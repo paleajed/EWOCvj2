@@ -439,7 +439,7 @@ extern void open_shelf(const std::string &path);
 extern BinElement *find_element(int size, int k, int i, int j, bool olc);
 
 extern GLuint copy_tex(GLuint tex);
-extern GLuint copy_tex(GLuint tex, bool big);
+extern GLuint copy_tex(GLuint tex, int tw, int th);
 
 bool thread_vidopen(Layer *lay, AVInputFormat *ifmt, bool skip);
 

@@ -2866,11 +2866,11 @@ void calc_texture(Layer *lay, bool comp, bool alive) {
 	if (comp and !mainprogram->prevvid and mainprogram->preveff) {
 		glBindFramebuffer(GL_FRAMEBUFFER, lay->fbo);
 		glDrawBuffer(GL_COLOR_ATTACHMENT0);
-		glClearColor( 0.f, 0.f, 0.f, 0.f );
+		glClearColor(0.0f, 0.0f, 0.0f, 0.0f);
 		glClear(GL_COLOR_BUFFER_BIT);
 		if (lay->filename != "") {
-			float black[4] = {1.0, 1.0, 1.0, 1.0};
-			draw_box(NULL, black, -1.0f, 1.0f, 2.0f, -2.0f, lay->shiftx, lay->shifty, lay->scale, opa, 0, laynocomp->texture);
+			float black[4] = {0.0f, 0.0f, 0.0f, 0.0f};
+			draw_box(NULL, black, -1.0f, 1.0f, 2.0f, -2.0f, laynocomp->texture);
 		}
 		glBindFramebuffer(GL_FRAMEBUFFER, 0);
 		glDrawBuffer(GL_BACK_LEFT);
@@ -2901,24 +2901,24 @@ void calc_texture(Layer *lay, bool comp, bool alive) {
 		glDrawBuffer(GL_COLOR_ATTACHMENT0);
 		glClearColor(0.0f, 0.0f, 0.0f, 0.0f);
 		glClear(GL_COLOR_BUFFER_BIT);
-		float black[4] = {1.0f, 1.0f, 1.0f, 1.0f};
+		float black[4] = {1.0f, 1.0f, 1.0f, 0.0f};
 		if (lay->liveinput) {
-			draw_box(NULL, black, -1.0f, 1.0f, 2.0f, -2.0f, lay->shiftx, lay->shifty, lay->scale, opa, 0, lay->liveinput->texture);
+			draw_box(NULL, black, -1.0f, 1.0f, 2.0f, -2.0f, lay->liveinput->texture);
 		}
 		else if (lay->filename != "") {
-			draw_box(NULL, black, -1.0f, 1.0f, 2.0f, -2.0f, lay->shiftx, lay->shifty, lay->scale, opa, 0, lay->texture);
+			draw_box(NULL, black, -1.0f, 1.0f, 2.0f, -2.0f, lay->texture);
 		}
 		if (!mainprogram->preveff) {
 			glBindFramebuffer(GL_FRAMEBUFFER, laynocomp->fbo);
 			glDrawBuffer(GL_COLOR_ATTACHMENT0);
-			glClearColor( 0.f, 0.f, 0.f, 0.f );
+			glClearColor(0.0f, 0.0f, 0.0f, 0.0f);
 			glClear(GL_COLOR_BUFFER_BIT);
-			float black[4] = {1.0, 1.0, 1.0, 1.0};
+			float black[4] = {1.0f, 1.0f, 1.0f, 0.0f};
 			if (lay->liveinput) {
-				draw_box(NULL, black, -1.0f, 1.0f, 2.0f, -2.0f, laynocomp->shiftx, laynocomp->shifty, laynocomp->scale, opa, 0, lay->liveinput->texture);
+				draw_box(NULL, black, -1.0f, 1.0f, 2.0f, -2.0f, lay->liveinput->texture);
 			}
 			else if (lay->filename != "") {
-				draw_box(NULL, black, -1.0f, 1.0f, 2.0f, -2.0f, laynocomp->shiftx, laynocomp->shifty, laynocomp->scale, opa, 0, lay->texture);
+				draw_box(NULL, black, -1.0f, 1.0f, 2.0f, -2.0f, lay->texture);
 			}
 		}
 		glBindFramebuffer(GL_FRAMEBUFFER, 0);
@@ -4205,6 +4205,20 @@ void onestepfrom(bool stage, Node *node, Node *prevnode, GLuint prevfbotex) {
 		glUniform1i(edgethickmode, 0);
 		prevfbotex = effect->fbotex;
 
+		Layer *lay = effect->layer;
+		if (effect->node == lay->lasteffnode) {
+			GLuint fbocopy;
+			if ((mainprogram->preveff and stage == 0)) fbocopy = copy_tex(effect->fbotex, w, h);
+			else fbocopy = copy_tex(effect->fbotex, (int)(w * w * 0.3f / 1920.0f), (int)(h * h * 0.3f / ((1080.0f * (1920.0f / 1080.0f)) / (w / h))));
+			glBindFramebuffer(GL_FRAMEBUFFER, effect->fbo);
+			glDrawBuffer(GL_COLOR_ATTACHMENT0);
+			glClearColor(0.0f, 0.0f, 0.0f, 0.0f);
+			glClear(GL_COLOR_BUFFER_BIT);
+			float black[4] = {0.0f, 0.0f, 0.0f, 0.0f};
+			draw_box(NULL, black, -1.0f, 1.0f, 2.0f, -2.0f, lay->shiftx * div, lay->shifty * div, lay->scale, lay->opacity->value, 0, fbocopy);
+			glDeleteTextures(1, &fbocopy);
+		}
+		
 		glBindFramebuffer(GL_FRAMEBUFFER, 0);
 		glDrawBuffer(GL_BACK_LEFT);
 	}
@@ -4220,6 +4234,20 @@ void onestepfrom(bool stage, Node *node, Node *prevnode, GLuint prevfbotex) {
 				GLfloat chinv = glGetUniformLocation(mainprogram->ShaderProgram, "chinv");
 				glUniform1f(chinv, lay->chinv->value);
 			}
+		}
+		if (lay->node == lay->lasteffnode) {
+			GLuint fbocopy;
+			if (mainprogram->preveff and stage == 0) fbocopy = copy_tex(lay->fbotex);
+			else fbocopy = copy_tex(lay->fbotex);
+			glBindFramebuffer(GL_FRAMEBUFFER, lay->fbo);
+			glDrawBuffer(GL_COLOR_ATTACHMENT0);
+			glClearColor(0.0f, 0.0f, 0.0f, 0.0f);
+			glClear(GL_COLOR_BUFFER_BIT);
+			float black[4] = {0.0f, 0.0f, 0.0f, 0.0f};
+			draw_box(NULL, black, -1.0f, 1.0f, 2.0f, -2.0f, lay->shiftx, lay->shifty, lay->scale, lay->opacity->value, 0, fbocopy);
+			glBindFramebuffer(GL_FRAMEBUFFER, 0);
+			glDrawBuffer(GL_BACK_LEFT);
+			glDeleteTextures(1, &fbocopy);
 		}
 	}
 	else if (node->type == BLEND) {
@@ -6567,7 +6595,7 @@ void Preferences::load() {
 			}
 		}
 	
-		if (istring == "MIDI2") {
+		if (istring == "MIDI") {
 			while (getline(rfile, istring)) {
 				if (istring == "ENDOFMIDI") break;
 				getline(rfile, istring);
@@ -8178,8 +8206,8 @@ void output_video() {
 		
 		GLuint temptex;
 		GLuint mixtex;
-		temptex = copy_tex(node->mixtex, true);
-		mixtex = copy_tex(temptex, true);
+		temptex = copy_tex(node->mixtex, 1920, (int)((1080.0f * (1920.0f / 1080.0f)) / (w / h)));
+		mixtex = copy_tex(temptex, 1920, (int)((1080.0f * (1920.0f / 1080.0f)) / (w / h)));
 
 		GLfloat cf = glGetUniformLocation(mainprogram->ShaderProgram, "cf");
 		GLint wipe = glGetUniformLocation(mainprogram->ShaderProgram, "wipe");
@@ -12715,18 +12743,19 @@ void open_handlefile(std::string path) {
 }
 
 GLuint copy_tex(GLuint tex) {
-	return copy_tex(tex, false);
+	return copy_tex(tex, (int)(w * 0.3f), (int)(h * 0.3f));
 }
 
-GLuint copy_tex(GLuint tex, bool big) {
+GLuint copy_tex(GLuint tex, int tw, int th) {
 	GLuint smalltex, fbo;
 	glBindVertexArray(mainprogram->fbovao[1]);
 	glGenTextures(1, &smalltex);
 	glBindTexture(GL_TEXTURE_2D, smalltex);
+	glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_BORDER);
+	glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_BORDER);
 	glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR);
 	glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
-	if (big) glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA, 1920, ((1080.0f * (1920.0f / 1080.0f)) / (w / h)), 0, GL_RGBA, GL_UNSIGNED_BYTE, NULL);
-	else glTexImage2D(GL_TEXTURE_2D, 0, GL_RGB, (int)(w * 0.3f), (int)(h * 0.3f), 0, GL_RGB, GL_UNSIGNED_BYTE, NULL);
+	glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA, tw, th, 0, GL_RGBA, GL_UNSIGNED_BYTE, NULL);
 	glGenFramebuffers(1, &fbo);
 	glBindFramebuffer(GL_FRAMEBUFFER, fbo);
 	glFramebufferTexture2D(GL_FRAMEBUFFER, GL_COLOR_ATTACHMENT0, GL_TEXTURE_2D, smalltex, 0);
