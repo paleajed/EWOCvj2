@@ -446,8 +446,10 @@ vec4 contrast(vec4 pxcol) {  //selfmade
 }
 
 vec2 scale(vec2 texc) {  //selfmade
+	float fac = scalefactor;
+	fac = fac * fac * fac * fac * fac * fac * fac * fac;
 	vec2 center = vec2(0.5, 0.5);
-	texc = (texc - center) / scalefactor + center;
+	texc = fract((texc - center) / fac + center);
 	return texc;
 }
 

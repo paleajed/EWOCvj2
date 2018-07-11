@@ -1941,7 +1941,7 @@ void set_fbovao2() {
 				bnode->fbo = -1;
 				glDeleteTextures(1, &bnode->fbotex);
 			}
-			if (node->type == MIX) {
+			else if (node->type == MIX) {
 				MixNode *mnode = (MixNode*)node;
 				glDeleteFramebuffers(1, &mnode->mixfbo);
 				mnode->mixfbo = -1;
@@ -5848,9 +5848,9 @@ ScaleEffect::ScaleEffect() {
 	this->numrows = 1;
 	Param *param = new Param;
 	param->name = "Factor"; 
-	param->value = 2.0f;
-	param->range[0] = 0.1f;
-	param->range[1] = 10.0f;
+	param->value = 1.1f;
+	param->range[0] = 0.75f;
+	param->range[1] = 1.33f;
 	param->sliding = true;
 	param->shadervar = "scalefactor";
 	param->effect = this;
@@ -7741,7 +7741,7 @@ int handle_menu(Menu *menu, float xshift) {
 			if (sub != 0) {
 				if (menu->box->scrcoords->x1 + mainprogram->menux + xvtxtoscr(xoff) < mainprogram->mx and mainprogram->mx < menu->box->scrcoords->x1 + menu->box->scrcoords->w + mainprogram->menux + xvtxtoscr(xoff) and menu->box->scrcoords->y1 - menu->box->scrcoords->h + mainprogram->menuy + (k - koff - numsubs) * yvtxtoscr(tf(0.05f)) < mainprogram->my and mainprogram->my < menu->box->scrcoords->y1 + mainprogram->menuy + (k - koff - numsubs) * yvtxtoscr(tf(0.05f))) {
 					draw_box(lc, ac2, menu->box->vtxcoords->x1 + vmx + xoff, menu->box->vtxcoords->y1 - (k - koff - numsubs) * tf(0.05f) - vmy, tf(0.156f), tf(0.05f), -1);
-					if (mainprogram->leftmousedown) mainprogram->leftmousedown = 0;
+					if (mainprogram->leftmousedown) mainprogram->leftmousedown = false;
 					if (mainprogram->leftmouse) {
 						for (int i = 0; i < mainprogram->menulist.size(); i++) {
 							mainprogram->menulist[i]->state = 0;
@@ -8571,6 +8571,11 @@ void the_loop() {
 	float darkgrey[] = {0.2f, 0.2f, 0.2f, 1.0f};
 	float lightblue[] = {0.5f, 0.5f, 1.0f, 1.0f};
 	
+	if (mainmix->adaptparam) {
+		// no hovering while adapting param
+		mainprogram->my = -1;
+	}
+		
 	for (int i = 0; i < 4; i++) {
 		for (int j = 0; j < mainmix->nbframesA[i].size(); j++) {
 			if (i == mainmix->page[0]) break;
@@ -9239,7 +9244,7 @@ void the_loop() {
 				}
 				else {
 					mainprogram->binelmenu->state = 2;
-					mainprogram->leftmousedown = 0;
+					mainprogram->leftmousedown = false;
 				}
 			}
 			mainprogram->menuactivation = false;
@@ -9820,6 +9825,7 @@ void the_loop() {
 							mainprogram->movingbinel->path = mainprogram->movingbinel->oldpath;
 							mainprogram->movingbinel->jpegpath = mainprogram->movingbinel->oldjpegpath;
 							mainprogram->movingbinel->type = mainprogram->movingbinel->oldtype;
+							mainprogram->movingbinel->full = false;
 							if (mainprogram->currbinel) mainprogram->currbinel->tex = mainprogram->currbinel->oldtex;
 							boost::filesystem::remove(mainprogram->movingbinel->jpegpath);
 							std::string path = mainprogram->binsdir + mainprogram->currbin->name + ".bin";
@@ -10060,7 +10066,7 @@ void the_loop() {
 	}
 	else {  //the_loop else
 		if ((mainprogram->effectmenu->state > 1) or (mainprogram->mixmodemenu->state > 1) or (mainprogram->mixenginemenu->state > 1) or (mainprogram->parammenu->state > 1) or (mainprogram->loopmenu->state > 1) or (mainprogram->deckmenu->state > 1)or (mainprogram->laymenu->state > 1) or (mainprogram->mixtargetmenu->state > 1) or (mainprogram->wipemenu->state > 1) or (mainprogram->livemenu->state > 1) or (mainprogram->binmenu->state > 1) or (mainprogram->binelmenu->state > 1) or (mainprogram->genmidimenu->state > 1) or (mainprogram->genericmenu->state > 1)) {
-			mainprogram->leftmousedown = 0;
+			mainprogram->leftmousedown = false;
 			mainprogram->menuondisplay = true;
 		}
 		else {
@@ -10284,8 +10290,8 @@ void the_loop() {
 				}
 			}
 		}
-				
-						
+
+
 		if (mainprogram->preveff) {
 			for(int i = 0; i < mainmix->layersA.size(); i++) {
 				Layer *testlay = mainmix->layersA[i];
@@ -10486,9 +10492,9 @@ void the_loop() {
 			mainprogram->effprev->box->acolor[2] = 1.0;
 			mainprogram->effprev->box->acolor[3] = 1.0;
 			if (mainprogram->leftmouse) {
-				std::vector<Layer*> &lvec = choose_layers(mainmix->currdeck);
 				mainprogram->preveff = !mainprogram->preveff;
 				mainprogram->prevvid = !mainprogram->prevvid;
+				std::vector<Layer*> &lvec = choose_layers(mainmix->currdeck);
 				if (!mainprogram->preveff and mainprogram->prevvid) {
 					for (int i = 0; i < mainmix->layersA.size(); i++) {
 						Layer *lay = mainmix->layersA[i];
@@ -11101,7 +11107,7 @@ void the_loop() {
 					else thick = xvtxtoscr(tf(0.006f));
 					if (box->scrcoords->y1 - box->scrcoords->h < mainprogram->my and mainprogram->my < box->scrcoords->y1) {
 						if (box->scrcoords->x1 - thick + (i - mainmix->scrollpos[j] == 0) * thick < mainprogram->mx and mainprogram->mx < box->scrcoords->x1 + thick) {
-							mainprogram->leftmousedown = 0;
+							mainprogram->leftmousedown = false;
 							float blue[] = {0.5, 0.5, 1.0, 1.0};
 							draw_box(blue, blue, box->vtxcoords->x1 - xscrtovtx(thick) + (i - mainmix->scrollpos[j] == 0) * xscrtovtx(thick), box->vtxcoords->y1, xscrtovtx(thick * (2.0f - (i - mainmix->scrollpos[j] == 0))), mainmix->layw, -1);
 							float red[] = {1.0, 0.0 , 0.0, 1.0};
@@ -11119,7 +11125,7 @@ void the_loop() {
 							}
 						}
 						else if (box->scrcoords->x1 + box->scrcoords->w - thick < mainprogram->mx and mainprogram->mx < box->scrcoords->x1 + box->scrcoords->w) {
-							mainprogram->leftmousedown = 0;
+							mainprogram->leftmousedown = false;
 							if (lay->pos == lvec.size() - 1 or lay->pos == mainmix->scrollpos[j] + 2) {
 								float blue[] = {0.5, 0.5 , 1.0, 1.0};
 								draw_box(blue, blue, box->vtxcoords->x1 + box->vtxcoords->w - xscrtovtx(thick), box->vtxcoords->y1, xscrtovtx(thick * (1.0f + (i - mainmix->scrollpos[j] != 2))), mainmix->layw, -1);
