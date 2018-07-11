@@ -347,10 +347,10 @@ public:
         if (!mainmix->donerec) {
 			#define BUFFER_OFFSET(i) ((char *)NULL + (i))
 			glBindBuffer(GL_PIXEL_PACK_BUFFER_ARB, mainmix->ioBuf);
-			glBufferData(GL_PIXEL_PACK_BUFFER_ARB, (int)(1920 * ((1080.0f * (1920.0f / 1080.0f)) / (w / h))) * 4, NULL, GL_DYNAMIC_READ);
+			glBufferData(GL_PIXEL_PACK_BUFFER_ARB, (int)(mainprogram->ow * mainprogram->oh) * 4, NULL, GL_DYNAMIC_READ);
 			glBindFramebuffer(GL_FRAMEBUFFER, ((MixNode*)mainprogram->nodesmain->mixnodescomp[2])->mixfbo);
 			glReadBuffer(GL_COLOR_ATTACHMENT0);
-			glReadPixels(0, 0, 1920, (int)((1080.0f * (1920.0f / 1080.0f)) / (w / h)), GL_RGBA, GL_UNSIGNED_BYTE, BUFFER_OFFSET(0));
+			glReadPixels(0, 0, mainprogram->ow, (int)mainprogram->oh, GL_RGBA, GL_UNSIGNED_BYTE, BUFFER_OFFSET(0));
 			mainmix->rgbdata = glMapBuffer(GL_PIXEL_PACK_BUFFER_ARB, GL_READ_ONLY);
 			assert(mainmix->rgbdata);
 			mainmix->recordnow = true;
@@ -404,8 +404,8 @@ void sdldie(const char *msg)
 
 void screenshot() {
 	return;
-	int wi = 1920;
-	int he = ((1080.0f * (1920.0f / 1080.0f)) / (w / h));
+	int wi = mainprogram->ow;
+	int he = mainprogram->oh;
 	char *buf = (char*)malloc(wi * he * 3);
 	MixNode *node = (MixNode*)mainprogram->nodesmain->mixnodescomp[2];
 
@@ -819,8 +819,8 @@ void Mixer::record_video() {
     c = avcodec_alloc_context3(codec);
     pkt = av_packet_alloc();
     c->global_quality = 0;
-    c->width = 1920;
-    c->height = (int)((1080.0f * (1920.0f / 1080.0f)) / (w / h));
+    c->width = mainprogram->ow;
+    c->height = (int)mainprogram->oh;
     /* frames per second */
     c->time_base = (AVRational){1, 25};
     c->framerate = (AVRational){25, 1};
@@ -882,7 +882,7 @@ void Mixer::record_video() {
 		
 		AVPicture rgbaframe;
 		avpicture_fill(&rgbaframe, (uint8_t *)mainmix->rgbdata, AV_PIX_FMT_RGBA, c->width, c->height);
-		rgbaframe.linesize[0] = 1920 * 4;
+		rgbaframe.linesize[0] = mainprogram->ow * 4;
 		sws_scale
 		(
 			this->sws_ctx,
@@ -1925,6 +1925,61 @@ void set_thumbs() {
 }
 
 
+void set_fbovao2() {
+	for (int i = 0; i < 1; i++) { //mainprogram->nodesmain->pages.size()
+		for (int j = 0; j < mainprogram->nodesmain->currpage->nodescomp.size(); j++) {
+			Node *node = mainprogram->nodesmain->currpage->nodescomp[j];
+			if (node->type == EFFECT) {
+				EffectNode *enode = (EffectNode*)node;
+				glDeleteFramebuffers(1, &enode->effect->fbo);
+				enode->effect->fbo = -1;
+				glDeleteTextures(1, &enode->effect->fbotex);
+			}
+			else if (node->type == BLEND) {
+				BlendNode *bnode = (BlendNode*)node;
+				glDeleteFramebuffers(1, &bnode->fbo);
+				bnode->fbo = -1;
+				glDeleteTextures(1, &bnode->fbotex);
+			}
+			if (node->type == MIX) {
+				MixNode *mnode = (MixNode*)node;
+				glDeleteFramebuffers(1, &mnode->mixfbo);
+				mnode->mixfbo = -1;
+				glDeleteTextures(1, &mnode->mixtex);
+			}
+		}
+	}
+
+	float vidwidth = mainprogram->ow;
+	float vidheight = mainprogram->oh;
+	
+	GLfloat vcoords3[8];
+	GLfloat *p = vcoords3;
+	*p++ = -1.0f; *p++ = -1.0f;
+	*p++ = -1.0f; *p++ = 1.0f - (2.0f - 2.0f * (vidheight / (float)h));
+	*p++ = 1.0f - (2.0f - 2.0f * (vidwidth / (float)w)); *p++ = -1.0f;
+	*p++ = 1.0f - (2.0f - 2.0f * (vidwidth / (float)w)); *p++ = 1.0f - (2.0f - 2.0f * (vidheight / (float)h));
+	GLfloat tcoords[] = {0.0f, 0.0f,
+						0.0f, 1.0f,
+						1.0f, 0.0f,
+						1.0f, 1.0f};
+
+	glBindBuffer(GL_ARRAY_BUFFER, vbuf3);
+    glBufferData(GL_ARRAY_BUFFER, 32, vcoords3, GL_STATIC_DRAW);
+	GLuint tbuf;
+    glGenBuffers(1, &tbuf);
+	glBindBuffer(GL_ARRAY_BUFFER, tbuf);
+    glBufferData(GL_ARRAY_BUFFER, 32, tcoords, GL_STATIC_DRAW);
+    
+	glBindVertexArray(mainprogram->fbovao[2]);
+	glBindBuffer(GL_ARRAY_BUFFER, vbuf3);
+	glEnableVertexAttribArray(0);
+	glVertexAttribPointer(0, 2, GL_FLOAT, GL_FALSE, 8, NULL);
+	glBindBuffer(GL_ARRAY_BUFFER, tbuf);
+	glEnableVertexAttribArray(1);
+	glVertexAttribPointer(1, 2, GL_FLOAT, GL_FALSE, 8, NULL);
+}	
+
 void set_fbo() {
 
     glGenTextures(1, &mainmix->mixbackuptex);
@@ -1955,8 +2010,8 @@ void set_fbo() {
 	glFramebufferTexture2D(GL_FRAMEBUFFER, GL_COLOR_ATTACHMENT0, GL_TEXTURE_2D, fbotex[1], 0);
 
 	
-	float vidwidth = 1920.0f;
-	float vidheight = ((1080.0f * (1920.0f / 1080.0f)) / (w / h));
+	float vidwidth = mainprogram->ow;
+	float vidheight = mainprogram->oh;
 	
 	GLfloat vcoords1[8];
 	GLfloat *p = vcoords1;
@@ -3738,13 +3793,13 @@ void onestepfrom(bool stage, Node *node, Node *prevnode, GLuint prevfbotex) {
 	int wi, he;
 	float div;
 	if (!mainprogram->preveff) {
-		div = 1920.0f / w;
+		div = mainprogram->ow / w;
 	}
 	if (mainprogram->preveff and stage == 0) {
 		div = 0.3f;
 	}
 	else {
-		div = 1920.0f / w;
+		div = mainprogram->ow / w;
 	}
 	
 	GLuint fbowidth = glGetUniformLocation(mainprogram->ShaderProgram, "fbowidth");
@@ -3794,14 +3849,14 @@ void onestepfrom(bool stage, Node *node, Node *prevnode, GLuint prevfbotex) {
 						glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA, (int)(w * div), (int)(h * div), 0, GL_RGBA, GL_UNSIGNED_BYTE, NULL);
 					}
 					else {
-						glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA, 1920, ((1080.0f * (1920.0f / 1080.0f)) / (w / h)), 0, GL_RGBA, GL_UNSIGNED_BYTE, NULL);
+						glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA, mainprogram->ow, mainprogram->oh, 0, GL_RGBA, GL_UNSIGNED_BYTE, NULL);
 					}
 					glBindTexture(GL_TEXTURE_2D, fbotex[1]);
 					if (mainprogram->preveff and stage == 0) {
 						glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA, (int)(w * div), (int)(h * div), 0, GL_RGBA, GL_UNSIGNED_BYTE, NULL);
 					}
 					else {
-						glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA, 1920, ((1080.0f * (1920.0f / 1080.0f)) / (w / h)), 0, GL_RGBA, GL_UNSIGNED_BYTE, NULL);
+						glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA, mainprogram->ow, mainprogram->oh, 0, GL_RGBA, GL_UNSIGNED_BYTE, NULL);
 					}
 					doblur(stage, prevfbotex, ((BlurEffect*)effect)->times);
 					glUniform1i(Sampler0, 0);
@@ -3829,14 +3884,14 @@ void onestepfrom(bool stage, Node *node, Node *prevnode, GLuint prevfbotex) {
 						glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA, (int)(w * div), (int)(h * div), 0, GL_RGBA, GL_UNSIGNED_BYTE, NULL);
 					}
 					else {
-						glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA, 1920, ((1080.0f * (1920.0f / 1080.0f)) / (w / h)), 0, GL_RGBA, GL_UNSIGNED_BYTE, NULL);
+						glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA, mainprogram->ow, mainprogram->oh, 0, GL_RGBA, GL_UNSIGNED_BYTE, NULL);
 					}
 					glBindTexture(GL_TEXTURE_2D, fbotex[1]);
 					if (mainprogram->preveff and stage == 0) {
 						glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA, (int)(w * div), (int)(h * div), 0, GL_RGBA, GL_UNSIGNED_BYTE, NULL);
 					}
 					else {
-						glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA, 1920, ((1080.0f * (1920.0f / 1080.0f)) / (w / h)), 0, GL_RGBA, GL_UNSIGNED_BYTE, NULL);
+						glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA, mainprogram->ow, mainprogram->oh, 0, GL_RGBA, GL_UNSIGNED_BYTE, NULL);
 					}
 					doblur(stage, prevfbotex, 6);
 					glUniform1i(Sampler0, 0);
@@ -3999,14 +4054,14 @@ void onestepfrom(bool stage, Node *node, Node *prevnode, GLuint prevfbotex) {
 						glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA, (int)(w * div), (int)(h * div), 0, GL_RGBA, GL_UNSIGNED_BYTE, NULL);
 					}
 					else {
-						glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA, 1920, ((1080.0f * (1920.0f / 1080.0f)) / (w / h)), 0, GL_RGBA, GL_UNSIGNED_BYTE, NULL);
+						glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA, mainprogram->ow, mainprogram->oh, 0, GL_RGBA, GL_UNSIGNED_BYTE, NULL);
 					}
 					glBindTexture(GL_TEXTURE_2D, fbotex[1]);
 					if (mainprogram->preveff and stage == 0) {
 						glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA, (int)(w * div), (int)(h * div), 0, GL_RGBA, GL_UNSIGNED_BYTE, NULL);
 					}
 					else {
-						glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA, 1920, ((1080.0f * (1920.0f / 1080.0f)) / (w / h)), 0, GL_RGBA, GL_UNSIGNED_BYTE, NULL);
+						glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA, mainprogram->ow, mainprogram->oh, 0, GL_RGBA, GL_UNSIGNED_BYTE, NULL);
 					}
 					glBindFramebuffer(GL_FRAMEBUFFER, frbuf[0]);
 					glDrawBuffer(GL_COLOR_ATTACHMENT0);
@@ -4120,7 +4175,7 @@ void onestepfrom(bool stage, Node *node, Node *prevnode, GLuint prevfbotex) {
 				glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA, (int)(w * div), (int)(h * div), 0, GL_RGBA, GL_UNSIGNED_BYTE, NULL);
 			}
 			else {
-				glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA, 1920, ((1080.0f * (1920.0f / 1080.0f)) / (w / h)), 0, GL_RGBA, GL_UNSIGNED_BYTE, NULL);
+				glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA, mainprogram->ow, mainprogram->oh, 0, GL_RGBA, GL_UNSIGNED_BYTE, NULL);
 			}
 			glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR);
 			glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
@@ -4177,10 +4232,10 @@ void onestepfrom(bool stage, Node *node, Node *prevnode, GLuint prevfbotex) {
 		// GLuint ioBuf;
  		// glGenBuffers(1, &ioBuf); 
 		// glBindBuffer(GL_PIXEL_PACK_BUFFER_ARB, ioBuf);
- 		// glBufferData(GL_PIXEL_PACK_BUFFER_ARB, 1920 * ((1080.0f * (1920.0f / 1080.0f)) / (w / h)), NULL, GL_STREAM_READ);
+ 		// glBufferData(GL_PIXEL_PACK_BUFFER_ARB, mainprogram->ow * mainprogram->oh, NULL, GL_STREAM_READ);
  		// glBindFramebuffer(GL_FRAMEBUFFER, ((VideoNode*)(node->in))->layer->fbo);
 		// glReadBuffer(GL_COLOR_ATTACHMENT0);
- 		// glReadPixels(0, 0, 1920, ((1080.0f * (1920.0f / 1080.0f)) / (w / h)), GL_RGBA, GL_UNSIGNED_BYTE, BUFFER_OFFSET(0));
+ 		// glReadPixels(0, 0, mainprogram->ow, mainprogram->oh, GL_RGBA, GL_UNSIGNED_BYTE, BUFFER_OFFSET(0));
  		// void* mem = glMapBuffer(GL_PIXEL_PACK_BUFFER_ARB, GL_READ_ONLY);   
  		// assert(mem);
 		// CopyMemory((void*)effect->pbuf, mem, 2073600);
@@ -4188,7 +4243,7 @@ void onestepfrom(bool stage, Node *node, Node *prevnode, GLuint prevfbotex) {
  		// glUnmapBuffer(GL_PIXEL_PACK_BUFFER_ARB);
  		// glBindBuffer(GL_PIXEL_PACK_BUFFER_ARB, 0);		
 		// //while((const char*)effect->pbuf != "TERCES") {}
-		// //glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA, 1920, ((1080.0f * (1920.0f / 1080.0f)) / (w / h)), 0, GL_RGBA, GL_UNSIGNED_BYTE, effect->pbuf);
+		// //glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA, mainprogram->ow, mainprogram->oh, 0, GL_RGBA, GL_UNSIGNED_BYTE, effect->pbuf);
 		
  		
  		glBindFramebuffer(GL_FRAMEBUFFER, effect->fbo);
@@ -4209,7 +4264,7 @@ void onestepfrom(bool stage, Node *node, Node *prevnode, GLuint prevfbotex) {
 		if (effect->node == lay->lasteffnode) {
 			GLuint fbocopy;
 			if ((mainprogram->preveff and stage == 0)) fbocopy = copy_tex(effect->fbotex, w, h);
-			else fbocopy = copy_tex(effect->fbotex, (int)(w * w * 0.3f / 1920.0f), (int)(h * h * 0.3f / ((1080.0f * (1920.0f / 1080.0f)) / (w / h))));
+			else fbocopy = copy_tex(effect->fbotex, (int)(w * w * 0.3f / mainprogram->ow), (int)(h * h * 0.3f / mainprogram->oh));
 			glBindFramebuffer(GL_FRAMEBUFFER, effect->fbo);
 			glDrawBuffer(GL_COLOR_ATTACHMENT0);
 			glClearColor(0.0f, 0.0f, 0.0f, 0.0f);
@@ -4267,7 +4322,7 @@ void onestepfrom(bool stage, Node *node, Node *prevnode, GLuint prevfbotex) {
 						glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA, w * div, h * div, 0, GL_RGBA, GL_UNSIGNED_BYTE, NULL);
 					}
 					else {	
-						glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA, 1920, ((1080.0f * (1920.0f / 1080.0f)) / (w / h)), 0, GL_RGBA, GL_UNSIGNED_BYTE, NULL);
+						glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA, mainprogram->ow, mainprogram->oh, 0, GL_RGBA, GL_UNSIGNED_BYTE, NULL);
 					}
 					glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR);
 					glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
@@ -4344,7 +4399,7 @@ void onestepfrom(bool stage, Node *node, Node *prevnode, GLuint prevfbotex) {
 				glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA, (int)(w * div), (int)(h * div), 0, GL_RGBA, GL_UNSIGNED_BYTE, NULL);
 			}
 			else {
-				glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA, 1920, ((1080.0f * (1920.0f / 1080.0f)) / (w / h)), 0, GL_RGBA, GL_UNSIGNED_BYTE, NULL);
+				glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA, mainprogram->ow, mainprogram->oh, 0, GL_RGBA, GL_UNSIGNED_BYTE, NULL);
 			}
 			glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR);
 			glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
@@ -6546,8 +6601,10 @@ Param::~Param() {
 
 
 Preferences::Preferences() {
-	PIGen *pigen = new PIGen;
-	this->items.push_back(pigen);
+	PIVid *pvi = new PIVid;
+	this->items.push_back(pvi);
+	PIInt *pii = new PIInt;
+	this->items.push_back(pii);
 	PIDirs *pidirs = new PIDirs;
 	this->items.push_back(pidirs);
 	PIMidi *pimidi = new PIMidi;
@@ -6572,21 +6629,21 @@ void Preferences::load() {
 	while (getline(rfile, istring)) {
 		if (istring == "ENDOFFILE") break;
 	
-		if (istring == "GENERAL") {
+		if (istring == "INTERFACE") {
 			while (getline(rfile, istring)) {
-				if (istring == "ENDOFGENERAL") break;
+				if (istring == "ENDOFINTERFACE") break;
 				getline(rfile, istring);
 				for (int i = 0; i < mainprogram->prefs->items.size(); i++) {
-					if (mainprogram->prefs->items[i]->name == "General") {
-						PIGen *pgi = (PIGen*)(mainprogram->prefs->items[i]);
-						for (int j = 0; j < pgi->items.size(); j++) {
-							if (pgi->items[j]->name == istring) {
+					if (mainprogram->prefs->items[i]->name == "Interface") {
+						PIInt *pii = (PIInt*)(mainprogram->prefs->items[i]);
+						for (int j = 0; j < pii->items.size(); j++) {
+							if (pii->items[j]->name == istring) {
 								getline(rfile, istring);
-								pgi->items[j]->type = (PIGEN_TYPE)std::stoi(istring);
+								pii->items[j]->type = (PIINT_TYPE)std::stoi(istring);
 								getline(rfile, istring);
-								pgi->items[j]->onoff = std::stoi(istring);
-								if (pgi->items[j]->type == PIGEN_CLICK) {
-									mainprogram->needsclick = pgi->items[j]->onoff;
+								pii->items[j]->onoff = std::stoi(istring);
+								if (pii->items[j]->type == PIINT_CLICK) {
+									mainprogram->needsclick = pii->items[j]->onoff;
 								}
 							}
 						}
@@ -6644,22 +6701,22 @@ void Preferences::save() {
 	wfile.open(".\\preferences.prefs");
 	wfile << "EWOCvj PREFERENCES V0.1\n";
 	
-	wfile << "GENERAL\n";
+	wfile << "INTERFACE\n";
 	wfile << "\n";
 	for (int i = 0; i < mainprogram->prefs->items.size(); i++) {
-		if (mainprogram->prefs->items[i]->name == "General") {
-			PIGen *pgi = (PIGen*)(mainprogram->prefs->items[i]);
-			for (int j = 0; j < pgi->items.size(); j++) {
-				wfile << pgi->items[j]->name;
+		if (mainprogram->prefs->items[i]->name == "Interface") {
+			PIInt *pii = (PIInt*)(mainprogram->prefs->items[i]);
+			for (int j = 0; j < pii->items.size(); j++) {
+				wfile << pii->items[j]->name;
 				wfile << "\n";
-				wfile << std::to_string(pgi->items[j]->type);
+				wfile << std::to_string(pii->items[j]->type);
 				wfile << "\n";
-				wfile << std::to_string(pgi->items[j]->onoff);
+				wfile << std::to_string(pii->items[j]->onoff);
 				wfile << "\n";
 			}
 		}
 	}
-	wfile << "ENDOFGENERAL\n";
+	wfile << "ENDOFINTERFACE\n";
 	wfile << "\n";
 	
 	wfile << "MIDI\n";
@@ -6724,17 +6781,31 @@ PIMidi::populate() {
 	}
 }
 
-PIGen::PIGen() {
-	this->name = "General";
-	PGenItem *pgi = new PGenItem;
-	pgi->name = "Select needs click";
-	pgi->type = PIGEN_CLICK;
-	pgi->onoff = 0;
-	this->items.push_back(pgi);
-	//pgi = new PGenItem;
-	//pgi->name = "Select needs click";
-	//pgi->onoff = 0;
-	//this->items.push_back(pgi);
+PIInt::PIInt() {
+	this->name = "Interface";
+	PIntItem *pii = new PIntItem;
+	pii->name = "Select needs click";
+	pii->type = PIINT_CLICK;
+	pii->onoff = 0;
+	this->items.push_back(pii);
+	//pii = new PIntItem;
+	//pii->name = "Select needs click";
+	//pii->onoff = 0;
+	//this->items.push_back(pii);
+}
+
+PIVid::PIVid() {
+	this->name = "Video";
+	PVidItem *pvi = new PVidItem;
+	pvi->name = "Output video width";
+	pvi->type = PIVID_W;
+	pvi->value = 1920;
+	this->items.push_back(pvi);
+	pvi = new PVidItem;
+	pvi->name = "Output video height";
+	pvi->type = PIVID_H;
+	pvi->value = 1080;
+	this->items.push_back(pvi);
 }
 
 
@@ -7771,8 +7842,8 @@ void preferences() {
 	draw_box(white, nullptr, -0.5f, -1.0f, 1.5f, 2.0f, -1);
 	
 	PrefItem *ci = mainprogram->prefs->items[mainprogram->prefs->curritem];
-	if (ci->name == "General") {
-		PIMidi *mci = (PIMidi*)ci;
+	if (ci->name == "Interface") {
+		PIInt *mci = (PIInt*)ci;
 		for (int i = 0; i < mci->items.size(); i++) {
 			Box box;
 			box.vtxcoords->x1 = -0.5f;
@@ -7801,6 +7872,58 @@ void preferences() {
 				draw_box(white, black, &box, -1);
 			}
 			mainprogram->needsclick = mci->items[i]->onoff;
+		}
+	}
+	if (ci->name == "Video") {
+		PIVid *mci = (PIVid*)ci;
+		for (int i = 0; i < mci->items.size(); i++) {
+			Box box;
+			box.vtxcoords->x1 = -0.5f;
+			box.vtxcoords->y1 = 1.0f - (i + 1) * 0.2f;
+			box.vtxcoords->w = 1.5f;
+			box.vtxcoords->h = 0.2f;
+			box.upvtxtoscr();
+			draw_box(white, black, &box, -1);
+			render_text(mci->items[i]->name, white, box.vtxcoords->x1 + 0.23f, box.vtxcoords->y1 + 0.06f, 0.0024f, 0.004f);
+			
+			box.vtxcoords->x1 = 0.25f;
+			box.vtxcoords->y1 = 1.0f - (i + 1) * 0.2f;
+			box.vtxcoords->w = 0.3f;
+			box.vtxcoords->h = 0.2f;
+			box.upvtxtoscr();
+			draw_box(white, black, &box, -1);
+			if ((mainprogram->renaming == EDIT_VIDW and mci->items[i]->type == PIVID_W) or (mainprogram->renaming == EDIT_VIDH and mci->items[i]->type == PIVID_H)) {
+				std::string part = mainprogram->inputtext.substr(0, mainprogram->cursorpos);
+				float textw = render_text(part, white, box.vtxcoords->x1 + 0.1f, box.vtxcoords->y1 + 0.06f, 0.0024f, 0.004f) * 0.5f;
+				part = mainprogram->inputtext.substr(mainprogram->cursorpos, mainprogram->inputtext.length() - mainprogram->cursorpos);
+				render_text(part, white, box.vtxcoords->x1 + 0.102f + textw, box.vtxcoords->y1 + 0.06f, 0.0024f, 0.004f);
+				draw_line(white, box.vtxcoords->x1 + 0.102f + textw, box.vtxcoords->y1 + 0.06f, box.vtxcoords->x1 + 0.102f + textw, box.vtxcoords->y1 + tf(0.09f)); 
+			}
+			else {
+				render_text(std::to_string(mci->items[i]->value), white, box.vtxcoords->x1 + 0.1f, box.vtxcoords->y1 + 0.06f, 0.0024f, 0.004f);
+			}
+			if (box.in()) {
+				if (mainprogram->leftmouse) {
+					if (mci->items[i]->type == PIVID_W) {
+						mainprogram->ow = mci->items[i]->value;
+						mainprogram->renaming = EDIT_VIDW;
+					}
+					else if (mci->items[i]->type == PIVID_H) {
+						mainprogram->oh = mci->items[i]->value;
+						mainprogram->renaming = EDIT_VIDH;
+					}
+					mainprogram->inputtext = std::to_string(mci->items[i]->value);
+					mainprogram->cursorpos = mainprogram->inputtext.length();
+					SDL_StartTextInput();
+					mainprogram->leftmouse = false;
+				}
+			}
+			if (mci->items[i]->type == PIVID_W) {
+				mci->items[i]->value = mainprogram->ow;
+			}
+			else if (mci->items[i]->type == PIVID_H) {
+				mci->items[i]->value = mainprogram->oh;
+			}
 		}
 	}
 	if (ci->name == "MIDI Devices") {
@@ -8206,8 +8329,8 @@ void output_video() {
 		
 		GLuint temptex;
 		GLuint mixtex;
-		temptex = copy_tex(node->mixtex, 1920, (int)((1080.0f * (1920.0f / 1080.0f)) / (w / h)));
-		mixtex = copy_tex(temptex, 1920, (int)((1080.0f * (1920.0f / 1080.0f)) / (w / h)));
+		temptex = copy_tex(node->mixtex, mainprogram->ow, (int)mainprogram->oh);
+		mixtex = copy_tex(temptex, mainprogram->ow, (int)mainprogram->oh);
 
 		GLfloat cf = glGetUniformLocation(mainprogram->ShaderProgram, "cf");
 		GLint wipe = glGetUniformLocation(mainprogram->ShaderProgram, "wipe");
@@ -10426,10 +10549,10 @@ void the_loop() {
 						mainmix->recording_video.detach();
 						#define BUFFER_OFFSET(i) ((char *)NULL + (i))
 						glBindBuffer(GL_PIXEL_PACK_BUFFER_ARB, mainmix->ioBuf);
-						glBufferData(GL_PIXEL_PACK_BUFFER_ARB, (int)(1920 * ((1080.0f * (1920.0f / 1080.0f)) / (w / h))) * 4, NULL, GL_DYNAMIC_READ);
+						glBufferData(GL_PIXEL_PACK_BUFFER_ARB, (int)(mainprogram->ow * mainprogram->oh) * 4, NULL, GL_DYNAMIC_READ);
 						glBindFramebuffer(GL_FRAMEBUFFER, ((MixNode*)mainprogram->nodesmain->mixnodescomp[2])->mixfbo);
 						glReadBuffer(GL_COLOR_ATTACHMENT0);
-						glReadPixels(0, 0, 1920, (int)((1080.0f * (1920.0f / 1080.0f)) / (w / h)), GL_RGBA, GL_UNSIGNED_BYTE, BUFFER_OFFSET(0));
+						glReadPixels(0, 0, mainprogram->ow, (int)mainprogram->oh, GL_RGBA, GL_UNSIGNED_BYTE, BUFFER_OFFSET(0));
 						mainmix->rgbdata = glMapBuffer(GL_PIXEL_PACK_BUFFER_ARB, GL_READ_ONLY);
 						assert(mainmix->rgbdata);
 						mainmix->recordnow = true;
@@ -14098,6 +14221,20 @@ int main(int argc, char* argv[]){
 				}
 				else if (mainprogram->renaming == EDIT_RECDIR) {
 					mainprogram->recdir = mainprogram->inputtext;
+				}
+				else if (mainprogram->renaming == EDIT_VIDW) {
+					try {
+						mainprogram->ow = std::stoi(mainprogram->inputtext);
+						set_fbovao2();
+					}
+					catch(const std::exception& e) {}
+				}
+				else if (mainprogram->renaming == EDIT_VIDH) {
+					try {
+						mainprogram->oh = std::stoi(mainprogram->inputtext);
+						set_fbovao2();
+					}
+					catch(const std::exception& e) {}
 				}
 			}
 		

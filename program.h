@@ -32,12 +32,20 @@ typedef enum
 	EDIT_BINSDIR = 2,
 	EDIT_RECDIR = 3,
 	EDIT_SHELFDIR = 4,
+	EDIT_VIDW = 5,
+	EDIT_VIDH = 6,
 } EDIT_TYPE;
 
 typedef enum
 {
-	PIGEN_CLICK = 0,
-} PIGEN_TYPE;
+	PIVID_W = 0,
+	PIVID_H = 1,
+} PIVID_TYPE;
+
+typedef enum
+{
+	PIINT_CLICK = 0,
+} PIINT_TYPE;
 
 struct mix_target_struct {
 	int width;
@@ -88,17 +96,30 @@ class PIDirs: public PrefItem {
 		PIDirs();
 };
 		
-class PGenItem {
+class PIntItem {
 	public:
 		std::string name;
-		PIGEN_TYPE type;
+		PIINT_TYPE type;
 		bool onoff;
 };
 
-class PIGen: public PrefItem {
+class PIInt: public PrefItem {
 	public:
-		std::vector<PGenItem*> items;
-		PIGen();
+		std::vector<PIntItem*> items;
+		PIInt();
+};
+		
+class PVidItem {
+	public:
+		std::string name;
+		PIVID_TYPE type;
+		int value;
+};
+
+class PIVid: public PrefItem {
+	public:
+		std::vector<PVidItem*> items;
+		PIVid();
 };
 		
 
@@ -248,8 +269,8 @@ class Program {
 		std::vector<int> menuresults;
 		int mx;
 		int my;
-		int globmx;
-		int globmy;
+		float ow = 1920.0f;
+		float oh = 1080.0f;
 		float cwx;
 		float cwy;
 		bool leftmousedown = 0;
