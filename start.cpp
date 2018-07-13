@@ -6656,13 +6656,16 @@ void Preferences::load() {
 			while (getline(rfile, istring)) {
 				if (istring == "ENDOFMIDI") break;
 				getline(rfile, istring);
+				printf("IN\n");
 				for (int i = 0; i < mainprogram->prefs->items.size(); i++) {
 					if (mainprogram->prefs->items[i]->name == "MIDI Devices") {
 						PIMidi *pmi = (PIMidi*)(mainprogram->prefs->items[i]);
+						pmi->populate();
 						for (int j = 0; j < pmi->items.size(); j++) {
 							if (pmi->items[j]->name == istring) {
 								getline(rfile, istring);
 								pmi->items[j]->onoff = std::stoi(istring);
+								printf("onoff %d\n", pmi->items[j]->onoff);
 								if (!pmi->items[i]->onoff) {
 									if (std::find(pmi->onnames.begin(), pmi->onnames.end(), pmi->items[i]->name) != pmi->onnames.end()) {
 										pmi->onnames.erase(std::find(pmi->onnames.begin(), pmi->onnames.end(), pmi->items[i]->name));
@@ -6702,7 +6705,6 @@ void Preferences::save() {
 	wfile << "EWOCvj PREFERENCES V0.1\n";
 	
 	wfile << "INTERFACE\n";
-	wfile << "\n";
 	for (int i = 0; i < mainprogram->prefs->items.size(); i++) {
 		if (mainprogram->prefs->items[i]->name == "Interface") {
 			PIInt *pii = (PIInt*)(mainprogram->prefs->items[i]);
@@ -6717,10 +6719,8 @@ void Preferences::save() {
 		}
 	}
 	wfile << "ENDOFINTERFACE\n";
-	wfile << "\n";
 	
 	wfile << "MIDI\n";
-	wfile << "\n";
 	for (int i = 0; i < mainprogram->prefs->items.size(); i++) {
 		if (mainprogram->prefs->items[i]->name == "MIDI Devices") {
 			PIMidi *pmi = (PIMidi*)(mainprogram->prefs->items[i]);
@@ -6733,7 +6733,6 @@ void Preferences::save() {
 		}
 	}
 	wfile << "ENDOFMIDI\n";
-	wfile << "\n";
 	
 	wfile << "BINSDIR\n";
 	wfile << mainprogram->binsdir;
@@ -7008,7 +7007,7 @@ void lay_copy(std::vector<Layer*> &slayers, std::vector<Layer*> &dlayers) {
 		clay->numf = lay->numf;
 		dlayers.push_back(clay);
 		clay->pos = dlayers.size() - 1;
-		if (i == 0) {
+		if (i == 0) { 	  
 			clay->blendnode = new BlendNode;
 			clay->blendnode->blendtype = lay->blendnode->blendtype;
 			clay->blendnode->mixfac->value = lay->blendnode->mixfac->value;
@@ -7225,6 +7224,12 @@ void copy_to_comp(std::vector<Layer*> &sourcelayersA, std::vector<Layer*> &destl
 			}
 			else if (node->type == BLEND) {
 				BlendNode *cnode = new BlendNode();
+				for (int i = 0; i < sourcelayersA.size(); i++) {
+					if (sourcelayersA[i]->blendnode == node) destlayersA[i]->blendnode = cnode;
+				}
+				for (int i = 0; i < sourcelayersB.size(); i++) {
+					if (sourcelayersB[i]->blendnode == node) destlayersB[i]->blendnode = cnode;
+				}
 				cnode->blendtype = ((BlendNode*)node)->blendtype;
 				cnode->mixfac->value = ((BlendNode*)node)->mixfac->value;
 				cnode->chred = ((BlendNode*)node)->chred;
@@ -7266,12 +7271,12 @@ void copy_to_comp(std::vector<Layer*> &sourcelayersA, std::vector<Layer*> &destl
 				}
 			}
 			for (int m = 0; m < sourcelayersA.size(); m++) {
-				if (node == sourcelayersA[m]->lasteffnode) destlayersA[m]->lasteffnode = cnode;
-				if (node == sourcelayersA[m]->blendnode) destlayersA[m]->blendnode = (BlendNode*)cnode;
+				if ((BlendNode*)node == sourcelayersA[m]->lasteffnode) destlayersA[m]->lasteffnode = cnode;
+				if ((BlendNode*)node == sourcelayersA[m]->blendnode) destlayersA[m]->blendnode = (BlendNode*)cnode;
 			}
 			for (int m = 0; m < sourcelayersB.size(); m++) {
-				if (node == sourcelayersB[m]->lasteffnode) destlayersB[m]->lasteffnode = cnode;
-				if (node == sourcelayersB[m]->blendnode) destlayersB[m]->blendnode = (BlendNode*)cnode;
+				if ((BlendNode*)node == sourcelayersB[m]->lasteffnode) destlayersB[m]->lasteffnode = cnode;
+				if ((BlendNode*)node == sourcelayersB[m]->blendnode) destlayersB[m]->blendnode = (BlendNode*)cnode;
 			}
 		}
 	}
@@ -7403,7 +7408,7 @@ void exchange(Layer *lay, std::vector<Layer*> &slayers, std::vector<Layer*> &dla
 		if (inlay->pos < mainmix->scrollpos[deck] or inlay->pos > mainmix->scrollpos[deck] + 2) continue;
 		Box *box = inlay->node->vidbox;
 		int endx = 0;
-		if ((i == mainmix->scrollpos[deck] + 2) and (box->scrcoords->x1 + box->scrcoords->w - xvtxtoscr(tf(0.075f)) < mainprogram->mx and mainprogram->mx < box->scrcoords->x1 + box->scrcoords->w + xvtxtoscr(0.075f) * (i - mainmix->scrollpos[deck] != 2))) {
+		if ((i == dlayers.size() - 1 - mainmix->scrollpos[deck]) and (box->scrcoords->x1 + box->scrcoords->w - xvtxtoscr(tf(0.075f)) < mainprogram->mx and mainprogram->mx < box->scrcoords->x1 + box->scrcoords->w + xvtxtoscr(0.075f) * (i != dlayers.size() - 1 - mainmix->scrollpos[deck]))) {
 			endx = 1;
 		}
 		bool dropin = false;
@@ -7421,6 +7426,7 @@ void exchange(Layer *lay, std::vector<Layer*> &slayers, std::vector<Layer*> &dla
 		if (dropin or (box->scrcoords->y1 < mainprogram->my + box->scrcoords->h and mainprogram->my < box->scrcoords->y1)) {
 			if ((box->scrcoords->x1 + xvtxtoscr(0.075f) < mainprogram->mx and mainprogram->mx < box->scrcoords->x1 + box->scrcoords->w - xvtxtoscr(0.075f))) {
 				if (lay == inlay) return;
+				//exchange
 				BlendNode *bnode = inlay->blendnode;
 				BLEND_TYPE btype = bnode->blendtype;
 				VideoNode *node = inlay->node;
@@ -7485,6 +7491,7 @@ void exchange(Layer *lay, std::vector<Layer*> &slayers, std::vector<Layer*> &dla
 			}
 			else if (dropin or endx or (box->scrcoords->x1 - xvtxtoscr(0.075f) * (i - mainmix->scrollpos[deck] != 0) < mainprogram->mx and mainprogram->mx < box->scrcoords->x1 + xvtxtoscr(0.075f))) {
 				if (lay == dlayers[i]) return;
+				//move
 				BLEND_TYPE nextbtype;
 				float nextmfval;
 				int nextwipetype, nextwipedir;
@@ -7495,16 +7502,18 @@ void exchange(Layer *lay, std::vector<Layer*> &slayers, std::vector<Layer*> &dla
 					nextbtype = nextlay->blendnode->blendtype;
 				}
 				BLEND_TYPE btype = lay->blendnode->blendtype;
+				BlendNode *firstbnode = (BlendNode*)dlayers[0]->lasteffnode->out[0];
+				Node *firstlasteffnode = dlayers[0]->lasteffnode;
 				float mfval = lay->blendnode->mixfac->value;
 				int wipetype = lay->blendnode->wipetype;
 				int wipedir = lay->blendnode->wipedir;
 				float wipex = lay->blendnode->wipex;
 				float wipey = lay->blendnode->wipey;
-				if (lay->pos > 0) {
+				if (lay->pos > 0 and i + endx != 0) {
 					mainprogram->nodesmain->currpage->connect_nodes(lay->blendnode->in, lay->blendnode->out[0]);
 					mainprogram->nodesmain->currpage->delete_node(lay->blendnode);
 				}
-				else {
+				else if (i + endx != 0) {
 					if (nextlay) {
 						nextlay->lasteffnode->out.clear();
 						mainprogram->nodesmain->currpage->connect_nodes(nextlay->lasteffnode, nextlay->blendnode->out[0]);
@@ -7538,7 +7547,10 @@ void exchange(Layer *lay, std::vector<Layer*> &slayers, std::vector<Layer*> &dla
 					slayers[j]->pos = j;
 				}
 				
-				if (endx) dlayers.insert(dlayers.end(), lay);
+				if (endx) {
+					dlayers.insert(dlayers.end(), lay);
+					if (slayers == dlayers) endx = 0;
+				}
 				else dlayers.insert(dlayers.begin() + i, lay);
 				for (int j = 0; j < dlayers.size(); j++) {
 					dlayers[j]->pos = j;
@@ -7589,14 +7601,15 @@ void exchange(Layer *lay, std::vector<Layer*> &slayers, std::vector<Layer*> &dla
 				}
 				else {
 					dlayers[i + endx]->blendnode = new BlendNode;
-					BlendNode *bnode = mainprogram->nodesmain->currpage->add_blendnode(MIXING, false);
-					Layer *nextlay = NULL;
-					if (dlayers.size() > 1) nextlay = dlayers[1];
-					if (nextlay) {
-						mainprogram->nodesmain->currpage->connect_nodes(bnode, nextlay->lasteffnode->out[0]);
-						nextlay->lasteffnode->out.clear();
-						nextlay->blendnode = bnode;
-						mainprogram->nodesmain->currpage->connect_nodes(lay->node, nextlay->lasteffnode, bnode);
+					//BlendNode *bnode = mainprogram->nodesmain->currpage->add_blendnode(MIXING, false);
+					Layer *nxlay = NULL;
+					if (dlayers.size() > 1) nxlay = dlayers[1];
+					if (nxlay) {
+						lay->node->out.clear();
+						firstlasteffnode->out.clear();
+						nxlay->blendnode = firstbnode;
+						nxlay->blendnode->blendtype = MIXING;
+						mainprogram->nodesmain->currpage->connect_nodes(lay->node, firstlasteffnode, firstbnode);
 					}
 				}
 				dlayers[i + endx]->blendnode->blendtype = btype;
@@ -7960,6 +7973,7 @@ void preferences() {
 						RtMidiIn *midiin = new RtMidiIn();
 						midiin->setCallback(&mycallback, (void*)mci->items[i]);
 						midiin->openPort(i);
+						midiin->ignoreTypes( true, true, true );
 						mci->items[i]->midiin = midiin;
 					}
 				}
@@ -13629,34 +13643,6 @@ int main(int argc, char* argv[]){
 	mainprogram->cwbox->vtxcoords->h = h / 5.0f;
 	mainprogram->cwbox->upvtxtoscr();
 
-
-	RtMidiIn *midiin = new RtMidiIn();
-	// Check available ports.
-	unsigned int nPorts = midiin->getPortCount();
-	if ( nPorts == 0 ) {
-		//std::cout << "No ports available!\n";
-	}
-	else {
-  std::string portName;
-  for ( unsigned int i=0; i<nPorts; i++ ) {
-   try {
-      portName = midiin->getPortName(i);
-    }
-    catch ( RtMidiError &error ) {
-      error.printMessage();
-    }
-    std::cout << "  Input Port #" << i+1 << ": " << portName << '\n';
-  }
-		midiin->openPort( 0 );
-		// Set our callback function.  This should be done immediately after
-		// opening the port to avoid having incoming messages written to the
-		// queue.
-		midiin->setCallback( &mycallback );
-		// Ignore sysex, timing, or active sensing messages.
-		midiin->ignoreTypes( true, true, true );
-	//	char input;
-	//  std::cin.get(input);
-	}
 
 	FT_Library ft;
 	if(FT_Init_FreeType(&ft)) {
