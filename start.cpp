@@ -108,7 +108,7 @@ static GLuint boxvao;
 static GLuint texvbuf, textbuf, texvao;
 FT_Face face;
 std::vector<std::string> thpath;
-float w, h, w2, h2;
+float w, h, w2, h2, smw, smh;
 SDL_GLContext glc;
 SDL_GLContext glc_tm;
 SDL_GLContext glc_pr;
@@ -355,8 +355,8 @@ public:
 			assert(mainmix->rgbdata);
 			mainmix->recordnow = true;
 			mainmix->startrecord.notify_one();
-			glBindFramebuffer(GL_FRAMEBUFFER, 0);
-			glDrawBuffer(GL_BACK_LEFT);
+			glBindFramebuffer(GL_FRAMEBUFFER, mainprogram->globfbo);
+			glDrawBuffer(GL_COLOR_ATTACHMENT0);
 		}
         wait();
     }
@@ -413,8 +413,8 @@ void screenshot() {
 	//glFramebufferTexture2D(GL_FRAMEBUFFER, GL_COLOR_ATTACHMENT0, GL_TEXTURE_2D, node->mixtex, 0);
 	glReadBuffer(GL_COLOR_ATTACHMENT0);
 	glReadPixels(0, 0, wi, he, GL_RGB, GL_UNSIGNED_BYTE, buf);
-	glBindFramebuffer(GL_FRAMEBUFFER, 0);
-	glDrawBuffer(GL_BACK_LEFT);
+	glBindFramebuffer(GL_FRAMEBUFFER, mainprogram->globfbo);
+	glDrawBuffer(GL_COLOR_ATTACHMENT0);
 	
 	std::string name = ".\\screenshots\\screenshot" + std::to_string(sscount) + ".jpg";
 	sscount++;
@@ -2075,8 +2075,8 @@ void set_fbo() {
 	glBufferData(GL_ARRAY_BUFFER, 32, tcoords, GL_STATIC_DRAW);
 	
 		
-	glBindFramebuffer(GL_FRAMEBUFFER, 0);
-	glDrawBuffer(GL_BACK_LEFT);
+	glBindFramebuffer(GL_FRAMEBUFFER, mainprogram->globfbo);
+	glDrawBuffer(GL_COLOR_ATTACHMENT0);
 	
 	// record buffer
 	glGenBuffers(1, &mainmix->ioBuf);
@@ -2190,8 +2190,8 @@ Layer::Layer(bool comp) {
     this->decoding = std::thread{&Layer::get_frame, this};
     this->decoding.detach();
 
-	glBindFramebuffer(GL_FRAMEBUFFER, 0);
-	glDrawBuffer(GL_BACK_LEFT);
+	glBindFramebuffer(GL_FRAMEBUFFER, mainprogram->globfbo);
+	glDrawBuffer(GL_COLOR_ATTACHMENT0);
 }
 
 Effect *new_effect(Effect *effect) {
@@ -2347,30 +2347,34 @@ void draw_line(float *linec, float x1, float y1, float x2, float y2) {
 }
 
 void draw_box(Box *box, GLuint tex) {
-	draw_box(box->lcolor, box->acolor, box->vtxcoords->x1, box->vtxcoords->y1, box->vtxcoords->w, box->vtxcoords->h, 0.0f, 0.0f, 1.0f, 1.0f, 0, tex);
+	draw_box(box->lcolor, box->acolor, box->vtxcoords->x1, box->vtxcoords->y1, box->vtxcoords->w, box->vtxcoords->h, 0.0f, 0.0f, 1.0f, 1.0f, 0, tex, w, h);
 }
 
 void draw_box(float *linec, float *areac, Box *box, GLuint tex) {
-	draw_box(linec, areac, box->vtxcoords->x1, box->vtxcoords->y1, box->vtxcoords->w, box->vtxcoords->h, 0.0f, 0.0f, 1.0f, 1.0f, 0, tex);
+	draw_box(linec, areac, box->vtxcoords->x1, box->vtxcoords->y1, box->vtxcoords->w, box->vtxcoords->h, 0.0f, 0.0f, 1.0f, 1.0f, 0, tex, w, h);
 }
 
 void draw_box(Box *box, float opacity, GLuint tex) {
-	draw_box(box->lcolor, box->acolor, box->vtxcoords->x1, box->vtxcoords->y1, box->vtxcoords->w, box->vtxcoords->h, 0.0f, 0.0f, 1.0f, opacity, 0, tex);
+	draw_box(box->lcolor, box->acolor, box->vtxcoords->x1, box->vtxcoords->y1, box->vtxcoords->w, box->vtxcoords->h, 0.0f, 0.0f, 1.0f, opacity, 0, tex, w, h);
 }
 
 void draw_box(Box *box, float dx, float dy, float scale, GLuint tex) {
-	draw_box(box->lcolor, box->acolor, box->vtxcoords->x1, box->vtxcoords->y1, box->vtxcoords->w, box->vtxcoords->h, dx, dy, scale, 1.0f, 0, tex);
+	draw_box(box->lcolor, box->acolor, box->vtxcoords->x1, box->vtxcoords->y1, box->vtxcoords->w, box->vtxcoords->h, dx, dy, scale, 1.0f, 0, tex, w, h);
 }
 
 void draw_box(float *linec, float *areac, float x, float y, float wi, float he, GLuint tex) {
-	draw_box(linec, areac, x, y, wi, he, 0.0f, 0.0f, 1.0f, 1.0f, 0, tex);
+	draw_box(linec, areac, x, y, wi, he, 0.0f, 0.0f, 1.0f, 1.0f, 0, tex, w, h);
 }
 
 void draw_box(float *color, float x, float y, float radius, int circle) {
-	draw_box(nullptr, color, x - radius, y - radius, radius * 2.0f, (radius * 2.0f), 0.0f, 0.0f, 1.0f, 1.0f, circle, -1);
+	draw_box(nullptr, color, x - radius, y - radius, radius * 2.0f, (radius * 2.0f), 0.0f, 0.0f, 1.0f, 1.0f, circle, -1, w, h);
 }
 
-void draw_box(float *linec, float *areac, float x, float y, float wi, float he, float dx, float dy, float scale, float opacity, int circle, GLuint tex) {
+void draw_box(float *color, float x, float y, float radius, int circle, float smw, float smh) {
+	draw_box(nullptr, color, x - radius, y - radius, radius * 2.0f, (radius * 2.0f), 0.0f, 0.0f, 1.0f, 1.0f, circle, -1, smw, smh);
+}
+
+void draw_box(float *linec, float *areac, float x, float y, float wi, float he, float dx, float dy, float scale, float opacity, int circle, GLuint tex, float smw, float smh) {
 
 	GLint down = glGetUniformLocation(mainprogram->ShaderProgram, "down");
 	GLint drawcircle = glGetUniformLocation(mainprogram->ShaderProgram, "circle");
@@ -2443,9 +2447,16 @@ void draw_box(float *linec, float *areac, float x, float y, float wi, float he, 
 		if (circle) {
 			glUniform1i(box, 0);
 			glUniform1i(drawcircle, circle);
-			glUniform1f(circleradius, (wi / 4.0f) * (float)h);
-			glUniform1f(cirx, ((x + (wi / 2.0f)) / 2.0f + 0.5f) * (float)w);
-			glUniform1f(ciry, ((y + (wi / 2.0f)) / 2.0f + 0.5f) * (float)h);
+			if (mainprogram->insmall) {
+				glUniform1f(circleradius, (wi / 4.0f) * smh);
+				glUniform1f(cirx, ((x + (wi / 2.0f)) / 2.0f + 0.5f) * smw);
+				glUniform1f(ciry, ((y + (wi / 2.0f)) / 2.0f + 0.5f) * smh);
+			}
+			else {
+				glUniform1f(circleradius, (wi / 4.0f) * h);
+				glUniform1f(cirx, ((x + (wi / 2.0f)) / 2.0f + 0.5f) * w);
+				glUniform1f(ciry, ((y + (wi / 2.0f)) / 2.0f + 0.5f) * h);
+			}
 		}
 		glDrawArrays(GL_TRIANGLE_STRIP, 0, 4);
 		glUniform1i(down, 0);
@@ -2513,7 +2524,12 @@ void draw_triangle(float *linec, float *areac, float x1, float y1, float xsize, 
 	glDeleteVertexArrays(1, &fvao);
 }
 
+
 float render_text(std::string text, float *textc, float x, float y, float sx, float sy) {
+	render_text(text, textc, x, y, sx, sy, 0);
+}
+
+float render_text(std::string text, float *textc, float x, float y, float sx, float sy, bool smflag) {
   	
 	y -= 0.01f;
 	sy *= 1.2f;
@@ -2639,8 +2655,13 @@ float render_text(std::string text, float *textc, float x, float y, float sx, fl
 			glBindFramebuffer(GL_FRAMEBUFFER, texfrbuf);
 			glDrawBuffer(GL_COLOR_ATTACHMENT0);
 			glDrawArrays(GL_TRIANGLE_STRIP, 0, 4);
-			glBindFramebuffer(GL_FRAMEBUFFER, 0);
-			glDrawBuffer(GL_BACK_LEFT);
+			if (smflag) {
+				glBindFramebuffer(GL_FRAMEBUFFER, mainprogram->smglobfbo);
+			}
+			else {
+				glBindFramebuffer(GL_FRAMEBUFFER, mainprogram->globfbo);
+			}
+			glDrawBuffer(GL_COLOR_ATTACHMENT0);
 			glUniform1i(textmode, 0);
 	
 			x += (g->advance.x/64) * sx;
@@ -2686,8 +2707,13 @@ float render_text(std::string text, float *textc, float x, float y, float sx, fl
 		glBufferData(GL_ARRAY_BUFFER, 32, textcoords, GL_STATIC_DRAW);
 		glEnableVertexAttribArray(1);
 		glVertexAttribPointer(1, 2, GL_FLOAT, GL_FALSE, 8, NULL);
-		glBindFramebuffer(GL_FRAMEBUFFER, 0);
-		glDrawBuffer(GL_BACK_LEFT);
+		if (smflag) {
+			glBindFramebuffer(GL_FRAMEBUFFER, mainprogram->smglobfbo);
+		}
+		else {
+			glBindFramebuffer(GL_FRAMEBUFFER, mainprogram->globfbo);
+		}
+		glDrawBuffer(GL_COLOR_ATTACHMENT0);
 		if (textw != 0) glDrawArrays(GL_TRIANGLE_STRIP, 0, 4);
 	
 		glUniform1i(textmode, 0);
@@ -2927,8 +2953,8 @@ void calc_texture(Layer *lay, bool comp, bool alive) {
 			float black[4] = {0.0f, 0.0f, 0.0f, 0.0f};
 			draw_box(NULL, black, -1.0f, 1.0f, 2.0f, -2.0f, laynocomp->texture);
 		}
-		glBindFramebuffer(GL_FRAMEBUFFER, 0);
-		glDrawBuffer(GL_BACK_LEFT);
+		glBindFramebuffer(GL_FRAMEBUFFER, mainprogram->globfbo);
+		glDrawBuffer(GL_COLOR_ATTACHMENT0);
 	}
 	else {
 		glActiveTexture(GL_TEXTURE0);
@@ -2976,8 +3002,8 @@ void calc_texture(Layer *lay, bool comp, bool alive) {
 				draw_box(NULL, black, -1.0f, 1.0f, 2.0f, -2.0f, lay->texture);
 			}
 		}
-		glBindFramebuffer(GL_FRAMEBUFFER, 0);
-		glDrawBuffer(GL_BACK_LEFT);
+		glBindFramebuffer(GL_FRAMEBUFFER, mainprogram->globfbo);
+		glDrawBuffer(GL_COLOR_ATTACHMENT0);
 	}
 }
 
@@ -3746,8 +3772,8 @@ void doblur(bool stage, GLuint prevfbotex, int iter) {
 		if (first_iteration)
 			first_iteration = false;
 	}
-	glBindFramebuffer(GL_FRAMEBUFFER, 0);
-	glDrawBuffer(GL_BACK_LEFT);
+	glBindFramebuffer(GL_FRAMEBUFFER, mainprogram->globfbo);
+	glDrawBuffer(GL_COLOR_ATTACHMENT0);
 	glUniform1i(blurring, 0);
 }
 
@@ -4086,8 +4112,8 @@ void onestepfrom(bool stage, Node *node, Node *prevnode, GLuint prevfbotex) {
 					}
 					glUniform1i(fboSampler, 0);
 					glActiveTexture(GL_TEXTURE0);
-					glBindFramebuffer(GL_FRAMEBUFFER, 0);
-					glDrawBuffer(GL_BACK_LEFT);
+					glBindFramebuffer(GL_FRAMEBUFFER, mainprogram->globfbo);
+					glDrawBuffer(GL_COLOR_ATTACHMENT0);
 					if (((EdgeDetectEffect*)effect)->thickness % 2) prevfbotex = fbotex[1];
 					else prevfbotex = fbotex[0];
 					break;
@@ -4270,12 +4296,12 @@ void onestepfrom(bool stage, Node *node, Node *prevnode, GLuint prevfbotex) {
 			glClearColor(0.0f, 0.0f, 0.0f, 0.0f);
 			glClear(GL_COLOR_BUFFER_BIT);
 			float black[4] = {0.0f, 0.0f, 0.0f, 0.0f};
-			draw_box(NULL, black, -1.0f, 1.0f, 2.0f, -2.0f, lay->shiftx * div, lay->shifty * div, lay->scale, lay->opacity->value, 0, fbocopy);
+			draw_box(NULL, black, -1.0f, 1.0f, 2.0f, -2.0f, lay->shiftx * div, lay->shifty * div, lay->scale, lay->opacity->value, 0, fbocopy, w, h);
 			glDeleteTextures(1, &fbocopy);
 		}
 		
-		glBindFramebuffer(GL_FRAMEBUFFER, 0);
-		glDrawBuffer(GL_BACK_LEFT);
+		glBindFramebuffer(GL_FRAMEBUFFER, mainprogram->globfbo);
+		glDrawBuffer(GL_COLOR_ATTACHMENT0);
 	}
 	else if (node->type == VIDEO) {
 		Layer *lay = ((VideoNode*)node)->layer;
@@ -4299,9 +4325,9 @@ void onestepfrom(bool stage, Node *node, Node *prevnode, GLuint prevfbotex) {
 			glClearColor(0.0f, 0.0f, 0.0f, 0.0f);
 			glClear(GL_COLOR_BUFFER_BIT);
 			float black[4] = {0.0f, 0.0f, 0.0f, 0.0f};
-			draw_box(NULL, black, -1.0f, 1.0f, 2.0f, -2.0f, lay->shiftx, lay->shifty, lay->scale, lay->opacity->value, 0, fbocopy);
-			glBindFramebuffer(GL_FRAMEBUFFER, 0);
-			glDrawBuffer(GL_BACK_LEFT);
+			draw_box(NULL, black, -1.0f, 1.0f, 2.0f, -2.0f, lay->shiftx, lay->shifty, lay->scale, lay->opacity->value, 0, fbocopy, w, h);
+			glBindFramebuffer(GL_FRAMEBUFFER, mainprogram->globfbo);
+			glDrawBuffer(GL_COLOR_ATTACHMENT0);
 			glDeleteTextures(1, &fbocopy);
 		}
 	}
@@ -4381,8 +4407,8 @@ void onestepfrom(bool stage, Node *node, Node *prevnode, GLuint prevfbotex) {
 				glUniform1i(wipe, 0);
 				glUniform1i(mixmode, 0);
 				glUniform1f(cf, mainmix->crossfade->value);
-				glBindFramebuffer(GL_FRAMEBUFFER, 0);
-				glDrawBuffer(GL_BACK_LEFT);
+				glBindFramebuffer(GL_FRAMEBUFFER, mainprogram->globfbo);
+				glDrawBuffer(GL_COLOR_ATTACHMENT0);
 			}
 			else {
 				node->walked = false;
@@ -4422,8 +4448,8 @@ void onestepfrom(bool stage, Node *node, Node *prevnode, GLuint prevfbotex) {
 		prevfbotex = mnode->mixtex;
 		mainmix->mixbackuptex = mnode->mixtex;
 		glUniform1i(down, 0);
-		glBindFramebuffer(GL_FRAMEBUFFER, 0);
-		glDrawBuffer(GL_BACK_LEFT);
+		glBindFramebuffer(GL_FRAMEBUFFER, mainprogram->globfbo);
+		glDrawBuffer(GL_COLOR_ATTACHMENT0);
 	}
 	for (int i = 0; i < node->out.size(); i++) {
 		if (node->out[i]->calc and !node->out[i]->walked) onestepfrom(stage, node->out[i], node, prevfbotex);
@@ -6565,11 +6591,13 @@ bool Box::in(bool menu) {
 }
 
 bool Box::in() {
+	this->in(mainprogram->mx, mainprogram->my);
+}
+
+bool Box::in(int mx, int my) {
 	if (mainprogram->menuondisplay) return false;
-	int x = mainprogram->mx;
-	int y = mainprogram->my;
-	if (this->scrcoords->x1 < x and x < this->scrcoords->x1 + this->scrcoords->w) {
-		if (this->scrcoords->y1 - this->scrcoords->h < y and y < this->scrcoords->y1) {
+	if (this->scrcoords->x1 < mx and mx < this->scrcoords->x1 + this->scrcoords->w) {
+		if (this->scrcoords->y1 - this->scrcoords->h < my and my < this->scrcoords->y1) {
 			return true;
 		}
 	}
@@ -6625,14 +6653,14 @@ void Preferences::load() {
 	if (!exists(".\\preferences.prefs")) return;
 	rfile.open(".\\preferences.prefs");
 	std::string istring;
+	getline(rfile, istring);
 
 	while (getline(rfile, istring)) {
 		if (istring == "ENDOFFILE") break;
 	
-		if (istring == "INTERFACE") {
+		else if (istring == "INTERFACE") {
 			while (getline(rfile, istring)) {
 				if (istring == "ENDOFINTERFACE") break;
-				getline(rfile, istring);
 				for (int i = 0; i < mainprogram->prefs->items.size(); i++) {
 					if (mainprogram->prefs->items[i]->name == "Interface") {
 						PIInt *pii = (PIInt*)(mainprogram->prefs->items[i]);
@@ -6651,34 +6679,38 @@ void Preferences::load() {
 				}
 			}
 		}
-	
-		if (istring == "MIDI") {
+		else if (istring == "MIDI") {
+			mainprogram->pmon.clear();
 			while (getline(rfile, istring)) {
 				if (istring == "ENDOFMIDI") break;
+				PMidiItem *newpm = new PMidiItem;
+				newpm->name = istring;
 				getline(rfile, istring);
-				printf("IN\n");
+				newpm->onoff = std::stoi(istring);
+				if (newpm->onoff) mainprogram->pmon.push_back(newpm);
 				for (int i = 0; i < mainprogram->prefs->items.size(); i++) {
 					if (mainprogram->prefs->items[i]->name == "MIDI Devices") {
 						PIMidi *pmi = (PIMidi*)(mainprogram->prefs->items[i]);
 						pmi->populate();
 						for (int j = 0; j < pmi->items.size(); j++) {
-							if (pmi->items[j]->name == istring) {
-								getline(rfile, istring);
-								pmi->items[j]->onoff = std::stoi(istring);
-								printf("onoff %d\n", pmi->items[j]->onoff);
-								if (!pmi->items[i]->onoff) {
-									if (std::find(pmi->onnames.begin(), pmi->onnames.end(), pmi->items[i]->name) != pmi->onnames.end()) {
-										pmi->onnames.erase(std::find(pmi->onnames.begin(), pmi->onnames.end(), pmi->items[i]->name));
-										pmi->items[i]->midiin->cancelCallback();
-										delete pmi->items[i]->midiin;
+							if (pmi->items[j]->name == newpm->name) {
+								if (!newpm->onoff) {
+									if (std::find(pmi->onnames.begin(), pmi->onnames.end(), pmi->items[j]->name) != pmi->onnames.end()) {
+										pmi->onnames.erase(std::find(pmi->onnames.begin(), pmi->onnames.end(), pmi->items[j]->name));
+										mainprogram->openports.erase(std::find(mainprogram->openports.begin(), mainprogram->openports.end(), j));
+										pmi->items[j]->midiin->cancelCallback();
+										delete pmi->items[j]->midiin;
 									}
 								}
 								else {
-									pmi->onnames.push_back(pmi->items[i]->name);
+									pmi->onnames.push_back(pmi->items[j]->name);
 									RtMidiIn *midiin = new RtMidiIn();
-									midiin->setCallback(&mycallback, (void*)pmi->items[i]);
-									midiin->openPort(i);
-									pmi->items[i]->midiin = midiin;
+									if (std::find(mainprogram->openports.begin(), mainprogram->openports.end(), j) == mainprogram->openports.end()) {
+										midiin->setCallback(&mycallback, (void*)pmi->items[j]);
+										midiin->openPort(j);
+									}
+									mainprogram->openports.push_back(j);
+									pmi->items[j]->midiin = midiin;
 								}
 							}
 						}
@@ -6687,11 +6719,11 @@ void Preferences::load() {
 			}
 		}
 	
-		if (istring == "BINSDIR") {
+		else if (istring == "BINSDIR") {
 			getline(rfile, istring);
 			mainprogram->binsdir = istring;
 		}
-		if (istring == "RECDIR") {
+		else if (istring == "RECDIR") {
 			getline(rfile, istring);
 			mainprogram->recdir = istring;
 		}
@@ -6729,6 +6761,21 @@ void Preferences::save() {
 				wfile << "\n";
 				wfile << std::to_string(pmi->items[j]->onoff);
 				wfile << "\n";
+			}
+			for (int j = 0; j < mainprogram->pmon.size(); j++) {
+				bool found = false;
+				for (int k = 0; k < pmi->items.size(); k++) {
+					if (mainprogram->pmon[j]->name == pmi->items[k]->name) {
+						found = true;
+						break;
+					}
+				}
+				if (!found) {
+					wfile << mainprogram->pmon[j]->name;
+					wfile << "\n";
+					wfile << std::to_string(mainprogram->pmon[j]->onoff);
+					wfile << "\n";
+				}
 			}
 		}
 	}
@@ -7814,33 +7861,27 @@ int handle_menu(Menu *menu, float xshift) {
 }
 
 
-void preferences() {
-	if (SDL_GetMouseFocus() != mainprogram->prefwindow) {
-		mainprogram->mx = -1;
-		mainprogram->my = -1;
-	}
-	//if (SDL_GetMouseFocus() != mainprogram->prefwindow and mainprogram->drawnonce) return;
+bool preferences() {
+	mainprogram->insmall = true;
 	float white[] = {1.0f, 1.0f, 1.0f, 1.0f};
 	float black[] = {0.0f, 0.0f, 0.0f, 1.0f};
 	float lightblue[] = {0.5f, 0.5f, 1.0f, 1.0f};
 	float green[] = {0.0f, 0.7f, 0.0f, 1.0f};
 		
-	int mx, my;
-	SDL_PumpEvents();
-	SDL_GetMouseState(&mx, &my);
-	int wi, he;
-	SDL_GL_GetDrawableSize(mainprogram->prefwindow, &wi, &he);
-	w = (float)wi;
-	h = (float)he;
-		
 	SDL_GL_MakeCurrent(mainprogram->prefwindow, glc_pr);
 	glClear(GL_COLOR_BUFFER_BIT);
 	
+	int mx, my;
+	SDL_PumpEvents();
+	SDL_GetMouseState(&mx, &my);
+	mx *= 2.0f;
+	my *= 2.0f;
+		
 	for (int i = 0; i < mainprogram->prefs->items.size(); i++) {
 		PrefItem *item = mainprogram->prefs->items[i];
-		if (item->box->in()) {	
+		if (item->box->in(mx, my)) {	
 			draw_box(white, lightblue, item->box, -1);
-			if (mainprogram->leftmouse) {
+			if (mainprogram->lmsave) {
 				mainprogram->prefs->curritem = i;
 			}
 		}
@@ -7850,7 +7891,7 @@ void preferences() {
 		else {
 			draw_box(white, black, item->box, -1);
 		}
-		render_text(item->name, white, item->box->vtxcoords->x1 + 0.03f, item->box->vtxcoords->y1 + 0.03f, 0.0024f, 0.004f);
+		render_text(item->name, white, item->box->vtxcoords->x1 + 0.03f, item->box->vtxcoords->y1 + 0.03f, 0.0024f, 0.004f, 1);
 	}
 	draw_box(white, nullptr, -0.5f, -1.0f, 1.5f, 2.0f, -1);
 	
@@ -7865,16 +7906,16 @@ void preferences() {
 			box.vtxcoords->h = 0.2f;
 			box.upvtxtoscr();
 			draw_box(white, black, &box, -1);
-			render_text(mci->items[i]->name, white, box.vtxcoords->x1 + 0.23f, box.vtxcoords->y1 + 0.06f, 0.0024f, 0.004f);
+			render_text(mci->items[i]->name, white, box.vtxcoords->x1 + 0.23f, box.vtxcoords->y1 + 0.06f, 0.0024f, 0.004f, 1);
 			
 			box.vtxcoords->x1 = -0.425f;
 			box.vtxcoords->y1 = 1.05f - (i + 1) * 0.2f;
 			box.vtxcoords->w = 0.1f;
 			box.vtxcoords->h = 0.1f;
 			box.upvtxtoscr();
-			if (box.in()) {
+			if (box.in(mx, my)) {
 				draw_box(white, lightblue, &box, -1);
-				if (mainprogram->leftmouse) {
+				if (mainprogram->lmsave) {
 					mci->items[i]->onoff = !mci->items[i]->onoff;
 				}
 			}
@@ -7897,7 +7938,7 @@ void preferences() {
 			box.vtxcoords->h = 0.2f;
 			box.upvtxtoscr();
 			draw_box(white, black, &box, -1);
-			render_text(mci->items[i]->name, white, box.vtxcoords->x1 + 0.23f, box.vtxcoords->y1 + 0.06f, 0.0024f, 0.004f);
+			render_text(mci->items[i]->name, white, box.vtxcoords->x1 + 0.23f, box.vtxcoords->y1 + 0.06f, 0.0024f, 0.004f, 1);
 			
 			box.vtxcoords->x1 = 0.25f;
 			box.vtxcoords->y1 = 1.0f - (i + 1) * 0.2f;
@@ -7907,16 +7948,16 @@ void preferences() {
 			draw_box(white, black, &box, -1);
 			if ((mainprogram->renaming == EDIT_VIDW and mci->items[i]->type == PIVID_W) or (mainprogram->renaming == EDIT_VIDH and mci->items[i]->type == PIVID_H)) {
 				std::string part = mainprogram->inputtext.substr(0, mainprogram->cursorpos);
-				float textw = render_text(part, white, box.vtxcoords->x1 + 0.1f, box.vtxcoords->y1 + 0.06f, 0.0024f, 0.004f) * 0.5f;
+				float textw = render_text(part, white, box.vtxcoords->x1 + 0.1f, box.vtxcoords->y1 + 0.06f, 0.0024f, 0.004f, 1) * 0.5f;
 				part = mainprogram->inputtext.substr(mainprogram->cursorpos, mainprogram->inputtext.length() - mainprogram->cursorpos);
-				render_text(part, white, box.vtxcoords->x1 + 0.102f + textw, box.vtxcoords->y1 + 0.06f, 0.0024f, 0.004f);
+				render_text(part, white, box.vtxcoords->x1 + 0.102f + textw, box.vtxcoords->y1 + 0.06f, 0.0024f, 0.004f, 1);
 				draw_line(white, box.vtxcoords->x1 + 0.102f + textw, box.vtxcoords->y1 + 0.06f, box.vtxcoords->x1 + 0.102f + textw, box.vtxcoords->y1 + tf(0.09f)); 
 			}
 			else {
-				render_text(std::to_string(mci->items[i]->value), white, box.vtxcoords->x1 + 0.1f, box.vtxcoords->y1 + 0.06f, 0.0024f, 0.004f);
+				render_text(std::to_string(mci->items[i]->value), white, box.vtxcoords->x1 + 0.1f, box.vtxcoords->y1 + 0.06f, 0.0024f, 0.004f, 1);
 			}
-			if (box.in()) {
-				if (mainprogram->leftmouse) {
+			if (box.in(mx, my)) {
+				if (mainprogram->lmsave) {
 					if (mci->items[i]->type == PIVID_W) {
 						mainprogram->ow = mci->items[i]->value;
 						mainprogram->renaming = EDIT_VIDW;
@@ -7928,7 +7969,7 @@ void preferences() {
 					mainprogram->inputtext = std::to_string(mci->items[i]->value);
 					mainprogram->cursorpos = mainprogram->inputtext.length();
 					SDL_StartTextInput();
-					mainprogram->leftmouse = false;
+					mainprogram->lmsave = false;
 				}
 			}
 			if (mci->items[i]->type == PIVID_W) {
@@ -7950,16 +7991,16 @@ void preferences() {
 			box.vtxcoords->h = 0.2f;
 			box.upvtxtoscr();
 			draw_box(white, black, &box, -1);
-			render_text(mci->items[i]->name, white, box.vtxcoords->x1 + 0.23f, box.vtxcoords->y1 + 0.03f, 0.0024f, 0.004f);
+			render_text(mci->items[i]->name, white, box.vtxcoords->x1 + 0.23f, box.vtxcoords->y1 + 0.03f, 0.0024f, 0.004f, 1);
 			
 			box.vtxcoords->x1 = -0.425f;
 			box.vtxcoords->y1 = 1.05f - (i + 1) * 0.2f;
 			box.vtxcoords->w = 0.1f;
 			box.vtxcoords->h = 0.1f;
 			box.upvtxtoscr();
-			if (box.in()) {
+			if (box.in(mx, my)) {
 				draw_box(white, lightblue, &box, -1);
-				if (mainprogram->leftmouse) {
+				if (mainprogram->lmsave) {
 					mci->items[i]->onoff = !mci->items[i]->onoff;
 					if (!mci->items[i]->onoff) {
 						if (std::find(mci->onnames.begin(), mci->onnames.end(), mci->items[i]->name) != mci->onnames.end()) {
@@ -7997,7 +8038,7 @@ void preferences() {
 			box.vtxcoords->h = 0.2f;
 			box.upvtxtoscr();
 			draw_box(white, black, &box, -1);
-			render_text(dci->items[i]->name, white, -0.5f + 0.1f, box.vtxcoords->y1 + 0.03f, 0.0024f, 0.004f);
+			render_text(dci->items[i]->name, white, -0.5f + 0.1f, box.vtxcoords->y1 + 0.03f, 0.0024f, 0.004f, 1);
 			if (dci->items[i]->name == "BINS") {
 				dci->items[i]->path = mainprogram->binsdir;
 				type = EDIT_BINSDIR;
@@ -8007,17 +8048,17 @@ void preferences() {
 				type = EDIT_RECDIR;
 			}
 			if (mainprogram->renaming != type) {
-				render_text(dci->items[i]->path, white, box.vtxcoords->x1 + 0.1f, box.vtxcoords->y1 + 0.03f, 0.0024f, 0.004f);
+				render_text(dci->items[i]->path, white, box.vtxcoords->x1 + 0.1f, box.vtxcoords->y1 + 0.03f, 0.0024f, 0.004f, 1);
 			}
 			else {
 				std::string part = mainprogram->inputtext.substr(0, mainprogram->cursorpos);
-				float textw = render_text(part, white, box.vtxcoords->x1 + 0.1f, box.vtxcoords->y1 + tf(0.03f), 0.0024f, 0.004f) * 0.5f;
+				float textw = render_text(part, white, box.vtxcoords->x1 + 0.1f, box.vtxcoords->y1 + tf(0.03f), 0.0024f, 0.004f, 1) * 0.5f;
 				part = mainprogram->inputtext.substr(mainprogram->cursorpos, mainprogram->inputtext.length() - mainprogram->cursorpos);
-				render_text(part, white, box.vtxcoords->x1 + 0.102f + textw, box.vtxcoords->y1 + tf(0.03f), 0.0024f, 0.004f);
+				render_text(part, white, box.vtxcoords->x1 + 0.102f + textw, box.vtxcoords->y1 + tf(0.03f), 0.0024f, 0.004f, 1);
 				draw_line(white, box.vtxcoords->x1 + 0.102f + textw, box.vtxcoords->y1 + tf(0.028f), box.vtxcoords->x1 + 0.102f + textw, box.vtxcoords->y1 + tf(0.09f)); 
 			}
-			if (box.in()) {
-				if (mainprogram->leftmouse) {
+			if (box.in(mx, my)) {
+				if (mainprogram->lmsave) {
 					if (type == EDIT_BINSDIR) {
 						mainprogram->inputtext = mainprogram->binsdir;
 					}
@@ -8027,7 +8068,7 @@ void preferences() {
 					mainprogram->renaming = type;
 					mainprogram->cursorpos = mainprogram->inputtext.length();
 					SDL_StartTextInput();
-					mainprogram->leftmouse = false;
+					mainprogram->lmsave = false;
 				}
 			}
 			box.vtxcoords->x1 = 0.9f;
@@ -8036,8 +8077,8 @@ void preferences() {
 			draw_box(white, black, &box, -1);
 			draw_box(white, black, box.vtxcoords->x1 + 0.02f, box.vtxcoords->y1 + 0.05f, 0.06f, 0.07f, -1);
 			draw_box(white, black, box.vtxcoords->x1 + 0.05f, box.vtxcoords->y1 + 0.11f, 0.025f, 0.03f, -1);
-			if (box.in()) {
-				if (mainprogram->leftmouse) {
+			if (box.in(mx, my)) {
+				if (mainprogram->lmsave) {
 					mainprogram->choosing = type;
 					mainprogram->pathto = "CHOOSEDIR";
 					std::thread filereq (get_dir);
@@ -8054,251 +8095,253 @@ void preferences() {
 	box.vtxcoords->h = 0.2f;
 	box.upvtxtoscr();
 	draw_box(white, black, &box, -1);
-	if (box.in()) {
+	if (box.in(mx, my)) {
 		draw_box(white, lightblue, &box, -1);
-		if (mainprogram->leftmouse) {
-			mainprogram->leftmouse = false;
+		if (mainprogram->lmsave) {
+			mainprogram->lmsave = false;
 			mainprogram->prefs->load();
 			mainprogram->prefon = false;
 			mainprogram->drawnonce = false;
 			SDL_DestroyWindow(mainprogram->prefwindow);
-			SDL_GL_MakeCurrent(mainprogram->mainwindow, glc);
-			SDL_GL_GetDrawableSize(mainprogram->mainwindow, &wi, &he);
-			w = (float)wi;
-			h = (float)he;
-			return;
+			return 0;
 		}
 	}
-	render_text("CANCEL", white, box.vtxcoords->x1 + 0.02f, box.vtxcoords->y1 + 0.03f, 0.0024f, 0.004f);
+	render_text("CANCEL", white, box.vtxcoords->x1 + 0.02f, box.vtxcoords->y1 + 0.03f, 0.0024f, 0.004f, 1);
 	box.vtxcoords->x1 = 0.45f;
 	box.upvtxtoscr();
 	draw_box(white, black, &box, -1);
-	if (box.in()) {
+	if (box.in(mx, my)) {
 		draw_box(white, lightblue, &box, -1);
-		if (mainprogram->leftmouse) {
-			mainprogram->leftmouse = false;
+		if (mainprogram->lmsave) {
+			mainprogram->lmsave = false;
 			mainprogram->prefs->save();
 			mainprogram->prefon = false;
 			mainprogram->drawnonce = false;
 			SDL_DestroyWindow(mainprogram->prefwindow);
-			SDL_GL_MakeCurrent(mainprogram->mainwindow, glc);
-			SDL_GL_GetDrawableSize(mainprogram->mainwindow, &wi, &he);
-			w = (float)wi;
-			h = (float)he;
-			return;
+			return 0;
 		}
 	}
-	render_text("SAVE", white, box.vtxcoords->x1 + 0.02f, box.vtxcoords->y1 + 0.03f, 0.0024f, 0.004f);
+	render_text("SAVE", white, box.vtxcoords->x1 + 0.02f, box.vtxcoords->y1 + 0.03f, 0.0024f, 0.004f, 1);
 			
-	SDL_GL_SwapWindow(mainprogram->prefwindow);
-	SDL_GL_MakeCurrent(mainprogram->mainwindow, glc);
-	SDL_GL_GetDrawableSize(mainprogram->mainwindow, &wi, &he);
-	w = (float)wi;
-	h = (float)he;
-	
-	mainprogram->leftmouse = 0;
+	mainprogram->lmsave = 0;
 	mainprogram->middlemouse = 0;
 	mainprogram->rightmouse = 0;
 	mainprogram->menuactivation = false;
 	mainprogram->mx = -1;
 	mainprogram->my = -1;
 	
-	mainprogram->drawnonce = true;
+	mainprogram->insmall = false;
 }
 		
 	
-void tune_midi() {
-	if (SDL_GetMouseFocus() != mainprogram->tunemidiwindow) {
-		mainprogram->mx = -1;
-		mainprogram->my = -1;
-	}
-	//if (SDL_GetMouseFocus() != mainprogram->tunemidiwindow and mainprogram->drawnonce) return;
+int tune_midi() {
+	mainprogram->insmall = true;
 	float white[] = {1.0f, 1.0f, 1.0f, 1.0f};
 	float black[] = {0.0f, 0.0f, 0.0f, 1.0f};
 	float lightblue[] = {0.5f, 0.5f, 1.0f, 1.0f};
 	float green[] = {0.0f, 0.7f, 0.0f, 1.0f};
 		
-	int mx, my;
-	SDL_PumpEvents();
-	SDL_GetMouseState(&mx, &my);
-	int wi, he;
-	SDL_GL_GetDrawableSize(mainprogram->tunemidiwindow, &wi, &he);
-	w = (float)wi;
-	h = (float)he;
-		
 	SDL_GL_MakeCurrent(mainprogram->tunemidiwindow, glc_tm);
 	glClear(GL_COLOR_BUFFER_BIT);
 	
+	int mx, my;
+	SDL_PumpEvents();
+	SDL_GetMouseState(&mx, &my);
+	mx *= 2.0f;
+	my *= 2.0f;
+		
 	if (mainprogram->rightmouse) mainprogram->tmlearn = TM_NONE; 
 	
-	bool skipdraw = true;
 	std::string lmstr;
 	if (mainprogram->tunemidideck == 1) lmstr = "A";
 	else if (mainprogram->tunemidideck == 2) lmstr = "B";
 	else if (mainprogram->tunemidideck == 3) lmstr = "C";
 	else if (mainprogram->tunemidideck == 4) lmstr = "D";
-	if (mainprogram->tmlearn != TM_NONE) render_text("Creating settings for midideck " + lmstr, white, -0.3f, 0.2f, 0.0024f, 0.004f);
+	if (mainprogram->tmlearn != TM_NONE) render_text("Creating settings for midideck " + lmstr, white, -0.3f, 0.2f, 0.0024f, 0.004f, 1);
 	switch (mainprogram->tmlearn) {
 		case TM_NONE:
-			skipdraw = false;
 			break;
 		case TM_PLAY:
-			render_text("Learn MIDI Play Forward", white, -0.3f, 0.0f, 0.0024f, 0.004f);
+			render_text("Learn MIDI Play Forward", white, -0.3f, 0.0f, 0.0024f, 0.004f, 1);
 			break;
 		case TM_BACKW:
-			render_text("Learn MIDI Play Backward", white, -0.3f, 0.0f, 0.0024f, 0.004f);
+			render_text("Learn MIDI Play Backward", white, -0.3f, 0.0f, 0.0024f, 0.004f, 1);
 			break;
 		case TM_BOUNCE:
-			render_text("Learn MIDI Play Bounce", white, -0.3f, 0.0f, 0.0024f, 0.004f);
+			render_text("Learn MIDI Play Bounce", white, -0.3f, 0.0f, 0.0024f, 0.004f, 1);
 			break;
 		case TM_FRFORW:
-			render_text("Learn MIDI Frame Forward", white, -0.3f, 0.0f, 0.0024f, 0.004f);
+			render_text("Learn MIDI Frame Forward", white, -0.3f, 0.0f, 0.0024f, 0.004f, 1);
 			break;
 		case TM_FRBACKW:
-			render_text("Learn MIDI Frame Backward", white, -0.3f, 0.0f, 0.0024f, 0.004f);
+			render_text("Learn MIDI Frame Backward", white, -0.3f, 0.0f, 0.0024f, 0.004f, 1);
 			break;
 		case TM_SPEED:
-			render_text("Learn MIDI Set Play Speed", white, -0.3f, 0.0f, 0.0024f, 0.004f);
+			render_text("Learn MIDI Set Play Speed", white, -0.3f, 0.0f, 0.0024f, 0.004f, 1);
 			break;
 		case TM_SPEEDZERO:
-			render_text("Learn MIDI Set Play Speed to Zero", white, -0.3f, 0.0f, 0.0024f, 0.004f);
+			render_text("Learn MIDI Set Play Speed to Zero", white, -0.3f, 0.0f, 0.0024f, 0.004f, 1);
 			break;
 		case TM_OPACITY:
-			render_text("Learn MIDI Set Opacity", white, -0.3f, 0.0f, 0.0024f, 0.004f);
+			render_text("Learn MIDI Set Opacity", white, -0.3f, 0.0f, 0.0024f, 0.004f, 1);
 			break;
 		case TM_FREEZE:
-			render_text("Learn MIDI Scratchwheel Freeze", white, -0.3f, 0.0f, 0.0024f, 0.004f);
+			render_text("Learn MIDI Scratchwheel Freeze", white, -0.3f, 0.0f, 0.0024f, 0.004f, 1);
 			break;
 		case TM_SCRATCH:
-			render_text("Learn MIDI Scratchwheel", white, -0.3f, 0.0f, 0.0024f, 0.004f);
+			render_text("Learn MIDI Scratchwheel", white, -0.3f, 0.0f, 0.0024f, 0.004f, 1);
 			break;
 	}
 	
-	if (!skipdraw) {
-		//draw scratchwheel
-		draw_box(white, black, mainprogram->tmplay, -1);
-		if (mainprogram->tmchoice == TM_PLAY) draw_box(white, green, mainprogram->tmplay, -1);
-		if (mainprogram->tmplay->in()) {
-			draw_box(white, lightblue, mainprogram->tmplay, -1);
-			if (mainprogram->leftmouse) {
-				mainprogram->tmlearn = TM_PLAY;
-				mainprogram->leftmouse = false;
-			}
+	//draw scratchwheel
+	draw_box(white, black, mainprogram->tmplay, -1);
+	if (mainprogram->tmchoice == TM_PLAY) draw_box(white, green, mainprogram->tmplay, -1);
+	if (mainprogram->tmplay->in(mx, my)) {
+		draw_box(white, lightblue, mainprogram->tmplay, -1);
+		if (mainprogram->lmsave) {
+			mainprogram->tmlearn = TM_PLAY;
+			mainprogram->lmsave = false;
 		}
-		draw_triangle(white, white, 0.125f, -0.83f, 0.06f, 0.12f, RIGHT, CLOSED);
-		draw_box(white, black, mainprogram->tmbackw, -1);
-		if (mainprogram->tmchoice == TM_BACKW) draw_box(white, green, mainprogram->tmbackw, -1);
-		if (mainprogram->tmbackw->in()) {
-			draw_box(white, lightblue, mainprogram->tmbackw, -1);
-			if (mainprogram->leftmouse) {
-				mainprogram->tmlearn = TM_BACKW;
-				mainprogram->leftmouse = false;
-			}
-		}
-		draw_triangle(white, white, -0.185f, -0.83f, 0.06f, 0.12f, LEFT, CLOSED);
-		draw_box(white, black, mainprogram->tmbounce, -1);
-		if (mainprogram->tmchoice == TM_BOUNCE) draw_box(white, green, mainprogram->tmbounce, -1);
-		if (mainprogram->tmbounce->in()) {
-			draw_box(white, lightblue, mainprogram->tmbounce, -1);
-			if (mainprogram->leftmouse) {
-				mainprogram->tmlearn = TM_BOUNCE;
-				mainprogram->leftmouse = false;
-			}
-		}
-		draw_triangle(white, white, -0.045f, -0.83f, 0.04f, 0.12f, LEFT, CLOSED);
-		draw_triangle(white, white, 0.01f, -0.83f, 0.04f, 0.12f, RIGHT, CLOSED);
-		draw_box(white, black, mainprogram->tmfrforw, -1);
-		if (mainprogram->tmchoice == TM_FRFORW) draw_box(white, green, mainprogram->tmfrforw, -1);
-		if (mainprogram->tmfrforw->in()) {
-			draw_box(white, lightblue, mainprogram->tmfrforw, -1);
-			if (mainprogram->leftmouse) {
-				mainprogram->tmlearn = TM_FRFORW;
-				mainprogram->leftmouse = false;
-			}
-		}
-		draw_triangle(white, white, 0.275f, -0.83f, 0.06f, 0.12f, RIGHT, OPEN);
-		draw_box(white, black, mainprogram->tmfrbackw, -1);
-		if (mainprogram->tmchoice == TM_FRBACKW) draw_box(white, green, mainprogram->tmfrbackw, -1);
-		if (mainprogram->tmfrbackw->in()) {
-			draw_box(white, lightblue, mainprogram->tmfrbackw, -1);
-			if (mainprogram->leftmouse) {
-				mainprogram->tmlearn = TM_FRBACKW;
-				mainprogram->leftmouse = false;
-			}
-		}
-		draw_triangle(white, white, -0.335f, -0.83f, 0.06f, 0.12f, LEFT, OPEN);
-		draw_box(white, black, mainprogram->tmspeed, -1);
-		if (mainprogram->tmchoice == TM_SPEED) draw_box(white, green, mainprogram->tmspeed, -1);
-		if (mainprogram->tmspeedzero->in()) {
-			draw_box(white, lightblue, mainprogram->tmspeedzero, -1);
-			if (mainprogram->leftmouse) {
-				mainprogram->tmlearn = TM_SPEEDZERO;
-				mainprogram->leftmouse = false;
-			}
-		}
-		else if (mainprogram->tmspeed->in()) {
-			draw_box(white, lightblue, mainprogram->tmspeed, -1);
-			if (mainprogram->leftmouse) {
-				mainprogram->tmlearn = TM_SPEED;
-				mainprogram->leftmouse = false;
-			}
-			draw_box(white, black, mainprogram->tmspeedzero, -1);
-			if (mainprogram->tmchoice == TM_SPEEDZERO) draw_box(white, green, mainprogram->tmspeedzero, -1);
-		}
-		else {
-			draw_box(white, black, mainprogram->tmspeedzero, -1);
-			if (mainprogram->tmchoice == TM_SPEEDZERO) draw_box(white, green, mainprogram->tmspeedzero, -1);
-		}
-		render_text("ONE", white, -0.755f, -0.08f, 0.0024f, 0.004f);
-		render_text("SPEED", white, -0.765f, -0.48f, 0.0024f, 0.004f);
-		draw_box(white, black, mainprogram->tmopacity, -1);
-		if (mainprogram->tmchoice == TM_OPACITY) draw_box(white, green, mainprogram->tmopacity, -1);
-		if (mainprogram->tmopacity->in()) {
-			draw_box(white, lightblue, mainprogram->tmopacity, -1);
-			if (mainprogram->leftmouse) {
-				mainprogram->tmlearn = TM_OPACITY;
-				mainprogram->leftmouse = false;
-			}
-		}
-		render_text("OPACITY", white, 0.605f, -0.48f, 0.0024f, 0.004f);
-		if (mainprogram->tmfreeze->in()) {
-			draw_box(white, lightblue, mainprogram->tmfreeze, -1);
-			if (mainprogram->leftmouse) {
-				mainprogram->tmlearn = TM_FREEZE;
-				mainprogram->leftmouse = false;
-			}
-		}
-		else {
-			if (mainprogram->tmchoice == TM_SCRATCH) draw_box(green, 0.0f, 0.1f, 0.6f, 1);
-			if (sqrt(pow((mx / (wi / 2.0f) - 1.0f) * wi / he, 2) + pow((he - my) / (he / 2.0f) - 1.1f, 2)) < 0.6f) {
-				draw_box(lightblue, 0.0f, 0.1f, 0.6f, 1);
-				if (mainprogram->leftmouse) {
-					mainprogram->tmlearn = TM_SCRATCH;
-					mainprogram->leftmouse = false;
-				}
-			}
-			draw_box(white, black, mainprogram->tmfreeze, -1);
-			if (mainprogram->tmchoice == TM_FREEZE) draw_box(white, green, mainprogram->tmfreeze, -1);
-		}
-		draw_box(white, 0.0f, 0.1f, 0.6f, 2);
-		render_text("SCRATCH", white, -0.1f, -0.3f, 0.0024f, 0.004f);
-		render_text("FREEZE", white, -0.08f, 0.12f, 0.0024f, 0.004f);
 	}
+	draw_triangle(white, white, 0.125f, -0.83f, 0.06f, 0.12f, RIGHT, CLOSED);
+	draw_box(white, black, mainprogram->tmbackw, -1);
+	if (mainprogram->tmchoice == TM_BACKW) draw_box(white, green, mainprogram->tmbackw, -1);
+	if (mainprogram->tmbackw->in(mx, my)) {
+		draw_box(white, lightblue, mainprogram->tmbackw, -1);
+		if (mainprogram->lmsave) {
+			mainprogram->tmlearn = TM_BACKW;
+			mainprogram->lmsave = false;
+		}
+	}
+	draw_triangle(white, white, -0.185f, -0.83f, 0.06f, 0.12f, LEFT, CLOSED);
+	draw_box(white, black, mainprogram->tmbounce, -1);
+	if (mainprogram->tmchoice == TM_BOUNCE) draw_box(white, green, mainprogram->tmbounce, -1);
+	if (mainprogram->tmbounce->in(mx, my)) {
+		draw_box(white, lightblue, mainprogram->tmbounce, -1);
+		if (mainprogram->lmsave) {
+			mainprogram->tmlearn = TM_BOUNCE;
+			mainprogram->lmsave = false;
+		}
+	}
+	draw_triangle(white, white, -0.045f, -0.83f, 0.04f, 0.12f, LEFT, CLOSED);
+	draw_triangle(white, white, 0.01f, -0.83f, 0.04f, 0.12f, RIGHT, CLOSED);
+	draw_box(white, black, mainprogram->tmfrforw, -1);
+	if (mainprogram->tmchoice == TM_FRFORW) draw_box(white, green, mainprogram->tmfrforw, -1);
+	if (mainprogram->tmfrforw->in(mx, my)) {
+		draw_box(white, lightblue, mainprogram->tmfrforw, -1);
+		if (mainprogram->lmsave) {
+			mainprogram->tmlearn = TM_FRFORW;
+			mainprogram->lmsave = false;
+		}
+	}
+	draw_triangle(white, white, 0.275f, -0.83f, 0.06f, 0.12f, RIGHT, OPEN);
+	draw_box(white, black, mainprogram->tmfrbackw, -1);
+	if (mainprogram->tmchoice == TM_FRBACKW) draw_box(white, green, mainprogram->tmfrbackw, -1);
+	if (mainprogram->tmfrbackw->in(mx, my)) {
+		draw_box(white, lightblue, mainprogram->tmfrbackw, -1);
+		if (mainprogram->lmsave) {
+			mainprogram->tmlearn = TM_FRBACKW;
+			mainprogram->lmsave = false;
+		}
+	}
+	draw_triangle(white, white, -0.335f, -0.83f, 0.06f, 0.12f, LEFT, OPEN);
+	draw_box(white, black, mainprogram->tmspeed, -1);
+	if (mainprogram->tmchoice == TM_SPEED) draw_box(white, green, mainprogram->tmspeed, -1);
+	if (mainprogram->tmspeedzero->in(mx, my)) {
+		draw_box(white, lightblue, mainprogram->tmspeedzero, -1);
+		if (mainprogram->lmsave) {
+			mainprogram->tmlearn = TM_SPEEDZERO;
+			mainprogram->lmsave = false;
+		}
+	}
+	else if (mainprogram->tmspeed->in(mx, my)) {
+		draw_box(white, lightblue, mainprogram->tmspeed, -1);
+		if (mainprogram->lmsave) {
+			mainprogram->tmlearn = TM_SPEED;
+			mainprogram->lmsave = false;
+		}
+		draw_box(white, black, mainprogram->tmspeedzero, -1);
+		if (mainprogram->tmchoice == TM_SPEEDZERO) draw_box(white, green, mainprogram->tmspeedzero, -1);
+	}
+	else {
+		draw_box(white, black, mainprogram->tmspeedzero, -1);
+		if (mainprogram->tmchoice == TM_SPEEDZERO) draw_box(white, green, mainprogram->tmspeedzero, -1);
+	}
+	render_text("ONE", white, -0.755f, -0.08f, 0.0024f, 0.004f, 1);
+	render_text("SPEED", white, -0.765f, -0.48f, 0.0024f, 0.004f, 1);
+	draw_box(white, black, mainprogram->tmopacity, -1);
+	if (mainprogram->tmchoice == TM_OPACITY) draw_box(white, green, mainprogram->tmopacity, -1);
+	if (mainprogram->tmopacity->in(mx, my)) {
+		draw_box(white, lightblue, mainprogram->tmopacity, -1);
+		if (mainprogram->lmsave) {
+			mainprogram->tmlearn = TM_OPACITY;
+			mainprogram->lmsave = false;
+		}
+	}
+	render_text("OPACITY", white, 0.605f, -0.48f, 0.0024f, 0.004f, 1);
+	if (mainprogram->tmfreeze->in(mx, my)) {
+		draw_box(white, lightblue, mainprogram->tmfreeze, -1);
+		if (mainprogram->lmsave) {
+			mainprogram->tmlearn = TM_FREEZE;
+			mainprogram->lmsave = false;
+		}
+	}
+	else {
+		if (mainprogram->tmchoice == TM_SCRATCH) draw_box(green, 0.0f, 0.1f, 0.6f, 1);
+		if (sqrt(pow((mx / (w / 2.0f) - 1.0f) * w / h, 2) + pow((h - my) / (h / 2.0f) - 1.1f, 2)) < 0.6f) {
+			draw_box(lightblue, 0.0f, 0.1f, 0.6f, 1, smw, smh);
+			if (mainprogram->lmsave) {
+				mainprogram->tmlearn = TM_SCRATCH;
+				mainprogram->lmsave = false;
+			}
+		}
+		draw_box(white, black, mainprogram->tmfreeze, -1);
+		if (mainprogram->tmchoice == TM_FREEZE) draw_box(white, green, mainprogram->tmfreeze, -1);
+	}
+	draw_box(white, 0.0f, 0.1f, 0.6f, 2, smw, smh);
+	render_text("SCRATCH", white, -0.1f, -0.3f, 0.0024f, 0.004f, 1);
+	render_text("FREEZE", white, -0.08f, 0.12f, 0.0024f, 0.004f, 1);
 	
-	SDL_GL_SwapWindow(mainprogram->tunemidiwindow);
-	SDL_GL_MakeCurrent(mainprogram->mainwindow, glc);
-	SDL_GL_GetDrawableSize(mainprogram->mainwindow, &wi, &he);
-	w = (float)wi;
-	h = (float)he;
-	
-	mainprogram->leftmouse = 0;
+	Box box;
+	box.vtxcoords->x1 = 0.75f;
+	box.vtxcoords->y1 = -1.0f;
+	box.vtxcoords->w = 0.3f;
+	box.vtxcoords->h = 0.2f;
+	box.upvtxtoscr();
+	draw_box(white, black, &box, -1);
+	if (box.in(mx, my)) {
+		draw_box(white, lightblue, &box, -1);
+		if (mainprogram->lmsave) {
+			mainprogram->lmsave = false;
+			open_genmidis("./midiset.gm");
+			mainprogram->tunemidi = false;
+			SDL_DestroyWindow(mainprogram->tunemidiwindow);
+			return 0;
+		}
+	}
+	render_text("CANCEL", white, box.vtxcoords->x1 + 0.02f, box.vtxcoords->y1 + 0.03f, 0.0024f, 0.004f, 1);
+	box.vtxcoords->x1 = 0.45f;
+	box.upvtxtoscr();
+	draw_box(white, black, &box, -1);
+	if (box.in(mx, my)) {
+		draw_box(white, lightblue, &box, -1);
+		if (mainprogram->lmsave) {
+			mainprogram->lmsave = false;
+			save_genmidis("./midiset.gm");
+			mainprogram->tunemidi = false;
+			SDL_DestroyWindow(mainprogram->tunemidiwindow);
+			return 0;
+		}
+	}
+	render_text("SAVE", white, box.vtxcoords->x1 + 0.02f, box.vtxcoords->y1 + 0.03f, 0.0024f, 0.004f, 1);
+		
 	mainprogram->middlemouse = 0;
 	mainprogram->rightmouse = 0;
 	mainprogram->menuactivation = false;
 	mainprogram->mx = -1;
 	mainprogram->my = -1;
 	
-	mainprogram->drawnonce = true;
+	mainprogram->insmall = false;
 }
 
 
@@ -8585,6 +8628,11 @@ void the_loop() {
 	float darkgrey[] = {0.2f, 0.2f, 0.2f, 1.0f};
 	float lightblue[] = {0.5f, 0.5f, 1.0f, 1.0f};
 	
+	if (SDL_GetMouseFocus() == mainprogram->prefwindow or SDL_GetMouseFocus() == mainprogram->tunemidiwindow) {
+		mainprogram->mx = -1;
+		mainprogram->my = -1;
+		mainprogram->lmsave = mainprogram->leftmouse;
+	}
 	if (mainmix->adaptparam) {
 		// no hovering while adapting param
 		mainprogram->my = -1;
@@ -8658,21 +8706,6 @@ void the_loop() {
 	
 	if (mainprogram->renaming != EDIT_NONE and mainprogram->leftmouse) mainprogram->renaming = EDIT_NONE;
 	
-	if (mainprogram->tunemidi) {
-		if (mainprogram->waitmidi){
-			clock_t t = clock() - mainprogram->stt;
-			double time_taken = ((double)t) / CLOCKS_PER_SEC; // in seconds
-			if (time_taken > 0.1f) {
-				mainprogram->waitmidi = 2;
-				mycallback(0.0f, &mainprogram->savedmessage, nullptr);
-				mainprogram->waitmidi = 0;
-			}
-		}
-		tune_midi();
-	}
-	if (mainprogram->prefon) {
-		preferences();
-	}
 	if (mainprogram->binsscreen) {
 		// wormhole
 		draw_box(darkgreen, 0.0f, 0.25f, 0.2f, 1);
@@ -10577,8 +10610,8 @@ void the_loop() {
 						assert(mainmix->rgbdata);
 						mainmix->recordnow = true;
 						mainmix->startrecord.notify_one();
-						glBindFramebuffer(GL_FRAMEBUFFER, 0);
-						glDrawBuffer(GL_BACK_LEFT);
+						glBindFramebuffer(GL_FRAMEBUFFER, mainprogram->globfbo);
+						glDrawBuffer(GL_COLOR_ATTACHMENT0);
 					}
 					else {
 						mainmix->recording = false;
@@ -11029,10 +11062,6 @@ void the_loop() {
 			if (!mainprogram->tunemidi) {
 				mainprogram->tunemidiwindow = SDL_CreateWindow("Tune MIDI", w / 4, h / 4, w / 2, h / 2, SDL_WINDOW_OPENGL | SDL_WINDOW_SHOWN | SDL_WINDOW_ALLOW_HIGHDPI);
 				glc_tm = SDL_GL_CreateContext(mainprogram->tunemidiwindow);
-				int wi, he;
-				SDL_GL_GetDrawableSize(mainprogram->tunemidiwindow, &wi, &he);
-				w = (float)wi;
-				h = (float)he;
 				mainprogram->tmfreeze->upvtxtoscr();
 				mainprogram->tmplay->upvtxtoscr();
 				mainprogram->tmbackw->upvtxtoscr();
@@ -11077,13 +11106,10 @@ void the_loop() {
 			filereq.detach();
 		}
 		else if (k == 2) {
+			mainprogram->prefs->load();
 			mainprogram->prefon = true;
 			mainprogram->prefwindow = SDL_CreateWindow("Preferences", w / 4, h / 4, w / 2, h / 2, SDL_WINDOW_OPENGL | SDL_WINDOW_SHOWN | SDL_WINDOW_ALLOW_HIGHDPI);
 			glc_pr = SDL_GL_CreateContext(mainprogram->prefwindow);
-			int wi, he;
-			SDL_GL_GetDrawableSize(mainprogram->prefwindow, &wi, &he);
-			w = (float)wi;
-			h = (float)he;
 			glEnable(GL_BLEND);
 			glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
 			SDL_GL_MakeCurrent(mainprogram->mainwindow, glc);
@@ -11620,9 +11646,40 @@ void the_loop() {
 	// sync with output views
 	mainprogram->syncnow = true;
 	mainprogram->sync.notify_one();
-
+	
+	glFlush();
+	if (mainprogram->prefon) {
+		glBindFramebuffer(GL_FRAMEBUFFER, mainprogram->smglobfbo);
+		glDrawBuffer(GL_COLOR_ATTACHMENT0);
+		int ret = preferences();
+		if (ret) {
+			glFlush();
+			glBlitNamedFramebuffer(mainprogram->smglobfbo, 0, 0, 0, smw, smh , 0, 0, smw, smh, GL_COLOR_BUFFER_BIT, GL_NEAREST);
+			SDL_GL_SwapWindow(mainprogram->prefwindow);
+		}
+	}
+	if (mainprogram->tunemidi) {
+		if (mainprogram->waitmidi){
+			clock_t t = clock() - mainprogram->stt;
+			double time_taken = ((double)t) / CLOCKS_PER_SEC; // in seconds
+			if (time_taken > 0.1f) {
+				mainprogram->waitmidi = 2;
+				mycallback(0.0f, &mainprogram->savedmessage, nullptr);
+				mainprogram->waitmidi = 0;
+			}
+		}
+		glBindFramebuffer(GL_FRAMEBUFFER, mainprogram->smglobfbo);
+		glDrawBuffer(GL_COLOR_ATTACHMENT0);
+		int ret = tune_midi();
+		if (ret) {
+			glFlush();
+			glBlitNamedFramebuffer(mainprogram->smglobfbo, 0, 0, 0, smw, smh , 0, 0, smw, smh, GL_COLOR_BUFFER_BIT, GL_NEAREST);
+			SDL_GL_SwapWindow(mainprogram->tunemidiwindow);
+		}
+	}
+	SDL_GL_MakeCurrent(mainprogram->mainwindow, glc);
+	glBlitNamedFramebuffer(mainprogram->globfbo, 0, 0, 0, w, h , 0, 0, w, h, GL_COLOR_BUFFER_BIT, GL_NEAREST);
 	SDL_GL_SwapWindow(mainprogram->mainwindow);
-
 }
 
 
@@ -12875,8 +12932,8 @@ void open_handlefile(std::string path) {
 	glBindVertexArray(mainprogram->fbovao[1]);
 	glDrawArrays(GL_TRIANGLE_STRIP, 0, 4);
 	glUniform1i(down, 0);
-	glBindFramebuffer(GL_FRAMEBUFFER, 0);
-	glDrawBuffer(GL_BACK_LEFT);
+	glBindFramebuffer(GL_FRAMEBUFFER, mainprogram->globfbo);
+	glDrawBuffer(GL_COLOR_ATTACHMENT0);
 	glDeleteTextures(1, &tex);
 	glDeleteFramebuffers(1, &fbo);
 	
@@ -12909,8 +12966,8 @@ GLuint copy_tex(GLuint tex, int tw, int th) {
 	glBindTexture(GL_TEXTURE_2D, tex);
 	glDrawArrays(GL_TRIANGLE_STRIP, 0, 4);
 	glUniform1i(down, 0);
-	glBindFramebuffer(GL_FRAMEBUFFER, 0);
-	glDrawBuffer(GL_BACK_LEFT);
+	glBindFramebuffer(GL_FRAMEBUFFER, mainprogram->globfbo);
+	glDrawBuffer(GL_COLOR_ATTACHMENT0);
 	glDeleteFramebuffers(1, &fbo);
 	
 	return smalltex;
@@ -13277,8 +13334,8 @@ void get_texes(int deck) {
 		glUniform1i(down, 0);
 		mainprogram->inserttexes[deck].push_back(tex);
 		glDeleteFramebuffers(1, &fbo);
-		glBindFramebuffer(GL_FRAMEBUFFER, 0);
-		glDrawBuffer(GL_BACK_LEFT);
+		glBindFramebuffer(GL_FRAMEBUFFER, mainprogram->globfbo);
+		glDrawBuffer(GL_COLOR_ATTACHMENT0);
 		glDeleteFramebuffers(1, &fbo);
 	}
 }
@@ -13635,9 +13692,32 @@ int main(int argc, char* argv[]){
 
 	glc = SDL_GL_CreateContext(mainprogram->mainwindow);
 
-
 	//glewExperimental = GL_TRUE;
 	glewInit();
+
+	SDL_Window *window = SDL_CreateWindow("Empty", w / 4, h / 4, w / 2, h / 2, SDL_WINDOW_OPENGL | SDL_WINDOW_SHOWN | SDL_WINDOW_ALLOW_HIGHDPI);
+	SDL_GLContext empty = SDL_GL_CreateContext(window);
+	SDL_GL_GetDrawableSize(window, &wi, &he);
+	smw = (float)wi;
+	smh = (float)he;
+	SDL_DestroyWindow(window);
+	glGenTextures(1, &mainprogram->globfbotex);
+	glBindTexture(GL_TEXTURE_2D, mainprogram->globfbotex);
+	glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_NEAREST);
+	glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_NEAREST);
+	glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA, w, h, 0, GL_RGBA, GL_UNSIGNED_BYTE, NULL);
+	glGenFramebuffers(1, &mainprogram->globfbo);
+	glBindFramebuffer(GL_FRAMEBUFFER, mainprogram->globfbo);
+	glFramebufferTexture2D(GL_FRAMEBUFFER, GL_COLOR_ATTACHMENT0, GL_TEXTURE_2D, mainprogram->globfbotex, 0);
+	glGenTextures(1, &mainprogram->smglobfbotex);
+	glBindTexture(GL_TEXTURE_2D, mainprogram->smglobfbotex);
+	glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_NEAREST);
+	glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_NEAREST);
+	glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA, smw, smh, 0, GL_RGBA, GL_UNSIGNED_BYTE, NULL);
+	glGenFramebuffers(1, &mainprogram->smglobfbo);
+	glBindFramebuffer(GL_FRAMEBUFFER, mainprogram->smglobfbo);
+	glFramebufferTexture2D(GL_FRAMEBUFFER, GL_COLOR_ATTACHMENT0, GL_TEXTURE_2D, mainprogram->smglobfbotex, 0);
+	SDL_GL_MakeCurrent(mainprogram->mainwindow, glc);
 
 	mainprogram->cwbox->vtxcoords->w = w / 5.0f;
 	mainprogram->cwbox->vtxcoords->h = h / 5.0f;
@@ -14242,7 +14322,6 @@ int main(int argc, char* argv[]){
 								mainprogram->tunemidi = false;
 								mainprogram->tmlearn = TM_NONE;
 								mainprogram->drawnonce = false;
-								save_genmidis("./midiset.gm");
 								SDL_DestroyWindow(mainprogram->tunemidiwindow);
 							}
 						}
@@ -14339,6 +14418,15 @@ int main(int argc, char* argv[]){
 					}
 				}
 			}
+			
+			if (focus and SDL_GetMouseFocus() != mainprogram->prefwindow and SDL_GetMouseFocus() != mainprogram->tunemidiwindow) {
+				SDL_GetMouseState(&mainprogram->mx, &mainprogram->my);
+			}
+			else {
+				mainprogram->mx = -1;
+				mainprogram->my = -1;
+			}
+			
 			if (e.type == SDL_MULTIGESTURE)	{
  				if (fabs(e.mgesture.dDist) > 0.002) {
 					mainprogram->mx = e.mgesture.x * w; 
@@ -14395,7 +14483,6 @@ int main(int argc, char* argv[]){
 				mainprogram->mousewheel = e.wheel.y;
 			}
 		}
-		if (focus) SDL_GetMouseState(&mainprogram->mx, &mainprogram->my);
 
 		std::chrono::high_resolution_clock::time_point now = std::chrono::high_resolution_clock::now();
 		elapsed = std::chrono::duration_cast<std::chrono::duration<double>>(now - begintime);

@@ -27,6 +27,7 @@ class Box {
 		void upscrtovtx();
 		void upvtxtoscr();
 		bool in();
+		bool in(int mx, int my);
 		bool in(bool menu);
 		Box();
 		~Box();

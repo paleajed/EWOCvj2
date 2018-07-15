@@ -235,6 +235,10 @@ class Program {
 	public:
 		GLuint ShaderProgram;
 		GLuint fbovao[4];
+		GLuint globfbo;
+		GLuint globfbotex;
+		GLuint smglobfbo;
+		GLuint smglobfbotex;
 		NodesMain *nodesmain;
 		Layer *loadlay;
 		Layer *prelay = nullptr;
@@ -273,13 +277,14 @@ class Program {
 		float oh = 1080.0f;
 		float cwx;
 		float cwy;
-		bool leftmousedown = 0;
-		bool middlemousedown = 0;
-		bool leftmouse = 0;
-		bool doubleleftmouse = 0;
-		bool middlemouse = 0;
-		bool rightmouse = 0;
-		float mousewheel = 0;
+		bool leftmousedown = false;
+		bool middlemousedown = false;
+		bool leftmouse = false;
+		bool lmsave = false;
+		bool doubleleftmouse = false;
+		bool middlemouse = false;
+		bool rightmouse = false;
+		float mousewheel = false;
 		bool del = false;
 		bool ctrl = false;
 		bool menuondisplay;
@@ -312,6 +317,8 @@ class Program {
 		TM_LEARN tmlearn = TM_NONE;
 		TM_LEARN tmchoice = TM_NONE;
 		int waitmidi = 0;
+		std::vector<int> openports;
+		std::vector<PMidiItem*> pmon;
 		clock_t stt;
 		std::vector<unsigned char> savedmessage;
 		bool queueing;
@@ -320,6 +327,7 @@ class Program {
 		bool prefon = false;
 		Preferences *prefs;
 		bool needsclick = false;
+		bool insmall;
 		
 		std::vector<GUIString*> guistrings;
 		std::vector<std::wstring> livedevices;
@@ -418,9 +426,10 @@ extern void make_layboxes();
 extern int handle_menu(Menu *menu, float xshift);
 extern int handle_menu(Menu *menu);
 extern void new_file(int decks, bool alive);
-extern void draw_box(float *linec, float *areac, float x, float y, float wi, float he, float dx, float dy, float scale, float opacity, int circle, GLuint tex);
+extern void draw_box(float *linec, float *areac, float x, float y, float wi, float he, float dx, float dy, float scale, float opacity, int circle, GLuint tex, float fw, float fh);
 extern void draw_box(float *linec, float *areac, float x, float y, float wi, float he, GLuint tex);
 extern void draw_box(float *color, float x, float y, float radius, int circle);
+extern void draw_box(float *color, float x, float y, float radius, int circle, float fw, float fh);
 extern void draw_box(Box *box, GLuint tex);
 extern void draw_box(float *linec, float *areac, Box *box, GLuint tex);
 extern void draw_box(Box *box, float opacity, GLuint tex);
@@ -431,6 +440,7 @@ extern void draw_triangle(float *linec, float *areac, float x1, float y1, float 
 extern void draw_line(float *linec, float x1, float y1, float x2, float y2);
 
 extern float render_text(std::string text, float *textc, float x, float y, float sx, float sy);
+extern float render_text(std::string text, float *textc, float x, float y, float sx, float sy, bool smflag);
 
 extern float xscrtovtx(float scrcoord);
 extern float yscrtovtx(float scrcoord);
@@ -461,6 +471,9 @@ extern BinElement *find_element(int size, int k, int i, int j, bool olc);
 
 extern GLuint copy_tex(GLuint tex);
 extern GLuint copy_tex(GLuint tex, int tw, int th);
+
+void open_genmidis(std::string path);
+void save_genmidis(std::string path);
 
 bool thread_vidopen(Layer *lay, AVInputFormat *ifmt, bool skip);
 
