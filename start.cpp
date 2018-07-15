@@ -12944,8 +12944,7 @@ GLuint copy_tex(GLuint tex) {
 }
 
 GLuint copy_tex(GLuint tex, int tw, int th) {
-	GLuint smalltex, fbo;
-	glBindVertexArray(mainprogram->fbovao[1]);
+	GLuint smalltex, sfbo, dfbo;
 	glGenTextures(1, &smalltex);
 	glBindTexture(GL_TEXTURE_2D, smalltex);
 	glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_BORDER);
@@ -12953,19 +12952,19 @@ GLuint copy_tex(GLuint tex, int tw, int th) {
 	glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR);
 	glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
 	glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA, tw, th, 0, GL_RGBA, GL_UNSIGNED_BYTE, NULL);
-	glGenFramebuffers(1, &fbo);
-	glBindFramebuffer(GL_FRAMEBUFFER, fbo);
+	glGenFramebuffers(1, &dfbo);
+	glBindFramebuffer(GL_FRAMEBUFFER, dfbo);
 	glFramebufferTexture2D(GL_FRAMEBUFFER, GL_COLOR_ATTACHMENT0, GL_TEXTURE_2D, smalltex, 0);
-	glDrawBuffer(GL_COLOR_ATTACHMENT0);
-	GLint down = glGetUniformLocation(mainprogram->ShaderProgram, "down");
-	glUniform1i(down, 1);
-	glActiveTexture(GL_TEXTURE0);
+	glGenFramebuffers(1, &sfbo);
+	glBindFramebuffer(GL_FRAMEBUFFER, sfbo);
+	glFramebufferTexture2D(GL_FRAMEBUFFER, GL_COLOR_ATTACHMENT0, GL_TEXTURE_2D, tex, 0);
+	int sw, sh;
 	glBindTexture(GL_TEXTURE_2D, tex);
-	glDrawArrays(GL_TRIANGLE_STRIP, 0, 4);
-	glUniform1i(down, 0);
-	glBindFramebuffer(GL_FRAMEBUFFER, mainprogram->globfbo);
-	glDrawBuffer(GL_COLOR_ATTACHMENT0);
-	glDeleteFramebuffers(1, &fbo);
+	glGetTexLevelParameteriv(GL_TEXTURE_2D, 0, GL_TEXTURE_WIDTH, &sw);
+	glGetTexLevelParameteriv(GL_TEXTURE_2D, 0, GL_TEXTURE_HEIGHT, &sh);
+	glBlitNamedFramebuffer(sfbo, dfbo, 0, 0, sw, sh , 0, 0, tw, th, GL_COLOR_BUFFER_BIT, GL_LINEAR);
+	glDeleteFramebuffers(1, &sfbo);
+	glDeleteFramebuffers(1, &dfbo);
 	
 	return smalltex;
 }
