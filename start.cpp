@@ -7852,6 +7852,15 @@ int handle_menu(Menu *menu, float xshift) {
 
 
 bool preferences() {
+	int mx = -1;
+	int my = -1;
+	if (SDL_GetMouseFocus() == mainprogram->prefwindow) {
+		SDL_PumpEvents();
+		SDL_GetMouseState(&mx, &my);
+		mx *= 2.0f;
+		my *= 2.0f;
+	}
+	
 	mainprogram->insmall = true;
 	float white[] = {1.0f, 1.0f, 1.0f, 1.0f};
 	float black[] = {0.0f, 0.0f, 0.0f, 1.0f};
@@ -7861,12 +7870,6 @@ bool preferences() {
 	SDL_GL_MakeCurrent(mainprogram->prefwindow, glc_pr);
 	glClear(GL_COLOR_BUFFER_BIT);
 	
-	int mx, my;
-	SDL_PumpEvents();
-	SDL_GetMouseState(&mx, &my);
-	mx *= 2.0f;
-	my *= 2.0f;
-		
 	for (int i = 0; i < mainprogram->prefs->items.size(); i++) {
 		PrefItem *item = mainprogram->prefs->items[i];
 		if (item->box->in(mx, my)) {	
@@ -7959,7 +7962,6 @@ bool preferences() {
 					mainprogram->inputtext = std::to_string(mci->items[i]->value);
 					mainprogram->cursorpos = mainprogram->inputtext.length();
 					SDL_StartTextInput();
-					mainprogram->lmsave = false;
 				}
 			}
 			if (mci->items[i]->type == PIVID_W) {
@@ -8058,7 +8060,6 @@ bool preferences() {
 					mainprogram->renaming = type;
 					mainprogram->cursorpos = mainprogram->inputtext.length();
 					SDL_StartTextInput();
-					mainprogram->lmsave = false;
 				}
 			}
 			box.vtxcoords->x1 = 0.9f;
@@ -8088,7 +8089,6 @@ bool preferences() {
 	if (box.in(mx, my)) {
 		draw_box(white, lightblue, &box, -1);
 		if (mainprogram->lmsave) {
-			mainprogram->lmsave = false;
 			mainprogram->prefs->load();
 			mainprogram->prefon = false;
 			mainprogram->drawnonce = false;
@@ -8103,7 +8103,6 @@ bool preferences() {
 	if (box.in(mx, my)) {
 		draw_box(white, lightblue, &box, -1);
 		if (mainprogram->lmsave) {
-			mainprogram->lmsave = false;
 			mainprogram->prefs->save();
 			mainprogram->prefon = false;
 			mainprogram->drawnonce = false;
@@ -8113,7 +8112,6 @@ bool preferences() {
 	}
 	render_text("SAVE", white, box.vtxcoords->x1 + 0.02f, box.vtxcoords->y1 + 0.03f, 0.0024f, 0.004f, 1);
 			
-	mainprogram->lmsave = 0;
 	mainprogram->middlemouse = 0;
 	mainprogram->rightmouse = 0;
 	mainprogram->menuactivation = false;
@@ -8125,6 +8123,15 @@ bool preferences() {
 		
 	
 int tune_midi() {
+	int mx = -1;
+	int my = -1;
+	if (SDL_GetMouseFocus() == mainprogram->tunemidiwindow) {
+		SDL_PumpEvents();
+		SDL_GetMouseState(&mx, &my);
+		mx *= 2.0f;
+		my *= 2.0f;
+	}
+	
 	mainprogram->insmall = true;
 	float white[] = {1.0f, 1.0f, 1.0f, 1.0f};
 	float black[] = {0.0f, 0.0f, 0.0f, 1.0f};
@@ -8134,12 +8141,6 @@ int tune_midi() {
 	SDL_GL_MakeCurrent(mainprogram->tunemidiwindow, glc_tm);
 	glClear(GL_COLOR_BUFFER_BIT);
 	
-	int mx, my;
-	SDL_PumpEvents();
-	SDL_GetMouseState(&mx, &my);
-	mx *= 2.0f;
-	my *= 2.0f;
-		
 	if (mainprogram->rightmouse) mainprogram->tmlearn = TM_NONE; 
 	
 	std::string lmstr;
@@ -8190,7 +8191,6 @@ int tune_midi() {
 		draw_box(white, lightblue, mainprogram->tmplay, -1);
 		if (mainprogram->lmsave) {
 			mainprogram->tmlearn = TM_PLAY;
-			mainprogram->lmsave = false;
 		}
 	}
 	draw_triangle(white, white, 0.125f, -0.83f, 0.06f, 0.12f, RIGHT, CLOSED);
@@ -8200,7 +8200,6 @@ int tune_midi() {
 		draw_box(white, lightblue, mainprogram->tmbackw, -1);
 		if (mainprogram->lmsave) {
 			mainprogram->tmlearn = TM_BACKW;
-			mainprogram->lmsave = false;
 		}
 	}
 	draw_triangle(white, white, -0.185f, -0.83f, 0.06f, 0.12f, LEFT, CLOSED);
@@ -8210,7 +8209,6 @@ int tune_midi() {
 		draw_box(white, lightblue, mainprogram->tmbounce, -1);
 		if (mainprogram->lmsave) {
 			mainprogram->tmlearn = TM_BOUNCE;
-			mainprogram->lmsave = false;
 		}
 	}
 	draw_triangle(white, white, -0.045f, -0.83f, 0.04f, 0.12f, LEFT, CLOSED);
@@ -8221,7 +8219,6 @@ int tune_midi() {
 		draw_box(white, lightblue, mainprogram->tmfrforw, -1);
 		if (mainprogram->lmsave) {
 			mainprogram->tmlearn = TM_FRFORW;
-			mainprogram->lmsave = false;
 		}
 	}
 	draw_triangle(white, white, 0.275f, -0.83f, 0.06f, 0.12f, RIGHT, OPEN);
@@ -8231,7 +8228,6 @@ int tune_midi() {
 		draw_box(white, lightblue, mainprogram->tmfrbackw, -1);
 		if (mainprogram->lmsave) {
 			mainprogram->tmlearn = TM_FRBACKW;
-			mainprogram->lmsave = false;
 		}
 	}
 	draw_triangle(white, white, -0.335f, -0.83f, 0.06f, 0.12f, LEFT, OPEN);
@@ -8241,14 +8237,12 @@ int tune_midi() {
 		draw_box(white, lightblue, mainprogram->tmspeedzero, -1);
 		if (mainprogram->lmsave) {
 			mainprogram->tmlearn = TM_SPEEDZERO;
-			mainprogram->lmsave = false;
 		}
 	}
 	else if (mainprogram->tmspeed->in(mx, my)) {
 		draw_box(white, lightblue, mainprogram->tmspeed, -1);
 		if (mainprogram->lmsave) {
 			mainprogram->tmlearn = TM_SPEED;
-			mainprogram->lmsave = false;
 		}
 		draw_box(white, black, mainprogram->tmspeedzero, -1);
 		if (mainprogram->tmchoice == TM_SPEEDZERO) draw_box(white, green, mainprogram->tmspeedzero, -1);
@@ -8265,7 +8259,6 @@ int tune_midi() {
 		draw_box(white, lightblue, mainprogram->tmopacity, -1);
 		if (mainprogram->lmsave) {
 			mainprogram->tmlearn = TM_OPACITY;
-			mainprogram->lmsave = false;
 		}
 	}
 	render_text("OPACITY", white, 0.605f, -0.48f, 0.0024f, 0.004f, 1);
@@ -8273,7 +8266,6 @@ int tune_midi() {
 		draw_box(white, lightblue, mainprogram->tmfreeze, -1);
 		if (mainprogram->lmsave) {
 			mainprogram->tmlearn = TM_FREEZE;
-			mainprogram->lmsave = false;
 		}
 	}
 	else {
@@ -8282,7 +8274,6 @@ int tune_midi() {
 			draw_box(lightblue, 0.0f, 0.1f, 0.6f, 1, smw, smh);
 			if (mainprogram->lmsave) {
 				mainprogram->tmlearn = TM_SCRATCH;
-				mainprogram->lmsave = false;
 			}
 		}
 		draw_box(white, black, mainprogram->tmfreeze, -1);
@@ -8302,7 +8293,6 @@ int tune_midi() {
 	if (box.in(mx, my)) {
 		draw_box(white, lightblue, &box, -1);
 		if (mainprogram->lmsave) {
-			mainprogram->lmsave = false;
 			open_genmidis("./midiset.gm");
 			mainprogram->tunemidi = false;
 			SDL_HideWindow(mainprogram->tunemidiwindow);
@@ -8316,7 +8306,6 @@ int tune_midi() {
 	if (box.in(mx, my)) {
 		draw_box(white, lightblue, &box, -1);
 		if (mainprogram->lmsave) {
-			mainprogram->lmsave = false;
 			save_genmidis("./midiset.gm");
 			mainprogram->tunemidi = false;
 			SDL_HideWindow(mainprogram->tunemidiwindow);
@@ -9166,7 +9155,7 @@ void the_loop() {
 		}
 		else if (k == 0 and mainprogram->menuset == 2) {
 			mainprogram->binsscreen = false;
-			open_file(mainprogram->movingmix->path.c_str());
+			open_mix(mainprogram->movingmix->path.c_str());
 		}
 		else if (k == 1 and mainprogram->menuset == 2) {
 			for (int j = 0; j < mainprogram->movingmix->height; j++) {
@@ -11462,7 +11451,7 @@ void the_loop() {
 		if (mainprogram->leftmouse or mainprogram->movingstruct) {
 			if (sqrt(pow((mainprogram->mx / (w / 2.0f) - 1.0f) * w / h, 2) + pow((h - mainprogram->my) / (h / 2.0f) - 1.25f, 2)) < 0.2f) {
 				mainprogram->binsscreen = false;
-				open_file(mainprogram->dragmix->path.c_str());
+				open_mix(mainprogram->dragmix->path.c_str());
 				mainprogram->dragmix = nullptr;
 			}
 			for (int m = 0; m < 2; m++) {
@@ -11890,6 +11879,10 @@ void save_mix(const std::string &path) {
 	wfile.open(str);
 	wfile << "EWOCvj SAVEMIX V0.1\n";
 	
+	wfile << "CURRLAY\n";
+	wfile << std::to_string(mainmix->currlay->pos);
+	wfile << "CURRDECK\n";
+	wfile << std::to_string(mainmix->currdeck);
 	wfile << "CROSSFADE\n";
 	wfile << std::to_string(mainmix->crossfade->value);
 	wfile << "\n";
@@ -12217,15 +12210,24 @@ void open_layerfile(const std::string &path, int reset) {
 	rfile.close();
 }
 
-void open_file(const char *path) {
+void open_mix(const char *path) {
 	ifstream rfile;
 	rfile.open(path);
 	std::string istring;
 	
 	new_file(2, 1);
 	
+	int clpos;
 	Layer *lay;
 	while (getline(rfile, istring)) {
+		if (istring == "CURRLAY") {
+			getline(rfile, istring);
+			clpos = std::stoi(istring);
+		}
+		if (istring == "CURRDECK") {
+			getline(rfile, istring);
+			mainmix->currdeck = std::stoi(istring);
+		}
 		if (istring == "CROSSFADE") {
 			getline(rfile, istring); 
 			mainmix->crossfade->value = std::stof(istring);
@@ -12263,7 +12265,6 @@ void open_file(const char *path) {
 			int pos = std::stoi(istring);
 			if (pos == 0) {
 				lay = layers[0];
-				mainmix->currlay = lay;
 			}
 			else {
 				lay = mainmix->add_layer(layers, pos);
@@ -12513,6 +12514,13 @@ void open_file(const char *path) {
 					}
 				}
 			}
+		}
+	}
+	std::vector<Layer*> lvec = choose_layers(mainmix->currdeck);
+	for (int i = 0; i < lvec.size(); i++) {
+		if (lvec[i]->pos == clpos) {
+			mainmix->currlay = lvec[i];
+			break;
 		}
 	}
 	
@@ -14195,7 +14203,7 @@ int main(int argc, char* argv[]){
 				open_layerfile(mainprogram->path, 0);
 			}
 			else if (mainprogram->pathto == "OPENFILE") {
-				open_file(mainprogram->path);
+				open_mix(mainprogram->path);
 			}
 			else if (mainprogram->pathto == "OPENBINFILES") {
 				mainprogram->openbinfile = true;

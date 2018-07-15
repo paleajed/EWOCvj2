@@ -447,7 +447,7 @@ extern void save_layerfile(const std::string &path);
 extern void save_mix(const std::string &path);
 extern void save_deck(const std::string &path);
 extern void open_layerfile(const std::string &path, int reset);
-extern void open_file(const char *path);
+extern void open_mix(const char *path);
 extern void open_deck(const std::string &path, bool alive);
 extern void open_binfiles();
 extern void open_bindir();
