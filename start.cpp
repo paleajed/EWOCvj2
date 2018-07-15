@@ -95,7 +95,6 @@ Mixer *mainmix;
 
 
 static GLuint mixvao;
-static GLuint ftex;
 static GLuint fbotex[2];
 static GLuint frbuf[2];
 static GLuint vbuf2, vbuf3;
@@ -105,7 +104,6 @@ static GLuint thmvao;
 std::vector<GLuint> thvao;
 std::vector<GLuint> thbvao;
 static GLuint boxvao;
-static GLuint texvbuf, textbuf, texvao;
 FT_Face face;
 std::vector<std::string> thpath;
 float w, h, w2, h2, smw, smh;
@@ -2067,14 +2065,6 @@ void set_fbo() {
 	glVertexAttribPointer(1, 2, GL_FLOAT, GL_FALSE, 8, NULL);
 	
 	
-	glGenBuffers(1, &mainprogram->boxbuf);
-	glBindBuffer(GL_ARRAY_BUFFER, mainprogram->boxbuf);
-   	glBufferData(GL_ARRAY_BUFFER, 32, vcoords1, GL_STATIC_DRAW);
-	glGenBuffers(1, &mainprogram->boxtbuf);
-	glBindBuffer(GL_ARRAY_BUFFER, mainprogram->boxtbuf);
-	glBufferData(GL_ARRAY_BUFFER, 32, tcoords, GL_STATIC_DRAW);
-	
-		
 	glBindFramebuffer(GL_FRAMEBUFFER, mainprogram->globfbo);
 	glDrawBuffer(GL_COLOR_ATTACHMENT0);
 	
@@ -2375,7 +2365,6 @@ void draw_box(float *color, float x, float y, float radius, int circle, float sm
 }
 
 void draw_box(float *linec, float *areac, float x, float y, float wi, float he, float dx, float dy, float scale, float opacity, int circle, GLuint tex, float smw, float smh) {
-
 	GLint down = glGetUniformLocation(mainprogram->ShaderProgram, "down");
 	GLint drawcircle = glGetUniformLocation(mainprogram->ShaderProgram, "circle");
 	GLfloat circleradius = glGetUniformLocation(mainprogram->ShaderProgram, "circleradius");
@@ -2404,14 +2393,17 @@ void draw_box(float *linec, float *areac, float x, float y, float wi, float he, 
 	*p++ = 1.0f; *p++ = 1.0f;
 	
 				
-	GLuint boxvao;		
-	glBindBuffer(GL_ARRAY_BUFFER, mainprogram->boxbuf);
+	GLuint boxvao, boxbuf;
+	glGenBuffers(1, &boxbuf);	
+	glBindBuffer(GL_ARRAY_BUFFER, boxbuf);
    	glBufferData(GL_ARRAY_BUFFER, 32, fvcoords, GL_STATIC_DRAW);
 	glGenVertexArrays(1, &boxvao);
 	glBindVertexArray(boxvao);
 	glEnableVertexAttribArray(0);
 	glVertexAttribPointer(0, 2, GL_FLOAT, GL_FALSE, 8, NULL);
-	glBindBuffer(GL_ARRAY_BUFFER, mainprogram->boxtbuf);
+	GLuint boxtbuf;
+	glGenBuffers(1, &boxtbuf);
+	glBindBuffer(GL_ARRAY_BUFFER, boxtbuf);
 	glBufferData(GL_ARRAY_BUFFER, 32, tcoords, GL_STATIC_DRAW);
 	glEnableVertexAttribArray(1);
 	glVertexAttribPointer(1, 2, GL_FLOAT, GL_FALSE, 8, NULL);
@@ -2427,8 +2419,9 @@ void draw_box(float *linec, float *areac, float x, float y, float wi, float he, 
 			x + wi - pixelw, y + he - pixelh,
 			x + wi - pixelw, y + pixelh   ,
 		};
-		glBindBuffer(GL_ARRAY_BUFFER, mainprogram->boxbuf);
+		glBindBuffer(GL_ARRAY_BUFFER, boxbuf);
 		glBufferData(GL_ARRAY_BUFFER, 32, fvcoords2, GL_STATIC_DRAW);
+		glBindVertexArray(boxvao);
 		glUniform4fv(color, 1, areac);
 		if (tex != -1) {
 			GLfloat tcoords[8];
@@ -2437,7 +2430,7 @@ void draw_box(float *linec, float *areac, float x, float y, float wi, float he, 
 			*p++ = ((0.0f) - 0.5f) * scale + 0.5f + shx; *p++ = ((1.0f) - 0.5f) * scale + 0.5f + shy;
 			*p++ = ((1.0f) - 0.5f) * scale + 0.5f + shx; *p++ = ((0.0f) - 0.5f) * scale + 0.5f + shy;
 			*p++ = ((1.0f) - 0.5f) * scale + 0.5f + shx; *p++ = ((1.0f) - 0.5f) * scale + 0.5f + shy;
-			glBindBuffer(GL_ARRAY_BUFFER, mainprogram->boxtbuf);
+			glBindBuffer(GL_ARRAY_BUFFER, boxtbuf);
 			glBufferData(GL_ARRAY_BUFFER, 32, tcoords, GL_STATIC_DRAW);
 			glActiveTexture(GL_TEXTURE0);
 			glBindTexture(GL_TEXTURE_2D, tex);
@@ -2461,11 +2454,14 @@ void draw_box(float *linec, float *areac, float x, float y, float wi, float he, 
 		glDrawArrays(GL_TRIANGLE_STRIP, 0, 4);
 		glUniform1i(down, 0);
 		glUniform1i(drawcircle, 0);
+		glDeleteBuffers(1, &boxbuf);
 	}
 
 	glUniform1i(box, 0);
 	glUniform1f(opa, 1.0f);
 	glDeleteVertexArrays(1, &boxvao);
+	glDeleteBuffers(1, &boxbuf);	
+	glDeleteBuffers(1, &boxtbuf);
  }
 
 void draw_triangle(float *linec, float *areac, float x1, float y1, float xsize, float ysize, ORIENTATION orient, TRIANGLE_TYPE type) {
@@ -2530,8 +2526,7 @@ float render_text(std::string text, float *textc, float x, float y, float sx, fl
 }
 
 float render_text(std::string text, float *textc, float x, float y, float sx, float sy, bool smflag) {
-  	
-	y -= 0.01f;
+ 	y -= 0.01f;
 	sy *= 1.2f;
 	sx *= 0.8f;
 	GLuint texture;
@@ -2587,13 +2582,14 @@ float render_text(std::string text, float *textc, float x, float y, float sx, fl
 							1.0f, 0.0f,
 							0.0f, 1.0f,
 							1.0f, 1.0f};
-		GLuint texfrbuf;
+		GLuint texfrbuf, texvbuf;
 		glGenFramebuffers(1, &texfrbuf);
 		glBindFramebuffer(GL_FRAMEBUFFER, texfrbuf);
-		glBindTexture(GL_TEXTURE_2D, 0);
+		//glBindTexture(GL_TEXTURE_2D, 0);
 		glFramebufferTexture2D(GL_FRAMEBUFFER, GL_COLOR_ATTACHMENT0, GL_TEXTURE_2D, texture, 0);
 		glGenBuffers(1, &texvbuf);
 		glBindBuffer(GL_ARRAY_BUFFER, texvbuf);
+		GLuint texvao, textbuf;
 		glGenVertexArrays(1, &texvao);
 		glGenBuffers(1, &textbuf);
 		glBindBuffer(GL_ARRAY_BUFFER, texvbuf);
@@ -2607,6 +2603,14 @@ float render_text(std::string text, float *textc, float x, float y, float sx, fl
 		glBindBuffer(GL_ARRAY_BUFFER, textbuf);
 		glEnableVertexAttribArray(1);
 		glVertexAttribPointer(1, 2, GL_FLOAT, GL_FALSE, 8, NULL);
+		GLuint ftex;
+		glGenTextures(1, &ftex);
+		glBindTexture(GL_TEXTURE_2D, ftex);
+		glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_EDGE);
+		glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_EDGE);
+		glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR);
+		glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
+		glPixelStorei(GL_UNPACK_ALIGNMENT, 1);
 		
 		x = -1.0f;
 		y = 1.0f;
@@ -2679,6 +2683,8 @@ float render_text(std::string text, float *textc, float x, float y, float sx, fl
 		guistring->texth = texth;
 		guistring->sx = sx;
 		mainprogram->guistrings.push_back(guistring);
+		
+		glDeleteFramebuffers(1, &texfrbuf);
   	}
 	else {
 		GLfloat texvcoords[8] = {
@@ -4532,11 +4538,7 @@ bool displaymix() {
 	GLint wipe = glGetUniformLocation(mainprogram->ShaderProgram, "wipe");
 	GLint mixmode = glGetUniformLocation(mainprogram->ShaderProgram, "mixmode");
 	node = (MixNode*)mainprogram->nodesmain->mixnodes[0];
-	glActiveTexture(GL_TEXTURE1);
-	glBindTexture(GL_TEXTURE_2D, node->mixtex);
 	node = (MixNode*)mainprogram->nodesmain->mixnodes[1];
-	glActiveTexture(GL_TEXTURE2);
-	glBindTexture(GL_TEXTURE_2D, node->mixtex);
 	if (mainprogram->preveff) {
 		if (mainmix->wipe[0] > -1) {
 			glUniform1i(mixmode, 18);
@@ -4551,19 +4553,11 @@ bool displaymix() {
 			glUniform1f(ypos, mainmix->wipey[0]);
 		}
 		node = (MixNode*)mainprogram->nodesmain->mixnodes[0];
-		glActiveTexture(GL_TEXTURE1);
-		glBindTexture(GL_TEXTURE_2D, node->mixtex);
 		node = (MixNode*)mainprogram->nodesmain->mixnodes[1];
-		glActiveTexture(GL_TEXTURE2);
-		glBindTexture(GL_TEXTURE_2D, node->mixtex);
 		node = (MixNode*)mainprogram->nodesmain->mixnodes[2];
 		draw_box(node->outputbox->lcolor, node->outputbox->acolor, -0.3f, -1.0f, 0.6f, 0.6f, node->mixtex);
 		node = (MixNode*)mainprogram->nodesmain->mixnodescomp[0];
-		glActiveTexture(GL_TEXTURE1);
-		glBindTexture(GL_TEXTURE_2D, node->mixtex);
 		node = (MixNode*)mainprogram->nodesmain->mixnodescomp[1];
-		glActiveTexture(GL_TEXTURE2);
-		glBindTexture(GL_TEXTURE_2D, node->mixtex);
 		
 		glUniform1i(wipe, 0);
 		glUniform1i(mixmode, 0);
@@ -4600,11 +4594,7 @@ bool displaymix() {
 			glUniform1f(ypos, mainmix->wipey[0]);
 		}
 		node = (MixNode*)mainprogram->nodesmain->mixnodescomp[0];
-		glActiveTexture(GL_TEXTURE1);
-		glBindTexture(GL_TEXTURE_2D, node->mixtex);
 		node = (MixNode*)mainprogram->nodesmain->mixnodescomp[1];
-		glActiveTexture(GL_TEXTURE2);
-		glBindTexture(GL_TEXTURE_2D, node->mixtex);
 		
 		glUniform1i(wipe, 0);
 		glUniform1i(mixmode, 0);
@@ -8102,7 +8092,7 @@ bool preferences() {
 			mainprogram->prefs->load();
 			mainprogram->prefon = false;
 			mainprogram->drawnonce = false;
-			SDL_DestroyWindow(mainprogram->prefwindow);
+			SDL_HideWindow(mainprogram->prefwindow);
 			return 0;
 		}
 	}
@@ -8117,7 +8107,7 @@ bool preferences() {
 			mainprogram->prefs->save();
 			mainprogram->prefon = false;
 			mainprogram->drawnonce = false;
-			SDL_DestroyWindow(mainprogram->prefwindow);
+			SDL_HideWindow(mainprogram->prefwindow);
 			return 0;
 		}
 	}
@@ -8315,7 +8305,7 @@ int tune_midi() {
 			mainprogram->lmsave = false;
 			open_genmidis("./midiset.gm");
 			mainprogram->tunemidi = false;
-			SDL_DestroyWindow(mainprogram->tunemidiwindow);
+			SDL_HideWindow(mainprogram->tunemidiwindow);
 			return 0;
 		}
 	}
@@ -8329,7 +8319,7 @@ int tune_midi() {
 			mainprogram->lmsave = false;
 			save_genmidis("./midiset.gm");
 			mainprogram->tunemidi = false;
-			SDL_DestroyWindow(mainprogram->tunemidiwindow);
+			SDL_HideWindow(mainprogram->tunemidiwindow);
 			return 0;
 		}
 	}
@@ -11060,8 +11050,14 @@ void the_loop() {
 		k = handle_menu(mainprogram->genmidimenu);
 		if (k == 0) {
 			if (!mainprogram->tunemidi) {
-				mainprogram->tunemidiwindow = SDL_CreateWindow("Tune MIDI", w / 4, h / 4, w / 2, h / 2, SDL_WINDOW_OPENGL | SDL_WINDOW_SHOWN | SDL_WINDOW_ALLOW_HIGHDPI);
-				glc_tm = SDL_GL_CreateContext(mainprogram->tunemidiwindow);
+				SDL_ShowWindow(mainprogram->tunemidiwindow);
+				SDL_RaiseWindow(mainprogram->tunemidiwindow);
+				SDL_GL_MakeCurrent(mainprogram->mainwindow, glc);
+				HGLRC cc1 = wglGetCurrentContext();
+				SDL_GL_MakeCurrent(mainprogram->tunemidiwindow, glc_tm);
+				HGLRC cc2 = wglGetCurrentContext();
+				wglShareLists(cc1, cc2);
+				glUseProgram(mainprogram->ShaderProgram);
 				mainprogram->tmfreeze->upvtxtoscr();
 				mainprogram->tmplay->upvtxtoscr();
 				mainprogram->tmbackw->upvtxtoscr();
@@ -11073,12 +11069,6 @@ void the_loop() {
 				mainprogram->tmopacity->upvtxtoscr();
 				glEnable(GL_BLEND);
 				glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
-				SDL_GL_MakeCurrent(mainprogram->mainwindow, glc);
-				HGLRC cc1 = wglGetCurrentContext();
-				SDL_GL_MakeCurrent(mainprogram->tunemidiwindow, glc_tm);
-				HGLRC cc2 = wglGetCurrentContext();
-				wglShareLists(cc1, cc2);
-				glUseProgram(mainprogram->ShaderProgram);
 				mainprogram->tunemidi = true;
 			}
 			else {
@@ -11106,21 +11096,26 @@ void the_loop() {
 			filereq.detach();
 		}
 		else if (k == 2) {
-			mainprogram->prefs->load();
-			mainprogram->prefon = true;
-			mainprogram->prefwindow = SDL_CreateWindow("Preferences", w / 4, h / 4, w / 2, h / 2, SDL_WINDOW_OPENGL | SDL_WINDOW_SHOWN | SDL_WINDOW_ALLOW_HIGHDPI);
-			glc_pr = SDL_GL_CreateContext(mainprogram->prefwindow);
-			glEnable(GL_BLEND);
-			glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
-			SDL_GL_MakeCurrent(mainprogram->mainwindow, glc);
-			HGLRC cc1 = wglGetCurrentContext();
-			SDL_GL_MakeCurrent(mainprogram->prefwindow, glc_pr);
-			HGLRC cc2 = wglGetCurrentContext();
-			wglShareLists(cc1, cc2);
-			glUseProgram(mainprogram->ShaderProgram);
-			for (int i = 0; i < mainprogram->prefs->items.size(); i++) {
-				PrefItem *item = mainprogram->prefs->items[i];
-				item->box->upvtxtoscr();
+			if (!mainprogram->prefon) {
+				mainprogram->prefs->load();
+				mainprogram->prefon = true;
+				SDL_ShowWindow(mainprogram->prefwindow);
+				SDL_RaiseWindow(mainprogram->prefwindow);
+				SDL_GL_MakeCurrent(mainprogram->mainwindow, glc);
+				HGLRC cc1 = wglGetCurrentContext();
+				SDL_GL_MakeCurrent(mainprogram->prefwindow, glc_pr);
+				HGLRC cc2 = wglGetCurrentContext();
+				wglShareLists(cc1, cc2);
+				glUseProgram(mainprogram->ShaderProgram);
+				glEnable(GL_BLEND);
+				glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
+				for (int i = 0; i < mainprogram->prefs->items.size(); i++) {
+					PrefItem *item = mainprogram->prefs->items[i];
+					item->box->upvtxtoscr();
+				}
+			}
+			else {
+				SDL_RaiseWindow(mainprogram->prefwindow);
 			}
 		}
 		else if (k == 3) {
@@ -11653,8 +11648,8 @@ void the_loop() {
 		glDrawBuffer(GL_COLOR_ATTACHMENT0);
 		int ret = preferences();
 		if (ret) {
-			glFlush();
 			glBlitNamedFramebuffer(mainprogram->smglobfbo, 0, 0, 0, smw, smh , 0, 0, smw, smh, GL_COLOR_BUFFER_BIT, GL_NEAREST);
+			glFlush();
 			SDL_GL_SwapWindow(mainprogram->prefwindow);
 		}
 	}
@@ -11672,14 +11667,16 @@ void the_loop() {
 		glDrawBuffer(GL_COLOR_ATTACHMENT0);
 		int ret = tune_midi();
 		if (ret) {
-			glFlush();
 			glBlitNamedFramebuffer(mainprogram->smglobfbo, 0, 0, 0, smw, smh , 0, 0, smw, smh, GL_COLOR_BUFFER_BIT, GL_NEAREST);
+			glFlush();
 			SDL_GL_SwapWindow(mainprogram->tunemidiwindow);
 		}
 	}
 	SDL_GL_MakeCurrent(mainprogram->mainwindow, glc);
 	glBlitNamedFramebuffer(mainprogram->globfbo, 0, 0, 0, w, h , 0, 0, w, h, GL_COLOR_BUFFER_BIT, GL_NEAREST);
 	SDL_GL_SwapWindow(mainprogram->mainwindow);
+	glBindFramebuffer(GL_FRAMEBUFFER, mainprogram->globfbo);
+	glDrawBuffer(GL_COLOR_ATTACHMENT0);
 }
 
 
@@ -13695,20 +13692,17 @@ int main(int argc, char* argv[]){
 	//glewExperimental = GL_TRUE;
 	glewInit();
 
-	SDL_Window *window = SDL_CreateWindow("Empty", w / 4, h / 4, w / 2, h / 2, SDL_WINDOW_OPENGL | SDL_WINDOW_SHOWN | SDL_WINDOW_ALLOW_HIGHDPI);
-	SDL_GLContext empty = SDL_GL_CreateContext(window);
-	SDL_GL_GetDrawableSize(window, &wi, &he);
+	mainprogram->tunemidiwindow = SDL_CreateWindow("Tune MIDI", w / 4, h / 4, w / 2, h / 2, SDL_WINDOW_OPENGL | SDL_WINDOW_SHOWN | SDL_WINDOW_ALLOW_HIGHDPI);
+	glc_tm = SDL_GL_CreateContext(mainprogram->tunemidiwindow);
+	SDL_HideWindow(mainprogram->tunemidiwindow);
+	mainprogram->prefwindow = SDL_CreateWindow("Preferences", w / 4, h / 4, w / 2, h / 2, SDL_WINDOW_OPENGL | SDL_WINDOW_SHOWN | SDL_WINDOW_ALLOW_HIGHDPI);
+	glc_pr = SDL_GL_CreateContext(mainprogram->prefwindow);
+	SDL_GL_GetDrawableSize(mainprogram->prefwindow, &wi, &he);
 	smw = (float)wi;
 	smh = (float)he;
-	SDL_DestroyWindow(window);
-	glGenTextures(1, &mainprogram->globfbotex);
-	glBindTexture(GL_TEXTURE_2D, mainprogram->globfbotex);
-	glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_NEAREST);
-	glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_NEAREST);
-	glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA, w, h, 0, GL_RGBA, GL_UNSIGNED_BYTE, NULL);
-	glGenFramebuffers(1, &mainprogram->globfbo);
-	glBindFramebuffer(GL_FRAMEBUFFER, mainprogram->globfbo);
-	glFramebufferTexture2D(GL_FRAMEBUFFER, GL_COLOR_ATTACHMENT0, GL_TEXTURE_2D, mainprogram->globfbotex, 0);
+	SDL_HideWindow(mainprogram->prefwindow);
+	
+	SDL_GL_MakeCurrent(mainprogram->mainwindow, glc);
 	glGenTextures(1, &mainprogram->smglobfbotex);
 	glBindTexture(GL_TEXTURE_2D, mainprogram->smglobfbotex);
 	glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_NEAREST);
@@ -13717,7 +13711,14 @@ int main(int argc, char* argv[]){
 	glGenFramebuffers(1, &mainprogram->smglobfbo);
 	glBindFramebuffer(GL_FRAMEBUFFER, mainprogram->smglobfbo);
 	glFramebufferTexture2D(GL_FRAMEBUFFER, GL_COLOR_ATTACHMENT0, GL_TEXTURE_2D, mainprogram->smglobfbotex, 0);
-	SDL_GL_MakeCurrent(mainprogram->mainwindow, glc);
+	glGenTextures(1, &mainprogram->globfbotex);
+	glBindTexture(GL_TEXTURE_2D, mainprogram->globfbotex);
+	glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_NEAREST);
+	glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_NEAREST);
+	glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA, w, h, 0, GL_RGBA, GL_UNSIGNED_BYTE, NULL);
+	glGenFramebuffers(1, &mainprogram->globfbo);
+	glBindFramebuffer(GL_FRAMEBUFFER, mainprogram->globfbo);
+	glFramebufferTexture2D(GL_FRAMEBUFFER, GL_COLOR_ATTACHMENT0, GL_TEXTURE_2D, mainprogram->globfbotex, 0);
 
 	mainprogram->cwbox->vtxcoords->w = w / 5.0f;
 	mainprogram->cwbox->vtxcoords->h = h / 5.0f;
@@ -13738,13 +13739,6 @@ int main(int argc, char* argv[]){
 	FT_Set_Pixel_Sizes(face, 0, 48);
 	glEnable(GL_BLEND);
 	glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
-	glGenTextures(1, &ftex);
-	glBindTexture(GL_TEXTURE_2D, ftex);
-	glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_EDGE);
-	glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_EDGE);
-	glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR);
-	glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
-	glPixelStorei(GL_UNPACK_ALIGNMENT, 1);
 
 	GLuint vertexShaderObject = glCreateShader(GL_VERTEX_SHADER);
 	GLuint fragmentShaderObject = glCreateShader(GL_FRAGMENT_SHADER);
@@ -14322,19 +14316,19 @@ int main(int argc, char* argv[]){
 								mainprogram->tunemidi = false;
 								mainprogram->tmlearn = TM_NONE;
 								mainprogram->drawnonce = false;
-								SDL_DestroyWindow(mainprogram->tunemidiwindow);
+								SDL_HideWindow(mainprogram->tunemidiwindow);
 							}
 						}
 						if (mainprogram->prefwindow) {
 							if (e.window.windowID == SDL_GetWindowID(mainprogram->prefwindow)) {
 								mainprogram->prefon = false;
 								mainprogram->drawnonce = false;
-								SDL_DestroyWindow(mainprogram->prefwindow);
+								SDL_HideWindow(mainprogram->prefwindow);
 							}
 						}
 						for (int i = 0; i < mainprogram->mixwindows.size(); i++) {
 							if (e.window.windowID == SDL_GetWindowID(mainprogram->mixwindows[i]->win)) {
-								SDL_DestroyWindow(mainprogram->mixwindows[i]->win);
+								SDL_HideWindow(mainprogram->mixwindows[i]->win);
 								mainprogram->mixwindows.erase(mainprogram->mixwindows.begin() + i);
 							}
 						}

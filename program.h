@@ -389,10 +389,6 @@ class Program {
 		std::string backupname;
 		int cursorpos;
 
-		GLuint boxbuf;
-		GLuint boxtbuf;
-		GLuint boxvao;
-		
 		std::mutex syncmutex;
 		std::condition_variable sync;
 		bool syncnow = false;
