@@ -252,6 +252,7 @@ class Program {
 		Menu *loopmenu = nullptr;
 		Menu *deckmenu = nullptr;
 		Menu *laymenu = nullptr;
+		Menu *loadmenu = nullptr;
 		Menu *mixtargetmenu = nullptr;
 		Menu *mixenginemenu = nullptr;
 		Menu *livemenu = nullptr;
@@ -271,6 +272,7 @@ class Program {
 		int menux;
 		int menuy;
 		std::vector<int> menuresults;
+		bool test = false;
 		int mx;
 		int my;
 		float ow = 1920.0f;
@@ -447,13 +449,13 @@ extern void save_layerfile(const std::string &path);
 extern void save_mix(const std::string &path);
 extern void save_deck(const std::string &path);
 extern void open_layerfile(const std::string &path, int reset);
-extern void open_mix(const char *path);
+extern void open_mix(const std::string &path);
 extern void open_deck(const std::string &path, bool alive);
 extern void open_binfiles();
 extern void open_bindir();
-extern void open_handlefile(std::string path);
-extern void save_bin(std::string &path);
-extern void open_bin(std::string &path);
+extern void open_handlefile(const std::string &path);
+extern void save_bin(const std::string &path);
+extern void open_bin(const std::string &path);
 extern Bin *new_bin(const std::string &name);
 extern int read_binslist();
 extern void save_binslist();
@@ -467,6 +469,7 @@ extern BinElement *find_element(int size, int k, int i, int j, bool olc);
 
 extern GLuint copy_tex(GLuint tex);
 extern GLuint copy_tex(GLuint tex, int tw, int th);
+extern GLuint copy_tex(GLuint tex, int tw, int th, bool yflip);
 
 void open_genmidis(std::string path);
 void save_genmidis(std::string path);

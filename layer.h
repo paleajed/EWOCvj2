@@ -125,6 +125,7 @@ class Layer {
 		bool openerr = false;
 		bool copying = false;
 		bool firsttime = true;
+		bool newframe = false;
 		frame_result *decresult;
 		std::thread decoding;
 		void get_frame();

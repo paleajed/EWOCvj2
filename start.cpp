@@ -106,6 +106,7 @@ std::vector<GLuint> thbvao;
 static GLuint boxvao;
 FT_Face face;
 std::vector<std::string> thpath;
+std::vector<ELEM_TYPE> thtype;
 float w, h, w2, h2, smw, smh;
 SDL_GLContext glc;
 SDL_GLContext glc_tm;
@@ -1534,7 +1535,6 @@ bool thread_vidopen(Layer *lay, AVInputFormat *ifmt, bool skip) {
      	lay->video_stream = lay->video->streams[lay->video_stream_idx];
         lay->video_dec_ctx = lay->video_stream->codec;
         lay->vidformat = lay->video_dec_ctx->codec_id;
-		glBindTexture(GL_TEXTURE_2D, lay->texture);
         if (lay->vidformat == 188 or lay->vidformat == 187) {
         	if (lay->databuf) free(lay->databuf);
 			lay->databuf = (char*)malloc(lay->video_dec_ctx->width * lay->video_dec_ctx->height);
@@ -1859,6 +1859,7 @@ void set_thumbs() {
 	}
 	for(int i = 0; i < 32; i++) {
 		thpath.push_back("");
+		thtype.push_back(ELEM_FILE);
 		thumbtex.push_back(0);
 		glGenTextures(1, &thumbtex.back());
 		glBindTexture(GL_TEXTURE_2D, thumbtex.back());
@@ -2085,18 +2086,15 @@ Layer::Layer() {
 Layer::Layer(bool comp) {
     glClearColor(0, 0, 0, 0);
 
-    glGenTextures(1, &this->texture);
-    glActiveTexture(GL_TEXTURE0);
-    glBindTexture(GL_TEXTURE_2D, this->texture);
-	glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR);
-	glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
-	glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_BORDER);
-	glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_BORDER);
-
     glGenTextures(1, &this->fbotex);
     glActiveTexture(GL_TEXTURE0);
     glBindTexture(GL_TEXTURE_2D, this->fbotex);
-	glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA, w, h, 0, GL_RGBA, GL_UNSIGNED_BYTE, NULL);
+    if (comp) {
+		glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA, mainprogram->ow, mainprogram->oh, 0, GL_RGBA, GL_UNSIGNED_BYTE, NULL);
+	}
+	else {
+		glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA, w * 0.3f, h * 0.3f, 0, GL_RGBA, GL_UNSIGNED_BYTE, NULL);
+	}
 	glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR);
 	glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
 	glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_BORDER);
@@ -2304,7 +2302,6 @@ Effect *new_effect(Effect *effect) {
 }
 
 Layer::~Layer() {
-   	glDeleteTextures(1, &this->texture);
    	glDeleteTextures(1, &this->fbotex);
     glDeleteBuffers(1, &(this->vbuf));
     glDeleteBuffers(1, &(this->tbuf));
@@ -2950,66 +2947,50 @@ void calc_texture(Layer *lay, bool comp, bool alive) {
 	if (lay->effects.size()) opa = 1.0f;
 	else opa = lay->opacity->value;
 
-	if (comp and !mainprogram->prevvid and mainprogram->preveff) {
-		glBindFramebuffer(GL_FRAMEBUFFER, lay->fbo);
-		glDrawBuffer(GL_COLOR_ATTACHMENT0);
-		glClearColor(0.0f, 0.0f, 0.0f, 0.0f);
-		glClear(GL_COLOR_BUFFER_BIT);
-		if (lay->filename != "") {
-			float black[4] = {0.0f, 0.0f, 0.0f, 0.0f};
-			draw_box(NULL, black, -1.0f, 1.0f, 2.0f, -2.0f, laynocomp->texture);
-		}
-		glBindFramebuffer(GL_FRAMEBUFFER, mainprogram->globfbo);
-		glDrawBuffer(GL_COLOR_ATTACHMENT0);
-	}
-	else {
-		glActiveTexture(GL_TEXTURE0);
-		glBindTexture(GL_TEXTURE_2D, lay->texture);
-		if (!lay->liveinput) {
-			if (lay->decresult) {
-				//if (comp and !mainmix->compon) return;
-				if (lay->decresult->width) {
-					if (lay->dataformat == 188 or lay->vidformat == 187) {
-						if (lay->decresult->compression == 187) {
-							glCompressedTexImage2D(GL_TEXTURE_2D, 0, GL_COMPRESSED_RGBA_S3TC_DXT1_EXT, lay->decresult->width, lay->decresult->height, 0, lay->decresult->size, lay->decresult->data);
-						}
-						else if (lay->decresult->compression == 190) {
-							glCompressedTexImage2D(GL_TEXTURE_2D, 0, GL_COMPRESSED_RGBA_S3TC_DXT5_EXT, lay->decresult->width, lay->decresult->height, 0, lay->decresult->size, lay->decresult->data);
-						}
-					}
-					else { // implement Sub
-						glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA, lay->decresult->width, lay->decresult->height, 0, GL_RGBA, GL_UNSIGNED_BYTE, lay->decresult->data);
-					}
+	glActiveTexture(GL_TEXTURE0);
+	if (lay->decresult) {
+		//if (comp and !mainmix->compon) return;
+		if (lay->decresult->data and lay->decresult->width) {
+			lay->newframe = true;
+			GLuint tex;
+			glGenTextures(1, &tex);
+			glBindTexture(GL_TEXTURE_2D, tex);
+			glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_BORDER);
+			glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_BORDER);
+			glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR);
+			glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
+			if (lay->dataformat == 188 or lay->vidformat == 187) {
+				if (lay->decresult->compression == 187) {
+					glCompressedTexImage2D(GL_TEXTURE_2D, 0, GL_COMPRESSED_RGBA_S3TC_DXT1_EXT, lay->decresult->width, lay->decresult->height, 0, lay->decresult->size, lay->decresult->data);
+				}
+				else if (lay->decresult->compression == 190) {
+					glCompressedTexImage2D(GL_TEXTURE_2D, 0, GL_COMPRESSED_RGBA_S3TC_DXT5_EXT, lay->decresult->width, lay->decresult->height, 0, lay->decresult->size, lay->decresult->data);
 				}
 			}
-			lay->decresult->data = nullptr;
+			else { // implement Sub
+				glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA, lay->decresult->width, lay->decresult->height, 0, GL_RGBA, GL_UNSIGNED_BYTE, lay->decresult->data);
+			}
+			glDeleteTextures(1, &lay->fbotex);
+			if (comp) {
+				lay->fbotex = copy_tex(tex, mainprogram->ow, mainprogram->oh, 1);
+			}
+			else {
+				lay->fbotex = copy_tex(tex, w * 0.3f, h * 0.3f, 1);
+			}
+			glBindFramebuffer(GL_FRAMEBUFFER, lay->fbo);
+			glFramebufferTexture2D(GL_FRAMEBUFFER, GL_COLOR_ATTACHMENT0, GL_TEXTURE_2D, lay->fbotex, 0);
+			glBindFramebuffer(GL_FRAMEBUFFER, mainprogram->globfbo);
+			glDrawBuffer(GL_COLOR_ATTACHMENT0);
+			glDeleteTextures(1, &tex);
 		}
+	}
+	lay->decresult->data = nullptr;
+
+	if (lay->filename == "") {
 		glBindFramebuffer(GL_FRAMEBUFFER, lay->fbo);
 		glDrawBuffer(GL_COLOR_ATTACHMENT0);
 		glClearColor(0.0f, 0.0f, 0.0f, 0.0f);
 		glClear(GL_COLOR_BUFFER_BIT);
-		float black[4] = {1.0f, 1.0f, 1.0f, 0.0f};
-		if (lay->liveinput) {
-			draw_box(NULL, black, -1.0f, 1.0f, 2.0f, -2.0f, lay->liveinput->texture);
-		}
-		else if (lay->filename != "") {
-			draw_box(NULL, black, -1.0f, 1.0f, 2.0f, -2.0f, lay->texture);
-		}
-		if (!mainprogram->preveff) {
-			glBindFramebuffer(GL_FRAMEBUFFER, laynocomp->fbo);
-			glDrawBuffer(GL_COLOR_ATTACHMENT0);
-			glClearColor(0.0f, 0.0f, 0.0f, 0.0f);
-			glClear(GL_COLOR_BUFFER_BIT);
-			float black[4] = {1.0f, 1.0f, 1.0f, 0.0f};
-			if (lay->liveinput) {
-				draw_box(NULL, black, -1.0f, 1.0f, 2.0f, -2.0f, lay->liveinput->texture);
-			}
-			else if (lay->filename != "") {
-				draw_box(NULL, black, -1.0f, 1.0f, 2.0f, -2.0f, lay->texture);
-			}
-		}
-		glBindFramebuffer(GL_FRAMEBUFFER, mainprogram->globfbo);
-		glDrawBuffer(GL_COLOR_ATTACHMENT0);
 	}
 }
 
@@ -3058,6 +3039,7 @@ void display_texture(Layer *lay, bool deck) {
 						if (mainprogram->menuactivation) {
 							mainprogram->laymenu->state = 2;
 							mainmix->mouselayer = lay;
+							mainmix->mousedeck = deck;
 							mainprogram->menuactivation = false;
 						}
 						if (mainprogram->menuactivation) {
@@ -3074,6 +3056,21 @@ void display_texture(Layer *lay, bool deck) {
 					lay->vidmoving = false;
 					mainmix->moving = false;
 					mainprogram->dragbinel = nullptr;
+				}
+			}
+			else {
+				int size = lvec.size();
+				int numonscreen = size - mainmix->scrollpos[deck];
+				if (0 <= numonscreen and numonscreen <= 2) {
+					if (xvtxtoscr(mainmix->numw + deck * 1.0f + numonscreen * mainmix->layw) < mainprogram->mx and mainprogram->mx < deck * (w / 2.0f) + w / 2.0f) {
+						if (0 < mainprogram->my and mainprogram->my < yvtxtoscr(mainmix->layw)) {
+							if (mainprogram->menuactivation) {
+								mainprogram->loadmenu->state = 2;
+								mainmix->mousedeck = deck;
+								mainprogram->menuactivation = false;
+							}
+						}
+					}
 				}
 			}
 		}
@@ -4277,7 +4274,7 @@ void onestepfrom(bool stage, Node *node, Node *prevnode, GLuint prevfbotex) {
 		// //while((const char*)effect->pbuf != "TERCES") {}
 		// //glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA, mainprogram->ow, mainprogram->oh, 0, GL_RGBA, GL_UNSIGNED_BYTE, effect->pbuf);
 		
- 		
+ 
  		glBindFramebuffer(GL_FRAMEBUFFER, effect->fbo);
 		glDrawBuffer(GL_COLOR_ATTACHMENT0);
 		glClearColor( 0.f, 0.f, 0.f, 0.f );
@@ -4295,14 +4292,18 @@ void onestepfrom(bool stage, Node *node, Node *prevnode, GLuint prevfbotex) {
 		Layer *lay = effect->layer;
 		if (effect->node == lay->lasteffnode) {
 			GLuint fbocopy;
-			if ((mainprogram->preveff and stage == 0)) fbocopy = copy_tex(effect->fbotex, w, h);
-			else fbocopy = copy_tex(effect->fbotex, (int)(w * w * 0.3f / mainprogram->ow), (int)(h * h * 0.3f / mainprogram->oh));
+			float fac = 1.0f;
+			if ((mainprogram->preveff and stage == 0)) fbocopy = copy_tex(effect->fbotex, w * div, h * div);
+			else {
+				fbocopy = copy_tex(effect->fbotex, mainprogram->ow, mainprogram->oh);
+				fac = (w / h) / (mainprogram->ow / mainprogram->oh);
+			}
 			glBindFramebuffer(GL_FRAMEBUFFER, effect->fbo);
 			glDrawBuffer(GL_COLOR_ATTACHMENT0);
 			glClearColor(0.0f, 0.0f, 0.0f, 0.0f);
 			glClear(GL_COLOR_BUFFER_BIT);
 			float black[4] = {0.0f, 0.0f, 0.0f, 0.0f};
-			draw_box(NULL, black, -1.0f, 1.0f, 2.0f, -2.0f, lay->shiftx * div, lay->shifty * div, lay->scale, lay->opacity->value, 0, fbocopy, w, h);
+			draw_box(NULL, black, -1.0f, -1.0f, 2.0f * div, 2.0f * div * fac, lay->shiftx * div, lay->shifty * div, lay->scale, lay->opacity->value, 0, fbocopy, w, h);
 			glDeleteTextures(1, &fbocopy);
 		}
 		
@@ -4311,7 +4312,6 @@ void onestepfrom(bool stage, Node *node, Node *prevnode, GLuint prevfbotex) {
 	}
 	else if (node->type == VIDEO) {
 		Layer *lay = ((VideoNode*)node)->layer;
-		prevfbotex = lay->fbotex;
 		if (lay->blendnode) {
 			if (lay->blendnode->blendtype == 19) {
 				GLfloat chromatol = glGetUniformLocation(mainprogram->ShaderProgram, "chromatol");
@@ -4322,20 +4322,28 @@ void onestepfrom(bool stage, Node *node, Node *prevnode, GLuint prevfbotex) {
 				glUniform1f(chinv, lay->chinv->value);
 			}
 		}
-		if (lay->node == lay->lasteffnode) {
+		if (lay->node == lay->lasteffnode and lay->newframe) {
+			lay->newframe = false;
 			GLuint fbocopy;
-			if (mainprogram->preveff and stage == 0) fbocopy = copy_tex(lay->fbotex);
-			else fbocopy = copy_tex(lay->fbotex);
+			float fac = 1.0f;
+			if ((mainprogram->preveff and stage == 0)) fbocopy = copy_tex(lay->fbotex, w * div, h * div);
+			else {
+				fbocopy = copy_tex(lay->fbotex, mainprogram->ow, mainprogram->oh);
+				fac = (w / h) / (mainprogram->ow / mainprogram->oh);
+			}
 			glBindFramebuffer(GL_FRAMEBUFFER, lay->fbo);
 			glDrawBuffer(GL_COLOR_ATTACHMENT0);
 			glClearColor(0.0f, 0.0f, 0.0f, 0.0f);
 			glClear(GL_COLOR_BUFFER_BIT);
 			float black[4] = {0.0f, 0.0f, 0.0f, 0.0f};
-			draw_box(NULL, black, -1.0f, 1.0f, 2.0f, -2.0f, lay->shiftx, lay->shifty, lay->scale, lay->opacity->value, 0, fbocopy, w, h);
-			glBindFramebuffer(GL_FRAMEBUFFER, mainprogram->globfbo);
-			glDrawBuffer(GL_COLOR_ATTACHMENT0);
+			float pixelw = 2.0f / (float)w;
+			float pixelh = 2.0f / (float)h;
+			draw_box(NULL, black, -1.0f - pixelw, -1.0f - pixelh, 2.0f * (div + pixelw), 2.0f * (div + pixelh) * fac, lay->shiftx * div, lay->shifty * div, lay->scale, lay->opacity->value, 0, fbocopy, w, h);
 			glDeleteTextures(1, &fbocopy);
 		}
+		prevfbotex = lay->fbotex;
+		glBindFramebuffer(GL_FRAMEBUFFER, mainprogram->globfbo);
+		glDrawBuffer(GL_COLOR_ATTACHMENT0);
 	}
 	else if (node->type == BLEND) {
 		BlendNode *bnode = (BlendNode*)node;
@@ -4827,6 +4835,7 @@ void visu_thumbs() {
 								mainprogram->leftmousedown = false;
 								mainprogram->dragbinel = new BinElement;
 								mainprogram->dragbinel->path = thpath[k];
+								mainprogram->dragbinel->type = thtype[k];
 								mainprogram->dragtex = thumbtex[k];
 							}
 						}
@@ -4834,9 +4843,10 @@ void visu_thumbs() {
 							if (mainprogram->dragbinel) {
 								mainprogram->leftmouse = false;
 								thpath[k] = mainprogram->dragbinel->path;
-								thumbtex[k] = mainprogram->dragtex;
+								thtype[k] = mainprogram->dragbinel->type;
+								thumbtex[k] = copy_tex(mainprogram->dragtex);
 								mainprogram->dragbinel = nullptr;
-								save_shelf(mainprogram->binsdir + "shelfs.shelf");
+								save_shelf("./shelfs.shelf");
 							}
 						}
 					}	
@@ -10987,7 +10997,6 @@ void the_loop() {
 			if (k == 0) {
 				if (mainprogram->menuresults[0] > 0) {
 					std::string livename = "video=" + mainprogram->devices[mainprogram->menuresults[0]];
-					printf("%s\n", livename.c_str());
 					set_live_base(mainmix->mouselayer, livename);
 				}
 			}
@@ -11008,6 +11017,26 @@ void the_loop() {
 				filereq.detach();
 			}
 			else if (k == 4) {
+				mainprogram->pathto = "OPENDECK";
+				std::thread filereq (get_inname);
+				filereq.detach();
+			}
+			else if (k == 5) {
+				mainprogram->pathto = "SAVEDECK";
+				std::thread filereq (get_outname);
+				filereq.detach();
+			}
+			else if (k == 6) {
+				mainprogram->pathto = "OPENMIX";
+				std::thread filereq (get_inname);
+				filereq.detach();
+			}
+			else if (k == 7) {
+				mainprogram->pathto = "SAVEMIX";
+				std::thread filereq (get_outname);
+				filereq.detach();
+			}
+			else if (k == 8) {
 				if (std::find(mainmix->layersA.begin(), mainmix->layersA.end(), mainmix->mouselayer) != mainmix->layersA.end()) {
 					mainmix->delete_layer(mainmix->layersA, mainmix->mouselayer, true);
 				}
@@ -11021,7 +11050,7 @@ void the_loop() {
 					mainmix->delete_layer(mainmix->layersBcomp, mainmix->mouselayer, true);
 				}
 			}
-			else if (k == 5) {
+			else if (k == 9) {
 				mainmix->mouselayer->shiftx = 0.0f;
 				mainmix->mouselayer->shifty = 0.0f;
 			}
@@ -11035,6 +11064,64 @@ void the_loop() {
 		}
 		
 			
+		k = handle_menu(mainprogram->loadmenu);
+		if (k > -1) {
+			std::vector<Layer*> lvec = choose_layers(mainmix->mousedeck);
+			if (k == 0) {
+				if (mainprogram->menuresults[0] > 0) {
+					mainmix->add_layer(lvec, lvec.size());
+					std::string livename = "video=" + mainprogram->devices[mainprogram->menuresults[0]];
+					set_live_base(mainmix->mouselayer, livename);
+				}
+			}
+			if (k == 1) {
+				mainprogram->pathto = "OPENVIDEO";
+				std::thread filereq (get_inname);
+				filereq.detach();
+				mainprogram->loadlay = mainmix->add_layer(lvec, lvec.size());
+			}
+			else if (k == 2) {
+				mainmix->mouselayer = mainmix->add_layer(lvec, lvec.size());
+				mainprogram->pathto = "OPENLAYFILE";
+				std::thread filereq (get_inname);
+				filereq.detach();
+			}
+			else if (k == 3) {
+				mainmix->mouselayer = mainmix->add_layer(lvec, lvec.size());
+				mainprogram->pathto = "SAVELAYFILE";
+				std::thread filereq (get_outname);
+				filereq.detach();
+			}
+			else if (k == 4) {
+				mainprogram->pathto = "OPENDECK";
+				std::thread filereq (get_inname);
+				filereq.detach();
+			}
+			else if (k == 5) {
+				mainprogram->pathto = "SAVEDECK";
+				std::thread filereq (get_outname);
+				filereq.detach();
+			}
+			else if (k == 6) {
+				mainprogram->pathto = "OPENMIX";
+				std::thread filereq (get_inname);
+				filereq.detach();
+			}
+			else if (k == 7) {
+				mainprogram->pathto = "SAVEMIX";
+				std::thread filereq (get_outname);
+				filereq.detach();
+			}
+		}
+	
+		if (mainprogram->menuchosen) {
+			mainprogram->menuchosen = false;
+			mainprogram->leftmouse = 0;
+			mainprogram->menuactivation = 0;
+			mainprogram->menuresults.clear();
+		}
+		
+		
 		// Draw and handle genmidimenu
 		k = handle_menu(mainprogram->genmidimenu);
 		if (k == 0) {
@@ -11075,12 +11162,12 @@ void the_loop() {
 		// Draw and handle genericmenu
 		k = handle_menu(mainprogram->genericmenu);
 		if (k == 0) {
-			mainprogram->pathto = "OPENFILE";
+			mainprogram->pathto = "OPENSTATE";
 			std::thread filereq (get_inname);
 			filereq.detach();
 		}
 		else if (k == 1) {
-			mainprogram->pathto = "SAVEMIX";
+			mainprogram->pathto = "SAVESTATE";
 			std::thread filereq (get_outname);
 			filereq.detach();
 		}
@@ -11870,6 +11957,33 @@ void save_layerfile(const std::string &path) {
 	wfile.close();
 }
 
+void save_state(const std::string &path) {
+	std::string ext = path.substr(path.length() - 6, std::string::npos);
+	std::string str;
+	if (ext != ".state") str = path + ".state";
+	else str = path;
+	ofstream wfile;
+	wfile.open(str);
+	wfile << "EWOCvj SAVESTATE V0.1\n";
+	wfile << "PREVEFF\n";
+	wfile << std::to_string(mainprogram->preveff);
+	wfile << "\n";
+	wfile << "COMPON\n";
+	wfile << std::to_string(mainmix->compon);
+	wfile << "\n";
+	wfile << "ENDOFFILE\n";
+	wfile.close();
+	
+	bool save = mainprogram->preveff;
+	mainprogram->preveff = true;
+	save_mix(remove_extension(path) + ".state1");
+	mainprogram->preveff = false;
+	save_mix(remove_extension(path) + ".state2");
+	save_genmidis(remove_extension(path) + ".midi");
+	save_shelf(remove_extension(path) + ".shelf");
+	mainprogram->preveff = save;
+}
+
 void save_mix(const std::string &path) {
 	std::string ext = path.substr(path.length() - 5, std::string::npos);
 	std::string str;
@@ -12210,7 +12324,34 @@ void open_layerfile(const std::string &path, int reset) {
 	rfile.close();
 }
 
-void open_mix(const char *path) {
+void open_state(const std::string &path) {
+	ifstream rfile;
+	rfile.open(path);
+	std::string istring;
+	getline(rfile, istring);
+	
+	mainprogram->preveff = true;
+	open_mix(remove_extension(path) + ".state1.ewoc");
+	mainprogram->preveff = false;
+	open_mix(remove_extension(path) + ".state2.ewoc");
+	open_genmidis(remove_extension(path) + ".midi");
+	open_shelf(remove_extension(path) + ".shelf");
+	
+	while (getline(rfile, istring)) {
+		if (istring == "ENDOFFILE") break;
+		if (istring == "PREVEFF") {
+			getline(rfile, istring);
+			mainprogram->preveff = std::stoi(istring);
+		}
+		if (istring == "COMPON") {
+			getline(rfile, istring);
+			mainmix->compon = std::stoi(istring);
+		}
+	}
+	rfile.close();
+}
+
+void open_mix(const std::string &path) {
 	ifstream rfile;
 	rfile.open(path);
 	std::string istring;
@@ -12886,7 +13027,7 @@ void open_bindir() {
 	else mainprogram->openbindir = false;
 }
 
-void open_handlefile(std::string path) {
+void open_handlefile(const std::string &path) {
 	Layer *lay = new Layer(true);
 	lay->dummy = 1;
 	open_video(1, lay, path, true);
@@ -12948,10 +13089,14 @@ void open_handlefile(std::string path) {
 }
 
 GLuint copy_tex(GLuint tex) {
-	return copy_tex(tex, (int)(w * 0.3f), (int)(h * 0.3f));
+	return copy_tex(tex, (int)(w * 0.3f), (int)(h * 0.3f), 0);
 }
 
 GLuint copy_tex(GLuint tex, int tw, int th) {
+	return copy_tex(tex, tw, th, 0);
+}
+
+GLuint copy_tex(GLuint tex, int tw, int th, bool yflip) {
 	GLuint smalltex, sfbo, dfbo;
 	glGenTextures(1, &smalltex);
 	glBindTexture(GL_TEXTURE_2D, smalltex);
@@ -12960,20 +13105,20 @@ GLuint copy_tex(GLuint tex, int tw, int th) {
 	glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR);
 	glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
 	glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA, tw, th, 0, GL_RGBA, GL_UNSIGNED_BYTE, NULL);
-	glGenFramebuffers(1, &dfbo);
-	glBindFramebuffer(GL_FRAMEBUFFER, dfbo);
+	glBindFramebuffer(GL_FRAMEBUFFER, frbuf[1]);
 	glFramebufferTexture2D(GL_FRAMEBUFFER, GL_COLOR_ATTACHMENT0, GL_TEXTURE_2D, smalltex, 0);
-	glGenFramebuffers(1, &sfbo);
-	glBindFramebuffer(GL_FRAMEBUFFER, sfbo);
+	glBindFramebuffer(GL_FRAMEBUFFER, frbuf[0]);
 	glFramebufferTexture2D(GL_FRAMEBUFFER, GL_COLOR_ATTACHMENT0, GL_TEXTURE_2D, tex, 0);
 	int sw, sh;
 	glBindTexture(GL_TEXTURE_2D, tex);
 	glGetTexLevelParameteriv(GL_TEXTURE_2D, 0, GL_TEXTURE_WIDTH, &sw);
 	glGetTexLevelParameteriv(GL_TEXTURE_2D, 0, GL_TEXTURE_HEIGHT, &sh);
-	glBlitNamedFramebuffer(sfbo, dfbo, 0, 0, sw, sh , 0, 0, tw, th, GL_COLOR_BUFFER_BIT, GL_LINEAR);
-	glDeleteFramebuffers(1, &sfbo);
-	glDeleteFramebuffers(1, &dfbo);
-	
+	if (yflip) {
+		glBlitNamedFramebuffer(frbuf[0], frbuf[1], 0, sh, sw, 0 , 0, 0, tw, th, GL_COLOR_BUFFER_BIT, GL_LINEAR);
+	}
+	else {
+		glBlitNamedFramebuffer(frbuf[0], frbuf[1], 0, 0, sw, sh , 0, 0, tw, th, GL_COLOR_BUFFER_BIT, GL_LINEAR);
+	}
 	return smalltex;
 }
 
@@ -13061,9 +13206,9 @@ void open_thumb(std::string path, GLuint tex) {
 	
 }
 
-void save_bin(std::string &path) {
+void save_bin(const std::string &path) {
 	ofstream wfile;
-	wfile.open(path.c_str());
+	wfile.open(path);
 	wfile << "EWOCvj BINFILE V0.1\n";
 	
 	wfile << "ELEMS\n";
@@ -13130,6 +13275,8 @@ void save_shelf(const std::string &path) {
 	for (int i = 0; i < thpath.size(); i++) {
 		wfile << thpath[i];
 		wfile << "\n";
+		wfile << std::to_string(thtype[i]);
+		wfile << "\n";
 	}
 	wfile << "ENDOFELEMS\n";
 	
@@ -13151,36 +13298,88 @@ void open_shelf(const std::string &path) {
 			while (getline(rfile, istring)) {
 				if (istring == "ENDOFELEMS") break;
 				thpath[count] = istring;
-				printf("%s\n", istring.c_str());
-				Layer lay = new Layer(true);
-				lay.dummy = 1;
-				open_video(1, &lay, thpath[count], true);
-				lay.frame = lay.numf / 2.0f;
-				lay.prevframe = -1;
-				lay.ready = true;
-				lay.startdecode.notify_one();
-				std::unique_lock<std::mutex> lock(lay.endlock);
-				lay.enddecode.wait(lock, [&]{return lay.processed;});
-				lay.processed = false;
-				lock.unlock();
-				if (lay.openerr) {
-					printf("error!\n");
-					lay.openerr = false;
+				getline(rfile, istring);
+				thtype[count] = (ELEM_TYPE)std::stoi(istring);
+				if (thpath[count] == "") {
+					//glBindTexture(GL_TEXTURE_2D, thumbtex[count]);
+					//glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA, 0, 0, 0, GL_RGBA, GL_UNSIGNED_BYTE, nullptr);
 					count++;
 					continue;
 				}
-				glBindTexture(GL_TEXTURE_2D, thumbtex[count]);
-				if (lay.dataformat == 188) {
-					if (lay.decresult->compression == 187) {
-						glCompressedTexImage2D(GL_TEXTURE_2D, 0, GL_COMPRESSED_RGBA_S3TC_DXT1_EXT, lay.decresult->width, lay.decresult->height, 0, lay.decresult->size, lay.decresult->data);
+				Layer *lay = new Layer(true);
+				lay->dummy = true;
+				if (thtype[count] == ELEM_FILE) {
+					open_video(1, lay, thpath[count], true);
+					lay->frame = lay->numf / 2.0f;
+					lay->prevframe = -1;
+					lay->ready = true;
+					lay->startdecode.notify_one();
+					std::unique_lock<std::mutex> lock(lay->endlock);
+					lay->enddecode.wait(lock, [&]{return lay->processed;});
+					lay->processed = false;
+					lock.unlock();
+					glBindTexture(GL_TEXTURE_2D, thumbtex[count]);
+					if (lay->dataformat == 188) {
+						if (lay->decresult->compression == 187) {
+							glCompressedTexImage2D(GL_TEXTURE_2D, 0, GL_COMPRESSED_RGBA_S3TC_DXT1_EXT, lay->decresult->width, lay->decresult->height, 0, lay->decresult->size, lay->decresult->data);
+						}
+						else if (lay->decresult->compression == 190) {
+							glCompressedTexImage2D(GL_TEXTURE_2D, 0, GL_COMPRESSED_RGBA_S3TC_DXT5_EXT, lay->decresult->width, lay->decresult->height, 0, lay->decresult->size, lay->decresult->data);
+						}
 					}
-					else if (lay.decresult->compression == 190) {
-						glCompressedTexImage2D(GL_TEXTURE_2D, 0, GL_COMPRESSED_RGBA_S3TC_DXT5_EXT, lay.decresult->width, lay.decresult->height, 0, lay.decresult->size, lay.decresult->data);
+					else { 
+						glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA, lay->decresult->width, lay->decresult->height, 0, GL_RGBA, GL_UNSIGNED_BYTE, lay->decresult->data);
 					}
 				}
-				else { 
-					glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA, lay.decresult->width, lay.decresult->height, 0, GL_RGBA, GL_UNSIGNED_BYTE, lay.decresult->data);
-				}	
+				else if (thtype[count] == ELEM_LAYER) {
+					lay->pos = 0;
+					lay->node = mainprogram->nodesmain->currpage->add_videonode(2);
+					lay->node->layer = lay;
+					lay->lasteffnode = lay->node;
+					lay->node->calc = true;
+					lay->node->walked = false;
+					mainmix->mouselayer = lay;
+					open_layerfile(thpath[count], true);
+					lay->playbut->value = false;
+					lay->revbut->value = false;
+					lay->bouncebut->value = false;
+					for (int k = 0; k < lay->effects.size(); k++) {
+						lay->effects[k]->node->calc = true;
+						lay->effects[k]->node->walked = false;
+					}
+					lay->frame = 0.0f;
+					lay->prevframe = -1;
+					lay->ready = true;
+					lay->startdecode.notify_one();
+					std::unique_lock<std::mutex> lock(lay->endlock);
+					lay->enddecode.wait(lock, [&]{return lay->processed;});
+					lay->processed = false;
+					lock.unlock();
+					glBindTexture(GL_TEXTURE_2D, lay->fbotex);
+					int sw, sh;
+					glGetTexLevelParameteriv(GL_TEXTURE_2D, 0, GL_TEXTURE_WIDTH, &sw);
+					glGetTexLevelParameteriv(GL_TEXTURE_2D, 0, GL_TEXTURE_HEIGHT, &sh);
+					if (lay->dataformat == 188 or lay->vidformat == 187) {
+						if (lay->decresult->compression == 187) {
+							glCompressedTexImage2D(GL_TEXTURE_2D, 0, GL_COMPRESSED_RGBA_S3TC_DXT1_EXT, sw, sh, 0, lay->decresult->size, lay->decresult->data);
+						}
+						else if (lay->decresult->compression == 190) {
+							glCompressedTexImage2D(GL_TEXTURE_2D, 0, GL_COMPRESSED_RGBA_S3TC_DXT5_EXT, sw, sh, 0, lay->decresult->size, lay->decresult->data);
+						}
+					}
+					else {
+						glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA, sw, sh, 0, GL_RGBA, GL_UNSIGNED_BYTE, lay->decresult->data);
+					}
+					onestepfrom(0, lay->node, NULL, -1);
+					if (lay->effects.size()) {
+						thumbtex[count] = copy_tex(lay->effects[lay->effects.size() - 1]->fbotex);
+					}
+					else {
+						thumbtex[count] = copy_tex(lay->fbotex);
+					}
+				}
+				lay->closethread = true;
+				delete lay;
 				count++;
 			}
 		}
@@ -13189,9 +13388,9 @@ void open_shelf(const std::string &path) {
 	rfile.close();
 }
 
-void open_bin(std::string &path, Bin *bin) {
+void open_bin(const std::string &path, Bin *bin) {
 	ifstream rfile;
-	rfile.open(path.c_str());
+	rfile.open(path);
 	std::string istring;
 	getline(rfile, istring);
 	//check if binfile
@@ -13784,7 +13983,8 @@ int main(int argc, char* argv[]){
 	GLint isLinked = 0;
 	glGetProgramiv(mainprogram->ShaderProgram, GL_LINK_STATUS, &isLinked);
 	printf("log %d\n", isLinked);
-
+	fflush(stdout);
+	glUseProgram(mainprogram->ShaderProgram);
 
  	std::vector<std::string> effects;
  	effects.push_back("Delete effect");
@@ -13884,9 +14084,25 @@ int main(int argc, char* argv[]){
  	layops.push_back("Open video");
 	layops.push_back("Open layer");
 	layops.push_back("Save layer");
+	layops.push_back("Open deck");
+	layops.push_back("Save deck");
+ 	layops.push_back("Open mix");
+	layops.push_back("Save mix");
   	layops.push_back("Delete layer");
   	layops.push_back("Center video");
  	make_menu("laymenu", mainprogram->laymenu, layops);
+
+ 	std::vector<std::string> loadops;
+ 	loadops.push_back("submenu livemenu");
+ 	loadops.push_back("Connect live");
+ 	loadops.push_back("Open video");
+	loadops.push_back("Open layer");
+	loadops.push_back("Save layer");
+	loadops.push_back("Open deck");
+	loadops.push_back("Save deck");
+ 	loadops.push_back("Open mix");
+	loadops.push_back("Save mix");
+ 	make_menu("loadmenu", mainprogram->loadmenu, loadops);
 
  	std::vector<std::string> wipes;
  	wipes.push_back("CROSSFADE");
@@ -13966,8 +14182,8 @@ int main(int argc, char* argv[]){
   	make_menu("genmidimenu", mainprogram->genmidimenu, genmidi);
 
  	std::vector<std::string> generic;
-  	generic.push_back("Open mix");
-  	generic.push_back("Save mix");
+  	generic.push_back("Open state");
+  	generic.push_back("Save state");
   	generic.push_back("Preferences");
   	generic.push_back("Quit");
   	make_menu("genericmenu", mainprogram->genericmenu, generic);
@@ -13986,7 +14202,7 @@ int main(int argc, char* argv[]){
 	mainprogram->prefs = new Preferences;
 	mainprogram->prefs->load();
 	
-	
+
 	mainprogram->newbinbox = new Box;
 	mainprogram->newbinbox->vtxcoords->x1 = -0.15f;
 	mainprogram->newbinbox->vtxcoords->w = 0.3f;
@@ -14009,10 +14225,9 @@ int main(int argc, char* argv[]){
 		if (exists(binname)) open_bin(binname, mainprogram->bins[i]);
 	}
 	make_currbin(cb);
-		
+	
 	set_thumbs();
-	if (exists(mainprogram->binsdir + "shelfs.shelf")) open_shelf(mainprogram->binsdir + "shelfs.shelf");
-	glUseProgram(mainprogram->ShaderProgram);
+	if (exists("./shelfs.shelf")) open_shelf("./shelfs.shelf");
 		
 	GLint Sampler0 = glGetUniformLocation(mainprogram->ShaderProgram, "Sampler0");
 	glUniform1i(Sampler0, 0);
@@ -14044,7 +14259,7 @@ int main(int argc, char* argv[]){
 	}
 	mainprogram->nodesmain->currpage->nodes.clear();
 	mainprogram->nodesmain->currpage->nodescomp.clear();
-	
+
 	GLint endSampler0 = glGetUniformLocation(mainprogram->ShaderProgram, "endSampler0");
 	glUniform1i(endSampler0, 1);
 	GLint endSampler1 = glGetUniformLocation(mainprogram->ShaderProgram, "endSampler1");
@@ -14183,6 +14398,10 @@ int main(int argc, char* argv[]){
 				std::string str(mainprogram->path);
 				open_video(0, mainprogram->loadlay, str, true);
 			}
+			else if (mainprogram->pathto == "SAVESTATE") {
+				std::string str(mainprogram->path);
+				save_state(str);
+			}
 			else if (mainprogram->pathto == "SAVEMIX") {
 				std::string str(mainprogram->path);
 				save_mix(str);
@@ -14202,8 +14421,13 @@ int main(int argc, char* argv[]){
 			else if (mainprogram->pathto == "OPENLAYFILE") {
 				open_layerfile(mainprogram->path, 0);
 			}
-			else if (mainprogram->pathto == "OPENFILE") {
-				open_mix(mainprogram->path);
+			else if (mainprogram->pathto == "OPENSTATE") {
+				std::string str(mainprogram->path);
+				open_state(str);
+			}
+			else if (mainprogram->pathto == "OPENMIX") {
+				std::string str(mainprogram->path);
+				open_mix(str);
 			}
 			else if (mainprogram->pathto == "OPENBINFILES") {
 				mainprogram->openbinfile = true;
@@ -14351,12 +14575,12 @@ int main(int argc, char* argv[]){
 				}
 				if (mainprogram->ctrl) {
 					if (e.key.keysym.sym == SDLK_s) {
-						mainprogram->pathto = "SAVEMIX";
+						mainprogram->pathto = "SAVESTATE";
 						std::thread filereq (get_outname);
 						filereq.detach();
 					}
 					if (e.key.keysym.sym == SDLK_o) {
-						mainprogram->pathto = "OPENFILE";
+						mainprogram->pathto = "OPENSTATE";
 						std::thread filereq (get_inname);
 						filereq.detach();
 					}
