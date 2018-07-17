@@ -94,6 +94,9 @@ Program *mainprogram;
 Mixer *mainmix;
 
 
+TCHAR buf [MAX_PATH];
+int retgtp = GetTempPath(MAX_PATH, buf);
+std::string temppath (buf);
 static GLuint mixvao;
 static GLuint fbotex[2];
 static GLuint frbuf[2];
@@ -1445,7 +1448,9 @@ void Layer::get_frame(){
 				}
 				continue;
 			}
-			this->decode_frame();
+			if ((int)(this->frame) != this->prevframe) {
+				this->decode_frame();
+			}
 			if (mainmix->firststage) {
 				if (std::find(mainmix->layersAcomp.begin(), mainmix->layersAcomp.end(), this) != mainmix->layersAcomp.end()) {
 					mainmix->compon = true;
@@ -2959,6 +2964,7 @@ void calc_texture(Layer *lay, bool comp, bool alive) {
 			glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_BORDER);
 			glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR);
 			glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
+			glDeleteTextures(1, &lay->fbotex);
 			if (lay->dataformat == 188 or lay->vidformat == 187) {
 				if (lay->decresult->compression == 187) {
 					glCompressedTexImage2D(GL_TEXTURE_2D, 0, GL_COMPRESSED_RGBA_S3TC_DXT1_EXT, lay->decresult->width, lay->decresult->height, 0, lay->decresult->size, lay->decresult->data);
@@ -2966,22 +2972,22 @@ void calc_texture(Layer *lay, bool comp, bool alive) {
 				else if (lay->decresult->compression == 190) {
 					glCompressedTexImage2D(GL_TEXTURE_2D, 0, GL_COMPRESSED_RGBA_S3TC_DXT5_EXT, lay->decresult->width, lay->decresult->height, 0, lay->decresult->size, lay->decresult->data);
 				}
+				lay->fbotex = tex;
 			}
 			else { // implement Sub
 				glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA, lay->decresult->width, lay->decresult->height, 0, GL_RGBA, GL_UNSIGNED_BYTE, lay->decresult->data);
-			}
-			glDeleteTextures(1, &lay->fbotex);
-			if (comp) {
-				lay->fbotex = copy_tex(tex, mainprogram->ow, mainprogram->oh, 1);
-			}
-			else {
-				lay->fbotex = copy_tex(tex, w * 0.3f, h * 0.3f, 1);
+				if (comp) {
+					lay->fbotex = copy_tex(tex, mainprogram->ow, mainprogram->oh, 1);
+				}
+				else {
+					lay->fbotex = copy_tex(tex, w * 0.3f, h * 0.3f, 1);
+				}
+				glDeleteTextures(1, &tex);
 			}
 			glBindFramebuffer(GL_FRAMEBUFFER, lay->fbo);
 			glFramebufferTexture2D(GL_FRAMEBUFFER, GL_COLOR_ATTACHMENT0, GL_TEXTURE_2D, lay->fbotex, 0);
 			glBindFramebuffer(GL_FRAMEBUFFER, mainprogram->globfbo);
 			glDrawBuffer(GL_COLOR_ATTACHMENT0);
-			glDeleteTextures(1, &tex);
 		}
 	}
 	lay->decresult->data = nullptr;
@@ -4293,7 +4299,7 @@ void onestepfrom(bool stage, Node *node, Node *prevnode, GLuint prevfbotex) {
 		if (effect->node == lay->lasteffnode) {
 			GLuint fbocopy;
 			float fac = 1.0f;
-			if ((mainprogram->preveff and stage == 0)) fbocopy = copy_tex(effect->fbotex, w * div, h * div);
+			if (mainprogram->preveff and stage == 0) fbocopy = copy_tex(effect->fbotex);
 			else {
 				fbocopy = copy_tex(effect->fbotex, mainprogram->ow, mainprogram->oh);
 				fac = (w / h) / (mainprogram->ow / mainprogram->oh);
@@ -7407,9 +7413,9 @@ void handle_numboxes(std::vector<Box*> &numboxes) {
 								mainmix->nbframesA[mainmix->page[0]].push_back(lvec[j]);
 							}
 							mainmix->mousedeck = 0;
-							save_deck("./tempdeck_xch.deck");
-							open_deck("./tempdeck_A" + std::to_string(i) + comp + ".deck", 0);
-							boost::filesystem::rename("./tempdeck_xch.deck", "./tempdeck_A" + std::to_string(mainmix->page[0] + 1) + comp + ".deck");
+							save_deck(temppath + "/tempdeck_xch.deck");
+							open_deck(temppath + "/tempdeck_A" + std::to_string(i) + comp + ".deck", 0);
+							boost::filesystem::rename(temppath + "/tempdeck_xch.deck", temppath + "/tempdeck_A" + std::to_string(mainmix->page[0] + 1) + comp + ".deck");
 							for (int j = 0; j < lvec.size(); j++) {
 								lvec[j]->frame = mainmix->tempnbframes[i - 1][j]->frame;
 							}
@@ -7429,9 +7435,9 @@ void handle_numboxes(std::vector<Box*> &numboxes) {
 								mainmix->nbframesB[mainmix->page[1]].push_back(lvec[j]);
 							}
 							mainmix->mousedeck = 1;
-							save_deck("./tempdeck_xch.deck");
-							open_deck("./tempdeck_B" + std::to_string(i) + comp + ".deck", 0);
-							boost::filesystem::rename("./tempdeck_xch.deck", "./tempdeck_B" + std::to_string(mainmix->page[1] + 1) + comp + ".deck");
+							save_deck(temppath + "/tempdeck_xch.deck");
+							open_deck(temppath + "/tempdeck_B" + std::to_string(i) + comp + ".deck", 0);
+							boost::filesystem::rename(temppath + "/tempdeck_xch.deck", temppath + "/tempdeck_B" + std::to_string(mainmix->page[1] + 1) + comp + ".deck");
 							for (int j = 0; j < lvec.size(); j++) {
 								lvec[j]->frame = mainmix->tempnbframes[i - 1][j]->frame;
 							}
@@ -13346,6 +13352,7 @@ void open_shelf(const std::string &path) {
 					for (int k = 0; k < lay->effects.size(); k++) {
 						lay->effects[k]->node->calc = true;
 						lay->effects[k]->node->walked = false;
+						lay->lasteffnode = lay->effects[k]->node;
 					}
 					lay->frame = 0.0f;
 					lay->prevframe = -1;
@@ -13356,19 +13363,16 @@ void open_shelf(const std::string &path) {
 					lay->processed = false;
 					lock.unlock();
 					glBindTexture(GL_TEXTURE_2D, lay->fbotex);
-					int sw, sh;
-					glGetTexLevelParameteriv(GL_TEXTURE_2D, 0, GL_TEXTURE_WIDTH, &sw);
-					glGetTexLevelParameteriv(GL_TEXTURE_2D, 0, GL_TEXTURE_HEIGHT, &sh);
 					if (lay->dataformat == 188 or lay->vidformat == 187) {
 						if (lay->decresult->compression == 187) {
-							glCompressedTexImage2D(GL_TEXTURE_2D, 0, GL_COMPRESSED_RGBA_S3TC_DXT1_EXT, sw, sh, 0, lay->decresult->size, lay->decresult->data);
+							glCompressedTexImage2D(GL_TEXTURE_2D, 0, GL_COMPRESSED_RGBA_S3TC_DXT1_EXT, lay->decresult->width, lay->decresult->height, 0, lay->decresult->size, lay->decresult->data);
 						}
 						else if (lay->decresult->compression == 190) {
-							glCompressedTexImage2D(GL_TEXTURE_2D, 0, GL_COMPRESSED_RGBA_S3TC_DXT5_EXT, sw, sh, 0, lay->decresult->size, lay->decresult->data);
+							glCompressedTexImage2D(GL_TEXTURE_2D, 0, GL_COMPRESSED_RGBA_S3TC_DXT5_EXT, lay->decresult->width, lay->decresult->height, 0, lay->decresult->size, lay->decresult->data);
 						}
 					}
 					else {
-						glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA, sw, sh, 0, GL_RGBA, GL_UNSIGNED_BYTE, lay->decresult->data);
+						glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA, lay->decresult->width, lay->decresult->height, 0, GL_RGBA, GL_UNSIGNED_BYTE, lay->decresult->data);
 					}
 					onestepfrom(0, lay->node, NULL, -1);
 					if (lay->effects.size()) {
@@ -14245,15 +14249,15 @@ int main(int argc, char* argv[]){
 		mainmix->nbframesA[mainmix->page[0]].insert(mainmix->nbframesA[mainmix->page[0]].begin(), layA);
 		layA->clips.clear();
 		mainmix->mousedeck = 0;
-		save_deck("./tempdeck_A" + std::to_string(i + 1) + ".deck");
-		save_deck("./tempdeck_A" + std::to_string(i + 1) + "comp.deck");
+		save_deck(temppath + "/tempdeck_A" + std::to_string(i + 1) + ".deck");
+		save_deck(temppath + "/tempdeck_A" + std::to_string(i + 1) + "comp.deck");
 		mainmix->page[1] = i;
 		Layer *layB = mainmix->add_layer(mainmix->layersB, 0);
 		mainmix->nbframesB[mainmix->page[1]].insert(mainmix->nbframesB[mainmix->page[1]].begin(), layB);
 		layB->clips.clear();
 		mainmix->mousedeck = 1;
-		save_deck("./tempdeck_B" + std::to_string(i + 1) + ".deck");
-		save_deck("./tempdeck_B" + std::to_string(i + 1) + "comp.deck");
+		save_deck(temppath + "/tempdeck_B" + std::to_string(i + 1) + ".deck");
+		save_deck(temppath + "/tempdeck_B" + std::to_string(i + 1) + "comp.deck");
 		mainmix->layersA.clear();
 		mainmix->layersB.clear();
 	}
@@ -14289,10 +14293,10 @@ int main(int argc, char* argv[]){
 	
 	mainmix->page[0] = 0;
 	mainmix->mousedeck = 0;
-	open_deck("./tempdeck_A1.deck", 1);
+	open_deck(temppath + "/tempdeck_A1.deck", 1);
 	mainmix->page[1] = 0;
 	mainmix->mousedeck = 1;
-	open_deck("./tempdeck_B1.deck", 1);
+	open_deck(temppath + "/tempdeck_B1.deck", 1);
 	Layer *layA1 = mainmix->layersA[0];
 	Layer *layB1 = mainmix->layersB[0];
 	mainprogram->nodesmain->currpage->connect_nodes(layA1->node, mixnodeA);
