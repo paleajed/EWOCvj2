@@ -3819,7 +3819,6 @@ void onestepfrom(bool stage, Node *node, Node *prevnode, GLuint prevfbotex) {
 	GLint Sampler0 = glGetUniformLocation(mainprogram->ShaderProgram, "Sampler0");
 	glUniform1i(Sampler0, 0);
 	GLint interm = glGetUniformLocation(mainprogram->ShaderProgram, "interm");
-	GLint addon = glGetUniformLocation(mainprogram->ShaderProgram, "addon");
 	GLint blurswitch = glGetUniformLocation(mainprogram->ShaderProgram, "blurswitch");
 	GLint edgethickmode = glGetUniformLocation(mainprogram->ShaderProgram, "edgethickmode");
 	GLint fxid;
@@ -4291,7 +4290,6 @@ void onestepfrom(bool stage, Node *node, Node *prevnode, GLuint prevfbotex) {
 		glDrawArrays(GL_TRIANGLE_STRIP, 0, 4);
 		glUniform1i(interm, 0);
 		glUniform1i(down, 0);
-		glUniform1i(addon, 0);
 		glUniform1i(edgethickmode, 0);
 		prevfbotex = effect->fbotex;
 
@@ -13103,7 +13101,7 @@ GLuint copy_tex(GLuint tex, int tw, int th) {
 }
 
 GLuint copy_tex(GLuint tex, int tw, int th, bool yflip) {
-	GLuint smalltex, sfbo, dfbo;
+	GLuint smalltex;
 	glGenTextures(1, &smalltex);
 	glBindTexture(GL_TEXTURE_2D, smalltex);
 	glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_BORDER);
@@ -13111,20 +13109,25 @@ GLuint copy_tex(GLuint tex, int tw, int th, bool yflip) {
 	glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR);
 	glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
 	glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA, tw, th, 0, GL_RGBA, GL_UNSIGNED_BYTE, NULL);
-	glBindFramebuffer(GL_FRAMEBUFFER, frbuf[1]);
+	GLuint sfbo, dfbo;
+	glGenFramebuffers(1, &dfbo);
+	glBindFramebuffer(GL_FRAMEBUFFER, dfbo);
 	glFramebufferTexture2D(GL_FRAMEBUFFER, GL_COLOR_ATTACHMENT0, GL_TEXTURE_2D, smalltex, 0);
-	glBindFramebuffer(GL_FRAMEBUFFER, frbuf[0]);
+	glGenFramebuffers(1, &sfbo);
+	glBindFramebuffer(GL_FRAMEBUFFER, sfbo);
 	glFramebufferTexture2D(GL_FRAMEBUFFER, GL_COLOR_ATTACHMENT0, GL_TEXTURE_2D, tex, 0);
 	int sw, sh;
 	glBindTexture(GL_TEXTURE_2D, tex);
 	glGetTexLevelParameteriv(GL_TEXTURE_2D, 0, GL_TEXTURE_WIDTH, &sw);
 	glGetTexLevelParameteriv(GL_TEXTURE_2D, 0, GL_TEXTURE_HEIGHT, &sh);
 	if (yflip) {
-		glBlitNamedFramebuffer(frbuf[0], frbuf[1], 0, sh, sw, 0 , 0, 0, tw, th, GL_COLOR_BUFFER_BIT, GL_LINEAR);
+		glBlitNamedFramebuffer(sfbo, dfbo, 0, sh, sw, 0 , 0, 0, tw, th, GL_COLOR_BUFFER_BIT, GL_LINEAR);
 	}
 	else {
-		glBlitNamedFramebuffer(frbuf[0], frbuf[1], 0, 0, sw, sh , 0, 0, tw, th, GL_COLOR_BUFFER_BIT, GL_LINEAR);
+		glBlitNamedFramebuffer(sfbo, dfbo, 0, 0, sw, sh , 0, 0, tw, th, GL_COLOR_BUFFER_BIT, GL_LINEAR);
 	}
+	glDeleteFramebuffers(1, &sfbo);
+	glDeleteFramebuffers(1, &dfbo);
 	return smalltex;
 }
 
@@ -14231,7 +14234,6 @@ int main(int argc, char* argv[]){
 	make_currbin(cb);
 	
 	set_thumbs();
-	if (exists("./shelfs.shelf")) open_shelf("./shelfs.shelf");
 		
 	GLint Sampler0 = glGetUniformLocation(mainprogram->ShaderProgram, "Sampler0");
 	glUniform1i(Sampler0, 0);
@@ -14388,6 +14390,7 @@ int main(int argc, char* argv[]){
 
     // must put this here or problem with fbovao[2] ?????
 	set_fbo();
+	if (exists("./shelfs.shelf")) open_shelf("./shelfs.shelf");
 	
 	std::chrono::high_resolution_clock::time_point begintime = std::chrono::high_resolution_clock::now();
 	std::chrono::duration<double> elapsed;
