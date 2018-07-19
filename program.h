@@ -444,6 +444,7 @@ extern float xscrtovtx(float scrcoord);
 extern float yscrtovtx(float scrcoord);
 
 extern float pdistance(float x, float y, float x1, float y1, float x2, float y2);
+extern void enddrag();
 
 extern void save_layerfile(const std::string &path);
 extern void save_mix(const std::string &path);

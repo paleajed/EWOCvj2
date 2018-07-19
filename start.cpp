@@ -1960,9 +1960,9 @@ void set_fbovao2() {
 	GLfloat vcoords3[8];
 	GLfloat *p = vcoords3;
 	*p++ = -1.0f; *p++ = -1.0f;
-	*p++ = -1.0f; *p++ = 1.0f - (2.0f - 2.0f * (vidheight / (float)h));
+	*p++ = -1.0f; *p++ = (1.0f - (2.0f - 2.0f * (vidheight / (float)h)));
 	*p++ = 1.0f - (2.0f - 2.0f * (vidwidth / (float)w)); *p++ = -1.0f;
-	*p++ = 1.0f - (2.0f - 2.0f * (vidwidth / (float)w)); *p++ = 1.0f - (2.0f - 2.0f * (vidheight / (float)h));
+	*p++ = 1.0f - (2.0f - 2.0f * (vidwidth / (float)w)); *p++ = (1.0f - (2.0f - 2.0f * (vidheight / (float)h)));
 	GLfloat tcoords[] = {0.0f, 0.0f,
 						0.0f, 1.0f,
 						1.0f, 0.0f,
@@ -2090,6 +2090,14 @@ Layer::Layer() {
 
 Layer::Layer(bool comp) {
     glClearColor(0, 0, 0, 0);
+
+    glGenTextures(1, &this->texture);
+    glActiveTexture(GL_TEXTURE0);
+    glBindTexture(GL_TEXTURE_2D, this->texture);
+	glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR);
+	glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
+	glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_BORDER);
+	glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_BORDER);
 
     glGenTextures(1, &this->fbotex);
     glActiveTexture(GL_TEXTURE0);
@@ -2953,51 +2961,61 @@ void calc_texture(Layer *lay, bool comp, bool alive) {
 	else opa = lay->opacity->value;
 
 	glActiveTexture(GL_TEXTURE0);
-	if (lay->decresult) {
-		//if (comp and !mainmix->compon) return;
-		if (lay->decresult->data and lay->decresult->width) {
-			lay->newframe = true;
-			GLuint tex;
-			glGenTextures(1, &tex);
-			glBindTexture(GL_TEXTURE_2D, tex);
-			glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_BORDER);
-			glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_BORDER);
-			glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR);
-			glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
-			glDeleteTextures(1, &lay->fbotex);
-			if (lay->dataformat == 188 or lay->vidformat == 187) {
-				if (lay->decresult->compression == 187) {
-					glCompressedTexImage2D(GL_TEXTURE_2D, 0, GL_COMPRESSED_RGBA_S3TC_DXT1_EXT, lay->decresult->width, lay->decresult->height, 0, lay->decresult->size, lay->decresult->data);
+	glBindTexture(GL_TEXTURE_2D, lay->texture);
+	if (!lay->liveinput) {
+		if (lay->decresult) {
+			//if (comp and !mainmix->compon) return;
+			if (lay->decresult->width) {
+				if (lay->dataformat == 188 or lay->vidformat == 187) {
+					if (lay->decresult->compression == 187) {
+						glCompressedTexImage2D(GL_TEXTURE_2D, 0, GL_COMPRESSED_RGBA_S3TC_DXT1_EXT, lay->decresult->width, lay->decresult->height, 0, lay->decresult->size, lay->decresult->data);
+					}
+					else if (lay->decresult->compression == 190) {
+						glCompressedTexImage2D(GL_TEXTURE_2D, 0, GL_COMPRESSED_RGBA_S3TC_DXT5_EXT, lay->decresult->width, lay->decresult->height, 0, lay->decresult->size, lay->decresult->data);
+					}
 				}
-				else if (lay->decresult->compression == 190) {
-					glCompressedTexImage2D(GL_TEXTURE_2D, 0, GL_COMPRESSED_RGBA_S3TC_DXT5_EXT, lay->decresult->width, lay->decresult->height, 0, lay->decresult->size, lay->decresult->data);
+				else { // implement Sub
+					glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA, lay->decresult->width, lay->decresult->height, 0, GL_RGBA, GL_UNSIGNED_BYTE, lay->decresult->data);
 				}
-				lay->fbotex = tex;
 			}
-			else { // implement Sub
-				glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA, lay->decresult->width, lay->decresult->height, 0, GL_RGBA, GL_UNSIGNED_BYTE, lay->decresult->data);
-				if (comp) {
-					lay->fbotex = copy_tex(tex, mainprogram->ow, mainprogram->oh, 1);
-				}
-				else {
-					lay->fbotex = copy_tex(tex, w * 0.3f, h * 0.3f, 1);
-				}
-				glDeleteTextures(1, &tex);
-			}
-			glBindFramebuffer(GL_FRAMEBUFFER, lay->fbo);
-			glFramebufferTexture2D(GL_FRAMEBUFFER, GL_COLOR_ATTACHMENT0, GL_TEXTURE_2D, lay->fbotex, 0);
-			glBindFramebuffer(GL_FRAMEBUFFER, mainprogram->globfbo);
-			glDrawBuffer(GL_COLOR_ATTACHMENT0);
+		}
+		lay->decresult->data = nullptr;
+	}
+	glBindFramebuffer(GL_FRAMEBUFFER, lay->fbo);
+	glDrawBuffer(GL_COLOR_ATTACHMENT0);
+	glClearColor(0.0f, 0.0f, 0.0f, 0.0f);
+	glClear(GL_COLOR_BUFFER_BIT);
+	float black[4] = {1.0f, 1.0f, 1.0f, 1.0f};
+	float div;
+	float fac = 1.0f;
+	if (!comp) {
+		div = 0.3f;
+	}
+	else {
+		div = mainprogram->ow / w;
+		fac = (w / h) / (mainprogram->ow / mainprogram->oh);
+	}
+	if (lay->liveinput) {
+		draw_box(NULL, black, -1.0f, -1.0f + 2.0f * div * fac, 2.0f * div, -2.0f * div * fac, lay->shiftx, lay->shifty, lay->scale, opa, 0, lay->liveinput->texture, w, h);
+	}
+	else if (lay->filename != "") {
+		draw_box(NULL, black, -1.0f, -1.0f + 2.0f * div * fac, 2.0f * div, -2.0f * div * fac, lay->shiftx, lay->shifty, lay->scale, opa, 0, lay->texture, w, h);
+	}
+	if (!mainprogram->preveff) {
+		glBindFramebuffer(GL_FRAMEBUFFER, laynocomp->fbo);
+		glDrawBuffer(GL_COLOR_ATTACHMENT0);
+		glClearColor( 0.f, 0.f, 0.f, 0.f );
+		glClear(GL_COLOR_BUFFER_BIT);
+		float black[4] = {1.0, 1.0, 1.0, 1.0};
+		if (lay->liveinput) {
+			draw_box(NULL, black, -1.0f, -1.0f + 2.0f * div * fac, 2.0f * div, -2.0f * div * fac, lay->shiftx, lay->shifty, lay->scale, opa, 0, lay->liveinput->texture, w, h);
+		}
+		else if (lay->filename != "") {
+			draw_box(NULL, black, -1.0f, -1.0f + 2.0f * div * fac, 2.0f * div, -2.0f * div * fac, lay->shiftx, lay->shifty, lay->scale, opa, 0, lay->texture, w, h);
 		}
 	}
-	lay->decresult->data = nullptr;
-
-	if (lay->filename == "") {
-		glBindFramebuffer(GL_FRAMEBUFFER, lay->fbo);
-		glDrawBuffer(GL_COLOR_ATTACHMENT0);
-		glClearColor(0.0f, 0.0f, 0.0f, 0.0f);
-		glClear(GL_COLOR_BUFFER_BIT);
-	}
+	glBindFramebuffer(GL_FRAMEBUFFER, mainprogram->globfbo);
+	glDrawBuffer(GL_COLOR_ATTACHMENT0);
 }
 
 void set_queueing(Layer *lay, bool onoff) {
@@ -3059,9 +3077,7 @@ void display_texture(Layer *lay, bool deck) {
 					set_queueing(lay, true);
 					mainprogram->doubleleftmouse = false;
 					mainprogram->leftmouse = false;
-					lay->vidmoving = false;
-					mainmix->moving = false;
-					mainprogram->dragbinel = nullptr;
+					enddrag();
 				}
 			}
 			else {
@@ -4307,7 +4323,7 @@ void onestepfrom(bool stage, Node *node, Node *prevnode, GLuint prevfbotex) {
 			glClearColor(0.0f, 0.0f, 0.0f, 0.0f);
 			glClear(GL_COLOR_BUFFER_BIT);
 			float black[4] = {0.0f, 0.0f, 0.0f, 0.0f};
-			draw_box(NULL, black, -1.0f, -1.0f, 2.0f * div, 2.0f * div * fac, lay->shiftx * div, lay->shifty * div, lay->scale, lay->opacity->value, 0, fbocopy, w, h);
+			draw_box(NULL, black, -1.0f, -1.0f + 2.0f * div * fac, 2.0f * div, -2.0f * div * fac, lay->shiftx * div, lay->shifty * div, lay->scale, lay->opacity->value, 0, fbocopy, w, h);
 			glDeleteTextures(1, &fbocopy);
 		}
 		
@@ -4674,9 +4690,7 @@ bool check_thumbs(std::vector<Layer*> &layers, bool deck) {
 							if (mainprogram->dragbinel) {
 								if (mainprogram->dragbinel->path == lay->filename and j == 0) {
 									mainprogram->leftmouse = false;
-									mainprogram->dragbinel = nullptr;
-									mainmix->moving = false;
-									lay->vidmoving = false;
+									enddrag();
 									return true;
 								}
 							}
@@ -4687,9 +4701,7 @@ bool check_thumbs(std::vector<Layer*> &layers, bool deck) {
 								nc->type = mainprogram->dragbinel->type;
 								nc->path = mainprogram->dragbinel->path;
 								lay->clips.insert(lay->clips.begin() + j + lay->queuescroll, nc);
-								mainprogram->dragbinel = nullptr;
-								if (mainprogram->draglay) mainprogram->draglay->vidmoving = false;
-								mainmix->moving = false;
+								enddrag();
 								if (j + lay->queuescroll == lay->clips.size() - 1) {
 									Clip *clip = new Clip;
 									lay->clips.push_back(clip);
@@ -4715,9 +4727,7 @@ bool check_thumbs(std::vector<Layer*> &layers, bool deck) {
 								jc->tex = copy_tex(mainprogram->dragbinel->tex);
 								jc->type = mainprogram->dragbinel->type;
 								jc->path = mainprogram->dragbinel->path;
-								mainprogram->dragbinel = nullptr;
-								if (mainprogram->draglay) mainprogram->draglay->vidmoving = false;
-								mainmix->moving = false;
+								enddrag();
 								if (j + lay->queuescroll == lay->clips.size() - 1) {
 									Clip *clip = new Clip;
 									lay->clips.push_back(clip);
@@ -4752,7 +4762,7 @@ bool check_thumbs(std::vector<Layer*> &layers, bool deck) {
 						else {
 							open_video(0, lay,  mainprogram->dragbinel->path, true);
 						}
-						mainprogram->dragbinel = nullptr;
+						enddrag();
 						return 1;
 					}
 				}
@@ -4769,7 +4779,7 @@ bool check_thumbs(std::vector<Layer*> &layers, bool deck) {
 							else {
 								open_video(0, inlay, mainprogram->dragbinel->path, true);
 							}
-							mainprogram->dragbinel = nullptr;
+							enddrag();
 						}
 						else {
 							open_video(0, inlay,  mainprogram->dragbinel->path, true);
@@ -4797,7 +4807,7 @@ bool check_thumbs(std::vector<Layer*> &layers, bool deck) {
 								else {
 									open_video(0, lay, mainprogram->dragbinel->path, true);
 								}
-								mainprogram->dragbinel = nullptr;
+								enddrag();
 							}
 							else {
 								open_video(0, lay,  mainprogram->dragbinel->path, true);
@@ -4847,9 +4857,15 @@ void visu_thumbs() {
 							if (mainprogram->dragbinel) {
 								mainprogram->leftmouse = false;
 								thpath[k] = mainprogram->dragbinel->path;
+								if (thpath[k].rfind(".layer") != std::string::npos) {
+									if (thpath[k].find("cliptemp_") != std::string::npos) {
+										std::string base = basename(thpath[k]);
+										boost::filesystem::rename(thpath[k], mainprogram->binsdir + "shelf_" + base.substr(9, std::string::npos));			
+									}
+								}
 								thtype[k] = mainprogram->dragbinel->type;
 								thumbtex[k] = copy_tex(mainprogram->dragtex);
-								mainprogram->dragbinel = nullptr;
+								enddrag();
 								save_shelf("./shelfs.shelf");
 							}
 						}
@@ -4869,7 +4885,7 @@ void visu_thumbs() {
 		}
 		if (mainprogram->leftmouse) {
 			mainprogram->leftmouse = 0;
-			mainprogram->dragbinel = nullptr;
+			enddrag();
 		}
 	}
 	glUniform1i(thumb, 0);
@@ -8606,6 +8622,19 @@ void hap_mix(BinMix * bm) {
 	rfile.close();
 	boost::filesystem::rename(remove_extension(bm->path) + ".temp", bm->path);
 }	
+
+
+void enddrag() {
+	mainprogram->dragbinel = nullptr;
+	mainprogram->draglay->vidmoving = false;
+	mainmix->moving = false;
+	glDeleteTextures(1, &mainprogram->dragtex);
+	if (mainprogram->draglay->path.rfind(".layer") != std::string::npos) {
+		if (mainprogram->draglay->path.find("cliptemp_") != std::string::npos) {
+			boost::filesystem::remove(mainprogram->draglay->path);			
+		}
+	}
+}
 	
 
 void the_loop() {
@@ -9815,7 +9844,7 @@ void the_loop() {
 							}
 						}
 						if (mainprogram->leftmouse) {
-							mainprogram->dragbinel = nullptr;
+							enddrag();
 							if (mainprogram->movingtex != -1) {
 								std::string temp1 = mainprogram->currbinel->path;
 								std::string temp3 = mainprogram->currbinel->jpegpath;
@@ -9951,9 +9980,7 @@ void the_loop() {
 						std::string path = mainprogram->binsdir + mainprogram->currbin->name + ".bin";
 						save_bin(path);
 						mainprogram->currbinel = nullptr;
-						mainprogram->dragbinel = nullptr;
-						lay->vidmoving = false;
-						mainmix->moving = false;
+						enddrag();
 						mainprogram->leftmouse = false;
 					}
 					if (mainprogram->currbinel and mainprogram->templayers.size() and mainprogram->leftmouse) {
@@ -10105,7 +10132,7 @@ void the_loop() {
 		}
 	}
 	else {  //the_loop else
-		if ((mainprogram->effectmenu->state > 1) or (mainprogram->mixmodemenu->state > 1) or (mainprogram->mixenginemenu->state > 1) or (mainprogram->parammenu->state > 1) or (mainprogram->loopmenu->state > 1) or (mainprogram->deckmenu->state > 1)or (mainprogram->laymenu->state > 1) or (mainprogram->mixtargetmenu->state > 1) or (mainprogram->wipemenu->state > 1) or (mainprogram->livemenu->state > 1) or (mainprogram->binmenu->state > 1) or (mainprogram->binelmenu->state > 1) or (mainprogram->genmidimenu->state > 1) or (mainprogram->genericmenu->state > 1)) {
+		if ((mainprogram->effectmenu->state > 1) or (mainprogram->mixmodemenu->state > 1) or (mainprogram->mixenginemenu->state > 1) or (mainprogram->parammenu->state > 1) or (mainprogram->loopmenu->state > 1) or (mainprogram->deckmenu->state > 1) or (mainprogram->laymenu->state > 1) or (mainprogram->loadmenu->state > 1) or (mainprogram->mixtargetmenu->state > 1) or (mainprogram->wipemenu->state > 1) or (mainprogram->livemenu->state > 1) or (mainprogram->binmenu->state > 1) or (mainprogram->binelmenu->state > 1) or (mainprogram->genmidimenu->state > 1) or (mainprogram->genericmenu->state > 1)) {
 			mainprogram->leftmousedown = false;
 			mainprogram->menuondisplay = true;
 		}
@@ -10675,7 +10702,7 @@ void the_loop() {
 			boxafter.upvtxtoscr();
 			if (box.in()) {
 				draw_box(white, lightblue, &box, -1);
-				if (mainprogram->leftmousedown and mainmix->scrollon == 0) {
+				if (mainprogram->leftmousedown and mainmix->scrollon == 0 and !mainprogram->menuondisplay) {
 					mainmix->scrollon = i + 1;
 					mainmix->scrollmx = mainprogram->mx;
 					mainprogram->leftmousedown = false;
@@ -11603,7 +11630,6 @@ void the_loop() {
 			if (sqrt(pow((mainprogram->mx / (w / 2.0f) - 1.0f) * w / h, 2) + pow((h - mainprogram->my) / (h / 2.0f) - 1.25f, 2)) < 0.2f) {
 				if (!mainprogram->inwormhole and !mainprogram->menuondisplay) {
 					if (!mainprogram->binsscreen) {
-						mainprogram->dragbinel = nullptr;
 						set_queueing(lay, false);
 					}
 					mainprogram->binsscreen = !mainprogram->binsscreen;
@@ -11641,10 +11667,7 @@ void the_loop() {
 				
 			if (mainprogram->leftmouse) {
 				mainprogram->leftmouse = false;
-				lay->vidmoving = false;
-				mainmix->moving = false;
-				mainprogram->dragbinel = nullptr;
-				glDeleteTextures(1, &mainprogram->dragtex);
+				enddrag();
 				if (!mainprogram->binsscreen) {
 					if (mainprogram->preveff) {
 						exchange(lay, lvec, mainmix->layersA, 0);
@@ -11723,15 +11746,22 @@ void the_loop() {
 	mainprogram->sync.notify_one();
 	
 	glFlush();
+	bool prret = false;
+	GLuint tex, fbo;
 	if (mainprogram->prefon) {
+		glGenTextures(1, &tex);
+		glBindTexture(GL_TEXTURE_2D, tex);
+		glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR);
+		glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
+		glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA, (int)(w * 0.3f), (int)(h * 0.3f), 0, GL_RGBA, GL_UNSIGNED_BYTE, NULL);
+		glGenFramebuffers(1, &fbo);
+		glBindFramebuffer(GL_FRAMEBUFFER, fbo);
+		glFramebufferTexture2D(GL_FRAMEBUFFER, GL_COLOR_ATTACHMENT0, GL_TEXTURE_2D, tex, 0);
 		glBindFramebuffer(GL_FRAMEBUFFER, mainprogram->smglobfbo);
 		glDrawBuffer(GL_COLOR_ATTACHMENT0);
-		int ret = preferences();
-		if (ret) {
-			glBlitNamedFramebuffer(mainprogram->smglobfbo, 0, 0, 0, smw, smh , 0, 0, smw, smh, GL_COLOR_BUFFER_BIT, GL_NEAREST);
-			glFlush();
-			SDL_GL_SwapWindow(mainprogram->prefwindow);
-		}
+		prret = preferences();
+		glBlitNamedFramebuffer(mainprogram->smglobfbo, fbo, 0, 0, smw, smh , 0, 0, smw, smh, GL_COLOR_BUFFER_BIT, GL_NEAREST);
+		glFlush();
 	}
 	if (mainprogram->tunemidi) {
 		if (mainprogram->waitmidi){
@@ -11745,12 +11775,17 @@ void the_loop() {
 		}
 		glBindFramebuffer(GL_FRAMEBUFFER, mainprogram->smglobfbo);
 		glDrawBuffer(GL_COLOR_ATTACHMENT0);
-		int ret = tune_midi();
+		bool ret = tune_midi();
+		glFlush();
 		if (ret) {
 			glBlitNamedFramebuffer(mainprogram->smglobfbo, 0, 0, 0, smw, smh , 0, 0, smw, smh, GL_COLOR_BUFFER_BIT, GL_NEAREST);
-			glFlush();
 			SDL_GL_SwapWindow(mainprogram->tunemidiwindow);
 		}
+	}
+	if (prret) {
+		SDL_GL_MakeCurrent(mainprogram->prefwindow, glc_pr);
+		glBlitNamedFramebuffer(fbo, 0, 0, 0, smw, smh , 0, 0, smw, smh, GL_COLOR_BUFFER_BIT, GL_NEAREST);
+		SDL_GL_SwapWindow(mainprogram->prefwindow);
 	}
 	SDL_GL_MakeCurrent(mainprogram->mainwindow, glc);
 	glBlitNamedFramebuffer(mainprogram->globfbo, 0, 0, 0, w, h , 0, 0, w, h, GL_COLOR_BUFFER_BIT, GL_NEAREST);
@@ -13310,8 +13345,8 @@ void open_shelf(const std::string &path) {
 				getline(rfile, istring);
 				thtype[count] = (ELEM_TYPE)std::stoi(istring);
 				if (thpath[count] == "") {
-					//glBindTexture(GL_TEXTURE_2D, thumbtex[count]);
-					//glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA, 0, 0, 0, GL_RGBA, GL_UNSIGNED_BYTE, nullptr);
+					glBindTexture(GL_TEXTURE_2D, thumbtex[count]);
+					glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA, 0, 0, 0, GL_RGBA, GL_UNSIGNED_BYTE, nullptr);
 					count++;
 					continue;
 				}
