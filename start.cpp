@@ -4856,13 +4856,16 @@ void visu_thumbs() {
 						else if (mainprogram->leftmouse) {
 							if (mainprogram->dragbinel) {
 								mainprogram->leftmouse = false;
-								thpath[k] = mainprogram->dragbinel->path;
-								if (thpath[k].rfind(".layer") != std::string::npos) {
-									if (thpath[k].find("cliptemp_") != std::string::npos) {
-										std::string base = basename(thpath[k]);
-										boost::filesystem::rename(thpath[k], mainprogram->binsdir + "shelf_" + base.substr(9, std::string::npos));			
+								if (mainprogram->dragbinel->path.rfind(".layer") != std::string::npos) {
+									std::string base = basename(mainprogram->dragbinel->path);
+									std::string newpath = mainprogram->binsdir + "shelf_" + base.substr(9, std::string::npos);
+									if (mainprogram->dragbinel->path.find("cliptemp_") != std::string::npos) {
+										boost::filesystem::rename(mainprogram->dragbinel->path, newpath);			
+										boost::filesystem::remove(mainprogram->dragbinel->path);			
+										mainprogram->dragbinel->path = newpath;
 									}
 								}
+								thpath[k] = mainprogram->dragbinel->path;
 								thtype[k] = mainprogram->dragbinel->type;
 								thumbtex[k] = copy_tex(mainprogram->dragtex);
 								enddrag();
@@ -8625,15 +8628,15 @@ void hap_mix(BinMix * bm) {
 
 
 void enddrag() {
-	mainprogram->dragbinel = nullptr;
-	mainprogram->draglay->vidmoving = false;
-	mainmix->moving = false;
-	glDeleteTextures(1, &mainprogram->dragtex);
-	if (mainprogram->draglay->path.rfind(".layer") != std::string::npos) {
-		if (mainprogram->draglay->path.find("cliptemp_") != std::string::npos) {
-			boost::filesystem::remove(mainprogram->draglay->path);			
+	if (mainprogram->dragbinel->path.rfind(".layer") != std::string::npos) {
+		if (mainprogram->dragbinel->path.find("cliptemp_") != std::string::npos) {
+			boost::filesystem::remove(mainprogram->dragbinel->path);			
 		}
 	}
+	mainprogram->dragbinel = nullptr;
+	if (mainprogram->draglay) mainprogram->draglay->vidmoving = false;
+	mainmix->moving = false;
+	glDeleteTextures(1, &mainprogram->dragtex);
 }
 	
 
@@ -11097,7 +11100,7 @@ void the_loop() {
 			
 		k = handle_menu(mainprogram->loadmenu);
 		if (k > -1) {
-			std::vector<Layer*> lvec = choose_layers(mainmix->mousedeck);
+			std::vector<Layer*> &lvec = choose_layers(mainmix->mousedeck);
 			if (k == 0) {
 				if (mainprogram->menuresults[0] > 0) {
 					mainmix->add_layer(lvec, lvec.size());
@@ -11325,7 +11328,7 @@ void the_loop() {
 								mainprogram->dragbinel->path = lay->filename;
 								mainprogram->dragbinel->type = ELEM_LIVE;
 							}
-							else if (lay->effects.size()) {
+							else {
 								std::string name = remove_extension(basename(mainprogram->draglay->filename));
 								int count = 0;
 								while (1) {
@@ -11340,10 +11343,6 @@ void the_loop() {
 								}
 								mainprogram->dragbinel->path = mainprogram->dragpath;
 								mainprogram->dragbinel->type = ELEM_LAYER;
-							}
-							else {
-								mainprogram->dragbinel->path = lay->filename;
-								mainprogram->dragbinel->type = ELEM_FILE;
 							}
 	
 							mainprogram->leftmousedown = false;
@@ -12696,7 +12695,7 @@ void open_mix(const std::string &path) {
 			}
 		}
 	}
-	std::vector<Layer*> lvec = choose_layers(mainmix->currdeck);
+	std::vector<Layer*> &lvec = choose_layers(mainmix->currdeck);
 	for (int i = 0; i < lvec.size(); i++) {
 		if (lvec[i]->pos == clpos) {
 			mainmix->currlay = lvec[i];
@@ -13363,7 +13362,7 @@ void open_shelf(const std::string &path) {
 					lay->processed = false;
 					lock.unlock();
 					glBindTexture(GL_TEXTURE_2D, thumbtex[count]);
-					if (lay->dataformat == 188) {
+					if (lay->dataformat == 188 or lay->vidformat == 187) {
 						if (lay->decresult->compression == 187) {
 							glCompressedTexImage2D(GL_TEXTURE_2D, 0, GL_COMPRESSED_RGBA_S3TC_DXT1_EXT, lay->decresult->width, lay->decresult->height, 0, lay->decresult->size, lay->decresult->data);
 						}
@@ -14699,7 +14698,7 @@ int main(int argc, char* argv[]){
 					mainprogram->mx = e.mgesture.x * w; 
 					mainprogram->my = e.mgesture.y * h;
 					for (int i = 0; i < 2; i++) {
-						std::vector<Layer*> lvec = choose_layers(i);
+						std::vector<Layer*> &lvec = choose_layers(i);
 						for (int j = 0; j < lvec.size(); j++) {
 							if (lvec[j]->node->vidbox->in()) {
 								lvec[j]->scale *= 1 - e.mgesture.dDist * w / 100; 

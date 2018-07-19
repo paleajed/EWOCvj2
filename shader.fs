@@ -928,8 +928,9 @@ vec4 cutoff(vec2 texco)  //selfmade
 }
 
 
-vec4 glitch(vec2 uv)  //shadertoy  ok
+vec4 glitch(vec2 uv)  //binary glitch shadertoy  waiting for permission - this function is CC licenced at the moment!
 {
+	return;
     float x = uv.s;
     float y = uv.t;
         
@@ -1012,8 +1013,9 @@ vec4 thermal(vec2 texco)  //geeks3d free
 #define ITERATIONS 150
 mat2 rot = mat2(cos(GOLDEN_ANGLE), sin(GOLDEN_ANGLE), -sin(GOLDEN_ANGLE), cos(GOLDEN_ANGLE));
 
-vec3 Bokeh(sampler2D tex, vec2 uv, float radius)  //attribution see email
+vec3 Bokeh(sampler2D tex, vec2 uv, float radius)  // kindly shared by Dave H.
 {
+	return;
 	vec3 acc = vec3(0), div = acc;
     float r = 1.;
     vec2 vangle = vec2(0.0,radius*.01 / sqrt(float(ITERATIONS)));
@@ -1118,8 +1120,33 @@ uniform float max_scale_lim = 10.0f;                // Abs change before max com
 // Colour to greyscale, fast approx gamma
 float CtG(vec3 RGB) { return  sqrt( (1.0/3.0)*((RGB*RGB).r + (RGB*RGB).g + (RGB*RGB).b) ); }
 
-vec4 sharpen(vec2 texco)
+vec4 sharpen(vec2 texco)    https://github.com/libretro/glsl-shaders - awaiting approval - until then the following disclaimer belongs to this functions code
 {
+// Copyright (c) 2015, bacondither
+// All rights reserved.
+//
+// Redistribution and use in source and binary forms, with or without
+// modification, are permitted provided that the following conditions
+// are met:
+// 1. Redistributions of source code must retain the above copyright
+//    notice, this list of conditions and the following disclaimer
+//    in this position and unchanged.
+// 2. Redistributions in binary form must reproduce the above copyright
+//    notice, this list of conditions and the following disclaimer in the
+//    documentation and/or other materials provided with the distribution.
+//
+// THIS SOFTWARE IS PROVIDED BY THE AUTHORS ``AS IS'' AND ANY EXPRESS OR
+// IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE IMPLIED WARRANTIES
+// OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR PURPOSE ARE DISCLAIMED.
+// IN NO EVENT SHALL THE AUTHOR BE LIABLE FOR ANY DIRECT, INDIRECT,
+// INCIDENTAL, SPECIAL, EXEMPLARY, OR CONSEQUENTIAL DAMAGES (INCLUDING, BUT
+// NOT LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES; LOSS OF USE,
+// DATA, OR PROFITS; OR BUSINESS INTERRUPTION) HOWEVER CAUSED AND ON ANY
+// THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT
+// (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE OF
+// THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE. */	
+
+	return;
 	vec2	tex	=	texco;
 	
 	float	px	=	1.0f / fbowidth;
@@ -1291,7 +1318,7 @@ return 0.0;
 return 1.0;
 }
 
-vec4 dither(vec2 texco)
+vec4 dither(vec2 texco)  //https://github.com/libretro/glsl-shaders/blob/master/dithering/shaders/bayer-matrix-dithering.glsl  free!
 {
 	float Scale = 3.0 + mod(2.0 * iGlobalTime, 32.0) * animate + dither_size;
 	vec4 lum = vec4(0.299, 0.587, 0.114, 0);
