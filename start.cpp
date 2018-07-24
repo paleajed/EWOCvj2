@@ -1260,7 +1260,7 @@ void decode_audio(Layer *lay) {
 	}
 }	
 	
-void get_frame_other(Layer *lay, int framenr, int prevframe)
+void get_frame_other(Layer *lay, int framenr, int prevframe, int errcount)
 {
    	int ret = 0, got_frame;
 	/* initialize packet, set data to NULL, let the demuxer fill it */
@@ -1340,7 +1340,12 @@ void get_frame_other(Layer *lay, int framenr, int prevframe)
 			if (framenr > lay->endframe) framenr = lay->startframe;
 			else if (framenr < lay->startframe) framenr = lay->endframe;
 			avcodec_flush_buffers(lay->video_dec_ctx);
-			get_frame_other(lay, framenr, lay->prevframe);
+			errcount++;
+			if (errcount == 10) {
+				lay->openerr = true;
+				return;
+			}
+			get_frame_other(lay, framenr, lay->prevframe, errcount);
 		}
 		decode_audio(lay);
 		av_packet_unref(&lay->decpkt);
@@ -1416,6 +1421,7 @@ void Layer::get_frame(){
 		this->ready = false;
 		if (this->closethread) {
 			this->closethread = false;
+			//delete this;  implement with layer delete vector?
 			return;
 		}
 		if (this->vidopen) {
@@ -1434,7 +1440,7 @@ void Layer::get_frame(){
 			if (!this->video_stream) continue;
 			if (this->vidformat != 188 and this->vidformat != 187) {
 				if ((int)(this->frame) != this->prevframe) {
-					get_frame_other(this, (int)this->frame, this->prevframe);
+					get_frame_other(this, (int)this->frame, this->prevframe, 0);
 				}
 				this->processed = true;
 				this->enddecode.notify_one();
@@ -8636,7 +8642,7 @@ void enddrag() {
 	mainprogram->dragbinel = nullptr;
 	if (mainprogram->draglay) mainprogram->draglay->vidmoving = false;
 	mainmix->moving = false;
-	glDeleteTextures(1, &mainprogram->dragtex);
+	//glDeleteTextures(1, &mainprogram->dragtex);  maybe needs implementing in one case, check history
 }
 	
 
@@ -8653,6 +8659,10 @@ void the_loop() {
 	float darkgrey[] = {0.2f, 0.2f, 0.2f, 1.0f};
 	float lightblue[] = {0.5f, 0.5f, 1.0f, 1.0f};
 	
+	if (mainprogram->blocking) {
+		mainprogram->mx = -1;
+		mainprogram->my = -1;
+	}
 	if (SDL_GetMouseFocus() == mainprogram->prefwindow or SDL_GetMouseFocus() == mainprogram->tunemidiwindow) {
 		mainprogram->mx = -1;
 		mainprogram->my = -1;
@@ -9233,6 +9243,7 @@ void the_loop() {
 		}
 		else if (k == mainprogram->menuset + 1) {
 			mainprogram->pathto = "OPENBINDIR";
+			mainprogram->blocking = true;
 			std::thread filereq (get_dir);
 			filereq.detach();
 		}
@@ -9353,7 +9364,14 @@ void the_loop() {
 						}
 						if (binel->full and !mainprogram->templayers.size() and mainprogram->inserting == -1 and !lay->vidmoving) {
 							if ((binel->type == ELEM_LAYER or binel->type == ELEM_DECK or binel->type == ELEM_MIX) and !mainprogram->binpreview) {
-								if (mainprogram->prelay) delete mainprogram->prelay;
+								if (mainprogram->prelay) {
+									mainprogram->prelay->closethread = true;
+									while (mainprogram->prelay->closethread) {
+										mainprogram->prelay->ready = true;
+										mainprogram->prelay->startdecode.notify_one();
+									}
+									//delete mainprogram->prelay;
+								}
 								mainprogram->binpreview = true;
 								mainprogram->prelay = new Layer(true);
 								mainprogram->prelay->dummy = true;
@@ -9471,7 +9489,14 @@ void the_loop() {
 								}
 							}
 							else if (binel->type == ELEM_FILE and !mainprogram->binpreview) {
-								if (mainprogram->prelay) delete mainprogram->prelay;
+								if (mainprogram->prelay) {
+									mainprogram->prelay->closethread = true;
+									while (mainprogram->prelay->closethread) {
+										mainprogram->prelay->ready = true;
+										mainprogram->prelay->startdecode.notify_one();
+									}
+									//delete mainprogram->prelay;
+								}
 								mainprogram->binpreview = true;
 								mainprogram->prelay = new Layer(true);
 								mainprogram->prelay->dummy = true;
@@ -9996,9 +10021,20 @@ void the_loop() {
 							dirbinel->full = true;
 							dirbinel->type = ELEM_FILE;
 							dirbinel->path = mainprogram->newpaths[k];
-							glDeleteTextures(1, &dirbinel->oldtex);
+							if (dirbinel->jpegpath != "" and 0) {
+								boost::filesystem::remove(dirbinel->jpegpath);
+								dirbinel->oldjpegpath = "";
+							}
+							dirbinel->jpegpath = "";
+							dirbinel->oldjpegpath = "";
+							//glDeleteTextures(1, &dirbinel->oldtex);
 							Layer *lay = mainprogram->templayers[k];
-							delete lay;
+							lay->closethread = true;
+							while (lay->closethread) {
+								lay->ready = true;
+								lay->startdecode.notify_one();
+							}
+							//delete lay;
 						}
 						std::string path = mainprogram->binsdir + mainprogram->currbin->name + ".bin";
 						save_bin(path);
@@ -13052,6 +13088,16 @@ void open_binfiles() {
 }
 
 void open_bindir() {
+	if (SDL_GetMouseFocus() != mainprogram->mainwindow) {
+		HCURSOR hCurs;
+		hCurs = LoadCursor(NULL, IDC_ARROW);
+		SetCursor(hCurs); 
+	}
+	else {
+		HCURSOR hCurs;
+		hCurs = LoadCursor(NULL, IDC_WAIT);
+		SetCursor(hCurs); 
+	} 
 	struct dirent *ent;
 	if ((ent = readdir(mainprogram->opendir)) != NULL) {
 		char *filepath = (char*)malloc(1024);
@@ -13062,7 +13108,13 @@ void open_bindir() {
 		
 		open_handlefile(str);
 	}
-	else mainprogram->openbindir = false;
+	else {
+		mainprogram->openbindir = false;
+		mainprogram->blocking = false;
+		HCURSOR hCurs;
+		hCurs = LoadCursor(NULL, IDC_ARROW);
+		SetCursor(hCurs); 
+	} 
 }
 
 void open_handlefile(const std::string &path) {
@@ -13080,7 +13132,12 @@ void open_handlefile(const std::string &path) {
 	if (lay->openerr) {
 		printf("error!\n");
 		lay->openerr = false;
-		delete lay;
+		lay->closethread = true;
+		while (lay->closethread) {
+			lay->ready = true;
+			lay->startdecode.notify_one();
+		}
+		//delete lay;
 		return;
 	}
 	GLuint tex;
@@ -13099,31 +13156,14 @@ void open_handlefile(const std::string &path) {
 	else {
 		glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA, lay->decresult->width, lay->decresult->height, 0, GL_RGBA, GL_UNSIGNED_BYTE, lay->decresult->data);
 	}
-	GLuint endtex, fbo;
-	glGenTextures(1, &endtex);
-	glBindTexture(GL_TEXTURE_2D, endtex);
-	glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR);
-	glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
-	glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA, (int)(w * 0.3f), (int)(h * 0.3f), 0, GL_RGBA, GL_UNSIGNED_BYTE, NULL);
-	glGenFramebuffers(1, &fbo);
-	glBindFramebuffer(GL_FRAMEBUFFER, fbo);
-	glFramebufferTexture2D(GL_FRAMEBUFFER, GL_COLOR_ATTACHMENT0, GL_TEXTURE_2D, endtex, 0);
-	glDrawBuffer(GL_COLOR_ATTACHMENT0);
-	GLint down = glGetUniformLocation(mainprogram->ShaderProgram, "down");
-	glUniform1i(down, 1);
-	glActiveTexture(GL_TEXTURE0);
-	glBindTexture(GL_TEXTURE_2D, tex);
-	glBindVertexArray(mainprogram->fbovao[1]);
-	glDrawArrays(GL_TRIANGLE_STRIP, 0, 4);
-	glUniform1i(down, 0);
-	glBindFramebuffer(GL_FRAMEBUFFER, mainprogram->globfbo);
-	glDrawBuffer(GL_COLOR_ATTACHMENT0);
+	GLuint endtex;
+	endtex = copy_tex(tex);
 	glDeleteTextures(1, &tex);
-	glDeleteFramebuffers(1, &fbo);
 	
 	mainprogram->newpaths.push_back(path);
 	mainprogram->inputtexes.push_back(endtex);
 	mainprogram->templayers.push_back(lay);
+	mainprogram->prevbinel = nullptr;
 }
 
 GLuint copy_tex(GLuint tex) {
@@ -13420,6 +13460,10 @@ void open_shelf(const std::string &path) {
 					}
 				}
 				lay->closethread = true;
+				while (lay->closethread) {
+					lay->ready = true;
+					lay->startdecode.notify_one();
+				}
 				delete lay;
 				count++;
 			}
@@ -14476,7 +14520,12 @@ int main(int argc, char* argv[]){
 			else if (mainprogram->pathto == "OPENBINDIR") {
 				mainprogram->binpath = mainprogram->path;
 				mainprogram->opendir = opendir(mainprogram->binpath.c_str());
-				if (mainprogram->opendir) mainprogram->openbindir = true;
+				if (mainprogram->opendir) {
+					mainprogram->openbindir = true;
+				}
+				else {
+					mainprogram->blocking = false;
+				}
 			}
 			else if (mainprogram->pathto == "CHOOSEDIR") {
 				std::string str(mainprogram->path);

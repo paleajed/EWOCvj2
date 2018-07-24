@@ -289,7 +289,8 @@ class Program {
 		float mousewheel = false;
 		bool del = false;
 		bool ctrl = false;
-		bool menuondisplay;
+		bool menuondisplay = false;
+		bool blocking = false;
 		char *path;
 		nfdpathset_t paths;
 		int counting;
