@@ -48,10 +48,13 @@ class Clip {
 class Layer {
 	public:
 		int pos;
+		bool deck;
 		std::vector<Clip*> clips;
 		ELEM_TYPE currcliptype = ELEM_FILE;
 		bool queueing = false;
 		int queuescroll = 0;
+		int numefflines = 0;
+		int effscroll = 0;
 		std::vector<Effect*> effects;
 		Effect *add_effect(EFFECT_TYPE type, int pos);
 		Effect *replace_effect(EFFECT_TYPE type, int pos);
@@ -187,7 +190,6 @@ class Mixer {
 		std::vector<Layer*> layersA;
 		std::vector<Layer*> layersB;
 		Layer *currlay = nullptr;
-		bool currdeck = 0;
 		Layer *add_layer(std::vector<Layer*> &layers, int pos);
 		void delete_layer(std::vector<Layer*> &layers, Layer *lay, bool add);
 		void record_video();

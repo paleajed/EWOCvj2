@@ -304,6 +304,11 @@ class Program {
 		Box *cwbox;
 		bool cwon = false;
 		int cwmouse = false;
+		Box *effscrollupA;
+		Box *effscrolldownA;
+		Box *effscrollupB;
+		Box *effscrolldownB;
+		
 		SDL_Window *tunemidiwindow = nullptr;
 		bool drawnonce = false;
 		bool tunemidi = false;

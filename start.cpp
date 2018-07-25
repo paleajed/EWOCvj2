@@ -3065,7 +3065,7 @@ void display_texture(Layer *lay, bool deck) {
 				if (!mainprogram->needsclick or mainprogram->leftmouse) {
 					if (!mainmix->moving and !mainprogram->cwon) {
 						mainmix->currlay = lay;
-						mainmix->currdeck = deck;
+						mainmix->currlay->deck = deck;
 						if (mainprogram->menuactivation) {
 							mainprogram->laymenu->state = 2;
 							mainmix->mouselayer = lay;
@@ -3184,161 +3184,253 @@ void display_texture(Layer *lay, bool deck) {
 			else {
 				render_text(mixstr, red, lay->mixbox->vtxcoords->x1 + tf(0.01f), 1.0f - (tf(mainmix->layw)) + tf(0.02f), tf(0.0003f), tf(0.0005f));
 			}
-			// Draw effectboxes
+			
+			// Draw and handle effect stack scrollboxes
+			if (lay->effscroll > 0 and mainmix->currlay->deck == 0) {
+				if (mainprogram->effscrollupA->in()) {
+					mainprogram->effscrollupA->acolor[0] = 0.5f;
+					mainprogram->effscrollupA->acolor[1] = 0.5f;
+					mainprogram->effscrollupA->acolor[2] = 1.0f;
+					mainprogram->effscrollupA->acolor[3] = 1.0f;
+					if (mainprogram->leftmouse) {
+						lay->effscroll--;
+					}
+				}
+				else {			
+					mainprogram->effscrollupA->acolor[0] = 0.0f;
+					mainprogram->effscrollupA->acolor[1] = 0.0f;
+					mainprogram->effscrollupA->acolor[2] = 0.0f;
+					mainprogram->effscrollupA->acolor[3] = 1.0f;
+				}
+				draw_box(mainprogram->effscrollupA, -1);
+				draw_triangle(white, white, mainprogram->effscrollupA->vtxcoords->x1 + tf(0.0074f), mainprogram->effscrollupA->vtxcoords->y1 + tf(0.0416f) - tf(0.030f), tf(0.011f), tf(0.0208f), DOWN, CLOSED);
+			}
+			if (lay->effscroll > 0 and mainmix->currlay->deck == 1) {
+				if (mainprogram->effscrollupB->in()) {
+					mainprogram->effscrollupB->acolor[0] = 0.5f;
+					mainprogram->effscrollupB->acolor[1] = 0.5f;
+					mainprogram->effscrollupB->acolor[2] = 1.0f;
+					mainprogram->effscrollupB->acolor[3] = 1.0f;
+					if (mainprogram->leftmouse) {
+						lay->effscroll--;
+					}
+				}
+				else {			
+					mainprogram->effscrollupB->acolor[0] = 0.0f;
+					mainprogram->effscrollupB->acolor[1] = 0.0f;
+					mainprogram->effscrollupB->acolor[2] = 0.0f;
+					mainprogram->effscrollupB->acolor[3] = 1.0f;
+				}
+				draw_box(mainprogram->effscrollupB, -1);
+				draw_triangle(white, white, mainprogram->effscrollupB->vtxcoords->x1 + tf(0.0074f), mainprogram->effscrollupB->vtxcoords->y1 + tf(0.0416f) - tf(0.030f), tf(0.011f), tf(0.0208f), DOWN, CLOSED);
+			}
+			if (lay->numefflines - lay->effscroll > 11 and mainmix->currlay->deck == 0) {
+				if (mainprogram->effscrolldownA->in()) {
+					mainprogram->effscrolldownA->acolor[0] = 0.5f;
+					mainprogram->effscrolldownA->acolor[1] = 0.5f;
+					mainprogram->effscrolldownA->acolor[2] = 1.0f;
+					mainprogram->effscrolldownA->acolor[3] = 1.0f;
+					if (mainprogram->leftmouse) {
+						lay->effscroll++;
+					}
+				}
+				else {			
+					mainprogram->effscrolldownA->acolor[0] = 0.0f;
+					mainprogram->effscrolldownA->acolor[1] = 0.0f;
+					mainprogram->effscrolldownA->acolor[2] = 0.0f;
+					mainprogram->effscrolldownA->acolor[3] = 1.0f;
+				}
+				draw_box(mainprogram->effscrolldownA, -1);
+				draw_triangle(white, white, mainprogram->effscrolldownA->vtxcoords->x1 + tf(0.0074f), mainprogram->effscrolldownA->vtxcoords->y1 + tf(0.0416f) - tf(0.030f), tf(0.011f), tf(0.0208f), UP, CLOSED);
+			}			
+			if (lay->numefflines - lay->effscroll > 11 and mainmix->currlay->deck == 1) {
+				if (mainprogram->effscrolldownB->in()) {
+					mainprogram->effscrolldownB->acolor[0] = 0.5f;
+					mainprogram->effscrolldownB->acolor[1] = 0.5f;
+					mainprogram->effscrolldownB->acolor[2] = 1.0f;
+					mainprogram->effscrolldownB->acolor[3] = 1.0f;
+					if (mainprogram->leftmouse) {
+						lay->effscroll++;
+					}
+				}
+				else {			
+					mainprogram->effscrolldownB->acolor[0] = 0.0f;
+					mainprogram->effscrolldownB->acolor[1] = 0.0f;
+					mainprogram->effscrolldownB->acolor[2] = 0.0f;
+					mainprogram->effscrolldownB->acolor[3] = 1.0f;
+				}
+				draw_box(mainprogram->effscrolldownB, -1);
+				draw_triangle(white, white, mainprogram->effscrolldownB->vtxcoords->x1 + tf(0.0074f), mainprogram->effscrolldownB->vtxcoords->y1 + tf(0.0416f) - tf(0.030f), tf(0.011f), tf(0.0208f), UP, CLOSED);
+			}
+			if (lay->effects.size()) {
+				if ((w / 2.0f > mainprogram->mx and mainmix->currlay->deck == 0) or (w / 2.0f < mainprogram->mx and mainmix->currlay->deck == 1)) {
+					if (mainprogram->my < h - yvtxtoscr(tf(mainmix->layw) - tf(0.20f)) and h - yvtxtoscr(tf(mainmix->layw) - tf(0.20f) - tf(0.05f) * lay->effscroll) > mainprogram->my) {
+						if (mainprogram->mousewheel) {
+							lay->effscroll -= mainprogram->mousewheel;
+							if (lay->effscroll < 0) lay->effscroll = 0;
+							if (lay->numefflines > 11 and lay->numefflines - lay->effscroll < 11) lay->effscroll = lay->numefflines - 11;
+						}
+					}
+				}
+			}
+			// Draw effectboxes and parameters
 			std::string effstr;
 			for(int i = 0; i < lay->effects.size(); i++) {
 				Effect *eff = lay->effects[i];
 				Box *box;
+				float x1, y1, wi;
 				
-				// Draw drywet->box
-				draw_box(eff->drywet->box, -1);
-				const char *parstr;
-				if (mainmix->learnparam == eff->drywet and mainmix->learn) {
-					parstr = "MIDI";
-				}
-				else parstr = "";
-				render_text(parstr, white, eff->drywet->box->vtxcoords->x1 + tf(0.01f), eff->drywet->box->vtxcoords->y1 + tf(0.05f) - tf(0.030f), tf(0.0003f), tf(0.0005f));
-				Param *par = eff->drywet;
-				if (eff->drywet->box->in()) {
-					if (mainprogram->leftmousedown) {
-						mainprogram->leftmousedown = false;
-						mainmix->adaptparam = par;
-						mainmix->prevx = mainprogram->mx;
+				if (eff->box->vtxcoords->y1 < 1.0 - tf(mainmix->layw) - tf(0.22f) - tf(0.05f) * 10) break;
+				if (eff->box->vtxcoords->y1 <= 1.0 - tf(mainmix->layw) - tf(0.18f)) {
+					draw_box(eff->drywet->box, -1);
+					const char *parstr;
+					if (mainmix->learnparam == eff->drywet and mainmix->learn) {
+						parstr = "MIDI";
 					}
+					else parstr = "";
+					render_text(parstr, white, eff->drywet->box->vtxcoords->x1 + tf(0.01f), eff->drywet->box->vtxcoords->y1 + tf(0.05f) - tf(0.030f), tf(0.0003f), tf(0.0005f));
+					Param *par = eff->drywet;
+					if (eff->drywet->box->in()) {
+						if (mainprogram->leftmousedown) {
+							mainprogram->leftmousedown = false;
+							mainmix->adaptparam = par;
+							mainmix->prevx = mainprogram->mx;
+						}
+					}
+					draw_box(green, green, par->box->vtxcoords->x1 + par->box->vtxcoords->w * ((par->value - par->range[0]) / (par->range[1] - par->range[0])) - tf(0.00078f), par->box->vtxcoords->y1, tf(0.00156f), par->box->vtxcoords->h, -1);
+		
+					
+					box = eff->box;
+					draw_box(box, -1);
+					if (eff->onoffbutton->value) {
+						eff->onoffbutton->box->acolor[1] = 0.7f;
+					}
+					else {
+						eff->onoffbutton->box->acolor[1] = 0.0f;
+					}
+					draw_box(eff->onoffbutton->box, -1);
+					switch (eff->type) {
+						case 0:
+							effstr = "BLUR";
+							break;
+						case 1:
+							effstr = "BRIGHTNESS";
+							break;
+						case 2:
+							effstr = "CHROMAROTATE";
+							break;
+						case 3:
+							effstr = "CONTRAST";
+							break;
+						case 4:
+							effstr = "DOT";
+							break;
+						case 5:
+							effstr = "GLOW";
+							break;
+						case 6:
+							effstr = "RADIALBLUR";
+							break;
+						case 7:
+							effstr = "SATURATION";
+							break;
+						case 8:
+							effstr = "SCALE";
+							break;
+						case 9:
+							effstr = "SWIRL";
+							break;
+						case 10:
+							effstr = "OLDFILM";
+							break;
+						case 11:
+							effstr = "RIPPLE";
+							break;
+						case 12:
+							effstr = "FISHEYE";
+							break;
+						case 13:
+							effstr = "TRESHOLD";
+							break;
+						case 14:
+							effstr = "STROBE";
+							break;
+						case 15:
+							effstr = "POSTERIZE";
+							break;
+						case 16:
+							effstr = "PIXELATE";
+							break;
+						case 17:
+							effstr = "CROSSHATCH";
+							break;
+						case 18:
+							effstr = "INVERT";
+							break;
+						case 19:
+							effstr = "ROTATE";
+							break;
+						case 20:
+							effstr = "EMBOSS";
+							break;
+						case 21:
+							effstr = "ASCII";
+							break;
+						case 22:
+							effstr = "SOLARIZE";
+							break;
+						case 23:
+							effstr = "VARDOT";
+							break;
+						case 24:
+							effstr = "CRT";
+							break;
+						case 25:
+							effstr = "EDGEDETECT";
+							break;
+						case 26:
+							effstr = "KALEIDOSCOPE";
+							break;
+						case 27:
+							effstr = "HALFTONE";
+							break;
+						case 28:
+							effstr = "CARTOON";
+							break;
+						case 29:
+							effstr = "CUTOFF";
+							break;
+						case 30:
+							effstr = "GLITCH";
+							break;
+						case 31:
+							effstr = "COLORIZE";
+							break;
+						case 32:
+							effstr = "NOISE";
+							break;
+						case 33:
+							effstr = "GAMMA";
+							break;
+						case 34:
+							effstr = "THERMAL";
+							break;
+						case 35:
+							effstr = "BOKEH";
+							break;
+						case 36:
+							effstr = "SHARPEN";
+							break;
+						case 37:
+							effstr = "DITHER";
+							break;
+					}
+					float textw = tf(render_text(effstr, white, eff->box->vtxcoords->x1 + tf(0.01f), eff->box->vtxcoords->y1 + tf(0.05f) - tf(0.030f), tf(0.0003f), tf(0.0005f)));
+					eff->box->vtxcoords->w = textw + tf(0.02f);
+					x1 = eff->box->vtxcoords->x1 + tf(0.02f) + textw;
+					wi = (0.7f - mainmix->numw - tf(0.02f) - textw) / 4.0f;
 				}
-				draw_box(green, green, par->box->vtxcoords->x1 + par->box->vtxcoords->w * ((par->value - par->range[0]) / (par->range[1] - par->range[0])) - tf(0.00078f), par->box->vtxcoords->y1, tf(0.00156f), par->box->vtxcoords->h, -1);
-	
-				
-				box = eff->box;
-				draw_box(box, -1);
-				if (eff->onoffbutton->value) {
-					eff->onoffbutton->box->acolor[1] = 0.7f;
-				}
-				else {
-					eff->onoffbutton->box->acolor[1] = 0.0f;
-				}
-				draw_box(eff->onoffbutton->box, -1);
-				switch (eff->type) {
-					case 0:
-						effstr = "BLUR";
-						break;
-					case 1:
-						effstr = "BRIGHTNESS";
-						break;
-					case 2:
-						effstr = "CHROMAROTATE";
-						break;
-					case 3:
-						effstr = "CONTRAST";
-						break;
-					case 4:
-						effstr = "DOT";
-						break;
-					case 5:
-						effstr = "GLOW";
-						break;
-					case 6:
-						effstr = "RADIALBLUR";
-						break;
-					case 7:
-						effstr = "SATURATION";
-						break;
-					case 8:
-						effstr = "SCALE";
-						break;
-					case 9:
-						effstr = "SWIRL";
-						break;
-					case 10:
-						effstr = "OLDFILM";
-						break;
-					case 11:
-						effstr = "RIPPLE";
-						break;
-					case 12:
-						effstr = "FISHEYE";
-						break;
-					case 13:
-						effstr = "TRESHOLD";
-						break;
-					case 14:
-						effstr = "STROBE";
-						break;
-					case 15:
-						effstr = "POSTERIZE";
-						break;
-					case 16:
-						effstr = "PIXELATE";
-						break;
-					case 17:
-						effstr = "CROSSHATCH";
-						break;
-					case 18:
-						effstr = "INVERT";
-						break;
-					case 19:
-						effstr = "ROTATE";
-						break;
-					case 20:
-						effstr = "EMBOSS";
-						break;
-					case 21:
-						effstr = "ASCII";
-						break;
-					case 22:
-						effstr = "SOLARIZE";
-						break;
-					case 23:
-						effstr = "VARDOT";
-						break;
-					case 24:
-						effstr = "CRT";
-						break;
-					case 25:
-						effstr = "EDGEDETECT";
-						break;
-					case 26:
-						effstr = "KALEIDOSCOPE";
-						break;
-					case 27:
-						effstr = "HALFTONE";
-						break;
-					case 28:
-						effstr = "CARTOON";
-						break;
-					case 29:
-						effstr = "CUTOFF";
-						break;
-					case 30:
-						effstr = "GLITCH";
-						break;
-					case 31:
-						effstr = "COLORIZE";
-						break;
-					case 32:
-						effstr = "NOISE";
-						break;
-					case 33:
-						effstr = "GAMMA";
-						break;
-					case 34:
-						effstr = "THERMAL";
-						break;
-					case 35:
-						effstr = "BOKEH";
-						break;
-					case 36:
-						effstr = "SHARPEN";
-						break;
-					case 37:
-						effstr = "DITHER";
-						break;
-				}
-				float textw = tf(render_text(effstr, white, eff->box->vtxcoords->x1 + tf(0.01f), eff->box->vtxcoords->y1 + tf(0.05f) - tf(0.030f), tf(0.0003f), tf(0.0005f)));
-				eff->box->vtxcoords->w = textw + tf(0.02f);
-				float x1 = eff->box->vtxcoords->x1 + tf(0.02f) + textw;
-				float y1 = eff->box->vtxcoords->y1;
-				float wi = (0.7f - mainmix->numw - tf(0.02f) - textw) / 4.0f;
+				y1 = eff->box->vtxcoords->y1;
 				for (int j = 0; j < eff->params.size(); j++) {
 					Param *par = eff->params[j];
 					par->box->lcolor[0] = 1.0;
@@ -3361,21 +3453,24 @@ void display_texture(Layer *lay, bool deck) {
 					par->box->vtxcoords->h = eff->box->vtxcoords->h;
 					par->box->upvtxtoscr();
 					
-					std::string parstr;
-					draw_box(par->box, -1);
-					if (mainmix->learnparam == par and mainmix->learn) {
-						parstr = "MIDI";
-					}
-					else parstr = par->name;
-					render_text(parstr, white, par->box->vtxcoords->x1 + tf(0.01f), par->box->vtxcoords->y1 + tf(0.05f) - tf(0.030f), tf(0.0003f), tf(0.0005f));
-					if (par->box->in()) {
-						if (mainprogram->leftmousedown) {
-							mainprogram->leftmousedown = false;
-							mainmix->adaptparam = par;
-							mainmix->prevx = mainprogram->mx;
+					if (par->box->vtxcoords->y1 < 1.0 - tf(mainmix->layw) - tf(0.22f) - tf(0.05f) * 10) break;
+					if (par->box->vtxcoords->y1 <= 1.0 - tf(mainmix->layw) - tf(0.18f)) {
+						std::string parstr;
+						draw_box(par->box, -1);
+						if (mainmix->learnparam == par and mainmix->learn) {
+							parstr = "MIDI";
 						}
+						else parstr = par->name;
+						render_text(parstr, white, par->box->vtxcoords->x1 + tf(0.01f), par->box->vtxcoords->y1 + tf(0.05f) - tf(0.030f), tf(0.0003f), tf(0.0005f));
+						if (par->box->in()) {
+							if (mainprogram->leftmousedown) {
+								mainprogram->leftmousedown = false;
+								mainmix->adaptparam = par;
+								mainmix->prevx = mainprogram->mx;
+							}
+						}
+						draw_box(green, green, par->box->vtxcoords->x1 + par->box->vtxcoords->w * ((par->value - par->range[0]) / (par->range[1] - par->range[0])) - tf(0.00078f), par->box->vtxcoords->y1, tf(0.00156f), par->box->vtxcoords->h, -1);
 					}
-					draw_box(green, green, par->box->vtxcoords->x1 + par->box->vtxcoords->w * ((par->value - par->range[0]) / (par->range[1] - par->range[0])) - tf(0.00078f), par->box->vtxcoords->y1, tf(0.00156f), par->box->vtxcoords->h, -1);
 				}
 			}
 			// Handle chroma tolerance
@@ -4011,6 +4106,8 @@ void onestepfrom(bool stage, Node *node, Node *prevnode, GLuint prevfbotex) {
 				case RIPPLE: {
 					float riptime = glGetUniformLocation(mainprogram->ShaderProgram, "riptime");
 					glUniform1f(riptime, effect->get_ripplecount());
+					printf("riptime %d\n", effect->get_ripplecount());
+					fflush(stdout);
 					fxid = glGetUniformLocation(mainprogram->ShaderProgram, "fxid");
 					glUniform1i(fxid, RIPPLE);
 					break;
@@ -5045,7 +5142,7 @@ void make_layboxes() {
 				testlay->chromabox->vtxcoords->h = tf(0.05f);
 				testlay->chromabox->upvtxtoscr();
 		
-				// shift effectboxes
+				// shift effectboxes and parameterboxes according to position in stack and scrollposition of stack
 				Effect *preveff = NULL;
 				for (int j = 0; j < testlay->effects.size(); j++) {
 					Effect *eff = testlay->effects[j];
@@ -5065,7 +5162,7 @@ void make_layboxes() {
 						}
 					}
 					else {
-						eff->box->vtxcoords->y1 = 1.0 - tf(mainmix->layw) - tf(0.20f);
+						eff->box->vtxcoords->y1 = 1.0 - tf(mainmix->layw) - tf(0.20f) + (tf(0.05f) * testlay->effscroll);
 					}
 					eff->box->upvtxtoscr();
 					eff->onoffbutton->box->vtxcoords->y1 = eff->box->vtxcoords->y1;
@@ -5082,14 +5179,14 @@ void make_layboxes() {
 					}
 				}
 				
-				// Make mixfac->box
+				// Make GUI box of mixing factor slider
 				testlay->blendnode->mixfac->box->vtxcoords->x1 = testlay->mixbox->vtxcoords->x1 + tf(0.08f);
 				testlay->blendnode->mixfac->box->vtxcoords->y1 = testlay->mixbox->vtxcoords->y1;
 				testlay->blendnode->mixfac->box->vtxcoords->w = tf(mainmix->layw) * 0.25f;
 				testlay->blendnode->mixfac->box->vtxcoords->h = tf(0.05f);
 				testlay->blendnode->mixfac->box->upvtxtoscr();
 				
-				// Make speed->box
+				// Make GUI box of video speed slider
 				testlay->speed->box->acolor[0] = 0.5;
 				testlay->speed->box->acolor[1] = 0.2;
 				testlay->speed->box->acolor[2] = 0.5;
@@ -5100,7 +5197,7 @@ void make_layboxes() {
 				testlay->speed->box->vtxcoords->h = tf(0.05f);
 				testlay->speed->box->upvtxtoscr();
 				
-				// Make opacity->box
+				// GUI box of layer opacity slider
 				testlay->opacity->box->acolor[0] = 0.5;
 				testlay->opacity->box->acolor[1] = 0.2;
 				testlay->opacity->box->acolor[2] = 0.5;
@@ -5111,7 +5208,7 @@ void make_layboxes() {
 				testlay->opacity->box->vtxcoords->h = tf(0.05f);
 				testlay->opacity->box->upvtxtoscr();
 				
-				// Make volume->box
+				// GUI box of layer audio volume slider
 				testlay->volume->box->acolor[0] = 0.5;
 				testlay->volume->box->acolor[1] = 0.2;
 				testlay->volume->box->acolor[2] = 0.5;
@@ -5122,7 +5219,7 @@ void make_layboxes() {
 				testlay->volume->box->vtxcoords->h = tf(0.05f);
 				testlay->volume->box->upvtxtoscr();
 				
-				// Make playbut->box
+				// GUI box of play video button
 				testlay->playbut->box->acolor[0] = 0.5;
 				testlay->playbut->box->acolor[1] = 0.2;
 				testlay->playbut->box->acolor[2] = 0.5;
@@ -5133,7 +5230,7 @@ void make_layboxes() {
 				testlay->playbut->box->vtxcoords->h = tf(0.05f);
 				testlay->playbut->box->upvtxtoscr();
 				
-				// Make bouncebut->box
+				// GUI box of bounce play video button
 				testlay->bouncebut->box->acolor[0] = 0.5;
 				testlay->bouncebut->box->acolor[1] = 0.2;
 				testlay->bouncebut->box->acolor[2] = 0.5;
@@ -5144,7 +5241,7 @@ void make_layboxes() {
 				testlay->bouncebut->box->vtxcoords->h = tf(0.05f);
 				testlay->bouncebut->box->upvtxtoscr();
 				
-				// Make revbut->box
+				// GUI box of reverse play video button
 				testlay->revbut->box->acolor[0] = 0.5;
 				testlay->revbut->box->acolor[1] = 0.2;
 				testlay->revbut->box->acolor[2] = 0.5;
@@ -5155,7 +5252,7 @@ void make_layboxes() {
 				testlay->revbut->box->vtxcoords->h = tf(0.05f);
 				testlay->revbut->box->upvtxtoscr();
 				
-				// Make frameforward->box
+				// GUI box of video frame forward button
 				testlay->frameforward->box->acolor[0] = 0.5;
 				testlay->frameforward->box->acolor[1] = 0.2;
 				testlay->frameforward->box->acolor[2] = 0.5;
@@ -5166,7 +5263,7 @@ void make_layboxes() {
 				testlay->frameforward->box->vtxcoords->h = tf(0.05f);
 				testlay->frameforward->box->upvtxtoscr();
 				
-				// Make framebackward->box
+				// GUI box of video frame backward button
 				testlay->framebackward->box->acolor[0] = 0.5;
 				testlay->framebackward->box->acolor[1] = 0.2;
 				testlay->framebackward->box->acolor[2] = 0.5;
@@ -5177,7 +5274,7 @@ void make_layboxes() {
 				testlay->framebackward->box->vtxcoords->h = tf(0.05f);
 				testlay->framebackward->box->upvtxtoscr();
 				
-				// Make genmidibut->box
+				// GUI box of specific general midi set for layer switch
 				testlay->genmidibut->box->acolor[0] = 0.5;
 				testlay->genmidibut->box->acolor[1] = 0.2;
 				testlay->genmidibut->box->acolor[2] = 0.5;
@@ -5188,7 +5285,7 @@ void make_layboxes() {
 				testlay->genmidibut->box->vtxcoords->h = tf(0.05f);
 				testlay->genmidibut->box->upvtxtoscr();
 				
-				// Make loopbox
+				// GUI box of scratch video box
 				testlay->loopbox->acolor[0] = 0.5;
 				testlay->loopbox->acolor[1] = 0.2;
 				testlay->loopbox->acolor[2] = 0.5;
@@ -5209,14 +5306,14 @@ void make_layboxes() {
 					testlay->node->box->upscrtovtx();
 				}
 				
-				// Make chdir->box
+				// GUI box of chromakey direction switch
 				testlay->chdir->box->vtxcoords->x1 = testlay->mixbox->vtxcoords->x1 + tf(0.24f);
 				testlay->chdir->box->vtxcoords->y1 = testlay->mixbox->vtxcoords->y1;
 				testlay->chdir->box->vtxcoords->w = tf(0.025f);
 				testlay->chdir->box->vtxcoords->h = tf(0.05f);
 				testlay->chdir->box->upvtxtoscr();
 				
-				// Make chinv->box
+				// GUI box of chromakey inversion switch
 				testlay->chinv->box->vtxcoords->x1 = testlay->mixbox->vtxcoords->x1 + tf(0.285f);
 				testlay->chinv->box->vtxcoords->y1 = testlay->mixbox->vtxcoords->y1;
 				testlay->chinv->box->vtxcoords->w = tf(0.025f);
@@ -5227,6 +5324,8 @@ void make_layboxes() {
 	}
 }
 
+// adds an effect of a certain type to a layer at a certain position in its effect list
+// comp is set when the layer belongs to the output layer stacks
 Effect *do_add_effect(Layer *lay, EFFECT_TYPE type, int pos, bool comp) {
 	Effect *effect;
 	switch (type) {
@@ -5265,6 +5364,7 @@ Effect *do_add_effect(Layer *lay, EFFECT_TYPE type, int pos, bool comp) {
 			break;
 		case RIPPLE:
 			effect = new RippleEffect();
+			((RippleEffect*)(effect))->speed = ((RippleEffect*)(effect))->params[0]->value;			
 			break;
 		case FISHEYE:
 			effect = new FishEyeEffect();
@@ -5349,16 +5449,21 @@ Effect *do_add_effect(Layer *lay, EFFECT_TYPE type, int pos, bool comp) {
 	effect->type = type;
 	effect->pos = pos;
 	effect->layer = lay;
+	
 
-	Effect *eff;
-	int temppos = pos;
-	for(int i = pos; i < lay->effects.size(); i++) {
-		eff = lay->effects[i];
-		eff->node->alignpos += 1;
-		temppos += 1;
-		eff->box->vtxcoords->y1 = 1.0 - tf(mainmix->layw) - tf(0.05f) * (temppos + 2);
-		eff->box->upvtxtoscr();
+	// does scrolling when effect stack reaches bottom of GUI space
+	lay->numefflines += effect->numrows;
+	if (lay->numefflines > 11) {
+		int further = (lay->numefflines - lay->effscroll) - 11;
+		lay->effscroll = lay->effscroll + further * (further > 0);
+		int linepos = 0;
+		for (int i = 0; i < effect->pos; i++) {
+			linepos += lay->effects[i]->numrows;
+		}
+		if (lay->effscroll > linepos) lay->effscroll = linepos;
 	}
+	
+	Effect *eff;
 
 	lay->effects.insert(lay->effects.begin() + pos, effect);
 
@@ -5558,6 +5663,8 @@ Layer* Mixer::add_layer(std::vector<Layer*> &layers, int pos) {
 	if (layers == mainmix->layersA or layers == mainmix->layersB) comp = false;
 	else comp = true;
 	Layer *layer = new Layer(comp);
+	if (layers == mainmix->layersA or layers == mainmix->layersAcomp) layer->deck = 0;
+	else layer->deck = 1;
 	Clip *clip = new Clip;
 	layer->clips.push_back(clip);
 	clip->type = ELEM_LAYER;
@@ -5725,7 +5832,6 @@ void Mixer::delete_layer(std::vector<Layer*> &layers, Layer *testlay, bool add) 
 	do_delete(testlay, layers, add);
 }
 
-
 Effect::Effect() {
 	Box *box = new Box;
 	this->box = box;
@@ -5739,6 +5845,8 @@ Effect::Effect() {
 	box->upvtxtoscr();
 	box->acolor[3] = 1.0f;
 	
+	// sets the dry/wet (mix of no-effect with effect) amount of the effect as a parameter
+	// read comment at BlurEffect::BlurEffect()
 	this->drywet = new Param;
 	this->drywet->name = ""; 
 	this->drywet->value = 1.0f;
@@ -5758,6 +5866,14 @@ Effect::~Effect() {
 	glDeleteFramebuffers(1, &this->fbo);
 }
 
+// The following section defines the different effects and their respective parameters
+// this->numrows defines the number of lines the effect+params takes up in the GUI
+// param->name is the parameter name as it appears in the GUI
+// param->value is the default parameter value
+// param->range defines the boundaries of possible parameter values
+// param->sliding: true when value is continuous, false when value is integer (not used at the moment, all params are continuous)
+// param->shadervar is the uniform variable name used in the shader to represent the parameter
+// param->effect: the effect the parameter belongs to
 BlurEffect::BlurEffect() {
 	this->numrows = 1;
 	Param *param = new Param;
@@ -6989,6 +7105,34 @@ Program::Program() {
 	this->effprev->box->vtxcoords->h = 0.1f;
 	this->effprev->box->upvtxtoscr();
 	
+	this->effscrollupA = new Box;
+	this->effscrollupA->vtxcoords->x1 = -1.0;
+	this->effscrollupA->vtxcoords->y1 = 1.0 - tf(mainmix->layw) - tf(0.20f);
+	this->effscrollupA->vtxcoords->w = tf(0.025f);
+	this->effscrollupA->vtxcoords->h = tf(0.05f);
+	this->effscrollupA->upvtxtoscr();
+	
+	this->effscrollupB = new Box;
+	this->effscrollupB->vtxcoords->x1 = -1.0;
+	this->effscrollupB->vtxcoords->y1 = 1.0 - tf(mainmix->layw) - tf(0.20f);
+	this->effscrollupB->vtxcoords->w = tf(0.025f);
+	this->effscrollupB->vtxcoords->h = tf(0.05f);
+	this->effscrollupB->upvtxtoscr();
+	
+	this->effscrolldownA = new Box;
+	this->effscrolldownA->vtxcoords->x1 = 1.0 - tf(0.05f);
+	this->effscrolldownA->vtxcoords->y1 = 1.0 - tf(mainmix->layw) - tf(0.20f) - tf(0.05f) * 10;
+	this->effscrolldownA->vtxcoords->w = tf(0.025f);
+	this->effscrolldownA->vtxcoords->h = tf(0.05f);
+	this->effscrolldownA->upvtxtoscr();
+	
+	this->effscrolldownB = new Box;
+	this->effscrolldownB->vtxcoords->x1 = -1.0;
+	this->effscrolldownB->vtxcoords->y1 = 1.0 - tf(mainmix->layw) - tf(0.20f) - tf(0.05f) * 10;
+	this->effscrolldownB->vtxcoords->w = tf(0.025f);
+	this->effscrolldownB->vtxcoords->h = tf(0.05f);
+	this->effscrolldownB->upvtxtoscr();
+	
 	this->tmplay = new Box;
 	this->tmplay->vtxcoords->x1 = 0.075;
 	this->tmplay->vtxcoords->y1 = -0.9f;
@@ -7477,6 +7621,8 @@ void handle_numboxes(std::vector<Box*> &numboxes) {
 	}
 }
 
+// regulates the reordering of layers around the stacks by dragging
+// both exchanging two layers and moving one layer
 void exchange(Layer *lay, std::vector<Layer*> &slayers, std::vector<Layer*> &dlayers, bool deck) {
 	int size = dlayers.size();
 	for (int i = 0; i < size; i++) {
@@ -7502,13 +7648,15 @@ void exchange(Layer *lay, std::vector<Layer*> &slayers, std::vector<Layer*> &dla
 		if (dropin or (box->scrcoords->y1 < mainprogram->my + box->scrcoords->h and mainprogram->my < box->scrcoords->y1)) {
 			if ((box->scrcoords->x1 + xvtxtoscr(0.075f) < mainprogram->mx and mainprogram->mx < box->scrcoords->x1 + box->scrcoords->w - xvtxtoscr(0.075f))) {
 				if (lay == inlay) return;
-				//exchange
+				//exchange two layers
+				bool indeck = inlay->deck;
 				BlendNode *bnode = inlay->blendnode;
 				BLEND_TYPE btype = bnode->blendtype;
 				VideoNode *node = inlay->node;
 				Node *lenode = inlay->lasteffnode;
 				slayers[lay->pos] = inlay;
 				slayers[lay->pos]->pos = lay->pos;
+				slayers[lay->pos]->deck = lay->deck;
 				slayers[lay->pos]->node = lay->node;
 				slayers[lay->pos]->node->layer = inlay;
 				slayers[lay->pos]->blendnode = lay->blendnode;
@@ -7522,6 +7670,7 @@ void exchange(Layer *lay, std::vector<Layer*> &slayers, std::vector<Layer*> &dla
 				
 				dlayers[i] = lay;
 				dlayers[i]->pos = i;
+				dlayers[i]->deck = indeck;
 				dlayers[i]->node = node;
 				dlayers[i]->node->layer = lay;
 				dlayers[i]->blendnode = bnode;
@@ -7567,7 +7716,7 @@ void exchange(Layer *lay, std::vector<Layer*> &slayers, std::vector<Layer*> &dla
 			}
 			else if (dropin or endx or (box->scrcoords->x1 - xvtxtoscr(0.075f) * (i - mainmix->scrollpos[deck] != 0) < mainprogram->mx and mainprogram->mx < box->scrcoords->x1 + xvtxtoscr(0.075f))) {
 				if (lay == dlayers[i]) return;
-				//move
+				//move one layer
 				BLEND_TYPE nextbtype;
 				float nextmfval;
 				int nextwipetype, nextwipedir;
@@ -7577,6 +7726,7 @@ void exchange(Layer *lay, std::vector<Layer*> &slayers, std::vector<Layer*> &dla
 					nextlay = slayers[lay->pos + 1];
 					nextbtype = nextlay->blendnode->blendtype;
 				}
+				lay->deck = deck;
 				BLEND_TYPE btype = lay->blendnode->blendtype;
 				BlendNode *firstbnode = (BlendNode*)dlayers[0]->lasteffnode->out[0];
 				Node *firstlasteffnode = dlayers[0]->lasteffnode;
@@ -10239,7 +10389,7 @@ void the_loop() {
 		//blue areas
 		float blue[4] = {0.1, 0.1, 0.6, 1.0};
 		if (mainmix->currlay) {
-			draw_box(nullptr, blue, -1.0f + mainmix->numw + mainmix->currdeck * 1.0f + (mainmix->currlay->pos - mainmix->scrollpos[mainmix->currdeck]) * mainmix->layw, -1.0f, mainmix->layw, 2.0f, -1);
+			draw_box(nullptr, blue, -1.0f + mainmix->numw + mainmix->currlay->deck * 1.0f + (mainmix->currlay->pos - mainmix->scrollpos[mainmix->currlay->deck]) * mainmix->layw, -1.0f, mainmix->layw, 2.0f, -1);
 		}
 			
 		//draw wormhole
@@ -10360,6 +10510,7 @@ void the_loop() {
 					box = eff->onoffbutton->box;
 					if (box->scrcoords->x1 < mainprogram->mx and mainprogram->mx < box->scrcoords->x1 + tf(mainmix->layw) * w / 2.0) {
 						if (box->scrcoords->y1 - box->scrcoords->h - 7.5 < mainprogram->my and mainprogram->my < box->scrcoords->y1 - box->scrcoords->h + 7.5) {
+							// mouse over "Insert Effect" box, inbetween effects
 							if (mainprogram->menuactivation or mainprogram->leftmouse) {
 								mainprogram->effectmenu->state = 2;
 								mainmix->insert = true;
@@ -10369,8 +10520,8 @@ void the_loop() {
 								mainprogram->menuy = mainprogram->my;
 								mainprogram->leftmouse = false;
 								mainprogram->menuactivation = false;
-								mainprogram->menuondisplay = true;
 							}
+							mainprogram->menuondisplay = true;
 							inbetween = true;
 							vx2 = box->vtxcoords->x1;
 							vy2 = box->vtxcoords->y1 + box->vtxcoords->h - tf(0.011f);
@@ -10600,7 +10751,7 @@ void the_loop() {
 			if (mainprogram->leftmouse) {
 				mainprogram->preveff = !mainprogram->preveff;
 				mainprogram->prevvid = !mainprogram->prevvid;
-				std::vector<Layer*> &lvec = choose_layers(mainmix->currdeck);
+				std::vector<Layer*> &lvec = choose_layers(mainmix->currlay->deck);
 				if (!mainprogram->preveff and mainprogram->prevvid) {
 					for (int i = 0; i < mainmix->layersA.size(); i++) {
 						Layer *lay = mainmix->layersA[i];
@@ -10696,6 +10847,9 @@ void the_loop() {
 		
 		// Draw effectmenuhints
 		if(!mainprogram->queueing) {
+			if (vy1 < 1.0 - tf(mainmix->layw) - tf(0.22f) - tf(0.05f) * 10) {
+				vy1 = 1.0 - tf(mainmix->layw) - tf(0.20f) - tf(0.05f) * 10;
+			}
 			if (bottom) {
 				bottom = false;
 				draw_box(white, lightblue, vx1, vy1 - tf(0.05f), tf(mainmix->layw), tf(0.038f), -1);
@@ -11331,7 +11485,7 @@ void the_loop() {
 		
 		if (mainprogram->nodesmain->linked and mainmix->currlay) {
 			// Handle vidbox
-			std::vector<Layer*> &lvec = choose_layers(mainmix->currdeck);
+			std::vector<Layer*> &lvec = choose_layers(mainmix->currlay->deck);
 			Layer *lay = mainmix->currlay;
 			Box *box = lay->node->vidbox;
 			if (box->in() and !lay->transforming) {
@@ -11455,9 +11609,9 @@ void the_loop() {
 			}
 			
 			// Handle wipes
-			if (mainprogram->nodesmain->mixnodes[mainmix->currdeck]->outputbox->in()) {
+			if (mainprogram->nodesmain->mixnodes[mainmix->currlay->deck]->outputbox->in()) {
 				if (mainprogram->leftmousedown) {
-					mainmix->currlay->blendnode->wipex = -(((1.0f - ((xscrtovtx(mainprogram->mx) - 0.55f - mainmix->currdeck * 0.9f) / 0.3f)) - 0.5f) * 2.0f - 1.5f);
+					mainmix->currlay->blendnode->wipex = -(((1.0f - ((xscrtovtx(mainprogram->mx) - 0.55f - mainmix->currlay->deck * 0.9f) / 0.3f)) - 0.5f) * 2.0f - 1.5f);
 					mainmix->currlay->blendnode->wipey = -((((2.0f - yscrtovtx(mainprogram->my)) / 0.3f) - 0.5f) * 2.0f - 0.50f);
 					if (mainmix->currlay->blendnode->wipetype > 7) {
 						mainmix->currlay->blendnode->wipex *= 16.0f;
@@ -11645,7 +11799,7 @@ void the_loop() {
 		
 	// layer dragging
 	if (mainprogram->nodesmain->linked and mainmix->currlay) {
-		std::vector<Layer*> &lvec = choose_layers(mainmix->currdeck);
+		std::vector<Layer*> &lvec = choose_layers(mainmix->currlay->deck);
 		Layer *lay = mainmix->currlay;
 		Box *box = lay->node->vidbox;
 		if (lay->vidmoving) {
@@ -12070,7 +12224,7 @@ void save_mix(const std::string &path) {
 	wfile << "CURRLAY\n";
 	wfile << std::to_string(mainmix->currlay->pos);
 	wfile << "CURRDECK\n";
-	wfile << std::to_string(mainmix->currdeck);
+	wfile << std::to_string(mainmix->currlay->deck);
 	wfile << "CROSSFADE\n";
 	wfile << std::to_string(mainmix->crossfade->value);
 	wfile << "\n";
@@ -12441,7 +12595,7 @@ void open_mix(const std::string &path) {
 		}
 		if (istring == "CURRDECK") {
 			getline(rfile, istring);
-			mainmix->currdeck = std::stoi(istring);
+			mainmix->currlay->deck = std::stoi(istring);
 		}
 		if (istring == "CROSSFADE") {
 			getline(rfile, istring); 
@@ -12731,7 +12885,7 @@ void open_mix(const std::string &path) {
 			}
 		}
 	}
-	std::vector<Layer*> &lvec = choose_layers(mainmix->currdeck);
+	std::vector<Layer*> &lvec = choose_layers(mainmix->currlay->deck);
 	for (int i = 0; i < lvec.size(); i++) {
 		if (lvec[i]->pos == clpos) {
 			mainmix->currlay = lvec[i];
@@ -13975,6 +14129,7 @@ int main(int argc, char* argv[]){
 	w2 = w;  // for render_text
 	h2 = h;
 
+	mainmix = new Mixer;
 	mainprogram = new Program;	
  	mainprogram->mainwindow = win;
 
@@ -14277,7 +14432,6 @@ int main(int argc, char* argv[]){
 	mainprogram->nodesmain = new NodesMain;
 	mainprogram->nodesmain->add_nodepages(8);
 	mainprogram->nodesmain->currpage = mainprogram->nodesmain->pages[0];
-	mainmix = new Mixer;
 	mainprogram->toscreen->box->upvtxtoscr();
 	mainprogram->backtopre->box->upvtxtoscr();
 	mainprogram->vidprev->box->upvtxtoscr();
