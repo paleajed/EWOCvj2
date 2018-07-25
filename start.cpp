@@ -11121,6 +11121,7 @@ void the_loop() {
 		// Draw and handle mixtargetmenu
 		std::vector<OutputEntry*> currentries;
 		std::vector<int> possscreens;
+		std::vector<OutputEntry*> takenentries;
 		if (mainprogram->mixtargetmenu->state > 1) {
 			int numd = SDL_GetNumVideoDisplays();
 			std::vector<std::string> mixtargets;
@@ -11135,6 +11136,9 @@ void the_loop() {
 						if (currentries.size() == 1) mixtargets.push_back("Stop displaying at:");
 						mixtargets.push_back(SDL_GetDisplayName(currentries.back()->screen));
 						currscreens.push_back(currentries.back()->screen);
+					}
+					else {
+						takenentries.push_back(mainprogram->outputentries[i]);
 					}
 				}
 			}
@@ -11163,6 +11167,18 @@ void the_loop() {
 				}
 			}
 			if (k > 1) {
+				for (int i = 0; i < takenentries.size(); i++) {
+					if (takenentries[i]->screen == k - currentries.size() - 2 - (currentries.size() != 0)) {
+						SDL_DestroyWindow(takenentries[i]->win->win);
+						mainprogram->outputentries.erase(std::find(mainprogram->outputentries.begin(), mainprogram->outputentries.end(), takenentries[i]));
+						// deleting entry itself?  closethread...
+						takenentries[i]->win->closethread = true;
+						while (takenentries[i]->win->closethread) {
+							takenentries[i]->win->syncnow = true;
+							takenentries[i]->win->sync.notify_one();
+						}
+					}
+				}
 				if (currentries.size()) {
 					if (k > 1 and k < 2 + currentries.size()) {
 						SDL_DestroyWindow(currentries[k - 2]->win->win);
@@ -11176,7 +11192,9 @@ void the_loop() {
 					}
 				}
 				else {
-					int screen = possscreens[k - currentries.size() - 2];
+					int screen;
+					if (currentries.size()) screen = possscreens[k - currentries.size() - 3];
+					else screen = possscreens[k - currentries.size() - 2];
 					Window *mwin = new Window;
 					mwin->mixid = mainprogram->mixtargetmenu->value;
 					OutputEntry *entry = new OutputEntry;
