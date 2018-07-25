@@ -231,6 +231,13 @@ class BinMix {
 		~BinMix();
 };
 
+class OutputEntry {
+	public:
+		int id;
+		int screen;
+		Window *win;
+};
+
 class Program {
 	public:
 		GLuint ShaderProgram;
@@ -240,6 +247,7 @@ class Program {
 		GLuint smglobfbo;
 		GLuint smglobfbotex;
 		NodesMain *nodesmain;
+		std::vector<OutputEntry*> outputentries;
 		Layer *loadlay;
 		Layer *prelay = nullptr;
 		SDL_Window *mainwindow;
@@ -397,10 +405,6 @@ class Program {
 		std::string backupname;
 		int cursorpos;
 
-		std::mutex syncmutex;
-		std::condition_variable sync;
-		bool syncnow = false;
-		
 		int numcores = 0;
 		int maxthreads;
 		int encthreads = 0;

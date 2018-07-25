@@ -930,7 +930,7 @@ vec4 cutoff(vec2 texco)  //selfmade
 
 vec4 glitch(vec2 uv)  //binary glitch shadertoy  waiting for permission - this function is CC licenced at the moment!
 {
-	return;
+	return vec4(0, 0, 0, 0);
     float x = uv.s;
     float y = uv.t;
         
@@ -1015,7 +1015,6 @@ mat2 rot = mat2(cos(GOLDEN_ANGLE), sin(GOLDEN_ANGLE), -sin(GOLDEN_ANGLE), cos(GO
 
 vec3 Bokeh(sampler2D tex, vec2 uv, float radius)  // kindly shared by Dave H.
 {
-	return;
 	vec3 acc = vec3(0), div = acc;
     float r = 1.;
     vec2 vangle = vec2(0.0,radius*.01 / sqrt(float(ITERATIONS)));
@@ -1120,7 +1119,7 @@ uniform float max_scale_lim = 10.0f;                // Abs change before max com
 // Colour to greyscale, fast approx gamma
 float CtG(vec3 RGB) { return  sqrt( (1.0/3.0)*((RGB*RGB).r + (RGB*RGB).g + (RGB*RGB).b) ); }
 
-vec4 sharpen(vec2 texco)    https://github.com/libretro/glsl-shaders - awaiting approval - until then the following disclaimer belongs to this functions code
+vec4 sharpen(vec2 texco)    //https://github.com/libretro/glsl-shaders - awaiting approval - until then the following disclaimer belongs to this functions code
 {
 // Copyright (c) 2015, bacondither
 // All rights reserved.
@@ -1146,7 +1145,7 @@ vec4 sharpen(vec2 texco)    https://github.com/libretro/glsl-shaders - awaiting 
 // (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE OF
 // THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE. */	
 
-	return;
+	return vec4(0, 0, 0, 0);
 	vec2	tex	=	texco;
 	
 	float	px	=	1.0f / fbowidth;

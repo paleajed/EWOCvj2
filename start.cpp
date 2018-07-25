@@ -8544,10 +8544,17 @@ void output_video() {
 
 	MixNode *node;
 	while(1) {
-		std::unique_lock<std::mutex> lock(mainprogram->syncmutex);
-		mainprogram->sync.wait(lock, [&]{return mainprogram->syncnow;});
-		mainprogram->syncnow = false;
+		std::unique_lock<std::mutex> lock(mwin->syncmutex);
+		mwin->sync.wait(lock, [&]{return mwin->syncnow;});
+		mwin->syncnow = false;
 		lock.unlock();
+		
+		// receive end of thread signal
+		if (mwin->closethread) {
+			mwin->closethread = false;
+			return;
+		}
+		
 		if (mwin->mixid == mainprogram->nodesmain->mixnodes.size()) node = (MixNode*)mainprogram->nodesmain->mixnodescomp[mwin->mixid - 1];
 		else node = (MixNode*)mainprogram->nodesmain->mixnodes[mwin->mixid];
 		
@@ -11112,15 +11119,35 @@ void the_loop() {
 		}
 		
 		// Draw and handle mixtargetmenu
+		std::vector<OutputEntry*> currentries;
+		std::vector<int> possscreens;
 		if (mainprogram->mixtargetmenu->state > 1) {
 			int numd = SDL_GetNumVideoDisplays();
 			std::vector<std::string> mixtargets;
 			mixtargets.push_back("submenu wipemenu");
 			mixtargets.push_back("Choose wipe");
+			std::vector<int> currscreens;
 			if (numd == 1) mixtargets.push_back("No external displays");
-			else mixtargets.push_back("Mix down to display:");
+			else {
+				for (int i = 0; i < mainprogram->outputentries.size(); i++) {
+					if (mainprogram->outputentries[i]->id == mainprogram->mixtargetmenu->value) {
+						currentries.push_back(mainprogram->outputentries[i]);
+						if (currentries.size() == 1) mixtargets.push_back("Stop displaying at:");
+						mixtargets.push_back(SDL_GetDisplayName(currentries.back()->screen));
+						currscreens.push_back(currentries.back()->screen);
+					}
+				}
+			}
+			bool first = true;
 			for (int i = 1; i < numd; i++) {
-				mixtargets.push_back(SDL_GetDisplayName(i));
+				if (std::find(currscreens.begin(), currscreens.end(), i) == currscreens.end()) {
+					if (first) {
+						first = false;
+						mixtargets.push_back("Mix down to display:");
+					}
+					mixtargets.push_back(SDL_GetDisplayName(i));
+					possscreens.push_back(i);
+				}
 			}
 			make_menu("mixtargetmenu", mainprogram->mixtargetmenu, mixtargets);
 		}
@@ -11136,26 +11163,46 @@ void the_loop() {
 				}
 			}
 			if (k > 1) {
-				Window *mwin = new Window;
-				mwin->mixid = mainprogram->mixtargetmenu->value;
-				SDL_Rect rc;
-				SDL_GetDisplayUsableBounds(k - 1, &rc);
-				auto sw = rc.w;
-				auto sh = rc.h;
-				mwin->win = SDL_CreateWindow(PROGRAM_NAME, SDL_WINDOWPOS_CENTERED_DISPLAY(k - 1), SDL_WINDOWPOS_CENTERED_DISPLAY(k - 1), sw, sh, SDL_WINDOW_OPENGL | SDL_WINDOW_MAXIMIZED | SDL_WINDOW_RESIZABLE | SDL_WINDOW_FULLSCREEN_DESKTOP | SDL_WINDOW_ALLOW_HIGHDPI);
-				mainprogram->mixwindows.push_back(mwin);
-				SDL_GL_MakeCurrent(mainprogram->mainwindow, glc);
-				HGLRC c1 = wglGetCurrentContext();
-				mwin->glc = SDL_GL_CreateContext(mwin->win);
-				SDL_GL_MakeCurrent(mwin->win, mwin->glc);
-				HGLRC c2 = wglGetCurrentContext();
-				wglShareLists(c1, c2);
-				glUseProgram(mainprogram->ShaderProgram);
-				
-				std::thread vidoutput (output_video);
-				vidoutput.detach();
-				
-				SDL_GL_MakeCurrent(mainprogram->mainwindow, glc);
+				if (currentries.size()) {
+					if (k > 1 and k < 2 + currentries.size()) {
+						SDL_DestroyWindow(currentries[k - 2]->win->win);
+						mainprogram->outputentries.erase(std::find(mainprogram->outputentries.begin(), mainprogram->outputentries.end(), currentries[k - 2]));
+						// deleting entry itself?  closethread...
+						currentries[k - 2]->win->closethread = true;
+						while (currentries[k - 2]->win->closethread) {
+							currentries[k - 2]->win->syncnow = true;
+							currentries[k - 2]->win->sync.notify_one();
+						}
+					}
+				}
+				else {
+					int screen = possscreens[k - currentries.size() - 2];
+					Window *mwin = new Window;
+					mwin->mixid = mainprogram->mixtargetmenu->value;
+					OutputEntry *entry = new OutputEntry;
+					entry->id = mwin->mixid;
+					entry->screen = screen;
+					entry->win = mwin;
+					mainprogram->outputentries.push_back(entry);
+					SDL_Rect rc;
+					SDL_GetDisplayUsableBounds(screen, &rc);
+					auto sw = rc.w;
+					auto sh = rc.h;
+					mwin->win = SDL_CreateWindow(PROGRAM_NAME, SDL_WINDOWPOS_CENTERED_DISPLAY(screen), SDL_WINDOWPOS_CENTERED_DISPLAY(screen), sw, sh, SDL_WINDOW_OPENGL | SDL_WINDOW_MAXIMIZED | SDL_WINDOW_RESIZABLE | SDL_WINDOW_FULLSCREEN_DESKTOP | SDL_WINDOW_ALLOW_HIGHDPI);
+					mainprogram->mixwindows.push_back(mwin);
+					SDL_GL_MakeCurrent(mainprogram->mainwindow, glc);
+					HGLRC c1 = wglGetCurrentContext();
+					mwin->glc = SDL_GL_CreateContext(mwin->win);
+					SDL_GL_MakeCurrent(mwin->win, mwin->glc);
+					HGLRC c2 = wglGetCurrentContext();
+					wglShareLists(c1, c2);
+					glUseProgram(mainprogram->ShaderProgram);
+					
+					std::thread vidoutput (output_video);
+					vidoutput.detach();
+					
+					SDL_GL_MakeCurrent(mainprogram->mainwindow, glc);
+				}
 			}
 		}
 		if (mainprogram->menuchosen) {
@@ -11947,8 +11994,11 @@ void the_loop() {
 	mainprogram->rightmouse = 0;
 	
 	// sync with output views
-	mainprogram->syncnow = true;
-	mainprogram->sync.notify_one();
+	for (int i = 0; i < mainprogram->outputentries.size(); i++) {
+		Window *win = mainprogram->outputentries[i]->win;
+		win->syncnow = true;
+		win->sync.notify_one();
+	}
 	
 	glFlush();
 	bool prret = false;

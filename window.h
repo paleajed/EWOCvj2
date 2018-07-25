@@ -3,12 +3,16 @@
 
 class Window {
 	public:
-		SDL_Window* win;
+		SDL_Window *win;
 		SDL_GLContext glc;
 		GLuint vao;
 		GLuint vbuf;
 		GLuint tbuf;
 		int mixid;
+		bool closethread = false;
+		std::mutex syncmutex;
+		std::condition_variable sync;
+		bool syncnow = false;
 };
 
 class Menu {
