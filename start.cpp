@@ -3065,7 +3065,6 @@ void display_texture(Layer *lay, bool deck) {
 				if (!mainprogram->needsclick or mainprogram->leftmouse) {
 					if (!mainmix->moving and !mainprogram->cwon) {
 						mainmix->currlay = lay;
-						mainmix->currlay->deck = deck;
 						if (mainprogram->menuactivation) {
 							mainprogram->laymenu->state = 2;
 							mainmix->mouselayer = lay;
@@ -5660,10 +5659,10 @@ Mixer::Mixer() {
 
 Layer* Mixer::add_layer(std::vector<Layer*> &layers, int pos) {
 	bool comp;
-	if (layers == mainmix->layersA or layers == mainmix->layersB) comp = false;
-	else comp = true;
+	if (layers == this->layersA or layers == this->layersB) comp = false;
+	else comp = true;1;
 	Layer *layer = new Layer(comp);
-	if (layers == mainmix->layersA or layers == mainmix->layersAcomp) layer->deck = 0;
+	if (layers == this->layersA or layers == this->layersAcomp) layer->deck = 0;
 	else layer->deck = 1;
 	Clip *clip = new Clip;
 	layer->clips.push_back(clip);
@@ -7113,21 +7112,21 @@ Program::Program() {
 	this->effscrollupA->upvtxtoscr();
 	
 	this->effscrollupB = new Box;
-	this->effscrollupB->vtxcoords->x1 = -1.0;
+	this->effscrollupB->vtxcoords->x1 = 1.0 - tf(0.05f);
 	this->effscrollupB->vtxcoords->y1 = 1.0 - tf(mainmix->layw) - tf(0.20f);
 	this->effscrollupB->vtxcoords->w = tf(0.025f);
-	this->effscrollupB->vtxcoords->h = tf(0.05f);
+	this->effscrollupB->vtxcoords->h = tf(0.05f);     
 	this->effscrollupB->upvtxtoscr();
 	
 	this->effscrolldownA = new Box;
-	this->effscrolldownA->vtxcoords->x1 = 1.0 - tf(0.05f);
+	this->effscrolldownA->vtxcoords->x1 = -1.0;
 	this->effscrolldownA->vtxcoords->y1 = 1.0 - tf(mainmix->layw) - tf(0.20f) - tf(0.05f) * 10;
 	this->effscrolldownA->vtxcoords->w = tf(0.025f);
 	this->effscrolldownA->vtxcoords->h = tf(0.05f);
 	this->effscrolldownA->upvtxtoscr();
 	
 	this->effscrolldownB = new Box;
-	this->effscrolldownB->vtxcoords->x1 = -1.0;
+	this->effscrolldownB->vtxcoords->x1 = 1.0 - tf(0.05f);
 	this->effscrolldownB->vtxcoords->y1 = 1.0 - tf(mainmix->layw) - tf(0.20f) - tf(0.05f) * 10;
 	this->effscrolldownB->vtxcoords->w = tf(0.025f);
 	this->effscrolldownB->vtxcoords->h = tf(0.05f);
@@ -7580,7 +7579,7 @@ void handle_numboxes(std::vector<Box*> &numboxes) {
 								mainmix->nbframesA[mainmix->page[0]].push_back(lvec[j]);
 							}
 							mainmix->mousedeck = 0;
-							save_deck(temppath + "/tempdeck_xch.deck");
+							save_deck(temppath + "/appdata_xch.deck");
 							open_deck(temppath + "/tempdeck_A" + std::to_string(i) + comp + ".deck", 0);
 							boost::filesystem::rename(temppath + "/tempdeck_xch.deck", temppath + "/tempdeck_A" + std::to_string(mainmix->page[0] + 1) + comp + ".deck");
 							for (int j = 0; j < lvec.size(); j++) {
@@ -8784,15 +8783,17 @@ void hap_mix(BinMix * bm) {
 
 
 void enddrag() {
-	if (mainprogram->dragbinel->path.rfind(".layer") != std::string::npos) {
-		if (mainprogram->dragbinel->path.find("cliptemp_") != std::string::npos) {
-			boost::filesystem::remove(mainprogram->dragbinel->path);			
+	if (mainprogram->dragbinel) {
+		if (mainprogram->dragbinel->path.rfind(".layer") != std::string::npos) {
+			if (mainprogram->dragbinel->path.find("cliptemp_") != std::string::npos) {
+				boost::filesystem::remove(mainprogram->dragbinel->path);			
+			}
 		}
+		mainprogram->dragbinel = nullptr;
+		if (mainprogram->draglay) mainprogram->draglay->vidmoving = false;
+		mainmix->moving = false;
+		//glDeleteTextures(1, &mainprogram->dragtex);  maybe needs implementing in one case, check history
 	}
-	mainprogram->dragbinel = nullptr;
-	if (mainprogram->draglay) mainprogram->draglay->vidmoving = false;
-	mainmix->moving = false;
-	//glDeleteTextures(1, &mainprogram->dragtex);  maybe needs implementing in one case, check history
 }
 	
 
@@ -11241,26 +11242,32 @@ void the_loop() {
 				filereq.detach();
 			}
 			else if (k == 4) {
+				new_file(mainmix->mousedeck, 1);
+			}
+			else if (k == 5) {
 				mainprogram->pathto = "OPENDECK";
 				std::thread filereq (get_inname);
 				filereq.detach();
 			}
-			else if (k == 5) {
+			else if (k == 6) {
 				mainprogram->pathto = "SAVEDECK";
 				std::thread filereq (get_outname);
 				filereq.detach();
 			}
-			else if (k == 6) {
+			else if (k == 7) {
+				new_file(2, 1);
+			}
+			else if (k == 8) {
 				mainprogram->pathto = "OPENMIX";
 				std::thread filereq (get_inname);
 				filereq.detach();
 			}
-			else if (k == 7) {
+			else if (k == 9) {
 				mainprogram->pathto = "SAVEMIX";
 				std::thread filereq (get_outname);
 				filereq.detach();
 			}
-			else if (k == 8) {
+			else if (k == 10) {
 				if (std::find(mainmix->layersA.begin(), mainmix->layersA.end(), mainmix->mouselayer) != mainmix->layersA.end()) {
 					mainmix->delete_layer(mainmix->layersA, mainmix->mouselayer, true);
 				}
@@ -11274,7 +11281,7 @@ void the_loop() {
 					mainmix->delete_layer(mainmix->layersBcomp, mainmix->mouselayer, true);
 				}
 			}
-			else if (k == 9) {
+			else if (k == 11) {
 				mainmix->mouselayer->shiftx = 0.0f;
 				mainmix->mouselayer->shifty = 0.0f;
 			}
@@ -11317,21 +11324,27 @@ void the_loop() {
 				filereq.detach();
 			}
 			else if (k == 4) {
+				new_file(mainmix->mousedeck, 1);
+			}
+			else if (k == 5) {
 				mainprogram->pathto = "OPENDECK";
 				std::thread filereq (get_inname);
 				filereq.detach();
 			}
-			else if (k == 5) {
+			else if (k == 6) {
 				mainprogram->pathto = "SAVEDECK";
 				std::thread filereq (get_outname);
 				filereq.detach();
 			}
-			else if (k == 6) {
+			else if (k == 7) {
+				new_file(2, 1);
+			}
+			else if (k == 8) {
 				mainprogram->pathto = "OPENMIX";
 				std::thread filereq (get_inname);
 				filereq.detach();
 			}
-			else if (k == 7) {
+			else if (k == 9) {
 				mainprogram->pathto = "SAVEMIX";
 				std::thread filereq (get_outname);
 				filereq.detach();
@@ -11386,16 +11399,19 @@ void the_loop() {
 		// Draw and handle genericmenu
 		k = handle_menu(mainprogram->genericmenu);
 		if (k == 0) {
+			new_state();
+		}
+		else if (k == 1) {
 			mainprogram->pathto = "OPENSTATE";
 			std::thread filereq (get_inname);
 			filereq.detach();
 		}
-		else if (k == 1) {
+		else if (k == 2) {
 			mainprogram->pathto = "SAVESTATE";
 			std::thread filereq (get_outname);
 			filereq.detach();
 		}
-		else if (k == 2) {
+		else if (k == 3) {
 			if (!mainprogram->prefon) {
 				mainprogram->prefs->load();
 				mainprogram->prefon = true;
@@ -11418,7 +11434,7 @@ void the_loop() {
 				SDL_RaiseWindow(mainprogram->prefwindow);
 			}
 		}
-		else if (k == 3) {
+		else if (k == 4) {
 			sdldie("quitted");
 		}
 	
@@ -12207,7 +12223,7 @@ void save_state(const std::string &path) {
 	save_mix(remove_extension(path) + ".state1");
 	mainprogram->preveff = false;
 	save_mix(remove_extension(path) + ".state2");
-	save_genmidis(remove_extension(path) + ".midi");
+	//save_genmidis(remove_extension(path) + ".midi");
 	save_shelf(remove_extension(path) + ".shelf");
 	mainprogram->preveff = save;
 }
@@ -12223,8 +12239,10 @@ void save_mix(const std::string &path) {
 	
 	wfile << "CURRLAY\n";
 	wfile << std::to_string(mainmix->currlay->pos);
+	wfile << "\n";
 	wfile << "CURRDECK\n";
 	wfile << std::to_string(mainmix->currlay->deck);
+	wfile << "\n";
 	wfile << "CROSSFADE\n";
 	wfile << std::to_string(mainmix->crossfade->value);
 	wfile << "\n";
@@ -12300,6 +12318,10 @@ void open_layerfile(const std::string &path, int reset) {
 	
 	while (getline(rfile, istring)) {
 		if (istring == "POS") {
+		}
+		if (istring == "DECK") {
+			getline(rfile, istring); 
+			lay->deck = std::stoi(istring);
 		}
 		if (istring == "LIVE") {
 			getline(rfile, istring); 
@@ -12562,7 +12584,7 @@ void open_state(const std::string &path) {
 	open_mix(remove_extension(path) + ".state1.ewoc");
 	mainprogram->preveff = false;
 	open_mix(remove_extension(path) + ".state2.ewoc");
-	open_genmidis(remove_extension(path) + ".midi");
+	//open_genmidis(remove_extension(path) + ".midi");
 	open_shelf(remove_extension(path) + ".shelf");
 	
 	while (getline(rfile, istring)) {
@@ -12586,7 +12608,7 @@ void open_mix(const std::string &path) {
 	
 	new_file(2, 1);
 	
-	int clpos;
+	int clpos, cldeck;
 	Layer *lay;
 	while (getline(rfile, istring)) {
 		if (istring == "CURRLAY") {
@@ -12595,7 +12617,7 @@ void open_mix(const std::string &path) {
 		}
 		if (istring == "CURRDECK") {
 			getline(rfile, istring);
-			mainmix->currlay->deck = std::stoi(istring);
+			cldeck = std::stoi(istring);
 		}
 		if (istring == "CROSSFADE") {
 			getline(rfile, istring); 
@@ -12638,6 +12660,7 @@ void open_mix(const std::string &path) {
 			else {
 				lay = mainmix->add_layer(layers, pos);
 			}
+			lay->deck = deck;
 		}
 		if (istring == "LIVE") {
 			getline(rfile, istring); 
@@ -12885,7 +12908,7 @@ void open_mix(const std::string &path) {
 			}
 		}
 	}
-	std::vector<Layer*> &lvec = choose_layers(mainmix->currlay->deck);
+	std::vector<Layer*> &lvec = choose_layers(cldeck);
 	for (int i = 0; i < lvec.size(); i++) {
 		if (lvec[i]->pos == clpos) {
 			mainmix->currlay = lvec[i];
@@ -12916,6 +12939,11 @@ void open_deck(const std::string &path, bool alive) {
 			else {
 				lay = mainmix->add_layer(layers, pos);
 			}
+			lay->deck = mainmix->mousedeck;
+		}
+		if (istring == "DECK") {
+			getline(rfile, istring); 
+			lay->deck = std::stoi(istring);
 		}
 		if (istring == "LIVE") {
 			getline(rfile, istring); 
@@ -13197,33 +13225,57 @@ void delete_layers(std::vector<Layer*> &layers, bool alive) {
 	}
 }
 
+void new_shelf() {
+	for (int i = 0; i < 32; i++) {
+		thpath[i] = "";
+		thtype[i] = ELEM_FILE;
+		glBindTexture(GL_TEXTURE_2D, thumbtex[i]);
+		glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA, 0, 0, 0, GL_RGBA, GL_UNSIGNED_BYTE, nullptr);
+	}
+}
+
+void new_state() {
+	bool save = mainprogram->preveff;
+	mainprogram->preveff = true;
+	new_file(2, 1);
+	mainprogram->preveff = false;
+	new_file(2, 1);
+	//clear genmidis?
+	new_shelf();
+	mainprogram->preveff = save;
+}
+
 void new_file(int decks, bool alive) {
 	// kill mixnodes
 	//mainprogram->nodesmain->mixnodes.clear();
 	//mainprogram->nodesmain->mixnodescomp.clear();
 	
 	// reset layers
+	bool currdeck = 0;
+	if (mainmix->currlay) currdeck = mainmix->currlay->deck;
 	if (decks == 0 or decks == 2) {
 		std::vector<Layer*> &lvec = choose_layers(0);
 		delete_layers(lvec, alive);
-		mainmix->add_layer(lvec, 0);
+		Layer *lay = mainmix->add_layer(lvec, 0);
 		if (mainprogram->preveff) {
 			mainprogram->nodesmain->currpage->connect_nodes(lvec[lvec.size() - 1]->lasteffnode, mainprogram->nodesmain->mixnodes[0]);
 		}
 		else {
 			mainprogram->nodesmain->currpage->connect_nodes(lvec[lvec.size() - 1]->lasteffnode, mainprogram->nodesmain->mixnodescomp[0]);
 		}
+		if (currdeck == 0) mainmix->currlay = lay;
 	}
 	if (decks == 1 or decks == 2) {
 		std::vector<Layer*> &lvec = choose_layers(1);
 		delete_layers(lvec, alive);
-		mainmix->add_layer(lvec, 0);
+		Layer *lay = mainmix->add_layer(lvec, 0);
 		if (mainprogram->preveff) {
 			mainprogram->nodesmain->currpage->connect_nodes(lvec[lvec.size() - 1]->lasteffnode, mainprogram->nodesmain->mixnodes[1]);
 		}
 		else {
 			mainprogram->nodesmain->currpage->connect_nodes(lvec[lvec.size() - 1]->lasteffnode, mainprogram->nodesmain->mixnodescomp[1]);
 		}
+		if (currdeck == 1) mainmix->currlay = lay;
 	}
 		
 	// set comp layers
@@ -14324,8 +14376,10 @@ int main(int argc, char* argv[]){
  	layops.push_back("Open video");
 	layops.push_back("Open layer");
 	layops.push_back("Save layer");
+ 	layops.push_back("New deck");
 	layops.push_back("Open deck");
 	layops.push_back("Save deck");
+ 	layops.push_back("New mix");
  	layops.push_back("Open mix");
 	layops.push_back("Save mix");
   	layops.push_back("Delete layer");
@@ -14338,8 +14392,10 @@ int main(int argc, char* argv[]){
  	loadops.push_back("Open video");
 	loadops.push_back("Open layer");
 	loadops.push_back("Save layer");
+ 	loadops.push_back("New deck");
 	loadops.push_back("Open deck");
 	loadops.push_back("Save deck");
+ 	loadops.push_back("New mix");
  	loadops.push_back("Open mix");
 	loadops.push_back("Save mix");
  	make_menu("loadmenu", mainprogram->loadmenu, loadops);
@@ -14422,6 +14478,7 @@ int main(int argc, char* argv[]){
   	make_menu("genmidimenu", mainprogram->genmidimenu, genmidi);
 
  	std::vector<std::string> generic;
+  	generic.push_back("New state");
   	generic.push_back("Open state");
   	generic.push_back("Save state");
   	generic.push_back("Preferences");
@@ -14487,6 +14544,7 @@ int main(int argc, char* argv[]){
 		save_deck(temppath + "/tempdeck_A" + std::to_string(i + 1) + "comp.deck");
 		mainmix->page[1] = i;
 		Layer *layB = mainmix->add_layer(mainmix->layersB, 0);
+		layB->deck = 1;
 		mainmix->nbframesB[mainmix->page[1]].insert(mainmix->nbframesB[mainmix->page[1]].begin(), layB);
 		layB->clips.clear();
 		mainmix->mousedeck = 1;

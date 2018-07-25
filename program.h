@@ -472,6 +472,7 @@ extern void save_thumb(std::string path, GLuint tex);
 extern void open_thumb(std::string path, GLuint tex);
 extern void save_shelf(const std::string &path);
 extern void open_shelf(const std::string &path);
+extern void new_state();
 extern BinElement *find_element(int size, int k, int i, int j, bool olc);
 
 extern GLuint copy_tex(GLuint tex);
