@@ -633,9 +633,12 @@ void mycallback( double deltatime, std::vector< unsigned char > *message, void *
 		return;
   	}
   	if (midi0 == 176) {
-		if (midi0 == mainmix->crossfade->midi[0] and midi1 == mainmix->crossfade->midi[1] and midiport == mainmix->crossfade->midiport) {
+		Param *par;
+		if (mainprogram->preveff) par = mainmix->crossfade;
+		else par = mainmix->crossfadecomp;
+		if (midi0 == par->midi[0] and midi1 == par->midi[1] and midiport == par->midiport) {
 			mainmix->midi2 = midi2;
-			mainmix->midiparam = mainmix->crossfade;
+			mainmix->midiparam = par;
 		}
 		
 		for (int i = 0; i < mainprogram->nodesmain->currpage->nodes.size(); i++) {
@@ -3062,6 +3065,12 @@ void display_texture(Layer *lay, bool deck) {
 				else if (deck == 1) deckstr = "B";
 				render_text("Layer " + deckstr + std::to_string(lay->pos + 1), white, box->vtxcoords->x1 + tf(0.01f), box->vtxcoords->y1 + box->vtxcoords->h - tf(0.03f), 0.0005f, 0.0008f);
 				render_text(remove_extension(basename(lay->filename)), white, box->vtxcoords->x1 + tf(0.01f), box->vtxcoords->y1 + box->vtxcoords->h - tf(0.06f), 0.0005f, 0.0008f);
+				if (lay->dataformat == 188 or lay->vidformat == 187) {
+					render_text("HAP", white, box->vtxcoords->x1 + tf(0.01f), box->vtxcoords->y1 + box->vtxcoords->h - tf(0.09f), 0.0005f, 0.0008f);
+				}
+				else {
+					render_text("CPU", white, box->vtxcoords->x1 + tf(0.01f), box->vtxcoords->y1 + box->vtxcoords->h - tf(0.09f), 0.0005f, 0.0008f);
+				}
 				if (!mainprogram->needsclick or mainprogram->leftmouse) {
 					if (!mainmix->moving and !mainprogram->cwon) {
 						mainmix->currlay = lay;
@@ -4504,9 +4513,8 @@ void onestepfrom(bool stage, Node *node, Node *prevnode, GLuint prevfbotex) {
 				glActiveTexture(GL_TEXTURE1);
 				glBindTexture(GL_TEXTURE_2D, bnode->intex);
 				
-				if (!mainprogram->preveff) mainmix->crossfadecomp = mainmix->crossfade->value;
 				GLfloat cf = glGetUniformLocation(mainprogram->ShaderProgram, "cf");
-				if (stage) glUniform1f(cf, mainmix->crossfadecomp);
+				if (stage) glUniform1f(cf, mainmix->crossfadecomp->value);
 				
 				GLint mixmode = glGetUniformLocation(mainprogram->ShaderProgram, "mixmode");
 				glUniform1i(mixmode, bnode->blendtype);
@@ -4542,7 +4550,12 @@ void onestepfrom(bool stage, Node *node, Node *prevnode, GLuint prevfbotex) {
 				glUniform1f(inlayer, 0);
 				glUniform1i(wipe, 0);
 				glUniform1i(mixmode, 0);
-				glUniform1f(cf, mainmix->crossfade->value);
+				if (mainprogram->preveff) {
+					glUniform1f(cf, mainmix->crossfade->value);
+				}
+				else {
+					glUniform1f(cf, mainmix->crossfadecomp->value);
+				}
 				glBindFramebuffer(GL_FRAMEBUFFER, mainprogram->globfbo);
 				glDrawBuffer(GL_COLOR_ATTACHMENT0);
 			}
@@ -4683,17 +4696,20 @@ bool displaymix() {
 			glUniform1f(ypos, mainmix->wipey[0]);
 		}
 		node = (MixNode*)mainprogram->nodesmain->mixnodes[0];
+		glActiveTexture(GL_TEXTURE1);
+		glBindTexture(GL_TEXTURE_2D, node->mixtex);
 		node = (MixNode*)mainprogram->nodesmain->mixnodes[1];
+		glActiveTexture(GL_TEXTURE2);
+		glBindTexture(GL_TEXTURE_2D, node->mixtex);
+		glActiveTexture(GL_TEXTURE0);
 		node = (MixNode*)mainprogram->nodesmain->mixnodes[2];
 		draw_box(node->outputbox->lcolor, node->outputbox->acolor, -0.3f, -1.0f, 0.6f, 0.6f, node->mixtex);
-		node = (MixNode*)mainprogram->nodesmain->mixnodescomp[0];
-		node = (MixNode*)mainprogram->nodesmain->mixnodescomp[1];
 		
 		glUniform1i(wipe, 0);
 		glUniform1i(mixmode, 0);
 		if (mainmix->wipe[1] > -1) {
 			GLfloat cf = glGetUniformLocation(mainprogram->ShaderProgram, "cf");
-			glUniform1f(cf, mainmix->crossfadecomp);
+			glUniform1f(cf, mainmix->crossfadecomp->value);
 			glUniform1i(mixmode, 18);
 			glUniform1i(wipe, 1);
 			GLint wkind = glGetUniformLocation(mainprogram->ShaderProgram, "wkind");
@@ -4704,33 +4720,30 @@ bool displaymix() {
 			glUniform1f(xpos, mainmix->wipex[1]);
 			GLfloat ypos = glGetUniformLocation(mainprogram->ShaderProgram, "ypos");
 			glUniform1f(ypos, mainmix->wipey[1]);
+			node = (MixNode*)mainprogram->nodesmain->mixnodescomp[0];
+			glActiveTexture(GL_TEXTURE1);
+			glBindTexture(GL_TEXTURE_2D, node->mixtex);
+			node = (MixNode*)mainprogram->nodesmain->mixnodescomp[1];
+			glActiveTexture(GL_TEXTURE2);
+			glBindTexture(GL_TEXTURE_2D, node->mixtex);
+			glActiveTexture(GL_TEXTURE0);
 		}
 		node = (MixNode*)mainprogram->nodesmain->mixnodescomp[2];
 		draw_box(node->outputbox->lcolor, node->outputbox->acolor, -0.15f, -0.4f + tf(0.05f), 0.3f, 0.3f, node->mixtex);
 		GLfloat cf = glGetUniformLocation(mainprogram->ShaderProgram, "cf");
-		glUniform1f(cf, mainmix->crossfade->value);
+		if (mainprogram->preveff) {
+			glUniform1f(cf, mainmix->crossfade->value);
+		}
+		else {
+			glUniform1f(cf, mainmix->crossfadecomp->value);
+		}
 	}
 	else {
-		if (mainmix->wipe[0] > -1) {
-			glUniform1i(mixmode, 18);
-			glUniform1i(wipe, 1);
-			GLint wkind = glGetUniformLocation(mainprogram->ShaderProgram, "wkind");
-			glUniform1i(wkind, mainmix->wipe[0]);
-			GLint dir = glGetUniformLocation(mainprogram->ShaderProgram, "dir");
-			glUniform1i(dir, mainmix->wipedir[0]);
-			GLfloat xpos = glGetUniformLocation(mainprogram->ShaderProgram, "xpos");
-			glUniform1f(xpos, mainmix->wipex[0]);
-			GLfloat ypos = glGetUniformLocation(mainprogram->ShaderProgram, "ypos");
-			glUniform1f(ypos, mainmix->wipey[0]);
-		}
-		node = (MixNode*)mainprogram->nodesmain->mixnodescomp[0];
-		node = (MixNode*)mainprogram->nodesmain->mixnodescomp[1];
-		
 		glUniform1i(wipe, 0);
 		glUniform1i(mixmode, 0);
 		if (mainmix->wipe[1] > -1) {
 			GLfloat cf = glGetUniformLocation(mainprogram->ShaderProgram, "cf");
-			glUniform1f(cf, mainmix->crossfadecomp);
+			glUniform1f(cf, mainmix->crossfadecomp->value);
 			glUniform1i(mixmode, 18);
 			glUniform1i(wipe, 1);
 			GLint wkind = glGetUniformLocation(mainprogram->ShaderProgram, "wkind");
@@ -4741,11 +4754,23 @@ bool displaymix() {
 			glUniform1f(xpos, mainmix->wipex[1]);
 			GLfloat ypos = glGetUniformLocation(mainprogram->ShaderProgram, "ypos");
 			glUniform1f(ypos, mainmix->wipey[1]);
+			node = (MixNode*)mainprogram->nodesmain->mixnodescomp[0];
+			glActiveTexture(GL_TEXTURE1);
+			glBindTexture(GL_TEXTURE_2D, node->mixtex);
+			node = (MixNode*)mainprogram->nodesmain->mixnodescomp[1];
+			glActiveTexture(GL_TEXTURE2);
+			glBindTexture(GL_TEXTURE_2D, node->mixtex);
+			glActiveTexture(GL_TEXTURE0);
 		}
 		node = (MixNode*)mainprogram->nodesmain->mixnodescomp[2];
 		draw_box(node->outputbox->lcolor, node->outputbox->acolor, -0.3f, -1.0f, 0.6f, 0.6f, node->mixtex);
 		GLfloat cf = glGetUniformLocation(mainprogram->ShaderProgram, "cf");
-		glUniform1f(cf, mainmix->crossfade->value);
+		if (mainprogram->preveff) {
+			glUniform1f(cf, mainmix->crossfade->value);
+		}
+		else {
+			glUniform1f(cf, mainmix->crossfadecomp->value);
+		}
 	}
 	glUniform1i(wipe, 0);
 	glUniform1i(mixmode, 0);
@@ -5648,6 +5673,19 @@ Mixer::Mixer() {
 	this->crossfade->box->vtxcoords->h = tf(0.05f);
 	this->crossfade->box->upvtxtoscr();
 	this->crossfade->box->acolor[3] = 1.0f;
+	this->crossfadecomp = new Param;
+	this->crossfadecomp->name = "Crossfadecomp"; 
+	this->crossfadecomp->value = 0.5f;
+	this->crossfadecomp->range[0] = 0.0f;
+	this->crossfadecomp->range[1] = 1.0f;
+	this->crossfadecomp->sliding = true;
+	this->crossfadecomp->shadervar = "cf";
+	this->crossfadecomp->box->vtxcoords->x1 = -0.15f;
+	this->crossfadecomp->box->vtxcoords->y1 = -0.4f;
+	this->crossfadecomp->box->vtxcoords->w = 0.3f;
+	this->crossfadecomp->box->vtxcoords->h = tf(0.05f);
+	this->crossfadecomp->box->upvtxtoscr();
+	this->crossfadecomp->box->acolor[3] = 1.0f;
 	
 	this->recbut = new Button(false);
 	this->recbut->box->vtxcoords->x1 = 0.15f;
@@ -7381,11 +7419,20 @@ void lay_copy(std::vector<Layer*> &slayers, std::vector<Layer*> &dlayers) {
 }
 
 void copy_to_comp(std::vector<Layer*> &sourcelayersA, std::vector<Layer*> &destlayersA, std::vector<Layer*> &sourcelayersB, std::vector<Layer*> &destlayersB, std::vector<Node*> &sourcenodes, std::vector<Node*> &destnodes, std::vector<MixNode*> &destmixnodes, bool comp) {
-	mainmix->crossfadecomp = mainmix->crossfade->value;
-	mainmix->wipe[1] = mainmix->wipe[0];
-	mainmix->wipedir[1] = mainmix->wipedir[0];
-	mainmix->wipex[1] = mainmix->wipex[0];
-	mainmix->wipey[1] = mainmix->wipey[0];
+	if (sourcelayersA == mainmix->layersA) {
+		mainmix->crossfadecomp->value = mainmix->crossfade->value;
+		mainmix->wipe[1] = mainmix->wipe[0];
+		mainmix->wipedir[1] = mainmix->wipedir[0];
+		mainmix->wipex[1] = mainmix->wipex[0];
+		mainmix->wipey[1] = mainmix->wipey[0];
+	}
+	else {
+		mainmix->crossfade->value = mainmix->crossfadecomp->value;
+		mainmix->wipe[0] = mainmix->wipe[1];
+		mainmix->wipedir[0] = mainmix->wipedir[1];
+		mainmix->wipex[0] = mainmix->wipex[1];
+		mainmix->wipey[0] = mainmix->wipey[1];
+	}
 	
 	lay_copy(sourcelayersA, destlayersA);
 	lay_copy(sourcelayersB, destlayersB);
@@ -8566,7 +8613,8 @@ void output_video(Window *mwin) {
 		GLint wipe = glGetUniformLocation(mainprogram->ShaderProgram, "wipe");
 		GLint mixmode = glGetUniformLocation(mainprogram->ShaderProgram, "mixmode");
 		if (mainmix->wipe[mwin->mixid == 2] > -1) {
-			if (mwin->mixid == 2) glUniform1f(cf, mainmix->crossfade->value);
+			if (mwin->mixid == 2) glUniform1f(cf, mainmix->crossfadecomp->value);
+			else glUniform1f(cf, mainmix->crossfade->value);
 			glUniform1i(wipe, 1);
 			glUniform1i(mixmode, 18);
 		}
@@ -9557,7 +9605,7 @@ void the_loop() {
 								lock.unlock();
 								if (!binel->encoding) {
 									if (mainprogram->prelay->dataformat == 188 or mainprogram->prelay->vidformat == 187) {
-										render_text("GPU", white, box->vtxcoords->x1 + tf(0.005f), box->vtxcoords->y1 + box->vtxcoords->h - tf(0.015f), 0.0005f, 0.0008f);
+										render_text("HAP", white, box->vtxcoords->x1 + tf(0.005f), box->vtxcoords->y1 + box->vtxcoords->h - tf(0.015f), 0.0005f, 0.0008f);
 									}
 									else {
 										render_text("CPU", white, box->vtxcoords->x1 + tf(0.005f), box->vtxcoords->y1 + box->vtxcoords->h - tf(0.015f), 0.0005f, 0.0008f);
@@ -10408,16 +10456,18 @@ void the_loop() {
 		else render_text("BINS", white, -0.025f, 0.24f, 0.0006f, 0.001f);
 		
 		// Draw crossfade->box
+		Param *par;
+		if (mainprogram->preveff) par = mainmix->crossfade;
+		else par = mainmix->crossfadecomp;
 		float green[4] = {0.0f, 1.0f, 0.2f, 1.0f};
-		draw_box(mainmix->crossfade->box, -1);
+		draw_box(par->box, -1);
 		const char *parstr2;
-		if (mainmix->learnparam == mainmix->crossfade and mainmix->learn) {
+		if (mainmix->learnparam == par and mainmix->learn) {
 			parstr2 = "MIDI";
 		}
 		else parstr2 = "Crossfade";
-		render_text(parstr2, white, mainmix->crossfade->box->vtxcoords->x1 + tf(0.01f), mainmix->crossfade->box->vtxcoords->y1 + tf(0.05f) - tf(0.030f), tf(0.0003f), tf(0.0005f));
-		Param *par = mainmix->crossfade;
-		if (mainmix->crossfade->box->in()) {	
+		render_text(parstr2, white, par->box->vtxcoords->x1 + tf(0.01f), par->box->vtxcoords->y1 + tf(0.05f) - tf(0.030f), tf(0.0003f), tf(0.0005f));
+		if (par->box->in()) {	
 			if (mainprogram->menuactivation) {
 				mainprogram->parammenu->state = 2;
 				mainmix->learnparam = par;
@@ -11161,12 +11211,12 @@ void the_loop() {
 		k = handle_menu(mainprogram->mixtargetmenu);
 		if (k > -1) {
 			if (k == 0) {
-				if (mainprogram->menuresults[0] == 0) {
-					mainmix->wipe[0] = -1;
+				if (mainprogram->menuresults[!mainprogram->preveff] == 0) {
+					mainmix->wipe[!mainprogram->preveff] = -1;
 				}
 				else {
-					mainmix->wipe[0] = mainprogram->menuresults[0] - 1;
-					mainmix->wipedir[0] = mainprogram->menuresults[1];
+					mainmix->wipe[!mainprogram->preveff] = mainprogram->menuresults[0] - 1;
+					mainmix->wipedir[!mainprogram->preveff] = mainprogram->menuresults[1];
 				}
 			}
 			if (k > 1) {
@@ -11236,11 +11286,11 @@ void the_loop() {
 		// Draw and handle wipemenu
 		k = handle_menu(mainprogram->wipemenu);
 		if (k > 0) {
-			mainmix->wipe[0] = k - 1;
-			mainmix->wipedir[0] = mainprogram->menuresults[0];
+			mainmix->wipe[!mainprogram->preveff] = k - 1;
+			mainmix->wipedir[!mainprogram->preveff] = mainprogram->menuresults[0];
 		}
 		else if (k == 0) {
-			mainmix->wipe[0] = -1;
+			mainmix->wipe[!mainprogram->preveff] = -1;
 		}
 		
 		if (mainprogram->menuchosen) {
@@ -11880,6 +11930,22 @@ void the_loop() {
 		}
 	}
 		
+	if (mainprogram->dragbinel) {
+		//dragging something inside wormhole
+		if (sqrt(pow((mainprogram->mx / (w / 2.0f) - 1.0f) * w / h, 2) + pow((h - mainprogram->my) / (h / 2.0f) - 1.25f, 2)) < 0.2f) {
+			if (!mainprogram->inwormhole and !mainprogram->menuondisplay) {
+				if (!mainprogram->binsscreen) {
+					set_queueing(mainmix->currlay, false);
+				}
+				mainprogram->binsscreen = !mainprogram->binsscreen;
+				mainprogram->inwormhole = true;
+			}
+		}
+		else {
+			mainprogram->inwormhole = false;
+		}
+	}
+	
 	// layer dragging
 	if (mainprogram->nodesmain->linked and mainmix->currlay) {
 		std::vector<Layer*> &lvec = choose_layers(mainmix->currlay->deck);
@@ -11899,20 +11965,9 @@ void the_loop() {
 					}
 				}
 			}				
-			if (sqrt(pow((mainprogram->mx / (w / 2.0f) - 1.0f) * w / h, 2) + pow((h - mainprogram->my) / (h / 2.0f) - 1.25f, 2)) < 0.2f) {
-				if (!mainprogram->inwormhole and !mainprogram->menuondisplay) {
-					if (!mainprogram->binsscreen) {
-						set_queueing(lay, false);
-					}
-					mainprogram->binsscreen = !mainprogram->binsscreen;
-					mainprogram->inwormhole = true;
-				}
-			}
-			else {
-				mainprogram->inwormhole = false;
-			}
 			
-			if (mainprogram->binsscreen) {
+			if (mainprogram->binsscreen) {				printf("IN\n");
+
 				GLint thumb = glGetUniformLocation(mainprogram->ShaderProgram, "thumb");
 				glUniform1i(thumb, 1);
 				GLfloat vcoords[8];
@@ -11969,12 +12024,6 @@ void the_loop() {
 	}
 	
 	if (mainprogram->dragbinel) {
-		if (mainprogram->binsscreen) {
-			if (sqrt(pow((mainprogram->mx / (w / 2.0f) - 1.0f) * w / h, 2) + pow((h - mainprogram->my) / (h / 2.0f) - 1.25f, 2)) < 0.2f) {
-				mainprogram->binsscreen = false;
-			}
-		}
-			
 		GLint thumb = glGetUniformLocation(mainprogram->ShaderProgram, "thumb");
 		glUniform1i(thumb, 1);
 		GLfloat vcoords[8];
@@ -12317,7 +12366,7 @@ void save_mix(const std::string &path) {
 	wfile << std::to_string(mainmix->crossfade->value);
 	wfile << "\n";
 	wfile << "CROSSFADECOMP\n";
-	wfile << std::to_string(mainmix->crossfadecomp);
+	wfile << std::to_string(mainmix->crossfadecomp->value);
 	wfile << "\n";
 	wfile << "WIPE\n";
 	wfile << std::to_string(mainmix->wipe[0]);
@@ -12692,12 +12741,18 @@ void open_mix(const std::string &path) {
 		if (istring == "CROSSFADE") {
 			getline(rfile, istring); 
 			mainmix->crossfade->value = std::stof(istring);
-			GLfloat cf = glGetUniformLocation(mainprogram->ShaderProgram, "cf");
-			glUniform1f(cf, mainmix->crossfade->value);
+			if (mainprogram->preveff) {
+				GLfloat cf = glGetUniformLocation(mainprogram->ShaderProgram, "cf");
+				glUniform1f(cf, mainmix->crossfade->value);
+			}
 		}
 		if (istring == "CROSSFADECOMP") {
 			getline(rfile, istring); 
-			mainmix->crossfadecomp = std::stof(istring);
+			mainmix->crossfadecomp->value = std::stof(istring);
+			if (!mainprogram->preveff) {
+				GLfloat cf = glGetUniformLocation(mainprogram->ShaderProgram, "cf");
+				glUniform1f(cf, mainmix->crossfadecomp->value);
+			}
 		}
 		if (istring == "WIPE") {
 			getline(rfile, istring); 

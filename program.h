@@ -233,7 +233,6 @@ class BinMix {
 
 class OutputEntry {
 	public:
-		int id;
 		int screen;
 		Window *win;
 };
@@ -248,9 +247,6 @@ class Program {
 		GLuint smglobfbotex;
 		NodesMain *nodesmain;
 		std::vector<OutputEntry*> outputentries;
-		SDL_Window *killwindow = nullptr;
-		SDL_Window *showwindow = nullptr;
-		int killcount = 0;
 		Layer *loadlay;
 		Layer *prelay = nullptr;
 		SDL_Window *mainwindow;

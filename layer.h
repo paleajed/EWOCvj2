@@ -218,7 +218,7 @@ class Mixer {
 		Button *genmidi[2];
 		Button *recbut;
 		Param *crossfade;
-		float crossfadecomp = 0.5f;
+		Param *crossfadecomp;
 		int numaudiochannels = 0;
 		
 		float layw = 0.319f;
