@@ -8512,8 +8512,7 @@ int tune_midi() {
 }
 
 
-void output_video() {
-	Window *mwin = mainprogram->mixwindows.back();
+void output_video(Window *mwin) {
 	SDL_GL_MakeCurrent(mwin->win, mwin->glc);
 	glUseProgram(mainprogram->ShaderProgram);
 	
@@ -11123,6 +11122,7 @@ void the_loop() {
 		std::vector<int> possscreens;
 		std::vector<OutputEntry*> takenentries;
 		if (mainprogram->mixtargetmenu->state > 1) {
+			// make the output display menu (SDL_GetNumVideoDisplays() doesn't allow hotplugging screens... :( )
 			int numd = SDL_GetNumVideoDisplays();
 			std::vector<std::string> mixtargets;
 			mixtargets.push_back("submenu wipemenu");
@@ -11131,13 +11131,15 @@ void the_loop() {
 			if (numd == 1) mixtargets.push_back("No external displays");
 			else {
 				for (int i = 0; i < mainprogram->outputentries.size(); i++) {
-					if (mainprogram->outputentries[i]->id == mainprogram->mixtargetmenu->value) {
+					if (mainprogram->outputentries[i]->win->mixid == mainprogram->mixtargetmenu->value) {
+						// current display(s) of chosen mixwindow, allow shutting down
 						currentries.push_back(mainprogram->outputentries[i]);
 						if (currentries.size() == 1) mixtargets.push_back("Stop displaying at:");
 						mixtargets.push_back(SDL_GetDisplayName(currentries.back()->screen));
 						currscreens.push_back(currentries.back()->screen);
 					}
 					else {
+						// other entries taking up chosen screen
 						takenentries.push_back(mainprogram->outputentries[i]);
 					}
 				}
@@ -11145,6 +11147,7 @@ void the_loop() {
 			bool first = true;
 			for (int i = 1; i < numd; i++) {
 				if (std::find(currscreens.begin(), currscreens.end(), i) == currscreens.end()) {
+					// possible new screens to start outputting to
 					if (first) {
 						first = false;
 						mixtargets.push_back("Mix down to display:");
@@ -11167,19 +11170,17 @@ void the_loop() {
 				}
 			}
 			if (k > 1) {
+				// chosen output screen already used? re-use window
+				bool switched = false;
 				for (int i = 0; i < takenentries.size(); i++) {
-					if (takenentries[i]->screen == k - currentries.size() - 2 - (currentries.size() != 0)) {
-						SDL_DestroyWindow(takenentries[i]->win->win);
-						mainprogram->outputentries.erase(std::find(mainprogram->outputentries.begin(), mainprogram->outputentries.end(), takenentries[i]));
-						// deleting entry itself?  closethread...
-						takenentries[i]->win->closethread = true;
-						while (takenentries[i]->win->closethread) {
-							takenentries[i]->win->syncnow = true;
-							takenentries[i]->win->sync.notify_one();
-						}
+					if (takenentries[i]->screen == k - currentries.size() - 1 - (currentries.size() != 0)) {
+						takenentries[i]->win->mixid = mainprogram->mixtargetmenu->value;
+						switched = true;
 					}
 				}
-				if (currentries.size()) {
+				if (switched) {}
+				else if (currentries.size()) {
+					// stop output display of chosen mixwindow on chosen screen
 					if (k > 1 and k < 2 + currentries.size()) {
 						SDL_DestroyWindow(currentries[k - 2]->win->win);
 						mainprogram->outputentries.erase(std::find(mainprogram->outputentries.begin(), mainprogram->outputentries.end(), currentries[k - 2]));
@@ -11192,13 +11193,13 @@ void the_loop() {
 					}
 				}
 				else {
+					// open new window on chosen ouput screen and start display thread (synced at end of the_loop)
 					int screen;
 					if (currentries.size()) screen = possscreens[k - currentries.size() - 3];
 					else screen = possscreens[k - currentries.size() - 2];
 					Window *mwin = new Window;
 					mwin->mixid = mainprogram->mixtargetmenu->value;
 					OutputEntry *entry = new OutputEntry;
-					entry->id = mwin->mixid;
 					entry->screen = screen;
 					entry->win = mwin;
 					mainprogram->outputentries.push_back(entry);
@@ -11207,6 +11208,7 @@ void the_loop() {
 					auto sw = rc.w;
 					auto sh = rc.h;
 					mwin->win = SDL_CreateWindow(PROGRAM_NAME, SDL_WINDOWPOS_CENTERED_DISPLAY(screen), SDL_WINDOWPOS_CENTERED_DISPLAY(screen), sw, sh, SDL_WINDOW_OPENGL | SDL_WINDOW_MAXIMIZED | SDL_WINDOW_RESIZABLE | SDL_WINDOW_FULLSCREEN_DESKTOP | SDL_WINDOW_ALLOW_HIGHDPI);
+					SDL_RaiseWindow(mainprogram->mainwindow);
 					mainprogram->mixwindows.push_back(mwin);
 					SDL_GL_MakeCurrent(mainprogram->mainwindow, glc);
 					HGLRC c1 = wglGetCurrentContext();
@@ -11216,7 +11218,7 @@ void the_loop() {
 					wglShareLists(c1, c2);
 					glUseProgram(mainprogram->ShaderProgram);
 					
-					std::thread vidoutput (output_video);
+					std::thread vidoutput (output_video, mwin);
 					vidoutput.detach();
 					
 					SDL_GL_MakeCurrent(mainprogram->mainwindow, glc);
@@ -14929,7 +14931,12 @@ int main(int argc, char* argv[]){
 						}
 						for (int i = 0; i < mainprogram->mixwindows.size(); i++) {
 							if (e.window.windowID == SDL_GetWindowID(mainprogram->mixwindows[i]->win)) {
-								SDL_HideWindow(mainprogram->mixwindows[i]->win);
+								SDL_DestroyWindow(mainprogram->mixwindows[i]->win);
+								mainprogram->mixwindows[i]->closethread = true;
+								while (mainprogram->mixwindows[i]->closethread) {
+									mainprogram->mixwindows[i]->syncnow = true;
+									mainprogram->mixwindows[i]->sync.notify_one();
+								}
 								mainprogram->mixwindows.erase(mainprogram->mixwindows.begin() + i);
 							}
 						}
