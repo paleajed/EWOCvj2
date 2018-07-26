@@ -1484,14 +1484,6 @@ void open_video(float frame, Layer *lay, const std::string &filename, int reset)
 	lay->prevframe = lay->frame - 1;
 	lay->vidopen = true;
 	lay->reset = reset;
-	if (!mainprogram->preveff or !mainprogram->prevvid) {
-		if (std::find(mainmix->layersA.begin(), mainmix->layersA.end(), lay) != mainmix->layersA.end()) {
-			open_video(lay->frame, mainmix->layersAcomp[lay->pos], lay->filename, reset);
-		}
-		else if (std::find(mainmix->layersB.begin(), mainmix->layersB.end(), lay) != mainmix->layersB.end()) {
-			open_video(lay->frame, mainmix->layersBcomp[lay->pos], lay->filename, reset);
-		}
-	}
 }
 
 bool thread_vidopen(Layer *lay, AVInputFormat *ifmt, bool skip) {
@@ -2761,10 +2753,12 @@ void calc_texture(Layer *lay, bool comp, bool alive) {
 		laynocomp = lay;
 	}
 	else if (std::find(mainmix->layersAcomp.begin(), mainmix->layersAcomp.end(), lay) != mainmix->layersAcomp.end()) {
-		laynocomp = mainmix->layersA[lay->pos];
+		if (lay->pos < mainmix->layersA.size()) laynocomp = mainmix->layersA[lay->pos];
+		else laynocomp = lay;
 	}
 	else {
-		laynocomp = mainmix->layersB[lay->pos];
+		if (lay->pos < mainmix->layersB.size()) laynocomp = mainmix->layersB[lay->pos];
+		else laynocomp = lay;
 	}
 		
 	std::chrono::high_resolution_clock::time_point now = std::chrono::high_resolution_clock::now();
@@ -2938,12 +2932,6 @@ void calc_texture(Layer *lay, bool comp, bool alive) {
 				}
 			}
 		}
-		
-		if (comp and !mainprogram->preveff) {
-			laynocomp->prevtime = lay->prevtime;
-			laynocomp->prevframe = lay->prevframe;
-			laynocomp->frame = lay->frame;
-		}
 	}
 	
 	for (int i = 0; i < lay->effects.size(); i++) {
@@ -3010,19 +2998,6 @@ void calc_texture(Layer *lay, bool comp, bool alive) {
 	else if (lay->filename != "") {
 		draw_box(NULL, black, -1.0f, -1.0f + 2.0f * div * fac, 2.0f * div, -2.0f * div * fac, lay->shiftx, lay->shifty, lay->scale, opa, 0, lay->texture, w, h);
 	}
-	if (!mainprogram->preveff) {
-		glBindFramebuffer(GL_FRAMEBUFFER, laynocomp->fbo);
-		glDrawBuffer(GL_COLOR_ATTACHMENT0);
-		glClearColor( 0.f, 0.f, 0.f, 0.f );
-		glClear(GL_COLOR_BUFFER_BIT);
-		float black[4] = {1.0, 1.0, 1.0, 1.0};
-		if (lay->liveinput) {
-			draw_box(NULL, black, -1.0f, -1.0f + 2.0f * div * fac, 2.0f * div, -2.0f * div * fac, lay->shiftx, lay->shifty, lay->scale, opa, 0, lay->liveinput->texture, w, h);
-		}
-		else if (lay->filename != "") {
-			draw_box(NULL, black, -1.0f, -1.0f + 2.0f * div * fac, 2.0f * div, -2.0f * div * fac, lay->shiftx, lay->shifty, lay->scale, opa, 0, lay->texture, w, h);
-		}
-	}
 	glBindFramebuffer(GL_FRAMEBUFFER, mainprogram->globfbo);
 	glDrawBuffer(GL_COLOR_ATTACHMENT0);
 }
@@ -3065,7 +3040,8 @@ void display_texture(Layer *lay, bool deck) {
 				else if (deck == 1) deckstr = "B";
 				render_text("Layer " + deckstr + std::to_string(lay->pos + 1), white, box->vtxcoords->x1 + tf(0.01f), box->vtxcoords->y1 + box->vtxcoords->h - tf(0.03f), 0.0005f, 0.0008f);
 				render_text(remove_extension(basename(lay->filename)), white, box->vtxcoords->x1 + tf(0.01f), box->vtxcoords->y1 + box->vtxcoords->h - tf(0.06f), 0.0005f, 0.0008f);
-				if (lay->dataformat == 188 or lay->vidformat == 187) {
+				if (lay->dataformat == -1) {}
+				else if (lay->dataformat == 188 or lay->vidformat == 187) {
 					render_text("HAP", white, box->vtxcoords->x1 + tf(0.01f), box->vtxcoords->y1 + box->vtxcoords->h - tf(0.09f), 0.0005f, 0.0008f);
 				}
 				else {
@@ -5514,14 +5490,6 @@ Effect *do_add_effect(Layer *lay, EFFECT_TYPE type, int pos, bool comp) {
 			mainprogram->nodesmain->currpage->connect_nodes(effnode1, effnode2);
 			//lay->node->out.clear();
 		}
-		else {
-			if (lay->node->out.size()) {
-				if (lay->pos == 0) {
-					mainprogram->nodesmain->currpage->connect_nodes(effnode1, lay->lasteffnode->out[0]);
-					//lay->lasteffnode->out.clear();
-				}
-			}
-		}
 		mainprogram->nodesmain->currpage->connect_nodes(lay->node, effnode1);
 	}
 	else {
@@ -7242,6 +7210,7 @@ void lay_copy(std::vector<Layer*> &slayers, std::vector<Layer*> &dlayers) {
 		clay->playkind = lay->playkind;
 		clay->genmidibut->value = lay->genmidibut->value;
 		clay->pos = lay->pos;
+		clay->deck = lay->deck;
 		clay->shiftx = lay->shiftx;
 		clay->shifty = lay->shifty;
 		clay->scale = lay->scale;
@@ -7699,7 +7668,7 @@ void exchange(Layer *lay, std::vector<Layer*> &slayers, std::vector<Layer*> &dla
 				BlendNode *bnode = inlay->blendnode;
 				BLEND_TYPE btype = bnode->blendtype;
 				VideoNode *node = inlay->node;
-				Node *lenode = inlay->lasteffnode;
+				
 				slayers[lay->pos] = inlay;
 				slayers[lay->pos]->pos = lay->pos;
 				slayers[lay->pos]->deck = lay->deck;
@@ -7712,7 +7681,6 @@ void exchange(Layer *lay, std::vector<Layer*> &slayers, std::vector<Layer*> &dla
 				slayers[lay->pos]->blendnode->wipedir = lay->blendnode->wipedir;
 				slayers[lay->pos]->blendnode->wipex = lay->blendnode->wipex;
 				slayers[lay->pos]->blendnode->wipey = lay->blendnode->wipey;
-				//if (lay->node == lay->lasteffnode) slayers[lay->pos]->lasteffnode = lay->node;
 				
 				dlayers[i] = lay;
 				dlayers[i]->pos = i;
@@ -7726,20 +7694,22 @@ void exchange(Layer *lay, std::vector<Layer*> &slayers, std::vector<Layer*> &dla
 				dlayers[i]->blendnode->wipedir = bnode->wipedir;
 				dlayers[i]->blendnode->wipex = bnode->wipex;
 				dlayers[i]->blendnode->wipey = bnode->wipey;
-				//if (node == lenode) dlayers[i]->lasteffnode = lenode;
 				
 				Node *inlayout = inlay->lasteffnode->out[0];
 				Node *layout = lay->lasteffnode->out[0];
 				if (inlay->effects.size()) {
 					inlay->node->out.clear();
-					inlay->effects[0]->node->in = nullptr;
 					mainprogram->nodesmain->currpage->connect_nodes(inlay->node, inlay->effects[0]->node);
 					inlay->lasteffnode = inlay->effects[inlay->effects.size() - 1]->node;
 				}
 				else inlay->lasteffnode = inlay->node;
 				inlay->lasteffnode->out.clear();
-				if (inlay->pos == 0) mainprogram->nodesmain->currpage->connect_nodes(inlay->lasteffnode, layout);
+				if (inlay->pos == 0) {
+					layout->in = nullptr;
+					mainprogram->nodesmain->currpage->connect_nodes(inlay->lasteffnode, layout);
+				}
 				else {
+					((BlendNode*)(layout))->in2 = nullptr;
 					mainprogram->nodesmain->currpage->connect_in2(inlay->lasteffnode, (BlendNode*)(layout));
 				}	
 				for (int j = 0; j < inlay->effects.size(); j++) {
@@ -7747,17 +7717,25 @@ void exchange(Layer *lay, std::vector<Layer*> &slayers, std::vector<Layer*> &dla
 				}
 				if (lay->effects.size()) {
 					lay->node->out.clear();
-					lay->effects[0]->node->in = nullptr;
 					mainprogram->nodesmain->currpage->connect_nodes(lay->node, lay->effects[0]->node);
 					lay->lasteffnode = lay->effects[lay->effects.size() - 1]->node;
 				}
 				else lay->lasteffnode = lay->node;
 				lay->lasteffnode->out.clear();
-				if (lay->pos == 0) mainprogram->nodesmain->currpage->connect_nodes(lay->lasteffnode, inlayout);
-				else mainprogram->nodesmain->currpage->connect_in2(lay->lasteffnode, (BlendNode*)inlayout);					
+				if (lay->pos == 0) {
+					inlayout->in = nullptr;
+					mainprogram->nodesmain->currpage->connect_nodes(lay->lasteffnode, inlayout);
+				}
+				else {
+					((BlendNode*)(inlayout))->in2 = nullptr;
+					mainprogram->nodesmain->currpage->connect_in2(lay->lasteffnode, (BlendNode*)inlayout);
+				}			
 				for (int j = 0; j < lay->effects.size(); j++) {
 					lay->effects[j]->node->align = lay->node;
 				}
+				printf("%d %d\n", inlay->lasteffnode, layout->in);
+				printf("%d %d\n", lay->lasteffnode, ((BlendNode*)(layout))->in2);
+				printf("%d %d\n", layout->out[0], mainprogram->nodesmain->mixnodes[0]);
 				break;
 			}
 			else if (dropin or endx or (box->scrcoords->x1 - xvtxtoscr(0.075f) * (i - mainmix->scrollpos[deck] != 0) < mainprogram->mx and mainprogram->mx < box->scrcoords->x1 + xvtxtoscr(0.075f))) {
@@ -8889,6 +8867,15 @@ void the_loop() {
 		}
 	}
 	if (!mainprogram->preveff) {
+		//when in performance mode: count normal layers frames (alive = 0)
+		for(int i = 0; i < mainmix->layersA.size(); i++) {
+			Layer *testlay = mainmix->layersA[i];
+			calc_texture(testlay, 0, 0);
+		}
+		for(int i = 0; i < mainmix->layersB.size(); i++) {
+			Layer *testlay = mainmix->layersB[i];
+			calc_texture(testlay, 0, 0);
+		}
 		for(int i = 0; i < mainmix->layersAcomp.size(); i++) {
 			Layer *testlay = mainmix->layersAcomp[i];
 			calc_texture(testlay, 1, 1);
@@ -9685,7 +9672,7 @@ void the_loop() {
 								}
 								if (!binel->encoding) {
 									if (mainprogram->prelay->dataformat == 188 or mainprogram->prelay->vidformat == 187) {
-										render_text("GPU", white, box->vtxcoords->x1 + tf(0.005f), box->vtxcoords->y1 + box->vtxcoords->h - tf(0.015f), 0.0005f, 0.0008f);
+										render_text("HAP", white, box->vtxcoords->x1 + tf(0.005f), box->vtxcoords->y1 + box->vtxcoords->h - tf(0.015f), 0.0005f, 0.0008f);
 									}
 									else {
 										render_text("CPU", white, box->vtxcoords->x1 + tf(0.005f), box->vtxcoords->y1 + box->vtxcoords->h - tf(0.015f), 0.0005f, 0.0008f);
@@ -9716,7 +9703,7 @@ void the_loop() {
 								lock.unlock();
 								if (!binel->encoding) {
 									if (mainprogram->prelay->dataformat == 188 or mainprogram->prelay->vidformat == 187) {
-										render_text("GPU", white, box->vtxcoords->x1 + tf(0.005f), box->vtxcoords->y1 + box->vtxcoords->h - tf(0.015f), 0.0005f, 0.0008f);
+										render_text("HAP", white, box->vtxcoords->x1 + tf(0.005f), box->vtxcoords->y1 + box->vtxcoords->h - tf(0.015f), 0.0005f, 0.0008f);
 									}
 									else {
 										render_text("CPU", white, box->vtxcoords->x1 + tf(0.005f), box->vtxcoords->y1 + box->vtxcoords->h - tf(0.015f), 0.0005f, 0.0008f);
@@ -9773,7 +9760,7 @@ void the_loop() {
 								}
 								if (!binel->encoding) {
 									if (mainprogram->prelay->dataformat == 188 or mainprogram->prelay->vidformat == 187) {
-										render_text("GPU", white, box->vtxcoords->x1 + tf(0.005f), box->vtxcoords->y1 + box->vtxcoords->h - tf(0.015f), 0.0005f, 0.0008f);
+										render_text("HAP", white, box->vtxcoords->x1 + tf(0.005f), box->vtxcoords->y1 + box->vtxcoords->h - tf(0.015f), 0.0005f, 0.0008f);
 									}
 									else {
 										render_text("CPU", white, box->vtxcoords->x1 + tf(0.005f), box->vtxcoords->y1 + box->vtxcoords->h - tf(0.015f), 0.0005f, 0.0008f);
@@ -12331,6 +12318,9 @@ void save_state(const std::string &path) {
 	wfile << "PREVEFF\n";
 	wfile << std::to_string(mainprogram->preveff);
 	wfile << "\n";
+	wfile << "PREVVID\n";
+	wfile << std::to_string(mainprogram->prevvid);
+	wfile << "\n";
 	wfile << "COMPON\n";
 	wfile << std::to_string(mainmix->compon);
 	wfile << "\n";
@@ -12700,7 +12690,7 @@ void open_state(const std::string &path) {
 	getline(rfile, istring);
 	
 	mainprogram->preveff = true;
-	open_mix(remove_extension(path) + ".state1.ewoc");
+	//open_mix(remove_extension(path) + ".state1.ewoc");
 	mainprogram->preveff = false;
 	open_mix(remove_extension(path) + ".state2.ewoc");
 	//open_genmidis(remove_extension(path) + ".midi");
@@ -12711,6 +12701,10 @@ void open_state(const std::string &path) {
 		if (istring == "PREVEFF") {
 			getline(rfile, istring);
 			mainprogram->preveff = std::stoi(istring);
+		}
+		if (istring == "PREVVID") {
+			getline(rfile, istring);
+			mainprogram->prevvid = std::stoi(istring);
 		}
 		if (istring == "COMPON") {
 			getline(rfile, istring);
