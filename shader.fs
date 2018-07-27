@@ -1807,10 +1807,10 @@ void main()
 					if (dir == 0) cond = sqrt(a * a + b * b) <= dist;
 					else cond = sqrt(a * a + b * b) >= dist;
 					if (cond) {
-						FragColor = vec4((data1.rgb * data1.a + data0.rgb * (1.0f - data1.a)), 1.0f) * (1 - dir) + data1 * dir;
+						FragColor = vec4((data1.rgb * data1.a + data0.rgb * (1.0f - data1.a)), max(data0.a, data1.a)) * (1 - dir) + data1 * dir;
 					}
 					else {
-						FragColor = vec4((data0.rgb * data0.a + data1.rgb * (1.0f - data0.a)), 1.0f) * dir + data0 * (1 - dir);
+						FragColor = vec4((data0.rgb * data0.a + data1.rgb * (1.0f - data0.a)), max(data0.a, data1.a)) * dir + data0 * (1 - dir);
 					}
 					break;
 				case 4:  //rectangle
@@ -1830,10 +1830,10 @@ void main()
 					if (dir == 0) cond = (tc.x > xl) && (tc.x < xh) && (tc.y > yl) && (tc.y < yh);
 					else cond = (tc.x < xl) || (tc.x > xh) || (tc.y < yl) || (tc.y > yh);
 					if (cond) {
-						FragColor = vec4((data1.rgb * data1.a + data0.rgb * (1.0f - data1.a)), 1.0f) * (1 - dir) + data1 * dir;
+						FragColor = vec4((data1.rgb * data1.a + data0.rgb * (1.0f - data1.a)), max(data0.a, data1.a)) * (1 - dir) + data1 * dir;
 					}
 					else {
-						FragColor = vec4((data0.rgb * data0.a + data1.rgb * (1.0f - data0.a)), 1.0f) * dir + data0 * (1 - dir);
+						FragColor = vec4((data0.rgb * data0.a + data1.rgb * (1.0f - data0.a)), max(data0.a, data1.a)) * dir + data0 * (1 - dir);
 					}
 					break;
 				case 5:  //zoomed rectangle
@@ -1861,7 +1861,7 @@ void main()
 							data0 = data1;
 							data1 = vec4(texture2D(endSampler0, tc).rgba);
 						}
-						FragColor = vec4((data1.rgb * data1.a + data0.rgb * (1.0f - data1.a)), 1.0f);
+						FragColor = vec4((data1.rgb * data1.a + data0.rgb * (1.0f - data1.a)), max(data0.a, data1.a));
 					}
 					else {
 						if (dir == 0) {
