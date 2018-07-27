@@ -1119,7 +1119,7 @@ uniform float max_scale_lim = 10.0f;                // Abs change before max com
 // Colour to greyscale, fast approx gamma
 float CtG(vec3 RGB) { return  sqrt( (1.0/3.0)*((RGB*RGB).r + (RGB*RGB).g + (RGB*RGB).b) ); }
 
-vec4 sharpen(vec2 texco)    //https://github.com/libretro/glsl-shaders - awaiting approval - until then the following disclaimer belongs to this functions code
+vec4 sharpen(vec2 texco)    //https://github.com/libretro/glsl-shaders - the following disclaimer belongs to this functions code
 {
 // Copyright (c) 2015, bacondither
 // All rights reserved.
@@ -1145,7 +1145,6 @@ vec4 sharpen(vec2 texco)    //https://github.com/libretro/glsl-shaders - awaitin
 // (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE OF
 // THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE. */	
 
-	return vec4(0, 0, 0, 0);
 	vec2	tex	=	texco;
 	
 	float	px	=	1.0f / fbowidth;
@@ -1690,11 +1689,11 @@ void main()
 					if (dir < 2) cond=(xc < xpix);
 					else cond=(yc < ypix);
 					if (cond) {
-						FragColor = data1;
+						FragColor = vec4((data1.rgb * data1.a + data0.rgb * (1.0f - data1.a)), 1.0f);
 					}
 					else {
-						FragColor = data0;
-					}     
+						FragColor = vec4((data0.rgb * data0.a + data1.rgb * (1.0f - data0.a)), 1.0f);
+					}
 					 break;
 				case 1:  //pushpull
 					if (dir % 2 == 1) {
@@ -1808,10 +1807,10 @@ void main()
 					if (dir == 0) cond = sqrt(a * a + b * b) <= dist;
 					else cond = sqrt(a * a + b * b) >= dist;
 					if (cond) {
-						FragColor = data1;
+						FragColor = vec4((data1.rgb * data1.a + data0.rgb * (1.0f - data1.a)), 1.0f) * (1 - dir) + data1 * dir;
 					}
 					else {
-						FragColor = data0;
+						FragColor = vec4((data0.rgb * data0.a + data1.rgb * (1.0f - data0.a)), 1.0f) * dir + data0 * (1 - dir);
 					}
 					break;
 				case 4:  //rectangle
@@ -1831,11 +1830,11 @@ void main()
 					if (dir == 0) cond = (tc.x > xl) && (tc.x < xh) && (tc.y > yl) && (tc.y < yh);
 					else cond = (tc.x < xl) || (tc.x > xh) || (tc.y < yl) || (tc.y > yh);
 					if (cond) {
-						FragColor = data1;
+						FragColor = vec4((data1.rgb * data1.a + data0.rgb * (1.0f - data1.a)), 1.0f) * (1 - dir) + data1 * dir;
 					}
 					else {
-						FragColor = data0;
-					}                        
+						FragColor = vec4((data0.rgb * data0.a + data1.rgb * (1.0f - data0.a)), 1.0f) * dir + data0 * (1 - dir);
+					}
 					break;
 				case 5:  //zoomed rectangle
 					if (dir == 0) {
@@ -1853,16 +1852,16 @@ void main()
 					tc = TexCoord0.st;
 					cond = (tc.x > xl) && (tc.x < xh) && (tc.y > yl) && (tc.y < yh);
 					if (cond) {
+						tc.x = (tc.x - xl) / (xh - xl);
+						tc.y = (tc.y - yl) / (yh - yl);
 						if (dir == 0) {
-							tc.x = (tc.x - xl) / (xh - xl);
-							tc.y = (tc.y - yl) / (yh - yl);
-							FragColor = vec4(texture2D(endSampler1, tc).rgb, 1.0f);
+							data1 = vec4(texture2D(endSampler1, tc).rgba);
 						}
 						else {
-							tc.x = (tc.x - xl) / (xh - xl);
-							tc.y = (tc.y - yl) / (yh - yl);
-							FragColor = vec4(texture2D(endSampler0, tc).rgb, 1.0f);
+							data0 = data1;
+							data1 = vec4(texture2D(endSampler0, tc).rgba);
 						}
+						FragColor = vec4((data1.rgb * data1.a + data0.rgb * (1.0f - data1.a)), 1.0f);
 					}
 					else {
 						if (dir == 0) {
@@ -1911,9 +1910,9 @@ void main()
 							else if ((dir / 2) == 3) {
 								cond1 = (yc > fboheight * fcdiv / 2);
 							}                            
-							if (cond1) FragColor = data0;
-							else if (cond2) FragColor = data1;
-							else FragColor = data0;
+							if (cond1) FragColor = vec4((data0.rgb * data0.a + data1.rgb * (1.0f - data0.a)), 1.0f);
+							else if (cond2) FragColor = vec4((data1.rgb * data1.a + data0.rgb * (1.0f - data1.a)), 1.0f);
+							else FragColor = vec4((data0.rgb * data0.a + data1.rgb * (1.0f - data0.a)), 1.0f);
 							break;
 						case 2:
 							if ((dir /2) == 0) {
@@ -1928,9 +1927,9 @@ void main()
 							else if ((dir / 2) == 3) {
 								cond1 = (yc > fboheight * fcdiv / 2);
 							}                            
-							if (cond1) FragColor = data0;
-							else if (cond2) FragColor = data1;
-							else FragColor = data0;
+							if (cond1) FragColor = vec4((data0.rgb * data0.a + data1.rgb * (1.0f - data0.a)), 1.0f);
+							else if (cond2) FragColor = vec4((data1.rgb * data1.a + data0.rgb * (1.0f - data1.a)), 1.0f);
+							else FragColor = vec4((data0.rgb * data0.a + data1.rgb * (1.0f - data0.a)), 1.0f);
 							break;
 						case 3:
 							if ((dir / 2) == 0) {
@@ -1945,9 +1944,9 @@ void main()
 							else if ((dir / 2) == 3) {
 								cond1 = (yc <= fboheight * fcdiv / 2);
 							 }                            
-							if (cond1) FragColor = data1;
-							else if (cond2) FragColor = data1;
-							else FragColor = data0;
+							if (cond1) FragColor = vec4((data1.rgb * data1.a + data0.rgb * (1.0f - data1.a)), 1.0f);
+							else if (cond2) FragColor = vec4((data1.rgb * data1.a + data0.rgb * (1.0f - data1.a)), 1.0f);
+							else FragColor = vec4((data0.rgb * data0.a + data1.rgb * (1.0f - data0.a)), 1.0f);
 							break;
 						case 4:
 							if ((dir /2) == 0) {
@@ -1962,9 +1961,9 @@ void main()
 							else if ((dir / 2) == 3) {
 								cond1 = (yc <= fboheight * fcdiv / 2);
 							}
-							if (cond1) FragColor = data1;
-							else if (cond2) FragColor = data1;
-							else FragColor = data0;
+							if (cond1) FragColor = vec4((data1.rgb * data1.a + data0.rgb * (1.0f - data1.a)), 1.0f);
+							else if (cond2) FragColor = vec4((data1.rgb * data1.a + data0.rgb * (1.0f - data1.a)), 1.0f);
+							else FragColor = vec4((data0.rgb * data0.a + data1.rgb * (1.0f - data0.a)), 1.0f);
 							break;
 					}
 					break;
@@ -1980,17 +1979,17 @@ void main()
 					xc = tc.x * fbowidth * fcdiv;
 					xt = xc - fbowidth * fcdiv / 2;
 					saxt = sa * xt;
-					if (xamount == 1) FragColor = data1;
+					if (xamount == 1) FragColor = vec4((data1.rgb * data1.a + data0.rgb * (1.0f - data1.a)), 1.0f);
 					else {
 						if (int(dir / 2) == 0) cond = (xc <= fbowidth * fcdiv / 2);
 						else cond = (yc <= fboheight * fcdiv / 2);
 						if (cond) {
-							if (saxt - cayt < 0) FragColor = data1;
-							else FragColor = data0;
+							if (saxt - cayt < 0) FragColor = vec4((data1.rgb * data1.a + data0.rgb * (1.0f - data1.a)), 1.0f);
+							else FragColor = vec4((data0.rgb * data0.a + data1.rgb * (1.0f - data0.a)), 1.0f);
 						}
 						else {
-							if (saxt - cayt > 0) FragColor = data1;
-							else FragColor = data0;
+							if (saxt - cayt > 0) FragColor = vec4((data1.rgb * data1.a + data0.rgb * (1.0f - data1.a)), 1.0f);
+							else FragColor = vec4((data0.rgb * data0.a + data1.rgb * (1.0f - data0.a)), 1.0f);
 						}
 					}
 					break;
@@ -2009,10 +2008,10 @@ void main()
 					else if (dir==4) cond = ((yc - yl * int((yc / yl))) < yl - (yl * xamount));
 					else if (dir==5) cond = (((yc - yl * int((yc / yl))) > (yl * xamount) / 2)&&((yc - yl * int((yc / yl))) < yl - (yl *xamount) / 2));
 					if (cond || xamount == 0) {
-						FragColor = data0;
+						FragColor = vec4((data0.rgb * data0.a + data1.rgb * (1.0f - data0.a)), 1.0f);
 					}
 					else {
-						FragColor = data1;
+						FragColor = vec4((data1.rgb * data1.a + data0.rgb * (1.0f - data1.a)), 1.0f);
 					}
 					break;
 				case 9:  //pattern
@@ -2032,10 +2031,10 @@ void main()
 					else if (dir == 4) cond = ((yc + offsy - yl * int(((yc + offsy) / yl))) < yl - (yl * xamount));
 					else if (dir == 5) cond = (((yc + offsy - yl * int(((yc + offsy) / yl))) > (yl * xamount) / 2) && ((yc + offsy - yl * int(((yc + offsy) / yl))) < yl - (yl * xamount) / 2));
 					if (cond || xamount == 0) {
-						FragColor = data0;
+						FragColor = vec4((data0.rgb * data0.a + data1.rgb * (1.0f - data0.a)), 1.0f);
 					}
 					else {
-						FragColor = data1;
+						FragColor = vec4((data1.rgb * data1.a + data0.rgb * (1.0f - data1.a)), 1.0f);
 					}
 					break;
 			}
