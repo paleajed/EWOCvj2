@@ -2983,8 +2983,6 @@ void calc_texture(Layer *lay, bool comp, bool alive) {
 	}
 	glBindFramebuffer(GL_FRAMEBUFFER, lay->fbo);
 	glDrawBuffer(GL_COLOR_ATTACHMENT0);
-	glClearColor(0.0f, 0.0f, 0.0f, 0.0f);
-	glClear(GL_COLOR_BUFFER_BIT);
 	float black[4] = {1.0f, 1.0f, 1.0f, 1.0f};
 	float div;
 	float fac = 1.0f;
@@ -2995,12 +2993,18 @@ void calc_texture(Layer *lay, bool comp, bool alive) {
 		div = mainprogram->ow / w;
 		fac = (w / h) / (mainprogram->ow / mainprogram->oh);
 	}
+	glDisable(GL_BLEND);
 	if (lay->liveinput) {
 		draw_box(NULL, black, -1.0f, -1.0f + 2.0f * div * fac, 2.0f * div, -2.0f * div * fac, lay->shiftx, lay->shifty, lay->scale, opa, 0, lay->liveinput->texture, w, h);
 	}
 	else if (lay->filename != "") {
 		draw_box(NULL, black, -1.0f, -1.0f + 2.0f * div * fac, 2.0f * div, -2.0f * div * fac, lay->shiftx, lay->shifty, lay->scale, opa, 0, lay->texture, w, h);
 	}
+	else {
+		glClearColor(0.0f, 0.0f, 0.0f, 0.0f);
+		glClear(GL_COLOR_BUFFER_BIT);
+	}
+	glEnable(GL_BLEND);
 	glBindFramebuffer(GL_FRAMEBUFFER, mainprogram->globfbo);
 	glDrawBuffer(GL_COLOR_ATTACHMENT0);
 }
@@ -3919,7 +3923,7 @@ void midi_set() {
 	}
 }
 
-void onestepfrom(bool stage, Node *node, Node *prevnode, GLuint prevfbotex) {
+void onestepfrom(bool stage, Node *node, Node *prevnode, GLuint prevfbotex, GLuint prevfbo) {
 	GLint Sampler0 = glGetUniformLocation(mainprogram->ShaderProgram, "Sampler0");
 	glUniform1i(Sampler0, 0);
 	GLint interm = glGetUniformLocation(mainprogram->ShaderProgram, "interm");
@@ -4398,11 +4402,13 @@ void onestepfrom(bool stage, Node *node, Node *prevnode, GLuint prevfbotex) {
 		glUniform1i(down, 0);
 		glUniform1i(edgethickmode, 0);
 		prevfbotex = effect->fbotex;
+		prevfbo = effect->fbo;
 
 		Layer *lay = effect->layer;
 		if (effect->node == lay->lasteffnode) {
 			GLuint fbocopy;
 			float fac = 1.0f;
+			glDisable(GL_BLEND);
 			if (mainprogram->preveff and stage == 0) fbocopy = copy_tex(effect->fbotex);
 			else {
 				fbocopy = copy_tex(effect->fbotex, mainprogram->ow, mainprogram->oh);
@@ -4410,10 +4416,9 @@ void onestepfrom(bool stage, Node *node, Node *prevnode, GLuint prevfbotex) {
 			}
 			glBindFramebuffer(GL_FRAMEBUFFER, effect->fbo);
 			glDrawBuffer(GL_COLOR_ATTACHMENT0);
-			glClearColor(0.0f, 0.0f, 0.0f, 0.0f);
-			glClear(GL_COLOR_BUFFER_BIT);
 			float black[4] = {0.0f, 0.0f, 0.0f, 0.0f};
 			draw_box(NULL, black, -1.0f, -1.0f + 2.0f * div * fac, 2.0f * div, -2.0f * div * fac, lay->shiftx * div, lay->shifty * div, lay->scale, lay->opacity->value, 0, fbocopy, w, h);
+			glEnable(GL_BLEND);
 			glDeleteTextures(1, &fbocopy);
 		}
 		
@@ -4436,6 +4441,7 @@ void onestepfrom(bool stage, Node *node, Node *prevnode, GLuint prevfbotex) {
 			lay->newframe = false;
 			GLuint fbocopy;
 			float fac = 1.0f;
+			glDisable(GL_BLEND);
 			if ((mainprogram->preveff and stage == 0)) fbocopy = copy_tex(lay->fbotex, w * div, h * div);
 			else {
 				fbocopy = copy_tex(lay->fbotex, mainprogram->ow, mainprogram->oh);
@@ -4443,15 +4449,15 @@ void onestepfrom(bool stage, Node *node, Node *prevnode, GLuint prevfbotex) {
 			}
 			glBindFramebuffer(GL_FRAMEBUFFER, lay->fbo);
 			glDrawBuffer(GL_COLOR_ATTACHMENT0);
-			glClearColor(0.0f, 0.0f, 0.0f, 0.0f);
-			glClear(GL_COLOR_BUFFER_BIT);
 			float black[4] = {0.0f, 0.0f, 0.0f, 0.0f};
 			float pixelw = 2.0f / (float)w;
 			float pixelh = 2.0f / (float)h;
 			draw_box(NULL, black, -1.0f - pixelw, -1.0f - pixelh, 2.0f * (div + pixelw), 2.0f * (div + pixelh) * fac, lay->shiftx * div, lay->shifty * div, lay->scale, lay->opacity->value, 0, fbocopy, w, h);
+			glEnable(GL_BLEND);
 			glDeleteTextures(1, &fbocopy);
 		}
 		prevfbotex = lay->fbotex;
+		prevfbo = lay->fbo;
 		glBindFramebuffer(GL_FRAMEBUFFER, mainprogram->globfbo);
 		glDrawBuffer(GL_COLOR_ATTACHMENT0);
 	}
@@ -4484,8 +4490,6 @@ void onestepfrom(bool stage, Node *node, Node *prevnode, GLuint prevfbotex) {
 				
 				glBindFramebuffer(GL_FRAMEBUFFER, bnode->fbo);
 				glDrawBuffer(GL_COLOR_ATTACHMENT0);
-				glClearColor( 0.f, 0.f, 0.f, 0.f );
-				glClear(GL_COLOR_BUFFER_BIT);
 				
 				GLfloat mixfac = glGetUniformLocation(mainprogram->ShaderProgram, "mixfac");
 				glUniform1f(mixfac, bnode->mixfac->value);
@@ -4522,8 +4526,11 @@ void onestepfrom(bool stage, Node *node, Node *prevnode, GLuint prevfbotex) {
 				glActiveTexture(GL_TEXTURE2);
 				glBindTexture(GL_TEXTURE_2D, bnode->in2tex);
 				glBindVertexArray(mainprogram->fbovao[2 - (mainprogram->preveff and !stage)]);
+				glDisable(GL_BLEND);
 				glDrawArrays(GL_TRIANGLE_STRIP, 0, 4);
+				glEnable(GL_BLEND);
 				prevfbotex = bnode->fbotex;
+				prevfbo = bnode->fbo;
 				
 				GLint inlayer = glGetUniformLocation(mainprogram->ShaderProgram, "inlayer");
 				glUniform1f(inlayer, 0);
@@ -4562,25 +4569,19 @@ void onestepfrom(bool stage, Node *node, Node *prevnode, GLuint prevfbotex) {
 			glBindFramebuffer(GL_FRAMEBUFFER, mnode->mixfbo);
 			glFramebufferTexture2D(GL_FRAMEBUFFER, GL_COLOR_ATTACHMENT0, GL_TEXTURE_2D, mnode->mixtex, 0);
 		}
-		GLint down = glGetUniformLocation(mainprogram->ShaderProgram, "down");
-		glUniform1i(down, 1);
-		glBindFramebuffer(GL_FRAMEBUFFER, mnode->mixfbo);
-		glDrawBuffer(GL_COLOR_ATTACHMENT0);
-		glClearColor( 0.f, 0.f, 0.f, 0.f );
-		glClear(GL_COLOR_BUFFER_BIT);
-		glActiveTexture(GL_TEXTURE0);
-		if (stage and !mainmix->compon and !mainmix->firststage) glBindTexture(GL_TEXTURE_2D, mainmix->mixbackuptex);
-		else glBindTexture(GL_TEXTURE_2D, prevfbotex);
-		glBindVertexArray(mainprogram->fbovao[2 - (mainprogram->preveff and !stage)]);
-		glDrawArrays(GL_TRIANGLE_STRIP, 0, 4);
+		glDisable(GL_BLEND);
+		if (mainprogram->preveff and stage == 0) {
+			glBlitNamedFramebuffer(prevfbo, mnode->mixfbo, 0, 0, w * div, h * div , 0, 0, w * div, h * div, GL_COLOR_BUFFER_BIT, GL_NEAREST);
+		}
+		else {
+			glBlitNamedFramebuffer(prevfbo, mnode->mixfbo, 0, 0, mainprogram->ow, mainprogram->oh, 0, 0, mainprogram->ow, mainprogram->oh, GL_COLOR_BUFFER_BIT, GL_NEAREST);
+		}
+		glEnable(GL_BLEND);
 		prevfbotex = mnode->mixtex;
-		mainmix->mixbackuptex = mnode->mixtex;
-		glUniform1i(down, 0);
-		glBindFramebuffer(GL_FRAMEBUFFER, mainprogram->globfbo);
-		glDrawBuffer(GL_COLOR_ATTACHMENT0);
+		prevfbo = mnode->mixfbo;
 	}
 	for (int i = 0; i < node->out.size(); i++) {
-		if (node->out[i]->calc and !node->out[i]->walked) onestepfrom(stage, node->out[i], node, prevfbotex);
+		if (node->out[i]->calc and !node->out[i]->walked) onestepfrom(stage, node->out[i], node, prevfbotex, prevfbo);
 	}
 }
 
@@ -4635,21 +4636,21 @@ void walk_nodes(bool stage) {
 	if (stage == 0) {
 		for (int i = 0; i < mainmix->layersA.size(); i++) {
 			Layer *lay = mainmix->layersA[i];
-			onestepfrom(0, lay->node, NULL, -1);
+			onestepfrom(0, lay->node, NULL, -1, -1);
 		}
 		for (int i = 0; i < mainmix->layersB.size(); i++) {
 			Layer *lay = mainmix->layersB[i];
-			onestepfrom(0, lay->node, NULL, -1);
+			onestepfrom(0, lay->node, NULL, -1, -1);
 		}
 	}
 	else {
 		for (int i = 0; i < mainmix->layersAcomp.size(); i++) {
 			Layer *lay = mainmix->layersAcomp[i];
-			onestepfrom(1, lay->node, NULL, -1);
+			onestepfrom(1, lay->node, NULL, -1, -1);
 		}
 		for (int i = 0; i < mainmix->layersBcomp.size(); i++) {
 			Layer *lay = mainmix->layersBcomp[i];
-			onestepfrom(1, lay->node, NULL, -1);
+			onestepfrom(1, lay->node, NULL, -1, -1);
 		}
 	}
 }		
@@ -9658,7 +9659,7 @@ void the_loop() {
 								else {
 									glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA, mainprogram->prelay->decresult->width, mainprogram->prelay->decresult->height, 0, GL_RGBA, GL_UNSIGNED_BYTE, mainprogram->prelay->decresult->data);
 								}
-								onestepfrom(0, mainprogram->prelay->node, NULL, -1);
+								onestepfrom(0, mainprogram->prelay->node, NULL, -1, -1);
 								if (mainprogram->prelay->effects.size()) {
 									draw_box(red, black, -0.2f, 0.5f, 0.4f, 0.4f, mainprogram->prelay->effects[mainprogram->prelay->effects.size() - 1]->fbotex);
 								}
@@ -9701,7 +9702,7 @@ void the_loop() {
 									else {
 										glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA, mainprogram->prelay->decresult->width, mainprogram->prelay->decresult->height, 0, GL_RGBA, GL_UNSIGNED_BYTE, mainprogram->prelay->decresult->data);
 									}
-									onestepfrom(0, mainprogram->prelay->node, NULL, -1);
+									onestepfrom(0, mainprogram->prelay->node, NULL, -1, -1);
 									if (mainprogram->prelay->effects.size()) {
 										draw_box(red, black, -0.2f, 0.5f, 0.4f, 0.4f, mainprogram->prelay->effects[mainprogram->prelay->effects.size() - 1]->fbotex);
 									}
@@ -13328,7 +13329,7 @@ void open_shelf(const std::string &path) {
 					else {
 						glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA, lay->decresult->width, lay->decresult->height, 0, GL_RGBA, GL_UNSIGNED_BYTE, lay->decresult->data);
 					}
-					onestepfrom(0, lay->node, NULL, -1);
+					onestepfrom(0, lay->node, NULL, -1, -1);
 					if (lay->effects.size()) {
 						thumbtex[count] = copy_tex(lay->effects[lay->effects.size() - 1]->fbotex);
 					}

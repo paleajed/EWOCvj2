@@ -1499,7 +1499,9 @@ void main()
 	}
 	else if (mixmode == 1) {
 		//MIX alpha
-		fc = vec4(tex0.rgb * (1.0f - (1.0f - mixfac) * tex1.a) + tex1.rgb * (1.0f - mixfac * tex0.a), max(tex0.a, tex1.a));
+		float fac1 = clamp((1.0f - mixfac) * 2.0f, 0.0f, 1.0f);
+		float fac2 = clamp(mixfac * 2.0f, 0.0f, 1.0f);
+		fc = vec4((tex0.rgb * (1.0f - fac2 * tex1.a / 2.0f) * fac1 + tex1.rgb * (1.0f - fac1 * tex0.a / 2.0f) * fac2), max(fac1 * tex0.a, fac2 * tex1.a));
 	}
 	else if (mixmode == 2) {
 		//MULTIPLY alpha
@@ -1580,7 +1582,9 @@ void main()
 	}
 	else if (mixmode == 21) {
 		//CROSSFADING alpha
-		fc = vec4(tex0.rgb * clamp(cf2 * tex0.a * (2.0f - tex1.a), 0.0f, 1.0f) + tex1.rgb * clamp(cf * tex1.a * (2.0f - tex0.a), 0.0f, 1.0f), 1.0f);
+		float fac1 = clamp(cf2 * 2.0f, 0.0f, 1.0f);
+		float fac2 = clamp(cf * 2.0f, 0.0f, 1.0f);
+		fc = vec4((tex0.rgb * (1.0f - fac2 * tex1.a / 2.0f) * fac1 + tex1.rgb * (1.0f - fac1 * tex0.a / 2.0f) * fac2), max(fac1 * tex0.a, fac2 * tex1.a));
 	}
 	else if (mixmode == 19) {
 		//CHROMAKEY alpha
@@ -1646,7 +1650,7 @@ void main()
 	}
 	if (mixmode > 0) {
 		//alpha demultiplying
-		FragColor = vec4(fc.rgb * fc.a, fc.a);
+		FragColor = vec4(fc.rgb / fc.a, fc.a);
 	}
 	if (wipe) {
 		if (mixmode == 18) {
