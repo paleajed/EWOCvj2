@@ -3,6 +3,8 @@
 #include <dirent.h>
 #include "nfd.h"
 #include "RtMidi.h"
+#include <istream>
+
 
 class PrefItem;
 class Menu;
@@ -345,6 +347,7 @@ class Program {
 		bool insmall;
 		
 		std::vector<GUIString*> guistrings;
+		std::vector<GUIString*> smguistrings;
 		std::vector<std::wstring> livedevices;
 		std::vector<std::string> devices;
 		std::vector<std::string> busylist;
@@ -477,6 +480,7 @@ extern void save_shelf(const std::string &path);
 extern void open_shelf(const std::string &path);
 extern void new_state();
 extern BinElement *find_element(int size, int k, int i, int j, bool olc);
+extern void read_layers(std::istream &rfile, std::vector<Layer*> &layers, bool deck, int type);
 
 extern GLuint copy_tex(GLuint tex);
 extern GLuint copy_tex(GLuint tex, int tw, int th);

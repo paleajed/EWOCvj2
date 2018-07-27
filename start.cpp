@@ -14,6 +14,7 @@
 #include <string>
 #include <assert.h>
 #include <ostream>
+#include <istream>
 #include <iostream>
 #include <fstream>
 #include <sstream>
@@ -2119,6 +2120,7 @@ Layer::Layer(bool comp) {
 
     this->mixbox = new Box;
     this->chromabox = new Box;
+    this->chromabox->acolor[3] = 1.0f;
     this->chtol = new Param;
     this->chtol->value = 0.8f;
     this->chtol->range[0] = -0.1f;
@@ -2694,6 +2696,7 @@ float render_text(std::string text, float *textc, float x, float y, float sx, fl
 		guistring->texth = texth;
 		guistring->sx = sx;
 		mainprogram->guistrings.push_back(guistring);
+		if (smflag) mainprogram->smguistrings.push_back(guistring);
 		
 		glDeleteFramebuffers(1, &texfrbuf);
   	}
@@ -6808,6 +6811,30 @@ void Preferences::load() {
 	while (getline(rfile, istring)) {
 		if (istring == "ENDOFFILE") break;
 	
+		else if (istring == "VIDEO") {
+			while (getline(rfile, istring)) {
+				if (istring == "ENDOFVIDEO") break;
+				for (int i = 0; i < mainprogram->prefs->items.size(); i++) {
+					if (mainprogram->prefs->items[i]->name == "Video") {
+						PIVid *piv = (PIVid*)(mainprogram->prefs->items[i]);
+						for (int j = 0; j < piv->items.size(); j++) {
+							if (piv->items[j]->name == istring) {
+								getline(rfile, istring);
+								piv->items[j]->type = (PIVID_TYPE)std::stoi(istring);
+								getline(rfile, istring);
+								piv->items[j]->value = (PIVID_TYPE)std::stoi(istring);
+								if (piv->items[j]->type == PIVID_W) {
+									mainprogram->ow = piv->items[j]->value;
+								}
+								if (piv->items[j]->type == PIVID_H) {
+									mainprogram->oh = piv->items[j]->value;
+								}
+							}
+						}
+					}
+				}
+			}
+		}
 		else if (istring == "INTERFACE") {
 			while (getline(rfile, istring)) {
 				if (istring == "ENDOFINTERFACE") break;
@@ -6885,6 +6912,22 @@ void Preferences::save() {
 	ofstream wfile;
 	wfile.open(".\\preferences.prefs");
 	wfile << "EWOCvj PREFERENCES V0.1\n";
+	
+	wfile << "VIDEO\n";
+	for (int i = 0; i < mainprogram->prefs->items.size(); i++) {
+		if (mainprogram->prefs->items[i]->name == "Video") {
+			PIVid *piv = (PIVid*)(mainprogram->prefs->items[i]);
+			for (int j = 0; j < piv->items.size(); j++) {
+				wfile << piv->items[j]->name;
+				wfile << "\n";
+				wfile << std::to_string(piv->items[j]->type);
+				wfile << "\n";
+				wfile << std::to_string(piv->items[j]->value);
+				wfile << "\n";
+			}
+		}
+	}
+	wfile << "ENDOFVIDEO\n";
 	
 	wfile << "INTERFACE\n";
 	for (int i = 0; i < mainprogram->prefs->items.size(); i++) {
@@ -8068,7 +8111,7 @@ bool preferences() {
 	int mx = -1;
 	int my = -1;
 	if (SDL_GetMouseFocus() == mainprogram->prefwindow) {
-		SDL_PumpEvents();
+		//SDL_PumpEvents();
 		SDL_GetMouseState(&mx, &my);
 		mx *= 2.0f;
 		my *= 2.0f;
@@ -8079,7 +8122,7 @@ bool preferences() {
 	float black[] = {0.0f, 0.0f, 0.0f, 1.0f};
 	float lightblue[] = {0.5f, 0.5f, 1.0f, 1.0f};
 	float green[] = {0.0f, 0.7f, 0.0f, 1.0f};
-		
+
 	SDL_GL_MakeCurrent(mainprogram->prefwindow, glc_pr);
 	glClear(GL_COLOR_BUFFER_BIT);
 	
@@ -8306,6 +8349,7 @@ bool preferences() {
 			mainprogram->prefon = false;
 			mainprogram->drawnonce = false;
 			SDL_HideWindow(mainprogram->prefwindow);
+			SDL_RaiseWindow(mainprogram->mainwindow);
 			return 0;
 		}
 	}
@@ -8320,6 +8364,7 @@ bool preferences() {
 			mainprogram->prefon = false;
 			mainprogram->drawnonce = false;
 			SDL_HideWindow(mainprogram->prefwindow);
+			SDL_RaiseWindow(mainprogram->mainwindow);
 			return 0;
 		}
 	}
@@ -8850,6 +8895,8 @@ void the_loop() {
 		mainprogram->mx = -1;
 		mainprogram->my = -1;
 		mainprogram->lmsave = mainprogram->leftmouse;
+		mainprogram->leftmouse = false;
+		mainprogram->rightmouse = false;
 	}
 	if (mainmix->adaptparam) {
 		// no hovering while adapting param
@@ -11520,15 +11567,14 @@ void the_loop() {
 				mainprogram->prefs->load();
 				mainprogram->prefon = true;
 				SDL_ShowWindow(mainprogram->prefwindow);
-				SDL_RaiseWindow(mainprogram->prefwindow);
-				SDL_GL_MakeCurrent(mainprogram->mainwindow, glc);
-				HGLRC cc1 = wglGetCurrentContext();
 				SDL_GL_MakeCurrent(mainprogram->prefwindow, glc_pr);
-				HGLRC cc2 = wglGetCurrentContext();
-				wglShareLists(cc1, cc2);
 				glUseProgram(mainprogram->ShaderProgram);
 				glEnable(GL_BLEND);
 				glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
+				for (int i = 0; i < mainprogram->smguistrings.size(); i++) {
+					mainprogram->guistrings.erase(std::find(mainprogram->guistrings.begin(), mainprogram->guistrings.end(), mainprogram->smguistrings[i]));
+				}
+				mainprogram->smguistrings.clear();
 				for (int i = 0; i < mainprogram->prefs->items.size(); i++) {
 					PrefItem *item = mainprogram->prefs->items[i];
 					item->box->upvtxtoscr();
@@ -12425,261 +12471,10 @@ void open_layerfile(const std::string &path, int reset) {
 		lay->effects.pop_back();
 	}
 	
-	while (getline(rfile, istring)) {
-		if (istring == "POS") {
-		}
-		if (istring == "DECK") {
-			getline(rfile, istring); 
-			lay->deck = std::stoi(istring);
-		}
-		if (istring == "LIVE") {
-			getline(rfile, istring); 
-			lay->live = std::stoi(istring);
-		}
-		if (istring == "FILENAME") {
-			getline(rfile, istring);
-			lay->filename = istring;
-			lay->timeinit = false;
-			if (lay->filename != "") {
-				if (lay->live) {
-					avdevice_register_all();
-					ptrdiff_t pos = std::find(mainprogram->busylist.begin(), mainprogram->busylist.end(), lay->filename) - mainprogram->busylist.begin();
-					if (pos >= mainprogram->busylist.size()) {
-						mainprogram->busylist.push_back(lay->filename);
-						mainprogram->busylayers.push_back(lay);
-						AVInputFormat *ifmt = av_find_input_format("dshow");
-						thread_vidopen(lay, ifmt, false);
-					}
-					else {
-						lay->liveinput = mainprogram->busylayers[pos];
-						mainprogram->mimiclayers.push_back(lay);
-					}
-				}
-				else {
-					open_video(lay->frame, lay, lay->filename, reset);
-				}
-			}
-			//lay->prevframe = -1;
-		}
-		if (istring == "RELPATH") {
-			getline(rfile, istring);
-			if (lay->filename == "") {
-				lay->filename = boost::filesystem::absolute(istring).string();
-				lay->timeinit = false;
-				open_video(lay->frame, lay, lay->filename, reset);
-			}
-		}	
-		if (istring == "SPEEDVAL") {
-			getline(rfile, istring); 
-			lay->speed->value = std::stof(istring);
-		}
-		if (istring == "PLAYBUTVAL") {
-			getline(rfile, istring); 
-			lay->playbut->value = std::stoi(istring);
-		}
-		if (istring == "REVBUTVAL") {
-			getline(rfile, istring); 
-			lay->revbut->value = std::stoi(istring);
-		}
-		if (istring == "BOUNCEBUTVAL") {
-			getline(rfile, istring); 
-			lay->bouncebut->value = std::stoi(istring);
-		}
-		if (istring == "PLAYKIND") {
-			getline(rfile, istring); 
-			lay->playkind = std::stoi(istring);
-		}
-		if (istring == "GENMIDIBUTVAL") {
-			getline(rfile, istring); 
-			lay->genmidibut->value = std::stoi(istring);
-		}
-		if (istring == "SHIFTX") {
-			getline(rfile, istring); 
-			lay->shiftx = std::stoi(istring);
-		}
-		if (istring == "SHIFTY") {
-			getline(rfile, istring); 
-			lay->shifty = std::stoi(istring);
-		}
-		if (istring == "SCALE") {
-			getline(rfile, istring);
-			lay->scale = std::stof(istring);
-		}
-		if (istring == "OPACITYVAL") {
-			getline(rfile, istring); 
-			lay->opacity->value = std::stof(istring);
-		}
-		if (istring == "VOLUMEVAL") {
-			getline(rfile, istring); 
-			lay->volume->value = std::stof(istring);
-		}
-		if (istring == "CHTOLVAL") {
-			getline(rfile, istring); 
-			lay->chtol->value = std::stof(istring);
-		}
-		if (istring == "CHDIRVAL") {
-			getline(rfile, istring); 
-			lay->chdir->value = std::stoi(istring);
-		}
-		if (istring == "CHINVVAL") {
-			getline(rfile, istring); 
-			lay->chinv->value = std::stoi(istring);
-		}
-		if (istring == "MILLIF") {
-			getline(rfile, istring); 
-			lay->millif = std::stof(istring);
-		}
-		if (istring == "FRAME") {
-			getline(rfile, istring); 
-			lay->frame = std::stof(istring);
-		}
-		//if (istring == "PREVFRAME") {
-		//	getline(rfile, istring); 
-		//	lay->prevframe = std::stoi(istring);
-		//}
-		if (istring == "STARTFRAME") {
-			getline(rfile, istring); 
-			lay->startframe = std::stoi(istring);
-		}
-		if (istring == "ENDFRAME") {
-			getline(rfile, istring); 
-			lay->endframe = std::stoi(istring);
-		}
-		if (istring == "NUMF") {
-			getline(rfile, istring); 
-			lay->numf = std::stoi(istring);
-		}
-		if (lay->blendnode) {
-			if (istring == "MIXMODE") {
-				getline(rfile, istring); 
-				lay->blendnode->blendtype = (BLEND_TYPE)std::stoi(istring);
-			}
-			if (istring == "MIXFACVAL") {
-				getline(rfile, istring); 
-				lay->blendnode->mixfac->value = std::stof(istring);
-			}
-			if (istring == "CHRED") {
-				getline(rfile, istring); 
-				lay->blendnode->chred = std::stof(istring);
-			}
-			if (istring == "CHGREEN") {
-				getline(rfile, istring); 
-				lay->blendnode->chgreen = std::stof(istring);
-			}
-			if (istring == "CHBLUE") {
-				getline(rfile, istring); 
-				lay->blendnode->chblue = std::stof(istring);
-			}
-			if (istring == "WIPETYPE") {
-				getline(rfile, istring); 
-				lay->blendnode->wipetype = std::stoi(istring);
-			}
-			if (istring == "WIPEDIR") {
-				getline(rfile, istring); 
-				lay->blendnode->wipedir = std::stoi(istring);
-			}
-			if (istring == "WIPEX") {
-				getline(rfile, istring); 
-				lay->blendnode->wipex = std::stof(istring);
-			}
-			if (istring == "WIPEY") {
-				getline(rfile, istring); 
-				lay->blendnode->wipey = std::stof(istring);
-			}
-		}
-		
-		if (istring == "CLIPS") {
-			Clip *clip = nullptr;
-			getline(rfile, istring);
-			while (istring != "ENDOFCLIPS") {
-				if (istring == "TYPE") {
-					clip = new Clip;
-					getline(rfile, istring);
-					clip->type = (ELEM_TYPE)std::stoi(istring);
-					if (reset == 0) lay->clips.insert(lay->clips.begin() + lay->clips.size() - 1, clip);
-				}
-				if (istring == "FILENAME") {
-					getline(rfile, istring);
-					clip->path = istring;					
-				}
-				if (istring == "JPEGPATH") {
-					getline(rfile, istring);
-					std::string jpegpath = istring;
-					glGenTextures(1, &clip->tex);
-					glBindTexture(GL_TEXTURE_2D, clip->tex);
-					glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR);
-					glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
-					glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA, (int)(w * 0.3f), (int)(h * 0.3f), 0, GL_RGBA, GL_UNSIGNED_BYTE, NULL);
-					open_thumb(jpegpath, clip->tex);
-				}
-				getline(rfile, istring);
-			}
-		}
-		
-		if (istring == "EFFECTS") {
-			int type;
-			Effect *eff = nullptr;
-			while (istring != "ENDOFEFFECTS") {
-				getline(rfile, istring);
-				if (istring == "TYPE") {
-					getline(rfile, istring);
-					type = std::stoi(istring);
-				}
-				if (istring == "POS") {
-					getline(rfile, istring);
-					int pos = std::stoi(istring);
-					eff = lay->add_effect((EFFECT_TYPE)type, pos);
-				}
-				if (istring == "ONOFFVAL") {
-					getline(rfile, istring);
-					eff->onoffbutton->value = std::stoi(istring);
-				}
-				if (istring == "DRYWETVAL") {
-					getline(rfile, istring);
-					eff->drywet->value = std::stof(istring);
-				}
-				if (eff) {
-					if (eff->type == RIPPLE) {
-						if (istring == "RIPPLESPEED") {
-							getline(rfile, istring);
-							((RippleEffect*)eff)->speed = std::stof(istring);
-						}
-						if (istring == "RIPPLECOUNT") {
-							getline(rfile, istring);
-							((RippleEffect*)eff)->ripplecount = std::stof(istring);
-						}
-					}
-				}
-				
-				if (istring == "PARAMS") {
-					int pos = 0;
-					Param *par;
-					while (istring != "ENDOFPARAMS") {
-						getline(rfile, istring);
-						if (istring == "VAL") {
-							par = eff->params[pos];
-							pos++;
-							getline(rfile, istring);
-							par->value = std::stof(istring);
-							par->effect = eff;
-						}
-						if (istring == "MIDI0") {
-							getline(rfile, istring);
-							par->midi[0] = std::stoi(istring);
-						}
-						if (istring == "MIDI1") {
-							getline(rfile, istring);
-							par->midi[1] = std::stoi(istring);
-						}
-						if (istring == "MIDIPORT") {
-							getline(rfile, istring);
-							par->midiport = istring;
-						}
-					}
-				}
-			}
-		}
-	}
+	std::vector<Layer*> layers;
+	layers.push_back(lay);
+	read_layers(rfile, layers, lay->deck, 0);
+	
 	rfile.close();
 }
 
@@ -12690,7 +12485,7 @@ void open_state(const std::string &path) {
 	getline(rfile, istring);
 	
 	mainprogram->preveff = true;
-	//open_mix(remove_extension(path) + ".state1.ewoc");
+	open_mix(remove_extension(path) + ".state1.ewoc");
 	mainprogram->preveff = false;
 	open_mix(remove_extension(path) + ".state2.ewoc");
 	//open_genmidis(remove_extension(path) + ".midi");
@@ -12764,17 +12559,52 @@ void open_mix(const std::string &path) {
 			getline(rfile, istring); 
 			mainmix->wipedir[1] = std::stoi(istring);
 		}
-	
 		int deck;
-		if (istring == "LAYERSA") deck = 0;
-		if (istring == "LAYERSB") deck = 1;
-		std::vector<Layer*> &layers = choose_layers(deck);
-		
+		if (istring == "LAYERSA") {
+			std::vector<Layer*> &layersA = choose_layers(0);
+			read_layers(rfile, layersA, 0, 2);
+			std::vector<Layer*> &layersB = choose_layers(1);
+			read_layers(rfile, layersB, 1, 2);
+		}
+	}
+	
+	std::vector<Layer*> &lvec = choose_layers(cldeck);
+	for (int i = 0; i < lvec.size(); i++) {
+		if (lvec[i]->pos == clpos) {
+			mainmix->currlay = lvec[i];
+			break;
+		}
+	}
+	
+	rfile.close();
+}
+
+void open_deck(const std::string &path, bool alive) {
+	ifstream rfile;
+	rfile.open(path.c_str());
+	std::string istring;
+	
+	new_file(mainmix->mousedeck, alive);
+	
+	std::vector<Layer*> &layers = choose_layers(mainmix->mousedeck);
+	read_layers(rfile, layers, mainmix->mousedeck, 1);
+	
+	rfile.close();
+}
+
+void read_layers(std::istream &rfile, std::vector<Layer*> &layers, bool deck, int type) {
+	Layer *lay = nullptr;
+	std::string istring;
+	while (getline(rfile, istring)) {
+		if (istring == "LAYERSB") {
+			return;
+		}
 		if (istring == "POS") {
 			getline(rfile, istring);
 			int pos = std::stoi(istring);
-			if (pos == 0) {
+			if (pos == 0 or type == 0) {
 				lay = layers[0];
+				if (type == 1) mainmix->currlay = lay;
 			}
 			else {
 				lay = mainmix->add_layer(layers, pos);
@@ -12808,7 +12638,7 @@ void open_mix(const std::string &path) {
 					open_video(lay->frame, lay, lay->filename, false);
 				}
 			}
-			lay->prevframe = -1;
+			if (type > 0) lay->prevframe = -1;
 		}
 		if (istring == "RELPATH") {
 			getline(rfile, istring);
@@ -12898,324 +12728,48 @@ void open_mix(const std::string &path) {
 			getline(rfile, istring); 
 			lay->numf = std::stoi(istring);
 		}
-		if (istring == "MIXMODE") {
-			getline(rfile, istring); 
-			lay->blendnode->blendtype = (BLEND_TYPE)std::stoi(istring);
-		}
-		if (istring == "MIXFACVAL") {
-			getline(rfile, istring); 
-			lay->blendnode->mixfac->value = std::stof(istring);
-		}
-		if (istring == "CHRED") {
-			getline(rfile, istring); 
-			lay->blendnode->chred = std::stof(istring);
-		}
-		if (istring == "CHGREEN") {
-			getline(rfile, istring); 
-			lay->blendnode->chgreen = std::stof(istring);
-		}
-		if (istring == "CHBLUE") {
-			getline(rfile, istring); 
-			lay->blendnode->chblue = std::stof(istring);
-		}
-		if (istring == "WIPETYPE") {
-			getline(rfile, istring); 
-			lay->blendnode->wipetype = std::stoi(istring);
-		}
-		if (istring == "WIPEDIR") {
-			getline(rfile, istring); 
-			lay->blendnode->wipedir = std::stoi(istring);
-		}
-		if (istring == "WIPEX") {
-			getline(rfile, istring); 
-			lay->blendnode->wipex = std::stof(istring);
-		}
-		if (istring == "WIPEY") {
-			getline(rfile, istring); 
-			lay->blendnode->wipey = std::stof(istring);
-		}
-		
-		if (istring == "CLIPS") {
-			Clip *clip = nullptr;
-			getline(rfile, istring);
-			while (istring != "ENDOFCLIPS") {
-				if (istring == "TYPE") {
-					clip = new Clip;
-					getline(rfile, istring);
-					clip->type = (ELEM_TYPE)std::stoi(istring);
-					lay->clips.insert(lay->clips.begin() + lay->clips.size() - 1, clip);
+		if (lay) {
+			if (!lay->dummy) {
+				if (istring == "MIXMODE") {
+					getline(rfile, istring); 
+					lay->blendnode->blendtype = (BLEND_TYPE)std::stoi(istring);
 				}
-				if (istring == "FILENAME") {
-					getline(rfile, istring);
-					clip->path = istring;					
+				if (istring == "MIXFACVAL") {
+					getline(rfile, istring); 
+					lay->blendnode->mixfac->value = std::stof(istring);
 				}
-				if (istring == "JPEGPATH") {
-					getline(rfile, istring);
-					std::string jpegpath = istring;
-					glGenTextures(1, &clip->tex);
-					glBindTexture(GL_TEXTURE_2D, clip->tex);
-					glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR);
-					glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
-					glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA, (int)(w * 0.3f), (int)(h * 0.3f), 0, GL_RGBA, GL_UNSIGNED_BYTE, NULL);
-					open_thumb(jpegpath, clip->tex);
+				if (istring == "CHRED") {
+					getline(rfile, istring); 
+					lay->blendnode->chred = std::stof(istring);
+					lay->chromabox->acolor[0] = lay->blendnode->chred;
 				}
-				getline(rfile, istring);
-			}
-		}
-		
-		if (istring == "EFFECTS") {
-			int type;
-			Effect *eff = nullptr;
-			while (istring != "ENDOFEFFECTS") {
-				getline(rfile, istring);
-				if (istring == "TYPE") {
-					getline(rfile, istring);
-					type = std::stoi(istring);
+				if (istring == "CHGREEN") {
+					getline(rfile, istring); 
+					lay->blendnode->chgreen = std::stof(istring);
+					lay->chromabox->acolor[1] = lay->blendnode->chgreen;
 				}
-				if (istring == "POS") {
-					getline(rfile, istring);
-					int pos = std::stoi(istring);
-					eff = lay->add_effect((EFFECT_TYPE)type, pos);
+				if (istring == "CHBLUE") {
+					getline(rfile, istring); 
+					lay->blendnode->chblue = std::stof(istring);
+					lay->chromabox->acolor[2] = lay->blendnode->chblue;
 				}
-				if (istring == "ONOFFVAL") {
-					getline(rfile, istring);
-					eff->onoffbutton->value = std::stoi(istring);
+				if (istring == "WIPETYPE") {
+					getline(rfile, istring); 
+					lay->blendnode->wipetype = std::stoi(istring);
 				}
-				if (istring == "DRYWETVAL") {
-					getline(rfile, istring);
-					eff->drywet->value = std::stof(istring);
+				if (istring == "WIPEDIR") {
+					getline(rfile, istring); 
+					lay->blendnode->wipedir = std::stoi(istring);
 				}
-				if (eff) {
-					if (eff->type == RIPPLE) {
-						if (istring == "RIPPLESPEED") {
-							getline(rfile, istring);
-							((RippleEffect*)eff)->speed = std::stof(istring);
-						}
-						if (istring == "RIPPLECOUNT") {
-							getline(rfile, istring);
-							((RippleEffect*)eff)->ripplecount = std::stof(istring);
-						}
-					}
+				if (istring == "WIPEX") {
+					getline(rfile, istring); 
+					lay->blendnode->wipex = std::stof(istring);
 				}
-				
-				if (istring == "PARAMS") {
-					int pos = 0;
-					Param *par;
-					while (istring != "ENDOFPARAMS") {
-						getline(rfile, istring);
-						if (istring == "VAL") {
-							par = eff->params[pos];
-							pos++;
-							getline(rfile, istring);
-							par->value = std::stof(istring);
-							par->effect = eff;
-						}
-						if (istring == "MIDI0") {
-							getline(rfile, istring);
-							par->midi[0] = std::stoi(istring);
-						}
-						if (istring == "MIDI1") {
-							getline(rfile, istring);
-							par->midi[1] = std::stoi(istring);
-						}
-						if (istring == "MIDIPORT") {
-							getline(rfile, istring);
-							par->midiport = istring;
-						}
-					}
+				if (istring == "WIPEY") {
+					getline(rfile, istring); 
+					lay->blendnode->wipey = std::stof(istring);
 				}
 			}
-		}
-	}
-	std::vector<Layer*> &lvec = choose_layers(cldeck);
-	for (int i = 0; i < lvec.size(); i++) {
-		if (lvec[i]->pos == clpos) {
-			mainmix->currlay = lvec[i];
-			break;
-		}
-	}
-	
-	rfile.close();
-}
-
-void open_deck(const std::string &path, bool alive) {
-	ifstream rfile;
-	rfile.open(path.c_str());
-	std::string istring;
-	
-	new_file(mainmix->mousedeck, alive);
-	
-	std::vector<Layer*> &layers = choose_layers(mainmix->mousedeck);
-	Layer *lay;
-	while (getline(rfile, istring)) {
-		if (istring == "POS") {
-			getline(rfile, istring);
-			int pos = std::stoi(istring);
-			if (pos == 0) {
-				lay = layers[0];
-				mainmix->currlay = lay;
-			}
-			else {
-				lay = mainmix->add_layer(layers, pos);
-			}
-			lay->deck = mainmix->mousedeck;
-		}
-		if (istring == "DECK") {
-			getline(rfile, istring); 
-			lay->deck = std::stoi(istring);
-		}
-		if (istring == "LIVE") {
-			getline(rfile, istring); 
-			lay->live = std::stoi(istring);
-		}
-		if (istring == "FILENAME") {
-			getline(rfile, istring);
-			lay->filename = istring;
-			lay->timeinit = false;
-			if (lay->filename != "") {
-				if (lay->live) {
-					avdevice_register_all();
-					ptrdiff_t pos = std::find(mainprogram->busylist.begin(), mainprogram->busylist.end(), lay->filename) - mainprogram->busylist.begin();
-					if (pos >= mainprogram->busylist.size()) {
-						mainprogram->busylist.push_back(lay->filename);
-						mainprogram->busylayers.push_back(lay);
-						AVInputFormat *ifmt = av_find_input_format("dshow");
-						thread_vidopen(lay, ifmt, false);
-					}
-					else {
-						lay->liveinput = mainprogram->busylayers[pos];
-						mainprogram->mimiclayers.push_back(lay);
-					}
-				}
-				else {
-					open_video(lay->frame, lay, lay->filename, false);
-				}
-			}
-			lay->prevframe = -1;
-		}
-		if (istring == "RELPATH") {
-			getline(rfile, istring);
-			if (lay->filename == "") {
-				lay->filename = boost::filesystem::absolute(istring).string();
-				lay->timeinit = false;
-				open_video(lay->frame, lay, lay->filename, false);
-			}
-		}	
-		if (istring == "SPEEDVAL") {
-			getline(rfile, istring); 
-			lay->speed->value = std::stof(istring);
-		}
-		if (istring == "PLAYBUTVAL") {
-			getline(rfile, istring); 
-			lay->playbut->value = std::stoi(istring);
-		}
-		if (istring == "REVBUTVAL") {
-			getline(rfile, istring); 
-			lay->revbut->value = std::stoi(istring);
-		}
-		if (istring == "BOUNCEBUTVAL") {
-			getline(rfile, istring); 
-			lay->bouncebut->value = std::stoi(istring);
-		}
-		if (istring == "PLAYKIND") {
-			getline(rfile, istring); 
-			lay->playkind = std::stoi(istring);
-		}
-		if (istring == "GENMIDIBUTVAL") {
-			getline(rfile, istring); 
-			lay->genmidibut->value = std::stoi(istring);
-		}
-		if (istring == "SHIFTX") {
-			getline(rfile, istring); 
-			lay->shiftx = std::stoi(istring);
-		}
-		if (istring == "SHIFTY") {
-			getline(rfile, istring); 
-			lay->shifty = std::stoi(istring);
-		}
-		if (istring == "SCALE") {
-			getline(rfile, istring);
-			lay->scale = std::stof(istring);
-		}
-		if (istring == "OPACITYVAL") {
-			getline(rfile, istring); 
-			lay->opacity->value = std::stof(istring);
-		}
-		if (istring == "VOLUMEVAL") {
-			getline(rfile, istring); 
-			lay->volume->value = std::stof(istring);
-		}
-		if (istring == "CHTOLVAL") {
-			getline(rfile, istring); 
-			lay->chtol->value = std::stof(istring);
-		}
-		if (istring == "CHDIRVAL") {
-			getline(rfile, istring); 
-			lay->chdir->value = std::stoi(istring);
-		}
-		if (istring == "CHINVVAL") {
-			getline(rfile, istring); 
-			lay->chinv->value = std::stoi(istring);
-		}
-		if (istring == "MILLIF") {
-			getline(rfile, istring); 
-			lay->millif = std::stof(istring);
-		}
-		if (istring == "FRAME") {
-			getline(rfile, istring); 
-			lay->frame = std::stof(istring);
-		}
-		//if (istring == "PREVFRAME") {
-		//	getline(rfile, istring); 
-		//	lay->prevframe = std::stoi(istring);
-		//}
-		if (istring == "STARTFRAME") {
-			getline(rfile, istring); 
-			lay->startframe = std::stoi(istring);
-		}
-		if (istring == "ENDFRAME") {
-			getline(rfile, istring); 
-			lay->endframe = std::stoi(istring);
-		}
-		if (istring == "NUMF") {
-			getline(rfile, istring); 
-			lay->numf = std::stoi(istring);
-		}
-		if (istring == "MIXMODE") {
-			getline(rfile, istring); 
-			lay->blendnode->blendtype = (BLEND_TYPE)std::stoi(istring);
-		}
-		if (istring == "MIXFACVAL") {
-			getline(rfile, istring); 
-			lay->blendnode->mixfac->value = std::stof(istring);
-		}
-		if (istring == "CHRED") {
-			getline(rfile, istring); 
-			lay->blendnode->chred = std::stof(istring);
-		}
-		if (istring == "CHGREEN") {
-			getline(rfile, istring); 
-			lay->blendnode->chgreen = std::stof(istring);
-		}
-		if (istring == "CHBLUE") {
-			getline(rfile, istring); 
-			lay->blendnode->chblue = std::stof(istring);
-		}
-		if (istring == "WIPETYPE") {
-			getline(rfile, istring); 
-			lay->blendnode->wipetype = std::stoi(istring);
-		}
-		if (istring == "WIPEDIR") {
-			getline(rfile, istring); 
-			lay->blendnode->wipedir = std::stoi(istring);
-		}
-		if (istring == "WIPEX") {
-			getline(rfile, istring); 
-			lay->blendnode->wipex = std::stof(istring);
-		}
-		if (istring == "WIPEY") {
-			getline(rfile, istring); 
-			lay->blendnode->wipey = std::stof(istring);
 		}
 		
 		if (istring == "CLIPS") {
@@ -13309,10 +12863,8 @@ void open_deck(const std::string &path, bool alive) {
 			}
 		}
 	}
-	
-	rfile.close();
 }
-
+	
 void delete_layers(std::vector<Layer*> &layers, bool alive) {
 	int count = 0;
 	while (!layers.empty()) {
@@ -14283,7 +13835,7 @@ int main(int argc, char* argv[]){
 
 	/* Turn on double buffering */
 	SDL_GL_SetAttribute(SDL_GL_DOUBLEBUFFER, 1);
-	SDL_GL_SetSwapInterval(1); //vsync on
+	SDL_GL_SetSwapInterval(0); //vsync off
 
 	SDL_SetHint(SDL_HINT_VIDEO_MINIMIZE_ON_FOCUS_LOSS, "0");
 	
@@ -14309,15 +13861,18 @@ int main(int argc, char* argv[]){
 	//glewExperimental = GL_TRUE;
 	glewInit();
 
-	mainprogram->tunemidiwindow = SDL_CreateWindow("Tune MIDI", w / 4, h / 4, w / 2, h / 2, SDL_WINDOW_OPENGL | SDL_WINDOW_SHOWN | SDL_WINDOW_ALLOW_HIGHDPI);
+	mainprogram->tunemidiwindow = SDL_CreateWindow("Tune MIDI", w / 4, h / 4, w / 2, h / 2, SDL_WINDOW_OPENGL | SDL_WINDOW_HIDDEN | SDL_WINDOW_ALLOW_HIGHDPI);
 	glc_tm = SDL_GL_CreateContext(mainprogram->tunemidiwindow);
-	SDL_HideWindow(mainprogram->tunemidiwindow);
-	mainprogram->prefwindow = SDL_CreateWindow("Preferences", w / 4, h / 4, w / 2, h / 2, SDL_WINDOW_OPENGL | SDL_WINDOW_SHOWN | SDL_WINDOW_ALLOW_HIGHDPI);
+	mainprogram->prefwindow = SDL_CreateWindow("Preferences", w / 4, h / 4, w / 2, h / 2, SDL_WINDOW_OPENGL | SDL_WINDOW_HIDDEN | SDL_WINDOW_ALLOW_HIGHDPI);
 	glc_pr = SDL_GL_CreateContext(mainprogram->prefwindow);
+	SDL_GL_MakeCurrent(mainprogram->mainwindow, glc);
+	HGLRC cc1 = wglGetCurrentContext();
+	SDL_GL_MakeCurrent(mainprogram->prefwindow, glc_pr);
+	HGLRC cc2 = wglGetCurrentContext();
+	wglShareLists(cc1, cc2);
 	SDL_GL_GetDrawableSize(mainprogram->prefwindow, &wi, &he);
 	smw = (float)wi;
 	smh = (float)he;
-	SDL_HideWindow(mainprogram->prefwindow);
 	
 	SDL_GL_MakeCurrent(mainprogram->mainwindow, glc);
 	glGenTextures(1, &mainprogram->smglobfbotex);
