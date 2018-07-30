@@ -2995,10 +2995,10 @@ void calc_texture(Layer *lay, bool comp, bool alive) {
 	}
 	glDisable(GL_BLEND);
 	if (lay->liveinput) {
-		draw_box(NULL, black, -1.0f, -1.0f + 2.0f * div * fac, 2.0f * div, -2.0f * div * fac, lay->shiftx, lay->shifty, lay->scale, opa, 0, lay->liveinput->texture, w, h);
+		draw_box(NULL, black, -1.0f, -1.0f, 2.0f * div, 2.0f * div * fac, 0.0f, 0.0f, 1.0f, 1.0f, 0, lay->liveinput->texture, w, h);
 	}
 	else if (lay->filename != "") {
-		draw_box(NULL, black, -1.0f, -1.0f + 2.0f * div * fac, 2.0f * div, -2.0f * div * fac, lay->shiftx, lay->shifty, lay->scale, opa, 0, lay->texture, w, h);
+		draw_box(NULL, black, -1.0f, -1.0f, 2.0f * div, 2.0f * div * fac, 0.0f, 0.0f, 1.0f, 1.0f, 0, lay->texture, w, h);
 	}
 	else {
 		glClearColor(0.0f, 0.0f, 0.0f, 0.0f);
@@ -3255,11 +3255,11 @@ void display_texture(Layer *lay, bool deck) {
 			}
 			if (lay->effects.size()) {
 				if ((w / 2.0f > mainprogram->mx and mainmix->currlay->deck == 0) or (w / 2.0f < mainprogram->mx and mainmix->currlay->deck == 1)) {
-					if (mainprogram->my < h - yvtxtoscr(tf(mainmix->layw) - tf(0.20f)) and h - yvtxtoscr(tf(mainmix->layw) - tf(0.20f) - tf(0.05f) * lay->effscroll) > mainprogram->my) {
-						if (mainprogram->mousewheel) {
+					if (mainprogram->my > yvtxtoscr(mainmix->layw - tf(0.20f))) {
+						if (mainprogram->mousewheel and lay->numefflines > 11) {
 							lay->effscroll -= mainprogram->mousewheel;
 							if (lay->effscroll < 0) lay->effscroll = 0;
-							if (lay->numefflines > 11 and lay->numefflines - lay->effscroll < 11) lay->effscroll = lay->numefflines - 11;
+							if (lay->numefflines - lay->effscroll < 11) lay->effscroll = lay->numefflines - 11;
 						}
 					}
 				}
@@ -4417,7 +4417,7 @@ void onestepfrom(bool stage, Node *node, Node *prevnode, GLuint prevfbotex, GLui
 			glBindFramebuffer(GL_FRAMEBUFFER, effect->fbo);
 			glDrawBuffer(GL_COLOR_ATTACHMENT0);
 			float black[4] = {0.0f, 0.0f, 0.0f, 0.0f};
-			draw_box(NULL, black, -1.0f, -1.0f + 2.0f * div * fac, 2.0f * div, -2.0f * div * fac, lay->shiftx * div, lay->shifty * div, lay->scale, lay->opacity->value, 0, fbocopy, w, h);
+			draw_box(NULL, black, -1.0f, -1.0f, 2.0f * div, 2.0f * div * fac, lay->shiftx * div, lay->shifty * div, lay->scale, lay->opacity->value, 0, fbocopy, w, h);
 			glEnable(GL_BLEND);
 			glDeleteTextures(1, &fbocopy);
 		}
@@ -4437,8 +4437,7 @@ void onestepfrom(bool stage, Node *node, Node *prevnode, GLuint prevfbotex, GLui
 				glUniform1f(chinv, lay->chinv->value);
 			}
 		}
-		if (lay->node == lay->lasteffnode and lay->newframe) {
-			lay->newframe = false;
+		if (lay->node == lay->lasteffnode) {
 			GLuint fbocopy;
 			float fac = 1.0f;
 			glDisable(GL_BLEND);
@@ -8865,9 +8864,9 @@ void enddrag() {
 		//	}
 		//}
 		mainprogram->dragbinel = nullptr;
+		if (mainprogram->draglay) mainprogram->draglay->vidmoving = false;
 		mainprogram->draglay = nullptr;
 		mainprogram->dragpath = "";
-		if (mainprogram->draglay) mainprogram->draglay->vidmoving = false;
 		mainmix->moving = false;
 		//glDeleteTextures(1, &mainprogram->dragtex);  maybe needs implementing in one case, check history
 	}
@@ -11993,7 +11992,7 @@ void the_loop() {
 				}
 			}				
 			
-			if (mainprogram->binsscreen) {				printf("IN\n");
+			if (mainprogram->binsscreen) {
 
 				GLint thumb = glGetUniformLocation(mainprogram->ShaderProgram, "thumb");
 				glUniform1i(thumb, 1);
