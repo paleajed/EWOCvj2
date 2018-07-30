@@ -10466,10 +10466,10 @@ void the_loop() {
 		}
 		
 		
-		//blue areas
+		//blue bars designating layer selection
 		float blue[4] = {0.1, 0.1, 0.6, 1.0};
 		if (mainmix->currlay) {
-			draw_box(nullptr, blue, -1.0f + mainmix->numw + mainmix->currlay->deck * 1.0f + (mainmix->currlay->pos - mainmix->scrollpos[mainmix->currlay->deck]) * mainmix->layw, -1.0f, mainmix->layw, 2.0f, -1);
+			draw_box(nullptr, blue, -1.0f + mainmix->numw + mainmix->currlay->deck * 1.0f + (mainmix->currlay->pos - mainmix->scrollpos[mainmix->currlay->deck]) * mainmix->layw, -0.1f + tf(0.05f), mainmix->layw, 1.1f, -1);
 		}
 			
 		//draw wormhole
@@ -12373,6 +12373,7 @@ void save_layerfile(const std::string &path, Layer *lay, bool doclips) {
 }
 
 void save_state(const std::string &path) {
+	std::vector<std::string> filestoadd;
 	std::string ext = path.substr(path.length() - 6, std::string::npos);
 	std::string str;
 	if (ext != ".state") str = path + ".state";
@@ -12392,14 +12393,27 @@ void save_state(const std::string &path) {
 	wfile << "ENDOFFILE\n";
 	wfile.close();
 	
+	save_shelf(temppath + "temp.shelf");
+	filestoadd.push_back(temppath + "temp.shelf");
 	bool save = mainprogram->preveff;
 	mainprogram->preveff = true;
-	save_mix(remove_extension(path) + ".state1");
-	mainprogram->preveff = false;
-	save_mix(remove_extension(path) + ".state2");
+	save_mix(temppath + "temp.state1");
+	filestoadd.push_back(temppath + "temp.state1.ewoc");
+	if (mainmix->compon) {
+		mainprogram->preveff = false;
+		save_mix(temppath + "temp.state2");
+		filestoadd.push_back(temppath + "temp.state2.ewoc");
+	}
 	//save_genmidis(remove_extension(path) + ".midi");
-	save_shelf(remove_extension(path) + ".shelf");
 	mainprogram->preveff = save;
+	
+    ofstream outputfile;
+	outputfile.open(temppath + "tempconcatstate", ios::out | ios::binary);
+	std::vector<std::vector<std::string>> filestoadd2;
+	filestoadd2.push_back(filestoadd);
+	concat_files(outputfile, str, filestoadd2);
+	outputfile.close();
+	boost::filesystem::rename(temppath + "tempconcatstate", str);
 }
 
 void save_mix(const std::string &path) {
@@ -12521,17 +12535,23 @@ void open_layerfile(const std::string &path, Layer *lay, int reset, bool doclips
 }
 
 void open_state(const std::string &path) {
+	std::string result = deconcat_files(path);
+	bool concat = (result != "");
 	ifstream rfile;
-	rfile.open(path);
+	if (concat) rfile.open(result);
+	else rfile.open(path);
+	
 	std::string istring;
 	getline(rfile, istring);
 	
+	open_shelf(result + "_0.file");
 	mainprogram->preveff = true;
-	open_mix(remove_extension(path) + ".state1.ewoc");
-	mainprogram->preveff = false;
-	open_mix(remove_extension(path) + ".state2.ewoc");
+	open_mix(result + "_1.file");
+	if (exists(result + "_2.file")) {
+		mainprogram->preveff = false;
+		open_mix(result + "_2.file");
+	}
 	//open_genmidis(remove_extension(path) + ".midi");
-	open_shelf(remove_extension(path) + ".shelf");
 	
 	while (getline(rfile, istring)) {
 		if (istring == "ENDOFFILE") break;
@@ -13277,6 +13297,8 @@ void concat_files(std::ostream &ofile, const std::string &path, std::vector<std:
 		ifstream fileInput;
 		fileInput.open(paths[i], ios::in | ios::binary);
 		int fileSize = getFileSize(paths[i]);
+		printf("fsize %s %d\n", paths[i].c_str(), fileSize);
+		fflush(stdout);
 		char *inputBuffer = new char[fileSize];
 		fileInput.read(inputBuffer, fileSize);
 		ofile.write(inputBuffer, fileSize);
