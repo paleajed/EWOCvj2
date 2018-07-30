@@ -2546,9 +2546,7 @@ float render_text(std::string text, float *textc, float x, float y, float sx, fl
 }
 
 float render_text(std::string text, float *textc, float x, float y, float sx, float sy, bool smflag) {
- 	y -= 0.01f;
-	sy *= 1.2f;
-	sx *= 0.8f;
+ 	y -= 0.015f;
 	GLuint texture;
 	GLuint vbo, tbo, vao;
 	float textw = 0.0f;
@@ -2581,8 +2579,8 @@ float render_text(std::string text, float *textc, float x, float y, float sx, fl
 			GL_TEXTURE_2D,
 			0,
 			GL_RGBA,
-			1152 * w2 / 2560.0f,
-			144 * h2 / 1346.0f,
+			1024,
+			128,
 			0,
 			GL_RGBA,
 			GL_UNSIGNED_BYTE,
@@ -2632,6 +2630,7 @@ float render_text(std::string text, float *textc, float x, float y, float sx, fl
 		glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
 		glPixelStorei(GL_UNPACK_ALIGNMENT, 1);
 		
+		FT_Set_Pixel_Sizes(face, 0, (int)(sy * 64000.0f * h / 1346.0f)); //
 		x = -1.0f;
 		y = 1.0f;
 		FT_GlyphSlot g = face->glyph;
@@ -2656,20 +2655,26 @@ float render_text(std::string text, float *textc, float x, float y, float sx, fl
 				g->bitmap.buffer
 				);
 	
-			float x2 = x + g->bitmap_left * sx;
-			float y2 = y - (g->bitmap_top + 12) * 0.6f * sy;
-			float wi = g->bitmap.width * sx;
-			float he = g->bitmap.rows * sy;
+			float pixelw = 2.0f / w;
+			float pixelh = 2.0f / h;
+			float x2 = x + g->bitmap_left * pixelw;
+			float y2 = y - (g->bitmap_top + 16 * h / 1346.0f) * pixelh;
+			float wi = g->bitmap.width * pixelw;
+			float he = g->bitmap.rows * pixelh;
 	
 			GLint textmode = glGetUniformLocation(mainprogram->ShaderProgram, "textmode");
 			glUniform1i(textmode, 1);
+			GLint fbowidth = glGetUniformLocation(mainprogram->ShaderProgram, "fbowidth");
+			glUniform1i(fbowidth, (int)w);
+			GLint fboheight = glGetUniformLocation(mainprogram->ShaderProgram, "fboheight");
+			glUniform1i(fboheight, (int)h);
 			GLint color = glGetUniformLocation(mainprogram->ShaderProgram, "color");
 			glUniform4fv(color, 1, textc);
 			GLfloat texvcoords2[8] = {
 					x2,     -y2,
 					x2 + wi, -y2,
-					x2,     -y2 - he * 0.6f,
-					x2 + wi, -y2 - he * 0.6f};
+					x2,     -y2 - he,
+					x2 + wi, -y2 - he};
 
 			glActiveTexture(GL_TEXTURE0);
 			glBindTexture(GL_TEXTURE_2D, ftex);
@@ -2688,10 +2693,10 @@ float render_text(std::string text, float *textc, float x, float y, float sx, fl
 			glDrawBuffer(GL_COLOR_ATTACHMENT0);
 			glUniform1i(textmode, 0);
 	
-			x += (g->advance.x/64) * sx;
-			//y += (g->advance.y/64) * sy;
-			textw += (g->advance.x/64) * sx;
-			texth = 60.0f * (h2 / 1346.0f) * sy;
+			x += (g->advance.x/64) * pixelw;
+			//y += (g->advance.y/64) * pixelh;
+			textw += (g->advance.x/64) * pixelw;
+			texth = 64.0f * pixelh;
 		}
 		GUIString *guistring = new GUIString;
 		guistring->text = text;
@@ -2710,13 +2715,13 @@ float render_text(std::string text, float *textc, float x, float y, float sx, fl
 	else {
 		GLfloat texvcoords[8] = {
 			x,     y   ,
-			x + textw, y    ,
-			x,     y + texth + 0.01f,
-			x + textw, y + texth + 0.01f};
+			x + texth * 4, y    ,
+			x,     y + texth,
+			x + texth * 4, y + texth};
 		GLfloat textcoords[] = {0.0f, 0.0f,
-							textw * 1.125f, 0.0f,
-							0.0f, texth * 4.5f,
-							textw * 1.125f, texth * 4.5f};
+							1.0f, 0.0f,
+							0.0f, 1.0f,
+							1.0f, 1.0f};
 		GLint textmode = glGetUniformLocation(mainprogram->ShaderProgram, "textmode");
 		glUniform1i(textmode, 1);
 		GLint color = glGetUniformLocation(mainprogram->ShaderProgram, "color");

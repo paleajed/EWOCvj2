@@ -1608,13 +1608,18 @@ void main()
 		}
 	} 
 	if (textmode == 1) {
-		vec4 col = vec4(1, 1, 1, texture2D(Sampler0, vec2(TexCoord0.s, TexCoord0.t)).r) * color;
-		vec4 left = vec4(1, 1, 1, texture2D(Sampler0, vec2(TexCoord0.s - 0.00125f, TexCoord0.t)).r) * color;
-		vec4 right = vec4(1, 1, 1, texture2D(Sampler0, vec2(TexCoord0.s + 0.00125f, TexCoord0.t)).r) * color;
-		vec4 above = vec4(1, 1, 1, texture2D(Sampler0, vec2(TexCoord0.s, TexCoord0.t - 0.01f)).r) * color;
-		vec4 under = vec4(1, 1, 1, texture2D(Sampler0, vec2(TexCoord0.s, TexCoord0.t + 0.01f)).r) * color;
-		float border = max(max(max(left.a, right.a), above.a), under.a);
-		FragColor = vec4(0.0f, 0.0f, 0.0f, (1.0f - col.a) * border) + col.a * color;
+		float col = texture2D(Sampler0, vec2(TexCoord0.s, TexCoord0.t)).r;
+		if (col > 0.0f) {
+			FragColor = vec4(col, col, col, 1.0f);
+			return;
+		}
+		float alpha = 1.0f;
+		float left = texture2D(Sampler0, vec2(TexCoord0.s - 0.001f, TexCoord0.t)).r;
+		float right = texture2D(Sampler0, vec2(TexCoord0.s + 0.001f, TexCoord0.t)).r;
+		float up = texture2D(Sampler0, vec2(TexCoord0.s, TexCoord0.t - 0.008f)).r;
+		float down = texture2D(Sampler0, vec2(TexCoord0.s, TexCoord0.t + 0.008f)).r;
+		if (left + right + up + down == 0.0f) alpha = 0.0f;
+		FragColor = vec4(0.0f, 0.0f, 0.0f, alpha);
 	}
 	else if (edgethickmode == 1) {
 		float thx = 1.0f / fbowidth;
