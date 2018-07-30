@@ -339,6 +339,7 @@ class Program {
 		clock_t stt;
 		std::vector<unsigned char> savedmessage;
 		bool queueing;
+		int filecount;
 		
 		SDL_Window *prefwindow = nullptr;
 		bool prefon = false;
@@ -458,10 +459,10 @@ extern float yscrtovtx(float scrcoord);
 extern float pdistance(float x, float y, float x1, float y1, float x2, float y2);
 extern void enddrag();
 
-extern void save_layerfile(const std::string &path);
+extern void save_layerfile(const std::string &path, Layer* lay, bool doclips);
 extern void save_mix(const std::string &path);
 extern void save_deck(const std::string &path);
-extern void open_layerfile(const std::string &path, int reset);
+extern void open_layerfile(const std::string &path, Layer *lay, int reset, bool doclips);
 extern void open_mix(const std::string &path);
 extern void open_deck(const std::string &path, bool alive);
 extern void open_binfiles();
@@ -480,8 +481,10 @@ extern void save_shelf(const std::string &path);
 extern void open_shelf(const std::string &path);
 extern void new_state();
 extern BinElement *find_element(int size, int k, int i, int j, bool olc);
-extern void read_layers(std::istream &rfile, std::vector<Layer*> &layers, bool deck, int type);
-
+extern int read_layers(std::istream &rfile, const std::string &result, std::vector<Layer*> &layers, bool deck, int type, bool doclips, bool concat, bool load = true);
+void concat_files(std::ostream &ofile, const std::string &path, std::vector<std::vector<std::string>> &jpegpaths);
+bool check_version(const std::string &path);
+std::string deconcat_files(const std::string &path);
 extern GLuint copy_tex(GLuint tex);
 extern GLuint copy_tex(GLuint tex, int tw, int th);
 extern GLuint copy_tex(GLuint tex, int tw, int th, bool yflip);

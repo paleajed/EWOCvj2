@@ -26,6 +26,7 @@
 #include <thread>
 #include <mutex>
 #include <condition_variable>
+#include <sys/stat.h>
 #ifndef UINT64_C
 #define UINT64_C(c) (c ## ULL)
 #endif
@@ -95,9 +96,10 @@ Program *mainprogram;
 Mixer *mainmix;
 
 
-TCHAR buf [MAX_PATH];
-int retgtp = GetTempPath(MAX_PATH, buf);
-std::string temppath (buf);
+//TCHAR buf [MAX_PATH];
+//int retgtp = GetTempPath(MAX_PATH, buf);
+//std::string temppath (buf);
+std::string temppath = "./temp/";
 static GLuint mixvao;
 static GLuint fbotex[2];
 static GLuint frbuf[2];
@@ -397,7 +399,12 @@ private:
  * and quits the application */
 void sdldie(const char *msg)
 {
-    printf("%s: %s\n", msg, SDL_GetError());
+	//empty temp dir
+	boost::filesystem::path path_to_remove(temppath);
+	for (boost::filesystem::directory_iterator end_dir_it, it(path_to_remove); it!=end_dir_it; ++it) {
+		boost::filesystem::remove_all(it->path());
+	}
+	printf("%s: %s\n", msg, SDL_GetError());
     printf("stopped\n");
 
     SDL_Quit();
@@ -2812,17 +2819,16 @@ void calc_texture(Layer *lay, bool comp, bool alive) {
 								lay->clips.erase(lay->clips.begin());
 								Node *node = lay->node;
 								ELEM_TYPE temptype = lay->currcliptype;
-								std::string temppath;
+								std::string tpath;
 								GLuint temptex;
 								if (temptype == ELEM_LAYER and lay->effects.size()) {
 									temptex = copy_tex(node->vidbox->tex);
 									std::string name = remove_extension(basename(lay->filename));
 									int count = 0;
 									while (1) {
-										temppath = mainprogram->binsdir + "cliptemp_" + name + ".layer";
-										if (!exists(temppath)) {
-											mainmix->mouselayer = lay;
-											save_layerfile(temppath);
+										tpath = mainprogram->binsdir + "cliptemp_" + name + ".layer";
+										if (!exists(tpath)) {
+											save_layerfile(tpath, lay, 0);
 											break;
 										}
 										count++;
@@ -2832,12 +2838,12 @@ void calc_texture(Layer *lay, bool comp, bool alive) {
 								else if (temptype == ELEM_LIVE) {
 									temptex = copy_tex(node->vidbox->tex);
 									temptype = ELEM_LIVE;
-									temppath = lay->filename;
+									tpath = lay->filename;
 								}
 								else {
 									temptex = copy_tex(lay->fbotex);
 									temptype = ELEM_FILE;
-									temppath = lay->filename;
+									tpath = lay->filename;
 								}
 								if (clip->type == ELEM_FILE) {
 									lay->live = false;
@@ -2845,19 +2851,17 @@ void calc_texture(Layer *lay, bool comp, bool alive) {
 								}
 								else if (clip->type == ELEM_LAYER) {
 									lay->live = false;
-									mainmix->mouselayer = lay;
-									open_layerfile(clip->path, 1);
+									open_layerfile(clip->path, lay, 1, 0);
 								}
 								else if (clip->type == ELEM_LIVE) {
 									set_live_base(lay, clip->path);
 								}
-								glDeleteTextures(1, &clip->tex);
 								lay->currcliptype = clip->type;
 								delete clip;
 								clip = new Clip;
 								clip->tex = temptex;
 								clip->type = temptype;
-								clip->path = temppath;
+								clip->path = tpath;
 								lay->clips.insert(lay->clips.end() - 1, clip);
 							}
 						}
@@ -2871,23 +2875,21 @@ void calc_texture(Layer *lay, bool comp, bool alive) {
 					if (lay->scritching != 4) {
 						if (laynocomp->bouncebut->value == 0) {
 							lay->frame = laynocomp->endframe;
-							printf("clipssize1 %d\n", lay->clips.size());
 							if (lay->clips.size() > 1) {
 								Clip *clip = lay->clips[0];
 								lay->clips.erase(lay->clips.begin());
 								Node *node = lay->node;
 								GLuint temptex = copy_tex(node->vidbox->tex);
 								ELEM_TYPE temptype;
-								std::string temppath;
+								std::string tpath;
 								if (lay->effects.size()) {
 									temptype = ELEM_LAYER;
 									std::string name = remove_extension(basename(lay->filename));
 									int count = 0;
 									while (1) {
-										temppath = mainprogram->binsdir + "temp_" + name + ".layer";
-										if (!exists(temppath)) {
-											mainmix->mouselayer = lay;
-											save_layerfile(temppath);
+										tpath = mainprogram->binsdir + "temp_" + name + ".layer";
+										if (!exists(tpath)) {
+											save_layerfile(tpath, lay, 0);
 											break;
 										}
 										count++;
@@ -2897,11 +2899,11 @@ void calc_texture(Layer *lay, bool comp, bool alive) {
 								else if (temptype == ELEM_LIVE) {
 									temptex = copy_tex(node->vidbox->tex);
 									temptype = ELEM_LIVE;
-									temppath = lay->filename;
+									tpath = lay->filename;
 								}
 								else {
 									temptype = ELEM_FILE;
-									temppath = lay->filename;
+									tpath = lay->filename;
 								}
 								if (clip->type == ELEM_FILE) {
 									lay->live = false;
@@ -2909,18 +2911,16 @@ void calc_texture(Layer *lay, bool comp, bool alive) {
 								}
 								else if (clip->type == ELEM_LAYER) {
 									lay->live = false;
-									mainmix->mouselayer = lay;
-									open_layerfile(clip->path, 2);
+									open_layerfile(clip->path, lay, 2, 0);
 								}
 								else if (clip->type == ELEM_LIVE) {
 									set_live_base(lay, clip->path);
 								}
-								glDeleteTextures(1, &clip->tex);
 								delete clip;
 								clip = new Clip;
 								clip->tex = temptex;
 								clip->type = temptype;
-								clip->path = temppath;
+								clip->path = tpath;
 								lay->clips.insert(lay->clips.end() - 1, clip);
 							}
 						}
@@ -4795,7 +4795,7 @@ bool check_thumbs(std::vector<Layer*> &layers, bool deck) {
 						// inserting
 						if (mainprogram->leftmouse) {
 							if (mainprogram->dragbinel) {
-								if (mainprogram->dragbinel->path == lay->filename and j == 0) {
+								if (mainprogram->draglay == lay and j == 0) {
 									mainprogram->leftmouse = false;
 									enddrag();
 									return true;
@@ -4859,8 +4859,7 @@ bool check_thumbs(std::vector<Layer*> &layers, bool deck) {
 						set_queueing(lay, false);
 						if (mainprogram->dragbinel) {
 							if (mainprogram->dragbinel->type == ELEM_LAYER) {
-								mainmix->mouselayer = lay;
-								open_layerfile(mainprogram->dragbinel->path, 1);
+								open_layerfile(mainprogram->dragbinel->path, lay, 1, 1);
 							}
 							else {
 								open_video(0, lay, mainprogram->dragbinel->path, true);
@@ -4880,8 +4879,7 @@ bool check_thumbs(std::vector<Layer*> &layers, bool deck) {
 						if (inlay->pos == mainmix->scrollpos[deck] + 3) mainmix->scrollpos[deck]++;
 						if (mainprogram->dragbinel) {
 							if (mainprogram->dragbinel->type == ELEM_LAYER) {
-								mainmix->mouselayer = inlay;
-								open_layerfile(mainprogram->dragbinel->path, 1);
+								open_layerfile(mainprogram->dragbinel->path, inlay, 1, 1);
 							}
 							else {
 								open_video(0, inlay, mainprogram->dragbinel->path, true);
@@ -4908,8 +4906,7 @@ bool check_thumbs(std::vector<Layer*> &layers, bool deck) {
 							lay = mainmix->add_layer(layers, layers.size());
 							if (mainprogram->dragbinel) {
 								if (mainprogram->dragbinel->type == ELEM_LAYER) {
-									mainmix->mouselayer = lay;
-									open_layerfile(mainprogram->dragbinel->path, 1);
+									open_layerfile(mainprogram->dragbinel->path, lay, 1, 1);
 								}
 								else {
 									open_video(0, lay, mainprogram->dragbinel->path, true);
@@ -4957,7 +4954,7 @@ void visu_thumbs() {
 								mainprogram->dragbinel = new BinElement;
 								mainprogram->dragbinel->path = thpath[k];
 								mainprogram->dragbinel->type = thtype[k];
-								mainprogram->dragtex = thumbtex[k];
+								mainprogram->dragbinel->tex = thumbtex[k];
 							}
 						}
 						else if (mainprogram->leftmouse) {
@@ -4965,7 +4962,7 @@ void visu_thumbs() {
 								mainprogram->leftmouse = false;
 								if (mainprogram->dragbinel->path.rfind(".layer") != std::string::npos) {
 									std::string base = basename(mainprogram->dragbinel->path);
-									std::string newpath = mainprogram->binsdir + "shelf_" + base.substr(9, std::string::npos);
+									std::string newpath = temppath + "shelf_" + base.substr(9, std::string::npos);
 									if (mainprogram->dragbinel->path.find("cliptemp_") != std::string::npos) {
 										boost::filesystem::rename(mainprogram->dragbinel->path, newpath);			
 										boost::filesystem::remove(mainprogram->dragbinel->path);			
@@ -4974,7 +4971,7 @@ void visu_thumbs() {
 								}
 								thpath[k] = mainprogram->dragbinel->path;
 								thtype[k] = mainprogram->dragbinel->type;
-								thumbtex[k] = copy_tex(mainprogram->dragtex);
+								thumbtex[k] = copy_tex(mainprogram->dragbinel->tex);
 								enddrag();
 								save_shelf("./shelfs.shelf");
 							}
@@ -7639,9 +7636,9 @@ void handle_numboxes(std::vector<Box*> &numboxes) {
 								mainmix->nbframesA[mainmix->page[0]].push_back(lvec[j]);
 							}
 							mainmix->mousedeck = 0;
-							save_deck(temppath + "/appdata_xch.deck");
-							open_deck(temppath + "/tempdeck_A" + std::to_string(i) + comp + ".deck", 0);
-							boost::filesystem::rename(temppath + "/tempdeck_xch.deck", temppath + "/tempdeck_A" + std::to_string(mainmix->page[0] + 1) + comp + ".deck");
+							save_deck(temppath + "tempdeck_xch.deck");
+							open_deck(temppath + "tempdeck_A" + std::to_string(i) + comp + ".deck", 0);
+							boost::filesystem::rename(temppath + "tempdeck_xch.deck", temppath + "tempdeck_A" + std::to_string(mainmix->page[0] + 1) + comp + ".deck");
 							for (int j = 0; j < lvec.size(); j++) {
 								lvec[j]->frame = mainmix->tempnbframes[i - 1][j]->frame;
 							}
@@ -7661,9 +7658,9 @@ void handle_numboxes(std::vector<Box*> &numboxes) {
 								mainmix->nbframesB[mainmix->page[1]].push_back(lvec[j]);
 							}
 							mainmix->mousedeck = 1;
-							save_deck(temppath + "/tempdeck_xch.deck");
-							open_deck(temppath + "/tempdeck_B" + std::to_string(i) + comp + ".deck", 0);
-							boost::filesystem::rename(temppath + "/tempdeck_xch.deck", temppath + "/tempdeck_B" + std::to_string(mainmix->page[1] + 1) + comp + ".deck");
+							save_deck(temppath + "tempdeck_xch.deck");
+							open_deck(temppath + "tempdeck_B" + std::to_string(i) + comp + ".deck", 0);
+							boost::filesystem::rename(temppath + "tempdeck_xch.deck", temppath + "tempdeck_B" + std::to_string(mainmix->page[1] + 1) + comp + ".deck");
 							for (int j = 0; j < lvec.size(); j++) {
 								lvec[j]->frame = mainmix->tempnbframes[i - 1][j]->frame;
 							}
@@ -8862,12 +8859,14 @@ void hap_mix(BinMix * bm) {
 
 void enddrag() {
 	if (mainprogram->dragbinel) {
-		if (mainprogram->dragbinel->path.rfind(".layer") != std::string::npos) {
-			if (mainprogram->dragbinel->path.find("cliptemp_") != std::string::npos) {
-				boost::filesystem::remove(mainprogram->dragbinel->path);			
-			}
-		}
+		//if (mainprogram->dragbinel->path.rfind(".layer") != std::string::npos) {
+		//	if (mainprogram->dragbinel->path.find("cliptemp_") != std::string::npos) {
+		//		boost::filesystem::remove(mainprogram->dragbinel->path);			
+		//	}
+		//}
 		mainprogram->dragbinel = nullptr;
+		mainprogram->draglay = nullptr;
+		mainprogram->dragpath = "";
 		if (mainprogram->draglay) mainprogram->draglay->vidmoving = false;
 		mainmix->moving = false;
 		//glDeleteTextures(1, &mainprogram->dragtex);  maybe needs implementing in one case, check history
@@ -9171,7 +9170,6 @@ void the_loop() {
 			if (bin->box->in()) {
 				if (mainprogram->leftmouse) {
 					make_currbin(i);
-					printf("decks %d\n", mainprogram->bins[3]->decks.size());
 				}
 				bin->box->acolor[0] = 0.5f;
 				bin->box->acolor[1] = 0.5f;
@@ -9241,8 +9239,6 @@ void the_loop() {
 			if (k == 0) {
 				std::string path = mainprogram->binsdir + mainprogram->menubin->name + ".bin";
 				boost::filesystem::remove(path);			
-				path = mainprogram->binsdir + mainprogram->menubin->name;
-				boost::filesystem::remove(path);
 				if (mainprogram->currbin->name == mainprogram->menubin->name) {
 					if (mainprogram->currbin->pos == 0) make_currbin(1);
 					else make_currbin(mainprogram->currbin->pos - 1);
@@ -9621,8 +9617,7 @@ void the_loop() {
 								mainprogram->prelay->lasteffnode = mainprogram->prelay->node;
 								mainprogram->prelay->node->calc = true;
 								mainprogram->prelay->node->walked = false;
-								mainmix->mouselayer = mainprogram->prelay;
-								open_layerfile(binel->path, true);
+								open_layerfile(binel->path, mainprogram->prelay, true, 0);
 								mainprogram->prelay->playbut->value = false;
 								mainprogram->prelay->revbut->value = false;
 								mainprogram->prelay->bouncebut->value = false;
@@ -10231,10 +10226,9 @@ void the_loop() {
 							std::string name = remove_extension(basename(lay->filename));
 							int count = 0;
 							while (1) {
-								mainprogram->currbinel->path = mainprogram->binsdir + mainprogram->currbin->name + "\\" + name + ".layer";
+								mainprogram->currbinel->path = temppath + mainprogram->currbin->name + "_" + name + ".layer";
 								if (!exists(mainprogram->currbinel->path)) {
-									mainmix->mouselayer = lay;
-									save_layerfile(mainprogram->currbinel->path);
+									save_layerfile(mainprogram->currbinel->path, lay, 1);
 									break;
 								}
 								count++;
@@ -10261,10 +10255,6 @@ void the_loop() {
 							dirbinel->full = true;
 							dirbinel->type = ELEM_FILE;
 							dirbinel->path = mainprogram->newpaths[k];
-							if (dirbinel->jpegpath != "" and 0) {
-								boost::filesystem::remove(dirbinel->jpegpath);
-								dirbinel->oldjpegpath = "";
-							}
 							dirbinel->jpegpath = "";
 							dirbinel->oldjpegpath = "";
 							//glDeleteTextures(1, &dirbinel->oldtex);
@@ -10285,6 +10275,7 @@ void the_loop() {
 						mainprogram->leftmouse = false;
 					}
 					if (mainprogram->currbinel and (mainprogram->inserting > -1) and mainprogram->leftmouse) {
+						mainprogram->prevbinel = nullptr;
 						std::string name = mainprogram->currbin->name;
 						std::string binname = name;
 						std::string path;
@@ -10307,8 +10298,8 @@ void the_loop() {
 							mainmix->mousedeck = deck;
 							int count1 = 0;
 							while (1) {
-								if (mainprogram->inserting == 2) path = mainprogram->binsdir + name + "\\" + name + ".ewoc";
-								else path = mainprogram->binsdir + binname + "\\" + name + ".deck";
+								if (mainprogram->inserting == 2) path = temppath + name + "_" + name + ".ewoc";
+								else path = temppath + name + "_" + name + ".deck";
 								if (!exists(path)) {
 									int size = max(((int)((mainprogram->inserttexes[0].size() - 1) / 3) * 3 + 3), ((int)((mainprogram->inserttexes[1].size() - 1) / 3) * 3 + 3));
 									for (int d = startdeck; d < enddeck; d++) {
@@ -10326,16 +10317,15 @@ void the_loop() {
 											else deckbinel->type = ELEM_DECK;
 											glDeleteTextures(1, &deckbinel->oldtex);
 											std::string name = remove_extension(basename(lvec[k]->filename));
-											int count2 = 0;
+											int count = 0;
 											while (1) {
-												deckbinel->path = mainprogram->binsdir + mainprogram->currbin->name + "\\" + name + ".layer";
+												deckbinel->path = temppath + mainprogram->currbin->name + "_" + name + ".layer";
 												if (!exists(deckbinel->path)) {
-													mainmix->mouselayer = lvec[k];
-													save_layerfile(deckbinel->path);
+													save_layerfile(deckbinel->path, lvec[k], 1);
 													break;
 												}
-												count2++;
-												name = remove_version(name) + "_" + std::to_string(count2);
+												count++;
+												name = remove_version(name) + "_" + std::to_string(count);
 											}
 										}
 									}
@@ -10739,6 +10729,7 @@ void the_loop() {
 				mainprogram->toscreen->box->acolor[2] = 1.0;
 				mainprogram->toscreen->box->acolor[3] = 1.0;
 				if (mainprogram->leftmouse) {
+					// MAKE LIVE button copies preview set entirely to comp set
 					mainmix->firststage = false;  //??????
 					mainmix->compon = true;
 					copy_to_comp(mainmix->layersA, mainmix->layersAcomp, mainmix->layersB, mainmix->layersBcomp, mainprogram->nodesmain->currpage->nodes, mainprogram->nodesmain->currpage->nodescomp, mainprogram->nodesmain->mixnodescomp, true);
@@ -10761,6 +10752,7 @@ void the_loop() {
 				mainprogram->backtopre->box->acolor[2] = 1.0;
 				mainprogram->backtopre->box->acolor[3] = 1.0;
 				if (mainprogram->leftmouse) {
+					// BACK button copies comp set entirely back to preview set
 					copy_to_comp(mainmix->layersAcomp, mainmix->layersA, mainmix->layersBcomp, mainmix->layersB, mainprogram->nodesmain->currpage->nodescomp, mainprogram->nodesmain->currpage->nodes, mainprogram->nodesmain->mixnodes, false);
 					mainprogram->leftmouse = false;
 				}
@@ -10781,11 +10773,14 @@ void the_loop() {
 				mainprogram->vidprev->box->acolor[2] = 1.0;
 				mainprogram->vidprev->box->acolor[3] = 1.0;
 				if (mainprogram->leftmouse) {
+					// toggles video preview mode (video frame throughput to comp from preview (off)
+					// or separate videos in normal and comp (on)
 					mainprogram->prevvid = !mainprogram->prevvid;
 					for (int i = 0; i < mainmix->layersA.size(); i++) {
 						Layer *lay = mainmix->layersA[i];
 						Layer *laycomp = mainmix->layersAcomp[i];
 						if (lay->filename != "" and !mainprogram->prevvid) {
+							// initialize throughput when off
 							laycomp->speed->value = lay->speed->value;
 							laycomp->playbut->value = lay->playbut->value;
 							laycomp->revbut->value = lay->revbut->value;
@@ -10802,6 +10797,7 @@ void the_loop() {
 						Layer *lay = mainmix->layersB[i];
 						Layer *laycomp = mainmix->layersBcomp[i];
 						if (lay->filename != "" and !mainprogram->prevvid) {
+							// initialize throughput when off
 							laycomp->speed->value = lay->speed->value;
 							laycomp->playbut->value = lay->playbut->value;
 							laycomp->revbut->value = lay->revbut->value;
@@ -10841,10 +10837,13 @@ void the_loop() {
 			mainprogram->effprev->box->acolor[2] = 1.0;
 			mainprogram->effprev->box->acolor[3] = 1.0;
 			if (mainprogram->leftmouse) {
+				//effprev is button that toggles effect preview mode to performance mode and back
 				mainprogram->preveff = !mainprogram->preveff;
 				mainprogram->prevvid = !mainprogram->prevvid;
 				std::vector<Layer*> &lvec = choose_layers(mainmix->currlay->deck);
 				if (!mainprogram->preveff and mainprogram->prevvid) {
+					// when prevvid, normally all comp layers are copied from normal layers
+					// but when going into performance mode, its more coherent to open them in comp layers
 					for (int i = 0; i < mainmix->layersA.size(); i++) {
 						Layer *lay = mainmix->layersA[i];
 						if (lay->filename != "") {
@@ -10883,10 +10882,8 @@ void the_loop() {
 				mainprogram->effprev->box->acolor[3] = 1.0;
 			}
 		}
-		//if (mainmix->compon) {
-			draw_box(mainprogram->effprev->box, -1);
-			render_text(mainprogram->effprev->name, white, mainprogram->effprev->box->vtxcoords->x1 + tf(0.0078f), mainprogram->effprev->box->vtxcoords->y1 + tf(0.015f), 0.00042, 0.00070);
-		//}
+		draw_box(mainprogram->effprev->box, -1);
+		render_text(mainprogram->effprev->name, white, mainprogram->effprev->box->vtxcoords->x1 + tf(0.0078f), mainprogram->effprev->box->vtxcoords->y1 + tf(0.015f), 0.00042, 0.00070);
 		
 		//draw and handle recbut
 		if (mainmix->compon) {
@@ -10897,8 +10894,10 @@ void the_loop() {
 				mainmix->recbut->box->acolor[3] = 1.0;
 				if (mainprogram->leftmouse) {
 					if (!mainmix->recording) {
+						// start recording
 						mainmix->donerec = false;
 						mainmix->recording = true;
+						// recording is done in separate low priority thread
 						mainmix->recording_video = std::thread{&Mixer::record_video, mainmix};
 						SetThreadPriority((void*)mainmix->recording_video.native_handle(), THREAD_PRIORITY_LOWEST);
 						mainmix->recording_video.detach();
@@ -11470,33 +11469,27 @@ void the_loop() {
 				filereq.detach();
 			}
 			else if (k == 3) {
-				mainmix->mouselayer = mainmix->add_layer(lvec, lvec.size());
-				mainprogram->pathto = "SAVELAYFILE";
-				std::thread filereq (get_outname);
-				filereq.detach();
-			}
-			else if (k == 4) {
 				new_file(mainmix->mousedeck, 1);
 			}
-			else if (k == 5) {
+			else if (k == 4) {
 				mainprogram->pathto = "OPENDECK";
 				std::thread filereq (get_inname);
 				filereq.detach();
 			}
-			else if (k == 6) {
+			else if (k == 5) {
 				mainprogram->pathto = "SAVEDECK";
 				std::thread filereq (get_outname);
 				filereq.detach();
 			}
-			else if (k == 7) {
+			else if (k == 6) {
 				new_file(2, 1);
 			}
-			else if (k == 8) {
+			else if (k == 7) {
 				mainprogram->pathto = "OPENMIX";
 				std::thread filereq (get_inname);
 				filereq.detach();
 			}
-			else if (k == 9) {
+			else if (k == 8) {
 				mainprogram->pathto = "SAVEMIX";
 				std::thread filereq (get_outname);
 				filereq.detach();
@@ -11691,8 +11684,7 @@ void the_loop() {
 								while (1) {
 									mainprogram->dragpath = mainprogram->binsdir + "cliptemp_" + name + ".layer";
 									if (!exists(mainprogram->dragpath)) {
-										mainmix->mouselayer = mainprogram->draglay;
-										save_layerfile(mainprogram->dragpath);
+										save_layerfile(mainprogram->dragpath, mainprogram->draglay, 1);
 										break;
 									}
 									count++;
@@ -11700,6 +11692,7 @@ void the_loop() {
 								}
 								mainprogram->dragbinel->path = mainprogram->dragpath;
 								mainprogram->dragbinel->type = ELEM_LAYER;
+								mainprogram->draglay = lay;
 							}
 	
 							mainprogram->leftmousedown = false;
@@ -12021,7 +12014,7 @@ void the_loop() {
 				glBindBuffer(GL_ARRAY_BUFFER, thmvbuf);
 				glBufferData(GL_ARRAY_BUFFER, 32, vcoords, GL_STREAM_DRAW);
 				glBindVertexArray(thmvao);
-				glBindTexture(GL_TEXTURE_2D, mainprogram->dragtex);
+				glBindTexture(GL_TEXTURE_2D, mainprogram->dragbinel->tex);
 				glDrawArrays(GL_TRIANGLE_STRIP, 0, 4);
 				glUniform1i(thumb, 0);
 			}
@@ -12077,7 +12070,7 @@ void the_loop() {
 		glBindBuffer(GL_ARRAY_BUFFER, thmvbuf);
 		glBufferData(GL_ARRAY_BUFFER, 32, vcoords, GL_STREAM_DRAW);
 		glBindVertexArray(thmvao);
-		glBindTexture(GL_TEXTURE_2D, mainprogram->dragtex);
+		glBindTexture(GL_TEXTURE_2D, mainprogram->dragbinel->tex);
 		glDrawArrays(GL_TRIANGLE_STRIP, 0, 4);
 		glUniform1i(thumb, 0);
 	}
@@ -12153,7 +12146,7 @@ void the_loop() {
 }
 
 
-void write_layer(Layer *lay, ostream& wfile) {
+std::vector<std::string> write_layer(Layer *lay, ostream& wfile, bool doclips) {
 	wfile << "POS\n";
 	wfile << std::to_string(lay->pos);
 	wfile << "\n";
@@ -12263,33 +12256,51 @@ void write_layer(Layer *lay, ostream& wfile) {
 	wfile << std::to_string(lay->blendnode->wipey);
 	wfile << "\n";
 	
-	wfile << "CLIPS\n";
-	int size = std::clamp((int)(lay->clips.size() - 1), 0, (int)(lay->clips.size() - 1));
-	for (int j = 0; j < size; j++) {
-		Clip *clip = lay->clips[j];
-		wfile << "TYPE\n";
-		wfile << std::to_string(clip->type);
-		wfile << "\n";
-		wfile << "FILENAME\n";
-		wfile << clip->path;
-		wfile << "\n";
-		std::string clipjpegpath;
-		std::string name = remove_extension(basename(clip->path));
-		int count = 0;
-		while (1) {
-			clipjpegpath = mainprogram->binsdir + name + ".jpg";
-			if (!exists(clipjpegpath)) {
-				break;
+	std::vector<std::string> jpegpaths;
+	if (doclips) {
+		wfile << "CLIPS\n";
+		int size = std::clamp((int)(lay->clips.size() - 1), 0, (int)(lay->clips.size() - 1));
+		for (int j = 0; j < size; j++) {
+			Clip *clip = lay->clips[j];
+			wfile << "TYPE\n";
+			wfile << std::to_string(clip->type);
+			wfile << "\n";
+			wfile << "FILENAME\n";
+			wfile << clip->path;
+			wfile << "\n";
+			if (clip->type == ELEM_LAYER) {
+				wfile << "CLIPLAYER\n";
+				ifstream rfile;
+				std::string result = deconcat_files(clip->path);
+				if (result != "") rfile.open(result);
+				else rfile.open(clip->path);
+				std::string istring;				
+				while (getline(rfile, istring)) {
+					wfile << istring;
+					wfile << "\n";
+					if (istring == "ENDOFFILE") break;
+				}
+				wfile << "ENDOFCLIPLAYER\n";
 			}
-			count++;
-			name = remove_version(name) + "_" + std::to_string(count);
+			std::string clipjpegpath;
+			std::string name = remove_extension(basename(clip->path));
+			int count = 0;
+			while (1) {
+				clipjpegpath = mainprogram->binsdir + name + ".jpg";
+				if (!exists(clipjpegpath)) {
+					break;
+				}
+				count++;
+				name = remove_version(name) + "_" + std::to_string(count);
+			}
+			save_thumb(clipjpegpath, clip->tex);
+			jpegpaths.push_back(clipjpegpath);
+			wfile << "JPEGPATH\n";
+			wfile << clipjpegpath;
+			wfile << "\n";
 		}
-		save_thumb(clipjpegpath, clip->tex);
-		wfile << "JPEGPATH\n";
-		wfile << clipjpegpath;
-		wfile << "\n";
+		wfile << "ENDOFCLIPS\n";
 	}
-	wfile << "ENDOFCLIPS\n";
 	
 	wfile << "EFFECTS\n";
 	for (int j = 0; j < lay->effects.size(); j++) {
@@ -12336,22 +12347,29 @@ void write_layer(Layer *lay, ostream& wfile) {
 		wfile << "ENDOFPARAMS\n";
 	}
 	wfile << "ENDOFEFFECTS\n";
+	return jpegpaths;
 }
 
-void save_layerfile(const std::string &path) {
+void save_layerfile(const std::string &path, Layer *lay, bool doclips) {
 	std::string ext = path.substr(path.length() - 6, std::string::npos);
 	std::string str;
 	if (ext != ".layer") str = path + ".layer";
 	else str = path;
 	ofstream wfile;
 	wfile.open(str);
-	wfile << "EWOCvj LAYERFILE V0.1\n";
+	wfile << "EWOCvj LAYERFILE V0.2\n";
 		
-	Layer *lay = mainmix->mouselayer;
-	write_layer(lay, wfile);
+	std::vector<std::vector<std::string>> jpegpaths;
+	jpegpaths.push_back(write_layer(lay, wfile, doclips));
 	
 	wfile << "ENDOFFILE\n";
 	wfile.close();
+	
+    ofstream outputfile;
+	outputfile.open(temppath + "tempconcat", ios::out | ios::binary);
+	concat_files(outputfile, str, jpegpaths);
+	outputfile.close();
+	boost::filesystem::rename(temppath + "tempconcat", str);
 }
 
 void save_state(const std::string &path) {
@@ -12361,7 +12379,7 @@ void save_state(const std::string &path) {
 	else str = path;
 	ofstream wfile;
 	wfile.open(str);
-	wfile << "EWOCvj SAVESTATE V0.1\n";
+	wfile << "EWOCvj SAVESTATE V0.2\n";
 	wfile << "PREVEFF\n";
 	wfile << std::to_string(mainprogram->preveff);
 	wfile << "\n";
@@ -12391,7 +12409,7 @@ void save_mix(const std::string &path) {
 	else str = path;
 	ofstream wfile;
 	wfile.open(str);
-	wfile << "EWOCvj SAVEMIX V0.1\n";
+	wfile << "EWOCvj SAVEMIX V0.2\n";
 	
 	wfile << "CURRLAY\n";
 	wfile << std::to_string(mainmix->currlay->pos);
@@ -12418,22 +12436,29 @@ void save_mix(const std::string &path) {
 	wfile << std::to_string(mainmix->wipedir[1]);
 	wfile << "\n";
 	
+	std::vector<std::vector<std::string>> jpegpaths;
 	wfile << "LAYERSA\n";
 	std::vector<Layer*> &lvec1 = choose_layers(0);
 	for (int i = 0; i < lvec1.size(); i++) {
 		Layer *lay = lvec1[i];
-		write_layer(lay, wfile);
+		jpegpaths.push_back(write_layer(lay, wfile, 1));
 	}
 	
 	wfile << "LAYERSB\n";
 	std::vector<Layer*> &lvec2 = choose_layers(1);
 	for (int i = 0; i < lvec2.size(); i++) {
 		Layer *lay = lvec2[i];
-		write_layer(lay, wfile);
+		jpegpaths.push_back(write_layer(lay, wfile, 1));
 	}
 	
 	wfile << "ENDOFFILE\n";
 	wfile.close();
+	
+    ofstream outputfile;
+	outputfile.open("./tempconcat", ios::out | ios::binary);
+	concat_files(outputfile, str, jpegpaths);
+	outputfile.close();
+	boost::filesystem::rename("./tempconcat", str);
 }
 
 void save_deck(const std::string &path) {
@@ -12443,26 +12468,42 @@ void save_deck(const std::string &path) {
 	else str = path;
 	ofstream wfile;
 	wfile.open(str.c_str());
-	wfile << "EWOCvj DECKFILE V0.1\n";
+	wfile << "EWOCvj DECKFILE V0.2\n";
 	
+	std::vector<std::vector<std::string>> jpegpaths;
 	std::vector<Layer*> &lvec = choose_layers(mainmix->mousedeck);
 	for (int i = 0; i < lvec.size(); i++) {
 		Layer *lay = lvec[i];
-		write_layer(lay, wfile);
+		jpegpaths.push_back(write_layer(lay, wfile, 1));
 	}
 	
 	wfile << "ENDOFFILE\n";
 	wfile.close();
+	
+    ofstream outputfile;
+	outputfile.open("./tempconcat", ios::out | ios::binary);
+	concat_files(outputfile, str, jpegpaths);
+	outputfile.close();
+	boost::filesystem::rename("./tempconcat", str);
 }
 
-void open_layerfile(const std::string &path, int reset) {
+void open_layerfile(const std::string &path, Layer *lay, int reset, bool doclips) {
+	std::string result = deconcat_files(path);
+	bool concat = (result != "");
 	ifstream rfile;
-	rfile.open(path.c_str());
-	std::string istring;
-	Layer *lay = mainmix->mouselayer;
+	if (concat) rfile.open(result);
+	else rfile.open(path);
 	
-	if (lay->lasteffnode->out.size()) lay->node->out.push_back(lay->lasteffnode->out[0]);
-	lay->lasteffnode = lay->node;
+	std::string istring;
+	
+	if (lay->lasteffnode) {
+		if (lay->lasteffnode->out.size()) {
+			Node *node = lay->lasteffnode->out[0];
+			lay->node->out.clear();
+			lay->node->out.push_back(node);
+		}
+		lay->lasteffnode = lay->node;
+	}
 	while (!lay->effects.empty()) {
 		mainprogram->nodesmain->currpage->delete_node(lay->effects.back()->node);
 		for (int j = 0; j < lay->effects.back()->params.size(); j++) {
@@ -12474,7 +12515,7 @@ void open_layerfile(const std::string &path, int reset) {
 	
 	std::vector<Layer*> layers;
 	layers.push_back(lay);
-	read_layers(rfile, layers, lay->deck, 0);
+	read_layers(rfile, result, layers, lay->deck, 0, doclips, concat);
 	
 	rfile.close();
 }
@@ -12511,8 +12552,11 @@ void open_state(const std::string &path) {
 }
 
 void open_mix(const std::string &path) {
+	std::string result = deconcat_files(path);
+	bool concat = (result != "");
 	ifstream rfile;
-	rfile.open(path);
+	if (concat) rfile.open(result);
+	else rfile.open(path);
 	std::string istring;
 	
 	new_file(2, 1);
@@ -12563,9 +12607,11 @@ void open_mix(const std::string &path) {
 		int deck;
 		if (istring == "LAYERSA") {
 			std::vector<Layer*> &layersA = choose_layers(0);
-			read_layers(rfile, layersA, 0, 2);
+			int jpegcount = read_layers(rfile, result, layersA, 0, 2, concat, 1);
+			mainprogram->filecount = jpegcount;
 			std::vector<Layer*> &layersB = choose_layers(1);
-			read_layers(rfile, layersB, 1, 2);
+			read_layers(rfile, result, layersB, 1, 2, concat, 1);
+			mainprogram->filecount = 0;
 		}
 	}
 	
@@ -12581,24 +12627,29 @@ void open_mix(const std::string &path) {
 }
 
 void open_deck(const std::string &path, bool alive) {
+	std::string result = deconcat_files(path);
+	bool concat = (result != "");
 	ifstream rfile;
-	rfile.open(path.c_str());
+	if (concat) rfile.open(result);
+	else rfile.open(path);
 	std::string istring;
 	
 	new_file(mainmix->mousedeck, alive);
 	
 	std::vector<Layer*> &layers = choose_layers(mainmix->mousedeck);
-	read_layers(rfile, layers, mainmix->mousedeck, 1);
+	read_layers(rfile, result, layers, mainmix->mousedeck, 1, 1, concat);
 	
 	rfile.close();
 }
 
-void read_layers(std::istream &rfile, std::vector<Layer*> &layers, bool deck, int type) {
+int read_layers(std::istream &rfile, const std::string &result, std::vector<Layer*> &layers, bool deck, int type, bool doclips, bool concat, bool load) {
 	Layer *lay = nullptr;
 	std::string istring;
+	int jpegcount = 0;
+	if (mainprogram->filecount) jpegcount = mainprogram->filecount;
 	while (getline(rfile, istring)) {
-		if (istring == "LAYERSB") {
-			return;
+		if (istring == "LAYERSB" or istring == "ENDOFCLIPLAYER") {
+			return jpegcount;
 		}
 		if (istring == "POS") {
 			getline(rfile, istring);
@@ -12619,34 +12670,38 @@ void read_layers(std::istream &rfile, std::vector<Layer*> &layers, bool deck, in
 		if (istring == "FILENAME") {
 			getline(rfile, istring);
 			lay->filename = istring;
-			lay->timeinit = false;
-			if (lay->filename != "") {
-				if (lay->live) {
-					avdevice_register_all();
-					ptrdiff_t pos = std::find(mainprogram->busylist.begin(), mainprogram->busylist.end(), lay->filename) - mainprogram->busylist.begin();
-					if (pos >= mainprogram->busylist.size()) {
-						mainprogram->busylist.push_back(lay->filename);
-						mainprogram->busylayers.push_back(lay);
-						AVInputFormat *ifmt = av_find_input_format("dshow");
-						thread_vidopen(lay, ifmt, false);
+			if (load) {
+				lay->timeinit = false;
+				if (lay->filename != "") {
+					if (lay->live) {
+						avdevice_register_all();
+						ptrdiff_t pos = std::find(mainprogram->busylist.begin(), mainprogram->busylist.end(), lay->filename) - mainprogram->busylist.begin();
+						if (pos >= mainprogram->busylist.size()) {
+							mainprogram->busylist.push_back(lay->filename);
+							mainprogram->busylayers.push_back(lay);
+							AVInputFormat *ifmt = av_find_input_format("dshow");
+							thread_vidopen(lay, ifmt, false);
+						}
+						else {
+							lay->liveinput = mainprogram->busylayers[pos];
+							mainprogram->mimiclayers.push_back(lay);
+						}
 					}
 					else {
-						lay->liveinput = mainprogram->busylayers[pos];
-						mainprogram->mimiclayers.push_back(lay);
+						open_video(lay->frame, lay, lay->filename, false);
 					}
 				}
-				else {
-					open_video(lay->frame, lay, lay->filename, false);
-				}
+				if (type > 0) lay->prevframe = -1;
 			}
-			if (type > 0) lay->prevframe = -1;
 		}
 		if (istring == "RELPATH") {
 			getline(rfile, istring);
-			if (lay->filename == "") {
-				lay->filename = boost::filesystem::absolute(istring).string();
-				lay->timeinit = false;
-				open_video(lay->frame, lay, lay->filename, false);
+			if (load) {
+				if (lay->filename == "") {
+					lay->filename = boost::filesystem::absolute(istring).string();
+					lay->timeinit = false;
+					open_video(lay->frame, lay, lay->filename, false);
+				}
 			}
 		}	
 		if (istring == "SPEEDVAL") {
@@ -12775,29 +12830,52 @@ void read_layers(std::istream &rfile, std::vector<Layer*> &layers, bool deck, in
 		
 		if (istring == "CLIPS") {
 			Clip *clip = nullptr;
-			getline(rfile, istring);
-			while (istring != "ENDOFCLIPS") {
-				if (istring == "TYPE") {
-					clip = new Clip;
-					getline(rfile, istring);
-					clip->type = (ELEM_TYPE)std::stoi(istring);
-					lay->clips.insert(lay->clips.begin() + lay->clips.size() - 1, clip);
+			while (getline(rfile, istring)) {
+				if (istring == "ENDOFCLIPS") break;
+				if (doclips) {
+					if (istring == "TYPE") {
+						clip = new Clip;
+						getline(rfile, istring);
+						clip->type = (ELEM_TYPE)std::stoi(istring);
+						lay->clips.insert(lay->clips.begin() + lay->clips.size() - 1, clip);
+					}
+					if (istring == "FILENAME") {
+						getline(rfile, istring);
+						clip->path = istring;					
+					}
+					if (istring == "CLIPLAYER") {
+						std::vector<Layer*> cliplayers;
+						Layer *cliplay = mainmix->add_layer(cliplayers, 0);
+						read_layers(rfile, result, cliplayers, 0, 0, 0, 1, 0);
+						std::string name = remove_extension(remove_extension(basename(result)));
+						int count = 0;
+						while (1) {
+							clip->path = temppath + "cliptemp_" + name + ".layer";
+							if (!exists(clip->path)) {
+								save_layerfile(clip->path, cliplay, 0);
+								break;
+							}
+							count++;
+							name = remove_version(name) + "_" + std::to_string(count);
+						}
+						mainmix->delete_layer(cliplayers, cliplay, false);
+					}
+					if (istring == "JPEGPATH") {
+						getline(rfile, istring);
+						std::string jpegpath = istring;
+						glGenTextures(1, &clip->tex);
+						glBindTexture(GL_TEXTURE_2D, clip->tex);
+						glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR);
+						glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
+						glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA, (int)(w * 0.3f), (int)(h * 0.3f), 0, GL_RGBA, GL_UNSIGNED_BYTE, NULL);
+						if (concat) {
+							boost::filesystem::rename(result + "_" + std::to_string(jpegcount) + ".file", result + "_" + std::to_string(jpegcount) + ".jpeg");
+							open_thumb(result + "_" + std::to_string(jpegcount) + ".jpeg", clip->tex);
+							jpegcount++;
+						}
+						else open_thumb(jpegpath, clip->tex);
+					}
 				}
-				if (istring == "FILENAME") {
-					getline(rfile, istring);
-					clip->path = istring;					
-				}
-				if (istring == "JPEGPATH") {
-					getline(rfile, istring);
-					std::string jpegpath = istring;
-					glGenTextures(1, &clip->tex);
-					glBindTexture(GL_TEXTURE_2D, clip->tex);
-					glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR);
-					glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
-					glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA, (int)(w * 0.3f), (int)(h * 0.3f), 0, GL_RGBA, GL_UNSIGNED_BYTE, NULL);
-					open_thumb(jpegpath, clip->tex);
-				}
-				getline(rfile, istring);
 			}
 		}
 		if (istring == "EFFECTS") {
@@ -12864,6 +12942,7 @@ void read_layers(std::istream &rfile, std::vector<Layer*> &layers, bool deck, in
 			}
 		}
 	}
+	return jpegcount;
 }
 	
 void delete_layers(std::vector<Layer*> &layers, bool alive) {
@@ -13024,6 +13103,8 @@ void open_handlefile(const std::string &path) {
 	glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR);
 	glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
 	if (lay->dataformat == 188 or lay->vidformat == 187) {
+		printf("HAP file\n");
+		printf("compression %d\n", lay->decresult->compression);
 		if (lay->decresult->compression == 187) {
 			glCompressedTexImage2D(GL_TEXTURE_2D, 0, GL_COMPRESSED_RGBA_S3TC_DXT1_EXT, lay->decresult->width, lay->decresult->height, 0, lay->decresult->size, lay->decresult->data);
 		}
@@ -13061,24 +13142,24 @@ GLuint copy_tex(GLuint tex, int tw, int th, bool yflip) {
 	glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR);
 	glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
 	glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA, tw, th, 0, GL_RGBA, GL_UNSIGNED_BYTE, NULL);
-	GLuint sfbo, dfbo;
+	GLuint dfbo;
 	glGenFramebuffers(1, &dfbo);
 	glBindFramebuffer(GL_FRAMEBUFFER, dfbo);
 	glFramebufferTexture2D(GL_FRAMEBUFFER, GL_COLOR_ATTACHMENT0, GL_TEXTURE_2D, smalltex, 0);
-	glGenFramebuffers(1, &sfbo);
-	glBindFramebuffer(GL_FRAMEBUFFER, sfbo);
-	glFramebufferTexture2D(GL_FRAMEBUFFER, GL_COLOR_ATTACHMENT0, GL_TEXTURE_2D, tex, 0);
+	glDrawBuffer(GL_COLOR_ATTACHMENT0);
 	int sw, sh;
 	glBindTexture(GL_TEXTURE_2D, tex);
 	glGetTexLevelParameteriv(GL_TEXTURE_2D, 0, GL_TEXTURE_WIDTH, &sw);
 	glGetTexLevelParameteriv(GL_TEXTURE_2D, 0, GL_TEXTURE_HEIGHT, &sh);
+	float black[4] = {1.0f, 1.0f, 1.0f, 1.0f};
+	float facx = (float)tw / w;
+	float facy = (float)th / h;
 	if (yflip) {
-		glBlitNamedFramebuffer(sfbo, dfbo, 0, sh, sw, 0 , 0, 0, tw, th, GL_COLOR_BUFFER_BIT, GL_LINEAR);
+		draw_box(NULL, black, -1.0f, -1.0f + 2.0f * facy, 2.0f * facx, -2.0f * facy, 0.0f, 0.0f, 1.0f, 1.0f, 0, tex, w, h);
 	}
 	else {
-		glBlitNamedFramebuffer(sfbo, dfbo, 0, 0, sw, sh , 0, 0, tw, th, GL_COLOR_BUFFER_BIT, GL_LINEAR);
+		draw_box(NULL, black, -1.0f, -1.0f + 2.0f * facy, 2.0f * facx, -2.0f * facy, 0.0f, 0.0f, 1.0f, 1.0f, 0, tex, w, h);
 	}
-	glDeleteFramebuffers(1, &sfbo);
 	glDeleteFramebuffers(1, &dfbo);
 	return smalltex;
 }
@@ -13167,10 +13248,107 @@ void open_thumb(std::string path, GLuint tex) {
 	
 }
 
+long getFileSize(std::string filename)
+{
+    struct stat stat_buf;
+    int rc = stat(filename.c_str(), &stat_buf);
+    return rc == 0 ? stat_buf.st_size : -1;
+}
+
+void concat_files(std::ostream &ofile, const std::string &path, std::vector<std::vector<std::string>> &filepaths) {
+	std::vector<std::string> paths;
+	paths.push_back(path);
+	for (int i = 0; i < filepaths.size(); i++) {
+		for (int j = 0; j < filepaths[i].size(); j++) {
+			paths.push_back(filepaths[i][j]);
+		}
+	}
+	
+	int size = paths.size();
+	ofile.write((const char *)&size, 4);
+	for (int i = 0; i < paths.size(); i++) {
+		ifstream fileInput;
+		fileInput.open(paths[i], ios::in | ios::binary);
+		int fileSize = getFileSize(paths[i]);
+		ofile.write((const char *)&fileSize, 4);
+		fileInput.close();
+	}
+	for (int i = 0; i < paths.size(); i++) {
+		ifstream fileInput;
+		fileInput.open(paths[i], ios::in | ios::binary);
+		int fileSize = getFileSize(paths[i]);
+		char *inputBuffer = new char[fileSize];
+		fileInput.read(inputBuffer, fileSize);
+		ofile.write(inputBuffer, fileSize);
+		delete(inputBuffer);
+		fileInput.close();
+	}
+}
+
+bool check_version(const std::string &path) {
+	bool concat = true;
+	ifstream bfile;
+	bfile.open(path, ios::in | ios::binary);
+	char *buffer = new char[7];
+	bfile.read(buffer, 7);
+	if (buffer[0] == 0x45 and buffer[1] == 0x57 and buffer[2] == 0x4F and buffer[3] == 0x43 and buffer[4] == 0x76 and buffer[5] == 0x6A and buffer[6] == 0x20) {
+		concat = false;
+	} 
+	delete(buffer);
+	bfile.close();
+	return concat;
+}
+
+std::string deconcat_files(const std::string &path) {
+	bool concat = check_version(path);
+	std::string outpath;
+	ifstream bfile;
+	bfile.open(path, ios::in | ios::binary);
+	if (concat) {
+		int num;
+		bfile.read((char *)&num, 4);
+		std::vector<int> sizes;
+		for (int i = 0; i < num; i++) {
+			int size;
+			bfile.read((char *)&size, 4);
+			sizes.push_back(size);
+		}
+		ofstream ofile;
+		std::string name = remove_extension(basename(path));
+		int count = 0;
+		while (1) {
+			outpath = temppath + name + ".mainfile";
+			if (!exists(outpath)) {
+				ofile.open(outpath, ios::out | ios::binary);
+				break;
+			}
+			count++;
+			name = remove_version(name) + "_" + std::to_string(count);
+		}
+		char *ibuffer = new char[sizes[0]];
+		bfile.read(ibuffer, sizes[0]);
+		ofile.write(ibuffer, sizes[0]);
+		ofile.close();
+		for (int i = 0; i < num - 1; i++) {
+			ofstream ofile;
+			ofile.open(outpath + "_" + std::to_string(i) + ".file", ios::out | ios::binary);
+			char *ibuffer = new char[sizes[i + 1]];
+			bfile.read(ibuffer, sizes[i + 1]);
+			ofile.write(ibuffer, sizes[i + 1]);
+			ofile.close();
+		}
+	}
+	bfile.close();
+	if (concat) return(outpath);
+	else return "";
+}
+
+
 void save_bin(const std::string &path) {
+	std::vector<std::string> filestoadd;
 	ofstream wfile;
 	wfile.open(path);
-	wfile << "EWOCvj BINFILE V0.1\n";
+	wfile << "EWOCvj BINFILE V0.2\n";
 	
 	wfile << "ELEMS\n";
 	for (int i = 0; i < 6; i++) {
@@ -13179,12 +13357,16 @@ void save_bin(const std::string &path) {
 			wfile << "\n";
 			wfile << std::to_string(mainprogram->currbin->elements[i * 24 + j]->type);
 			wfile << "\n";
+			ELEM_TYPE type = mainprogram->currbin->elements[i * 24 + j]->type;
+			if ((type == ELEM_LAYER or type == ELEM_DECK or type == ELEM_MIX) and mainprogram->currbin->elements[i * 24 + j]->path != "") {
+				filestoadd.push_back(mainprogram->currbin->elements[i * 24 + j]->path);
+			}
 			if (mainprogram->currbin->elements[i * 24 + j]->path != "") {
 				if (mainprogram->currbin->elements[i * 24 + j]->jpegpath == "") {
 					std::string name = remove_extension(basename(mainprogram->currbin->elements[i * 24 + j]->path));
 					int count = 0;
 					while (1) {
-						mainprogram->currbin->elements[i * 24 + j]->jpegpath = mainprogram->binsdir + mainprogram->currbin->name + "\\" + name + ".jpg";
+						mainprogram->currbin->elements[i * 24 + j]->jpegpath = temppath + mainprogram->currbin->name + "_" + name + ".jpg";
 						if (!exists(mainprogram->currbin->elements[i * 24 + j]->jpegpath)) {
 							break;
 						}
@@ -13193,6 +13375,7 @@ void save_bin(const std::string &path) {
 					}
 					save_thumb(mainprogram->currbin->elements[i * 24 + j]->jpegpath, mainprogram->currbin->elements[i * 24 + j]->tex);
 				}
+				filestoadd.push_back(mainprogram->currbin->elements[i * 24 + j]->jpegpath);
 			}				
 			wfile << mainprogram->currbin->elements[i * 24 + j]->jpegpath;
 			wfile << "\n";
@@ -13204,6 +13387,7 @@ void save_bin(const std::string &path) {
 	for (int i = 0; i < mainprogram->currbin->decks.size(); i++) {
 		wfile << mainprogram->currbin->decks[i]->path;
 		wfile << "\n";
+		if (mainprogram->currbin->decks[i]->path != "") filestoadd.push_back(mainprogram->currbin->decks[i]->path);
 		wfile << std::to_string(mainprogram->currbin->decks[i]->i);
 		wfile << "\n";
 		wfile << std::to_string(mainprogram->currbin->decks[i]->j);
@@ -13216,6 +13400,7 @@ void save_bin(const std::string &path) {
 	for (int i = 0; i < mainprogram->currbin->mixes.size(); i++) {
 		wfile << mainprogram->currbin->mixes[i]->path;
 		wfile << "\n";
+		if (mainprogram->currbin->mixes[i]->path != "") filestoadd.push_back(mainprogram->currbin->mixes[i]->path);
 		wfile << std::to_string(mainprogram->currbin->mixes[i]->j);
 		wfile << "\n";
 		wfile << std::to_string(mainprogram->currbin->mixes[i]->height);
@@ -13225,11 +13410,20 @@ void save_bin(const std::string &path) {
 		
 	wfile << "ENDOFFILE\n";
 	wfile.close();
+	
+    ofstream outputfile;
+	outputfile.open(temppath + "tempconcatbin", ios::out | ios::binary);
+	std::vector<std::vector<std::string>> filestoadd2;
+	filestoadd2.push_back(filestoadd);
+	concat_files(outputfile, path, filestoadd2);
+	outputfile.close();
+	boost::filesystem::rename(temppath + "tempconcatbin", path);
 }
 	
 void save_shelf(const std::string &path) {
+	std::vector<std::string> filestoadd;
 	ofstream wfile;
-	wfile.open(path.c_str());
+	wfile.open(path);
 	wfile << "EWOCvj SHELFFILE V0.1\n";
 	
 	wfile << "ELEMS\n";
@@ -13238,16 +13432,30 @@ void save_shelf(const std::string &path) {
 		wfile << "\n";
 		wfile << std::to_string(thtype[i]);
 		wfile << "\n";
+		if (thtype[i] == ELEM_LAYER) filestoadd.push_back(thpath[i]);
 	}
 	wfile << "ENDOFELEMS\n";
 	
 	wfile << "ENDOFFILE\n";
 	wfile.close();
+	
+    ofstream outputfile;
+	outputfile.open(temppath + "tempconcatshelf", ios::out | ios::binary);
+	std::vector<std::vector<std::string>> filestoadd2;
+	filestoadd2.push_back(filestoadd);
+	concat_files(outputfile, path, filestoadd2);
+	outputfile.close();
+	boost::filesystem::rename(temppath + "tempconcatshelf", path);
 }
 	
 void open_shelf(const std::string &path) {
+	std::string result = deconcat_files(path);
+	bool concat = (result != "");
 	ifstream rfile;
-	rfile.open(path.c_str());
+	if (concat) rfile.open(result);
+	else rfile.open(path);
+	
+	int filecount = 0;
 	std::string istring;
 	getline(rfile, istring);
 	while (getline(rfile, istring)) {
@@ -13261,6 +13469,12 @@ void open_shelf(const std::string &path) {
 				thpath[count] = istring;
 				getline(rfile, istring);
 				thtype[count] = (ELEM_TYPE)std::stoi(istring);
+				if (thtype[count] == ELEM_LAYER) {
+					if (concat) {
+						boost::filesystem::rename(result + "_" + std::to_string(filecount) + ".file", thpath[count]);
+						filecount++;
+					}
+				}
 				if (thpath[count] == "") {
 					glBindTexture(GL_TEXTURE_2D, thumbtex[count]);
 					glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA, 0, 0, 0, GL_RGBA, GL_UNSIGNED_BYTE, nullptr);
@@ -13299,8 +13513,7 @@ void open_shelf(const std::string &path) {
 					lay->lasteffnode = lay->node;
 					lay->node->calc = true;
 					lay->node->walked = false;
-					mainmix->mouselayer = lay;
-					open_layerfile(thpath[count], true);
+					open_layerfile(thpath[count], lay, true, 0);
 					lay->playbut->value = false;
 					lay->revbut->value = false;
 					lay->bouncebut->value = false;
@@ -13352,8 +13565,13 @@ void open_shelf(const std::string &path) {
 }
 
 void open_bin(const std::string &path, Bin *bin) {
+	std::string result = deconcat_files(path);
+	bool concat = (result != "");
 	ifstream rfile;
-	rfile.open(path);
+	if (concat) rfile.open(result);
+	else rfile.open(path);
+	
+	int filecount = 0;
 	std::string istring;
 	getline(rfile, istring);
 	//check if binfile
@@ -13370,9 +13588,25 @@ void open_bin(const std::string &path, Bin *bin) {
 				else bin->elements[count]->full = false;
 				getline(rfile, istring);
 				bin->elements[count]->type = (ELEM_TYPE)std::stoi(istring);
+				ELEM_TYPE type = bin->elements[count]->type;
+				if ((type == ELEM_LAYER or type == ELEM_DECK or type == ELEM_MIX) and bin->elements[count]->path != "") {
+					if (concat) {
+						boost::filesystem::rename(result + "_" + std::to_string(filecount) + ".file", bin->elements[count]->path);
+						filecount++;
+					}
+				}
 				getline(rfile, istring);
 				bin->elements[count]->jpegpath = istring;
-				if (bin->elements[count]->jpegpath != "") open_thumb(bin->elements[count]->jpegpath, bin->elements[count]->tex);
+				if (bin->elements[count]->path != "") {
+					if (bin->elements[count]->jpegpath != "") {
+						if (concat) {
+							boost::filesystem::rename(result + "_" + std::to_string(filecount) + ".file", result + "_" + std::to_string(filecount) + ".jpeg");
+							open_thumb(result + "_" + std::to_string(filecount) + ".jpeg", bin->elements[count]->tex);
+							filecount++;
+						}
+						else open_thumb(bin->elements[count]->jpegpath, bin->elements[count]->tex);
+					}
+				}
 				count++;
 			}
 		}
@@ -13381,7 +13615,12 @@ void open_bin(const std::string &path, Bin *bin) {
 				if (istring == "ENDOFDECKS") break;
 				BinDeck *bd = new BinDeck;
 				bin->decks.push_back(bd);
-				bd->path = istring;
+				if (concat) {
+					bd->path = result + "_" + std::to_string(filecount) + ".deck";
+					boost::filesystem::rename(result + "_" + std::to_string(filecount) + ".file", bd->path);
+				}
+				else bd->path = istring;
+				filecount++;
 				getline(rfile, istring);
 				bd->i = std::stoi(istring);
 				getline(rfile, istring);
@@ -13395,7 +13634,12 @@ void open_bin(const std::string &path, Bin *bin) {
 				if (istring == "ENDOFMIXES") break;
 				BinMix *bm = new BinMix;
 				bin->mixes.push_back(bm);
-				bm->path = istring;
+				if (concat) {
+					bm->path = result + "_" + std::to_string(filecount) + ".ewoc";
+					boost::filesystem::rename(result + "_" + std::to_string(filecount) + ".file", bm->path);
+				}
+				else bm->path = istring;
+				filecount++;
 				getline(rfile, istring);
 				bm->j = std::stoi(istring);
 				getline(rfile, istring);
@@ -13420,9 +13664,7 @@ Bin *new_bin(const std::string &name) {
 		}
 	}
 	make_currbin(mainprogram->bins.size() - 1);
-	std::string path = mainprogram->binsdir + name;
-	boost::filesystem::path dir(path.c_str());
-	boost::filesystem::create_directory(dir);
+	std::string path;
 	path = mainprogram->binsdir + name + ".bin";
 	if (!exists(path)) {
 		save_bin(path);
@@ -13470,6 +13712,7 @@ void save_binslist() {
 	wfile << "\n";
 	wfile << "BINS\n";
 	for (int i = 0; i < mainprogram->bins.size(); i++) {
+		std::string path = mainprogram->binsdir + mainprogram->bins[i]->name + ".bin";
 		wfile << mainprogram->bins[i]->name;
 		wfile << "\n";
 	}
@@ -14066,7 +14309,6 @@ int main(int argc, char* argv[]){
  	loadops.push_back("Connect live");
  	loadops.push_back("Open video");
 	loadops.push_back("Open layer");
-	loadops.push_back("Save layer");
  	loadops.push_back("New deck");
 	loadops.push_back("Open deck");
 	loadops.push_back("Save deck");
@@ -14196,6 +14438,7 @@ int main(int argc, char* argv[]){
 		if (exists(binname)) open_bin(binname, mainprogram->bins[i]);
 	}
 	make_currbin(cb);
+	save_binslist(); // updates old bins to latest bin version
 	
 	set_thumbs();
 		
@@ -14215,16 +14458,16 @@ int main(int argc, char* argv[]){
 		mainmix->nbframesA[mainmix->page[0]].insert(mainmix->nbframesA[mainmix->page[0]].begin(), layA);
 		layA->clips.clear();
 		mainmix->mousedeck = 0;
-		save_deck(temppath + "/tempdeck_A" + std::to_string(i + 1) + ".deck");
-		save_deck(temppath + "/tempdeck_A" + std::to_string(i + 1) + "comp.deck");
+		save_deck(temppath + "tempdeck_A" + std::to_string(i + 1) + ".deck");
+		save_deck(temppath + "tempdeck_A" + std::to_string(i + 1) + "comp.deck");
 		mainmix->page[1] = i;
 		Layer *layB = mainmix->add_layer(mainmix->layersB, 0);
 		layB->deck = 1;
 		mainmix->nbframesB[mainmix->page[1]].insert(mainmix->nbframesB[mainmix->page[1]].begin(), layB);
 		layB->clips.clear();
 		mainmix->mousedeck = 1;
-		save_deck(temppath + "/tempdeck_B" + std::to_string(i + 1) + ".deck");
-		save_deck(temppath + "/tempdeck_B" + std::to_string(i + 1) + "comp.deck");
+		save_deck(temppath + "tempdeck_B" + std::to_string(i + 1) + ".deck");
+		save_deck(temppath + "tempdeck_B" + std::to_string(i + 1) + "comp.deck");
 		mainmix->layersA.clear();
 		mainmix->layersB.clear();
 	}
@@ -14260,10 +14503,10 @@ int main(int argc, char* argv[]){
 	
 	mainmix->page[0] = 0;
 	mainmix->mousedeck = 0;
-	open_deck(temppath + "/tempdeck_A1.deck", 1);
+	open_deck(temppath + "tempdeck_A1.deck", 1);
 	mainmix->page[1] = 0;
 	mainmix->mousedeck = 1;
-	open_deck(temppath + "/tempdeck_B1.deck", 1);
+	open_deck(temppath + "tempdeck_B1.deck", 1);
 	Layer *layA1 = mainmix->layersA[0];
 	Layer *layB1 = mainmix->layersB[0];
 	mainprogram->nodesmain->currpage->connect_nodes(layA1->node, mixnodeA);
@@ -14388,10 +14631,10 @@ int main(int argc, char* argv[]){
 			}
 			else if (mainprogram->pathto == "SAVELAYFILE") {
 				std::string str(mainprogram->path);
-				save_layerfile(str);
+				save_layerfile(str, mainmix->mouselayer, 1);
 			}
 			else if (mainprogram->pathto == "OPENLAYFILE") {
-				open_layerfile(mainprogram->path, 0);
+				open_layerfile(mainprogram->path, mainmix->mouselayer, 0, 1);
 			}
 			else if (mainprogram->pathto == "OPENSTATE") {
 				std::string str(mainprogram->path);
