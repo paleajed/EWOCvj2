@@ -71,6 +71,7 @@ class Param {
 		Box *box = NULL;
 		MidiNode *node = NULL;
 		bool nextrow = false;
+		handle();
 		Param();
 		~Param();
 };

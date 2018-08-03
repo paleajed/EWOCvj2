@@ -11,6 +11,7 @@ class Menu;
 class BinElement;
 class BinDeck;
 class BinMix;
+class LoopStation;
 
 typedef enum
 {
@@ -160,6 +161,8 @@ class Button {
 		std::string name;
 		Box *box;
 		int value;
+		float ccol[4];
+		draw(bool circlein);
 		Button(bool state);
 		~Button();
 };
@@ -338,6 +341,7 @@ class Program {
 		std::vector<PMidiItem*> pmon;
 		clock_t stt;
 		std::vector<unsigned char> savedmessage;
+		PMidiItem* savedmidiitem;
 		bool queueing;
 		int filecount;
 		
@@ -425,6 +429,7 @@ class Program {
 
 extern Program *mainprogram;
 extern Mixer *mainmix;
+extern LoopStation *loopstation;
 extern Menu *effectmenu;
 extern Menu *mixmodemenu;
 
@@ -459,12 +464,6 @@ extern float yscrtovtx(float scrcoord);
 extern float pdistance(float x, float y, float x1, float y1, float x2, float y2);
 extern void enddrag();
 
-extern void save_layerfile(const std::string &path, Layer* lay, bool doclips);
-extern void save_mix(const std::string &path);
-extern void save_deck(const std::string &path);
-extern void open_layerfile(const std::string &path, Layer *lay, int reset, bool doclips);
-extern void open_mix(const std::string &path);
-extern void open_deck(const std::string &path, bool alive);
 extern void open_binfiles();
 extern void open_bindir();
 extern void open_handlefile(const std::string &path);
@@ -481,7 +480,6 @@ extern void save_shelf(const std::string &path);
 extern void open_shelf(const std::string &path);
 extern void new_state();
 extern BinElement *find_element(int size, int k, int i, int j, bool olc);
-extern int read_layers(std::istream &rfile, const std::string &result, std::vector<Layer*> &layers, bool deck, int type, bool doclips, bool concat, bool load = true);
 void concat_files(std::ostream &ofile, const std::string &path, std::vector<std::vector<std::string>> &jpegpaths);
 bool check_version(const std::string &path);
 std::string deconcat_files(const std::string &path);
@@ -501,3 +499,5 @@ void calctexture(Layer *lay);
 static int open_codec_context(int *stream_idx, AVFormatContext *video, enum AVMediaType type);
 
 void set_live_base(Layer *lay, std::string livename);
+
+extern float tf(float vtxcoord);

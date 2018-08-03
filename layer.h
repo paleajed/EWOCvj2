@@ -2,6 +2,8 @@
 #include <mutex>
 #include <condition_variable>
 #include <list>
+#include <istream>
+#include <ostream>
 
 #include "SDL2\SDL.h"
 #include <AL/al.h>
@@ -53,6 +55,7 @@ class Layer {
 		ELEM_TYPE currcliptype = ELEM_FILE;
 		bool queueing = false;
 		int queuescroll = 0;
+		float scrollcol[4] = {0.5f, 0.5f, 0.5f, 1.0f};
 		int numefflines = 0;
 		int effscroll = 0;
 		std::vector<Effect*> effects;
@@ -184,6 +187,9 @@ class Layer {
 };
 
 class Mixer {
+	private:
+		event_write(std::ostream &wfile, Param *par);
+		event_read(std::istream &rfile, Param *par, Layer *lay);
 	public:
 		std::vector<Layer*> layersAcomp;
 		std::vector<Layer*> layersBcomp;
@@ -193,6 +199,16 @@ class Mixer {
 		Layer *add_layer(std::vector<Layer*> &layers, int pos);
 		void delete_layer(std::vector<Layer*> &layers, Layer *lay, bool add);
 		void record_video();
+		save_layerfile(const std::string &path, Layer* lay, bool doclips);
+		save_mix(const std::string &path);
+		save_deck(const std::string &path);
+		open_layerfile(const std::string &path, Layer *lay, int reset, bool doclips);
+		open_mix(const std::string &path);
+		open_deck(const std::string &path, bool alive);
+		open_state(const std::string &path);
+		save_state(const std::string &path);
+		std::vector<std::string> write_layer(Layer *lay, std::ostream& wfile, bool doclips);
+		int read_layers(std::istream &rfile, const std::string &result, std::vector<Layer*> &layers, bool deck, int type, bool doclips, bool concat, bool load = true);
 		Mixer();
 		
 		std::mutex recordlock;

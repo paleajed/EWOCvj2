@@ -73,14 +73,15 @@ extern "C" {
 #include <windows.h>
 #include <ShellScalingAPI.h>
 #include <comdef.h>
-//#include <tchar.h>
 
+// my own headers
 #include "box.h"
 #include "effect.h"
 #include "node.h"
 #include "layer.h"
 #include "window.h"
 #include "program.h"
+#include "loopstation.h"
 
 //#include "debug_new.h"
 
@@ -94,7 +95,7 @@ extern "C" {
 
 Program *mainprogram;
 Mixer *mainmix;
-
+LoopStation *loopstation = nullptr;
 
 //TCHAR buf [MAX_PATH];
 //int retgtp = GetTempPath(MAX_PATH, buf);
@@ -517,11 +518,13 @@ void mycallback( double deltatime, std::vector< unsigned char > *message, void *
  	if (mainprogram->waitmidi == 0 and mainprogram->tmlearn) {
     	mainprogram->stt = clock();
     	mainprogram->savedmessage = *message;
+    	mainprogram->savedmidiitem = (PMidiItem*)userData;
     	mainprogram->waitmidi = 1;
     	return;
     }
     if (mainprogram->waitmidi == 1) {
      	mainprogram->savedmessage = *message;
+    	mainprogram->savedmidiitem = (PMidiItem*)userData;
    		return;
    	}
   	
@@ -2129,6 +2132,7 @@ Layer::Layer(bool comp) {
     this->chromabox = new Box;
     this->chromabox->acolor[3] = 1.0f;
     this->chtol = new Param;
+    this->chtol->name = "Tolerance";
     this->chtol->value = 0.8f;
     this->chtol->range[0] = -0.1f;
     this->chtol->range[1] = 3.3f;
@@ -2139,18 +2143,30 @@ Layer::Layer(bool comp) {
 	this->speed->range[0] = 0.0f;
 	this->speed->range[1] = 3.33f;
 	this->speed->sliding = true;
+	this->speed->box->acolor[0] = 0.5;
+	this->speed->box->acolor[1] = 0.2;
+	this->speed->box->acolor[2] = 0.5;
+	this->speed->box->acolor[3] = 1.0;
 	this->opacity = new Param;
 	this->opacity->name = "Opacity"; 
 	this->opacity->value = 1.0f;
 	this->opacity->range[0] = 0.0f;
 	this->opacity->range[1] = 1.0f;
 	this->opacity->sliding = true;
+	this->opacity->box->acolor[0] = 0.5;
+	this->opacity->box->acolor[1] = 0.2;
+	this->opacity->box->acolor[2] = 0.5;
+	this->opacity->box->acolor[3] = 1.0;
 	this->volume = new Param;
 	this->volume->name = "Volume"; 
 	this->volume->value = 0.0f;
 	this->volume->range[0] = 0.0f;
 	this->volume->range[1] = 1.0f;
 	this->volume->sliding = true;
+	this->volume->box->acolor[0] = 0.5;
+	this->volume->box->acolor[1] = 0.2;
+	this->volume->box->acolor[2] = 0.5;
+	this->volume->box->acolor[3] = 1.0;
 	this->playbut = new Button(false);
 	this->frameforward = new Button(false);
 	this->framebackward = new Button(false);
@@ -2546,7 +2562,7 @@ float render_text(std::string text, float *textc, float x, float y, float sx, fl
 }
 
 float render_text(std::string text, float *textc, float x, float y, float sx, float sy, bool smflag) {
- 	y -= 0.015f;
+ 	y -= 0.03f;
 	GLuint texture;
 	GLuint vbo, tbo, vao;
 	float textw = 0.0f;
@@ -2579,7 +2595,7 @@ float render_text(std::string text, float *textc, float x, float y, float sx, fl
 			GL_TEXTURE_2D,
 			0,
 			GL_RGBA,
-			1024,
+			2048,
 			128,
 			0,
 			GL_RGBA,
@@ -2630,7 +2646,7 @@ float render_text(std::string text, float *textc, float x, float y, float sx, fl
 		glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
 		glPixelStorei(GL_UNPACK_ALIGNMENT, 1);
 		
-		FT_Set_Pixel_Sizes(face, 0, (int)(sy * 64000.0f * h / 1346.0f)); //
+		FT_Set_Pixel_Sizes(face, 0, (int)(sy * 32000.0f * h / 1346.0f)); //
 		x = -1.0f;
 		y = 1.0f;
 		FT_GlyphSlot g = face->glyph;
@@ -2664,10 +2680,6 @@ float render_text(std::string text, float *textc, float x, float y, float sx, fl
 	
 			GLint textmode = glGetUniformLocation(mainprogram->ShaderProgram, "textmode");
 			glUniform1i(textmode, 1);
-			GLint fbowidth = glGetUniformLocation(mainprogram->ShaderProgram, "fbowidth");
-			glUniform1i(fbowidth, (int)w);
-			GLint fboheight = glGetUniformLocation(mainprogram->ShaderProgram, "fboheight");
-			glUniform1i(fboheight, (int)h);
 			GLint color = glGetUniformLocation(mainprogram->ShaderProgram, "color");
 			glUniform4fv(color, 1, textc);
 			GLfloat texvcoords2[8] = {
@@ -2695,7 +2707,7 @@ float render_text(std::string text, float *textc, float x, float y, float sx, fl
 	
 			x += (g->advance.x/64) * pixelw;
 			//y += (g->advance.y/64) * pixelh;
-			textw += (g->advance.x/64) * pixelw;
+			textw += (g->advance.x/128) * pixelw;
 			texth = 64.0f * pixelh;
 		}
 		GUIString *guistring = new GUIString;
@@ -2715,15 +2727,15 @@ float render_text(std::string text, float *textc, float x, float y, float sx, fl
 	else {
 		GLfloat texvcoords[8] = {
 			x,     y   ,
-			x + texth * 4, y    ,
-			x,     y + texth,
-			x + texth * 4, y + texth};
+			x + texth * 16, y    ,
+			x,     y + texth * 2,
+			x + texth * 16, y + texth * 2};
 		GLfloat textcoords[] = {0.0f, 0.0f,
 							1.0f, 0.0f,
 							0.0f, 1.0f,
 							1.0f, 1.0f};
 		GLint textmode = glGetUniformLocation(mainprogram->ShaderProgram, "textmode");
-		glUniform1i(textmode, 1);
+		glUniform1i(textmode, 2);
 		GLint color = glGetUniformLocation(mainprogram->ShaderProgram, "color");
 		glUniform4fv(color, 1, textc);
 		glActiveTexture(GL_TEXTURE0);
@@ -2756,7 +2768,10 @@ float render_text(std::string text, float *textc, float x, float y, float sx, fl
 }
 
 
+// calculates new frame numbers for a video layer
+// also checks if new frame has been decompressed and loads it into layer
 void calc_texture(Layer *lay, bool comp, bool alive) {
+	// laynocomp is root layer for comp layer when video previewing is on
 	Layer *laynocomp;
 	if (!comp) {
 		laynocomp = lay;
@@ -2775,7 +2790,8 @@ void calc_texture(Layer *lay, bool comp, bool alive) {
 		if (lay->pos < mainmix->layersB.size()) laynocomp = mainmix->layersB[lay->pos];
 		else laynocomp = lay;
 	}
-		
+	
+	//measure time since last loop
 	std::chrono::high_resolution_clock::time_point now = std::chrono::high_resolution_clock::now();
 	std::chrono::duration<double> elapsed;
 	if (lay->timeinit) elapsed = std::chrono::duration_cast<std::chrono::duration<double>>(now - lay->prevtime);
@@ -2795,6 +2811,7 @@ void calc_texture(Layer *lay, bool comp, bool alive) {
 		}
 		else {
 			if (lay->prevframe != -1) {
+				// calculate and visualize fps
 				lay->fps[lay->fpscount] = (int)(1000.0f / thismilli);
 				int total = 0;
 				for (int i = 0; i < 25; i++) total += lay->fps[i];
@@ -2807,7 +2824,7 @@ void calc_texture(Layer *lay, bool comp, bool alive) {
 		
 				lay->frame = lay->frame + laynocomp->scratch;
 				laynocomp->scratch = 0;
-				
+				// calculate new frame numbers
 				if ((laynocomp->speed->value > 0 and (laynocomp->playbut->value or laynocomp->bouncebut->value == 1)) or (laynocomp->speed->value < 0 and (laynocomp->revbut->value or laynocomp->bouncebut->value == 2))) {
 					lay->frame += !laynocomp->scratchtouch * laynocomp->speed->value * laynocomp->speed->value * thismilli / lay->millif;
 				}
@@ -2815,6 +2832,7 @@ void calc_texture(Layer *lay, bool comp, bool alive) {
 					lay->frame -= !laynocomp->scratchtouch * laynocomp->speed->value * laynocomp->speed->value * thismilli / lay->millif;
 				}
 				
+				// on end of video (or beginning if reverse play) switch to next clip in queue
 				if (lay->frame > (laynocomp->endframe)) {
 					if (lay->scritching != 4) {
 						if (laynocomp->bouncebut->value == 0) {
@@ -2833,7 +2851,7 @@ void calc_texture(Layer *lay, bool comp, bool alive) {
 									while (1) {
 										tpath = mainprogram->binsdir + "cliptemp_" + name + ".layer";
 										if (!exists(tpath)) {
-											save_layerfile(tpath, lay, 0);
+											mainmix->save_layerfile(tpath, lay, 0);
 											break;
 										}
 										count++;
@@ -2856,7 +2874,7 @@ void calc_texture(Layer *lay, bool comp, bool alive) {
 								}
 								else if (clip->type == ELEM_LAYER) {
 									lay->live = false;
-									open_layerfile(clip->path, lay, 1, 0);
+									mainmix->open_layerfile(clip->path, lay, 1, 0);
 								}
 								else if (clip->type == ELEM_LIVE) {
 									set_live_base(lay, clip->path);
@@ -2894,7 +2912,7 @@ void calc_texture(Layer *lay, bool comp, bool alive) {
 									while (1) {
 										tpath = mainprogram->binsdir + "temp_" + name + ".layer";
 										if (!exists(tpath)) {
-											save_layerfile(tpath, lay, 0);
+											mainmix->save_layerfile(tpath, lay, 0);
 											break;
 										}
 										count++;
@@ -2916,7 +2934,7 @@ void calc_texture(Layer *lay, bool comp, bool alive) {
 								}
 								else if (clip->type == ELEM_LAYER) {
 									lay->live = false;
-									open_layerfile(clip->path, lay, 2, 0);
+									mainmix->open_layerfile(clip->path, lay, 2, 0);
 								}
 								else if (clip->type == ELEM_LIVE) {
 									set_live_base(lay, clip->path);
@@ -2942,6 +2960,7 @@ void calc_texture(Layer *lay, bool comp, bool alive) {
 		}
 	}
 	
+	// advance ripple effects
 	for (int i = 0; i < lay->effects.size(); i++) {
 		if (lay->effects[i]->type == RIPPLE) {
 			RippleEffect *effect = (RippleEffect*)(lay->effects[i]);
@@ -2955,23 +2974,18 @@ void calc_texture(Layer *lay, bool comp, bool alive) {
 	if (comp and !mainprogram->prevvid and mainprogram->preveff) {
 	}
 	else {
-		//if (comp and !mainmix->firststage) return;
+		// start a new frame decoding
 		lay->ready = true;
 		lay->startdecode.notify_one();
 	}
 	
-	Effect *effect = NULL;
-	float opa;
-	if (lay->effects.size()) opa = 1.0f;
-	else opa = lay->opacity->value;
-
 	glActiveTexture(GL_TEXTURE0);
 	glBindTexture(GL_TEXTURE_2D, lay->texture);
 	if (!lay->liveinput) {
-		if (lay->decresult) {
-			//if (comp and !mainmix->compon) return;
+		if (lay->decresult) {  // decresult contains new frame width, height and data
 			if (lay->decresult->width) {
 				if (lay->dataformat == 188 or lay->vidformat == 187) {
+					// HAP video layers
 					if (lay->decresult->compression == 187) {
 						glCompressedTexImage2D(GL_TEXTURE_2D, 0, GL_COMPRESSED_RGBA_S3TC_DXT1_EXT, lay->decresult->width, lay->decresult->height, 0, lay->decresult->size, lay->decresult->data);
 					}
@@ -2992,13 +3006,15 @@ void calc_texture(Layer *lay, bool comp, bool alive) {
 	float div;
 	float fac = 1.0f;
 	if (!comp) {
+		// previewing frames are on 30%
 		div = 0.3f;
 	}
 	else {
 		div = mainprogram->ow / w;
-		fac = (w / h) / (mainprogram->ow / mainprogram->oh);
+		fac = (w / h) / (mainprogram->ow / mainprogram->oh);  //aspect ratio correction
 	}
 	glDisable(GL_BLEND);
+	// put lay->texture into lay->fbo(tex)
 	if (lay->liveinput) {
 		draw_box(NULL, black, -1.0f, -1.0f, 2.0f * div, 2.0f * div * fac, 0.0f, 0.0f, 1.0f, 1.0f, 0, lay->liveinput->texture, w, h);
 	}
@@ -3278,23 +3294,7 @@ void display_texture(Layer *lay, bool deck) {
 				
 				if (eff->box->vtxcoords->y1 < 1.0 - tf(mainmix->layw) - tf(0.22f) - tf(0.05f) * 10) break;
 				if (eff->box->vtxcoords->y1 <= 1.0 - tf(mainmix->layw) - tf(0.18f)) {
-					draw_box(eff->drywet->box, -1);
-					const char *parstr;
-					if (mainmix->learnparam == eff->drywet and mainmix->learn) {
-						parstr = "MIDI";
-					}
-					else parstr = "";
-					render_text(parstr, white, eff->drywet->box->vtxcoords->x1 + tf(0.01f), eff->drywet->box->vtxcoords->y1 + tf(0.05f) - tf(0.030f), tf(0.0003f), tf(0.0005f));
-					Param *par = eff->drywet;
-					if (eff->drywet->box->in()) {
-						if (mainprogram->leftmousedown) {
-							mainprogram->leftmousedown = false;
-							mainmix->adaptparam = par;
-							mainmix->prevx = mainprogram->mx;
-						}
-					}
-					draw_box(green, green, par->box->vtxcoords->x1 + par->box->vtxcoords->w * ((par->value - par->range[0]) / (par->range[1] - par->range[0])) - tf(0.00078f), par->box->vtxcoords->y1, tf(0.00156f), par->box->vtxcoords->h, -1);
-		
+					eff->drywet->handle();		
 					
 					box = eff->box;
 					draw_box(box, -1);
@@ -3433,10 +3433,6 @@ void display_texture(Layer *lay, bool deck) {
 					par->box->lcolor[1] = 1.0;
 					par->box->lcolor[2] = 1.0;
 					par->box->lcolor[3] = 1.0;
-					par->box->acolor[0] = 0.2;
-					par->box->acolor[1] = 0.2;
-					par->box->acolor[2] = 0.2;
-					par->box->acolor[3] = 1.0;
 					if (par->nextrow) { 
 						x1 = eff->box->vtxcoords->x1 + tf(0.02f);
 						y1 -= tf(0.05f);
@@ -3451,21 +3447,7 @@ void display_texture(Layer *lay, bool deck) {
 					
 					if (par->box->vtxcoords->y1 < 1.0 - tf(mainmix->layw) - tf(0.22f) - tf(0.05f) * 10) break;
 					if (par->box->vtxcoords->y1 <= 1.0 - tf(mainmix->layw) - tf(0.18f)) {
-						std::string parstr;
-						draw_box(par->box, -1);
-						if (mainmix->learnparam == par and mainmix->learn) {
-							parstr = "MIDI";
-						}
-						else parstr = par->name;
-						render_text(parstr, white, par->box->vtxcoords->x1 + tf(0.01f), par->box->vtxcoords->y1 + tf(0.05f) - tf(0.030f), tf(0.0003f), tf(0.0005f));
-						if (par->box->in()) {
-							if (mainprogram->leftmousedown) {
-								mainprogram->leftmousedown = false;
-								mainmix->adaptparam = par;
-								mainmix->prevx = mainprogram->mx;
-							}
-						}
-						draw_box(green, green, par->box->vtxcoords->x1 + par->box->vtxcoords->w * ((par->value - par->range[0]) / (par->range[1] - par->range[0])) - tf(0.00078f), par->box->vtxcoords->y1, tf(0.00156f), par->box->vtxcoords->h, -1);
+						par->handle();
 					}
 				}
 			}
@@ -3487,125 +3469,30 @@ void display_texture(Layer *lay, bool deck) {
 					par->box->vtxcoords->h = lay->chromabox->vtxcoords->h;
 					par->box->upvtxtoscr();
 					
-					std::string parstr;
-					draw_box(par->box, -1);
-					if (mainmix->learnparam == lay->chtol and mainmix->learn) {
-						parstr = "MIDI";
-					}
-					else parstr = "Tolerance";
-					render_text(parstr, white, par->box->vtxcoords->x1 + tf(0.01f), par->box->vtxcoords->y1 + tf(0.05f) - tf(0.030f), tf(0.0003f), tf(0.0005f));
-					if (par->box->in()) {
-						if (mainprogram->menuactivation) {
-							mainprogram->parammenu->state = 2;
-							mainmix->learnparam = par;
-							mainprogram->menuactivation = false;
-						}
-						if (mainprogram->leftmousedown) {
-							mainprogram->leftmousedown = false;
-							mainmix->adaptparam = par;
-							mainmix->prevx = mainprogram->mx;
-						}
-					}
-					draw_box(green, green, par->box->vtxcoords->x1 + par->box->vtxcoords->w * ((par->value - par->range[0]) / (par->range[1] - par->range[0])) - tf(0.00078f), par->box->vtxcoords->y1, tf(0.00156f), par->box->vtxcoords->h, -1);
+					par->handle();
 				}
 			}
 			
 					
 			// Draw mixfac->box
 			if (lay->pos > 0 and lay->blendnode->blendtype != CHROMAKEY) {
-				draw_box(lay->blendnode->mixfac->box, -1);
-				const char *parstr;
-				if (mainmix->learnparam == lay->blendnode->mixfac and mainmix->learn) {
-					parstr = "MIDI";
-				}
-				else parstr = "Factor";
-				render_text(parstr, white, lay->blendnode->mixfac->box->vtxcoords->x1 + tf(0.01f), lay->blendnode->mixfac->box->vtxcoords->y1 + tf(0.05f) - tf(0.030f), tf(0.0003f), tf(0.0005f));
 				Param *par = lay->blendnode->mixfac;
-				if (lay->blendnode->mixfac->box->in()) {
-					if (mainprogram->menuactivation) {
-						mainprogram->parammenu->state = 2;
-						mainmix->learnparam = par;
-						mainprogram->menuactivation = false;
-					}
-					if (mainprogram->leftmousedown) {
-						mainprogram->leftmousedown = false;
-						mainmix->adaptparam = par;
-						mainmix->prevx = mainprogram->mx;
-					}
-				}
-				draw_box(green, green, par->box->vtxcoords->x1 + par->box->vtxcoords->w * ((par->value - par->range[0]) / (par->range[1] - par->range[0])) - tf(0.00078f), par->box->vtxcoords->y1, tf(0.00156f), par->box->vtxcoords->h, -1);
+				par->handle();
 			}
 				
 			// Draw speed->box
-			draw_box(lay->speed->box, -1);
-			draw_box(white, NULL, lay->speed->box->vtxcoords->x1, lay->speed->box->vtxcoords->y1, lay->speed->box->vtxcoords->w * 0.30f, tf(0.05f), -1);
-			const char *parstr;
-			if (mainmix->learnparam == lay->speed and mainmix->learn) {
-				parstr = "MIDI";
-			}
-			else parstr = "Speed";
-			render_text(parstr, white, lay->speed->box->vtxcoords->x1 + tf(0.01f), lay->speed->box->vtxcoords->y1 + tf(0.05f) - tf(0.030f), tf(0.0003f), tf(0.0005f));
 			Param *par = lay->speed;
-			if (lay->speed->box->in()) {
-				if (mainprogram->menuactivation) {
-					mainprogram->parammenu->state = 2;
-					mainmix->learnparam = par;
-					mainprogram->menuactivation = false;
-				}
-				if (mainprogram->leftmousedown) {
-					mainprogram->leftmousedown = false;
-					mainmix->adaptparam = par;
-					mainmix->prevx = mainprogram->mx;
-				}
-			}
-			draw_box(green, green, par->box->vtxcoords->x1 + par->box->vtxcoords->w * ((par->value - par->range[0]) / (par->range[1] - par->range[0])) - tf(0.00078f), par->box->vtxcoords->y1, tf(0.00156f), par->box->vtxcoords->h, -1);
+			par->handle();
+			draw_box(white, NULL, lay->speed->box->vtxcoords->x1, lay->speed->box->vtxcoords->y1, lay->speed->box->vtxcoords->w * 0.30f, tf(0.05f), -1);
 			
 			// Draw opacity->box
-			draw_box(lay->opacity->box, -1);
-			const char *parstr2;
-			if (mainmix->learnparam == lay->opacity and mainmix->learn) {
-				parstr2 = "MIDI";
-			}
-			else parstr2 = "Opacity";
-			render_text(parstr2, white, lay->opacity->box->vtxcoords->x1 + tf(0.01f), lay->opacity->box->vtxcoords->y1 + tf(0.05f) - tf(0.030f), tf(0.0003f), tf(0.0005f));
 			par = lay->opacity;
-			if (lay->opacity->box->in()) {
-				if (mainprogram->menuactivation) {
-					mainprogram->parammenu->state = 2;
-					mainmix->learnparam = par;
-					mainprogram->menuactivation = false;
-				}
-				if (mainprogram->leftmousedown) {
-					mainprogram->leftmousedown = false;
-					mainmix->adaptparam = par;
-					mainmix->prevx = mainprogram->mx;
-				}
-			}
-			draw_box(green, green, par->box->vtxcoords->x1 + par->box->vtxcoords->w * ((par->value - par->range[0]) / (par->range[1] - par->range[0])) - tf(0.00078f), par->box->vtxcoords->y1, tf(0.00156f), par->box->vtxcoords->h, -1);
+			par->handle();
 			
 			// Draw volume->box
 			if (lay->audioplaying) {
-				draw_box(lay->volume->box, -1);
-				const char *parstr2;
-				if (mainmix->learnparam == lay->volume and mainmix->learn) {
-					parstr2 = "MIDI";
-				}
-				else parstr2 = "Volume";
-				render_text(parstr2, white, lay->volume->box->vtxcoords->x1 + tf(0.01f), lay->volume->box->vtxcoords->y1 + tf(0.05f) - tf(0.030f), tf(0.0003f), tf(0.0005f));
 				par = lay->volume;
-				if (lay->volume->box->in()) {
-					if (mainprogram->menuactivation) {
-						mainprogram->parammenu->state = 2;
-						mainmix->learnparam = par;
-						mainprogram->menuactivation = false;
-					}
-					if (mainprogram->leftmousedown) {
-						mainprogram->leftmousedown = false;
-						mainmix->adaptparam = par;
-						mainmix->prevx = mainprogram->mx;
-					}
-				}
-				draw_box(green, green, par->box->vtxcoords->x1 + par->box->vtxcoords->w * ((par->value - par->range[0]) / (par->range[1] - par->range[0])) - tf(0.00078f), par->box->vtxcoords->y1, tf(0.00156f), par->box->vtxcoords->h, -1);
+				par->handle();
 			}
 				
 			// Draw and handle playbutton revbutton bouncebutton
@@ -3923,8 +3810,15 @@ void midi_set() {
 		else {
 			GLint var = glGetUniformLocation(mainprogram->ShaderProgram, par->shadervar.c_str());
 			glUniform1f(var, par->value);
-			mainmix->midiparam = nullptr;
 		}
+			
+		for (int i = 0; i < loopstation->elems.size(); i++) {
+			if (loopstation->elems[i]->recbut->value) {
+				loopstation->elems[i]->add_param();
+			}
+		}
+		
+		mainmix->midiparam = nullptr;
 	}
 }
 
@@ -4863,7 +4757,7 @@ bool check_thumbs(std::vector<Layer*> &layers, bool deck) {
 						set_queueing(lay, false);
 						if (mainprogram->dragbinel) {
 							if (mainprogram->dragbinel->type == ELEM_LAYER) {
-								open_layerfile(mainprogram->dragbinel->path, lay, 1, 1);
+								mainmix->open_layerfile(mainprogram->dragbinel->path, lay, 1, 1);
 							}
 							else {
 								open_video(0, lay, mainprogram->dragbinel->path, true);
@@ -4883,7 +4777,7 @@ bool check_thumbs(std::vector<Layer*> &layers, bool deck) {
 						if (inlay->pos == mainmix->scrollpos[deck] + 3) mainmix->scrollpos[deck]++;
 						if (mainprogram->dragbinel) {
 							if (mainprogram->dragbinel->type == ELEM_LAYER) {
-								open_layerfile(mainprogram->dragbinel->path, inlay, 1, 1);
+								mainmix->open_layerfile(mainprogram->dragbinel->path, inlay, 1, 1);
 							}
 							else {
 								open_video(0, inlay, mainprogram->dragbinel->path, true);
@@ -4910,7 +4804,7 @@ bool check_thumbs(std::vector<Layer*> &layers, bool deck) {
 							lay = mainmix->add_layer(layers, layers.size());
 							if (mainprogram->dragbinel) {
 								if (mainprogram->dragbinel->type == ELEM_LAYER) {
-									open_layerfile(mainprogram->dragbinel->path, lay, 1, 1);
+									mainmix->open_layerfile(mainprogram->dragbinel->path, lay, 1, 1);
 								}
 								else {
 									open_video(0, lay, mainprogram->dragbinel->path, true);
@@ -5176,12 +5070,12 @@ void make_layboxes() {
 					eff->drywet->box->upvtxtoscr();
 					preveff = eff;
 					
-					for (int k = 0; k < eff->params.size(); k++) {
-						if (eff->params[k]->midi[0] != -1) {
-							eff->params[k]->node->box->vtxcoords->x1 = eff->node->box->vtxcoords->x1 + tf(0.0625f) * (k - eff->params.size() / 2.0f) - tf(0.025);
-							eff->params[k]->node->box->upvtxtoscr();
-						}
-					}
+					//for (int k = 0; k < eff->params.size(); k++) {
+					//	if (eff->params[k]->midi[0] != -1) {
+					//		eff->params[k]->node->box->vtxcoords->x1 = eff->node->box->vtxcoords->x1 + tf(0.0625f) * (k - eff->params.size() / 2.0f) - tf(0.025);
+					//		eff->params[k]->node->box->upvtxtoscr();
+					//	}
+					//}
 				}
 				
 				// Make GUI box of mixing factor slider
@@ -5192,10 +5086,6 @@ void make_layboxes() {
 				testlay->blendnode->mixfac->box->upvtxtoscr();
 				
 				// Make GUI box of video speed slider
-				testlay->speed->box->acolor[0] = 0.5;
-				testlay->speed->box->acolor[1] = 0.2;
-				testlay->speed->box->acolor[2] = 0.5;
-				testlay->speed->box->acolor[3] = 1.0;
 				testlay->speed->box->vtxcoords->x1 = testlay->mixbox->vtxcoords->x1;
 				testlay->speed->box->vtxcoords->y1 = testlay->mixbox->vtxcoords->y1 - tf(0.05f);
 				testlay->speed->box->vtxcoords->w = tf(mainmix->layw) * 0.5f;
@@ -5203,10 +5093,6 @@ void make_layboxes() {
 				testlay->speed->box->upvtxtoscr();
 				
 				// GUI box of layer opacity slider
-				testlay->opacity->box->acolor[0] = 0.5;
-				testlay->opacity->box->acolor[1] = 0.2;
-				testlay->opacity->box->acolor[2] = 0.5;
-				testlay->opacity->box->acolor[3] = 1.0;
 				testlay->opacity->box->vtxcoords->x1 = testlay->mixbox->vtxcoords->x1;
 				testlay->opacity->box->vtxcoords->y1 = testlay->mixbox->vtxcoords->y1 - tf(0.15f);
 				testlay->opacity->box->vtxcoords->w = tf(mainmix->layw) * 0.25f;
@@ -5214,10 +5100,6 @@ void make_layboxes() {
 				testlay->opacity->box->upvtxtoscr();
 				
 				// GUI box of layer audio volume slider
-				testlay->volume->box->acolor[0] = 0.5;
-				testlay->volume->box->acolor[1] = 0.2;
-				testlay->volume->box->acolor[2] = 0.5;
-				testlay->volume->box->acolor[3] = 1.0;
 				testlay->volume->box->vtxcoords->x1 = testlay->mixbox->vtxcoords->x1 + tf(mainmix->layw) * 0.30f;
 				testlay->volume->box->vtxcoords->y1 = testlay->mixbox->vtxcoords->y1 - tf(0.15f);
 				testlay->volume->box->vtxcoords->w = tf(mainmix->layw) * 0.25f;
@@ -5845,7 +5727,7 @@ void Mixer::delete_layer(std::vector<Layer*> &layers, Layer *testlay, bool add) 
 Effect::Effect() {
 	Box *box = new Box;
 	this->box = box;
-	box->vtxcoords->w = tf(mainmix->layw);
+	box->vtxcoords->w = tf(0.2f);
 	box->vtxcoords->h = tf(0.05f);
 	box->upvtxtoscr();
 	this->onoffbutton = new Button(true);
@@ -6716,11 +6598,38 @@ Box::~Box() {
 Button::Button(bool state) {
 	this->box = new Box;
 	this->value = state;
+	this->ccol[3] = 1.0f;
 }
 
 Button::~Button() {
 	delete this->box;
 }
+
+Button::draw(bool circlein) {
+	if (this->box->in()) {
+		this->box->acolor[0] = 0.5;
+		this->box->acolor[1] = 0.5;
+		this->box->acolor[2] = 1.0;
+		this->box->acolor[3] = 1.0;
+	}
+	else {
+		this->box->acolor[0] = 0.0;
+		this->box->acolor[1] = 0.0;
+		this->box->acolor[2] = 0.0;
+		this->box->acolor[3] = 1.0;
+	}
+	draw_box(this->box, -1);
+	
+	if (circlein) {
+		float radx = this->box->vtxcoords->w / 2.0f;
+		float rady = this->box->vtxcoords->h / 2.0f;
+		if (this->value) {
+			draw_box(this->ccol, this->box->vtxcoords->x1 + radx, this->box->vtxcoords->y1 + rady, tf(0.015f), 1);
+		}	
+		else draw_box(this->ccol, this->box->vtxcoords->x1 + radx, this->box->vtxcoords->y1 + rady, tf(0.015f), 2);
+	}
+}
+
 
 void Box::upscrtovtx() {
 	int hw = w / 2;
@@ -6776,10 +6685,41 @@ Clip::~Clip() {
 
 Param::Param() {
 	this->box = new Box;
+	this->box->acolor[0] = 0.2;
+	this->box->acolor[1] = 0.2;
+	this->box->acolor[2] = 0.2;
+	this->box->acolor[3] = 1.0;
+	if (loopstation) loopstation->allparams.push_back(this);
 }
 
 Param::~Param() {
 	delete this->box;
+	loopstation->allparams.erase(std::find(loopstation->allparams.begin(), loopstation->allparams.end(), this));
+}
+
+Param::handle() {
+	float green[4] = {0.0, 1.0, 0.2, 1.0};
+	float white[4] = {1.0, 1.0, 1.0, 1.0};
+	std::string parstr;
+	draw_box(this->box, -1);
+	if (mainmix->learnparam == this and mainmix->learn) {
+		parstr = "MIDI";
+	}
+	else parstr = this->name;
+	render_text(parstr, white, this->box->vtxcoords->x1 + tf(0.01f), this->box->vtxcoords->y1 + tf(0.05f) - tf(0.030f), tf(0.0003f), tf(0.0005f));
+	if (this->box->in()) {
+		if (mainprogram->leftmousedown) {
+			mainprogram->leftmousedown = false;
+			mainmix->adaptparam = this;
+			mainmix->prevx = mainprogram->mx;
+		}
+		if (mainprogram->menuactivation) {
+			mainprogram->parammenu->state = 2;
+			mainmix->learnparam = this;
+			mainprogram->menuactivation = false;
+		}
+	}
+	draw_box(green, green, this->box->vtxcoords->x1 + this->box->vtxcoords->w * ((this->value - this->range[0]) / (this->range[1] - this->range[0])) - tf(0.00078f), this->box->vtxcoords->y1, 2.0f / w, this->box->vtxcoords->h, -1);
 }
 
 
@@ -7640,8 +7580,8 @@ void handle_numboxes(std::vector<Box*> &numboxes) {
 								mainmix->nbframesA[mainmix->page[0]].push_back(lvec[j]);
 							}
 							mainmix->mousedeck = 0;
-							save_deck(temppath + "tempdeck_xch.deck");
-							open_deck(temppath + "tempdeck_A" + std::to_string(i) + comp + ".deck", 0);
+							mainmix->save_deck(temppath + "tempdeck_xch.deck");
+							mainmix->open_deck(temppath + "tempdeck_A" + std::to_string(i) + comp + ".deck", 0);
 							boost::filesystem::rename(temppath + "tempdeck_xch.deck", temppath + "tempdeck_A" + std::to_string(mainmix->page[0] + 1) + comp + ".deck");
 							for (int j = 0; j < lvec.size(); j++) {
 								lvec[j]->frame = mainmix->tempnbframes[i - 1][j]->frame;
@@ -7662,8 +7602,8 @@ void handle_numboxes(std::vector<Box*> &numboxes) {
 								mainmix->nbframesB[mainmix->page[1]].push_back(lvec[j]);
 							}
 							mainmix->mousedeck = 1;
-							save_deck(temppath + "tempdeck_xch.deck");
-							open_deck(temppath + "tempdeck_B" + std::to_string(i) + comp + ".deck", 0);
+							mainmix->save_deck(temppath + "tempdeck_xch.deck");
+							mainmix->open_deck(temppath + "tempdeck_B" + std::to_string(i) + comp + ".deck", 0);
 							boost::filesystem::rename(temppath + "tempdeck_xch.deck", temppath + "tempdeck_B" + std::to_string(mainmix->page[1] + 1) + comp + ".deck");
 							for (int j = 0; j < lvec.size(); j++) {
 								lvec[j]->frame = mainmix->tempnbframes[i - 1][j]->frame;
@@ -8444,104 +8384,106 @@ int tune_midi() {
 			break;
 	}
 	
-	//draw scratchwheel
-	draw_box(white, black, mainprogram->tmplay, -1);
-	if (mainprogram->tmchoice == TM_PLAY) draw_box(white, green, mainprogram->tmplay, -1);
-	if (mainprogram->tmplay->in(mx, my)) {
-		draw_box(white, lightblue, mainprogram->tmplay, -1);
-		if (mainprogram->lmsave) {
-			mainprogram->tmlearn = TM_PLAY;
-		}
-	}
-	draw_triangle(white, white, 0.125f, -0.83f, 0.06f, 0.12f, RIGHT, CLOSED);
-	draw_box(white, black, mainprogram->tmbackw, -1);
-	if (mainprogram->tmchoice == TM_BACKW) draw_box(white, green, mainprogram->tmbackw, -1);
-	if (mainprogram->tmbackw->in(mx, my)) {
-		draw_box(white, lightblue, mainprogram->tmbackw, -1);
-		if (mainprogram->lmsave) {
-			mainprogram->tmlearn = TM_BACKW;
-		}
-	}
-	draw_triangle(white, white, -0.185f, -0.83f, 0.06f, 0.12f, LEFT, CLOSED);
-	draw_box(white, black, mainprogram->tmbounce, -1);
-	if (mainprogram->tmchoice == TM_BOUNCE) draw_box(white, green, mainprogram->tmbounce, -1);
-	if (mainprogram->tmbounce->in(mx, my)) {
-		draw_box(white, lightblue, mainprogram->tmbounce, -1);
-		if (mainprogram->lmsave) {
-			mainprogram->tmlearn = TM_BOUNCE;
-		}
-	}
-	draw_triangle(white, white, -0.045f, -0.83f, 0.04f, 0.12f, LEFT, CLOSED);
-	draw_triangle(white, white, 0.01f, -0.83f, 0.04f, 0.12f, RIGHT, CLOSED);
-	draw_box(white, black, mainprogram->tmfrforw, -1);
-	if (mainprogram->tmchoice == TM_FRFORW) draw_box(white, green, mainprogram->tmfrforw, -1);
-	if (mainprogram->tmfrforw->in(mx, my)) {
-		draw_box(white, lightblue, mainprogram->tmfrforw, -1);
-		if (mainprogram->lmsave) {
-			mainprogram->tmlearn = TM_FRFORW;
-		}
-	}
-	draw_triangle(white, white, 0.275f, -0.83f, 0.06f, 0.12f, RIGHT, OPEN);
-	draw_box(white, black, mainprogram->tmfrbackw, -1);
-	if (mainprogram->tmchoice == TM_FRBACKW) draw_box(white, green, mainprogram->tmfrbackw, -1);
-	if (mainprogram->tmfrbackw->in(mx, my)) {
-		draw_box(white, lightblue, mainprogram->tmfrbackw, -1);
-		if (mainprogram->lmsave) {
-			mainprogram->tmlearn = TM_FRBACKW;
-		}
-	}
-	draw_triangle(white, white, -0.335f, -0.83f, 0.06f, 0.12f, LEFT, OPEN);
-	draw_box(white, black, mainprogram->tmspeed, -1);
-	if (mainprogram->tmchoice == TM_SPEED) draw_box(white, green, mainprogram->tmspeed, -1);
-	if (mainprogram->tmspeedzero->in(mx, my)) {
-		draw_box(white, lightblue, mainprogram->tmspeedzero, -1);
-		if (mainprogram->lmsave) {
-			mainprogram->tmlearn = TM_SPEEDZERO;
-		}
-	}
-	else if (mainprogram->tmspeed->in(mx, my)) {
-		draw_box(white, lightblue, mainprogram->tmspeed, -1);
-		if (mainprogram->lmsave) {
-			mainprogram->tmlearn = TM_SPEED;
-		}
-		draw_box(white, black, mainprogram->tmspeedzero, -1);
-		if (mainprogram->tmchoice == TM_SPEEDZERO) draw_box(white, green, mainprogram->tmspeedzero, -1);
-	}
-	else {
-		draw_box(white, black, mainprogram->tmspeedzero, -1);
-		if (mainprogram->tmchoice == TM_SPEEDZERO) draw_box(white, green, mainprogram->tmspeedzero, -1);
-	}
-	render_text("ONE", white, -0.755f, -0.08f, 0.0024f, 0.004f, 1);
-	render_text("SPEED", white, -0.765f, -0.48f, 0.0024f, 0.004f, 1);
-	draw_box(white, black, mainprogram->tmopacity, -1);
-	if (mainprogram->tmchoice == TM_OPACITY) draw_box(white, green, mainprogram->tmopacity, -1);
-	if (mainprogram->tmopacity->in(mx, my)) {
-		draw_box(white, lightblue, mainprogram->tmopacity, -1);
-		if (mainprogram->lmsave) {
-			mainprogram->tmlearn = TM_OPACITY;
-		}
-	}
-	render_text("OPACITY", white, 0.605f, -0.48f, 0.0024f, 0.004f, 1);
-	if (mainprogram->tmfreeze->in(mx, my)) {
-		draw_box(white, lightblue, mainprogram->tmfreeze, -1);
-		if (mainprogram->lmsave) {
-			mainprogram->tmlearn = TM_FREEZE;
-		}
-	}
-	else {
-		if (mainprogram->tmchoice == TM_SCRATCH) draw_box(green, 0.0f, 0.1f, 0.6f, 1);
-		if (sqrt(pow((mx / (w / 2.0f) - 1.0f) * w / h, 2) + pow((h - my) / (h / 2.0f) - 1.1f, 2)) < 0.6f) {
-			draw_box(lightblue, 0.0f, 0.1f, 0.6f, 1, smw, smh);
+	if (mainprogram->tmlearn == TM_NONE) {
+		//draw scratchwheel
+		draw_box(white, black, mainprogram->tmplay, -1);
+		if (mainprogram->tmchoice == TM_PLAY) draw_box(white, green, mainprogram->tmplay, -1);
+		if (mainprogram->tmplay->in(mx, my)) {
+			draw_box(white, lightblue, mainprogram->tmplay, -1);
 			if (mainprogram->lmsave) {
-				mainprogram->tmlearn = TM_SCRATCH;
+				mainprogram->tmlearn = TM_PLAY;
 			}
 		}
-		draw_box(white, black, mainprogram->tmfreeze, -1);
-		if (mainprogram->tmchoice == TM_FREEZE) draw_box(white, green, mainprogram->tmfreeze, -1);
+		draw_triangle(white, white, 0.125f, -0.83f, 0.06f, 0.12f, RIGHT, CLOSED);
+		draw_box(white, black, mainprogram->tmbackw, -1);
+		if (mainprogram->tmchoice == TM_BACKW) draw_box(white, green, mainprogram->tmbackw, -1);
+		if (mainprogram->tmbackw->in(mx, my)) {
+			draw_box(white, lightblue, mainprogram->tmbackw, -1);
+			if (mainprogram->lmsave) {
+				mainprogram->tmlearn = TM_BACKW;
+			}
+		}
+		draw_triangle(white, white, -0.185f, -0.83f, 0.06f, 0.12f, LEFT, CLOSED);
+		draw_box(white, black, mainprogram->tmbounce, -1);
+		if (mainprogram->tmchoice == TM_BOUNCE) draw_box(white, green, mainprogram->tmbounce, -1);
+		if (mainprogram->tmbounce->in(mx, my)) {
+			draw_box(white, lightblue, mainprogram->tmbounce, -1);
+			if (mainprogram->lmsave) {
+				mainprogram->tmlearn = TM_BOUNCE;
+			}
+		}
+		draw_triangle(white, white, -0.045f, -0.83f, 0.04f, 0.12f, LEFT, CLOSED);
+		draw_triangle(white, white, 0.01f, -0.83f, 0.04f, 0.12f, RIGHT, CLOSED);
+		draw_box(white, black, mainprogram->tmfrforw, -1);
+		if (mainprogram->tmchoice == TM_FRFORW) draw_box(white, green, mainprogram->tmfrforw, -1);
+		if (mainprogram->tmfrforw->in(mx, my)) {
+			draw_box(white, lightblue, mainprogram->tmfrforw, -1);
+			if (mainprogram->lmsave) {
+				mainprogram->tmlearn = TM_FRFORW;
+			}
+		}
+		draw_triangle(white, white, 0.275f, -0.83f, 0.06f, 0.12f, RIGHT, OPEN);
+		draw_box(white, black, mainprogram->tmfrbackw, -1);
+		if (mainprogram->tmchoice == TM_FRBACKW) draw_box(white, green, mainprogram->tmfrbackw, -1);
+		if (mainprogram->tmfrbackw->in(mx, my)) {
+			draw_box(white, lightblue, mainprogram->tmfrbackw, -1);
+			if (mainprogram->lmsave) {
+				mainprogram->tmlearn = TM_FRBACKW;
+			}
+		}
+		draw_triangle(white, white, -0.335f, -0.83f, 0.06f, 0.12f, LEFT, OPEN);
+		draw_box(white, black, mainprogram->tmspeed, -1);
+		if (mainprogram->tmchoice == TM_SPEED) draw_box(white, green, mainprogram->tmspeed, -1);
+		if (mainprogram->tmspeedzero->in(mx, my)) {
+			draw_box(white, lightblue, mainprogram->tmspeedzero, -1);
+			if (mainprogram->lmsave) {
+				mainprogram->tmlearn = TM_SPEEDZERO;
+			}
+		}
+		else if (mainprogram->tmspeed->in(mx, my)) {
+			draw_box(white, lightblue, mainprogram->tmspeed, -1);
+			if (mainprogram->lmsave) {
+				mainprogram->tmlearn = TM_SPEED;
+			}
+			draw_box(white, black, mainprogram->tmspeedzero, -1);
+			if (mainprogram->tmchoice == TM_SPEEDZERO) draw_box(white, green, mainprogram->tmspeedzero, -1);
+		}
+		else {
+			draw_box(white, black, mainprogram->tmspeedzero, -1);
+			if (mainprogram->tmchoice == TM_SPEEDZERO) draw_box(white, green, mainprogram->tmspeedzero, -1);
+		}
+		render_text("ONE", white, -0.755f, -0.08f, 0.0024f, 0.004f, 1);
+		render_text("SPEED", white, -0.765f, -0.48f, 0.0024f, 0.004f, 1);
+		draw_box(white, black, mainprogram->tmopacity, -1);
+		if (mainprogram->tmchoice == TM_OPACITY) draw_box(white, green, mainprogram->tmopacity, -1);
+		if (mainprogram->tmopacity->in(mx, my)) {
+			draw_box(white, lightblue, mainprogram->tmopacity, -1);
+			if (mainprogram->lmsave) {
+				mainprogram->tmlearn = TM_OPACITY;
+			}
+		}
+		render_text("OPACITY", white, 0.605f, -0.48f, 0.0024f, 0.004f, 1);
+		if (mainprogram->tmfreeze->in(mx, my)) {
+			draw_box(white, lightblue, mainprogram->tmfreeze, -1);
+			if (mainprogram->lmsave) {
+				mainprogram->tmlearn = TM_FREEZE;
+			}
+		}
+		else {
+			if (mainprogram->tmchoice == TM_SCRATCH) draw_box(green, 0.0f, 0.1f, 0.6f, 1);
+			if (sqrt(pow((mx / (w / 2.0f) - 1.0f) * w / h, 2) + pow((h - my) / (h / 2.0f) - 1.1f, 2)) < 0.6f) {
+				draw_box(lightblue, 0.0f, 0.1f, 0.6f, 1, smw, smh);
+				if (mainprogram->lmsave) {
+					mainprogram->tmlearn = TM_SCRATCH;
+				}
+			}
+			draw_box(white, black, mainprogram->tmfreeze, -1);
+			if (mainprogram->tmchoice == TM_FREEZE) draw_box(white, green, mainprogram->tmfreeze, -1);
+		}
+		draw_box(white, 0.0f, 0.1f, 0.6f, 2, smw, smh);
+		render_text("SCRATCH", white, -0.1f, -0.3f, 0.0024f, 0.004f, 1);
+		render_text("FREEZE", white, -0.08f, 0.12f, 0.0024f, 0.004f, 1);
 	}
-	draw_box(white, 0.0f, 0.1f, 0.6f, 2, smw, smh);
-	render_text("SCRATCH", white, -0.1f, -0.3f, 0.0024f, 0.004f, 1);
-	render_text("FREEZE", white, -0.08f, 0.12f, 0.0024f, 0.004f, 1);
 	
 	Box box;
 	box.vtxcoords->x1 = 0.75f;
@@ -9429,12 +9371,12 @@ void the_loop() {
 		else if (k == 0 and mainprogram->menuset == 3) {
 			mainprogram->binsscreen = false;
 			mainmix->mousedeck = 0;
-			open_deck(mainprogram->movingdeck->path, 1);
+			mainmix->open_deck(mainprogram->movingdeck->path, 1);
 		}
 		else if (k == 1 and mainprogram->menuset == 3) {
 			mainprogram->binsscreen = false;
 			mainmix->mousedeck = 1;
-			open_deck(mainprogram->movingdeck->path, 1);
+			mainmix->open_deck(mainprogram->movingdeck->path, 1);
 		}
 		else if (k == 2 and mainprogram->menuset == 3) {
 			for (int j = 0; j < mainprogram->movingdeck->height; j++) {
@@ -9451,7 +9393,7 @@ void the_loop() {
 		}
 		else if (k == 0 and mainprogram->menuset == 2) {
 			mainprogram->binsscreen = false;
-			open_mix(mainprogram->movingmix->path.c_str());
+			mainmix->open_mix(mainprogram->movingmix->path.c_str());
 		}
 		else if (k == 1 and mainprogram->menuset == 2) {
 			for (int j = 0; j < mainprogram->movingmix->height; j++) {
@@ -9621,7 +9563,7 @@ void the_loop() {
 								mainprogram->prelay->lasteffnode = mainprogram->prelay->node;
 								mainprogram->prelay->node->calc = true;
 								mainprogram->prelay->node->walked = false;
-								open_layerfile(binel->path, mainprogram->prelay, true, 0);
+								mainmix->open_layerfile(binel->path, mainprogram->prelay, true, 0);
 								mainprogram->prelay->playbut->value = false;
 								mainprogram->prelay->revbut->value = false;
 								mainprogram->prelay->bouncebut->value = false;
@@ -10232,7 +10174,7 @@ void the_loop() {
 							while (1) {
 								mainprogram->currbinel->path = temppath + mainprogram->currbin->name + "_" + name + ".layer";
 								if (!exists(mainprogram->currbinel->path)) {
-									save_layerfile(mainprogram->currbinel->path, lay, 1);
+									mainmix->save_layerfile(mainprogram->currbinel->path, lay, 1);
 									break;
 								}
 								count++;
@@ -10325,7 +10267,7 @@ void the_loop() {
 											while (1) {
 												deckbinel->path = temppath + mainprogram->currbin->name + "_" + name + ".layer";
 												if (!exists(deckbinel->path)) {
-													save_layerfile(deckbinel->path, lvec[k], 1);
+													mainmix->save_layerfile(deckbinel->path, lvec[k], 1);
 													break;
 												}
 												count++;
@@ -10339,7 +10281,7 @@ void the_loop() {
 										bm->path = path;
 										bm->j = mainprogram->prevj;
 										bm->height = max((int)((mainprogram->inserttexes[0].size() - 1) / 3), (int)((mainprogram->inserttexes[1].size() - 1) / 3)) + 1;
-										save_mix(path);
+										mainmix->save_mix(path);
 									}
 									else {
 										bd = new BinDeck;
@@ -10348,7 +10290,7 @@ void the_loop() {
 										bd->i = (int)(mainprogram->previ / 3) * 3;
 										bd->j = mainprogram->prevj;
 										bd->height = (int)((mainprogram->inserttexes[deck].size() - 1) / 3) + 1;
-										save_deck(path);
+										mainmix->save_deck(path);
 									}
 									break;
 								}
@@ -10463,6 +10405,12 @@ void the_loop() {
 				mainmix->midiparam = nullptr;
 			}
 			
+			for (int i = 0; i < loopstation->elems.size(); i++) {
+				if (loopstation->elems[i]->recbut->value) {
+					loopstation->elems[i]->add_param();
+				}
+			}
+			
 			if (mainprogram->leftmouse) {
 				mainprogram->leftmouse = false;
 				mainmix->adaptparam = nullptr;
@@ -10564,10 +10512,10 @@ void the_loop() {
 			for(int j = 0; j < lay->effects.size(); j++) {
 				eff = lay->effects[j];
 				box = eff->box;
-				eff->box->acolor[0] = 0.75;
-				eff->box->acolor[1] = 0.0;
-				eff->box->acolor[2] = 0.0;
-				eff->box->acolor[3] = 1.0;
+				eff->box->acolor[0] = 0.75f;
+				eff->box->acolor[1] = 0.0f;
+				eff->box->acolor[2] = 0.0f;
+				eff->box->acolor[3] = 1.0f;
 				if (!mainprogram->menuondisplay) {
 					if (box->scrcoords->x1 < mainprogram->mx and mainprogram->mx < box->scrcoords->x1 + box->scrcoords->w) {
 						if (box->scrcoords->y1 - box->scrcoords->h + 7.5 <= mainprogram->my and mainprogram->my <= box->scrcoords->y1 - 7.5) {
@@ -10971,6 +10919,7 @@ void the_loop() {
 			Box box;
 			Box boxbefore;
 			Box boxafter;
+			Box boxlayer;
 			int size = lvec.size() + 1;
 			if (size < 3) size = 3;
 			box.vtxcoords->x1 = -1.0f + mainmix->numw + i + mainmix->scrollpos[i] * (mainmix->layw * 3.0f / size); 
@@ -10998,6 +10947,16 @@ void the_loop() {
 			}
 			else {
 				draw_box(white, grey, &box, -1);
+			}
+			boxlayer.vtxcoords->y1 = 1.0f - mainmix->layw - 0.05f;
+			boxlayer.vtxcoords->w = 3.0f / size * mainmix->layw;
+			boxlayer.vtxcoords->h = 0.05f;
+			for (int j = 0; j < lvec.size(); j++) {
+				if (mainmix->scrollpos[i] <= j and j < mainmix->scrollpos[i]+ 3) {
+					boxlayer.vtxcoords->x1 = -1.0f + mainmix->numw + i + (j + mainmix->scrollpos[i]) * (mainmix->layw * 3.0f / size); 
+					boxlayer.upvtxtoscr();
+					draw_box(white, lvec[j]->scrollcol, &boxlayer, -1);
+				}
 			}
 			box.vtxcoords->w /= 3.0f;
 			if (mainmix->scrollon == i + 1) {
@@ -11688,7 +11647,7 @@ void the_loop() {
 								while (1) {
 									mainprogram->dragpath = mainprogram->binsdir + "cliptemp_" + name + ".layer";
 									if (!exists(mainprogram->dragpath)) {
-										save_layerfile(mainprogram->dragpath, mainprogram->draglay, 1);
+										mainmix->save_layerfile(mainprogram->dragpath, mainprogram->draglay, 1);
 										break;
 									}
 									count++;
@@ -11875,14 +11834,14 @@ void the_loop() {
 				draw_box(nullptr, lightblue, -1.0f + mainmix->numw, 1.0f - mainmix->layw, mainmix->layw * 3, mainmix->layw, -1);
 				if (mainprogram->leftmouse) {
 					mainmix->mousedeck = 0;
-					open_deck(mainprogram->dragdeck->path, 1);
+					mainmix->open_deck(mainprogram->dragdeck->path, 1);
 				}
 			}
 			else if (boxB.in()) {
 				draw_box(nullptr, lightblue, mainmix->numw, 1.0f - mainmix->layw, mainmix->layw * 3, mainmix->layw, -1);
 				if (mainprogram->leftmouse) {
 					mainmix->mousedeck = 1;
-					open_deck(mainprogram->dragdeck->path, 1);
+					mainmix->open_deck(mainprogram->dragdeck->path, 1);
 				}
 			}
 		}
@@ -11922,7 +11881,7 @@ void the_loop() {
 		if (mainprogram->leftmouse or mainprogram->movingstruct) {
 			if (sqrt(pow((mainprogram->mx / (w / 2.0f) - 1.0f) * w / h, 2) + pow((h - mainprogram->my) / (h / 2.0f) - 1.25f, 2)) < 0.2f) {
 				mainprogram->binsscreen = false;
-				open_mix(mainprogram->dragmix->path.c_str());
+				mainmix->open_mix(mainprogram->dragmix->path.c_str());
 				mainprogram->dragmix = nullptr;
 			}
 			for (int m = 0; m < 2; m++) {
@@ -12078,6 +12037,10 @@ void the_loop() {
 		glDrawArrays(GL_TRIANGLE_STRIP, 0, 4);
 		glUniform1i(thumb, 0);
 	}
+	
+	
+	// draw and handle loopstation
+	loopstation->handle();
 			
 			
 	// draw close window icon?
@@ -12124,7 +12087,7 @@ void the_loop() {
 			double time_taken = ((double)t) / CLOCKS_PER_SEC; // in seconds
 			if (time_taken > 0.1f) {
 				mainprogram->waitmidi = 2;
-				mycallback(0.0f, &mainprogram->savedmessage, nullptr);
+				mycallback(0.0f, &mainprogram->savedmessage, mainprogram->savedmidiitem);
 				mainprogram->waitmidi = 0;
 			}
 		}
@@ -12150,7 +12113,7 @@ void the_loop() {
 }
 
 
-std::vector<std::string> write_layer(Layer *lay, ostream& wfile, bool doclips) {
+std::vector<std::string> Mixer::write_layer(Layer *lay, ostream& wfile, bool doclips) {
 	wfile << "POS\n";
 	wfile << std::to_string(lay->pos);
 	wfile << "\n";
@@ -12347,6 +12310,7 @@ std::vector<std::string> write_layer(Layer *lay, ostream& wfile, bool doclips) {
 			wfile << "MIDIPORT\n";
 			wfile << par->midiport;
 			wfile << "\n";
+			mainmix->event_write(wfile, par);
 		}
 		wfile << "ENDOFPARAMS\n";
 	}
@@ -12354,7 +12318,7 @@ std::vector<std::string> write_layer(Layer *lay, ostream& wfile, bool doclips) {
 	return jpegpaths;
 }
 
-void save_layerfile(const std::string &path, Layer *lay, bool doclips) {
+Mixer::save_layerfile(const std::string &path, Layer *lay, bool doclips) {
 	std::string ext = path.substr(path.length() - 6, std::string::npos);
 	std::string str;
 	if (ext != ".layer") str = path + ".layer";
@@ -12364,7 +12328,7 @@ void save_layerfile(const std::string &path, Layer *lay, bool doclips) {
 	wfile << "EWOCvj LAYERFILE V0.2\n";
 		
 	std::vector<std::vector<std::string>> jpegpaths;
-	jpegpaths.push_back(write_layer(lay, wfile, doclips));
+	jpegpaths.push_back(mainmix->write_layer(lay, wfile, doclips));
 	
 	wfile << "ENDOFFILE\n";
 	wfile.close();
@@ -12376,7 +12340,7 @@ void save_layerfile(const std::string &path, Layer *lay, bool doclips) {
 	boost::filesystem::rename(temppath + "tempconcat", str);
 }
 
-void save_state(const std::string &path) {
+Mixer::save_state(const std::string &path) {
 	std::vector<std::string> filestoadd;
 	std::string ext = path.substr(path.length() - 6, std::string::npos);
 	std::string str;
@@ -12401,11 +12365,11 @@ void save_state(const std::string &path) {
 	filestoadd.push_back(temppath + "temp.shelf");
 	bool save = mainprogram->preveff;
 	mainprogram->preveff = true;
-	save_mix(temppath + "temp.state1");
+	mainmix->save_mix(temppath + "temp.state1");
 	filestoadd.push_back(temppath + "temp.state1.ewoc");
 	if (mainmix->compon) {
 		mainprogram->preveff = false;
-		save_mix(temppath + "temp.state2");
+		mainmix->save_mix(temppath + "temp.state2");
 		filestoadd.push_back(temppath + "temp.state2.ewoc");
 	}
 	//save_genmidis(remove_extension(path) + ".midi");
@@ -12420,7 +12384,88 @@ void save_state(const std::string &path) {
 	boost::filesystem::rename(temppath + "tempconcatstate", str);
 }
 
-void save_mix(const std::string &path) {
+Mixer::event_write(std::ostream &wfile, Param *par) {
+	for (int i = 0; i < loopstation->elems.size(); i++) {
+		LoopStationElement *elem = loopstation->elems[i];
+		if (std::find(elem->params.begin(), elem->params.end(), par) != elem->params.end()) {
+			wfile << "EVENTELEM\n";
+			wfile << std::to_string(i);
+			wfile << "\n";
+			wfile << std::to_string(elem->loopbut->value);
+			wfile << "\n";
+			wfile << std::to_string(elem->playbut->value);
+			wfile << "\n";
+			wfile << std::to_string(elem->speed->value);
+			wfile << "\n";
+			for (int j = 0; j < elem->eventlist.size(); j++) {
+				wfile << std::to_string(std::get<0>(elem->eventlist[j]));
+				wfile << "\n";
+				wfile << std::to_string(std::get<2>(elem->eventlist[j]));
+				wfile << "\n";
+			}
+			wfile << "ENDOFEVENT\n";
+		}
+	}
+}
+
+Mixer::event_read(std::istream &rfile, Param *par, Layer *lay) {
+	std::string istring;
+	if (istring == "EVENTELEM") {
+		LoopStationElement *loop = nullptr;
+		getline(rfile, istring);
+		int elemnr = std::stoi(istring);
+		if (std::find(loopstation->readelemnrs.begin(), loopstation->readelemnrs.end(), elemnr) == loopstation->readelemnrs.end()) {
+			loop = loopstation->free_element();
+			loopstation->readelemnrs.push_back(elemnr);
+			loopstation->readelems.push_back(loop);
+		}
+		else loop = loopstation->readelems[std::find(loopstation->readelemnrs.begin(), loopstation->readelemnrs.end(), elemnr) - loopstation->readelemnrs.begin()];
+		getline(rfile, istring);
+		if (loop) {
+			loop->loopbut->value = std::stoi(istring);
+			if (loop->loopbut->value) {
+				loop->eventpos = 0;
+				loop->starttime = std::chrono::high_resolution_clock::now();
+			}
+		}
+		getline(rfile, istring);
+		if (loop) {
+			loop->playbut->value = std::stoi(istring);
+			if (loop->playbut->value) {
+				loop->eventpos = 0;
+				loop->starttime = std::chrono::high_resolution_clock::now();
+			}
+		}
+		getline(rfile, istring);
+		if (loop) {
+			loop->speed->value = std::stof(istring);
+			loop->layers.push_back(lay);
+		}
+		while (getline(rfile, istring)) {
+			if (istring == "ENDOFEVENT") break;
+			int time = std::stoi(istring);
+			getline(rfile, istring);
+			float value = std::stof(istring);
+			bool inserted = false;
+			if (loop) {
+				for (int i = 0; i < loop->eventlist.size(); i++) {
+					if (time < std::get<0>(loop->eventlist[i])) {
+						loop->eventlist.insert(loop->eventlist.begin() + i, std::make_tuple(time, par, value));
+						inserted = true;
+						break;
+					}
+				}
+				if (!inserted) loop->eventlist.insert(loop->eventlist.end(), std::make_tuple(time, par, value));
+				par->box->acolor[0] = loop->colbox->acolor[0];
+				par->box->acolor[1] = loop->colbox->acolor[1];
+				par->box->acolor[2] = loop->colbox->acolor[2];
+				par->box->acolor[3] = loop->colbox->acolor[3];
+			}
+		}
+	}
+}
+
+Mixer::save_mix(const std::string &path) {
 	std::string ext = path.substr(path.length() - 5, std::string::npos);
 	std::string str;
 	if (ext != ".ewoc") str = path + ".ewoc";
@@ -12438,9 +12483,15 @@ void save_mix(const std::string &path) {
 	wfile << "CROSSFADE\n";
 	wfile << std::to_string(mainmix->crossfade->value);
 	wfile << "\n";
+	wfile << "CROSSFADEEVENT\n";
+	Param *par = mainmix->crossfade;
+	mainmix->event_write(wfile, par);
 	wfile << "CROSSFADECOMP\n";
 	wfile << std::to_string(mainmix->crossfadecomp->value);
 	wfile << "\n";
+	wfile << "CROSSFADECOMPEVENT\n";
+	par = mainmix->crossfadecomp;
+	mainmix->event_write(wfile, par);
 	wfile << "WIPE\n";
 	wfile << std::to_string(mainmix->wipe[0]);
 	wfile << "\n";
@@ -12459,14 +12510,14 @@ void save_mix(const std::string &path) {
 	std::vector<Layer*> &lvec1 = choose_layers(0);
 	for (int i = 0; i < lvec1.size(); i++) {
 		Layer *lay = lvec1[i];
-		jpegpaths.push_back(write_layer(lay, wfile, 1));
+		jpegpaths.push_back(mainmix->write_layer(lay, wfile, 1));
 	}
 	
 	wfile << "LAYERSB\n";
 	std::vector<Layer*> &lvec2 = choose_layers(1);
 	for (int i = 0; i < lvec2.size(); i++) {
 		Layer *lay = lvec2[i];
-		jpegpaths.push_back(write_layer(lay, wfile, 1));
+		jpegpaths.push_back(mainmix->write_layer(lay, wfile, 1));
 	}
 	
 	wfile << "ENDOFFILE\n";
@@ -12479,7 +12530,7 @@ void save_mix(const std::string &path) {
 	boost::filesystem::rename("./tempconcat", str);
 }
 
-void save_deck(const std::string &path) {
+Mixer::save_deck(const std::string &path) {
 	std::string ext = path.substr(path.length() - 5, std::string::npos);
 	std::string str;
 	if (ext != ".deck") str = path + ".deck";
@@ -12492,7 +12543,7 @@ void save_deck(const std::string &path) {
 	std::vector<Layer*> &lvec = choose_layers(mainmix->mousedeck);
 	for (int i = 0; i < lvec.size(); i++) {
 		Layer *lay = lvec[i];
-		jpegpaths.push_back(write_layer(lay, wfile, 1));
+		jpegpaths.push_back(mainmix->write_layer(lay, wfile, 1));
 	}
 	
 	wfile << "ENDOFFILE\n";
@@ -12505,7 +12556,7 @@ void save_deck(const std::string &path) {
 	boost::filesystem::rename("./tempconcat", str);
 }
 
-void open_layerfile(const std::string &path, Layer *lay, int reset, bool doclips) {
+Mixer::open_layerfile(const std::string &path, Layer *lay, int reset, bool doclips) {
 	std::string result = deconcat_files(path);
 	bool concat = (result != "");
 	ifstream rfile;
@@ -12531,14 +12582,16 @@ void open_layerfile(const std::string &path, Layer *lay, int reset, bool doclips
 		lay->effects.pop_back();
 	}
 	
+	loopstation->readelems.clear();
+	loopstation->readelemnrs.clear();
 	std::vector<Layer*> layers;
 	layers.push_back(lay);
-	read_layers(rfile, result, layers, lay->deck, 0, doclips, concat);
+	mainmix->read_layers(rfile, result, layers, lay->deck, 0, doclips, concat);
 	
 	rfile.close();
 }
 
-void open_state(const std::string &path) {
+Mixer::open_state(const std::string &path) {
 	std::string result = deconcat_files(path);
 	bool concat = (result != "");
 	ifstream rfile;
@@ -12550,10 +12603,10 @@ void open_state(const std::string &path) {
 	
 	open_shelf(result + "_0.file");
 	mainprogram->preveff = true;
-	open_mix(result + "_1.file");
+	mainmix->open_mix(result + "_1.file");
 	if (exists(result + "_2.file")) {
 		mainprogram->preveff = false;
-		open_mix(result + "_2.file");
+		mainmix->open_mix(result + "_2.file");
 	}
 	//open_genmidis(remove_extension(path) + ".midi");
 	
@@ -12575,7 +12628,7 @@ void open_state(const std::string &path) {
 	rfile.close();
 }
 
-void open_mix(const std::string &path) {
+Mixer::open_mix(const std::string &path) {
 	std::string result = deconcat_files(path);
 	bool concat = (result != "");
 	ifstream rfile;
@@ -12604,6 +12657,10 @@ void open_mix(const std::string &path) {
 				glUniform1f(cf, mainmix->crossfade->value);
 			}
 		}
+		if (istring == "CROSSFADEEVENT") {
+			Param *par = mainmix->crossfade;
+			mainmix->event_read(rfile, par, lay);
+		}
 		if (istring == "CROSSFADECOMP") {
 			getline(rfile, istring); 
 			mainmix->crossfadecomp->value = std::stof(istring);
@@ -12611,6 +12668,10 @@ void open_mix(const std::string &path) {
 				GLfloat cf = glGetUniformLocation(mainprogram->ShaderProgram, "cf");
 				glUniform1f(cf, mainmix->crossfadecomp->value);
 			}
+		}
+		if (istring == "CROSSFADECOMPEVENT") {
+			Param *par = mainmix->crossfadecomp;
+			mainmix->event_read(rfile, par, lay);
 		}
 		if (istring == "WIPE") {
 			getline(rfile, istring); 
@@ -12630,11 +12691,13 @@ void open_mix(const std::string &path) {
 		}
 		int deck;
 		if (istring == "LAYERSA") {
+			loopstation->readelems.clear();
+			loopstation->readelemnrs.clear();
 			std::vector<Layer*> &layersA = choose_layers(0);
-			int jpegcount = read_layers(rfile, result, layersA, 0, 2, concat, 1);
+			int jpegcount = mainmix->read_layers(rfile, result, layersA, 0, 2, concat, 1);
 			mainprogram->filecount = jpegcount;
 			std::vector<Layer*> &layersB = choose_layers(1);
-			read_layers(rfile, result, layersB, 1, 2, concat, 1);
+			mainmix->read_layers(rfile, result, layersB, 1, 2, concat, 1);
 			mainprogram->filecount = 0;
 		}
 	}
@@ -12650,7 +12713,7 @@ void open_mix(const std::string &path) {
 	rfile.close();
 }
 
-void open_deck(const std::string &path, bool alive) {
+Mixer::open_deck(const std::string &path, bool alive) {
 	std::string result = deconcat_files(path);
 	bool concat = (result != "");
 	ifstream rfile;
@@ -12660,13 +12723,15 @@ void open_deck(const std::string &path, bool alive) {
 	
 	new_file(mainmix->mousedeck, alive);
 	
+	loopstation->readelems.clear();
+	loopstation->readelemnrs.clear();
 	std::vector<Layer*> &layers = choose_layers(mainmix->mousedeck);
-	read_layers(rfile, result, layers, mainmix->mousedeck, 1, 1, concat);
+	mainmix->read_layers(rfile, result, layers, mainmix->mousedeck, 1, 1, concat);
 	
 	rfile.close();
 }
 
-int read_layers(std::istream &rfile, const std::string &result, std::vector<Layer*> &layers, bool deck, int type, bool doclips, bool concat, bool load) {
+Mixer::read_layers(std::istream &rfile, const std::string &result, std::vector<Layer*> &layers, bool deck, int type, bool doclips, bool concat, bool load) {
 	Layer *lay = nullptr;
 	std::string istring;
 	int jpegcount = 0;
@@ -12870,13 +12935,13 @@ int read_layers(std::istream &rfile, const std::string &result, std::vector<Laye
 					if (istring == "CLIPLAYER") {
 						std::vector<Layer*> cliplayers;
 						Layer *cliplay = mainmix->add_layer(cliplayers, 0);
-						read_layers(rfile, result, cliplayers, 0, 0, 0, 1, 0);
+						mainmix->read_layers(rfile, result, cliplayers, 0, 0, 0, 1, 0);
 						std::string name = remove_extension(remove_extension(basename(result)));
 						int count = 0;
 						while (1) {
 							clip->path = temppath + "cliptemp_" + name + ".layer";
 							if (!exists(clip->path)) {
-								save_layerfile(clip->path, cliplay, 0);
+								mainmix->save_layerfile(clip->path, cliplay, 0);
 								break;
 							}
 							count++;
@@ -12961,6 +13026,7 @@ int read_layers(std::istream &rfile, const std::string &result, std::vector<Laye
 							getline(rfile, istring);
 							par->midiport = istring;
 						}
+						mainmix->event_read(rfile, par, lay);
 					}
 				}
 			}
@@ -13539,7 +13605,7 @@ void open_shelf(const std::string &path) {
 					lay->lasteffnode = lay->node;
 					lay->node->calc = true;
 					lay->node->walked = false;
-					open_layerfile(thpath[count], lay, true, 0);
+					mainmix->open_layerfile(thpath[count], lay, true, 0);
 					lay->playbut->value = false;
 					lay->revbut->value = false;
 					lay->bouncebut->value = false;
@@ -14122,6 +14188,7 @@ int main(int argc, char* argv[]){
 	w2 = w;  // for render_text
 	h2 = h;
 
+ 	loopstation = new LoopStation;
 	mainmix = new Mixer;
 	mainprogram = new Program;	
  	mainprogram->mainwindow = win;
@@ -14484,16 +14551,16 @@ int main(int argc, char* argv[]){
 		mainmix->nbframesA[mainmix->page[0]].insert(mainmix->nbframesA[mainmix->page[0]].begin(), layA);
 		layA->clips.clear();
 		mainmix->mousedeck = 0;
-		save_deck(temppath + "tempdeck_A" + std::to_string(i + 1) + ".deck");
-		save_deck(temppath + "tempdeck_A" + std::to_string(i + 1) + "comp.deck");
+		mainmix->save_deck(temppath + "tempdeck_A" + std::to_string(i + 1) + ".deck");
+		mainmix->save_deck(temppath + "tempdeck_A" + std::to_string(i + 1) + "comp.deck");
 		mainmix->page[1] = i;
 		Layer *layB = mainmix->add_layer(mainmix->layersB, 0);
 		layB->deck = 1;
 		mainmix->nbframesB[mainmix->page[1]].insert(mainmix->nbframesB[mainmix->page[1]].begin(), layB);
 		layB->clips.clear();
 		mainmix->mousedeck = 1;
-		save_deck(temppath + "tempdeck_B" + std::to_string(i + 1) + ".deck");
-		save_deck(temppath + "tempdeck_B" + std::to_string(i + 1) + "comp.deck");
+		mainmix->save_deck(temppath + "tempdeck_B" + std::to_string(i + 1) + ".deck");
+		mainmix->save_deck(temppath + "tempdeck_B" + std::to_string(i + 1) + "comp.deck");
 		mainmix->layersA.clear();
 		mainmix->layersB.clear();
 	}
@@ -14529,10 +14596,10 @@ int main(int argc, char* argv[]){
 	
 	mainmix->page[0] = 0;
 	mainmix->mousedeck = 0;
-	open_deck(temppath + "tempdeck_A1.deck", 1);
+	mainmix->open_deck(temppath + "tempdeck_A1.deck", 1);
 	mainmix->page[1] = 0;
 	mainmix->mousedeck = 1;
-	open_deck(temppath + "tempdeck_B1.deck", 1);
+	mainmix->open_deck(temppath + "tempdeck_B1.deck", 1);
 	Layer *layA1 = mainmix->layersA[0];
 	Layer *layB1 = mainmix->layersB[0];
 	mainprogram->nodesmain->currpage->connect_nodes(layA1->node, mixnodeA);
@@ -14641,34 +14708,34 @@ int main(int argc, char* argv[]){
 			}
 			else if (mainprogram->pathto == "SAVESTATE") {
 				std::string str(mainprogram->path);
-				save_state(str);
+				mainmix->save_state(str);
 			}
 			else if (mainprogram->pathto == "SAVEMIX") {
 				std::string str(mainprogram->path);
-				save_mix(str);
+				mainmix->save_mix(str);
 			}
 			else if (mainprogram->pathto == "SAVEDECK") {
 				std::string str(mainprogram->path);
-				save_deck(str);
+				mainmix->save_deck(str);
 			}
 			else if (mainprogram->pathto == "OPENDECK") {
 				std::string str(mainprogram->path);
-				open_deck(str, 1);
+				mainmix->open_deck(str, 1);
 			}
 			else if (mainprogram->pathto == "SAVELAYFILE") {
 				std::string str(mainprogram->path);
-				save_layerfile(str, mainmix->mouselayer, 1);
+				mainmix->save_layerfile(str, mainmix->mouselayer, 1);
 			}
 			else if (mainprogram->pathto == "OPENLAYFILE") {
-				open_layerfile(mainprogram->path, mainmix->mouselayer, 0, 1);
+				mainmix->open_layerfile(mainprogram->path, mainmix->mouselayer, 0, 1);
 			}
 			else if (mainprogram->pathto == "OPENSTATE") {
 				std::string str(mainprogram->path);
-				open_state(str);
+				mainmix->open_state(str);
 			}
 			else if (mainprogram->pathto == "OPENMIX") {
 				std::string str(mainprogram->path);
-				open_mix(str);
+				mainmix->open_mix(str);
 			}
 			else if (mainprogram->pathto == "OPENBINFILES") {
 				mainprogram->openbinfile = true;

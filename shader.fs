@@ -1607,7 +1607,7 @@ void main()
 			else fc = vec4(tex0.rgb * ia + tex1.rgb * a, max(tex0.a, tex1.a));
 		}
 	} 
-	if (textmode == 1) {
+	if (textmode == 2) {
 		float col = texture2D(Sampler0, vec2(TexCoord0.s, TexCoord0.t)).r;
 		if (col > 0.0f) {
 			FragColor = vec4(col, col, col, 1.0f);
@@ -1620,6 +1620,9 @@ void main()
 		float down = texture2D(Sampler0, vec2(TexCoord0.s, TexCoord0.t + 0.008f)).r;
 		if (left + right + up + down == 0.0f) alpha = 0.0f;
 		FragColor = vec4(0.0f, 0.0f, 0.0f, alpha);
+	}
+	else if (textmode == 1) {
+		FragColor = texture2D(Sampler0, vec2(TexCoord0.s, TexCoord0.t));
 	}
 	else if (edgethickmode == 1) {
 		float thx = 1.0f / fbowidth;

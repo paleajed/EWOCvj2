@@ -10,6 +10,7 @@
 #include "layer.h"
 #include "window.h"
 #include "program.h"
+#include "loopstation.h"
 
 
 float pdistance(float x, float y, float x1, float y1, float x2, float y2) {
@@ -88,7 +89,7 @@ BlendNode::BlendNode() {
 	this->fbo = -1;
 	this->fbotex = -1;
     this->mixfac = new Param;
-    this->mixfac->name = "MixFac";
+    this->mixfac->name = "Fa";
     this->mixfac->value = 0.5f;
     this->mixfac->range[0] = 0.0f;
     this->mixfac->range[1] = 1.0f;
