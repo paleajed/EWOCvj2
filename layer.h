@@ -188,6 +188,7 @@ class Layer {
 
 class Mixer {
 	private:
+		do_deletelay(Layer *testlay, std::vector<Layer*> &layers, bool add);
 		event_write(std::ostream &wfile, Param *par);
 		event_read(std::istream &rfile, Param *par, Layer *lay);
 	public:

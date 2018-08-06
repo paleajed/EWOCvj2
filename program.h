@@ -255,6 +255,8 @@ class Program {
 		Layer *loadlay;
 		Layer *prelay = nullptr;
 		SDL_Window *mainwindow;
+		float w;
+		float h;
 		std::vector<Window*> mixwindows;
 		std::vector<Menu*> menulist;
 		std::vector<Menu*> actmenulist;
@@ -303,6 +305,7 @@ class Program {
 		bool ctrl = false;
 		bool menuondisplay = false;
 		bool blocking = false;
+		std::string temppath;
 		char *path;
 		nfdpathset_t paths;
 		int counting;
@@ -427,6 +430,7 @@ class Program {
 		Program();
 };
 
+extern float w, h;
 extern Program *mainprogram;
 extern Mixer *mainmix;
 extern LoopStation *loopstation;
@@ -435,7 +439,9 @@ extern Menu *mixmodemenu;
 
 extern mix_target_struct mixtarget[2];
 
-extern std::string basename(std::string pathname);
+extern int encode_frame(AVFormatContext *fmtctx, AVCodecContext *enc_ctx, AVFrame *frame, AVPacket *pkt, FILE *outfile, int framenr);
+extern void open_video(float frame, Layer *lay, const std::string &filename, int reset);
+
 extern std::vector<Layer*>& choose_layers(bool j);
 extern void make_layboxes();
 
@@ -501,3 +507,7 @@ static int open_codec_context(int *stream_idx, AVFormatContext *video, enum AVMe
 void set_live_base(Layer *lay, std::string livename);
 
 extern float tf(float vtxcoord);
+extern bool exists(const std::string &name);
+extern std::string basename(std::string pathname);
+extern std::string remove_extension(std::string filename);
+extern std::string remove_version(std::string filename);

@@ -36,11 +36,9 @@ LoopStationElement::LoopStationElement() {
 	this->speed->range[1] = 4.0f;
 	this->speed->box->vtxcoords->w = tf(0.1f);
 	this->speed->box->vtxcoords->h = tf(0.05f);
-	this->speed->box->upvtxtoscr();
 	this->colbox = new Box;
 	this->colbox->vtxcoords->w = tf(0.031f);
 	this->colbox->vtxcoords->h = tf(0.05f);
-	this->colbox->upvtxtoscr();
 }
 
 LoopStationElement::~LoopStationElement() {
@@ -55,7 +53,6 @@ LoopStation::setbut(Button *but, float r, float g, float b) {
 	but->ccol[2] = b;
 	but->box->vtxcoords->w = tf(0.031f);
 	but->box->vtxcoords->h = tf(0.05f);	
-	but->box->upvtxtoscr();
 }
 
 LoopStationElement* LoopStation::add_elem() {
@@ -70,9 +67,11 @@ LoopStationElement* LoopStation::add_elem() {
 }
 
 LoopStation::handle() {
+	float white[] = {1.0f, 1.0f, 1.0f, 1.0f};
 	for (int i = 0; i < this->elems.size(); i++) {
 		elems[i]->handle();
 	}
+	render_text("Loopstation", white, elems[0]->recbut->box->vtxcoords->x1 + tf(0.01f), elems[0]->recbut->box->vtxcoords->y1 + elems[0]->recbut->box->vtxcoords->h * 2.0f - tf(0.03f), 0.0005f, 0.0008f);
 }
 
 LoopStationElement::handle() {
@@ -110,11 +109,11 @@ LoopStationElement::visualize() {
 	this->playbut->box->vtxcoords->x1 = -0.8f + 1.1f * !mainmix->currlay->deck + this->playbut->box->vtxcoords->w * 2.0f;		
 	this->speed->box->vtxcoords->x1 = -0.8f + 1.1f * !mainmix->currlay->deck + this->recbut->box->vtxcoords->w * 3.0f;
 	this->colbox->vtxcoords->x1 = -0.8f + 1.1f * !mainmix->currlay->deck + this->recbut->box->vtxcoords->w * 3.0f + this->speed->box->vtxcoords->w;
-	this->recbut->box->vtxcoords->y1 = 0.5f - tf(0.05f) * this->pos;
-	this->loopbut->box->vtxcoords->y1 = 0.5f - tf(0.05f) * this->pos;
-	this->playbut->box->vtxcoords->y1 = 0.5f - tf(0.05f) * this->pos;
-	this->speed->box->vtxcoords->y1 = 0.5f - tf(0.05f) * this->pos;
-	this->colbox->vtxcoords->y1 = 0.5f - tf(0.05f) * this->pos;
+	this->recbut->box->vtxcoords->y1 = 0.4f - tf(0.05f) * this->pos;
+	this->loopbut->box->vtxcoords->y1 = 0.4f - tf(0.05f) * this->pos;
+	this->playbut->box->vtxcoords->y1 = 0.4f - tf(0.05f) * this->pos;
+	this->speed->box->vtxcoords->y1 = 0.4f - tf(0.05f) * this->pos;
+	this->colbox->vtxcoords->y1 = 0.4f - tf(0.05f) * this->pos;
 	this->recbut->box->upvtxtoscr();
 	this->loopbut->box->upvtxtoscr();
 	this->playbut->box->upvtxtoscr();
