@@ -12,6 +12,8 @@ class LoopStation {
 		std::vector<LoopStationElement*> readelems;
 		std::vector<int> readelemnrs;
 		std::vector<Param*> allparams;
+		std::unordered_map<Param*, Param*> parmap;
+		std::unordered_map<Param*, LoopStationElement*> elemmap;
 		std::vector<float> colvals = {1.0f, 0.0f, 0.0f
 									, 0.0f, 0.5f, 0.0f
 									, 0.0f, 0.0f, 1.0f
@@ -41,8 +43,8 @@ class LoopStation {
 class LoopStationElement {
 	public:
 		int pos = 0;
-		std::vector<Param*> params;
-		std::vector<Layer*> layers;
+		std::unordered_set<Param*> params;
+		std::unordered_set<Layer*> layers;
 		Button *recbut;
 		Button *loopbut;
 		Button *playbut;
@@ -57,11 +59,11 @@ class LoopStationElement {
 		init();
 		handle();
 		add_param();
+		set_params();
 		LoopStationElement();
 		~LoopStationElement();
 		
 	private:
 		visualize();
 		mouse_handle();
-		set_params();
 };

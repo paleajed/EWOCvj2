@@ -89,7 +89,7 @@ BlendNode::BlendNode() {
 	this->fbo = -1;
 	this->fbotex = -1;
     this->mixfac = new Param;
-    this->mixfac->name = "Fa";
+    this->mixfac->name = "Factor";
     this->mixfac->value = 0.5f;
     this->mixfac->range[0] = 0.0f;
     this->mixfac->range[1] = 1.0f;

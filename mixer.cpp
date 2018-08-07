@@ -113,6 +113,7 @@ Mixer::Mixer() {
 	this->crossfadecomp->box->vtxcoords->h = tf(0.05f);
 	this->crossfadecomp->box->upvtxtoscr();
 	this->crossfadecomp->box->acolor[3] = 1.0f;
+	lpc->allparams.push_back(this->crossfadecomp);
 	
 	this->recbut = new Button(false);
 	this->recbut->box->vtxcoords->x1 = 0.15f;
@@ -326,7 +327,60 @@ Mixer::set_values(Layer *clay, Layer *lay) {
 	clay->numf = lay->numf;
 }
 
-Mixer::lay_copy(std::vector<Layer*> &slayers, std::vector<Layer*> &dlayers) {
+Mixer::loopstation_copy(bool comp) {
+	LoopStation *lp1;
+	LoopStation *lp2;
+	if (comp) {
+		lp1 = lp;
+		lp2 = lpc;
+	}
+	else {
+		lp1 = lpc;
+		lp2 = lp;
+	}
+	for (int i = 0; i < lp1->elems.size(); i++) {
+		lp2->elems[i]->eventlist.clear();
+		lp2->elems[i]->params.clear();
+		lp2->elems[i]->layers.clear();
+		for (int j = 0; j < lp1->elems[i]->eventlist.size(); j++) {
+			std::tuple<long long, Param*, float> event1 = lp1->elems[i]->eventlist[j];
+			std::tuple<long long, Param*, float> event2;
+			event2 = std::make_tuple(std::get<0>(event1), lp1->parmap[std::get<1>(event1)], std::get<2>(event1));
+			Param *par = std::get<1>(event2);
+			if (par) {	
+				lp2->elems[i]->eventlist.push_back(event2);
+				lp2->elems[i]->params.emplace(par);
+				if (par->effect) lp2->elems[i]->layers.emplace(par->effect->layer);
+				lp2->elemmap[par] = lp2->elems[i];
+				par->box->acolor[0] = lp2->elems[i]->colbox->acolor[0];
+				par->box->acolor[1] = lp2->elems[i]->colbox->acolor[1];
+				par->box->acolor[2] = lp2->elems[i]->colbox->acolor[2];
+				par->box->acolor[3] = lp2->elems[i]->colbox->acolor[3];
+			}
+		}
+		lp2->elems[i]->speed->value = lp1->elems[i]->speed->value;
+		lp2->elems[i]->starttime = lp1->elems[i]->starttime;
+		lp2->elems[i]->interimtime = lp1->elems[i]->interimtime;
+		lp2->elems[i]->speedadaptedtime = lp1->elems[i]->speedadaptedtime;
+		lp2->elems[i]->eventpos = lp1->elems[i]->eventpos;
+		lp2->elems[i]->loopbut->value = lp1->elems[i]->loopbut->value;
+		lp2->elems[i]->playbut->value = lp1->elems[i]->playbut->value;
+	}
+}
+
+Mixer::lay_copy(std::vector<Layer*> &slayers, std::vector<Layer*> &dlayers, bool comp) {
+	LoopStation *lp1;
+	LoopStation *lp2;
+	if (comp) {
+		lp1 = lp;
+		lp2 = lpc;
+		lp1->parmap[mainmix->crossfade] = mainmix->crossfadecomp;
+	}
+	else {
+		lp1 = lpc;
+		lp2 = lp;
+		lp1->parmap[mainmix->crossfadecomp] = mainmix->crossfade;
+	}
 	int pos = std::find(dlayers.begin(), dlayers.end(), mainmix->currlay) - dlayers.begin();
 	while (!dlayers.empty()) {
 		dlayers.back()->node = nullptr;
@@ -491,10 +545,12 @@ Mixer::lay_copy(std::vector<Layer*> &slayers, std::vector<Layer*> &dlayers) {
 			for (int k = 0; k < slayers[i]->effects[j]->params.size(); k++) {
 				Param *par = slayers[i]->effects[j]->params[k];
 				Param *cpar = dlayers[i]->effects[j]->params[k];
+				lp1->parmap[par] = cpar;
 				cpar->value = par->value;
 				cpar->midi[0] = par->midi[0];
 				cpar->midi[1] = par->midi[1];
 				cpar->effect = ceff;
+				lp2->allparams.push_back(cpar);
 			}
 		}
 	}
@@ -522,6 +578,24 @@ Layer* Mixer::clone_layer(std::vector<Layer*> &lvec, Layer* slay) {
 			cpar->midi[0] = par->midi[0];
 			cpar->midi[1] = par->midi[1];
 			cpar->effect = eff;
+			if (loopstation->elemmap.find(par) != loopstation->elemmap.end()) {
+				for (int k = 0; k < loopstation->elemmap[par]->eventlist.size(); k++) {
+					LoopStationElement *elem = loopstation->elemmap[par];
+					std::tuple<long long, Param*, float> event1 = elem->eventlist[k];
+					if (par == std::get<1>(event1)) {
+						std::tuple<long long, Param*, float> event2;
+						event2 = std::make_tuple(std::get<0>(event1), cpar, std::get<2>(event1));
+						elem->eventlist.insert(elem->eventlist.begin() + k + 1, event2);
+						elem->params.emplace(cpar);
+						elem->layers.emplace(cpar->effect->layer);
+						loopstation->elemmap[par] = elem;
+						cpar->box->acolor[0] = elem->colbox->acolor[0];
+						cpar->box->acolor[1] = elem->colbox->acolor[1];
+						cpar->box->acolor[2] = elem->colbox->acolor[2];
+						cpar->box->acolor[3] = elem->colbox->acolor[3];
+					}
+				}
+			}
 		}
 	}
 	return dlay;
@@ -543,8 +617,9 @@ Mixer::copy_to_comp(std::vector<Layer*> &sourcelayersA, std::vector<Layer*> &des
 		mainmix->wipey[0] = mainmix->wipey[1];
 	}
 	
-	this->lay_copy(sourcelayersA, destlayersA);
-	this->lay_copy(sourcelayersB, destlayersB);
+	this->lay_copy(sourcelayersA, destlayersA, comp);
+	this->lay_copy(sourcelayersB, destlayersB, comp);
+	this->loopstation_copy(comp);
 	
 	for (int i = 0; i < destnodes.size(); i++) {
 		delete destnodes[i];
@@ -997,7 +1072,7 @@ Mixer::event_read(std::istream &rfile, Param *par, Layer *lay) {
 	getline(rfile, istring);
 	if (loop) {
 		loop->speed->value = std::stof(istring);
-		loop->layers.push_back(lay);
+		loop->layers.emplace(lay);
 	}
 	while (getline(rfile, istring)) {
 		if (istring == "ENDOFEVENT") break;
@@ -1013,7 +1088,15 @@ Mixer::event_read(std::istream &rfile, Param *par, Layer *lay) {
 					break;
 				}
 			}
-			if (!inserted) loop->eventlist.insert(loop->eventlist.end(), std::make_tuple(time, par, value));
+			if (!inserted) {
+				loop->eventlist.insert(loop->eventlist.end(), std::make_tuple(time, par, value));
+			}
+			loop->params.emplace(par);
+			if (mainprogram->preveff) lp->elemmap[par] = loop;
+			else lpc->elemmap[par] = loop;
+			if (par->effect) {
+				loop->layers.emplace(par->effect->layer);
+			}
 			par->box->acolor[0] = loop->colbox->acolor[0];
 			par->box->acolor[1] = loop->colbox->acolor[1];
 			par->box->acolor[2] = loop->colbox->acolor[2];

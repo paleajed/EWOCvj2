@@ -262,7 +262,8 @@ class Program {
 		std::vector<Menu*> actmenulist;
 		Menu *effectmenu = nullptr;
 		Menu *mixmodemenu = nullptr;
-		Menu *parammenu = nullptr;
+		Menu *parammenu1 = nullptr;
+		Menu *parammenu2 = nullptr;
 		Menu *loopmenu = nullptr;
 		Menu *deckmenu = nullptr;
 		Menu *laymenu = nullptr;
@@ -434,6 +435,8 @@ extern float w, h;
 extern Program *mainprogram;
 extern Mixer *mainmix;
 extern LoopStation *loopstation;
+extern LoopStation *lp;
+extern LoopStation *lpc;
 extern Menu *effectmenu;
 extern Menu *mixmodemenu;
 

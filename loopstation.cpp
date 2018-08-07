@@ -36,9 +36,11 @@ LoopStationElement::LoopStationElement() {
 	this->speed->range[1] = 4.0f;
 	this->speed->box->vtxcoords->w = tf(0.1f);
 	this->speed->box->vtxcoords->h = tf(0.05f);
+	this->speed->box->upvtxtoscr();
 	this->colbox = new Box;
 	this->colbox->vtxcoords->w = tf(0.031f);
 	this->colbox->vtxcoords->h = tf(0.05f);
+	this->colbox->upvtxtoscr();
 }
 
 LoopStationElement::~LoopStationElement() {
@@ -52,7 +54,8 @@ LoopStation::setbut(Button *but, float r, float g, float b) {
 	but->ccol[1] = g;
 	but->ccol[2] = b;
 	but->box->vtxcoords->w = tf(0.031f);
-	but->box->vtxcoords->h = tf(0.05f);	
+	but->box->vtxcoords->h = tf(0.05f);
+	but->box->upvtxtoscr();
 }
 
 LoopStationElement* LoopStation::add_elem() {
@@ -134,13 +137,16 @@ LoopStationElement::mouse_handle() {
 			if (this->recbut->value) {
 				this->loopbut->value = false;
 				this->playbut->value = false;
-				for (int i = 0; i < this->params.size(); i++) {
-					this->params[i]->box->acolor[0] = 0.0f;
-					this->params[i]->box->acolor[1] = 0.0f;
-					this->params[i]->box->acolor[2] = 0.0f;
-					this->params[i]->box->acolor[3] = 0.0f;
-				}
 				this->eventlist.clear();
+				std::unordered_set<Param*>::iterator it;
+				for (it = this->params.begin(); it != this->params.end(); it++) {
+					Param *par = *it;
+					par->box->acolor[0] = 0.2f;
+					par->box->acolor[1] = 0.2f;
+					par->box->acolor[2] = 0.2f;
+					par->box->acolor[3] = 1.0f;
+				}
+				this->params.clear();
 				this->starttime = std::chrono::high_resolution_clock::now();
 			}
 			else {
@@ -202,17 +208,16 @@ LoopStationElement::set_params() {
 		Param *par = std::get<1>(event);
 		if (std::find(loopstation->allparams.begin(), loopstation->allparams.end(), par) != loopstation->allparams.end()) {
 			par->value = std::get<2>(event);
-			this->didsomething = true;
 		}
 		event = this->eventlist[++this->eventpos];
 	}
 	if (this->eventpos >= this->eventlist.size()) {
-		if (this->playbut->value or !this->didsomething) {
+		if (this->eventlist.size() == 0) {
 			// end loop when one-shot playing or no of the params exist anymore
 			this->playbut->value = false;
 			this->loopbut->value = false;
 		}
-		else if (this->loopbut->value) {
+		if (this->eventpos >= this->eventlist.size() and this->loopbut->value) {
 			//start loop again
 			this->eventpos = 0;
 			this->starttime = std::chrono::high_resolution_clock::now();
@@ -230,16 +235,17 @@ LoopStationElement::add_param() {
 	std::tuple<long long, Param*, float> event;
 	event = std::make_tuple(millicount, mainmix->adaptparam, mainmix->adaptparam->value);
 	this->eventlist.push_back(event);
-	this->params.push_back(mainmix->adaptparam);
+	this->params.emplace(mainmix->adaptparam);
+	loopstation->elemmap[mainmix->adaptparam] = this;
 	if (mainmix->adaptparam->effect) {
-		this->layers.push_back(mainmix->adaptparam->effect->layer);
+		this->layers.emplace(mainmix->adaptparam->effect->layer);
 	}
 	for (int i = 0; i < 2; i++) {
 		std::vector<Layer*> &lvec = choose_layers(i);
 		for (int j = 0; j < lvec.size(); j++) {
-			if (mainmix->adaptparam == lvec[j]->speed) this->layers.push_back(lvec[j]);
-			if (mainmix->adaptparam == lvec[j]->opacity) this->layers.push_back(lvec[j]);
-			if (mainmix->adaptparam == lvec[j]->volume) this->layers.push_back(lvec[j]);
+			if (mainmix->adaptparam == lvec[j]->speed) this->layers.emplace(lvec[j]);
+			if (mainmix->adaptparam == lvec[j]->opacity) this->layers.emplace(lvec[j]);
+			if (mainmix->adaptparam == lvec[j]->volume) this->layers.emplace(lvec[j]);
 		}
 	}
 	mainmix->adaptparam->box->acolor[0] = this->colbox->acolor[0];

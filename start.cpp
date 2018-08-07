@@ -98,6 +98,8 @@ extern "C" {
 Program *mainprogram;
 Mixer *mainmix;
 LoopStation *loopstation = nullptr;
+LoopStation *lp = nullptr;
+LoopStation *lpc = nullptr;
 
 //TCHAR buf [MAX_PATH];
 //int retgtp = Getmainprogram->temppath(MAX_PATH, buf);
@@ -3302,9 +3304,9 @@ void display_texture(Layer *lay, bool deck) {
 							break;
 					}
 					float textw = tf(render_text(effstr, white, eff->box->vtxcoords->x1 + tf(0.01f), eff->box->vtxcoords->y1 + tf(0.05f) - tf(0.030f), tf(0.0003f), tf(0.0005f)));
-					eff->box->vtxcoords->w = textw + tf(0.02f);
-					x1 = eff->box->vtxcoords->x1 + tf(0.02f) + textw;
-					wi = (0.7f - mainmix->numw - tf(0.02f) - textw) / 4.0f;
+					eff->box->vtxcoords->w = textw + tf(0.032f);
+					x1 = eff->box->vtxcoords->x1 + tf(0.032f) + textw;
+					wi = (0.7f - mainmix->numw - tf(0.032f) - textw) / 4.0f;
 				}
 				y1 = eff->box->vtxcoords->y1;
 				for (int j = 0; j < eff->params.size(); j++) {
@@ -6354,7 +6356,8 @@ Param::handle() {
 			mainmix->prevx = mainprogram->mx;
 		}
 		if (mainprogram->menuactivation) {
-			mainprogram->parammenu->state = 2;
+			if (loopstation->elemmap.find(this) != loopstation->elemmap.end()) mainprogram->parammenu2->state = 2;
+			else mainprogram->parammenu1->state = 2;
 			mainmix->learnparam = this;
 			mainprogram->menuactivation = false;
 		}
@@ -8146,6 +8149,14 @@ void the_loop() {
 		// no hovering while adapting param
 		mainprogram->my = -1;
 	}
+	
+	if (mainprogram->preveff) {
+		loopstation = lp;
+	}
+	else {
+		loopstation = lpc;
+	}
+
 		
 	for (int i = 0; i < 4; i++) {
 		for (int j = 0; j < mainmix->nbframesA[i].size(); j++) {
@@ -9645,7 +9656,7 @@ void the_loop() {
 		}
 	}
 	else {  //the_loop else
-		if ((mainprogram->effectmenu->state > 1) or (mainprogram->mixmodemenu->state > 1) or (mainprogram->mixenginemenu->state > 1) or (mainprogram->parammenu->state > 1) or (mainprogram->loopmenu->state > 1) or (mainprogram->deckmenu->state > 1) or (mainprogram->laymenu->state > 1) or (mainprogram->loadmenu->state > 1) or (mainprogram->mixtargetmenu->state > 1) or (mainprogram->wipemenu->state > 1) or (mainprogram->livemenu->state > 1) or (mainprogram->binmenu->state > 1) or (mainprogram->binelmenu->state > 1) or (mainprogram->genmidimenu->state > 1) or (mainprogram->genericmenu->state > 1)) {
+		if ((mainprogram->effectmenu->state > 1) or (mainprogram->mixmodemenu->state > 1) or (mainprogram->mixenginemenu->state > 1) or (mainprogram->parammenu1->state > 1) or (mainprogram->parammenu2->state > 1) or (mainprogram->loopmenu->state > 1) or (mainprogram->deckmenu->state > 1) or (mainprogram->laymenu->state > 1) or (mainprogram->loadmenu->state > 1) or (mainprogram->mixtargetmenu->state > 1) or (mainprogram->wipemenu->state > 1) or (mainprogram->livemenu->state > 1) or (mainprogram->binmenu->state > 1) or (mainprogram->binelmenu->state > 1) or (mainprogram->genmidimenu->state > 1) or (mainprogram->genericmenu->state > 1)) {
 			mainprogram->leftmousedown = false;
 			mainprogram->menuondisplay = true;
 		}
@@ -9744,7 +9755,8 @@ void the_loop() {
 		render_text(parstr2, white, par->box->vtxcoords->x1 + tf(0.01f), par->box->vtxcoords->y1 + tf(0.05f) - tf(0.030f), tf(0.0003f), tf(0.0005f));
 		if (par->box->in()) {	
 			if (mainprogram->menuactivation) {
-				mainprogram->parammenu->state = 2;
+				if (loopstation->elemmap.find(par) != loopstation->elemmap.end()) mainprogram->parammenu2->state = 2;
+				else mainprogram->parammenu1->state = 2;
 				mainmix->learnparam = par;
 				mainprogram->menuondisplay = true;
 				mainprogram->menuactivation = false;
@@ -9869,7 +9881,8 @@ void the_loop() {
 					for (int k = 0; k < eff->params.size(); k++) {
 						if (eff->params[k]->box) {
 							if (eff->params[k]->box->in()) {
-								mainprogram->parammenu->state = 2;
+								if (loopstation->elemmap.find(eff->params[k]) != loopstation->elemmap.end()) mainprogram->parammenu2->state = 2;
+								else mainprogram->parammenu1->state = 2;
 								mainmix->learnparam = eff->params[k];
 								mainprogram->menuactivation = false;
 								break;
@@ -10245,14 +10258,14 @@ void the_loop() {
 			}
 			else {
 				draw_box(white, grey, &box, -1);
-			}
-			boxlayer.vtxcoords->y1 = 1.0f - mainmix->layw - 0.05f;
-			boxlayer.vtxcoords->w = 0.062f;
-			boxlayer.vtxcoords->h = 0.05f;
-			for (int j = 0; j < lvec.size(); j++) {
-				boxlayer.vtxcoords->x1 = -1.0f + mainmix->numw + i + (j + mainmix->scrollpos[i]) * (mainmix->layw * 3.0f / size); 
-				boxlayer.upvtxtoscr();
-				draw_box(nullptr, lvec[j]->scrollcol, &boxlayer, -1);
+				boxlayer.vtxcoords->y1 = 1.0f - mainmix->layw - 0.05f;
+				boxlayer.vtxcoords->w = 0.062f;
+				boxlayer.vtxcoords->h = 0.05f;
+				for (int j = 0; j < lvec.size(); j++) {
+					boxlayer.vtxcoords->x1 = -1.0f + mainmix->numw + i + (j + mainmix->scrollpos[i]) * (mainmix->layw * 3.0f / size); 
+					boxlayer.upvtxtoscr();
+					draw_box(nullptr, lvec[j]->scrollcol, &boxlayer, -1);
+				}
 			}
 			box.vtxcoords->w /= 3.0f;
 			if (mainmix->scrollon == i + 1) {
@@ -10370,6 +10383,21 @@ void the_loop() {
 
 		visu_thumbs();
 		
+		
+		// draw and handle loopstation
+		if (mainprogram->preveff) {
+			lp->handle();
+			if (mainmix->compon) {
+				for (int i = 0; i < lpc->elems.size(); i++) {
+					if (lpc->elems[i]->loopbut->value or lpc->elems[i]->playbut->value) lpc->elems[i]->set_params();
+				}			
+			}
+		}
+		else {
+			lpc->handle();
+		}
+		
+		
 		int k;
 		// Do mainprogram->mixenginemenu
 		k = handle_menu(mainprogram->mixenginemenu);
@@ -10423,11 +10451,38 @@ void the_loop() {
 			mainprogram->menuresults.clear();
 		}
 		
-		// Draw and handle mainprogram->parammenu
-		k = handle_menu(mainprogram->parammenu);
+		// Draw and handle mainprogram->parammenu1
+		k = handle_menu(mainprogram->parammenu1);
 		if (k > -1) {
 			if (k == 0) {
 				mainmix->learn = true;
+			}
+		}
+		if (mainprogram->menuchosen) {
+			mainprogram->menuchosen = false;
+			mainprogram->leftmouse = 0;
+			mainprogram->menuactivation = 0;
+			mainprogram->menuresults.clear();
+		}
+		
+		// Draw and handle mainprogram->parammenu2
+		k = handle_menu(mainprogram->parammenu2);
+		if (k > -1) {
+			if (k == 0) {
+				mainmix->learn = true;
+			}
+			else if (k == 1) {
+				LoopStationElement *elem = loopstation->elemmap[mainmix->learnparam];
+				elem->params.erase(mainmix->learnparam);
+				if (mainmix->learnparam->effect) elem->layers.erase(mainmix->learnparam->effect->layer);
+				for (int i = elem->eventlist.size() - 1; i >= 0; i--) {
+					if (std::get<1>(elem->eventlist[i]) == mainmix->learnparam) elem->eventlist.erase(elem->eventlist.begin() + i);
+				}
+				loopstation->elemmap.erase(mainmix->learnparam);
+				mainmix->learnparam->box->acolor[0] = 0.2f;
+				mainmix->learnparam->box->acolor[1] = 0.2f;
+				mainmix->learnparam->box->acolor[2] = 0.2f;
+				mainmix->learnparam->box->acolor[3] = 1.0f;
 			}
 		}
 		if (mainprogram->menuchosen) {
@@ -11119,6 +11174,7 @@ void the_loop() {
 				}
 			}
 		}
+	
 	}	
 
 	//deck and mix dragging
@@ -11348,10 +11404,6 @@ void the_loop() {
 		glUniform1i(thumb, 0);
 	}
 	
-	
-	// draw and handle loopstation
-	loopstation->handle();
-			
 			
 	// draw close window icon?
 	float deepred[4] = {1.0, 0.0, 0.0, 1.0};
@@ -12575,8 +12627,10 @@ int main(int argc, char* argv[]){
 	w2 = w;  // for render_text
 	h2 = h;
 
- 	loopstation = new LoopStation;
-	mainmix = new Mixer;
+ 	lp = new LoopStation;
+ 	lpc = new LoopStation;
+ 	loopstation = lp;
+ 	mainmix = new Mixer;
 	mainprogram = new Program;	
  	mainprogram->mainwindow = win;
 
@@ -12748,9 +12802,14 @@ int main(int argc, char* argv[]){
  	mixmodes.push_back("DISPLACEMENT");
   	make_menu("mixmodemenu", mainprogram->mixmodemenu, mixmodes);
  	
-	std::vector<std::string> parammodes;
-	parammodes.push_back("MIDI Learn");
- 	make_menu("parammenu", mainprogram->parammenu, parammodes);
+	std::vector<std::string> parammodes1;
+	parammodes1.push_back("MIDI Learn");
+ 	make_menu("parammenu1", mainprogram->parammenu1, parammodes1);
+ 	
+	std::vector<std::string> parammodes2;
+	parammodes2.push_back("MIDI Learn");
+	parammodes2.push_back("Remove automation");
+ 	make_menu("parammenu2", mainprogram->parammenu2, parammodes2);
  	
 	std::vector<std::string> mixtargets;
  	make_menu("mixtargetmenu", mainprogram->mixtargetmenu, mixtargets);

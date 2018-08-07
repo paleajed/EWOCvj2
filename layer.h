@@ -193,6 +193,7 @@ class Mixer {
 	private:
 		do_deletelay(Layer *testlay, std::vector<Layer*> &layers, bool add);
 		set_values(Layer *clay, Layer *lay);
+		loopstation_copy(bool comp);
 		event_write(std::ostream &wfile, Param *par);
 		event_read(std::istream &rfile, Param *par, Layer *lay);
 	public:
@@ -204,7 +205,7 @@ class Mixer {
 		Layer *add_layer(std::vector<Layer*> &layers, int pos);
 		void delete_layer(std::vector<Layer*> &layers, Layer *lay, bool add);
 		Layer* clone_layer(std::vector<Layer*> &lvec, Layer* slay);
-		lay_copy(std::vector<Layer*> &slayers, std::vector<Layer*> &dlayers);
+		lay_copy(std::vector<Layer*> &slayers, std::vector<Layer*> &dlayers, bool comp);
 		copy_to_comp(std::vector<Layer*> &sourcelayersA, std::vector<Layer*> &destlayersA, std::vector<Layer*> &sourcelayersB, std::vector<Layer*> &destlayersB, std::vector<Node*> &sourcenodes, std::vector<Node*> &destnodes, std::vector<MixNode*> &destmixnodes, bool comp);
 		void record_video();
 		save_layerfile(const std::string &path, Layer* lay, bool doclips);
