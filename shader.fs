@@ -470,7 +470,7 @@ vec4 swirl(vec2 uv)  //geeks3D seems free
 	normtc = vec2(dot(normtc, vec2(c, -s)), dot(normtc, vec2(s, c)));
 	}
 	normtc += center;
-	normtc.y = normtc.y * fboheight / fbowidth;
+	normtc.y = normtc.y * fbowidth / fboheight;
 	vec3 color = texture2D(Sampler0, (normtc / 2.0f + 0.5f)).rgb;
 	return vec4(color, 1.0);
 }

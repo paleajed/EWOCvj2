@@ -22,6 +22,8 @@
 #include <vector>
 #include <dirent.h>
 #include <algorithm>
+#include <unordered_set>
+#include <unordered_map>
 #include <time.h>
 #include <thread>
 #include <mutex>
@@ -3593,6 +3595,10 @@ void display_texture(Layer *lay, bool deck) {
 				if (mainprogram->middlemouse) lay->scritching = 0;
 			}
 			
+			// Set all clone layers to possibly changed values
+			lay->set_clones();
+
+			
 			// Draw and handle chdir chinv
 			if (lay->pos > 0) {
 				if (lay->blendnode->blendtype == CHROMAKEY) {
@@ -5331,10 +5337,31 @@ void do_delete_effect(Layer *lay, int pos) {
 	
 	make_layboxes();
 }
-void Layer::delete_effect(int pos) {
+
+Layer::delete_effect(int pos) {
 	do_delete_effect(this, pos);
 	this->currcliptype = ELEM_LAYER;
 }		
+
+Layer::set_clones() {
+	std::unordered_set<Layer*>::iterator it;
+	if (mainmix->clonemap.find(this) != mainmix->clonemap.end()) {
+		for (it = mainmix->clonemap[this]->begin(); it != mainmix->clonemap[this]->end(); it++) {	
+			Layer *lay = *it;
+			if (lay != this) {
+				lay->speed->value = this->speed->value;
+				lay->opacity->value = this->opacity->value;
+				lay->playbut->value = this->playbut->value;
+				lay->revbut->value = this->revbut->value;
+				lay->bouncebut->value = this->bouncebut->value;
+				lay->genmidibut->value = this->genmidibut->value;
+				lay->frame = this->frame;
+				lay->startframe = this->startframe;
+				lay->endframe = this->endframe;
+			}
+		}
+	}
+}
 
 
 Effect::Effect() {
@@ -6783,350 +6810,6 @@ Program::Program() {
 	this->tmfreeze->vtxcoords->y1 = 0.1f;
 	this->tmfreeze->vtxcoords->w = 0.2f;
 	this->tmfreeze->vtxcoords->h = 0.2f;
-}
-
-
-void lay_copy(std::vector<Layer*> &slayers, std::vector<Layer*> &dlayers) {
-	int pos = std::find(dlayers.begin(), dlayers.end(), mainmix->currlay) - dlayers.begin();
-	while (!dlayers.empty()) {
-		dlayers.back()->node = nullptr;
-		dlayers.back()->blendnode = nullptr;
-		mainmix->delete_layer(dlayers, dlayers.back(), false);
-	}
-	for (int i = 0; i < slayers.size(); i++) {
-		Layer *lay = slayers[i];
-		Layer *clay;
-		if (&dlayers == &mainmix->layersA or &dlayers == &mainmix->layersB) {
-			clay = new Layer(false);
-			if (i == pos) mainmix->currlay = clay;
-		}
-		else {
-			clay = new Layer(true);
-		}
-		clay->speed->value = lay->speed->value;
-		clay->playbut->value = lay->playbut->value;
-		clay->revbut->value = lay->revbut->value;
-		clay->bouncebut->value = lay->bouncebut->value;
-		clay->playkind = lay->playkind;
-		clay->genmidibut->value = lay->genmidibut->value;
-		clay->pos = lay->pos;
-		clay->deck = lay->deck;
-		clay->shiftx = lay->shiftx;
-		clay->shifty = lay->shifty;
-		clay->scale = lay->scale;
-		clay->opacity->value = lay->opacity->value;
-		clay->volume->value = lay->volume->value;
-		clay->chtol->value = lay->chtol->value;
-		clay->chdir->value = lay->chdir->value;
-		clay->chinv->value = lay->chinv->value;
-		if (lay->live) {
-			set_live_base(clay, lay->filename);
-		}
-		else if (lay->filename != "") open_video(lay->frame, clay, lay->filename, false);
-		fflush(stdout);
-		clay->millif = lay->millif;
-		clay->prevtime = lay->prevtime;
-		clay->frame = lay->frame;
-		clay->prevframe = lay->frame - 1;
-		clay->startframe = lay->startframe;
-		clay->endframe = lay->endframe;
-		clay->numf = lay->numf;
-		dlayers.push_back(clay);
-		clay->pos = dlayers.size() - 1;
-		if (i == 0) { 	  
-			clay->blendnode = new BlendNode;
-			clay->blendnode->blendtype = lay->blendnode->blendtype;
-			clay->blendnode->mixfac->value = lay->blendnode->mixfac->value;
-			clay->blendnode->chred = lay->blendnode->chred;
-			clay->blendnode->chgreen = lay->blendnode->chgreen;
-			clay->blendnode->chblue = lay->blendnode->chblue;
-			clay->blendnode->wipetype = lay->blendnode->wipetype;
-			clay->blendnode->wipedir = lay->blendnode->wipedir;
-			clay->blendnode->wipex = lay->blendnode->wipex;
-			clay->blendnode->wipey = lay->blendnode->wipey;
-		}
-	}
-			
-	for (int i = 0; i < slayers.size(); i++) {
-		dlayers[i]->effects.clear();
-		for (int j = 0; j < slayers[i]->effects.size(); j++) {
-			Effect *eff = slayers[i]->effects[j];
-			Effect *ceff;
-			switch (eff->type) {
-				case BLUR:
-					ceff = new BlurEffect();
-					break;
-				case BRIGHTNESS:
-					ceff = new BrightnessEffect();
-					break;
-				case CHROMAROTATE:
-					ceff = new ChromarotateEffect();
-					break;
-				case CONTRAST:
-					ceff = new ContrastEffect();
-					break;
-				case DOT:
-					ceff = new DotEffect();
-					break;
-				case GLOW:
-					ceff = new GlowEffect();
-					break;
-				case RADIALBLUR:
-					ceff = new RadialblurEffect();
-					break;
-				case SATURATION:
-					ceff = new SaturationEffect();
-					break;
-				case SCALE:
-					ceff = new ScaleEffect();
-					break;
-				case SWIRL:
-					ceff = new SwirlEffect();
-					break;
-				case OLDFILM:
-					ceff = new OldFilmEffect();
-					break;
-				case RIPPLE:
-					ceff = new RippleEffect();
-					break;
-				case FISHEYE:
-					ceff = new FishEyeEffect();
-					break;
-				case TRESHOLD:
-					ceff = new TresholdEffect();
-					break;
-				case STROBE:
-					ceff = new StrobeEffect();
-					break;
-				case POSTERIZE:
-					ceff = new PosterizeEffect();
-					break;
-				case PIXELATE:
-					ceff = new PixelateEffect();
-					break;
-				case CROSSHATCH:
-					ceff = new CrosshatchEffect();
-					break;
-				case INVERT:
-					ceff = new InvertEffect();
-					break;
-				case ROTATE:
-					ceff = new RotateEffect();
-					break;
-				case EMBOSS:
-					ceff = new EmbossEffect();
-					break;
-				case ASCII:
-					ceff = new AsciiEffect();
-					break;
-				case SOLARIZE:
-					ceff = new SolarizeEffect();
-					break;
-				case VARDOT:
-					ceff = new VarDotEffect();
-					break;
-				case CRT:
-					ceff = new CRTEffect();
-					break;
-				case EDGEDETECT:
-					ceff = new EdgeDetectEffect();
-					break;
-				case KALEIDOSCOPE:
-					ceff = new KaleidoScopeEffect();
-					break;
-				case HTONE:
-					ceff = new HalfToneEffect();
-					break;
-				case CARTOON:
-					ceff = new CartoonEffect();
-					break;
-				case CUTOFF:
-					ceff = new CutoffEffect();
-					break;
-				case GLITCH:
-					ceff = new GlitchEffect();
-					break;
-				case COLORIZE:
-					ceff = new ColorizeEffect();
-					break;
-				case NOISE:
-					ceff = new NoiseEffect();
-					break;
-				case GAMMA:
-					ceff = new GammaEffect();
-					break;
-				case THERMAL:
-					ceff = new ThermalEffect();
-					break;
-				case BOKEH:
-					ceff = new BokehEffect();
-					break;
-				case SHARPEN:
-					ceff = new SharpenEffect();
-					break;
-				case DITHER:
-					ceff = new DitherEffect();
-					break;
-			}
-			ceff->type = eff->type;
-			ceff->layer = dlayers[i];
-			ceff->onoffbutton->value = eff->onoffbutton->value;
-			ceff->drywet->value = eff->drywet->value;
-			if (ceff->type == RIPPLE) ((RippleEffect*)ceff)->speed = ((RippleEffect*)eff)->speed;
-			if (ceff->type == RIPPLE) ((RippleEffect*)ceff)->ripplecount = ((RippleEffect*)eff)->ripplecount;
-			dlayers[i]->effects.push_back(ceff);
-			for (int k = 0; k < slayers[i]->effects[j]->params.size(); k++) {
-				Param *par = slayers[i]->effects[j]->params[k];
-				Param *cpar = dlayers[i]->effects[j]->params[k];
-				cpar->value = par->value;
-				cpar->midi[0] = par->midi[0];
-				cpar->midi[1] = par->midi[1];
-				cpar->effect = ceff;
-			}
-		}
-	}
-}
-
-void copy_to_comp(std::vector<Layer*> &sourcelayersA, std::vector<Layer*> &destlayersA, std::vector<Layer*> &sourcelayersB, std::vector<Layer*> &destlayersB, std::vector<Node*> &sourcenodes, std::vector<Node*> &destnodes, std::vector<MixNode*> &destmixnodes, bool comp) {
-	if (sourcelayersA == mainmix->layersA) {
-		mainmix->crossfadecomp->value = mainmix->crossfade->value;
-		mainmix->wipe[1] = mainmix->wipe[0];
-		mainmix->wipedir[1] = mainmix->wipedir[0];
-		mainmix->wipex[1] = mainmix->wipex[0];
-		mainmix->wipey[1] = mainmix->wipey[0];
-	}
-	else {
-		mainmix->crossfade->value = mainmix->crossfadecomp->value;
-		mainmix->wipe[0] = mainmix->wipe[1];
-		mainmix->wipedir[0] = mainmix->wipedir[1];
-		mainmix->wipex[0] = mainmix->wipex[1];
-		mainmix->wipey[0] = mainmix->wipey[1];
-	}
-	
-	lay_copy(sourcelayersA, destlayersA);
-	lay_copy(sourcelayersB, destlayersB);
-	
-	for (int i = 0; i < destnodes.size(); i++) {
-		delete destnodes[i];
-	}
-	destmixnodes.clear();
-	
-	destnodes.clear();
-	for (int i = 0; i < 1; i++) { //mainprogram->nodesmain->pages.size()
-		for (int j = 0; j < sourcenodes.size(); j++) {
-			Node *node = sourcenodes[j];
-			if (node->type == VIDEO) {
-				VideoNode *cnode = mainprogram->nodesmain->currpage->add_videonode(comp);
-				for (int k = 0; k < sourcelayersA.size(); k++) {
-					if (sourcelayersA[k] == ((VideoNode*)(node))->layer) {
-						cnode->layer = destlayersA[k];
-						cnode->layer->node = cnode;
-					}
-				}
-				for (int k = 0; k < sourcelayersB.size(); k++) {
-					if (sourcelayersB[k] == ((VideoNode*)(node))->layer) {
-						cnode->layer = destlayersB[k];
-						cnode->layer->node = cnode;
-					}
-				}
-			}
-			else if (node->type == MIX) {
-				MixNode *cnode = mainprogram->nodesmain->currpage->add_mixnode(0, comp);
-			}
-			else if (node->type == EFFECT) {
-				EffectNode *cnode = new EffectNode();
-				for (int k = 0; k < sourcelayersA.size(); k++) {
-					for (int m = 0; m < sourcelayersA[k]->effects.size(); m++) {
-						Effect *eff = sourcelayersA[k]->effects[m];
-						if (eff == ((EffectNode*)node)->effect) {
-							cnode->effect = destlayersA[k]->effects[m];
-							destlayersA[k]->effects[m]->node = cnode;
-							break;
-						}
-					}
-				}
-				for (int k = 0; k < sourcelayersB.size(); k++) {
-					for (int m = 0; m < sourcelayersB[k]->effects.size(); m++) {
-						Effect *eff = sourcelayersB[k]->effects[m];
-						if (eff == ((EffectNode*)node)->effect) {
-							cnode->effect = destlayersB[k]->effects[m];
-							destlayersB[k]->effects[m]->node = cnode;
-							break;
-						}
-					}
-				}
-				destnodes.push_back(cnode);
-			}
-			else if (node->type == BLEND) {
-				BlendNode *cnode = new BlendNode();
-				for (int i = 0; i < sourcelayersA.size(); i++) {
-					if (sourcelayersA[i]->blendnode == node) destlayersA[i]->blendnode = cnode;
-				}
-				for (int i = 0; i < sourcelayersB.size(); i++) {
-					if (sourcelayersB[i]->blendnode == node) destlayersB[i]->blendnode = cnode;
-				}
-				cnode->blendtype = ((BlendNode*)node)->blendtype;
-				cnode->mixfac->value = ((BlendNode*)node)->mixfac->value;
-				cnode->chred = ((BlendNode*)node)->chred;
-				cnode->chblue = ((BlendNode*)node)->chblue;
-				cnode->chgreen = ((BlendNode*)node)->chgreen;
-				cnode->wipetype = ((BlendNode*)node)->wipetype;
-				cnode->wipedir = ((BlendNode*)node)->wipedir;
-				cnode->wipex = ((BlendNode*)node)->wipex;
-				cnode->wipey = ((BlendNode*)node)->wipey;
-				destnodes.push_back(cnode);
-			}
-			else if (node->type == MIDI) {
-				MidiNode *mnode = new MidiNode();
-				destnodes.push_back(mnode);
-			}
-		}
-		for (int j = 0; j < sourcenodes.size(); j++) {
-			Node *node = sourcenodes[j];
-			Node *cnode = destnodes[j];
-			if (node->in) {
-				for (int k = 0; k < sourcenodes.size(); k++) {
-					Node *tnode = sourcenodes[k];
-					if (node->in == tnode) {
-						Node *innode = destnodes[k];
-						cnode->in = innode;
-						innode->out.push_back(cnode);
-					}
-				}
-			}
-			if (node->type == BLEND) {
-				if (((BlendNode*)node)->in2) {
-					for (int k = 0; k < sourcenodes.size(); k++) {
-						Node *tnode = sourcenodes[k];
-						if (((BlendNode*)node)->in2 == tnode) {
-							Node *innode = destnodes[k];
-							mainprogram->nodesmain->pages[i]->connect_in2(innode, ((BlendNode*)cnode));
-						}
-					}
-				}
-			}
-			for (int m = 0; m < sourcelayersA.size(); m++) {
-				if ((BlendNode*)node == sourcelayersA[m]->lasteffnode) destlayersA[m]->lasteffnode = cnode;
-				if ((BlendNode*)node == sourcelayersA[m]->blendnode) destlayersA[m]->blendnode = (BlendNode*)cnode;
-			}
-			for (int m = 0; m < sourcelayersB.size(); m++) {
-				if ((BlendNode*)node == sourcelayersB[m]->lasteffnode) destlayersB[m]->lasteffnode = cnode;
-				if ((BlendNode*)node == sourcelayersB[m]->blendnode) destlayersB[m]->blendnode = (BlendNode*)cnode;
-			}
-		}
-	}
-	
-	//for (int i = 0; i < sourcelayers.size(); i++) {
-	//	Layer *lay = sourcelayers[i];
-	//	Layer *clay = destlayers[i];
-
-	//	clay->prevtime = lay->prevtime;
-	//	clay->frame = lay->frame;
-	//	clay->prevframe = lay->frame - 1;
-	//}
-	
-	make_layboxes();
-	
 }
 
 void handle_numboxes(std::vector<Box*> &numboxes) {
@@ -10299,7 +9982,7 @@ void the_loop() {
 					// MAKE LIVE button copies preview set entirely to comp set
 					mainmix->firststage = false;  //??????
 					mainmix->compon = true;
-					copy_to_comp(mainmix->layersA, mainmix->layersAcomp, mainmix->layersB, mainmix->layersBcomp, mainprogram->nodesmain->currpage->nodes, mainprogram->nodesmain->currpage->nodescomp, mainprogram->nodesmain->mixnodescomp, true);
+					mainmix->copy_to_comp(mainmix->layersA, mainmix->layersAcomp, mainmix->layersB, mainmix->layersBcomp, mainprogram->nodesmain->currpage->nodes, mainprogram->nodesmain->currpage->nodescomp, mainprogram->nodesmain->mixnodescomp, true);
 					mainprogram->leftmouse = false;
 				}
 			}
@@ -10320,7 +10003,7 @@ void the_loop() {
 				mainprogram->backtopre->box->acolor[3] = 1.0;
 				if (mainprogram->leftmouse) {
 					// BACK button copies comp set entirely back to preview set
-					copy_to_comp(mainmix->layersAcomp, mainmix->layersA, mainmix->layersBcomp, mainmix->layersB, mainprogram->nodesmain->currpage->nodescomp, mainprogram->nodesmain->currpage->nodes, mainprogram->nodesmain->mixnodes, false);
+					mainmix->copy_to_comp(mainmix->layersAcomp, mainmix->layersA, mainmix->layersBcomp, mainmix->layersB, mainprogram->nodesmain->currpage->nodescomp, mainprogram->nodesmain->currpage->nodes, mainprogram->nodesmain->mixnodes, false);
 					mainprogram->leftmouse = false;
 				}
 			}
@@ -11009,6 +10692,20 @@ void the_loop() {
 				}
 			}
 			else if (k == 11) {
+				std::vector<Layer*> &lvec = choose_layers(mainmix->mouselayer->deck);
+				Layer *clonelay = mainmix->clone_layer(lvec, mainmix->mouselayer);
+				if (mainmix->clonemap.find(mainmix->mouselayer) != mainmix->clonemap.end()) {
+					mainmix->clonemap.emplace(clonelay, mainmix->clonemap[mainmix->mouselayer]);
+				}
+				else {
+					std::unordered_set<Layer*> *uset = new std::unordered_set<Layer*>;
+					mainmix->clonemap.emplace(mainmix->mouselayer, uset);
+					mainmix->clonemap.emplace(clonelay, uset);
+					uset->emplace(mainmix->mouselayer);
+				}
+				mainmix->clonemap[mainmix->mouselayer]->emplace(clonelay);
+			}
+			else if (k == 12) {
 				mainmix->mouselayer->shiftx = 0.0f;
 				mainmix->mouselayer->shifty = 0.0f;
 			}
@@ -11811,7 +11508,7 @@ void new_file(int decks, bool alive) {
 	}
 		
 	// set comp layers
-	//copy_to_comp(mainmix->layersA, mainmix->layersAcomp, mainmix->layersB, mainmix->layersBcomp, mainprogram->nodesmain->currpage->nodes, mainprogram->nodesmain->currpage->nodescomp, mainprogram->nodesmain->mixnodescomp, true);
+	//mainmix->copy_to_comp(mainmix->layersA, mainmix->layersAcomp, mainmix->layersB, mainmix->layersBcomp, mainprogram->nodesmain->currpage->nodes, mainprogram->nodesmain->currpage->nodescomp, mainprogram->nodesmain->mixnodescomp, true);
 }
 
 
@@ -13084,6 +12781,7 @@ int main(int argc, char* argv[]){
  	layops.push_back("Open mix");
 	layops.push_back("Save mix");
   	layops.push_back("Delete layer");
+  	layops.push_back("Clone layer");
   	layops.push_back("Center video");
  	make_menu("laymenu", mainprogram->laymenu, layops);
 
@@ -13309,7 +13007,7 @@ int main(int argc, char* argv[]){
 	laymidiD = new LayMidi;
 	if (exists("./midiset.gm")) open_genmidis("./midiset.gm");
 	
-	copy_to_comp(mainmix->layersA, mainmix->layersAcomp, mainmix->layersB, mainmix->layersBcomp, mainprogram->nodesmain->currpage->nodes, mainprogram->nodesmain->currpage->nodescomp, mainprogram->nodesmain->mixnodescomp, true);
+	mainmix->copy_to_comp(mainmix->layersA, mainmix->layersAcomp, mainmix->layersB, mainmix->layersBcomp, mainprogram->nodesmain->currpage->nodes, mainprogram->nodesmain->currpage->nodescomp, mainprogram->nodesmain->mixnodescomp, true);
 	GLint preff = glGetUniformLocation(mainprogram->ShaderProgram, "preff");
 	glUniform1i(preff, 1);
 	

@@ -4,6 +4,8 @@
 #include <list>
 #include <istream>
 #include <ostream>
+#include <unordered_set>
+#include <unordered_map>
 
 #include "SDL2\SDL.h"
 #include <AL/al.h>
@@ -61,7 +63,8 @@ class Layer {
 		std::vector<Effect*> effects;
 		Effect *add_effect(EFFECT_TYPE type, int pos);
 		Effect *replace_effect(EFFECT_TYPE type, int pos);
-		void delete_effect(int pos);
+		delete_effect(int pos);
+		set_clones();
 		Layer();
 		Layer(bool comp);
 		Layer(const Layer &lay);
@@ -189,6 +192,7 @@ class Layer {
 class Mixer {
 	private:
 		do_deletelay(Layer *testlay, std::vector<Layer*> &layers, bool add);
+		set_values(Layer *clay, Layer *lay);
 		event_write(std::ostream &wfile, Param *par);
 		event_read(std::istream &rfile, Param *par, Layer *lay);
 	public:
@@ -199,6 +203,9 @@ class Mixer {
 		Layer *currlay = nullptr;
 		Layer *add_layer(std::vector<Layer*> &layers, int pos);
 		void delete_layer(std::vector<Layer*> &layers, Layer *lay, bool add);
+		Layer* clone_layer(std::vector<Layer*> &lvec, Layer* slay);
+		lay_copy(std::vector<Layer*> &slayers, std::vector<Layer*> &dlayers);
+		copy_to_comp(std::vector<Layer*> &sourcelayersA, std::vector<Layer*> &destlayersA, std::vector<Layer*> &sourcelayersB, std::vector<Layer*> &destlayersB, std::vector<Node*> &sourcenodes, std::vector<Node*> &destnodes, std::vector<MixNode*> &destmixnodes, bool comp);
 		void record_video();
 		save_layerfile(const std::string &path, Layer* lay, bool doclips);
 		save_mix(const std::string &path);
@@ -271,4 +278,6 @@ class Mixer {
 		float time = 0;
 		
 		GLuint tempbuf, temptex;
+		
+		std::unordered_map<Layer*, std::unordered_set<Layer*>*> clonemap;
 };
