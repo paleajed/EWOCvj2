@@ -258,6 +258,7 @@ class Mixer {
 		int mouseeffect = -1;
 		Layer *mouselayer;
 		bool mousedeck = -1;
+		int mouseshelfelem;
 		bool insert;
 		Node *mousenode = NULL;
 		Param *learnparam;

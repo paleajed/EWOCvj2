@@ -1001,7 +1001,7 @@ Mixer::save_state(const std::string &path) {
 	wfile << "ENDOFFILE\n";
 	wfile.close();
 	
-	save_shelf(mainprogram->temppath + "temp.shelf");
+	save_shelf(mainprogram->temppath + "temp.shelf", 2);
 	filestoadd.push_back(mainprogram->temppath + "temp.shelf");
 	bool save = mainprogram->preveff;
 	mainprogram->preveff = true;
@@ -1254,7 +1254,7 @@ Mixer::open_state(const std::string &path) {
 	std::string istring;
 	getline(rfile, istring);
 	
-	open_shelf(result + "_0.file");
+	open_shelf(result + "_0.file", 2);
 	mainprogram->preveff = true;
 	mainmix->open_mix(result + "_1.file");
 	if (exists(result + "_2.file")) {

@@ -282,6 +282,8 @@ class Program {
 		Menu *bin2menu = nullptr;
 		Menu *genmidimenu = nullptr;
 		Menu *genericmenu = nullptr;
+		Menu *shelfmenu1 = nullptr;
+		Menu *shelfmenu2 = nullptr;
 		bool menuactivation;
 		bool menuchosen;
 		int menux;
@@ -427,6 +429,10 @@ class Program {
 		std::string binsdir;
 		std::string recdir;
 		std::string shelfdir;
+		bool openshelfdir = false;
+		bool mainshelf = true;
+		std::string shelfpath;
+		int shelfdircount;
 		
 		Program();
 };
@@ -485,8 +491,12 @@ extern void make_currbin(int pos);
 extern void get_texes(int deck);
 extern void save_thumb(std::string path, GLuint tex);
 extern void open_thumb(std::string path, GLuint tex);
-extern void save_shelf(const std::string &path);
-extern void open_shelf(const std::string &path);
+extern void save_shelf(const std::string &path, int deck);
+extern void open_shelf(const std::string &path, int deck);
+extern bool open_shelfvideo(const std::string &path, int pos);
+extern bool open_shelflayer(const std::string &path, int pos);
+extern void open_shelfdir();
+extern void new_shelf(bool deck);
 extern void new_state();
 extern BinElement *find_element(int size, int k, int i, int j, bool olc);
 void concat_files(std::ostream &ofile, const std::string &path, std::vector<std::vector<std::string>> &jpegpaths);

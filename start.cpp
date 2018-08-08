@@ -4713,10 +4713,12 @@ bool check_thumbs(std::vector<Layer*> &layers, bool deck) {
 
 // check all STATIC/DYNAMIC draws
 void visu_thumbs() {
+	// draw shelves and handle shelves
 	GLint thumb = glGetUniformLocation(mainprogram->ShaderProgram, "thumb");
 	GLint box = glGetUniformLocation(mainprogram->ShaderProgram, "box");
 	glUniform1i(thumb, 1);
 	glActiveTexture(GL_TEXTURE0);
+	glDisable(GL_BLEND);
 	for (int m = 0; m < 2; m++) {
 		for(int i = 0; i < 4; i++) {
 			for(int j = 0; j < 4; j++) {
@@ -4734,6 +4736,7 @@ void visu_thumbs() {
 					if (h - yvtxtoscr(0.1f) * (4 - i) < mainprogram->my and mainprogram->my < (h - yvtxtoscr(0.1f) * (3 - i))) {
 						if (mainprogram->leftmousedown) {
 							if (!mainprogram->dragbinel) {
+								// user starts dragging shelf element
 								mainprogram->leftmousedown = false;
 								mainprogram->dragbinel = new BinElement;
 								mainprogram->dragbinel->path = thpath[k];
@@ -4744,6 +4747,7 @@ void visu_thumbs() {
 						else if (mainprogram->leftmouse) {
 							if (mainprogram->dragbinel) {
 								mainprogram->leftmouse = false;
+								// user drops something in shelf element
 								if (mainprogram->dragbinel->path.rfind(".layer") != std::string::npos) {
 									std::string base = basename(mainprogram->dragbinel->path);
 									std::string newpath = mainprogram->temppath + "shelf_" + base.substr(9, std::string::npos);
@@ -4757,14 +4761,22 @@ void visu_thumbs() {
 								thtype[k] = mainprogram->dragbinel->type;
 								thumbtex[k] = copy_tex(mainprogram->dragbinel->tex);
 								enddrag();
-								save_shelf("./shelfs.shelf");
+								if (mainprogram->mainshelf) save_shelf("./shelfs.shelf", 2);
 							}
+						}
+						else if (mainprogram->menuactivation) {
+							if (mainprogram->mainshelf) mainprogram->shelfmenu1->state = 2;
+							else mainprogram->shelfmenu2->state = 2;
+							mainmix->mouseshelfelem = k;
+							mainmix->mousedeck = (k > 15);
+							mainprogram->menuactivation = false;
 						}
 					}	
 				}
 			}
 		}
 	}
+	glEnable(GL_BLEND);
 	if (mainprogram->dragbinel) {
 		if (mainprogram->preveff) {
 			if (check_thumbs(mainmix->layersA, 0)) return;
@@ -8193,6 +8205,10 @@ void the_loop() {
 		loopstation = lpc;
 	}
 
+	if (mainprogram->openshelfdir) {
+		// load one item from mainprogram->opendir into shelf, one each loop not to slowdown output stream
+		open_shelfdir();
+	}
 		
 	for (int i = 0; i < 4; i++) {
 		for (int j = 0; j < mainmix->nbframesA[i].size(); j++) {
@@ -9692,7 +9708,7 @@ void the_loop() {
 		}
 	}
 	else {  //the_loop else
-		if ((mainprogram->effectmenu->state > 1) or (mainprogram->mixmodemenu->state > 1) or (mainprogram->mixenginemenu->state > 1) or (mainprogram->parammenu1->state > 1) or (mainprogram->parammenu2->state > 1) or (mainprogram->loopmenu->state > 1) or (mainprogram->deckmenu->state > 1) or (mainprogram->laymenu->state > 1) or (mainprogram->loadmenu->state > 1) or (mainprogram->mixtargetmenu->state > 1) or (mainprogram->wipemenu->state > 1) or (mainprogram->livemenu->state > 1) or (mainprogram->binmenu->state > 1) or (mainprogram->binelmenu->state > 1) or (mainprogram->genmidimenu->state > 1) or (mainprogram->genericmenu->state > 1)) {
+		if ((mainprogram->effectmenu->state > 1) or (mainprogram->mixmodemenu->state > 1) or (mainprogram->mixenginemenu->state > 1) or (mainprogram->parammenu1->state > 1) or (mainprogram->parammenu2->state > 1) or (mainprogram->loopmenu->state > 1) or (mainprogram->deckmenu->state > 1) or (mainprogram->laymenu->state > 1) or (mainprogram->loadmenu->state > 1) or (mainprogram->mixtargetmenu->state > 1) or (mainprogram->wipemenu->state > 1) or (mainprogram->livemenu->state > 1) or (mainprogram->binmenu->state > 1) or (mainprogram->binelmenu->state > 1) or (mainprogram->genmidimenu->state > 1) or (mainprogram->genericmenu->state > 1) or (mainprogram->shelfmenu1->state > 1) or (mainprogram->shelfmenu2->state > 1)) {
 			mainprogram->leftmousedown = false;
 			mainprogram->menuondisplay = true;
 		}
@@ -9714,24 +9730,24 @@ void the_loop() {
 					
 		// Draw and handle modebox
 		Box *box = mainmix->modebox;
-		draw_box(box, -1);
-		if (box->in()) {
-			draw_box(white, lightblue, box, -1);
-			if (mainprogram->leftmouse) {
-				//sdldie("quitted");
-			}
-		}
-	
-		const char *modestr;
-		switch (mainmix->mode) {
-			case 0:
-				modestr = "QUIT";
-				break;
-			case 1:
-				modestr = "Node View";
-				break;
-		}
-		render_text(modestr, white, box->vtxcoords->x1 + 0.015f, box->vtxcoords->y1 + 0.04f, 0.0006f, 0.001f);
+		// draw_box(box, -1);
+		// if (box->in()) {
+			// draw_box(white, lightblue, box, -1);
+			// if (mainprogram->leftmouse) {
+				// //sdldie("quitted");
+			// }
+		// }
+	// 
+		// const char *modestr;
+		// switch (mainmix->mode) {
+			// case 0:
+				// modestr = "QUIT";
+				// break;
+			// case 1:
+				// modestr = "Node View";
+				// break;
+		// }
+		// render_text(modestr, white, box->vtxcoords->x1 + 0.015f, box->vtxcoords->y1 + 0.04f, 0.0006f, 0.001f);
 	
 		
 		// Handle params
@@ -10952,6 +10968,55 @@ void the_loop() {
 			mainprogram->menuactivation = 0;
 			mainprogram->menuresults.clear();
 		}
+				
+		// Draw and handle shelfmenu
+		if (mainprogram->mainshelf) k = handle_menu(mainprogram->shelfmenu1);
+		else k = handle_menu(mainprogram->shelfmenu2);
+		if (k == 0) {
+			new_shelf(mainmix->mousedeck);
+		}
+		else if (k == 1) {
+			mainprogram->pathto = "OPENSHELF";
+			std::thread filereq (get_inname);
+			filereq.detach();
+		}
+		else if (k == 2) {
+			mainprogram->pathto = "SAVESHELF";
+			std::thread filereq (get_outname);
+			filereq.detach();
+		}
+		else if (k == 3) {
+			mainprogram->pathto = "OPENSHELFVIDEO";
+			std::thread filereq (get_inname);
+			filereq.detach();
+		}
+		else if (k == 4) {
+			mainprogram->pathto = "OPENSHELFLAYER";
+			std::thread filereq (get_inname);
+			filereq.detach();
+		}
+		else if (k == 5) {
+			mainprogram->pathto = "OPENSHELFDIR";
+			std::thread filereq (get_dir);
+			filereq.detach();
+		}
+		else if (k == 6) {
+			if (exists("./shelfs.shelf")) open_shelf("./shelfs.shelf", 2);
+			else {
+				new_shelf(0);
+				new_shelf(1);
+			}
+			mainprogram->mainshelf = true;
+		}
+	
+		if (mainprogram->menuchosen) {
+			mainprogram->menuchosen = false;
+			mainprogram->leftmouse = 0;
+			mainprogram->menuactivation = 0;
+			mainprogram->menuresults.clear();
+		}
+		
+		// end of menu code
 		
 		//add/delete layer
 		if (!mainprogram->menuondisplay) {
@@ -11985,14 +12050,14 @@ void save_bin(const std::string &path) {
 	boost::filesystem::rename(mainprogram->temppath + "tempconcatbin", path);
 }
 	
-void save_shelf(const std::string &path) {
+void save_shelf(const std::string &path, int deck) {
 	std::vector<std::string> filestoadd;
 	ofstream wfile;
 	wfile.open(path);
 	wfile << "EWOCvj SHELFFILE V0.1\n";
 	
 	wfile << "ELEMS\n";
-	for (int i = 0; i < thpath.size(); i++) {
+	for (int i = 16 * (deck == 1); i < 16 + 16 * (deck == 1 or deck == 2); i++) {
 		wfile << thpath[i];
 		wfile << "\n";
 		wfile << std::to_string(thtype[i]);
@@ -12012,8 +12077,147 @@ void save_shelf(const std::string &path) {
 	outputfile.close();
 	boost::filesystem::rename(mainprogram->temppath + "tempconcatshelf", path);
 }
+
+void open_shelfdir() {
+	struct dirent *ent;
+	if ((ent = readdir(mainprogram->opendir)) != NULL and mainprogram->shelfdircount < 16) {
+		char *filepath = (char*)malloc(1024);
+		strcpy(filepath, mainprogram->shelfpath.c_str());
+		strcat(filepath, "\\");
+		strcat(filepath, ent->d_name);
+		std::string str(filepath);
+		
+		bool ret;
+		if (str.substr(str.length() - 6, std::string::npos) == ".layer") {
+			ret = open_shelflayer(str, mainprogram->shelfdircount + mainmix->mousedeck * 16);
+		}
+		else {
+			ret = open_shelfvideo(str, mainprogram->shelfdircount + mainmix->mousedeck * 16);
+		}
+		
+		if (ret) mainprogram->shelfdircount++;
+	}
+	else mainprogram->openshelfdir = false;
+}
+
+bool open_shelfvideo(const std::string &path, int pos) {
+	thpath[pos] = path;
+	thtype[pos] = ELEM_FILE;
+	Layer *lay = new Layer(true);
+	lay->dummy = true;
+	open_video(1, lay, path, true);
+	lay->frame = lay->numf / 2.0f;
+	lay->prevframe = -1;
+	lay->ready = true;
+	lay->startdecode.notify_one();
+	std::unique_lock<std::mutex> lock(lay->endlock);
+	lay->enddecode.wait(lock, [&]{return lay->processed;});
+	lay->processed = false;
+	lock.unlock();
+	if (lay->openerr) {
+		thpath[pos] = "";
+		lay->closethread = true;
+		while (lay->closethread) {
+			lay->ready = true;
+			lay->startdecode.notify_one();
+		}
+		delete lay;
+		return 0;
+	}
+	glBindTexture(GL_TEXTURE_2D, thumbtex[pos]);
+	if (lay->dataformat == 188 or lay->vidformat == 187) {
+		if (lay->decresult->compression == 187) {
+			glCompressedTexImage2D(GL_TEXTURE_2D, 0, GL_COMPRESSED_RGBA_S3TC_DXT1_EXT, lay->decresult->width, lay->decresult->height, 0, lay->decresult->size, lay->decresult->data);
+		}
+		else if (lay->decresult->compression == 190) {
+			glCompressedTexImage2D(GL_TEXTURE_2D, 0, GL_COMPRESSED_RGBA_S3TC_DXT5_EXT, lay->decresult->width, lay->decresult->height, 0, lay->decresult->size, lay->decresult->data);
+		}
+	}
+	else { 
+		glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA, lay->decresult->width, lay->decresult->height, 0, GL_RGBA, GL_UNSIGNED_BYTE, lay->decresult->data);
+	}
+	lay->closethread = true;
+	while (lay->closethread) {
+		lay->ready = true;
+		lay->startdecode.notify_one();
+	}
+	delete lay;
 	
-void open_shelf(const std::string &path) {
+	return 1;
+}
+	
+bool open_shelflayer(const std::string &path, int pos) {
+	thpath[pos] = path;
+	thtype[pos] = ELEM_LAYER;
+	Layer *lay = new Layer(true);
+	lay->dummy = true;
+	lay->pos = 0;
+	lay->node = mainprogram->nodesmain->currpage->add_videonode(2);
+	lay->node->layer = lay;
+	lay->lasteffnode = lay->node;
+	lay->node->calc = true;
+	lay->node->walked = false;
+	mainmix->open_layerfile(path, lay, true, 0);
+	if (lay->openerr) {
+		thpath[pos] = "";
+		lay->closethread = true;
+		while (lay->closethread) {
+			lay->ready = true;
+			lay->startdecode.notify_one();
+		}
+		delete lay;
+		return 0;
+	}
+	lay->playbut->value = false;
+	lay->revbut->value = false;
+	lay->bouncebut->value = false;
+	for (int k = 0; k < lay->effects.size(); k++) {
+		lay->effects[k]->node->calc = true;
+		lay->effects[k]->node->walked = false;
+		lay->lasteffnode = lay->effects[k]->node;
+	}
+	lay->frame = 0.0f;
+	lay->prevframe = -1;
+	lay->ready = true;
+	lay->startdecode.notify_one();
+	std::unique_lock<std::mutex> lock(lay->endlock);
+	lay->enddecode.wait(lock, [&]{return lay->processed;});
+	lay->processed = false;
+	lock.unlock();
+	glBindTexture(GL_TEXTURE_2D, lay->fbotex);
+	if (lay->dataformat == 188 or lay->vidformat == 187) {
+		if (lay->decresult->compression == 187) {
+			glCompressedTexImage2D(GL_TEXTURE_2D, 0, GL_COMPRESSED_RGBA_S3TC_DXT1_EXT, lay->decresult->width, lay->decresult->height, 0, lay->decresult->size, lay->decresult->data);
+		}
+		else if (lay->decresult->compression == 190) {
+			glCompressedTexImage2D(GL_TEXTURE_2D, 0, GL_COMPRESSED_RGBA_S3TC_DXT5_EXT, lay->decresult->width, lay->decresult->height, 0, lay->decresult->size, lay->decresult->data);
+		}
+	}
+	else {
+		glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA, lay->decresult->width, lay->decresult->height, 0, GL_RGBA, GL_UNSIGNED_BYTE, lay->decresult->data);
+	}
+	onestepfrom(0, lay->node, NULL, -1, -1);
+	if (lay->effects.size()) {
+		thumbtex[pos] = copy_tex(lay->effects[lay->effects.size() - 1]->fbotex);
+	}
+	else {
+		thumbtex[pos] = copy_tex(lay->fbotex);
+	}
+	lay->closethread = true;
+	while (lay->closethread) {
+		lay->ready = true;
+		lay->startdecode.notify_one();
+	}
+	delete lay;
+	
+	return 1;
+}
+
+void open_shelf(const std::string &path, int deck) {
+	
+	if (path != "./shelfs.shelf") mainprogram->mainshelf = false;
+	else mainprogram->mainshelf = true;
+	
 	std::string result = deconcat_files(path);
 	bool concat = (result != "");
 	ifstream rfile;
@@ -12028,7 +12232,7 @@ void open_shelf(const std::string &path) {
 			break;
 		}
 		else if (istring == "ELEMS") {
-			int count = 0;
+			int count = (deck == 1) * 16;
 			while (getline(rfile, istring)) {
 				if (istring == "ENDOFELEMS") break;
 				thpath[count] = istring;
@@ -12046,81 +12250,12 @@ void open_shelf(const std::string &path) {
 					count++;
 					continue;
 				}
-				Layer *lay = new Layer(true);
-				lay->dummy = true;
 				if (thtype[count] == ELEM_FILE) {
-					open_video(1, lay, thpath[count], true);
-					lay->frame = lay->numf / 2.0f;
-					lay->prevframe = -1;
-					lay->ready = true;
-					lay->startdecode.notify_one();
-					std::unique_lock<std::mutex> lock(lay->endlock);
-					lay->enddecode.wait(lock, [&]{return lay->processed;});
-					lay->processed = false;
-					lock.unlock();
-					glBindTexture(GL_TEXTURE_2D, thumbtex[count]);
-					if (lay->dataformat == 188 or lay->vidformat == 187) {
-						if (lay->decresult->compression == 187) {
-							glCompressedTexImage2D(GL_TEXTURE_2D, 0, GL_COMPRESSED_RGBA_S3TC_DXT1_EXT, lay->decresult->width, lay->decresult->height, 0, lay->decresult->size, lay->decresult->data);
-						}
-						else if (lay->decresult->compression == 190) {
-							glCompressedTexImage2D(GL_TEXTURE_2D, 0, GL_COMPRESSED_RGBA_S3TC_DXT5_EXT, lay->decresult->width, lay->decresult->height, 0, lay->decresult->size, lay->decresult->data);
-						}
-					}
-					else { 
-						glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA, lay->decresult->width, lay->decresult->height, 0, GL_RGBA, GL_UNSIGNED_BYTE, lay->decresult->data);
-					}
+					open_shelfvideo(thpath[count], count);
 				}
 				else if (thtype[count] == ELEM_LAYER) {
-					lay->pos = 0;
-					lay->node = mainprogram->nodesmain->currpage->add_videonode(2);
-					lay->node->layer = lay;
-					lay->lasteffnode = lay->node;
-					lay->node->calc = true;
-					lay->node->walked = false;
-					mainmix->open_layerfile(thpath[count], lay, true, 0);
-					lay->playbut->value = false;
-					lay->revbut->value = false;
-					lay->bouncebut->value = false;
-					for (int k = 0; k < lay->effects.size(); k++) {
-						lay->effects[k]->node->calc = true;
-						lay->effects[k]->node->walked = false;
-						lay->lasteffnode = lay->effects[k]->node;
-					}
-					lay->frame = 0.0f;
-					lay->prevframe = -1;
-					lay->ready = true;
-					lay->startdecode.notify_one();
-					std::unique_lock<std::mutex> lock(lay->endlock);
-					lay->enddecode.wait(lock, [&]{return lay->processed;});
-					lay->processed = false;
-					lock.unlock();
-					glBindTexture(GL_TEXTURE_2D, lay->fbotex);
-					if (lay->dataformat == 188 or lay->vidformat == 187) {
-						if (lay->decresult->compression == 187) {
-							glCompressedTexImage2D(GL_TEXTURE_2D, 0, GL_COMPRESSED_RGBA_S3TC_DXT1_EXT, lay->decresult->width, lay->decresult->height, 0, lay->decresult->size, lay->decresult->data);
-						}
-						else if (lay->decresult->compression == 190) {
-							glCompressedTexImage2D(GL_TEXTURE_2D, 0, GL_COMPRESSED_RGBA_S3TC_DXT5_EXT, lay->decresult->width, lay->decresult->height, 0, lay->decresult->size, lay->decresult->data);
-						}
-					}
-					else {
-						glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA, lay->decresult->width, lay->decresult->height, 0, GL_RGBA, GL_UNSIGNED_BYTE, lay->decresult->data);
-					}
-					onestepfrom(0, lay->node, NULL, -1, -1);
-					if (lay->effects.size()) {
-						thumbtex[count] = copy_tex(lay->effects[lay->effects.size() - 1]->fbotex);
-					}
-					else {
-						thumbtex[count] = copy_tex(lay->fbotex);
-					}
+					open_shelflayer(thpath[count], count);
 				}
-				lay->closethread = true;
-				while (lay->closethread) {
-					lay->ready = true;
-					lay->startdecode.notify_one();
-				}
-				delete lay;
 				count++;
 			}
 		}
@@ -12129,6 +12264,15 @@ void open_shelf(const std::string &path) {
 	rfile.close();
 }
 
+void new_shelf(bool deck) {
+	for (int i = 16 * deck; i < 16 + 16 * deck; i++) {
+		thpath[i] = "";
+		thtype[i] == ELEM_FILE;
+		glBindTexture(GL_TEXTURE_2D, thumbtex[i]);
+		glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA, 16, 16, 0, GL_RGBA, GL_UNSIGNED_BYTE, nullptr);
+	}
+}
+	
 void open_bin(const std::string &path, Bin *bin) {
 	std::string result = deconcat_files(path);
 	bool concat = (result != "");
@@ -12978,6 +13122,25 @@ int main(int argc, char* argv[]){
   	generic.push_back("Quit");
   	make_menu("genericmenu", mainprogram->genericmenu, generic);
 
+ 	std::vector<std::string> shelf1;
+  	shelf1.push_back("New shelf");
+  	shelf1.push_back("Open shelf");
+  	shelf1.push_back("Save shelf");
+  	shelf1.push_back("Open video");
+  	shelf1.push_back("Open layerfile");
+  	shelf1.push_back("Open dir");
+  	make_menu("shelfmenu1", mainprogram->shelfmenu1, shelf1);
+
+ 	std::vector<std::string> shelf2;
+  	shelf2.push_back("New shelf");
+  	shelf2.push_back("Open shelf");
+  	shelf2.push_back("Save shelf");
+  	shelf2.push_back("Open video");
+  	shelf2.push_back("Open layerfile");
+  	shelf2.push_back("Open dir");
+  	shelf2.push_back("Back to main shelf");
+  	make_menu("shelfmenu2", mainprogram->shelfmenu2, shelf2);
+
  	
 	mainprogram->nodesmain = new NodesMain;
 	mainprogram->nodesmain->add_nodepages(8);
@@ -13176,7 +13339,7 @@ int main(int argc, char* argv[]){
 
     // must put this here or problem with fbovao[2] ?????
 	set_fbo();
-	if (exists("./shelfs.shelf")) open_shelf("./shelfs.shelf");
+	if (exists("./shelfs.shelf")) open_shelf("./shelfs.shelf", 2);
 	
 	std::chrono::high_resolution_clock::time_point begintime = std::chrono::high_resolution_clock::now();
 	std::chrono::duration<double> elapsed;
@@ -13189,6 +13352,30 @@ int main(int argc, char* argv[]){
 			if (mainprogram->pathto == "OPENVIDEO") {
 				std::string str(mainprogram->path);
 				open_video(0, mainprogram->loadlay, str, true);
+			}
+			else if (mainprogram->pathto == "OPENSHELF") {
+				std::string str(mainprogram->path);
+				open_shelf(str, mainmix->mousedeck);
+			}
+			else if (mainprogram->pathto == "SAVESHELF") {
+				std::string str(mainprogram->path);
+				save_shelf(str, mainmix->mousedeck);
+			}
+			else if (mainprogram->pathto == "OPENSHELFVIDEO") {
+				std::string str(mainprogram->path);
+				open_shelfvideo(str, mainmix->mouseshelfelem);
+			}
+			else if (mainprogram->pathto == "OPENSHELFLAYER") {
+				std::string str(mainprogram->path);
+				open_shelflayer(str, mainmix->mouseshelfelem);
+			}
+			else if (mainprogram->pathto == "OPENSHELFDIR") {
+				mainprogram->shelfpath = mainprogram->path;
+				mainprogram->opendir = opendir(mainprogram->path);
+				if (mainprogram->opendir) {
+					mainprogram->openshelfdir = true;
+					mainprogram->shelfdircount = 0;
+				}
 			}
 			else if (mainprogram->pathto == "SAVESTATE") {
 				std::string str(mainprogram->path);
