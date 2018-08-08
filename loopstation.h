@@ -58,6 +58,7 @@ class LoopStationElement {
 		bool didsomething = false;	
 		init();
 		handle();
+		erase_elem();
 		add_param();
 		set_params();
 		LoopStationElement();

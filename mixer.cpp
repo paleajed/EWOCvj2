@@ -283,6 +283,14 @@ Mixer::do_deletelay(Layer *testlay, std::vector<Layer*> &layers, bool add) {
 	if (testlay->node) mainprogram->nodesmain->currpage->delete_node(testlay->node);
 
 	delete testlay;
+	
+	if (mainmix->clonemap.find(testlay) != mainmix->clonemap.end()) {
+		mainmix->clonemap[testlay]->erase(testlay);
+		if (mainmix->clonemap[testlay]->size() == 0) {
+			delete mainmix->clonemap[testlay];
+		}
+		mainmix->clonemap.erase(testlay);
+	}
 }
 
 void Mixer::delete_layer(std::vector<Layer*> &layers, Layer *testlay, bool add) {
@@ -1043,16 +1051,21 @@ Mixer::event_write(std::ostream &wfile, Param *par) {
 }
 
 Mixer::event_read(std::istream &rfile, Param *par, Layer *lay) {
+	// load loopstation events for this parameter
 	std::string istring;
 	LoopStationElement *loop = nullptr;
 	getline(rfile, istring);
 	int elemnr = std::stoi(istring);
 	if (std::find(loopstation->readelemnrs.begin(), loopstation->readelemnrs.end(), elemnr) == loopstation->readelemnrs.end()) {
+		// new loopstation line taken in use
 		loop = loopstation->free_element();
 		loopstation->readelemnrs.push_back(elemnr);
 		loopstation->readelems.push_back(loop);
 	}
-	else loop = loopstation->readelems[std::find(loopstation->readelemnrs.begin(), loopstation->readelemnrs.end(), elemnr) - loopstation->readelemnrs.begin()];
+	else {
+		// other parameter(s) of this rfile using this loopstation line already exist
+		loop = loopstation->readelems[std::find(loopstation->readelemnrs.begin(), loopstation->readelemnrs.end(), elemnr) - loopstation->readelemnrs.begin()];
+	}
 	getline(rfile, istring);
 	if (loop) {
 		loop->loopbut->value = std::stoi(istring);
@@ -1383,7 +1396,7 @@ Mixer::read_layers(std::istream &rfile, const std::string &result, std::vector<L
 	int jpegcount = 0;
 	if (mainprogram->filecount) jpegcount = mainprogram->filecount;
 	while (getline(rfile, istring)) {
-		if (istring == "LAYERSB" or istring == "ENDOFCLIPLAYER") {
+		if (istring == "LAYERSB" or istring == "ENDOFCLIPLAYER" or istring == "ENDOFFILE") {
 			return jpegcount;
 		}
 		if (istring == "POS") {

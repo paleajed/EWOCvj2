@@ -129,6 +129,20 @@ LoopStationElement::visualize() {
 	draw_box(this->colbox, -1);
 }
 	
+LoopStationElement::erase_elem() {
+	this->eventlist.clear();
+	std::unordered_set<Param*>::iterator it;
+	for (it = this->params.begin(); it != this->params.end(); it++) {
+		Param *par = *it;
+		par->box->acolor[0] = 0.2f;
+		par->box->acolor[1] = 0.2f;
+		par->box->acolor[2] = 0.2f;
+		par->box->acolor[3] = 1.0f;
+	}
+	this->params.clear();
+	this->layers.clear();
+}
+
 LoopStationElement::mouse_handle() {
 	if (this->recbut->box->in()) {
 		if (mainprogram->leftmouse) {
@@ -137,16 +151,7 @@ LoopStationElement::mouse_handle() {
 			if (this->recbut->value) {
 				this->loopbut->value = false;
 				this->playbut->value = false;
-				this->eventlist.clear();
-				std::unordered_set<Param*>::iterator it;
-				for (it = this->params.begin(); it != this->params.end(); it++) {
-					Param *par = *it;
-					par->box->acolor[0] = 0.2f;
-					par->box->acolor[1] = 0.2f;
-					par->box->acolor[2] = 0.2f;
-					par->box->acolor[3] = 1.0f;
-				}
-				this->params.clear();
+				this->erase_elem();
 				this->starttime = std::chrono::high_resolution_clock::now();
 			}
 			else {

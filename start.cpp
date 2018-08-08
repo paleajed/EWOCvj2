@@ -6869,6 +6869,7 @@ void handle_numboxes(std::vector<Box*> &numboxes) {
 						std::string comp = "";
 						if (!mainprogram->preveff) comp = "comp";
 						if (numboxes == mainmix->numboxesA) {
+							// switch scenes
 							if (i == mainmix->page[0] + 1) continue;
 							mainmix->tempnbframes[i - 1].clear();
 							for (int j = 0; j < mainmix->nbframesA[i - 1].size(); j++) {
@@ -6878,14 +6879,33 @@ void handle_numboxes(std::vector<Box*> &numboxes) {
 							std::vector<Layer*> &lvec = choose_layers(0);
 							mainmix->nbframesA[mainmix->page[0]].clear();
 							for (int j = 0; j < lvec.size(); j++) {
+								// store layers of current scene into nbframesA for running their framecounters in the background (to keep sync)
 								mainmix->nbframesA[mainmix->page[0]].push_back(lvec[j]);
 							}
 							mainmix->mousedeck = 0;
+							// save current scene to temp dir, open new scene
 							mainmix->save_deck(mainprogram->temppath + "tempdeck_xch.deck");
+							// stop current scene loopstation line if they don't extend to the other deck
+							for (int j = 0; j < loopstation->elems.size(); j++) {
+								std::unordered_set<Param*>::iterator it;
+								for (it = loopstation->elems[j]->params.begin(); it != loopstation->elems[j]->params.end(); it++) {
+									Param *par = *it;
+									if (par->effect) {
+										if (std::find(lvec.begin(), lvec.end(), par->effect->layer) != lvec.end()) {
+											loopstation->elems[j]->params.erase(par);
+										}
+									}
+								}
+								if (loopstation->elems[j]->params.size() == 0) {
+									loopstation->elems[j]->erase_elem();
+								}
+							}
 							mainmix->open_deck(mainprogram->temppath + "tempdeck_A" + std::to_string(i) + comp + ".deck", 0);
 							boost::filesystem::rename(mainprogram->temppath + "tempdeck_xch.deck", mainprogram->temppath + "tempdeck_A" + std::to_string(mainmix->page[0] + 1) + comp + ".deck");
-							for (int j = 0; j < lvec.size(); j++) {
-								lvec[j]->frame = mainmix->tempnbframes[i - 1][j]->frame;
+							std::vector<Layer*> &lvec2 = choose_layers(0);
+							for (int j = 0; j < lvec2.size(); j++) {
+								// set layer frame to (running in background) nbframesA->frame of loaded scene
+								lvec2[j]->frame = mainmix->tempnbframes[i - 1][j]->frame;
 							}
 							mainmix->page[0] = i - 1;
 							
@@ -6904,10 +6924,26 @@ void handle_numboxes(std::vector<Box*> &numboxes) {
 							}
 							mainmix->mousedeck = 1;
 							mainmix->save_deck(mainprogram->temppath + "tempdeck_xch.deck");
+							// stop current scene loopstation line if they don't extend to the other deck
+							for (int j = 0; j < loopstation->elems.size(); j++) {
+								std::unordered_set<Param*>::iterator it;
+								for (it = loopstation->elems[j]->params.begin(); it != loopstation->elems[j]->params.end(); it++) {
+									Param *par = *it;
+									if (par->effect) {
+										if (std::find(lvec.begin(), lvec.end(), par->effect->layer) != lvec.end()) {
+											loopstation->elems[j]->params.erase(par);
+										}
+									}
+								}
+								if (loopstation->elems[j]->params.size() == 0) {
+									loopstation->elems[j]->erase_elem();
+								}
+							}
 							mainmix->open_deck(mainprogram->temppath + "tempdeck_B" + std::to_string(i) + comp + ".deck", 0);
 							boost::filesystem::rename(mainprogram->temppath + "tempdeck_xch.deck", mainprogram->temppath + "tempdeck_B" + std::to_string(mainmix->page[1] + 1) + comp + ".deck");
-							for (int j = 0; j < lvec.size(); j++) {
-								lvec[j]->frame = mainmix->tempnbframes[i - 1][j]->frame;
+							std::vector<Layer*> &lvec2 = choose_layers(0);
+							for (int j = 0; j < lvec2.size(); j++) {
+								lvec2[j]->frame = mainmix->tempnbframes[i - 1][j]->frame;
 							}
 							mainmix->page[1] = i - 1;
 						}
@@ -11101,7 +11137,7 @@ void the_loop() {
 				if (mainprogram->leftmousedown) {
 					mainmix->currlay->blendnode->wipex = -(((1.0f - ((xscrtovtx(mainprogram->mx) - 0.55f - mainmix->currlay->deck * 0.9f) / 0.3f)) - 0.5f) * 2.0f - 1.5f);
 					mainmix->currlay->blendnode->wipey = -((((2.0f - yscrtovtx(mainprogram->my)) / 0.3f) - 0.5f) * 2.0f - 0.50f);
-					if (mainmix->currlay->blendnode->wipetype > 7) {
+					if (mainmix->currlay->blendnode->wipetype == 8 or mainmix->currlay->blendnode->wipetype == 9) {
 						mainmix->currlay->blendnode->wipex *= 16.0f;
 						mainmix->currlay->blendnode->wipey *= 16.0f;
 					}
@@ -11116,7 +11152,7 @@ void the_loop() {
 					mainprogram->menuactivation = false;
 					mainmix->wipex[0] = -(((1.0f - ((xscrtovtx(mainprogram->mx) - 0.7f) / 0.6f)) - 0.5f) * 2.0f - 0.5f);
 					mainmix->wipey[0] = -((((2.0f - yscrtovtx(mainprogram->my)) / 0.6f) - 0.5f) * 2.0f - 0.5f);
-					if (mainmix->wipe[0] > 7) {
+					if (mainmix->currlay->blendnode->wipetype == 8 or mainmix->currlay->blendnode->wipetype == 9) {
 						mainmix->wipex[0] *= 16.0f;
 						mainmix->wipey[0] *= 16.0f;
 					}
@@ -11124,7 +11160,8 @@ void the_loop() {
 				if (mainprogram->leftmousedown) {
 					mainmix->wipex[0] = -(((1.0f - ((xscrtovtx(mainprogram->mx) - 0.7f) / 0.6f)) - 0.5f) * 2.0f - 0.5f);
 					mainmix->wipey[0] = -((((2.0f - yscrtovtx(mainprogram->my)) / 0.6f) - 0.5f) * 2.0f - 0.5f);
-					if (mainmix->wipe[0] > 7) {
+					printf("wipex, wipey %f %f\n", mainmix->wipex[0], mainmix->wipey[0]);
+					if (mainmix->currlay->blendnode->wipetype == 8 or mainmix->currlay->blendnode->wipetype == 9) {
 						mainmix->wipex[0] *= 16.0f;
 						mainmix->wipey[0] *= 16.0f;
 					}
@@ -11476,7 +11513,6 @@ void the_loop() {
 
 
 void delete_layers(std::vector<Layer*> &layers, bool alive) {
-	int count = 0;
 	while (!layers.empty()) {
 		//layers.back()->node = nullptr;
 		//layers.back()->blendnode = nullptr;
@@ -11500,8 +11536,6 @@ void delete_layers(std::vector<Layer*> &layers, bool alive) {
 				lay->effects.pop_back();
 			}
 			mainprogram->nodesmain->currpage->delete_node(lay->node);
-			count++;
-			if (count == layers.size()) break;
 		}
 	}
 }
@@ -12879,6 +12913,8 @@ int main(int argc, char* argv[]){
  	wipes.push_back("BARS");
  	wipes.push_back("submenu dir3menu");
   	wipes.push_back("PATTERN");
+ 	wipes.push_back("submenu dir2menu");
+  	wipes.push_back("REPEL");
  	make_menu("wipemenu", mainprogram->wipemenu, wipes);
 
  	std::vector<std::string> direction1;
