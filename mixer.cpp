@@ -31,7 +31,7 @@ extern "C" {
 #include "loopstation.h"
 
 Mixer::Mixer() {
-	this->numh = this->numh * w / h;
+	this->numh = this->numh * glob->w / glob->h;
 	for (int j = 0; j < 2; j++) {
 		for (int i = 0; i < 5; i++) {
 			Box *box = new Box;
@@ -1603,7 +1603,7 @@ Mixer::read_layers(std::istream &rfile, const std::string &result, std::vector<L
 						glBindTexture(GL_TEXTURE_2D, clip->tex);
 						glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR);
 						glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
-						glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA, (int)(w * 0.3f), (int)(h * 0.3f), 0, GL_RGBA, GL_UNSIGNED_BYTE, NULL);
+						glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA, (int)(glob->w * 0.3f), (int)(glob->h * 0.3f), 0, GL_RGBA, GL_UNSIGNED_BYTE, NULL);
 						if (concat) {
 							boost::filesystem::rename(result + "_" + std::to_string(jpegcount) + ".file", result + "_" + std::to_string(jpegcount) + ".jpeg");
 							open_thumb(result + "_" + std::to_string(jpegcount) + ".jpeg", clip->tex);

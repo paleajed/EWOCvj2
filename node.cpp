@@ -11,6 +11,7 @@
 #include "window.h"
 #include "program.h"
 #include "loopstation.h"
+#include "bins.h"
 
 
 float pdistance(float x, float y, float x1, float y1, float x2, float y2) {
@@ -56,8 +57,8 @@ Node::Node() {
 MidiNode::MidiNode() {
 	this->type = MIDI;
 	this->box->vtxcoords->y1 = -0.7;
-	this->box->vtxcoords->w = xscrtovtx(60);
-	this->box->vtxcoords->h = yscrtovtx(60);
+	this->box->vtxcoords->w = mainprogram->xscrtovtx(60);
+	this->box->vtxcoords->h = mainprogram->yscrtovtx(60);
 	this->box->upvtxtoscr();
 }
 
@@ -443,7 +444,7 @@ void NodePage::handle_nodes() {
 					effstr = "MAZEEDGE";
 					break;
 			}
-			render_text(effstr, white, node->box->vtxcoords->x1 + 0.01, node->box->vtxcoords->y1 + yscrtovtx(7), 0.0003, 0.0005);
+			render_text(effstr, white, node->box->vtxcoords->x1 + 0.01, node->box->vtxcoords->y1 + mainprogram->yscrtovtx(7), 0.0003, 0.0005);
 			
 			if (node->box->in()) {
 				if (mainprogram->del) {
@@ -493,7 +494,7 @@ void NodePage::handle_nodes() {
 			std::string typestr;
 			if (((MidiNode*)node)->param->midi[0] == 176) typestr = "Ctrl";
 			else typestr = "Note";
-			render_text(typestr, white, node->box->vtxcoords->x1 + 0.01, node->box->vtxcoords->y1 + yscrtovtx(7), 0.0003, 0.0005);
+			render_text(typestr, white, node->box->vtxcoords->x1 + 0.01, node->box->vtxcoords->y1 + mainprogram->yscrtovtx(7), 0.0003, 0.0005);
 		}
 
 		if (node->type == BLEND) {
@@ -556,7 +557,7 @@ void NodePage::handle_nodes() {
 					mixstr = "LiOn";
 					break;
 			}
-			render_text(mixstr, white, node->box->vtxcoords->x1 + 0.01, node->box->vtxcoords->y1 + yscrtovtx(7), 0.0003, 0.0005);
+			render_text(mixstr, white, node->box->vtxcoords->x1 + 0.01, node->box->vtxcoords->y1 + mainprogram->yscrtovtx(7), 0.0003, 0.0005);
 			
 			if (node->box->in()) {
 				if (mainprogram->mixmodemenu->state == 1) {
@@ -569,7 +570,7 @@ void NodePage::handle_nodes() {
 		
 		if (node->box->scrcoords->x1 - 10 < mainprogram->mx and mainprogram->mx < node->box->scrcoords->x1 + 10) {
 			if (node->box->scrcoords->y1 - node->box->scrcoords->h / 2 - 10 < mainprogram->my and mainprogram->my < node->box->scrcoords->y1 - node->box->scrcoords->h / 2 + 10) {
-				draw_box(blue, blue, node->box->vtxcoords->x1 - xscrtovtx(10), node->box->vtxcoords->y1 + node->box->vtxcoords->h / 2.0f - yscrtovtx(10), xscrtovtx(20), yscrtovtx(20), -1);
+				draw_box(blue, blue, node->box->vtxcoords->x1 - mainprogram->xscrtovtx(10), node->box->vtxcoords->y1 + node->box->vtxcoords->h / 2.0f - mainprogram->yscrtovtx(10), mainprogram->xscrtovtx(20), mainprogram->yscrtovtx(20), -1);
 				if (mainprogram->leftmousedown) {
 					mainprogram->leftmousedown = false;
 					if (node->in) {
@@ -584,7 +585,7 @@ void NodePage::handle_nodes() {
 		if (node->type == BLEND) {
 			if (node->box->scrcoords->x1 + node->box->scrcoords->w / 2 - 10 < mainprogram->mx and mainprogram->mx < node->box->scrcoords->x1 + node->box->scrcoords->w / 2 + 10) {
 				if (node->box->scrcoords->y1 - 10 < mainprogram->my and mainprogram->my < node->box->scrcoords->y1 + 10) {
-					draw_box(blue, blue, node->box->vtxcoords->x1 + node->box->vtxcoords->w / 2.0f - xscrtovtx(10), node->box->vtxcoords->y1 - yscrtovtx(10), xscrtovtx(20), yscrtovtx(20), -1);
+					draw_box(blue, blue, node->box->vtxcoords->x1 + node->box->vtxcoords->w / 2.0f - mainprogram->xscrtovtx(10), node->box->vtxcoords->y1 - mainprogram->yscrtovtx(10), mainprogram->xscrtovtx(20), mainprogram->yscrtovtx(20), -1);
 					if (mainprogram->leftmousedown) {
 						mainprogram->leftmousedown = false;
 						node->dragging = C_IN2;
@@ -594,7 +595,7 @@ void NodePage::handle_nodes() {
 		}
 		if (node->box->scrcoords->x1 + node->box->scrcoords->w - 10 < mainprogram->mx and mainprogram->mx < node->box->scrcoords->x1 + node->box->scrcoords->w + 10) {
 			if (node->box->scrcoords->y1 - node->box->scrcoords->h / 2 - 10 < mainprogram->my and mainprogram->my < node->box->scrcoords->y1 - node->box->scrcoords->h / 2 + 10) {
-				draw_box(blue, blue, node->box->vtxcoords->x1 + node->box->vtxcoords->w - xscrtovtx(10), node->box->vtxcoords->y1 + node->box->vtxcoords->h / 2.0f - yscrtovtx(10), xscrtovtx(20), yscrtovtx(20), -1);
+				draw_box(blue, blue, node->box->vtxcoords->x1 + node->box->vtxcoords->w - mainprogram->xscrtovtx(10), node->box->vtxcoords->y1 + node->box->vtxcoords->h / 2.0f - mainprogram->yscrtovtx(10), mainprogram->xscrtovtx(20), mainprogram->yscrtovtx(20), -1);
 				if (mainprogram->leftmousedown) {
 					mainprogram->leftmousedown = false;
 					node->dragging = C_OUT;
@@ -603,16 +604,16 @@ void NodePage::handle_nodes() {
 			}	
 		}
 		if (node->dragging == C_OUT) {
-			draw_line(white, node->box->vtxcoords->x1 + node->box->vtxcoords->w, node->box->vtxcoords->y1 + node->box->vtxcoords->h / 2.0f, -1 + xscrtovtx(mainprogram->mx), 1 - yscrtovtx(mainprogram->my));
-			draw_box(white, white, node->box->vtxcoords->x1 + node->box->vtxcoords->w - xscrtovtx(10), node->box->vtxcoords->y1 + yscrtovtx(node->box->scrcoords->h / 2 - 10), xscrtovtx(20), yscrtovtx(20), -1);
+			draw_line(white, node->box->vtxcoords->x1 + node->box->vtxcoords->w, node->box->vtxcoords->y1 + node->box->vtxcoords->h / 2.0f, -1 + mainprogram->xscrtovtx(mainprogram->mx), 1 - mainprogram->yscrtovtx(mainprogram->my));
+			draw_box(white, white, node->box->vtxcoords->x1 + node->box->vtxcoords->w - mainprogram->xscrtovtx(10), node->box->vtxcoords->y1 + mainprogram->yscrtovtx(node->box->scrcoords->h / 2 - 10), mainprogram->xscrtovtx(20), mainprogram->yscrtovtx(20), -1);
 		}
 		else if (node->dragging == C_IN) {
-			draw_line(white, node->box->vtxcoords->x1, node->box->vtxcoords->y1 + node->box->vtxcoords->h / 2.0f, -1 + xscrtovtx(mainprogram->mx), 1 - yscrtovtx(mainprogram->my));
-			draw_box(white, white, node->box->vtxcoords->x1 - xscrtovtx(10), node->box->vtxcoords->y1 + yscrtovtx(node->box->scrcoords->h / 2 - 10), xscrtovtx(20), yscrtovtx(20), -1);
+			draw_line(white, node->box->vtxcoords->x1, node->box->vtxcoords->y1 + node->box->vtxcoords->h / 2.0f, -1 + mainprogram->xscrtovtx(mainprogram->mx), 1 - mainprogram->yscrtovtx(mainprogram->my));
+			draw_box(white, white, node->box->vtxcoords->x1 - mainprogram->xscrtovtx(10), node->box->vtxcoords->y1 + mainprogram->yscrtovtx(node->box->scrcoords->h / 2 - 10), mainprogram->xscrtovtx(20), mainprogram->yscrtovtx(20), -1);
 		}
 		else if (node->dragging == C_IN2) {
-			draw_line(white, node->box->vtxcoords->x1 + node->box->vtxcoords->w / 2.0f, node->box->vtxcoords->y1, -1 + xscrtovtx(mainprogram->mx), 1 - yscrtovtx(mainprogram->my));
-			draw_box(white, white, node->box->vtxcoords->x1  + node->box->vtxcoords->w / 2.0f - xscrtovtx(10), node->box->vtxcoords->y1 - yscrtovtx(10), xscrtovtx(20), yscrtovtx(20), -1);
+			draw_line(white, node->box->vtxcoords->x1 + node->box->vtxcoords->w / 2.0f, node->box->vtxcoords->y1, -1 + mainprogram->xscrtovtx(mainprogram->mx), 1 - mainprogram->yscrtovtx(mainprogram->my));
+			draw_box(white, white, node->box->vtxcoords->x1  + node->box->vtxcoords->w / 2.0f - mainprogram->xscrtovtx(10), node->box->vtxcoords->y1 - mainprogram->yscrtovtx(10), mainprogram->xscrtovtx(20), mainprogram->yscrtovtx(20), -1);
 		}
 		if (mainprogram->leftmouse) {
 			if (node->dragging == C_OUT) {
@@ -677,7 +678,7 @@ void NodePage::handle_nodes() {
 		if (!mainprogram->nodesmain->linked) {
 			for (int i = 0; i < 6; i++) {
 				if (node->monitor == i + mainmix->page[0] * 6) {
-					draw_box(white, red, node->box->vtxcoords->x1 + xscrtovtx(1) + i * xscrtovtx(21), node->box->vtxcoords->y1 + node->box->vtxcoords->h, xscrtovtx(21), yscrtovtx(10), -1);
+					draw_box(white, red, node->box->vtxcoords->x1 + mainprogram->xscrtovtx(1) + i * mainprogram->xscrtovtx(21), node->box->vtxcoords->y1 + node->box->vtxcoords->h, mainprogram->xscrtovtx(21), mainprogram->yscrtovtx(10), -1);
 				}
 				else if (node->box->scrcoords->x1 + 1 + i * 21 < mainprogram->mx and mainprogram->mx < node->box->scrcoords->x1 + 22 + i * 21 and node->box->scrcoords->y1 - node->box->scrcoords->h - 21 < mainprogram->my and mainprogram->my < node->box->scrcoords->y1 - node->box->scrcoords->h) {
 					if (mainprogram->leftmouse) {
@@ -689,9 +690,9 @@ void NodePage::handle_nodes() {
 						node->monitor = i + mainmix->page[0] * 6;
 						make_layboxes();
 					}
-					draw_box(white, blue, node->box->vtxcoords->x1 + xscrtovtx(1) + i * xscrtovtx(21), node->box->vtxcoords->y1 + node->box->vtxcoords->h, xscrtovtx(21), yscrtovtx(10), -1);
+					draw_box(white, blue, node->box->vtxcoords->x1 + mainprogram->xscrtovtx(1) + i * mainprogram->xscrtovtx(21), node->box->vtxcoords->y1 + node->box->vtxcoords->h, mainprogram->xscrtovtx(21), mainprogram->yscrtovtx(10), -1);
 			}
-				else draw_box(white, black, node->box->vtxcoords->x1 + xscrtovtx(1) + i * xscrtovtx(21), node->box->vtxcoords->y1 + node->box->vtxcoords->h, xscrtovtx(21), yscrtovtx(10), -1);
+				else draw_box(white, black, node->box->vtxcoords->x1 + mainprogram->xscrtovtx(1) + i * mainprogram->xscrtovtx(21), node->box->vtxcoords->y1 + node->box->vtxcoords->h, mainprogram->xscrtovtx(21), mainprogram->yscrtovtx(10), -1);
 			}
 		}
 				
@@ -699,7 +700,7 @@ void NodePage::handle_nodes() {
 			draw_box(node->box, ((MixNode*)node)->mixtex);					
 			if (node->box->scrcoords->x1 - 10 < mainprogram->mx and mainprogram->mx < node->box->scrcoords->x1 + 10) {
 				if (node->box->scrcoords->y1 - 45 < mainprogram->my and mainprogram->my < node->box->scrcoords->y1 - 25) {
-					draw_box(blue, blue, node->box->vtxcoords->x1 - xscrtovtx(10), node->box->vtxcoords->y1 + yscrtovtx(25), xscrtovtx(20), yscrtovtx(20), -1);
+					draw_box(blue, blue, node->box->vtxcoords->x1 - mainprogram->xscrtovtx(10), node->box->vtxcoords->y1 + mainprogram->yscrtovtx(25), mainprogram->xscrtovtx(20), mainprogram->yscrtovtx(20), -1);
 					if (mainprogram->leftmousedown) {
 						mainprogram->leftmousedown = false;
 						if (node->in) {
@@ -712,8 +713,8 @@ void NodePage::handle_nodes() {
 				}
 			}
 			if (node->dragging == C_IN) {
-				draw_line(white, node->box->vtxcoords->x1, node->box->vtxcoords->y1 + yscrtovtx(32), -1 + xscrtovtx(mainprogram->mx), 1 - yscrtovtx(mainprogram->my));
-				draw_box(white, white, node->box->vtxcoords->x1 - xscrtovtx(10), node->box->vtxcoords->y1 + yscrtovtx(25), xscrtovtx(20), yscrtovtx(20), -1);
+				draw_line(white, node->box->vtxcoords->x1, node->box->vtxcoords->y1 + mainprogram->yscrtovtx(32), -1 + mainprogram->xscrtovtx(mainprogram->mx), 1 - mainprogram->yscrtovtx(mainprogram->my));
+				draw_box(white, white, node->box->vtxcoords->x1 - mainprogram->xscrtovtx(10), node->box->vtxcoords->y1 + mainprogram->yscrtovtx(25), mainprogram->xscrtovtx(20), mainprogram->yscrtovtx(20), -1);
 			}
 			if (mainprogram->leftmouse) {
 				if (node->dragging == C_IN) {
@@ -733,7 +734,7 @@ void NodePage::handle_nodes() {
 			if (!mainprogram->nodesmain->linked) {
 				for (int i = 0; i < 6; i++) {
 					if (node->monitor == i + mainmix->page[0] * 6) {
-						draw_box(white, red, node->box->vtxcoords->x1 + xscrtovtx(1) + i * xscrtovtx(21), node->box->vtxcoords->y1 + node->box->vtxcoords->h, xscrtovtx(21), yscrtovtx(10), -1);
+						draw_box(white, red, node->box->vtxcoords->x1 + mainprogram->xscrtovtx(1) + i * mainprogram->xscrtovtx(21), node->box->vtxcoords->y1 + node->box->vtxcoords->h, mainprogram->xscrtovtx(21), mainprogram->yscrtovtx(10), -1);
 					}
 					else if (node->box->scrcoords->x1 + 1 + i * 21 < mainprogram->mx and mainprogram->mx < node->box->scrcoords->x1 + 22 + i * 21 and node->box->scrcoords->y1 - node->box->scrcoords->h - 21 < mainprogram->my and mainprogram->my < node->box->scrcoords->y1 - node->box->scrcoords->h) {
 						if (mainprogram->leftmouse) {
@@ -745,9 +746,9 @@ void NodePage::handle_nodes() {
 							node->monitor = i + mainmix->page[0] * 6;
 							make_layboxes();
 						}
-						draw_box(white, blue, node->box->vtxcoords->x1 + xscrtovtx(1) + i * xscrtovtx(21), node->box->vtxcoords->y1 + node->box->vtxcoords->h, xscrtovtx(21), yscrtovtx(10), -1);
+						draw_box(white, blue, node->box->vtxcoords->x1 + mainprogram->xscrtovtx(1) + i * mainprogram->xscrtovtx(21), node->box->vtxcoords->y1 + node->box->vtxcoords->h, mainprogram->xscrtovtx(21), mainprogram->yscrtovtx(10), -1);
 				}
-					else draw_box(white, black, node->box->vtxcoords->x1 + xscrtovtx(1) + i * xscrtovtx(21), node->box->vtxcoords->y1 + node->box->vtxcoords->h, xscrtovtx(21), yscrtovtx(10), -1);
+					else draw_box(white, black, node->box->vtxcoords->x1 + mainprogram->xscrtovtx(1) + i * mainprogram->xscrtovtx(21), node->box->vtxcoords->y1 + node->box->vtxcoords->h, mainprogram->xscrtovtx(21), mainprogram->yscrtovtx(10), -1);
 				}
 			}
 		}

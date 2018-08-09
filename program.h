@@ -8,10 +8,10 @@
 
 class PrefItem;
 class Menu;
-class BinElement;
-class BinDeck;
-class BinMix;
 class LoopStation;
+class BinsMain;
+class Bin;
+class BinElement;
 
 typedef enum
 {
@@ -179,67 +179,16 @@ class GUIString {
 		GLuint vao;
 };
 
-class Bin {
-	public:
-		std::string name;
-		std::vector<BinElement*> elements;
-		std::vector<BinDeck*> decks;
-		std::vector<BinMix*> mixes;
-		int encthreads;
-		int pos;
-		Bin(int pos);
-		~Bin();
-		
-		Box *box;
-};
-
-class BinElement {
-	public:
-		Bin *bin;
-		ELEM_TYPE type = ELEM_FILE;
-		ELEM_TYPE oldtype = ELEM_FILE;
-		std::string path = "";
-		std::string oldpath = "";
-		std::string jpegpath = "";
-		std::string oldjpegpath = "";
-		int vidw;
-		int vidh;
-		GLuint tex;
-		GLuint oldtex;
-		bool full = false;
-		bool encwaiting = false;
-		bool encoding = false;
-		float encodeprogress;
-		BinElement();
-		~BinElement();
-};
-
-class BinDeck {
-	public:
-		std::string path;
-		int i, j;
-		int height;
-		int encthreads = 0;
-		Box *box;
-		BinDeck();
-		~BinDeck();
-};
-
-class BinMix {
-	public:
-		std::string path;
-		int j;
-		int height;
-		int encthreads = 0;
-		Box *box;
-		BinMix();
-		~BinMix();
-};
-
 class OutputEntry {
 	public:
 		int screen;
 		Window *win;
+};
+
+class Globals {
+	public:
+		float w;
+		float h;
 };
 
 class Program {
@@ -255,8 +204,6 @@ class Program {
 		Layer *loadlay;
 		Layer *prelay = nullptr;
 		SDL_Window *mainwindow;
-		float w;
-		float h;
 		std::vector<Window*> mixwindows;
 		std::vector<Menu*> menulist;
 		std::vector<Menu*> actmenulist;
@@ -364,52 +311,17 @@ class Program {
 		std::vector<std::string> busylist;
 		std::vector<Layer*> busylayers;
 		std::vector<Layer*> mimiclayers;
-		std::vector<Bin*> bins;
 		std::vector<Box*> elemboxes;
 		
-		Bin *currbin;
-		Box *newbinbox;
+		BinsMain *binsmain;
 		bool binsscreen = false;
-		bool inwormhole = false;
-		BinElement *currbinel = nullptr;
-		BinElement *prevbinel = nullptr;
-		int previ;
-		int prevj;
-		GLuint binelpreviewtex;
-		bool binpreview = false;
-		std::vector<Layer*> templayers;
-		std::string newpath;
-		std::string binpath;
-		std::vector<std::string> newpaths;
-		GLuint movingtex = -1;
-		GLuint dragtex = -1;
-		std::vector<GLuint> inputtexes;
-		std::vector<int> inputwidths;
-		std::vector<int> inputheights;
-		std::vector<GLuint> dragtexes[2];
-		std::vector<GLuint> inserttexes[2];
-		std::vector<ELEM_TYPE> inserttypes[2];
-		std::vector<std::string> insertpaths[2];
-		std::vector<std::string> insertjpegpaths[2];
-		BinElement *movingbinel = nullptr;
-		BinElement *backupbinel = nullptr;
-		BinElement *inputbinel = nullptr;
 		BinElement *dragbinel = nullptr;
-		BinElement *menubinel = nullptr;
-		BinDeck *dragdeck = nullptr;
-		BinMix *dragmix = nullptr;
 		Clip *dragclip = nullptr;
 		Layer *draglay = nullptr;
 		std::string dragpath;
 		int dragpos;
-		Bin *menubin = nullptr;
+		bool inwormhole = false;
 		DIR *opendir;
-		bool openbindir = false;
-		bool openbinfile = false;
-		int inserting = -1;
-		bool movingstruct = false;
-		BinDeck *movingdeck;
-		BinMix *movingmix;
 		int menuset;
 		
 		EDIT_TYPE renaming = EDIT_NONE;
@@ -434,12 +346,23 @@ class Program {
 		std::string shelfpath;
 		int shelfdircount;
 		
+		quit(const char *msg);
+		make_menu(const std::string &name, Menu *&menu, std::vector<std::string> &entries);
+		get_outname(const nfdchar_t *filters, const nfdchar_t *defaultdir);
+		get_inname(const nfdchar_t *filters, const nfdchar_t *defaultdir);
+		get_multinname();
+		get_dir();
+		float xscrtovtx(float scrcoord);
+		float yscrtovtx(float scrcoord);
+		float xvtxtoscr(float vtxcoord);
+		float yvtxtoscr(float vtxcoord);
 		Program();
 };
 
-extern float w, h;
+extern Globals *glob;
 extern Program *mainprogram;
 extern Mixer *mainmix;
+extern BinsMain *binsmain;
 extern LoopStation *loopstation;
 extern LoopStation *lp;
 extern LoopStation *lpc;
@@ -503,6 +426,7 @@ void concat_files(std::ostream &ofile, const std::string &path, std::vector<std:
 bool check_version(const std::string &path);
 std::string deconcat_files(const std::string &path);
 extern GLuint copy_tex(GLuint tex);
+extern GLuint copy_tex(GLuint tex, bool yflip);
 extern GLuint copy_tex(GLuint tex, int tw, int th);
 extern GLuint copy_tex(GLuint tex, int tw, int th, bool yflip);
 
@@ -515,7 +439,7 @@ void screenshot();
 
 void calctexture(Layer *lay);
 
-static int open_codec_context(int *stream_idx, AVFormatContext *video, enum AVMediaType type);
+int open_codec_context(int *stream_idx, AVFormatContext *video, enum AVMediaType type);
 
 void set_live_base(Layer *lay, std::string livename);
 
@@ -524,3 +448,5 @@ extern bool exists(const std::string &name);
 extern std::string basename(std::string pathname);
 extern std::string remove_extension(std::string filename);
 extern std::string remove_version(std::string filename);
+
+extern void onestepfrom(bool stage, Node *node, Node *prevnode, GLuint prevfbotex, GLuint prevfbo);

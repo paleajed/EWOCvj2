@@ -14,6 +14,7 @@
 #include "window.h"
 #include "program.h"
 #include "loopstation.h"
+#include "bins.h"
 
 LoopStation::LoopStation() {
 	for (int i = 0; i < this->numelems; i++) {
@@ -211,8 +212,10 @@ LoopStationElement::set_params() {
 	event = this->eventlist[this->eventpos];
 	while (this->speedadaptedtime > std::get<0>(event)) {
 		Param *par = std::get<1>(event);
-		if (std::find(loopstation->allparams.begin(), loopstation->allparams.end(), par) != loopstation->allparams.end()) {
-			par->value = std::get<2>(event);
+		if (par != mainmix->adaptparam) {
+			if (std::find(loopstation->allparams.begin(), loopstation->allparams.end(), par) != loopstation->allparams.end()) {
+				par->value = std::get<2>(event);
+			}
 		}
 		event = this->eventlist[++this->eventpos];
 	}

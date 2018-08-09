@@ -1763,11 +1763,12 @@ void main()
 			return;
 		}
 		float alpha = 1.0f;
+		float tresh = 0.7f;
 		float left = texture2D(Sampler0, vec2(TexCoord0.s - 0.001f, TexCoord0.t)).r;
 		float right = texture2D(Sampler0, vec2(TexCoord0.s + 0.001f, TexCoord0.t)).r;
 		float up = texture2D(Sampler0, vec2(TexCoord0.s, TexCoord0.t - 0.008f)).r;
 		float down = texture2D(Sampler0, vec2(TexCoord0.s, TexCoord0.t + 0.008f)).r;
-		if (left + right + up + down == 0.0f) alpha = 0.0f;
+		if ((left < tresh) && (right < tresh) && (up < tresh) && (down < tresh)) alpha = 0.0f;
 		FragColor = vec4(0.0f, 0.0f, 0.0f, alpha);
 	}
 	else if (textmode == 1) {
