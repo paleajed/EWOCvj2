@@ -2198,11 +2198,12 @@ void main()
 						FragColor = vec4((data1.rgb * data1.a + data0.rgb * (1.0f - data1.a)), 1.0f);
 					}
 					break;
-				case 10:  //repel
-					float rad = xamount;
-					//xxpos = xxpos + 0.5f / 2.0f;
-					//xypos = xypos + 0.5f / 2.0f;
+				case 10:  //repel - alpha?
+					float rad = xamount / 1.7f;
+					xxpos = 0.5f + (xxpos - 0.5f) * (1.0f - xamount);
+					xypos = 0.5f + (xypos - 0.5f) * (1.0f - xamount);
 					tc = TexCoord0.st;
+					tc.y = (tc.y - 0.5f) * float(fboheight) / float(fbowidth) + 0.5f;
 					float dist = distance(tc, vec2(xxpos, xypos));
 					bool cond = (dist < rad);
 					if (cond) {

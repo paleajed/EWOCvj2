@@ -764,9 +764,9 @@ int loadshader(char* filename, char** ShaderSource, unsigned long len)
    return 0; // No Error
 }
 
-void get_inname() {
+void get_inname(const nfdchar_t *filters, const nfdchar_t *defaultdir) {
 	nfdchar_t *outPath = NULL;
-	nfdresult_t result = NFD_OpenDialog(NULL, NULL, &outPath);
+	nfdresult_t result = NFD_OpenDialog(filters, defaultdir, &outPath);
 	if (!(result == NFD_OKAY)) {
 		return;
 	}
@@ -793,9 +793,9 @@ void get_dir() {
 	mainprogram->path = (char *)outPath;
 }
 
-void get_outname() {
+void get_outname(const nfdchar_t *filters, const nfdchar_t *defaultdir) {
 	nfdchar_t *outPath = NULL;
-	nfdresult_t result = NFD_SaveDialog(NULL, NULL, &outPath);
+	nfdresult_t result = NFD_SaveDialog(filters, defaultdir, &outPath);
 	if (!(result == NFD_OKAY)) {
 		return;
 	}
@@ -2732,7 +2732,7 @@ void calc_texture(Layer *lay, bool comp, bool alive) {
 									std::string name = remove_extension(basename(lay->filename));
 									int count = 0;
 									while (1) {
-										tpath = mainprogram->binsdir + "cliptemp_" + name + ".layer";
+										tpath = mainprogram->temppath + "cliptemp_" + name + ".layer";
 										if (!exists(tpath)) {
 											mainmix->save_layerfile(tpath, lay, 0);
 											break;
@@ -8154,7 +8154,7 @@ void hap_mix(BinMix * bm) {
 
 void enddrag() {
 	if (mainprogram->dragbinel) {
-		//if (mainprogram->dragbinel->path.rfind(".layer") != std::string::npos) {
+		//if (mainprogram->dragbinel->path.rfind, ".layer", nullptr != std::string::npos) {
 		//	if (mainprogram->dragbinel->path.find("cliptemp_") != std::string::npos) {
 		//		boost::filesystem::remove(mainprogram->dragbinel->path);			
 		//	}
@@ -9605,7 +9605,7 @@ void the_loop() {
 							mainmix->mousedeck = deck;
 							int count1 = 0;
 							while (1) {
-								if (mainprogram->inserting == 2) path = mainprogram->temppath + name + "_" + name + ".ewoc";
+								if (mainprogram->inserting == 2) path = mainprogram->temppath + name + "_" + name + ".mix";
 								else path = mainprogram->temppath + name + "_" + name + ".deck";
 								if (!exists(path)) {
 									int size = max(((int)((mainprogram->inserttexes[0].size() - 1) / 3) * 3 + 3), ((int)((mainprogram->inserttexes[1].size() - 1) / 3) * 3 + 3));
@@ -10704,12 +10704,12 @@ void the_loop() {
 		k = handle_menu(mainprogram->deckmenu);
 		if (k == 0) {
 			mainprogram->pathto = "OPENDECK";
-			std::thread filereq (get_inname);
+			std::thread filereq (get_inname, "deck", nullptr);
 			filereq.detach();
 		}
 		else if (k == 1) {
 			mainprogram->pathto = "SAVEDECK";
-			std::thread filereq (get_outname);
+			std::thread filereq (get_outname, "deck", nullptr);
 			filereq.detach();
 		}
 		if (mainprogram->menuchosen) {
@@ -10744,18 +10744,18 @@ void the_loop() {
 			}
 			if (k == 1) {
 				mainprogram->pathto = "OPENVIDEO";
-				std::thread filereq (get_inname);
+				std::thread filereq (get_inname, nullptr, nullptr);
 				filereq.detach();
 				mainprogram->loadlay = mainmix->mouselayer;
 			}
 			else if (k == 2) {
 				mainprogram->pathto = "OPENLAYFILE";
-				std::thread filereq (get_inname);
+				std::thread filereq (get_inname, "layer", nullptr);
 				filereq.detach();
 			}
 			else if (k == 3) {
 				mainprogram->pathto = "SAVELAYFILE";
-				std::thread filereq (get_outname);
+				std::thread filereq (get_outname, "layer", nullptr);
 				filereq.detach();
 			}
 			else if (k == 4) {
@@ -10763,12 +10763,12 @@ void the_loop() {
 			}
 			else if (k == 5) {
 				mainprogram->pathto = "OPENDECK";
-				std::thread filereq (get_inname);
+				std::thread filereq (get_inname, "deck", nullptr);
 				filereq.detach();
 			}
 			else if (k == 6) {
 				mainprogram->pathto = "SAVEDECK";
-				std::thread filereq (get_outname);
+				std::thread filereq (get_outname, "deck", nullptr);
 				filereq.detach();
 			}
 			else if (k == 7) {
@@ -10776,12 +10776,12 @@ void the_loop() {
 			}
 			else if (k == 8) {
 				mainprogram->pathto = "OPENMIX";
-				std::thread filereq (get_inname);
+				std::thread filereq (get_inname, "mix", nullptr);
 				filereq.detach();
 			}
 			else if (k == 9) {
 				mainprogram->pathto = "SAVEMIX";
-				std::thread filereq (get_outname);
+				std::thread filereq (get_outname, "mix", nullptr);
 				filereq.detach();
 			}
 			else if (k == 10) {
@@ -10838,14 +10838,14 @@ void the_loop() {
 			}
 			if (k == 1) {
 				mainprogram->pathto = "OPENVIDEO";
-				std::thread filereq (get_inname);
+				std::thread filereq (get_inname, nullptr, nullptr);
 				filereq.detach();
 				mainprogram->loadlay = mainmix->add_layer(lvec, lvec.size());
 			}
 			else if (k == 2) {
 				mainmix->mouselayer = mainmix->add_layer(lvec, lvec.size());
 				mainprogram->pathto = "OPENLAYFILE";
-				std::thread filereq (get_inname);
+				std::thread filereq (get_inname, "layer", nullptr);
 				filereq.detach();
 			}
 			else if (k == 3) {
@@ -10853,12 +10853,12 @@ void the_loop() {
 			}
 			else if (k == 4) {
 				mainprogram->pathto = "OPENDECK";
-				std::thread filereq (get_inname);
+				std::thread filereq (get_inname, "deck", nullptr);
 				filereq.detach();
 			}
 			else if (k == 5) {
 				mainprogram->pathto = "SAVEDECK";
-				std::thread filereq (get_outname);
+				std::thread filereq (get_outname, "deck", nullptr);
 				filereq.detach();
 			}
 			else if (k == 6) {
@@ -10866,12 +10866,12 @@ void the_loop() {
 			}
 			else if (k == 7) {
 				mainprogram->pathto = "OPENMIX";
-				std::thread filereq (get_inname);
+				std::thread filereq (get_inname, "mix", nullptr);
 				filereq.detach();
 			}
 			else if (k == 8) {
 				mainprogram->pathto = "SAVEMIX";
-				std::thread filereq (get_outname);
+				std::thread filereq (get_outname, "mix", nullptr);
 				filereq.detach();
 			}
 		}
@@ -10928,12 +10928,12 @@ void the_loop() {
 		}
 		else if (k == 1) {
 			mainprogram->pathto = "OPENSTATE";
-			std::thread filereq (get_inname);
+			std::thread filereq (get_inname, "state", nullptr);
 			filereq.detach();
 		}
 		else if (k == 2) {
 			mainprogram->pathto = "SAVESTATE";
-			std::thread filereq (get_outname);
+			std::thread filereq (get_outname, "state", nullptr);
 			filereq.detach();
 		}
 		else if (k == 3) {
@@ -10977,22 +10977,22 @@ void the_loop() {
 		}
 		else if (k == 1) {
 			mainprogram->pathto = "OPENSHELF";
-			std::thread filereq (get_inname);
+			std::thread filereq (get_inname, "shelf", boost::filesystem::absolute("shelves").string().c_str());
 			filereq.detach();
 		}
 		else if (k == 2) {
 			mainprogram->pathto = "SAVESHELF";
-			std::thread filereq (get_outname);
+			std::thread filereq (get_outname, "shelf", boost::filesystem::absolute("shelves").string().c_str());
 			filereq.detach();
 		}
 		else if (k == 3) {
 			mainprogram->pathto = "OPENSHELFVIDEO";
-			std::thread filereq (get_inname);
+			std::thread filereq (get_inname, nullptr, nullptr);
 			filereq.detach();
 		}
 		else if (k == 4) {
 			mainprogram->pathto = "OPENSHELFLAYER";
-			std::thread filereq (get_inname);
+			std::thread filereq (get_inname, "layer", nullptr);
 			filereq.detach();
 		}
 		else if (k == 5) {
@@ -11111,7 +11111,7 @@ void the_loop() {
 								std::string name = remove_extension(basename(mainprogram->draglay->filename));
 								int count = 0;
 								while (1) {
-									mainprogram->dragpath = mainprogram->binsdir + "cliptemp_" + name + ".layer";
+									mainprogram->dragpath = mainprogram->temppath + "cliptemp_" + name + ".layer";
 									if (!exists(mainprogram->dragpath)) {
 										mainmix->save_layerfile(mainprogram->dragpath, mainprogram->draglay, 1);
 										break;
@@ -12051,6 +12051,11 @@ void save_bin(const std::string &path) {
 }
 	
 void save_shelf(const std::string &path, int deck) {
+	std::string ext = path.substr(path.length() - 6, std::string::npos);
+	std::string str;
+	if (ext != ".shelf") str = path + ".shelf";
+	else str = path;
+	
 	std::vector<std::string> filestoadd;
 	ofstream wfile;
 	wfile.open(path);
@@ -12311,6 +12316,7 @@ void open_bin(const std::string &path, Bin *bin) {
 						if (concat) {
 							boost::filesystem::rename(result + "_" + std::to_string(filecount) + ".file", result + "_" + std::to_string(filecount) + ".jpeg");
 							open_thumb(result + "_" + std::to_string(filecount) + ".jpeg", bin->elements[count]->tex);
+							bin->elements[count]->jpegpath = result + "_" + std::to_string(filecount) + ".jpeg";
 							filecount++;
 						}
 						else open_thumb(bin->elements[count]->jpegpath, bin->elements[count]->tex);
@@ -12344,7 +12350,7 @@ void open_bin(const std::string &path, Bin *bin) {
 				BinMix *bm = new BinMix;
 				bin->mixes.push_back(bm);
 				if (concat) {
-					bm->path = result + "_" + std::to_string(filecount) + ".ewoc";
+					bm->path = result + "_" + std::to_string(filecount) + ".mix";
 					boost::filesystem::rename(result + "_" + std::to_string(filecount) + ".file", bm->path);
 				}
 				else bm->path = istring;
@@ -13565,12 +13571,12 @@ int main(int argc, char* argv[]){
 				if (mainprogram->ctrl) {
 					if (e.key.keysym.sym == SDLK_s) {
 						mainprogram->pathto = "SAVESTATE";
-						std::thread filereq (get_outname);
+						std::thread filereq (get_outname, "state", nullptr);
 						filereq.detach();
 					}
 					if (e.key.keysym.sym == SDLK_o) {
 						mainprogram->pathto = "OPENSTATE";
-						std::thread filereq (get_inname);
+						std::thread filereq (get_inname, "state", nullptr);
 						filereq.detach();
 					}
 					if (e.key.keysym.sym == SDLK_n) {

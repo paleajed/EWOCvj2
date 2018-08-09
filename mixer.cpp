@@ -959,10 +959,7 @@ std::vector<std::string> Mixer::write_layer(Layer *lay, std::ostream& wfile, boo
 }
 
 Mixer::save_layerfile(const std::string &path, Layer *lay, bool doclips) {
-	std::string ext = path.substr(path.length() - 6, std::string::npos);
-	std::string str;
-	if (ext != ".layer") str = path + ".layer";
-	else str = path;
+	std::string str = path;
 	std::ofstream wfile;
 	wfile.open(str);
 	wfile << "EWOCvj LAYERFILE V0.2\n";
@@ -982,10 +979,7 @@ Mixer::save_layerfile(const std::string &path, Layer *lay, bool doclips) {
 
 Mixer::save_state(const std::string &path) {
 	std::vector<std::string> filestoadd;
-	std::string ext = path.substr(path.length() - 6, std::string::npos);
-	std::string str;
-	if (ext != ".state") str = path + ".state";
-	else str = path;
+	std::string str = path;
 	std::ofstream wfile;
 	wfile.open(str);
 	wfile << "EWOCvj SAVESTATE V0.2\n";
@@ -1006,11 +1000,11 @@ Mixer::save_state(const std::string &path) {
 	bool save = mainprogram->preveff;
 	mainprogram->preveff = true;
 	mainmix->save_mix(mainprogram->temppath + "temp.state1");
-	filestoadd.push_back(mainprogram->temppath + "temp.state1.ewoc");
+	filestoadd.push_back(mainprogram->temppath + "temp.state1.mix");
 	if (mainmix->compon) {
 		mainprogram->preveff = false;
 		mainmix->save_mix(mainprogram->temppath + "temp.state2");
-		filestoadd.push_back(mainprogram->temppath + "temp.state2.ewoc");
+		filestoadd.push_back(mainprogram->temppath + "temp.state2.mix");
 	}
 	//save_genmidis(remove_extension(path) + ".midi");
 	mainprogram->preveff = save;
@@ -1119,10 +1113,7 @@ Mixer::event_read(std::istream &rfile, Param *par, Layer *lay) {
 }
 
 Mixer::save_mix(const std::string &path) {
-	std::string ext = path.substr(path.length() - 5, std::string::npos);
-	std::string str;
-	if (ext != ".ewoc") str = path + ".ewoc";
-	else str = path;
+	std::string str = path;
 	std::ofstream wfile;
 	wfile.open(str);
 	wfile << "EWOCvj SAVEMIX V0.2\n";
@@ -1184,12 +1175,9 @@ Mixer::save_mix(const std::string &path) {
 }
 
 Mixer::save_deck(const std::string &path) {
-	std::string ext = path.substr(path.length() - 5, std::string::npos);
-	std::string str;
-	if (ext != ".deck") str = path + ".deck";
-	else str = path;
+	std::string str = path;
 	std::ofstream wfile;
-	wfile.open(str.c_str());
+	wfile.open(str);
 	wfile << "EWOCvj DECKFILE V0.2\n";
 	
 	std::vector<std::vector<std::string>> jpegpaths;
