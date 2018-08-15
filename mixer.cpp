@@ -1197,7 +1197,7 @@ Mixer::save_deck(const std::string &path) {
 	boost::filesystem::rename("./tempconcat", str);
 }
 
-Mixer::open_layerfile(const std::string &path, Layer *lay, int reset, bool doclips) {
+Mixer::open_layerfile(const std::string &path, Layer *lay, bool loadevents, bool doclips) {
 	std::string result = deconcat_files(path);
 	bool concat = (result != "");
 	std::ifstream rfile;
@@ -1206,14 +1206,21 @@ Mixer::open_layerfile(const std::string &path, Layer *lay, int reset, bool docli
 	
 	std::string istring;
 	
+	Node *nextnode;
+	if (lay->lasteffnode->out.size()) nextnode = lay->lasteffnode->out[0];
 	if (lay->node) {
-		if (lay->lasteffnode->out.size()) {
-			lay->lasteffnode->out[0]->in = nullptr;
-			mainprogram->nodesmain->currpage->connect_nodes(lay->node, lay->lasteffnode->out[0]);
+		if (lay->node != lay->lasteffnode) {
+			if (lay->pos > 0) {
+				((BlendNode*)nextnode)->in2 = nullptr;
+				mainprogram->nodesmain->currpage->connect_in2(lay->node, (BlendNode*)nextnode);
+			}
+			else {
+				nextnode->in = nullptr;
+				mainprogram->nodesmain->currpage->connect_nodes(lay->node, nextnode);
+			}
 		}
 		lay->lasteffnode = lay->node;
 	}
-	
 	while (!lay->effects.empty()) {
 		mainprogram->nodesmain->currpage->delete_node(lay->effects.back()->node);
 		for (int j = 0; j < lay->effects.back()->params.size(); j++) {
@@ -1227,7 +1234,7 @@ Mixer::open_layerfile(const std::string &path, Layer *lay, int reset, bool docli
 	loopstation->readelemnrs.clear();
 	std::vector<Layer*> layers;
 	layers.push_back(lay);
-	mainmix->read_layers(rfile, result, layers, lay->deck, 0, doclips, concat);
+	mainmix->read_layers(rfile, result, layers, lay->deck, 0, doclips, concat, 1, loadevents);
 	
 	rfile.close();
 }
@@ -1341,10 +1348,10 @@ Mixer::open_mix(const std::string &path) {
 		int deck;
 		if (istring == "LAYERSA") {
 			std::vector<Layer*> &layersA = choose_layers(0);
-			int jpegcount = mainmix->read_layers(rfile, result, layersA, 0, 2, concat, 1);
+			int jpegcount = mainmix->read_layers(rfile, result, layersA, 0, 2, concat, 1, 1, 1);
 			mainprogram->filecount = jpegcount;
 			std::vector<Layer*> &layersB = choose_layers(1);
-			mainmix->read_layers(rfile, result, layersB, 1, 2, concat, 1);
+			mainmix->read_layers(rfile, result, layersB, 1, 2, concat, 1, 1, 1);
 			mainprogram->filecount = 0;
 		}
 	}
@@ -1373,12 +1380,12 @@ Mixer::open_deck(const std::string &path, bool alive) {
 	loopstation->readelems.clear();
 	loopstation->readelemnrs.clear();
 	std::vector<Layer*> &layers = choose_layers(mainmix->mousedeck);
-	mainmix->read_layers(rfile, result, layers, mainmix->mousedeck, 1, 1, concat);
+	mainmix->read_layers(rfile, result, layers, mainmix->mousedeck, 1, 1, concat, 1, 1);
 	
 	rfile.close();
 }
 
-Mixer::read_layers(std::istream &rfile, const std::string &result, std::vector<Layer*> &layers, bool deck, int type, bool doclips, bool concat, bool load) {
+Mixer::read_layers(std::istream &rfile, const std::string &result, std::vector<Layer*> &layers, bool deck, int type, bool doclips, bool concat, bool load, bool loadevents) {
 	Layer *lay = nullptr;
 	std::string istring;
 	int jpegcount = 0;
@@ -1582,7 +1589,7 @@ Mixer::read_layers(std::istream &rfile, const std::string &result, std::vector<L
 					if (istring == "CLIPLAYER") {
 						std::vector<Layer*> cliplayers;
 						Layer *cliplay = mainmix->add_layer(cliplayers, 0);
-						mainmix->read_layers(rfile, result, cliplayers, 0, 0, 0, 1, 0);
+						mainmix->read_layers(rfile, result, cliplayers, 0, 0, 0, 1, 0, 0);
 						std::string name = remove_extension(remove_extension(basename(result)));
 						int count = 0;
 						while (1) {
@@ -1674,7 +1681,14 @@ Mixer::read_layers(std::istream &rfile, const std::string &result, std::vector<L
 							par->midiport = istring;
 						}
 						if (istring == "EVENTELEM") {
-							mainmix->event_read(rfile, par, lay);
+							if (loadevents) {
+								mainmix->event_read(rfile, par, lay);
+							}
+							else {
+								while (getline(rfile, istring)) {
+									if (istring == "ENDOFEVENT") break;
+								}
+							}
 						}
 					}
 				}
@@ -1813,3 +1827,26 @@ void Mixer::record_video() {
     mainmix->donerec = true;
 }
 
+Mixer::start_recording() {
+	if (this->compon) {
+		// start recording main output
+		this->donerec = false;
+		this->recording = true;
+		// recording is done in separate low priority thread
+		this->recording_video = std::thread{&Mixer::record_video, this};
+		SetThreadPriority((void*)this->recording_video.native_handle(), THREAD_PRIORITY_LOWEST);
+		this->recording_video.detach();
+		#define BUFFER_OFFSET(i) ((char *)NULL + (i))
+		glBindBuffer(GL_PIXEL_PACK_BUFFER_ARB, this->ioBuf);
+		glBufferData(GL_PIXEL_PACK_BUFFER_ARB, (int)(mainprogram->ow * mainprogram->oh) * 4, NULL, GL_DYNAMIC_READ);
+		glBindFramebuffer(GL_FRAMEBUFFER, ((MixNode*)mainprogram->nodesmain->mixnodescomp[2])->mixfbo);
+		glReadBuffer(GL_COLOR_ATTACHMENT0);
+		glReadPixels(0, 0, mainprogram->ow, (int)mainprogram->oh, GL_RGBA, GL_UNSIGNED_BYTE, BUFFER_OFFSET(0));
+		this->rgbdata = glMapBuffer(GL_PIXEL_PACK_BUFFER_ARB, GL_READ_ONLY);
+		//assert(this->rgbdata);
+		this->recordnow = true;
+		this->startrecord.notify_one();
+		glBindFramebuffer(GL_FRAMEBUFFER, mainprogram->globfbo);
+		glDrawBuffer(GL_COLOR_ATTACHMENT0);
+	}
+}

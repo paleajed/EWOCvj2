@@ -4,6 +4,9 @@
 #include "nfd.h"
 #include "RtMidi.h"
 #include <istream>
+#include <lo/lo.h>
+#include <lo/lo_cpp.h>
+
 
 
 class PrefItem;
@@ -274,6 +277,10 @@ class Program {
 		Box *effscrollupB;
 		Box *effscrolldownB;
 		
+		lo::ServerThread *st;
+		std::unordered_map<std::string, int> wipesmap;
+		std::unordered_map<EFFECT_TYPE, std::string> effectsmap;
+		
 		SDL_Window *tunemidiwindow = nullptr;
 		bool drawnonce = false;
 		bool tunemidi = false;
@@ -356,6 +363,10 @@ class Program {
 		float yscrtovtx(float scrcoord);
 		float xvtxtoscr(float vtxcoord);
 		float yvtxtoscr(float vtxcoord);
+		
+		prevvid_off();
+		preveff_init();
+		add_main_oscmethods();
 		Program();
 };
 

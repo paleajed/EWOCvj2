@@ -109,3 +109,68 @@ Program::quit(const char *msg)
     exit(1);
 }
 
+Program::prevvid_off() {
+	for (int i = 0; i < mainmix->layersA.size(); i++) {
+		Layer *lay = mainmix->layersA[i];
+		Layer *laycomp = mainmix->layersAcomp[i];
+		if (lay->filename != "" and !prevvid) {
+			// initialize throughput when off
+			laycomp->speed->value = lay->speed->value;
+			laycomp->playbut->value = lay->playbut->value;
+			laycomp->revbut->value = lay->revbut->value;
+			laycomp->bouncebut->value = lay->bouncebut->value;
+			laycomp->playkind = lay->playkind;
+			laycomp->genmidibut->value = lay->genmidibut->value;
+			laycomp->startframe = lay->startframe;
+			laycomp->endframe = lay->endframe;
+			laycomp->audioplaying = false;
+			open_video(lay->frame, laycomp, lay->filename, false);
+		}
+	}
+	for (int i = 0; i < mainmix->layersB.size(); i++) {
+		Layer *lay = mainmix->layersB[i];
+		Layer *laycomp = mainmix->layersBcomp[i];
+		if (lay->filename != "" and !prevvid) {
+			// initialize throughput when off
+			laycomp->speed->value = lay->speed->value;
+			laycomp->playbut->value = lay->playbut->value;
+			laycomp->revbut->value = lay->revbut->value;
+			laycomp->bouncebut->value = lay->bouncebut->value;
+			laycomp->playkind = lay->playkind;
+			laycomp->genmidibut->value = lay->genmidibut->value;
+			laycomp->startframe = lay->startframe;
+			laycomp->endframe = lay->endframe;
+			laycomp->audioplaying = false;
+			open_video(lay->frame, laycomp, lay->filename, false);
+		}
+	}
+}
+
+Program::preveff_init() {
+	std::vector<Layer*> &lvec = choose_layers(mainmix->currlay->deck);
+	if (!this->preveff and !this->prevvid) {
+		// when prevvid, normally all comp layers are copied from normal layers
+		// but when going into performance mode, its more coherent to open them in comp layers
+		for (int i = 0; i < mainmix->layersA.size(); i++) {
+			Layer *lay = mainmix->layersA[i];
+			if (lay->filename != "") {
+				Layer *laycomp = mainmix->layersAcomp[i];
+				laycomp->audioplaying = false;
+				open_video(lay->frame, laycomp, lay->filename, true);
+			}
+		}
+		for (int i = 0; i < mainmix->layersB.size(); i++) {
+			Layer *lay = mainmix->layersB[i];
+			if (lay->filename != "") {
+				Layer *laycomp = mainmix->layersBcomp[i];
+				laycomp->audioplaying = false;
+				open_video(lay->frame, laycomp, lay->filename, true);
+			}
+		}
+	}
+	int p = mainmix->currlay->pos;
+	if (p > lvec.size() - 1) p = lvec.size() - 1;
+	mainmix->currlay = lvec[p];
+	GLint preff = glGetUniformLocation(this->ShaderProgram, "preff");
+	glUniform1i(preff, this->preveff);
+}

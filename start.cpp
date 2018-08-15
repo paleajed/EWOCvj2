@@ -1,8 +1,7 @@
 #include <boost/bind.hpp>
-#include <boost/thread.hpp>
 #include <boost/asio.hpp>
 #include <boost/date_time/posix_time/posix_time.hpp>
-#include <boost/interprocess/managed_shared_memory.hpp>
+//#include <boost/interprocess/managed_shared_memory.hpp>
 #include <boost/filesystem.hpp>
 
 #include <stdio.h>
@@ -48,6 +47,8 @@
 #include "snappy.h"
 #include "snappy-c.h"
 #include "rtmidi-master/RtMidi.h"
+#include <lo/lo.h>
+#include <lo/lo_cpp.h>
 
 extern "C" {
 #include "libavformat/avformat.h"
@@ -310,9 +311,7 @@ public:
         wait();
     }
 
-    void timeout(const boost::system::error_code &e) {
-        if (e)
-            return;
+    void timeout() {
         cout << "tick" << endl;
         screenshot();
         wait();
@@ -326,7 +325,7 @@ public:
 private:
     void wait() {
         t.expires_from_now(boost::posix_time::seconds(20)); //repeat rate here
-        t.async_wait(boost::bind(&Deadline::timeout, this, boost::asio::placeholders::error));
+        t.async_wait(boost::bind(&Deadline::timeout, this));
     }
 
     deadline_timer &t;
@@ -353,9 +352,7 @@ public:
         wait();
     }
 
-    void timeout(const boost::system::error_code &e) {
-        if (e)
-            return;
+    void timeout() {
         if (!mainmix->donerec) {
 			#define BUFFER_OFFSET(i) ((char *)NULL + (i))
 			glBindBuffer(GL_PIXEL_PACK_BUFFER_ARB, mainmix->ioBuf);
@@ -381,7 +378,7 @@ public:
 private:
     void wait() {
         t.expires_from_now(boost::posix_time::milliseconds(40)); //repeat rate here
-        t.async_wait(boost::bind(&Deadline2::timeout, this, boost::asio::placeholders::error));
+        t.async_wait(boost::bind(&Deadline2::timeout, this));
     }
 
     deadline_timer &t;
@@ -1420,7 +1417,7 @@ void Layer::playaudio() {
 
 void * shared_mem(int size) {
 
-	using namespace boost::interprocess;
+	//using namespace boost::interprocess;
      //Remove shared memory on construction and destruction
       //struct shm_remove
       //{
@@ -1430,8 +1427,8 @@ void * shared_mem(int size) {
 
       //Create a managed shared memory segment
       //managed_shared_memory segment(open_orcreate_only, "FrameShared", 2080000);
-	shared_memory_object shm (open_or_create, "FrameShared", read_write);
-	shm.truncate(8294400);
+	//shared_memory_object shm (open_or_create, "FrameShared", read_write);
+	//shm.truncate(8294400);
       //Allocate a portion of the segment (raw memory)
       //managed_shared_memory::size_type free_memory = segment.get_free_memory();
       //return (char *)segment.allocate(size);
@@ -2199,7 +2196,8 @@ void draw_triangle(float *linec, float *areac, float x1, float y1, float xsize, 
 
 
 float render_text(std::string text, float *textc, float x, float y, float sx, float sy) {
-	render_text(text, textc, x, y, sx, sy, 0);
+	float ret = render_text(text, textc, x, y, sx, sy, 0);
+	return ret;
 }
 
 float render_text(std::string text, float *textc, float x, float y, float sx, float sy, bool smflag) {
@@ -2575,7 +2573,7 @@ void calc_texture(Layer *lay, bool comp, bool alive) {
 								}
 								else if (clip->type == ELEM_LAYER) {
 									lay->live = false;
-									mainmix->open_layerfile(clip->path, lay, 2, 0);
+									mainmix->open_layerfile(clip->path, lay, 1, 0);
 								}
 								else if (clip->type == ELEM_LIVE) {
 									set_live_base(lay, clip->path);
@@ -4508,11 +4506,21 @@ void visu_thumbs() {
 								// user drops something in shelf element
 								if (mainprogram->dragbinel->path.rfind(".layer") != std::string::npos) {
 									std::string base = basename(mainprogram->dragbinel->path);
-									std::string newpath = mainprogram->temppath + "shelf_" + base.substr(9, std::string::npos);
-									if (mainprogram->dragbinel->path.find("cliptemp_") != std::string::npos) {
-										boost::filesystem::rename(mainprogram->dragbinel->path, newpath);			
-										boost::filesystem::remove(mainprogram->dragbinel->path);			
-										mainprogram->dragbinel->path = newpath;
+									std::string newpath;
+									std::string name = remove_extension("shelf_" + base.substr(9, std::string::npos));
+									int count = 0;
+									while (1) {
+										newpath = mainprogram->temppath + name + ".layer";
+										if (!exists(newpath)) {
+											if (mainprogram->dragbinel->path.find("cliptemp_") != std::string::npos) {
+												boost::filesystem::rename(mainprogram->dragbinel->path, newpath);			
+												boost::filesystem::remove(mainprogram->dragbinel->path);			
+												mainprogram->dragbinel->path = newpath;
+											}
+											break;
+										}
+										count++;
+										name = remove_version(name) + "_" + std::to_string(count);
 									}
 								}
 								thpath[k] = mainprogram->dragbinel->path;
@@ -4867,6 +4875,15 @@ void make_layboxes() {
 	}
 }
 
+
+int osc_param(const char *path, const char *types, lo_arg **argv, int argc, lo_message m, void *data) {
+	Param *par = (Param*)data;
+	par->value = par->range[0] + argv[0]->f * (par->range[1] - par->range[0]);
+	printf("value %f\n", argv[0]->f);
+	fflush(stdout);
+	return 0;
+}
+
 // adds an effect of a certain type to a layer at a certain position in its effect list
 // comp is set when the layer belongs to the output layer stacks
 Effect *do_add_effect(Layer *lay, EFFECT_TYPE type, int pos, bool comp) {
@@ -5006,8 +5023,6 @@ Effect *do_add_effect(Layer *lay, EFFECT_TYPE type, int pos, bool comp) {
 		if (lay->effscroll > linepos) lay->effscroll = linepos;
 	}
 	
-	Effect *eff;
-
 	lay->effects.insert(lay->effects.begin() + pos, effect);
 
 	
@@ -5033,8 +5048,8 @@ Effect *do_add_effect(Layer *lay, EFFECT_TYPE type, int pos, bool comp) {
 		if (lay->effects.size() > 1) {
 			EffectNode *effnode2 = lay->effects[pos + 1]->node;
 			mainprogram->nodesmain->currpage->connect_nodes(effnode1, effnode2);
-			//lay->node->out.clear();
 		}
+		lay->node->out.clear();
 		mainprogram->nodesmain->currpage->connect_nodes(lay->node, effnode1);
 	}
 	else {
@@ -5042,15 +5057,33 @@ Effect *do_add_effect(Layer *lay, EFFECT_TYPE type, int pos, bool comp) {
 		if (lay->effects.size() > pos + 1) {
 			EffectNode *effnode3 = lay->effects[pos + 1]->node;
 			mainprogram->nodesmain->currpage->connect_nodes(effnode1, effnode3);
-			effnode2->out.clear();
 		}
+		effnode2->out.clear();
 		mainprogram->nodesmain->currpage->connect_nodes(effnode2, effnode1);
+	}
+	
+	// add parameters to OSC ssystem
+	if (lay->numoftypemap.find(effect->type) != lay->numoftypemap.end()) lay->numoftypemap[effect->type]++;
+	else lay->numoftypemap[effect->type] = 1;
+	for (int i = 0; i < effect->params.size(); i++) {
+		std::string deckstr;
+		if (lay->deck == 0) deckstr = "/deckA";
+		else deckstr = "/deckB";
+		std::string compstr;
+		if (mainprogram->preveff) compstr = "preview";
+		else compstr = "output";
+		std::string path = "/mix/" + compstr + deckstr + "/layer/" + std::to_string(lay->pos + 1) + "/effect/" + mainprogram->effectsmap[effect->type] + "/" + std::to_string(lay->numoftypemap[effect->type]) + "/" + effect->params[i]->name;
+		effect->params[i]->oscpaths.push_back(path);
+		printf("osc %s\n", path.c_str());
+		fflush(stdout);
+		mainprogram->st->add_method(path, "f", osc_param, effect->params[i]);
 	}
 	
 	return effect;
 }
 Effect* Layer::add_effect(EFFECT_TYPE type, int pos) {
 	Effect *eff;
+
 	if (mainprogram->preveff) {
 		eff = do_add_effect(this, type, pos, false);
 	}
@@ -6067,7 +6100,8 @@ bool Box::in(bool menu) {
 }
 
 bool Box::in() {
-	this->in(mainprogram->mx, mainprogram->my);
+	bool ret = this->in(mainprogram->mx, mainprogram->my);
+	return ret;
 }
 
 bool Box::in(int mx, int my) {
@@ -7058,7 +7092,8 @@ void pick_color(Layer *lay, Box *cbox) {
 }
 
 int handle_menu(Menu *menu) {
-	handle_menu(menu, 0.0f);
+	int ret = handle_menu(menu, 0.0f);
+	return ret;
 }
 int handle_menu(Menu *menu, float xshift) {
 	float white[] = {1.0, 1.0, 1.0, 1.0};
@@ -8245,40 +8280,7 @@ void the_loop() {
 					// toggles video preview mode (video frame throughput to comp from preview (off)
 					// or separate videos in normal and comp (on)
 					mainprogram->prevvid = !mainprogram->prevvid;
-					for (int i = 0; i < mainmix->layersA.size(); i++) {
-						Layer *lay = mainmix->layersA[i];
-						Layer *laycomp = mainmix->layersAcomp[i];
-						if (lay->filename != "" and !mainprogram->prevvid) {
-							// initialize throughput when off
-							laycomp->speed->value = lay->speed->value;
-							laycomp->playbut->value = lay->playbut->value;
-							laycomp->revbut->value = lay->revbut->value;
-							laycomp->bouncebut->value = lay->bouncebut->value;
-							laycomp->playkind = lay->playkind;
-							laycomp->genmidibut->value = lay->genmidibut->value;
-							laycomp->startframe = lay->startframe;
-							laycomp->endframe = lay->endframe;
-							laycomp->audioplaying = false;
-							open_video(lay->frame, laycomp, lay->filename, false);
-						}
-					}
-					for (int i = 0; i < mainmix->layersB.size(); i++) {
-						Layer *lay = mainmix->layersB[i];
-						Layer *laycomp = mainmix->layersBcomp[i];
-						if (lay->filename != "" and !mainprogram->prevvid) {
-							// initialize throughput when off
-							laycomp->speed->value = lay->speed->value;
-							laycomp->playbut->value = lay->playbut->value;
-							laycomp->revbut->value = lay->revbut->value;
-							laycomp->bouncebut->value = lay->bouncebut->value;
-							laycomp->playkind = lay->playkind;
-							laycomp->genmidibut->value = lay->genmidibut->value;
-							laycomp->startframe = lay->startframe;
-							laycomp->endframe = lay->endframe;
-							laycomp->audioplaying = false;
-							open_video(lay->frame, laycomp, lay->filename, false);
-						}
-					}
+					if (!mainprogram->prevvid) mainprogram->prevvid_off();
 				}
 			}
 			else {
@@ -8308,33 +8310,7 @@ void the_loop() {
 			if (mainprogram->leftmouse) {
 				//effprev is button that toggles effect preview mode to performance mode and back
 				mainprogram->preveff = !mainprogram->preveff;
-				mainprogram->prevvid = !mainprogram->prevvid;
-				std::vector<Layer*> &lvec = choose_layers(mainmix->currlay->deck);
-				if (!mainprogram->preveff and mainprogram->prevvid) {
-					// when prevvid, normally all comp layers are copied from normal layers
-					// but when going into performance mode, its more coherent to open them in comp layers
-					for (int i = 0; i < mainmix->layersA.size(); i++) {
-						Layer *lay = mainmix->layersA[i];
-						if (lay->filename != "") {
-							Layer *laycomp = mainmix->layersAcomp[i];
-							laycomp->audioplaying = false;
-							open_video(lay->frame, laycomp, lay->filename, true);
-						}
-					}
-					for (int i = 0; i < mainmix->layersB.size(); i++) {
-						Layer *lay = mainmix->layersB[i];
-						if (lay->filename != "") {
-							Layer *laycomp = mainmix->layersBcomp[i];
-							laycomp->audioplaying = false;
-							open_video(lay->frame, laycomp, lay->filename, true);
-						}
-					}
-				}
-				int p = mainmix->currlay->pos;
-				if (p > lvec.size() - 1) p = lvec.size() - 1;
-				mainmix->currlay = lvec[p];
-				GLint preff = glGetUniformLocation(mainprogram->ShaderProgram, "preff");
-				glUniform1i(preff, mainprogram->preveff);
+				mainprogram->preveff_init();
 			}
 		}
 		else {
@@ -8364,24 +8340,7 @@ void the_loop() {
 				if (mainprogram->leftmouse) {
 					if (!mainmix->recording) {
 						// start recording
-						mainmix->donerec = false;
-						mainmix->recording = true;
-						// recording is done in separate low priority thread
-						mainmix->recording_video = std::thread{&Mixer::record_video, mainmix};
-						SetThreadPriority((void*)mainmix->recording_video.native_handle(), THREAD_PRIORITY_LOWEST);
-						mainmix->recording_video.detach();
-						#define BUFFER_OFFSET(i) ((char *)NULL + (i))
-						glBindBuffer(GL_PIXEL_PACK_BUFFER_ARB, mainmix->ioBuf);
-						glBufferData(GL_PIXEL_PACK_BUFFER_ARB, (int)(mainprogram->ow * mainprogram->oh) * 4, NULL, GL_DYNAMIC_READ);
-						glBindFramebuffer(GL_FRAMEBUFFER, ((MixNode*)mainprogram->nodesmain->mixnodescomp[2])->mixfbo);
-						glReadBuffer(GL_COLOR_ATTACHMENT0);
-						glReadPixels(0, 0, mainprogram->ow, (int)mainprogram->oh, GL_RGBA, GL_UNSIGNED_BYTE, BUFFER_OFFSET(0));
-						mainmix->rgbdata = glMapBuffer(GL_PIXEL_PACK_BUFFER_ARB, GL_READ_ONLY);
-						assert(mainmix->rgbdata);
-						mainmix->recordnow = true;
-						mainmix->startrecord.notify_one();
-						glBindFramebuffer(GL_FRAMEBUFFER, mainprogram->globfbo);
-						glDrawBuffer(GL_COLOR_ATTACHMENT0);
+						mainmix->start_recording();
 					}
 					else {
 						mainmix->recording = false;
@@ -8604,7 +8563,7 @@ void the_loop() {
 		}
 		
 		
-		int k;
+		int k = -1;
 		// Do mainprogram->mixenginemenu
 		k = handle_menu(mainprogram->mixenginemenu);
 		if (k == 0) {
@@ -10153,7 +10112,7 @@ bool open_shelflayer(const std::string &path, int pos) {
 	lay->lasteffnode = lay->node;
 	lay->node->calc = true;
 	lay->node->walked = false;
-	mainmix->open_layerfile(path, lay, true, 0);
+	mainmix->open_layerfile(path, lay, false, 0);
 	if (lay->openerr) {
 		thpath[pos] = "";
 		lay->closethread = true;
@@ -10572,7 +10531,7 @@ BinElement *find_element(int size, int k, int i, int j, bool overlapchk) {
 
 
 int main(int argc, char* argv[]){
-	bool quit;
+	bool quit = false;
 
    	HRESULT hr = SetProcessDpiAwareness(PROCESS_PER_MONITOR_DPI_AWARE);
     if (FAILED(hr))
@@ -10760,6 +10719,9 @@ int main(int argc, char* argv[]){
   	effects.push_back("SHARPEN");
   	effects.push_back("DITHER");
   	mainprogram->make_menu("effectmenu", mainprogram->effectmenu, effects);
+ 	for (int i = 1; i < effects.size(); i++) {
+ 		mainprogram->effectsmap[(EFFECT_TYPE)(i - 1)] = effects[i];
+  	}
  	
   	std::vector<std::string> mixengines;
  	mixengines.push_back("submenu mixmodemenu");
@@ -10871,6 +10833,13 @@ int main(int argc, char* argv[]){
  	wipes.push_back("submenu dir2menu");
   	wipes.push_back("REPEL");
  	mainprogram->make_menu("wipemenu", mainprogram->wipemenu, wipes);
+ 	int count = 0;
+ 	for (int i = 0; i < wipes.size(); i++) {
+ 		if (wipes[i].find("submenu") != std::string::npos) {
+ 			mainprogram->wipesmap[wipes[i]] = count;
+ 			count++;
+ 		}
+ 	}
 
  	std::vector<std::string> direction1;
  	direction1.push_back("Left->Right");
@@ -11000,6 +10969,8 @@ int main(int argc, char* argv[]){
 		mainmix->nbframesB.push_back(std::vector<Layer*>());
 		mainmix->tempnbframes.push_back(std::vector<Layer*>());
 	}
+	printf("tottier\n");
+	fflush(stdout);
 	
 	mainprogram->loadlay = new Layer(true);
 	for (int i = 0; i < 4; i++) {
@@ -11086,17 +11057,25 @@ int main(int argc, char* argv[]){
 		PSYSTEM_LOGICAL_PROCESSOR_INFORMATION, 
 		PDWORD);
 	
-    LPFN_GLPI glpi;
-    BOOL done = FALSE;
-    PSYSTEM_LOGICAL_PROCESSOR_INFORMATION buffer = NULL;
-    PSYSTEM_LOGICAL_PROCESSOR_INFORMATION ptr = NULL;
-    DWORD returnLength = 0;
-    DWORD byteOffset = 0;
+	LPFN_GLPI glpi;
+	BOOL done = FALSE;
+	PSYSTEM_LOGICAL_PROCESSOR_INFORMATION buffer = NULL;
+	PSYSTEM_LOGICAL_PROCESSOR_INFORMATION ptr = NULL;
+	DWORD returnLength = 0;
+	DWORD byteOffset = 0;
 
-    glpi = (LPFN_GLPI) GetProcAddress(
-                            GetModuleHandle(TEXT("kernel32")),
-                            "GetLogicalProcessorInformation");
-    while (!done)
+	glpi = (LPFN_GLPI) GetProcAddress(
+							GetModuleHandle(TEXT("kernel32")),
+							"GetLogicalProcessorInformation");
+
+	
+	// OSC
+	mainprogram->st = new lo::ServerThread (9000);
+	mainprogram->add_main_oscmethods();
+	mainprogram->st->start();
+	
+
+	while (!done)
     {
         DWORD rc2 = glpi(buffer, &returnLength);
 
@@ -11142,11 +11121,13 @@ int main(int argc, char* argv[]){
     deadline_timer t1(io);
     Deadline d(t1);
     CancelDeadline cd(d);
-    boost::thread thr1(cd);
-    deadline_timer t2(io);
+    std::thread thr1(cd);
+    thr1.detach();
+   	deadline_timer t2(io);
     Deadline2 d2(t2);
     CancelDeadline2 cd2(d2);
-    boost::thread thr2(cd2);
+    std::thread thr2(cd2);
+    thr2.detach();
 
     // must put this here or problem with fbovao[2] ?????
 	set_fbo();
@@ -11209,7 +11190,7 @@ int main(int argc, char* argv[]){
 				mainmix->save_layerfile(str, mainmix->mouselayer, 1);
 			}
 			else if (mainprogram->pathto == "OPENLAYFILE") {
-				mainmix->open_layerfile(mainprogram->path, mainmix->mouselayer, 0, 1);
+				mainmix->open_layerfile(mainprogram->path, mainmix->mouselayer, 1, 1);
 			}
 			else if (mainprogram->pathto == "OPENSTATE") {
 				std::string str(mainprogram->path);

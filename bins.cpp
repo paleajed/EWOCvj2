@@ -707,10 +707,10 @@ BinsMain::handle() {
 							}
 							onestepfrom(0, mainprogram->prelay->node, NULL, -1, -1);
 							if (mainprogram->prelay->effects.size()) {
-								draw_box(red, black, -0.2f, 0.5f, 0.4f, 0.4f, mainprogram->prelay->effects[mainprogram->prelay->effects.size() - 1]->fbotex);
+								draw_box(red, black, -0.2f, 0.9f, 0.4f, -0.4f, mainprogram->prelay->effects[mainprogram->prelay->effects.size() - 1]->fbotex);
 							}
 							else {
-								draw_box(red, black, -0.2f, 0.5f, 0.4f, 0.4f, mainprogram->prelay->fbotex);
+								draw_box(red, black, -0.2f, 0.9f, 0.4f, -0.4f, mainprogram->prelay->fbotex);
 							}
 						}
 						else if (binel->type == ELEM_LAYER or binel->type == ELEM_DECK or binel->type == ELEM_MIX) {
@@ -750,18 +750,18 @@ BinsMain::handle() {
 								}
 								onestepfrom(0, mainprogram->prelay->node, NULL, -1, -1);
 								if (mainprogram->prelay->effects.size()) {
-									draw_box(red, black, -0.2f, 0.5f, 0.4f, 0.4f, mainprogram->prelay->effects[mainprogram->prelay->effects.size() - 1]->fbotex);
+									draw_box(red, black, -0.2f, 0.9f, 0.4f, -0.4f, mainprogram->prelay->effects[mainprogram->prelay->effects.size() - 1]->fbotex);
 								}
 								else {
-									draw_box(red, black, -0.2f, 0.5f, 0.4f, 0.4f, mainprogram->prelay->fbotex);
+									draw_box(red, black, -0.2f, 0.9f, 0.4f, -0.4f, mainprogram->prelay->fbotex);
 								}
 							}
 							else {
 								if (mainprogram->prelay->effects.size()) {
-									draw_box(red, black, -0.2f, 0.5f, 0.4f, 0.4f, mainprogram->prelay->effects[mainprogram->prelay->effects.size() - 1]->fbotex);
+									draw_box(red, black, -0.2f, 0.9f, 0.4f, -0.4f, mainprogram->prelay->effects[mainprogram->prelay->effects.size() - 1]->fbotex);
 								}
 								else {
-									draw_box(red, black, -0.2f, 0.5f, 0.4f, 0.4f, mainprogram->prelay->fbotex);
+									draw_box(red, black, -0.2f, 0.9f, 0.4f, -0.4f, mainprogram->prelay->fbotex);
 								}
 							}
 							if (!binel->encoding) {

@@ -184,6 +184,8 @@ class Layer {
 		ALuint sample_rate;
 		int channels;
 		ALuint sampleformat;
+		
+		std::unordered_map<EFFECT_TYPE, int> numoftypemap;
 	
 	private:
 		void decode_frame();
@@ -211,13 +213,14 @@ class Mixer {
 		save_layerfile(const std::string &path, Layer* lay, bool doclips);
 		save_mix(const std::string &path);
 		save_deck(const std::string &path);
-		open_layerfile(const std::string &path, Layer *lay, int reset, bool doclips);
+		open_layerfile(const std::string &path, Layer *lay, bool loadevents, bool doclips);
 		open_mix(const std::string &path);
 		open_deck(const std::string &path, bool alive);
 		open_state(const std::string &path);
 		save_state(const std::string &path);
 		std::vector<std::string> write_layer(Layer *lay, std::ostream& wfile, bool doclips);
-		int read_layers(std::istream &rfile, const std::string &result, std::vector<Layer*> &layers, bool deck, int type, bool doclips, bool concat, bool load = true);
+		int read_layers(std::istream &rfile, const std::string &result, std::vector<Layer*> &layers, bool deck, int type, bool doclips, bool concat, bool load, bool loadevents);
+		start_recording();
 		Mixer();
 		
 		std::mutex recordlock;
