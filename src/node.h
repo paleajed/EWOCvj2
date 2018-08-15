@@ -105,7 +105,7 @@ class NodesMain {
         std::vector<MixNode*> mixnodes;
         bool linked = true;
         Node *floatingnode = nullptr;
-        add_nodepages(int num);
+        void add_nodepages(int num);
 };
 
 class VideoNode: public Node {

@@ -33,11 +33,11 @@ class LoopStation {
 									, 0.0f, 0.5f, 0.5f};
 		LoopStationElement* add_elem();
 		LoopStationElement* free_element();
-		handle();
+		void handle();
 		LoopStation();
 		
 	private:
-		setbut(Button *but, float r, float g, float b);
+		void setbut(Button *but, float r, float g, float b);
 };
 
 class LoopStationElement {
@@ -56,15 +56,15 @@ class LoopStationElement {
 		std::vector<std::tuple<long long, Param*, float>> eventlist;
 		int eventpos = 0;
 		bool didsomething = false;	
-		init();
-		handle();
-		erase_elem();
-		add_param();
-		set_params();
+		void init();
+		void handle();
+		void erase_elem();
+		void add_param();
+		void set_params();
 		LoopStationElement();
 		~LoopStationElement();
 		
 	private:
-		visualize();
-		mouse_handle();
+		void visualize();
+		void mouse_handle();
 };

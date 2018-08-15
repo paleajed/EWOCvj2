@@ -1,7 +1,7 @@
 #include <string>
 #include <vector>
 
-class Window {
+class EWindow {
 	public:
 		SDL_Window *win;
 		SDL_GLContext glc;

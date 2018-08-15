@@ -1263,7 +1263,7 @@ uniform float D_overshoot = 0.016f;              // Max dark overshoot before ma
 uniform float D_comp_ratio = 0.250f;               // Max compression ratio, dark overshoot (1/0.25=4x)
 uniform float L_overshoot = 0.004f;                // Max light overshoot before max compression
 uniform float L_comp_ratio = 0.167f;                // Max compression ratio, light overshoot (1/0.167=6x)
-uniform float max_scale_lim = 10.0f;                // Abs change before max compression (1/10=±10%)
+uniform float max_scale_lim = 10.0f;                // Abs change before max compression (1/10=ï¿½10%)
 
 // Colour to greyscale, fast approx gamma
 float CtG(vec3 RGB) { return  sqrt( (1.0/3.0)*((RGB*RGB).r + (RGB*RGB).g + (RGB*RGB).b) ); }
@@ -2205,8 +2205,8 @@ void main()
 					xypos = 0.5f + (xypos - 0.5f) * (1.0f - xamount);
 					tc = TexCoord0.st;
 					tc.y = (tc.y - 0.5f) * float(fboheight) / float(fbowidth) + 0.5f;
-					float dist = distance(tc, vec2(xxpos, xypos));
-					bool cond = (dist < rad);
+					dist = distance(tc, vec2(xxpos, xypos));
+					cond = (dist < rad);
 					if (cond) {
 						FragColor = vec4((data1.rgb * data1.a + data0.rgb * (1.0f - data1.a)), max(data0.a, data1.a)) * (1 - dir) + data1 * dir;
 					}

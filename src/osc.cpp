@@ -1,11 +1,8 @@
-#include "GL\glew.h"
-#include "GL\gl.h"
-#include "GL\glut.h"
+#include "GL/glew.h"
+#include "GL/gl.h"
+#include "GL/glut.h"
 
 #include <string>
-
-#include <lo/lo.h>
-#include <lo/lo_cpp.h>
 
 // my own headers
 #include "box.h"
@@ -22,7 +19,7 @@ void preview_wipetype(lo_arg **argv, int argc) {
 	
 }
 
-Program::add_main_oscmethods() {
+void Program::add_main_oscmethods() {
 	// crossfading
 	mainprogram->st->add_method("/mix/crossfade_all", "f",[](lo_arg **argv, float){mainmix->crossfade->value = argv[0]->f; mainmix->crossfadecomp->value = argv[0]->f;});
 	mainprogram->st->add_method("/mix/preview/crossfade", "f",[](lo_arg **argv, float){mainmix->crossfade->value = argv[0]->f;});

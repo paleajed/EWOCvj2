@@ -1,7 +1,6 @@
 #include <boost/bind.hpp>
 #include <boost/asio.hpp>
 #include <boost/date_time/posix_time/posix_time.hpp>
-//#include <boost/interprocess/managed_shared_memory.hpp>
 #include <boost/filesystem.hpp>
 
 #include <stdio.h>
@@ -31,24 +30,37 @@
 #ifndef UINT64_C
 #define UINT64_C(c) (c ## ULL)
 #endif
+
+#ifdef _WIN64
 #include <shobjidl.h>
 #include <Vfw.h>
+#define STRSAFE_NO_DEPRECATE
+#include <initguid.h>
+#include <dshow.h>
+#pragma comment (lib, "strmiids.lib")
+#pragma comment (lib, "Quartz.lib")
+#pragma comment (lib, "ole32.lib")
+#include <windows.h>
+#include <ShellScalingAPI.h>
+#include <comdef.h>
+#endif
+
+#include "RtMidi.h"
 #include <jpeglib.h>
 #define SDL_MAIN_HANDLED
-#include "RtMidi.h"
-#include "GL\glew.h"
-#include "GL\gl.h"
-#include "GL\glut.h"
-#include "SDL2\SDL.h"
-#include "SDL2\SDL_syswm.h"
+#include "GL/glew.h"
+#include "GL/gl.h"
+#ifdef __GNUC__
+#include "GL/glx.h"
+#endif
+#include "GL/glut.h"
+#include "SDL2/SDL.h"
+#include "SDL2/SDL_syswm.h"
 #include <AL/al.h>
 #include <AL/alc.h>
 #include <AL/alext.h>
 #include "snappy.h"
 #include "snappy-c.h"
-#include "rtmidi-master/RtMidi.h"
-#include <lo/lo.h>
-#include <lo/lo_cpp.h>
 
 extern "C" {
 #include "libavformat/avformat.h"
@@ -61,21 +73,11 @@ extern "C" {
 #include "libavutil/imgutils.h"
 }
 
-#define STRSAFE_NO_DEPRECATE
-#include <initguid.h>
-#include <dshow.h>
-#pragma comment (lib, "strmiids.lib")
-#pragma comment (lib, "Quartz.lib")
-#pragma comment (lib, "ole32.lib")
-
 #include <ft2build.h>
 #include FT_FREETYPE_H
 #include FT_MODULE_H
 #define  FT_HINTING_ADOBE     0
 #include "nfd.h"
-#include <windows.h>
-#include <ShellScalingAPI.h>
-#include <comdef.h>
 
 // my own headers
 #include "box.h"
@@ -146,7 +148,7 @@ bool exists(const std::string &name) {
 
 std::string basename(std::string pathname)
 {
-	const size_t last_slash_idx = pathname.find_last_of("\\/");
+	const size_t last_slash_idx = pathname.find_last_of("//");
 	if (std::string::npos != last_slash_idx)
 	{
 		pathname.erase(0, last_slash_idx + 1);
@@ -179,6 +181,7 @@ std::string remove_version(std::string filename) {
 }
 
 
+#ifdef _WIN64
 HRESULT EnumerateDevices(REFGUID category, IEnumMoniker **ppEnum)
 {
     // Create the System Device Enumerator.
@@ -198,7 +201,6 @@ HRESULT EnumerateDevices(REFGUID category, IEnumMoniker **ppEnum)
     }
     return hr;
 }
-
 
 void DisplayDeviceInformation(IEnumMoniker *pEnum)
 {
@@ -254,9 +256,11 @@ void DisplayDeviceInformation(IEnumMoniker *pEnum)
         pMoniker->Release();
     }
 }
+#endif
 
 void get_cameras()
 {
+	#ifdef _WIN64
     HRESULT hr;
     if (1)
      {
@@ -276,6 +280,7 @@ void get_cameras()
         //}
         //CoUninitialize();
     }
+    #endif
 }
 
 void set_live_base(Layer *lay, std::string livename) {
@@ -414,7 +419,7 @@ void screenshot() {
 	glBindFramebuffer(GL_FRAMEBUFFER, mainprogram->globfbo);
 	glDrawBuffer(GL_COLOR_ATTACHMENT0);
 	
-	std::string name = ".\\screenshots\\screenshot" + std::to_string(sscount) + ".jpg";
+	std::string name = "./screenshots/screenshot" + std::to_string(sscount) + ".jpg";
 	sscount++;
 	FILE* outfile = fopen(name.c_str(), "wb");
 	
@@ -1415,41 +1420,6 @@ void Layer::playaudio() {
 	}
 }
 
-void * shared_mem(int size) {
-
-	//using namespace boost::interprocess;
-     //Remove shared memory on construction and destruction
-      //struct shm_remove
-      //{
-      //   shm_remove() {  shared_memory_object::remove("FrameShared"); }
-      //   ~shm_remove(){  shared_memory_object::remove("FrameShared"); }
-      //} remover;
-
-      //Create a managed shared memory segment
-      //managed_shared_memory segment(open_orcreate_only, "FrameShared", 2080000);
-	//shared_memory_object shm (open_or_create, "FrameShared", read_write);
-	//shm.truncate(8294400);
-      //Allocate a portion of the segment (raw memory)
-      //managed_shared_memory::size_type free_memory = segment.get_free_memory();
-      //return (char *)segment.allocate(size);
-
-      //Check invariant
-      //if(free_memory <= segment.get_free_memory())
-      //   return NULL;
-
-      //An handle from the base address can identify any byte of the shared
-      //memory segment even if it is mapped in different base addresses
-      //managed_shared_memory::handle_t handle = segment.get_handle_from_address(shptr);
-      //std::stringstream s;
-      //s << argv[0] << " " << handle;
-      //s << std::ends;
-      //Launch child process
-      //if(0 != std::system(s.str().c_str()))
-      //   return NULL;
-      //Check memory has been freed
-      //if(free_memory != segment.get_free_memory())
-      //   return NULL;
-}
 
 float tf(float vtxcoord) {
 	return 1.5f * vtxcoord;
@@ -1976,6 +1946,7 @@ Effect *new_effect(Effect *effect) {
 			return new DitherEffect(*(DitherEffect *)effect);
 			break;
 	}
+	return nullptr;
 }
 
 Layer::~Layer() {
@@ -3868,39 +3839,6 @@ void onestepfrom(bool stage, Node *node, Node *prevnode, GLuint prevfbotex, GLui
 			glGenFramebuffers(1, &(effect->fbo));
 			glBindFramebuffer(GL_FRAMEBUFFER, effect->fbo);
 			glFramebufferTexture2D(GL_FRAMEBUFFER, GL_COLOR_ATTACHMENT0, GL_TEXTURE_2D, effect->fbotex, 0);
-		   
-			
-  			// HANDLE hMapFile;
-// 
- 			// hMapFile = CreateFileMapping(
-						 // INVALID_HANDLE_VALUE,    // use paging file
-						 // NULL,                    // default security
-						 // PAGE_READWRITE,          // read/write access
-						 // 0,                       // maximum object size (high-order DWORD)
-						 // 8294400,                // maximum object size (low-order DWORD)
-						 // "SharedFrame");                 // name of mapping object
-		// 
-		   // if (hMapFile == NULL)
-		   // {
-			  // printf(TEXT("Could not create file mapping object (%d).\n"),
-					 // GetLastError());
-			  // return;
-		   // }
-		   // effect->pbuf = (LPTSTR) MapViewOfFile(hMapFile,   // handle to map object
-								// FILE_MAP_ALL_ACCESS, // read/write permission
-								// 0,
-								// 0,
-								// 8294400);
-		// 
-		   // if (effect->pbuf == NULL)
-		   // {
-			  // printf(TEXT("Could not map view of file (%d).\n"),
-					 // GetLastError());
-		// 
-			   // CloseHandle(hMapFile);
-		// 
-			  // return;
-		   // }
 		}
 		glUniform1i(blurswitch, 0);
 		GLuint down = glGetUniformLocation(mainprogram->ShaderProgram, "down");
@@ -4306,7 +4244,9 @@ bool displaymix() {
 		draw_box(node->outputbox->lcolor, node->outputbox->acolor, -0.6f, -1.0f, 0.3f, 0.3f, node->mixtex);
 		node = (MixNode*)mainprogram->nodesmain->mixnodescomp[1];
 		draw_box(node->outputbox->lcolor, node->outputbox->acolor, 0.3f, -1.0f, 0.3f, 0.3f, node->mixtex);
-	}	
+	}
+	
+	return true;
 }
 
 
@@ -5143,12 +5083,12 @@ void do_delete_effect(Layer *lay, int pos) {
 	make_layboxes();
 }
 
-Layer::delete_effect(int pos) {
+void Layer::delete_effect(int pos) {
 	do_delete_effect(this, pos);
 	this->currcliptype = ELEM_LAYER;
 }		
 
-Layer::set_clones() {
+void Layer::set_clones() {
 	std::unordered_set<Layer*>::iterator it;
 	if (mainmix->clonemap.find(this) != mainmix->clonemap.end()) {
 		for (it = mainmix->clonemap[this]->begin(); it != mainmix->clonemap[this]->end(); it++) {	
@@ -6050,7 +5990,7 @@ Button::~Button() {
 	delete this->box;
 }
 
-Button::draw(bool circlein) {
+void Button::draw(bool circlein) {
 	if (this->box->in()) {
 		this->box->acolor[0] = 0.5;
 		this->box->acolor[1] = 0.5;
@@ -6143,7 +6083,7 @@ Param::~Param() {
 	loopstation->allparams.erase(std::find(loopstation->allparams.begin(), loopstation->allparams.end(), this));
 }
 
-Param::handle() {
+void Param::handle() {
 	float green[4] = {0.0, 1.0, 0.2, 1.0};
 	float white[4] = {1.0, 1.0, 1.0, 1.0};
 	std::string parstr;
@@ -6192,8 +6132,8 @@ Preferences::Preferences() {
 
 void Preferences::load() {
 	ifstream rfile;
-	if (!exists(".\\preferences.prefs")) return;
-	rfile.open(".\\preferences.prefs");
+	if (!exists("./preferences.prefs")) return;
+	rfile.open("./preferences.prefs");
 	std::string istring;
 	getline(rfile, istring);
 
@@ -6299,7 +6239,7 @@ void Preferences::load() {
 
 void Preferences::save() {
 	ofstream wfile;
-	wfile.open(".\\preferences.prefs");
+	wfile.open("./preferences.prefs");
 	wfile << "EWOCvj PREFERENCES V0.1\n";
 	
 	wfile << "VIDEO\n";
@@ -6378,9 +6318,9 @@ void Preferences::save() {
 PIDirs::PIDirs() {
 	this->name = "Directories";
 	PDirItem *pdi;
-	pdi = this->additem("BINS", ".\\bins\\");
+	pdi = this->additem("BINS", "./bins/");
 	mainprogram->binsdir = pdi->path;
-	pdi = this->additem("Recordings", ".\\recordings\\");
+	pdi = this->additem("Recordings", "./recordings/");
 	mainprogram->recdir = pdi->path;
 }
 
@@ -6396,7 +6336,7 @@ PIMidi::PIMidi() {
 	this->name = "MIDI Devices";
 }
 
-PIMidi::populate() {
+void PIMidi::populate() {
 	RtMidiIn midiin;
 	int nPorts = midiin.getPortCount();
 	std::string portName;
@@ -7461,6 +7401,8 @@ bool preferences() {
 	mainprogram->my = -1;
 	
 	mainprogram->insmall = false;
+	
+	return 1;
 }
 		
 	
@@ -7665,10 +7607,12 @@ int tune_midi() {
 	mainprogram->my = -1;
 	
 	mainprogram->insmall = false;
+	
+	return 1;
 }
 
 
-void output_video(Window *mwin) {
+void output_video(EWindow *mwin) {
 	SDL_GL_MakeCurrent(mwin->win, mwin->glc);
 	glUseProgram(mainprogram->ShaderProgram);
 	
@@ -8760,7 +8704,7 @@ void the_loop() {
 					int screen;
 					if (currentries.size()) screen = possscreens[k - currentries.size() - 3];
 					else screen = possscreens[k - currentries.size() - 2];
-					Window *mwin = new Window;
+					EWindow *mwin = new EWindow;
 					mwin->mixid = mainprogram->mixtargetmenu->value;
 					OutputEntry *entry = new OutputEntry;
 					entry->screen = screen;
@@ -8773,12 +8717,7 @@ void the_loop() {
 					mwin->win = SDL_CreateWindow(PROGRAM_NAME, SDL_WINDOWPOS_CENTERED_DISPLAY(screen), SDL_WINDOWPOS_CENTERED_DISPLAY(screen), sw, sh, SDL_WINDOW_OPENGL | SDL_WINDOW_MAXIMIZED | SDL_WINDOW_RESIZABLE | SDL_WINDOW_FULLSCREEN_DESKTOP | SDL_WINDOW_ALLOW_HIGHDPI);
 					SDL_RaiseWindow(mainprogram->mainwindow);
 					mainprogram->mixwindows.push_back(mwin);
-					SDL_GL_MakeCurrent(mainprogram->mainwindow, glc);
-					HGLRC c1 = wglGetCurrentContext();
-					mwin->glc = SDL_GL_CreateContext(mwin->win);
-					SDL_GL_MakeCurrent(mwin->win, mwin->glc);
-					HGLRC c2 = wglGetCurrentContext();
-					wglShareLists(c1, c2);
+					mainprogram->share_lists(&glc, mainprogram->mainwindow, &mwin->glc, mwin->win);
 					glUseProgram(mainprogram->ShaderProgram);
 					
 					std::thread vidoutput (output_video, mwin);
@@ -9003,11 +8942,8 @@ void the_loop() {
 			if (!mainprogram->tunemidi) {
 				SDL_ShowWindow(mainprogram->tunemidiwindow);
 				SDL_RaiseWindow(mainprogram->tunemidiwindow);
-				SDL_GL_MakeCurrent(mainprogram->mainwindow, glc);
-				HGLRC cc1 = wglGetCurrentContext();
+				mainprogram->share_lists(&glc, mainprogram->mainwindow, &glc_tm, mainprogram->tunemidiwindow);
 				SDL_GL_MakeCurrent(mainprogram->tunemidiwindow, glc_tm);
-				HGLRC cc2 = wglGetCurrentContext();
-				wglShareLists(cc1, cc2);
 				glUseProgram(mainprogram->ShaderProgram);
 				mainprogram->tmfreeze->upvtxtoscr();
 				mainprogram->tmplay->upvtxtoscr();
@@ -9054,6 +8990,7 @@ void the_loop() {
 				mainprogram->prefs->load();
 				mainprogram->prefon = true;
 				SDL_ShowWindow(mainprogram->prefwindow);
+				mainprogram->share_lists(&glc, mainprogram->mainwindow, &glc_pr, mainprogram->prefwindow);
 				SDL_GL_MakeCurrent(mainprogram->prefwindow, glc_pr);
 				glUseProgram(mainprogram->ShaderProgram);
 				glEnable(GL_BLEND);
@@ -9635,7 +9572,7 @@ void the_loop() {
 	
 	// sync with output views
 	for (int i = 0; i < mainprogram->outputentries.size(); i++) {
-		Window *win = mainprogram->outputentries[i]->win;
+		EWindow *win = mainprogram->outputentries[i]->win;
 		win->syncnow = true;
 		win->sync.notify_one();
 	}
@@ -10038,7 +9975,7 @@ void open_shelfdir() {
 	if ((ent = readdir(mainprogram->opendir)) != NULL and mainprogram->shelfdircount < 16) {
 		char *filepath = (char*)malloc(1024);
 		strcpy(filepath, mainprogram->shelfpath.c_str());
-		strcat(filepath, "\\");
+		strcat(filepath, "/");
 		strcat(filepath, ent->d_name);
 		std::string str(filepath);
 		
@@ -10533,12 +10470,14 @@ BinElement *find_element(int size, int k, int i, int j, bool overlapchk) {
 int main(int argc, char* argv[]){
 	bool quit = false;
 
+	#ifdef _WIN64
    	HRESULT hr = SetProcessDpiAwareness(PROCESS_PER_MONITOR_DPI_AWARE);
     if (FAILED(hr))
     {
         _com_error err(hr);
         fwprintf(stderr, L"SetProcessDpiAwareness: %s\n", err.ErrorMessage());
     }
+    #endif
 	
     
     // OPENAL
@@ -10588,14 +10527,7 @@ int main(int argc, char* argv[]){
 	glewInit();
 
 	mainprogram->tunemidiwindow = SDL_CreateWindow("Tune MIDI", glob->w / 4, glob->h / 4, glob->w / 2, glob->h / 2, SDL_WINDOW_OPENGL | SDL_WINDOW_HIDDEN | SDL_WINDOW_ALLOW_HIGHDPI);
-	glc_tm = SDL_GL_CreateContext(mainprogram->tunemidiwindow);
 	mainprogram->prefwindow = SDL_CreateWindow("Preferences", glob->w / 4, glob->h / 4, glob->w / 2, glob->h / 2, SDL_WINDOW_OPENGL | SDL_WINDOW_HIDDEN | SDL_WINDOW_ALLOW_HIGHDPI);
-	glc_pr = SDL_GL_CreateContext(mainprogram->prefwindow);
-	SDL_GL_MakeCurrent(mainprogram->mainwindow, glc);
-	HGLRC cc1 = wglGetCurrentContext();
-	SDL_GL_MakeCurrent(mainprogram->prefwindow, glc_pr);
-	HGLRC cc2 = wglGetCurrentContext();
-	wglShareLists(cc1, cc2);
 	SDL_GL_GetDrawableSize(mainprogram->prefwindow, &wi, &he);
 	smw = (float)wi;
 	smh = (float)he;
@@ -10630,7 +10562,7 @@ int main(int argc, char* argv[]){
 	}
   	FT_UInt interpreter_version = 40;
 	FT_Property_Set(ft, "truetype", "interpreter-version", &interpreter_version);
-	if(FT_New_Face(ft, ".\\expressway rg.ttf", 0, &face)) {
+	if(FT_New_Face(ft, "./expressway rg.ttf", 0, &face)) {
 	  fprintf(stderr, "Could not open font\n");
 	  return 1;
 	}
@@ -10643,11 +10575,11 @@ int main(int argc, char* argv[]){
 	unsigned long vlen, flen;
 	char *VShaderSource;
  	char *vshader = (char*)malloc(100);
- 	strcpy (vshader, ".\\shader.vs");
+ 	strcpy (vshader, "./shader.vs");
 	loadshader(vshader, &VShaderSource, vlen);
 	char *FShaderSource;
  	char *fshader = (char*)malloc(100);
- 	strcpy (fshader, ".\\shader.fs");
+ 	strcpy (fshader, "./shader.fs");
 	loadshader(fshader, &FShaderSource, flen);
 	glShaderSource(vertexShaderObject, 1, &VShaderSource, NULL);
 	glShaderSource(fragmentShaderObject, 1, &FShaderSource, NULL);
@@ -10933,7 +10865,14 @@ int main(int argc, char* argv[]){
 	
 	mainprogram->prefs = new Preferences;
 	mainprogram->prefs->load();
-	
+	boost::filesystem::path p1{"./bins"};
+	if (!exists("./bins")) boost::filesystem::create_directory(p1);
+	boost::filesystem::path p2{"./recordings"};
+	if (!exists("./recordings")) boost::filesystem::create_directory(p2);
+	boost::filesystem::path p3{"./shelves"};
+	if (!exists("./shelves")) boost::filesystem::create_directory(p3);
+	boost::filesystem::path p4{"./temp"};
+	if (!exists("./temp")) boost::filesystem::create_directory(p4);
 
 	binsmain->newbinbox = new Box;
 	binsmain->newbinbox->vtxcoords->x1 = -0.15f;
@@ -10969,8 +10908,6 @@ int main(int argc, char* argv[]){
 		mainmix->nbframesB.push_back(std::vector<Layer*>());
 		mainmix->tempnbframes.push_back(std::vector<Layer*>());
 	}
-	printf("tottier\n");
-	fflush(stdout);
 	
 	mainprogram->loadlay = new Layer(true);
 	for (int i = 0; i < 4; i++) {
@@ -11053,6 +10990,7 @@ int main(int argc, char* argv[]){
 	
 	
 	// get number of cores
+	#ifdef _WIN64
 	typedef BOOL (WINAPI *LPFN_GLPI)(
 		PSYSTEM_LOGICAL_PROCESSOR_INFORMATION, 
 		PDWORD);
@@ -11069,12 +11007,6 @@ int main(int argc, char* argv[]){
 							"GetLogicalProcessorInformation");
 
 	
-	// OSC
-	mainprogram->st = new lo::ServerThread (9000);
-	mainprogram->add_main_oscmethods();
-	mainprogram->st->start();
-	
-
 	while (!done)
     {
         DWORD rc2 = glpi(buffer, &returnLength);
@@ -11115,8 +11047,19 @@ int main(int argc, char* argv[]){
         ptr++;
     }
     free(buffer);
+    #endif
+    
+    #ifdef __GNUC__
+    mainprogram->numcores = sysconf(_SC_NPROCESSORS_ONLN);
+    #endif
 
 
+	// OSC
+	mainprogram->st = new lo::ServerThread (9000);
+	mainprogram->add_main_oscmethods();
+	mainprogram->st->start();
+	
+	
    	io_service io;
     deadline_timer t1(io);
     Deadline d(t1);
@@ -11216,14 +11159,14 @@ int main(int argc, char* argv[]){
 			else if (mainprogram->pathto == "CHOOSEDIR") {
 				std::string str(mainprogram->path);
 				std::string driveletter1 = str.substr(0, 1);
-				std::string abspath = boost::filesystem::absolute(".\\").string();
+				std::string abspath = boost::filesystem::absolute("./").string();
 				std::string driveletter2 = abspath.substr(0, 1);
 				std::string path;
 				if (driveletter1 == driveletter2) {
-					path = ".\\" + boost::filesystem::relative(str, ".\\").string() + "\\";
+					path = "./" + boost::filesystem::relative(str, "./").string() + "/";
 				}
 				else {
-					path = str + "\\";
+					path = str + "/";
 				}
 				if (mainprogram->choosing == EDIT_BINSDIR) {
 					mainprogram->binsdir = path;

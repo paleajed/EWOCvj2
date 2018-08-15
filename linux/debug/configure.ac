@@ -10,8 +10,8 @@ AC_PROG_CXX
 AC_PROG_CC
 
 # Checks for libraries.
-AC_CHECK_LIB([OpenAL32], [alGenBuffers], [], [
-              echo "The OpenAL32 library is required for this program. (Audio support)."
+AC_CHECK_LIB([openal], [alGenBuffers], [], [
+              echo "The OpenAL Soft library is required for this program. (Audio support)."
               exit -1])
 AC_CHECK_LIB([rtmidi], [main], [], [
               echo "The RtMidi library is required for this program. (Audio support)."
@@ -31,19 +31,19 @@ AC_CHECK_LIB([avutil], [avutil_version], [], [
 AC_CHECK_LIB([swscale], [swscale_version], [], [
               echo "The FFMPEG swscale library is required for this program."
               exit -1])
-AC_CHECK_LIB([freeglut], [glutInit], [], [
+AC_CHECK_LIB([glut], [glutInit], [], [
               echo "The freeglut library is required for this program."
               exit -1])
 AC_CHECK_LIB([freetype], [FT_Init_FreeType], [], [
               echo "The freetype2 library is required for this program."
               exit -1])
-AC_CHECK_LIB([sdl2], [SDL_GetMouseFocus], [], [
+AC_CHECK_LIB([SDL2], [SDL_GetMouseFocus], [], [
               echo "The SDL2 library is required for this program."
               exit -1])
-AC_CHECK_LIB([opengl32], [glClear], [], [
-              echo "The opengl32 library is required for this program."
+AC_CHECK_LIB([GL], [glClear], [], [
+              echo "The OpenGL library is required for this program."
               exit -1])
-AC_CHECK_LIB([glew32], [glewInit], [], [
+AC_CHECK_LIB([GLEW], [glewInit], [], [
               echo "The glew library is required for this program."
               exit -1])
 AC_CHECK_LIB([jpeg], [jpeg_start_compress], [], [
@@ -52,35 +52,26 @@ AC_CHECK_LIB([jpeg], [jpeg_start_compress], [], [
 AC_CHECK_LIB([snappy], [snappy_uncompress], [], [
               echo "The snappy library is required for this program."
               exit -1])
-AC_CHECK_LIB([ole32], [BindMoniker], [], [
-              echo "The ole32 library is required for this program."
+AC_CHECK_LIB([boost_system], [main], [], [
+              echo "The boost system library is required for this program."
               exit -1])
-AC_CHECK_LIB([Uuid], [CLSID_FileSaveDialog], [], [
-              echo "The Uuid library is required for this program."
+AC_CHECK_LIB([boost_filesystem], [rename], [], [
+              echo "The boost filesystem library is required for this program."
+              exit -1])
+AC_CHECK_LIB([glib-2.0], [g_free], [], [
+              echo "The glib library is required for this program."
+              exit -1])
+AC_CHECK_LIB([gobject-2.0], [g_free], [], [
+              echo "The gobject library is required for this program."
+              exit -1])
+AC_CHECK_LIB([gtk-3], [gtk_init_check], [], [
+              echo "The GTK3+ library is required for this program."
               exit -1])
 AC_CHECK_LIB([nfd], [NFD_PickFolder], [], [
               echo "The native file dialog (NFD) library is required for this program."
               exit -1])
-AC_CHECK_LIB([boost_system-mt], [main], [], [
-              echo "The boost system library is required for this program."
-              exit -1])
-AC_CHECK_LIB([boost_filesystem-mt], [rename], [], [
-              echo "The boost filesystem library is required for this program."
-              exit -1])
-AC_CHECK_LIB([oleaut32], [BstrFromVector], [], [
-              echo "The oleaut32 library is required for this program."
-              exit -1])
-AC_CHECK_LIB([strmiids], [IID_IBaseFilter], [], [
-              echo "The strmiids is required for this program."
-              exit -1])
-AC_CHECK_LIB([ws2_32], [WSACleanup], [], [
-              echo "The ws2_32 library is required for this program."
-              exit -1])
-AC_CHECK_LIB([shcore], [CreateStreamOverRandomAccessStream], [], [
-              echo "The shcore library is required for this program."
-              exit -1])
 AC_CHECK_LIB([lo], [lo_address_new], [], [
-              echo "The liblo library is required for this program. (OSC support)."
+              echo "The liblo library >= 0.29 is required for this program. (OSC support)."
               exit -1])
 
 # Checks for header files.
@@ -98,6 +89,6 @@ AC_CHECK_TYPES([ptrdiff_t])
 AC_FUNC_MALLOC
 AC_CHECK_FUNCS([memset pow sqrt])
 
-AC_CONFIG_FILES([makefile])
+AC_CONFIG_FILES([Makefile])
 AM_INIT_AUTOMAKE([foreign])
 AC_OUTPUT

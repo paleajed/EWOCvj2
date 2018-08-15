@@ -1,8 +1,16 @@
 #include <boost/filesystem.hpp>
 
-#include "GL\glew.h"
-#include "GL\gl.h"
-#include "GL\glut.h"
+#include <X11/Xlib.h>
+#include <X11/Xutil.h>
+#include <X11/Xos.h>
+#include <X11/cursorfont.h>
+
+#include "GL/glew.h"
+#include "GL/gl.h"
+#include "GL/glut.h"
+
+#include "SDL2/SDL.h"
+#include "SDL2/SDL_syswm.h"
 
 #include <algorithm>
 #include <ostream>
@@ -33,7 +41,7 @@ extern "C" {
 #include "loopstation.h"
 #include "bins.h"
 
-BinsMain::handle() {
+void BinsMain::handle() {
 	float white[] = {1.0f, 1.0f, 1.0f, 1.0f};
 	float black[] = {0.0f, 0.0f, 0.0f, 1.0f};
 	float darkgrey[] = {0.2f, 0.2f, 0.2f, 1.0f};
@@ -1452,7 +1460,7 @@ BinsMain::handle() {
 	}
 }
 
-BinsMain::open_bin(const std::string &path, Bin *bin) {
+void BinsMain::open_bin(const std::string &path, Bin *bin) {
 	std::string result = deconcat_files(path);
 	bool concat = (result != "");
 	std::ifstream rfile;
@@ -1540,7 +1548,7 @@ BinsMain::open_bin(const std::string &path, Bin *bin) {
 	rfile.close();
 }
 
-BinsMain::save_bin(const std::string &path) {
+void BinsMain::save_bin(const std::string &path) {
 	std::vector<std::string> filestoadd;
 	std::ofstream wfile;
 	wfile.open(path);
@@ -1638,7 +1646,7 @@ Bin *BinsMain::new_bin(const std::string &name) {
 	return bin;
 }
 
-BinsMain::make_currbin(int pos) {
+void BinsMain::make_currbin(int pos) {
 	this->currbin->pos = pos;
 	this->currbin->name = this->bins[pos]->name;
 	this->currbin->elements = this->bins[pos]->elements;
@@ -1669,7 +1677,7 @@ int BinsMain::read_binslist() {
 	return currbin;
 }
 
-BinsMain::save_binslist() {
+void BinsMain::save_binslist() {
 	std::ofstream wfile;
 	wfile.open(mainprogram->binsdir + "bins.list");
 	wfile << "EWOC BINSLIST v0.1\n";
@@ -1686,7 +1694,7 @@ BinsMain::save_binslist() {
 	wfile.close();
 }
 
-BinsMain::get_texes(int deck) {
+void BinsMain::get_texes(int deck) {
 	std::vector<Layer*> &lvec = choose_layers(deck);
 	for (int i = 0; i < lvec.size(); i++) {
 		GLuint tex, fbo;
@@ -1714,32 +1722,46 @@ BinsMain::get_texes(int deck) {
 	}
 }
 
-BinsMain::open_binfiles() {
+void BinsMain::open_binfiles() {
 	if (mainprogram->counting == NFD_PathSet_GetCount(&mainprogram->paths)) {
 		this->openbinfile = false;
-		return 1;
+		return;
 	}
 	std::string str(NFD_PathSet_GetPath(&mainprogram->paths, mainprogram->counting));
 	open_handlefile(str);
 	mainprogram->counting++;
 }
 
-BinsMain::open_bindir() {
+void BinsMain::open_bindir() {
+	SDL_SysWMinfo info;
+	SDL_GetWindowWMInfo(mainprogram->mainwindow, &info);
 	if (SDL_GetMouseFocus() != mainprogram->mainwindow) {
+		#ifdef _WIN64
 		HCURSOR hCurs;
 		hCurs = LoadCursor(NULL, IDC_ARROW);
-		SetCursor(hCurs); 
+		SetCursor(hCurs);
+		#else
+		Cursor c;
+		c = XCreateFontCursor(info.info.x11.display, 68); 
+		XDefineCursor(info.info.x11.display, info.info.x11.window, c);
+		#endif
 	}
 	else {
+		#ifdef _WIN64
 		HCURSOR hCurs;
 		hCurs = LoadCursor(NULL, IDC_WAIT);
-		SetCursor(hCurs); 
+		SetCursor(hCurs);
+		#else
+		Cursor c;
+		c = XCreateFontCursor(info.info.x11.display, 150); 
+		XDefineCursor(info.info.x11.display, info.info.x11.window, c);
+		#endif
 	} 
 	struct dirent *ent;
 	if ((ent = readdir(mainprogram->opendir)) != NULL) {
 		char *filepath = (char*)malloc(1024);
 		strcpy(filepath, this->binpath.c_str());
-		strcat(filepath, "\\");
+		strcat(filepath, "/");
 		strcat(filepath, ent->d_name);
 		std::string str(filepath);
 		
@@ -1748,13 +1770,19 @@ BinsMain::open_bindir() {
 	else {
 		this->openbindir = false;
 		mainprogram->blocking = false;
+		#ifdef _WIN64
 		HCURSOR hCurs;
 		hCurs = LoadCursor(NULL, IDC_ARROW);
-		SetCursor(hCurs); 
+		SetCursor(hCurs);
+		#else
+		Cursor c;
+		c = XCreateFontCursor(info.info.x11.display, 68); 
+		XDefineCursor(info.info.x11.display, info.info.x11.window, c);
+		#endif
 	} 
 }
 
-BinsMain::open_handlefile(const std::string &path) {
+void BinsMain::open_handlefile(const std::string &path) {
 	Layer *lay = new Layer(true);
 	lay->dummy = 1;
 	open_video(1, lay, path, true);
@@ -1775,7 +1803,7 @@ BinsMain::open_handlefile(const std::string &path) {
 			lay->startdecode.notify_one();
 		}
 		//delete lay;
-		return 0;
+		return;
 	}
 	GLuint tex;
 	glGenTextures(1, &tex);
@@ -1811,7 +1839,12 @@ std::tuple<std::string, std::string> BinsMain::hap_binel(BinElement *binel, BinD
 	std::string rpath = "";
 	if (binel->type == ELEM_FILE) {
 		std::thread hap (&BinsMain::hap_encode, this, binel->path, binel, nullptr, nullptr);
+		#ifdef _WIN64
 		SetThreadPriority((void*)hap.native_handle(), THREAD_PRIORITY_LOWEST);
+		#else
+		struct sched_param params;
+		params.sched_priority = sched_get_priority_min(SCHED_FIFO);		pthread_setschedparam(hap.native_handle(), SCHED_FIFO, &params);
+		#endif
 		hap.detach();
 		binel->path = remove_extension(binel->path) + "_hap.mov";
 	}
@@ -1833,7 +1866,7 @@ std::tuple<std::string, std::string> BinsMain::hap_binel(BinElement *binel, BinD
 					wfile << apath;
 					wfile << "\n";
 					wfile << "RELPATH\n";
-					wfile << ".\\" + boost::filesystem::relative(apath, ".\\").string();
+					wfile << "./" + boost::filesystem::relative(apath, "./").string();
 					wfile << "\n";
 				}
 			}
@@ -1857,7 +1890,7 @@ std::tuple<std::string, std::string> BinsMain::hap_binel(BinElement *binel, BinD
 						wfile << path;
 						wfile << "\n";
 						wfile << "RELPATH\n";
-						wfile << ".\\" + boost::filesystem::relative(path, ".\\").string();
+						wfile << "./" + boost::filesystem::relative(path, "./").string();
 						wfile << "\n";
 					}
 				}
@@ -1877,7 +1910,7 @@ std::tuple<std::string, std::string> BinsMain::hap_binel(BinElement *binel, BinD
 			cpm = video->streams[idx]->codecpar;
 			if (cpm->codec_id == 188 or cpm->codec_id == 187) {
     			apath = path;
-    			rpath = ".\\" + boost::filesystem::relative(path, ".\\").string();
+    			rpath = "./" + boost::filesystem::relative(path, "./").string();
 				wfile.close();
 				rfile.close();
  				boost::filesystem::remove(remove_extension(binel->path) + ".temp");
@@ -1891,7 +1924,12 @@ std::tuple<std::string, std::string> BinsMain::hap_binel(BinElement *binel, BinD
 				return {apath, rpath};
  			}
 			std::thread hap (&BinsMain::hap_encode, this, path, binel, bd, bm);
+			#ifdef _WIN64
 			SetThreadPriority((void*)hap.native_handle(), THREAD_PRIORITY_LOWEST);
+			#else
+			struct sched_param params;
+			params.sched_priority = sched_get_priority_min(SCHED_FIFO);		pthread_setschedparam(hap.native_handle(), SCHED_FIFO, &params);
+			#endif
 			hap.detach();
 		}
 		else printf("Can't find file to encode");
@@ -1905,7 +1943,7 @@ std::tuple<std::string, std::string> BinsMain::hap_binel(BinElement *binel, BinD
 	return {apath, rpath};
 }				
 	
-BinsMain::hap_deck(BinDeck * bd) {			
+void BinsMain::hap_deck(BinDeck * bd) {			
 	std::ifstream rfile;
 	rfile.open(bd->path);
 	std::ofstream wfile;
@@ -1953,7 +1991,7 @@ BinsMain::hap_deck(BinDeck * bd) {
 	boost::filesystem::rename(remove_extension(bd->path) + ".temp", bd->path);
 }
 
-BinsMain::hap_mix(BinMix * bm) {
+void BinsMain::hap_mix(BinMix * bm) {
 	std::ifstream rfile;
 	rfile.open(bm->path);
 	std::ofstream wfile;
@@ -1999,7 +2037,7 @@ BinsMain::hap_mix(BinMix * bm) {
 	boost::filesystem::rename(remove_extension(bm->path) + ".temp", bm->path);
 }	
 
-BinsMain::hap_encode(const std::string &srcpath, BinElement *binel, BinDeck *bd, BinMix *bm) {
+void BinsMain::hap_encode(const std::string &srcpath, BinElement *binel, BinDeck *bd, BinMix *bm) {
 	// opening the source vid
 	AVFormatContext *source = nullptr;
 	AVCodecParameters *source_dec_cpm;
@@ -2019,7 +2057,7 @@ BinsMain::hap_encode(const std::string &srcpath, BinElement *binel, BinDeck *bd,
 		else if (bm) {
 			bm->encthreads--;
 		}
-		return 0;
+		return;
 	}
 	numf = source_stream->nb_frames;
 	

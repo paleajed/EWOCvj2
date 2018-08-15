@@ -1,8 +1,18 @@
 #include <boost/filesystem.hpp>
 
-#include "GL\glew.h"
-#include "GL\gl.h"
-#include "GL\glut.h"
+#include <X11/Xlib.h>
+#include <X11/Xutil.h>
+#include <X11/Xos.h>
+
+#include "GL/glew.h"
+#include "GL/gl.h"
+#include "GL/glut.h"
+#ifdef __GNUC__
+#include "GL/glx.h"
+#endif
+
+#include "SDL2/SDL.h"
+#include "SDL2/SDL_syswm.h"
 
 #include "nfd.h"
 
@@ -16,7 +26,7 @@
 #include "loopstation.h"
 #include "bins.h"
 
-Program::make_menu(const std::string &name, Menu *&menu, std::vector<std::string> &entries) {
+void Program::make_menu(const std::string &name, Menu *&menu, std::vector<std::string> &entries) {
 	bool found = false;
 	for (int i = 0; i < mainprogram->menulist.size(); i++) {
 		if (mainprogram->menulist[i]->name == name) {
@@ -39,40 +49,40 @@ Program::make_menu(const std::string &name, Menu *&menu, std::vector<std::string
 	menu->box->upscrtovtx();
 }
 
-Program::get_inname(const nfdchar_t *filters, const nfdchar_t *defaultdir) {
+void Program::get_inname(const nfdchar_t *filters, const nfdchar_t *defaultdir) {
 	nfdchar_t *outPath = NULL;
 	nfdresult_t result = NFD_OpenDialog(filters, defaultdir, &outPath);
 	if (!(result == NFD_OKAY)) {
-		return 0;
+		return;
 	}
 	mainprogram->path = (char *)outPath;
 }
 
-Program::get_multinname() {
+void Program::get_multinname() {
 	nfdpathset_t outPaths;
 	nfdresult_t result = NFD_OpenDialogMultiple(NULL, NULL, &outPaths);
 	if (!(result == NFD_OKAY)) {
-		return 0;
+		return;
 	}
 	mainprogram->paths = outPaths;
 	mainprogram->path = (char*)"ENTER";
 	mainprogram->counting = 0;
 }
 
-Program::get_dir() {
+void Program::get_dir() {
 	nfdchar_t *outPath = NULL;
 	nfdresult_t result = NFD_PickFolder(NULL, &outPath);
 	if (!(result == NFD_OKAY)) {
-		return 0;
+		return;
 	}
 	mainprogram->path = (char *)outPath;
 }
 
-Program::get_outname(const nfdchar_t *filters, const nfdchar_t *defaultdir) {
+void Program::get_outname(const nfdchar_t *filters, const nfdchar_t *defaultdir) {
 	nfdchar_t *outPath = NULL;
 	nfdresult_t result = NFD_SaveDialog(filters, defaultdir, &outPath);
 	if (!(result == NFD_OKAY)) {
-		return 0;
+		return;
 	}
 	mainprogram->path = (char *)outPath;
 }
@@ -95,7 +105,7 @@ float Program::yvtxtoscr(float vtxcoord) {
 
 /* A simple function that prints a message, the error code returned by SDL,
  * and quits the application */
-Program::quit(const char *msg)
+void Program::quit(const char *msg)
 {
 	//empty temp dir
 	boost::filesystem::path path_to_remove(mainprogram->temppath);
@@ -109,7 +119,7 @@ Program::quit(const char *msg)
     exit(1);
 }
 
-Program::prevvid_off() {
+void Program::prevvid_off() {
 	for (int i = 0; i < mainmix->layersA.size(); i++) {
 		Layer *lay = mainmix->layersA[i];
 		Layer *laycomp = mainmix->layersAcomp[i];
@@ -146,7 +156,7 @@ Program::prevvid_off() {
 	}
 }
 
-Program::preveff_init() {
+void Program::preveff_init() {
 	std::vector<Layer*> &lvec = choose_layers(mainmix->currlay->deck);
 	if (!this->preveff and !this->prevvid) {
 		// when prevvid, normally all comp layers are copied from normal layers
@@ -173,4 +183,28 @@ Program::preveff_init() {
 	mainmix->currlay = lvec[p];
 	GLint preff = glGetUniformLocation(this->ShaderProgram, "preff");
 	glUniform1i(preff, this->preveff);
+}
+
+void Program::share_lists(SDL_GLContext *srcctx, SDL_Window *srcwin, SDL_GLContext *destctx, SDL_Window *destwin) {
+	SDL_GL_MakeCurrent(srcwin, *srcctx);
+	#ifdef _WIN64
+	destctx = &SDL_GL_CreateContext(destwin);
+	HGLRC cc1 = wglGetCurrentContext();
+	SDL_GL_MakeCurrent(destwin, destctx);
+	HGLRC cc2 = wglGetCurrentContext();
+	wglShareLists(cc1, cc2);
+	#else
+	SDL_SysWMinfo info;
+	SDL_GetWindowWMInfo(destwin, &info);
+    XWindowAttributes xattr;
+    XVisualInfo v, *vinfo;
+    int n;
+    XGetWindowAttributes(info.info.x11.display, info.info.x11.window, &xattr);
+    v.screen = DefaultScreen(info.info.x11.display);
+    v.visualid = XVisualIDFromVisual(xattr.visual);
+    vinfo = XGetVisualInfo(info.info.x11.display, VisualScreenMask | VisualIDMask, &v, &n);
+	GLXContext cc1 = glXGetCurrentContext();
+	GLXContext cc2 = glXCreateContext(info.info.x11.display, vinfo, cc1, true);
+	destctx = (SDL_GLContext*)&cc2;
+	#endif
 }

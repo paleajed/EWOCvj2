@@ -1,6 +1,6 @@
-#include "GL\glew.h"
-#include "GL\gl.h"
-#include "GL\glut.h"
+#include "GL/glew.h"
+#include "GL/gl.h"
+#include "GL/glut.h"
 
 #include <iostream>
 #include <chrono>
@@ -50,7 +50,7 @@ LoopStationElement::~LoopStationElement() {
 	delete this->playbut;
 }
 
-LoopStation::setbut(Button *but, float r, float g, float b) {
+void LoopStation::setbut(Button *but, float r, float g, float b) {
 	but->ccol[0] = r;
 	but->ccol[1] = g;
 	but->ccol[2] = b;
@@ -70,7 +70,7 @@ LoopStationElement* LoopStation::add_elem() {
 	return elem;
 }
 
-LoopStation::handle() {
+void LoopStation::handle() {
 	float white[] = {1.0f, 1.0f, 1.0f, 1.0f};
 	for (int i = 0; i < this->elems.size(); i++) {
 		elems[i]->handle();
@@ -78,7 +78,7 @@ LoopStation::handle() {
 	render_text("Loopstation", white, elems[0]->recbut->box->vtxcoords->x1 + tf(0.01f), elems[0]->recbut->box->vtxcoords->y1 + elems[0]->recbut->box->vtxcoords->h * 2.0f - tf(0.03f), 0.0005f, 0.0008f);
 }
 
-LoopStationElement::handle() {
+void LoopStationElement::handle() {
 	this->mouse_handle();
 	this->visualize();
 	if (this->colbox->in()) {
@@ -107,7 +107,7 @@ LoopStationElement::handle() {
 	if (this->loopbut->value or this->playbut->value) this->set_params();
 }
 
-LoopStationElement::visualize() {
+void LoopStationElement::visualize() {
 	this->recbut->box->vtxcoords->x1 = -0.8f + 1.1f * !mainmix->currlay->deck;
 	this->loopbut->box->vtxcoords->x1 = -0.8f + 1.1f * !mainmix->currlay->deck + this->loopbut->box->vtxcoords->w;
 	this->playbut->box->vtxcoords->x1 = -0.8f + 1.1f * !mainmix->currlay->deck + this->playbut->box->vtxcoords->w * 2.0f;		
@@ -130,7 +130,7 @@ LoopStationElement::visualize() {
 	draw_box(this->colbox, -1);
 }
 	
-LoopStationElement::erase_elem() {
+void LoopStationElement::erase_elem() {
 	this->eventlist.clear();
 	std::unordered_set<Param*>::iterator it;
 	for (it = this->params.begin(); it != this->params.end(); it++) {
@@ -144,7 +144,7 @@ LoopStationElement::erase_elem() {
 	this->layers.clear();
 }
 
-LoopStationElement::mouse_handle() {
+void LoopStationElement::mouse_handle() {
 	if (this->recbut->box->in()) {
 		if (mainprogram->leftmouse) {
 			// start/stop recording
@@ -199,7 +199,7 @@ LoopStationElement::mouse_handle() {
 	}
 }
 	
-LoopStationElement::set_params() {
+void LoopStationElement::set_params() {
 	// if current elapsed time in loop > eventtime of events starting from eventpos then set their params to stored values
 	std::chrono::high_resolution_clock::time_point now = std::chrono::high_resolution_clock::now();
 	std::chrono::duration<double> elapsed;
@@ -235,7 +235,7 @@ LoopStationElement::set_params() {
 	}
 }		
 		
-LoopStationElement::add_param() {
+void LoopStationElement::add_param() {
 	std::chrono::high_resolution_clock::time_point now = std::chrono::high_resolution_clock::now();
 	std::chrono::duration<double> elapsed;
 	elapsed = std::chrono::duration_cast<std::chrono::duration<double>>(now - this->starttime);

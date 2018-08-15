@@ -1,4 +1,5 @@
 #include <string>
+#include <vector>
 
 typedef enum
 {
@@ -72,7 +73,7 @@ class Param {
 		MidiNode *node = NULL;
 		bool nextrow = false;
 		std::vector<std::string> oscpaths;
-		handle();
+		void handle();
 		Param();
 		~Param();
 };
@@ -96,8 +97,6 @@ class Effect {
 		Param *drywet;
 		Button *onoffbutton;
 		int numrows;
-		
-   		LPCTSTR pbuf;
 };
 
 class BlurEffect: public Effect {

@@ -1,6 +1,6 @@
-#include "GL\glew.h"
-#include "GL\gl.h"
-#include "GL\glut.h"
+#include "GL/glew.h"
+#include "GL/gl.h"
+#include "GL/glut.h"
 
 #include <algorithm>
 
@@ -332,7 +332,7 @@ void NodePage::delete_node(Node *node) {
 	delete node;
 }
 
-NodesMain::add_nodepages(int num) {
+void NodesMain::add_nodepages(int num) {
 	for(int i = 0; i < num; i++) {
 		NodePage *page = new NodePage;
 		page->pos = this->pages.size();

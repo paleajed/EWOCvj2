@@ -11,9 +11,9 @@ extern "C" {
 #include "libavutil/imgutils.h"
 }
 
-#include "GL\glew.h"
-#include "GL\gl.h"
-#include "GL\glut.h"
+#include "GL/glew.h"
+#include "GL/gl.h"
+#include "GL/glut.h"
 
 #include <ostream>
 #include <istream>
@@ -213,7 +213,7 @@ Layer* Mixer::add_layer(std::vector<Layer*> &layers, int pos) {
 	return layer;
 }
 
-Mixer::do_deletelay(Layer *testlay, std::vector<Layer*> &layers, bool add) {
+void Mixer::do_deletelay(Layer *testlay, std::vector<Layer*> &layers, bool add) {
 	if (testlay == mainmix->currlay) {
 		if (testlay->pos == layers.size() - 1) mainmix->currlay = layers[testlay->pos - 1];
 		else mainmix->currlay = layers[testlay->pos + 1];
@@ -305,7 +305,7 @@ void Mixer::delete_layer(std::vector<Layer*> &layers, Layer *testlay, bool add) 
 	this->do_deletelay(testlay, layers, add);
 }
 
-Mixer::set_values(Layer *clay, Layer *lay) {
+void Mixer::set_values(Layer *clay, Layer *lay) {
 	clay->speed->value = lay->speed->value;
 	clay->playbut->value = lay->playbut->value;
 	clay->revbut->value = lay->revbut->value;
@@ -335,7 +335,7 @@ Mixer::set_values(Layer *clay, Layer *lay) {
 	clay->numf = lay->numf;
 }
 
-Mixer::loopstation_copy(bool comp) {
+void Mixer::loopstation_copy(bool comp) {
 	LoopStation *lp1;
 	LoopStation *lp2;
 	if (comp) {
@@ -376,7 +376,7 @@ Mixer::loopstation_copy(bool comp) {
 	}
 }
 
-Mixer::lay_copy(std::vector<Layer*> &slayers, std::vector<Layer*> &dlayers, bool comp) {
+void Mixer::lay_copy(std::vector<Layer*> &slayers, std::vector<Layer*> &dlayers, bool comp) {
 	LoopStation *lp1;
 	LoopStation *lp2;
 	if (comp) {
@@ -609,7 +609,7 @@ Layer* Mixer::clone_layer(std::vector<Layer*> &lvec, Layer* slay) {
 	return dlay;
 }
 
-Mixer::copy_to_comp(std::vector<Layer*> &sourcelayersA, std::vector<Layer*> &destlayersA, std::vector<Layer*> &sourcelayersB, std::vector<Layer*> &destlayersB, std::vector<Node*> &sourcenodes, std::vector<Node*> &destnodes, std::vector<MixNode*> &destmixnodes, bool comp) {
+void Mixer::copy_to_comp(std::vector<Layer*> &sourcelayersA, std::vector<Layer*> &destlayersA, std::vector<Layer*> &sourcelayersB, std::vector<Layer*> &destlayersB, std::vector<Node*> &sourcenodes, std::vector<Node*> &destnodes, std::vector<MixNode*> &destmixnodes, bool comp) {
 	if (sourcelayersA == mainmix->layersA) {
 		mainmix->crossfadecomp->value = mainmix->crossfade->value;
 		mainmix->wipe[1] = mainmix->wipe[0];
@@ -764,7 +764,7 @@ std::vector<std::string> Mixer::write_layer(Layer *lay, std::ostream& wfile, boo
 	wfile << lay->filename;
 	wfile << "\n";
 	wfile << "RELPATH\n";
-	wfile << ".\\" + boost::filesystem::relative(lay->filename, ".\\").string();
+	wfile << "./" + boost::filesystem::relative(lay->filename, "./").string();
 	wfile << "\n";
 	if (!lay->live) {
 		wfile << "SPEEDVAL\n";
@@ -958,7 +958,7 @@ std::vector<std::string> Mixer::write_layer(Layer *lay, std::ostream& wfile, boo
 	return jpegpaths;
 }
 
-Mixer::save_layerfile(const std::string &path, Layer *lay, bool doclips) {
+void Mixer::save_layerfile(const std::string &path, Layer *lay, bool doclips) {
 	std::string str = path;
 	std::ofstream wfile;
 	wfile.open(str);
@@ -977,7 +977,7 @@ Mixer::save_layerfile(const std::string &path, Layer *lay, bool doclips) {
 	boost::filesystem::rename(mainprogram->temppath + "tempconcat", str);
 }
 
-Mixer::save_state(const std::string &path) {
+void Mixer::save_state(const std::string &path) {
 	std::vector<std::string> filestoadd;
 	std::string str = path;
 	std::ofstream wfile;
@@ -1018,7 +1018,7 @@ Mixer::save_state(const std::string &path) {
 	boost::filesystem::rename(mainprogram->temppath + "tempconcatstate", str);
 }
 
-Mixer::event_write(std::ostream &wfile, Param *par) {
+void Mixer::event_write(std::ostream &wfile, Param *par) {
 	for (int i = 0; i < loopstation->elems.size(); i++) {
 		LoopStationElement *elem = loopstation->elems[i];
 		if (std::find(elem->params.begin(), elem->params.end(), par) != elem->params.end()) {
@@ -1044,7 +1044,7 @@ Mixer::event_write(std::ostream &wfile, Param *par) {
 	}
 }
 
-Mixer::event_read(std::istream &rfile, Param *par, Layer *lay) {
+void Mixer::event_read(std::istream &rfile, Param *par, Layer *lay) {
 	// load loopstation events for this parameter
 	std::string istring;
 	LoopStationElement *loop = nullptr;
@@ -1112,7 +1112,7 @@ Mixer::event_read(std::istream &rfile, Param *par, Layer *lay) {
 	}
 }
 
-Mixer::save_mix(const std::string &path) {
+void Mixer::save_mix(const std::string &path) {
 	std::string str = path;
 	std::ofstream wfile;
 	wfile.open(str);
@@ -1174,7 +1174,7 @@ Mixer::save_mix(const std::string &path) {
 	boost::filesystem::rename("./tempconcat", str);
 }
 
-Mixer::save_deck(const std::string &path) {
+void Mixer::save_deck(const std::string &path) {
 	std::string str = path;
 	std::ofstream wfile;
 	wfile.open(str);
@@ -1197,7 +1197,7 @@ Mixer::save_deck(const std::string &path) {
 	boost::filesystem::rename("./tempconcat", str);
 }
 
-Mixer::open_layerfile(const std::string &path, Layer *lay, bool loadevents, bool doclips) {
+void Mixer::open_layerfile(const std::string &path, Layer *lay, bool loadevents, bool doclips) {
 	std::string result = deconcat_files(path);
 	bool concat = (result != "");
 	std::ifstream rfile;
@@ -1239,7 +1239,7 @@ Mixer::open_layerfile(const std::string &path, Layer *lay, bool loadevents, bool
 	rfile.close();
 }
 
-Mixer::open_state(const std::string &path) {
+void Mixer::open_state(const std::string &path) {
 	std::string result = deconcat_files(path);
 	bool concat = (result != "");
 	std::ifstream rfile;
@@ -1276,7 +1276,7 @@ Mixer::open_state(const std::string &path) {
 	rfile.close();
 }
 
-Mixer::open_mix(const std::string &path) {
+void Mixer::open_mix(const std::string &path) {
 	std::string result = deconcat_files(path);
 	bool concat = (result != "");
 	std::ifstream rfile;
@@ -1367,7 +1367,7 @@ Mixer::open_mix(const std::string &path) {
 	rfile.close();
 }
 
-Mixer::open_deck(const std::string &path, bool alive) {
+void Mixer::open_deck(const std::string &path, bool alive) {
 	std::string result = deconcat_files(path);
 	bool concat = (result != "");
 	std::ifstream rfile;
@@ -1385,7 +1385,7 @@ Mixer::open_deck(const std::string &path, bool alive) {
 	rfile.close();
 }
 
-Mixer::read_layers(std::istream &rfile, const std::string &result, std::vector<Layer*> &layers, bool deck, int type, bool doclips, bool concat, bool load, bool loadevents) {
+int Mixer::read_layers(std::istream &rfile, const std::string &result, std::vector<Layer*> &layers, bool deck, int type, bool doclips, bool concat, bool load, bool loadevents) {
 	Layer *lay = nullptr;
 	std::string istring;
 	int jpegcount = 0;
@@ -1827,14 +1827,19 @@ void Mixer::record_video() {
     mainmix->donerec = true;
 }
 
-Mixer::start_recording() {
+void Mixer::start_recording() {
 	if (this->compon) {
 		// start recording main output
 		this->donerec = false;
 		this->recording = true;
 		// recording is done in separate low priority thread
 		this->recording_video = std::thread{&Mixer::record_video, this};
+		#ifdef _WIN64
 		SetThreadPriority((void*)this->recording_video.native_handle(), THREAD_PRIORITY_LOWEST);
+		#else
+	    struct sched_param params;
+        params.sched_priority = sched_get_priority_min(SCHED_FIFO);		pthread_setschedparam(this->recording_video.native_handle(), SCHED_FIFO, &params);
+		#endif
 		this->recording_video.detach();
 		#define BUFFER_OFFSET(i) ((char *)NULL + (i))
 		glBindBuffer(GL_PIXEL_PACK_BUFFER_ARB, this->ioBuf);

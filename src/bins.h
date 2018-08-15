@@ -42,21 +42,21 @@ class BinsMain {
 		BinDeck *movingdeck;
 		BinMix *movingmix;		
 		
-		handle();
+		void handle();
 		int read_binslist();
-		save_binslist();
-		make_currbin(int pos);
+		void save_binslist();
+		void make_currbin(int pos);
 		Bin *new_bin(const std::string &name);
-		open_bin(const std::string &path, Bin *bin);
-		save_bin(const std::string &path);
-		open_binfiles();
-		open_bindir();
-		open_handlefile(const std::string &path);
-		get_texes(int deck);
+		void open_bin(const std::string &path, Bin *bin);
+		void save_bin(const std::string &path);
+		void open_binfiles();
+		void open_bindir();
+		void open_handlefile(const std::string &path);
+		void get_texes(int deck);
 		std::tuple<std::string, std::string> hap_binel(BinElement *binel, BinDeck *bd, BinMix *bm);
-		hap_deck(BinDeck * bd);
-		hap_mix(BinMix * bm);
-		hap_encode(const std::string &srcpath, BinElement *binel, BinDeck *bd, BinMix *bm);
+		void hap_deck(BinDeck * bd);
+		void hap_mix(BinMix * bm);
+		void hap_encode(const std::string &srcpath, BinElement *binel, BinDeck *bd, BinMix *bm);
 };
 		
 class Bin {

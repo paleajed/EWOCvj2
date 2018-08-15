@@ -7,7 +7,7 @@
 #include <unordered_set>
 #include <unordered_map>
 
-#include "SDL2\SDL.h"
+#include "SDL2/SDL.h"
 #include <AL/al.h>
 #include <AL/alc.h>
 #include <AL/alext.h>
@@ -63,8 +63,8 @@ class Layer {
 		std::vector<Effect*> effects;
 		Effect *add_effect(EFFECT_TYPE type, int pos);
 		Effect *replace_effect(EFFECT_TYPE type, int pos);
-		delete_effect(int pos);
-		set_clones();
+		void delete_effect(int pos);
+		void set_clones();
 		Layer();
 		Layer(bool comp);
 		Layer(const Layer &lay);
@@ -193,11 +193,11 @@ class Layer {
 
 class Mixer {
 	private:
-		do_deletelay(Layer *testlay, std::vector<Layer*> &layers, bool add);
-		set_values(Layer *clay, Layer *lay);
-		loopstation_copy(bool comp);
-		event_write(std::ostream &wfile, Param *par);
-		event_read(std::istream &rfile, Param *par, Layer *lay);
+		void do_deletelay(Layer *testlay, std::vector<Layer*> &layers, bool add);
+		void set_values(Layer *clay, Layer *lay);
+		void loopstation_copy(bool comp);
+		void event_write(std::ostream &wfile, Param *par);
+		void event_read(std::istream &rfile, Param *par, Layer *lay);
 	public:
 		std::vector<Layer*> layersAcomp;
 		std::vector<Layer*> layersBcomp;
@@ -207,20 +207,20 @@ class Mixer {
 		Layer *add_layer(std::vector<Layer*> &layers, int pos);
 		void delete_layer(std::vector<Layer*> &layers, Layer *lay, bool add);
 		Layer* clone_layer(std::vector<Layer*> &lvec, Layer* slay);
-		lay_copy(std::vector<Layer*> &slayers, std::vector<Layer*> &dlayers, bool comp);
-		copy_to_comp(std::vector<Layer*> &sourcelayersA, std::vector<Layer*> &destlayersA, std::vector<Layer*> &sourcelayersB, std::vector<Layer*> &destlayersB, std::vector<Node*> &sourcenodes, std::vector<Node*> &destnodes, std::vector<MixNode*> &destmixnodes, bool comp);
+		void lay_copy(std::vector<Layer*> &slayers, std::vector<Layer*> &dlayers, bool comp);
+		void copy_to_comp(std::vector<Layer*> &sourcelayersA, std::vector<Layer*> &destlayersA, std::vector<Layer*> &sourcelayersB, std::vector<Layer*> &destlayersB, std::vector<Node*> &sourcenodes, std::vector<Node*> &destnodes, std::vector<MixNode*> &destmixnodes, bool comp);
 		void record_video();
-		save_layerfile(const std::string &path, Layer* lay, bool doclips);
-		save_mix(const std::string &path);
-		save_deck(const std::string &path);
-		open_layerfile(const std::string &path, Layer *lay, bool loadevents, bool doclips);
-		open_mix(const std::string &path);
-		open_deck(const std::string &path, bool alive);
-		open_state(const std::string &path);
-		save_state(const std::string &path);
+		void save_layerfile(const std::string &path, Layer* lay, bool doclips);
+		void save_mix(const std::string &path);
+		void save_deck(const std::string &path);
+		void open_layerfile(const std::string &path, Layer *lay, bool loadevents, bool doclips);
+		void open_mix(const std::string &path);
+		void open_deck(const std::string &path, bool alive);
+		void open_state(const std::string &path);
+		void save_state(const std::string &path);
 		std::vector<std::string> write_layer(Layer *lay, std::ostream& wfile, bool doclips);
 		int read_layers(std::istream &rfile, const std::string &result, std::vector<Layer*> &layers, bool deck, int type, bool doclips, bool concat, bool load, bool loadevents);
-		start_recording();
+		void start_recording();
 		Mixer();
 		
 		std::mutex recordlock;

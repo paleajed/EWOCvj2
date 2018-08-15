@@ -1,5 +1,5 @@
 #include <string>
-#include "GL\gl.h"
+#include "GL/gl.h"
 #include <dirent.h>
 #include "nfd.h"
 #include "RtMidi.h"
@@ -85,7 +85,7 @@ class PIMidi: public PrefItem {
 	public:
 		std::vector<PMidiItem*> items;
 		std::vector<std::string> onnames;
-		populate();
+		void populate();
 		PIMidi();
 };
 		
@@ -165,7 +165,7 @@ class Button {
 		Box *box;
 		int value;
 		float ccol[4];
-		draw(bool circlein);
+		void draw(bool circlein);
 		Button(bool state);
 		~Button();
 };
@@ -185,7 +185,7 @@ class GUIString {
 class OutputEntry {
 	public:
 		int screen;
-		Window *win;
+		EWindow *win;
 };
 
 class Globals {
@@ -207,7 +207,7 @@ class Program {
 		Layer *loadlay;
 		Layer *prelay = nullptr;
 		SDL_Window *mainwindow;
-		std::vector<Window*> mixwindows;
+		std::vector<EWindow*> mixwindows;
 		std::vector<Menu*> menulist;
 		std::vector<Menu*> actmenulist;
 		Menu *effectmenu = nullptr;
@@ -353,20 +353,20 @@ class Program {
 		std::string shelfpath;
 		int shelfdircount;
 		
-		quit(const char *msg);
-		make_menu(const std::string &name, Menu *&menu, std::vector<std::string> &entries);
-		get_outname(const nfdchar_t *filters, const nfdchar_t *defaultdir);
-		get_inname(const nfdchar_t *filters, const nfdchar_t *defaultdir);
-		get_multinname();
-		get_dir();
+		void quit(const char *msg);
+		void make_menu(const std::string &name, Menu *&menu, std::vector<std::string> &entries);
+		void get_outname(const nfdchar_t *filters, const nfdchar_t *defaultdir);
+		void get_inname(const nfdchar_t *filters, const nfdchar_t *defaultdir);
+		void get_multinname();
+		void get_dir();
 		float xscrtovtx(float scrcoord);
 		float yscrtovtx(float scrcoord);
 		float xvtxtoscr(float vtxcoord);
 		float yvtxtoscr(float vtxcoord);
-		
-		prevvid_off();
-		preveff_init();
-		add_main_oscmethods();
+		void share_lists(SDL_GLContext *srcctx, SDL_Window *srcwin, SDL_GLContext *destctx, SDL_Window *destwin);		
+		void prevvid_off();
+		void preveff_init();
+		void add_main_oscmethods();
 		Program();
 };
 
