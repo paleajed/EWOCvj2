@@ -1,0 +1,6 @@
+<mime-info xmlns='http://www.freedesktop.org/standards/shared-mime-info'>
+<mime-type type="application/ewocvj2-deck">
+  <comment>EWOCvj2 deck file</comment> 
+  <glob pattern="*.deck"/>
+</mime-type>
+</mime-info>

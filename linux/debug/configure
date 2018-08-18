@@ -585,7 +585,7 @@ PACKAGE_STRING='EWOCvj2 2.00'
 PACKAGE_BUGREPORT='paleajed@gmail.com'
 PACKAGE_URL=''
 
-ac_unique_file="start.cpp"
+ac_unique_file="../../src/start.cpp"
 # Factoring default headers for most tests.
 ac_includes_default="\
 #include <stdio.h>
@@ -3654,7 +3654,7 @@ _ACEOF
 
 else
 
-              echo "The FFMPEG avcodec library is required for this program."
+              echo "The FFMPEG avcodec library with HAP support (decoder+encoder) is required for this program."
               exit -1
 fi
 
@@ -3949,6 +3949,55 @@ _ACEOF
 else
 
               echo "The freetype2 library is required for this program."
+              exit -1
+fi
+
+{ $as_echo "$as_me:${as_lineno-$LINENO}: checking for XGetWindowAttributes in -lX11" >&5
+$as_echo_n "checking for XGetWindowAttributes in -lX11... " >&6; }
+if ${ac_cv_lib_X11_XGetWindowAttributes+:} false; then :
+  $as_echo_n "(cached) " >&6
+else
+  ac_check_lib_save_LIBS=$LIBS
+LIBS="-lX11  $LIBS"
+cat confdefs.h - <<_ACEOF >conftest.$ac_ext
+/* end confdefs.h.  */
+
+/* Override any GCC internal prototype to avoid an error.
+   Use char because int might match the return type of a GCC
+   builtin and then its argument prototype would still apply.  */
+#ifdef __cplusplus
+extern "C"
+#endif
+char XGetWindowAttributes ();
+int
+main ()
+{
+return XGetWindowAttributes ();
+  ;
+  return 0;
+}
+_ACEOF
+if ac_fn_c_try_link "$LINENO"; then :
+  ac_cv_lib_X11_XGetWindowAttributes=yes
+else
+  ac_cv_lib_X11_XGetWindowAttributes=no
+fi
+rm -f core conftest.err conftest.$ac_objext \
+    conftest$ac_exeext conftest.$ac_ext
+LIBS=$ac_check_lib_save_LIBS
+fi
+{ $as_echo "$as_me:${as_lineno-$LINENO}: result: $ac_cv_lib_X11_XGetWindowAttributes" >&5
+$as_echo "$ac_cv_lib_X11_XGetWindowAttributes" >&6; }
+if test "x$ac_cv_lib_X11_XGetWindowAttributes" = xyes; then :
+  cat >>confdefs.h <<_ACEOF
+#define HAVE_LIBX11 1
+_ACEOF
+
+  LIBS="-lX11 $LIBS"
+
+else
+
+              echo "The X11 library is required for this program."
               exit -1
 fi
 
@@ -4286,202 +4335,6 @@ _ACEOF
 else
 
               echo "The boost filesystem library is required for this program."
-              exit -1
-fi
-
-{ $as_echo "$as_me:${as_lineno-$LINENO}: checking for g_free in -lglib-2.0" >&5
-$as_echo_n "checking for g_free in -lglib-2.0... " >&6; }
-if ${ac_cv_lib_glib_2_0_g_free+:} false; then :
-  $as_echo_n "(cached) " >&6
-else
-  ac_check_lib_save_LIBS=$LIBS
-LIBS="-lglib-2.0  $LIBS"
-cat confdefs.h - <<_ACEOF >conftest.$ac_ext
-/* end confdefs.h.  */
-
-/* Override any GCC internal prototype to avoid an error.
-   Use char because int might match the return type of a GCC
-   builtin and then its argument prototype would still apply.  */
-#ifdef __cplusplus
-extern "C"
-#endif
-char g_free ();
-int
-main ()
-{
-return g_free ();
-  ;
-  return 0;
-}
-_ACEOF
-if ac_fn_c_try_link "$LINENO"; then :
-  ac_cv_lib_glib_2_0_g_free=yes
-else
-  ac_cv_lib_glib_2_0_g_free=no
-fi
-rm -f core conftest.err conftest.$ac_objext \
-    conftest$ac_exeext conftest.$ac_ext
-LIBS=$ac_check_lib_save_LIBS
-fi
-{ $as_echo "$as_me:${as_lineno-$LINENO}: result: $ac_cv_lib_glib_2_0_g_free" >&5
-$as_echo "$ac_cv_lib_glib_2_0_g_free" >&6; }
-if test "x$ac_cv_lib_glib_2_0_g_free" = xyes; then :
-  cat >>confdefs.h <<_ACEOF
-#define HAVE_LIBGLIB_2_0 1
-_ACEOF
-
-  LIBS="-lglib-2.0 $LIBS"
-
-else
-
-              echo "The glib library is required for this program."
-              exit -1
-fi
-
-{ $as_echo "$as_me:${as_lineno-$LINENO}: checking for g_free in -lgobject-2.0" >&5
-$as_echo_n "checking for g_free in -lgobject-2.0... " >&6; }
-if ${ac_cv_lib_gobject_2_0_g_free+:} false; then :
-  $as_echo_n "(cached) " >&6
-else
-  ac_check_lib_save_LIBS=$LIBS
-LIBS="-lgobject-2.0  $LIBS"
-cat confdefs.h - <<_ACEOF >conftest.$ac_ext
-/* end confdefs.h.  */
-
-/* Override any GCC internal prototype to avoid an error.
-   Use char because int might match the return type of a GCC
-   builtin and then its argument prototype would still apply.  */
-#ifdef __cplusplus
-extern "C"
-#endif
-char g_free ();
-int
-main ()
-{
-return g_free ();
-  ;
-  return 0;
-}
-_ACEOF
-if ac_fn_c_try_link "$LINENO"; then :
-  ac_cv_lib_gobject_2_0_g_free=yes
-else
-  ac_cv_lib_gobject_2_0_g_free=no
-fi
-rm -f core conftest.err conftest.$ac_objext \
-    conftest$ac_exeext conftest.$ac_ext
-LIBS=$ac_check_lib_save_LIBS
-fi
-{ $as_echo "$as_me:${as_lineno-$LINENO}: result: $ac_cv_lib_gobject_2_0_g_free" >&5
-$as_echo "$ac_cv_lib_gobject_2_0_g_free" >&6; }
-if test "x$ac_cv_lib_gobject_2_0_g_free" = xyes; then :
-  cat >>confdefs.h <<_ACEOF
-#define HAVE_LIBGOBJECT_2_0 1
-_ACEOF
-
-  LIBS="-lgobject-2.0 $LIBS"
-
-else
-
-              echo "The gobject library is required for this program."
-              exit -1
-fi
-
-{ $as_echo "$as_me:${as_lineno-$LINENO}: checking for gtk_init_check in -lgtk-3" >&5
-$as_echo_n "checking for gtk_init_check in -lgtk-3... " >&6; }
-if ${ac_cv_lib_gtk_3_gtk_init_check+:} false; then :
-  $as_echo_n "(cached) " >&6
-else
-  ac_check_lib_save_LIBS=$LIBS
-LIBS="-lgtk-3  $LIBS"
-cat confdefs.h - <<_ACEOF >conftest.$ac_ext
-/* end confdefs.h.  */
-
-/* Override any GCC internal prototype to avoid an error.
-   Use char because int might match the return type of a GCC
-   builtin and then its argument prototype would still apply.  */
-#ifdef __cplusplus
-extern "C"
-#endif
-char gtk_init_check ();
-int
-main ()
-{
-return gtk_init_check ();
-  ;
-  return 0;
-}
-_ACEOF
-if ac_fn_c_try_link "$LINENO"; then :
-  ac_cv_lib_gtk_3_gtk_init_check=yes
-else
-  ac_cv_lib_gtk_3_gtk_init_check=no
-fi
-rm -f core conftest.err conftest.$ac_objext \
-    conftest$ac_exeext conftest.$ac_ext
-LIBS=$ac_check_lib_save_LIBS
-fi
-{ $as_echo "$as_me:${as_lineno-$LINENO}: result: $ac_cv_lib_gtk_3_gtk_init_check" >&5
-$as_echo "$ac_cv_lib_gtk_3_gtk_init_check" >&6; }
-if test "x$ac_cv_lib_gtk_3_gtk_init_check" = xyes; then :
-  cat >>confdefs.h <<_ACEOF
-#define HAVE_LIBGTK_3 1
-_ACEOF
-
-  LIBS="-lgtk-3 $LIBS"
-
-else
-
-              echo "The GTK3+ library is required for this program."
-              exit -1
-fi
-
-{ $as_echo "$as_me:${as_lineno-$LINENO}: checking for NFD_PickFolder in -lnfd" >&5
-$as_echo_n "checking for NFD_PickFolder in -lnfd... " >&6; }
-if ${ac_cv_lib_nfd_NFD_PickFolder+:} false; then :
-  $as_echo_n "(cached) " >&6
-else
-  ac_check_lib_save_LIBS=$LIBS
-LIBS="-lnfd  $LIBS"
-cat confdefs.h - <<_ACEOF >conftest.$ac_ext
-/* end confdefs.h.  */
-
-/* Override any GCC internal prototype to avoid an error.
-   Use char because int might match the return type of a GCC
-   builtin and then its argument prototype would still apply.  */
-#ifdef __cplusplus
-extern "C"
-#endif
-char NFD_PickFolder ();
-int
-main ()
-{
-return NFD_PickFolder ();
-  ;
-  return 0;
-}
-_ACEOF
-if ac_fn_c_try_link "$LINENO"; then :
-  ac_cv_lib_nfd_NFD_PickFolder=yes
-else
-  ac_cv_lib_nfd_NFD_PickFolder=no
-fi
-rm -f core conftest.err conftest.$ac_objext \
-    conftest$ac_exeext conftest.$ac_ext
-LIBS=$ac_check_lib_save_LIBS
-fi
-{ $as_echo "$as_me:${as_lineno-$LINENO}: result: $ac_cv_lib_nfd_NFD_PickFolder" >&5
-$as_echo "$ac_cv_lib_nfd_NFD_PickFolder" >&6; }
-if test "x$ac_cv_lib_nfd_NFD_PickFolder" = xyes; then :
-  cat >>confdefs.h <<_ACEOF
-#define HAVE_LIBNFD 1
-_ACEOF
-
-  LIBS="-lnfd $LIBS"
-
-else
-
-              echo "The native file dialog (NFD) library is required for this program."
               exit -1
 fi
 

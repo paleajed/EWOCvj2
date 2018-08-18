@@ -65,7 +65,7 @@ class Bin {
 		std::vector<BinElement*> elements;
 		std::vector<BinDeck*> decks;
 		std::vector<BinMix*> mixes;
-		int encthreads;
+		int encthreads = 0;
 		int pos;
 		Bin(int pos);
 		~Bin();

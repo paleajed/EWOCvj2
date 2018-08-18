@@ -2,6 +2,7 @@
 #include <boost/asio.hpp>
 #include <boost/date_time/posix_time/posix_time.hpp>
 #include <boost/filesystem.hpp>
+#include <boost/foreach.hpp>
 
 #include <stdio.h>
 #include <stdlib.h>
@@ -51,6 +52,9 @@
 #include "GL/glew.h"
 #include "GL/gl.h"
 #ifdef __GNUC__
+#include <sys/ioctl.h>
+#include <linux/videodev2.h>
+//#include <linux/v4l2-common.h>
 #include "GL/glx.h"
 #endif
 #include "GL/glut.h"
@@ -77,7 +81,6 @@ extern "C" {
 #include FT_FREETYPE_H
 #include FT_MODULE_H
 #define  FT_HINTING_ADOBE     0
-#include "nfd.h"
 
 // my own headers
 #include "box.h"
@@ -281,6 +284,28 @@ void get_cameras()
         //CoUninitialize();
     }
     #endif
+    #ifdef __GNUC__
+    mainprogram->livedevices.clear();
+    std::map<std::string, std::wstring> map;
+	boost::filesystem::path dir("/sys/class/video4linux");
+	for (boost::filesystem::directory_iterator iter(dir), end; iter != end; ++iter) {
+		std::ifstream name;
+		name.open(iter->path().string() + "/name");
+		std::string istring;
+		getline(name, istring);
+		istring = istring.substr(0, istring.find(":"));
+		std::wstring wstr (istring.begin(), istring.end());
+		map["/dev/" + basename(iter->path().string())] = wstr;
+	}
+	std::map<std::string, std::wstring>::iterator it;
+    for (it = map.begin(); it != map.end(); it++) {
+		struct v4l2_capability cap;
+		int fd = open(it->first.c_str(), O_RDONLY);
+		ioctl(fd, VIDIOC_QUERYCAP, &cap);
+		if (cap.capabilities & V4L2_CAP_VIDEO_CAPTURE) mainprogram->livedevices.push_back(it->second);
+		close(fd);
+    }
+    #endif
 }
 
 void set_live_base(Layer *lay, std::string livename) {
@@ -299,7 +324,13 @@ void set_live_base(Layer *lay, std::string livename) {
 	if (pos >= mainprogram->busylist.size()) {
 		mainprogram->busylist.push_back(lay->filename);
 		mainprogram->busylayers.push_back(lay);
+		#ifdef _WIN64
 		AVInputFormat *ifmt = av_find_input_format("dshow");
+		#else
+		#ifdef __GNUC__
+		AVInputFormat *ifmt = av_find_input_format("v4l2");
+		#endif
+		#endif
 		thread_vidopen(lay, ifmt, false);
 	}
 	else {
@@ -707,50 +738,6 @@ void mycallback( double deltatime, std::vector< unsigned char > *message, void *
     	int stamp = deltatime;
 }
 
-
-unsigned long getFileLength(std::ifstream& file)
-{
-    if(!file.good()) return 0;
-
-    unsigned long pos=file.tellg();
-    file.seekg(0,std::ios::end);
-    unsigned long len = file.tellg();
-    file.seekg(std::ios::beg);
-
-    return len;
-}
-
-int loadshader(char* filename, char** ShaderSource, unsigned long len)
-{
-   std::ifstream file;
-   file.open(filename, std::ios::in); // opens as ASCII!
-   if(!file) return -1;
-
-   len = getFileLength(file);
-
-   if (len==0) return -2;   // Error: Empty File
-
-   *ShaderSource = (char*)malloc(len+1);
-   if (*ShaderSource == 0) return -3;   // can't reserve memory
-
-    // len isn't always strlen cause some characters are stripped in ascii read...
-    // it is important to 0-terminate the real length later, len is just max possible value...
-   (*ShaderSource)[len] = 0;
-
-   unsigned int i=0;
-   while (file.good())
-   {
-       (*ShaderSource)[i] = file.get();       // get character from file.
-       if (!file.eof())
-        i++;
-   }
-
-   (*ShaderSource)[i] = 0;  // 0-terminate it at the correct position
-
-   file.close();
-
-   return 0; // No Error
-}
 
 
 int encode_frame(AVFormatContext *fmtctx, AVCodecContext *enc_ctx, AVFrame *frame, AVPacket *pkt, FILE *outfile, int framenr) {
@@ -1195,7 +1182,13 @@ bool thread_vidopen(Layer *lay, AVInputFormat *ifmt, bool skip) {
 					mlay->liveinput = nullptr;
 					mainprogram->mimiclayers.erase(mainprogram->mimiclayers.begin() + i);
 					mainprogram->busylayers[pos] = mlay;
+					#ifdef _WIN64
 					AVInputFormat *ifmt = av_find_input_format("dshow");
+					#else
+					#ifdef __GNUC__
+					AVInputFormat *ifmt = av_find_input_format("v4l2");
+					#endif
+					#endif
 					thread_vidopen(mlay, ifmt, true);
 					for (int j = 0; j < mainprogram->mimiclayers.size(); j++) {
 						if (mainprogram->mimiclayers[j]->liveinput == lay) {
@@ -1325,7 +1318,7 @@ bool thread_vidopen(Layer *lay, AVInputFormat *ifmt, bool skip) {
     lay->rgbframe->format = AV_PIX_FMT_RGBA;
     lay->rgbframe->width  = lay->video_dec_ctx->width;
     lay->rgbframe->height = lay->video_dec_ctx->height;
-	int storage = av_image_alloc(lay->rgbframe->data, lay->rgbframe->linesize, lay->rgbframe->width, lay->rgbframe->height, AV_PIX_FMT_RGBA, 32);
+	int storage = av_image_alloc(lay->rgbframe->data, lay->rgbframe->linesize, lay->rgbframe->width, lay->rgbframe->height, AV_PIX_FMT_RGBA, 1);
   	lay->sws_ctx = sws_getContext
     (
         lay->video_dec_ctx->width,
@@ -2171,26 +2164,62 @@ float render_text(std::string text, float *textc, float x, float y, float sx, fl
 	return ret;
 }
 
-float render_text(std::string text, float *textc, float x, float y, float sx, float sy, bool smflag) {
+float render_text(std::string text, float *textc, float x, float y, float sx, float sy, int smflag) {
  	y -= 0.03f;
 	GLuint texture;
 	GLuint vbo, tbo, vao;
 	float textw = 0.0f;
 	float texth = 0.0f;
 	bool prepare = true;
-	for (int i = 0; i < mainprogram->guistrings.size(); i++) {
-		if (text.compare(mainprogram->guistrings[i]->text) != 0 or sx != mainprogram->guistrings[i]->sx) {
-			prepare = true;
+	if (smflag == 0) {
+		for (int i = 0; i < mainprogram->guistrings.size(); i++) {
+			if (text.compare(mainprogram->guistrings[i]->text) != 0 or sx != mainprogram->guistrings[i]->sx) {
+				prepare = true;
+			}
+			else {
+				prepare = false;
+				texture = mainprogram->guistrings[i]->texture;
+				vbo = mainprogram->guistrings[i]->vbo;
+				tbo = mainprogram->guistrings[i]->tbo;
+				vao = mainprogram->guistrings[i]->vao;
+				textw = mainprogram->guistrings[i]->textw;
+				texth = mainprogram->guistrings[i]->texth;
+				break;
+			}
 		}
-		else {
-			prepare = false;
-			texture = mainprogram->guistrings[i]->texture;
-			vbo = mainprogram->guistrings[i]->vbo;
-			tbo = mainprogram->guistrings[i]->tbo;
-			vao = mainprogram->guistrings[i]->vao;
-			textw = mainprogram->guistrings[i]->textw;
-			texth = mainprogram->guistrings[i]->texth;
-			break;
+	}
+	else if (smflag == 1) {
+		for (int i = 0; i < mainprogram->prguistrings.size(); i++) {
+			if (text.compare(mainprogram->prguistrings[i]->text) != 0 or sx != mainprogram->prguistrings[i]->sx) {
+				prepare = true;
+			}
+			else {
+				prepare = false;
+				texture = mainprogram->prguistrings[i]->texture;
+				vbo = mainprogram->prguistrings[i]->vbo;
+				tbo = mainprogram->prguistrings[i]->tbo;
+				vao = mainprogram->prguistrings[i]->vao;
+				textw = mainprogram->prguistrings[i]->textw;
+				texth = mainprogram->prguistrings[i]->texth;
+				break;
+			}
+		}
+	}
+	else if (smflag == 2) {
+		for (int i = 0; i < mainprogram->tmguistrings.size(); i++) {
+			if (text.compare(mainprogram->tmguistrings[i]->text) != 0 or sx != mainprogram->tmguistrings[i]->sx) {
+				prepare = true;
+			}
+			else {
+				prepare = false;
+				texture = mainprogram->tmguistrings[i]->texture;
+				vbo = mainprogram->tmguistrings[i]->vbo;
+				tbo = mainprogram->tmguistrings[i]->tbo;
+				vao = mainprogram->tmguistrings[i]->vao;
+				textw = mainprogram->tmguistrings[i]->textw;
+				texth = mainprogram->tmguistrings[i]->texth;
+				break;
+			}
 		}
 	}
 	
@@ -2306,8 +2335,11 @@ float render_text(std::string text, float *textc, float x, float y, float sx, fl
 			glBindFramebuffer(GL_FRAMEBUFFER, texfrbuf);
 			glDrawBuffer(GL_COLOR_ATTACHMENT0);
 			glDrawArrays(GL_TRIANGLE_STRIP, 0, 4);
-			if (smflag) {
-				glBindFramebuffer(GL_FRAMEBUFFER, mainprogram->smglobfbo);
+			if (smflag == 1) {
+				glBindFramebuffer(GL_FRAMEBUFFER, mainprogram->smglobfbo_pr);
+			}
+			else if (smflag == 2) {
+				glBindFramebuffer(GL_FRAMEBUFFER, mainprogram->smglobfbo_tm);
 			}
 			else {
 				glBindFramebuffer(GL_FRAMEBUFFER, mainprogram->globfbo);
@@ -2329,8 +2361,9 @@ float render_text(std::string text, float *textc, float x, float y, float sx, fl
 		guistring->textw = textw;
 		guistring->texth = texth;
 		guistring->sx = sx;
-		mainprogram->guistrings.push_back(guistring);
-		if (smflag) mainprogram->smguistrings.push_back(guistring);
+		if (smflag == 0) mainprogram->guistrings.push_back(guistring);
+		else if (smflag == 1) mainprogram->prguistrings.push_back(guistring);
+		else if (smflag == 2) mainprogram->tmguistrings.push_back(guistring);
 		
 		glDeleteFramebuffers(1, &texfrbuf);
   	}
@@ -2361,8 +2394,11 @@ float render_text(std::string text, float *textc, float x, float y, float sx, fl
 		glBufferData(GL_ARRAY_BUFFER, 32, textcoords, GL_STATIC_DRAW);
 		glEnableVertexAttribArray(1);
 		glVertexAttribPointer(1, 2, GL_FLOAT, GL_FALSE, 8, NULL);
-		if (smflag) {
-			glBindFramebuffer(GL_FRAMEBUFFER, mainprogram->smglobfbo);
+		if (smflag == 1) {
+			glBindFramebuffer(GL_FRAMEBUFFER, mainprogram->smglobfbo_pr);
+		}
+		else if (smflag == 2) {
+			glBindFramebuffer(GL_FRAMEBUFFER, mainprogram->smglobfbo_tm);
 		}
 		else {
 			glBindFramebuffer(GL_FRAMEBUFFER, mainprogram->globfbo);
@@ -4467,7 +4503,15 @@ void visu_thumbs() {
 								thtype[k] = mainprogram->dragbinel->type;
 								thumbtex[k] = copy_tex(mainprogram->dragbinel->tex);
 								enddrag();
-								if (mainprogram->mainshelf) save_shelf("./shelfs.shelf", 2);
+								#ifdef _WIN64
+								if (mainprogram->mainshelf) save_shelf("./shelves/shelfs.shelf", 2);
+								# else
+								#ifdef __GNUC__
+								std::string homedir (getenv("HOME"));
+								if (mainprogram->mainshelf) save_shelf(homedir + "/.ewocvj2/shelves/shelfs.shelf", 2);
+								if (exists(homedir + "/.ewocvj2/shelves/shelfs.shelf")) open_shelf(homedir + "/.ewocvj2/shelves/shelfs.shelf", 2);
+								#endif
+								#endif
 							}
 						}
 						else if (mainprogram->menuactivation) {
@@ -6132,8 +6176,16 @@ Preferences::Preferences() {
 
 void Preferences::load() {
 	ifstream rfile;
-	if (!exists("./preferences.prefs")) return;
-	rfile.open("./preferences.prefs");
+	#ifdef _WIN64
+	std::string prstr = "./preferences.prefs";
+	#else
+	#ifdef __GNUC__
+	std::string homedir (getenv("HOME"));
+	std::string prstr = homedir + "/.ewocvj2/preferences.prefs";
+	#endif
+	#endif
+	if (!exists(prstr)) return;
+	rfile.open(prstr);
 	std::string istring;
 	getline(rfile, istring);
 
@@ -6239,7 +6291,15 @@ void Preferences::load() {
 
 void Preferences::save() {
 	ofstream wfile;
-	wfile.open("./preferences.prefs");
+	#ifdef _WIN64
+	std::string prstr = "./preferences.prefs";
+	#else
+	#ifdef __GNUC__
+	std::string homedir (getenv("HOME"));
+	std::string prstr = homedir + "/.ewocvj2/preferences.prefs";
+	#endif
+	#endif
+	wfile.open(prstr);
 	wfile << "EWOCvj PREFERENCES V0.1\n";
 	
 	wfile << "VIDEO\n";
@@ -6318,9 +6378,22 @@ void Preferences::save() {
 PIDirs::PIDirs() {
 	this->name = "Directories";
 	PDirItem *pdi;
+	#ifdef _WIN64
 	pdi = this->additem("BINS", "./bins/");
+	#else
+	#ifdef __GNUC__
+	std::string homedir (getenv("HOME"));
+	pdi = this->additem("BINS", homedir + "/.ewocvj2/bins/");
+	#endif
+	#endif
 	mainprogram->binsdir = pdi->path;
+	#ifdef _WIN64
 	pdi = this->additem("Recordings", "./recordings/");
+	#else
+	#ifdef __GNUC__
+	pdi = this->additem("Recordings", homedir + "/.ewocvj2/recordings/");
+	#endif
+	#endif
 	mainprogram->recdir = pdi->path;
 }
 
@@ -6432,7 +6505,14 @@ BinMix::~BinMix() {
 
 
 Program::Program() {
+	#ifdef _WIN64
 	this->temppath = "./temp/";
+	#else
+	#ifdef __GNUC__
+	std::string homedir (getenv("HOME"));
+	this->temppath = homedir + "/.ewocvj2/temp/";
+	#endif
+	#endif
 	
 	for (int i = 0; i < 6; i++) {
 		for (int j = 0; j < 24; j++) {
@@ -7352,7 +7432,8 @@ bool preferences() {
 				if (mainprogram->lmsave) {
 					mainprogram->choosing = type;
 					mainprogram->pathto = "CHOOSEDIR";
-					std::thread filereq (&Program::get_dir, mainprogram);
+					std::string title = "Open " + dci->items[i]->name + " directory";
+					std::thread filereq (&Program::get_dir, mainprogram, title.c_str());
 					filereq.detach();
 				}
 			}
@@ -7432,39 +7513,39 @@ int tune_midi() {
 	else if (mainprogram->tunemidideck == 2) lmstr = "B";
 	else if (mainprogram->tunemidideck == 3) lmstr = "C";
 	else if (mainprogram->tunemidideck == 4) lmstr = "D";
-	if (mainprogram->tmlearn != TM_NONE) render_text("Creating settings for midideck " + lmstr, white, -0.3f, 0.2f, 0.0024f, 0.004f, 1);
+	if (mainprogram->tmlearn != TM_NONE) render_text("Creating settings for midideck " + lmstr, white, -0.3f, 0.2f, 0.0024f, 0.004f, 2);
 	switch (mainprogram->tmlearn) {
 		case TM_NONE:
 			break;
 		case TM_PLAY:
-			render_text("Learn MIDI Play Forward", white, -0.3f, 0.0f, 0.0024f, 0.004f, 1);
+			render_text("Learn MIDI Play Forward", white, -0.3f, 0.0f, 0.0024f, 0.004f, 2);
 			break;
 		case TM_BACKW:
-			render_text("Learn MIDI Play Backward", white, -0.3f, 0.0f, 0.0024f, 0.004f, 1);
+			render_text("Learn MIDI Play Backward", white, -0.3f, 0.0f, 0.0024f, 0.004f, 2);
 			break;
 		case TM_BOUNCE:
-			render_text("Learn MIDI Play Bounce", white, -0.3f, 0.0f, 0.0024f, 0.004f, 1);
+			render_text("Learn MIDI Play Bounce", white, -0.3f, 0.0f, 0.0024f, 0.004f, 2);
 			break;
 		case TM_FRFORW:
-			render_text("Learn MIDI Frame Forward", white, -0.3f, 0.0f, 0.0024f, 0.004f, 1);
+			render_text("Learn MIDI Frame Forward", white, -0.3f, 0.0f, 0.0024f, 0.004f, 2);
 			break;
 		case TM_FRBACKW:
-			render_text("Learn MIDI Frame Backward", white, -0.3f, 0.0f, 0.0024f, 0.004f, 1);
+			render_text("Learn MIDI Frame Backward", white, -0.3f, 0.0f, 0.0024f, 0.004f, 2);
 			break;
 		case TM_SPEED:
-			render_text("Learn MIDI Set Play Speed", white, -0.3f, 0.0f, 0.0024f, 0.004f, 1);
+			render_text("Learn MIDI Set Play Speed", white, -0.3f, 0.0f, 0.0024f, 0.004f, 2);
 			break;
 		case TM_SPEEDZERO:
-			render_text("Learn MIDI Set Play Speed to Zero", white, -0.3f, 0.0f, 0.0024f, 0.004f, 1);
+			render_text("Learn MIDI Set Play Speed to Zero", white, -0.3f, 0.0f, 0.0024f, 0.004f, 2);
 			break;
 		case TM_OPACITY:
-			render_text("Learn MIDI Set Opacity", white, -0.3f, 0.0f, 0.0024f, 0.004f, 1);
+			render_text("Learn MIDI Set Opacity", white, -0.3f, 0.0f, 0.0024f, 0.004f, 2);
 			break;
 		case TM_FREEZE:
-			render_text("Learn MIDI Scratchwheel Freeze", white, -0.3f, 0.0f, 0.0024f, 0.004f, 1);
+			render_text("Learn MIDI Scratchwheel Freeze", white, -0.3f, 0.0f, 0.0024f, 0.004f, 2);
 			break;
 		case TM_SCRATCH:
-			render_text("Learn MIDI Scratchwheel", white, -0.3f, 0.0f, 0.0024f, 0.004f, 1);
+			render_text("Learn MIDI Scratchwheel", white, -0.3f, 0.0f, 0.0024f, 0.004f, 2);
 			break;
 	}
 	
@@ -7536,8 +7617,8 @@ int tune_midi() {
 			draw_box(white, black, mainprogram->tmspeedzero, -1);
 			if (mainprogram->tmchoice == TM_SPEEDZERO) draw_box(white, green, mainprogram->tmspeedzero, -1);
 		}
-		render_text("ONE", white, -0.755f, -0.08f, 0.0024f, 0.004f, 1);
-		render_text("SPEED", white, -0.765f, -0.48f, 0.0024f, 0.004f, 1);
+		render_text("ONE", white, -0.755f, -0.08f, 0.0024f, 0.004f, 2);
+		render_text("SPEED", white, -0.765f, -0.48f, 0.0024f, 0.004f, 2);
 		draw_box(white, black, mainprogram->tmopacity, -1);
 		if (mainprogram->tmchoice == TM_OPACITY) draw_box(white, green, mainprogram->tmopacity, -1);
 		if (mainprogram->tmopacity->in(mx, my)) {
@@ -7546,7 +7627,7 @@ int tune_midi() {
 				mainprogram->tmlearn = TM_OPACITY;
 			}
 		}
-		render_text("OPACITY", white, 0.605f, -0.48f, 0.0024f, 0.004f, 1);
+		render_text("OPACITY", white, 0.605f, -0.48f, 0.0024f, 0.004f, 2);
 		if (mainprogram->tmfreeze->in(mx, my)) {
 			draw_box(white, lightblue, mainprogram->tmfreeze, -1);
 			if (mainprogram->lmsave) {
@@ -7565,8 +7646,8 @@ int tune_midi() {
 			if (mainprogram->tmchoice == TM_FREEZE) draw_box(white, green, mainprogram->tmfreeze, -1);
 		}
 		draw_box(white, 0.0f, 0.1f, 0.6f, 2, smw, smh);
-		render_text("SCRATCH", white, -0.1f, -0.3f, 0.0024f, 0.004f, 1);
-		render_text("FREEZE", white, -0.08f, 0.12f, 0.0024f, 0.004f, 1);
+		render_text("SCRATCH", white, -0.1f, -0.3f, 0.0024f, 0.004f, 2);
+		render_text("FREEZE", white, -0.08f, 0.12f, 0.0024f, 0.004f, 2);
 	}
 	
 	Box box;
@@ -7585,7 +7666,7 @@ int tune_midi() {
 			return 0;
 		}
 	}
-	render_text("CANCEL", white, box.vtxcoords->x1 + 0.02f, box.vtxcoords->y1 + 0.03f, 0.0024f, 0.004f, 1);
+	render_text("CANCEL", white, box.vtxcoords->x1 + 0.02f, box.vtxcoords->y1 + 0.03f, 0.0024f, 0.004f, 2);
 	box.vtxcoords->x1 = 0.45f;
 	box.upvtxtoscr();
 	draw_box(white, black, &box, -1);
@@ -7598,7 +7679,7 @@ int tune_midi() {
 			return 0;
 		}
 	}
-	render_text("SAVE", white, box.vtxcoords->x1 + 0.02f, box.vtxcoords->y1 + 0.03f, 0.0024f, 0.004f, 1);
+	render_text("SAVE", white, box.vtxcoords->x1 + 0.02f, box.vtxcoords->y1 + 0.03f, 0.0024f, 0.004f, 2);
 		
 	mainprogram->middlemouse = 0;
 	mainprogram->rightmouse = 0;
@@ -7779,6 +7860,10 @@ void the_loop() {
 			Layer *testlay = mainmix->layersBcomp[i];
 			calc_texture(testlay, 1, 1);
 		}
+		for(int i = 0; i < mainprogram->busylayers.size(); i++) {
+			Layer *testlay = mainprogram->busylayers[i];  // needs to be revised
+			calc_texture(testlay, 1, 1);
+		}
 	}
 	if (mainprogram->preveff) {
 		for(int i = 0; i < mainmix->layersA.size(); i++) {
@@ -7799,10 +7884,6 @@ void the_loop() {
 			Layer *testlay = mainmix->layersBcomp[i];
 			calc_texture(testlay, 1, 1);
 		}
-	}
-	for(int i = 0; i < mainprogram->busylayers.size(); i++) {
-		Layer *testlay = mainprogram->busylayers[i];
-		calc_texture(testlay, 1, 1);
 	}
 		
 	// Crawl web
@@ -8717,8 +8798,9 @@ void the_loop() {
 					mwin->win = SDL_CreateWindow(PROGRAM_NAME, SDL_WINDOWPOS_CENTERED_DISPLAY(screen), SDL_WINDOWPOS_CENTERED_DISPLAY(screen), sw, sh, SDL_WINDOW_OPENGL | SDL_WINDOW_MAXIMIZED | SDL_WINDOW_RESIZABLE | SDL_WINDOW_FULLSCREEN_DESKTOP | SDL_WINDOW_ALLOW_HIGHDPI);
 					SDL_RaiseWindow(mainprogram->mainwindow);
 					mainprogram->mixwindows.push_back(mwin);
-					mainprogram->share_lists(&glc, mainprogram->mainwindow, &mwin->glc, mwin->win);
-					glUseProgram(mainprogram->ShaderProgram);
+					mwin->glc = SDL_GL_CreateContext(mwin->win);
+					GLuint prog = mainprogram->set_shader();
+					glUseProgram(prog);
 					
 					std::thread vidoutput (output_video, mwin);
 					vidoutput.detach();
@@ -8756,12 +8838,12 @@ void the_loop() {
 		k = handle_menu(mainprogram->deckmenu);
 		if (k == 0) {
 			mainprogram->pathto = "OPENDECK";
-			std::thread filereq (&Program::get_inname, mainprogram, "deck", nullptr);
+			std::thread filereq (&Program::get_inname, mainprogram, "Open deck file", "application/ewocvj2-deck", "");
 			filereq.detach();
 		}
 		else if (k == 1) {
 			mainprogram->pathto = "SAVEDECK";
-			std::thread filereq (&Program::get_outname, mainprogram, "deck", nullptr);
+			std::thread filereq (&Program::get_outname, mainprogram, "Save deck file", "application/ewocvj2-deck", "");
 			filereq.detach();
 		}
 		if (mainprogram->menuchosen) {
@@ -8790,24 +8872,30 @@ void the_loop() {
 		if (k > -1) {
 			if (k == 0) {
 				if (mainprogram->menuresults[0] > 0) {
+					#ifdef _WIN64
 					std::string livename = "video=" + mainprogram->devices[mainprogram->menuresults[0]];
+					#else
+					#ifdef __GNUC__
+					std::string livename = "/dev/video" + std::to_string(mainprogram->menuresults[0] - 1);
+					#endif
+					#endif
 					set_live_base(mainmix->mouselayer, livename);
 				}
 			}
 			if (k == 1) {
 				mainprogram->pathto = "OPENVIDEO";
-				std::thread filereq (&Program::get_inname, mainprogram, nullptr, nullptr);
+				std::thread filereq (&Program::get_inname, mainprogram, "Open video file", nullptr, "");
 				filereq.detach();
 				mainprogram->loadlay = mainmix->mouselayer;
 			}
 			else if (k == 2) {
 				mainprogram->pathto = "OPENLAYFILE";
-				std::thread filereq (&Program::get_inname, mainprogram, "layer", nullptr);
+				std::thread filereq (&Program::get_inname, mainprogram, "Open layer file", "application/ewocvj2-layer", "");
 				filereq.detach();
 			}
 			else if (k == 3) {
 				mainprogram->pathto = "SAVELAYFILE";
-				std::thread filereq (&Program::get_outname, mainprogram, "layer", nullptr);
+				std::thread filereq (&Program::get_outname, mainprogram, "Save layer file", "application/ewocvj2-layer", "");
 				filereq.detach();
 			}
 			else if (k == 4) {
@@ -8815,12 +8903,12 @@ void the_loop() {
 			}
 			else if (k == 5) {
 				mainprogram->pathto = "OPENDECK";
-				std::thread filereq (&Program::get_inname, mainprogram, "deck", nullptr);
+				std::thread filereq (&Program::get_inname, mainprogram, "Open deck file", "application/ewocvj2-deck", "");
 				filereq.detach();
 			}
 			else if (k == 6) {
 				mainprogram->pathto = "SAVEDECK";
-				std::thread filereq (&Program::get_outname, mainprogram, "deck", nullptr);
+				std::thread filereq (&Program::get_outname, mainprogram, "Save deck file", "application/ewocvj2-deck", "");
 				filereq.detach();
 			}
 			else if (k == 7) {
@@ -8828,12 +8916,12 @@ void the_loop() {
 			}
 			else if (k == 8) {
 				mainprogram->pathto = "OPENMIX";
-				std::thread filereq (&Program::get_inname, mainprogram, "mix", nullptr);
+				std::thread filereq (&Program::get_inname, mainprogram, "Open mix file", "application/ewocvj2-mix", "");
 				filereq.detach();
 			}
 			else if (k == 9) {
 				mainprogram->pathto = "SAVEMIX";
-				std::thread filereq (&Program::get_outname, mainprogram, "mix", nullptr);
+				std::thread filereq (&Program::get_outname, mainprogram, "Open mix file", "application/ewocvj2-mix", "");
 				filereq.detach();
 			}
 			else if (k == 10) {
@@ -8883,21 +8971,27 @@ void the_loop() {
 			std::vector<Layer*> &lvec = choose_layers(mainmix->mousedeck);
 			if (k == 0) {
 				if (mainprogram->menuresults[0] > 0) {
-					mainmix->add_layer(lvec, lvec.size());
+					mainmix->mouselayer = mainmix->add_layer(lvec, lvec.size());
+					#ifdef _WIN64
 					std::string livename = "video=" + mainprogram->devices[mainprogram->menuresults[0]];
+					#else
+					#ifdef __GNUC__
+					std::string livename = "/dev/video" + std::to_string(mainprogram->menuresults[0] - 1);
+					#endif
+					#endif
 					set_live_base(mainmix->mouselayer, livename);
 				}
 			}
 			if (k == 1) {
 				mainprogram->pathto = "OPENVIDEO";
-				std::thread filereq (&Program::get_inname, mainprogram, nullptr, nullptr);
+				std::thread filereq (&Program::get_inname, mainprogram, "Open video file", nullptr, "");
 				filereq.detach();
 				mainprogram->loadlay = mainmix->add_layer(lvec, lvec.size());
 			}
 			else if (k == 2) {
 				mainmix->mouselayer = mainmix->add_layer(lvec, lvec.size());
 				mainprogram->pathto = "OPENLAYFILE";
-				std::thread filereq (&Program::get_inname, mainprogram, "layer", nullptr);
+				std::thread filereq (&Program::get_inname, mainprogram, "Open layer file", "application/ewocvj2-layer", "");
 				filereq.detach();
 			}
 			else if (k == 3) {
@@ -8905,12 +8999,12 @@ void the_loop() {
 			}
 			else if (k == 4) {
 				mainprogram->pathto = "OPENDECK";
-				std::thread filereq (&Program::get_inname, mainprogram, "deck", nullptr);
+				std::thread filereq (&Program::get_inname, mainprogram, "Open deck file", "application/ewocvj2-deck", "");
 				filereq.detach();
 			}
 			else if (k == 5) {
 				mainprogram->pathto = "SAVEDECK";
-				std::thread filereq (&Program::get_outname, mainprogram, "deck", nullptr);
+				std::thread filereq (&Program::get_outname, mainprogram, "Save deck file", "application/ewocvj2-deck", "");
 				filereq.detach();
 			}
 			else if (k == 6) {
@@ -8918,12 +9012,12 @@ void the_loop() {
 			}
 			else if (k == 7) {
 				mainprogram->pathto = "OPENMIX";
-				std::thread filereq (&Program::get_inname, mainprogram, "mix", nullptr);
+				std::thread filereq (&Program::get_inname, mainprogram, "Open mix file", "application/ewocvj2-mix", "");
 				filereq.detach();
 			}
 			else if (k == 8) {
 				mainprogram->pathto = "SAVEMIX";
-				std::thread filereq (&Program::get_outname, mainprogram, "mix", nullptr);
+				std::thread filereq (&Program::get_outname, mainprogram, "Save mix file", "application/ewocvj2-mix", "");
 				filereq.detach();
 			}
 		}
@@ -8942,9 +9036,9 @@ void the_loop() {
 			if (!mainprogram->tunemidi) {
 				SDL_ShowWindow(mainprogram->tunemidiwindow);
 				SDL_RaiseWindow(mainprogram->tunemidiwindow);
-				mainprogram->share_lists(&glc, mainprogram->mainwindow, &glc_tm, mainprogram->tunemidiwindow);
+				//mainprogram->share_lists(&glc, mainprogram->mainwindow, &glc_tm, mainprogram->tunemidiwindow);
 				SDL_GL_MakeCurrent(mainprogram->tunemidiwindow, glc_tm);
-				glUseProgram(mainprogram->ShaderProgram);
+				glUseProgram(mainprogram->ShaderProgram_tm);
 				mainprogram->tmfreeze->upvtxtoscr();
 				mainprogram->tmplay->upvtxtoscr();
 				mainprogram->tmbackw->upvtxtoscr();
@@ -8977,12 +9071,12 @@ void the_loop() {
 		}
 		else if (k == 1) {
 			mainprogram->pathto = "OPENSTATE";
-			std::thread filereq (&Program::get_inname, mainprogram, "state", nullptr);
+			std::thread filereq (&Program::get_inname, mainprogram, "Open state file", "application/ewocvj2-state", "");
 			filereq.detach();
 		}
 		else if (k == 2) {
 			mainprogram->pathto = "SAVESTATE";
-			std::thread filereq (&Program::get_outname, mainprogram, "state", nullptr);
+			std::thread filereq (&Program::get_outname, mainprogram, "Save state file", "application/ewocvj2-state", "");
 			filereq.detach();
 		}
 		else if (k == 3) {
@@ -8990,15 +9084,11 @@ void the_loop() {
 				mainprogram->prefs->load();
 				mainprogram->prefon = true;
 				SDL_ShowWindow(mainprogram->prefwindow);
-				mainprogram->share_lists(&glc, mainprogram->mainwindow, &glc_pr, mainprogram->prefwindow);
+				SDL_RaiseWindow(mainprogram->prefwindow);
 				SDL_GL_MakeCurrent(mainprogram->prefwindow, glc_pr);
-				glUseProgram(mainprogram->ShaderProgram);
+				glUseProgram(mainprogram->ShaderProgram_pr);
 				glEnable(GL_BLEND);
 				glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
-				for (int i = 0; i < mainprogram->smguistrings.size(); i++) {
-					mainprogram->guistrings.erase(std::find(mainprogram->guistrings.begin(), mainprogram->guistrings.end(), mainprogram->smguistrings[i]));
-				}
-				mainprogram->smguistrings.clear();
 				for (int i = 0; i < mainprogram->prefs->items.size(); i++) {
 					PrefItem *item = mainprogram->prefs->items[i];
 					item->box->upvtxtoscr();
@@ -9027,31 +9117,55 @@ void the_loop() {
 		}
 		else if (k == 1) {
 			mainprogram->pathto = "OPENSHELF";
-			std::thread filereq (&Program::get_inname, mainprogram, "shelf", boost::filesystem::absolute("shelves").string().c_str());
+			#ifdef _WIN64
+			std::string sdir = boost::filesystem::absolute("shelves").string();
+			#else
+			#ifdef __GNUC__
+			std::string homedir (getenv("HOME"));
+			std::string sdir = homedir + "/.ewocvj2/shelves";
+			#endif
+			#endif
+			printf("shelfdir %s\n", sdir.c_str());
+			std::thread filereq (&Program::get_inname, mainprogram, "Open shelf file", "application/ewocvj2-shelf", sdir);
 			filereq.detach();
 		}
 		else if (k == 2) {
 			mainprogram->pathto = "SAVESHELF";
-			std::thread filereq (&Program::get_outname, mainprogram, "shelf", boost::filesystem::absolute("shelves").string().c_str());
+			#ifdef _WIN64
+			std::string sdir = boost::filesystem::absolute("shelves").string();
+			#else
+			#ifdef __GNUC__
+			std::string homedir (getenv("HOME"));
+			std::string sdir = homedir + "/.ewocvj2/shelves";
+			#endif
+			#endif
+			std::thread filereq (&Program::get_outname, mainprogram, "Save shelf file", "application/ewocvj2-shelf", sdir);
 			filereq.detach();
 		}
 		else if (k == 3) {
 			mainprogram->pathto = "OPENSHELFVIDEO";
-			std::thread filereq (&Program::get_inname, mainprogram, nullptr, nullptr);
+			std::thread filereq (&Program::get_inname, mainprogram,  "Load video file in shelf", "", "");
 			filereq.detach();
 		}
 		else if (k == 4) {
 			mainprogram->pathto = "OPENSHELFLAYER";
-			std::thread filereq (&Program::get_inname, mainprogram, "layer", nullptr);
+			std::thread filereq (&Program::get_inname, mainprogram, "Load layer file in shelf", "application/ewocvj2-layer", "");
 			filereq.detach();
 		}
 		else if (k == 5) {
 			mainprogram->pathto = "OPENSHELFDIR";
-			std::thread filereq (&Program::get_dir, mainprogram);
+			std::thread filereq (&Program::get_dir, mainprogram, "Load directory into shelf");
 			filereq.detach();
 		}
 		else if (k == 6) {
-			if (exists("./shelfs.shelf")) open_shelf("./shelfs.shelf", 2);
+			#ifdef _WIN64
+			if (exists("./shelves/shelfs.shelf")) open_shelf("./shelves/shelfs.shelf", 2);
+			# else
+			#ifdef __GNUC__
+			std::string homedir (getenv("HOME"));
+			if (exists(homedir + "/.ewocvj2/shelves/shelfs.shelf")) open_shelf(homedir + "/.ewocvj2/shelves/shelfs.shelf", 2);
+			#endif
+			#endif
 			else {
 				new_shelf(0);
 				new_shelf(1);
@@ -9581,18 +9695,19 @@ void the_loop() {
 	bool prret = false;
 	GLuint tex, fbo;
 	if (mainprogram->prefon) {
+		SDL_GL_MakeCurrent(mainprogram->prefwindow, glc_pr);
 		glGenTextures(1, &tex);
 		glBindTexture(GL_TEXTURE_2D, tex);
 		glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR);
 		glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
-		glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA, (int)(glob->w * 0.3f), (int)(glob->h * 0.3f), 0, GL_RGBA, GL_UNSIGNED_BYTE, NULL);
+		glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA, smw, smh, 0, GL_RGBA, GL_UNSIGNED_BYTE, NULL);
 		glGenFramebuffers(1, &fbo);
 		glBindFramebuffer(GL_FRAMEBUFFER, fbo);
 		glFramebufferTexture2D(GL_FRAMEBUFFER, GL_COLOR_ATTACHMENT0, GL_TEXTURE_2D, tex, 0);
-		glBindFramebuffer(GL_FRAMEBUFFER, mainprogram->smglobfbo);
+		glBindFramebuffer(GL_FRAMEBUFFER, mainprogram->smglobfbo_pr);
 		glDrawBuffer(GL_COLOR_ATTACHMENT0);
 		prret = preferences();
-		glBlitNamedFramebuffer(mainprogram->smglobfbo, fbo, 0, 0, smw, smh , 0, 0, smw, smh, GL_COLOR_BUFFER_BIT, GL_NEAREST);
+		glBlitNamedFramebuffer(mainprogram->smglobfbo_pr, fbo, 0, 0, smw, smh , 0, 0, smw, smh, GL_COLOR_BUFFER_BIT, GL_NEAREST);
 		glFlush();
 	}
 	if (mainprogram->tunemidi) {
@@ -9605,12 +9720,13 @@ void the_loop() {
 				mainprogram->waitmidi = 0;
 			}
 		}
-		glBindFramebuffer(GL_FRAMEBUFFER, mainprogram->smglobfbo);
+		SDL_GL_MakeCurrent(mainprogram->tunemidiwindow, glc_tm);
+		glBindFramebuffer(GL_FRAMEBUFFER, mainprogram->smglobfbo_tm);
 		glDrawBuffer(GL_COLOR_ATTACHMENT0);
 		bool ret = tune_midi();
 		glFlush();
 		if (ret) {
-			glBlitNamedFramebuffer(mainprogram->smglobfbo, 0, 0, 0, smw, smh , 0, 0, smw, smh, GL_COLOR_BUFFER_BIT, GL_NEAREST);
+			glBlitNamedFramebuffer(mainprogram->smglobfbo_tm, 0, 0, 0, smw, smh , 0, 0, smw, smh, GL_COLOR_BUFFER_BIT, GL_NEAREST);
 			SDL_GL_SwapWindow(mainprogram->tunemidiwindow);
 		}
 	}
@@ -10107,8 +10223,16 @@ bool open_shelflayer(const std::string &path, int pos) {
 
 void open_shelf(const std::string &path, int deck) {
 	
-	if (path != "./shelfs.shelf") mainprogram->mainshelf = false;
+	#ifdef _WIN64
+	if (path != "./shelves/shelfs.shelf") mainprogram->mainshelf = false;
 	else mainprogram->mainshelf = true;
+	# else
+	#ifdef __GNUC__
+	std::string homedir (getenv("HOME"));
+	if (path != homedir + "/.ewocvj2/shelves/shelfs.shelf") mainprogram->mainshelf = false;
+	else mainprogram->mainshelf = true;
+	#endif
+	#endif
 	
 	std::string result = deconcat_files(path);
 	bool concat = (result != "");
@@ -10532,15 +10656,32 @@ int main(int argc, char* argv[]){
 	smw = (float)wi;
 	smh = (float)he;
 	
-	SDL_GL_MakeCurrent(mainprogram->mainwindow, glc);
-	glGenTextures(1, &mainprogram->smglobfbotex);
-	glBindTexture(GL_TEXTURE_2D, mainprogram->smglobfbotex);
+	glc_tm = SDL_GL_CreateContext(mainprogram->tunemidiwindow);
+	SDL_GL_MakeCurrent(mainprogram->tunemidiwindow, glc_tm);
+	mainprogram->ShaderProgram_tm = mainprogram->set_shader();
+	glGenTextures(1, &mainprogram->smglobfbotex_tm);
+	glBindTexture(GL_TEXTURE_2D, mainprogram->smglobfbotex_tm);
 	glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_NEAREST);
 	glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_NEAREST);
 	glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA, smw, smh, 0, GL_RGBA, GL_UNSIGNED_BYTE, NULL);
-	glGenFramebuffers(1, &mainprogram->smglobfbo);
-	glBindFramebuffer(GL_FRAMEBUFFER, mainprogram->smglobfbo);
-	glFramebufferTexture2D(GL_FRAMEBUFFER, GL_COLOR_ATTACHMENT0, GL_TEXTURE_2D, mainprogram->smglobfbotex, 0);
+	glGenFramebuffers(1, &mainprogram->smglobfbo_tm);
+	glBindFramebuffer(GL_FRAMEBUFFER, mainprogram->smglobfbo_tm);
+	glFramebufferTexture2D(GL_FRAMEBUFFER, GL_COLOR_ATTACHMENT0, GL_TEXTURE_2D, mainprogram->smglobfbotex_tm, 0);
+	glc_pr = SDL_GL_CreateContext(mainprogram->prefwindow);
+	SDL_GL_MakeCurrent(mainprogram->prefwindow, glc_pr);
+	mainprogram->ShaderProgram_pr = mainprogram->set_shader();
+	glGenTextures(1, &mainprogram->smglobfbotex_pr);
+	glBindTexture(GL_TEXTURE_2D, mainprogram->smglobfbotex_pr);
+	glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_NEAREST);
+	glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_NEAREST);
+	glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA, smw, smh, 0, GL_RGBA, GL_UNSIGNED_BYTE, NULL);
+	glGenFramebuffers(1, &mainprogram->smglobfbo_pr);
+	glBindFramebuffer(GL_FRAMEBUFFER, mainprogram->smglobfbo_pr);
+	glFramebufferTexture2D(GL_FRAMEBUFFER, GL_COLOR_ATTACHMENT0, GL_TEXTURE_2D, mainprogram->smglobfbotex_pr, 0);
+	SDL_GL_MakeCurrent(mainprogram->mainwindow, glc);
+	mainprogram->ShaderProgram = mainprogram->set_shader();
+	glUseProgram(mainprogram->ShaderProgram);
+	
 	glGenTextures(1, &mainprogram->globfbotex);
 	glBindTexture(GL_TEXTURE_2D, mainprogram->globfbotex);
 	glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_NEAREST);
@@ -10562,53 +10703,23 @@ int main(int argc, char* argv[]){
 	}
   	FT_UInt interpreter_version = 40;
 	FT_Property_Set(ft, "truetype", "interpreter-version", &interpreter_version);
-	if(FT_New_Face(ft, "./expressway rg.ttf", 0, &face)) {
+	#ifdef _WIN64
+	std::string fstr = "./expressway.ttf";
+	if (!exists(fstr)) mainprogram->quit("Can't find \"expressway.ttf\" TrueType font in current directory");
+	#else
+	#ifdef __GNUC__
+	std::string fdir (FONTDIR);
+	std::string fstr = fdir + "/expressway.ttf";
+	if (!exists(fdir + "/expressway.ttf"))  mainprogram->quit("Can't find \"expressway.ttf\" TrueType font in " + fdir);
+	#endif
+	#endif
+	if(FT_New_Face(ft, fstr.c_str(), 0, &face)) {
 	  fprintf(stderr, "Could not open font\n");
 	  return 1;
 	}
 	FT_Set_Pixel_Sizes(face, 0, 48);
 	glEnable(GL_BLEND);
 	glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
-
-	GLuint vertexShaderObject = glCreateShader(GL_VERTEX_SHADER);
-	GLuint fragmentShaderObject = glCreateShader(GL_FRAGMENT_SHADER);
-	unsigned long vlen, flen;
-	char *VShaderSource;
- 	char *vshader = (char*)malloc(100);
- 	strcpy (vshader, "./shader.vs");
-	loadshader(vshader, &VShaderSource, vlen);
-	char *FShaderSource;
- 	char *fshader = (char*)malloc(100);
- 	strcpy (fshader, "./shader.fs");
-	loadshader(fshader, &FShaderSource, flen);
-	glShaderSource(vertexShaderObject, 1, &VShaderSource, NULL);
-	glShaderSource(fragmentShaderObject, 1, &FShaderSource, NULL);
-	glCompileShader(vertexShaderObject);
-	glCompileShader(fragmentShaderObject);
-
-	GLint maxLength = 0;
-	glGetShaderiv(fragmentShaderObject, GL_INFO_LOG_LENGTH, &maxLength);
- 	GLchar *infolog = (GLchar*)malloc(maxLength);
-	glGetShaderInfoLog(fragmentShaderObject, maxLength, &maxLength, &(infolog[0]));
-	printf("compile log %s\n", infolog);
-
-	mainprogram->ShaderProgram = glCreateProgram();
-	glBindAttribLocation(mainprogram->ShaderProgram, 0, "Position");
-	glBindAttribLocation(mainprogram->ShaderProgram, 1, "TexCoord");
-	glAttachShader(mainprogram->ShaderProgram, vertexShaderObject);
-	glAttachShader(mainprogram->ShaderProgram, fragmentShaderObject);
-	glLinkProgram(mainprogram->ShaderProgram);
-
-	maxLength = 1024;
- 	infolog = (GLchar*)malloc(maxLength);
-	glGetProgramInfoLog(mainprogram->ShaderProgram, maxLength, &maxLength, &(infolog[0]));
-	printf("linker log %s\n", infolog);
-
-	GLint isLinked = 0;
-	glGetProgramiv(mainprogram->ShaderProgram, GL_LINK_STATUS, &isLinked);
-	printf("log %d\n", isLinked);
-	fflush(stdout);
-	glUseProgram(mainprogram->ShaderProgram);
 
  	std::vector<std::string> effects;
  	effects.push_back("Delete effect");
@@ -10865,6 +10976,7 @@ int main(int argc, char* argv[]){
 	
 	mainprogram->prefs = new Preferences;
 	mainprogram->prefs->load();
+	#ifdef _WIN64
 	boost::filesystem::path p1{"./bins"};
 	if (!exists("./bins")) boost::filesystem::create_directory(p1);
 	boost::filesystem::path p2{"./recordings"};
@@ -10873,6 +10985,21 @@ int main(int argc, char* argv[]){
 	if (!exists("./shelves")) boost::filesystem::create_directory(p3);
 	boost::filesystem::path p4{"./temp"};
 	if (!exists("./temp")) boost::filesystem::create_directory(p4);
+	#else
+	#ifdef __GNUC__
+	std::string homedir (getenv("HOME"));
+	boost::filesystem::path e{homedir + "/.ewocvj2"};
+	if (!exists(homedir + "/.ewocvj2")) boost::filesystem::create_directory(e);
+	boost::filesystem::path p1{homedir + "/.ewocvj2/bins"};
+	if (!exists(homedir + "/.ewocvj2/bins")) boost::filesystem::create_directory(p1);
+	boost::filesystem::path p2{homedir + "/.ewocvj2/recordings"};
+	if (!exists(homedir + "/recordings")) boost::filesystem::create_directory(p2);
+	boost::filesystem::path p3{homedir + "/.ewocvj2/shelves"};
+	if (!exists(homedir + "/.ewocvj2/shelves")) boost::filesystem::create_directory(p3);
+	boost::filesystem::path p4{homedir + "/.ewocvj2/temp"};
+	if (!exists(homedir + "/.ewocvj2/temp")) boost::filesystem::create_directory(p4);
+	#endif
+	#endif
 
 	binsmain->newbinbox = new Box;
 	binsmain->newbinbox->vtxcoords->x1 = -0.15f;
@@ -11074,7 +11201,13 @@ int main(int argc, char* argv[]){
 
     // must put this here or problem with fbovao[2] ?????
 	set_fbo();
-	if (exists("./shelfs.shelf")) open_shelf("./shelfs.shelf", 2);
+	#ifdef _WIN64
+	if (exists("./shelves/shelfs.shelf")) open_shelf("./shelves/shelfs.shelf", 2);
+	# else
+	#ifdef __GNUC__
+	if (exists(homedir + "/.ewocvj2/shelves/shelfs.shelf")) open_shelf(homedir + "/.ewocvj2/shelves/shelfs.shelf", 2);
+	#endif
+	#endif
 	
 	std::chrono::high_resolution_clock::time_point begintime = std::chrono::high_resolution_clock::now();
 	std::chrono::duration<double> elapsed;
@@ -11089,6 +11222,7 @@ int main(int argc, char* argv[]){
 				open_video(0, mainprogram->loadlay, str, true);
 			}
 			else if (mainprogram->pathto == "OPENSHELF") {
+				printf("shelfpath %s\n", mainprogram->path);
 				std::string str(mainprogram->path);
 				open_shelf(str, mainmix->mousedeck);
 			}
@@ -11234,6 +11368,8 @@ int main(int argc, char* argv[]){
 				}
 				else if (mainprogram->renaming == EDIT_BINSDIR) {
 					mainprogram->binsdir = mainprogram->inputtext;
+					std::string lastchar = mainprogram->binsdir.substr(mainprogram->binsdir.length() - 1, std::string::npos);
+					if (lastchar != "/" and lastchar != "\\") mainprogram->binsdir += "/";
 				}
 				else if (mainprogram->renaming == EDIT_RECDIR) {
 					mainprogram->recdir = mainprogram->inputtext;
@@ -11300,12 +11436,12 @@ int main(int argc, char* argv[]){
 				if (mainprogram->ctrl) {
 					if (e.key.keysym.sym == SDLK_s) {
 						mainprogram->pathto = "SAVESTATE";
-						std::thread filereq (&Program::get_outname, mainprogram, "state", nullptr);
+						std::thread filereq (&Program::get_outname, mainprogram, "Save state file", "application/ewocvj2-state", "");
 						filereq.detach();
 					}
 					if (e.key.keysym.sym == SDLK_o) {
 						mainprogram->pathto = "OPENSTATE";
-						std::thread filereq (&Program::get_inname, mainprogram, "state", nullptr);
+						std::thread filereq (&Program::get_inname, mainprogram, "Open state file", "application/ewocvj2-state", "");
 						filereq.detach();
 					}
 					if (e.key.keysym.sym == SDLK_n) {

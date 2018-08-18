@@ -18,7 +18,7 @@
 #include <iostream>
 #include <ios>
 
-#include "nfd.h"
+#include "tinyfiledialogs.h"
 
 extern "C" {
 #include "libavformat/avformat.h"
@@ -533,13 +533,13 @@ void BinsMain::handle() {
 	}
 	else if (k == mainprogram->menuset) {
 		mainprogram->pathto = "OPENBINFILES";
-		std::thread filereq (&Program::get_multinname, mainprogram);
+		std::thread filereq (&Program::get_multinname, mainprogram, "Open video files");
 		filereq.detach();
 	}
 	else if (k == mainprogram->menuset + 1) {
 		mainprogram->pathto = "OPENBINDIR";
 		mainprogram->blocking = true;
-		std::thread filereq (&Program::get_dir, mainprogram);
+		std::thread filereq (&Program::get_dir, mainprogram, "Open video file directory");
 		filereq.detach();
 	}
 	else if (k == mainprogram->menuset + 2) {
@@ -879,6 +879,8 @@ void BinsMain::handle() {
 						}
 					}
 					if (binel != this->currbinel or mainprogram->rightmouse) {
+						printf("size %d\n", this->templayers.size());
+						fflush(stdout);
 						if (this->currbinel) this->binpreview = false;
 						if (this->inserting == 0 or this->inserting == 1) {
 							if (this->prevbinel) {
@@ -1551,7 +1553,7 @@ void BinsMain::open_bin(const std::string &path, Bin *bin) {
 void BinsMain::save_bin(const std::string &path) {
 	std::vector<std::string> filestoadd;
 	std::ofstream wfile;
-	wfile.open(path);
+	wfile.open(path.c_str());
 	wfile << "EWOCvj BINFILE V0.2\n";
 	
 	wfile << "ELEMS\n";
@@ -1723,39 +1725,21 @@ void BinsMain::get_texes(int deck) {
 }
 
 void BinsMain::open_binfiles() {
-	if (mainprogram->counting == NFD_PathSet_GetCount(&mainprogram->paths)) {
+	if (mainprogram->counting == mainprogram->paths.size()) {
 		this->openbinfile = false;
 		return;
 	}
-	std::string str(NFD_PathSet_GetPath(&mainprogram->paths, mainprogram->counting));
+	std::string str = mainprogram->paths[mainprogram->counting];
 	open_handlefile(str);
 	mainprogram->counting++;
 }
 
 void BinsMain::open_bindir() {
-	SDL_SysWMinfo info;
-	SDL_GetWindowWMInfo(mainprogram->mainwindow, &info);
 	if (SDL_GetMouseFocus() != mainprogram->mainwindow) {
-		#ifdef _WIN64
-		HCURSOR hCurs;
-		hCurs = LoadCursor(NULL, IDC_ARROW);
-		SetCursor(hCurs);
-		#else
-		Cursor c;
-		c = XCreateFontCursor(info.info.x11.display, 68); 
-		XDefineCursor(info.info.x11.display, info.info.x11.window, c);
-		#endif
+		SDL_SetCursor(SDL_CreateSystemCursor(SDL_SYSTEM_CURSOR_ARROW));
 	}
 	else {
-		#ifdef _WIN64
-		HCURSOR hCurs;
-		hCurs = LoadCursor(NULL, IDC_WAIT);
-		SetCursor(hCurs);
-		#else
-		Cursor c;
-		c = XCreateFontCursor(info.info.x11.display, 150); 
-		XDefineCursor(info.info.x11.display, info.info.x11.window, c);
-		#endif
+		SDL_SetCursor(SDL_CreateSystemCursor(SDL_SYSTEM_CURSOR_WAIT));
 	} 
 	struct dirent *ent;
 	if ((ent = readdir(mainprogram->opendir)) != NULL) {
@@ -1770,15 +1754,7 @@ void BinsMain::open_bindir() {
 	else {
 		this->openbindir = false;
 		mainprogram->blocking = false;
-		#ifdef _WIN64
-		HCURSOR hCurs;
-		hCurs = LoadCursor(NULL, IDC_ARROW);
-		SetCursor(hCurs);
-		#else
-		Cursor c;
-		c = XCreateFontCursor(info.info.x11.display, 68); 
-		XDefineCursor(info.info.x11.display, info.info.x11.window, c);
-		#endif
+		SDL_SetCursor(SDL_CreateSystemCursor(SDL_SYSTEM_CURSOR_ARROW));
 	} 
 }
 
@@ -1789,7 +1765,9 @@ void BinsMain::open_handlefile(const std::string &path) {
 	lay->frame = lay->numf / 2.0f;
 	lay->prevframe = -1;
 	lay->ready = true;
-	lay->startdecode.notify_one();
+	while (lay->ready) {
+		lay->startdecode.notify_one();
+	}
 	std::unique_lock<std::mutex> lock(lay->endlock);
 	lay->enddecode.wait(lock, [&]{return lay->processed;});
 	lay->processed = false;

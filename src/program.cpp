@@ -14,7 +14,14 @@
 #include "SDL2/SDL.h"
 #include "SDL2/SDL_syswm.h"
 
-#include "nfd.h"
+#include "tinyfiledialogs.h"
+
+#include "paths.h"
+
+#include <istream>
+#include <ostream>
+#include <iostream>
+#include <string>
 
 // my own headers
 #include "box.h"
@@ -49,43 +56,51 @@ void Program::make_menu(const std::string &name, Menu *&menu, std::vector<std::s
 	menu->box->upscrtovtx();
 }
 
-void Program::get_inname(const nfdchar_t *filters, const nfdchar_t *defaultdir) {
-	nfdchar_t *outPath = NULL;
-	nfdresult_t result = NFD_OpenDialog(filters, defaultdir, &outPath);
-	if (!(result == NFD_OKAY)) {
-		return;
+void Program::get_inname(const char *title, const char* filters, std::string defaultdir) {
+	char const* const dd = (defaultdir == "") ? "" : defaultdir.c_str();
+	if (filters == nullptr) {
+		mainprogram->path = tinyfd_openFileDialog(title, dd, 0, nullptr, NULL, 0);
 	}
-	mainprogram->path = (char *)outPath;
+	else {
+		mainprogram->path = tinyfd_openFileDialog(title, dd, 1, &filters, NULL, 0);
+	}
 }
 
-void Program::get_multinname() {
-	nfdpathset_t outPaths;
-	nfdresult_t result = NFD_OpenDialogMultiple(NULL, NULL, &outPaths);
-	if (!(result == NFD_OKAY)) {
-		return;
+void Program::get_outname(const char *title, const char* filters, std::string defaultdir) {
+	char const* const dd = (defaultdir == "") ? "" : defaultdir.c_str();
+	if (filters == nullptr) {
+		mainprogram->path = tinyfd_saveFileDialog(title, dd, 0, nullptr, NULL);
 	}
-	mainprogram->paths = outPaths;
+	else {
+		mainprogram->path = tinyfd_saveFileDialog(title, dd, 1, &filters, NULL);
+	}
+}
+
+void Program::get_multinname(const char* title) {
+	const char *outpaths;
+	outpaths = tinyfd_openFileDialog(title, "", 0, NULL, NULL, 1);
+	std::string opaths(outpaths);
+	mainprogram->paths.push_back("");
+	std::string currstr = mainprogram->paths.back();
+	for (int i = 0; i < opaths.length(); i++) {
+		std::string charstr;
+		charstr = opaths[i];
+		if (charstr == "|") {
+			mainprogram->paths.push_back("");
+			std::string currstr = mainprogram->paths.back();
+			continue;
+		}
+		currstr += charstr;
+	}
 	mainprogram->path = (char*)"ENTER";
 	mainprogram->counting = 0;
 }
 
-void Program::get_dir() {
-	nfdchar_t *outPath = NULL;
-	nfdresult_t result = NFD_PickFolder(NULL, &outPath);
-	if (!(result == NFD_OKAY)) {
-		return;
-	}
-	mainprogram->path = (char *)outPath;
+void Program::get_dir(const char *title) {
+	mainprogram->path = tinyfd_selectFolderDialog(title, "") ;
 }
 
-void Program::get_outname(const nfdchar_t *filters, const nfdchar_t *defaultdir) {
-	nfdchar_t *outPath = NULL;
-	nfdresult_t result = NFD_SaveDialog(filters, defaultdir, &outPath);
-	if (!(result == NFD_OKAY)) {
-		return;
-	}
-	mainprogram->path = (char *)outPath;
-}
+
 
 float Program::xscrtovtx(float scrcoord) {
 	return (scrcoord * 2.0 / (float)glob->w);
@@ -105,14 +120,14 @@ float Program::yvtxtoscr(float vtxcoord) {
 
 /* A simple function that prints a message, the error code returned by SDL,
  * and quits the application */
-void Program::quit(const char *msg)
+void Program::quit(std::string msg)
 {
 	//empty temp dir
 	boost::filesystem::path path_to_remove(mainprogram->temppath);
 	for (boost::filesystem::directory_iterator end_dir_it, it(path_to_remove); it!=end_dir_it; ++it) {
 		boost::filesystem::remove_all(it->path());
 	}
-	printf("%s: %s\n", msg, SDL_GetError());
+	printf("%s: %s\n", msg.c_str(), SDL_GetError());
     printf("stopped\n");
 
     SDL_Quit();
@@ -185,26 +200,112 @@ void Program::preveff_init() {
 	glUniform1i(preff, this->preveff);
 }
 
-void Program::share_lists(SDL_GLContext *srcctx, SDL_Window *srcwin, SDL_GLContext *destctx, SDL_Window *destwin) {
-	SDL_GL_MakeCurrent(srcwin, *srcctx);
-	#ifdef _WIN64
-	destctx = &SDL_GL_CreateContext(destwin);
-	HGLRC cc1 = wglGetCurrentContext();
-	SDL_GL_MakeCurrent(destwin, destctx);
-	HGLRC cc2 = wglGetCurrentContext();
-	wglShareLists(cc1, cc2);
-	#else
-	SDL_SysWMinfo info;
-	SDL_GetWindowWMInfo(destwin, &info);
-    XWindowAttributes xattr;
-    XVisualInfo v, *vinfo;
-    int n;
-    XGetWindowAttributes(info.info.x11.display, info.info.x11.window, &xattr);
-    v.screen = DefaultScreen(info.info.x11.display);
-    v.visualid = XVisualIDFromVisual(xattr.visual);
-    vinfo = XGetVisualInfo(info.info.x11.display, VisualScreenMask | VisualIDMask, &v, &n);
-	GLXContext cc1 = glXGetCurrentContext();
-	GLXContext cc2 = glXCreateContext(info.info.x11.display, vinfo, cc1, true);
-	destctx = (SDL_GLContext*)&cc2;
-	#endif
+unsigned long getFileLength(std::ifstream& file)
+{
+    if(!file.good()) return 0;
+
+    unsigned long pos=file.tellg();
+    file.seekg(0,std::ios::end);
+    unsigned long len = file.tellg();
+    file.seekg(std::ios::beg);
+
+    return len;
 }
+
+int Program::load_shader(char* filename, char** ShaderSource, unsigned long len)
+{
+   std::ifstream file;
+   file.open(filename, std::ios::in); // opens as ASCII!
+   if(!file) return -1;
+
+   len = getFileLength(file);
+
+   if (len==0) return -2;   // Error: Empty File
+
+   *ShaderSource = (char*)malloc(len+1);
+   if (*ShaderSource == 0) return -3;   // can't reserve memory
+
+    // len isn't always strlen cause some characters are stripped in ascii read...
+    // it is important to 0-terminate the real length later, len is just max possible value...
+   (*ShaderSource)[len] = 0;
+
+   unsigned int i=0;
+   while (file.good())
+   {
+       (*ShaderSource)[i] = file.get();       // get character from file.
+       if (!file.eof())
+        i++;
+   }
+
+   (*ShaderSource)[i] = 0;  // 0-terminate it at the correct position
+
+   file.close();
+
+   return 0; // No Error
+}
+
+GLuint Program::set_shader() {
+	GLuint program;
+	GLuint vertexShaderObject = glCreateShader(GL_VERTEX_SHADER);
+	GLuint fragmentShaderObject = glCreateShader(GL_FRAGMENT_SHADER);
+	unsigned long vlen, flen;
+	char *VShaderSource;
+ 	char *vshader = (char*)malloc(100);
+ 	#ifdef _WIN64
+ 	if (exists("./shader.vs")) strcpy (vshader, "./shader.vs");
+ 	else mainprogram->quit("Unable to find vertex shader \"shader.vs\" in current directory");
+ 	#else
+ 	#ifdef __GNUC__
+ 	std::string ddir (DATADIR);
+ 	if (exists("./shader.vs")) strcpy (vshader, "./shader.vs");
+ 	else if (exists(ddir + "/shader.vs")) strcpy (vshader, (ddir + "/shader.vs").c_str());
+ 	else mainprogram->quit("Unable to find vertex shader \"shader.vs\" in " + ddir);
+ 	#endif
+ 	#endif
+ 	load_shader(vshader, &VShaderSource, vlen);
+	char *FShaderSource;
+ 	char *fshader = (char*)malloc(100);
+ 	#ifdef _WIN64
+ 	if (exists("./shader.fs")) strcpy (fshader, "./shader.fs");
+ 	else mainprogram->quit("Unable to find fragment shader \"shader.fs\" in current directory");
+ 	#else
+ 	#ifdef __GNUC__
+ 	if (exists("./shader.fs")) strcpy (fshader, "./shader.fs");
+ 	else if (exists(ddir + "/shader.fs")) strcpy (fshader, (ddir + "/shader.fs").c_str());
+ 	else mainprogram->quit("Unable to find fragment shader \"shader.fs\" in " + ddir);
+ 	#endif
+ 	#endif
+	load_shader(fshader, &FShaderSource, flen);
+	glShaderSource(vertexShaderObject, 1, &VShaderSource, NULL);
+	glShaderSource(fragmentShaderObject, 1, &FShaderSource, NULL);
+	glCompileShader(vertexShaderObject);
+	glCompileShader(fragmentShaderObject);
+
+	GLint maxLength = 0;
+	glGetShaderiv(fragmentShaderObject, GL_INFO_LOG_LENGTH, &maxLength);
+ 	GLchar *infolog = (GLchar*)malloc(maxLength);
+	glGetShaderInfoLog(fragmentShaderObject, maxLength, &maxLength, &(infolog[0]));
+	printf("compile log %s\n", infolog);
+
+	program = glCreateProgram();
+	glBindAttribLocation(program, 0, "Position");
+	glBindAttribLocation(program, 1, "TexCoord");
+	glAttachShader(program, vertexShaderObject);
+	glAttachShader(program, fragmentShaderObject);
+	glLinkProgram(program);
+
+	maxLength = 1024;
+ 	infolog = (GLchar*)malloc(maxLength);
+	glGetProgramInfoLog(program, maxLength, &maxLength, &(infolog[0]));
+	printf("linker log %s\n", infolog);
+
+	GLint isLinked = 0;
+	glGetProgramiv(program, GL_LINK_STATUS, &isLinked);
+	printf("log %d\n", isLinked);
+	fflush(stdout);
+	
+	return program;
+}
+
+
+

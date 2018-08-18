@@ -197,11 +197,15 @@ class Globals {
 class Program {
 	public:
 		GLuint ShaderProgram;
+		GLuint ShaderProgram_tm;
+		GLuint ShaderProgram_pr;
 		GLuint fbovao[4];
 		GLuint globfbo;
 		GLuint globfbotex;
-		GLuint smglobfbo;
-		GLuint smglobfbotex;
+		GLuint smglobfbo_tm;
+		GLuint smglobfbotex_tm;
+		GLuint smglobfbo_pr;
+		GLuint smglobfbotex_pr;
 		NodesMain *nodesmain;
 		std::vector<OutputEntry*> outputentries;
 		Layer *loadlay;
@@ -259,8 +263,8 @@ class Program {
 		bool menuondisplay = false;
 		bool blocking = false;
 		std::string temppath;
-		char *path;
-		nfdpathset_t paths;
+		const char *path;
+		std::vector<std::string> paths;
 		int counting;
 		std::string pathto;
 		Button *toscreen;
@@ -312,7 +316,8 @@ class Program {
 		bool insmall;
 		
 		std::vector<GUIString*> guistrings;
-		std::vector<GUIString*> smguistrings;
+		std::vector<GUIString*> prguistrings;
+		std::vector<GUIString*> tmguistrings;
 		std::vector<std::wstring> livedevices;
 		std::vector<std::string> devices;
 		std::vector<std::string> busylist;
@@ -353,17 +358,18 @@ class Program {
 		std::string shelfpath;
 		int shelfdircount;
 		
-		void quit(const char *msg);
+		void quit(std::string msg);
+		GLuint set_shader();
+		int load_shader(char* filename, char** ShaderSource, unsigned long len);
 		void make_menu(const std::string &name, Menu *&menu, std::vector<std::string> &entries);
-		void get_outname(const nfdchar_t *filters, const nfdchar_t *defaultdir);
-		void get_inname(const nfdchar_t *filters, const nfdchar_t *defaultdir);
-		void get_multinname();
-		void get_dir();
+		void get_outname(const char *title, const char* filters, std::string defaultdir);
+		void get_inname(const char *title, const char* filters, std::string defaultdir);
+		void get_multinname(const char* title);
+		void get_dir(const char *title);
 		float xscrtovtx(float scrcoord);
 		float yscrtovtx(float scrcoord);
 		float xvtxtoscr(float vtxcoord);
 		float yvtxtoscr(float vtxcoord);
-		void share_lists(SDL_GLContext *srcctx, SDL_Window *srcwin, SDL_GLContext *destctx, SDL_Window *destwin);		
 		void prevvid_off();
 		void preveff_init();
 		void add_main_oscmethods();
@@ -405,7 +411,7 @@ extern void draw_triangle(float *linec, float *areac, float x1, float y1, float 
 extern void draw_line(float *linec, float x1, float y1, float x2, float y2);
 
 extern float render_text(std::string text, float *textc, float x, float y, float sx, float sy);
-extern float render_text(std::string text, float *textc, float x, float y, float sx, float sy, bool smflag);
+extern float render_text(std::string text, float *textc, float x, float y, float sx, float sy, int smflag);
 
 extern float xscrtovtx(float scrcoord);
 extern float yscrtovtx(float scrcoord);

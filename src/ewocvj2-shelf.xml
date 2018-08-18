@@ -1,0 +1,6 @@
+<mime-info xmlns='http://www.freedesktop.org/standards/shared-mime-info'>
+<mime-type type="application/ewocvj2-shelf">
+  <comment>EWOCvj2 shelf file</comment> 
+  <glob pattern="*.shelf"/>
+</mime-type>
+</mime-info>

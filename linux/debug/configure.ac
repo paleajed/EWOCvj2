@@ -3,7 +3,7 @@
 
 AC_PREREQ([2.69])
 AC_INIT([EWOCvj2], [2.00], [paleajed@gmail.com])
-AC_CONFIG_SRCDIR([start.cpp])
+AC_CONFIG_SRCDIR([../../src/start.cpp])
 
 # Checks for programs.
 AC_PROG_CXX
@@ -17,7 +17,7 @@ AC_CHECK_LIB([rtmidi], [main], [], [
               echo "The RtMidi library is required for this program. (Audio support)."
               exit -1])
 AC_CHECK_LIB([avcodec], [av_codec_next], [], [
-              echo "The FFMPEG avcodec library is required for this program."
+              echo "The FFMPEG avcodec library with HAP support (decoder+encoder) is required for this program."
               exit -1])
 AC_CHECK_LIB([avdevice], [avdevice_version], [], [
               echo "The FFMPEG avdevice library is required for this program."
@@ -36,6 +36,9 @@ AC_CHECK_LIB([glut], [glutInit], [], [
               exit -1])
 AC_CHECK_LIB([freetype], [FT_Init_FreeType], [], [
               echo "The freetype2 library is required for this program."
+              exit -1])
+AC_CHECK_LIB([X11], [XGetWindowAttributes], [], [
+              echo "The X11 library is required for this program."
               exit -1])
 AC_CHECK_LIB([SDL2], [SDL_GetMouseFocus], [], [
               echo "The SDL2 library is required for this program."
@@ -57,18 +60,6 @@ AC_CHECK_LIB([boost_system], [main], [], [
               exit -1])
 AC_CHECK_LIB([boost_filesystem], [rename], [], [
               echo "The boost filesystem library is required for this program."
-              exit -1])
-AC_CHECK_LIB([glib-2.0], [g_free], [], [
-              echo "The glib library is required for this program."
-              exit -1])
-AC_CHECK_LIB([gobject-2.0], [g_free], [], [
-              echo "The gobject library is required for this program."
-              exit -1])
-AC_CHECK_LIB([gtk-3], [gtk_init_check], [], [
-              echo "The GTK3+ library is required for this program."
-              exit -1])
-AC_CHECK_LIB([nfd], [NFD_PickFolder], [], [
-              echo "The native file dialog (NFD) library is required for this program."
               exit -1])
 AC_CHECK_LIB([lo], [lo_address_new], [], [
               echo "The liblo library >= 0.29 is required for this program. (OSC support)."

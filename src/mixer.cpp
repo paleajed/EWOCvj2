@@ -1168,10 +1168,10 @@ void Mixer::save_mix(const std::string &path) {
 	wfile.close();
 	
     std::ofstream outputfile;
-	outputfile.open("./tempconcat", std::ios::out | std::ios::binary);
+	outputfile.open(mainprogram->temppath + "/tempconcat", std::ios::out | std::ios::binary);
 	concat_files(outputfile, str, jpegpaths);
 	outputfile.close();
-	boost::filesystem::rename("./tempconcat", str);
+	boost::filesystem::rename(mainprogram->temppath + "/tempconcat", str);
 }
 
 void Mixer::save_deck(const std::string &path) {
@@ -1191,10 +1191,10 @@ void Mixer::save_deck(const std::string &path) {
 	wfile.close();
 	
     std::ofstream outputfile;
-	outputfile.open("./tempconcat", std::ios::out | std::ios::binary);
+	outputfile.open(mainprogram->temppath + "/tempconcat", std::ios::out | std::ios::binary);
 	concat_files(outputfile, str, jpegpaths);
 	outputfile.close();
-	boost::filesystem::rename("./tempconcat", str);
+	boost::filesystem::rename(mainprogram->temppath + "/tempconcat", str);
 }
 
 void Mixer::open_layerfile(const std::string &path, Layer *lay, bool loadevents, bool doclips) {
