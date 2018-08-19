@@ -362,8 +362,8 @@ class Program {
 		GLuint set_shader();
 		int load_shader(char* filename, char** ShaderSource, unsigned long len);
 		void make_menu(const std::string &name, Menu *&menu, std::vector<std::string> &entries);
-		void get_outname(const char *title, const char* filters, std::string defaultdir);
-		void get_inname(const char *title, const char* filters, std::string defaultdir);
+		void get_outname(const char *title, std::string filters, std::string defaultdir);
+		void get_inname(const char *title, std::string filters, std::string defaultdir);
 		void get_multinname(const char* title);
 		void get_dir(const char *title);
 		float xscrtovtx(float scrcoord);
@@ -374,6 +374,9 @@ class Program {
 		void preveff_init();
 		void add_main_oscmethods();
 		Program();
+		
+	private:
+		std::string mime_to_wildcard(std::string filters);
 };
 
 extern Globals *glob;

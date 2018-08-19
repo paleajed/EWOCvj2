@@ -1,13 +1,16 @@
 #include <boost/filesystem.hpp>
 
-#include <X11/Xlib.h>
-#include <X11/Xutil.h>
-#include <X11/Xos.h>
-#include <X11/cursorfont.h>
 
 #include "GL/glew.h"
 #include "GL/gl.h"
 #include "GL/glut.h"
+
+#ifdef __linux__
+#include <X11/Xlib.h>
+#include <X11/Xutil.h>
+#include <X11/Xos.h>
+#include <X11/cursorfont.h>
+#endif
 
 #include "SDL2/SDL.h"
 #include "SDL2/SDL_syswm.h"

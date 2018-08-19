@@ -1,22 +1,20 @@
 #include <boost/filesystem.hpp>
 
-#include <X11/Xlib.h>
-#include <X11/Xutil.h>
-#include <X11/Xos.h>
-
 #include "GL/glew.h"
 #include "GL/gl.h"
 #include "GL/glut.h"
-#ifdef __GNUC__
+#ifdef __linux__
 #include "GL/glx.h"
+#include <X11/Xlib.h>
+#include <X11/Xutil.h>
+#include <X11/Xos.h>
+#include "paths.h"
 #endif
 
 #include "SDL2/SDL.h"
 #include "SDL2/SDL_syswm.h"
 
 #include "tinyfiledialogs.h"
-
-#include "paths.h"
 
 #include <istream>
 #include <ostream>
@@ -56,23 +54,42 @@ void Program::make_menu(const std::string &name, Menu *&menu, std::vector<std::s
 	menu->box->upscrtovtx();
 }
 
-void Program::get_inname(const char *title, const char* filters, std::string defaultdir) {
+std::string Program::mime_to_wildcard(std::string filters) {
+	if (filters == "") return "";
+	if (filters == "application/ewocvj2-layer") return "*.layer";
+	if (filters == "application/ewocvj2-deck") return "*.deck";
+	if (filters == "application/ewocvj2-mix") return "*.mix";
+	if (filters == "application/ewocvj2-state") return "*.state";
+	if (filters == "application/ewocvj2-shelf") return "*.shelf";
+}
+
+void Program::get_inname(const char *title, std::string filters, std::string defaultdir) {
 	char const* const dd = (defaultdir == "") ? "" : defaultdir.c_str();
-	if (filters == nullptr) {
-		mainprogram->path = tinyfd_openFileDialog(title, dd, 0, nullptr, NULL, 0);
+	#ifdef _WIN64
+	filters = this->mime_to_wildcard(filters);
+	#endif
+	const char* fi[1];
+	fi[0] = filters.c_str();
+	if (fi[0] == "") {
+		this->path = tinyfd_openFileDialog(title, dd, 0, nullptr, NULL, 0);
 	}
 	else {
-		mainprogram->path = tinyfd_openFileDialog(title, dd, 1, &filters, NULL, 0);
+		this->path = tinyfd_openFileDialog(title, dd, 1, fi, NULL, 0);
 	}
 }
 
-void Program::get_outname(const char *title, const char* filters, std::string defaultdir) {
+void Program::get_outname(const char *title, std::string filters, std::string defaultdir) {
 	char const* const dd = (defaultdir == "") ? "" : defaultdir.c_str();
-	if (filters == nullptr) {
-		mainprogram->path = tinyfd_saveFileDialog(title, dd, 0, nullptr, NULL);
+	#ifdef _WIN64
+	filters = this->mime_to_wildcard(filters);
+	#endif
+	const char* fi[1];
+	fi[0] = filters.c_str();
+	if (fi[0] == "") {
+		this->path = tinyfd_saveFileDialog(title, dd, 0, nullptr, NULL);
 	}
 	else {
-		mainprogram->path = tinyfd_saveFileDialog(title, dd, 1, &filters, NULL);
+		this->path = tinyfd_saveFileDialog(title, dd, 1, fi, NULL);
 	}
 }
 
@@ -80,24 +97,24 @@ void Program::get_multinname(const char* title) {
 	const char *outpaths;
 	outpaths = tinyfd_openFileDialog(title, "", 0, NULL, NULL, 1);
 	std::string opaths(outpaths);
-	mainprogram->paths.push_back("");
-	std::string currstr = mainprogram->paths.back();
+	this->paths.push_back("");
+	std::string currstr = this->paths.back();
 	for (int i = 0; i < opaths.length(); i++) {
 		std::string charstr;
 		charstr = opaths[i];
 		if (charstr == "|") {
-			mainprogram->paths.push_back("");
-			std::string currstr = mainprogram->paths.back();
+			this->paths.push_back("");
+			std::string currstr = this->paths.back();
 			continue;
 		}
 		currstr += charstr;
 	}
-	mainprogram->path = (char*)"ENTER";
-	mainprogram->counting = 0;
+	this->path = (char*)"ENTER";
+	this->counting = 0;
 }
 
 void Program::get_dir(const char *title) {
-	mainprogram->path = tinyfd_selectFolderDialog(title, "") ;
+	this->path = tinyfd_selectFolderDialog(title, "") ;
 }
 
 
@@ -255,7 +272,7 @@ GLuint Program::set_shader() {
  	if (exists("./shader.vs")) strcpy (vshader, "./shader.vs");
  	else mainprogram->quit("Unable to find vertex shader \"shader.vs\" in current directory");
  	#else
- 	#ifdef __GNUC__
+ 	#ifdef __linux__
  	std::string ddir (DATADIR);
  	if (exists("./shader.vs")) strcpy (vshader, "./shader.vs");
  	else if (exists(ddir + "/shader.vs")) strcpy (vshader, (ddir + "/shader.vs").c_str());
@@ -269,7 +286,7 @@ GLuint Program::set_shader() {
  	if (exists("./shader.fs")) strcpy (fshader, "./shader.fs");
  	else mainprogram->quit("Unable to find fragment shader \"shader.fs\" in current directory");
  	#else
- 	#ifdef __GNUC__
+ 	#ifdef __linux__
  	if (exists("./shader.fs")) strcpy (fshader, "./shader.fs");
  	else if (exists(ddir + "/shader.fs")) strcpy (fshader, (ddir + "/shader.fs").c_str());
  	else mainprogram->quit("Unable to find fragment shader \"shader.fs\" in " + ddir);

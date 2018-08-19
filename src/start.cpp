@@ -51,7 +51,7 @@
 #define SDL_MAIN_HANDLED
 #include "GL/glew.h"
 #include "GL/gl.h"
-#ifdef __GNUC__
+#ifdef __linux__
 #include <sys/ioctl.h>
 #include <linux/videodev2.h>
 //#include <linux/v4l2-common.h>
@@ -284,7 +284,7 @@ void get_cameras()
         //CoUninitialize();
     }
     #endif
-    #ifdef __GNUC__
+    #ifdef __linux__
     mainprogram->livedevices.clear();
     std::map<std::string, std::wstring> map;
 	boost::filesystem::path dir("/sys/class/video4linux");
@@ -327,7 +327,7 @@ void set_live_base(Layer *lay, std::string livename) {
 		#ifdef _WIN64
 		AVInputFormat *ifmt = av_find_input_format("dshow");
 		#else
-		#ifdef __GNUC__
+		#ifdef __linux__
 		AVInputFormat *ifmt = av_find_input_format("v4l2");
 		#endif
 		#endif
@@ -1185,7 +1185,7 @@ bool thread_vidopen(Layer *lay, AVInputFormat *ifmt, bool skip) {
 					#ifdef _WIN64
 					AVInputFormat *ifmt = av_find_input_format("dshow");
 					#else
-					#ifdef __GNUC__
+					#ifdef __linux__
 					AVInputFormat *ifmt = av_find_input_format("v4l2");
 					#endif
 					#endif
@@ -4506,7 +4506,7 @@ void visu_thumbs() {
 								#ifdef _WIN64
 								if (mainprogram->mainshelf) save_shelf("./shelves/shelfs.shelf", 2);
 								# else
-								#ifdef __GNUC__
+								#ifdef __linux__
 								std::string homedir (getenv("HOME"));
 								if (mainprogram->mainshelf) save_shelf(homedir + "/.ewocvj2/shelves/shelfs.shelf", 2);
 								if (exists(homedir + "/.ewocvj2/shelves/shelfs.shelf")) open_shelf(homedir + "/.ewocvj2/shelves/shelfs.shelf", 2);
@@ -6179,7 +6179,7 @@ void Preferences::load() {
 	#ifdef _WIN64
 	std::string prstr = "./preferences.prefs";
 	#else
-	#ifdef __GNUC__
+	#ifdef __linux__
 	std::string homedir (getenv("HOME"));
 	std::string prstr = homedir + "/.ewocvj2/preferences.prefs";
 	#endif
@@ -6294,7 +6294,7 @@ void Preferences::save() {
 	#ifdef _WIN64
 	std::string prstr = "./preferences.prefs";
 	#else
-	#ifdef __GNUC__
+	#ifdef __linux__
 	std::string homedir (getenv("HOME"));
 	std::string prstr = homedir + "/.ewocvj2/preferences.prefs";
 	#endif
@@ -6381,7 +6381,7 @@ PIDirs::PIDirs() {
 	#ifdef _WIN64
 	pdi = this->additem("BINS", "./bins/");
 	#else
-	#ifdef __GNUC__
+	#ifdef __linux__
 	std::string homedir (getenv("HOME"));
 	pdi = this->additem("BINS", homedir + "/.ewocvj2/bins/");
 	#endif
@@ -6390,7 +6390,7 @@ PIDirs::PIDirs() {
 	#ifdef _WIN64
 	pdi = this->additem("Recordings", "./recordings/");
 	#else
-	#ifdef __GNUC__
+	#ifdef __linux__
 	pdi = this->additem("Recordings", homedir + "/.ewocvj2/recordings/");
 	#endif
 	#endif
@@ -6508,7 +6508,7 @@ Program::Program() {
 	#ifdef _WIN64
 	this->temppath = "./temp/";
 	#else
-	#ifdef __GNUC__
+	#ifdef __linux__
 	std::string homedir (getenv("HOME"));
 	this->temppath = homedir + "/.ewocvj2/temp/";
 	#endif
@@ -8875,7 +8875,7 @@ void the_loop() {
 					#ifdef _WIN64
 					std::string livename = "video=" + mainprogram->devices[mainprogram->menuresults[0]];
 					#else
-					#ifdef __GNUC__
+					#ifdef __linux__
 					std::string livename = "/dev/video" + std::to_string(mainprogram->menuresults[0] - 1);
 					#endif
 					#endif
@@ -8975,7 +8975,7 @@ void the_loop() {
 					#ifdef _WIN64
 					std::string livename = "video=" + mainprogram->devices[mainprogram->menuresults[0]];
 					#else
-					#ifdef __GNUC__
+					#ifdef __linux__
 					std::string livename = "/dev/video" + std::to_string(mainprogram->menuresults[0] - 1);
 					#endif
 					#endif
@@ -9118,9 +9118,9 @@ void the_loop() {
 		else if (k == 1) {
 			mainprogram->pathto = "OPENSHELF";
 			#ifdef _WIN64
-			std::string sdir = boost::filesystem::absolute("shelves").string();
+			std::string sdir = ".\\shelves\\";
 			#else
-			#ifdef __GNUC__
+			#ifdef __linux__
 			std::string homedir (getenv("HOME"));
 			std::string sdir = homedir + "/.ewocvj2/shelves";
 			#endif
@@ -9132,9 +9132,9 @@ void the_loop() {
 		else if (k == 2) {
 			mainprogram->pathto = "SAVESHELF";
 			#ifdef _WIN64
-			std::string sdir = boost::filesystem::absolute("shelves").string();
+			std::string sdir = ".\\shelves\\";
 			#else
-			#ifdef __GNUC__
+			#ifdef __linux__
 			std::string homedir (getenv("HOME"));
 			std::string sdir = homedir + "/.ewocvj2/shelves";
 			#endif
@@ -9161,7 +9161,7 @@ void the_loop() {
 			#ifdef _WIN64
 			if (exists("./shelves/shelfs.shelf")) open_shelf("./shelves/shelfs.shelf", 2);
 			# else
-			#ifdef __GNUC__
+			#ifdef __linux__
 			std::string homedir (getenv("HOME"));
 			if (exists(homedir + "/.ewocvj2/shelves/shelfs.shelf")) open_shelf(homedir + "/.ewocvj2/shelves/shelfs.shelf", 2);
 			#endif
@@ -10227,7 +10227,7 @@ void open_shelf(const std::string &path, int deck) {
 	if (path != "./shelves/shelfs.shelf") mainprogram->mainshelf = false;
 	else mainprogram->mainshelf = true;
 	# else
-	#ifdef __GNUC__
+	#ifdef __linux__
 	std::string homedir (getenv("HOME"));
 	if (path != homedir + "/.ewocvj2/shelves/shelfs.shelf") mainprogram->mainshelf = false;
 	else mainprogram->mainshelf = true;
@@ -10707,7 +10707,7 @@ int main(int argc, char* argv[]){
 	std::string fstr = "./expressway.ttf";
 	if (!exists(fstr)) mainprogram->quit("Can't find \"expressway.ttf\" TrueType font in current directory");
 	#else
-	#ifdef __GNUC__
+	#ifdef __linux__
 	std::string fdir (FONTDIR);
 	std::string fstr = fdir + "/expressway.ttf";
 	if (!exists(fdir + "/expressway.ttf"))  mainprogram->quit("Can't find \"expressway.ttf\" TrueType font in " + fdir);
@@ -10986,7 +10986,7 @@ int main(int argc, char* argv[]){
 	boost::filesystem::path p4{"./temp"};
 	if (!exists("./temp")) boost::filesystem::create_directory(p4);
 	#else
-	#ifdef __GNUC__
+	#ifdef __linux__
 	std::string homedir (getenv("HOME"));
 	boost::filesystem::path e{homedir + "/.ewocvj2"};
 	if (!exists(homedir + "/.ewocvj2")) boost::filesystem::create_directory(e);
@@ -11176,7 +11176,7 @@ int main(int argc, char* argv[]){
     free(buffer);
     #endif
     
-    #ifdef __GNUC__
+    #ifdef __linux__
     mainprogram->numcores = sysconf(_SC_NPROCESSORS_ONLN);
     #endif
 
@@ -11204,7 +11204,7 @@ int main(int argc, char* argv[]){
 	#ifdef _WIN64
 	if (exists("./shelves/shelfs.shelf")) open_shelf("./shelves/shelfs.shelf", 2);
 	# else
-	#ifdef __GNUC__
+	#ifdef __linux__
 	if (exists(homedir + "/.ewocvj2/shelves/shelfs.shelf")) open_shelf(homedir + "/.ewocvj2/shelves/shelfs.shelf", 2);
 	#endif
 	#endif

@@ -3,7 +3,7 @@
 
 AC_PREREQ([2.69])
 AC_INIT([EWOCvj2], [2.00], [paleajed@gmail.com])
-AC_CONFIG_SRCDIR([start.cpp])
+AC_CONFIG_SRCDIR([../../src/start.cpp])
 
 # Checks for programs.
 AC_PROG_CXX
@@ -55,12 +55,6 @@ AC_CHECK_LIB([snappy], [snappy_uncompress], [], [
 AC_CHECK_LIB([ole32], [BindMoniker], [], [
               echo "The ole32 library is required for this program."
               exit -1])
-AC_CHECK_LIB([Uuid], [CLSID_FileSaveDialog], [], [
-              echo "The Uuid library is required for this program."
-              exit -1])
-AC_CHECK_LIB([nfd], [NFD_PickFolder], [], [
-              echo "The native file dialog (NFD) library is required for this program."
-              exit -1])
 AC_CHECK_LIB([boost_system-mt], [main], [], [
               echo "The boost system library is required for this program."
               exit -1])
@@ -70,14 +64,14 @@ AC_CHECK_LIB([boost_filesystem-mt], [rename], [], [
 AC_CHECK_LIB([oleaut32], [BstrFromVector], [], [
               echo "The oleaut32 library is required for this program."
               exit -1])
-AC_CHECK_LIB([strmiids], [IID_IBaseFilter], [], [
-              echo "The strmiids is required for this program."
-              exit -1])
 AC_CHECK_LIB([ws2_32], [WSACleanup], [], [
-              echo "The ws2_32 library is required for this program."
+              echo "The Ws2_32 library is required for this program."
               exit -1])
 AC_CHECK_LIB([shcore], [CreateStreamOverRandomAccessStream], [], [
-              echo "The shcore library is required for this program."
+              echo "The Shcore library is required for this program."
+              exit -1])
+AC_CHECK_LIB([comdlg32], [GetSaveFileNameA], [], [
+              echo "The Comdlg32 library is required for this program."
               exit -1])
 AC_CHECK_LIB([lo], [lo_address_new], [], [
               echo "The liblo library is required for this program. (OSC support)."
