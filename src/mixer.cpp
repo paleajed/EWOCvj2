@@ -893,7 +893,7 @@ std::vector<std::string> Mixer::write_layer(Layer *lay, std::ostream& wfile, boo
 			std::string name = remove_extension(basename(clip->path));
 			int count = 0;
 			while (1) {
-				clipjpegpath = mainprogram->binsdir + name + ".jpg";
+				clipjpegpath = mainprogram->temppath + name + ".jpg";
 				if (!exists(clipjpegpath)) {
 					break;
 				}

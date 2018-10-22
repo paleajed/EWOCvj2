@@ -151,10 +151,15 @@ bool exists(const std::string &name) {
 
 std::string basename(std::string pathname)
 {
-	const size_t last_slash_idx = pathname.find_last_of("//");
-	if (std::string::npos != last_slash_idx)
+	size_t last_slash_idx1 = pathname.find_last_of("//");
+	size_t last_slash_idx2 = pathname.find_last_of("\\");
+	if (last_slash_idx1 == std::string::npos) last_slash_idx1 = 0;
+	if (last_slash_idx2 == std::string::npos) last_slash_idx2 = 0;
+	size_t maxpos = last_slash_idx2;
+	if (last_slash_idx1 > last_slash_idx2) maxpos = last_slash_idx1;
+	if (std::string::npos != maxpos)
 	{
-		pathname.erase(0, last_slash_idx + 1);
+		pathname.erase(0, maxpos + 1);
 	}
     return pathname;
 }
@@ -8884,7 +8889,7 @@ void the_loop() {
 			}
 			if (k == 1) {
 				mainprogram->pathto = "OPENVIDEO";
-				std::thread filereq (&Program::get_inname, mainprogram, "Open video file", nullptr, "");
+				std::thread filereq (&Program::get_inname, mainprogram, "Open video file", "", "");
 				filereq.detach();
 				mainprogram->loadlay = mainmix->mouselayer;
 			}
@@ -8984,7 +8989,7 @@ void the_loop() {
 			}
 			if (k == 1) {
 				mainprogram->pathto = "OPENVIDEO";
-				std::thread filereq (&Program::get_inname, mainprogram, "Open video file", nullptr, "");
+				std::thread filereq (&Program::get_inname, mainprogram, "Open video file", "", "");
 				filereq.detach();
 				mainprogram->loadlay = mainmix->add_layer(lvec, lvec.size());
 			}
@@ -9974,17 +9979,19 @@ void concat_files(std::ostream &ofile, const std::string &path, std::vector<std:
 	
 	int size = paths.size();
 	ofile.write((const char *)&size, 4);
+	// for (int i = 0; i < paths.size(); i++) {
+		// ifstream fileInput;
+		// fileInput.open(paths[i], ios::in | ios::binary);
+		// int fileSize = getFileSize(paths[i]);
+		// ofile.write((const char *)&fileSize, 4);
+		// fileInput.close();
+	// }
 	for (int i = 0; i < paths.size(); i++) {
+		if (paths[i] == "") continue;
 		ifstream fileInput;
 		fileInput.open(paths[i], ios::in | ios::binary);
 		int fileSize = getFileSize(paths[i]);
-		ofile.write((const char *)&fileSize, 4);
-		fileInput.close();
-	}
-	for (int i = 0; i < paths.size(); i++) {
-		ifstream fileInput;
-		fileInput.open(paths[i], ios::in | ios::binary);
-		int fileSize = getFileSize(paths[i]);
+		printf("path %s\n", paths[i].c_str());
 		fflush(stdout);
 		char *inputBuffer = new char[fileSize];
 		fileInput.read(inputBuffer, fileSize);
