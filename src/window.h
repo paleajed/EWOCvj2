@@ -5,6 +5,8 @@ class EWindow {
 	public:
 		SDL_Window *win;
 		SDL_GLContext glc;
+		int w;
+		int h;
 		GLuint vao;
 		GLuint vbuf;
 		GLuint tbuf;
@@ -13,6 +15,9 @@ class EWindow {
 		std::mutex syncmutex;
 		std::condition_variable sync;
 		bool syncnow = false;
+		std::mutex syncendmutex;
+		std::condition_variable syncend;
+		bool syncendnow = false;
 };
 
 class Menu {

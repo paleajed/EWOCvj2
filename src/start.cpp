@@ -7004,7 +7004,7 @@ void exchange(Layer *lay, std::vector<Layer*> &slayers, std::vector<Layer*> &dla
 					dlayers[i + endx]->blendnode = new BlendNode;
 					//BlendNode *bnode = mainprogram->nodesmain->currpage->add_blendnode(MIXING, false);
 					Layer *nxlay = NULL;
-					if (dlayers.size() > 1) nxlay = dlayers[1];
+					if (dlayers.size() > 2) nxlay = dlayers[1];
 					if (nxlay) {
 						lay->node->out.clear();
 						firstlasteffnode->out.clear();
@@ -7012,6 +7012,26 @@ void exchange(Layer *lay, std::vector<Layer*> &slayers, std::vector<Layer*> &dla
 						nxlay->blendnode->blendtype = MIXING;
 						mainprogram->nodesmain->currpage->connect_nodes(lay->node, firstlasteffnode, firstbnode);
 					}
+					else {
+						BlendNode *bnode = mainprogram->nodesmain->currpage->add_blendnode(MIXING, comp);
+						lay->node->out.clear();
+						dlayers[1]->blendnode = bnode;
+						dlayers[1]->blendnode->blendtype = MIXING;
+						mainprogram->nodesmain->currpage->connect_nodes(lay->node, dlayers[1]->lasteffnode, bnode);
+						if (&dlayers == &mainmix->layersA) {
+							mainprogram->nodesmain->currpage->connect_nodes(bnode, mainprogram->nodesmain->mixnodes[0]);
+						}
+						else if (&dlayers == &mainmix->layersB) {
+							mainprogram->nodesmain->currpage->connect_nodes(bnode, mainprogram->nodesmain->mixnodes[1]);
+						}
+						else if (&dlayers == &mainmix->layersAcomp) {
+							mainprogram->nodesmain->currpage->connect_nodes(bnode, mainprogram->nodesmain->mixnodescomp[0]);
+						}
+						else if (&dlayers == &mainmix->layersBcomp) {
+							mainprogram->nodesmain->currpage->connect_nodes(bnode, mainprogram->nodesmain->mixnodescomp[1]);
+						}
+					}
+
 				}
 				dlayers[i + endx]->blendnode->blendtype = btype;
 				dlayers[i + endx]->blendnode->mixfac->value = mfval;
@@ -7700,7 +7720,6 @@ int tune_midi() {
 
 void output_video(EWindow *mwin) {
 	SDL_GL_MakeCurrent(mwin->win, mwin->glc);
-	glUseProgram(mainprogram->ShaderProgram);
 	
 	GLfloat vcoords1[8];
 	GLfloat *p = vcoords1;
@@ -7743,11 +7762,6 @@ void output_video(EWindow *mwin) {
 		if (mwin->mixid == mainprogram->nodesmain->mixnodes.size()) node = (MixNode*)mainprogram->nodesmain->mixnodescomp[mwin->mixid - 1];
 		else node = (MixNode*)mainprogram->nodesmain->mixnodes[mwin->mixid];
 		
-		GLuint temptex;
-		GLuint mixtex;
-		temptex = copy_tex(node->mixtex, mainprogram->ow, (int)mainprogram->oh);
-		mixtex = copy_tex(temptex, mainprogram->ow, (int)mainprogram->oh);
-
 		GLfloat cf = glGetUniformLocation(mainprogram->ShaderProgram, "cf");
 		GLint wipe = glGetUniformLocation(mainprogram->ShaderProgram, "wipe");
 		GLint mixmode = glGetUniformLocation(mainprogram->ShaderProgram, "mixmode");
@@ -7761,7 +7775,7 @@ void output_video(EWindow *mwin) {
 			GLint down = glGetUniformLocation(mainprogram->ShaderProgram, "down");
 			glUniform1i(down, 1);
 			glActiveTexture(GL_TEXTURE0);
-			glBindTexture(GL_TEXTURE_2D, mixtex);
+			glBindTexture(GL_TEXTURE_2D, node->mixtex);
 			glBindVertexArray(mwin->vao);
 			glDrawArrays(GL_TRIANGLE_STRIP, 0, 4);
 			glUniform1i(down, 0);
@@ -7772,9 +7786,9 @@ void output_video(EWindow *mwin) {
 		}
 		glUniform1i(wipe, 0);
 		glUniform1i(mixmode, 0);
+		mwin->syncendnow = true;
+		mwin->syncend.notify_one();
 		SDL_GL_SwapWindow(mwin->win);
-		glDeleteTextures(1, &temptex);
-		glDeleteTextures(1, &mixtex);
 	}
 }
 
@@ -8798,14 +8812,19 @@ void the_loop() {
 					mainprogram->outputentries.push_back(entry);
 					SDL_Rect rc;
 					SDL_GetDisplayUsableBounds(screen, &rc);
-					auto sw = rc.w;
-					auto sh = rc.h;
-					mwin->win = SDL_CreateWindow(PROGRAM_NAME, SDL_WINDOWPOS_CENTERED_DISPLAY(screen), SDL_WINDOWPOS_CENTERED_DISPLAY(screen), sw, sh, SDL_WINDOW_OPENGL | SDL_WINDOW_MAXIMIZED | SDL_WINDOW_RESIZABLE | SDL_WINDOW_FULLSCREEN_DESKTOP | SDL_WINDOW_ALLOW_HIGHDPI);
+					mwin->w = rc.w;
+					mwin->h = rc.h;
+					mwin->win = SDL_CreateWindow(PROGRAM_NAME, SDL_WINDOWPOS_CENTERED_DISPLAY(screen), SDL_WINDOWPOS_CENTERED_DISPLAY(screen), mwin->w, mwin->h, SDL_WINDOW_OPENGL | SDL_WINDOW_MAXIMIZED | SDL_WINDOW_RESIZABLE | 
+					SDL_WINDOW_FULLSCREEN_DESKTOP | SDL_WINDOW_ALLOW_HIGHDPI);
 					SDL_RaiseWindow(mainprogram->mainwindow);
 					mainprogram->mixwindows.push_back(mwin);
+					SDL_GL_MakeCurrent(mainprogram->mainwindow, glc);
+					HGLRC c1 = wglGetCurrentContext();
 					mwin->glc = SDL_GL_CreateContext(mwin->win);
-					GLuint prog = mainprogram->set_shader();
-					glUseProgram(prog);
+					SDL_GL_MakeCurrent(mwin->win, mwin->glc);
+					HGLRC c2 = wglGetCurrentContext();
+					wglShareLists(c1, c2);
+					glUseProgram(mainprogram->ShaderProgram);
 					
 					std::thread vidoutput (output_video, mwin);
 					vidoutput.detach();
@@ -9694,6 +9713,10 @@ void the_loop() {
 		EWindow *win = mainprogram->outputentries[i]->win;
 		win->syncnow = true;
 		win->sync.notify_one();
+		std::unique_lock<std::mutex> lock(win->syncendmutex);
+		win->syncend.wait(lock, [&]{return win->syncendnow;});
+		win->syncendnow = false;
+		lock.unlock();
 	}
 	
 	glFlush();
