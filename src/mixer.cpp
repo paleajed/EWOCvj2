@@ -157,6 +157,7 @@ Layer* Mixer::add_layer(std::vector<Layer*> &layers, int pos) {
 		Layer *prevlay = layers[pos - 1];
 		BlendNode *bnode = mainprogram->nodesmain->currpage->add_blendnode(MIXING, comp);
 		layer->blendnode = bnode;
+		if (layer->pos == 1) bnode->firstlayer = prevlay;
 		Node *node;
 		if (prevlay->pos > 0) {
 			node = prevlay->blendnode;

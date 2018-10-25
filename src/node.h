@@ -137,6 +137,7 @@ class EffectNode: public Node {
 
 class BlendNode: public Node {
 	public:
+		Layer *firstlayer = nullptr;
 		BLEND_TYPE blendtype = MIXING;
 		Param *mixfac;
 		int wipetype;
@@ -152,6 +153,7 @@ class BlendNode: public Node {
 		float chred = 0.0f;
 		float chgreen = 0.0f;
 		float chblue = 0.0f;
+		bool onoff = true;
 		BlendNode();
 		~BlendNode();
 };

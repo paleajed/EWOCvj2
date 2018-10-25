@@ -2708,7 +2708,8 @@ void display_texture(Layer *lay, bool deck) {
 	if (lay->pos >= mainmix->scrollpos[deck] and lay->pos < mainmix->scrollpos[deck] + 3) {
 		Box *box = lay->node->vidbox;
 		
-		draw_box(box, box->tex);
+		if (lay->onoff) draw_box(box, box->tex);
+		else draw_box(box, -1);
 
 		if (mainmix->mode == 0 and mainprogram->nodesmain->linked) {
 			// Trigger mainprogram->laymenu
@@ -4065,8 +4066,22 @@ void onestepfrom(bool stage, Node *node, Node *prevnode, GLuint prevfbotex, GLui
 				glDrawBuffer(GL_COLOR_ATTACHMENT0);
 			}
 			else {
-				node->walked = false;
-				return;
+				bool cond = false;
+				if (bnode->firstlayer) {
+					if (bnode->firstlayer->onoff == false) cond = true;
+				}
+				if (bnode->in and prevnode == bnode->in and (bnode->onoff == false)) {
+					node->walked = true;
+					bnode->fbotex = prevfbotex;
+				}
+				else if (bnode->in2 and prevnode == bnode->in2 and (bnode->onoff == false or cond)) {
+					node->walked = true;
+					bnode->fbotex = prevfbotex;
+				}
+				else {
+					node->walked = false;
+					return;
+				}
 			}
 		}
 	}
@@ -4155,20 +4170,40 @@ void walk_nodes(bool stage) {
 	if (stage == 0) {
 		for (int i = 0; i < mainmix->layersA.size(); i++) {
 			Layer *lay = mainmix->layersA[i];
+			if (lay->onoff == false) {
+				if (lay != lay->next()) {
+					continue;
+				}
+			}
 			onestepfrom(0, lay->node, NULL, -1, -1);
 		}
 		for (int i = 0; i < mainmix->layersB.size(); i++) {
 			Layer *lay = mainmix->layersB[i];
+			if (lay->onoff == false) {
+				if (lay != lay->next()) {
+					continue;
+				}
+			}
 			onestepfrom(0, lay->node, NULL, -1, -1);
 		}
 	}
 	else {
 		for (int i = 0; i < mainmix->layersAcomp.size(); i++) {
 			Layer *lay = mainmix->layersAcomp[i];
+			if (lay->onoff == false) {
+				if (lay != lay->next()) {
+					continue;
+				}
+			}
 			onestepfrom(1, lay->node, NULL, -1, -1);
 		}
 		for (int i = 0; i < mainmix->layersBcomp.size(); i++) {
 			Layer *lay = mainmix->layersBcomp[i];
+			if (lay->onoff == false) {
+				if (lay != lay->next()) {
+					continue;
+				}
+			}
 			onestepfrom(1, lay->node, NULL, -1, -1);
 		}
 	}
@@ -4491,32 +4526,21 @@ void visu_thumbs() {
 									std::string name = remove_extension("shelf_" + base.substr(9, std::string::npos));
 									int count = 0;
 									while (1) {
-										newpath = mainprogram->temppath + name + ".layer";
+										newpath = mainprogram->shelfdir + name + ".layer";
 										if (!exists(newpath)) {
-											if (mainprogram->dragbinel->path.find("cliptemp_") != std::string::npos) {
-												boost::filesystem::rename(mainprogram->dragbinel->path, newpath);			
-												boost::filesystem::remove(mainprogram->dragbinel->path);			
-												mainprogram->dragbinel->path = newpath;
-											}
+											boost::filesystem::copy_file(mainprogram->dragbinel->path, newpath);
+											mainprogram->dragbinel->path = newpath;
 											break;
 										}
 										count++;
-										name = remove_version(name) + "_" + std::to_string(count);
 									}
 								}
 								thpath[k] = mainprogram->dragbinel->path;
 								thtype[k] = mainprogram->dragbinel->type;
 								thumbtex[k] = copy_tex(mainprogram->dragbinel->tex);
 								enddrag();
-								#ifdef _WIN64
-								if (mainprogram->mainshelf) save_shelf("./shelves/shelfs.shelf", 2);
-								# else
-								#ifdef __linux__
-								std::string homedir (getenv("HOME"));
-								if (mainprogram->mainshelf) save_shelf(homedir + "/.ewocvj2/shelves/shelfs.shelf", 2);
-								if (exists(homedir + "/.ewocvj2/shelves/shelfs.shelf")) open_shelf(homedir + "/.ewocvj2/shelves/shelfs.shelf", 2);
-								#endif
-								#endif
+								if (mainprogram->mainshelf) save_shelf(mainprogram->shelfdir + "shelfs.shelf", 2);
+								//if (exists(mainprogram->shelfdir + "shelfs.shelf")) open_shelf(mainprogram->shelfdir + "shelfs.shelf", 2);
 							}
 						}
 						else if (mainprogram->menuactivation) {
@@ -5157,6 +5181,13 @@ void Layer::set_clones() {
 	}
 }
 
+Layer* Layer::next() {
+	if (std::find(mainmix->layersA.begin(), mainmix->layersA.end(), this) != mainmix->layersA.end()) return mainmix->layersA[this->pos + 1];
+	else if (std::find(mainmix->layersB.begin(), mainmix->layersB.end(), this) != mainmix->layersB.end()) return mainmix->layersB[this->pos + 1];
+	else if (std::find(mainmix->layersAcomp.begin(), mainmix->layersAcomp.end(), this) != mainmix->layersAcomp.end()) return mainmix->layersAcomp[this->pos + 1];
+	else if (std::find(mainmix->layersBcomp.begin(), mainmix->layersBcomp.end(), this) != mainmix->layersBcomp.end()) return mainmix->layersBcomp[this->pos + 1];
+	return this;
+}	
 
 Effect::Effect() {
 	Box *box = new Box;
@@ -6400,6 +6431,16 @@ PIDirs::PIDirs() {
 	#endif
 	#endif
 	mainprogram->recdir = pdi->path;
+	
+	// add shelfdir to preferences...
+	#ifdef _WIN64
+	mainprogram->shelfdir = "./shelves/";
+	# else
+	#ifdef __linux__
+	std::string homedir (getenv("HOME"));
+	mainprogram->shelfdir = homedir + "/.ewocvj2/shelves/";
+	#endif
+	#endif
 }
 
 PDirItem* PIDirs::additem(const std::string &name, const std::string &path) {
@@ -8480,7 +8521,7 @@ void the_loop() {
 			if (mainmix->scrollon == i + 1) {
 				if (mainprogram->leftmouse) {
 					mainmix->scrollon = 0;
-					mainprogram->leftmouse = false;
+					//mainprogram->leftmouse = false;
 				}
 				else {
 					if ((mainprogram->mx - mainmix->scrollmx) > mainprogram->xvtxtoscr(box.vtxcoords->w)) {
@@ -8536,7 +8577,25 @@ void the_loop() {
 			for (int j = 0; j < size; j++) {
 				draw_box(white, nullptr, &box, -1);
 				render_text(std::to_string(j + 1), white, box.vtxcoords->x1 + 0.0078f, box.vtxcoords->y1 + 0.0078f, 0.0006, 0.001);
-				box.vtxcoords->x1 += box.vtxcoords->w;
+				box.vtxcoords->x1 += box.vtxcoords->w / 2.0f - 0.015f;
+				box.upvtxtoscr();
+				if (box.in()) {
+					if (mainprogram->leftmouse) {
+						lvec[j]->onoff = !lvec[j]->onoff;
+						if (lvec[j]->blendnode) lvec[j]->blendnode->onoff = lvec[j]->onoff;
+						mainprogram->leftmouse = false;
+					}
+				}
+				if (lvec.size() > j) {
+					if (lvec[j]->onoff) {
+						draw_box(white, green, box.vtxcoords->x1, box.vtxcoords->y1, 0.03f, box.vtxcoords->h, -1);
+					}
+					else {
+						draw_box(white, nullptr, box.vtxcoords->x1, box.vtxcoords->y1, 0.03f, box.vtxcoords->h, -1);
+					}
+				}
+				box.vtxcoords->x1 += box.vtxcoords->w / 2.0f + 0.015f;
+				box.upvtxtoscr();
 			}
 		} 
 		if (!inbox) mainmix->scrolltime = 0.0f;
@@ -9141,29 +9200,12 @@ void the_loop() {
 		}
 		else if (k == 1) {
 			mainprogram->pathto = "OPENSHELF";
-			#ifdef _WIN64
-			std::string sdir = ".\\shelves\\";
-			#else
-			#ifdef __linux__
-			std::string homedir (getenv("HOME"));
-			std::string sdir = homedir + "/.ewocvj2/shelves";
-			#endif
-			#endif
-			printf("shelfdir %s\n", sdir.c_str());
-			std::thread filereq (&Program::get_inname, mainprogram, "Open shelf file", "application/ewocvj2-shelf", sdir);
+			std::thread filereq (&Program::get_inname, mainprogram, "Open shelf file", "application/ewocvj2-shelf", mainprogram->shelfdir);
 			filereq.detach();
 		}
 		else if (k == 2) {
 			mainprogram->pathto = "SAVESHELF";
-			#ifdef _WIN64
-			std::string sdir = ".\\shelves\\";
-			#else
-			#ifdef __linux__
-			std::string homedir (getenv("HOME"));
-			std::string sdir = homedir + "/.ewocvj2/shelves";
-			#endif
-			#endif
-			std::thread filereq (&Program::get_outname, mainprogram, "Save shelf file", "application/ewocvj2-shelf", sdir);
+			std::thread filereq (&Program::get_outname, mainprogram, "Save shelf file", "application/ewocvj2-shelf", mainprogram->shelfdir);
 			filereq.detach();
 		}
 		else if (k == 3) {
@@ -9183,11 +9225,11 @@ void the_loop() {
 		}
 		else if (k == 6) {
 			#ifdef _WIN64
-			if (exists("./shelves/shelfs.shelf")) open_shelf("./shelves/shelfs.shelf", 2);
+			if (exists(mainprogram->shelfdir + "shelfs.shelf")) open_shelf(mainprogram->shelfdir + "shelfs.shelf", 2);
 			# else
 			#ifdef __linux__
 			std::string homedir (getenv("HOME"));
-			if (exists(homedir + "/.ewocvj2/shelves/shelfs.shelf")) open_shelf(homedir + "/.ewocvj2/shelves/shelfs.shelf", 2);
+			if (exists(homedir + mainprogram->shelfdir + "shelfs.shelf")) open_shelf(homedir + mainprogram->shelfdir + "shelfs.shelf", 2);
 			#endif
 			#endif
 			else {
@@ -10002,14 +10044,17 @@ void concat_files(std::ostream &ofile, const std::string &path, std::vector<std:
 	
 	int size = paths.size();
 	ofile.write((const char *)&size, 4);
-	// for (int i = 0; i < paths.size(); i++) {
-		// ifstream fileInput;
-		// fileInput.open(paths[i], ios::in | ios::binary);
-		// int fileSize = getFileSize(paths[i]);
-		// ofile.write((const char *)&fileSize, 4);
-		// fileInput.close();
-	// }
 	for (int i = 0; i < paths.size(); i++) {
+		// save header
+		if (paths[i] == "") continue;
+		ifstream fileInput;
+		fileInput.open(paths[i], ios::in | ios::binary);
+		int fileSize = getFileSize(paths[i]);
+		ofile.write((const char *)&fileSize, 4);
+		fileInput.close();
+	}
+	for (int i = 0; i < paths.size(); i++) {
+		// save body
 		if (paths[i] == "") continue;
 		ifstream fileInput;
 		fileInput.open(paths[i], ios::in | ios::binary);
@@ -10253,16 +10298,8 @@ bool open_shelflayer(const std::string &path, int pos) {
 
 void open_shelf(const std::string &path, int deck) {
 	
-	#ifdef _WIN64
-	if (path != "./shelves/shelfs.shelf") mainprogram->mainshelf = false;
+	if (path != mainprogram->shelfdir + "shelfs.shelf") mainprogram->mainshelf = false;
 	else mainprogram->mainshelf = true;
-	# else
-	#ifdef __linux__
-	std::string homedir (getenv("HOME"));
-	if (path != homedir + "/.ewocvj2/shelves/shelfs.shelf") mainprogram->mainshelf = false;
-	else mainprogram->mainshelf = true;
-	#endif
-	#endif
 	
 	std::string result = deconcat_files(path);
 	bool concat = (result != "");
@@ -11231,13 +11268,7 @@ int main(int argc, char* argv[]){
 
     // must put this here or problem with fbovao[2] ?????
 	set_fbo();
-	#ifdef _WIN64
-	if (exists("./shelves/shelfs.shelf")) open_shelf("./shelves/shelfs.shelf", 2);
-	# else
-	#ifdef __linux__
-	if (exists(homedir + "/.ewocvj2/shelves/shelfs.shelf")) open_shelf(homedir + "/.ewocvj2/shelves/shelfs.shelf", 2);
-	#endif
-	#endif
+	if (exists(mainprogram->shelfdir + "shelfs.shelf")) open_shelf(mainprogram->shelfdir + "shelfs.shelf", 2);
 	
 	std::chrono::high_resolution_clock::time_point begintime = std::chrono::high_resolution_clock::now();
 	std::chrono::duration<double> elapsed;
@@ -11252,7 +11283,6 @@ int main(int argc, char* argv[]){
 				open_video(0, mainprogram->loadlay, str, true);
 			}
 			else if (mainprogram->pathto == "OPENSHELF") {
-				printf("shelfpath %s\n", mainprogram->path);
 				std::string str(mainprogram->path);
 				open_shelf(str, mainmix->mousedeck);
 			}
