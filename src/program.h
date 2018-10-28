@@ -223,6 +223,7 @@ class Program {
 		Menu *laymenu = nullptr;
 		Menu *loadmenu = nullptr;
 		Menu *mixtargetmenu = nullptr;
+		Menu *fullscreenmenu = nullptr;
 		Menu *mixenginemenu = nullptr;
 		Menu *livemenu = nullptr;
 		Menu *wipemenu = nullptr;
@@ -243,6 +244,7 @@ class Program {
 		int menux;
 		int menuy;
 		std::vector<int> menuresults;
+		int fullscreen = -1;
 		bool test = false;
 		int mx;
 		int my;
@@ -357,6 +359,7 @@ class Program {
 		bool mainshelf = true;
 		std::string shelfpath;
 		int shelfdircount;
+		bool shelfdrag = false;
 		
 		void quit(std::string msg);
 		GLuint set_shader();

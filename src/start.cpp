@@ -4509,6 +4509,7 @@ void visu_thumbs() {
 						if (mainprogram->leftmousedown) {
 							if (!mainprogram->dragbinel) {
 								// user starts dragging shelf element
+								mainprogram->shelfdrag = true;
 								mainprogram->leftmousedown = false;
 								mainprogram->dragbinel = new BinElement;
 								mainprogram->dragbinel->path = thpath[k];
@@ -7846,6 +7847,7 @@ void enddrag() {
 		mainprogram->draglay = nullptr;
 		mainprogram->dragpath = "";
 		mainmix->moving = false;
+		mainprogram->shelfdrag = false;
 		//glDeleteTextures(1, &binsmain->dragtex);  maybe needs implementing in one case, check history
 	}
 }
@@ -7970,19 +7972,84 @@ void the_loop() {
 	if (mainprogram->renaming != EDIT_NONE and mainprogram->leftmouse) mainprogram->renaming = EDIT_NONE;
 	
 	// wormhole
-	draw_box(darkgreen, 0.0f, 0.25f, 0.2f, 1);
-	draw_box(white, 0.0f, 0.25f, 0.2f, 2);
-	draw_box(white, 0.0f, 0.25f, 0.15f, 2);
-	draw_box(white, 0.0f, 0.25f, 0.1f, 2);
-	if (mainprogram->binsscreen) render_text("MIX", white, -0.024f, 0.24f, 0.0006f, 0.001f);
-	else render_text("BINS", white, -0.025f, 0.24f, 0.0006f, 0.001f);
-	
+	if (mainprogram->fullscreen == -1) {
+		draw_box(darkgreen, 0.0f, 0.25f, 0.2f, 1);
+		draw_box(white, 0.0f, 0.25f, 0.2f, 2);
+		draw_box(white, 0.0f, 0.25f, 0.15f, 2);
+		draw_box(white, 0.0f, 0.25f, 0.1f, 2);
+		if (mainprogram->binsscreen) render_text("MIX", white, -0.024f, 0.24f, 0.0006f, 0.001f);
+		else render_text("BINS", white, -0.025f, 0.24f, 0.0006f, 0.001f);
+	}
 	
 	if (mainprogram->binsscreen) {
 		binsmain->handle();
 	}
+	else if (mainprogram->fullscreen > -1) {
+		GLfloat vcoords1[8];
+		GLfloat *p = vcoords1;
+		*p++ = -1.0f; *p++ = 1.0f;
+		*p++ = -1.0f; *p++ = -1.0f;
+		*p++ = 1.0f; *p++ = 1.0f;
+		*p++ = 1.0f; *p++ = -1.0f;
+		GLfloat tcoords[] = {0.0f, 0.0f,
+							0.0f, 1.0f,
+							1.0f, 0.0f,
+							1.0f, 1.0f};
+		GLuint vbuf, tbuf, vao;
+		glGenBuffers(1, &vbuf);
+		glBindBuffer(GL_ARRAY_BUFFER, vbuf);
+		glBufferData(GL_ARRAY_BUFFER, 32, vcoords1, GL_STATIC_DRAW);
+		glGenBuffers(1, &tbuf);
+		glBindBuffer(GL_ARRAY_BUFFER, tbuf);
+		glBufferData(GL_ARRAY_BUFFER, 32, tcoords, GL_STATIC_DRAW);
+		glGenVertexArrays(1, &vao);
+		glBindVertexArray(vao);
+		glBindBuffer(GL_ARRAY_BUFFER, vbuf);
+		glEnableVertexAttribArray(0);
+		glVertexAttribPointer(0, 2, GL_FLOAT, GL_FALSE, 8, NULL);
+		glBindBuffer(GL_ARRAY_BUFFER, tbuf);
+		glEnableVertexAttribArray(1);
+		glVertexAttribPointer(1, 2, GL_FLOAT, GL_FALSE, 8, NULL);
+	
+		MixNode *node;
+		if (mainprogram->fullscreen == mainprogram->nodesmain->mixnodes.size()) node = (MixNode*)mainprogram->nodesmain->mixnodescomp[mainprogram->fullscreen - 1];
+		else node = (MixNode*)mainprogram->nodesmain->mixnodes[mainprogram->fullscreen];
+		GLfloat cf = glGetUniformLocation(mainprogram->ShaderProgram, "cf");
+		GLint wipe = glGetUniformLocation(mainprogram->ShaderProgram, "wipe");
+		GLint mixmode = glGetUniformLocation(mainprogram->ShaderProgram, "mixmode");
+		if (mainmix->wipe[mainprogram->fullscreen == 2] > -1) {
+			if (mainprogram->fullscreen == 2) glUniform1f(cf, mainmix->crossfadecomp->value);
+			else glUniform1f(cf, mainmix->crossfade->value);
+			glUniform1i(wipe, 1);
+			glUniform1i(mixmode, 18);
+		}
+		GLint down = glGetUniformLocation(mainprogram->ShaderProgram, "down");
+		glUniform1i(down, 1);
+		glActiveTexture(GL_TEXTURE0);
+		glBindTexture(GL_TEXTURE_2D, node->mixtex);
+		glBindVertexArray(vao);
+		glDrawArrays(GL_TRIANGLE_STRIP, 0, 4);
+		glUniform1i(down, 0);
+		glUniform1i(wipe, 0);
+		glUniform1i(mixmode, 0);
+		if (mainprogram->menuactivation) {
+			mainprogram->fullscreenmenu->state = 2;
+			mainprogram->menuondisplay = true;
+			mainprogram->menuactivation = false;
+		}
+		
+		// Draw and handle fullscreenmenu
+		int k = handle_menu(mainprogram->fullscreenmenu);
+		if (k == 0) mainprogram->fullscreen = -1;
+		if (mainprogram->menuchosen) {
+			mainprogram->menuchosen = false;
+			mainprogram->leftmouse = 0;
+			mainprogram->menuactivation = 0;
+			mainprogram->menuresults.clear();
+		}
+	}
 	else {  //the_loop else
-		if ((mainprogram->effectmenu->state > 1) or (mainprogram->mixmodemenu->state > 1) or (mainprogram->mixenginemenu->state > 1) or (mainprogram->parammenu1->state > 1) or (mainprogram->parammenu2->state > 1) or (mainprogram->loopmenu->state > 1) or (mainprogram->deckmenu->state > 1) or (mainprogram->laymenu->state > 1) or (mainprogram->loadmenu->state > 1) or (mainprogram->mixtargetmenu->state > 1) or (mainprogram->wipemenu->state > 1) or (mainprogram->livemenu->state > 1) or (mainprogram->binmenu->state > 1) or (mainprogram->binelmenu->state > 1) or (mainprogram->genmidimenu->state > 1) or (mainprogram->genericmenu->state > 1) or (mainprogram->shelfmenu1->state > 1) or (mainprogram->shelfmenu2->state > 1)) {
+		if ((mainprogram->effectmenu->state > 1) or (mainprogram->mixmodemenu->state > 1) or (mainprogram->mixenginemenu->state > 1) or (mainprogram->parammenu1->state > 1) or (mainprogram->parammenu2->state > 1) or (mainprogram->loopmenu->state > 1) or (mainprogram->deckmenu->state > 1) or (mainprogram->laymenu->state > 1) or (mainprogram->loadmenu->state > 1) or (mainprogram->mixtargetmenu->state > 1) or (mainprogram->wipemenu->state > 1) or (mainprogram->livemenu->state > 1) or (mainprogram->binmenu->state > 1) or (mainprogram->binelmenu->state > 1) or (mainprogram->genmidimenu->state > 1) or (mainprogram->genericmenu->state > 1) or (mainprogram->shelfmenu1->state > 1) or (mainprogram->shelfmenu2->state > 1) or (mainprogram->fullscreenmenu->state > 1)) {
 			mainprogram->leftmousedown = false;
 			mainprogram->menuondisplay = true;
 		}
@@ -8791,6 +8858,7 @@ void the_loop() {
 			// make the output display menu (SDL_GetNumVideoDisplays() doesn't allow hotplugging screens... :( )
 			int numd = SDL_GetNumVideoDisplays();
 			std::vector<std::string> mixtargets;
+			mixtargets.push_back("View full screen");
 			mixtargets.push_back("submenu wipemenu");
 			mixtargets.push_back("Choose wipe");
 			std::vector<int> currscreens;
@@ -8827,6 +8895,9 @@ void the_loop() {
 		k = handle_menu(mainprogram->mixtargetmenu);
 		if (k > -1) {
 			if (k == 0) {
+				mainprogram->fullscreen = mainprogram->mixtargetmenu->value;
+			}
+			else if (k == 1) {
 				if (mainprogram->menuresults[!mainprogram->preveff] == 0) {
 					mainmix->wipe[!mainprogram->preveff] = -1;
 				}
@@ -8835,7 +8906,7 @@ void the_loop() {
 					mainmix->wipedir[!mainprogram->preveff] = mainprogram->menuresults[1];
 				}
 			}
-			if (k > 1) {
+			else if (k > 2) {
 				// chosen output screen already used? re-use window
 				bool switched = false;
 				for (int i = 0; i < takenentries.size(); i++) {
@@ -8899,7 +8970,6 @@ void the_loop() {
 			mainprogram->menuresults.clear();
 		}
 		
-	
 		// Draw and handle wipemenu
 		k = handle_menu(mainprogram->wipemenu);
 		if (k > 0) {
@@ -9621,7 +9691,7 @@ void the_loop() {
 	if (mainprogram->dragbinel) {
 		//dragging something inside wormhole
 		if (sqrt(pow((mainprogram->mx / (glob->w / 2.0f) - 1.0f) * glob->w / glob->h, 2) + pow((glob->h - mainprogram->my) / (glob->h / 2.0f) - 1.25f, 2)) < 0.2f) {
-			if (!mainprogram->inwormhole and !mainprogram->menuondisplay) {
+			if (!mainprogram->inwormhole and !mainprogram->menuondisplay and !mainprogram->shelfdrag) {
 				if (!mainprogram->binsscreen) {
 					set_queueing(mainmix->currlay, false);
 				}
@@ -10875,6 +10945,10 @@ int main(int argc, char* argv[]){
 	std::vector<std::string> mixtargets;
  	mainprogram->make_menu("mixtargetmenu", mainprogram->mixtargetmenu, mixtargets);
  	
+	std::vector<std::string> fullscreen;
+	fullscreen.push_back("Exit fullscreen");
+ 	mainprogram->make_menu("fullscreenmenu", mainprogram->fullscreenmenu, fullscreen);
+ 	
 	std::vector<std::string> livesources;
  	mainprogram->make_menu("livemenu", mainprogram->livemenu, livesources);
  	
@@ -11515,6 +11589,9 @@ int main(int argc, char* argv[]){
 				}
 				if (e.key.keysym.sym == SDLK_DELETE) {
 					mainprogram->del = 1;
+				}
+				if (e.key.keysym.sym == SDLK_ESCAPE) {
+					mainprogram->fullscreen = -1;
 				}
 				else if (e.key.keysym.sym == SDLK_SPACE) {
 					if (mainmix->currlay) {

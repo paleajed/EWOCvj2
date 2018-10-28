@@ -960,7 +960,10 @@ std::vector<std::string> Mixer::write_layer(Layer *lay, std::ostream& wfile, boo
 }
 
 void Mixer::save_layerfile(const std::string &path, Layer *lay, bool doclips) {
-	std::string str = path;
+	std::string ext = path.substr(path.length() - 6, std::string::npos);
+	std::string str;
+	if (ext != ".layer") str = path + ".layer";
+	else str = path;
 	std::ofstream wfile;
 	wfile.open(str);
 	wfile << "EWOCvj LAYERFILE V0.2\n";
@@ -980,7 +983,10 @@ void Mixer::save_layerfile(const std::string &path, Layer *lay, bool doclips) {
 
 void Mixer::save_state(const std::string &path) {
 	std::vector<std::string> filestoadd;
-	std::string str = path;
+	std::string ext = path.substr(path.length() - 6, std::string::npos);
+	std::string str;
+	if (ext != ".state") str = path + ".state";
+	else str = path;
 	std::ofstream wfile;
 	wfile.open(str);
 	wfile << "EWOCvj SAVESTATE V0.2\n";
@@ -1114,7 +1120,10 @@ void Mixer::event_read(std::istream &rfile, Param *par, Layer *lay) {
 }
 
 void Mixer::save_mix(const std::string &path) {
-	std::string str = path;
+	std::string ext = path.substr(path.length() - 4, std::string::npos);
+	std::string str;
+	if (ext != ".mix") str = path + ".mix";
+	else str = path;
 	std::ofstream wfile;
 	wfile.open(str);
 	wfile << "EWOCvj SAVEMIX V0.2\n";
@@ -1176,7 +1185,10 @@ void Mixer::save_mix(const std::string &path) {
 }
 
 void Mixer::save_deck(const std::string &path) {
-	std::string str = path;
+	std::string ext = path.substr(path.length() - 5, std::string::npos);
+	std::string str;
+	if (ext != ".deck") str = path + ".deck";
+	else str = path;
 	std::ofstream wfile;
 	wfile.open(str);
 	wfile << "EWOCvj DECKFILE V0.2\n";
