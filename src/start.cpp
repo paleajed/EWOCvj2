@@ -10306,6 +10306,7 @@ bool open_shelfvideo(const std::string &path, int pos) {
 }
 	
 bool open_shelflayer(const std::string &path, int pos) {
+	float black[] = {0.0f, 0.0f, 0.0f, 1.0f};
 	thpath[pos] = path;
 	thtype[pos] = ELEM_LAYER;
 	Layer *lay = new Layer(true);
@@ -10343,7 +10344,7 @@ bool open_shelflayer(const std::string &path, int pos) {
 	lay->enddecode.wait(lock, [&]{return lay->processed;});
 	lay->processed = false;
 	lock.unlock();
-	glBindTexture(GL_TEXTURE_2D, lay->fbotex);
+	glBindTexture(GL_TEXTURE_2D, lay->texture);
 	if (lay->dataformat == 188 or lay->vidformat == 187) {
 		if (lay->decresult->compression == 187) {
 			glCompressedTexImage2D(GL_TEXTURE_2D, 0, GL_COMPRESSED_RGBA_S3TC_DXT1_EXT, lay->decresult->width, lay->decresult->height, 0, lay->decresult->size, lay->decresult->data);
@@ -10355,6 +10356,18 @@ bool open_shelflayer(const std::string &path, int pos) {
 	else {
 		glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA, lay->decresult->width, lay->decresult->height, 0, GL_RGBA, GL_UNSIGNED_BYTE, lay->decresult->data);
 	}
+	glBindFramebuffer(GL_FRAMEBUFFER, lay->fbo);
+	glDrawBuffer(GL_COLOR_ATTACHMENT0);
+	float div = 0.3f;
+	float fac = 1.0f;
+	glDisable(GL_BLEND);
+	// put lay->texture into lay->fbo(tex)
+	draw_box(nullptr, black, -1.0f, -1.0f, 2.0f * div, 2.0f * div * fac, 0.0f, 0.0f, 1.0f, 1.0f, 0, lay->texture, glob->w, glob->h);
+	glEnable(GL_BLEND);
+	glBindFramebuffer(GL_FRAMEBUFFER, mainprogram->globfbo);
+	glDrawBuffer(GL_COLOR_ATTACHMENT0);
+	if (lay->effects.size()) lay->fbotex = copy_tex(lay->texture, 1);
+	else lay->fbotex = copy_tex(lay->texture);
 	onestepfrom(0, lay->node, nullptr, -1, -1);
 	if (lay->effects.size()) {
 		thumbtex[pos] = copy_tex(lay->effects[lay->effects.size() - 1]->fbotex);
