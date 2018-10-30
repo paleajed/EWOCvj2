@@ -71,10 +71,10 @@ void Program::get_inname(const char *title, std::string filters, std::string def
 	const char* fi[1];
 	fi[0] = filters.c_str();
 	if (fi[0] == "") {
-		this->path = tinyfd_openFileDialog(title, dd, 0, nullptr, NULL, 0);
+		this->path = tinyfd_openFileDialog(title, dd, 0, nullptr, nullptr, 0);
 	}
 	else {
-		this->path = tinyfd_openFileDialog(title, dd, 1, fi, NULL, 0);
+		this->path = tinyfd_openFileDialog(title, dd, 1, fi, nullptr, 0);
 	}
 }
 
@@ -86,28 +86,32 @@ void Program::get_outname(const char *title, std::string filters, std::string de
 	const char* fi[1];
 	fi[0] = filters.c_str();
 	if (fi[0] == "") {
-		this->path = tinyfd_saveFileDialog(title, dd, 0, nullptr, NULL);
+		this->path = tinyfd_saveFileDialog(title, dd, 0, nullptr, nullptr);
 	}
 	else {
-		this->path = tinyfd_saveFileDialog(title, dd, 1, fi, NULL);
+		this->path = tinyfd_saveFileDialog(title, dd, 1, fi, nullptr);
 	}
 }
 
 void Program::get_multinname(const char* title) {
 	const char *outpaths;
-	outpaths = tinyfd_openFileDialog(title, "", 0, NULL, NULL, 1);
+	outpaths = tinyfd_openFileDialog(title, "", 0, nullptr, nullptr, 1);
+	if (outpaths == nullptr) {
+		binsmain->openbinfile = false;
+		return;
+	}
 	std::string opaths(outpaths);
-	this->paths.push_back("");
-	std::string currstr = this->paths.back();
+	std::string currstr = "";
+	std::string charstr;
 	for (int i = 0; i < opaths.length(); i++) {
-		std::string charstr;
 		charstr = opaths[i];
 		if (charstr == "|") {
-			this->paths.push_back("");
-			std::string currstr = this->paths.back();
+			this->paths.push_back(currstr);
+			std::string currstr = "";
 			continue;
 		}
 		currstr += charstr;
+		if (i == opaths.length() - 1) this->paths.push_back(currstr);
 	}
 	this->path = (char*)"ENTER";
 	this->counting = 0;
@@ -293,8 +297,8 @@ GLuint Program::set_shader() {
  	#endif
  	#endif
 	load_shader(fshader, &FShaderSource, flen);
-	glShaderSource(vertexShaderObject, 1, &VShaderSource, NULL);
-	glShaderSource(fragmentShaderObject, 1, &FShaderSource, NULL);
+	glShaderSource(vertexShaderObject, 1, &VShaderSource, nullptr);
+	glShaderSource(fragmentShaderObject, 1, &FShaderSource, nullptr);
 	glCompileShader(vertexShaderObject);
 	glCompileShader(fragmentShaderObject);
 

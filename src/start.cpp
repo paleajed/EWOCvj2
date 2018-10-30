@@ -194,7 +194,7 @@ HRESULT EnumerateDevices(REFGUID category, IEnumMoniker **ppEnum)
 {
     // Create the System Device Enumerator.
     ICreateDevEnum *pDevEnum;
-    HRESULT hr = CoCreateInstance(CLSID_SystemDeviceEnum, NULL,  
+    HRESULT hr = CoCreateInstance(CLSID_SystemDeviceEnum, nullptr,  
         CLSCTX_INPROC_SERVER, IID_PPV_ARGS(&pDevEnum));
 
     if (SUCCEEDED(hr))
@@ -212,10 +212,10 @@ HRESULT EnumerateDevices(REFGUID category, IEnumMoniker **ppEnum)
 
 void DisplayDeviceInformation(IEnumMoniker *pEnum)
 {
-    IMoniker *pMoniker = NULL;
+    IMoniker *pMoniker = nullptr;
 	mainprogram->livedevices.clear();
     
-    while (pEnum->Next(1, &pMoniker, NULL) == S_OK)
+    while (pEnum->Next(1, &pMoniker, nullptr) == S_OK)
     {
         IPropertyBag *pPropBag;
         HRESULT hr = pMoniker->BindToStorage(0, 0, IID_PPV_ARGS(&pPropBag));
@@ -395,9 +395,9 @@ public:
 
     void timeout() {
         if (!mainmix->donerec) {
-			#define BUFFER_OFFSET(i) ((char *)NULL + (i))
+			#define BUFFER_OFFSET(i) ((char *)nullptr + (i))
 			glBindBuffer(GL_PIXEL_PACK_BUFFER_ARB, mainmix->ioBuf);
-			glBufferData(GL_PIXEL_PACK_BUFFER_ARB, (int)(mainprogram->ow * mainprogram->oh) * 4, NULL, GL_DYNAMIC_READ);
+			glBufferData(GL_PIXEL_PACK_BUFFER_ARB, (int)(mainprogram->ow * mainprogram->oh) * 4, nullptr, GL_DYNAMIC_READ);
 			glBindFramebuffer(GL_FRAMEBUFFER, ((MixNode*)mainprogram->nodesmain->mixnodescomp[2])->mixfbo);
 			glReadBuffer(GL_COLOR_ATTACHMENT0);
 			glReadPixels(0, 0, mainprogram->ow, (int)mainprogram->oh, GL_RGBA, GL_UNSIGNED_BYTE, BUFFER_OFFSET(0));
@@ -749,12 +749,18 @@ int encode_frame(AVFormatContext *fmtctx, AVCodecContext *enc_ctx, AVFrame *fram
     int ret;
     /* send the frame to the encoder */
 	AVPacket enc_pkt;
-	enc_pkt.data = NULL;
+	enc_pkt.data = nullptr;
 	enc_pkt.size = 0;
 	av_init_packet(&enc_pkt);
 	int got_frame;
-	if (outfile) ret = avcodec_encode_video2(enc_ctx, pkt, frame, &got_frame);
-	else ret = avcodec_encode_video2(enc_ctx, &enc_pkt, frame, &got_frame);
+	if (outfile) {
+		avcodec_send_frame(enc_ctx, frame);
+ 		int err = avcodec_receive_packet(enc_ctx, pkt);
+ 	}
+	else {
+		avcodec_send_frame(enc_ctx, frame);
+ 		int err = avcodec_receive_packet(enc_ctx, &enc_pkt);
+ 	}
 	if (outfile) fwrite(pkt->data, 1, pkt->size, outfile);
 	else {
 		/* prepare packet for muxing */
@@ -840,10 +846,10 @@ int open_codec_context(int *stream_idx,
 {
     int ret;
     AVStream *st;
-    AVCodecContext *dec_ctx = NULL;
-    AVCodec *dec = NULL;
-    AVDictionary *opts = NULL;
-    ret = av_find_best_stream(video, type, -1, -1, NULL, 0);
+    AVCodecContext *dec_ctx = nullptr;
+    AVCodec *dec = nullptr;
+    AVDictionary *opts = nullptr;
+    ret = av_find_best_stream(video, type, -1, -1, nullptr, 0);
     if (ret <0) {
     	printf("%s\n", " cant find stream");
     	return -1;
@@ -880,7 +886,7 @@ static int get_format_from_sample_fmt(const char **fmt,
         { AV_SAMPLE_FMT_FLT, "f32be", "f32le" },
         { AV_SAMPLE_FMT_DBL, "f64be", "f64le" },
     };
-    *fmt = NULL;
+    *fmt = nullptr;
     for (i = 0; i < FF_ARRAY_ELEMS(sample_fmt_entries); i++) {
         struct sample_fmt_entry *entry = &sample_fmt_entries[i];
         if (sample_fmt == entry->sample_fmt) {
@@ -896,8 +902,8 @@ static int get_format_from_sample_fmt(const char **fmt,
 
 void decode_audio(Layer *lay) {
     int ret = 0, got_frame;
-	int *snippet = NULL;
-	int *snip = NULL;
+	int *snippet = nullptr;
+	int *snip = nullptr;
 	size_t unpadded_linesize;
     av_packet_unref(&lay->decpkt);
 	av_frame_unref(lay->decframe);
@@ -910,7 +916,7 @@ void decode_audio(Layer *lay) {
 				lay->decpkt.size -= ret;
 			} while (lay->decpkt.size > 0);
 			// flush
-			//lay->decpkt.data = NULL;
+			//lay->decpkt.data = nullptr;
 			//lay->decpkt.size = 0;
 			//decode_packet(lay, &got_frame);
 			if (ret >= 0 ) {
@@ -946,9 +952,9 @@ void decode_audio(Layer *lay) {
 void get_frame_other(Layer *lay, int framenr, int prevframe, int errcount)
 {
    	int ret = 0, got_frame;
-	/* initialize packet, set data to NULL, let the demuxer fill it */
+	/* initialize packet, set data to nullptr, let the demuxer fill it */
 	av_init_packet(&lay->decpkt);
-	lay->decpkt.data = NULL;
+	lay->decpkt.data = nullptr;
 	lay->decpkt.size = 0;
 	
 	if (!lay->live) {
@@ -964,7 +970,7 @@ void get_frame_other(Layer *lay, int framenr, int prevframe, int errcount)
 		}
 
     /* flush cached frames */
-//    lay->decpkt.data = NULL;
+//    lay->decpkt.data = nullptr;
 //    lay->decpkt.size = 0;
 //    do {
 //        decode_packet(&got_frame, 1);
@@ -1083,7 +1089,7 @@ void Layer::decode_frame() {
 
 	int st = snappy_uncompress(bptrData + headerl, size - headerl, this->databuf, &uncomp);
     av_packet_unref(&this->decpkt);
-	if (st) this->decresult->data = NULL;
+	if (st) this->decresult->data = nullptr;
 	else this->decresult->data = this->databuf;
 	this->decresult->height = this->video_dec_ctx->height;
 	this->decresult->width = this->video_dec_ctx->width;
@@ -1215,7 +1221,7 @@ bool thread_vidopen(Layer *lay, AVInputFormat *ifmt, bool skip) {
 		}
 	}
 	
-	int r = avformat_open_input(&(lay->video), lay->filename.c_str(), ifmt, NULL);
+	int r = avformat_open_input(&(lay->video), lay->filename.c_str(), ifmt, nullptr);
 	printf("loading... %s\n", lay->filename.c_str());
 	if (r < 0) {
 		lay->filename = "";
@@ -1333,9 +1339,9 @@ bool thread_vidopen(Layer *lay, AVInputFormat *ifmt, bool skip) {
         lay->video_dec_ctx->height,
         AV_PIX_FMT_RGBA,
         SWS_BILINEAR,
-        NULL,
-        NULL,
-        NULL);
+        nullptr,
+        nullptr,
+        nullptr);
 
     lay->decframe = av_frame_alloc();
 	
@@ -1509,10 +1515,10 @@ void set_thumbs() {
 		glBindVertexArray(thvao.back());
 		glBindBuffer(GL_ARRAY_BUFFER, vbuf);
 		glEnableVertexAttribArray(0);
-		glVertexAttribPointer(0, 2, GL_FLOAT, GL_FALSE, 8, NULL);
+		glVertexAttribPointer(0, 2, GL_FLOAT, GL_FALSE, 8, nullptr);
 		glBindBuffer(GL_ARRAY_BUFFER, tbuf);
 		glEnableVertexAttribArray(1);
-		glVertexAttribPointer(1, 2, GL_FLOAT, GL_FALSE, 8, NULL);
+		glVertexAttribPointer(1, 2, GL_FLOAT, GL_FALSE, 8, nullptr);
 		glBindVertexArray(thvao.back());
 
 		GLuint vbbuf;
@@ -1524,7 +1530,7 @@ void set_thumbs() {
 		glBindVertexArray(thbvao.back());
 		glBindBuffer(GL_ARRAY_BUFFER, vbbuf);
 		glEnableVertexAttribArray(0);
-		glVertexAttribPointer(0, 2, GL_FLOAT, GL_FALSE, 8, NULL);
+		glVertexAttribPointer(0, 2, GL_FLOAT, GL_FALSE, 8, nullptr);
 		glBindVertexArray(thbvao.back());
 
 		GLuint tmbuf;
@@ -1538,10 +1544,10 @@ void set_thumbs() {
 		glBindVertexArray(thmvao);
 		glBindBuffer(GL_ARRAY_BUFFER, thmvbuf);
 		glEnableVertexAttribArray(0);
-		glVertexAttribPointer(0, 2, GL_FLOAT, GL_FALSE, 8, NULL);
+		glVertexAttribPointer(0, 2, GL_FLOAT, GL_FALSE, 8, nullptr);
 		glBindBuffer(GL_ARRAY_BUFFER, tmbuf);
 		glEnableVertexAttribArray(1);
-		glVertexAttribPointer(1, 2, GL_FLOAT, GL_FALSE, 8, NULL);
+		glVertexAttribPointer(1, 2, GL_FLOAT, GL_FALSE, 8, nullptr);
 		glBindVertexArray(thmvao);
 	}
 }
@@ -1596,17 +1602,17 @@ void set_fbovao2() {
 	glBindVertexArray(mainprogram->fbovao[2]);
 	glBindBuffer(GL_ARRAY_BUFFER, vbuf3);
 	glEnableVertexAttribArray(0);
-	glVertexAttribPointer(0, 2, GL_FLOAT, GL_FALSE, 8, NULL);
+	glVertexAttribPointer(0, 2, GL_FLOAT, GL_FALSE, 8, nullptr);
 	glBindBuffer(GL_ARRAY_BUFFER, tbuf);
 	glEnableVertexAttribArray(1);
-	glVertexAttribPointer(1, 2, GL_FLOAT, GL_FALSE, 8, NULL);
+	glVertexAttribPointer(1, 2, GL_FLOAT, GL_FALSE, 8, nullptr);
 }	
 
 void set_fbo() {
 
     glGenTextures(1, &mainmix->mixbackuptex);
     glBindTexture(GL_TEXTURE_2D, mainmix->mixbackuptex);
-	glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA, glob->w, glob->h, 0, GL_RGBA, GL_UNSIGNED_BYTE, NULL);
+	glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA, glob->w, glob->h, 0, GL_RGBA, GL_UNSIGNED_BYTE, nullptr);
     glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR);
     glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
 
@@ -1614,13 +1620,13 @@ void set_fbo() {
     glGenTextures(1, &fbotex[1]);
 	glActiveTexture(GL_TEXTURE5);
     glBindTexture(GL_TEXTURE_2D, fbotex[0]);
-	glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA, glob->w, glob->h, 0, GL_RGBA, GL_UNSIGNED_BYTE, NULL);
+	glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA, glob->w, glob->h, 0, GL_RGBA, GL_UNSIGNED_BYTE, nullptr);
     glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR);
     glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
 
     glActiveTexture(GL_TEXTURE6);
     glBindTexture(GL_TEXTURE_2D, fbotex[1]);
-	glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA, glob->w, glob->h, 0, GL_RGBA, GL_UNSIGNED_BYTE, NULL);
+	glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA, glob->w, glob->h, 0, GL_RGBA, GL_UNSIGNED_BYTE, nullptr);
     glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR);
     glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
 
@@ -1674,19 +1680,19 @@ void set_fbo() {
 	glBindVertexArray(mainprogram->fbovao[1]);
 	glBindBuffer(GL_ARRAY_BUFFER, vbuf2);
 	glEnableVertexAttribArray(0);
-	glVertexAttribPointer(0, 2, GL_FLOAT, GL_FALSE, 8, NULL);
+	glVertexAttribPointer(0, 2, GL_FLOAT, GL_FALSE, 8, nullptr);
 	glBindBuffer(GL_ARRAY_BUFFER, tbuf);
 	glEnableVertexAttribArray(1);
-	glVertexAttribPointer(1, 2, GL_FLOAT, GL_FALSE, 8, NULL);
+	glVertexAttribPointer(1, 2, GL_FLOAT, GL_FALSE, 8, nullptr);
 	
 	glGenVertexArrays(1, &mainprogram->fbovao[2]);
 	glBindVertexArray(mainprogram->fbovao[2]);
 	glBindBuffer(GL_ARRAY_BUFFER, vbuf3);
 	glEnableVertexAttribArray(0);
-	glVertexAttribPointer(0, 2, GL_FLOAT, GL_FALSE, 8, NULL);
+	glVertexAttribPointer(0, 2, GL_FLOAT, GL_FALSE, 8, nullptr);
 	glBindBuffer(GL_ARRAY_BUFFER, tbuf);
 	glEnableVertexAttribArray(1);
-	glVertexAttribPointer(1, 2, GL_FLOAT, GL_FALSE, 8, NULL);
+	glVertexAttribPointer(1, 2, GL_FLOAT, GL_FALSE, 8, nullptr);
 	
 	
 	glBindFramebuffer(GL_FRAMEBUFFER, mainprogram->globfbo);
@@ -1721,10 +1727,10 @@ Layer::Layer(bool comp) {
     glActiveTexture(GL_TEXTURE0);
     glBindTexture(GL_TEXTURE_2D, this->fbotex);
     if (comp) {
-		glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA, mainprogram->ow, mainprogram->oh, 0, GL_RGBA, GL_UNSIGNED_BYTE, NULL);
+		glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA, mainprogram->ow, mainprogram->oh, 0, GL_RGBA, GL_UNSIGNED_BYTE, nullptr);
 	}
 	else {
-		glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA, glob->w * 0.3f, glob->h * 0.3f, 0, GL_RGBA, GL_UNSIGNED_BYTE, NULL);
+		glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA, glob->w * 0.3f, glob->h * 0.3f, 0, GL_RGBA, GL_UNSIGNED_BYTE, nullptr);
 	}
 	glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR);
 	glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
@@ -1808,17 +1814,17 @@ Layer::Layer(bool comp) {
 	glBindVertexArray(this->vao);
 	glBindBuffer(GL_ARRAY_BUFFER, this->vbuf);
 	glEnableVertexAttribArray(0);
-	glVertexAttribPointer(0, 2, GL_FLOAT, GL_FALSE, 8, NULL);
+	glVertexAttribPointer(0, 2, GL_FLOAT, GL_FALSE, 8, nullptr);
 	glBindBuffer(GL_ARRAY_BUFFER, tbuf);
 	glEnableVertexAttribArray(1);
-	glVertexAttribPointer(1, 2, GL_FLOAT, GL_FALSE, 8, NULL);
+	glVertexAttribPointer(1, 2, GL_FLOAT, GL_FALSE, 8, nullptr);
  	glBindVertexArray(this->vao);
 
  	//glDisableVertexAttribArray(0);
  	//glDisableVertexAttribArray(1);
 
 	this->decresult = new frame_result;
-	this->decresult->data = NULL;
+	this->decresult->data = nullptr;
 
     this->decoding = std::thread{&Layer::get_frame, this};
     this->decoding.detach();
@@ -1971,7 +1977,7 @@ void draw_line(float *linec, float x1, float y1, float x2, float y2) {
 	glBindVertexArray(fvao);
 	glBindBuffer(GL_ARRAY_BUFFER, fvbuf);
 	glEnableVertexAttribArray(0);
-	glVertexAttribPointer(0, 2, GL_FLOAT, GL_FALSE, 8, NULL);
+	glVertexAttribPointer(0, 2, GL_FLOAT, GL_FALSE, 8, nullptr);
 	glDrawArrays(GL_LINES, 0, 2);
 	glUniform1i(box, 0);
 	
@@ -2043,13 +2049,13 @@ void draw_box(float *linec, float *areac, float x, float y, float wi, float he, 
 	glGenVertexArrays(1, &boxvao);
 	glBindVertexArray(boxvao);
 	glEnableVertexAttribArray(0);
-	glVertexAttribPointer(0, 2, GL_FLOAT, GL_FALSE, 8, NULL);
+	glVertexAttribPointer(0, 2, GL_FLOAT, GL_FALSE, 8, nullptr);
 	GLuint boxtbuf;
 	glGenBuffers(1, &boxtbuf);
 	glBindBuffer(GL_ARRAY_BUFFER, boxtbuf);
 	glBufferData(GL_ARRAY_BUFFER, 32, tcoords, GL_STATIC_DRAW);
 	glEnableVertexAttribArray(1);
-	glVertexAttribPointer(1, 2, GL_FLOAT, GL_FALSE, 8, NULL);
+	glVertexAttribPointer(1, 2, GL_FLOAT, GL_FALSE, 8, nullptr);
 	if (linec) glDrawArrays(GL_LINE_LOOP, 0, 4);
 	if (areac) {
 		float pixelw = 2.0f / (float)glob->w;
@@ -2151,7 +2157,7 @@ void draw_triangle(float *linec, float *areac, float x1, float y1, float xsize, 
 	glBindVertexArray(fvao);
 	glBindBuffer(GL_ARRAY_BUFFER, fvbuf);
 	glEnableVertexAttribArray(0);
-	glVertexAttribPointer(0, 2, GL_FLOAT, GL_FALSE, 8, NULL);
+	glVertexAttribPointer(0, 2, GL_FLOAT, GL_FALSE, 8, nullptr);
 	if (type == CLOSED) {
 		glUniform4fv(color, 1, areac);
 		glDrawArrays(GL_TRIANGLE_STRIP, 0, 3);
@@ -2277,10 +2283,10 @@ float render_text(std::string text, float *textc, float x, float y, float sx, fl
 		glBindVertexArray(texvao);
 		glBindBuffer(GL_ARRAY_BUFFER, texvbuf);
 		glEnableVertexAttribArray(0);
-		glVertexAttribPointer(0, 2, GL_FLOAT, GL_FALSE, 8, NULL);
+		glVertexAttribPointer(0, 2, GL_FLOAT, GL_FALSE, 8, nullptr);
 		glBindBuffer(GL_ARRAY_BUFFER, textbuf);
 		glEnableVertexAttribArray(1);
-		glVertexAttribPointer(1, 2, GL_FLOAT, GL_FALSE, 8, NULL);
+		glVertexAttribPointer(1, 2, GL_FLOAT, GL_FALSE, 8, nullptr);
 		GLuint ftex;
 		glGenTextures(1, &ftex);
 		glBindTexture(GL_TEXTURE_2D, ftex);
@@ -2394,11 +2400,11 @@ float render_text(std::string text, float *textc, float x, float y, float sx, fl
 		glBindBuffer(GL_ARRAY_BUFFER, vbo);
 		glBufferData(GL_ARRAY_BUFFER, 32, texvcoords, GL_STATIC_DRAW);
 		glEnableVertexAttribArray(0);
-		glVertexAttribPointer(0, 2, GL_FLOAT, GL_FALSE, 8, NULL);
+		glVertexAttribPointer(0, 2, GL_FLOAT, GL_FALSE, 8, nullptr);
 		glBindBuffer(GL_ARRAY_BUFFER, tbo);
 		glBufferData(GL_ARRAY_BUFFER, 32, textcoords, GL_STATIC_DRAW);
 		glEnableVertexAttribArray(1);
-		glVertexAttribPointer(1, 2, GL_FLOAT, GL_FALSE, 8, NULL);
+		glVertexAttribPointer(1, 2, GL_FLOAT, GL_FALSE, 8, nullptr);
 		if (smflag == 1) {
 			glBindFramebuffer(GL_FRAMEBUFFER, mainprogram->smglobfbo_pr);
 		}
@@ -2666,10 +2672,10 @@ void calc_texture(Layer *lay, bool comp, bool alive) {
 	glDisable(GL_BLEND);
 	// put lay->texture into lay->fbo(tex)
 	if (lay->liveinput) {
-		draw_box(NULL, black, -1.0f, -1.0f, 2.0f * div, 2.0f * div * fac, 0.0f, 0.0f, 1.0f, 1.0f, 0, lay->liveinput->texture, glob->w, glob->h);
+		draw_box(nullptr, black, -1.0f, -1.0f, 2.0f * div, 2.0f * div * fac, 0.0f, 0.0f, 1.0f, 1.0f, 0, lay->liveinput->texture, glob->w, glob->h);
 	}
 	else if (lay->filename != "") {
-		draw_box(NULL, black, -1.0f, -1.0f, 2.0f * div, 2.0f * div * fac, 0.0f, 0.0f, 1.0f, 1.0f, 0, lay->texture, glob->w, glob->h);
+		draw_box(nullptr, black, -1.0f, -1.0f, 2.0f * div, 2.0f * div * fac, 0.0f, 0.0f, 1.0f, 1.0f, 0, lay->texture, glob->w, glob->h);
 	}
 	else {
 		glClearColor(0.0f, 0.0f, 0.0f, 0.0f);
@@ -3134,7 +3140,7 @@ void display_texture(Layer *lay, bool deck) {
 			// Draw speed->box
 			Param *par = lay->speed;
 			par->handle();
-			draw_box(white, NULL, lay->speed->box->vtxcoords->x1, lay->speed->box->vtxcoords->y1, lay->speed->box->vtxcoords->w * 0.30f, tf(0.05f), -1);
+			draw_box(white, nullptr, lay->speed->box->vtxcoords->x1, lay->speed->box->vtxcoords->y1, lay->speed->box->vtxcoords->w * 0.30f, tf(0.05f), -1);
 			
 			// Draw opacity->box
 			par = lay->opacity;
@@ -3542,17 +3548,17 @@ void onestepfrom(bool stage, Node *node, Node *prevnode, GLuint prevfbotex, GLui
 					glUniform1i(blurswitch, 1);
 					glBindTexture(GL_TEXTURE_2D, fbotex[0]);
 					if (mainprogram->preveff and stage == 0) {
-						glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA, (int)(glob->w * div), (int)(glob->h * div), 0, GL_RGBA, GL_UNSIGNED_BYTE, NULL);
+						glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA, (int)(glob->w * div), (int)(glob->h * div), 0, GL_RGBA, GL_UNSIGNED_BYTE, nullptr);
 					}
 					else {
-						glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA, mainprogram->ow, mainprogram->oh, 0, GL_RGBA, GL_UNSIGNED_BYTE, NULL);
+						glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA, mainprogram->ow, mainprogram->oh, 0, GL_RGBA, GL_UNSIGNED_BYTE, nullptr);
 					}
 					glBindTexture(GL_TEXTURE_2D, fbotex[1]);
 					if (mainprogram->preveff and stage == 0) {
-						glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA, (int)(glob->w * div), (int)(glob->h * div), 0, GL_RGBA, GL_UNSIGNED_BYTE, NULL);
+						glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA, (int)(glob->w * div), (int)(glob->h * div), 0, GL_RGBA, GL_UNSIGNED_BYTE, nullptr);
 					}
 					else {
-						glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA, mainprogram->ow, mainprogram->oh, 0, GL_RGBA, GL_UNSIGNED_BYTE, NULL);
+						glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA, mainprogram->ow, mainprogram->oh, 0, GL_RGBA, GL_UNSIGNED_BYTE, nullptr);
 					}
 					doblur(stage, prevfbotex, ((BlurEffect*)effect)->times);
 					glUniform1i(Sampler0, 0);
@@ -3577,17 +3583,17 @@ void onestepfrom(bool stage, Node *node, Node *prevnode, GLuint prevfbotex, GLui
 					glUniform1i(blurswitch, 1);
 					glBindTexture(GL_TEXTURE_2D, fbotex[0]);
 					if (mainprogram->preveff and stage == 0) {
-						glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA, (int)(glob->w * div), (int)(glob->h * div), 0, GL_RGBA, GL_UNSIGNED_BYTE, NULL);
+						glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA, (int)(glob->w * div), (int)(glob->h * div), 0, GL_RGBA, GL_UNSIGNED_BYTE, nullptr);
 					}
 					else {
-						glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA, mainprogram->ow, mainprogram->oh, 0, GL_RGBA, GL_UNSIGNED_BYTE, NULL);
+						glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA, mainprogram->ow, mainprogram->oh, 0, GL_RGBA, GL_UNSIGNED_BYTE, nullptr);
 					}
 					glBindTexture(GL_TEXTURE_2D, fbotex[1]);
 					if (mainprogram->preveff and stage == 0) {
-						glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA, (int)(glob->w * div), (int)(glob->h * div), 0, GL_RGBA, GL_UNSIGNED_BYTE, NULL);
+						glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA, (int)(glob->w * div), (int)(glob->h * div), 0, GL_RGBA, GL_UNSIGNED_BYTE, nullptr);
 					}
 					else {
-						glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA, mainprogram->ow, mainprogram->oh, 0, GL_RGBA, GL_UNSIGNED_BYTE, NULL);
+						glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA, mainprogram->ow, mainprogram->oh, 0, GL_RGBA, GL_UNSIGNED_BYTE, nullptr);
 					}
 					doblur(stage, prevfbotex, 6);
 					glUniform1i(Sampler0, 0);
@@ -3749,17 +3755,17 @@ void onestepfrom(bool stage, Node *node, Node *prevnode, GLuint prevfbotex, GLui
 					glActiveTexture(GL_TEXTURE0);
 					glBindTexture(GL_TEXTURE_2D, fbotex[0]);
 					if (mainprogram->preveff and stage == 0) {
-						glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA, (int)(glob->w * div), (int)(glob->h * div), 0, GL_RGBA, GL_UNSIGNED_BYTE, NULL);
+						glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA, (int)(glob->w * div), (int)(glob->h * div), 0, GL_RGBA, GL_UNSIGNED_BYTE, nullptr);
 					}
 					else {
-						glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA, mainprogram->ow, mainprogram->oh, 0, GL_RGBA, GL_UNSIGNED_BYTE, NULL);
+						glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA, mainprogram->ow, mainprogram->oh, 0, GL_RGBA, GL_UNSIGNED_BYTE, nullptr);
 					}
 					glBindTexture(GL_TEXTURE_2D, fbotex[1]);
 					if (mainprogram->preveff and stage == 0) {
-						glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA, (int)(glob->w * div), (int)(glob->h * div), 0, GL_RGBA, GL_UNSIGNED_BYTE, NULL);
+						glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA, (int)(glob->w * div), (int)(glob->h * div), 0, GL_RGBA, GL_UNSIGNED_BYTE, nullptr);
 					}
 					else {
-						glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA, mainprogram->ow, mainprogram->oh, 0, GL_RGBA, GL_UNSIGNED_BYTE, NULL);
+						glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA, mainprogram->ow, mainprogram->oh, 0, GL_RGBA, GL_UNSIGNED_BYTE, nullptr);
 					}
 					glBindFramebuffer(GL_FRAMEBUFFER, frbuf[0]);
 					glDrawBuffer(GL_COLOR_ATTACHMENT0);
@@ -3870,10 +3876,10 @@ void onestepfrom(bool stage, Node *node, Node *prevnode, GLuint prevfbotex, GLui
 			glGenTextures(1, &(effect->fbotex));
 			glBindTexture(GL_TEXTURE_2D, effect->fbotex);
 			if ((mainprogram->preveff and stage == 0)) {
-				glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA, (int)(glob->w * div), (int)(glob->h * div), 0, GL_RGBA, GL_UNSIGNED_BYTE, NULL);
+				glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA, (int)(glob->w * div), (int)(glob->h * div), 0, GL_RGBA, GL_UNSIGNED_BYTE, nullptr);
 			}
 			else {
-				glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA, mainprogram->ow, mainprogram->oh, 0, GL_RGBA, GL_UNSIGNED_BYTE, NULL);
+				glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA, mainprogram->ow, mainprogram->oh, 0, GL_RGBA, GL_UNSIGNED_BYTE, nullptr);
 			}
 			glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR);
 			glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
@@ -3893,11 +3899,11 @@ void onestepfrom(bool stage, Node *node, Node *prevnode, GLuint prevfbotex, GLui
 		else glUniform1f(opacity, 1.0f);
 		
 		
-// #define BUFFER_OFFSET(i) ((char *)NULL + (i))
+// #define BUFFER_OFFSET(i) ((char *)nullptr + (i))
 		// GLuint ioBuf;
  		// glGenBuffers(1, &ioBuf); 
 		// glBindBuffer(GL_PIXEL_PACK_BUFFER_ARB, ioBuf);
- 		// glBufferData(GL_PIXEL_PACK_BUFFER_ARB, mainprogram->ow * mainprogram->oh, NULL, GL_STREAM_READ);
+ 		// glBufferData(GL_PIXEL_PACK_BUFFER_ARB, mainprogram->ow * mainprogram->oh, nullptr, GL_STREAM_READ);
  		// glBindFramebuffer(GL_FRAMEBUFFER, ((VideoNode*)(node->in))->layer->fbo);
 		// glReadBuffer(GL_COLOR_ATTACHMENT0);
  		// glReadPixels(0, 0, mainprogram->ow, mainprogram->oh, GL_RGBA, GL_UNSIGNED_BYTE, BUFFER_OFFSET(0));
@@ -3938,7 +3944,7 @@ void onestepfrom(bool stage, Node *node, Node *prevnode, GLuint prevfbotex, GLui
 			glBindFramebuffer(GL_FRAMEBUFFER, effect->fbo);
 			glDrawBuffer(GL_COLOR_ATTACHMENT0);
 			float black[4] = {0.0f, 0.0f, 0.0f, 0.0f};
-			draw_box(NULL, black, -1.0f, -1.0f, 2.0f * div, 2.0f * div * fac, lay->shiftx * div, lay->shifty * div, lay->scale, lay->opacity->value, 0, fbocopy, glob->w, glob->h);
+			draw_box(nullptr, black, -1.0f, -1.0f, 2.0f * div, 2.0f * div * fac, lay->shiftx * div, lay->shifty * div, lay->scale, lay->opacity->value, 0, fbocopy, glob->w, glob->h);
 			glEnable(GL_BLEND);
 			glDeleteTextures(1, &fbocopy);
 		}
@@ -3972,7 +3978,7 @@ void onestepfrom(bool stage, Node *node, Node *prevnode, GLuint prevfbotex, GLui
 			float black[4] = {0.0f, 0.0f, 0.0f, 0.0f};
 			float pixelw = 2.0f / (float)glob->w;
 			float pixelh = 2.0f / (float)glob->h;
-			draw_box(NULL, black, -1.0f - pixelw, -1.0f - pixelh, 2.0f * (div + pixelw), 2.0f * (div + pixelh) * fac, lay->shiftx * div, lay->shifty * div, lay->scale, lay->opacity->value, 0, fbocopy, glob->w, glob->h);
+			draw_box(nullptr, black, -1.0f - pixelw, -1.0f - pixelh, 2.0f * (div + pixelw), 2.0f * (div + pixelh) * fac, lay->shiftx * div, lay->shifty * div, lay->scale, lay->opacity->value, 0, fbocopy, glob->w, glob->h);
 			glEnable(GL_BLEND);
 			glDeleteTextures(1, &fbocopy);
 		}
@@ -3995,10 +4001,10 @@ void onestepfrom(bool stage, Node *node, Node *prevnode, GLuint prevfbotex, GLui
 					glGenTextures(1, &(bnode->fbotex));
 					glBindTexture(GL_TEXTURE_2D, bnode->fbotex);
 					if (mainprogram->preveff and stage == 0) {
-						glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA, glob->w * div, glob->h * div, 0, GL_RGBA, GL_UNSIGNED_BYTE, NULL);
+						glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA, glob->w * div, glob->h * div, 0, GL_RGBA, GL_UNSIGNED_BYTE, nullptr);
 					}
 					else {	
-						glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA, mainprogram->ow, mainprogram->oh, 0, GL_RGBA, GL_UNSIGNED_BYTE, NULL);
+						glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA, mainprogram->ow, mainprogram->oh, 0, GL_RGBA, GL_UNSIGNED_BYTE, nullptr);
 					}
 					glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR);
 					glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
@@ -4091,10 +4097,10 @@ void onestepfrom(bool stage, Node *node, Node *prevnode, GLuint prevfbotex, GLui
 			glGenTextures(1, &(mnode->mixtex));
 			glBindTexture(GL_TEXTURE_2D, mnode->mixtex);
 			if (mainprogram->preveff and stage == 0) {
-				glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA, (int)(glob->w * div), (int)(glob->h * div), 0, GL_RGBA, GL_UNSIGNED_BYTE, NULL);
+				glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA, (int)(glob->w * div), (int)(glob->h * div), 0, GL_RGBA, GL_UNSIGNED_BYTE, nullptr);
 			}
 			else {
-				glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA, mainprogram->ow, mainprogram->oh, 0, GL_RGBA, GL_UNSIGNED_BYTE, NULL);
+				glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA, mainprogram->ow, mainprogram->oh, 0, GL_RGBA, GL_UNSIGNED_BYTE, nullptr);
 			}
 			glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR);
 			glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
@@ -4175,7 +4181,7 @@ void walk_nodes(bool stage) {
 					continue;
 				}
 			}
-			onestepfrom(0, lay->node, NULL, -1, -1);
+			onestepfrom(0, lay->node, nullptr, -1, -1);
 		}
 		for (int i = 0; i < mainmix->layersB.size(); i++) {
 			Layer *lay = mainmix->layersB[i];
@@ -4184,7 +4190,7 @@ void walk_nodes(bool stage) {
 					continue;
 				}
 			}
-			onestepfrom(0, lay->node, NULL, -1, -1);
+			onestepfrom(0, lay->node, nullptr, -1, -1);
 		}
 	}
 	else {
@@ -4195,7 +4201,7 @@ void walk_nodes(bool stage) {
 					continue;
 				}
 			}
-			onestepfrom(1, lay->node, NULL, -1, -1);
+			onestepfrom(1, lay->node, nullptr, -1, -1);
 		}
 		for (int i = 0; i < mainmix->layersBcomp.size(); i++) {
 			Layer *lay = mainmix->layersBcomp[i];
@@ -4204,7 +4210,7 @@ void walk_nodes(bool stage) {
 					continue;
 				}
 			}
-			onestepfrom(1, lay->node, NULL, -1, -1);
+			onestepfrom(1, lay->node, nullptr, -1, -1);
 		}
 	}
 }		
@@ -4720,7 +4726,7 @@ void make_layboxes() {
 				testlay->chromabox->upvtxtoscr();
 		
 				// shift effectboxes and parameterboxes according to position in stack and scrollposition of stack
-				Effect *preveff = NULL;
+				Effect *preveff = nullptr;
 				for (int j = 0; j < testlay->effects.size(); j++) {
 					Effect *eff = testlay->effects[j];
 					eff->box->vtxcoords->x1 = testlay->mixbox->vtxcoords->x1 + tf(0.05f) - (testlay->pos % 3) * tf(0.04f);
@@ -6938,7 +6944,7 @@ void exchange(Layer *lay, std::vector<Layer*> &slayers, std::vector<Layer*> &dla
 				float nextmfval;
 				int nextwipetype, nextwipedir;
 				float nextwipex, nextwipey;
-				Layer *nextlay = NULL;
+				Layer *nextlay = nullptr;
 				if (slayers.size() > lay->pos + 1) {
 					nextlay = slayers[lay->pos + 1];
 					nextbtype = nextlay->blendnode->blendtype;
@@ -7045,7 +7051,7 @@ void exchange(Layer *lay, std::vector<Layer*> &slayers, std::vector<Layer*> &dla
 				else {
 					dlayers[i + endx]->blendnode = new BlendNode;
 					//BlendNode *bnode = mainprogram->nodesmain->currpage->add_blendnode(MIXING, false);
-					Layer *nxlay = NULL;
+					Layer *nxlay = nullptr;
 					if (dlayers.size() > 2) nxlay = dlayers[1];
 					if (nxlay) {
 						lay->node->out.clear();
@@ -7783,10 +7789,10 @@ void output_video(EWindow *mwin) {
 	glBindVertexArray(mwin->vao);
 	glBindBuffer(GL_ARRAY_BUFFER, mwin->vbuf);
 	glEnableVertexAttribArray(0);
-	glVertexAttribPointer(0, 2, GL_FLOAT, GL_FALSE, 8, NULL);
+	glVertexAttribPointer(0, 2, GL_FLOAT, GL_FALSE, 8, nullptr);
 	glBindBuffer(GL_ARRAY_BUFFER, mwin->tbuf);
 	glEnableVertexAttribArray(1);
-	glVertexAttribPointer(1, 2, GL_FLOAT, GL_FALSE, 8, NULL);
+	glVertexAttribPointer(1, 2, GL_FLOAT, GL_FALSE, 8, nullptr);
 
 	MixNode *node;
 	while(1) {
@@ -8006,10 +8012,10 @@ void the_loop() {
 		glBindVertexArray(vao);
 		glBindBuffer(GL_ARRAY_BUFFER, vbuf);
 		glEnableVertexAttribArray(0);
-		glVertexAttribPointer(0, 2, GL_FLOAT, GL_FALSE, 8, NULL);
+		glVertexAttribPointer(0, 2, GL_FLOAT, GL_FALSE, 8, nullptr);
 		glBindBuffer(GL_ARRAY_BUFFER, tbuf);
 		glEnableVertexAttribArray(1);
-		glVertexAttribPointer(1, 2, GL_FLOAT, GL_FALSE, 8, NULL);
+		glVertexAttribPointer(1, 2, GL_FLOAT, GL_FALSE, 8, nullptr);
 	
 		MixNode *node;
 		if (mainprogram->fullscreen == mainprogram->nodesmain->mixnodes.size()) node = (MixNode*)mainprogram->nodesmain->mixnodescomp[mainprogram->fullscreen - 1];
@@ -8776,7 +8782,7 @@ void the_loop() {
 				mainmix->mouselayer->replace_effect((EFFECT_TYPE)(k - 1), mainmix->mouseeffect);
 				mainmix->mouselayer->effects[mainmix->mouseeffect]->node->monitor = mon;
 			}
-			mainmix->mouselayer = NULL;
+			mainmix->mouselayer = nullptr;
 			mainmix->mouseeffect = -1;
 		}
 		if (mainprogram->menuchosen) {
@@ -9810,7 +9816,7 @@ void the_loop() {
 	// draw close window icon?
 	float deepred[4] = {1.0, 0.0, 0.0, 1.0};
 	if (mainprogram->mx == glob->w - 1 and mainprogram->my == 0) {
-		draw_box(NULL, deepred, 0.95f, 1.0f - 0.05f * glob->w / glob->h, 0.05f, 0.05f * glob->w / glob->h, -1);
+		draw_box(nullptr, deepred, 0.95f, 1.0f - 0.05f * glob->w / glob->h, 0.05f, 0.05f * glob->w / glob->h, -1);
 		render_text("x", white, 0.962f, 1.015f - 0.05f * glob->w / glob->h, 0.0012f, 0.002f);
 		if (mainprogram->leftmouse)	mainprogram->quit("closed window");
 	}
@@ -9840,7 +9846,7 @@ void the_loop() {
 		glBindTexture(GL_TEXTURE_2D, tex);
 		glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR);
 		glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
-		glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA, smw, smh, 0, GL_RGBA, GL_UNSIGNED_BYTE, NULL);
+		glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA, smw, smh, 0, GL_RGBA, GL_UNSIGNED_BYTE, nullptr);
 		glGenFramebuffers(1, &fbo);
 		glBindFramebuffer(GL_FRAMEBUFFER, fbo);
 		glFramebufferTexture2D(GL_FRAMEBUFFER, GL_COLOR_ATTACHMENT0, GL_TEXTURE_2D, tex, 0);
@@ -9989,7 +9995,7 @@ GLuint copy_tex(GLuint tex, int tw, int th, bool yflip) {
 	glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_BORDER);
 	glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR);
 	glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
-	glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA, tw, th, 0, GL_RGBA, GL_UNSIGNED_BYTE, NULL);
+	glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA, tw, th, 0, GL_RGBA, GL_UNSIGNED_BYTE, nullptr);
 	GLuint dfbo;
 	glGenFramebuffers(1, &dfbo);
 	glBindFramebuffer(GL_FRAMEBUFFER, dfbo);
@@ -10003,10 +10009,10 @@ GLuint copy_tex(GLuint tex, int tw, int th, bool yflip) {
 	float facx = (float)tw / glob->w;
 	float facy = (float)th / glob->h;
 	if (yflip) {
-		draw_box(NULL, black, -1.0f, -1.0f, 2.0f * facx, 2.0f * facy, 0.0f, 0.0f, 1.0f, 1.0f, 0, tex, glob->w, glob->h);
+		draw_box(nullptr, black, -1.0f, -1.0f, 2.0f * facx, 2.0f * facy, 0.0f, 0.0f, 1.0f, 1.0f, 0, tex, glob->w, glob->h);
 	}
 	else {
-		draw_box(NULL, black, -1.0f, -1.0f + 2.0f * facy, 2.0f * facx, -2.0f * facy, 0.0f, 0.0f, 1.0f, 1.0f, 0, tex, glob->w, glob->h);
+		draw_box(nullptr, black, -1.0f, -1.0f + 2.0f * facy, 2.0f * facx, -2.0f * facy, 0.0f, 0.0f, 1.0f, 1.0f, 0, tex, glob->w, glob->h);
 	}
 	glDeleteFramebuffers(1, &dfbo);
 	return smalltex;
@@ -10233,7 +10239,7 @@ void save_shelf(const std::string &path, int deck) {
 
 void open_shelfdir() {
 	struct dirent *ent;
-	if ((ent = readdir(mainprogram->opendir)) != NULL and mainprogram->shelfdircount < 16) {
+	if ((ent = readdir(mainprogram->opendir)) != nullptr and mainprogram->shelfdircount < 16) {
 		char *filepath = (char*)malloc(1024);
 		strcpy(filepath, mainprogram->shelfpath.c_str());
 		strcat(filepath, "/");
@@ -10349,12 +10355,12 @@ bool open_shelflayer(const std::string &path, int pos) {
 	else {
 		glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA, lay->decresult->width, lay->decresult->height, 0, GL_RGBA, GL_UNSIGNED_BYTE, lay->decresult->data);
 	}
-	onestepfrom(0, lay->node, NULL, -1, -1);
+	onestepfrom(0, lay->node, nullptr, -1, -1);
 	if (lay->effects.size()) {
-		thumbtex[pos] = copy_tex(lay->effects[lay->effects.size() - 1]->fbotex, 1);
+		thumbtex[pos] = copy_tex(lay->effects[lay->effects.size() - 1]->fbotex);
 	}
 	else {
-		thumbtex[pos] = copy_tex(lay->fbotex, 1);
+		thumbtex[pos] = copy_tex(lay->fbotex);
 	}
 	lay->closethread = true;
 	while (lay->closethread) {
@@ -10742,9 +10748,9 @@ int main(int argc, char* argv[]){
 	
     
     // OPENAL
-	const char *defaultDeviceName = alcGetString(NULL, ALC_DEFAULT_DEVICE_SPECIFIER);
+	const char *defaultDeviceName = alcGetString(nullptr, ALC_DEFAULT_DEVICE_SPECIFIER);
 	ALCdevice *device = alcOpenDevice(defaultDeviceName);
-	ALCcontext *context = alcCreateContext(device, NULL);
+	ALCcontext *context = alcCreateContext(device, nullptr);
 	bool succes = alcMakeContextCurrent(context);
 	
 	if (SDL_Init(SDL_INIT_VIDEO) < 0) /* Initialize SDL's Video subsystem */
@@ -10800,7 +10806,7 @@ int main(int argc, char* argv[]){
 	glBindTexture(GL_TEXTURE_2D, mainprogram->smglobfbotex_tm);
 	glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_NEAREST);
 	glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_NEAREST);
-	glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA, smw, smh, 0, GL_RGBA, GL_UNSIGNED_BYTE, NULL);
+	glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA, smw, smh, 0, GL_RGBA, GL_UNSIGNED_BYTE, nullptr);
 	glGenFramebuffers(1, &mainprogram->smglobfbo_tm);
 	glBindFramebuffer(GL_FRAMEBUFFER, mainprogram->smglobfbo_tm);
 	glFramebufferTexture2D(GL_FRAMEBUFFER, GL_COLOR_ATTACHMENT0, GL_TEXTURE_2D, mainprogram->smglobfbotex_tm, 0);
@@ -10811,7 +10817,7 @@ int main(int argc, char* argv[]){
 	glBindTexture(GL_TEXTURE_2D, mainprogram->smglobfbotex_pr);
 	glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_NEAREST);
 	glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_NEAREST);
-	glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA, smw, smh, 0, GL_RGBA, GL_UNSIGNED_BYTE, NULL);
+	glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA, smw, smh, 0, GL_RGBA, GL_UNSIGNED_BYTE, nullptr);
 	glGenFramebuffers(1, &mainprogram->smglobfbo_pr);
 	glBindFramebuffer(GL_FRAMEBUFFER, mainprogram->smglobfbo_pr);
 	glFramebufferTexture2D(GL_FRAMEBUFFER, GL_COLOR_ATTACHMENT0, GL_TEXTURE_2D, mainprogram->smglobfbotex_pr, 0);
@@ -10823,7 +10829,7 @@ int main(int argc, char* argv[]){
 	glBindTexture(GL_TEXTURE_2D, mainprogram->globfbotex);
 	glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_NEAREST);
 	glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_NEAREST);
-	glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA, glob->w, glob->h, 0, GL_RGBA, GL_UNSIGNED_BYTE, NULL);
+	glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA, glob->w, glob->h, 0, GL_RGBA, GL_UNSIGNED_BYTE, nullptr);
 	glGenFramebuffers(1, &mainprogram->globfbo);
 	glBindFramebuffer(GL_FRAMEBUFFER, mainprogram->globfbo);
 	glFramebufferTexture2D(GL_FRAMEBUFFER, GL_COLOR_ATTACHMENT0, GL_TEXTURE_2D, mainprogram->globfbotex, 0);
@@ -11265,8 +11271,8 @@ int main(int argc, char* argv[]){
 	
 	LPFN_GLPI glpi;
 	BOOL done = FALSE;
-	PSYSTEM_LOGICAL_PROCESSOR_INFORMATION buffer = NULL;
-	PSYSTEM_LOGICAL_PROCESSOR_INFORMATION ptr = NULL;
+	PSYSTEM_LOGICAL_PROCESSOR_INFORMATION buffer = nullptr;
+	PSYSTEM_LOGICAL_PROCESSOR_INFORMATION ptr = nullptr;
 	DWORD returnLength = 0;
 	DWORD byteOffset = 0;
 
@@ -11289,7 +11295,7 @@ int main(int argc, char* argv[]){
                 buffer = (PSYSTEM_LOGICAL_PROCESSOR_INFORMATION)malloc(
                         returnLength);
 
-                if (NULL == buffer) 
+                if (nullptr == buffer) 
                 {
                     printf(TEXT("\nError: Allocation failure\n"));
                     return (2);
@@ -11351,7 +11357,7 @@ int main(int argc, char* argv[]){
 
 		io.poll();
 		
-		if (!(mainprogram->path == NULL)) {
+		if (!(mainprogram->path == nullptr)) {
 			if (mainprogram->pathto == "OPENVIDEO") {
 				std::string str(mainprogram->path);
 				open_video(0, mainprogram->loadlay, str, true);
@@ -11444,9 +11450,11 @@ int main(int argc, char* argv[]){
 				}
 				mainprogram->choosing = EDIT_NONE;
 			}
-			mainprogram->path = NULL;
+			mainprogram->path = nullptr;
+			mainprogram->pathto = "";
 		}
-
+		else mainprogram->blocking = false;
+		
 		bool focus = true;
 		mainprogram->mousewheel = 0;
 		SDL_Event e;

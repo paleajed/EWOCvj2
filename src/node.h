@@ -59,7 +59,7 @@ class Node {
 		std::vector<Node*> out;
 		Box *box;
 		Box *vidbox;
-		Node *align = NULL;
+		Node *align = nullptr;
 		int alignpos;
 		int aligned = 0;
 		bool calc = false;
@@ -130,8 +130,8 @@ class MixNode: public Node {
 
 class EffectNode: public Node {
 	public:
-		Effect *effect = NULL;
-		Node *in2 = NULL;
+		Effect *effect = nullptr;
+		Node *in2 = nullptr;
 		EffectNode();
 };
 
@@ -144,7 +144,7 @@ class BlendNode: public Node {
 		int wipedir;
 		float wipex;
 		float wipey;
-		Node *in2 = NULL;
+		Node *in2 = nullptr;
 		GLuint intex = -1;
 		GLuint in2tex = -1;
 		GLuint fbo = -1;

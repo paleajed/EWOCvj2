@@ -776,7 +776,7 @@ void NodePage::handle_nodes() {
 				mainprogram->leftmousedown = false;
 				if (!mainprogram->nodesmain->currpage->movingnode)
 					mainprogram->nodesmain->currpage->movingnode = node;
-					if (node->type == EFFECT) ((EffectNode*)node)->align = NULL;
+					if (node->type == EFFECT) ((EffectNode*)node)->align = nullptr;
 			}
 		}
 		if (mainprogram->nodesmain->currpage->movingnode == node) {

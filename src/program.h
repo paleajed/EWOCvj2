@@ -327,7 +327,6 @@ class Program {
 		std::vector<Layer*> mimiclayers;
 		std::vector<Box*> elemboxes;
 		
-		BinsMain *binsmain;
 		bool binsscreen = false;
 		BinElement *dragbinel = nullptr;
 		Clip *dragclip = nullptr;

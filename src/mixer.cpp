@@ -143,7 +143,7 @@ Layer* Mixer::add_layer(std::vector<Layer*> &layers, int pos) {
 		layer->genmidibut->value = this->genmidi[1]->value;
 	}
 	
-	Layer *testlay = NULL;
+	Layer *testlay = nullptr;
 	
 	layer->pos = pos;
 	
@@ -187,7 +187,7 @@ Layer* Mixer::add_layer(std::vector<Layer*> &layers, int pos) {
 	else {
 		layer->blendnode = new BlendNode;
 		BlendNode *bnode = mainprogram->nodesmain->currpage->add_blendnode(MIXING, false);
-		Layer *nextlay = NULL;
+		Layer *nextlay = nullptr;
 		if (layers.size() > 1) nextlay = layers[1];
 		if (nextlay) {
 			mainprogram->nodesmain->currpage->connect_nodes(bnode, nextlay->lasteffnode->out[0]);
@@ -227,7 +227,7 @@ void Mixer::do_deletelay(Layer *testlay, std::vector<Layer*> &layers, bool add) 
 	}
 	
 	BLEND_TYPE nextbtype;
-	Layer *nextlay = NULL;
+	Layer *nextlay = nullptr;
 	if (layers.size() > testlay->pos + 1) {
 		nextlay = layers[testlay->pos + 1];
 		nextbtype = nextlay->blendnode->blendtype;
@@ -1220,7 +1220,9 @@ void Mixer::open_layerfile(const std::string &path, Layer *lay, bool loadevents,
 	std::string istring;
 	
 	Node *nextnode;
-	if (lay->lasteffnode->out.size()) nextnode = lay->lasteffnode->out[0];
+	if (lay->lasteffnode) {
+		if (lay->lasteffnode->out.size()) nextnode = lay->lasteffnode->out[0];
+	}
 	if (lay->node) {
 		if (lay->node != lay->lasteffnode) {
 			if (lay->pos > 0) {
@@ -1623,7 +1625,7 @@ int Mixer::read_layers(std::istream &rfile, const std::string &result, std::vect
 						glBindTexture(GL_TEXTURE_2D, clip->tex);
 						glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR);
 						glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
-						glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA, (int)(glob->w * 0.3f), (int)(glob->h * 0.3f), 0, GL_RGBA, GL_UNSIGNED_BYTE, NULL);
+						glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA, (int)(glob->w * 0.3f), (int)(glob->h * 0.3f), 0, GL_RGBA, GL_UNSIGNED_BYTE, nullptr);
 						if (concat) {
 							boost::filesystem::rename(result + "_" + std::to_string(jpegcount) + ".file", result + "_" + std::to_string(jpegcount) + ".jpeg");
 							open_thumb(result + "_" + std::to_string(jpegcount) + ".jpeg", clip->tex);
@@ -1713,7 +1715,7 @@ int Mixer::read_layers(std::istream &rfile, const std::string &result, std::vect
 	
 void Mixer::record_video() {
     const AVCodec *codec;
-    AVCodecContext *c = NULL;
+    AVCodecContext *c = nullptr;
     int i, ret, x, y;
     FILE *f;
     AVFrame *frame;
@@ -1730,7 +1732,7 @@ void Mixer::record_video() {
     c->framerate = (AVRational){25, 1};
     c->pix_fmt = AV_PIX_FMT_YUVJ420P;
     /* open it */
-    ret = avcodec_open2(c, codec, NULL);
+    ret = avcodec_open2(c, codec, nullptr);
     
 	std::string name = "recording_0";
 	int count = 0;
@@ -1773,9 +1775,9 @@ void Mixer::record_video() {
         c->height,
         c->pix_fmt,
         SWS_BILINEAR,
-        NULL,
-        NULL,
-        NULL);
+        nullptr,
+        nullptr,
+        nullptr);
     
 	/* record */
     while (mainmix->recording) {
@@ -1830,7 +1832,7 @@ void Mixer::record_video() {
         encode_frame(nullptr, c, this->yuvframe, pkt, f, 0);
     }
     /* flush the encoder */
-    encode_frame(nullptr, c, NULL, pkt, f, 0);
+    encode_frame(nullptr, c, nullptr, pkt, f, 0);
     /* add sequence end code to have a real MPEG file */
     fwrite(endcode, 1, sizeof(endcode), f);
     fclose(f);
@@ -1854,9 +1856,9 @@ void Mixer::start_recording() {
         params.sched_priority = sched_get_priority_min(SCHED_FIFO);		pthread_setschedparam(this->recording_video.native_handle(), SCHED_FIFO, &params);
 		#endif
 		this->recording_video.detach();
-		#define BUFFER_OFFSET(i) ((char *)NULL + (i))
+		#define BUFFER_OFFSET(i) ((char *)nullptr + (i))
 		glBindBuffer(GL_PIXEL_PACK_BUFFER_ARB, this->ioBuf);
-		glBufferData(GL_PIXEL_PACK_BUFFER_ARB, (int)(mainprogram->ow * mainprogram->oh) * 4, NULL, GL_DYNAMIC_READ);
+		glBufferData(GL_PIXEL_PACK_BUFFER_ARB, (int)(mainprogram->ow * mainprogram->oh) * 4, nullptr, GL_DYNAMIC_READ);
 		glBindFramebuffer(GL_FRAMEBUFFER, ((MixNode*)mainprogram->nodesmain->mixnodescomp[2])->mixfbo);
 		glReadBuffer(GL_COLOR_ATTACHMENT0);
 		glReadPixels(0, 0, mainprogram->ow, (int)mainprogram->oh, GL_RGBA, GL_UNSIGNED_BYTE, BUFFER_OFFSET(0));

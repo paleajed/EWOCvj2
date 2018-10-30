@@ -39,8 +39,8 @@ class BinsMain {
 		bool openbinfile = false;
 		int inserting = -1;
 		bool movingstruct = false;
-		BinDeck *movingdeck;
-		BinMix *movingmix;		
+		BinDeck *movingdeck = nullptr;
+		BinMix *movingmix = nullptr;		
 		
 		void handle();
 		int read_binslist();

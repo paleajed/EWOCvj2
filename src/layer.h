@@ -159,27 +159,27 @@ class Layer {
 		
 		Box *vidbox;
 		bool changed;
-		VideoNode *node;
-		Node *lasteffnode = NULL;
-		BlendNode *blendnode = NULL;
+		VideoNode *node = nullptr;
+		Node *lasteffnode = nullptr;
+		BlendNode *blendnode = nullptr;
 		
 		std::string filename = "";
-		AVFormatContext *video = NULL;
-		AVFrame *rgbframe = NULL;
-		AVFrame *decframe = NULL;
-		AVFrame *audioframe = NULL;
+		AVFormatContext *video = nullptr;
+		AVFrame *rgbframe = nullptr;
+		AVFrame *decframe = nullptr;
+		AVFrame *audioframe = nullptr;
 		AVPacket decpkt;
 		bool pktloaded = false;
 		int reset = 0;
 		AVPacket audiopkt;
-		AVCodecContext *video_dec_ctx = NULL;
-		AVCodecContext *audio_dec_ctx = NULL;
-		AVStream *video_stream = NULL;
-		AVStream *audio_stream = NULL;
+		AVCodecContext *video_dec_ctx = nullptr;
+		AVCodecContext *audio_dec_ctx = nullptr;
+		AVStream *video_stream = nullptr;
+		AVStream *audio_stream = nullptr;
 		int video_stream_idx = -1;
 		int audio_stream_idx = -1;
-		struct SwsContext *sws_ctx = NULL;
-		uint8_t *avbuffer = NULL;
+		struct SwsContext *sws_ctx = nullptr;
+		uint8_t *avbuffer = nullptr;
 		char *databuf = nullptr;
 		int vidformat = -1;
 		int dataformat = -1;
@@ -232,9 +232,9 @@ class Mixer {
 		bool recordnow = false;
 		bool recording = false;
 		bool donerec = true;
-		struct SwsContext *sws_ctx = NULL;
-		uint8_t *avbuffer = NULL;
-		AVFrame *yuvframe = NULL;
+		struct SwsContext *sws_ctx = nullptr;
+		uint8_t *avbuffer = nullptr;
+		AVFrame *yuvframe = nullptr;
 		void *rgbdata = nullptr;
 		GLuint ioBuf;
 		
@@ -266,7 +266,7 @@ class Mixer {
 		bool mousedeck = -1;
 		int mouseshelfelem;
 		bool insert;
-		Node *mousenode = NULL;
+		Node *mousenode = nullptr;
 		Param *learnparam;
 		bool learn = false;
 		float midi2;
