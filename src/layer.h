@@ -53,6 +53,8 @@ class Layer {
 	public:
 		int pos;
 		bool deck;
+		bool clonedeck = -1;
+		int clonepos = -1;
 		std::vector<Clip*> clips;
 		ELEM_TYPE currcliptype = ELEM_FILE;
 		bool queueing = false;

@@ -1928,13 +1928,14 @@ std::tuple<std::string, std::string> BinsMain::hap_binel(BinElement *binel, BinD
 					wfile << "\n";
 					wfile << "RELPATH\n";
 					wfile << "./" + boost::filesystem::relative(apath, "./").string();
+					rpath = "./" + boost::filesystem::relative(apath, "./").string();
 					wfile << "\n";
 				}
 			}
 			else if (istring == "RELPATH") {
 				getline(rfile, istring);
-				rpath = istring;
 				if (path == "") {
+					rpath = istring;
 					if (exists(istring)) {
 						path = boost::filesystem::absolute(istring).string();
 						rpath = remove_extension(rpath) + "_hap.mov";
@@ -1965,6 +1966,8 @@ std::tuple<std::string, std::string> BinsMain::hap_binel(BinElement *binel, BinD
 			AVFormatContext *video = nullptr;
 			AVCodecParameters *cpm = nullptr;
 			int idx;
+			printf("pathname %s\n", path.c_str());
+			fflush(stdout);
 			avformat_open_input(&video, path.c_str(), nullptr, nullptr);
 			avformat_find_stream_info(video, nullptr);
 			open_codec_context(&idx, video, AVMEDIA_TYPE_VIDEO);
@@ -2118,7 +2121,8 @@ void BinsMain::hap_encode(const std::string &srcpath, BinElement *binel, BinDeck
 	AVCodec *scodec = avcodec_find_decoder(source_stream->codecpar->codec_id);	
 	source_dec_ctx = avcodec_alloc_context3(scodec);
 	r = avcodec_parameters_to_context(source_dec_ctx, source_dec_cpm);
-	source_dec_ctx->time_base = source_stream->time_base;
+    source_dec_ctx->time_base = {1, 1000};
+    source_dec_ctx->framerate = (AVRational){source_stream->r_frame_rate.num, source_stream->r_frame_rate.den};
 	r = avcodec_open2(source_dec_ctx, scodec, nullptr);
 	if (source_dec_cpm->codec_id == 188 or source_dec_cpm->codec_id == 187) {
 		binel->encoding = false;
@@ -2157,8 +2161,8 @@ void BinsMain::hap_encode(const std::string &srcpath, BinElement *binel, BinDeck
 	pkt.data = nullptr;
 	pkt.size = 0;
 	/* open it */
-    c->time_base = source_stream->time_base;
-    c->framerate = (AVRational){source_stream->r_frame_rate.num, source_stream->r_frame_rate.den};
+    c->time_base = source_dec_ctx->time_base;
+    //c->framerate = (AVRational){source_stream->r_frame_rate.num, source_stream->r_frame_rate.den};
 	c->sample_aspect_ratio = source_dec_cpm->sample_aspect_ratio;
     c->pix_fmt = codec->pix_fmts[0];  
     int rem = source_dec_cpm->width % 32;
@@ -2171,12 +2175,12 @@ void BinsMain::hap_encode(const std::string &srcpath, BinElement *binel, BinDeck
     std::string destpath = remove_extension(srcpath) + "_hap.mov";
     avformat_alloc_output_context2(&dest, av_guess_format("mov", nullptr, "video/mov"), nullptr, destpath.c_str());
     dest_stream = avformat_new_stream(dest, codec);
+    dest_stream->time_base = source_stream->time_base;
 	r = avcodec_parameters_from_context(dest_stream->codecpar, c);
     if (r < 0) {
 		av_log(nullptr, AV_LOG_ERROR, "Copying stream context failed\n");
 		av_log(nullptr, AV_LOG_ERROR, "Copying parameters for stream #%u failed\n");
     }   
-    dest_stream->time_base = source_stream->time_base;
     dest_stream->r_frame_rate = source_stream->r_frame_rate;
     dest->oformat->flags |= AVFMT_NOFILE;
     //avformat_init_output(dest, nullptr);
@@ -2218,7 +2222,7 @@ void BinsMain::hap_encode(const std::string &srcpath, BinElement *binel, BinDeck
 		int got_frame;
 		avcodec_send_packet(source_dec_ctx, &pkt);
  		int r = avcodec_receive_frame(source_dec_ctx, decframe);
- 		if (r == AVERROR(EINVAL)) printf("EINVAL\n");
+		if (r == AVERROR(EINVAL)) printf("EINVAL\n");
 	   	
 	   	// do pixel format conversion
 		int storage = av_image_alloc(nv12frame->data, nv12frame->linesize, nv12frame->width, nv12frame->height, c->pix_fmt, 32);
@@ -2232,8 +2236,9 @@ void BinsMain::hap_encode(const std::string &srcpath, BinElement *binel, BinDeck
 			nv12frame->data,
 			nv12frame->linesize
 		);
+		nv12frame->pts = decframe->pts;
 
-		encode_frame(dest, c, nv12frame, &pkt, nullptr, frame);
+		encode_frame(dest, source, c, nv12frame, &pkt, nullptr, frame);
 		
         av_freep(nv12frame->data);
 		av_packet_unref(&pkt);

@@ -767,6 +767,29 @@ std::vector<std::string> Mixer::write_layer(Layer *lay, std::ostream& wfile, boo
 	wfile << "RELPATH\n";
 	wfile << "./" + boost::filesystem::relative(lay->filename, "./").string();
 	wfile << "\n";
+	wfile << "CLONEPOS\n";
+	bool brk;
+	int clonepos = -1;
+	int clonedeck = -1;
+	std::unordered_map<Layer*, std::unordered_set<Layer*>*>::iterator it1;
+    for (it1 = mainmix->clonemap.begin(); it1 != mainmix->clonemap.end(); it1++) {
+		std::unordered_set<Layer*>::iterator it2;
+		for (it2 = mainmix->clonemap[it1->first]->begin(); it2 != mainmix->clonemap[it1->first]->end(); it2++) {	
+			Layer *clonelay = *it2;
+			if (clonelay == lay) {
+				clonepos = it1->first->pos;
+				clonedeck = it1->first->deck;
+				brk = true;
+				break;
+			}
+		}
+		if (brk) break;
+	}
+	wfile << std::to_string(clonepos);
+	wfile << "\n";
+	wfile << "CLONEDECK\n";
+	wfile << std::to_string(clonedeck);
+	wfile << "\n";
 	if (!lay->live) {
 		wfile << "SPEEDVAL\n";
 		wfile << std::to_string(lay->speed->value);
@@ -1369,6 +1392,24 @@ void Mixer::open_mix(const std::string &path) {
 			mainmix->read_layers(rfile, result, layersB, 1, 2, concat, 1, 1, 1);
 			mainprogram->filecount = 0;
 		}
+		for (int m = 0; m < 2; m++) {
+			std::vector<Layer*> &layers = choose_layers(m);
+			for (int i = 0; i < layers.size(); i++) {
+				if (layers[i]->clonepos != -1) {
+					std::vector<Layer*> &layersmaster = choose_layers(layers[i]->clonedeck);
+					std::unordered_map<Layer*, std::unordered_set<Layer*>*>::iterator it = mainmix->clonemap.find(layersmaster[layers[i]->clonepos]);
+					if (it != mainmix->clonemap.end()) {
+						mainmix->clonemap[it->first]->emplace(layers[i]);
+					}
+					else {
+						std::unordered_set<Layer*> *uset = new std::unordered_set<Layer*>;
+						mainmix->clonemap.emplace(layersmaster[layers[i]->clonepos], uset);
+						mainmix->clonemap.emplace(layersmaster[i], uset);
+						uset->emplace(layersmaster[layers[i]->clonepos]);
+					}
+				}
+			}
+		}
 	}
 	
 	std::vector<Layer*> &lvec = choose_layers(cldeck);
@@ -1396,7 +1437,20 @@ void Mixer::open_deck(const std::string &path, bool alive) {
 	loopstation->readelemnrs.clear();
 	std::vector<Layer*> &layers = choose_layers(mainmix->mousedeck);
 	mainmix->read_layers(rfile, result, layers, mainmix->mousedeck, 1, 1, concat, 1, 1);
-	
+	for (int i = 0; i < layers.size(); i++) {
+		if (layers[i]->clonedeck == mainmix->mousedeck and layers[i]->clonepos != -1) {
+			std::unordered_map<Layer*, std::unordered_set<Layer*>*>::iterator it = mainmix->clonemap.find(layers[layers[i]->clonepos]);
+			if (it != mainmix->clonemap.end()) {
+				mainmix->clonemap[it->first]->emplace(layers[i]);
+			}
+			else {
+				std::unordered_set<Layer*> *uset = new std::unordered_set<Layer*>;
+				mainmix->clonemap.emplace(layers[layers[i]->clonepos], uset);
+				mainmix->clonemap.emplace(layers[i], uset);
+				uset->emplace(layers[layers[i]->clonepos]);
+			}
+		}
+	}
 	rfile.close();
 }
 
@@ -1462,6 +1516,14 @@ int Mixer::read_layers(std::istream &rfile, const std::string &result, std::vect
 				}
 			}
 		}	
+		if (istring == "CLONEPOS") {
+			getline(rfile, istring); 
+			lay->clonepos = std::stoi(istring);
+		}
+		if (istring == "CLONEDECK") {
+			getline(rfile, istring); 
+			lay->clonedeck = std::stoi(istring);
+		}
 		if (istring == "SPEEDVAL") {
 			getline(rfile, istring); 
 			lay->speed->value = std::stof(istring);
@@ -1639,8 +1701,8 @@ int Mixer::read_layers(std::istream &rfile, const std::string &result, std::vect
 		if (istring == "EFFECTS") {
 			int type;
 			Effect *eff = nullptr;
+			getline(rfile, istring);
 			while (istring != "ENDOFEFFECTS") {
-				getline(rfile, istring);
 				if (istring == "TYPE") {
 					getline(rfile, istring);
 					type = std::stoi(istring);
@@ -1707,7 +1769,10 @@ int Mixer::read_layers(std::istream &rfile, const std::string &result, std::vect
 						}
 					}
 				}
+				getline(rfile, istring);
 			}
+			printf("endtheend\n");
+			fflush(stdout);
 		}
 	}
 	return jpegcount;
@@ -1829,10 +1894,10 @@ void Mixer::record_video() {
         //}
         //frame->pts = i;
         /* encode the image */
-        encode_frame(nullptr, c, this->yuvframe, pkt, f, 0);
+        encode_frame(nullptr, nullptr, c, this->yuvframe, pkt, f, 0);
     }
     /* flush the encoder */
-    encode_frame(nullptr, c, nullptr, pkt, f, 0);
+    encode_frame(nullptr, nullptr, c, nullptr, pkt, f, 0);
     /* add sequence end code to have a real MPEG file */
     fwrite(endcode, 1, sizeof(endcode), f);
     fclose(f);

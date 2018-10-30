@@ -393,7 +393,7 @@ extern Menu *mixmodemenu;
 
 extern mix_target_struct mixtarget[2];
 
-extern int encode_frame(AVFormatContext *fmtctx, AVCodecContext *enc_ctx, AVFrame *frame, AVPacket *pkt, FILE *outfile, int framenr);
+extern int encode_frame(AVFormatContext *fmtctx, AVFormatContext *srcctx, AVCodecContext *enc_ctx, AVFrame *frame, AVPacket *pkt, FILE *outfile, int framenr);
 extern void open_video(float frame, Layer *lay, const std::string &filename, int reset);
 
 extern std::vector<Layer*>& choose_layers(bool j);

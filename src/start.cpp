@@ -745,7 +745,7 @@ void mycallback( double deltatime, std::vector< unsigned char > *message, void *
 
 
 
-int encode_frame(AVFormatContext *fmtctx, AVCodecContext *enc_ctx, AVFrame *frame, AVPacket *pkt, FILE *outfile, int framenr) {
+int encode_frame(AVFormatContext *fmtctx, AVFormatContext *srcctx, AVCodecContext *enc_ctx, AVFrame *frame, AVPacket *pkt, FILE *outfile, int framenr) {
     int ret;
     /* send the frame to the encoder */
 	AVPacket enc_pkt;
@@ -760,14 +760,13 @@ int encode_frame(AVFormatContext *fmtctx, AVCodecContext *enc_ctx, AVFrame *fram
 	else {
 		avcodec_send_frame(enc_ctx, frame);
  		int err = avcodec_receive_packet(enc_ctx, &enc_pkt);
+		av_packet_rescale_ts(&enc_pkt, srcctx->streams[enc_pkt.stream_index]->time_base, fmtctx->streams[enc_pkt.stream_index]->time_base);
  	}
 	if (outfile) fwrite(pkt->data, 1, pkt->size, outfile);
 	else {
 		/* prepare packet for muxing */
 		enc_pkt.stream_index = pkt->stream_index;
-		enc_pkt.duration = (fmtctx->streams[enc_pkt.stream_index]->time_base.den * fmtctx->streams[enc_pkt.stream_index]->r_frame_rate.den) / (fmtctx->streams[enc_pkt.stream_index]->time_base.num * fmtctx->streams[enc_pkt.stream_index]->r_frame_rate.num);
-		enc_pkt.dts = framenr * enc_pkt.duration;
-		enc_pkt.pts = enc_pkt.dts;
+		//enc_pkt.duration = pkt->duration;//(fmtctx->streams[enc_pkt.stream_index]->time_base.den * fmtctx->streams[enc_pkt.stream_index]->r_frame_rate.den) / (fmtctx->streams[enc_pkt.stream_index]->time_base.num * fmtctx->streams[enc_pkt.stream_index]->r_frame_rate.num);
 		av_write_frame(fmtctx, &enc_pkt);
 	}
    	av_packet_unref(pkt);
@@ -3160,6 +3159,7 @@ void display_texture(Layer *lay, bool deck) {
 				lay->playbut->box->acolor[3] = 1.0;
 				if (mainprogram->leftmouse) {
 					lay->playbut->value = !lay->playbut->value;
+					lay->set_clones();
 					if (lay->playbut->value) {
 						lay->revbut->value = false;
 						lay->bouncebut->value = false;
@@ -3187,6 +3187,7 @@ void display_texture(Layer *lay, bool deck) {
 				lay->revbut->box->acolor[3] = 1.0;
 				if (mainprogram->leftmouse) {
 					lay->revbut->value = !lay->revbut->value;
+					lay->set_clones();
 					if (lay->revbut->value) {
 						lay->playbut->value = false;
 						lay->bouncebut->value = false;
@@ -3214,6 +3215,7 @@ void display_texture(Layer *lay, bool deck) {
 				lay->bouncebut->box->acolor[3] = 1.0;
 				if (mainprogram->leftmouse) {
 					lay->bouncebut->value = !lay->bouncebut->value;
+					lay->set_clones();
 					if (lay->bouncebut->value) {
 						if (lay->revbut->value) {
 							lay->bouncebut->value = 2;
@@ -3298,6 +3300,7 @@ void display_texture(Layer *lay, bool deck) {
 				if (mainprogram->leftmouse) {
 					lay->genmidibut->value++;
 					if (lay->genmidibut->value == 5) lay->genmidibut->value = 0;
+					lay->set_clones();
 				}
 			}
 			else {
@@ -3340,12 +3343,14 @@ void display_texture(Layer *lay, bool deck) {
 						lay->scritching = 3;
 						mainprogram->middlemousedown = false;
 					}
+					lay->set_clones();
 				}
 			}
 			if (lay->loopbox->in()) {
 				if (mainprogram->leftmousedown) {
 					lay->scritching = 1;
 					lay->frame = (lay->numf - 1) * ((mainprogram->mx - lay->loopbox->scrcoords->x1) / lay->loopbox->scrcoords->w);
+					lay->set_clones();
 				}
 			}
 			if (lay->scritching) mainprogram->leftmousedown = false;
@@ -3353,6 +3358,7 @@ void display_texture(Layer *lay, bool deck) {
 				lay->frame = (lay->numf - 1) * ((mainprogram->mx - lay->loopbox->scrcoords->x1) / lay->loopbox->scrcoords->w);
 				if (lay->frame < 0) lay->frame = 0.0f;
 				else if (lay->frame > lay->numf - 1) lay->frame = lay->numf - 1;
+				lay->set_clones();
 				if (mainprogram->leftmouse and !mainprogram->menuondisplay) lay->scritching = 4;
 			}
 			else if (lay->scritching == 2) {
@@ -3361,6 +3367,7 @@ void display_texture(Layer *lay, bool deck) {
 				else if (lay->startframe > lay->numf - 1) lay->startframe = lay->numf - 1;
 				if (lay->startframe > lay->frame) lay->frame = lay->startframe;
 				if (lay->startframe > lay->endframe) lay->startframe = lay->endframe;
+				lay->set_clones();
 				if (mainprogram->middlemouse) lay->scritching = 0;
 			}
 			else if (lay->scritching == 3) {
@@ -3369,12 +3376,9 @@ void display_texture(Layer *lay, bool deck) {
 				else if (lay->endframe > lay->numf - 1) lay->endframe = lay->numf - 1;
 				//if (lay->endframe < lay->frame) lay->frame = lay->endframe;
 				//if (lay->endframe < lay->startframe) lay->endframe = lay->startframe;
+				lay->set_clones();
 				if (mainprogram->middlemouse) lay->scritching = 0;
 			}
-			
-			// Set all clone layers to possibly changed values
-			lay->set_clones();
-
 			
 			// Draw and handle chdir chinv
 			if (lay->pos > 0) {
@@ -5169,22 +5173,49 @@ void Layer::delete_effect(int pos) {
 }		
 
 void Layer::set_clones() {
-	std::unordered_set<Layer*>::iterator it;
-	if (mainmix->clonemap.find(this) != mainmix->clonemap.end()) {
-		for (it = mainmix->clonemap[this]->begin(); it != mainmix->clonemap[this]->end(); it++) {	
-			Layer *lay = *it;
-			if (lay != this) {
-				lay->speed->value = this->speed->value;
-				lay->opacity->value = this->opacity->value;
-				lay->playbut->value = this->playbut->value;
-				lay->revbut->value = this->revbut->value;
-				lay->bouncebut->value = this->bouncebut->value;
-				lay->genmidibut->value = this->genmidibut->value;
-				lay->frame = this->frame;
-				lay->startframe = this->startframe;
-				lay->endframe = this->endframe;
+	std::vector<Layer*> changelayers;
+	std::unordered_map<Layer*, std::unordered_set<Layer*>*>::iterator it1;
+	bool brk = false;
+    for (it1 = mainmix->clonemap.begin(); it1 != mainmix->clonemap.end(); it1++) {
+    	if ((Layer*)(it1->first) == this) {
+    		printf("found\n");
+			std::unordered_set<Layer*>::iterator it4;
+			for (it4 = mainmix->clonemap[it1->first]->begin(); it4 != mainmix->clonemap[it1->first]->end(); it4++) {
+				Layer *lay = *it4;
+				changelayers.push_back(lay);
+				printf("added layer\n");
+			}
+			break;
+		}
+		std::unordered_set<Layer*>::iterator it2;
+		for (it2 = mainmix->clonemap[it1->first]->begin(); it2 != mainmix->clonemap[it1->first]->end(); it2++) {	
+			Layer *clonelay = *it2;
+			if (clonelay == this) {
+				changelayers.push_back(it1->first);
+				std::unordered_set<Layer*>::iterator it3;
+				for (it3 = mainmix->clonemap[it1->first]->begin(); it3 != mainmix->clonemap[it1->first]->end(); it3++) {
+					Layer *lay = *it3;
+					if (lay != this) changelayers.push_back(lay);
+				}
+				brk = true;
+				break;
 			}
 		}
+		if (brk) break;
+	}
+	printf("setclones1\n");
+	for (int i = 0; i < changelayers.size(); i++) {
+		printf("setclones2\n");
+		Layer *lay = changelayers[i];
+		lay->speed->value = this->speed->value;
+		lay->opacity->value = this->opacity->value;
+		lay->playbut->value = this->playbut->value;
+		lay->revbut->value = this->revbut->value;
+		lay->bouncebut->value = this->bouncebut->value;
+		lay->genmidibut->value = this->genmidibut->value;
+		lay->frame = this->frame;
+		lay->startframe = this->startframe;
+		lay->endframe = this->endframe;
 	}
 }
 
@@ -8104,6 +8135,9 @@ void the_loop() {
 			if (mainmix->adaptparam->value > mainmix->adaptparam->range[1]) mainmix->adaptparam->value = mainmix->adaptparam->range[1];
 			mainmix->prevx = mainprogram->mx;
 			
+			if (mainmix->adaptparam == mainmix->currlay->speed) mainmix->currlay->set_clones();
+			if (mainmix->adaptparam == mainmix->currlay->opacity) mainmix->currlay->set_clones();
+			
 			if (mainmix->adaptparam->shadervar == "ripple") {
 				((RippleEffect*)mainmix->adaptparam->effect)->speed = mainmix->adaptparam->value;
 			}
@@ -8653,7 +8687,7 @@ void the_loop() {
 				box.vtxcoords->x1 += box.vtxcoords->w / 2.0f - 0.015f;
 				box.upvtxtoscr();
 				if (box.in()) {
-					if (mainprogram->leftmouse) {
+					if (mainprogram->leftmouse and j < size - 1) {
 						lvec[j]->onoff = !lvec[j]->onoff;
 						if (lvec[j]->blendnode) lvec[j]->blendnode->onoff = lvec[j]->onoff;
 						mainprogram->leftmouse = false;
@@ -8841,12 +8875,14 @@ void the_loop() {
 				if (mainmix->mouselayer->startframe > mainmix->mouselayer->endframe) {
 					mainmix->mouselayer->endframe = mainmix->mouselayer->startframe;
 				}
+				mainmix->mouselayer->set_clones();
 			}
 			else if (k == 1) {
 				mainmix->mouselayer->endframe = mainmix->mouselayer->frame;
 				if (mainmix->mouselayer->startframe > mainmix->mouselayer->endframe) {
 					mainmix->mouselayer->startframe = mainmix->mouselayer->endframe;
 				}
+				mainmix->mouselayer->set_clones();
 			}
 		}
 		if (mainprogram->menuchosen) {
@@ -9100,16 +9136,27 @@ void the_loop() {
 			else if (k == 11) {
 				std::vector<Layer*> &lvec = choose_layers(mainmix->mouselayer->deck);
 				Layer *clonelay = mainmix->clone_layer(lvec, mainmix->mouselayer);
-				if (mainmix->clonemap.find(mainmix->mouselayer) != mainmix->clonemap.end()) {
-					mainmix->clonemap.emplace(clonelay, mainmix->clonemap[mainmix->mouselayer]);
+				std::unordered_map<Layer*, std::unordered_set<Layer*>*>::iterator it1;
+				bool brk = false;
+				Layer *clonemaster = mainmix->mouselayer;
+				for (it1 = mainmix->clonemap.begin(); it1 != mainmix->clonemap.end(); it1++) {
+					std::unordered_set<Layer*>::iterator it2;
+					for (it2 = mainmix->clonemap[it1->first]->begin(); it2 != mainmix->clonemap[it1->first]->end(); it2++) {	
+						Layer *clonelay = *it2;
+						if (clonelay == mainmix->mouselayer) {
+							clonemaster = it1->first;
+							break;
+							brk = true;
+						}
+					}
+					if (brk) break;
 				}
-				else {
+				if (mainmix->clonemap.find(clonemaster) == mainmix->clonemap.end()) {
 					std::unordered_set<Layer*> *uset = new std::unordered_set<Layer*>;
-					mainmix->clonemap.emplace(mainmix->mouselayer, uset);
-					mainmix->clonemap.emplace(clonelay, uset);
-					uset->emplace(mainmix->mouselayer);
+					mainmix->clonemap.emplace(clonemaster, uset);
 				}
-				mainmix->clonemap[mainmix->mouselayer]->emplace(clonelay);
+				mainmix->clonemap[clonemaster]->emplace(clonelay);
+				printf("clonemaster %d\n", clonemaster);
 			}
 			else if (k == 12) {
 				mainmix->mouselayer->shiftx = 0.0f;
