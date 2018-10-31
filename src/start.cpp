@@ -2704,6 +2704,7 @@ void set_queueing(Layer *lay, bool onoff) {
 	
 void display_texture(Layer *lay, bool deck) {
 	float green[4] = {0.0, 1.0, 0.2, 1.0};
+	float lightblue[4] = {0.0, 0.2, 1.0, 1.0};
 	float white[4] = {1.0, 1.0, 1.0, 1.0};
 	float red[4] = {1.0, 0.0, 0.0, 1.0};
 	float black[4] = {0.0, 0.0, 0.0, 1.0};
@@ -3328,23 +3329,36 @@ void display_texture(Layer *lay, bool deck) {
 			draw_box(lay->loopbox, -1);
 			draw_box(white, green, lay->loopbox->vtxcoords->x1 + lay->startframe * (lay->loopbox->vtxcoords->w / (lay->numf - 1)), lay->loopbox->vtxcoords->y1, (lay->endframe - lay->startframe) * (lay->loopbox->vtxcoords->w / (lay->numf - 1)), tf(0.05f), -1);
 			draw_box(white, white, lay->loopbox->vtxcoords->x1 + lay->frame * (lay->loopbox->vtxcoords->w / (lay->numf - 1)), lay->loopbox->vtxcoords->y1, tf(0.00078f), tf(0.05f), -1);
+			bool ends = false;
 			if (lay->loopbox->in()) {
 				if (mainprogram->menuactivation) {
 					mainprogram->loopmenu->state = 2;
 					mainmix->mouselayer = lay;
 					mainprogram->menuactivation = false;
-				}	
-				if (mainprogram->middlemousedown) {
-					if (pdistance(mainprogram->mx, mainprogram->my, lay->loopbox->scrcoords->x1 + lay->startframe * (lay->loopbox->scrcoords->w / (lay->numf - 1)), lay->loopbox->scrcoords->y1, lay->loopbox->scrcoords->x1 + lay->startframe * (lay->loopbox->scrcoords->w / (lay->numf - 1)), lay->loopbox->scrcoords->y1 - mainprogram->yvtxtoscr(0.045f)) < 6) {
+				}
+				
+				if (pdistance(mainprogram->mx, mainprogram->my, lay->loopbox->scrcoords->x1 + lay->startframe * (lay->loopbox->scrcoords->w / (lay->numf - 1)), lay->loopbox->scrcoords->y1, lay->loopbox->scrcoords->x1 + lay->startframe * (lay->loopbox->scrcoords->w / (lay->numf - 1)), lay->loopbox->scrcoords->y1 - mainprogram->yvtxtoscr(0.045f)) < 6) {
+					ends = true;
+					if (mainprogram->middlemousedown) {
 						lay->scritching = 2;
 						mainprogram->middlemousedown = false;
 					}
-					if (pdistance(mainprogram->mx, mainprogram->my, lay->loopbox->scrcoords->x1 + lay->startframe * (lay->loopbox->scrcoords->w / (lay->numf - 1)) +  (lay->endframe - lay->startframe) * (lay->loopbox->scrcoords->w / (lay->numf - 1)), lay->loopbox->scrcoords->y1, lay->loopbox->scrcoords->x1 + lay->startframe * (lay->loopbox->scrcoords->w / (lay->numf - 1)) +  (lay->endframe - lay->startframe) * (lay->loopbox->scrcoords->w / (lay->numf - 1)), lay->loopbox->scrcoords->y1 - mainprogram->yvtxtoscr(0.045f)) < 6) {
+				}
+				else if (pdistance(mainprogram->mx, mainprogram->my, lay->loopbox->scrcoords->x1 + lay->startframe * (lay->loopbox->scrcoords->w / (lay->numf - 1)) +  (lay->endframe - lay->startframe) * (lay->loopbox->scrcoords->w / (lay->numf - 1)), lay->loopbox->scrcoords->y1, lay->loopbox->scrcoords->x1 + lay->startframe * (lay->loopbox->scrcoords->w / (lay->numf - 1)) +  (lay->endframe - lay->startframe) * (lay->loopbox->scrcoords->w / (lay->numf - 1)), lay->loopbox->scrcoords->y1 - mainprogram->yvtxtoscr(0.045f)) < 6) {
+					ends = true;
+					if (mainprogram->middlemousedown) {
 						lay->scritching = 3;
 						mainprogram->middlemousedown = false;
 					}
-					lay->set_clones();
 				}
+				else if (mainprogram->mx > lay->loopbox->scrcoords->x1 + lay->startframe * (lay->loopbox->scrcoords->w / (lay->numf - 1)) and mainprogram->mx  < lay->loopbox->scrcoords->x1 + lay->startframe * (lay->loopbox->scrcoords->w / (lay->numf - 1)) +  (lay->endframe - lay->startframe) * (lay->loopbox->scrcoords->w / (lay->numf - 1))) {
+					if (mainprogram->middlemousedown) {
+						mainmix->prevx = mainprogram->mx;
+						lay->scritching = 5;
+						mainprogram->middlemousedown = false;
+					}
+				}
+				lay->set_clones();
 			}
 			if (lay->loopbox->in()) {
 				if (mainprogram->leftmousedown) {
@@ -3379,6 +3393,38 @@ void display_texture(Layer *lay, bool deck) {
 				lay->set_clones();
 				if (mainprogram->middlemouse) lay->scritching = 0;
 			}
+			else if (lay->scritching == 5) {
+				float start = 0.0f;
+				float end = 0.0f;
+				lay->startframe += (mainprogram->mx - mainmix->prevx) / (lay->loopbox->scrcoords->w / (lay->numf - 1));
+				if (lay->startframe < 0) {
+					start = lay->startframe - 1;
+					lay->startframe = 0.0f;
+				}
+				else if (lay->startframe > lay->numf - 1) lay->startframe = lay->numf - 1;
+				if (lay->startframe > lay->frame) lay->frame = lay->startframe;
+				if (lay->startframe > lay->endframe) lay->startframe = lay->endframe;
+				lay->endframe += (mainprogram->mx - mainmix->prevx) / (lay->loopbox->scrcoords->w / (lay->numf - 1)) - start;
+				if (lay->endframe < 0) lay->endframe = 0.0f;
+				else if (lay->endframe > lay->numf - 1) {
+					end = lay->endframe - (lay->numf - 1);
+					lay->startframe -= end;
+					lay->endframe = lay->numf - 1;
+				}
+				mainmix->prevx = mainprogram->mx;
+				//if (lay->endframe < lay->frame) lay->frame = lay->endframe;
+				//if (lay->endframe < lay->startframe) lay->endframe = lay->startframe;
+				lay->set_clones();
+				if (mainprogram->middlemouse) lay->scritching = 0;
+			}
+			draw_box(lay->loopbox, -1);
+			if (ends) {
+				draw_box(white, lightblue, lay->loopbox->vtxcoords->x1 + lay->startframe * (lay->loopbox->vtxcoords->w / (lay->numf - 1)), lay->loopbox->vtxcoords->y1, (lay->endframe - lay->startframe) * (lay->loopbox->vtxcoords->w / (lay->numf - 1)), tf(0.05f), -1);
+			}
+			else {
+				draw_box(white, green, lay->loopbox->vtxcoords->x1 + lay->startframe * (lay->loopbox->vtxcoords->w / (lay->numf - 1)), lay->loopbox->vtxcoords->y1, (lay->endframe - lay->startframe) * (lay->loopbox->vtxcoords->w / (lay->numf - 1)), tf(0.05f), -1);
+			}
+			draw_box(white, white, lay->loopbox->vtxcoords->x1 + lay->frame * (lay->loopbox->vtxcoords->w / (lay->numf - 1)), lay->loopbox->vtxcoords->y1, tf(0.00078f), tf(0.05f), -1);
 			
 			// Draw and handle chdir chinv
 			if (lay->pos > 0) {
@@ -7254,7 +7300,7 @@ int handle_menu(Menu *menu, float xshift) {
 			std::size_t sub = menu->entries[k].find("submenu");
 			if (sub != 0) {
 				if (menu->box->scrcoords->x1 + mainprogram->menux + mainprogram->xvtxtoscr(xoff) < mainprogram->mx and mainprogram->mx < menu->box->scrcoords->x1 + menu->box->scrcoords->w + mainprogram->menux + mainprogram->xvtxtoscr(xoff) and menu->box->scrcoords->y1 - menu->box->scrcoords->h + mainprogram->menuy + (k - koff - numsubs) * mainprogram->yvtxtoscr(tf(0.05f)) < mainprogram->my and mainprogram->my < menu->box->scrcoords->y1 + mainprogram->menuy + (k - koff - numsubs) * mainprogram->yvtxtoscr(tf(0.05f))) {
-					draw_box(lc, ac2, menu->box->vtxcoords->x1 + vmx + xoff, menu->box->vtxcoords->y1 - (k - koff - numsubs) * tf(0.05f) - vmy, tf(0.156f), tf(0.05f), -1);
+					draw_box(lc, ac2, menu->box->vtxcoords->x1 + vmx + xoff, menu->box->vtxcoords->y1 - (k - koff - numsubs) * tf(0.05f) - vmy, tf(menu->width), tf(0.05f), -1);
 					if (mainprogram->leftmousedown) mainprogram->leftmousedown = false;
 					if (mainprogram->leftmouse) {
 						for (int i = 0; i < mainprogram->menulist.size(); i++) {
@@ -7265,10 +7311,10 @@ int handle_menu(Menu *menu, float xshift) {
 					}
 				}
 				else if (menu->currsub == k - 1) {
-					draw_box(lc, ac2, menu->box->vtxcoords->x1 + vmx + xoff, menu->box->vtxcoords->y1 - (k - koff - numsubs) * tf(0.05f) - vmy, tf(0.156f), tf(0.05f), -1);
+					draw_box(lc, ac2, menu->box->vtxcoords->x1 + vmx + xoff, menu->box->vtxcoords->y1 - (k - koff - numsubs) * tf(0.05f) - vmy, tf(menu->width), tf(0.05f), -1);
 				}
 				else {
-					draw_box(lc, ac1, menu->box->vtxcoords->x1 + vmx + xoff, menu->box->vtxcoords->y1 - (k - koff - numsubs) * tf(0.05f) - vmy, tf(0.156f), tf(0.05f), -1);
+					draw_box(lc, ac1, menu->box->vtxcoords->x1 + vmx + xoff, menu->box->vtxcoords->y1 - (k - koff - numsubs) * tf(0.05f) - vmy, tf(menu->width), tf(0.05f), -1);
 				}
 				render_text(menu->entries[k], white, menu->box->vtxcoords->x1 + vmx + tf(0.0078f) + xoff, menu->box->vtxcoords->y1 - (k - koff - numsubs) * tf(0.05f) - vmy + tf(0.015f), tf(0.0003f), tf(0.0005f));
 			}
@@ -8883,6 +8929,33 @@ void the_loop() {
 					mainmix->mouselayer->startframe = mainmix->mouselayer->endframe;
 				}
 				mainmix->mouselayer->set_clones();
+			}
+			else if (k == 2) {
+				mainmix->cbduration = ((mainmix->mouselayer->endframe - mainmix->mouselayer->startframe) * mainmix->mouselayer->millif) / (mainmix->mouselayer->speed->value * mainmix->mouselayer->speed->value);
+			}
+			else if (k == 3) {
+				mainmix->mouselayer->speed->value = sqrt(((mainmix->mouselayer->endframe - mainmix->mouselayer->startframe) * mainmix->mouselayer->millif) / mainmix->cbduration);
+			}
+			else if (k == 4) {
+				float sf, ef;
+				float loop = mainmix->mouselayer->endframe - mainmix->mouselayer->startframe;
+				float fac = ((loop * mainmix->mouselayer->millif) / mainmix->cbduration) / (mainmix->mouselayer->speed->value * mainmix->mouselayer->speed->value);
+				float end = mainmix->mouselayer->numf - (mainmix->mouselayer->startframe + loop / fac);
+				if (end > 0) {
+					mainmix->mouselayer->endframe = mainmix->mouselayer->startframe + loop / fac;
+				}
+				else {
+					mainmix->mouselayer->endframe = mainmix->mouselayer->numf;
+					float start = mainmix->mouselayer->startframe + end;
+					if (start > 0) { 
+						mainmix->mouselayer->startframe += end;
+					}
+					else {
+						mainmix->mouselayer->startframe = 0.0f;
+						mainmix->mouselayer->endframe = mainmix->mouselayer->numf;
+						mainmix->mouselayer->speed->value *= sqrt((float)mainmix->mouselayer->numf / ((float)mainmix->mouselayer->numf - start));
+					}
+				}
 			}
 		}
 		if (mainprogram->menuchosen) {
@@ -11021,7 +11094,11 @@ int main(int argc, char* argv[]){
  	std::vector<std::string> loopops;
  	loopops.push_back("Set loop start to current frame");
  	loopops.push_back("Set loop end to current frame");
+ 	loopops.push_back("Copy duration");
+ 	loopops.push_back("Paste duration (speed)");
+ 	loopops.push_back("Paste duration (loop length)");
  	mainprogram->make_menu("loopmenu", mainprogram->loopmenu, loopops);
+ 	mainprogram->loopmenu->width = 0.2f;
  	
  	std::vector<std::string> deckops;
  	deckops.push_back("Open deck");

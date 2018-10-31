@@ -286,6 +286,7 @@ class Mixer {
 		float wipey[2];
 		
 		float time = 0;
+		float cbduration = 0.0f;
 		
 		GLuint tempbuf, temptex;
 		

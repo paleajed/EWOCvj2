@@ -27,6 +27,7 @@ class Menu {
 		Box *box;
 		int state = 0;
 		int x, y;
+		float width = 0.156f;
 		int value;
 		int currsub = -1;
 };
