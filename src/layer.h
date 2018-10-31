@@ -191,6 +191,7 @@ class Layer {
 		ALuint sampleformat;
 		
 		std::unordered_map<EFFECT_TYPE, int> numoftypemap;
+		int clonesetnr = -1;
 	
 	private:
 		void decode_frame();
@@ -290,5 +291,5 @@ class Mixer {
 		
 		GLuint tempbuf, temptex;
 		
-		std::unordered_map<Layer*, std::unordered_set<Layer*>*> clonemap;
+		std::vector<std::unordered_set<Layer*>*> clonesets;
 };

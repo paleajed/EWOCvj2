@@ -282,16 +282,16 @@ void Mixer::do_deletelay(Layer *testlay, std::vector<Layer*> &layers, bool add) 
 	avformat_close_input(&testlay->video);
 	
 	if (testlay->node) mainprogram->nodesmain->currpage->delete_node(testlay->node);
+	
+	if (testlay->clonesetnr != -1) {
+		mainmix->clonesets[testlay->clonesetnr]->erase(testlay);
+		if (mainmix->clonesets[testlay->clonesetnr]->size() == 0) {
+			mainmix->clonesets.erase(mainmix->clonesets.begin() + testlay->clonesetnr);
+			testlay->clonesetnr = -1;
+		}
+	}
 
 	delete testlay;
-	
-	if (mainmix->clonemap.find(testlay) != mainmix->clonemap.end()) {
-		mainmix->clonemap[testlay]->erase(testlay);
-		if (mainmix->clonemap[testlay]->size() == 0) {
-			delete mainmix->clonemap[testlay];
-		}
-		mainmix->clonemap.erase(testlay);
-	}
 }
 
 void Mixer::delete_layer(std::vector<Layer*> &layers, Layer *testlay, bool add) {
@@ -767,28 +767,8 @@ std::vector<std::string> Mixer::write_layer(Layer *lay, std::ostream& wfile, boo
 	wfile << "RELPATH\n";
 	wfile << "./" + boost::filesystem::relative(lay->filename, "./").string();
 	wfile << "\n";
-	wfile << "CLONEPOS\n";
-	bool brk;
-	int clonepos = -1;
-	int clonedeck = -1;
-	std::unordered_map<Layer*, std::unordered_set<Layer*>*>::iterator it1;
-    for (it1 = mainmix->clonemap.begin(); it1 != mainmix->clonemap.end(); it1++) {
-		std::unordered_set<Layer*>::iterator it2;
-		for (it2 = mainmix->clonemap[it1->first]->begin(); it2 != mainmix->clonemap[it1->first]->end(); it2++) {	
-			Layer *clonelay = *it2;
-			if (clonelay == lay) {
-				clonepos = it1->first->pos;
-				clonedeck = it1->first->deck;
-				brk = true;
-				break;
-			}
-		}
-		if (brk) break;
-	}
-	wfile << std::to_string(clonepos);
-	wfile << "\n";
-	wfile << "CLONEDECK\n";
-	wfile << std::to_string(clonedeck);
+	wfile << "CLONESETNR\n";
+	wfile << std::to_string(lay->clonesetnr);
 	wfile << "\n";
 	if (!lay->live) {
 		wfile << "SPEEDVAL\n";
@@ -1169,6 +1149,12 @@ void Mixer::save_mix(const std::string &path) {
 	wfile << "CROSSFADECOMPEVENT\n";
 	par = mainmix->crossfadecomp;
 	mainmix->event_write(wfile, par);
+	wfile << "DECKSPEEDA\n";
+	wfile << std::to_string(mainprogram->deckspeed[0]->value);
+	wfile << "\n";
+	wfile << "DECKSPEEDB\n";
+	wfile << std::to_string(mainprogram->deckspeed[1]->value);
+	wfile << "\n";
 	wfile << "WIPE\n";
 	wfile << std::to_string(mainmix->wipe[0]);
 	wfile << "\n";
@@ -1215,6 +1201,10 @@ void Mixer::save_deck(const std::string &path) {
 	std::ofstream wfile;
 	wfile.open(str);
 	wfile << "EWOCvj DECKFILE V0.2\n";
+	
+	wfile << "DECKSPEED\n";
+	wfile << std::to_string(mainprogram->deckspeed[mainmix->mousedeck]->value);
+	wfile << "\n";
 	
 	std::vector<std::vector<std::string>> jpegpaths;
 	std::vector<Layer*> &lvec = choose_layers(mainmix->mousedeck);
@@ -1367,6 +1357,14 @@ void Mixer::open_mix(const std::string &path) {
 				mainmix->event_read(rfile, par, lay);
 			}
 		}
+		if (istring == "DECKSPEEDA") {
+			getline(rfile, istring);
+			mainprogram->deckspeed[0]->value = std::stof(istring);
+		}
+		if (istring == "DECKSPEEDB") {
+			getline(rfile, istring);
+			mainprogram->deckspeed[1]->value = std::stof(istring);
+		}
 		if (istring == "WIPE") {
 			getline(rfile, istring); 
 			mainmix->wipe[0] = std::stoi(istring);
@@ -1392,21 +1390,20 @@ void Mixer::open_mix(const std::string &path) {
 			mainmix->read_layers(rfile, result, layersB, 1, 2, concat, 1, 1, 1);
 			mainprogram->filecount = 0;
 		}
+		std::vector<int> map;
 		for (int m = 0; m < 2; m++) {
 			std::vector<Layer*> &layers = choose_layers(m);
 			for (int i = 0; i < layers.size(); i++) {
-				if (layers[i]->clonepos != -1) {
-					std::vector<Layer*> &layersmaster = choose_layers(layers[i]->clonedeck);
-					std::unordered_map<Layer*, std::unordered_set<Layer*>*>::iterator it = mainmix->clonemap.find(layersmaster[layers[i]->clonepos]);
-					if (it != mainmix->clonemap.end()) {
-						mainmix->clonemap[it->first]->emplace(layers[i]);
-					}
-					else {
+				if (layers[i]->clonesetnr != -1) {
+					int pos = std::find(map.begin(), map.end(), layers[i]->clonesetnr) - map.begin();
+					if (pos == map.size()) {
 						std::unordered_set<Layer*> *uset = new std::unordered_set<Layer*>;
-						mainmix->clonemap.emplace(layersmaster[layers[i]->clonepos], uset);
-						mainmix->clonemap.emplace(layersmaster[i], uset);
-						uset->emplace(layersmaster[layers[i]->clonepos]);
+						mainmix->clonesets.push_back(uset);
+						map.push_back(layers[i]->clonesetnr);
+						layers[i]->clonesetnr = mainmix->clonesets.size() - 1;
 					}
+					else layers[i]->clonesetnr = pos;
+					mainmix->clonesets[layers[i]->clonesetnr]->emplace(layers[i]);
 				}
 			}
 		}
@@ -1437,18 +1434,21 @@ void Mixer::open_deck(const std::string &path, bool alive) {
 	loopstation->readelemnrs.clear();
 	std::vector<Layer*> &layers = choose_layers(mainmix->mousedeck);
 	mainmix->read_layers(rfile, result, layers, mainmix->mousedeck, 1, 1, concat, 1, 1);
+	std::vector<int> map;
+	for (int i = 0; i < mainmix->clonesets.size(); i++) {
+		map.push_back(i);
+	}
 	for (int i = 0; i < layers.size(); i++) {
-		if (layers[i]->clonedeck == mainmix->mousedeck and layers[i]->clonepos != -1) {
-			std::unordered_map<Layer*, std::unordered_set<Layer*>*>::iterator it = mainmix->clonemap.find(layers[layers[i]->clonepos]);
-			if (it != mainmix->clonemap.end()) {
-				mainmix->clonemap[it->first]->emplace(layers[i]);
-			}
-			else {
+		if (layers[i]->clonesetnr != -1) {
+			int pos = std::find(map.begin(), map.end(), layers[i]->clonesetnr) - map.begin();
+			if (pos == map.size()) {
 				std::unordered_set<Layer*> *uset = new std::unordered_set<Layer*>;
-				mainmix->clonemap.emplace(layers[layers[i]->clonepos], uset);
-				mainmix->clonemap.emplace(layers[i], uset);
-				uset->emplace(layers[layers[i]->clonepos]);
+				mainmix->clonesets.push_back(uset);
+				map.push_back(layers[i]->clonesetnr);
+				layers[i]->clonesetnr = mainmix->clonesets.size() - 1;
 			}
+			else layers[i]->clonesetnr = pos;
+			mainmix->clonesets[layers[i]->clonesetnr]->emplace(layers[i]);
 		}
 	}
 	rfile.close();
@@ -1462,6 +1462,10 @@ int Mixer::read_layers(std::istream &rfile, const std::string &result, std::vect
 	while (getline(rfile, istring)) {
 		if (istring == "LAYERSB" or istring == "ENDOFCLIPLAYER" or istring == "ENDOFFILE") {
 			return jpegcount;
+		}
+		if (istring == "DECKSPEED") {
+			getline(rfile, istring);
+			mainprogram->deckspeed[deck]->value = std::stof(istring);
 		}
 		if (istring == "POS") {
 			getline(rfile, istring);
@@ -1516,13 +1520,9 @@ int Mixer::read_layers(std::istream &rfile, const std::string &result, std::vect
 				}
 			}
 		}	
-		if (istring == "CLONEPOS") {
+		if (istring == "CLONESETNR") {
 			getline(rfile, istring); 
-			lay->clonepos = std::stoi(istring);
-		}
-		if (istring == "CLONEDECK") {
-			getline(rfile, istring); 
-			lay->clonedeck = std::stoi(istring);
+			lay->clonesetnr = std::stoi(istring);
 		}
 		if (istring == "SPEEDVAL") {
 			getline(rfile, istring); 

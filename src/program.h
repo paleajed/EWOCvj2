@@ -275,6 +275,7 @@ class Program {
 		Button *effprev;
 		bool prevvid = true;
 		bool preveff = true;
+		Param *deckspeed[2];
 		Box *cwbox;
 		bool cwon = false;
 		int cwmouse = false;
