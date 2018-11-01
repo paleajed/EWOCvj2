@@ -1950,6 +1950,12 @@ Effect *new_effect(Effect *effect) {
 		case DITHER:
 			return new DitherEffect(*(DitherEffect *)effect);
 			break;
+		case FLIP:
+			return new FlipEffect(*(FlipEffect *)effect);
+			break;
+		case MIRROR:
+			return new MirrorEffect(*(MirrorEffect *)effect);
+			break;
 	}
 	return nullptr;
 }
@@ -3081,6 +3087,12 @@ void display_texture(Layer *lay, bool deck) {
 						case 37:
 							effstr = "DITHER";
 							break;
+						case 38:
+							effstr = "FLIP";
+							break;
+						case 39:
+							effstr = "MIRROR";
+							break;
 					}
 					float textw = tf(render_text(effstr, white, eff->box->vtxcoords->x1 + tf(0.01f), eff->box->vtxcoords->y1 + tf(0.05f) - tf(0.030f), tf(0.0003f), tf(0.0005f)));
 					eff->box->vtxcoords->w = textw + tf(0.032f);
@@ -3920,6 +3932,18 @@ void onestepfrom(bool stage, Node *node, Node *prevnode, GLuint prevfbotex, GLui
 				case DITHER: {
 					fxid = glGetUniformLocation(mainprogram->ShaderProgram, "fxid");
 					glUniform1i(fxid, DITHER);
+					break;
+				 }
+				 
+				case FLIP: {
+					fxid = glGetUniformLocation(mainprogram->ShaderProgram, "fxid");
+					glUniform1i(fxid, FLIP);
+					break;
+				 }
+				 
+				case MIRROR: {
+					fxid = glGetUniformLocation(mainprogram->ShaderProgram, "fxid");
+					glUniform1i(fxid, MIRROR);
 					break;
 				 }
 			}
@@ -5076,6 +5100,12 @@ Effect *do_add_effect(Layer *lay, EFFECT_TYPE type, int pos, bool comp) {
 		case DITHER:
 			effect = new DitherEffect();
 			break;
+		case FLIP:
+			effect = new FlipEffect();
+			break;
+		case MIRROR:
+			effect = new MirrorEffect();
+			break;
 	}
 
 	effect->type = type;
@@ -6115,6 +6145,50 @@ DitherEffect::DitherEffect() {
 	this->params.push_back(param);
 }
 
+FlipEffect::FlipEffect() {
+	this->numrows = 1;
+	Param *param = new Param;
+	param->name = "X";
+	param->value = 1.0f;
+	param->range[0] = 0.0f;
+	param->range[1] = 1.0f;
+	param->sliding = false;
+	param->shadervar = "xflip";
+	param->effect = this;
+	this->params.push_back(param);
+	param = new Param;
+	param->name = "Y";
+	param->value = 0.0f;
+	param->range[0] = 0.0f;
+	param->range[1] = 1.0f;
+	param->sliding = false;
+	param->shadervar = "yflip";
+	param->effect = this;
+	this->params.push_back(param);
+}
+
+MirrorEffect::MirrorEffect() {
+	this->numrows = 1;
+	Param *param = new Param;
+	param->name = "Xdir";
+	param->value = 0.0f;
+	param->range[0] = 0.0f;
+	param->range[1] = 2.0f;
+	param->sliding = false;
+	param->shadervar = "xmirror";
+	param->effect = this;
+	this->params.push_back(param);
+	param = new Param;
+	param->name = "Ydir";
+	param->value = 1.0f;
+	param->range[0] = 0.0f;
+	param->range[1] = 2.0f;
+	param->sliding = false;
+	param->shadervar = "ymirror";
+	param->effect = this;
+	this->params.push_back(param);
+}
+
 
 
 float RippleEffect::get_speed() { return this->speed; }
@@ -6261,7 +6335,12 @@ void Param::handle() {
 			mainprogram->menuactivation = false;
 		}
 	}
-	draw_box(green, green, this->box->vtxcoords->x1 + this->box->vtxcoords->w * ((this->value - this->range[0]) / (this->range[1] - this->range[0])) - tf(0.00078f), this->box->vtxcoords->y1, 2.0f / glob->w, this->box->vtxcoords->h, -1);
+	if (this->sliding) {
+		draw_box(green, green, this->box->vtxcoords->x1 + this->box->vtxcoords->w * ((this->value - this->range[0]) / (this->range[1] - this->range[0])) - tf(0.00078f), this->box->vtxcoords->y1, 2.0f / glob->w, this->box->vtxcoords->h, -1);
+	}
+	else {
+		draw_box(green, green, this->box->vtxcoords->x1 + this->box->vtxcoords->w * (((int)(this->value + 0.5f) - this->range[0]) / (this->range[1] - this->range[0])) - tf(0.00078f), this->box->vtxcoords->y1, 2.0f / glob->w, this->box->vtxcoords->h, -1);
+	}
 }
 
 
@@ -8245,8 +8324,12 @@ void the_loop() {
 		// Handle params
 		if (mainmix->adaptparam) {
 			mainmix->adaptparam->value += (mainprogram->mx - mainmix->prevx) * (mainmix->adaptparam->range[1] - mainmix->adaptparam->range[0]) / mainprogram->xvtxtoscr(mainmix->adaptparam->box->vtxcoords->w);
-			if (mainmix->adaptparam->value < mainmix->adaptparam->range[0]) mainmix->adaptparam->value = mainmix->adaptparam->range[0];
-			if (mainmix->adaptparam->value > mainmix->adaptparam->range[1]) mainmix->adaptparam->value = mainmix->adaptparam->range[1];
+			if (mainmix->adaptparam->value < mainmix->adaptparam->range[0]) {
+				mainmix->adaptparam->value = mainmix->adaptparam->range[0];
+			}
+			if (mainmix->adaptparam->value > mainmix->adaptparam->range[1]) {
+				mainmix->adaptparam->value = mainmix->adaptparam->range[1];
+			}
 			mainmix->prevx = mainprogram->mx;
 			
 			if (mainmix->adaptparam == mainmix->currlay->speed) mainmix->currlay->set_clones();
@@ -8268,6 +8351,9 @@ void the_loop() {
 			}
 			
 			if (mainprogram->leftmouse) {
+				if (!mainmix->adaptparam->sliding) {
+					mainmix->adaptparam->value = (int)(mainmix->adaptparam->value + 0.5f);
+				}
 				mainprogram->leftmouse = false;
 				mainmix->adaptparam = nullptr;
 			}
@@ -11149,6 +11235,8 @@ int main(int argc, char* argv[]){
   	effects.push_back("BOKEH");
   	effects.push_back("SHARPEN");
   	effects.push_back("DITHER");
+ 	effects.push_back("FLIP");
+ 	effects.push_back("MIRROR");
   	mainprogram->make_menu("effectmenu", mainprogram->effectmenu, effects);
  	for (int i = 1; i < effects.size(); i++) {
  		mainprogram->effectsmap[(EFFECT_TYPE)(i - 1)] = effects[i];

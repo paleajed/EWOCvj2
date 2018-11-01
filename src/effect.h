@@ -1,6 +1,7 @@
 #include <string>
 #include <vector>
 
+
 typedef enum
 {
     BLUR = 0,
@@ -41,6 +42,8 @@ typedef enum
    	BOKEH = 35,
    	SHARPEN = 36,
    	DITHER = 37,
+   	FLIP = 38,
+   	MIRROR = 39,
 } EFFECT_TYPE;
 
 typedef enum
@@ -297,5 +300,15 @@ class SharpenEffect: public Effect {
 class DitherEffect: public Effect {
 	public:
 		DitherEffect();
+};
+
+class FlipEffect: public Effect {
+	public:
+		FlipEffect();
+};
+
+class MirrorEffect: public Effect {
+	public:
+		MirrorEffect();
 };
 

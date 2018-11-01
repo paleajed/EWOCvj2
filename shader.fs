@@ -113,6 +113,10 @@ uniform float noiselevel = 0.5f;
 uniform float gammaval = 2.2f;
 uniform float bokehrad = 1.0f;
 uniform bool inlayer = false;
+uniform bool xflip = true;
+uniform bool yflip = false;
+uniform float xmirror = 0;
+uniform float ymirror = 1;
 
 /// Computes the overlay between the source and destination colours.
 vec3 Overlay (vec3 src, vec3 dst)
@@ -1487,6 +1491,34 @@ vec4 dither(vec2 texco)  //https://github.com/libretro/glsl-shaders/blob/master/
 }
 
 
+vec4 flip(vec2 texco)  //selfmade
+{
+	if (xflip) texco.x = 1.0f - texco.x;
+	if (yflip) texco.y = 1.0f - texco.y;
+	return texture2D(Sampler0, texco);
+}
+
+
+vec4 mirror(vec2 texco)  //selfmade
+{
+	int xm = int(xmirror + 0.5f);
+	int ym = int(ymirror + 0.5f);
+	if (xm == 0) {
+		if (texco.x > 0.5f) texco.x = 1.0f - texco.x;
+	}
+	else if (xm == 2) {
+		if (texco.x <= 0.5f) texco.x = 1.0f - texco.x;
+	}
+	if (ym == 2) {
+		if (texco.y > 0.5f) texco.y = 1.0f - texco.y;
+	}
+	else if (ym == 0) {
+		if (texco.y <= 0.5f) texco.y = 1.0f - texco.y;
+	}
+	return texture2D(Sampler0, texco);
+}
+
+
 
 
 
@@ -1627,6 +1659,12 @@ void main()
 			case 37:
 				intcoloring = true;
 				intcol = dither(texco); break;
+			case 38:
+				intcoloring = true;
+				intcol = flip(texco); break;
+			case 39:
+				intcoloring = true;
+				intcol = mirror(texco); break;
 		}
     	if (intcoloring) FragColor = vec4(intcol.rgb * drywet + (1.0f - drywet) * texcol.rgb, intcol.a * opacity);
 	}
