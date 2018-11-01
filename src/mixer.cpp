@@ -157,7 +157,6 @@ Layer* Mixer::add_layer(std::vector<Layer*> &layers, int pos) {
 		Layer *prevlay = layers[pos - 1];
 		BlendNode *bnode = mainprogram->nodesmain->currpage->add_blendnode(MIXING, comp);
 		layer->blendnode = bnode;
-		if (layer->pos == 1) bnode->firstlayer = prevlay;
 		Node *node;
 		if (prevlay->pos > 0) {
 			node = prevlay->blendnode;
@@ -766,6 +765,12 @@ std::vector<std::string> Mixer::write_layer(Layer *lay, std::ostream& wfile, boo
 	wfile << "\n";
 	wfile << "RELPATH\n";
 	wfile << "./" + boost::filesystem::relative(lay->filename, "./").string();
+	wfile << "\n";
+	wfile << "MUTE\n";
+	wfile << std::to_string(lay->mute);
+	wfile << "\n";
+	wfile << "SOLO\n";
+	wfile << std::to_string(lay->solo);
 	wfile << "\n";
 	wfile << "CLONESETNR\n";
 	wfile << std::to_string(lay->clonesetnr);
@@ -1520,6 +1525,14 @@ int Mixer::read_layers(std::istream &rfile, const std::string &result, std::vect
 				}
 			}
 		}	
+		if (istring == "MUTE") {
+			getline(rfile, istring); 
+			lay->mute = std::stoi(istring);
+		}
+		if (istring == "SOLO") {
+			getline(rfile, istring); 
+			lay->solo = std::stoi(istring);
+		}
 		if (istring == "CLONESETNR") {
 			getline(rfile, istring); 
 			lay->clonesetnr = std::stoi(istring);
@@ -1775,6 +1788,11 @@ int Mixer::read_layers(std::istream &rfile, const std::string &result, std::vect
 			fflush(stdout);
 		}
 	}
+	std::vector<Layer*> &lvec = choose_layers(deck);
+	for (int i = 0; i < lvec.size(); i++) {
+		if (lvec[i]->mute) lvec[i]->mute_handle();
+	}
+	
 	return jpegcount;
 }
 	

@@ -67,14 +67,16 @@ class Layer {
 		Effect *replace_effect(EFFECT_TYPE type, int pos);
 		void delete_effect(int pos);
 		void set_clones();
-		void set_blendnode(BlendNode *bnode);
+		void mute_handle();
 		Layer *next();
+		Layer *prev();
 		Layer();
 		Layer(bool comp);
 		Layer(const Layer &lay);
 		~Layer();
 		
-		bool onoff = true;
+		bool mute = false;
+		bool solo = false;
 		float frame = 0;
 		int prevframe = -1;
 		int numf = 0;

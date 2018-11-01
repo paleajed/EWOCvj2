@@ -2718,7 +2718,7 @@ void display_texture(Layer *lay, bool deck) {
 	if (lay->pos >= mainmix->scrollpos[deck] and lay->pos < mainmix->scrollpos[deck] + 3) {
 		Box *box = lay->node->vidbox;
 		
-		if (lay->onoff) draw_box(box, box->tex);
+		if (!lay->mute) draw_box(box, box->tex);
 		else draw_box(box, -1);
 
 		if (mainmix->mode == 0 and mainprogram->nodesmain->linked) {
@@ -4126,17 +4126,15 @@ void onestepfrom(bool stage, Node *node, Node *prevnode, GLuint prevfbotex, GLui
 				glDrawBuffer(GL_COLOR_ATTACHMENT0);
 			}
 			else {
-				bool cond = false;
-				if (bnode->firstlayer) {
-					if (bnode->firstlayer->onoff == false) cond = true;
-				}
-				if (bnode->in and prevnode == bnode->in and (bnode->onoff == false)) {
-					node->walked = true;
-					bnode->fbotex = prevfbotex;
-				}
-				else if (bnode->in2 and prevnode == bnode->in2 and (bnode->onoff == false or cond)) {
-					node->walked = true;
-					bnode->fbotex = prevfbotex;
+				if (prevnode == bnode->in2) {
+					node->walked = true;			//for when first layer is muted
+					glBindFramebuffer(GL_FRAMEBUFFER, bnode->fbo);
+					glDrawBuffer(GL_COLOR_ATTACHMENT0);
+					glBindTexture(GL_TEXTURE_2D, prevfbotex);
+					glBindVertexArray(mainprogram->fbovao[2 - (mainprogram->preveff and !stage)]);
+					glDrawArrays(GL_TRIANGLE_STRIP, 0, 4);
+					glBindFramebuffer(GL_FRAMEBUFFER, mainprogram->globfbo);
+					glDrawBuffer(GL_COLOR_ATTACHMENT0);
 				}
 				else {
 					node->walked = false;
@@ -4230,7 +4228,7 @@ void walk_nodes(bool stage) {
 	if (stage == 0) {
 		for (int i = 0; i < mainmix->layersA.size(); i++) {
 			Layer *lay = mainmix->layersA[i];
-			if (lay->onoff == false) {
+			if (lay->mute == true) {
 				if (lay != lay->next()) {
 					continue;
 				}
@@ -4239,7 +4237,7 @@ void walk_nodes(bool stage) {
 		}
 		for (int i = 0; i < mainmix->layersB.size(); i++) {
 			Layer *lay = mainmix->layersB[i];
-			if (lay->onoff == false) {
+			if (lay->mute == true) {
 				if (lay != lay->next()) {
 					continue;
 				}
@@ -4250,7 +4248,7 @@ void walk_nodes(bool stage) {
 	else {
 		for (int i = 0; i < mainmix->layersAcomp.size(); i++) {
 			Layer *lay = mainmix->layersAcomp[i];
-			if (lay->onoff == false) {
+			if (lay->mute == true) {
 				if (lay != lay->next()) {
 					continue;
 				}
@@ -4259,7 +4257,7 @@ void walk_nodes(bool stage) {
 		}
 		for (int i = 0; i < mainmix->layersBcomp.size(); i++) {
 			Layer *lay = mainmix->layersBcomp[i];
-			if (lay->onoff == false) {
+			if (lay->mute == true) {
 				if (lay != lay->next()) {
 					continue;
 				}
@@ -5241,10 +5239,28 @@ void Layer::set_clones() {
 }
 
 Layer* Layer::next() {
-	if (std::find(mainmix->layersA.begin(), mainmix->layersA.end(), this) != mainmix->layersA.end()) return mainmix->layersA[this->pos + 1];
-	else if (std::find(mainmix->layersB.begin(), mainmix->layersB.end(), this) != mainmix->layersB.end()) return mainmix->layersB[this->pos + 1];
-	else if (std::find(mainmix->layersAcomp.begin(), mainmix->layersAcomp.end(), this) != mainmix->layersAcomp.end()) return mainmix->layersAcomp[this->pos + 1];
-	else if (std::find(mainmix->layersBcomp.begin(), mainmix->layersBcomp.end(), this) != mainmix->layersBcomp.end()) return mainmix->layersBcomp[this->pos + 1];
+	if (std::find(mainmix->layersA.begin(), mainmix->layersA.end(), this) != mainmix->layersA.end()) {
+		if (this->pos < mainmix->layersA.size() - 1) return mainmix->layersA[this->pos + 1];
+	}
+	else if (std::find(mainmix->layersB.begin(), mainmix->layersB.end(), this) != mainmix->layersB.end()) {
+		 if (this->pos < mainmix->layersB.size() - 1) return mainmix->layersB[this->pos + 1];
+	}
+	else if (std::find(mainmix->layersAcomp.begin(), mainmix->layersAcomp.end(), this) != mainmix->layersAcomp.end()) {
+		 if (this->pos < mainmix->layersAcomp.size() - 1) return mainmix->layersAcomp[this->pos + 1];
+	}
+	else if (std::find(mainmix->layersBcomp.begin(), mainmix->layersBcomp.end(), this) != mainmix->layersBcomp.end()) {
+		 if (this->pos < mainmix->layersBcomp.size() - 1) return mainmix->layersBcomp[this->pos + 1];
+	}
+	return this;
+}	
+
+Layer* Layer::prev() {
+	if (this->pos > 0) {
+		if (std::find(mainmix->layersA.begin(), mainmix->layersA.end(), this) != mainmix->layersA.end()) return mainmix->layersA[this->pos - 1];
+		else if (std::find(mainmix->layersB.begin(), mainmix->layersB.end(), this) != mainmix->layersB.end()) return mainmix->layersB[this->pos - 1];
+		else if (std::find(mainmix->layersAcomp.begin(), mainmix->layersAcomp.end(), this) != mainmix->layersAcomp.end()) return mainmix->layersAcomp[this->pos - 1];
+		else if (std::find(mainmix->layersBcomp.begin(), mainmix->layersBcomp.end(), this) != mainmix->layersBcomp.end()) return mainmix->layersBcomp[this->pos - 1];
+	}
 	return this;
 }	
 
@@ -7933,6 +7949,59 @@ void enddrag() {
 		//glDeleteTextures(1, &binsmain->dragtex);  maybe needs implementing in one case, check history
 	}
 }
+
+void Layer::mute_handle() {
+	// change node connections to accommodate for a mute layer
+	if (this->mute) {
+		if (this->pos > 0) {
+			this->blendnode->in->out.clear();
+			mainprogram->nodesmain->currpage->connect_nodes(this->blendnode->in, this->blendnode->out[0]);
+		}
+	}
+	else {
+		if (this->pos > 0) {
+			Layer *templay = this;
+			while (1) {
+				if (templay == templay->prev()) {
+					this->prev()->lasteffnode->out.clear();
+					mainprogram->nodesmain->currpage->connect_nodes(this->prev()->lasteffnode, this->blendnode);
+					break;
+				}
+				if (!templay->prev()->mute) {
+					this->prev()->blendnode->out.clear();
+					mainprogram->nodesmain->currpage->connect_nodes(this->prev()->blendnode, this->blendnode);
+					break;
+				}
+				templay = templay->prev();
+			}
+			this->blendnode->out.clear();
+			templay = this;
+			while (1) {
+				if (templay == templay->next()) {
+					std::vector<Layer*> &lvec = choose_layers(this->deck);
+					if (&lvec == &mainmix->layersA) {
+						mainprogram->nodesmain->currpage->connect_nodes(this->blendnode, mainprogram->nodesmain->mixnodes[0]);
+					}
+					else if (&lvec == &mainmix->layersB) {
+						mainprogram->nodesmain->currpage->connect_nodes(this->blendnode, mainprogram->nodesmain->mixnodes[1]);
+					}
+					else if (&lvec == &mainmix->layersAcomp) {
+						mainprogram->nodesmain->currpage->connect_nodes(this->blendnode, mainprogram->nodesmain->mixnodescomp[0]);
+					}
+					else if (&lvec == &mainmix->layersBcomp) {
+						mainprogram->nodesmain->currpage->connect_nodes(this->blendnode, mainprogram->nodesmain->mixnodescomp[1]);
+					}
+					break;
+				}
+				if (!templay->next()->mute) {
+					mainprogram->nodesmain->currpage->connect_nodes(this->blendnode, templay->next()->blendnode);
+					break;
+				}
+				templay = templay->next();
+			}
+		}
+	}
+}
 	
 
 void the_loop() {
@@ -8698,6 +8767,76 @@ void the_loop() {
 					}
 				}
 			}
+			box.vtxcoords->x1 = -1.0f + mainmix->numw + i; 
+			float remw = box.vtxcoords->w;
+			for (int j = 0; j < size; j++) {
+				draw_box(white, nullptr, &box, -1);
+				render_text(std::to_string(j + 1), white, box.vtxcoords->x1 + 0.0078f, box.vtxcoords->y1 + 0.0078f, 0.0006, 0.001);
+				box.vtxcoords->x1 += 0.03f;
+				box.upvtxtoscr();
+				const int s = lvec.size() - mainmix->scrollpos[i];
+				bool greycond = (j >= mainmix->scrollpos[i] and j < mainmix->scrollpos[i] + std::min(s, 3));
+				float remw = box.vtxcoords->w;
+				box.vtxcoords->w = 0.03f;
+				box.upvtxtoscr();
+				if (box.in()) {
+					if (mainprogram->leftmouse and greycond) {
+						lvec[j]->mute = !lvec[j]->mute;
+						lvec[j]->mute_handle();
+						mainprogram->leftmouse = false;
+					}
+				}
+				box.vtxcoords->x1 += 0.03f;
+				box.upvtxtoscr();
+				if (box.in()) {
+					if (mainprogram->leftmouse and greycond) {
+						lvec[j]->solo = !lvec[j]->solo;
+						if (lvec[j]->solo) {
+							if (lvec[j]->mute) {
+								lvec[j]->mute = false;
+								lvec[j]->mute_handle();
+							}
+							for (int k = 0; k < lvec.size(); k++) {
+								if (k != j) {
+									if (lvec[k]->mute == false) {
+										lvec[k]->mute = true;
+										lvec[k]->mute_handle();
+									}
+									lvec[k]->solo = false;
+								}
+							}
+						}
+						else {
+							for (int k = 0; k < lvec.size(); k++) {
+								if (k != j) {
+									lvec[k]->mute = false;
+									lvec[k]->mute_handle();
+								}
+							}
+						}
+						mainprogram->leftmouse = false;
+					}
+				}
+				if (greycond) {
+					if (lvec[j]->mute) {
+						draw_box(white, green, box.vtxcoords->x1 - 0.03f, box.vtxcoords->y1, 0.03f, box.vtxcoords->h, -1);
+					}
+					else {
+						draw_box(white, nullptr, box.vtxcoords->x1 - 0.03f, box.vtxcoords->y1, 0.03f, box.vtxcoords->h, -1);
+					}
+					render_text("M", white, box.vtxcoords->x1 + 0.0078f - 0.03f, box.vtxcoords->y1 + 0.0078f, 0.0006, 0.001);
+					if (lvec[j]->solo) {
+						draw_box(white, green, box.vtxcoords->x1, box.vtxcoords->y1, 0.03f, box.vtxcoords->h, -1);
+					}
+					else {
+						draw_box(white, nullptr, box.vtxcoords->x1, box.vtxcoords->y1, 0.03f, box.vtxcoords->h, -1);
+					}
+					render_text("S", white, box.vtxcoords->x1 + 0.0078f, box.vtxcoords->y1 + 0.0078f, 0.0006, 0.001);
+				}
+				box.vtxcoords->w = remw;
+				box.vtxcoords->x1 += box.vtxcoords->w - 0.06f;
+				box.upvtxtoscr();
+			}
 			if (boxbefore.in()) {
 				inbox = true;
 				if (mainprogram->dragbinel) {
@@ -8731,31 +8870,6 @@ void the_loop() {
 				if (mainprogram->leftmouse) {
 					mainmix->scrollpos[i]++;
 				}
-			}
-			
-			box.vtxcoords->x1 = -1.0f + mainmix->numw + i; 
-			for (int j = 0; j < size; j++) {
-				draw_box(white, nullptr, &box, -1);
-				render_text(std::to_string(j + 1), white, box.vtxcoords->x1 + 0.0078f, box.vtxcoords->y1 + 0.0078f, 0.0006, 0.001);
-				box.vtxcoords->x1 += box.vtxcoords->w / 2.0f - 0.015f;
-				box.upvtxtoscr();
-				if (box.in()) {
-					if (mainprogram->leftmouse and j < size - 1) {
-						lvec[j]->onoff = !lvec[j]->onoff;
-						if (lvec[j]->blendnode) lvec[j]->blendnode->onoff = lvec[j]->onoff;
-						mainprogram->leftmouse = false;
-					}
-				}
-				if (lvec.size() > j) {
-					if (lvec[j]->onoff) {
-						draw_box(white, green, box.vtxcoords->x1, box.vtxcoords->y1, 0.03f, box.vtxcoords->h, -1);
-					}
-					else {
-						draw_box(white, nullptr, box.vtxcoords->x1, box.vtxcoords->y1, 0.03f, box.vtxcoords->h, -1);
-					}
-				}
-				box.vtxcoords->x1 += box.vtxcoords->w / 2.0f + 0.015f;
-				box.upvtxtoscr();
 			}
 		} 
 		if (!inbox) mainmix->scrolltime = 0.0f;
