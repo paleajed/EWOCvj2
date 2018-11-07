@@ -687,7 +687,7 @@ void BinsMain::handle() {
 								mainprogram->prelay->pos = 0;
 								mainprogram->prelay->node = mainprogram->nodesmain->currpage->add_videonode(2);
 								mainprogram->prelay->node->layer = mainprogram->prelay;
-								mainprogram->prelay->lasteffnode = mainprogram->prelay->node;
+								mainprogram->prelay->lasteffnode[0] = mainprogram->prelay->node;
 								mainmix->open_layerfile(binel->path, mainprogram->prelay, true, 0);
 								mainprogram->prelay->node->calc = true;
 								mainprogram->prelay->node->walked = false;

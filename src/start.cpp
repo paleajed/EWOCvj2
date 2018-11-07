@@ -2182,7 +2182,7 @@ float render_text(std::string text, float *textc, float x, float y, float sx, fl
 	return ret;
 }
 
-float render_text(std::string text, float *textc, float x, float y, float sx, float sy, int smflag) {
+float render_text(std::string text, float *textc, float x, float y, float sx, float sy, int smflag, bool vertical) {
  	y -= 0.03f;
 	GLuint texture;
 	GLuint vbo, tbo, vao;
@@ -2386,11 +2386,20 @@ float render_text(std::string text, float *textc, float x, float y, float sx, fl
 		glDeleteFramebuffers(1, &texfrbuf);
   	}
 	else {
-		GLfloat texvcoords[8] = {
-			x,     y   ,
-			x + texth * 16, y    ,
-			x,     y + texth * 2,
-			x + texth * 16, y + texth * 2};
+		GLfloat texvcoords[8];
+		GLfloat *p = texvcoords;
+		if (vertical) {
+			*p++ = x; *p++ = y;
+			*p++ = x; *p++ = y - texth * 16 * glob->w / glob->h;
+			*p++ = x + texth * 2 * glob->h / glob->w;     *p++ = y;
+			*p++ = x + texth * 2 * glob->h / glob->w;     *p++ = y - texth * 16 * glob->w / glob->h;
+		}
+		else {
+			*p++ = x;    *p++ = y;
+			*p++ = x + texth * 16; *p++ = y;
+			*p++ = x;     *p++ = y + texth * 2;
+			*p++ = x + texth * 16; *p++ = y + texth * 2;
+		}
 		GLfloat textcoords[] = {0.0f, 0.0f,
 							1.0f, 0.0f,
 							0.0f, 1.0f,
@@ -2864,15 +2873,29 @@ void display_texture(Layer *lay, bool deck) {
 				render_text(mixstr, red, lay->mixbox->vtxcoords->x1 + tf(0.01f), 1.0f - (tf(mainmix->layw)) + tf(0.02f), tf(0.0003f), tf(0.0005f));
 			}
 			
+			// Draw and handle effect category buttons
+			Box *box = mainprogram->effcat[lay->deck]->box;
+			draw_box(box, -1);
+			mainprogram->effcat[lay->deck]->draw();	
+			render_text(mainprogram->effcat[lay->deck]->name, white, box->vtxcoords->x1, box->vtxcoords->y1 + box->vtxcoords->h - tf(0.01f), tf(0.0003f), tf(0.0005f), 0, 1);
+			if (mainprogram->effcat[lay->deck]->value) {
+				mainprogram->effcat[lay->deck]->name = "Stream effects";
+			}
+			else {
+				mainprogram->effcat[lay->deck]->name = "Layer effects";
+			}
+			std::vector<Effect*> &evec = lay->choose_effects();
+			bool cat = mainprogram->effcat[lay->deck]->value;
+				
 			// Draw and handle effect stack scrollboxes
-			if (lay->effscroll > 0 and mainmix->currlay->deck == 0) {
+			if (lay->effscroll[cat] > 0 and mainmix->currlay->deck == 0) {
 				if (mainprogram->effscrollupA->in()) {
 					mainprogram->effscrollupA->acolor[0] = 0.5f;
 					mainprogram->effscrollupA->acolor[1] = 0.5f;
 					mainprogram->effscrollupA->acolor[2] = 1.0f;
 					mainprogram->effscrollupA->acolor[3] = 1.0f;
 					if (mainprogram->leftmouse) {
-						lay->effscroll--;
+						lay->effscroll[cat]--;
 					}
 				}
 				else {			
@@ -2884,14 +2907,14 @@ void display_texture(Layer *lay, bool deck) {
 				draw_box(mainprogram->effscrollupA, -1);
 				draw_triangle(white, white, mainprogram->effscrollupA->vtxcoords->x1 + tf(0.0074f), mainprogram->effscrollupA->vtxcoords->y1 + tf(0.0416f) - tf(0.030f), tf(0.011f), tf(0.0208f), DOWN, CLOSED);
 			}
-			if (lay->effscroll > 0 and mainmix->currlay->deck == 1) {
+			if (lay->effscroll[cat] > 0 and mainmix->currlay->deck == 1) {
 				if (mainprogram->effscrollupB->in()) {
 					mainprogram->effscrollupB->acolor[0] = 0.5f;
 					mainprogram->effscrollupB->acolor[1] = 0.5f;
 					mainprogram->effscrollupB->acolor[2] = 1.0f;
 					mainprogram->effscrollupB->acolor[3] = 1.0f;
 					if (mainprogram->leftmouse) {
-						lay->effscroll--;
+						lay->effscroll[cat]--;
 					}
 				}
 				else {			
@@ -2903,14 +2926,14 @@ void display_texture(Layer *lay, bool deck) {
 				draw_box(mainprogram->effscrollupB, -1);
 				draw_triangle(white, white, mainprogram->effscrollupB->vtxcoords->x1 + tf(0.0074f), mainprogram->effscrollupB->vtxcoords->y1 + tf(0.0416f) - tf(0.030f), tf(0.011f), tf(0.0208f), DOWN, CLOSED);
 			}
-			if (lay->numefflines - lay->effscroll > 11 and mainmix->currlay->deck == 0) {
+			if (lay->numefflines - lay->effscroll[cat] > 11 and mainmix->currlay->deck == 0) {
 				if (mainprogram->effscrolldownA->in()) {
 					mainprogram->effscrolldownA->acolor[0] = 0.5f;
 					mainprogram->effscrolldownA->acolor[1] = 0.5f;
 					mainprogram->effscrolldownA->acolor[2] = 1.0f;
 					mainprogram->effscrolldownA->acolor[3] = 1.0f;
 					if (mainprogram->leftmouse) {
-						lay->effscroll++;
+						lay->effscroll[cat]++;
 					}
 				}
 				else {			
@@ -2922,14 +2945,14 @@ void display_texture(Layer *lay, bool deck) {
 				draw_box(mainprogram->effscrolldownA, -1);
 				draw_triangle(white, white, mainprogram->effscrolldownA->vtxcoords->x1 + tf(0.0074f), mainprogram->effscrolldownA->vtxcoords->y1 + tf(0.0416f) - tf(0.030f), tf(0.011f), tf(0.0208f), UP, CLOSED);
 			}			
-			if (lay->numefflines - lay->effscroll > 11 and mainmix->currlay->deck == 1) {
+			if (lay->numefflines - lay->effscroll[cat] > 11 and mainmix->currlay->deck == 1) {
 				if (mainprogram->effscrolldownB->in()) {
 					mainprogram->effscrolldownB->acolor[0] = 0.5f;
 					mainprogram->effscrolldownB->acolor[1] = 0.5f;
 					mainprogram->effscrolldownB->acolor[2] = 1.0f;
 					mainprogram->effscrolldownB->acolor[3] = 1.0f;
 					if (mainprogram->leftmouse) {
-						lay->effscroll++;
+						lay->effscroll[cat]++;
 					}
 				}
 				else {			
@@ -2945,17 +2968,17 @@ void display_texture(Layer *lay, bool deck) {
 				if ((glob->w / 2.0f > mainprogram->mx and mainmix->currlay->deck == 0) or (glob->w / 2.0f < mainprogram->mx and mainmix->currlay->deck == 1)) {
 					if (mainprogram->my > mainprogram->yvtxtoscr(mainmix->layw - tf(0.20f))) {
 						if (mainprogram->mousewheel and lay->numefflines > 11) {
-							lay->effscroll -= mainprogram->mousewheel;
-							if (lay->effscroll < 0) lay->effscroll = 0;
-							if (lay->numefflines - lay->effscroll < 11) lay->effscroll = lay->numefflines - 11;
+							lay->effscroll[cat] -= mainprogram->mousewheel;
+							if (lay->effscroll[cat] < 0) lay->effscroll[cat] = 0;
+							if (lay->numefflines - lay->effscroll[cat] < 11) lay->effscroll[cat] = lay->numefflines - 11;
 						}
 					}
 				}
 			}
 			// Draw effectboxes and parameters
 			std::string effstr;
-			for(int i = 0; i < lay->effects.size(); i++) {
-				Effect *eff = lay->effects[i];
+			for(int i = 0; i < evec.size(); i++) {
+				Effect *eff = evec[i];
 				Box *box;
 				float x1, y1, wi;
 				
@@ -2964,7 +2987,9 @@ void display_texture(Layer *lay, bool deck) {
 					eff->drywet->handle();		
 					
 					box = eff->box;
-					draw_box(box, -1);
+					if (mainprogram->effcat[lay->deck]->value) draw_box(white, green, box, -1);
+					else draw_box(box, -1);  //red
+					
 					if (eff->onoffbutton->value) {
 						eff->onoffbutton->box->acolor[1] = 0.7f;
 					}
@@ -3971,7 +3996,7 @@ void onestepfrom(bool stage, Node *node, Node *prevnode, GLuint prevfbotex, GLui
 		if (effect->onoffbutton->value) glUniform1i(interm, 1);
 		else glUniform1i(down, 1);
 		GLfloat opacity = glGetUniformLocation(mainprogram->ShaderProgram, "opacity");
-		if (effect->node == (EffectNode*)(effect->layer->lasteffnode)) {
+		if (effect->node == (EffectNode*)(effect->layer->lasteffnode[0])) {
 			glUniform1f(opacity, effect->layer->opacity->value);
 		}
 		else glUniform1f(opacity, 1.0f);
@@ -4010,7 +4035,7 @@ void onestepfrom(bool stage, Node *node, Node *prevnode, GLuint prevfbotex, GLui
 		prevfbo = effect->fbo;
 
 		Layer *lay = effect->layer;
-		if (effect->node == lay->lasteffnode) {
+		if (effect->node == lay->lasteffnode[0]) {
 			GLuint fbocopy;
 			float fac = 1.0f;
 			glDisable(GL_BLEND);
@@ -4042,7 +4067,7 @@ void onestepfrom(bool stage, Node *node, Node *prevnode, GLuint prevfbotex, GLui
 				glUniform1f(chinv, lay->chinv->value);
 			}
 		}
-		if (lay->node == lay->lasteffnode) {
+		if (lay->node == lay->lasteffnode[0]) {
 			GLuint fbocopy;
 			float fac = 1.0f;
 			glDisable(GL_BLEND);
@@ -4802,12 +4827,21 @@ void make_layboxes() {
 				testlay->chromabox->upvtxtoscr();
 		
 				// shift effectboxes and parameterboxes according to position in stack and scrollposition of stack
+				std::vector<Effect*> &evec = testlay->choose_effects();
 				Effect *preveff = nullptr;
-				for (int j = 0; j < testlay->effects.size(); j++) {
-					Effect *eff = testlay->effects[j];
-					eff->box->vtxcoords->x1 = testlay->mixbox->vtxcoords->x1 + tf(0.05f) - (testlay->pos % 3) * tf(0.04f);
-					eff->onoffbutton->box->vtxcoords->x1 = testlay->mixbox->vtxcoords->x1 + tf(0.025f) - (testlay->pos % 3) * tf(0.04f);
-					eff->drywet->box->vtxcoords->x1 = testlay->mixbox->vtxcoords->x1 - (testlay->pos % 3) * tf(0.04f);
+				for (int j = 0; j < evec.size(); j++) {
+					Effect *eff = evec[j];
+					if (testlay->deck == 0) {
+						eff->box->vtxcoords->x1 = -1.0f + mainmix->numw + tf(0.05f);
+						eff->onoffbutton->box->vtxcoords->x1 = -1.0f + mainmix->numw + tf(0.025f);
+						eff->drywet->box->vtxcoords->x1 =  -1.0f + mainmix->numw;
+					}
+					else {
+						xoffset = 1.0f + mainmix->layw - 0.019f;
+						eff->box->vtxcoords->x1 = -1.0f + mainmix->numw + tf(0.05f) + xoffset;
+						eff->onoffbutton->box->vtxcoords->x1 = -1.0f + mainmix->numw + tf(0.025f) + xoffset;
+						eff->drywet->box->vtxcoords->x1 =  -1.0f + mainmix->numw + xoffset;
+					}
 					float dy;
 					if (preveff) {
 						if (preveff->params.size() < 4) {
@@ -4821,7 +4855,7 @@ void make_layboxes() {
 						}
 					}
 					else {
-						eff->box->vtxcoords->y1 = 1.0 - tf(mainmix->layw) - tf(0.20f) + (tf(0.05f) * testlay->effscroll);
+						eff->box->vtxcoords->y1 = 1.0 - tf(mainmix->layw) - tf(0.20f) + (tf(0.05f) * testlay->effscroll[mainprogram->effcat[testlay->deck]->value]);
 					}
 					eff->box->upvtxtoscr();
 					eff->onoffbutton->box->vtxcoords->y1 = eff->box->vtxcoords->y1;
@@ -5112,52 +5146,64 @@ Effect *do_add_effect(Layer *lay, EFFECT_TYPE type, int pos, bool comp) {
 	effect->pos = pos;
 	effect->layer = lay;
 	
-
+	std::vector<Effect*> &evec = lay->choose_effects();
+	evec.insert(evec.begin() + pos, effect);
+	bool cat = mainprogram->effcat[lay->deck]->value;
+	
 	// does scrolling when effect stack reaches bottom of GUI space
 	lay->numefflines += effect->numrows;
 	if (lay->numefflines > 11) {
-		int further = (lay->numefflines - lay->effscroll) - 11;
-		lay->effscroll = lay->effscroll + further * (further > 0);
+		int further = (lay->numefflines - lay->effscroll[cat]) - 11;
+		lay->effscroll[cat] = lay->effscroll[cat] + further * (further > 0);
 		int linepos = 0;
 		for (int i = 0; i < effect->pos; i++) {
-			linepos += lay->effects[i]->numrows;
+			linepos += evec[i]->numrows;
 		}
-		if (lay->effscroll > linepos) lay->effscroll = linepos;
+		if (lay->effscroll[cat] > linepos) lay->effscroll[cat] = linepos;
 	}
-	
-	lay->effects.insert(lay->effects.begin() + pos, effect);
-
 	
 	EffectNode *effnode1 = mainprogram->nodesmain->currpage->add_effectnode(effect, lay->node, pos, comp);
 	effnode1->align = lay->node;
 	effnode1->alignpos = pos;
 	lay->node->aligned += 1;
 	
-	if (pos == lay->effects.size() - 1) {
-		if (lay->pos > 0 and lay->blendnode) {
+	if (pos == evec.size() - 1) {
+		if (lay->pos > 0 and lay->blendnode and !cat) {
 			lay->blendnode->in2 = nullptr;
 			mainprogram->nodesmain->currpage->connect_in2(effnode1, lay->blendnode);
 		}
-		else if (lay->lasteffnode->out.size()) {
-			lay->lasteffnode->out[0]->in = nullptr;
-			mainprogram->nodesmain->currpage->connect_nodes(effnode1, lay->lasteffnode->out[0]);
+		else if (lay->lasteffnode[cat]->out.size()) {
+			lay->lasteffnode[cat]->out[0]->in = nullptr;
+			mainprogram->nodesmain->currpage->connect_nodes(effnode1, lay->lasteffnode[cat]->out[0]);
 		}
-		lay->lasteffnode->out.clear();
-		lay->lasteffnode = effnode1;
+		lay->lasteffnode[cat]->out.clear();
+		lay->lasteffnode[cat] = effnode1;
 	}
 
 	if (pos == 0) {
-		if (lay->effects.size() > 1) {
-			EffectNode *effnode2 = lay->effects[pos + 1]->node;
+		if (evec.size() > 1) {
+			EffectNode *effnode2 = evec[pos + 1]->node;
 			mainprogram->nodesmain->currpage->connect_nodes(effnode1, effnode2);
 		}
-		lay->node->out.clear();
-		mainprogram->nodesmain->currpage->connect_nodes(lay->node, effnode1);
+		if (!cat) {
+			lay->node->out.clear();
+			mainprogram->nodesmain->currpage->connect_nodes(lay->node, effnode1);
+		}
+		else {
+			if (lay->pos == 0) {
+				lay->lasteffnode[0]->out.clear();
+				mainprogram->nodesmain->currpage->connect_nodes(lay->lasteffnode[0], effnode1);
+			}
+			else {
+				lay->blendnode->out.clear();
+				mainprogram->nodesmain->currpage->connect_nodes(lay->blendnode, effnode1);
+			}
+		}
 	}
 	else {
-		EffectNode *effnode2 = lay->effects[pos - 1]->node;
-		if (lay->effects.size() > pos + 1) {
-			EffectNode *effnode3 = lay->effects[pos + 1]->node;
+		EffectNode *effnode2 = evec[pos - 1]->node;
+		if (evec.size() > pos + 1) {
+			EffectNode *effnode3 = evec[pos + 1]->node;
 			mainprogram->nodesmain->currpage->connect_nodes(effnode1, effnode3);
 		}
 		effnode2->out.clear();
@@ -5206,40 +5252,71 @@ Effect* Layer::replace_effect(EFFECT_TYPE type, int pos) {
 }
 
 void do_delete_effect(Layer *lay, int pos) {
-	Effect *effect = lay->effects[pos];
 	
-	for(int i = pos; i < lay->effects.size(); i++) {
-		Effect *eff = lay->effects[i];
+	std::vector<Effect*> &evec = lay->choose_effects();
+	bool cat = mainprogram->effcat[lay->deck]->value;
+	Effect *effect = evec[pos];
+	
+	for(int i = pos; i < evec.size(); i++) {
+		Effect *eff = evec[i];
 		eff->node->alignpos -= 1;
 	}
 	lay->node->aligned -= 1;
 	
 	for (int i = 0; i < lay->node->page->nodes.size(); i++) {
-		if (lay->effects[pos]->node == lay->node->page->nodes[i]) {
+		if (evec[pos]->node == lay->node->page->nodes[i]) {
 			lay->node->page->nodes.erase(lay->node->page->nodes.begin() + i);
 		}
 	}
-	if (lay->lasteffnode == lay->effects[pos]->node) {
-		if (pos == 0) lay->lasteffnode = lay->node;
-		else lay->lasteffnode = lay->effects[pos - 1]->node;
-		lay->lasteffnode->out = lay->effects[pos]->node->out;
-		if (lay->pos == 0) {
-			lay->lasteffnode->out[0]->in = lay->lasteffnode;
+	if (lay->lasteffnode[cat] == evec[pos]->node) {
+		if (pos == 0) {
+			if (!cat) lay->lasteffnode[cat] = lay->node;
+			else {
+				if (lay->pos == 0) {
+					lay->lasteffnode[0]->out.clear();
+					mainprogram->nodesmain->currpage->connect_nodes(lay->lasteffnode[0], lay->lasteffnode[1]->out[0]);
+				}
+				else {	
+					lay->blendnode->out.clear();
+					mainprogram->nodesmain->currpage->connect_nodes(lay->blendnode, lay->lasteffnode[1]->out[0]);
+				}
+				lay->lasteffnode[1] = lay->blendnode;
+			}
 		}
 		else {
-			((BlendNode*)lay->lasteffnode->out[0])->in2 = lay->lasteffnode;
+			lay->lasteffnode[cat] = evec[pos - 1]->node;
+			lay->lasteffnode[cat]->out = evec[pos]->node->out;
+			if (cat) evec[pos]->node->out[0]->in = lay->lasteffnode[1];
+		}
+		if (!cat) {
+			if (lay->pos == 0) {
+				lay->lasteffnode[cat]->out[0]->in = lay->lasteffnode[cat];
+			}
+			else {
+				((BlendNode*)lay->lasteffnode[0]->out[0])->in2 = lay->lasteffnode[0];
+			}
 		}
 	}
 	else {
-		lay->effects[pos + 1]->node->in = lay->effects[pos]->node->in;
-		if (pos != 0) lay->effects[pos - 1]->node->out.push_back(lay->effects[pos + 1]->node);
-		else lay->node->out.push_back(lay->effects[pos + 1]->node);
+		evec[pos + 1]->node->in = evec[pos]->node->in;
+		if (pos != 0) evec[pos - 1]->node->out.push_back(evec[pos + 1]->node);
+		else {
+			if (!cat) lay->node->out.push_back(evec[pos + 1]->node);
+			else {
+				if (lay->pos == 0) {
+					lay->lasteffnode[0]->out.push_back(evec[pos + 1]->node);
+				}
+				else {
+					lay->blendnode->out.push_back(evec[pos + 1]->node);
+				}
+			}
+		}
 	}	
 	
-	lay->node->page->delete_node(lay->effects[pos]->node);
+	lay->node->page->delete_node(evec[pos]->node);
 	lay->node->upeffboxes();
 
-	lay->effects.erase(lay->effects.begin() + pos);
+	evec.erase(evec.begin() + pos);
 	delete effect;
 	
 	make_layboxes();
@@ -5302,6 +5379,7 @@ Effect::Effect() {
 	box->upvtxtoscr();
 	this->onoffbutton = new Button(true);
 	box = this->onoffbutton->box;
+	box->vtxcoords->x1 = -1.0f + mainmix->numw;
 	box->vtxcoords->w = tf(0.025f);
 	box->vtxcoords->h = tf(0.05f);
 	box->upvtxtoscr();
@@ -6221,16 +6299,25 @@ Button::~Button() {
 
 void Button::draw(bool circlein) {
 	if (this->box->in()) {
-		this->box->acolor[0] = 0.5;
-		this->box->acolor[1] = 0.5;
-		this->box->acolor[2] = 1.0;
-		this->box->acolor[3] = 1.0;
+		if (mainprogram->leftmouse) {
+			this->value = !this->value;
+		}
+		this->box->acolor[0] = 0.5f;
+		this->box->acolor[1] = 0.5f;
+		this->box->acolor[2] = 1.0f;
+		this->box->acolor[3] = 1.0f;
+	}
+	else if (this->value) {
+		this->box->acolor[0] = 0.0f;
+		this->box->acolor[1] = 0.7f;
+		this->box->acolor[2] = 0.0f;
+		this->box->acolor[3] = 1.0f;
 	}
 	else {
-		this->box->acolor[0] = 0.0;
-		this->box->acolor[1] = 0.0;
-		this->box->acolor[2] = 0.0;
-		this->box->acolor[3] = 1.0;
+		this->box->acolor[0] = 0.0f;
+		this->box->acolor[1] = 0.0f;
+		this->box->acolor[2] = 0.0f;
+		this->box->acolor[3] = 1.0f;
 	}
 	draw_box(this->box, -1);
 	
@@ -6795,6 +6882,23 @@ Program::Program() {
 	this->effscrollupA->vtxcoords->h = tf(0.05f);
 	this->effscrollupA->upvtxtoscr();
 	
+	this->effcat[0] = new Button(false);
+	this->effcat[0]->name = "Layer effects";
+	this->effcat[0]->box->vtxcoords->x1 = -1.0f + mainmix->numw - tf(0.025f);
+	this->effcat[0]->box->vtxcoords->y1 = 1.0f - tf(mainmix->layw) - tf(0.50f);
+	this->effcat[0]->box->vtxcoords->w = tf(0.025f);
+	this->effcat[0]->box->vtxcoords->h = tf(0.2f);
+	this->effcat[0]->box->upvtxtoscr();
+	
+	this->effcat[1] = new Button(false);
+	this->effcat[1]->name = "Layer effects";
+	float xoffset = 1.0f + mainmix->layw - 0.019f;
+	this->effcat[1]->box->vtxcoords->x1 = -1.0f + mainmix->numw - tf(0.025f) + xoffset;
+	this->effcat[1]->box->vtxcoords->y1 = 1.0f - tf(mainmix->layw) - tf(0.50f);
+	this->effcat[1]->box->vtxcoords->w = tf(0.025f);
+	this->effcat[1]->box->vtxcoords->h = tf(0.2f);
+	this->effcat[1]->box->upvtxtoscr();
+	
 	this->effscrollupB = new Box;
 	this->effscrollupB->vtxcoords->x1 = 1.0 - tf(0.05f);
 	this->effscrollupB->vtxcoords->y1 = 1.0 - tf(mainmix->layw) - tf(0.20f);
@@ -7065,22 +7169,22 @@ void exchange(Layer *lay, std::vector<Layer*> &slayers, std::vector<Layer*> &dla
 				dlayers[i]->blendnode->wipex = bnode->wipex;
 				dlayers[i]->blendnode->wipey = bnode->wipey;
 				
-				Node *inlayout = inlay->lasteffnode->out[0];
-				Node *layout = lay->lasteffnode->out[0];
+				Node *inlayout = inlay->lasteffnode[0]->out[0];
+				Node *layout = lay->lasteffnode[0]->out[0];
 				if (inlay->effects.size()) {
 					inlay->node->out.clear();
 					mainprogram->nodesmain->currpage->connect_nodes(inlay->node, inlay->effects[0]->node);
-					inlay->lasteffnode = inlay->effects[inlay->effects.size() - 1]->node;
+					inlay->lasteffnode[0] = inlay->effects[inlay->effects.size() - 1]->node;
 				}
-				else inlay->lasteffnode = inlay->node;
-				inlay->lasteffnode->out.clear();
+				else inlay->lasteffnode[0] = inlay->node;
+				inlay->lasteffnode[0]->out.clear();
 				if (inlay->pos == 0) {
 					layout->in = nullptr;
-					mainprogram->nodesmain->currpage->connect_nodes(inlay->lasteffnode, layout);
+					mainprogram->nodesmain->currpage->connect_nodes(inlay->lasteffnode[0], layout);
 				}
 				else {
 					((BlendNode*)(layout))->in2 = nullptr;
-					mainprogram->nodesmain->currpage->connect_in2(inlay->lasteffnode, (BlendNode*)(layout));
+					mainprogram->nodesmain->currpage->connect_in2(inlay->lasteffnode[0], (BlendNode*)(layout));
 				}	
 				for (int j = 0; j < inlay->effects.size(); j++) {
 					inlay->effects[j]->node->align = inlay->node;
@@ -7088,24 +7192,21 @@ void exchange(Layer *lay, std::vector<Layer*> &slayers, std::vector<Layer*> &dla
 				if (lay->effects.size()) {
 					lay->node->out.clear();
 					mainprogram->nodesmain->currpage->connect_nodes(lay->node, lay->effects[0]->node);
-					lay->lasteffnode = lay->effects[lay->effects.size() - 1]->node;
+					lay->lasteffnode[0] = lay->effects[lay->effects.size() - 1]->node;
 				}
-				else lay->lasteffnode = lay->node;
-				lay->lasteffnode->out.clear();
+				else lay->lasteffnode[0] = lay->node;
+				lay->lasteffnode[0]->out.clear();
 				if (lay->pos == 0) {
 					inlayout->in = nullptr;
-					mainprogram->nodesmain->currpage->connect_nodes(lay->lasteffnode, inlayout);
+					mainprogram->nodesmain->currpage->connect_nodes(lay->lasteffnode[0], inlayout);
 				}
 				else {
 					((BlendNode*)(inlayout))->in2 = nullptr;
-					mainprogram->nodesmain->currpage->connect_in2(lay->lasteffnode, (BlendNode*)inlayout);
+					mainprogram->nodesmain->currpage->connect_in2(lay->lasteffnode[0], (BlendNode*)inlayout);
 				}			
 				for (int j = 0; j < lay->effects.size(); j++) {
 					lay->effects[j]->node->align = lay->node;
 				}
-				printf("%d %d\n", inlay->lasteffnode, layout->in);
-				printf("%d %d\n", lay->lasteffnode, ((BlendNode*)(layout))->in2);
-				printf("%d %d\n", layout->out[0], mainprogram->nodesmain->mixnodes[0]);
 				break;
 			}
 			else if (dropin or endx or (box->scrcoords->x1 - mainprogram->xvtxtoscr(0.075f) * (i - mainmix->scrollpos[deck] != 0) < mainprogram->mx and mainprogram->mx < box->scrcoords->x1 + mainprogram->xvtxtoscr(0.075f))) {
@@ -7122,21 +7223,29 @@ void exchange(Layer *lay, std::vector<Layer*> &slayers, std::vector<Layer*> &dla
 				}
 				lay->deck = deck;
 				BLEND_TYPE btype = lay->blendnode->blendtype;
-				BlendNode *firstbnode = (BlendNode*)dlayers[0]->lasteffnode->out[0];
-				Node *firstlasteffnode = dlayers[0]->lasteffnode;
+				BlendNode *firstbnode = (BlendNode*)dlayers[0]->lasteffnode[0]->out[0];
+				Node *firstlasteffnode = dlayers[0]->lasteffnode[0];
 				float mfval = lay->blendnode->mixfac->value;
 				int wipetype = lay->blendnode->wipetype;
 				int wipedir = lay->blendnode->wipedir;
 				float wipex = lay->blendnode->wipex;
 				float wipey = lay->blendnode->wipey;
-				if (lay->pos > 0 and i + endx != 0) {
-					mainprogram->nodesmain->currpage->connect_nodes(lay->blendnode->in, lay->blendnode->out[0]);
+				if (lay->pos > 0) {
+					lay->blendnode->in->out.clear();
+					mainprogram->nodesmain->currpage->connect_nodes(lay->blendnode->in, lay->lasteffnode[1]->out[0]);
 					mainprogram->nodesmain->currpage->delete_node(lay->blendnode);
 				}
 				else if (i + endx != 0) {
 					if (nextlay) {
-						nextlay->lasteffnode->out.clear();
-						mainprogram->nodesmain->currpage->connect_nodes(nextlay->lasteffnode, nextlay->blendnode->out[0]);
+						nextlay->lasteffnode[0]->out.clear();
+						if (lay->streameffects.size()) {
+							mainprogram->nodesmain->currpage->connect_nodes(nextlay->lasteffnode[0], nextlay->streameffects[0]->node);
+						}
+						else {
+							nextlay->lasteffnode[1] = nextlay->lasteffnode[0];
+						}
+						nextlay->lasteffnode[1]->out.clear();
+						mainprogram->nodesmain->currpage->connect_nodes(nextlay->lasteffnode[1], nextlay->blendnode->out[0]);
 						mainprogram->nodesmain->currpage->delete_node(nextlay->blendnode);
 						nextlay->blendnode = new BlendNode;
 						nextlay->blendnode->blendtype = nextbtype;
@@ -7149,7 +7258,7 @@ void exchange(Layer *lay, std::vector<Layer*> &slayers, std::vector<Layer*> &dla
 				}
 				lay->blendnode = nullptr;
 				bool lastisvid = false;
-				if (lay->lasteffnode == lay->node) lastisvid = true;
+				if (lay->lasteffnode[0] == lay->node) lastisvid = true;
 				mainprogram->nodesmain->currpage->delete_node(lay->node);
 				
 				int slayerssize = slayers.size();
@@ -7182,7 +7291,7 @@ void exchange(Layer *lay, std::vector<Layer*> &slayers, std::vector<Layer*> &dla
 					if (j == 0) mainprogram->nodesmain->currpage->connect_nodes(dlayers[i + endx]->node, dlayers[i + endx]->effects[j]->node);
 					dlayers[i + endx]->effects[j]->node->align = dlayers[i + endx]->node;
 				}
-				if (lastisvid) lay->lasteffnode = lay->node;
+				if (lastisvid) lay->lasteffnode[0] = lay->node;
 				if (dlayers[i + endx]->pos > 0) {
 					Layer *prevlay = dlayers[dlayers[i + endx]->pos - 1];
 					BlendNode *bnode = mainprogram->nodesmain->currpage->add_blendnode(MIXING, comp);
@@ -7193,50 +7302,64 @@ void exchange(Layer *lay, std::vector<Layer*> &slayers, std::vector<Layer*> &dla
 					lay->blendnode->wipedir = wipedir;
 					lay->blendnode->wipex = wipex;
 					lay->blendnode->wipey = wipey;
-					Node *node;
-					if (prevlay->pos > 0) {
-						node = prevlay->blendnode;
+					mainprogram->nodesmain->currpage->connect_nodes(prevlay->lasteffnode[1], lay->lasteffnode[0], lay->blendnode);
+					if (lay->streameffects.size()) {
+						lay->blendnode->out.clear();
+						mainprogram->nodesmain->currpage->connect_nodes(lay->blendnode, lay->streameffects[0]->node);
 					}
 					else {
-						node = prevlay->lasteffnode;
+						lay->lasteffnode[1] = lay->blendnode;
 					}
-					mainprogram->nodesmain->currpage->connect_nodes(node, lay->lasteffnode, lay->blendnode);
 					if (dlayers[i + endx]->pos == dlayers.size() - 1 and mainprogram->nodesmain->mixnodes.size()) {
 						if (&dlayers == &mainmix->layersA) {
-							mainprogram->nodesmain->currpage->connect_nodes(lay->blendnode, mainprogram->nodesmain->mixnodes[0]);
+							mainprogram->nodesmain->currpage->connect_nodes(lay->lasteffnode[1], mainprogram->nodesmain->mixnodes[0]);
 						}
 						else if (&dlayers == &mainmix->layersB) {
-							mainprogram->nodesmain->currpage->connect_nodes(lay->blendnode, mainprogram->nodesmain->mixnodes[1]);
+							mainprogram->nodesmain->currpage->connect_nodes(lay->lasteffnode[1], mainprogram->nodesmain->mixnodes[1]);
 						}
 						else if (&dlayers == &mainmix->layersAcomp) {
-							mainprogram->nodesmain->currpage->connect_nodes(lay->blendnode, mainprogram->nodesmain->mixnodescomp[0]);
+							mainprogram->nodesmain->currpage->connect_nodes(lay->lasteffnode[1], mainprogram->nodesmain->mixnodescomp[0]);
 						}
 						else if (&dlayers == &mainmix->layersBcomp) {
-							mainprogram->nodesmain->currpage->connect_nodes(lay->blendnode, mainprogram->nodesmain->mixnodescomp[1]);
+							mainprogram->nodesmain->currpage->connect_nodes(lay->lasteffnode[1], mainprogram->nodesmain->mixnodescomp[1]);
 						}
 					}
 					else if (dlayers[i + endx]->pos < dlayers.size() - 1) {
-						mainprogram->nodesmain->currpage->connect_nodes(lay->blendnode, dlayers[dlayers[i + endx]->pos + 1]->blendnode);
+						mainprogram->nodesmain->currpage->connect_nodes(lay->lasteffnode[1], dlayers[dlayers[i + endx]->pos + 1]->blendnode);
 					}	
 				}
 				else {
 					dlayers[i + endx]->blendnode = new BlendNode;
 					//BlendNode *bnode = mainprogram->nodesmain->currpage->add_blendnode(MIXING, false);
+					if (lay->streameffects.size()) {
+						lay->lasteffnode[0]->out.clear();
+						mainprogram->nodesmain->currpage->connect_nodes(lay->lasteffnode[0], lay->streameffects[0]->node);
+					}
+					else {
+						lay->lasteffnode[1] = lay->lasteffnode[0];
+					}
 					Layer *nxlay = nullptr;
 					if (dlayers.size() > 2) nxlay = dlayers[1];
 					if (nxlay) {
-						lay->node->out.clear();
+						Node *cpn = nxlay->lasteffnode[1]->out[0];
 						firstlasteffnode->out.clear();
-						nxlay->blendnode = firstbnode;
-						nxlay->blendnode->blendtype = MIXING;
-						mainprogram->nodesmain->currpage->connect_nodes(lay->node, firstlasteffnode, firstbnode);
+						BlendNode *bnode = mainprogram->nodesmain->currpage->add_blendnode(MIXING, comp);
+						nxlay->blendnode = bnode;
+						lay->lasteffnode[1]->out.clear();
+						mainprogram->nodesmain->currpage->connect_nodes(lay->lasteffnode[1], firstlasteffnode, bnode);
+						if (nxlay->streameffects.size()) {
+							mainprogram->nodesmain->currpage->connect_nodes(bnode, nxlay->streameffects[0]->node);
+							nxlay->lasteffnode[1]->out.clear();
+							mainprogram->nodesmain->currpage->connect_nodes(nxlay->lasteffnode[1], cpn);
+						}
+						else mainprogram->nodesmain->currpage->connect_nodes(bnode, cpn);
 					}
 					else {
 						BlendNode *bnode = mainprogram->nodesmain->currpage->add_blendnode(MIXING, comp);
-						lay->node->out.clear();
+						lay->lasteffnode[1]->out.clear();
 						dlayers[1]->blendnode = bnode;
 						dlayers[1]->blendnode->blendtype = MIXING;
-						mainprogram->nodesmain->currpage->connect_nodes(lay->node, dlayers[1]->lasteffnode, bnode);
+						mainprogram->nodesmain->currpage->connect_nodes(lay->lasteffnode[1], dlayers[1]->lasteffnode[0], bnode);
 						if (&dlayers == &mainmix->layersA) {
 							mainprogram->nodesmain->currpage->connect_nodes(bnode, mainprogram->nodesmain->mixnodes[0]);
 						}
@@ -7261,22 +7384,31 @@ void exchange(Layer *lay, std::vector<Layer*> &slayers, std::vector<Layer*> &dla
 				if (slayers.size() == 0) {
 					Layer *newlay = mainmix->add_layer(slayers, 0);
 					if (&slayers == &mainmix->layersA) {
-						mainprogram->nodesmain->currpage->connect_nodes(newlay->lasteffnode, mainprogram->nodesmain->mixnodes[0]);
+						mainprogram->nodesmain->currpage->connect_nodes(newlay->lasteffnode[0], mainprogram->nodesmain->mixnodes[0]);
 					}
 					else if (&slayers == &mainmix->layersB) {
-						mainprogram->nodesmain->currpage->connect_nodes(newlay->lasteffnode, mainprogram->nodesmain->mixnodes[1]);
+						mainprogram->nodesmain->currpage->connect_nodes(newlay->lasteffnode[0], mainprogram->nodesmain->mixnodes[1]);
 					}
 					else if (&slayers == &mainmix->layersAcomp) {
-						mainprogram->nodesmain->currpage->connect_nodes(newlay->lasteffnode, mainprogram->nodesmain->mixnodescomp[0]);
+						mainprogram->nodesmain->currpage->connect_nodes(newlay->lasteffnode[0], mainprogram->nodesmain->mixnodescomp[0]);
 					}
 					else if (&slayers == &mainmix->layersBcomp) {
-						mainprogram->nodesmain->currpage->connect_nodes(newlay->lasteffnode, mainprogram->nodesmain->mixnodescomp[1]);
+						mainprogram->nodesmain->currpage->connect_nodes(newlay->lasteffnode[0], mainprogram->nodesmain->mixnodescomp[1]);
 					}
 				}
 				break;
 			}
 		}
 		make_layboxes();
+	}
+}
+
+std::vector<Effect*>& Layer::choose_effects() {
+	if (mainprogram->effcat[this->deck]->value) {
+		return this->streameffects;
+	}
+	else {
+		return this->effects;
 	}
 }
 
@@ -8042,8 +8174,8 @@ void Layer::mute_handle() {
 			Layer *templay = this;
 			while (1) {
 				if (templay == templay->prev()) {
-					this->prev()->lasteffnode->out.clear();
-					mainprogram->nodesmain->currpage->connect_nodes(this->prev()->lasteffnode, this->blendnode);
+					this->prev()->lasteffnode[0]->out.clear();
+					mainprogram->nodesmain->currpage->connect_nodes(this->prev()->lasteffnode[0], this->blendnode);
 					break;
 				}
 				if (!templay->prev()->mute) {
@@ -8409,9 +8541,10 @@ void the_loop() {
 		bool inbetween = false;
 		Layer *lay = mainmix->currlay;
 		Effect *eff = nullptr;
+		std::vector<Effect*> &evec = lay->choose_effects();
 		if (!mainprogram->queueing) {
-			if (lay->effects.size()) {
-				eff = lay->effects[lay->effects.size() - 1];
+			if (evec.size()) {
+				eff = evec[evec.size() - 1];
 				box = eff->onoffbutton->box;
 				sx1 = box->scrcoords->x1;
 				sy1 = box->scrcoords->y1 + (eff->numrows - 1) * mainprogram->yvtxtoscr(tf(0.05f));
@@ -8440,7 +8573,7 @@ void the_loop() {
 						if (mainprogram->menuactivation or mainprogram->leftmouse) {
 							mainprogram->effectmenu->state = 2;
 							mainmix->insert = 1;
-							mainmix->mouseeffect = lay->effects.size();
+							mainmix->mouseeffect = evec.size();
 							mainmix->mouselayer = lay;
 							mainprogram->menux = mainprogram->mx;
 							mainprogram->menuy = mainprogram->my;
@@ -8452,8 +8585,8 @@ void the_loop() {
 					}
 				}
 			}
-			for(int j = 0; j < lay->effects.size(); j++) {
-				eff = lay->effects[j];
+			for(int j = 0; j < evec.size(); j++) {
+				eff = evec[j];
 				box = eff->box;
 				eff->box->acolor[0] = 0.75f;
 				eff->box->acolor[1] = 0.0f;
@@ -9065,9 +9198,10 @@ void the_loop() {
 			if (k == 0) mainmix->mouselayer->delete_effect(mainmix->mouseeffect);
 			else if (mainmix->insert) mainmix->mouselayer->add_effect((EFFECT_TYPE)(k - 1), mainmix->mouseeffect);
 			else {
-				int mon = mainmix->mouselayer->effects[mainmix->mouseeffect]->node->monitor;
+				std::vector<Effect*> &evec = mainmix->mouselayer->choose_effects();
+				int mon = evec[mainmix->mouseeffect]->node->monitor;
 				mainmix->mouselayer->replace_effect((EFFECT_TYPE)(k - 1), mainmix->mouseeffect);
-				mainmix->mouselayer->effects[mainmix->mouseeffect]->node->monitor = mon;
+				evec[mainmix->mouseeffect]->node->monitor = mon;
 			}
 			mainmix->mouselayer = nullptr;
 			mainmix->mouseeffect = -1;
@@ -10268,10 +10402,10 @@ void new_file(int decks, bool alive) {
 		delete_layers(lvec, alive);
 		Layer *lay = mainmix->add_layer(lvec, 0);
 		if (mainprogram->preveff) {
-			mainprogram->nodesmain->currpage->connect_nodes(lvec[lvec.size() - 1]->lasteffnode, mainprogram->nodesmain->mixnodes[0]);
+			mainprogram->nodesmain->currpage->connect_nodes(lvec[lvec.size() - 1]->lasteffnode[0], mainprogram->nodesmain->mixnodes[0]);
 		}
 		else {
-			mainprogram->nodesmain->currpage->connect_nodes(lvec[lvec.size() - 1]->lasteffnode, mainprogram->nodesmain->mixnodescomp[0]);
+			mainprogram->nodesmain->currpage->connect_nodes(lvec[lvec.size() - 1]->lasteffnode[0], mainprogram->nodesmain->mixnodescomp[0]);
 		}
 		if (currdeck == 0) mainmix->currlay = lay;
 	}
@@ -10280,10 +10414,10 @@ void new_file(int decks, bool alive) {
 		delete_layers(lvec, alive);
 		Layer *lay = mainmix->add_layer(lvec, 0);
 		if (mainprogram->preveff) {
-			mainprogram->nodesmain->currpage->connect_nodes(lvec[lvec.size() - 1]->lasteffnode, mainprogram->nodesmain->mixnodes[1]);
+			mainprogram->nodesmain->currpage->connect_nodes(lvec[lvec.size() - 1]->lasteffnode[0], mainprogram->nodesmain->mixnodes[1]);
 		}
 		else {
-			mainprogram->nodesmain->currpage->connect_nodes(lvec[lvec.size() - 1]->lasteffnode, mainprogram->nodesmain->mixnodescomp[1]);
+			mainprogram->nodesmain->currpage->connect_nodes(lvec[lvec.size() - 1]->lasteffnode[0], mainprogram->nodesmain->mixnodescomp[1]);
 		}
 		if (currdeck == 1) mainmix->currlay = lay;
 	}
@@ -10632,7 +10766,7 @@ bool open_shelflayer(const std::string &path, int pos) {
 	lay->pos = 0;
 	lay->node = mainprogram->nodesmain->currpage->add_videonode(2);
 	lay->node->layer = lay;
-	lay->lasteffnode = lay->node;
+	lay->lasteffnode[0] = lay->node;
 	lay->node->calc = true;
 	lay->node->walked = false;
 	mainmix->open_layerfile(path, lay, false, 0);
@@ -10652,7 +10786,7 @@ bool open_shelflayer(const std::string &path, int pos) {
 	for (int k = 0; k < lay->effects.size(); k++) {
 		lay->effects[k]->node->calc = true;
 		lay->effects[k]->node->walked = false;
-		lay->lasteffnode = lay->effects[k]->node;
+		lay->lasteffnode[0] = lay->effects[k]->node;
 	}
 	lay->frame = 0.0f;
 	lay->prevframe = -1;
@@ -11586,7 +11720,7 @@ int main(int argc, char* argv[]){
 	make_layboxes();
 
 	//temporary
-	layA1->lasteffnode->monitor = 0;
+	layA1->lasteffnode[0]->monitor = 0;
 	mainprogram->nodesmain->linked = true;
 	
 	laymidiA = new LayMidi;

@@ -126,7 +126,7 @@ Mixer::Mixer() {
 Layer* Mixer::add_layer(std::vector<Layer*> &layers, int pos) {
 	bool comp;
 	if (layers == this->layersA or layers == this->layersB) comp = false;
-	else comp = true;1;
+	else comp = true;
 	Layer *layer = new Layer(comp);
 	if (layers == this->layersA or layers == this->layersAcomp) layer->deck = 0;
 	else layer->deck = 1;
@@ -135,7 +135,7 @@ Layer* Mixer::add_layer(std::vector<Layer*> &layers, int pos) {
 	clip->type = ELEM_LAYER;
  	layer->node = mainprogram->nodesmain->currpage->add_videonode(comp);
 	layer->node->layer = layer;
-	layer->lasteffnode = layer->node;
+	layer->lasteffnode[0] = layer->node;
 	if (layers == this->layersA or layers == this->layersAcomp) {
 		layer->genmidibut->value = this->genmidi[0]->value;
 	}
@@ -158,13 +158,16 @@ Layer* Mixer::add_layer(std::vector<Layer*> &layers, int pos) {
 		BlendNode *bnode = mainprogram->nodesmain->currpage->add_blendnode(MIXING, comp);
 		layer->blendnode = bnode;
 		Node *node;
-		if (prevlay->pos > 0) {
+		if (prevlay->streameffects.size()) {
+			node = prevlay->lasteffnode[1];
+		}
+		else if (prevlay->pos > 0) {
 			node = prevlay->blendnode;
 		}
 		else {
-			node = prevlay->lasteffnode;
+			node = prevlay->lasteffnode[0];
 		}
-		mainprogram->nodesmain->currpage->connect_nodes(node, layer->lasteffnode, layer->blendnode);
+		mainprogram->nodesmain->currpage->connect_nodes(node, layer->lasteffnode[0], layer->blendnode);
 		if (pos == layers.size() - 1 and mainprogram->nodesmain->mixnodes.size()) {
 			if (layers == mainmix->layersA) {
 				mainprogram->nodesmain->currpage->connect_nodes(layer->blendnode, mainprogram->nodesmain->mixnodes[0]);
@@ -189,10 +192,10 @@ Layer* Mixer::add_layer(std::vector<Layer*> &layers, int pos) {
 		Layer *nextlay = nullptr;
 		if (layers.size() > 1) nextlay = layers[1];
 		if (nextlay) {
-			mainprogram->nodesmain->currpage->connect_nodes(bnode, nextlay->lasteffnode->out[0]);
-			nextlay->lasteffnode->out.clear();
+			mainprogram->nodesmain->currpage->connect_nodes(bnode, nextlay->lasteffnode[0]->out[0]);
+			nextlay->lasteffnode[0]->out.clear();
 			nextlay->blendnode = bnode;
-			mainprogram->nodesmain->currpage->connect_nodes(layer->node, nextlay->lasteffnode, bnode);
+			mainprogram->nodesmain->currpage->connect_nodes(layer->node, nextlay->lasteffnode[0], bnode);
 		}
 	}
 	
@@ -207,6 +210,9 @@ Layer* Mixer::add_layer(std::vector<Layer*> &layers, int pos) {
 		}
 	}
 	layer->blendnode->box->upscrtovtx();
+	
+	if (pos == 0) layer->lasteffnode[1] = layer->lasteffnode[0];
+	else layer->lasteffnode[1] = layer->blendnode;
 	
 	make_layboxes();
 	
@@ -253,16 +259,24 @@ void Mixer::do_deletelay(Layer *testlay, std::vector<Layer*> &layers, bool add) 
 			delete testlay->effects.back();
 			testlay->effects.pop_back();
 		}
+		while (!testlay->streameffects.empty()) {
+			mainprogram->nodesmain->currpage->delete_node(testlay->streameffects.back()->node);
+			for (int j = 0; j < testlay->streameffects.back()->params.size(); j++) {
+				delete testlay->streameffects.back()->params[j];
+			}
+			delete testlay->streameffects.back();
+			testlay->streameffects.pop_back();
+		}
 
 		if (testlay->pos > 0 and testlay->blendnode) {
-			mainprogram->nodesmain->currpage->connect_nodes(testlay->blendnode->in, testlay->blendnode->out[0]);
+			mainprogram->nodesmain->currpage->connect_nodes(testlay->blendnode->in, testlay->lasteffnode[1]->out[0]);
 			mainprogram->nodesmain->currpage->delete_node(testlay->blendnode);
 			testlay->blendnode = 0;
 		}
 		else {
 			if (nextlay) {
-				nextlay->lasteffnode->out.clear();
-				mainprogram->nodesmain->currpage->connect_nodes(nextlay->lasteffnode, nextlay->blendnode->out[0]);
+				nextlay->lasteffnode[0]->out.clear();
+				mainprogram->nodesmain->currpage->connect_nodes(nextlay->lasteffnode[0], nextlay->lasteffnode[1]->out[0]);
 				mainprogram->nodesmain->currpage->delete_node(nextlay->blendnode);
 				nextlay->blendnode = new BlendNode;
 				nextlay->blendnode->blendtype = nextbtype;
@@ -678,6 +692,26 @@ void Mixer::copy_to_comp(std::vector<Layer*> &sourcelayersA, std::vector<Layer*>
 						}
 					}
 				}
+				for (int k = 0; k < sourcelayersA.size(); k++) {
+					for (int m = 0; m < sourcelayersA[k]->streameffects.size(); m++) {
+						Effect *eff = sourcelayersA[k]->streameffects[m];
+						if (eff == ((EffectNode*)node)->effect) {
+							cnode->effect = destlayersA[k]->streameffects[m];
+							destlayersA[k]->streameffects[m]->node = cnode;
+							break;
+						}
+					}
+				}
+				for (int k = 0; k < sourcelayersB.size(); k++) {
+					for (int m = 0; m < sourcelayersB[k]->streameffects.size(); m++) {
+						Effect *eff = sourcelayersB[k]->streameffects[m];
+						if (eff == ((EffectNode*)node)->effect) {
+							cnode->effect = destlayersB[k]->streameffects[m];
+							destlayersB[k]->streameffects[m]->node = cnode;
+							break;
+						}
+					}
+				}
 				destnodes.push_back(cnode);
 			}
 			else if (node->type == BLEND) {
@@ -729,11 +763,11 @@ void Mixer::copy_to_comp(std::vector<Layer*> &sourcelayersA, std::vector<Layer*>
 				}
 			}
 			for (int m = 0; m < sourcelayersA.size(); m++) {
-				if ((BlendNode*)node == sourcelayersA[m]->lasteffnode) destlayersA[m]->lasteffnode = cnode;
+				if ((BlendNode*)node == sourcelayersA[m]->lasteffnode[0]) destlayersA[m]->lasteffnode[0] = cnode;
 				if ((BlendNode*)node == sourcelayersA[m]->blendnode) destlayersA[m]->blendnode = (BlendNode*)cnode;
 			}
 			for (int m = 0; m < sourcelayersB.size(); m++) {
-				if ((BlendNode*)node == sourcelayersB[m]->lasteffnode) destlayersB[m]->lasteffnode = cnode;
+				if ((BlendNode*)node == sourcelayersB[m]->lasteffnode[0]) destlayersB[m]->lasteffnode[0] = cnode;
 				if ((BlendNode*)node == sourcelayersB[m]->blendnode) destlayersB[m]->blendnode = (BlendNode*)cnode;
 			}
 		}
@@ -964,6 +998,58 @@ std::vector<std::string> Mixer::write_layer(Layer *lay, std::ostream& wfile, boo
 		wfile << "ENDOFPARAMS\n";
 	}
 	wfile << "ENDOFEFFECTS\n";
+	
+	wfile << "STREAMEFFECTS\n";
+	for (int j = 0; j < lay->streameffects.size(); j++) {
+		Effect *eff = lay->streameffects[j];
+		wfile << "TYPE\n";
+		wfile << std::to_string(eff->type);
+		wfile << "\n";
+		wfile << "POS\n";
+		wfile << std::to_string(j);
+		wfile << "\n";
+		wfile << "ONOFFVAL\n";
+		wfile << std::to_string(eff->onoffbutton->value);
+		wfile << "\n";
+		wfile << "DRYWETVAL\n";
+		wfile << std::to_string(eff->drywet->value);
+		wfile << "\n";
+		if (eff->type == RIPPLE) {
+			wfile << "RIPPLESPEED\n";
+			wfile << std::to_string(((RippleEffect*)eff)->speed);
+			wfile << "\n";
+		}
+		if (eff->type == RIPPLE) {
+			wfile << "RIPPLECOUNT\n";
+			wfile << std::to_string(((RippleEffect*)eff)->ripplecount);
+			wfile << "\n";
+		}
+		
+		wfile << "PARAMS\n";
+		for (int k = 0; k < eff->params.size(); k++) {
+			Param *par = eff->params[k];
+			wfile << "VAL\n";
+			wfile << std::to_string(par->value);
+			wfile << "\n";
+			wfile << "MIDI0\n";
+			wfile << std::to_string(par->midi[0]);
+			wfile << "\n";
+			wfile << "MIDI1\n";
+			wfile << std::to_string(par->midi[1]);
+			wfile << "\n";
+			wfile << "MIDIPORT\n";
+			wfile << par->midiport;
+			wfile << "\n";
+			mainmix->event_write(wfile, par);
+		}
+		wfile << "ENDOFPARAMS\n";
+	}
+	wfile << "ENDOFSTREAMEFFECTS\n";
+	
+	wfile << "EFFCAT\n";
+	wfile << std::to_string(mainprogram->effcat[lay->deck]->value);
+	wfile << "\n";
+	
 	return jpegpaths;
 }
 
@@ -1238,11 +1324,11 @@ void Mixer::open_layerfile(const std::string &path, Layer *lay, bool loadevents,
 	std::string istring;
 	
 	Node *nextnode;
-	if (lay->lasteffnode) {
-		if (lay->lasteffnode->out.size()) nextnode = lay->lasteffnode->out[0];
+	if (lay->lasteffnode[0]) {
+		if (lay->lasteffnode[0]->out.size()) nextnode = lay->lasteffnode[0]->out[0];
 	}
 	if (lay->node) {
-		if (lay->node != lay->lasteffnode) {
+		if (lay->node != lay->lasteffnode[0]) {
 			if (lay->pos > 0) {
 				((BlendNode*)nextnode)->in2 = nullptr;
 				mainprogram->nodesmain->currpage->connect_in2(lay->node, (BlendNode*)nextnode);
@@ -1252,7 +1338,7 @@ void Mixer::open_layerfile(const std::string &path, Layer *lay, bool loadevents,
 				mainprogram->nodesmain->currpage->connect_nodes(lay->node, nextnode);
 			}
 		}
-		lay->lasteffnode = lay->node;
+		lay->lasteffnode[0] = lay->node;
 	}
 	while (!lay->effects.empty()) {
 		mainprogram->nodesmain->currpage->delete_node(lay->effects.back()->node);
@@ -1466,7 +1552,7 @@ int Mixer::read_layers(std::istream &rfile, const std::string &result, std::vect
 	if (mainprogram->filecount) jpegcount = mainprogram->filecount;
 	while (getline(rfile, istring)) {
 		if (istring == "LAYERSB" or istring == "ENDOFCLIPLAYER" or istring == "ENDOFFILE") {
-			return jpegcount;
+			return jpegcount;	
 		}
 		if (istring == "DECKSPEED") {
 			getline(rfile, istring);
@@ -1712,6 +1798,7 @@ int Mixer::read_layers(std::istream &rfile, const std::string &result, std::vect
 			}
 		}
 		if (istring == "EFFECTS") {
+			mainprogram->effcat[lay->deck]->value = 0;
 			int type;
 			Effect *eff = nullptr;
 			getline(rfile, istring);
@@ -1784,8 +1871,85 @@ int Mixer::read_layers(std::istream &rfile, const std::string &result, std::vect
 				}
 				getline(rfile, istring);
 			}
-			printf("endtheend\n");
-			fflush(stdout);
+		}
+		if (istring == "STREAMEFFECTS") {
+			mainprogram->effcat[lay->deck]->value = 1;
+			int type;
+			Effect *eff = nullptr;
+			getline(rfile, istring);
+			while (istring != "ENDOFSTREAMEFFECTS") {
+				if (istring == "TYPE") {
+					getline(rfile, istring);
+					type = std::stoi(istring);
+				}
+				if (istring == "POS") {
+					getline(rfile, istring);
+					int pos = std::stoi(istring);
+					eff = lay->add_effect((EFFECT_TYPE)type, pos);
+				}
+				if (istring == "ONOFFVAL") {
+					getline(rfile, istring);
+					eff->onoffbutton->value = std::stoi(istring);
+				}
+				if (istring == "DRYWETVAL") {
+					getline(rfile, istring);
+					eff->drywet->value = std::stof(istring);
+				}
+				if (eff) {
+					if (eff->type == RIPPLE) {
+						if (istring == "RIPPLESPEED") {
+							getline(rfile, istring);
+							((RippleEffect*)eff)->speed = std::stof(istring);
+						}
+						if (istring == "RIPPLECOUNT") {
+							getline(rfile, istring);
+							((RippleEffect*)eff)->ripplecount = std::stof(istring);
+						}
+					}
+				}
+				
+				if (istring == "PARAMS") {
+					int pos = 0;
+					Param *par;
+					while (istring != "ENDOFPARAMS") {
+						getline(rfile, istring);
+						if (istring == "VAL") {
+							par = eff->params[pos];
+							pos++;
+							getline(rfile, istring);
+							par->value = std::stof(istring);
+							par->effect = eff;
+						}
+						if (istring == "MIDI0") {
+							getline(rfile, istring);
+							par->midi[0] = std::stoi(istring);
+						}
+						if (istring == "MIDI1") {
+							getline(rfile, istring);
+							par->midi[1] = std::stoi(istring);
+						}
+						if (istring == "MIDIPORT") {
+							getline(rfile, istring);
+							par->midiport = istring;
+						}
+						if (istring == "EVENTELEM") {
+							if (loadevents) {
+								mainmix->event_read(rfile, par, lay);
+							}
+							else {
+								while (getline(rfile, istring)) {
+									if (istring == "ENDOFEVENT") break;
+								}
+							}
+						}
+					}
+				}
+				getline(rfile, istring);
+			}
+		}
+		if (istring == "EFFCAT") {
+			getline(rfile, istring);
+			mainprogram->effcat[lay->deck]->value = std::stoi(istring);
 		}
 	}
 	std::vector<Layer*> &lvec = choose_layers(deck);

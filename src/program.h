@@ -163,9 +163,9 @@ class Button {
 	public:
 		std::string name;
 		Box *box;
-		int value;
+		int value = 0;
 		float ccol[4];
-		void draw(bool circlein);
+		void draw(bool circlein = false);
 		Button(bool state);
 		~Button();
 };
@@ -279,6 +279,7 @@ class Program {
 		Box *cwbox;
 		bool cwon = false;
 		int cwmouse = false;
+		Button *effcat[2];
 		Box *effscrollupA;
 		Box *effscrolldownA;
 		Box *effscrollupB;
@@ -417,7 +418,7 @@ extern void draw_triangle(float *linec, float *areac, float x1, float y1, float 
 extern void draw_line(float *linec, float x1, float y1, float x2, float y2);
 
 extern float render_text(std::string text, float *textc, float x, float y, float sx, float sy);
-extern float render_text(std::string text, float *textc, float x, float y, float sx, float sy, int smflag);
+extern float render_text(std::string text, float *textc, float x, float y, float sx, float sy, int smflag, bool vertical = false);
 
 extern float xscrtovtx(float scrcoord);
 extern float yscrtovtx(float scrcoord);

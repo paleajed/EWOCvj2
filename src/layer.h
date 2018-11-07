@@ -52,7 +52,7 @@ class Clip {
 class Layer {
 	public:
 		int pos;
-		bool deck;
+		bool deck = 0;
 		bool clonedeck = -1;
 		int clonepos = -1;
 		std::vector<Clip*> clips;
@@ -61,11 +61,13 @@ class Layer {
 		int queuescroll = 0;
 		float scrollcol[4] = {0.5f, 0.5f, 0.5f, 1.0f};
 		int numefflines = 0;
-		int effscroll = 0;
+		int effscroll[2] = {0,0};
 		std::vector<Effect*> effects;
+		std::vector<Effect*> streameffects;
 		Effect *add_effect(EFFECT_TYPE type, int pos);
 		Effect *replace_effect(EFFECT_TYPE type, int pos);
 		void delete_effect(int pos);
+		std::vector<Effect*>& choose_effects();
 		void set_clones();
 		void mute_handle();
 		Layer *next();
@@ -164,7 +166,7 @@ class Layer {
 		Box *vidbox;
 		bool changed;
 		VideoNode *node = nullptr;
-		Node *lasteffnode = nullptr;
+		Node *lasteffnode[2] = {nullptr, nullptr};
 		BlendNode *blendnode = nullptr;
 		
 		std::string filename = "";

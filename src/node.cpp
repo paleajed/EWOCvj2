@@ -178,7 +178,11 @@ void NodePage::connect_nodes(Node *node1, Node *node2, BlendNode *bnode) {
 	bnode->in = node1;
 	node1->out.push_back(bnode);
 	if (bnode->in2) {
-		if (bnode->in2->out.size()) bnode->in2->out.erase(std::find(bnode->in2->out.begin(), bnode->in2->out.end(), bnode));
+		if (bnode->in2->out.size()) {
+			if (std::find(bnode->in2->out.begin(), bnode->in2->out.end(), bnode) != bnode->in2->out.end()) {
+				bnode->in2->out.erase(std::find(bnode->in2->out.begin(), bnode->in2->out.end(), bnode));
+			}
+		}
 	}
 	bnode->in2 = node2;
 	node2->out.push_back(bnode);
