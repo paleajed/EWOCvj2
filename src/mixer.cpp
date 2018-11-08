@@ -143,12 +143,15 @@ void Param::handle() {
 	float white[4] = {1.0, 1.0, 1.0, 1.0};
 	std::string parstr;
 	draw_box(this->box, -1);
+	int val;
+	if (!this->powertwo) val = round(this->value * 1000.0f);
+	else val = round(this->value * this->value * 1000.0f);
 	if (mainmix->learnparam == this and mainmix->learn) {
 		parstr = "MIDI";
 	}
 	else if (this != mainmix->adaptparam) parstr = this->name;
-	else if (this->sliding) parstr = std::to_string(this->value).substr(0, 5);
-	else parstr = std::to_string((int)(this->value + 0.5f)).substr(0, 5);
+	else if (this->sliding) parstr = std::to_string(val).substr(0, std::to_string(val).length() - 3) + "." + std::to_string(val).substr(std::to_string(val).length() - 3, std::string::npos); 
+	else parstr = std::to_string((int)(this->value + 0.5f));
 	if (this != mainmix->adaptnumparam) {
 		render_text(parstr, white, this->box->vtxcoords->x1 + tf(0.01f), this->box->vtxcoords->y1 + tf(0.05f) - tf(0.030f), tf(0.0003f), tf(0.0005f));
 		if (this->box->in()) {
@@ -892,7 +895,7 @@ KaleidoScopeEffect::KaleidoScopeEffect() {
 	param->value = 8.0;
 	param->range[0] = 0;
 	param->range[1] = 32.0f;
-	param->sliding = true;
+	param->sliding = false;
 	param->shadervar = "kalslices";
 	param->effect = this;
 	this->params.push_back(param);

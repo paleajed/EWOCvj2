@@ -257,8 +257,8 @@ void BinsMain::handle() {
 			std::string part = mainprogram->inputtext.substr(0, mainprogram->cursorpos);
 			float textw = render_text(part, white, bin->box->vtxcoords->x1 + tf(0.01f), bin->box->vtxcoords->y1 + tf(0.012f), tf(0.0003f), tf(0.0005f));
 			part = mainprogram->inputtext.substr(mainprogram->cursorpos, mainprogram->inputtext.length() - mainprogram->cursorpos);
-			render_text(part, white, bin->box->vtxcoords->x1 + tf(0.01f) + textw, bin->box->vtxcoords->y1 + tf(0.012f), tf(0.0003f), tf(0.0005f));
-			draw_line(white, bin->box->vtxcoords->x1 + tf(0.011f) + textw, bin->box->vtxcoords->y1 + tf(0.01f), bin->box->vtxcoords->x1 + tf(0.011f) + textw, bin->box->vtxcoords->y1 + tf(0.028f)); 
+			render_text(part, white, bin->box->vtxcoords->x1 + tf(0.01f) + textw * 2, bin->box->vtxcoords->y1 + tf(0.012f), tf(0.0003f), tf(0.0005f));
+			draw_line(white, bin->box->vtxcoords->x1 + tf(0.011f) + textw * 2, bin->box->vtxcoords->y1 + tf(0.01f), bin->box->vtxcoords->x1 + tf(0.011f) + textw * 2, bin->box->vtxcoords->y1 + tf(0.028f)); 
 		}
 		else {
 			render_text(bin->name, white, bin->box->vtxcoords->x1 + tf(0.01f), bin->box->vtxcoords->y1 + tf(0.012f), tf(0.0003f), tf(0.0005f));

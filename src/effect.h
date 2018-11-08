@@ -70,6 +70,7 @@ class Param {
 		int midi[2] = {-1, -1};
 		std::string midiport;
 		bool sliding;
+		bool powertwo = false;
 		std::string shadervar;
 		Effect *effect = nullptr;
 		Box *box = NULL;

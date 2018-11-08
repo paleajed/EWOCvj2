@@ -1756,6 +1756,7 @@ Layer::Layer(bool comp) {
 	this->speed->range[0] = 0.0f;
 	this->speed->range[1] = 3.33f;
 	this->speed->sliding = true;
+	this->speed->powertwo = true;
 	this->speed->box->acolor[0] = 0.5;
 	this->speed->box->acolor[1] = 0.2;
 	this->speed->box->acolor[2] = 0.5;
@@ -5549,6 +5550,7 @@ Program::Program() {
 	this->deckspeed[0]->range[0] = 0.0f;
 	this->deckspeed[0]->range[1] = 3.33f;
 	this->deckspeed[0]->sliding = true;
+	this->deckspeed[0]->powertwo = true;
 	this->deckspeed[0]->box->vtxcoords->x1 = -0.3 - (0.3 / 2.0) - 0.15f;
 	this->deckspeed[0]->box->vtxcoords->y1 = -0.7;
 	this->deckspeed[0]->box->vtxcoords->w = 0.3 / 2.0;
@@ -5561,6 +5563,7 @@ Program::Program() {
 	this->deckspeed[1]->range[0] = 0.0f;
 	this->deckspeed[1]->range[1] = 3.33f;
 	this->deckspeed[1]->sliding = true;
+	this->deckspeed[1]->powertwo = true;
 	this->deckspeed[1]->box->vtxcoords->x1 = -0.3 - (0.3 / 2.0) + 0.9f;
 	this->deckspeed[1]->box->vtxcoords->y1 = -0.7;
 	this->deckspeed[1]->box->vtxcoords->w = 0.3 / 2.0;
@@ -6371,8 +6374,8 @@ bool preferences() {
 				std::string part = mainprogram->inputtext.substr(0, mainprogram->cursorpos);
 				float textw = render_text(part, white, box.vtxcoords->x1 + 0.1f, box.vtxcoords->y1 + 0.06f, 0.0024f, 0.004f, 1) * 0.5f;
 				part = mainprogram->inputtext.substr(mainprogram->cursorpos, mainprogram->inputtext.length() - mainprogram->cursorpos);
-				render_text(part, white, box.vtxcoords->x1 + 0.102f + textw * 4, box.vtxcoords->y1 + 0.06f, 0.0024f, 0.004f, 1);
-				draw_line(white, box.vtxcoords->x1 + 0.102f + textw * 4, box.vtxcoords->y1 + 0.06f, box.vtxcoords->x1 + 0.102f + textw * 4, box.vtxcoords->y1 + tf(0.09f)); 
+				render_text(part, white, box.vtxcoords->x1 + 0.102f + textw * 2, box.vtxcoords->y1 + 0.06f, 0.0024f, 0.004f, 1);
+				draw_line(white, box.vtxcoords->x1 + 0.102f + textw * 2, box.vtxcoords->y1 + 0.06f, box.vtxcoords->x1 + 0.102f + textw * 2, box.vtxcoords->y1 + tf(0.09f)); 
 			}
 			else {
 				render_text(std::to_string(mci->items[i]->value), white, box.vtxcoords->x1 + 0.1f, box.vtxcoords->y1 + 0.06f, 0.0024f, 0.004f, 1);
@@ -6474,8 +6477,8 @@ bool preferences() {
 				std::string part = mainprogram->inputtext.substr(0, mainprogram->cursorpos);
 				float textw = render_text(part, white, box.vtxcoords->x1 + 0.1f, box.vtxcoords->y1 + tf(0.03f), 0.0024f, 0.004f, 1) * 0.5f;
 				part = mainprogram->inputtext.substr(mainprogram->cursorpos, mainprogram->inputtext.length() - mainprogram->cursorpos);
-				render_text(part, white, box.vtxcoords->x1 + 0.102f + textw * 4, box.vtxcoords->y1 + tf(0.03f), 0.0024f, 0.004f, 1);
-				draw_line(white, box.vtxcoords->x1 + 0.102f + textw * 4, box.vtxcoords->y1 + tf(0.028f), box.vtxcoords->x1 + 0.102f + textw * 4, box.vtxcoords->y1 + tf(0.09f)); 
+				render_text(part, white, box.vtxcoords->x1 + 0.102f + textw * 2, box.vtxcoords->y1 + tf(0.03f), 0.0024f, 0.004f, 1);
+				draw_line(white, box.vtxcoords->x1 + 0.102f + textw * 2, box.vtxcoords->y1 + tf(0.028f), box.vtxcoords->x1 + 0.102f + textw * 2, box.vtxcoords->y1 + tf(0.09f)); 
 			}
 			if (box.in(mx, my)) {
 				if (mainprogram->lmsave) {
@@ -7154,7 +7157,6 @@ void the_loop() {
 			if (mainmix->adaptparam->value > mainmix->adaptparam->range[1]) {
 				mainmix->adaptparam->value = mainmix->adaptparam->range[1];
 			}
-			mainmix->adaptparam->value = std::stof(std::to_string(mainmix->adaptparam->value).substr(0, 5));
 			mainmix->prevx = mainprogram->mx;
 			
 			if (mainmix->adaptparam == mainmix->currlay->speed) mainmix->currlay->set_clones();
@@ -8968,6 +8970,7 @@ void the_loop() {
 	
 		
 	mainprogram->leftmouse = 0;
+	mainprogram->doubleleftmouse = 0;
 	mainprogram->middlemouse = 0;
 	mainprogram->rightmouse = 0;
 	
@@ -10661,13 +10664,13 @@ int main(int argc, char* argv[]){
 						if (mainprogram->renaming == EDIT_PARAM) {
 							try {
 								mainmix->adaptnumparam->value = std::stof(mainprogram->inputtext);
+								if (mainmix->adaptnumparam->powertwo) mainmix->adaptnumparam->value = sqrt(mainmix->adaptnumparam->value);
 								if (mainmix->adaptnumparam->value < mainmix->adaptnumparam->range[0]) {
 									mainmix->adaptnumparam->value = mainmix->adaptnumparam->range[0];
 								}
 								if (mainmix->adaptnumparam->value > mainmix->adaptnumparam->range[1]) {
 									mainmix->adaptnumparam->value = mainmix->adaptnumparam->range[1];
 								}
-								mainmix->adaptnumparam->value = std::stof(std::to_string(mainmix->adaptnumparam->value).substr(0, 5));
 							}
 							catch (...) {
 							}
@@ -10682,10 +10685,10 @@ int main(int argc, char* argv[]){
 					binsmain->menubin->name = mainprogram->inputtext;
 					std::string oldpath = mainprogram->binsdir + mainprogram->backupname;
 					std::string newpath = mainprogram->binsdir + mainprogram->inputtext;
-					boost::filesystem::rename(oldpath, newpath);
+					if (exists(oldpath)) boost::filesystem::rename(oldpath, newpath);
 					oldpath += ".bin";
 					newpath += ".bin";
-					boost::filesystem::rename(oldpath, newpath);
+					if (exists(oldpath)) boost::filesystem::rename(oldpath, newpath);
 					binsmain->save_binslist();
 				}
 				else if (mainprogram->renaming == EDIT_BINSDIR) {
@@ -10711,9 +10714,9 @@ int main(int argc, char* argv[]){
 					catch(const std::exception& e) {}
 				}
 				else if (mainprogram->renaming == EDIT_PARAM) {
-					int diff = 5 - mainprogram->inputtext.length();
+					int diff = mainprogram->inputtext.find(".") + 4 - mainprogram->inputtext.length();
 					if (diff < 0) {
-						mainprogram->inputtext = mainprogram->inputtext.substr(0, 5);
+						mainprogram->inputtext = mainprogram->inputtext.substr(0, mainprogram->inputtext.find(".") + 4);
 						if (mainprogram->cursorpos > mainprogram->inputtext.length()) {
 							mainprogram->cursorpos = mainprogram->inputtext.length();
 						}
