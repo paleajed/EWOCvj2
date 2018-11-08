@@ -279,6 +279,7 @@ class Mixer {
 		float midi2;
 		Param *midiparam = nullptr;
 		Param *adaptparam = nullptr;
+		Param *adaptnumparam = nullptr;
 		bool midiisspeed = false;
 		int prevx;
 		bool compon = false;

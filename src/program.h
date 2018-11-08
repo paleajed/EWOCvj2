@@ -40,6 +40,7 @@ typedef enum
 	EDIT_SHELFDIR = 4,
 	EDIT_VIDW = 5,
 	EDIT_VIDH = 6,
+	EDIT_PARAM = 7,
 } EDIT_TYPE;
 
 typedef enum
@@ -474,3 +475,5 @@ extern std::string remove_extension(std::string filename);
 extern std::string remove_version(std::string filename);
 
 extern void onestepfrom(bool stage, Node *node, Node *prevnode, GLuint prevfbotex, GLuint prevfbo);
+
+extern int osc_param(const char *path, const char *types, lo_arg **argv, int argc, lo_message m, void *data);
