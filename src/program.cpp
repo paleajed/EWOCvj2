@@ -31,6 +31,195 @@
 #include "loopstation.h"
 #include "bins.h"
 
+Program::Program() {
+	#ifdef _WIN64
+	this->temppath = "./temp/";
+	#else
+	#ifdef __linux__
+	std::string homedir (getenv("HOME"));
+	this->temppath = homedir + "/.ewocvj2/temp/";
+	#endif
+	#endif
+	
+	this->numh = this->numh * glob->w / glob->h;
+	
+	for (int i = 0; i < 6; i++) {
+		for (int j = 0; j < 24; j++) {
+			Box *box = new Box;
+			this->elemboxes.push_back(box);
+			box->vtxcoords->x1 = -0.95f + i * 0.12f + (1.2f * (j > 11));
+			box->vtxcoords->y1 = 0.95f - ((j % 12) + 1) * 0.15f;
+			box->vtxcoords->w = 0.1f;
+			box->vtxcoords->h = 0.1f;
+			box->upvtxtoscr();
+			box->lcolor[0] = 0.4f;
+			box->lcolor[1] = 0.4f;
+			box->lcolor[2] = 0.4f;
+			box->lcolor[3] = 1.0f;
+		}
+	}
+	
+	this->cwbox = new Box;
+
+	this->toscreen = new Button(false);
+	this->buttons.push_back(this->toscreen);
+	this->toscreen->name[0] = "SEND";
+	this->toscreen->name[1] = "SEND";
+	this->toscreen->box->vtxcoords->x1 = -0.3;
+	this->toscreen->box->vtxcoords->y1 = -0.3;
+	this->toscreen->box->vtxcoords->w = 0.3 / 2.0;
+	this->toscreen->box->vtxcoords->h = 0.3 / 3.0;
+	this->toscreen->box->upvtxtoscr();
+	
+	this->backtopre = new Button(false);
+	this->buttons.push_back(this->backtopre);
+	this->backtopre->name[0] = "SEND";
+	this->backtopre->name[1] = "SEND";
+	this->backtopre->box->vtxcoords->x1 = -0.3;
+	this->backtopre->box->vtxcoords->y1 = -0.4;
+	this->backtopre->box->vtxcoords->w = 0.15f;
+	this->backtopre->box->vtxcoords->h = 0.1f;
+	this->backtopre->box->upvtxtoscr();
+	
+	this->modusbut = new Button(false);
+	this->buttons.push_back(this->modusbut);
+	this->modusbut->name[0] = "LIVE MODUS";
+	this->modusbut->name[1] = "PREVIEW MODUS";
+	this->modusbut->box->vtxcoords->x1 = -0.3 - (0.3 / 2.0);
+	this->modusbut->box->vtxcoords->y1 = -0.7;
+	this->modusbut->box->vtxcoords->w = 0.3 / 2.0;
+	this->modusbut->box->vtxcoords->h = 0.3 / 3.0;
+	this->modusbut->box->upvtxtoscr();
+	this->modusbut->tcol[0] = 0.0f;
+	this->modusbut->tcol[1] = 0.0f;
+	this->modusbut->tcol[2] = 0.0f;
+	this->modusbut->tcol[3] = 1.0f;
+	
+	this->deckspeed[0] = new Param;
+	this->deckspeed[0]->name = "Speed A"; 
+	this->deckspeed[0]->value = 1.0f;
+	this->deckspeed[0]->range[0] = 0.0f;
+	this->deckspeed[0]->range[1] = 3.33f;
+	this->deckspeed[0]->sliding = true;
+	this->deckspeed[0]->powertwo = true;
+	this->deckspeed[0]->box->vtxcoords->x1 = -0.3 - (0.3 / 2.0) - 0.15f;
+	this->deckspeed[0]->box->vtxcoords->y1 = -0.7;
+	this->deckspeed[0]->box->vtxcoords->w = 0.3 / 2.0;
+	this->deckspeed[0]->box->vtxcoords->h = 0.3 / 3.0;
+	this->deckspeed[0]->box->upvtxtoscr();
+	
+	this->deckspeed[1] = new Param;
+	this->deckspeed[1]->name = "Speed B"; 
+	this->deckspeed[1]->value = 1.0f;
+	this->deckspeed[1]->range[0] = 0.0f;
+	this->deckspeed[1]->range[1] = 3.33f;
+	this->deckspeed[1]->sliding = true;
+	this->deckspeed[1]->powertwo = true;
+	this->deckspeed[1]->box->vtxcoords->x1 = -0.3 - (0.3 / 2.0) + 0.9f;
+	this->deckspeed[1]->box->vtxcoords->y1 = -0.7;
+	this->deckspeed[1]->box->vtxcoords->w = 0.3 / 2.0;
+	this->deckspeed[1]->box->vtxcoords->h = 0.3 / 3.0;
+	this->deckspeed[1]->box->upvtxtoscr();
+	
+	this->effscrollupA = new Box;
+	this->effscrollupA->vtxcoords->x1 = -1.0;
+	this->effscrollupA->vtxcoords->y1 = 1.0 - tf(this->layw) - tf(0.20f);
+	this->effscrollupA->vtxcoords->w = tf(0.025f);
+	this->effscrollupA->vtxcoords->h = tf(0.05f);
+	this->effscrollupA->upvtxtoscr();
+	
+	this->effcat[0] = new Button(false);
+	this->buttons.push_back(this->effcat[0]);
+	this->effcat[0]->name[0] = "Layer effects";
+	this->effcat[0]->name[1] = "Stream effects";
+	this->effcat[0]->box->vtxcoords->x1 = -1.0f + this->numw - tf(0.025f);
+	this->effcat[0]->box->vtxcoords->y1 = 1.0f - tf(this->layw) - tf(0.50f);
+	this->effcat[0]->box->vtxcoords->w = tf(0.025f);
+	this->effcat[0]->box->vtxcoords->h = tf(0.2f);
+	this->effcat[0]->box->upvtxtoscr();
+	
+	this->effcat[1] = new Button(false);
+	this->buttons.push_back(this->effcat[1]);
+	this->effcat[1]->name[0] = "Layer effects";
+	this->effcat[1]->name[1] = "Stream effects";
+	float xoffset = 1.0f + this->layw - 0.019f;
+	this->effcat[1]->box->vtxcoords->x1 = -1.0f + this->numw - tf(0.025f) + xoffset;
+	this->effcat[1]->box->vtxcoords->y1 = 1.0f - tf(this->layw) - tf(0.50f);
+	this->effcat[1]->box->vtxcoords->w = tf(0.025f);
+	this->effcat[1]->box->vtxcoords->h = tf(0.2f);
+	this->effcat[1]->box->upvtxtoscr();
+	
+	this->effscrollupB = new Box;
+	this->effscrollupB->vtxcoords->x1 = 1.0 - tf(0.05f);
+	this->effscrollupB->vtxcoords->y1 = 1.0 - tf(this->layw) - tf(0.20f);
+	this->effscrollupB->vtxcoords->w = tf(0.025f);
+	this->effscrollupB->vtxcoords->h = tf(0.05f);     
+	this->effscrollupB->upvtxtoscr();
+	
+	this->effscrolldownA = new Box;
+	this->effscrolldownA->vtxcoords->x1 = -1.0;
+	this->effscrolldownA->vtxcoords->y1 = 1.0 - tf(this->layw) - tf(0.20f) - tf(0.05f) * 10;
+	this->effscrolldownA->vtxcoords->w = tf(0.025f);
+	this->effscrolldownA->vtxcoords->h = tf(0.05f);
+	this->effscrolldownA->upvtxtoscr();
+	
+	this->effscrolldownB = new Box;
+	this->effscrolldownB->vtxcoords->x1 = 1.0 - tf(0.05f);
+	this->effscrolldownB->vtxcoords->y1 = 1.0 - tf(this->layw) - tf(0.20f) - tf(0.05f) * 10;
+	this->effscrolldownB->vtxcoords->w = tf(0.025f);
+	this->effscrolldownB->vtxcoords->h = tf(0.05f);
+	this->effscrolldownB->upvtxtoscr();
+	
+	this->tmplay = new Box;
+	this->tmplay->vtxcoords->x1 = 0.075;
+	this->tmplay->vtxcoords->y1 = -0.9f;
+	this->tmplay->vtxcoords->w = 0.15f;
+	this->tmplay->vtxcoords->h = 0.26f;
+	this->tmbackw = new Box;
+	this->tmbackw->vtxcoords->x1 = -0.225f;
+	this->tmbackw->vtxcoords->y1 = -0.9f;
+	this->tmbackw->vtxcoords->w = 0.15f;
+	this->tmbackw->vtxcoords->h = 0.26f;
+	this->tmbounce = new Box;
+	this->tmbounce->vtxcoords->x1 = -0.075f;
+	this->tmbounce->vtxcoords->y1 = -0.9f;
+	this->tmbounce->vtxcoords->w = 0.15f;
+	this->tmbounce->vtxcoords->h = 0.26f;
+	this->tmfrforw = new Box;
+	this->tmfrforw->vtxcoords->x1 = 0.225f;
+	this->tmfrforw->vtxcoords->y1 = -0.9f;
+	this->tmfrforw->vtxcoords->w = 0.15;
+	this->tmfrforw->vtxcoords->h = 0.26f;
+	this->tmfrbackw = new Box;
+	this->tmfrbackw->vtxcoords->x1 = -0.375f;
+	this->tmfrbackw->vtxcoords->y1 = -0.9f;
+	this->tmfrbackw->vtxcoords->w = 0.15;
+	this->tmfrbackw->vtxcoords->h = 0.26f;
+	this->tmspeed = new Box;
+	this->tmspeed->vtxcoords->x1 = -0.8f;
+	this->tmspeed->vtxcoords->y1 = -0.5f;
+	this->tmspeed->vtxcoords->w = 0.2f;
+	this->tmspeed->vtxcoords->h = 1.0f;
+	this->tmspeedzero = new Box;
+	this->tmspeedzero->vtxcoords->x1 = -0.775f;
+	this->tmspeedzero->vtxcoords->y1 = -0.1f;
+	this->tmspeedzero->vtxcoords->w = 0.15f;
+	this->tmspeedzero->vtxcoords->h = 0.2f;
+	this->tmopacity = new Box;
+	this->tmopacity->vtxcoords->x1 = 0.6f;
+	this->tmopacity->vtxcoords->y1 = -0.5f;
+	this->tmopacity->vtxcoords->w = 0.2f;
+	this->tmopacity->vtxcoords->h = 1.0f;
+	this->tmfreeze = new Box;
+	this->tmfreeze->vtxcoords->x1 = -0.1f;
+	this->tmfreeze->vtxcoords->y1 = 0.1f;
+	this->tmfreeze->vtxcoords->w = 0.2f;
+	this->tmfreeze->vtxcoords->h = 0.2f;
+	
+	this->wormhole = new Button(false);
+	this->buttons.push_back(this->wormhole);
+}
+
 void Program::make_menu(const std::string &name, Menu *&menu, std::vector<std::string> &entries) {
 	bool found = false;
 	for (int i = 0; i < mainprogram->menulist.size(); i++) {
@@ -143,6 +332,8 @@ float Program::yvtxtoscr(float vtxcoord) {
  * and quits the application */
 void Program::quit(std::string msg)
 {
+	//save midi map
+	save_genmidis("./midiset.gm");
 	//empty temp dir
 	boost::filesystem::path path_to_remove(mainprogram->temppath);
 	for (boost::filesystem::directory_iterator end_dir_it, it(path_to_remove); it!=end_dir_it; ++it) {
@@ -155,47 +346,10 @@ void Program::quit(std::string msg)
     exit(1);
 }
 
-void Program::prevvid_off() {
-	for (int i = 0; i < mainmix->layersA.size(); i++) {
-		Layer *lay = mainmix->layersA[i];
-		Layer *laycomp = mainmix->layersAcomp[i];
-		if (lay->filename != "" and !prevvid) {
-			// initialize throughput when off
-			laycomp->speed->value = lay->speed->value;
-			laycomp->playbut->value = lay->playbut->value;
-			laycomp->revbut->value = lay->revbut->value;
-			laycomp->bouncebut->value = lay->bouncebut->value;
-			laycomp->playkind = lay->playkind;
-			laycomp->genmidibut->value = lay->genmidibut->value;
-			laycomp->startframe = lay->startframe;
-			laycomp->endframe = lay->endframe;
-			laycomp->audioplaying = false;
-			open_video(lay->frame, laycomp, lay->filename, false);
-		}
-	}
-	for (int i = 0; i < mainmix->layersB.size(); i++) {
-		Layer *lay = mainmix->layersB[i];
-		Layer *laycomp = mainmix->layersBcomp[i];
-		if (lay->filename != "" and !prevvid) {
-			// initialize throughput when off
-			laycomp->speed->value = lay->speed->value;
-			laycomp->playbut->value = lay->playbut->value;
-			laycomp->revbut->value = lay->revbut->value;
-			laycomp->bouncebut->value = lay->bouncebut->value;
-			laycomp->playkind = lay->playkind;
-			laycomp->genmidibut->value = lay->genmidibut->value;
-			laycomp->startframe = lay->startframe;
-			laycomp->endframe = lay->endframe;
-			laycomp->audioplaying = false;
-			open_video(lay->frame, laycomp, lay->filename, false);
-		}
-	}
-}
-
 void Program::preveff_init() {
 	std::vector<Layer*> &lvec = choose_layers(mainmix->currlay->deck);
-	if (!this->preveff and !this->prevvid) {
-		// when prevvid, normally all comp layers are copied from normal layers
+	if (!this->prevmodus) {
+		// normally all comp layers are copied from normal layers
 		// but when going into performance mode, its more coherent to open them in comp layers
 		for (int i = 0; i < mainmix->layersA.size(); i++) {
 			Layer *lay = mainmix->layersA[i];
@@ -218,7 +372,7 @@ void Program::preveff_init() {
 	if (p > lvec.size() - 1) p = lvec.size() - 1;
 	mainmix->currlay = lvec[p];
 	GLint preff = glGetUniformLocation(this->ShaderProgram, "preff");
-	glUniform1i(preff, this->preveff);
+	glUniform1i(preff, this->prevmodus);
 }
 
 unsigned long getFileLength(std::ifstream& file)

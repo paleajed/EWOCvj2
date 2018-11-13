@@ -10,7 +10,7 @@ uniform sampler2D fboSampler;
 uniform float cf = 0.5f;
 uniform float opacity = 1.0f;
 uniform float satamount = 4.0f;
-uniform float chromarot = 0.5f;
+uniform float colorrot = 0.5f;
 uniform float dotsize = 300.0f;
 uniform int fbowidth = 1920;
 uniform int fboheight = 1080;
@@ -89,7 +89,7 @@ uniform int dir = 0;
 uniform float xpos = 0.0f;
 uniform float ypos = 0.0f;
 
-uniform float chromatol = 0.8f;
+uniform float colortol = 0.8f;
 uniform bool chdir = false;
 uniform bool chinv = false;
 uniform float mx = 0.0f;
@@ -261,7 +261,7 @@ vec4 saturation(vec4 color)  //selfmade
 vec4 chromarotate(vec4 color)  //selfmade
 {
 	vec3 hsv = rgb2hsv(color);
-	hsv.x += chromarot;
+	hsv.x += colorrot;
 	if (hsv.x < 0) hsv.x += 1;
 	vec3 rgb = hsv2rgb(hsv);
 	return vec4(rgb.x, rgb.y, rgb.z, 1.0);
@@ -1774,7 +1774,7 @@ void main()
 		fc = vec4((tex0.rgb * (1.0f - fac2 * tex1.a / 2.0f) * fac1 + tex1.rgb * (1.0f - fac1 * tex0.a / 2.0f) * fac2), max(fac1 * tex0.a, fac2 * tex1.a));
 	}
 	else if (mixmode == 19) {
-		//CHROMAKEY alpha
+		//COLOURKEY alpha
 		if (chdir) {
 			vec4 bu;
 			bu = tex0;
@@ -1782,12 +1782,12 @@ void main()
 			tex1 = bu;
 		}
 		float totdiff = (abs(chred - tex1.r) + abs(chgreen - tex1.g) + abs(chblue - tex1.b)) * tex1.a;
-		if (totdiff > chromatol) {
+		if (totdiff > colortol) {
 			if (chinv) fc = vec4(tex0.rgb, 1.0f);
 			else fc = vec4(tex1.rgb, 1.0f);
 		}
 		else {
-			float ia = (chromatol - totdiff) * -(feather - 5.2f);
+			float ia = (colortol - totdiff) * -(feather - 5.2f);
 			if (ia > 1.0f) ia = 1.0f;
 			float a = 1.0f - ia;
 			if (chinv) fc = vec4(tex1.rgb * ia + tex0.rgb * a, max(tex0.a, tex1.a));
@@ -1826,7 +1826,7 @@ void main()
 		FragColor = color;
 	}
 	else if (thumb == 1) {
-		FragColor = texture2D(Sampler0, TexCoord0.st);
+		FragColor = vec4(texture2D(Sampler0, TexCoord0.st).rgb, 0.7f);
 	}
 	else if (down == 1) {
 		vec4 ic = texture2D(Sampler0, TexCoord0.st).rgba;

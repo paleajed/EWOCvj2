@@ -136,7 +136,7 @@ void BinsMain::handle() {
 	Layer *lay = nullptr;		
 	if (mainmix->currlay) lay = mainmix->currlay;
 	else {
-		if (mainprogram->preveff) lay = mainmix->layersA[0];
+		if (mainprogram->prevmodus) lay = mainmix->layersA[0];
 		else lay = mainmix->layersAcomp[0];
 	}
 	int deck = this->inserting;

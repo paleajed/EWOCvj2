@@ -59,6 +59,23 @@ struct mix_target_struct {
 	int height;
 };
 
+
+class Shelf {
+	public:
+		std::string paths[16];
+		ELEM_TYPE types[16];
+		GLuint texes[16];
+		Button *buttons[16];
+		void handle();
+		void erase();
+		void save(const std::string &path);
+		void open(const std::string &path);
+		bool open_videofile(const std::string &path, int pos);
+		bool open_layer(const std::string &path, int pos);
+		void open_dir();
+		Shelf(bool side);
+};
+
 class Preferences {
 	public:
 		std::vector<PrefItem*> items;
@@ -160,17 +177,6 @@ class LayMidi {
 		std::string tocuestr;
 };
 
-class Button {
-	public:
-		std::string name;
-		Box *box;
-		int value = 0;
-		float ccol[4];
-		void draw(bool circlein = false);
-		Button(bool state);
-		~Button();
-};
-
 class GUIString {
 	public:
 		std::string text;
@@ -209,6 +215,7 @@ class Program {
 		GLuint smglobfbotex_pr;
 		NodesMain *nodesmain;
 		std::vector<OutputEntry*> outputentries;
+		std::vector<Button*> buttons;
 		Layer *loadlay;
 		Layer *prelay = nullptr;
 		SDL_Window *mainwindow;
@@ -251,6 +258,9 @@ class Program {
 		int my;
 		float ow = 1920.0f;
 		float oh = 1080.0f;
+		float layw = 0.319f;
+		float numw = 0.041f;
+		float numh = 0.041f;
 		float cwx;
 		float cwy;
 		bool leftmousedown = false;
@@ -272,10 +282,8 @@ class Program {
 		std::string pathto;
 		Button *toscreen;
 		Button *backtopre;
-		Button *vidprev;
-		Button *effprev;
-		bool prevvid = true;
-		bool preveff = true;
+		Button *modusbut;
+		bool prevmodus = true;
 		Param *deckspeed[2];
 		Box *cwbox;
 		bool cwon = false;
@@ -337,6 +345,7 @@ class Program {
 		std::string dragpath;
 		int dragpos;
 		bool inwormhole = false;
+		Button *wormhole;
 		DIR *opendir;
 		int menuset;
 		
@@ -362,6 +371,10 @@ class Program {
 		std::string shelfpath;
 		int shelfdircount;
 		bool shelfdrag = false;
+		Shelf *shelves[2];
+		
+		Box *tooltipbox = nullptr;
+		float tooltipmilli = 0.0f;
 		
 		void quit(std::string msg);
 		GLuint set_shader();
@@ -375,7 +388,6 @@ class Program {
 		float yscrtovtx(float scrcoord);
 		float xvtxtoscr(float vtxcoord);
 		float yvtxtoscr(float vtxcoord);
-		void prevvid_off();
 		void preveff_init();
 		void add_main_oscmethods();
 		Program();
@@ -439,12 +451,6 @@ extern void make_currbin(int pos);
 extern void get_texes(int deck);
 extern void save_thumb(std::string path, GLuint tex);
 extern void open_thumb(std::string path, GLuint tex);
-extern void save_shelf(const std::string &path, int deck);
-extern void open_shelf(const std::string &path, int deck);
-extern bool open_shelfvideo(const std::string &path, int pos);
-extern bool open_shelflayer(const std::string &path, int pos);
-extern void open_shelfdir();
-extern void new_shelf(bool deck);
 extern void new_state();
 extern BinElement *find_element(int size, int k, int i, int j, bool olc);
 void concat_files(std::ostream &ofile, const std::string &path, std::vector<std::vector<std::string>> &jpegpaths);

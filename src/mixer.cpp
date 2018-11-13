@@ -31,7 +31,6 @@ extern "C" {
 #include "loopstation.h"
 
 Mixer::Mixer() {
-	this->numh = this->numh * glob->w / glob->h;
 	for (int j = 0; j < 2; j++) {
 		for (int i = 0; i < 5; i++) {
 			Box *box = new Box;
@@ -50,9 +49,9 @@ Mixer::Mixer() {
 				box->lcolor[3] = 1.0;
 			}
 			box->vtxcoords->x1 = -1 + j;
-			box->vtxcoords->y1 = 1 - (i + 1) * this->numh;
-			box->vtxcoords->w = this->numw;
-			box->vtxcoords->h = this->numh;
+			box->vtxcoords->y1 = 1 - (i + 1) * mainprogram->numh;
+			box->vtxcoords->w = mainprogram->numw;
+			box->vtxcoords->h = mainprogram->numh;
 			box->upvtxtoscr();
 		}
 	}
@@ -73,18 +72,18 @@ Mixer::Mixer() {
 	this->genmidi[0]->box->acolor[2] = 0.5;
 	this->genmidi[0]->box->acolor[3] = 1.0;
 	this->genmidi[0]->box->vtxcoords->x1 = -1.0f;
-	this->genmidi[0]->box->vtxcoords->y1 =  1 - 6 * this->numh;
-	this->genmidi[0]->box->vtxcoords->w = this->numw;
-	this->genmidi[0]->box->vtxcoords->h = this->numh;
+	this->genmidi[0]->box->vtxcoords->y1 =  1 - 6 * mainprogram->numh;
+	this->genmidi[0]->box->vtxcoords->w = mainprogram->numw;
+	this->genmidi[0]->box->vtxcoords->h = mainprogram->numh;
 	this->genmidi[0]->box->upvtxtoscr();
 	this->genmidi[1]->box->acolor[0] = 0.5;
 	this->genmidi[1]->box->acolor[1] = 0.2;
 	this->genmidi[1]->box->acolor[2] = 0.5;
 	this->genmidi[1]->box->acolor[3] = 1.0;
 	this->genmidi[1]->box->vtxcoords->x1 = 0.0f;
-	this->genmidi[1]->box->vtxcoords->y1 =  1 - 6 * this->numh;
-	this->genmidi[1]->box->vtxcoords->w = this->numw;
-	this->genmidi[1]->box->vtxcoords->h = this->numh;
+	this->genmidi[1]->box->vtxcoords->y1 =  1 - 6 * mainprogram->numh;
+	this->genmidi[1]->box->vtxcoords->w = mainprogram->numw;
+	this->genmidi[1]->box->vtxcoords->h = mainprogram->numh;
 	this->genmidi[1]->box->upvtxtoscr();
 	
 	this->crossfade = new Param;
@@ -135,7 +134,9 @@ Param::Param() {
 
 Param::~Param() {
 	delete this->box;
-	loopstation->allparams.erase(std::find(loopstation->allparams.begin(), loopstation->allparams.end(), this));
+	if (std::find(loopstation->allparams.begin(), loopstation->allparams.end(), this) != loopstation->allparams.end()) {
+		loopstation->allparams.erase(std::find(loopstation->allparams.begin(), loopstation->allparams.end(), this));
+	}
 }
 
 void Param::handle() {
@@ -146,11 +147,15 @@ void Param::handle() {
 	int val;
 	if (!this->powertwo) val = round(this->value * 1000.0f);
 	else val = round(this->value * this->value * 1000.0f);
+	int val2 = val;
+	val += 1000000;
+	int firstdigit = 7 - std::to_string(val2).length();
+	if (firstdigit > 3) firstdigit = 3;
 	if (mainmix->learnparam == this and mainmix->learn) {
 		parstr = "MIDI";
 	}
 	else if (this != mainmix->adaptparam) parstr = this->name;
-	else if (this->sliding) parstr = std::to_string(val).substr(0, std::to_string(val).length() - 3) + "." + std::to_string(val).substr(std::to_string(val).length() - 3, std::string::npos); 
+	else if (this->sliding) parstr = std::to_string(val).substr(firstdigit, 1) + "." + std::to_string(val).substr(std::to_string(val).length() - 3, std::string::npos); 
 	else parstr = std::to_string((int)(this->value + 0.5f));
 	if (this != mainmix->adaptnumparam) {
 		render_text(parstr, white, this->box->vtxcoords->x1 + tf(0.01f), this->box->vtxcoords->y1 + tf(0.05f) - tf(0.030f), tf(0.0003f), tf(0.0005f));
@@ -168,9 +173,10 @@ void Param::handle() {
 				SDL_StartTextInput();
 				mainprogram->doubleleftmouse = false;
 			}
-			if (mainprogram->menuactivation) {
+			if (mainprogram->menuactivation and !mainprogram->menuondisplay) {
 				if (loopstation->elemmap.find(this) != loopstation->elemmap.end()) mainprogram->parammenu2->state = 2;
 				else mainprogram->parammenu1->state = 2;
+				mainmix->learnbutton = nullptr;
 				mainmix->learnparam = this;
 				mainprogram->menuactivation = false;
 			}
@@ -200,11 +206,10 @@ Effect::Effect() {
 	box->upvtxtoscr();
 	this->onoffbutton = new Button(true);
 	box = this->onoffbutton->box;
-	box->vtxcoords->x1 = -1.0f + mainmix->numw;
+	box->vtxcoords->x1 = -1.0f + mainprogram->numw;
 	box->vtxcoords->w = tf(0.025f);
 	box->vtxcoords->h = tf(0.05f);
 	box->upvtxtoscr();
-	box->acolor[3] = 1.0f;
 	
 	// sets the dry/wet (mix of no-effect with effect) amount of the effect as a parameter
 	// read comment at BlurEffect::BlurEffect()
@@ -269,7 +274,7 @@ ChromarotateEffect::ChromarotateEffect() {
 	param->range[0] = -0.5;
 	param->range[1] = 0.5;
 	param->sliding = true;
-	param->shadervar = "chromarot";
+	param->shadervar = "colorrot";
 	param->effect = this;
 	this->params.push_back(param);
 }
@@ -1300,7 +1305,7 @@ Effect *do_add_effect(Layer *lay, EFFECT_TYPE type, int pos, bool comp) {
 		if (lay->deck == 0) deckstr = "/deckA";
 		else deckstr = "/deckB";
 		std::string compstr;
-		if (mainprogram->preveff) compstr = "preview";
+		if (mainprogram->prevmodus) compstr = "preview";
 		else compstr = "output";
 		std::string path = "/mix/" + compstr + deckstr + "/layer/" + std::to_string(lay->pos + 1) + "/effect/" + mainprogram->effectsmap[effect->type] + "/" + std::to_string(lay->numoftypemap[effect->type]) + "/" + effect->params[i]->name;
 		effect->params[i]->oscpaths.push_back(path);
@@ -1314,7 +1319,7 @@ Effect *do_add_effect(Layer *lay, EFFECT_TYPE type, int pos, bool comp) {
 Effect* Layer::add_effect(EFFECT_TYPE type, int pos) {
 	Effect *eff;
 
-	if (mainprogram->preveff) {
+	if (mainprogram->prevmodus) {
 		eff = do_add_effect(this, type, pos, false);
 	}
 	else {
@@ -2295,8 +2300,26 @@ std::vector<std::string> Mixer::write_layer(Layer *lay, std::ostream& wfile, boo
 		wfile << "ONOFFVAL\n";
 		wfile << std::to_string(eff->onoffbutton->value);
 		wfile << "\n";
+		wfile << "ONOFFMIDI0\n";
+		wfile << std::to_string(eff->onoffbutton->midi[0]);
+		wfile << "\n";
+		wfile << "ONOFFMIDI1\n";
+		wfile << std::to_string(eff->onoffbutton->midi[1]);
+		wfile << "\n";
+		wfile << "ONOFFMIDIPORT\n";
+		wfile << eff->onoffbutton->midiport;
+		wfile << "\n";
 		wfile << "DRYWETVAL\n";
 		wfile << std::to_string(eff->drywet->value);
+		wfile << "\n";
+		wfile << "DRYWETMIDI0\n";
+		wfile << std::to_string(eff->drywet->midi[0]);
+		wfile << "\n";
+		wfile << "DRYWETMIDI1\n";
+		wfile << std::to_string(eff->drywet->midi[1]);
+		wfile << "\n";
+		wfile << "DRYWETMIDIPORT\n";
+		wfile << eff->drywet->midiport;
 		wfile << "\n";
 		if (eff->type == RIPPLE) {
 			wfile << "RIPPLESPEED\n";
@@ -2415,31 +2438,57 @@ void Mixer::save_state(const std::string &path) {
 	std::ofstream wfile;
 	wfile.open(str);
 	wfile << "EWOCvj SAVESTATE V0.2\n";
-	wfile << "PREVEFF\n";
-	wfile << std::to_string(mainprogram->preveff);
-	wfile << "\n";
-	wfile << "PREVVID\n";
-	wfile << std::to_string(mainprogram->prevvid);
+	wfile << "PREVMODUS\n";
+	wfile << std::to_string(mainprogram->prevmodus);
 	wfile << "\n";
 	wfile << "COMPON\n";
 	wfile << std::to_string(mainmix->compon);
 	wfile << "\n";
+	wfile << "TOSCREENMIDI0\n";
+	wfile << std::to_string(mainprogram->toscreen->midi[0]);
+	wfile << "\n";
+	wfile << "TOSCREENMIDI1\n";
+	wfile << std::to_string(mainprogram->toscreen->midi[1]);
+	wfile << "\n";
+	wfile << "TOSCREENMIDIPORT\n";
+	wfile << mainprogram->toscreen->midiport;
+	wfile << "\n";
+	wfile << "BACKTOPREMIDI0\n";
+	wfile << std::to_string(mainprogram->backtopre->midi[0]);
+	wfile << "\n";
+	wfile << "BACKTOPREMIDI1\n";
+	wfile << std::to_string(mainprogram->backtopre->midi[1]);
+	wfile << "\n";
+	wfile << "BACKTOPREMIDIPORT\n";
+	wfile << mainprogram->backtopre->midiport;
+	wfile << "\n";
+	wfile << "MODUSBUTMIDI0\n";
+	wfile << std::to_string(mainprogram->modusbut->midi[0]);
+	wfile << "\n";
+	wfile << "MODUSBUTMIDI1\n";
+	wfile << std::to_string(mainprogram->modusbut->midi[1]);
+	wfile << "\n";
+	wfile << "MODUSBUTMIDIPORT\n";
+	wfile << mainprogram->modusbut->midiport;
+	wfile << "\n";
 	wfile << "ENDOFFILE\n";
 	wfile.close();
 	
-	save_shelf(mainprogram->temppath + "temp.shelf", 2);
-	filestoadd.push_back(mainprogram->temppath + "temp.shelf");
-	bool save = mainprogram->preveff;
-	mainprogram->preveff = true;
+	mainprogram->shelves[0]->save(mainprogram->temppath + "tempA.shelf");
+	filestoadd.push_back(mainprogram->temppath + "tempA.shelf");
+	mainprogram->shelves[1]->save(mainprogram->temppath + "tempB.shelf");
+	filestoadd.push_back(mainprogram->temppath + "tempB.shelf");
+	bool save = mainprogram->prevmodus;
+	mainprogram->prevmodus = true;
 	mainmix->save_mix(mainprogram->temppath + "temp.state1");
 	filestoadd.push_back(mainprogram->temppath + "temp.state1.mix");
 	if (mainmix->compon) {
-		mainprogram->preveff = false;
+		mainprogram->prevmodus = false;
 		mainmix->save_mix(mainprogram->temppath + "temp.state2");
 		filestoadd.push_back(mainprogram->temppath + "temp.state2.mix");
 	}
 	//save_genmidis(remove_extension(path) + ".midi");
-	mainprogram->preveff = save;
+	mainprogram->prevmodus = save;
 	
     std::ofstream outputfile;
 	outputfile.open(mainprogram->temppath + "tempconcatstate", std::ios::out | std::ios::binary);
@@ -2531,7 +2580,7 @@ void Mixer::event_read(std::istream &rfile, Param *par, Layer *lay) {
 				loop->eventlist.insert(loop->eventlist.end(), std::make_tuple(time, par, value));
 			}
 			loop->params.emplace(par);
-			if (mainprogram->preveff) lp->elemmap[par] = loop;
+			if (mainprogram->prevmodus) lp->elemmap[par] = loop;
 			else lpc->elemmap[par] = loop;
 			if (par->effect) {
 				loop->layers.emplace(par->effect->layer);
@@ -2574,8 +2623,26 @@ void Mixer::save_mix(const std::string &path) {
 	wfile << "DECKSPEEDA\n";
 	wfile << std::to_string(mainprogram->deckspeed[0]->value);
 	wfile << "\n";
+	wfile << "DECKSPEEDAMIDI0\n";
+	wfile << std::to_string(mainprogram->deckspeed[0]->midi[0]);
+	wfile << "\n";
+	wfile << "DECKSPEEDAMIDI1\n";
+	wfile << std::to_string(mainprogram->deckspeed[0]->midi[1]);
+	wfile << "\n";
+	wfile << "DECKSPEEDAMIDIPORT\n";
+	wfile << mainprogram->deckspeed[0]->midiport;
+	wfile << "\n";
 	wfile << "DECKSPEEDB\n";
 	wfile << std::to_string(mainprogram->deckspeed[1]->value);
+	wfile << "\n";
+	wfile << "DECKSPEEDBMIDI0\n";
+	wfile << std::to_string(mainprogram->deckspeed[1]->midi[0]);
+	wfile << "\n";
+	wfile << "DECKSPEEDBMIDI1\n";
+	wfile << std::to_string(mainprogram->deckspeed[1]->midi[1]);
+	wfile << "\n";
+	wfile << "DECKSPEEDBMIDIPORT\n";
+	wfile << mainprogram->deckspeed[1]->midiport;
 	wfile << "\n";
 	wfile << "WIPE\n";
 	wfile << std::to_string(mainmix->wipe[0]);
@@ -2626,6 +2693,15 @@ void Mixer::save_deck(const std::string &path) {
 	
 	wfile << "DECKSPEED\n";
 	wfile << std::to_string(mainprogram->deckspeed[mainmix->mousedeck]->value);
+	wfile << "\n";
+	wfile << "DECKSPEEDMIDI0\n";
+	wfile << std::to_string(mainprogram->deckspeed[mainmix->mousedeck]->midi[0]);
+	wfile << "\n";
+	wfile << "DECKSPEEDMIDI1\n";
+	wfile << std::to_string(mainprogram->deckspeed[mainmix->mousedeck]->midi[1]);
+	wfile << "\n";
+	wfile << "DECKSPEEDMIDIPORT\n";
+	wfile << mainprogram->deckspeed[mainmix->mousedeck]->midiport;
 	wfile << "\n";
 	
 	std::vector<std::vector<std::string>> jpegpaths;
@@ -2699,28 +2775,61 @@ void Mixer::open_state(const std::string &path) {
 	std::string istring;
 	getline(rfile, istring);
 	
-	open_shelf(result + "_0.file", 2);
-	mainprogram->preveff = true;
-	mainmix->open_mix(result + "_1.file");
-	if (exists(result + "_2.file")) {
-		mainprogram->preveff = false;
-		mainmix->open_mix(result + "_2.file");
+	mainprogram->shelves[0]->open(result + "_0.file");
+	mainprogram->shelves[1]->open(result + "_1.file");
+	mainprogram->prevmodus = true;
+	mainmix->open_mix(result + "_2.file");
+	if (exists(result + "_3.file")) {
+		mainprogram->prevmodus = false;
+		mainmix->open_mix(result + "_3.file");
 	}
 	//open_genmidis(remove_extension(path) + ".midi");
 	
 	while (getline(rfile, istring)) {
 		if (istring == "ENDOFFILE") break;
-		if (istring == "PREVEFF") {
+		if (istring == "PREVMODUS") {
 			getline(rfile, istring);
-			mainprogram->preveff = std::stoi(istring);
-		}
-		if (istring == "PREVVID") {
-			getline(rfile, istring);
-			mainprogram->prevvid = std::stoi(istring);
+			mainprogram->prevmodus = std::stoi(istring);
 		}
 		if (istring == "COMPON") {
 			getline(rfile, istring);
 			mainmix->compon = std::stoi(istring);
+		}
+		if (istring == "TOSCREENMIDI0") {
+			getline(rfile, istring);
+			mainprogram->toscreen->midi[0] = std::stoi(istring);
+		}
+		if (istring == "TOSCREENMIDI1") {
+			getline(rfile, istring);
+			mainprogram->toscreen->midi[1] = std::stoi(istring);
+		}
+		if (istring == "TOSCREENMIDIPORT") {
+			getline(rfile, istring);
+			mainprogram->toscreen->midiport = istring;
+		}
+		if (istring == "BACKTOPREMIDI0") {
+			getline(rfile, istring);
+			mainprogram->backtopre->midi[0] = std::stoi(istring);
+		}
+		if (istring == "BACKTOPREMIDI1") {
+			getline(rfile, istring);
+			mainprogram->backtopre->midi[1] = std::stoi(istring);
+		}
+		if (istring == "BACKTOPREMIDIPORT") {
+			getline(rfile, istring);
+			mainprogram->backtopre->midiport = istring;
+		}
+		if (istring == "MODUSBUTMIDI0") {
+			getline(rfile, istring);
+			mainprogram->modusbut->midi[0] = std::stoi(istring);
+		}
+		if (istring == "MODUSBUTMIDI1") {
+			getline(rfile, istring);
+			mainprogram->modusbut->midi[1] = std::stoi(istring);
+		}
+		if (istring == "MODUSBUTMIDIPORT") {
+			getline(rfile, istring);
+			mainprogram->modusbut->midiport = istring;
 		}
 	}
 	rfile.close();
@@ -2752,7 +2861,7 @@ void Mixer::open_mix(const std::string &path) {
 		if (istring == "CROSSFADE") {
 			getline(rfile, istring); 
 			mainmix->crossfade->value = std::stof(istring);
-			if (mainprogram->preveff) {
+			if (mainprogram->prevmodus) {
 				GLfloat cf = glGetUniformLocation(mainprogram->ShaderProgram, "cf");
 				glUniform1f(cf, mainmix->crossfade->value);
 			}
@@ -2767,7 +2876,7 @@ void Mixer::open_mix(const std::string &path) {
 		if (istring == "CROSSFADECOMP") {
 			getline(rfile, istring); 
 			mainmix->crossfadecomp->value = std::stof(istring);
-			if (!mainprogram->preveff) {
+			if (!mainprogram->prevmodus) {
 				GLfloat cf = glGetUniformLocation(mainprogram->ShaderProgram, "cf");
 				glUniform1f(cf, mainmix->crossfadecomp->value);
 			}
@@ -2783,9 +2892,33 @@ void Mixer::open_mix(const std::string &path) {
 			getline(rfile, istring);
 			mainprogram->deckspeed[0]->value = std::stof(istring);
 		}
+		if (istring == "DECKSPEEDAMIDI0") {
+			getline(rfile, istring);
+			mainprogram->deckspeed[0]->midi[0] = std::stoi(istring);
+		}
+		if (istring == "DECKSPEEDAMIDI1") {
+			getline(rfile, istring);
+			mainprogram->deckspeed[0]->midi[1] = std::stoi(istring);
+		}
+		if (istring == "DECKSPEEDAMIDIPORT") {
+			getline(rfile, istring);
+			mainprogram->deckspeed[0]->midiport = istring;
+		}
 		if (istring == "DECKSPEEDB") {
 			getline(rfile, istring);
 			mainprogram->deckspeed[1]->value = std::stof(istring);
+		}
+		if (istring == "DECKSPEEDBMIDI0") {
+			getline(rfile, istring);
+			mainprogram->deckspeed[1]->midi[0] = std::stoi(istring);
+		}
+		if (istring == "DECKSPEEDBMIDI1") {
+			getline(rfile, istring);
+			mainprogram->deckspeed[1]->midi[1] = std::stoi(istring);
+		}
+		if (istring == "DECKSPEEDBMIDIPORT") {
+			getline(rfile, istring);
+			mainprogram->deckspeed[1]->midiport = istring;
 		}
 		if (istring == "WIPE") {
 			getline(rfile, istring); 
@@ -2888,6 +3021,18 @@ int Mixer::read_layers(std::istream &rfile, const std::string &result, std::vect
 		if (istring == "DECKSPEED") {
 			getline(rfile, istring);
 			mainprogram->deckspeed[deck]->value = std::stof(istring);
+		}
+		if (istring == "DECKSPEEDMIDI0") {
+			getline(rfile, istring);
+			mainprogram->deckspeed[deck]->midi[0] = std::stoi(istring);
+		}
+		if (istring == "DECKSPEEDMIDI1") {
+			getline(rfile, istring);
+			mainprogram->deckspeed[deck]->midi[1] = std::stoi(istring);
+		}
+		if (istring == "DECKSPEEDMIDIPORT") {
+			getline(rfile, istring);
+			mainprogram->deckspeed[deck]->midiport = istring;
 		}
 		if (istring == "POS") {
 			getline(rfile, istring);
@@ -3047,17 +3192,17 @@ int Mixer::read_layers(std::istream &rfile, const std::string &result, std::vect
 				if (istring == "CHRED") {
 					getline(rfile, istring); 
 					lay->blendnode->chred = std::stof(istring);
-					lay->chromabox->acolor[0] = lay->blendnode->chred;
+					lay->colorbox->acolor[0] = lay->blendnode->chred;
 				}
 				if (istring == "CHGREEN") {
 					getline(rfile, istring); 
 					lay->blendnode->chgreen = std::stof(istring);
-					lay->chromabox->acolor[1] = lay->blendnode->chgreen;
+					lay->colorbox->acolor[1] = lay->blendnode->chgreen;
 				}
 				if (istring == "CHBLUE") {
 					getline(rfile, istring); 
 					lay->blendnode->chblue = std::stof(istring);
-					lay->chromabox->acolor[2] = lay->blendnode->chblue;
+					lay->colorbox->acolor[2] = lay->blendnode->chblue;
 				}
 				if (istring == "WIPETYPE") {
 					getline(rfile, istring); 
@@ -3147,9 +3292,33 @@ int Mixer::read_layers(std::istream &rfile, const std::string &result, std::vect
 					getline(rfile, istring);
 					eff->onoffbutton->value = std::stoi(istring);
 				}
+				if (istring == "ONOFFMIDI0") {
+					getline(rfile, istring);
+					eff->onoffbutton->midi[0] = std::stoi(istring);
+				}
+				if (istring == "ONOFFMIDI1") {
+					getline(rfile, istring);
+					eff->onoffbutton->midi[1] = std::stoi(istring);
+				}
+				if (istring == "ONOFFMIDIPORT") {
+					getline(rfile, istring);
+					eff->onoffbutton->midiport = istring;
+				}
 				if (istring == "DRYWETVAL") {
 					getline(rfile, istring);
 					eff->drywet->value = std::stof(istring);
+				}
+				if (istring == "DRYWETMIDI0") {
+					getline(rfile, istring);
+					eff->drywet->midi[0] = std::stoi(istring);
+				}
+				if (istring == "DRYWETMIDI1") {
+					getline(rfile, istring);
+					eff->drywet->midi[1] = std::stoi(istring);
+				}
+				if (istring == "DRYWETMIDIPORT") {
+					getline(rfile, istring);
+					eff->drywet->midiport = istring;
 				}
 				if (eff) {
 					if (eff->type == RIPPLE) {

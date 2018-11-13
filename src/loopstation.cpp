@@ -35,6 +35,7 @@ LoopStationElement::LoopStationElement() {
 	this->speed->value = 1.0f;
 	this->speed->range[0] = 0.0f;
 	this->speed->range[1] = 4.0f;
+	this->speed->sliding = true;
 	this->speed->box->vtxcoords->w = tf(0.1f);
 	this->speed->box->vtxcoords->h = tf(0.05f);
 	this->speed->box->upvtxtoscr();
@@ -97,7 +98,7 @@ void LoopStationElement::handle() {
 						lvec[j]->scrollcol[0] = 0.5f;
 						lvec[j]->scrollcol[1] = 0.5f;
 						lvec[j]->scrollcol[2] = 0.5f;
-						lvec[j]->scrollcol[3] = 1.0f;
+						lvec[j]->scrollcol[3] = 0.0f;
 					}
 				}
 			}
@@ -123,9 +124,6 @@ void LoopStationElement::visualize() {
 	this->playbut->box->upvtxtoscr();
 	this->speed->box->upvtxtoscr();
 	this->colbox->upvtxtoscr();
-	this->recbut->draw(1);
-	this->loopbut->draw(1);
-	this->playbut->draw(1);
 	this->speed->handle();
 	draw_box(this->colbox, -1);
 }
@@ -145,55 +143,50 @@ void LoopStationElement::erase_elem() {
 }
 
 void LoopStationElement::mouse_handle() {
-	if (this->recbut->box->in()) {
-		if (mainprogram->leftmouse) {
-			// start/stop recording
-			this->recbut->value = !this->recbut->value;
-			if (this->recbut->value) {
-				this->loopbut->value = false;
-				this->playbut->value = false;
-				this->erase_elem();
+	this->recbut->handle(1);
+	if (this->recbut->toggled()) {
+		if (this->recbut->value) {
+			this->loopbut->value = false;
+			this->playbut->value = false;
+			this->erase_elem();
+			this->starttime = std::chrono::high_resolution_clock::now();
+		}
+		else {
+			if (this->eventlist.size()) {
+				this->loopbut->value = true;
 				this->starttime = std::chrono::high_resolution_clock::now();
-			}
-			else {
-				if (this->eventlist.size()) {
-					this->loopbut->value = true;
-					this->starttime = std::chrono::high_resolution_clock::now();
-					this->interimtime = 0;
-					this->speedadaptedtime = 0;
-				}
+				this->interimtime = 0;
+				this->speedadaptedtime = 0;
 			}
 		}
 	}
-	if (this->loopbut->box->in()) {
-		if (mainprogram->leftmouse) {
-			// start/stop loop play of recording
-			if (this->eventlist.size()) {
-				this->loopbut->value = !this->loopbut->value;
-				this->recbut->value = false;
-				this->playbut->value = false;
-				if (this->loopbut->value) {
-					this->eventpos = 0;
-					this->starttime = std::chrono::high_resolution_clock::now();
-					this->interimtime = 0;
-					this->speedadaptedtime = 0;
-				}
+	this->loopbut->handle(1);
+	if (this->loopbut->toggled()) {
+		// start/stop loop play of recording
+		if (this->eventlist.size()) {
+			this->loopbut->value = !this->loopbut->value;
+			this->recbut->value = false;
+			this->playbut->value = false;
+			if (this->loopbut->value) {
+				this->eventpos = 0;
+				this->starttime = std::chrono::high_resolution_clock::now();
+				this->interimtime = 0;
+				this->speedadaptedtime = 0;
 			}
 		}
 	}
-	if (this->playbut->box->in()) {
-		if (mainprogram->leftmouse) {
-			// start/stop one-shot play of recording
-			if (this->eventlist.size()) {
-				this->playbut->value = !this->playbut->value;
-				this->recbut->value = false;
-				this->loopbut->value = false;
-				if (this->playbut->value) {
-					this->eventpos = 0;
-					this->starttime = std::chrono::high_resolution_clock::now();
-					this->interimtime = 0;
-					this->speedadaptedtime = 0;
-				}
+	this->playbut->handle(1);
+	if (this->playbut->toggled()) {
+		// start/stop one-shot play of recording
+		if (this->eventlist.size()) {
+			this->playbut->value = !this->playbut->value;
+			this->recbut->value = false;
+			this->loopbut->value = false;
+			if (this->playbut->value) {
+				this->eventpos = 0;
+				this->starttime = std::chrono::high_resolution_clock::now();
+				this->interimtime = 0;
+				this->speedadaptedtime = 0;
 			}
 		}
 	}

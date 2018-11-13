@@ -379,7 +379,7 @@ void NodePage::handle_nodes() {
 					effstr = "BRIGHTNESS";
 					break;
 				case 2:
-					effstr = "CHROMAROT";
+					effstr = "COLORROT";
 					break;
 				case 3:
 					effstr = "CONTRAST";

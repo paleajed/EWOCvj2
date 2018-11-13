@@ -39,6 +39,7 @@ struct frame_result {
 };
 
 class Button;
+class Shelf;
 
 class Clip {
 	public:
@@ -59,7 +60,7 @@ class Layer {
 		ELEM_TYPE currcliptype = ELEM_FILE;
 		bool queueing = false;
 		int queuescroll = 0;
-		float scrollcol[4] = {0.5f, 0.5f, 0.5f, 1.0f};
+		float scrollcol[4] = {0.5f, 0.5f, 0.5f, 0.0f};
 		int numefflines = 0;
 		int effscroll[2] = {0,0};
 		std::vector<Effect*> effects;
@@ -88,7 +89,7 @@ class Layer {
 		int fps[25];
 		int fpscount = 0;
 		Box *mixbox;
-		Box *chromabox;
+		Box *colorbox;
 		Param *chtol;
 		Button *chdir;
 		Button *chinv;
@@ -259,11 +260,8 @@ class Mixer {
 		Param *crossfadecomp;
 		int numaudiochannels = 0;
 		
-		float layw = 0.319f;
 		int page[2] = {0, 0};
 		bool deck = 0;
-		float numw = 0.041f;
-		float numh = 0.041f;
 		int scrollpos[2] = {0, 0};
 		int scrollon = 0;
 		int scrollmx;
@@ -271,12 +269,15 @@ class Mixer {
 		int mouseeffect = -1;
 		Layer *mouselayer;
 		bool mousedeck = -1;
+		Shelf *mouseshelf;
 		int mouseshelfelem;
 		bool insert;
 		Node *mousenode = nullptr;
 		Param *learnparam;
+		Button *learnbutton;
 		bool learn = false;
 		float midi2;
+		Button *midibutton = nullptr;
 		Param *midiparam = nullptr;
 		Param *adaptparam = nullptr;
 		Param *adaptnumparam = nullptr;

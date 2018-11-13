@@ -1,3 +1,6 @@
+#include <string>
+
+
 typedef enum
 {
 	RIGHT = 0,
@@ -24,6 +27,7 @@ class Box {
 		BOX_COORDS *scrcoords;
 		BOX_COORDS *vtxcoords;
 		GLuint tex = -1;
+		std::string tooltip = "";
 		void upscrtovtx();
 		void upvtxtoscr();
 		bool in();
@@ -32,3 +36,20 @@ class Box {
 		Box();
 		~Box();
 };
+
+class Button {
+	public:
+		std::string name[2];
+		Box *box;
+		int value = 0;
+		int oldvalue = 0;
+		float tcol[4] = {0.0f, 0.7f, 0.0f, 1.0f};
+		float ccol[4] = {1.0f, 0.0f, 0.0f, 1.0f};
+		int midi[2] = {-1, -1};
+		std::string midiport;
+		void handle(bool circlein = false);
+		bool toggled();
+		Button(bool state);
+		~Button();
+};
+

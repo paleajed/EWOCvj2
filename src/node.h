@@ -42,7 +42,7 @@ typedef enum
 	DARKEN_ONLY = 16, 
 	LIGHTEN_ONLY = 17,
 	WIPE = 18,
-	CHROMAKEY = 19,
+	COLOURKEY = 19,
 	DISPLACEMENT = 20,
 	CROSSFADING = 21,
 	
@@ -77,6 +77,7 @@ class VideoNode;
 class MixNode;
 class EffectNode;
 class BlendNode;
+class Button;
 
 class NodePage {
 	public:
@@ -159,5 +160,6 @@ class BlendNode: public Node {
 class MidiNode: public Node {
 	public:
 		Param *param;
+		Button *button;
 		MidiNode();
 };
