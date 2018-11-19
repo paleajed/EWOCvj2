@@ -50,7 +50,7 @@ float pdistance(float x, float y, float x1, float y1, float x2, float y2) {
 
 Node::Node() {
 	this->box = new Box;
-    this->vidbox = new Box;
+	this->monbox = new Box;
     this->page = mainprogram->nodesmain->currpage;
 }
 
@@ -68,9 +68,11 @@ Node::Node(const Node &node) {
 	this->monitor = node.monitor;
 }
 
-VideoNode::VideoNode(const VideoNode &node) {
+VideoNode::VideoNode() {
 	this->type = VIDEO;
-	this->layer = node.layer;
+    this->vidbox = new Box;
+    this->vidbox->tooltiptitle = "Layer stack - layer monitor ";
+    this->vidbox->tooltip = "Layer stack: bottom layer is leftmost. Monitor shows layer video image after all layer effects are processed.  Leftdrag center box to pan layer image.  Mousewheel scales layer image.  Leftdrag (not on center box) starts layer drag'n'drop: exchange or move layers to/from either A/B layer queue, drag layer files to shelf or media bins (through the center wormhole). ";
 }
 
 MixNode::MixNode(const MixNode &node) {
@@ -96,6 +98,8 @@ BlendNode::BlendNode() {
     this->mixfac->range[1] = 1.0f;
     this->mixfac->shadervar = "mixfac";
     this->mixfac->sliding = true;
+    this->mixfac->box->tooltiptitle = "Mix factor ";
+    this->mixfac->box->tooltip = "Leftdrag sets relative mixamount of current layer and its previous layers. ";
 }
 
 Node::~Node() {
@@ -354,8 +358,8 @@ void NodePage::handle_nodes() {
 		float red[] = {1.0, 0.0, 0.0, 1.0};
 		float blue[] = {0.5, 0.5, 1.0, 1.0};
 		if (node->monitor != -1) {
-			if (mainmix->page[0] == node->monitor / 6) {
-				draw_box(node->vidbox, node->vidbox->tex);
+			if (mainmix->currscene[0] == node->monitor / 6) {
+				draw_box(node->monbox, node->monbox->tex);
 			}
 		}
 		
@@ -477,8 +481,8 @@ void NodePage::handle_nodes() {
 					AB.insert(AB.end(), mainmix->layersB.begin(), mainmix->layersB.end());
 					bool found = false;
 					for (int m = 0; m < AB.size(); m++) {
-						for (int n = 0; n < AB[m]->effects.size(); n++) {
-							if (eff == AB[m]->effects[n]) {
+						for (int n = 0; n < AB[m]->effects[0].size(); n++) {
+							if (eff == AB[m]->effects[0][n]) {
 								mainmix->mouseeffect = n;
 								mainmix->mouselayer = AB[m];
 								found = true;
@@ -681,17 +685,17 @@ void NodePage::handle_nodes() {
 		
 		if (!mainprogram->nodesmain->linked) {
 			for (int i = 0; i < 6; i++) {
-				if (node->monitor == i + mainmix->page[0] * 6) {
+				if (node->monitor == i + mainmix->currscene[0] * 6) {
 					draw_box(white, red, node->box->vtxcoords->x1 + mainprogram->xscrtovtx(1) + i * mainprogram->xscrtovtx(21), node->box->vtxcoords->y1 + node->box->vtxcoords->h, mainprogram->xscrtovtx(21), mainprogram->yscrtovtx(10), -1);
 				}
 				else if (node->box->scrcoords->x1 + 1 + i * 21 < mainprogram->mx and mainprogram->mx < node->box->scrcoords->x1 + 22 + i * 21 and node->box->scrcoords->y1 - node->box->scrcoords->h - 21 < mainprogram->my and mainprogram->my < node->box->scrcoords->y1 - node->box->scrcoords->h) {
 					if (mainprogram->leftmouse) {
 						for (int k = 0; k < mainprogram->nodesmain->currpage->nodes.size(); k++){
-							if (mainprogram->nodesmain->currpage->nodes[k]->monitor == i + mainmix->page[0] * 6) {
+							if (mainprogram->nodesmain->currpage->nodes[k]->monitor == i + mainmix->currscene[0] * 6) {
 								mainprogram->nodesmain->currpage->nodes[k]->monitor = -1;
 							}
 						}
-						node->monitor = i + mainmix->page[0] * 6;
+						node->monitor = i + mainmix->currscene[0] * 6;
 						make_layboxes();
 					}
 					draw_box(white, blue, node->box->vtxcoords->x1 + mainprogram->xscrtovtx(1) + i * mainprogram->xscrtovtx(21), node->box->vtxcoords->y1 + node->box->vtxcoords->h, mainprogram->xscrtovtx(21), mainprogram->yscrtovtx(10), -1);
@@ -737,17 +741,17 @@ void NodePage::handle_nodes() {
 			
 			if (!mainprogram->nodesmain->linked) {
 				for (int i = 0; i < 6; i++) {
-					if (node->monitor == i + mainmix->page[0] * 6) {
+					if (node->monitor == i + mainmix->currscene[0] * 6) {
 						draw_box(white, red, node->box->vtxcoords->x1 + mainprogram->xscrtovtx(1) + i * mainprogram->xscrtovtx(21), node->box->vtxcoords->y1 + node->box->vtxcoords->h, mainprogram->xscrtovtx(21), mainprogram->yscrtovtx(10), -1);
 					}
 					else if (node->box->scrcoords->x1 + 1 + i * 21 < mainprogram->mx and mainprogram->mx < node->box->scrcoords->x1 + 22 + i * 21 and node->box->scrcoords->y1 - node->box->scrcoords->h - 21 < mainprogram->my and mainprogram->my < node->box->scrcoords->y1 - node->box->scrcoords->h) {
 						if (mainprogram->leftmouse) {
 							for (int k = 0; k < mainprogram->nodesmain->currpage->nodes.size(); k++){
-								if (mainprogram->nodesmain->currpage->nodes[k]->monitor == i + mainmix->page[0] * 6) {
+								if (mainprogram->nodesmain->currpage->nodes[k]->monitor == i + mainmix->currscene[0] * 6) {
 									mainprogram->nodesmain->currpage->nodes[k]->monitor = -1;
 								}
 							}
-							node->monitor = i + mainmix->page[0] * 6;
+							node->monitor = i + mainmix->currscene[0] * 6;
 							make_layboxes();
 						}
 						draw_box(white, blue, node->box->vtxcoords->x1 + mainprogram->xscrtovtx(1) + i * mainprogram->xscrtovtx(21), node->box->vtxcoords->y1 + node->box->vtxcoords->h, mainprogram->xscrtovtx(21), mainprogram->yscrtovtx(10), -1);
@@ -766,10 +770,10 @@ void NodePage::handle_nodes() {
 			if (mainprogram->leftmouse) {
 				if (node->type == VIDEO) {
 					VideoNode *vnode = (VideoNode*)node;
-					for (int i = 0; i < vnode->layer->effects.size(); i++) {
-						if (vnode->layer->effects[i]->node == mainprogram->nodesmain->currpage->movingnode) {
-							vnode->layer->effects[i]->node->align = node;
-							vnode->layer->effects[i]->node->alignpos = vnode->aligned;
+					for (int i = 0; i < vnode->layer->effects[0].size(); i++) {
+						if (vnode->layer->effects[0][i]->node == mainprogram->nodesmain->currpage->movingnode) {
+							vnode->layer->effects[0][i]->node->align = node;
+							vnode->layer->effects[0][i]->node->alignpos = vnode->aligned;
 							vnode->aligned += 1;
 							vnode->upeffboxes();
 						}

@@ -9,7 +9,7 @@
 
 
 
-class PrefItem;
+class PrefCat;
 class Menu;
 class LoopStation;
 class BinsMain;
@@ -35,24 +35,17 @@ typedef enum
 {
 	EDIT_NONE = 0,
 	EDIT_BINNAME = 1,
-	EDIT_BINSDIR = 2,
-	EDIT_RECDIR = 3,
-	EDIT_SHELFDIR = 4,
-	EDIT_VIDW = 5,
-	EDIT_VIDH = 6,
-	EDIT_PARAM = 7,
+	EDIT_STRING = 2,
+	EDIT_NUMBER = 3,
+	EDIT_PARAM = 4,
 } EDIT_TYPE;
 
 typedef enum
 {
-	PIVID_W = 0,
-	PIVID_H = 1,
-} PIVID_TYPE;
-
-typedef enum
-{
-	PIINT_CLICK = 0,
-} PIINT_TYPE;
+	PREF_ONOFF = 0,
+	PREF_NUMBER = 1,
+	PREF_PATH = 2,
+} PREF_TYPE;
 
 struct mix_target_struct {
 	int width;
@@ -78,7 +71,7 @@ class Shelf {
 
 class Preferences {
 	public:
-		std::vector<PrefItem*> items;
+		std::vector<PrefCat*> items;
 		int curritem = 0;
 		void load();
 		void save();
@@ -88,61 +81,51 @@ class Preferences {
 class PrefItem {
 	public:
 		std::string name;
-		int pos;
+		PREF_TYPE type;
+		void *dest;
+		bool onoff = false;
+		int value;
+		std::string path;
+		bool renaming = false;
+		Box *namebox;
+		Box *valuebox;
+		PrefItem(PrefCat *cat, int pos, std::string name, PREF_TYPE type, void *dest);
+};
+
+class PrefCat {
+	public:
+		std::vector<PrefItem*> items;
+		std::string name;
 		Box *box;
 };
 
-class PMidiItem {
+class PMidiItem: public PrefItem {
 	public:
-		std::string name;
-		bool onoff = false;
+		bool connected = true;
 		RtMidiIn *midiin;
+		PMidiItem(PrefCat *cat, int pos, std::string name, PREF_TYPE type, void *dest)
+		: PrefItem(cat, pos, name, type, dest) {}
 };
 
-class PIMidi: public PrefItem {
+class PIMidi: public PrefCat {
 	public:
-		std::vector<PMidiItem*> items;
 		std::vector<std::string> onnames;
 		void populate();
 		PIMidi();
 };
-		
-class PDirItem {
-	public:
-		std::string name;
-		std::string path;
-};
 
-class PIDirs: public PrefItem {
+class PIDirs: public PrefCat {
 	public:
-		std::vector<PDirItem*> items;
-		PDirItem* additem(const std::string &name, const std::string &path);
 		PIDirs();
 };
 		
-class PIntItem {
+class PIInt: public PrefCat {
 	public:
-		std::string name;
-		PIINT_TYPE type;
-		bool onoff;
-};
-
-class PIInt: public PrefItem {
-	public:
-		std::vector<PIntItem*> items;
 		PIInt();
 };
 		
-class PVidItem {
+class PIVid: public PrefCat {
 	public:
-		std::string name;
-		PIVID_TYPE type;
-		int value;
-};
-
-class PIVid: public PrefItem {
-	public:
-		std::vector<PVidItem*> items;
 		PIVid();
 };
 		
@@ -216,6 +199,7 @@ class Program {
 		NodesMain *nodesmain;
 		std::vector<OutputEntry*> outputentries;
 		std::vector<Button*> buttons;
+		Box *scrollboxes[2];
 		Layer *loadlay;
 		Layer *prelay = nullptr;
 		SDL_Window *mainwindow;
@@ -285,6 +269,9 @@ class Program {
 		Button *modusbut;
 		bool prevmodus = true;
 		Param *deckspeed[2];
+		Box *outputmonitor;
+		Box *mainmonitor;
+		Box *deckmonitor[2];
 		Box *cwbox;
 		bool cwon = false;
 		int cwmouse = false;
@@ -293,6 +280,7 @@ class Program {
 		Box *effscrolldownA;
 		Box *effscrollupB;
 		Box *effscrolldownB;
+		Box *addeffectbox;
 		
 		lo::ServerThread *st;
 		std::unordered_map<std::string, int> wipesmap;
@@ -302,6 +290,7 @@ class Program {
 		bool drawnonce = false;
 		bool tunemidi = false;
 		int tunemidideck;
+		Box *tmscratch;
 		Box *tmfreeze;
 		Box *tmplay;
 		Box *tmbackw;
@@ -336,7 +325,6 @@ class Program {
 		std::vector<std::string> busylist;
 		std::vector<Layer*> busylayers;
 		std::vector<Layer*> mimiclayers;
-		std::vector<Box*> elemboxes;
 		
 		bool binsscreen = false;
 		BinElement *dragbinel = nullptr;
@@ -350,7 +338,6 @@ class Program {
 		int menuset;
 		
 		EDIT_TYPE renaming = EDIT_NONE;
-		EDIT_TYPE choosing = EDIT_NONE;
 		std::string inputtext;
 		std::string backupname;
 		int cursorpos;
@@ -373,6 +360,7 @@ class Program {
 		bool shelfdrag = false;
 		Shelf *shelves[2];
 		
+		bool showtooltips = true;
 		Box *tooltipbox = nullptr;
 		float tooltipmilli = 0.0f;
 		

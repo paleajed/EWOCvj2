@@ -76,6 +76,9 @@ AC_CHECK_LIB([comdlg32], [GetSaveFileNameA], [], [
 AC_CHECK_LIB([lo], [lo_address_new], [], [
               echo "The liblo library is required for this program. (OSC support)."
               exit -1])
+AC_CHECK_LIB([il], [ilInit], [], [
+              echo "The devIL library is required for this program."
+              exit -1])
 
 # Checks for header files.
 AC_FUNC_ALLOCA

@@ -108,6 +108,7 @@ uniform float htdotsize = 1.48f;
 uniform float hts = 0.2f;
 uniform float cut = 0.5f;
 uniform float glitchstr = 1.0f;
+uniform float glitchspeed = 1.0f;
 uniform float colhue = 0.5f;
 uniform float noiselevel = 0.5f;
 uniform float gammaval = 2.2f;
@@ -522,9 +523,10 @@ vec4 posterize(vec4 col)  //geeks3d seems free
 }
 
 vec4 pixelate(vec2 uv)  //selfmade
-{ 
+{
+	float ph = pixel_h * 2.0f;
     float dx = pixel_w / fboheight;
-    float dy = pixel_h / fbowidth;
+    float dy = ph / fbowidth;
     vec2 coord = vec2(dx * (floor(uv.x / dx) + 1), dy * floor(uv.y / dy));
     vec3 tc = texture2D(Sampler0, coord).rgb;
 
@@ -565,11 +567,13 @@ vec4 crosshatch(vec4 col, vec2 uv)  //geeks3D
 vec4 rotate(vec2 texco)  // selfmade
 {
     float rot = radians(rotamount);
-    texco -= 0.5;
+    texco -= 0.5f;
+    texco.y *= fbowidth / fboheight;
     //rotation matrix
     mat2 m = mat2(cos(rot), -sin(rot), sin(rot), cos(rot));
    	texco  = m * texco;
-    texco += 0.5;
+    //texco.y *= fboheight / fbowidth;
+    texco += 0.5f;
     
     return texture2D(Sampler0, texco);
 }
@@ -1036,28 +1040,29 @@ float snoise3(vec3 v)
 const float interval = 3.0;
 
 vec4 glitch(vec2 texco) {
-	float strength = smoothstep(interval * 0.5, interval, interval - mod(iGlobalTime, interval));
+	float time = iGlobalTime * glitchspeed;
+	float strength = smoothstep(interval * 0.5, interval, interval - mod(time, interval));
 	vec2 shake = vec2(strength * 8.0 + 0.5) * vec2(
-	  random2(vec2(iGlobalTime)) * 2.0 - 1.0,
-	  random2(vec2(iGlobalTime * 2.0)) * 2.0 - 1.0
+	  random2(vec2(time)) * 2.0 - 1.0,
+	  random2(vec2(time * 2.0)) * 2.0 - 1.0
 	) / vec2(fbowidth, fboheight);
 	
 	float y = texco.y * fboheight;
 	float rgbWave = (
-		snoise3(vec3(0.0, y * 0.01, iGlobalTime * 400.0)) * (2.0 + strength * 32.0)
-		* snoise3(vec3(0.0, y * 0.02, iGlobalTime * 200.0)) * (1.0 + strength * 4.0)
-		+ step(0.9995, sin(y * 0.005 + iGlobalTime * 1.6)) * 12.0
-		+ step(0.9999, sin(y * 0.005 + iGlobalTime * 2.0)) * -18.0
+		snoise3(vec3(0.0, y * 0.01, time * 400.0)) * (2.0 + strength * 32.0)
+		* snoise3(vec3(0.0, y * 0.02, time * 200.0)) * (1.0 + strength * 4.0)
+		+ step(0.9995, sin(y * 0.005 + time * 1.6)) * 12.0
+		+ step(0.9999, sin(y * 0.005 + time * 2.0)) * -18.0
 	  ) / fbowidth;
-	float rgbDiff = (6.0 + sin(iGlobalTime * 500.0 + texco.y * 40.0) * (20.0 * strength + 1.0)) / fbowidth;
+	float rgbDiff = (6.0 + sin(time * 500.0 + texco.y * 40.0) * (20.0 * strength + 1.0)) / fbowidth;
 	float rgbUvX = texco.x + rgbWave;
 	float r = texture2D(Sampler0, vec2(rgbUvX + rgbDiff, texco.y) + shake).r;
 	float g = texture2D(Sampler0, vec2(rgbUvX, texco.y) + shake).g;
 	float b = texture2D(Sampler0, vec2(rgbUvX - rgbDiff, texco.y) + shake).b;
 	
-	float whiteNoise = (random2(texco + mod(iGlobalTime, 10.0)) * 2.0 - 1.0) * (0.15 + strength * 0.15);
+	float whiteNoise = (random2(texco + mod(time, 10.0)) * 2.0 - 1.0) * (0.15 + strength * 0.15);
 	
-	float bnTime = floor(iGlobalTime * 20.0) * 200.0;
+	float bnTime = floor(time * 20.0) * 200.0;
 	float noiseX = step((snoise3(vec3(0.0, texco.x * 3.0, bnTime)) + 1.0) / 2.0, 0.12 + strength * 0.3);
 	float noiseY = step((snoise3(vec3(0.0, texco.y * 3.0, bnTime)) + 1.0) / 2.0, 0.12 + strength * 0.3);
 	float bnMask = noiseX * noiseY;
@@ -1067,7 +1072,7 @@ vec4 glitch(vec2 texco) {
 	float bnB = texture2D(Sampler0, vec2(bnUvX - rgbDiff, texco.y)).b * bnMask;
 	vec4 blockNoise = vec4(bnR, bnG, bnB, 1.0);
 	
-	float bnTime2 = floor(iGlobalTime * 25.0) * 300.0;
+	float bnTime2 = floor(time * 25.0) * 300.0;
 	float noiseX2 = step((snoise3(vec3(0.0, texco.x * 2.0, bnTime2)) + 1.0) / 2.0, 0.12 + strength * 0.5);
 	float noiseY2 = step((snoise3(vec3(0.0, texco.y * 8.0, bnTime2)) + 1.0) / 2.0, 0.12 + strength * 0.3);
 	float bnMask2 = noiseX2 * noiseY2;
@@ -1797,7 +1802,7 @@ void main()
 	if (textmode == 2) {
 		float col = texture2D(Sampler0, vec2(TexCoord0.s, TexCoord0.t)).r;
 		if (col > 0.0f) {
-			FragColor = vec4(col, col, col, 1.0f);
+			FragColor = vec4(color.rgb, col);
 			return;
 		}
 		float alpha = 1.0f;

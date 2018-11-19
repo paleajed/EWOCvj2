@@ -28,8 +28,14 @@ LoopStation::LoopStation() {
 
 LoopStationElement::LoopStationElement() {
 	this->recbut = new Button(0);
+	this->recbut->box->tooltiptitle = "Record loopstation row ";
+	this->recbut->box->tooltip = "Start recording non-automated parameter movements on this loopstation row.  ";
 	this->loopbut = new Button(0);
+	this->loopbut->box->tooltiptitle = "Loop play loopstation row ";
+	this->loopbut->box->tooltip = "Start loop-playing of recorded parameter movements for this loopstation row. Stops recording if it was still running. ";
 	this->playbut = new Button(0);
+	this->playbut->box->tooltiptitle = "One-off play loopstation row ";
+	this->playbut->box->tooltip = "Start one-off-play of recorded parameter movements for this loopstation row. Stops at end of recording. ";
 	this->speed = new Param;
 	this->speed->name = "Speed";
 	this->speed->value = 1.0f;
@@ -39,10 +45,14 @@ LoopStationElement::LoopStationElement() {
 	this->speed->box->vtxcoords->w = tf(0.1f);
 	this->speed->box->vtxcoords->h = tf(0.05f);
 	this->speed->box->upvtxtoscr();
+	this->speed->box->tooltiptitle = "Loopstation row speed ";
+	this->speed->box->tooltip = "Allows multiplying the recorded event's speed of this loopstation row.  Leftdrag sets value. Doubleclick allows numeric entry. ";
 	this->colbox = new Box;
 	this->colbox->vtxcoords->w = tf(0.031f);
 	this->colbox->vtxcoords->h = tf(0.05f);
 	this->colbox->upvtxtoscr();
+	this->colbox->tooltiptitle = "Loopstation row color code ";
+	this->colbox->tooltip = "Leftclicking this box shows colored boxes on both deck layer scroll strips for layers that contain parameters automated by this loopstation row. ";
 }
 
 LoopStationElement::~LoopStationElement() {

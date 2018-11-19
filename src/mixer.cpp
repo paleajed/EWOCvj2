@@ -33,9 +33,13 @@ extern "C" {
 Mixer::Mixer() {
 	for (int j = 0; j < 2; j++) {
 		for (int i = 0; i < 5; i++) {
+			Scene *scene = new Scene;
+			scene->deck = j;
+			this->scenes[j].push_back(scene);
 			Box *box = new Box;
-			if (j == 0) this->numboxesA.push_back(box);
-			else this->numboxesB.push_back(box);
+			Button *button = new Button(false);
+			this->scenes[j][i]->box = box;
+			this->scenes[j][i]->button = button;
 			if (i == 0) {
 				box->lcolor[0] = 1.0;
 				box->lcolor[1] = 0.5;
@@ -43,6 +47,8 @@ Mixer::Mixer() {
 				box->lcolor[3] = 1.0;
 			}
 			else {
+				box->tooltiptitle = "Scene toggle deck A";
+				box->tooltip = "Leftclick activates one of the four scenes (separate layer stacks) for deck A. ";
 				box->lcolor[0] = 1.0;
 				box->lcolor[1] = 1.0;
 				box->lcolor[2] = 1.0;
@@ -62,6 +68,8 @@ Mixer::Mixer() {
 	this->modebox->vtxcoords->w = 0.15f;
 	this->modebox->vtxcoords->h = 0.1f;
 	this->modebox->upvtxtoscr();
+	this->modebox->tooltiptitle = "Operation mode toggle ";
+	this->modebox->tooltip = "Leftclick toggles between Basic and Node mode. ";
 	
 	this->genmidi[0] = new Button(false);
 	this->genmidi[0]->value = 1;
@@ -76,6 +84,8 @@ Mixer::Mixer() {
 	this->genmidi[0]->box->vtxcoords->w = mainprogram->numw;
 	this->genmidi[0]->box->vtxcoords->h = mainprogram->numh;
 	this->genmidi[0]->box->upvtxtoscr();
+	this->genmidi[0]->box->tooltiptitle = "Deck A global MIDI preset ";
+	this->genmidi[0]->box->tooltip = "Leftclick toggles between MIDI presets for deck A (A, B, C, D or off).  Rightclick shows menu allowing settings for the current MIDI preset. ";
 	this->genmidi[1]->box->acolor[0] = 0.5;
 	this->genmidi[1]->box->acolor[1] = 0.2;
 	this->genmidi[1]->box->acolor[2] = 0.5;
@@ -85,6 +95,8 @@ Mixer::Mixer() {
 	this->genmidi[1]->box->vtxcoords->w = mainprogram->numw;
 	this->genmidi[1]->box->vtxcoords->h = mainprogram->numh;
 	this->genmidi[1]->box->upvtxtoscr();
+	this->genmidi[1]->box->tooltiptitle = "Deck B global MIDI preset ";
+	this->genmidi[1]->box->tooltip = "Leftclick toggles between MIDI presets for deck B (A, B, C, D or off).  Rightclick shows menu allowing settings for the current MIDI preset. ";
 	
 	this->crossfade = new Param;
 	this->crossfade->name = "Crossfade"; 
@@ -98,7 +110,10 @@ Mixer::Mixer() {
 	this->crossfade->box->vtxcoords->w = 0.3f;
 	this->crossfade->box->vtxcoords->h = tf(0.05f);
 	this->crossfade->box->upvtxtoscr();
+	this->crossfade->box->tooltiptitle = "Crossfade ";
+	this->crossfade->box->tooltip = "Leftdrag crossfades between deck A and deck B streams. Doubleclick allows numeric entry. ";
 	this->crossfade->box->acolor[3] = 1.0f;
+	lpc->allparams.push_back(this->crossfade);
 	this->crossfadecomp = new Param;
 	this->crossfadecomp->name = "Crossfadecomp"; 
 	this->crossfadecomp->value = 0.5f;
@@ -111,6 +126,8 @@ Mixer::Mixer() {
 	this->crossfadecomp->box->vtxcoords->w = 0.3f;
 	this->crossfadecomp->box->vtxcoords->h = tf(0.05f);
 	this->crossfadecomp->box->upvtxtoscr();
+	this->crossfadecomp->box->tooltiptitle = "Crossfade ";
+	this->crossfadecomp->box->tooltip = "Leftdrag crossfades between deck A and deck B streams. Doubleclick allows numeric entry. ";
 	this->crossfadecomp->box->acolor[3] = 1.0f;
 	lpc->allparams.push_back(this->crossfadecomp);
 	
@@ -120,6 +137,8 @@ Mixer::Mixer() {
 	this->recbut->box->vtxcoords->w = tf(0.031f);
 	this->recbut->box->vtxcoords->h = tf(0.05f);
 	this->recbut->box->upvtxtoscr();
+	this->recbut->box->tooltiptitle = "Record output to video file ";
+	this->recbut->box->tooltip = "Start/stop recording the output stream to an MJPEG video file in the recordings directory (set in preferences). ";
 }
 
 
@@ -210,6 +229,8 @@ Effect::Effect() {
 	box->vtxcoords->w = tf(0.025f);
 	box->vtxcoords->h = tf(0.05f);
 	box->upvtxtoscr();
+	box->tooltiptitle = "Effect on/off ";
+	box->tooltip = "Leftclick toggles effect on/off ";
 	
 	// sets the dry/wet (mix of no-effect with effect) amount of the effect as a parameter
 	// read comment at BlurEffect::BlurEffect()
@@ -223,6 +244,8 @@ Effect::Effect() {
 	this->drywet->box->vtxcoords->w = tf(0.025f);
 	this->drywet->box->vtxcoords->h = tf(0.05f);
 	this->drywet->box->upvtxtoscr();
+	this->drywet->box->tooltiptitle = "Effect dry/wet ";
+	this->drywet->box->tooltip = "Sets the dry/wet value of the effect - Leftdrag sets value. Doubleclick allows numeric input. ";
 }
 
 Effect::~Effect() {
@@ -250,6 +273,8 @@ BlurEffect::BlurEffect() {
 	param->sliding = true;
 	param->shadervar = "glowblur";
 	param->effect = this;
+	param->box->tooltiptitle = "Blur amount ";
+	param->box->tooltip = "Amount of image blurring - between 2.0 and 132.0 ";
 	this->params.push_back(param);
 }
 
@@ -263,6 +288,8 @@ BrightnessEffect::BrightnessEffect() {
 	param->sliding = true;
 	param->shadervar = "brightamount";
 	param->effect = this;
+	param->box->tooltiptitle = "Brightness amount ";
+	param->box->tooltip = "Amount of image brightness change - between -1.0 and 1.0 ";
 	this->params.push_back(param);
 }
 
@@ -276,6 +303,8 @@ ChromarotateEffect::ChromarotateEffect() {
 	param->sliding = true;
 	param->shadervar = "colorrot";
 	param->effect = this;
+	param->box->tooltiptitle = "Chromarotate amount ";
+	param->box->tooltip = "Amount of image hue change - between -0.5 and 0.5 ";
 	this->params.push_back(param);
 }
 
@@ -289,6 +318,8 @@ ContrastEffect::ContrastEffect() {
 	param->sliding = true;
 	param->shadervar = "contrastamount";
 	param->effect = this;
+	param->box->tooltiptitle = "Contrast amount ";
+	param->box->tooltip = "Image contrast multiplication factor - between 0.0 and 4.0";
 	this->params.push_back(param);
 }
 
@@ -302,6 +333,8 @@ DotEffect::DotEffect() {
 	param->sliding = true;
 	param->shadervar = "dotsize";
 	param->effect = this;
+	param->box->tooltiptitle = "Dot size ";
+	param->box->tooltip = "Size of overlayed dots - between 7.5 and 2000.0 ";
 	this->params.push_back(param);
 }
 
@@ -314,16 +347,20 @@ GlowEffect::GlowEffect() {
 	param->range[1] = 132;
 	param->sliding = true;
 	param->shadervar = "glowblur";
+	param->box->tooltiptitle = "Blur amount ";
+	param->box->tooltip = "Amount of image blurring - betwwen 8.0 and 132.0 ";
 	param->effect = this;
 	this->params.push_back(param);
 	param = new Param;
-	param->name = "Factor"; 
+	param->name = "Amount"; 
 	param->value = 1.2f;
 	param->range[0] = 1.0f;
 	param->range[1] = 1.5f;
 	param->sliding = true;
 	param->shadervar = "glowfac";
 	param->effect = this;
+	param->box->tooltiptitle = "Glow amount ";
+	param->box->tooltip = "Amount of image glow - between 1.0 and 1.5 ";
 	this->params.push_back(param);
 }
 
@@ -336,6 +373,8 @@ RadialblurEffect::RadialblurEffect() {
 	param->range[1] = 1.0f;
 	param->sliding = true;
 	param->shadervar = "radstrength";
+	param->box->tooltiptitle = "Radialblur strength ";
+	param->box->tooltip = "Strenght of radialblur - between 0.0 and 1.0 ";
 	param->effect = this;
 	this->params.push_back(param);
 	param = new Param;
@@ -346,6 +385,8 @@ RadialblurEffect::RadialblurEffect() {
 	param->sliding = true;
 	param->shadervar = "radinner";
 	param->effect = this;
+	param->box->tooltiptitle = "Inner radialblur radius ";
+	param->box->tooltip = "Radius of untouched area inside blur ellipse - between 0.0 and 1.0 ";
 	this->params.push_back(param);
 	param = new Param;
 	param->nextrow = true;
@@ -356,6 +397,8 @@ RadialblurEffect::RadialblurEffect() {
 	param->sliding = true;
 	param->shadervar = "radialX";
 	param->effect = this;
+	param->box->tooltiptitle = "Radialblur X position ";
+	param->box->tooltip = "X position where radialblur rays start ";
 	this->params.push_back(param);
 	param = new Param;
 	param->name = "Y"; 
@@ -365,19 +408,23 @@ RadialblurEffect::RadialblurEffect() {
 	param->sliding = true;
 	param->shadervar = "radialY";
 	param->effect = this;
+	param->box->tooltiptitle = "Radialblur Y position ";
+	param->box->tooltip = "Y position where radialblur rays start ";
 	this->params.push_back(param);
 }
 
 SaturationEffect::SaturationEffect() {
 	this->numrows = 1;
 	Param *param = new Param;
-	param->name = "Amount"; 
-	param->value = 4;
-	param->range[0] = 0;
-	param->range[1] = 8;
+	param->name = "Factor"; 
+	param->value = 4.0f;
+	param->range[0] = 0.0f;
+	param->range[1] = 8.0f;
 	param->sliding = true;
 	param->shadervar = "satamount";
 	param->effect = this;
+	param->box->tooltiptitle = "Saturation amount factor";
+	param->box->tooltip = "Factor that multiplies image saturation - between 0.0 and 8.0";
 	this->params.push_back(param);
 }
 
@@ -391,6 +438,8 @@ ScaleEffect::ScaleEffect() {
 	param->sliding = true;
 	param->shadervar = "scalefactor";
 	param->effect = this;
+	param->box->tooltiptitle = "Scale factor ";
+	param->box->tooltip = "Factor by which image is scaled - between 0.75 and 1.33 ";
 	this->params.push_back(param);
 }
 
@@ -398,40 +447,48 @@ SwirlEffect::SwirlEffect() {
 	this->numrows = 2;
 	Param *param = new Param;
 	param->name = "Angle"; 
-	param->value = 0.8;
-	param->range[0] = 0;
-	param->range[1] = 2;
+	param->value = 0.8f;
+	param->range[0] = 0.0f;
+	param->range[1] = 2.0f;
 	param->sliding = true;
 	param->shadervar = "swirlangle";
 	param->effect = this;
+	param->box->tooltiptitle = "Swirl angle ";
+	param->box->tooltip = "Angle amount of image swirl - between 0.0 and 2.0 ";
 	this->params.push_back(param);
 	param = new Param;
 	param->name = "Radius"; 
 	param->value = 0.5;
-	param->range[0] = 0;
-	param->range[1] = 1;
+	param->range[0] = 0.0f;
+	param->range[1] = 1.0f;
 	param->sliding = true;
 	param->shadervar = "swradius";
 	param->effect = this;
+	param->box->tooltiptitle = "Swirl radius ";
+	param->box->tooltip = "Radius size of image swirl - between 0.0 and 1.0 ";
 	this->params.push_back(param);
 	param = new Param;
 	param->nextrow = true;
 	param->name = "X"; 
-	param->value = 0.5;
-	param->range[0] = 0;
-	param->range[1] = 1;
+	param->value = 0.5f;
+	param->range[0] = 0.0f;
+	param->range[1] = 1.0f;
 	param->sliding = true;
 	param->shadervar = "swirlx";
 	param->effect = this;
+	param->box->tooltiptitle = "Swirl X position ";
+	param->box->tooltip = "X position of swirl center - between 0.0 and 1.0 ";
 	this->params.push_back(param);
 	param = new Param;
 	param->name = "Y"; 
-	param->value = 0.5;
-	param->range[0] = 0;
-	param->range[1] = 1;
+	param->value = 0.5f;
+	param->range[0] = 0.0f;
+	param->range[1] = 1.0f;
 	param->sliding = true;
 	param->shadervar = "swirly";
 	param->effect = this;
+	param->box->tooltiptitle = "Swirl Y position ";
+	param->box->tooltip = "Y position of swirl center - between 0.0 and 1.0 ";
 	this->params.push_back(param);
 }
 
@@ -439,48 +496,58 @@ OldFilmEffect::OldFilmEffect() {
 	this->numrows = 2;
 	Param *param = new Param;
 	param->name = "Noise"; 
-	param->value = 2.0;
-	param->range[0] = 0;
-	param->range[1] = 4;
+	param->value = 2.0f;
+	param->range[0] = 0.0f;
+	param->range[1] = 4.0f;
 	param->sliding = true;
 	param->shadervar = "filmnoise";
 	param->effect = this;
+	param->box->tooltiptitle = "Oldfilm noise amount ";
+	param->box->tooltip = "Amount of noise in image - between 0.0 and 4.0 ";
 	this->params.push_back(param);
 	param = new Param;
 	param->name = "Sepia"; 
-	param->value = 2.0;
-	param->range[0] = 0;
-	param->range[1] = 4;
+	param->value = 2.0f;
+	param->range[0] = 0.0f;
+	param->range[1] = 4.0f;
 	param->sliding = true;
 	param->shadervar = "SepiaValue";
+	param->box->tooltiptitle = "Oldfilm sepia amount ";
+	param->box->tooltip = "Sepia image colorization saturation amount - between 0.0 and 4.0 ";
 	param->effect = this;
 	this->params.push_back(param);
 	param = new Param;
 	param->name = "Scratch"; 
-	param->value = 2.0;
-	param->range[0] = 0;
-	param->range[1] = 4;
+	param->value = 2.0f;
+	param->range[0] = 0.0f;
+	param->range[1] = 4.0f;
 	param->sliding = true;
 	param->shadervar = "ScratchValue";
+	param->box->tooltiptitle = "Oldfilm scratches amount ";
+	param->box->tooltip = "Amount of scratches in image - between 0.0 and 4.0 ";
 	param->effect = this;
 	this->params.push_back(param);
 	param = new Param;
 	param->nextrow = true;
 	param->name = "InVign"; 
-	param->range[0] = 0;
-	param->range[1] = 1;
+	param->value = 0.7f;
+	param->range[0] = 0.0f;
+	param->range[1] = 1.0f;
 	param->sliding = true;
 	param->shadervar = "InnerVignetting";
-	param->value = 0.7;
+	param->box->tooltiptitle = "Oldfilm inner vignetting amount ";
+	param->box->tooltip = "Amount of inner vignetting of image - between 0.0 and 1.0 ";
 	param->effect = this;
 	this->params.push_back(param);
 	param = new Param;
 	param->name = "OutVign"; 
-	param->range[0] = 0;
-	param->range[1] = 1;
+	param->range[0] = 0.0f;
+	param->range[1] = 1.0f;
 	param->sliding = true;
 	param->shadervar = "OuterVignetting";
-	param->value = 1.0;
+	param->value = 1.0f;
+	param->box->tooltiptitle = "Oldfilm outer vignetting amount ";
+	param->box->tooltip = "Amount of outer vignetting of image - between 0.0 and 1.0 ";
 	param->effect = this;
 	this->params.push_back(param);
 }
@@ -489,12 +556,14 @@ RippleEffect::RippleEffect() {
 	this->numrows = 1;
 	Param *param = new Param;
 	param->name = "Speed"; 
-	param->value = 0.1;
-	param->range[0] = 0;
-	param->range[1] = 0.5;
+	param->value = 0.1f;
+	param->range[0] = 0.0f;
+	param->range[1] = 0.5f;
 	param->sliding = true;
 	param->shadervar = "ripple";
 	param->effect = this;
+	param->box->tooltiptitle = "Ripple speed ";
+	param->box->tooltip = "Speed of image ripple distortion - between 0.0 and 0.5 ";
 	this->params.push_back(param);
 }
 
@@ -502,12 +571,14 @@ FishEyeEffect::FishEyeEffect() {
 	this->numrows = 1;
 	Param *param = new Param;
 	param->name = "Amount"; 
-	param->value = 0.7;
+	param->value = 0.7f;
 	param->range[0] = 0.1f;
 	param->range[1] = 2;
 	param->sliding = true;
 	param->shadervar = "fishamount";
 	param->effect = this;
+	param->box->tooltiptitle = "Fisheye amount ";
+	param->box->tooltip = "Amount of image fisheye distortion -between 0.1 and 2.0  Low values pinch image. ";
 	this->params.push_back(param);
 }
 
@@ -515,68 +586,82 @@ TresholdEffect::TresholdEffect() {
 	this->numrows = 3;
 	Param *param = new Param;
 	param->name = "Level"; 
-	param->value = 0.5;
-	param->range[0] = 0;
-	param->range[1] = 2;
+	param->value = 0.5f;
+	param->range[0] = 0.0f;
+	param->range[1] = 2.0f;
 	param->sliding = true;
 	param->shadervar = "treshheight";
 	param->effect = this;
+	param->box->tooltiptitle = "Treshold cutoff level";
+	param->box->tooltip = "Lightness level at which treshold switches between colors - between 0.0 and 2.0 ";
 	this->params.push_back(param);
 	param = new Param;
 	param->nextrow = true;
 	param->name = "R1"; 
-	param->value = 1.0;
-	param->range[0] = 0;
-	param->range[1] = 1;
+	param->value = 1.0f;
+	param->range[0] = 0.0f;
+	param->range[1] = 1.0f;
 	param->sliding = true;
 	param->shadervar = "treshred1";
 	param->effect = this;
+	param->box->tooltiptitle = "Treshold red1 ";
+	param->box->tooltip = "Value of red component of color 1 - between 0.0 and 1.0 ";
 	this->params.push_back(param);
 	param = new Param;
 	param->name = "G1"; 
-	param->value = 1.0;
-	param->range[0] = 0;
-	param->range[1] = 1;
+	param->value = 1.0f;
+	param->range[0] = 0.0f;
+	param->range[1] = 1.0f;
 	param->sliding = true;
 	param->shadervar = "treshgreen1";
 	param->effect = this;
+	param->box->tooltiptitle = "Treshold green1 ";
+	param->box->tooltip = "Value of green component of color 1 - between 0.0 and 1.0 ";
 	this->params.push_back(param);
 	param = new Param;
 	param->name = "B1"; 
-	param->value = 1.0;
-	param->range[0] = 0;
-	param->range[1] = 1;
+	param->value = 1.0f;
+	param->range[0] = 0.0f;
+	param->range[1] = 1.0f;
 	param->sliding = true;
 	param->shadervar = "treshblue1";
 	param->effect = this;
+	param->box->tooltiptitle = "Treshold blue1 ";
+	param->box->tooltip = "Value of blue component of color 1 - between 0.0 and 1.0 ";
 	this->params.push_back(param);
 	param = new Param;
 	param->nextrow = true;
 	param->name = "R2"; 
-	param->value = 0.0;
-	param->range[0] = 0;
-	param->range[1] = 1;
+	param->value = 0.0f;
+	param->range[0] = 0.0f;
+	param->range[1] = 1.0f;
 	param->sliding = true;
 	param->shadervar = "treshred2";
 	param->effect = this;
+	param->box->tooltiptitle = "Treshold red2 ";
+	param->box->tooltip = "Value of red component of color 2 - between 0.0 and 1.0 ";
 	this->params.push_back(param);
 	param = new Param;
 	param->name = "G2"; 
-	param->value = 0.0;
-	param->range[0] = 0;
-	param->range[1] = 1;
+	param->value = 0.0f;
+	param->range[0] = 0.0f;
+	param->range[1] = 1.0f;
 	param->sliding = true;
 	param->shadervar = "treshgreen2";
 	param->effect = this;
+	param->box->tooltiptitle = "Treshold green2 ";
+	param->box->tooltip = "Value of green component of color 2 - between 0.0 and 1.0 ";
 	this->params.push_back(param);
 	param = new Param;
 	param->name = "B2"; 
-	param->value = 0.0;
-	param->range[0] = 0;
-	param->range[1] = 1;
+	param->value = 0.0f;
+	param->range[0] = 0.0f;
+	param->range[1] = 1.0f;
 	param->sliding = true;
 	param->shadervar = "treshblue2";
 	param->effect = this;
+	param->box->tooltiptitle = "Treshold blue2 ";
+	param->box->tooltip = "Value of blue component of color 2 - between 0.0 and 1.0 ";
 	this->params.push_back(param);
 }
 
@@ -584,30 +669,36 @@ StrobeEffect::StrobeEffect() {
 	this->numrows = 1;
 	Param *param = new Param;
 	param->name = "R"; 
-	param->value = 1.0;
-	param->range[0] = 0;
-	param->range[1] = 1;
+	param->value = 1.0f;
+	param->range[0] = 0.0f;
+	param->range[1] = 1.0f;
 	param->sliding = true;
 	param->shadervar = "strobered";
 	param->effect = this;
+	param->box->tooltiptitle = "Strobe red ";
+	param->box->tooltip = "Red component of strobe color - between 0.0 and 1.0 ";
 	this->params.push_back(param);
 	param = new Param;
 	param->name = "G"; 
-	param->value = 1.0;
-	param->range[0] = 0;
-	param->range[1] = 1;
+	param->value = 1.0f;
+	param->range[0] = 0.0f;
+	param->range[1] = 1.0f;
 	param->sliding = true;
 	param->shadervar = "strobegreen";
 	param->effect = this;
+	param->box->tooltiptitle = "Strobe green ";
+	param->box->tooltip = "Green component of strobe color - between 0.0 and 1.0 ";
 	this->params.push_back(param);
 	param = new Param;
 	param->name = "B"; 
-	param->value = 1.0;
-	param->range[0] = 0;
-	param->range[1] = 1;
+	param->value = 1.0f;
+	param->range[0] = 0.0f;
+	param->range[1] = 1.0f;
 	param->sliding = true;
 	param->shadervar = "strobeblue";
 	param->effect = this;
+	param->box->tooltiptitle = "Strobe blue ";
+	param->box->tooltip = "Blue component of strobe color - between 0.0 and 1.0 ";
 	this->params.push_back(param);
 }
 
@@ -615,21 +706,25 @@ PosterizeEffect::PosterizeEffect() {
 	this->numrows = 1;
 	Param *param = new Param;
 	param->name = "Number"; 
-	param->value = 8.0;
+	param->value = 8;
 	param->range[0] = 0;
 	param->range[1] = 16;
 	param->sliding = false;
 	param->shadervar = "numColors";
 	param->effect = this;
+	param->box->tooltiptitle = "Number of colors ";
+	param->box->tooltip = "Number of colors for posterization - integer between 0 and 16 ";
 	this->params.push_back(param);
 	param = new Param;
 	param->name = "Gamma"; 
-	param->value = 0.6;
-	param->range[0] = 0;
-	param->range[1] = 1;
+	param->value = 0.6f;
+	param->range[0] = 0.0f;
+	param->range[1] = 1.0f;
 	param->sliding = true;
 	param->shadervar = "gamma";
 	param->effect = this;
+	param->box->tooltiptitle = "Posterize gamma ";
+	param->box->tooltip = "Gamma adaptation for posterization - between 0.0 and 1.0 ";
 	this->params.push_back(param);
 }
 
@@ -637,21 +732,25 @@ PixelateEffect::PixelateEffect() {
 	this->numrows = 1;
 	Param *param = new Param;
 	param->name = "Width"; 
-	param->value = 64.0;
-	param->range[0] = 1;
-	param->range[1] = 512;
+	param->value = 64.0f;
+	param->range[0] = 1.0f;
+	param->range[1] = 512.0f;
 	param->sliding = true;
 	param->shadervar = "pixel_w";
 	param->effect = this;
+	param->box->tooltiptitle = "Pixel width ";
+	param->box->tooltip = "Width of pixels of pixelization - between 1.0 and 512.0 ";
 	this->params.push_back(param);
 	param = new Param;
 	param->name = "Height"; 
-	param->value = 128.0;
-	param->range[0] = 1;
-	param->range[1] = 1024;
+	param->value = 128.0f;
+	param->range[0] = 1.0f;
+	param->range[1] = 512.0f;
 	param->sliding = true;
 	param->shadervar = "pixel_h";
 	param->effect = this;
+	param->box->tooltiptitle = "Pixel height ";
+	param->box->tooltip = "Height of pixels of pixelization - between 1.0 and 512.0 ";
 	this->params.push_back(param);
 }
 
@@ -659,59 +758,71 @@ CrosshatchEffect::CrosshatchEffect() {
 	this->numrows = 3;
 	Param *param = new Param;
 	param->name = "Size"; 
-	param->value = 20.0;
-	param->range[0] = 0;
-	param->range[1] = 100;
+	param->value = 20.0f;
+	param->range[0] = 0.0f;
+	param->range[1] = 100.0f;
 	param->sliding = true;
 	param->shadervar = "hatchsize";
 	param->effect = this;
+	param->box->tooltiptitle = "Crosshatch size ";
+	param->box->tooltip = "Size of iame crosshatching - between 0.0 and 100.0 ";
 	this->params.push_back(param);
 	param = new Param;
 	param->name = "Y Offset"; 
 	param->value = 5.0;
-	param->range[0] = 0;
-	param->range[1] = 40;
+	param->range[0] = 0.0f;
+	param->range[1] = 40.0f;
 	param->sliding = true;
 	param->shadervar = "hatch_y_offset";
 	param->effect = this;
+	param->box->tooltiptitle = "Crosshatch Y offset ";
+	param->box->tooltip = "Y offset distance of image crosshatching - between 0.0 and 40.0 ";
 	this->params.push_back(param);
 	param = new Param;
 	param->nextrow = true;
 	param->name = "Lum Tresh 1"; 
-	param->value = 1.0;
-	param->range[0] = 0;
-	param->range[1] = 1.0;
+	param->value = 1.0f;
+	param->range[0] = 0.0f;
+	param->range[1] = 1.0f;
 	param->sliding = true;
 	param->shadervar = "lum_threshold_1";
 	param->effect = this;
+	param->box->tooltiptitle = "Crosshatch luminance treshold 1 ";
+	param->box->tooltip = "Luminance treshold value for image crosshatching - between 0.0 and 1.0 ";
 	this->params.push_back(param);
 	param = new Param;
 	param->name = "Lum Tresh 2"; 
-	param->value = 0.7;
-	param->range[0] = 0;
-	param->range[1] = 1.0;
+	param->value = 0.7f;
+	param->range[0] = 0.0f;
+	param->range[1] = 1.0f;
 	param->sliding = true;
 	param->shadervar = "lum_threshold_2";
 	param->effect = this;
+	param->box->tooltiptitle = "Crosshatch luminance treshold 2 ";
+	param->box->tooltip = "Luminance treshold value for image crosshatching - between 0.0 and 1.0 ";
 	this->params.push_back(param);
 	param = new Param;
 	param->nextrow = true;
 	param->name = "Lum Tresh 3"; 
-	param->value = 0.5;
-	param->range[0] = 0;
-	param->range[1] = 1.0;
+	param->value = 0.5f;
+	param->range[0] = 0.0f;
+	param->range[1] = 1.0f;
 	param->sliding = true;
 	param->shadervar = "lum_threshold_3";
 	param->effect = this;
+	param->box->tooltiptitle = "Crosshatch luminance treshold 3 ";
+	param->box->tooltip = "Luminance treshold value for image crosshatching - between 0.0 and 1.0 ";
 	this->params.push_back(param);
 	param = new Param;
 	param->name = "Lum Tresh 4"; 
-	param->value = 0.3;
-	param->range[0] = 0;
-	param->range[1] = 1.0;
+	param->value = 0.3f;
+	param->range[0] = 0.0f;
+	param->range[1] = 1.0f;
 	param->sliding = true;
 	param->shadervar = "lum_threshold_4";
 	param->effect = this;
+	param->box->tooltiptitle = "Crosshatch luminance treshold 4 ";
+	param->box->tooltip = "Luminance treshold value for image crosshatching - between 0.0 and 1.0 ";
 	this->params.push_back(param);
 }
 
@@ -724,11 +835,13 @@ RotateEffect::RotateEffect() {
 	Param *param = new Param;
 	param->name = "Angle"; 
 	param->value = 45.0;
-	param->range[0] = 0;
-	param->range[1] = 360;
+	param->range[0] = 0.0f;
+	param->range[1] = 360.0f;
 	param->sliding = true;
 	param->shadervar = "rotamount";
 	param->effect = this;
+	param->box->tooltiptitle = "Rotation angle ";
+	param->box->tooltip = "Angle of image rotation - between 0.0 and 360.0 ";
 	this->params.push_back(param);
 }
 
@@ -737,11 +850,13 @@ EmbossEffect::EmbossEffect() {
 	Param *param = new Param;
 	param->name = "Strength"; 
 	param->value = 5.0f;
-	param->range[0] = 0;
+	param->range[0] = 0.0f;
 	param->range[1] = 20.0f;
 	param->sliding = true;
 	param->shadervar = "embstrength";
 	param->effect = this;
+	param->box->tooltiptitle = "Emboss strength ";
+	param->box->tooltip = "Strength of image embossing - between 0.0 and 20.0 ";
 	this->params.push_back(param);
 }
 
@@ -754,11 +869,13 @@ AsciiEffect::AsciiEffect() {
 	Param *param = new Param;
 	param->name = "Size"; 
 	param->value = 50.0f;
-	param->range[0] = 20;
-	param->range[1] = 200;
+	param->range[0] = 20.0f;
+	param->range[1] = 200.0f;
 	param->sliding = true;
 	param->shadervar = "asciisize";
 	param->effect = this;
+	param->box->tooltiptitle = "ASCII size ";
+	param->box->tooltip = "Size of ascii symbols - between 20.0 and 200.0 ";
 	this->params.push_back(param);
 }
 
@@ -772,6 +889,8 @@ VarDotEffect::VarDotEffect() {
 	param->sliding = true;
 	param->shadervar = "vardotsize";
 	param->effect = this;
+	param->box->tooltiptitle = "Vardot size ";
+	param->box->tooltip = "Size of vardots - between 0.0 and 2.0 ";
 	this->params.push_back(param);
 	param = new Param;
 	param->name = "Angle"; 
@@ -781,6 +900,8 @@ VarDotEffect::VarDotEffect() {
 	param->sliding = true;
 	param->shadervar = "vardotangle";
 	param->effect = this;
+	param->box->tooltiptitle = "Vardot angle ";
+	param->box->tooltip = "Angle of image vardotting - between 0.0 and 4.0 ";
 	this->params.push_back(param);
 }
 
@@ -794,6 +915,8 @@ CRTEffect::CRTEffect() {
 	param->sliding = true;
 	param->shadervar = "crtcurvature";
 	param->effect = this;
+	param->box->tooltiptitle = "CRT linecurvature ";
+	param->box->tooltip = "Curvature amount of crt lines - between 0.0 and 10.0 ";
 	this->params.push_back(param);
 	param = new Param;
 	param->name = "LineWidth";
@@ -803,6 +926,8 @@ CRTEffect::CRTEffect() {
 	param->sliding = true;
 	param->shadervar = "crtlineWidth";
 	param->effect = this;
+	param->box->tooltiptitle = "CRT linewidth ";
+	param->box->tooltip = "Width of crt lines - between 0.0 and 50.0 ";
 	this->params.push_back(param);
 	param = new Param;
 	param->name = "LineContrast";
@@ -812,6 +937,8 @@ CRTEffect::CRTEffect() {
 	param->sliding = true;
 	param->shadervar = "crtlineContrast";
 	param->effect = this;
+	param->box->tooltiptitle = "CRT linecontrast ";
+	param->box->tooltip = "Contrast amount of crt lines - between 0.0 and 1.0 ";
 	this->params.push_back(param);
 	param = new Param;
 	param->nextrow = true;
@@ -822,6 +949,8 @@ CRTEffect::CRTEffect() {
 	param->sliding = true;
 	param->shadervar = "crtnoise";
 	param->effect = this;
+	param->box->tooltiptitle = "CRT noise level ";
+	param->box->tooltip = "Level of noise - between 0.0 and 1.0 ";
 	this->params.push_back(param);
 	param = new Param;
 	param->name = "NoiseSize";
@@ -831,6 +960,8 @@ CRTEffect::CRTEffect() {
 	param->sliding = true;
 	param->shadervar = "crtnoiseSize";
 	param->effect = this;
+	param->box->tooltiptitle = "CRT noise size ";
+	param->box->tooltip = "Size of noise - between 0.0 and 20.0 ";
 	this->params.push_back(param);
 	param = new Param;
 	param->nextrow = true;
@@ -841,6 +972,8 @@ CRTEffect::CRTEffect() {
 	param->sliding = true;
 	param->shadervar = "crtvignetting";
 	param->effect = this;
+	param->box->tooltiptitle = "CRT vignetting size ";
+	param->box->tooltip = "Size of vignetting - between 0.0 and 0.5 ";
 	this->params.push_back(param);
 	param = new Param;
 	param->name = "VignetAlpha";
@@ -850,6 +983,8 @@ CRTEffect::CRTEffect() {
 	param->sliding = true;
 	param->shadervar = "crtvignettingAlpha";
 	param->effect = this;
+	param->box->tooltiptitle = "CRT vignetting alpha ";
+	param->box->tooltip = "Alpha value of vignetting - between 0.0 and 1.0 ";
 	this->params.push_back(param);
 	param = new Param;
 	param->name = "VignetBlur";
@@ -859,6 +994,8 @@ CRTEffect::CRTEffect() {
 	param->sliding = true;
 	param->shadervar = "crtvignettingBlur";
 	param->effect = this;
+	param->box->tooltiptitle = "CRT vignetting blur ";
+	param->box->tooltip = "Blur amount of vignetting - between 0.0 and 1.0 ";
 	this->params.push_back(param);
 }
 
@@ -872,6 +1009,8 @@ EdgeDetectEffect::EdgeDetectEffect() {
 	param->sliding = true;
 	param->shadervar = "edge_thres";
 	param->effect = this;
+	param->box->tooltiptitle = "Edgedetect edge treshold 1 ";
+	param->box->tooltip = "Edge treshold value for edge detection - between 0.0 and 1.1 ";
 	this->params.push_back(param);
 	param = new Param;
 	param->name = "Threshold2";
@@ -881,6 +1020,8 @@ EdgeDetectEffect::EdgeDetectEffect() {
 	param->sliding = true;
 	param->shadervar = "edge_thres2";
 	param->effect = this;
+	param->box->tooltiptitle = "Edgedetect edge treshold 2 ";
+	param->box->tooltip = "Edge treshold value for edge detection - between 0.0 and 20.0 ";
 	this->params.push_back(param);
 	param = new Param;
 	param->name = "Thickness";
@@ -890,6 +1031,8 @@ EdgeDetectEffect::EdgeDetectEffect() {
 	param->sliding = true;
 	param->shadervar = "edthickness";  //dummy
 	param->effect = this;
+	param->box->tooltiptitle = "Edgedetect edge thickness ";
+	param->box->tooltip = "Thickness of detected image edges - between 0.0 and 40.0 ";
 	this->params.push_back(param);
 }
 
@@ -897,12 +1040,14 @@ KaleidoScopeEffect::KaleidoScopeEffect() {
 	this->numrows = 1;
 	Param *param = new Param;
 	param->name = "Slices"; 
-	param->value = 8.0;
+	param->value = 8;
 	param->range[0] = 0;
-	param->range[1] = 32.0f;
+	param->range[1] = 32;
 	param->sliding = false;
 	param->shadervar = "kalslices";
 	param->effect = this;
+	param->box->tooltiptitle = "Kaleidoscope slices ";
+	param->box->tooltip = "Number of kaeidoscope slices - integer between 0 and 32 ";
 	this->params.push_back(param);
 }
 
@@ -916,6 +1061,8 @@ HalfToneEffect::HalfToneEffect() {
 	param->sliding = true;
 	param->shadervar = "hts";
 	param->effect = this;
+	param->box->tooltiptitle = "Halftone scale ";
+	param->box->tooltip = "Scale of image halftoneing - between 1.0 and 200.0 ";
 	this->params.push_back(param);
 }
 
@@ -929,6 +1076,8 @@ CartoonEffect::CartoonEffect() {
 	param->sliding = true;
 	param->shadervar = "edge_thres";
 	param->effect = this;
+	param->box->tooltiptitle = "Cartoonify edge treshold 1 ";
+	param->box->tooltip = "Edge treshold value for image caroonization - between 0.0 and 1.0 ";
 	this->params.push_back(param);
 	param = new Param;
 	param->name = "Threshold2";
@@ -938,6 +1087,8 @@ CartoonEffect::CartoonEffect() {
 	param->sliding = true;
 	param->shadervar = "edge_thres2";
 	param->effect = this;
+	param->box->tooltiptitle = "Cartoonify edge treshold 2 ";
+	param->box->tooltip = "Edge treshold value for image caroonization - between 0.0 and 10.0 ";
 	this->params.push_back(param);
 }
 
@@ -951,19 +1102,23 @@ CutoffEffect::CutoffEffect() {
 	param->sliding = true;
 	param->shadervar = "cut";
 	param->effect = this;
+	param->box->tooltiptitle = "Cutoff treshold ";
+	param->box->tooltip = "Level under which dark image areas are turned black - between 0.0 and 1.0";
 	this->params.push_back(param);
 }
 
 GlitchEffect::GlitchEffect() {
 	this->numrows = 1;
 	Param *param = new Param;
-	param->name = "Size";
+	param->name = "Speed";
 	param->value = 1.0f;
 	param->range[0] = 0.2f;
 	param->range[1] = 4.0f;
 	param->sliding = true;
-	param->shadervar = "glitchstr";
+	param->shadervar = "glitchspeed";
 	param->effect = this;
+	param->box->tooltiptitle = "Glitch speed ";
+	param->box->tooltip = "Speed factor of image glitching - between 0.2 and 4.0 ";
 	this->params.push_back(param);
 }
 
@@ -977,6 +1132,8 @@ ColorizeEffect::ColorizeEffect() {
 	param->sliding = true;
 	param->shadervar = "colhue";
 	param->effect = this;
+	param->box->tooltiptitle = "Colorize hue ";
+	param->box->tooltip = "Hue of image colorizing - between 0.0 and 1.0 ";
 	this->params.push_back(param);
 }
 
@@ -990,6 +1147,8 @@ NoiseEffect::NoiseEffect() {
 	param->sliding = true;
 	param->shadervar = "noiselevel";
 	param->effect = this;
+	param->box->tooltiptitle = "Noise level ";
+	param->box->tooltip = "Amount of image noise - between 0.0 and 8.0 ";
 	this->params.push_back(param);
 }
 
@@ -1003,6 +1162,8 @@ GammaEffect::GammaEffect() {
 	param->sliding = true;
 	param->shadervar = "gammaval";
 	param->effect = this;
+	param->box->tooltiptitle = "Gamma ";
+	param->box->tooltip = "Image gamma level - between 0.0 and 4.0 ";
 	this->params.push_back(param);
 }
 
@@ -1020,6 +1181,8 @@ BokehEffect::BokehEffect() {
 	param->sliding = true;
 	param->shadervar = "bokehrad";
 	param->effect = this;
+	param->box->tooltiptitle = "Bokeh radius ";
+	param->box->tooltip = "Radius of bokeh circle spots - between 0.0 and 4.0 ";
 	this->params.push_back(param);
 }
 
@@ -1033,6 +1196,8 @@ SharpenEffect::SharpenEffect() {
 	param->sliding = true;
 	param->shadervar = "curve_height";
 	param->effect = this;
+	param->box->tooltiptitle = "Sharpness strength ";
+	param->box->tooltip = "Strenght of image sharpening - between 0.0 and 40.0 ";
 	this->params.push_back(param);
 }
 
@@ -1046,6 +1211,8 @@ DitherEffect::DitherEffect() {
 	param->sliding = true;
 	param->shadervar = "dither_size";
 	param->effect = this;
+	param->box->tooltiptitle = "Dithering size ";
+	param->box->tooltip = "Size of the image dithering - between 0.4 and 0.55 ";
 	this->params.push_back(param);
 }
 
@@ -1059,6 +1226,8 @@ FlipEffect::FlipEffect() {
 	param->sliding = false;
 	param->shadervar = "xflip";
 	param->effect = this;
+	param->box->tooltiptitle = "X Flip ";
+	param->box->tooltip = "Toggles X image flipping: 0 = no flipping, 1 = flipping in X direction ";
 	this->params.push_back(param);
 	param = new Param;
 	param->name = "Y";
@@ -1068,6 +1237,8 @@ FlipEffect::FlipEffect() {
 	param->sliding = false;
 	param->shadervar = "yflip";
 	param->effect = this;
+	param->box->tooltiptitle = "Y Flip ";
+	param->box->tooltip = "Toggles Y image flipping: 0 = no flipping, 1 = flipping in Y direction ";
 	this->params.push_back(param);
 }
 
@@ -1081,6 +1252,8 @@ MirrorEffect::MirrorEffect() {
 	param->sliding = false;
 	param->shadervar = "xmirror";
 	param->effect = this;
+	param->box->tooltiptitle = "X Mirror ";
+	param->box->tooltip = "Toggles X image mirroring: 0 = left to right mirroring, 1 = no mirroring, 2 = right to left mirroring. ";
 	this->params.push_back(param);
 	param = new Param;
 	param->name = "Ydir";
@@ -1090,6 +1263,8 @@ MirrorEffect::MirrorEffect() {
 	param->sliding = false;
 	param->shadervar = "ymirror";
 	param->effect = this;
+	param->box->tooltiptitle = "Y Mirror ";
+	param->box->tooltip = "Toggles Y image mirroring: 0 = top to bottom mirroring, 1 = no mirroring, 2 = bottom to top mirroring. ";
 	this->params.push_back(param);
 }
 
@@ -1100,6 +1275,132 @@ void RippleEffect::set_ripplecount(float count) { this->ripplecount = count; }
 int StrobeEffect::get_phase() { return this->phase; }
 void StrobeEffect::set_phase(int phase) { this->phase = phase; }
 
+
+Effect *new_effect(Effect *effect) {
+	switch (effect->type) {
+		case BLUR:
+			return new BlurEffect(*(BlurEffect *)effect);
+			break;
+		case BRIGHTNESS:
+			return new BrightnessEffect(*(BrightnessEffect *)effect);
+			break;
+		case CHROMAROTATE:
+			return new ChromarotateEffect(*(ChromarotateEffect *)effect);
+			break;
+		case CONTRAST:
+			return new ContrastEffect(*(ContrastEffect *)effect);
+			break;
+		case DOT:
+			return new DotEffect(*(DotEffect *)effect);
+			break;
+		case GLOW:
+			return new GlowEffect(*(GlowEffect *)effect);
+			break;
+		case RADIALBLUR:
+			return new RadialblurEffect(*(RadialblurEffect *)effect);
+			break;
+		case SATURATION:
+			return new SaturationEffect(*(SaturationEffect *)effect);
+			break;
+		case SCALE:
+			return new ScaleEffect(*(ScaleEffect *)effect);
+			break;
+		case SWIRL:
+			return new SwirlEffect(*(SwirlEffect *)effect);
+			break;
+		case OLDFILM:
+			return new OldFilmEffect(*(OldFilmEffect *)effect);
+			break;
+		case RIPPLE:
+			return new RippleEffect(*(RippleEffect *)effect);
+			break;
+		case FISHEYE:
+			return new FishEyeEffect(*(FishEyeEffect *)effect);
+			break;
+		case TRESHOLD:
+			return new TresholdEffect(*(TresholdEffect *)effect);
+			break;
+		case STROBE:
+			return new StrobeEffect(*(StrobeEffect *)effect);
+			break;
+		case POSTERIZE:
+			return new PosterizeEffect(*(PosterizeEffect *)effect);
+			break;
+		case PIXELATE:
+			return new PixelateEffect(*(PixelateEffect *)effect);
+			break;
+		case CROSSHATCH:
+			return new CrosshatchEffect(*(CrosshatchEffect *)effect);
+			break;
+		case INVERT:
+			return new InvertEffect(*(InvertEffect *)effect);
+			break;
+		case ROTATE:
+			return new RotateEffect(*(RotateEffect *)effect);
+			break;
+		case EMBOSS:
+			return new EmbossEffect(*(EmbossEffect *)effect);
+			break;
+		case ASCII:
+			return new AsciiEffect(*(AsciiEffect *)effect);
+			break;
+		case SOLARIZE:
+			return new SolarizeEffect(*(SolarizeEffect *)effect);
+			break;
+		case VARDOT:
+			return new VarDotEffect(*(VarDotEffect *)effect);
+			break;
+		case CRT:
+			return new CRTEffect(*(CRTEffect *)effect);
+			break;
+		case EDGEDETECT:
+			return new EdgeDetectEffect(*(EdgeDetectEffect *)effect);
+			break;
+		case KALEIDOSCOPE:
+			return new KaleidoScopeEffect(*(KaleidoScopeEffect *)effect);
+			break;
+		case HTONE:
+			return new HalfToneEffect(*(HalfToneEffect *)effect);
+			break;
+		case CARTOON:
+			return new CartoonEffect(*(CartoonEffect *)effect);
+			break;
+		case CUTOFF:
+			return new CutoffEffect(*(CutoffEffect *)effect);
+			break;
+		case GLITCH:
+			return new GlitchEffect(*(GlitchEffect *)effect);
+			break;
+		case COLORIZE:
+			return new ColorizeEffect(*(ColorizeEffect *)effect);
+			break;
+		case NOISE:
+			return new NoiseEffect(*(NoiseEffect *)effect);
+			break;
+		case GAMMA:
+			return new GammaEffect(*(GammaEffect *)effect);
+			break;
+		case THERMAL:
+			return new ThermalEffect(*(ThermalEffect *)effect);
+			break;
+		case BOKEH:
+			return new BokehEffect(*(BokehEffect *)effect);
+			break;
+		case SHARPEN:
+			return new SharpenEffect(*(SharpenEffect *)effect);
+			break;
+		case DITHER:
+			return new DitherEffect(*(DitherEffect *)effect);
+			break;
+		case FLIP:
+			return new FlipEffect(*(FlipEffect *)effect);
+			break;
+		case MIRROR:
+			return new MirrorEffect(*(MirrorEffect *)effect);
+			break;
+	}
+	return nullptr;
+}
 
 // adds an effect of a certain type to a layer at a certain position in its effect list
 // comp is set when the layer belongs to the output layer stacks
@@ -1238,9 +1539,9 @@ Effect *do_add_effect(Layer *lay, EFFECT_TYPE type, int pos, bool comp) {
 	bool cat = mainprogram->effcat[lay->deck]->value;
 	
 	// does scrolling when effect stack reaches bottom of GUI space
-	lay->numefflines += effect->numrows;
-	if (lay->numefflines > 11) {
-		int further = (lay->numefflines - lay->effscroll[cat]) - 11;
+	lay->numefflines[cat] += effect->numrows;
+	if (lay->numefflines[cat] > 11) {
+		int further = (lay->numefflines[cat] - lay->effscroll[cat]) - 11;
 		lay->effscroll[cat] = lay->effscroll[cat] + further * (further > 0);
 		int linepos = 0;
 		for (int i = 0; i < effect->pos; i++) {
@@ -1265,6 +1566,9 @@ Effect *do_add_effect(Layer *lay, EFFECT_TYPE type, int pos, bool comp) {
 		}
 		lay->lasteffnode[cat]->out.clear();
 		lay->lasteffnode[cat] = effnode1;
+		if (!cat and lay->effects[1].size() == 0) {
+			lay->lasteffnode[1] = lay->lasteffnode[0];
+		}
 	}
 
 	if (pos == 0) {
@@ -1278,6 +1582,7 @@ Effect *do_add_effect(Layer *lay, EFFECT_TYPE type, int pos, bool comp) {
 		}
 		else {
 			if (lay->pos == 0) {
+				printf("lasteffnode0 %d\n", lay->lasteffnode[0]);
 				lay->lasteffnode[0]->out.clear();
 				mainprogram->nodesmain->currpage->connect_nodes(lay->lasteffnode[0], effnode1);
 			}
@@ -1295,6 +1600,9 @@ Effect *do_add_effect(Layer *lay, EFFECT_TYPE type, int pos, bool comp) {
 		}
 		effnode2->out.clear();
 		mainprogram->nodesmain->currpage->connect_nodes(effnode2, effnode1);
+	}
+	for (int i = 0; i < effect->params.size(); i++) {
+		effect->params[i]->box->tooltip += " - Leftdrag sets value. Doubleclicking allows numeric entry. ";
 	}
 	
 	// add parameters to OSC ssystem
@@ -1362,12 +1670,13 @@ void do_delete_effect(Layer *lay, int pos) {
 				if (lay->pos == 0) {
 					lay->lasteffnode[0]->out.clear();
 					mainprogram->nodesmain->currpage->connect_nodes(lay->lasteffnode[0], lay->lasteffnode[1]->out[0]);
+					lay->lasteffnode[1] = lay->lasteffnode[0];
 				}
 				else {	
 					lay->blendnode->out.clear();
 					mainprogram->nodesmain->currpage->connect_nodes(lay->blendnode, lay->lasteffnode[1]->out[0]);
+					lay->lasteffnode[1] = lay->blendnode;
 				}
-				lay->lasteffnode[1] = lay->blendnode;
 			}
 		}
 		else {
@@ -1450,7 +1759,7 @@ Layer* Mixer::add_layer(std::vector<Layer*> &layers, int pos) {
 		BlendNode *bnode = mainprogram->nodesmain->currpage->add_blendnode(MIXING, comp);
 		layer->blendnode = bnode;
 		Node *node;
-		if (prevlay->streameffects.size()) {
+		if (prevlay->effects[1].size()) {
 			node = prevlay->lasteffnode[1];
 		}
 		else if (prevlay->pos > 0) {
@@ -1543,21 +1852,21 @@ void Mixer::do_deletelay(Layer *testlay, std::vector<Layer*> &layers, bool add) 
 			testlay->clips.pop_back();
 		}
 			
-		while (!testlay->effects.empty()) {
-			mainprogram->nodesmain->currpage->delete_node(testlay->effects.back()->node);
-			for (int j = 0; j < testlay->effects.back()->params.size(); j++) {
-				delete testlay->effects.back()->params[j];
+		while (!testlay->effects[0].empty()) {
+			mainprogram->nodesmain->currpage->delete_node(testlay->effects[0].back()->node);
+			for (int j = 0; j < testlay->effects[0].back()->params.size(); j++) {
+				delete testlay->effects[0].back()->params[j];
 			}
-			delete testlay->effects.back();
-			testlay->effects.pop_back();
+			delete testlay->effects[0].back();
+			testlay->effects[0].pop_back();
 		}
-		while (!testlay->streameffects.empty()) {
-			mainprogram->nodesmain->currpage->delete_node(testlay->streameffects.back()->node);
-			for (int j = 0; j < testlay->streameffects.back()->params.size(); j++) {
-				delete testlay->streameffects.back()->params[j];
+		while (!testlay->effects[1].empty()) {
+			mainprogram->nodesmain->currpage->delete_node(testlay->effects[1].back()->node);
+			for (int j = 0; j < testlay->effects[1].back()->params.size(); j++) {
+				delete testlay->effects[1].back()->params[j];
 			}
-			delete testlay->streameffects.back();
-			testlay->streameffects.pop_back();
+			delete testlay->effects[1].back();
+			testlay->effects[1].pop_back();
 		}
 
 		if (testlay->pos > 0 and testlay->blendnode) {
@@ -1609,6 +1918,183 @@ void Mixer::delete_layer(std::vector<Layer*> &layers, Layer *testlay, bool add) 
 	testlay->audioplaying = false;
 	
 	this->do_deletelay(testlay, layers, add);
+}
+
+
+Layer::Layer() {
+	Layer(true);
+}
+
+Layer::Layer(bool comp) {
+    glClearColor(0, 0, 0, 0);
+
+    glGenTextures(1, &this->texture);
+    glActiveTexture(GL_TEXTURE0);
+    glBindTexture(GL_TEXTURE_2D, this->texture);
+	glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR);
+	glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
+	glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_BORDER);
+	glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_BORDER);
+
+    glGenTextures(1, &this->fbotex);
+    glActiveTexture(GL_TEXTURE0);
+    glBindTexture(GL_TEXTURE_2D, this->fbotex);
+    if (comp) {
+		glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA, mainprogram->ow, mainprogram->oh, 0, GL_RGBA, GL_UNSIGNED_BYTE, nullptr);
+	}
+	else {
+		glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA, glob->w * 0.3f, glob->h * 0.3f, 0, GL_RGBA, GL_UNSIGNED_BYTE, nullptr);
+	}
+	glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR);
+	glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
+	glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_BORDER);
+	glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_BORDER);
+	glGenFramebuffers(1, &this->fbo);
+	glBindFramebuffer(GL_FRAMEBUFFER, this->fbo);
+	glFramebufferTexture2D(GL_FRAMEBUFFER, GL_COLOR_ATTACHMENT0, GL_TEXTURE_2D, this->fbotex, 0);
+
+    this->mutebut = new Button(false);
+    this->mutebut->box->vtxcoords->y1 = 1.0f - mainprogram->layw - 0.05f;
+	this->mutebut->box->vtxcoords->w = 0.03f;
+   	this->mutebut->box->vtxcoords->h = 0.05f;
+    this->mutebut->box->tooltiptitle = "Layer mute ";
+    this->mutebut->box->tooltip = "Leftclick temporarily mutes/unmutes this layer. ";
+    this->solobut = new Button(false);
+    this->solobut->box->vtxcoords->y1 = 1.0f - mainprogram->layw - 0.05f;
+	this->solobut->box->vtxcoords->w = 0.03f;
+   	this->solobut->box->vtxcoords->h = 0.05f;
+    this->solobut->box->tooltiptitle = "Layer solo ";
+    this->solobut->box->tooltip = "Leftclick temporarily soloes/unsoloes this layer (all other layers in deck are muted). ";
+    this->mixbox = new Box;
+    this->mixbox->tooltiptitle = "Set layer mix mode ";
+    this->mixbox->tooltip = "Left or rightclick for choosing how to mix this layer with the previous ones: blendmode or local wipe.  Also accesses colorkeying. ";
+    this->colorbox = new Box;
+    this->colorbox->acolor[3] = 1.0f;
+    this->colorbox->tooltiptitle = "Set colorkey color ";
+    this->colorbox->tooltip = "Leftclick to set colorkey color.  Either use colorwheel or leftclick anywhere on screen.  Hovering mouse shows color that will be selected. ";
+    this->chtol = new Param;
+    this->chtol->name = "Tolerance";
+    this->chtol->value = 0.8f;
+    this->chtol->range[0] = -0.1f;
+    this->chtol->range[1] = 3.3f;
+    this->chtol->shadervar = "colortol";
+    this->chtol->box->tooltiptitle = "Set colorkey tolerance ";
+    this->chtol->box->tooltip = "Leftdrag to set color tolerance (\"spread\") around colorkey color.  Doubleclicking allows numeric entry. ";
+	this->speed = new Param;
+	this->speed->name = "Speed"; 
+	this->speed->value = 1.0f;
+	this->speed->range[0] = 0.0f;
+	this->speed->range[1] = 3.33f;
+	this->speed->sliding = true;
+	this->speed->powertwo = true;
+	this->speed->box->acolor[0] = 0.5;
+	this->speed->box->acolor[1] = 0.2;
+	this->speed->box->acolor[2] = 0.5;
+	this->speed->box->acolor[3] = 1.0;
+    this->speed->box->tooltiptitle = "Set layer speed ";
+	this->speed->box->tooltip = "Leftdrag sets current layer video playing speed factor. Doubleclicking allows numeric entry. ";
+	this->opacity = new Param;
+	this->opacity->name = "Opacity"; 
+	this->opacity->value = 1.0f;
+	this->opacity->range[0] = 0.0f;
+	this->opacity->range[1] = 1.0f;
+	this->opacity->sliding = true;
+	this->opacity->box->acolor[0] = 0.5;
+	this->opacity->box->acolor[1] = 0.2;
+	this->opacity->box->acolor[2] = 0.5;
+	this->opacity->box->acolor[3] = 1.0;
+    this->opacity->box->tooltiptitle = "Set layer opacity ";
+	this->opacity->box->tooltip = "Leftdrag sets current layer opacity. Doubleclicking allows numeric entry. ";
+	this->volume = new Param;
+	this->volume->name = "Volume"; 
+	this->volume->value = 0.0f;
+	this->volume->range[0] = 0.0f;
+	this->volume->range[1] = 1.0f;
+	this->volume->sliding = true;
+	this->volume->box->acolor[0] = 0.5;
+	this->volume->box->acolor[1] = 0.2;
+	this->volume->box->acolor[2] = 0.5;
+	this->volume->box->acolor[3] = 1.0;
+    this->volume->box->tooltiptitle = "Set audio volume ";
+	this->volume->box->tooltip = "Leftdrag sets current layer audio volume.  Default is zero.  (Audio support is experimental and often causes strange effects.) Doubleclicking allows numeric entry. ";
+	this->playbut = new Button(false);
+    this->playbut->box->tooltiptitle = "Toggle play ";
+	this->playbut->box->tooltip = "Leftclick toggles current layer video normal play on/off. ";
+	this->frameforward = new Button(false);
+    this->frameforward->box->tooltiptitle = "Frame forward ";
+	this->frameforward->box->tooltip = "Leftclick advances the current layer video by one frame. ";
+	this->framebackward = new Button(false);
+    this->framebackward->box->tooltiptitle = "Frame backward ";
+	this->framebackward->box->tooltip = "Leftclick seeks back in the current layer video by one frame. ";
+	this->revbut = new Button(false);
+    this->revbut->box->tooltiptitle = "Toggle reverse play ";
+	this->revbut->box->tooltip = "Leftclick toggles current layer video reverse play on/off. ";
+	this->bouncebut = new Button(false);
+    this->bouncebut->box->tooltiptitle = "Toggle bounce play ";
+	this->bouncebut->box->tooltip = "Leftclick toggles current layer video bounce play on/off.  Bounce play plays the video first forward than backward. ";
+	this->genmidibut = new Button(false);
+    this->genmidibut->box->tooltiptitle = "Set layer MIDI preset ";
+	this->genmidibut->box->tooltip = "Selects (leftclick advances) for this layer which MIDI preset (A, B, C, D or off) is used to control this layers common controls. ";
+	this->loopbox = new Box;
+    this->loopbox->tooltiptitle = "Loop bar ";
+	this->loopbox->tooltip = "Loop bar for current layer video.  Green area is looped area, white vertical line is video position. .  Leftdrag on bar scrubs video.  When hovering over green area edges, it turns blue; when this happens middledrag will drag the areas edge.  If area is green, middledrag will drag the looparea left/right.  Rightclicking starts a menu allowing to set loop start or end to the current play position. ";
+	this->chdir = new Button(false);
+    this->chdir->box->tooltiptitle = "Toggle colorkey direction ";
+	this->chdir->box->tooltip = "Leftclick toggles colorkey direction: does the previous layer stream image fill up the current layer's color or does the current layer fill a color in the previous layer stream image. ";
+	this->chinv = new Button(false);
+    this->chinv->box->tooltiptitle = "Toggle colorkey inverse modus ";
+	this->chinv->box->tooltip = "Leftclick toggles colorkey inverse modus: either the selected color is exchanged or all colors but the selected color are exchanged. ";
+	this->chdir->box->acolor[3] = 1.0f;
+	this->chinv->box->acolor[3] = 1.0f;
+
+    GLfloat vcoords[8];
+ 	GLfloat *p = vcoords;
+	GLfloat tcoords[] = {0.0f, 1.0f,
+						1.0f, 1.0f,
+						0.0f, 0.0f,
+						1.0f, 0.0f};
+
+  GLenum err;
+    while ((err = glGetError()) != GL_NO_ERROR) {
+        printf("%X\n", err);
+    }
+
+    glGenBuffers(1, &this->vbuf);
+	glBindBuffer(GL_ARRAY_BUFFER, this->vbuf);
+    glBufferData(GL_ARRAY_BUFFER, 32, vcoords, GL_STATIC_DRAW);
+	GLuint tbuf;
+    glGenBuffers(1, &tbuf);
+	glBindBuffer(GL_ARRAY_BUFFER, tbuf);
+    glBufferData(GL_ARRAY_BUFFER, 32, tcoords, GL_STATIC_DRAW);
+	glGenVertexArrays(1, &(this->vao));
+	glBindVertexArray(this->vao);
+	glBindBuffer(GL_ARRAY_BUFFER, this->vbuf);
+	glEnableVertexAttribArray(0);
+	glVertexAttribPointer(0, 2, GL_FLOAT, GL_FALSE, 8, nullptr);
+	glBindBuffer(GL_ARRAY_BUFFER, tbuf);
+	glEnableVertexAttribArray(1);
+	glVertexAttribPointer(1, 2, GL_FLOAT, GL_FALSE, 8, nullptr);
+ 	glBindVertexArray(this->vao);
+
+ 	//glDisableVertexAttribArray(0);
+ 	//glDisableVertexAttribArray(1);
+
+	this->decresult = new frame_result;
+	this->decresult->data = nullptr;
+
+    this->decoding = std::thread{&Layer::get_frame, this};
+    this->decoding.detach();
+
+	glBindFramebuffer(GL_FRAMEBUFFER, mainprogram->globfbo);
+	glDrawBuffer(GL_COLOR_ATTACHMENT0);
+}
+
+Layer::~Layer() {
+   	glDeleteTextures(1, &this->fbotex);
+    glDeleteBuffers(1, &(this->vbuf));
+    glDeleteBuffers(1, &(this->tbuf));
+    glDeleteFramebuffers(1, &(this->fbo));
+	glDeleteVertexArrays(1, &(this->vao));
 }
 
 void Layer::set_clones() {
@@ -1726,6 +2212,89 @@ void Mixer::loopstation_copy(bool comp) {
 	}
 }
 
+Layer* Mixer::clone_layer(std::vector<Layer*> &lvec, Layer* slay) {
+	Layer *dlay = mainmix->add_layer(lvec, slay->pos + 1);
+	this->set_values(dlay, slay);
+	dlay->pos = slay->pos + 1;
+	dlay->blendnode->blendtype = slay->blendnode->blendtype;
+	dlay->blendnode->mixfac->value = slay->blendnode->mixfac->value;
+	dlay->blendnode->chred = slay->blendnode->chred;
+	dlay->blendnode->chgreen = slay->blendnode->chgreen;
+	dlay->blendnode->chblue = slay->blendnode->chblue;
+	dlay->blendnode->wipetype = slay->blendnode->wipetype;
+	dlay->blendnode->wipedir = slay->blendnode->wipedir;
+	dlay->blendnode->wipex = slay->blendnode->wipex;
+	dlay->blendnode->wipey = slay->blendnode->wipey;
+	
+	int buval = mainprogram->effcat[dlay->deck]->value;
+	mainprogram->effcat[dlay->deck]->value = 0;
+	for (int i = 0; i < slay->effects[0].size(); i++) {
+		Effect *eff = dlay->add_effect(slay->effects[0][i]->type, i);
+		for (int j = 0; j < slay->effects[0][i]->params.size(); j++) {
+			Param *par = slay->effects[0][i]->params[j];
+			Param *cpar = eff->params[j];
+			cpar->value = par->value;
+			cpar->midi[0] = par->midi[0];
+			cpar->midi[1] = par->midi[1];
+			cpar->effect = eff;
+			if (loopstation->elemmap.find(par) != loopstation->elemmap.end()) {
+				for (int k = 0; k < loopstation->elemmap[par]->eventlist.size(); k++) {
+					LoopStationElement *elem = loopstation->elemmap[par];
+					std::tuple<long long, Param*, float> event1 = elem->eventlist[k];
+					if (par == std::get<1>(event1)) {
+						std::tuple<long long, Param*, float> event2;
+						event2 = std::make_tuple(std::get<0>(event1), cpar, std::get<2>(event1));
+						elem->eventlist.insert(elem->eventlist.begin() + k + 1, event2);
+						elem->params.emplace(cpar);
+						elem->layers.emplace(cpar->effect->layer);
+						loopstation->elemmap[par] = elem;
+						cpar->box->acolor[0] = elem->colbox->acolor[0];
+						cpar->box->acolor[1] = elem->colbox->acolor[1];
+						cpar->box->acolor[2] = elem->colbox->acolor[2];
+						cpar->box->acolor[3] = elem->colbox->acolor[3];
+					}
+				}
+			}
+		}
+	}
+	mainprogram->effcat[dlay->deck]->value = buval;
+	
+	return dlay;
+}
+
+void Mixer::clonesets_copy(bool comp) {
+	bool bupm = mainprogram->prevmodus;
+	mainprogram->prevmodus = comp;
+	std::vector<Layer*> &lvecA1 = choose_layers(0);
+	std::vector<Layer*> &lvecB1 = choose_layers(1);
+	mainprogram->prevmodus = !comp;
+	std::vector<std::unordered_set<Layer*>*> tempclonesets;
+	for (int i = 0; i < mainmix->clonesets.size(); i++) {
+		if (std::find(lvecA1.begin(), lvecA1.end(), *mainmix->clonesets[i]->begin()) != lvecA1.end() or std::find(lvecB1.begin(), lvecB1.end(), *mainmix->clonesets[i]->begin()) != lvecB1.end()) {
+			std::unordered_set<Layer*> *uset1 = new std::unordered_set<Layer*>;
+			tempclonesets.push_back(uset1);
+			std::unordered_set<Layer*>::iterator it;
+			for (it = mainmix->clonesets[i]->begin(); it != mainmix->clonesets[i]->end(); it++) {
+				Layer *lay = *it;
+				uset1->emplace(lay);
+				lay->clonesetnr = tempclonesets.size() - 1;
+			}
+			std::unordered_set<Layer*> *uset2 = new std::unordered_set<Layer*>;
+			tempclonesets.push_back(uset2);
+			for (it = mainmix->clonesets[i]->begin(); it != mainmix->clonesets[i]->end(); it++) {
+				Layer *lay = *it;
+				std::vector<Layer*> &lvec2 = choose_layers(lay->deck);
+				uset2->emplace(lvec2[lay->pos]);
+				lvec2[lay->pos]->clonesetnr = tempclonesets.size() - 1;
+			}
+		}
+		delete mainmix->clonesets[i];
+	}
+		
+	mainmix->clonesets = tempclonesets;
+	mainprogram->prevmodus = bupm;
+}			
+
 void Mixer::lay_copy(std::vector<Layer*> &slayers, std::vector<Layer*> &dlayers, bool comp) {
 	LoopStation *lp1;
 	LoopStation *lp2;
@@ -1773,190 +2342,147 @@ void Mixer::lay_copy(std::vector<Layer*> &slayers, std::vector<Layer*> &dlayers,
 	}
 			
 	for (int i = 0; i < slayers.size(); i++) {
-		dlayers[i]->effects.clear();
-		for (int j = 0; j < slayers[i]->effects.size(); j++) {
-			Effect *eff = slayers[i]->effects[j];
-			Effect *ceff;
-			switch (eff->type) {
-				case BLUR:
-					ceff = new BlurEffect();
-					break;
-				case BRIGHTNESS:
-					ceff = new BrightnessEffect();
-					break;
-				case CHROMAROTATE:
-					ceff = new ChromarotateEffect();
-					break;
-				case CONTRAST:
-					ceff = new ContrastEffect();
-					break;
-				case DOT:
-					ceff = new DotEffect();
-					break;
-				case GLOW:
-					ceff = new GlowEffect();
-					break;
-				case RADIALBLUR:
-					ceff = new RadialblurEffect();
-					break;
-				case SATURATION:
-					ceff = new SaturationEffect();
-					break;
-				case SCALE:
-					ceff = new ScaleEffect();
-					break;
-				case SWIRL:
-					ceff = new SwirlEffect();
-					break;
-				case OLDFILM:
-					ceff = new OldFilmEffect();
-					break;
-				case RIPPLE:
-					ceff = new RippleEffect();
-					break;
-				case FISHEYE:
-					ceff = new FishEyeEffect();
-					break;
-				case TRESHOLD:
-					ceff = new TresholdEffect();
-					break;
-				case STROBE:
-					ceff = new StrobeEffect();
-					break;
-				case POSTERIZE:
-					ceff = new PosterizeEffect();
-					break;
-				case PIXELATE:
-					ceff = new PixelateEffect();
-					break;
-				case CROSSHATCH:
-					ceff = new CrosshatchEffect();
-					break;
-				case INVERT:
-					ceff = new InvertEffect();
-					break;
-				case ROTATE:
-					ceff = new RotateEffect();
-					break;
-				case EMBOSS:
-					ceff = new EmbossEffect();
-					break;
-				case ASCII:
-					ceff = new AsciiEffect();
-					break;
-				case SOLARIZE:
-					ceff = new SolarizeEffect();
-					break;
-				case VARDOT:
-					ceff = new VarDotEffect();
-					break;
-				case CRT:
-					ceff = new CRTEffect();
-					break;
-				case EDGEDETECT:
-					ceff = new EdgeDetectEffect();
-					break;
-				case KALEIDOSCOPE:
-					ceff = new KaleidoScopeEffect();
-					break;
-				case HTONE:
-					ceff = new HalfToneEffect();
-					break;
-				case CARTOON:
-					ceff = new CartoonEffect();
-					break;
-				case CUTOFF:
-					ceff = new CutoffEffect();
-					break;
-				case GLITCH:
-					ceff = new GlitchEffect();
-					break;
-				case COLORIZE:
-					ceff = new ColorizeEffect();
-					break;
-				case NOISE:
-					ceff = new NoiseEffect();
-					break;
-				case GAMMA:
-					ceff = new GammaEffect();
-					break;
-				case THERMAL:
-					ceff = new ThermalEffect();
-					break;
-				case BOKEH:
-					ceff = new BokehEffect();
-					break;
-				case SHARPEN:
-					ceff = new SharpenEffect();
-					break;
-				case DITHER:
-					ceff = new DitherEffect();
-					break;
-			}
-			ceff->type = eff->type;
-			ceff->layer = dlayers[i];
-			ceff->onoffbutton->value = eff->onoffbutton->value;
-			ceff->drywet->value = eff->drywet->value;
-			if (ceff->type == RIPPLE) ((RippleEffect*)ceff)->speed = ((RippleEffect*)eff)->speed;
-			if (ceff->type == RIPPLE) ((RippleEffect*)ceff)->ripplecount = ((RippleEffect*)eff)->ripplecount;
-			dlayers[i]->effects.push_back(ceff);
-			for (int k = 0; k < slayers[i]->effects[j]->params.size(); k++) {
-				Param *par = slayers[i]->effects[j]->params[k];
-				Param *cpar = dlayers[i]->effects[j]->params[k];
-				lp1->parmap[par] = cpar;
-				cpar->value = par->value;
-				cpar->midi[0] = par->midi[0];
-				cpar->midi[1] = par->midi[1];
-				cpar->effect = ceff;
-				lp2->allparams.push_back(cpar);
-			}
-		}
-	}
-}
-
-Layer* Mixer::clone_layer(std::vector<Layer*> &lvec, Layer* slay) {
-	Layer *dlay = mainmix->add_layer(lvec, slay->pos + 1);
-	this->set_values(dlay, slay);
-	dlay->pos = slay->pos + 1;
-	dlay->blendnode->blendtype = slay->blendnode->blendtype;
-	dlay->blendnode->mixfac->value = slay->blendnode->mixfac->value;
-	dlay->blendnode->chred = slay->blendnode->chred;
-	dlay->blendnode->chgreen = slay->blendnode->chgreen;
-	dlay->blendnode->chblue = slay->blendnode->chblue;
-	dlay->blendnode->wipetype = slay->blendnode->wipetype;
-	dlay->blendnode->wipedir = slay->blendnode->wipedir;
-	dlay->blendnode->wipex = slay->blendnode->wipex;
-	dlay->blendnode->wipey = slay->blendnode->wipey;
-	for (int i = 0; i < slay->effects.size(); i++) {
-		Effect *eff = dlay->add_effect(slay->effects[i]->type, i);
-		for (int j = 0; j < slay->effects[i]->params.size(); j++) {
-			Param *par = slay->effects[i]->params[j];
-			Param *cpar = eff->params[j];
-			cpar->value = par->value;
-			cpar->midi[0] = par->midi[0];
-			cpar->midi[1] = par->midi[1];
-			cpar->effect = eff;
-			if (loopstation->elemmap.find(par) != loopstation->elemmap.end()) {
-				for (int k = 0; k < loopstation->elemmap[par]->eventlist.size(); k++) {
-					LoopStationElement *elem = loopstation->elemmap[par];
-					std::tuple<long long, Param*, float> event1 = elem->eventlist[k];
-					if (par == std::get<1>(event1)) {
-						std::tuple<long long, Param*, float> event2;
-						event2 = std::make_tuple(std::get<0>(event1), cpar, std::get<2>(event1));
-						elem->eventlist.insert(elem->eventlist.begin() + k + 1, event2);
-						elem->params.emplace(cpar);
-						elem->layers.emplace(cpar->effect->layer);
-						loopstation->elemmap[par] = elem;
-						cpar->box->acolor[0] = elem->colbox->acolor[0];
-						cpar->box->acolor[1] = elem->colbox->acolor[1];
-						cpar->box->acolor[2] = elem->colbox->acolor[2];
-						cpar->box->acolor[3] = elem->colbox->acolor[3];
-					}
+		dlayers[i]->effects[0].clear();
+		for (int m = 0; m < 2; m++) {
+			for (int j = 0; j < slayers[i]->effects[m].size(); j++) {
+				Effect *eff = slayers[i]->effects[m][j];
+				Effect *ceff;
+				switch (eff->type) {
+					case BLUR:
+						ceff = new BlurEffect();
+						break;
+					case BRIGHTNESS:
+						ceff = new BrightnessEffect();
+						break;
+					case CHROMAROTATE:
+						ceff = new ChromarotateEffect();
+						break;
+					case CONTRAST:
+						ceff = new ContrastEffect();
+						break;
+					case DOT:
+						ceff = new DotEffect();
+						break;
+					case GLOW:
+						ceff = new GlowEffect();
+						break;
+					case RADIALBLUR:
+						ceff = new RadialblurEffect();
+						break;
+					case SATURATION:
+						ceff = new SaturationEffect();
+						break;
+					case SCALE:
+						ceff = new ScaleEffect();
+						break;
+					case SWIRL:
+						ceff = new SwirlEffect();
+						break;
+					case OLDFILM:
+						ceff = new OldFilmEffect();
+						break;
+					case RIPPLE:
+						ceff = new RippleEffect();
+						break;
+					case FISHEYE:
+						ceff = new FishEyeEffect();
+						break;
+					case TRESHOLD:
+						ceff = new TresholdEffect();
+						break;
+					case STROBE:
+						ceff = new StrobeEffect();
+						break;
+					case POSTERIZE:
+						ceff = new PosterizeEffect();
+						break;
+					case PIXELATE:
+						ceff = new PixelateEffect();
+						break;
+					case CROSSHATCH:
+						ceff = new CrosshatchEffect();
+						break;
+					case INVERT:
+						ceff = new InvertEffect();
+						break;
+					case ROTATE:
+						ceff = new RotateEffect();
+						break;
+					case EMBOSS:
+						ceff = new EmbossEffect();
+						break;
+					case ASCII:
+						ceff = new AsciiEffect();
+						break;
+					case SOLARIZE:
+						ceff = new SolarizeEffect();
+						break;
+					case VARDOT:
+						ceff = new VarDotEffect();
+						break;
+					case CRT:
+						ceff = new CRTEffect();
+						break;
+					case EDGEDETECT:
+						ceff = new EdgeDetectEffect();
+						break;
+					case KALEIDOSCOPE:
+						ceff = new KaleidoScopeEffect();
+						break;
+					case HTONE:
+						ceff = new HalfToneEffect();
+						break;
+					case CARTOON:
+						ceff = new CartoonEffect();
+						break;
+					case CUTOFF:
+						ceff = new CutoffEffect();
+						break;
+					case GLITCH:
+						ceff = new GlitchEffect();
+						break;
+					case COLORIZE:
+						ceff = new ColorizeEffect();
+						break;
+					case NOISE:
+						ceff = new NoiseEffect();
+						break;
+					case GAMMA:
+						ceff = new GammaEffect();
+						break;
+					case THERMAL:
+						ceff = new ThermalEffect();
+						break;
+					case BOKEH:
+						ceff = new BokehEffect();
+						break;
+					case SHARPEN:
+						ceff = new SharpenEffect();
+						break;
+					case DITHER:
+						ceff = new DitherEffect();
+						break;
+				}
+				ceff->type = eff->type;
+				ceff->layer = dlayers[i];
+				ceff->onoffbutton->value = eff->onoffbutton->value;
+				ceff->drywet->value = eff->drywet->value;
+				if (ceff->type == RIPPLE) ((RippleEffect*)ceff)->speed = ((RippleEffect*)eff)->speed;
+				if (ceff->type == RIPPLE) ((RippleEffect*)ceff)->ripplecount = ((RippleEffect*)eff)->ripplecount;
+				dlayers[i]->effects[m].push_back(ceff);
+				for (int k = 0; k < slayers[i]->effects[m][j]->params.size(); k++) {
+					Param *par = slayers[i]->effects[m][j]->params[k];
+					Param *cpar = dlayers[i]->effects[m][j]->params[k];
+					lp1->parmap[par] = cpar;
+					cpar->value = par->value;
+					cpar->midi[0] = par->midi[0];
+					cpar->midi[1] = par->midi[1];
+					cpar->effect = ceff;
+					lp2->allparams.push_back(cpar);
 				}
 			}
 		}
 	}
-	return dlay;
 }
 
 void Mixer::copy_to_comp(std::vector<Layer*> &sourcelayersA, std::vector<Layer*> &destlayersA, std::vector<Layer*> &sourcelayersB, std::vector<Layer*> &destlayersB, std::vector<Node*> &sourcenodes, std::vector<Node*> &destnodes, std::vector<MixNode*> &destmixnodes, bool comp) {
@@ -1978,6 +2504,7 @@ void Mixer::copy_to_comp(std::vector<Layer*> &sourcelayersA, std::vector<Layer*>
 	this->lay_copy(sourcelayersA, destlayersA, comp);
 	this->lay_copy(sourcelayersB, destlayersB, comp);
 	this->loopstation_copy(comp);
+	this->clonesets_copy(comp);
 	
 	for (int i = 0; i < destnodes.size(); i++) {
 		delete destnodes[i];
@@ -2009,41 +2536,41 @@ void Mixer::copy_to_comp(std::vector<Layer*> &sourcelayersA, std::vector<Layer*>
 			else if (node->type == EFFECT) {
 				EffectNode *cnode = new EffectNode();
 				for (int k = 0; k < sourcelayersA.size(); k++) {
-					for (int m = 0; m < sourcelayersA[k]->effects.size(); m++) {
-						Effect *eff = sourcelayersA[k]->effects[m];
+					for (int m = 0; m < sourcelayersA[k]->effects[0].size(); m++) {
+						Effect *eff = sourcelayersA[k]->effects[0][m];
 						if (eff == ((EffectNode*)node)->effect) {
-							cnode->effect = destlayersA[k]->effects[m];
-							destlayersA[k]->effects[m]->node = cnode;
+							cnode->effect = destlayersA[k]->effects[0][m];
+							destlayersA[k]->effects[0][m]->node = cnode;
 							break;
 						}
 					}
 				}
 				for (int k = 0; k < sourcelayersB.size(); k++) {
-					for (int m = 0; m < sourcelayersB[k]->effects.size(); m++) {
-						Effect *eff = sourcelayersB[k]->effects[m];
+					for (int m = 0; m < sourcelayersB[k]->effects[0].size(); m++) {
+						Effect *eff = sourcelayersB[k]->effects[0][m];
 						if (eff == ((EffectNode*)node)->effect) {
-							cnode->effect = destlayersB[k]->effects[m];
-							destlayersB[k]->effects[m]->node = cnode;
+							cnode->effect = destlayersB[k]->effects[0][m];
+							destlayersB[k]->effects[0][m]->node = cnode;
 							break;
 						}
 					}
 				}
 				for (int k = 0; k < sourcelayersA.size(); k++) {
-					for (int m = 0; m < sourcelayersA[k]->streameffects.size(); m++) {
-						Effect *eff = sourcelayersA[k]->streameffects[m];
+					for (int m = 0; m < sourcelayersA[k]->effects[1].size(); m++) {
+						Effect *eff = sourcelayersA[k]->effects[1][m];
 						if (eff == ((EffectNode*)node)->effect) {
-							cnode->effect = destlayersA[k]->streameffects[m];
-							destlayersA[k]->streameffects[m]->node = cnode;
+							cnode->effect = destlayersA[k]->effects[1][m];
+							destlayersA[k]->effects[1][m]->node = cnode;
 							break;
 						}
 					}
 				}
 				for (int k = 0; k < sourcelayersB.size(); k++) {
-					for (int m = 0; m < sourcelayersB[k]->streameffects.size(); m++) {
-						Effect *eff = sourcelayersB[k]->streameffects[m];
+					for (int m = 0; m < sourcelayersB[k]->effects[1].size(); m++) {
+						Effect *eff = sourcelayersB[k]->effects[1][m];
 						if (eff == ((EffectNode*)node)->effect) {
-							cnode->effect = destlayersB[k]->streameffects[m];
-							destlayersB[k]->streameffects[m]->node = cnode;
+							cnode->effect = destlayersB[k]->effects[1][m];
+							destlayersB[k]->effects[1][m]->node = cnode;
 							break;
 						}
 					}
@@ -2109,14 +2636,33 @@ void Mixer::copy_to_comp(std::vector<Layer*> &sourcelayersA, std::vector<Layer*>
 		}
 	}
 	
-	//for (int i = 0; i < sourcelayers.size(); i++) {
-	//	Layer *lay = sourcelayers[i];
-	//	Layer *clay = destlayers[i];
-
-	//	clay->prevtime = lay->prevtime;
-	//	clay->frame = lay->frame;
-	//	clay->prevframe = lay->frame - 1;
-	//}
+	// setting lasteffnode[1]s
+	for (int i = 0; i < destlayersA.size(); i++) {
+		if (destlayersA[i]->pos == 0) {
+			destlayersA[i]->lasteffnode[1] = destlayersA[i]->lasteffnode[0];
+		}
+		else {
+			if (destlayersA[i]->effects[1].size()) {
+				destlayersA[i]->lasteffnode[1] = destlayersA[i]->effects[1].back()->node;
+			}
+			else {
+				destlayersA[i]->lasteffnode[1] = destlayersA[i]->blendnode;
+			}
+		}
+	}
+	for (int i = 0; i < destlayersB.size(); i++) {
+		if (destlayersB[i]->pos == 0) {
+			destlayersB[i]->lasteffnode[1] = destlayersB[i]->lasteffnode[0];
+		}
+		else {
+			if (destlayersB[i]->effects[1].size()) {
+				destlayersB[i]->lasteffnode[1] = destlayersB[i]->effects[1].back()->node;
+			}
+			else {
+				destlayersB[i]->lasteffnode[1] = destlayersB[i]->blendnode;
+			}
+		}
+	}
 	
 	make_layboxes();
 	
@@ -2137,10 +2683,10 @@ std::vector<std::string> Mixer::write_layer(Layer *lay, std::ostream& wfile, boo
 	wfile << "./" + boost::filesystem::relative(lay->filename, "./").string();
 	wfile << "\n";
 	wfile << "MUTE\n";
-	wfile << std::to_string(lay->mute);
+	wfile << std::to_string(lay->mutebut->value);
 	wfile << "\n";
 	wfile << "SOLO\n";
-	wfile << std::to_string(lay->solo);
+	wfile << std::to_string(lay->solobut->value);
 	wfile << "\n";
 	wfile << "CLONESETNR\n";
 	wfile << std::to_string(lay->clonesetnr);
@@ -2289,8 +2835,8 @@ std::vector<std::string> Mixer::write_layer(Layer *lay, std::ostream& wfile, boo
 	}
 	
 	wfile << "EFFECTS\n";
-	for (int j = 0; j < lay->effects.size(); j++) {
-		Effect *eff = lay->effects[j];
+	for (int j = 0; j < lay->effects[0].size(); j++) {
+		Effect *eff = lay->effects[0][j];
 		wfile << "TYPE\n";
 		wfile << std::to_string(eff->type);
 		wfile << "\n";
@@ -2354,8 +2900,8 @@ std::vector<std::string> Mixer::write_layer(Layer *lay, std::ostream& wfile, boo
 	wfile << "ENDOFEFFECTS\n";
 	
 	wfile << "STREAMEFFECTS\n";
-	for (int j = 0; j < lay->streameffects.size(); j++) {
-		Effect *eff = lay->streameffects[j];
+	for (int j = 0; j < lay->effects[1].size(); j++) {
+		Effect *eff = lay->effects[1][j];
 		wfile << "TYPE\n";
 		wfile << std::to_string(eff->type);
 		wfile << "\n";
@@ -2747,13 +3293,13 @@ void Mixer::open_layerfile(const std::string &path, Layer *lay, bool loadevents,
 		}
 		lay->lasteffnode[0] = lay->node;
 	}
-	while (!lay->effects.empty()) {
-		mainprogram->nodesmain->currpage->delete_node(lay->effects.back()->node);
-		for (int j = 0; j < lay->effects.back()->params.size(); j++) {
-			delete lay->effects.back()->params[j];
+	while (!lay->effects[0].empty()) {
+		mainprogram->nodesmain->currpage->delete_node(lay->effects[0].back()->node);
+		for (int j = 0; j < lay->effects[0].back()->params.size(); j++) {
+			delete lay->effects[0].back()->params[j];
 		}
-		delete lay->effects.back();
-		lay->effects.pop_back();
+		delete lay->effects[0].back();
+		lay->effects[0].pop_back();
 	}
 	
 	loopstation->readelems.clear();
@@ -3089,11 +3635,11 @@ int Mixer::read_layers(std::istream &rfile, const std::string &result, std::vect
 		}	
 		if (istring == "MUTE") {
 			getline(rfile, istring); 
-			lay->mute = std::stoi(istring);
+			lay->mutebut->value = std::stoi(istring);
 		}
 		if (istring == "SOLO") {
 			getline(rfile, istring); 
-			lay->solo = std::stoi(istring);
+			lay->solobut->value = std::stoi(istring);
 		}
 		if (istring == "CLONESETNR") {
 			getline(rfile, istring); 
@@ -3454,7 +4000,7 @@ int Mixer::read_layers(std::istream &rfile, const std::string &result, std::vect
 	}
 	std::vector<Layer*> &lvec = choose_layers(deck);
 	for (int i = 0; i < lvec.size(); i++) {
-		if (lvec[i]->mute) lvec[i]->mute_handle();
+		if (lvec[i]->mutebut->value) lvec[i]->mute_handle();
 	}
 	
 	return jpegcount;

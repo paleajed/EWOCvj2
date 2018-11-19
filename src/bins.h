@@ -7,6 +7,7 @@ class BinsMain {
 	public:
 		std::vector<Bin*> bins;
 		Bin *currbin;
+		std::vector<Box*> elemboxes;
 		BinElement *currbinel = nullptr;
 		BinElement *prevbinel = nullptr;
 		int previ;
@@ -41,6 +42,7 @@ class BinsMain {
 		bool movingstruct = false;
 		BinDeck *movingdeck = nullptr;
 		BinMix *movingmix = nullptr;		
+		Box *hapmodebox;
 		
 		void handle();
 		int read_binslist();
@@ -57,6 +59,7 @@ class BinsMain {
 		void hap_deck(BinDeck * bd);
 		void hap_mix(BinMix * bm);
 		void hap_encode(const std::string &srcpath, BinElement *binel, BinDeck *bd, BinMix *bm);
+		BinsMain();
 };
 		
 class Bin {

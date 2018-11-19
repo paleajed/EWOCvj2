@@ -58,7 +58,7 @@ class Node {
 		Node *in = nullptr;
 		std::vector<Node*> out;
 		Box *box;
-		Box *vidbox;
+		Box *monbox;
 		Node *align = nullptr;
 		int alignpos;
 		int aligned = 0;
@@ -112,9 +112,9 @@ class NodesMain {
 class VideoNode: public Node {
 	public:
 		Layer *layer = nullptr;
+		Box *vidbox;
 		void upeffboxes();
-		VideoNode() {}
-		VideoNode(const VideoNode &node);
+		VideoNode();
 };
 
 class MixNode: public Node {

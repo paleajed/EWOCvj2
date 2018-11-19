@@ -61,10 +61,11 @@ class Layer {
 		bool queueing = false;
 		int queuescroll = 0;
 		float scrollcol[4] = {0.5f, 0.5f, 0.5f, 0.0f};
-		int numefflines = 0;
+		Button *mutebut;
+		Button *solobut;
+		int numefflines[2] = {0,0};
 		int effscroll[2] = {0,0};
-		std::vector<Effect*> effects;
-		std::vector<Effect*> streameffects;
+		std::vector<Effect*> effects[2];
 		Effect *add_effect(EFFECT_TYPE type, int pos);
 		Effect *replace_effect(EFFECT_TYPE type, int pos);
 		void delete_effect(int pos);
@@ -78,8 +79,6 @@ class Layer {
 		Layer(const Layer &lay);
 		~Layer();
 		
-		bool mute = false;
-		bool solo = false;
 		float frame = 0;
 		int prevframe = -1;
 		int numf = 0;
@@ -202,11 +201,22 @@ class Layer {
 		void decode_frame();
 };
 
+class Scene {
+	public:
+		bool deck;
+		Box* box;
+		Button* button;
+		std::vector<Layer*> nbframes;
+		std::vector<Layer*> tempnbframes;
+		int scrollpos = 0;
+};
+
 class Mixer {
 	private:
 		void do_deletelay(Layer *testlay, std::vector<Layer*> &layers, bool add);
 		void set_values(Layer *clay, Layer *lay);
 		void loopstation_copy(bool comp);
+		void clonesets_copy(bool comp);
 		void event_write(std::ostream &wfile, Param *par);
 		void event_read(std::istream &rfile, Param *par, Layer *lay);
 	public:
@@ -214,6 +224,7 @@ class Mixer {
 		std::vector<Layer*> layersBcomp;
 		std::vector<Layer*> layersA;
 		std::vector<Layer*> layersB;
+		std::vector<Scene*> scenes[2];
 		Layer *currlay = nullptr;
 		Layer *add_layer(std::vector<Layer*> &layers, int pos);
 		void delete_layer(std::vector<Layer*> &layers, Layer *lay, bool add);
@@ -246,11 +257,6 @@ class Mixer {
 		void *rgbdata = nullptr;
 		GLuint ioBuf;
 		
-		std::vector<Box*> numboxesA;
-		std::vector<Box*> numboxesB;
-		std::vector<std::vector<Layer*>> nbframesA;
-		std::vector<std::vector<Layer*>> nbframesB;
-		std::vector<std::vector<Layer*>> tempnbframes;
 		Box *modebox;
 		int mode = 0;
 		bool staged = true;
@@ -260,9 +266,8 @@ class Mixer {
 		Param *crossfadecomp;
 		int numaudiochannels = 0;
 		
-		int page[2] = {0, 0};
+		int currscene[2] = {0, 0};
 		bool deck = 0;
-		int scrollpos[2] = {0, 0};
 		int scrollon = 0;
 		int scrollmx;
 		float scrolltime = 0.0f;

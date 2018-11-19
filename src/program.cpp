@@ -43,21 +43,22 @@ Program::Program() {
 	
 	this->numh = this->numh * glob->w / glob->h;
 	
-	for (int i = 0; i < 6; i++) {
-		for (int j = 0; j < 24; j++) {
-			Box *box = new Box;
-			this->elemboxes.push_back(box);
-			box->vtxcoords->x1 = -0.95f + i * 0.12f + (1.2f * (j > 11));
-			box->vtxcoords->y1 = 0.95f - ((j % 12) + 1) * 0.15f;
-			box->vtxcoords->w = 0.1f;
-			box->vtxcoords->h = 0.1f;
-			box->upvtxtoscr();
-			box->lcolor[0] = 0.4f;
-			box->lcolor[1] = 0.4f;
-			box->lcolor[2] = 0.4f;
-			box->lcolor[3] = 1.0f;
-		}
-	}
+	this->scrollboxes[0] = new Box;
+	this->scrollboxes[0]->vtxcoords->x1 = -1.0f + this->numw;
+	this->scrollboxes[0]->vtxcoords->y1 = 1.0f - this->layw - 0.05f;
+	this->scrollboxes[0]->vtxcoords->w = this->layw * 3.0f;
+	this->scrollboxes[0]->vtxcoords->h = 0.05f;
+	this->scrollboxes[0]->upvtxtoscr();
+	this->scrollboxes[0]->tooltiptitle = "Deck A Layer stack scroll bar ";
+	this->scrollboxes[0]->tooltip = "Scroll bar for layer stack.  Divided in total number of layers parts for deck A. Lightgrey part is the visible layer monitors part.  Leftdragging the lightgrey part allows scrolling.  So does leftclicking the darkgrey parts. ";
+	this->scrollboxes[1] = new Box;
+	this->scrollboxes[1]->vtxcoords->x1 = this->numw;
+	this->scrollboxes[1]->vtxcoords->y1 = 1.0f - this->layw - 0.05f;
+	this->scrollboxes[1]->vtxcoords->w = this->layw * 3.0f;
+	this->scrollboxes[1]->vtxcoords->h = 0.05f;
+	this->scrollboxes[1]->upvtxtoscr();
+	this->scrollboxes[1]->tooltiptitle = "Deck b Layer stack scroll bar ";
+	this->scrollboxes[1]->tooltip = "Scroll bar for layer stack.  Divided in total number of layers parts for deck B. Lightgrey part is the visible layer monitors part.  Leftdragging the lightgrey part allows scrolling.  So does leftclicking the darkgrey parts. ";
 	
 	this->cwbox = new Box;
 
@@ -70,6 +71,8 @@ Program::Program() {
 	this->toscreen->box->vtxcoords->w = 0.3 / 2.0;
 	this->toscreen->box->vtxcoords->h = 0.3 / 3.0;
 	this->toscreen->box->upvtxtoscr();
+	this->toscreen->box->tooltiptitle = "Send preview streams to output ";
+	this->toscreen->box->tooltip = "Leftclick sends/copies the streams being previewed to the output streams ";
 	
 	this->backtopre = new Button(false);
 	this->buttons.push_back(this->backtopre);
@@ -80,6 +83,8 @@ Program::Program() {
 	this->backtopre->box->vtxcoords->w = 0.15f;
 	this->backtopre->box->vtxcoords->h = 0.1f;
 	this->backtopre->box->upvtxtoscr();
+	this->backtopre->box->tooltiptitle = "Send output streams to preview ";
+	this->backtopre->box->tooltip = "Leftclick sends/copies the streams being output back into the preview streams ";
 	
 	this->modusbut = new Button(false);
 	this->buttons.push_back(this->modusbut);
@@ -90,6 +95,8 @@ Program::Program() {
 	this->modusbut->box->vtxcoords->w = 0.3 / 2.0;
 	this->modusbut->box->vtxcoords->h = 0.3 / 3.0;
 	this->modusbut->box->upvtxtoscr();
+	this->modusbut->box->tooltiptitle = "LIVE/PREVIEW modus switch ";
+	this->modusbut->box->tooltip = "Leftclicking toggles between preview modus (changes are previewed, then sent to/from output) and live modus (changes appear in output immediately) ";
 	this->modusbut->tcol[0] = 0.0f;
 	this->modusbut->tcol[1] = 0.0f;
 	this->modusbut->tcol[2] = 0.0f;
@@ -107,6 +114,8 @@ Program::Program() {
 	this->deckspeed[0]->box->vtxcoords->w = 0.3 / 2.0;
 	this->deckspeed[0]->box->vtxcoords->h = 0.3 / 3.0;
 	this->deckspeed[0]->box->upvtxtoscr();
+	this->deckspeed[0]->box->tooltiptitle = "Global deck A speed setting ";
+	this->deckspeed[0]->box->tooltip = "Change global deck A speed factor. Leftdrag changes value. Doubleclick allows numeric entry. ";
 	
 	this->deckspeed[1] = new Param;
 	this->deckspeed[1]->name = "Speed B"; 
@@ -120,14 +129,45 @@ Program::Program() {
 	this->deckspeed[1]->box->vtxcoords->w = 0.3 / 2.0;
 	this->deckspeed[1]->box->vtxcoords->h = 0.3 / 3.0;
 	this->deckspeed[1]->box->upvtxtoscr();
+	this->deckspeed[1]->box->tooltiptitle = "Global deck B speed setting ";
+	this->deckspeed[1]->box->tooltip = "Change global deck B speed factor. Leftdrag changes value. Doubleclick allows numeric entry. ";
 	
-	this->effscrollupA = new Box;
-	this->effscrollupA->vtxcoords->x1 = -1.0;
-	this->effscrollupA->vtxcoords->y1 = 1.0 - tf(this->layw) - tf(0.20f);
-	this->effscrollupA->vtxcoords->w = tf(0.025f);
-	this->effscrollupA->vtxcoords->h = tf(0.05f);
-	this->effscrollupA->upvtxtoscr();
-	
+	this->outputmonitor = new Box;
+	this->outputmonitor->vtxcoords->x1 = -0.15f;
+	this->outputmonitor->vtxcoords->y1 = -0.4f + tf(0.05f);
+	this->outputmonitor->vtxcoords->w = 0.3f;
+	this->outputmonitor->vtxcoords->h = 0.3f;
+	this->outputmonitor->upvtxtoscr();
+	this->outputmonitor->tooltiptitle = "Output monitor ";
+	this->outputmonitor->tooltip = "Shows mix of output stream when in preview modus.  Rightclick menu allows sending monitor image fullscreen to another display device. ";
+
+	this->mainmonitor = new Box;
+	this->mainmonitor->vtxcoords->x1 = -0.3f;
+	this->mainmonitor->vtxcoords->y1 = -1.0f;
+	this->mainmonitor->vtxcoords->w = 0.6f;
+	this->mainmonitor->vtxcoords->h = 0.6f;
+	this->mainmonitor->upvtxtoscr();
+	this->mainmonitor->tooltiptitle = "A+B monitor ";
+	this->mainmonitor->tooltip = "Shows crossfaded or wiped A+B mix of preview stream (preview modus) or output stream (live modus).  Rightclick menu allows setting wipes and sending monitor image fullscreen to another display device. Leftclick/drag on image affects some wipe modes. ";
+
+	this->deckmonitor[0] = new Box;
+	this->deckmonitor[0]->vtxcoords->x1 = -0.6f;
+	this->deckmonitor[0]->vtxcoords->y1 = -1.0f;
+	this->deckmonitor[0]->vtxcoords->w = 0.3f;
+	this->deckmonitor[0]->vtxcoords->h = 0.3f;
+	this->deckmonitor[0]->upvtxtoscr();
+	this->deckmonitor[0]->tooltiptitle = "Deck A monitor ";
+	this->deckmonitor[0]->tooltip = "Shows deck A stream.  Rightclick menu allows sending monitor image fullscreen to another display device. Leftclick/drag on image affects some local layer wipe modes. ";
+
+	this->deckmonitor[1] = new Box;
+	this->deckmonitor[1]->vtxcoords->x1 = 0.3f;
+	this->deckmonitor[1]->vtxcoords->y1 = -1.0f;
+	this->deckmonitor[1]->vtxcoords->w = 0.3f;
+	this->deckmonitor[1]->vtxcoords->h = 0.3f;
+	this->deckmonitor[1]->upvtxtoscr();
+	this->deckmonitor[1]->tooltiptitle = "Deck B monitor ";
+	this->deckmonitor[1]->tooltip = "Shows deck B stream.  Rightclick menu allows sending monitor image fullscreen to another display device. Leftclick/drag on image affects some local layer wipe modes. ";
+
 	this->effcat[0] = new Button(false);
 	this->buttons.push_back(this->effcat[0]);
 	this->effcat[0]->name[0] = "Layer effects";
@@ -137,6 +177,8 @@ Program::Program() {
 	this->effcat[0]->box->vtxcoords->w = tf(0.025f);
 	this->effcat[0]->box->vtxcoords->h = tf(0.2f);
 	this->effcat[0]->box->upvtxtoscr();
+	this->effcat[0]->box->tooltiptitle = "Layer/stream effects toggle ";
+	this->effcat[0]->box->tooltip = "Leftclick toggles between layer effects queue (these effects only affect the current layer) and stream effects queue (effects affect mix of all layers upto and including the current one). ";
 	
 	this->effcat[1] = new Button(false);
 	this->buttons.push_back(this->effcat[1]);
@@ -148,6 +190,17 @@ Program::Program() {
 	this->effcat[1]->box->vtxcoords->w = tf(0.025f);
 	this->effcat[1]->box->vtxcoords->h = tf(0.2f);
 	this->effcat[1]->box->upvtxtoscr();
+	this->effcat[1]->box->tooltiptitle = "Layer/stream effects toggle ";
+	this->effcat[1]->box->tooltip = "Leftclick toggles between layer effects queue (these effects only affect the current layer) and stream effects queue (effects affect mix of all layers upto and including the current one). ";
+	
+	this->effscrollupA = new Box;
+	this->effscrollupA->vtxcoords->x1 = -1.0;
+	this->effscrollupA->vtxcoords->y1 = 1.0 - tf(this->layw) - tf(0.20f);
+	this->effscrollupA->vtxcoords->w = tf(0.025f);
+	this->effscrollupA->vtxcoords->h = tf(0.05f);
+	this->effscrollupA->upvtxtoscr();
+	this->effscrollupA->tooltiptitle = "Scroll effects queue up ";
+	this->effscrollupA->tooltip = "Leftclicking scrolls the effect queue up ";
 	
 	this->effscrollupB = new Box;
 	this->effscrollupB->vtxcoords->x1 = 1.0 - tf(0.05f);
@@ -155,6 +208,8 @@ Program::Program() {
 	this->effscrollupB->vtxcoords->w = tf(0.025f);
 	this->effscrollupB->vtxcoords->h = tf(0.05f);     
 	this->effscrollupB->upvtxtoscr();
+	this->effscrollupB->tooltiptitle = "Scroll effects queue up ";
+	this->effscrollupB->tooltip = "Leftclicking scrolls the effect queue up ";
 	
 	this->effscrolldownA = new Box;
 	this->effscrolldownA->vtxcoords->x1 = -1.0;
@@ -162,6 +217,8 @@ Program::Program() {
 	this->effscrolldownA->vtxcoords->w = tf(0.025f);
 	this->effscrolldownA->vtxcoords->h = tf(0.05f);
 	this->effscrolldownA->upvtxtoscr();
+	this->effscrolldownA->tooltiptitle = "Scroll effects queue down ";
+	this->effscrolldownA->tooltip = "Leftclicking scrolls the effect queue down ";
 	
 	this->effscrolldownB = new Box;
 	this->effscrolldownB->vtxcoords->x1 = 1.0 - tf(0.05f);
@@ -169,54 +226,89 @@ Program::Program() {
 	this->effscrolldownB->vtxcoords->w = tf(0.025f);
 	this->effscrolldownB->vtxcoords->h = tf(0.05f);
 	this->effscrolldownB->upvtxtoscr();
+	this->effscrolldownB->tooltiptitle = "Scroll effects queue down ";
+	this->effscrolldownB->tooltip = "Leftclicking scrolls the effect queue down ";
+	
+	this->addeffectbox = new Box;
+	this->addeffectbox->vtxcoords->w = tf(this->layw);
+	this->addeffectbox->vtxcoords->h = tf(0.038f);
+	this->addeffectbox->tooltiptitle = "Add effect ";
+	this->addeffectbox->tooltip = "Add effect to end of layer effect queue ";
 	
 	this->tmplay = new Box;
 	this->tmplay->vtxcoords->x1 = 0.075;
 	this->tmplay->vtxcoords->y1 = -0.9f;
 	this->tmplay->vtxcoords->w = 0.15f;
 	this->tmplay->vtxcoords->h = 0.26f;
+	this->tmplay->tooltiptitle = "Set MIDI for play button ";
+	this->tmplay->tooltip = "Leftclick to start waiting for a MIDI command that will trigger normal video play for this preset. ";
 	this->tmbackw = new Box;
 	this->tmbackw->vtxcoords->x1 = -0.225f;
 	this->tmbackw->vtxcoords->y1 = -0.9f;
 	this->tmbackw->vtxcoords->w = 0.15f;
 	this->tmbackw->vtxcoords->h = 0.26f;
+	this->tmbackw->tooltiptitle = "Set MIDI for reverse play button ";
+	this->tmbackw->tooltip = "Leftclick to start waiting for a MIDI command that will trigger reverse video play for this preset. ";
 	this->tmbounce = new Box;
 	this->tmbounce->vtxcoords->x1 = -0.075f;
 	this->tmbounce->vtxcoords->y1 = -0.9f;
 	this->tmbounce->vtxcoords->w = 0.15f;
 	this->tmbounce->vtxcoords->h = 0.26f;
+	this->tmbounce->tooltiptitle = "Set MIDI for bounce play button ";
+	this->tmbounce->tooltip = "Leftclick to start waiting for a MIDI command that will trigger bounce video play for this preset. ";
 	this->tmfrforw = new Box;
 	this->tmfrforw->vtxcoords->x1 = 0.225f;
 	this->tmfrforw->vtxcoords->y1 = -0.9f;
 	this->tmfrforw->vtxcoords->w = 0.15;
 	this->tmfrforw->vtxcoords->h = 0.26f;
+	this->tmfrforw->tooltiptitle = "Set MIDI for frame forward button ";
+	this->tmfrforw->tooltip = "Leftclick to start waiting for a MIDI command that will trigger frame forward for this preset. ";
 	this->tmfrbackw = new Box;
 	this->tmfrbackw->vtxcoords->x1 = -0.375f;
 	this->tmfrbackw->vtxcoords->y1 = -0.9f;
 	this->tmfrbackw->vtxcoords->w = 0.15;
 	this->tmfrbackw->vtxcoords->h = 0.26f;
+	this->tmfrbackw->tooltiptitle = "Set MIDI for frame backward button ";
+	this->tmfrbackw->tooltip = "Leftclick to start waiting for a MIDI command that will trigger frame backward for this preset. ";
 	this->tmspeed = new Box;
 	this->tmspeed->vtxcoords->x1 = -0.8f;
 	this->tmspeed->vtxcoords->y1 = -0.5f;
 	this->tmspeed->vtxcoords->w = 0.2f;
 	this->tmspeed->vtxcoords->h = 1.0f;
+	this->tmspeed->tooltiptitle = "Set MIDI for setting video play speed ";
+	this->tmspeed->tooltip = "Leftclick to start waiting for a MIDI command that will set the play speed factor for this preset. ";
 	this->tmspeedzero = new Box;
 	this->tmspeedzero->vtxcoords->x1 = -0.775f;
 	this->tmspeedzero->vtxcoords->y1 = -0.1f;
 	this->tmspeedzero->vtxcoords->w = 0.15f;
 	this->tmspeedzero->vtxcoords->h = 0.2f;
+	this->tmspeedzero->tooltiptitle = "Set MIDI for setting video play speed to one";
+	this->tmspeedzero->tooltip = "Leftclick to start waiting for a MIDI command that will set the play speed factor back to one for this preset. ";
 	this->tmopacity = new Box;
 	this->tmopacity->vtxcoords->x1 = 0.6f;
 	this->tmopacity->vtxcoords->y1 = -0.5f;
 	this->tmopacity->vtxcoords->w = 0.2f;
 	this->tmopacity->vtxcoords->h = 1.0f;
+	this->tmopacity->tooltiptitle = "Set MIDI for setting video opacity ";
+	this->tmopacity->tooltip = "Leftclick to start waiting for a MIDI command that will set the opacity for this preset. ";
 	this->tmfreeze = new Box;
 	this->tmfreeze->vtxcoords->x1 = -0.1f;
 	this->tmfreeze->vtxcoords->y1 = 0.1f;
 	this->tmfreeze->vtxcoords->w = 0.2f;
 	this->tmfreeze->vtxcoords->h = 0.2f;
+	this->tmfreeze->tooltiptitle = "Set MIDI for scratch wheel freeze ";
+	this->tmfreeze->tooltip = "Leftclick to start waiting for a MIDI command that will trigger scratch wheel freeze for this preset. ";
+	this->tmscratch = new Box;
+	this->tmscratch->vtxcoords->x1 = -1.0f;
+	this->tmscratch->vtxcoords->y1 = -1.0f;
+	this->tmscratch->vtxcoords->w = 2.0f;
+	this->tmscratch->vtxcoords->h = 2.0f;
+	this->tmscratch->tooltiptitle = "Set MIDI for scratch wheel ";
+	this->tmscratch->tooltip = "Leftclick to start waiting for a MIDI command that will trigger the scratch wheel  for this preset. ";
 	
 	this->wormhole = new Button(false);
+	this->wormhole->box->tooltiptitle = "Screen switching wormhole ";
+	this->wormhole->box->tooltip = "Connects mixing screen and media bins screen.  Leftclick to switch screen.  Drag content inside wormhole to travel to the other screen. ";
 	this->buttons.push_back(this->wormhole);
 }
 

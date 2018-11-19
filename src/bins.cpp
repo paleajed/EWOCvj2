@@ -44,6 +44,103 @@ extern "C" {
 #include "loopstation.h"
 #include "bins.h"
 
+
+Bin::Bin(int pos) {
+	this->box = new Box;
+	this->box->vtxcoords->x1 = -0.15f;
+	this->box->vtxcoords->y1 = (pos + 1) * -0.05f;
+	this->box->vtxcoords->w = 0.3f;
+	this->box->vtxcoords->h = 0.05f;
+	this->box->upvtxtoscr();
+	this->box->tooltiptitle = "List of media bins ";
+	this->box->tooltip = "Media bins listed by name. Leftclick to make bin current. Leftdrag to move bin inside bin list. Rightclick to access bin renaming and bin deleting. ";
+}
+
+Bin::~Bin() {
+	delete this->box;
+}
+
+BinElement::BinElement() {
+	glGenTextures(1, &this->tex);
+	glBindTexture(GL_TEXTURE_2D, this->tex);
+	glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR);
+	glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
+}
+
+BinElement::~BinElement() {
+	glDeleteTextures(1, &this->tex);
+	glDeleteTextures(1, &this->oldtex);
+}
+
+BinDeck::BinDeck() {
+	this->box = new Box;
+	this->box->vtxcoords->w = 0.36f;
+	this->box->upvtxtoscr();
+	this->box->lcolor[0] = 0.5f;
+	this->box->lcolor[1] = 0.5f;
+	this->box->lcolor[2] = 1.0f;
+	this->box->lcolor[3] = 1.0f;
+}
+
+BinDeck::~BinDeck() {
+	delete this->box;
+}
+
+BinMix::BinMix() {
+	this->box = new Box;
+	this->box->vtxcoords->w = 0.72f;
+	this->box->upvtxtoscr();
+	this->box->lcolor[0] = 0.5f;
+	this->box->lcolor[1] = 1.0f;
+	this->box->lcolor[2] = 0.5f;
+	this->box->lcolor[3] = 1.0f;
+}
+
+BinMix::~BinMix() {
+	delete this->box;
+}
+
+BinsMain::BinsMain() {
+	for (int i = 0; i < 6; i++) {
+		for (int j = 0; j < 24; j++) {
+			Box *box = new Box;
+			this->elemboxes.push_back(box);
+			box->vtxcoords->x1 = -0.95f + i * 0.12f + (1.2f * (j > 11));
+			box->vtxcoords->y1 = 0.95f - ((j % 12) + 1) * 0.15f;
+			box->vtxcoords->w = 0.1f;
+			box->vtxcoords->h = 0.1f;
+			box->upvtxtoscr();
+			box->lcolor[0] = 0.4f;
+			box->lcolor[1] = 0.4f;
+			box->lcolor[2] = 0.4f;
+			box->lcolor[3] = 1.0f;
+			box->tooltiptitle = "Media bin element ";
+			box->tooltip = "Shows thumbnail of media bin element, either being a video file (grey border) or a layer file (orange border) or belonging to a deck file (purple border) or mix file (green border).  Hovering over this element shows video resolution and video compression method (CPU or HAP).  Mousewheel skips through the element contents (previewed in larger monitor topmiddle).  Leftdrag allows dragging to mix screen via wormhole.  Leftclick allows moving inside the media bin. Rightclickmenu allows among other things, HAP encoding. ";
+		}
+	}
+	
+	this->newbinbox = new Box;
+	this->newbinbox->vtxcoords->x1 = -0.15f;
+	this->newbinbox->vtxcoords->w = 0.3f;
+	this->newbinbox->vtxcoords->h = 0.05f;
+	this->newbinbox->upvtxtoscr();
+	this->newbinbox->tooltiptitle = "Add new bin ";
+	this->newbinbox->tooltip = "Leftclick to add a new bin and make it current. ";
+	
+	this->inputbinel = new BinElement;
+	
+	this->currbin = new Bin(-1);
+	
+	this->hapmodebox = new Box;
+	this->hapmodebox->vtxcoords->x1 = -0.05f;
+	this->hapmodebox->vtxcoords->y1 = 0.65f;
+	this->hapmodebox->vtxcoords->w = 0.1f;
+	this->hapmodebox->vtxcoords->h = 0.075f;
+	this->hapmodebox->upvtxtoscr();
+	this->hapmodebox->tooltiptitle = "HAP encode modus ";
+	this->hapmodebox->tooltip = "Toggles between hap encoding for during live situations (only using one core, not to slow down the realtime video mix, and hap encoding at full power (using 'number of system cores + 1' threads). ";
+}
+
 void BinsMain::handle() {
 	float white[] = {1.0f, 1.0f, 1.0f, 1.0f};
 	float black[] = {0.0f, 0.0f, 0.0f, 1.0f};
@@ -56,7 +153,7 @@ void BinsMain::handle() {
 	if (mainprogram->menuactivation) mainprogram->menuset = 0;
 	for (int i = 0; i < 6; i++) {
 		for (int j = 0; j < 24; j++) {
-			Box *box = mainprogram->elemboxes[i * 24 + j];
+			Box *box = this->elemboxes[i * 24 + j];
 			BinElement *binel = this->currbin->elements[i * 24 + j];
 			if (box->in()) {
 				if (binel->path != "" and mainprogram->menuactivation) {
@@ -103,28 +200,22 @@ void BinsMain::handle() {
 			draw_box(box, binel->tex);
 			if (remove_extension(basename(binel->path)) != "") render_text(basename(binel->path).substr(0, 20), white, box->vtxcoords->x1, box->vtxcoords->y1 - 0.02f, 0.00045f, 0.00075f);
 		}
-		Box *box = mainprogram->elemboxes[i * 24];
+		Box *box = this->elemboxes[i * 24];
 		draw_box(nullptr, darkgrey, box->vtxcoords->x1 + box->vtxcoords->w, -1.0f, 0.12f, 2.0f, -1);
-		box = mainprogram->elemboxes[i * 24 + 12];
+		box = this->elemboxes[i * 24 + 12];
 		draw_box(nullptr, darkgrey, box->vtxcoords->x1 + box->vtxcoords->w, -1.0f, 0.12f, 2.0f, -1);
 	}
 	
 	// set threadmode for hap encoding
-	Box thbox;
-	thbox.vtxcoords->x1 = -0.05f;
-	thbox.vtxcoords->y1 = 0.65f;
-	thbox.vtxcoords->w = 0.1f;
-	thbox.vtxcoords->h = 0.075f;
-	thbox.upvtxtoscr();
 	render_text("HAP Encoding Mode", white, -0.125f, 0.8f, 0.00075f, 0.0012f);
-	draw_box(white, black, &thbox, -1);
+	draw_box(white, black, binsmain->hapmodebox, -1);
 	draw_box(white, lightblue, -0.049f + 0.048f * mainprogram->threadmode, 0.6575f, 0.048f, 0.06f, -1);
 	render_text("Live mode", white, -0.15f, 0.6f, 0.00075f, 0.0012f);
 	render_text("Max mode", white, 0.01f, 0.6f, 0.00075f, 0.0012f);
 	render_text("1 thread", white, -0.15f, 0.55f, 0.00075f, 0.0012f);
 	mainprogram->maxthreads = mainprogram->numcores * mainprogram->threadmode + 1;
 	render_text(std::to_string(mainprogram->numcores + 1) + " threads", white, 0.01f, 0.55f, 0.00075f, 0.0012f);
-	if (thbox.in()) {
+	if (binsmain->hapmodebox->in()) {
 		if (mainprogram->leftmouse) {
 			mainprogram->threadmode = !mainprogram->threadmode;
 			mainprogram->hapnow = true;
@@ -652,7 +743,7 @@ void BinsMain::handle() {
 	else if (!mainprogram->menuondisplay) {
 		for (int j = 0; j < 24; j++) {
 			for (int i = 0; i < 6; i++) {
-				Box *box = mainprogram->elemboxes[i * 24 + j];
+				Box *box = this->elemboxes[i * 24 + j];
 				box->upvtxtoscr();
 				BinElement *binel = this->currbin->elements[i * 24 + j];
 				if (binel->encwaiting) {
@@ -688,15 +779,16 @@ void BinsMain::handle() {
 								mainprogram->prelay->node = mainprogram->nodesmain->currpage->add_videonode(2);
 								mainprogram->prelay->node->layer = mainprogram->prelay;
 								mainprogram->prelay->lasteffnode[0] = mainprogram->prelay->node;
+								mainprogram->prelay->lasteffnode[1] = mainprogram->prelay->node;
 								mainmix->open_layerfile(binel->path, mainprogram->prelay, true, 0);
 								mainprogram->prelay->node->calc = true;
 								mainprogram->prelay->node->walked = false;
 								mainprogram->prelay->playbut->value = false;
 								mainprogram->prelay->revbut->value = false;
 								mainprogram->prelay->bouncebut->value = false;
-								for (int k = 0; k < mainprogram->prelay->effects.size(); k++) {
-									mainprogram->prelay->effects[k]->node->calc = true;
-									mainprogram->prelay->effects[k]->node->walked = false;
+								for (int k = 0; k < mainprogram->prelay->effects[0].size(); k++) {
+									mainprogram->prelay->effects[0][k]->node->calc = true;
+									mainprogram->prelay->effects[0][k]->node->walked = false;
 								}
 								mainprogram->prelay->frame = 0.0f;
 								mainprogram->prelay->prevframe = -1;
@@ -740,8 +832,8 @@ void BinsMain::handle() {
 								glDrawBuffer(GL_COLOR_ATTACHMENT0);
 								mainprogram->prelay->fbotex = copy_tex(mainprogram->prelay->texture);
 								onestepfrom(0, mainprogram->prelay->node, nullptr, -1, -1);
-								if (mainprogram->prelay->effects.size()) {
-									draw_box(red, black, -0.2f, 0.9f, 0.4f, -0.4f, mainprogram->prelay->effects[mainprogram->prelay->effects.size() - 1]->fbotex);
+								if (mainprogram->prelay->effects[0].size()) {
+									draw_box(red, black, -0.2f, 0.9f, 0.4f, -0.4f, mainprogram->prelay->effects[0][mainprogram->prelay->effects[0].size() - 1]->fbotex);
 								}
 								else {
 									draw_box(red, black, -0.2f, 0.9f, 0.4f, -0.4f, mainprogram->prelay->fbotex);
@@ -761,9 +853,9 @@ void BinsMain::handle() {
 								//mainprogram->prelay->prevframe = -1;
 								mainprogram->prelay->node->calc = true;
 								mainprogram->prelay->node->walked = false;
-								for (int k = 0; k < mainprogram->prelay->effects.size(); k++) {
-									mainprogram->prelay->effects[k]->node->calc = true;
-									mainprogram->prelay->effects[k]->node->walked = false;
+								for (int k = 0; k < mainprogram->prelay->effects[0].size(); k++) {
+									mainprogram->prelay->effects[0][k]->node->calc = true;
+									mainprogram->prelay->effects[0][k]->node->walked = false;
 								}
 								mainprogram->prelay->ready = true;
 								mainprogram->prelay->startdecode.notify_one();
@@ -784,16 +876,16 @@ void BinsMain::handle() {
 									glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA, mainprogram->prelay->decresult->width, mainprogram->prelay->decresult->height, 0, GL_RGBA, GL_UNSIGNED_BYTE, mainprogram->prelay->decresult->data);
 								}
 								onestepfrom(0, mainprogram->prelay->node, nullptr, -1, -1);
-								if (mainprogram->prelay->effects.size()) {
-									draw_box(red, black, -0.2f, 0.9f, 0.4f, -0.4f, mainprogram->prelay->effects[mainprogram->prelay->effects.size() - 1]->fbotex);
+								if (mainprogram->prelay->effects[0].size()) {
+									draw_box(red, black, -0.2f, 0.9f, 0.4f, -0.4f, mainprogram->prelay->effects[0][mainprogram->prelay->effects[0].size() - 1]->fbotex);
 								}
 								else {
 									draw_box(red, black, -0.2f, 0.5f, 0.4f, 0.4f, mainprogram->prelay->fbotex);
 								}
 							}
 							else {
-								if (mainprogram->prelay->effects.size()) {
-									draw_box(red, black, -0.2f, 0.9f, 0.4f, -0.4f, mainprogram->prelay->effects[mainprogram->prelay->effects.size() - 1]->fbotex);
+								if (mainprogram->prelay->effects[0].size()) {
+									draw_box(red, black, -0.2f, 0.9f, 0.4f, -0.4f, mainprogram->prelay->effects[0][mainprogram->prelay->effects[0].size() - 1]->fbotex);
 								}
 								else {
 									draw_box(red, black, -0.2f, 0.5f, 0.4f, 0.4f, mainprogram->prelay->fbotex);
