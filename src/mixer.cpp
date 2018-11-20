@@ -1,5 +1,6 @@
 #include <boost/filesystem.hpp>
 
+#include "IL/il.h"
 extern "C" {
 #include "libavformat/avformat.h"
 #include "libavcodec/avcodec.h"
@@ -1633,7 +1634,7 @@ Effect* Layer::add_effect(EFFECT_TYPE type, int pos) {
 	else {
 		eff = do_add_effect(this, type, pos, true);
 	}
-	this->currcliptype = ELEM_LAYER;
+	if (this->type == ELEM_FILE) this->type = ELEM_LAYER;
 	return eff;
 }		
 
@@ -1720,7 +1721,7 @@ void do_delete_effect(Layer *lay, int pos) {
 
 void Layer::delete_effect(int pos) {
 	do_delete_effect(this, pos);
-	this->currcliptype = ELEM_LAYER;
+	this->type = ELEM_LAYER;
 }		
 
 
@@ -2097,6 +2098,41 @@ Layer::~Layer() {
 	glDeleteVertexArrays(1, &(this->vao));
 }
 
+void Layer::open_image(const std::string &path) {
+	ILboolean ret = ilLoadImage(path.c_str());
+	if (ret == IL_FALSE) return;
+	this->filename = path;
+	this->dataformat = -1;
+	float x = ilGetInteger(IL_IMAGE_WIDTH);
+	float y = ilGetInteger(IL_IMAGE_HEIGHT);
+	int bpp = ilGetInteger(IL_IMAGE_BPP);
+	if (x / y > glob->w / glob->h) {
+		this->iw = x;
+		this->ih = y * x * glob->h / y / glob->w;
+		this->xs = 0;
+		this->ys = (this->ih - y) / 2.0f;
+	}
+	else {
+		this->iw = x * glob->w * y / glob->h / x;
+		this->ih = y;
+		this->xs = (this->iw - x) / 2.0f;
+		this->ys = 0;
+	}
+	std::vector<int> emptydata(this->iw * this->ih);
+	std::fill(emptydata.begin(), emptydata.end(), 0x00000000);
+	glBindTexture(GL_TEXTURE_2D, this->texture);
+	glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA, this->iw, this->ih, 0, GL_RGBA, GL_UNSIGNED_BYTE, &emptydata[0]);
+	this->type = ELEM_IMAGE;
+	if (bpp == 3) {
+		glTexSubImage2D(GL_TEXTURE_2D, 0, this->xs, this->ys, x, y, GL_RGB, GL_UNSIGNED_BYTE, ilGetData());
+	}
+	else if (bpp == 4) {
+		glTexSubImage2D(GL_TEXTURE_2D, 0, this->xs, this->ys, x, y, GL_RGBA, GL_UNSIGNED_BYTE, ilGetData());
+	}
+	this->decresult->width = x;
+	this->decresult->height = y;
+}
+
 void Layer::set_clones() {
 	if (this->clonesetnr != -1) {
 		std::unordered_set<Layer*>::iterator it;
@@ -2158,7 +2194,7 @@ void Mixer::set_values(Layer *clay, Layer *lay) {
 	clay->chtol->value = lay->chtol->value;
 	clay->chdir->value = lay->chdir->value;
 	clay->chinv->value = lay->chinv->value;
-	if (lay->live) {
+	if (lay->type == ELEM_LIVE) {
 		set_live_base(clay, lay->filename);
 	}
 	else if (lay->filename != "") open_video(lay->frame, clay, lay->filename, false);
@@ -2673,8 +2709,8 @@ std::vector<std::string> Mixer::write_layer(Layer *lay, std::ostream& wfile, boo
 	wfile << "POS\n";
 	wfile << std::to_string(lay->pos);
 	wfile << "\n";
-	wfile << "LIVE\n";
-	wfile << std::to_string(lay->live);
+	wfile << "TYPE\n";
+	wfile << std::to_string(lay->type);
 	wfile << "\n";
 	wfile << "FILENAME\n";
 	wfile << lay->filename;
@@ -2691,7 +2727,7 @@ std::vector<std::string> Mixer::write_layer(Layer *lay, std::ostream& wfile, boo
 	wfile << "CLONESETNR\n";
 	wfile << std::to_string(lay->clonesetnr);
 	wfile << "\n";
-	if (!lay->live) {
+	if (lay->type != ELEM_LIVE or lay->type == ELEM_IMAGE) {
 		wfile << "SPEEDVAL\n";
 		wfile << std::to_string(lay->speed->value);
 		wfile << "\n";
@@ -2735,7 +2771,7 @@ std::vector<std::string> Mixer::write_layer(Layer *lay, std::ostream& wfile, boo
 	wfile << "CHINVVAL\n";
 	wfile << std::to_string(lay->chinv->value);
 	wfile << "\n";
-	if (!lay->live) {
+	if (lay->type != ELEM_LIVE or lay->type == ELEM_IMAGE) {
 		wfile << "MILLIF\n";
 		wfile << std::to_string(lay->millif);
 		wfile << "\n";
@@ -3592,9 +3628,9 @@ int Mixer::read_layers(std::istream &rfile, const std::string &result, std::vect
 			}
 			lay->deck = deck;
 		}
-		if (istring == "LIVE") {
-			getline(rfile, istring); 
-			lay->live = std::stoi(istring);
+		if (istring == "TYPE") {
+			getline(rfile, istring);
+			lay->type = (ELEM_TYPE)std::stoi(istring);
 		}
 		if (istring == "FILENAME") {
 			getline(rfile, istring);
@@ -3602,7 +3638,7 @@ int Mixer::read_layers(std::istream &rfile, const std::string &result, std::vect
 			if (load) {
 				lay->timeinit = false;
 				if (lay->filename != "") {
-					if (lay->live) {
+					if (lay->type == ELEM_LIVE) {
 						avdevice_register_all();
 						ptrdiff_t pos = std::find(mainprogram->busylist.begin(), mainprogram->busylist.end(), lay->filename) - mainprogram->busylist.begin();
 						if (pos >= mainprogram->busylist.size()) {
@@ -3616,8 +3652,11 @@ int Mixer::read_layers(std::istream &rfile, const std::string &result, std::vect
 							mainprogram->mimiclayers.push_back(lay);
 						}
 					}
-					else {
+					else if (lay->type == ELEM_FILE or lay->type == ELEM_LAYER) {
 						open_video(lay->frame, lay, lay->filename, false);
+					}
+					else if (lay->type == ELEM_IMAGE) {
+						lay->open_image(lay->filename);
 					}
 				}
 				if (type > 0) lay->prevframe = -1;
@@ -3629,7 +3668,12 @@ int Mixer::read_layers(std::istream &rfile, const std::string &result, std::vect
 				if (lay->filename == "") {
 					lay->filename = boost::filesystem::absolute(istring).string();
 					lay->timeinit = false;
-					open_video(lay->frame, lay, lay->filename, false);
+					if (lay->type == ELEM_FILE or lay->type == ELEM_LAYER) {
+						open_video(lay->frame, lay, lay->filename, false);
+					}
+					else if (lay->type == ELEM_IMAGE) {
+						lay->open_image(lay->filename);
+					}
 				}
 			}
 		}	

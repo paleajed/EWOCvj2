@@ -25,15 +25,17 @@ typedef enum
 {
 	ELEM_FILE = 0,
 	ELEM_LAYER = 1,
-	ELEM_DECK = 2,
-	ELEM_MIX = 3,
-	ELEM_LIVE = 4,
+	ELEM_IMAGE = 2,
+	ELEM_DECK = 3,
+	ELEM_MIX = 4,
+	ELEM_LIVE = 5,
 } ELEM_TYPE;
 
 struct frame_result {
 	char *data = nullptr;
 	int height = 0;
 	int width = 0;
+	int bpp = 4;
 	int size = 0;
 	unsigned char compression = 0;
 };
@@ -57,7 +59,7 @@ class Layer {
 		bool clonedeck = -1;
 		int clonepos = -1;
 		std::vector<Clip*> clips;
-		ELEM_TYPE currcliptype = ELEM_FILE;
+		ELEM_TYPE type = ELEM_FILE;
 		bool queueing = false;
 		int queuescroll = 0;
 		float scrollcol[4] = {0.5f, 0.5f, 0.5f, 0.0f};
@@ -72,6 +74,7 @@ class Layer {
 		std::vector<Effect*>& choose_effects();
 		void set_clones();
 		void mute_handle();
+		void open_image(const std::string &path);
 		Layer *next();
 		Layer *prev();
 		Layer();
@@ -79,6 +82,7 @@ class Layer {
 		Layer(const Layer &lay);
 		~Layer();
 		
+		bool initialized = false;
 		float frame = 0;
 		int prevframe = -1;
 		int numf = 0;
@@ -113,6 +117,7 @@ class Layer {
 		int transforming = 0;
 		int transmx;
 		int transmy;
+		int iw, ih, xs, ys;
 		int shiftx = 0;
 		int shifty = 0;
 		float scale = 1.0f;

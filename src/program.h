@@ -34,10 +34,11 @@ typedef enum
 typedef enum
 {
 	EDIT_NONE = 0,
-	EDIT_BINNAME = 1,
-	EDIT_STRING = 2,
-	EDIT_NUMBER = 3,
-	EDIT_PARAM = 4,
+	EDIT_CANCEL = 1,
+	EDIT_BINNAME = 2,
+	EDIT_STRING = 3,
+	EDIT_NUMBER = 4,
+	EDIT_PARAM = 5,
 } EDIT_TYPE;
 
 typedef enum
@@ -66,6 +67,7 @@ class Shelf {
 		bool open_videofile(const std::string &path, int pos);
 		bool open_layer(const std::string &path, int pos);
 		void open_dir();
+		bool open_image(const std::string &path, int pos);
 		Shelf(bool side);
 };
 
@@ -87,8 +89,10 @@ class PrefItem {
 		int value;
 		std::string path;
 		bool renaming = false;
+		bool choosing = false;
 		Box *namebox;
 		Box *valuebox;
+		Box *iconbox;
 		PrefItem(PrefCat *cat, int pos, std::string name, PREF_TYPE type, void *dest);
 };
 
@@ -338,6 +342,7 @@ class Program {
 		int menuset;
 		
 		EDIT_TYPE renaming = EDIT_NONE;
+		std::string choosedir = "";
 		std::string inputtext;
 		std::string backupname;
 		int cursorpos;
@@ -467,6 +472,7 @@ extern bool exists(const std::string &name);
 extern std::string basename(std::string pathname);
 extern std::string remove_extension(std::string filename);
 extern std::string remove_version(std::string filename);
+extern bool isimage(const std::string &path);
 
 extern void onestepfrom(bool stage, Node *node, Node *prevnode, GLuint prevfbotex, GLuint prevfbo);
 

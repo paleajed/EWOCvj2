@@ -388,7 +388,7 @@ void Program::get_multinname(const char* title) {
 		charstr = opaths[i];
 		if (charstr == "|") {
 			this->paths.push_back(currstr);
-			std::string currstr = "";
+			currstr = "";
 			continue;
 		}
 		currstr += charstr;

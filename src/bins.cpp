@@ -114,6 +114,7 @@ BinsMain::BinsMain() {
 			box->lcolor[1] = 0.4f;
 			box->lcolor[2] = 0.4f;
 			box->lcolor[3] = 1.0f;
+			box->acolor[3] = 1.0f;
 			box->tooltiptitle = "Media bin element ";
 			box->tooltip = "Shows thumbnail of media bin element, either being a video file (grey border) or a layer file (orange border) or belonging to a deck file (purple border) or mix file (green border).  Hovering over this element shows video resolution and video compression method (CPU or HAP).  Mousewheel skips through the element contents (previewed in larger monitor topmiddle).  Leftdrag allows dragging to mix screen via wormhole.  Leftclick allows moving inside the media bin. Rightclickmenu allows among other things, HAP encoding. ";
 		}
@@ -197,6 +198,7 @@ void BinsMain::handle() {
 				color[3] = 1.0f;
 			}
 			draw_box(nullptr, color, box->vtxcoords->x1 - 0.01f, box->vtxcoords->y1 - 0.01f, box->vtxcoords->w + 0.02f, box->vtxcoords->h + 0.02f, -1);
+			draw_box(box, -1);  //in case of alpha thumbnail
 			draw_box(box, binel->tex);
 			if (remove_extension(basename(binel->path)) != "") render_text(basename(binel->path).substr(0, 20), white, box->vtxcoords->x1, box->vtxcoords->y1 - 0.02f, 0.00045f, 0.00075f);
 		}
@@ -535,7 +537,7 @@ void BinsMain::handle() {
 								glBindTexture(GL_TEXTURE_2D, mixbinel->oldtex);
 								glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR);
 								glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
-								glTexImage2D(GL_TEXTURE_2D, 0, GL_RGB, (int)(glob->w * 0.3f), (int)(glob->h * 0.3f), 0, GL_RGB, GL_UNSIGNED_BYTE, nullptr);
+								glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA, (int)(glob->w * 0.3f), (int)(glob->h * 0.3f), 0, GL_RGBA, GL_UNSIGNED_BYTE, nullptr);
 								if (k < 3) this->inserttexes[0].push_back(mixbinel->tex);
 								else this->inserttexes[1].push_back(mixbinel->tex);
 								if (k < 3) this->inserttypes[0].push_back(mixbinel->type);
@@ -637,13 +639,13 @@ void BinsMain::handle() {
 	}
 	else if (k == mainprogram->menuset) {
 		mainprogram->pathto = "OPENBINFILES";
-		std::thread filereq (&Program::get_multinname, mainprogram, "Open video files");
+		std::thread filereq (&Program::get_multinname, mainprogram, "Open video and/or image files");
 		filereq.detach();
 	}
 	else if (k == mainprogram->menuset + 1) {
 		mainprogram->pathto = "OPENBINDIR";
 		mainprogram->blocking = true;
-		std::thread filereq (&Program::get_dir, mainprogram, "Open video file directory");
+		std::thread filereq (&Program::get_dir, mainprogram, "Open video/image file directory");
 		filereq.detach();
 	}
 	else if (k == mainprogram->menuset + 2) {
@@ -773,6 +775,7 @@ void BinsMain::handle() {
 									//delete mainprogram->prelay;
 								}
 								this->binpreview = true;
+								draw_box(red, black, -0.2f, 0.5f, 0.4f, 0.4f, -1);
 								mainprogram->prelay = new Layer(true);
 								mainprogram->prelay->dummy = true;
 								mainprogram->prelay->pos = 0;
@@ -790,35 +793,28 @@ void BinsMain::handle() {
 									mainprogram->prelay->effects[0][k]->node->calc = true;
 									mainprogram->prelay->effects[0][k]->node->walked = false;
 								}
-								mainprogram->prelay->frame = 0.0f;
-								mainprogram->prelay->prevframe = -1;
-								mainprogram->prelay->ready = true;
-								mainprogram->prelay->startdecode.notify_one();
-								std::unique_lock<std::mutex> lock(mainprogram->prelay->endlock);
-								mainprogram->prelay->enddecode.wait(lock, [&]{return mainprogram->prelay->processed;});
-								mainprogram->prelay->processed = false;
-								lock.unlock();
-								if (!binel->encoding) {
+								if (mainprogram->prelay->type != ELEM_IMAGE) {
+									mainprogram->prelay->frame = 0.0f;
+									mainprogram->prelay->prevframe = -1;
+									mainprogram->prelay->ready = true;
+									mainprogram->prelay->startdecode.notify_one();
+									std::unique_lock<std::mutex> lock(mainprogram->prelay->endlock);
+									mainprogram->prelay->enddecode.wait(lock, [&]{return mainprogram->prelay->processed;});
+									mainprogram->prelay->processed = false;
+									lock.unlock();
+									glActiveTexture(GL_TEXTURE0);
+									glBindTexture(GL_TEXTURE_2D, mainprogram->prelay->texture);
 									if (mainprogram->prelay->dataformat == 188 or mainprogram->prelay->vidformat == 187) {
-										render_text("HAP", white, box->vtxcoords->x1 + tf(0.005f), box->vtxcoords->y1 + box->vtxcoords->h - tf(0.015f), 0.0005f, 0.0008f);
+										if (mainprogram->prelay->decresult->compression == 187) {
+											glCompressedTexImage2D(GL_TEXTURE_2D, 0, GL_COMPRESSED_RGBA_S3TC_DXT1_EXT, mainprogram->prelay->decresult->width, mainprogram->prelay->decresult->height, 0, mainprogram->prelay->decresult->size, mainprogram->prelay->decresult->data);
+										}
+										else if (mainprogram->prelay->decresult->compression == 190) {
+											glCompressedTexImage2D(GL_TEXTURE_2D, 0, GL_COMPRESSED_RGBA_S3TC_DXT5_EXT, mainprogram->prelay->decresult->width, mainprogram->prelay->decresult->height, 0, mainprogram->prelay->decresult->size, mainprogram->prelay->decresult->data);
+										}
 									}
 									else {
-										render_text("CPU", white, box->vtxcoords->x1 + tf(0.005f), box->vtxcoords->y1 + box->vtxcoords->h - tf(0.015f), 0.0005f, 0.0008f);
+										glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA, mainprogram->prelay->decresult->width, mainprogram->prelay->decresult->height, 0, GL_RGBA, GL_UNSIGNED_BYTE, mainprogram->prelay->decresult->data);
 									}
-									render_text(std::to_string(mainprogram->prelay->decresult->width) + "x" + std::to_string(mainprogram->prelay->decresult->height), white, box->vtxcoords->x1 + tf(0.005f), box->vtxcoords->y1 + box->vtxcoords->h - tf(0.045f), 0.0005f, 0.0008f);
-								}
-								glActiveTexture(GL_TEXTURE0);
-								glBindTexture(GL_TEXTURE_2D, mainprogram->prelay->texture);
-								if (mainprogram->prelay->dataformat == 188 or mainprogram->prelay->vidformat == 187) {
-									if (mainprogram->prelay->decresult->compression == 187) {
-										glCompressedTexImage2D(GL_TEXTURE_2D, 0, GL_COMPRESSED_RGBA_S3TC_DXT1_EXT, mainprogram->prelay->decresult->width, mainprogram->prelay->decresult->height, 0, mainprogram->prelay->decresult->size, mainprogram->prelay->decresult->data);
-									}
-									else if (mainprogram->prelay->decresult->compression == 190) {
-										glCompressedTexImage2D(GL_TEXTURE_2D, 0, GL_COMPRESSED_RGBA_S3TC_DXT5_EXT, mainprogram->prelay->decresult->width, mainprogram->prelay->decresult->height, 0, mainprogram->prelay->decresult->size, mainprogram->prelay->decresult->data);
-									}
-								}
-								else {
-									glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA, mainprogram->prelay->decresult->width, mainprogram->prelay->decresult->height, 0, GL_RGBA, GL_UNSIGNED_BYTE, mainprogram->prelay->decresult->data);
 								}
 								glBindFramebuffer(GL_FRAMEBUFFER, mainprogram->prelay->fbo);
 								glDrawBuffer(GL_COLOR_ATTACHMENT0);
@@ -838,9 +834,22 @@ void BinsMain::handle() {
 								else {
 									draw_box(red, black, -0.2f, 0.9f, 0.4f, -0.4f, mainprogram->prelay->fbotex);
 								}
+								if (!binel->encoding) {
+									if (mainprogram->prelay->dataformat == 188 or mainprogram->prelay->vidformat == 187) {
+										render_text("HAP", white, box->vtxcoords->x1 + tf(0.005f), box->vtxcoords->y1 + box->vtxcoords->h - tf(0.015f), 0.0005f, 0.0008f);
+									}
+									else if (mainprogram->prelay->type != ELEM_IMAGE) {
+										render_text("CPU", white, box->vtxcoords->x1 + tf(0.005f), box->vtxcoords->y1 + box->vtxcoords->h - tf(0.015f), 0.0005f, 0.0008f);
+									}
+									else {
+										render_text("IMAGE", white, box->vtxcoords->x1 + tf(0.005f), box->vtxcoords->y1 + box->vtxcoords->h - tf(0.015f), 0.0005f, 0.0008f);
+									}
+									render_text(std::to_string(mainprogram->prelay->decresult->width) + "x" + std::to_string(mainprogram->prelay->decresult->height), white, box->vtxcoords->x1 + tf(0.005f), box->vtxcoords->y1 + box->vtxcoords->h - tf(0.045f), 0.0005f, 0.0008f);
+								}
 							}
 						}
 						else if (binel->type == ELEM_LAYER or binel->type == ELEM_DECK or binel->type == ELEM_MIX) {
+							draw_box(red, black, -0.2f, 0.5f, 0.4f, 0.4f, -1);
 							if (mainprogram->mousewheel) {
 								mainprogram->prelay->frame += mainprogram->mousewheel * (mainprogram->prelay->numf / 32.0f);
 								mainprogram->mousewheel = 0.0f;
@@ -857,23 +866,25 @@ void BinsMain::handle() {
 									mainprogram->prelay->effects[0][k]->node->calc = true;
 									mainprogram->prelay->effects[0][k]->node->walked = false;
 								}
-								mainprogram->prelay->ready = true;
-								mainprogram->prelay->startdecode.notify_one();
-								std::unique_lock<std::mutex> lock(mainprogram->prelay->endlock);
-								mainprogram->prelay->enddecode.wait(lock, [&]{return mainprogram->prelay->processed;});
-								mainprogram->prelay->processed = false;
-								lock.unlock();
-								glBindTexture(GL_TEXTURE_2D, mainprogram->prelay->fbotex);
-								if (mainprogram->prelay->dataformat == 188 or mainprogram->prelay->vidformat == 187) {
-									if (mainprogram->prelay->decresult->compression == 187) {
-										glCompressedTexImage2D(GL_TEXTURE_2D, 0, GL_COMPRESSED_RGBA_S3TC_DXT1_EXT, mainprogram->prelay->decresult->width, mainprogram->prelay->decresult->height, 0, mainprogram->prelay->decresult->size, mainprogram->prelay->decresult->data);
+								if (mainprogram->prelay->type != ELEM_IMAGE) {
+									mainprogram->prelay->ready = true;
+									mainprogram->prelay->startdecode.notify_one();
+									std::unique_lock<std::mutex> lock(mainprogram->prelay->endlock);
+									mainprogram->prelay->enddecode.wait(lock, [&]{return mainprogram->prelay->processed;});
+									mainprogram->prelay->processed = false;
+									lock.unlock();
+									glBindTexture(GL_TEXTURE_2D, mainprogram->prelay->fbotex);
+									if (mainprogram->prelay->dataformat == 188 or mainprogram->prelay->vidformat == 187) {
+										if (mainprogram->prelay->decresult->compression == 187) {
+											glCompressedTexImage2D(GL_TEXTURE_2D, 0, GL_COMPRESSED_RGBA_S3TC_DXT1_EXT, mainprogram->prelay->decresult->width, mainprogram->prelay->decresult->height, 0, mainprogram->prelay->decresult->size, mainprogram->prelay->decresult->data);
+										}
+										else if (mainprogram->prelay->decresult->compression == 190) {
+											glCompressedTexImage2D(GL_TEXTURE_2D, 0, GL_COMPRESSED_RGBA_S3TC_DXT5_EXT, mainprogram->prelay->decresult->width, mainprogram->prelay->decresult->height, 0, mainprogram->prelay->decresult->size, mainprogram->prelay->decresult->data);
+										}
 									}
-									else if (mainprogram->prelay->decresult->compression == 190) {
-										glCompressedTexImage2D(GL_TEXTURE_2D, 0, GL_COMPRESSED_RGBA_S3TC_DXT5_EXT, mainprogram->prelay->decresult->width, mainprogram->prelay->decresult->height, 0, mainprogram->prelay->decresult->size, mainprogram->prelay->decresult->data);
+									else {
+										glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA, mainprogram->prelay->decresult->width, mainprogram->prelay->decresult->height, 0, GL_RGBA, GL_UNSIGNED_BYTE, mainprogram->prelay->decresult->data);
 									}
-								}
-								else {
-									glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA, mainprogram->prelay->decresult->width, mainprogram->prelay->decresult->height, 0, GL_RGBA, GL_UNSIGNED_BYTE, mainprogram->prelay->decresult->data);
 								}
 								onestepfrom(0, mainprogram->prelay->node, nullptr, -1, -1);
 								if (mainprogram->prelay->effects[0].size()) {
@@ -895,13 +906,16 @@ void BinsMain::handle() {
 								if (mainprogram->prelay->dataformat == 188 or mainprogram->prelay->vidformat == 187) {
 									render_text("HAP", white, box->vtxcoords->x1 + tf(0.005f), box->vtxcoords->y1 + box->vtxcoords->h - tf(0.015f), 0.0005f, 0.0008f);
 								}
-								else {
+								else if (mainprogram->prelay->type != ELEM_IMAGE) {
 									render_text("CPU", white, box->vtxcoords->x1 + tf(0.005f), box->vtxcoords->y1 + box->vtxcoords->h - tf(0.015f), 0.0005f, 0.0008f);
+								}
+								else {
+									render_text("IMAGE", white, box->vtxcoords->x1 + tf(0.005f), box->vtxcoords->y1 + box->vtxcoords->h - tf(0.015f), 0.0005f, 0.0008f);
 								}
 								render_text(std::to_string(mainprogram->prelay->decresult->width) + "x" + std::to_string(mainprogram->prelay->decresult->height), white, box->vtxcoords->x1 + tf(0.005f), box->vtxcoords->y1 + box->vtxcoords->h - tf(0.045f), 0.0005f, 0.0008f);
 							}
 						}
-						else if (binel->type == ELEM_FILE and !this->binpreview) {
+						else if ((binel->type == ELEM_FILE or binel->type == ELEM_IMAGE) and !this->binpreview) {
 							if (remove_extension(basename(binel->path)) != "") {
 								if (mainprogram->prelay) {
 									mainprogram->prelay->closethread = true;
@@ -912,81 +926,104 @@ void BinsMain::handle() {
 									//delete mainprogram->prelay;
 								}
 								this->binpreview = true;
+								draw_box(red, black, -0.2f, 0.5f, 0.4f, 0.4f, -1);
 								mainprogram->prelay = new Layer(true);
 								mainprogram->prelay->dummy = true;
-								open_video(1, mainprogram->prelay, binel->path, true);
-								mainprogram->prelay->frame = 0.0f;
-								mainprogram->prelay->prevframe = -1;
-								mainprogram->prelay->ready = true;
-								mainprogram->prelay->startdecode.notify_one();
-								std::unique_lock<std::mutex> lock(mainprogram->prelay->endlock);
-								mainprogram->prelay->enddecode.wait(lock, [&]{return mainprogram->prelay->processed;});
-								mainprogram->prelay->processed = false;
-								lock.unlock();
+								if (binel->type == ELEM_FILE) {
+									open_video(1, mainprogram->prelay, binel->path, true);
+									mainprogram->prelay->frame = 0.0f;
+									mainprogram->prelay->prevframe = -1;
+									mainprogram->prelay->ready = true;
+									mainprogram->prelay->startdecode.notify_one();
+									std::unique_lock<std::mutex> lock(mainprogram->prelay->endlock);
+									mainprogram->prelay->enddecode.wait(lock, [&]{return mainprogram->prelay->processed;});
+									mainprogram->prelay->processed = false;
+									lock.unlock();
+									glBindTexture(GL_TEXTURE_2D, this->binelpreviewtex);
+									if (mainprogram->prelay->dataformat == 188 or mainprogram->prelay->vidformat == 187) {
+										if (mainprogram->prelay->decresult->compression == 187) {
+											glCompressedTexImage2D(GL_TEXTURE_2D, 0, GL_COMPRESSED_RGBA_S3TC_DXT1_EXT, mainprogram->prelay->decresult->width, mainprogram->prelay->decresult->height, 0, mainprogram->prelay->decresult->size, mainprogram->prelay->decresult->data);
+										}
+										else if (mainprogram->prelay->decresult->compression == 190) {
+											glCompressedTexImage2D(GL_TEXTURE_2D, 0, GL_COMPRESSED_RGBA_S3TC_DXT5_EXT, mainprogram->prelay->decresult->width, mainprogram->prelay->decresult->height, 0, mainprogram->prelay->decresult->size, mainprogram->prelay->decresult->data);
+										}
+									}
+									else {
+										glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA, mainprogram->prelay->decresult->width, mainprogram->prelay->decresult->height, 0, GL_RGBA, GL_UNSIGNED_BYTE, mainprogram->prelay->decresult->data);
+									}
+									draw_box(red, black, -0.2f, 0.5f, 0.4f, 0.4f, this->binelpreviewtex);
+								}
+								else if (binel->type == ELEM_IMAGE) {
+									mainprogram->prelay->open_image(binel->path);
+									draw_box(red, black, -0.2f, 0.5f, 0.4f, 0.4f, lay->texture);
+								}
 								if (!binel->encoding) {
 									if (mainprogram->prelay->dataformat == 188 or mainprogram->prelay->vidformat == 187) {
 										render_text("HAP", white, box->vtxcoords->x1 + tf(0.005f), box->vtxcoords->y1 + box->vtxcoords->h - tf(0.015f), 0.0005f, 0.0008f);
 									}
 									else {
-										render_text("CPU", white, box->vtxcoords->x1 + tf(0.005f), box->vtxcoords->y1 + box->vtxcoords->h - tf(0.015f), 0.0005f, 0.0008f);
+										if (mainprogram->prelay->type == ELEM_FILE) {
+											render_text("CPU", white, box->vtxcoords->x1 + tf(0.005f), box->vtxcoords->y1 + box->vtxcoords->h - tf(0.015f), 0.0005f, 0.0008f);
+										}
+										if (mainprogram->prelay->type == ELEM_IMAGE) {
+											render_text("IMAGE", white, box->vtxcoords->x1 + tf(0.005f), box->vtxcoords->y1 + box->vtxcoords->h - tf(0.015f), 0.0005f, 0.0008f);
+										}
 									}
 									render_text(std::to_string(mainprogram->prelay->decresult->width) + "x" + std::to_string(mainprogram->prelay->decresult->height), white, box->vtxcoords->x1 + tf(0.005f), box->vtxcoords->y1 + box->vtxcoords->h - tf(0.045f), 0.0005f, 0.0008f);
 								}
-								glBindTexture(GL_TEXTURE_2D, this->binelpreviewtex);
-								if (mainprogram->prelay->dataformat == 188 or mainprogram->prelay->vidformat == 187) {
-									if (mainprogram->prelay->decresult->compression == 187) {
-										glCompressedTexImage2D(GL_TEXTURE_2D, 0, GL_COMPRESSED_RGBA_S3TC_DXT1_EXT, mainprogram->prelay->decresult->width, mainprogram->prelay->decresult->height, 0, mainprogram->prelay->decresult->size, mainprogram->prelay->decresult->data);
-									}
-									else if (mainprogram->prelay->decresult->compression == 190) {
-										glCompressedTexImage2D(GL_TEXTURE_2D, 0, GL_COMPRESSED_RGBA_S3TC_DXT5_EXT, mainprogram->prelay->decresult->width, mainprogram->prelay->decresult->height, 0, mainprogram->prelay->decresult->size, mainprogram->prelay->decresult->data);
-									}
-								}
-								else {
-									glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA, mainprogram->prelay->decresult->width, mainprogram->prelay->decresult->height, 0, GL_RGBA, GL_UNSIGNED_BYTE, mainprogram->prelay->decresult->data);
-								}
-								draw_box(red, black, -0.2f, 0.5f, 0.4f, 0.4f, this->binelpreviewtex);
 							}
 						}
-						else if (binel->type == ELEM_FILE) {
-							if (mainprogram->mousewheel) {
-								mainprogram->prelay->frame += mainprogram->mousewheel * (mainprogram->prelay->numf / 32.0f);
-								mainprogram->mousewheel = 0.0f;
-								if (mainprogram->prelay->frame < 0.0f) {
-									mainprogram->prelay->frame = mainprogram->prelay->numf - 1.0f;
-								}
-								else if (mainprogram->prelay->frame > mainprogram->prelay->numf - 1) {
-									mainprogram->prelay->frame = 0.0f;
-								}
-								//mainprogram->prelay->prevframe = -1;
-								mainprogram->prelay->ready = true;
-								mainprogram->prelay->startdecode.notify_one();
-								std::unique_lock<std::mutex> lock(mainprogram->prelay->endlock);
-								mainprogram->prelay->enddecode.wait(lock, [&]{return mainprogram->prelay->processed;});
-								mainprogram->prelay->processed = false;
-								lock.unlock();
-								glBindTexture(GL_TEXTURE_2D, this->binelpreviewtex);
-								if (mainprogram->prelay->dataformat == 188 or mainprogram->prelay->vidformat == 187) {
-									if (mainprogram->prelay->decresult->compression == 187) {
-										glCompressedTexImage2D(GL_TEXTURE_2D, 0, GL_COMPRESSED_RGBA_S3TC_DXT1_EXT, mainprogram->prelay->decresult->width, mainprogram->prelay->decresult->height, 0, mainprogram->prelay->decresult->size, mainprogram->prelay->decresult->data);
+						else if (binel->type == ELEM_FILE or binel->type == ELEM_IMAGE) {
+							draw_box(red, black, -0.2f, 0.5f, 0.4f, 0.4f, -1);
+							if (mainprogram->prelay->type != ELEM_IMAGE) {
+								if (mainprogram->mousewheel) {
+									mainprogram->prelay->frame += mainprogram->mousewheel * (mainprogram->prelay->numf / 32.0f);
+									mainprogram->mousewheel = 0.0f;
+									if (mainprogram->prelay->frame < 0.0f) {
+										mainprogram->prelay->frame = mainprogram->prelay->numf - 1.0f;
 									}
-									else if (mainprogram->prelay->decresult->compression == 190) {
-										glCompressedTexImage2D(GL_TEXTURE_2D, 0, GL_COMPRESSED_RGBA_S3TC_DXT5_EXT, mainprogram->prelay->decresult->width, mainprogram->prelay->decresult->height, 0, mainprogram->prelay->decresult->size, mainprogram->prelay->decresult->data);
+									else if (mainprogram->prelay->frame > mainprogram->prelay->numf - 1) {
+										mainprogram->prelay->frame = 0.0f;
 									}
+									//mainprogram->prelay->prevframe = -1;
+									mainprogram->prelay->ready = true;
+									mainprogram->prelay->startdecode.notify_one();
+									std::unique_lock<std::mutex> lock(mainprogram->prelay->endlock);
+									mainprogram->prelay->enddecode.wait(lock, [&]{return mainprogram->prelay->processed;});
+									mainprogram->prelay->processed = false;
+									lock.unlock();
+									glBindTexture(GL_TEXTURE_2D, this->binelpreviewtex);
+									if (mainprogram->prelay->dataformat == 188 or mainprogram->prelay->vidformat == 187) {
+										if (mainprogram->prelay->decresult->compression == 187) {
+											glCompressedTexImage2D(GL_TEXTURE_2D, 0, GL_COMPRESSED_RGBA_S3TC_DXT1_EXT, mainprogram->prelay->decresult->width, mainprogram->prelay->decresult->height, 0, mainprogram->prelay->decresult->size, mainprogram->prelay->decresult->data);
+										}
+										else if (mainprogram->prelay->decresult->compression == 190) {
+											glCompressedTexImage2D(GL_TEXTURE_2D, 0, GL_COMPRESSED_RGBA_S3TC_DXT5_EXT, mainprogram->prelay->decresult->width, mainprogram->prelay->decresult->height, 0, mainprogram->prelay->decresult->size, mainprogram->prelay->decresult->data);
+										}
+									}
+									else {
+										glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA, mainprogram->prelay->decresult->width, mainprogram->prelay->decresult->height, 0, GL_RGBA, GL_UNSIGNED_BYTE, mainprogram->prelay->decresult->data);
+									}
+									draw_box(red, black, -0.2f, 0.5f, 0.4f, 0.4f, this->binelpreviewtex);
 								}
 								else {
-									glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA, mainprogram->prelay->decresult->width, mainprogram->prelay->decresult->height, 0, GL_RGBA, GL_UNSIGNED_BYTE, mainprogram->prelay->decresult->data);
+									draw_box(red, black, -0.2f, 0.5f, 0.4f, 0.4f, this->binelpreviewtex);
 								}
-								draw_box(red, black, -0.2f, 0.5f, 0.4f, 0.4f, this->binelpreviewtex);
 							}
 							else {
-								draw_box(red, black, -0.2f, 0.5f, 0.4f, 0.4f, this->binelpreviewtex);
+								draw_box(red, black, -0.2f, 0.5f, 0.4f, 0.4f, mainprogram->prelay->texture);
 							}
 							if (!binel->encoding and remove_extension(basename(binel->path)) != "") {
 								if (mainprogram->prelay->dataformat == 188 or mainprogram->prelay->vidformat == 187) {
 									render_text("HAP", white, box->vtxcoords->x1 + tf(0.005f), box->vtxcoords->y1 + box->vtxcoords->h - tf(0.015f), 0.0005f, 0.0008f);
 								}
 								else {
-									render_text("CPU", white, box->vtxcoords->x1 + tf(0.005f), box->vtxcoords->y1 + box->vtxcoords->h - tf(0.015f), 0.0005f, 0.0008f);
+									if (mainprogram->prelay->type == ELEM_FILE) {
+										render_text("CPU", white, box->vtxcoords->x1 + tf(0.005f), box->vtxcoords->y1 + box->vtxcoords->h - tf(0.015f), 0.0005f, 0.0008f);
+									}
+									if (mainprogram->prelay->type == ELEM_IMAGE) {
+										render_text("IMAGE", white, box->vtxcoords->x1 + tf(0.005f), box->vtxcoords->y1 + box->vtxcoords->h - tf(0.015f), 0.0005f, 0.0008f);
+									}
 								}
 								render_text(std::to_string(mainprogram->prelay->decresult->width) + "x" + std::to_string(mainprogram->prelay->decresult->height), white, box->vtxcoords->x1 + tf(0.005f), box->vtxcoords->y1 + box->vtxcoords->h - tf(0.045f), 0.0005f, 0.0008f);
 							}
@@ -1457,10 +1494,6 @@ void BinsMain::handle() {
 							name = remove_version(name) + "_" + std::to_string(count);
 						}
 					}
-					else {
-						this->currbinel->path = this->newpath;
-						this->currbinel->type = ELEM_FILE;
-					}
 					std::string path = mainprogram->binsdir + this->currbin->name + ".bin";
 					save_bin(path);
 					this->currbinel = nullptr;
@@ -1473,14 +1506,14 @@ void BinsMain::handle() {
 						intm = (intm < 0) * intm;
 						int jj = this->prevj + (int)((k + this->previ + intm) / 6) - ((k + this->previ + intm) < 0);
 						int ii = ((k + intm + 144) % 6 + this->previ + 144) % 6;
+						Layer *lay = this->templayers[k];
 						BinElement *dirbinel = this->currbin->elements[ii * 24 + jj];
 						dirbinel->full = true;
-						dirbinel->type = ELEM_FILE;
+						dirbinel->type = lay->type;
 						dirbinel->path = this->newpaths[k];
 						dirbinel->jpegpath = "";
 						dirbinel->oldjpegpath = "";
 						//glDeleteTextures(1, &dirbinel->oldtex);
-						Layer *lay = this->templayers[k];
 						lay->closethread = true;
 						while (lay->closethread) {
 							lay->ready = true;
@@ -1497,7 +1530,8 @@ void BinsMain::handle() {
 					mainprogram->leftmouse = false;
 				}
 				if (this->currbinel and (this->inserting > -1) and mainprogram->leftmouse) {
-					this->prevbinel = nullptr;
+					
+				this->prevbinel = nullptr;
 					std::string dirname = this->currbin->name;
 					std::string name = this->currbin->name;
 					std::string binname = name;
@@ -1936,49 +1970,49 @@ void BinsMain::open_bindir() {
 void BinsMain::open_handlefile(const std::string &path) {
 	Layer *lay = new Layer(true);
 	lay->dummy = 1;
-	open_video(1, lay, path, true);
-	lay->frame = lay->numf / 2.0f;
-	lay->prevframe = -1;
-	lay->ready = true;
-	while (lay->ready) {
-		lay->startdecode.notify_one();
-	}
-	std::unique_lock<std::mutex> lock(lay->endlock);
-	lay->enddecode.wait(lock, [&]{return lay->processed;});
-	lay->processed = false;
-	lock.unlock();
-	if (lay->openerr) {
-		printf("error!\n");
-		lay->openerr = false;
-		lay->closethread = true;
-		while (lay->closethread) {
-			lay->ready = true;
-			lay->startdecode.notify_one();
-		}
-		//delete lay;
-		return;
-	}
-	GLuint tex;
-	glGenTextures(1, &tex);
-	glBindTexture(GL_TEXTURE_2D, tex);
-	glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR);
-	glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
-	if (lay->dataformat == 188 or lay->vidformat == 187) {
-		printf("HAP file\n");
-		printf("compression %d\n", lay->decresult->compression);
-		if (lay->decresult->compression == 187) {
-			glCompressedTexImage2D(GL_TEXTURE_2D, 0, GL_COMPRESSED_RGBA_S3TC_DXT1_EXT, lay->decresult->width, lay->decresult->height, 0, lay->decresult->size, lay->decresult->data);
-		}
-		else if (lay->decresult->compression == 190) {
-			glCompressedTexImage2D(GL_TEXTURE_2D, 0, GL_COMPRESSED_RGBA_S3TC_DXT5_EXT, lay->decresult->width, lay->decresult->height, 0, lay->decresult->size, lay->decresult->data);
-		}
+	if (isimage(path)) {
+		lay->open_image(path);
 	}
 	else {
-		glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA, lay->decresult->width, lay->decresult->height, 0, GL_RGBA, GL_UNSIGNED_BYTE, lay->decresult->data);
+		open_video(1, lay, path, true);
+		lay->frame = lay->numf / 2.0f;
+		lay->prevframe = -1;
+		lay->ready = true;
+		while (lay->ready) {
+			lay->startdecode.notify_one();
+		}
+		std::unique_lock<std::mutex> lock(lay->endlock);
+		lay->enddecode.wait(lock, [&]{return lay->processed;});
+		lay->processed = false;
+		lock.unlock();
+		if (lay->openerr) {
+			printf("error!\n");
+			lay->openerr = false;
+			lay->closethread = true;
+			while (lay->closethread) {
+				lay->ready = true;
+				lay->startdecode.notify_one();
+			}
+			//delete lay;
+			return;
+		}
+		glBindTexture(GL_TEXTURE_2D, lay->texture);
+		glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR);
+		glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
+		if (lay->dataformat == 188 or lay->vidformat == 187) {
+			if (lay->decresult->compression == 187) {
+				glCompressedTexImage2D(GL_TEXTURE_2D, 0, GL_COMPRESSED_RGBA_S3TC_DXT1_EXT, lay->decresult->width, lay->decresult->height, 0, lay->decresult->size, lay->decresult->data);
+			}
+			else if (lay->decresult->compression == 190) {
+				glCompressedTexImage2D(GL_TEXTURE_2D, 0, GL_COMPRESSED_RGBA_S3TC_DXT5_EXT, lay->decresult->width, lay->decresult->height, 0, lay->decresult->size, lay->decresult->data);
+			}
+		}
+		else {
+			glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA, lay->decresult->width, lay->decresult->height, 0, GL_RGBA, GL_UNSIGNED_BYTE, lay->decresult->data);
+		}
 	}
 	GLuint endtex;
-	endtex = copy_tex(tex);
-	glDeleteTextures(1, &tex);
+	endtex = copy_tex(lay->texture);
 	
 	this->newpaths.push_back(path);
 	this->inputtexes.push_back(endtex);
