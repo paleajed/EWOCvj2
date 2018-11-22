@@ -804,7 +804,7 @@ void BinsMain::handle() {
 									lock.unlock();
 									glActiveTexture(GL_TEXTURE0);
 									glBindTexture(GL_TEXTURE_2D, mainprogram->prelay->texture);
-									if (mainprogram->prelay->dataformat == 188 or mainprogram->prelay->vidformat == 187) {
+									if (mainprogram->prelay->vidformat == 188 or mainprogram->prelay->vidformat == 187) {
 										if (mainprogram->prelay->decresult->compression == 187) {
 											glCompressedTexImage2D(GL_TEXTURE_2D, 0, GL_COMPRESSED_RGBA_S3TC_DXT1_EXT, mainprogram->prelay->decresult->width, mainprogram->prelay->decresult->height, 0, mainprogram->prelay->decresult->size, mainprogram->prelay->decresult->data);
 										}
@@ -835,7 +835,7 @@ void BinsMain::handle() {
 									draw_box(red, black, -0.2f, 0.9f, 0.4f, -0.4f, mainprogram->prelay->fbotex);
 								}
 								if (!binel->encoding) {
-									if (mainprogram->prelay->dataformat == 188 or mainprogram->prelay->vidformat == 187) {
+									if (mainprogram->prelay->vidformat == 188 or mainprogram->prelay->vidformat == 187) {
 										render_text("HAP", white, box->vtxcoords->x1 + tf(0.005f), box->vtxcoords->y1 + box->vtxcoords->h - tf(0.015f), 0.0005f, 0.0008f);
 									}
 									else if (mainprogram->prelay->type != ELEM_IMAGE) {
@@ -874,7 +874,7 @@ void BinsMain::handle() {
 									mainprogram->prelay->processed = false;
 									lock.unlock();
 									glBindTexture(GL_TEXTURE_2D, mainprogram->prelay->fbotex);
-									if (mainprogram->prelay->dataformat == 188 or mainprogram->prelay->vidformat == 187) {
+									if (mainprogram->prelay->vidformat == 188 or mainprogram->prelay->vidformat == 187) {
 										if (mainprogram->prelay->decresult->compression == 187) {
 											glCompressedTexImage2D(GL_TEXTURE_2D, 0, GL_COMPRESSED_RGBA_S3TC_DXT1_EXT, mainprogram->prelay->decresult->width, mainprogram->prelay->decresult->height, 0, mainprogram->prelay->decresult->size, mainprogram->prelay->decresult->data);
 										}
@@ -903,7 +903,7 @@ void BinsMain::handle() {
 								}
 							}
 							if (!binel->encoding and remove_extension(basename(binel->path)) != "") {
-								if (mainprogram->prelay->dataformat == 188 or mainprogram->prelay->vidformat == 187) {
+								if (mainprogram->prelay->vidformat == 188 or mainprogram->prelay->vidformat == 187) {
 									render_text("HAP", white, box->vtxcoords->x1 + tf(0.005f), box->vtxcoords->y1 + box->vtxcoords->h - tf(0.015f), 0.0005f, 0.0008f);
 								}
 								else if (mainprogram->prelay->type != ELEM_IMAGE) {
@@ -940,7 +940,7 @@ void BinsMain::handle() {
 									mainprogram->prelay->processed = false;
 									lock.unlock();
 									glBindTexture(GL_TEXTURE_2D, this->binelpreviewtex);
-									if (mainprogram->prelay->dataformat == 188 or mainprogram->prelay->vidformat == 187) {
+									if (mainprogram->prelay->vidformat == 188 or mainprogram->prelay->vidformat == 187) {
 										if (mainprogram->prelay->decresult->compression == 187) {
 											glCompressedTexImage2D(GL_TEXTURE_2D, 0, GL_COMPRESSED_RGBA_S3TC_DXT1_EXT, mainprogram->prelay->decresult->width, mainprogram->prelay->decresult->height, 0, mainprogram->prelay->decresult->size, mainprogram->prelay->decresult->data);
 										}
@@ -958,7 +958,7 @@ void BinsMain::handle() {
 									draw_box(red, black, -0.2f, 0.5f, 0.4f, 0.4f, lay->texture);
 								}
 								if (!binel->encoding) {
-									if (mainprogram->prelay->dataformat == 188 or mainprogram->prelay->vidformat == 187) {
+									if (mainprogram->prelay->vidformat == 188 or mainprogram->prelay->vidformat == 187) {
 										render_text("HAP", white, box->vtxcoords->x1 + tf(0.005f), box->vtxcoords->y1 + box->vtxcoords->h - tf(0.015f), 0.0005f, 0.0008f);
 									}
 									else {
@@ -993,7 +993,7 @@ void BinsMain::handle() {
 									mainprogram->prelay->processed = false;
 									lock.unlock();
 									glBindTexture(GL_TEXTURE_2D, this->binelpreviewtex);
-									if (mainprogram->prelay->dataformat == 188 or mainprogram->prelay->vidformat == 187) {
+									if (mainprogram->prelay->vidformat == 188 or mainprogram->prelay->vidformat == 187) {
 										if (mainprogram->prelay->decresult->compression == 187) {
 											glCompressedTexImage2D(GL_TEXTURE_2D, 0, GL_COMPRESSED_RGBA_S3TC_DXT1_EXT, mainprogram->prelay->decresult->width, mainprogram->prelay->decresult->height, 0, mainprogram->prelay->decresult->size, mainprogram->prelay->decresult->data);
 										}
@@ -1014,7 +1014,7 @@ void BinsMain::handle() {
 								draw_box(red, black, -0.2f, 0.5f, 0.4f, 0.4f, mainprogram->prelay->texture);
 							}
 							if (!binel->encoding and remove_extension(basename(binel->path)) != "") {
-								if (mainprogram->prelay->dataformat == 188 or mainprogram->prelay->vidformat == 187) {
+								if (mainprogram->prelay->vidformat == 188 or mainprogram->prelay->vidformat == 187) {
 									render_text("HAP", white, box->vtxcoords->x1 + tf(0.005f), box->vtxcoords->y1 + box->vtxcoords->h - tf(0.015f), 0.0005f, 0.0008f);
 								}
 								else {
@@ -1999,7 +1999,7 @@ void BinsMain::open_handlefile(const std::string &path) {
 		glBindTexture(GL_TEXTURE_2D, lay->texture);
 		glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR);
 		glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
-		if (lay->dataformat == 188 or lay->vidformat == 187) {
+		if (lay->vidformat == 188 or lay->vidformat == 187) {
 			if (lay->decresult->compression == 187) {
 				glCompressedTexImage2D(GL_TEXTURE_2D, 0, GL_COMPRESSED_RGBA_S3TC_DXT1_EXT, lay->decresult->width, lay->decresult->height, 0, lay->decresult->size, lay->decresult->data);
 			}

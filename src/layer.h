@@ -33,8 +33,8 @@ typedef enum
 
 struct frame_result {
 	char *data = nullptr;
-	int height = 0;
-	int width = 0;
+	int height = 1;
+	int width = 1;
 	int bpp = 4;
 	int size = 0;
 	unsigned char compression = 0;
@@ -75,6 +75,7 @@ class Layer {
 		void set_clones();
 		void mute_handle();
 		void open_image(const std::string &path);
+		void initialize(int w, int h);
 		Layer *next();
 		Layer *prev();
 		Layer();
@@ -117,7 +118,9 @@ class Layer {
 		int transforming = 0;
 		int transmx;
 		int transmy;
-		int iw, ih, xs, ys;
+		int iw = 1;
+		int ih = 1;
+		int xs, ys;
 		int shiftx = 0;
 		int shifty = 0;
 		float scale = 1.0f;
@@ -159,6 +162,7 @@ class Layer {
         std::list<int*> snippets;
  		int pslen;
 		GLuint texture;
+		GLuint comptexture;
 		GLuint fbotex;
 		GLuint fbo;
 		GLuint texpos = 0;
@@ -193,7 +197,6 @@ class Layer {
 		uint8_t *avbuffer = nullptr;
 		char *databuf = nullptr;
 		int vidformat = -1;
-		int dataformat = -1;
 		std::vector<char*> audio_chunks;
 		ALuint sample_rate;
 		int channels;

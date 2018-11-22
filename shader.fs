@@ -256,7 +256,7 @@ vec4 saturation(vec4 color)  //selfmade
 	vec3 hsv = rgb2hsv(color);
 	hsv.y *= satamount;
 	vec3 rgb = hsv2rgb(hsv);
-	return vec4(rgb.x, rgb.y, rgb.z, 1.0);
+	return vec4(rgb.x, rgb.y, rgb.z, color.a);
 }
 
 vec4 chromarotate(vec4 color)  //selfmade
@@ -265,7 +265,7 @@ vec4 chromarotate(vec4 color)  //selfmade
 	hsv.x += colorrot;
 	if (hsv.x < 0) hsv.x += 1;
 	vec3 rgb = hsv2rgb(hsv);
-	return vec4(rgb.x, rgb.y, rgb.z, 1.0);
+	return vec4(rgb.x, rgb.y, rgb.z, color.a);
 }
 
 vec4 colorize(vec4 color)  //selfmade
@@ -275,7 +275,7 @@ vec4 colorize(vec4 color)  //selfmade
 	hsv.y = hsv.y - ((hsv.y - 1.0f) / 2.0f);
 	if (hsv.x < 0) hsv.x += 1;
 	vec3 rgb = hsv2rgb(hsv);
-	return vec4(rgb.x, rgb.y, rgb.z, 1.0);
+	return vec4(rgb.x, rgb.y, rgb.z, color.a);
 }
 
 float normpdf(in float x, in float sigma)
@@ -306,7 +306,7 @@ vec4 blur(vec2 texc) //tutorial on rastergrid seems free
 		  tc += texture2D(fboSampler, uv - vec2(offset[i])/size.x, 0.0).rgb * weight[i];
 		}
 	}
-  	return vec4(tc, 1.0);
+  	return vec4(tc, texture2D(fboSampler, uv).a);
 }
 
 vec4 boxblur(vec2 texc)  //blog.trsquarelab.com free
@@ -477,8 +477,7 @@ vec4 swirl(vec2 uv)  //geeks3D seems free
 	}
 	normtc += center;
 	normtc.y = normtc.y * fbowidth / fboheight;
-	vec3 color = texture2D(Sampler0, (normtc / 2.0f + 0.5f)).rgb;
-	return vec4(color, 1.0);
+	return texture2D(Sampler0, (normtc / 2.0f + 0.5f));
 }
 
 vec4 ripple() {  //geeks3d seems free
@@ -507,8 +506,8 @@ vec4 fisheye(vec2 texco)  //selfmade
 
 vec4 treshold(vec4 pxcol) {  //selfmade
 	float bright = (pxcol.r + pxcol.g + pxcol.b) / 3.0;
-	if (bright > treshheight) return vec4(treshred1, treshgreen1, treshblue1, 1.0);
-	else return vec4(treshred2, treshgreen2, treshblue2, 1.0);
+	if (bright > treshheight) return vec4(treshred1, treshgreen1, treshblue1, pxcol.a);
+	else return vec4(treshred2, treshgreen2, treshblue2, pxcol.a);
 }
   
 vec4 posterize(vec4 col)  //geeks3d seems free
@@ -519,7 +518,7 @@ vec4 posterize(vec4 col)  //geeks3d seems free
   c = floor(c);
   c = c / float(numColors);
   c = pow(c, vec3(1.0 / gamma));
-  return vec4(c, 1.0);
+  return vec4(c, col.a);
 }
 
 vec4 pixelate(vec2 uv)  //selfmade
@@ -528,9 +527,7 @@ vec4 pixelate(vec2 uv)  //selfmade
     float dx = pixel_w / fboheight;
     float dy = ph / fbowidth;
     vec2 coord = vec2(dx * (floor(uv.x / dx) + 1), dy * floor(uv.y / dy));
-    vec3 tc = texture2D(Sampler0, coord).rgb;
-
-    return vec4(tc, 1.0);
+    return texture2D(Sampler0, coord);
 }
 
 vec4 crosshatch(vec4 col, vec2 uv)  //geeks3D
@@ -561,7 +558,7 @@ vec4 crosshatch(vec4 col, vec2 uv)  //geeks3D
       	if (mod(int(uv.x * fboheight) - int(uv.y * fboheight) - int(hatch_y_offset), int(hatchsize)) == 0.0) 
         	tc = vec3(0.0, 0.0, 0.0);
   	}
- 	return vec4(tc, 1.0);
+ 	return vec4(tc, col.a);
 }
 
 vec4 rotate(vec2 texco)  // selfmade
@@ -628,7 +625,7 @@ vec4 ascii(vec2 texco)  //pixi-filters mit
 	vec2 p = mod(vec2(texco.x * fbowidth, texco.y * fboheight) / asciisize, 2.0) - vec2(1.0);
 	col = col * character(n, p);
 	
-	return vec4(col, 1.0);
+	return vec4(col, texture2D(Sampler0, texco).a);
 }
 
 #define THRESHOLD vec3(1.,.92,.1)
@@ -640,7 +637,7 @@ vec4 solarize(vec2 texco)  //unknown problem 3?
     if (rgb.g < 0.92f) rgb.g = 1.0f - rgb.g;
     if (rgb.b < 0.1f) rgb.b = 1.0f - rgb.b;
     
-    return vec4(rgb, 1.0f);
+    return vec4(rgb, texture2D(Sampler0, texco).a);
 }
 
 
@@ -694,7 +691,8 @@ vec4 crt(vec2 texco)
     float k = crtcurvature > 0. ?(length(dir * dir) * 0.25 * _c * _c + 0.935 * _c) : 1.;
     vec2 uv = dir * k;
 
-    vec3 rgb = texture2D(Sampler0, texco).rgb;
+    vec4 rgba = texture2D(Sampler0, texco);
+    vec3 rgb = rgba.rgb;
 
     if (crtnoise > 0.0 && crtnoiseSize > 0.0)
     {
@@ -719,7 +717,7 @@ vec4 crt(vec2 texco)
         rgb *= darker + (1.0 - darker) * (1.0 - crtvignettingAlpha);
     }
 
-    return vec4(rgb, 1.0f);
+    return vec4(rgb, rgba.a);
 }
 
 
@@ -758,7 +756,7 @@ vec4 edgedetect2(vec2 texco)  //rastergrid seems free
 	float S = (cnv[4] + cnv[5]) + (cnv[6] + cnv[7]) + (cnv[8] + M); 
 	
 	vec4 col = vec4(sqrt(M/S));
-	return vec4(col.rgb * 2.0f, 1.0f);
+	return vec4(col.rgb * 2.0f, texture2D(Sampler0, texco).a);
 }
 
 
@@ -791,7 +789,8 @@ float aastep(float threshold, float value) {
   #endif
 }
 
-vec4 halftone(vec3 texcolor, vec2 st) {  //glslify mit
+vec4 halftone(vec4 rgba, vec2 st) {  //glslify mit
+	vec3 texcolor = rgba.rgb;
   st.y = st.y * fboheight /fbowidth;
   float frequency = hts;
   float n = 0.1*snoise2(st*200.0); // Fractal noise
@@ -822,7 +821,7 @@ vec4 halftone(vec3 texcolor, vec2 st) {  //glslify mit
   float y = aastep(0.0, sqrt(cmyk.z)-length(Yuv)+n);
 
   vec3 rgbscreen = 1.0 - 0.9*vec3(c,m,y) + n;
-  return vec4(mix(rgbscreen, black, 0.85*k + 0.3*n), 1.0f);
+  return vec4(mix(rgbscreen, black, 0.85*k + 0.3*n), rgba.a);
 }
 
 
@@ -909,7 +908,7 @@ vec4 edgedetect(vec2 texco)
   float gray = IsEdge(texco.xy);
   vec3 vRGB = (gray >= edge_thres)? vec3(0.0,0.0,0.0):vec3(gray ,gray ,gray);
     
-  return vec4(vRGB.x,vRGB.y,vRGB.z, 1.0f);  
+  return vec4(vRGB.x,vRGB.y,vRGB.z, texture2D(fboSampler, texco).a);  
 }
 
 vec4 cartoon(vec2 texco)  //geeks3d free
@@ -923,7 +922,7 @@ vec4 cartoon(vec2 texco)  //geeks3d free
     float edg = IsEdge(texco);
     vec3 vRGB = (edg >= edge_thres)? vec3(0.0,0.0,0.0):hsv2rgb(vec3(vHSV.x,vHSV.y,vHSV.z));
     
-  	return vec4(vRGB.x,vRGB.y,vRGB.z, 1.0f);  
+  	return vec4(vRGB.x,vRGB.y,vRGB.z, texture2D(Sampler0, texco).a);  
 }
 
 vec4 cutoff(vec2 texco)  //selfmade
@@ -932,8 +931,8 @@ vec4 cutoff(vec2 texco)  //selfmade
     
 	float luma = dot(vec3(0.30, 0.59, 0.11), color.rgb);
 
-	if (luma > cut) return vec4(color.rgb, 1.0f);
-	else return vec4(0.1f, 0.1f, 0.1f, 1.0f);
+	if (luma > cut) return color;
+	else return vec4(0.1f, 0.1f, 0.1f, color.a);
 }
 
 
@@ -1126,8 +1125,8 @@ float rand(vec2 co){
 
 vec4 noise(vec2 uv)  //ok
 {
-    vec3 color = texture2D(Sampler0, uv).rgb;
-	return vec4(max(min(color.rgb + vec3(rand(uv) * noiselevel), vec3(1.0f)), vec3(0.0f)), 1.0f);
+    vec4 color = texture2D(Sampler0, uv);
+	return vec4(max(min(color.rgb + vec3(rand(uv) * noiselevel), vec3(1.0f)), vec3(0.0f)), color.a);
 }
 
 
@@ -1154,7 +1153,7 @@ vec4 gammamain(vec2 texco)  //shadertoy WTFPL
 vec4 thermal(vec2 texco)  //geeks3d free
 { 
     vec3 tc = vec3(1.0, 0.0, 0.0);
-    vec3 pixcol = texture2D(Sampler0, texco).rgb;
+    vec4 pixcol = texture2D(Sampler0, texco);
     vec3 colors[3];
     colors[0] = vec3(0.,0.,1.);
     colors[1] = vec3(1.,1.,0.);
@@ -1163,7 +1162,7 @@ vec4 thermal(vec2 texco)  //geeks3d free
     int ix = (lum < 0.5)? 0:1;
     tc = mix(colors[ix],colors[ix+1],(lum-float(ix)*0.5)/0.5);
 
-    return vec4(tc, 1.0f);
+    return vec4(tc, pixcol.a);
 }
 
 
@@ -1441,8 +1440,8 @@ vec4 sharpen(vec2 texco)    //https://github.com/libretro/glsl-shaders - the fol
 	sharpdiff			=	mix( (tanh((max(sharpdiff, 0.0))*nmax_scale)/nmax_scale), (max(sharpdiff, 0.0)), L_comp_ratio )
 						+	mix( (tanh((min(sharpdiff, 0.0))*nmin_scale)/nmin_scale), (min(sharpdiff, 0.0)), D_comp_ratio );
 
-   return vec4(c0.rgb, 1.0f) + sharpdiff;
-} 
+   return vec4(c0.rgb, texture2D(Sampler0, texco).a) + sharpdiff;
+}
 
 
 // dither stuff
@@ -1550,7 +1549,8 @@ void main()
 			case 5:
 				if (blurswitch == 1) {
 					intcoloring = true;
-					intcol = boxblur(texco) * glowfac;
+					intcol = boxblur(texco);
+					intcol = vec4(intcol.rgb * glowfac, intcol.a);
 				}
 				if (blurswitch == 0) FragColor = texcol;
 				break;
@@ -1633,7 +1633,7 @@ void main()
 				intcol = kaleidoscope(texco); break;
 			case 27:
 				intcoloring = true;
-				intcol = halftone(texcol.rgb, texco); break;
+				intcol = halftone(texcol, texco); break;
 			case 28:
 				intcoloring = true;
 				intcol = cartoon(texco); break;
@@ -1799,23 +1799,9 @@ void main()
 			else fc = vec4(tex0.rgb * ia + tex1.rgb * a, max(tex0.a, tex1.a));
 		}
 	} 
-	if (textmode == 2) {
-		float col = texture2D(Sampler0, vec2(TexCoord0.s, TexCoord0.t)).r;
-		if (col > 0.0f) {
-			FragColor = vec4(color.rgb, col);
-			return;
-		}
-		float alpha = 1.0f;
-		float tresh = 0.7f;
-		float left = texture2D(Sampler0, vec2(TexCoord0.s - 0.001f, TexCoord0.t)).r;
-		float right = texture2D(Sampler0, vec2(TexCoord0.s + 0.001f, TexCoord0.t)).r;
-		float up = texture2D(Sampler0, vec2(TexCoord0.s, TexCoord0.t - 0.008f)).r;
-		float down = texture2D(Sampler0, vec2(TexCoord0.s, TexCoord0.t + 0.008f)).r;
-		if ((left < tresh) && (right < tresh) && (up < tresh) && (down < tresh)) alpha = 0.0f;
-		FragColor = vec4(0.0f, 0.0f, 0.0f, alpha);
-	}
-	else if (textmode == 1) {
-		FragColor = texture2D(Sampler0, vec2(TexCoord0.s, TexCoord0.t));
+	if (textmode == 1) {
+		float c = texture2D(Sampler0, vec2(TexCoord0.s, TexCoord0.t)).r;
+		FragColor = vec4(color.rgb, c);
 	}
 	else if (edgethickmode == 1) {
 		float thx = 1.0f / fbowidth;
@@ -1825,7 +1811,7 @@ void main()
 		float above = texture2D(fboSampler, vec2(TexCoord0.s, TexCoord0.t - thy)).r;
 		float under = texture2D(fboSampler, vec2(TexCoord0.s, TexCoord0.t + thy)).r;
 		float border = max(max(max(left, right), above), under);
-		FragColor = vec4(border, border, border, 1.0f);
+		FragColor = vec4(border, border, border, texture2D(fboSampler, TexCoord0).a);
 	}
 	else if (box == 1) {
 		FragColor = color;

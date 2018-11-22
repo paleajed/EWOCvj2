@@ -1046,7 +1046,7 @@ void get_frame_other(Layer *lay, int framenr, int prevframe, int errcount)
 		}
 		decode_packet(lay, &got_frame);
 		lay->prevframe = framenr;
-		lay->dataformat = lay->vidformat;
+		lay->vidformat = lay->vidformat;
 		lay->pktloaded = true;
 		if (lay->decframe->width == 0) {
 			lay->prevframe = framenr;
@@ -1198,7 +1198,7 @@ void Layer::get_frame(){
 		}
 		this->processed = true;
 		this->enddecode.notify_one();
-		this->dataformat = this->vidformat;
+		this->vidformat = this->vidformat;
 		continue;
 	}
 }
@@ -1743,6 +1743,8 @@ void draw_box(float *linec, float *areac, float x, float y, float wi, float he, 
 	glUniform1f(opa, opacity);
 	GLint color = glGetUniformLocation(mainprogram->ShaderProgram, "color");
 	if (linec) glUniform4fv(color, 1, linec);
+	float pixelw = 2.0f / (float)glob->w;
+	float pixelh = 2.0f / (float)glob->h;
 
 	GLfloat fvcoords[8] = {
 				x, y,
@@ -1773,17 +1775,17 @@ void draw_box(float *linec, float *areac, float x, float y, float wi, float he, 
 	glBufferData(GL_ARRAY_BUFFER, 32, tcoords, GL_STATIC_DRAW);
 	glEnableVertexAttribArray(1);
 	glVertexAttribPointer(1, 2, GL_FLOAT, GL_FALSE, 8, nullptr);
-	if (linec) glDrawArrays(GL_LINE_LOOP, 0, 4);
+	if (linec) {
+		glDrawArrays(GL_LINE_LOOP, 0, 4);
+	} 
 	if (areac) {
-		float pixelw = 2.0f / (float)glob->w;
-		float pixelh = 2.0f / (float)glob->h;
 		float shx = -dx / ((float)glob->w * 0.1f);
 		float shy = -dy / ((float)glob->h * 0.1f);
 		GLfloat fvcoords2[8] = {
 			x + pixelw,     y + he - pixelh,
-			x + pixelw,     y + pixelh   ,
+			x + pixelw,     y + pixelh,
 			x + wi - pixelw, y + he - pixelh,
-			x + wi - pixelw, y + pixelh   ,
+			x + wi - pixelw, y + pixelh,
 		};
 		glBindBuffer(GL_ARRAY_BUFFER, boxbuf);
 		glBufferData(GL_ARRAY_BUFFER, 32, fvcoords2, GL_STATIC_DRAW);
@@ -2100,6 +2102,7 @@ float render_text(std::string text, float *textc, float x, float y, float sx, fl
 	else {
 		GLfloat texvcoords[8];
 		GLfloat *p = texvcoords;
+		float th = 0.0012f;
 		if (vertical) {
 			*p++ = x; *p++ = y;
 			*p++ = x; *p++ = y - texth * 16 * glob->w / glob->h;
@@ -2107,19 +2110,20 @@ float render_text(std::string text, float *textc, float x, float y, float sx, fl
 			*p++ = x + texth * 2 * glob->h / glob->w;     *p++ = y - texth * 16 * glob->w / glob->h;
 		}
 		else {
-			*p++ = x;    *p++ = y;
-			*p++ = x + texth * 16; *p++ = y;
-			*p++ = x;     *p++ = y + texth * 2;
-			*p++ = x + texth * 16; *p++ = y + texth * 2;
+			*p++ = x + th;    *p++ = y - th;
+			*p++ = x + texth * 16 + th; *p++ = y - th;
+			*p++ = x + th;     *p++ = y + texth * 2 - th;
+			*p++ = x + texth * 16 + th; *p++ = y + texth * 2 - th;
 		}
 		GLfloat textcoords[] = {0.0f, 0.0f,
 							1.0f, 0.0f,
 							0.0f, 1.0f,
 							1.0f, 1.0f};
 		GLint textmode = glGetUniformLocation(mainprogram->ShaderProgram, "textmode");
-		glUniform1i(textmode, 2);
+		glUniform1i(textmode, 1);
+		float black[] = {0.0f, 0.0f, 0.0f, 1.0f};
 		GLint color = glGetUniformLocation(mainprogram->ShaderProgram, "color");
-		glUniform4fv(color, 1, textc);
+		glUniform4fv(color, 1, black);
 		glActiveTexture(GL_TEXTURE0);
 		glBindTexture(GL_TEXTURE_2D, texture);
 		GLuint texvao;
@@ -2145,6 +2149,24 @@ float render_text(std::string text, float *textc, float x, float y, float sx, fl
 		glDrawBuffer(GL_COLOR_ATTACHMENT0);
 		if (textw != 0) glDrawArrays(GL_TRIANGLE_STRIP, 0, 4);
 	
+		p = texvcoords;
+		if (vertical) {
+			*p++ = x; *p++ = y;
+			*p++ = x; *p++ = y - texth * 16 * glob->w / glob->h;
+			*p++ = x + texth * 2 * glob->h / glob->w;     *p++ = y;
+			*p++ = x + texth * 2 * glob->h / glob->w;     *p++ = y - texth * 16 * glob->w / glob->h;
+		}
+		else {
+			*p++ = x;    *p++ = y;
+			*p++ = x + texth * 16; *p++ = y;
+			*p++ = x;     *p++ = y + texth * 2;
+			*p++ = x + texth * 16; *p++ = y + texth * 2;
+		}
+		glBindBuffer(GL_ARRAY_BUFFER, vbo);
+		glBufferData(GL_ARRAY_BUFFER, 32, texvcoords, GL_STATIC_DRAW);
+		glUniform4fv(color, 1, textc);
+		if (textw != 0) glDrawArrays(GL_TRIANGLE_STRIP, 0, 4);		
+		
 		glUniform1i(textmode, 0);
 		glDeleteVertexArrays(1, &texvao);
 	}
@@ -2361,42 +2383,30 @@ void calc_texture(Layer *lay, bool comp, bool alive) {
 	if (!lay->liveinput) {
 		if (lay->decresult) {  // decresult contains new frame width, height, number of bitmaps and data
 			if (lay->decresult->width) {
-				if (lay->dataformat == 188 or lay->vidformat == 187) {
+				if (lay->vidformat == 188 or lay->vidformat == 187) {
 					// HAP video layers
-					if (lay->decresult->compression == 187) {
-						glCompressedTexImage2D(GL_TEXTURE_2D, 0, GL_COMPRESSED_RGBA_S3TC_DXT1_EXT, lay->decresult->width, lay->decresult->height, 0, lay->decresult->size, lay->decresult->data);
+					if (!lay->initialized) {
+						float w = lay->decresult->width;
+						float h = lay->decresult->height;
+						lay->initialize(w, h);
+						lay->initialized = true;
+					}
+					else if (lay->decresult->compression == 187) {
+						glCompressedTexSubImage2D(GL_TEXTURE_2D, 0, lay->xs, lay->ys, lay->decresult->width, lay->decresult->height, GL_COMPRESSED_RGBA_S3TC_DXT1_EXT, lay->decresult->size, lay->decresult->data);
 					}
 					else if (lay->decresult->compression == 190) {
-						glCompressedTexImage2D(GL_TEXTURE_2D, 0, GL_COMPRESSED_RGBA_S3TC_DXT5_EXT, lay->decresult->width, lay->decresult->height, 0, lay->decresult->size, lay->decresult->data);
+						glCompressedTexSubImage2D(GL_TEXTURE_2D, 0, lay->xs, lay->ys, lay->decresult->width, lay->decresult->height, GL_COMPRESSED_RGBA_S3TC_DXT5_EXT, lay->decresult->size, lay->decresult->data);
 					}
 				}
 				else {
-					if (lay->type != ELEM_IMAGE) {
+					if (lay->type != ELEM_IMAGE and lay->video_dec_ctx) {
 						if (!lay->initialized) {
-							float x = lay->video_dec_ctx->width;
-							float y = lay->video_dec_ctx->height;
-							if (x / y > glob->w / glob->h) {
-								lay->iw = x;
-								lay->ih = y * x * glob->h / y / glob->w;
-								lay->xs = 0;
-								lay->ys = (lay->ih - y) / 2.0f;
-							}
-							else {
-								lay->iw = x * glob->w * y / glob->h / x;
-								lay->ih = y;
-								lay->xs = (lay->iw - x) / 2.0f;
-								lay->ys = 0;
-							}
-							std::vector<int> emptydata(lay->iw * lay->ih);
-							std::fill(emptydata.begin(), emptydata.end(), 0x00000000);
-							glBindTexture(GL_TEXTURE_2D, lay->texture);
-							glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA, lay->iw, lay->ih, 0, GL_RGBA, GL_UNSIGNED_BYTE, &emptydata[0]);
+							float w = lay->video_dec_ctx->width;
+							float h = lay->video_dec_ctx->height;
+							lay->initialize(w, h);
 							lay->initialized = true;
 						}
-						if (lay->decresult->bpp == 3) {
-							glTexSubImage2D(GL_TEXTURE_2D, 0, lay->xs, lay->ys, lay->decresult->width, lay->decresult->height, GL_RGB, GL_UNSIGNED_BYTE, lay->decresult->data);
-						}
-						else if (lay->decresult->bpp == 4) {
+						else {
 							glTexSubImage2D(GL_TEXTURE_2D, 0, lay->xs, lay->ys, lay->decresult->width, lay->decresult->height, GL_RGBA, GL_UNSIGNED_BYTE, lay->decresult->data);
 						}
 					}
@@ -2404,34 +2414,28 @@ void calc_texture(Layer *lay, bool comp, bool alive) {
 			}
 		}
 	}
-	glBindFramebuffer(GL_FRAMEBUFFER, lay->fbo);
-	glDrawBuffer(GL_COLOR_ATTACHMENT0);
-	float black[4] = {1.0f, 1.0f, 1.0f, 1.0f};
-	float div;
-	float fac = 1.0f;
-	if (!comp) {
-		// previewing frames are on 30%
-		div = 0.3f;
-	}
-	else {
-		div = mainprogram->ow / glob->w;
-		fac = (glob->w / glob->h) / (mainprogram->ow / mainprogram->oh);  //aspect ratio correction
-	}
 	glDisable(GL_BLEND);
 	// put lay->texture into lay->fbo(tex)
-	if (lay->liveinput) {
-		draw_box(nullptr, black, -1.0f, -1.0f, 2.0f * div, 2.0f * div * fac, 0.0f, 0.0f, 1.0f, 1.0f, 0, lay->liveinput->texture, glob->w, glob->h);
-	}
-	else if (lay->filename != "") {
-		draw_box(nullptr, black, -1.0f, -1.0f, 2.0f * div, 2.0f * div * fac, 0.0f, 0.0f, 1.0f, 1.0f, 0, lay->texture, glob->w, glob->h);
-	}
+	glBindFramebuffer(GL_FRAMEBUFFER, lay->fbo);
+	glDrawBuffer(GL_COLOR_ATTACHMENT0);
+	GLuint tex;
+	if (lay->liveinput) tex = lay->liveinput->texture;
+	else if (lay->filename != "") tex = lay->texture;
 	else {
 		glClearColor(0.0f, 0.0f, 0.0f, 0.0f);
 		glClear(GL_COLOR_BUFFER_BIT);
+		glDrawBuffer(GL_COLOR_ATTACHMENT0);
+		glEnable(GL_BLEND);
+		return;
 	}
+	if (comp) glViewport(0, 0, mainprogram->ow, mainprogram->oh);
+	else glViewport(0, 0, glob->w * 0.3f, glob->h * 0.3f);
+	float black[4] = {0.0f, 0.0f, 0.0f, 0.0f};
+	draw_box(nullptr, black, -1.0f, 1.0f, 2.0f, -2.0f, 0, 0, 1, 1, 0, tex, glob->w, glob->h);
 	glEnable(GL_BLEND);
-	glBindFramebuffer(GL_FRAMEBUFFER, mainprogram->globfbo);
 	glDrawBuffer(GL_COLOR_ATTACHMENT0);
+	glEnable(GL_BLEND);
+	glViewport(0, 0, glob->w, glob->h);
 }
 
 void set_queueing(Layer *lay, bool onoff) {
@@ -2464,6 +2468,7 @@ void display_texture(Layer *lay, bool deck) {
 
 	std::vector<Layer*> &lvec = choose_layers(deck);
 	if (mainmix->scenes[deck][mainmix->currscene[deck]]->scrollpos > lvec.size() - 2) mainmix->scenes[deck][mainmix->currscene[deck]]->scrollpos = lvec.size() - 2;
+	if (mainmix->scenes[deck][mainmix->currscene[deck]]->scrollpos < 0) mainmix->scenes[deck][mainmix->currscene[deck]]->scrollpos = 0;
 	if (lay->pos >= mainmix->scenes[deck][mainmix->currscene[deck]]->scrollpos and lay->pos < mainmix->scenes[deck][mainmix->currscene[deck]]->scrollpos + 3) {
 		Box *box = lay->node->vidbox;
 		
@@ -2481,12 +2486,12 @@ void display_texture(Layer *lay, bool deck) {
 				else if (deck == 1) deckstr = "B";
 				render_text("Layer " + deckstr + std::to_string(lay->pos + 1), white, box->vtxcoords->x1 + tf(0.01f), box->vtxcoords->y1 + box->vtxcoords->h - tf(0.03f), 0.0005f, 0.0008f);
 				render_text(remove_extension(basename(lay->filename)), white, box->vtxcoords->x1 + tf(0.01f), box->vtxcoords->y1 + box->vtxcoords->h - tf(0.06f), 0.0005f, 0.0008f);
-				if (lay->dataformat == -1) {
+				if (lay->vidformat == -1) {
 					if (lay->type == ELEM_IMAGE) {
 						render_text("IMAGE", white, box->vtxcoords->x1 + tf(0.01f), box->vtxcoords->y1 + box->vtxcoords->h - tf(0.09f), 0.0005f, 0.0008f);
 					}
 				}
-				else if (lay->dataformat == 188 or lay->vidformat == 187) {
+				else if (lay->vidformat == 188 or lay->vidformat == 187) {
 					render_text("HAP", white, box->vtxcoords->x1 + tf(0.01f), box->vtxcoords->y1 + box->vtxcoords->h - tf(0.09f), 0.0005f, 0.0008f);
 				}
 				else {
@@ -3780,21 +3785,29 @@ void onestepfrom(bool stage, Node *node, Node *prevnode, GLuint prevfbotex, GLui
 			GLuint fbocopy;
 			float fac = 1.0f;
 			glDisable(GL_BLEND);
-			if (mainprogram->prevmodus and stage == 0) fbocopy = copy_tex(effect->fbotex);
+			glBindFramebuffer(GL_FRAMEBUFFER, lay->fbo);
+			glDrawBuffer(GL_COLOR_ATTACHMENT0);
+			if ((mainprogram->prevmodus and stage == 0)) {
+				fbocopy = copy_tex(effect->fbotex);
+				glViewport(0, 0, glob->w * div, glob->h * div);
+			}
 			else {
 				fbocopy = copy_tex(effect->fbotex, mainprogram->ow, mainprogram->oh);
-				fac = (glob->w / glob->h) / (mainprogram->ow / mainprogram->oh);
+				glViewport(0, 0, mainprogram->ow, mainprogram->oh);
 			}
-			glBindFramebuffer(GL_FRAMEBUFFER, effect->fbo);
-			glDrawBuffer(GL_COLOR_ATTACHMENT0);
+			glClearColor(0.0f, 0.0f, 0.0f, 0.0f);
+			glClear(GL_COLOR_BUFFER_BIT);
 			float black[4] = {0.0f, 0.0f, 0.0f, 0.0f};
-			draw_box(nullptr, black, -1.0f, -1.0f, 2.0f * div, 2.0f * div * fac, lay->shiftx * div, lay->shifty * div, lay->scale, lay->opacity->value, 0, fbocopy, glob->w, glob->h);
+			float pixelw = 2.0f / (float)glob->w;
+			float pixelh = 2.0f / (float)glob->h;
+			draw_box(nullptr, black, -1.0f, -1.0f, 2.0f, 2.0f, lay->shiftx, lay->shifty, lay->scale, lay->opacity->value, 0, fbocopy, glob->w, glob->h);
 			glEnable(GL_BLEND);
 			glDeleteTextures(1, &fbocopy);
 		}
 		
 		glBindFramebuffer(GL_FRAMEBUFFER, mainprogram->globfbo);
 		glDrawBuffer(GL_COLOR_ATTACHMENT0);
+		glViewport(0, 0, glob->w, glob->h);
 	}
 	else if (node->type == VIDEO) {
 		Layer *lay = ((VideoNode*)node)->layer;
@@ -3812,17 +3825,22 @@ void onestepfrom(bool stage, Node *node, Node *prevnode, GLuint prevfbotex, GLui
 			GLuint fbocopy;
 			float fac = 1.0f;
 			glDisable(GL_BLEND);
-			if ((mainprogram->prevmodus and stage == 0)) fbocopy = copy_tex(lay->fbotex, glob->w * div, glob->h * div);
-			else {
-				fbocopy = copy_tex(lay->fbotex, mainprogram->ow, mainprogram->oh);
-				fac = (glob->w / glob->h) / (mainprogram->ow / mainprogram->oh);
-			}
 			glBindFramebuffer(GL_FRAMEBUFFER, lay->fbo);
 			glDrawBuffer(GL_COLOR_ATTACHMENT0);
+			if ((mainprogram->prevmodus and stage == 0)) {
+				fbocopy = copy_tex(lay->fbotex, glob->w * div, glob->h * div);
+				glViewport(0, 0, glob->w * div, glob->h * div);
+			}
+			else {
+				fbocopy = copy_tex(lay->fbotex, mainprogram->ow, mainprogram->oh);
+				glViewport(0, 0, mainprogram->ow, mainprogram->oh);
+			}
+			glClearColor(0.0f, 0.0f, 0.0f, 0.0f);
+			glClear(GL_COLOR_BUFFER_BIT);
 			float black[4] = {0.0f, 0.0f, 0.0f, 0.0f};
 			float pixelw = 2.0f / (float)glob->w;
 			float pixelh = 2.0f / (float)glob->h;
-			draw_box(nullptr, black, -1.0f - pixelw, -1.0f - pixelh, 2.0f * (div + pixelw), 2.0f * (div + pixelh), lay->shiftx * div, lay->shifty * div, lay->scale, lay->opacity->value, 0, fbocopy, glob->w, glob->h);
+			draw_box(nullptr, black, -1.0f, -1.0f, 2.0f, 2.0f, lay->shiftx, lay->shifty, lay->scale, lay->opacity->value, 0, fbocopy, glob->w, glob->h);
 			glEnable(GL_BLEND);
 			glDeleteTextures(1, &fbocopy);
 		}
@@ -3830,6 +3848,7 @@ void onestepfrom(bool stage, Node *node, Node *prevnode, GLuint prevfbotex, GLui
 		prevfbo = lay->fbo;
 		glBindFramebuffer(GL_FRAMEBUFFER, mainprogram->globfbo);
 		glDrawBuffer(GL_COLOR_ATTACHMENT0);
+		glViewport(0, 0, glob->w, glob->h);
 	}
 	else if (node->type == BLEND) {
 		BlendNode *bnode = (BlendNode*)node;
@@ -4428,7 +4447,7 @@ void make_layboxes() {
 					VideoNode *vnode = (VideoNode*)node;
 					float xoffset;
 					int deck;
-					if (std::find(mainmix->layersAcomp.begin(), mainmix->layersAcomp.end(), ((VideoNode*)node)->layer) != mainmix->layersAcomp.end()) {
+					if (std::find(mainmix->layersAcomp.begin(), mainmix->layersAcomp.end(), vnode->layer) != mainmix->layersAcomp.end()) {
 						xoffset = 0.0f;
 						deck = 0;
 					}
@@ -4436,7 +4455,7 @@ void make_layboxes() {
 						xoffset = 1.0f;
 						deck = 1;
 					}
-					vnode->vidbox->vtxcoords->x1 = -1.0f + (float)((((VideoNode*)node)->layer->pos - mainmix->scenes[deck][mainmix->currscene[deck]]->scrollpos + 9999) % 3) * mainprogram->layw + mainprogram->numw + xoffset;
+					vnode->vidbox->vtxcoords->x1 = -1.0f + (float)((vnode->layer->pos - mainmix->scenes[deck][mainmix->currscene[deck]]->scrollpos + 9999) % 3) * mainprogram->layw + mainprogram->numw + xoffset;
 					vnode->vidbox->vtxcoords->y1 = 1.0f - mainprogram->layw;
 					vnode->vidbox->vtxcoords->w = mainprogram->layw;
 					vnode->vidbox->vtxcoords->h = mainprogram->layw;
@@ -4450,7 +4469,7 @@ void make_layboxes() {
 						vnode->vidbox->tex = vnode->layer->fbotex;
 					}
 					else {
-						vnode->vidbox->tex = vnode->layer->effects[0][((VideoNode*)node)->layer->effects[0].size() - 1]->fbotex;
+						vnode->vidbox->tex = vnode->layer->effects[0][vnode->layer->effects[0].size() - 1]->fbotex;
 					}
 				}
 				else continue;
@@ -4474,6 +4493,15 @@ void make_layboxes() {
 						deck = 1;
 					}
 					vnode->vidbox->vtxcoords->x1 = -1.0f + (float)((vnode->layer->pos - mainmix->scenes[deck][mainmix->currscene[deck]]->scrollpos + 9999) % 3) * mainprogram->layw + mainprogram->numw + xoffset;
+					vnode->vidbox->vtxcoords->y1 = 1.0f - mainprogram->layw;
+					vnode->vidbox->vtxcoords->w = mainprogram->layw;
+					vnode->vidbox->vtxcoords->h = mainprogram->layw;
+					vnode->vidbox->upvtxtoscr();
+					
+					vnode->vidbox->lcolor[0] = 1.0;
+					vnode->vidbox->lcolor[1] = 1.0;
+					vnode->vidbox->lcolor[2] = 1.0;
+					vnode->vidbox->lcolor[3] = 1.0;
 					if ((vnode)->layer->effects[0].size() == 0) {
 						vnode->vidbox->tex = vnode->layer->fbotex;
 					}
@@ -6018,8 +6046,20 @@ bool preferences() {
 	if (box.in(mx, my)) {
 		draw_box(white, lightblue, &box, -1);
 		if (mainprogram->lmsave) {
+			float oldow = mainprogram->ow;
+			float oldoh = mainprogram->oh;
 			mainprogram->prefs->save();
 			mainprogram->prefs->load();
+			if (mainprogram->ow != oldow or mainprogram->oh != oldoh) {
+				for (int i = 0; i < mainmix->layersAcomp.size(); i++) {
+    				glBindTexture(GL_TEXTURE_2D, mainmix->layersAcomp[i]->fbotex);
+					glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA, mainprogram->ow, mainprogram->oh, 0, GL_RGBA, GL_UNSIGNED_BYTE, nullptr);
+				}
+				for (int i = 0; i < mainmix->layersBcomp.size(); i++) {
+    				glBindTexture(GL_TEXTURE_2D, mainmix->layersBcomp[i]->fbotex);
+					glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA, mainprogram->ow, mainprogram->oh, 0, GL_RGBA, GL_UNSIGNED_BYTE, nullptr);
+				}
+			}	
 			mainprogram->prefon = false;
 			mainprogram->drawnonce = false;
 			SDL_HideWindow(mainprogram->prefwindow);
@@ -8889,18 +8929,21 @@ bool Shelf::open_videofile(const std::string &path, int pos) {
 		delete lay;
 		return 0;
 	}
-	glBindTexture(GL_TEXTURE_2D, this->texes[pos]);
-	if (lay->dataformat == 188 or lay->vidformat == 187) {
+	
+	lay->initialize(lay->decresult->width, lay->decresult->height);
+	if (lay->vidformat == 188 or lay->vidformat == 187) {
 		if (lay->decresult->compression == 187) {
-			glCompressedTexImage2D(GL_TEXTURE_2D, 0, GL_COMPRESSED_RGBA_S3TC_DXT1_EXT, lay->decresult->width, lay->decresult->height, 0, lay->decresult->size, lay->decresult->data);
+			glCompressedTexSubImage2D(GL_TEXTURE_2D, 0, lay->xs, lay->ys, lay->decresult->width, lay->decresult->height, GL_COMPRESSED_RGBA_S3TC_DXT1_EXT, lay->decresult->size, lay->decresult->data);
 		}
 		else if (lay->decresult->compression == 190) {
-			glCompressedTexImage2D(GL_TEXTURE_2D, 0, GL_COMPRESSED_RGBA_S3TC_DXT5_EXT, lay->decresult->width, lay->decresult->height, 0, lay->decresult->size, lay->decresult->data);
+			glCompressedTexSubImage2D(GL_TEXTURE_2D, 0, lay->xs, lay->ys, lay->decresult->width, lay->decresult->height, GL_COMPRESSED_RGBA_S3TC_DXT5_EXT, lay->decresult->size, lay->decresult->data);
 		}
 	}
-	else { 
-		glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA, lay->decresult->width, lay->decresult->height, 0, GL_RGBA, GL_UNSIGNED_BYTE, lay->decresult->data);
+	else {
+		glTexSubImage2D(GL_TEXTURE_2D, 0, lay->xs, lay->ys, lay->decresult->width, lay->decresult->height, GL_RGBA, GL_UNSIGNED_BYTE, lay->decresult->data);
 	}
+	this->texes[pos] = copy_tex(lay->texture);
+	
 	lay->closethread = true;
 	while (lay->closethread) {
 		lay->ready = true;
@@ -8953,30 +8996,31 @@ bool Shelf::open_layer(const std::string &path, int pos) {
 		lay->enddecode.wait(lock, [&]{return lay->processed;});
 		lay->processed = false;
 		lock.unlock();
-		glBindTexture(GL_TEXTURE_2D, lay->texture);
-		if (lay->dataformat == 188 or lay->vidformat == 187) {
+		
+		lay->initialize(lay->decresult->width, lay->decresult->height);
+		if (lay->vidformat == 188 or lay->vidformat == 187) {
 			if (lay->decresult->compression == 187) {
-				glCompressedTexImage2D(GL_TEXTURE_2D, 0, GL_COMPRESSED_RGBA_S3TC_DXT1_EXT, lay->decresult->width, lay->decresult->height, 0, lay->decresult->size, lay->decresult->data);
+				glCompressedTexSubImage2D(GL_TEXTURE_2D, 0, lay->xs, lay->ys, lay->decresult->width, lay->decresult->height, GL_COMPRESSED_RGBA_S3TC_DXT1_EXT, lay->decresult->size, lay->decresult->data);
 			}
 			else if (lay->decresult->compression == 190) {
-				glCompressedTexImage2D(GL_TEXTURE_2D, 0, GL_COMPRESSED_RGBA_S3TC_DXT5_EXT, lay->decresult->width, lay->decresult->height, 0, lay->decresult->size, lay->decresult->data);
+				glCompressedTexSubImage2D(GL_TEXTURE_2D, 0, lay->xs, lay->ys, lay->decresult->width, lay->decresult->height, GL_COMPRESSED_RGBA_S3TC_DXT5_EXT, lay->decresult->size, lay->decresult->data);
 			}
 		}
 		else {
-			glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA, lay->decresult->width, lay->decresult->height, 0, GL_RGBA, GL_UNSIGNED_BYTE, lay->decresult->data);
+			glTexSubImage2D(GL_TEXTURE_2D, 0, lay->xs, lay->ys, lay->decresult->width, lay->decresult->height, GL_RGBA, GL_UNSIGNED_BYTE, lay->decresult->data);
 		}
 	}
 	glBindFramebuffer(GL_FRAMEBUFFER, lay->fbo);
 	glDrawBuffer(GL_COLOR_ATTACHMENT0);
-	float div = 0.3f;
-	float fac = 1.0f;
+	glViewport(0, 0, glob->w * 0.3f, glob->h * 0.3f);
 	glDisable(GL_BLEND);
 	// put lay->texture into lay->fbo(tex)
-	draw_box(nullptr, black, -1.0f, -1.0f, 2.0f * div, 2.0f * div * fac, 0.0f, 0.0f, 1.0f, 1.0f, 0, lay->texture, glob->w, glob->h);
+	draw_box(nullptr, black, -1.0f, -1.0f, 2.0f, 2.0f, 0.0f, 0.0f, 1.0f, 1.0f, 0, lay->texture, glob->w, glob->h);
 	glEnable(GL_BLEND);
 	glBindFramebuffer(GL_FRAMEBUFFER, mainprogram->globfbo);
 	glDrawBuffer(GL_COLOR_ATTACHMENT0);
-	if (lay->effects[0].size()) lay->fbotex = copy_tex(lay->texture, 1);
+	glViewport(0, 0, glob->w, glob->h);
+	if (lay->effects[0].size()) lay->fbotex = copy_tex(lay->texture);
 	else lay->fbotex = copy_tex(lay->texture);
 	onestepfrom(0, lay->node, nullptr, -1, -1);
 	if (lay->effects[0].size()) {
@@ -9002,34 +9046,32 @@ bool Shelf::open_image(const std::string &path, int pos) {
 	if (ret == IL_FALSE) return 0;
 	this->paths[pos] = path;
 	this->types[pos] = ELEM_IMAGE;
-	glBindTexture(GL_TEXTURE_2D, this->texes[pos]);
 	float x = ilGetInteger(IL_IMAGE_WIDTH);
 	float y = ilGetInteger(IL_IMAGE_HEIGHT);
 	int iw, ih, xs, ys;
-	if (x / y > glob->w / glob->h) {
+	if (x / y > mainprogram->ow / mainprogram->oh) {
 		iw = x;
 		ih = y * x * glob->h / y / glob->w;
 		xs = 0;
 		ys = (ih - y) / 2.0f;
 	}
 	else {
-		iw = x * glob->w * y / glob->h / x;
+		iw = x * mainprogram->ow * y / mainprogram->oh / x;
 		ih = y;
 		xs = (iw - x) / 2.0f;
 		ys = 0;
 	}
 	int bpp = ilGetInteger(IL_IMAGE_BPP);
-	//GLubyte* emptydata = new GLubyte[iw * ih * 4];
-	//memset(emptydata, 0x000000ff, iw * ih * 4 * sizeof(GLubyte));
 	std::vector<int> emptydata(iw * ih);
 	std::fill(emptydata.begin(), emptydata.end(), 0x000000ff);
+	glBindTexture(GL_TEXTURE_2D, this->texes[pos]);
 	if (bpp == 3) {
 		glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA, iw, ih, 0, GL_RGBA, GL_UNSIGNED_BYTE, &emptydata[0]);
-		glTexSubImage2D(GL_TEXTURE_2D, 0, xs, ys, ilGetInteger(IL_IMAGE_WIDTH), ilGetInteger(IL_IMAGE_HEIGHT), GL_RGB, GL_UNSIGNED_BYTE, ilGetData());
+		glTexSubImage2D(GL_TEXTURE_2D, 0, xs, ys, x, y, GL_RGB, GL_UNSIGNED_BYTE, ilGetData());
 	}
 	else if (bpp == 4) {
 		glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA, iw, ih, 0, GL_RGBA, GL_UNSIGNED_BYTE, &emptydata[0]);
-		glTexSubImage2D(GL_TEXTURE_2D, 0, xs, ys, ilGetInteger(IL_IMAGE_WIDTH), ilGetInteger(IL_IMAGE_HEIGHT), GL_RGBA, GL_UNSIGNED_BYTE, ilGetData());
+		glTexSubImage2D(GL_TEXTURE_2D, 0, xs, ys, x, y, GL_RGBA, GL_UNSIGNED_BYTE, ilGetData());
 	}
 	
 	mainprogram->shelves[0]->save(mainprogram->shelfdir + "shelfsA.shelf");
