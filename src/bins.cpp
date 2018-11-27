@@ -1870,6 +1870,10 @@ int BinsMain::read_binslist() {
 	//check if is binslistfile
 	getline(rfile, istring);
 	int currbin = std::stoi(istring);
+	for (int i = 0; i < this->bins.size(); i++) {
+		delete this->bins[i];
+	}
+	this->bins.clear();
 	while (getline(rfile, istring)) {
 		Bin *newbin;
 		if (istring == "ENDOFFILE") break;

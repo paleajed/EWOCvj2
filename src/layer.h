@@ -31,6 +31,13 @@ typedef enum
 	ELEM_LIVE = 5,
 } ELEM_TYPE;
 
+typedef enum
+{
+	RATIO_OUTPUT = 0,
+	RATIO_ORIGINAL = 1,
+	RATIO_WINDOW = 2,
+} RATIO_TYPE;
+
 struct frame_result {
 	char *data = nullptr;
 	int height = 1;
@@ -60,6 +67,7 @@ class Layer {
 		int clonepos = -1;
 		std::vector<Clip*> clips;
 		ELEM_TYPE type = ELEM_FILE;
+		RATIO_TYPE aspectratio = RATIO_WINDOW;
 		bool queueing = false;
 		int queuescroll = 0;
 		float scrollcol[4] = {0.5f, 0.5f, 0.5f, 0.0f};

@@ -202,10 +202,10 @@ void Param::handle() {
 			}
 		}
 		if (this->sliding) {
-			draw_box(green, green, this->box->vtxcoords->x1 + this->box->vtxcoords->w * ((this->value - this->range[0]) / (this->range[1] - this->range[0])) - tf(0.00078f), this->box->vtxcoords->y1, 2.0f / glob->w, this->box->vtxcoords->h, -1);
+			draw_box(green, green, this->box->vtxcoords->x1 + this->box->vtxcoords->w * ((this->value - this->range[0]) / (this->range[1] - this->range[0])) - tf(0.001f), this->box->vtxcoords->y1, 0.002f, this->box->vtxcoords->h, -1);
 		}
 		else {
-			draw_box(green, green, this->box->vtxcoords->x1 + this->box->vtxcoords->w * (((int)(this->value + 0.5f) - this->range[0]) / (this->range[1] - this->range[0])) - tf(0.00078f), this->box->vtxcoords->y1, 2.0f / glob->w, this->box->vtxcoords->h, -1);
+			draw_box(green, green, this->box->vtxcoords->x1 + this->box->vtxcoords->w * (((int)(this->value + 0.5f) - this->range[0]) / (this->range[1] - this->range[0])) - tf(0.001f), this->box->vtxcoords->y1, 0.002f, this->box->vtxcoords->h, -1);
 		}
 	}
 	if (this == mainmix->adaptnumparam) {
@@ -1944,7 +1944,7 @@ Layer::Layer(bool comp) {
 		glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA, mainprogram->ow, mainprogram->oh, 0, GL_RGBA, GL_UNSIGNED_BYTE, nullptr);
 	}
 	else {
-		glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA, glob->w * 0.3f, glob->h * 0.3f, 0, GL_RGBA, GL_UNSIGNED_BYTE, nullptr);
+		glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA, mainprogram->ow, mainprogram->oh, 0, GL_RGBA, GL_UNSIGNED_BYTE, nullptr);
 	}
 	glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR);
 	glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
@@ -2099,23 +2099,16 @@ Layer::~Layer() {
 }
 
 void Layer::initialize(int w, int h) {
-	if (w / h > mainprogram->ow / mainprogram->oh) {
-		this->iw = w;
-		this->ih = h * w * mainprogram->oh / h / mainprogram->ow;
-		this->xs = 0;
-		this->ys = (this->ih - h) / 2.0f;
-	}
-	else {
-		this->iw = w * mainprogram->ow * h / mainprogram->oh / w;
-		this->ih = h;
-		this->xs = (this->iw - w) / 2.0f;
-		this->ys = 0;
-	}
+	this->iw = w;
+	this->ih = h;
 	std::vector<int> emptydata(this->iw * this->ih);
 	std::fill(emptydata.begin(), emptydata.end(), 0x00000000);
 	glBindTexture(GL_TEXTURE_2D, this->texture);
+	glPixelStorei(GL_UNPACK_ALIGNMENT, 1);
+	glPixelStorei(GL_UNPACK_ROW_LENGTH, 0);
+	glPixelStorei(GL_UNPACK_SKIP_PIXELS, 0);
+	glPixelStorei(GL_UNPACK_SKIP_ROWS, 0);	
 	if (this->vidformat == 188 or this->vidformat == 187) {
-		glTexImage2D(GL_TEXTURE_2D, 0, GL_COMPRESSED_RGBA, this->iw, this->ih, 0, GL_RGBA, GL_UNSIGNED_BYTE, &emptydata[0]);
 		if (this->decresult->compression == 187) {
 			glTexImage2D(GL_TEXTURE_2D, 0, GL_COMPRESSED_RGBA_S3TC_DXT1_EXT, this->iw, this->ih, 0, GL_RGBA, GL_UNSIGNED_BYTE, &emptydata[0]);
 		}
@@ -2133,19 +2126,20 @@ void Layer::open_image(const std::string &path) {
 	if (ret == IL_FALSE) return;
 	this->filename = path;
 	this->vidformat = -1;
-	float w = ilGetInteger(IL_IMAGE_WIDTH);
-	float h = ilGetInteger(IL_IMAGE_HEIGHT);
+	int w = ilGetInteger(IL_IMAGE_WIDTH);
+	int h = ilGetInteger(IL_IMAGE_HEIGHT);
 	int bpp = ilGetInteger(IL_IMAGE_BPP);
 	this->initialize(w, h);
 	this->type = ELEM_IMAGE;
 	this->decresult->width = w;
 	this->decresult->height = h;
-	
+		
+	glBindTexture(GL_TEXTURE_2D, this->texture);
 	if (bpp == 3) {
-		glTexSubImage2D(GL_TEXTURE_2D, 0, this->xs, this->ys, w, h, GL_RGB, GL_UNSIGNED_BYTE, ilGetData());
+		glTexSubImage2D(GL_TEXTURE_2D, 0, this->xs, this->ys, w, h, GL_RGB, GL_UNSIGNED_BYTE, (char*)ilGetData());
 	}
 	else if (bpp == 4) {
-		glTexSubImage2D(GL_TEXTURE_2D, 0, this->xs, this->ys, w, h, GL_RGBA, GL_UNSIGNED_BYTE, ilGetData());
+		glTexSubImage2D(GL_TEXTURE_2D, 0, this->xs, this->ys, w, h, GL_RGBA, GL_UNSIGNED_BYTE, (char*)ilGetData());
 	}
 }
 
@@ -2202,6 +2196,7 @@ void Mixer::set_values(Layer *clay, Layer *lay) {
 	clay->genmidibut->value = lay->genmidibut->value;
 	clay->pos = lay->pos;
 	clay->deck = lay->deck;
+	clay->aspectratio = lay->aspectratio;
 	clay->shiftx = lay->shiftx;
 	clay->shifty = lay->shifty;
 	clay->scale = lay->scale;
@@ -2743,7 +2738,7 @@ std::vector<std::string> Mixer::write_layer(Layer *lay, std::ostream& wfile, boo
 	wfile << "CLONESETNR\n";
 	wfile << std::to_string(lay->clonesetnr);
 	wfile << "\n";
-	if (lay->type != ELEM_LIVE or lay->type == ELEM_IMAGE) {
+	if (lay->type != ELEM_LIVE and lay->type != ELEM_IMAGE) {
 		wfile << "SPEEDVAL\n";
 		wfile << std::to_string(lay->speed->value);
 		wfile << "\n";
@@ -2787,7 +2782,7 @@ std::vector<std::string> Mixer::write_layer(Layer *lay, std::ostream& wfile, boo
 	wfile << "CHINVVAL\n";
 	wfile << std::to_string(lay->chinv->value);
 	wfile << "\n";
-	if (lay->type != ELEM_LIVE or lay->type == ELEM_IMAGE) {
+	if (lay->type != ELEM_LIVE and lay->type != ELEM_IMAGE) {
 		wfile << "MILLIF\n";
 		wfile << std::to_string(lay->millif);
 		wfile << "\n";
@@ -3353,7 +3348,6 @@ void Mixer::open_layerfile(const std::string &path, Layer *lay, bool loadevents,
 		delete lay->effects[0].back();
 		lay->effects[0].pop_back();
 	}
-	
 	loopstation->readelems.clear();
 	loopstation->readelemnrs.clear();
 	std::vector<Layer*> layers;

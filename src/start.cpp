@@ -115,8 +115,8 @@ LoopStation *lpc = nullptr;
 //int retgtp = Getmainprogram->temppath(MAX_PATH, buf);
 //std::string mainprogram->temppath (buf);
 static GLuint mixvao;
-static GLuint fbotex[2];
-static GLuint frbuf[2];
+static GLuint fbotex[4];
+static GLuint frbuf[4];
 static GLuint vbuf2, vbuf3;
 static GLuint thmvbuf;
 static GLuint thmvao;
@@ -143,6 +143,21 @@ bool exists(const std::string &name) {
     } else {
         return false;
     }   
+}
+
+std::string dirname(std::string pathname)
+{
+	size_t last_slash_idx1 = pathname.find_last_of("//");
+	size_t last_slash_idx2 = pathname.find_last_of("\\");
+	if (last_slash_idx1 == std::string::npos) last_slash_idx1 = 0;
+	if (last_slash_idx2 == std::string::npos) last_slash_idx2 = 0;
+	size_t maxpos = last_slash_idx2;
+	if (last_slash_idx1 > last_slash_idx2) maxpos = last_slash_idx1;
+	if (std::string::npos != maxpos)
+	{
+		pathname.erase(maxpos + 1, std::string::npos);
+	}
+    return pathname;
 }
 
 std::string basename(std::string pathname)
@@ -1500,7 +1515,6 @@ Shelf::Shelf(bool side) {
 	}
 }
 
-
 void set_fbovao2() {
 	for (int i = 0; i < 1; i++) { //mainprogram->nodesmain->pages.size()
 		for (int j = 0; j < mainprogram->nodesmain->currpage->nodescomp.size(); j++) {
@@ -1564,26 +1578,39 @@ void set_fbo() {
     glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR);
     glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
 
-    glGenTextures(1, &fbotex[0]);
+    glGenTextures(1, &fbotex[0]); //comp = false
     glGenTextures(1, &fbotex[1]);
-	glActiveTexture(GL_TEXTURE5);
+   	glGenTextures(1, &fbotex[2]); //comp = true
+    glGenTextures(1, &fbotex[3]);
     glBindTexture(GL_TEXTURE_2D, fbotex[0]);
 	glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA, glob->w, glob->h, 0, GL_RGBA, GL_UNSIGNED_BYTE, nullptr);
     glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR);
     glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
-
-    glActiveTexture(GL_TEXTURE6);
     glBindTexture(GL_TEXTURE_2D, fbotex[1]);
 	glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA, glob->w, glob->h, 0, GL_RGBA, GL_UNSIGNED_BYTE, nullptr);
+    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR);
+    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
+    glBindTexture(GL_TEXTURE_2D, fbotex[2]);
+	glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA, mainprogram->ow, mainprogram->oh, 0, GL_RGBA, GL_UNSIGNED_BYTE, nullptr);
+    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR);
+    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
+    glBindTexture(GL_TEXTURE_2D, fbotex[3]);
+	glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA, mainprogram->ow, mainprogram->oh, 0, GL_RGBA, GL_UNSIGNED_BYTE, nullptr);
     glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR);
     glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
 
 	glGenFramebuffers(1, &frbuf[0]);
 	glGenFramebuffers(1, &frbuf[1]);
+	glGenFramebuffers(1, &frbuf[2]);
+	glGenFramebuffers(1, &frbuf[3]);
 	glBindFramebuffer(GL_FRAMEBUFFER, frbuf[0]);
 	glFramebufferTexture2D(GL_FRAMEBUFFER, GL_COLOR_ATTACHMENT0, GL_TEXTURE_2D, fbotex[0], 0);
 	glBindFramebuffer(GL_FRAMEBUFFER, frbuf[1]);
 	glFramebufferTexture2D(GL_FRAMEBUFFER, GL_COLOR_ATTACHMENT0, GL_TEXTURE_2D, fbotex[1], 0);
+	glBindFramebuffer(GL_FRAMEBUFFER, frbuf[2]);
+	glFramebufferTexture2D(GL_FRAMEBUFFER, GL_COLOR_ATTACHMENT0, GL_TEXTURE_2D, fbotex[2], 0);
+	glBindFramebuffer(GL_FRAMEBUFFER, frbuf[3]);
+	glFramebufferTexture2D(GL_FRAMEBUFFER, GL_COLOR_ATTACHMENT0, GL_TEXTURE_2D, fbotex[3], 0);
 
 	
 	float vidwidth = mainprogram->ow;
@@ -1762,19 +1789,15 @@ void draw_box(float *linec, float *areac, float x, float y, float wi, float he, 
 	
 				
 	GLuint boxvao, boxbuf;
+	GLuint boxtbuf;
 	glGenBuffers(1, &boxbuf);	
+	glGenBuffers(1, &boxtbuf);
 	glBindBuffer(GL_ARRAY_BUFFER, boxbuf);
    	glBufferData(GL_ARRAY_BUFFER, 32, fvcoords, GL_STATIC_DRAW);
 	glGenVertexArrays(1, &boxvao);
 	glBindVertexArray(boxvao);
 	glEnableVertexAttribArray(0);
 	glVertexAttribPointer(0, 2, GL_FLOAT, GL_FALSE, 8, nullptr);
-	GLuint boxtbuf;
-	glGenBuffers(1, &boxtbuf);
-	glBindBuffer(GL_ARRAY_BUFFER, boxtbuf);
-	glBufferData(GL_ARRAY_BUFFER, 32, tcoords, GL_STATIC_DRAW);
-	glEnableVertexAttribArray(1);
-	glVertexAttribPointer(1, 2, GL_FLOAT, GL_FALSE, 8, nullptr);
 	if (linec) {
 		glDrawArrays(GL_LINE_LOOP, 0, 4);
 	} 
@@ -1789,7 +1812,7 @@ void draw_box(float *linec, float *areac, float x, float y, float wi, float he, 
 		};
 		glBindBuffer(GL_ARRAY_BUFFER, boxbuf);
 		glBufferData(GL_ARRAY_BUFFER, 32, fvcoords2, GL_STATIC_DRAW);
-		glBindVertexArray(boxvao);
+		//glBindVertexArray(boxvao);
 		glUniform4fv(color, 1, areac);
 		if (tex != -1) {
 			GLfloat tcoords[8];
@@ -1800,6 +1823,8 @@ void draw_box(float *linec, float *areac, float x, float y, float wi, float he, 
 			*p++ = ((1.0f) - 0.5f) * scale + 0.5f + shx; *p++ = ((1.0f) - 0.5f) * scale + 0.5f + shy;
 			glBindBuffer(GL_ARRAY_BUFFER, boxtbuf);
 			glBufferData(GL_ARRAY_BUFFER, 32, tcoords, GL_STATIC_DRAW);
+			glEnableVertexAttribArray(1);
+			glVertexAttribPointer(1, 2, GL_FLOAT, GL_FALSE, 8, nullptr);
 			glActiveTexture(GL_TEXTURE0);
 			glBindTexture(GL_TEXTURE_2D, tex);
 			glUniform1i(box, 0);
@@ -1822,7 +1847,6 @@ void draw_box(float *linec, float *areac, float x, float y, float wi, float he, 
 		glDrawArrays(GL_TRIANGLE_STRIP, 0, 4);
 		glUniform1i(down, 0);
 		glUniform1i(drawcircle, 0);
-		glDeleteBuffers(1, &boxbuf);
 	}
 
 	glUniform1i(box, 0);
@@ -1897,7 +1921,6 @@ float render_text(std::string text, float *textc, float x, float y, float sx, fl
 float render_text(std::string text, float *textc, float x, float y, float sx, float sy, int smflag, bool vertical) {
  	y -= 0.03f;
 	GLuint texture;
-	GLuint vbo, tbo, vao;
 	float textw = 0.0f;
 	float texth = 0.0f;
 	bool prepare = true;
@@ -1909,9 +1932,6 @@ float render_text(std::string text, float *textc, float x, float y, float sx, fl
 			else {
 				prepare = false;
 				texture = mainprogram->guistrings[i]->texture;
-				vbo = mainprogram->guistrings[i]->vbo;
-				tbo = mainprogram->guistrings[i]->tbo;
-				vao = mainprogram->guistrings[i]->vao;
 				textw = mainprogram->guistrings[i]->textw;
 				texth = mainprogram->guistrings[i]->texth;
 				break;
@@ -1926,9 +1946,6 @@ float render_text(std::string text, float *textc, float x, float y, float sx, fl
 			else {
 				prepare = false;
 				texture = mainprogram->prguistrings[i]->texture;
-				vbo = mainprogram->prguistrings[i]->vbo;
-				tbo = mainprogram->prguistrings[i]->tbo;
-				vao = mainprogram->prguistrings[i]->vao;
 				textw = mainprogram->prguistrings[i]->textw;
 				texth = mainprogram->prguistrings[i]->texth;
 				break;
@@ -1943,9 +1960,6 @@ float render_text(std::string text, float *textc, float x, float y, float sx, fl
 			else {
 				prepare = false;
 				texture = mainprogram->tmguistrings[i]->texture;
-				vbo = mainprogram->tmguistrings[i]->vbo;
-				tbo = mainprogram->tmguistrings[i]->tbo;
-				vao = mainprogram->tmguistrings[i]->vao;
 				textw = mainprogram->tmguistrings[i]->textw;
 				texth = mainprogram->tmguistrings[i]->texth;
 				break;
@@ -1960,12 +1974,12 @@ float render_text(std::string text, float *textc, float x, float y, float sx, fl
 		glGenTextures(1, &texture);
 		glActiveTexture(GL_TEXTURE0);
 		glBindTexture(GL_TEXTURE_2D, texture);
-		glTexImage2D(
+		glTexImage2D(        //reminder: texture size efficiency!
 			GL_TEXTURE_2D,
 			0,
 			GL_RGBA,
 			2048,
-			128,
+			64,
 			0,
 			GL_RGBA,
 			GL_UNSIGNED_BYTE,
@@ -2015,6 +2029,7 @@ float render_text(std::string text, float *textc, float x, float y, float sx, fl
 		glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
 		glPixelStorei(GL_UNPACK_ALIGNMENT, 1);
 		
+		float pixelw, pixelh;
 		FT_Set_Pixel_Sizes(face, 0, (int)(sy * 32000.0f * glob->h / 1346.0f)); //
 		x = -1.0f;
 		y = 1.0f;
@@ -2040,8 +2055,8 @@ float render_text(std::string text, float *textc, float x, float y, float sx, fl
 				g->bitmap.buffer
 				);
 	
-			float pixelw = 2.0f / glob->w;
-			float pixelh = 2.0f / glob->h;
+			pixelw = 2.0f / glob->w;
+			pixelh = 2.0f / glob->h;
 			float x2 = x + g->bitmap_left * pixelw;
 			float y2 = y - (g->bitmap_top + 16 * glob->h / 1346.0f) * pixelh;
 			float wi = g->bitmap.width * pixelw;
@@ -2082,12 +2097,36 @@ float render_text(std::string text, float *textc, float x, float y, float sx, fl
 			textw += (g->advance.x/128) * pixelw;
 			texth = 64.0f * pixelh;
 		}
+		
+		//cropping texture
+		int w = textw * 2.2f / pixelw;
+		GLuint endtex;
+		glGenTextures(1, &endtex);
+		glBindTexture(GL_TEXTURE_2D, endtex);
+		glTexImage2D(
+			GL_TEXTURE_2D,
+			0,
+			GL_RGBA,
+			w,
+			64,
+			0,
+			GL_RGBA,
+			GL_UNSIGNED_BYTE,
+			0
+			);
+		glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR);
+		glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
+		glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_EDGE);
+		glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_EDGE);
+		GLuint endfrbuf;
+		glGenFramebuffers(1, &endfrbuf);
+		glBindFramebuffer(GL_FRAMEBUFFER, endfrbuf);
+		glFramebufferTexture2D(GL_FRAMEBUFFER, GL_COLOR_ATTACHMENT0, GL_TEXTURE_2D, endtex, 0);
+		glBlitNamedFramebuffer(texfrbuf, endfrbuf, 0, 0, w, 64 , 0, 0, w, 64, GL_COLOR_BUFFER_BIT, GL_NEAREST);
+		
 		GUIString *guistring = new GUIString;
 		guistring->text = text;
-		guistring->texture = texture;
-		guistring->vbo = texvbuf;
-		guistring->tbo = textbuf;
-		guistring->vao = texvao;
+		guistring->texture = endtex;
 		guistring->textw = textw;
 		guistring->texth = texth;
 		guistring->sx = sx;
@@ -2096,6 +2135,9 @@ float render_text(std::string text, float *textc, float x, float y, float sx, fl
 		else if (smflag == 2) mainprogram->tmguistrings.push_back(guistring);
 		
 		glDeleteFramebuffers(1, &texfrbuf);
+		glDeleteFramebuffers(1, &endfrbuf);
+		glDeleteTextures(1, &ftex);
+		glDeleteTextures(1, &texture);
 		
 		return textw;
   	}
@@ -2103,17 +2145,22 @@ float render_text(std::string text, float *textc, float x, float y, float sx, fl
 		GLfloat texvcoords[8];
 		GLfloat *p = texvcoords;
 		float th = 0.0012f;
+		float pixelw = 2.0f / glob->w;
+		float wfac = textw / pixelw / 512.0f;
+		float thtrans[] = {th, -th};
+		GLfloat trans = glGetUniformLocation(mainprogram->ShaderProgram, "translation");
+		glUniform2fv(trans, 1, thtrans);
 		if (vertical) {
 			*p++ = x; *p++ = y;
-			*p++ = x; *p++ = y - texth * 16 * glob->w / glob->h;
-			*p++ = x + texth * 2 * glob->h / glob->w;     *p++ = y;
-			*p++ = x + texth * 2 * glob->h / glob->w;     *p++ = y - texth * 16 * glob->w / glob->h;
+			*p++ = x; *p++ = y - texth * 8 * wfac * glob->w / glob->h;
+			*p++ = x + texth * glob->h / glob->w;     *p++ = y;
+			*p++ = x + texth * glob->h / glob->w;     *p++ = y - texth * 8 * wfac * glob->w / glob->h;
 		}
 		else {
-			*p++ = x + th;    *p++ = y - th;
-			*p++ = x + texth * 16 + th; *p++ = y - th;
-			*p++ = x + th;     *p++ = y + texth * 2 - th;
-			*p++ = x + texth * 16 + th; *p++ = y + texth * 2 - th;
+			*p++ = x;    *p++ = y;
+			*p++ = x + texth * 8 * wfac; *p++ = y;
+			*p++ = x;     *p++ = y + texth;
+			*p++ = x + texth * 8 * wfac; *p++ = y + texth;
 		}
 		GLfloat textcoords[] = {0.0f, 0.0f,
 							1.0f, 0.0f,
@@ -2129,46 +2176,40 @@ float render_text(std::string text, float *textc, float x, float y, float sx, fl
 		GLuint texvao;
 		glGenVertexArrays(1, &texvao);
 		glBindVertexArray(texvao);
+		GLuint vbo;
+		glGenBuffers(1, &vbo);
 		glBindBuffer(GL_ARRAY_BUFFER, vbo);
 		glBufferData(GL_ARRAY_BUFFER, 32, texvcoords, GL_STATIC_DRAW);
 		glEnableVertexAttribArray(0);
 		glVertexAttribPointer(0, 2, GL_FLOAT, GL_FALSE, 8, nullptr);
+		GLuint tbo;
+		glGenBuffers(1, &tbo);
 		glBindBuffer(GL_ARRAY_BUFFER, tbo);
 		glBufferData(GL_ARRAY_BUFFER, 32, textcoords, GL_STATIC_DRAW);
 		glEnableVertexAttribArray(1);
 		glVertexAttribPointer(1, 2, GL_FLOAT, GL_FALSE, 8, nullptr);
-		if (smflag == 1) {
-			glBindFramebuffer(GL_FRAMEBUFFER, mainprogram->smglobfbo_pr);
+		if (mainprogram->startloop) {
+			if (smflag == 1) {
+				glBindFramebuffer(GL_FRAMEBUFFER, mainprogram->smglobfbo_pr);
+			}
+			else if (smflag == 2) {
+				glBindFramebuffer(GL_FRAMEBUFFER, mainprogram->smglobfbo_tm);
+			}
+			else {
+				glBindFramebuffer(GL_FRAMEBUFFER, mainprogram->globfbo);
+			}
+			glDrawBuffer(GL_COLOR_ATTACHMENT0);
 		}
-		else if (smflag == 2) {
-			glBindFramebuffer(GL_FRAMEBUFFER, mainprogram->smglobfbo_tm);
-		}
-		else {
-			glBindFramebuffer(GL_FRAMEBUFFER, mainprogram->globfbo);
-		}
-		glDrawBuffer(GL_COLOR_ATTACHMENT0);
-		if (textw != 0) glDrawArrays(GL_TRIANGLE_STRIP, 0, 4);
-	
-		p = texvcoords;
-		if (vertical) {
-			*p++ = x; *p++ = y;
-			*p++ = x; *p++ = y - texth * 16 * glob->w / glob->h;
-			*p++ = x + texth * 2 * glob->h / glob->w;     *p++ = y;
-			*p++ = x + texth * 2 * glob->h / glob->w;     *p++ = y - texth * 16 * glob->w / glob->h;
-		}
-		else {
-			*p++ = x;    *p++ = y;
-			*p++ = x + texth * 16; *p++ = y;
-			*p++ = x;     *p++ = y + texth * 2;
-			*p++ = x + texth * 16; *p++ = y + texth * 2;
-		}
-		glBindBuffer(GL_ARRAY_BUFFER, vbo);
-		glBufferData(GL_ARRAY_BUFFER, 32, texvcoords, GL_STATIC_DRAW);
+		if (textw != 0) glDrawArrays(GL_TRIANGLE_STRIP, 0, 4);  //draw text shadow
 		glUniform4fv(color, 1, textc);
-		if (textw != 0) glDrawArrays(GL_TRIANGLE_STRIP, 0, 4);		
+		float zerotrans[] = {0.0f, 0.0f};
+		glUniform2fv(trans, 1, zerotrans);
+		if (textw != 0) glDrawArrays(GL_TRIANGLE_STRIP, 0, 4);	//draw text
 		
 		glUniform1i(textmode, 0);
 		glDeleteVertexArrays(1, &texvao);
+		glDeleteBuffers(1, &vbo);
+		glDeleteBuffers(1, &tbo);
 	}
 	
 	return textw;
@@ -2432,7 +2473,7 @@ void calc_texture(Layer *lay, bool comp, bool alive) {
 	else glViewport(0, 0, glob->w * 0.3f, glob->h * 0.3f);
 	float black[4] = {0.0f, 0.0f, 0.0f, 0.0f};
 	draw_box(nullptr, black, -1.0f, 1.0f, 2.0f, -2.0f, 0, 0, 1, 1, 0, tex, glob->w, glob->h);
-	glEnable(GL_BLEND);
+	glBindFramebuffer(GL_FRAMEBUFFER, mainprogram->globfbo);
 	glDrawBuffer(GL_COLOR_ATTACHMENT0);
 	glEnable(GL_BLEND);
 	glViewport(0, 0, glob->w, glob->h);
@@ -2466,6 +2507,9 @@ void display_texture(Layer *lay, bool deck) {
 	float darkred2[4] = {0.4f, 0.0f, 0.0f, 1.0f};
 	float black[4] = {0.0f, 0.0f, 0.0f, 1.0f};
 
+	glBindFramebuffer(GL_FRAMEBUFFER, mainprogram->globfbo);
+	glDrawBuffer(GL_COLOR_ATTACHMENT0);
+					
 	std::vector<Layer*> &lvec = choose_layers(deck);
 	if (mainmix->scenes[deck][mainmix->currscene[deck]]->scrollpos > lvec.size() - 2) mainmix->scenes[deck][mainmix->currscene[deck]]->scrollpos = lvec.size() - 2;
 	if (mainmix->scenes[deck][mainmix->currscene[deck]]->scrollpos < 0) mainmix->scenes[deck][mainmix->currscene[deck]]->scrollpos = 0;
@@ -3248,19 +3292,21 @@ void display_texture(Layer *lay, bool deck) {
 }
 
 void doblur(bool stage, GLuint prevfbotex, int iter) {
+	glActiveTexture(GL_TEXTURE5);
+	glBindTexture(GL_TEXTURE_2D, fbotex[0 + stage * 2]);
+	glActiveTexture(GL_TEXTURE6);
+	glBindTexture(GL_TEXTURE_2D, fbotex[1 + stage * 2]);
 	if (iter == 0) return;
 	GLboolean horizontal = true, first_iteration = true;
 	GLuint *tex;
-	GLint blurring = glGetUniformLocation(mainprogram->ShaderProgram, "blurring");
-	glUniform1i(blurring, 1);
 	GLint fboSampler = glGetUniformLocation(mainprogram->ShaderProgram, "fboSampler");
 	glUniform1i(fboSampler, 0);
 	glActiveTexture(GL_TEXTURE0);
 	for(GLuint i = 0; i < iter; i++) {
-		glBindFramebuffer(GL_FRAMEBUFFER, frbuf[horizontal]);
+		glBindFramebuffer(GL_FRAMEBUFFER, frbuf[horizontal + stage * 2]);
 		glDrawBuffer(GL_COLOR_ATTACHMENT0);
 		if (first_iteration) tex = &prevfbotex;
-		else tex = &fbotex[!horizontal];
+		else tex = &fbotex[!horizontal + stage * 2];
 		glBindTexture(GL_TEXTURE_2D, *tex);
 		glUniform1i(glGetUniformLocation(mainprogram->ShaderProgram, "horizontal"), horizontal);
 		glBindVertexArray(mainprogram->fbovao[2 - (mainprogram->prevmodus and !stage)]);
@@ -3274,7 +3320,6 @@ void doblur(bool stage, GLuint prevfbotex, int iter) {
 	}
 	glBindFramebuffer(GL_FRAMEBUFFER, mainprogram->globfbo);
 	glDrawBuffer(GL_COLOR_ATTACHMENT0);
-	glUniform1i(blurring, 0);
 }
 
 void midi_set() {
@@ -3382,27 +3427,9 @@ void onestepfrom(bool stage, Node *node, Node *prevnode, GLuint prevfbotex, GLui
 					glUniform1i(fxid, BLUR);
 					GLint interm = glGetUniformLocation(mainprogram->ShaderProgram, "interm");
 					glUniform1i(interm, 1);
-					glUniform1i(blurswitch, 1);
-					glBindTexture(GL_TEXTURE_2D, fbotex[0]);
-					if (mainprogram->prevmodus and stage == 0) {
-						glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA, (int)(glob->w * div), (int)(glob->h * div), 0, GL_RGBA, GL_UNSIGNED_BYTE, nullptr);
-					}
-					else {
-						glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA, mainprogram->ow, mainprogram->oh, 0, GL_RGBA, GL_UNSIGNED_BYTE, nullptr);
-					}
-					glBindTexture(GL_TEXTURE_2D, fbotex[1]);
-					if (mainprogram->prevmodus and stage == 0) {
-						glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA, (int)(glob->w * div), (int)(glob->h * div), 0, GL_RGBA, GL_UNSIGNED_BYTE, nullptr);
-					}
-					else {
-						glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA, mainprogram->ow, mainprogram->oh, 0, GL_RGBA, GL_UNSIGNED_BYTE, nullptr);
-					}
 					doblur(stage, prevfbotex, ((BlurEffect*)effect)->times);
-					glUniform1i(Sampler0, 0);
 					glActiveTexture(GL_TEXTURE0);
-					glBindTexture(GL_TEXTURE_2D, fbotex[1]);
-					glUniform1i(blurswitch, 0);
-					prevfbotex = fbotex[1];
+					prevfbotex = fbotex[1 + stage * 2];
 					break;
 				 }
 	
@@ -3417,27 +3444,9 @@ void onestepfrom(bool stage, Node *node, Node *prevnode, GLuint prevfbotex, GLui
 					glUniform1i(fxid, GLOW);
 					GLint interm = glGetUniformLocation(mainprogram->ShaderProgram, "interm");
 					glUniform1i(interm, 1);
-					glUniform1i(blurswitch, 1);
-					glBindTexture(GL_TEXTURE_2D, fbotex[0]);
-					if (mainprogram->prevmodus and stage == 0) {
-						glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA, (int)(glob->w * div), (int)(glob->h * div), 0, GL_RGBA, GL_UNSIGNED_BYTE, nullptr);
-					}
-					else {
-						glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA, mainprogram->ow, mainprogram->oh, 0, GL_RGBA, GL_UNSIGNED_BYTE, nullptr);
-					}
-					glBindTexture(GL_TEXTURE_2D, fbotex[1]);
-					if (mainprogram->prevmodus and stage == 0) {
-						glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA, (int)(glob->w * div), (int)(glob->h * div), 0, GL_RGBA, GL_UNSIGNED_BYTE, nullptr);
-					}
-					else {
-						glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA, mainprogram->ow, mainprogram->oh, 0, GL_RGBA, GL_UNSIGNED_BYTE, nullptr);
-					}
 					doblur(stage, prevfbotex, 6);
-					glUniform1i(Sampler0, 0);
 					glActiveTexture(GL_TEXTURE0);
-					glBindTexture(GL_TEXTURE_2D, fbotex[1]);
-					glUniform1i(blurswitch, 0);
-					prevfbotex = fbotex[1];
+					prevfbotex = fbotex[1 + stage * 2];
 					break;
 				 }
 	
@@ -3590,34 +3599,25 @@ void onestepfrom(bool stage, Node *node, Node *prevnode, GLuint prevfbotex, GLui
 					GLint interm = glGetUniformLocation(mainprogram->ShaderProgram, "interm");
 					glUniform1i(interm, 1);
 					glActiveTexture(GL_TEXTURE0);
-					glBindTexture(GL_TEXTURE_2D, fbotex[0]);
-					if (mainprogram->prevmodus and stage == 0) {
-						glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA, (int)(glob->w * div), (int)(glob->h * div), 0, GL_RGBA, GL_UNSIGNED_BYTE, nullptr);
-					}
-					else {
-						glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA, mainprogram->ow, mainprogram->oh, 0, GL_RGBA, GL_UNSIGNED_BYTE, nullptr);
-					}
-					glBindTexture(GL_TEXTURE_2D, fbotex[1]);
-					if (mainprogram->prevmodus and stage == 0) {
-						glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA, (int)(glob->w * div), (int)(glob->h * div), 0, GL_RGBA, GL_UNSIGNED_BYTE, nullptr);
-					}
-					else {
-						glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA, mainprogram->ow, mainprogram->oh, 0, GL_RGBA, GL_UNSIGNED_BYTE, nullptr);
-					}
-					glBindFramebuffer(GL_FRAMEBUFFER, frbuf[0]);
+					glBindFramebuffer(GL_FRAMEBUFFER, frbuf[0 + stage * 2]);
 					glDrawBuffer(GL_COLOR_ATTACHMENT0);
 					glBindTexture(GL_TEXTURE_2D, prevfbotex);
 					glBindVertexArray(mainprogram->fbovao[2 - (mainprogram->prevmodus and !stage)]);
 					glDrawArrays(GL_TRIANGLE_STRIP, 0, 4);
-					
 					glUniform1i(interm, 0);
+					
 					glUniform1i(edgethickmode, 1);
+					glActiveTexture(GL_TEXTURE6);
+					glBindTexture(GL_TEXTURE_2D, fbotex[1 + stage * 2]);
+					glActiveTexture(GL_TEXTURE5);
+					glBindTexture(GL_TEXTURE_2D, fbotex[0 + stage * 2]);
+					glUniform1i(fboSampler, 5);
 					GLboolean swits = true;
 					GLuint *tex;
 					for(GLuint i = 0; i < ((EdgeDetectEffect*)effect)->thickness; i++) {
-						glBindFramebuffer(GL_FRAMEBUFFER, frbuf[swits]);
+						glBindFramebuffer(GL_FRAMEBUFFER, frbuf[swits + stage * 2]);
 						glDrawBuffer(GL_COLOR_ATTACHMENT0);
-						glBindTexture(GL_TEXTURE_2D, fbotex[!swits]);
+						glBindTexture(GL_TEXTURE_2D, fbotex[!swits + stage * 2]);
 						glBindVertexArray(mainprogram->fbovao[2 - (mainprogram->prevmodus and !stage)]);
 						glDrawArrays(GL_TRIANGLE_STRIP, 0, 4);
 						if (i % 2) glActiveTexture(GL_TEXTURE5);
@@ -3629,8 +3629,8 @@ void onestepfrom(bool stage, Node *node, Node *prevnode, GLuint prevfbotex, GLui
 					glActiveTexture(GL_TEXTURE0);
 					glBindFramebuffer(GL_FRAMEBUFFER, mainprogram->globfbo);
 					glDrawBuffer(GL_COLOR_ATTACHMENT0);
-					if (((EdgeDetectEffect*)effect)->thickness % 2) prevfbotex = fbotex[1];
-					else prevfbotex = fbotex[0];
+					if (((EdgeDetectEffect*)effect)->thickness % 2) prevfbotex = fbotex[1 + stage * 2];
+					else prevfbotex = fbotex[0 + stage * 2];
 					break;
 				}
 				 
@@ -3783,10 +3783,7 @@ void onestepfrom(bool stage, Node *node, Node *prevnode, GLuint prevfbotex, GLui
 		Layer *lay = effect->layer;
 		if (effect->node == lay->lasteffnode[0]) {
 			GLuint fbocopy;
-			float fac = 1.0f;
 			glDisable(GL_BLEND);
-			glBindFramebuffer(GL_FRAMEBUFFER, lay->fbo);
-			glDrawBuffer(GL_COLOR_ATTACHMENT0);
 			if ((mainprogram->prevmodus and stage == 0)) {
 				fbocopy = copy_tex(effect->fbotex);
 				glViewport(0, 0, glob->w * div, glob->h * div);
@@ -3795,12 +3792,12 @@ void onestepfrom(bool stage, Node *node, Node *prevnode, GLuint prevfbotex, GLui
 				fbocopy = copy_tex(effect->fbotex, mainprogram->ow, mainprogram->oh);
 				glViewport(0, 0, mainprogram->ow, mainprogram->oh);
 			}
+			glBindFramebuffer(GL_FRAMEBUFFER, effect->fbo);
+			glDrawBuffer(GL_COLOR_ATTACHMENT0);
 			glClearColor(0.0f, 0.0f, 0.0f, 0.0f);
 			glClear(GL_COLOR_BUFFER_BIT);
 			float black[4] = {0.0f, 0.0f, 0.0f, 0.0f};
-			float pixelw = 2.0f / (float)glob->w;
-			float pixelh = 2.0f / (float)glob->h;
-			draw_box(nullptr, black, -1.0f, -1.0f, 2.0f, 2.0f, lay->shiftx, lay->shifty, lay->scale, lay->opacity->value, 0, fbocopy, glob->w, glob->h);
+			draw_box(nullptr, black, -1.0f, 1.0f, 2.0f, -2.0f, lay->shiftx, lay->shifty, lay->scale, lay->opacity->value, 0, fbocopy, glob->w, glob->h);
 			glEnable(GL_BLEND);
 			glDeleteTextures(1, &fbocopy);
 		}
@@ -3823,10 +3820,7 @@ void onestepfrom(bool stage, Node *node, Node *prevnode, GLuint prevfbotex, GLui
 		}
 		if (lay->node == lay->lasteffnode[0]) {
 			GLuint fbocopy;
-			float fac = 1.0f;
 			glDisable(GL_BLEND);
-			glBindFramebuffer(GL_FRAMEBUFFER, lay->fbo);
-			glDrawBuffer(GL_COLOR_ATTACHMENT0);
 			if ((mainprogram->prevmodus and stage == 0)) {
 				fbocopy = copy_tex(lay->fbotex, glob->w * div, glob->h * div);
 				glViewport(0, 0, glob->w * div, glob->h * div);
@@ -3835,20 +3829,20 @@ void onestepfrom(bool stage, Node *node, Node *prevnode, GLuint prevfbotex, GLui
 				fbocopy = copy_tex(lay->fbotex, mainprogram->ow, mainprogram->oh);
 				glViewport(0, 0, mainprogram->ow, mainprogram->oh);
 			}
+			glBindFramebuffer(GL_FRAMEBUFFER, lay->fbo);
+			glDrawBuffer(GL_COLOR_ATTACHMENT0);
 			glClearColor(0.0f, 0.0f, 0.0f, 0.0f);
 			glClear(GL_COLOR_BUFFER_BIT);
 			float black[4] = {0.0f, 0.0f, 0.0f, 0.0f};
-			float pixelw = 2.0f / (float)glob->w;
-			float pixelh = 2.0f / (float)glob->h;
-			draw_box(nullptr, black, -1.0f, -1.0f, 2.0f, 2.0f, lay->shiftx, lay->shifty, lay->scale, lay->opacity->value, 0, fbocopy, glob->w, glob->h);
+			draw_box(nullptr, black, -1.0f, 1.0f, 2.0f, -2.0f, lay->shiftx, lay->shifty, lay->scale, lay->opacity->value, 0, fbocopy, glob->w, glob->h);
 			glEnable(GL_BLEND);
 			glDeleteTextures(1, &fbocopy);
+			glBindFramebuffer(GL_FRAMEBUFFER, mainprogram->globfbo);
+			glDrawBuffer(GL_COLOR_ATTACHMENT0);
+			glViewport(0, 0, glob->w, glob->h);
 		}
 		prevfbotex = lay->fbotex;
 		prevfbo = lay->fbo;
-		glBindFramebuffer(GL_FRAMEBUFFER, mainprogram->globfbo);
-		glDrawBuffer(GL_COLOR_ATTACHMENT0);
-		glViewport(0, 0, glob->w, glob->h);
 	}
 	else if (node->type == BLEND) {
 		BlendNode *bnode = (BlendNode*)node;
@@ -4384,13 +4378,10 @@ void Shelf::handle() {
 					this->types[i] = mainprogram->dragbinel->type;
 					this->texes[i] = copy_tex(mainprogram->dragbinel->tex);
 					enddrag();
-					mainprogram->shelves[0]->save(mainprogram->shelfdir + "shelfsA.shelf");
-					mainprogram->shelves[1]->save(mainprogram->shelfdir + "shelfsB.shelf");
 				}
 			}
 			else if (mainprogram->menuactivation) {
-				if (mainprogram->mainshelf) mainprogram->shelfmenu1->state = 2;
-				else mainprogram->shelfmenu2->state = 2;
+				mainprogram->shelfmenu->state = 2;
 				mainmix->mouseshelf = this;
 				mainmix->mouseshelfelem = i;
 				mainprogram->menuactivation = false;
@@ -4887,11 +4878,11 @@ void tooltips_handle(float fac) {
 			pos = mainprogram->tooltipbox->tooltip.rfind(" ", pos + 58);
 			texts.push_back(mainprogram->tooltipbox->tooltip.substr(oldpos, pos - oldpos));
 		}
-		float x = mainprogram->tooltipbox->vtxcoords->x1;  //first print offscreen
-		float y = mainprogram->tooltipbox->vtxcoords->y1;
+		float x = mainprogram->tooltipbox->vtxcoords->x1 + mainprogram->tooltipbox->vtxcoords->w + tf(0.01f);  //first print offscreen
+		float y = mainprogram->tooltipbox->vtxcoords->y1 - tf(0.01f) * glob->w / glob->h - tf(0.01f);
 		float textw = 0.5f * sqrt(fac);
 		float texth = 0.092754f * sqrt(fac);
-		if ((x + textw) > 1.0f) x = 1.0f - textw - tf(0.01f);
+		if ((x + textw) > 1.0f) x = x - textw - tf(0.02f) - mainprogram->tooltipbox->vtxcoords->w;
 		if ((y - texth * (texts.size() + 1) - tf(0.01f)) < -1.0f) y = -1.0f + texth * (texts.size() + 1) - tf(0.01f);
 		draw_box(nullptr, black, x, y - texth, textw, texth + tf(0.01f), -1);
 		render_text(mainprogram->tooltipbox->tooltiptitle, orange, x + tf(0.015f) * sqrt(fac), y - texth + tf(0.03f) * sqrt(fac), tf(0.0003f) * fac, tf(0.0005f) * fac);
@@ -5136,12 +5127,30 @@ PIDirs::PIDirs() {
 	int pos = 0;
 	this->name = "Directories";
 	
+	pdi = new PrefItem(this, pos, "Projects", PREF_PATH, (void*)&mainprogram->projdir);
+	pdi->namebox->tooltiptitle = "Projects directory ";
+	pdi->namebox->tooltip = "Default directory where new projects will be created in. ";
+	pdi->valuebox->tooltiptitle = "Set projects directory ";
+	pdi->valuebox->tooltip = "Leftclick starts keyboard entry of location of projects directory. ";
+	pdi->iconbox->tooltiptitle = "Browse to set projects directory ";
+	pdi->iconbox->tooltip = "Leftclick allows browsing for location of projects directory. ";
+	#ifdef _WIN64
+	pdi->path = "./projects/";
+	#else
+	#ifdef __linux__
+	pdi->path = homedir + "/.ewocvj2/projects/";
+	#endif
+	#endif
+	mainprogram->projdir = pdi->path;
+	this->items.push_back(pdi);
+	pos++;
+	
 	pdi = new PrefItem(this, pos, "General mediabins", PREF_PATH, (void*)&mainprogram->binsdir);
 	pdi->namebox->tooltiptitle = "General mediabins directory ";
 	pdi->namebox->tooltip = "This directory contains general mediabins, that can be accessed from every project. ";
 	pdi->valuebox->tooltiptitle = "Set general mediabins directory ";
 	pdi->valuebox->tooltip = "Leftclick starts keyboard entry of location of general mediabins directory. ";
-	pdi->iconbox->tooltiptitle = "Browse for general mediabins directory ";
+	pdi->iconbox->tooltiptitle = "Browse to set general mediabins directory ";
 	pdi->iconbox->tooltip = "Leftclick allows browsing for location of general mediabins directory. ";
 	#ifdef _WIN64
 	pdi->path = "./bins/";
@@ -5160,7 +5169,7 @@ PIDirs::PIDirs() {
 	pdi->namebox->tooltip = "This directory contains general shelves, that can be accessed from every project. ";
 	pdi->valuebox->tooltiptitle = "Set general shelves directory ";
 	pdi->valuebox->tooltip = "Leftclick starts keyboard entry of location of general shelves directory. ";
-	pdi->iconbox->tooltiptitle = "Browse for general shelves directory ";
+	pdi->iconbox->tooltiptitle = "Browse to set general shelves directory ";
 	pdi->iconbox->tooltip = "Leftclick allows browsing for location of general shelves directory. ";
 	#ifdef _WIN64
 	pdi->path = "./shelves/";
@@ -5179,7 +5188,7 @@ PIDirs::PIDirs() {
 	pdi->namebox->tooltip = "Video file recordings of the program output stream are saved in this directory. ";
 	pdi->valuebox->tooltiptitle = "Set recordings directory ";
 	pdi->valuebox->tooltip = "Leftclick starts keyboard entry of location of recordings directory. ";
-	pdi->iconbox->tooltiptitle = "Browse for recordings directory ";
+	pdi->iconbox->tooltiptitle = "Browse to set recordings directory ";
 	pdi->iconbox->tooltip = "Leftclick allows browsing for location of recordings directory. ";
 	#ifdef _WIN64
 	pdi->path = "./recordings/";
@@ -5757,10 +5766,10 @@ void pick_color(Layer *lay, Box *cbox) {
 }
 
 int handle_menu(Menu *menu) {
-	int ret = handle_menu(menu, 0.0f);
+	int ret = handle_menu(menu, 0.0f, 0.0f);
 	return ret;
 }
-int handle_menu(Menu *menu, float xshift) {
+int handle_menu(Menu *menu, float xshift, float yshift) {
 	float white[] = {1.0, 1.0, 1.0, 1.0};
 	if (menu->state > 1) {
 		if (std::find(mainprogram->actmenulist.begin(), mainprogram->actmenulist.end(), menu) == mainprogram->actmenulist.end()) {
@@ -5771,8 +5780,8 @@ int handle_menu(Menu *menu, float xshift) {
 			std::size_t sub = menu->entries[k].find("submenu");
 			if (sub != 0) size++;
 		}
-		if (mainprogram->menuy > glob->h - size * mainprogram->yvtxtoscr(tf(0.05f))) mainprogram->menuy = glob->h - size * mainprogram->yvtxtoscr(tf(0.05f));
-		if (size > 21) mainprogram->menuy = mainprogram->yvtxtoscr(mainprogram->layw);
+		if (mainprogram->menuy + mainprogram->yvtxtoscr(yshift) > glob->h - size * mainprogram->yvtxtoscr(tf(0.05f))) mainprogram->menuy = glob->h - size * mainprogram->yvtxtoscr(tf(0.05f)) + mainprogram->yvtxtoscr(yshift);
+		if (size > 21) mainprogram->menuy = mainprogram->yvtxtoscr(mainprogram->layw) - mainprogram->yvtxtoscr(yshift);
 		float vmx = (float)mainprogram->menux * 2.0 / glob->w;
 		float vmy = (float)mainprogram->menuy * 2.0 / glob->h;
 		float lc[] = {0.0, 0.0, 0.0, 1.0};
@@ -5780,10 +5789,11 @@ int handle_menu(Menu *menu, float xshift) {
 		float ac2[] = {0.5, 0.5, 1.0, 1.0};
 		int numsubs = 0;
 		float limit = 1.0f;
+		int notsubk = 0;
 		for(int k = 0; k < menu->entries.size(); k++) {
 			float xoff;
 			int koff;
-			if (k > 20) {
+			if (notsubk > 20) {
 				if (mainprogram->xscrtovtx(mainprogram->menux) > limit) xoff = -tf(0.195f) + xshift;
 				else xoff = tf(0.195f) + xshift;
 				koff = menu->entries.size() - 21;
@@ -5794,8 +5804,9 @@ int handle_menu(Menu *menu, float xshift) {
 			}
 			std::size_t sub = menu->entries[k].find("submenu");
 			if (sub != 0) {
-				if (menu->box->scrcoords->x1 + mainprogram->menux + mainprogram->xvtxtoscr(xoff) < mainprogram->mx and mainprogram->mx < menu->box->scrcoords->x1 + menu->box->scrcoords->w + mainprogram->menux + mainprogram->xvtxtoscr(xoff) and menu->box->scrcoords->y1 - menu->box->scrcoords->h + mainprogram->menuy + (k - koff - numsubs) * mainprogram->yvtxtoscr(tf(0.05f)) < mainprogram->my and mainprogram->my < menu->box->scrcoords->y1 + mainprogram->menuy + (k - koff - numsubs) * mainprogram->yvtxtoscr(tf(0.05f))) {
-					draw_box(lc, ac2, menu->box->vtxcoords->x1 + vmx + xoff, menu->box->vtxcoords->y1 - (k - koff - numsubs) * tf(0.05f) - vmy, tf(menu->width), tf(0.05f), -1);
+				notsubk++;
+				if (menu->box->scrcoords->x1 + mainprogram->menux + mainprogram->xvtxtoscr(xoff) < mainprogram->mx and mainprogram->mx < menu->box->scrcoords->x1 + menu->box->scrcoords->w + mainprogram->menux + mainprogram->xvtxtoscr(xoff) and menu->box->scrcoords->y1 - menu->box->scrcoords->h + mainprogram->menuy + (k - koff - numsubs) * mainprogram->yvtxtoscr(tf(0.05f)) - mainprogram->yvtxtoscr(yshift) < mainprogram->my and mainprogram->my < menu->box->scrcoords->y1 + mainprogram->menuy + (k - koff - numsubs) * mainprogram->yvtxtoscr(tf(0.05f)) - mainprogram->yvtxtoscr(yshift)) {
+					draw_box(lc, ac2, menu->box->vtxcoords->x1 + vmx + xoff, menu->box->vtxcoords->y1 - (k - koff - numsubs) * tf(0.05f) - vmy + yshift, tf(menu->width), tf(0.05f), -1);
 					if (mainprogram->leftmousedown) mainprogram->leftmousedown = false;
 					if (mainprogram->leftmouse) {
 						for (int i = 0; i < mainprogram->menulist.size(); i++) {
@@ -5806,16 +5817,16 @@ int handle_menu(Menu *menu, float xshift) {
 					}
 				}
 				else if (menu->currsub == k - 1) {
-					draw_box(lc, ac2, menu->box->vtxcoords->x1 + vmx + xoff, menu->box->vtxcoords->y1 - (k - koff - numsubs) * tf(0.05f) - vmy, tf(menu->width), tf(0.05f), -1);
+					draw_box(lc, ac2, menu->box->vtxcoords->x1 + vmx + xoff, menu->box->vtxcoords->y1 - (k - koff - numsubs) * tf(0.05f) - vmy + yshift, tf(menu->width), tf(0.05f), -1);
 				}
 				else {
-					draw_box(lc, ac1, menu->box->vtxcoords->x1 + vmx + xoff, menu->box->vtxcoords->y1 - (k - koff - numsubs) * tf(0.05f) - vmy, tf(menu->width), tf(0.05f), -1);
+					draw_box(lc, ac1, menu->box->vtxcoords->x1 + vmx + xoff, menu->box->vtxcoords->y1 - (k - koff - numsubs) * tf(0.05f) - vmy + yshift, tf(menu->width), tf(0.05f), -1);
 				}
-				render_text(menu->entries[k], white, menu->box->vtxcoords->x1 + vmx + tf(0.0078f) + xoff, menu->box->vtxcoords->y1 - (k - koff - numsubs) * tf(0.05f) - vmy + tf(0.015f), tf(0.0003f), tf(0.0005f));
+				render_text(menu->entries[k], white, menu->box->vtxcoords->x1 + vmx + tf(0.0078f) + xoff, menu->box->vtxcoords->y1 - (k - koff - numsubs) * tf(0.05f) - vmy + yshift + tf(0.015f), tf(0.0003f), tf(0.0005f));
 			}
 			else {
 				numsubs++;
-				if (menu->currsub == k or (menu->box->scrcoords->x1 + mainprogram->menux + mainprogram->xvtxtoscr(xoff) < mainprogram->mx and mainprogram->mx < menu->box->scrcoords->x1 + menu->box->scrcoords->w + mainprogram->menux + mainprogram->xvtxtoscr(xoff) and menu->box->scrcoords->y1 - menu->box->scrcoords->h + mainprogram->menuy + (k - koff - numsubs + 1) * mainprogram->yvtxtoscr(tf(0.05f)) < mainprogram->my and mainprogram->my < menu->box->scrcoords->y1 + mainprogram->menuy + (k - koff - numsubs + 1) * mainprogram->yvtxtoscr(tf(0.05f)))) {
+				if (menu->currsub == k or (menu->box->scrcoords->x1 + mainprogram->menux + mainprogram->xvtxtoscr(xoff) < mainprogram->mx and mainprogram->mx < menu->box->scrcoords->x1 + menu->box->scrcoords->w + mainprogram->menux + mainprogram->xvtxtoscr(xoff) and menu->box->scrcoords->y1 - menu->box->scrcoords->h + mainprogram->menuy + (k - koff - numsubs + 1) * mainprogram->yvtxtoscr(tf(0.05f)) - mainprogram->yvtxtoscr(yshift) < mainprogram->my and mainprogram->my < menu->box->scrcoords->y1 + mainprogram->menuy + (k - koff - numsubs + 1) * mainprogram->yvtxtoscr(tf(0.05f)) - mainprogram->yvtxtoscr(yshift))) {
 					if (menu->currsub == k or mainprogram->leftmouse) {
 						if (menu->currsub != k) mainprogram->leftmouse = false;
 						std::string name = menu->entries[k].substr(8, std::string::npos);
@@ -5832,7 +5843,8 @@ int handle_menu(Menu *menu, float xshift) {
 								else {
 									xs = xshift + tf(0.195f);
 								}
-								int ret = handle_menu(mainprogram->menulist[i], xs);
+								float ys = (k - mainprogram->menulist[i]->entries.size() / 2.0f) * tf(-0.05f) + yshift;
+								int ret = handle_menu(mainprogram->menulist[i], xs, ys);
 								if (mainprogram->menuchosen) {
 									menu->state = 0;
 									mainprogram->menuresults.insert(mainprogram->menuresults.begin(), ret);
@@ -5880,7 +5892,8 @@ bool preferences() {
 		PrefCat *item = mainprogram->prefs->items[i];
 		if (item->box->in(mx, my)) {	
 			draw_box(white, lightblue, item->box, -1);
-			if (mainprogram->lmsave) {
+			if (mainprogram->lmsave and mainprogram->prefs->curritem != i) {
+				mainprogram->renaming = EDIT_NONE;
 				mainprogram->prefs->curritem = i;
 			}
 		}
@@ -5958,7 +5971,7 @@ bool preferences() {
 				render_text(std::to_string(mci->items[i]->value), white, mci->items[i]->valuebox->vtxcoords->x1 + 0.1f, mci->items[i]->valuebox->vtxcoords->y1 + 0.06f, 0.0024f, 0.004f, 1);
 			}
 			if (mci->items[i]->valuebox->in(mx, my)) {
-				if (mainprogram->lmsave) {
+				if (mainprogram->lmsave and mainprogram->renaming == EDIT_NONE) {
 					mci->items[i]->renaming = true;
 					mainprogram->renaming = EDIT_NUMBER;
 					mainprogram->inputtext = std::to_string(mci->items[i]->value);
@@ -5991,7 +6004,7 @@ bool preferences() {
 				}
 			}
 			if (mci->items[i]->valuebox->in(mx, my)) {
-				if (mainprogram->lmsave) {
+				if (mainprogram->lmsave and mainprogram->renaming == EDIT_NONE) {
 					mci->items[i]->renaming = true;
 					mainprogram->renaming = EDIT_STRING;
 					mainprogram->inputtext = mci->items[i]->path;
@@ -6031,6 +6044,13 @@ bool preferences() {
 	if (box.in(mx, my)) {
 		draw_box(white, lightblue, &box, -1);
 		if (mainprogram->lmsave) {
+			for (int i = 0; i < mci->items.size(); i++) {
+				if (mci->items[i]->renaming) {
+					mci->items[i]->renaming = false;
+					break;
+				}
+			}
+			mainprogram->renaming = EDIT_NONE;
 			mainprogram->prefs->load();
 			mainprogram->prefon = false;
 			mainprogram->drawnonce = false;
@@ -6046,18 +6066,34 @@ bool preferences() {
 	if (box.in(mx, my)) {
 		draw_box(white, lightblue, &box, -1);
 		if (mainprogram->lmsave) {
+			for (int i = 0; i < mci->items.size(); i++) {
+				if (mci->items[i]->renaming) {
+					if (mci->items[i]->type == PREF_PATH) {
+						mci->items[i]->path = mainprogram->inputtext;
+						SDL_StopTextInput();
+						break;
+					}
+					if (mci->items[i]->type == PREF_NUMBER) {
+						 try {
+							mci->items[i]->value = std::stoi(mainprogram->inputtext);
+						 }
+						 catch (...) {}
+						SDL_StopTextInput();
+						break;
+					}
+				}
+			}
+			mainprogram->renaming = EDIT_NONE;
 			float oldow = mainprogram->ow;
 			float oldoh = mainprogram->oh;
 			mainprogram->prefs->save();
 			mainprogram->prefs->load();
 			if (mainprogram->ow != oldow or mainprogram->oh != oldoh) {
 				for (int i = 0; i < mainmix->layersAcomp.size(); i++) {
-    				glBindTexture(GL_TEXTURE_2D, mainmix->layersAcomp[i]->fbotex);
-					glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA, mainprogram->ow, mainprogram->oh, 0, GL_RGBA, GL_UNSIGNED_BYTE, nullptr);
+					if (mainmix->layersAcomp[i]->aspectratio == RATIO_OUTPUT) mainmix->layersAcomp[i]->initialize();
 				}
 				for (int i = 0; i < mainmix->layersBcomp.size(); i++) {
-    				glBindTexture(GL_TEXTURE_2D, mainmix->layersBcomp[i]->fbotex);
-					glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA, mainprogram->ow, mainprogram->oh, 0, GL_RGBA, GL_UNSIGNED_BYTE, nullptr);
+					if (mainmix->layersBcomp[i]->aspectratio == RATIO_OUTPUT) mainmix->layersBcomp[i]->initialize();
 				}
 			}	
 			mainprogram->prefon = false;
@@ -6446,9 +6482,6 @@ void Layer::mute_handle() {
 	
 
 void the_loop() {
-	glClearColor(0.2f, 0.2f, 0.2f, 0.2f);
-	glClear(GL_COLOR_BUFFER_BIT);
-
 	float white[] = {1.0f, 1.0f, 1.0f, 1.0f};
 	float halfwhite[] = {1.0f, 1.0f, 1.0f, 0.5f};
 	float black[] = {0.0f, 0.0f, 0.0f, 1.0f};
@@ -6649,12 +6682,15 @@ void the_loop() {
 		}
 	}
 	else {  //the_loop else
-		if ((mainprogram->effectmenu->state > 1) or (mainprogram->mixmodemenu->state > 1) or (mainprogram->mixenginemenu->state > 1) or (mainprogram->parammenu1->state > 1) or (mainprogram->parammenu2->state > 1) or (mainprogram->loopmenu->state > 1) or (mainprogram->deckmenu->state > 1) or (mainprogram->laymenu->state > 1) or (mainprogram->loadmenu->state > 1) or (mainprogram->mixtargetmenu->state > 1) or (mainprogram->wipemenu->state > 1) or (mainprogram->livemenu->state > 1) or (mainprogram->binmenu->state > 1) or (mainprogram->binelmenu->state > 1) or (mainprogram->genmidimenu->state > 1) or (mainprogram->genericmenu->state > 1) or (mainprogram->shelfmenu1->state > 1) or (mainprogram->shelfmenu2->state > 1) or (mainprogram->fullscreenmenu->state > 1)) {
-			mainprogram->leftmousedown = false;
-			mainprogram->menuondisplay = true;
-		}
-		else {
-			mainprogram->menuondisplay = false;
+		for (int i = 0; i < mainprogram->menulist.size(); i++) {
+			if (mainprogram->menulist[i]->state > 1) {
+				mainprogram->leftmousedown = false;
+				mainprogram->menuondisplay = true;
+				break;
+			}
+			else {
+				mainprogram->menuondisplay = false;
+			}
 		}
 			
 		if (mainmix->learn and mainprogram->rightmouse) {
@@ -7340,7 +7376,7 @@ void the_loop() {
 		k = handle_menu(mainprogram->effectmenu);
 		if (k > -1) {
 			if (k == 0) {
-				if (mainmix->mouseeffect) mainmix->mouselayer->delete_effect(mainmix->mouseeffect);
+				if (mainmix->mouseeffect > -1) mainmix->mouselayer->delete_effect(mainmix->mouseeffect);
 			}
 			else if (mainmix->insert) mainmix->mouselayer->add_effect((EFFECT_TYPE)(k - 1), mainmix->mouseeffect);
 			else {
@@ -7744,6 +7780,10 @@ void the_loop() {
 				mainmix->mouselayer->shiftx = 0.0f;
 				mainmix->mouselayer->shifty = 0.0f;
 			}
+			else if (k == 14) {
+				mainmix->mouselayer->aspectratio = (RATIO_TYPE)mainprogram->menuresults[0];
+				mainmix->mouselayer->initialize(mainmix->mouselayer->decresult->width, mainmix->mouselayer->decresult->height);
+			}
 		}
 	
 		if (mainprogram->menuchosen) {
@@ -7865,19 +7905,45 @@ void the_loop() {
 		// Draw and handle genericmenu
 		k = handle_menu(mainprogram->genericmenu);
 		if (k == 0) {
-			new_state();
+			mainprogram->pathto = "NEWPROJECT";
+			std::string reqdir = mainprogram->projdir;
+			if (reqdir.substr(0, 1) == ".") reqdir.erase(0, 2);
+			std::string name = "Untitled";
+			std::string path;
+			int count = 0;
+			while (1) {
+				path = mainprogram->projdir + name;
+				if (!exists(path + ".ewocvj")) {
+					break;
+				}
+				count++;
+				name = remove_version(name) + "_" + std::to_string(count);
+			}
+			std::thread filereq (&Program::get_outname, mainprogram, "New project", "application/ewocvj2-project", boost::filesystem::absolute(reqdir + name).string());
+			filereq.detach();
 		}
 		else if (k == 1) {
+			mainprogram->pathto = "OPENPROJECT";
+			std::thread filereq (&Program::get_inname, mainprogram, "Open project file", "application/ewocvj2-project", "");
+			filereq.detach();
+		}
+		else if (k == 2) {
+			mainprogram->project->save(mainprogram->project->path);
+		}
+		else if (k == 3) {
+			new_state();
+		}
+		else if (k == 4) {
 			mainprogram->pathto = "OPENSTATE";
 			std::thread filereq (&Program::get_inname, mainprogram, "Open state file", "application/ewocvj2-state", "");
 			filereq.detach();
 		}
-		else if (k == 2) {
+		else if (k == 5) {
 			mainprogram->pathto = "SAVESTATE";
 			std::thread filereq (&Program::get_outname, mainprogram, "Save state file", "application/ewocvj2-state", "");
 			filereq.detach();
 		}
-		else if (k == 3) {
+		else if (k == 6) {
 			if (!mainprogram->prefon) {
 				mainprogram->prefs->load();
 				mainprogram->prefon = true;
@@ -7896,7 +7962,7 @@ void the_loop() {
 				SDL_RaiseWindow(mainprogram->prefwindow);
 			}
 		}
-		else if (k == 4) {
+		else if (k == 7) {
 			mainprogram->quit("quitted");
 		}
 	
@@ -7908,8 +7974,7 @@ void the_loop() {
 		}
 				
 		// Draw and handle shelfmenu
-		if (mainprogram->mainshelf) k = handle_menu(mainprogram->shelfmenu1);
-		else k = handle_menu(mainprogram->shelfmenu2);
+		k = handle_menu(mainprogram->shelfmenu);
 		if (k == 0) {
 			mainprogram->shelves[mainmix->mousedeck]->erase();
 		}
@@ -7945,23 +8010,6 @@ void the_loop() {
 		}
 		else if (k == 7) {
 			//reminder: MIDI LEARN
-		}
-		else if (k == 8) {
-			#ifdef _WIN64
-			if (exists(mainprogram->shelfdir + "shelfsA.shelf")) mainprogram->shelves[0]->open(mainprogram->shelfdir + "shelfsA.shelf");
-			if (exists(mainprogram->shelfdir + "shelfsB.shelf")) mainprogram->shelves[1]->open(mainprogram->shelfdir + "shelfsB.shelf");
-			# else
-			#ifdef __linux__
-			std::string homedir (getenv("HOME"));
-			if (exists(homedir + mainprogram->shelfdir + "shelfsA.shelf")) mainprogram->shelves[0]->open(homedir + mainprogram->shelfdir + "shelfsA.shelf");
-			if (exists(homedir + mainprogram->shelfdir + "shelfsB.shelf")) mainprogram->shelves[1]->open(homedir + mainprogram->shelfdir + "shelfsB.shelf");
-			#endif
-			#endif
-			else {
-				mainprogram->shelves[0]->erase();
-				mainprogram->shelves[1]->erase();
-			}
-			mainprogram->mainshelf = true;
 		}
 	
 		if (mainprogram->menuchosen) {
@@ -8040,7 +8088,7 @@ void the_loop() {
 						mainprogram->leftmousedown = false;
 						lay->transforming = 1;
 						lay->transmx = mainprogram->mx - lay->shiftx;
-						lay->transmy = mainprogram->my + lay->shifty;
+						lay->transmy = mainprogram->my - lay->shifty;
 					}
 				}
 				//if (mainprogram->middlemousedown) {
@@ -8095,7 +8143,7 @@ void the_loop() {
 			
 			if (lay->transforming == 1) {
 				lay->shiftx = mainprogram->mx - lay->transmx;
-				lay->shifty = -mainprogram->my + lay->transmy;
+				lay->shifty = mainprogram->my - lay->transmy;
 				if (mainprogram->leftmouse) {
 					lay->transforming = 0;
 				}
@@ -8463,14 +8511,6 @@ void the_loop() {
 	if (!mainprogram->prefon and !mainprogram->tunemidi) tooltips_handle(1.0f);
 	
 			
-	// draw close window icon?
-	float deepred[4] = {1.0, 0.0, 0.0, 1.0};
-	if (mainprogram->mx == glob->w - 1 and mainprogram->my == 0) {
-		draw_box(nullptr, deepred, 0.95f, 1.0f - 0.05f * glob->w / glob->h, 0.05f, 0.05f * glob->w / glob->h, -1);
-		render_text("x", white, 0.962f, 1.015f - 0.05f * glob->w / glob->h, 0.0012f, 0.002f);
-		if (mainprogram->leftmouse)	mainprogram->quit("closed window");
-	}
-	
 	// sync with output views
 	for (int i = 0; i < mainprogram->outputentries.size(); i++) {
 		EWindow *win = mainprogram->outputentries[i]->win;
@@ -9081,9 +9121,6 @@ bool Shelf::open_image(const std::string &path, int pos) {
 	
 void Shelf::open(const std::string &path) {
 	
-	if (path != mainprogram->shelfdir + "shelfs.shelf") mainprogram->mainshelf = false;
-	else mainprogram->mainshelf = true;
-	
 	std::string result = deconcat_files(path);
 	bool concat = (result != "");
 	ifstream rfile;
@@ -9134,11 +9171,13 @@ void Shelf::open(const std::string &path) {
 }
 
 void Shelf::erase() {
+	std::vector<int> emptydata(256);
+	std::fill(emptydata.begin(), emptydata.end(), 0xff000000);
 	for (int i = 0; i < 16; i++) {
 		this->paths[i] = "";
-		this->types[i] == ELEM_FILE;
+		this->types[i] = ELEM_FILE;
 		glBindTexture(GL_TEXTURE_2D, this->texes[i]);
-		glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA, 16, 16, 0, GL_RGBA, GL_UNSIGNED_BYTE, nullptr);
+		glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA, 16, 16, 0, GL_RGBA, GL_UNSIGNED_BYTE, &emptydata[0]);
 	}
 }
 	
@@ -9846,6 +9885,12 @@ int main(int argc, char* argv[]){
 	deckops.push_back("MIDI Learn");
  	mainprogram->make_menu("deckmenu", mainprogram->deckmenu, deckops);
 
+ 	std::vector<std::string> aspectops;
+  	aspectops.push_back("Same as output");
+ 	aspectops.push_back("Original");
+ 	aspectops.push_back("Window/monitor");
+ 	mainprogram->make_menu("aspectmenu", mainprogram->aspectmenu, aspectops);
+
  	std::vector<std::string> layops;
  	layops.push_back("submenu livemenu");
  	layops.push_back("Connect live");
@@ -9862,6 +9907,8 @@ int main(int argc, char* argv[]){
   	layops.push_back("Delete layer");
   	layops.push_back("Clone layer");
   	layops.push_back("Center video");
+ 	layops.push_back("submenu aspectmenu");
+ 	layops.push_back("Aspect ratio");
  	mainprogram->make_menu("laymenu", mainprogram->laymenu, layops);
 
  	std::vector<std::string> loadops;
@@ -9965,6 +10012,9 @@ int main(int argc, char* argv[]){
   	mainprogram->make_menu("genmidimenu", mainprogram->genmidimenu, genmidi);
 
  	std::vector<std::string> generic;
+  	generic.push_back("New project");
+  	generic.push_back("Open project");
+  	generic.push_back("Save project");
   	generic.push_back("New state");
   	generic.push_back("Open state");
   	generic.push_back("Save state");
@@ -9981,19 +10031,7 @@ int main(int argc, char* argv[]){
   	shelf1.push_back("Open dir");
   	shelf1.push_back("Open image");
   	shelf1.push_back("MIDI Learn");
-  	mainprogram->make_menu("shelfmenu1", mainprogram->shelfmenu1, shelf1);
-
- 	std::vector<std::string> shelf2;
-  	shelf2.push_back("New shelf");
-  	shelf2.push_back("Open shelf");
-  	shelf2.push_back("Save shelf");
-  	shelf2.push_back("Open video");
-  	shelf2.push_back("Open layerfile");
-  	shelf2.push_back("Open dir");
-  	shelf2.push_back("Open image");
-  	shelf2.push_back("MIDI Learn");
-  	shelf2.push_back("Back to main shelf");
-  	mainprogram->make_menu("shelfmenu2", mainprogram->shelfmenu2, shelf2);
+  	mainprogram->make_menu("shelfmenu", mainprogram->shelfmenu, shelf1);
 
  	
 	mainprogram->nodesmain = new NodesMain;
@@ -10015,12 +10053,14 @@ int main(int argc, char* argv[]){
 	if (!exists("./shelves")) boost::filesystem::create_directory(p3);
 	boost::filesystem::path p4{"./temp"};
 	if (!exists("./temp")) boost::filesystem::create_directory(p4);
+	boost::filesystem::path p5{"./projects"};
+	if (!exists("./projects")) boost::filesystem::create_directory(p5);
 	#else
 	#ifdef __linux__
 	std::string homedir (getenv("HOME"));
 	boost::filesystem::path e{homedir + "/.ewocvj2"};
 	if (!exists(homedir + "/.ewocvj2")) boost::filesystem::create_directory(e);
-	boost::filesystem::path p1{homedir + "/.ewocvj2/bins"};
+	boost::filesystem::path p2{homedir + "/.ewocvj2/recordings"};
 	if (!exists(homedir + "/.ewocvj2/bins")) boost::filesystem::create_directory(p1);
 	boost::filesystem::path p2{homedir + "/.ewocvj2/recordings"};
 	if (!exists(homedir + "/recordings")) boost::filesystem::create_directory(p2);
@@ -10028,27 +10068,11 @@ int main(int argc, char* argv[]){
 	if (!exists(homedir + "/.ewocvj2/shelves")) boost::filesystem::create_directory(p3);
 	boost::filesystem::path p4{homedir + "/.ewocvj2/temp"};
 	if (!exists(homedir + "/.ewocvj2/temp")) boost::filesystem::create_directory(p4);
+	boost::filesystem::path p5{homedir + "/.ewocvj2/projects"};
+	if (!exists(homedir + "/.ewocvj2/projects")) boost::filesystem::create_directory(p5);
 	#endif
 	#endif
 
-	int cb = 0; 
-	if (exists(mainprogram->binsdir + "bins.list")) {
-		cb = binsmain->read_binslist();
-	}
-	else {
-		binsmain->new_bin("this is a bin");
-	}
-	
-	for (int i = 0; i < binsmain->bins.size(); i++) {
-		std::string binname = mainprogram->binsdir + binsmain->bins[i]->name + ".bin";
-		if (exists(binname)) binsmain->open_bin(binname, binsmain->bins[i]);
-	}
-	binsmain->make_currbin(cb);
-	binsmain->save_binslist(); // updates old bins to latest bin version
-	
-	mainprogram->shelves[0] = new Shelf(0);
-	mainprogram->shelves[1] = new Shelf(1);
-		
 	GLint Sampler0 = glGetUniformLocation(mainprogram->ShaderProgram, "Sampler0");
 	glUniform1i(Sampler0, 0);
 	
@@ -10210,16 +10234,30 @@ int main(int argc, char* argv[]){
 
     // must put this here or problem with fbovao[2] ?????
 	set_fbo();
-	if (exists(mainprogram->shelfdir + "shelfsA.shelf")) {
-		mainprogram->shelves[0]->open(mainprogram->shelfdir + "shelfsA.shelf");
-	}
-	if (exists(mainprogram->shelfdir + "shelfsB.shelf")) {
-		mainprogram->shelves[1]->open(mainprogram->shelfdir + "shelfsB.shelf");
-	}
 	
 	std::chrono::high_resolution_clock::time_point begintime = std::chrono::high_resolution_clock::now();
 	std::chrono::duration<double> elapsed;
-		
+	
+	#ifdef _WIN64
+	std::string dir = "./";
+	#else
+	#ifdef __linux__
+	std::string homedir (getenv("HOME"));
+	std::string dir = homedir + "/.ewocvj2/"
+	#endif
+	#endif
+	if (exists(dir + "recentprojectslist")) {
+		std::ifstream rfile;
+		rfile.open(dir + "recentprojectslist");
+		std::string istring;
+		getline(rfile, istring);
+		while (getline(rfile, istring)) {
+			if (istring == "ENDOFFILE") break;
+			mainprogram->recentprojectpaths.push_back(istring);
+		}
+	}
+
+	
 	while (!quit){
 
 		io.poll();
@@ -10317,6 +10355,15 @@ int main(int argc, char* argv[]){
 					mainprogram->choosedir = str + "/";
 				}
 			}
+			else if (mainprogram->pathto == "NEWPROJECT") {
+				std::string str(mainprogram->path);
+				new_state();
+				mainprogram->project->newp(str);
+			}
+			else if (mainprogram->pathto == "OPENPROJECT") {
+				std::string str(mainprogram->path);
+				mainprogram->project->open(str);
+			}
 			mainprogram->path = nullptr;
 			mainprogram->pathto = "";
 		}
@@ -10331,6 +10378,26 @@ int main(int argc, char* argv[]){
                 if (e.type == SDL_TEXTINPUT) {
                     /* Add new text onto the end of our text */
                     if( !( ( e.text.text[ 0 ] == 'c' || e.text.text[ 0 ] == 'C' ) && ( e.text.text[ 0 ] == 'v' || e.text.text[ 0 ] == 'V' ) && SDL_GetModState() & KMOD_CTRL ) ) {
+						if (mainprogram->prefon) {
+							for (int i = 0; i < mainprogram->prguistrings.size(); i++) {
+								if (mainprogram->inputtext.compare(mainprogram->prguistrings[i]->text) == 0) {
+									glDeleteTextures(1, &mainprogram->prguistrings[i]->texture);
+									mainprogram->prguistrings.erase(mainprogram->prguistrings.begin() + i);
+									delete mainprogram->prguistrings[i];
+									break;
+								}
+							}
+						}
+						else if (!mainprogram->tunemidi) {
+							for (int i = 0; i < mainprogram->guistrings.size(); i++) {
+								if (mainprogram->inputtext.compare(mainprogram->guistrings[i]->text) == 0) {
+									glDeleteTextures(1, &mainprogram->guistrings[i]->texture);
+									mainprogram->prguistrings.erase(mainprogram->guistrings.begin() + i);
+									delete mainprogram->guistrings[i];
+									break;
+								}
+							}
+						}
 						mainprogram->inputtext = mainprogram->inputtext.substr(0, mainprogram->cursorpos) + e.text.text + mainprogram->inputtext.substr(mainprogram->cursorpos, mainprogram->inputtext.length() - mainprogram->cursorpos);
 						mainprogram->cursorpos++;
 					}
@@ -10347,6 +10414,26 @@ int main(int argc, char* argv[]){
 					if (e.key.keysym.sym == SDLK_BACKSPACE and mainprogram->inputtext.length() > 0) {
 						if (mainprogram->cursorpos != 0) {
 							mainprogram->cursorpos--;
+							if (mainprogram->prefon) {
+								for (int i = 0; i < mainprogram->prguistrings.size(); i++) {
+									if (mainprogram->inputtext.compare(mainprogram->prguistrings[i]->text) == 0) {
+										glDeleteTextures(1, &mainprogram->prguistrings[i]->texture);
+										mainprogram->prguistrings.erase(mainprogram->prguistrings.begin() + i);
+										delete mainprogram->prguistrings[i];
+										break;
+									}
+								}
+							}
+							else if (!mainprogram->tunemidi) {
+								for (int i = 0; i < mainprogram->guistrings.size(); i++) {
+									if (mainprogram->inputtext.compare(mainprogram->guistrings[i]->text) == 0) {
+										glDeleteTextures(1, &mainprogram->guistrings[i]->texture);
+										mainprogram->prguistrings.erase(mainprogram->guistrings.begin() + i);
+										delete mainprogram->guistrings[i];
+										break;
+									}
+								}
+							}
 							mainprogram->inputtext.erase(mainprogram->inputtext.begin() + mainprogram->cursorpos); 
 						}
 					} 
@@ -10589,15 +10676,117 @@ int main(int argc, char* argv[]){
 			}
 		}
 
-		std::chrono::high_resolution_clock::time_point now = std::chrono::high_resolution_clock::now();
-		elapsed = std::chrono::duration_cast<std::chrono::duration<double>>(now - begintime);
-		long long microcount = std::chrono::duration_cast<std::chrono::microseconds>(elapsed).count();
-		mainmix->time = microcount / 1000000.0f;
-		GLint iGlobalTime = glGetUniformLocation(mainprogram->ShaderProgram, "iGlobalTime");
-		glUniform1f(iGlobalTime, mainmix->time);
 		
-		the_loop();
-		
+		float white[] = {1.0f, 1.0f, 1.0f, 1.0f};
+		float deepred[4] = {1.0, 0.0, 0.0, 1.0};
+		float lightblue[] = {0.5f, 0.5f, 1.0f, 1.0f};
+		glClearColor(0.2f, 0.2f, 0.2f, 0.2f);
+		glClear(GL_COLOR_BUFFER_BIT);	
+	
+		// draw close window icon?
+		if (mainprogram->mx == glob->w - 1 and mainprogram->my == 0) {
+			glBindFramebuffer(GL_FRAMEBUFFER, 0);
+			glDrawBuffer(GL_BACK_LEFT);
+			draw_box(nullptr, deepred, 0.95f, 1.0f - 0.05f * glob->w / glob->h, 0.05f, 0.05f * glob->w / glob->h, -1);
+			render_text("x", white, 0.962f, 1.015f - 0.05f * glob->w / glob->h, 0.0012f, 0.002f);
+			glBindFramebuffer(GL_FRAMEBUFFER, 0);
+			glDrawBuffer(GL_BACK_LEFT);
+			if (mainprogram->leftmouse)	mainprogram->quit("closed window");
+		}
+	
+		if (!mainprogram->startloop) {
+			std::string reqdir = mainprogram->projdir;
+			if (reqdir.substr(0, 1) == ".") reqdir.erase(0, 2);
+			glBindFramebuffer(GL_FRAMEBUFFER, 0);
+			glDrawBuffer(GL_BACK_LEFT);
+			Box box;
+			box.acolor[3] = 1.0f;
+			box.vtxcoords->x1 = -0.75;
+			box.vtxcoords->y1 = 0.0f;
+			box.vtxcoords->w = 0.5f;
+			box.vtxcoords->h = 0.25f;
+			box.upvtxtoscr();
+			draw_box(&box, -1);
+			if (box.in()) {
+				draw_box(white, lightblue, &box, -1);
+				if (mainprogram->leftmouse) {
+					//start new project
+					std::string name = "Untitled";
+					std::string path;
+					count = 0;
+					while (1) {
+						path = mainprogram->projdir + name;
+						if (!exists(path + ".ewocvj")) {
+							break;
+						}
+						count++;
+						name = remove_version(name) + "_" + std::to_string(count);
+					}
+					mainprogram->get_outname("New project", "application/ewocvj2-project", boost::filesystem::absolute(reqdir + name).string());
+					if (mainprogram->path != nullptr) {
+						mainprogram->project->newp(mainprogram->path);
+						mainprogram->path = nullptr;
+						mainprogram->startloop = true;
+					}
+				}
+			}
+			render_text("New project", white, box.vtxcoords->x1 + 0.015f, box.vtxcoords->y1 + 0.15f, 0.001f, 0.0016f);
+			glBindFramebuffer(GL_FRAMEBUFFER, 0);
+			glDrawBuffer(GL_BACK_LEFT);
+			
+			box.vtxcoords->y1 = -0.25f;
+			box.upvtxtoscr();
+			draw_box(&box, -1);
+			if (box.in()) {
+				draw_box(white, lightblue, &box, -1);
+				if (mainprogram->leftmouse) {
+					mainprogram->get_inname("Open project", "application/ewocvj2-project", boost::filesystem::absolute(dir).string());
+					if (mainprogram->path != nullptr) {
+						mainprogram->project->open(mainprogram->path);
+						mainprogram->path = nullptr;
+						mainprogram->startloop = true;
+					}
+				}
+			}
+			render_text("Open project", white, box.vtxcoords->x1 + 0.015f, box.vtxcoords->y1 + 0.15f, 0.001f, 0.0016f);
+			glBindFramebuffer(GL_FRAMEBUFFER, 0);
+			glDrawBuffer(GL_BACK_LEFT);
+			
+			box.vtxcoords->x1 = 0.0f;
+			box.vtxcoords->y1 = 0.5f;
+			box.vtxcoords->w = 0.95f;
+			box.vtxcoords->h = 0.125f;
+			box.upvtxtoscr();
+			
+			render_text("Recent project files:", white, box.vtxcoords->x1 + 0.015f, box.vtxcoords->y1 + box.vtxcoords->h * 2.0f + 0.03f, 0.001f, 0.0016f);
+			for (int i = 0; i < mainprogram->recentprojectpaths.size(); i++) {
+				draw_box(&box, -1);
+				if (box.in()) {
+					draw_box(white, lightblue, &box, -1);
+					if (mainprogram->leftmouse) {
+						mainprogram->project->open(mainprogram->recentprojectpaths[i]);
+						mainprogram->startloop = true;
+						break;
+					}
+				}
+				render_text(mainprogram->recentprojectpaths[i], white, box.vtxcoords->x1 + 0.015f, box.vtxcoords->y1 + 0.03f, 0.001f, 0.0016f);
+				box.vtxcoords->y1 -= 0.125f;
+				box.upvtxtoscr();
+			}
+				
+			SDL_GL_SwapWindow(mainprogram->mainwindow);
+			mainprogram->leftmouse = false;
+		}
+		else {
+			std::chrono::high_resolution_clock::time_point now = std::chrono::high_resolution_clock::now();
+			elapsed = std::chrono::duration_cast<std::chrono::duration<double>>(now - begintime);
+			long long microcount = std::chrono::duration_cast<std::chrono::microseconds>(elapsed).count();
+			mainmix->time = microcount / 1000000.0f;
+			GLint iGlobalTime = glGetUniformLocation(mainprogram->ShaderProgram, "iGlobalTime");
+			glUniform1f(iGlobalTime, mainmix->time);
+			
+			the_loop();
+		}
 	}
 
 	mainprogram->quit("stop");

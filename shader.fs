@@ -19,7 +19,6 @@ uniform int preff = 1;
 uniform float drywet = 1.0f;
 uniform vec4 color = vec4(0.0f, 0.0f, 0.0f, 1.0f);
 uniform bool horizontal;
-uniform int blurswitch = 1;
 uniform float BlurStart = 0.0f;
 uniform float radialwidth = 0.6f; 
 uniform float radialX = 0.0f; 
@@ -311,6 +310,7 @@ vec4 blur(vec2 texc) //tutorial on rastergrid seems free
 
 vec4 boxblur(vec2 texc)  //blog.trsquarelab.com free
 {
+	float alpha = texture2D(fboSampler, texc).a;
 	const int jump = 20;
 	vec2 size = textureSize(fboSampler, 0);
 	vec2 point;
@@ -338,7 +338,7 @@ vec4 boxblur(vec2 texc)  //blog.trsquarelab.com free
 		}
 		finalcol /= float(count);
 	}
-  	return finalcol;
+  	return vec4(finalcol.rgb, alpha);
 }
 
 
@@ -1540,19 +1540,13 @@ void main()
 		texcol = texture2D(Sampler0, texco);
 		switch (fxid) {
 			case 0:
-				if (blurswitch == 1) {
-					intcoloring = true;
-					intcol = blur(texco);
-				}
-				if (blurswitch == 0) FragColor = texcol;
+				intcoloring = true;
+				intcol = blur(texco);
 				break;
 			case 5:
-				if (blurswitch == 1) {
-					intcoloring = true;
-					intcol = boxblur(texco);
-					intcol = vec4(intcol.rgb * glowfac, intcol.a);
-				}
-				if (blurswitch == 0) FragColor = texcol;
+				intcoloring = true;
+				intcol = boxblur(texco);
+				intcol = vec4(intcol.rgb * glowfac, intcol.a);
 				break;
 			case 1:
 				intcoloring = true;
@@ -1693,7 +1687,9 @@ void main()
 		//MIX alpha
 		float fac1 = clamp((1.0f - mixfac) * 2.0f, 0.0f, 1.0f);
 		float fac2 = clamp(mixfac * 2.0f, 0.0f, 1.0f);
-		fc = vec4((tex0.rgb * (1.0f - fac2 * tex1.a / 2.0f) * fac1 + tex1.rgb * (1.0f - fac1 * tex0.a / 2.0f) * fac2), max(fac1 * tex0.a, fac2 * tex1.a));
+		float term0 = (1.0f - fac2 * tex1.a / 2.0f) * fac1;
+		float term1 = (1.0f - fac1 * tex0.a / 2.0f) * fac2;
+		fc = vec4((tex0.rgb * (term0 + (1.0f - tex1.a) * (1.0f - term0)) + tex1.rgb * (term1 + (1.0f - tex0.a) * (1.0f - term1))), max(tex0.a, tex1.a));
 	}
 	else if (mixmode == 2) {
 		//MULTIPLY alpha

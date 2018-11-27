@@ -56,6 +56,7 @@ struct mix_target_struct {
 
 class Shelf {
 	public:
+		std::string basepath = "";
 		std::string paths[16];
 		ELEM_TYPE types[16];
 		GLuint texes[16];
@@ -69,6 +70,17 @@ class Shelf {
 		void open_dir();
 		bool open_image(const std::string &path, int pos);
 		Shelf(bool side);
+};
+
+class Project {
+	public:
+		std::string path;
+		std::string binsdir;
+		std::string recdir;
+		std::string shelfdir;
+		void newp(const std::string &path);
+		void open(const std::string &path);
+		void save(const std::string &path);
 };
 
 class Preferences {
@@ -190,6 +202,8 @@ class Globals {
 
 class Program {
 	public:
+		Project *project;
+		NodesMain *nodesmain;
 		GLuint ShaderProgram;
 		GLuint ShaderProgram_tm;
 		GLuint ShaderProgram_pr;
@@ -200,7 +214,6 @@ class Program {
 		GLuint smglobfbotex_tm;
 		GLuint smglobfbo_pr;
 		GLuint smglobfbotex_pr;
-		NodesMain *nodesmain;
 		std::vector<OutputEntry*> outputentries;
 		std::vector<Button*> buttons;
 		Box *scrollboxes[2];
@@ -218,6 +231,7 @@ class Program {
 		Menu *deckmenu = nullptr;
 		Menu *laymenu = nullptr;
 		Menu *loadmenu = nullptr;
+		Menu *aspectmenu = nullptr;
 		Menu *mixtargetmenu = nullptr;
 		Menu *fullscreenmenu = nullptr;
 		Menu *mixenginemenu = nullptr;
@@ -233,8 +247,7 @@ class Program {
 		Menu *bin2menu = nullptr;
 		Menu *genmidimenu = nullptr;
 		Menu *genericmenu = nullptr;
-		Menu *shelfmenu1 = nullptr;
-		Menu *shelfmenu2 = nullptr;
+		Menu *shelfmenu = nullptr;
 		bool menuactivation;
 		bool menuchosen;
 		int menux;
@@ -285,6 +298,8 @@ class Program {
 		Box *effscrollupB;
 		Box *effscrolldownB;
 		Box *addeffectbox;
+		bool startloop = false;
+		std::vector<std::string> recentprojectpaths;
 		
 		lo::ServerThread *st;
 		std::unordered_map<std::string, int> wipesmap;
@@ -355,11 +370,11 @@ class Program {
 		std::condition_variable hap;
 		bool hapnow = false;
 		
+		std::string projdir;
 		std::string binsdir;
 		std::string recdir;
 		std::string shelfdir;
 		bool openshelfdir = false;
-		bool mainshelf = true;
 		std::string shelfpath;
 		int shelfdircount;
 		bool shelfdrag = false;
@@ -407,7 +422,7 @@ extern void open_video(float frame, Layer *lay, const std::string &filename, int
 extern std::vector<Layer*>& choose_layers(bool j);
 extern void make_layboxes();
 
-extern int handle_menu(Menu *menu, float xshift);
+extern int handle_menu(Menu *menu, float xshift, float yshift);
 extern int handle_menu(Menu *menu);
 extern void new_file(int decks, bool alive);
 extern void draw_box(float *linec, float *areac, float x, float y, float wi, float he, float dx, float dy, float scale, float opacity, int circle, GLuint tex, float fw, float fh);
@@ -469,6 +484,7 @@ void set_live_base(Layer *lay, std::string livename);
 
 extern float tf(float vtxcoord);
 extern bool exists(const std::string &name);
+extern std::string dirname(std::string pathname);
 extern std::string basename(std::string pathname);
 extern std::string remove_extension(std::string filename);
 extern std::string remove_version(std::string filename);

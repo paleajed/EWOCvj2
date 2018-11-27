@@ -32,6 +32,8 @@
 #include "bins.h"
 
 Program::Program() {
+	this->project = new Project;
+
 	#ifdef _WIN64
 	this->temppath = "./temp/";
 	#else
@@ -41,6 +43,9 @@ Program::Program() {
 	#endif
 	#endif
 	
+	this->shelves[0] = new Shelf(0);
+	this->shelves[1] = new Shelf(1);
+		
 	this->numh = this->numh * glob->w / glob->h;
 	
 	this->scrollboxes[0] = new Box;
@@ -341,6 +346,7 @@ std::string Program::mime_to_wildcard(std::string filters) {
 	if (filters == "application/ewocvj2-deck") return "*.deck";
 	if (filters == "application/ewocvj2-mix") return "*.mix";
 	if (filters == "application/ewocvj2-state") return "*.state";
+	if (filters == "application/ewocvj2-project") return "*.ewocvj";
 	if (filters == "application/ewocvj2-shelf") return "*.shelf";
 }
 
@@ -575,4 +581,145 @@ GLuint Program::set_shader() {
 }
 
 
+void Project::newp(const std::string &path) {
+	std::string ext = path.substr(path.length() - 7, std::string::npos);
+	std::string str;
+	if (ext != ".ewocvj") str = path + ".ewocvj";
+	else str = path;
+	mainprogram->project->path = path;
+	
+	std::string dir = remove_extension(path) + "/";
+	this->binsdir = dir + "bins/";
+	this->recdir = dir + "recordings/";
+	this->shelfdir = dir + "shelves/";
+	boost::filesystem::path d{dir};
+	boost::filesystem::create_directory(d);
+	boost::filesystem::path p1{this->binsdir};
+	boost::filesystem::create_directory(p1);
+	boost::filesystem::path p2{this->recdir};
+	boost::filesystem::create_directory(p2);
+	boost::filesystem::path p3{this->shelfdir};
+	boost::filesystem::create_directory(p3);
+	mainprogram->binsdir = this->binsdir;
+	mainprogram->recdir = this->recdir;
+	mainprogram->shelfdir = this->shelfdir;
+	for (int i = 0; i < binsmain->bins.size(); i++) {
+		delete binsmain->bins[i];
+	}
+	binsmain->bins.clear();
+	binsmain->new_bin("this is a bin");
+	binsmain->save_binslist();
+	mainprogram->shelves[0]->erase();
+	mainprogram->shelves[1]->erase();
+	mainprogram->project->save(path);
+}
+	
+void Project::open(const std::string &path) {
+	std::string result = deconcat_files(path);
+	bool concat = (result != "");
+	std::ifstream rfile;
+	if (concat) rfile.open(result);
+	else rfile.open(path);
+	
+	mainprogram->project->path = path;
+	std::string dir = remove_extension(path) + "/";
+	this->binsdir = dir + "bins/";
+	this->recdir = dir + "recordings/";
+	this->shelfdir = dir + "shelves/";
+	int cb = binsmain->read_binslist();
+	for (int i = 0; i < binsmain->bins.size(); i++) {
+		std::string binname = this->binsdir + binsmain->bins[i]->name + ".bin";
+		if (exists(binname)) binsmain->open_bin(binname, binsmain->bins[i]);
+	}
+	binsmain->make_currbin(cb);
+	mainprogram->binsdir = this->binsdir;
+	mainprogram->recdir = this->recdir;
+	mainprogram->shelfdir = this->shelfdir;
+	
+	std::string istring;
+	getline(rfile, istring);
+	
+	while (getline(rfile, istring)) {
+		if (istring == "ENDOFFILE") break;
+		if (istring == "CURRSHELFA") {
+			getline(rfile, istring);
+			if (istring != "") {
+				mainprogram->shelves[0]->open(this->shelfdir + istring);
+				mainprogram->shelves[0]->basepath = istring;
+			}
+			else {
+				mainprogram->shelves[0]->erase();
+			}
+		}
+		if (istring == "CURRSHELFB") {
+			getline(rfile, istring);
+			if (istring != "") {
+				mainprogram->shelves[1]->open(this->shelfdir + istring);
+				mainprogram->shelves[1]->basepath = istring;
+			}
+			else {
+				mainprogram->shelves[1]->erase();
+			}
+		}
+	}
+	
+	rfile.close();
+	
+	mainmix->open_state(result + "_0.file");
+}
+
+void Project::save(const std::string &path) {
+	std::string ext = path.substr(path.length() - 7, std::string::npos);
+	std::string str;
+	if (ext != ".ewocvj") str = path + ".ewocvj";
+	else str = path;
+	std::ofstream wfile;
+	wfile.open(str);
+	std::vector<std::string> filestoadd;
+	
+	wfile << "EWOCvj PROJECT V0.1\n";
+	wfile << "CURRSHELFA\n";
+	wfile << mainprogram->shelves[0]->basepath;
+	wfile << "\n";
+	wfile << "CURRSHELFB\n";
+	wfile << mainprogram->shelves[1]->basepath;
+	wfile << "\n";
+	
+	wfile.close();
+	
+	mainmix->save_state(mainprogram->temppath + "current.state");
+	filestoadd.push_back(mainprogram->temppath + "current.state");
+	
+    std::ofstream outputfile;
+	outputfile.open(mainprogram->temppath + "tempconcatproj", std::ios::out | std::ios::binary);
+	std::vector<std::vector<std::string>> filestoadd2;
+	filestoadd2.push_back(filestoadd);
+	concat_files(outputfile, str, filestoadd2);
+	outputfile.close();
+	boost::filesystem::rename(mainprogram->temppath + "tempconcatproj", str);
+	
+	if (std::find(mainprogram->recentprojectpaths.begin(), mainprogram->recentprojectpaths.end(), str) == mainprogram->recentprojectpaths.end()) {
+		mainprogram->recentprojectpaths.insert(mainprogram->recentprojectpaths.begin(), str);
+		if (mainprogram->recentprojectpaths.size() > 10) {
+			mainprogram->recentprojectpaths.pop_back();
+		}
+		#ifdef _WIN64
+		std::string dir = "./";
+		#else
+		#ifdef __linux__
+		std::string homedir (getenv("HOME"));
+		std::string dir = homedir + "/.ewocvj2/";
+		#endif
+		#endif
+		wfile.open(dir + "recentprojectslist");
+		wfile << "EWOCvj RECENTPROJECTS V0.1\n";
+		for (int i = 0; i < mainprogram->recentprojectpaths.size(); i++) {
+			wfile << mainprogram->recentprojectpaths[i];
+			wfile << "\n";
+		}
+		wfile << "ENDOFFILE\n";
+		wfile.close();
+	}
+}
+	
 
