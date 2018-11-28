@@ -207,7 +207,7 @@ class Program {
 		GLuint ShaderProgram;
 		GLuint ShaderProgram_tm;
 		GLuint ShaderProgram_pr;
-		GLuint fbovao[4];
+		GLuint fbovao;
 		GLuint globfbo;
 		GLuint globfbotex;
 		GLuint smglobfbo_tm;
@@ -259,9 +259,12 @@ class Program {
 		int my;
 		float ow = 1920.0f;
 		float oh = 1080.0f;
+		float ow3, oh3;
 		float layw = 0.319f;
+		float layh = 0.319f;
 		float numw = 0.041f;
 		float numh = 0.041f;
+		float monh = 0.3f;
 		float cwx;
 		float cwy;
 		bool leftmousedown = false;

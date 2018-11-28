@@ -117,7 +117,6 @@ LoopStation *lpc = nullptr;
 static GLuint mixvao;
 static GLuint fbotex[4];
 static GLuint frbuf[4];
-static GLuint vbuf2, vbuf3;
 static GLuint thmvbuf;
 static GLuint thmvao;
 static GLuint boxvao;
@@ -1506,69 +1505,15 @@ Shelf::Shelf(bool side) {
 		this->buttons[i] = new Button(false);
 		Box *box = this->buttons[i]->box;
 		box->vtxcoords->x1 = -1.0f + (i % 4) * boxwidth + (2.0f - boxwidth * 4) * side;
-		box->vtxcoords->y1 = -1.0f + (int)(i / 4) * boxwidth;
+		box->vtxcoords->h = boxwidth * (glob->w / glob->h) / (1920.0f /  1080.0f);
+		box->vtxcoords->y1 = -1.0f + (int)(i / 4) * box->vtxcoords->h;
 		box->vtxcoords->w = boxwidth;
-		box->vtxcoords->h = boxwidth;
 		box->upvtxtoscr();
 		box->tooltiptitle = "Video launch shelf";
 		box->tooltip = "Shelf containing up to 16 videos/layerfiles for quick and easy video launching.  Left drag'n'drop from other areas, both videos and layerfiles.  Rightdrag of videos to layers launches with empty effect stack.  Rightclick launches shelf menu. ";
 	}
 }
-
-void set_fbovao2() {
-	for (int i = 0; i < 1; i++) { //mainprogram->nodesmain->pages.size()
-		for (int j = 0; j < mainprogram->nodesmain->currpage->nodescomp.size(); j++) {
-			Node *node = mainprogram->nodesmain->currpage->nodescomp[j];
-			if (node->type == EFFECT) {
-				EffectNode *enode = (EffectNode*)node;
-				glDeleteFramebuffers(1, &enode->effect->fbo);
-				enode->effect->fbo = -1;
-				glDeleteTextures(1, &enode->effect->fbotex);
-			}
-			else if (node->type == BLEND) {
-				BlendNode *bnode = (BlendNode*)node;
-				glDeleteFramebuffers(1, &bnode->fbo);
-				bnode->fbo = -1;
-				glDeleteTextures(1, &bnode->fbotex);
-			}
-			else if (node->type == MIX) {
-				MixNode *mnode = (MixNode*)node;
-				glDeleteFramebuffers(1, &mnode->mixfbo);
-				mnode->mixfbo = -1;
-				glDeleteTextures(1, &mnode->mixtex);
-			}
-		}
-	}
-
-	float vidwidth = mainprogram->ow;
-	float vidheight = mainprogram->oh;
 	
-	GLfloat vcoords3[8];
-	GLfloat *p = vcoords3;
-	*p++ = -1.0f; *p++ = -1.0f;
-	*p++ = -1.0f; *p++ = (1.0f - (2.0f - 2.0f * (vidheight / (float)glob->h)));
-	*p++ = 1.0f - (2.0f - 2.0f * (vidwidth / (float)glob->w)); *p++ = -1.0f;
-	*p++ = 1.0f - (2.0f - 2.0f * (vidwidth / (float)glob->w)); *p++ = (1.0f - (2.0f - 2.0f * (vidheight / (float)glob->h)));
-	GLfloat tcoords[] = {0.0f, 0.0f,
-						0.0f, 1.0f,
-						1.0f, 0.0f,
-						1.0f, 1.0f};
-
-	glBindBuffer(GL_ARRAY_BUFFER, vbuf3);
-    glBufferData(GL_ARRAY_BUFFER, 32, vcoords3, GL_STATIC_DRAW);
-	GLuint tbuf;
-    glGenBuffers(1, &tbuf);
-	glBindBuffer(GL_ARRAY_BUFFER, tbuf);
-    glBufferData(GL_ARRAY_BUFFER, 32, tcoords, GL_STATIC_DRAW);
-    
-	glBindVertexArray(mainprogram->fbovao[2]);
-	glBindBuffer(GL_ARRAY_BUFFER, vbuf3);
-	glEnableVertexAttribArray(0);
-	glVertexAttribPointer(0, 2, GL_FLOAT, GL_FALSE, 8, nullptr);
-	glBindBuffer(GL_ARRAY_BUFFER, tbuf);
-	glEnableVertexAttribArray(1);
-	glVertexAttribPointer(1, 2, GL_FLOAT, GL_FALSE, 8, nullptr);
-}	
 
 void set_fbo() {
 
@@ -1612,57 +1557,30 @@ void set_fbo() {
 	glBindFramebuffer(GL_FRAMEBUFFER, frbuf[3]);
 	glFramebufferTexture2D(GL_FRAMEBUFFER, GL_COLOR_ATTACHMENT0, GL_TEXTURE_2D, fbotex[3], 0);
 
-	
-	float vidwidth = mainprogram->ow;
-	float vidheight = mainprogram->oh;
-	
-	GLfloat vcoords1[8];
-	GLfloat *p = vcoords1;
+
+	GLfloat vcoords[8];
+	GLfloat *p = vcoords;
 	*p++ = -1.0f; *p++ = -1.0f;
 	*p++ = -1.0f; *p++ = 1.0f;
 	*p++ = 1.0f; *p++ = -1.0f;
 	*p++ = 1.0f; *p++ = 1.0f;
 
-	GLfloat vcoords2[8];
-	p = vcoords2;
-	*p++ = -1.0f; *p++ = -1.0f;
-	*p++ = -1.0f; *p++ = -0.4f;
-	*p++ = -0.4f; *p++ = -1.0f;
-	*p++ = -0.4f; *p++ = -0.4f;
-
-	GLfloat vcoords3[8];
-	p = vcoords3;
-	*p++ = -1.0f; *p++ = -1.0f;
-	*p++ = -1.0f; *p++ = 1.0f - (2.0f - 2.0f * vidheight / (float)glob->h);
-	*p++ = 1.0f - (2.0f - 2.0f * vidwidth / (float)glob->w); *p++ = -1.0f;
-	*p++ = 1.0f - (2.0f - 2.0f * vidwidth / (float)glob->w); *p++ = 1.0f - (2.0f - 2.0f * vidheight / (float)glob->h);
-
 	GLfloat tcoords[] = {0.0f, 0.0f,
 						0.0f, 1.0f,
 						1.0f, 0.0f,
 						1.0f, 1.0f};
-    glGenBuffers(1, &vbuf2);
-	glBindBuffer(GL_ARRAY_BUFFER, vbuf2);
-    glBufferData(GL_ARRAY_BUFFER, 32, vcoords2, GL_STATIC_DRAW);
-    glGenBuffers(1, &vbuf3);
-	glBindBuffer(GL_ARRAY_BUFFER, vbuf3);
-    glBufferData(GL_ARRAY_BUFFER, 32, vcoords3, GL_STATIC_DRAW);
+					
+	GLuint vbuf;	
+    glGenBuffers(1, &vbuf);
+	glBindBuffer(GL_ARRAY_BUFFER, vbuf);
+    glBufferData(GL_ARRAY_BUFFER, 32, vcoords, GL_STATIC_DRAW);
 	GLuint tbuf;
     glGenBuffers(1, &tbuf);
 	glBindBuffer(GL_ARRAY_BUFFER, tbuf);
     glBufferData(GL_ARRAY_BUFFER, 32, tcoords, GL_STATIC_DRAW);
-	glGenVertexArrays(1, &mainprogram->fbovao[1]);
-	glBindVertexArray(mainprogram->fbovao[1]);
-	glBindBuffer(GL_ARRAY_BUFFER, vbuf2);
-	glEnableVertexAttribArray(0);
-	glVertexAttribPointer(0, 2, GL_FLOAT, GL_FALSE, 8, nullptr);
-	glBindBuffer(GL_ARRAY_BUFFER, tbuf);
-	glEnableVertexAttribArray(1);
-	glVertexAttribPointer(1, 2, GL_FLOAT, GL_FALSE, 8, nullptr);
-	
-	glGenVertexArrays(1, &mainprogram->fbovao[2]);
-	glBindVertexArray(mainprogram->fbovao[2]);
-	glBindBuffer(GL_ARRAY_BUFFER, vbuf3);
+	glGenVertexArrays(1, &mainprogram->fbovao);
+	glBindVertexArray(mainprogram->fbovao);
+	glBindBuffer(GL_ARRAY_BUFFER, vbuf);
 	glEnableVertexAttribArray(0);
 	glVertexAttribPointer(0, 2, GL_FLOAT, GL_FALSE, 8, nullptr);
 	glBindBuffer(GL_ARRAY_BUFFER, tbuf);
@@ -1691,7 +1609,7 @@ void set_fbo() {
 	GLuint tmbuf;
 	glGenBuffers(1, &thmvbuf);
 	glBindBuffer(GL_ARRAY_BUFFER, thmvbuf);
-	glBufferData(GL_ARRAY_BUFFER, 32, vcoords1, GL_STREAM_DRAW);
+	glBufferData(GL_ARRAY_BUFFER, 32, vcoords, GL_STREAM_DRAW);
 	glGenBuffers(1, &tmbuf);
 	glBindBuffer(GL_ARRAY_BUFFER, tmbuf);
 	glBufferData(GL_ARRAY_BUFFER, 32, tcoords2, GL_STATIC_DRAW);
@@ -2433,10 +2351,10 @@ void calc_texture(Layer *lay, bool comp, bool alive) {
 						lay->initialized = true;
 					}
 					else if (lay->decresult->compression == 187) {
-						glCompressedTexSubImage2D(GL_TEXTURE_2D, 0, lay->xs, lay->ys, lay->decresult->width, lay->decresult->height, GL_COMPRESSED_RGBA_S3TC_DXT1_EXT, lay->decresult->size, lay->decresult->data);
+						glCompressedTexSubImage2D(GL_TEXTURE_2D, 0, 0, 0, lay->decresult->width, lay->decresult->height, GL_COMPRESSED_RGBA_S3TC_DXT1_EXT, lay->decresult->size, lay->decresult->data);
 					}
 					else if (lay->decresult->compression == 190) {
-						glCompressedTexSubImage2D(GL_TEXTURE_2D, 0, lay->xs, lay->ys, lay->decresult->width, lay->decresult->height, GL_COMPRESSED_RGBA_S3TC_DXT5_EXT, lay->decresult->size, lay->decresult->data);
+						glCompressedTexSubImage2D(GL_TEXTURE_2D, 0, 0, 0, lay->decresult->width, lay->decresult->height, GL_COMPRESSED_RGBA_S3TC_DXT5_EXT, lay->decresult->size, lay->decresult->data);
 					}
 				}
 				else {
@@ -2448,7 +2366,7 @@ void calc_texture(Layer *lay, bool comp, bool alive) {
 							lay->initialized = true;
 						}
 						else {
-							glTexSubImage2D(GL_TEXTURE_2D, 0, lay->xs, lay->ys, lay->decresult->width, lay->decresult->height, GL_RGBA, GL_UNSIGNED_BYTE, lay->decresult->data);
+							glTexSubImage2D(GL_TEXTURE_2D, 0, 0, 0, lay->decresult->width, lay->decresult->height, GL_RGBA, GL_UNSIGNED_BYTE, lay->decresult->data);
 						}
 					}
 				}
@@ -2470,7 +2388,7 @@ void calc_texture(Layer *lay, bool comp, bool alive) {
 		return;
 	}
 	if (comp) glViewport(0, 0, mainprogram->ow, mainprogram->oh);
-	else glViewport(0, 0, glob->w * 0.3f, glob->h * 0.3f);
+	else glViewport(0, 0, mainprogram->ow3, mainprogram->oh3);
 	float black[4] = {0.0f, 0.0f, 0.0f, 0.0f};
 	draw_box(nullptr, black, -1.0f, 1.0f, 2.0f, -2.0f, 0, 0, 1, 1, 0, tex, glob->w, glob->h);
 	glBindFramebuffer(GL_FRAMEBUFFER, mainprogram->globfbo);
@@ -2509,6 +2427,28 @@ void display_texture(Layer *lay, bool deck) {
 
 	glBindFramebuffer(GL_FRAMEBUFFER, mainprogram->globfbo);
 	glDrawBuffer(GL_COLOR_ATTACHMENT0);
+	
+	float xs = 0.0f;
+	float ys = 0.0f;
+	float frachd = 1920.0f / 1080.0f;
+	if (lay->aspectratio == RATIO_OUTPUT) {
+		float frac = mainprogram->ow / mainprogram->oh;
+		if (frac > frachd) {
+			ys = mainprogram->layh / 2.0f * (1.0f - frachd / (frac));
+		}
+		else {
+			xs = mainprogram->layw / 2.0f * (1.0f - frac / frachd);
+		}
+	}
+	else if (lay->aspectratio == RATIO_ORIGINAL) {
+		float frac = (float)lay->decresult->width / (float)lay->decresult->height;
+		if (frac > frachd) {
+			ys = mainprogram->layh / 2.0f * (1.0f - frachd / frac);
+		}
+		else {
+			xs = mainprogram->layw / 2.0f * (1.0f - frac / frachd);
+		}
+	}
 					
 	std::vector<Layer*> &lvec = choose_layers(deck);
 	if (mainmix->scenes[deck][mainmix->currscene[deck]]->scrollpos > lvec.size() - 2) mainmix->scenes[deck][mainmix->currscene[deck]]->scrollpos = lvec.size() - 2;
@@ -2516,10 +2456,13 @@ void display_texture(Layer *lay, bool deck) {
 	if (lay->pos >= mainmix->scenes[deck][mainmix->currscene[deck]]->scrollpos and lay->pos < mainmix->scenes[deck][mainmix->currscene[deck]]->scrollpos + 3) {
 		Box *box = lay->node->vidbox;
 		
-		if (!lay->mutebut->value) draw_box(box, box->tex);
+		if (!lay->mutebut->value) {
+			draw_box(box, -1);
+			draw_box(nullptr, box->acolor, box->vtxcoords->x1 + xs, box->vtxcoords->y1 + ys, box->vtxcoords->w - xs * 2.0f, box->vtxcoords->h - ys * 2.0f, box->tex);
+		}
 		else {
-			draw_box(nullptr, darkred2, box, -1);
-			draw_box(box, 0.5f, box->tex);
+			draw_box(white, darkred2, box, -1);
+			draw_box(nullptr, box->acolor, box->vtxcoords->x1 + xs, box->vtxcoords->y1 + ys, box->vtxcoords->w - xs * 2.0f, box->vtxcoords->h - ys * 2.0f, 0, 0, 1, 0.5f, 0, box->tex, 0, 0);
 		}
 
 		if (mainmix->mode == 0 and mainprogram->nodesmain->linked) {
@@ -2570,7 +2513,7 @@ void display_texture(Layer *lay, bool deck) {
 				int numonscreen = size - mainmix->scenes[deck][mainmix->currscene[deck]]->scrollpos;
 				if (0 <= numonscreen and numonscreen <= 2) {
 					if (mainprogram->xvtxtoscr(mainprogram->numw + deck * 1.0f + numonscreen * mainprogram->layw) < mainprogram->mx and mainprogram->mx < deck * (glob->w / 2.0f) + glob->w / 2.0f) {
-						if (0 < mainprogram->my and mainprogram->my < mainprogram->yvtxtoscr(mainprogram->layw)) {
+						if (0 < mainprogram->my and mainprogram->my < mainprogram->yvtxtoscr(mainprogram->layh)) {
 							if (mainprogram->menuactivation) {
 								mainprogram->loadmenu->state = 2;
 								mainmix->mousedeck = deck;
@@ -2650,7 +2593,7 @@ void display_texture(Layer *lay, bool deck) {
 					mixstr = "CKey";
 					if (lay->pos > 0) {
 						draw_box(lay->colorbox, -1);
-						render_text("Color", white, lay->mixbox->vtxcoords->x1 + tf(0.08f), 1.0f - (tf(mainprogram->layw)) + tf(0.02f), tf(0.0003f), tf(0.0005f));
+						render_text("Color", white, lay->mixbox->vtxcoords->x1 + tf(0.08f), 1.0f - (tf(mainprogram->layh)) + tf(0.02f), tf(0.0003f), tf(0.0005f));
 					}
 					break;
 				case 20:
@@ -2658,10 +2601,10 @@ void display_texture(Layer *lay, bool deck) {
 					break;
 			}
 			if (lay->pos > 0) {
-				render_text(mixstr, white, lay->mixbox->vtxcoords->x1 + tf(0.01f), 1.0f - (tf(mainprogram->layw)) + tf(0.02f), tf(0.0003f), tf(0.0005f));
+				render_text(mixstr, white, lay->mixbox->vtxcoords->x1 + tf(0.01f), 1.0f - (tf(mainprogram->layh)) + tf(0.02f), tf(0.0003f), tf(0.0005f));
 			}
 			else {
-				render_text(mixstr, red, lay->mixbox->vtxcoords->x1 + tf(0.01f), 1.0f - (tf(mainprogram->layw)) + tf(0.02f), tf(0.0003f), tf(0.0005f));
+				render_text(mixstr, red, lay->mixbox->vtxcoords->x1 + tf(0.01f), 1.0f - (tf(mainprogram->layh)) + tf(0.02f), tf(0.0003f), tf(0.0005f));
 			}
 			
 			// Draw and handle effect category buttons
@@ -2750,7 +2693,7 @@ void display_texture(Layer *lay, bool deck) {
 			}
 			if (lay->effects[cat].size()) {
 				if ((glob->w / 2.0f > mainprogram->mx and mainmix->currlay->deck == 0) or (glob->w / 2.0f < mainprogram->mx and mainmix->currlay->deck == 1)) {
-					if (mainprogram->my > mainprogram->yvtxtoscr(mainprogram->layw - tf(0.20f))) {
+					if (mainprogram->my > mainprogram->yvtxtoscr(mainprogram->layh - tf(0.20f))) {
 						if (mainprogram->mousewheel and lay->numefflines[cat] > 11) {
 							lay->effscroll[cat] -= mainprogram->mousewheel;
 							if (lay->effscroll[cat] < 0) lay->effscroll[cat] = 0;
@@ -2766,8 +2709,8 @@ void display_texture(Layer *lay, bool deck) {
 				Box *box;
 				float x1, y1, wi;
 				
-				if (eff->box->vtxcoords->y1 < 1.0 - tf(mainprogram->layw) - tf(0.22f) - tf(0.05f) * 10) break;
-				if (eff->box->vtxcoords->y1 <= 1.0 - tf(mainprogram->layw) - tf(0.18f)) {
+				if (eff->box->vtxcoords->y1 < 1.0 - tf(mainprogram->layh) - tf(0.22f) - tf(0.05f) * 10) break;
+				if (eff->box->vtxcoords->y1 <= 1.0 - tf(mainprogram->layh) - tf(0.18f)) {
 					eff->drywet->handle();		
 					eff->onoffbutton->handle();
 					
@@ -2927,8 +2870,8 @@ void display_texture(Layer *lay, bool deck) {
 					par->box->vtxcoords->h = eff->box->vtxcoords->h;
 					par->box->upvtxtoscr();
 					
-					if (par->box->vtxcoords->y1 < 1.0 - tf(mainprogram->layw) - tf(0.22f) - tf(0.05f) * 10) break;
-					if (par->box->vtxcoords->y1 <= 1.0 - tf(mainprogram->layw) - tf(0.18f)) {
+					if (par->box->vtxcoords->y1 < 1.0 - tf(mainprogram->layh) - tf(0.22f) - tf(0.05f) * 10) break;
+					if (par->box->vtxcoords->y1 <= 1.0 - tf(mainprogram->layh) - tf(0.18f)) {
 						par->handle();
 					}
 				}
@@ -3302,14 +3245,16 @@ void doblur(bool stage, GLuint prevfbotex, int iter) {
 	GLint fboSampler = glGetUniformLocation(mainprogram->ShaderProgram, "fboSampler");
 	glUniform1i(fboSampler, 0);
 	glActiveTexture(GL_TEXTURE0);
-	for(GLuint i = 0; i < iter; i++) {
+	if (stage) glViewport(0, 0, mainprogram->ow, mainprogram->oh);
+	else glViewport(0, 0, mainprogram->ow3, mainprogram->oh3);
+	for (GLuint i = 0; i < iter; i++) {
 		glBindFramebuffer(GL_FRAMEBUFFER, frbuf[horizontal + stage * 2]);
 		glDrawBuffer(GL_COLOR_ATTACHMENT0);
 		if (first_iteration) tex = &prevfbotex;
 		else tex = &fbotex[!horizontal + stage * 2];
 		glBindTexture(GL_TEXTURE_2D, *tex);
 		glUniform1i(glGetUniformLocation(mainprogram->ShaderProgram, "horizontal"), horizontal);
-		glBindVertexArray(mainprogram->fbovao[2 - (mainprogram->prevmodus and !stage)]);
+		glBindVertexArray(mainprogram->fbovao);
 		glDrawArrays(GL_TRIANGLE_STRIP, 0, 4);
 		if (i % 2) glActiveTexture(GL_TEXTURE5);
 		else glActiveTexture(GL_TEXTURE6);
@@ -3320,6 +3265,7 @@ void doblur(bool stage, GLuint prevfbotex, int iter) {
 	}
 	glBindFramebuffer(GL_FRAMEBUFFER, mainprogram->globfbo);
 	glDrawBuffer(GL_COLOR_ATTACHMENT0);
+	glViewport(0, 0, glob->w, glob->h);
 }
 
 void midi_set() {
@@ -3372,24 +3318,27 @@ void onestepfrom(bool stage, Node *node, Node *prevnode, GLuint prevfbotex, GLui
 	GLint blurswitch = glGetUniformLocation(mainprogram->ShaderProgram, "blurswitch");
 	GLint edgethickmode = glGetUniformLocation(mainprogram->ShaderProgram, "edgethickmode");
 	GLint fxid;
-	
-	
-	int wi, he;
-	float div;
-	if (!mainprogram->prevmodus) {
-		div = mainprogram->ow / glob->w;
-	}
-	if (mainprogram->prevmodus and stage == 0) {
-		div = 0.3f;
+		
+	float div = 1.0f;
+	if (mainprogram->ow > mainprogram->oh) {
+		if (mainprogram->ow > 640) {
+			mainprogram->ow3 = 640;
+			mainprogram->oh3 = 640 * mainprogram->oh / mainprogram->ow;
+		}
+		if (mainprogram->prevmodus and stage == 0) div = mainprogram->ow3 / mainprogram->ow;
 	}
 	else {
-		div = mainprogram->ow / glob->w;
+		if (mainprogram->oh > 640) {
+			mainprogram->oh3 = 640;
+			mainprogram->ow3 = 640 * mainprogram->ow / mainprogram->oh;
+		}
+		if (mainprogram->prevmodus and stage == 0) div = mainprogram->oh3 / mainprogram->oh;
 	}
 	
 	GLuint fbowidth = glGetUniformLocation(mainprogram->ShaderProgram, "fbowidth");
-	glUniform1i(fbowidth, (int)glob->w);
+	glUniform1i(fbowidth, mainprogram->ow);
 	GLuint fboheight = glGetUniformLocation(mainprogram->ShaderProgram, "fboheight");
-	glUniform1i(fboheight, (int)glob->h);
+	glUniform1i(fboheight, mainprogram->oh);
 	GLuint fcdiv = glGetUniformLocation(mainprogram->ShaderProgram, "fcdiv");
 	glUniform1f(fcdiv, div);
 	
@@ -3601,8 +3550,10 @@ void onestepfrom(bool stage, Node *node, Node *prevnode, GLuint prevfbotex, GLui
 					glActiveTexture(GL_TEXTURE0);
 					glBindFramebuffer(GL_FRAMEBUFFER, frbuf[0 + stage * 2]);
 					glDrawBuffer(GL_COLOR_ATTACHMENT0);
+					if (stage) glViewport(0, 0, mainprogram->ow, mainprogram->oh);
+					else glViewport(0, 0, mainprogram->ow3, mainprogram->oh3);
 					glBindTexture(GL_TEXTURE_2D, prevfbotex);
-					glBindVertexArray(mainprogram->fbovao[2 - (mainprogram->prevmodus and !stage)]);
+					glBindVertexArray(mainprogram->fbovao);
 					glDrawArrays(GL_TRIANGLE_STRIP, 0, 4);
 					glUniform1i(interm, 0);
 					
@@ -3618,7 +3569,7 @@ void onestepfrom(bool stage, Node *node, Node *prevnode, GLuint prevfbotex, GLui
 						glBindFramebuffer(GL_FRAMEBUFFER, frbuf[swits + stage * 2]);
 						glDrawBuffer(GL_COLOR_ATTACHMENT0);
 						glBindTexture(GL_TEXTURE_2D, fbotex[!swits + stage * 2]);
-						glBindVertexArray(mainprogram->fbovao[2 - (mainprogram->prevmodus and !stage)]);
+						glBindVertexArray(mainprogram->fbovao);
 						glDrawArrays(GL_TRIANGLE_STRIP, 0, 4);
 						if (i % 2) glActiveTexture(GL_TEXTURE5);
 						else glActiveTexture(GL_TEXTURE6);
@@ -3629,6 +3580,7 @@ void onestepfrom(bool stage, Node *node, Node *prevnode, GLuint prevfbotex, GLui
 					glActiveTexture(GL_TEXTURE0);
 					glBindFramebuffer(GL_FRAMEBUFFER, mainprogram->globfbo);
 					glDrawBuffer(GL_COLOR_ATTACHMENT0);
+					glViewport(0, 0, glob->w, glob->h);
 					if (((EdgeDetectEffect*)effect)->thickness % 2) prevfbotex = fbotex[1 + stage * 2];
 					else prevfbotex = fbotex[0 + stage * 2];
 					break;
@@ -3725,7 +3677,7 @@ void onestepfrom(bool stage, Node *node, Node *prevnode, GLuint prevfbotex, GLui
 			glGenTextures(1, &(effect->fbotex));
 			glBindTexture(GL_TEXTURE_2D, effect->fbotex);
 			if ((mainprogram->prevmodus and stage == 0)) {
-				glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA, (int)(glob->w * div), (int)(glob->h * div), 0, GL_RGBA, GL_UNSIGNED_BYTE, nullptr);
+				glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA, mainprogram->ow3, mainprogram->oh3, 0, GL_RGBA, GL_UNSIGNED_BYTE, nullptr);
 			}
 			else {
 				glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA, mainprogram->ow, mainprogram->oh, 0, GL_RGBA, GL_UNSIGNED_BYTE, nullptr);
@@ -3737,7 +3689,6 @@ void onestepfrom(bool stage, Node *node, Node *prevnode, GLuint prevfbotex, GLui
 			glBindFramebuffer(GL_FRAMEBUFFER, effect->fbo);
 			glFramebufferTexture2D(GL_FRAMEBUFFER, GL_COLOR_ATTACHMENT0, GL_TEXTURE_2D, effect->fbotex, 0);
 		}
-		glUniform1i(blurswitch, 0);
 		GLuint down = glGetUniformLocation(mainprogram->ShaderProgram, "down");
 		if (effect->onoffbutton->value) glUniform1i(interm, 1);
 		else glUniform1i(down, 1);
@@ -3768,11 +3719,13 @@ void onestepfrom(bool stage, Node *node, Node *prevnode, GLuint prevfbotex, GLui
  
  		glBindFramebuffer(GL_FRAMEBUFFER, effect->fbo);
 		glDrawBuffer(GL_COLOR_ATTACHMENT0);
+		if (stage) glViewport(0, 0, mainprogram->ow, mainprogram->oh);
+		else glViewport(0, 0, mainprogram->ow3, mainprogram->oh3);
 		glClearColor( 0.f, 0.f, 0.f, 0.f );
 		glClear(GL_COLOR_BUFFER_BIT);
 		glActiveTexture(GL_TEXTURE0);
 		glBindTexture(GL_TEXTURE_2D, prevfbotex);
-		glBindVertexArray(mainprogram->fbovao[2 - (mainprogram->prevmodus and !stage)]);
+		glBindVertexArray(mainprogram->fbovao);
 		glDrawArrays(GL_TRIANGLE_STRIP, 0, 4);
 		glUniform1i(interm, 0);
 		glUniform1i(down, 0);
@@ -3786,7 +3739,7 @@ void onestepfrom(bool stage, Node *node, Node *prevnode, GLuint prevfbotex, GLui
 			glDisable(GL_BLEND);
 			if ((mainprogram->prevmodus and stage == 0)) {
 				fbocopy = copy_tex(effect->fbotex);
-				glViewport(0, 0, glob->w * div, glob->h * div);
+				glViewport(0, 0, mainprogram->ow3, mainprogram->oh3);
 			}
 			else {
 				fbocopy = copy_tex(effect->fbotex, mainprogram->ow, mainprogram->oh);
@@ -3797,7 +3750,7 @@ void onestepfrom(bool stage, Node *node, Node *prevnode, GLuint prevfbotex, GLui
 			glClearColor(0.0f, 0.0f, 0.0f, 0.0f);
 			glClear(GL_COLOR_BUFFER_BIT);
 			float black[4] = {0.0f, 0.0f, 0.0f, 0.0f};
-			draw_box(nullptr, black, -1.0f, 1.0f, 2.0f, -2.0f, lay->shiftx, lay->shifty, lay->scale, lay->opacity->value, 0, fbocopy, glob->w, glob->h);
+			draw_box(nullptr, black, -1.0f, 1.0f, 2.0f, -2.0f, lay->shiftx, lay->shifty, lay->scale, lay->opacity->value, 0, fbocopy, 0, 0);
 			glEnable(GL_BLEND);
 			glDeleteTextures(1, &fbocopy);
 		}
@@ -3822,8 +3775,8 @@ void onestepfrom(bool stage, Node *node, Node *prevnode, GLuint prevfbotex, GLui
 			GLuint fbocopy;
 			glDisable(GL_BLEND);
 			if ((mainprogram->prevmodus and stage == 0)) {
-				fbocopy = copy_tex(lay->fbotex, glob->w * div, glob->h * div);
-				glViewport(0, 0, glob->w * div, glob->h * div);
+				fbocopy = copy_tex(lay->fbotex, mainprogram->ow3, mainprogram->oh3);
+				glViewport(0, 0, mainprogram->ow3, mainprogram->oh3);
 			}
 			else {
 				fbocopy = copy_tex(lay->fbotex, mainprogram->ow, mainprogram->oh);
@@ -3834,7 +3787,7 @@ void onestepfrom(bool stage, Node *node, Node *prevnode, GLuint prevfbotex, GLui
 			glClearColor(0.0f, 0.0f, 0.0f, 0.0f);
 			glClear(GL_COLOR_BUFFER_BIT);
 			float black[4] = {0.0f, 0.0f, 0.0f, 0.0f};
-			draw_box(nullptr, black, -1.0f, 1.0f, 2.0f, -2.0f, lay->shiftx, lay->shifty, lay->scale, lay->opacity->value, 0, fbocopy, glob->w, glob->h);
+			draw_box(nullptr, black, -1.0f, 1.0f, 2.0f, -2.0f, lay->shiftx, lay->shifty, lay->scale, lay->opacity->value, 0, fbocopy, 0, 0);
 			glEnable(GL_BLEND);
 			glDeleteTextures(1, &fbocopy);
 			glBindFramebuffer(GL_FRAMEBUFFER, mainprogram->globfbo);
@@ -3858,7 +3811,7 @@ void onestepfrom(bool stage, Node *node, Node *prevnode, GLuint prevfbotex, GLui
 					glGenTextures(1, &(bnode->fbotex));
 					glBindTexture(GL_TEXTURE_2D, bnode->fbotex);
 					if (mainprogram->prevmodus and stage == 0) {
-						glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA, glob->w * div, glob->h * div, 0, GL_RGBA, GL_UNSIGNED_BYTE, nullptr);
+						glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA, mainprogram->ow3, mainprogram->oh3, 0, GL_RGBA, GL_UNSIGNED_BYTE, nullptr);
 					}
 					else {	
 						glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA, mainprogram->ow, mainprogram->oh, 0, GL_RGBA, GL_UNSIGNED_BYTE, nullptr);
@@ -3873,6 +3826,8 @@ void onestepfrom(bool stage, Node *node, Node *prevnode, GLuint prevfbotex, GLui
 				
 				glBindFramebuffer(GL_FRAMEBUFFER, bnode->fbo);
 				glDrawBuffer(GL_COLOR_ATTACHMENT0);
+				if (stage) glViewport(0, 0, mainprogram->ow, mainprogram->oh);
+				else glViewport(0, 0, mainprogram->ow3, mainprogram->oh3);
 				
 				GLfloat mixfac = glGetUniformLocation(mainprogram->ShaderProgram, "mixfac");
 				glUniform1f(mixfac, bnode->mixfac->value);
@@ -3908,7 +3863,7 @@ void onestepfrom(bool stage, Node *node, Node *prevnode, GLuint prevfbotex, GLui
 				}
 				glActiveTexture(GL_TEXTURE2);
 				glBindTexture(GL_TEXTURE_2D, bnode->in2tex);
-				glBindVertexArray(mainprogram->fbovao[2 - (mainprogram->prevmodus and !stage)]);
+				glBindVertexArray(mainprogram->fbovao);
 				glDisable(GL_BLEND);
 				glDrawArrays(GL_TRIANGLE_STRIP, 0, 4);
 				glEnable(GL_BLEND);
@@ -3927,17 +3882,21 @@ void onestepfrom(bool stage, Node *node, Node *prevnode, GLuint prevfbotex, GLui
 				}
 				glBindFramebuffer(GL_FRAMEBUFFER, mainprogram->globfbo);
 				glDrawBuffer(GL_COLOR_ATTACHMENT0);
+				glViewport(0, 0, glob->w, glob->h);
 			}
 			else {
 				if (prevnode == bnode->in2) {
 					node->walked = true;			//for when first layer is muted
 					glBindFramebuffer(GL_FRAMEBUFFER, bnode->fbo);
 					glDrawBuffer(GL_COLOR_ATTACHMENT0);
+					if (stage) glViewport(0, 0, mainprogram->ow, mainprogram->oh);
+					else glViewport(0, 0, mainprogram->ow3, mainprogram->oh3);
 					glBindTexture(GL_TEXTURE_2D, prevfbotex);
-					glBindVertexArray(mainprogram->fbovao[2 - (mainprogram->prevmodus and !stage)]);
+					glBindVertexArray(mainprogram->fbovao);
 					glDrawArrays(GL_TRIANGLE_STRIP, 0, 4);
 					glBindFramebuffer(GL_FRAMEBUFFER, mainprogram->globfbo);
 					glDrawBuffer(GL_COLOR_ATTACHMENT0);
+					glViewport(0, 0, glob->w, glob->h);
 				}
 				else {
 					node->walked = false;
@@ -3952,7 +3911,7 @@ void onestepfrom(bool stage, Node *node, Node *prevnode, GLuint prevfbotex, GLui
 			glGenTextures(1, &(mnode->mixtex));
 			glBindTexture(GL_TEXTURE_2D, mnode->mixtex);
 			if (mainprogram->prevmodus and stage == 0) {
-				glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA, (int)(glob->w * div), (int)(glob->h * div), 0, GL_RGBA, GL_UNSIGNED_BYTE, nullptr);
+				glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA, mainprogram->ow3, mainprogram->oh3, 0, GL_RGBA, GL_UNSIGNED_BYTE, nullptr);
 			}
 			else {
 				glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA, mainprogram->ow, mainprogram->oh, 0, GL_RGBA, GL_UNSIGNED_BYTE, nullptr);
@@ -3966,7 +3925,7 @@ void onestepfrom(bool stage, Node *node, Node *prevnode, GLuint prevfbotex, GLui
 		}
 		glDisable(GL_BLEND);
 		if (mainprogram->prevmodus and stage == 0) {
-			glBlitNamedFramebuffer(prevfbo, mnode->mixfbo, 0, 0, glob->w * div, glob->h * div , 0, 0, glob->w * div, glob->h * div, GL_COLOR_BUFFER_BIT, GL_NEAREST);
+			glBlitNamedFramebuffer(prevfbo, mnode->mixfbo, 0, 0, mainprogram->ow3, mainprogram->oh3 , 0, 0, mainprogram->ow3, mainprogram->oh3, GL_COLOR_BUFFER_BIT, GL_NEAREST);
 		}
 		else {
 			glBlitNamedFramebuffer(prevfbo, mnode->mixfbo, 0, 0, mainprogram->ow, mainprogram->oh, 0, 0, mainprogram->ow, mainprogram->oh, GL_COLOR_BUFFER_BIT, GL_NEAREST);
@@ -4052,8 +4011,18 @@ void walk_nodes(bool stage) {
 		
 
 bool display_mix() {
+	float xs = 0.0f;
+	float ys = 0.0f;
+	float frac = mainprogram->ow / mainprogram->oh;
+	float frachd = 1920.0f / 1080.0f;
+	if (frac > frachd) {
+		ys = 0.15f * (1.0f - frachd / frac);
+	}
+	else {
+		xs = 0.15f * (1.0f - frac / frachd);
+	}
 	MixNode *node;
-	Box box;
+	Box *box;
 	GLint wipe = glGetUniformLocation(mainprogram->ShaderProgram, "wipe");
 	GLint mixmode = glGetUniformLocation(mainprogram->ShaderProgram, "mixmode");
 	node = (MixNode*)mainprogram->nodesmain->mixnodes[0];
@@ -4079,7 +4048,9 @@ bool display_mix() {
 		glBindTexture(GL_TEXTURE_2D, node->mixtex);
 		glActiveTexture(GL_TEXTURE0);
 		node = (MixNode*)mainprogram->nodesmain->mixnodes[2];
-		draw_box(node->outputbox->lcolor, node->outputbox->acolor, mainprogram->mainmonitor, node->mixtex);
+		box = mainprogram->mainmonitor;
+		draw_box(node->outputbox->lcolor, node->outputbox->acolor, box, -1);
+		draw_box(nullptr, node->outputbox->acolor, box->vtxcoords->x1 + xs * 2.0f, box->vtxcoords->y1 + ys * 2.0f, box->vtxcoords->w - xs * 4.0f, box->vtxcoords->h - ys * 4.0f, node->mixtex);
 		mainprogram->mainmonitor->in();
 		
 		glUniform1i(wipe, 0);
@@ -4106,7 +4077,9 @@ bool display_mix() {
 			glActiveTexture(GL_TEXTURE0);
 		}
 		node = (MixNode*)mainprogram->nodesmain->mixnodescomp[2];
-		draw_box(node->outputbox->lcolor, node->outputbox->acolor, mainprogram->outputmonitor, node->mixtex);
+		box = mainprogram->outputmonitor;
+		draw_box(node->outputbox->lcolor, node->outputbox->acolor, box, -1);
+		draw_box(nullptr, node->outputbox->acolor, box->vtxcoords->x1 + xs, box->vtxcoords->y1 + ys, box->vtxcoords->w - xs * 2.0f, box->vtxcoords->h - ys * 2.0f, node->mixtex);
 		mainprogram->outputmonitor->in();
 		GLfloat cf = glGetUniformLocation(mainprogram->ShaderProgram, "cf");
 		if (mainprogram->prevmodus) {
@@ -4141,7 +4114,9 @@ bool display_mix() {
 			glActiveTexture(GL_TEXTURE0);
 		}
 		node = (MixNode*)mainprogram->nodesmain->mixnodescomp[2];
-		draw_box(node->outputbox->lcolor, node->outputbox->acolor, mainprogram->mainmonitor, node->mixtex);
+		box = mainprogram->mainmonitor;
+		draw_box(node->outputbox->lcolor, node->outputbox->acolor, box, -1);
+		draw_box(nullptr, node->outputbox->acolor, box->vtxcoords->x1 + xs * 2.0f, box->vtxcoords->y1 + ys * 2.0f, box->vtxcoords->w - xs * 4.0f, box->vtxcoords->h - ys * 4.0f, node->mixtex);
 		mainprogram->mainmonitor->in();
 		GLfloat cf = glGetUniformLocation(mainprogram->ShaderProgram, "cf");
 		if (mainprogram->prevmodus) {
@@ -4156,18 +4131,26 @@ bool display_mix() {
 	
 	if (mainprogram->prevmodus) {
 		node = (MixNode*)mainprogram->nodesmain->mixnodes[0];
-		draw_box(node->outputbox->lcolor, node->outputbox->acolor, mainprogram->deckmonitor[0], node->mixtex);
+		box = mainprogram->deckmonitor[0];
+		draw_box(node->outputbox->lcolor, node->outputbox->acolor, box, -1);
+		draw_box(nullptr, node->outputbox->acolor, box->vtxcoords->x1 + xs, box->vtxcoords->y1 + ys, box->vtxcoords->w - xs * 2.0f, box->vtxcoords->h - ys * 2.0f, node->mixtex);
 		mainprogram->deckmonitor[0]->in();
 		node = (MixNode*)mainprogram->nodesmain->mixnodes[1];
-		draw_box(node->outputbox->lcolor, node->outputbox->acolor, mainprogram->deckmonitor[1], node->mixtex);
+		box = mainprogram->deckmonitor[1];
+		draw_box(node->outputbox->lcolor, node->outputbox->acolor, box, -1);
+		draw_box(nullptr, node->outputbox->acolor, box->vtxcoords->x1 + xs, box->vtxcoords->y1 + ys, box->vtxcoords->w - xs * 2.0f, box->vtxcoords->h - ys * 2.0f, node->mixtex);
 		mainprogram->deckmonitor[1]->in();
 	}
 	else {
 		node = (MixNode*)mainprogram->nodesmain->mixnodescomp[0];
-		draw_box(node->outputbox->lcolor, node->outputbox->acolor, mainprogram->deckmonitor[0], node->mixtex);
+		box = mainprogram->deckmonitor[0];
+		draw_box(node->outputbox->lcolor, node->outputbox->acolor, box, -1);
+		draw_box(nullptr, node->outputbox->acolor, box->vtxcoords->x1 + xs, box->vtxcoords->y1 + ys, box->vtxcoords->w - xs * 2.0f, box->vtxcoords->h - ys * 2.0f, node->mixtex);
 		mainprogram->deckmonitor[0]->in();
 		node = (MixNode*)mainprogram->nodesmain->mixnodescomp[1];
-		draw_box(node->outputbox->lcolor, node->outputbox->acolor, mainprogram->deckmonitor[1], node->mixtex);
+		box = mainprogram->deckmonitor[1];
+		draw_box(node->outputbox->lcolor, node->outputbox->acolor, box, -1);
+		draw_box(nullptr, node->outputbox->acolor, box->vtxcoords->x1 + xs, box->vtxcoords->y1 + ys, box->vtxcoords->w - xs * 2.0f, box->vtxcoords->h - ys * 2.0f, node->mixtex);
 		mainprogram->deckmonitor[1]->in();
 	}
 	
@@ -4306,9 +4289,9 @@ bool handle_clips(std::vector<Layer*> &layers, bool deck) {
 			int numonscreen = layers.size() - mainmix->scenes[deck][mainmix->currscene[deck]]->scrollpos;
 			if (0 <= numonscreen and numonscreen <= 2) {
 				if (mainprogram->xvtxtoscr(mainprogram->numw + deck * 1.0f + numonscreen * mainprogram->layw) < mainprogram->mx and mainprogram->mx < deck * (glob->w / 2.0f) + glob->w / 2.0f) {
-					if (0 < mainprogram->my and mainprogram->my < mainprogram->yvtxtoscr(mainprogram->layw)) {
+					if (0 < mainprogram->my and mainprogram->my < mainprogram->yvtxtoscr(mainprogram->layh)) {
 						float blue[] = {0.5, 0.5 , 1.0, 1.0};
-						draw_box(nullptr, blue, -1.0f + mainprogram->numw + deck * 1.0f + numonscreen * mainprogram->layw, 1.0f - mainprogram->layw, mainprogram->layw, mainprogram->layw, -1);
+						draw_box(nullptr, blue, -1.0f + mainprogram->numw + deck * 1.0f + numonscreen * mainprogram->layw, 1.0f - mainprogram->layh, mainprogram->layw, mainprogram->layh, -1);
 						if (mainprogram->leftmouse) {
 							mainprogram->leftmouse = false;
 							lay = mainmix->add_layer(layers, layers.size());
@@ -4447,9 +4430,9 @@ void make_layboxes() {
 						deck = 1;
 					}
 					vnode->vidbox->vtxcoords->x1 = -1.0f + (float)((vnode->layer->pos - mainmix->scenes[deck][mainmix->currscene[deck]]->scrollpos + 9999) % 3) * mainprogram->layw + mainprogram->numw + xoffset;
-					vnode->vidbox->vtxcoords->y1 = 1.0f - mainprogram->layw;
+					vnode->vidbox->vtxcoords->y1 = 1.0f - mainprogram->layh;
 					vnode->vidbox->vtxcoords->w = mainprogram->layw;
-					vnode->vidbox->vtxcoords->h = mainprogram->layw;
+					vnode->vidbox->vtxcoords->h = mainprogram->layh;
 					vnode->vidbox->upvtxtoscr();
 					
 					vnode->vidbox->lcolor[0] = 1.0;
@@ -4486,7 +4469,7 @@ void make_layboxes() {
 					vnode->vidbox->vtxcoords->x1 = -1.0f + (float)((vnode->layer->pos - mainmix->scenes[deck][mainmix->currscene[deck]]->scrollpos + 9999) % 3) * mainprogram->layw + mainprogram->numw + xoffset;
 					vnode->vidbox->vtxcoords->y1 = 1.0f - mainprogram->layw;
 					vnode->vidbox->vtxcoords->w = mainprogram->layw;
-					vnode->vidbox->vtxcoords->h = mainprogram->layw;
+					vnode->vidbox->vtxcoords->h = mainprogram->layh;
 					vnode->vidbox->upvtxtoscr();
 					
 					vnode->vidbox->lcolor[0] = 1.0;
@@ -4520,9 +4503,9 @@ void make_layboxes() {
 				}
 				else continue;
 			}
-			node->monbox->vtxcoords->y1 = 1.0f - mainprogram->layw;
+			node->monbox->vtxcoords->y1 = 1.0f - mainprogram->layh;
 			node->monbox->vtxcoords->w = mainprogram->layw;
-			node->monbox->vtxcoords->h = mainprogram->layw;
+			node->monbox->vtxcoords->h = mainprogram->layh;
 			node->monbox->upvtxtoscr();
 			
 			node->monbox->lcolor[0] = 1.0;
@@ -4557,7 +4540,7 @@ void make_layboxes() {
 				testlay->node->upeffboxes();
 				// Make mixbox
 				testlay->mixbox->vtxcoords->x1 = -1.0f + mainprogram->numw + xoffset + (testlay->pos % 3) * tf(0.04f);
-				testlay->mixbox->vtxcoords->y1 = 1.0f - tf(mainprogram->layw);
+				testlay->mixbox->vtxcoords->y1 = 1.0f - tf(mainprogram->layh);
 				testlay->mixbox->vtxcoords->w = tf(0.05f);
 				testlay->mixbox->vtxcoords->h = tf(0.05f);
 				testlay->mixbox->upvtxtoscr();
@@ -4596,7 +4579,7 @@ void make_layboxes() {
 						}
 					}
 					else {
-						eff->box->vtxcoords->y1 = 1.0 - tf(mainprogram->layw) - tf(0.20f) + (tf(0.05f) * testlay->effscroll[mainprogram->effcat[testlay->deck]->value]);
+						eff->box->vtxcoords->y1 = 1.0 - tf(mainprogram->layh) - tf(0.20f) + (tf(0.05f) * testlay->effscroll[mainprogram->effcat[testlay->deck]->value]);
 					}
 					eff->box->upvtxtoscr();
 					eff->onoffbutton->box->vtxcoords->y1 = eff->box->vtxcoords->y1;
@@ -5037,7 +5020,6 @@ void Preferences::load() {
 		}
 	}
 	
-	//set_fbovao2();
 	rfile.close();
 }
 
@@ -5398,7 +5380,7 @@ void exchange(Layer *lay, std::vector<Layer*> &slayers, std::vector<Layer*> &dla
 		int numonscreen = size - mainmix->scenes[deck][mainmix->currscene[deck]]->scrollpos;
 		if (0 <= numonscreen and numonscreen <= 2) {
 			if (mainprogram->xvtxtoscr(mainprogram->numw + deck * 1.0f + numonscreen * mainprogram->layw) < mainprogram->mx and mainprogram->mx < deck * (glob->w / 2.0f) + glob->w / 2.0f) {
-				if (0 < mainprogram->my and mainprogram->my < mainprogram->yvtxtoscr(mainprogram->layw)) {
+				if (0 < mainprogram->my and mainprogram->my < mainprogram->yvtxtoscr(mainprogram->layh)) {
 					if (size == i + 1) {
 						dropin = true;
 						endx = 1;
@@ -5781,7 +5763,7 @@ int handle_menu(Menu *menu, float xshift, float yshift) {
 			if (sub != 0) size++;
 		}
 		if (mainprogram->menuy + mainprogram->yvtxtoscr(yshift) > glob->h - size * mainprogram->yvtxtoscr(tf(0.05f))) mainprogram->menuy = glob->h - size * mainprogram->yvtxtoscr(tf(0.05f)) + mainprogram->yvtxtoscr(yshift);
-		if (size > 21) mainprogram->menuy = mainprogram->yvtxtoscr(mainprogram->layw) - mainprogram->yvtxtoscr(yshift);
+		if (size > 21) mainprogram->menuy = mainprogram->yvtxtoscr(mainprogram->layh) - mainprogram->yvtxtoscr(yshift);
 		float vmx = (float)mainprogram->menux * 2.0 / glob->w;
 		float vmy = (float)mainprogram->menuy * 2.0 / glob->h;
 		float lc[] = {0.0, 0.0, 0.0, 1.0};
@@ -6089,12 +6071,8 @@ bool preferences() {
 			mainprogram->prefs->save();
 			mainprogram->prefs->load();
 			if (mainprogram->ow != oldow or mainprogram->oh != oldoh) {
-				for (int i = 0; i < mainmix->layersAcomp.size(); i++) {
-					if (mainmix->layersAcomp[i]->aspectratio == RATIO_OUTPUT) mainmix->layersAcomp[i]->initialize();
-				}
-				for (int i = 0; i < mainmix->layersBcomp.size(); i++) {
-					if (mainmix->layersBcomp[i]->aspectratio == RATIO_OUTPUT) mainmix->layersBcomp[i]->initialize();
-				}
+				mainmix->save_state(mainprogram->temppath + "tempstate");
+				mainmix->open_state(mainprogram->temppath + "tempstate");
 			}	
 			mainprogram->prefon = false;
 			mainprogram->drawnonce = false;
@@ -6808,9 +6786,9 @@ void the_loop() {
 				box = lay->mixbox;
 				sw = tf(mainprogram->layw) * glob->w / 2.0;
 				sx1 = box->scrcoords->x1 + mainprogram->xvtxtoscr(tf(0.025f));
-				sy1 = mainprogram->layw * glob->h / 2.0 + mainprogram->yvtxtoscr(tf(0.25f));
+				sy1 = mainprogram->layh * glob->h / 2.0 + mainprogram->yvtxtoscr(tf(0.25f));
 				vx1 = box->vtxcoords->x1 + tf(0.025f);
-				vy1 = 1 - mainprogram->layw - tf(0.25f);
+				vy1 = 1 - mainprogram->layh - tf(0.25f);
 			}
 			if (!mainprogram->menuondisplay) {
 				if (sx1 < mainprogram->mx and mainprogram->mx < sx1 + sw) {
@@ -7050,8 +7028,8 @@ void the_loop() {
 		
 		// Draw effectmenuhints
 		if(!mainprogram->queueing) {
-			if (vy1 < 1.0 - tf(mainprogram->layw) - tf(0.22f) - tf(0.05f) * 10) {
-				vy1 = 1.0 - tf(mainprogram->layw) - tf(0.20f) - tf(0.05f) * 10;
+			if (vy1 < 1.0 - tf(mainprogram->layh) - tf(0.22f) - tf(0.05f) * 10) {
+				vy1 = 1.0 - tf(mainprogram->layh) - tf(0.20f) - tf(0.05f) * 10;
 			}
 			
 			mainprogram->addeffectbox->vtxcoords->x1 = vx1;
@@ -7080,7 +7058,7 @@ void the_loop() {
 		bool inbox = false;
 		for (int i = 0; i < 2; i++) {
 			std::vector<Layer*> &lvec = choose_layers(i);
-			draw_box(white, nullptr, -1.0f + mainprogram->numw + i, 1.0f - mainprogram->layw - 0.05f, mainprogram->layw * 3.0f, 0.05f, -1);
+			draw_box(white, nullptr, -1.0f + mainprogram->numw + i, 1.0f - mainprogram->layh - 0.05f, mainprogram->layh * 3.0f, 0.05f, -1);
 			Box box;
 			Box boxbefore;
 			Box boxafter;
@@ -7088,17 +7066,17 @@ void the_loop() {
 			int size = lvec.size() + 1;
 			if (size < 3) size = 3;
 			box.vtxcoords->x1 = -1.0f + mainprogram->numw + i + mainmix->scenes[i][mainmix->currscene[i]]->scrollpos * (mainprogram->layw * 3.0f / size); 
-			box.vtxcoords->y1 = 1.0f - mainprogram->layw - 0.05f;
+			box.vtxcoords->y1 = 1.0f - mainprogram->layh - 0.05f;
 			box.vtxcoords->w = (3.0f / size) * mainprogram->layw * 3.0f;
 			box.vtxcoords->h = 0.05f;
 			box.upvtxtoscr();
 			boxbefore.vtxcoords->x1 = -1.0f + mainprogram->numw + i; 
-			boxbefore.vtxcoords->y1 = 1.0f - mainprogram->layw - 0.05f;
+			boxbefore.vtxcoords->y1 = 1.0f - mainprogram->layh - 0.05f;
 			boxbefore.vtxcoords->w = (3.0f / size) * mainprogram->layw * mainmix->scenes[i][mainmix->currscene[i]]->scrollpos;
 			boxbefore.vtxcoords->h = 0.05f;
 			boxbefore.upvtxtoscr();
 			boxafter.vtxcoords->x1 = -1.0f + mainprogram->numw + i + (mainmix->scenes[i][mainmix->currscene[i]]->scrollpos + 3) * (mainprogram->layw * 3.0f / size); 
-			boxafter.vtxcoords->y1 = 1.0f - mainprogram->layw - 0.05f;
+			boxafter.vtxcoords->y1 = 1.0f - mainprogram->layh - 0.05f;
 			boxafter.vtxcoords->w = (3.0f / size) * mainprogram->layw * (size - 3);
 			boxafter.vtxcoords->h = 0.05f;
 			boxafter.upvtxtoscr();
@@ -7112,7 +7090,7 @@ void the_loop() {
 			}
 			else {
 				draw_box(white, grey, &box, -1);
-				boxlayer.vtxcoords->y1 = 1.0f - mainprogram->layw - 0.05f;
+				boxlayer.vtxcoords->y1 = 1.0f - mainprogram->layh - 0.05f;
 				boxlayer.vtxcoords->w = 0.031f;
 				boxlayer.vtxcoords->h = 0.05f;
 				for (int j = 0; j < lvec.size(); j++) {
@@ -7280,13 +7258,13 @@ void the_loop() {
 					int until = lay2->clips.size() - lay2->queuescroll;
 					if (until > 4) until = 4;
 					for (int k = 0; k < until; k++) {
-						draw_box(white, black, box->vtxcoords->x1, box->vtxcoords->y1 - (k + 1) * mainprogram->layw, box->vtxcoords->w, box->vtxcoords->h, lay2->clips[k + lay2->queuescroll]->tex);
+						draw_box(white, black, box->vtxcoords->x1, box->vtxcoords->y1 - (k + 1) * mainprogram->layh, box->vtxcoords->w, box->vtxcoords->h, lay2->clips[k + lay2->queuescroll]->tex);
 						render_text("Queued clip #" + std::to_string(k + lay2->queuescroll + 1), white, box->vtxcoords->x1 + tf(0.01f), box->vtxcoords->y1 - k * box->vtxcoords->h - tf(0.03f), 0.0005f, 0.0008f);
 					}
 					for (int k = 0; k < lay2->clips.size() - lay2->queuescroll; k++) {
 						if (box->scrcoords->x1 + (k == 0) * mainprogram->xvtxtoscr(0.075f) < mainprogram->mx and mainprogram->mx < box->scrcoords->x1 + box->scrcoords->w - (k == 0) * mainprogram->xvtxtoscr(0.075f)) {
 							if (box->scrcoords->y1 + (k - 0.25f) * box->scrcoords->h < mainprogram->my and mainprogram->my < box->scrcoords->y1 + (k + 0.25) * box->scrcoords->h) {
-								if (mainprogram->dragbinel) draw_box(lightblue, lightblue, box->vtxcoords->x1 + (k == 0) * 0.075f, box->vtxcoords->y1 - (k + 0.25f) * mainprogram->layw, box->vtxcoords->w - ((k == 0) * 0.075) * 2.0f, box->vtxcoords->h / 2.0f, -1);
+								if (mainprogram->dragbinel) draw_box(lightblue, lightblue, box->vtxcoords->x1 + (k == 0) * 0.075f, box->vtxcoords->y1 - (k + 0.25f) * mainprogram->layh, box->vtxcoords->w - ((k == 0) * 0.075) * 2.0f, box->vtxcoords->h / 2.0f, -1);
 							}
 							if (box->scrcoords->y1 + k * box->scrcoords->h < mainprogram->my and mainprogram->my < box->scrcoords->y1 + (k + 1) * box->scrcoords->h) {
 								if (mainprogram->mousewheel) {
@@ -7825,7 +7803,8 @@ void the_loop() {
 				mainmix->currlay = mainprogram->loadlay;
 			}
 			else if (k == 3) {
-				mainmix->mouselayer = mainmix->add_layer(lvec, lvec.size());
+				mainprogram->loadlay = mainmix->add_layer(lvec, lvec.size());
+				mainmix->mouselayer = mainprogram->loadlay;
 				mainmix->currlay = mainprogram->loadlay;
 				mainprogram->pathto = "OPENLAYFILE";
 				std::thread filereq (&Program::get_inname, mainprogram, "Open layer file", "application/ewocvj2-layer", "");
@@ -8036,7 +8015,7 @@ void the_loop() {
 						if (box->scrcoords->x1 - thick + (i - mainmix->scenes[j][mainmix->currscene[j]]->scrollpos == 0) * thick < mainprogram->mx and mainprogram->mx < box->scrcoords->x1 + thick) {
 							mainprogram->leftmousedown = false;
 							float blue[] = {0.5, 0.5, 1.0, 1.0};
-							draw_box(blue, blue, box->vtxcoords->x1 - mainprogram->xscrtovtx(thick) + (i - mainmix->scenes[j][mainmix->currscene[j]]->scrollpos == 0) * mainprogram->xscrtovtx(thick), box->vtxcoords->y1, mainprogram->xscrtovtx(thick * (2.0f - (i - mainmix->scenes[j][mainmix->currscene[j]]->scrollpos == 0))), mainprogram->layw, -1);
+							draw_box(blue, blue, box->vtxcoords->x1 - mainprogram->xscrtovtx(thick) + (i - mainmix->scenes[j][mainmix->currscene[j]]->scrollpos == 0) * mainprogram->xscrtovtx(thick), box->vtxcoords->y1, mainprogram->xscrtovtx(thick * (2.0f - (i - mainmix->scenes[j][mainmix->currscene[j]]->scrollpos == 0))), mainprogram->layh, -1);
 							float red[] = {1.0, 0.0 , 0.0, 1.0};
 							if (lay->pos > 0 and !mainprogram->dragbinel) draw_box(red, red, box->vtxcoords->x1 - mainprogram->xscrtovtx(thick), box->vtxcoords->y1 + box->vtxcoords->h, mainprogram->xscrtovtx(thick * 2.0f), -tf(0.05f), -1);
 							if (mainprogram->leftmouse and !mainmix->moving) {
@@ -8055,7 +8034,7 @@ void the_loop() {
 							mainprogram->leftmousedown = false;
 							if (lay->pos == lvec.size() - 1 or lay->pos == mainmix->scenes[j][mainmix->currscene[j]]->scrollpos + 2) {
 								float blue[] = {0.5, 0.5 , 1.0, 1.0};
-								draw_box(blue, blue, box->vtxcoords->x1 + box->vtxcoords->w - mainprogram->xscrtovtx(thick), box->vtxcoords->y1, mainprogram->xscrtovtx(thick * (1.0f + (i - mainmix->scenes[j][mainmix->currscene[j]]->scrollpos != 2))), mainprogram->layw, -1);
+								draw_box(blue, blue, box->vtxcoords->x1 + box->vtxcoords->w - mainprogram->xscrtovtx(thick), box->vtxcoords->y1, mainprogram->xscrtovtx(thick * (1.0f + (i - mainmix->scenes[j][mainmix->currscene[j]]->scrollpos != 2))), mainprogram->layh, -1);
 								float red[] = {1.0, 0.0 , 0.0, 1.0};
 								if (!mainprogram->dragbinel) draw_box(red, red, box->vtxcoords->x1 + box->vtxcoords->w - mainprogram->xscrtovtx(thick), box->vtxcoords->y1 + box->vtxcoords->h, mainprogram->xscrtovtx(thick * (1.0f + (i - mainmix->scenes[j][mainmix->currscene[j]]->scrollpos != 2))), -tf(0.05f), -1);
 								if (mainprogram->leftmouse and !mainmix->moving) {
@@ -8289,25 +8268,25 @@ void the_loop() {
 			float lightblue[] = {0.5f, 0.5f, 1.0f, 1.0f};
 			Box boxA;
 			boxA.vtxcoords->x1 = -1.0f + mainprogram->numw;
-			boxA.vtxcoords->y1 = 1.0f - mainprogram->layw;
+			boxA.vtxcoords->y1 = 1.0f - mainprogram->layh;
 			boxA.vtxcoords->w = mainprogram->layw * 3;
-			boxA.vtxcoords->h = mainprogram->layw;
+			boxA.vtxcoords->h = mainprogram->layh;
 			boxA.upvtxtoscr();
 			Box boxB;
 			boxB.vtxcoords->x1 = mainprogram->numw;
-			boxB.vtxcoords->y1 = 1.0f - mainprogram->layw;
+			boxB.vtxcoords->y1 = 1.0f - mainprogram->layh;
 			boxB.vtxcoords->w = mainprogram->layw * 3;
-			boxB.vtxcoords->h = mainprogram->layw;
+			boxB.vtxcoords->h = mainprogram->layh;
 			boxB.upvtxtoscr();
 			if (boxA.in()) {
-				draw_box(nullptr, lightblue, -1.0f + mainprogram->numw, 1.0f - mainprogram->layw, mainprogram->layw * 3, mainprogram->layw, -1);
+				draw_box(nullptr, lightblue, -1.0f + mainprogram->numw, 1.0f - mainprogram->layh, mainprogram->layw * 3, mainprogram->layh, -1);
 				if (mainprogram->leftmouse) {
 					mainmix->mousedeck = 0;
 					mainmix->open_deck(binsmain->dragdeck->path, 1);
 				}
 			}
 			else if (boxB.in()) {
-				draw_box(nullptr, lightblue, mainprogram->numw, 1.0f - mainprogram->layw, mainprogram->layw * 3, mainprogram->layw, -1);
+				draw_box(nullptr, lightblue, mainprogram->numw, 1.0f - mainprogram->layh, mainprogram->layw * 3, mainprogram->layh, -1);
 				if (mainprogram->leftmouse) {
 					mainmix->mousedeck = 1;
 					mainmix->open_deck(binsmain->dragdeck->path, 1);
@@ -8683,19 +8662,21 @@ GLuint copy_tex(GLuint tex, int tw, int th, bool yflip) {
 	glBindFramebuffer(GL_FRAMEBUFFER, dfbo);
 	glFramebufferTexture2D(GL_FRAMEBUFFER, GL_COLOR_ATTACHMENT0, GL_TEXTURE_2D, smalltex, 0);
 	glDrawBuffer(GL_COLOR_ATTACHMENT0);
+	glViewport(0, 0, tw, th);
 	int sw, sh;
 	glBindTexture(GL_TEXTURE_2D, tex);
 	glGetTexLevelParameteriv(GL_TEXTURE_2D, 0, GL_TEXTURE_WIDTH, &sw);
 	glGetTexLevelParameteriv(GL_TEXTURE_2D, 0, GL_TEXTURE_HEIGHT, &sh);
 	float black[4] = {1.0f, 1.0f, 1.0f, 1.0f};
-	float facx = (float)tw / glob->w;
-	float facy = (float)th / glob->h;
 	if (yflip) {
-		draw_box(nullptr, black, -1.0f, -1.0f, 2.0f * facx, 2.0f * facy, 0.0f, 0.0f, 1.0f, 1.0f, 0, tex, glob->w, glob->h);
+		draw_box(nullptr, black, -1.0f, -1.0f, 2.0f, 2.0f, 0.0f, 0.0f, 1.0f, 1.0f, 0, tex, glob->w, glob->h);
 	}
 	else {
-		draw_box(nullptr, black, -1.0f, -1.0f + 2.0f * facy, 2.0f * facx, -2.0f * facy, 0.0f, 0.0f, 1.0f, 1.0f, 0, tex, glob->w, glob->h);
+		draw_box(nullptr, black, -1.0f, -1.0f + 2.0f, 2.0f, -2.0f, 0.0f, 0.0f, 1.0f, 1.0f, 0, tex, glob->w, glob->h);
 	}
+	glBindFramebuffer(GL_FRAMEBUFFER, mainprogram->globfbo);
+	glDrawBuffer(GL_COLOR_ATTACHMENT0);
+	glViewport(0, 0, glob->w, glob->h);
 	glDeleteFramebuffers(1, &dfbo);
 	return smalltex;
 }
@@ -9052,7 +9033,7 @@ bool Shelf::open_layer(const std::string &path, int pos) {
 	}
 	glBindFramebuffer(GL_FRAMEBUFFER, lay->fbo);
 	glDrawBuffer(GL_COLOR_ATTACHMENT0);
-	glViewport(0, 0, glob->w * 0.3f, glob->h * 0.3f);
+	glViewport(0, 0, mainprogram->ow, mainprogram->oh);
 	glDisable(GL_BLEND);
 	// put lay->texture into lay->fbo(tex)
 	draw_box(nullptr, black, -1.0f, -1.0f, 2.0f, 2.0f, 0.0f, 0.0f, 1.0f, 1.0f, 0, lay->texture, glob->w, glob->h);
@@ -9888,7 +9869,6 @@ int main(int argc, char* argv[]){
  	std::vector<std::string> aspectops;
   	aspectops.push_back("Same as output");
  	aspectops.push_back("Original");
- 	aspectops.push_back("Window/monitor");
  	mainprogram->make_menu("aspectmenu", mainprogram->aspectmenu, aspectops);
 
  	std::vector<std::string> layops;
@@ -10232,7 +10212,6 @@ int main(int argc, char* argv[]){
     std::thread thr2(cd2);
     thr2.detach();
 
-    // must put this here or problem with fbovao[2] ?????
 	set_fbo();
 	
 	std::chrono::high_resolution_clock::time_point begintime = std::chrono::high_resolution_clock::now();
@@ -10382,8 +10361,8 @@ int main(int argc, char* argv[]){
 							for (int i = 0; i < mainprogram->prguistrings.size(); i++) {
 								if (mainprogram->inputtext.compare(mainprogram->prguistrings[i]->text) == 0) {
 									glDeleteTextures(1, &mainprogram->prguistrings[i]->texture);
-									mainprogram->prguistrings.erase(mainprogram->prguistrings.begin() + i);
 									delete mainprogram->prguistrings[i];
+									mainprogram->prguistrings.erase(mainprogram->prguistrings.begin() + i);
 									break;
 								}
 							}
@@ -10392,8 +10371,8 @@ int main(int argc, char* argv[]){
 							for (int i = 0; i < mainprogram->guistrings.size(); i++) {
 								if (mainprogram->inputtext.compare(mainprogram->guistrings[i]->text) == 0) {
 									glDeleteTextures(1, &mainprogram->guistrings[i]->texture);
-									mainprogram->prguistrings.erase(mainprogram->guistrings.begin() + i);
 									delete mainprogram->guistrings[i];
+									mainprogram->prguistrings.erase(mainprogram->guistrings.begin() + i);
 									break;
 								}
 							}
@@ -10418,8 +10397,8 @@ int main(int argc, char* argv[]){
 								for (int i = 0; i < mainprogram->prguistrings.size(); i++) {
 									if (mainprogram->inputtext.compare(mainprogram->prguistrings[i]->text) == 0) {
 										glDeleteTextures(1, &mainprogram->prguistrings[i]->texture);
-										mainprogram->prguistrings.erase(mainprogram->prguistrings.begin() + i);
 										delete mainprogram->prguistrings[i];
+										mainprogram->prguistrings.erase(mainprogram->prguistrings.begin() + i);
 										break;
 									}
 								}
@@ -10428,8 +10407,8 @@ int main(int argc, char* argv[]){
 								for (int i = 0; i < mainprogram->guistrings.size(); i++) {
 									if (mainprogram->inputtext.compare(mainprogram->guistrings[i]->text) == 0) {
 										glDeleteTextures(1, &mainprogram->guistrings[i]->texture);
-										mainprogram->prguistrings.erase(mainprogram->guistrings.begin() + i);
 										delete mainprogram->guistrings[i];
+										mainprogram->prguistrings.erase(mainprogram->guistrings.begin() + i);
 										break;
 									}
 								}

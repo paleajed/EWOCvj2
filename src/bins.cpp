@@ -1917,22 +1917,24 @@ void BinsMain::get_texes(int deck) {
 		glBindTexture(GL_TEXTURE_2D, tex);
 		glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR);
 		glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
-		glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA, (int)(glob->w * 0.3f), (int)(glob->h * 0.3f), 0, GL_RGBA, GL_UNSIGNED_BYTE, nullptr);
+		glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA, mainprogram->ow3, mainprogram->oh3, 0, GL_RGBA, GL_UNSIGNED_BYTE, nullptr);
 		glGenFramebuffers(1, &fbo);
 		glBindFramebuffer(GL_FRAMEBUFFER, fbo);
 		glFramebufferTexture2D(GL_FRAMEBUFFER, GL_COLOR_ATTACHMENT0, GL_TEXTURE_2D, tex, 0);
 		glDrawBuffer(GL_COLOR_ATTACHMENT0);
+		glViewport(0, 0, mainprogram->ow3, mainprogram->oh3);
 		GLint down = glGetUniformLocation(mainprogram->ShaderProgram, "down");
 		glUniform1i(down, 1);
 		glActiveTexture(GL_TEXTURE0);
 		glBindTexture(GL_TEXTURE_2D, lvec[i]->node->vidbox->tex);
-		glBindVertexArray(mainprogram->fbovao[1]);
+		glBindVertexArray(mainprogram->fbovao);
 		glDrawArrays(GL_TRIANGLE_STRIP, 0, 4);
 		glUniform1i(down, 0);
 		this->inserttexes[deck].push_back(tex);
 		glDeleteFramebuffers(1, &fbo);
 		glBindFramebuffer(GL_FRAMEBUFFER, mainprogram->globfbo);
 		glDrawBuffer(GL_COLOR_ATTACHMENT0);
+		glViewport(0, 0, glob->w, glob->h);
 		glDeleteFramebuffers(1, &fbo);
 	}
 }

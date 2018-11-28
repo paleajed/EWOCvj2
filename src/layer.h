@@ -35,7 +35,6 @@ typedef enum
 {
 	RATIO_OUTPUT = 0,
 	RATIO_ORIGINAL = 1,
-	RATIO_WINDOW = 2,
 } RATIO_TYPE;
 
 struct frame_result {
@@ -67,7 +66,7 @@ class Layer {
 		int clonepos = -1;
 		std::vector<Clip*> clips;
 		ELEM_TYPE type = ELEM_FILE;
-		RATIO_TYPE aspectratio = RATIO_WINDOW;
+		RATIO_TYPE aspectratio = RATIO_OUTPUT;
 		bool queueing = false;
 		int queuescroll = 0;
 		float scrollcol[4] = {0.5f, 0.5f, 0.5f, 0.0f};
@@ -316,6 +315,7 @@ class Mixer {
 		float time = 0;
 		float cbduration = 0.0f;
 		
+		std::vector<GLuint> fbotexes;
 		GLuint tempbuf, temptex;
 		
 		std::vector<std::unordered_set<Layer*>*> clonesets;

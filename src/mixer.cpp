@@ -107,7 +107,7 @@ Mixer::Mixer() {
 	this->crossfade->sliding = true;
 	this->crossfade->shadervar = "cf";
 	this->crossfade->box->vtxcoords->x1 = -0.15f;
-	this->crossfade->box->vtxcoords->y1 = -0.4f;
+	this->crossfade->box->vtxcoords->y1 = -1.0f + mainprogram->monh * 2.0f;
 	this->crossfade->box->vtxcoords->w = 0.3f;
 	this->crossfade->box->vtxcoords->h = tf(0.05f);
 	this->crossfade->box->upvtxtoscr();
@@ -123,7 +123,7 @@ Mixer::Mixer() {
 	this->crossfadecomp->sliding = true;
 	this->crossfadecomp->shadervar = "cf";
 	this->crossfadecomp->box->vtxcoords->x1 = -0.15f;
-	this->crossfadecomp->box->vtxcoords->y1 = -0.4f;
+	this->crossfadecomp->box->vtxcoords->y1 = -1.0f + mainprogram->monh * 2.0f;
 	this->crossfadecomp->box->vtxcoords->w = 0.3f;
 	this->crossfadecomp->box->vtxcoords->h = tf(0.05f);
 	this->crossfadecomp->box->upvtxtoscr();
@@ -134,7 +134,7 @@ Mixer::Mixer() {
 	
 	this->recbut = new Button(false);
 	this->recbut->box->vtxcoords->x1 = 0.15f;
-	this->recbut->box->vtxcoords->y1 = -0.4f;
+	this->recbut->box->vtxcoords->y1 = -1.0f + mainprogram->monh * 2.0f;
 	this->recbut->box->vtxcoords->w = tf(0.031f);
 	this->recbut->box->vtxcoords->h = tf(0.05f);
 	this->recbut->box->upvtxtoscr();
@@ -1567,7 +1567,7 @@ Effect *do_add_effect(Layer *lay, EFFECT_TYPE type, int pos, bool comp) {
 		}
 		lay->lasteffnode[cat]->out.clear();
 		lay->lasteffnode[cat] = effnode1;
-		if (!cat and lay->effects[1].size() == 0) {
+		if (lay->pos == 0 and !cat and lay->effects[1].size() == 0) {
 			lay->lasteffnode[1] = lay->lasteffnode[0];
 		}
 	}
@@ -1944,7 +1944,7 @@ Layer::Layer(bool comp) {
 		glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA, mainprogram->ow, mainprogram->oh, 0, GL_RGBA, GL_UNSIGNED_BYTE, nullptr);
 	}
 	else {
-		glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA, mainprogram->ow, mainprogram->oh, 0, GL_RGBA, GL_UNSIGNED_BYTE, nullptr);
+		glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA, mainprogram->ow3, mainprogram->oh3, 0, GL_RGBA, GL_UNSIGNED_BYTE, nullptr);
 	}
 	glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR);
 	glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
@@ -1955,13 +1955,13 @@ Layer::Layer(bool comp) {
 	glFramebufferTexture2D(GL_FRAMEBUFFER, GL_COLOR_ATTACHMENT0, GL_TEXTURE_2D, this->fbotex, 0);
 
     this->mutebut = new Button(false);
-    this->mutebut->box->vtxcoords->y1 = 1.0f - mainprogram->layw - 0.05f;
+    this->mutebut->box->vtxcoords->y1 = 1.0f - mainprogram->layh - 0.05f;
 	this->mutebut->box->vtxcoords->w = 0.03f;
    	this->mutebut->box->vtxcoords->h = 0.05f;
     this->mutebut->box->tooltiptitle = "Layer mute ";
     this->mutebut->box->tooltip = "Leftclick temporarily mutes/unmutes this layer. ";
     this->solobut = new Button(false);
-    this->solobut->box->vtxcoords->y1 = 1.0f - mainprogram->layw - 0.05f;
+    this->solobut->box->vtxcoords->y1 = 1.0f - mainprogram->layh - 0.05f;
 	this->solobut->box->vtxcoords->w = 0.03f;
    	this->solobut->box->vtxcoords->h = 0.05f;
     this->solobut->box->tooltiptitle = "Layer solo ";
@@ -2107,17 +2107,23 @@ void Layer::initialize(int w, int h) {
 	glPixelStorei(GL_UNPACK_ALIGNMENT, 1);
 	glPixelStorei(GL_UNPACK_ROW_LENGTH, 0);
 	glPixelStorei(GL_UNPACK_SKIP_PIXELS, 0);
-	glPixelStorei(GL_UNPACK_SKIP_ROWS, 0);	
-	if (this->vidformat == 188 or this->vidformat == 187) {
-		if (this->decresult->compression == 187) {
-			glTexImage2D(GL_TEXTURE_2D, 0, GL_COMPRESSED_RGBA_S3TC_DXT1_EXT, this->iw, this->ih, 0, GL_RGBA, GL_UNSIGNED_BYTE, &emptydata[0]);
+	glPixelStorei(GL_UNPACK_SKIP_ROWS, 0);
+	int count = 0;
+	while (1) {
+		if (this->vidformat == 188 or this->vidformat == 187) {
+			if (this->decresult->compression == 187) {
+				glTexImage2D(GL_TEXTURE_2D, 0, GL_COMPRESSED_RGBA_S3TC_DXT1_EXT, this->iw, this->ih, 0, GL_RGBA, GL_UNSIGNED_BYTE, &emptydata[0]);
+			}
+			else if (this->decresult->compression == 190) {
+				glTexImage2D(GL_TEXTURE_2D, 0, GL_COMPRESSED_RGBA_S3TC_DXT5_EXT, this->iw, this->ih, 0, GL_RGBA, GL_UNSIGNED_BYTE, &emptydata[0]);
+			}
 		}
-		else if (this->decresult->compression == 190) {
-			glTexImage2D(GL_TEXTURE_2D, 0, GL_COMPRESSED_RGBA_S3TC_DXT5_EXT, this->iw, this->ih, 0, GL_RGBA, GL_UNSIGNED_BYTE, &emptydata[0]);
+		else {
+			glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA, this->iw, this->ih, 0, GL_RGBA, GL_UNSIGNED_BYTE, &emptydata[0]);
 		}
-	}
-	else { 
-		glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA, this->iw, this->ih, 0, GL_RGBA, GL_UNSIGNED_BYTE, &emptydata[0]);
+		if (count == this->effects[0].size()) break;
+		glBindTexture(GL_TEXTURE_2D, this->effects[0][count]->fbotex);
+		count++;
 	}
 }
 
@@ -2728,6 +2734,9 @@ std::vector<std::string> Mixer::write_layer(Layer *lay, std::ostream& wfile, boo
 	wfile << "\n";
 	wfile << "RELPATH\n";
 	wfile << "./" + boost::filesystem::relative(lay->filename, "./").string();
+	wfile << "\n";
+	wfile << "ASPECTRATIO\n";
+	wfile << std::to_string(lay->aspectratio);
 	wfile << "\n";
 	wfile << "MUTE\n";
 	wfile << std::to_string(lay->mutebut->value);
@@ -3687,6 +3696,10 @@ int Mixer::read_layers(std::istream &rfile, const std::string &result, std::vect
 				}
 			}
 		}	
+		if (istring == "ASPECTRATIO") {
+			getline(rfile, istring); 
+			lay->aspectratio = (RATIO_TYPE)std::stoi(istring);
+		}
 		if (istring == "MUTE") {
 			getline(rfile, istring); 
 			lay->mutebut->value = std::stoi(istring);

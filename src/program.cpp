@@ -47,10 +47,12 @@ Program::Program() {
 	this->shelves[1] = new Shelf(1);
 		
 	this->numh = this->numh * glob->w / glob->h;
+	this->layh = this->layh * (glob->w / glob->h) / (1920.0f /  1080.0f);
+	this->monh = this->monh * (glob->w / glob->h) / (1920.0f /  1080.0f);
 	
 	this->scrollboxes[0] = new Box;
 	this->scrollboxes[0]->vtxcoords->x1 = -1.0f + this->numw;
-	this->scrollboxes[0]->vtxcoords->y1 = 1.0f - this->layw - 0.05f;
+	this->scrollboxes[0]->vtxcoords->y1 = 1.0f - this->layh - 0.05f;
 	this->scrollboxes[0]->vtxcoords->w = this->layw * 3.0f;
 	this->scrollboxes[0]->vtxcoords->h = 0.05f;
 	this->scrollboxes[0]->upvtxtoscr();
@@ -58,7 +60,7 @@ Program::Program() {
 	this->scrollboxes[0]->tooltip = "Scroll bar for layer stack.  Divided in total number of layers parts for deck A. Lightgrey part is the visible layer monitors part.  Leftdragging the lightgrey part allows scrolling.  So does leftclicking the darkgrey parts. ";
 	this->scrollboxes[1] = new Box;
 	this->scrollboxes[1]->vtxcoords->x1 = this->numw;
-	this->scrollboxes[1]->vtxcoords->y1 = 1.0f - this->layw - 0.05f;
+	this->scrollboxes[1]->vtxcoords->y1 = 1.0f - this->layh - 0.05f;
 	this->scrollboxes[1]->vtxcoords->w = this->layw * 3.0f;
 	this->scrollboxes[1]->vtxcoords->h = 0.05f;
 	this->scrollboxes[1]->upvtxtoscr();
@@ -72,7 +74,7 @@ Program::Program() {
 	this->toscreen->name[0] = "SEND";
 	this->toscreen->name[1] = "SEND";
 	this->toscreen->box->vtxcoords->x1 = -0.3;
-	this->toscreen->box->vtxcoords->y1 = -0.3;
+	this->toscreen->box->vtxcoords->y1 = -1.0f + this->monh * 2.0f + 0.1f;
 	this->toscreen->box->vtxcoords->w = 0.3 / 2.0;
 	this->toscreen->box->vtxcoords->h = 0.3 / 3.0;
 	this->toscreen->box->upvtxtoscr();
@@ -84,7 +86,7 @@ Program::Program() {
 	this->backtopre->name[0] = "SEND";
 	this->backtopre->name[1] = "SEND";
 	this->backtopre->box->vtxcoords->x1 = -0.3;
-	this->backtopre->box->vtxcoords->y1 = -0.4;
+	this->backtopre->box->vtxcoords->y1 = -1.0f + this->monh * 2.0f;
 	this->backtopre->box->vtxcoords->w = 0.15f;
 	this->backtopre->box->vtxcoords->h = 0.1f;
 	this->backtopre->box->upvtxtoscr();
@@ -96,7 +98,7 @@ Program::Program() {
 	this->modusbut->name[0] = "LIVE MODUS";
 	this->modusbut->name[1] = "PREVIEW MODUS";
 	this->modusbut->box->vtxcoords->x1 = -0.3 - (0.3 / 2.0);
-	this->modusbut->box->vtxcoords->y1 = -0.7;
+	this->modusbut->box->vtxcoords->y1 = -1.0f + this->monh;
 	this->modusbut->box->vtxcoords->w = 0.3 / 2.0;
 	this->modusbut->box->vtxcoords->h = 0.3 / 3.0;
 	this->modusbut->box->upvtxtoscr();
@@ -115,7 +117,7 @@ Program::Program() {
 	this->deckspeed[0]->sliding = true;
 	this->deckspeed[0]->powertwo = true;
 	this->deckspeed[0]->box->vtxcoords->x1 = -0.3 - (0.3 / 2.0) - 0.15f;
-	this->deckspeed[0]->box->vtxcoords->y1 = -0.7;
+	this->deckspeed[0]->box->vtxcoords->y1 = -1.0f + this->monh;
 	this->deckspeed[0]->box->vtxcoords->w = 0.3 / 2.0;
 	this->deckspeed[0]->box->vtxcoords->h = 0.3 / 3.0;
 	this->deckspeed[0]->box->upvtxtoscr();
@@ -130,7 +132,7 @@ Program::Program() {
 	this->deckspeed[1]->sliding = true;
 	this->deckspeed[1]->powertwo = true;
 	this->deckspeed[1]->box->vtxcoords->x1 = -0.3 - (0.3 / 2.0) + 0.9f;
-	this->deckspeed[1]->box->vtxcoords->y1 = -0.7;
+	this->deckspeed[1]->box->vtxcoords->y1 = -1.0f + this->monh;
 	this->deckspeed[1]->box->vtxcoords->w = 0.3 / 2.0;
 	this->deckspeed[1]->box->vtxcoords->h = 0.3 / 3.0;
 	this->deckspeed[1]->box->upvtxtoscr();
@@ -139,9 +141,9 @@ Program::Program() {
 	
 	this->outputmonitor = new Box;
 	this->outputmonitor->vtxcoords->x1 = -0.15f;
-	this->outputmonitor->vtxcoords->y1 = -0.4f + tf(0.05f);
+	this->outputmonitor->vtxcoords->y1 = -1.0f + this->monh * 2.0f + tf(0.05f);
 	this->outputmonitor->vtxcoords->w = 0.3f;
-	this->outputmonitor->vtxcoords->h = 0.3f;
+	this->outputmonitor->vtxcoords->h = this->monh;
 	this->outputmonitor->upvtxtoscr();
 	this->outputmonitor->tooltiptitle = "Output monitor ";
 	this->outputmonitor->tooltip = "Shows mix of output stream when in preview modus.  Rightclick menu allows sending monitor image fullscreen to another display device. ";
@@ -150,7 +152,7 @@ Program::Program() {
 	this->mainmonitor->vtxcoords->x1 = -0.3f;
 	this->mainmonitor->vtxcoords->y1 = -1.0f;
 	this->mainmonitor->vtxcoords->w = 0.6f;
-	this->mainmonitor->vtxcoords->h = 0.6f;
+	this->mainmonitor->vtxcoords->h = this->monh * 2.0f;
 	this->mainmonitor->upvtxtoscr();
 	this->mainmonitor->tooltiptitle = "A+B monitor ";
 	this->mainmonitor->tooltip = "Shows crossfaded or wiped A+B mix of preview stream (preview modus) or output stream (live modus).  Rightclick menu allows setting wipes and sending monitor image fullscreen to another display device. Leftclick/drag on image affects some wipe modes. ";
@@ -159,7 +161,7 @@ Program::Program() {
 	this->deckmonitor[0]->vtxcoords->x1 = -0.6f;
 	this->deckmonitor[0]->vtxcoords->y1 = -1.0f;
 	this->deckmonitor[0]->vtxcoords->w = 0.3f;
-	this->deckmonitor[0]->vtxcoords->h = 0.3f;
+	this->deckmonitor[0]->vtxcoords->h = this->monh;
 	this->deckmonitor[0]->upvtxtoscr();
 	this->deckmonitor[0]->tooltiptitle = "Deck A monitor ";
 	this->deckmonitor[0]->tooltip = "Shows deck A stream.  Rightclick menu allows sending monitor image fullscreen to another display device. Leftclick/drag on image affects some local layer wipe modes. ";
@@ -168,7 +170,7 @@ Program::Program() {
 	this->deckmonitor[1]->vtxcoords->x1 = 0.3f;
 	this->deckmonitor[1]->vtxcoords->y1 = -1.0f;
 	this->deckmonitor[1]->vtxcoords->w = 0.3f;
-	this->deckmonitor[1]->vtxcoords->h = 0.3f;
+	this->deckmonitor[1]->vtxcoords->h = this->monh;
 	this->deckmonitor[1]->upvtxtoscr();
 	this->deckmonitor[1]->tooltiptitle = "Deck B monitor ";
 	this->deckmonitor[1]->tooltip = "Shows deck B stream.  Rightclick menu allows sending monitor image fullscreen to another display device. Leftclick/drag on image affects some local layer wipe modes. ";
@@ -178,7 +180,7 @@ Program::Program() {
 	this->effcat[0]->name[0] = "Layer effects";
 	this->effcat[0]->name[1] = "Stream effects";
 	this->effcat[0]->box->vtxcoords->x1 = -1.0f + this->numw - tf(0.025f);
-	this->effcat[0]->box->vtxcoords->y1 = 1.0f - tf(this->layw) - tf(0.50f);
+	this->effcat[0]->box->vtxcoords->y1 = 1.0f - tf(this->layh) - tf(0.50f);
 	this->effcat[0]->box->vtxcoords->w = tf(0.025f);
 	this->effcat[0]->box->vtxcoords->h = tf(0.2f);
 	this->effcat[0]->box->upvtxtoscr();
@@ -191,7 +193,7 @@ Program::Program() {
 	this->effcat[1]->name[1] = "Stream effects";
 	float xoffset = 1.0f + this->layw - 0.019f;
 	this->effcat[1]->box->vtxcoords->x1 = -1.0f + this->numw - tf(0.025f) + xoffset;
-	this->effcat[1]->box->vtxcoords->y1 = 1.0f - tf(this->layw) - tf(0.50f);
+	this->effcat[1]->box->vtxcoords->y1 = 1.0f - tf(this->layh) - tf(0.50f);
 	this->effcat[1]->box->vtxcoords->w = tf(0.025f);
 	this->effcat[1]->box->vtxcoords->h = tf(0.2f);
 	this->effcat[1]->box->upvtxtoscr();
@@ -200,7 +202,7 @@ Program::Program() {
 	
 	this->effscrollupA = new Box;
 	this->effscrollupA->vtxcoords->x1 = -1.0;
-	this->effscrollupA->vtxcoords->y1 = 1.0 - tf(this->layw) - tf(0.20f);
+	this->effscrollupA->vtxcoords->y1 = 1.0 - tf(this->layh) - tf(0.20f);
 	this->effscrollupA->vtxcoords->w = tf(0.025f);
 	this->effscrollupA->vtxcoords->h = tf(0.05f);
 	this->effscrollupA->upvtxtoscr();
@@ -209,7 +211,7 @@ Program::Program() {
 	
 	this->effscrollupB = new Box;
 	this->effscrollupB->vtxcoords->x1 = 1.0 - tf(0.05f);
-	this->effscrollupB->vtxcoords->y1 = 1.0 - tf(this->layw) - tf(0.20f);
+	this->effscrollupB->vtxcoords->y1 = 1.0 - tf(this->layh) - tf(0.20f);
 	this->effscrollupB->vtxcoords->w = tf(0.025f);
 	this->effscrollupB->vtxcoords->h = tf(0.05f);     
 	this->effscrollupB->upvtxtoscr();
@@ -218,7 +220,7 @@ Program::Program() {
 	
 	this->effscrolldownA = new Box;
 	this->effscrolldownA->vtxcoords->x1 = -1.0;
-	this->effscrolldownA->vtxcoords->y1 = 1.0 - tf(this->layw) - tf(0.20f) - tf(0.05f) * 10;
+	this->effscrolldownA->vtxcoords->y1 = 1.0 - tf(this->layh) - tf(0.20f) - tf(0.05f) * 10;
 	this->effscrolldownA->vtxcoords->w = tf(0.025f);
 	this->effscrolldownA->vtxcoords->h = tf(0.05f);
 	this->effscrolldownA->upvtxtoscr();
@@ -227,7 +229,7 @@ Program::Program() {
 	
 	this->effscrolldownB = new Box;
 	this->effscrolldownB->vtxcoords->x1 = 1.0 - tf(0.05f);
-	this->effscrolldownB->vtxcoords->y1 = 1.0 - tf(this->layw) - tf(0.20f) - tf(0.05f) * 10;
+	this->effscrolldownB->vtxcoords->y1 = 1.0 - tf(this->layh) - tf(0.20f) - tf(0.05f) * 10;
 	this->effscrolldownB->vtxcoords->w = tf(0.025f);
 	this->effscrolldownB->vtxcoords->h = tf(0.05f);
 	this->effscrolldownB->upvtxtoscr();
@@ -641,6 +643,14 @@ void Project::open(const std::string &path) {
 	
 	while (getline(rfile, istring)) {
 		if (istring == "ENDOFFILE") break;
+		if (istring == "OUTPUTWIDTH") {
+			getline(rfile, istring);
+			mainprogram->ow = std::stoi(istring);
+		}
+		else if (istring == "OUTPUTHEIGHT") {
+			getline(rfile, istring);
+			mainprogram->oh = std::stoi(istring);
+		}
 		if (istring == "CURRSHELFA") {
 			getline(rfile, istring);
 			if (istring != "") {
@@ -678,6 +688,12 @@ void Project::save(const std::string &path) {
 	std::vector<std::string> filestoadd;
 	
 	wfile << "EWOCvj PROJECT V0.1\n";
+	wfile << "OUTPUTWIDTH\n";
+	wfile << std::to_string((int)mainprogram->ow);
+	wfile << "\n";
+	wfile << "OUTPUTHEIGHT\n";
+	wfile << std::to_string((int)mainprogram->oh);
+	wfile << "\n";
 	wfile << "CURRSHELFA\n";
 	wfile << mainprogram->shelves[0]->basepath;
 	wfile << "\n";
