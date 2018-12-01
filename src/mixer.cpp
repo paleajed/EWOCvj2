@@ -1659,9 +1659,14 @@ void do_delete_effect(Layer *lay, int pos) {
 	}
 	lay->node->aligned -= 1;
 	
-	for (int i = 0; i < lay->node->page->nodes.size(); i++) {
-		if (evec[pos]->node == lay->node->page->nodes[i]) {
-			lay->node->page->nodes.erase(lay->node->page->nodes.begin() + i);
+	for (int i = 0; i < mainprogram->nodesmain->currpage->nodes.size(); i++) {
+		if (evec[pos]->node == mainprogram->nodesmain->currpage->nodes[i]) {
+			mainprogram->nodesmain->currpage->nodes.erase(mainprogram->nodesmain->currpage->nodes.begin() + i);
+		}
+	}
+	for (int i = 0; i < mainprogram->nodesmain->currpage->nodescomp.size(); i++) {
+		if (evec[pos]->node == mainprogram->nodesmain->currpage->nodescomp[i]) {
+			mainprogram->nodesmain->currpage->nodescomp.erase(mainprogram->nodesmain->currpage->nodescomp.begin() + i);
 		}
 	}
 	if (lay->lasteffnode[cat] == evec[pos]->node) {
@@ -1685,12 +1690,15 @@ void do_delete_effect(Layer *lay, int pos) {
 			lay->lasteffnode[cat]->out = evec[pos]->node->out;
 			if (cat) evec[pos]->node->out[0]->in = lay->lasteffnode[1];
 		}
+		if (lay->pos == 0) {
+			lay->lasteffnode[1] = lay->lasteffnode[0];
+		}
 		if (!cat) {
 			if (lay->pos == 0) {
-				lay->lasteffnode[cat]->out[0]->in = lay->lasteffnode[cat];
+				mainprogram->nodesmain->currpage->connect_nodes(lay->lasteffnode[0], evec[pos]->node->out[0]);
 			}
 			else {
-				((BlendNode*)lay->lasteffnode[0]->out[0])->in2 = lay->lasteffnode[0];
+				mainprogram->nodesmain->currpage->connect_in2(lay->lasteffnode[0], ((BlendNode*)(evec[pos]->node->out[0])));
 			}
 		}
 	}
@@ -2792,25 +2800,14 @@ std::vector<std::string> Mixer::write_layer(Layer *lay, std::ostream& wfile, boo
 	wfile << std::to_string(lay->chinv->value);
 	wfile << "\n";
 	if (lay->type != ELEM_LIVE and lay->type != ELEM_IMAGE) {
-		wfile << "MILLIF\n";
-		wfile << std::to_string(lay->millif);
-		wfile << "\n";
-		//wfile << "PREVTIME";
-		//wfile << std::to_string(lay->prevtime);
 		wfile << "FRAME\n";
 		wfile << std::to_string(lay->frame);
 		wfile << "\n";
-		//wfile << "PREVFRAME\n";
-		//wfile << std::to_string(lay->prevframe);
-		//wfile << "\n";
 		wfile << "STARTFRAME\n";
 		wfile << std::to_string(lay->startframe);
 		wfile << "\n";
 		wfile << "ENDFRAME\n";
 		wfile << std::to_string(lay->endframe);
-		wfile << "\n";
-		wfile << "NUMF\n";
-		wfile << std::to_string(lay->numf);
 		wfile << "\n";
 	}
 	wfile << "BLENDTYPE\n";
@@ -3768,18 +3765,10 @@ int Mixer::read_layers(std::istream &rfile, const std::string &result, std::vect
 			getline(rfile, istring); 
 			lay->chinv->value = std::stoi(istring);
 		}
-		if (istring == "MILLIF") {
-			getline(rfile, istring); 
-			lay->millif = std::stof(istring);
-		}
 		if (istring == "FRAME") {
 			getline(rfile, istring); 
 			lay->frame = std::stof(istring);
 		}
-		//if (istring == "PREVFRAME") {
-		//	getline(rfile, istring); 
-		//	lay->prevframe = std::stoi(istring);
-		//}
 		if (istring == "STARTFRAME") {
 			getline(rfile, istring); 
 			lay->startframe = std::stoi(istring);
@@ -3787,10 +3776,6 @@ int Mixer::read_layers(std::istream &rfile, const std::string &result, std::vect
 		if (istring == "ENDFRAME") {
 			getline(rfile, istring); 
 			lay->endframe = std::stoi(istring);
-		}
-		if (istring == "NUMF") {
-			getline(rfile, istring); 
-			lay->numf = std::stoi(istring);
 		}
 		if (lay) {
 			if (!lay->dummy) {

@@ -1061,7 +1061,6 @@ void get_frame_other(Layer *lay, int framenr, int prevframe, int errcount)
 		decode_packet(lay, &got_frame);
 		lay->prevframe = framenr;
 		lay->vidformat = lay->vidformat;
-		lay->pktloaded = true;
 		if (lay->decframe->width == 0) {
 			lay->prevframe = framenr;
 			if ((lay->speed->value > 0 and (lay->playbut->value or lay->bouncebut->value == 1)) or (lay->speed->value < 0 and (lay->revbut->value or lay->bouncebut->value == 2))) {
@@ -1115,10 +1114,6 @@ void get_frame_other(Layer *lay, int framenr, int prevframe, int errcount)
 
 void Layer::decode_frame() {
 
-	this->numf = this->video_stream->nb_frames;
-	if (this->numf == 0) return;	//implement!
-	float tbperframe = (float)this->video_stream->duration / (float)this->numf;
-	this->millif = tbperframe * (((float)this->video_stream->time_base.num * 1000.0) / (float)this->video_stream->time_base.den);
 	int64_t seekTarget = ((this->video_stream->duration * this->frame) / this->numf);
 	int r = av_seek_frame(this->video, this->video_stream->index, seekTarget, AVSEEK_FLAG_ANY);
 	av_init_packet(&this->decpkt);
@@ -1218,6 +1213,7 @@ void Layer::get_frame(){
 }
 
 void open_video(float frame, Layer *lay, const std::string &filename, int reset) {
+	lay->initialized = false;
 	lay->audioplaying = false;
 	if (lay->effects[0].size() == 0) lay->type = ELEM_FILE;
 	else lay->type = ELEM_LAYER;
@@ -1226,6 +1222,8 @@ void open_video(float frame, Layer *lay, const std::string &filename, int reset)
 	lay->prevframe = lay->frame - 1;
 	lay->vidopen = true;
 	lay->reset = reset;
+	lay->ready = true;
+	lay->startdecode.notify_one();
 }
 
 bool thread_vidopen(Layer *lay, AVInputFormat *ifmt, bool skip) {
@@ -1293,6 +1291,8 @@ bool thread_vidopen(Layer *lay, AVInputFormat *ifmt, bool skip) {
         	if (lay->databuf) free(lay->databuf);
 			lay->databuf = (char*)malloc(lay->video_dec_ctx->width * lay->video_dec_ctx->height);
 			lay->numf = lay->video_stream->nb_frames;
+			float tbperframe = (float)lay->video_stream->duration / (float)lay->numf;
+			lay->millif = tbperframe * (((float)lay->video_stream->time_base.num * 1000.0) / (float)lay->video_stream->time_base.den);
 			if (lay->reset) {
 				lay->startframe = 0;
 				lay->endframe = lay->numf - 1;
@@ -1396,8 +1396,6 @@ bool thread_vidopen(Layer *lay, AVInputFormat *ifmt, bool skip) {
 
     lay->decframe = av_frame_alloc();
 	
-	lay->pktloaded = false;
-
 	if (std::find(mainmix->layersAcomp.begin(), mainmix->layersAcomp.end(), lay) != mainmix->layersAcomp.end()) {
 		mainmix->firststage = true;
 	}
@@ -2350,7 +2348,7 @@ void calc_texture(Layer *lay, bool comp, bool alive) {
 						lay->initialize(w, h);
 						lay->initialized = true;
 					}
-					else if (lay->decresult->compression == 187) {
+					if (lay->decresult->compression == 187) {
 						glCompressedTexSubImage2D(GL_TEXTURE_2D, 0, 0, 0, lay->decresult->width, lay->decresult->height, GL_COMPRESSED_RGBA_S3TC_DXT1_EXT, lay->decresult->size, lay->decresult->data);
 					}
 					else if (lay->decresult->compression == 190) {
@@ -2365,12 +2363,11 @@ void calc_texture(Layer *lay, bool comp, bool alive) {
 							lay->initialize(w, h);
 							lay->initialized = true;
 						}
-						else {
-							glTexSubImage2D(GL_TEXTURE_2D, 0, 0, 0, lay->decresult->width, lay->decresult->height, GL_RGBA, GL_UNSIGNED_BYTE, lay->decresult->data);
-						}
+						glTexSubImage2D(GL_TEXTURE_2D, 0, 0, 0, lay->decresult->width, lay->decresult->height, GL_RGBA, GL_UNSIGNED_BYTE, lay->decresult->data);
 					}
 				}
 			}
+			else return;
 		}
 	}
 	glDisable(GL_BLEND);
@@ -2379,11 +2376,10 @@ void calc_texture(Layer *lay, bool comp, bool alive) {
 	glDrawBuffer(GL_COLOR_ATTACHMENT0);
 	GLuint tex;
 	if (lay->liveinput) tex = lay->liveinput->texture;
-	else if (lay->filename != "") tex = lay->texture;
+	else if (lay->decresult->width) tex = lay->texture;
 	else {
 		glClearColor(0.0f, 0.0f, 0.0f, 0.0f);
 		glClear(GL_COLOR_BUFFER_BIT);
-		glDrawBuffer(GL_COLOR_ATTACHMENT0);
 		glEnable(GL_BLEND);
 		return;
 	}
@@ -3321,17 +3317,9 @@ void onestepfrom(bool stage, Node *node, Node *prevnode, GLuint prevfbotex, GLui
 		
 	float div = 1.0f;
 	if (mainprogram->ow > mainprogram->oh) {
-		if (mainprogram->ow > 640) {
-			mainprogram->ow3 = 640;
-			mainprogram->oh3 = 640 * mainprogram->oh / mainprogram->ow;
-		}
 		if (mainprogram->prevmodus and stage == 0) div = mainprogram->ow3 / mainprogram->ow;
 	}
 	else {
-		if (mainprogram->oh > 640) {
-			mainprogram->oh3 = 640;
-			mainprogram->ow3 = 640 * mainprogram->ow / mainprogram->oh;
-		}
 		if (mainprogram->prevmodus and stage == 0) div = mainprogram->oh3 / mainprogram->oh;
 	}
 	
@@ -3349,415 +3337,415 @@ void onestepfrom(bool stage, Node *node, Node *prevnode, GLuint prevfbotex, GLui
 	
 	if (node->type == EFFECT) {
 		Effect *effect = ((EffectNode*)node)->effect;
-		GLint drywet = glGetUniformLocation(mainprogram->ShaderProgram, "drywet");
-		glUniform1f(drywet, effect->drywet->value);
-		if (effect->onoffbutton->value) {
-			for (int i = 0; i < effect->params.size(); i++) {
-				Param *par = effect->params[i];
-				float val;
-				val = par->value;
-				if (effect->type == RIPPLE) {
-					((RippleEffect*)par->effect)->speed = val;
+		if (effect->layer->initialized) {
+			GLint drywet = glGetUniformLocation(mainprogram->ShaderProgram, "drywet");
+			glUniform1f(drywet, effect->drywet->value);
+			if (effect->onoffbutton->value) {
+				for (int i = 0; i < effect->params.size(); i++) {
+					Param *par = effect->params[i];
+					float val;
+					val = par->value;
+					if (effect->type == RIPPLE) {
+						((RippleEffect*)par->effect)->speed = val;
+					}
+					else if (par->shadervar == "edthickness") {
+						((EdgeDetectEffect*)par->effect)->thickness = val;
+					}
+					else if (effect->type == BLUR) {
+						((BlurEffect*)par->effect)->times = val;
+					}
+					else {
+						GLint var = glGetUniformLocation(mainprogram->ShaderProgram, par->shadervar.c_str());
+						glUniform1f(var, val);
+					}
 				}
-				else if (par->shadervar == "edthickness") {
-					((EdgeDetectEffect*)par->effect)->thickness = val;
-				}
-				else if (effect->type == BLUR) {
-					((BlurEffect*)par->effect)->times = val;
-				}
-				else {
-					GLint var = glGetUniformLocation(mainprogram->ShaderProgram, par->shadervar.c_str());
-					glUniform1f(var, val);
-				}
-			}
-			switch (effect->type) {
-				case BLUR: {
-					fxid = glGetUniformLocation(mainprogram->ShaderProgram, "fxid");
-					glUniform1i(fxid, BLUR);
-					GLint interm = glGetUniformLocation(mainprogram->ShaderProgram, "interm");
-					glUniform1i(interm, 1);
-					doblur(stage, prevfbotex, ((BlurEffect*)effect)->times);
-					glActiveTexture(GL_TEXTURE0);
-					prevfbotex = fbotex[1 + stage * 2];
-					break;
-				 }
-	
-				case RADIALBLUR: {
-					fxid = glGetUniformLocation(mainprogram->ShaderProgram, "fxid");
-					glUniform1i(fxid, RADIALBLUR);
-					break;
-				 }
-	
-				case GLOW: {
-					fxid = glGetUniformLocation(mainprogram->ShaderProgram, "fxid");
-					glUniform1i(fxid, GLOW);
-					GLint interm = glGetUniformLocation(mainprogram->ShaderProgram, "interm");
-					glUniform1i(interm, 1);
-					doblur(stage, prevfbotex, 6);
-					glActiveTexture(GL_TEXTURE0);
-					prevfbotex = fbotex[1 + stage * 2];
-					break;
-				 }
-	
-				case CONTRAST: {
-					fxid = glGetUniformLocation(mainprogram->ShaderProgram, "fxid");
-					glUniform1i(fxid, CONTRAST);
-					break;
-				 }
-	
-				case BRIGHTNESS: {
-					fxid = glGetUniformLocation(mainprogram->ShaderProgram, "fxid");
-					glUniform1i(fxid, BRIGHTNESS);
-					break;
-				 }
-	
-				case SCALE: {
-					fxid = glGetUniformLocation(mainprogram->ShaderProgram, "fxid");
-					glUniform1i(fxid, SCALE);
-					break;
-				 }
-	
-				case SWIRL: {
-					fxid = glGetUniformLocation(mainprogram->ShaderProgram, "fxid");
-					glUniform1i(fxid, SWIRL);
-					break;
-				 }
-	
-				case CHROMAROTATE: {
-					fxid = glGetUniformLocation(mainprogram->ShaderProgram, "fxid");
-					glUniform1i(fxid, CHROMAROTATE);
-					break;
-				 }
-	
-				case DOT: {
-					fxid = glGetUniformLocation(mainprogram->ShaderProgram, "fxid");
-					glUniform1i(fxid, DOT);
-					break;
-				 }
-	
-				case SATURATION: {
-					fxid = glGetUniformLocation(mainprogram->ShaderProgram, "fxid");
-					glUniform1i(fxid, SATURATION);
-					break;
-				 }
-	
-				case OLDFILM: {
-					GLfloat RandomValue = glGetUniformLocation(mainprogram->ShaderProgram, "RandomValue");
-					glUniform1f(RandomValue, (float)(rand() % 100) / 100.0);
-					fxid = glGetUniformLocation(mainprogram->ShaderProgram, "fxid");
-					glUniform1i(fxid, OLDFILM);
-					break;
-				 }
-	
-				case RIPPLE: {
-					float riptime = glGetUniformLocation(mainprogram->ShaderProgram, "riptime");
-					glUniform1f(riptime, effect->get_ripplecount());
-					printf("riptime %d\n", effect->get_ripplecount());
-					fflush(stdout);
-					fxid = glGetUniformLocation(mainprogram->ShaderProgram, "fxid");
-					glUniform1i(fxid, RIPPLE);
-					break;
-				 }
-	
-				case FISHEYE: {
-					fxid = glGetUniformLocation(mainprogram->ShaderProgram, "fxid");
-					glUniform1i(fxid, FISHEYE);
-					break;
-				 }
-	
-				case TRESHOLD: {
-					fxid = glGetUniformLocation(mainprogram->ShaderProgram, "fxid");
-					glUniform1i(fxid, TRESHOLD);
-					break;
-				 }
-	
-				case STROBE: {
-					if (((StrobeEffect*)effect)->get_phase() == 0) ((StrobeEffect*)effect)->set_phase(1);
-					else ((StrobeEffect*)effect)->set_phase(0);
-					GLint strobephase = glGetUniformLocation(mainprogram->ShaderProgram, "strobephase");
-					glUniform1f(strobephase, ((StrobeEffect*)effect)->get_phase());
-					fxid = glGetUniformLocation(mainprogram->ShaderProgram, "fxid");
-					glUniform1i(fxid, STROBE);
-					break;
-				}
-	
-				case POSTERIZE: {
-					fxid = glGetUniformLocation(mainprogram->ShaderProgram, "fxid");
-					glUniform1i(fxid, POSTERIZE);
-					break;
-				 }
-	
-				case PIXELATE: {
-					fxid = glGetUniformLocation(mainprogram->ShaderProgram, "fxid");
-					glUniform1i(fxid, PIXELATE);
-					break;
-				 }
-	
-				case CROSSHATCH: {
-					fxid = glGetUniformLocation(mainprogram->ShaderProgram, "fxid");
-					glUniform1i(fxid, CROSSHATCH);
-					break;
-				 }
-	
-				case INVERT: {
-					fxid = glGetUniformLocation(mainprogram->ShaderProgram, "fxid");
-					glUniform1i(fxid, INVERT);
-					break;
-				 }
-	
-				case ROTATE: {
-					fxid = glGetUniformLocation(mainprogram->ShaderProgram, "fxid");
-					glUniform1i(fxid, ROTATE);
-					break;
-				}
-	
-				case EMBOSS: {
-					fxid = glGetUniformLocation(mainprogram->ShaderProgram, "fxid");
-					glUniform1i(fxid, EMBOSS);
-					break;
-				 }
-	
-				case ASCII: {
-					fxid = glGetUniformLocation(mainprogram->ShaderProgram, "fxid");
-					glUniform1i(fxid, ASCII);
-					break;
-				 }
-	
-				case SOLARIZE: {
-					fxid = glGetUniformLocation(mainprogram->ShaderProgram, "fxid");
-					glUniform1i(fxid, SOLARIZE);
-					break;
-				 }
-	
-				case VARDOT: {
-					fxid = glGetUniformLocation(mainprogram->ShaderProgram, "fxid");
-					glUniform1i(fxid, VARDOT);
-					break;
-				 }
-	
-				case CRT: {
-					fxid = glGetUniformLocation(mainprogram->ShaderProgram, "fxid");
-					glUniform1i(fxid, CRT);
-					break;
-				 }
-				 
-				case EDGEDETECT: {
-					fxid = glGetUniformLocation(mainprogram->ShaderProgram, "fxid");
-					glUniform1i(fxid, EDGEDETECT);
-					GLint fboSampler = glGetUniformLocation(mainprogram->ShaderProgram, "fboSampler");
-					GLint interm = glGetUniformLocation(mainprogram->ShaderProgram, "interm");
-					glUniform1i(interm, 1);
-					glActiveTexture(GL_TEXTURE0);
-					glBindFramebuffer(GL_FRAMEBUFFER, frbuf[0 + stage * 2]);
-					glDrawBuffer(GL_COLOR_ATTACHMENT0);
-					if (stage) glViewport(0, 0, mainprogram->ow, mainprogram->oh);
-					else glViewport(0, 0, mainprogram->ow3, mainprogram->oh3);
-					glBindTexture(GL_TEXTURE_2D, prevfbotex);
-					glBindVertexArray(mainprogram->fbovao);
-					glDrawArrays(GL_TRIANGLE_STRIP, 0, 4);
-					glUniform1i(interm, 0);
-					
-					glUniform1i(edgethickmode, 1);
-					glActiveTexture(GL_TEXTURE6);
-					glBindTexture(GL_TEXTURE_2D, fbotex[1 + stage * 2]);
-					glActiveTexture(GL_TEXTURE5);
-					glBindTexture(GL_TEXTURE_2D, fbotex[0 + stage * 2]);
-					glUniform1i(fboSampler, 5);
-					GLboolean swits = true;
-					GLuint *tex;
-					for(GLuint i = 0; i < ((EdgeDetectEffect*)effect)->thickness; i++) {
-						glBindFramebuffer(GL_FRAMEBUFFER, frbuf[swits + stage * 2]);
+				switch (effect->type) {
+					case BLUR: {
+						fxid = glGetUniformLocation(mainprogram->ShaderProgram, "fxid");
+						glUniform1i(fxid, BLUR);
+						GLint interm = glGetUniformLocation(mainprogram->ShaderProgram, "interm");
+						glUniform1i(interm, 1);
+						doblur(stage, prevfbotex, ((BlurEffect*)effect)->times);
+						glActiveTexture(GL_TEXTURE0);
+						prevfbotex = fbotex[1 + stage * 2];
+						break;
+					 }
+		
+					case RADIALBLUR: {
+						fxid = glGetUniformLocation(mainprogram->ShaderProgram, "fxid");
+						glUniform1i(fxid, RADIALBLUR);
+						break;
+					 }
+		
+					case GLOW: {
+						fxid = glGetUniformLocation(mainprogram->ShaderProgram, "fxid");
+						glUniform1i(fxid, GLOW);
+						GLint interm = glGetUniformLocation(mainprogram->ShaderProgram, "interm");
+						glUniform1i(interm, 1);
+						doblur(stage, prevfbotex, 6);
+						glActiveTexture(GL_TEXTURE0);
+						prevfbotex = fbotex[1 + stage * 2];
+						break;
+					 }
+		
+					case CONTRAST: {
+						fxid = glGetUniformLocation(mainprogram->ShaderProgram, "fxid");
+						glUniform1i(fxid, CONTRAST);
+						break;
+					 }
+		
+					case BRIGHTNESS: {
+						fxid = glGetUniformLocation(mainprogram->ShaderProgram, "fxid");
+						glUniform1i(fxid, BRIGHTNESS);
+						break;
+					 }
+		
+					case SCALE: {
+						fxid = glGetUniformLocation(mainprogram->ShaderProgram, "fxid");
+						glUniform1i(fxid, SCALE);
+						break;
+					 }
+		
+					case SWIRL: {
+						fxid = glGetUniformLocation(mainprogram->ShaderProgram, "fxid");
+						glUniform1i(fxid, SWIRL);
+						break;
+					 }
+		
+					case CHROMAROTATE: {
+						fxid = glGetUniformLocation(mainprogram->ShaderProgram, "fxid");
+						glUniform1i(fxid, CHROMAROTATE);
+						break;
+					 }
+		
+					case DOT: {
+						fxid = glGetUniformLocation(mainprogram->ShaderProgram, "fxid");
+						glUniform1i(fxid, DOT);
+						break;
+					 }
+		
+					case SATURATION: {
+						fxid = glGetUniformLocation(mainprogram->ShaderProgram, "fxid");
+						glUniform1i(fxid, SATURATION);
+						break;
+					 }
+		
+					case OLDFILM: {
+						GLfloat RandomValue = glGetUniformLocation(mainprogram->ShaderProgram, "RandomValue");
+						glUniform1f(RandomValue, (float)(rand() % 100) / 100.0);
+						fxid = glGetUniformLocation(mainprogram->ShaderProgram, "fxid");
+						glUniform1i(fxid, OLDFILM);
+						break;
+					 }
+		
+					case RIPPLE: {
+						float riptime = glGetUniformLocation(mainprogram->ShaderProgram, "riptime");
+						glUniform1f(riptime, effect->get_ripplecount());
+						fxid = glGetUniformLocation(mainprogram->ShaderProgram, "fxid");
+						glUniform1i(fxid, RIPPLE);
+						break;
+					 }
+		
+					case FISHEYE: {
+						fxid = glGetUniformLocation(mainprogram->ShaderProgram, "fxid");
+						glUniform1i(fxid, FISHEYE);
+						break;
+					 }
+		
+					case TRESHOLD: {
+						fxid = glGetUniformLocation(mainprogram->ShaderProgram, "fxid");
+						glUniform1i(fxid, TRESHOLD);
+						break;
+					 }
+		
+					case STROBE: {
+						if (((StrobeEffect*)effect)->get_phase() == 0) ((StrobeEffect*)effect)->set_phase(1);
+						else ((StrobeEffect*)effect)->set_phase(0);
+						GLint strobephase = glGetUniformLocation(mainprogram->ShaderProgram, "strobephase");
+						glUniform1f(strobephase, ((StrobeEffect*)effect)->get_phase());
+						fxid = glGetUniformLocation(mainprogram->ShaderProgram, "fxid");
+						glUniform1i(fxid, STROBE);
+						break;
+					}
+		
+					case POSTERIZE: {
+						fxid = glGetUniformLocation(mainprogram->ShaderProgram, "fxid");
+						glUniform1i(fxid, POSTERIZE);
+						break;
+					 }
+		
+					case PIXELATE: {
+						fxid = glGetUniformLocation(mainprogram->ShaderProgram, "fxid");
+						glUniform1i(fxid, PIXELATE);
+						break;
+					 }
+		
+					case CROSSHATCH: {
+						fxid = glGetUniformLocation(mainprogram->ShaderProgram, "fxid");
+						glUniform1i(fxid, CROSSHATCH);
+						break;
+					 }
+		
+					case INVERT: {
+						fxid = glGetUniformLocation(mainprogram->ShaderProgram, "fxid");
+						glUniform1i(fxid, INVERT);
+						break;
+					 }
+		
+					case ROTATE: {
+						fxid = glGetUniformLocation(mainprogram->ShaderProgram, "fxid");
+						glUniform1i(fxid, ROTATE);
+						break;
+					}
+		
+					case EMBOSS: {
+						fxid = glGetUniformLocation(mainprogram->ShaderProgram, "fxid");
+						glUniform1i(fxid, EMBOSS);
+						break;
+					 }
+		
+					case ASCII: {
+						fxid = glGetUniformLocation(mainprogram->ShaderProgram, "fxid");
+						glUniform1i(fxid, ASCII);
+						break;
+					 }
+		
+					case SOLARIZE: {
+						fxid = glGetUniformLocation(mainprogram->ShaderProgram, "fxid");
+						glUniform1i(fxid, SOLARIZE);
+						break;
+					 }
+		
+					case VARDOT: {
+						fxid = glGetUniformLocation(mainprogram->ShaderProgram, "fxid");
+						glUniform1i(fxid, VARDOT);
+						break;
+					 }
+		
+					case CRT: {
+						fxid = glGetUniformLocation(mainprogram->ShaderProgram, "fxid");
+						glUniform1i(fxid, CRT);
+						break;
+					 }
+					 
+					case EDGEDETECT: {
+						fxid = glGetUniformLocation(mainprogram->ShaderProgram, "fxid");
+						glUniform1i(fxid, EDGEDETECT);
+						GLint fboSampler = glGetUniformLocation(mainprogram->ShaderProgram, "fboSampler");
+						GLint interm = glGetUniformLocation(mainprogram->ShaderProgram, "interm");
+						glUniform1i(interm, 1);
+						glActiveTexture(GL_TEXTURE0);
+						glBindFramebuffer(GL_FRAMEBUFFER, frbuf[0 + stage * 2]);
 						glDrawBuffer(GL_COLOR_ATTACHMENT0);
-						glBindTexture(GL_TEXTURE_2D, fbotex[!swits + stage * 2]);
+						if (stage) glViewport(0, 0, mainprogram->ow, mainprogram->oh);
+						else glViewport(0, 0, mainprogram->ow3, mainprogram->oh3);
+						glBindTexture(GL_TEXTURE_2D, prevfbotex);
 						glBindVertexArray(mainprogram->fbovao);
 						glDrawArrays(GL_TRIANGLE_STRIP, 0, 4);
-						if (i % 2) glActiveTexture(GL_TEXTURE5);
-						else glActiveTexture(GL_TEXTURE6);
-						glUniform1i(fboSampler, swits + 5);
-						swits = !swits;
+						glUniform1i(interm, 0);
+						
+						glUniform1i(edgethickmode, 1);
+						glActiveTexture(GL_TEXTURE6);
+						glBindTexture(GL_TEXTURE_2D, fbotex[1 + stage * 2]);
+						glActiveTexture(GL_TEXTURE5);
+						glBindTexture(GL_TEXTURE_2D, fbotex[0 + stage * 2]);
+						glUniform1i(fboSampler, 5);
+						GLboolean swits = true;
+						GLuint *tex;
+						for(GLuint i = 0; i < ((EdgeDetectEffect*)effect)->thickness; i++) {
+							glBindFramebuffer(GL_FRAMEBUFFER, frbuf[swits + stage * 2]);
+							glDrawBuffer(GL_COLOR_ATTACHMENT0);
+							glBindTexture(GL_TEXTURE_2D, fbotex[!swits + stage * 2]);
+							glBindVertexArray(mainprogram->fbovao);
+							glDrawArrays(GL_TRIANGLE_STRIP, 0, 4);
+							if (i % 2) glActiveTexture(GL_TEXTURE5);
+							else glActiveTexture(GL_TEXTURE6);
+							glUniform1i(fboSampler, swits + 5);
+							swits = !swits;
+						}
+						glUniform1i(fboSampler, 0);
+						glActiveTexture(GL_TEXTURE0);
+						glBindFramebuffer(GL_FRAMEBUFFER, mainprogram->globfbo);
+						glDrawBuffer(GL_COLOR_ATTACHMENT0);
+						glViewport(0, 0, glob->w, glob->h);
+						if (((EdgeDetectEffect*)effect)->thickness % 2) prevfbotex = fbotex[1 + stage * 2];
+						else prevfbotex = fbotex[0 + stage * 2];
+						break;
 					}
-					glUniform1i(fboSampler, 0);
-					glActiveTexture(GL_TEXTURE0);
-					glBindFramebuffer(GL_FRAMEBUFFER, mainprogram->globfbo);
-					glDrawBuffer(GL_COLOR_ATTACHMENT0);
-					glViewport(0, 0, glob->w, glob->h);
-					if (((EdgeDetectEffect*)effect)->thickness % 2) prevfbotex = fbotex[1 + stage * 2];
-					else prevfbotex = fbotex[0 + stage * 2];
-					break;
+					 
+					case KALEIDOSCOPE: {
+						fxid = glGetUniformLocation(mainprogram->ShaderProgram, "fxid");
+						glUniform1i(fxid, KALEIDOSCOPE);
+						break;
+					 }
+					 
+					case HTONE: {
+						fxid = glGetUniformLocation(mainprogram->ShaderProgram, "fxid");
+						glUniform1i(fxid, HTONE);
+						break;
+					 }
+					 
+					case CARTOON: {
+						fxid = glGetUniformLocation(mainprogram->ShaderProgram, "fxid");
+						glUniform1i(fxid, CARTOON);
+						break;
+					 }
+					 
+					case CUTOFF: {
+						fxid = glGetUniformLocation(mainprogram->ShaderProgram, "fxid");
+						glUniform1i(fxid, CUTOFF);
+						break;
+					 }
+					 
+					case GLITCH: {
+						fxid = glGetUniformLocation(mainprogram->ShaderProgram, "fxid");
+						glUniform1i(fxid, GLITCH);
+						break;
+					 }
+					 
+					case COLORIZE: {
+						fxid = glGetUniformLocation(mainprogram->ShaderProgram, "fxid");
+						glUniform1i(fxid, COLORIZE);
+						break;
+					 }
+					 
+					case NOISE: {
+						fxid = glGetUniformLocation(mainprogram->ShaderProgram, "fxid");
+						glUniform1i(fxid, NOISE);
+						break;
+					 }
+					 
+					case GAMMA: {
+						fxid = glGetUniformLocation(mainprogram->ShaderProgram, "fxid");
+						glUniform1i(fxid, GAMMA);
+						break;
+					 }
+					 
+					case THERMAL: {
+						fxid = glGetUniformLocation(mainprogram->ShaderProgram, "fxid");
+						glUniform1i(fxid, THERMAL);
+						break;
+					 }
+					 
+					case BOKEH: {
+						fxid = glGetUniformLocation(mainprogram->ShaderProgram, "fxid");
+						glUniform1i(fxid, BOKEH);
+						break;
+					 }
+					 
+					case SHARPEN: {
+						fxid = glGetUniformLocation(mainprogram->ShaderProgram, "fxid");
+						glUniform1i(fxid, SHARPEN);
+						break;
+					 }
+					 
+					case DITHER: {
+						fxid = glGetUniformLocation(mainprogram->ShaderProgram, "fxid");
+						glUniform1i(fxid, DITHER);
+						break;
+					 }
+					 
+					case FLIP: {
+						fxid = glGetUniformLocation(mainprogram->ShaderProgram, "fxid");
+						glUniform1i(fxid, FLIP);
+						break;
+					 }
+					 
+					case MIRROR: {
+						fxid = glGetUniformLocation(mainprogram->ShaderProgram, "fxid");
+						glUniform1i(fxid, MIRROR);
+						break;
+					 }
 				}
-				 
-				case KALEIDOSCOPE: {
-					fxid = glGetUniformLocation(mainprogram->ShaderProgram, "fxid");
-					glUniform1i(fxid, KALEIDOSCOPE);
-					break;
-				 }
-				 
-				case HTONE: {
-					fxid = glGetUniformLocation(mainprogram->ShaderProgram, "fxid");
-					glUniform1i(fxid, HTONE);
-					break;
-				 }
-				 
-				case CARTOON: {
-					fxid = glGetUniformLocation(mainprogram->ShaderProgram, "fxid");
-					glUniform1i(fxid, CARTOON);
-					break;
-				 }
-				 
-				case CUTOFF: {
-					fxid = glGetUniformLocation(mainprogram->ShaderProgram, "fxid");
-					glUniform1i(fxid, CUTOFF);
-					break;
-				 }
-				 
-				case GLITCH: {
-					fxid = glGetUniformLocation(mainprogram->ShaderProgram, "fxid");
-					glUniform1i(fxid, GLITCH);
-					break;
-				 }
-				 
-				case COLORIZE: {
-					fxid = glGetUniformLocation(mainprogram->ShaderProgram, "fxid");
-					glUniform1i(fxid, COLORIZE);
-					break;
-				 }
-				 
-				case NOISE: {
-					fxid = glGetUniformLocation(mainprogram->ShaderProgram, "fxid");
-					glUniform1i(fxid, NOISE);
-					break;
-				 }
-				 
-				case GAMMA: {
-					fxid = glGetUniformLocation(mainprogram->ShaderProgram, "fxid");
-					glUniform1i(fxid, GAMMA);
-					break;
-				 }
-				 
-				case THERMAL: {
-					fxid = glGetUniformLocation(mainprogram->ShaderProgram, "fxid");
-					glUniform1i(fxid, THERMAL);
-					break;
-				 }
-				 
-				case BOKEH: {
-					fxid = glGetUniformLocation(mainprogram->ShaderProgram, "fxid");
-					glUniform1i(fxid, BOKEH);
-					break;
-				 }
-				 
-				case SHARPEN: {
-					fxid = glGetUniformLocation(mainprogram->ShaderProgram, "fxid");
-					glUniform1i(fxid, SHARPEN);
-					break;
-				 }
-				 
-				case DITHER: {
-					fxid = glGetUniformLocation(mainprogram->ShaderProgram, "fxid");
-					glUniform1i(fxid, DITHER);
-					break;
-				 }
-				 
-				case FLIP: {
-					fxid = glGetUniformLocation(mainprogram->ShaderProgram, "fxid");
-					glUniform1i(fxid, FLIP);
-					break;
-				 }
-				 
-				case MIRROR: {
-					fxid = glGetUniformLocation(mainprogram->ShaderProgram, "fxid");
-					glUniform1i(fxid, MIRROR);
-					break;
-				 }
 			}
-		}
-		
-		glActiveTexture(GL_TEXTURE0);
-		if (effect->fbo == -1) {
-			glGenTextures(1, &(effect->fbotex));
-			glBindTexture(GL_TEXTURE_2D, effect->fbotex);
-			if ((mainprogram->prevmodus and stage == 0)) {
-				glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA, mainprogram->ow3, mainprogram->oh3, 0, GL_RGBA, GL_UNSIGNED_BYTE, nullptr);
+			
+			glActiveTexture(GL_TEXTURE0);
+			if (effect->fbo == -1) {
+				glGenTextures(1, &(effect->fbotex));
+				glBindTexture(GL_TEXTURE_2D, effect->fbotex);
+				if ((mainprogram->prevmodus and stage == 0)) {
+					glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA, mainprogram->ow3, mainprogram->oh3, 0, GL_RGBA, GL_UNSIGNED_BYTE, nullptr);
+				}
+				else {
+					glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA, mainprogram->ow, mainprogram->oh, 0, GL_RGBA, GL_UNSIGNED_BYTE, nullptr);
+				}
+				glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR);
+				glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
+	
+				glGenFramebuffers(1, &(effect->fbo));
+				glBindFramebuffer(GL_FRAMEBUFFER, effect->fbo);
+				glFramebufferTexture2D(GL_FRAMEBUFFER, GL_COLOR_ATTACHMENT0, GL_TEXTURE_2D, effect->fbotex, 0);
 			}
-			else {
-				glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA, mainprogram->ow, mainprogram->oh, 0, GL_RGBA, GL_UNSIGNED_BYTE, nullptr);
+			GLuint down = glGetUniformLocation(mainprogram->ShaderProgram, "down");
+			if (effect->onoffbutton->value) glUniform1i(interm, 1);
+			else glUniform1i(down, 1);
+			GLfloat opacity = glGetUniformLocation(mainprogram->ShaderProgram, "opacity");
+			if (effect->node == (EffectNode*)(effect->layer->lasteffnode[0])) {
+				glUniform1f(opacity, effect->layer->opacity->value);
 			}
-			glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR);
-			glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
-
-			glGenFramebuffers(1, &(effect->fbo));
-			glBindFramebuffer(GL_FRAMEBUFFER, effect->fbo);
-			glFramebufferTexture2D(GL_FRAMEBUFFER, GL_COLOR_ATTACHMENT0, GL_TEXTURE_2D, effect->fbotex, 0);
-		}
-		GLuint down = glGetUniformLocation(mainprogram->ShaderProgram, "down");
-		if (effect->onoffbutton->value) glUniform1i(interm, 1);
-		else glUniform1i(down, 1);
-		GLfloat opacity = glGetUniformLocation(mainprogram->ShaderProgram, "opacity");
-		if (effect->node == (EffectNode*)(effect->layer->lasteffnode[0])) {
-			glUniform1f(opacity, effect->layer->opacity->value);
-		}
-		else glUniform1f(opacity, 1.0f);
-		
-		
-// #define BUFFER_OFFSET(i) ((char *)nullptr + (i))
-		// GLuint ioBuf;
- 		// glGenBuffers(1, &ioBuf); 
-		// glBindBuffer(GL_PIXEL_PACK_BUFFER_ARB, ioBuf);
- 		// glBufferData(GL_PIXEL_PACK_BUFFER_ARB, mainprogram->ow * mainprogram->oh, nullptr, GL_STREAM_READ);
- 		// glBindFramebuffer(GL_FRAMEBUFFER, ((VideoNode*)(node->in))->layer->fbo);
-		// glReadBuffer(GL_COLOR_ATTACHMENT0);
- 		// glReadPixels(0, 0, mainprogram->ow, mainprogram->oh, GL_RGBA, GL_UNSIGNED_BYTE, BUFFER_OFFSET(0));
- 		// void* mem = glMapBuffer(GL_PIXEL_PACK_BUFFER_ARB, GL_READ_ONLY);   
- 		// assert(mem);
-		// CopyMemory((void*)effect->pbuf, mem, 2073600);
-		// //memcpy((void*)effect->pbuf, "SECRET", 7);
- 		// glUnmapBuffer(GL_PIXEL_PACK_BUFFER_ARB);
- 		// glBindBuffer(GL_PIXEL_PACK_BUFFER_ARB, 0);		
-		// //while((const char*)effect->pbuf != "TERCES") {}
-		// //glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA, mainprogram->ow, mainprogram->oh, 0, GL_RGBA, GL_UNSIGNED_BYTE, effect->pbuf);
-		
- 
- 		glBindFramebuffer(GL_FRAMEBUFFER, effect->fbo);
-		glDrawBuffer(GL_COLOR_ATTACHMENT0);
-		if (stage) glViewport(0, 0, mainprogram->ow, mainprogram->oh);
-		else glViewport(0, 0, mainprogram->ow3, mainprogram->oh3);
-		glClearColor( 0.f, 0.f, 0.f, 0.f );
-		glClear(GL_COLOR_BUFFER_BIT);
-		glActiveTexture(GL_TEXTURE0);
-		glBindTexture(GL_TEXTURE_2D, prevfbotex);
-		glBindVertexArray(mainprogram->fbovao);
-		glDrawArrays(GL_TRIANGLE_STRIP, 0, 4);
-		glUniform1i(interm, 0);
-		glUniform1i(down, 0);
-		glUniform1i(edgethickmode, 0);
-		prevfbotex = effect->fbotex;
-		prevfbo = effect->fbo;
-
-		Layer *lay = effect->layer;
-		if (effect->node == lay->lasteffnode[0]) {
-			GLuint fbocopy;
-			glDisable(GL_BLEND);
-			if ((mainprogram->prevmodus and stage == 0)) {
-				fbocopy = copy_tex(effect->fbotex);
-				glViewport(0, 0, mainprogram->ow3, mainprogram->oh3);
-			}
-			else {
-				fbocopy = copy_tex(effect->fbotex, mainprogram->ow, mainprogram->oh);
-				glViewport(0, 0, mainprogram->ow, mainprogram->oh);
-			}
+			else glUniform1f(opacity, 1.0f);
+			
+			
+	// #define BUFFER_OFFSET(i) ((char *)nullptr + (i))
+			// GLuint ioBuf;
+			// glGenBuffers(1, &ioBuf); 
+			// glBindBuffer(GL_PIXEL_PACK_BUFFER_ARB, ioBuf);
+			// glBufferData(GL_PIXEL_PACK_BUFFER_ARB, mainprogram->ow * mainprogram->oh, nullptr, GL_STREAM_READ);
+			// glBindFramebuffer(GL_FRAMEBUFFER, ((VideoNode*)(node->in))->layer->fbo);
+			// glReadBuffer(GL_COLOR_ATTACHMENT0);
+			// glReadPixels(0, 0, mainprogram->ow, mainprogram->oh, GL_RGBA, GL_UNSIGNED_BYTE, BUFFER_OFFSET(0));
+			// void* mem = glMapBuffer(GL_PIXEL_PACK_BUFFER_ARB, GL_READ_ONLY);   
+			// assert(mem);
+			// CopyMemory((void*)effect->pbuf, mem, 2073600);
+			// //memcpy((void*)effect->pbuf, "SECRET", 7);
+			// glUnmapBuffer(GL_PIXEL_PACK_BUFFER_ARB);
+			// glBindBuffer(GL_PIXEL_PACK_BUFFER_ARB, 0);		
+			// //while((const char*)effect->pbuf != "TERCES") {}
+			// //glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA, mainprogram->ow, mainprogram->oh, 0, GL_RGBA, GL_UNSIGNED_BYTE, effect->pbuf);
+			
+	 
 			glBindFramebuffer(GL_FRAMEBUFFER, effect->fbo);
 			glDrawBuffer(GL_COLOR_ATTACHMENT0);
-			glClearColor(0.0f, 0.0f, 0.0f, 0.0f);
+			if (stage) glViewport(0, 0, mainprogram->ow, mainprogram->oh);
+			else glViewport(0, 0, mainprogram->ow3, mainprogram->oh3);
+			glClearColor( 0.f, 0.f, 0.f, 0.f );
 			glClear(GL_COLOR_BUFFER_BIT);
-			float black[4] = {0.0f, 0.0f, 0.0f, 0.0f};
-			draw_box(nullptr, black, -1.0f, 1.0f, 2.0f, -2.0f, lay->shiftx, lay->shifty, lay->scale, lay->opacity->value, 0, fbocopy, 0, 0);
-			glEnable(GL_BLEND);
-			glDeleteTextures(1, &fbocopy);
+			glActiveTexture(GL_TEXTURE0);
+			glBindTexture(GL_TEXTURE_2D, prevfbotex);
+			glBindVertexArray(mainprogram->fbovao);
+			glDrawArrays(GL_TRIANGLE_STRIP, 0, 4);
+			glUniform1i(interm, 0);
+			glUniform1i(down, 0);
+			glUniform1i(edgethickmode, 0);
+			prevfbotex = effect->fbotex;
+			prevfbo = effect->fbo;
+	
+			Layer *lay = effect->layer;
+			if (effect->node == lay->lasteffnode[0]) {
+				GLuint fbocopy;
+				glDisable(GL_BLEND);
+				if ((mainprogram->prevmodus and stage == 0)) {
+					fbocopy = copy_tex(effect->fbotex);
+					glViewport(0, 0, mainprogram->ow3, mainprogram->oh3);
+				}
+				else {
+					fbocopy = copy_tex(effect->fbotex, mainprogram->ow, mainprogram->oh);
+					glViewport(0, 0, mainprogram->ow, mainprogram->oh);
+				}
+				glBindFramebuffer(GL_FRAMEBUFFER, effect->fbo);
+				glDrawBuffer(GL_COLOR_ATTACHMENT0);
+				glClearColor(0.0f, 0.0f, 0.0f, 0.0f);
+				glClear(GL_COLOR_BUFFER_BIT);
+				float black[4] = {0.0f, 0.0f, 0.0f, 0.0f};
+				draw_box(nullptr, black, -1.0f, 1.0f, 2.0f, -2.0f, lay->shiftx, lay->shifty, lay->scale, lay->opacity->value, 0, fbocopy, 0, 0);
+				glEnable(GL_BLEND);
+				glDeleteTextures(1, &fbocopy);
+			}
+			
+			glBindFramebuffer(GL_FRAMEBUFFER, mainprogram->globfbo);
+			glDrawBuffer(GL_COLOR_ATTACHMENT0);
+			glViewport(0, 0, glob->w, glob->h);
 		}
-		
-		glBindFramebuffer(GL_FRAMEBUFFER, mainprogram->globfbo);
-		glDrawBuffer(GL_COLOR_ATTACHMENT0);
-		glViewport(0, 0, glob->w, glob->h);
 	}
 	else if (node->type == VIDEO) {
 		Layer *lay = ((VideoNode*)node)->layer;
@@ -4023,6 +4011,13 @@ bool display_mix() {
 	}
 	MixNode *node;
 	Box *box;
+	GLfloat cf = glGetUniformLocation(mainprogram->ShaderProgram, "cf");
+	if (mainprogram->prevmodus) {
+		glUniform1f(cf, mainmix->crossfade->value);
+	}
+	else {
+		glUniform1f(cf, mainmix->crossfadecomp->value);
+	}
 	GLint wipe = glGetUniformLocation(mainprogram->ShaderProgram, "wipe");
 	GLint mixmode = glGetUniformLocation(mainprogram->ShaderProgram, "mixmode");
 	node = (MixNode*)mainprogram->nodesmain->mixnodes[0];
@@ -4081,13 +4076,6 @@ bool display_mix() {
 		draw_box(node->outputbox->lcolor, node->outputbox->acolor, box, -1);
 		draw_box(nullptr, node->outputbox->acolor, box->vtxcoords->x1 + xs, box->vtxcoords->y1 + ys, box->vtxcoords->w - xs * 2.0f, box->vtxcoords->h - ys * 2.0f, node->mixtex);
 		mainprogram->outputmonitor->in();
-		GLfloat cf = glGetUniformLocation(mainprogram->ShaderProgram, "cf");
-		if (mainprogram->prevmodus) {
-			glUniform1f(cf, mainmix->crossfade->value);
-		}
-		else {
-			glUniform1f(cf, mainmix->crossfadecomp->value);
-		}
 	}
 	else {
 		glUniform1i(wipe, 0);
@@ -4118,13 +4106,6 @@ bool display_mix() {
 		draw_box(node->outputbox->lcolor, node->outputbox->acolor, box, -1);
 		draw_box(nullptr, node->outputbox->acolor, box->vtxcoords->x1 + xs * 2.0f, box->vtxcoords->y1 + ys * 2.0f, box->vtxcoords->w - xs * 4.0f, box->vtxcoords->h - ys * 4.0f, node->mixtex);
 		mainprogram->mainmonitor->in();
-		GLfloat cf = glGetUniformLocation(mainprogram->ShaderProgram, "cf");
-		if (mainprogram->prevmodus) {
-			glUniform1f(cf, mainmix->crossfade->value);
-		}
-		else {
-			glUniform1f(cf, mainmix->crossfadecomp->value);
-		}
 	}
 	glUniform1i(wipe, 0);
 	glUniform1i(mixmode, 0);
@@ -4903,6 +4884,11 @@ Preferences::Preferences() {
 	pii->box->tooltiptitle = "Interface settings ";
 	pii->box->tooltip = "Left click to set interface related preferences ";
 	this->items.push_back(pii);
+	PIProg *pip = new PIProg;
+	pip->box = new Box;
+	pip->box->tooltiptitle = "Program settings ";
+	pip->box->tooltip = "Left click to set program related preferences ";
+	this->items.push_back(pip);
 	PIDirs *pidirs = new PIDirs;
 	pidirs->box = new Box;
 	pidirs->box->tooltiptitle = "Directory settings ";
@@ -5182,6 +5168,24 @@ PIDirs::PIDirs() {
 	mainprogram->recdir = pdi->path;
 	this->items.push_back(pdi);
 	pos++;
+
+	pdi = new PrefItem(this, pos, "Autosaves", PREF_PATH, (void*)&mainprogram->autosavedir);
+	pdi->namebox->tooltiptitle = "Autosaves directory ";
+	pdi->namebox->tooltip = "Project state autosaves are saved in this directory. ";
+	pdi->valuebox->tooltiptitle = "Set autosaves directory ";
+	pdi->valuebox->tooltip = "Leftclick starts keyboard entry of location of autosaves directory. ";
+	pdi->iconbox->tooltiptitle = "Browse to set autosaves directory ";
+	pdi->iconbox->tooltip = "Leftclick allows browsing for location of autosaves directory. ";
+	#ifdef _WIN64
+	pdi->path = "./autosaves/";
+	#else
+	#ifdef __linux__
+	pdi->path = homedir + "/.ewocvj2/autosaves/";
+	#endif
+	#endif
+	mainprogram->autosavedir = pdi->path;
+	this->items.push_back(pdi);
+	pos++;
 }
 
 PIMidi::PIMidi() {
@@ -5249,7 +5253,6 @@ PIVid::PIVid() {
 	pos++;
 	
 	pvi = new PrefItem(this, pos, "Output video height", PREF_NUMBER, (void*)&mainprogram->oh);
-	pvi->name = "Output video height";
 	pvi->value = 1080;
 	pvi->namebox->tooltiptitle = "Output video height ";
 	pvi->namebox->tooltip = "Sets the height in pixels of the video stream sent to the output. ";
@@ -5257,6 +5260,32 @@ PIVid::PIVid() {
 	pvi->valuebox->tooltip = "Leftclicking the value allows setting the height in pixels of the video stream sent to the output. ";
 	mainprogram->oh = pvi->value;
 	this->items.push_back(pvi);
+	pos++;
+}
+
+PIProg::PIProg() {
+	this->name = "Program";
+	PrefItem *ppi;
+	int pos = 0;
+	
+	ppi = new PrefItem(this, pos, "Autosave", PREF_ONOFF, (void*)&mainprogram->autosave);
+	ppi->onoff = 1;
+	ppi->namebox->tooltiptitle = "Autosave ";
+	ppi->namebox->tooltip = "Saves project states at specified intervals in specified directory. ";
+	ppi->valuebox->tooltiptitle = "Autosave toggle ";
+	ppi->valuebox->tooltip = "Leftclick to turn on/off autosave functionality. ";
+	mainprogram->autosave = ppi->onoff;
+	this->items.push_back(ppi);
+	pos++;
+	
+	ppi = new PrefItem(this, pos, "Autosave interval (minutes)", PREF_NUMBER, (void*)&mainprogram->asminutes);
+	ppi->value = 1;
+	ppi->namebox->tooltiptitle = "Autosave interval ";
+	ppi->namebox->tooltip = "Sets the time interval between successive autosaves. ";
+	ppi->valuebox->tooltiptitle = "Set autosave interval ";
+	ppi->valuebox->tooltip = "Leftclicking the value allows typing the autosave interval as number of minutes. ";
+	mainprogram->asminutes = ppi->value;
+	this->items.push_back(ppi);
 	pos++;
 }
 
@@ -8489,6 +8518,25 @@ void the_loop() {
 	
 	if (!mainprogram->prefon and !mainprogram->tunemidi) tooltips_handle(1.0f);
 	
+	
+	//autosave
+	if (mainmix->time > mainprogram->astimestamp + mainprogram->asminutes * 60) {
+		mainprogram->astimestamp = (int)mainmix->time;
+		
+		std::string name = "autosave_" + remove_extension(basename(mainprogram->project->path));
+		std::string path;
+		int count = 0;
+		while (1) {
+			path = mainprogram->autosavedir + name;
+			if (!exists(path + ".state")) {
+				break;
+			}
+			count++;
+			name = remove_version(name) + "_" + std::to_string(count);
+		}
+		mainmix->save_state(path);
+	}
+	
 			
 	// sync with output views
 	for (int i = 0; i < mainprogram->outputentries.size(); i++) {
@@ -10035,6 +10083,8 @@ int main(int argc, char* argv[]){
 	if (!exists("./temp")) boost::filesystem::create_directory(p4);
 	boost::filesystem::path p5{"./projects"};
 	if (!exists("./projects")) boost::filesystem::create_directory(p5);
+	boost::filesystem::path p6{"./autosaves"};
+	if (!exists("./autosaves")) boost::filesystem::create_directory(p6);
 	#else
 	#ifdef __linux__
 	std::string homedir (getenv("HOME"));
@@ -10050,6 +10100,8 @@ int main(int argc, char* argv[]){
 	if (!exists(homedir + "/.ewocvj2/temp")) boost::filesystem::create_directory(p4);
 	boost::filesystem::path p5{homedir + "/.ewocvj2/projects"};
 	if (!exists(homedir + "/.ewocvj2/projects")) boost::filesystem::create_directory(p5);
+	boost::filesystem::path p6{homedir + "/.ewocvj2/autosaves"};
+	if (!exists(homedir + "/.ewocvj2/autosaves")) boost::filesystem::create_directory(p6);
 	#endif
 	#endif
 

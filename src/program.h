@@ -145,6 +145,11 @@ class PIVid: public PrefCat {
 		PIVid();
 };
 		
+class PIProg: public PrefCat {
+	public:
+		PIProg();
+};
+		
 
 class LayMidi {
 	public:
@@ -338,6 +343,12 @@ class Program {
 		Preferences *prefs;
 		bool needsclick = false;
 		bool insmall;
+		bool showtooltips = true;
+		Box *tooltipbox = nullptr;
+		float tooltipmilli = 0.0f;
+		bool autosave;
+		int asminutes = 1;
+		int astimestamp = 0;
 		
 		std::vector<GUIString*> guistrings;
 		std::vector<GUIString*> prguistrings;
@@ -377,15 +388,12 @@ class Program {
 		std::string binsdir;
 		std::string recdir;
 		std::string shelfdir;
+		std::string autosavedir;
 		bool openshelfdir = false;
 		std::string shelfpath;
 		int shelfdircount;
 		bool shelfdrag = false;
 		Shelf *shelves[2];
-		
-		bool showtooltips = true;
-		Box *tooltipbox = nullptr;
-		float tooltipmilli = 0.0f;
 		
 		void quit(std::string msg);
 		GLuint set_shader();

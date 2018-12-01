@@ -39,8 +39,8 @@ typedef enum
 
 struct frame_result {
 	char *data = nullptr;
-	int height = 1;
-	int width = 1;
+	int height = 0;
+	int width = 0;
 	int bpp = 4;
 	int size = 0;
 	unsigned char compression = 0;
@@ -191,7 +191,6 @@ class Layer {
 		AVFrame *decframe = nullptr;
 		AVFrame *audioframe = nullptr;
 		AVPacket decpkt;
-		bool pktloaded = false;
 		int reset = 0;
 		AVPacket audiopkt;
 		AVCodecContext *video_dec_ctx = nullptr;
