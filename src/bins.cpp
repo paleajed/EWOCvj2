@@ -537,7 +537,7 @@ void BinsMain::handle() {
 								glBindTexture(GL_TEXTURE_2D, mixbinel->oldtex);
 								glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR);
 								glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
-								glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA, (int)(glob->w * 0.3f), (int)(glob->h * 0.3f), 0, GL_RGBA, GL_UNSIGNED_BYTE, nullptr);
+								glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA8, (int)(glob->w * 0.3f), (int)(glob->h * 0.3f), 0, GL_BGRA, GL_UNSIGNED_BYTE, nullptr);
 								if (k < 3) this->inserttexes[0].push_back(mixbinel->tex);
 								else this->inserttexes[1].push_back(mixbinel->tex);
 								if (k < 3) this->inserttypes[0].push_back(mixbinel->type);
@@ -813,7 +813,7 @@ void BinsMain::handle() {
 										}
 									}
 									else {
-										glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA, mainprogram->prelay->decresult->width, mainprogram->prelay->decresult->height, 0, GL_RGBA, GL_UNSIGNED_BYTE, mainprogram->prelay->decresult->data);
+										glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA8, mainprogram->prelay->decresult->width, mainprogram->prelay->decresult->height, 0, GL_BGRA, GL_UNSIGNED_BYTE, mainprogram->prelay->decresult->data);
 									}
 								}
 								glBindFramebuffer(GL_FRAMEBUFFER, mainprogram->prelay->fbo);
@@ -883,7 +883,7 @@ void BinsMain::handle() {
 										}
 									}
 									else {
-										glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA, mainprogram->prelay->decresult->width, mainprogram->prelay->decresult->height, 0, GL_RGBA, GL_UNSIGNED_BYTE, mainprogram->prelay->decresult->data);
+										glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA8, mainprogram->prelay->decresult->width, mainprogram->prelay->decresult->height, 0, GL_BGRA, GL_UNSIGNED_BYTE, mainprogram->prelay->decresult->data);
 									}
 								}
 								onestepfrom(0, mainprogram->prelay->node, nullptr, -1, -1);
@@ -949,7 +949,7 @@ void BinsMain::handle() {
 										}
 									}
 									else {
-										glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA, mainprogram->prelay->decresult->width, mainprogram->prelay->decresult->height, 0, GL_RGBA, GL_UNSIGNED_BYTE, mainprogram->prelay->decresult->data);
+										glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA8, mainprogram->prelay->decresult->width, mainprogram->prelay->decresult->height, 0, GL_BGRA, GL_UNSIGNED_BYTE, mainprogram->prelay->decresult->data);
 									}
 									draw_box(red, black, -0.2f, 0.5f, 0.4f, 0.4f, this->binelpreviewtex);
 								}
@@ -1002,7 +1002,7 @@ void BinsMain::handle() {
 										}
 									}
 									else {
-										glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA, mainprogram->prelay->decresult->width, mainprogram->prelay->decresult->height, 0, GL_RGBA, GL_UNSIGNED_BYTE, mainprogram->prelay->decresult->data);
+										glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA8, mainprogram->prelay->decresult->width, mainprogram->prelay->decresult->height, 0, GL_BGRA, GL_UNSIGNED_BYTE, mainprogram->prelay->decresult->data);
 									}
 									draw_box(red, black, -0.2f, 0.5f, 0.4f, 0.4f, this->binelpreviewtex);
 								}
@@ -1478,7 +1478,7 @@ void BinsMain::handle() {
 				
 				if (this->currbinel and lay->vidmoving and mainprogram->leftmouse) {
 					glBindTexture(GL_TEXTURE_2D, this->inputbinel->tex);
-					glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA, 8, 8, 0, GL_RGBA, GL_UNSIGNED_BYTE, nullptr);
+					glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA8, 8, 8, 0, GL_BGRA, GL_UNSIGNED_BYTE, nullptr);
 					this->currbinel->full = true;
 					if (lay->vidmoving) {
 						this->currbinel->type = ELEM_LAYER;
@@ -1917,7 +1917,7 @@ void BinsMain::get_texes(int deck) {
 		glBindTexture(GL_TEXTURE_2D, tex);
 		glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR);
 		glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
-		glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA, mainprogram->ow3, mainprogram->oh3, 0, GL_RGBA, GL_UNSIGNED_BYTE, nullptr);
+		glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA8, mainprogram->ow3, mainprogram->oh3, 0, GL_BGRA, GL_UNSIGNED_BYTE, nullptr);
 		glGenFramebuffers(1, &fbo);
 		glBindFramebuffer(GL_FRAMEBUFFER, fbo);
 		glFramebufferTexture2D(GL_FRAMEBUFFER, GL_COLOR_ATTACHMENT0, GL_TEXTURE_2D, tex, 0);
@@ -2014,7 +2014,7 @@ void BinsMain::open_handlefile(const std::string &path) {
 			}
 		}
 		else {
-			glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA, lay->decresult->width, lay->decresult->height, 0, GL_RGBA, GL_UNSIGNED_BYTE, lay->decresult->data);
+			glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA8, lay->decresult->width, lay->decresult->height, 0, GL_BGRA, GL_UNSIGNED_BYTE, lay->decresult->data);
 		}
 	}
 	GLuint endtex;

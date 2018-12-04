@@ -219,6 +219,8 @@ class Program {
 		GLuint smglobfbotex_tm;
 		GLuint smglobfbo_pr;
 		GLuint smglobfbotex_pr;
+		GLuint fbotex[4];
+		GLuint frbuf[4];
 		std::vector<OutputEntry*> outputentries;
 		std::vector<Button*> buttons;
 		Box *scrollboxes[2];
@@ -265,6 +267,8 @@ class Program {
 		float ow = 1920.0f;
 		float oh = 1080.0f;
 		float ow3, oh3;
+		float oldow = 1920.0f;
+		float oldoh = 1080.0f;
 		float layw = 0.319f;
 		float layh = 0.319f;
 		float numw = 0.041f;
@@ -294,6 +298,8 @@ class Program {
 		Button *modusbut;
 		bool prevmodus = true;
 		Param *deckspeed[2];
+		BlendNode *bnodeend;
+		BlendNode *bnodeendcomp;
 		Box *outputmonitor;
 		Box *mainmonitor;
 		Box *deckmonitor[2];
@@ -398,6 +404,7 @@ class Program {
 		void quit(std::string msg);
 		GLuint set_shader();
 		int load_shader(char* filename, char** ShaderSource, unsigned long len);
+		void set_ow3oh3();
 		void make_menu(const std::string &name, Menu *&menu, std::vector<std::string> &entries);
 		void get_outname(const char *title, std::string filters, std::string defaultdir);
 		void get_inname(const char *title, std::string filters, std::string defaultdir);

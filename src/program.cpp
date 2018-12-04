@@ -410,7 +410,16 @@ void Program::get_dir(const char *title) {
 	this->path = tinyfd_selectFolderDialog(title, "") ;
 }
 
-
+void Program::set_ow3oh3() {
+	if (mainprogram->ow > mainprogram->oh) {
+		mainprogram->ow3 = 640.0f;
+		mainprogram->oh3 = 640.0f * mainprogram->oh / mainprogram->ow;
+	}
+	else {
+		mainprogram->oh3 = 640.0f;
+		mainprogram->ow3 = 640.0f * mainprogram->ow / mainprogram->oh;
+	}
+}
 
 float Program::xscrtovtx(float scrcoord) {
 	return (scrcoord * 2.0 / (float)glob->w);
@@ -448,26 +457,6 @@ void Program::quit(std::string msg)
 
 void Program::preveff_init() {
 	std::vector<Layer*> &lvec = choose_layers(mainmix->currlay->deck);
-	if (!this->prevmodus) {
-		// normally all comp layers are copied from normal layers
-		// but when going into performance mode, its more coherent to open them in comp layers
-		for (int i = 0; i < mainmix->layersA.size(); i++) {
-			Layer *lay = mainmix->layersA[i];
-			if (lay->filename != "") {
-				Layer *laycomp = mainmix->layersAcomp[i];
-				laycomp->audioplaying = false;
-				open_video(lay->frame, laycomp, lay->filename, true);
-			}
-		}
-		for (int i = 0; i < mainmix->layersB.size(); i++) {
-			Layer *lay = mainmix->layersB[i];
-			if (lay->filename != "") {
-				Layer *laycomp = mainmix->layersBcomp[i];
-				laycomp->audioplaying = false;
-				open_video(lay->frame, laycomp, lay->filename, true);
-			}
-		}
-	}
 	int p = mainmix->currlay->pos;
 	if (p > lvec.size() - 1) p = lvec.size() - 1;
 	mainmix->currlay = lvec[p];

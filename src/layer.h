@@ -34,7 +34,8 @@ typedef enum
 typedef enum
 {
 	RATIO_OUTPUT = 0,
-	RATIO_ORIGINAL = 1,
+	RATIO_ORIGINAL_INSIDE = 1,
+	RATIO_ORIGINAL_OUTSIDE = 2,
 } RATIO_TYPE;
 
 struct frame_result {
@@ -62,6 +63,7 @@ class Layer {
 	public:
 		int pos;
 		bool deck = 0;
+		bool comp = true;
 		bool clonedeck = -1;
 		int clonepos = -1;
 		std::vector<Clip*> clips;
@@ -81,6 +83,7 @@ class Layer {
 		std::vector<Effect*>& choose_effects();
 		void set_clones();
 		void mute_handle();
+		void set_aspectratio(int lw, int lh);
 		void open_image(const std::string &path);
 		void initialize(int w, int h);
 		Layer *next();
@@ -127,7 +130,6 @@ class Layer {
 		int transmy;
 		int iw = 1;
 		int ih = 1;
-		int xs, ys;
 		int shiftx = 0;
 		int shifty = 0;
 		float scale = 1.0f;
@@ -228,6 +230,7 @@ class Scene {
 class Mixer {
 	private:
 		void do_deletelay(Layer *testlay, std::vector<Layer*> &layers, bool add);
+		void delete_layers(std::vector<Layer*> &layers, bool alive);
 		void set_values(Layer *clay, Layer *lay);
 		void loopstation_copy(bool comp);
 		void clonesets_copy(bool comp);
@@ -246,6 +249,7 @@ class Mixer {
 		void lay_copy(std::vector<Layer*> &slayers, std::vector<Layer*> &dlayers, bool comp);
 		void copy_to_comp(std::vector<Layer*> &sourcelayersA, std::vector<Layer*> &destlayersA, std::vector<Layer*> &sourcelayersB, std::vector<Layer*> &destlayersB, std::vector<Node*> &sourcenodes, std::vector<Node*> &destnodes, std::vector<MixNode*> &destmixnodes, bool comp);
 		void record_video();
+		void new_file(int decks, bool alive);
 		void save_layerfile(const std::string &path, Layer* lay, bool doclips);
 		void save_mix(const std::string &path);
 		void save_deck(const std::string &path);
@@ -302,8 +306,6 @@ class Mixer {
 		Param *adaptnumparam = nullptr;
 		bool midiisspeed = false;
 		int prevx;
-		bool compon = false;
-		bool firststage = true;
 		GLuint mixbackuptex;
 		int wipe[2] = {-1, -1};
 		int wipedir[2] = {0, 0};

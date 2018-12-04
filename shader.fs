@@ -1675,8 +1675,10 @@ void main()
 		else {
 			texco = TexCoord0.st;
 		}
+		vec2 size0 = textureSize(endSampler0, 0);
+		vec2 size1 = textureSize(endSampler1, 0);
 		tex0 = texture2D(endSampler0, texco);
-		tex1 = texture2D(endSampler1, texco);
+		tex1 = texture2D(endSampler1, vec2((texco.x - 0.5f) * size0.x / size1.x + 0.5f, (texco.y - 0.5f) * size0.y / size1.y + 0.5f));
 		tex0 = vec4(tex0.rgb * tex0.a, tex0.a);
 		tex1 = vec4(tex1.rgb * tex1.a, tex1.a);
 	}

@@ -39,7 +39,7 @@ void Program::add_main_oscmethods() {
 	mainprogram->st->add_method("/mix/output/wipe/xpos", "i", [](lo_arg **argv, int){mainmix->wipex[1] = argv[0]->i;});
 	mainprogram->st->add_method("/mix/output/wipe/ypos", "i", [](lo_arg **argv, int){mainmix->wipey[1] = argv[0]->i;});
 	// makelive, back, previewmodes
-	mainprogram->st->add_method("/mix/makelive", "", [](){mainmix->compon = true; mainmix->copy_to_comp(mainmix->layersA, mainmix->layersAcomp, mainmix->layersB, mainmix->layersBcomp, mainprogram->nodesmain->currpage->nodes, mainprogram->nodesmain->currpage->nodescomp, mainprogram->nodesmain->mixnodescomp, true);});
+	mainprogram->st->add_method("/mix/makelive", "", [](){mainmix->copy_to_comp(mainmix->layersA, mainmix->layersAcomp, mainmix->layersB, mainmix->layersBcomp, mainprogram->nodesmain->currpage->nodes, mainprogram->nodesmain->currpage->nodescomp, mainprogram->nodesmain->mixnodescomp, true);});
 	mainprogram->st->add_method("/mix/back", "", [](){mainmix->copy_to_comp(mainmix->layersAcomp, mainmix->layersA, mainmix->layersBcomp, mainmix->layersB, mainprogram->nodesmain->currpage->nodescomp, mainprogram->nodesmain->currpage->nodes, mainprogram->nodesmain->mixnodes, false);});
 	mainprogram->st->add_method("/mix/effectpreview", "i",[](lo_arg **argv, int){mainprogram->prevmodus = argv[0]->i; mainprogram->preveff_init();});
 }
