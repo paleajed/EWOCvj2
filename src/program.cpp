@@ -353,6 +353,8 @@ std::string Program::mime_to_wildcard(std::string filters) {
 }
 
 void Program::get_inname(const char *title, std::string filters, std::string defaultdir) {
+	bool as = mainprogram->autosave;
+	mainprogram->autosave = false;
 	char const* const dd = (defaultdir == "") ? "" : defaultdir.c_str();
 	#ifdef _WIN64
 	filters = this->mime_to_wildcard(filters);
@@ -365,9 +367,12 @@ void Program::get_inname(const char *title, std::string filters, std::string def
 	else {
 		this->path = tinyfd_openFileDialog(title, dd, 1, fi, nullptr, 0);
 	}
+	mainprogram->autosave = as;
 }
 
 void Program::get_outname(const char *title, std::string filters, std::string defaultdir) {
+	bool as = mainprogram->autosave;
+	mainprogram->autosave = false;
 	char const* const dd = (defaultdir == "") ? "" : defaultdir.c_str();
 	#ifdef _WIN64
 	filters = this->mime_to_wildcard(filters);
@@ -380,9 +385,12 @@ void Program::get_outname(const char *title, std::string filters, std::string de
 	else {
 		this->path = tinyfd_saveFileDialog(title, dd, 1, fi, nullptr);
 	}
+	mainprogram->autosave = as;
 }
 
 void Program::get_multinname(const char* title) {
+	bool as = mainprogram->autosave;
+	mainprogram->autosave = false;
 	const char *outpaths;
 	outpaths = tinyfd_openFileDialog(title, "", 0, nullptr, nullptr, 1);
 	if (outpaths == nullptr) {
@@ -404,10 +412,14 @@ void Program::get_multinname(const char* title) {
 	}
 	this->path = (char*)"ENTER";
 	this->counting = 0;
+	mainprogram->autosave = as;
 }
 
 void Program::get_dir(const char *title) {
+	bool as = mainprogram->autosave;
+	mainprogram->autosave = false;
 	this->path = tinyfd_selectFolderDialog(title, "") ;
+	mainprogram->autosave = as;
 }
 
 void Program::set_ow3oh3() {
@@ -617,15 +629,15 @@ void Project::open(const std::string &path) {
 	this->binsdir = dir + "bins/";
 	this->recdir = dir + "recordings/";
 	this->shelfdir = dir + "shelves/";
+	mainprogram->binsdir = this->binsdir;
+	mainprogram->recdir = this->recdir;
+	mainprogram->shelfdir = this->shelfdir;
 	int cb = binsmain->read_binslist();
 	for (int i = 0; i < binsmain->bins.size(); i++) {
 		std::string binname = this->binsdir + binsmain->bins[i]->name + ".bin";
 		if (exists(binname)) binsmain->open_bin(binname, binsmain->bins[i]);
 	}
 	binsmain->make_currbin(cb);
-	mainprogram->binsdir = this->binsdir;
-	mainprogram->recdir = this->recdir;
-	mainprogram->shelfdir = this->shelfdir;
 	
 	std::string istring;
 	getline(rfile, istring);
@@ -635,10 +647,12 @@ void Project::open(const std::string &path) {
 		if (istring == "OUTPUTWIDTH") {
 			getline(rfile, istring);
 			mainprogram->ow = std::stoi(istring);
+			mainprogram->oldow = mainprogram->ow;
 		}
 		else if (istring == "OUTPUTHEIGHT") {
 			getline(rfile, istring);
 			mainprogram->oh = std::stoi(istring);
+			mainprogram->oldoh = mainprogram->oh;
 		}
 		if (istring == "CURRSHELFA") {
 			getline(rfile, istring);
@@ -664,6 +678,7 @@ void Project::open(const std::string &path) {
 	
 	rfile.close();
 	
+	mainprogram->set_ow3oh3();
 	mainmix->open_state(result + "_0.file");
 }
 

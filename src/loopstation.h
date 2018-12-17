@@ -33,6 +33,7 @@ class LoopStation {
 									, 0.0f, 0.5f, 0.5f};
 		LoopStationElement* add_elem();
 		LoopStationElement* free_element();
+		void init();
 		void handle();
 		LoopStation();
 		

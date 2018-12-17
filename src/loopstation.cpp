@@ -26,6 +26,13 @@ LoopStation::LoopStation() {
 	}
 }
 
+void LoopStation::init() {
+	for (int i = 0; i < this->elems.size(); i++) {
+		this->elems[i]->init();
+	}
+	this->elemmap.clear();
+}
+
 LoopStationElement::LoopStationElement() {
 	this->recbut = new Button(0);
 	this->recbut->box->tooltiptitle = "Record loopstation row ";
@@ -116,6 +123,16 @@ void LoopStationElement::handle() {
 	}
 	
 	if (this->loopbut->value or this->playbut->value) this->set_params();
+}
+
+void LoopStationElement::init() {
+	this->recbut->value = 0;
+	this->loopbut->value = 0;
+	this->playbut->value = 0;
+	this->speed->value = 1.0f;
+	this->eventlist.clear();
+	this->params.clear();
+	this->layers.clear();
 }
 
 void LoopStationElement::visualize() {
@@ -257,6 +274,18 @@ void LoopStationElement::add_param() {
 			if (mainmix->adaptparam == lvec[j]->speed) this->layers.emplace(lvec[j]);
 			if (mainmix->adaptparam == lvec[j]->opacity) this->layers.emplace(lvec[j]);
 			if (mainmix->adaptparam == lvec[j]->volume) this->layers.emplace(lvec[j]);
+			if (mainmix->adaptparam == lvec[j]->shiftx) {
+				this->layers.emplace(lvec[j]);
+				mainmix->adaptparam = lvec[j]->shifty;
+				this->add_param();
+				mainmix->adaptparam = nullptr;
+				return;
+			}
+			if (mainmix->adaptparam == lvec[j]->scale) {
+				this->layers.emplace(lvec[j]);
+				mainmix->adaptparam = nullptr;
+				return;
+			}
 		}
 	}
 	mainmix->adaptparam->box->acolor[0] = this->colbox->acolor[0];

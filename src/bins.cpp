@@ -220,8 +220,6 @@ void BinsMain::handle() {
 	if (binsmain->hapmodebox->in()) {
 		if (mainprogram->leftmouse) {
 			mainprogram->threadmode = !mainprogram->threadmode;
-			mainprogram->hapnow = true;
-			mainprogram->hap.notify_all();
 			mainprogram->leftmouse = false;
 		}
 	}
@@ -407,7 +405,7 @@ void BinsMain::handle() {
 				this->bins[i]->box->vtxcoords->y1 = (i + 1) * -0.05f;
 				this->bins[i]->box->upvtxtoscr();
 			}
-			save_binslist();
+			this->save_binslist();
 		}
 		else if (k == 1) {
 			mainprogram->backupname = this->menubin->name;
@@ -470,9 +468,9 @@ void BinsMain::handle() {
 								glBindTexture(GL_TEXTURE_2D, deckbinel->oldtex);
 								glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR);
 								glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
-								glTexImage2D(GL_TEXTURE_2D, 0, GL_RGB, (int)(glob->w * 0.3f), (int)(glob->h * 0.3f), 0, GL_RGB, GL_UNSIGNED_BYTE, nullptr);
+								glTexImage2D(GL_TEXTURE_2D, 0, GL_RGB, (int)(mainprogram->ow3), (int)(mainprogram->oh3), 0, GL_RGB, GL_UNSIGNED_BYTE, nullptr);
 								this->inserttexes[0].push_back(deckbinel->tex);
-								this->inserttypes[0].push_back(deckbinel->type);
+								this->inserttypes[0].push_back(ELEM_DECK);
 								this->insertpaths[0].push_back(deckbinel->path);
 								this->insertjpegpaths[0].push_back(deckbinel->jpegpath);
 							}
@@ -530,6 +528,7 @@ void BinsMain::handle() {
 						this->currbinel = this->currbin->elements[bm->j];
 						this->previ = 0;
 						this->prevj = bm->j;
+						this->prevbinel = this->currbinel;
 						for (int j = 0; j < bm->height; j++) {
 							for (int k = 0; k < 6; k++) {
 								BinElement *mixbinel = this->currbin->elements[(bm->j + j) + (k * 24)];
@@ -537,10 +536,10 @@ void BinsMain::handle() {
 								glBindTexture(GL_TEXTURE_2D, mixbinel->oldtex);
 								glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR);
 								glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
-								glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA8, (int)(glob->w * 0.3f), (int)(glob->h * 0.3f), 0, GL_BGRA, GL_UNSIGNED_BYTE, nullptr);
+								glTexImage2D(GL_TEXTURE_2D, 0, GL_RGB, (int)(mainprogram->ow3), (int)(mainprogram->oh3), 0, GL_RGB, GL_UNSIGNED_BYTE, nullptr);
 								if (k < 3) this->inserttexes[0].push_back(mixbinel->tex);
 								else this->inserttexes[1].push_back(mixbinel->tex);
-								if (k < 3) this->inserttypes[0].push_back(mixbinel->type);
+								if (k < 3) this->inserttypes[0].push_back(ELEM_MIX);
 								else this->inserttypes[1].push_back(mixbinel->type);
 								if (k < 3) this->insertpaths[0].push_back(mixbinel->path);
 								else this->insertpaths[1].push_back(mixbinel->path);
@@ -622,7 +621,7 @@ void BinsMain::handle() {
 				glBindTexture(GL_TEXTURE_2D, mixbinel->oldtex);
 				glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR);
 				glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
-				glTexImage2D(GL_TEXTURE_2D, 0, GL_RGB, (int)(glob->w * 0.3f), (int)(glob->h * 0.3f), 0, GL_RGB, GL_UNSIGNED_BYTE, nullptr);
+				glTexImage2D(GL_TEXTURE_2D, 0, GL_RGB, (int)(mainprogram->ow3), (int)(mainprogram->oh3), 0, GL_RGB, GL_UNSIGNED_BYTE, nullptr);
 				if (m < 3) this->inserttexes[0].push_back(mixbinel->tex);
 				else this->inserttexes[1].push_back(mixbinel->tex);
 				if (m < 3) this->inserttypes[0].push_back(mixbinel->type);
@@ -763,7 +762,7 @@ void BinsMain::handle() {
 					else if (this->movingmix) {
 						if (this->movingmix->encthreads) continue;
 					}
-					if (binel->full and !this->templayers.size() and this->inserting == -1 and !lay->vidmoving) {
+					if (!binel->encwaiting and !binel->encoding and binel->full and !this->templayers.size() and this->inserting == -1 and !lay->vidmoving) {
 						if ((binel->type == ELEM_LAYER or binel->type == ELEM_DECK or binel->type == ELEM_MIX) and !this->binpreview) {
 							if (remove_extension(basename(binel->path)) != "") {
 								if (mainprogram->prelay) {
@@ -776,7 +775,7 @@ void BinsMain::handle() {
 								}
 								this->binpreview = true;
 								draw_box(red, black, -0.2f, 0.5f, 0.4f, 0.4f, -1);
-								mainprogram->prelay = new Layer(true);
+								mainprogram->prelay = new Layer(false);
 								mainprogram->prelay->dummy = true;
 								mainprogram->prelay->pos = 0;
 								mainprogram->prelay->node = mainprogram->nodesmain->currpage->add_videonode(2);
@@ -797,11 +796,14 @@ void BinsMain::handle() {
 									mainprogram->prelay->frame = 0.0f;
 									mainprogram->prelay->prevframe = -1;
 									mainprogram->prelay->ready = true;
-									mainprogram->prelay->startdecode.notify_one();
-									std::unique_lock<std::mutex> lock(mainprogram->prelay->endlock);
-									mainprogram->prelay->enddecode.wait(lock, [&]{return mainprogram->prelay->processed;});
+									while (mainprogram->prelay->ready) {
+										mainprogram->prelay->startdecode.notify_one();
+									}
+									std::unique_lock<std::mutex> lock(mainprogram->prelay->enddecodelock);
+									mainprogram->prelay->enddecodevar.wait(lock, [&]{return mainprogram->prelay->processed;});
 									mainprogram->prelay->processed = false;
 									lock.unlock();
+									mainprogram->prelay->initialized = true;
 									glActiveTexture(GL_TEXTURE0);
 									glBindTexture(GL_TEXTURE_2D, mainprogram->prelay->texture);
 									if (mainprogram->prelay->vidformat == 188 or mainprogram->prelay->vidformat == 187) {
@@ -816,23 +818,14 @@ void BinsMain::handle() {
 										glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA8, mainprogram->prelay->decresult->width, mainprogram->prelay->decresult->height, 0, GL_BGRA, GL_UNSIGNED_BYTE, mainprogram->prelay->decresult->data);
 									}
 								}
-								glBindFramebuffer(GL_FRAMEBUFFER, mainprogram->prelay->fbo);
-								glDrawBuffer(GL_COLOR_ATTACHMENT0);
-								float div = 0.3f;
-								float fac = 1.0f;
-								glDisable(GL_BLEND);
-								// put lay->texture into lay->fbo(tex)
-								draw_box(nullptr, black, -1.0f, -1.0f, 2.0f * div, 2.0f * div * fac, 0.0f, 0.0f, 1.0f, 1.0f, 0, mainprogram->prelay->texture, glob->w, glob->h);
-								glEnable(GL_BLEND);
-								glBindFramebuffer(GL_FRAMEBUFFER, mainprogram->globfbo);
-								glDrawBuffer(GL_COLOR_ATTACHMENT0);
+								mainprogram->prelay->initialized = true;
 								mainprogram->prelay->fbotex = copy_tex(mainprogram->prelay->texture);
 								onestepfrom(0, mainprogram->prelay->node, nullptr, -1, -1);
 								if (mainprogram->prelay->effects[0].size()) {
-									draw_box(red, black, -0.2f, 0.9f, 0.4f, -0.4f, mainprogram->prelay->effects[0][mainprogram->prelay->effects[0].size() - 1]->fbotex);
+									draw_box(red, black, -0.2f, 0.5f, 0.4f, 0.4f, mainprogram->prelay->effects[0][mainprogram->prelay->effects[0].size() - 1]->fbotex);
 								}
 								else {
-									draw_box(red, black, -0.2f, 0.9f, 0.4f, -0.4f, mainprogram->prelay->fbotex);
+									draw_box(red, black, -0.2f, 0.5f, 0.4f, 0.4f, mainprogram->prelay->fbotex);
 								}
 								if (!binel->encoding) {
 									if (mainprogram->prelay->vidformat == 188 or mainprogram->prelay->vidformat == 187) {
@@ -868,12 +861,14 @@ void BinsMain::handle() {
 								}
 								if (mainprogram->prelay->type != ELEM_IMAGE) {
 									mainprogram->prelay->ready = true;
-									mainprogram->prelay->startdecode.notify_one();
-									std::unique_lock<std::mutex> lock(mainprogram->prelay->endlock);
-									mainprogram->prelay->enddecode.wait(lock, [&]{return mainprogram->prelay->processed;});
+									while (mainprogram->prelay->ready) {
+										mainprogram->prelay->startdecode.notify_one();
+									}
+									std::unique_lock<std::mutex> lock(mainprogram->prelay->enddecodelock);
+									mainprogram->prelay->enddecodevar.wait(lock, [&]{return mainprogram->prelay->processed;});
 									mainprogram->prelay->processed = false;
 									lock.unlock();
-									glBindTexture(GL_TEXTURE_2D, mainprogram->prelay->fbotex);
+									glBindTexture(GL_TEXTURE_2D, mainprogram->prelay->texture);
 									if (mainprogram->prelay->vidformat == 188 or mainprogram->prelay->vidformat == 187) {
 										if (mainprogram->prelay->decresult->compression == 187) {
 											glCompressedTexImage2D(GL_TEXTURE_2D, 0, GL_COMPRESSED_RGBA_S3TC_DXT1_EXT, mainprogram->prelay->decresult->width, mainprogram->prelay->decresult->height, 0, mainprogram->prelay->decresult->size, mainprogram->prelay->decresult->data);
@@ -886,9 +881,10 @@ void BinsMain::handle() {
 										glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA8, mainprogram->prelay->decresult->width, mainprogram->prelay->decresult->height, 0, GL_BGRA, GL_UNSIGNED_BYTE, mainprogram->prelay->decresult->data);
 									}
 								}
+								mainprogram->prelay->fbotex = copy_tex(mainprogram->prelay->texture);
 								onestepfrom(0, mainprogram->prelay->node, nullptr, -1, -1);
 								if (mainprogram->prelay->effects[0].size()) {
-									draw_box(red, black, -0.2f, 0.9f, 0.4f, -0.4f, mainprogram->prelay->effects[0][mainprogram->prelay->effects[0].size() - 1]->fbotex);
+									draw_box(red, black, -0.2f, 0.5f, 0.4f, 0.4f, mainprogram->prelay->effects[0][mainprogram->prelay->effects[0].size() - 1]->fbotex);
 								}
 								else {
 									draw_box(red, black, -0.2f, 0.5f, 0.4f, 0.4f, mainprogram->prelay->fbotex);
@@ -896,7 +892,7 @@ void BinsMain::handle() {
 							}
 							else {
 								if (mainprogram->prelay->effects[0].size()) {
-									draw_box(red, black, -0.2f, 0.9f, 0.4f, -0.4f, mainprogram->prelay->effects[0][mainprogram->prelay->effects[0].size() - 1]->fbotex);
+									draw_box(red, black, -0.2f, 0.5f, 0.4f, 0.4f, mainprogram->prelay->effects[0][mainprogram->prelay->effects[0].size() - 1]->fbotex);
 								}
 								else {
 									draw_box(red, black, -0.2f, 0.5f, 0.4f, 0.4f, mainprogram->prelay->fbotex);
@@ -931,12 +927,19 @@ void BinsMain::handle() {
 								mainprogram->prelay->dummy = true;
 								if (binel->type == ELEM_FILE) {
 									open_video(1, mainprogram->prelay, binel->path, true);
+									std::unique_lock<std::mutex> olock(mainprogram->prelay->endopenlock);
+									mainprogram->prelay->endopenvar.wait(olock, [&]{return mainprogram->prelay->opened;});
+									mainprogram->prelay->opened = false;
+									olock.unlock();
+									mainprogram->prelay->initialized = true;
 									mainprogram->prelay->frame = 0.0f;
 									mainprogram->prelay->prevframe = -1;
 									mainprogram->prelay->ready = true;
-									mainprogram->prelay->startdecode.notify_one();
-									std::unique_lock<std::mutex> lock(mainprogram->prelay->endlock);
-									mainprogram->prelay->enddecode.wait(lock, [&]{return mainprogram->prelay->processed;});
+									while (mainprogram->prelay->ready) {
+										mainprogram->prelay->startdecode.notify_one();
+									}
+									std::unique_lock<std::mutex> lock(mainprogram->prelay->enddecodelock);
+									mainprogram->prelay->enddecodevar.wait(lock, [&]{return mainprogram->prelay->processed;});
 									mainprogram->prelay->processed = false;
 									lock.unlock();
 									glBindTexture(GL_TEXTURE_2D, this->binelpreviewtex);
@@ -987,9 +990,11 @@ void BinsMain::handle() {
 									}
 									//mainprogram->prelay->prevframe = -1;
 									mainprogram->prelay->ready = true;
-									mainprogram->prelay->startdecode.notify_one();
-									std::unique_lock<std::mutex> lock(mainprogram->prelay->endlock);
-									mainprogram->prelay->enddecode.wait(lock, [&]{return mainprogram->prelay->processed;});
+									while (mainprogram->prelay->ready) {
+										mainprogram->prelay->startdecode.notify_one();
+									}
+									std::unique_lock<std::mutex> lock(mainprogram->prelay->enddecodelock);
+									mainprogram->prelay->enddecodevar.wait(lock, [&]{return mainprogram->prelay->processed;});
 									mainprogram->prelay->processed = false;
 									lock.unlock();
 									glBindTexture(GL_TEXTURE_2D, this->binelpreviewtex);
@@ -1432,7 +1437,7 @@ void BinsMain::handle() {
 								boost::filesystem::remove(path);
 								BinElement *deckbinel = find_element(this->inserttexes[deck].size(), k, this->movingdeck->i, this->movingdeck->j, 1);
 								glBindTexture(GL_TEXTURE_2D, deckbinel->oldtex);
-								glTexImage2D(GL_TEXTURE_2D, 0, GL_RGB, (int)(glob->w * 0.3f), (int)(glob->h * 0.3f), 0, GL_RGB, GL_UNSIGNED_BYTE, nullptr);
+								glTexImage2D(GL_TEXTURE_2D, 0, GL_RGB, (int)(mainprogram->ow3), (int)(mainprogram->oh3), 0, GL_RGB, GL_UNSIGNED_BYTE, nullptr);
 								deckbinel->tex = deckbinel->oldtex;
 								deckbinel->path = deckbinel->oldpath;
 								deckbinel->jpegpath = deckbinel->oldjpegpath;
@@ -1456,6 +1461,8 @@ void BinsMain::handle() {
 									int newj = this->prevj;
 									if (this->prevj > 23 - (int)((size - 1) / 3)) newj = this->prevj - (int)((size - 1) / 3);
 									BinElement *deckbinel = find_element(size, k, m * 3, newj, 1);
+									glBindTexture(GL_TEXTURE_2D, deckbinel->oldtex);
+									glTexImage2D(GL_TEXTURE_2D, 0, GL_RGB, (int)(mainprogram->ow3), (int)(mainprogram->oh3), 0, GL_RGB, GL_UNSIGNED_BYTE, nullptr);
 									deckbinel->tex = deckbinel->oldtex;
 									if (this->movingstruct) {
 										deckbinel->path = deckbinel->oldpath;
@@ -1531,7 +1538,7 @@ void BinsMain::handle() {
 				}
 				if (this->currbinel and (this->inserting > -1) and mainprogram->leftmouse) {
 					
-				this->prevbinel = nullptr;
+					this->prevbinel = nullptr;
 					std::string dirname = this->currbin->name;
 					std::string name = this->currbin->name;
 					std::string binname = name;
@@ -1846,7 +1853,7 @@ Bin *BinsMain::new_bin(const std::string &name) {
 	path = mainprogram->binsdir + name + ".bin";
 	if (!exists(path)) {
 		save_bin(path);
-		save_binslist();
+		this->save_binslist();
 	}
 	boost::filesystem::path p1{mainprogram->binsdir + name};
 	boost::filesystem::create_directory(p1);
@@ -1940,8 +1947,18 @@ void BinsMain::get_texes(int deck) {
 }
 
 void BinsMain::open_binfiles() {
+	mainprogram->blocking = true;
+	if (SDL_GetMouseFocus() != mainprogram->mainwindow) {
+		SDL_SetCursor(SDL_CreateSystemCursor(SDL_SYSTEM_CURSOR_ARROW));
+	}
+	else {
+		SDL_SetCursor(SDL_CreateSystemCursor(SDL_SYSTEM_CURSOR_WAIT));
+	} 
 	if (mainprogram->counting == mainprogram->paths.size()) {
 		this->openbinfile = false;
+		mainprogram->paths.clear();
+		mainprogram->blocking = false;
+		SDL_SetCursor(SDL_CreateSystemCursor(SDL_SYSTEM_CURSOR_ARROW));
 		return;
 	}
 	std::string str = mainprogram->paths[mainprogram->counting];
@@ -1981,16 +1998,10 @@ void BinsMain::open_handlefile(const std::string &path) {
 	}
 	else {
 		open_video(1, lay, path, true);
-		lay->frame = lay->numf / 2.0f;
-		lay->prevframe = -1;
-		lay->ready = true;
-		while (lay->ready) {
-			lay->startdecode.notify_one();
-		}
-		std::unique_lock<std::mutex> lock(lay->endlock);
-		lay->enddecode.wait(lock, [&]{return lay->processed;});
-		lay->processed = false;
-		lock.unlock();
+		std::unique_lock<std::mutex> olock(lay->endopenlock);
+		lay->endopenvar.wait(olock, [&]{return lay->opened;});
+		lay->opened = false;
+		olock.unlock();
 		if (lay->openerr) {
 			printf("error!\n");
 			lay->openerr = false;
@@ -2002,9 +2013,18 @@ void BinsMain::open_handlefile(const std::string &path) {
 			//delete lay;
 			return;
 		}
+		lay->frame = lay->numf / 2.0f;
+		lay->prevframe = -1;
+		lay->ready = true;
+		while (lay->ready) {
+			lay->startdecode.notify_one();
+		}
+		std::unique_lock<std::mutex> lock2(lay->enddecodelock);
+		lay->enddecodevar.wait(lock2, [&]{return lay->processed;});
+		lay->processed = false;
+		lock2.unlock();
+		lay->initialized = true;
 		glBindTexture(GL_TEXTURE_2D, lay->texture);
-		glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR);
-		glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
 		if (lay->vidformat == 188 or lay->vidformat == 187) {
 			if (lay->decresult->compression == 187) {
 				glCompressedTexImage2D(GL_TEXTURE_2D, 0, GL_COMPRESSED_RGBA_S3TC_DXT1_EXT, lay->decresult->width, lay->decresult->height, 0, lay->decresult->size, lay->decresult->data);
@@ -2032,12 +2052,14 @@ std::tuple<std::string, std::string> BinsMain::hap_binel(BinElement *binel, BinD
 	std::string rpath = "";
 	if (binel->type == ELEM_FILE) {
 		std::thread hap (&BinsMain::hap_encode, this, binel->path, binel, nullptr, nullptr);
-		#ifdef _WIN64
-		SetThreadPriority((void*)hap.native_handle(), THREAD_PRIORITY_LOWEST);
-		#else
-		struct sched_param params;
-		params.sched_priority = sched_get_priority_min(SCHED_FIFO);		pthread_setschedparam(hap.native_handle(), SCHED_FIFO, &params);
-		#endif
+		if (!mainprogram->threadmode) {
+			#ifdef _WIN64
+			SetThreadPriority((void*)hap.native_handle(), THREAD_PRIORITY_LOWEST);
+			#else
+			struct sched_param params;
+			params.sched_priority = sched_get_priority_min(SCHED_FIFO);		pthread_setschedparam(hap.native_handle(), SCHED_FIFO, &params);
+			#endif
+		}
 		hap.detach();
 		binel->path = remove_extension(binel->path) + "_hap.mov";
 	}
@@ -2120,12 +2142,14 @@ std::tuple<std::string, std::string> BinsMain::hap_binel(BinElement *binel, BinD
 				return {apath, rpath};
  			}
 			std::thread hap (&BinsMain::hap_encode, this, path, binel, bd, bm);
-			#ifdef _WIN64
-			SetThreadPriority((void*)hap.native_handle(), THREAD_PRIORITY_LOWEST);
-			#else
-			struct sched_param params;
-			params.sched_priority = sched_get_priority_min(SCHED_FIFO);		pthread_setschedparam(hap.native_handle(), SCHED_FIFO, &params);
-			#endif
+			if (!mainprogram->threadmode) {
+				#ifdef _WIN64
+				SetThreadPriority((void*)hap.native_handle(), THREAD_PRIORITY_LOWEST);
+				#else
+				struct sched_param params;
+				params.sched_priority = sched_get_priority_min(SCHED_FIFO);		pthread_setschedparam(hap.native_handle(), SCHED_FIFO, &params);
+				#endif
+			}
 			hap.detach();
 		}
 		else printf("Can't find file to encode");
@@ -2237,7 +2261,19 @@ void BinsMain::hap_mix(BinMix * bm) {
 	this->open_bin(mainprogram->binsdir + this->currbin->name + ".bin", this->currbin);
 }	
 
-void BinsMain::hap_encode(const std::string &srcpath, BinElement *binel, BinDeck *bd, BinMix *bm) {
+void BinsMain::hap_encode(const std::string srcpath, BinElement *binel, BinDeck *bd, BinMix *bm) {
+	binel->encwaiting = true;
+	while (mainprogram->encthreads >= mainprogram->maxthreads) {
+		mainprogram->hapnow = false;
+		std::unique_lock<std::mutex> lock(mainprogram->hapmutex);
+		mainprogram->hap.wait(lock, [&]{return mainprogram->hapnow;});
+		lock.unlock();
+	}	
+	mainprogram->encthreads++;
+	binel->encwaiting = false;
+	binel->encoding = true;
+	binel->encodeprogress = 0.0f;
+	
 	// opening the source vid
 	AVFormatContext *source = nullptr;
 	AVCodecContext *source_dec_ctx;
@@ -2246,7 +2282,14 @@ void BinsMain::hap_encode(const std::string &srcpath, BinElement *binel, BinDeck
 	int source_stream_idx;
 	int numf;
 	int r = avformat_open_input(&source, srcpath.c_str(), nullptr, nullptr);
-	avformat_find_stream_info(source, nullptr);
+	if (r < 0) {
+		printf("%s\n", "Couldnt open video to encode");
+		return;
+	}
+	if (avformat_find_stream_info(source, nullptr) < 0) {
+        printf("Could not find stream information\n");
+        return;
+    }
 	open_codec_context(&source_stream_idx, source, AVMEDIA_TYPE_VIDEO);
     source_stream = source->streams[source_stream_idx];
     source_dec_cpm = source_stream->codecpar;
@@ -2268,17 +2311,6 @@ void BinsMain::hap_encode(const std::string &srcpath, BinElement *binel, BinDeck
 	}
 	numf = source_stream->nb_frames;
 	
-	binel->encwaiting = true;
-	while (mainprogram->encthreads >= mainprogram->maxthreads) {
-		mainprogram->hapnow = false;
-		std::unique_lock<std::mutex> lock(mainprogram->hapmutex);
-		mainprogram->hap.wait(lock, [&]{return mainprogram->hapnow;});
-		lock.unlock();
-	}	
-	mainprogram->encthreads++;
-	binel->encwaiting = false;
-	binel->encoding = true;
-	binel->encodeprogress = 0.0f;
 	// setting up destination vid
 	AVFormatContext *dest = avformat_alloc_context();
 	AVStream *dest_stream;
@@ -2352,9 +2384,16 @@ void BinsMain::hap_encode(const std::string &srcpath, BinElement *binel, BinDeck
 		if (pkt.stream_index != source_stream_idx) continue;
     	count++;
 		int got_frame;
-		avcodec_send_packet(source_dec_ctx, &pkt);
- 		int r = avcodec_receive_frame(source_dec_ctx, decframe);
-		if (r == AVERROR(EINVAL)) printf("EINVAL\n");
+    	while (1) {
+			avcodec_send_packet(source_dec_ctx, &pkt);
+ 			int r = avcodec_receive_frame(source_dec_ctx, decframe);
+			if (r == AVERROR(EAGAIN)) {
+				av_packet_unref(&pkt);
+				av_read_frame(source, &pkt);
+			}
+			else break;
+			if (r == AVERROR(EINVAL)) printf("EINVAL\n");
+		}
 	   	
 	   	// do pixel format conversion
 		int storage = av_image_alloc(nv12frame->data, nv12frame->linesize, nv12frame->width, nv12frame->height, c->pix_fmt, 32);

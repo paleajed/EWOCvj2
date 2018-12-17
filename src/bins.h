@@ -58,7 +58,7 @@ class BinsMain {
 		std::tuple<std::string, std::string> hap_binel(BinElement *binel, BinDeck *bd, BinMix *bm);
 		void hap_deck(BinDeck * bd);
 		void hap_mix(BinMix * bm);
-		void hap_encode(const std::string &srcpath, BinElement *binel, BinDeck *bd, BinMix *bm);
+		void hap_encode(const std::string srcpath, BinElement *binel, BinDeck *bd, BinMix *bm);
 		BinsMain();
 };
 		

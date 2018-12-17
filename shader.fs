@@ -523,10 +523,11 @@ vec4 posterize(vec4 col)  //geeks3d seems free
 
 vec4 pixelate(vec2 uv)  //selfmade
 {
-	float ph = pixel_h * 2.0f;
-    float dx = pixel_w / fboheight;
-    float dy = ph / fbowidth;
-    vec2 coord = vec2(dx * (floor(uv.x / dx) + 1), dy * floor(uv.y / dy));
+	int pw = int(pixel_w * pixel_w);
+	int ph = int(pixel_h * pixel_h);
+    float dx = 1.0f / pw;
+    float dy = 1.0f / ph;
+    vec2 coord = vec2(dx * (floor(uv.x / dx) + 0.5f), dy * (floor(uv.y / dy) + 0.5f));
     return texture2D(Sampler0, coord);
 }
 

@@ -86,6 +86,7 @@ class Layer {
 		void set_aspectratio(int lw, int lh);
 		void open_image(const std::string &path);
 		void initialize(int w, int h);
+		void initialize(int w, int h, int compression);
 		Layer *next();
 		Layer *prev();
 		Layer();
@@ -94,7 +95,7 @@ class Layer {
 		~Layer();
 		
 		bool initialized = false;
-		float frame = 0;
+		float frame = 0.0f;
 		int prevframe = -1;
 		int numf = 0;
 		float millif = 0.0f;
@@ -130,9 +131,9 @@ class Layer {
 		int transmy;
 		int iw = 1;
 		int ih = 1;
-		int shiftx = 0;
-		int shifty = 0;
-		float scale = 1.0f;
+		Param *shiftx;
+		Param *shifty;
+		Param *scale;
 		float oldscale = 1.0f;
 		float scratch = 0.0f;
 		bool scratchtouch = 0;
@@ -142,15 +143,18 @@ class Layer {
 		
 		bool dummy = 0;
 		std::mutex startlock;
-		std::mutex endlock;
+		std::mutex enddecodelock;
+		std::mutex endopenlock;
 		std::mutex chunklock;
 		std::mutex endchunklock;
 		std::mutex protect;
 		std::condition_variable startdecode;
-		std::condition_variable enddecode;
+		std::condition_variable enddecodevar;
+		std::condition_variable endopenvar;
 		std::condition_variable newchunk;
 		std::condition_variable endchunk;
 		bool processed = false;
+		bool opened = false;
 		bool ready = false;
 		bool chready = false;
 		bool endready = false;
@@ -261,6 +265,7 @@ class Mixer {
 		std::vector<std::string> write_layer(Layer *lay, std::ostream& wfile, bool doclips);
 		int read_layers(std::istream &rfile, const std::string &result, std::vector<Layer*> &layers, bool deck, int type, bool doclips, bool concat, bool load, bool loadevents);
 		void start_recording();
+		void cloneset_destroy(std::unordered_set<Layer*>* cs);
 		Mixer();
 		
 		std::mutex recordlock;
@@ -320,4 +325,5 @@ class Mixer {
 		GLuint tempbuf, temptex;
 		
 		std::vector<std::unordered_set<Layer*>*> clonesets;
+		std::unordered_map<int, Layer*> firstlayers;  //first decompressed layer per cloneset
 };

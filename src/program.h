@@ -59,7 +59,7 @@ class Shelf {
 		std::string basepath = "";
 		std::string paths[16];
 		ELEM_TYPE types[16];
-		GLuint texes[16];
+		GLuint texes[16] = {0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0};
 		Button *buttons[16];
 		void handle();
 		void erase();
@@ -236,7 +236,8 @@ class Program {
 		Menu *parammenu2 = nullptr;
 		Menu *loopmenu = nullptr;
 		Menu *deckmenu = nullptr;
-		Menu *laymenu = nullptr;
+		Menu *laymenu1 = nullptr;
+		Menu *laymenu2 = nullptr;
 		Menu *loadmenu = nullptr;
 		Menu *aspectmenu = nullptr;
 		Menu *mixtargetmenu = nullptr;
@@ -318,6 +319,7 @@ class Program {
 		lo::ServerThread *st;
 		std::unordered_map<std::string, int> wipesmap;
 		std::unordered_map<EFFECT_TYPE, std::string> effectsmap;
+		std::vector<EFFECT_TYPE> abeffects;
 		
 		SDL_Window *tunemidiwindow = nullptr;
 		bool drawnonce = false;
@@ -353,7 +355,7 @@ class Program {
 		Box *tooltipbox = nullptr;
 		float tooltipmilli = 0.0f;
 		bool autosave;
-		int asminutes = 1;
+		float asminutes = 1;
 		int astimestamp = 0;
 		
 		std::vector<GUIString*> guistrings;
@@ -472,7 +474,6 @@ extern void save_bin(const std::string &path);
 extern void open_bin(const std::string &path);
 extern Bin *new_bin(const std::string &name);
 extern int read_binslist();
-extern void save_binslist();
 extern void make_currbin(int pos);
 extern void get_texes(int deck);
 extern void save_thumb(std::string path, GLuint tex);

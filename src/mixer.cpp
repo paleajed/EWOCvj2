@@ -22,6 +22,8 @@ extern "C" {
 #include <fstream>
 #include <sstream>
 #include <ios>
+#include <list>
+#include <map>
 
 #include "node.h"
 #include "box.h"
@@ -116,7 +118,7 @@ Mixer::Mixer() {
 	this->crossfade->box->acolor[3] = 1.0f;
 	lpc->allparams.push_back(this->crossfade);
 	this->crossfadecomp = new Param;
-	this->crossfadecomp->name = "Crossfadecomp"; 
+	this->crossfadecomp->name = "Crossfade"; 
 	this->crossfadecomp->value = 0.5f;
 	this->crossfadecomp->range[0] = 0.0f;
 	this->crossfadecomp->range[1] = 1.0f;
@@ -305,9 +307,9 @@ ChromarotateEffect::ChromarotateEffect() {
 	this->numrows = 1;
 	Param *param = new Param;
 	param->name = "Amount"; 
-	param->value = -0.5;
-	param->range[0] = -0.5;
-	param->range[1] = 0.5;
+	param->value = 0.0f;
+	param->range[0] = 0.0f;
+	param->range[1] = 1.0f;
 	param->sliding = true;
 	param->shadervar = "colorrot";
 	param->effect = this;
@@ -740,9 +742,9 @@ PixelateEffect::PixelateEffect() {
 	this->numrows = 1;
 	Param *param = new Param;
 	param->name = "Width"; 
-	param->value = 64.0f;
+	param->value = 8.0f;
 	param->range[0] = 1.0f;
-	param->range[1] = 512.0f;
+	param->range[1] = 10.0f;
 	param->sliding = true;
 	param->shadervar = "pixel_w";
 	param->effect = this;
@@ -751,9 +753,9 @@ PixelateEffect::PixelateEffect() {
 	this->params.push_back(param);
 	param = new Param;
 	param->name = "Height"; 
-	param->value = 128.0f;
+	param->value = 8.0f;
 	param->range[0] = 1.0f;
-	param->range[1] = 512.0f;
+	param->range[1] = 10.0f;
 	param->sliding = true;
 	param->shadervar = "pixel_h";
 	param->effect = this;
@@ -1745,7 +1747,6 @@ Layer* Mixer::add_layer(std::vector<Layer*> &layers, int pos) {
 	if (mainprogram->prevmodus) comp = false;
 	else comp = true;
 	Layer *layer = new Layer(comp);
-	printf("comp %d\n", comp);
 	if (layers == this->layersA or layers == this->layersAcomp) layer->deck = 0;
 	else layer->deck = 1;
 	Clip *clip = new Clip;
@@ -1806,7 +1807,7 @@ Layer* Mixer::add_layer(std::vector<Layer*> &layers, int pos) {
 	}
 	else {
 		layer->blendnode = new BlendNode;
-		BlendNode *bnode = mainprogram->nodesmain->currpage->add_blendnode(MIXING, false);
+		BlendNode *bnode = mainprogram->nodesmain->currpage->add_blendnode(MIXING, comp);
 		Layer *nextlay = nullptr;
 		if (layers.size() > 1) nextlay = layers[1];
 		if (nextlay) {
@@ -1835,6 +1836,17 @@ Layer* Mixer::add_layer(std::vector<Layer*> &layers, int pos) {
 	make_layboxes();
 	
 	return layer;
+}
+
+void Mixer::cloneset_destroy(std::unordered_set<Layer*>* cs) {
+	mainmix->clonesets.erase(std::find(mainmix->clonesets.begin(), mainmix->clonesets.end(), cs));
+	for (int i = 0; i < mainmix->clonesets.size(); i++) {
+		std::unordered_set<Layer*>::iterator it;
+		for (it = mainmix->clonesets[i]->begin(); it != mainmix->clonesets[i]->end(); it++) {
+			Layer *lay = *it;
+			lay->clonesetnr = i;
+		}
+	}
 }
 
 void Mixer::do_deletelay(Layer *testlay, std::vector<Layer*> &layers, bool add) {
@@ -1869,6 +1881,7 @@ void Mixer::do_deletelay(Layer *testlay, std::vector<Layer*> &layers, bool add) 
 			testlay->clips.pop_back();
 		}
 			
+		Node *bulasteffnode1out = testlay->lasteffnode[1]->out[0];
 		while (!testlay->effects[0].empty()) {
 			mainprogram->nodesmain->currpage->delete_node(testlay->effects[0].back()->node);
 			for (int j = 0; j < testlay->effects[0].back()->params.size(); j++) {
@@ -1887,7 +1900,7 @@ void Mixer::do_deletelay(Layer *testlay, std::vector<Layer*> &layers, bool add) 
 		}
 
 		if (testlay->pos > 0 and testlay->blendnode) {
-			mainprogram->nodesmain->currpage->connect_nodes(testlay->blendnode->in, testlay->lasteffnode[1]->out[0]);
+			mainprogram->nodesmain->currpage->connect_nodes(testlay->blendnode->in, bulasteffnode1out);
 			mainprogram->nodesmain->currpage->delete_node(testlay->blendnode);
 			testlay->blendnode = 0;
 		}
@@ -1917,7 +1930,7 @@ void Mixer::do_deletelay(Layer *testlay, std::vector<Layer*> &layers, bool add) 
 	if (testlay->clonesetnr != -1) {
 		mainmix->clonesets[testlay->clonesetnr]->erase(testlay);
 		if (mainmix->clonesets[testlay->clonesetnr]->size() == 0) {
-			mainmix->clonesets.erase(mainmix->clonesets.begin() + testlay->clonesetnr);
+			mainmix->cloneset_destroy(mainmix->clonesets[testlay->clonesetnr]);
 			testlay->clonesetnr = -1;
 		}
 	}
@@ -1991,6 +2004,20 @@ Layer::Layer(bool comp) {
     this->colorbox->acolor[3] = 1.0f;
     this->colorbox->tooltiptitle = "Set colorkey color ";
     this->colorbox->tooltip = "Leftclick to set colorkey color.  Either use colorwheel or leftclick anywhere on screen.  Hovering mouse shows color that will be selected. ";
+    
+    this->shiftx = new Param;
+    this->shiftx->value = 0.0f;
+    this->shiftx->range[0] = -1000.0f;
+    this->shiftx->range[1] = 1000.0f;
+    this->shifty = new Param;
+    this->shifty->value = 0.0f;
+    this->shifty->range[0] = -1000.0f;
+    this->shifty->range[1] = 1000.0f;
+    this->scale = new Param;
+    this->scale->value = 1.0f;
+    this->scale->range[0] = 0.001f;
+    this->scale->range[1] = 1000.0f;
+    
     this->chtol = new Param;
     this->chtol->name = "Tolerance";
     this->chtol->value = 0.8f;
@@ -2117,6 +2144,10 @@ Layer::~Layer() {
 }
 
 void Layer::initialize(int w, int h) {
+	this->initialize(w, h, this->decresult->compression);
+}
+
+void Layer::initialize(int w, int h, int compression) {
 	this->iw = w;
 	this->ih = h;
 	std::vector<int> emptydata(this->iw * this->ih);
@@ -2127,22 +2158,18 @@ void Layer::initialize(int w, int h) {
 	glPixelStorei(GL_UNPACK_SKIP_PIXELS, 0);
 	glPixelStorei(GL_UNPACK_SKIP_ROWS, 0);
 	int count = 0;
-	while (1) {
-		if (this->vidformat == 188 or this->vidformat == 187) {
-			if (this->decresult->compression == 187) {
-				glTexImage2D(GL_TEXTURE_2D, 0, GL_COMPRESSED_RGBA_S3TC_DXT1_EXT, this->iw, this->ih, 0, GL_BGRA, GL_UNSIGNED_BYTE, &emptydata[0]);
-			}
-			else if (this->decresult->compression == 190) {
-				glTexImage2D(GL_TEXTURE_2D, 0, GL_COMPRESSED_RGBA_S3TC_DXT5_EXT, this->iw, this->ih, 0, GL_BGRA, GL_UNSIGNED_BYTE, &emptydata[0]);
-			}
+	if (this->vidformat == 188 or this->vidformat == 187) {
+		if (compression == 187) {
+			glTexImage2D(GL_TEXTURE_2D, 0, GL_COMPRESSED_RGBA_S3TC_DXT1_EXT, this->iw, this->ih, 0, GL_BGRA, GL_UNSIGNED_BYTE, &emptydata[0]);
 		}
-		else {
-			glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA8, this->iw, this->ih, 0, GL_BGRA, GL_UNSIGNED_BYTE, &emptydata[0]);
+		else if (compression == 190) {
+			glTexImage2D(GL_TEXTURE_2D, 0, GL_COMPRESSED_RGBA_S3TC_DXT5_EXT, this->iw, this->ih, 0, GL_BGRA, GL_UNSIGNED_BYTE, &emptydata[0]);
 		}
-		if (count == this->effects[0].size()) break;
-		glBindTexture(GL_TEXTURE_2D, this->effects[0][count]->fbotex);
-		count++;
 	}
+	else {
+		glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA8, this->iw, this->ih, 0, GL_BGRA, GL_UNSIGNED_BYTE, &emptydata[0]);
+	}
+	this->initialized = true;
 }
 
 void Layer::set_aspectratio(int lw, int lh) {
@@ -2212,6 +2239,7 @@ void Layer::set_clones() {
 		std::unordered_set<Layer*>::iterator it;
 		for (it = mainmix->clonesets[this->clonesetnr]->begin(); it != mainmix->clonesets[this->clonesetnr]->end(); it++) {
 			Layer *lay = *it;
+			if (lay == this) continue;
 			lay->speed->value = this->speed->value;
 			lay->opacity->value = this->opacity->value;
 			lay->playbut->value = this->playbut->value;
@@ -2261,9 +2289,9 @@ void Mixer::set_values(Layer *clay, Layer *lay) {
 	clay->pos = lay->pos;
 	clay->deck = lay->deck;
 	clay->aspectratio = lay->aspectratio;
-	clay->shiftx = lay->shiftx;
-	clay->shifty = lay->shifty;
-	clay->scale = lay->scale;
+	clay->shiftx->value = lay->shiftx->value;
+	clay->shifty->value = lay->shifty->value;
+	clay->scale->value = lay->scale->value;
 	clay->opacity->value = lay->opacity->value;
 	clay->volume->value = lay->volume->value;
 	clay->chtol->value = lay->chtol->value;
@@ -2272,7 +2300,10 @@ void Mixer::set_values(Layer *clay, Layer *lay) {
 	if (lay->type == ELEM_LIVE) {
 		set_live_base(clay, lay->filename);
 	}
-	else if (lay->filename != "") open_video(lay->frame, clay, lay->filename, false);
+	else if (lay->filename != "") {
+		if (lay->type == ELEM_IMAGE) clay->open_image(lay->filename);
+		else open_video(lay->frame, clay, lay->filename, false);
+	}
 	clay->millif = lay->millif;
 	clay->prevtime = lay->prevtime;
 	clay->frame = lay->frame;
@@ -2436,6 +2467,18 @@ void Mixer::lay_copy(std::vector<Layer*> &slayers, std::vector<Layer*> &dlayers,
 			clay = new Layer(true);
 		}
 		this->set_values(clay, lay);
+		lp1->parmap[lay->speed] = clay->speed;
+		lp2->allparams.push_back(clay->speed);
+		lp1->parmap[lay->opacity] = clay->opacity;
+		lp2->allparams.push_back(clay->opacity);
+		lp1->parmap[lay->volume] = clay->volume;
+		lp2->allparams.push_back(clay->volume);
+		lp1->parmap[lay->shiftx] = clay->shiftx;
+		lp2->allparams.push_back(clay->shiftx);
+		lp1->parmap[lay->shifty] = clay->shifty;
+		lp2->allparams.push_back(clay->shifty);
+		lp1->parmap[lay->scale] = clay->scale;
+		lp2->allparams.push_back(clay->scale);
 		dlayers.push_back(clay);
 		clay->pos = dlayers.size() - 1;
 		if (i == 0) { 	  
@@ -2570,6 +2613,12 @@ void Mixer::lay_copy(std::vector<Layer*> &slayers, std::vector<Layer*> &dlayers,
 						break;
 					case DITHER:
 						ceff = new DitherEffect();
+						break;
+					case FLIP:
+						ceff = new FlipEffect();
+						break;
+					case MIRROR:
+						ceff = new MirrorEffect();
 						break;
 				}
 				ceff->type = eff->type;
@@ -2797,10 +2846,10 @@ std::vector<std::string> Mixer::write_layer(Layer *lay, std::ostream& wfile, boo
 	wfile << "\n";
 	if (lay->filename != "") {
 		wfile << "WIDTH\n";
-		wfile << std::to_string(lay->video_dec_ctx->width);
+		wfile << std::to_string(lay->decresult->width);
 		wfile << "\n";
 		wfile << "HEIGHT\n";
-		wfile << std::to_string(lay->video_dec_ctx->height);
+		wfile << std::to_string(lay->decresult->height);
 		wfile << "\n";
 	}
 	wfile << "ASPECTRATIO\n";
@@ -2819,6 +2868,8 @@ std::vector<std::string> Mixer::write_layer(Layer *lay, std::ostream& wfile, boo
 		wfile << "SPEEDVAL\n";
 		wfile << std::to_string(lay->speed->value);
 		wfile << "\n";
+		wfile << "SPEEDEVENT\n";
+		mainmix->event_write(wfile, lay->speed);
 		wfile << "PLAYBUTVAL\n";
 		wfile << std::to_string(lay->playbut->value);;
 		wfile << "\n";
@@ -2836,20 +2887,30 @@ std::vector<std::string> Mixer::write_layer(Layer *lay, std::ostream& wfile, boo
 		wfile << "\n";
 	}
 	wfile << "SHIFTX\n";
-	wfile << std::to_string(lay->shiftx);
+	wfile << std::to_string(lay->shiftx->value);
 	wfile << "\n";
+	wfile << "SHIFTXEVENT\n";
+	mainmix->event_write(wfile, lay->shiftx);
 	wfile << "SHIFTY\n";
-	wfile << std::to_string(lay->shifty);
+	wfile << std::to_string(lay->shifty->value);
 	wfile << "\n";
+	wfile << "SHIFTYEVENT\n";
+	mainmix->event_write(wfile, lay->shifty);
 	wfile << "SCALE\n";
-	wfile << std::to_string(lay->scale);
+	wfile << std::to_string(lay->scale->value);
 	wfile << "\n";
+	wfile << "SCALEEVENT\n";
+	mainmix->event_write(wfile, lay->scale);
 	wfile << "OPACITYVAL\n";
 	wfile << std::to_string(lay->opacity->value);
 	wfile << "\n";
+	wfile << "OPACITYEVENT\n";
+	mainmix->event_write(wfile, lay->opacity);
 	wfile << "VOLUMEVAL\n";
 	wfile << std::to_string(lay->volume->value);
 	wfile << "\n";
+	wfile << "VOLUMEEVENT\n";
+	mainmix->event_write(wfile, lay->volume);
 	wfile << "CHTOLVAL\n";
 	wfile << std::to_string(lay->chtol->value);
 	wfile << "\n";
@@ -3282,6 +3343,9 @@ void Mixer::save_mix(const std::string &path) {
 	wfile << "DECKSPEEDA\n";
 	wfile << std::to_string(mainprogram->deckspeed[0]->value);
 	wfile << "\n";
+	wfile << "DECKSPEEDAEVENT\n";
+	par = mainprogram->deckspeed[0];
+	mainmix->event_write(wfile, par);
 	wfile << "DECKSPEEDAMIDI0\n";
 	wfile << std::to_string(mainprogram->deckspeed[0]->midi[0]);
 	wfile << "\n";
@@ -3294,6 +3358,9 @@ void Mixer::save_mix(const std::string &path) {
 	wfile << "DECKSPEEDB\n";
 	wfile << std::to_string(mainprogram->deckspeed[1]->value);
 	wfile << "\n";
+	wfile << "DECKSPEEDBEVENT\n";
+	par = mainprogram->deckspeed[1];
+	mainmix->event_write(wfile, par);
 	wfile << "DECKSPEEDBMIDI0\n";
 	wfile << std::to_string(mainprogram->deckspeed[1]->midi[0]);
 	wfile << "\n";
@@ -3353,6 +3420,9 @@ void Mixer::save_deck(const std::string &path) {
 	wfile << "DECKSPEED\n";
 	wfile << std::to_string(mainprogram->deckspeed[mainmix->mousedeck]->value);
 	wfile << "\n";
+	wfile << "DECKSPEEDEVENT\n";
+	Param *par = mainprogram->deckspeed[mainmix->mousedeck];
+	mainmix->event_write(wfile, par);
 	wfile << "DECKSPEEDMIDI0\n";
 	wfile << std::to_string(mainprogram->deckspeed[mainmix->mousedeck]->midi[0]);
 	wfile << "\n";
@@ -3433,20 +3503,55 @@ void Mixer::open_state(const std::string &path) {
 	std::string istring;
 	getline(rfile, istring);
 	
-	mainprogram->set_ow3oh3();
     glBindTexture(GL_TEXTURE_2D, mainprogram->fbotex[2]);
 	glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA8, mainprogram->ow, mainprogram->oh, 0, GL_BGRA, GL_UNSIGNED_BYTE, nullptr);
     glBindTexture(GL_TEXTURE_2D, mainprogram->fbotex[3]);
 	glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA8, mainprogram->ow, mainprogram->oh, 0, GL_BGRA, GL_UNSIGNED_BYTE, nullptr);
+	if (mainprogram->bnodeend->fbo == -1) {
+		glGenTextures(1, &mainprogram->bnodeend->fbotex);
+ 		glBindTexture(GL_TEXTURE_2D, mainprogram->bnodeend->fbotex);
+		glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR);
+		glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
+		glGenFramebuffers(1, &(mainprogram->bnodeend->fbo));
+		glBindFramebuffer(GL_FRAMEBUFFER, mainprogram->bnodeend->fbo);
+		glFramebufferTexture2D(GL_FRAMEBUFFER, GL_COLOR_ATTACHMENT0, GL_TEXTURE_2D, mainprogram->bnodeend->fbotex, 0);
+	}
+	if (mainprogram->bnodeendcomp->fbo == -1) {
+		glGenTextures(1, &mainprogram->bnodeendcomp->fbotex);
+ 		glBindTexture(GL_TEXTURE_2D, mainprogram->bnodeendcomp->fbotex);
+		glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR);
+		glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
+		glGenFramebuffers(1, &(mainprogram->bnodeendcomp->fbo));
+		glBindFramebuffer(GL_FRAMEBUFFER, mainprogram->bnodeendcomp->fbo);
+		glFramebufferTexture2D(GL_FRAMEBUFFER, GL_COLOR_ATTACHMENT0, GL_TEXTURE_2D, mainprogram->bnodeendcomp->fbotex, 0);
+	}
     glBindTexture(GL_TEXTURE_2D, mainprogram->bnodeend->fbotex);
 	glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA8, mainprogram->ow, mainprogram->oh, 0, GL_BGRA, GL_UNSIGNED_BYTE, nullptr);
-    glBindTexture(GL_TEXTURE_2D, mainprogram->bnodeend->fbotex);
+    glBindTexture(GL_TEXTURE_2D, mainprogram->bnodeendcomp->fbotex);
 	glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA8, mainprogram->ow, mainprogram->oh, 0, GL_BGRA, GL_UNSIGNED_BYTE, nullptr);
 	for (int i = 0; i < mainprogram->nodesmain->mixnodes.size(); i++) {
+		if (mainprogram->nodesmain->mixnodes[i]->mixfbo == -1) {
+			glGenTextures(1, &mainprogram->nodesmain->mixnodes[i]->mixtex);
+			glBindTexture(GL_TEXTURE_2D, mainprogram->nodesmain->mixnodes[i]->mixtex);
+			glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR);
+			glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
+			glGenFramebuffers(1, &(mainprogram->nodesmain->mixnodes[i]->mixfbo));
+			glBindFramebuffer(GL_FRAMEBUFFER, mainprogram->nodesmain->mixnodes[i]->mixfbo);
+			glFramebufferTexture2D(GL_FRAMEBUFFER, GL_COLOR_ATTACHMENT0, GL_TEXTURE_2D, mainprogram->nodesmain->mixnodes[i]->mixtex, 0);
+		}
 		glBindTexture(GL_TEXTURE_2D, mainprogram->nodesmain->mixnodes[i]->mixtex);
 		glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA8, mainprogram->ow3, mainprogram->oh3, 0, GL_BGRA, GL_UNSIGNED_BYTE, nullptr);
 	}
 	for (int i = 0; i < mainprogram->nodesmain->mixnodescomp.size(); i++) {
+		if (mainprogram->nodesmain->mixnodescomp[i]->mixfbo == -1) {
+			glGenTextures(1, &mainprogram->nodesmain->mixnodescomp[i]->mixtex);
+			glBindTexture(GL_TEXTURE_2D, mainprogram->nodesmain->mixnodescomp[i]->mixtex);
+			glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR);
+			glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
+			glGenFramebuffers(1, &(mainprogram->nodesmain->mixnodescomp[i]->mixfbo));
+			glBindFramebuffer(GL_FRAMEBUFFER, mainprogram->nodesmain->mixnodescomp[i]->mixfbo);
+			glFramebufferTexture2D(GL_FRAMEBUFFER, GL_COLOR_ATTACHMENT0, GL_TEXTURE_2D, mainprogram->nodesmain->mixnodescomp[i]->mixtex, 0);
+		}
 		glDeleteTextures(1, &mainprogram->nodesmain->mixnodescomp[i]->mixtex);
 		glDeleteFramebuffers(1, &mainprogram->nodesmain->mixnodescomp[i]->mixfbo);
 		glGenTextures(1, &mainprogram->nodesmain->mixnodescomp[i]->mixtex);
@@ -3458,7 +3563,6 @@ void Mixer::open_state(const std::string &path) {
 		glBindFramebuffer(GL_FRAMEBUFFER, mainprogram->nodesmain->mixnodescomp[i]->mixfbo);
 		glFramebufferTexture2D(GL_FRAMEBUFFER, GL_COLOR_ATTACHMENT0, GL_TEXTURE_2D, mainprogram->nodesmain->mixnodescomp[i]->mixtex, 0);
 	}
-	
 	mainprogram->shelves[0]->open(result + "_0.file");
 	mainprogram->shelves[1]->open(result + "_1.file");
 	mainprogram->prevmodus = true;
@@ -3514,6 +3618,7 @@ void Mixer::open_state(const std::string &path) {
 			mainprogram->modusbut->midiport = istring;
 		}
 	}
+	
 	rfile.close();
 }
 
@@ -3632,19 +3737,18 @@ void Mixer::open_mix(const std::string &path) {
 			mainmix->read_layers(rfile, result, layersB, 1, 2, concat, 1, 1, 1);
 			mainprogram->filecount = 0;
 		}
-		std::vector<int> map;
+		std::map<int, int> map;
 		for (int m = 0; m < 2; m++) {
 			std::vector<Layer*> &layers = choose_layers(m);
 			for (int i = 0; i < layers.size(); i++) {
 				if (layers[i]->clonesetnr != -1) {
-					int pos = std::find(map.begin(), map.end(), layers[i]->clonesetnr) - map.begin();
-					if (pos == map.size()) {
+					if (map.count(layers[i]->clonesetnr) == 0) {
 						std::unordered_set<Layer*> *uset = new std::unordered_set<Layer*>;
 						mainmix->clonesets.push_back(uset);
-						map.push_back(layers[i]->clonesetnr);
+						map[layers[i]->clonesetnr] = mainmix->clonesets.size() - 1;
 						layers[i]->clonesetnr = mainmix->clonesets.size() - 1;
 					}
-					else layers[i]->clonesetnr = pos;
+					else layers[i]->clonesetnr = map[layers[i]->clonesetnr];
 					mainmix->clonesets[layers[i]->clonesetnr]->emplace(layers[i]);
 				}
 			}
@@ -3695,20 +3799,16 @@ void Mixer::open_deck(const std::string &path, bool alive) {
 	loopstation->readelemnrs.clear();
 	std::vector<Layer*> &layers = choose_layers(mainmix->mousedeck);
 	mainmix->read_layers(rfile, result, layers, mainmix->mousedeck, 1, 1, concat, 1, 1);
-	std::vector<int> map;
-	for (int i = 0; i < mainmix->clonesets.size(); i++) {
-		map.push_back(i);
-	}
+	std::map<int, int> map;
 	for (int i = 0; i < layers.size(); i++) {
 		if (layers[i]->clonesetnr != -1) {
-			int pos = std::find(map.begin(), map.end(), layers[i]->clonesetnr) - map.begin();
-			if (pos == map.size()) {
+			if (map.count(layers[i]->clonesetnr) == 0) {
 				std::unordered_set<Layer*> *uset = new std::unordered_set<Layer*>;
 				mainmix->clonesets.push_back(uset);
-				map.push_back(layers[i]->clonesetnr);
+				map[layers[i]->clonesetnr] = mainmix->clonesets.size() - 1;
 				layers[i]->clonesetnr = mainmix->clonesets.size() - 1;
 			}
-			else layers[i]->clonesetnr = pos;
+			else layers[i]->clonesetnr = map[layers[i]->clonesetnr];
 			mainmix->clonesets[layers[i]->clonesetnr]->emplace(layers[i]);
 		}
 	}
@@ -3729,6 +3829,13 @@ int Mixer::read_layers(std::istream &rfile, const std::string &result, std::vect
 		if (istring == "DECKSPEED") {
 			getline(rfile, istring);
 			mainprogram->deckspeed[deck]->value = std::stof(istring);
+		}
+		if (istring == "DECKSPEEDEVENT") {
+			Param *par = mainprogram->deckspeed[deck];
+			getline(rfile, istring);
+			if (istring == "EVENTELEM") {
+				mainmix->event_read(rfile, par, lay);
+			}
 		}
 		if (istring == "DECKSPEEDMIDI0") {
 			getline(rfile, istring);
@@ -3779,7 +3886,7 @@ int Mixer::read_layers(std::istream &rfile, const std::string &result, std::vect
 						}
 					}
 					else if (lay->type == ELEM_FILE or lay->type == ELEM_LAYER) {
-						open_video(lay->frame, lay, lay->filename, false);
+						open_video(-1, lay, lay->filename, false);
 					}
 					else if (lay->type == ELEM_IMAGE) {
 						lay->open_image(lay->filename);
@@ -3795,7 +3902,7 @@ int Mixer::read_layers(std::istream &rfile, const std::string &result, std::vect
 					lay->filename = boost::filesystem::absolute(istring).string();
 					lay->timeinit = false;
 					if (lay->type == ELEM_FILE or lay->type == ELEM_LAYER) {
-						open_video(lay->frame, lay, lay->filename, false);
+						open_video(-1, lay, lay->filename, false);
 					}
 					else if (lay->type == ELEM_IMAGE) {
 						lay->open_image(lay->filename);
@@ -3831,6 +3938,13 @@ int Mixer::read_layers(std::istream &rfile, const std::string &result, std::vect
 			getline(rfile, istring); 
 			lay->speed->value = std::stof(istring);
 		}
+		if (istring == "SPEEDEVENT") {
+			Param *par = lay->speed;
+			getline(rfile, istring);
+			if (istring == "EVENTELEM") {
+				mainmix->event_read(rfile, par, lay);
+			}
+		}
 		if (istring == "PLAYBUTVAL") {
 			getline(rfile, istring); 
 			lay->playbut->value = std::stoi(istring);
@@ -3853,23 +3967,58 @@ int Mixer::read_layers(std::istream &rfile, const std::string &result, std::vect
 		}
 		if (istring == "SHIFTX") {
 			getline(rfile, istring); 
-			lay->shiftx = std::stoi(istring);
+			lay->shiftx->value = std::stoi(istring);
+		}
+		if (istring == "SHIFTXEVENT") {
+			Param *par = lay->shiftx;
+			getline(rfile, istring);
+			if (istring == "EVENTELEM") {
+				mainmix->event_read(rfile, par, lay);
+			}
 		}
 		if (istring == "SHIFTY") {
 			getline(rfile, istring); 
-			lay->shifty = std::stoi(istring);
+			lay->shifty->value = std::stoi(istring);
+		}
+		if (istring == "SHIFTYEVENT") {
+			Param *par = lay->shifty;
+			getline(rfile, istring);
+			if (istring == "EVENTELEM") {
+				mainmix->event_read(rfile, par, lay);
+			}
 		}
 		if (istring == "SCALE") {
 			getline(rfile, istring);
-			lay->scale = std::stof(istring);
+			lay->scale->value = std::stof(istring);
+		}
+		if (istring == "SCALEEVENT") {
+			Param *par = lay->scale;
+			getline(rfile, istring);
+			if (istring == "EVENTELEM") {
+				mainmix->event_read(rfile, par, lay);
+			}
 		}
 		if (istring == "OPACITYVAL") {
 			getline(rfile, istring); 
 			lay->opacity->value = std::stof(istring);
 		}
+		if (istring == "OPACITYEVENT") {
+			Param *par = lay->opacity;
+			getline(rfile, istring);
+			if (istring == "EVENTELEM") {
+				mainmix->event_read(rfile, par, lay);
+			}
+		}
 		if (istring == "VOLUMEVAL") {
 			getline(rfile, istring); 
 			lay->volume->value = std::stof(istring);
+		}
+		if (istring == "VOLUMEEVENT") {
+			Param *par = lay->volume;
+			getline(rfile, istring);
+			if (istring == "EVENTELEM") {
+				mainmix->event_read(rfile, par, lay);
+			}
 		}
 		if (istring == "CHTOLVAL") {
 			getline(rfile, istring); 
@@ -3978,7 +4127,7 @@ int Mixer::read_layers(std::istream &rfile, const std::string &result, std::vect
 						glBindTexture(GL_TEXTURE_2D, clip->tex);
 						glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR);
 						glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
-						glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA8, (int)(glob->w * 0.3f), (int)(glob->h * 0.3f), 0, GL_BGRA, GL_UNSIGNED_BYTE, nullptr);
+						glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA8, (int)(mainprogram->ow3), (int)(mainprogram->oh3), 0, GL_BGRA, GL_UNSIGNED_BYTE, nullptr);
 						if (concat) {
 							boost::filesystem::rename(result + "_" + std::to_string(jpegcount) + ".file", result + "_" + std::to_string(jpegcount) + ".jpeg");
 							open_thumb(result + "_" + std::to_string(jpegcount) + ".jpeg", clip->tex);
@@ -4166,7 +4315,7 @@ int Mixer::read_layers(std::istream &rfile, const std::string &result, std::vect
 		}
 		if (istring == "EFFCAT") {
 			getline(rfile, istring);
-			mainprogram->effcat[lay->deck]->value = std::stoi(istring);
+			mainprogram->effcat[lay->deck]->value = std::atoi(istring.c_str());
 		}
 	}
 	
@@ -4394,7 +4543,9 @@ void Mixer::start_recording() {
 	this->rgbdata = glMapBuffer(GL_PIXEL_PACK_BUFFER_ARB, GL_READ_ONLY);
 	//assert(this->rgbdata);
 	this->recordnow = true;
-	this->startrecord.notify_one();
+	while (this->recordnow) {
+		this->startrecord.notify_one();
+	}
 	glBindFramebuffer(GL_FRAMEBUFFER, mainprogram->globfbo);
 	glDrawBuffer(GL_COLOR_ATTACHMENT0);
 }
