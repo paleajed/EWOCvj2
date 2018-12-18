@@ -11,6 +11,7 @@
 #include <AL/al.h>
 #include <AL/alc.h>
 #include <AL/alext.h>
+#include "IL/il.h"
 
 extern "C" {
 #include "libavformat/avformat.h"
@@ -42,7 +43,6 @@ struct frame_result {
 	char *data = nullptr;
 	int height = 0;
 	int width = 0;
-	int bpp = 4;
 	int size = 0;
 	unsigned char compression = 0;
 };
@@ -140,6 +140,8 @@ class Layer {
 		bool vidmoving = false;
 		bool live = false;
 		Layer *liveinput = nullptr;
+		int imagenum = 0;
+		ILuint boundimage = -1;
 		
 		bool dummy = 0;
 		std::mutex startlock;

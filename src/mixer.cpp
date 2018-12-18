@@ -2213,25 +2213,31 @@ void Layer::set_aspectratio(int lw, int lh) {
 }
 
 void Layer::open_image(const std::string &path) {
+	this->vidopen = true;
+	ilEnable(IL_CONV_PAL);
+	if (this->boundimage != -1) {
+		glDeleteTextures(1, &this->boundimage);
+		this->boundimage = -1;
+	}
+	ilGenImages(1, &this->boundimage);
+	ilBindImage(this->boundimage);
 	ILboolean ret = ilLoadImage(path.c_str());
-	if (ret == IL_FALSE) return;
-	this->filename = path;
-	this->vidformat = -1;
+	if (ret == IL_FALSE) {
+		printf("can't load image %s\n", path.c_str());
+		return;
+	}
+	this->numf = ilGetInteger(IL_NUM_IMAGES);
+	this->frame = 0.0f;
+	this->startframe = 0;
+	this->endframe = this->numf - 1;
 	int w = ilGetInteger(IL_IMAGE_WIDTH);
 	int h = ilGetInteger(IL_IMAGE_HEIGHT);
-	int bpp = ilGetInteger(IL_IMAGE_BPP);
+	this->filename = path;
+	this->vidformat = -1;
 	this->initialize(w, h);
 	this->type = ELEM_IMAGE;
-	this->decresult->width = w;
-	this->decresult->height = h;
 		
-	glBindTexture(GL_TEXTURE_2D, this->texture);
-	if (bpp == 3) {
-		glTexSubImage2D(GL_TEXTURE_2D, 0, 0, 0, w, h, GL_RGB, GL_UNSIGNED_BYTE, (char*)ilGetData());
-	}
-	else if (bpp == 4) {
-		glTexSubImage2D(GL_TEXTURE_2D, 0, 0, 0, w, h, GL_BGRA, GL_UNSIGNED_BYTE, (char*)ilGetData());
-	}
+	this->vidopen = false;
 }
 
 void Layer::set_clones() {

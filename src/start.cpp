@@ -901,7 +901,6 @@ static int decode_packet(Layer *lay, int *got_frame)
 			lay->decresult->data = (char*)*(lay->rgbframe->extended_data);
 			lay->decresult->height = lay->video_dec_ctx->height;
 			lay->decresult->width = lay->video_dec_ctx->width;
-			lay->decresult->bpp = 4;
        }
     } 
     else if (lay->decpkt.stream_index == lay->audio_stream_idx) {
@@ -1252,6 +1251,10 @@ void Layer::get_frame(){
 }
 
 void open_video(float frame, Layer *lay, const std::string &filename, int reset) {
+	if (lay->boundimage != -1) {
+		glDeleteTextures(1, &lay->boundimage);
+		lay->boundimage = -1;
+	}
 	lay->video_dec_ctx = nullptr;
 	lay->audioplaying = false;
 	if (lay->effects[0].size() == 0) lay->type = ELEM_FILE;
@@ -2180,6 +2183,7 @@ void calc_texture(Layer *lay, bool comp, bool alive) {
 	else {
 		lay->timeinit = true;
 		lay->prevtime = now;
+		return;
 	}
 	long long microcount = std::chrono::duration_cast<std::chrono::microseconds>(elapsed).count();
 	lay->prevtime = now;
@@ -2189,166 +2193,167 @@ void calc_texture(Layer *lay, bool comp, bool alive) {
 		mainprogram->tooltipmilli += thismilli;
 	} 
 		
-	if (lay->type != ELEM_IMAGE) {
-		if (lay->type != ELEM_LIVE) {
-			if (!lay->vidopen) {
-				// calculate and visualize fps
-				lay->fps[lay->fpscount] = (int)(1000.0f / thismilli);
-				int total = 0;
-				for (int i = 0; i < 25; i++) total += lay->fps[i];
-				int rate = total / 25;
-				float white[] = {1.0f, 1.0f, 1.0f, 1.0f};
-				std::string s = std::to_string(rate);
-				render_text(s, white, 0.01f, 0.47f, 0.0006f, 0.001f);
-				lay->fpscount++;
-				if (lay->fpscount > 24) lay->fpscount = 0;
-		
-				lay->frame = lay->frame + laynocomp->scratch;
-				laynocomp->scratch = 0;
-				// calculate new frame numbers
-				float fac = mainprogram->deckspeed[laynocomp->deck]->value;
-				if (laynocomp->clonesetnr != -1) {
-					std::unordered_set<Layer*>::iterator it;
-					for (it = mainmix->clonesets[laynocomp->clonesetnr]->begin(); it != mainmix->clonesets[laynocomp->clonesetnr]->end(); it++) {
-						Layer *l = *it;
-						if (l->deck == !laynocomp->deck) {
-							fac *= mainprogram->deckspeed[!laynocomp->deck]->value;
-							break;
-						}
+	if (lay->type != ELEM_LIVE) {
+		if (!lay->vidopen) {
+			// calculate and visualize fps
+			lay->fps[lay->fpscount] = (int)(1000.0f / thismilli);
+			int total = 0;
+			for (int i = 0; i < 25; i++) total += lay->fps[i];
+			int rate = total / 25;
+			float white[] = {1.0f, 1.0f, 1.0f, 1.0f};
+			std::string s = std::to_string(rate);
+			render_text(s, white, 0.01f, 0.47f, 0.0006f, 0.001f);
+			lay->fpscount++;
+			if (lay->fpscount > 24) lay->fpscount = 0;
+	
+			lay->frame = lay->frame + laynocomp->scratch;
+			laynocomp->scratch = 0;
+			// calculate new frame numbers
+			float fac = mainprogram->deckspeed[laynocomp->deck]->value;
+			if (laynocomp->clonesetnr != -1) {
+				std::unordered_set<Layer*>::iterator it;
+				for (it = mainmix->clonesets[laynocomp->clonesetnr]->begin(); it != mainmix->clonesets[laynocomp->clonesetnr]->end(); it++) {
+					Layer *l = *it;
+					if (l->deck == !laynocomp->deck) {
+						fac *= mainprogram->deckspeed[!laynocomp->deck]->value;
+						break;
 					}
 				}
-				if ((laynocomp->speed->value > 0 and (laynocomp->playbut->value or laynocomp->bouncebut->value == 1)) or (laynocomp->speed->value < 0 and (laynocomp->revbut->value or laynocomp->bouncebut->value == 2))) {
-					lay->frame += !laynocomp->scratchtouch * laynocomp->speed->value * fac * fac *  laynocomp->speed->value * thismilli / lay->millif;
-					if (lay->pos == 2) printf("FRAME %f\n", lay->frame);
-				}
-				else if ((laynocomp->speed->value > 0 and (laynocomp->revbut->value or laynocomp->bouncebut->value == 2)) or (laynocomp->speed->value < 0 and (laynocomp->playbut->value or laynocomp->bouncebut->value == 1))) {
-					lay->frame -= !laynocomp->scratchtouch * laynocomp->speed->value * fac * fac *  laynocomp->speed->value * thismilli / lay->millif;
-				}
-				
-				// on end of video (or beginning if reverse play) switch to next clip in queue
-				if (lay->frame > (laynocomp->endframe)) {
-					if (lay->scritching != 4) {
-						if (laynocomp->bouncebut->value == 0) {
-							lay->frame = laynocomp->startframe;
-							if (lay->clips.size() > 1) {
-								Clip *clip = lay->clips[0];
-								lay->clips.erase(lay->clips.begin());
-								VideoNode *node = lay->node;
-								ELEM_TYPE temptype = lay->type;
-								std::string tpath;
-								GLuint temptex;
-								if (temptype == ELEM_LAYER and lay->effects[0].size()) {
-									temptex = copy_tex(node->vidbox->tex);
-									std::string name = remove_extension(basename(lay->filename));
-									int count = 0;
-									while (1) {
-										tpath = mainprogram->temppath + "cliptemp_" + name + ".layer";
-										if (!exists(tpath)) {
-											mainmix->save_layerfile(tpath, lay, 0);
-											break;
-										}
-										count++;
-										name = remove_version(name) + "_" + std::to_string(count);
+			}
+			if (lay->type == ELEM_IMAGE) {
+				ilBindImage(lay->boundimage);
+				lay->millif = ilGetInteger(IL_IMAGE_DURATION);
+			}
+			if ((laynocomp->speed->value > 0 and (laynocomp->playbut->value or laynocomp->bouncebut->value == 1)) or (laynocomp->speed->value < 0 and (laynocomp->revbut->value or laynocomp->bouncebut->value == 2))) {
+				lay->frame += !laynocomp->scratchtouch * laynocomp->speed->value * fac * fac *  laynocomp->speed->value * thismilli / lay->millif;
+			}
+			else if ((laynocomp->speed->value > 0 and (laynocomp->revbut->value or laynocomp->bouncebut->value == 2)) or (laynocomp->speed->value < 0 and (laynocomp->playbut->value or laynocomp->bouncebut->value == 1))) {
+				lay->frame -= !laynocomp->scratchtouch * laynocomp->speed->value * fac * fac *  laynocomp->speed->value * thismilli / lay->millif;
+			}
+			
+			// on end of video (or beginning if reverse play) switch to next clip in queue
+			if (lay->frame > (laynocomp->endframe)) {
+				if (lay->scritching != 4) {
+					if (laynocomp->bouncebut->value == 0) {
+						lay->frame = laynocomp->startframe;
+						if (lay->clips.size() > 1) {
+							Clip *clip = lay->clips[0];
+							lay->clips.erase(lay->clips.begin());
+							VideoNode *node = lay->node;
+							ELEM_TYPE temptype = lay->type;
+							std::string tpath;
+							GLuint temptex;
+							if (temptype == ELEM_LAYER and lay->effects[0].size()) {
+								temptex = copy_tex(node->vidbox->tex);
+								std::string name = remove_extension(basename(lay->filename));
+								int count = 0;
+								while (1) {
+									tpath = mainprogram->temppath + "cliptemp_" + name + ".layer";
+									if (!exists(tpath)) {
+										mainmix->save_layerfile(tpath, lay, 0);
+										break;
 									}
+									count++;
+									name = remove_version(name) + "_" + std::to_string(count);
 								}
-								else if (temptype == ELEM_LIVE) {
-									temptex = copy_tex(node->vidbox->tex);
-									temptype = ELEM_LIVE;
-									tpath = lay->filename;
-								}
-								else {
-									temptex = copy_tex(lay->fbotex);
-									temptype = ELEM_FILE;
-									tpath = lay->filename;
-								}
-								if (clip->type == ELEM_FILE) {
-									lay->type = ELEM_FILE;
-									open_video(0, lay, clip->path, 1);
-								}
-								else if (clip->type == ELEM_LAYER) {
-									lay->type = ELEM_LAYER;
-									mainmix->open_layerfile(clip->path, lay, 1, 0);
-								}
-								else if (clip->type == ELEM_LIVE) {
-									set_live_base(lay, clip->path);
-								}
-								lay->type = clip->type;
-								delete clip;
-								clip = new Clip;
-								clip->tex = temptex;
-								clip->type = temptype;
-								clip->path = tpath;
-								lay->clips.insert(lay->clips.end() - 1, clip);
 							}
-						}
-						else {
-							lay->frame = laynocomp->endframe - (lay->frame - laynocomp->endframe);
-							laynocomp->bouncebut->value = 2;
+							else if (temptype == ELEM_LIVE) {
+								temptex = copy_tex(node->vidbox->tex);
+								temptype = ELEM_LIVE;
+								tpath = lay->filename;
+							}
+							else {
+								temptex = copy_tex(lay->fbotex);
+								temptype = ELEM_FILE;
+								tpath = lay->filename;
+							}
+							if (clip->type == ELEM_FILE) {
+								lay->type = ELEM_FILE;
+								open_video(0, lay, clip->path, 1);
+							}
+							else if (clip->type == ELEM_LAYER) {
+								lay->type = ELEM_LAYER;
+								mainmix->open_layerfile(clip->path, lay, 1, 0);
+							}
+							else if (clip->type == ELEM_LIVE) {
+								set_live_base(lay, clip->path);
+							}
+							lay->type = clip->type;
+							delete clip;
+							clip = new Clip;
+							clip->tex = temptex;
+							clip->type = temptype;
+							clip->path = tpath;
+							lay->clips.insert(lay->clips.end() - 1, clip);
 						}
 					}
+					else {
+						lay->frame = laynocomp->endframe - (lay->frame - laynocomp->endframe);
+						laynocomp->bouncebut->value = 2;
+					}
 				}
-				else if (lay->frame < laynocomp->startframe) {
-					if (lay->scritching != 4) {
-						if (laynocomp->bouncebut->value == 0) {
-							lay->frame = laynocomp->endframe;
-							if (lay->clips.size() > 1) {
-								Clip *clip = lay->clips[0];
-								lay->clips.erase(lay->clips.begin());
-								VideoNode *node = lay->node;
-								GLuint temptex = copy_tex(node->vidbox->tex);
-								ELEM_TYPE temptype;
-								std::string tpath;
-								if (lay->effects[0].size()) {
-									temptype = ELEM_LAYER;
-									std::string name = remove_extension(basename(lay->filename));
-									int count = 0;
-									while (1) {
-										tpath = mainprogram->binsdir + "temp_" + name + ".layer";
-										if (!exists(tpath)) {
-											mainmix->save_layerfile(tpath, lay, 0);
-											break;
-										}
-										count++;
-										name = remove_version(name) + "_" + std::to_string(count);
+			}
+			else if (lay->frame < laynocomp->startframe) {
+				if (lay->scritching != 4) {
+					if (laynocomp->bouncebut->value == 0) {
+						lay->frame = laynocomp->endframe;
+						if (lay->clips.size() > 1) {
+							Clip *clip = lay->clips[0];
+							lay->clips.erase(lay->clips.begin());
+							VideoNode *node = lay->node;
+							GLuint temptex = copy_tex(node->vidbox->tex);
+							ELEM_TYPE temptype;
+							std::string tpath;
+							if (lay->effects[0].size()) {
+								temptype = ELEM_LAYER;
+								std::string name = remove_extension(basename(lay->filename));
+								int count = 0;
+								while (1) {
+									tpath = mainprogram->binsdir + "temp_" + name + ".layer";
+									if (!exists(tpath)) {
+										mainmix->save_layerfile(tpath, lay, 0);
+										break;
 									}
+									count++;
+									name = remove_version(name) + "_" + std::to_string(count);
 								}
-								else if (temptype == ELEM_LIVE) {
-									temptex = copy_tex(node->vidbox->tex);
-									temptype = ELEM_LIVE;
-									tpath = lay->filename;
-								}
-								else {
-									temptype = ELEM_FILE;
-									tpath = lay->filename;
-								}
-								if (clip->type == ELEM_FILE) {
-									lay->type = ELEM_FILE;
-									open_video(0, lay, clip->path, 2);
-								}
-								else if (clip->type == ELEM_LAYER) {
-									lay->type = ELEM_LAYER;
-									mainmix->open_layerfile(clip->path, lay, 1, 0);
-								}
-								else if (clip->type == ELEM_LIVE) {
-									set_live_base(lay, clip->path);
-								}
-								delete clip;
-								clip = new Clip;
-								clip->tex = temptex;
-								clip->type = temptype;
-								clip->path = tpath;
-								lay->clips.insert(lay->clips.end() - 1, clip);
 							}
-						}
-						else {
-							lay->frame = laynocomp->startframe + (laynocomp->startframe - lay->frame);
-							laynocomp->bouncebut->value = 1;
+							else if (temptype == ELEM_LIVE) {
+								temptex = copy_tex(node->vidbox->tex);
+								temptype = ELEM_LIVE;
+								tpath = lay->filename;
+							}
+							else {
+								temptype = ELEM_FILE;
+								tpath = lay->filename;
+							}
+							if (clip->type == ELEM_FILE) {
+								lay->type = ELEM_FILE;
+								open_video(0, lay, clip->path, 2);
+							}
+							else if (clip->type == ELEM_LAYER) {
+								lay->type = ELEM_LAYER;
+								mainmix->open_layerfile(clip->path, lay, 1, 0);
+							}
+							else if (clip->type == ELEM_LIVE) {
+								set_live_base(lay, clip->path);
+							}
+							delete clip;
+							clip = new Clip;
+							clip->tex = temptex;
+							clip->type = temptype;
+							clip->path = tpath;
+							lay->clips.insert(lay->clips.end() - 1, clip);
 						}
 					}
+					else {
+						lay->frame = laynocomp->startframe + (laynocomp->startframe - lay->frame);
+						laynocomp->bouncebut->value = 1;
+					}
 				}
-				else {
-					if (lay->scritching == 4) lay->scritching = 0;
-				}
+			}
+			else {
+				if (lay->scritching == 4) lay->scritching = 0;
 			}
 		}
 	}
@@ -2367,7 +2372,7 @@ void calc_texture(Layer *lay, bool comp, bool alive) {
 	if (!alive) return;
 	
 	Layer *srclay = lay;
-	if (lay->type != ELEM_IMAGE) {
+	if (lay->startframe != lay->endframe) {
 		if (mainmix->firstlayers.count(lay->clonesetnr) == 0) {
 			lay->ready = true;
 			while (lay->ready) {
@@ -2385,8 +2390,8 @@ void calc_texture(Layer *lay, bool comp, bool alive) {
 	glActiveTexture(GL_TEXTURE0);
 	glBindTexture(GL_TEXTURE_2D, lay->texture);
 	if (!lay->liveinput) {
-		if ((!lay->initialized or srclay == lay) and srclay->decresult) {  // decresult contains new frame width, height, number of bitmaps and data
-			if (srclay->decresult->width) {
+		if ((!lay->initialized or srclay == lay)) {  // decresult contains new frame width, height, number of bitmaps and data
+			if (srclay->decresult->width or srclay->type == ELEM_IMAGE) {
 				if (srclay->vidformat == 188 or srclay->vidformat == 187 and lay->video_dec_ctx) {
 					// HAP video layers
 					if (!lay->initialized) {
@@ -2402,7 +2407,26 @@ void calc_texture(Layer *lay, bool comp, bool alive) {
 					}
 				}
 				else {
-					if (srclay->type != ELEM_IMAGE and lay->video_dec_ctx) {
+					if (srclay->type == ELEM_IMAGE) {
+						ilBindImage(srclay->boundimage);
+						ilActiveImage((int)srclay->frame);
+						int imageformat = ilGetInteger(IL_IMAGE_FORMAT);
+						int w = ilGetInteger(IL_IMAGE_WIDTH);
+						int h = ilGetInteger(IL_IMAGE_HEIGHT);
+						int bpp = ilGetInteger(IL_IMAGE_BPP);
+						GLuint mode = GL_BGR;
+						if (imageformat == IL_RGBA) mode = GL_RGBA;
+						if (imageformat == IL_BGRA) mode = GL_BGRA;
+						if (imageformat == IL_RGB) mode = GL_RGB;
+						if (imageformat == IL_BGR) mode = GL_BGR;
+						if (bpp == 3) {
+							glTexSubImage2D(GL_TEXTURE_2D, 0, 0, 0, w, h, mode, GL_UNSIGNED_BYTE, ilGetData());
+						}
+						else if (bpp == 4) {
+							glTexSubImage2D(GL_TEXTURE_2D, 0, 0, 0, w, h, mode, GL_UNSIGNED_BYTE, ilGetData());
+						}
+					}
+					else if (lay->video_dec_ctx) {
 						if (!lay->initialized) {
 							float w = lay->video_dec_ctx->width;
 							float h = lay->video_dec_ctx->height;
@@ -2428,7 +2452,7 @@ void calc_texture(Layer *lay, bool comp, bool alive) {
 	glDrawBuffer(GL_COLOR_ATTACHMENT0);
 	GLuint tex;
 	if (lay->liveinput) tex = lay->liveinput->texture;
-	else if (srclay->decresult->width) tex = srclay->texture;
+	else if (srclay->decresult->width or srclay->type == ELEM_IMAGE) tex = srclay->texture;
 	else {
 		glClearColor(0.0f, 0.0f, 0.0f, 0.0f);
 		glClear(GL_COLOR_BUFFER_BIT);
@@ -2485,7 +2509,13 @@ void display_texture(Layer *lay, bool deck) {
 	float sciy = 0.0f;
 	float frachd = 1920.0f / 1080.0f;
 	float fraco = mainprogram->ow / mainprogram->oh;
-	float frac = (float)lay->decresult->width / (float)lay->decresult->height;
+	float frac;
+	if (lay->type == ELEM_IMAGE) {
+		ilBindImage(lay->boundimage);
+		ilActiveImage((int)lay->frame);
+		frac = (float)ilGetInteger(IL_IMAGE_WIDTH) / (float)ilGetInteger(IL_IMAGE_HEIGHT);
+	}
+	else frac = (float)lay->decresult->width / (float)lay->decresult->height;
 	if (fraco > frachd) {
 		ys = 1.0f - frachd / fraco;
 		sciy = ys;
@@ -3991,15 +4021,27 @@ void onestepfrom(bool stage, Node *node, Node *prevnode, GLuint prevfbotex, GLui
 			glFramebufferTexture2D(GL_FRAMEBUFFER, GL_COLOR_ATTACHMENT0, GL_TEXTURE_2D, mnode->mixtex, 0);
 		}
 		glDisable(GL_BLEND);
-		if (stage == 0) {
-			glBlitNamedFramebuffer(prevfbo, mnode->mixfbo, 0, 0, mainprogram->ow3, mainprogram->oh3 , 0, 0, mainprogram->ow3, mainprogram->oh3, GL_COLOR_BUFFER_BIT, GL_NEAREST);
-		}
-		else {
-			glBlitNamedFramebuffer(prevfbo, mnode->mixfbo, 0, 0, mainprogram->ow, mainprogram->oh, 0, 0, mainprogram->ow, mainprogram->oh, GL_COLOR_BUFFER_BIT, GL_NEAREST);
-		}
+		GLuint singlelayer = glGetUniformLocation(mainprogram->ShaderProgram, "singlelayer");
+		GLuint down = glGetUniformLocation(mainprogram->ShaderProgram, "down");
+		if (prevnode->type == VIDEO) glUniform1i(singlelayer, 1);
+		else glUniform1i(down, 1);
+		glBindFramebuffer(GL_FRAMEBUFFER, mnode->mixfbo);
+		glDrawBuffer(GL_COLOR_ATTACHMENT0);
+		if (stage) glViewport(0, 0, mainprogram->ow, mainprogram->oh);
+		else glViewport(0, 0, mainprogram->ow3, mainprogram->oh3);
+		glActiveTexture(GL_TEXTURE0);
+		glBindTexture(GL_TEXTURE_2D, prevfbotex);
+		glBindVertexArray(mainprogram->fbovao);
+		glDisable(GL_BLEND);
+		glDrawArrays(GL_TRIANGLE_STRIP, 0, 4);
 		glEnable(GL_BLEND);
+		glUniform1i(singlelayer, 0);
+		glUniform1i(down, 0);
 		prevfbotex = mnode->mixtex;
 		prevfbo = mnode->mixfbo;
+		glBindFramebuffer(GL_FRAMEBUFFER, mainprogram->globfbo);
+		glDrawBuffer(GL_COLOR_ATTACHMENT0);
+		glViewport(0, 0, glob->w, glob->h);
 	}
 	for (int i = 0; i < node->out.size(); i++) {
 		if (node->out[i]->calc and !node->out[i]->walked) onestepfrom(stage, node->out[i], node, prevfbotex, prevfbo);
@@ -7778,18 +7820,22 @@ void the_loop() {
 		
 		// Draw and handle mainprogram->laymenu1
 		if (mainprogram->laymenu1->state > 1 or mainprogram->laymenu2->state > 1) {
-			get_cameras();
-			mainprogram->devices.clear();
-			int numd = mainprogram->livedevices.size();
-			if (numd == 0) mainprogram->devices.push_back("No live devices");
-			else mainprogram->devices.push_back("Connect live to:");
-			for (int i = 0; i < numd; i++) {
-				std::string str(mainprogram->livedevices[i].begin(), mainprogram->livedevices[i].end());
-				mainprogram->devices.push_back(str);
+			if (!mainprogram->gotcameras) {
+				get_cameras();
+				mainprogram->devices.clear();
+				int numd = mainprogram->livedevices.size();
+				if (numd == 0) mainprogram->devices.push_back("No live devices");
+				else mainprogram->devices.push_back("Connect live to:");
+				for (int i = 0; i < numd; i++) {
+					std::string str(mainprogram->livedevices[i].begin(), mainprogram->livedevices[i].end());
+					mainprogram->devices.push_back(str);
+				}
+				mainprogram->make_menu("livemenu", mainprogram->livemenu, mainprogram->devices);
+				mainprogram->livemenu->box->upscrtovtx();
+				mainprogram->gotcameras = true;
 			}
-			mainprogram->make_menu("livemenu", mainprogram->livemenu, mainprogram->devices);
-			mainprogram->livemenu->box->upscrtovtx();
 		}
+		else mainprogram->gotcameras = false;
 		if (mainprogram->laymenu1->state > 1) k = handle_menu(mainprogram->laymenu1);
 		else if (mainprogram->laymenu2->state > 1) {
 			k = handle_menu(mainprogram->laymenu2);
@@ -7888,7 +7934,14 @@ void the_loop() {
 			}
 			else if (k == 14) {
 				mainmix->mouselayer->aspectratio = (RATIO_TYPE)mainprogram->menuresults[0];
-				mainmix->mouselayer->set_aspectratio(mainmix->mouselayer->video_dec_ctx->width, mainmix->mouselayer->video_dec_ctx->height);
+				if (mainmix->mouselayer->type == ELEM_IMAGE) {
+					ilBindImage(mainmix->mouselayer->boundimage);
+					ilActiveImage((int)mainmix->mouselayer->frame);
+					mainmix->mouselayer->set_aspectratio(ilGetInteger(IL_IMAGE_WIDTH), ilGetInteger(IL_IMAGE_HEIGHT));
+				}
+				else {
+					mainmix->mouselayer->set_aspectratio(mainmix->mouselayer->video_dec_ctx->width, mainmix->mouselayer->video_dec_ctx->height);
+				}
 			}
 		}
 	

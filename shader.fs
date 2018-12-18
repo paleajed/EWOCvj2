@@ -35,6 +35,7 @@ uniform float swirlx = 0.5f;
 uniform float swirly = 0.5f;
 uniform int fxid = -1;
 uniform int mixmode = 0;
+uniform int singlelayer = 0;
 uniform int down = 0;
 uniform int circle = 0;
 uniform float cirx = 0.0f;
@@ -1535,9 +1536,9 @@ void main()
     vec4 fc;
     bool intcoloring = false;
     int brk = 0;
+	vec2 texco;
+	texco = TexCoord0.st;
     if (interm == 1) {
-		vec2 texco;
-		texco = TexCoord0.st;
 		texcol = texture2D(Sampler0, texco);
 		switch (fxid) {
 			case 0:
@@ -1669,17 +1670,10 @@ void main()
     	if (intcoloring) FragColor = vec4(intcol.rgb * drywet + (1.0f - drywet) * texcol.rgb, intcol.a * opacity);
 	}
 	else if (mixmode > 0) {
-		vec2 texco;
-		if (preff == 1) {
-			texco = TexCoord0.st;
-		}
-		else {
-			texco = TexCoord0.st;
-		}
 		vec2 size0 = textureSize(endSampler0, 0);
 		vec2 size1 = textureSize(endSampler1, 0);
-		tex0 = texture2D(endSampler0, texco);
-		tex1 = texture2D(endSampler1, vec2((texco.x - 0.5f) * size0.x / size1.x + 0.5f, (texco.y - 0.5f) * size0.y / size1.y + 0.5f));
+		tex0 = texture2D(endSampler0, vec2((texco.x - 0.5f) * fbowidth / size0.x + 0.5f, (texco.y - 0.5f) * fboheight / size0.y + 0.5f));
+		tex1 = texture2D(endSampler1, vec2((texco.x - 0.5f) * fbowidth / size1.x + 0.5f, (texco.y - 0.5f) * fboheight / size1.y + 0.5f));
 		tex0 = vec4(tex0.rgb * tex0.a, tex0.a);
 		tex1 = vec4(tex1.rgb * tex1.a, tex1.a);
 	}
@@ -1817,6 +1811,11 @@ void main()
 	}
 	else if (thumb == 1) {
 		FragColor = vec4(texture2D(Sampler0, TexCoord0.st).rgb, 0.7f);
+	}
+	else if (singlelayer == 1) {
+		vec2 size0 = textureSize(Sampler0, 0);
+		vec4 ic = texture2D(Sampler0, vec2((texco.x - 0.5f) * fbowidth / size0.x + 0.5f, (texco.y - 0.5f) * fboheight / size0.y + 0.5f));
+		FragColor = vec4(ic.r, ic.g, ic.b, ic.a * opacity);
 	}
 	else if (down == 1) {
 		vec4 ic = texture2D(Sampler0, TexCoord0.st).rgba;
