@@ -237,21 +237,23 @@ void LoopStationElement::set_params() {
 				par->value = std::get<2>(event);
 			}
 		}
-		event = this->eventlist[++this->eventpos];
-	}
-	if (this->eventpos >= this->eventlist.size()) {
-		if (this->eventlist.size() == 0) {
-			// end loop when one-shot playing or no of the params exist anymore
-			this->playbut->value = false;
-			this->loopbut->value = false;
+		this->eventpos++;
+		if (this->eventpos >= this->eventlist.size()) {
+			if (this->eventlist.size() == 0) {
+				// end loop when one-shot playing or no of the params exist anymore
+				this->playbut->value = false;
+				this->loopbut->value = false;
+			}
+			if (this->eventpos >= this->eventlist.size() and this->loopbut->value) {
+				//start loop again
+				this->eventpos = 0;
+				this->starttime = std::chrono::high_resolution_clock::now();
+				this->interimtime = 0;
+				this->speedadaptedtime = 0;
+			}
+			break;
 		}
-		if (this->eventpos >= this->eventlist.size() and this->loopbut->value) {
-			//start loop again
-			this->eventpos = 0;
-			this->starttime = std::chrono::high_resolution_clock::now();
-			this->interimtime = 0;
-			this->speedadaptedtime = 0;
-		}
+		event = this->eventlist[this->eventpos];
 	}
 }		
 		

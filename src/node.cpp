@@ -115,7 +115,7 @@ BlendNode::~BlendNode() {
 }
 	
 MixNode::~MixNode() {
-	glDeleteTextures(1, &this->mixtex);
+	//glDeleteTextures(1, &this->mixtex);  reminder: !
 	glDeleteBuffers(1, &this->mixfbo);
 }
 	

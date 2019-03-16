@@ -1,12 +1,12 @@
+#include <boost/filesystem.hpp>
+
 #include <string>
 #include "GL/gl.h"
-#include <dirent.h>
-#include "nfd.h"
+#include "dirent.h""
 #include "RtMidi.h"
 #include <istream>
 #include <lo/lo.h>
 #include <lo/lo_cpp.h>
-
 
 
 class PrefCat;
@@ -290,6 +290,8 @@ class Program {
 		bool menuondisplay = false;
 		bool blocking = false;
 		std::string temppath;
+		std::string docpath;
+		std::string fontpath;
 		const char *path;
 		std::vector<std::string> paths;
 		int counting;
@@ -398,6 +400,18 @@ class Program {
 		std::string recdir;
 		std::string shelfdir;
 		std::string autosavedir;
+		std::string currprojdir;
+		std::string currbinsdir;
+		std::string currrecdir;
+		std::string currshelfdir;
+		std::string currshelfdirdir;
+		std::string currbindirdir;
+		std::string currvideodir;
+		std::string currimagedir;
+		std::string currdeckdir;
+		std::string currmixdir;
+		std::string currlayerdir;
+		std::string currstatedir;
 		bool openshelfdir = false;
 		std::string shelfpath;
 		int shelfdircount;
@@ -411,8 +425,8 @@ class Program {
 		void make_menu(const std::string &name, Menu *&menu, std::vector<std::string> &entries);
 		void get_outname(const char *title, std::string filters, std::string defaultdir);
 		void get_inname(const char *title, std::string filters, std::string defaultdir);
-		void get_multinname(const char* title);
-		void get_dir(const char *title);
+		void get_multinname(const char* title, std::string defaultdir);
+		void get_dir(const char *title, std::string defaultdir);
 		float xscrtovtx(float scrcoord);
 		float yscrtovtx(float scrcoord);
 		float xvtxtoscr(float vtxcoord);
@@ -504,6 +518,7 @@ void set_live_base(Layer *lay, std::string livename);
 
 extern float tf(float vtxcoord);
 extern bool exists(const std::string &name);
+extern std::string replace_string(std::string subject, const std::string& search, const std::string& replace);
 extern std::string dirname(std::string pathname);
 extern std::string basename(std::string pathname);
 extern std::string remove_extension(std::string filename);

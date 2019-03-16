@@ -11,6 +11,13 @@
 #include "paths.h"
 #endif
 
+#include <windows.h>
+#include <initguid.h>
+#include <KnownFolders.h>
+#include <ShlObj.h>
+#include <wchar.h>
+#include <string>
+
 #include "SDL2/SDL.h"
 #include "SDL2/SDL_syswm.h"
 
@@ -35,7 +42,31 @@ Program::Program() {
 	this->project = new Project;
 
 	#ifdef _WIN64
-	this->temppath = "./temp/";
+	PWSTR charbuf;
+	HRESULT hr = SHGetKnownFolderPath(FOLDERID_Documents, 0, NULL, &charbuf);
+	std::wstring ws1(charbuf);
+	std::string str1(ws1.begin(), ws1.end());
+	this->docpath = boost::filesystem::canonical(str1).string() + "/EWOCvj2/";
+	this->currlayerdir = this->docpath + "elems/";
+	this->currdeckdir = this->docpath + "elems/";
+	this->currmixdir = this->docpath + "elems/";
+	this->currstatedir = this->docpath + "elems/";
+	hr = SHGetKnownFolderPath(FOLDERID_Fonts, 0, NULL, &charbuf);
+	std::wstring ws2(charbuf);
+	std::string str2(ws2.begin(), ws2.end());
+	this->fontpath = str2;
+	hr = SHGetKnownFolderPath(FOLDERID_Videos, 0, NULL, &charbuf);
+	std::wstring ws4(charbuf);
+	std::string str4(ws4.begin(), ws4.end());
+	str4 += "/";
+	this->currvideodir = str4;
+	this->currshelfdirdir = str4;
+	this->currbindirdir = str4;
+	std::wstring ws3;
+	wchar_t wcharPath[MAX_PATH];
+	if (GetTempPathW(MAX_PATH, wcharPath)) ws3 = wcharPath;
+	std::string str3(ws3.begin(), ws3.end());
+	this->temppath = str3 + "/EWOCvj2";
 	#else
 	#ifdef __linux__
 	std::string homedir (getenv("HOME"));
@@ -355,7 +386,12 @@ std::string Program::mime_to_wildcard(std::string filters) {
 void Program::get_inname(const char *title, std::string filters, std::string defaultdir) {
 	bool as = mainprogram->autosave;
 	mainprogram->autosave = false;
-	char const* const dd = (defaultdir == "") ? "" : defaultdir.c_str();
+	boost::filesystem::path p(defaultdir);
+	if (boost::filesystem::is_directory(p)) defaultdir += "/";
+	#ifdef _WIN64
+	std::string dir = replace_string(defaultdir, "/", "\\");
+	#endif
+	char const* const dd = (dir == "") ? "" : dir.c_str();
 	#ifdef _WIN64
 	filters = this->mime_to_wildcard(filters);
 	#endif
@@ -373,7 +409,12 @@ void Program::get_inname(const char *title, std::string filters, std::string def
 void Program::get_outname(const char *title, std::string filters, std::string defaultdir) {
 	bool as = mainprogram->autosave;
 	mainprogram->autosave = false;
-	char const* const dd = (defaultdir == "") ? "" : defaultdir.c_str();
+	boost::filesystem::path p(defaultdir);
+	if (boost::filesystem::is_directory(p)) defaultdir += "/";
+	#ifdef _WIN64
+	std::string dir = replace_string(defaultdir, "/", "\\");
+	#endif
+	char const* const dd = (dir == "") ? "" : dir.c_str();
 	#ifdef _WIN64
 	filters = this->mime_to_wildcard(filters);
 	#endif
@@ -388,11 +429,17 @@ void Program::get_outname(const char *title, std::string filters, std::string de
 	mainprogram->autosave = as;
 }
 
-void Program::get_multinname(const char* title) {
+void Program::get_multinname(const char* title, std::string defaultdir) {
 	bool as = mainprogram->autosave;
 	mainprogram->autosave = false;
 	const char *outpaths;
-	outpaths = tinyfd_openFileDialog(title, "", 0, nullptr, nullptr, 1);
+	boost::filesystem::path p(defaultdir);
+	if (boost::filesystem::is_directory(p)) defaultdir += "/";
+	#ifdef _WIN64
+	std::string dir = replace_string(defaultdir, "/", "\\");
+	#endif
+	char const* const dd = (dir == "") ? "" : dir.c_str();
+	outpaths = tinyfd_openFileDialog(title, dd, 0, nullptr, nullptr, 1);
 	if (outpaths == nullptr) {
 		binsmain->openbinfile = false;
 		return;
@@ -415,10 +462,16 @@ void Program::get_multinname(const char* title) {
 	mainprogram->autosave = as;
 }
 
-void Program::get_dir(const char *title) {
+void Program::get_dir(const char *title, std::string defaultdir) {
+	boost::filesystem::path p(defaultdir);
+	if (boost::filesystem::is_directory(p)) defaultdir += "/";
+	#ifdef _WIN64
+	std::string dir = replace_string(defaultdir, "/", "\\");
+	#endif
+	char const* const dd = (dir == "") ? "" : dir.c_str();
 	bool as = mainprogram->autosave;
 	mainprogram->autosave = false;
-	this->path = tinyfd_selectFolderDialog(title, "") ;
+	this->path = tinyfd_selectFolderDialog(title, dd) ;
 	mainprogram->autosave = as;
 }
 
@@ -431,6 +484,14 @@ void Program::set_ow3oh3() {
 		mainprogram->oh3 = 640.0f;
 		mainprogram->ow3 = 640.0f * mainprogram->ow / mainprogram->oh;
 	}
+	glBindTexture(GL_TEXTURE_2D, mainprogram->fbotex[0]);
+	glTexStorage2D(GL_TEXTURE_2D, 1, GL_RGBA8, mainprogram->ow3, mainprogram->oh3);
+	glBindTexture(GL_TEXTURE_2D, mainprogram->fbotex[1]);
+	glTexStorage2D(GL_TEXTURE_2D, 1, GL_RGBA8, mainprogram->ow3, mainprogram->oh3);
+	glBindTexture(GL_TEXTURE_2D, mainprogram->fbotex[2]);
+	glTexStorage2D(GL_TEXTURE_2D, 1, GL_RGBA8, mainprogram->ow, mainprogram->oh);
+	glBindTexture(GL_TEXTURE_2D, mainprogram->fbotex[3]);
+	glTexStorage2D(GL_TEXTURE_2D, 1, GL_RGBA8, mainprogram->ow, mainprogram->oh);
 }
 
 float Program::xscrtovtx(float scrcoord) {
@@ -454,12 +515,15 @@ float Program::yvtxtoscr(float vtxcoord) {
 void Program::quit(std::string msg)
 {
 	//save midi map
-	save_genmidis("./midiset.gm");
+	//save_genmidis(mainprogram->docpath + "midiset.gm");
 	//empty temp dir
-	boost::filesystem::path path_to_remove(mainprogram->temppath);
-	for (boost::filesystem::directory_iterator end_dir_it, it(path_to_remove); it!=end_dir_it; ++it) {
-		boost::filesystem::remove_all(it->path());
-	}
+	//boost::filesystem::path path_to_remove(mainprogram->temppath);
+	//for (boost::filesystem::directory_iterator end_dir_it, it(path_to_remove); it!=end_dir_it; ++it) {
+	//	boost::filesystem::remove_all(it->path());
+	//}
+
+	mainprogram->prefs->save();
+
 	printf("%s: %s\n", msg.c_str(), SDL_GetError());
     printf("stopped\n");
 
@@ -524,7 +588,8 @@ GLuint Program::set_shader() {
 	GLuint program;
 	GLuint vertexShaderObject = glCreateShader(GL_VERTEX_SHADER);
 	GLuint fragmentShaderObject = glCreateShader(GL_FRAGMENT_SHADER);
-	unsigned long vlen, flen;
+	unsigned long vlen = 0;
+	unsigned long flen = 0;
 	char *VShaderSource;
  	char *vshader = (char*)malloc(100);
  	#ifdef _WIN64
@@ -724,7 +789,7 @@ void Project::save(const std::string &path) {
 			mainprogram->recentprojectpaths.pop_back();
 		}
 		#ifdef _WIN64
-		std::string dir = "./";
+		std::string dir = mainprogram->docpath;
 		#else
 		#ifdef __linux__
 		std::string homedir (getenv("HOME"));

@@ -1415,7 +1415,7 @@ Effect *new_effect(Effect *effect) {
 // adds an effect of a certain type to a layer at a certain position in its effect list
 // comp is set when the layer belongs to the output layer stacks
 Effect *do_add_effect(Layer *lay, EFFECT_TYPE type, int pos, bool comp) {
-	Effect *effect;
+	Effect *effect = nullptr;
 	switch (type) {
 		case BLUR:
 			effect = new BlurEffect();
@@ -1814,6 +1814,7 @@ Layer* Mixer::add_layer(std::vector<Layer*> &layers, int pos) {
 			mainprogram->nodesmain->currpage->connect_nodes(bnode, nextlay->lasteffnode[0]->out[0]);
 			nextlay->lasteffnode[0]->out.clear();
 			nextlay->blendnode = bnode;
+			if (!nextlay->effects[1].size()) nextlay->lasteffnode[1] = bnode;
 			mainprogram->nodesmain->currpage->connect_nodes(layer->node, nextlay->lasteffnode[0], bnode);
 		}
 	}
@@ -1851,7 +1852,8 @@ void Mixer::cloneset_destroy(std::unordered_set<Layer*>* cs) {
 
 void Mixer::do_deletelay(Layer *testlay, std::vector<Layer*> &layers, bool add) {
 	if (testlay == mainmix->currlay) {
-		if (testlay->pos == layers.size() - 1) mainmix->currlay = layers[testlay->pos - 1];
+		if (testlay->pos == 0 and layers.size() == 1) mainmix->currlay = nullptr;
+		else if (testlay->pos == layers.size() - 1) mainmix->currlay = layers[testlay->pos - 1];
 		else mainmix->currlay = layers[testlay->pos + 1];
 		if (layers.size() == 1) mainmix->currlay = nullptr;
 	}
@@ -1872,6 +1874,7 @@ void Mixer::do_deletelay(Layer *testlay, std::vector<Layer*> &layers, bool add) 
 	for (int i = 0; i < size; i++) {
 		if (layers[i] == testlay) {
 			layers.erase(layers.begin() + i);
+			break;
 		}
 	}
 		
@@ -1972,10 +1975,10 @@ Layer::Layer(bool comp) {
     glActiveTexture(GL_TEXTURE0);
     glBindTexture(GL_TEXTURE_2D, this->fbotex);
     if (comp) {
-		glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA8, mainprogram->ow, mainprogram->oh, 0, GL_BGRA, GL_UNSIGNED_BYTE, nullptr);
+		glTexStorage2D(GL_TEXTURE_2D, 1, GL_RGBA8, mainprogram->ow, mainprogram->oh);
 	}
 	else {
-		glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA8, mainprogram->ow3, mainprogram->oh3, 0, GL_BGRA, GL_UNSIGNED_BYTE, nullptr);
+		glTexStorage2D(GL_TEXTURE_2D, 1, GL_RGBA8, mainprogram->ow3, mainprogram->oh3);
 	}
 	glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR);
 	glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
@@ -2150,8 +2153,6 @@ void Layer::initialize(int w, int h) {
 void Layer::initialize(int w, int h, int compression) {
 	this->iw = w;
 	this->ih = h;
-	std::vector<int> emptydata(this->iw * this->ih);
-	std::fill(emptydata.begin(), emptydata.end(), 0x00000000);
 	glBindTexture(GL_TEXTURE_2D, this->texture);
 	glPixelStorei(GL_UNPACK_ALIGNMENT, 1);
 	glPixelStorei(GL_UNPACK_ROW_LENGTH, 0);
@@ -2160,14 +2161,14 @@ void Layer::initialize(int w, int h, int compression) {
 	int count = 0;
 	if (this->vidformat == 188 or this->vidformat == 187) {
 		if (compression == 187) {
-			glTexImage2D(GL_TEXTURE_2D, 0, GL_COMPRESSED_RGBA_S3TC_DXT1_EXT, this->iw, this->ih, 0, GL_BGRA, GL_UNSIGNED_BYTE, &emptydata[0]);
+			glTexStorage2D(GL_TEXTURE_2D, 1, GL_COMPRESSED_RGBA_S3TC_DXT1_EXT, this->iw, this->ih);
 		}
 		else if (compression == 190) {
-			glTexImage2D(GL_TEXTURE_2D, 0, GL_COMPRESSED_RGBA_S3TC_DXT5_EXT, this->iw, this->ih, 0, GL_BGRA, GL_UNSIGNED_BYTE, &emptydata[0]);
+			glTexStorage2D(GL_TEXTURE_2D, 1, GL_COMPRESSED_RGBA_S3TC_DXT5_EXT, this->iw, this->ih);
 		}
 	}
 	else {
-		glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA8, this->iw, this->ih, 0, GL_BGRA, GL_UNSIGNED_BYTE, &emptydata[0]);
+		glTexStorage2D(GL_TEXTURE_2D, 1, GL_RGBA8, this->iw, this->ih);
 	}
 	this->initialized = true;
 }
@@ -2205,10 +2206,10 @@ void Layer::set_aspectratio(int lw, int lh) {
 		}
 	}
 	glBindTexture(GL_TEXTURE_2D, this->fbotex);
-	glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA8, w, h, 0, GL_BGRA, GL_UNSIGNED_BYTE, nullptr);
+	glTexStorage2D(GL_TEXTURE_2D, 1, GL_RGBA8, w, h);
 	for (int i = 0; i < this->effects[0].size(); i++) {
 		glBindTexture(GL_TEXTURE_2D, this->effects[0][i]->fbotex);
-		glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA8, w, h, 0, GL_BGRA, GL_UNSIGNED_BYTE, nullptr);
+		glTexStorage2D(GL_TEXTURE_2D, 1, GL_RGBA8, w, h);
 	}
 }
 
@@ -2446,6 +2447,7 @@ void Mixer::clonesets_copy(bool comp) {
 void Mixer::lay_copy(std::vector<Layer*> &slayers, std::vector<Layer*> &dlayers, bool comp) {
 	LoopStation *lp1;
 	LoopStation *lp2;
+
 	if (comp) {
 		lp1 = lp;
 		lp2 = lpc;
@@ -2504,7 +2506,7 @@ void Mixer::lay_copy(std::vector<Layer*> &slayers, std::vector<Layer*> &dlayers,
 		for (int m = 0; m < 2; m++) {
 			for (int j = 0; j < slayers[i]->effects[m].size(); j++) {
 				Effect *eff = slayers[i]->effects[m][j];
-				Effect *ceff;
+				Effect *ceff = nullptr;
 				switch (eff->type) {
 					case BLUR:
 						ceff = new BlurEffect();
@@ -2676,7 +2678,6 @@ void Mixer::copy_to_comp(std::vector<Layer*> &sourcelayersA, std::vector<Layer*>
 		delete destnodes[i];
 	}
 	destmixnodes.clear();
-	
 	destnodes.clear();
 	for (int i = 0; i < 1; i++) { //mainprogram->nodesmain->pages.size()
 		for (int j = 0; j < sourcenodes.size(); j++) {
@@ -2698,6 +2699,7 @@ void Mixer::copy_to_comp(std::vector<Layer*> &sourcelayersA, std::vector<Layer*>
 			}
 			else if (node->type == MIX) {
 				MixNode *cnode = mainprogram->nodesmain->currpage->add_mixnode(0, comp);
+				cnode->mixtex = ((MixNode*)node)->mixtex;
 			}
 			else if (node->type == EFFECT) {
 				EffectNode *cnode = new EffectNode();
@@ -2848,7 +2850,7 @@ std::vector<std::string> Mixer::write_layer(Layer *lay, std::ostream& wfile, boo
 	wfile << lay->filename;
 	wfile << "\n";
 	wfile << "RELPATH\n";
-	wfile << "./" + boost::filesystem::relative(lay->filename, "./").string();
+	wfile << mainprogram->docpath + boost::filesystem::relative(lay->filename, mainprogram->docpath).string();
 	wfile << "\n";
 	if (lay->filename != "") {
 		wfile << "WIDTH\n";
@@ -2969,7 +2971,7 @@ std::vector<std::string> Mixer::write_layer(Layer *lay, std::ostream& wfile, boo
 	wfile << "\n";
 	
 	std::vector<std::string> jpegpaths;
-	if (doclips) {
+	if (doclips and lay->clips.size()) {
 		wfile << "CLIPS\n";
 		int size = std::clamp((int)(lay->clips.size() - 1), 0, (int)(lay->clips.size() - 1));
 		for (int j = 0; j < size; j++) {
@@ -3465,7 +3467,7 @@ void Mixer::open_layerfile(const std::string &path, Layer *lay, bool loadevents,
 	
 	std::string istring;
 	
-	Node *nextnode;
+	Node *nextnode = nullptr;
 	if (lay->lasteffnode[0]) {
 		if (lay->lasteffnode[0]->out.size()) nextnode = lay->lasteffnode[0]->out[0];
 	}
@@ -3510,9 +3512,9 @@ void Mixer::open_state(const std::string &path) {
 	getline(rfile, istring);
 	
     glBindTexture(GL_TEXTURE_2D, mainprogram->fbotex[2]);
-	glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA8, mainprogram->ow, mainprogram->oh, 0, GL_BGRA, GL_UNSIGNED_BYTE, nullptr);
+	glTexStorage2D(GL_TEXTURE_2D, 1, GL_RGBA8, mainprogram->ow, mainprogram->oh);
     glBindTexture(GL_TEXTURE_2D, mainprogram->fbotex[3]);
-	glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA8, mainprogram->ow, mainprogram->oh, 0, GL_BGRA, GL_UNSIGNED_BYTE, nullptr);
+	glTexStorage2D(GL_TEXTURE_2D, 1, GL_RGBA8, mainprogram->ow, mainprogram->oh);
 	if (mainprogram->bnodeend->fbo == -1) {
 		glGenTextures(1, &mainprogram->bnodeend->fbotex);
  		glBindTexture(GL_TEXTURE_2D, mainprogram->bnodeend->fbotex);
@@ -3532,9 +3534,9 @@ void Mixer::open_state(const std::string &path) {
 		glFramebufferTexture2D(GL_FRAMEBUFFER, GL_COLOR_ATTACHMENT0, GL_TEXTURE_2D, mainprogram->bnodeendcomp->fbotex, 0);
 	}
     glBindTexture(GL_TEXTURE_2D, mainprogram->bnodeend->fbotex);
-	glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA8, mainprogram->ow, mainprogram->oh, 0, GL_BGRA, GL_UNSIGNED_BYTE, nullptr);
+	glTexStorage2D(GL_TEXTURE_2D, 1, GL_RGBA8, mainprogram->ow, mainprogram->oh);
     glBindTexture(GL_TEXTURE_2D, mainprogram->bnodeendcomp->fbotex);
-	glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA8, mainprogram->ow, mainprogram->oh, 0, GL_BGRA, GL_UNSIGNED_BYTE, nullptr);
+	glTexStorage2D(GL_TEXTURE_2D, 1, GL_RGBA8, mainprogram->ow, mainprogram->oh);
 	for (int i = 0; i < mainprogram->nodesmain->mixnodes.size(); i++) {
 		if (mainprogram->nodesmain->mixnodes[i]->mixfbo == -1) {
 			glGenTextures(1, &mainprogram->nodesmain->mixnodes[i]->mixtex);
@@ -3546,7 +3548,7 @@ void Mixer::open_state(const std::string &path) {
 			glFramebufferTexture2D(GL_FRAMEBUFFER, GL_COLOR_ATTACHMENT0, GL_TEXTURE_2D, mainprogram->nodesmain->mixnodes[i]->mixtex, 0);
 		}
 		glBindTexture(GL_TEXTURE_2D, mainprogram->nodesmain->mixnodes[i]->mixtex);
-		glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA8, mainprogram->ow3, mainprogram->oh3, 0, GL_BGRA, GL_UNSIGNED_BYTE, nullptr);
+		glTexStorage2D(GL_TEXTURE_2D, 1, GL_RGBA8, mainprogram->ow3, mainprogram->oh3);
 	}
 	for (int i = 0; i < mainprogram->nodesmain->mixnodescomp.size(); i++) {
 		if (mainprogram->nodesmain->mixnodescomp[i]->mixfbo == -1) {
@@ -3562,7 +3564,7 @@ void Mixer::open_state(const std::string &path) {
 		glDeleteFramebuffers(1, &mainprogram->nodesmain->mixnodescomp[i]->mixfbo);
 		glGenTextures(1, &mainprogram->nodesmain->mixnodescomp[i]->mixtex);
 		glBindTexture(GL_TEXTURE_2D, mainprogram->nodesmain->mixnodescomp[i]->mixtex);
-		glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA8, mainprogram->ow, mainprogram->oh, 0, GL_BGRA, GL_UNSIGNED_BYTE, nullptr);
+		glTexStorage2D(GL_TEXTURE_2D, 1, GL_RGBA8, mainprogram->ow, mainprogram->oh);
 		glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR);
 		glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
 		glGenFramebuffers(1, &mainprogram->nodesmain->mixnodescomp[i]->mixfbo);
@@ -3646,7 +3648,7 @@ void Mixer::open_mix(const std::string &path) {
 	loopstation->readelemnrs.clear();
 	
 	int clpos, cldeck;
-	Layer *lay;
+	Layer *lay = nullptr;
 	while (getline(rfile, istring)) {
 		if (istring == "CURRLAY") {
 			getline(rfile, istring);
@@ -3905,7 +3907,7 @@ int Mixer::read_layers(std::istream &rfile, const std::string &result, std::vect
 			getline(rfile, istring);
 			if (load) {
 				if (lay->filename == "") {
-					lay->filename = boost::filesystem::absolute(istring).string();
+					lay->filename = boost::filesystem::canonical(istring).string();
 					lay->timeinit = false;
 					if (lay->type == ELEM_FILE or lay->type == ELEM_LAYER) {
 						open_video(-1, lay, lay->filename, false);
@@ -4133,7 +4135,7 @@ int Mixer::read_layers(std::istream &rfile, const std::string &result, std::vect
 						glBindTexture(GL_TEXTURE_2D, clip->tex);
 						glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR);
 						glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
-						glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA8, (int)(mainprogram->ow3), (int)(mainprogram->oh3), 0, GL_BGRA, GL_UNSIGNED_BYTE, nullptr);
+						glTexStorage2D(GL_TEXTURE_2D, 1, GL_RGBA8, (int)(mainprogram->ow3), (int)(mainprogram->oh3));
 						if (concat) {
 							boost::filesystem::rename(result + "_" + std::to_string(jpegcount) + ".file", result + "_" + std::to_string(jpegcount) + ".jpeg");
 							open_thumb(result + "_" + std::to_string(jpegcount) + ".jpeg", clip->tex);
@@ -4206,7 +4208,7 @@ int Mixer::read_layers(std::istream &rfile, const std::string &result, std::vect
 				
 				if (istring == "PARAMS") {
 					int pos = 0;
-					Param *par;
+					Param *par = nullptr;
 					while (istring != "ENDOFPARAMS") {
 						getline(rfile, istring);
 						if (istring == "VAL") {
@@ -4282,7 +4284,7 @@ int Mixer::read_layers(std::istream &rfile, const std::string &result, std::vect
 				
 				if (istring == "PARAMS") {
 					int pos = 0;
-					Param *par;
+					Param *par = nullptr;
 					while (istring != "ENDOFPARAMS") {
 						getline(rfile, istring);
 						if (istring == "VAL") {
@@ -4414,8 +4416,8 @@ void Mixer::record_video() {
     c->width = mainprogram->ow;
     c->height = (int)mainprogram->oh;
     /* frames per second */
-    c->time_base = (AVRational){1, 25};
-    c->framerate = (AVRational){25, 1};
+    c->time_base = {1, 25};
+    c->framerate = {25, 1};
     c->pix_fmt = AV_PIX_FMT_YUVJ420P;
     /* open it */
     ret = avcodec_open2(c, codec, nullptr);

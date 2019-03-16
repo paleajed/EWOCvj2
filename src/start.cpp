@@ -19,7 +19,7 @@
 #include <sstream>
 #include <ios>
 #include <vector>
-#include <dirent.h>
+#include "dirent.h"
 #include <algorithm>
 #include <unordered_set>
 #include <unordered_map>
@@ -44,7 +44,7 @@
 #pragma comment (lib, "Quartz.lib")
 #pragma comment (lib, "ole32.lib")
 #include <windows.h>
-#include <ShellScalingAPI.h>
+#include <shellscalingapi.h>
 #include <comdef.h>
 #endif
 
@@ -142,6 +142,15 @@ bool exists(const std::string &name) {
     } else {
         return false;
     }   
+}
+
+std::string replace_string(std::string subject, const std::string& search, const std::string& replace) {
+	size_t pos = 0;
+	while ((pos = subject.find(search, pos)) != std::string::npos) {
+		subject.replace(pos, search.length(), replace);
+		pos += replace.length();
+	}
+	return subject;
 }
 
 std::string dirname(std::string pathname)
@@ -487,7 +496,7 @@ void screenshot() {
 	glBindFramebuffer(GL_FRAMEBUFFER, mainprogram->globfbo);
 	glDrawBuffer(GL_COLOR_ATTACHMENT0);
 	
-	std::string name = "./screenshots/screenshot" + std::to_string(sscount) + ".jpg";
+	std::string name = mainprogram->docpath + "screenshots/screenshot" + std::to_string(sscount) + ".jpg";
 	sscount++;
 	FILE* outfile = fopen(name.c_str(), "wb");
 	
@@ -589,7 +598,7 @@ void mycallback( double deltatime, std::vector< unsigned char > *message, void *
    	}
   	
   	if (mainprogram->tunemidi) {
-  		LayMidi *lm;
+  		LayMidi *lm = nullptr;
   		if (mainprogram->tunemidideck == 1) lm = laymidiA;
   		else if (mainprogram->tunemidideck == 2) lm = laymidiB;
   		else if (mainprogram->tunemidideck == 3) lm = laymidiC;
@@ -825,7 +834,7 @@ int encode_frame(AVFormatContext *fmtctx, AVFormatContext *srcctx, AVCodecContex
 	enc_pkt.data = nullptr;
 	enc_pkt.size = 0;
 	av_init_packet(&enc_pkt);
-	int got_frame;
+	int got_frame = 0;
 	if (outfile) {
 		avcodec_send_frame(enc_ctx, frame);
  		int err = avcodec_receive_packet(enc_ctx, pkt);
@@ -865,24 +874,29 @@ static int decode_packet(Layer *lay, int *got_frame)
         /* decode video frame */
 	//clock_t stt;
     //stt = clock();
+		int err2 = 0;
     	while (1) {
 			int err1 = avcodec_send_packet(lay->video_dec_ctx, &lay->decpkt);
-			int err2 = avcodec_receive_frame(lay->video_dec_ctx, lay->decframe);
+			err2 = avcodec_receive_frame(lay->video_dec_ctx, lay->decframe);
 			if (err2 == AVERROR(EAGAIN)) {
 				av_packet_unref(&lay->decpkt);
 				av_read_frame(lay->video, &lay->decpkt);
 			}
 			else break;
 		}
- 		//char buffer[1024];
+		if (lay->vidformat == 187) {
+			printf("");
+		}
+		//char buffer[1024];
  		//av_strerror(err2, buffer, 1024);
  		//printf(buffer);
  		//if (err == AVERROR_EOF) lay->numf--;
    //clock_t t = clock() - stt;
     //double time_taken = ((double)t)/CLOCKS_PER_SEC; // in seconds
 	//printf("decodetime1 %f\n", time_taken);
-        if (ret < 0) {
+		if (err2 == AVERROR(EINVAL)) {
             fprintf(stderr, "Error decoding video frame (%s)\n", 0);
+			printf("codec %d", lay->decpkt);
             return ret;
         }
         if (1) {
@@ -905,11 +919,8 @@ static int decode_packet(Layer *lay, int *got_frame)
     } 
     else if (lay->decpkt.stream_index == lay->audio_stream_idx) {
         /* decode audio frame */
-        ret = avcodec_decode_audio4(lay->audio_dec_ctx, lay->decframe, got_frame, &lay->decpkt);
-        if (ret < 0) {
-            fprintf(stderr, "Error decoding audio frame (%s)\n", 0);
-            return ret;
-        }
+		int err1 = avcodec_send_packet(lay->audio_dec_ctx, &lay->decpkt);
+		int err2 = avcodec_receive_frame(lay->audio_dec_ctx, lay->decframe);
         /* Some audio decoders decode only part of the packet, and have to be
          * called again with the remainder of the packet data.
          * Sample: fate-suite/lossless-audio/luckynight-partial.shn
@@ -939,8 +950,10 @@ int open_codec_context(int *stream_idx,
 	*stream_idx = ret;
 	st = video->streams[*stream_idx];
 	/* find decoder for the stream */
-	dec_ctx = st->codec;
-    dec_ctx->refcounted_frames = false;
+	dec = avcodec_find_decoder(st->codecpar->codec_id);
+	dec_ctx = avcodec_alloc_context3(dec);
+	avcodec_parameters_to_context(dec_ctx, st->codecpar);
+    //dec_ctx->refcounted_frames = false;
 	dec = avcodec_find_decoder(dec_ctx->codec_id);
 	if (!dec) {
 		fprintf(stderr, "Failed to find %s codec\n",
@@ -1091,8 +1104,8 @@ void get_frame_other(Layer *lay, int framenr, int prevframe, int errcount)
 			}
 			else {
 			//avformat_seek_file(lay->video, lay->video_stream->index, 0, lay->video->streams[lay->video_stream->index]->start_time, lay->video->streams[lay->video_stream->index]->start_time, 0);
-			av_seek_frame(lay->video, lay->video_stream->index, lay->video->streams[lay->video_stream->index]->start_time, 0);
-			avcodec_flush_buffers(lay->video_dec_ctx);
+				av_seek_frame(lay->video, lay->video_stream->index, lay->video->streams[lay->video_stream->index]->start_time, 0);
+				//avcodec_flush_buffers(lay->video_dec_ctx);
 				av_packet_unref(&lay->decpkt);
 				if (av_read_frame(lay->video, &lay->decpkt) < 0) printf("READPROBLEM\n");;
 			}
@@ -1114,7 +1127,7 @@ void get_frame_other(Layer *lay, int framenr, int prevframe, int errcount)
 			else framenr++;	
 			if (framenr > lay->endframe) framenr = lay->startframe;
 			else if (framenr < lay->startframe) framenr = lay->endframe;
-			avcodec_flush_buffers(lay->video_dec_ctx);
+			//avcodec_flush_buffers(lay->video_dec_ctx);
 			errcount++;
 			if (errcount == 10) {
 				lay->openerr = true;
@@ -1185,7 +1198,6 @@ void Layer::get_frame(){
 	int frnums[10] = {-1, -1, -1, -1, -1, -1, -1, -1, -1, -1};
 
 	while (1) {
-		this->building = false;
 		std::unique_lock<std::mutex> lock(this->startlock);
 		this->startdecode.wait(lock, [&]{return this->ready;});
 		lock.unlock();
@@ -1208,6 +1220,8 @@ void Layer::get_frame(){
 			if (r == 0) {
 				printf("load error\n");
 				this->openerr = true;
+				this->startframe = 0;
+				this->endframe = 0;
 			}
 			this->opened = true;
 			this->endopenvar.notify_one();
@@ -1215,7 +1229,7 @@ void Layer::get_frame(){
 			continue;
 		}
 		if (this->liveinput == nullptr) {
-			if (!this->video_stream) continue;
+			if (!this->initialized and this->decresult->width) continue;
 			if (this->vidformat != 188 and this->vidformat != 187) {
 				if ((int)(this->frame) != this->prevframe) {
 					get_frame_other(this, (int)this->frame, this->prevframe, 0);
@@ -1251,11 +1265,12 @@ void Layer::get_frame(){
 }
 
 void open_video(float frame, Layer *lay, const std::string &filename, int reset) {
+	lay->decresult->width = 0;
 	if (lay->boundimage != -1) {
 		glDeleteTextures(1, &lay->boundimage);
 		lay->boundimage = -1;
 	}
-	lay->video_dec_ctx = nullptr;
+	//lay->video_dec_ctx = nullptr;
 	lay->audioplaying = false;
 	if (lay->effects[0].size() == 0) lay->type = ELEM_FILE;
 	else lay->type = ELEM_LAYER;
@@ -1278,7 +1293,9 @@ void open_video(float frame, Layer *lay, const std::string &filename, int reset)
 }
 
 bool thread_vidopen(Layer *lay, AVInputFormat *ifmt, bool skip) {
+	if (lay->video) avformat_close_input(&lay->video);
 	lay->video = nullptr;
+	lay->video_dec_ctx = nullptr;
 	lay->liveinput = nullptr;
 		
 	if (!skip) {
@@ -1334,12 +1351,15 @@ bool thread_vidopen(Layer *lay, AVInputFormat *ifmt, bool skip) {
     }
 	lay->video->max_picture_buffer = 20000000;
 
-   if (open_codec_context(&(lay->video_stream_idx), lay->video, AVMEDIA_TYPE_VIDEO) >= 0) {
+    if (open_codec_context(&(lay->video_stream_idx), lay->video, AVMEDIA_TYPE_VIDEO) >= 0) {
      	lay->video_stream = lay->video->streams[lay->video_stream_idx];
-        lay->video_dec_ctx = lay->video_stream->codec;
+		AVCodec *dec = avcodec_find_decoder(lay->video_stream->codecpar->codec_id);
+        lay->video_dec_ctx = avcodec_alloc_context3(dec);
+		avcodec_parameters_to_context(lay->video_dec_ctx, lay->video_stream->codecpar);
+		avcodec_open2(lay->video_dec_ctx, dec, nullptr);
         lay->vidformat = lay->video_dec_ctx->codec_id;
 		if (lay->vidformat == 188 or lay->vidformat == 187) {
-        	if (lay->databuf) free(lay->databuf);
+			if (lay->databuf) free(lay->databuf);
 			lay->databuf = (char*)malloc(lay->video_dec_ctx->width * lay->video_dec_ctx->height);
 			lay->numf = lay->video_stream->nb_frames;
 			float tbperframe = (float)lay->video_stream->duration / (float)lay->numf;
@@ -1349,6 +1369,7 @@ bool thread_vidopen(Layer *lay, AVInputFormat *ifmt, bool skip) {
 				lay->endframe = lay->numf - 1;
 				lay->frame = (lay->numf - 1) * (lay->reset - 1);
 			}
+			lay->decframe = av_frame_alloc();
 			return 1;
         }
   	}
@@ -1372,12 +1393,14 @@ bool thread_vidopen(Layer *lay, AVInputFormat *ifmt, bool skip) {
 	//if (lay->numf == 0) return 0;	//implement!
 	float tbperframe = (float)lay->video_stream->duration / (float)lay->numf;
 	lay->millif = tbperframe * (((float)lay->video_stream->time_base.num * 1000.0) / (float)lay->video_stream->time_base.den);
-	float waitmilli = lay->millif;  // fix this
 		
 
 	if (open_codec_context(&(lay->audio_stream_idx), lay->video, AVMEDIA_TYPE_AUDIO) >= 0 and !lay->dummy) {
 		lay->audio_stream = lay->video->streams[lay->audio_stream_idx];
-		lay->audio_dec_ctx = lay->audio_stream->codec;
+		AVCodec *dec = avcodec_find_decoder(lay->audio_stream->codecpar->codec_id);
+        lay->audio_dec_ctx = avcodec_alloc_context3(dec);
+		avcodec_parameters_to_context(lay->audio_dec_ctx, lay->audio_stream->codecpar);
+		avcodec_open2(lay->audio_dec_ctx, dec, nullptr);
 		lay->sample_rate = lay->audio_dec_ctx->sample_rate;
 		lay->channels = lay->audio_dec_ctx->channels;
 		lay->channels = 1;
@@ -1555,7 +1578,7 @@ void set_fbo() {
 
     glGenTextures(1, &mainmix->mixbackuptex);
     glBindTexture(GL_TEXTURE_2D, mainmix->mixbackuptex);
-	glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA8, glob->w, glob->h, 0, GL_BGRA, GL_UNSIGNED_BYTE, nullptr);
+	glTexStorage2D(GL_TEXTURE_2D, 1, GL_RGBA8, glob->w, glob->h);
     glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR);
     glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
 
@@ -1564,19 +1587,19 @@ void set_fbo() {
    	glGenTextures(1, &mainprogram->fbotex[2]); //comp = true
     glGenTextures(1, &mainprogram->fbotex[3]);
     glBindTexture(GL_TEXTURE_2D, mainprogram->fbotex[0]);
-	glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA8, glob->w, glob->h, 0, GL_BGRA, GL_UNSIGNED_BYTE, nullptr);
+	glTexStorage2D(GL_TEXTURE_2D, 1, GL_RGBA8, mainprogram->ow3, mainprogram->oh3);
     glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR);
     glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
     glBindTexture(GL_TEXTURE_2D, mainprogram->fbotex[1]);
-	glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA8, glob->w, glob->h, 0, GL_BGRA, GL_UNSIGNED_BYTE, nullptr);
+	glTexStorage2D(GL_TEXTURE_2D, 1, GL_RGBA8, mainprogram->ow3, mainprogram->oh3);
     glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR);
     glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
     glBindTexture(GL_TEXTURE_2D, mainprogram->fbotex[2]);
-	glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA8, mainprogram->ow, mainprogram->oh, 0, GL_BGRA, GL_UNSIGNED_BYTE, nullptr);
+	glTexStorage2D(GL_TEXTURE_2D, 1, GL_RGBA8, mainprogram->ow, mainprogram->oh);
     glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR);
     glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
     glBindTexture(GL_TEXTURE_2D, mainprogram->fbotex[3]);
-	glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA8, mainprogram->ow, mainprogram->oh, 0, GL_BGRA, GL_UNSIGNED_BYTE, nullptr);
+	glTexStorage2D(GL_TEXTURE_2D, 1, GL_RGBA8, mainprogram->ow, mainprogram->oh);
     glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR);
     glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
 
@@ -1873,7 +1896,7 @@ float render_text(std::string text, float *textc, float x, float y, float sx, fl
 }
 
 float render_text(std::string text, float *textc, float x, float y, float sx, float sy, int smflag, bool vertical) {
- 	y -= 0.03f;
+ 	y -= 0.015f;
 	GLuint texture;
 	float textw = 0.0f;
 	float texth = 0.0f;
@@ -1928,16 +1951,12 @@ float render_text(std::string text, float *textc, float x, float y, float sx, fl
 		glGenTextures(1, &texture);
 		glActiveTexture(GL_TEXTURE0);
 		glBindTexture(GL_TEXTURE_2D, texture);
-		glTexImage2D(        //reminder: texture size efficiency!
+		glTexStorage2D(        //reminder: texture size efficiency!
 			GL_TEXTURE_2D,
-			0,
+			1,
 			GL_RGBA8,
 			2048,
-			64,
-			0,
-			GL_BGRA,
-			GL_UNSIGNED_BYTE,
-			0
+			64
 			);
 		glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR);
 		glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
@@ -1949,6 +1968,7 @@ float render_text(std::string text, float *textc, float x, float y, float sx, fl
 			1.0f , -1.0f,
 			-1.0f,     1.0f,
 			1.0f, 1.0f};
+
 		GLfloat textcoords[] = {0.0f, 0.0f,
 							1.0f, 0.0f,
 							0.0f, 1.0f,
@@ -1956,8 +1976,10 @@ float render_text(std::string text, float *textc, float x, float y, float sx, fl
 		GLuint texfrbuf, texvbuf;
 		glGenFramebuffers(1, &texfrbuf);
 		glBindFramebuffer(GL_FRAMEBUFFER, texfrbuf);
-		//glBindTexture(GL_TEXTURE_2D, 0);
 		glFramebufferTexture2D(GL_FRAMEBUFFER, GL_COLOR_ATTACHMENT0, GL_TEXTURE_2D, texture, 0);
+		glDrawBuffer(GL_COLOR_ATTACHMENT0);
+		glClearColor(0, 0, 0, 0);
+		glClear(GL_COLOR_BUFFER_BIT);
 		glGenBuffers(1, &texvbuf);
 		glBindBuffer(GL_ARRAY_BUFFER, texvbuf);
 		GLuint texvao, textbuf;
@@ -1983,8 +2005,9 @@ float render_text(std::string text, float *textc, float x, float y, float sx, fl
 		glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
 		glPixelStorei(GL_UNPACK_ALIGNMENT, 1);
 		
-		float pixelw, pixelh;
-		FT_Set_Pixel_Sizes(face, 0, (int)(sy * 32000.0f * glob->h / 1346.0f)); //
+		float pixelw = 0.0f;
+		float pixelh = 0.0f;
+		FT_Set_Pixel_Sizes(face, 0, (int)(sy * 24000.0f * glob->h / 1346.0f)); //
 		x = -1.0f;
 		y = 1.0f;
 		FT_GlyphSlot g = face->glyph;
@@ -2012,7 +2035,7 @@ float render_text(std::string text, float *textc, float x, float y, float sx, fl
 			pixelw = 2.0f / glob->w;
 			pixelh = 2.0f / glob->h;
 			float x2 = x + g->bitmap_left * pixelw;
-			float y2 = y - (g->bitmap_top + 16 * glob->h / 1346.0f) * pixelh;
+			float y2 = y - (g->bitmap_top + 8 * glob->h / 1346.0f) * pixelh;
 			float wi = g->bitmap.width * pixelw;
 			float he = g->bitmap.rows * pixelh;
 	
@@ -2057,16 +2080,12 @@ float render_text(std::string text, float *textc, float x, float y, float sx, fl
 		GLuint endtex;
 		glGenTextures(1, &endtex);
 		glBindTexture(GL_TEXTURE_2D, endtex);
-		glTexImage2D(
+		glTexStorage2D(
 			GL_TEXTURE_2D,
-			0,
+			1,
 			GL_RGBA8,
 			w,
-			64,
-			0,
-			GL_BGRA,
-			GL_UNSIGNED_BYTE,
-			0
+			64
 			);
 		glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR);
 		glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
@@ -2302,7 +2321,7 @@ void calc_texture(Layer *lay, bool comp, bool alive) {
 							lay->clips.erase(lay->clips.begin());
 							VideoNode *node = lay->node;
 							GLuint temptex = copy_tex(node->vidbox->tex);
-							ELEM_TYPE temptype;
+							ELEM_TYPE temptype = ELEM_FILE;
 							std::string tpath;
 							if (lay->effects[0].size()) {
 								temptype = ELEM_LAYER;
@@ -2386,57 +2405,57 @@ void calc_texture(Layer *lay, bool comp, bool alive) {
 			srclay = mainmix->firstlayers[lay->clonesetnr];
 		}
 	}
+	else return;
 	
 	glActiveTexture(GL_TEXTURE0);
 	glBindTexture(GL_TEXTURE_2D, lay->texture);
 	if (!lay->liveinput) {
 		if ((!lay->initialized or srclay == lay)) {  // decresult contains new frame width, height, number of bitmaps and data
-			if (srclay->decresult->width or srclay->type == ELEM_IMAGE) {
-				if (srclay->vidformat == 188 or srclay->vidformat == 187 and lay->video_dec_ctx) {
-					// HAP video layers
+			if (!srclay->decresult->width) return;
+
+			if (srclay->vidformat == 188 or srclay->vidformat == 187 and lay->video_dec_ctx) {
+				// HAP video layers
+				if (!lay->initialized) {
+					float w = lay->video_dec_ctx->width;
+					float h = lay->video_dec_ctx->height;
+					lay->initialize(w, h, srclay->decresult->compression);
+				}
+				if (srclay->decresult->compression == 187) {
+					glCompressedTexSubImage2D(GL_TEXTURE_2D, 0, 0, 0, srclay->decresult->width, srclay->decresult->height, GL_COMPRESSED_RGBA_S3TC_DXT1_EXT, srclay->decresult->size, srclay->decresult->data);
+				}
+				else if (srclay->decresult->compression == 190) {
+					glCompressedTexSubImage2D(GL_TEXTURE_2D, 0, 0, 0, srclay->decresult->width, srclay->decresult->height, GL_COMPRESSED_RGBA_S3TC_DXT5_EXT, srclay->decresult->size, srclay->decresult->data);
+				}
+			}
+			else {
+				if (srclay->type == ELEM_IMAGE) {
+					ilBindImage(srclay->boundimage);
+					ilActiveImage((int)srclay->frame);
+					int imageformat = ilGetInteger(IL_IMAGE_FORMAT);
+					int w = ilGetInteger(IL_IMAGE_WIDTH);
+					int h = ilGetInteger(IL_IMAGE_HEIGHT);
+					int bpp = ilGetInteger(IL_IMAGE_BPP);
+					GLuint mode = GL_BGR;
+					if (imageformat == IL_RGBA) mode = GL_RGBA;
+					if (imageformat == IL_BGRA) mode = GL_BGRA;
+					if (imageformat == IL_RGB) mode = GL_RGB;
+					if (imageformat == IL_BGR) mode = GL_BGR;
+					if (bpp == 3) {
+						glTexSubImage2D(GL_TEXTURE_2D, 0, 0, 0, w, h, mode, GL_UNSIGNED_BYTE, ilGetData());
+					}
+					else if (bpp == 4) {
+						glTexSubImage2D(GL_TEXTURE_2D, 0, 0, 0, w, h, mode, GL_UNSIGNED_BYTE, ilGetData());
+					}
+				}
+				else if (lay->video_dec_ctx) {
 					if (!lay->initialized) {
 						float w = lay->video_dec_ctx->width;
 						float h = lay->video_dec_ctx->height;
-						lay->initialize(w, h, srclay->decresult->compression);
+						lay->initialize(w, h);
 					}
-					if (srclay->decresult->compression == 187) {
-						glCompressedTexSubImage2D(GL_TEXTURE_2D, 0, 0, 0, srclay->decresult->width, srclay->decresult->height, GL_COMPRESSED_RGBA_S3TC_DXT1_EXT, srclay->decresult->size, srclay->decresult->data);
-					}
-					else if (srclay->decresult->compression == 190) {
-						glCompressedTexSubImage2D(GL_TEXTURE_2D, 0, 0, 0, srclay->decresult->width, srclay->decresult->height, GL_COMPRESSED_RGBA_S3TC_DXT5_EXT, srclay->decresult->size, srclay->decresult->data);
-					}
-				}
-				else {
-					if (srclay->type == ELEM_IMAGE) {
-						ilBindImage(srclay->boundimage);
-						ilActiveImage((int)srclay->frame);
-						int imageformat = ilGetInteger(IL_IMAGE_FORMAT);
-						int w = ilGetInteger(IL_IMAGE_WIDTH);
-						int h = ilGetInteger(IL_IMAGE_HEIGHT);
-						int bpp = ilGetInteger(IL_IMAGE_BPP);
-						GLuint mode = GL_BGR;
-						if (imageformat == IL_RGBA) mode = GL_RGBA;
-						if (imageformat == IL_BGRA) mode = GL_BGRA;
-						if (imageformat == IL_RGB) mode = GL_RGB;
-						if (imageformat == IL_BGR) mode = GL_BGR;
-						if (bpp == 3) {
-							glTexSubImage2D(GL_TEXTURE_2D, 0, 0, 0, w, h, mode, GL_UNSIGNED_BYTE, ilGetData());
-						}
-						else if (bpp == 4) {
-							glTexSubImage2D(GL_TEXTURE_2D, 0, 0, 0, w, h, mode, GL_UNSIGNED_BYTE, ilGetData());
-						}
-					}
-					else if (lay->video_dec_ctx) {
-						if (!lay->initialized) {
-							float w = lay->video_dec_ctx->width;
-							float h = lay->video_dec_ctx->height;
-							lay->initialize(w, h);
-						}
-						glTexSubImage2D(GL_TEXTURE_2D, 0, 0, 0, srclay->decresult->width, srclay->decresult->height, GL_BGRA, GL_UNSIGNED_BYTE, srclay->decresult->data);
-					}
+					glTexSubImage2D(GL_TEXTURE_2D, 0, 0, 0, srclay->decresult->width, srclay->decresult->height, GL_BGRA, GL_UNSIGNED_BYTE, srclay->decresult->data);
 				}
 			}
-			else return;
 		}
 	}
 	else {
@@ -3773,10 +3792,11 @@ void onestepfrom(bool stage, Node *node, Node *prevnode, GLuint prevfbotex, GLui
 				glGenTextures(1, &(effect->fbotex));
 				glBindTexture(GL_TEXTURE_2D, effect->fbotex);
 				if ((stage == 0)) {
-					glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA8, mainprogram->ow3, mainprogram->oh3, 0, GL_BGRA, GL_UNSIGNED_BYTE, nullptr);
+
+					glTexStorage2D(GL_TEXTURE_2D, 1, GL_RGBA8, mainprogram->ow3, mainprogram->oh3);
 				}
 				else {
-					glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA8, mainprogram->ow, mainprogram->oh, 0, GL_BGRA, GL_UNSIGNED_BYTE, nullptr);
+					glTexStorage2D(GL_TEXTURE_2D, 1, GL_RGBA8, mainprogram->ow, mainprogram->oh);
 				}
 				glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR);
 				glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
@@ -3904,10 +3924,10 @@ void onestepfrom(bool stage, Node *node, Node *prevnode, GLuint prevfbotex, GLui
 					glGenTextures(1, &(bnode->fbotex));
 					glBindTexture(GL_TEXTURE_2D, bnode->fbotex);
 					if (stage == 0) {
-						glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA8, mainprogram->ow3, mainprogram->oh3, 0, GL_BGRA, GL_UNSIGNED_BYTE, nullptr);
+						glTexStorage2D(GL_TEXTURE_2D, 1, GL_RGBA8, mainprogram->ow3, mainprogram->oh3);
 					}
 					else {	
-						glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA8, mainprogram->ow, mainprogram->oh, 0, GL_BGRA, GL_UNSIGNED_BYTE, nullptr);
+						glTexStorage2D(GL_TEXTURE_2D, 1, GL_RGBA8, mainprogram->ow, mainprogram->oh);
 					}
 					glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR);
 					glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
@@ -4008,10 +4028,10 @@ void onestepfrom(bool stage, Node *node, Node *prevnode, GLuint prevfbotex, GLui
 			glGenTextures(1, &(mnode->mixtex));
 			glBindTexture(GL_TEXTURE_2D, mnode->mixtex);
 			if (stage == 0) {
-				glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA8, mainprogram->ow3, mainprogram->oh3, 0, GL_BGRA, GL_UNSIGNED_BYTE, nullptr);
+				glTexStorage2D(GL_TEXTURE_2D, 1, GL_RGBA8, mainprogram->ow3, mainprogram->oh3);
 			}
 			else {
-				glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA8, mainprogram->ow, mainprogram->oh, 0, GL_BGRA, GL_UNSIGNED_BYTE, nullptr);
+				glTexStorage2D(GL_TEXTURE_2D, 1, GL_RGBA8, mainprogram->ow, mainprogram->oh);
 			}
 			glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR);
 			glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
@@ -4099,20 +4119,24 @@ void walk_nodes(bool stage) {
 	if (stage == 0) {
 		for (int i = 0; i < mainmix->layersA.size(); i++) {
 			Layer *lay = mainmix->layersA[i];
+			if (!lay->decresult->width) return;
 			onestepfrom(0, lay->node, nullptr, -1, -1);
 		}
 		for (int i = 0; i < mainmix->layersB.size(); i++) {
 			Layer *lay = mainmix->layersB[i];
+			if (!lay->decresult->width) return;
 			onestepfrom(0, lay->node, nullptr, -1, -1);
 		}
 	}
 	else {
 		for (int i = 0; i < mainmix->layersAcomp.size(); i++) {
 			Layer *lay = mainmix->layersAcomp[i];
+			if (!lay->decresult->width) return;
 			onestepfrom(1, lay->node, nullptr, -1, -1);
 		}
 		for (int i = 0; i < mainmix->layersBcomp.size(); i++) {
 			Layer *lay = mainmix->layersBcomp[i];
+			if (!lay->decresult->width) return;
 			onestepfrom(1, lay->node, nullptr, -1, -1);
 		}
 	}
@@ -5029,7 +5053,7 @@ Preferences::Preferences() {
 void Preferences::load() {
 	ifstream rfile;
 	#ifdef _WIN64
-	std::string prstr = "./preferences.prefs";
+	std::string prstr = mainprogram->docpath + "preferences.prefs";
 	#else
 	#ifdef __linux__
 	std::string homedir (getenv("HOME"));
@@ -5061,7 +5085,7 @@ void Preferences::load() {
 									break;
 								}
 								int foundpos = -1;
-								PrefItem *pi;
+								PrefItem *pi = nullptr;
 								for (int j = 0; j < mainprogram->prefs->items[i]->items.size(); j++) {
 									pi = mainprogram->prefs->items[i]->items[j];
 									if (pi->name == istring) {
@@ -5127,6 +5151,40 @@ void Preferences::load() {
 					if (brk) break;
 				}
 			}
+			mainprogram->currshelfdir = mainprogram->shelfdir;
+			mainprogram->currbinsdir = mainprogram->binsdir;
+			if (istring == "CURRVIDEODIR") {
+				getline(rfile, istring);
+				mainprogram->currvideodir = istring;
+			}
+			else if (istring == "CURRIMAGEDIR") {
+				getline(rfile, istring);
+				mainprogram->currimagedir = istring;
+			}
+			else if (istring == "CURRLAYERDIR") {
+				getline(rfile, istring);
+				mainprogram->currlayerdir = istring;
+			}
+			else if (istring == "CURRDECKDIR") {
+				getline(rfile, istring);
+				mainprogram->currdeckdir = istring;
+			}
+			else if (istring == "CURRMIXDIR") {
+				getline(rfile, istring);
+				mainprogram->currmixdir = istring;
+			}
+			else if (istring == "CURRSTATEDIR") {
+				getline(rfile, istring);
+				mainprogram->currstatedir = istring;
+			}
+			else if (istring == "CURRBINDIRDIR") {
+				getline(rfile, istring);
+				mainprogram->currbindirdir = istring;
+			}
+			else if (istring == "CURRSHELFDIRDIR") {
+				getline(rfile, istring);
+				mainprogram->currshelfdirdir = istring;
+			}
 		}
 	}
 	
@@ -5137,7 +5195,7 @@ void Preferences::load() {
 void Preferences::save() {
 	ofstream wfile;
 	#ifdef _WIN64
-	std::string prstr = "./preferences.prefs";
+	std::string prstr = mainprogram->docpath + "preferences.prefs";
 	#else
 	#ifdef __linux__
 	std::string homedir (getenv("HOME"));
@@ -5170,7 +5228,32 @@ void Preferences::save() {
 		}
 		wfile << "ENDOFPREFCAT\n";
 	}
-	
+
+	wfile << "CURRVIDEODIR\n";
+	wfile << mainprogram->currvideodir;
+	wfile << "\n";
+	wfile << "CURRIMAGEDIR\n";
+	wfile << mainprogram->currimagedir;
+	wfile << "\n";
+	wfile << "CURRLAYERDIR\n";
+	wfile << mainprogram->currlayerdir;
+	wfile << "\n";
+	wfile << "CURRDECKDIR\n";
+	wfile << mainprogram->currdeckdir;
+	wfile << "\n";
+	wfile << "CURRMIXDIR\n";
+	wfile << mainprogram->currmixdir;
+	wfile << "\n";
+	wfile << "CURRSTATEDIR\n";
+	wfile << mainprogram->currstatedir;
+	wfile << "\n";
+	wfile << "CURRBINDIRDIR\n";
+	wfile << mainprogram->currbindirdir;
+	wfile << "\n";
+	wfile << "CURRSHELFDIRDIR\n";
+	wfile << mainprogram->currshelfdirdir;
+	wfile << "\n";
+
 	wfile << "ENDOFFILE\n";
 	wfile.close();
 }
@@ -5228,7 +5311,7 @@ PIDirs::PIDirs() {
 	pdi->iconbox->tooltiptitle = "Browse to set projects directory ";
 	pdi->iconbox->tooltip = "Leftclick allows browsing for location of projects directory. ";
 	#ifdef _WIN64
-	pdi->path = "./projects/";
+	pdi->path = mainprogram->docpath + "projects/";
 	#else
 	#ifdef __linux__
 	pdi->path = homedir + "/.ewocvj2/projects/";
@@ -5246,7 +5329,7 @@ PIDirs::PIDirs() {
 	pdi->iconbox->tooltiptitle = "Browse to set general mediabins directory ";
 	pdi->iconbox->tooltip = "Leftclick allows browsing for location of general mediabins directory. ";
 	#ifdef _WIN64
-	pdi->path = "./bins/";
+	pdi->path = mainprogram->docpath + "bins/";
 	#else
 	#ifdef __linux__
 	std::string homedir (getenv("HOME"));
@@ -5265,7 +5348,7 @@ PIDirs::PIDirs() {
 	pdi->iconbox->tooltiptitle = "Browse to set general shelves directory ";
 	pdi->iconbox->tooltip = "Leftclick allows browsing for location of general shelves directory. ";
 	#ifdef _WIN64
-	pdi->path = "./shelves/";
+	pdi->path = mainprogram->docpath + "shelves/";
 	# else
 	#ifdef __linux__
 	std::string homedir (getenv("HOME"));
@@ -5284,7 +5367,7 @@ PIDirs::PIDirs() {
 	pdi->iconbox->tooltiptitle = "Browse to set recordings directory ";
 	pdi->iconbox->tooltip = "Leftclick allows browsing for location of recordings directory. ";
 	#ifdef _WIN64
-	pdi->path = "./recordings/";
+	pdi->path = mainprogram->docpath + "recordings/";
 	#else
 	#ifdef __linux__
 	pdi->path = homedir + "/.ewocvj2/recordings/";
@@ -5302,7 +5385,7 @@ PIDirs::PIDirs() {
 	pdi->iconbox->tooltiptitle = "Browse to set autosaves directory ";
 	pdi->iconbox->tooltip = "Leftclick allows browsing for location of autosaves directory. ";
 	#ifdef _WIN64
-	pdi->path = "./autosaves/";
+	pdi->path = mainprogram->docpath + "autosaves/";
 	#else
 	#ifdef __linux__
 	pdi->path = homedir + "/.ewocvj2/autosaves/";
@@ -5627,9 +5710,11 @@ void exchange(Layer *lay, std::vector<Layer*> &slayers, std::vector<Layer*> &dla
 				if (lay == dlayers[i]) return;
 				//move one layer
 				BLEND_TYPE nextbtype;
-				float nextmfval;
-				int nextwipetype, nextwipedir;
-				float nextwipex, nextwipey;
+				float nextmfval = 0.0f;
+				int nextwipetype = 0;
+				int nextwipedir = 0;
+				float nextwipex = 0.0f;
+				float nextwipey = 0.0f;
 				Layer *nextlay = nullptr;
 				if (slayers.size() > lay->pos + 1) {
 					nextlay = slayers[lay->pos + 1];
@@ -6161,7 +6246,7 @@ bool preferences() {
 					mci->items[i]->choosing = true;
 					mainprogram->pathto = "CHOOSEDIR";
 					std::string title = "Open " + mci->items[i]->name + " directory";
-					std::thread filereq (&Program::get_dir, mainprogram, title.c_str());
+					std::thread filereq (&Program::get_dir, mainprogram, title.c_str(), boost::filesystem::canonical(mci->items[i]->path).generic_string());
 					filereq.detach();
 				}
 			}
@@ -6427,7 +6512,7 @@ int tune_midi() {
 	if (box.in(mx, my)) {
 		draw_box(white, lightblue, &box, -1);
 		if (mainprogram->lmsave) {
-			open_genmidis("./midiset.gm");
+			open_genmidis(mainprogram->docpath + "midiset.gm");
 			mainprogram->tunemidi = false;
 			SDL_HideWindow(mainprogram->tunemidiwindow);
 			return 0;
@@ -6440,7 +6525,7 @@ int tune_midi() {
 	if (box.in(mx, my)) {
 		draw_box(white, lightblue, &box, -1);
 		if (mainprogram->lmsave) {
-			save_genmidis("./midiset.gm");
+			save_genmidis(mainprogram->docpath + "midiset.gm");
 			mainprogram->tunemidi = false;
 			SDL_HideWindow(mainprogram->tunemidiwindow);
 			return 0;
@@ -7126,7 +7211,7 @@ void the_loop() {
 			if (mainprogram->toscreen->toggled()) {
 				mainprogram->toscreen->value = 0;
 				mainprogram->toscreen->oldvalue = 0;
-				// MAKE LIVE button copies preview set entirely to comp set
+				// SEND UP button copies preview set entirely to comp set
 				mainmix->copy_to_comp(mainmix->layersA, mainmix->layersAcomp, mainmix->layersB, mainmix->layersBcomp, mainprogram->nodesmain->currpage->nodes, mainprogram->nodesmain->currpage->nodescomp, mainprogram->nodesmain->mixnodescomp, true);
 				mainprogram->leftmouse = false;
 			}
@@ -7139,7 +7224,7 @@ void the_loop() {
 			if (mainprogram->backtopre->toggled()) {
 				mainprogram->backtopre->value = 0;
 				mainprogram->backtopre->oldvalue = 0;
-				// BACK button copies comp set entirely back to preview set
+				// SEND DOWN button copies comp set entirely back to preview set
 				mainmix->copy_to_comp(mainmix->layersAcomp, mainmix->layersA, mainmix->layersBcomp, mainmix->layersB, mainprogram->nodesmain->currpage->nodescomp, mainprogram->nodesmain->currpage->nodes, mainprogram->nodesmain->mixnodes, false);
 				mainprogram->leftmouse = false;
 			}
@@ -7799,12 +7884,12 @@ void the_loop() {
 		k = handle_menu(mainprogram->deckmenu);
 		if (k == 0) {
 			mainprogram->pathto = "OPENDECK";
-			std::thread filereq (&Program::get_inname, mainprogram, "Open deck file", "application/ewocvj2-deck", "");
+			std::thread filereq (&Program::get_inname, mainprogram, "Open deck file", "application/ewocvj2-deck", boost::filesystem::canonical(mainprogram->currdeckdir).generic_string());
 			filereq.detach();
 		}
 		else if (k == 1) {
 			mainprogram->pathto = "SAVEDECK";
-			std::thread filereq (&Program::get_outname, mainprogram, "Save deck file", "application/ewocvj2-deck", "");
+			std::thread filereq (&Program::get_outname, mainprogram, "Save deck file", "application/ewocvj2-deck", boost::filesystem::canonical(mainprogram->currdeckdir).generic_string());
 			filereq.detach();
 		}
 		else if (k == 2) {
@@ -7856,24 +7941,24 @@ void the_loop() {
 			}
 			if (k == 1) {
 				mainprogram->pathto = "OPENVIDEO";
-				std::thread filereq (&Program::get_inname, mainprogram, "Open video file", "", "");
+				std::thread filereq (&Program::get_inname, mainprogram, "Open video file", "", boost::filesystem::canonical(mainprogram->currvideodir).generic_string());
 				filereq.detach();
 				mainprogram->loadlay = mainmix->mouselayer;
 			}
 			if (k == 2) {
 				mainprogram->pathto = "OPENIMAGE";
-				std::thread filereq (&Program::get_inname, mainprogram, "Open image file", "", "");
+				std::thread filereq (&Program::get_inname, mainprogram, "Open image file", "", boost::filesystem::canonical(mainprogram->currimagedir).generic_string());
 				filereq.detach();
 				mainprogram->loadlay = mainmix->mouselayer;
 			}
 			else if (k == 3) {
 				mainprogram->pathto = "OPENLAYFILE";
-				std::thread filereq (&Program::get_inname, mainprogram, "Open layer file", "application/ewocvj2-layer", "");
+				std::thread filereq (&Program::get_inname, mainprogram, "Open layer file", "application/ewocvj2-layer", boost::filesystem::canonical(mainprogram->currlayerdir).generic_string());
 				filereq.detach();
 			}
 			else if (k == 4) {
 				mainprogram->pathto = "SAVELAYFILE";
-				std::thread filereq (&Program::get_outname, mainprogram, "Save layer file", "application/ewocvj2-layer", "");
+				std::thread filereq (&Program::get_outname, mainprogram, "Save layer file", "application/ewocvj2-layer", boost::filesystem::canonical(mainprogram->currlayerdir).generic_string());
 				filereq.detach();
 			}
 			else if (k == 5) {
@@ -7881,12 +7966,12 @@ void the_loop() {
 			}
 			else if (k == 6) {
 				mainprogram->pathto = "OPENDECK";
-				std::thread filereq (&Program::get_inname, mainprogram, "Open deck file", "application/ewocvj2-deck", "");
+				std::thread filereq (&Program::get_inname, mainprogram, "Open deck file", "application/ewocvj2-deck", boost::filesystem::canonical(mainprogram->currdeckdir).generic_string());
 				filereq.detach();
 			}
 			else if (k == 7) {
 				mainprogram->pathto = "SAVEDECK";
-				std::thread filereq (&Program::get_outname, mainprogram, "Save deck file", "application/ewocvj2-deck", "");
+				std::thread filereq (&Program::get_outname, mainprogram, "Save deck file", "application/ewocvj2-deck", boost::filesystem::canonical(mainprogram->currdeckdir).generic_string());
 				filereq.detach();
 			}
 			else if (k == 8) {
@@ -7894,12 +7979,12 @@ void the_loop() {
 			}
 			else if (k == 9) {
 				mainprogram->pathto = "OPENMIX";
-				std::thread filereq (&Program::get_inname, mainprogram, "Open mix file", "application/ewocvj2-mix", "");
+				std::thread filereq (&Program::get_inname, mainprogram, "Open mix file", "application/ewocvj2-mix", boost::filesystem::canonical(mainprogram->currmixdir).generic_string());
 				filereq.detach();
 			}
 			else if (k == 10) {
 				mainprogram->pathto = "SAVEMIX";
-				std::thread filereq (&Program::get_outname, mainprogram, "Open mix file", "application/ewocvj2-mix", "");
+				std::thread filereq (&Program::get_outname, mainprogram, "Open mix file", "application/ewocvj2-mix", boost::filesystem::canonical(mainprogram->currmixdir).generic_string());
 				filereq.detach();
 			}
 			else if (k == 11) {
@@ -7971,14 +8056,14 @@ void the_loop() {
 			}
 			if (k == 1) {
 				mainprogram->pathto = "OPENVIDEO";
-				std::thread filereq (&Program::get_inname, mainprogram, "Open video file", "", "");
+				std::thread filereq (&Program::get_inname, mainprogram, "Open video file", "", boost::filesystem::canonical(mainprogram->currvideodir).generic_string());
 				filereq.detach();
 				mainprogram->loadlay = mainmix->add_layer(lvec, lvec.size());
 				mainmix->currlay = mainprogram->loadlay;
 			}
 			if (k == 2) {
 				mainprogram->pathto = "OPENIMAGE";
-				std::thread filereq (&Program::get_inname, mainprogram, "Open image file", "", "");
+				std::thread filereq (&Program::get_inname, mainprogram, "Open image file", "", boost::filesystem::canonical(mainprogram->currimagedir).generic_string());
 				filereq.detach();
 				mainprogram->loadlay = mainmix->add_layer(lvec, lvec.size());
 				mainmix->currlay = mainprogram->loadlay;
@@ -7988,7 +8073,7 @@ void the_loop() {
 				mainmix->mouselayer = mainprogram->loadlay;
 				mainmix->currlay = mainprogram->loadlay;
 				mainprogram->pathto = "OPENLAYFILE";
-				std::thread filereq (&Program::get_inname, mainprogram, "Open layer file", "application/ewocvj2-layer", "");
+				std::thread filereq (&Program::get_inname, mainprogram, "Open layer file", "application/ewocvj2-layer", boost::filesystem::canonical(mainprogram->currlayerdir).generic_string());
 				filereq.detach();
 			}
 			else if (k == 4) {
@@ -7996,12 +8081,12 @@ void the_loop() {
 			}
 			else if (k == 5) {
 				mainprogram->pathto = "OPENDECK";
-				std::thread filereq (&Program::get_inname, mainprogram, "Open deck file", "application/ewocvj2-deck", "");
+				std::thread filereq (&Program::get_inname, mainprogram, "Open deck file", "application/ewocvj2-deck", boost::filesystem::canonical(mainprogram->currdeckdir).generic_string());
 				filereq.detach();
 			}
 			else if (k == 6) {
 				mainprogram->pathto = "SAVEDECK";
-				std::thread filereq (&Program::get_outname, mainprogram, "Save deck file", "application/ewocvj2-deck", "");
+				std::thread filereq (&Program::get_outname, mainprogram, "Save deck file", "application/ewocvj2-deck", boost::filesystem::canonical(mainprogram->currdeckdir).generic_string());
 				filereq.detach();
 			}
 			else if (k == 7) {
@@ -8009,12 +8094,12 @@ void the_loop() {
 			}
 			else if (k == 8) {
 				mainprogram->pathto = "OPENMIX";
-				std::thread filereq (&Program::get_inname, mainprogram, "Open mix file", "application/ewocvj2-mix", "");
+				std::thread filereq (&Program::get_inname, mainprogram, "Open mix file", "application/ewocvj2-mix", boost::filesystem::canonical(mainprogram->currmixdir).generic_string());
 				filereq.detach();
 			}
 			else if (k == 9) {
 				mainprogram->pathto = "SAVEMIX";
-				std::thread filereq (&Program::get_outname, mainprogram, "Save mix file", "application/ewocvj2-mix", "");
+				std::thread filereq (&Program::get_outname, mainprogram, "Save mix file", "application/ewocvj2-mix", boost::filesystem::canonical(mainprogram->currmixdir).generic_string());
 				filereq.detach();
 			}
 		}
@@ -8079,28 +8164,30 @@ void the_loop() {
 				count++;
 				name = remove_version(name) + "_" + std::to_string(count);
 			}
-			std::thread filereq (&Program::get_outname, mainprogram, "New project", "application/ewocvj2-project", boost::filesystem::absolute(reqdir + name).string());
+			std::thread filereq (&Program::get_outname, mainprogram, "New project", "application/ewocvj2-project", boost::filesystem::canonical(reqdir + name).generic_string());
 			filereq.detach();
 		}
 		else if (k == 1) {
 			mainprogram->pathto = "OPENPROJECT";
-			std::thread filereq (&Program::get_inname, mainprogram, "Open project file", "application/ewocvj2-project", "");
+			std::thread filereq (&Program::get_inname, mainprogram, "Open project file", "application/ewocvj2-project", boost::filesystem::canonical(mainprogram->currprojdir).generic_string());
 			filereq.detach();
 		}
 		else if (k == 2) {
-			mainprogram->project->save(mainprogram->project->path);
+			mainprogram->pathto = "SAVEPROJECT";
+			std::thread filereq(&Program::get_outname, mainprogram, "Save project file", "application/ewocvj2-project", boost::filesystem::canonical(mainprogram->project->path).generic_string());
+			filereq.detach();
 		}
 		else if (k == 3) {
 			new_state();
 		}
 		else if (k == 4) {
 			mainprogram->pathto = "OPENSTATE";
-			std::thread filereq (&Program::get_inname, mainprogram, "Open state file", "application/ewocvj2-state", "");
+			std::thread filereq (&Program::get_inname, mainprogram, "Open state file", "application/ewocvj2-state", boost::filesystem::canonical(mainprogram->currstatedir).generic_string());
 			filereq.detach();
 		}
 		else if (k == 5) {
 			mainprogram->pathto = "SAVESTATE";
-			std::thread filereq (&Program::get_outname, mainprogram, "Save state file", "application/ewocvj2-state", "");
+			std::thread filereq (&Program::get_outname, mainprogram, "Save state file", "application/ewocvj2-state", boost::filesystem::canonical(mainprogram->currstatedir).generic_string());
 			filereq.detach();
 		}
 		else if (k == 6) {
@@ -8139,32 +8226,32 @@ void the_loop() {
 		}
 		else if (k == 1) {
 			mainprogram->pathto = "OPENSHELF";
-			std::thread filereq (&Program::get_inname, mainprogram, "Open shelf file", "application/ewocvj2-shelf", mainprogram->shelfdir);
+			std::thread filereq (&Program::get_inname, mainprogram, "Open shelf file", "application/ewocvj2-shelf", boost::filesystem::canonical(mainprogram->currshelfdir).generic_string());
 			filereq.detach();
 		}
 		else if (k == 2) {
 			mainprogram->pathto = "SAVESHELF";
-			std::thread filereq (&Program::get_outname, mainprogram, "Save shelf file", "application/ewocvj2-shelf", mainprogram->shelfdir);
+			std::thread filereq (&Program::get_outname, mainprogram, "Save shelf file", "application/ewocvj2-shelf", boost::filesystem::canonical(mainprogram->currshelfdir).generic_string());
 			filereq.detach();
 		}
 		else if (k == 3) {
 			mainprogram->pathto = "OPENSHELFVIDEO";
-			std::thread filereq (&Program::get_inname, mainprogram,  "Load video file in shelf", "", "");
+			std::thread filereq (&Program::get_inname, mainprogram,  "Load video file in shelf", "", boost::filesystem::canonical(mainprogram->currvideodir).generic_string());
 			filereq.detach();
 		}
 		else if (k == 4) {
 			mainprogram->pathto = "OPENSHELFLAYER";
-			std::thread filereq (&Program::get_inname, mainprogram, "Load layer file in shelf", "application/ewocvj2-layer", "");
+			std::thread filereq (&Program::get_inname, mainprogram, "Load layer file in shelf", "application/ewocvj2-layer", boost::filesystem::canonical(mainprogram->currlayerdir).generic_string());
 			filereq.detach();
 		}
 		else if (k == 5) {
 			mainprogram->pathto = "OPENSHELFDIR";
-			std::thread filereq (&Program::get_dir, mainprogram, "Load directory into shelf");
+			std::thread filereq (&Program::get_dir, mainprogram, "Load directory into shelf", boost::filesystem::canonical(mainprogram->currshelfdirdir).generic_string());
 			filereq.detach();
 		}
 		else if (k == 6) {
 			mainprogram->pathto = "OPENSHELFIMAGE";
-			std::thread filereq (&Program::get_inname, mainprogram, "Load image into shelf", "", "");
+			std::thread filereq (&Program::get_inname, mainprogram, "Load image into shelf", "", boost::filesystem::canonical(mainprogram->currimagedir).generic_string());
 			filereq.detach();
 		}
 		else if (k == 7) {
@@ -8729,7 +8816,7 @@ void the_loop() {
 		glBindTexture(GL_TEXTURE_2D, tex);
 		glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR);
 		glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
-		glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA8, smw, smh, 0, GL_BGRA, GL_UNSIGNED_BYTE, nullptr);
+		glTexStorage2D(GL_TEXTURE_2D, 1, GL_RGBA8, smw, smh);
 		glGenFramebuffers(1, &fbo);
 		glBindFramebuffer(GL_FRAMEBUFFER, fbo);
 		glFramebufferTexture2D(GL_FRAMEBUFFER, GL_COLOR_ATTACHMENT0, GL_TEXTURE_2D, tex, 0);
@@ -8812,7 +8899,7 @@ GLuint copy_tex(GLuint tex, int tw, int th, bool yflip) {
 	glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_BORDER);
 	glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR);
 	glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
-	glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA8, tw, th, 0, GL_BGRA, GL_UNSIGNED_BYTE, nullptr);
+	glTexStorage2D(GL_TEXTURE_2D, 1, GL_RGBA8, tw, th);
 	GLuint dfbo;
 	glGenFramebuffers(1, &dfbo);
 	glBindFramebuffer(GL_FRAMEBUFFER, dfbo);
@@ -9234,15 +9321,13 @@ bool Shelf::open_image(const std::string &path, int pos) {
 		ys = 0;
 	}
 	int bpp = ilGetInteger(IL_IMAGE_BPP);
-	std::vector<int> emptydata(iw * ih);
-	std::fill(emptydata.begin(), emptydata.end(), 0x000000ff);
 	glBindTexture(GL_TEXTURE_2D, this->texes[pos]);
 	if (bpp == 3) {
-		glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA8, iw, ih, 0, GL_BGRA, GL_UNSIGNED_BYTE, &emptydata[0]);
+		glTexStorage2D(GL_TEXTURE_2D, 1, GL_RGBA8, iw, ih);
 		glTexSubImage2D(GL_TEXTURE_2D, 0, xs, ys, x, y, GL_RGB, GL_UNSIGNED_BYTE, ilGetData());
 	}
 	else if (bpp == 4) {
-		glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA8, iw, ih, 0, GL_BGRA, GL_UNSIGNED_BYTE, &emptydata[0]);
+		glTexStorage2D(GL_TEXTURE_2D, 1, GL_RGBA8, iw, ih);
 		glTexSubImage2D(GL_TEXTURE_2D, 0, xs, ys, x, y, GL_BGRA, GL_UNSIGNED_BYTE, ilGetData());
 	}
 	
@@ -9489,7 +9574,7 @@ void open_genmidis(std::string path) {
 	rfile.open(path);
 	std::string istring;
 
-	LayMidi *lm;
+	LayMidi *lm = nullptr;
 	while (getline(rfile, istring)) {
 		if (istring == "ENDOFFILE") break;
 	
@@ -9775,14 +9860,14 @@ BinElement *find_element(int size, int k, int i, int j, bool overlapchk) {
 int main(int argc, char* argv[]){
 	bool quit = false;
 
-	#ifdef _WIN64
-   	HRESULT hr = SetProcessDpiAwareness(PROCESS_PER_MONITOR_DPI_AWARE);
-    if (FAILED(hr))
-    {
-        _com_error err(hr);
-        fwprintf(stderr, L"SetProcessDpiAwareness: %s\n", err.ErrorMessage());
-    }
-    #endif
+	//#ifdef _WIN64
+ //  	HRESULT hr = SetProcessDpiAwareness(PROCESS_PER_MONITOR_DPI_AWARE);
+ //   if (FAILED(hr))
+ //   {
+ //       _com_error err(hr);
+ //       fwprintf(stderr, L"SetProcessDpiAwareness: %s\n", err.ErrorMessage());
+ //   }
+ //   #endif
 	
     
     // OPENAL
@@ -9847,7 +9932,7 @@ int main(int argc, char* argv[]){
 	glBindTexture(GL_TEXTURE_2D, mainprogram->smglobfbotex_tm);
 	glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_NEAREST);
 	glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_NEAREST);
-	glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA8, smw, smh, 0, GL_BGRA, GL_UNSIGNED_BYTE, nullptr);
+	glTexStorage2D(GL_TEXTURE_2D, 1, GL_RGBA8, smw, smh);
 	glGenFramebuffers(1, &mainprogram->smglobfbo_tm);
 	glBindFramebuffer(GL_FRAMEBUFFER, mainprogram->smglobfbo_tm);
 	glFramebufferTexture2D(GL_FRAMEBUFFER, GL_COLOR_ATTACHMENT0, GL_TEXTURE_2D, mainprogram->smglobfbotex_tm, 0);
@@ -9858,7 +9943,7 @@ int main(int argc, char* argv[]){
 	glBindTexture(GL_TEXTURE_2D, mainprogram->smglobfbotex_pr);
 	glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_NEAREST);
 	glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_NEAREST);
-	glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA8, smw, smh, 0, GL_BGRA, GL_UNSIGNED_BYTE, nullptr);
+	glTexStorage2D(GL_TEXTURE_2D, 1, GL_RGBA8, smw, smh);
 	glGenFramebuffers(1, &mainprogram->smglobfbo_pr);
 	glBindFramebuffer(GL_FRAMEBUFFER, mainprogram->smglobfbo_pr);
 	glFramebufferTexture2D(GL_FRAMEBUFFER, GL_COLOR_ATTACHMENT0, GL_TEXTURE_2D, mainprogram->smglobfbotex_pr, 0);
@@ -9870,7 +9955,7 @@ int main(int argc, char* argv[]){
 	glBindTexture(GL_TEXTURE_2D, mainprogram->globfbotex);
 	glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_NEAREST);
 	glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_NEAREST);
-	glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA8, glob->w, glob->h, 0, GL_BGRA, GL_UNSIGNED_BYTE, nullptr);
+	glTexStorage2D(GL_TEXTURE_2D, 1, GL_RGBA8, glob->w, glob->h);
 	glGenFramebuffers(1, &mainprogram->globfbo);
 	glBindFramebuffer(GL_FRAMEBUFFER, mainprogram->globfbo);
 	glFramebufferTexture2D(GL_FRAMEBUFFER, GL_COLOR_ATTACHMENT0, GL_TEXTURE_2D, mainprogram->globfbotex, 0);
@@ -9888,7 +9973,7 @@ int main(int argc, char* argv[]){
   	FT_UInt interpreter_version = 40;
 	FT_Property_Set(ft, "truetype", "interpreter-version", &interpreter_version);
 	#ifdef _WIN64
-	std::string fstr = "./expressway.ttf";
+	std::string fstr = mainprogram->fontpath + "/expressway.ttf";
 	if (!exists(fstr)) mainprogram->quit("Can't find \"expressway.ttf\" TrueType font in current directory");
 	#else
 	#ifdef __linux__
@@ -10205,36 +10290,50 @@ int main(int argc, char* argv[]){
 	mainprogram->prefs = new Preferences;
 	mainprogram->prefs->load();
 	#ifdef _WIN64
-	boost::filesystem::path p1{"./bins"};
-	if (!exists("./bins")) boost::filesystem::create_directory(p1);
-	boost::filesystem::path p2{"./recordings"};
-	if (!exists("./recordings")) boost::filesystem::create_directory(p2);
-	boost::filesystem::path p3{"./shelves"};
-	if (!exists("./shelves")) boost::filesystem::create_directory(p3);
-	boost::filesystem::path p4{"./temp"};
-	if (!exists("./temp")) boost::filesystem::create_directory(p4);
-	boost::filesystem::path p5{"./projects"};
-	if (!exists("./projects")) boost::filesystem::create_directory(p5);
-	boost::filesystem::path p6{"./autosaves"};
-	if (!exists("./autosaves")) boost::filesystem::create_directory(p6);
-	#else
+	boost::filesystem::path p0{mainprogram->docpath};
+	if (!exists(mainprogram->docpath)) boost::filesystem::create_directory(p0);
+	boost::filesystem::path p1{mainprogram->docpath + "bins" };
+	mainprogram->currbinsdir = p1.string();
+	if (!exists("mainprogram->docpath + /bins")) boost::filesystem::create_directory(p1);
+	boost::filesystem::path p2{mainprogram->docpath + "recordings"};
+	mainprogram->currrecdir = p1.string();
+	if (!exists("mainprogram->docpath + /recordings")) boost::filesystem::create_directory(p2);
+	boost::filesystem::path p3{mainprogram->docpath + "shelves"};
+	mainprogram->currshelfdir = p3.string();
+	if (!exists("mainprogram->docpath + /shelves")) boost::filesystem::create_directory(p3);
+	boost::filesystem::path p4{mainprogram->temppath};
+	if (!exists(mainprogram->temppath)) boost::filesystem::create_directory(p4);
+	boost::filesystem::path p5{mainprogram->docpath + "projects"};
+	mainprogram->currprojdir = p5.string();
+	if (!exists("mainprogram->docpath + /projects")) boost::filesystem::create_directory(p5);
+	boost::filesystem::path p6{ mainprogram->docpath + "autosaves" };
+	if (!exists("mainprogram->docpath + /autosaves")) boost::filesystem::create_directory(p6);
+	boost::filesystem::path p7{ mainprogram->docpath + "elems" };
+	if (!exists("mainprogram->docpath + /elems")) boost::filesystem::create_directory(p7);
+#else
 	#ifdef __linux__
 	std::string homedir (getenv("HOME"));
 	boost::filesystem::path e{homedir + "/.ewocvj2"};
 	if (!exists(homedir + "/.ewocvj2")) boost::filesystem::create_directory(e);
-	boost::filesystem::path p2{homedir + "/.ewocvj2/recordings"};
+	boost::filesystem::path p1{homedir + "/.ewocvj2/recordings"};
+	mainprogram->currbinsdir = p1.string();
 	if (!exists(homedir + "/.ewocvj2/bins")) boost::filesystem::create_directory(p1);
 	boost::filesystem::path p2{homedir + "/.ewocvj2/recordings"};
+	mainprogram->currrecdir = p2.string();
 	if (!exists(homedir + "/recordings")) boost::filesystem::create_directory(p2);
 	boost::filesystem::path p3{homedir + "/.ewocvj2/shelves"};
+	mainprogram->currshelfdir = p3.string();
 	if (!exists(homedir + "/.ewocvj2/shelves")) boost::filesystem::create_directory(p3);
 	boost::filesystem::path p4{homedir + "/.ewocvj2/temp"};
 	if (!exists(homedir + "/.ewocvj2/temp")) boost::filesystem::create_directory(p4);
 	boost::filesystem::path p5{homedir + "/.ewocvj2/projects"};
+	mainprogram->currprojdir = p5.string();
 	if (!exists(homedir + "/.ewocvj2/projects")) boost::filesystem::create_directory(p5);
-	boost::filesystem::path p6{homedir + "/.ewocvj2/autosaves"};
+	boost::filesystem::path p6{ homedir + "/.ewocvj2/autosaves" };
 	if (!exists(homedir + "/.ewocvj2/autosaves")) boost::filesystem::create_directory(p6);
-	#endif
+	boost::filesystem::path p7{ homedir + "/.ewocvj2/elems" };
+	if (!exists(homedir + "/.ewocvj2/elems")) boost::filesystem::create_directory(p7);
+#endif
 	#endif
 
 	GLint Sampler0 = glGetUniformLocation(mainprogram->ShaderProgram, "Sampler0");
@@ -10306,7 +10405,7 @@ int main(int argc, char* argv[]){
 	laymidiB = new LayMidi;
 	laymidiC = new LayMidi;
 	laymidiD = new LayMidi;
-	if (exists("./midiset.gm")) open_genmidis("./midiset.gm");
+	if (exists(mainprogram->docpath + "/midiset.gm")) open_genmidis(mainprogram->docpath + "midiset.gm");
 	
 	mainmix->copy_to_comp(mainmix->layersA, mainmix->layersAcomp, mainmix->layersB, mainmix->layersBcomp, mainprogram->nodesmain->currpage->nodes, mainprogram->nodesmain->currpage->nodescomp, mainprogram->nodesmain->mixnodescomp, true);
 	GLint preff = glGetUniformLocation(mainprogram->ShaderProgram, "preff");
@@ -10402,7 +10501,7 @@ int main(int argc, char* argv[]){
 	std::chrono::duration<double> elapsed;
 	
 	#ifdef _WIN64
-	std::string dir = "./";
+	std::string dir = mainprogram->docpath;
 	#else
 	#ifdef __linux__
 	std::string homedir (getenv("HOME"));
@@ -10428,31 +10527,38 @@ int main(int argc, char* argv[]){
 		if (mainprogram->path != nullptr) {
 			if (mainprogram->pathto == "OPENVIDEO") {
 				std::string str(mainprogram->path);
+				mainprogram->currvideodir = dirname(str);
 				open_video(0, mainprogram->loadlay, str, true);
 			}
 			if (mainprogram->pathto == "OPENIMAGE") {
 				std::string str(mainprogram->path);
+				mainprogram->currimagedir = dirname(str);
 				mainprogram->loadlay->open_image(str);
 			}
 			else if (mainprogram->pathto == "OPENSHELF") {
 				std::string str(mainprogram->path);
+				mainprogram->currshelfdir = dirname(str);
 				mainprogram->shelves[mainmix->mousedeck]->open(str);
 			}
 			else if (mainprogram->pathto == "SAVESHELF") {
 				std::string str(mainprogram->path);
+				mainprogram->currshelfdir = dirname(str);
 				mainprogram->shelves[mainmix->mousedeck]->save(str);
 			}
 			else if (mainprogram->pathto == "OPENSHELFVIDEO") {
 				std::string str(mainprogram->path);
+				mainprogram->currvideodir = dirname(str);
 				mainmix->mouseshelf->open_videofile(str, mainmix->mouseshelfelem);
 			}
 			else if (mainprogram->pathto == "OPENSHELFLAYER") {
 				std::string str(mainprogram->path);
+				mainprogram->currlayerdir = dirname(str);
 				mainmix->mouseshelf->open_layer(str, mainmix->mouseshelfelem);
 			}
 			else if (mainprogram->pathto == "OPENSHELFDIR") {
 				mainprogram->shelfpath = mainprogram->path;
 				mainprogram->opendir = opendir(mainprogram->path);
+				mainprogram->currshelfdirdir = mainprogram->shelfpath;
 				if (mainprogram->opendir) {
 					mainprogram->openshelfdir = true;
 					mainprogram->shelfdircount = 0;
@@ -10460,37 +10566,47 @@ int main(int argc, char* argv[]){
 			}
 			else if (mainprogram->pathto == "OPENSHELFIMAGE") {
 				std::string str(mainprogram->path);
+				mainprogram->currimagedir = dirname(str);
 				mainmix->mouseshelf->open_image(str, mainmix->mouseshelfelem);
 			}
 			else if (mainprogram->pathto == "SAVESTATE") {
 				std::string str(mainprogram->path);
+				mainprogram->currstatedir = dirname(str);
 				mainmix->save_state(str);
 			}
 			else if (mainprogram->pathto == "SAVEMIX") {
 				std::string str(mainprogram->path);
+				mainprogram->currmixdir = dirname(str);
 				mainmix->save_mix(str);
 			}
 			else if (mainprogram->pathto == "SAVEDECK") {
 				std::string str(mainprogram->path);
+				mainprogram->currdeckdir = dirname(str);
 				mainmix->save_deck(str);
 			}
 			else if (mainprogram->pathto == "OPENDECK") {
 				std::string str(mainprogram->path);
+				mainprogram->currdeckdir = dirname(str);
 				mainmix->open_deck(str, 1);
 			}
 			else if (mainprogram->pathto == "SAVELAYFILE") {
 				std::string str(mainprogram->path);
+				mainprogram->currlayerdir = dirname(str);
 				mainmix->save_layerfile(str, mainmix->mouselayer, 1);
 			}
 			else if (mainprogram->pathto == "OPENLAYFILE") {
+				std::string str(mainprogram->path);
+				mainprogram->currlayerdir = dirname(str);
 				mainmix->open_layerfile(mainprogram->path, mainmix->mouselayer, 1, 1);
 			}
 			else if (mainprogram->pathto == "OPENSTATE") {
 				std::string str(mainprogram->path);
+				mainprogram->currstatedir = dirname(str);
 				mainmix->open_state(str);
 			}
 			else if (mainprogram->pathto == "OPENMIX") {
 				std::string str(mainprogram->path);
+				mainprogram->currmixdir = dirname(str);
 				mainmix->open_mix(str);
 			}
 			else if (mainprogram->pathto == "OPENBINFILES") {
@@ -10499,6 +10615,7 @@ int main(int argc, char* argv[]){
 			else if (mainprogram->pathto == "OPENBINDIR") {
 				binsmain->binpath = mainprogram->path;
 				mainprogram->opendir = opendir(binsmain->binpath.c_str());
+				mainprogram->currbindirdir = binsmain->binpath;
 				if (mainprogram->opendir) {
 					binsmain->openbindir = true;
 				}
@@ -10509,10 +10626,10 @@ int main(int argc, char* argv[]){
 			else if (mainprogram->pathto == "CHOOSEDIR") {
 				std::string str(mainprogram->path);
 				std::string driveletter1 = str.substr(0, 1);
-				std::string abspath = boost::filesystem::absolute("./").string();
+				std::string abspath = boost::filesystem::canonical(mainprogram->docpath).string();
 				std::string driveletter2 = abspath.substr(0, 1);
 				if (driveletter1 == driveletter2) {
-					mainprogram->choosedir = "./" + boost::filesystem::relative(str, "./").string() + "/";
+					mainprogram->choosedir = mainprogram->docpath + boost::filesystem::relative(str, mainprogram->docpath).string() + "/";
 				}
 				else {
 					mainprogram->choosedir = str + "/";
@@ -10520,12 +10637,19 @@ int main(int argc, char* argv[]){
 			}
 			else if (mainprogram->pathto == "NEWPROJECT") {
 				std::string str(mainprogram->path);
+				mainprogram->currprojdir = dirname(str);
 				new_state();
 				mainprogram->project->newp(str);
 			}
 			else if (mainprogram->pathto == "OPENPROJECT") {
 				std::string str(mainprogram->path);
+				mainprogram->currprojdir = dirname(str);
 				mainprogram->project->open(str);
+			}
+			else if (mainprogram->pathto == "SAVEPROJECT") {
+				std::string str(mainprogram->path);
+				mainprogram->currprojdir = dirname(str);
+				mainprogram->project->save(str);
 			}
 			mainprogram->path = nullptr;
 			mainprogram->pathto = "";
@@ -10698,12 +10822,12 @@ int main(int argc, char* argv[]){
 				if (mainprogram->ctrl) {
 					if (e.key.keysym.sym == SDLK_s) {
 						mainprogram->pathto = "SAVESTATE";
-						std::thread filereq (&Program::get_outname, mainprogram, "Save state file", "application/ewocvj2-state", "");
+						std::thread filereq (&Program::get_outname, mainprogram, "Save state file", "application/ewocvj2-state", boost::filesystem::canonical(mainprogram->currstatedir).generic_string());
 						filereq.detach();
 					}
 					if (e.key.keysym.sym == SDLK_o) {
 						mainprogram->pathto = "OPENSTATE";
-						std::thread filereq (&Program::get_inname, mainprogram, "Open state file", "application/ewocvj2-state", "");
+						std::thread filereq (&Program::get_inname, mainprogram, "Open state file", "application/ewocvj2-state", boost::filesystem::canonical(mainprogram->currstatedir).generic_string());
 						filereq.detach();
 					}
 					if (e.key.keysym.sym == SDLK_n) {
@@ -10862,7 +10986,7 @@ int main(int argc, char* argv[]){
 			mainprogram->prevmodus = false;
 			mainprogram->preveff_init();
 			
-			std::string reqdir = mainprogram->projdir;
+			std::string reqdir = mainprogram->currprojdir;
 			if (reqdir.substr(0, 1) == ".") reqdir.erase(0, 2);
 			glBindFramebuffer(GL_FRAMEBUFFER, 0);
 			glDrawBuffer(GL_BACK_LEFT);
@@ -10889,7 +11013,7 @@ int main(int argc, char* argv[]){
 						count++;
 						name = remove_version(name) + "_" + std::to_string(count);
 					}
-					mainprogram->get_outname("New project", "application/ewocvj2-project", boost::filesystem::absolute(reqdir + name).string());
+					mainprogram->get_outname("New project", "application/ewocvj2-project", boost::filesystem::absolute(reqdir + "/" + name).generic_string());
 					if (mainprogram->path != nullptr) {
 						mainprogram->project->newp(mainprogram->path);
 						mainprogram->path = nullptr;
@@ -10907,7 +11031,7 @@ int main(int argc, char* argv[]){
 			if (box.in()) {
 				draw_box(white, lightblue, &box, -1);
 				if (mainprogram->leftmouse) {
-					mainprogram->get_inname("Open project", "application/ewocvj2-project", boost::filesystem::absolute(dir).string());
+					mainprogram->get_inname("Open project", "application/ewocvj2-project", boost::filesystem::canonical(mainprogram->currprojdir).generic_string());
 					if (mainprogram->path != nullptr) {
 						mainprogram->project->open(mainprogram->path);
 						mainprogram->path = nullptr;

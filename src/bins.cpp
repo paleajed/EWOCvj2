@@ -355,6 +355,12 @@ void BinsMain::handle() {
 			render_text(bin->name, white, bin->box->vtxcoords->x1 + tf(0.01f), bin->box->vtxcoords->y1 + tf(0.012f), tf(0.0003f), tf(0.0005f));
 		}
 	}
+
+	if (mainprogram->leftmouse and mainprogram->dragbinel) {
+		mainprogram->leftmouse;
+		enddrag();  //when dropping on grey area
+	}
+
 	Box *box = this->newbinbox;
 	float newy = (this->bins.size() + 1) * -0.05f;
 	box->vtxcoords->y1 = newy;
@@ -468,7 +474,7 @@ void BinsMain::handle() {
 								glBindTexture(GL_TEXTURE_2D, deckbinel->oldtex);
 								glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR);
 								glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
-								glTexImage2D(GL_TEXTURE_2D, 0, GL_RGB, (int)(mainprogram->ow3), (int)(mainprogram->oh3), 0, GL_RGB, GL_UNSIGNED_BYTE, nullptr);
+								glTexStorage2D(GL_TEXTURE_2D, 1, GL_RGB, (int)(mainprogram->ow3), (int)(mainprogram->oh3));
 								this->inserttexes[0].push_back(deckbinel->tex);
 								this->inserttypes[0].push_back(ELEM_DECK);
 								this->insertpaths[0].push_back(deckbinel->path);
@@ -536,7 +542,7 @@ void BinsMain::handle() {
 								glBindTexture(GL_TEXTURE_2D, mixbinel->oldtex);
 								glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR);
 								glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
-								glTexImage2D(GL_TEXTURE_2D, 0, GL_RGB, (int)(mainprogram->ow3), (int)(mainprogram->oh3), 0, GL_RGB, GL_UNSIGNED_BYTE, nullptr);
+								glTexStorage2D(GL_TEXTURE_2D, 1, GL_RGB, (int)(mainprogram->ow3), (int)(mainprogram->oh3));
 								if (k < 3) this->inserttexes[0].push_back(mixbinel->tex);
 								else this->inserttexes[1].push_back(mixbinel->tex);
 								if (k < 3) this->inserttypes[0].push_back(ELEM_MIX);
@@ -621,7 +627,7 @@ void BinsMain::handle() {
 				glBindTexture(GL_TEXTURE_2D, mixbinel->oldtex);
 				glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR);
 				glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
-				glTexImage2D(GL_TEXTURE_2D, 0, GL_RGB, (int)(mainprogram->ow3), (int)(mainprogram->oh3), 0, GL_RGB, GL_UNSIGNED_BYTE, nullptr);
+				glTexStorage2D(GL_TEXTURE_2D, 1, GL_RGB, (int)(mainprogram->ow3), (int)(mainprogram->oh3));
 				if (m < 3) this->inserttexes[0].push_back(mixbinel->tex);
 				else this->inserttexes[1].push_back(mixbinel->tex);
 				if (m < 3) this->inserttypes[0].push_back(mixbinel->type);
@@ -638,13 +644,13 @@ void BinsMain::handle() {
 	}
 	else if (k == mainprogram->menuset) {
 		mainprogram->pathto = "OPENBINFILES";
-		std::thread filereq (&Program::get_multinname, mainprogram, "Open video and/or image files");
+		std::thread filereq (&Program::get_multinname, mainprogram, "Open video and/or image files", boost::filesystem::canonical(mainprogram->currvideodir).generic_string());
 		filereq.detach();
 	}
 	else if (k == mainprogram->menuset + 1) {
 		mainprogram->pathto = "OPENBINDIR";
 		mainprogram->blocking = true;
-		std::thread filereq (&Program::get_dir, mainprogram, "Open video/image file directory");
+		std::thread filereq (&Program::get_dir, mainprogram, "Open video/image file directory", boost::filesystem::canonical(mainprogram->currbindirdir).generic_string());
 		filereq.detach();
 	}
 	else if (k == mainprogram->menuset + 2) {
@@ -1437,7 +1443,7 @@ void BinsMain::handle() {
 								boost::filesystem::remove(path);
 								BinElement *deckbinel = find_element(this->inserttexes[deck].size(), k, this->movingdeck->i, this->movingdeck->j, 1);
 								glBindTexture(GL_TEXTURE_2D, deckbinel->oldtex);
-								glTexImage2D(GL_TEXTURE_2D, 0, GL_RGB, (int)(mainprogram->ow3), (int)(mainprogram->oh3), 0, GL_RGB, GL_UNSIGNED_BYTE, nullptr);
+								glTexStorage2D(GL_TEXTURE_2D, 1, GL_RGB, (int)(mainprogram->ow3), (int)(mainprogram->oh3));
 								deckbinel->tex = deckbinel->oldtex;
 								deckbinel->path = deckbinel->oldpath;
 								deckbinel->jpegpath = deckbinel->oldjpegpath;
@@ -1462,7 +1468,7 @@ void BinsMain::handle() {
 									if (this->prevj > 23 - (int)((size - 1) / 3)) newj = this->prevj - (int)((size - 1) / 3);
 									BinElement *deckbinel = find_element(size, k, m * 3, newj, 1);
 									glBindTexture(GL_TEXTURE_2D, deckbinel->oldtex);
-									glTexImage2D(GL_TEXTURE_2D, 0, GL_RGB, (int)(mainprogram->ow3), (int)(mainprogram->oh3), 0, GL_RGB, GL_UNSIGNED_BYTE, nullptr);
+									glTexStorage2D(GL_TEXTURE_2D, 1, GL_RGB, (int)(mainprogram->ow3), (int)(mainprogram->oh3));
 									deckbinel->tex = deckbinel->oldtex;
 									if (this->movingstruct) {
 										deckbinel->path = deckbinel->oldpath;
@@ -1485,7 +1491,7 @@ void BinsMain::handle() {
 				
 				if (this->currbinel and lay->vidmoving and mainprogram->leftmouse) {
 					glBindTexture(GL_TEXTURE_2D, this->inputbinel->tex);
-					glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA8, 8, 8, 0, GL_BGRA, GL_UNSIGNED_BYTE, nullptr);
+					glTexStorage2D(GL_TEXTURE_2D, 1, GL_RGBA8, 8, 8);
 					this->currbinel->full = true;
 					if (lay->vidmoving) {
 						this->currbinel->type = ELEM_LAYER;
@@ -1543,8 +1549,8 @@ void BinsMain::handle() {
 					std::string name = this->currbin->name;
 					std::string binname = name;
 					std::string path;
-					BinDeck *bd;
-					BinMix *bm;
+					BinDeck *bd = nullptr;
+					BinMix *bm = nullptr;
 					if (!this->movingstruct) {
 						int startdeck, enddeck;
 						if (this->inserting == 0) {
@@ -1924,7 +1930,7 @@ void BinsMain::get_texes(int deck) {
 		glBindTexture(GL_TEXTURE_2D, tex);
 		glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR);
 		glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
-		glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA8, mainprogram->ow3, mainprogram->oh3, 0, GL_BGRA, GL_UNSIGNED_BYTE, nullptr);
+		glTexStorage2D(GL_TEXTURE_2D, 1, GL_RGBA8, mainprogram->ow3, mainprogram->oh3);
 		glGenFramebuffers(1, &fbo);
 		glBindFramebuffer(GL_FRAMEBUFFER, fbo);
 		glFramebufferTexture2D(GL_FRAMEBUFFER, GL_COLOR_ATTACHMENT0, GL_TEXTURE_2D, tex, 0);
@@ -2081,8 +2087,8 @@ std::tuple<std::string, std::string> BinsMain::hap_binel(BinElement *binel, BinD
 					wfile << apath;
 					wfile << "\n";
 					wfile << "RELPATH\n";
-					wfile << "./" + boost::filesystem::relative(apath, "./").string();
-					rpath = "./" + boost::filesystem::relative(apath, "./").string();
+					wfile << mainprogram->docpath + boost::filesystem::relative(apath, mainprogram->docpath).string();
+					rpath = mainprogram->docpath + boost::filesystem::relative(apath, mainprogram->docpath).string();
 					wfile << "\n";
 				}
 			}
@@ -2091,22 +2097,22 @@ std::tuple<std::string, std::string> BinsMain::hap_binel(BinElement *binel, BinD
 				if (path == "") {
 					rpath = istring;
 					if (exists(istring)) {
-						path = boost::filesystem::absolute(istring).string();
+						path = boost::filesystem::canonical(istring).string();
 						rpath = remove_extension(rpath) + "_hap.mov";
 						wfile << "FILENAME\n";
-						wfile << boost::filesystem::absolute(rpath).string();
+						wfile << boost::filesystem::canonical(rpath).string();
 						wfile << "\n";
 						wfile << "RELPATH\n";
 						wfile << path;
 						wfile << "\n";
-						apath = boost::filesystem::absolute(rpath).string();
+						apath = boost::filesystem::canonical(rpath).string();
 					}
 					else {
 						wfile << "FILENAME\n";
 						wfile << path;
 						wfile << "\n";
 						wfile << "RELPATH\n";
-						wfile << "./" + boost::filesystem::relative(path, "./").string();
+						wfile << mainprogram->docpath + boost::filesystem::relative(path, mainprogram->docpath).string();
 						wfile << "\n";
 					}
 				}
@@ -2128,7 +2134,7 @@ std::tuple<std::string, std::string> BinsMain::hap_binel(BinElement *binel, BinD
 			cpm = video->streams[idx]->codecpar;
 			if (cpm->codec_id == 188 or cpm->codec_id == 187) {
     			apath = path;
-    			rpath = "./" + boost::filesystem::relative(path, "./").string();
+    			rpath = mainprogram->docpath + boost::filesystem::relative(path, mainprogram->docpath).string();
 				wfile.close();
 				rfile.close();
  				boost::filesystem::remove(remove_extension(binel->path) + ".temp");
@@ -2297,7 +2303,7 @@ void BinsMain::hap_encode(const std::string srcpath, BinElement *binel, BinDeck 
 	source_dec_ctx = avcodec_alloc_context3(scodec);
 	r = avcodec_parameters_to_context(source_dec_ctx, source_dec_cpm);
     source_dec_ctx->time_base = {1, 1000};
-    source_dec_ctx->framerate = (AVRational){source_stream->r_frame_rate.num, source_stream->r_frame_rate.den};
+    source_dec_ctx->framerate = {source_stream->r_frame_rate.num, source_stream->r_frame_rate.den};
 	r = avcodec_open2(source_dec_ctx, scodec, nullptr);
 	if (source_dec_cpm->codec_id == 188 or source_dec_cpm->codec_id == 187) {
 		binel->encoding = false;

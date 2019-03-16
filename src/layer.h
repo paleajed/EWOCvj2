@@ -161,7 +161,7 @@ class Layer {
 		bool chready = false;
 		bool endready = false;
 		bool closethread = false;
-		bool building = true;
+		bool waiting = true;
 		bool vidopen = false;
 		bool openerr = false;
 		bool copying = false;
