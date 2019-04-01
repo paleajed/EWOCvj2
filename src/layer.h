@@ -181,6 +181,8 @@ class Layer {
 		GLuint comptexture;
 		GLuint fbotex;
 		GLuint fbo;
+		GLuint fbotex2;
+		GLuint fbo2;
 		GLuint texpos = 0;
 		GLuint vbuf;
 		GLuint tbuf;

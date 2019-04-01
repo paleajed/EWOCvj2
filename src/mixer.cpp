@@ -1971,10 +1971,10 @@ Layer::Layer(bool comp) {
 	glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_BORDER);
 	glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_BORDER);
 
-    glGenTextures(1, &this->fbotex);
-    glActiveTexture(GL_TEXTURE0);
-    glBindTexture(GL_TEXTURE_2D, this->fbotex);
-    if (comp) {
+	glGenTextures(1, &this->fbotex);
+	glActiveTexture(GL_TEXTURE0);
+	glBindTexture(GL_TEXTURE_2D, this->fbotex);
+	if (comp) {
 		glTexStorage2D(GL_TEXTURE_2D, 1, GL_RGBA8, mainprogram->ow, mainprogram->oh);
 	}
 	else {
@@ -1988,7 +1988,24 @@ Layer::Layer(bool comp) {
 	glBindFramebuffer(GL_FRAMEBUFFER, this->fbo);
 	glFramebufferTexture2D(GL_FRAMEBUFFER, GL_COLOR_ATTACHMENT0, GL_TEXTURE_2D, this->fbotex, 0);
 
-    this->mutebut = new Button(false);
+	glGenTextures(1, &this->fbotex2);
+	glActiveTexture(GL_TEXTURE0);
+	glBindTexture(GL_TEXTURE_2D, this->fbotex2);
+	if (comp) {
+		glTexStorage2D(GL_TEXTURE_2D, 1, GL_RGBA8, mainprogram->ow, mainprogram->oh);
+	}
+	else {
+		glTexStorage2D(GL_TEXTURE_2D, 1, GL_RGBA8, mainprogram->ow3, mainprogram->oh3);
+	}
+	glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR);
+	glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
+	glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_BORDER);
+	glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_BORDER);
+	glGenFramebuffers(1, &this->fbo2);
+	glBindFramebuffer(GL_FRAMEBUFFER, this->fbo2);
+	glFramebufferTexture2D(GL_FRAMEBUFFER, GL_COLOR_ATTACHMENT0, GL_TEXTURE_2D, this->fbotex2, 0);
+
+	this->mutebut = new Button(false);
     this->mutebut->box->vtxcoords->y1 = 1.0f - mainprogram->layh - 0.05f;
 	this->mutebut->box->vtxcoords->w = 0.03f;
    	this->mutebut->box->vtxcoords->h = 0.05f;
@@ -2139,10 +2156,12 @@ Layer::Layer(bool comp) {
 }
 
 Layer::~Layer() {
-   	glDeleteTextures(1, &this->fbotex);
-    glDeleteBuffers(1, &(this->vbuf));
+	glDeleteTextures(1, &this->fbotex);
+	glDeleteTextures(1, &this->fbotex2);
+	glDeleteBuffers(1, &(this->vbuf));
     glDeleteBuffers(1, &(this->tbuf));
-    glDeleteFramebuffers(1, &(this->fbo));
+	glDeleteFramebuffers(1, &(this->fbo));
+	glDeleteFramebuffers(1, &(this->fbo2));
 	glDeleteVertexArrays(1, &(this->vao));
 }
 
@@ -2216,6 +2235,8 @@ void Layer::set_aspectratio(int lw, int lh) {
 		}
 	}
 	glBindTexture(GL_TEXTURE_2D, this->fbotex);
+	glTexStorage2D(GL_TEXTURE_2D, 1, GL_RGBA8, w, h);
+	glBindTexture(GL_TEXTURE_2D, this->fbotex2);
 	glTexStorage2D(GL_TEXTURE_2D, 1, GL_RGBA8, w, h);
 	for (int i = 0; i < this->effects[0].size(); i++) {
 		glBindTexture(GL_TEXTURE_2D, this->effects[0][i]->fbotex);

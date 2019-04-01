@@ -2433,9 +2433,7 @@ void calc_texture(Layer *lay, bool comp, bool alive) {
 	if (lay->startframe != lay->endframe) {
 		if (mainmix->firstlayers.count(lay->clonesetnr) == 0) {
 			lay->ready = true;
-			while (lay->ready) {
-				lay->startdecode.notify_one();
-			}
+			lay->startdecode.notify_one();
 			if (lay->clonesetnr != -1) {
 				mainmix->firstlayers[lay->clonesetnr] = lay;
 			}
@@ -3951,22 +3949,26 @@ void onestepfrom(bool stage, Node *node, Node *prevnode, GLuint prevfbotex, GLui
 			glBindTexture(GL_TEXTURE_2D, lay->fbotex);
 			glGetTexLevelParameteriv(GL_TEXTURE_2D, 0, GL_TEXTURE_WIDTH, &sw);
 			glGetTexLevelParameteriv(GL_TEXTURE_2D, 0, GL_TEXTURE_HEIGHT, &sh);
-			fbocopy = copy_tex(lay->fbotex, sw, sh);
+			//fbocopy = copy_tex(lay->fbotex, sw, sh);
 			glViewport(0, 0, sw, sh);
-			glBindFramebuffer(GL_FRAMEBUFFER, lay->fbo);
+			glBindFramebuffer(GL_FRAMEBUFFER, lay->fbo2);
 			glDrawBuffer(GL_COLOR_ATTACHMENT0);
 			glClearColor(0.0f, 0.0f, 0.0f, 0.0f);
 			glClear(GL_COLOR_BUFFER_BIT);
 			float black[4] = {0.0f, 0.0f, 0.0f, 0.0f};
-			draw_box(nullptr, black, -1.0f, 1.0f, 2.0f, -2.0f, lay->shiftx->value, lay->shifty->value, lay->scale->value, lay->opacity->value, 0, fbocopy, 0, 0);
+			draw_box(nullptr, black, -1.0f, 1.0f, 2.0f, -2.0f, lay->shiftx->value, lay->shifty->value, lay->scale->value, lay->opacity->value, 0, lay->fbotex, 0, 0);
 			glEnable(GL_BLEND);
-			glDeleteTextures(1, &fbocopy);
+			//glDeleteTextures(1, &fbocopy);
 			glBindFramebuffer(GL_FRAMEBUFFER, mainprogram->globfbo);
 			glDrawBuffer(GL_COLOR_ATTACHMENT0);
 			glViewport(0, 0, glob->w, glob->h);
+			prevfbotex = lay->fbotex2;
+			prevfbo = lay->fbo2;
 		}
-		prevfbotex = lay->fbotex;
-		prevfbo = lay->fbo;
+		else {
+			prevfbotex = lay->fbotex;
+			prevfbo = lay->fbo;
+		}
 	}
 	else if (node->type == BLEND) {
 		BlendNode *bnode = (BlendNode*)node;
