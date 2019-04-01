@@ -2133,8 +2133,8 @@ std::tuple<std::string, std::string> BinsMain::hap_binel(BinElement *binel, BinD
 			open_codec_context(&idx, video, AVMEDIA_TYPE_VIDEO);
 			cpm = video->streams[idx]->codecpar;
 			if (cpm->codec_id == 188 or cpm->codec_id == 187) {
-    			apath = path;
-    			rpath = mainprogram->docpath + boost::filesystem::relative(path, mainprogram->docpath).string();
+    				apath = path;
+    				rpath = mainprogram->docpath + boost::filesystem::relative(path, mainprogram->docpath).string();
 				wfile.close();
 				rfile.close();
  				boost::filesystem::remove(remove_extension(binel->path) + ".temp");
@@ -2145,6 +2145,7 @@ std::tuple<std::string, std::string> BinsMain::hap_binel(BinElement *binel, BinD
 				else if (bm) {
 					bm->encthreads--;
 				}
+				mainprogram->encthreads--;
 				return {apath, rpath};
  			}
 			std::thread hap (&BinsMain::hap_encode, this, path, binel, bd, bm);
@@ -2269,17 +2270,6 @@ void BinsMain::hap_mix(BinMix * bm) {
 
 void BinsMain::hap_encode(const std::string srcpath, BinElement *binel, BinDeck *bd, BinMix *bm) {
 	binel->encwaiting = true;
-	while (mainprogram->encthreads >= mainprogram->maxthreads) {
-		mainprogram->hapnow = false;
-		std::unique_lock<std::mutex> lock(mainprogram->hapmutex);
-		mainprogram->hap.wait(lock, [&]{return mainprogram->hapnow;});
-		lock.unlock();
-	}	
-	mainprogram->encthreads++;
-	binel->encwaiting = false;
-	binel->encoding = true;
-	binel->encodeprogress = 0.0f;
-	
 	// opening the source vid
 	AVFormatContext *source = nullptr;
 	AVCodecContext *source_dec_ctx;
@@ -2293,19 +2283,20 @@ void BinsMain::hap_encode(const std::string srcpath, BinElement *binel, BinDeck 
 		return;
 	}
 	if (avformat_find_stream_info(source, nullptr) < 0) {
-        printf("Could not find stream information\n");
-        return;
-    }
+		printf("Could not find stream information\n");
+		return;
+	}
 	open_codec_context(&source_stream_idx, source, AVMEDIA_TYPE_VIDEO);
-    source_stream = source->streams[source_stream_idx];
-    source_dec_cpm = source_stream->codecpar;
-	AVCodec *scodec = avcodec_find_decoder(source_stream->codecpar->codec_id);	
+	source_stream = source->streams[source_stream_idx];
+	source_dec_cpm = source_stream->codecpar;
+	AVCodec *scodec = avcodec_find_decoder(source_stream->codecpar->codec_id);
 	source_dec_ctx = avcodec_alloc_context3(scodec);
 	r = avcodec_parameters_to_context(source_dec_ctx, source_dec_cpm);
-    source_dec_ctx->time_base = {1, 1000};
-    source_dec_ctx->framerate = {source_stream->r_frame_rate.num, source_stream->r_frame_rate.den};
+	source_dec_ctx->time_base = { 1, 1000 };
+	source_dec_ctx->framerate = { source_stream->r_frame_rate.num, source_stream->r_frame_rate.den };
 	r = avcodec_open2(source_dec_ctx, scodec, nullptr);
 	if (source_dec_cpm->codec_id == 188 or source_dec_cpm->codec_id == 187) {
+		binel->encwaiting = false;
 		binel->encoding = false;
 		if (bd) {
 			bd->encthreads--;
@@ -2315,8 +2306,24 @@ void BinsMain::hap_encode(const std::string srcpath, BinElement *binel, BinDeck 
 		}
 		return;
 	}
-	numf = source_stream->nb_frames;
+
+	while (mainprogram->encthreads >= mainprogram->maxthreads) {
+		mainprogram->hapnow = false;
+		std::unique_lock<std::mutex> lock(mainprogram->hapmutex);
+		mainprogram->hap.wait(lock, [&]{return mainprogram->hapnow;});
+		lock.unlock();
+	}
+
+	mainprogram->encthreads++;
+	binel->encwaiting = false;
+	binel->encoding = true;
+	binel->encodeprogress = 0.0f;
 	
+	numf = source_stream->nb_frames;
+	if (numf == 0) {
+		numf = (double)source->duration * (double)source_stream->avg_frame_rate.num / (double)source_stream->avg_frame_rate.den / (double)1000000.0f;
+	}
+
 	// setting up destination vid
 	AVFormatContext *dest = avformat_alloc_context();
 	AVStream *dest_stream;
@@ -2381,16 +2388,16 @@ void BinsMain::hap_encode(const std::string srcpath, BinElement *binel, BinDeck 
 	int frame = 0;
 	int count = 0;
     while (count < numf) {
-    	binel->encodeprogress = (float)count / (float)numf;
-    	// decode a frame
+    		binel->encodeprogress = (float)count / (float)numf;
+    		// decode a frame
 		av_init_packet(&pkt);
 		pkt.data = nullptr;
 		pkt.size = 0;
 		av_read_frame(source, &pkt);
 		if (pkt.stream_index != source_stream_idx) continue;
-    	count++;
+		count++;
 		int got_frame;
-    	while (1) {
+    		while (1) {
 			avcodec_send_packet(source_dec_ctx, &pkt);
  			int r = avcodec_receive_frame(source_dec_ctx, decframe);
 			if (r == AVERROR(EAGAIN)) {

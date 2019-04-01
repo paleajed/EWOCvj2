@@ -60,7 +60,7 @@ class Shelf {
 		std::string paths[16];
 		ELEM_TYPE types[16];
 		GLuint texes[16] = {0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0};
-		Button *buttons[16];
+		std::vector<Button*> buttons;
 		void handle();
 		void erase();
 		void save(const std::string &path);
@@ -105,6 +105,10 @@ class PrefItem {
 		Box *namebox;
 		Box *valuebox;
 		Box *iconbox;
+
+		bool connected = true;
+		RtMidiIn *midiin = nullptr;
+
 		PrefItem(PrefCat *cat, int pos, std::string name, PREF_TYPE type, void *dest);
 };
 
@@ -113,14 +117,6 @@ class PrefCat {
 		std::vector<PrefItem*> items;
 		std::string name;
 		Box *box;
-};
-
-class PMidiItem: public PrefItem {
-	public:
-		bool connected = true;
-		RtMidiIn *midiin;
-		PMidiItem(PrefCat *cat, int pos, std::string name, PREF_TYPE type, void *dest)
-		: PrefItem(cat, pos, name, type, dest) {}
 };
 
 class PIMidi: public PrefCat {
@@ -341,10 +337,10 @@ class Program {
 		TM_LEARN tmchoice = TM_NONE;
 		int waitmidi = 0;
 		std::vector<int> openports;
-		std::vector<PMidiItem*> pmon;
+		std::vector<PrefItem*> pmon;
 		clock_t stt;
 		std::vector<unsigned char> savedmessage;
-		PMidiItem* savedmidiitem;
+		PrefItem* savedmidiitem;
 		bool queueing;
 		int filecount;
 		

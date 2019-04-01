@@ -2151,16 +2151,24 @@ void Layer::initialize(int w, int h) {
 }
 
 void Layer::initialize(int w, int h, int compression) {
+	if (this->iw == w and this->ih == h and this->oldvidformat == this->vidformat and this->oldcompression == compression) {
+		this->initialized = true;
+		return;
+	}
 	this->iw = w;
 	this->ih = h;
+	glDeleteTextures(1, &this->texture);
+	glGenTextures(1, &this->texture);
 	glBindTexture(GL_TEXTURE_2D, this->texture);
+	glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR);
+	glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
 	glPixelStorei(GL_UNPACK_ALIGNMENT, 1);
 	glPixelStorei(GL_UNPACK_ROW_LENGTH, 0);
 	glPixelStorei(GL_UNPACK_SKIP_PIXELS, 0);
 	glPixelStorei(GL_UNPACK_SKIP_ROWS, 0);
 	int count = 0;
 	if (this->vidformat == 188 or this->vidformat == 187) {
-		if (compression == 187) {
+		if (compression == 187 or compression == 171) {
 			glTexStorage2D(GL_TEXTURE_2D, 1, GL_COMPRESSED_RGBA_S3TC_DXT1_EXT, this->iw, this->ih);
 		}
 		else if (compression == 190) {
@@ -2170,6 +2178,8 @@ void Layer::initialize(int w, int h, int compression) {
 	else {
 		glTexStorage2D(GL_TEXTURE_2D, 1, GL_RGBA8, this->iw, this->ih);
 	}
+	this->oldvidformat = this->vidformat;
+	this->oldcompression = compression;
 	this->initialized = true;
 }
 
@@ -3459,6 +3469,8 @@ void Mixer::save_deck(const std::string &path) {
 }
 
 void Mixer::open_layerfile(const std::string &path, Layer *lay, bool loadevents, bool doclips) {
+	lay->decresult->width = 0;
+
 	std::string result = deconcat_files(path);
 	bool concat = (result != "");
 	std::ifstream rfile;

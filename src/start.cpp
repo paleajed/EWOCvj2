@@ -76,6 +76,7 @@ extern "C" {
 #include "libswscale/swscale.h"
 #include "libavutil/avutil.h"
 #include "libavutil/pixfmt.h"
+#include "libavutil/dict.h"
 #include "libavutil/opt.h"
 #include "libavutil/imgutils.h"
 }
@@ -582,18 +583,18 @@ void mycallback( double deltatime, std::vector< unsigned char > *message, void *
   	int midi0 = (int)message->at(0);
   	int midi1 = (int)message->at(1);
   	float midi2 = (int)message->at(2);
-  	std::string midiport = ((PMidiItem*)userData)->name;
+  	std::string midiport = ((PrefItem*)userData)->name;
   	
  	if (mainprogram->waitmidi == 0 and mainprogram->tmlearn) {
     	mainprogram->stt = clock();
     	mainprogram->savedmessage = *message;
-    	mainprogram->savedmidiitem = (PMidiItem*)userData;
+    	mainprogram->savedmidiitem = (PrefItem*)userData;
     	mainprogram->waitmidi = 1;
     	return;
     }
     if (mainprogram->waitmidi == 1) {
      	mainprogram->savedmessage = *message;
-    	mainprogram->savedmidiitem = (PMidiItem*)userData;
+    	mainprogram->savedmidiitem = (PrefItem*)userData;
    		return;
    	}
   	
@@ -741,15 +742,24 @@ IMPLEMENT */		}
   	}
   	
   	
-  	if (midi0 == 176) {
-  		for (int i = 0; i < mainprogram->buttons.size(); i++) {
+  	if (midi0 == 176 or midi0 == 144) {
+		for (int i = 0; i < mainprogram->buttons.size(); i++) {
 			Button *but = mainprogram->buttons[i];
 			if (midi0 == but->midi[0] and midi1 == but->midi[1] and midiport == but->midiport) {
 				mainmix->midi2 = midi2;
 				mainmix->midibutton = but;
 			}
 		}
-		
+		for (int m = 0; m < 2; m++) {
+			for (int i = 0; i < 16; i++) {
+				Button *but = mainprogram->shelves[m]->buttons[i];
+				if (midi0 == but->midi[0] and midi1 == but->midi[1] and midiport == but->midiport) {
+					mainmix->midi2 = midi2;
+					mainmix->midishelfbutton = but;
+				}
+			}
+		}
+
 		Param *par;
 		if (mainprogram->prevmodus) par = mainmix->crossfade;
 		else par = mainmix->crossfadecomp;
@@ -757,7 +767,7 @@ IMPLEMENT */		}
 			mainmix->midi2 = midi2;
 			mainmix->midiparam = par;
 		}
-			
+
 		std::vector<Node*> ns;
 		if (mainprogram->prevmodus) ns = mainprogram->nodesmain->currpage->nodes;
 		else ns = mainprogram->nodesmain->currpage->nodescomp;
@@ -776,7 +786,7 @@ IMPLEMENT */		}
 		}
 		mainmix->midiisspeed = false;
 		for (int i = 0; i < ns.size(); i++) {
-			if (mainprogram->nodesmain->currpage->nodes[i]->type == VIDEO) {
+			if (ns[i]->type == VIDEO) {
 				VideoNode *vnode = (VideoNode*)ns[i]; 			
 				if (midi0 == vnode->layer->speed->midi[0] and midi1 == vnode->layer->speed->midi[1] and midiport == vnode->layer->speed->midiport) {
 					mainmix->midiisspeed = true;
@@ -792,11 +802,12 @@ IMPLEMENT */		}
 					mainmix->midiparam = vnode->layer->volume;
 				}
 				if (midi0 == vnode->layer->chtol->midi[0] and midi1 == vnode->layer->chtol->midi[1] and midiport == vnode->layer->chtol->midiport) {
+					printf("CHTOL!!!!!!!!!!!!!!!\n");
 					mainmix->midi2 = midi2;
 					mainmix->midiparam = vnode->layer->chtol;
 				}
 			}
-			if (mainprogram->nodesmain->currpage->nodes[i]->type == BLEND) {
+			if (ns[i]->type == BLEND) {
 				BlendNode *bnode = (BlendNode*)ns[i]; 			
 				if (midi0 == bnode->mixfac->midi[0] and midi1 == bnode->mixfac->midi[1] and midiport == bnode->mixfac->midiport) {
 					mainmix->midi2 = midi2;
@@ -872,10 +883,8 @@ static int decode_packet(Layer *lay, int *got_frame)
 			// AV_ROUND_NEAR_INF|AV_ROUND_PASS_MINMAX);
     if (lay->decpkt.stream_index == lay->video_stream_idx) {
         /* decode video frame */
-	//clock_t stt;
-    //stt = clock();
 		int err2 = 0;
-    	while (1) {
+	 	while (1) {
 			int err1 = avcodec_send_packet(lay->video_dec_ctx, &lay->decpkt);
 			err2 = avcodec_receive_frame(lay->video_dec_ctx, lay->decframe);
 			if (err2 == AVERROR(EAGAIN)) {
@@ -891,9 +900,6 @@ static int decode_packet(Layer *lay, int *got_frame)
  		//av_strerror(err2, buffer, 1024);
  		//printf(buffer);
  		//if (err == AVERROR_EOF) lay->numf--;
-   //clock_t t = clock() - stt;
-    //double time_taken = ((double)t)/CLOCKS_PER_SEC; // in seconds
-	//printf("decodetime1 %f\n", time_taken);
 		if (err2 == AVERROR(EINVAL)) {
             fprintf(stderr, "Error decoding video frame (%s)\n", 0);
 			printf("codec %d", lay->decpkt);
@@ -902,7 +908,7 @@ static int decode_packet(Layer *lay, int *got_frame)
         if (1) {
             /* copy decoded frame to destination buffer:
              * this is required since rawvideo expects non aligned data */
-			sws_scale
+			int h = sws_scale
 			(
 				lay->sws_ctx,
 				(uint8_t const * const *)lay->decframe->data,
@@ -912,6 +918,7 @@ static int decode_packet(Layer *lay, int *got_frame)
 				lay->rgbframe->data,
 				lay->rgbframe->linesize
 			);
+			if (h < 1) return 0;
 			lay->decresult->data = (char*)*(lay->rgbframe->extended_data);
 			lay->decresult->height = lay->video_dec_ctx->height;
 			lay->decresult->width = lay->video_dec_ctx->width;
@@ -919,13 +926,29 @@ static int decode_packet(Layer *lay, int *got_frame)
     } 
     else if (lay->decpkt.stream_index == lay->audio_stream_idx) {
         /* decode audio frame */
-		int err1 = avcodec_send_packet(lay->audio_dec_ctx, &lay->decpkt);
-		int err2 = avcodec_receive_frame(lay->audio_dec_ctx, lay->decframe);
-        /* Some audio decoders decode only part of the packet, and have to be
+		int err2 = 0;
+		int nsam = 0;
+		while (1) {
+			int err1 = avcodec_send_packet(lay->audio_dec_ctx, &lay->decpkt);
+			err2 = avcodec_receive_frame(lay->audio_dec_ctx, lay->decframe);
+			nsam += lay->decframe->nb_samples;
+			if (err2 == AVERROR(EAGAIN)) {
+				av_packet_unref(&lay->decpkt);
+				av_read_frame(lay->video, &lay->decpkt);
+			}
+			else break;
+		}
+		if (err2 == AVERROR(EINVAL)) {
+			fprintf(stderr, "Error decoding audio frame (%s)\n", 0);
+			printf("codec %d", lay->decpkt);
+			return ret;
+		}
+		/* Some audio decoders decode only part of the packet, and have to be
          * called again with the remainder of the packet data.
          * Sample: fate-suite/lossless-audio/luckynight-partial.shn
          * Also, some decoders might over-read the packet. */
-        decoded = FFMIN(ret, lay->decpkt.size);
+        //decoded = FFMIN(ret, lay->decpkt.size);
+		return nsam;
     }
     
  	//av_frame_unref(lay->decframe);
@@ -997,36 +1020,45 @@ static int get_format_from_sample_fmt(const char **fmt,
 
 void decode_audio(Layer *lay) {
     int ret = 0, got_frame;
-	int *snippet = nullptr;
-	int *snip = nullptr;
+	char *snippet = nullptr;
 	size_t unpadded_linesize;
     av_packet_unref(&lay->decpkt);
 	av_frame_unref(lay->decframe);
 	av_read_frame(lay->video, &lay->decpkt);
-	while (lay->decpkt.stream_index != lay->video_stream_idx) {
+	while (lay->decpkt.stream_index == lay->audio_stream_idx) {
 		if (!lay->dummy and lay->volume->value > 0.0f) {
-			do {
-				ret = decode_packet(lay, &got_frame);
-				lay->decpkt.data += ret;
-				lay->decpkt.size -= ret;
-			} while (lay->decpkt.size > 0);
+			ret = decode_packet(lay, &got_frame);
 			// flush
 			//lay->decpkt.data = nullptr;
 			//lay->decpkt.size = 0;
 			//decode_packet(lay, &got_frame);
-			if (ret >= 0 ) {
-				unpadded_linesize = lay->decframe->nb_samples * av_get_bytes_per_sample((AVSampleFormat)lay->decframe->format);
-				snip = (int*)malloc(unpadded_linesize);
-				snippet = snip;
-				memcpy(snippet, lay->decframe->extended_data[0], unpadded_linesize);
-				if ((lay->playbut->value and lay->speed->value < 0) or (lay->revbut->value and lay->speed->value > 0)) {
-					snippet = (int*)malloc(unpadded_linesize);
-					for (int add = 0; add < unpadded_linesize / av_get_bytes_per_sample((AVSampleFormat)lay->decframe->format); add++) {
-						snippet[add] = snip[add];
-					}
-					free(snip);
+			if (ret >= 0) {
+				int ps;
+				unpadded_linesize = lay->decframe->linesize[0];
+				if (av_sample_fmt_is_planar(lay->audio_dec_ctx->sample_fmt)) {
+					snippet = new char[unpadded_linesize / 2];
+					ps = unpadded_linesize / 2;
 				}
-				lay->pslen = unpadded_linesize;
+				else {
+					snippet = new char[unpadded_linesize / 2];
+					ps = unpadded_linesize / 2;
+				}
+				for (int pos = 0; pos < unpadded_linesize / 2; pos++) {
+					if (av_sample_fmt_is_planar(lay->audio_dec_ctx->sample_fmt)) {
+						snippet[pos] = lay->decframe->extended_data[0][pos];
+					}
+					else {
+						snippet[pos] = lay->decframe->extended_data[0][pos * 2 + 1];
+					}
+				}
+				//if ((lay->playbut->value and lay->speed->value < 0) or (lay->revbut->value and lay->speed->value > 0)) {
+				//	snippet = (int*)malloc(unpadded_linesize);
+				//	for (int add = 0; add < unpadded_linesize / av_get_bytes_per_sample((AVSampleFormat)lay->decframe->format); add++) {
+				//		snippet[add] = snip[add];
+				//	}
+				//	free(snip);
+				//}
+				lay->pslens.push_back(ps);
 				lay->snippets.push_back(snippet);
 				//	if (ret < 0) break;
 				//	lay->decpkt.data += ret;
@@ -1035,7 +1067,7 @@ void decode_audio(Layer *lay) {
 				//av_free_packet(&orig_pkt);
 			}
 		}
-    	av_packet_unref(&lay->decpkt);
+    		av_packet_unref(&lay->decpkt);
 		av_read_frame(lay->video, &lay->decpkt);
 	}
 	if (snippet) {
@@ -1051,66 +1083,59 @@ void get_frame_other(Layer *lay, int framenr, int prevframe, int errcount)
    	int ret = 0, got_frame;
 	/* initialize packet, set data to nullptr, let the demuxer fill it */
 	av_init_packet(&lay->decpkt);
+	/* flush cached frames */
 	lay->decpkt.data = nullptr;
 	lay->decpkt.size = 0;
-	
+	//do {
+	//	decode_packet(&got_frame, 1);
+	//} while (got_frame);
+
+
 	if (lay->type != ELEM_LIVE) {
 		if (lay->numf == 0) return;
-		int64_t seekTarget = ((lay->video_stream->duration * (framenr)) / lay->numf);
+		long long seekTarget = av_rescale(lay->video_duration, framenr, lay->numf) + lay->video_stream->first_dts;
 		if (framenr != 0) {
 			if (framenr != prevframe + 1) {
 				avformat_seek_file(lay->video, lay->video_stream->index, 0, seekTarget, seekTarget, 0);
+				avcodec_flush_buffers(lay->video_dec_ctx);
 			}
 			else {
-				avformat_seek_file(lay->video, lay->video_stream->index, 0, seekTarget, seekTarget, AVSEEK_FLAG_ANY);
+				//avformat_seek_file(lay->video, lay->video_stream->index, 0, seekTarget, seekTarget, AVSEEK_FLAG_ANY);
 			}
 		}
+		else {
+			avformat_seek_file(lay->video, lay->video_stream->index, 0, seekTarget, seekTarget, 0);
+		}
 
-    /* flush cached frames */
-//    lay->decpkt.data = nullptr;
-//    lay->decpkt.size = 0;
-//    do {
-//        decode_packet(&got_frame, 1);
-//    } while (got_frame);
-    
-		decode_audio(lay);
+		do {
+			decode_audio(lay);
+		} while (lay->decpkt.stream_index != lay->video_stream_idx);
 		if (!lay->dummy) {
-			int readpos = (lay->decpkt.dts * lay->numf) / lay->video_stream->duration;
+			int readpos = (lay->decpkt.dts * lay->numf) / lay->video_duration;
 			int count = readpos;
-			if (framenr != 0) {
-				if (framenr != prevframe + 1) {
-					if (readpos < framenr) {
-						if (framenr > prevframe and prevframe > readpos) {
-							readpos = prevframe + 1;
-							int64_t seekTarget2 = ((lay->video_stream->duration * (prevframe + 1)) / lay->numf);
-							avformat_seek_file(lay->video, lay->video_stream->index, 0, seekTarget2, seekTarget2, AVSEEK_FLAG_ANY);
-							do {
-								av_packet_unref(&lay->decpkt);
-								av_read_frame(lay->video, &lay->decpkt);
-							} while (lay->decpkt.stream_index != lay->video_stream_idx);
-							int pos = (lay->decpkt.dts * lay->numf) / lay->video_stream->duration;
+			if (framenr != prevframe + 1) {
+				if (readpos < framenr) {
+					if (framenr > prevframe and prevframe > readpos) {
+						readpos = prevframe + 1;
+						int64_t seekTarget2 = ((lay->video_duration * (prevframe + 1)) / lay->numf);
+						avformat_seek_file(lay->video, lay->video_stream->index, 0, seekTarget2, seekTarget2, AVSEEK_FLAG_ANY);
+						do {
+							decode_audio(lay);
+						} while (lay->decpkt.stream_index != lay->video_stream_idx);
+						int pos = (lay->decpkt.dts * lay->numf) / lay->video_duration;
+					}
+					for (int f = readpos; f < framenr; f++) {
+						ret = decode_packet(lay, &got_frame);
+						while (lay->decpkt.stream_index != lay->video_stream_idx) {
+							decode_audio(lay);
 						}
-						for (int f = readpos; f < framenr; f++) {
-							avcodec_send_packet(lay->video_dec_ctx, &lay->decpkt);
-							avcodec_receive_frame(lay->video_dec_ctx, lay->decframe);
-							do {
-								av_packet_unref(&lay->decpkt);
-								av_read_frame(lay->video, &lay->decpkt);
-							} while (lay->decpkt.stream_index != lay->video_stream_idx);
-							int pos = (lay->decpkt.dts * lay->numf) / lay->video_stream->duration;
-						}
+						int pos = (lay->decpkt.dts * lay->numf) / lay->video_duration;
 					}
 				}
 			}
-			else {
-			//avformat_seek_file(lay->video, lay->video_stream->index, 0, lay->video->streams[lay->video_stream->index]->start_time, lay->video->streams[lay->video_stream->index]->start_time, 0);
-				av_seek_frame(lay->video, lay->video_stream->index, lay->video->streams[lay->video_stream->index]->start_time, 0);
-				//avcodec_flush_buffers(lay->video_dec_ctx);
-				av_packet_unref(&lay->decpkt);
-				if (av_read_frame(lay->video, &lay->decpkt) < 0) printf("READPROBLEM\n");;
-			}
 		}
-		decode_packet(lay, &got_frame);
+		ret = decode_packet(lay, &got_frame);
+		if (ret == 0) return;
 		lay->prevframe = framenr;
 		if (lay->decframe->width == 0) {
 			lay->prevframe = framenr;
@@ -1129,13 +1154,14 @@ void get_frame_other(Layer *lay, int framenr, int prevframe, int errcount)
 			else if (framenr < lay->startframe) framenr = lay->endframe;
 			//avcodec_flush_buffers(lay->video_dec_ctx);
 			errcount++;
-			if (errcount == 10) {
+			if (errcount == 1000) {
 				lay->openerr = true;
 				return;
 			}
 			get_frame_other(lay, framenr, lay->prevframe, errcount);
+			lay->frame == framenr;
 		}
-		decode_audio(lay);
+		//decode_audio(lay);
 		av_packet_unref(&lay->decpkt);
 	}
 	else {
@@ -1150,7 +1176,7 @@ void get_frame_other(Layer *lay, int framenr, int prevframe, int errcount)
         enum AVSampleFormat sfmt = lay->audio_dec_ctx->sample_fmt;
         int n_channels = lay->audio_dec_ctx->channels;
         const char *fmt;
-        if (av_sample_fmt_is_planar(sfmt)) {
+        if (av_sample_fmt_is_planar(lay->audio_dec_ctx->sample_fmt)) {
             const char *packed = av_get_sample_fmt_name(sfmt);
             printf("Warning: the sample format the decoder produced is planar "
                    "(%s). This example will output the first channel only.\n",
@@ -1165,7 +1191,7 @@ void get_frame_other(Layer *lay, int framenr, int prevframe, int errcount)
 
 void Layer::decode_frame() {
 
-	int64_t seekTarget = ((this->video_stream->duration * this->frame) / this->numf);
+	long long seekTarget = av_rescale(this->video_stream->duration, this->frame, this->numf) + this->video_stream->first_dts;
 	int r = av_seek_frame(this->video, this->video_stream->index, seekTarget, AVSEEK_FLAG_ANY);
 	av_init_packet(&this->decpkt);
 	av_frame_unref(this->decframe);
@@ -1184,7 +1210,10 @@ void Layer::decode_frame() {
 
 	int st = snappy_uncompress(bptrData + headerl, size - headerl, this->databuf, &uncomp);
     av_packet_unref(&this->decpkt);
-	if (st) this->decresult->data = nullptr;
+	if (st) {
+		this->decresult->data = nullptr;
+		this->decresult->width = 0;
+	}
 	else this->decresult->data = this->databuf;
 	this->decresult->height = this->video_dec_ctx->height;
 	this->decresult->width = this->video_dec_ctx->width;
@@ -1265,7 +1294,6 @@ void Layer::get_frame(){
 }
 
 void open_video(float frame, Layer *lay, const std::string &filename, int reset) {
-	lay->decresult->width = 0;
 	if (lay->boundimage != -1) {
 		glDeleteTextures(1, &lay->boundimage);
 		lay->boundimage = -1;
@@ -1279,6 +1307,7 @@ void open_video(float frame, Layer *lay, const std::string &filename, int reset)
 	lay->prevframe = lay->frame - 1;
 	lay->reset = reset;
 	lay->vidopen = true;
+	lay->decresult->width = 0;
 	lay->ready = true;
 	while (lay->ready) {
 		lay->startdecode.notify_one();
@@ -1337,6 +1366,7 @@ bool thread_vidopen(Layer *lay, AVInputFormat *ifmt, bool skip) {
 		}
 	}
 	
+	av_opt_set_int(lay->video, "probesize2", INT_MAX, 0);
 	int r = avformat_open_input(&(lay->video), lay->filename.c_str(), ifmt, nullptr);
 	printf("loading... %s\n", lay->filename.c_str());
 	if (r < 0) {
@@ -1345,7 +1375,8 @@ bool thread_vidopen(Layer *lay, AVInputFormat *ifmt, bool skip) {
 		return 0;
 	}
 
-    if (avformat_find_stream_info(lay->video, nullptr) < 0) {
+	av_opt_set_int(lay->video, "max_analyze_duration2", 100000000, 0);
+	if (avformat_find_stream_info(lay->video, nullptr) < 0) {
         fprintf(stderr, "Could not find stream information\n");
         return 0;
     }
@@ -1354,13 +1385,15 @@ bool thread_vidopen(Layer *lay, AVInputFormat *ifmt, bool skip) {
     if (open_codec_context(&(lay->video_stream_idx), lay->video, AVMEDIA_TYPE_VIDEO) >= 0) {
      	lay->video_stream = lay->video->streams[lay->video_stream_idx];
 		AVCodec *dec = avcodec_find_decoder(lay->video_stream->codecpar->codec_id);
+        lay->vidformat = lay->video_stream->codecpar->codec_id;
         lay->video_dec_ctx = avcodec_alloc_context3(dec);
 		avcodec_parameters_to_context(lay->video_dec_ctx, lay->video_stream->codecpar);
 		avcodec_open2(lay->video_dec_ctx, dec, nullptr);
-        lay->vidformat = lay->video_dec_ctx->codec_id;
 		if (lay->vidformat == 188 or lay->vidformat == 187) {
-			if (lay->databuf) free(lay->databuf);
-			lay->databuf = (char*)malloc(lay->video_dec_ctx->width * lay->video_dec_ctx->height);
+			if (lay->video_dec_ctx->width != lay->iw or lay->video_dec_ctx->height != lay->ih) {
+				if (lay->databuf) delete[] lay->databuf;
+				lay->databuf = new char[lay->video_dec_ctx->width * lay->video_dec_ctx->height];
+			}
 			lay->numf = lay->video_stream->nb_frames;
 			float tbperframe = (float)lay->video_stream->duration / (float)lay->numf;
 			lay->millif = tbperframe * (((float)lay->video_stream->time_base.num * 1000.0) / (float)lay->video_stream->time_base.den);
@@ -1386,14 +1419,19 @@ bool thread_vidopen(Layer *lay, AVInputFormat *ifmt, bool skip) {
     }
 
  	lay->numf = lay->video_stream->nb_frames;
+	if (lay->numf == 0) {
+		lay->numf = (double)lay->video->duration * (double)lay->video_stream->avg_frame_rate.num / (double)lay->video_stream->avg_frame_rate.den / (double)1000000.0f;
+		lay->video_duration = lay->video->duration / (1000000.0f * lay->video_stream->time_base.num / lay->video_stream->time_base.den);
+	}
+	else lay->video_duration = lay->video_stream->duration;
 	if (lay->reset) {
 		lay->startframe = 0;
 		lay->endframe = lay->numf - 1;
 	}
 	//if (lay->numf == 0) return 0;	//implement!
-	float tbperframe = (float)lay->video_stream->duration / (float)lay->numf;
+	float tbperframe = (float)lay->video_duration / (float)lay->numf;
 	lay->millif = tbperframe * (((float)lay->video_stream->time_base.num * 1000.0) / (float)lay->video_stream->time_base.den);
-		
+
 
 	if (open_codec_context(&(lay->audio_stream_idx), lay->video, AVMEDIA_TYPE_AUDIO) >= 0 and !lay->dummy) {
 		lay->audio_stream = lay->video->streams[lay->audio_stream_idx];
@@ -1473,13 +1511,13 @@ void Layer::playaudio() {
 	ALint availBuffers = 0; // Buffers to be recovered
 	ALint buffqueued = 0;
 	ALuint myBuff; // The buffer we're using
-	ALuint buffHolder[8]; // An array to hold catch the unqueued buffers
+	ALuint buffHolder[128]; // An array to hold catch the unqueued buffers
 	bool done = false;
 	std::list<ALuint> bufferQueue; // A quick and dirty queue of buffer objects
-	ALuint temp[8];
-	alGenBuffers(8, &temp[0]);
+	ALuint temp[128];
+	alGenBuffers(128, &temp[0]);
     // Queue our buffers onto an STL list
-	for (int ii = 0; ii < 8; ++ii) {
+	for (int ii = 0; ii < 128; ++ii) {
 		bufferQueue.push_back(temp[ii]);
 	}
 	// Request a source name
@@ -1510,14 +1548,15 @@ void Layer::playaudio() {
 			// Stuff the data in a buffer-object
 			int count = 0;
 			if (this->snippets.size()) {
-				int *input = this->snippets.front(); this->snippets.pop_front();
+				char *input = this->snippets.front(); this->snippets.pop_front();
+				int pslen = this->pslens.front(); this->pslens.pop_front();
 				if (!bufferQueue.empty()) { // We just drop the data if no buffers are available
 					myBuff = bufferQueue.front(); bufferQueue.pop_front();
-					alBufferData(myBuff, this->sampleformat, input, this->pslen, this->sample_rate);
+					alBufferData(myBuff, this->sampleformat, input, pslen, this->sample_rate);
 					// Queue the buffer
 					alSourceQueueBuffers(source[0], 1, &myBuff);
 				}
-				free(input);
+				if (pslen) delete[] input;
 			}
 				
 			// Restart the source if needed
@@ -1561,7 +1600,7 @@ Shelf::Shelf(bool side) {
 		glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR);
 		glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
 		
-		this->buttons[i] = new Button(false);
+		this->buttons.push_back(new Button(false));
 		Box *box = this->buttons[i]->box;
 		box->vtxcoords->x1 = -1.0f + (i % 4) * boxwidth + (2.0f - boxwidth * 4) * side;
 		box->vtxcoords->h = boxwidth * (glob->w / glob->h) / (1920.0f /  1080.0f);
@@ -2420,7 +2459,7 @@ void calc_texture(Layer *lay, bool comp, bool alive) {
 					float h = lay->video_dec_ctx->height;
 					lay->initialize(w, h, srclay->decresult->compression);
 				}
-				if (srclay->decresult->compression == 187) {
+				if (srclay->decresult->compression == 187 or srclay->decresult->compression == 171) {
 					glCompressedTexSubImage2D(GL_TEXTURE_2D, 0, 0, 0, srclay->decresult->width, srclay->decresult->height, GL_COMPRESSED_RGBA_S3TC_DXT1_EXT, srclay->decresult->size, srclay->decresult->data);
 				}
 				else if (srclay->decresult->compression == 190) {
@@ -3398,7 +3437,26 @@ void midi_set() {
 		if (but == mainprogram->wormhole) mainprogram->binsscreen = but->value;
 		mainmix->midibutton = nullptr;
 	}
-	
+
+	if (mainmix->midishelfbutton) {
+		bool shelf = 0;
+		int pos = std::find(mainprogram->shelves[0]->buttons.begin(), mainprogram->shelves[0]->buttons.end(), mainmix->midishelfbutton) - mainprogram->shelves[0]->buttons.begin();
+		if (pos == 16) {
+			pos = std::find(mainprogram->shelves[1]->buttons.begin(), mainprogram->shelves[1]->buttons.end(), mainmix->midishelfbutton) - mainprogram->shelves[1]->buttons.begin();
+			shelf = 1;
+		}
+		if (mainprogram->shelves[shelf]->types[pos] == ELEM_FILE) {
+			open_video(0, mainmix->currlay, mainprogram->shelves[shelf]->paths[pos], true);
+		}
+		else if (mainprogram->shelves[shelf]->types[pos] == ELEM_IMAGE) {
+			mainmix->currlay->open_image(mainprogram->shelves[shelf]->paths[pos]);
+		}
+		else if (mainprogram->shelves[shelf]->types[pos] == ELEM_LAYER) {
+			mainmix->open_layerfile(mainprogram->shelves[shelf]->paths[pos], mainmix->currlay, true, false);
+		}
+		mainmix->midishelfbutton = nullptr;
+	}
+
 	if (mainmix->midiparam) {
 		printf("MIDIPARAM\n");
 		Param *par = mainmix->midiparam;
@@ -4119,24 +4177,24 @@ void walk_nodes(bool stage) {
 	if (stage == 0) {
 		for (int i = 0; i < mainmix->layersA.size(); i++) {
 			Layer *lay = mainmix->layersA[i];
-			if (!lay->decresult->width) return;
+			if (!lay->decresult->width and lay->filename != "") return;
 			onestepfrom(0, lay->node, nullptr, -1, -1);
 		}
 		for (int i = 0; i < mainmix->layersB.size(); i++) {
 			Layer *lay = mainmix->layersB[i];
-			if (!lay->decresult->width) return;
+			if (!lay->decresult->width and lay->filename != "") return;
 			onestepfrom(0, lay->node, nullptr, -1, -1);
 		}
 	}
 	else {
 		for (int i = 0; i < mainmix->layersAcomp.size(); i++) {
 			Layer *lay = mainmix->layersAcomp[i];
-			if (!lay->decresult->width) return;
+			if (!lay->decresult->width and lay->filename != "") return;
 			onestepfrom(1, lay->node, nullptr, -1, -1);
 		}
 		for (int i = 0; i < mainmix->layersBcomp.size(); i++) {
 			Layer *lay = mainmix->layersBcomp[i];
-			if (!lay->decresult->width) return;
+			if (!lay->decresult->width and lay->filename != "") return;
 			onestepfrom(1, lay->node, nullptr, -1, -1);
 		}
 	}
@@ -5078,7 +5136,7 @@ void Preferences::load() {
 					for (int i = 0; i < mainprogram->prefs->items.size(); i++) {
 						if (mainprogram->prefs->items[i]->name == istring) {
 							std::string catname = istring;
-							if (istring == "MIDI Devices") ((PIMidi*)mainprogram->prefs->items[i])->populate();
+							if (istring == "MIDI Devices") ((PIMidi*)(mainprogram->prefs->items[i]))->populate();
 							while (getline(rfile, istring)) {
 								if (istring == "ENDOFPREFCAT") {
 									brk = true;
@@ -5100,6 +5158,11 @@ void Preferences::load() {
 											if (pi->dest) *(float*)pi->dest = pi->value;
 										}
 										else if (pi->type == PREF_PATH) {
+											boost::filesystem::path p(istring);
+											if (!boost::filesystem::exists(p)) {
+												pi->path = *(std::string*)pi->dest;
+												continue;
+											}
 											pi->path = istring;
 											std::string lastchar = pi->path.substr(pi->path.length() - 1, std::string::npos);
 											if (lastchar != "/" and lastchar != "\\") pi->path += "/";
@@ -5115,7 +5178,7 @@ void Preferences::load() {
 										printf("istring \n", istring.c_str());
 										fflush(stdout);
 										bool onoff = std::stoi(istring);
-										PMidiItem *pmi = new PMidiItem(mainprogram->prefs->items[i], mainprogram->prefs->items[i]->items.size(), name, PREF_ONOFF, nullptr);
+										PrefItem *pmi = new PrefItem(mainprogram->prefs->items[i], mainprogram->prefs->items[i]->items.size(), name, PREF_ONOFF, nullptr);
 										pmi->onoff = onoff;
 										pmi->connected = false;
 									}
@@ -5125,21 +5188,19 @@ void Preferences::load() {
 											if (std::find(pim->onnames.begin(), pim->onnames.end(), pi->name) != pim->onnames.end()) {
 												pim->onnames.erase(std::find(pim->onnames.begin(), pim->onnames.end(), pi->name));
 												mainprogram->openports.erase(std::find(mainprogram->openports.begin(), mainprogram->openports.end(), foundpos));
-												((PMidiItem*)pi)->midiin->cancelCallback();
-												delete ((PMidiItem*)pi)->midiin;
+												pi->midiin->cancelCallback();
+												delete pi->midiin;
 											}
 										}
 										else {
-											printf("AAN\n");
 											pim->onnames.push_back(pi->name);
 											RtMidiIn *midiin = new RtMidiIn();
 											if (std::find(mainprogram->openports.begin(), mainprogram->openports.end(), foundpos) == mainprogram->openports.end()) {
-												printf("OPEN\n");
-												midiin->setCallback(&mycallback, (void*)pim->items[foundpos]);
 												midiin->openPort(foundpos);
+												midiin->setCallback(&mycallback, (void*)pim->items[foundpos]);
+												mainprogram->openports.push_back(foundpos);
 											}
-											mainprogram->openports.push_back(foundpos);
-											((PMidiItem*)pi)->midiin = midiin;
+											pi->midiin = midiin;
 										}
 										fflush(stdout);
 									}
@@ -5155,35 +5216,43 @@ void Preferences::load() {
 			mainprogram->currbinsdir = mainprogram->binsdir;
 			if (istring == "CURRVIDEODIR") {
 				getline(rfile, istring);
-				mainprogram->currvideodir = istring;
+				boost::filesystem::path p(istring);
+				if (boost::filesystem::exists(p)) mainprogram->currvideodir = istring;
 			}
 			else if (istring == "CURRIMAGEDIR") {
 				getline(rfile, istring);
-				mainprogram->currimagedir = istring;
+				boost::filesystem::path p(istring);
+				if (boost::filesystem::exists(p)) mainprogram->currimagedir = istring;
 			}
 			else if (istring == "CURRLAYERDIR") {
 				getline(rfile, istring);
-				mainprogram->currlayerdir = istring;
+				boost::filesystem::path p(istring);
+				if (boost::filesystem::exists(p)) mainprogram->currlayerdir = istring;
 			}
 			else if (istring == "CURRDECKDIR") {
 				getline(rfile, istring);
-				mainprogram->currdeckdir = istring;
+				boost::filesystem::path p(istring);
+				if (boost::filesystem::exists(p)) mainprogram->currdeckdir = istring;
 			}
 			else if (istring == "CURRMIXDIR") {
 				getline(rfile, istring);
-				mainprogram->currmixdir = istring;
+				boost::filesystem::path p(istring);
+				if (boost::filesystem::exists(p)) mainprogram->currmixdir = istring;
 			}
 			else if (istring == "CURRSTATEDIR") {
 				getline(rfile, istring);
-				mainprogram->currstatedir = istring;
+				boost::filesystem::path p(istring);
+				if (boost::filesystem::exists(p)) mainprogram->currstatedir = istring;
 			}
 			else if (istring == "CURRBINDIRDIR") {
 				getline(rfile, istring);
-				mainprogram->currbindirdir = istring;
+				boost::filesystem::path p(istring);
+				if (boost::filesystem::exists(p)) mainprogram->currbindirdir = istring;
 			}
 			else if (istring == "CURRSHELFDIRDIR") {
 				getline(rfile, istring);
-				mainprogram->currshelfdirdir = istring;
+				boost::filesystem::path p(istring);
+				if (boost::filesystem::exists(p)) mainprogram->currshelfdirdir = istring;
 			}
 		}
 	}
@@ -5404,19 +5473,26 @@ void PIMidi::populate() {
 	RtMidiIn midiin;
 	int nPorts = midiin.getPortCount();
 	std::string portName;
-	for (int i = 0; i < this->items.size(); i++) {
-		delete this->items[i];
-	}
-	this->items.clear();
+	std::vector<PrefItem*> intrmitems;
 	for (int i = 0; i < nPorts; i++) {
-		PMidiItem *pmi = new PMidiItem(this, i, midiin.getPortName(i), PREF_ONOFF, nullptr);
+		PrefItem *pmi = new PrefItem(this, i, midiin.getPortName(i), PREF_ONOFF, nullptr);
 		pmi->onoff = (std::find(this->onnames.begin(), this->onnames.end(), pmi->name) != this->onnames.end());
 		pmi->namebox->tooltiptitle = "MIDI device ";
 		pmi->namebox->tooltip = "Name of a connected MIDI device. ";
 		pmi->valuebox->tooltiptitle = "MIDI device on/off ";
 		pmi->valuebox->tooltip = "Leftclicking toggles if this MIDI device is used by EWOCvj2. ";
-		this->items.push_back(pmi);
+		for (int j = 0; j < this->items.size(); j++) {
+			if (this->items[j]->name == pmi->name) {
+				pmi->midiin = this->items[j]->midiin;
+				printf("resetting %d\n", pmi->midiin);
+			}
+		}
+		intrmitems.push_back(pmi);
 	}
+	for (int i = 0; i < this->items.size(); i++) {
+		delete this->items[i];
+	}
+	this->items = intrmitems;
 }
 
 PIInt::PIInt() {
@@ -6148,17 +6224,20 @@ bool preferences() {
 						if (!midici->items[i]->onoff) {
 							if (std::find(midici->onnames.begin(), midici->onnames.end(), midici->items[i]->name) != midici->onnames.end()) {
 								midici->onnames.erase(std::find(midici->onnames.begin(), midici->onnames.end(), midici->items[i]->name));
-								((PMidiItem*)midici->items[i])->midiin->cancelCallback();
-								delete ((PMidiItem*)midici->items[i])->midiin;
+								//midici->items[i]->midiin->cancelCallback();
+								midici->items[i]->midiin->closePort();
+								delete midici->items[i]->midiin;
 							}
 						}
 						else {
 							midici->onnames.push_back(midici->items[i]->name);
 							RtMidiIn *midiin = new RtMidiIn();
-							midiin->setCallback(&mycallback, (void*)midici->items[i]);
 							midiin->openPort(i);
+							midiin->setCallback(&mycallback, (void*)mci->items[i]);
+							mainprogram->openports.push_back(i);
 							midiin->ignoreTypes( true, true, true );
-							((PMidiItem*)midici->items[i])->midiin = midiin;
+							midici->items[i]->midiin = midiin;
+							midici->items[i]->midiin = midiin;
 						}
 					}
 				}
@@ -6738,7 +6817,7 @@ void the_loop() {
 				
 	if (mainprogram->openshelfdir) {
 		// load one item from mainprogram->opendir into shelf, one each loop not to slowdown output stream
-		mainprogram->shelves[mainmix->mousedeck]->open_dir();
+		mainmix->mouseshelf->open_dir();
 	}
 	
 	for (int m = 0; m < 2; m++) {
@@ -8255,7 +8334,9 @@ void the_loop() {
 			filereq.detach();
 		}
 		else if (k == 7) {
-			//reminder: MIDI LEARN
+			mainmix->learn = true;
+			mainmix->learnparam = nullptr;
+			mainmix->learnbutton = mainmix->mouseshelf->buttons[mainmix->mouseshelfelem];
 		}
 	
 		if (mainprogram->menuchosen) {
@@ -9132,7 +9213,21 @@ void Shelf::save(const std::string &path) {
 		}
 	}
 	wfile << "ENDOFELEMS\n";
-	
+
+	wfile << "ELEMMIDI\n";
+	for (int j = 0; j < 16; j++) {
+		wfile << "MIDI0\n";
+		wfile << std::to_string(this->buttons[j]->midi[0]);
+		wfile << "\n";
+		wfile << "MIDI1\n";
+		wfile << std::to_string(this->buttons[j]->midi[1]);
+		wfile << "\n";
+		wfile << "MIDIPORT\n";
+		wfile << this->buttons[j]->midiport;
+		wfile << "\n";
+	}
+	wfile << "ENDOFELEMMIDI\n";
+
 	wfile << "ENDOFFILE\n";
 	wfile.close();
 	
@@ -9174,7 +9269,7 @@ bool Shelf::open_videofile(const std::string &path, int pos) {
 	this->types[pos] = ELEM_FILE;
 	Layer *lay = new Layer(true);
 	lay->dummy = true;
-	open_video(1, lay, path, true);
+	open_video(0, lay, path, true);
 	lay->frame = lay->numf / 2.0f;
 	lay->prevframe = -1;
 	lay->ready = true;
@@ -9379,6 +9474,24 @@ void Shelf::open(const std::string &path) {
 					this->open_image(this->paths[count], count);
 				}
 				count++;
+			}
+		}
+		else if (istring == "ELEMMIDI") {
+			int count = 0;
+			while (getline(rfile, istring)) {
+				if (istring == "ENDOFELEMMIDI") break;
+				if (istring == "MIDI0") {
+					getline(rfile, istring);
+					this->buttons[count]->midi[0] = std::stoi(istring);
+				}
+				if (istring == "MIDI1") {
+					getline(rfile, istring);
+					this->buttons[count]->midi[1] = std::stoi(istring);
+				}
+				if (istring == "MIDIPORT") {
+					getline(rfile, istring);
+					this->buttons[count]->midiport = istring;
+				}
 			}
 		}
 	}
@@ -10528,7 +10641,11 @@ int main(int argc, char* argv[]){
 			if (mainprogram->pathto == "OPENVIDEO") {
 				std::string str(mainprogram->path);
 				mainprogram->currvideodir = dirname(str);
-				open_video(0, mainprogram->loadlay, str, true);
+				open_video(1, mainprogram->loadlay, str, true);
+				std::unique_lock<std::mutex> olock(mainprogram->loadlay->endopenlock);
+				mainprogram->loadlay->endopenvar.wait(olock, [&]{return mainprogram->loadlay->opened;});
+				mainprogram->loadlay->opened = false;
+				olock.unlock();
 			}
 			if (mainprogram->pathto == "OPENIMAGE") {
 				std::string str(mainprogram->path);
@@ -11016,6 +11133,7 @@ int main(int argc, char* argv[]){
 					mainprogram->get_outname("New project", "application/ewocvj2-project", boost::filesystem::absolute(reqdir + "/" + name).generic_string());
 					if (mainprogram->path != nullptr) {
 						mainprogram->project->newp(mainprogram->path);
+						mainprogram->currprojdir = dirname(mainprogram->path);
 						mainprogram->path = nullptr;
 						mainprogram->startloop = true;
 					}
@@ -11034,6 +11152,7 @@ int main(int argc, char* argv[]){
 					mainprogram->get_inname("Open project", "application/ewocvj2-project", boost::filesystem::canonical(mainprogram->currprojdir).generic_string());
 					if (mainprogram->path != nullptr) {
 						mainprogram->project->open(mainprogram->path);
+						mainprogram->currprojdir = dirname(mainprogram->path);
 						mainprogram->path = nullptr;
 						mainprogram->startloop = true;
 					}
@@ -11057,6 +11176,7 @@ int main(int argc, char* argv[]){
 					if (mainprogram->leftmouse) {
 						mainprogram->leftmouse = false;
 						mainprogram->project->open(mainprogram->recentprojectpaths[i]);
+						mainprogram->currprojdir = dirname(mainprogram->recentprojectpaths[i]);
 						mainprogram->startloop = true;
 						break;
 					}

@@ -94,10 +94,11 @@ class Layer {
 		Layer(const Layer &lay);
 		~Layer();
 		
-		bool initialized = false;
+		bool initialized = true;
 		float frame = 0.0f;
 		int prevframe = -1;
 		int numf = 0;
+		int video_duration;
 		float millif = 0.0f;
 		std::chrono::high_resolution_clock::time_point prevtime;
 		bool timeinit = false;
@@ -174,8 +175,8 @@ class Layer {
 		void playaudio();
 		bool audioplaying = false;
 		bool notdecoding = true;
-        std::list<int*> snippets;
- 		int pslen;
+		std::list<char*> snippets;
+		std::list<int> pslens;
 		GLuint texture;
 		GLuint comptexture;
 		GLuint fbotex;
@@ -211,6 +212,8 @@ class Layer {
 		uint8_t *avbuffer = nullptr;
 		char *databuf = nullptr;
 		int vidformat = -1;
+		int oldvidformat = -2;  //different from -1
+		int oldcompression = -1;
 		std::vector<char*> audio_chunks;
 		ALuint sample_rate;
 		int channels;
@@ -308,6 +311,7 @@ class Mixer {
 		bool learn = false;
 		float midi2;
 		Button *midibutton = nullptr;
+		Button *midishelfbutton = nullptr;
 		Param *midiparam = nullptr;
 		Param *adaptparam = nullptr;
 		Param *adaptnumparam = nullptr;
