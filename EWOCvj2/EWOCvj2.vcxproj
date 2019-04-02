@@ -88,10 +88,10 @@
       <EnableParallelCodeGeneration>true</EnableParallelCodeGeneration>
       <PreprocessorDefinitions>_CRT_SECURE_NO_WARNINGS;_SILENCE_CXX17_ALLOCATOR_VOID_DEPRECATION_WARNING;%(PreprocessorDefinitions)</PreprocessorDefinitions>
       <MultiProcessorCompilation>true</MultiProcessorCompilation>
-      <AdditionalIncludeDirectories>C:\source\ffmpeg-4.1-win64-dev\include;C:\source\rtmidi-src;%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
+      <AdditionalIncludeDirectories>C:\source\ffmpeg-4.1-win64-dev\include;C:\source\rtmidi-src;C:\source\boost_1_69_0;%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
     </ClCompile>
     <Link>
-      <AdditionalLibraryDirectories>C:\source\rtmidi-src\lib;C:\source\rtmidi;C:\source\ffmpeg-4.1-win64-dev\lib;%(AdditionalLibraryDirectories)</AdditionalLibraryDirectories>
+      <AdditionalLibraryDirectories>C:\source\rtmidi-src\lib;C:\source\rtmidi;C:\source\ffmpeg-4.1-win64-dev\lib;C:\source\boost_1_69_0\lib64-msvc-14.1;%(AdditionalLibraryDirectories)</AdditionalLibraryDirectories>
       <AdditionalDependencies>avcodec.lib;avdevice.lib;avformat.lib;avutil.lib;swscale.lib;winmm.lib;%(AdditionalDependencies)</AdditionalDependencies>
       <SubSystem>Console</SubSystem>
     </Link>

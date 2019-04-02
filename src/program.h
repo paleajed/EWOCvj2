@@ -183,7 +183,9 @@ class GUIString {
 		float textw;
 		float texth;
 		float sx;
+		std::vector<float> sxvec;
 		GLuint texture;
+		std::vector<GLuint> texturevec;
 		GLuint vbo;
 		GLuint tbo;
 		GLuint vao;
@@ -357,6 +359,7 @@ class Program {
 		int astimestamp = 0;
 		
 		std::vector<GUIString*> guistrings;
+		std::unordered_map <std::string, GUIString*> guitextmap;
 		std::vector<GUIString*> prguistrings;
 		std::vector<GUIString*> tmguistrings;
 		std::vector<std::wstring> livedevices;

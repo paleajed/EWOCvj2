@@ -1941,16 +1941,14 @@ float render_text(std::string text, float *textc, float x, float y, float sx, fl
 	float texth = 0.0f;
 	bool prepare = true;
 	if (smflag == 0) {
-		for (int i = 0; i < mainprogram->guistrings.size(); i++) {
-			if (text.compare(mainprogram->guistrings[i]->text) != 0 or sx != mainprogram->guistrings[i]->sx) {
-				prepare = true;
-			}
-			else {
+		GUIString *gs = mainprogram->guitextmap[text];
+		if (gs) {
+			int pos = std::find(gs->sxvec.begin(), gs->sxvec.end(), sx) - gs->sxvec.begin();
+			if (pos != gs->sxvec.size()) {
 				prepare = false;
-				texture = mainprogram->guistrings[i]->texture;
-				textw = mainprogram->guistrings[i]->textw;
-				texth = mainprogram->guistrings[i]->texth;
-				break;
+				texture = gs->texturevec[pos];
+				textw = gs->textw;
+				texth = gs->texth;
 			}
 		}
 	}
@@ -2138,11 +2136,11 @@ float render_text(std::string text, float *textc, float x, float y, float sx, fl
 		
 		GUIString *guistring = new GUIString;
 		guistring->text = text;
-		guistring->texture = endtex;
+		guistring->texturevec.push_back(endtex);
 		guistring->textw = textw;
 		guistring->texth = texth;
-		guistring->sx = sx;
-		if (smflag == 0) mainprogram->guistrings.push_back(guistring);
+		guistring->sxvec.push_back(sx);
+		if (smflag == 0) mainprogram->guitextmap[text] = guistring;
 		else if (smflag == 1) mainprogram->prguistrings.push_back(guistring);
 		else if (smflag == 2) mainprogram->tmguistrings.push_back(guistring);
 		
