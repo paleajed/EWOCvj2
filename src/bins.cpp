@@ -230,7 +230,6 @@ void BinsMain::handle() {
 		if (mainprogram->prevmodus) lay = mainmix->layersA[0];
 		else lay = mainmix->layersAcomp[0];
 	}
-	int deck = this->inserting;
 		
 	if (mainprogram->rightmouse and this->currbinel) {
 		bool cont = false;
@@ -1051,14 +1050,14 @@ void BinsMain::handle() {
 						if (this->currbinel) this->binpreview = false;
 						if (this->inserting == 0 or this->inserting == 1) {
 							if (this->prevbinel) {
-								for (int k = 0; k < this->inserttexes[deck].size(); k++) {
-									BinElement *deckbinel = find_element(this->inserttexes[deck].size(), k, this->previ, this->prevj, 1);
+								for (int k = 0; k < this->inserttexes[this->inserting].size(); k++) {
+									BinElement *deckbinel = find_element(this->inserttexes[this->inserting].size(), k, this->previ, this->prevj, 1);
 									if (!deckbinel) {
 										this->inserting = -1;
 										break;
 									}
 									if (!this->movingstruct) {
-										std::vector<Layer*> &lvec = choose_layers(deck);
+										std::vector<Layer*> &lvec = choose_layers(this->inserting);
 										if (lvec[k]->filename != "") {
 											deckbinel->tex = deckbinel->oldtex;
 										}
@@ -1073,35 +1072,35 @@ void BinsMain::handle() {
 									}
 								}
 							}
-							for (int k = 0; k < this->inserttexes[deck].size(); k++) {
+							for (int k = 0; k < this->inserttexes[this->inserting].size(); k++) {
 								int newi = i;
 								if (mainprogram->rightmouse) newi = this->movingdeck->i;
 								int newj = j;
 								if (mainprogram->rightmouse) newj = this->movingdeck->j;
-								BinElement *deckbinel = find_element(this->inserttexes[deck].size(), k, newi, newj, 1);
+								BinElement *deckbinel = find_element(this->inserttexes[this->inserting].size(), k, newi, newj, 1);
 								if (!deckbinel) {
 									this->inserting = -1;
 									break;
 								}
 								if (!this->movingstruct) {
-									std::vector<Layer*> &lvec = choose_layers(deck);
+									std::vector<Layer*> &lvec = choose_layers(this->inserting);
 									if (lvec[k]->filename != "") {
 										deckbinel->oldtex = deckbinel->tex;
-										deckbinel->tex = this->inserttexes[deck][k];
+										deckbinel->tex = this->inserttexes[this->inserting][k];
 									}
 								}
 								else {
 									deckbinel->oldtex = deckbinel->tex;
-									deckbinel->tex = this->inserttexes[deck][k];
+									deckbinel->tex = this->inserttexes[this->inserting][k];
 								}
 								//if (mainprogram->rightmouse) glDeleteTextures(1, &deckbinel->oldtex);
 								if (this->movingstruct) {
 									deckbinel->oldtype = deckbinel->type;
-									deckbinel->type = this->inserttypes[deck][k];
+									deckbinel->type = this->inserttypes[this->inserting][k];
 									deckbinel->oldpath = deckbinel->path;
-									deckbinel->path = this->insertpaths[deck][k];
+									deckbinel->path = this->insertpaths[this->inserting][k];
 									deckbinel->oldjpegpath = deckbinel->jpegpath;
-									deckbinel->jpegpath = this->insertjpegpaths[deck][k];
+									deckbinel->jpegpath = this->insertjpegpaths[this->inserting][k];
 									int pos = std::distance(this->currbin->elements.begin(), std::find(this->currbin->elements.begin(), this->currbin->elements.end(), deckbinel));
 									int ii = (int)((int)(pos / 24) / 3) * 3;
 									int jj = pos % 24;
@@ -1441,7 +1440,7 @@ void BinsMain::handle() {
 								boost::filesystem::remove(path);
 								path = this->insertjpegpaths[0][k];
 								boost::filesystem::remove(path);
-								BinElement *deckbinel = find_element(this->inserttexes[deck].size(), k, this->movingdeck->i, this->movingdeck->j, 1);
+								BinElement *deckbinel = find_element(this->inserttexes[this->inserting].size(), k, this->movingdeck->i, this->movingdeck->j, 1);
 								glBindTexture(GL_TEXTURE_2D, deckbinel->oldtex);
 								glTexStorage2D(GL_TEXTURE_2D, 1, GL_RGB, (int)(mainprogram->ow3), (int)(mainprogram->oh3));
 								deckbinel->tex = deckbinel->oldtex;
@@ -1565,7 +1564,7 @@ void BinsMain::handle() {
 							startdeck = 0;
 							enddeck = 2;
 						}
-						mainmix->mousedeck = deck;
+						mainmix->mousedeck = this->inserting;
 						int count1 = 0;
 						while (1) {
 							if (this->inserting == 2) path = mainprogram->binsdir + dirname + "/" + name + ".mix";
@@ -1612,6 +1611,10 @@ void BinsMain::handle() {
 									bm->path = path;
 									bm->j = this->prevj;
 									bm->height = std::max((int)((this->inserttexes[0].size() - 1) / 3), (int)((this->inserttexes[1].size() - 1) / 3)) + 1;
+									if (mainprogram->prevmodus) bm->tex = copy_tex(mainprogram->nodesmain->mixnodes[2]->mixtex);
+									else bm->tex = copy_tex(mainprogram->nodesmain->mixnodescomp[2]->mixtex);
+									bm->jpegpath = path + ".jpeg";
+									save_thumb(bm->jpegpath, bm->tex);
 									mainmix->save_mix(path);
 								}
 								else {
@@ -1620,7 +1623,11 @@ void BinsMain::handle() {
 									bd->path = path;
 									bd->i = (int)(this->previ / 3) * 3;
 									bd->j = this->prevj;
-									bd->height = (int)((this->inserttexes[deck].size() - 1) / 3) + 1;
+									bd->height = (int)((this->inserttexes[this->inserting].size() - 1) / 3) + 1;
+									if (mainprogram->prevmodus) bd->tex = copy_tex(mainprogram->nodesmain->mixnodes[this->inserting]->mixtex);
+									else bd->tex = copy_tex(mainprogram->nodesmain->mixnodescomp[this->inserting]->mixtex);
+									bd->jpegpath = path + ".jpeg";
+									save_thumb(bd->jpegpath, bd->tex);
 									mainmix->save_deck(path);
 								}
 								break;
@@ -1742,6 +1749,10 @@ void BinsMain::open_bin(const std::string &path, Bin *bin) {
 				bd->j = std::stoi(istring);
 				getline(rfile, istring);
 				bd->height = std::stoi(istring);
+				getline(rfile, istring);
+				if (istring == "ENDOFDECKS") break;
+				bd->jpegpath = istring;
+				open_thumb(istring, bd->tex);
 			}
 		}
 		else if (istring == "MIXES") {
@@ -1759,6 +1770,10 @@ void BinsMain::open_bin(const std::string &path, Bin *bin) {
 				bm->j = std::stoi(istring);
 				getline(rfile, istring);
 				bm->height = std::stoi(istring);
+				getline(rfile, istring);
+				if (istring == "ENDOFMIXES") break;
+				bm->jpegpath = istring;
+				open_thumb(istring, bm->tex);
 			}
 		}
 	}
@@ -1816,6 +1831,8 @@ void BinsMain::save_bin(const std::string &path) {
 		wfile << "\n";
 		wfile << std::to_string(this->currbin->decks[i]->height);
 		wfile << "\n";
+		wfile << this->currbin->decks[i]->jpegpath;
+		wfile << "\n";
 	}
 	wfile << "ENDOFDECKS\n";
 	wfile << "MIXES\n";
@@ -1826,6 +1843,8 @@ void BinsMain::save_bin(const std::string &path) {
 		wfile << std::to_string(this->currbin->mixes[i]->j);
 		wfile << "\n";
 		wfile << std::to_string(this->currbin->mixes[i]->height);
+		wfile << "\n";
+		wfile << this->currbin->mixes[i]->jpegpath;
 		wfile << "\n";
 	}
 	wfile << "ENDOFMIXES\n";

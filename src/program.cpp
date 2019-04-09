@@ -66,7 +66,7 @@ Program::Program() {
 	wchar_t wcharPath[MAX_PATH];
 	if (GetTempPathW(MAX_PATH, wcharPath)) ws3 = wcharPath;
 	std::string str3(ws3.begin(), ws3.end());
-	this->temppath = str3 + "/EWOCvj2";
+	this->temppath = str3 + "EWOCvj2/";
 	#else
 	#ifdef __linux__
 	std::string homedir (getenv("HOME"));
@@ -74,9 +74,6 @@ Program::Program() {
 	#endif
 	#endif
 	
-	this->shelves[0] = new Shelf(0);
-	this->shelves[1] = new Shelf(1);
-		
 	this->numh = this->numh * glob->w / glob->h;
 	this->layh = this->layh * (glob->w / glob->h) / (1920.0f /  1080.0f);
 	this->monh = this->monh * (glob->w / glob->h) / (1920.0f /  1080.0f);
@@ -679,6 +676,10 @@ void Project::newp(const std::string &path) {
 	binsmain->save_binslist();
 	mainprogram->shelves[0]->erase();
 	mainprogram->shelves[1]->erase();
+	mainprogram->shelves[0]->basepath = "shelfsA.shelf";
+	mainprogram->shelves[1]->basepath = "shelfsB.shelf";
+	mainprogram->shelves[0]->save(mainprogram->shelfdir + "shelfsA.shelf");
+	mainprogram->shelves[1]->save(mainprogram->shelfdir + "shelfsB.shelf");
 	mainprogram->project->save(path);
 }
 	
@@ -744,6 +745,7 @@ void Project::open(const std::string &path) {
 	rfile.close();
 	
 	mainprogram->set_ow3oh3();
+	//mainmix->new_state();
 	mainmix->open_state(result + "_0.file");
 }
 

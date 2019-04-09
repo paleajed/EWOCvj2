@@ -19,6 +19,7 @@ class BinsMain {
 		std::string newpath;
 		std::string binpath;
 		std::vector<std::string> newpaths;
+		std::string tempjpegpath;
 		GLuint movingtex = -1;
 		GLuint dragtex = -1;
 		std::vector<GLuint> inputtexes;
@@ -100,9 +101,11 @@ class BinElement {
 class BinDeck {
 	public:
 		std::string path;
+		std::string jpegpath;
 		int i, j;
 		int height;
 		int encthreads = 0;
+		GLuint tex;
 		Box *box;
 		BinDeck();
 		~BinDeck();
@@ -111,9 +114,11 @@ class BinDeck {
 class BinMix {
 	public:
 		std::string path;
+		std::string jpegpath;
 		int j;
 		int height;
 		int encthreads = 0;
+		GLuint tex;
 		Box *box;
 		BinMix();
 		~BinMix();

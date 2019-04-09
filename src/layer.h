@@ -267,7 +267,8 @@ class Mixer {
 		void open_layerfile(const std::string &path, Layer *lay, bool loadevents, bool doclips);
 		void open_mix(const std::string &path);
 		void open_deck(const std::string &path, bool alive);
-		void open_state(const std::string &path);
+		void new_state();
+		void open_state(const std::string& path);
 		void save_state(const std::string &path);
 		std::vector<std::string> write_layer(Layer *lay, std::ostream& wfile, bool doclips);
 		int read_layers(std::istream &rfile, const std::string &result, std::vector<Layer*> &layers, bool deck, int type, bool doclips, bool concat, bool load, bool loadevents);

@@ -33,6 +33,7 @@ class Box {
 		void upvtxtoscr();
 		bool in();
 		bool in(int mx, int my);
+		bool in(int mx, int my, bool draggoal);
 		bool in(bool menu);
 		Box();
 		~Box();

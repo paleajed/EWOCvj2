@@ -58,6 +58,7 @@ class Shelf {
 	public:
 		std::string basepath = "";
 		std::string paths[16];
+		std::string jpegpaths[16];
 		ELEM_TYPE types[16];
 		GLuint texes[16] = {0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0};
 		std::vector<Button*> buttons;
@@ -66,9 +67,11 @@ class Shelf {
 		void save(const std::string &path);
 		void open(const std::string &path);
 		bool open_videofile(const std::string &path, int pos);
-		bool open_layer(const std::string &path, int pos);
+		bool open_layer(const std::string& path, int pos);
 		void open_dir();
 		bool open_image(const std::string &path, int pos);
+		bool insert_deck(const std::string& path, bool deck, int pos);
+		bool insert_mix(const std::string& path, int pos);
 		Shelf(bool side);
 };
 
@@ -180,8 +183,8 @@ class LayMidi {
 class GUIString {
 	public:
 		std::string text;
-		float textw;
-		float texth;
+		std::vector<float> textwvec;
+		std::vector<float> texthvec;
 		float sx;
 		std::vector<float> sxvec;
 		GLuint texture;
@@ -219,6 +222,18 @@ class Program {
 		GLuint smglobfbotex_pr;
 		GLuint fbotex[4];
 		GLuint frbuf[4];
+		GLuint bvao;
+		GLuint boxvao;
+		GLuint prboxvao;
+		GLuint tmboxvao;
+		GLuint bvbuf;
+		GLuint boxvbuf;
+		GLuint prboxvbuf;
+		GLuint tmboxvbuf;
+		GLuint btbuf;
+		GLuint boxtbuf;
+		GLuint prboxtbuf;
+		GLuint tmboxtbuf;
 		std::vector<OutputEntry*> outputentries;
 		std::vector<Button*> buttons;
 		Box *scrollboxes[2];
@@ -358,10 +373,9 @@ class Program {
 		float asminutes = 1;
 		int astimestamp = 0;
 		
-		std::vector<GUIString*> guistrings;
 		std::unordered_map <std::string, GUIString*> guitextmap;
-		std::vector<GUIString*> prguistrings;
-		std::vector<GUIString*> tmguistrings;
+		std::unordered_map <std::string, GUIString*> prguitextmap;
+		std::unordered_map <std::string, GUIString*> tmguitextmap;
 		std::vector<std::wstring> livedevices;
 		std::vector<std::string> devices;
 		std::vector<std::string> busylist;
@@ -373,7 +387,8 @@ class Program {
 		Clip *dragclip = nullptr;
 		Layer *draglay = nullptr;
 		std::string dragpath;
-		int dragpos;
+		int dragpos; 
+		bool drag = false;
 		bool inwormhole = false;
 		Button *wormhole;
 		DIR *opendir;

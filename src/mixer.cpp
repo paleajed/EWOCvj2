@@ -2371,7 +2371,9 @@ void Mixer::loopstation_copy(bool comp) {
 			std::tuple<long long, Param*, float> event2;
 			event2 = std::make_tuple(std::get<0>(event1), lp1->parmap[std::get<1>(event1)], std::get<2>(event1));
 			Param *par = std::get<1>(event2);
-			if (par) {	
+			if (par == mainmix->crossfade) par = mainmix->crossfadecomp;
+			else if (par == mainmix->crossfadecomp) par = mainmix->crossfade;
+			if (par) {
 				lp2->elems[i]->eventlist.push_back(event2);
 				lp2->elems[i]->params.emplace(par);
 				if (par->effect) lp2->elems[i]->layers.emplace(par->effect->layer);
@@ -2389,6 +2391,8 @@ void Mixer::loopstation_copy(bool comp) {
 		lp2->elems[i]->eventpos = lp1->elems[i]->eventpos;
 		lp2->elems[i]->loopbut->value = lp1->elems[i]->loopbut->value;
 		lp2->elems[i]->playbut->value = lp1->elems[i]->playbut->value;
+		lp2->elems[i]->loopbut->oldvalue = lp1->elems[i]->loopbut->oldvalue;
+		lp2->elems[i]->playbut->oldvalue = lp1->elems[i]->playbut->oldvalue;
 	}
 }
 
@@ -2399,6 +2403,7 @@ Layer* Mixer::clone_layer(std::vector<Layer*> &lvec, Layer* slay) {
 	dlay->blendnode->blendtype = slay->blendnode->blendtype;
 	dlay->blendnode->mixfac->value = slay->blendnode->mixfac->value;
 	dlay->blendnode->chred = slay->blendnode->chred;
+
 	dlay->blendnode->chgreen = slay->blendnode->chgreen;
 	dlay->blendnode->chblue = slay->blendnode->chblue;
 	dlay->blendnode->wipetype = slay->blendnode->wipetype;
@@ -3230,10 +3235,10 @@ void Mixer::save_state(const std::string &path) {
 	wfile << "ENDOFFILE\n";
 	wfile.close();
 	
-	mainprogram->shelves[0]->save(mainprogram->temppath + "tempA.shelf");
-	filestoadd.push_back(mainprogram->temppath + "tempA.shelf");
-	mainprogram->shelves[1]->save(mainprogram->temppath + "tempB.shelf");
-	filestoadd.push_back(mainprogram->temppath + "tempB.shelf");
+	//mainprogram->shelves[0]->save(mainprogram->temppath + "tempA.shelf");
+	//filestoadd.push_back(mainprogram->temppath + "tempA.shelf");
+	//mainprogram->shelves[1]->save(mainprogram->temppath + "tempB.shelf");
+	//filestoadd.push_back(mainprogram->temppath + "tempB.shelf");
 	bool save = mainprogram->prevmodus;
 	mainprogram->prevmodus = true;
 	mainmix->save_mix(mainprogram->temppath + "temp.state1");
@@ -3320,7 +3325,7 @@ void Mixer::event_read(std::istream &rfile, Param *par, Layer *lay) {
 	getline(rfile, istring);
 	if (loop) {
 		loop->speed->value = std::stof(istring);
-		loop->layers.emplace(lay);
+		if (lay) loop->layers.emplace(lay);
 	}
 	while (getline(rfile, istring)) {
 		if (istring == "ENDOFEVENT") break;
@@ -3534,6 +3539,35 @@ void Mixer::open_layerfile(const std::string &path, Layer *lay, bool loadevents,
 	rfile.close();
 }
 
+void Mixer::new_state() {
+	bool save = mainprogram->prevmodus;
+	mainprogram->prevmodus = true;
+	this->new_file(2, 1);
+	mainprogram->prevmodus = false;
+	this->new_file(2, 1);
+	//clear genmidis?
+	mainprogram->shelves[0]->erase();
+	mainprogram->shelves[1]->erase();
+	lp->init();
+	lpc->init();
+	mainprogram->prevmodus = save;
+	for (int i = 0; i < 3; i++) {
+		glDeleteFramebuffers(1, &((MixNode*)mainprogram->nodesmain->mixnodes[i])->mixfbo);
+		glDeleteTextures(1, &((MixNode*)mainprogram->nodesmain->mixnodes[i])->mixtex);
+		((MixNode*)mainprogram->nodesmain->mixnodes[i])->mixfbo = -1;
+		glDeleteFramebuffers(1, &((MixNode*)mainprogram->nodesmain->mixnodescomp[i])->mixfbo);
+		glDeleteTextures(1, &((MixNode*)mainprogram->nodesmain->mixnodescomp[i])->mixtex);
+		((MixNode*)mainprogram->nodesmain->mixnodescomp[i])->mixfbo = -1;
+	}
+	glDeleteFramebuffers(1, &mainprogram->bnodeend->fbo);
+	glDeleteTextures(1, &mainprogram->bnodeend->fbotex);
+	mainprogram->bnodeend->fbo = -1;
+	glDeleteFramebuffers(1, &mainprogram->bnodeendcomp->fbo);
+	glDeleteTextures(1, &mainprogram->bnodeendcomp->fbotex);
+	mainprogram->bnodeendcomp->fbo = -1;
+}
+
+
 void Mixer::open_state(const std::string &path) {
 	std::string result = deconcat_files(path);
 	bool concat = (result != "");
@@ -3567,7 +3601,7 @@ void Mixer::open_state(const std::string &path) {
 		glFramebufferTexture2D(GL_FRAMEBUFFER, GL_COLOR_ATTACHMENT0, GL_TEXTURE_2D, mainprogram->bnodeendcomp->fbotex, 0);
 	}
     glBindTexture(GL_TEXTURE_2D, mainprogram->bnodeend->fbotex);
-	glTexStorage2D(GL_TEXTURE_2D, 1, GL_RGBA8, mainprogram->ow, mainprogram->oh);
+	glTexStorage2D(GL_TEXTURE_2D, 1, GL_RGBA8, mainprogram->ow3, mainprogram->oh3);
     glBindTexture(GL_TEXTURE_2D, mainprogram->bnodeendcomp->fbotex);
 	glTexStorage2D(GL_TEXTURE_2D, 1, GL_RGBA8, mainprogram->ow, mainprogram->oh);
 	for (int i = 0; i < mainprogram->nodesmain->mixnodes.size(); i++) {
@@ -3604,10 +3638,10 @@ void Mixer::open_state(const std::string &path) {
 		glBindFramebuffer(GL_FRAMEBUFFER, mainprogram->nodesmain->mixnodescomp[i]->mixfbo);
 		glFramebufferTexture2D(GL_FRAMEBUFFER, GL_COLOR_ATTACHMENT0, GL_TEXTURE_2D, mainprogram->nodesmain->mixnodescomp[i]->mixtex, 0);
 	}
-	mainprogram->shelves[0]->open(result + "_0.file");
-	mainprogram->shelves[1]->open(result + "_1.file");
 	mainprogram->prevmodus = true;
-	mainmix->open_mix(result + "_2.file");
+	if (exists(result + "_3.file")) {
+		mainmix->open_mix(result + "_2.file");
+	}
 	Layer *bulay = mainmix->currlay;
 	if (exists(result + "_3.file")) {
 		mainprogram->prevmodus = false;
@@ -4428,6 +4462,7 @@ void Mixer::delete_layers(std::vector<Layer*> &layers, bool alive) {
 				delete lay->effects[0].back();
 				lay->effects[0].pop_back();
 			}
+			mainprogram->nodesmain->currpage->delete_node(lay->blendnode);
 			mainprogram->nodesmain->currpage->delete_node(lay->node);
 		}
 	}
