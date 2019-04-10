@@ -129,8 +129,12 @@ void LoopStationElement::init() {
 	this->recbut->value = 0;
 	this->loopbut->value = 0;
 	this->playbut->value = 0;
+	this->recbut->oldvalue = 0;
+	this->loopbut->oldvalue = 0;
+	this->playbut->oldvalue = 0;
 	this->speed->value = 1.0f;
 	this->eventlist.clear();
+	this->eventpos = 0;
 	this->params.clear();
 	this->layers.clear();
 }
@@ -156,6 +160,7 @@ void LoopStationElement::visualize() {
 }
 	
 void LoopStationElement::erase_elem() {
+	this->init();
 	this->eventlist.clear();
 	std::unordered_set<Param*>::iterator it;
 	for (it = this->params.begin(); it != this->params.end(); it++) {

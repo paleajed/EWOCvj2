@@ -4167,14 +4167,25 @@ void onestepfrom(bool stage, Node *node, Node *prevnode, GLuint prevfbotex, GLui
 	}
 }
 
-void walkback(Node *node) {
+void walkback(Node* node) {
 	while (node->in and !node->calc) {
 		if (node->type == BLEND) {
 			if (((BlendNode*)node)->in2) walkback(((BlendNode*)node)->in2);
 		}
 		node->calc = true;
 		node = node->in;
+		//try { Node* n = node->in; }
+		//catch (...) { return; }
 	}
+}
+
+void walk_forward(Node* node) {
+	do {
+		node->calc = true;
+		node->walked = false;
+		if (node->out.size() == 0) break;
+		node = node->out[0];
+	} while (1);
 }
 
 void walk_nodes(bool stage) {
@@ -4216,27 +4227,81 @@ void walk_nodes(bool stage) {
 	}
 	
 	if (stage == 0) {
+		int mutes = 0;
+		bool muted = false;
 		for (int i = 0; i < mainmix->layersA.size(); i++) {
-			Layer *lay = mainmix->layersA[i];
+			Layer* lay = mainmix->layersA[i];
 			if (!lay->decresult->width and lay->filename != "") return;
+			if (lay->mutebut->value) mutes++;
+			walk_forward(lay->node);
 			onestepfrom(0, lay->node, nullptr, -1, -1);
 		}
+		if (mutes == mainmix->layersA.size()) {
+			muted = true;
+			glBindFramebuffer(GL_FRAMEBUFFER, mainprogram->nodesmain->mixnodes[0]->mixfbo);
+			glDrawBuffer(GL_COLOR_ATTACHMENT0);
+			glClearColor(0, 0, 0, 0);
+			glClear(GL_COLOR_BUFFER_BIT);
+		}
+		mutes = 0;
 		for (int i = 0; i < mainmix->layersB.size(); i++) {
-			Layer *lay = mainmix->layersB[i];
+			Layer* lay = mainmix->layersB[i];
 			if (!lay->decresult->width and lay->filename != "") return;
+			if (lay->mutebut->value) mutes++;
+			walk_forward(lay->node);
 			onestepfrom(0, lay->node, nullptr, -1, -1);
+		}
+		if (mutes == mainmix->layersB.size()) {
+			muted = true;
+			glBindFramebuffer(GL_FRAMEBUFFER, mainprogram->nodesmain->mixnodes[1]->mixfbo);
+			glDrawBuffer(GL_COLOR_ATTACHMENT0);
+			glClearColor(0, 0, 0, 0);
+			glClear(GL_COLOR_BUFFER_BIT);
+		}
+		if (muted) {
+			mainprogram->bnodeend->intex = -1;
+			mainprogram->bnodeend->in2tex = -1;
+			onestepfrom(0, mainprogram->bnodeend, mainprogram->nodesmain->mixnodes[0], mainprogram->nodesmain->mixnodes[0]->mixtex, mainprogram->nodesmain->mixnodes[0]->mixfbo);
+			onestepfrom(0, mainprogram->bnodeend, mainprogram->nodesmain->mixnodes[1], mainprogram->nodesmain->mixnodes[1]->mixtex, mainprogram->nodesmain->mixnodes[1]->mixfbo);
 		}
 	}
 	else {
+		int mutes = 0;
+		bool muted = false;
 		for (int i = 0; i < mainmix->layersAcomp.size(); i++) {
-			Layer *lay = mainmix->layersAcomp[i];
+			Layer* lay = mainmix->layersAcomp[i];
 			if (!lay->decresult->width and lay->filename != "") return;
+			if (lay->mutebut->value) mutes++;
+			walk_forward(lay->node);
 			onestepfrom(1, lay->node, nullptr, -1, -1);
 		}
+		if (mutes == mainmix->layersAcomp.size()) {
+			muted = true;
+			glBindFramebuffer(GL_FRAMEBUFFER, mainprogram->nodesmain->mixnodescomp[0]->mixfbo);
+			glDrawBuffer(GL_COLOR_ATTACHMENT0);
+			glClearColor(0, 0, 0, 0);
+			glClear(GL_COLOR_BUFFER_BIT);
+		}
+		mutes = 0;
 		for (int i = 0; i < mainmix->layersBcomp.size(); i++) {
-			Layer *lay = mainmix->layersBcomp[i];
+			Layer* lay = mainmix->layersBcomp[i];
 			if (!lay->decresult->width and lay->filename != "") return;
+			if (lay->mutebut->value) mutes++;
+			walk_forward(lay->node);
 			onestepfrom(1, lay->node, nullptr, -1, -1);
+		}
+		if (mutes == mainmix->layersBcomp.size()) {
+			muted = true;
+			glBindFramebuffer(GL_FRAMEBUFFER, mainprogram->nodesmain->mixnodescomp[1]->mixfbo);
+			glDrawBuffer(GL_COLOR_ATTACHMENT0);
+			glClearColor(0, 0, 0, 0);
+			glClear(GL_COLOR_BUFFER_BIT);
+		}
+		if (muted) {
+			mainprogram->bnodeendcomp->intex = -1;
+			mainprogram->bnodeendcomp->in2tex = -1;
+			onestepfrom(1, mainprogram->bnodeendcomp, mainprogram->nodesmain->mixnodescomp[0], mainprogram->nodesmain->mixnodescomp[0]->mixtex, mainprogram->nodesmain->mixnodescomp[0]->mixfbo);
+			onestepfrom(1, mainprogram->bnodeendcomp, mainprogram->nodesmain->mixnodescomp[1], mainprogram->nodesmain->mixnodescomp[1]->mixtex, mainprogram->nodesmain->mixnodescomp[1]->mixfbo);
 		}
 	}
 }		
@@ -4465,7 +4530,7 @@ bool handle_clips(std::vector<Layer*> &layers, bool deck) {
 					//clips queue
 					set_queueing(lay, true);
 					mainmix->currlay = lay;
-					if (mainprogram->leftmouse) {
+					if (mainprogram->lmsave) {
 						mainprogram->leftmouse = false;
 						set_queueing(lay, false);
 						if (mainprogram->dragbinel) {
@@ -4487,7 +4552,7 @@ bool handle_clips(std::vector<Layer*> &layers, bool deck) {
 					}
 				}
 				else if (endx or (box->scrcoords->x1 - mainprogram->xvtxtoscr(0.075f) < mainprogram->mx and mainprogram->mx < box->scrcoords->x1 + mainprogram->xvtxtoscr(0.075f))) {
-					if (mainprogram->leftmouse) {
+					if (mainprogram->lmsave) {
 						mainprogram->leftmouse = false;
 						Layer *inlay = mainmix->add_layer(layers, lay->pos + endx);
 						if (inlay->pos == mainmix->scenes[deck][mainmix->currscene[deck]]->scrollpos + 3) mainmix->scenes[deck][mainmix->currscene[deck]]->scrollpos++;
@@ -4515,7 +4580,7 @@ bool handle_clips(std::vector<Layer*> &layers, bool deck) {
 					if (0 < mainprogram->my and mainprogram->my < mainprogram->yvtxtoscr(mainprogram->layh)) {
 						float blue[] = {0.5, 0.5 , 1.0, 1.0};
 						draw_box(nullptr, blue, -1.0f + mainprogram->numw + deck * 1.0f + numonscreen * mainprogram->layw, 1.0f - mainprogram->layh, mainprogram->layw, mainprogram->layh, -1);
-						if (mainprogram->leftmouse) {
+						if (mainprogram->lmsave) {
 							mainprogram->leftmouse = false;
 							lay = mainmix->add_layer(layers, layers.size());
 							if (mainprogram->dragbinel) {
@@ -6868,12 +6933,12 @@ void Layer::mute_handle() {
 	// change node connections to accommodate for a mute layer
 	if (this->mutebut->value) {
 		if (this->pos > 0) {
-			if (this->blendnode->in->out.size()) {
+			if (this->blendnode->in) {
 				this->blendnode->in->out.clear();
 				mainprogram->nodesmain->currpage->connect_nodes(this->blendnode->in, this->lasteffnode[1]->out[0]);
 			}
-			else this->blendnode->out.clear();
 		}
+		else if (this->next() != this) this->next()->blendnode->in = nullptr;
 		this->lasteffnode[1]->out.clear();
 	}
 	else {
@@ -7631,6 +7696,12 @@ void the_loop() {
 							for (int k = 0; k < lvec.size(); k++) {
 								if (k != j) {
 									if (lvec[k]->mutebut->value == false) {
+										lvec[k]->mutebut->value = true;
+										lvec[k]->mute_handle();
+									}
+									else {
+										lvec[k]->mutebut->value = false;
+										lvec[k]->mute_handle();
 										lvec[k]->mutebut->value = true;
 										lvec[k]->mute_handle();
 									}

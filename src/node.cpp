@@ -147,8 +147,10 @@ void VideoNode::upeffboxes() {
 
 void NodePage::connect_nodes(Node *node1, Node *node2) {
 	if (node2->in) {
-		if (std::find(node2->in->out.begin(), node2->in->out.end(), node2) != node2->in->out.end()) {
-			node2->in->out.erase(std::find(node2->in->out.begin(), node2->in->out.end(), node2));
+		if (node2->in->out.size()) {
+			if (std::find(node2->in->out.begin(), node2->in->out.end(), node2) != node2->in->out.end()) {
+				node2->in->out.erase(std::find(node2->in->out.begin(), node2->in->out.end(), node2));
+			}
 		}
 	}
 	node2->in = node1;
@@ -157,8 +159,10 @@ void NodePage::connect_nodes(Node *node1, Node *node2) {
 
 void NodePage::connect_in2(Node *node1, BlendNode *node2) {
 	if (node2->in2) {
-		if (std::find(node2->in2->out.begin(), node2->in2->out.end(), node2) != node2->in2->out.end()) {
-			node2->in2->out.erase(std::find(node2->in2->out.begin(), node2->in2->out.end(), node2));
+		if (node2->in->out.size()) {
+			if (std::find(node2->in2->out.begin(), node2->in2->out.end(), node2) != node2->in2->out.end()) {
+				node2->in2->out.erase(std::find(node2->in2->out.begin(), node2->in2->out.end(), node2));
+			}
 		}
 	}
 	node2->in2 = node1;

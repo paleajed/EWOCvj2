@@ -1592,7 +1592,6 @@ Effect *do_add_effect(Layer *lay, EFFECT_TYPE type, int pos, bool comp) {
 		}
 		else {
 			if (lay->pos == 0) {
-				printf("lasteffnode0 %d\n", lay->lasteffnode[0]);
 				lay->lasteffnode[0]->out.clear();
 				mainprogram->nodesmain->currpage->connect_nodes(lay->lasteffnode[0], effnode1);
 			}
@@ -1787,23 +1786,23 @@ Layer* Mixer::add_layer(std::vector<Layer*> &layers, int pos) {
 			node = prevlay->lasteffnode[0];
 		}
 		mainprogram->nodesmain->currpage->connect_nodes(node, layer->lasteffnode[0], layer->blendnode);
-		if (pos == layers.size() - 1 and mainprogram->nodesmain->mixnodes.size()) {
-			if (layers == mainmix->layersA) {
+		if (pos == layers.size() - 1) {
+			if (layers == mainmix->layersA and mainprogram->nodesmain->mixnodes.size()) {
 				mainprogram->nodesmain->currpage->connect_nodes(layer->blendnode, mainprogram->nodesmain->mixnodes[0]);
 			}
-			else if (layers == mainmix->layersB) {
+			else if (layers == mainmix->layersB and mainprogram->nodesmain->mixnodes.size()) {
 				mainprogram->nodesmain->currpage->connect_nodes(layer->blendnode, mainprogram->nodesmain->mixnodes[1]);
 			}
-			else if (layers == mainmix->layersAcomp) {
+			else if (layers == mainmix->layersAcomp and mainprogram->nodesmain->mixnodescomp.size()) {
 				mainprogram->nodesmain->currpage->connect_nodes(layer->blendnode, mainprogram->nodesmain->mixnodescomp[0]);
 			}
-			else if (layers == mainmix->layersBcomp) {
+			else if (layers == mainmix->layersBcomp and mainprogram->nodesmain->mixnodescomp.size()) {
 				mainprogram->nodesmain->currpage->connect_nodes(layer->blendnode, mainprogram->nodesmain->mixnodescomp[1]);
 			}
 		}
 		else if (pos < layers.size() - 1) {
 			mainprogram->nodesmain->currpage->connect_nodes(layer->blendnode, layers[pos + 1]->blendnode);
-		}	
+		}
 	}
 	else {
 		layer->blendnode = new BlendNode;
@@ -1864,12 +1863,16 @@ void Mixer::do_deletelay(Layer *testlay, std::vector<Layer*> &layers, bool add) 
 	}
 	
 	BLEND_TYPE nextbtype;
-	Layer *nextlay = nullptr;
+	Layer* nextlay = nullptr;
 	if (layers.size() > testlay->pos + 1) {
 		nextlay = layers[testlay->pos + 1];
 		nextbtype = nextlay->blendnode->blendtype;
 	}
-	
+	Layer* prevlay = nullptr;
+	if (testlay->pos > 0) {
+		prevlay = layers[testlay->pos - 1];
+	}
+
 	int size = layers.size();
 	for (int i = 0; i < size; i++) {
 		if (layers[i] == testlay) {
@@ -1903,7 +1906,7 @@ void Mixer::do_deletelay(Layer *testlay, std::vector<Layer*> &layers, bool add) 
 		}
 
 		if (testlay->pos > 0 and testlay->blendnode) {
-			mainprogram->nodesmain->currpage->connect_nodes(testlay->blendnode->in, bulasteffnode1out);
+			mainprogram->nodesmain->currpage->connect_nodes(prevlay->lasteffnode[1], bulasteffnode1out);
 			mainprogram->nodesmain->currpage->delete_node(testlay->blendnode);
 			testlay->blendnode = 0;
 		}
@@ -1911,6 +1914,7 @@ void Mixer::do_deletelay(Layer *testlay, std::vector<Layer*> &layers, bool add) 
 			if (nextlay) {
 				nextlay->lasteffnode[0]->out.clear();
 				mainprogram->nodesmain->currpage->connect_nodes(nextlay->lasteffnode[0], nextlay->lasteffnode[1]->out[0]);
+				nextlay->lasteffnode[1] = nextlay->lasteffnode[0];
 				mainprogram->nodesmain->currpage->delete_node(nextlay->blendnode);
 				nextlay->blendnode = new BlendNode;
 				nextlay->blendnode->blendtype = nextbtype;
@@ -1949,6 +1953,9 @@ void Mixer::delete_layer(std::vector<Layer*> &layers, Layer *testlay, bool add) 
 	}
 	
 	testlay->audioplaying = false;
+
+	testlay->mutebut->value = false;
+	testlay->mute_handle();
 	
 	this->do_deletelay(testlay, layers, add);
 }
@@ -4412,6 +4419,10 @@ void Mixer::new_file(int decks, bool alive) {
 	if (mainmix->currlay) currdeck = mainmix->currlay->deck;
 	if (decks == 0 or decks == 2) {
 		std::vector<Layer*> &lvec = choose_layers(0);
+		for (int i = 0; i < lvec.size(); i++) {
+			lvec[i]->mutebut->value = false;
+			lvec[i]->mute_handle();
+		}
 		this->delete_layers(lvec, alive);
 		Layer *lay = mainmix->add_layer(lvec, 0);
 		if (mainprogram->prevmodus) {
@@ -4424,6 +4435,10 @@ void Mixer::new_file(int decks, bool alive) {
 	}
 	if (decks == 1 or decks == 2) {
 		std::vector<Layer*> &lvec = choose_layers(1);
+		for (int i = 0; i < lvec.size(); i++) {
+			lvec[i]->mutebut->value = false;
+			lvec[i]->mute_handle();
+		}
 		this->delete_layers(lvec, alive);
 		Layer *lay = mainmix->add_layer(lvec, 0);
 		if (mainprogram->prevmodus) {
