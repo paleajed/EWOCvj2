@@ -74,6 +74,8 @@ class Layer {
 		float scrollcol[4] = {0.5f, 0.5f, 0.5f, 0.0f};
 		Button *mutebut;
 		Button *solobut;
+		bool muting = false;
+		bool soloing = false;
 		int numefflines[2] = {0,0};
 		int effscroll[2] = {0,0};
 		std::vector<Effect*> effects[2];

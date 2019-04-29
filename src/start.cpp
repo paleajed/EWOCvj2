@@ -1259,7 +1259,7 @@ void Layer::get_frame(){
 			continue;
 		}
 		if (this->liveinput == nullptr) {
-			if (!this->initialized and this->decresult->width) continue;
+			if ((!this->initialized and this->decresult->width) or this->filename == "") continue;
 			if (this->vidformat != 188 and this->vidformat != 187) {
 				if ((int)(this->frame) != this->prevframe) {
 					get_frame_other(this, (int)this->frame, this->prevframe, 0);
@@ -2016,8 +2016,6 @@ float render_text(std::string text, float *textc, float x, float y, float sx, fl
 		const char *t = text.c_str();
 		const char *p;
 
-		printf("text %s\n", t);
-		
 		glGenTextures(1, &texture);
 		glActiveTexture(GL_TEXTURE0);
 		glBindTexture(GL_TEXTURE_2D, texture);
@@ -2466,6 +2464,7 @@ void calc_texture(Layer *lay, bool comp, bool alive) {
 	if (lay->startframe != lay->endframe) {
 		if (mainmix->firstlayers.count(lay->clonesetnr) == 0) {
 			lay->ready = true;
+
 			lay->startdecode.notify_one();
 			if (lay->clonesetnr != -1) {
 				mainmix->firstlayers[lay->clonesetnr] = lay;
@@ -2583,7 +2582,9 @@ void display_texture(Layer *lay, bool deck) {
 	float darkgreen1[4] = {0.0f, 0.75f, 0.0f, 1.0f};
 	float darkgreen2[4] = {0.0f, 0.4f, 0.0f, 1.0f};
 	float lightblue[4] = {0.0f, 0.2f, 1.0f, 1.0f};
-	float white[4] = {1.0f, 1.0f, 1.0f, 1.0f};
+	float white[4] = { 1.0f, 1.0f, 1.0f, 1.0f };
+	float alphawhite[4] = { 1.0f, 1.0f, 1.0f, 0.5f };
+	float alphagreen[4] = { 0.0f, 1.0f, 0.2f, 0.5f };
 	float red[4] = {1.0f, 0.0f, 0.0f, 1.0f};
 	float darkred1[4] = {0.75f, 0.0f, 0.0f, 1.0f};
 	float darkred2[4] = {0.4f, 0.0f, 0.0f, 1.0f};
@@ -2700,6 +2701,84 @@ void display_texture(Layer *lay, bool deck) {
 					mainprogram->leftmouse = false;
 					enddrag();
 				}
+
+				//draw and handle layer mute and solo buttons
+				lay->mutebut->box->vtxcoords->x1 = box->vtxcoords->x1 + mainprogram->layw - 0.06f;
+				lay->mutebut->box->upvtxtoscr();
+				if (lay->mutebut->box->in()) {
+					if (mainprogram->leftmousedown) {
+						lay->muting = true;
+						mainprogram->leftmousedown = false;
+					}
+					if (lay->muting and mainprogram->leftmouse) {
+						lay->muting = false;
+						lay->mutebut->value = !lay->mutebut->value;
+						lay->mute_handle();
+						mainprogram->leftmouse = false;
+					}
+					if (mainprogram->menuactivation and !mainprogram->menuondisplay) {
+						mainprogram->parammenu1->state = 2;
+						mainmix->learnparam = nullptr;
+						mainmix->learnbutton = lay->mutebut;
+						mainprogram->menuactivation = false;
+					}
+				}
+				lay->solobut->box->vtxcoords->x1 = lay->mutebut->box->vtxcoords->x1 + 0.03f;
+				lay->solobut->box->upvtxtoscr();
+				if (lay->solobut->box->in()) {
+					if (mainprogram->leftmousedown) {
+						lay->soloing = true;
+						mainprogram->leftmousedown = false;
+					}
+					if (lay->soloing and mainprogram->leftmouse) {
+						lay->soloing = false;
+						lay->solobut->value = !lay->solobut->value;
+						if (lay->solobut->value) {
+							if (lay->mutebut->value) {
+								lay->mutebut->value = false;
+								lay->mute_handle();
+							}
+							for (int k = 0; k < lvec.size(); k++) {
+								if (k != lay->pos) {
+									if (lvec[k]->mutebut->value == false) {
+										lvec[k]->mutebut->value = true;
+										lvec[k]->mute_handle();
+									}
+									else {
+										lvec[k]->mutebut->value = false;
+										lvec[k]->mute_handle();
+										lvec[k]->mutebut->value = true;
+										lvec[k]->mute_handle();
+									}
+									lvec[k]->solobut->value = false;
+								}
+							}
+						}
+						else {
+							for (int k = 0; k < lvec.size(); k++) {
+								if (k != lay->pos) {
+									lvec[k]->mutebut->value = false;
+									lvec[k]->mute_handle();
+								}
+							}
+						}
+						mainprogram->leftmouse = false;
+					}
+					if (mainprogram->menuactivation and !mainprogram->menuondisplay) {
+						mainprogram->parammenu1->state = 2;
+						mainmix->learnparam = nullptr;
+						mainmix->learnbutton = lay->solobut;
+						mainprogram->menuactivation = false;
+					}
+				}
+				if (!lay->mutebut->value) {
+					render_text("M", alphawhite, lay->mutebut->box->vtxcoords->x1 + 0.0078f, lay->mutebut->box->vtxcoords->y1 + 0.0078f, 0.0006, 0.001);
+				}
+				lay->mutebut->box->in();
+				if (!lay->solobut->value) {
+					render_text("S", alphawhite, lay->solobut->box->vtxcoords->x1 + 0.0078f, lay->solobut->box->vtxcoords->y1 + 0.0078f, 0.0006, 0.001);
+				}
+				lay->solobut->box->in();
 			}
 			else {
 				int size = lvec.size();
@@ -2715,6 +2794,12 @@ void display_texture(Layer *lay, bool deck) {
 						}
 					}
 				}
+			}
+			if (lay->mutebut->value) {
+				render_text("M", alphagreen, lay->mutebut->box->vtxcoords->x1 + 0.0078f, lay->mutebut->box->vtxcoords->y1 + 0.0078f, 0.0006, 0.001);
+			}
+			if (lay->solobut->value) {
+				render_text("S", alphagreen, lay->solobut->box->vtxcoords->x1 + 0.0078f, lay->solobut->box->vtxcoords->y1 + 0.0078f, 0.0006, 0.001);
 			}
 		}
 		
@@ -2901,7 +2986,9 @@ void display_texture(Layer *lay, bool deck) {
 				Effect *eff = evec[i];
 				Box *box;
 				float x1, y1, wi;
-				
+				x1 = eff->box->vtxcoords->x1 + tf(0.032f);
+				wi = (0.7f - mainprogram->numw - tf(0.032f)) / 4.0f;
+
 				if (eff->box->vtxcoords->y1 < 1.0 - tf(mainprogram->layh) - tf(0.22f) - tf(0.05f) * 10) break;
 				if (eff->box->vtxcoords->y1 <= 1.0 - tf(mainprogram->layh) - tf(0.18f)) {
 					eff->drywet->handle();		
@@ -4469,7 +4556,7 @@ bool handle_clips(std::vector<Layer*> &layers, bool deck) {
 					float last = (j == lay->clips.size() - lay->queuescroll - 1) * 0.25f;
 					if (box->scrcoords->y1 + (j - 0.25f) * box->scrcoords->h < mainprogram->my and mainprogram->my < box->scrcoords->y1 + (j + 0.25) * box->scrcoords->h) {
 						// inserting
-						if (mainprogram->leftmouse) {
+						if (mainprogram->lmsave) {
 							if (mainprogram->dragbinel) {
 								if (mainprogram->draglay == lay and j == 0) {
 									mainprogram->leftmouse = false;
@@ -4497,7 +4584,7 @@ bool handle_clips(std::vector<Layer*> &layers, bool deck) {
 					else if (box->scrcoords->y1 + (j + 0.25f) * box->scrcoords->h < mainprogram->my and mainprogram->my < box->scrcoords->y1 + (j + 0.75 + last) * box->scrcoords->h) {
 						// replacing
 						Clip *jc = lay->clips[j + lay->queuescroll];
-						if (mainprogram->leftmouse) {
+						if (mainprogram->lmsave) {
 							if (mainprogram->dragbinel) {
 								mainprogram->leftmouse = false;
 								if (mainprogram->dragclip) {
@@ -5234,6 +5321,7 @@ void tooltips_handle(float fac) {
 		while (pos < mainprogram->tooltipbox->tooltip.length() - 1) {
 			int oldpos = pos;
 			pos = mainprogram->tooltipbox->tooltip.rfind(" ", pos + 58);
+			if (pos == -1) break;
 			texts.push_back(mainprogram->tooltipbox->tooltip.substr(oldpos, pos - oldpos));
 		}
 		float x = mainprogram->tooltipbox->vtxcoords->x1 + mainprogram->tooltipbox->vtxcoords->w + tf(0.01f);  //first print offscreen
@@ -5340,7 +5428,7 @@ void Preferences::load() {
 								PrefItem *pi = nullptr;
 								for (int j = 0; j < mainprogram->prefs->items[i]->items.size(); j++) {
 									pi = mainprogram->prefs->items[i]->items[j];
-									if (pi->name == istring) {
+									if (pi->name == istring and pi->connected) {
 										foundpos = j;
 										getline(rfile, istring);
 										if (pi->type == PREF_ONOFF) {
@@ -5369,10 +5457,9 @@ void Preferences::load() {
 									if (foundpos == -1) {
 										std::string name = istring;
 										getline(rfile, istring);
-										printf("istring \n", istring.c_str());
-										fflush(stdout);
 										bool onoff = std::stoi(istring);
 										PrefItem *pmi = new PrefItem(mainprogram->prefs->items[i], mainprogram->prefs->items[i]->items.size(), name, PREF_ONOFF, nullptr);
+										mainprogram->prefs->items[i]->items.push_back(pmi);
 										pmi->onoff = onoff;
 										pmi->connected = false;
 									}
@@ -5664,6 +5751,10 @@ PIMidi::PIMidi() {
 }
 
 void PIMidi::populate() {
+	std::vector<PrefItem*> ncitems;
+	for (int i = 0; i < this->items.size(); i++) {
+		if (!this->items[i]->connected) ncitems.push_back(this->items[i]);
+	}
 	RtMidiIn midiin;
 	int nPorts = midiin.getPortCount();
 	std::string portName;
@@ -5684,9 +5775,10 @@ void PIMidi::populate() {
 		intrmitems.push_back(pmi);
 	}
 	for (int i = 0; i < this->items.size(); i++) {
-		delete this->items[i];
+		if (this->items[i]->connected) delete this->items[i];
 	}
 	this->items = intrmitems;
+	this->items.insert(this->items.end(), ncitems.begin(), ncitems.end());
 }
 
 PIInt::PIInt() {
@@ -5805,12 +5897,11 @@ void handle_scenes(Scene *scene) {
 					// switch scenes
 					Scene *si = mainmix->scenes[scene->deck][i - 1];
 					if (i == mainmix->currscene[scene->deck] + 1) continue;
-					scene->tempnbframes.clear();
+					si->tempnbframes.clear();
 					for (int j = 0; j < si->nbframes.size(); j++) {
 						si->tempnbframes.push_back(si->nbframes[j]);
 					}
-					si->nbframes.clear();
-					std::vector<Layer*> &lvec = choose_layers(0);
+					std::vector<Layer*> &lvec = choose_layers(scene->deck);
 					scene->nbframes.clear();
 					for (int j = 0; j < lvec.size(); j++) {
 						// store layers of current scene into nbframes for running their framecounters in the background (to keep sync)
@@ -6410,6 +6501,7 @@ bool preferences() {
 	if (mci->name == "MIDI Devices") ((PIMidi*)mci)->populate();
 	for (int i = 0; i < mci->items.size(); i++) {
 		if (mci->items[i]->type == PREF_ONOFF) {
+			if (!mci->items[i]->connected) continue;
 			draw_box(white, black, mci->items[i]->namebox, -1);
 			render_text(mci->items[i]->name, white, mci->items[i]->namebox->vtxcoords->x1 + 0.23f, mci->items[i]->namebox->vtxcoords->y1 + 0.06f, 0.0024f, 0.004f, 1);		
 			if (mci->items[i]->valuebox->in(mx, my)) {
@@ -6533,7 +6625,8 @@ bool preferences() {
 			}
 		}
 		
-		mci->items[i]->namebox->in(mx, my); //trigger tooltip
+		if (mci->items[i]->connected) mci->items[i]->namebox->in(mx, my); //trigger tooltip
+
 	}
 
 	Box box;
@@ -7667,81 +7760,6 @@ void the_loop() {
 					continue;
 				}
 				
-				//draw and handle layer mute and solo buttons
-				lvec[j]->mutebut->box->vtxcoords->x1 = box.vtxcoords->x1 + 0.03f;
-				lvec[j]->mutebut->box->upvtxtoscr();
-				if (lvec[j]->mutebut->box->in()) {
-					if (mainprogram->leftmouse) {
-						lvec[j]->mutebut->value = !lvec[j]->mutebut->value;
-						lvec[j]->mute_handle();
-						mainprogram->leftmouse = false;
-					}
-					if (mainprogram->menuactivation and !mainprogram->menuondisplay) {
-						mainprogram->parammenu1->state = 2;
-						mainmix->learnparam = nullptr;
-						mainmix->learnbutton = lvec[j]->mutebut;
-						mainprogram->menuactivation = false;
-					}
-				}
-				lvec[j]->solobut->box->vtxcoords->x1 = lvec[j]->mutebut->box->vtxcoords->x1 + 0.03f;
-				lvec[j]->solobut->box->upvtxtoscr();
-				if (lvec[j]->solobut->box->in()) {
-					if (mainprogram->leftmouse) {
-						lvec[j]->solobut->value = !lvec[j]->solobut->value;
-						if (lvec[j]->solobut->value) {
-							if (lvec[j]->mutebut->value) {
-								lvec[j]->mutebut->value = false;
-								lvec[j]->mute_handle();
-							}
-							for (int k = 0; k < lvec.size(); k++) {
-								if (k != j) {
-									if (lvec[k]->mutebut->value == false) {
-										lvec[k]->mutebut->value = true;
-										lvec[k]->mute_handle();
-									}
-									else {
-										lvec[k]->mutebut->value = false;
-										lvec[k]->mute_handle();
-										lvec[k]->mutebut->value = true;
-										lvec[k]->mute_handle();
-									}
-									lvec[k]->solobut->value = false;
-								}
-							}
-						}
-						else {
-							for (int k = 0; k < lvec.size(); k++) {
-								if (k != j) {
-									lvec[k]->mutebut->value = false;
-									lvec[k]->mute_handle();
-								}
-							}
-						}
-						mainprogram->leftmouse = false;
-					}
-					if (mainprogram->menuactivation and !mainprogram->menuondisplay) {
-						mainprogram->parammenu1->state = 2;
-						mainmix->learnparam = nullptr;
-						mainmix->learnbutton = lvec[j]->solobut;
-						mainprogram->menuactivation = false;
-					}
-				}
-				if (lvec[j]->mutebut->value) {
-					draw_box(white, green, lvec[j]->mutebut->box, -1);
-				}
-				else {
-					draw_box(white, nullptr, lvec[j]->mutebut->box, -1);
-				}
-				render_text("M", white, lvec[j]->mutebut->box->vtxcoords->x1 + 0.0078f, lvec[j]->mutebut->box->vtxcoords->y1 + 0.0078f, 0.0006, 0.001);
-				lvec[j]->mutebut->box->in();
-				if (lvec[j]->solobut->value) {
-					draw_box(white, green, lvec[j]->solobut->box, -1);
-				}
-				else {
-					draw_box(white, nullptr, lvec[j]->solobut->box, -1);
-				}
-				render_text("S", white, lvec[j]->solobut->box->vtxcoords->x1 + 0.0078f, lvec[j]->solobut->box->vtxcoords->y1 + 0.0078f, 0.0006, 0.001);
-				lvec[j]->solobut->box->in();
 				box.vtxcoords->x1 += box.vtxcoords->w;
 				box.upvtxtoscr();
 			}
@@ -9104,7 +9122,7 @@ void the_loop() {
 				glUniform1i(thumb, 0);
 			}
 				
-			if (mainprogram->leftmouse) {
+			if (mainprogram->lmsave) {
 				mainprogram->leftmouse = false;
 				enddrag();
 				if (!mainprogram->binsscreen) {
@@ -10956,7 +10974,7 @@ int main(int argc, char* argv[]){
 			if (mainprogram->pathto == "OPENVIDEO") {
 				std::string str(mainprogram->path);
 				mainprogram->currvideodir = dirname(str);
-				open_video(1, mainprogram->loadlay, str, true);
+				open_video(0, mainprogram->loadlay, str, true);
 				std::unique_lock<std::mutex> olock(mainprogram->loadlay->endopenlock);
 				mainprogram->loadlay->endopenvar.wait(olock, [&]{return mainprogram->loadlay->opened;});
 				mainprogram->loadlay->opened = false;

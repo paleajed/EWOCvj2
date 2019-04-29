@@ -931,7 +931,7 @@ void BinsMain::handle() {
 								mainprogram->prelay = new Layer(true);
 								mainprogram->prelay->dummy = true;
 								if (binel->type == ELEM_FILE) {
-									open_video(1, mainprogram->prelay, binel->path, true);
+									open_video(0, mainprogram->prelay, binel->path, true);
 									std::unique_lock<std::mutex> olock(mainprogram->prelay->endopenlock);
 									mainprogram->prelay->endopenvar.wait(olock, [&]{return mainprogram->prelay->opened;});
 									mainprogram->prelay->opened = false;
@@ -2022,7 +2022,7 @@ void BinsMain::open_handlefile(const std::string &path) {
 		lay->open_image(path);
 	}
 	else {
-		open_video(1, lay, path, true);
+		open_video(0, lay, path, true);
 		std::unique_lock<std::mutex> olock(lay->endopenlock);
 		lay->endopenvar.wait(olock, [&]{return lay->opened;});
 		lay->opened = false;

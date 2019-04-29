@@ -434,7 +434,7 @@ SaturationEffect::SaturationEffect() {
 	param->shadervar = "satamount";
 	param->effect = this;
 	param->box->tooltiptitle = "Saturation amount factor";
-	param->box->tooltip = "Factor that multiplies image saturation - between 0.0 and 8.0";
+	param->box->tooltip = "Factor that multiplies image saturation - between 0.0 and 8.0 ";
 	this->params.push_back(param);
 }
 
@@ -1954,8 +1954,10 @@ void Mixer::delete_layer(std::vector<Layer*> &layers, Layer *testlay, bool add) 
 	
 	testlay->audioplaying = false;
 
-	testlay->mutebut->value = false;
-	testlay->mute_handle();
+	if (testlay->mutebut->value) {
+		testlay->mutebut->value = false;
+		testlay->mute_handle();
+	}
 	
 	this->do_deletelay(testlay, layers, add);
 }
@@ -2013,13 +2015,13 @@ Layer::Layer(bool comp) {
 	glFramebufferTexture2D(GL_FRAMEBUFFER, GL_COLOR_ATTACHMENT0, GL_TEXTURE_2D, this->fbotex2, 0);
 
 	this->mutebut = new Button(false);
-    this->mutebut->box->vtxcoords->y1 = 1.0f - mainprogram->layh - 0.05f;
+    this->mutebut->box->vtxcoords->y1 = 1.0f - mainprogram->layh;
 	this->mutebut->box->vtxcoords->w = 0.03f;
    	this->mutebut->box->vtxcoords->h = 0.05f;
     this->mutebut->box->tooltiptitle = "Layer mute ";
     this->mutebut->box->tooltip = "Leftclick temporarily mutes/unmutes this layer. ";
     this->solobut = new Button(false);
-    this->solobut->box->vtxcoords->y1 = 1.0f - mainprogram->layh - 0.05f;
+    this->solobut->box->vtxcoords->y1 = 1.0f - mainprogram->layh;
 	this->solobut->box->vtxcoords->w = 0.03f;
    	this->solobut->box->vtxcoords->h = 0.05f;
     this->solobut->box->tooltiptitle = "Layer solo ";
@@ -3634,25 +3636,17 @@ void Mixer::open_state(const std::string &path) {
 			glBindFramebuffer(GL_FRAMEBUFFER, mainprogram->nodesmain->mixnodescomp[i]->mixfbo);
 			glFramebufferTexture2D(GL_FRAMEBUFFER, GL_COLOR_ATTACHMENT0, GL_TEXTURE_2D, mainprogram->nodesmain->mixnodescomp[i]->mixtex, 0);
 		}
-		glDeleteTextures(1, &mainprogram->nodesmain->mixnodescomp[i]->mixtex);
-		glDeleteFramebuffers(1, &mainprogram->nodesmain->mixnodescomp[i]->mixfbo);
-		glGenTextures(1, &mainprogram->nodesmain->mixnodescomp[i]->mixtex);
 		glBindTexture(GL_TEXTURE_2D, mainprogram->nodesmain->mixnodescomp[i]->mixtex);
 		glTexStorage2D(GL_TEXTURE_2D, 1, GL_RGBA8, mainprogram->ow, mainprogram->oh);
-		glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR);
-		glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
-		glGenFramebuffers(1, &mainprogram->nodesmain->mixnodescomp[i]->mixfbo);
-		glBindFramebuffer(GL_FRAMEBUFFER, mainprogram->nodesmain->mixnodescomp[i]->mixfbo);
-		glFramebufferTexture2D(GL_FRAMEBUFFER, GL_COLOR_ATTACHMENT0, GL_TEXTURE_2D, mainprogram->nodesmain->mixnodescomp[i]->mixtex, 0);
 	}
 	mainprogram->prevmodus = true;
-	if (exists(result + "_3.file")) {
-		mainmix->open_mix(result + "_2.file");
+	if (exists(result + "_1.file")) {
+		mainmix->open_mix(result + "_0.file");
 	}
 	Layer *bulay = mainmix->currlay;
-	if (exists(result + "_3.file")) {
+	if (exists(result + "_1.file")) {
 		mainprogram->prevmodus = false;
-		mainmix->open_mix(result + "_3.file");
+		mainmix->open_mix(result + "_1.file");
 	}
 	//open_genmidis(remove_extension(path) + ".midi");
 	
@@ -3936,6 +3930,7 @@ int Mixer::read_layers(std::istream &rfile, const std::string &result, std::vect
 			int pos = std::stoi(istring);
 			if (pos == 0 or type == 0) {
 				lay = layers[0];
+				lay->numefflines[0] = 0;
 				if (type == 1) mainmix->currlay = lay;
 			}
 			else {
