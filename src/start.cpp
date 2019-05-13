@@ -4551,10 +4551,15 @@ bool handle_clips(std::vector<Layer*> &layers, bool deck) {
 		
 		// handle clip queue?
 		if (lay->queueing and lay->filename != "") {
-			if (box->scrcoords->x1 + (i == 0) * mainprogram->xvtxtoscr(tf(0.075)) < mainprogram->mx and mainprogram->mx < box->scrcoords->x1 + box->scrcoords->w - (i == 0) * mainprogram->xvtxtoscr(tf(0.075))) {
+			if (box->scrcoords->x1 < mainprogram->mx and mainprogram->mx < box->scrcoords->x1 + box->scrcoords->w) {
 				for (int j = 0; j < lay->clips.size() - lay->queuescroll; j++) {
 					float last = (j == lay->clips.size() - lay->queuescroll - 1) * 0.25f;
 					if (box->scrcoords->y1 + (j - 0.25f) * box->scrcoords->h < mainprogram->my and mainprogram->my < box->scrcoords->y1 + (j + 0.25) * box->scrcoords->h) {
+						if (j == 0) {
+							if (box->scrcoords->x1 + mainprogram->xvtxtoscr(0.075f) > mainprogram->mx or mainprogram->mx > box->scrcoords->x1 + box->scrcoords->w - mainprogram->xvtxtoscr(0.075f)) {
+								continue;
+							}
+						}
 						// inserting
 						if (mainprogram->lmsave) {
 							if (mainprogram->dragbinel) {
@@ -4691,7 +4696,6 @@ bool handle_clips(std::vector<Layer*> &layers, bool deck) {
 				}
 			}
 		}
-		else return 1;
 	}
 	return 0;
 }
@@ -5964,7 +5968,8 @@ void handle_scenes(Scene *scene) {
 
 // regulates the reordering of layers around the stacks by dragging
 // both exchanging two layers and moving one layer
-void exchange(Layer *lay, std::vector<Layer*> &slayers, std::vector<Layer*> &dlayers, bool deck) {
+bool exchange(Layer *lay, std::vector<Layer*> &slayers, std::vector<Layer*> &dlayers, bool deck) {
+	bool ret = false;
 	int size = dlayers.size();
 	for (int i = 0; i < size; i++) {
 		Layer *inlay = dlayers[i];
@@ -5988,7 +5993,8 @@ void exchange(Layer *lay, std::vector<Layer*> &slayers, std::vector<Layer*> &dla
 		}
 		if (dropin or (box->scrcoords->y1 < mainprogram->my + box->scrcoords->h and mainprogram->my < box->scrcoords->y1)) {
 			if ((box->scrcoords->x1 + mainprogram->xvtxtoscr(0.075f) < mainprogram->mx and mainprogram->mx < box->scrcoords->x1 + box->scrcoords->w - mainprogram->xvtxtoscr(0.075f))) {
-				if (lay == inlay) return;
+				if (lay == inlay) return false;
+				ret = true;
 				//exchange two layers
 				bool indeck = inlay->deck;
 				BlendNode *bnode = inlay->blendnode;
@@ -6008,8 +6014,9 @@ void exchange(Layer *lay, std::vector<Layer*> &slayers, std::vector<Layer*> &dla
 				slayers[lay->pos]->blendnode->wipedir = lay->blendnode->wipedir;
 				slayers[lay->pos]->blendnode->wipex = lay->blendnode->wipex;
 				slayers[lay->pos]->blendnode->wipey = lay->blendnode->wipey;
-				slayers[lay->pos]->lasteffnode[1] = lay->lasteffnode[1];
-				
+				if (lay->pos == 0) inlay->lasteffnode[1] = inlay->lasteffnode[0];
+				else inlay->lasteffnode[1] = lay->lasteffnode[1];
+
 				dlayers[i] = lay;
 				dlayers[i]->pos = i;
 				dlayers[i]->deck = indeck;
@@ -6022,7 +6029,8 @@ void exchange(Layer *lay, std::vector<Layer*> &slayers, std::vector<Layer*> &dla
 				dlayers[i]->blendnode->wipedir = bnode->wipedir;
 				dlayers[i]->blendnode->wipex = bnode->wipex;
 				dlayers[i]->blendnode->wipey = bnode->wipey;
-				dlayers[lay->pos]->lasteffnode[1] = len1;
+				if (i == 0) lay->lasteffnode[1] = lay->lasteffnode[0];
+				else lay->lasteffnode[1] = len1;
 				
 				Node *inlayout = inlay->lasteffnode[0]->out[0];
 				Node *layout = lay->lasteffnode[0]->out[0];
@@ -6068,7 +6076,8 @@ void exchange(Layer *lay, std::vector<Layer*> &slayers, std::vector<Layer*> &dla
 				break;
 			}
 			else if (dropin or endx or (box->scrcoords->x1 - mainprogram->xvtxtoscr(0.075f) * (i - mainmix->scenes[deck][mainmix->currscene[deck]]->scrollpos != 0) < mainprogram->mx and mainprogram->mx < box->scrcoords->x1 + mainprogram->xvtxtoscr(0.075f))) {
-				if (lay == dlayers[i]) return;
+				if (lay == dlayers[i]) return false;
+				ret = true;
 				//move one layer
 				BLEND_TYPE nextbtype;
 				float nextmfval = 0.0f;
@@ -6098,14 +6107,16 @@ void exchange(Layer *lay, std::vector<Layer*> &slayers, std::vector<Layer*> &dla
 				else if (i + endx != 0) {
 					if (nextlay) {
 						nextlay->lasteffnode[0]->out.clear();
-						if (lay->effects[1].size()) {
+						if (nextlay->effects[1].size()) {
 							mainprogram->nodesmain->currpage->connect_nodes(nextlay->lasteffnode[0], nextlay->effects[1][0]->node);
 						}
 						else {
 							nextlay->lasteffnode[1] = nextlay->lasteffnode[0];
 						}
-						nextlay->lasteffnode[1]->out.clear();
-						mainprogram->nodesmain->currpage->connect_nodes(nextlay->lasteffnode[1], nextlay->blendnode->out[0]);
+						if (nextlay->lasteffnode[1] != nextlay->blendnode) {
+							nextlay->lasteffnode[1]->out.clear();
+							mainprogram->nodesmain->currpage->connect_nodes(nextlay->lasteffnode[1], nextlay->blendnode->out[0]);
+						}
 						mainprogram->nodesmain->currpage->delete_node(nextlay->blendnode);
 						nextlay->blendnode = new BlendNode;
 						nextlay->blendnode->blendtype = nextbtype;
@@ -6264,6 +6275,7 @@ void exchange(Layer *lay, std::vector<Layer*> &slayers, std::vector<Layer*> &dla
 		}
 		make_layboxes();
 	}
+	return ret;
 }
 
 std::vector<Effect*>& Layer::choose_effects() {
@@ -7805,6 +7817,24 @@ void the_loop() {
 		if (!inbox) mainmix->scrolltime = 0.0f;
 
 		
+		//handle clip dragging
+		clip_dragging();
+
+		// draw and handle loopstation
+		if (mainprogram->prevmodus) {
+			lp->handle();
+			for (int i = 0; i < lpc->elems.size(); i++) {
+				if (lpc->elems[i]->loopbut->value or lpc->elems[i]->playbut->value) lpc->elems[i]->set_params();
+			}
+		}
+		else {
+			lpc->handle();
+		}
+
+		//handle shelves
+		mainprogram->shelves[0]->handle();
+		mainprogram->shelves[1]->handle();
+
 		for (int i = 0; i < 2; i++) {
 			std::vector<Layer*> &lays = choose_layers(i);
 			for (int j = 0; j < lays.size(); j++) {
@@ -7853,24 +7883,6 @@ void the_loop() {
 			}
 		}
 
-		//handle shelves
-		mainprogram->shelves[0]->handle();
-		mainprogram->shelves[1]->handle();
-		
-		//handle clip dragging
-		clip_dragging();		
-		
-		// draw and handle loopstation
-		if (mainprogram->prevmodus) {
-			lp->handle();
-			for (int i = 0; i < lpc->elems.size(); i++) {
-				if (lpc->elems[i]->loopbut->value or lpc->elems[i]->playbut->value) lpc->elems[i]->set_params();
-			}			
-		}
-		else {
-			lpc->handle();
-		}
-		
 		
 		int k = -1;
 		// Do mainprogram->mixenginemenu
@@ -9071,9 +9083,9 @@ void the_loop() {
 				mainprogram->inwormhole = true;
 			}
 		}
-	}
-	else {
-		mainprogram->inwormhole = false;
+		else {
+			mainprogram->inwormhole = false;
+		}
 	}
 	
 	// layer dragging
@@ -9125,17 +9137,18 @@ void the_loop() {
 			if (mainprogram->lmsave) {
 				mainprogram->leftmouse = false;
 				enddrag();
+				bool ret;
 				if (!mainprogram->binsscreen) {
 					if (mainprogram->prevmodus) {
-						if (mainprogram->mx < glob->w / 2.0f) exchange(lay, lvec, mainmix->layersA, 0);
-						else exchange(lay, lvec, mainmix->layersB, 1);
+						if (mainprogram->mx < glob->w / 2.0f) ret = exchange(lay, lvec, mainmix->layersA, 0);
+						else ret = exchange(lay, lvec, mainmix->layersB, 1);
 					}
 					else {
-						if (mainprogram->mx < glob->w / 2.0f) exchange(lay, lvec, mainmix->layersAcomp, 0);
-						else exchange(lay, lvec, mainmix->layersBcomp, 1);
+						if (mainprogram->mx < glob->w / 2.0f) ret = exchange(lay, lvec, mainmix->layersAcomp, 0);
+						else ret = exchange(lay, lvec, mainmix->layersBcomp, 1);
 					}
 				}
-				set_queueing(lay, false);
+				if (ret) set_queueing(lay, false);
 			}				
 		}
 	}
@@ -11282,6 +11295,23 @@ int main(int argc, char* argv[]){
 					}
 					if (e.key.keysym.sym == SDLK_n) {
 						mainmix->new_file(2, 1);
+					}
+				}
+				else {
+					if (e.key.keysym.sym == SDLK_r) {
+						// toggle record button for current loopstation element
+						loopstation->currelem->recbut->value = !loopstation->currelem->recbut->value;
+						loopstation->currelem->recbut->oldvalue = !loopstation->currelem->recbut->value;
+					}
+					else if (e.key.keysym.sym == SDLK_l) {
+						// toggle loop button for current loopstation element
+						loopstation->currelem->loopbut->value = !loopstation->currelem->loopbut->value;
+						loopstation->currelem->loopbut->oldvalue = !loopstation->currelem->loopbut->value;
+					}
+					if (e.key.keysym.sym == SDLK_s) {
+						// toggle "one shot play" button for current loopstation element
+						loopstation->currelem->playbut->value = !loopstation->currelem->playbut->value;
+						loopstation->currelem->playbut->oldvalue = !loopstation->currelem->playbut->value;
 					}
 				}
 			}

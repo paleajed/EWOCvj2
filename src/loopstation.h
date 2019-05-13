@@ -31,6 +31,7 @@ class LoopStation {
 									, 0.0f, 0.0f, 0.5f
 									, 0.5f, 0.0f, 0.5f
 									, 0.0f, 0.5f, 0.5f};
+		LoopStationElement* currelem;
 		LoopStationElement* add_elem();
 		LoopStationElement* free_element();
 		void init();
@@ -50,6 +51,7 @@ class LoopStationElement {
 		Button *loopbut;
 		Button *playbut;
 		Box *colbox;
+		Box *box;
 		std::chrono::high_resolution_clock::time_point starttime;
 		long long interimtime = 0;
 		long long speedadaptedtime = 0;

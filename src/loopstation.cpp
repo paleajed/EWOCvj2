@@ -24,6 +24,7 @@ LoopStation::LoopStation() {
 		elem->colbox->acolor[2] = this->colvals[i*3 + 2];
 		elem->colbox->acolor[3] = 1.0f;
 	}
+	this->init();
 }
 
 void LoopStation::init() {
@@ -31,6 +32,7 @@ void LoopStation::init() {
 		this->elems[i]->init();
 	}
 	this->elemmap.clear();
+	this->currelem = this->elems[0];
 }
 
 LoopStationElement::LoopStationElement() {
@@ -59,7 +61,13 @@ LoopStationElement::LoopStationElement() {
 	this->colbox->vtxcoords->h = tf(0.05f);
 	this->colbox->upvtxtoscr();
 	this->colbox->tooltiptitle = "Loopstation row color code ";
-	this->colbox->tooltip = "Leftclicking this box shows colored boxes on both deck layer scroll strips for layers that contain parameters automated by this loopstation row. ";
+	this->colbox->tooltip = "Leftclicking this box shows colored boxes on the layer stack scroll strips for layers that contain parameters automated by this loopstation row. A white circle is drawn here when this loopstation row contains data. ";
+	this->box = new Box;
+	this->box->vtxcoords->w = 0.02f;
+	this->box->vtxcoords->h = tf(0.05f);
+	this->box->upvtxtoscr();
+	this->box->tooltiptitle = "Loopstation row select current ";
+	this->box->tooltip = "Leftclicking this box selects this loopstation row for use of R(record), L(loop play this row) and S(one shot play this row) keyboard shortcuts. ";
 }
 
 LoopStationElement::~LoopStationElement() {
@@ -140,7 +148,9 @@ void LoopStationElement::init() {
 }
 
 void LoopStationElement::visualize() {
+	float white[] = { 1.0f, 1.0f, 1.0f, 1.0f };
 	this->recbut->box->vtxcoords->x1 = -0.8f + 1.1f * !mainmix->currlay->deck;
+	this->box->vtxcoords->x1 = this->recbut->box->vtxcoords->x1 - 0.02f;
 	this->loopbut->box->vtxcoords->x1 = -0.8f + 1.1f * !mainmix->currlay->deck + this->loopbut->box->vtxcoords->w;
 	this->playbut->box->vtxcoords->x1 = -0.8f + 1.1f * !mainmix->currlay->deck + this->playbut->box->vtxcoords->w * 2.0f;		
 	this->speed->box->vtxcoords->x1 = -0.8f + 1.1f * !mainmix->currlay->deck + this->recbut->box->vtxcoords->w * 3.0f;
@@ -150,14 +160,18 @@ void LoopStationElement::visualize() {
 	this->playbut->box->vtxcoords->y1 = 0.4f - tf(0.05f) * this->pos;
 	this->speed->box->vtxcoords->y1 = 0.4f - tf(0.05f) * this->pos;
 	this->colbox->vtxcoords->y1 = 0.4f - tf(0.05f) * this->pos;
+	this->box->vtxcoords->y1 = 0.4f - tf(0.05f) * this->pos;
 	this->recbut->box->upvtxtoscr();
 	this->loopbut->box->upvtxtoscr();
 	this->playbut->box->upvtxtoscr();
 	this->speed->box->upvtxtoscr();
 	this->colbox->upvtxtoscr();
+	this->box->upvtxtoscr();
 	this->speed->handle();
 	draw_box(this->colbox, -1);
 	if (this->eventlist.size()) draw_box(this->colbox->lcolor, this->colbox->vtxcoords->x1 + tf(0.0155f) , this->colbox->vtxcoords->y1 + tf(0.025f), tf(0.015f), 1);
+	if (this == loopstation->currelem) draw_box(white, white, this->box, -1);
+	else draw_box(white, nullptr, this->box, -1);
 }
 	
 void LoopStationElement::erase_elem() {
@@ -233,6 +247,8 @@ void LoopStationElement::mouse_handle() {
 			this->playbut->oldvalue = false;
 		}
 	}
+	//current loopstation element selection
+	if (this->box->in() and mainprogram->leftmouse) loopstation->currelem = this;
 }
 	
 void LoopStationElement::set_params() {
@@ -293,6 +309,10 @@ void LoopStationElement::add_param() {
 	if (mainmix->adaptparam->effect) {
 		this->layers.emplace(mainmix->adaptparam->effect->layer);
 	}
+	mainmix->adaptparam->box->acolor[0] = this->colbox->acolor[0];
+	mainmix->adaptparam->box->acolor[1] = this->colbox->acolor[1];
+	mainmix->adaptparam->box->acolor[2] = this->colbox->acolor[2];
+	mainmix->adaptparam->box->acolor[3] = this->colbox->acolor[3];
 	for (int i = 0; i < 2; i++) {
 		std::vector<Layer*> &lvec = choose_layers(i);
 		for (int j = 0; j < lvec.size(); j++) {
@@ -313,10 +333,6 @@ void LoopStationElement::add_param() {
 			}
 		}
 	}
-	mainmix->adaptparam->box->acolor[0] = this->colbox->acolor[0];
-	mainmix->adaptparam->box->acolor[1] = this->colbox->acolor[1];
-	mainmix->adaptparam->box->acolor[2] = this->colbox->acolor[2];
-	mainmix->adaptparam->box->acolor[3] = this->colbox->acolor[3];
 }
 
 LoopStationElement* LoopStation::free_element() {

@@ -2380,8 +2380,6 @@ void Mixer::loopstation_copy(bool comp) {
 			std::tuple<long long, Param*, float> event2;
 			event2 = std::make_tuple(std::get<0>(event1), lp1->parmap[std::get<1>(event1)], std::get<2>(event1));
 			Param *par = std::get<1>(event2);
-			if (par == mainmix->crossfade) par = mainmix->crossfadecomp;
-			else if (par == mainmix->crossfadecomp) par = mainmix->crossfade;
 			if (par) {
 				lp2->elems[i]->eventlist.push_back(event2);
 				lp2->elems[i]->params.emplace(par);
