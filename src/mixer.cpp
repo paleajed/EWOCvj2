@@ -2257,7 +2257,7 @@ void Layer::open_image(const std::string &path) {
 	this->vidopen = true;
 	ilEnable(IL_CONV_PAL);
 	if (this->boundimage != -1) {
-		glDeleteTextures(1, &this->boundimage);
+		ilDeleteImages(1, &this->boundimage);
 		this->boundimage = -1;
 	}
 	ilGenImages(1, &this->boundimage);
@@ -2277,6 +2277,7 @@ void Layer::open_image(const std::string &path) {
 	this->vidformat = -1;
 	this->initialize(w, h);
 	this->type = ELEM_IMAGE;
+	this->decresult->width = -1;
 		
 	this->vidopen = false;
 }

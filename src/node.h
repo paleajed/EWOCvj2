@@ -121,7 +121,7 @@ class MixNode: public Node {
 	public:
 		bool fullscreen = false;
 		int screen = 0;
-		Box *outputbox = nullptr;
+		Box* outputbox = nullptr;
 		GLuint mixfbo = -1;
 		GLuint mixtex = -1;
 		MixNode() {}

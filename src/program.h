@@ -62,6 +62,7 @@ class Shelf {
 		ELEM_TYPE types[16];
 		GLuint texes[16] = {0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0};
 		std::vector<Button*> buttons;
+		bool ret;
 		void handle();
 		void erase();
 		void save(const std::string &path);
@@ -271,8 +272,6 @@ class Program {
 		Menu *shelfmenu = nullptr;
 		bool menuactivation;
 		bool menuchosen;
-		int menux;
-		int menuy;
 		std::vector<int> menuresults;
 		int fullscreen = -1;
 		bool test = false;
