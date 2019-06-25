@@ -1250,6 +1250,9 @@ void Layer::get_frame(){
 			if (r == 0) {
 				printf("load error\n");
 				this->openerr = true;
+				this->opened = true;
+				this->endopenvar.notify_one();
+				this->initialized = false;
 				this->startframe = 0;
 				this->endframe = 0;
 				if (this->dummy) {
@@ -1377,7 +1380,7 @@ bool thread_vidopen(Layer *lay, AVInputFormat *ifmt, bool skip) {
 		}
 	}
 	
-	av_opt_set_int(lay->video, "probesize2", INT_MAX, 0);
+	//av_opt_set_int(lay->video, "probesize2", INT_MAX, 0);
 	int r = avformat_open_input(&(lay->video), lay->filename.c_str(), ifmt, nullptr);
 	printf("loading... %s\n", lay->filename.c_str());
 	if (r < 0) {
@@ -1392,7 +1395,7 @@ bool thread_vidopen(Layer *lay, AVInputFormat *ifmt, bool skip) {
         fprintf(stderr, "Could not find stream information\n");
         return 0;
     }
-	//lay->video->max_picture_buffer = 20000000;
+	lay->video->max_picture_buffer = 20000000;
 
     if (open_codec_context(&(lay->video_stream_idx), lay->video, AVMEDIA_TYPE_VIDEO) >= 0) {
      	lay->video_stream = lay->video->streams[lay->video_stream_idx];
@@ -1616,7 +1619,7 @@ Shelf::Shelf(bool side) {
 		Box *box = this->buttons[i]->box;
 		box->vtxcoords->x1 = -1.0f + (i % 4) * boxwidth + (2.0f - boxwidth * 4) * side;
 		box->vtxcoords->h = boxwidth * (glob->w / glob->h) / (1920.0f /  1080.0f);
-		box->vtxcoords->y1 = -1.0f + (int)(i / 4) * box->vtxcoords->h;
+		box->vtxcoords->y1 = -1.0f + (int)(3 - (i / 4)) * box->vtxcoords->h;
 		box->vtxcoords->w = boxwidth;
 		box->upvtxtoscr();
 		box->tooltiptitle = "Video launch shelf";
@@ -1745,6 +1748,15 @@ void set_fbo() {
 	glEnableVertexAttribArray(1);
 	glVertexAttribPointer(1, 2, GL_FLOAT, GL_FALSE, 8, nullptr);
 	SDL_GL_MakeCurrent(mainprogram->prefwindow, glc_pr);
+	GLuint tex;
+	glGenTextures(1, &tex);
+	glBindTexture(GL_TEXTURE_2D, tex);
+	glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR);
+	glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
+	glTexStorage2D(GL_TEXTURE_2D, 1, GL_RGBA8, smw, smh);
+	glGenFramebuffers(1, &mainprogram->prfbo);
+	glBindFramebuffer(GL_FRAMEBUFFER, mainprogram->prfbo);
+	glFramebufferTexture2D(GL_FRAMEBUFFER, GL_COLOR_ATTACHMENT0, GL_TEXTURE_2D, tex, 0);
 	glGenBuffers(1, &mainprogram->prboxvbuf);
 	glGenBuffers(1, &mainprogram->prboxtbuf);
 	glGenVertexArrays(1, &mainprogram->prboxvao);
@@ -2608,70 +2620,17 @@ void display_texture(Layer *lay, bool deck) {
 	glBindFramebuffer(GL_FRAMEBUFFER, mainprogram->globfbo);
 	glDrawBuffer(GL_COLOR_ATTACHMENT0);
 	
-	float xs = 0.0f;
-	float ys = 0.0f;
-	float scix = 0.0f;
-	float sciy = 0.0f;
-	float frachd = 1920.0f / 1080.0f;
-	float fraco = mainprogram->ow / mainprogram->oh;
-	float frac;
-	if (lay->type == ELEM_IMAGE) {
-		ilBindImage(lay->boundimage);
-		ilActiveImage((int)lay->frame);
-		frac = (float)ilGetInteger(IL_IMAGE_WIDTH) / (float)ilGetInteger(IL_IMAGE_HEIGHT);
-	}
-	else frac = (float)lay->decresult->width / (float)lay->decresult->height;
-	if (fraco > frachd) {
-		ys = 1.0f - frachd / fraco;
-		sciy = ys;
-	}
-	else {
-		xs = 1.0f - fraco / frachd;
-		scix = xs;
-	}
-	if (lay->aspectratio == RATIO_ORIGINAL_INSIDE) {
-		if (frac > fraco) {
-			ys = 1.0f - (((1.0f - xs) * frachd) / frac);
-		}
-		else {
-			xs = 1.0f - (((1.0f - ys) / frachd) * frac);
-		}
-	}
-	else if (lay->aspectratio == RATIO_ORIGINAL_OUTSIDE) {
-		if (frac < fraco) {
-			ys = 1.0f - (((1.0f - xs) * frachd) / frac);
-		}
-		else {
-			xs = 1.0f - (((1.0f - ys) / frachd) * frac);
-		}
-	}
-					
 	std::vector<Layer*> &lvec = choose_layers(deck);
 	if (mainmix->scenes[deck][mainmix->currscene[deck]]->scrollpos > lvec.size() - 2) mainmix->scenes[deck][mainmix->currscene[deck]]->scrollpos = lvec.size() - 2;
 	if (mainmix->scenes[deck][mainmix->currscene[deck]]->scrollpos < 0) mainmix->scenes[deck][mainmix->currscene[deck]]->scrollpos = 0;
 	if (lay->pos >= mainmix->scenes[deck][mainmix->currscene[deck]]->scrollpos and lay->pos < mainmix->scenes[deck][mainmix->currscene[deck]]->scrollpos + 3) {
 		Box *box = lay->node->vidbox;
 		if (!lay->mutebut->value) {
-			draw_box(box, -1);
+			draw_box(box, box->tex);
 		}
 		else {
 			draw_box(white, darkred2, box, -1);
 		}
-		int sxs = xs * box->scrcoords->w / 2.0f;
-		int sys = ys * box->scrcoords->h / 2.0f;
-		scix = scix * box->scrcoords->w / 2.0f;
-		sciy = sciy * box->scrcoords->h / 2.0f;
-		glViewport(box->scrcoords->x1 + sxs, glob->h - box->scrcoords->y1 + sys, box->scrcoords->w - sxs * 2.0f, box->scrcoords->h - sys  * 2.0f);
-		glEnable(GL_SCISSOR_TEST);
-		glScissor(box->scrcoords->x1 + scix, glob->h - box->scrcoords->y1 + sciy, box->scrcoords->w - scix * 2.0f, box->scrcoords->h - sciy  * 2.0f);
-		if (!lay->mutebut->value) {
-			draw_box(nullptr, box->acolor, -1.0f, -1.0f, 2.0f, 2.0f, box->tex);
-		}
-		else {
-			draw_box(nullptr, box->acolor, -1.0f, -1.0f, 2.0f, 2.0f, 0, 0, 1, 0.5f, 0, box->tex, 0, 0);
-		}
-		glDisable(GL_SCISSOR_TEST);
-		glViewport(0, 0, glob->w, glob->h);
 
 		if (mainmix->mode == 0 and mainprogram->nodesmain->linked) {
 			// Trigger mainprogram->laymenu1
@@ -4083,21 +4042,86 @@ void onestepfrom(bool stage, Node *node, Node *prevnode, GLuint prevfbotex, GLui
 				glUniform1f(chinv, lay->chinv->value);
 			}
 		}
+		float xs = 0.0f;
+		float ys = 0.0f;
+		float scix = 0.0f;
+		float sciy = 0.0f;
+		float frachd = 1920.0f / 1080.0f;
+		float fraco = mainprogram->ow / mainprogram->oh;
+		float frac;
+		if (lay->type == ELEM_IMAGE) {
+			ilBindImage(lay->boundimage);
+			ilActiveImage((int)lay->frame);
+			frac = (float)ilGetInteger(IL_IMAGE_WIDTH) / (float)ilGetInteger(IL_IMAGE_HEIGHT);
+		}
+		else frac = (float)lay->decresult->width / (float)lay->decresult->height;
+		if (fraco > frachd) {
+			ys = 1.0f - frachd / fraco;
+			sciy = ys;
+		}
+		else {
+			xs = 1.0f - fraco / frachd;
+			scix = xs;
+		}
+		if (lay->aspectratio == RATIO_ORIGINAL_INSIDE) {
+			if (frac > fraco) {
+				ys = 1.0f - (((1.0f - xs) * frachd) / frac);
+			}
+			else {
+				xs = 1.0f - (((1.0f - ys) / frachd) * frac);
+			}
+		}
+		else if (lay->aspectratio == RATIO_ORIGINAL_OUTSIDE) {
+			if (frac < fraco) {
+				ys = 1.0f - (((1.0f - xs) * frachd) / frac);
+			}
+			else {
+				xs = 1.0f - (((1.0f - ys) / frachd) * frac);
+			}
+		}
+
+		int sw, sh;
+		glBindTexture(GL_TEXTURE_2D, lay->fbotex2);
+		glGetTexLevelParameteriv(GL_TEXTURE_2D, 0, GL_TEXTURE_WIDTH, &sw);
+		glGetTexLevelParameteriv(GL_TEXTURE_2D, 0, GL_TEXTURE_HEIGHT, &sh);
+		float scw = sw;
+		float sch = sh;
+		int sxs = xs * scw / 2.0f;
+		int sys = ys * sch / 2.0f;
+		scix = scix * scw / 2.0f;
+		sciy = sciy * sch / 2.0f;
+		glBindFramebuffer(GL_FRAMEBUFFER, lay->fbointm);
+		glDrawBuffer(GL_COLOR_ATTACHMENT0);
+		glClearColor(0.0f, 0.0f, 0.0f, 0.0f);
+		glClear(GL_COLOR_BUFFER_BIT);
+		glViewport(sxs, sys, scw - sxs * 2.0f, sch - sys * 2.0f);
+		float black[4] = { 0.0f, 0.0f, 0.0f, 0.0f };
+		if (!lay->mutebut->value) {
+			draw_box(nullptr, black, -1.0f, 1.0f, 2.0f, -2.0f, lay->fbotex);
+		}
+		else {
+			float darkred2[4] = { 0.4f, 0.0f, 0.0f, 1.0f };
+			draw_box(nullptr, darkred2, -1.0f, 1.0f, 2.0f, -2.0f, lay->fbotex);
+		}
+		//glDisable(GL_BLEND);
+		//glEnable(GL_BLEND);
+		//glDeleteTextures(1, &fbocopy);
 		if (lay->node == lay->lasteffnode[0]) {
+			lay->drawfbo2 = true;
 			GLuint fbocopy;
 			glDisable(GL_BLEND);
 			int sw, sh;
-			glBindTexture(GL_TEXTURE_2D, lay->fbotex);
+			glBindTexture(GL_TEXTURE_2D, lay->fbotexintm);
 			glGetTexLevelParameteriv(GL_TEXTURE_2D, 0, GL_TEXTURE_WIDTH, &sw);
 			glGetTexLevelParameteriv(GL_TEXTURE_2D, 0, GL_TEXTURE_HEIGHT, &sh);
 			//fbocopy = copy_tex(lay->fbotex, sw, sh);
-			glViewport(0, 0, sw, sh);
 			glBindFramebuffer(GL_FRAMEBUFFER, lay->fbo2);
 			glDrawBuffer(GL_COLOR_ATTACHMENT0);
 			glClearColor(0.0f, 0.0f, 0.0f, 0.0f);
 			glClear(GL_COLOR_BUFFER_BIT);
-			float black[4] = {0.0f, 0.0f, 0.0f, 0.0f};
-			draw_box(nullptr, black, -1.0f, 1.0f, 2.0f, -2.0f, lay->shiftx->value, lay->shifty->value, lay->scale->value, lay->opacity->value, 0, lay->fbotex, 0, 0);
+			glViewport(0, 0, sw, sh);
+			float black[4] = { 0.0f, 0.0f, 0.0f, 0.0f };
+			draw_box(nullptr, black, -1.0f, 1.0f, 2.0f, -2.0f, lay->shiftx->value, lay->shifty->value, lay->scale->value, lay->opacity->value, 0, lay->fbotexintm, 0, 0);
 			glEnable(GL_BLEND);
 			//glDeleteTextures(1, &fbocopy);
 			glBindFramebuffer(GL_FRAMEBUFFER, mainprogram->globfbo);
@@ -4107,9 +4131,13 @@ void onestepfrom(bool stage, Node *node, Node *prevnode, GLuint prevfbotex, GLui
 			prevfbo = lay->fbo2;
 		}
 		else {
-			prevfbotex = lay->fbotex;
-			prevfbo = lay->fbo;
+			lay->drawfbo2 = true;
+			prevfbotex = lay->fbotexintm;
+			prevfbo = lay->fbointm;
 		}
+		glBindFramebuffer(GL_FRAMEBUFFER, mainprogram->globfbo);
+		glDrawBuffer(GL_COLOR_ATTACHMENT0);
+		glViewport(0, 0, glob->w, glob->h);
 	}
 	else if (node->type == BLEND) {
 		BlendNode *bnode = (BlendNode*)node;
@@ -4911,7 +4939,8 @@ void make_layboxes() {
 					vnode->vidbox->lcolor[2] = 1.0;
 					vnode->vidbox->lcolor[3] = 1.0;
 					if (vnode->layer->effects[0].size() == 0) {
-						vnode->vidbox->tex = vnode->layer->fbotex;
+						if (vnode->layer->drawfbo2) vnode->vidbox->tex = vnode->layer->fbotex2;
+						else vnode->vidbox->tex = vnode->layer->fbotexintm;
 					}
 					else {
 						vnode->vidbox->tex = vnode->layer->effects[0][vnode->layer->effects[0].size() - 1]->fbotex;
@@ -4948,7 +4977,8 @@ void make_layboxes() {
 					vnode->vidbox->lcolor[2] = 1.0;
 					vnode->vidbox->lcolor[3] = 1.0;
 					if ((vnode)->layer->effects[0].size() == 0) {
-						vnode->vidbox->tex = vnode->layer->fbotex;
+						if (vnode->layer->drawfbo2) vnode->vidbox->tex = vnode->layer->fbotex2;
+						else vnode->vidbox->tex = vnode->layer->fbotexintm;
 					}
 					else {
 						vnode->vidbox->tex = vnode->layer->effects[0][vnode->layer->effects[0].size() - 1]->fbotex;
@@ -5336,26 +5366,35 @@ void tooltips_handle(float fac) {
 	float orange[] = {1.0f, 0.5f, 0.0f, 1.0f};
 	float white[] = {1.0f, 1.0f, 1.0f, 1.0f};
 	if (mainprogram->tooltipmilli > 3000) {
-		std::vector<std::string> texts;
-		int pos = 0;
-		while (pos < mainprogram->tooltipbox->tooltip.length() - 1) {
-			int oldpos = pos;
-			pos = mainprogram->tooltipbox->tooltip.rfind(" ", pos + 58);
-			if (pos == -1) break;
-			texts.push_back(mainprogram->tooltipbox->tooltip.substr(oldpos, pos - oldpos));
-		}
-		float x = mainprogram->tooltipbox->vtxcoords->x1 + mainprogram->tooltipbox->vtxcoords->w + tf(0.01f);  //first print offscreen
-		float y = mainprogram->tooltipbox->vtxcoords->y1 - tf(0.01f) * glob->w / glob->h - tf(0.01f);
-		float textw = 0.5f * sqrt(fac);
-		float texth = 0.092754f * sqrt(fac);
-		if ((x + textw) > 1.0f) x = x - textw - tf(0.02f) - mainprogram->tooltipbox->vtxcoords->w;
-		if ((y - texth * (texts.size() + 1) - tf(0.01f)) < -1.0f) y = -1.0f + texth * (texts.size() + 1) - tf(0.01f);
-		draw_box(nullptr, black, x, y - texth, textw, texth + tf(0.01f), -1);
-		render_text(mainprogram->tooltipbox->tooltiptitle, orange, x + tf(0.015f) * sqrt(fac), y - texth + tf(0.03f) * sqrt(fac), tf(0.0003f) * fac, tf(0.0005f) * fac);
-		for (int i = 0; i < texts.size(); i++) {
-			y -= texth;
+		if (mainprogram->longtooltips) {
+			std::vector<std::string> texts;
+			int pos = 0;
+			while (pos < mainprogram->tooltipbox->tooltip.length() - 1) {
+				int oldpos = pos;
+				pos = mainprogram->tooltipbox->tooltip.rfind(" ", pos + 58);
+				if (pos == -1) break;
+				texts.push_back(mainprogram->tooltipbox->tooltip.substr(oldpos, pos - oldpos));
+			}
+			float x = mainprogram->tooltipbox->vtxcoords->x1 + mainprogram->tooltipbox->vtxcoords->w + tf(0.01f);  //first print offscreen
+			float y = mainprogram->tooltipbox->vtxcoords->y1 - tf(0.01f) * glob->w / glob->h - tf(0.01f);
+			float textw = 0.5f * sqrt(fac);
+			float texth = 0.092754f * sqrt(fac);
+			if ((x + textw) > 1.0f) x = x - textw - tf(0.02f) - mainprogram->tooltipbox->vtxcoords->w;
+			if ((y - texth * (texts.size() + 1) - tf(0.01f)) < -1.0f) y = -1.0f + texth * (texts.size() + 1) - tf(0.01f);
 			draw_box(nullptr, black, x, y - texth, textw, texth + tf(0.01f), -1);
-			render_text(texts[i], white, x + tf(0.015f) * sqrt(fac), y - texth + tf(0.03f) * sqrt(fac), tf(0.0003f) * fac, tf(0.0005f) * fac);
+			render_text(mainprogram->tooltipbox->tooltiptitle, orange, x + tf(0.015f) * sqrt(fac), y - texth + tf(0.03f) * sqrt(fac), tf(0.0003f) * fac, tf(0.0005f) * fac);
+			for (int i = 0; i < texts.size(); i++) {
+				y -= texth;
+				draw_box(nullptr, black, x, y - texth, textw, texth + tf(0.01f), -1);
+				render_text(texts[i], white, x + tf(0.015f) * sqrt(fac), y - texth + tf(0.03f) * sqrt(fac), tf(0.0003f) * fac, tf(0.0005f) * fac);
+			}
+		}
+		else {
+			float x = mainprogram->tooltipbox->vtxcoords->x1 + mainprogram->tooltipbox->vtxcoords->w + tf(0.01f);  //first print offscreen
+			float y = mainprogram->tooltipbox->vtxcoords->y1 - tf(0.01f) * glob->w / glob->h - tf(0.01f);
+			float textw = 0.25f * sqrt(fac);
+			draw_box(nullptr, black, x, y - 0.092754f, textw, 0.092754f + tf(0.01f), -1);
+			render_text(mainprogram->tooltipbox->tooltiptitle, orange, x + tf(0.015f) * sqrt(fac), y - 0.092754f + tf(0.03f) * sqrt(fac), tf(0.0003f) * fac, tf(0.0005f) * fac);
 		}
 	}
 }
@@ -5550,6 +5589,11 @@ void Preferences::load() {
 				boost::filesystem::path p(istring);
 				if (boost::filesystem::exists(p)) mainprogram->currbindirdir = istring;
 			}
+			else if (istring == "CURRSHELFFILESDIR") {
+				getline(rfile, istring);
+				boost::filesystem::path p(istring);
+				if (boost::filesystem::exists(p)) mainprogram->currshelffilesdir = istring;
+			}
 			else if (istring == "CURRSHELFDIRDIR") {
 				getline(rfile, istring);
 				boost::filesystem::path p(istring);
@@ -5619,6 +5663,9 @@ void Preferences::save() {
 	wfile << "\n";
 	wfile << "CURRBINDIRDIR\n";
 	wfile << mainprogram->currbindirdir;
+	wfile << "\n";
+	wfile << "CURRSHELFFILESDIR\n";
+	wfile << mainprogram->currshelfdirdir;
 	wfile << "\n";
 	wfile << "CURRSHELFDIRDIR\n";
 	wfile << mainprogram->currshelfdirdir;
@@ -5816,12 +5863,22 @@ PIInt::PIInt() {
 	this->items.push_back(pii);
 	pos++;
 
-	pii = new PrefItem(this, pos, "Show tooltips", PREF_ONOFF, (void*)&mainprogram->showtooltips);
+	pii = new PrefItem(this, pos, "Show tooltips", PREF_ONOFF, (void*)& mainprogram->showtooltips);
 	pii->onoff = 1;
 	pii->namebox->tooltiptitle = "Show tooltips toggle ";
 	pii->namebox->tooltip = "Toggles if tooltips will be shown when hovering mouse over an interface element. ";
 	pii->valuebox->tooltiptitle = "Show tooltips toggle ";
 	pii->valuebox->tooltip = "Toggles if tooltips will be shown when hovering mouse over an interface element. ";
+	mainprogram->showtooltips = pii->onoff;
+	this->items.push_back(pii);
+	pos++;
+
+	pii = new PrefItem(this, pos, "Long tooltips", PREF_ONOFF, (void*)& mainprogram->longtooltips);
+	pii->onoff = 1;
+	pii->namebox->tooltiptitle = "Long tooltips toggle ";
+	pii->namebox->tooltip = "Toggles if tooltips will be long, if off only tooltip titles will be shown. ";
+	pii->valuebox->tooltiptitle = "Long tooltips toggle ";
+	pii->valuebox->tooltip = "Toggles if tooltips will be long, if off only tooltip titles will be shown. ";
 	mainprogram->showtooltips = pii->onoff;
 	this->items.push_back(pii);
 	pos++;
@@ -7156,7 +7213,11 @@ void the_loop() {
 		// load one item from mainprogram->opendir into shelf, one each loop not to slowdown output stream
 		mainmix->mouseshelf->open_dir();
 	}
-	
+	else if (mainprogram->openshelffiles) {
+		// load one item from mainprogram->paths into shelf, one each loop not to slowdown output stream
+		mainmix->mouseshelf->open_shelffiles();
+	}
+
 	for (int m = 0; m < 2; m++) {
 		for (int i = 0; i < 4; i++) {
 			for (int j = 0; j < mainmix->scenes[m][i]->nbframes.size(); j++) {
@@ -8595,26 +8656,21 @@ void the_loop() {
 			filereq.detach();
 		}
 		else if (k == 3) {
-			mainprogram->pathto = "OPENSHELFVIDEO";
-			std::thread filereq (&Program::get_inname, mainprogram,  "Load video file in shelf", "", boost::filesystem::canonical(mainprogram->currvideodir).generic_string());
+			mainprogram->pathto = "OPENSHELFFILES";
+			std::thread filereq (&Program::get_multinname, mainprogram,  "Load video file(s)/layer file(s) in shelf", boost::filesystem::canonical(mainprogram->currshelffilesdir).generic_string());
 			filereq.detach();
 		}
 		else if (k == 4) {
-			mainprogram->pathto = "OPENSHELFLAYER";
-			std::thread filereq (&Program::get_inname, mainprogram, "Load layer file in shelf", "application/ewocvj2-layer", boost::filesystem::canonical(mainprogram->currlayerdir).generic_string());
-			filereq.detach();
-		}
-		else if (k == 5) {
 			mainprogram->pathto = "OPENSHELFDIR";
 			std::thread filereq (&Program::get_dir, mainprogram, "Load directory into shelf", boost::filesystem::canonical(mainprogram->currshelfdirdir).generic_string());
 			filereq.detach();
 		}
-		else if (k == 6) {
+		else if (k == 5) {
 			mainprogram->pathto = "OPENSHELFIMAGE";
 			std::thread filereq (&Program::get_inname, mainprogram, "Load image into shelf", "", boost::filesystem::canonical(mainprogram->currimagedir).generic_string());
 			filereq.detach();
 		}
-		else if (k == 7 or k == 8) {
+		else if (k == 6 or k == 7) {
 			std::string name = remove_extension(basename(mainprogram->project->path));
 			std::string path;
 			int count = 0;
@@ -8630,7 +8686,7 @@ void the_loop() {
 			mainmix->save_deck(path);
 			mainmix->mouseshelf->insert_deck(path, k - 7, mainmix->mouseshelfelem);
 		}
-		else if (k == 9) {
+		else if (k == 8) {
 			std::string name = remove_extension(basename(mainprogram->project->path));
 			std::string path;
 			int count = 0;
@@ -8645,7 +8701,7 @@ void the_loop() {
 			mainmix->save_mix(path);
 			mainmix->mouseshelf->insert_mix(path, mainmix->mouseshelfelem);
 		}
-		else if (k == 10) {
+		else if (k == 9) {
 			mainmix->learn = true;
 			mainmix->learnparam = nullptr;
 			mainmix->learnbutton = mainmix->mouseshelf->buttons[mainmix->mouseshelfelem];
@@ -9276,18 +9332,8 @@ void the_loop() {
 	GLuint tex, fbo;
 	if (mainprogram->prefon) {
 		SDL_GL_MakeCurrent(mainprogram->prefwindow, glc_pr);
-		glGenTextures(1, &tex);
-		glBindTexture(GL_TEXTURE_2D, tex);
-		glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR);
-		glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
-		glTexStorage2D(GL_TEXTURE_2D, 1, GL_RGBA8, smw, smh);
-		glGenFramebuffers(1, &fbo);
-		glBindFramebuffer(GL_FRAMEBUFFER, fbo);
-		glFramebufferTexture2D(GL_FRAMEBUFFER, GL_COLOR_ATTACHMENT0, GL_TEXTURE_2D, tex, 0);
-		glBindFramebuffer(GL_FRAMEBUFFER, mainprogram->smglobfbo_pr);
-		glDrawBuffer(GL_COLOR_ATTACHMENT0);
 		prret = preferences();
-		glBlitNamedFramebuffer(mainprogram->smglobfbo_pr, fbo, 0, 0, smw, smh , 0, 0, smw, smh, GL_COLOR_BUFFER_BIT, GL_NEAREST);
+		glBlitNamedFramebuffer(mainprogram->smglobfbo_pr, mainprogram->prfbo, 0, 0, smw, smh , 0, 0, smw, smh, GL_COLOR_BUFFER_BIT, GL_NEAREST);
 		glFlush();
 	}
 	if (mainprogram->tunemidi) {
@@ -9312,7 +9358,7 @@ void the_loop() {
 	}
 	if (prret) {
 		SDL_GL_MakeCurrent(mainprogram->prefwindow, glc_pr);
-		glBlitNamedFramebuffer(fbo, 0, 0, 0, smw, smh , 0, 0, smw, smh, GL_COLOR_BUFFER_BIT, GL_NEAREST);
+		glBlitNamedFramebuffer(mainprogram->prfbo, 0, 0, 0, smw, smh , 0, 0, smw, smh, GL_COLOR_BUFFER_BIT, GL_NEAREST);
 		SDL_GL_SwapWindow(mainprogram->prefwindow);
 	}
 	SDL_GL_MakeCurrent(mainprogram->mainwindow, glc);
@@ -9638,6 +9684,23 @@ void Shelf::open_dir() {
 		if (ret) mainprogram->shelfdircount++;
 	}
 	else mainprogram->openshelfdir = false;
+}
+
+void Shelf::open_shelffiles() {
+	std::string str = mainprogram->paths[mainprogram->shelffilescount];
+	if (str.substr(str.length() - 6, std::string::npos) == ".layer") {
+		mainmix->mouseshelf->open_layer(str, mainprogram->shelffileselem);
+	}
+	else {
+		mainmix->mouseshelf->open_videofile(str, mainprogram->shelffileselem);
+	}
+	mainprogram->shelffileselem++;
+	mainprogram->shelffilescount++;
+	if (mainprogram->shelffilescount == mainprogram->paths.size() or mainprogram->shelffileselem == 16) {
+		mainprogram->openshelffiles = false;
+		mainprogram->paths.clear();
+	}
+	mainprogram->currshelffilesdir = dirname(str);
 }
 
 bool Shelf::open_videofile(const std::string &path, int pos) {
@@ -10762,8 +10825,7 @@ int main(int argc, char* argv[]){
   	shelf1.push_back("New shelf");
   	shelf1.push_back("Open shelf");
   	shelf1.push_back("Save shelf");
-  	shelf1.push_back("Open video");
-  	shelf1.push_back("Open layerfile");
+  	shelf1.push_back("Open video(s)/layer(s)");
   	shelf1.push_back("Open dir");
 	shelf1.push_back("Open image");
 	shelf1.push_back("Insert deck A");
@@ -11043,15 +11105,12 @@ int main(int argc, char* argv[]){
 				mainprogram->currshelfdir = dirname(str);
 				mainmix->mouseshelf->save(str);
 			}
-			else if (mainprogram->pathto == "OPENSHELFVIDEO") {
-				std::string str(mainprogram->path);
-				mainprogram->currvideodir = dirname(str);
-				mainmix->mouseshelf->open_videofile(str, mainmix->mouseshelfelem);
-			}
-			else if (mainprogram->pathto == "OPENSHELFLAYER") {
-				std::string str(mainprogram->path);
-				mainprogram->currlayerdir = dirname(str);
-				mainmix->mouseshelf->open_layer(str, mainmix->mouseshelfelem);
+			else if (mainprogram->pathto == "OPENSHELFFILES") {
+				if (mainprogram->paths.size() > 0) {
+					mainprogram->openshelffiles = true;
+					mainprogram->shelffilescount = 0;
+					mainprogram->shelffileselem = mainmix->mouseshelfelem;
+				}
 			}
 			else if (mainprogram->pathto == "OPENSHELFDIR") {
 				mainprogram->shelfpath = mainprogram->path;

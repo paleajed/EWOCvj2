@@ -67,6 +67,7 @@ class Shelf {
 		void erase();
 		void save(const std::string &path);
 		void open(const std::string &path);
+		void open_shelffiles();
 		bool open_videofile(const std::string &path, int pos);
 		bool open_layer(const std::string& path, int pos);
 		void open_dir();
@@ -219,6 +220,7 @@ class Program {
 		GLuint globfbotex;
 		GLuint smglobfbo_tm;
 		GLuint smglobfbotex_tm;
+		GLuint prfbo;
 		GLuint smglobfbo_pr;
 		GLuint smglobfbotex_pr;
 		GLuint fbotex[4];
@@ -366,6 +368,7 @@ class Program {
 		bool needsclick = false;
 		bool insmall;
 		bool showtooltips = true;
+		bool longtooltips = true;
 		Box *tooltipbox = nullptr;
 		float tooltipmilli = 0.0f;
 		bool autosave;
@@ -418,6 +421,7 @@ class Program {
 		std::string currrecdir;
 		std::string currshelfdir;
 		std::string currshelfdirdir;
+		std::string currshelffilesdir;
 		std::string currbindirdir;
 		std::string currvideodir;
 		std::string currimagedir;
@@ -428,6 +432,9 @@ class Program {
 		bool openshelfdir = false;
 		std::string shelfpath;
 		int shelfdircount;
+		bool openshelffiles = false;
+		int shelffileselem;
+		int shelffilescount;
 		bool shelfdrag = false;
 		Shelf *shelves[2];
 		

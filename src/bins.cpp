@@ -800,10 +800,6 @@ void BinsMain::handle() {
 								if (mainprogram->prelay->type != ELEM_IMAGE) {
 									mainprogram->prelay->frame = 0.0f;
 									mainprogram->prelay->prevframe = -1;
-									mainprogram->prelay->ready = true;
-									while (mainprogram->prelay->ready) {
-										mainprogram->prelay->startdecode.notify_one();
-									}
 									std::unique_lock<std::mutex> lock(mainprogram->prelay->enddecodelock);
 									mainprogram->prelay->enddecodevar.wait(lock, [&]{return mainprogram->prelay->processed;});
 									mainprogram->prelay->processed = false;
@@ -835,14 +831,15 @@ void BinsMain::handle() {
 								if (!binel->encoding) {
 									if (mainprogram->prelay->vidformat == 188 or mainprogram->prelay->vidformat == 187) {
 										render_text("HAP", white, box->vtxcoords->x1 + tf(0.005f), box->vtxcoords->y1 + box->vtxcoords->h - tf(0.015f), 0.0005f, 0.0008f);
+										render_text(std::to_string(mainprogram->prelay->decresult->width) + "x" + std::to_string(mainprogram->prelay->decresult->height), white, box->vtxcoords->x1 + tf(0.005f), box->vtxcoords->y1 + box->vtxcoords->h - tf(0.045f), 0.0005f, 0.0008f);
 									}
 									else if (mainprogram->prelay->type != ELEM_IMAGE) {
 										render_text("CPU", white, box->vtxcoords->x1 + tf(0.005f), box->vtxcoords->y1 + box->vtxcoords->h - tf(0.015f), 0.0005f, 0.0008f);
+										render_text(std::to_string(mainprogram->prelay->decresult->width) + "x" + std::to_string(mainprogram->prelay->decresult->height), white, box->vtxcoords->x1 + tf(0.005f), box->vtxcoords->y1 + box->vtxcoords->h - tf(0.045f), 0.0005f, 0.0008f);
 									}
 									else {
 										render_text("IMAGE", white, box->vtxcoords->x1 + tf(0.005f), box->vtxcoords->y1 + box->vtxcoords->h - tf(0.015f), 0.0005f, 0.0008f);
 									}
-									render_text(std::to_string(mainprogram->prelay->decresult->width) + "x" + std::to_string(mainprogram->prelay->decresult->height), white, box->vtxcoords->x1 + tf(0.005f), box->vtxcoords->y1 + box->vtxcoords->h - tf(0.045f), 0.0005f, 0.0008f);
 								}
 							}
 						}
@@ -906,14 +903,15 @@ void BinsMain::handle() {
 							if (!binel->encoding and remove_extension(basename(binel->path)) != "") {
 								if (mainprogram->prelay->vidformat == 188 or mainprogram->prelay->vidformat == 187) {
 									render_text("HAP", white, box->vtxcoords->x1 + tf(0.005f), box->vtxcoords->y1 + box->vtxcoords->h - tf(0.015f), 0.0005f, 0.0008f);
+									render_text(std::to_string(mainprogram->prelay->decresult->width) + "x" + std::to_string(mainprogram->prelay->decresult->height), white, box->vtxcoords->x1 + tf(0.005f), box->vtxcoords->y1 + box->vtxcoords->h - tf(0.045f), 0.0005f, 0.0008f);
 								}
 								else if (mainprogram->prelay->type != ELEM_IMAGE) {
 									render_text("CPU", white, box->vtxcoords->x1 + tf(0.005f), box->vtxcoords->y1 + box->vtxcoords->h - tf(0.015f), 0.0005f, 0.0008f);
+									render_text(std::to_string(mainprogram->prelay->decresult->width) + "x" + std::to_string(mainprogram->prelay->decresult->height), white, box->vtxcoords->x1 + tf(0.005f), box->vtxcoords->y1 + box->vtxcoords->h - tf(0.045f), 0.0005f, 0.0008f);
 								}
 								else {
 									render_text("IMAGE", white, box->vtxcoords->x1 + tf(0.005f), box->vtxcoords->y1 + box->vtxcoords->h - tf(0.015f), 0.0005f, 0.0008f);
 								}
-								render_text(std::to_string(mainprogram->prelay->decresult->width) + "x" + std::to_string(mainprogram->prelay->decresult->height), white, box->vtxcoords->x1 + tf(0.005f), box->vtxcoords->y1 + box->vtxcoords->h - tf(0.045f), 0.0005f, 0.0008f);
 							}
 						}
 						else if ((binel->type == ELEM_FILE or binel->type == ELEM_IMAGE) and !this->binpreview) {
@@ -939,10 +937,6 @@ void BinsMain::handle() {
 									mainprogram->prelay->initialized = true;
 									mainprogram->prelay->frame = 0.0f;
 									mainprogram->prelay->prevframe = -1;
-									mainprogram->prelay->ready = true;
-									while (mainprogram->prelay->ready) {
-										mainprogram->prelay->startdecode.notify_one();
-									}
 									std::unique_lock<std::mutex> lock(mainprogram->prelay->enddecodelock);
 									mainprogram->prelay->enddecodevar.wait(lock, [&]{return mainprogram->prelay->processed;});
 									mainprogram->prelay->processed = false;
@@ -968,16 +962,17 @@ void BinsMain::handle() {
 								if (!binel->encoding) {
 									if (mainprogram->prelay->vidformat == 188 or mainprogram->prelay->vidformat == 187) {
 										render_text("HAP", white, box->vtxcoords->x1 + tf(0.005f), box->vtxcoords->y1 + box->vtxcoords->h - tf(0.015f), 0.0005f, 0.0008f);
+										render_text(std::to_string(mainprogram->prelay->decresult->width) + "x" + std::to_string(mainprogram->prelay->decresult->height), white, box->vtxcoords->x1 + tf(0.005f), box->vtxcoords->y1 + box->vtxcoords->h - tf(0.045f), 0.0005f, 0.0008f);
 									}
 									else {
 										if (mainprogram->prelay->type == ELEM_FILE) {
 											render_text("CPU", white, box->vtxcoords->x1 + tf(0.005f), box->vtxcoords->y1 + box->vtxcoords->h - tf(0.015f), 0.0005f, 0.0008f);
+											render_text(std::to_string(mainprogram->prelay->decresult->width) + "x" + std::to_string(mainprogram->prelay->decresult->height), white, box->vtxcoords->x1 + tf(0.005f), box->vtxcoords->y1 + box->vtxcoords->h - tf(0.045f), 0.0005f, 0.0008f);
 										}
 										if (mainprogram->prelay->type == ELEM_IMAGE) {
 											render_text("IMAGE", white, box->vtxcoords->x1 + tf(0.005f), box->vtxcoords->y1 + box->vtxcoords->h - tf(0.015f), 0.0005f, 0.0008f);
 										}
 									}
-									render_text(std::to_string(mainprogram->prelay->decresult->width) + "x" + std::to_string(mainprogram->prelay->decresult->height), white, box->vtxcoords->x1 + tf(0.005f), box->vtxcoords->y1 + box->vtxcoords->h - tf(0.045f), 0.0005f, 0.0008f);
 								}
 							}
 						}
@@ -1026,16 +1021,17 @@ void BinsMain::handle() {
 							if (!binel->encoding and remove_extension(basename(binel->path)) != "") {
 								if (mainprogram->prelay->vidformat == 188 or mainprogram->prelay->vidformat == 187) {
 									render_text("HAP", white, box->vtxcoords->x1 + tf(0.005f), box->vtxcoords->y1 + box->vtxcoords->h - tf(0.015f), 0.0005f, 0.0008f);
+									render_text(std::to_string(mainprogram->prelay->decresult->width) + "x" + std::to_string(mainprogram->prelay->decresult->height), white, box->vtxcoords->x1 + tf(0.005f), box->vtxcoords->y1 + box->vtxcoords->h - tf(0.045f), 0.0005f, 0.0008f);
 								}
 								else {
 									if (mainprogram->prelay->type == ELEM_FILE) {
 										render_text("CPU", white, box->vtxcoords->x1 + tf(0.005f), box->vtxcoords->y1 + box->vtxcoords->h - tf(0.015f), 0.0005f, 0.0008f);
+										render_text(std::to_string(mainprogram->prelay->decresult->width) + "x" + std::to_string(mainprogram->prelay->decresult->height), white, box->vtxcoords->x1 + tf(0.005f), box->vtxcoords->y1 + box->vtxcoords->h - tf(0.045f), 0.0005f, 0.0008f);
 									}
 									if (mainprogram->prelay->type == ELEM_IMAGE) {
 										render_text("IMAGE", white, box->vtxcoords->x1 + tf(0.005f), box->vtxcoords->y1 + box->vtxcoords->h - tf(0.015f), 0.0005f, 0.0008f);
 									}
 								}
-								render_text(std::to_string(mainprogram->prelay->decresult->width) + "x" + std::to_string(mainprogram->prelay->decresult->height), white, box->vtxcoords->x1 + tf(0.005f), box->vtxcoords->y1 + box->vtxcoords->h - tf(0.045f), 0.0005f, 0.0008f);
 							}
 						}
 					}
@@ -2006,7 +2002,7 @@ void BinsMain::open_bindir() {
 		strcat(filepath, ent->d_name);
 		std::string str(filepath);
 		
-		open_handlefile(str);
+		this->open_handlefile(str);
 	}
 	else {
 		this->openbindir = false;
@@ -2020,9 +2016,31 @@ void BinsMain::open_handlefile(const std::string &path) {
 	lay->dummy = 1;
 	if (isimage(path)) {
 		lay->open_image(path);
+		glBindTexture(GL_TEXTURE_2D, lay->texture);
+		ilBindImage(lay->boundimage);
+		ilActiveImage((int)lay->frame);
+		int imageformat = ilGetInteger(IL_IMAGE_FORMAT);
+		int w = ilGetInteger(IL_IMAGE_WIDTH);
+		int h = ilGetInteger(IL_IMAGE_HEIGHT);
+		int bpp = ilGetInteger(IL_IMAGE_BPP);
+		GLuint mode = GL_BGR;
+		if (imageformat == IL_RGBA) mode = GL_RGBA;
+		if (imageformat == IL_BGRA) mode = GL_BGRA;
+		if (imageformat == IL_RGB) mode = GL_RGB;
+		if (imageformat == IL_BGR) mode = GL_BGR;
+		if (bpp == 3) {
+			glTexSubImage2D(GL_TEXTURE_2D, 0, 0, 0, w, h, mode, GL_UNSIGNED_BYTE, ilGetData());
+		}
+		else if (bpp == 4) {
+			glTexSubImage2D(GL_TEXTURE_2D, 0, 0, 0, w, h, mode, GL_UNSIGNED_BYTE, ilGetData());
+		}
 	}
 	else {
 		open_video(0, lay, path, true);
+		std::unique_lock<std::mutex> lock(lay->enddecodelock);
+		lay->enddecodevar.wait(lock, [&] {return lay->processed; });
+		lay->processed = false;
+		lock.unlock();
 		std::unique_lock<std::mutex> olock(lay->endopenlock);
 		lay->endopenvar.wait(olock, [&]{return lay->opened;});
 		lay->opened = false;
@@ -2030,24 +2048,11 @@ void BinsMain::open_handlefile(const std::string &path) {
 		if (lay->openerr) {
 			printf("error!\n");
 			lay->openerr = false;
-			lay->closethread = true;
-			while (lay->closethread) {
-				lay->ready = true;
-				lay->startdecode.notify_one();
-			}
 			//delete lay;
 			return;
 		}
 		lay->frame = lay->numf / 2.0f;
 		lay->prevframe = -1;
-		lay->ready = true;
-		while (lay->ready) {
-			lay->startdecode.notify_one();
-		}
-		std::unique_lock<std::mutex> lock2(lay->enddecodelock);
-		lay->enddecodevar.wait(lock2, [&]{return lay->processed;});
-		lay->processed = false;
-		lock2.unlock();
 		lay->initialized = true;
 		glBindTexture(GL_TEXTURE_2D, lay->texture);
 		if (lay->vidformat == 188 or lay->vidformat == 187) {

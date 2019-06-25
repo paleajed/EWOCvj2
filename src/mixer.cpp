@@ -2014,6 +2014,23 @@ Layer::Layer(bool comp) {
 	glBindFramebuffer(GL_FRAMEBUFFER, this->fbo2);
 	glFramebufferTexture2D(GL_FRAMEBUFFER, GL_COLOR_ATTACHMENT0, GL_TEXTURE_2D, this->fbotex2, 0);
 
+	glGenTextures(1, &this->fbotexintm);
+	glActiveTexture(GL_TEXTURE0);
+	glBindTexture(GL_TEXTURE_2D, this->fbotexintm);
+	if (comp) {
+		glTexStorage2D(GL_TEXTURE_2D, 1, GL_RGBA8, mainprogram->ow, mainprogram->oh);
+	}
+	else {
+		glTexStorage2D(GL_TEXTURE_2D, 1, GL_RGBA8, mainprogram->ow3, mainprogram->oh3);
+	}
+	glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR);
+	glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
+	glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_BORDER);
+	glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_BORDER);
+	glGenFramebuffers(1, &this->fbointm);
+	glBindFramebuffer(GL_FRAMEBUFFER, this->fbointm);
+	glFramebufferTexture2D(GL_FRAMEBUFFER, GL_COLOR_ATTACHMENT0, GL_TEXTURE_2D, this->fbotexintm, 0);
+
 	this->mutebut = new Button(false);
     this->mutebut->box->vtxcoords->y1 = 1.0f - mainprogram->layh;
 	this->mutebut->box->vtxcoords->w = 0.03f;

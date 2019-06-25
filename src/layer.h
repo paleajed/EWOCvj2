@@ -183,6 +183,8 @@ class Layer {
 		GLuint comptexture;
 		GLuint fbotex;
 		GLuint fbo;
+		GLuint fbotexintm;
+		GLuint fbointm;
 		GLuint fbotex2;
 		GLuint fbo2;
 		GLuint texpos = 0;
@@ -191,6 +193,7 @@ class Layer {
 		GLuint vao;
 		GLuint endtex;
 		GLuint endbuf;
+		bool drawfbo2;
 		
 		Box *vidbox;
 		bool changed;

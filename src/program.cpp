@@ -60,6 +60,7 @@ Program::Program() {
 	std::string str4(ws4.begin(), ws4.end());
 	str4 += "/";
 	this->currvideodir = str4;
+	this->currshelffilesdir = str4;
 	this->currshelfdirdir = str4;
 	this->currbindirdir = str4;
 	std::wstring ws3;
