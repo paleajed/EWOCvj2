@@ -237,6 +237,15 @@ class Program {
 		GLuint boxtbuf;
 		GLuint prboxtbuf;
 		GLuint tmboxtbuf;
+		GLuint texvao;
+		GLuint rtvbo;
+		GLuint rttbo;
+		GLuint pr_texvao;
+		GLuint pr_rtvbo;
+		GLuint pr_rttbo;
+		GLuint tm_texvao;
+		GLuint tm_rtvbo;
+		GLuint tm_rttbo;
 		std::vector<OutputEntry*> outputentries;
 		std::vector<Button*> buttons;
 		Box *scrollboxes[2];

@@ -1347,7 +1347,8 @@ bool thread_vidopen(Layer *lay, AVInputFormat *ifmt, bool skip) {
 		if (pos < mainprogram->busylayers.size()) {
 			int size = mainprogram->mimiclayers.size();
 			for (int i = 0; i < size; i++) {
-				Layer *mlay = mainprogram->mimiclayers[i];
+				Layer *mlay = mainprogram->mimiclayers[i]; 
+				if (mlay->liveinputpos != -1) continue;
 				if (mlay->liveinput == lay) {
 					mlay->liveinput = nullptr;
 					mainprogram->mimiclayers.erase(mainprogram->mimiclayers.begin() + i);
@@ -1740,11 +1741,11 @@ void set_fbo() {
 	glGenVertexArrays(1, &mainprogram->boxvao);
 	glBindVertexArray(mainprogram->boxvao);
 	glBindBuffer(GL_ARRAY_BUFFER, mainprogram->boxvbuf);
-	glBufferData(GL_ARRAY_BUFFER, 32, vcoords, GL_DYNAMIC_DRAW);
+	glBufferStorage(GL_ARRAY_BUFFER, 32, nullptr, GL_DYNAMIC_STORAGE_BIT);
 	glEnableVertexAttribArray(0);
 	glVertexAttribPointer(0, 2, GL_FLOAT, GL_FALSE, 8, nullptr);
 	glBindBuffer(GL_ARRAY_BUFFER, mainprogram->boxtbuf);
-	glBufferData(GL_ARRAY_BUFFER, 32, tcoords2, GL_DYNAMIC_DRAW);
+	glBufferStorage(GL_ARRAY_BUFFER, 32, nullptr, GL_DYNAMIC_STORAGE_BIT);
 	glEnableVertexAttribArray(1);
 	glVertexAttribPointer(1, 2, GL_FLOAT, GL_FALSE, 8, nullptr);
 	SDL_GL_MakeCurrent(mainprogram->prefwindow, glc_pr);
@@ -1769,6 +1770,18 @@ void set_fbo() {
 	glBufferData(GL_ARRAY_BUFFER, 32, tcoords2, GL_DYNAMIC_DRAW);
 	glEnableVertexAttribArray(1);
 	glVertexAttribPointer(1, 2, GL_FLOAT, GL_FALSE, 8, nullptr);
+	glGenVertexArrays(1, &mainprogram->pr_texvao);
+	glBindVertexArray(mainprogram->pr_texvao);
+	glGenBuffers(1, &mainprogram->pr_rtvbo);
+	glBindBuffer(GL_ARRAY_BUFFER, mainprogram->pr_rtvbo);
+	glBufferStorage(GL_ARRAY_BUFFER, 32, nullptr, GL_DYNAMIC_STORAGE_BIT);
+	glEnableVertexAttribArray(0);
+	glVertexAttribPointer(0, 2, GL_FLOAT, GL_FALSE, 8, nullptr);
+	glGenBuffers(1, &mainprogram->pr_rttbo);
+	glBindBuffer(GL_ARRAY_BUFFER, mainprogram->pr_rttbo);
+	glBufferStorage(GL_ARRAY_BUFFER, 32, nullptr, GL_DYNAMIC_STORAGE_BIT);
+	glEnableVertexAttribArray(1);
+	glVertexAttribPointer(1, 2, GL_FLOAT, GL_FALSE, 8, nullptr);
 	SDL_GL_MakeCurrent(mainprogram->tunemidiwindow, glc_tm);
 	glGenBuffers(1, &mainprogram->tmboxvbuf);
 	glGenBuffers(1, &mainprogram->tmboxtbuf);
@@ -1782,10 +1795,35 @@ void set_fbo() {
 	glBufferData(GL_ARRAY_BUFFER, 32, tcoords2, GL_DYNAMIC_DRAW);
 	glEnableVertexAttribArray(1);
 	glVertexAttribPointer(1, 2, GL_FLOAT, GL_FALSE, 8, nullptr);
+	glGenVertexArrays(1, &mainprogram->tm_texvao);
+	glBindVertexArray(mainprogram->tm_texvao);
+	glGenBuffers(1, &mainprogram->tm_rtvbo);
+	glBindBuffer(GL_ARRAY_BUFFER, mainprogram->tm_rtvbo);
+	glBufferStorage(GL_ARRAY_BUFFER, 32, nullptr, GL_DYNAMIC_STORAGE_BIT);
+	glEnableVertexAttribArray(0);
+	glVertexAttribPointer(0, 2, GL_FLOAT, GL_FALSE, 8, nullptr);
+	glGenBuffers(1, &mainprogram->tm_rttbo);
+	glBindBuffer(GL_ARRAY_BUFFER, mainprogram->tm_rttbo);
+	glBufferStorage(GL_ARRAY_BUFFER, 32, nullptr, GL_DYNAMIC_STORAGE_BIT);
+	glEnableVertexAttribArray(1);
+	glVertexAttribPointer(1, 2, GL_FLOAT, GL_FALSE, 8, nullptr);
 	SDL_GL_MakeCurrent(mainprogram->mainwindow, glc);
 	mainprogram->bvao = mainprogram->boxvao;
 	mainprogram->bvbuf = mainprogram->boxvbuf;
 	mainprogram->btbuf = mainprogram->boxtbuf;
+
+	glGenVertexArrays(1, &mainprogram->texvao);
+	glBindVertexArray(mainprogram->texvao);
+	glGenBuffers(1, &mainprogram->rtvbo);
+	glBindBuffer(GL_ARRAY_BUFFER, mainprogram->rtvbo);
+	glBufferStorage(GL_ARRAY_BUFFER, 32, nullptr, GL_DYNAMIC_STORAGE_BIT);
+	glEnableVertexAttribArray(0);
+	glVertexAttribPointer(0, 2, GL_FLOAT, GL_FALSE, 8, nullptr);
+	glGenBuffers(1, &mainprogram->rttbo);
+	glBindBuffer(GL_ARRAY_BUFFER, mainprogram->rttbo);
+	glBufferStorage(GL_ARRAY_BUFFER, 32, nullptr, GL_DYNAMIC_STORAGE_BIT);
+	glEnableVertexAttribArray(1);
+	glVertexAttribPointer(1, 2, GL_FLOAT, GL_FALSE, 8, nullptr);
 }
 
 
@@ -1872,7 +1910,7 @@ void draw_box(float *linec, float *areac, float x, float y, float wi, float he, 
 	
 				
 	glBindBuffer(GL_ARRAY_BUFFER, mainprogram->bvbuf);
-   	glBufferData(GL_ARRAY_BUFFER, 32, fvcoords, GL_DYNAMIC_DRAW);
+   	glBufferSubData(GL_ARRAY_BUFFER, 0, 32, fvcoords);
 	if (linec) {
 		glBindVertexArray(mainprogram->bvao);
 		glDrawArrays(GL_LINE_LOOP, 0, 4);
@@ -1887,7 +1925,7 @@ void draw_box(float *linec, float *areac, float x, float y, float wi, float he, 
 			x + wi - pixelw, y + pixelh,
 		};
 		glBindBuffer(GL_ARRAY_BUFFER, mainprogram->bvbuf);
-		glBufferData(GL_ARRAY_BUFFER, 32, fvcoords2, GL_DYNAMIC_DRAW);
+		glBufferSubData(GL_ARRAY_BUFFER, 0, 32, fvcoords2);
 		//glBindVertexArray(boxvao);
 		glUniform4fv(color, 1, areac);
 		if (tex != -1) {
@@ -1898,7 +1936,7 @@ void draw_box(float *linec, float *areac, float x, float y, float wi, float he, 
 			*p++ = ((1.0f) - 0.5f) * scale + 0.5f + shx; *p++ = ((0.0f) - 0.5f) * scale + 0.5f + shy;
 			*p++ = ((1.0f) - 0.5f) * scale + 0.5f + shx; *p++ = ((1.0f) - 0.5f) * scale + 0.5f + shy;
 			glBindBuffer(GL_ARRAY_BUFFER, mainprogram->btbuf);
-			glBufferData(GL_ARRAY_BUFFER, 32, tcoords, GL_DYNAMIC_DRAW);
+			glBufferSubData(GL_ARRAY_BUFFER, 0, 32, tcoords);
 			glActiveTexture(GL_TEXTURE0);
 			glBindTexture(GL_TEXTURE_2D, tex);
 			glUniform1i(box, 0);
@@ -2239,32 +2277,39 @@ float render_text(std::string text, float *textc, float x, float y, float sx, fl
 		glUniform4fv(color, 1, black);
 		glActiveTexture(GL_TEXTURE0);
 		glBindTexture(GL_TEXTURE_2D, texture);
-		GLuint texvao;
-		glGenVertexArrays(1, &texvao);
-		glBindVertexArray(texvao);
-		GLuint vbo;
-		glGenBuffers(1, &vbo);
-		glBindBuffer(GL_ARRAY_BUFFER, vbo);
-		glBufferData(GL_ARRAY_BUFFER, 32, texvcoords, GL_STATIC_DRAW);
-		glEnableVertexAttribArray(0);
-		glVertexAttribPointer(0, 2, GL_FLOAT, GL_FALSE, 8, nullptr);
-		GLuint tbo;
-		glGenBuffers(1, &tbo);
-		glBindBuffer(GL_ARRAY_BUFFER, tbo);
-		glBufferData(GL_ARRAY_BUFFER, 32, textcoords, GL_STATIC_DRAW);
-		glEnableVertexAttribArray(1);
-		glVertexAttribPointer(1, 2, GL_FLOAT, GL_FALSE, 8, nullptr);
 		if (mainprogram->startloop) {
 			if (smflag == 1) {
+				glBindBuffer(GL_ARRAY_BUFFER, mainprogram->pr_rtvbo);
+				glBufferSubData(GL_ARRAY_BUFFER, 0, 32, texvcoords);
+				glBindBuffer(GL_ARRAY_BUFFER, mainprogram->pr_rttbo);
+				glBufferSubData(GL_ARRAY_BUFFER, 0, 32, textcoords);
+				glBindVertexArray(mainprogram->pr_texvao);
 				glBindFramebuffer(GL_FRAMEBUFFER, mainprogram->smglobfbo_pr);
 			}
 			else if (smflag == 2) {
+				glBindBuffer(GL_ARRAY_BUFFER, mainprogram->tm_rtvbo);
+				glBufferSubData(GL_ARRAY_BUFFER, 0, 32, texvcoords);
+				glBindBuffer(GL_ARRAY_BUFFER, mainprogram->tm_rttbo);
+				glBufferSubData(GL_ARRAY_BUFFER, 0, 32, textcoords);
+				glBindVertexArray(mainprogram->tm_texvao);
 				glBindFramebuffer(GL_FRAMEBUFFER, mainprogram->smglobfbo_tm);
 			}
 			else {
+				glBindBuffer(GL_ARRAY_BUFFER, mainprogram->rtvbo);
+				glBufferSubData(GL_ARRAY_BUFFER, 0, 32, texvcoords);
+				glBindBuffer(GL_ARRAY_BUFFER, mainprogram->rttbo);
+				glBufferSubData(GL_ARRAY_BUFFER, 0, 32, textcoords);
+				glBindVertexArray(mainprogram->texvao);
 				glBindFramebuffer(GL_FRAMEBUFFER, mainprogram->globfbo);
 			}
 			glDrawBuffer(GL_COLOR_ATTACHMENT0);
+		}
+		else {
+			glBindBuffer(GL_ARRAY_BUFFER, mainprogram->rtvbo);
+			glBufferSubData(GL_ARRAY_BUFFER, 0, 32, texvcoords);
+			glBindBuffer(GL_ARRAY_BUFFER, mainprogram->rttbo);
+			glBufferSubData(GL_ARRAY_BUFFER, 0, 32, textcoords);
+			glBindVertexArray(mainprogram->texvao);
 		}
 		if (textw != 0) glDrawArrays(GL_TRIANGLE_STRIP, 0, 4);  //draw text shadow
 		glUniform4fv(color, 1, textc);
@@ -2273,9 +2318,6 @@ float render_text(std::string text, float *textc, float x, float y, float sx, fl
 		if (textw != 0) glDrawArrays(GL_TRIANGLE_STRIP, 0, 4);	//draw text
 		
 		glUniform1i(textmode, 0);
-		glDeleteVertexArrays(1, &texvao);
-		glDeleteBuffers(1, &vbo);
-		glDeleteBuffers(1, &tbo);
 	}
 	
 	return textw;
@@ -2660,11 +2702,6 @@ void display_texture(Layer *lay, bool deck) {
 							else mainprogram->laymenu1->state = 2;
 							mainmix->mouselayer = lay;
 							mainmix->mousedeck = deck;
-							mainprogram->menuactivation = false;
-						}
-						if (mainprogram->menuactivation) {
-							mainprogram->livemenu->state = 2;
-							mainmix->mouselayer = lay;
 							mainprogram->menuactivation = false;
 						}
 					}
@@ -8321,7 +8358,7 @@ void the_loop() {
 		
 		
 		// Draw and handle mainprogram->laymenu1
-		if (mainprogram->laymenu1->state > 1 or mainprogram->laymenu2->state > 1) {
+		if (mainprogram->laymenu1->state > 1 or mainprogram->laymenu2->state > 1 or mainprogram->loadmenu->state > 1) {
 			if (!mainprogram->gotcameras) {
 				get_cameras();
 				mainprogram->devices.clear();

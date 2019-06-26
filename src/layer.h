@@ -143,6 +143,7 @@ class Layer {
 		bool vidmoving = false;
 		bool live = false;
 		Layer *liveinput = nullptr;
+		int liveinputpos = -1;
 		int imagenum = 0;
 		ILuint boundimage = -1;
 		

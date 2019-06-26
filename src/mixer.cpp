@@ -1737,7 +1737,7 @@ void do_delete_effect(Layer *lay, int pos) {
 
 void Layer::delete_effect(int pos) {
 	do_delete_effect(this, pos);
-	this->type = ELEM_LAYER;
+	if (this->type != ELEM_LIVE) this->type = ELEM_LAYER;
 }		
 
 
@@ -1887,7 +1887,8 @@ void Mixer::do_deletelay(Layer *testlay, std::vector<Layer*> &layers, bool add) 
 			testlay->clips.pop_back();
 		}
 			
-		Node *bulasteffnode1out = testlay->lasteffnode[1]->out[0];
+		Node *bulasteffnode1out = nullptr;
+		if (testlay->pos > 0) bulasteffnode1out = testlay->lasteffnode[1]->out[0];
 		while (!testlay->effects[0].empty()) {
 			mainprogram->nodesmain->currpage->delete_node(testlay->effects[0].back()->node);
 			for (int j = 0; j < testlay->effects[0].back()->params.size(); j++) {
@@ -2906,6 +2907,10 @@ std::vector<std::string> Mixer::write_layer(Layer *lay, std::ostream& wfile, boo
 	wfile << "\n";
 	wfile << "TYPE\n";
 	wfile << std::to_string(lay->type);
+	wfile << "\n";
+	wfile << "LIVEINPUT\n";
+	if (lay->type == ELEM_LIVE and lay->liveinput) wfile << std::to_string(lay->liveinput->pos + 1);
+	else wfile << std::to_string(0);
 	wfile << "\n";
 	wfile << "FILENAME\n";
 	wfile << lay->filename;
@@ -3958,24 +3963,38 @@ int Mixer::read_layers(std::istream &rfile, const std::string &result, std::vect
 			getline(rfile, istring);
 			lay->type = (ELEM_TYPE)std::stoi(istring);
 		}
+		if (istring == "LIVEINPUT") {
+			getline(rfile, istring);
+			std::vector<Layer*> &lvec = choose_layers(deck);
+			if (std::stoi(istring)) {
+				if (std::stoi(istring) > lvec.size()) {
+					lay->liveinputpos = std::stoi(istring) - 1;
+					lay->liveinput = lay;
+				}
+				else {
+					lay->liveinput = lvec[std::stoi(istring) - 1];
+				}
+				mainprogram->mimiclayers.push_back(lay);
+			}
+			else lay->liveinput = nullptr;
+		}
 		if (istring == "FILENAME") {
 			getline(rfile, istring);
 			lay->filename = istring;
 			if (load) {
 				lay->timeinit = false;
 				if (lay->filename != "") {
-					if (lay->type == ELEM_LIVE) {
-						avdevice_register_all();
-						ptrdiff_t pos = std::find(mainprogram->busylist.begin(), mainprogram->busylist.end(), lay->filename) - mainprogram->busylist.begin();
-						if (pos >= mainprogram->busylist.size()) {
-							mainprogram->busylist.push_back(lay->filename);
-							mainprogram->busylayers.push_back(lay);
-							AVInputFormat *ifmt = av_find_input_format("dshow");
-							thread_vidopen(lay, ifmt, false);
+					if (lay->type == ELEM_LIVE and !lay->liveinput) {
+						for (int i = 0; i < mainprogram->mimiclayers.size(); i++) {
+							if (mainprogram->mimiclayers[i]->liveinputpos == lay->pos) {
+								mainprogram->mimiclayers[i]->liveinput = lay;
+							}
 						}
-						else {
-							lay->liveinput = mainprogram->busylayers[pos];
-							mainprogram->mimiclayers.push_back(lay);
+						set_live_base(lay, lay->filename);
+						for (int i = 0; i < mainprogram->mimiclayers.size(); i++) {
+							if (mainprogram->mimiclayers[i]->liveinputpos == lay->pos) {
+								mainprogram->mimiclayers[i]->liveinputpos = -1;
+							}
 						}
 					}
 					else if (lay->type == ELEM_FILE or lay->type == ELEM_LAYER) {
@@ -4004,7 +4023,7 @@ int Mixer::read_layers(std::istream &rfile, const std::string &result, std::vect
 			}
 		}
 		if (istring == "WIDTH") {
-			getline(rfile, istring); 
+			getline(rfile, istring);
 			lw = std::stoi(istring);
 		}
 		if (istring == "HEIGHT") {
