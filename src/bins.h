@@ -42,7 +42,8 @@ class BinsMain {
 		int inserting = -1;
 		bool movingstruct = false;
 		BinDeck *movingdeck = nullptr;
-		BinMix *movingmix = nullptr;		
+		BinMix *movingmix = nullptr;	
+		std::vector<BinElement*> prevelems;
 		Box *hapmodebox;
 		
 		void handle();
@@ -96,6 +97,7 @@ class BinElement {
 		float encodeprogress;
 		BinElement();
 		~BinElement();
+		BinElement* next();
 };
 
 class BinDeck {

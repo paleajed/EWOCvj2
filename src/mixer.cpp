@@ -2938,7 +2938,7 @@ std::vector<std::string> Mixer::write_layer(Layer *lay, std::ostream& wfile, boo
 	wfile << "CLONESETNR\n";
 	wfile << std::to_string(lay->clonesetnr);
 	wfile << "\n";
-	if (lay->type != ELEM_LIVE and lay->type != ELEM_IMAGE) {
+	if (lay->type != ELEM_LIVE) {
 		wfile << "SPEEDVAL\n";
 		wfile << std::to_string(lay->speed->value);
 		wfile << "\n";

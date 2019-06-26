@@ -2526,7 +2526,7 @@ void calc_texture(Layer *lay, bool comp, bool alive) {
 	if (!alive) return;
 	
 	Layer *srclay = lay;
-	if (lay->liveinput);
+	if (lay->liveinput or lay->type == ELEM_IMAGE);
 	else if (lay->startframe != lay->endframe or lay->type == ELEM_LIVE) {
 		if (mainmix->firstlayers.count(lay->clonesetnr) == 0) {
 			lay->ready = true;
@@ -4854,6 +4854,8 @@ void Shelf::handle() {
 					this->types[i] = mainprogram->dragbinel->type;
 					this->texes[i] = copy_tex(mainprogram->dragbinel->tex);
 					enddrag();
+					mainprogram->rightmouse = true;
+					binsmain->handle();
 				}
 				else if (binsmain->dragdeck) {
 					mainprogram->leftmouse = false;
@@ -4877,6 +4879,8 @@ void Shelf::handle() {
 					this->types[i] = ELEM_DECK;
 					open_thumb(binsmain->dragdeck->jpegpath, this->texes[i]);
 					enddrag();
+					mainprogram->rightmouse = true;
+					binsmain->handle();
 				}
 				else if (binsmain->dragmix) {
 					mainprogram->leftmouse = false;
@@ -4900,6 +4904,8 @@ void Shelf::handle() {
 					this->types[i] = ELEM_MIX;
 					open_thumb (binsmain->dragmix->jpegpath, this->texes[i]);
 					enddrag();
+					mainprogram->rightmouse = true;
+					binsmain->handle();
 				}
 			}
 			else if (mainprogram->menuactivation) {
@@ -7144,6 +7150,17 @@ void enddrag() {
 	}
 	binsmain->dragtexes[0].clear();
 	binsmain->dragtexes[1].clear();
+
+	if (binsmain->movingtex != -1) {
+		bool temp = binsmain->currbinel->full;
+		binsmain->currbinel->full = binsmain->movingbinel->full;
+		binsmain->movingbinel->full = temp;
+		binsmain->currbinel->tex = binsmain->movingbinel->oldtex;
+		binsmain->movingbinel->tex = binsmain->movingtex;
+		binsmain->currbinel = nullptr;
+		binsmain->movingbinel = nullptr;
+		binsmain->movingtex = -1;
+	}
 }
 
 void Layer::mute_handle() {
@@ -9063,6 +9080,8 @@ void the_loop() {
 				if (mainprogram->lmsave) {
 					mainmix->mousedeck = 0;
 					mainmix->open_deck(binsmain->dragdeck->path, 1);
+					mainprogram->rightmouse = true;
+					binsmain->handle();
 				}
 			}
 			else if (boxB.in(mainprogram->mx, mainprogram->my, true)) {
@@ -9073,7 +9092,7 @@ void the_loop() {
 				}
 			}
 		}
-		if (mainprogram->leftmouse or binsmain->movingstruct) {
+		if (mainprogram->leftmouse) {
 			binsmain->dragtexes[0].clear();
 			binsmain->dragdeck = nullptr;
 			binsmain->dragtex = -1;
@@ -9132,7 +9151,7 @@ void the_loop() {
 			}
 		}
 	}
-	if (binsmain->dragmix) {
+	if (binsmain->dragmix and !mainprogram->binsscreen) {
 		Box box;
 		box.vtxcoords->x1 = -1.0f + mainprogram->numw;
 		box.vtxcoords->y1 = 1.0f - mainprogram->layh;
@@ -9141,15 +9160,18 @@ void the_loop() {
 		box.upvtxtoscr();
 		if (box.in(mainprogram->mx, mainprogram->my, true)) {
 			draw_box(nullptr, lightblue, -1.0f + mainprogram->numw, 1.0f - mainprogram->layh, mainprogram->layw * 6 + mainprogram->numw, mainprogram->layh, -1);
-			if (mainprogram->lmsave or binsmain->movingstruct) {
-				mainprogram->binsscreen = false;
+			if (mainprogram->lmsave) {
 				mainmix->open_mix(binsmain->dragmix->path.c_str());
 				binsmain->dragmix = nullptr;
 				binsmain->dragtex = -1;
 				mainprogram->leftmouse = false;
+				mainprogram->rightmouse = true;
+				binsmain->handle();
 			}
 		}
+	}
 
+	if (binsmain->dragmix) {
 		if (binsmain->dragtexes[0].size() != 0 or binsmain->dragtexes[1].size() != 0) {
 			for (int m = 0; m < 2; m++) {
 				for (int k = 0; k < binsmain->dragtexes[m].size(); k++) {
@@ -9269,6 +9291,8 @@ void the_loop() {
 			if (mainprogram->lmsave) {
 				mainprogram->leftmouse = false;
 				enddrag();
+				mainprogram->rightmouse = true;
+				binsmain->handle();
 				bool ret;
 				if (!mainprogram->binsscreen) {
 					if (mainprogram->prevmodus) {
@@ -10375,56 +10399,60 @@ BinElement *find_element(int size, int k, int i, int j, bool overlapchk) {
 		j = -1;
 		while (pos1 >= 0 or pos2 < 24) {
 			bool found1 = true;
-			for (int m = 0; m <= (int)((size - 1) / 3); m++) {
-				if (rows[pos1 + m] == 1) {
-					if (binsmain->inserting == 2) {
+			if (pos1 >= 0) {
+				for (int m = 0; m <= (int)((size - 1) / 3); m++) {
+					if (rows[pos1 + m] == 1) {
+						if (binsmain->inserting == 2) {
+							found1 = false;
+							break;
+						}
+						else newi = 3;
+					}
+					else if (rows[pos1 + m] == 2) {
+						if (binsmain->inserting == 2) {
+							found1 = false;
+							break;
+						}
+						else newi = 0;
+					}
+					else if (rows[pos1 + m] == 3) {
 						found1 = false;
 						break;
 					}
-					else newi = 3;
 				}
-				else if (rows[pos1 + m] == 2) {
-					if (binsmain->inserting == 2) {
-						found1 = false;
-						break;
-					}
-					else newi = 0;
-				}
-				else if (rows[pos1 + m] == 3) {
-					found1 = false;
+				if (found1) {
+					i = newi;
+					j = pos1;
 					break;
 				}
 			}
-			if (found1) {
-				i = newi;
-				j = pos1;
-				break;
-			}
-			bool found2 = true;
-			for (int m = 0; m <= (int)((size - 1) / 3); m++) {
-				if (rows[pos2 + m] == 1) {
-					if (binsmain->inserting == 2) {
+			if (pos2 < 24) {
+				bool found2 = true;
+				for (int m = 0; m <= (int)((size - 1) / 3); m++) {
+					if (rows[pos2 + m] == 1) {
+						if (binsmain->inserting == 2) {
+							found2 = false;
+							break;
+						}
+						else newi = 3;
+					}
+					else if (rows[pos2 + m] == 2) {
+						if (binsmain->inserting == 2) {
+							found2 = false;
+							break;
+						}
+						else newi = 0;
+					}
+					else if (rows[pos2 + m] == 3) {
 						found2 = false;
 						break;
 					}
-					else newi = 3;
 				}
-				else if (rows[pos2 + m] == 2) {
-					if (binsmain->inserting == 2) {
-						found2 = false;
-						break;
-					}
-					else newi = 0;
-				}
-				else if (rows[pos2 + m] == 3) {
-					found2 = false;
+				if (found2) {
+					i = newi;
+					j = pos2;
 					break;
 				}
-			}
-			if (found2) {
-				i = newi;
-				j = pos2;
-				break;
 			}
 			pos1--;
 			pos2++;
@@ -11243,6 +11271,7 @@ int main(int argc, char* argv[]){
 			else if (mainprogram->pathto == "SAVEPROJECT") {
 				std::string str(mainprogram->path);
 				mainprogram->currprojdir = dirname(str);
+				if (!exists(str)) mainprogram->project->newp(str);
 				mainprogram->project->save(str);
 			}
 			mainprogram->path = nullptr;
