@@ -185,7 +185,7 @@ void Param::handle() {
 	}
 	else if (this != mainmix->adaptparam) parstr = this->name;
 	else if (this->sliding) parstr = std::to_string(val).substr(firstdigit, 1) + "." + std::to_string(val).substr(std::to_string(val).length() - 3, std::string::npos); 
-	else parstr = std::to_string((int)(this->value + 0.5f));
+	else parstr = std::to_string((int)(this->value + (float)(0.5f * (this->effect->type == FLIP or this->effect->type == MIRROR))));
 	if (this != mainmix->adaptnumparam) {
 		render_text(parstr, white, this->box->vtxcoords->x1 + tf(0.01f), this->box->vtxcoords->y1 + tf(0.05f) - tf(0.030f), tf(0.0003f), tf(0.0005f));
 		if (this->box->in()) {
@@ -1695,7 +1695,7 @@ void do_delete_effect(Layer *lay, int pos) {
 		}
 		else {
 			lay->lasteffnode[cat] = evec[pos - 1]->node;
-			lay->lasteffnode[cat]->out = evec[pos]->node->out;
+			lay->lasteffnode[cat]->out[0] = evec[pos]->node->out[0];
 			if (cat) evec[pos]->node->out[0]->in = lay->lasteffnode[1];
 		}
 		if (lay->pos == 0) {
@@ -1712,7 +1712,7 @@ void do_delete_effect(Layer *lay, int pos) {
 	}
 	else {
 		evec[pos + 1]->node->in = evec[pos]->node->in;
-		if (pos != 0) evec[pos - 1]->node->out.push_back(evec[pos + 1]->node);
+		if (pos != 0) evec[pos - 1]->node->out[0] = evec[pos + 1]->node;
 		else {
 			if (!cat) lay->node->out.push_back(evec[pos + 1]->node);
 			else {
@@ -1737,7 +1737,7 @@ void do_delete_effect(Layer *lay, int pos) {
 
 void Layer::delete_effect(int pos) {
 	do_delete_effect(this, pos);
-	if (this->type != ELEM_LIVE) this->type = ELEM_LAYER;
+	if (this->type == ELEM_FILE) this->type = ELEM_LAYER;
 }		
 
 

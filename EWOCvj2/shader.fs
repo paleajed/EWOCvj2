@@ -233,7 +233,7 @@ vec4 oldfilm(vec2 texco) { //devmaster.net seems free
 }
 
 
-vec3 rgb2hsv(vec4 c)  //theres many on kylemcdonald/hsv2rgb.glsl
+vec3 rgb2hsv(vec3 c)  //theres many on kylemcdonald/hsv2rgb.glsl
 {
     vec4 K = vec4(0.0, -1.0 / 3.0, 2.0 / 3.0, -1.0);
     vec4 p = mix(vec4(c.bg, K.wz), vec4(c.gb, K.xy), step(c.b, c.g));
@@ -253,7 +253,7 @@ vec3 hsv2rgb(vec3 c)
 
 vec4 saturation(vec4 color)  //selfmade
 {
-	vec3 hsv = rgb2hsv(color);
+	vec3 hsv = rgb2hsv(color.rgb);
 	hsv.y *= satamount;
 	vec3 rgb = hsv2rgb(hsv);
 	return vec4(rgb.x, rgb.y, rgb.z, color.a);
@@ -261,7 +261,7 @@ vec4 saturation(vec4 color)  //selfmade
 
 vec4 chromarotate(vec4 color)  //selfmade
 {
-	vec3 hsv = rgb2hsv(color);
+	vec3 hsv = rgb2hsv(color.rgb);
 	hsv.x += colorrot;
 	if (hsv.x < 0) hsv.x += 1;
 	vec3 rgb = hsv2rgb(hsv);
@@ -270,7 +270,7 @@ vec4 chromarotate(vec4 color)  //selfmade
 
 vec4 colorize(vec4 color)  //selfmade
 {
-	vec3 hsv = rgb2hsv(color);
+	vec3 hsv = rgb2hsv(color.rgb);
 	hsv.x = colhue;
 	hsv.y = hsv.y - ((hsv.y - 1.0f) / 2.0f);
 	if (hsv.x < 0) hsv.x += 1;
@@ -460,12 +460,12 @@ vec2 scale(vec2 texc) {  //selfmade
 	return texc;
 }
 
-vec4 swirl(vec2 uv)  //geeks3D seems free
+vec4 swirl(vec2 texco)  //geeks3D seems free
 {
-	vec2 normtc = uv * 2.0f - 1.0f;
+	vec2 normtc = texco - 0.5f;
 	normtc.y = normtc.y * fboheight / fbowidth;
-	vec2 center = (vec2(swirlx, swirly)) * 2.0f - 1.0f;
-	float radius = swradius;
+	vec2 center = ((vec2(swirlx, swirly)) - 0.5f) * 2.0f;
+	float radius = swradius * 2.0f;
 	normtc -= center;
 	float dist = length(normtc);
 	if (dist < radius) 
@@ -831,38 +831,6 @@ uniform float edge_thres = 0.2f; // 0.2;
 uniform float edge_thres2 = 5.0f; // 5.0;
 uniform int edgethickmode;
 
-#define HueLevCount 6
-#define SatLevCount 7
-#define ValLevCount 4
-float[HueLevCount] HueLevels = float[] (0.0,140.0,160.0,240.0,240.0,360.0);
-float[SatLevCount] SatLevels = float[] (0.0,0.15,0.3,0.45,0.6,0.8,1.0);
-float[ValLevCount] ValLevels = float[] (0.0,0.3,0.6,1.0);
-
-float nearestLevel(float col, int mode) 
-{
-   int levCount;
-   if (mode==0) levCount = HueLevCount;
-   if (mode==1) levCount = SatLevCount;
-   if (mode==2) levCount = ValLevCount;
-   
-   for (int i =0; i<levCount-1; i++ ) {
-     if (mode==0) {
-        if (col >= HueLevels[i] && col <= HueLevels[i+1]) {
-          return HueLevels[i+1];
-        }
-     }
-     if (mode==1) {
-        if (col >= SatLevels[i] && col <= SatLevels[i+1]) {
-          return SatLevels[i+1];
-        }
-     }
-     if (mode==2) {
-        if (col >= ValLevels[i] && col <= ValLevels[i+1]) {
-          return ValLevels[i+1];
-        }
-     }
-   }
-}
 
 // averaged pixel intensity from 3 color channels
 float avg_intensity(vec4 pix) 
@@ -915,12 +883,12 @@ vec4 edgedetect(vec2 texco)
 
 vec4 cartoon(vec2 texco)  //geeks3d free
 {
-	vec4 tc = vec4(1.0, 0.0, 0.0, 1.0);
-    vec3 colorOrg = texture2D(Sampler0, texco).rgb;
-    vec3 vHSV =  rgb2hsv(vec4(colorOrg.r,colorOrg.g,colorOrg.b, 1.0f));
-    vHSV.x = nearestLevel(vHSV.x, 0);
-    vHSV.y = nearestLevel(vHSV.y, 1);
-    vHSV.z = nearestLevel(vHSV.z, 2);
+	//vec4 tc = vec4(1.0, 0.0, 0.0, 1.0);
+    vec4 colorOrg = texture2D(Sampler0, texco).rgba;
+    vec3 vHSV =  rgb2hsv(colorOrg.rgb);
+    vHSV.x = floor(vHSV.x * 50.0f) / 50.0f;
+    vHSV.y = floor(vHSV.y * 7.0f + 1) / 7.0f;
+    vHSV.z = floor(vHSV.z * 4.0f + 1) / 4.0f;
     float edg = IsEdge(texco);
     vec3 vRGB = (edg >= edge_thres)? vec3(0.0,0.0,0.0):hsv2rgb(vec3(vHSV.x,vHSV.y,vHSV.z));
     
