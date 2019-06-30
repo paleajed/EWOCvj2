@@ -445,7 +445,7 @@ public:
 			mainmix->rgbdata = glMapBuffer(GL_PIXEL_PACK_BUFFER_ARB, GL_READ_ONLY);
 			assert(mainmix->rgbdata);
 			mainmix->recordnow = true;
-			while (mainmix->recordnow) {
+			while (mainmix->recordnow and !mainmix->donerec) {
 				mainmix->startrecord.notify_one();
 			}
 			glBindFramebuffer(GL_FRAMEBUFFER, mainprogram->globfbo);
@@ -547,7 +547,7 @@ void handle_midi(LayMidi *laymidi, int deck, int midi0, int midi1, int midi2, st
 			}
 			if (midi0 == laymidi->frforw[0] and midi1 == laymidi->frforw[1] and midi2 == 127 and midiport == laymidi->frforwstr) {
 				lvec[j]->frame += 1;
-				if (lvec[j]->frame > lvec[j]->numf - 1) lvec[j]->frame = 0;
+				if (lvec[j]->frame >= lvec[j]->numf) lvec[j]->frame = 0;
 			}
 			if (midi0 == laymidi->frbackw[0] and midi1 == laymidi->frbackw[1] and midi2 == 127 and midiport == laymidi->frbackwstr) {
 				lvec[j]->frame -= 1;
@@ -853,27 +853,32 @@ int encode_frame(AVFormatContext *fmtctx, AVFormatContext *srcctx, AVCodecContex
  	}
 	else {
 		avcodec_send_frame(enc_ctx, frame);
- 		int err = avcodec_receive_packet(enc_ctx, &enc_pkt);
-		av_packet_rescale_ts(&enc_pkt, srcctx->streams[enc_pkt.stream_index]->time_base, fmtctx->streams[enc_pkt.stream_index]->time_base);
- 	}
+		int err = avcodec_receive_packet(enc_ctx, &enc_pkt);
+		if (srcctx) av_packet_rescale_ts(&enc_pkt, srcctx->streams[enc_pkt.stream_index]->time_base, fmtctx->streams[enc_pkt.stream_index]->time_base);
+		else {
+			// *2 still don't know why
+			AVRational sttb = { fmtctx->streams[enc_pkt.stream_index]->time_base.num, fmtctx->streams[enc_pkt.stream_index]->time_base.den * 2};
+			enc_pkt.pts = framenr;
+			av_packet_rescale_ts(&enc_pkt, enc_ctx->time_base, sttb);
+		}
+	}
 	if (outfile) fwrite(pkt->data, 1, pkt->size, outfile);
 	else {
 		/* prepare packet for muxing */
 		enc_pkt.stream_index = pkt->stream_index;
 		//enc_pkt.duration = pkt->duration;//(fmtctx->streams[enc_pkt.stream_index]->time_base.den * fmtctx->streams[enc_pkt.stream_index]->r_frame_rate.den) / (fmtctx->streams[enc_pkt.stream_index]->time_base.num * fmtctx->streams[enc_pkt.stream_index]->r_frame_rate.num);
-		av_write_frame(fmtctx, &enc_pkt);
+		int err = av_interleaved_write_frame(fmtctx, &enc_pkt);
 	}
    	av_packet_unref(pkt);
    	av_packet_unref(&enc_pkt);
    	return got_frame;
 }
 
-static int decode_packet(Layer *lay, int *got_frame)
+static int decode_packet(Layer *lay, bool show)
 {
     int ret = 0;
     int decoded = lay->decpkt.size;
-    *got_frame = 0;
-	//av_frame_unref(lay->decframe);
+ 	//av_frame_unref(lay->decframe);
 	// lay->decpkt.dts = av_rescale_q_rnd(lay->decpkt.dts,
 			// lay->video->streams[lay->decpkt.stream_index]->time_base,
 			// lay->video->streams[lay->decpkt.stream_index]->codec->time_base,
@@ -906,7 +911,7 @@ static int decode_packet(Layer *lay, int *got_frame)
 			printf("codec %d", lay->decpkt);
             return ret;
         }
-        if (1) {
+        if (show) {
             /* copy decoded frame to destination buffer:
              * this is required since rawvideo expects non aligned data */
 			int h = sws_scale
@@ -923,6 +928,7 @@ static int decode_packet(Layer *lay, int *got_frame)
 			lay->decresult->data = (char*)*(lay->rgbframe->extended_data);
 			lay->decresult->height = lay->video_dec_ctx->height;
 			lay->decresult->width = lay->video_dec_ctx->width;
+			lay->decresult->hap = false;
        }
     } 
     else if (lay->decpkt.stream_index == lay->audio_stream_idx) {
@@ -1079,105 +1085,110 @@ void decode_audio(Layer *lay) {
 	}
 }	
 	
-void get_frame_other(Layer *lay, int framenr, int prevframe, int errcount)
+void Layer::get_frame_other(int framenr, int prevframe, int errcount)
 {
    	int ret = 0, got_frame;
 	/* initialize packet, set data to nullptr, let the demuxer fill it */
-	av_init_packet(&lay->decpkt);
+	av_init_packet(&this->decpkt);
+	av_init_packet(&this->decpktseek);
 	/* flush cached frames */
-	lay->decpkt.data = nullptr;
-	lay->decpkt.size = 0;
+	this->decpkt.data = nullptr;
+	this->decpkt.size = 0;
 	//do {
 	//	decode_packet(&got_frame, 1);
 	//} while (got_frame);
 
 
-	if (lay->type != ELEM_LIVE) {
-		if (lay->numf == 0) return;
-		long long seekTarget = av_rescale(lay->video_duration, framenr, lay->numf) + lay->video_stream->first_dts;
+	if (this->type != ELEM_LIVE) {
+		if (this->numf == 0) return;
+
+		long long seekTarget = av_rescale(this->video_duration, framenr, this->numf) + this->video_stream->first_dts;
 		if (framenr != 0) {
 			if (framenr != prevframe + 1) {
-				avformat_seek_file(lay->video, lay->video_stream->index, 0, seekTarget, seekTarget, 0);
-				avcodec_flush_buffers(lay->video_dec_ctx);
+				avformat_seek_file(this->videoseek, this->video_stream->index, 0, seekTarget, seekTarget, 0);
+				//avcodec_flush_buffers(this->video_dec_ctx);
+				//int r = av_read_frame(this->videoseek, &this->decpktseek);
 			}
 			else {
-				//avformat_seek_file(lay->video, lay->video_stream->index, 0, seekTarget, seekTarget, AVSEEK_FLAG_ANY);
+				//avformat_seek_file(this->video, this->video_stream->index, 0, seekTarget, seekTarget, AVSEEK_FLAG_ANY);
 			}
 		}
 		else {
-			avformat_seek_file(lay->video, lay->video_stream->index, 0, seekTarget, seekTarget, 0);
+			avformat_seek_file(this->video, this->video_stream->index, 0, seekTarget, seekTarget, 0);
 		}
 
 		do {
-			decode_audio(lay);
-		} while (lay->decpkt.stream_index != lay->video_stream_idx);
-		if (!lay->dummy) {
-			int readpos = (lay->decpkt.dts * lay->numf) / lay->video_duration;
-			int count = readpos;
+			decode_audio(this);
+		} while (this->decpkt.stream_index != this->video_stream_idx);
+		if (!this->dummy) {
 			if (framenr != prevframe + 1) {
+				int r = av_read_frame(this->videoseek, &this->decpktseek);
+				int readpos = ((this->decpktseek.dts - this->video_stream->first_dts) * this->numf) / this->video_duration;
 				if (readpos < framenr) {
+					// readpos at keyframe before framenr
 					if (framenr > prevframe and prevframe > readpos) {
+						// starting from just past prevframe here is more efficient than decoding from readpos keyframe
 						readpos = prevframe + 1;
-						int64_t seekTarget2 = ((lay->video_duration * (prevframe + 1)) / lay->numf);
-						avformat_seek_file(lay->video, lay->video_stream->index, 0, seekTarget2, seekTarget2, AVSEEK_FLAG_ANY);
-						do {
-							decode_audio(lay);
-						} while (lay->decpkt.stream_index != lay->video_stream_idx);
-						int pos = (lay->decpkt.dts * lay->numf) / lay->video_duration;
+					}
+					else {
+						avformat_seek_file(this->video, this->video_stream->index, 0, seekTarget, seekTarget, 0);
 					}
 					for (int f = readpos; f < framenr; f++) {
-						ret = decode_packet(lay, &got_frame);
-						while (lay->decpkt.stream_index != lay->video_stream_idx) {
-							decode_audio(lay);
-						}
-						int pos = (lay->decpkt.dts * lay->numf) / lay->video_duration;
+						// decode sequentially frames starting from keyframe readpos to current framenr
+						ret = decode_packet(this, false);
+						do  {
+							decode_audio(this);
+						} while (this->decpkt.stream_index != this->video_stream_idx);
 					}
 				}
 			}
+			else printf("frn %d %d \n", framenr);
 		}
-		ret = decode_packet(lay, &got_frame);
-		if (ret == 0) return;
-		lay->prevframe = framenr;
-		if (lay->decframe->width == 0) {
-			lay->prevframe = framenr;
-			if ((lay->speed->value > 0 and (lay->playbut->value or lay->bouncebut->value == 1)) or (lay->speed->value < 0 and (lay->revbut->value or lay->bouncebut->value == 2))) {
+		ret = decode_packet(this, true);
+		if (ret == 0) {
+			return;
+		}
+		this->prevframe = framenr;
+		if (this->decframe->width == 0) {
+			this->prevframe = framenr;
+			if ((this->speed->value > 0 and (this->playbut->value or this->bouncebut->value == 1)) or (this->speed->value < 0 and (this->revbut->value or this->bouncebut->value == 2))) {
 				framenr++;
 			}
-			else if ((lay->speed->value > 0 and (lay->revbut->value or lay->bouncebut->value == 2)) or (lay->speed->value < 0 and (lay->playbut->value or lay->bouncebut->value == 1))) {
+			else if ((this->speed->value > 0 and (this->revbut->value or this->bouncebut->value == 2)) or (this->speed->value < 0 and (this->playbut->value or this->bouncebut->value == 1))) {
 				framenr--;
 			}
-			else if (lay->prevfbw) {
-				//lay->prevfbw = false;
+			else if (this->prevfbw) {
+				//this->prevfbw = false;
 				framenr--;
 			}
 			else framenr++;	
-			if (framenr > lay->endframe) framenr = lay->startframe;
-			else if (framenr < lay->startframe) framenr = lay->endframe;
-			//avcodec_flush_buffers(lay->video_dec_ctx);
+			if (framenr > this->endframe) framenr = this->startframe;
+			else if (framenr < this->startframe) framenr = this->endframe;
+			//avcodec_flush_buffers(this->video_dec_ctx);
 			errcount++;
 			if (errcount == 1000) {
-				lay->openerr = true;
+				this->openerr = true;
 				return;
 			}
-			get_frame_other(lay, framenr, lay->prevframe, errcount);
-			lay->frame == framenr;
+			get_frame_other(framenr, this->prevframe, errcount);
+			this->frame == framenr;
 		}
-		//decode_audio(lay);
-		av_packet_unref(&lay->decpkt);
+		//decode_audio(this);
+		av_packet_unref(&this->decpkt);
 	}
 	else {
-		av_frame_unref(lay->decframe);
-		int r = av_read_frame(lay->video, &lay->decpkt);
-	 	if (r >= 0) decode_packet(lay, &got_frame);
-		av_packet_unref(&lay->decpkt);
+		av_frame_unref(this->decframe);
+		int r = av_read_frame(this->video, &this->decpkt);
+	 	if (r >= 0) decode_packet(this, &got_frame);
+		av_packet_unref(&this->decpkt);
 	}
 		
     
-    if (lay->audio_stream and 0) {
-        enum AVSampleFormat sfmt = lay->audio_dec_ctx->sample_fmt;
-        int n_channels = lay->audio_dec_ctx->channels;
+    if (this->audio_stream and 0) {
+        enum AVSampleFormat sfmt = this->audio_dec_ctx->sample_fmt;
+        int n_channels = this->audio_dec_ctx->channels;
         const char *fmt;
-        if (av_sample_fmt_is_planar(lay->audio_dec_ctx->sample_fmt)) {
+        if (av_sample_fmt_is_planar(this->audio_dec_ctx->sample_fmt)) {
             const char *packed = av_get_sample_fmt_name(sfmt);
             printf("Warning: the sample format the decoder produced is planar "
                    "(%s). This example will output the first channel only.\n",
@@ -1219,7 +1230,7 @@ void Layer::decode_frame() {
 	this->decresult->height = this->video_dec_ctx->height;
 	this->decresult->width = this->video_dec_ctx->width;
 	this->decresult->size = uncomp;
-
+	this->decresult->hap = true;
 }
 
 void Layer::get_frame(){
@@ -1275,7 +1286,7 @@ void Layer::get_frame(){
 			if ((!this->initialized and this->decresult->width) or this->filename == "") continue;
 			if (this->vidformat != 188 and this->vidformat != 187) {
 				if ((int)(this->frame) != this->prevframe) {
-					get_frame_other(this, (int)this->frame, this->prevframe, 0);
+					get_frame_other((int)this->frame, this->prevframe, 0);
 				}
 				if (this->dummy) {
 					this->processed = true;
@@ -1290,6 +1301,7 @@ void Layer::get_frame(){
 				continue;
 			}
 			if ((int)(this->frame) != this->prevframe) {
+				if (!this->databuf) continue;
 				this->decode_frame();
 			}
 		}
@@ -1397,6 +1409,7 @@ bool thread_vidopen(Layer *lay, AVInputFormat *ifmt, bool skip) {
         return 0;
     }
 	lay->video->max_picture_buffer = 20000000;
+	avformat_open_input(&(lay->videoseek), lay->filename.c_str(), ifmt, nullptr);
 
     if (open_codec_context(&(lay->video_stream_idx), lay->video, AVMEDIA_TYPE_VIDEO) >= 0) {
      	lay->video_stream = lay->video->streams[lay->video_stream_idx];
@@ -1406,21 +1419,25 @@ bool thread_vidopen(Layer *lay, AVInputFormat *ifmt, bool skip) {
 		avcodec_parameters_to_context(lay->video_dec_ctx, lay->video_stream->codecpar);
 		avcodec_open2(lay->video_dec_ctx, dec, nullptr);
 		if (lay->vidformat == 188 or lay->vidformat == 187) {
-			if (lay->video_dec_ctx->width != lay->iw or lay->video_dec_ctx->height != lay->ih) {
-				if (lay->databuf) delete[] lay->databuf;
-				lay->databuf = new char[lay->video_dec_ctx->width * lay->video_dec_ctx->height];
-			}
+			if (lay->databuf) delete[] lay->databuf;
+			lay->databuf = new char[lay->video_dec_ctx->width * lay->video_dec_ctx->height];
 			lay->numf = lay->video_stream->nb_frames;
 			float tbperframe = (float)lay->video_stream->duration / (float)lay->numf;
 			lay->millif = tbperframe * (((float)lay->video_stream->time_base.num * 1000.0) / (float)lay->video_stream->time_base.den);
+			printf("numf %d\n", lay->numf);
+			printf("duration %d\n", lay->video_stream->duration);
+			printf("timebase %d\n", lay->video_stream->time_base.den);
+			printf("millif %f\n", lay->millif);
+
 			if (lay->reset) {
 				lay->startframe = 0;
-				lay->endframe = lay->numf - 1;
+				lay->endframe = lay->numf;
 				lay->frame = (lay->numf - 1) * (lay->reset - 1);
 			}
 			lay->decframe = av_frame_alloc();
 			return 1;
         }
+		else avformat_open_input(&(lay->videoseek), lay->filename.c_str(), ifmt, nullptr);
   	}
     else {
     	printf("Error2\n");
@@ -2386,7 +2403,7 @@ void calc_texture(Layer *lay, bool comp, bool alive) {
 			}
 			
 			// on end of video (or beginning if reverse play) switch to next clip in queue
-			if (lay->frame > (laynocomp->endframe)) {
+			if (lay->frame >= (laynocomp->endframe)) {
 				if (lay->scritching != 4) {
 					if (laynocomp->bouncebut->value == 0) {
 						lay->frame = laynocomp->startframe;
@@ -2524,7 +2541,7 @@ void calc_texture(Layer *lay, bool comp, bool alive) {
 	}
 	
 	if (!alive) return;
-	
+
 	Layer *srclay = lay;
 	if (lay->liveinput or lay->type == ELEM_IMAGE);
 	else if (lay->startframe != lay->endframe or lay->type == ELEM_LIVE) {
@@ -2548,7 +2565,9 @@ void calc_texture(Layer *lay, bool comp, bool alive) {
 		if ((!lay->initialized or srclay == lay)) {  // decresult contains new frame width, height, number of bitmaps and data
 			if (!srclay->decresult->width) return;
 
-			if (srclay->vidformat == 188 or srclay->vidformat == 187 and lay->video_dec_ctx) {
+			if (srclay->decresult->hap and lay->video_dec_ctx) {
+				if (!lay->databuf) return;
+
 				// HAP video layers
 				if (!lay->initialized) {
 					float w = lay->video_dec_ctx->width;
@@ -3309,7 +3328,7 @@ void display_texture(Layer *lay, bool deck) {
 				lay->frameforward->box->acolor[3] = 1.0;
 				if (mainprogram->leftmouse) {
 					lay->frame += 1;
-					if (lay->frame > lay->numf - 1) lay->frame = 0.0f;
+					if (lay->frame >= lay->numf) lay->frame = 0.0f;
 					lay->frameforward->box->acolor[0] = 1.0;
 					lay->frameforward->box->acolor[1] = 0.5;
 					lay->frameforward->box->acolor[2] = 0.0;
@@ -3426,14 +3445,14 @@ void display_texture(Layer *lay, bool deck) {
 			if (lay->scritching == 1) {
 				lay->frame = (lay->numf - 1) * ((mainprogram->mx - lay->loopbox->scrcoords->x1) / lay->loopbox->scrcoords->w);
 				if (lay->frame < 0) lay->frame = 0.0f;
-				else if (lay->frame > lay->numf - 1) lay->frame = lay->numf - 1;
+				else if (lay->frame >= lay->numf) lay->frame = lay->numf - 1;
 				lay->set_clones();
 				if (mainprogram->leftmouse and !mainprogram->menuondisplay) lay->scritching = 4;
 			}
 			else if (lay->scritching == 2) {
 				lay->startframe = (lay->numf - 1) * ((mainprogram->mx - lay->loopbox->scrcoords->x1) / lay->loopbox->scrcoords->w);
 				if (lay->startframe < 0) lay->startframe = 0.0f;
-				else if (lay->startframe > lay->numf - 1) lay->startframe = lay->numf - 1;
+				else if (lay->startframe >= lay->numf) lay->startframe = lay->numf - 1;
 				if (lay->startframe > lay->frame) lay->frame = lay->startframe;
 				if (lay->startframe > lay->endframe) lay->startframe = lay->endframe;
 				lay->set_clones();
@@ -3442,7 +3461,7 @@ void display_texture(Layer *lay, bool deck) {
 			else if (lay->scritching == 3) {
 				lay->endframe = (lay->numf - 1) * ((mainprogram->mx - lay->loopbox->scrcoords->x1) / lay->loopbox->scrcoords->w);
 				if (lay->endframe < 0) lay->endframe = 0.0f;
-				else if (lay->endframe > lay->numf - 1) lay->endframe = lay->numf - 1;
+				else if (lay->endframe >= lay->numf) lay->endframe = lay->numf - 1;
 				//if (lay->endframe < lay->frame) lay->frame = lay->endframe;
 				//if (lay->endframe < lay->startframe) lay->endframe = lay->startframe;
 				lay->set_clones();
@@ -3456,12 +3475,12 @@ void display_texture(Layer *lay, bool deck) {
 					start = lay->startframe - 1;
 					lay->startframe = 0.0f;
 				}
-				else if (lay->startframe > lay->numf - 1) lay->startframe = lay->numf - 1;
+				else if (lay->startframe >= lay->numf) lay->startframe = lay->numf - 1;
 				if (lay->startframe > lay->frame) lay->frame = lay->startframe;
 				if (lay->startframe > lay->endframe) lay->startframe = lay->endframe;
 				lay->endframe += (mainprogram->mx - mainmix->prevx) / (lay->loopbox->scrcoords->w / (lay->numf - 1)) - start;
 				if (lay->endframe < 0) lay->endframe = 0.0f;
-				else if (lay->endframe > lay->numf - 1) {
+				else if (lay->endframe >= lay->numf) {
 					end = lay->endframe - (lay->numf - 1);
 					lay->startframe -= end;
 					lay->endframe = lay->numf - 1;
@@ -11463,12 +11482,12 @@ int main(int argc, char* argv[]){
 						loopstation->currelem->recbut->value = !loopstation->currelem->recbut->value;
 						loopstation->currelem->recbut->oldvalue = !loopstation->currelem->recbut->value;
 					}
-					else if (e.key.keysym.sym == SDLK_l) {
+					else if (e.key.keysym.sym == SDLK_t) {
 						// toggle loop button for current loopstation element
 						loopstation->currelem->loopbut->value = !loopstation->currelem->loopbut->value;
 						loopstation->currelem->loopbut->oldvalue = !loopstation->currelem->loopbut->value;
 					}
-					if (e.key.keysym.sym == SDLK_s) {
+					if (e.key.keysym.sym == SDLK_y) {
 						// toggle "one shot play" button for current loopstation element
 						loopstation->currelem->playbut->value = !loopstation->currelem->playbut->value;
 						loopstation->currelem->playbut->oldvalue = !loopstation->currelem->playbut->value;
@@ -11522,7 +11541,7 @@ int main(int argc, char* argv[]){
 				else if (e.key.keysym.sym == SDLK_RIGHT) {
 					if (mainmix->currlay) {
 						mainmix->currlay->frame += 1;
-						if (mainmix->currlay->frame > mainmix->currlay->numf - 1) mainmix->currlay->frame = 0;
+						if (mainmix->currlay->frame >= mainmix->currlay->numf) mainmix->currlay->frame = 0;
 					}
 				}
 				else if (e.key.keysym.sym == SDLK_LEFT) {

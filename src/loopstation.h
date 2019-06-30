@@ -47,6 +47,7 @@ class LoopStationElement {
 		int pos = 0;
 		std::unordered_set<Param*> params;
 		std::unordered_set<Layer*> layers;
+		LoopStation* lpst;
 		Button *recbut;
 		Button *loopbut;
 		Button *playbut;

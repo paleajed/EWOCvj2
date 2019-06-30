@@ -2420,6 +2420,7 @@ void BinsMain::hap_encode(const std::string srcpath, BinElement *binel, BinDeck 
 	pkt.size = 0;
 	/* open it */
     c->time_base = source_dec_ctx->time_base;
+	printf("ctb %d\n", c->time_base.num);
     //c->framerate = (AVRational){source_stream->r_frame_rate.num, source_stream->r_frame_rate.den};
 	c->sample_aspect_ratio = source_dec_cpm->sample_aspect_ratio;
     c->pix_fmt = codec->pix_fmts[0];  

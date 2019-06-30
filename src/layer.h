@@ -45,6 +45,7 @@ struct frame_result {
 	int width = 0;
 	int size = 0;
 	unsigned char compression = 0;
+	bool hap = false;
 };
 
 class Button;
@@ -203,11 +204,13 @@ class Layer {
 		BlendNode *blendnode = nullptr;
 		
 		std::string filename = "";
-		AVFormatContext *video = nullptr;
+		AVFormatContext* video = nullptr;
+		AVFormatContext* videoseek = nullptr;
 		AVFrame *rgbframe = nullptr;
 		AVFrame *decframe = nullptr;
 		AVFrame *audioframe = nullptr;
 		AVPacket decpkt;
+		AVPacket decpktseek;
 		int reset = 0;
 		AVPacket audiopkt;
 		AVCodecContext *video_dec_ctx = nullptr;
@@ -232,6 +235,7 @@ class Layer {
 	
 	private:
 		void decode_frame();
+		void get_frame_other(int framenr, int prevframe, int errcount);
 };
 
 class Scene {

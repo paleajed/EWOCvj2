@@ -4515,47 +4515,59 @@ void Mixer::delete_layers(std::vector<Layer*> &layers, bool alive) {
 
 
 void Mixer::record_video() {
-    const AVCodec *codec;
+	AVFormatContext* dest = avformat_alloc_context();
+	AVStream* dest_stream;
+	const AVCodec *codec = nullptr;
     AVCodecContext *c = nullptr;
     int i, ret, x, y;
-    FILE *f;
     AVFrame *frame;
     AVPacket *pkt;
     uint8_t endcode[] = { 0, 0, 1, 0xb7 };
-    codec = avcodec_find_encoder_by_name("mjpeg");
+    codec = avcodec_find_encoder_by_name("hap");
     c = avcodec_alloc_context3(codec);
     pkt = av_packet_alloc();
-    c->global_quality = 0;
     c->width = mainprogram->ow;
-    c->height = (int)mainprogram->oh;
-    /* frames per second */
+	int rem = c->width % 32;
+	c->width = c->width + (32 - rem) * (rem > 0);
+	c->height = (int)mainprogram->oh;
+	rem = c->height % 4;
+	c->height = c->height + (4 - rem) * (rem > 0);
+	/* frames per second */
     c->time_base = {1, 25};
     c->framerate = {25, 1};
-    c->pix_fmt = AV_PIX_FMT_YUVJ420P;
+	c->pix_fmt = codec->pix_fmts[0];
     /* open it */
     ret = avcodec_open2(c, codec, nullptr);
     
+	std::string path;
 	std::string name = "recording_0";
 	int count = 0;
 	while (1) {
-		std::string path = mainprogram->recdir + name + ".mov";
+		path = mainprogram->recdir + name + "_hap.mov";
 		if (!exists(path)) {
-			f = fopen(path.c_str(), "wb");
-			if (!f) {
-				fprintf(stderr, "Could not open %s\n", path);
-				exit(1);
-			}
 			break;
 		}
 		count++;
 		name = remove_version(name) + "_" + std::to_string(count);
 	}
     
-	this->yuvframe = av_frame_alloc();
-    this->yuvframe->format = c->pix_fmt;
-    this->yuvframe->width  = c->width;
-    this->yuvframe->height = c->height;
-    //ret = av_frame_get_buffer(frame, 32);
+	avformat_alloc_output_context2(&dest, av_guess_format("mov", nullptr, "video/mov"), nullptr, path.c_str());
+	dest_stream = avformat_new_stream(dest, codec);
+	//dest_stream->time_base = source_stream->time_base;
+	int r = avcodec_parameters_from_context(dest_stream->codecpar, c);
+	if (r < 0) {
+		av_log(nullptr, AV_LOG_ERROR, "Copying stream context failed\n");
+		av_log(nullptr, AV_LOG_ERROR, "Copying parameters for stream #%u failed\n");
+	}
+	dest_stream->r_frame_rate = c->framerate;
+	dest_stream->avg_frame_rate = c->framerate;
+	dest_stream->first_dts = 0;
+	dest->oformat->flags |= AVFMT_NOFILE;
+	//avformat_init_output(dest, nullptr);
+	r = avio_open(&dest->pb, path.c_str(), AVIO_FLAG_WRITE);
+	r = avformat_write_header(dest, nullptr);
+
+	//ret = av_frame_get_buffer(frame, 32);
     //if (ret < 0) {
     //    fprintf(stderr, "Could not allocate the video frame data\n");
     //    exit(1);
@@ -4581,6 +4593,7 @@ void Mixer::record_video() {
         nullptr);
     
 	/* record */
+	count = 0;
     while (mainmix->recording) {
 		std::unique_lock<std::mutex> lock(this->recordlock);
 		this->startrecord.wait(lock, [&]{return this->recordnow;});
@@ -4608,38 +4621,30 @@ void Mixer::record_video() {
 			this->yuvframe->data,
 			this->yuvframe->linesize
 		);
-		
- 		glUnmapBuffer(GL_PIXEL_PACK_BUFFER_ARB);
+		this->yuvframe->pts++;
+
+		glUnmapBuffer(GL_PIXEL_PACK_BUFFER_ARB);
  		glBindBuffer(GL_PIXEL_PACK_BUFFER_ARB, 0);
-        /* make sure the frame data is writable */
-        ret = av_frame_make_writable(this->yuvframe);
-        /* prepare a dummy image */
-        /* Y */
-        //for (y = 0; y < c->height; y++) {
-        //    for (x = 0; x < c->width; x++) {
-        //        this->yuvframe->data[0][y * this->yuvframe->linesize[0] + x] = x + y + i * 3;
-        //    }
-        //}
-        /* Cb and Cr */
-        //for (y = 0; y < c->height/2; y++) {
-        //    for (x = 0; x < c->width/2; x++) {
-        //        this->yuvframe->data[1][y * this->yuvframe->linesize[1] + x] = 128 + y + i * 2;
-        //        this->yuvframe->data[2][y * this->yuvframe->linesize[2] + x] = 64 + x + i * 5;
-        //    }
-        //}
-        //frame->pts = i;
+
         /* encode the image */
-        encode_frame(nullptr, nullptr, c, this->yuvframe, pkt, f, 0);
-    }
+        encode_frame(dest, nullptr, c, this->yuvframe, pkt, nullptr, count);
+		
+		av_freep(this->yuvframe->data);
+		av_packet_unref(pkt);
+		
+		count++;
+	}
     /* flush the encoder */
-    encode_frame(nullptr, nullptr, c, nullptr, pkt, f, 0);
+ //   encode_frame(dest, nullptr, c, nullptr, pkt, nullptr, 0);
     /* add sequence end code to have a real MPEG file */
-    fwrite(endcode, 1, sizeof(endcode), f);
-    fclose(f);
+	dest_stream->duration = (count + 1) * av_rescale_q(1, c->time_base, dest_stream->time_base);
+	av_write_trailer(dest);
+	avio_close(dest->pb);
     avcodec_free_context(&c);
     av_frame_free(&this->yuvframe);
     av_packet_free(&pkt);
     mainmix->donerec = true;
+	mainmix->recordnow = false;
 }
 
 void Mixer::start_recording() {

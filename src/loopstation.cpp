@@ -30,6 +30,7 @@ LoopStation::LoopStation() {
 void LoopStation::init() {
 	for (int i = 0; i < this->elems.size(); i++) {
 		this->elems[i]->init();
+		this->elems[i]->lpst = this;
 	}
 	this->elemmap.clear();
 	this->currelem = this->elems[0];
@@ -265,7 +266,7 @@ void LoopStationElement::set_params() {
 	while (this->speedadaptedtime > std::get<0>(event)) {
 		Param *par = std::get<1>(event);
 		if (par != mainmix->adaptparam) {
-			if (std::find(loopstation->allparams.begin(), loopstation->allparams.end(), par) != loopstation->allparams.end()) {
+			if (std::find(this->lpst->allparams.begin(), this->lpst->allparams.end(), par) != this->lpst->allparams.end()) {
 				par->value = std::get<2>(event);
 			}
 		}
