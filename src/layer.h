@@ -87,6 +87,7 @@ class Layer {
 		void set_clones();
 		void mute_handle();
 		void set_aspectratio(int lw, int lh);
+		void open_video(float frame, const std::string& filename, int reset);
 		void open_image(const std::string &path);
 		void initialize(int w, int h);
 		void initialize(int w, int h, int compression);
@@ -319,6 +320,7 @@ class Mixer {
 		int mouseshelfelem;
 		bool insert;
 		Node *mousenode = nullptr;
+		Clip* mouseclip;
 		Param *learnparam;
 		Button *learnbutton;
 		bool learn = false;

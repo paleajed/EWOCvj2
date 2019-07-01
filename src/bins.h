@@ -15,7 +15,6 @@ class BinsMain {
 		Box *newbinbox;
 		GLuint binelpreviewtex;
 		bool binpreview = false;
-		std::vector<Layer*> templayers;
 		std::string newpath;
 		std::string binpath;
 		std::vector<std::string> newpaths;
@@ -23,6 +22,7 @@ class BinsMain {
 		GLuint movingtex = -1;
 		GLuint dragtex = -1;
 		std::vector<GLuint> inputtexes;
+		std::vector<ELEM_TYPE> inputtypes;
 		std::vector<int> inputwidths;
 		std::vector<int> inputheights;
 		std::vector<GLuint> dragtexes[2];
@@ -32,7 +32,6 @@ class BinsMain {
 		std::vector<std::string> insertjpegpaths[2];
 		BinElement *movingbinel = nullptr;
 		BinElement *backupbinel = nullptr;
-		BinElement *inputbinel = nullptr;
 		BinElement *menubinel = nullptr;
 		BinDeck *dragdeck = nullptr;
 		BinMix *dragmix = nullptr;
@@ -46,7 +45,7 @@ class BinsMain {
 		std::vector<BinElement*> prevelems;
 		Box *hapmodebox;
 		
-		void handle();
+		void handle(bool draw);
 		int read_binslist();
 		void save_binslist();
 		void make_currbin(int pos);

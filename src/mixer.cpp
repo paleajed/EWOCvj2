@@ -184,7 +184,7 @@ void Param::handle() {
 		parstr = "MIDI";
 	}
 	else if (this != mainmix->adaptparam) parstr = this->name;
-	else if (this->sliding) parstr = std::to_string(val).substr(firstdigit, 1) + "." + std::to_string(val).substr(std::to_string(val).length() - 3, std::string::npos); 
+	else if (this->sliding) parstr = std::to_string(val).substr(firstdigit, 4 - firstdigit) + "." + std::to_string(val).substr(std::to_string(val).length() - 3, std::string::npos); 
 	else parstr = std::to_string((int)(this->value + (float)(0.5f * (this->effect->type == FLIP or this->effect->type == MIRROR))));
 	if (this != mainmix->adaptnumparam) {
 		render_text(parstr, white, this->box->vtxcoords->x1 + tf(0.01f), this->box->vtxcoords->y1 + tf(0.05f) - tf(0.030f), tf(0.0003f), tf(0.0005f));
@@ -278,13 +278,13 @@ BlurEffect::BlurEffect() {
 	Param *param = new Param;
 	param->name = "Amount"; 
 	param->value = 10.0;
-	param->range[0] = 2;
-	param->range[1] = 132;
-	param->sliding = true;
+	param->range[0] = 1;
+	param->range[1] = 60;
+	param->sliding = false;
 	param->shadervar = "glowblur";
 	param->effect = this;
 	param->box->tooltiptitle = "Blur amount ";
-	param->box->tooltip = "Amount of image blurring - between 2.0 and 132.0 ";
+	param->box->tooltip = "Amount of image blurring - between 1 and 60 ";
 	this->params.push_back(param);
 }
 
@@ -769,7 +769,7 @@ CrosshatchEffect::CrosshatchEffect() {
 	Param *param = new Param;
 	param->name = "Size"; 
 	param->value = 20.0f;
-	param->range[0] = 0.0f;
+	param->range[0] = 2.0f;
 	param->range[1] = 100.0f;
 	param->sliding = true;
 	param->shadervar = "hatchsize";
@@ -879,13 +879,13 @@ AsciiEffect::AsciiEffect() {
 	Param *param = new Param;
 	param->name = "Size"; 
 	param->value = 50.0f;
-	param->range[0] = 20.0f;
+	param->range[0] = 10.0f;
 	param->range[1] = 200.0f;
 	param->sliding = true;
 	param->shadervar = "asciisize";
 	param->effect = this;
 	param->box->tooltiptitle = "ASCII size ";
-	param->box->tooltip = "Size of ascii symbols - between 20.0 and 200.0 ";
+	param->box->tooltip = "Size of ascii symbols - between 10.0 and 200.0 ";
 	this->params.push_back(param);
 }
 
@@ -1065,7 +1065,7 @@ HalfToneEffect::HalfToneEffect() {
 	this->numrows = 1;
 	Param *param = new Param;
 	param->name = "Scale";
-	param->value = 30.0f;
+	param->value = 100.0f;
 	param->range[0] = 1.0f;
 	param->range[1] = 200.0f;
 	param->sliding = true;
@@ -1216,13 +1216,13 @@ DitherEffect::DitherEffect() {
 	Param *param = new Param;
 	param->name = "Size";
 	param->value = 0.5f;
-	param->range[0] = 0.4f;
-	param->range[1] = 0.55f;
+	param->range[0] = 0.1f;
+	param->range[1] = 0.97f;
 	param->sliding = true;
 	param->shadervar = "dither_size";
 	param->effect = this;
 	param->box->tooltiptitle = "Dithering size ";
-	param->box->tooltip = "Size of the image dithering - between 0.4 and 0.55 ";
+	param->box->tooltip = "Size of the image dithering - between 0.1 and 0.97 ";
 	this->params.push_back(param);
 }
 
@@ -2288,7 +2288,7 @@ void Layer::open_image(const std::string &path) {
 	this->numf = ilGetInteger(IL_NUM_IMAGES);
 	this->frame = 0.0f;
 	this->startframe = 0;
-	this->endframe = this->numf - 1;
+	this->endframe = this->numf;
 	int w = ilGetInteger(IL_IMAGE_WIDTH);
 	int h = ilGetInteger(IL_IMAGE_HEIGHT);
 	this->filename = path;
@@ -2296,7 +2296,8 @@ void Layer::open_image(const std::string &path) {
 	this->initialize(w, h);
 	this->type = ELEM_IMAGE;
 	this->decresult->width = -1;
-		
+	this->decresult->hap = false;
+
 	this->vidopen = false;
 }
 
@@ -2368,7 +2369,7 @@ void Mixer::set_values(Layer *clay, Layer *lay) {
 	}
 	else if (lay->filename != "") {
 		if (lay->type == ELEM_IMAGE) clay->open_image(lay->filename);
-		else open_video(lay->frame, clay, lay->filename, false);
+		else clay->open_video(lay->frame, lay->filename, false);
 	}
 	clay->millif = lay->millif;
 	clay->prevtime = lay->prevtime;
@@ -3998,7 +3999,7 @@ int Mixer::read_layers(std::istream &rfile, const std::string &result, std::vect
 						}
 					}
 					else if (lay->type == ELEM_FILE or lay->type == ELEM_LAYER) {
-						open_video(-1, lay, lay->filename, false);
+						lay->open_video(-1, lay->filename, false);
 					}
 					else if (lay->type == ELEM_IMAGE) {
 						lay->open_image(lay->filename);
@@ -4014,7 +4015,7 @@ int Mixer::read_layers(std::istream &rfile, const std::string &result, std::vect
 					lay->filename = boost::filesystem::canonical(istring).string();
 					lay->timeinit = false;
 					if (lay->type == ELEM_FILE or lay->type == ELEM_LAYER) {
-						open_video(-1, lay, lay->filename, false);
+						lay->open_video(-1, lay->filename, false);
 					}
 					else if (lay->type == ELEM_IMAGE) {
 						lay->open_image(lay->filename);

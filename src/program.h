@@ -263,7 +263,8 @@ class Program {
 		Menu *deckmenu = nullptr;
 		Menu *laymenu1 = nullptr;
 		Menu *laymenu2 = nullptr;
-		Menu *loadmenu = nullptr;
+		Menu* loadmenu = nullptr;
+		Menu* clipmenu = nullptr;
 		Menu *aspectmenu = nullptr;
 		Menu *mixtargetmenu = nullptr;
 		Menu *fullscreenmenu = nullptr;
@@ -480,8 +481,10 @@ extern Menu *mixmodemenu;
 
 extern mix_target_struct mixtarget[2];
 
+extern GLuint get_imagetex(const std::string& path);
+extern GLuint get_videotex(const std::string& path);
+extern GLuint get_layertex(const std::string& path);
 extern int encode_frame(AVFormatContext *fmtctx, AVFormatContext *srcctx, AVCodecContext *enc_ctx, AVFrame *frame, AVPacket *pkt, FILE *outfile, int framenr);
-extern void open_video(float frame, Layer *lay, const std::string &filename, int reset);
 
 extern std::vector<Layer*>& choose_layers(bool j);
 extern void make_layboxes();
