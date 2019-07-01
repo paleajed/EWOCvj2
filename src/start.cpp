@@ -11239,6 +11239,7 @@ int main(int argc, char* argv[]){
 			mainmix->save_deck(mainprogram->temppath + "tempdeck_" + std::to_string(m) + std::to_string(i + 1) + ".deck");
 			mainmix->save_deck(mainprogram->temppath + "tempdeck_" + std::to_string(m) + std::to_string(i + 1) + "comp.deck");
 			lvec.clear();
+			lay->filename = "";
 		}
 	}
 	mainprogram->nodesmain->currpage->nodes.clear();
@@ -11549,6 +11550,10 @@ int main(int argc, char* argv[]){
 				else {
 					mainprogram->blocking = false;
 				}
+			}
+			else if (mainprogram->pathto == "OPENBINDECK") {
+				std::string str(mainprogram->path);
+				binsmain->open_bindeck(str);
 			}
 			else if (mainprogram->pathto == "CHOOSEDIR") {
 				std::string str(mainprogram->path);

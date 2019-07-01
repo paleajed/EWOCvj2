@@ -205,6 +205,7 @@ class Layer {
 		BlendNode *blendnode = nullptr;
 		
 		std::string filename = "";
+		std::string layerfilepath = "";
 		AVFormatContext* video = nullptr;
 		AVFormatContext* videoseek = nullptr;
 		AVFrame *rgbframe = nullptr;
@@ -315,7 +316,7 @@ class Mixer {
 		float scrolltime = 0.0f;
 		int mouseeffect = -1;
 		Layer *mouselayer;
-		bool mousedeck = -1;
+		int mousedeck = -1;
 		Shelf *mouseshelf;
 		int mouseshelfelem;
 		bool insert;

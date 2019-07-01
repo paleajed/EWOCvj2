@@ -2903,6 +2903,8 @@ void Mixer::copy_to_comp(std::vector<Layer*> &sourcelayersA, std::vector<Layer*>
 
 
 std::vector<std::string> Mixer::write_layer(Layer *lay, std::ostream& wfile, bool doclips) {
+	std::vector<std::string> jpegpaths;
+
 	wfile << "POS\n";
 	wfile << std::to_string(lay->pos);
 	wfile << "\n";
@@ -2917,7 +2919,12 @@ std::vector<std::string> Mixer::write_layer(Layer *lay, std::ostream& wfile, boo
 	wfile << lay->filename;
 	wfile << "\n";
 	wfile << "RELPATH\n";
-	wfile << mainprogram->docpath + boost::filesystem::relative(lay->filename, mainprogram->docpath).string();
+	if (lay->filename != "") {
+		wfile << mainprogram->docpath + boost::filesystem::relative(lay->filename, mainprogram->docpath).string();
+	}
+	else {
+		wfile << lay->filename;
+	}
 	wfile << "\n";
 	if (lay->filename != "") {
 		wfile << "WIDTH\n";
@@ -2925,6 +2932,24 @@ std::vector<std::string> Mixer::write_layer(Layer *lay, std::ostream& wfile, boo
 		wfile << "\n";
 		wfile << "HEIGHT\n";
 		wfile << std::to_string(lay->decresult->height);
+		wfile << "\n";
+	}
+	if (lay->node->vidbox) {
+		std::string jpegpath;
+		std::string name = remove_extension(basename(lay->filename));
+		int count = 0;
+		while (1) {
+			jpegpath = mainprogram->temppath + name + ".jpg";
+			if (!exists(jpegpath)) {
+				break;
+			}
+			count++;
+			name = remove_version(name) + "_" + std::to_string(count);
+		}
+		save_thumb(jpegpath, lay->node->vidbox->tex);
+		jpegpaths.push_back(jpegpath);
+		wfile << "JPEGPATH\n";
+		wfile << jpegpath;
 		wfile << "\n";
 	}
 	wfile << "ASPECTRATIO\n";
@@ -3037,7 +3062,6 @@ std::vector<std::string> Mixer::write_layer(Layer *lay, std::ostream& wfile, boo
 	wfile << std::to_string(lay->blendnode->wipey);
 	wfile << "\n";
 	
-	std::vector<std::string> jpegpaths;
 	if (doclips and lay->clips.size()) {
 		wfile << "CLIPS\n";
 		int size = std::clamp((int)(lay->clips.size() - 1), 0, (int)(lay->clips.size() - 1));
@@ -3864,7 +3888,8 @@ void Mixer::open_mix(const std::string &path) {
 	rfile.close();
 }
 
-void Mixer::open_deck(const std::string &path, bool alive) {
+void Mixer::open_deck(const std::string & path, bool alive) {
+		
 	std::string result = deconcat_files(path);
 	bool concat = (result != "");
 	std::ifstream rfile;
@@ -3873,12 +3898,12 @@ void Mixer::open_deck(const std::string &path, bool alive) {
 	std::string istring;
 	
 	this->new_file(mainmix->mousedeck, alive);
-	
+
 	for (int i = 0; i < loopstation->elems.size(); i++) {
 		bool alsootherdeck = false;
 		std::unordered_set<Layer*>::iterator it;
 		for (it = loopstation->elems[i]->layers.begin(); it != loopstation->elems[i]->layers.end(); it++) {
-			Layer *lay = *it;
+			Layer* lay = *it;
 			if (lay->deck == !mainmix->mousedeck) {
 				alsootherdeck = true;
 				break;
@@ -3896,12 +3921,15 @@ void Mixer::open_deck(const std::string &path, bool alive) {
 	loopstation->readelems.clear();
 	loopstation->readelemnrs.clear();
 	std::vector<Layer*> &layers = choose_layers(mainmix->mousedeck);
+
 	mainmix->read_layers(rfile, result, layers, mainmix->mousedeck, 1, 1, concat, 1, 1);
+	
+	// if mousedeck == 2 then its a background load for bin entries
 	std::map<int, int> map;
 	for (int i = 0; i < layers.size(); i++) {
 		if (layers[i]->clonesetnr != -1) {
 			if (map.count(layers[i]->clonesetnr) == 0) {
-				std::unordered_set<Layer*> *uset = new std::unordered_set<Layer*>;
+				std::unordered_set<Layer*>* uset = new std::unordered_set<Layer*>;
 				mainmix->clonesets.push_back(uset);
 				map[layers[i]->clonesetnr] = mainmix->clonesets.size() - 1;
 				layers[i]->clonesetnr = mainmix->clonesets.size() - 1;
@@ -3910,6 +3938,7 @@ void Mixer::open_deck(const std::string &path, bool alive) {
 			mainmix->clonesets[layers[i]->clonesetnr]->emplace(layers[i]);
 		}
 	}
+
 	rfile.close();
 }
 
@@ -3920,6 +3949,7 @@ int Mixer::read_layers(std::istream &rfile, const std::string &result, std::vect
 	if (mainprogram->filecount) jpegcount = mainprogram->filecount;
 	int lw = 0;
 	int lh = 0;
+	bool newlay = false;
 	while (getline(rfile, istring)) {
 		if (istring == "LAYERSB" or istring == "ENDOFCLIPLAYER" or istring == "ENDOFFILE") {
 			return jpegcount;	
@@ -3959,6 +3989,7 @@ int Mixer::read_layers(std::istream &rfile, const std::string &result, std::vect
 				lay = mainmix->add_layer(layers, pos);
 			}
 			lay->deck = deck;
+			newlay = true;
 		}
 		if (istring == "TYPE") {
 			getline(rfile, istring);
@@ -4010,8 +4041,9 @@ int Mixer::read_layers(std::istream &rfile, const std::string &result, std::vect
 		}
 		if (istring == "RELPATH") {
 			getline(rfile, istring);
-			if (load) {
-				if (lay->filename == "") {
+			if (lay->filename == "" and istring != "") {
+				lay->filename = boost::filesystem::canonical(istring).string();
+				if (load) {
 					lay->filename = boost::filesystem::canonical(istring).string();
 					lay->timeinit = false;
 					if (lay->type == ELEM_FILE or lay->type == ELEM_LAYER) {
@@ -4429,6 +4461,21 @@ int Mixer::read_layers(std::istream &rfile, const std::string &result, std::vect
 		if (istring == "EFFCAT") {
 			getline(rfile, istring);
 			mainprogram->effcat[lay->deck]->value = std::atoi(istring.c_str());
+		}
+
+		if (newlay) {
+			newlay = false;
+			std::string name = remove_extension(basename(lay->filename));
+			int count = 0;
+			while (1) {
+				lay->layerfilepath = mainprogram->temppath + name + ".layer";
+				if (!exists(lay->layerfilepath)) {
+					mainmix->save_layerfile(lay->layerfilepath, lay, false);
+					break;
+				}
+				count++;
+				name = remove_version(name) + "_" + std::to_string(count);
+			}
 		}
 	}
 	

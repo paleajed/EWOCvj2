@@ -55,6 +55,7 @@ class BinsMain {
 		void open_binfiles();
 		void open_bindir();
 		void open_handlefile(const std::string &path);
+		void open_bindeck(const std::string& path);
 		void get_texes(int deck);
 		std::tuple<std::string, std::string> hap_binel(BinElement *binel, BinDeck *bd, BinMix *bm);
 		void hap_deck(BinDeck * bd);
