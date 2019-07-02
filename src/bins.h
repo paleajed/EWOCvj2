@@ -12,6 +12,8 @@ class BinsMain {
 		BinElement *prevbinel = nullptr;
 		int previ;
 		int prevj;
+		int ii = -1;
+		int jj = -1;
 		Box *newbinbox;
 		GLuint binelpreviewtex;
 		bool binpreview = false;
@@ -30,7 +32,9 @@ class BinsMain {
 		std::vector<ELEM_TYPE> inserttypes[2];
 		std::vector<std::string> insertpaths[2];
 		std::vector<std::string> insertjpegpaths[2];
-		BinElement *movingbinel = nullptr;
+		std::string previewimage;
+		BinElement* previewbinel = nullptr;
+		BinElement* movingbinel = nullptr;
 		BinElement *backupbinel = nullptr;
 		BinElement *menubinel = nullptr;
 		BinDeck *dragdeck = nullptr;
@@ -56,6 +60,7 @@ class BinsMain {
 		void open_bindir();
 		void open_handlefile(const std::string &path);
 		void open_bindeck(const std::string& path);
+		void open_binmix(const std::string& path);
 		void get_texes(int deck);
 		std::tuple<std::string, std::string> hap_binel(BinElement *binel, BinDeck *bd, BinMix *bm);
 		void hap_deck(BinDeck * bd);
@@ -105,7 +110,7 @@ class BinDeck {
 		std::string path;
 		std::string jpegpath;
 		int i, j;
-		int height;
+		int height = -1;
 		int encthreads = 0;
 		GLuint tex;
 		Box *box;

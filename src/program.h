@@ -401,6 +401,7 @@ class Program {
 		std::string dragpath;
 		int dragpos; 
 		bool drag = false;
+		bool dragmousedown = false;
 		bool inwormhole = false;
 		Button *wormhole;
 		DIR *opendir;

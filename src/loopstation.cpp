@@ -179,10 +179,12 @@ void LoopStationElement::erase_elem() {
 	std::unordered_set<Param*>::iterator it;
 	for (it = this->params.begin(); it != this->params.end(); it++) {
 		Param *par = *it;
-		par->box->acolor[0] = 0.2f;
-		par->box->acolor[1] = 0.2f;
-		par->box->acolor[2] = 0.2f;
-		par->box->acolor[3] = 1.0f;
+		if (par->name.length()) {
+			par->box->acolor[0] = 0.2f;
+			par->box->acolor[1] = 0.2f;
+			par->box->acolor[2] = 0.2f;
+			par->box->acolor[3] = 1.0f;
+		}
 	}
 	this->init();
 	this->eventlist.clear();

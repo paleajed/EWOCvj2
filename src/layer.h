@@ -273,7 +273,7 @@ class Mixer {
 		void copy_to_comp(std::vector<Layer*> &sourcelayersA, std::vector<Layer*> &destlayersA, std::vector<Layer*> &sourcelayersB, std::vector<Layer*> &destlayersB, std::vector<Node*> &sourcenodes, std::vector<Node*> &destnodes, std::vector<MixNode*> &destmixnodes, bool comp);
 		void record_video();
 		void new_file(int decks, bool alive);
-		void save_layerfile(const std::string &path, Layer* lay, bool doclips);
+		void save_layerfile(const std::string &path, Layer* lay, bool doclips, bool dojpeg);
 		void save_mix(const std::string &path);
 		void save_deck(const std::string &path);
 		void open_layerfile(const std::string &path, Layer *lay, bool loadevents, bool doclips);
@@ -282,8 +282,8 @@ class Mixer {
 		void new_state();
 		void open_state(const std::string& path);
 		void save_state(const std::string &path);
-		std::vector<std::string> write_layer(Layer *lay, std::ostream& wfile, bool doclips);
-		int read_layers(std::istream &rfile, const std::string &result, std::vector<Layer*> &layers, bool deck, int type, bool doclips, bool concat, bool load, bool loadevents);
+		std::vector<std::string> write_layer(Layer *lay, std::ostream& wfile, bool doclips, bool dojpeg);
+		int read_layers(std::istream &rfile, const std::string &result, std::vector<Layer*> &layers, bool deck, int type, bool doclips, bool concat, bool load, bool loadevents, bool save);
 		void start_recording();
 		void cloneset_destroy(std::unordered_set<Layer*>* cs);
 		Mixer();

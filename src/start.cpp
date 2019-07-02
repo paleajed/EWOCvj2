@@ -2421,7 +2421,7 @@ void calc_texture(Layer *lay, bool comp, bool alive) {
 								while (1) {
 									tpath = mainprogram->temppath + "cliptemp_" + name + ".layer";
 									if (!exists(tpath)) {
-										mainmix->save_layerfile(tpath, lay, 0);
+										mainmix->save_layerfile(tpath, lay, 0, 0);
 										break;
 									}
 									count++;
@@ -2486,7 +2486,7 @@ void calc_texture(Layer *lay, bool comp, bool alive) {
 								while (1) {
 									tpath = mainprogram->binsdir + "temp_" + name + ".layer";
 									if (!exists(tpath)) {
-										mainmix->save_layerfile(tpath, lay, 0);
+										mainmix->save_layerfile(tpath, lay, 0, 0);
 										break;
 									}
 									count++;
@@ -7365,6 +7365,8 @@ void enddrag() {
 		binsmain->movingbinel = nullptr;
 		binsmain->movingtex = -1;
 	}
+
+	mainprogram->dragmousedown = false;
 }
 
 void Layer::mute_handle() {
@@ -9123,7 +9125,7 @@ void the_loop() {
 								while (1) {
 									mainprogram->dragpath = mainprogram->temppath + "cliptemp_" + name + ".layer";
 									if (!exists(mainprogram->dragpath)) {
-										mainmix->save_layerfile(mainprogram->dragpath, mainprogram->draglay, 1);
+										mainmix->save_layerfile(mainprogram->dragpath, mainprogram->draglay, 1, 0);
 										break;
 									}
 									count++;
@@ -9317,7 +9319,7 @@ void the_loop() {
 	//deck and mix dragging
 	if (binsmain->dragdeck) {
 		if (sqrt(pow((mainprogram->mx / (glob->w / 2.0f) - 1.0f) * glob->w / glob->h, 2) + pow((glob->h - mainprogram->my) / (glob->h / 2.0f) - 1.25f, 2)) < 0.2f) {
-			mainprogram->binsscreen = false;
+			if (mainprogram->dragmousedown) mainprogram->binsscreen = false;
 		}
 		if (!mainprogram->binsscreen) {
 			float lightblue[] = {0.5f, 0.5f, 1.0f, 1.0f};
@@ -10726,7 +10728,7 @@ BinElement *find_element(int size, int k, int i, int j, bool overlapchk) {
 	intm = (intm < 0) * intm;
 	int jj = frontj + (int)((kk + fronti + intm) / 6) - ((kk + fronti + intm) < 0);
 	int ii = ((kk + intm + 144) % 6 + fronti + 144) % 6;
-	
+
 	return binsmain->currbin->elements[ii * 24 + jj];
 }
 
@@ -11520,7 +11522,7 @@ int main(int argc, char* argv[]){
 			else if (mainprogram->pathto == "SAVELAYFILE") {
 				std::string str(mainprogram->path);
 				mainprogram->currlayerdir = dirname(str);
-				mainmix->save_layerfile(str, mainmix->mouselayer, 1);
+				mainmix->save_layerfile(str, mainmix->mouselayer, 1, 0);
 			}
 			else if (mainprogram->pathto == "OPENLAYFILE") {
 				std::string str(mainprogram->path);
@@ -11553,7 +11555,13 @@ int main(int argc, char* argv[]){
 			}
 			else if (mainprogram->pathto == "OPENBINDECK") {
 				std::string str(mainprogram->path);
+				mainprogram->currdeckdir = dirname(str);
 				binsmain->open_bindeck(str);
+			}
+			else if (mainprogram->pathto == "OPENBINMIX") {
+				std::string str(mainprogram->path);
+				mainprogram->currmixdir = dirname(str);
+				binsmain->open_binmix(str);
 			}
 			else if (mainprogram->pathto == "CHOOSEDIR") {
 				std::string str(mainprogram->path);

@@ -2902,7 +2902,7 @@ void Mixer::copy_to_comp(std::vector<Layer*> &sourcelayersA, std::vector<Layer*>
 }
 
 
-std::vector<std::string> Mixer::write_layer(Layer *lay, std::ostream& wfile, bool doclips) {
+std::vector<std::string> Mixer::write_layer(Layer *lay, std::ostream& wfile, bool doclips, bool dojpeg) {
 	std::vector<std::string> jpegpaths;
 
 	wfile << "POS\n";
@@ -2934,7 +2934,7 @@ std::vector<std::string> Mixer::write_layer(Layer *lay, std::ostream& wfile, boo
 		wfile << std::to_string(lay->decresult->height);
 		wfile << "\n";
 	}
-	if (lay->node->vidbox) {
+	if (lay->node->vidbox and dojpeg) {
 		std::string jpegpath;
 		std::string name = remove_extension(basename(lay->filename));
 		int count = 0;
@@ -3226,7 +3226,7 @@ std::vector<std::string> Mixer::write_layer(Layer *lay, std::ostream& wfile, boo
 	return jpegpaths;
 }
 
-void Mixer::save_layerfile(const std::string &path, Layer *lay, bool doclips) {
+void Mixer::save_layerfile(const std::string &path, Layer *lay, bool doclips, bool dojpeg) {
 	std::string ext = path.substr(path.length() - 6, std::string::npos);
 	std::string str;
 	if (ext != ".layer") str = path + ".layer";
@@ -3236,7 +3236,7 @@ void Mixer::save_layerfile(const std::string &path, Layer *lay, bool doclips) {
 	wfile << "EWOCvj LAYERFILE V0.2\n";
 		
 	std::vector<std::vector<std::string>> jpegpaths;
-	jpegpaths.push_back(mainmix->write_layer(lay, wfile, doclips));
+	jpegpaths.push_back(mainmix->write_layer(lay, wfile, doclips, dojpeg));
 	
 	wfile << "ENDOFFILE\n";
 	wfile.close();
@@ -3353,7 +3353,6 @@ void Mixer::event_read(std::istream &rfile, Param *par, Layer *lay) {
 		loop = ls->free_element();
 		ls->readelemnrs.push_back(elemnr);
 		ls->readelems.push_back(loop);
-		printf("loop %d\n", loop);
 	}
 	else {
 		// other parameter(s) of this rfile using this loopstation line already exist
@@ -3487,14 +3486,14 @@ void Mixer::save_mix(const std::string &path) {
 	std::vector<Layer*> &lvec1 = choose_layers(0);
 	for (int i = 0; i < lvec1.size(); i++) {
 		Layer *lay = lvec1[i];
-		jpegpaths.push_back(mainmix->write_layer(lay, wfile, 1));
+		jpegpaths.push_back(mainmix->write_layer(lay, wfile, 1, 1));
 	}
 	
 	wfile << "LAYERSB\n";
 	std::vector<Layer*> &lvec2 = choose_layers(1);
 	for (int i = 0; i < lvec2.size(); i++) {
 		Layer *lay = lvec2[i];
-		jpegpaths.push_back(mainmix->write_layer(lay, wfile, 1));
+		jpegpaths.push_back(mainmix->write_layer(lay, wfile, 1, 1));
 	}
 	
 	wfile << "ENDOFFILE\n";
@@ -3536,7 +3535,7 @@ void Mixer::save_deck(const std::string &path) {
 	std::vector<Layer*> &lvec = choose_layers(mainmix->mousedeck);
 	for (int i = 0; i < lvec.size(); i++) {
 		Layer *lay = lvec[i];
-		jpegpaths.push_back(mainmix->write_layer(lay, wfile, 1));
+		jpegpaths.push_back(mainmix->write_layer(lay, wfile, 1, 1));
 	}
 	
 	wfile << "ENDOFFILE\n";
@@ -3589,7 +3588,7 @@ void Mixer::open_layerfile(const std::string &path, Layer *lay, bool loadevents,
 	loopstation->readelemnrs.clear();
 	std::vector<Layer*> layers;
 	layers.push_back(lay);
-	mainmix->read_layers(rfile, result, layers, lay->deck, 0, doclips, concat, 1, loadevents);
+	mainmix->read_layers(rfile, result, layers, lay->deck, 0, doclips, concat, 1, loadevents, 0);
 	
 	rfile.close();
 }
@@ -3754,7 +3753,10 @@ void Mixer::open_mix(const std::string &path) {
 	
 	this->new_file(2, 1);
 	for (int i = 0; i < loopstation->elems.size(); i++) {
-		loopstation->elems[i]->erase_elem();
+		loopstation->elems[i]->init();
+		loopstation->elems[i]->eventlist.clear();
+		loopstation->elems[i]->params.clear();
+		loopstation->elems[i]->layers.clear();
 	}
 	loopstation->parmap.clear();
 	loopstation->elemmap.clear();
@@ -3853,10 +3855,10 @@ void Mixer::open_mix(const std::string &path) {
 		int deck;
 		if (istring == "LAYERSA") {
 			std::vector<Layer*> &layersA = choose_layers(0);
-			int jpegcount = mainmix->read_layers(rfile, result, layersA, 0, 2, concat, 1, 1, 1);
+			int jpegcount = mainmix->read_layers(rfile, result, layersA, 0, 2, concat, 1, 1, 1, 0);
 			mainprogram->filecount = jpegcount;
 			std::vector<Layer*> &layersB = choose_layers(1);
-			mainmix->read_layers(rfile, result, layersB, 1, 2, concat, 1, 1, 1);
+			mainmix->read_layers(rfile, result, layersB, 1, 2, concat, 1, 1, 1, 0);
 			mainprogram->filecount = 0;
 		}
 		std::map<int, int> map;
@@ -3922,7 +3924,7 @@ void Mixer::open_deck(const std::string & path, bool alive) {
 	loopstation->readelemnrs.clear();
 	std::vector<Layer*> &layers = choose_layers(mainmix->mousedeck);
 
-	mainmix->read_layers(rfile, result, layers, mainmix->mousedeck, 1, 1, concat, 1, 1);
+	mainmix->read_layers(rfile, result, layers, mainmix->mousedeck, 1, 1, concat, 1, 1, 0);
 	
 	// if mousedeck == 2 then its a background load for bin entries
 	std::map<int, int> map;
@@ -3942,7 +3944,7 @@ void Mixer::open_deck(const std::string & path, bool alive) {
 	rfile.close();
 }
 
-int Mixer::read_layers(std::istream &rfile, const std::string &result, std::vector<Layer*> &layers, bool deck, int type, bool doclips, bool concat, bool load, bool loadevents) {
+int Mixer::read_layers(std::istream &rfile, const std::string &result, std::vector<Layer*> &layers, bool deck, int type, bool doclips, bool concat, bool load, bool loadevents, bool save) {
 	Layer *lay = nullptr;
 	std::string istring;
 	int jpegcount = 0;
@@ -3989,7 +3991,6 @@ int Mixer::read_layers(std::istream &rfile, const std::string &result, std::vect
 				lay = mainmix->add_layer(layers, pos);
 			}
 			lay->deck = deck;
-			newlay = true;
 		}
 		if (istring == "TYPE") {
 			getline(rfile, istring);
@@ -4054,6 +4055,7 @@ int Mixer::read_layers(std::istream &rfile, const std::string &result, std::vect
 					}
 				}
 			}
+			newlay = true;
 		}
 		if (istring == "WIDTH") {
 			getline(rfile, istring);
@@ -4251,13 +4253,13 @@ int Mixer::read_layers(std::istream &rfile, const std::string &result, std::vect
 					if (istring == "CLIPLAYER") {
 						std::vector<Layer*> cliplayers;
 						Layer *cliplay = mainmix->add_layer(cliplayers, 0);
-						mainmix->read_layers(rfile, result, cliplayers, 0, 0, 0, 1, 0, 0);
+						mainmix->read_layers(rfile, result, cliplayers, 0, 0, 0, 1, 0, 0, 0);
 						std::string name = remove_extension(remove_extension(basename(result)));
 						int count = 0;
 						while (1) {
 							clip->path = mainprogram->temppath + "cliptemp_" + name + ".layer";
 							if (!exists(clip->path)) {
-								mainmix->save_layerfile(clip->path, cliplay, 0);
+								mainmix->save_layerfile(clip->path, cliplay, 0, 0);
 								break;
 							}
 							count++;
@@ -4463,14 +4465,14 @@ int Mixer::read_layers(std::istream &rfile, const std::string &result, std::vect
 			mainprogram->effcat[lay->deck]->value = std::atoi(istring.c_str());
 		}
 
-		if (newlay) {
+		if (newlay and save) {
 			newlay = false;
 			std::string name = remove_extension(basename(lay->filename));
 			int count = 0;
 			while (1) {
 				lay->layerfilepath = mainprogram->temppath + name + ".layer";
 				if (!exists(lay->layerfilepath)) {
-					mainmix->save_layerfile(lay->layerfilepath, lay, false);
+					mainmix->save_layerfile(lay->layerfilepath, lay, false, false);
 					break;
 				}
 				count++;
