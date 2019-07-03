@@ -271,6 +271,20 @@ Program::Program() {
 	this->addeffectbox->tooltiptitle = "Add effect ";
 	this->addeffectbox->tooltip = "Add effect to end of layer effect queue ";
 	
+	this->tmdeck = new Box;
+	this->tmdeck->vtxcoords->x1 = -0.4f;
+	this->tmdeck->vtxcoords->y1 = 0.74f;
+	this->tmdeck->vtxcoords->w = 0.4f;
+	this->tmdeck->vtxcoords->h = 0.26f;
+	this->tmdeck->tooltiptitle = "Toggle deck to set general MIDI for";
+	this->tmdeck->tooltip = "Leftclick to toggle deck to set general MIDI for. ";
+	this->tmset = new Box;
+	this->tmset->vtxcoords->x1 = 0.0f;
+	this->tmset->vtxcoords->y1 = 0.74f;
+	this->tmset->vtxcoords->w = 0.4f;
+	this->tmset->vtxcoords->h = 0.26f;
+	this->tmset->tooltiptitle = "Toggle MIDI set to configure ";
+	this->tmset->tooltip = "Leftclick to toggle the MIDI set that is being configured. ";
 	this->tmplay = new Box;
 	this->tmplay->vtxcoords->x1 = 0.075;
 	this->tmplay->vtxcoords->y1 = -0.9f;

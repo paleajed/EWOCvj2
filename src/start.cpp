@@ -1424,10 +1424,6 @@ bool thread_vidopen(Layer *lay, AVInputFormat *ifmt, bool skip) {
 			lay->numf = lay->video_stream->nb_frames;
 			float tbperframe = (float)lay->video_stream->duration / (float)lay->numf;
 			lay->millif = tbperframe * (((float)lay->video_stream->time_base.num * 1000.0) / (float)lay->video_stream->time_base.den);
-			printf("numf %d\n", lay->numf);
-			printf("duration %d\n", lay->video_stream->duration);
-			printf("timebase %d\n", lay->video_stream->time_base.den);
-			printf("millif %f\n", lay->millif);
 
 			if (lay->reset) {
 				lay->startframe = 0;
@@ -5463,11 +5459,14 @@ bool Box::in(int mx, int my, bool draggoal) {
 }
 
 
-void tooltips_handle(float fac) {
+void tooltips_handle(int win) {
 	// draw tooltip
 	float black[] = {0.0f, 0.0f, 0.0f, 1.0f};
 	float orange[] = {1.0f, 0.5f, 0.0f, 1.0f};
 	float white[] = {1.0f, 1.0f, 1.0f, 1.0f};
+	float fac = 1.0f;
+	if (mainprogram->prefon or mainprogram->tunemidi) fac = 4.0f;
+
 	if (mainprogram->tooltipmilli > 3000) {
 		if (mainprogram->longtooltips) {
 			std::vector<std::string> texts;
@@ -5484,12 +5483,13 @@ void tooltips_handle(float fac) {
 			float texth = 0.092754f * sqrt(fac);
 			if ((x + textw) > 1.0f) x = x - textw - tf(0.02f) - mainprogram->tooltipbox->vtxcoords->w;
 			if ((y - texth * (texts.size() + 1) - tf(0.01f)) < -1.0f) y = -1.0f + texth * (texts.size() + 1) - tf(0.01f);
+			if (x < -1.0f) x = -1.0f;
 			draw_box(nullptr, black, x, y - texth, textw, texth + tf(0.01f), -1);
-			render_text(mainprogram->tooltipbox->tooltiptitle, orange, x + tf(0.015f) * sqrt(fac), y - texth + tf(0.03f) * sqrt(fac), tf(0.0003f) * fac, tf(0.0005f) * fac);
+			render_text(mainprogram->tooltipbox->tooltiptitle, orange, x + tf(0.015f) * sqrt(fac), y - texth + tf(0.03f) * sqrt(fac), tf(0.0003f) * fac, tf(0.0005f) * fac, win);
 			for (int i = 0; i < texts.size(); i++) {
 				y -= texth;
 				draw_box(nullptr, black, x, y - texth, textw, texth + tf(0.01f), -1);
-				render_text(texts[i], white, x + tf(0.015f) * sqrt(fac), y - texth + tf(0.03f) * sqrt(fac), tf(0.0003f) * fac, tf(0.0005f) * fac);
+				render_text(texts[i], white, x + tf(0.015f) * sqrt(fac), y - texth + tf(0.03f) * sqrt(fac), tf(0.0003f) * fac, tf(0.0005f) * fac, win);
 			}
 		}
 		else {
@@ -5497,7 +5497,7 @@ void tooltips_handle(float fac) {
 			float y = mainprogram->tooltipbox->vtxcoords->y1 - tf(0.01f) * glob->w / glob->h - tf(0.01f);
 			float textw = 0.25f * sqrt(fac);
 			draw_box(nullptr, black, x, y - 0.092754f, textw, 0.092754f + tf(0.01f), -1);
-			render_text(mainprogram->tooltipbox->tooltiptitle, orange, x + tf(0.015f) * sqrt(fac), y - 0.092754f + tf(0.03f) * sqrt(fac), tf(0.0003f) * fac, tf(0.0005f) * fac);
+			render_text(mainprogram->tooltipbox->tooltiptitle, orange, x + tf(0.015f) * sqrt(fac), y - 0.092754f + tf(0.03f) * sqrt(fac), tf(0.0003f) * fac, tf(0.0005f) * fac, win);
 		}
 	}
 }
@@ -6425,16 +6425,9 @@ bool exchange(Layer *lay, std::vector<Layer*> &slayers, std::vector<Layer*> &dla
 				}
 				else if (i + endx != 0) {
 					if (nextlay) {
-						nextlay->lasteffnode[0]->out.clear();
 						if (nextlay->effects[1].size()) {
+							nextlay->lasteffnode[0]->out.clear();
 							mainprogram->nodesmain->currpage->connect_nodes(nextlay->lasteffnode[0], nextlay->effects[1][0]->node);
-						}
-						else {
-							nextlay->lasteffnode[1] = nextlay->lasteffnode[0];
-						}
-						if (nextlay->lasteffnode[1] != nextlay->blendnode) {
-							nextlay->lasteffnode[1]->out.clear();
-							mainprogram->nodesmain->currpage->connect_nodes(nextlay->lasteffnode[1], nextlay->blendnode->out[0]);
 						}
 						mainprogram->nodesmain->currpage->delete_node(nextlay->blendnode);
 						nextlay->blendnode = new BlendNode;
@@ -6444,6 +6437,9 @@ bool exchange(Layer *lay, std::vector<Layer*> &slayers, std::vector<Layer*> &dla
 						nextlay->blendnode->wipedir = nextwipedir;
 						nextlay->blendnode->wipex = nextwipex;
 						nextlay->blendnode->wipey = nextwipey;
+						if (!nextlay->effects[1].size()) {
+							nextlay->lasteffnode[1] = nextlay->lasteffnode[0];
+						}
 					}
 				}
 				lay->blendnode = nullptr;
@@ -7023,7 +7019,7 @@ bool preferences() {
 	}
 	render_text("SAVE", white, box.vtxcoords->x1 + 0.02f, box.vtxcoords->y1 + 0.03f, 0.0024f, 0.004f, 1);
 			
-	tooltips_handle(4.0f);
+	tooltips_handle(1);
 		
 	mainprogram->bvao = mainprogram->boxvao;
 	mainprogram->bvbuf = mainprogram->boxvbuf;
@@ -7054,8 +7050,9 @@ int tune_midi() {
 	float white[] = {1.0f, 1.0f, 1.0f, 1.0f};
 	float black[] = {0.0f, 0.0f, 0.0f, 1.0f};
 	float lightblue[] = {0.5f, 0.5f, 1.0f, 1.0f};
-	float green[] = {0.0f, 0.7f, 0.0f, 1.0f};
-		
+	float green[] = { 0.0f, 0.7f, 0.0f, 1.0f };
+	float red[] = { 0.9f, 0.0f, 0.0f, 1.0f };
+
 	SDL_GL_MakeCurrent(mainprogram->tunemidiwindow, glc_tm);
 	mainprogram->bvao = mainprogram->tmboxvao;
 	mainprogram->bvbuf = mainprogram->tmboxvbuf;
@@ -7068,10 +7065,10 @@ int tune_midi() {
 	}
 	
 	std::string lmstr;
-	if (mainprogram->tunemidideck == 1) lmstr = "A";
-	else if (mainprogram->tunemidideck == 2) lmstr = "B";
-	else if (mainprogram->tunemidideck == 3) lmstr = "C";
-	else if (mainprogram->tunemidideck == 4) lmstr = "D";
+	if (mainprogram->tunemidiset == 1) lmstr = "A";
+	else if (mainprogram->tunemidiset == 2) lmstr = "B";
+	else if (mainprogram->tunemidiset == 3) lmstr = "C";
+	else if (mainprogram->tunemidiset == 4) lmstr = "D";
 	if (mainprogram->tmlearn != TM_NONE) render_text("Creating settings for midideck " + lmstr, white, -0.3f, 0.2f, 0.0024f, 0.004f, 2);
 	switch (mainprogram->tmlearn) {
 		case TM_NONE:
@@ -7110,6 +7107,29 @@ int tune_midi() {
 	
 	if (mainprogram->tmlearn == TM_NONE) {
 		//draw tune_midi screen
+		draw_box(red, black, mainprogram->tmdeck, -1);
+		if (mainprogram->tmdeck->in(mx, my)) {
+			draw_box(red, lightblue, mainprogram->tmdeck, -1);
+			if (mainprogram->lmsave) {
+				mainprogram->tunemidideck = !mainprogram->tunemidideck;
+			}
+		}
+		if (mainprogram->tunemidideck == 0) render_text("deck A", red, -0.390f, 0.78f, 0.0024f, 0.004f, 2);
+		else render_text("deck B", red, -0.390f, 0.78f, 0.0024f, 0.004f, 2);
+		
+		draw_box(red, black, mainprogram->tmset, -1);
+		if (mainprogram->tmset->in(mx, my)) {
+			draw_box(red, lightblue, mainprogram->tmset, -1);
+			if (mainprogram->lmsave) {
+				mainprogram->tunemidiset++;
+				if (mainprogram->tunemidiset == 5) mainprogram->tunemidiset = 1;
+			}
+		}
+		if (mainprogram->tunemidiset == 1) render_text("set A", red, 0.01f, 0.78f, 0.0024f, 0.004f, 2);
+		else if (mainprogram->tunemidiset == 2) render_text("set B", red, 0.01f, 0.78f, 0.0024f, 0.004f, 2);
+		else if (mainprogram->tunemidiset == 3) render_text("set C", red, 0.01f, 0.78f, 0.0024f, 0.004f, 2);
+		else if (mainprogram->tunemidiset == 4) render_text("set D", red, 0.01f, 0.78f, 0.0024f, 0.004f, 2);
+		
 		draw_box(white, black, mainprogram->tmplay, -1);
 		if (mainprogram->tmchoice == TM_PLAY) draw_box(white, green, mainprogram->tmplay, -1);
 		if (mainprogram->tmplay->in(mx, my)) {
@@ -7119,6 +7139,7 @@ int tune_midi() {
 			}
 		}
 		draw_triangle(white, white, 0.125f, -0.83f, 0.06f, 0.12f, RIGHT, CLOSED);
+		
 		draw_box(white, black, mainprogram->tmbackw, -1);
 		if (mainprogram->tmchoice == TM_BACKW) draw_box(white, green, mainprogram->tmbackw, -1);
 		if (mainprogram->tmbackw->in(mx, my)) {
@@ -7128,6 +7149,7 @@ int tune_midi() {
 			}
 		}
 		draw_triangle(white, white, -0.185f, -0.83f, 0.06f, 0.12f, LEFT, CLOSED);
+		
 		draw_box(white, black, mainprogram->tmbounce, -1);
 		if (mainprogram->tmchoice == TM_BOUNCE) draw_box(white, green, mainprogram->tmbounce, -1);
 		if (mainprogram->tmbounce->in(mx, my)) {
@@ -7138,6 +7160,7 @@ int tune_midi() {
 		}
 		draw_triangle(white, white, -0.045f, -0.83f, 0.04f, 0.12f, LEFT, CLOSED);
 		draw_triangle(white, white, 0.01f, -0.83f, 0.04f, 0.12f, RIGHT, CLOSED);
+		
 		draw_box(white, black, mainprogram->tmfrforw, -1);
 		if (mainprogram->tmchoice == TM_FRFORW) draw_box(white, green, mainprogram->tmfrforw, -1);
 		if (mainprogram->tmfrforw->in(mx, my)) {
@@ -7147,6 +7170,7 @@ int tune_midi() {
 			}
 		}
 		draw_triangle(white, white, 0.275f, -0.83f, 0.06f, 0.12f, RIGHT, OPEN);
+		
 		draw_box(white, black, mainprogram->tmfrbackw, -1);
 		if (mainprogram->tmchoice == TM_FRBACKW) draw_box(white, green, mainprogram->tmfrbackw, -1);
 		if (mainprogram->tmfrbackw->in(mx, my)) {
@@ -7156,6 +7180,7 @@ int tune_midi() {
 			}
 		}
 		draw_triangle(white, white, -0.335f, -0.83f, 0.06f, 0.12f, LEFT, OPEN);
+		
 		draw_box(white, black, mainprogram->tmspeed, -1);
 		if (mainprogram->tmchoice == TM_SPEED) draw_box(white, green, mainprogram->tmspeed, -1);
 		if (mainprogram->tmspeedzero->in(mx, my)) {
@@ -7178,6 +7203,7 @@ int tune_midi() {
 		}
 		render_text("ONE", white, -0.755f, -0.08f, 0.0024f, 0.004f, 2);
 		render_text("SPEED", white, -0.765f, -0.48f, 0.0024f, 0.004f, 2);
+		
 		draw_box(white, black, mainprogram->tmopacity, -1);
 		if (mainprogram->tmchoice == TM_OPACITY) draw_box(white, green, mainprogram->tmopacity, -1);
 		if (mainprogram->tmopacity->in(mx, my)) {
@@ -7187,6 +7213,7 @@ int tune_midi() {
 			}
 		}
 		render_text("OPACITY", white, 0.605f, -0.48f, 0.0024f, 0.004f, 2);
+		
 		if (mainprogram->tmfreeze->in(mx, my)) {
 			draw_box(white, lightblue, mainprogram->tmfreeze, -1);
 			if (mainprogram->lmsave) {
@@ -7241,7 +7268,7 @@ int tune_midi() {
 	}
 	render_text("SAVE", white, box.vtxcoords->x1 + 0.02f, box.vtxcoords->y1 + 0.03f, 0.0024f, 0.004f, 2);
 	
-	tooltips_handle(4.0f);
+	tooltips_handle(2);
 		
 	mainprogram->bvao = mainprogram->boxvao;
 	mainprogram->bvbuf = mainprogram->boxvbuf;
@@ -7907,12 +7934,6 @@ void the_loop() {
 					for (int j = 0; j < lvec.size(); j++) {
 						lvec[j]->genmidibut->value = but->value;
 					}
-				}
-				if (mainprogram->menuactivation and but->value != 0) {
-					mainprogram->tunemidideck = but->value;
-					mainprogram->genmidimenu->state = 2;
-					mainprogram->rightmouse = false;
-					mainprogram->menuactivation = false;
 				}
 			}
 			else {
@@ -8846,42 +8867,6 @@ void the_loop() {
 		}
 
 
-
-		// Draw and handle genmidimenu
-		k = handle_menu(mainprogram->genmidimenu);
-		if (k == 0) {
-			if (!mainprogram->tunemidi) {
-				SDL_ShowWindow(mainprogram->tunemidiwindow);
-				SDL_RaiseWindow(mainprogram->tunemidiwindow);
-				//mainprogram->share_lists(&glc, mainprogram->mainwindow, &glc_tm, mainprogram->tunemidiwindow);
-				SDL_GL_MakeCurrent(mainprogram->tunemidiwindow, glc_tm);
-				glUseProgram(mainprogram->ShaderProgram_tm);
-				mainprogram->tmscratch->upvtxtoscr();
-				mainprogram->tmfreeze->upvtxtoscr();
-				mainprogram->tmplay->upvtxtoscr();
-				mainprogram->tmbackw->upvtxtoscr();
-				mainprogram->tmbounce->upvtxtoscr();
-				mainprogram->tmfrforw->upvtxtoscr();
-				mainprogram->tmfrbackw->upvtxtoscr();
-				mainprogram->tmspeed->upvtxtoscr();
-				mainprogram->tmspeedzero->upvtxtoscr();
-				mainprogram->tmopacity->upvtxtoscr();
-				glEnable(GL_BLEND);
-				glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
-				mainprogram->tunemidi = true;
-			}
-			else {
-				SDL_RaiseWindow(mainprogram->tunemidiwindow);
-			}
-		}
-	
-		if (mainprogram->menuchosen) {
-			mainprogram->menuchosen = false;
-			mainprogram->leftmouse = 0;
-			mainprogram->menuactivation = 0;
-			mainprogram->menuresults.clear();
-		}
-		
 		// Draw and handle genericmenu
 		k = handle_menu(mainprogram->genericmenu);
 		if (k == 0) {
@@ -8944,9 +8929,35 @@ void the_loop() {
 			}
 		}
 		else if (k == 7) {
+			if (!mainprogram->tunemidi) {
+				SDL_ShowWindow(mainprogram->tunemidiwindow);
+				SDL_RaiseWindow(mainprogram->tunemidiwindow);
+				SDL_GL_MakeCurrent(mainprogram->tunemidiwindow, glc_tm);
+				glUseProgram(mainprogram->ShaderProgram_tm);
+				mainprogram->tmdeck->upvtxtoscr();
+				mainprogram->tmset->upvtxtoscr();
+				mainprogram->tmscratch->upvtxtoscr();
+				mainprogram->tmfreeze->upvtxtoscr();
+				mainprogram->tmplay->upvtxtoscr();
+				mainprogram->tmbackw->upvtxtoscr();
+				mainprogram->tmbounce->upvtxtoscr();
+				mainprogram->tmfrforw->upvtxtoscr();
+				mainprogram->tmfrbackw->upvtxtoscr();
+				mainprogram->tmspeed->upvtxtoscr();
+				mainprogram->tmspeedzero->upvtxtoscr();
+				mainprogram->tmopacity->upvtxtoscr();
+				glEnable(GL_BLEND);
+				glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
+				mainprogram->tunemidi = true;
+			}
+			else {
+				SDL_RaiseWindow(mainprogram->tunemidiwindow);
+			}
+		}
+		else if (k == 8) {
 			mainprogram->quit("quitted");
 		}
-	
+
 		if (mainprogram->menuchosen) {
 			mainprogram->menuchosen = false;
 			mainprogram->leftmouse = 0;
@@ -9613,7 +9624,7 @@ void the_loop() {
 	}
 	mainprogram->drag = false;
 
-	if (!mainprogram->prefon and !mainprogram->tunemidi) tooltips_handle(1.0f);
+	if (!mainprogram->prefon and !mainprogram->tunemidi) tooltips_handle(0);
 	
 	
 	//autosave
@@ -11013,8 +11024,8 @@ int main(int argc, char* argv[]){
   	layops1.push_back("Clone layer");
   	layops1.push_back("Center image");
  	layops1.push_back("submenu aspectmenu");
- 	layops1.push_back("Aspect ratio");
- 	mainprogram->make_menu("laymenu1", mainprogram->laymenu1, layops1);
+	layops1.push_back("Aspect ratio");
+	mainprogram->make_menu("laymenu1", mainprogram->laymenu1, layops1);
 
  	std::vector<std::string> layops2;
  	layops2.push_back("submenu livemenu");
@@ -11139,11 +11150,7 @@ int main(int argc, char* argv[]){
   	bin2.push_back("Rename bin");
   	mainprogram->make_menu("bin2menu", mainprogram->bin2menu, bin2);
 
- 	std::vector<std::string> genmidi;
-  	genmidi.push_back("Tune deck MIDI");
-  	mainprogram->make_menu("genmidimenu", mainprogram->genmidimenu, genmidi);
-
- 	std::vector<std::string> generic;
+  	std::vector<std::string> generic;
   	generic.push_back("New project");
   	generic.push_back("Open project");
   	generic.push_back("Save project");
@@ -11151,7 +11158,8 @@ int main(int argc, char* argv[]){
   	generic.push_back("Open state");
   	generic.push_back("Save state");
   	generic.push_back("Preferences");
-  	generic.push_back("Quit");
+	generic.push_back("Configure general MIDI");
+	generic.push_back("Quit");
   	mainprogram->make_menu("genericmenu", mainprogram->genericmenu, generic);
 
  	std::vector<std::string> shelf1;

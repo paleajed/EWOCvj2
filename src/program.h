@@ -279,7 +279,6 @@ class Program {
 		Menu *binelmenu = nullptr;
 		Menu *binmenu = nullptr;
 		Menu *bin2menu = nullptr;
-		Menu *genmidimenu = nullptr;
 		Menu *genericmenu = nullptr;
 		Menu *shelfmenu = nullptr;
 		bool menuactivation;
@@ -350,8 +349,11 @@ class Program {
 		SDL_Window *tunemidiwindow = nullptr;
 		bool drawnonce = false;
 		bool tunemidi = false;
-		int tunemidideck;
-		Box *tmscratch;
+		bool tunemidideck = 0;
+		int tunemidiset = 1;
+		Box* tmdeck;
+		Box* tmset;
+		Box* tmscratch;
 		Box *tmfreeze;
 		Box *tmplay;
 		Box *tmbackw;
