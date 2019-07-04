@@ -66,7 +66,7 @@ class Shelf {
 		void handle();
 		void erase();
 		void save(const std::string &path);
-		void open(const std::string &path);
+		bool open(const std::string &path);
 		void open_shelffiles();
 		bool open_videofile(const std::string &path, int pos);
 		bool open_layer(const std::string& path, int pos);
@@ -85,7 +85,9 @@ class Project {
 		std::string shelfdir;
 		void newp(const std::string &path);
 		void open(const std::string &path);
-		void save(const std::string &path);
+		void save(const std::string& path);
+	private:
+		void do_save(const std::string& path);
 };
 
 class Preferences {
@@ -346,7 +348,8 @@ class Program {
 		std::unordered_map<EFFECT_TYPE, std::string> effectsmap;
 		std::vector<EFFECT_TYPE> abeffects;
 		
-		SDL_Window *tunemidiwindow = nullptr;
+		SDL_Window* dummywindow = nullptr;
+		SDL_Window* tunemidiwindow = nullptr;
 		bool drawnonce = false;
 		bool tunemidi = false;
 		bool tunemidideck = 0;
@@ -481,12 +484,15 @@ extern LoopStation *lp;
 extern LoopStation *lpc;
 extern Menu *effectmenu;
 extern Menu *mixmodemenu;
+extern SDL_GLContext glc_th;
+
 
 extern mix_target_struct mixtarget[2];
 
 extern GLuint get_imagetex(const std::string& path);
 extern GLuint get_videotex(const std::string& path);
 extern GLuint get_layertex(const std::string& path);
+extern GLuint get_deckmixtex(const std::string& path);
 extern int encode_frame(AVFormatContext *fmtctx, AVFormatContext *srcctx, AVCodecContext *enc_ctx, AVFrame *frame, AVPacket *pkt, FILE *outfile, int framenr);
 
 extern std::vector<Layer*>& choose_layers(bool j);

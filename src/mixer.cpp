@@ -3248,7 +3248,12 @@ void Mixer::save_layerfile(const std::string &path, Layer *lay, bool doclips, bo
 	boost::filesystem::rename(mainprogram->temppath + "tempconcat", str);
 }
 
-void Mixer::save_state(const std::string &path) {
+void Mixer::save_state(const std::string& path) {
+	std::thread statesav(&Mixer::do_save_state, this, path);
+	statesav.detach();
+}
+
+void Mixer::do_save_state(const std::string &path) {
 	std::vector<std::string> filestoadd;
 	std::string ext = path.substr(path.length() - 6, std::string::npos);
 	std::string str;
@@ -3294,16 +3299,12 @@ void Mixer::save_state(const std::string &path) {
 	//filestoadd.push_back(mainprogram->temppath + "tempA.shelf");
 	//mainprogram->shelves[1]->save(mainprogram->temppath + "tempB.shelf");
 	//filestoadd.push_back(mainprogram->temppath + "tempB.shelf");
-	bool save = mainprogram->prevmodus;
-	mainprogram->prevmodus = true;
-	mainmix->save_mix(mainprogram->temppath + "temp.state1");
+	mainmix->do_save_mix(mainprogram->temppath + "temp.state1", true);
 	filestoadd.push_back(mainprogram->temppath + "temp.state1.mix");
-	mainprogram->prevmodus = false;
-	mainmix->save_mix(mainprogram->temppath + "temp.state2");
+	mainmix->do_save_mix(mainprogram->temppath + "temp.state2", true);
 	filestoadd.push_back(mainprogram->temppath + "temp.state2.mix");
 	//save_genmidis(remove_extension(path) + ".midi");
-	mainprogram->prevmodus = save;
-	
+
     std::ofstream outputfile;
 	outputfile.open(mainprogram->temppath + "tempconcatstate", std::ios::out | std::ios::binary);
 	std::vector<std::vector<std::string>> filestoadd2;
@@ -3411,7 +3412,14 @@ void Mixer::event_read(std::istream &rfile, Param *par, Layer *lay) {
 	}
 }
 
-void Mixer::save_mix(const std::string &path) {
+void Mixer::save_mix(const std::string& path) {
+	std::thread mixsav(&Mixer::do_save_mix, this, path, mainprogram->prevmodus);
+	mixsav.detach();
+}
+
+void Mixer::do_save_mix(const std::string & path, bool modus) {
+	SDL_GL_MakeCurrent(mainprogram->dummywindow, glc_th);
+
 	std::string ext = path.substr(path.length() - 4, std::string::npos);
 	std::string str;
 	if (ext != ".mix") str = path + ".mix";
@@ -3474,39 +3482,83 @@ void Mixer::save_mix(const std::string &path) {
 	wfile << "WIPEDIR\n";
 	wfile << std::to_string(mainmix->wipedir[0]);
 	wfile << "\n";
+	wfile << "WIPEX\n";
+	wfile << std::to_string(mainmix->wipex[0]);
+	wfile << "\n";
+	wfile << "WIPEY\n";
+	wfile << std::to_string(mainmix->wipey[0]);
+	wfile << "\n";
 	wfile << "WIPECOMP\n";
 	wfile << std::to_string(mainmix->wipe[1]);
 	wfile << "\n";
 	wfile << "WIPEDIRCOMP\n";
 	wfile << std::to_string(mainmix->wipedir[1]);
 	wfile << "\n";
-	
+	wfile << "WIPEXCOMP\n";
+	wfile << std::to_string(mainmix->wipex[1]);
+	wfile << "\n";
+	wfile << "WIPEYCOMP\n";
+	wfile << std::to_string(mainmix->wipey[1]);
+	wfile << "\n";
+
 	std::vector<std::vector<std::string>> jpegpaths;
 	wfile << "LAYERSA\n";
-	std::vector<Layer*> &lvec1 = choose_layers(0);
-	for (int i = 0; i < lvec1.size(); i++) {
-		Layer *lay = lvec1[i];
+	std::vector<Layer*> lvec;
+	if (modus) lvec = mainmix->layersA;
+	else lvec = mainmix->layersB;
+	for (int i = 0; i < lvec.size(); i++) {
+		Layer* lay = lvec[i];
 		jpegpaths.push_back(mainmix->write_layer(lay, wfile, 1, 1));
 	}
-	
+
 	wfile << "LAYERSB\n";
-	std::vector<Layer*> &lvec2 = choose_layers(1);
-	for (int i = 0; i < lvec2.size(); i++) {
-		Layer *lay = lvec2[i];
+	if (modus) lvec = mainmix->layersAcomp;
+	else lvec = mainmix->layersBcomp;
+	for (int i = 0; i < lvec.size(); i++) {
+		Layer* lay = lvec[i];
 		jpegpaths.push_back(mainmix->write_layer(lay, wfile, 1, 1));
 	}
-	
+
 	wfile << "ENDOFFILE\n";
 	wfile.close();
 	
-    std::ofstream outputfile;
-	outputfile.open(mainprogram->temppath + "/tempconcat", std::ios::out | std::ios::binary);
+	std::vector<MixNode*> mns = mainprogram->nodesmain->mixnodescomp;
+	if (modus) mns = mainprogram->nodesmain->mixnodes;
+	if (mns.size()) {
+		std::vector<std::string> jpegpaths2;
+		GLuint tex = ((MixNode*)(mns[2]))->mixtex;
+		save_thumb(mainprogram->temppath + "deck.jpg", tex);
+		jpegpaths2.push_back(mainprogram->temppath + "deck.jpg");
+		jpegpaths.push_back(jpegpaths2);
+	}
+
+	std::string tcpath;
+	std::string name = "tempconcat";
+	int count = 0;
+	while (1) {
+		tcpath = mainprogram->temppath + name;
+		if (!exists(tcpath)) {
+			break;
+		}
+		count++;
+		name = remove_version(name) + "_" + std::to_string(count);
+	}
+	std::ofstream outputfile;
+	outputfile.open(tcpath, std::ios::out | std::ios::binary);
 	concat_files(outputfile, str, jpegpaths);
 	outputfile.close();
-	boost::filesystem::rename(mainprogram->temppath + "/tempconcat", str);
+	boost::filesystem::rename(tcpath, str);
+	
+	SDL_GL_MakeCurrent(nullptr, nullptr);
 }
 
-void Mixer::save_deck(const std::string &path) {
+void Mixer::save_deck(const std::string& path) {
+	std::thread decksav(&Mixer::do_save_deck, this, path);
+	decksav.detach();
+}
+
+void Mixer::do_save_deck(const std::string &path) {
+	SDL_GL_MakeCurrent(mainprogram->dummywindow, glc_th);
 	std::string ext = path.substr(path.length() - 5, std::string::npos);
 	std::string str;
 	if (ext != ".deck") str = path + ".deck";
@@ -3532,12 +3584,21 @@ void Mixer::save_deck(const std::string &path) {
 	wfile << "\n";
 	
 	std::vector<std::vector<std::string>> jpegpaths;
-	std::vector<Layer*> &lvec = choose_layers(mainmix->mousedeck);
+	std::vector<Layer*>& lvec = choose_layers(mainmix->mousedeck);
 	for (int i = 0; i < lvec.size(); i++) {
-		Layer *lay = lvec[i];
-		jpegpaths.push_back(mainmix->write_layer(lay, wfile, 1, 1));
+		Layer* lay = lvec[i];
+		jpegpaths.push_back(mainmix->write_layer(lay, wfile, true, true));
 	}
-	
+	std::vector<MixNode*>& mns = mainprogram->nodesmain->mixnodescomp;
+	if (mainprogram->prevmodus) mns = mainprogram->nodesmain->mixnodes;
+	if (mns.size()) {
+		std::vector<std::string> jpegpaths2;
+		GLuint tex = ((MixNode*)(mns[mainmix->mousedeck]))->mixtex;
+		save_thumb(mainprogram->temppath + "deck.jpg", tex);
+		jpegpaths2.push_back(mainprogram->temppath + "deck.jpg");
+		jpegpaths.push_back(jpegpaths2);
+	}
+
 	wfile << "ENDOFFILE\n";
 	wfile.close();
 	
@@ -3546,6 +3607,8 @@ void Mixer::save_deck(const std::string &path) {
 	concat_files(outputfile, str, jpegpaths);
 	outputfile.close();
 	boost::filesystem::rename(mainprogram->temppath + "/tempconcat", str);
+	
+	SDL_GL_MakeCurrent(nullptr, nullptr);
 }
 
 void Mixer::open_layerfile(const std::string &path, Layer *lay, bool loadevents, bool doclips) {
@@ -3685,7 +3748,7 @@ void Mixer::open_state(const std::string &path) {
 		glTexStorage2D(GL_TEXTURE_2D, 1, GL_RGBA8, mainprogram->ow, mainprogram->oh);
 	}
 	mainprogram->prevmodus = true;
-	if (exists(result + "_1.file")) {
+	if (exists(result + "_0.file")) {
 		mainmix->open_mix(result + "_0.file");
 	}
 	Layer *bulay = mainmix->currlay;
@@ -3841,8 +3904,16 @@ void Mixer::open_mix(const std::string &path) {
 			mainmix->wipe[0] = std::stoi(istring);
 		}
 		if (istring == "WIPEDIR") {
-			getline(rfile, istring); 
+			getline(rfile, istring);
 			mainmix->wipedir[0] = std::stoi(istring);
+		}
+		if (istring == "WIPEX") {
+			getline(rfile, istring);
+			mainmix->wipex[0] = std::stof(istring);
+		}
+		if (istring == "WIPEY") {
+			getline(rfile, istring);
+			mainmix->wipey[0] = std::stof(istring);
 		}
 		if (istring == "WIPECOMP") {
 			getline(rfile, istring); 
@@ -3851,6 +3922,14 @@ void Mixer::open_mix(const std::string &path) {
 		if (istring == "WIPEDIRCOMP") {
 			getline(rfile, istring); 
 			mainmix->wipedir[1] = std::stoi(istring);
+		}
+		if (istring == "WIPEXCOMP") {
+			getline(rfile, istring);
+			mainmix->wipex[1] = std::stof(istring);
+		}
+		if (istring == "WIPEYCOMP") {
+			getline(rfile, istring);
+			mainmix->wipey[1] = std::stof(istring);
 		}
 		int deck;
 		if (istring == "LAYERSA") {

@@ -127,6 +127,7 @@ float smw, smh;
 SDL_GLContext glc;
 SDL_GLContext glc_tm;
 SDL_GLContext glc_pr;
+SDL_GLContext glc_th;
 LayMidi *laymidiA;
 LayMidi *laymidiB;
 LayMidi *laymidiC;
@@ -5644,6 +5645,38 @@ GLuint get_layertex(const std::string& path) {
 	return ctex;
 }
 
+GLuint get_deckmixtex(const std::string& path) {
+
+	std::string result = deconcat_files(path);
+	bool concat = (result != "");
+	std::ifstream rfile;
+	if (concat) rfile.open(result);
+	else rfile.open(path);
+	std::string istring;
+
+	int32_t num;
+	if (concat) {
+		ifstream bfile;
+		bfile.open(path, ios::in | ios::binary);
+		bfile.read((char*)& num, 4);
+	}
+	else return -1;
+	printf("num %d\n", num);
+
+	GLuint ctex;
+	glGenTextures(1, &ctex);
+	glActiveTexture(GL_TEXTURE0);
+	glBindTexture(GL_TEXTURE_2D, ctex);
+	glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR);
+	glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
+	glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_BORDER);
+	glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_BORDER);
+
+	open_thumb(result + "_" + std::to_string(num - 2) + ".file", ctex);
+
+	return ctex;
+}
+
 
 Preferences::Preferences() {
 	PIVid *pvi = new PIVid;
@@ -7496,11 +7529,7 @@ void the_loop() {
 		mainprogram->oldoh = mainprogram->oh;
 	}
 				
-	if (mainprogram->openshelfdir) {
-		// load one item from mainprogram->opendir into shelf, one each loop not to slowdown output stream
-		mainmix->mouseshelf->open_dir();
-	}
-	else if (mainprogram->openshelffiles) {
+	if (mainprogram->openshelffiles) {
 		// load one item from mainprogram->paths into shelf, one each loop not to slowdown output stream
 		mainmix->mouseshelf->open_shelffiles();
 	}
@@ -8982,20 +9011,10 @@ void the_loop() {
 		}
 		else if (k == 3) {
 			mainprogram->pathto = "OPENSHELFFILES";
-			std::thread filereq (&Program::get_multinname, mainprogram,  "Load video file(s)/layer file(s) in shelf", boost::filesystem::canonical(mainprogram->currshelffilesdir).generic_string());
+			std::thread filereq (&Program::get_multinname, mainprogram,  "Load file(s) in shelf", boost::filesystem::canonical(mainprogram->currshelffilesdir).generic_string());
 			filereq.detach();
 		}
-		else if (k == 4) {
-			mainprogram->pathto = "OPENSHELFDIR";
-			std::thread filereq (&Program::get_dir, mainprogram, "Load directory into shelf", boost::filesystem::canonical(mainprogram->currshelfdirdir).generic_string());
-			filereq.detach();
-		}
-		else if (k == 5) {
-			mainprogram->pathto = "OPENSHELFIMAGE";
-			std::thread filereq (&Program::get_inname, mainprogram, "Load image into shelf", "", boost::filesystem::canonical(mainprogram->currimagedir).generic_string());
-			filereq.detach();
-		}
-		else if (k == 6 or k == 7) {
+		else if (k == 4 or k == 5) {
 			std::string name = remove_extension(basename(mainprogram->project->path));
 			std::string path;
 			int count = 0;
@@ -9011,7 +9030,7 @@ void the_loop() {
 			mainmix->save_deck(path);
 			mainmix->mouseshelf->insert_deck(path, k - 7, mainmix->mouseshelfelem);
 		}
-		else if (k == 8) {
+		else if (k == 6) {
 			std::string name = remove_extension(basename(mainprogram->project->path));
 			std::string path;
 			int count = 0;
@@ -9026,7 +9045,7 @@ void the_loop() {
 			mainmix->save_mix(path);
 			mainmix->mouseshelf->insert_mix(path, mainmix->mouseshelfelem);
 		}
-		else if (k == 9) {
+		else if (k == 7) {
 			mainmix->learn = true;
 			mainmix->learnparam = nullptr;
 			mainmix->learnbutton = mainmix->mouseshelf->buttons[mainmix->mouseshelfelem];
@@ -9212,11 +9231,18 @@ void the_loop() {
 				}
 			}
 			box = mainprogram->nodesmain->mixnodescomp[2]->outputbox;
-			box->vtxcoords->x1 = -0.3f;
-			if (mainprogram->prevmodus) box->vtxcoords->y1 = -0.4f + tf(0.05f);
-			else box->vtxcoords->y1 = -1.0f;
-			box->vtxcoords->w = 0.6f;
-			box->vtxcoords->h = 0.6f;
+			if (mainprogram->prevmodus) {
+				box->vtxcoords->y1 = -0.4f + tf(0.075f);
+				box->vtxcoords->x1 = -0.15f;
+				box->vtxcoords->w = 0.3f;
+				box->vtxcoords->h = 0.3f;
+			}
+			else {
+				box->vtxcoords->y1 = -1.0f;
+				box->vtxcoords->x1 = -0.3f;
+				box->vtxcoords->w = 0.6f;
+				box->vtxcoords->h = 0.6f;
+			}
 			box->upvtxtoscr();
 			if (!mainprogram->menuondisplay) {
 				if (box->scrcoords->x1 < mainprogram->mx and mainprogram->mx < box->scrcoords->x1 + box->scrcoords->w) {
@@ -9756,11 +9782,26 @@ void save_thumb(std::string path, GLuint tex) {
 	int he = mainprogram->oh3;
 	char *buf = (char*)malloc(wi * he * 3);
 
-	GLuint smalltex = copy_tex(tex);
-	GLuint fbo;
-	glGenFramebuffers(1, &fbo);
-	glBindFramebuffer(GL_FRAMEBUFFER, fbo);
+	GLuint texfrbuf, endfrbuf;
+	glGenFramebuffers(1, &texfrbuf);
+	glBindFramebuffer(GL_FRAMEBUFFER, texfrbuf);
+	glFramebufferTexture2D(GL_FRAMEBUFFER, GL_COLOR_ATTACHMENT0, GL_TEXTURE_2D, tex, 0);
+	GLuint smalltex;
+	glGenTextures(1, &smalltex);
+	glBindTexture(GL_TEXTURE_2D, smalltex);
+	glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_BORDER);
+	glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_BORDER);
+	glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR);
+	glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
+	glTexStorage2D(GL_TEXTURE_2D, 1, GL_RGBA8, wi, he);
+	glGenFramebuffers(1, &endfrbuf);
+	glBindFramebuffer(GL_FRAMEBUFFER, endfrbuf);
 	glFramebufferTexture2D(GL_FRAMEBUFFER, GL_COLOR_ATTACHMENT0, GL_TEXTURE_2D, smalltex, 0);
+	int sw, sh;
+	glBindTexture(GL_TEXTURE_2D, tex);
+	glGetTexLevelParameteriv(GL_TEXTURE_2D, 0, GL_TEXTURE_WIDTH, &sw);
+	glGetTexLevelParameteriv(GL_TEXTURE_2D, 0, GL_TEXTURE_HEIGHT, &sh);
+	glBlitNamedFramebuffer(texfrbuf, endfrbuf, 0, 0, sw, sh, 0, 0, wi, he, GL_COLOR_BUFFER_BIT, GL_LINEAR);
 	glReadBuffer(GL_COLOR_ATTACHMENT0);
 	glReadPixels(0, 0, wi, he, GL_RGB, GL_UNSIGNED_BYTE, buf);
 	glDeleteTextures(1, &smalltex);
@@ -9953,15 +9994,12 @@ void Shelf::save(const std::string &path) {
 	for (int j = 0; j < 16; j++) {
 		wfile << this->paths[j];
 		wfile << "\n";
+		if (this->paths[j] == "") continue;
 		wfile << std::to_string(this->types[j]);
 		wfile << "\n";
 		if (this->types[j] == ELEM_LAYER) {
 			filestoadd.push_back(this->paths[j]);
 		}
-		std::string name = remove_extension(this->basepath);
-		int count = 0;
-		this->jpegpaths[j] = mainprogram->temppath + name + "_" + std::to_string(j) + ".jpg";
-		save_thumb(this->jpegpaths[j], this->texes[j]);
 		filestoadd.push_back(this->jpegpaths[j]);
 		wfile << this->jpegpaths[j];
 		wfile << "\n";
@@ -10020,12 +10058,39 @@ void Shelf::open_dir() {
 
 void Shelf::open_shelffiles() {
 	std::string str = mainprogram->paths[mainprogram->shelffilescount];
-	if (str.substr(str.length() - 6, std::string::npos) == ".layer") {
+	if (isimage(str)) {
+		mainmix->mouseshelf->open_image(str, mainprogram->shelffileselem);
+	}
+	else if (str.substr(str.length() - 6, std::string::npos) == ".layer") {
 		mainmix->mouseshelf->open_layer(str, mainprogram->shelffileselem);
+	}
+	else if (str.substr(str.length() - 5, std::string::npos) == ".deck") {
+		this->texes[mainprogram->shelffileselem] = get_deckmixtex(str);
+		this->paths[mainprogram->shelffileselem] = str;
+		this->jpegpaths[mainprogram->shelffileselem] = "";
+		this->types[mainprogram->shelffileselem] = ELEM_DECK;
+	}
+	else if (str.substr(str.length() - 4, std::string::npos) == ".mix") {
+		this->texes[mainprogram->shelffileselem] = get_deckmixtex(str);
+		this->paths[mainprogram->shelffileselem] = str;
+		this->jpegpaths[mainprogram->shelffileselem] = "";
+		this->types[mainprogram->shelffileselem] = ELEM_MIX;
 	}
 	else {
 		mainmix->mouseshelf->open_videofile(str, mainprogram->shelffileselem);
 	}
+	std::string name = remove_extension(this->basepath);
+	int count = 0;
+	while (1) {
+		this->jpegpaths[mainprogram->shelffileselem] = mainprogram->temppath + name + ".jpg";
+		if (!exists(this->jpegpaths[mainprogram->shelffileselem])) {
+			break;
+		}
+		count++;
+		name = remove_version(name) + "_" + std::to_string(count);
+	}
+	save_thumb(this->jpegpaths[mainprogram->shelffileselem], this->texes[mainprogram->shelffileselem]);
+
 	mainprogram->shelffileselem++;
 	mainprogram->shelffilescount++;
 	if (mainprogram->shelffilescount == mainprogram->paths.size() or mainprogram->shelffileselem == 16) {
@@ -10212,8 +10277,9 @@ bool Shelf::open_image(const std::string &path, int pos) {
 	return 1;
 }
 	
-void Shelf::open(const std::string &path) {
+bool Shelf::open(const std::string &path) {
 	
+	if (!exists(path)) return 0;
 	std::string result = deconcat_files(path);
 	bool concat = (result != "");
 	ifstream rfile;
@@ -10233,17 +10299,32 @@ void Shelf::open(const std::string &path) {
 			while (getline(rfile, istring)) {
 				if (istring == "ENDOFELEMS") break;
 				this->paths[count] = istring;
+				if (this->paths[count] == "") {
+					count++;
+					continue;
+				}
 				getline(rfile, istring);
 				this->types[count] = (ELEM_TYPE)std::stoi(istring);
 				if (this->types[count] == ELEM_LAYER) {
 					if (concat) {
+						std::string name = remove_extension(basename(this->paths[count]));
+						int pcount = 0;
+						while (1) {
+							this->paths[count] = mainprogram->temppath + name + ".layer";
+							if (!exists(this->paths[count])) {
+								break;
+							}
+							pcount++;
+							name = remove_version(name) + "_" + std::to_string(pcount);
+						}
 						boost::filesystem::rename(result + "_" + std::to_string(filecount) + ".file", this->paths[count]);
 						filecount++;
 					}
 				}
 				getline(rfile, istring);
-				this->jpegpaths[count] = istring;
-				open_thumb(this->jpegpaths[count], this->texes[count]);
+				this->jpegpaths[count] = result + "_" + std::to_string(filecount) + ".file";
+				open_thumb(result + "_" + std::to_string(filecount) + ".file", this->texes[count]);
+				filecount++;
 				count++;
 			}
 		}
@@ -10807,6 +10888,7 @@ int main(int argc, char* argv[]){
 	//glewExperimental = GL_TRUE;
 	glewInit();
 
+	mainprogram->dummywindow = SDL_CreateWindow("", 0, 0, 32, 32, SDL_WINDOW_OPENGL | SDL_WINDOW_HIDDEN | SDL_WINDOW_ALLOW_HIGHDPI);
 	mainprogram->tunemidiwindow = SDL_CreateWindow("Tune MIDI", glob->w / 4, glob->h / 4, glob->w / 2, glob->h / 2, SDL_WINDOW_OPENGL | SDL_WINDOW_HIDDEN | SDL_WINDOW_ALLOW_HIGHDPI);
 	mainprogram->prefwindow = SDL_CreateWindow("Preferences", glob->w / 4, glob->h / 4, glob->w / 2, glob->h / 2, SDL_WINDOW_OPENGL | SDL_WINDOW_HIDDEN | SDL_WINDOW_ALLOW_HIGHDPI);
 	SDL_GL_GetDrawableSize(mainprogram->prefwindow, &wi, &he);
@@ -10835,6 +10917,14 @@ int main(int argc, char* argv[]){
 	glGenFramebuffers(1, &mainprogram->smglobfbo_pr);
 	glBindFramebuffer(GL_FRAMEBUFFER, mainprogram->smglobfbo_pr);
 	glFramebufferTexture2D(GL_FRAMEBUFFER, GL_COLOR_ATTACHMENT0, GL_TEXTURE_2D, mainprogram->smglobfbotex_pr, 0);
+
+	SDL_GL_MakeCurrent(mainprogram->mainwindow, glc);
+	HGLRC c1 = wglGetCurrentContext();
+	glc_th = SDL_GL_CreateContext(mainprogram->dummywindow);
+	SDL_GL_MakeCurrent(mainprogram->dummywindow, glc_th);
+	HGLRC c2 = wglGetCurrentContext();
+	wglShareLists(c1, c2);
+
 	SDL_GL_MakeCurrent(mainprogram->mainwindow, glc);
 	mainprogram->ShaderProgram = mainprogram->set_shader();
 	glUseProgram(mainprogram->ShaderProgram);
@@ -11166,9 +11256,7 @@ int main(int argc, char* argv[]){
   	shelf1.push_back("New shelf");
   	shelf1.push_back("Open shelf");
   	shelf1.push_back("Save shelf");
-  	shelf1.push_back("Open video(s)/layer(s)");
-  	shelf1.push_back("Open dir");
-	shelf1.push_back("Open image");
+  	shelf1.push_back("Open file(s)");
 	shelf1.push_back("Insert deck A");
 	shelf1.push_back("Insert deck B");
 	shelf1.push_back("Insert full mix");
@@ -11246,8 +11334,10 @@ int main(int argc, char* argv[]){
 			mainmix->scenes[m][mainmix->currscene[m]]->nbframes.insert(mainmix->scenes[m][mainmix->currscene[m]]->nbframes.begin(), lay);
 			lay->clips.clear();
 			mainmix->mousedeck = m;
-			mainmix->save_deck(mainprogram->temppath + "tempdeck_" + std::to_string(m) + std::to_string(i + 1) + ".deck");
-			mainmix->save_deck(mainprogram->temppath + "tempdeck_" + std::to_string(m) + std::to_string(i + 1) + "comp.deck");
+			mainmix->do_save_deck(mainprogram->temppath + "tempdeck_" + std::to_string(m) + std::to_string(i + 1) + ".deck");
+			SDL_GL_MakeCurrent(mainprogram->mainwindow, glc);
+			mainmix->do_save_deck(mainprogram->temppath + "tempdeck_" + std::to_string(m) + std::to_string(i + 1) + "comp.deck");
+			SDL_GL_MakeCurrent(mainprogram->mainwindow, glc);
 			lvec.clear();
 			lay->filename = "";
 		}
@@ -11492,20 +11582,6 @@ int main(int argc, char* argv[]){
 					mainprogram->shelffilescount = 0;
 					mainprogram->shelffileselem = mainmix->mouseshelfelem;
 				}
-			}
-			else if (mainprogram->pathto == "OPENSHELFDIR") {
-				mainprogram->shelfpath = mainprogram->path;
-				mainprogram->opendir = opendir(mainprogram->path);
-				mainprogram->currshelfdirdir = mainprogram->shelfpath;
-				if (mainprogram->opendir) {
-					mainprogram->openshelfdir = true;
-					mainprogram->shelfdircount = 0;
-				}
-			}
-			else if (mainprogram->pathto == "OPENSHELFIMAGE") {
-				std::string str(mainprogram->path);
-				mainprogram->currimagedir = dirname(str);
-				mainmix->mouseshelf->open_image(str, mainmix->mouseshelfelem);
 			}
 			else if (mainprogram->pathto == "SAVESTATE") {
 				std::string str(mainprogram->path);

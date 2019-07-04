@@ -764,7 +764,12 @@ void Project::open(const std::string &path) {
 	mainmix->open_state(result + "_0.file");
 }
 
-void Project::save(const std::string &path) {
+void Project::save(const std::string& path) {
+	std::thread projsav(&Project::do_save, this, path);
+	projsav.detach();
+}
+
+void Project::do_save(const std::string& path) {
 	std::string ext = path.substr(path.length() - 7, std::string::npos);
 	std::string str;
 	if (ext != ".ewocvj") str = path + ".ewocvj";
@@ -780,16 +785,18 @@ void Project::save(const std::string &path) {
 	wfile << "OUTPUTHEIGHT\n";
 	wfile << std::to_string((int)mainprogram->oh);
 	wfile << "\n";
+	mainprogram->shelves[0]->save(this->shelfdir + mainprogram->shelves[0]->basepath);
 	wfile << "CURRSHELFA\n";
 	wfile << mainprogram->shelves[0]->basepath;
 	wfile << "\n";
+	mainprogram->shelves[1]->save(this->shelfdir + mainprogram->shelves[1]->basepath);
 	wfile << "CURRSHELFB\n";
 	wfile << mainprogram->shelves[1]->basepath;
 	wfile << "\n";
 	
 	wfile.close();
 	
-	mainmix->save_state(mainprogram->temppath + "current.state");
+	mainmix->do_save_state(mainprogram->temppath + "current.state");
 	filestoadd.push_back(mainprogram->temppath + "current.state");
 	
     std::ofstream outputfile;

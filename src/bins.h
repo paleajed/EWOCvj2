@@ -67,6 +67,9 @@ class BinsMain {
 		void hap_mix(BinMix * bm);
 		void hap_encode(const std::string srcpath, BinElement *binel, BinDeck *bd, BinMix *bm);
 		BinsMain();
+
+	private:
+		void do_save_bin(const std::string& path);
 };
 		
 class Bin {

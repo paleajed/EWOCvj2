@@ -1871,7 +1871,12 @@ void BinsMain::open_bin(const std::string &path, Bin *bin) {
 	rfile.close();
 }
 
-void BinsMain::save_bin(const std::string &path) {
+void BinsMain::save_bin(const std::string& path) {
+	std::thread binsav(&BinsMain::do_save_bin, this, path);
+	binsav.detach();
+}
+
+void BinsMain::do_save_bin(const std::string& path) {
 	std::vector<std::string> filestoadd;
 	std::ofstream wfile;
 	wfile.open(path.c_str());
