@@ -275,8 +275,8 @@ Effect::~Effect() {
 // param->effect: the effect the parameter belongs to
 BlurEffect::BlurEffect() {
 	this->numrows = 1;
-	Param *param = new Param;
-	param->name = "Amount"; 
+	Param* param = new Param;
+	param->name = "Amount";
 	param->value = 10.0;
 	param->range[0] = 1;
 	param->range[1] = 60;
@@ -285,6 +285,32 @@ BlurEffect::BlurEffect() {
 	param->effect = this;
 	param->box->tooltiptitle = "Blur amount ";
 	param->box->tooltip = "Amount of image blurring - between 1 and 60 ";
+	this->params.push_back(param);
+}
+
+BoxblurEffect::BoxblurEffect() {
+	this->numrows = 1;
+	Param* param = new Param;
+	param->name = "Amount";
+	param->value = 10.0;
+	param->range[0] = 1;
+	param->range[1] = 60;
+	param->sliding = false;
+	param->shadervar = "glowblur";
+	param->effect = this;
+	param->box->tooltiptitle = "Boxblur amount ";
+	param->box->tooltip = "Amount of image blurring - between 1 and 60 ";
+	this->params.push_back(param);
+	param = new Param;
+	param->name = "Precision";
+	param->value = 20;
+	param->range[0] = 1;
+	param->range[1] = 40;
+	param->sliding = false;
+	param->shadervar = "jump";
+	param->effect = this;
+	param->box->tooltiptitle = "Boxblur precision ";
+	param->box->tooltip = "Size of boxblur boxes - between 1 and 40 ";
 	this->params.push_back(param);
 }
 
@@ -1406,7 +1432,10 @@ Effect *new_effect(Effect *effect) {
 			return new FlipEffect(*(FlipEffect *)effect);
 			break;
 		case MIRROR:
-			return new MirrorEffect(*(MirrorEffect *)effect);
+			return new MirrorEffect(*(MirrorEffect*)effect);
+			break;
+		case BOXBLUR:
+			return new BoxblurEffect(*(BoxblurEffect*)effect);
 			break;
 	}
 	return nullptr;
@@ -1537,6 +1566,9 @@ Effect *do_add_effect(Layer *lay, EFFECT_TYPE type, int pos, bool comp) {
 			break;
 		case MIRROR:
 			effect = new MirrorEffect();
+			break;
+		case BOXBLUR:
+			effect = new BoxblurEffect();
 			break;
 	}
 
@@ -2147,10 +2179,10 @@ Layer::Layer(bool comp) {
 						0.0f, 0.0f,
 						1.0f, 0.0f};
 
-  GLenum err;
-    while ((err = glGetError()) != GL_NO_ERROR) {
-        printf("%X\n", err);
-    }
+  //GLenum err;
+    //while ((err = glGetError()) != GL_NO_ERROR) {
+     //   printf("%X\n", err);
+    //}
 
     glGenBuffers(1, &this->vbuf);
 	glBindBuffer(GL_ARRAY_BUFFER, this->vbuf);
@@ -2690,6 +2722,9 @@ void Mixer::lay_copy(std::vector<Layer*> &slayers, std::vector<Layer*> &dlayers,
 						break;
 					case MIRROR:
 						ceff = new MirrorEffect();
+						break;
+					case BOXBLUR:
+						ceff = new BoxblurEffect();
 						break;
 				}
 				ceff->type = eff->type;
@@ -3299,9 +3334,9 @@ void Mixer::do_save_state(const std::string &path) {
 	//filestoadd.push_back(mainprogram->temppath + "tempA.shelf");
 	//mainprogram->shelves[1]->save(mainprogram->temppath + "tempB.shelf");
 	//filestoadd.push_back(mainprogram->temppath + "tempB.shelf");
-	mainmix->do_save_mix(mainprogram->temppath + "temp.state1", true);
+	mainmix->do_save_mix(mainprogram->temppath + "temp.state1", true, true);
 	filestoadd.push_back(mainprogram->temppath + "temp.state1.mix");
-	mainmix->do_save_mix(mainprogram->temppath + "temp.state2", true);
+	mainmix->do_save_mix(mainprogram->temppath + "temp.state2", true, true);
 	filestoadd.push_back(mainprogram->temppath + "temp.state2.mix");
 	//save_genmidis(remove_extension(path) + ".midi");
 
@@ -3413,11 +3448,11 @@ void Mixer::event_read(std::istream &rfile, Param *par, Layer *lay) {
 }
 
 void Mixer::save_mix(const std::string& path) {
-	std::thread mixsav(&Mixer::do_save_mix, this, path, mainprogram->prevmodus);
+	std::thread mixsav(&Mixer::do_save_mix, this, path, mainprogram->prevmodus, true);
 	mixsav.detach();
 }
 
-void Mixer::do_save_mix(const std::string & path, bool modus) {
+void Mixer::do_save_mix(const std::string & path, bool modus, bool save) {
 	SDL_GL_MakeCurrent(mainprogram->dummywindow, glc_th);
 
 	std::string ext = path.substr(path.length() - 4, std::string::npos);
@@ -3508,7 +3543,7 @@ void Mixer::do_save_mix(const std::string & path, bool modus) {
 	else lvec = mainmix->layersB;
 	for (int i = 0; i < lvec.size(); i++) {
 		Layer* lay = lvec[i];
-		jpegpaths.push_back(mainmix->write_layer(lay, wfile, 1, 1));
+		jpegpaths.push_back(mainmix->write_layer(lay, wfile, true, save));
 	}
 
 	wfile << "LAYERSB\n";
@@ -3516,20 +3551,22 @@ void Mixer::do_save_mix(const std::string & path, bool modus) {
 	else lvec = mainmix->layersBcomp;
 	for (int i = 0; i < lvec.size(); i++) {
 		Layer* lay = lvec[i];
-		jpegpaths.push_back(mainmix->write_layer(lay, wfile, 1, 1));
+		jpegpaths.push_back(mainmix->write_layer(lay, wfile, true, save));
 	}
 
 	wfile << "ENDOFFILE\n";
 	wfile.close();
 	
-	std::vector<MixNode*> mns = mainprogram->nodesmain->mixnodescomp;
-	if (modus) mns = mainprogram->nodesmain->mixnodes;
-	if (mns.size()) {
-		std::vector<std::string> jpegpaths2;
-		GLuint tex = ((MixNode*)(mns[2]))->mixtex;
-		save_thumb(mainprogram->temppath + "deck.jpg", tex);
-		jpegpaths2.push_back(mainprogram->temppath + "deck.jpg");
-		jpegpaths.push_back(jpegpaths2);
+	if (save) {
+		std::vector<MixNode*> mns = mainprogram->nodesmain->mixnodescomp;
+		if (modus) mns = mainprogram->nodesmain->mixnodes;
+		if (mns.size()) {
+			std::vector<std::string> jpegpaths2;
+			GLuint tex = ((MixNode*)(mns[2]))->mixtex;
+			save_thumb(mainprogram->temppath + "mix.jpg", tex);
+			jpegpaths2.push_back(mainprogram->temppath + "mix.jpg");
+			jpegpaths.push_back(jpegpaths2);
+		}
 	}
 
 	std::string tcpath;
@@ -3553,11 +3590,11 @@ void Mixer::do_save_mix(const std::string & path, bool modus) {
 }
 
 void Mixer::save_deck(const std::string& path) {
-	std::thread decksav(&Mixer::do_save_deck, this, path);
+	std::thread decksav(&Mixer::do_save_deck, this, path, true);
 	decksav.detach();
 }
 
-void Mixer::do_save_deck(const std::string &path) {
+void Mixer::do_save_deck(const std::string &path, bool save) {
 	SDL_GL_MakeCurrent(mainprogram->dummywindow, glc_th);
 	std::string ext = path.substr(path.length() - 5, std::string::npos);
 	std::string str;
@@ -3587,16 +3624,18 @@ void Mixer::do_save_deck(const std::string &path) {
 	std::vector<Layer*>& lvec = choose_layers(mainmix->mousedeck);
 	for (int i = 0; i < lvec.size(); i++) {
 		Layer* lay = lvec[i];
-		jpegpaths.push_back(mainmix->write_layer(lay, wfile, true, true));
+		jpegpaths.push_back(mainmix->write_layer(lay, wfile, true, save));
 	}
-	std::vector<MixNode*>& mns = mainprogram->nodesmain->mixnodescomp;
-	if (mainprogram->prevmodus) mns = mainprogram->nodesmain->mixnodes;
-	if (mns.size()) {
-		std::vector<std::string> jpegpaths2;
-		GLuint tex = ((MixNode*)(mns[mainmix->mousedeck]))->mixtex;
-		save_thumb(mainprogram->temppath + "deck.jpg", tex);
-		jpegpaths2.push_back(mainprogram->temppath + "deck.jpg");
-		jpegpaths.push_back(jpegpaths2);
+	if (save) {
+		std::vector<MixNode*>& mns = mainprogram->nodesmain->mixnodescomp;
+		if (mainprogram->prevmodus) mns = mainprogram->nodesmain->mixnodes;
+		if (mns.size()) {
+			std::vector<std::string> jpegpaths2;
+			GLuint tex = ((MixNode*)(mns[mainmix->mousedeck]))->mixtex;
+			save_thumb(mainprogram->temppath + "deck.jpg", tex);
+			jpegpaths2.push_back(mainprogram->temppath + "deck.jpg");
+			jpegpaths.push_back(jpegpaths2);
+		}
 	}
 
 	wfile << "ENDOFFILE\n";
@@ -4582,7 +4621,9 @@ void Mixer::new_file(int decks, bool alive) {
 			lvec[i]->mutebut->value = false;
 			lvec[i]->mute_handle();
 		}
-		this->delete_layers(lvec, alive);
+		std::vector<Layer*> lrs = lvec;
+		lvec.clear();
+		this->delete_layers(lrs, alive);
 		Layer *lay = mainmix->add_layer(lvec, 0);
 		if (mainprogram->prevmodus) {
 			mainprogram->nodesmain->currpage->connect_nodes(lvec[lvec.size() - 1]->lasteffnode[0], mainprogram->nodesmain->mixnodes[0]);
@@ -4598,7 +4639,9 @@ void Mixer::new_file(int decks, bool alive) {
 			lvec[i]->mutebut->value = false;
 			lvec[i]->mute_handle();
 		}
-		this->delete_layers(lvec, alive);
+		std::vector<Layer*> lrs = lvec;
+		lvec.clear();
+		this->delete_layers(lrs, alive);
 		Layer *lay = mainmix->add_layer(lvec, 0);
 		if (mainprogram->prevmodus) {
 			mainprogram->nodesmain->currpage->connect_nodes(lvec[lvec.size() - 1]->lasteffnode[0], mainprogram->nodesmain->mixnodes[1]);
@@ -4613,21 +4656,18 @@ void Mixer::new_file(int decks, bool alive) {
 	//mainmix->copy_to_comp(mainmix->layersA, mainmix->layersAcomp, mainmix->layersB, mainmix->layersBcomp, mainprogram->nodesmain->currpage->nodes, mainprogram->nodesmain->currpage->nodescomp, mainprogram->nodesmain->mixnodescomp, true);
 }
 
-void Mixer::delete_layers(std::vector<Layer*> &layers, bool alive) {
-	while (!layers.empty()) {
-		//layers.back()->node = nullptr;
-		//layers.back()->blendnode = nullptr;
-		Layer *lay = layers.back();
+void Mixer::delete_layers(std::vector<Layer*>& layers, bool alive) {
+	std::thread lrsdel(&Mixer::do_delete_layers, this, layers, alive);
+	lrsdel.detach();
+}
+
+void Mixer::do_delete_layers(std::vector<Layer*> lrs, bool alive) {
+	for (int i = 0; i < lrs.size(); i++) {
+		Layer *lay = lrs[lrs.size() - i - 1];
 		if (alive and std::find(mainprogram->busylayers.begin(), mainprogram->busylayers.end(), lay) == mainprogram->busylayers.end()) {
-			mainmix->delete_layer(layers, lay, false);
+			mainmix->delete_layer(lrs, lay, false);
 		}
 		else {
-			int size = layers.size();
-			for (int i = 0; i < size; i++) {
-				if (layers[i] == lay) {
-					layers.erase(layers.begin() + i);
-				}
-			}
 			while (!lay->effects[0].empty()) {
 				mainprogram->nodesmain->currpage->delete_node(lay->effects[0].back()->node);
 				for (int j = 0; j < lay->effects[0].back()->params.size(); j++) {

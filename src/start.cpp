@@ -3160,6 +3160,9 @@ void display_texture(Layer *lay, bool deck) {
 						case 39:
 							effstr = "MIRROR";
 							break;
+						case 40:
+							effstr = "BOXBLUR";
+							break;
 					}
 					float textw = tf(render_text(effstr, white, eff->box->vtxcoords->x1 + tf(0.01f), eff->box->vtxcoords->y1 + tf(0.05f) - tf(0.030f), tf(0.0003f), tf(0.0005f)));
 					eff->box->vtxcoords->w = textw + tf(0.032f);
@@ -3716,6 +3719,17 @@ void onestepfrom(bool stage, Node *node, Node *prevnode, GLuint prevfbotex, GLui
 						break;
 					 }
 		
+					case BOXBLUR: {
+						fxid = glGetUniformLocation(mainprogram->ShaderProgram, "fxid");
+						glUniform1i(fxid, BOXBLUR);
+						GLint interm = glGetUniformLocation(mainprogram->ShaderProgram, "interm");
+						glUniform1i(interm, 1);
+						doblur(stage, prevfbotex, 6);
+						glActiveTexture(GL_TEXTURE0);
+						prevfbotex = mainprogram->fbotex[1 + stage * 2];
+						break;
+					}
+
 					case RADIALBLUR: {
 						fxid = glGetUniformLocation(mainprogram->ShaderProgram, "fxid");
 						glUniform1i(fxid, RADIALBLUR);
@@ -3995,12 +4009,12 @@ void onestepfrom(bool stage, Node *node, Node *prevnode, GLuint prevfbotex, GLui
 						glUniform1i(fxid, FLIP);
 						break;
 					 }
-					 
+
 					case MIRROR: {
 						fxid = glGetUniformLocation(mainprogram->ShaderProgram, "fxid");
 						glUniform1i(fxid, MIRROR);
 						break;
-					 }
+					}
 				}
 			}
 			
@@ -6250,7 +6264,8 @@ void handle_scenes(Scene *scene) {
 					}
 					mainmix->mousedeck = scene->deck;
 					// save current scene to temp dir, open new scene
-					mainmix->save_deck(mainprogram->temppath + "tempdeck_xch.deck");
+					mainmix->do_save_deck(mainprogram->temppath + "tempdeck_xch.deck", false);
+					SDL_GL_MakeCurrent(mainprogram->mainwindow, glc);
 					// stop current scene loopstation line if they don't extend to the other deck
 					for (int j = 0; j < loopstation->elems.size(); j++) {
 						std::unordered_set<Param*>::iterator it;
@@ -6266,7 +6281,7 @@ void handle_scenes(Scene *scene) {
 							loopstation->elems[j]->erase_elem();
 						}
 					}
-					mainmix->open_deck(mainprogram->temppath + "tempdeck_" + std::to_string(scene->deck) + std::to_string(i) + comp + ".deck", 0);
+					mainmix->open_deck(mainprogram->temppath + "tempdeck_" + std::to_string(scene->deck) + std::to_string(i) + comp + ".deck", false);
 					boost::filesystem::rename(mainprogram->temppath + "tempdeck_xch.deck", mainprogram->temppath + "tempdeck_" + std::to_string(scene->deck) + std::to_string(mainmix->currscene[scene->deck] + 1) + comp + ".deck");
 					std::vector<Layer*> &lvec2 = choose_layers(scene->deck);
 					for (int j = 0; j < lvec2.size(); j++) {
@@ -7408,9 +7423,11 @@ void enddrag() {
 	}
 	if (binsmain->dragdeck) {
 		binsmain->dragdeck = nullptr;
+		binsmain->movingdeck = nullptr;
 	}
 	if (binsmain->dragmix) {
 		binsmain->dragmix = nullptr;
+		binsmain->movingmix = nullptr;
 	}
 	binsmain->dragtexes[0].clear();
 	binsmain->dragtexes[1].clear();
@@ -8573,7 +8590,6 @@ void the_loop() {
 					mwin->win = SDL_CreateWindow(PROGRAM_NAME, rc1.x, rc1.y, mwin->w, mwin->h, SDL_WINDOW_OPENGL | SDL_WINDOW_MAXIMIZED | SDL_WINDOW_RESIZABLE |
 						SDL_WINDOW_FULLSCREEN_DESKTOP | SDL_WINDOW_ALLOW_HIGHDPI);
 					SDL_RaiseWindow(mainprogram->mainwindow);
-					printf("screen %d\n", screen);
 					mainprogram->mixwindows.push_back(mwin);
 					SDL_GL_MakeCurrent(mainprogram->mainwindow, glc);
 					HGLRC c1 = wglGetCurrentContext();
@@ -10732,7 +10748,7 @@ BinElement *find_element(int size, int k, int i, int j, bool overlapchk) {
 		}
 		for (int m = 0; m < binsmain->currbin->decks.size(); m++) {
 			BinDeck *bd = binsmain->currbin->decks[m];
-			if (bd == binsmain->movingdeck) continue;
+			if (bd == binsmain->dragdeck) continue;
 			for (int n = 0; n < bd->height; n++) {
 				if (bd->i == 0) rows[bd->j + n] += 1;
 				if (bd->i == 3) rows[bd->j + n] += 2;
@@ -10740,7 +10756,9 @@ BinElement *find_element(int size, int k, int i, int j, bool overlapchk) {
 		}
 		for (int m = 0; m < binsmain->currbin->mixes.size(); m++) {
 			BinMix *bm = binsmain->currbin->mixes[m];
-			if (bm == binsmain->movingmix) continue;
+			if (bm == binsmain->dragmix) {
+				continue;
+			}
 			for (int n = 0; n < bm->height; n++) {
 				rows[bm->j + n] = 3;
 			}
@@ -11010,8 +11028,9 @@ int main(int argc, char* argv[]){
   	effects.push_back("SHARPEN");
   	effects.push_back("DITHER");
  	effects.push_back("FLIP");
- 	effects.push_back("MIRROR");
- 	std::vector<std::string> meffects = effects;
+	effects.push_back("MIRROR");
+	effects.push_back("BOXBLUR");
+	std::vector<std::string> meffects = effects;
  	std::sort(meffects.begin(), meffects.end());
  	for (int i = 0; i < meffects.size(); i++) {
  		for (int j = 0; j < effects.size(); j++) {
@@ -11334,9 +11353,9 @@ int main(int argc, char* argv[]){
 			mainmix->scenes[m][mainmix->currscene[m]]->nbframes.insert(mainmix->scenes[m][mainmix->currscene[m]]->nbframes.begin(), lay);
 			lay->clips.clear();
 			mainmix->mousedeck = m;
-			mainmix->do_save_deck(mainprogram->temppath + "tempdeck_" + std::to_string(m) + std::to_string(i + 1) + ".deck");
+			mainmix->do_save_deck(mainprogram->temppath + "tempdeck_" + std::to_string(m) + std::to_string(i + 1) + ".deck", false);
 			SDL_GL_MakeCurrent(mainprogram->mainwindow, glc);
-			mainmix->do_save_deck(mainprogram->temppath + "tempdeck_" + std::to_string(m) + std::to_string(i + 1) + "comp.deck");
+			mainmix->do_save_deck(mainprogram->temppath + "tempdeck_" + std::to_string(m) + std::to_string(i + 1) + "comp.deck", false);
 			SDL_GL_MakeCurrent(mainprogram->mainwindow, glc);
 			lvec.clear();
 			lay->filename = "";

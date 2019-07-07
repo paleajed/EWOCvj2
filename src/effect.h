@@ -43,7 +43,8 @@ typedef enum
    	SHARPEN = 36,
    	DITHER = 37,
    	FLIP = 38,
-   	MIRROR = 39,
+	MIRROR = 39,
+	BOXBLUR = 40,
 } EFFECT_TYPE;
 
 typedef enum
@@ -308,8 +309,13 @@ class FlipEffect: public Effect {
 		FlipEffect();
 };
 
-class MirrorEffect: public Effect {
-	public:
-		MirrorEffect();
+class MirrorEffect : public Effect {
+public:
+	MirrorEffect();
+};
+
+class BoxblurEffect : public Effect {
+public:
+	BoxblurEffect();
 };
 

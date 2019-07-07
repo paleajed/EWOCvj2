@@ -252,9 +252,9 @@ class Scene {
 
 class Mixer {
 	private:
-		void do_save_mix(const std::string& path, bool modus);
 		void do_deletelay(Layer *testlay, std::vector<Layer*> &layers, bool add);
-		void delete_layers(std::vector<Layer*> &layers, bool alive);
+		void delete_layers(std::vector<Layer*>& layers, bool alive);
+		void do_delete_layers(std::vector<Layer*> layers, bool alive);
 		void set_values(Layer *clay, Layer *lay);
 		void loopstation_copy(bool comp);
 		void clonesets_copy(bool comp);
@@ -276,8 +276,9 @@ class Mixer {
 		void new_file(int decks, bool alive);
 		void save_layerfile(const std::string &path, Layer* lay, bool doclips, bool dojpeg);
 		void save_mix(const std::string &path);
+		void do_save_mix(const std::string& path, bool modus, bool save);
 		void save_deck(const std::string &path);
-		void do_save_deck(const std::string& path);
+		void do_save_deck(const std::string& path, bool save);
 		void open_layerfile(const std::string &path, Layer *lay, bool loadevents, bool doclips);
 		void open_mix(const std::string &path);
 		void open_deck(const std::string &path, bool alive);

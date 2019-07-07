@@ -243,7 +243,7 @@ void BinsMain::handle(bool draw) {
 		else lay = mainmix->layersAcomp[0];
 	}
 		
-	if (mainprogram->rightmouse and this->currbinel) {
+	if (mainprogram->rightmouse and this->currbinel and !mainprogram->dragbinel) {
 		bool cont = false;
 		if (this->prevbinel) {
 			if (this->inputtexes.size()) {
@@ -456,7 +456,7 @@ void BinsMain::handle(bool draw) {
 					if (this->movingdeck) {
 						if (this->movingdeck->encthreads) continue;
 					}
-					if (mainprogram->leftmousedown) {
+					if (mainprogram->leftmousedown and this->inserting == -1) {
 						// dragging a deck from one place to the other in the bins view
 						mainprogram->leftmousedown = false;
 						mainprogram->dragmousedown = true;
@@ -474,9 +474,11 @@ void BinsMain::handle(bool draw) {
 						this->prevbinel = this->currbinel;
 						this->ii = bd->i;
 						this->jj = bd->j;
+						this->inserttexes[0].clear();
 						for (int j = 0; j < bd->height; j++) {
 							for (int k = 0; k < 3; k++) {
 								BinElement* deckbinel = this->currbin->elements[(bd->j + j) + ((bd->i + k) * 24)];
+								deckbinel->full = true;
 								glGenTextures(1, &deckbinel->oldtex);
 								glBindTexture(GL_TEXTURE_2D, deckbinel->oldtex);
 								glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR);
@@ -527,7 +529,7 @@ void BinsMain::handle(bool draw) {
 					if (this->movingmix) {
 						if (this->movingmix->encthreads) continue;
 					}
-					if (mainprogram->leftmousedown) {
+					if (mainprogram->leftmousedown and this->inserting == -1) {
 						mainprogram->leftmousedown = false;
 						// dragging a mix from one place to the other in the bins view
 						this->dragmix = bm;
@@ -545,9 +547,12 @@ void BinsMain::handle(bool draw) {
 						this->ii = 0;
 						this->jj = bm->j;
 						this->prevbinel = this->currbinel;
+						this->inserttexes[0].clear();
+						this->inserttexes[1].clear();
 						for (int j = 0; j < bm->height; j++) {
 							for (int k = 0; k < 6; k++) {
 								BinElement* mixbinel = this->currbin->elements[(bm->j + j) + (k * 24)];
+								mixbinel->full = true;
 								glGenTextures(1, &mixbinel->oldtex);
 								glBindTexture(GL_TEXTURE_2D, mixbinel->oldtex);
 								glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR);
@@ -663,12 +668,14 @@ void BinsMain::handle(bool draw) {
 			this->inserting = 0;
 			this->inserttexes[0].clear();
 			get_texes(0);
+			mainprogram->lmsave = false;
 			this->prevbinel = nullptr;
 		}
 		else if (k == mainprogram->menuset + 5) {
 			this->inserting = 1;
 			this->inserttexes[1].clear();
 			get_texes(1);
+			mainprogram->lmsave = false;
 			this->prevbinel = nullptr;
 		}
 		else if (k == mainprogram->menuset + 6) {
@@ -677,6 +684,7 @@ void BinsMain::handle(bool draw) {
 			get_texes(0);
 			this->inserttexes[1].clear();
 			get_texes(1);
+			mainprogram->lmsave = false;
 			this->prevbinel = nullptr;
 		}
 		else if (k == 8 and mainprogram->menuset == 1) {
@@ -1161,9 +1169,10 @@ void BinsMain::handle(bool draw) {
 							}
 						}
 					}
-					if (binel != this->currbinel or mainprogram->rightmouse) {
+					if (binel != this->currbinel or (mainprogram->rightmouse and ((this->movingdeck and this->movingdeck->j != -1) or (this->movingmix and this->movingmix->j != -1)))) {
 						if (this->currbinel) this->binpreview = false;
 						if (this->inserting == 0 or this->inserting == 1) {
+							
 							if (this->prevbinel) {
 								// reset previous position of inserted deck
 								for (int k = 0; k < this->inserttexes[this->inserting].size(); k++) {
@@ -1219,6 +1228,7 @@ void BinsMain::handle(bool draw) {
 								this->inserting = -1;
 								this->currbinel = nullptr;
 								mainprogram->rightmouse = false;
+								enddrag();
 								break;
 							}
 							this->prevbinel = binel;
@@ -1226,7 +1236,7 @@ void BinsMain::handle(bool draw) {
 						if (this->inserting == 2) {
 							int size = std::max(((int)((this->inserttexes[0].size() - 1) / 3) * 3 + 3), ((int)((this->inserttexes[1].size() - 1) / 3) * 3 + 3));
 							if (this->prevbinel) {
-								// reset previous position of inserted mix
+								// reset elements of previous position of inserted mix
 								for (int m = 0; m < 2; m++) {
 									for (int k = 0; k < (this->inserttexes[m].size() + 2) / 3 * 3; k++) {
 										int newj = this->jj;
@@ -1471,19 +1481,23 @@ void BinsMain::handle(bool draw) {
 					if (this->movingstruct) {
 						if (this->inserting == 0) {
 							for (int k = 0; k < this->inserttexes[0].size(); k++) {
-								glDeleteTextures(1, &this->inserttexes[0][k]);
 								std::string path = this->insertpaths[0][k];
 								boost::filesystem::remove(path);
 								path = this->insertjpegpaths[0][k];
 								boost::filesystem::remove(path);
-								BinElement *deckbinel = find_element(this->inserttexes[this->inserting].size(), k, this->movingdeck->i, this->movingdeck->j, 1);
-								glBindTexture(GL_TEXTURE_2D, deckbinel->oldtex);
-								glTexStorage2D(GL_TEXTURE_2D, 1, GL_RGB, (int)(mainprogram->ow3), (int)(mainprogram->oh3));
-								deckbinel->tex = deckbinel->oldtex;
-								deckbinel->path = deckbinel->oldpath;
-								deckbinel->jpegpath = deckbinel->oldjpegpath;
-								deckbinel->type = deckbinel->oldtype;
 							}
+							for (int jj = this->movingdeck->j; jj < this->movingdeck->j + this->movingdeck->height; jj++) {
+								for (int ii = this->movingdeck->i; ii < this->movingdeck->i + 3; ii++) {
+									BinElement* deckbinel = this->currbin->elements[ii * 24 + jj];
+									glClearTexImage(deckbinel->tex, 0, GL_BGRA, GL_UNSIGNED_BYTE, black);
+									glClearTexImage(deckbinel->oldtex, 0, GL_BGRA, GL_UNSIGNED_BYTE, black);
+									deckbinel->path = "";
+									deckbinel->jpegpath = "";
+									deckbinel->type = ELEM_FILE;
+									deckbinel->full = false;
+								}
+							}
+
 							boost::filesystem::remove(this->movingdeck->path);
 							this->currbin->decks.erase(std::find(this->currbin->decks.begin(), this->currbin->decks.end(), this->movingdeck));
 							delete this->movingdeck;
@@ -1493,24 +1507,21 @@ void BinsMain::handle(bool draw) {
 						else if (this->inserting == 2) {
 							for (int m = 0; m < 2; m++) {
 								for (int k = 0; k < this->inserttexes[m].size(); k++) {
-									glDeleteTextures(1, &this->inserttexes[m][k]);
 									std::string path = this->insertpaths[m][k];
 									boost::filesystem::remove(path);
-									path = this->insertjpegpaths[0][k];
+									path = this->insertjpegpaths[m][k];
 									boost::filesystem::remove(path);
-									int size = std::max(((int)((this->inserttexes[0].size() - 1) / 3) * 3 + 3), ((int)((this->inserttexes[1].size() - 1) / 3) * 3 + 3));
-									int newj = this->prevj;
-									if (this->prevj > 23 - (int)((size - 1) / 3)) newj = this->prevj - (int)((size - 1) / 3);
-									BinElement *deckbinel = find_element(size, k, m * 3, newj, 1);
-									glBindTexture(GL_TEXTURE_2D, deckbinel->oldtex);
-									glTexStorage2D(GL_TEXTURE_2D, 1, GL_RGB, (int)(mainprogram->ow3), (int)(mainprogram->oh3));
-									deckbinel->tex = deckbinel->oldtex;
-									if (this->movingstruct) {
-										deckbinel->path = deckbinel->oldpath;
-										deckbinel->jpegpath = deckbinel->oldjpegpath;
-										deckbinel->type = deckbinel->oldtype;
-										deckbinel->full = true;
-									}
+								}
+							}
+							for (int jj = this->movingmix->j; jj < this->movingmix->j + this->movingmix->height; jj++) {
+								for (int ii = 0; ii < 6; ii++) {
+									BinElement* mixbinel = this->currbin->elements[ii * 24 + jj];
+									glClearTexImage(mixbinel->tex, 0, GL_BGRA, GL_UNSIGNED_BYTE, black);
+									glClearTexImage(mixbinel->oldtex, 0, GL_BGRA, GL_UNSIGNED_BYTE, black);
+									mixbinel->path = "";
+									mixbinel->jpegpath = "";
+									mixbinel->type = ELEM_FILE;
+									mixbinel->full = false;
 								}
 							}
 							boost::filesystem::remove(this->movingmix->path);
@@ -1549,7 +1560,7 @@ void BinsMain::handle(bool draw) {
 				}
 
 
-				if (this->currbinel and (this->inserting > -1) and (mainprogram->leftmouse or (mainprogram->lmsave and this->movingstruct))) {
+				if (this->currbinel and (this->inserting > -1) and mainprogram->lmsave) {
 					this->prevbinel = nullptr;
 					std::string dirname = this->currbin->name;
 					std::string name = this->currbin->name;
@@ -1558,6 +1569,7 @@ void BinsMain::handle(bool draw) {
 					BinDeck* bd = nullptr;
 					BinMix* bm = nullptr;
 					if (!this->movingstruct) {
+						// inserting deck/mix
 						int startdeck, enddeck;
 						if (this->inserting == 0) {
 							startdeck = 0;
@@ -1627,7 +1639,7 @@ void BinsMain::handle(bool draw) {
 							else bm->tex = copy_tex(mainprogram->nodesmain->mixnodescomp[2]->mixtex);
 							bm->jpegpath = path + ".jpeg";
 							save_thumb(bm->jpegpath, bm->tex);
-							mainmix->save_mix(path);
+							//mainmix->save_mix(path);  implemented in save_bin
 						}
 						else {
 							bd = new BinDeck;
@@ -1639,7 +1651,7 @@ void BinsMain::handle(bool draw) {
 							else bd->tex = copy_tex(mainprogram->nodesmain->mixnodescomp[this->inserting]->mixtex);
 							bd->jpegpath = path + ".jpeg";
 							save_thumb(bd->jpegpath, bd->tex);
-							mainmix->save_deck(path);
+							//mainmix->save_deck(path);  implemented in save_bin
 						}
 					}
 					else {
@@ -1697,13 +1709,16 @@ void BinsMain::handle(bool draw) {
 					this->inserting = -1;
 					this->currbinel = nullptr;
 					this->newpaths.clear();
+					this->movingdeck = nullptr;
+					this->movingmix = nullptr;
 					enddrag();
 					mainprogram->leftmouse = false;
+					mainprogram->lmsave = false;
 				}
 			}
 		}
 
-		if (inbinel and lay->vidmoving and mainprogram->lmsave) {
+		if (inbinel and !mainprogram->rightmouse and lay->vidmoving and mainprogram->lmsave) {
 			this->currbinel->full = true;
 			this->currbinel->type = ELEM_LAYER;
 			std::string name = remove_extension(basename(lay->filename));
@@ -1724,7 +1739,7 @@ void BinsMain::handle(bool draw) {
 			lay->vidmoving = false;
 			mainmix->moving = false;
 		}
-		else if (mainprogram->lmsave and mainprogram->dragbinel) {
+		else if ((mainprogram->lmsave or mainprogram->rightmouse) and mainprogram->dragbinel) {
 			//when dropping on grey area
 			if (lay->vidmoving) {
 				if (this->currbinel) {
@@ -1877,6 +1892,7 @@ void BinsMain::save_bin(const std::string& path) {
 }
 
 void BinsMain::do_save_bin(const std::string& path) {
+	SDL_GL_MakeCurrent(mainprogram->dummywindow, glc_th);
 	std::vector<std::string> filestoadd;
 	std::ofstream wfile;
 	wfile.open(path.c_str());
@@ -1915,8 +1931,12 @@ void BinsMain::do_save_bin(const std::string& path) {
 	}
 	wfile << "ENDOFELEMS\n";
 	
+	SDL_GL_MakeCurrent(nullptr, nullptr);
 	wfile << "DECKS\n";
 	for (int i = 0; i < this->currbin->decks.size(); i++) {
+		if (!exists(this->currbin->decks[i]->path)) {
+			mainmix->do_save_deck(this->currbin->decks[i]->path, false);
+		}
 		wfile << this->currbin->decks[i]->path;
 		wfile << "\n";
 		if (this->currbin->decks[i]->path != "") filestoadd.push_back(this->currbin->decks[i]->path);
@@ -1932,6 +1952,9 @@ void BinsMain::do_save_bin(const std::string& path) {
 	wfile << "ENDOFDECKS\n";
 	wfile << "MIXES\n";
 	for (int i = 0; i < this->currbin->mixes.size(); i++) {
+		if (!exists(this->currbin->mixes[i]->path)) {
+			mainmix->do_save_mix(this->currbin->mixes[i]->path, mainprogram->prevmodus, false);
+		}
 		wfile << this->currbin->mixes[i]->path;
 		wfile << "\n";
 		if (this->currbin->mixes[i]->path != "") filestoadd.push_back(this->currbin->mixes[i]->path);
@@ -1947,8 +1970,19 @@ void BinsMain::do_save_bin(const std::string& path) {
 	wfile << "ENDOFFILE\n";
 	wfile.close();
 	
-    std::ofstream outputfile;
-	outputfile.open(mainprogram->temppath + "tempconcatbin", std::ios::out | std::ios::binary);
+	std::string tcbpath;
+	std::string name = "tempconcatbin";
+	int count = 0;
+	while (1) {
+		tcbpath = mainprogram->temppath + name;
+		if (!exists(tcbpath)) {
+			break;
+		}
+		count++;
+		name = remove_version(name) + "_" + std::to_string(count);
+	}
+	std::ofstream outputfile;
+	outputfile.open(tcbpath, std::ios::out | std::ios::binary);
 	std::vector<std::vector<std::string>> filestoadd2;
 	filestoadd2.push_back(filestoadd);
 	concat_files(outputfile, path, filestoadd2);

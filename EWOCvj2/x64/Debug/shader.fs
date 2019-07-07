@@ -25,6 +25,7 @@ uniform float radialX = 0.0f;
 uniform float radialY = 0.0f; 
 uniform float nSamples = 10.0f;
 uniform float glowblur = 10.0f;  
+uniform float jump = 20;  
 uniform float glowfac = 1.2f;
 uniform float contrastamount = 2.0f;
 uniform float brightamount = 1.0f;    
@@ -312,7 +313,6 @@ vec4 blur(vec2 texc) //tutorial on rastergrid seems free
 vec4 boxblur(vec2 texc)  //blog.trsquarelab.com free
 {
 	float alpha = texture2D(fboSampler, texc).a;
-	const int jump = 20;
 	vec2 size = textureSize(fboSampler, 0);
 	vec2 point;
 	vec4 finalcol = vec4(0.0, 0.0, 0.0, 0.0);
@@ -320,7 +320,7 @@ vec4 boxblur(vec2 texc)  //blog.trsquarelab.com free
     float pxdistX = 1 / float(fbowidth);
     float pxdistY = 1 / float(fboheight);
     if (!horizontal) {
-		for (int i = int(-glowblur); i < glowblur; i+= jump) 
+		for (int i = int(-glowblur); i < glowblur; i+= int(jump)) 
 		{
       		point.x = texc.x;
             point.y = texc.y  + i * pxdistY;
@@ -330,7 +330,7 @@ vec4 boxblur(vec2 texc)  //blog.trsquarelab.com free
 		finalcol /= float(count);
 	}
 	else {
-		for (int i = int(-glowblur); i < glowblur; i+= jump) 
+		for (int i = int(-glowblur); i < glowblur; i+= int(jump)) 
 		{
      		point.x = texc.x  + i * pxdistX;
             point.y = texc.y;
@@ -1634,6 +1634,9 @@ void main()
 			case 39:
 				intcoloring = true;
 				intcol = mirror(texco); break;
+			case 40:
+				intcoloring = true;
+				intcol = boxblur(texco); break;
 		}
     	if (intcoloring) FragColor = vec4(intcol.rgb * drywet + (1.0f - drywet) * texcol.rgb, intcol.a * opacity);
 	}
