@@ -171,7 +171,6 @@ void BinsMain::handle(bool draw) {
 						std::vector<std::string> binel;
 						binel.push_back("Delete element");
 						binel.push_back("Open file(s) from disk");
-						binel.push_back("Open dir from disk");
 						binel.push_back("Open deck");
 						binel.push_back("Open mix");
 						binel.push_back("Insert deck A");
@@ -436,7 +435,6 @@ void BinsMain::handle(bool draw) {
 						binel.push_back("Load in deck B");
 						binel.push_back("Delete deck");
 						binel.push_back("Open file(s) from disk");
-						binel.push_back("Open dir from disk");
 						binel.push_back("Open deck");
 						binel.push_back("Open mix");
 						binel.push_back("Insert deck A");
@@ -509,7 +507,6 @@ void BinsMain::handle(bool draw) {
 						binel.push_back("Load in mix");
 						binel.push_back("Delete mix");
 						binel.push_back("Open file(s) from disk");
-						binel.push_back("Open dir from disk");
 						binel.push_back("Open deck");
 						binel.push_back("Open mix");
 						binel.push_back("Insert deck A");
@@ -575,7 +572,6 @@ void BinsMain::handle(bool draw) {
 		if (mainprogram->menuset == 0 and mainprogram->menuactivation) {
 			std::vector<std::string> binel;
 			binel.push_back("Open file(s) from disk");
-			binel.push_back("Open dir from disk");
 			binel.push_back("Open deck");
 			binel.push_back("Open mix");
 			binel.push_back("Insert deck A");
@@ -649,36 +645,30 @@ void BinsMain::handle(bool draw) {
 			filereq.detach();
 		}
 		else if (k == mainprogram->menuset + 1) {
-			mainprogram->pathto = "OPENBINDIR";
-			mainprogram->blocking = true;
-			std::thread filereq(&Program::get_dir, mainprogram, "Open files directory", boost::filesystem::canonical(mainprogram->currbindirdir).generic_string());
-			filereq.detach();
-		}
-		else if (k == mainprogram->menuset + 2) {
 			mainprogram->pathto = "OPENBINDECK";
 			std::thread filereq(&Program::get_inname, mainprogram, "Open deck", "application/ewocvj2-deck", boost::filesystem::canonical(mainprogram->currvideodir).generic_string());
 			filereq.detach();
 		}
-		else if (k == mainprogram->menuset + 3) {
+		else if (k == mainprogram->menuset + 2) {
 			mainprogram->pathto = "OPENBINMIX";
 			std::thread filereq(&Program::get_inname, mainprogram, "Open mix", "application/ewocvj2-mix", boost::filesystem::canonical(mainprogram->currvideodir).generic_string());
 			filereq.detach();
 		}
-		else if (k == mainprogram->menuset + 4) {
+		else if (k == mainprogram->menuset + 3) {
 			this->inserting = 0;
 			this->inserttexes[0].clear();
 			get_texes(0);
 			mainprogram->lmsave = false;
 			this->prevbinel = nullptr;
 		}
-		else if (k == mainprogram->menuset + 5) {
+		else if (k == mainprogram->menuset + 4) {
 			this->inserting = 1;
 			this->inserttexes[1].clear();
 			get_texes(1);
 			mainprogram->lmsave = false;
 			this->prevbinel = nullptr;
 		}
-		else if (k == mainprogram->menuset + 6) {
+		else if (k == mainprogram->menuset + 5) {
 			this->inserting = 2;
 			this->inserttexes[0].clear();
 			get_texes(0);
@@ -687,16 +677,16 @@ void BinsMain::handle(bool draw) {
 			mainprogram->lmsave = false;
 			this->prevbinel = nullptr;
 		}
-		else if (k == 8 and mainprogram->menuset == 1) {
+		else if (k == 7 and mainprogram->menuset == 1) {
 			this->hap_binel(this->menubinel, nullptr, nullptr);
 		}
-		else if (k == 10 and mainprogram->menuset == 3) {
+		else if (k == 9 and mainprogram->menuset == 3) {
 			this->hap_deck(this->movingdeck);
 		}
-		else if (k == 9 and mainprogram->menuset == 2) {
+		else if (k == 8 and mainprogram->menuset == 2) {
 			this->hap_mix(this->movingmix);
 		}
-		else if (k == 7 and mainprogram->menuset == 0) {
+		else if (k == 6 and mainprogram->menuset == 0) {
 			for (int i = 0; i < 6; i++) {
 				for (int j = 0; j < 24; j++) {
 					BinElement* binel = this->currbin->elements[i * 24 + j];
@@ -760,10 +750,7 @@ void BinsMain::handle(bool draw) {
 	}
 	
 	//handle binelements
-	if (this->openbindir) {
-		open_bindir();
-	}
-	else if (this->openbinfile) {
+	if (this->openbinfile) {
 		open_binfiles();
 	}
 	else if (!mainprogram->menuondisplay) {
@@ -1935,7 +1922,7 @@ void BinsMain::do_save_bin(const std::string& path) {
 	wfile << "DECKS\n";
 	for (int i = 0; i < this->currbin->decks.size(); i++) {
 		if (!exists(this->currbin->decks[i]->path)) {
-			mainmix->do_save_deck(this->currbin->decks[i]->path, false);
+			mainmix->do_save_deck(this->currbin->decks[i]->path, false, true);
 		}
 		wfile << this->currbin->decks[i]->path;
 		wfile << "\n";
@@ -2123,30 +2110,6 @@ void BinsMain::open_binfiles() {
 	std::string str = mainprogram->paths[mainprogram->counting];
 	open_handlefile(str);
 	mainprogram->counting++;
-}
-
-void BinsMain::open_bindir() {
-	if (SDL_GetMouseFocus() != mainprogram->mainwindow) {
-		SDL_SetCursor(SDL_CreateSystemCursor(SDL_SYSTEM_CURSOR_ARROW));
-	}
-	else {
-		SDL_SetCursor(SDL_CreateSystemCursor(SDL_SYSTEM_CURSOR_WAIT));
-	} 
-	struct dirent *ent;
-	if ((ent = readdir(mainprogram->opendir)) != nullptr) {
-		char *filepath = (char*)malloc(1024);
-		strcpy(filepath, this->binpath.c_str());
-		strcat(filepath, "/");
-		strcat(filepath, ent->d_name);
-		std::string str(filepath);
-		
-		this->open_handlefile(str);
-	}
-	else {
-		this->openbindir = false;
-		mainprogram->blocking = false;
-		SDL_SetCursor(SDL_CreateSystemCursor(SDL_SYSTEM_CURSOR_ARROW));
-	} 
 }
 
 void BinsMain::open_handlefile(const std::string &path) {

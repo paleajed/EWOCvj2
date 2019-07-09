@@ -40,7 +40,6 @@ class BinsMain {
 		BinDeck *dragdeck = nullptr;
 		BinMix *dragmix = nullptr;
 		Bin *menubin = nullptr;
-		bool openbindir = false;
 		bool openbinfile = false;
 		int inserting = -1;
 		bool movingstruct = false;
@@ -57,7 +56,6 @@ class BinsMain {
 		void open_bin(const std::string &path, Bin *bin);
 		void save_bin(const std::string &path);
 		void open_binfiles();
-		void open_bindir();
 		void open_handlefile(const std::string &path);
 		void open_bindeck(const std::string& path);
 		void open_binmix(const std::string& path);

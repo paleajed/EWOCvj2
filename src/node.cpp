@@ -275,7 +275,7 @@ EffectNode *NodePage::add_effectnode(Effect *effect, VideoNode *node, int pos, b
 	effnode->box->acolor[3] = 1.0;
 	effnode->box->scrcoords->w = 128;
 	effnode->box->scrcoords->h = 30;
-	node->upeffboxes();
+	//node->upeffboxes();
 	
 	return effnode;
 }

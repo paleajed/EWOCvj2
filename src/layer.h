@@ -56,8 +56,15 @@ class Clip {
 		std::string path = "";
 		ELEM_TYPE type;
 		GLuint tex;
+		int frame = 0.0f;
+		int startframe = -1;
+		int endframe = -1;
 		Clip();
 		~Clip();
+		bool get_imageframes();
+		bool get_videoframes();
+		bool get_layerframes();
+		void open_clipfiles();
 };
 
 class Layer {
@@ -68,7 +75,9 @@ class Layer {
 		bool clonedeck = -1;
 		int clonepos = -1;
 		std::vector<Clip*> clips;
+		Clip* currclip = nullptr;
 		ELEM_TYPE type = ELEM_FILE;
+		ELEM_TYPE oldtype = ELEM_FILE;
 		RATIO_TYPE aspectratio = RATIO_OUTPUT;
 		bool queueing = false;
 		int queuescroll = 0;
@@ -87,10 +96,12 @@ class Layer {
 		void set_clones();
 		void mute_handle();
 		void set_aspectratio(int lw, int lh);
+		void open_files();
 		void open_video(float frame, const std::string& filename, int reset);
 		void open_image(const std::string &path);
 		void initialize(int w, int h);
 		void initialize(int w, int h, int compression);
+		void clip_followup(bool startend, bool alive);
 		Layer *next();
 		Layer *prev();
 		Layer();
@@ -148,6 +159,7 @@ class Layer {
 		int liveinputpos = -1;
 		int imagenum = 0;
 		ILuint boundimage = -1;
+		bool cliploading = false;
 		
 		bool dummy = 0;
 		std::mutex startlock;
@@ -196,7 +208,7 @@ class Layer {
 		GLuint vao;
 		GLuint endtex;
 		GLuint endbuf;
-		bool drawfbo2;
+		bool drawfbo2 = false;
 		
 		Box *vidbox;
 		bool changed;
@@ -227,6 +239,7 @@ class Layer {
 		int vidformat = -1;
 		int oldvidformat = -2;  //different from -1
 		int oldcompression = -1;
+		bool oldalive = true;
 		std::vector<char*> audio_chunks;
 		ALuint sample_rate;
 		int channels;
@@ -278,14 +291,14 @@ class Mixer {
 		void save_mix(const std::string &path);
 		void do_save_mix(const std::string& path, bool modus, bool save);
 		void save_deck(const std::string &path);
-		void do_save_deck(const std::string& path, bool save);
+		void do_save_deck(const std::string& path, bool save, bool doclips);
 		void open_layerfile(const std::string &path, Layer *lay, bool loadevents, bool doclips);
 		void open_mix(const std::string &path);
 		void open_deck(const std::string &path, bool alive);
 		void new_state();
 		void open_state(const std::string& path);
-		void save_state(const std::string &path);
-		void do_save_state(const std::string& path);
+		void save_state(const std::string &path, bool autosave);
+		void do_save_state(const std::string& path, bool autosave);
 		std::vector<std::string> write_layer(Layer *lay, std::ostream& wfile, bool doclips, bool dojpeg);
 		int read_layers(std::istream &rfile, const std::string &result, std::vector<Layer*> &layers, bool deck, int type, bool doclips, bool concat, bool load, bool loadevents, bool save);
 		void start_recording();

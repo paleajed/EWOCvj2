@@ -86,8 +86,8 @@ class Project {
 		void newp(const std::string &path);
 		void open(const std::string &path);
 		void save(const std::string& path);
-	private:
 		void do_save(const std::string& path);
+	private:
 };
 
 class Preferences {
@@ -341,6 +341,7 @@ class Program {
 		Box *effscrolldownB;
 		Box *addeffectbox;
 		bool startloop = false;
+		bool newproject = false;
 		std::vector<std::string> recentprojectpaths;
 		
 		lo::ServerThread *st;
@@ -453,7 +454,14 @@ class Program {
 		int shelffilescount;
 		bool shelfdrag = false;
 		Shelf *shelves[2];
-		
+		bool openclipfiles = false;
+		int clipfilescount = 0;
+		Clip* clipfilesclip = nullptr;
+		Layer* clipfileslay = nullptr;
+		bool openfiles = false;
+		int filescount = 0;
+		Layer* fileslay = nullptr;
+
 		void quit(std::string msg);
 		GLuint set_shader();
 		int load_shader(char* filename, char** ShaderSource, unsigned long len);

@@ -469,6 +469,7 @@ void Program::get_multinname(const char* title, std::string defaultdir) {
 		currstr += charstr;
 		if (i == opaths.length() - 1) this->paths.push_back(currstr);
 	}
+	std::reverse(this->paths.begin(), this->paths.end());
 	this->path = (char*)"ENTER";
 	this->counting = 0;
 	mainprogram->autosave = as;
@@ -666,7 +667,7 @@ void Project::newp(const std::string &path) {
 	std::string str;
 	if (ext != ".ewocvj") str = path + ".ewocvj";
 	else str = path;
-	mainprogram->project->path = path;
+	mainprogram->project->path = str;
 	
 	std::string dir = remove_extension(path) + "/";
 	this->binsdir = dir + "bins/";
@@ -695,7 +696,7 @@ void Project::newp(const std::string &path) {
 	mainprogram->shelves[1]->basepath = "shelfsB.shelf";
 	mainprogram->shelves[0]->save(mainprogram->shelfdir + "shelfsA.shelf");
 	mainprogram->shelves[1]->save(mainprogram->shelfdir + "shelfsB.shelf");
-	mainprogram->project->save(path);
+	mainprogram->project->do_save(path);
 }
 	
 void Project::open(const std::string &path) {
@@ -796,7 +797,7 @@ void Project::do_save(const std::string& path) {
 	
 	wfile.close();
 	
-	mainmix->do_save_state(mainprogram->temppath + "current.state");
+	mainmix->do_save_state(mainprogram->temppath + "current.state", false);
 	filestoadd.push_back(mainprogram->temppath + "current.state");
 	
     std::ofstream outputfile;

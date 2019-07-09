@@ -1920,7 +1920,7 @@ void Mixer::do_deletelay(Layer *testlay, std::vector<Layer*> &layers, bool add) 
 		}
 			
 		Node *bulasteffnode1out = nullptr;
-		if (testlay->pos > 0) bulasteffnode1out = testlay->lasteffnode[1]->out[0];
+		if (testlay->pos > 0 and testlay->lasteffnode[1]->out.size()) bulasteffnode1out = testlay->lasteffnode[1]->out[0];
 		while (!testlay->effects[0].empty()) {
 			mainprogram->nodesmain->currpage->delete_node(testlay->effects[0].back()->node);
 			for (int j = 0; j < testlay->effects[0].back()->params.size(); j++) {
@@ -1939,7 +1939,7 @@ void Mixer::do_deletelay(Layer *testlay, std::vector<Layer*> &layers, bool add) 
 		}
 
 		if (testlay->pos > 0 and testlay->blendnode) {
-			mainprogram->nodesmain->currpage->connect_nodes(prevlay->lasteffnode[1], bulasteffnode1out);
+			if (bulasteffnode1out) mainprogram->nodesmain->currpage->connect_nodes(prevlay->lasteffnode[1], bulasteffnode1out);
 			mainprogram->nodesmain->currpage->delete_node(testlay->blendnode);
 			testlay->blendnode = 0;
 		}
@@ -2002,6 +2002,7 @@ Layer::Layer() {
 
 Layer::Layer(bool comp) {
 	this->comp = comp;
+	this->databuf = nullptr;
 
     glClearColor(0, 0, 0, 0);
 
@@ -2229,7 +2230,7 @@ void Layer::initialize(int w, int h) {
 }
 
 void Layer::initialize(int w, int h, int compression) {
-	if (this->iw == w and this->ih == h and this->oldvidformat == this->vidformat and this->oldcompression == compression) {
+	if (this->iw == w and this->ih == h and this->oldvidformat == this->vidformat and this->oldcompression == compression and this->type == this->oldtype) {
 		this->initialized = true;
 		return;
 	}
@@ -2258,6 +2259,7 @@ void Layer::initialize(int w, int h, int compression) {
 	}
 	this->oldvidformat = this->vidformat;
 	this->oldcompression = compression;
+	this->oldtype = this->type;
 	this->initialized = true;
 }
 
@@ -2377,6 +2379,144 @@ Layer* Layer::prev() {
 	}
 	return this;
 }	
+
+void Layer::clip_followup(bool startend, bool alive){
+	if (this->clips.size() > 1) {
+		Clip* oldclip = new Clip;
+		oldclip->type = this->type;
+		if (!alive and this->currclip) {
+			oldclip->type = this->currclip->type;
+		}
+		if (oldclip->type == ELEM_LAYER) oldclip->frame = this->frame;
+		else oldclip->frame = 0.0f;
+		if (startend) oldclip->frame = this->endframe;
+		oldclip->startframe = this->startframe;
+		oldclip->endframe = this->endframe;
+		if (!alive and this->currclip) {
+			oldclip->tex = this->currclip->tex;
+		}
+		VideoNode* node = (VideoNode*)this->node;
+		if (alive) {
+			if (oldclip->type == ELEM_LAYER and this->effects[0].size()) {
+				oldclip->tex = copy_tex(node->vidbox->tex);
+				std::string name = remove_extension(basename(this->filename));
+				int count = 0;
+				while (1) {
+					oldclip->path = mainprogram->temppath + "cliptemp_" + name + ".layer";
+					if (!exists(oldclip->path)) {
+						mainmix->save_layerfile(oldclip->path, this, 0, 0);
+						break;
+					}
+					count++;
+					name = remove_version(name) + "_" + std::to_string(count);
+				}
+			}
+			else if (oldclip->type == ELEM_LIVE) {
+				oldclip->tex = copy_tex(node->vidbox->tex);
+				oldclip->path = this->filename;
+			}
+			else if (oldclip->type == ELEM_IMAGE) {
+				oldclip->tex = copy_tex(this->fbotex);
+				oldclip->path = this->filename;
+			}
+			else {
+				oldclip->tex = copy_tex(this->fbotex);
+				oldclip->path = this->filename;
+			}
+		}
+		else {
+			if (oldclip->type == ELEM_LAYER) {
+				oldclip->path = this->layerfilepath;
+			}
+			else oldclip->path = this->filename;
+		}
+
+		this->currclip = this->clips[0];
+		this->frame = this->currclip->frame;
+		this->startframe = this->currclip->startframe;
+		this->endframe = this->currclip->endframe;
+		this->type = this->currclip->type;
+		this->layerfilepath = this->currclip->path;
+		this->filename = this->currclip->path;
+		if (alive) {
+			if (this->currclip->type == ELEM_FILE) {
+				this->open_video(0, this->currclip->path, 0);
+			}
+			else if (this->currclip->type == ELEM_LAYER) {
+				mainmix->open_layerfile(this->currclip->path, this, 1, 0);
+			}
+			else if (this->currclip->type == ELEM_IMAGE) {
+				this->open_image(this->currclip->path);
+			}
+			else if (this->currclip->type == ELEM_LIVE) {
+				set_live_base(this, this->currclip->path);
+			}
+		}
+
+		this->clips.erase(this->clips.begin());
+		this->clips.insert(this->clips.end() - 1, oldclip);
+		if (!alive) this->oldalive = false;
+	}
+}
+
+void Layer::open_files() {
+	std::string str = mainprogram->paths[mainprogram->filescount];
+	if (mainprogram->filescount == 1) {
+		mainprogram->clipfilesclip = mainprogram->fileslay->clips[0];
+	}
+	int pos;
+	if (mainprogram->filescount != 0) {
+		pos = std::find(mainprogram->fileslay->clips.begin(), mainprogram->fileslay->clips.end(), mainprogram->clipfilesclip) - mainprogram->fileslay->clips.begin();
+		if (pos == mainprogram->fileslay->clips.size() - 1) {
+			Clip* clip = new Clip;
+			if (mainprogram->fileslay->clips.size() > 4) mainprogram->fileslay->queuescroll++;
+			mainprogram->clipfilesclip = clip;
+			mainprogram->fileslay->clips.insert(mainprogram->fileslay->clips.end() - 1, clip);
+		}
+	}
+	if (isimage(str)) {
+		if (mainprogram->filescount == 0) mainprogram->fileslay->open_image(str);
+		else {
+			mainprogram->clipfilesclip->path = str;
+			mainprogram->clipfilesclip->tex = get_imagetex(str);
+			mainprogram->clipfilesclip->type = ELEM_IMAGE;
+			mainprogram->clipfilesclip->get_imageframes();
+		}
+	}
+	else if (str.substr(str.length() - 6, std::string::npos) == ".layer") {
+		if (mainprogram->filescount == 0) mainprogram->fileslay->open_image(str);
+		else {
+			mainprogram->clipfilesclip->path = str;
+			mainprogram->clipfilesclip->tex = get_layertex(str);
+			mainprogram->clipfilesclip->type = ELEM_LAYER;
+			mainprogram->clipfilesclip->get_layerframes();
+		}
+	}
+	else {
+		if (mainprogram->filescount == 0) {
+			mainprogram->fileslay->open_video(0, str, true);
+			std::unique_lock<std::mutex> olock(mainprogram->fileslay->endopenlock);
+			mainprogram->fileslay->endopenvar.wait(olock, [&] {return mainprogram->loadlay->opened; });
+			mainprogram->fileslay->opened = false;
+			olock.unlock();
+		}
+		else {
+			mainprogram->clipfilesclip->path = str;
+			mainprogram->clipfilesclip->tex = get_videotex(str);
+			mainprogram->clipfilesclip->type = ELEM_FILE;
+			mainprogram->clipfilesclip->get_videoframes();
+		}
+	}
+	if (mainprogram->filescount != 0) {
+		mainprogram->clipfilesclip = mainprogram->fileslay->clips[pos + 1];
+	}
+	mainprogram->filescount++;
+	if (mainprogram->filescount == mainprogram->paths.size()) {
+		mainprogram->fileslay->cliploading = false;
+		mainprogram->openfiles = false;
+	}
+}
+
 
 void Mixer::set_values(Layer *clay, Layer *lay) {
 	clay->speed->value = lay->speed->value;
@@ -3138,6 +3278,15 @@ std::vector<std::string> Mixer::write_layer(Layer *lay, std::ostream& wfile, boo
 			wfile << "JPEGPATH\n";
 			wfile << clipjpegpath;
 			wfile << "\n";
+			wfile << "FRAME\n";
+			wfile << std::to_string(clip->frame);
+			wfile << "\n";
+			wfile << "STARTFRAME\n";
+			wfile << std::to_string(clip->startframe);
+			wfile << "\n";
+			wfile << "ENDFRAME\n";
+			wfile << std::to_string(clip->endframe);
+			wfile << "\n";
 		}
 		wfile << "ENDOFCLIPS\n";
 	}
@@ -3281,14 +3430,15 @@ void Mixer::save_layerfile(const std::string &path, Layer *lay, bool doclips, bo
 	concat_files(outputfile, str, jpegpaths);
 	outputfile.close();
 	boost::filesystem::rename(mainprogram->temppath + "tempconcat", str);
+	lay->layerfilepath = str;
 }
 
-void Mixer::save_state(const std::string& path) {
-	std::thread statesav(&Mixer::do_save_state, this, path);
+void Mixer::save_state(const std::string& path, bool autosave) {
+	std::thread statesav(&Mixer::do_save_state, this, path, autosave);
 	statesav.detach();
 }
 
-void Mixer::do_save_state(const std::string &path) {
+void Mixer::do_save_state(const std::string &path, bool autosave) {
 	std::vector<std::string> filestoadd;
 	std::string ext = path.substr(path.length() - 6, std::string::npos);
 	std::string str;
@@ -3334,10 +3484,11 @@ void Mixer::do_save_state(const std::string &path) {
 	//filestoadd.push_back(mainprogram->temppath + "tempA.shelf");
 	//mainprogram->shelves[1]->save(mainprogram->temppath + "tempB.shelf");
 	//filestoadd.push_back(mainprogram->temppath + "tempB.shelf");
-	mainmix->do_save_mix(mainprogram->temppath + "temp.state1", true, true);
-	filestoadd.push_back(mainprogram->temppath + "temp.state1.mix");
-	mainmix->do_save_mix(mainprogram->temppath + "temp.state2", true, true);
-	filestoadd.push_back(mainprogram->temppath + "temp.state2.mix");
+	std::string as = (autosave) ? "_autosave" : "";
+	mainmix->do_save_mix(mainprogram->temppath + "temp.state1" + as, true, true);
+	filestoadd.push_back(mainprogram->temppath + "temp.state1" + as + ".mix");
+	mainmix->do_save_mix(mainprogram->temppath + "temp.state2" + as, false, true);
+	filestoadd.push_back(mainprogram->temppath + "temp.state2" + as + ".mix");
 	//save_genmidis(remove_extension(path) + ".midi");
 
     std::ofstream outputfile;
@@ -3540,14 +3691,14 @@ void Mixer::do_save_mix(const std::string & path, bool modus, bool save) {
 	wfile << "LAYERSA\n";
 	std::vector<Layer*> lvec;
 	if (modus) lvec = mainmix->layersA;
-	else lvec = mainmix->layersB;
+	else lvec = mainmix->layersAcomp;
 	for (int i = 0; i < lvec.size(); i++) {
 		Layer* lay = lvec[i];
 		jpegpaths.push_back(mainmix->write_layer(lay, wfile, true, save));
 	}
 
 	wfile << "LAYERSB\n";
-	if (modus) lvec = mainmix->layersAcomp;
+	if (modus) lvec = mainmix->layersB;
 	else lvec = mainmix->layersBcomp;
 	for (int i = 0; i < lvec.size(); i++) {
 		Layer* lay = lvec[i];
@@ -3570,7 +3721,7 @@ void Mixer::do_save_mix(const std::string & path, bool modus, bool save) {
 	}
 
 	std::string tcpath;
-	std::string name = "tempconcat";
+	std::string name = "tempconcat_" + std::to_string(modus);
 	int count = 0;
 	while (1) {
 		tcpath = mainprogram->temppath + name;
@@ -3590,11 +3741,11 @@ void Mixer::do_save_mix(const std::string & path, bool modus, bool save) {
 }
 
 void Mixer::save_deck(const std::string& path) {
-	std::thread decksav(&Mixer::do_save_deck, this, path, true);
+	std::thread decksav(&Mixer::do_save_deck, this, path, true, true);
 	decksav.detach();
 }
 
-void Mixer::do_save_deck(const std::string &path, bool save) {
+void Mixer::do_save_deck(const std::string &path, bool save, bool doclips) {
 	SDL_GL_MakeCurrent(mainprogram->dummywindow, glc_th);
 	std::string ext = path.substr(path.length() - 5, std::string::npos);
 	std::string str;
@@ -3624,7 +3775,7 @@ void Mixer::do_save_deck(const std::string &path, bool save) {
 	std::vector<Layer*>& lvec = choose_layers(mainmix->mousedeck);
 	for (int i = 0; i < lvec.size(); i++) {
 		Layer* lay = lvec[i];
-		jpegpaths.push_back(mainmix->write_layer(lay, wfile, true, save));
+		jpegpaths.push_back(mainmix->write_layer(lay, wfile, doclips, save));
 	}
 	if (save) {
 		std::vector<MixNode*>& mns = mainprogram->nodesmain->mixnodescomp;
@@ -3652,6 +3803,7 @@ void Mixer::do_save_deck(const std::string &path, bool save) {
 
 void Mixer::open_layerfile(const std::string &path, Layer *lay, bool loadevents, bool doclips) {
 	lay->decresult->width = 0;
+	lay->initialized = false;
 
 	std::string result = deconcat_files(path);
 	bool concat = (result != "");
@@ -4175,6 +4327,10 @@ int Mixer::read_layers(std::istream &rfile, const std::string &result, std::vect
 			}
 			newlay = true;
 		}
+		if (istring == "JPEGPATH") {
+			getline(rfile, istring);
+			jpegcount++;
+		}
 		if (istring == "WIDTH") {
 			getline(rfile, istring);
 			lw = std::stoi(istring);
@@ -4362,7 +4518,7 @@ int Mixer::read_layers(std::istream &rfile, const std::string &result, std::vect
 						clip = new Clip;
 						getline(rfile, istring);
 						clip->type = (ELEM_TYPE)std::stoi(istring);
-						lay->clips.insert(lay->clips.begin() + lay->clips.size() - 1, clip);
+						lay->clips.insert(lay->clips.end() - 1, clip);
 					}
 					if (istring == "FILENAME") {
 						getline(rfile, istring);
@@ -4392,13 +4548,25 @@ int Mixer::read_layers(std::istream &rfile, const std::string &result, std::vect
 						glBindTexture(GL_TEXTURE_2D, clip->tex);
 						glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR);
 						glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
-						glTexStorage2D(GL_TEXTURE_2D, 1, GL_RGBA8, (int)(mainprogram->ow3), (int)(mainprogram->oh3));
+						//glTexStorage2D(GL_TEXTURE_2D, 1, GL_RGBA8, (int)(mainprogram->ow3), (int)(mainprogram->oh3));
 						if (concat) {
 							boost::filesystem::rename(result + "_" + std::to_string(jpegcount) + ".file", result + "_" + std::to_string(jpegcount) + ".jpeg");
 							open_thumb(result + "_" + std::to_string(jpegcount) + ".jpeg", clip->tex);
 							jpegcount++;
 						}
 						else open_thumb(jpegpath, clip->tex);
+					}
+					if (istring == "FRAME") {
+						getline(rfile, istring);
+						clip->frame = std::stof(istring);
+					}
+					if (istring == "STARTFRAME") {
+						getline(rfile, istring);
+						clip->startframe = std::stoi(istring);
+					}
+					if (istring == "ENDFRAME") {
+						getline(rfile, istring);
+						clip->endframe = std::stoi(istring);
 					}
 				}
 			}
