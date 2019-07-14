@@ -532,7 +532,7 @@ void Program::quit(std::string msg)
 	//empty temp dir
 	boost::filesystem::path path_to_remove(mainprogram->temppath);
 	for (boost::filesystem::directory_iterator end_dir_it, it(path_to_remove); it!=end_dir_it; ++it) {
-		boost::filesystem::remove_all(it->path());
+		boost::filesystem::remove(it->path());
 	}
 
 	mainprogram->prefs->save();

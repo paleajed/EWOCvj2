@@ -2484,7 +2484,13 @@ void Layer::open_files() {
 		}
 	}
 	else if (str.substr(str.length() - 6, std::string::npos) == ".layer") {
-		if (mainprogram->filescount == 0) mainprogram->fileslay->open_image(str);
+		if (mainprogram->filescount == 0) {
+			mainmix->open_layerfile(str, mainprogram->fileslay, true, true);
+			std::unique_lock<std::mutex> olock(mainprogram->fileslay->endopenlock);
+			mainprogram->fileslay->endopenvar.wait(olock, [&] {return mainprogram->loadlay->opened; });
+			mainprogram->fileslay->opened = false;
+			olock.unlock();
+		}
 		else {
 			mainprogram->clipfilesclip->path = str;
 			mainprogram->clipfilesclip->tex = get_layertex(str);
@@ -2541,7 +2547,13 @@ void Mixer::set_values(Layer *clay, Layer *lay) {
 	}
 	else if (lay->filename != "") {
 		if (lay->type == ELEM_IMAGE) clay->open_image(lay->filename);
-		else clay->open_video(lay->frame, lay->filename, false);
+		else {
+			clay->open_video(lay->frame, lay->filename, false);
+			std::unique_lock<std::mutex> lock(lay->enddecodelock);
+			lay->enddecodevar.wait(lock, [&] {return lay->processed; });
+			lay->processed = false;
+			lock.unlock();
+		}
 	}
 	clay->millif = lay->millif;
 	clay->prevtime = lay->prevtime;

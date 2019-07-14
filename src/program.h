@@ -56,6 +56,7 @@ struct mix_target_struct {
 
 class Shelf {
 	public:
+		bool side;
 		std::string basepath = "";
 		std::string paths[16];
 		std::string jpegpaths[16];
@@ -454,6 +455,8 @@ class Program {
 		int shelffilescount;
 		bool shelfdrag = false;
 		Shelf *shelves[2];
+		int inshelf = -1;
+		int inclips = -1;
 		bool openclipfiles = false;
 		int clipfilescount = 0;
 		Clip* clipfilesclip = nullptr;
@@ -518,7 +521,7 @@ extern void draw_box(float *linec, float *areac, Box *box, GLuint tex);
 extern void draw_box(Box *box, float opacity, GLuint tex);
 extern void draw_box(Box *box, float dx, float dy, float scale, GLuint tex);
 
-extern void draw_triangle(float *linec, float *areac, float x1, float y1, float xsize, float ysize, ORIENTATION orient);
+extern void draw_triangle(float *linec, float *areac, float x1, float y1, float xsize, float ysize, ORIENTATION orient, TRIANGLE_TYPE type);
 
 extern void draw_line(float *linec, float x1, float y1, float x2, float y2);
 
