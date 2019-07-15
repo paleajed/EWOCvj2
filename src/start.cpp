@@ -2965,132 +2965,7 @@ void display_texture(Layer *lay, bool deck) {
 						if (eff->onoffbutton->value) draw_box(white, darkgreen1, box, -1);
 						else draw_box(white, darkgreen2, box, -1);
 					}
-					
-					switch (eff->type) {
-						case 0:
-							effstr = "BLUR";
-							break;
-						case 1:
-							effstr = "BRIGHTNESS";
-							break;
-						case 2:
-							effstr = "CHROMAROTATE";
-							break;
-						case 3:
-							effstr = "CONTRAST";
-							break;
-						case 4:
-							effstr = "DOT";
-							break;
-						case 5:
-							effstr = "GLOW";
-							break;
-						case 6:
-							effstr = "RADIALBLUR";
-							break;
-						case 7:
-							effstr = "SATURATION";
-							break;
-						case 8:
-							effstr = "SCALE";
-							break;
-						case 9:
-							effstr = "SWIRL";
-							break;
-						case 10:
-							effstr = "OLDFILM";
-							break;
-						case 11:
-							effstr = "RIPPLE";
-							break;
-						case 12:
-							effstr = "FISHEYE";
-							break;
-						case 13:
-							effstr = "TRESHOLD";
-							break;
-						case 14:
-							effstr = "STROBE";
-							break;
-						case 15:
-							effstr = "POSTERIZE";
-							break;
-						case 16:
-							effstr = "PIXELATE";
-							break;
-						case 17:
-							effstr = "CROSSHATCH";
-							break;
-						case 18:
-							effstr = "INVERT";
-							break;
-						case 19:
-							effstr = "ROTATE";
-							break;
-						case 20:
-							effstr = "EMBOSS";
-							break;
-						case 21:
-							effstr = "ASCII";
-							break;
-						case 22:
-							effstr = "SOLARIZE";
-							break;
-						case 23:
-							effstr = "VARDOT";
-							break;
-						case 24:
-							effstr = "CRT";
-							break;
-						case 25:
-							effstr = "EDGEDETECT";
-							break;
-						case 26:
-							effstr = "KALEIDOSCOPE";
-							break;
-						case 27:
-							effstr = "HALFTONE";
-							break;
-						case 28:
-							effstr = "CARTOON";
-							break;
-						case 29:
-							effstr = "CUTOFF";
-							break;
-						case 30:
-							effstr = "GLITCH";
-							break;
-						case 31:
-							effstr = "COLORIZE";
-							break;
-						case 32:
-							effstr = "NOISE";
-							break;
-						case 33:
-							effstr = "GAMMA";
-							break;
-						case 34:
-							effstr = "THERMAL";
-							break;
-						case 35:
-							effstr = "BOKEH";
-							break;
-						case 36:
-							effstr = "SHARPEN";
-							break;
-						case 37:
-							effstr = "DITHER";
-							break;
-						case 38:
-							effstr = "FLIP";
-							break;
-						case 39:
-							effstr = "MIRROR";
-							break;
-						case 40:
-							effstr = "BOXBLUR";
-							break;
-					}
+					effstr = eff->get_namestring();
 					float textw = tf(render_text(effstr, white, eff->box->vtxcoords->x1 + tf(0.01f), eff->box->vtxcoords->y1 + tf(0.05f) - tf(0.030f), tf(0.0003f), tf(0.0005f)));
 					eff->box->vtxcoords->w = textw + tf(0.032f);
 					x1 = eff->box->vtxcoords->x1 + tf(0.032f) + textw;
@@ -3098,12 +2973,12 @@ void display_texture(Layer *lay, bool deck) {
 				}
 				y1 = eff->box->vtxcoords->y1;
 				for (int j = 0; j < eff->params.size(); j++) {
-					Param *par = eff->params[j];
+					Param* par = eff->params[j];
 					par->box->lcolor[0] = 1.0;
 					par->box->lcolor[1] = 1.0;
 					par->box->lcolor[2] = 1.0;
 					par->box->lcolor[3] = 1.0;
-					if (par->nextrow) { 
+					if (par->nextrow) {
 						x1 = eff->box->vtxcoords->x1 + tf(0.02f);
 						y1 -= tf(0.05f);
 						wi = (0.7f - mainprogram->numw - tf(0.02f)) / 4.0;
@@ -3114,13 +2989,72 @@ void display_texture(Layer *lay, bool deck) {
 					par->box->vtxcoords->w = wi;
 					par->box->vtxcoords->h = eff->box->vtxcoords->h;
 					par->box->upvtxtoscr();
-					
+
 					if (par->box->vtxcoords->y1 < 1.0 - tf(mainprogram->layh) - tf(0.22f) - tf(0.05f) * 10) break;
 					if (par->box->vtxcoords->y1 <= 1.0 - tf(mainprogram->layh) - tf(0.18f)) {
 						par->handle();
 					}
 				}
 			}
+
+			// handle effect dragging
+			if (mainprogram->drageff) {
+				int pos;
+				for (int j = lay->effscroll[cat]; j < evec.size() + 1; j++) {
+					// calculate dragged effect temporary position pos when mouse between
+					//limits under and upper
+					int under1, under2, upper;
+					if (j == lay->effscroll[cat]) {
+						// mouse above first bin
+						under2 = 0;
+						under1 = evec[lay->effscroll[cat]]->box->scrcoords->y1 - evec[lay->effscroll[cat]]->box->scrcoords->h * 0.5f;
+					}
+					else {
+						under1 = evec[j - 1]->box->scrcoords->y1 + evec[j - 1]->box->scrcoords->h * 0.5f;
+						under2 = under1;
+					}
+					if (j == evec.size()) {
+						// mouse under last bin
+						upper = glob->h;
+					}
+					else upper = evec[j]->box->scrcoords->y1 + evec[j]->box->scrcoords->h * 0.5f;
+					if (mainprogram->my > under2 and mainprogram->my < upper) {
+						std::string name = mainprogram->drageff->get_namestring();
+						draw_box(white, darkred1, mainprogram->drageff->box->vtxcoords->x1, 1.0f - mainprogram->yscrtovtx(under1), mainprogram->drageff->box->vtxcoords->w, mainprogram->drageff->box->vtxcoords->h, -1);
+						render_text(name, white, mainprogram->drageff->box->vtxcoords->x1 + tf(0.01f), 1.0f - mainprogram->yscrtovtx(under1) + tf(0.05f) - tf(0.030f), tf(0.0003f), tf(0.0005f));
+						pos = j;
+						break;
+					}
+				}
+				if (mainprogram->leftmouse) {
+					// do bin drag
+					if (mainprogram->drageffpos < pos) {
+						std::rotate(evec.begin() + mainprogram->drageffpos, evec.begin() + mainprogram->drageffpos + 1, evec.begin() + pos);
+					}
+					else {
+						std::rotate(evec.begin() + pos, evec.begin() + mainprogram->drageffpos, evec.begin() + mainprogram->drageffpos + 1);
+					}
+					for (int k = 0; k < evec.size(); k++) {
+						// set pos and box y1 for all bins in new list
+						evec[k]->pos = k;
+						//evec->box->vtxcoords->y1 = (i + 1) * -0.05f;
+						//evec->box->upvtxtoscr();
+					}
+					mainprogram->drageff = nullptr;
+					mainprogram->leftmouse = false;
+				}
+				if (mainprogram->rightmouse) {
+					// cancel bin drag
+					mainprogram->drageff = nullptr;
+					mainprogram->rightmouse = false;
+					mainprogram->menuactivation = false;
+					for (int i = 0; i < mainprogram->menulist.size(); i++) {
+						mainprogram->menulist[i]->state = 0;
+					}
+				}
+			}
+
+
 			// Handle color tolerance
 			if (lay->pos > 0) {
 				if (lay->blendnode->blendtype == COLOURKEY) {
@@ -7920,6 +7854,7 @@ void the_loop() {
 		Layer* lay = mainmix->currlay;
 		Effect* eff = nullptr;
 		std::vector<Effect*>& evec = lay->choose_effects();
+		bool cat = mainprogram->effcat[lay->deck]->value;
 		if (!mainprogram->queueing) {
 			if (evec.size()) {
 				eff = evec[evec.size() - 1];
@@ -7948,7 +7883,7 @@ void the_loop() {
 						vy2 = vy1 - tf(0.011f);
 					}
 					if (cond1 or cond2) {
-						if (mainprogram->menuactivation or mainprogram->leftmouse) {
+						if ((mainprogram->menuactivation or mainprogram->leftmouse) and !mainprogram->drageff) {
 							mainprogram->effectmenu->state = 2;
 							mainmix->insert = 1;
 							mainmix->mouseeffect = evec.size();
@@ -7963,6 +7898,7 @@ void the_loop() {
 					}
 				}
 			}
+			mainprogram->indragbox = false;
 			for (int j = 0; j < evec.size(); j++) {
 				eff = evec[j];
 				box = eff->box;
@@ -7988,18 +7924,34 @@ void the_loop() {
 								mainprogram->leftmouse = false;
 								mainprogram->menuactivation = false;
 								mainprogram->menuondisplay = true;
+								mainprogram->dragbox = nullptr;
+								mainprogram->drageffsense = false;
 							}
 							eff->box->acolor[0] = 0.5;
 							eff->box->acolor[1] = 0.5;
 							eff->box->acolor[2] = 1.0;
 							eff->box->acolor[3] = 1.0;
+
+							// prepare effect dragging
+							eff->pos = j;
+							if (!mainprogram->drageff) {
+								if (mainprogram->leftmousedown and !mainprogram->drageffsense) {
+									mainprogram->drageffsense = true;
+									mainprogram->dragbox = eff->box;
+									mainprogram->drageffpos = j;
+									mainprogram->leftmousedown = false;
+								}
+								if (j == mainprogram->drageffpos) {
+									mainprogram->indragbox = true;
+								}
+							}
 						}
 					}
 					box = eff->onoffbutton->box;
 					if (box->scrcoords->x1 < mainprogram->mx and mainprogram->mx < box->scrcoords->x1 + tf(mainprogram->layw) * glob->w / 2.0) {
 						if (box->scrcoords->y1 - box->scrcoords->h - 7.5 < mainprogram->my and mainprogram->my < box->scrcoords->y1 - box->scrcoords->h + 7.5) {
 							// mouse over "Insert Effect" box, inbetween effects
-							if (mainprogram->menuactivation or mainprogram->leftmouse) {
+							if ((mainprogram->menuactivation or mainprogram->leftmouse) and !mainprogram->drageff) {
 								mainprogram->effectmenu->state = 2;
 								mainmix->insert = true;
 								mainmix->mouseeffect = j;
@@ -8016,6 +7968,10 @@ void the_loop() {
 						}
 					}
 				}
+			}
+			if (!mainprogram->indragbox and mainprogram->drageffsense) {
+				mainprogram->drageff = evec[mainprogram->drageffpos];
+				mainprogram->drageffsense = false;
 			}
 		}
 

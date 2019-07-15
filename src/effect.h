@@ -95,6 +95,7 @@ class Effect {
 		virtual float get_speed() { return -1; };
 		virtual float get_ripplecount() { return -1; };
 		virtual void set_ripplecount(float count) { return; };
+		std::string get_namestring();
 		Effect();
 		~Effect();
 		

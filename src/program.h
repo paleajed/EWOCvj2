@@ -464,6 +464,11 @@ class Program {
 		bool openfiles = false;
 		int filescount = 0;
 		Layer* fileslay = nullptr;
+		Effect* drageff = nullptr;
+		int drageffpos = -1;
+		bool drageffsense = false;
+		bool indragbox = false;
+		Box* dragbox;
 
 		void quit(std::string msg);
 		GLuint set_shader();

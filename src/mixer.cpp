@@ -265,6 +265,136 @@ Effect::~Effect() {
 	glDeleteFramebuffers(1, &this->fbo);
 }
 
+std::string Effect::get_namestring() {
+	std::string effstr;
+	switch (this->type) {
+		case 0:
+			effstr = "BLUR";
+			break;
+		case 1:
+			effstr = "BRIGHTNESS";
+			break;
+		case 2:
+			effstr = "CHROMAROTATE";
+			break;
+		case 3:
+			effstr = "CONTRAST";
+			break;
+		case 4:
+			effstr = "DOT";
+			break;
+		case 5:
+			effstr = "GLOW";
+			break;
+		case 6:
+			effstr = "RADIALBLUR";
+			break;
+		case 7:
+			effstr = "SATURATION";
+			break;
+		case 8:
+			effstr = "SCALE";
+			break;
+		case 9:
+			effstr = "SWIRL";
+			break;
+		case 10:
+			effstr = "OLDFILM";
+			break;
+		case 11:
+			effstr = "RIPPLE";
+			break;
+		case 12:
+			effstr = "FISHEYE";
+			break;
+		case 13:
+			effstr = "TRESHOLD";
+			break;
+		case 14:
+			effstr = "STROBE";
+			break;
+		case 15:
+			effstr = "POSTERIZE";
+			break;
+		case 16:
+			effstr = "PIXELATE";
+			break;
+		case 17:
+			effstr = "CROSSHATCH";
+			break;
+		case 18:
+			effstr = "INVERT";
+			break;
+		case 19:
+			effstr = "ROTATE";
+			break;
+		case 20:
+			effstr = "EMBOSS";
+			break;
+		case 21:
+			effstr = "ASCII";
+			break;
+		case 22:
+			effstr = "SOLARIZE";
+			break;
+		case 23:
+			effstr = "VARDOT";
+			break;
+		case 24:
+			effstr = "CRT";
+			break;
+		case 25:
+			effstr = "EDGEDETECT";
+			break;
+		case 26:
+			effstr = "KALEIDOSCOPE";
+			break;
+		case 27:
+			effstr = "HALFTONE";
+			break;
+		case 28:
+			effstr = "CARTOON";
+			break;
+		case 29:
+			effstr = "CUTOFF";
+			break;
+		case 30:
+			effstr = "GLITCH";
+			break;
+		case 31:
+			effstr = "COLORIZE";
+			break;
+		case 32:
+			effstr = "NOISE";
+			break;
+		case 33:
+			effstr = "GAMMA";
+			break;
+		case 34:
+			effstr = "THERMAL";
+			break;
+		case 35:
+			effstr = "BOKEH";
+			break;
+		case 36:
+			effstr = "SHARPEN";
+			break;
+		case 37:
+			effstr = "DITHER";
+			break;
+		case 38:
+			effstr = "FLIP";
+			break;
+		case 39:
+			effstr = "MIRROR";
+			break;
+		case 40:
+			effstr = "BOXBLUR";
+			break;
+	}
+	return effstr;
+}
+
 // The following section defines the different effects and their respective parameters
 // this->numrows defines the number of lines the effect+params takes up in the GUI
 // param->name is the parameter name as it appears in the GUI
