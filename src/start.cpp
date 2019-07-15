@@ -9102,6 +9102,114 @@ void the_loop() {
 			mainprogram->menuresults.clear();
 		}
 		
+		// Draw and handle filemenu
+		k = handle_menu(mainprogram->filemenu);
+		if (k == 0) {
+			mainprogram->pathto = "NEWPROJECT";
+			std::string reqdir = mainprogram->projdir;
+			if (reqdir.substr(0, 1) == ".") reqdir.erase(0, 2);
+			std::string name = "Untitled";
+			std::string path;
+			int count = 0;
+			while (1) {
+				path = mainprogram->projdir + name;
+				if (!exists(path + ".ewocvj")) {
+					break;
+				}
+				count++;
+				name = remove_version(name) + "_" + std::to_string(count);
+			}
+			std::thread filereq(&Program::get_outname, mainprogram, "New project", "application/ewocvj2-project", boost::filesystem::absolute(reqdir + name).generic_string());
+			filereq.detach();
+		}
+		else if (k == 1) {
+			mainprogram->pathto = "OPENPROJECT";
+			std::thread filereq(&Program::get_inname, mainprogram, "Open project file", "application/ewocvj2-project", boost::filesystem::canonical(mainprogram->currprojdir).generic_string());
+			filereq.detach();
+		}
+		else if (k == 2) {
+			mainprogram->pathto = "SAVEPROJECT";
+			std::thread filereq(&Program::get_outname, mainprogram, "Save project file", "application/ewocvj2-project", boost::filesystem::canonical(mainprogram->project->path).generic_string());
+			filereq.detach();
+		}
+		else if (k == 3) {
+			mainmix->new_state();
+		}
+		else if (k == 4) {
+			mainprogram->pathto = "OPENSTATE";
+			std::thread filereq(&Program::get_inname, mainprogram, "Open state file", "application/ewocvj2-state", boost::filesystem::canonical(mainprogram->currstatedir).generic_string());
+			filereq.detach();
+		}
+		else if (k == 5) {
+			mainprogram->pathto = "SAVESTATE";
+			std::thread filereq(&Program::get_outname, mainprogram, "Save state file", "application/ewocvj2-state", boost::filesystem::canonical(mainprogram->currstatedir).generic_string());
+			filereq.detach();
+		}
+		else if (k == 6) {
+			mainprogram->quit("quitted");
+		}
+
+		if (mainprogram->menuchosen) {
+			mainprogram->menuchosen = false;
+			mainprogram->leftmouse = 0;
+			mainprogram->menuactivation = 0;
+			mainprogram->menuresults.clear();
+		}
+
+		// Draw and handle editmenu
+		k = handle_menu(mainprogram->editmenu);
+		if (k == 0) {
+			if (!mainprogram->prefon) {
+				mainprogram->prefon = true;
+				SDL_ShowWindow(mainprogram->prefwindow);
+				SDL_RaiseWindow(mainprogram->prefwindow);
+				SDL_GL_MakeCurrent(mainprogram->prefwindow, glc_pr);
+				glUseProgram(mainprogram->ShaderProgram_pr);
+				glEnable(GL_BLEND);
+				glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
+				for (int i = 0; i < mainprogram->prefs->items.size(); i++) {
+					PrefCat* item = mainprogram->prefs->items[i];
+					item->box->upvtxtoscr();
+				}
+			}
+			else {
+				SDL_RaiseWindow(mainprogram->prefwindow);
+			}
+		}
+		else if (k == 1) {
+			if (!mainprogram->tunemidi) {
+				SDL_ShowWindow(mainprogram->tunemidiwindow);
+				SDL_RaiseWindow(mainprogram->tunemidiwindow);
+				SDL_GL_MakeCurrent(mainprogram->tunemidiwindow, glc_tm);
+				glUseProgram(mainprogram->ShaderProgram_tm);
+				mainprogram->tmdeck->upvtxtoscr();
+				mainprogram->tmset->upvtxtoscr();
+				mainprogram->tmscratch->upvtxtoscr();
+				mainprogram->tmfreeze->upvtxtoscr();
+				mainprogram->tmplay->upvtxtoscr();
+				mainprogram->tmbackw->upvtxtoscr();
+				mainprogram->tmbounce->upvtxtoscr();
+				mainprogram->tmfrforw->upvtxtoscr();
+				mainprogram->tmfrbackw->upvtxtoscr();
+				mainprogram->tmspeed->upvtxtoscr();
+				mainprogram->tmspeedzero->upvtxtoscr();
+				mainprogram->tmopacity->upvtxtoscr();
+				glEnable(GL_BLEND);
+				glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
+				mainprogram->tunemidi = true;
+			}
+			else {
+				SDL_RaiseWindow(mainprogram->tunemidiwindow);
+			}
+		}
+
+		if (mainprogram->menuchosen) {
+			mainprogram->menuchosen = false;
+			mainprogram->leftmouse = 0;
+			mainprogram->menuactivation = 0;
+			mainprogram->menuresults.clear();
+		}
+
 		// end of menu code
 		
 		//add/delete layer
@@ -9122,7 +9230,7 @@ void the_loop() {
 							draw_box(blue, blue, box->vtxcoords->x1 - mainprogram->xscrtovtx(thick) + (i - mainmix->scenes[j][mainmix->currscene[j]]->scrollpos == 0) * mainprogram->xscrtovtx(thick), box->vtxcoords->y1, mainprogram->xscrtovtx(thick * (2.0f - (i - mainmix->scenes[j][mainmix->currscene[j]]->scrollpos == 0))), mainprogram->layh, -1);
 							float red[] = {1.0, 0.0 , 0.0, 1.0};
 							if (lay->pos > 0 and !mainprogram->dragbinel) draw_box(red, red, box->vtxcoords->x1 - mainprogram->xscrtovtx(thick), box->vtxcoords->y1 + box->vtxcoords->h, mainprogram->xscrtovtx(thick * 2.0f), -tf(0.05f), -1);
-							if (mainprogram->leftmouse and !mainmix->moving) {
+							if (mainprogram->leftmouse and !mainmix->moving and !mainprogram->intopmenu) {
 								mainprogram->leftmouse = 0;
 								if (lay->pos > 0 and box->scrcoords->y1 - box->scrcoords->h < mainprogram->my and mainprogram->my < box->scrcoords->y1 - box->scrcoords->h + mainprogram->yvtxtoscr(tf(0.05f))) {
 									mainmix->delete_layer(lvec, lvec[lay->pos - 1], true);
@@ -9182,7 +9290,7 @@ void the_loop() {
 				//}
 				else if (box->in()) {
 					// move layer
-					if (mainprogram->leftmousedown) {
+					if (mainprogram->leftmousedown and !mainprogram->intopmenu) {
 						if (!lay->vidmoving and !mainmix->moving and !lay->cliploading) {
 							binsmain->dragtex = copy_tex(lay->node->vidbox->tex);
 							mainprogram->draglay = lay;
@@ -9699,6 +9807,46 @@ void the_loop() {
 		glBindTexture(GL_TEXTURE_2D, mainprogram->dragbinel->tex);
 		glDrawArrays(GL_TRIANGLE_STRIP, 0, 4);
 		glUniform1i(thumb, 0);
+	}
+
+	// implementation of a basic menu when mouse at top of screen
+	if (mainprogram->my == 0) {
+		mainprogram->intopmenu = true;
+	}
+	if (mainprogram->intopmenu) {
+		float lc[] = { 0.0, 0.0, 0.0, 1.0 };
+		float ac1[] = { 0.3, 0.3, 0.3, 1.0 };
+		float ac2[] = { 0.6, 0.6, 0.6, 1.0 };
+		float deepred[] = { 1.0, 0.0, 0.0, 1.0 };
+		draw_box(lc, ac1, -1.0f, 1.0f - tf(0.05f), 0.156f, tf(0.05f), -1);
+		draw_box(lc, ac1, -1.0f + 0.156f, 1.0f - tf(0.05f), 0.156f, tf(0.05f), -1);
+		draw_box(lc, ac2, -1.0f + 0.312f, 1.0f - tf(0.05f), 2.0f - 0.312f, tf(0.05f), -1);
+		draw_box(nullptr, deepred, 1.0f - 0.05f, 1.0f - tf(0.05f), 0.05f, tf(0.05f), -1);
+		render_text("x", white, 0.966f, 1.019f - tf(0.05f), 0.0012f, 0.002f);
+		render_text("FILE", white, -1.0f + tf(0.0078f), 1.0f - tf(0.05f) + tf(0.015f), tf(0.0003f), tf(0.0005f));
+		render_text("CONFIGURE", white, -1.0f + 0.156f + tf(0.0078f), 1.0f - tf(0.05f) + tf(0.015f), tf(0.0003f), tf(0.0005f));
+		if (mainprogram->my > mainprogram->yvtxtoscr(tf(0.05f))) {
+			mainprogram->intopmenu = false;
+		}
+		else if (mainprogram->mx < mainprogram->xvtxtoscr(0.156f)) {
+			if (mainprogram->leftmouse) {
+				mainprogram->filemenu->menux = 0;
+				mainprogram->filemenu->menuy = mainprogram->yvtxtoscr(tf(0.05f));
+				mainprogram->filemenu->state = 2;
+			}
+		}
+		else if (mainprogram->mx < mainprogram->xvtxtoscr(0.312f)) {
+			if (mainprogram->leftmouse) {
+				mainprogram->editmenu->menux = mainprogram->xvtxtoscr(0.156f);
+				mainprogram->editmenu->menuy = mainprogram->yvtxtoscr(tf(0.05f));
+				mainprogram->editmenu->state = 2;
+			}
+		}
+		else if (mainprogram->mx > 1.0f - 0.05f) {
+			if (mainprogram->leftmouse) {
+				mainprogram->quit("closed window");
+			}
+		}
 	}
 	
 	if ((mainprogram->leftmouse and (mainprogram->dragbinel or binsmain->dragmix or binsmain->dragdeck)) or mainprogram->drag) {
@@ -11333,7 +11481,22 @@ int main(int argc, char* argv[]){
 	shelf1.push_back("MIDI Learn");
   	mainprogram->make_menu("shelfmenu", mainprogram->shelfmenu, shelf1);
 
- 	
+	std::vector<std::string> file;
+	file.push_back("New project");
+	file.push_back("Open project");
+	file.push_back("Save project");
+	file.push_back("New state");
+	file.push_back("Open state");
+	file.push_back("Save state");
+	file.push_back("Quit");
+	mainprogram->make_menu("filemenu", mainprogram->filemenu, file);
+
+	std::vector<std::string> edit;
+	edit.push_back("Preferences");
+	edit.push_back("Configure general MIDI");
+	mainprogram->make_menu("editmenu", mainprogram->editmenu, edit);
+
+
 	mainprogram->nodesmain = new NodesMain;
 	mainprogram->nodesmain->add_nodepages(8);
 	mainprogram->nodesmain->currpage = mainprogram->nodesmain->pages[0];
@@ -12034,17 +12197,6 @@ int main(int argc, char* argv[]){
 		float lightblue[] = {0.5f, 0.5f, 1.0f, 1.0f};
 		glClearColor(0.2f, 0.2f, 0.2f, 0.2f);
 		glClear(GL_COLOR_BUFFER_BIT);	
-	
-		// draw close window icon?
-		if (mainprogram->mx == glob->w - 1 and mainprogram->my == 0) {
-			glBindFramebuffer(GL_FRAMEBUFFER, 0);
-			glDrawBuffer(GL_BACK_LEFT);
-			draw_box(nullptr, deepred, 0.95f, 1.0f - 0.05f * glob->w / glob->h, 0.05f, 0.05f * glob->w / glob->h, -1);
-			render_text("x", white, 0.962f, 1.015f - 0.05f * glob->w / glob->h, 0.0012f, 0.002f);
-			glBindFramebuffer(GL_FRAMEBUFFER, 0);
-			glDrawBuffer(GL_BACK_LEFT);
-			if (mainprogram->leftmouse)	mainprogram->quit("closed window");
-		}
 	
 		if (!mainprogram->startloop) {
 			//initial switch to live mode

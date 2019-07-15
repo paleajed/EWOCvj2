@@ -283,10 +283,13 @@ class Program {
 		Menu *binmenu = nullptr;
 		Menu *bin2menu = nullptr;
 		Menu *genericmenu = nullptr;
-		Menu *shelfmenu = nullptr;
+		Menu* shelfmenu = nullptr;
+		Menu* filemenu = nullptr;
+		Menu* editmenu = nullptr;
 		bool menuactivation;
 		bool menuchosen;
 		std::vector<int> menuresults;
+		bool intopmenu = false;
 		int fullscreen = -1;
 		bool test = false;
 		int mx;
