@@ -500,11 +500,12 @@ class Program {
 		float yvtxtoscr(float vtxcoord);
 		void preveff_init();
 		void add_main_oscmethods();
-		bool order_paths();
+		bool order_paths(bool dodeckmix);
 		Program();
 		
 	private:
 		std::string mime_to_wildcard(std::string filters);
+		bool do_order_paths();
 };
 
 extern Globals *glob;

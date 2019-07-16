@@ -2590,53 +2590,11 @@ void Layer::clip_followup(bool startend, bool alive){
 }
 
 void Layer::open_files() {
-	if (mainprogram->multistage == 0) {
-		mainprogram->orderondisplay = true;
-		// first get one file texture per loop
-		std::string str = mainprogram->paths[mainprogram->filescount];
-		mainprogram->filescount++;
-		GLuint tex;
-		if (isimage(str)) {
-			tex = get_imagetex(str);
-		}
-		else if (str.substr(str.length() - 6, std::string::npos) == ".layer") {
-			tex = get_layertex(str);
-		}
-		else {
-			tex = get_videotex(str);
-		}
-		mainprogram->pathtexes.push_back(tex);
-		if (mainprogram->filescount < mainprogram->paths.size()) return;
-		for (int j = 0; j < mainprogram->paths.size() + 1; j++) {
-			mainprogram->pathboxes.push_back(new Box);
-			mainprogram->pathboxes[j]->vtxcoords->x1 = -0.4f;
-			mainprogram->pathboxes[j]->vtxcoords->y1 = 0.8f - j * 0.1f;
-			mainprogram->pathboxes[j]->vtxcoords->w = 0.8f;
-			mainprogram->pathboxes[j]->vtxcoords->h = 0.1f;
-			mainprogram->pathboxes[j]->upvtxtoscr();
-		}
-		mainprogram->multistage = 1;
-	}
-	if (mainprogram->multistage == 1) {
-		// then do interactive ordering
-		bool cont = mainprogram->order_paths();
-		if (!cont) return;
-		mainprogram->multistage = 2;
-	}
-	if (mainprogram->multistage == 2) {
-		// then cleanup
-		for (int j = 0; j < mainprogram->paths.size(); j++) {
-			delete mainprogram->pathboxes[j];
-			glDeleteTextures(1, &mainprogram->pathtexes[j]);
-		}
-		mainprogram->pathboxes.clear();
-		mainprogram->pathtexes.clear();
-		mainprogram->filescount = 0;
-		mainprogram->orderondisplay = false;
-		mainprogram->multistage = 3;
-	}
+	// order elements
+	bool cont = mainprogram->order_paths(false);
+	if (!cont) return;
 
-	// then start loading one element of ordered list each loop
+	// load one element of ordered list each loop
 	std::string str = mainprogram->paths[mainprogram->filescount];
 	if (mainprogram->filescount == 1) {
 		mainprogram->clipfilesclip = mainprogram->fileslay->clips[0];

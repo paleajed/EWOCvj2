@@ -5674,51 +5674,10 @@ GLuint get_deckmixtex(const std::string& path) {
 }
 
 void Clip::open_clipfiles() {
-	if (mainprogram->multistage == 0) {
-		mainprogram->orderondisplay = true;
-		// first get one file texture per loop
-		std::string str = mainprogram->paths[mainprogram->clipfilescount];
-		mainprogram->clipfilescount++;
-		GLuint tex;
-		if (isimage(str)) {
-			tex = get_imagetex(str);
-		}
-		else if (str.substr(str.length() - 6, std::string::npos) == ".layer") {
-			tex = get_layertex(str);
-		}
-		else {
-			tex = get_videotex(str);
-		}
-		mainprogram->pathtexes.push_back(tex);
-		if (mainprogram->clipfilescount < mainprogram->paths.size()) return;
-		for (int j = 0; j < mainprogram->paths.size() + 1; j++) {
-			mainprogram->pathboxes.push_back(new Box);
-			mainprogram->pathboxes[j]->vtxcoords->x1 = -0.4f;
-			mainprogram->pathboxes[j]->vtxcoords->y1 = 0.8f - j * 0.1f;
-			mainprogram->pathboxes[j]->vtxcoords->w = 0.8f;
-			mainprogram->pathboxes[j]->vtxcoords->h = 0.1f;
-			mainprogram->pathboxes[j]->upvtxtoscr();
-		}
-		mainprogram->multistage = 1;
-	}
-	if (mainprogram->multistage == 1) {
-		// then do interactive ordering
-		bool cont = mainprogram->order_paths();
-		if (!cont) return;
-		mainprogram->multistage = 2;
-	}
-	if (mainprogram->multistage == 2) {
-		// then cleanup
-		for (int j = 0; j < mainprogram->paths.size(); j++) {
-			delete mainprogram->pathboxes[j];
-			glDeleteTextures(1, &mainprogram->pathtexes[j]);
-		}
-		mainprogram->pathboxes.clear();
-		mainprogram->pathtexes.clear();
-		mainprogram->clipfilescount = 0;
-		mainprogram->orderondisplay = false;
-		mainprogram->multistage = 3;
-	}
+	// order elements
+	bool cont = mainprogram->order_paths(false);
+	if (!cont) return;
+
 	std::string str = mainprogram->paths[mainprogram->clipfilescount];
 	int pos = std::find(mainprogram->clipfileslay->clips.begin(), mainprogram->clipfileslay->clips.end(), mainprogram->clipfilesclip) - mainprogram->clipfileslay->clips.begin();
 	if (pos == mainprogram->clipfileslay->clips.size() - 1) {
@@ -10331,58 +10290,9 @@ void Shelf::open_dir() {
 
 
 void Shelf::open_shelffiles() {
-	if (mainprogram->multistage == 0) {
-		mainprogram->orderondisplay = true;
-		// first get one file texture per loop
-		std::string str = mainprogram->paths[mainprogram->shelffilescount];
-		mainprogram->shelffilescount++;
-		GLuint tex;
-		if (isimage(str)) {
-			tex = get_imagetex(str);
-		}
-		else if (str.substr(str.length() - 6, std::string::npos) == ".layer") {
-			tex = get_layertex(str);
-		}
-		else if (str.substr(str.length() - 5, std::string::npos) == ".deck") {
-			tex = get_deckmixtex(str);
-		}
-		else if (str.substr(str.length() - 4, std::string::npos) == ".mix") {
-			tex = get_deckmixtex(str);
-		}
-		else {
-			tex = get_videotex(str);
-		}
-		mainprogram->pathtexes.push_back(tex);
-		if (mainprogram->shelffilescount < mainprogram->paths.size()) return;
-		for (int j = 0; j < mainprogram->paths.size() + 1; j++) {
-			mainprogram->pathboxes.push_back(new Box);
-			mainprogram->pathboxes[j]->vtxcoords->x1 = -0.4f;
-			mainprogram->pathboxes[j]->vtxcoords->y1 = 0.8f - j * 0.1f;
-			mainprogram->pathboxes[j]->vtxcoords->w = 0.8f;
-			mainprogram->pathboxes[j]->vtxcoords->h = 0.1f;
-			mainprogram->pathboxes[j]->upvtxtoscr();
-		}
-		mainprogram->multistage = 1;
-	}
-	if (mainprogram->multistage == 1) {
-		// then do interactive ordering
-		bool cont = mainprogram->order_paths();
-		if (!cont) return;
-		mainprogram->multistage = 2;
-	}
-	if (mainprogram->multistage == 2) {
-		// then cleanup
-		for (int j = 0; j < mainprogram->paths.size(); j++) {
-			delete mainprogram->pathboxes[j];
-			glDeleteTextures(1, &mainprogram->pathtexes[j]);
-		}
-		mainprogram->pathboxes.clear();
-		mainprogram->pathtexes.clear();
-		mainprogram->shelffilescount = 0;
-		mainprogram->orderondisplay = false;
-		mainprogram->multistage = 3;
-	}
-
+	// order elements
+	bool cont = mainprogram->order_paths(true);
+	if (!cont) return;
 
 	std::string str = mainprogram->paths[mainprogram->shelffilescount];
 	if (isimage(str)) {

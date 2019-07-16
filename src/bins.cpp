@@ -905,10 +905,7 @@ void BinsMain::handle(bool draw) {
 	}
 	
 	//handle binelements
-	if (this->openbinfile) {
-		open_binfiles();
-	}
-	else if (!mainprogram->menuondisplay) {
+	if (!mainprogram->menuondisplay) {
 		this->prevelems.clear();
 		bool inbinel = false;
 		for (int j = 0; j < 24; j++) {
@@ -1943,6 +1940,11 @@ void BinsMain::handle(bool draw) {
 			enddrag();
 		}
 	}
+
+	// load one file into bin each loop
+	if (this->openbinfile) {
+		open_binfiles();
+	}
 }
 
 void BinsMain::open_bin(const std::string &path, Bin *bin) {
@@ -2268,6 +2270,10 @@ void BinsMain::get_texes(int deck) {
 }
 
 void BinsMain::open_binfiles() {
+	// order elements
+	bool cont = mainprogram->order_paths(false);
+	if (!cont) return;
+
 	mainprogram->blocking = true;
 	if (SDL_GetMouseFocus() != mainprogram->mainwindow) {
 		SDL_SetCursor(SDL_CreateSystemCursor(SDL_SYSTEM_CURSOR_ARROW));

@@ -504,8 +504,69 @@ void Program::get_dir(const char *title, std::string defaultdir) {
 	mainprogram->autosave = as;
 }
 
-bool Program::order_paths() {
-	if (this->paths.size() == 1) return true;
+bool Program::order_paths(bool dodeckmix) {
+	if (mainprogram->multistage == 0) {
+		mainprogram->filescount = 0;
+		mainprogram->multistage = 1;
+	}
+	if (mainprogram->multistage == 1) {
+			mainprogram->orderondisplay = true;
+		// first get one file texture per loop
+		std::string str = mainprogram->paths[mainprogram->filescount];
+		mainprogram->filescount++;
+		GLuint tex;
+		if (isimage(str)) {
+			tex = get_imagetex(str);
+		}
+		else if (str.substr(str.length() - 6, std::string::npos) == ".layer") {
+			tex = get_layertex(str);
+		}
+		else if (dodeckmix and str.substr(str.length() - 5, std::string::npos) == ".deck") {
+			tex = get_deckmixtex(str);
+		}
+		else if (dodeckmix and str.substr(str.length() - 4, std::string::npos) == ".mix") {
+			tex = get_deckmixtex(str);
+		}
+		else {
+			tex = get_videotex(str);
+		}
+		mainprogram->pathtexes.push_back(tex);
+		if (mainprogram->filescount < mainprogram->paths.size()) return false;
+		for (int j = 0; j < mainprogram->paths.size() + 1; j++) {
+			mainprogram->pathboxes.push_back(new Box);
+			mainprogram->pathboxes[j]->vtxcoords->x1 = -0.4f;
+			mainprogram->pathboxes[j]->vtxcoords->y1 = 0.8f - j * 0.1f;
+			mainprogram->pathboxes[j]->vtxcoords->w = 0.8f;
+			mainprogram->pathboxes[j]->vtxcoords->h = 0.1f;
+			mainprogram->pathboxes[j]->upvtxtoscr();
+		}
+		mainprogram->multistage = 2;
+	}
+	if (mainprogram->multistage == 2) {
+		// then do interactive ordering
+		bool cont = mainprogram->do_order_paths();
+		if (!cont) return false;
+		mainprogram->multistage = 3;
+	}
+	if (mainprogram->multistage == 3) {
+		// then cleanup
+		for (int j = 0; j < mainprogram->paths.size(); j++) {
+			delete mainprogram->pathboxes[j];
+			glDeleteTextures(1, &mainprogram->pathtexes[j]);
+		}
+		mainprogram->pathboxes.clear();
+		mainprogram->pathtexes.clear();
+		mainprogram->filescount = 0;
+		mainprogram->orderondisplay = false;
+		mainprogram->multistage = 4;
+	}
+
+	return true;
+}
+
+	
+bool Program::do_order_paths() {
+		if (this->paths.size() == 1) return true;
 	// show interactive list with draggable elements to allow element ordering of mainprogram->paths, result of get_multinname
 	float white[4] = { 1.0f, 1.0f, 1.0f, 1.0f };
 	float black[4] = { 0.0f, 0.0f, 0.0f, 1.0f };
