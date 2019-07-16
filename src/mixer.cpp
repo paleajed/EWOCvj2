@@ -232,6 +232,8 @@ Effect::Effect() {
 	this->box = box;
 	box->vtxcoords->w = tf(0.2f);
 	box->vtxcoords->h = tf(0.05f);
+	box->tooltiptitle = "Effect type name ";
+	box->tooltip = "Leftclick or rightclick effect name to change it in another effect class.  Leftdrag to move effect in the stack. ";
 	box->upvtxtoscr();
 	this->onoffbutton = new Button(true);
 	box = this->onoffbutton->box;

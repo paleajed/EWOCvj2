@@ -539,6 +539,8 @@ bool Program::order_paths(bool dodeckmix) {
 			mainprogram->pathboxes[j]->vtxcoords->w = 0.8f;
 			mainprogram->pathboxes[j]->vtxcoords->h = 0.1f;
 			mainprogram->pathboxes[j]->upvtxtoscr();
+			mainprogram->pathboxes[j]->tooltiptitle = "Order files to be opened ";
+			mainprogram->pathboxes[j]->tooltip = "Leftmouse drag the files in the list to set the order in which they will be loaded.  Use arrows/mousewheel to scroll list when its bigger then the screen.  Click APPLY ORDER to continue. ";
 		}
 		mainprogram->multistage = 2;
 	}
