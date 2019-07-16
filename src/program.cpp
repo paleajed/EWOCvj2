@@ -265,6 +265,23 @@ Program::Program() {
 	this->effscrolldownB->tooltiptitle = "Scroll effects queue down ";
 	this->effscrolldownB->tooltip = "Leftclicking scrolls the effect queue down ";
 	
+	this->orderscrollup = new Box;
+	this->orderscrollup->vtxcoords->x1 = -0.45f;
+	this->orderscrollup->vtxcoords->y1 = 0.8f;
+	this->orderscrollup->vtxcoords->w = 0.05f;
+	this->orderscrollup->vtxcoords->h = 0.1f;
+	this->orderscrollup->upvtxtoscr();
+	this->orderscrollup->tooltiptitle = "Scroll orderlist up ";
+	this->orderscrollup->tooltip = "Leftclicking scrolls the orderlist up ";
+
+	this->orderscrolldown = new Box;
+	this->orderscrolldown->vtxcoords->x1 = -0.45f;
+	this->orderscrolldown->vtxcoords->w = 0.05f;
+	this->orderscrolldown->vtxcoords->h = 0.1f;
+	this->orderscrolldown->upvtxtoscr();
+	this->orderscrolldown->tooltiptitle = "Scroll orderlist down ";
+	this->orderscrolldown->tooltip = "Leftclicking scrolls the orderlist down ";
+
 	this->addeffectbox = new Box;
 	this->addeffectbox->vtxcoords->w = tf(this->layw);
 	this->addeffectbox->vtxcoords->h = tf(0.038f);
@@ -444,12 +461,12 @@ void Program::get_outname(const char *title, std::string filters, std::string de
 void Program::get_multinname(const char* title, std::string defaultdir) {
 	bool as = mainprogram->autosave;
 	mainprogram->autosave = false;
-	const char *outpaths;
+	const char* outpaths;
 	boost::filesystem::path p(defaultdir);
 	if (boost::filesystem::is_directory(p)) defaultdir += "/";
-	#ifdef _WIN64
+#ifdef _WIN64
 	std::string dir = replace_string(defaultdir, "/", "\\");
-	#endif
+#endif
 	char const* const dd = (dir == "") ? "" : dir.c_str();
 	outpaths = tinyfd_openFileDialog(title, dd, 0, nullptr, nullptr, 1);
 	if (outpaths == nullptr) {
@@ -469,7 +486,6 @@ void Program::get_multinname(const char* title, std::string defaultdir) {
 		currstr += charstr;
 		if (i == opaths.length() - 1) this->paths.push_back(currstr);
 	}
-	std::reverse(this->paths.begin(), this->paths.end());
 	this->path = (char*)"ENTER";
 	this->counting = 0;
 	mainprogram->autosave = as;
@@ -487,6 +503,165 @@ void Program::get_dir(const char *title, std::string defaultdir) {
 	this->path = tinyfd_selectFolderDialog(title, dd) ;
 	mainprogram->autosave = as;
 }
+
+bool Program::order_paths() {
+	if (this->paths.size() == 1) return true;
+	// show interactive list with draggable elements to allow element ordering of mainprogram->paths, result of get_multinname
+	float white[4] = { 1.0f, 1.0f, 1.0f, 1.0f };
+	float black[4] = { 0.0f, 0.0f, 0.0f, 1.0f };
+	int limit = this->paths.size();
+	if (limit > 17) limit = 17;
+
+	// mousewheel scroll
+	this->pathscroll -= mainprogram->mousewheel;
+	if (this->dragstr != "" and mainmix->time - mainmix->oldtime> 0.1f) {
+		mainmix->oldtime = mainmix->time;
+		// border scroll when dragging
+		if (mainprogram->my < yvtxtoscr(0.1f)) this->pathscroll--;
+		if (mainprogram->my > yvtxtoscr(1.9f)) this->pathscroll++;
+	}
+	if (this->pathscroll < 0) this->pathscroll = 0;
+	if (this->paths.size() > 18 and this->paths.size() - this->pathscroll < 18) this->pathscroll = this->paths.size() - 17;
+
+	// draw and handle orderlist scrollboxes
+	if (this->pathscroll > 0) {
+		if (this->orderscrollup->in()) {
+			this->orderscrollup->acolor[0] = 0.5f;
+			this->orderscrollup->acolor[1] = 0.5f;
+			this->orderscrollup->acolor[2] = 1.0f;
+			this->orderscrollup->acolor[3] = 1.0f;
+			if (mainprogram->orderleftmouse) {
+				this->pathscroll--;
+			}
+		}
+		else {
+			this->orderscrollup->acolor[0] = 0.0f;
+			this->orderscrollup->acolor[1] = 0.0f;
+			this->orderscrollup->acolor[2] = 0.0f;
+			this->orderscrollup->acolor[3] = 1.0f;
+		}
+		draw_box(this->orderscrollup, -1);
+		draw_triangle(white, white, this->orderscrollup->vtxcoords->x1 + 0.0074f, this->orderscrollup->vtxcoords->y1 + 0.0416f - 0.030f, 0.011f, 0.0208f, DOWN, CLOSED);
+	}
+	if (this->paths.size() - this->pathscroll > 17) {
+		this->orderscrolldown->vtxcoords->y1 = 0.8f - (limit - 1) * 0.1f;
+		this->orderscrolldown->upvtxtoscr();
+		if (this->orderscrolldown->in()) {
+			this->orderscrolldown->acolor[0] = 0.5f;
+			this->orderscrolldown->acolor[1] = 0.5f;
+			this->orderscrolldown->acolor[2] = 1.0f;
+			this->orderscrolldown->acolor[3] = 1.0f;
+			if (mainprogram->orderleftmouse) {
+				this->pathscroll++;
+			}
+		}
+		else {
+			this->orderscrolldown->acolor[0] = 0.0f;
+			this->orderscrolldown->acolor[1] = 0.0f;
+			this->orderscrolldown->acolor[2] = 0.0f;
+			this->orderscrolldown->acolor[3] = 1.0f;
+		}
+		draw_box(this->orderscrolldown, -1);
+		draw_triangle(white, white, this->orderscrolldown->vtxcoords->x1 + 0.0074f, this->orderscrolldown->vtxcoords->y1 + 0.0416f - 0.030f, 0.011f, 0.0208f, UP, CLOSED);
+	}
+
+	bool indragbox = false;
+	for (int j = this->pathscroll; j < this->pathscroll + limit; j++) {
+		Box* box = this->pathboxes[j];
+		box->vtxcoords->y1 = 0.8f - (j - this->pathscroll) * 0.1f;
+		draw_box(white, black, box, -1);
+		draw_box(white, black, 0.3f, box->vtxcoords->y1, 0.1f, 0.1f, this->pathtexes[j]);
+		render_text(this->paths[j], white, -0.4f + tf(0.01f), box->vtxcoords->y1 + tf(0.05f) - tf(0.030f), tf(0.0003f), tf(0.0005f));
+		// prepare effect dragging
+		if (box->in()) {
+			std::string path = this->paths[j];
+			if (this->dragstr == "") {
+				if (mainprogram->orderleftmousedown and !this->dragpathsense) {
+					this->dragpathsense = true;
+					dragbox = box;
+					this->dragpathpos = j;
+					mainprogram->orderleftmousedown = false;
+				}
+				if (j == this->dragpathpos) {
+					indragbox = true;
+				}
+			}
+		}
+	}
+
+	if (!indragbox and this->dragpathsense) {
+		this->dragstr = this->paths[this->dragpathpos];
+		this->dragpathsense = false;
+	}
+
+	// confirm box
+	this->pathboxes.back()->vtxcoords->y1 = 0.8f - limit * 0.1f;
+	this->pathboxes.back()->upvtxtoscr();
+	draw_box(white, black, this->pathboxes.back(), -1);
+	render_text("APPLY ORDER", white, -0.4f + tf(0.01f), this->pathboxes.back()->vtxcoords->y1 + tf(0.05f) - tf(0.030f), tf(0.0003f), tf(0.0005f));
+	if (this->pathboxes.back()->in()) {
+		if (mainprogram->orderleftmouse) return true;
+	}
+
+	// do drag
+	if (this->dragstr != "") {
+		int pos;
+		for (int j = this->pathscroll; j < this->paths.size() + 1; j++) {
+			// calculate dragged element temporary position pos when mouse between
+			//limits under and upper
+			int under1, under2, upper;
+			if (j == this->pathscroll) {
+				// mouse above first bin
+				under2 = 0;
+				under1 = this->pathboxes[this->pathscroll]->scrcoords->y1 - this->pathboxes[this->pathscroll]->scrcoords->h * 0.5f;
+			}
+			else {
+				under1 = this->pathboxes[j - 1]->scrcoords->y1 + this->pathboxes[j - 1]->scrcoords->h * 0.5f;
+				under2 = under1;
+			}
+			if (j == this->paths.size()) {
+				// mouse under last bin
+				upper = glob->h;
+			}
+			else upper = this->pathboxes[j]->scrcoords->y1 + this->pathboxes[j]->scrcoords->h * 0.5f;
+			if (mainprogram->my > under2 and mainprogram->my < upper) {
+				draw_box(white, black, this->pathboxes[this->dragpathpos]->vtxcoords->x1, 1.0f - mainprogram->yscrtovtx(under1), this->pathboxes[this->dragpathpos]->vtxcoords->w, this->pathboxes[this->dragpathpos]->vtxcoords->h, -1);
+				draw_box(white, black, 0.3f, 1.0f - mainprogram->yscrtovtx(under1), 0.1f, 0.1f, this->pathtexes[this->dragpathpos]);
+				render_text(this->dragstr, white, -0.4f + tf(0.01f), 1.0f - mainprogram->yscrtovtx(under1) + tf(0.05f) - tf(0.030f), tf(0.0003f), tf(0.0005f));
+				pos = j;
+				break;
+			}
+		}
+		if (mainprogram->orderleftmouse) {
+			// do bin drag
+			if (this->dragpathpos < pos) {
+				std::rotate(this->paths.begin() + this->dragpathpos, this->paths.begin() + this->dragpathpos + 1, this->paths.begin() + pos);
+				std::rotate(this->pathboxes.begin() + this->dragpathpos, this->pathboxes.begin() + this->dragpathpos + 1, this->pathboxes.begin() + pos - 1);
+				std::rotate(this->pathtexes.begin() + this->dragpathpos, this->pathtexes.begin() + this->dragpathpos + 1, this->pathtexes.begin() + pos);
+			}
+			else {
+				std::rotate(this->paths.begin() + pos, this->paths.begin() + this->dragpathpos, this->paths.begin() + this->dragpathpos + 1);
+				std::rotate(this->pathboxes.begin() + pos, this->pathboxes.begin() + this->dragpathpos, this->pathboxes.begin() + this->dragpathpos);
+				std::rotate(this->pathtexes.begin() + pos, this->pathtexes.begin() + this->dragpathpos, this->pathtexes.begin() + this->dragpathpos + 1);
+			}
+			this->dragstr = "";
+			mainprogram->orderleftmouse = false;
+		}
+		if (mainprogram->rightmouse) {
+			// cancel element drag
+			this->dragstr = "";
+			mainprogram->rightmouse = false;
+			mainprogram->menuactivation = false;
+			for (int i = 0; i < mainprogram->menulist.size(); i++) {
+				mainprogram->menulist[i]->state = 0;
+			}
+		}
+	}
+
+	return false;
+
+}
+
 
 void Program::set_ow3oh3() {
 	if (mainprogram->ow > mainprogram->oh) {

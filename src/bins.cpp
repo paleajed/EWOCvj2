@@ -127,7 +127,7 @@ BinsMain::BinsMain() {
 			box->lcolor[3] = 1.0f;
 			box->acolor[3] = 1.0f;
 			box->tooltiptitle = "Media bin element ";
-			box->tooltip = "Shows thumbnail of media bin element, either being a video file (grey border) or a layer file (orange border) or belonging to a deck file (purple border) or mix file (green border).  Hovering over this element shows video resolution and video compression method (CPU or HAP).  Mousewheel skips through the element contents (previewed in larger monitor topmiddle).  Leftdrag allows dragging to mix screen via wormhole.  Leftclick allows moving inside the media bin. Rightclickmenu allows among other things, HAP encoding. ";
+			box->tooltip = "Shows thumbnail of media bin element, either being a video file (grey border) or an image (pink border) or a layer file (orange border) or belonging to a deck file (purple border) or mix file (green border).  Hovering over this element shows video resolution and video compression method (CPU or HAP).  Mousewheel skips through the element contents (previewed in larger monitor topmiddle).  Leftdrag allows dragging to mix screen via wormhole.  Leftclick allows moving inside the media bin. Rightclickmenu allows among other things, HAP encoding. ";
 		}
 	}
 	
@@ -216,6 +216,12 @@ void BinsMain::handle(bool draw) {
 				else if (binel->type == ELEM_MIX) {
 					color[0] = 0.5f;
 					color[1] = 1.0f;
+					color[2] = 0.5f;
+					color[3] = 1.0f;
+				}
+				else if (binel->type == ELEM_IMAGE) {
+					color[0] = 1.0f;
+					color[1] = 0.5f;
 					color[2] = 0.5f;
 					color[3] = 1.0f;
 				}
@@ -338,7 +344,7 @@ void BinsMain::handle(bool draw) {
 			// mousewheel scroll
 			this->binsscroll -= mainprogram->mousewheel;
 			if (this->binsscroll < 0) this->binsscroll = 0;
-			if (this->bins.size() - this->binsscroll < 20) this->binsscroll = this->bins.size() - 19;
+			if (this->bins.size() > 20 and this->bins.size() - this->binsscroll < 20) this->binsscroll = this->bins.size() - 19;
 		}
 
 		// draw and handle binslist scrollboxes

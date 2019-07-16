@@ -4717,6 +4717,7 @@ void Shelf::handle() {
 	float purple[] = { 0.5f, 0.5f, 1.0f, 1.0f };
 	float green[] = { 0.5f, 1.0f, 0.5f, 1.0f };
 	float grey[] = { 0.4f, 0.4f, 0.4f, 1.0f };
+	float pink[] = { 1.0f, 0.5f, 0.5f, 1.0f };
 	for (int i = 0; i < 16; i++) {
 		// border coloring according to element type
 		if (this->types[i] == ELEM_LAYER) {
@@ -4730,6 +4731,10 @@ void Shelf::handle() {
 		else if (this->types[i] == ELEM_MIX) {
 			draw_box(green, green, this->buttons[i]->box, -1);
 			draw_box(nullptr, green, this->buttons[i]->box->vtxcoords->x1 + tf(0.005f), this->buttons[i]->box->vtxcoords->y1, this->buttons[i]->box->vtxcoords->w - tf(0.005f), this->buttons[i]->box->vtxcoords->h - tf(0.005f), this->texes[i]);
+		}
+		else if (this->types[i] == ELEM_IMAGE) {
+			draw_box(pink, pink, this->buttons[i]->box, -1);
+			draw_box(nullptr, pink, this->buttons[i]->box->vtxcoords->x1 + tf(0.005f), this->buttons[i]->box->vtxcoords->y1, this->buttons[i]->box->vtxcoords->w - tf(0.005f), this->buttons[i]->box->vtxcoords->h - tf(0.005f), this->texes[i]);
 		}
 		else {
 			draw_box(grey, grey, this->buttons[i]->box, -1);
@@ -4858,18 +4863,18 @@ void clip_intest(std::vector<Layer*>& layers, bool deck) {
 		lay = layers[i];
 		if (lay->pos < mainmix->scenes[deck][mainmix->currscene[deck]]->scrollpos or lay->pos > mainmix->scenes[deck][mainmix->currscene[deck]]->scrollpos + 2) continue;
 		Box* box = lay->node->vidbox;
-		int endx = false;
-		if ((i == layers.size() - 1 or i == mainmix->scenes[deck][mainmix->currscene[deck]]->scrollpos + 2) and (box->scrcoords->x1 + box->scrcoords->w - mainprogram->xvtxtoscr(tf(0.075f)) < mainprogram->mx and mainprogram->mx < box->scrcoords->x1 + box->scrcoords->w + mainprogram->xvtxtoscr(0.075f))) {
-			endx = true;
-		}
 		if (lay->queueing and lay->filename != "") {
 			if (box->scrcoords->x1 < mainprogram->mx and mainprogram->mx < box->scrcoords->x1 + box->scrcoords->w) {
 				int limit = lay->clips.size() - lay->queuescroll;
 				if (limit > 4) limit = 4;
 				for (int j = 0; j < limit; j++) {
 					Clip* jc = lay->clips[j + lay->queuescroll];
-					float last = (j == lay->clips.size() - lay->queuescroll - 1) * 0.25f;
-					if (box->scrcoords->y1 + j * box->scrcoords->h < mainprogram->my and mainprogram->my < box->scrcoords->y1 + (j + 1 + last) * box->scrcoords->h) {
+					jc->box->vtxcoords->x1 = box->vtxcoords->x1;
+					jc->box->vtxcoords->y1 = box->vtxcoords->y1 - (j + 1) * box->vtxcoords->h;
+					jc->box->vtxcoords->w = box->vtxcoords->w;
+					jc->box->vtxcoords->h = box->vtxcoords->h;
+					jc->box->upvtxtoscr();
+					if (jc->box->in()) {
 						if (mainprogram->menuactivation) {
 							mainprogram->clipmenu->state = 2;
 							mainmix->mouseclip = jc;
@@ -4877,8 +4882,8 @@ void clip_intest(std::vector<Layer*>& layers, bool deck) {
 							mainprogram->menuactivation = false;
 						}
 						else mainprogram->inclips = i;
+						break;
 					}
-					break;
 				}
 			}
 		}
@@ -5417,6 +5422,9 @@ void tooltips_handle(int win) {
 
 	
 Clip::Clip() {
+	this->box = new Box;
+	this->box->tooltiptitle = "Clip queue ";
+	this->box->tooltip = "Clip queue: clips (videos, images, layer files, live feeds) loaded here are played in order after the current clip.  Rightclick menu allows loading live feed / opening content into clip / deleting clip.  Clips can be dragged anywhere and anything can be dragged into or inserted between them. ";
 	this->tex = -1;
 }
 
@@ -5666,6 +5674,51 @@ GLuint get_deckmixtex(const std::string& path) {
 }
 
 void Clip::open_clipfiles() {
+	if (mainprogram->multistage == 0) {
+		mainprogram->orderondisplay = true;
+		// first get one file texture per loop
+		std::string str = mainprogram->paths[mainprogram->clipfilescount];
+		mainprogram->clipfilescount++;
+		GLuint tex;
+		if (isimage(str)) {
+			tex = get_imagetex(str);
+		}
+		else if (str.substr(str.length() - 6, std::string::npos) == ".layer") {
+			tex = get_layertex(str);
+		}
+		else {
+			tex = get_videotex(str);
+		}
+		mainprogram->pathtexes.push_back(tex);
+		if (mainprogram->clipfilescount < mainprogram->paths.size()) return;
+		for (int j = 0; j < mainprogram->paths.size() + 1; j++) {
+			mainprogram->pathboxes.push_back(new Box);
+			mainprogram->pathboxes[j]->vtxcoords->x1 = -0.4f;
+			mainprogram->pathboxes[j]->vtxcoords->y1 = 0.8f - j * 0.1f;
+			mainprogram->pathboxes[j]->vtxcoords->w = 0.8f;
+			mainprogram->pathboxes[j]->vtxcoords->h = 0.1f;
+			mainprogram->pathboxes[j]->upvtxtoscr();
+		}
+		mainprogram->multistage = 1;
+	}
+	if (mainprogram->multistage == 1) {
+		// then do interactive ordering
+		bool cont = mainprogram->order_paths();
+		if (!cont) return;
+		mainprogram->multistage = 2;
+	}
+	if (mainprogram->multistage == 2) {
+		// then cleanup
+		for (int j = 0; j < mainprogram->paths.size(); j++) {
+			delete mainprogram->pathboxes[j];
+			glDeleteTextures(1, &mainprogram->pathtexes[j]);
+		}
+		mainprogram->pathboxes.clear();
+		mainprogram->pathtexes.clear();
+		mainprogram->clipfilescount = 0;
+		mainprogram->orderondisplay = false;
+		mainprogram->multistage = 3;
+	}
 	std::string str = mainprogram->paths[mainprogram->clipfilescount];
 	int pos = std::find(mainprogram->clipfileslay->clips.begin(), mainprogram->clipfileslay->clips.end(), mainprogram->clipfilesclip) - mainprogram->clipfileslay->clips.begin();
 	if (pos == mainprogram->clipfileslay->clips.size() - 1) {
@@ -5697,6 +5750,8 @@ void Clip::open_clipfiles() {
 	if (mainprogram->clipfilescount == mainprogram->paths.size()) {
 		mainprogram->clipfileslay->cliploading = false;
 		mainprogram->openclipfiles = false;
+		mainprogram->paths.clear();
+		mainprogram->multistage = 0;
 	}
 }
 
@@ -7549,6 +7604,14 @@ void the_loop() {
 		// no hovering while adapting param
 		mainprogram->my = -1;
 	}
+	if (mainprogram->orderondisplay) {
+		mainprogram->orderleftmouse = mainprogram->leftmouse;
+		mainprogram->orderleftmousedown = mainprogram->leftmousedown;
+		mainprogram->leftmousedown = false;
+		mainprogram->leftmouse = false;
+		mainprogram->lmsave = false;
+		mainprogram->menuactivation = false;
+	}
 
 	if (mainprogram->prevmodus) {
 		loopstation = lp;
@@ -7564,21 +7627,6 @@ void the_loop() {
 		mainprogram->oldoh = mainprogram->oh;
 	}
 				
-	if (mainprogram->openfiles) {
-		// load one item from mainprogram->paths into layer and clips, one each loop not to slowdown output stream
-		mainprogram->fileslay->open_files();
-	}
-
-	if (mainprogram->openclipfiles) {
-		// load one item from mainprogram->paths into clips, one each loop not to slowdown output stream
-		mainmix->mouseclip->open_clipfiles();
-	}
-
-	if (mainprogram->openshelffiles) {
-		// load one item from mainprogram->paths into shelf, one each loop not to slowdown output stream
-		mainmix->mouseshelf->open_shelffiles();
-	}
-
 	for (int m = 0; m < 2; m++) {
 		for (int i = 0; i < 4; i++) {
 			for (int j = 0; j < mainmix->scenes[m][i]->nbframes.size(); j++) {
@@ -8930,7 +8978,10 @@ void the_loop() {
 				std::thread filereq(&Program::get_multinname, mainprogram, "Open clip video file", boost::filesystem::canonical(mainprogram->currvideodir).generic_string());
 				filereq.detach();
 			}
-
+			if (k == 2) {
+				mainmix->mouselayer->clips.erase(std::find(mainmix->mouselayer->clips.begin(), mainmix->mouselayer->clips.end(), mainmix->mouseclip));
+				delete mainmix->mouseclip;
+			}
 			if (mainprogram->menuchosen) {
 				mainprogram->menuchosen = false;
 				mainprogram->leftmouse = 0;
@@ -9809,6 +9860,22 @@ void the_loop() {
 		glUniform1i(thumb, 0);
 	}
 
+	// multi opening of files, handle one per loop
+	if (mainprogram->openfiles) {
+		// load one item from mainprogram->paths into layer and clips, one each loop not to slowdown output stream
+		mainprogram->fileslay->open_files();
+	}
+
+	if (mainprogram->openclipfiles) {
+		// load one item from mainprogram->paths into clips, one each loop not to slowdown output stream
+		mainmix->mouseclip->open_clipfiles();
+	}
+
+	if (mainprogram->openshelffiles) {
+		// load one item from mainprogram->paths into shelf, one each loop not to slowdown output stream
+		mainmix->mouseshelf->open_shelffiles();
+	}
+
 	// implementation of a basic menu when mouse at top of screen
 	if (mainprogram->my == 0) {
 		mainprogram->intopmenu = true;
@@ -9843,7 +9910,7 @@ void the_loop() {
 			}
 		}
 		else if (mainprogram->mx > 1.0f - 0.05f) {
-			if (mainprogram->leftmouse) {
+			if (mainprogram->leftmouse or mainprogram->orderleftmouse) {
 				mainprogram->quit("closed window");
 			}
 		}
@@ -10264,6 +10331,59 @@ void Shelf::open_dir() {
 
 
 void Shelf::open_shelffiles() {
+	if (mainprogram->multistage == 0) {
+		mainprogram->orderondisplay = true;
+		// first get one file texture per loop
+		std::string str = mainprogram->paths[mainprogram->shelffilescount];
+		mainprogram->shelffilescount++;
+		GLuint tex;
+		if (isimage(str)) {
+			tex = get_imagetex(str);
+		}
+		else if (str.substr(str.length() - 6, std::string::npos) == ".layer") {
+			tex = get_layertex(str);
+		}
+		else if (str.substr(str.length() - 5, std::string::npos) == ".deck") {
+			tex = get_deckmixtex(str);
+		}
+		else if (str.substr(str.length() - 4, std::string::npos) == ".mix") {
+			tex = get_deckmixtex(str);
+		}
+		else {
+			tex = get_videotex(str);
+		}
+		mainprogram->pathtexes.push_back(tex);
+		if (mainprogram->shelffilescount < mainprogram->paths.size()) return;
+		for (int j = 0; j < mainprogram->paths.size() + 1; j++) {
+			mainprogram->pathboxes.push_back(new Box);
+			mainprogram->pathboxes[j]->vtxcoords->x1 = -0.4f;
+			mainprogram->pathboxes[j]->vtxcoords->y1 = 0.8f - j * 0.1f;
+			mainprogram->pathboxes[j]->vtxcoords->w = 0.8f;
+			mainprogram->pathboxes[j]->vtxcoords->h = 0.1f;
+			mainprogram->pathboxes[j]->upvtxtoscr();
+		}
+		mainprogram->multistage = 1;
+	}
+	if (mainprogram->multistage == 1) {
+		// then do interactive ordering
+		bool cont = mainprogram->order_paths();
+		if (!cont) return;
+		mainprogram->multistage = 2;
+	}
+	if (mainprogram->multistage == 2) {
+		// then cleanup
+		for (int j = 0; j < mainprogram->paths.size(); j++) {
+			delete mainprogram->pathboxes[j];
+			glDeleteTextures(1, &mainprogram->pathtexes[j]);
+		}
+		mainprogram->pathboxes.clear();
+		mainprogram->pathtexes.clear();
+		mainprogram->shelffilescount = 0;
+		mainprogram->orderondisplay = false;
+		mainprogram->multistage = 3;
+	}
+
+
 	std::string str = mainprogram->paths[mainprogram->shelffilescount];
 	if (isimage(str)) {
 		mainmix->mouseshelf->open_image(str, mainprogram->shelffileselem);
@@ -10303,6 +10423,7 @@ void Shelf::open_shelffiles() {
 	if (mainprogram->shelffilescount == mainprogram->paths.size() or mainprogram->shelffileselem == 16) {
 		mainprogram->openshelffiles = false;
 		mainprogram->paths.clear();
+		mainprogram->multistage = 0;
 	}
 	mainprogram->currshelffilesdir = dirname(str);
 }
@@ -11374,6 +11495,7 @@ int main(int argc, char* argv[]){
 	clipops.push_back("submenu livemenu");
 	clipops.push_back("Connect live");
 	clipops.push_back("Open file(s)");
+	clipops.push_back("Delete clip");
 	mainprogram->make_menu("clipmenu", mainprogram->clipmenu, clipops);
 
  	std::vector<std::string> wipes;

@@ -59,6 +59,7 @@ class Clip {
 		int frame = 0.0f;
 		int startframe = -1;
 		int endframe = -1;
+		Box* box;
 		Clip();
 		~Clip();
 		bool get_imageframes();
@@ -358,6 +359,7 @@ class Mixer {
 		float wipey[2];
 		
 		float time = 0;
+		float oldtime = 0;
 		float cbduration = 0.0f;
 		
 		std::vector<GLuint> fbotexes;

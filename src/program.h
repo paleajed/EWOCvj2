@@ -309,6 +309,8 @@ class Program {
 		bool leftmousedown = false;
 		bool middlemousedown = false;
 		bool leftmouse = false;
+		bool orderleftmouse = false;
+		bool orderleftmousedown = false;
 		bool lmsave = false;
 		bool doubleleftmouse = false;
 		bool middlemouse = false;
@@ -317,6 +319,7 @@ class Program {
 		bool del = false;
 		bool ctrl = false;
 		bool menuondisplay = false;
+		bool orderondisplay = false;
 		bool blocking = false;
 		std::string temppath;
 		std::string docpath;
@@ -344,6 +347,8 @@ class Program {
 		Box *effscrollupB;
 		Box *effscrolldownB;
 		Box *addeffectbox;
+		Box* orderscrolldown;
+		Box* orderscrollup;
 		bool startloop = false;
 		bool newproject = false;
 		std::vector<std::string> recentprojectpaths;
@@ -467,9 +472,16 @@ class Program {
 		bool openfiles = false;
 		int filescount = 0;
 		Layer* fileslay = nullptr;
+		int multistage = 0;
 		Effect* drageff = nullptr;
 		int drageffpos = -1;
 		bool drageffsense = false;
+		std::string dragstr = "";
+		int dragpathpos = -1;
+		bool dragpathsense = false;
+		std::vector<Box*> pathboxes;
+		std::vector<GLuint> pathtexes;
+		int pathscroll = 0;
 		bool indragbox = false;
 		Box* dragbox;
 
@@ -488,6 +500,7 @@ class Program {
 		float yvtxtoscr(float vtxcoord);
 		void preveff_init();
 		void add_main_oscmethods();
+		bool order_paths();
 		Program();
 		
 	private:
