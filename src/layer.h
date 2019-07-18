@@ -201,8 +201,6 @@ class Layer {
 		GLuint fbo;
 		GLuint fbotexintm;
 		GLuint fbointm;
-		GLuint fbotex2;
-		GLuint fbo2;
 		GLuint texpos = 0;
 		GLuint vbuf;
 		GLuint tbuf;
@@ -237,6 +235,7 @@ class Layer {
 		struct SwsContext *sws_ctx = nullptr;
 		uint8_t *avbuffer = nullptr;
 		char *databuf = nullptr;
+		bool databufready = false;
 		int vidformat = -1;
 		int oldvidformat = -2;  //different from -1
 		int oldcompression = -1;
@@ -250,8 +249,8 @@ class Layer {
 		int clonesetnr = -1;
 	
 	private:
-		void decode_frame();
-		void get_frame_other(int framenr, int prevframe, int errcount);
+		void get_hap_frame();
+		void get_cpu_frame(int framenr, int prevframe, int errcount);
 };
 
 class Scene {

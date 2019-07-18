@@ -1146,7 +1146,7 @@ void BinsMain::handle(bool draw) {
 									}
 									else {
 										if (mainprogram->prelay->drawfbo2) {
-											draw_box(red, black, -0.2f, 0.5f, 0.4f, 0.4f, mainprogram->prelay->fbotex2);
+											draw_box(red, black, -0.2f, 0.5f, 0.4f, 0.4f, mainprogram->prelay->fbotex);
 										}
 										else {
 											draw_box(red, black, -0.2f, 0.5f, 0.4f, 0.4f, mainprogram->prelay->fbotexintm);
@@ -1215,7 +1215,7 @@ void BinsMain::handle(bool draw) {
 									}
 									else {
 										if (mainprogram->prelay->drawfbo2) {
-											draw_box(red, black, -0.2f, 0.5f, 0.4f, 0.4f, mainprogram->prelay->fbotex2);
+											draw_box(red, black, -0.2f, 0.5f, 0.4f, 0.4f, mainprogram->prelay->fbotex);
 										}
 										else {
 											draw_box(red, black, -0.2f, 0.5f, 0.4f, 0.4f, mainprogram->prelay->fbotexintm);
@@ -1229,7 +1229,7 @@ void BinsMain::handle(bool draw) {
 									}
 									else {
 										if (mainprogram->prelay->drawfbo2) {
-											draw_box(red, black, -0.2f, 0.5f, 0.4f, 0.4f, mainprogram->prelay->fbotex2);
+											draw_box(red, black, -0.2f, 0.5f, 0.4f, 0.4f, mainprogram->prelay->fbotex);
 										}
 										else {
 											draw_box(red, black, -0.2f, 0.5f, 0.4f, 0.4f, mainprogram->prelay->fbotexintm);

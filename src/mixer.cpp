@@ -2163,23 +2163,6 @@ Layer::Layer(bool comp) {
 	glBindFramebuffer(GL_FRAMEBUFFER, this->fbo);
 	glFramebufferTexture2D(GL_FRAMEBUFFER, GL_COLOR_ATTACHMENT0, GL_TEXTURE_2D, this->fbotex, 0);
 
-	glGenTextures(1, &this->fbotex2);
-	glActiveTexture(GL_TEXTURE0);
-	glBindTexture(GL_TEXTURE_2D, this->fbotex2);
-	if (comp) {
-		glTexStorage2D(GL_TEXTURE_2D, 1, GL_RGBA8, mainprogram->ow, mainprogram->oh);
-	}
-	else {
-		glTexStorage2D(GL_TEXTURE_2D, 1, GL_RGBA8, mainprogram->ow3, mainprogram->oh3);
-	}
-	glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR);
-	glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
-	glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_BORDER);
-	glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_BORDER);
-	glGenFramebuffers(1, &this->fbo2);
-	glBindFramebuffer(GL_FRAMEBUFFER, this->fbo2);
-	glFramebufferTexture2D(GL_FRAMEBUFFER, GL_COLOR_ATTACHMENT0, GL_TEXTURE_2D, this->fbotex2, 0);
-
 	glGenTextures(1, &this->fbotexintm);
 	glActiveTexture(GL_TEXTURE0);
 	glBindTexture(GL_TEXTURE_2D, this->fbotexintm);
@@ -2349,11 +2332,11 @@ Layer::Layer(bool comp) {
 
 Layer::~Layer() {
 	glDeleteTextures(1, &this->fbotex);
-	glDeleteTextures(1, &this->fbotex2);
+	glDeleteTextures(1, &this->fbotexintm);
 	glDeleteBuffers(1, &(this->vbuf));
     glDeleteBuffers(1, &(this->tbuf));
 	glDeleteFramebuffers(1, &(this->fbo));
-	glDeleteFramebuffers(1, &(this->fbo2));
+	glDeleteFramebuffers(1, &(this->fbointm));
 	glDeleteVertexArrays(1, &(this->vao));
 }
 
@@ -2427,13 +2410,18 @@ void Layer::set_aspectratio(int lw, int lh) {
 			w = ow;
 		}
 	}
-	glBindTexture(GL_TEXTURE_2D, this->fbotex);
-	glTexStorage2D(GL_TEXTURE_2D, 1, GL_RGBA8, w, h);
-	glBindTexture(GL_TEXTURE_2D, this->fbotex2);
-	glTexStorage2D(GL_TEXTURE_2D, 1, GL_RGBA8, w, h);
+	GLuint tex;
+	tex = set_texes(this->fbotex, &this->fbo, w, h);
+	this->fbotex = tex;
+	tex = set_texes(this->fbotexintm, &this->fbointm, w, h);
+	this->fbotexintm = tex;
 	for (int i = 0; i < this->effects[0].size(); i++) {
-		glBindTexture(GL_TEXTURE_2D, this->effects[0][i]->fbotex);
-		glTexStorage2D(GL_TEXTURE_2D, 1, GL_RGBA8, w, h);
+		tex = set_texes(this->effects[0][i]->fbotex, &this->effects[0][i]->fbo, w, h);
+		this->effects[0][i]->fbotex = tex;
+	}
+	for (int i = 0; i < this->effects[1].size(); i++) {
+		tex = set_texes(this->effects[1][i]->fbotex, &this->effects[1][i]->fbo, w, h);
+		this->effects[1][i]->fbotex = tex;
 	}
 }
 
@@ -4036,10 +4024,11 @@ void Mixer::open_state(const std::string &path) {
 	std::string istring;
 	getline(rfile, istring);
 	
-    glBindTexture(GL_TEXTURE_2D, mainprogram->fbotex[2]);
-	glTexStorage2D(GL_TEXTURE_2D, 1, GL_RGBA8, mainprogram->ow, mainprogram->oh);
-    glBindTexture(GL_TEXTURE_2D, mainprogram->fbotex[3]);
-	glTexStorage2D(GL_TEXTURE_2D, 1, GL_RGBA8, mainprogram->ow, mainprogram->oh);
+	GLuint tex;
+	tex = set_texes(mainprogram->fbotex[2], &mainprogram->frbuf[2], mainprogram->ow, mainprogram->oh);
+	mainprogram->fbotex[2] = tex;
+	tex = set_texes(mainprogram->fbotex[3], &mainprogram->frbuf[3], mainprogram->ow, mainprogram->oh);
+	mainprogram->fbotex[3] = tex;
 	if (mainprogram->bnodeend->fbo == -1) {
 		glGenTextures(1, &mainprogram->bnodeend->fbotex);
  		glBindTexture(GL_TEXTURE_2D, mainprogram->bnodeend->fbotex);
@@ -4959,7 +4948,7 @@ void Mixer::new_file(int decks, bool alive) {
 		}
 		std::vector<Layer*> lrs = lvec;
 		lvec.clear();
-		this->delete_layers(lrs, alive);
+		this->do_delete_layers(lrs, alive);  //reminder: change to threaded variant?
 		Layer *lay = mainmix->add_layer(lvec, 0);
 		if (mainprogram->prevmodus) {
 			mainprogram->nodesmain->currpage->connect_nodes(lvec[lvec.size() - 1]->lasteffnode[0], mainprogram->nodesmain->mixnodes[1]);

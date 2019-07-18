@@ -68,6 +68,7 @@ class Node {
 		CONN_TYPE dragging = C_NONE;
 		bool nocutting = false;
 		void draw_connection(Node *node, CONN_TYPE ct);
+		void renew_texes(float ow, float oh);
 		Node();
 		Node(const Node &node);
 		~Node();

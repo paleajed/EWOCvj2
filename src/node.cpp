@@ -115,7 +115,7 @@ BlendNode::~BlendNode() {
 }
 	
 MixNode::~MixNode() {
-	//glDeleteTextures(1, &this->mixtex);  reminder: !
+	glDeleteTextures(1, &this->mixtex);
 	glDeleteBuffers(1, &this->mixfbo);
 }
 	
@@ -134,6 +134,50 @@ void Node::draw_connection(Node *node, CONN_TYPE ct) {
 	}
 }
 
+GLuint set_texes(GLuint tex, GLuint *fbo, float ow, float oh) {
+	if (*fbo == -1) glGenFramebuffers(1, fbo);
+	glBindFramebuffer(GL_FRAMEBUFFER, *fbo);
+	glDeleteTextures(1, &tex);
+	GLuint newtex;
+	glGenTextures(1, &newtex);
+	glActiveTexture(GL_TEXTURE0);
+	glBindTexture(GL_TEXTURE_2D, newtex);
+	glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR);
+	glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
+	glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_BORDER);
+	glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_BORDER);
+	glTexStorage2D(GL_TEXTURE_2D, 1, GL_RGBA8, ow, oh);
+	glFramebufferTexture2D(GL_FRAMEBUFFER, GL_COLOR_ATTACHMENT0, GL_TEXTURE_2D, newtex, 0);
+	return newtex;
+}
+
+void Node::renew_texes(float ow, float oh) {
+	GLuint tex;
+	if (this->type == VIDEO) {
+		VideoNode* vnode = (VideoNode*)this;
+		tex = set_texes(vnode->layer->fbotex, &vnode->layer->fbo, ow, oh);
+		vnode->layer->fbotex = tex;
+		tex = set_texes(vnode->layer->fbotexintm, &vnode->layer->fbointm, ow, oh);
+		vnode->layer->fbotexintm = tex;
+	}
+	else if (this->type == EFFECT) {
+		EffectNode* enode = (EffectNode*)this;
+		tex = set_texes(enode->effect->fbotex, &enode->effect->fbo, ow, oh);
+		enode->effect->fbotex = tex;
+	}
+	else if (this->type == BLEND) {
+		BlendNode* bnode = (BlendNode*)this;
+		tex = set_texes(bnode->fbotex, &bnode->fbo, ow, oh);
+		bnode->fbotex = tex;
+	}
+	else if (this->type == MIX) {
+		MixNode* mnode = (MixNode*)this;
+		tex = set_texes(mnode->mixtex, &mnode->mixfbo, ow, oh);
+		mnode->mixtex = tex;
+	}
+}
+
+
 void VideoNode::upeffboxes() {
 	for (int i = 0; i < mainprogram->nodesmain->currpage->nodes.size(); i++) {
 		Node *node = mainprogram->nodesmain->currpage->nodes[i];
@@ -146,7 +190,7 @@ void VideoNode::upeffboxes() {
 }
 
 void NodePage::connect_nodes(Node *node1, Node *node2) {
-	if (node2->in) {
+	if (node2->in != nullptr) {
 		if (node2->in->out.size()) {
 			if (std::find(node2->in->out.begin(), node2->in->out.end(), node2) != node2->in->out.end()) {
 				node2->in->out.erase(std::find(node2->in->out.begin(), node2->in->out.end(), node2));

@@ -41,5 +41,5 @@ void Program::add_main_oscmethods() {
 	// makelive, back, previewmodes
 	mainprogram->st->add_method("/mix/makelive", "", [](){mainmix->copy_to_comp(mainmix->layersA, mainmix->layersAcomp, mainmix->layersB, mainmix->layersBcomp, mainprogram->nodesmain->currpage->nodes, mainprogram->nodesmain->currpage->nodescomp, mainprogram->nodesmain->mixnodescomp, true);});
 	mainprogram->st->add_method("/mix/back", "", [](){mainmix->copy_to_comp(mainmix->layersAcomp, mainmix->layersA, mainmix->layersBcomp, mainmix->layersB, mainprogram->nodesmain->currpage->nodescomp, mainprogram->nodesmain->currpage->nodes, mainprogram->nodesmain->mixnodes, false);});
-	mainprogram->st->add_method("/mix/effectpreview", "i",[](lo_arg **argv, int){mainprogram->prevmodus = argv[0]->i; mainprogram->preveff_init();});
+	mainprogram->st->add_method("/mix/effectpreview", "i",[](lo_arg **argv, int){mainprogram->prevmodus = argv[0]->i; mainprogram->preview_init();});
 }

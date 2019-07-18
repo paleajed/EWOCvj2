@@ -727,22 +727,18 @@ bool Program::do_order_paths() {
 
 
 void Program::set_ow3oh3() {
+	float wmeas = 640.0f;
+	if (mainprogram->ow < wmeas) wmeas = mainprogram->ow;
+	float hmeas = 640.0f;
+	if (mainprogram->oh < hmeas) hmeas = mainprogram->oh;
 	if (mainprogram->ow > mainprogram->oh) {
-		mainprogram->ow3 = 640.0f;
-		mainprogram->oh3 = 640.0f * mainprogram->oh / mainprogram->ow;
+		mainprogram->ow3 = wmeas;
+		mainprogram->oh3 = wmeas * mainprogram->oh / mainprogram->ow;
 	}
 	else {
-		mainprogram->oh3 = 640.0f;
-		mainprogram->ow3 = 640.0f * mainprogram->ow / mainprogram->oh;
+		mainprogram->oh3 = hmeas;
+		mainprogram->ow3 = hmeas * mainprogram->ow / mainprogram->oh;
 	}
-	glBindTexture(GL_TEXTURE_2D, mainprogram->fbotex[0]);
-	glTexStorage2D(GL_TEXTURE_2D, 1, GL_RGBA8, mainprogram->ow3, mainprogram->oh3);
-	glBindTexture(GL_TEXTURE_2D, mainprogram->fbotex[1]);
-	glTexStorage2D(GL_TEXTURE_2D, 1, GL_RGBA8, mainprogram->ow3, mainprogram->oh3);
-	glBindTexture(GL_TEXTURE_2D, mainprogram->fbotex[2]);
-	glTexStorage2D(GL_TEXTURE_2D, 1, GL_RGBA8, mainprogram->ow, mainprogram->oh);
-	glBindTexture(GL_TEXTURE_2D, mainprogram->fbotex[3]);
-	glTexStorage2D(GL_TEXTURE_2D, 1, GL_RGBA8, mainprogram->ow, mainprogram->oh);
 }
 
 float Program::xscrtovtx(float scrcoord) {
@@ -782,7 +778,8 @@ void Program::quit(std::string msg)
     exit(1);
 }
 
-void Program::preveff_init() {
+void Program::preview_init() {
+	// extra initialization when prevmodus is changed (preview modus)
 	std::vector<Layer*> &lvec = choose_layers(mainmix->currlay->deck);
 	int p = mainmix->currlay->pos;
 	if (p > lvec.size() - 1) p = lvec.size() - 1;
@@ -964,15 +961,15 @@ void Project::open(const std::string &path) {
 	
 	while (getline(rfile, istring)) {
 		if (istring == "ENDOFFILE") break;
-		if (istring == "OUTPUTWIDTH") {
+		if (istring == "OUTPUTWIDTH") {  // reminder: what to do? project or program level?
 			getline(rfile, istring);
-			mainprogram->ow = std::stoi(istring);
-			mainprogram->oldow = mainprogram->ow;
+			//mainprogram->ow = std::stoi(istring);
+			//mainprogram->oldow = mainprogram->ow;
 		}
 		else if (istring == "OUTPUTHEIGHT") {
 			getline(rfile, istring);
-			mainprogram->oh = std::stoi(istring);
-			mainprogram->oldoh = mainprogram->oh;
+			//mainprogram->oh = std::stoi(istring);
+			//mainprogram->oldoh = mainprogram->oh;
 		}
 		if (istring == "CURRSHELFA") {
 			getline(rfile, istring);

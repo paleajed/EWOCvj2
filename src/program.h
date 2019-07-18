@@ -308,6 +308,7 @@ class Program {
 		float cwy;
 		bool leftmousedown = false;
 		bool middlemousedown = false;
+		bool rightmousedown = false;
 		bool leftmouse = false;
 		bool orderleftmouse = false;
 		bool orderleftmousedown = false;
@@ -484,6 +485,7 @@ class Program {
 		int pathscroll = 0;
 		bool indragbox = false;
 		Box* dragbox;
+		bool dragright = false;
 
 		void quit(std::string msg);
 		GLuint set_shader();
@@ -498,7 +500,7 @@ class Program {
 		float yscrtovtx(float scrcoord);
 		float xvtxtoscr(float vtxcoord);
 		float yvtxtoscr(float vtxcoord);
-		void preveff_init();
+		void preview_init();
 		void add_main_oscmethods();
 		bool order_paths(bool dodeckmix);
 		Program();
@@ -576,6 +578,8 @@ extern GLuint copy_tex(GLuint tex);
 extern GLuint copy_tex(GLuint tex, bool yflip);
 extern GLuint copy_tex(GLuint tex, int tw, int th);
 extern GLuint copy_tex(GLuint tex, int tw, int th, bool yflip);
+
+extern GLuint set_texes(GLuint tex, GLuint *fbo, float ow, float oh);
 
 void open_genmidis(std::string path);
 void save_genmidis(std::string path);
