@@ -163,9 +163,12 @@ Param::Param() {
 
 Param::~Param() {
 	delete this->box;
+	std::mutex lock;
+	lock.lock();
 	if (std::find(loopstation->allparams.begin(), loopstation->allparams.end(), this) != loopstation->allparams.end()) {
 		loopstation->allparams.erase(std::find(loopstation->allparams.begin(), loopstation->allparams.end(), this));
 	}
+	lock.unlock();
 }
 
 void Param::handle() {
@@ -2202,12 +2205,12 @@ Layer::Layer(bool comp) {
     
     this->shiftx = new Param;
     this->shiftx->value = 0.0f;
-    this->shiftx->range[0] = -1000.0f;
-    this->shiftx->range[1] = 1000.0f;
+    this->shiftx->range[0] = -10.0f;
+    this->shiftx->range[1] = 10.0f;
     this->shifty = new Param;
     this->shifty->value = 0.0f;
-    this->shifty->range[0] = -1000.0f;
-    this->shifty->range[1] = 1000.0f;
+    this->shifty->range[0] = -10.0f;
+    this->shifty->range[1] = 10.0f;
     this->scale = new Param;
     this->scale->value = 1.0f;
     this->scale->range[0] = 0.001f;
@@ -3737,12 +3740,13 @@ void Mixer::event_read(std::istream &rfile, Param *par, Layer *lay) {
 }
 
 void Mixer::save_mix(const std::string& path) {
-	std::thread mixsav(&Mixer::do_save_mix, this, path, mainprogram->prevmodus, true);
-	mixsav.detach();
+	mainmix->do_save_mix(path, mainprogram->prevmodus, true);
+	//std::thread mixsav(&Mixer::do_save_mix, this, path, mainprogram->prevmodus, true);
+	//mixsav.detach();  reminder
 }
 
 void Mixer::do_save_mix(const std::string & path, bool modus, bool save) {
-	SDL_GL_MakeCurrent(mainprogram->dummywindow, glc_th);
+	//SDL_GL_MakeCurrent(mainprogram->dummywindow, glc_th);
 
 	std::string ext = path.substr(path.length() - 4, std::string::npos);
 	std::string str;
@@ -3875,16 +3879,17 @@ void Mixer::do_save_mix(const std::string & path, bool modus, bool save) {
 	outputfile.close();
 	boost::filesystem::rename(tcpath, str);
 	
-	SDL_GL_MakeCurrent(nullptr, nullptr);
+	//SDL_GL_MakeCurrent(nullptr, nullptr);
 }
 
 void Mixer::save_deck(const std::string& path) {
-	std::thread decksav(&Mixer::do_save_deck, this, path, true, true);
-	decksav.detach();
+	mainmix->do_save_deck(path, true, true);
+	//std::thread decksav(&Mixer::do_save_deck, this, path, true, true);
+	//decksav.detach();  // reminder
 }
 
 void Mixer::do_save_deck(const std::string &path, bool save, bool doclips) {
-	SDL_GL_MakeCurrent(mainprogram->dummywindow, glc_th);
+	//SDL_GL_MakeCurrent(mainprogram->dummywindow, glc_th);
 	std::string ext = path.substr(path.length() - 5, std::string::npos);
 	std::string str;
 	if (ext != ".deck") str = path + ".deck";
@@ -3936,7 +3941,7 @@ void Mixer::do_save_deck(const std::string &path, bool save, bool doclips) {
 	outputfile.close();
 	boost::filesystem::rename(mainprogram->temppath + "/tempconcat", str);
 	
-	SDL_GL_MakeCurrent(nullptr, nullptr);
+	//SDL_GL_MakeCurrent(nullptr, nullptr);
 }
 
 void Mixer::open_layerfile(const std::string &path, Layer *lay, bool loadevents, bool doclips) {
@@ -4527,7 +4532,7 @@ int Mixer::read_layers(std::istream &rfile, const std::string &result, std::vect
 		}
 		if (istring == "SHIFTX") {
 			getline(rfile, istring); 
-			lay->shiftx->value = std::stoi(istring);
+			lay->shiftx->value = std::stof(istring);
 		}
 		if (istring == "SHIFTXEVENT") {
 			Param *par = lay->shiftx;
@@ -4538,7 +4543,7 @@ int Mixer::read_layers(std::istream &rfile, const std::string &result, std::vect
 		}
 		if (istring == "SHIFTY") {
 			getline(rfile, istring); 
-			lay->shifty->value = std::stoi(istring);
+			lay->shifty->value = std::stof(istring);
 		}
 		if (istring == "SHIFTYEVENT") {
 			Param *par = lay->shifty;

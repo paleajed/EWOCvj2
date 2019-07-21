@@ -459,8 +459,8 @@ void Program::get_outname(const char *title, std::string filters, std::string de
 }
 
 void Program::get_multinname(const char* title, std::string defaultdir) {
-	bool as = mainprogram->autosave;
-	mainprogram->autosave = false;
+	bool as = this->autosave;
+	this->autosave = false;
 	const char* outpaths;
 	boost::filesystem::path p(defaultdir);
 	if (boost::filesystem::is_directory(p)) defaultdir += "/";
@@ -488,7 +488,7 @@ void Program::get_multinname(const char* title, std::string defaultdir) {
 	}
 	this->path = (char*)"ENTER";
 	this->counting = 0;
-	mainprogram->autosave = as;
+	this->autosave = as;
 }
 
 void Program::get_dir(const char *title, std::string defaultdir) {
@@ -505,6 +505,7 @@ void Program::get_dir(const char *title, std::string defaultdir) {
 }
 
 bool Program::order_paths(bool dodeckmix) {
+	if (mainprogram->paths.size() == 1) return true;
 	if (mainprogram->multistage == 0) {
 		mainprogram->filescount = 0;
 		mainprogram->multistage = 1;

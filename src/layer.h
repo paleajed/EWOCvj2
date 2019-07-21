@@ -168,12 +168,13 @@ class Layer {
 		std::mutex endopenlock;
 		std::mutex chunklock;
 		std::mutex endchunklock;
-		std::mutex protect;
+		std::mutex protectlock;
 		std::condition_variable startdecode;
 		std::condition_variable enddecodevar;
 		std::condition_variable endopenvar;
 		std::condition_variable newchunk;
 		std::condition_variable endchunk;
+		std::condition_variable protect;
 		bool processed = false;
 		bool opened = false;
 		bool ready = false;

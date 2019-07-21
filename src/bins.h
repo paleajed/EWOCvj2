@@ -1,7 +1,5 @@
 class Bin;
 class BinElement;
-class BinDeck;
-class BinMix;
 
 class BinsMain {
 	public:
@@ -28,7 +26,6 @@ class BinsMain {
 		std::vector<std::string> inputjpegpaths;
 		std::vector<int> inputwidths;
 		std::vector<int> inputheights;
-		std::vector<GLuint> dragtexes[2];
 		std::vector<GLuint> inserttexes[2];
 		std::vector<ELEM_TYPE> inserttypes[2];
 		std::vector<std::string> insertpaths[2];
@@ -38,8 +35,6 @@ class BinsMain {
 		BinElement* movingbinel = nullptr;
 		BinElement *backupbinel = nullptr;
 		BinElement *menubinel = nullptr;
-		BinDeck *dragdeck = nullptr;
-		BinMix *dragmix = nullptr;
 		Bin* dragbin = nullptr;
 		int dragbinpos = -1;
 		bool dragbinsense = false;
@@ -50,10 +45,7 @@ class BinsMain {
 		Box* binsscrollup;
 		Bin *menubin = nullptr;
 		bool openbinfile = false;
-		int inserting = -1;
 		bool movingstruct = false;
-		BinDeck *movingdeck = nullptr;
-		BinMix *movingmix = nullptr;	
 		std::vector<BinElement*> prevelems;
 		Box *hapmodebox;
 		
@@ -66,13 +58,10 @@ class BinsMain {
 		void save_bin(const std::string &path);
 		void open_binfiles();
 		void open_handlefile(const std::string &path);
-		void open_bindeck(const std::string& path);
-		void open_binmix(const std::string& path);
-		void get_texes(int deck);
-		std::tuple<std::string, std::string> hap_binel(BinElement *binel, BinDeck *bd, BinMix *bm);
-		void hap_deck(BinDeck * bd);
-		void hap_mix(BinMix * bm);
-		void hap_encode(const std::string srcpath, BinElement *binel, BinDeck *bd, BinMix *bm);
+		std::tuple<std::string, std::string> hap_binel(BinElement *binel, BinElement* bdm);
+		void hap_deck(BinElement * bd);
+		void hap_mix(BinElement * bm);
+		void hap_encode(const std::string srcpath, BinElement* binel, BinElement* bdm);
 		BinsMain();
 
 	private:
@@ -83,8 +72,6 @@ class Bin {
 	public:
 		std::string name;
 		std::vector<BinElement*> elements;
-		std::vector<BinDeck*> decks;
-		std::vector<BinMix*> mixes;
 		int encthreads = 0;
 		int pos;
 		Bin(int pos);
@@ -109,35 +96,9 @@ class BinElement {
 		bool full = false;
 		bool encwaiting = false;
 		bool encoding = false;
+		int encthreads;
 		float encodeprogress;
 		BinElement();
 		~BinElement();
 		BinElement* next();
 };
-
-class BinDeck {
-	public:
-		std::string path;
-		std::string jpegpath;
-		int i, j;
-		int height = -1;
-		int encthreads = 0;
-		GLuint tex;
-		Box *box;
-		BinDeck();
-		~BinDeck();
-};
-
-class BinMix {
-	public:
-		std::string path;
-		std::string jpegpath;
-		int j;
-		int height;
-		int encthreads = 0;
-		GLuint tex;
-		Box *box;
-		BinMix();
-		~BinMix();
-};
-

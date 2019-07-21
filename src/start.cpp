@@ -1226,8 +1226,16 @@ void Layer::get_hap_frame() {
 	}
 	this->decresult->compression = *(bptrData + 3);
 
-	if (!this->databufready) return;
-	int st = snappy_uncompress(bptrData + headerl, size - headerl, this->databuf, &uncomp);
+	int st;
+	if (!this->databufready) {
+		std::unique_lock<std::mutex> lock(this->protectlock);
+		this->protect.wait(lock, [&] {return this->databufready; });
+		st = snappy_uncompress(bptrData + headerl, size - headerl, this->databuf, &uncomp);
+		lock.unlock();
+	}
+	else {
+		st = snappy_uncompress(bptrData + headerl, size - headerl, this->databuf, &uncomp);
+	}
     av_packet_unref(&this->decpkt);
 	if (st) {
 		this->decresult->data = nullptr;
@@ -1448,15 +1456,18 @@ bool thread_vidopen(Layer *lay, AVInputFormat *ifmt, bool skip) {
 			}
 			lay->decframe = av_frame_alloc();
 
-			lay->startdecode.notify_one();
-			std::unique_lock<std::mutex> lock2(lay->enddecodelock);
-			lay->enddecodevar.wait(lock2, [&] {return lay->processed; });
-			lay->processed = false;
-			lock2.unlock();
+			if (lay->opened) {
+				lay->startdecode.notify_one();
+				std::unique_lock<std::mutex> lock2(lay->enddecodelock);
+				lay->enddecodevar.wait(lock2, [&] {return lay->processed; });
+				lay->processed = false;
+				lock2.unlock();
+			}
 			int *mem = new int[lay->video_dec_ctx->width * lay->video_dec_ctx->height];
-			if (lay->databuf) delete[] lay->databuf;  // reminder: lock?
+			if (lay->databuf) delete[] lay->databuf;
 			lay->databuf = (char*)mem;
 			lay->databufready = true;
+			lay->protect.notify_one();
 			return 1;
         }
 		else avformat_open_input(&(lay->videoseek), lay->filename.c_str(), ifmt, nullptr);
@@ -1956,8 +1967,8 @@ void draw_box(float *linec, float *areac, float x, float y, float wi, float he, 
 		glDrawArrays(GL_LINE_LOOP, 0, 4);
 	} 
 	if (areac) {
-		float shx = -dx / ((float)glob->w * 0.1f);
-		float shy = -dy / ((float)glob->h * 0.1f);
+		float shx = -dx * 6.0f;
+		float shy = -dy * 6.0f;
 		GLfloat fvcoords2[8] = {
 			x + pixelw,     y + he - pixelh,
 			x + pixelw,     y + pixelh,
@@ -4630,83 +4641,34 @@ bool handle_clips(std::vector<Layer*> &layers, bool deck) {
 		}
 
 		if (!mainmix->moving) {
-			if (box->scrcoords->y1 < mainprogram->my + box->scrcoords->h and mainprogram->my < box->scrcoords->y1) {
-				if (box->scrcoords->x1 + box->scrcoords->w * 0.25f < mainprogram->mx and mainprogram->mx < box->scrcoords->x1 + box->scrcoords->w * 0.75f) {
-					// handle dragging things into layer monitors of deck
-					set_queueing(lay, true);
-					mainmix->currlay = lay;
-					if (mainprogram->lmsave or mainprogram->laymenu1->state > 1 or mainprogram->laymenu2->state > 1 or mainprogram->loadmenu->state > 1) {
-						mainprogram->leftmouse = false;
-						set_queueing(lay, false);
-						if (mainprogram->dragbinel) {
-							mainprogram->laymenu1->state = 0;
-							mainprogram->laymenu2->state = 0;
-							mainprogram->loadmenu->state = 0;
-							if (mainprogram->dragright) {
-								mainprogram->dragright = false;
-								while (!lay->effects[0].empty()) {
-									lay->delete_effect(lay->effects[0].size() - 1);
-								}
-								lay->scale->value = 1.0f;
-								lay->shiftx->value = 0.0f;
-								lay->shifty->value = 0.0f;
-							}
-							if (mainprogram->dragbinel->type == ELEM_LAYER) {
-								mainmix->open_layerfile(mainprogram->dragbinel->path, lay, 1, 1);
-							}
-							else if (mainprogram->dragbinel->type == ELEM_FILE) {
-								lay->open_video(0, mainprogram->dragbinel->path, true);
-							}
-							else if (mainprogram->dragbinel->type == ELEM_IMAGE) {
-								lay->open_image(mainprogram->dragbinel->path);
-							}
-						}
-						else {
-							lay->open_video(0, mainprogram->dragbinel->path, true);
-						}
-						mainprogram->rightmouse = true;
-						binsmain->handle(0);
-						enddrag();
-						return 1;
-					}
-				}
-				else if (endx or (box->scrcoords->x1 - mainprogram->xvtxtoscr(0.075f) < mainprogram->mx and mainprogram->mx < box->scrcoords->x1 + mainprogram->xvtxtoscr(0.075f))) {
-					// handle dragging things to the end of the last visible layer monitor of deck
-					if (mainprogram->lmsave) {
-						mainprogram->leftmouse = false;
-						Layer *inlay = mainmix->add_layer(layers, lay->pos + endx);
-						if (inlay->pos == mainmix->scenes[deck][mainmix->currscene[deck]]->scrollpos + 3) mainmix->scenes[deck][mainmix->currscene[deck]]->scrollpos++;
-						if (mainprogram->dragbinel) {
-							if (mainprogram->dragbinel->type == ELEM_LAYER) {
-								mainmix->open_layerfile(mainprogram->dragbinel->path, inlay, 1, 1);
-							}
-							else {
-								inlay->open_video(0, mainprogram->dragbinel->path, true);
-							}
-						}
-						else {
-							inlay->open_video(0, mainprogram->dragbinel->path, true);
-						}
-						mainprogram->rightmouse = true;
-						binsmain->handle(0);
-						enddrag();
-						return 1;
-					}
+			bool no = false;
+			if (mainprogram->dragbinel) {
+				if (mainprogram->dragbinel->type == ELEM_DECK or mainprogram->dragbinel->type == ELEM_MIX) {
+					no = true;
 				}
 			}
-
-		
-			int numonscreen = layers.size() - mainmix->scenes[deck][mainmix->currscene[deck]]->scrollpos;
-			if (0 <= numonscreen and numonscreen <= 2) {
-				if (mainprogram->xvtxtoscr(mainprogram->numw + deck * 1.0f + numonscreen * mainprogram->layw) < mainprogram->mx and mainprogram->mx < deck * (glob->w / 2.0f) + glob->w / 2.0f) {
-					if (0 < mainprogram->my and mainprogram->my < mainprogram->yvtxtoscr(mainprogram->layh)) {
-						float blue[] = {0.5, 0.5 , 1.0, 1.0};
-						draw_box(nullptr, blue, -1.0f + mainprogram->numw + deck * 1.0f + numonscreen * mainprogram->layw, 1.0f - mainprogram->layh, mainprogram->layw, mainprogram->layh, -1);
-						if (mainprogram->lmsave) {
-							// handle dragging into black space to the right of deck layer monitors
+			if (!no) {
+				if (box->scrcoords->y1 < mainprogram->my + box->scrcoords->h and mainprogram->my < box->scrcoords->y1) {
+					if (box->scrcoords->x1 + box->scrcoords->w * 0.25f < mainprogram->mx and mainprogram->mx < box->scrcoords->x1 + box->scrcoords->w * 0.75f) {
+						// handle dragging things into layer monitors of deck
+						set_queueing(lay, true);
+						mainmix->currlay = lay;
+						if (mainprogram->lmsave or mainprogram->laymenu1->state > 1 or mainprogram->laymenu2->state > 1 or mainprogram->loadmenu->state > 1) {
 							mainprogram->leftmouse = false;
-							lay = mainmix->add_layer(layers, layers.size());
+							set_queueing(lay, false);
 							if (mainprogram->dragbinel) {
+								mainprogram->laymenu1->state = 0;
+								mainprogram->laymenu2->state = 0;
+								mainprogram->loadmenu->state = 0;
+								if (mainprogram->dragright) {
+									mainprogram->dragright = false;
+									while (!lay->effects[0].empty()) {
+										lay->delete_effect(lay->effects[0].size() - 1);
+									}
+									lay->scale->value = 1.0f;
+									lay->shiftx->value = 0.0f;
+									lay->shifty->value = 0.0f;
+								}
 								if (mainprogram->dragbinel->type == ELEM_LAYER) {
 									mainmix->open_layerfile(mainprogram->dragbinel->path, lay, 1, 1);
 								}
@@ -4724,6 +4686,62 @@ bool handle_clips(std::vector<Layer*> &layers, bool deck) {
 							binsmain->handle(0);
 							enddrag();
 							return 1;
+						}
+					}
+					else if (endx or (box->scrcoords->x1 - mainprogram->xvtxtoscr(0.075f) < mainprogram->mx and mainprogram->mx < box->scrcoords->x1 + mainprogram->xvtxtoscr(0.075f))) {
+						// handle dragging things to the end of the last visible layer monitor of deck
+						if (mainprogram->lmsave) {
+							mainprogram->leftmouse = false;
+							Layer* inlay = mainmix->add_layer(layers, lay->pos + endx);
+							if (inlay->pos == mainmix->scenes[deck][mainmix->currscene[deck]]->scrollpos + 3) mainmix->scenes[deck][mainmix->currscene[deck]]->scrollpos++;
+							if (mainprogram->dragbinel) {
+								if (mainprogram->dragbinel->type == ELEM_LAYER) {
+									mainmix->open_layerfile(mainprogram->dragbinel->path, inlay, 1, 1);
+								}
+								else {
+									inlay->open_video(0, mainprogram->dragbinel->path, true);
+								}
+							}
+							else {
+								inlay->open_video(0, mainprogram->dragbinel->path, true);
+							}
+							mainprogram->rightmouse = true;
+							binsmain->handle(0);
+							enddrag();
+							return 1;
+						}
+					}
+				}
+
+				int numonscreen = layers.size() - mainmix->scenes[deck][mainmix->currscene[deck]]->scrollpos;
+				if (0 <= numonscreen and numonscreen <= 2) {
+					if (mainprogram->xvtxtoscr(mainprogram->numw + deck * 1.0f + numonscreen * mainprogram->layw) < mainprogram->mx and mainprogram->mx < deck * (glob->w / 2.0f) + glob->w / 2.0f) {
+						if (0 < mainprogram->my and mainprogram->my < mainprogram->yvtxtoscr(mainprogram->layh)) {
+							float blue[] = { 0.5, 0.5 , 1.0, 1.0 };
+							draw_box(nullptr, blue, -1.0f + mainprogram->numw + deck * 1.0f + numonscreen * mainprogram->layw, 1.0f - mainprogram->layh, mainprogram->layw, mainprogram->layh, -1);
+							if (mainprogram->lmsave) {
+								// handle dragging into black space to the right of deck layer monitors
+								mainprogram->leftmouse = false;
+								lay = mainmix->add_layer(layers, layers.size());
+								if (mainprogram->dragbinel) {
+									if (mainprogram->dragbinel->type == ELEM_LAYER) {
+										mainmix->open_layerfile(mainprogram->dragbinel->path, lay, 1, 1);
+									}
+									else if (mainprogram->dragbinel->type == ELEM_FILE) {
+										lay->open_video(0, mainprogram->dragbinel->path, true);
+									}
+									else if (mainprogram->dragbinel->type == ELEM_IMAGE) {
+										lay->open_image(mainprogram->dragbinel->path);
+									}
+								}
+								else {
+									lay->open_video(0, mainprogram->dragbinel->path, true);
+								}
+								mainprogram->rightmouse = true;
+								binsmain->handle(0);
+								enddrag();
+								return 1;
+							}
 						}
 					}
 				}
@@ -4774,98 +4792,44 @@ void Shelf::handle() {
 						mainprogram->shelfdrag = true;
 						mainprogram->leftmousedown = false;
 						mainprogram->rightmousedown = false;
-						if (this->types[i] == ELEM_DECK) {
-							binsmain->dragdeck = new BinDeck;
-							binsmain->dragdeck->path = this->paths[i];
-							binsmain->dragtex = this->texes[i];
-						}
-						else if (this->types[i] == ELEM_MIX) {
-							binsmain->dragmix = new BinMix;
-							binsmain->dragmix->path = this->paths[i];
-							binsmain->dragtex = this->texes[i];
-						}
-						else {
-							mainprogram->dragbinel = new BinElement;
-							mainprogram->dragbinel->path = this->paths[i];
-							mainprogram->dragbinel->type = this->types[i];
-							mainprogram->dragbinel->tex = this->texes[i];
-						}
+						mainprogram->dragbinel = new BinElement;
+						mainprogram->dragbinel->path = this->paths[i];
+						mainprogram->dragbinel->type = this->types[i];
+						mainprogram->dragbinel->tex = this->texes[i];
 					}
 				}
 			}
 			else if (mainprogram->lmsave) {
 				if (mainprogram->dragbinel) {
 					mainprogram->leftmouse = false;
-					// user drops file/layer in shelf element
+					// user drops file/layer/deck/mix in shelf element
+					std::string newpath;
+					std::string extstr;
 					if (mainprogram->dragbinel->path.rfind(".layer") != std::string::npos) {
-						std::string base = basename(mainprogram->dragbinel->path);
-						std::string newpath;
-						std::string name = remove_extension("shelf_" + base.substr(9, std::string::npos));
-						int count = 0;
-						while (1) {
-							newpath = mainprogram->shelfdir + name + ".layer";
-							if (!exists(newpath)) {
-								boost::filesystem::copy_file(mainprogram->dragbinel->path, newpath);
-								mainprogram->dragbinel->path = newpath;
-								break;
-							}
-							count++;
-							name = remove_version(name) + "_" + std::to_string(count);
+						extstr = ".layer";
+					}
+					else if (mainprogram->dragbinel->path.rfind(".deck") != std::string::npos) {
+						extstr = ".deck";
+					}
+					else if (mainprogram->dragbinel->path.rfind(".mix") != std::string::npos) {
+						extstr = ".mix";
+					}
+					std::string base = basename(mainprogram->dragbinel->path);
+					std::string name = remove_extension("shelf_" + base);
+					int count = 0;
+					while (1) {
+						newpath = mainprogram->shelfdir + name + extstr;
+						if (!exists(newpath)) {
+							boost::filesystem::copy_file(mainprogram->dragbinel->path, newpath);
+							mainprogram->dragbinel->path = newpath;
+							break;
 						}
+						count++;
+						name = remove_version(name) + "_" + std::to_string(count);
 					}
 					this->paths[i] = mainprogram->dragbinel->path;
 					this->types[i] = mainprogram->dragbinel->type;
 					this->texes[i] = copy_tex(mainprogram->dragbinel->tex);
-					enddrag();
-					mainprogram->rightmouse = true;
-					binsmain->handle(0);
-				}
-				else if (binsmain->dragdeck) {
-					mainprogram->leftmouse = false;
-					// user drops mix in shelf element
-					std::string newpath;
-					if (binsmain->dragdeck->path.rfind(".deck") != std::string::npos) {
-						std::string base = basename(binsmain->dragdeck->path);
-						std::string name = remove_extension("shelf_" + base);
-						int count = 0;
-						while (1) {
-							newpath = mainprogram->shelfdir + name + ".deck";
-							if (!exists(newpath)) {
-								boost::filesystem::copy_file(binsmain->dragdeck->path, newpath);
-								break;
-							}
-							count++;
-							name = remove_version(name) + "_" + std::to_string(count);
-						}
-					}
-					this->paths[i] = newpath;
-					this->types[i] = ELEM_DECK;
-					open_thumb(binsmain->dragdeck->jpegpath, this->texes[i]);
-					enddrag();
-					mainprogram->rightmouse = true;
-					binsmain->handle(0);
-				}
-				else if (binsmain->dragmix) {
-					mainprogram->leftmouse = false;
-					// user drops mix in shelf element
-					std::string newpath;
-					if (binsmain->dragmix->path.rfind(".mix") != std::string::npos) {
-						std::string base = basename(binsmain->dragmix->path);
-						std::string name = remove_extension("shelf_" + base);
-						int count = 0;
-						while (1) {
-							newpath = mainprogram->shelfdir + name + ".mix";
-							if (!exists(newpath)) {
-								boost::filesystem::copy_file(binsmain->dragmix->path, newpath);
-								break;
-							}
-							count++;
-							name = remove_version(name) + "_" + std::to_string(count);
-						}
-					}
-					this->paths[i] = newpath;
-					this->types[i] = ELEM_MIX;
-					open_thumb (binsmain->dragmix->jpegpath, this->texes[i]);
 					enddrag();
 					mainprogram->rightmouse = true;
 					binsmain->handle(0);
@@ -5387,7 +5351,7 @@ bool Box::in(int mx, int my) {
 
 bool Box::in(int mx, int my, bool draggoal) {
 	if (mainprogram->menuondisplay) return false;
-	if (!draggoal and (mainprogram->dragbinel or binsmain->dragmix or binsmain->dragdeck)) {
+	if (!draggoal and (mainprogram->dragbinel)) {
 		if (mainprogram->leftmouse) {
 			mainprogram->leftmouse = false;
 			mainprogram->drag = true;
@@ -7480,17 +7444,6 @@ void enddrag() {
 		mainprogram->drag = false;
 		//glDeleteTextures(1, &binsmain->dragtex);  maybe needs implementing in one case, check history
 	}
-	if (binsmain->dragdeck) {
-		binsmain->dragdeck = nullptr;
-		binsmain->movingdeck = nullptr;
-	}
-	if (binsmain->dragmix) {
-		binsmain->dragmix = nullptr;
-		binsmain->movingmix = nullptr;
-	}
-	binsmain->dragtexes[0].clear();
-	binsmain->dragtexes[1].clear();
-	binsmain->inserting = -1;
 
 	if (binsmain->movingtex != -1) {
 		bool temp = binsmain->currbinel->full;
@@ -7703,7 +7656,7 @@ void the_loop() {
 	//draw and handle BINS wormhole
 	float darkgreen[4] = {0.0f, 0.3f, 0.0f, 1.0f};
 	if (!mainprogram->menuondisplay) {
-		if (sqrt(pow((mainprogram->mx / (glob->w / 2.0f) - 1.0f) * glob->w / glob->h, 2) + pow((glob->h - mainprogram->my) / (glob->h / 2.0f) - 1.25f, 2)) < 0.2f) {
+		if (sqrt(pow((mainprogram->mx / (glob->w / 2.0f) - 1.0f - (mainprogram->binsscreen * 0.72f)) * glob->w / glob->h, 2) + pow((glob->h - mainprogram->my) / (glob->h / 2.0f) - 1.25f, 2)) < 0.2f) {
 			darkgreen[0] = 0.5f;
 			darkgreen[1] = 0.5f;
 			darkgreen[2] = 1.0f;
@@ -7727,12 +7680,12 @@ void the_loop() {
 	
 	// wormhole
 	if (mainprogram->fullscreen == -1) {
-		draw_box(darkgreen, 0.0f, 0.25f, 0.2f, 1);
-		draw_box(white, 0.0f, 0.25f, 0.2f, 2);
-		draw_box(white, 0.0f, 0.25f, 0.15f, 2);
-		draw_box(white, 0.0f, 0.25f, 0.1f, 2);
-		if (mainprogram->binsscreen) render_text("MIX", white, -0.024f, 0.24f, 0.0006f, 0.001f);
-		else render_text("BINS", white, -0.025f, 0.24f, 0.0006f, 0.001f);
+		draw_box(darkgreen, mainprogram->binsscreen * 0.72f, 0.25f, 0.2f, 1);
+		draw_box(white, mainprogram->binsscreen * 0.72f, 0.25f, 0.2f, 2);
+		draw_box(white, mainprogram->binsscreen * 0.72f, 0.25f, 0.15f, 2);
+		draw_box(white, mainprogram->binsscreen * 0.72f, 0.25f, 0.1f, 2);
+		if (mainprogram->binsscreen) render_text("MIX", white, -0.024f + (mainprogram->binsscreen * 0.72f), 0.24f, 0.0006f, 0.001f);
+		else render_text("BINS", white, -0.025f + (mainprogram->binsscreen * 0.72f), 0.24f, 0.0006f, 0.001f);
 	}
 	
 	if (mainprogram->binsscreen) {
@@ -7895,12 +7848,12 @@ void the_loop() {
 		}
 
 		//draw wormhole
-		draw_box(darkgreen, 0.0f, 0.25f, 0.2f, 1);
-		draw_box(white, 0.0f, 0.25f, 0.2f, 2);
-		draw_box(white, 0.0f, 0.25f, 0.15f, 2);
-		draw_box(white, 0.0f, 0.25f, 0.1f, 2);
-		if (mainprogram->binsscreen) render_text("MIX", white, -0.024f, 0.24f, 0.0006f, 0.001f);
-		else render_text("BINS", white, -0.025f, 0.24f, 0.0006f, 0.001f);
+		draw_box(darkgreen, mainprogram->binsscreen * 0.72f, 0.25f, 0.2f, 1);
+		draw_box(white, mainprogram->binsscreen * 0.72f, 0.25f, 0.2f, 2);
+		draw_box(white, mainprogram->binsscreen * 0.72f, 0.25f, 0.15f, 2);
+		draw_box(white, mainprogram->binsscreen * 0.72f, 0.25f, 0.1f, 2);
+		if (mainprogram->binsscreen) render_text("MIX", white, -0.024f + (mainprogram->binsscreen * 0.72f), 0.24f, 0.0006f, 0.001f);
+		else render_text("BINS", white, -0.025f + (mainprogram->binsscreen * 0.72f), 0.24f, 0.0006f, 0.001f);
 
 		// Draw crossfade->box
 		Param* par;
@@ -9342,9 +9295,11 @@ void the_loop() {
 					draw_box(black, lightblue, box->vtxcoords->x1 + (box->vtxcoords->w / 2.0f) - 0.015f, box->vtxcoords->y1 + (box->vtxcoords->h / 2.0f) - 0.025f, 0.03f, 0.05f, -1);
 					if (mainprogram->leftmousedown) {
 						mainprogram->leftmousedown = false;
+						mainprogram->transforming = true;
 						lay->transforming = 1;
-						lay->transmx = mainprogram->mx - lay->shiftx->value;
-						lay->transmy = mainprogram->my - lay->shifty->value;
+						lay->transmx = mainprogram->mx - (lay->shiftx->value * (float)glob->w / 2.0f);
+						printf("transmx %d\n", lay->transmx);
+						lay->transmy = mainprogram->my - (lay->shifty->value * (float)glob->w / 2.0f);
 					}
 				}
 				//if (mainprogram->middlemousedown) {
@@ -9404,8 +9359,9 @@ void the_loop() {
 			}
 			
 			if (lay->transforming == 1) {
-				lay->shiftx->value = mainprogram->mx - lay->transmx;
-				lay->shifty->value = mainprogram->my - lay->transmy;
+				lay->shiftx->value = (float)(mainprogram->mx - lay->transmx) / ((float)glob->w / 2.0f);
+
+				lay->shifty->value = (float)(mainprogram->my - lay->transmy) / ((float)glob->w / 2.0f);
 				for (int i = 0; i < loopstation->elems.size(); i++) {
 					if (loopstation->elems[i]->recbut->value) {
 						mainmix->adaptparam = lay->shiftx;
@@ -9414,6 +9370,7 @@ void the_loop() {
 				}
 				if (mainprogram->leftmouse) {
 					lay->transforming = 0;
+					mainprogram->transforming = false;
 				}
 			}
 			//if (lay->transforming == 2) {
@@ -9570,179 +9527,10 @@ void the_loop() {
 	
 	}	
 
-	//deck and mix dragging
-	if (binsmain->dragdeck) {
-		if (sqrt(pow((mainprogram->mx / (glob->w / 2.0f) - 1.0f) * glob->w / glob->h, 2) + pow((glob->h - mainprogram->my) / (glob->h / 2.0f) - 1.25f, 2)) < 0.2f) {
-			if (mainprogram->dragmousedown) mainprogram->binsscreen = false;
-		}
-		if (!mainprogram->binsscreen) {
-			float lightblue[] = {0.5f, 0.5f, 1.0f, 1.0f};
-			Box boxA;
-			boxA.vtxcoords->x1 = -1.0f + mainprogram->numw;
-			boxA.vtxcoords->y1 = 1.0f - mainprogram->layh;
-			boxA.vtxcoords->w = mainprogram->layw * 3;
-			boxA.vtxcoords->h = mainprogram->layh;
-			boxA.upvtxtoscr();
-			Box boxB;
-			boxB.vtxcoords->x1 = mainprogram->numw;
-			boxB.vtxcoords->y1 = 1.0f - mainprogram->layh;
-			boxB.vtxcoords->w = mainprogram->layw * 3;
-			boxB.vtxcoords->h = mainprogram->layh;
-			boxB.upvtxtoscr();
-			if (boxA.in(mainprogram->mx, mainprogram->my, true)) {
-				draw_box(nullptr, lightblue, -1.0f + mainprogram->numw, 1.0f - mainprogram->layh, mainprogram->layw * 3, mainprogram->layh, -1);
-				if (mainprogram->lmsave) {
-					mainmix->mousedeck = 0;
-					mainmix->open_deck(binsmain->dragdeck->path, 1);
-					mainprogram->rightmouse = true;
-					binsmain->handle(0);
-				}
-			}
-			else if (boxB.in(mainprogram->mx, mainprogram->my, true)) {
-				draw_box(nullptr, lightblue, mainprogram->numw, 1.0f - mainprogram->layh, mainprogram->layw * 3, mainprogram->layh, -1);
-				if (mainprogram->lmsave) {
-					mainmix->mousedeck = 1;
-					mainmix->open_deck(binsmain->dragdeck->path, 1);
-				}
-			}
-		}
-		if (mainprogram->leftmouse) {
-			binsmain->dragtexes[0].clear();
-			binsmain->dragdeck = nullptr;
-			binsmain->dragtex = -1;
-			mainprogram->leftmouse = false;
-		}
-		else {
-			if (binsmain->dragtexes[0].size()) {
-				for (int k = 0; k < binsmain->dragtexes[0].size(); k++) {
-					GLint thumb = glGetUniformLocation(mainprogram->ShaderProgram, "thumb");
-					glUniform1i(thumb, 1);
-					GLfloat vcoords[8];
-					float boxwidth = tf(0.06f);
-
-					float nmx = mainprogram->xscrtovtx(mainprogram->mx) + (k % 3) * boxwidth;
-					float nmy = 2.0 - mainprogram->yscrtovtx(mainprogram->my) - (int)(k / 3) * boxwidth;
-					GLfloat * p = vcoords;
-					*p++ = -1.0f - 0.5 * boxwidth + nmx;
-					*p++ = -1.0f - 0.5 * boxwidth + nmy;
-					*p++ = -1.0f + 0.5 * boxwidth + nmx;
-					*p++ = -1.0f - 0.5 * boxwidth + nmy;
-					*p++ = -1.0f - 0.5 * boxwidth + nmx;
-					*p++ = -1.0f + 0.5 * boxwidth + nmy;
-					*p++ = -1.0f + 0.5 * boxwidth + nmx;
-					*p++ = -1.0f + 0.5 * boxwidth + nmy;
-					glBindBuffer(GL_ARRAY_BUFFER, thmvbuf);
-					glBufferData(GL_ARRAY_BUFFER, 32, vcoords, GL_STREAM_DRAW);
-					glBindVertexArray(thmvao);
-					glBindTexture(GL_TEXTURE_2D, binsmain->dragtexes[0][k]);
-					glDrawArrays(GL_TRIANGLE_STRIP, 0, 4);
-					glUniform1i(thumb, 0);
-				}
-			}
-			else {
-				GLint thumb = glGetUniformLocation(mainprogram->ShaderProgram, "thumb");
-				glUniform1i(thumb, 1);
-				GLfloat vcoords[8];
-				float boxwidth = tf(0.2f);
-
-				float nmx = mainprogram->xscrtovtx(mainprogram->mx) + boxwidth / 2.0f;
-				float nmy = 2.0 - mainprogram->yscrtovtx(mainprogram->my) - boxwidth / 2.0f;
-				GLfloat* p = vcoords;
-				*p++ = -1.0f - 0.5 * boxwidth + nmx;
-				*p++ = -1.0f - 0.5 * boxwidth + nmy;
-				*p++ = -1.0f + 0.5 * boxwidth + nmx;
-				*p++ = -1.0f - 0.5 * boxwidth + nmy;
-				*p++ = -1.0f - 0.5 * boxwidth + nmx;
-				*p++ = -1.0f + 0.5 * boxwidth + nmy;
-				*p++ = -1.0f + 0.5 * boxwidth + nmx;
-				*p++ = -1.0f + 0.5 * boxwidth + nmy;
-				glBindBuffer(GL_ARRAY_BUFFER, thmvbuf);
-				glBufferData(GL_ARRAY_BUFFER, 32, vcoords, GL_STREAM_DRAW);
-				glBindVertexArray(thmvao);
-				glBindTexture(GL_TEXTURE_2D, binsmain->dragtex);
-				glDrawArrays(GL_TRIANGLE_STRIP, 0, 4);
-				glUniform1i(thumb, 0);
-			}
-		}
-	}
-	if (binsmain->dragmix and !mainprogram->binsscreen) {
-		Box box;
-		box.vtxcoords->x1 = -1.0f + mainprogram->numw;
-		box.vtxcoords->y1 = 1.0f - mainprogram->layh;
-		box.vtxcoords->w = mainprogram->layw * 6 + mainprogram->numw;
-		box.vtxcoords->h = mainprogram->layh;
-		box.upvtxtoscr();
-		if (box.in(mainprogram->mx, mainprogram->my, true)) {
-			draw_box(nullptr, lightblue, -1.0f + mainprogram->numw, 1.0f - mainprogram->layh, mainprogram->layw * 6 + mainprogram->numw, mainprogram->layh, -1);
-			if (mainprogram->lmsave) {
-				mainmix->open_mix(binsmain->dragmix->path.c_str());
-				binsmain->dragmix = nullptr;
-				binsmain->dragtex = -1;
-				mainprogram->leftmouse = false;
-				mainprogram->rightmouse = true;
-				binsmain->handle(0);
-			}
-		}
-	}
-
-	if (binsmain->dragmix) {
-		if (binsmain->dragtexes[0].size() != 0 or binsmain->dragtexes[1].size() != 0) {
-			for (int m = 0; m < 2; m++) {
-				for (int k = 0; k < binsmain->dragtexes[m].size(); k++) {
-					GLint thumb = glGetUniformLocation(mainprogram->ShaderProgram, "thumb");
-					glUniform1i(thumb, 1);
-					GLfloat vcoords[8];
-					float boxwidth = tf(0.06f);
-
-					float nmx = mainprogram->xscrtovtx(mainprogram->mx) + (k % 3) * boxwidth + m * boxwidth * 3;
-					float nmy = 2.0 - mainprogram->yscrtovtx(mainprogram->my) - (int)(k / 3) * boxwidth;
-					GLfloat * p = vcoords;
-					*p++ = -1.0f - 0.5 * boxwidth + nmx;
-					*p++ = -1.0f - 0.5 * boxwidth + nmy;
-					*p++ = -1.0f + 0.5 * boxwidth + nmx;
-					*p++ = -1.0f - 0.5 * boxwidth + nmy;
-					*p++ = -1.0f - 0.5 * boxwidth + nmx;
-					*p++ = -1.0f + 0.5 * boxwidth + nmy;
-					*p++ = -1.0f + 0.5 * boxwidth + nmx;
-					*p++ = -1.0f + 0.5 * boxwidth + nmy;
-					glBindBuffer(GL_ARRAY_BUFFER, thmvbuf);
-					glBufferData(GL_ARRAY_BUFFER, 32, vcoords, GL_STREAM_DRAW);
-					glBindVertexArray(thmvao);
-					glBindTexture(GL_TEXTURE_2D, binsmain->dragtexes[m][k]);
-					glDrawArrays(GL_TRIANGLE_STRIP, 0, 4);
-					glUniform1i(thumb, 0);
-				}
-			}
-		}
-		else {
-			GLint thumb = glGetUniformLocation(mainprogram->ShaderProgram, "thumb");
-			glUniform1i(thumb, 1);
-			GLfloat vcoords[8];
-			float boxwidth = tf(0.2f);
-
-			float nmx = mainprogram->xscrtovtx(mainprogram->mx) + boxwidth / 2.0f;
-			float nmy = 2.0 - mainprogram->yscrtovtx(mainprogram->my) - boxwidth / 2.0f;
-			GLfloat* p = vcoords;
-			*p++ = -1.0f - 0.5 * boxwidth + nmx;
-			*p++ = -1.0f - 0.5 * boxwidth + nmy;
-			*p++ = -1.0f + 0.5 * boxwidth + nmx;
-			*p++ = -1.0f - 0.5 * boxwidth + nmy;
-			*p++ = -1.0f - 0.5 * boxwidth + nmx;
-			*p++ = -1.0f + 0.5 * boxwidth + nmy;
-			*p++ = -1.0f + 0.5 * boxwidth + nmx;
-			*p++ = -1.0f + 0.5 * boxwidth + nmy;
-			glBindBuffer(GL_ARRAY_BUFFER, thmvbuf);
-			glBufferData(GL_ARRAY_BUFFER, 32, vcoords, GL_STREAM_DRAW);
-			glBindVertexArray(thmvao);
-			glBindTexture(GL_TEXTURE_2D, binsmain->dragtex);
-			glDrawArrays(GL_TRIANGLE_STRIP, 0, 4);
-			glUniform1i(thumb, 0);
-		}
-	}
 		
-	if (mainprogram->dragbinel or binsmain->dragdeck or binsmain->dragmix) {
+	if (mainprogram->dragbinel) {
 		//dragging something inside wormhole
-		if (sqrt(pow((mainprogram->mx / (glob->w / 2.0f) - 1.0f) * glob->w / glob->h, 2) + pow((glob->h - mainprogram->my) / (glob->h / 2.0f) - 1.25f, 2)) < 0.2f) {
+		if (sqrt(pow((mainprogram->mx / (glob->w / 2.0f) - 1.0f - (mainprogram->binsscreen * 0.72f)) * glob->w / glob->h, 2) + pow((glob->h - mainprogram->my) / (glob->h / 2.0f) - 1.25f, 2)) < 0.2f) {
 			if (!mainprogram->inwormhole and !mainprogram->menuondisplay and !mainprogram->shelfdrag) {
 				if (!mainprogram->binsscreen) {
 					set_queueing(mainmix->currlay, false);
@@ -9850,6 +9638,7 @@ void the_loop() {
 	}
 	
 	if (mainprogram->dragbinel) {
+		// draw texture of element being dragged
 		GLint thumb = glGetUniformLocation(mainprogram->ShaderProgram, "thumb");
 		glUniform1i(thumb, 1);
 		GLfloat vcoords[8];
@@ -9872,7 +9661,68 @@ void the_loop() {
 		glBindTexture(GL_TEXTURE_2D, mainprogram->dragbinel->tex);
 		glDrawArrays(GL_TRIANGLE_STRIP, 0, 4);
 		glUniform1i(thumb, 0);
+
+		//deck and mix dragging
+		if (mainprogram->dragbinel->type == ELEM_DECK) {
+			if (!mainprogram->binsscreen) {
+				// check drop of dragged deck into mix
+				float lightblue[] = { 0.5f, 0.5f, 1.0f, 1.0f };
+				Box boxA;
+				boxA.vtxcoords->x1 = -1.0f + mainprogram->numw;
+				boxA.vtxcoords->y1 = 1.0f - mainprogram->layh;
+				boxA.vtxcoords->w = mainprogram->layw * 3;
+				boxA.vtxcoords->h = mainprogram->layh;
+				boxA.upvtxtoscr();
+				Box boxB;
+				boxB.vtxcoords->x1 = mainprogram->numw;
+				boxB.vtxcoords->y1 = 1.0f - mainprogram->layh;
+				boxB.vtxcoords->w = mainprogram->layw * 3;
+				boxB.vtxcoords->h = mainprogram->layh;
+				boxB.upvtxtoscr();
+				if (boxA.in(mainprogram->mx, mainprogram->my, true)) {
+					draw_box(nullptr, lightblue, -1.0f + mainprogram->numw, 1.0f - mainprogram->layh, mainprogram->layw * 3, mainprogram->layh, -1);
+					if (mainprogram->lmsave) {
+						mainmix->mousedeck = 0;
+						mainmix->open_deck(mainprogram->dragbinel->path, 1);
+						mainprogram->rightmouse = true;
+						binsmain->handle(0);
+						enddrag();
+					}
+				}
+				else if (boxB.in(mainprogram->mx, mainprogram->my, true)) {
+					draw_box(nullptr, lightblue, mainprogram->numw, 1.0f - mainprogram->layh, mainprogram->layw * 3, mainprogram->layh, -1);
+					if (mainprogram->lmsave) {
+						mainmix->mousedeck = 1;
+						mainmix->open_deck(mainprogram->dragbinel->path, 1);
+						enddrag();
+					}
+				}
+			}
+		}
+		else if (mainprogram->dragbinel->type == ELEM_MIX) {
+			if (!mainprogram->binsscreen) {
+				// check drop of dragged mix into mix
+				Box box;
+				box.vtxcoords->x1 = -1.0f + mainprogram->numw;
+				box.vtxcoords->y1 = 1.0f - mainprogram->layh;
+				box.vtxcoords->w = mainprogram->layw * 6 + mainprogram->numw;
+				box.vtxcoords->h = mainprogram->layh;
+				box.upvtxtoscr();
+				if (box.in(mainprogram->mx, mainprogram->my, true)) {
+					draw_box(nullptr, lightblue, -1.0f + mainprogram->numw, 1.0f - mainprogram->layh, mainprogram->layw * 6 + mainprogram->numw, mainprogram->layh, -1);
+					if (mainprogram->lmsave) {
+						mainmix->open_mix(mainprogram->dragbinel->path.c_str());
+						enddrag();
+						mainprogram->leftmouse = false;
+						mainprogram->rightmouse = true;
+						binsmain->handle(0);
+						enddrag();
+					}
+				}
+			}
+		}
 	}
+
 
 	// multi opening of files, handle one per loop
 	if (mainprogram->openfiles) {
@@ -9890,8 +9740,9 @@ void the_loop() {
 		mainmix->mouseshelf->open_shelffiles();
 	}
 
+
 	// implementation of a basic menu when mouse at top of screen
-	if (mainprogram->my == 0) {
+	if (mainprogram->my == 0 and !mainprogram->transforming) {
 		mainprogram->intopmenu = true;
 	}
 	if (mainprogram->intopmenu) {
@@ -9930,7 +9781,7 @@ void the_loop() {
 		}
 	}
 	
-	if ((mainprogram->leftmouse and (mainprogram->dragbinel or binsmain->dragmix or binsmain->dragdeck)) or mainprogram->drag) {
+	if ((mainprogram->leftmouse and mainprogram->dragbinel) or mainprogram->drag) {
 		enddrag();
 		mainprogram->leftmouse = false;
 	}
@@ -11037,107 +10888,7 @@ void open_genmidis(std::string path) {
 	rfile.close();
 }
 
-BinElement *find_element(int size, int k, int i, int j, bool overlapchk) {
-	if (overlapchk) {
-		std::vector<int> rows;
-		for (int m = 0; m < 24; m++) {
-			rows.push_back(0);
-		}
-		for (int m = 0; m < binsmain->currbin->decks.size(); m++) {
-			BinDeck *bd = binsmain->currbin->decks[m];
-			if (bd == binsmain->dragdeck) continue;
-			for (int n = 0; n < bd->height; n++) {
-				if (bd->i == 0) rows[bd->j + n] += 1;
-				if (bd->i == 3) rows[bd->j + n] += 2;
-			}
-		}
-		for (int m = 0; m < binsmain->currbin->mixes.size(); m++) {
-			BinMix *bm = binsmain->currbin->mixes[m];
-			if (bm == binsmain->dragmix) {
-				continue;
-			}
-			for (int n = 0; n < bm->height; n++) {
-				rows[bm->j + n] = 3;
-			}
-		}
-		int pos1 = j;
-		int pos2 = j;
-		int newi = i;
-		j = -1;
-		while (pos1 >= 0 or pos2 < 24) {
-			bool found1 = true;
-			if (pos1 >= 0) {
-				for (int m = 0; m <= (int)((size - 1) / 3); m++) {
-					if (rows[pos1 + m] == 1) {
-						if (binsmain->inserting == 2) {
-							found1 = false;
-							break;
-						}
-						else newi = 3;
-					}
-					else if (rows[pos1 + m] == 2) {
-						if (binsmain->inserting == 2) {
-							found1 = false;
-							break;
-						}
-						else newi = 0;
-					}
-					else if (rows[pos1 + m] == 3) {
-						found1 = false;
-						break;
-					}
-				}
-				if (found1) {
-					i = newi;
-					j = pos1;
-					break;
-				}
-			}
-			if (pos2 < 24) {
-				bool found2 = true;
-				for (int m = 0; m <= (int)((size - 1) / 3); m++) {
-					if (rows[pos2 + m] == 1) {
-						if (binsmain->inserting == 2) {
-							found2 = false;
-							break;
-						}
-						else newi = 3;
-					}
-					else if (rows[pos2 + m] == 2) {
-						if (binsmain->inserting == 2) {
-							found2 = false;
-							break;
-						}
-						else newi = 0;
-					}
-					else if (rows[pos2 + m] == 3) {
-						found2 = false;
-						break;
-					}
-				}
-				if (found2) {
-					i = newi;
-					j = pos2;
-					break;
-				}
-			}
-			pos1--;
-			pos2++;
-		}
-		if (j == -1) return nullptr;
-	}
-	
-	int kk = ((int)(k / 3) * 6) + (k % 3);
-	int move = (j * 6 + i + 144) % 3;
-	int fronti = (int)(i / 3) * 3 + ((144 + i - move) % 3);
-	int frontj = (int)((j * 6 + i - move) / 6);
-	int intm = (144 - (fronti + frontj * 6) - (((int)((size - 1) / 3) * 6) + 3));
-	intm = (intm < 0) * intm;
-	int jj = frontj + (int)((kk + fronti + intm) / 6) - ((kk + fronti + intm) < 0);
-	int ii = ((kk + intm + 144) % 6 + fronti + 144) % 6;
 
-	return binsmain->currbin->elements[ii * 24 + jj];
-}
 
 
 
@@ -11917,16 +11668,6 @@ int main(int argc, char* argv[]){
 			}
 			else if (mainprogram->pathto == "OPENBINFILES") {
 				binsmain->openbinfile = true;
-			}
-			else if (mainprogram->pathto == "OPENBINDECK") {
-				std::string str(mainprogram->path);
-				mainprogram->currdeckdir = dirname(str);
-				binsmain->open_bindeck(str);
-			}
-			else if (mainprogram->pathto == "OPENBINMIX") {
-				std::string str(mainprogram->path);
-				mainprogram->currmixdir = dirname(str);
-				binsmain->open_binmix(str);
 			}
 			else if (mainprogram->pathto == "CHOOSEDIR") {
 				std::string str(mainprogram->path);
