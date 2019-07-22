@@ -246,7 +246,9 @@ void BinsMain::handle(bool draw) {
 				draw_box(nullptr, color, box->vtxcoords->x1 - 0.01f, box->vtxcoords->y1 - 0.01f, box->vtxcoords->w + 0.02f, box->vtxcoords->h + 0.02f, -1);
 				draw_box(box, -1);  //in case of alpha thumbnail
 				draw_box(box, binel->tex);
-				if (remove_extension(basename(binel->path)) != "") render_text(basename(binel->path).substr(0, 20), white, box->vtxcoords->x1, box->vtxcoords->y1 - 0.02f, 0.00045f, 0.00075f);
+				if (binel->path != "") {
+					if (remove_extension(basename(binel->path)) != "") render_text(basename(binel->path).substr(0, 20), white, box->vtxcoords->x1, box->vtxcoords->y1 - 0.02f, 0.00045f, 0.00075f);
+				}
 			}
 			// draw big grey areas next to each element column to cut off element titles
 			Box* box = this->elemboxes[i * 12];
@@ -785,18 +787,31 @@ void BinsMain::handle(bool draw) {
 		for (int j = 0; j < 12; j++) {
 			for (int i = 0; i < 12; i++) {
 				// handle elements, row per row
-				Box *box = this->elemboxes[i * 12 + j];
+				Box* box = this->elemboxes[i * 12 + j];
 				box->upvtxtoscr();
-				BinElement *binel = this->currbin->elements[i * 12 + j];
+				BinElement* binel = this->currbin->elements[i * 12 + j];
 				if (draw) {
 					// show if element encoding/awaiting encoding
 					if (binel->encwaiting) {
 						render_text("Waiting...", white, box->vtxcoords->x1 + tf(0.005f), box->vtxcoords->y1 + box->vtxcoords->h - tf(0.015f), 0.0005f, 0.0008f);
 					}
 					else if (binel->encoding) {
+						float progress = binel->encodeprogress;
+						if (binel->type == ELEM_DECK or binel->type == ELEM_MIX) {
+							if (binel->allhaps) {
+								progress /= binel->allhaps;
+							}
+							else progress = 0.0f;
+						}
 						render_text("Encoding...", white, box->vtxcoords->x1 + tf(0.005f), box->vtxcoords->y1 + box->vtxcoords->h - tf(0.015f), 0.0005f, 0.0008f);
-						draw_box(black, white, box->vtxcoords->x1, box->vtxcoords->y1 + box->vtxcoords->h - tf(0.045f), binel->encodeprogress * 0.1f, 0.02f, -1);
+						draw_box(black, white, box->vtxcoords->x1, box->vtxcoords->y1 + box->vtxcoords->h - tf(0.045f), progress * 0.1f, 0.02f, -1);
 					}
+				}
+				if (binel->encoding and binel->encthreads == 0 and (binel->type == ELEM_DECK or binel->type == ELEM_MIX)) {
+					binel->encoding = false;
+					boost::filesystem::rename(remove_extension(binel->path) + ".temp", binel->path);
+					this->do_save_bin(mainprogram->project->binsdir + this->currbin->name + ".bin");
+					this->open_bin(mainprogram->project->binsdir + this->currbin->name + ".bin", this->currbin);
 				}
 				if ((box->in() or mainprogram->rightmouse) and !binel->encoding) {
 					if (draw) {
@@ -1597,7 +1612,7 @@ void BinsMain::do_save_bin(const std::string& path) {
 	filestoadd2.push_back(filestoadd);
 	concat_files(outputfile, path, filestoadd2);
 	outputfile.close();
-	boost::filesystem::rename(mainprogram->temppath + "tempconcatbin", path);
+	boost::filesystem::rename(tcbpath, path);
 }
 
 Bin *BinsMain::new_bin(const std::string &name) {
@@ -1770,7 +1785,7 @@ std::tuple<std::string, std::string> BinsMain::hap_binel(BinElement *binel, BinE
    	std::string apath = "";
 	std::string rpath = "";
 	if (binel->type == ELEM_FILE) {
-		std::thread hap (&BinsMain::hap_encode, this, binel->path, binel, nullptr);
+		std::thread hap (&BinsMain::hap_encode, this, binel->path, binel, bdm);
 		if (!mainprogram->threadmode) {
 			#ifdef _WIN64
 			SetThreadPriority((void*)hap.native_handle(), THREAD_PRIORITY_LOWEST);
@@ -1781,6 +1796,8 @@ std::tuple<std::string, std::string> BinsMain::hap_binel(BinElement *binel, BinE
 		}
 		hap.detach();
 		binel->path = remove_extension(binel->path) + "_hap.mov";
+		apath = binel->path;
+		rpath = mainprogram->docpath + boost::filesystem::relative(apath, mainprogram->docpath).string();
 	}
 	else {
 		std::ifstream rfile;
@@ -1839,8 +1856,6 @@ std::tuple<std::string, std::string> BinsMain::hap_binel(BinElement *binel, BinE
 			AVFormatContext *video = nullptr;
 			AVCodecParameters *cpm = nullptr;
 			int idx;
-			printf("pathname %s\n", path.c_str());
-			fflush(stdout);
 			avformat_open_input(&video, path.c_str(), nullptr, nullptr);
 			avformat_find_stream_info(video, nullptr);
 			open_codec_context(&idx, video, AVMEDIA_TYPE_VIDEO);
@@ -1874,13 +1889,18 @@ std::tuple<std::string, std::string> BinsMain::hap_binel(BinElement *binel, BinE
 		rfile.close();
 		boost::filesystem::rename(remove_extension(binel->path) + ".temp", binel->path);
 	}
-	std::string bpath = mainprogram->project->binsdir + this->currbin->name + ".bin";
-	this->save_bin(bpath);
-	
+	if (!bdm) {
+		std::string bpath = mainprogram->project->binsdir + this->currbin->name + ".bin";
+		this->do_save_bin(bpath);
+	}
+
 	return {apath, rpath};
 }				
 	
 void BinsMain::hap_deck(BinElement* bd) {
+	bd->allhaps = 0;
+	bd->encodeprogress = 0.0f;
+	bd->encoding = true;
 	// hap encode a bindeck
 	std::ifstream rfile;
 	rfile.open(bd->path);
@@ -1888,21 +1908,17 @@ void BinsMain::hap_deck(BinElement* bd) {
 	wfile.open(remove_extension(bd->path) + ".temp");
 	std::string istring;
 	bd->encthreads = 0;
-	std::string apath;
-	std::string rpath;
-	if (bd->path != "") {
-		bd->encthreads++;
-	}
-	else {
-		apath = "";
-		rpath = "";
-	}
+	std::string apath = "";
+	std::string rpath = "";
+
 	while (getline(rfile, istring)) {
 		if (istring == "FILENAME") {
 			getline(rfile, istring);
-			BinElement binel;
-			binel.path = istring;
-			std::tuple<std::string, std::string> output = this->hap_binel(&binel, bd);
+			BinElement *binel = new BinElement;
+			binel->path = istring;
+			binel->type = ELEM_FILE;
+			bd->encthreads++;
+			std::tuple<std::string, std::string> output = this->hap_binel(binel, bd);
 			apath = std::get<0>(output);
 			rpath = std::get<1>(output);
 			wfile << "FILENAME\n";
@@ -1914,21 +1930,21 @@ void BinsMain::hap_deck(BinElement* bd) {
 		}
 		else if (istring == "RELPATH") {
 			getline(rfile, istring);
-			break;
 		}
 		else {
 			wfile << istring;
 			wfile << "\n";
 		}
 	}
-	wfile.close();
 	rfile.close();
-	boost::filesystem::rename(remove_extension(bd->path) + ".temp", bd->path);
-	this->save_bin(mainprogram->project->binsdir + this->currbin->name + ".bin");
-	this->open_bin(mainprogram->project->binsdir + this->currbin->name + ".bin", this->currbin);
+	wfile.close();
+	bd->allhaps = bd->encthreads;
 }
 
 void BinsMain::hap_mix(BinElement * bm) {
+	bm->allhaps = 0;
+	bm->encodeprogress = 0.0f;
+	bm->encoding = true;
 	// hap encode a binmix
 	std::ifstream rfile;
 	rfile.open(bm->path);
@@ -1939,13 +1955,14 @@ void BinsMain::hap_mix(BinElement * bm) {
 	std::string apath;
 	std::string rpath;
 	if (bm->path != "") {
-		bm->encthreads++;
 		while (getline(rfile, istring)) {
 			if (istring == "FILENAME") {
 				getline(rfile, istring);
-				BinElement binel;
-				binel.path = istring;
-				std::tuple<std::string, std::string> output = this->hap_binel(&binel, bm);
+				BinElement *binel = new BinElement;
+				binel->path = istring;
+				binel->type = ELEM_FILE;
+				bm->encthreads++;
+				std::tuple<std::string, std::string> output = this->hap_binel(binel, bm);
 				apath = std::get<0>(output);
 				rpath = std::get<1>(output);
 				wfile << "FILENAME\n";
@@ -1957,7 +1974,6 @@ void BinsMain::hap_mix(BinElement * bm) {
 			}
 			else if (istring == "RELPATH") {
 				getline(rfile, istring);
-				break;
 			}
 			else {
 				wfile << istring;
@@ -1965,12 +1981,10 @@ void BinsMain::hap_mix(BinElement * bm) {
 			}
 		}
 	}
-	wfile.close();
 	rfile.close();
-	boost::filesystem::rename(remove_extension(bm->path) + ".temp", bm->path);
-	this->save_bin(mainprogram->project->binsdir + this->currbin->name + ".bin");
-	this->open_bin(mainprogram->project->binsdir + this->currbin->name + ".bin", this->currbin);
-}	
+	wfile.close();
+	bm->allhaps = bm->encthreads;
+}
 
 void BinsMain::hap_encode(const std::string srcpath, BinElement *binel, BinElement *bdm) {
 	// do the actual hap encoding
@@ -2020,7 +2034,8 @@ void BinsMain::hap_encode(const std::string srcpath, BinElement *binel, BinEleme
 	binel->encwaiting = false;
 	binel->encoding = true;
 	binel->encodeprogress = 0.0f;
-	
+	float oldprogress = 0.0f;
+
 	numf = source_stream->nb_frames;
 	if (numf == 0) {
 		numf = (double)source->duration * (double)source_stream->avg_frame_rate.num / (double)source_stream->avg_frame_rate.den / (double)1000000.0f;
@@ -2091,8 +2106,10 @@ void BinsMain::hap_encode(const std::string srcpath, BinElement *binel, BinEleme
 	int frame = 0;
 	int count = 0;
     while (count < numf) {
-    		binel->encodeprogress = (float)count / (float)numf;
-    		// decode a frame
+		binel->encodeprogress = (float)count / (float)numf;
+		bdm->encodeprogress += binel->encodeprogress - oldprogress;
+		oldprogress = binel->encodeprogress;
+		// decode a frame
 		av_init_packet(&pkt);
 		pkt.data = nullptr;
 		pkt.size = 0;

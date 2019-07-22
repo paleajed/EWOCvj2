@@ -98,6 +98,7 @@ class BinElement {
 		bool encoding = false;
 		int encthreads;
 		float encodeprogress;
+		int allhaps = 0;
 		BinElement();
 		~BinElement();
 		BinElement* next();
