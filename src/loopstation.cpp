@@ -267,6 +267,7 @@ void LoopStationElement::set_params() {
 	event = this->eventlist[this->eventpos];
 	while (this->speedadaptedtime > std::get<0>(event)) {
 		Param *par = std::get<1>(event);
+		lpc = lpc;
 		if (par != mainmix->adaptparam) {
 			if (std::find(this->lpst->allparams.begin(), this->lpst->allparams.end(), par) != this->lpst->allparams.end()) {
 				par->value = std::get<2>(event);
@@ -329,12 +330,31 @@ void LoopStationElement::add_param() {
 				mainmix->adaptparam = nullptr;
 				return;
 			}
+			if (mainmix->adaptparam == lvec[j]->blendnode->wipex) {
+				this->layers.emplace(lvec[j]);
+				mainmix->adaptparam = lvec[j]->blendnode->wipey;
+				this->add_param();
+				mainmix->adaptparam = nullptr;
+				return;
+			}
 			if (mainmix->adaptparam == lvec[j]->scale) {
 				this->layers.emplace(lvec[j]);
 				mainmix->adaptparam = nullptr;
 				return;
 			}
 		}
+	}
+	if (mainmix->adaptparam == mainmix->wipex[0]) {
+		mainmix->adaptparam = mainmix->wipey[0];
+		this->add_param();
+		mainmix->adaptparam = nullptr;
+		return;
+	}
+	if (mainmix->adaptparam == mainmix->wipex[1]) {
+		mainmix->adaptparam = mainmix->wipey[1];
+		this->add_param();
+		mainmix->adaptparam = nullptr;
+		return;
 	}
 }
 

@@ -91,7 +91,9 @@ BlendNode::BlendNode() {
 	this->in2tex = -1;
 	this->fbo = -1;
 	this->fbotex = -1;
-    this->mixfac = new Param;
+	this->wipex = new Param;
+	this->wipey = new Param;
+	this->mixfac = new Param;
     this->mixfac->name = "Factor";
     this->mixfac->value = 0.5f;
     this->mixfac->range[0] = 0.0f;

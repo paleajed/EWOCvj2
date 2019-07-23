@@ -1658,27 +1658,36 @@ float tf(float vtxcoord) {
 
 Shelf::Shelf(bool side) {
 	this->side = side;
-	float boxwidth = 0.1f;
 	for (int i = 0; i < 16; i++) {
-		this->paths[i] = "";
-		this->types[i] = ELEM_FILE;
-		glGenTextures(1, &this->texes[i]);
-		glBindTexture(GL_TEXTURE_2D, this->texes[i]);
-		glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR);
-		glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
-		
 		this->buttons.push_back(new Button(false));
-		Box *box = this->buttons[i]->box;
-		box->vtxcoords->x1 = -1.0f + (i % 4) * boxwidth + (2.0f - boxwidth * 4) * side;
-		box->vtxcoords->h = boxwidth * (glob->w / glob->h) / (1920.0f /  1080.0f);
-		box->vtxcoords->y1 = -1.0f + (int)(3 - (i / 4)) * box->vtxcoords->h;
-		box->vtxcoords->w = boxwidth;
-		box->upvtxtoscr();
-		box->tooltiptitle = "Video launch shelf";
-		box->tooltip = "Shelf containing up to 16 videos/layerfiles for quick and easy video launching.  Left drag'n'drop from other areas, both videos and layerfiles.  Rightdrag of videos to layers launches with empty effect stack.  Rightclick launches shelf menu. ";
+		this->elements.push_back(new ShelfElement(side, i, this->buttons.back()));
 	}
 }
-	
+
+ShelfElement::ShelfElement(bool side, int pos, Button *but) {
+	float boxwidth = 0.1f;
+	this->path = "";
+	this->type = ELEM_FILE;
+	glGenTextures(1, &this->tex);
+	glBindTexture(GL_TEXTURE_2D, this->tex);
+	glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR);
+	glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
+	glGenTextures(1, &this->oldtex);
+	glBindTexture(GL_TEXTURE_2D, this->oldtex);
+	glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR);
+	glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
+
+	this->button = but;
+	Box* box = this->button->box;
+	box->vtxcoords->x1 = -1.0f + (pos % 4) * boxwidth + (2.0f - boxwidth * 4) * side;
+	box->vtxcoords->h = boxwidth * (glob->w / glob->h) / (1920.0f / 1080.0f);
+	box->vtxcoords->y1 = -1.0f + (int)(3 - (pos / 4)) * box->vtxcoords->h;
+	box->vtxcoords->w = boxwidth;
+	box->upvtxtoscr();
+	box->tooltiptitle = "Video launch shelf";
+	box->tooltip = "Shelf containing up to 16 videos/layerfiles for quick and easy video launching.  Left drag'n'drop from other areas, both videos and layerfiles.  Rightdrag of videos to layers launches with empty effect stack.  Rightclick launches shelf menu. ";
+}
+
 
 void set_fbo() {
 
@@ -3019,7 +3028,7 @@ void display_texture(Layer *lay, bool deck) {
 				}
 			}
 
-			// handle effect dragging
+			// handle effect drag
 			if (mainprogram->drageff) {
 				int pos;
 				for (int j = lay->effscroll[cat]; j < evec.size() + 1; j++) {
@@ -3483,21 +3492,22 @@ void midi_set() {
 			pos = std::find(mainprogram->shelves[1]->buttons.begin(), mainprogram->shelves[1]->buttons.end(), mainmix->midishelfbutton) - mainprogram->shelves[1]->buttons.begin();
 			shelf = 1;
 		}
-		if (mainprogram->shelves[shelf]->types[pos] == ELEM_FILE) {
-			mainmix->currlay->open_video(0, mainprogram->shelves[shelf]->paths[pos], true);
+		ShelfElement* elem = mainprogram->shelves[shelf]->elements[pos];
+		if (elem->type == ELEM_FILE) {
+			mainmix->currlay->open_video(0, elem->path, true);
 		}
-		else if (mainprogram->shelves[shelf]->types[pos] == ELEM_IMAGE) {
-			mainmix->currlay->open_image(mainprogram->shelves[shelf]->paths[pos]);
+		else if (elem->type == ELEM_IMAGE) {
+			mainmix->currlay->open_image(elem->path);
 		}
-		else if (mainprogram->shelves[shelf]->types[pos] == ELEM_LAYER) {
-			mainmix->open_layerfile(mainprogram->shelves[shelf]->paths[pos], mainmix->currlay, true, false);
+		else if (elem->type == ELEM_LAYER) {
+			mainmix->open_layerfile(elem->path, mainmix->currlay, true, false);
 		}
-		else if (mainprogram->shelves[shelf]->types[pos] == ELEM_DECK) {
+		else if (elem->type == ELEM_DECK) {
 			mainmix->mousedeck = mainmix->currlay->deck;
-			mainmix->open_deck(mainprogram->shelves[shelf]->paths[pos], true);
+			mainmix->open_deck(elem->path, true);
 		}
-		else if (mainprogram->shelves[shelf]->types[pos] == ELEM_MIX) {
-			mainmix->open_mix(mainprogram->shelves[shelf]->paths[pos]);
+		else if (elem->type == ELEM_MIX) {
+			mainmix->open_mix(elem->path);
 		}
 		mainmix->midishelfbutton = nullptr;
 	}
@@ -4160,9 +4170,9 @@ void onestepfrom(bool stage, Node *node, Node *prevnode, GLuint prevfbotex, GLui
 					GLint dir = glGetUniformLocation(mainprogram->ShaderProgram, "dir");
 					glUniform1i(dir, bnode->wipedir);
 					GLfloat xpos = glGetUniformLocation(mainprogram->ShaderProgram, "xpos");
-					glUniform1f(xpos, bnode->wipex);
+					glUniform1f(xpos, bnode->wipex->value);
 					GLfloat ypos = glGetUniformLocation(mainprogram->ShaderProgram, "ypos");
-					glUniform1f(ypos, bnode->wipey);
+					glUniform1f(ypos, bnode->wipey->value);
 				}
 				glActiveTexture(GL_TEXTURE2);
 				glBindTexture(GL_TEXTURE_2D, bnode->in2tex);
@@ -4426,9 +4436,9 @@ bool display_mix() {
 			GLint dir = glGetUniformLocation(mainprogram->ShaderProgram, "dir");
 			glUniform1i(dir, mainmix->wipedir[0]);
 			GLfloat xpos = glGetUniformLocation(mainprogram->ShaderProgram, "xpos");
-			glUniform1f(xpos, mainmix->wipex[0]);
+			glUniform1f(xpos, mainmix->wipex[0]->value);
 			GLfloat ypos = glGetUniformLocation(mainprogram->ShaderProgram, "ypos");
-			glUniform1f(ypos, mainmix->wipey[0]);
+			glUniform1f(ypos, mainmix->wipey[0]->value);
 		}
 		node = (MixNode*)mainprogram->nodesmain->mixnodes[0];
 		glActiveTexture(GL_TEXTURE1);
@@ -4455,9 +4465,9 @@ bool display_mix() {
 			GLint dir = glGetUniformLocation(mainprogram->ShaderProgram, "dir");
 			glUniform1i(dir, mainmix->wipedir[1]);
 			GLfloat xpos = glGetUniformLocation(mainprogram->ShaderProgram, "xpos");
-			glUniform1f(xpos, mainmix->wipex[1]);
+			glUniform1f(xpos, mainmix->wipex[1]->value);
 			GLfloat ypos = glGetUniformLocation(mainprogram->ShaderProgram, "ypos");
-			glUniform1f(ypos, mainmix->wipey[1]);
+			glUniform1f(ypos, mainmix->wipey[1]->value);
 			node = (MixNode*)mainprogram->nodesmain->mixnodescomp[0];
 			glActiveTexture(GL_TEXTURE1);
 			glBindTexture(GL_TEXTURE_2D, node->mixtex);
@@ -4485,9 +4495,9 @@ bool display_mix() {
 			GLint dir = glGetUniformLocation(mainprogram->ShaderProgram, "dir");
 			glUniform1i(dir, mainmix->wipedir[1]);
 			GLfloat xpos = glGetUniformLocation(mainprogram->ShaderProgram, "xpos");
-			glUniform1f(xpos, mainmix->wipex[1]);
+			glUniform1f(xpos, mainmix->wipex[1]->value);
 			GLfloat ypos = glGetUniformLocation(mainprogram->ShaderProgram, "ypos");
-			glUniform1f(ypos, mainmix->wipey[1]);
+			glUniform1f(ypos, mainmix->wipey[1]->value);
 			node = (MixNode*)mainprogram->nodesmain->mixnodescomp[0];
 			glActiveTexture(GL_TEXTURE1);
 			glBindTexture(GL_TEXTURE_2D, node->mixtex);
@@ -4760,42 +4770,54 @@ void Shelf::handle() {
 	float grey[] = { 0.4f, 0.4f, 0.4f, 1.0f };
 	float pink[] = { 1.0f, 0.5f, 0.5f, 1.0f };
 	for (int i = 0; i < 16; i++) {
+		ShelfElement* elem = this->elements[i];
 		// border coloring according to element type
-		if (this->types[i] == ELEM_LAYER) {
+		if (elem->type == ELEM_LAYER) {
 			draw_box(orange, orange, this->buttons[i]->box, -1);
-			draw_box(nullptr, orange, this->buttons[i]->box->vtxcoords->x1 + tf(0.005f), this->buttons[i]->box->vtxcoords->y1, this->buttons[i]->box->vtxcoords->w - tf(0.005f), this->buttons[i]->box->vtxcoords->h - tf(0.005f), this->texes[i]);
+			draw_box(nullptr, orange, this->buttons[i]->box->vtxcoords->x1 + tf(0.005f), this->buttons[i]->box->vtxcoords->y1, this->buttons[i]->box->vtxcoords->w - tf(0.005f), this->buttons[i]->box->vtxcoords->h - tf(0.005f), elem->tex);
 		}
-		else if (this->types[i] == ELEM_DECK) {
+		else if (elem->type == ELEM_DECK) {
 			draw_box(purple, purple, this->buttons[i]->box, -1);
-			draw_box(nullptr, purple, this->buttons[i]->box->vtxcoords->x1 + tf(0.005f), this->buttons[i]->box->vtxcoords->y1, this->buttons[i]->box->vtxcoords->w - tf(0.005f), this->buttons[i]->box->vtxcoords->h - tf(0.005f), this->texes[i]);
+			draw_box(nullptr, purple, this->buttons[i]->box->vtxcoords->x1 + tf(0.005f), this->buttons[i]->box->vtxcoords->y1, this->buttons[i]->box->vtxcoords->w - tf(0.005f), this->buttons[i]->box->vtxcoords->h - tf(0.005f), elem->tex);
 		}
-		else if (this->types[i] == ELEM_MIX) {
+		else if (elem->type == ELEM_MIX) {
 			draw_box(green, green, this->buttons[i]->box, -1);
-			draw_box(nullptr, green, this->buttons[i]->box->vtxcoords->x1 + tf(0.005f), this->buttons[i]->box->vtxcoords->y1, this->buttons[i]->box->vtxcoords->w - tf(0.005f), this->buttons[i]->box->vtxcoords->h - tf(0.005f), this->texes[i]);
+			draw_box(nullptr, green, this->buttons[i]->box->vtxcoords->x1 + tf(0.005f), this->buttons[i]->box->vtxcoords->y1, this->buttons[i]->box->vtxcoords->w - tf(0.005f), this->buttons[i]->box->vtxcoords->h - tf(0.005f), elem->tex);
 		}
-		else if (this->types[i] == ELEM_IMAGE) {
+		else if (elem->type == ELEM_IMAGE) {
 			draw_box(pink, pink, this->buttons[i]->box, -1);
-			draw_box(nullptr, pink, this->buttons[i]->box->vtxcoords->x1 + tf(0.005f), this->buttons[i]->box->vtxcoords->y1, this->buttons[i]->box->vtxcoords->w - tf(0.005f), this->buttons[i]->box->vtxcoords->h - tf(0.005f), this->texes[i]);
+			draw_box(nullptr, pink, this->buttons[i]->box->vtxcoords->x1 + tf(0.005f), this->buttons[i]->box->vtxcoords->y1, this->buttons[i]->box->vtxcoords->w - tf(0.005f), this->buttons[i]->box->vtxcoords->h - tf(0.005f), elem->tex);
 		}
 		else {
 			draw_box(grey, grey, this->buttons[i]->box, -1);
-			draw_box(nullptr, grey, this->buttons[i]->box->vtxcoords->x1 + tf(0.005f), this->buttons[i]->box->vtxcoords->y1, this->buttons[i]->box->vtxcoords->w - tf(0.005f), this->buttons[i]->box->vtxcoords->h - tf(0.005f), this->texes[i]);
+			draw_box(nullptr, grey, this->buttons[i]->box->vtxcoords->x1 + tf(0.005f), this->buttons[i]->box->vtxcoords->y1, this->buttons[i]->box->vtxcoords->w - tf(0.005f), this->buttons[i]->box->vtxcoords->h - tf(0.005f), elem->tex);
 		}
 
 		if (this->buttons[i]->box->in()) {
+			this->newnum = i;
 			mainprogram->inshelf = this->side;
+			if (mainprogram->dragbinel and i != this->prevnum) {
+				std::swap(elem->tex, elem->oldtex);
+				if (mainprogram->shelfdragelem) {
+					std::swap(this->elements[this->prevnum]->tex, this->elements[this->prevnum]->oldtex);
+					std::swap(mainprogram->shelfdragelem->tex, mainprogram->shelfdragelem->oldtex);
+					mainprogram->shelfdragelem->tex = elem->oldtex;
+				}
+				elem->tex = mainprogram->dragbinel->tex;
+				this->prevnum = i;
+			}
 			if (mainprogram->leftmousedown or mainprogram->rightmousedown) {
 				if (!mainprogram->dragbinel) {
 					// user starts dragging shelf element
-					if (this->paths[i] != "") {
+					if (elem->path!= "") {
 						mainprogram->dragright = mainprogram->rightmousedown;
-						mainprogram->shelfdrag = true;
+						mainprogram->shelfdragelem = elem;
 						mainprogram->leftmousedown = false;
 						mainprogram->rightmousedown = false;
 						mainprogram->dragbinel = new BinElement;
-						mainprogram->dragbinel->path = this->paths[i];
-						mainprogram->dragbinel->type = this->types[i];
-						mainprogram->dragbinel->tex = this->texes[i];
+						mainprogram->dragbinel->path = elem->path;
+						mainprogram->dragbinel->type = elem->type;
+						mainprogram->dragbinel->tex = elem->tex;
 					}
 				}
 			}
@@ -4827,9 +4849,17 @@ void Shelf::handle() {
 						count++;
 						name = remove_version(name) + "_" + std::to_string(count);
 					}
-					this->paths[i] = mainprogram->dragbinel->path;
-					this->types[i] = mainprogram->dragbinel->type;
-					this->texes[i] = copy_tex(mainprogram->dragbinel->tex);
+					if (mainprogram->shelfdragelem) {
+						std::swap(elem->path, mainprogram->shelfdragelem->path);
+						std::swap(elem->type, mainprogram->shelfdragelem->type);
+						std::swap(elem->oldtex, mainprogram->shelfdragelem->tex);
+					}
+					else {
+						elem->path = mainprogram->dragbinel->path;
+						elem->type = mainprogram->dragbinel->type;
+						elem->tex = copy_tex(mainprogram->dragbinel->tex);
+					}
+					blacken(elem->oldtex);
 					enddrag();
 					mainprogram->rightmouse = true;
 					binsmain->handle(0);
@@ -4843,6 +4873,7 @@ void Shelf::handle() {
 			}
 		}
 	}
+	this->prevnum = this->newnum;
 }
 
 void clip_intest(std::vector<Layer*>& layers, bool deck) {
@@ -6386,8 +6417,8 @@ bool exchange(Layer *lay, std::vector<Layer*> &slayers, std::vector<Layer*> &dla
 				slayers[lay->pos]->blendnode->mixfac->value = lay->blendnode->mixfac->value;
 				slayers[lay->pos]->blendnode->wipetype = lay->blendnode->wipetype;
 				slayers[lay->pos]->blendnode->wipedir = lay->blendnode->wipedir;
-				slayers[lay->pos]->blendnode->wipex = lay->blendnode->wipex;
-				slayers[lay->pos]->blendnode->wipey = lay->blendnode->wipey;
+				slayers[lay->pos]->blendnode->wipex->value = lay->blendnode->wipex->value;
+				slayers[lay->pos]->blendnode->wipey->value = lay->blendnode->wipey->value;
 				if (lay->pos == 0) inlay->lasteffnode[1] = inlay->lasteffnode[0];
 				else inlay->lasteffnode[1] = lay->lasteffnode[1];
 
@@ -6401,8 +6432,8 @@ bool exchange(Layer *lay, std::vector<Layer*> &slayers, std::vector<Layer*> &dla
 				dlayers[i]->blendnode->mixfac->value = bnode->mixfac->value;
 				dlayers[i]->blendnode->wipetype = bnode->wipetype;
 				dlayers[i]->blendnode->wipedir = bnode->wipedir;
-				dlayers[i]->blendnode->wipex = bnode->wipex;
-				dlayers[i]->blendnode->wipey = bnode->wipey;
+				dlayers[i]->blendnode->wipex->value = bnode->wipex->value;
+				dlayers[i]->blendnode->wipey->value = bnode->wipey->value;
 				if (i == 0) lay->lasteffnode[1] = lay->lasteffnode[0];
 				else lay->lasteffnode[1] = len1;
 				
@@ -6486,8 +6517,8 @@ bool exchange(Layer *lay, std::vector<Layer*> &slayers, std::vector<Layer*> &dla
 				float mfval = lay->blendnode->mixfac->value;
 				int wipetype = lay->blendnode->wipetype;
 				int wipedir = lay->blendnode->wipedir;
-				float wipex = lay->blendnode->wipex;
-				float wipey = lay->blendnode->wipey;
+				float wipex = lay->blendnode->wipex->value;
+				float wipey = lay->blendnode->wipey->value;
 				if (lay->pos > 0) {
 					lay->blendnode->in->out.clear();
 					mainprogram->nodesmain->currpage->connect_nodes(lay->blendnode->in, lay->lasteffnode[1]->out[0]);
@@ -6505,8 +6536,8 @@ bool exchange(Layer *lay, std::vector<Layer*> &slayers, std::vector<Layer*> &dla
 						nextlay->blendnode->mixfac->value = nextmfval;
 						nextlay->blendnode->wipetype = nextwipetype;
 						nextlay->blendnode->wipedir = nextwipedir;
-						nextlay->blendnode->wipex = nextwipex;
-						nextlay->blendnode->wipey = nextwipey;
+						nextlay->blendnode->wipex->value = nextwipex;
+						nextlay->blendnode->wipey->value = nextwipey;
 						if (!nextlay->effects[1].size()) {
 							nextlay->lasteffnode[1] = nextlay->lasteffnode[0];
 						}
@@ -6558,8 +6589,8 @@ bool exchange(Layer *lay, std::vector<Layer*> &slayers, std::vector<Layer*> &dla
 					dlayers[i + endx]->blendnode->mixfac->value = mfval;
 					dlayers[i + endx]->blendnode->wipetype = wipetype;
 					dlayers[i + endx]->blendnode->wipedir = wipedir;
-					dlayers[i + endx]->blendnode->wipex = wipex;
-					dlayers[i + endx]->blendnode->wipey = wipey;
+					dlayers[i + endx]->blendnode->wipex->value = wipex;
+					dlayers[i + endx]->blendnode->wipey->value = wipey;
 					mainprogram->nodesmain->currpage->connect_nodes(prevlay->lasteffnode[1], dlayers[i + endx]->lasteffnode[0], dlayers[i + endx]->blendnode);
 					if (dlayers[i + endx]->effects[1].size()) {
 						dlayers[i + endx]->blendnode->out.clear();
@@ -6638,8 +6669,8 @@ bool exchange(Layer *lay, std::vector<Layer*> &slayers, std::vector<Layer*> &dla
 				dlayers[i + endx]->blendnode->mixfac->value = mfval;
 				dlayers[i + endx]->blendnode->wipetype = wipetype;
 				dlayers[i + endx]->blendnode->wipedir = wipedir;
-				dlayers[i + endx]->blendnode->wipex = wipex;
-				dlayers[i + endx]->blendnode->wipey = wipey;
+				dlayers[i + endx]->blendnode->wipex->value = wipex;
+				dlayers[i + endx]->blendnode->wipey->value = wipey;
 				if (slayers.size() == 0) {
 					Layer *newlay = mainmix->add_layer(slayers, 0);
 					if (&slayers == &mainmix->layersA) {
@@ -7440,7 +7471,7 @@ void enddrag() {
 		mainprogram->dragclip = nullptr;
 		mainprogram->dragpath = "";
 		mainmix->moving = false;
-		mainprogram->shelfdrag = false;
+		mainprogram->shelfdragelem = nullptr;
 		mainprogram->drag = false;
 		//glDeleteTextures(1, &binsmain->dragtex);  maybe needs implementing in one case, check history
 	}
@@ -7688,6 +7719,18 @@ void the_loop() {
 		else render_text("BINS", white, -0.025f + (mainprogram->binsscreen * 0.72f), 0.24f, 0.0006f, 0.001f);
 	}
 	
+	for (int i = 0; i < mainprogram->menulist.size(); i++) {
+		// set menuondisplay: is there a menu active (state > 1)?
+		if (mainprogram->menulist[i]->state > 1) {
+			mainprogram->leftmousedown = false;
+			mainprogram->menuondisplay = true;
+			break;
+		}
+		else {
+			mainprogram->menuondisplay = false;
+		}
+	}
+
 	if (mainprogram->binsscreen) {
 		binsmain->handle(1);
 	}
@@ -7757,17 +7800,6 @@ void the_loop() {
 		}
 	}
 	else {  //the_loop else
-		for (int i = 0; i < mainprogram->menulist.size(); i++) {
-			if (mainprogram->menulist[i]->state > 1) {
-				mainprogram->leftmousedown = false;
-				mainprogram->menuondisplay = true;
-				break;
-			}
-			else {
-				mainprogram->menuondisplay = false;
-			}
-		}
-
 		if (mainmix->learn and mainprogram->rightmouse) {
 			mainmix->learn = false;
 			mainprogram->rightmouse = false;
@@ -7929,7 +7961,7 @@ void the_loop() {
 								mainprogram->del = 0;
 								break;
 							}
-							if (mainprogram->menuactivation or mainprogram->leftmouse) {
+							if ((mainprogram->menuactivation or mainprogram->leftmouse) and !mainprogram->drageff) {
 								mainprogram->effectmenu->state = 2;
 								mainmix->mouselayer = lay;
 								mainmix->mouseeffect = j;
@@ -9088,9 +9120,9 @@ void the_loop() {
 				count++;
 				name = remove_version(name) + "_" + std::to_string(count);
 			}
-			mainmix->mousedeck = k - 7;
+			mainmix->mousedeck = k - 4;
 			mainmix->save_deck(path);
-			mainmix->mouseshelf->insert_deck(path, k - 7, mainmix->mouseshelfelem);
+			mainmix->mouseshelf->insert_deck(path, k - 4, mainmix->mouseshelfelem);
 		}
 		else if (k == 6) {
 			std::string name = remove_extension(basename(mainprogram->project->path));
@@ -9447,11 +9479,17 @@ void the_loop() {
 			else if (mainprogram->deckmonitor[1]->in()) deck = 1;
 			if (deck > -1) {
 				if (mainprogram->leftmousedown) {
-					mainmix->currlay->blendnode->wipex = -(((1.0f - ((mainprogram->xscrtovtx(mainprogram->mx) - 0.55f - deck * 0.9f) / 0.3f)) - 0.5f) * 2.0f - 1.5f);
-					mainmix->currlay->blendnode->wipey = -((((2.0f - mainprogram->yscrtovtx(mainprogram->my)) / 0.3f) - 0.5f) * 2.0f - 0.50f);
+					mainmix->currlay->blendnode->wipex->value = -(((1.0f - ((mainprogram->xscrtovtx(mainprogram->mx) - 0.55f - deck * 0.9f) / 0.3f)) - 0.5f) * 2.0f - 1.5f);
+					mainmix->currlay->blendnode->wipey->value = -((((2.0f - mainprogram->yscrtovtx(mainprogram->my)) / 0.3f) - 0.5f) * 2.0f - 0.50f);
 					if (mainmix->currlay->blendnode->wipetype == 8 or mainmix->currlay->blendnode->wipetype == 9) {
-						mainmix->currlay->blendnode->wipex *= 16.0f;
-						mainmix->currlay->blendnode->wipey *= 16.0f;
+						mainmix->currlay->blendnode->wipex->value *= 16.0f;
+						mainmix->currlay->blendnode->wipey->value *= 16.0f;
+					}
+					for (int i = 0; i < loopstation->elems.size(); i++) {
+						if (loopstation->elems[i]->recbut->value) {
+							mainmix->adaptparam = mainmix->currlay->blendnode->wipex;
+							loopstation->elems[i]->add_param();
+						}
 					}
 				}
 			}
@@ -9464,19 +9502,19 @@ void the_loop() {
 					mainprogram->wipemenu->state = 2;
 					mainprogram->mixtargetmenu->value = m.size();
 					mainprogram->menuactivation = false;
-					mainmix->wipex[pm] = -(((1.0f - ((mainprogram->xscrtovtx(mainprogram->mx) - 0.7f) / 0.6f)) - 0.5f) * 2.0f - 0.5f);
-					mainmix->wipey[pm] = -((((2.0f - mainprogram->yscrtovtx(mainprogram->my)) / 0.6f) - 0.5f) * 2.0f - 0.5f);
-					if (mainmix->currlay->blendnode->wipetype == 8 or mainmix->currlay->blendnode->wipetype == 9) {
-						mainmix->wipex[pm] *= 16.0f;
-						mainmix->wipey[pm] *= 16.0f;
-					}
 				}
 				if (mainprogram->leftmousedown) {
-					mainmix->wipex[pm] = -(((1.0f - ((mainprogram->xscrtovtx(mainprogram->mx) - 0.7f) / 0.6f)) - 0.5f) * 2.0f - 0.5f);
-					mainmix->wipey[pm] = -((((2.0f - mainprogram->yscrtovtx(mainprogram->my)) / 0.6f) - 0.5f) * 2.0f - 0.5f);
+					mainmix->wipex[pm]->value = -(((1.0f - ((mainprogram->xscrtovtx(mainprogram->mx) - 0.7f) / 0.6f)) - 0.5f) * 2.0f - 0.5f);
+					mainmix->wipey[pm]->value = -((((2.0f - mainprogram->yscrtovtx(mainprogram->my)) / 0.6f) - 0.5f) * 2.0f - 0.5f);
 					if (mainmix->currlay->blendnode->wipetype == 8 or mainmix->currlay->blendnode->wipetype == 9) {
-						mainmix->wipex[pm] *= 16.0f;
-						mainmix->wipey[pm] *= 16.0f;
+						mainmix->wipex[pm]->value *= 16.0f;
+						mainmix->wipey[pm]->value *= 16.0f;
+					}
+					for (int i = 0; i < loopstation->elems.size(); i++) {
+						if (loopstation->elems[i]->recbut->value) {
+							mainmix->adaptparam = mainmix->wipex[pm];
+							loopstation->elems[i]->add_param();
+						}
 					}
 				}
 				if (mainprogram->middlemouse) {
@@ -9531,7 +9569,7 @@ void the_loop() {
 	if (mainprogram->dragbinel) {
 		//dragging something inside wormhole
 		if (sqrt(pow((mainprogram->mx / (glob->w / 2.0f) - 1.0f - (mainprogram->binsscreen * 0.72f)) * glob->w / glob->h, 2) + pow((glob->h - mainprogram->my) / (glob->h / 2.0f) - 1.25f, 2)) < 0.2f) {
-			if (!mainprogram->inwormhole and !mainprogram->menuondisplay and !mainprogram->shelfdrag) {
+			if (!mainprogram->inwormhole and !mainprogram->menuondisplay and !mainprogram->shelfdragelem) {
 				if (!mainprogram->binsscreen) {
 					set_queueing(mainmix->currlay, false);
 				}
@@ -10129,22 +10167,24 @@ void Shelf::save(const std::string &path) {
 	
 	wfile << "ELEMS\n";
 	for (int j = 0; j < 16; j++) {
-		wfile << this->paths[j];
+		ShelfElement* elem = this->elements[j];
+		wfile << elem->path;
 		wfile << "\n";
-		if (this->paths[j] == "") continue;
-		wfile << std::to_string(this->types[j]);
+		if (elem->path == "") continue;
+		wfile << std::to_string(elem->type);
 		wfile << "\n";
-		if (this->types[j] == ELEM_LAYER) {
-			filestoadd.push_back(this->paths[j]);
+		if (elem->type == ELEM_LAYER) {
+			filestoadd.push_back(elem->path);
 		}
-		filestoadd.push_back(this->jpegpaths[j]);
-		wfile << this->jpegpaths[j];
+		filestoadd.push_back(elem->jpegpath);
+		wfile << elem->jpegpath;
 		wfile << "\n";
 	}
 	wfile << "ENDOFELEMS\n";
 
 	wfile << "ELEMMIDI\n";
 	for (int j = 0; j < 16; j++) {
+		ShelfElement* elem = this->elements[j];
 		wfile << "MIDI0\n";
 		wfile << std::to_string(this->buttons[j]->midi[0]);
 		wfile << "\n";
@@ -10152,7 +10192,7 @@ void Shelf::save(const std::string &path) {
 		wfile << std::to_string(this->buttons[j]->midi[1]);
 		wfile << "\n";
 		wfile << "MIDIPORT\n";
-		wfile << this->buttons[j]->midiport;
+		wfile << elem->button->midiport;
 		wfile << "\n";
 	}
 	wfile << "ENDOFELEMMIDI\n";
@@ -10200,6 +10240,7 @@ void Shelf::open_shelffiles() {
 	bool cont = mainprogram->order_paths(true);
 	if (!cont) return;
 
+	ShelfElement* elem = this->elements[mainprogram->shelffileselem];
 	std::string str = mainprogram->paths[mainprogram->shelffilescount];
 	if (isimage(str)) {
 		mainmix->mouseshelf->open_image(str, mainprogram->shelffileselem);
@@ -10208,16 +10249,16 @@ void Shelf::open_shelffiles() {
 		mainmix->mouseshelf->open_layer(str, mainprogram->shelffileselem);
 	}
 	else if (str.substr(str.length() - 5, std::string::npos) == ".deck") {
-		this->texes[mainprogram->shelffileselem] = get_deckmixtex(str);
-		this->paths[mainprogram->shelffileselem] = str;
-		this->jpegpaths[mainprogram->shelffileselem] = "";
-		this->types[mainprogram->shelffileselem] = ELEM_DECK;
+		elem->tex = get_deckmixtex(str);
+		elem->path = str;
+		elem->jpegpath = "";
+		elem->type = ELEM_DECK;
 	}
 	else if (str.substr(str.length() - 4, std::string::npos) == ".mix") {
-		this->texes[mainprogram->shelffileselem] = get_deckmixtex(str);
-		this->paths[mainprogram->shelffileselem] = str;
-		this->jpegpaths[mainprogram->shelffileselem] = "";
-		this->types[mainprogram->shelffileselem] = ELEM_MIX;
+		elem->tex = get_deckmixtex(str);
+		elem->path = str;
+		elem->jpegpath = "";
+		elem->type = ELEM_MIX;
 	}
 	else {
 		mainmix->mouseshelf->open_videofile(str, mainprogram->shelffileselem);
@@ -10225,14 +10266,14 @@ void Shelf::open_shelffiles() {
 	std::string name = remove_extension(this->basepath);
 	int count = 0;
 	while (1) {
-		this->jpegpaths[mainprogram->shelffileselem] = mainprogram->temppath + name + ".jpg";
-		if (!exists(this->jpegpaths[mainprogram->shelffileselem])) {
+		elem->jpegpath = mainprogram->temppath + name + ".jpg";
+		if (!exists(elem->jpegpath)) {
 			break;
 		}
 		count++;
 		name = remove_version(name) + "_" + std::to_string(count);
 	}
-	save_thumb(this->jpegpaths[mainprogram->shelffileselem], this->texes[mainprogram->shelffileselem]);
+	save_thumb(elem->jpegpath, elem->tex);
 
 	mainprogram->shelffileselem++;
 	mainprogram->shelffilescount++;
@@ -10245,8 +10286,9 @@ void Shelf::open_shelffiles() {
 }
 
 bool Shelf::open_videofile(const std::string &path, int pos) {
-	this->paths[pos] = path;
-	this->types[pos] = ELEM_FILE;
+	ShelfElement* elem = this->elements[pos];
+	elem->path = path;
+	elem->type = ELEM_FILE;
 	Layer *lay = new Layer(true);
 	lay->dummy = true;
 	lay->open_video(0, path, true);
@@ -10257,7 +10299,7 @@ bool Shelf::open_videofile(const std::string &path, int pos) {
 	lay->opened = false;
 	olock.unlock();
 	if (lay->openerr) {
-		this->paths[pos] = "";
+		elem->path = "";
 		lay->closethread = true;
 		while (lay->closethread) {
 			lay->ready = true;
@@ -10287,7 +10329,7 @@ bool Shelf::open_videofile(const std::string &path, int pos) {
 	else {
 		glTexSubImage2D(GL_TEXTURE_2D, 0, 0, 0, lay->decresult->width, lay->decresult->height, GL_BGRA, GL_UNSIGNED_BYTE, lay->decresult->data);
 	}
-	this->texes[pos] = copy_tex(lay->texture);
+	elem->tex = copy_tex(lay->texture);
 	
 	lay->closethread = true;
 	while (lay->closethread) {
@@ -10301,8 +10343,9 @@ bool Shelf::open_videofile(const std::string &path, int pos) {
 	
 bool Shelf::open_layer(const std::string& path, int pos) {
 	float black[] = { 0.0f, 0.0f, 0.0f, 1.0f };
-	this->paths[pos] = path;
-	this->types[pos] = ELEM_LAYER;
+	ShelfElement* elem = this->elements[pos];
+	elem->path = path;
+	elem->type = ELEM_LAYER;
 	Layer* lay = new Layer(false);
 	lay->dummy = true;
 	lay->pos = 0;
@@ -10317,7 +10360,7 @@ bool Shelf::open_layer(const std::string& path, int pos) {
 	lay->node->calc = true;
 	lay->node->walked = false;
 	if (lay->openerr) {
-		this->paths[pos] = "";
+		elem->path = "";
 		lay->closethread = true;
 		while (lay->closethread) {
 			lay->ready = true;
@@ -10364,10 +10407,10 @@ bool Shelf::open_layer(const std::string& path, int pos) {
 	lay->fbotex = copy_tex(lay->texture);
 	onestepfrom(0, lay->node, nullptr, -1, -1);
 	if (lay->effects[0].size()) {
-		this->texes[pos] = copy_tex(lay->effects[0][lay->effects[0].size() - 1]->fbotex);
+		elem->tex = copy_tex(lay->effects[0][lay->effects[0].size() - 1]->fbotex);
 	}
 	else {
-		this->texes[pos] = copy_tex(lay->fbotex);
+		elem->tex = copy_tex(lay->fbotex);
 	}
 	lay->closethread = true;
 	while (lay->closethread) {
@@ -10380,33 +10423,36 @@ bool Shelf::open_layer(const std::string& path, int pos) {
 }
 
 bool Shelf::insert_deck(const std::string& path, bool deck, int pos) {
-	this->paths[pos] = path;
-	this->types[pos] = ELEM_DECK;
-	if (mainprogram->prevmodus) this->texes[pos] = copy_tex(mainprogram->nodesmain->mixnodes[deck]->mixtex);
-	else this->texes[pos] = copy_tex(mainprogram->nodesmain->mixnodescomp[deck]->mixtex);
+	ShelfElement* elem = this->elements[pos];
+	elem->path = path;
+	elem->type = ELEM_DECK;
+	if (mainprogram->prevmodus) elem->tex = copy_tex(mainprogram->nodesmain->mixnodes[deck]->mixtex);
+	else elem->tex = copy_tex(mainprogram->nodesmain->mixnodescomp[deck]->mixtex);
 	std::string jpegpath = path + ".jpeg";
-	save_thumb(jpegpath, this->texes[pos]);
+	save_thumb(jpegpath, elem->tex);
 	return 1;
 }
 
 bool Shelf::insert_mix(const std::string& path, int pos) {
-	this->paths[pos] = path;
-	this->types[pos] = ELEM_MIX;
-	if (mainprogram->prevmodus) this->texes[pos] = copy_tex(mainprogram->nodesmain->mixnodes[2]->mixtex);
-	else this->texes[pos] = copy_tex(mainprogram->nodesmain->mixnodescomp[2]->mixtex);
+	ShelfElement* elem = this->elements[pos];
+	elem->path = path;
+	elem->type = ELEM_MIX;
+	if (mainprogram->prevmodus) elem->tex = copy_tex(mainprogram->nodesmain->mixnodes[2]->mixtex);
+	else elem->tex = copy_tex(mainprogram->nodesmain->mixnodescomp[2]->mixtex);
 	std::string jpegpath = path + ".jpeg";
-	save_thumb(jpegpath, this->texes[pos]);
+	save_thumb(jpegpath, elem->tex);
 	return 1;
 }
 
 bool Shelf::open_image(const std::string &path, int pos) {
+	ShelfElement* elem = this->elements[pos];
 	ILuint tempim;
 	ilGenImages(1, &tempim);
 	ilBindImage(tempim);
 	ILboolean ret = ilLoadImage(path.c_str());
 	if (ret == IL_FALSE) return 0;
-	this->paths[pos] = path;
-	this->types[pos] = ELEM_IMAGE;
+	elem->path = path;
+	elem->type = ELEM_IMAGE;
 	float x = ilGetInteger(IL_IMAGE_WIDTH);
 	float y = ilGetInteger(IL_IMAGE_HEIGHT);
 	int iw, ih, xs, ys;
@@ -10424,9 +10470,9 @@ bool Shelf::open_image(const std::string &path, int pos) {
 	}
 	int bpp = ilGetInteger(IL_IMAGE_BPP);
 	glActiveTexture(GL_TEXTURE0);
-	glDeleteTextures(1, &this->texes[pos]);
-	glGenTextures(1, &this->texes[pos]);
-	glBindTexture(GL_TEXTURE_2D, this->texes[pos]);
+	glDeleteTextures(1, &elem->tex);
+	glGenTextures(1, &elem->tex);
+	glBindTexture(GL_TEXTURE_2D, elem->tex);
 	if (bpp == 3) {
 		glTexStorage2D(GL_TEXTURE_2D, 1, GL_RGBA8, iw, ih);
 		glTexSubImage2D(GL_TEXTURE_2D, 0, xs, ys, x, y, GL_RGB, GL_UNSIGNED_BYTE, ilGetData());
@@ -10460,32 +10506,33 @@ bool Shelf::open(const std::string &path) {
 			int count = 0;
 			while (getline(rfile, istring)) {
 				if (istring == "ENDOFELEMS") break;
-				this->paths[count] = istring;
-				if (this->paths[count] == "") {
+				ShelfElement* elem = this->elements[count];
+				elem->path = istring;
+				if (elem->path == "") {
 					count++;
 					continue;
 				}
 				getline(rfile, istring);
-				this->types[count] = (ELEM_TYPE)std::stoi(istring);
-				if (this->types[count] == ELEM_LAYER) {
+				elem->type = (ELEM_TYPE)std::stoi(istring);
+				if (elem->type == ELEM_LAYER) {
 					if (concat) {
-						std::string name = remove_extension(basename(this->paths[count]));
+						std::string name = remove_extension(basename(elem->path));
 						int pcount = 0;
 						while (1) {
-							this->paths[count] = mainprogram->temppath + name + ".layer";
-							if (!exists(this->paths[count])) {
+							elem->path = mainprogram->temppath + name + ".layer";
+							if (!exists(elem->path)) {
 								break;
 							}
 							pcount++;
 							name = remove_version(name) + "_" + std::to_string(pcount);
 						}
-						boost::filesystem::rename(result + "_" + std::to_string(filecount) + ".file", this->paths[count]);
+						boost::filesystem::rename(result + "_" + std::to_string(filecount) + ".file", elem->path);
 						filecount++;
 					}
 				}
 				getline(rfile, istring);
-				this->jpegpaths[count] = result + "_" + std::to_string(filecount) + ".file";
-				open_thumb(result + "_" + std::to_string(filecount) + ".file", this->texes[count]);
+				elem->jpegpath = result + "_" + std::to_string(filecount) + ".file";
+				open_thumb(result + "_" + std::to_string(filecount) + ".file", elem->tex);
 				filecount++;
 				count++;
 			}
@@ -10493,18 +10540,19 @@ bool Shelf::open(const std::string &path) {
 		else if (istring == "ELEMMIDI") {
 			int count = 0;
 			while (getline(rfile, istring)) {
+				ShelfElement* elem = this->elements[count];
 				if (istring == "ENDOFELEMMIDI") break;
 				if (istring == "MIDI0") {
 					getline(rfile, istring);
-					this->buttons[count]->midi[0] = std::stoi(istring);
+					elem->button->midi[0] = std::stoi(istring);
 				}
 				if (istring == "MIDI1") {
 					getline(rfile, istring);
-					this->buttons[count]->midi[1] = std::stoi(istring);
+					elem->button->midi[1] = std::stoi(istring);
 				}
 				if (istring == "MIDIPORT") {
 					getline(rfile, istring);
-					this->buttons[count]->midiport = istring;
+					elem->button->midiport = istring;
 				}
 			}
 		}
@@ -10515,14 +10563,20 @@ bool Shelf::open(const std::string &path) {
 	return 1;
 }
 
-void Shelf::erase() {
+void blacken(GLuint tex) {
 	std::vector<int> emptydata(4096);
 	std::fill(emptydata.begin(), emptydata.end(), 0xff000000);
+	glBindTexture(GL_TEXTURE_2D, tex);
+	glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA8, 64, 64, 0, GL_BGRA, GL_UNSIGNED_BYTE, &emptydata[0]);
+}
+
+void Shelf::erase() {
 	for (int i = 0; i < 16; i++) {
-		this->paths[i] = "";
-		this->types[i] = ELEM_FILE;
-		glBindTexture(GL_TEXTURE_2D, this->texes[i]);
-		glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA8, 64, 64, 0, GL_BGRA, GL_UNSIGNED_BYTE, &emptydata[0]);
+		ShelfElement* elem = this->elements[i];
+		elem->path = "";
+		elem->type = ELEM_FILE;
+		blacken(elem->tex);
+		blacken(elem->oldtex);
 	}
 }
 	
@@ -11298,11 +11352,15 @@ int main(int argc, char* argv[]){
   	bin.push_back("Rename bin");
   	mainprogram->make_menu("binmenu", mainprogram->binmenu, bin);
 
-  	std::vector<std::string> bin2;
-  	bin2.push_back("Rename bin");
-  	mainprogram->make_menu("bin2menu", mainprogram->bin2menu, bin2);
+	std::vector<std::string> bin2;
+	bin2.push_back("Rename bin");
+	mainprogram->make_menu("bin2menu", mainprogram->bin2menu, bin2);
 
-  	std::vector<std::string> generic;
+	std::vector<std::string> binsel;
+	binsel.push_back("Delete elements");
+	mainprogram->make_menu("binselmenu", mainprogram->binselmenu, binsel);
+
+	std::vector<std::string> generic;
   	generic.push_back("New project");
   	generic.push_back("Open project");
   	generic.push_back("Save project");

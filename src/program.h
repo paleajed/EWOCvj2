@@ -15,6 +15,7 @@ class LoopStation;
 class BinsMain;
 class Bin;
 class BinElement;
+class ShelfElement;
 
 typedef enum
 {
@@ -55,27 +56,38 @@ struct mix_target_struct {
 
 
 class Shelf {
-	public:
-		bool side;
-		std::string basepath = "";
-		std::string paths[16];
-		std::string jpegpaths[16];
-		ELEM_TYPE types[16];
-		GLuint texes[16] = {0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0};
-		std::vector<Button*> buttons;
-		bool ret;
-		void handle();
-		void erase();
-		void save(const std::string &path);
-		bool open(const std::string &path);
-		void open_shelffiles();
-		bool open_videofile(const std::string &path, int pos);
-		bool open_layer(const std::string& path, int pos);
-		void open_dir();
-		bool open_image(const std::string &path, int pos);
-		bool insert_deck(const std::string& path, bool deck, int pos);
-		bool insert_mix(const std::string& path, int pos);
-		Shelf(bool side);
+public:
+	bool side;
+	std::string basepath = "";
+	std::vector<ShelfElement*> elements;
+	std::vector<Button*> buttons;
+	int prevnum;
+	int newnum = -1;
+	bool ret;
+	void handle();
+	void erase();
+	void save(const std::string& path);
+	bool open(const std::string& path);
+	void open_shelffiles();
+	bool open_videofile(const std::string& path, int pos);
+	bool open_layer(const std::string& path, int pos);
+	void open_dir();
+	bool open_image(const std::string& path, int pos);
+	bool insert_deck(const std::string& path, bool deck, int pos);
+	bool insert_mix(const std::string& path, int pos);
+	Shelf(bool side);
+};
+
+class ShelfElement {
+public:
+	std::string path;
+	std::string jpegpath;
+	ELEM_TYPE type;
+	GLuint tex = -1;
+	GLuint oldtex = -1;
+	Button* button;
+	ShelfElement(bool side, int pos, Button *but);
+	~ShelfElement();
 };
 
 class Project {
@@ -281,7 +293,8 @@ class Program {
 		Menu *dir4menu = nullptr;
 		Menu *binelmenu = nullptr;
 		Menu *binmenu = nullptr;
-		Menu *bin2menu = nullptr;
+		Menu* bin2menu = nullptr;
+		Menu* binselmenu = nullptr;
 		Menu *genericmenu = nullptr;
 		Menu* shelfmenu = nullptr;
 		Menu* filemenu = nullptr;
@@ -463,7 +476,7 @@ class Program {
 		bool openshelffiles = false;
 		int shelffileselem;
 		int shelffilescount;
-		bool shelfdrag = false;
+		ShelfElement *shelfdragelem = nullptr;
 		Shelf *shelves[2];
 		int inshelf = -1;
 		int inclips = -1;
@@ -577,6 +590,7 @@ extern GLuint copy_tex(GLuint tex);
 extern GLuint copy_tex(GLuint tex, bool yflip);
 extern GLuint copy_tex(GLuint tex, int tw, int th);
 extern GLuint copy_tex(GLuint tex, int tw, int th, bool yflip);
+extern void blacken(GLuint tex);
 
 extern GLuint set_texes(GLuint tex, GLuint *fbo, float ow, float oh);
 

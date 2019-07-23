@@ -355,8 +355,8 @@ class Mixer {
 		int wipe[2] = {-1, -1};
 		int wipedir[2] = {0, 0};
 		bool moving = false;
-		float wipex[2];
-		float wipey[2];
+		Param *wipex[2];
+		Param *wipey[2];
 		
 		float time = 0;
 		float oldtime = 0;

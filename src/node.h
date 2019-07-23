@@ -143,8 +143,8 @@ class BlendNode: public Node {
 		Param *mixfac;
 		int wipetype;
 		int wipedir;
-		float wipex;
-		float wipey;
+		Param *wipex;
+		Param *wipey;
 		Node *in2 = nullptr;
 		GLuint intex = -1;
 		GLuint in2tex = -1;

@@ -65,6 +65,19 @@ Mixer::Mixer() {
 		}
 	}
 
+	this->wipex[0] = new Param;
+	this->wipex[0]->shadervar = "xpos";
+	this->wipey[0] = new Param;
+	this->wipex[0]->shadervar = "ypos";
+	lp->allparams.push_back(this->wipex[0]);
+	lp->allparams.push_back(this->wipey[0]);
+	this->wipex[1] = new Param;
+	this->wipex[1]->shadervar = "xpos";
+	this->wipey[1] = new Param;
+	this->wipex[1]->shadervar = "ypos";
+	lpc->allparams.push_back(this->wipex[1]);
+	lpc->allparams.push_back(this->wipey[1]);
+
 	this->modebox = new Box;
 	this->modebox->vtxcoords->x1 = 0.85f;
 	this->modebox->vtxcoords->y1 = -1.0f;
@@ -116,7 +129,7 @@ Mixer::Mixer() {
 	this->crossfade->box->tooltiptitle = "Crossfade ";
 	this->crossfade->box->tooltip = "Leftdrag crossfades between deck A and deck B streams. Doubleclick allows numeric entry. ";
 	this->crossfade->box->acolor[3] = 1.0f;
-	lpc->allparams.push_back(this->crossfade);
+	lp->allparams.push_back(this->crossfade);
 	this->crossfadecomp = new Param;
 	this->crossfadecomp->name = "Crossfade"; 
 	this->crossfadecomp->value = 0.5f;
@@ -2748,8 +2761,8 @@ Layer* Mixer::clone_layer(std::vector<Layer*> &lvec, Layer* slay) {
 	dlay->blendnode->chblue = slay->blendnode->chblue;
 	dlay->blendnode->wipetype = slay->blendnode->wipetype;
 	dlay->blendnode->wipedir = slay->blendnode->wipedir;
-	dlay->blendnode->wipex = slay->blendnode->wipex;
-	dlay->blendnode->wipey = slay->blendnode->wipey;
+	dlay->blendnode->wipex->value = slay->blendnode->wipex->value;
+	dlay->blendnode->wipey->value = slay->blendnode->wipey->value;
 	
 	int buval = mainprogram->effcat[dlay->deck]->value;
 	mainprogram->effcat[dlay->deck]->value = 0;
@@ -2828,11 +2841,15 @@ void Mixer::lay_copy(std::vector<Layer*> &slayers, std::vector<Layer*> &dlayers,
 		lp1 = lp;
 		lp2 = lpc;
 		lp1->parmap[mainmix->crossfade] = mainmix->crossfadecomp;
+		lp1->parmap[mainmix->wipex[0]] = mainmix->wipex[1];
+		lp1->parmap[mainmix->wipey[0]] = mainmix->wipey[1];
 	}
 	else {
 		lp1 = lpc;
 		lp2 = lp;
 		lp1->parmap[mainmix->crossfadecomp] = mainmix->crossfade;
+		lp1->parmap[mainmix->wipex[1]] = mainmix->wipex[0];
+		lp1->parmap[mainmix->wipey[1]] = mainmix->wipey[0];
 	}
 	int pos = std::find(dlayers.begin(), dlayers.end(), mainmix->currlay) - dlayers.begin();
 	while (!dlayers.empty()) {
@@ -2874,8 +2891,8 @@ void Mixer::lay_copy(std::vector<Layer*> &slayers, std::vector<Layer*> &dlayers,
 			clay->blendnode->chblue = lay->blendnode->chblue;
 			clay->blendnode->wipetype = lay->blendnode->wipetype;
 			clay->blendnode->wipedir = lay->blendnode->wipedir;
-			clay->blendnode->wipex = lay->blendnode->wipex;
-			clay->blendnode->wipey = lay->blendnode->wipey;
+			clay->blendnode->wipex->value = lay->blendnode->wipex->value;
+			clay->blendnode->wipey->value = lay->blendnode->wipey->value;
 		}
 
 		dlayers[i]->effects[0].clear();
@@ -3037,15 +3054,15 @@ void Mixer::copy_to_comp(std::vector<Layer*> &sourcelayersA, std::vector<Layer*>
 		mainmix->crossfadecomp->value = mainmix->crossfade->value;
 		mainmix->wipe[1] = mainmix->wipe[0];
 		mainmix->wipedir[1] = mainmix->wipedir[0];
-		mainmix->wipex[1] = mainmix->wipex[0];
-		mainmix->wipey[1] = mainmix->wipey[0];
+		mainmix->wipex[1]->value = mainmix->wipex[0]->value;
+		mainmix->wipey[1]->value = mainmix->wipey[0]->value;
 	}
 	else {
 		mainmix->crossfade->value = mainmix->crossfadecomp->value;
 		mainmix->wipe[0] = mainmix->wipe[1];
 		mainmix->wipedir[0] = mainmix->wipedir[1];
-		mainmix->wipex[0] = mainmix->wipex[1];
-		mainmix->wipey[0] = mainmix->wipey[1];
+		mainmix->wipex[0]->value = mainmix->wipex[1]->value;
+		mainmix->wipey[0]->value = mainmix->wipey[1]->value;
 	}
 	
 	this->lay_copy(sourcelayersA, destlayersA, comp);
@@ -3141,8 +3158,8 @@ void Mixer::copy_to_comp(std::vector<Layer*> &sourcelayersA, std::vector<Layer*>
 				cnode->chgreen = ((BlendNode*)node)->chgreen;
 				cnode->wipetype = ((BlendNode*)node)->wipetype;
 				cnode->wipedir = ((BlendNode*)node)->wipedir;
-				cnode->wipex = ((BlendNode*)node)->wipex;
-				cnode->wipey = ((BlendNode*)node)->wipey;
+				cnode->wipex->value = ((BlendNode*)node)->wipex->value;
+				cnode->wipey->value = ((BlendNode*)node)->wipey->value;
 				destnodes.push_back(cnode);
 			}
 			else if (node->type == MIDI) {
@@ -3372,10 +3389,10 @@ std::vector<std::string> Mixer::write_layer(Layer *lay, std::ostream& wfile, boo
 	wfile << std::to_string(lay->blendnode->wipedir);
 	wfile << "\n";
 	wfile << "WIPEX\n";
-	wfile << std::to_string(lay->blendnode->wipex);
+	wfile << std::to_string(lay->blendnode->wipex->value);
 	wfile << "\n";
 	wfile << "WIPEY\n";
-	wfile << std::to_string(lay->blendnode->wipey);
+	wfile << std::to_string(lay->blendnode->wipey->value);
 	wfile << "\n";
 	
 	if (doclips and lay->clips.size()) {
@@ -3811,10 +3828,10 @@ void Mixer::do_save_mix(const std::string & path, bool modus, bool save) {
 	wfile << std::to_string(mainmix->wipedir[0]);
 	wfile << "\n";
 	wfile << "WIPEX\n";
-	wfile << std::to_string(mainmix->wipex[0]);
+	wfile << std::to_string(mainmix->wipex[0]->value);
 	wfile << "\n";
 	wfile << "WIPEY\n";
-	wfile << std::to_string(mainmix->wipey[0]);
+	wfile << std::to_string(mainmix->wipey[0]->value);
 	wfile << "\n";
 	wfile << "WIPECOMP\n";
 	wfile << std::to_string(mainmix->wipe[1]);
@@ -3823,10 +3840,10 @@ void Mixer::do_save_mix(const std::string & path, bool modus, bool save) {
 	wfile << std::to_string(mainmix->wipedir[1]);
 	wfile << "\n";
 	wfile << "WIPEXCOMP\n";
-	wfile << std::to_string(mainmix->wipex[1]);
+	wfile << std::to_string(mainmix->wipex[1]->value);
 	wfile << "\n";
 	wfile << "WIPEYCOMP\n";
-	wfile << std::to_string(mainmix->wipey[1]);
+	wfile << std::to_string(mainmix->wipey[1]->value);
 	wfile << "\n";
 
 	std::vector<std::vector<std::string>> jpegpaths;
@@ -4244,11 +4261,11 @@ void Mixer::open_mix(const std::string &path) {
 		}
 		if (istring == "WIPEX") {
 			getline(rfile, istring);
-			mainmix->wipex[0] = std::stof(istring);
+			mainmix->wipex[0]->value = std::stof(istring);
 		}
 		if (istring == "WIPEY") {
 			getline(rfile, istring);
-			mainmix->wipey[0] = std::stof(istring);
+			mainmix->wipey[0]->value = std::stof(istring);
 		}
 		if (istring == "WIPECOMP") {
 			getline(rfile, istring); 
@@ -4260,11 +4277,11 @@ void Mixer::open_mix(const std::string &path) {
 		}
 		if (istring == "WIPEXCOMP") {
 			getline(rfile, istring);
-			mainmix->wipex[1] = std::stof(istring);
+			mainmix->wipex[1]->value = std::stof(istring);
 		}
 		if (istring == "WIPEYCOMP") {
 			getline(rfile, istring);
-			mainmix->wipey[1] = std::stof(istring);
+			mainmix->wipey[1]->value = std::stof(istring);
 		}
 		int deck;
 		if (istring == "LAYERSA") {
@@ -4644,11 +4661,11 @@ int Mixer::read_layers(std::istream &rfile, const std::string &result, std::vect
 				}
 				if (istring == "WIPEX") {
 					getline(rfile, istring); 
-					lay->blendnode->wipex = std::stof(istring);
+					lay->blendnode->wipex->value = std::stof(istring);
 				}
 				if (istring == "WIPEY") {
 					getline(rfile, istring); 
-					lay->blendnode->wipey = std::stof(istring);
+					lay->blendnode->wipey->value = std::stof(istring);
 				}
 			}
 		}

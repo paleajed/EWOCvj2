@@ -663,7 +663,7 @@ bool Program::do_order_paths() {
 	this->pathboxes.back()->upvtxtoscr();
 	draw_box(white, black, this->pathboxes.back(), -1);
 	render_text("APPLY ORDER", white, -0.4f + tf(0.01f), this->pathboxes.back()->vtxcoords->y1 + tf(0.05f) - tf(0.030f), tf(0.0003f), tf(0.0005f));
-	if (this->pathboxes.back()->in()) {
+	if (this->pathboxes.back()->in() and this->dragstr == "") {
 		if (mainprogram->orderleftmouse) return true;
 	}
 

@@ -154,8 +154,12 @@ void BinsMain::handle(bool draw) {
 	float lightblue[] = { 0.5f, 0.5f, 1.0f, 1.0f };
 	float red[] = { 1.0f, 0.5f, 0.5f, 1.0f };
 	float lightgreen[] = { 0.5f, 1.0f, 0.5f, 1.0f };
+	float yellow[] = { 1.0f, 1.0f, 0.0f, 1.0f };
+
+	GLint inverted = glGetUniformLocation(mainprogram->ShaderProgram, "inverted");
 
 	//draw binelements
+	if (!mainprogram->menuondisplay) this->menubinel = nullptr;
 	if (mainprogram->menuactivation) mainprogram->menuset = 0;
 	if (draw) {
 		for (int i = 0; i < 12; i++) {
@@ -163,16 +167,18 @@ void BinsMain::handle(bool draw) {
 				Box* box = this->elemboxes[i * 12 + j];
 				BinElement* binel = this->currbin->elements[i * 12 + j];
 				if (box->in()) {
+					this->menubinel = binel;
 					if (mainprogram->menuactivation) {
 						if (binel->path != "") {
 							// Set menu when over non-empty element
-							this->menubinel = binel;
 							std::vector<std::string> binel;
 							binel.push_back("Delete element");
 							binel.push_back("Open file(s) from disk");
 							binel.push_back("Insert deck A");
 							binel.push_back("Insert deck B");
 							binel.push_back("Insert full mix");
+							binel.push_back("Load block in shelf A");
+							binel.push_back("Load block in shelf B");
 							binel.push_back("HAP encode element");
 							binel.push_back("Quit");
 							mainprogram->make_menu("binelmenu", mainprogram->binelmenu, binel);
@@ -188,6 +194,8 @@ void BinsMain::handle(bool draw) {
 							binel.push_back("Insert deck A");
 							binel.push_back("Insert deck B");
 							binel.push_back("Insert full mix");
+							binel.push_back("Load block in shelf A");
+							binel.push_back("Load block in shelf B");
 							binel.push_back("HAP encode deck");
 							binel.push_back("Quit");
 							mainprogram->make_menu("binelmenu", mainprogram->binelmenu, binel);
@@ -202,6 +210,8 @@ void BinsMain::handle(bool draw) {
 							binel.push_back("Insert deck A");
 							binel.push_back("Insert deck B");
 							binel.push_back("Insert full mix");
+							binel.push_back("Load block in shelf A");
+							binel.push_back("Load block in shelf B");
 							binel.push_back("HAP encode mix");
 							binel.push_back("Quit");
 							mainprogram->make_menu("binelmenu", mainprogram->binelmenu, binel);
@@ -245,7 +255,11 @@ void BinsMain::handle(bool draw) {
 				// visualize elements
 				draw_box(nullptr, color, box->vtxcoords->x1 - 0.01f, box->vtxcoords->y1 - 0.01f, box->vtxcoords->w + 0.02f, box->vtxcoords->h + 0.02f, -1);
 				draw_box(box, -1);  //in case of alpha thumbnail
+				if (binel->select) {
+					glUniform1i(inverted, 1);
+				}
 				draw_box(box, binel->tex);
+				glUniform1i(inverted, 0);
 				if (binel->path != "") {
 					if (remove_extension(basename(binel->path)) != "") render_text(basename(binel->path).substr(0, 20), white, box->vtxcoords->x1, box->vtxcoords->y1 - 0.02f, 0.00045f, 0.00075f);
 				}
@@ -254,7 +268,37 @@ void BinsMain::handle(bool draw) {
 			Box* box = this->elemboxes[i * 12];
 			draw_box(nullptr, darkgrey, box->vtxcoords->x1 + box->vtxcoords->w, -1.0f, 0.12f, 2.0f, -1);
 		}
-		if (mainprogram->menuset == 0 and mainprogram->menuactivation) {
+
+		if (!mainprogram->menuondisplay) this->mouseshelfnum = -1;
+		for (int i = 0; i < 3; i++) {
+			for (int j = 0; j < 3; j++) {
+				Box box;
+				box.vtxcoords->x1 = -0.965f + i * 0.48f;
+				box.vtxcoords->y1 = 0.925f - ((j % 3) + 1) * 0.6f;
+				box.vtxcoords->w = 0.48f;
+				box.vtxcoords->h = 0.6f;
+				box.upvtxtoscr();
+				draw_box(yellow, nullptr, &box, -1);
+				if (box.in()) {
+					this->mouseshelfnum = i * 3 + j;
+					if (mainprogram->menuset == 0 and mainprogram->menuactivation) {
+						// set binelmenu entries when mouse in shelf blocks box but not on bin element
+						std::vector<std::string> binel;
+						binel.push_back("Open file(s) from disk");
+						binel.push_back("Insert deck A");
+						binel.push_back("Insert deck B");
+						binel.push_back("Insert full mix");
+						binel.push_back("Load block in shelf A");
+						binel.push_back("Load block in shelf B");
+						binel.push_back("HAP encode entire bin");
+						binel.push_back("Quit");
+						mainprogram->make_menu("binelmenu", mainprogram->binelmenu, binel);
+					}
+				}
+			}
+		}
+
+		if (this->mouseshelfnum == -1 and mainprogram->menuset == 0 and mainprogram->menuactivation) {
 			// set binelmenu entries when mouse over nothing
 			std::vector<std::string> binel;
 			binel.push_back("Open file(s) from disk");
@@ -264,6 +308,59 @@ void BinsMain::handle(bool draw) {
 			binel.push_back("HAP encode entire bin");
 			binel.push_back("Quit");
 			mainprogram->make_menu("binelmenu", mainprogram->binelmenu, binel);
+		}
+
+		if (mainprogram->menuset == 0) {
+			// not in bin element -> leftmouse draws selection box
+			bool full = false;
+			if (this->menubinel) {
+				if (this->menubinel->full) full = true;
+			}
+			if (mainprogram->leftmousedown and !full and !this->inputtexes.size() and !mainprogram->intopmenu) {
+				mainprogram->leftmousedown = false;
+				if (!this->selboxing) {
+					this->selboxing = true;
+					this->selboxx = mainprogram->mx;
+					this->selboxy = mainprogram->my;
+					for (int i = 0; i < 12; i++) {
+						for (int j = 0; j < 12; j++) {
+							BinElement* binel = this->currbin->elements[i * 12 + j];
+							binel->select = false;
+						}
+					}
+				}
+			}
+			if (this->selboxing) {
+				Box box;
+				box.vtxcoords->x1 = -1.0f + mainprogram->xscrtovtx(this->selboxx);
+				box.vtxcoords->h = mainprogram->yscrtovtx(mainprogram->my - this->selboxy);
+				box.vtxcoords->y1 = 1.0f - mainprogram->yscrtovtx(this->selboxy);
+				box.vtxcoords->y1 -= box.vtxcoords->h;
+				box.vtxcoords->w = mainprogram->xscrtovtx(mainprogram->mx - this->selboxx);
+				box.upvtxtoscr();
+				draw_box(white, nullptr, &box, -1);
+				bool found = false;
+				// select bin elements entirely inside selection box
+				for (int i = 0; i < 12; i++) {
+					for (int j = 0; j < 12; j++) {
+						Box* ebox = this->elemboxes[i * 12 + j];
+						BinElement* binel = this->currbin->elements[i * 12 + j];
+						if (!binel->full) continue;
+						binel->select = false;
+						if (box.in(ebox->scrcoords->x1, ebox->scrcoords->y1)) {
+							if (box.in(ebox->scrcoords->x1 + ebox->scrcoords->w, ebox->scrcoords->y1 - ebox->scrcoords->h)) {
+								binel->select = true;
+								found = true;
+							}
+						}
+					}
+				}
+				if (mainprogram->leftmouse) {
+					if (found) mainprogram->binselmenu->state = 2;
+					this->selboxing = false;
+					mainprogram->leftmouse = false;
+				}
+			}
 		}
 	}
 
@@ -551,6 +648,22 @@ void BinsMain::handle(bool draw) {
 			}
 		}
 
+
+		// Draw and handle binselmenu	
+		int k = handle_menu(mainprogram->binselmenu);
+		if (k == 0) {
+			// delete selected bin elements
+			for (int i = 0; i < 12; i++) {
+				for (int j = 0; j < 12; j++) {
+					BinElement* binel = this->currbin->elements[i * 12 + j];
+					if (binel->select) {
+						this->delbinels.push_back(binel);
+					}
+				}
+			}
+			mainprogram->del = true;
+		}
+
 		// Draw and handle binmenu and binelmenu	
 		if (this->bins.size() > 1) {
 			int k = handle_menu(mainprogram->binmenu);
@@ -599,8 +712,7 @@ void BinsMain::handle(bool draw) {
 	//if (k > -1) this->currbinel = nullptr;
 	if (k == 0 and mainprogram->menuset == 1) {
 		// delete hovered bin element
-		this->movingtex = this->menubinel->tex;
-		this->movingbinel = this->menubinel;
+		this->delbinels.push_back(this->menubinel);
 		mainprogram->del = true;
 	}
 	else if (k == 0 and mainprogram->menuset == 3) {
@@ -617,8 +729,7 @@ void BinsMain::handle(bool draw) {
 	}
 	else if (k == 2 and mainprogram->menuset == 3) {
 		// delete hovered deck
-		this->movingtex = this->menubinel->tex;
-		this->movingbinel = this->menubinel;
+		this->delbinels.push_back(this->menubinel);
 		mainprogram->del = true;
 	}
 	else if (k == 0 and mainprogram->menuset == 2) {
@@ -628,8 +739,7 @@ void BinsMain::handle(bool draw) {
 	}
 	else if (k == 1 and mainprogram->menuset == 2) {
 		// delete hovered mix
-		this->movingtex = this->menubinel->tex;
-		this->movingbinel = this->menubinel;
+		this->delbinels.push_back(this->menubinel);
 		mainprogram->del = true;
 	}
 	else if (k == mainprogram->menuset) {
@@ -655,6 +765,7 @@ void BinsMain::handle(bool draw) {
 		}
 		mainmix->do_save_deck(path, true, true);
 		mainprogram->paths.push_back(path);
+		mainprogram->counting = 0;
 		this->openbinfile = true;
 		mainprogram->lmsave = false;
 		this->prevbinel = nullptr;
@@ -702,19 +813,41 @@ void BinsMain::handle(bool draw) {
 		mainprogram->lmsave = false;
 		this->prevbinel = nullptr;
 	}
-	else if (k == 5 and mainprogram->menuset == 1) {
+	else if (k == mainprogram->menuset + 4 and this->mouseshelfnum != -1) {
+	Shelf* shelf = mainprogram->shelves[0];
+	for (int i = 0; i < 16; i++) {
+		BinElement* binel = this->currbin->elements[this->mouseshelfnum / 3 * 48 + (this->mouseshelfnum % 3) * 4 + i / 4 + (i % 4) * 12];
+		ShelfElement* elem = shelf->elements[i];
+		elem->path = binel->path;
+		elem->jpegpath = binel->jpegpath;
+		elem->type = binel->type;
+		elem->tex = copy_tex(binel->tex);
+	}
+	}
+	else if (k == mainprogram->menuset + 5 and this->mouseshelfnum != -1) {
+	Shelf* shelf = mainprogram->shelves[1];
+	for (int i = 0; i < 16; i++) {
+		BinElement* binel = this->currbin->elements[this->mouseshelfnum / 3 * 48 + (this->mouseshelfnum % 3) * 4 + i / 4 + (i % 4) * 12];
+		ShelfElement* elem = shelf->elements[i];
+		elem->path = binel->path;
+		elem->jpegpath = binel->jpegpath;
+		elem->type = binel->type;
+		elem->tex = copy_tex(binel->tex);
+	}
+	}
+	else if (k == 7 and mainprogram->menuset == 1) {
 		// hap encode hovered bin element
 		this->hap_binel(this->menubinel, nullptr);
 	}
-	else if (k == 7 and mainprogram->menuset == 3) {
+	else if (k == 9 and mainprogram->menuset == 3) {
 		// hap encode hovered deck
 		this->hap_deck(this->menubinel);
 	}
-	else if (k == 6 and mainprogram->menuset == 2) {
+	else if (k == 8 and mainprogram->menuset == 2) {
 		// hap encode hovered mix
 		this->hap_mix(this->menubinel);
 	}
-	else if (k == 4 and mainprogram->menuset == 0) {
+	else if (k == 4 + (this->mouseshelfnum != -1) * 2 and mainprogram->menuset == 0) {
 		// hap encode entire bin
 		for (int i = 0; i < 12; i++) {
 			for (int j = 0; j < 12; j++) {
@@ -811,7 +944,6 @@ void BinsMain::handle(bool draw) {
 					binel->encoding = false;
 					boost::filesystem::rename(remove_extension(binel->path) + ".temp", binel->path);
 					this->do_save_bin(mainprogram->project->binsdir + this->currbin->name + ".bin");
-					this->open_bin(mainprogram->project->binsdir + this->currbin->name + ".bin", this->currbin);
 				}
 				if ((box->in() or mainprogram->rightmouse) and !binel->encoding) {
 					if (draw) {
@@ -1357,22 +1489,22 @@ void BinsMain::handle(bool draw) {
 				
 
 				if (mainprogram->del) {
-					// handle all kinds of element deleting
-					if (this->movingtex != -1) {
-						// deleting dragged single element
-						this->movingtex = -1;
-						this->movingbinel->tex = this->movingbinel->oldtex;
-						std::string name = remove_extension(basename(this->movingbinel->path));
-						//if (this->movingbinel->type == ELEM_LAYER or this->movingbinel->type == ELEM_LAYERthis->movingbinel->type == ELEM_LAYER) boost::filesystem::remove(this->movingbinel->path);  reminder
-						this->movingbinel->path = this->movingbinel->oldpath;
-						this->movingbinel->jpegpath = this->movingbinel->oldjpegpath;
-						this->movingbinel->type = this->movingbinel->oldtype;
-						this->movingbinel->full = false;
-						if (this->currbinel) this->currbinel->tex = this->currbinel->oldtex;
-						boost::filesystem::remove(this->movingbinel->jpegpath);
-						std::string path = mainprogram->project->binsdir + this->currbin->name + ".bin";
-						save_bin(path);
+					// handle element deleting
+					for (int k = 0; k < this->delbinels.size(); k++) {
+						// deleting single bin element
+						this->delbinels[k]->tex = this->delbinels[k]->oldtex;
+						std::string name = remove_extension(basename(this->delbinels[k]->path));
+						//if (this->delbinels[k]->type == ELEM_LAYER or this->delbinels[k]->type == ELEM_LAYERthis->movingbinel->type == ELEM_LAYER) boost::filesystem::remove(this->delbinels[k]->path);  reminder
+						this->delbinels[k]->path = this->delbinels[k]->oldpath;
+						this->delbinels[k]->jpegpath = this->delbinels[k]->oldjpegpath;
+						this->delbinels[k]->type = this->delbinels[k]->oldtype;
+						this->delbinels[k]->full = false;
+						this->delbinels[k]->select = false;
+						boost::filesystem::remove(this->delbinels[k]->jpegpath);
 					}
+					std::string path = mainprogram->project->binsdir + this->currbin->name + ".bin";
+					save_bin(path);
+					this->delbinels.clear();
 					mainprogram->del = false;
 				}
 				
@@ -1719,6 +1851,8 @@ void BinsMain::open_binfiles() {
 		SDL_SetCursor(SDL_CreateSystemCursor(SDL_SYSTEM_CURSOR_WAIT));
 	} 
 	if (mainprogram->counting == mainprogram->paths.size()) {
+		std::string path = mainprogram->project->binsdir + this->currbin->name + ".bin";
+		save_bin(path);
 		this->openbinfile = false;
 		mainprogram->paths.clear();
 		mainprogram->blocking = false;
@@ -2107,7 +2241,7 @@ void BinsMain::hap_encode(const std::string srcpath, BinElement *binel, BinEleme
 	int count = 0;
     while (count < numf) {
 		binel->encodeprogress = (float)count / (float)numf;
-		bdm->encodeprogress += binel->encodeprogress - oldprogress;
+		if (bdm) bdm->encodeprogress += binel->encodeprogress - oldprogress;
 		oldprogress = binel->encodeprogress;
 		// decode a frame
 		av_init_packet(&pkt);
@@ -2164,6 +2298,7 @@ void BinsMain::hap_encode(const std::string srcpath, BinElement *binel, BinEleme
     binel->encoding = false;
     if (bdm) {
     	bdm->encthreads--;
+		delete binel;  // temp bin elements populate bdm binelements
     }
  	mainprogram->encthreads--;
 	mainprogram->hapnow = true;

@@ -10,8 +10,6 @@ class BinsMain {
 		BinElement *prevbinel = nullptr;
 		int previ;
 		int prevj;
-		int ii = -1;
-		int jj = -1;
 		Box *newbinbox;
 		GLuint binelpreviewtex;
 		bool binpreview = false;
@@ -34,7 +32,8 @@ class BinsMain {
 		BinElement* previewbinel = nullptr;
 		BinElement* movingbinel = nullptr;
 		BinElement *backupbinel = nullptr;
-		BinElement *menubinel = nullptr;
+		BinElement* menubinel = nullptr;
+		std::vector<BinElement*> delbinels;
 		Bin* dragbin = nullptr;
 		int dragbinpos = -1;
 		bool dragbinsense = false;
@@ -47,6 +46,10 @@ class BinsMain {
 		bool openbinfile = false;
 		bool movingstruct = false;
 		std::vector<BinElement*> prevelems;
+		int mouseshelfnum = -1;
+		bool selboxing = false;
+		int selboxx;
+		int selboxy;
 		Box *hapmodebox;
 		
 		void handle(bool draw);
@@ -94,6 +97,7 @@ class BinElement {
 		GLuint tex;
 		GLuint oldtex;
 		bool full = false;
+		bool select = false;
 		bool encwaiting = false;
 		bool encoding = false;
 		int encthreads;
