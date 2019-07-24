@@ -47,22 +47,19 @@ Program::Program() {
 	std::wstring ws1(charbuf);
 	std::string str1(ws1.begin(), ws1.end());
 	this->docpath = boost::filesystem::canonical(str1).string() + "/EWOCvj2/";
-	this->currlayerdir = this->docpath + "elems/";
-	this->currdeckdir = this->docpath + "elems/";
-	this->currmixdir = this->docpath + "elems/";
+	this->currfilesdir = this->docpath + "elems/";
+	this->currclipfilesdir = this->docpath + "elems/";
+	this->currshelffilesdir = this->docpath + "elems/";
+	this->currbinfilesdir = this->docpath + "elems/";
 	this->currstatedir = this->docpath + "elems/";
 	hr = SHGetKnownFolderPath(FOLDERID_Fonts, 0, NULL, &charbuf);
 	std::wstring ws2(charbuf);
 	std::string str2(ws2.begin(), ws2.end());
 	this->fontpath = str2;
-	hr = SHGetKnownFolderPath(FOLDERID_Videos, 0, NULL, &charbuf);
-	std::wstring ws4(charbuf);
-	std::string str4(ws4.begin(), ws4.end());
-	str4 += "/";
-	this->currvideodir = str4;
-	this->currshelffilesdir = str4;
-	this->currshelfdirdir = str4;
-	this->currbindirdir = str4;
+	//hr = SHGetKnownFolderPath(FOLDERID_Videos, 0, NULL, &charbuf);
+	//std::wstring ws4(charbuf);
+	//std::string str4(ws4.begin(), ws4.end());
+	//str4 += "/";   reminder: do something with Videos dir?
 	std::wstring ws3;
 	wchar_t wcharPath[MAX_PATH];
 	if (GetTempPathW(MAX_PATH, wcharPath)) ws3 = wcharPath;
@@ -288,15 +285,8 @@ Program::Program() {
 	this->addeffectbox->tooltiptitle = "Add effect ";
 	this->addeffectbox->tooltip = "Add effect to end of layer effect queue ";
 	
-	this->tmdeck = new Box;
-	this->tmdeck->vtxcoords->x1 = -0.4f;
-	this->tmdeck->vtxcoords->y1 = 0.74f;
-	this->tmdeck->vtxcoords->w = 0.4f;
-	this->tmdeck->vtxcoords->h = 0.26f;
-	this->tmdeck->tooltiptitle = "Toggle deck to set general MIDI for";
-	this->tmdeck->tooltip = "Leftclick to toggle deck to set general MIDI for. ";
 	this->tmset = new Box;
-	this->tmset->vtxcoords->x1 = 0.0f;
+	this->tmset->vtxcoords->x1 = -0.2f;
 	this->tmset->vtxcoords->y1 = 0.74f;
 	this->tmset->vtxcoords->w = 0.4f;
 	this->tmset->vtxcoords->h = 0.26f;

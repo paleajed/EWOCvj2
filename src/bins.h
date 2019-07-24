@@ -10,7 +10,8 @@ class BinsMain {
 		BinElement *prevbinel = nullptr;
 		int previ;
 		int prevj;
-		Box *newbinbox;
+		Box* newbinbox;
+		Box* renamingbox;
 		GLuint binelpreviewtex;
 		bool binpreview = false;
 		std::string newpath;
@@ -51,6 +52,7 @@ class BinsMain {
 		int selboxx;
 		int selboxy;
 		Box *hapmodebox;
+		BinElement *renamingelem = nullptr;
 		
 		void handle(bool draw);
 		int read_binslist();
@@ -88,6 +90,8 @@ class BinElement {
 		Bin *bin;
 		ELEM_TYPE type = ELEM_FILE;
 		ELEM_TYPE oldtype = ELEM_FILE;
+		std::string name = "";
+		std::string oldname = "";
 		std::string path = "";
 		std::string oldpath = "";
 		std::string jpegpath = "";

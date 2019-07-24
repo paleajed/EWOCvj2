@@ -602,10 +602,10 @@ void mycallback( double deltatime, std::vector< unsigned char > *message, void *
   	
   	if (mainprogram->tunemidi) {
   		LayMidi *lm = nullptr;
-  		if (mainprogram->tunemidideck == 1) lm = laymidiA;
-  		else if (mainprogram->tunemidideck == 2) lm = laymidiB;
-  		else if (mainprogram->tunemidideck == 3) lm = laymidiC;
-  		else if (mainprogram->tunemidideck == 4) lm = laymidiD;
+  		if (mainprogram->tunemidiset == 1) lm = laymidiA;
+  		else if (mainprogram->tunemidiset == 2) lm = laymidiB;
+  		else if (mainprogram->tunemidiset == 3) lm = laymidiC;
+  		else if (mainprogram->tunemidiset == 4) lm = laymidiD;
 		switch (mainprogram->tmlearn) {
 			case TM_NONE:
 				if (lm->play[0] == midi0 and lm->play[1] == midi1 and lm->playstr == midiport) mainprogram->tmchoice = TM_PLAY;
@@ -3999,6 +3999,7 @@ void onestepfrom(bool stage, Node *node, Node *prevnode, GLuint prevfbotex, GLui
 		}
 	}
 	else if (node->type == VIDEO) {
+		glActiveTexture(GL_TEXTURE0);
 		Layer *lay = ((VideoNode*)node)->layer;
 		if (lay->blendnode) {
 			if (lay->blendnode->blendtype == 19) {
@@ -4071,9 +4072,7 @@ void onestepfrom(bool stage, Node *node, Node *prevnode, GLuint prevfbotex, GLui
 			float darkred2[4] = { 0.4f, 0.0f, 0.0f, 1.0f };
 			draw_box(nullptr, darkred2, -1.0f, 1.0f, 2.0f, -2.0f, lay->fbotex);
 		}
-		//glDisable(GL_BLEND);
-		//glEnable(GL_BLEND);
-		//glDeleteTextures(1, &fbocopy);
+
 		if (lay->node == lay->lasteffnode[0]) {
 			lay->drawfbo2 = true;
 			glDisable(GL_BLEND);
@@ -4089,16 +4088,11 @@ void onestepfrom(bool stage, Node *node, Node *prevnode, GLuint prevfbotex, GLui
 			float black[4] = { 0.0f, 0.0f, 0.0f, 0.0f };
 			draw_box(nullptr, black, -1.0f, 1.0f, 2.0f, -2.0f, lay->shiftx->value, lay->shifty->value, lay->scale->value, lay->opacity->value, 0, lay->fbotexintm, 0, 0);
 			glEnable(GL_BLEND);
-			glBindFramebuffer(GL_FRAMEBUFFER, mainprogram->globfbo);
-			glDrawBuffer(GL_COLOR_ATTACHMENT0);
-			glViewport(0, 0, glob->w, glob->h);
 			prevfbotex = lay->fbotex;
 			prevfbo = lay->fbo;
 		}
 		else {
 			lay->drawfbo2 = false;
-			glBindFramebuffer(GL_FRAMEBUFFER, mainprogram->globfbo);
-			glDrawBuffer(GL_COLOR_ATTACHMENT0);
 			prevfbotex = lay->fbotexintm;
 			prevfbo = lay->fbointm;
 		}
@@ -4146,7 +4140,7 @@ void onestepfrom(bool stage, Node *node, Node *prevnode, GLuint prevfbotex, GLui
 				glUniform1f(mixfac, bnode->mixfac->value);
 				glActiveTexture(GL_TEXTURE1);
 				glBindTexture(GL_TEXTURE_2D, bnode->intex);
-				
+
 				GLfloat cf = glGetUniformLocation(mainprogram->ShaderProgram, "cf");
 				if (stage) glUniform1f(cf, mainmix->crossfadecomp->value);
 				
@@ -4176,6 +4170,7 @@ void onestepfrom(bool stage, Node *node, Node *prevnode, GLuint prevfbotex, GLui
 				}
 				glActiveTexture(GL_TEXTURE2);
 				glBindTexture(GL_TEXTURE_2D, bnode->in2tex);
+				glActiveTexture(GL_TEXTURE0);
 				glBindVertexArray(mainprogram->fbovao);
 				glDisable(GL_BLEND);
 				glDrawArrays(GL_TRIANGLE_STRIP, 0, 4);
@@ -4769,6 +4764,7 @@ void Shelf::handle() {
 	float green[] = { 0.5f, 1.0f, 0.5f, 1.0f };
 	float grey[] = { 0.4f, 0.4f, 0.4f, 1.0f };
 	float pink[] = { 1.0f, 0.5f, 0.5f, 1.0f };
+	int inelem = -1;
 	for (int i = 0; i < 16; i++) {
 		ShelfElement* elem = this->elements[i];
 		// border coloring according to element type
@@ -4793,13 +4789,25 @@ void Shelf::handle() {
 			draw_box(nullptr, grey, this->buttons[i]->box->vtxcoords->x1 + tf(0.005f), this->buttons[i]->box->vtxcoords->y1, this->buttons[i]->box->vtxcoords->w - tf(0.005f), this->buttons[i]->box->vtxcoords->h - tf(0.005f), elem->tex);
 		}
 
-		if (this->buttons[i]->box->in()) {
+		if (elem->button->box->in()) {
+			inelem = i;
+			if (mainprogram->rightmouse) {
+				if (mainprogram->dragbinel) {
+					if (mainprogram->shelfdragelem) {
+						if (this->prevnum != -1) std::swap(this->elements[this->prevnum]->tex, this->elements[this->prevnum]->oldtex);
+						std::swap(elem->tex, mainprogram->shelfdragelem->tex);
+						mainprogram->shelfdragelem->tex = mainprogram->dragbinel->tex;
+						enddrag();
+						mainprogram->menuactivation = false;
+					}
+				}
+			}
 			this->newnum = i;
 			mainprogram->inshelf = this->side;
 			if (mainprogram->dragbinel and i != this->prevnum) {
 				std::swap(elem->tex, elem->oldtex);
+				if (this->prevnum != -1) std::swap(this->elements[this->prevnum]->tex, this->elements[this->prevnum]->oldtex);
 				if (mainprogram->shelfdragelem) {
-					std::swap(this->elements[this->prevnum]->tex, this->elements[this->prevnum]->oldtex);
 					std::swap(mainprogram->shelfdragelem->tex, mainprogram->shelfdragelem->oldtex);
 					mainprogram->shelfdragelem->tex = elem->oldtex;
 				}
@@ -4826,43 +4834,47 @@ void Shelf::handle() {
 					mainprogram->leftmouse = false;
 					// user drops file/layer/deck/mix in shelf element
 					std::string newpath;
-					std::string extstr;
-					if (mainprogram->dragbinel->path.rfind(".layer") != std::string::npos) {
+					std::string extstr = "";
+					if (mainprogram->dragbinel->type == ELEM_LAYER) {
 						extstr = ".layer";
 					}
-					else if (mainprogram->dragbinel->path.rfind(".deck") != std::string::npos) {
+					else if (mainprogram->dragbinel->type == ELEM_DECK) {
 						extstr = ".deck";
 					}
-					else if (mainprogram->dragbinel->path.rfind(".mix") != std::string::npos) {
+					else if (mainprogram->dragbinel->type == ELEM_MIX) {
 						extstr = ".mix";
 					}
-					std::string base = basename(mainprogram->dragbinel->path);
-					std::string name = remove_extension("shelf_" + base);
-					int count = 0;
-					while (1) {
-						newpath = mainprogram->shelfdir + name + extstr;
-						if (!exists(newpath)) {
-							boost::filesystem::copy_file(mainprogram->dragbinel->path, newpath);
-							mainprogram->dragbinel->path = newpath;
-							break;
+					if (extstr != "") {
+						std::string base = basename(mainprogram->dragbinel->path);
+						std::string name = remove_extension("shelf_" + base);
+						int count = 0;
+						while (1) {
+							newpath = mainprogram->shelfdir + name + extstr;
+							if (!exists(newpath)) {
+								boost::filesystem::copy_file(mainprogram->dragbinel->path, newpath);
+								mainprogram->dragbinel->path = newpath;
+								break;
+							}
+							count++;
+							name = remove_version(name) + "_" + std::to_string(count);
 						}
-						count++;
-						name = remove_version(name) + "_" + std::to_string(count);
 					}
 					if (mainprogram->shelfdragelem) {
 						std::swap(elem->path, mainprogram->shelfdragelem->path);
+						std::swap(elem->jpegpath, mainprogram->shelfdragelem->jpegpath);
 						std::swap(elem->type, mainprogram->shelfdragelem->type);
-						std::swap(elem->oldtex, mainprogram->shelfdragelem->tex);
 					}
 					else {
 						elem->path = mainprogram->dragbinel->path;
 						elem->type = mainprogram->dragbinel->type;
-						elem->tex = copy_tex(mainprogram->dragbinel->tex);
 					}
+					elem->tex = copy_tex(mainprogram->dragbinel->tex);
 					blacken(elem->oldtex);
-					enddrag();
+					this->prevnum = -1;
 					mainprogram->rightmouse = true;
 					binsmain->handle(0);
+					enddrag();
+					break;
 				}
 			}
 			if (mainprogram->menuactivation) {
@@ -4873,7 +4885,30 @@ void Shelf::handle() {
 			}
 		}
 	}
-	this->prevnum = this->newnum;
+	if (inelem > -1 and mainprogram->dragbinel) {
+		mainprogram->dragout[this->side] = false;
+		mainprogram->dragout[!this->side] = true;
+	}
+	if (inelem == -1 and !mainprogram->dragout[this->side] and mainprogram->dragbinel) {
+		// mouse not over shelf element
+		mainprogram->dragout[this->side] == true;
+		if (this->prevnum != -1) std::swap(this->elements[this->prevnum]->tex, this->elements[this->prevnum]->oldtex);
+		if (mainprogram->shelfdragelem) std::swap(mainprogram->shelfdragelem->tex, mainprogram->shelfdragelem->oldtex);
+		this->prevnum = -1;
+	}
+	else if (!mainprogram->dragout[this->side]) this->prevnum = this->newnum;
+
+	if (mainprogram->shelfdragelem) {
+		if (mainprogram->lmsave) {
+			// delete dragged element when dropped outside shelf
+			ShelfElement* elem = mainprogram->shelfdragelem;
+			elem->path = "";
+			elem->jpegpath = "";
+			elem->type = ELEM_FILE;
+			blacken(elem->tex);
+			blacken(elem->oldtex);
+		}
+	}
 }
 
 void clip_intest(std::vector<Layer*>& layers, bool deck) {
@@ -5876,50 +5911,35 @@ void Preferences::load() {
 		}
 		mainprogram->currshelfdir = mainprogram->shelfdir;
 		mainprogram->currbinsdir = mainprogram->binsdir;
-		if (istring == "CURRVIDEODIR") {
+		if (istring == "CURRFILESDIR") {
 			getline(rfile, istring);
 			boost::filesystem::path p(istring);
-			if (boost::filesystem::exists(p)) mainprogram->currvideodir = istring;
+			if (boost::filesystem::exists(p)) mainprogram->currfilesdir = istring;
 		}
-		else if (istring == "CURRIMAGEDIR") {
+		else if (istring == "CURRCLIPFILESDIR") {
 			getline(rfile, istring);
 			boost::filesystem::path p(istring);
-			if (boost::filesystem::exists(p)) mainprogram->currimagedir = istring;
-		}
-		else if (istring == "CURRLAYERDIR") {
-			getline(rfile, istring);
-			boost::filesystem::path p(istring);
-			if (boost::filesystem::exists(p)) mainprogram->currlayerdir = istring;
-		}
-		else if (istring == "CURRDECKDIR") {
-			getline(rfile, istring);
-			boost::filesystem::path p(istring);
-			if (boost::filesystem::exists(p)) mainprogram->currdeckdir = istring;
-		}
-		else if (istring == "CURRMIXDIR") {
-			getline(rfile, istring);
-			boost::filesystem::path p(istring);
-			if (boost::filesystem::exists(p)) mainprogram->currmixdir = istring;
-		}
-		else if (istring == "CURRSTATEDIR") {
-			getline(rfile, istring);
-			boost::filesystem::path p(istring);
-			if (boost::filesystem::exists(p)) mainprogram->currstatedir = istring;
-		}
-		else if (istring == "CURRBINDIRDIR") {
-			getline(rfile, istring);
-			boost::filesystem::path p(istring);
-			if (boost::filesystem::exists(p)) mainprogram->currbindirdir = istring;
+			if (boost::filesystem::exists(p)) mainprogram->currclipfilesdir = istring;
 		}
 		else if (istring == "CURRSHELFFILESDIR") {
 			getline(rfile, istring);
 			boost::filesystem::path p(istring);
 			if (boost::filesystem::exists(p)) mainprogram->currshelffilesdir = istring;
 		}
-		else if (istring == "CURRSHELFDIRDIR") {
+		else if (istring == "CURRBINFILESDIR") {
 			getline(rfile, istring);
 			boost::filesystem::path p(istring);
-			if (boost::filesystem::exists(p)) mainprogram->currshelfdirdir = istring;
+			if (boost::filesystem::exists(p)) mainprogram->currbinfilesdir = istring;
+		}
+		else if (istring == "CURRSTATEDIR") {
+			getline(rfile, istring);
+			boost::filesystem::path p(istring);
+			if (boost::filesystem::exists(p)) mainprogram->currstatedir = istring;
+		}
+		else if (istring == "CURRSHELFFILESDIR") {
+			getline(rfile, istring);
+			boost::filesystem::path p(istring);
+			if (boost::filesystem::exists(p)) mainprogram->currshelffilesdir = istring;
 		}
 	}
 	
@@ -5964,32 +5984,20 @@ void Preferences::save() {
 		wfile << "ENDOFPREFCAT\n";
 	}
 
-	wfile << "CURRVIDEODIR\n";
-	wfile << mainprogram->currvideodir;
+	wfile << "CURRFILESDIR\n";
+	wfile << mainprogram->currfilesdir;
 	wfile << "\n";
-	wfile << "CURRIMAGEDIR\n";
-	wfile << mainprogram->currimagedir;
+	wfile << "CURRCLIPFILESDIR\n";
+	wfile << mainprogram->currclipfilesdir;
 	wfile << "\n";
-	wfile << "CURRLAYERDIR\n";
-	wfile << mainprogram->currlayerdir;
+	wfile << "CURRSHELFFILESDIR\n";
+	wfile << mainprogram->currshelffilesdir;
 	wfile << "\n";
-	wfile << "CURRDECKDIR\n";
-	wfile << mainprogram->currdeckdir;
-	wfile << "\n";
-	wfile << "CURRMIXDIR\n";
-	wfile << mainprogram->currmixdir;
+	wfile << "CURRBINFILESDIR\n";
+	wfile << mainprogram->currshelffilesdir;
 	wfile << "\n";
 	wfile << "CURRSTATEDIR\n";
 	wfile << mainprogram->currstatedir;
-	wfile << "\n";
-	wfile << "CURRBINDIRDIR\n";
-	wfile << mainprogram->currbindirdir;
-	wfile << "\n";
-	wfile << "CURRSHELFFILESDIR\n";
-	wfile << mainprogram->currshelfdirdir;
-	wfile << "\n";
-	wfile << "CURRSHELFDIRDIR\n";
-	wfile << mainprogram->currshelfdirdir;
 	wfile << "\n";
 
 	wfile << "ENDOFFILE\n";
@@ -6861,6 +6869,12 @@ int handle_menu(Menu *menu, float xshift, float yshift) {
 								//float ys = (k - mainprogram->menulist[i]->entries.size() / 2.0f) * tf(-0.05f) + yshift;
 								//float intm = std::clamp(ys + mainprogram->yscrtovtx(menu->menuy), 0.0f, 2.0f - mainprogram->menulist[i]->entries.size() * tf(0.05f));
 								//ys = intm + mainprogram->menulist[i]->entries.size() * tf(0.05f);
+								if (menu == mainprogram->filemenu and k - numsubs == 2) {
+									// special rule: one layer choice less when saving layer
+									mainprogram->laylistmenu1->entries.pop_back();
+									mainprogram->laylistmenu2->entries.pop_back();
+								}
+								// start submenu
 								int ret = handle_menu(mainprogram->menulist[i], xs, yshift);
 								if (mainprogram->menuchosen) {
 									menu->state = 0;
@@ -7153,6 +7167,7 @@ int tune_midi() {
 	float lightblue[] = {0.5f, 0.5f, 1.0f, 1.0f};
 	float green[] = { 0.0f, 0.7f, 0.0f, 1.0f };
 	float red[] = { 0.9f, 0.0f, 0.0f, 1.0f };
+	float yellow[] = { 1.0f, 1.0f, 0.0f, 1.0f };
 
 	SDL_GL_MakeCurrent(mainprogram->tunemidiwindow, glc_tm);
 	mainprogram->bvao = mainprogram->tmboxvao;
@@ -7208,17 +7223,7 @@ int tune_midi() {
 	
 	if (mainprogram->tmlearn == TM_NONE) {
 		//draw tune_midi screen
-		draw_box(red, black, mainprogram->tmdeck, -1);
-		if (mainprogram->tmdeck->in(mx, my)) {
-			draw_box(red, lightblue, mainprogram->tmdeck, -1);
-			if (mainprogram->lmsave) {
-				mainprogram->tunemidideck = !mainprogram->tunemidideck;
-			}
-		}
-		if (mainprogram->tunemidideck == 0) render_text("deck A", red, -0.390f, 0.78f, 0.0024f, 0.004f, 2);
-		else render_text("deck B", red, -0.390f, 0.78f, 0.0024f, 0.004f, 2);
-		
-		draw_box(red, black, mainprogram->tmset, -1);
+		draw_box(yellow, black, mainprogram->tmset, -1);
 		if (mainprogram->tmset->in(mx, my)) {
 			draw_box(red, lightblue, mainprogram->tmset, -1);
 			if (mainprogram->lmsave) {
@@ -7226,10 +7231,10 @@ int tune_midi() {
 				if (mainprogram->tunemidiset == 5) mainprogram->tunemidiset = 1;
 			}
 		}
-		if (mainprogram->tunemidiset == 1) render_text("set A", red, 0.01f, 0.78f, 0.0024f, 0.004f, 2);
-		else if (mainprogram->tunemidiset == 2) render_text("set B", red, 0.01f, 0.78f, 0.0024f, 0.004f, 2);
-		else if (mainprogram->tunemidiset == 3) render_text("set C", red, 0.01f, 0.78f, 0.0024f, 0.004f, 2);
-		else if (mainprogram->tunemidiset == 4) render_text("set D", red, 0.01f, 0.78f, 0.0024f, 0.004f, 2);
+		if (mainprogram->tunemidiset == 1) render_text("set A", yellow, 0.01f, 0.78f, 0.0024f, 0.004f, 2);
+		else if (mainprogram->tunemidiset == 2) render_text("set B", yellow, 0.01f, 0.78f, 0.0024f, 0.004f, 2);
+		else if (mainprogram->tunemidiset == 3) render_text("set C", yellow, 0.01f, 0.78f, 0.0024f, 0.004f, 2);
+		else if (mainprogram->tunemidiset == 4) render_text("set D", yellow, 0.01f, 0.78f, 0.0024f, 0.004f, 2);
 		
 		draw_box(white, black, mainprogram->tmplay, -1);
 		if (mainprogram->tmchoice == TM_PLAY) draw_box(white, green, mainprogram->tmplay, -1);
@@ -7472,6 +7477,8 @@ void enddrag() {
 		mainprogram->dragpath = "";
 		mainmix->moving = false;
 		mainprogram->shelfdragelem = nullptr;
+		mainprogram->dragout[0] = true;
+		mainprogram->dragout[1] = true;
 		mainprogram->drag = false;
 		//glDeleteTextures(1, &binsmain->dragtex);  maybe needs implementing in one case, check history
 	}
@@ -8747,12 +8754,12 @@ void the_loop() {
 		k = handle_menu(mainprogram->deckmenu);
 		if (k == 0) {
 			mainprogram->pathto = "OPENDECK";
-			std::thread filereq (&Program::get_inname, mainprogram, "Open deck file", "application/ewocvj2-deck", boost::filesystem::canonical(mainprogram->currdeckdir).generic_string());
+			std::thread filereq (&Program::get_inname, mainprogram, "Open deck file", "application/ewocvj2-deck", boost::filesystem::canonical(mainprogram->currfilesdir).generic_string());
 			filereq.detach();
 		}
 		else if (k == 1) {
 			mainprogram->pathto = "SAVEDECK";
-			std::thread filereq (&Program::get_outname, mainprogram, "Save deck file", "application/ewocvj2-deck", boost::filesystem::canonical(mainprogram->currdeckdir).generic_string());
+			std::thread filereq (&Program::get_outname, mainprogram, "Save deck file", "application/ewocvj2-deck", boost::filesystem::canonical(mainprogram->currfilesdir).generic_string());
 			filereq.detach();
 		}
 		else if (k == 2) {
@@ -8806,13 +8813,13 @@ void the_loop() {
 			}
 			if (k == 1) {
 				mainprogram->pathto = "OPENFILES";
-				std::thread filereq (&Program::get_multinname, mainprogram, "Open video/image/layer file", boost::filesystem::canonical(mainprogram->currvideodir).generic_string());
+				std::thread filereq (&Program::get_multinname, mainprogram, "Open video/image/layer file", boost::filesystem::canonical(mainprogram->currfilesdir).generic_string());
 				filereq.detach();
 				mainprogram->loadlay = mainmix->mouselayer;
 			}
 			else if (k == 2) {
 				mainprogram->pathto = "SAVELAYFILE";
-				std::thread filereq (&Program::get_outname, mainprogram, "Save layer file", "application/ewocvj2-layer", boost::filesystem::canonical(mainprogram->currlayerdir).generic_string());
+				std::thread filereq (&Program::get_outname, mainprogram, "Save layer file", "application/ewocvj2-layer", boost::filesystem::canonical(mainprogram->currfilesdir).generic_string());
 				filereq.detach();
 			}
 			else if (k == 3) {
@@ -8820,12 +8827,12 @@ void the_loop() {
 			}
 			else if (k == 4) {
 				mainprogram->pathto = "OPENDECK";
-				std::thread filereq (&Program::get_inname, mainprogram, "Open deck file", "application/ewocvj2-deck", boost::filesystem::canonical(mainprogram->currdeckdir).generic_string());
+				std::thread filereq (&Program::get_inname, mainprogram, "Open deck file", "application/ewocvj2-deck", boost::filesystem::canonical(mainprogram->currfilesdir).generic_string());
 				filereq.detach();
 			}
 			else if (k == 5) {
 				mainprogram->pathto = "SAVEDECK";
-				std::thread filereq (&Program::get_outname, mainprogram, "Save deck file", "application/ewocvj2-deck", boost::filesystem::canonical(mainprogram->currdeckdir).generic_string());
+				std::thread filereq (&Program::get_outname, mainprogram, "Save deck file", "application/ewocvj2-deck", boost::filesystem::canonical(mainprogram->currfilesdir).generic_string());
 				filereq.detach();
 			}
 			else if (k == 6) {
@@ -8833,12 +8840,12 @@ void the_loop() {
 			}
 			else if (k == 7) {
 				mainprogram->pathto = "OPENMIX";
-				std::thread filereq (&Program::get_inname, mainprogram, "Open mix file", "application/ewocvj2-mix", boost::filesystem::canonical(mainprogram->currmixdir).generic_string());
+				std::thread filereq (&Program::get_inname, mainprogram, "Open mix file", "application/ewocvj2-mix", boost::filesystem::canonical(mainprogram->currfilesdir).generic_string());
 				filereq.detach();
 			}
 			else if (k == 8) {
 				mainprogram->pathto = "SAVEMIX";
-				std::thread filereq (&Program::get_outname, mainprogram, "Open mix file", "application/ewocvj2-mix", boost::filesystem::canonical(mainprogram->currmixdir).generic_string());
+				std::thread filereq (&Program::get_outname, mainprogram, "Open mix file", "application/ewocvj2-mix", boost::filesystem::canonical(mainprogram->currfilesdir).generic_string());
 				filereq.detach();
 			}
 			else if (k == 9) {
@@ -8912,22 +8919,21 @@ void the_loop() {
 			}
 			if (k == 1) {
 				mainprogram->pathto = "OPENFILES";
-				std::thread filereq (&Program::get_multinname, mainprogram, "Open video/image/layer file", boost::filesystem::canonical(mainprogram->currvideodir).generic_string());
+				std::thread filereq (&Program::get_multinname, mainprogram, "Open video/image/layer file", boost::filesystem::canonical(mainprogram->currfilesdir).generic_string());
 				filereq.detach();
-				mainprogram->loadlay = mainmix->add_layer(lvec, lvec.size());
-				mainmix->currlay = mainprogram->loadlay;
+				mainmix->addlay = true;
 			}
 			else if (k == 2) {
 				mainmix->new_file(mainmix->mousedeck, 1);
 			}
 			else if (k == 3) {
 				mainprogram->pathto = "OPENDECK";
-				std::thread filereq (&Program::get_inname, mainprogram, "Open deck file", "application/ewocvj2-deck", boost::filesystem::canonical(mainprogram->currdeckdir).generic_string());
+				std::thread filereq (&Program::get_inname, mainprogram, "Open deck file", "application/ewocvj2-deck", boost::filesystem::canonical(mainprogram->currfilesdir).generic_string());
 				filereq.detach();
 			}
 			else if (k == 4) {
 				mainprogram->pathto = "SAVEDECK";
-				std::thread filereq (&Program::get_outname, mainprogram, "Save deck file", "application/ewocvj2-deck", boost::filesystem::canonical(mainprogram->currdeckdir).generic_string());
+				std::thread filereq (&Program::get_outname, mainprogram, "Save deck file", "application/ewocvj2-deck", boost::filesystem::canonical(mainprogram->currfilesdir).generic_string());
 				filereq.detach();
 			}
 			else if (k == 5) {
@@ -8935,12 +8941,12 @@ void the_loop() {
 			}
 			else if (k == 6) {
 				mainprogram->pathto = "OPENMIX";
-				std::thread filereq (&Program::get_inname, mainprogram, "Open mix file", "application/ewocvj2-mix", boost::filesystem::canonical(mainprogram->currmixdir).generic_string());
+				std::thread filereq (&Program::get_inname, mainprogram, "Open mix file", "application/ewocvj2-mix", boost::filesystem::canonical(mainprogram->currfilesdir).generic_string());
 				filereq.detach();
 			}
 			else if (k == 7) {
 				mainprogram->pathto = "SAVEMIX";
-				std::thread filereq (&Program::get_outname, mainprogram, "Save mix file", "application/ewocvj2-mix", boost::filesystem::canonical(mainprogram->currmixdir).generic_string());
+				std::thread filereq (&Program::get_outname, mainprogram, "Save mix file", "application/ewocvj2-mix", boost::filesystem::canonical(mainprogram->currfilesdir).generic_string());
 				filereq.detach();
 			}
 		}
@@ -8974,7 +8980,7 @@ void the_loop() {
 			}
 			if (k == 1) {
 				mainprogram->pathto = "CLIPOPENFILES";
-				std::thread filereq(&Program::get_multinname, mainprogram, "Open clip video file", boost::filesystem::canonical(mainprogram->currvideodir).generic_string());
+				std::thread filereq(&Program::get_multinname, mainprogram, "Open clip video file", boost::filesystem::canonical(mainprogram->currclipfilesdir).generic_string());
 				filereq.detach();
 			}
 			if (k == 2) {
@@ -9057,7 +9063,6 @@ void the_loop() {
 				SDL_RaiseWindow(mainprogram->tunemidiwindow);
 				SDL_GL_MakeCurrent(mainprogram->tunemidiwindow, glc_tm);
 				glUseProgram(mainprogram->ShaderProgram_tm);
-				mainprogram->tmdeck->upvtxtoscr();
 				mainprogram->tmset->upvtxtoscr();
 				mainprogram->tmscratch->upvtxtoscr();
 				mainprogram->tmfreeze->upvtxtoscr();
@@ -9153,49 +9158,174 @@ void the_loop() {
 		}
 		
 		// Draw and handle filemenu
+		if (mainprogram->filemenu->state > 1) {
+			// make menus with layer numbers, one for each deck
+			std::vector<Layer*>& lvec = choose_layers(0);
+			std::vector<std::string> laylist1;
+			for (int i = 0; i < lvec.size() + 1; i++) {
+				laylist1.push_back("Layer " + std::to_string(i + 1));
+			}
+			mainprogram->make_menu("laylistmenu1", mainprogram->laylistmenu1, laylist1);
+			std::vector<Layer*>& lvec2 = choose_layers(1);
+			std::vector<std::string> laylist2;
+			for (int i = 0; i < lvec2.size() + 1; i++) {
+				laylist2.push_back("Layer " + std::to_string(i + 1));
+			}
+			mainprogram->make_menu("laylistmenu2", mainprogram->laylistmenu2, laylist2);
+		}
+		
 		k = handle_menu(mainprogram->filemenu);
 		if (k == 0) {
-			mainprogram->pathto = "NEWPROJECT";
-			std::string reqdir = mainprogram->projdir;
-			if (reqdir.substr(0, 1) == ".") reqdir.erase(0, 2);
-			std::string name = "Untitled";
-			std::string path;
-			int count = 0;
-			while (1) {
-				path = mainprogram->projdir + name;
-				if (!exists(path + ".ewocvj")) {
-					break;
+			if (mainprogram->menuresults[0] == 0) {
+				// new project
+				mainprogram->pathto = "NEWPROJECT";
+				std::string reqdir = mainprogram->projdir;
+				if (reqdir.substr(0, 1) == ".") reqdir.erase(0, 2);
+				std::string name = "Untitled";
+				std::string path;
+				int count = 0;
+				while (1) {
+					path = mainprogram->projdir + name;
+					if (!exists(path + ".ewocvj")) {
+						break;
+					}
+					count++;
+					name = remove_version(name) + "_" + std::to_string(count);
 				}
-				count++;
-				name = remove_version(name) + "_" + std::to_string(count);
+				std::thread filereq(&Program::get_outname, mainprogram, "New project", "application/ewocvj2-project", boost::filesystem::absolute(reqdir + name).generic_string());
+				filereq.detach();
 			}
-			std::thread filereq(&Program::get_outname, mainprogram, "New project", "application/ewocvj2-project", boost::filesystem::absolute(reqdir + name).generic_string());
-			filereq.detach();
+			else if (mainprogram->menuresults[0] == 1) {
+				// new state
+				mainmix->new_state();
+			}
+			else if (mainprogram->menuresults[0] == 2) {
+				// new mix
+				mainmix->new_file(2, 1);
+			}
+			else if (mainprogram->menuresults[0] == 3) {
+				// new deck in deck A
+				mainmix->new_file(0, 1);
+			}
+			else if (mainprogram->menuresults[0] == 4) {
+				// open deck in deck B
+				mainmix->new_file(1, 1);
+			}
+			else if (mainprogram->menuresults[0] == 5) {
+				// open new layer in deck A
+				std::vector<Layer*>& lvec = choose_layers(0);
+				mainmix->add_layer(lvec, mainprogram->menuresults[1]);
+			}
+			else if (mainprogram->menuresults[0] == 5) {
+				// open new layer in deck B
+				std::vector<Layer*>& lvec = choose_layers(1);
+				mainmix->add_layer(lvec, mainprogram->menuresults[1]);
+			}
 		}
 		else if (k == 1) {
-			mainprogram->pathto = "OPENPROJECT";
-			std::thread filereq(&Program::get_inname, mainprogram, "Open project file", "application/ewocvj2-project", boost::filesystem::canonical(mainprogram->currprojdir).generic_string());
-			filereq.detach();
+			if (mainprogram->menuresults[0] == 0) {
+				mainprogram->pathto = "OPENPROJECT";
+				std::thread filereq(&Program::get_inname, mainprogram, "Open project file", "application/ewocvj2-project", boost::filesystem::canonical(mainprogram->currprojdir).generic_string());
+				filereq.detach();
+			}
+			else if (mainprogram->menuresults[0] == 1) {
+				mainprogram->pathto = "OPENSTATE";
+				std::thread filereq(&Program::get_inname, mainprogram, "Open state file", "application/ewocvj2-state", boost::filesystem::canonical(mainprogram->currstatedir).generic_string());
+				filereq.detach();
+			}
+			else if (mainprogram->menuresults[0] == 2) {
+				// open mix file
+				mainprogram->pathto = "OPENMIX";
+				std::thread filereq(&Program::get_inname, mainprogram, "Open mix file", "application/ewocvj2-mix", boost::filesystem::canonical(mainprogram->currfilesdir).generic_string());
+				filereq.detach();
+			}
+			else if (mainprogram->menuresults[0] == 3) {
+				// open deck file in deck A
+				mainmix->mousedeck = 0;
+				mainprogram->pathto = "OPENDECK";
+				std::thread filereq(&Program::get_inname, mainprogram, "Open deck file", "application/ewocvj2-deck", boost::filesystem::canonical(mainprogram->currfilesdir).generic_string());
+				filereq.detach();
+			}
+			else if (mainprogram->menuresults[0] == 4) {
+				// open deck file in deck B
+				mainmix->mousedeck = 1;
+				mainprogram->pathto = "OPENDECK";
+				std::thread filereq(&Program::get_inname, mainprogram, "Open deck file", "application/ewocvj2-deck", boost::filesystem::canonical(mainprogram->currfilesdir).generic_string());
+				filereq.detach();
+			}
+			else if (mainprogram->menuresults[0] == 5) {
+				// open files in layer in deck A
+				std::vector<Layer*>& lvec = choose_layers(0);
+				mainprogram->pathto = "OPENFILES";
+				std::thread filereq(&Program::get_multinname, mainprogram, "Open video/image/layer file", boost::filesystem::canonical(mainprogram->currfilesdir).generic_string());
+				filereq.detach();
+				if (mainprogram->menuresults[1] == lvec.size()) {
+					mainmix->addlay = true;
+				}
+				else {
+					mainprogram->loadlay = lvec[mainprogram->menuresults[1]];
+				}
+			}
+			else if (mainprogram->menuresults[0] == 6) {
+				// open files in layer in deck B
+				std::vector<Layer*>& lvec = choose_layers(1);
+				mainprogram->pathto = "OPENFILES";
+				std::thread filereq(&Program::get_multinname, mainprogram, "Open video/image/layer file", boost::filesystem::canonical(mainprogram->currfilesdir).generic_string());
+				filereq.detach();
+				if (mainprogram->menuresults[1] == lvec.size()) {
+					mainmix->addlay = true;
+				}
+				else {
+					mainprogram->loadlay = lvec[mainprogram->menuresults[1]];
+				}
+			}
 		}
 		else if (k == 2) {
-			mainprogram->pathto = "SAVEPROJECT";
-			std::thread filereq(&Program::get_outname, mainprogram, "Save project file", "application/ewocvj2-project", boost::filesystem::canonical(mainprogram->project->path).generic_string());
-			filereq.detach();
+			if (mainprogram->menuresults[0] == 0) {
+				mainprogram->pathto = "SAVEPROJECT";
+				std::thread filereq(&Program::get_outname, mainprogram, "Save project file", "application/ewocvj2-project", boost::filesystem::canonical(mainprogram->project->path).generic_string());
+				filereq.detach();
+			}
+			else if (mainprogram->menuresults[0] == 1) {
+				mainprogram->pathto = "SAVESTATE";
+				std::thread filereq(&Program::get_outname, mainprogram, "Save state file", "application/ewocvj2-state", boost::filesystem::canonical(mainprogram->currstatedir).generic_string());
+				filereq.detach();
+			}
+			else if (mainprogram->menuresults[0] == 2) {
+				mainmix->mousedeck = 0;
+				mainprogram->pathto = "SAVEDECK";
+				std::thread filereq(&Program::get_outname, mainprogram, "Save deck file", "application/ewocvj2-deck", boost::filesystem::canonical(mainprogram->currfilesdir).generic_string());
+				filereq.detach();
+			}
+			else if (mainprogram->menuresults[0] == 3) {
+				mainmix->mousedeck = 1;
+				mainprogram->pathto = "SAVEDECK";
+				std::thread filereq(&Program::get_outname, mainprogram, "Save deck file", "application/ewocvj2-deck", boost::filesystem::canonical(mainprogram->currfilesdir).generic_string());
+				filereq.detach();
+			}
+			else if (mainprogram->menuresults[0] == 4) {
+				mainprogram->pathto = "SAVEMIX";
+				std::thread filereq(&Program::get_outname, mainprogram, "Open mix file", "application/ewocvj2-mix", boost::filesystem::canonical(mainprogram->currfilesdir).generic_string());
+				filereq.detach();
+			}
+			else if (mainprogram->menuresults[0] == 5) {
+				// save layer from deck A
+				std::vector<Layer*>& lvec = choose_layers(0);
+				mainmix->mouselayer = lvec[mainprogram->menuresults[1]];
+				mainprogram->pathto = "SAVELAYFILE";
+				std::thread filereq(&Program::get_outname, mainprogram, "Save layer file", "application/ewocvj2-layer", boost::filesystem::canonical(mainprogram->currfilesdir).generic_string());
+				filereq.detach();
+			}
+			else if (mainprogram->menuresults[0] == 6) {
+				// save layer from deck B
+				std::vector<Layer*>& lvec = choose_layers(1);
+				mainmix->mouselayer = lvec[mainprogram->menuresults[1]];
+				mainprogram->pathto = "SAVELAYFILE";
+				std::thread filereq(&Program::get_outname, mainprogram, "Save layer file", "application/ewocvj2-layer", boost::filesystem::canonical(mainprogram->currfilesdir).generic_string());
+				filereq.detach();
+			}
 		}
 		else if (k == 3) {
-			mainmix->new_state();
-		}
-		else if (k == 4) {
-			mainprogram->pathto = "OPENSTATE";
-			std::thread filereq(&Program::get_inname, mainprogram, "Open state file", "application/ewocvj2-state", boost::filesystem::canonical(mainprogram->currstatedir).generic_string());
-			filereq.detach();
-		}
-		else if (k == 5) {
-			mainprogram->pathto = "SAVESTATE";
-			std::thread filereq(&Program::get_outname, mainprogram, "Save state file", "application/ewocvj2-state", boost::filesystem::canonical(mainprogram->currstatedir).generic_string());
-			filereq.detach();
-		}
-		else if (k == 6) {
 			mainprogram->quit("quitted");
 		}
 
@@ -9232,7 +9362,6 @@ void the_loop() {
 				SDL_RaiseWindow(mainprogram->tunemidiwindow);
 				SDL_GL_MakeCurrent(mainprogram->tunemidiwindow, glc_tm);
 				glUseProgram(mainprogram->ShaderProgram_tm);
-				mainprogram->tmdeck->upvtxtoscr();
 				mainprogram->tmset->upvtxtoscr();
 				mainprogram->tmscratch->upvtxtoscr();
 				mainprogram->tmfreeze->upvtxtoscr();
@@ -9262,6 +9391,7 @@ void the_loop() {
 
 		// end of menu code
 		
+
 		//add/delete layer
 		if (!mainprogram->menuondisplay) {
 			for (int j = 0; j < 2; j++) {
@@ -9901,6 +10031,7 @@ void the_loop() {
 	glDrawBuffer(GL_COLOR_ATTACHMENT0);
 	
 	mainprogram->leftmouse = 0;
+	mainprogram->orderleftmouse = 0;
 	mainprogram->doubleleftmouse = 0;
 	mainprogram->middlemouse = 0;
 	mainprogram->rightmouse = 0;
@@ -11384,14 +11515,32 @@ int main(int argc, char* argv[]){
   	mainprogram->make_menu("shelfmenu", mainprogram->shelfmenu, shelf1);
 
 	std::vector<std::string> file;
-	file.push_back("New project");
-	file.push_back("Open project");
-	file.push_back("Save project");
-	file.push_back("New state");
-	file.push_back("Open state");
-	file.push_back("Save state");
+	file.push_back("submenu filedomenu");
+	file.push_back("New");
+	file.push_back("submenu filedomenu");
+	file.push_back("Open");
+	file.push_back("submenu filedomenu");
+	file.push_back("Save");
 	file.push_back("Quit");
 	mainprogram->make_menu("filemenu", mainprogram->filemenu, file);
+
+	std::vector<std::string> laylist1;
+	mainprogram->make_menu("laylistmenu1", mainprogram->laylistmenu1, laylist1);
+
+	std::vector<std::string> laylist2;
+	mainprogram->make_menu("laylistmenu2", mainprogram->laylistmenu2, laylist2);
+
+	std::vector<std::string> filedo;
+	filedo.push_back("Project");
+	filedo.push_back("State");
+	filedo.push_back("Mix");
+	filedo.push_back("Deck A");
+	filedo.push_back("Deck B");
+	filedo.push_back("submenu laylistmenu1");
+	filedo.push_back("Layer in deck A");
+	filedo.push_back("submenu laylistmenu2");
+	filedo.push_back("Layer in deck B");
+	mainprogram->make_menu("filedomenu", mainprogram->filedomenu, filedo);
 
 	std::vector<std::string> edit;
 	edit.push_back("Preferences");
@@ -11652,7 +11801,13 @@ int main(int argc, char* argv[]){
 		if (mainprogram->path != nullptr) {
 			if (mainprogram->pathto == "OPENFILES") {
 				std::string str(mainprogram->paths[0]);
-				mainprogram->currvideodir = dirname(str);
+				if (mainmix->addlay) {
+					mainmix->addlay = false;
+					std::vector<Layer*>& lvec = choose_layers(mainmix->mousedeck);
+					mainprogram->loadlay = mainmix->add_layer(lvec, lvec.size());
+					mainmix->currlay = mainprogram->loadlay;
+				}
+				mainprogram->currfilesdir = dirname(str);
 				mainprogram->filescount = 0;
 				mainprogram->fileslay = mainprogram->loadlay;
 				mainprogram->fileslay->cliploading = true;
@@ -11660,7 +11815,7 @@ int main(int argc, char* argv[]){
 			}
 			else if (mainprogram->pathto == "CLIPOPENFILES") {
 				std::string str(mainprogram->paths[0]);
-				mainprogram->currvideodir = dirname(str);
+				mainprogram->currclipfilesdir = dirname(str);
 				mainprogram->clipfilescount = 0;
 				mainprogram->clipfilesclip = mainmix->mouseclip;
 				mainprogram->clipfileslay = mainmix->mouselayer;
@@ -11679,6 +11834,7 @@ int main(int argc, char* argv[]){
 			}
 			else if (mainprogram->pathto == "OPENSHELFFILES") {
 				if (mainprogram->paths.size() > 0) {
+					mainprogram->currshelffilesdir = dirname(mainprogram->paths[0]);
 					mainprogram->openshelffiles = true;
 					mainprogram->shelffilescount = 0;
 					mainprogram->shelffileselem = mainmix->mouseshelfelem;
@@ -11691,27 +11847,27 @@ int main(int argc, char* argv[]){
 			}
 			else if (mainprogram->pathto == "SAVEMIX") {
 				std::string str(mainprogram->path);
-				mainprogram->currmixdir = dirname(str);
+				mainprogram->currfilesdir = dirname(str);
 				mainmix->save_mix(str);
 			}
 			else if (mainprogram->pathto == "SAVEDECK") {
 				std::string str(mainprogram->path);
-				mainprogram->currdeckdir = dirname(str);
+				mainprogram->currfilesdir = dirname(str);
 				mainmix->save_deck(str);
 			}
 			else if (mainprogram->pathto == "OPENDECK") {
 				std::string str(mainprogram->path);
-				mainprogram->currdeckdir = dirname(str);
+				mainprogram->currfilesdir = dirname(str);
 				mainmix->open_deck(str, 1);
 			}
 			else if (mainprogram->pathto == "SAVELAYFILE") {
 				std::string str(mainprogram->path);
-				mainprogram->currlayerdir = dirname(str);
+				mainprogram->currfilesdir = dirname(str);
 				mainmix->save_layerfile(str, mainmix->mouselayer, 1, 0);
 			}
 			else if (mainprogram->pathto == "OPENLAYFILE") {
 				std::string str(mainprogram->path);
-				mainprogram->currlayerdir = dirname(str);
+				mainprogram->currfilesdir = dirname(str);
 				mainmix->open_layerfile(mainprogram->path, mainmix->mouselayer, 1, 1);
 			}
 			else if (mainprogram->pathto == "OPENSTATE") {
@@ -11721,7 +11877,7 @@ int main(int argc, char* argv[]){
 			}
 			else if (mainprogram->pathto == "OPENMIX") {
 				std::string str(mainprogram->path);
-				mainprogram->currmixdir = dirname(str);
+				mainprogram->currfilesdir = dirname(str);
 				mainmix->open_mix(str);
 			}
 			else if (mainprogram->pathto == "OPENBINFILES") {
@@ -11869,6 +12025,9 @@ int main(int argc, char* argv[]){
 					newpath += ".bin";
 					if (exists(oldpath)) boost::filesystem::rename(oldpath, newpath);
 					binsmain->save_binslist();
+				}
+				else if (mainprogram->renaming == EDIT_BINELEMNAME) {
+					binsmain->renamingelem->name = mainprogram->inputtext;
 				}
 				else if (mainprogram->renaming == EDIT_PARAM) {
 					int diff = mainprogram->inputtext.find(".") + 4 - mainprogram->inputtext.length();

@@ -357,6 +357,7 @@ class Mixer {
 		bool moving = false;
 		Param *wipex[2];
 		Param *wipey[2];
+		bool addlay = false;
 		
 		float time = 0;
 		float oldtime = 0;

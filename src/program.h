@@ -37,9 +37,10 @@ typedef enum
 	EDIT_NONE = 0,
 	EDIT_CANCEL = 1,
 	EDIT_BINNAME = 2,
-	EDIT_STRING = 3,
-	EDIT_NUMBER = 4,
-	EDIT_PARAM = 5,
+	EDIT_BINELEMNAME = 3,
+	EDIT_STRING = 4,
+	EDIT_NUMBER = 5,
+	EDIT_PARAM = 6,
 } EDIT_TYPE;
 
 typedef enum
@@ -298,6 +299,9 @@ class Program {
 		Menu *genericmenu = nullptr;
 		Menu* shelfmenu = nullptr;
 		Menu* filemenu = nullptr;
+		Menu* filedomenu = nullptr;
+		Menu* laylistmenu1 = nullptr;
+		Menu* laylistmenu2 = nullptr;
 		Menu* editmenu = nullptr;
 		bool menuactivation;
 		bool menuchosen;
@@ -377,9 +381,7 @@ class Program {
 		SDL_Window* tunemidiwindow = nullptr;
 		bool drawnonce = false;
 		bool tunemidi = false;
-		bool tunemidideck = 0;
 		int tunemidiset = 1;
-		Box* tmdeck;
 		Box* tmset;
 		Box* tmscratch;
 		Box *tmfreeze;
@@ -463,12 +465,9 @@ class Program {
 		std::string currshelfdir;
 		std::string currshelfdirdir;
 		std::string currshelffilesdir;
-		std::string currbindirdir;
-		std::string currvideodir;
-		std::string currimagedir;
-		std::string currdeckdir;
-		std::string currmixdir;
-		std::string currlayerdir;
+		std::string currclipfilesdir;
+		std::string currbinfilesdir;
+		std::string currfilesdir;
 		std::string currstatedir;
 		bool openshelfdir = false;
 		std::string shelfpath;
@@ -500,6 +499,7 @@ class Program {
 		bool indragbox = false;
 		Box* dragbox;
 		bool dragright = false;
+		bool dragout[2] = { true, true };
 
 		void quit(std::string msg);
 		GLuint set_shader();

@@ -14,6 +14,7 @@ uniform float colorrot = 0.5f;
 uniform float dotsize = 300.0f;
 uniform int fbowidth = 1920;
 uniform int fboheight = 1080;
+uniform bool inverted = false;
 uniform float fcdiv = 1.0f;
 uniform int preff = 1;
 uniform float drywet = 1.0f;
@@ -1790,7 +1791,8 @@ void main()
 	}
 	else if (down == 1) {
 		vec4 ic = texture2D(Sampler0, TexCoord0.st).rgba;
-		FragColor = vec4(ic.r, ic.g, ic.b, ic.a * opacity);
+		if (!inverted) FragColor = vec4(ic.r, ic.g, ic.b, ic.a * opacity);
+		else FragColor = vec4(1.0f - ic.r, 1.0f - ic.g, 1.0f - ic.b, ic.a * opacity);
 	}
 	else if (circle == 1) {
 		if (distance(vec2(cirx, ciry), gl_FragCoord.xy) < circleradius - 1.0f) {
@@ -1867,6 +1869,7 @@ void main()
 					if (dir == 0) {
 						tc.x -= xpix / (fbowidth * fcdiv);
 						if (xc < xpix) {
+							tc.x = 1.0f + tc.x;
 							FragColor = vec4(texture2D(endSampler1, tc).rgb, 1.0f);
 						}
 						else {
@@ -1876,6 +1879,7 @@ void main()
 					else if (dir == 2) {
 						tc.y -= ypix / (fboheight * fcdiv);
 						if (yc < ypix) {
+							tc.y = 1.0f + tc.y;
 							FragColor = vec4(texture2D(endSampler1, tc).rgb, 1.0f);
 						}
 						else {
@@ -1888,6 +1892,7 @@ void main()
 							FragColor = vec4(texture2D(endSampler1, tc).rgb, 1.0f);
 						}
 						else {
+							tc.x = 1.0f + tc.x;
 							FragColor = vec4(texture2D(endSampler0, tc).rgb, 1.0f);
 						}
 					}
@@ -1897,6 +1902,7 @@ void main()
 							FragColor = vec4(texture2D(endSampler1, tc).rgb, 1.0f);
 						}
 						else {
+							tc.y = 1.0f + tc.y;
 							FragColor = vec4(texture2D(endSampler0, tc).rgb, 1.0f);
 						}
 					}
@@ -1918,7 +1924,7 @@ void main()
 							FragColor = vec4(texture2D(endSampler1, tc).rgb, 1.0f);
 						}
 						else {
-							tc.x = -(fbowidth * fcdiv - xc) / (fbowidth * fcdiv - xpix);
+							tc.x = (fbowidth * fcdiv - xc) / (fbowidth * fcdiv - xpix);
 							FragColor = vec4(texture2D(endSampler0, tc).rgb, 1.0f);
 						}
 					}
@@ -1928,7 +1934,7 @@ void main()
 							FragColor = vec4(texture2D(endSampler0, tc).rgb, 1.0f);
 						}
 						else {
-							tc.x = -(fbowidth * fcdiv - xc) / (fbowidth * fcdiv - xpix);
+							tc.x = (fbowidth * fcdiv - xc) / (fbowidth * fcdiv - xpix);
 							FragColor = vec4(texture2D(endSampler1, tc).rgb, 1.0f);
 						}
 					}
@@ -1938,7 +1944,7 @@ void main()
 							FragColor = vec4(texture2D(endSampler1, tc).rgb, 1.0f);
 						}
 						else {
-							tc.y = -(fboheight * fcdiv - yc) / (fboheight * fcdiv - ypix);
+							tc.y = (fboheight * fcdiv - yc) / (fboheight * fcdiv - ypix);
 							FragColor = vec4(texture2D(endSampler0, tc).rgb, 1.0f);
 						}
 					}
@@ -1948,7 +1954,7 @@ void main()
 							FragColor = vec4(texture2D(endSampler0, tc).rgb, 1.0f);
 						}
 						else {
-							tc.y = -(fboheight * fcdiv - yc) / (fboheight * fcdiv - ypix);
+							tc.y = (fboheight * fcdiv - yc) / (fboheight * fcdiv - ypix);
 							FragColor = vec4(texture2D(endSampler1, tc).rgb, 1.0f);
 						}
 					}
