@@ -1,3 +1,21 @@
+typedef enum
+{
+	BET_DELETE = 0,
+	BET_RENAME = 1,
+	BET_OPENFILES = 2,
+	BET_LOADMIX = 3,
+	BET_LOADDECKA = 4,
+	BET_LOADDECKB = 5,
+	BET_INSDECKA = 6,
+	BET_INSDECKB = 7,
+	BET_INSMIX = 8,
+	BET_LOADSHELFA = 9,
+	BET_LOADSHELFB = 10,
+	BET_HAPELEM = 11,
+	BET_HAPBIN = 12,
+	BET_QUIT = 13,
+} BINELMENU_OPTION;
+
 class Bin;
 class BinElement;
 
@@ -8,6 +26,7 @@ class BinsMain {
 		std::vector<Box*> elemboxes;
 		BinElement *currbinel = nullptr;
 		BinElement *prevbinel = nullptr;
+		std::vector<BINELMENU_OPTION> binelmenuoptions;
 		int previ;
 		int prevj;
 		Box* newbinbox;

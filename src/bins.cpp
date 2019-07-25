@@ -193,7 +193,7 @@ void BinsMain::handle(bool draw) {
 
 	//draw binelements
 	if (!mainprogram->menuondisplay) this->menubinel = nullptr;
-	if (mainprogram->menuactivation) mainprogram->menuset = 0;
+	if (mainprogram->menuactivation) this->menubinel = nullptr;
 	if (draw) {
 		for (int i = 0; i < 12; i++) {
 			for (int j = 0; j < 12; j++) {
@@ -204,54 +204,87 @@ void BinsMain::handle(bool draw) {
 					if (mainprogram->menuactivation) {
 						if (binel->path != "") {
 							// Set menu when over non-empty element
+							this->binelmenuoptions.clear();
 							std::vector<std::string> binel;
 							binel.push_back("Delete element");
+							binelmenuoptions.push_back(BET_DELETE);
 							binel.push_back("Rename element");
+							binelmenuoptions.push_back(BET_RENAME);
 							binel.push_back("Open file(s) from disk");
+							binelmenuoptions.push_back(BET_OPENFILES);
 							binel.push_back("Insert deck A");
+							binelmenuoptions.push_back(BET_INSDECKA);
 							binel.push_back("Insert deck B");
+							binelmenuoptions.push_back(BET_INSDECKB);
 							binel.push_back("Insert full mix");
+							binelmenuoptions.push_back(BET_INSMIX);
 							binel.push_back("Load block in shelf A");
+							binelmenuoptions.push_back(BET_LOADSHELFA);
 							binel.push_back("Load block in shelf B");
+							binelmenuoptions.push_back(BET_LOADSHELFB);
 							binel.push_back("HAP encode element");
+							binelmenuoptions.push_back(BET_HAPELEM);
 							binel.push_back("Quit");
+							binelmenuoptions.push_back(BET_QUIT);
 							mainprogram->make_menu("binelmenu", mainprogram->binelmenu, binel);
-							mainprogram->menuset = 2;
 						}
 						if (binel->type == ELEM_DECK) {
 							// set binelmenu entries when mouse over deck
+							this->binelmenuoptions.clear();
 							std::vector<std::string> binel;
 							binel.push_back("Load in deck A");
+							binelmenuoptions.push_back(BET_LOADDECKA);
 							binel.push_back("Load in deck B");
+							binelmenuoptions.push_back(BET_LOADDECKB);
 							binel.push_back("Delete deck");
+							binelmenuoptions.push_back(BET_DELETE);
 							binel.push_back("Rename deck");
+							binelmenuoptions.push_back(BET_RENAME);
 							binel.push_back("Open file(s) from disk");
+							binelmenuoptions.push_back(BET_OPENFILES);
 							binel.push_back("Insert deck A");
+							binelmenuoptions.push_back(BET_INSDECKA);
 							binel.push_back("Insert deck B");
+							binelmenuoptions.push_back(BET_INSDECKB);
 							binel.push_back("Insert full mix");
+							binelmenuoptions.push_back(BET_INSMIX);
 							binel.push_back("Load block in shelf A");
+							binelmenuoptions.push_back(BET_LOADSHELFA);
 							binel.push_back("Load block in shelf B");
+							binelmenuoptions.push_back(BET_LOADSHELFB);
 							binel.push_back("HAP encode deck");
+							binelmenuoptions.push_back(BET_HAPELEM);
 							binel.push_back("Quit");
+							binelmenuoptions.push_back(BET_QUIT);
 							mainprogram->make_menu("binelmenu", mainprogram->binelmenu, binel);
-							mainprogram->menuset = 4;
 						}
 						else if (binel->type == ELEM_MIX) {
 							// set binelmenu entries when mouse over mix
+							this->binelmenuoptions.clear();
 							std::vector<std::string> binel;
 							binel.push_back("Load in mix");
+							binelmenuoptions.push_back(BET_LOADMIX);
 							binel.push_back("Delete mix");
+							binelmenuoptions.push_back(BET_DELETE);
 							binel.push_back("Rename mix");
+							binelmenuoptions.push_back(BET_RENAME);
 							binel.push_back("Open file(s) from disk");
+							binelmenuoptions.push_back(BET_OPENFILES);
 							binel.push_back("Insert deck A");
+							binelmenuoptions.push_back(BET_INSDECKA);
 							binel.push_back("Insert deck B");
+							binelmenuoptions.push_back(BET_INSDECKB);
 							binel.push_back("Insert full mix");
+							binelmenuoptions.push_back(BET_INSMIX);
 							binel.push_back("Load block in shelf A");
+							binelmenuoptions.push_back(BET_LOADSHELFA);
 							binel.push_back("Load block in shelf B");
+							binelmenuoptions.push_back(BET_LOADSHELFB);
 							binel.push_back("HAP encode mix");
+							binelmenuoptions.push_back(BET_HAPELEM);
 							binel.push_back("Quit");
+							binelmenuoptions.push_back(BET_QUIT);
 							mainprogram->make_menu("binelmenu", mainprogram->binelmenu, binel);
-							mainprogram->menuset = 3;
 						}
 					}
 				}
@@ -317,36 +350,52 @@ void BinsMain::handle(bool draw) {
 				draw_box(yellow, nullptr, &box, -1);
 				if (box.in()) {
 					this->mouseshelfnum = i * 3 + j;
-					if (mainprogram->menuset == 0 and mainprogram->menuactivation) {
+					if (!this->menubinel and mainprogram->menuactivation) {
 						// set binelmenu entries when mouse in shelf blocks box but not on bin element
 						std::vector<std::string> binel;
+						this->binelmenuoptions.clear();
 						binel.push_back("Open file(s) from disk");
+						binelmenuoptions.push_back(BET_OPENFILES);
 						binel.push_back("Insert deck A");
+						binelmenuoptions.push_back(BET_INSDECKA);
 						binel.push_back("Insert deck B");
+						binelmenuoptions.push_back(BET_INSDECKB);
 						binel.push_back("Insert full mix");
+						binelmenuoptions.push_back(BET_INSMIX);
 						binel.push_back("Load block in shelf A");
+						binelmenuoptions.push_back(BET_LOADSHELFA);
 						binel.push_back("Load block in shelf B");
+						binelmenuoptions.push_back(BET_LOADSHELFB);
 						binel.push_back("HAP encode entire bin");
+						binelmenuoptions.push_back(BET_HAPBIN);
 						binel.push_back("Quit");
+						binelmenuoptions.push_back(BET_QUIT);
 						mainprogram->make_menu("binelmenu", mainprogram->binelmenu, binel);
 					}
 				}
 			}
 		}
 
-		if (this->mouseshelfnum == -1 and mainprogram->menuset == 0 and mainprogram->menuactivation) {
+		if (this->mouseshelfnum == -1 and !this->menubinel and mainprogram->menuactivation) {
 			// set binelmenu entries when mouse over nothing
 			std::vector<std::string> binel;
+			this->binelmenuoptions.clear();
 			binel.push_back("Open file(s) from disk");
+			binelmenuoptions.push_back(BET_OPENFILES);
 			binel.push_back("Insert deck A");
+			binelmenuoptions.push_back(BET_INSDECKA);
 			binel.push_back("Insert deck B");
+			binelmenuoptions.push_back(BET_INSDECKB);
 			binel.push_back("Insert full mix");
+			binelmenuoptions.push_back(BET_INSMIX);
 			binel.push_back("HAP encode entire bin");
+			binelmenuoptions.push_back(BET_HAPBIN);
 			binel.push_back("Quit");
+			binelmenuoptions.push_back(BET_QUIT);
 			mainprogram->make_menu("binelmenu", mainprogram->binelmenu, binel);
 		}
 
-		if (mainprogram->menuset == 0) {
+		if (!this->menubinel == 0) {
 			// not in bin element -> leftmouse draws selection box
 			bool full = false;
 			if (this->menubinel) {
@@ -756,177 +805,169 @@ void BinsMain::handle(bool draw) {
 	// handle binelmenu thats been populated above, menuset controls which options sets are used
 	int k = handle_menu(mainprogram->binelmenu);
 	//if (k > -1) this->currbinel = nullptr;
-	if (k == 0 and mainprogram->menuset == 2) {
-		// delete hovered bin element
-		this->delbinels.push_back(this->menubinel);
-		mainprogram->del = true;
-	}
-	else if (k == 1 and mainprogram->menuset > 0) {
-		// start renaming bin element
-		this->renamingelem = this->menubinel;
-		this->renamingelem->oldname = this->renamingelem->name;
-		std::string name = this->menubinel->name;
-		mainprogram->backupname = name;
-		mainprogram->inputtext = name;
-		mainprogram->cursorpos = mainprogram->inputtext.length();
-		SDL_StartTextInput();
-		mainprogram->renaming = EDIT_BINELEMNAME;
-	}
-	else if (k == 0 and mainprogram->menuset == 4) {
-		// load hovered deck in deck A
-		mainprogram->binsscreen = false;
-		mainmix->mousedeck = 0;
-		mainmix->open_deck(this->menubinel->path, 1);
-	}
-	else if (k == 2 and mainprogram->menuset == 4) {
-		// load hovered deck in deck B
-		mainprogram->binsscreen = false;
-		mainmix->mousedeck = 1;
-		mainmix->open_deck(this->menubinel->path, 1);
-	}
-	else if (k == 3 and mainprogram->menuset == 4) {
-		// delete hovered deck
-		this->delbinels.push_back(this->menubinel);
-		mainprogram->del = true;
-	}
-	else if (k == 0 and mainprogram->menuset == 3) {
-		// load hovered mix into decks
-		mainprogram->binsscreen = false;
-		mainmix->open_mix(this->menubinel->path.c_str());
-	}
-	else if (k == 2 and mainprogram->menuset == 3) {
-		// delete hovered mix
-		this->delbinels.push_back(this->menubinel);
-		mainprogram->del = true;
-	}
-	else if (k == mainprogram->menuset) {
-		// open videos/images/layer files into bin
-		mainprogram->pathto = "OPENBINFILES";
-		std::thread filereq(&Program::get_multinname, mainprogram, "Open file(s)", boost::filesystem::canonical(mainprogram->currbinfilesdir).generic_string());
-		filereq.detach();
-	}
-	else if (k == mainprogram->menuset + 1) {
-		// insert deck A into bin
-		mainprogram->paths.clear();
-		mainmix->mousedeck = 0;
-		std::string name = "deckA";
-		std::string path;
-		int count = 0;
-		while (1) {
-			path = mainprogram->temppath + name + ".deck";
-			if (!exists(path)) {
-				break;
-			}
-			count++;
-			name = remove_version(name) + "_" + std::to_string(count);
+	if (binelmenuoptions.size() and k > -1) {
+		if (binelmenuoptions[k] == BET_DELETE) {
+			// delete hovered bin element
+			this->delbinels.push_back(this->menubinel);
+			mainprogram->del = true;
 		}
-		mainmix->do_save_deck(path, true, true);
-		mainprogram->paths.push_back(path);
-		mainprogram->counting = 0;
-		this->openbinfile = true;
-		mainprogram->lmsave = false;
-		this->prevbinel = nullptr;
-	}
-	else if (k == mainprogram->menuset + 2) {
-		// insert deck B into bin
-		mainprogram->paths.clear();
-		mainmix->mousedeck = 1;
-		std::string name = "deckB";
-		std::string path;
-		int count = 0;
-		while (1) {
-			path = mainprogram->temppath + name + ".deck";
-			if (!exists(path)) {
-				break;
-			}
-			count++;
-			name = remove_version(name) + "_" + std::to_string(count);
+		else if (binelmenuoptions[k] == BET_RENAME) {
+			// start renaming bin element
+			this->renamingelem = this->menubinel;
+			this->renamingelem->oldname = this->renamingelem->name;
+			std::string name = this->menubinel->name;
+			mainprogram->backupname = name;
+			mainprogram->inputtext = name;
+			mainprogram->cursorpos = mainprogram->inputtext.length();
+			SDL_StartTextInput();
+			mainprogram->renaming = EDIT_BINELEMNAME;
 		}
-		mainmix->do_save_deck(path, true, true);
-		mainprogram->paths.push_back(path);
-		mainprogram->counting = 0;
-		this->openbinfile = true;
-		mainprogram->lmsave = false;
-		this->prevbinel = nullptr;
-	}
-	else if (k == mainprogram->menuset + 3) {
-		// insert live mix into bin
-		mainprogram->paths.clear();
-		std::string name = "mix";
-		std::string path;
-		int count = 0;
-		while (1) {
-			path = mainprogram->temppath + name + ".mix";
-			if (!exists(path)) {
-				break;
-			}
-			count++;
-			name = remove_version(name) + "_" + std::to_string(count);
+		else if (binelmenuoptions[k] == BET_LOADDECKA) {
+			// load hovered deck in deck A
+			mainprogram->binsscreen = false;
+			mainmix->mousedeck = 0;
+			mainmix->open_deck(this->menubinel->path, 1);
 		}
-		mainmix->do_save_mix(path, mainprogram->prevmodus, true);
-		mainprogram->paths.push_back(path);
-		mainprogram->counting = 0;
-		this->openbinfile = true;
-		mainprogram->lmsave = false;
-		this->prevbinel = nullptr;
-	}
-	else if (k == mainprogram->menuset + 4 and this->mouseshelfnum != -1) {
-		// load hovered block into shelf A
-		Shelf* shelf = mainprogram->shelves[0];
-		for (int i = 0; i < 16; i++) {
-			BinElement* binel = this->currbin->elements[this->mouseshelfnum / 3 * 48 + (this->mouseshelfnum % 3) * 4 + i / 4 + (i % 4) * 12];
-			ShelfElement* elem = shelf->elements[i];
-			elem->path = binel->path;
-			elem->jpegpath = binel->jpegpath;
-			elem->type = binel->type;
-			elem->tex = copy_tex(binel->tex);
+		else if (binelmenuoptions[k] == BET_LOADDECKB) {
+			// load hovered deck in deck B
+			mainprogram->binsscreen = false;
+			mainmix->mousedeck = 1;
+			mainmix->open_deck(this->menubinel->path, 1);
 		}
-	}
-	else if (k == mainprogram->menuset + 5 and this->mouseshelfnum != -1) {
-		// load hovered block into shelf B
-		Shelf* shelf = mainprogram->shelves[1];
-		for (int i = 0; i < 16; i++) {
-			BinElement* binel = this->currbin->elements[this->mouseshelfnum / 3 * 48 + (this->mouseshelfnum % 3) * 4 + i / 4 + (i % 4) * 12];
-			ShelfElement* elem = shelf->elements[i];
-			elem->path = binel->path;
-			elem->jpegpath = binel->jpegpath;
-			elem->type = binel->type;
-			elem->tex = copy_tex(binel->tex);
+		else if (binelmenuoptions[k] == BET_LOADMIX) {
+			// load hovered mix into decks
+			mainprogram->binsscreen = false;
+			mainmix->open_mix(this->menubinel->path.c_str());
 		}
-	}
-	else if (k == 7 and mainprogram->menuset == 1) {
-		// hap encode hovered bin element
-		this->hap_binel(this->menubinel, nullptr);
-	}
-	else if (k == 9 and mainprogram->menuset == 3) {
-		// hap encode hovered deck
-		this->hap_deck(this->menubinel);
-	}
-	else if (k == 8 and mainprogram->menuset == 2) {
-		// hap encode hovered mix
-		this->hap_mix(this->menubinel);
-	}
-	else if (k == 4 + (this->mouseshelfnum != -1) * 2 and mainprogram->menuset == 0) {
-		// hap encode entire bin
-		for (int i = 0; i < 12; i++) {
-			for (int j = 0; j < 12; j++) {
-				// elements
-				BinElement* binel = this->currbin->elements[i * 12 + j];
-				if (binel->full and (binel->type == ELEM_FILE or binel->type == ELEM_LAYER)) {
-					this->hap_binel(binel, nullptr);
+		else if (binelmenuoptions[k] == BET_OPENFILES) {
+			// open videos/images/layer files into bin
+			mainprogram->pathto = "OPENBINFILES";
+			std::thread filereq(&Program::get_multinname, mainprogram, "Open file(s)", boost::filesystem::canonical(mainprogram->currbinfilesdir).generic_string());
+			filereq.detach();
+		}
+		else if (binelmenuoptions[k] == BET_INSDECKA) {
+			// insert deck A into bin
+			mainprogram->paths.clear();
+			mainmix->mousedeck = 0;
+			std::string name = "deckA";
+			std::string path;
+			int count = 0;
+			while (1) {
+				path = mainprogram->temppath + name + ".deck";
+				if (!exists(path)) {
+					break;
 				}
-				else if (binel->type == ELEM_DECK) {
-					this->hap_deck(this->menubinel);
+				count++;
+				name = remove_version(name) + "_" + std::to_string(count);
+			}
+			mainmix->do_save_deck(path, true, true);
+			mainprogram->paths.push_back(path);
+			mainprogram->counting = 0;
+			this->openbinfile = true;
+			mainprogram->lmsave = false;
+			this->prevbinel = nullptr;
+		}
+		else if (binelmenuoptions[k] == BET_INSDECKB) {
+			// insert deck B into bin
+			mainprogram->paths.clear();
+			mainmix->mousedeck = 1;
+			std::string name = "deckB";
+			std::string path;
+			int count = 0;
+			while (1) {
+				path = mainprogram->temppath + name + ".deck";
+				if (!exists(path)) {
+					break;
 				}
-				else if (binel->type == ELEM_MIX) {
-					this->hap_mix(this->menubinel);
+				count++;
+				name = remove_version(name) + "_" + std::to_string(count);
+			}
+			mainmix->do_save_deck(path, true, true);
+			mainprogram->paths.push_back(path);
+			mainprogram->counting = 0;
+			this->openbinfile = true;
+			mainprogram->lmsave = false;
+			this->prevbinel = nullptr;
+		}
+		else if (binelmenuoptions[k] == BET_INSMIX) {
+			// insert live mix into bin
+			mainprogram->paths.clear();
+			std::string name = "mix";
+			std::string path;
+			int count = 0;
+			while (1) {
+				path = mainprogram->temppath + name + ".mix";
+				if (!exists(path)) {
+					break;
+				}
+				count++;
+				name = remove_version(name) + "_" + std::to_string(count);
+			}
+			mainmix->do_save_mix(path, mainprogram->prevmodus, true);
+			mainprogram->paths.push_back(path);
+			mainprogram->counting = 0;
+			this->openbinfile = true;
+			mainprogram->lmsave = false;
+			this->prevbinel = nullptr;
+		}
+		else if (binelmenuoptions[k] == BET_LOADSHELFA) {
+			// load hovered block into shelf A
+			Shelf* shelf = mainprogram->shelves[0];
+			for (int i = 0; i < 16; i++) {
+				BinElement* binel = this->currbin->elements[this->mouseshelfnum / 3 * 48 + (this->mouseshelfnum % 3) * 4 + i / 4 + (i % 4) * 12];
+				ShelfElement* elem = shelf->elements[i];
+				elem->path = binel->path;
+				elem->jpegpath = binel->jpegpath;
+				elem->type = binel->type;
+				elem->tex = copy_tex(binel->tex);
+			}
+		}
+		else if (binelmenuoptions[k] == BET_LOADSHELFB) {
+			// load hovered block into shelf B
+			Shelf* shelf = mainprogram->shelves[1];
+			for (int i = 0; i < 16; i++) {
+				BinElement* binel = this->currbin->elements[this->mouseshelfnum / 3 * 48 + (this->mouseshelfnum % 3) * 4 + i / 4 + (i % 4) * 12];
+				ShelfElement* elem = shelf->elements[i];
+				elem->path = binel->path;
+				elem->jpegpath = binel->jpegpath;
+				elem->type = binel->type;
+				elem->tex = copy_tex(binel->tex);
+			}
+		}
+		else if (binelmenuoptions[k] == BET_HAPELEM) {
+			// hap encode hovered bin element
+			if (this->menubinel->type == ELEM_DECK) {
+				this->hap_mix(this->menubinel);
+			}
+			else if (this->menubinel->type == ELEM_MIX) {
+				this->hap_deck(this->menubinel);
+			}
+			else {
+				this->hap_binel(this->menubinel, nullptr);
+			}
+		}
+		else if (binelmenuoptions[k] == BET_HAPBIN) {
+			// hap encode entire bin
+			for (int i = 0; i < 12; i++) {
+				for (int j = 0; j < 12; j++) {
+					// elements
+					BinElement* binel = this->currbin->elements[i * 12 + j];
+					if (binel->full and (binel->type == ELEM_FILE or binel->type == ELEM_LAYER)) {
+						this->hap_binel(binel, nullptr);
+					}
+					else if (binel->type == ELEM_DECK) {
+						this->hap_deck(this->menubinel);
+					}
+					else if (binel->type == ELEM_MIX) {
+						this->hap_mix(this->menubinel);
+					}
 				}
 			}
 		}
-	}
-	else if (k == mainprogram->binelmenu->entries.size() - 1) {
-		// quit program
-		mainprogram->quit("quitted");
+		else if (binelmenuoptions[k] == BET_QUIT) {
+			// quit program
+			mainprogram->quit("quitted");
+		}
 	}
 
 	if (mainprogram->menuchosen) {
@@ -943,10 +984,10 @@ void BinsMain::handle(bool draw) {
 		// activate binslist or bin menu
 		int dt = 0;
 		int mt = 0;
-		if (this->menubinel and mainprogram->menuset == 3) {
+		if (this->menubinel) {
 			dt = this->menubinel->encthreads;
 		}
-		else if (this->menubinel and mainprogram->menuset == 2) {
+		else if (this->menubinel) {
 			mt = this->menubinel->encthreads;
 		}
 		if (dt == 0 and mt == 0) {
@@ -2007,7 +2048,6 @@ std::tuple<std::string, std::string> BinsMain::hap_binel(BinElement *binel, BinE
 			#endif
 		}
 		hap.detach();
-		binel->path = remove_extension(binel->path) + "_hap.mov";
 		apath = binel->path;
 		rpath = mainprogram->docpath + boost::filesystem::relative(apath, mainprogram->docpath).string();
 	}
@@ -2373,7 +2413,8 @@ void BinsMain::hap_encode(const std::string srcpath, BinElement *binel, BinEleme
     avcodec_free_context(&c);
     av_frame_free(&nv12frame);
     av_packet_unref(&pkt);
-    binel->encoding = false;
+	binel->path = remove_extension(binel->path) + "_hap.mov";
+	binel->encoding = false;
     if (bdm) {
     	bdm->encthreads--;
 		delete binel;  // temp bin elements populate bdm binelements

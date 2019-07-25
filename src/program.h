@@ -437,7 +437,6 @@ class Program {
 		bool inwormhole = false;
 		Button *wormhole;
 		DIR *opendir;
-		int menuset;
 		bool gotcameras = false;
 		
 		EDIT_TYPE renaming = EDIT_NONE;
