@@ -54,6 +54,7 @@ class BinsMain {
 		BinElement *backupbinel = nullptr;
 		BinElement* menubinel = nullptr;
 		std::vector<BinElement*> delbinels;
+		std::vector<BinElement*> movebinels;
 		Bin* dragbin = nullptr;
 		int dragbinpos = -1;
 		bool dragbinsense = false;
@@ -120,13 +121,16 @@ class BinElement {
 		GLuint tex;
 		GLuint oldtex;
 		bool full = false;
+		bool oldfull = false;
 		bool select = false;
+		bool oldselect = false;
 		bool encwaiting = false;
 		bool encoding = false;
 		int encthreads;
 		float encodeprogress;
 		int allhaps = 0;
+		BinElement* next();
+		void erase();
 		BinElement();
 		~BinElement();
-		BinElement* next();
 };

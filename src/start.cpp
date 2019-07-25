@@ -9932,6 +9932,12 @@ void the_loop() {
 			if (mainprogram->leftmouse) {
 				mainprogram->filemenu->menux = 0;
 				mainprogram->filemenu->menuy = mainprogram->yvtxtoscr(tf(0.05f));
+				mainprogram->filedomenu->menux = 0;
+				mainprogram->filedomenu->menuy = mainprogram->yvtxtoscr(tf(0.05f));
+				mainprogram->laylistmenu1->menux = 0;
+				mainprogram->laylistmenu1->menuy = mainprogram->yvtxtoscr(tf(0.05f));
+				mainprogram->laylistmenu2->menux = 0;
+				mainprogram->laylistmenu2->menuy = mainprogram->yvtxtoscr(tf(0.05f));
 				mainprogram->filemenu->state = 2;
 			}
 		}
@@ -11489,6 +11495,7 @@ int main(int argc, char* argv[]){
 
 	std::vector<std::string> binsel;
 	binsel.push_back("Delete elements");
+	binsel.push_back("Move elements");
 	mainprogram->make_menu("binselmenu", mainprogram->binselmenu, binsel);
 
 	std::vector<std::string> generic;
