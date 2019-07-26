@@ -363,10 +363,24 @@ Program::Program() {
 	this->tmscratch->tooltiptitle = "Set MIDI for scratch wheel ";
 	this->tmscratch->tooltip = "Leftclick to start waiting for a MIDI command that will trigger the scratch wheel  for this preset. ";
 	
-	this->wormhole = new Button(false);
-	this->wormhole->box->tooltiptitle = "Screen switching wormhole ";
-	this->wormhole->box->tooltip = "Connects mixing screen and media bins screen.  Leftclick to switch screen.  Drag content inside wormhole to travel to the other screen. ";
-	this->buttons.push_back(this->wormhole);
+	this->wormhole1 = new Button(false);
+	this->wormhole1->box->vtxcoords->x1 = -1.0f;
+	this->wormhole1->box->vtxcoords->y1 = -0.58f;
+	this->wormhole1->box->vtxcoords->w = 0.05f;
+	this->wormhole1->box->vtxcoords->h = 0.3f;
+	this->wormhole1->box->upvtxtoscr();
+	this->wormhole1->box->tooltiptitle = "Screen switching wormhole ";
+	this->wormhole1->box->tooltip = "Connects mixing screen and media bins screen.  Leftclick to switch screen.  Drag content inside white rectangle up to the very edge of the screen to travel to the other screen. ";
+	this->buttons.push_back(this->wormhole1);
+	this->wormhole2 = new Button(false);
+	this->wormhole2->box->vtxcoords->x1 = 0.95f;
+	this->wormhole2->box->vtxcoords->y1 = -0.58f;
+	this->wormhole2->box->vtxcoords->w = 0.05f;
+	this->wormhole2->box->vtxcoords->h = 0.3f;
+	this->wormhole2->box->upvtxtoscr();
+	this->wormhole2->box->tooltiptitle = "Screen switching wormhole ";
+	this->wormhole2->box->tooltip = "Connects mixing screen and media bins screen.  Leftclick to switch screen.  Leftclick to switch screen.  Drag content inside white rectangle up to the very edge of the screen to travel to the other screen. ";
+	this->buttons.push_back(this->wormhole2);
 }
 
 void Program::make_menu(const std::string &name, Menu *&menu, std::vector<std::string> &entries) {
@@ -714,6 +728,61 @@ bool Program::do_order_paths() {
 
 	return false;
 
+}
+
+
+void Program::handle_wormhole(bool hole) {
+	float white[] = { 1.0f, 1.0f, 1.0f, 1.0f };
+	float lightblue[] = { 0.5f, 0.5f, 1.0f, 1.0f };
+
+	Box* box;
+	if (hole == 0) box = mainprogram->wormhole1->box;
+	else box = mainprogram->wormhole2->box;
+
+	//draw and handle BINS wormhole
+	if (mainprogram->fullscreen == -1) {
+		if (box->in()) {
+			draw_box(white, lightblue, box, -1);
+			mainprogram->tooltipbox = mainprogram->wormhole1->box;
+			if (!mainprogram->menuondisplay) {
+				if (mainprogram->leftmouse) {
+					mainprogram->binsscreen = !mainprogram->binsscreen;
+					mainprogram->leftmouse = false;
+				}
+				if (mainprogram->menuactivation) {
+					mainprogram->parammenu1->state = 2;
+					mainmix->learnparam = nullptr;
+					mainmix->learnbutton = mainprogram->wormhole1;
+					mainprogram->menuactivation = false;
+				}
+			}
+			if (mainprogram->dragbinel) {
+				//dragging something inside wormhole
+				if (!mainprogram->inwormhole and !mainprogram->menuondisplay) {
+					if (mainprogram->mx == hole * (glob->w - 1)) {
+						if (!mainprogram->binsscreen) {
+							set_queueing(mainmix->currlay, false);
+						}
+						mainprogram->binsscreen = !mainprogram->binsscreen;
+						mainprogram->inwormhole = true;
+					}
+				}
+			}
+		}
+		else {
+			draw_box(white, white, box, -1);
+		}
+		if (hole == 0) {
+			draw_triangle(white, white, -1.0 + box->vtxcoords->w, box->vtxcoords->y1, box->vtxcoords->h / 2.0f, box->vtxcoords->h, LEFT, OPEN);
+			if (!mainprogram->binsscreen) render_text("MIX", white,  -0.9f, -0.44f, 0.0006f, 0.001f);
+			else render_text("BINS", white, -0.9f, -0.44f, 0.0006f, 0.001f);
+		}
+		else {
+			draw_triangle(white, white, 1.0f - box->vtxcoords->w - box->vtxcoords->h / 2.0f * 0.866f, box->vtxcoords->y1, box->vtxcoords->h / 2.0f, box->vtxcoords->h, RIGHT, OPEN);
+			if (mainprogram->binsscreen) render_text("MIX", white, 0.87f, -0.44f, 0.0006f, 0.001f);
+			else render_text("BINS", white, 0.87f, -0.44f, 0.0006f, 0.001f);
+		}
+	}
 }
 
 

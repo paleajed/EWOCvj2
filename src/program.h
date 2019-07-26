@@ -435,7 +435,8 @@ class Program {
 		bool drag = false;
 		bool dragmousedown = false;
 		bool inwormhole = false;
-		Button *wormhole;
+		Button* wormhole1;
+		Button* wormhole2;
 		DIR *opendir;
 		bool gotcameras = false;
 		
@@ -516,6 +517,7 @@ class Program {
 		void preview_init();
 		void add_main_oscmethods();
 		bool order_paths(bool dodeckmix);
+		void handle_wormhole(bool hole);
 		Program();
 		
 	private:
@@ -605,6 +607,8 @@ void calctexture(Layer *lay);
 int open_codec_context(int *stream_idx, AVFormatContext *video, enum AVMediaType type);
 
 void set_live_base(Layer *lay, std::string livename);
+
+extern void set_queueing(Layer* lay, bool onoff);
 
 extern float tf(float vtxcoord);
 extern bool exists(const std::string &name);

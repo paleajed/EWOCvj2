@@ -3481,7 +3481,7 @@ void midi_set() {
 	if (mainmix->midibutton) {
 		Button *but = mainmix->midibutton;
 		but->value = (int)(mainmix->midi2 / 64);
-		if (but == mainprogram->wormhole) mainprogram->binsscreen = but->value;
+		if (but == mainprogram->wormhole1 or but == mainprogram->wormhole2) mainprogram->binsscreen = but->value;
 		mainmix->midibutton = nullptr;
 	}
 
@@ -5423,8 +5423,8 @@ bool Box::in(int mx, int my, bool draggoal) {
 			mainprogram->drag = true;
 		}
 	}
-	if (this->scrcoords->x1 < mx and mx < this->scrcoords->x1 + this->scrcoords->w) {
-		if (this->scrcoords->y1 - this->scrcoords->h < my and my < this->scrcoords->y1) {
+	if (this->scrcoords->x1 <= mx and mx <= this->scrcoords->x1 + this->scrcoords->w) {
+		if (this->scrcoords->y1 - this->scrcoords->h <= my and my <= this->scrcoords->y1) {
 			if (mainprogram->showtooltips and mainprogram->tooltipbox == nullptr and this->tooltiptitle != "") mainprogram->tooltipbox = this;
 			return true;
 		}
@@ -7686,44 +7686,20 @@ void the_loop() {
 		}
 	}
 		
+
 	// Crawl web
 	make_layboxes();
 	if (mainprogram->prevmodus) walk_nodes(0);
 	walk_nodes(1);
 	
-	//draw and handle BINS wormhole
-	float darkgreen[4] = {0.0f, 0.3f, 0.0f, 1.0f};
-	if (!mainprogram->menuondisplay) {
-		if (sqrt(pow((mainprogram->mx / (glob->w / 2.0f) - 1.0f - (mainprogram->binsscreen * 0.72f)) * glob->w / glob->h, 2) + pow((glob->h - mainprogram->my) / (glob->h / 2.0f) - 1.25f, 2)) < 0.2f) {
-			darkgreen[0] = 0.5f;
-			darkgreen[1] = 0.5f;
-			darkgreen[2] = 1.0f;
-			darkgreen[3] = 1.0f;
-			mainprogram->tooltipbox = mainprogram->wormhole->box;
-			if (mainprogram->leftmouse) {
-				mainprogram->binsscreen = !mainprogram->binsscreen;
-				mainprogram->leftmouse = false;
-			}
-			if (mainprogram->menuactivation) {
-				mainprogram->parammenu1->state = 2;
-				mainmix->learnparam = nullptr;
-				mainmix->learnbutton = mainprogram->wormhole;
-				mainprogram->menuactivation = false;
-			}
+
+	// draw and handle wormgates
+	if (!mainprogram->binsscreen) mainprogram->handle_wormhole(0);
+	mainprogram->handle_wormhole(1);
+	if (mainprogram->dragbinel) {
+		if (!mainprogram->wormhole1->box->in() and !mainprogram->wormhole2->box->in()) {
+			mainprogram->inwormhole = false;
 		}
-	}
-		
-	
-	//if (mainprogram->renaming != EDIT_NONE and mainprogram->leftmouse) mainprogram->renaming = EDIT_NONE;
-	
-	// wormhole
-	if (mainprogram->fullscreen == -1) {
-		draw_box(darkgreen, mainprogram->binsscreen * 0.72f, 0.25f, 0.2f, 1);
-		draw_box(white, mainprogram->binsscreen * 0.72f, 0.25f, 0.2f, 2);
-		draw_box(white, mainprogram->binsscreen * 0.72f, 0.25f, 0.15f, 2);
-		draw_box(white, mainprogram->binsscreen * 0.72f, 0.25f, 0.1f, 2);
-		if (mainprogram->binsscreen) render_text("MIX", white, -0.024f + (mainprogram->binsscreen * 0.72f), 0.24f, 0.0006f, 0.001f);
-		else render_text("BINS", white, -0.025f + (mainprogram->binsscreen * 0.72f), 0.24f, 0.0006f, 0.001f);
 	}
 	
 	for (int i = 0; i < mainprogram->menulist.size(); i++) {
@@ -7885,14 +7861,6 @@ void the_loop() {
 		if (mainmix->currlay) {
 			draw_box(nullptr, blue, -1.0f + mainprogram->numw + mainmix->currlay->deck * 1.0f + (mainmix->currlay->pos - mainmix->scenes[mainmix->currlay->deck][mainmix->currscene[mainmix->currlay->deck]]->scrollpos) * mainprogram->layw, -0.1f + tf(0.05f), mainprogram->layw, 1.1f, -1);
 		}
-
-		//draw wormhole
-		draw_box(darkgreen, mainprogram->binsscreen * 0.72f, 0.25f, 0.2f, 1);
-		draw_box(white, mainprogram->binsscreen * 0.72f, 0.25f, 0.2f, 2);
-		draw_box(white, mainprogram->binsscreen * 0.72f, 0.25f, 0.15f, 2);
-		draw_box(white, mainprogram->binsscreen * 0.72f, 0.25f, 0.1f, 2);
-		if (mainprogram->binsscreen) render_text("MIX", white, -0.024f + (mainprogram->binsscreen * 0.72f), 0.24f, 0.0006f, 0.001f);
-		else render_text("BINS", white, -0.025f + (mainprogram->binsscreen * 0.72f), 0.24f, 0.0006f, 0.001f);
 
 		// Draw crossfade->box
 		Param* par;
@@ -9696,22 +9664,6 @@ void the_loop() {
 	}	
 
 		
-	if (mainprogram->dragbinel) {
-		//dragging something inside wormhole
-		if (sqrt(pow((mainprogram->mx / (glob->w / 2.0f) - 1.0f - (mainprogram->binsscreen * 0.72f)) * glob->w / glob->h, 2) + pow((glob->h - mainprogram->my) / (glob->h / 2.0f) - 1.25f, 2)) < 0.2f) {
-			if (!mainprogram->inwormhole and !mainprogram->menuondisplay and !mainprogram->shelfdragelem) {
-				if (!mainprogram->binsscreen) {
-					set_queueing(mainmix->currlay, false);
-				}
-				mainprogram->binsscreen = !mainprogram->binsscreen;
-				mainprogram->inwormhole = true;
-			}
-		}
-		else {
-			mainprogram->inwormhole = false;
-		}
-	}
-	
 	// layer dragging
 	if (mainprogram->nodesmain->linked and mainmix->currlay) {
 		std::vector<Layer*> &lvec = choose_layers(mainmix->currlay->deck);
@@ -10821,13 +10773,13 @@ void save_genmidis(std::string path) {
 	
 	
 	wfile << "WORMHOLEMIDI0\n";
-	wfile << std::to_string(mainprogram->wormhole->midi[0]);
+	wfile << std::to_string(mainprogram->wormhole1->midi[0]);
 	wfile << "\n";
 	wfile << "WORMHOLEMIDI1\n";
-	wfile << std::to_string(mainprogram->wormhole->midi[1]);
+	wfile << std::to_string(mainprogram->wormhole1->midi[1]);
 	wfile << "\n";
 	wfile << "WORMHOLEMIDIPORT\n";
-	wfile << mainprogram->wormhole->midiport;
+	wfile << mainprogram->wormhole1->midiport;
 	wfile << "\n";
 	
 	wfile << "EFFCAT0MIDI0\n";
@@ -10986,15 +10938,15 @@ void open_genmidis(std::string path) {
 		
 		if (istring == "WORMHOLE0MIDI0") {
 			getline(rfile, istring);
-			mainprogram->wormhole->midi[0] = std::stoi(istring);
+			mainprogram->wormhole1->midi[0] = std::stoi(istring);
 		}
 		if (istring == "WORMHOLEMIDI1") {
 			getline(rfile, istring);
-			mainprogram->wormhole->midi[1] = std::stoi(istring);
+			mainprogram->wormhole1->midi[1] = std::stoi(istring);
 		}
 		if (istring == "WORMHOLEMIDIPORT") {
 			getline(rfile, istring);
-			mainprogram->wormhole->midiport = istring;
+			mainprogram->wormhole1->midiport = istring;
 		}
 		
 		if (istring == "EFFCAT0MIDI0") {

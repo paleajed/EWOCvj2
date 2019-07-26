@@ -46,9 +46,9 @@ extern "C" {
 
 
 Bin::Bin(int pos) {
-	// boxes of &bins in binslist
+	// boxes of bins in binslist
 	this->box = new Box;
-	this->box->vtxcoords->x1 = 0.57f;
+	this->box->vtxcoords->x1 = 0.50f;
 	this->box->vtxcoords->y1 = (pos + 1) * -0.05f;
 	this->box->vtxcoords->w = 0.3f;
 	this->box->vtxcoords->h = 0.05f;
@@ -122,7 +122,7 @@ BinsMain::BinsMain() {
 	
 	// box to click to add another bin to bins list
 	this->newbinbox = new Box;
-	this->newbinbox->vtxcoords->x1 = 0.57f;
+	this->newbinbox->vtxcoords->x1 = 0.50f;
 	this->newbinbox->vtxcoords->w = 0.3f;
 	this->newbinbox->vtxcoords->h = 0.05f;
 	this->newbinbox->upvtxtoscr();
@@ -151,7 +151,7 @@ BinsMain::BinsMain() {
 
 	// arrow box to scroll bins list up
 	this->binsscrollup = new Box;
-	this->binsscrollup->vtxcoords->x1 = 0.545f;
+	this->binsscrollup->vtxcoords->x1 = 0.475f;
 	this->binsscrollup->vtxcoords->y1 = -0.05f;
 	this->binsscrollup->vtxcoords->w = 0.025f;
 	this->binsscrollup->vtxcoords->h = 0.05f;
@@ -161,7 +161,7 @@ BinsMain::BinsMain() {
 
 	// arrow box to scroll bins list down
 	this->binsscrolldown = new Box;
-	this->binsscrolldown->vtxcoords->x1 = 0.545f;
+	this->binsscrolldown->vtxcoords->x1 = 0.475f;
 	this->binsscrolldown->vtxcoords->y1 = -1.0f;
 	this->binsscrolldown->vtxcoords->w = 0.025f;
 	this->binsscrolldown->vtxcoords->h = 0.05f;
@@ -417,9 +417,10 @@ void BinsMain::handle(bool draw) {
 
 		Box box;
 		bool found = false;
-		bool cond = false;
-		if (this->menubinel) cond = (!this->menubinel->full);
-		if (!this->menubinel or cond) {
+		bool cond1 = false;
+		if (this->menubinel) cond1 = (!this->menubinel->full);
+		bool cond2 = (mainprogram->mx < mainprogram->xvtxtoscr(1.475f));
+		if ((!this->menubinel or cond1) and cond2) {
 			// not in bin element -> leftmouse draws selection box
 			bool full = false;
 			if (this->menubinel) {
@@ -554,7 +555,7 @@ void BinsMain::handle(bool draw) {
 	if (draw) {
 		//handle binslist scroll
 		Box binsbox;
-		binsbox.vtxcoords->x1 = 0.57f;
+		binsbox.vtxcoords->x1 = 0.50f;
 		binsbox.vtxcoords->y1 = -1.0f;
 		binsbox.vtxcoords->w = 0.3f;
 		binsbox.vtxcoords->h = 1.0f;
