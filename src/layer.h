@@ -50,6 +50,7 @@ struct frame_result {
 
 class Button;
 class Shelf;
+class ShelfElement;
 
 class Clip {
 	public:
@@ -73,6 +74,7 @@ class Layer {
 		int pos;
 		bool deck = 0;
 		bool comp = true;
+		std::vector<Layer*>* layers;
 		bool clonedeck = -1;
 		int clonepos = -1;
 		std::vector<Clip*> clips;
@@ -93,6 +95,7 @@ class Layer {
 		Effect *add_effect(EFFECT_TYPE type, int pos);
 		Effect *replace_effect(EFFECT_TYPE type, int pos);
 		void delete_effect(int pos);
+		void inhibit();
 		std::vector<Effect*>& choose_effects();
 		void set_clones();
 		void mute_handle();
@@ -154,6 +157,7 @@ class Layer {
 		float oldscale = 1.0f;
 		float scratch = 0.0f;
 		bool scratchtouch = 0;
+		float olddeckspeed;
 		bool vidmoving = false;
 		bool live = false;
 		Layer *liveinput = nullptr;
@@ -215,7 +219,9 @@ class Layer {
 		VideoNode *node = nullptr;
 		Node *lasteffnode[2] = {nullptr, nullptr};
 		BlendNode *blendnode = nullptr;
-		
+
+		ShelfElement* prevshelfdragelem = nullptr;
+
 		std::string filename = "";
 		std::string layerfilepath = "";
 		AVFormatContext* video = nullptr;
@@ -269,7 +275,6 @@ class Mixer {
 		void do_deletelay(Layer *testlay, std::vector<Layer*> &layers, bool add);
 		void delete_layers(std::vector<Layer*>& layers, bool alive);
 		void do_delete_layers(std::vector<Layer*> layers, bool alive);
-		void set_values(Layer *clay, Layer *lay);
 		void loopstation_copy(bool comp);
 		void clonesets_copy(bool comp);
 		void event_write(std::ostream &wfile, Param *par);
@@ -286,6 +291,8 @@ class Mixer {
 		Layer* clone_layer(std::vector<Layer*> &lvec, Layer* slay);
 		void lay_copy(std::vector<Layer*> &slayers, std::vector<Layer*> &dlayers, bool comp);
 		void copy_to_comp(std::vector<Layer*> &sourcelayersA, std::vector<Layer*> &destlayersA, std::vector<Layer*> &sourcelayersB, std::vector<Layer*> &destlayersB, std::vector<Node*> &sourcenodes, std::vector<Node*> &destnodes, std::vector<MixNode*> &destmixnodes, bool comp);
+		void set_values(Layer* clay, Layer* lay, bool open);
+		void handle_adaptparam();
 		void record_video();
 		void new_file(int decks, bool alive);
 		void save_layerfile(const std::string &path, Layer* lay, bool doclips, bool dojpeg);
@@ -294,7 +301,7 @@ class Mixer {
 		void save_deck(const std::string &path);
 		void do_save_deck(const std::string& path, bool save, bool doclips);
 		void open_layerfile(const std::string &path, Layer *lay, bool loadevents, bool doclips);
-		void open_mix(const std::string &path);
+		void open_mix(const std::string &path, bool alive);
 		void open_deck(const std::string &path, bool alive);
 		void new_state();
 		void open_state(const std::string& path);
@@ -304,6 +311,8 @@ class Mixer {
 		int read_layers(std::istream &rfile, const std::string &result, std::vector<Layer*> &layers, bool deck, int type, bool doclips, bool concat, bool load, bool loadevents, bool save);
 		void start_recording();
 		void cloneset_destroy(std::unordered_set<Layer*>* cs);
+		void handle_genmidi();
+		bool set_prevshelfdragelem(Layer *lay);
 		Mixer();
 		
 		std::mutex recordlock;

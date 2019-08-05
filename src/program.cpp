@@ -205,8 +205,8 @@ Program::Program() {
 	this->buttons.push_back(this->effcat[0]);
 	this->effcat[0]->name[0] = "Layer effects";
 	this->effcat[0]->name[1] = "Stream effects";
-	this->effcat[0]->box->vtxcoords->x1 = -1.0f + this->numw - tf(0.025f);
-	this->effcat[0]->box->vtxcoords->y1 = 1.0f - tf(this->layh) - tf(0.50f);
+	this->effcat[0]->box->vtxcoords->x1 = -1.0f;
+	this->effcat[0]->box->vtxcoords->y1 = 1.0f - tf(this->layh) - tf(0.19f);
 	this->effcat[0]->box->vtxcoords->w = tf(0.025f);
 	this->effcat[0]->box->vtxcoords->h = tf(0.2f);
 	this->effcat[0]->box->upvtxtoscr();
@@ -219,7 +219,7 @@ Program::Program() {
 	this->effcat[1]->name[1] = "Stream effects";
 	float xoffset = 1.0f + this->layw - 0.019f;
 	this->effcat[1]->box->vtxcoords->x1 = -1.0f + this->numw - tf(0.025f) + xoffset;
-	this->effcat[1]->box->vtxcoords->y1 = 1.0f - tf(this->layh) - tf(0.50f);
+	this->effcat[1]->box->vtxcoords->y1 = 1.0f - tf(this->layh) - tf(0.19f);
 	this->effcat[1]->box->vtxcoords->w = tf(0.025f);
 	this->effcat[1]->box->vtxcoords->h = tf(0.2f);
 	this->effcat[1]->box->upvtxtoscr();
@@ -228,7 +228,7 @@ Program::Program() {
 	
 	this->effscrollupA = new Box;
 	this->effscrollupA->vtxcoords->x1 = -1.0;
-	this->effscrollupA->vtxcoords->y1 = 1.0 - tf(this->layh) - tf(0.20f);
+	this->effscrollupA->vtxcoords->y1 = 1.0 - tf(this->layh) - tf(0.25f);
 	this->effscrollupA->vtxcoords->w = tf(0.025f);
 	this->effscrollupA->vtxcoords->h = tf(0.05f);
 	this->effscrollupA->upvtxtoscr();
@@ -237,7 +237,7 @@ Program::Program() {
 	
 	this->effscrollupB = new Box;
 	this->effscrollupB->vtxcoords->x1 = 1.0 - tf(0.05f);
-	this->effscrollupB->vtxcoords->y1 = 1.0 - tf(this->layh) - tf(0.20f);
+	this->effscrollupB->vtxcoords->y1 = 1.0 - tf(this->layh) - tf(0.25f);
 	this->effscrollupB->vtxcoords->w = tf(0.025f);
 	this->effscrollupB->vtxcoords->h = tf(0.05f);     
 	this->effscrollupB->upvtxtoscr();
@@ -246,7 +246,7 @@ Program::Program() {
 	
 	this->effscrolldownA = new Box;
 	this->effscrolldownA->vtxcoords->x1 = -1.0;
-	this->effscrolldownA->vtxcoords->y1 = 1.0 - tf(this->layh) - tf(0.20f) - tf(0.05f) * 10;
+	this->effscrolldownA->vtxcoords->y1 = 1.0 - tf(this->layh) - tf(0.25f) - tf(0.05f);
 	this->effscrolldownA->vtxcoords->w = tf(0.025f);
 	this->effscrolldownA->vtxcoords->h = tf(0.05f);
 	this->effscrolldownA->upvtxtoscr();
@@ -255,7 +255,7 @@ Program::Program() {
 	
 	this->effscrolldownB = new Box;
 	this->effscrolldownB->vtxcoords->x1 = 1.0 - tf(0.05f);
-	this->effscrolldownB->vtxcoords->y1 = 1.0 - tf(this->layh) - tf(0.20f) - tf(0.05f) * 10;
+	this->effscrolldownB->vtxcoords->y1 = 1.0 - tf(this->layh) - tf(0.25f) - tf(0.05f);
 	this->effscrolldownB->vtxcoords->w = tf(0.025f);
 	this->effscrolldownB->vtxcoords->h = tf(0.05f);
 	this->effscrolldownB->upvtxtoscr();
@@ -273,6 +273,7 @@ Program::Program() {
 
 	this->orderscrolldown = new Box;
 	this->orderscrolldown->vtxcoords->x1 = -0.45f;
+	this->orderscrolldown->vtxcoords->y1 = 0.7f;
 	this->orderscrolldown->vtxcoords->w = 0.05f;
 	this->orderscrolldown->vtxcoords->h = 0.1f;
 	this->orderscrolldown->upvtxtoscr();
@@ -366,19 +367,19 @@ Program::Program() {
 	this->wormhole1 = new Button(false);
 	this->wormhole1->box->vtxcoords->x1 = -1.0f;
 	this->wormhole1->box->vtxcoords->y1 = -0.58f;
-	this->wormhole1->box->vtxcoords->w = 0.05f;
-	this->wormhole1->box->vtxcoords->h = 0.3f;
+	this->wormhole1->box->vtxcoords->w = tf(0.025f);
+	this->wormhole1->box->vtxcoords->h = 0.6f;
 	this->wormhole1->box->upvtxtoscr();
-	this->wormhole1->box->tooltiptitle = "Screen switching wormhole ";
+	this->wormhole1->box->tooltiptitle = "Screen switching wormgate ";
 	this->wormhole1->box->tooltip = "Connects mixing screen and media bins screen.  Leftclick to switch screen.  Drag content inside white rectangle up to the very edge of the screen to travel to the other screen. ";
 	this->buttons.push_back(this->wormhole1);
 	this->wormhole2 = new Button(false);
-	this->wormhole2->box->vtxcoords->x1 = 0.95f;
+	this->wormhole2->box->vtxcoords->x1 = 1.0f - tf(0.025f);
 	this->wormhole2->box->vtxcoords->y1 = -0.58f;
-	this->wormhole2->box->vtxcoords->w = 0.05f;
-	this->wormhole2->box->vtxcoords->h = 0.3f;
+	this->wormhole2->box->vtxcoords->w = tf(0.025f);
+	this->wormhole2->box->vtxcoords->h = 0.6f;
 	this->wormhole2->box->upvtxtoscr();
-	this->wormhole2->box->tooltiptitle = "Screen switching wormhole ";
+	this->wormhole2->box->tooltiptitle = "Screen switching wormgate ";
 	this->wormhole2->box->tooltip = "Connects mixing screen and media bins screen.  Leftclick to switch screen.  Leftclick to switch screen.  Drag content inside white rectangle up to the very edge of the screen to travel to the other screen. ";
 	this->buttons.push_back(this->wormhole2);
 }
@@ -592,47 +593,8 @@ bool Program::do_order_paths() {
 	if (this->paths.size() > 18 and this->paths.size() - this->pathscroll < 18) this->pathscroll = this->paths.size() - 17;
 
 	// draw and handle orderlist scrollboxes
-	if (this->pathscroll > 0) {
-		if (this->orderscrollup->in()) {
-			this->orderscrollup->acolor[0] = 0.5f;
-			this->orderscrollup->acolor[1] = 0.5f;
-			this->orderscrollup->acolor[2] = 1.0f;
-			this->orderscrollup->acolor[3] = 1.0f;
-			if (mainprogram->orderleftmouse) {
-				this->pathscroll--;
-			}
-		}
-		else {
-			this->orderscrollup->acolor[0] = 0.0f;
-			this->orderscrollup->acolor[1] = 0.0f;
-			this->orderscrollup->acolor[2] = 0.0f;
-			this->orderscrollup->acolor[3] = 1.0f;
-		}
-		draw_box(this->orderscrollup, -1);
-		draw_triangle(white, white, this->orderscrollup->vtxcoords->x1 + 0.0074f, this->orderscrollup->vtxcoords->y1 + 0.0416f - 0.030f, 0.011f, 0.0208f, DOWN, CLOSED);
-	}
-	if (this->paths.size() - this->pathscroll > 17) {
-		this->orderscrolldown->vtxcoords->y1 = 0.8f - (limit - 1) * 0.1f;
-		this->orderscrolldown->upvtxtoscr();
-		if (this->orderscrolldown->in()) {
-			this->orderscrolldown->acolor[0] = 0.5f;
-			this->orderscrolldown->acolor[1] = 0.5f;
-			this->orderscrolldown->acolor[2] = 1.0f;
-			this->orderscrolldown->acolor[3] = 1.0f;
-			if (mainprogram->orderleftmouse) {
-				this->pathscroll++;
-			}
-		}
-		else {
-			this->orderscrolldown->acolor[0] = 0.0f;
-			this->orderscrolldown->acolor[1] = 0.0f;
-			this->orderscrolldown->acolor[2] = 0.0f;
-			this->orderscrolldown->acolor[3] = 1.0f;
-		}
-		draw_box(this->orderscrolldown, -1);
-		draw_triangle(white, white, this->orderscrolldown->vtxcoords->x1 + 0.0074f, this->orderscrolldown->vtxcoords->y1 + 0.0416f - 0.030f, 0.011f, 0.0208f, UP, CLOSED);
-	}
-
+	this->pathscroll = mainprogram->handle_scrollboxes(this->orderscrollup, this->orderscrolldown, this->paths.size(), this->pathscroll, 17);
+	printf("numl scrp %d %d\n", this->paths.size(), this->pathscroll);
 	bool indragbox = false;
 	for (int j = this->pathscroll; j < this->pathscroll + limit; j++) {
 		Box* box = this->pathboxes[j];
@@ -773,14 +735,14 @@ void Program::handle_wormhole(bool hole) {
 			draw_box(white, white, box, -1);
 		}
 		if (hole == 0) {
-			draw_triangle(white, white, -1.0 + box->vtxcoords->w, box->vtxcoords->y1, box->vtxcoords->h / 2.0f, box->vtxcoords->h, LEFT, OPEN);
-			if (!mainprogram->binsscreen) render_text("MIX", white,  -0.9f, -0.44f, 0.0006f, 0.001f);
-			else render_text("BINS", white, -0.9f, -0.44f, 0.0006f, 0.001f);
+			draw_triangle(white, white, -1.0 + box->vtxcoords->w, box->vtxcoords->y1 + box->vtxcoords->h / 4.0f, box->vtxcoords->h / 4.0f, box->vtxcoords->h / 2.0f, LEFT, OPEN);
+			if (mainprogram->binsscreen) render_text("MIX", white,  -0.9f, -0.29f, 0.0006f, 0.001f);
+			else render_text("BINS", white, -0.9f, -0.29f, 0.0006f, 0.001f);
 		}
 		else {
-			draw_triangle(white, white, 1.0f - box->vtxcoords->w - box->vtxcoords->h / 2.0f * 0.866f, box->vtxcoords->y1, box->vtxcoords->h / 2.0f, box->vtxcoords->h, RIGHT, OPEN);
-			if (mainprogram->binsscreen) render_text("MIX", white, 0.87f, -0.44f, 0.0006f, 0.001f);
-			else render_text("BINS", white, 0.87f, -0.44f, 0.0006f, 0.001f);
+			draw_triangle(white, white, 1.0f - box->vtxcoords->w - box->vtxcoords->h / 4.0f * 0.866f, box->vtxcoords->y1 + box->vtxcoords->h / 4.0f , box->vtxcoords->h / 4.0f, box->vtxcoords->h / 2.0f, RIGHT, OPEN);
+			if (mainprogram->binsscreen) render_text("MIX", white, 0.86f, -0.29f, 0.0006f, 0.001f);
+			else render_text("BINS", white, 0.86f, -0.29f, 0.0006f, 0.001f);
 		}
 	}
 }
@@ -801,6 +763,110 @@ void Program::set_ow3oh3() {
 	}
 }
 
+void Program::handle_changed_owoh() {
+	if (this->ow != this->oldow or this->oh != this->oldoh) {
+		for (int i = 0; i < this->nodesmain->pages.size(); i++) {
+			for (int j = 0; j < this->nodesmain->pages[i]->nodes.size(); j++) {
+				Node* node = this->nodesmain->pages[i]->nodes[j];
+				node->renew_texes(this->ow3, this->oh3);
+			}
+			for (int j = 0; j < this->nodesmain->pages[i]->nodescomp.size(); j++) {
+				Node* node = this->nodesmain->pages[i]->nodescomp[j];
+				node->renew_texes(this->ow, this->oh);
+			}
+		}
+		for (int j = 0; j < this->nodesmain->mixnodes.size(); j++) {
+			Node* node = this->nodesmain->mixnodes[j];
+			node->renew_texes(this->ow3, this->oh3);
+		}
+		for (int j = 0; j < this->nodesmain->mixnodescomp.size(); j++) {
+			Node* node = this->nodesmain->mixnodescomp[j];
+			node->renew_texes(this->ow, this->oh);
+		}
+
+		GLuint tex;
+		tex = set_texes(this->fbotex[0], &this->frbuf[0], this->ow3, this->oh3);
+		this->fbotex[0] = tex;
+		tex = set_texes(this->fbotex[1], &this->frbuf[1], this->ow3, this->oh3);
+		this->fbotex[1] = tex;
+		tex = set_texes(this->fbotex[2], &this->frbuf[2], this->ow, this->oh);
+		this->fbotex[2] = tex;
+		tex = set_texes(this->fbotex[3], &this->frbuf[3], this->ow, this->oh);
+		this->fbotex[3] = tex;
+
+		this->oldow = this->ow;
+		this->oldoh = this->oh;
+	}
+}
+
+
+void Program::handle_fullscreen() {
+	GLfloat vcoords1[8];
+	GLfloat* p = vcoords1;
+	*p++ = -1.0f; *p++ = 1.0f;
+	*p++ = -1.0f; *p++ = -1.0f;
+	*p++ = 1.0f; *p++ = 1.0f;
+	*p++ = 1.0f; *p++ = -1.0f;
+	GLfloat tcoords[] = { 0.0f, 0.0f,
+						0.0f, 1.0f,
+						1.0f, 0.0f,
+						1.0f, 1.0f };
+	GLuint vbuf, tbuf, vao;
+	glGenBuffers(1, &vbuf);
+	glBindBuffer(GL_ARRAY_BUFFER, vbuf);
+	glBufferData(GL_ARRAY_BUFFER, 32, vcoords1, GL_STATIC_DRAW);
+	glGenBuffers(1, &tbuf);
+	glBindBuffer(GL_ARRAY_BUFFER, tbuf);
+	glBufferData(GL_ARRAY_BUFFER, 32, tcoords, GL_STATIC_DRAW);
+	glGenVertexArrays(1, &vao);
+	glBindVertexArray(vao);
+	glBindBuffer(GL_ARRAY_BUFFER, vbuf);
+	glEnableVertexAttribArray(0);
+	glVertexAttribPointer(0, 2, GL_FLOAT, GL_FALSE, 8, nullptr);
+	glBindBuffer(GL_ARRAY_BUFFER, tbuf);
+	glEnableVertexAttribArray(1);
+	glVertexAttribPointer(1, 2, GL_FLOAT, GL_FALSE, 8, nullptr);
+
+	MixNode* node;
+	if (this->fullscreen == this->nodesmain->mixnodes.size()) node = (MixNode*)this->nodesmain->mixnodescomp[this->fullscreen - 1];
+	else node = (MixNode*)this->nodesmain->mixnodes[this->fullscreen];
+	if (this->prevmodus == false) node = (MixNode*)this->nodesmain->mixnodescomp[this->fullscreen];
+	GLfloat cf = glGetUniformLocation(this->ShaderProgram, "cf");
+	GLint wipe = glGetUniformLocation(this->ShaderProgram, "wipe");
+	GLint mixmode = glGetUniformLocation(this->ShaderProgram, "mixmode");
+	if (mainmix->wipe[this->fullscreen == 2] > -1) {
+		if (this->fullscreen == 2) glUniform1f(cf, mainmix->crossfadecomp->value);
+		else glUniform1f(cf, mainmix->crossfade->value);
+		glUniform1i(wipe, 1);
+		glUniform1i(mixmode, 18);
+	}
+	GLint down = glGetUniformLocation(this->ShaderProgram, "down");
+	glUniform1i(down, 1);
+	glActiveTexture(GL_TEXTURE0);
+	glBindTexture(GL_TEXTURE_2D, node->mixtex);
+	glBindVertexArray(vao);
+	glDrawArrays(GL_TRIANGLE_STRIP, 0, 4);
+	glUniform1i(down, 0);
+	glUniform1i(wipe, 0);
+	glUniform1i(mixmode, 0);
+	if (this->menuactivation) {
+		this->fullscreenmenu->state = 2;
+		this->menuondisplay = true;
+		this->menuactivation = false;
+	}
+
+	// Draw and handle fullscreenmenu
+	int k = handle_menu(this->fullscreenmenu);
+	if (k == 0) this->fullscreen = -1;
+	if (this->menuchosen) {
+		this->menuchosen = false;
+		this->leftmouse = 0;
+		this->menuactivation = 0;
+		this->menuresults.clear();
+	}
+}
+
+
 float Program::xscrtovtx(float scrcoord) {
 	return (scrcoord * 2.0 / (float)glob->w);
 }
@@ -816,6 +882,53 @@ float Program::xvtxtoscr(float vtxcoord) {
 float Program::yvtxtoscr(float vtxcoord) {
 	return (vtxcoord * (float)glob->h / 2.0);
 }
+
+
+int Program::handle_scrollboxes(Box* upperbox, Box* lowerbox, int numlines, int scrollpos, int scrlines) {
+	// general code for scrollbuttons of scrollable lists
+	float white[] = { 1.0f, 1.0f, 1.0f, 1.0f };
+	if (scrollpos > 0) {
+		if (upperbox->in()) {
+			upperbox->acolor[0] = 0.5f;
+			upperbox->acolor[1] = 0.5f;
+			upperbox->acolor[2] = 1.0f;
+			upperbox->acolor[3] = 1.0f;
+			if (mainprogram->leftmouse or mainprogram->orderleftmouse) {
+				scrollpos--;
+			}
+		}
+		else {
+			upperbox->acolor[0] = 0.0f;
+			upperbox->acolor[1] = 0.0f;
+			upperbox->acolor[2] = 0.0f;
+			upperbox->acolor[3] = 1.0f;
+		}
+		draw_box(upperbox, -1);
+		draw_triangle(white, white, upperbox->vtxcoords->x1 + (lowerbox->vtxcoords->w / tf(0.05f)) * tf(0.0074f), upperbox->vtxcoords->y1 + (lowerbox->vtxcoords->w / tf(0.05f)) * (tf(0.0416f) - tf(0.030f)), tf(0.011f), tf(0.0208f), DOWN, CLOSED);
+	}
+	if (numlines - scrollpos > scrlines) {
+		if (lowerbox->in()) {
+			lowerbox->acolor[0] = 0.5f;
+			lowerbox->acolor[1] = 0.5f;
+			lowerbox->acolor[2] = 1.0f;
+			lowerbox->acolor[3] = 1.0f;
+			if (mainprogram->leftmouse or mainprogram->orderleftmouse) {
+				scrollpos++;
+			}
+		}
+		else {
+			lowerbox->acolor[0] = 0.0f;
+			lowerbox->acolor[1] = 0.0f;
+			lowerbox->acolor[2] = 0.0f;
+			lowerbox->acolor[3] = 1.0f;
+		}
+		draw_box(lowerbox, -1);
+		draw_triangle(white, white, lowerbox->vtxcoords->x1 + (lowerbox->vtxcoords->w / tf(0.05f)) * tf(0.0074f), lowerbox->vtxcoords->y1 + (lowerbox->vtxcoords->w / tf(0.05f)) * (tf(0.0416f) - tf(0.030f)), tf(0.011f), tf(0.0208f), UP, CLOSED);
+	}
+	return scrollpos;
+}
+
+
 
 /* A simple function that prints a message, the error code returned by SDL,
  * and quits the application */

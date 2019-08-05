@@ -358,20 +358,81 @@ void BinsMain::handle(bool draw) {
 			draw_box(nullptr, darkgrey, box->vtxcoords->x1 + box->vtxcoords->w, -1.0f, 0.12f, 2.0f, -1);
 		}
 
+		bool cond1 = false;
+		if (this->menubinel) cond1 = (this->menubinel->path == "");
 		if (!mainprogram->menuondisplay) this->mouseshelfnum = -1;
+		Box *insertbox = nullptr;
 		for (int i = 0; i < 3; i++) {
 			for (int j = 0; j < 3; j++) {
-				Box box;
-				box.vtxcoords->x1 = -0.965f + i * 0.48f;
-				box.vtxcoords->y1 = 0.925f - ((j % 3) + 1) * 0.6f;
-				box.vtxcoords->w = 0.48f;
-				box.vtxcoords->h = 0.6f;
-				box.upvtxtoscr();
-				draw_box(yellow, nullptr, &box, -1);
-				if (box.in()) {
+				Box *box = new Box;
+				box->vtxcoords->x1 = -0.965f + i * 0.48f;
+				box->vtxcoords->y1 = 0.925f - ((j % 3) + 1) * 0.6f;
+				box->vtxcoords->w = 0.48f;
+				box->vtxcoords->h = 0.6f;
+				box->upvtxtoscr();
+				draw_box(yellow, nullptr, box, -1);
+				if (box->in()) {
 					this->mouseshelfnum = i * 3 + j;
-					if (!this->menubinel and mainprogram->menuactivation) {
-						// set binelmenu entries when mouse in shelf blocks box but not on bin element
+					if (this->insertshelf) {
+						insertbox = box;
+						mainprogram->leftmousedown = false;
+						// inserting a shelf into one of the bin shelf blocks
+						if (this->oldmouseshelfnum != -1) {
+							if (this->oldmouseshelfnum != this->mouseshelfnum) {
+								for (int i = 0; i < 16; i++) {
+									// reset elements of previously hovered shelf block
+									BinElement* binel = this->currbin->elements[this->oldmouseshelfnum / 3 * 48 + (this->oldmouseshelfnum % 3) * 4 + i / 4 + (i % 4) * 12];
+									binel->tex = binel->oldtex;
+									binel->type = binel->oldtype;
+									binel->name = binel->oldname;
+								}
+							}
+						}
+						if (this->oldmouseshelfnum != this->mouseshelfnum) {
+							// temporary change when hovering
+							for (int i = 0; i < 16; i++) {
+								BinElement* binel = this->currbin->elements[this->mouseshelfnum / 3 * 48 + (this->mouseshelfnum % 3) * 4 + i / 4 + (i % 4) * 12];
+								ShelfElement* elem = this->insertshelf->elements[i];
+								binel->oldtex = binel->tex;
+								binel->oldtype = binel->type;
+								binel->oldname = binel->name;
+								binel->tex = elem->tex;
+								binel->type = elem->type;
+								binel->name = remove_extension(basename(elem->path));
+							}
+						}
+						if (mainprogram->leftmouse) {
+							// confirm insert
+							for (int i = 0; i < 16; i++) {
+								BinElement* binel = this->currbin->elements[this->mouseshelfnum / 3 * 48 + (this->mouseshelfnum % 3) * 4 + i / 4 + (i % 4) * 12];
+								ShelfElement* elem = this->insertshelf->elements[i];
+								binel->tex = copy_tex(elem->tex);
+								binel->path = elem->path;
+								binel->jpegpath = elem->jpegpath;
+							}
+							this->insertshelf = nullptr;
+							mainprogram->leftmouse = false;
+							mainprogram->binsscreen = false;
+						}
+						if (mainprogram->rightmouse) {
+							// cancel insert
+							for (int i = 0; i < 16; i++) {
+								// reset elements of previously hovered shelf block
+								BinElement* binel = this->currbin->elements[this->mouseshelfnum / 3 * 48 + (this->mouseshelfnum % 3) * 4 + i / 4 + (i % 4) * 12];
+								binel->tex = binel->oldtex;
+								binel->type = binel->oldtype;
+								binel->name = binel->oldname;
+							}
+							this->insertshelf = nullptr;
+							mainprogram->rightmouse = false;
+							mainprogram->menuactivation = false;
+							mainprogram->binsscreen = false;
+						}
+						this->oldmouseshelfnum = this->mouseshelfnum;
+					}
+					else delete box;
+					if ((!this->menubinel or cond1) and mainprogram->menuactivation) {
+						// set binelmenu entries when mouse in shelf block box but not on full bin element
 						std::vector<std::string> binel;
 						this->binelmenuoptions.clear();
 						binel.push_back("Open file(s) from disk");
@@ -395,6 +456,10 @@ void BinsMain::handle(bool draw) {
 				}
 			}
 		}
+		if (insertbox) {
+			draw_box(red, nullptr, insertbox, -1);
+			delete insertbox;
+		}
 
 		if (this->mouseshelfnum == -1 and !this->menubinel and mainprogram->menuactivation) {
 			// set binelmenu entries when mouse over nothing
@@ -417,14 +482,12 @@ void BinsMain::handle(bool draw) {
 
 		Box box;
 		bool found = false;
-		bool cond1 = false;
-		if (this->menubinel) cond1 = (!this->menubinel->full);
 		bool cond2 = (mainprogram->mx < mainprogram->xvtxtoscr(1.475f));
 		if ((!this->menubinel or cond1) and cond2) {
 			// not in bin element -> leftmouse draws selection box
 			bool full = false;
 			if (this->menubinel) {
-				if (this->menubinel->full) full = true;
+				if (this->menubinel->path != "") full = true;
 			}
 			if (mainprogram->leftmousedown and !full and !this->inputtexes.size() and !mainprogram->intopmenu) {
 				mainprogram->leftmousedown = false;
@@ -454,7 +517,7 @@ void BinsMain::handle(bool draw) {
 				for (int j = 0; j < 12; j++) {
 					Box* ebox = this->elemboxes[i * 12 + j];
 					BinElement* binel = this->currbin->elements[i * 12 + j];
-					if (!binel->full) continue;
+					if (binel->path == "") continue;
 					binel->select = false;
 					if (box.in(ebox->scrcoords->x1, ebox->scrcoords->y1)) {
 						if (box.in(ebox->scrcoords->x1 + ebox->scrcoords->w, ebox->scrcoords->y1 - ebox->scrcoords->h)) {
@@ -569,46 +632,7 @@ void BinsMain::handle(bool draw) {
 		}
 
 		// draw and handle binslist scrollboxes
-		if (this->binsscroll > 0) {
-			if (this->binsscrollup->in()) {
-				this->binsscrollup->acolor[0] = 0.5f;
-				this->binsscrollup->acolor[1] = 0.5f;
-				this->binsscrollup->acolor[2] = 1.0f;
-				this->binsscrollup->acolor[3] = 1.0f;
-				if (mainprogram->leftmouse) {
-					this->binsscroll--;
-					this->save_binslist();
-				}
-			}
-			else {
-				this->binsscrollup->acolor[0] = 0.0f;
-				this->binsscrollup->acolor[1] = 0.0f;
-				this->binsscrollup->acolor[2] = 0.0f;
-				this->binsscrollup->acolor[3] = 1.0f;
-			}
-			draw_box(this->binsscrollup, -1);
-			draw_triangle(white, white, this->binsscrollup->vtxcoords->x1 + 0.0074f, this->binsscrollup->vtxcoords->y1 + 0.0416f - 0.030f, 0.011f, 0.0208f, DOWN, CLOSED);
-		}
-		if (this->bins.size() - this->binsscroll > 19) {
-			if (this->binsscrolldown->in()) {
-				this->binsscrolldown->acolor[0] = 0.5f;
-				this->binsscrolldown->acolor[1] = 0.5f;
-				this->binsscrolldown->acolor[2] = 1.0f;
-				this->binsscrolldown->acolor[3] = 1.0f;
-				if (mainprogram->leftmouse) {
-					this->binsscroll++;
-					this->save_binslist();
-				}
-			}
-			else {
-				this->binsscrolldown->acolor[0] = 0.0f;
-				this->binsscrolldown->acolor[1] = 0.0f;
-				this->binsscrolldown->acolor[2] = 0.0f;
-				this->binsscrolldown->acolor[3] = 1.0f;
-			}
-			draw_box(this->binsscrolldown, -1);
-			draw_triangle(white, white, this->binsscrolldown->vtxcoords->x1 + 0.0074f, this->binsscrolldown->vtxcoords->y1 + 0.0416f - 0.030f, 0.011f, 0.0208f, UP, CLOSED);
-		}
+		this->binsscroll = mainprogram->handle_scrollboxes(this->binsscrollup, this->binsscrolldown, this->bins.size(), this->binsscroll, 19);
 
 		//draw and handle binslist
 		this->indragbox = false;
@@ -775,7 +799,8 @@ void BinsMain::handle(bool draw) {
 			draw_line(white, -0.5f + 0.1f + textw, -0.2f + 0.05f, -0.5f + 0.1f + textw, -0.2f + tf(0.056f));
 		}
 
-		// Draw and handle binselmenu	
+
+		// Draw and handle binselmenu
 		int k = handle_menu(mainprogram->binselmenu);
 		if (k == 0) {
 			// delete selected bin elements
@@ -789,7 +814,7 @@ void BinsMain::handle(bool draw) {
 			}
 			mainprogram->del = true;
 		}
-		if (k == 1) {
+		else if (k == 1) {
 			// move selected bin elements
 			for (int i = 0; i < 12; i++) {
 				for (int j = 0; j < 12; j++) {
@@ -804,6 +829,15 @@ void BinsMain::handle(bool draw) {
 				}
 			}
 			mainprogram->del = true;
+		}
+
+		if (mainprogram->menuchosen) {
+			// menu cleanup
+			mainprogram->menuchosen = false;
+			mainprogram->leftmouse = 0;
+			mainprogram->menuactivation = 0;
+			mainprogram->menuresults.clear();
+			mainprogram->menuondisplay = false;
 		}
 
 		// Draw and handle binmenu and binelmenu	
@@ -848,6 +882,15 @@ void BinsMain::handle(bool draw) {
 		}
 	}
 
+	if (mainprogram->menuchosen) {
+		// menu cleanup
+		mainprogram->menuchosen = false;
+		mainprogram->leftmouse = 0;
+		mainprogram->menuactivation = 0;
+		mainprogram->menuresults.clear();
+		mainprogram->menuondisplay = false;
+	}
+
 
 	// handle binelmenu thats been populated above, menuset controls which options sets are used
 	int k = handle_menu(mainprogram->binelmenu);
@@ -884,7 +927,7 @@ void BinsMain::handle(bool draw) {
 		else if (binelmenuoptions[k] == BET_LOADMIX) {
 			// load hovered mix into decks
 			mainprogram->binsscreen = false;
-			mainmix->open_mix(this->menubinel->path.c_str());
+			mainmix->open_mix(this->menubinel->path.c_str(), true);
 		}
 		else if (binelmenuoptions[k] == BET_OPENFILES) {
 			// open videos/images/layer files into bin
@@ -999,7 +1042,7 @@ void BinsMain::handle(bool draw) {
 				for (int j = 0; j < 12; j++) {
 					// elements
 					BinElement* binel = this->currbin->elements[i * 12 + j];
-					if (binel->full and (binel->type == ELEM_FILE or binel->type == ELEM_LAYER)) {
+					if (binel->path != "" and (binel->type == ELEM_FILE or binel->type == ELEM_LAYER)) {
 						this->hap_binel(binel, nullptr);
 					}
 					else if (binel->type == ELEM_DECK) {
@@ -1103,7 +1146,7 @@ void BinsMain::handle(bool draw) {
 						else if (this->menubinel) {
 							if (this->menubinel->encthreads) continue;
 						}
-						if (!binel->encwaiting and !binel->encoding and binel->full and !this->inputtexes.size() and !lay->vidmoving) {
+						if (!binel->encwaiting and !binel->encoding and binel->path != "" and !this->inputtexes.size() and !lay->vidmoving and !this->insertshelf) {
 							if (this->previewbinel != binel) {
 								// reset when new element hovered
 								this->previewimage = "";
@@ -1483,7 +1526,7 @@ void BinsMain::handle(bool draw) {
 						if (binel->path != "") {
 							if (!this->inputtexes.size() and mainprogram->leftmousedown and !mainprogram->dragbinel) {
 								// dragging single bin element
-								if (binel->full) {
+								if (binel->path != "") {
 									mainprogram->dragbinel = new BinElement;
 									mainprogram->dragbinel->tex = binel->tex;
 									mainprogram->dragbinel->path = binel->path;
@@ -1516,7 +1559,6 @@ void BinsMain::handle(bool draw) {
 								binel->oldtex = binel->tex;
 								binel->tex = this->dragtex;
 							}
-							binel->full = true;
 							this->currbinel = binel;
 						}	
 
@@ -1608,11 +1650,6 @@ void BinsMain::handle(bool draw) {
 					BinElement *tempbinel = this->currbinel;
 					if (this->currbinel and this->movingtex != -1) {
 						if (binel != this->currbinel) {
-							if (this->currbinel != this->movingbinel) {
-								this->currbinel->full = this->currbinel->oldfull;
-							}
-							binel->oldfull = binel->full;
-							binel->full = this->movingbinel->full;
 							this->currbinel->tex = this->currbinel->oldtex;
 							this->movingbinel->tex = binel->tex;
 							binel->oldtex = binel->tex;
@@ -1635,7 +1672,7 @@ void BinsMain::handle(bool draw) {
 						this->delbinels[k]->name = this->delbinels[k]->oldname;
 						this->delbinels[k]->jpegpath = this->delbinels[k]->oldjpegpath;
 						this->delbinels[k]->type = this->delbinels[k]->oldtype;
-						this->delbinels[k]->full = false;
+						this->delbinels[k]->path == "";
 						this->delbinels[k]->select = false;
 						boost::filesystem::remove(this->delbinels[k]->jpegpath);
 					}
@@ -1653,7 +1690,6 @@ void BinsMain::handle(bool draw) {
 						int jj = this->prevj + (int)((k + this->previ + intm) / 12) - ((k + this->previ + intm) < 0);
 						int ii = ((k + intm + 144) % 12 + this->previ + 144) % 12;
 						BinElement *dirbinel = this->currbin->elements[ii * 12 + jj];
-						dirbinel->full = true;
 						dirbinel->type = this->inputtypes[k];
 						dirbinel->path = this->newpaths[k];
 						dirbinel->name = remove_extension(basename(dirbinel->path));
@@ -1688,7 +1724,6 @@ void BinsMain::handle(bool draw) {
 
 		if (inbinel and !mainprogram->rightmouse and lay->vidmoving and mainprogram->lmsave) {
 			// confirm layer dragging from main view and set influenced bin element to the right values
-			this->currbinel->full = true;
 			this->currbinel->type = mainprogram->dragbinel->type;
 			this->currbinel->path = mainprogram->dragbinel->path;
 			if (this->currbinel->type == ELEM_LAYER) {
@@ -1736,9 +1771,6 @@ void BinsMain::handle(bool draw) {
 					}
 				}
 				if (!found) {
-					bool temp = this->currbinel->full;
-					this->currbinel->full = this->movingbinel->full;
-					this->movingbinel->full = temp;
 					this->currbinel->tex = this->movingbinel->oldtex;
 					this->movingbinel->tex = this->movingtex;
 					this->currbinel = nullptr;
@@ -1750,7 +1782,6 @@ void BinsMain::handle(bool draw) {
 					std::swap(this->currbinel->path, this->movingbinel->path);
 					std::swap(this->currbinel->name, this->movingbinel->name);
 					std::swap(this->currbinel->jpegpath, this->movingbinel->jpegpath);  // one way?
-					this->movingbinel->full = this->currbinel->oldfull;
 					this->currbinel = nullptr;
 					this->movingbinel = nullptr;
 					this->movingtex = -1;
@@ -1795,8 +1826,6 @@ void BinsMain::open_bin(const std::string &path, Bin *bin) {
 				if (istring == "PATH") {
 					getline(rfile, istring);
 					bin->elements[pos]->path = istring;
-					if (istring != "") bin->elements[pos]->full = true;
-					else bin->elements[pos]->full = false;
 				}
 				if (istring == "NAME") {
 					getline(rfile, istring);
@@ -1945,6 +1974,7 @@ void BinsMain::make_currbin(int pos) {
 	this->currbin->pos = pos;
 	this->currbin->name = this->bins[pos]->name;
 	this->currbin->elements = this->bins[pos]->elements;
+	this->save_binslist();
 	this->prevbinel = nullptr;
 }
 

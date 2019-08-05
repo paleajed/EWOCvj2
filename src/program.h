@@ -87,6 +87,12 @@ public:
 	GLuint tex = -1;
 	GLuint oldtex = -1;
 	Button* button;
+	Box* sbox;
+	Box* pbox;
+	Box* cbox;
+	int launchtype = 0;
+	std::vector<int> cframes;
+	std::vector<Layer*> nbframes;
 	ShelfElement(bool side, int pos, Button *but);
 	~ShelfElement();
 };
@@ -416,7 +422,7 @@ class Program {
 		bool autosave;
 		float asminutes = 1;
 		int astimestamp = 0;
-		
+
 		std::unordered_map <std::string, GUIString*> guitextmap;
 		std::unordered_map <std::string, GUIString*> prguitextmap;
 		std::unordered_map <std::string, GUIString*> tmguitextmap;
@@ -476,6 +482,7 @@ class Program {
 		int shelffileselem;
 		int shelffilescount;
 		ShelfElement *shelfdragelem = nullptr;
+		ShelfElement* midishelfelem = nullptr;
 		Shelf *shelves[2];
 		int inshelf = -1;
 		int inclips = -1;
@@ -505,6 +512,8 @@ class Program {
 		GLuint set_shader();
 		int load_shader(char* filename, char** ShaderSource, unsigned long len);
 		void set_ow3oh3();
+		void handle_changed_owoh();
+		void handle_fullscreen();
 		void make_menu(const std::string &name, Menu *&menu, std::vector<std::string> &entries);
 		void get_outname(const char *title, std::string filters, std::string defaultdir);
 		void get_inname(const char *title, std::string filters, std::string defaultdir);
@@ -518,6 +527,7 @@ class Program {
 		void add_main_oscmethods();
 		bool order_paths(bool dodeckmix);
 		void handle_wormhole(bool hole);
+		int handle_scrollboxes(Box *upperbox, Box *lowerbox, int numlines, int scrollpos, int scrlines);
 		Program();
 		
 	private:
@@ -616,6 +626,7 @@ extern std::string replace_string(std::string subject, const std::string& search
 extern std::string dirname(std::string pathname);
 extern std::string basename(std::string pathname);
 extern std::string remove_extension(std::string filename);
+extern std::string chop_off(std::string filename);
 extern std::string remove_version(std::string filename);
 extern bool isimage(const std::string &path);
 

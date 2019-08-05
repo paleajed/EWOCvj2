@@ -72,7 +72,7 @@ VideoNode::VideoNode() {
 	this->type = VIDEO;
     this->vidbox = new Box;
     this->vidbox->tooltiptitle = "Layer stack - layer monitor ";
-    this->vidbox->tooltip = "Layer stack: bottom layer to the left. Monitor shows layer video image after all layer effects are applied.  Leftdrag center box to pan layer image.  Mousewheel scales layer image.  Leftdrag (not on center box) starts layer drag'n'drop: exchange or move layers to/from any layer stack, drag layer files to shelf or media bins (through the center wormhole), or to any layer clip queue (by hovering over a layer while dragging).  Double leftmouse click opens the layer clip queue. ";
+    this->vidbox->tooltip = "Layer stack: bottom layer to the left. Monitor shows layer video image after all layer effects are applied.  Leftdrag center box to pan layer image.  Mousewheel scales layer image.  Leftdrag (not on center box) starts layer drag'n'drop: exchange or move layers to/from any layer stack, drag layer files to shelf or media bins (through the side BINS wormgates), or to any layer clip queue (by hovering over a layer while dragging).  Double leftmouse click opens the layer clip queue. ";
 }
 
 MixNode::MixNode(const MixNode &node) {

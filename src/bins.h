@@ -49,6 +49,7 @@ class BinsMain {
 		std::vector<std::string> insertpaths[2];
 		std::vector<std::string> insertjpegpaths[2];
 		std::string previewimage = "";
+		Shelf* insertshelf = nullptr;
 		BinElement* previewbinel = nullptr;
 		BinElement* movingbinel = nullptr;
 		BinElement *backupbinel = nullptr;
@@ -68,6 +69,7 @@ class BinsMain {
 		bool movingstruct = false;
 		std::vector<BinElement*> prevelems;
 		int mouseshelfnum = -1;
+		int oldmouseshelfnum = -1;
 		bool selboxing = false;
 		int selboxx;
 		int selboxy;
