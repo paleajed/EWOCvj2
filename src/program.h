@@ -209,6 +209,7 @@ class GUIString {
 		std::string text;
 		std::vector<float> textwvec;
 		std::vector<float> texthvec;
+		std::vector<std::vector<float>> textwvecvec;
 		float sx;
 		std::vector<float> sxvec;
 		GLuint texture;
@@ -336,7 +337,7 @@ class Program {
 		bool leftmouse = false;
 		bool orderleftmouse = false;
 		bool orderleftmousedown = false;
-		bool lmsave = false;
+		bool lmover = false;
 		bool doubleleftmouse = false;
 		bool middlemouse = false;
 		bool rightmouse = false;
@@ -377,6 +378,8 @@ class Program {
 		bool startloop = false;
 		bool newproject = false;
 		std::vector<std::string> recentprojectpaths;
+		bool wiping = false;
+		float texth;
 		
 		lo::ServerThread *st;
 		std::unordered_map<std::string, int> wipesmap;
@@ -450,7 +453,12 @@ class Program {
 		std::string choosedir = "";
 		std::string inputtext;
 		std::string backupname;
-		int cursorpos;
+		int cursorpos0;
+		int cursorpos1 = -1;
+		int cursorpos2 = -1;
+		int cursortemp1 = -1;
+		int cursortemp2 = -1;
+		bool cursorreset = true;
 
 		int numcores = 0;
 		int maxthreads;
@@ -481,6 +489,7 @@ class Program {
 		bool openshelffiles = false;
 		int shelffileselem;
 		int shelffilescount;
+		int shelfdragnum = -1;
 		ShelfElement *shelfdragelem = nullptr;
 		ShelfElement* midishelfelem = nullptr;
 		Shelf *shelves[2];
@@ -574,8 +583,9 @@ extern void draw_triangle(float *linec, float *areac, float x1, float y1, float 
 
 extern void draw_line(float *linec, float x1, float y1, float x2, float y2);
 
-extern float render_text(std::string text, float *textc, float x, float y, float sx, float sy);
-extern float render_text(std::string text, float *textc, float x, float y, float sx, float sy, int smflag, bool vertical = false);
+extern std::vector<float> render_text(std::string text, float *textc, float x, float y, float sx, float sy);
+extern std::vector<float> render_text(std::string text, float *textc, float x, float y, float sx, float sy, int smflag, bool vertical = false);
+extern float textwvec_total(std::vector<float> textwvec);
 
 extern float xscrtovtx(float scrcoord);
 extern float yscrtovtx(float scrcoord);
@@ -629,6 +639,8 @@ extern std::string remove_extension(std::string filename);
 extern std::string chop_off(std::string filename);
 extern std::string remove_version(std::string filename);
 extern bool isimage(const std::string &path);
+
+extern void drag_into_layerstack(std::vector<Layer*>& layers, bool deck);
 
 extern void onestepfrom(bool stage, Node *node, Node *prevnode, GLuint prevfbotex, GLuint prevfbo);
 

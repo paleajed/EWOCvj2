@@ -701,6 +701,28 @@ void Program::handle_wormhole(bool hole) {
 	if (hole == 0) box = mainprogram->wormhole1->box;
 	else box = mainprogram->wormhole2->box;
 
+	if (hole == 0) {
+		draw_triangle(white, white, -1.0 + box->vtxcoords->w, box->vtxcoords->y1 + box->vtxcoords->h / 4.0f, box->vtxcoords->h / 4.0f, box->vtxcoords->h / 2.0f, LEFT, OPEN);
+		if (mainprogram->binsscreen) render_text("MIX", white, -0.9f, -0.29f, 0.0006f, 0.001f);
+		else render_text("BINS", white, -0.9f, -0.29f, 0.0006f, 0.001f);
+	}
+	else {
+		if (mainprogram->binsscreen) {
+			draw_triangle(white, white, 1.0f - box->vtxcoords->w - box->vtxcoords->h / 4.0f * 0.866f, box->vtxcoords->y1 + box->vtxcoords->h / 4.0f + 0.3f, box->vtxcoords->h / 4.0f, box->vtxcoords->h / 2.0f, RIGHT, OPEN);
+			render_text("MIX", white, 0.86f, 0.01f, 0.0006f, 0.001f);
+		}
+		else {
+			draw_triangle(white, white, 1.0f - box->vtxcoords->w - box->vtxcoords->h / 4.0f * 0.866f, box->vtxcoords->y1 + box->vtxcoords->h / 4.0f, box->vtxcoords->h / 4.0f, box->vtxcoords->h / 2.0f, RIGHT, OPEN);
+			render_text("BINS", white, 0.86f, -0.29f, 0.0006f, 0.001f);
+		}
+	}
+
+	if (mainprogram->binsscreen) {
+		box->vtxcoords->y1 = -1.0f;
+		box->vtxcoords->h = 2.0f;
+		box->upvtxtoscr();
+	}
+
 	//draw and handle BINS wormhole
 	if (mainprogram->fullscreen == -1) {
 		if (box->in()) {
@@ -709,7 +731,6 @@ void Program::handle_wormhole(bool hole) {
 			if (!mainprogram->menuondisplay) {
 				if (mainprogram->leftmouse) {
 					mainprogram->binsscreen = !mainprogram->binsscreen;
-					mainprogram->leftmouse = false;
 				}
 				if (mainprogram->menuactivation) {
 					mainprogram->parammenu1->state = 2;
@@ -734,17 +755,11 @@ void Program::handle_wormhole(bool hole) {
 		else {
 			draw_box(white, white, box, -1);
 		}
-		if (hole == 0) {
-			draw_triangle(white, white, -1.0 + box->vtxcoords->w, box->vtxcoords->y1 + box->vtxcoords->h / 4.0f, box->vtxcoords->h / 4.0f, box->vtxcoords->h / 2.0f, LEFT, OPEN);
-			if (mainprogram->binsscreen) render_text("MIX", white,  -0.9f, -0.29f, 0.0006f, 0.001f);
-			else render_text("BINS", white, -0.9f, -0.29f, 0.0006f, 0.001f);
-		}
-		else {
-			draw_triangle(white, white, 1.0f - box->vtxcoords->w - box->vtxcoords->h / 4.0f * 0.866f, box->vtxcoords->y1 + box->vtxcoords->h / 4.0f , box->vtxcoords->h / 4.0f, box->vtxcoords->h / 2.0f, RIGHT, OPEN);
-			if (mainprogram->binsscreen) render_text("MIX", white, 0.86f, -0.29f, 0.0006f, 0.001f);
-			else render_text("BINS", white, 0.86f, -0.29f, 0.0006f, 0.001f);
-		}
 	}
+
+	box->vtxcoords->y1 = -0.58f;
+	box->vtxcoords->h = 0.6f;
+	box->upvtxtoscr();
 }
 
 
@@ -860,7 +875,6 @@ void Program::handle_fullscreen() {
 	if (k == 0) this->fullscreen = -1;
 	if (this->menuchosen) {
 		this->menuchosen = false;
-		this->leftmouse = 0;
 		this->menuactivation = 0;
 		this->menuresults.clear();
 	}

@@ -411,7 +411,6 @@ void BinsMain::handle(bool draw) {
 								binel->jpegpath = elem->jpegpath;
 							}
 							this->insertshelf = nullptr;
-							mainprogram->leftmouse = false;
 							mainprogram->binsscreen = false;
 						}
 						if (mainprogram->rightmouse) {
@@ -534,7 +533,6 @@ void BinsMain::handle(bool draw) {
 					mainprogram->binselmenu->menuy = box.scrcoords->y1 - box.scrcoords->h / 2.0f;
 				}
 				this->selboxing = false;
-				mainprogram->leftmouse = false;
 			}
 		}
 	}
@@ -552,7 +550,6 @@ void BinsMain::handle(bool draw) {
 	if (binsmain->hapmodebox->in()) {
 		if (mainprogram->leftmouse) {
 			mainprogram->threadmode = !mainprogram->threadmode;
-			mainprogram->leftmouse = false;
 		}
 	}
 
@@ -653,7 +650,6 @@ void BinsMain::handle(bool draw) {
 					make_currbin(i);
 					this->dragbox = nullptr;
 					this->dragbinsense = false;
-					mainprogram->leftmouse = false;
 				}
 				if (i + this->binsscroll == this->dragbinpos) {
 					// mouse over box thats being dragged: first stage drag startup, allows user to just choose current bin without starting drag
@@ -680,9 +676,9 @@ void BinsMain::handle(bool draw) {
 			draw_box(bin->box, -1);
 			if (mainprogram->renaming != EDIT_NONE and bin == this->menubin) {
 				// bin renaming with keyboard
-				std::string part = mainprogram->inputtext.substr(0, mainprogram->cursorpos);
-				float textw = render_text(part, white, bin->box->vtxcoords->x1 + tf(0.01f), bin->box->vtxcoords->y1 + tf(0.012f), tf(0.0003f), tf(0.0005f));
-				part = mainprogram->inputtext.substr(mainprogram->cursorpos, mainprogram->inputtext.length() - mainprogram->cursorpos);
+				std::string part = mainprogram->inputtext.substr(0, mainprogram->cursorpos0);
+				float textw = textwvec_total(render_text(part, white, bin->box->vtxcoords->x1 + tf(0.01f), bin->box->vtxcoords->y1 + tf(0.012f), tf(0.0003f), tf(0.0005f)));
+				part = mainprogram->inputtext.substr(mainprogram->cursorpos0, mainprogram->inputtext.length() - mainprogram->cursorpos0);
 				render_text(part, white, bin->box->vtxcoords->x1 + tf(0.01f) + textw, bin->box->vtxcoords->y1 + tf(0.012f), tf(0.0003f), tf(0.0005f));
 				draw_line(white, bin->box->vtxcoords->x1 + tf(0.011f) + textw, bin->box->vtxcoords->y1 + tf(0.01f), bin->box->vtxcoords->x1 + tf(0.011f) + textw, bin->box->vtxcoords->y1 + tf(0.028f));
 			}
@@ -759,7 +755,7 @@ void BinsMain::handle(bool draw) {
 					break;
 				}
 			}
-			if (mainprogram->leftmouse) {
+			if (mainprogram->lmover) {
 				// do bin drag
 				if (this->dragbinpos < pos) {
 					std::rotate(this->bins.begin() + this->dragbinpos, this->bins.begin() + this->dragbinpos + 1, this->bins.begin() + pos);
@@ -775,7 +771,6 @@ void BinsMain::handle(bool draw) {
 				}
 				this->dragbin = nullptr;
 				this->save_binslist();
-				mainprogram->leftmouse = false;
 			}
 			if (mainprogram->rightmouse) {
 				// cancel bin drag
@@ -792,9 +787,9 @@ void BinsMain::handle(bool draw) {
 		if (mainprogram->renaming != EDIT_NONE and this->renamingelem) {
 			// bin element renaming with keyboard
 			draw_box(white, black, this->renamingbox, -1);
-			std::string part = mainprogram->inputtext.substr(0, mainprogram->cursorpos);
-			float textw = render_text(part, white, -0.5f + 0.1f, -0.2f + 0.05f, tf(0.0006f), tf(0.001f));
-			part = mainprogram->inputtext.substr(mainprogram->cursorpos, mainprogram->inputtext.length() - mainprogram->cursorpos);
+			std::string part = mainprogram->inputtext.substr(0, mainprogram->cursorpos0);
+			float textw = textwvec_total(render_text(part, white, -0.5f + 0.1f, -0.2f + 0.05f, tf(0.0006f), tf(0.001f)));
+			part = mainprogram->inputtext.substr(mainprogram->cursorpos0, mainprogram->inputtext.length() - mainprogram->cursorpos0);
 			render_text(part, white, -0.5f + 0.1f + textw, -0.2f + 0.05f, tf(0.0006f), tf(0.001f));
 			draw_line(white, -0.5f + 0.1f + textw, -0.2f + 0.05f, -0.5f + 0.1f + textw, -0.2f + tf(0.056f));
 		}
@@ -834,7 +829,6 @@ void BinsMain::handle(bool draw) {
 		if (mainprogram->menuchosen) {
 			// menu cleanup
 			mainprogram->menuchosen = false;
-			mainprogram->leftmouse = 0;
 			mainprogram->menuactivation = 0;
 			mainprogram->menuresults.clear();
 			mainprogram->menuondisplay = false;
@@ -864,7 +858,7 @@ void BinsMain::handle(bool draw) {
 				// start renaming bin
 				mainprogram->backupname = this->menubin->name;
 				mainprogram->inputtext = this->menubin->name;
-				mainprogram->cursorpos = mainprogram->inputtext.length();
+				mainprogram->cursorpos0 = mainprogram->inputtext.length();
 				SDL_StartTextInput();
 				mainprogram->renaming = EDIT_BINNAME;
 			}
@@ -875,7 +869,7 @@ void BinsMain::handle(bool draw) {
 				// start renaming bin
 				mainprogram->backupname = this->menubin->name;
 				mainprogram->inputtext = this->menubin->name;
-				mainprogram->cursorpos = mainprogram->inputtext.length();
+				mainprogram->cursorpos0 = mainprogram->inputtext.length();
 				SDL_StartTextInput();
 				mainprogram->renaming = EDIT_BINNAME;
 			}
@@ -885,7 +879,6 @@ void BinsMain::handle(bool draw) {
 	if (mainprogram->menuchosen) {
 		// menu cleanup
 		mainprogram->menuchosen = false;
-		mainprogram->leftmouse = 0;
 		mainprogram->menuactivation = 0;
 		mainprogram->menuresults.clear();
 		mainprogram->menuondisplay = false;
@@ -908,7 +901,7 @@ void BinsMain::handle(bool draw) {
 			std::string name = this->menubinel->name;
 			mainprogram->backupname = name;
 			mainprogram->inputtext = name;
-			mainprogram->cursorpos = mainprogram->inputtext.length();
+			mainprogram->cursorpos0 = mainprogram->inputtext.length();
 			SDL_StartTextInput();
 			mainprogram->renaming = EDIT_BINELEMNAME;
 		}
@@ -954,7 +947,6 @@ void BinsMain::handle(bool draw) {
 			mainprogram->paths.push_back(path);
 			mainprogram->counting = 0;
 			this->openbinfile = true;
-			mainprogram->lmsave = false;
 			this->prevbinel = nullptr;
 		}
 		else if (binelmenuoptions[k] == BET_INSDECKB) {
@@ -976,7 +968,6 @@ void BinsMain::handle(bool draw) {
 			mainprogram->paths.push_back(path);
 			mainprogram->counting = 0;
 			this->openbinfile = true;
-			mainprogram->lmsave = false;
 			this->prevbinel = nullptr;
 		}
 		else if (binelmenuoptions[k] == BET_INSMIX) {
@@ -997,7 +988,6 @@ void BinsMain::handle(bool draw) {
 			mainprogram->paths.push_back(path);
 			mainprogram->counting = 0;
 			this->openbinfile = true;
-			mainprogram->lmsave = false;
 			this->prevbinel = nullptr;
 		}
 		else if (binelmenuoptions[k] == BET_LOADSHELFA) {
@@ -1063,7 +1053,6 @@ void BinsMain::handle(bool draw) {
 	if (mainprogram->menuchosen) {
 		// menu cleanup
 		mainprogram->menuchosen = false;
-		mainprogram->leftmouse = 0;
 		mainprogram->menuactivation = 0;
 		mainprogram->menuresults.clear();
 		mainprogram->menuondisplay = false;
@@ -1537,7 +1526,6 @@ void BinsMain::handle(bool draw) {
 									this->movingtex = binel->tex;
 									this->movingbinel = binel;
 									this->currbinel = binel;
-									mainprogram->leftmouse = false;
 								}
 							}
 						}
@@ -1545,19 +1533,23 @@ void BinsMain::handle(bool draw) {
 
 					if (binel != this->currbinel) {
 						if (this->currbinel) this->binpreview = false;
-						if (lay->vidmoving) {
-							// when dragging layer in from mix view
+						bool cond = false;
+						if (mainprogram->dragbinel) {
+							cond = (mainprogram->dragbinel->type == ELEM_DECK or mainprogram->dragbinel->type == ELEM_MIX);
+						}
+						if (lay->vidmoving or cond) {
+							// when dragging layer/mix/deck in from mix view
 							if (this->currbinel) {
 								//reset old currbinel
 								this->currbinel->tex = this->currbinel->oldtex;
 								// set new layer drag textures in this bin element
 								binel->oldtex = binel->tex;
-								binel->tex = this->dragtex;
+								binel->tex = mainprogram->dragbinel->tex;
 							}
 							else {
 								// set new layer drag textures in this bin element
 								binel->oldtex = binel->tex;
-								binel->tex = this->dragtex;
+								binel->tex = mainprogram->dragbinel->tex;
 							}
 							this->currbinel = binel;
 						}	
@@ -1722,7 +1714,11 @@ void BinsMain::handle(bool draw) {
 
 		if (!inbinel) this->binpreview = false;
 
-		if (inbinel and !mainprogram->rightmouse and lay->vidmoving and mainprogram->lmsave) {
+		bool cond = false;
+		if (mainprogram->dragbinel) {
+			cond = (mainprogram->dragbinel->type == ELEM_DECK or mainprogram->dragbinel->type == ELEM_MIX);
+		}
+		if (inbinel and !mainprogram->rightmouse and (lay->vidmoving or cond) and mainprogram->lmover) {
 			// confirm layer dragging from main view and set influenced bin element to the right values
 			this->currbinel->type = mainprogram->dragbinel->type;
 			this->currbinel->path = mainprogram->dragbinel->path;
@@ -1747,10 +1743,14 @@ void BinsMain::handle(bool draw) {
 			lay->vidmoving = false;
 			mainmix->moving = false;
 		}
-		else if ((mainprogram->lmsave or mainprogram->rightmouse) and mainprogram->dragbinel) {
+		else if ((mainprogram->lmover or mainprogram->rightmouse) and mainprogram->dragbinel) {
 			//when dropping on grey area
-			if (lay->vidmoving) {
-				// whn layer dragging from mix view
+			bool cond = false;
+			if (mainprogram->dragbinel) {
+				cond = (mainprogram->dragbinel->type == ELEM_DECK or mainprogram->dragbinel->type == ELEM_MIX);
+			}
+			if (lay->vidmoving or cond) {
+				// when layer/mix/deck dragging from mix view
 				if (this->currbinel) {
 					this->currbinel->tex = this->currbinel->oldtex;
 					this->currbinel = nullptr;

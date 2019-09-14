@@ -214,7 +214,7 @@ void Param::handle() {
 				mainprogram->renaming = EDIT_PARAM;
 				mainmix->adaptnumparam = this;
 				mainprogram->inputtext = "";
-				mainprogram->cursorpos = mainprogram->inputtext.length();
+				mainprogram->cursorpos0 = mainprogram->inputtext.length();
 				SDL_StartTextInput();
 				mainprogram->doubleleftmouse = false;
 			}
@@ -234,9 +234,9 @@ void Param::handle() {
 		}
 	}
 	if (this == mainmix->adaptnumparam) {
-		std::string part = mainprogram->inputtext.substr(0, mainprogram->cursorpos);
-		float textw = render_text(part, white, box->vtxcoords->x1 + tf(0.01f), box->vtxcoords->y1 + tf(0.05f) - tf(0.03f), tf(0.0003f), tf(0.0005f), 1) * 0.5f;
-		part = mainprogram->inputtext.substr(mainprogram->cursorpos, mainprogram->inputtext.length() - mainprogram->cursorpos);
+		std::string part = mainprogram->inputtext.substr(0, mainprogram->cursorpos0);
+		float textw = textwvec_total(render_text(part, white, box->vtxcoords->x1 + tf(0.01f), box->vtxcoords->y1 + tf(0.05f) - tf(0.03f), tf(0.0003f), tf(0.0005f), 1)) * 0.5f;
+		part = mainprogram->inputtext.substr(mainprogram->cursorpos0, mainprogram->inputtext.length() - mainprogram->cursorpos0);
 		render_text(part, white, box->vtxcoords->x1 + tf(0.01f) + textw * 4, box->vtxcoords->y1 + tf(0.05f) - tf(0.03f), tf(0.0003f), tf(0.0005f), 1);
 		draw_line(white, box->vtxcoords->x1 + tf(0.01f) + textw * 4, box->vtxcoords->y1 + tf(0.04f) - tf(0.03f), box->vtxcoords->x1 + tf(0.01f) + textw * 4, box->vtxcoords->y1 + tf(0.04f));
 	}
@@ -2128,6 +2128,24 @@ void Mixer::do_deletelay(Layer *testlay, std::vector<Layer*> &layers, bool add) 
 }
 
 void Mixer::delete_layer(std::vector<Layer*> &layers, Layer *testlay, bool add) {
+	if (!testlay->dummy) {
+		ShelfElement* elem = testlay->prevshelfdragelem;
+		bool ret = this->set_prevshelfdragelem(testlay);
+		if (!ret and elem->type == ELEM_DECK) {
+			if (elem->launchtype == 2) {
+				this->mousedeck = elem->nbframes[0]->deck;
+				this->do_save_deck(mainprogram->temppath + "tempdeck_lnch.deck", false, false);
+				this->open_deck(mainprogram->temppath + "tempdeck_lnch.deck", false);
+			}
+		}
+		else if (!ret and elem->type == ELEM_MIX) {
+			if (elem->launchtype == 2) {
+				this->do_save_mix(mainprogram->temppath + "tempdeck_lnch.deck", mainprogram->prevmodus, false);
+				this->open_mix(mainprogram->temppath + "tempdeck_lnch.deck", false);
+			}
+		}
+	}
+
 	testlay->closethread = true;
 	while (testlay->closethread) {
 		testlay->ready = true;
@@ -2172,11 +2190,10 @@ void Mixer::handle_adaptparam() {
 		}
 	}
 
-	if (mainprogram->leftmouse) {
+	if (mainprogram->lmover) {
 		if (!this->adaptparam->sliding) {
 			this->adaptparam->value = (int)(this->adaptparam->value + 0.5f);
 		}
-		mainprogram->leftmouse = false;
 		this->adaptparam = nullptr;
 	}
 }
@@ -2530,12 +2547,22 @@ void Layer::set_aspectratio(int lw, int lh) {
 
 void Layer::open_image(const std::string &path) {
 	if (!this->dummy) {
-		bool cond = false;
-		if (this->prevshelfdragelem) {
-			cond = (this->prevshelfdragelem->type == ELEM_DECK or this->prevshelfdragelem->type == ELEM_MIX);
-		}
+		ShelfElement* elem = this->prevshelfdragelem;
 		bool ret = mainmix->set_prevshelfdragelem(this);
-		if (!ret and !cond) {
+		if (!ret and elem->type == ELEM_DECK) {
+			if (elem->launchtype == 2) {
+				mainmix->mousedeck = elem->nbframes[0]->deck;
+				mainmix->do_save_deck(mainprogram->temppath + "tempdeck_lnch.deck", false, false);
+				mainmix->open_deck(mainprogram->temppath + "tempdeck_lnch.deck", false);
+			}
+		}
+		else if (!ret and elem->type == ELEM_MIX) {
+			if (elem->launchtype == 2) {
+				mainmix->do_save_mix(mainprogram->temppath + "tempdeck_lnch.deck", mainprogram->prevmodus, false);
+				mainmix->open_mix(mainprogram->temppath + "tempdeck_lnch.deck", false);
+			}
+		}
+		else if (!ret) {
 			this->inhibit(); // lay is passed over into only framecounting
 			this->layers->erase(std::find(this->layers->begin(), this->layers->end(), this));
 			Layer* lay = mainmix->add_layer(*this->layers, this->pos);
@@ -4137,10 +4164,6 @@ void Mixer::open_layerfile(const std::string &path, Layer *lay, bool loadevents,
 	if (concat) rfile.open(result);
 	else rfile.open(path);
 	
-	if (!lay->dummy) {
-		this->set_prevshelfdragelem(lay);
-	}
-
 	std::string istring;
 	
 	Node *nextnode = nullptr;
