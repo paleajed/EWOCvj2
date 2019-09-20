@@ -1968,8 +1968,8 @@ void main()
 					if (dir == 0) dist = fardist * xamount;
 					else dist = fardist * (1 - xamount);
 					tc = TexCoord0.st;
-					a = abs(tc.x - xxpos);
-					b = abs(tc.y - xypos);
+					a = abs(tc.x - xxpos - (xxpos - 0.7f) * (xamount));
+					b = abs(tc.y - xypos - (xypos - 0.7f) * (xamount));
 					if (dir == 0) cond = sqrt(a * a + b * b) <= dist;
 					else cond = sqrt(a * a + b * b) >= dist;
 					if (cond) {
@@ -1981,16 +1981,16 @@ void main()
 					break;
 				case 4:  //rectangle
 					if (dir == 0) {
-						xl = xxpos * (1 - xamount);
-						xh = xxpos + (1 - xxpos) * (xamount);
-						yl = xypos * (1 - xamount);
-						yh = xypos + (1 - xypos) * (xamount);
+						xl = (xxpos - 0.6f) * (xamount) + (xxpos * (1 - xamount));
+						xh = (xxpos - 0.6f) * (xamount) + (xxpos + (1 - xxpos) * (xamount));
+						yl = (xypos - 0.6f) * (xamount) + (xypos * (1 - xamount));
+						yh = (xypos - 0.6f) * (xamount) + (xypos + (1 - xypos) * (xamount));
 					}
 					else {
-						xl = xxpos * (xamount);
-						xh = xxpos + (1 - xxpos) * (1 - xamount);
-						yl = xypos * (xamount);
-						yh = xypos + (1 - xypos) * (1 - xamount);
+						xl = (xxpos - 0.6f) * (1 - xamount) + (xxpos * (xamount));
+						xh = (xxpos - 0.6f) * (1 - xamount) + (xxpos + (1 - xxpos) * (1 - xamount));
+						yl = (xypos - 0.6f) * (1 - xamount) + (xypos * (xamount));
+						yh = (xypos - 0.6f) * (1 - xamount) + (xypos + (1 - xypos) * (1 - xamount));
 					}
 					tc = TexCoord0.st;
 					if (dir == 0) cond = (tc.x > xl) && (tc.x < xh) && (tc.y > yl) && (tc.y < yh);
@@ -2004,22 +2004,22 @@ void main()
 					break;
 				case 5:  //zoomed rectangle
 					if (dir == 0) {
-						xl = xxpos * (1 - xamount);
-						xh = xxpos + (1 - xxpos) * (xamount);
-						yl = xypos * (1 - xamount);
-						yh = xypos + (1 - xypos) * (xamount);
+						xl = (xxpos - 0.6f) * (xamount) + (xxpos * (1 - xamount));
+						xh = (xxpos - 0.6f) * (xamount) + (xxpos + (1 - xxpos) * (xamount));
+						yl = (xypos - 0.6f) * (xamount) + (xypos * (1 - xamount));
+						yh = (xypos - 0.6f) * (xamount) + (xypos + (1 - xypos) * (xamount));
 					}
 					else {
-						xl = xxpos * (xamount);
-						xh = xxpos + (1 - xxpos) * (1 - xamount);
-						yl = xypos * (xamount);
-						yh = xypos + (1 - xypos) * (1 - xamount);
+						xl = (xxpos - 0.6f) * (1 - xamount) + (xxpos * (xamount));
+						xh = (xxpos - 0.6f) * (1 - xamount) + (xxpos + (1 - xxpos) * (1 - xamount));
+						yl = (xypos - 0.6f) * (1 - xamount) + (xypos * (xamount));
+						yh = (xypos - 0.6f) * (1 - xamount) + (xypos + (1 - xypos) * (1 - xamount));
 					}
 					tc = TexCoord0.st;
 					cond = (tc.x > xl) && (tc.x < xh) && (tc.y > yl) && (tc.y < yh);
 					if (cond) {
-						tc.x = (tc.x - xl) / (xh - xl);
-						tc.y = (tc.y - yl) / (yh - yl);
+						tc.x = ((tc.x - xl) / (xh - xl)) - (xl * 0.5f) - xl;					
+						tc.y = ((tc.y - yl) / (yh - yl)) - (yl * 0.5f) - yl;
 						if (dir == 0) {
 							data1 = vec4(texture2D(endSampler1, tc).rgba);
 						}

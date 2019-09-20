@@ -5247,7 +5247,7 @@ void Mixer::record_video() {
 	std::string name = "recording_0";
 	int count = 0;
 	while (1) {
-		path = mainprogram->recdir + name + "_hap.mov";
+		path = mainprogram->project->recdir + name + "_hap.mov";
 		if (!exists(path)) {
 			break;
 		}

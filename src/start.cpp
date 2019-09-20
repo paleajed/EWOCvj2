@@ -2149,21 +2149,30 @@ void draw_triangle(float *linec, float *areac, float x1, float y1, float xsize, 
 }
 
 
-std::vector<float> render_text(std::string text, float *textc, float x, float y, float sx, float sy) {
-	std::vector<float> ret = render_text(text, textc, x, y, sx, sy, 0, 0);
+std::vector<float> render_text(std::string text, float* textc, float x, float y, float sx, float sy) {
+	std::vector<float> ret = render_text(text, textc, x, y, sx, sy, 0, 1, 0);
 	return ret;
 }
 
-std::vector<float> render_text(std::string text, float *textc, float x, float y, float sx, float sy, int smflag, bool vertical) {
+std::vector<float> render_text(std::string text, float* textc, float x, float y, float sx, float sy, int smflag, bool vertical) {
+	std::vector<float> ret = render_text(text, textc, x, y, sx, sy, smflag, 1, vertical);
+	return ret;
+}
+
+std::vector<float> render_text(std::string text, float *textc, float x, float y, float sx, float sy, int smflag, bool display, bool vertical) {
+	float bux = x;
+	float buy = y;
+	std::vector<float> textwsplay;
+	if (text == "") return textwsplay;
 	float white[4] = { 1.0f, 1.0f, 1.0f, 1.0f };
 	y -= 0.015f;
 	GLuint texture;
+	float wfac;
 	float textw = 0.0f;
 	float texth = 0.0f;
 	bool prepare = true;
 	GUIString* gs = nullptr;
 	int pos = 0;
-	std::vector<float> textwsplay;
 	if (smflag == 0) {
 		gs = mainprogram->guitextmap[text];
 		if (gs) {
@@ -2205,6 +2214,7 @@ std::vector<float> render_text(std::string text, float *textc, float x, float y,
 	}
 	
 	if (prepare) {
+		// compose string texture for display all next times
 		const char *t = text.c_str();
 		const char *p;
 
@@ -2330,15 +2340,14 @@ std::vector<float> render_text(std::string text, float *textc, float x, float y,
 			glDrawBuffer(GL_COLOR_ATTACHMENT0);
 			glUniform1i(textmode, 0);
 	
-			x += (g->advance.x/64) * pixelw;
-			//y += (g->advance.y/64) * pixelh;
+			x += (g->advance.x/64.0f) * pixelw;
 			textw += (g->advance.x/128.0f) * pixelh;
-			textws.push_back((g->advance.x / 128.0f)* pixelh);
+			textws.push_back((g->advance.x / 128.0f) * pixelh * ((smflag == 0) + 1) * 0.5f / 1.1f); //1.1 *
 			texth = 64.0f * pixelh;
 		}
 		
 		//cropping texture
-		int w = textw * 2.2f / pixelw;
+		int w = textw * 2.2f / pixelw; //2.2 *
 		GLuint endtex;
 		glGenTextures(1, &endtex);
 		glBindTexture(GL_TEXTURE_2D, endtex);
@@ -2377,56 +2386,70 @@ std::vector<float> render_text(std::string text, float *textc, float x, float y,
 		glDeleteTextures(1, &ftex);
 		glDeleteTextures(1, &texture);
 		
+		//display
+		textws = render_text(text, textc, bux, buy, sx, sy, smflag, display, vertical);
 		return textws;
   	}
 	else {
-		GLfloat texvcoords[8];
-		GLfloat *p = texvcoords;
-		float th = 0.0012f;
-		float pixelw = 2.0f / glob->w;
-		float wfac = textw / pixelw / 512.0f;
-		float thtrans[] = {th, -th};
-		GLfloat trans = glGetUniformLocation(mainprogram->ShaderProgram, "translation");
-		glUniform2fv(trans, 1, thtrans);
-		if (vertical) {
-			*p++ = x; *p++ = y;
-			*p++ = x; *p++ = y - texth * 8 * wfac * glob->w / glob->h;
-			*p++ = x + texth * glob->h / glob->w;     *p++ = y;
-			*p++ = x + texth * glob->h / glob->w;     *p++ = y - texth * 8 * wfac * glob->w / glob->h;
-		}
-		else {
-			*p++ = x;    *p++ = y;
-			*p++ = x + texth * 8 * wfac; *p++ = y;
-			*p++ = x;     *p++ = y + texth;
-			*p++ = x + texth * 8 * wfac; *p++ = y + texth;
-		}
-		GLfloat textcoords[] = {0.0f, 0.0f,
-							1.0f, 0.0f,
-							0.0f, 1.0f,
-							1.0f, 1.0f};
-		GLint textmode = glGetUniformLocation(mainprogram->ShaderProgram, "textmode");
-		glUniform1i(textmode, 1);
-		float black[] = {0.0f, 0.0f, 0.0f, 1.0f};
-		GLint color = glGetUniformLocation(mainprogram->ShaderProgram, "color");
-		glUniform4fv(color, 1, black);
-		glActiveTexture(GL_TEXTURE0);
-		glBindTexture(GL_TEXTURE_2D, texture);
-		if (mainprogram->startloop) {
-			if (smflag == 1) {
-				glBindBuffer(GL_ARRAY_BUFFER, mainprogram->pr_rtvbo);
-				glBufferSubData(GL_ARRAY_BUFFER, 0, 32, texvcoords);
-				glBindBuffer(GL_ARRAY_BUFFER, mainprogram->pr_rttbo);
-				glBufferSubData(GL_ARRAY_BUFFER, 0, 32, textcoords);
-				glBindVertexArray(mainprogram->pr_texvao);
-				glBindFramebuffer(GL_FRAMEBUFFER, mainprogram->smglobfbo_pr);
+		if (display) {
+			// display string texture
+			GLfloat texvcoords[8];
+			GLfloat* p = texvcoords;
+			float th = 0.0012f;
+			float pixelw = 2.0f / glob->w;
+			wfac = textw / pixelw / 512.0f;
+			float thtrans[] = { th, -th };
+			GLfloat trans = glGetUniformLocation(mainprogram->ShaderProgram, "translation");
+			glUniform2fv(trans, 1, thtrans);
+			if (vertical) {
+				*p++ = x; *p++ = y;
+				*p++ = x; *p++ = y - texth * 8.0f * wfac * glob->w / glob->h;
+				*p++ = x + texth * glob->h / glob->w;     *p++ = y;
+				*p++ = x + texth * glob->h / glob->w;     *p++ = y - texth * 8.0f * wfac * glob->w / glob->h;
 			}
-			else if (smflag == 2) {
-				glBindBuffer(GL_ARRAY_BUFFER, mainprogram->tm_rtvbo);
-				glBufferSubData(GL_ARRAY_BUFFER, 0, 32, texvcoords);
-				glBindBuffer(GL_ARRAY_BUFFER, mainprogram->tm_rttbo);
-				glBufferSubData(GL_ARRAY_BUFFER, 0, 32, textcoords);
-				glBindVertexArray(mainprogram->tm_texvao);
-				glBindFramebuffer(GL_FRAMEBUFFER, mainprogram->smglobfbo_tm);
+			else {
+				*p++ = x;    *p++ = y;
+				*p++ = x + texth * 8.0f * wfac; *p++ = y;
+				*p++ = x;     *p++ = y + texth;
+				*p++ = x + texth * 8.0f * wfac; *p++ = y + texth;
+			}
+			GLfloat textcoords[] = { 0.0f, 0.0f,
+								1.0f, 0.0f,
+								0.0f, 1.0f,
+								1.0f, 1.0f };
+			GLint textmode = glGetUniformLocation(mainprogram->ShaderProgram, "textmode");
+			glUniform1i(textmode, 1);
+			float black[] = { 0.0f, 0.0f, 0.0f, 1.0f };
+			GLint color = glGetUniformLocation(mainprogram->ShaderProgram, "color");
+			glUniform4fv(color, 1, black);
+			glActiveTexture(GL_TEXTURE0);
+			glBindTexture(GL_TEXTURE_2D, texture);
+			if (mainprogram->startloop) {
+				if (smflag == 1) {
+					glBindBuffer(GL_ARRAY_BUFFER, mainprogram->pr_rtvbo);
+					glBufferSubData(GL_ARRAY_BUFFER, 0, 32, texvcoords);
+					glBindBuffer(GL_ARRAY_BUFFER, mainprogram->pr_rttbo);
+					glBufferSubData(GL_ARRAY_BUFFER, 0, 32, textcoords);
+					glBindVertexArray(mainprogram->pr_texvao);
+					glBindFramebuffer(GL_FRAMEBUFFER, mainprogram->smglobfbo_pr);
+				}
+				else if (smflag == 2) {
+					glBindBuffer(GL_ARRAY_BUFFER, mainprogram->tm_rtvbo);
+					glBufferSubData(GL_ARRAY_BUFFER, 0, 32, texvcoords);
+					glBindBuffer(GL_ARRAY_BUFFER, mainprogram->tm_rttbo);
+					glBufferSubData(GL_ARRAY_BUFFER, 0, 32, textcoords);
+					glBindVertexArray(mainprogram->tm_texvao);
+					glBindFramebuffer(GL_FRAMEBUFFER, mainprogram->smglobfbo_tm);
+				}
+				else {
+					glBindBuffer(GL_ARRAY_BUFFER, mainprogram->rtvbo);
+					glBufferSubData(GL_ARRAY_BUFFER, 0, 32, texvcoords);
+					glBindBuffer(GL_ARRAY_BUFFER, mainprogram->rttbo);
+					glBufferSubData(GL_ARRAY_BUFFER, 0, 32, textcoords);
+					glBindVertexArray(mainprogram->texvao);
+					glBindFramebuffer(GL_FRAMEBUFFER, mainprogram->globfbo);
+				}
+				glDrawBuffer(GL_COLOR_ATTACHMENT0);
 			}
 			else {
 				glBindBuffer(GL_ARRAY_BUFFER, mainprogram->rtvbo);
@@ -2434,29 +2457,18 @@ std::vector<float> render_text(std::string text, float *textc, float x, float y,
 				glBindBuffer(GL_ARRAY_BUFFER, mainprogram->rttbo);
 				glBufferSubData(GL_ARRAY_BUFFER, 0, 32, textcoords);
 				glBindVertexArray(mainprogram->texvao);
-				glBindFramebuffer(GL_FRAMEBUFFER, mainprogram->globfbo);
 			}
-			glDrawBuffer(GL_COLOR_ATTACHMENT0);
+
+			if (textw != 0) glDrawArrays(GL_TRIANGLE_STRIP, 0, 4);  //draw text shadow
+			glUniform4fv(color, 1, textc);
+			float zerotrans[] = { 0.0f, 0.0f };
+			glUniform2fv(trans, 1, zerotrans);
+			if (textw != 0) glDrawArrays(GL_TRIANGLE_STRIP, 0, 4);	//draw text
+			
+			glUniform1i(textmode, 0);
 		}
-		else {
-			glBindBuffer(GL_ARRAY_BUFFER, mainprogram->rtvbo);
-			glBufferSubData(GL_ARRAY_BUFFER, 0, 32, texvcoords);
-			glBindBuffer(GL_ARRAY_BUFFER, mainprogram->rttbo);
-			glBufferSubData(GL_ARRAY_BUFFER, 0, 32, textcoords);
-			glBindVertexArray(mainprogram->texvao);
-		}
-		if (textw != 0) glDrawArrays(GL_TRIANGLE_STRIP, 0, 4);  //draw text shadow
-		glUniform4fv(color, 1, textc);
-		float zerotrans[] = {0.0f, 0.0f};
-		glUniform2fv(trans, 1, zerotrans);
-		if (textw != 0) glDrawArrays(GL_TRIANGLE_STRIP, 0, 4);	//draw text
-		
-		glUniform1i(textmode, 0);
 	}
 
-	for (int i = 0; i < textwsplay.size(); i++) {
-		textwsplay[i] = texth * 4.0f * (textwsplay[i] / (2.0f / glob->w) / 522.0f);
-	}
 	mainprogram->texth = texth;
 	
 	return textwsplay;
@@ -5216,7 +5228,7 @@ void Shelf::handle() {
 						std::string name = remove_extension("shelf_" + base);
 						int count = 0;
 						while (1) {
-							newpath = mainprogram->shelfdir + name + extstr;
+							newpath = mainprogram->project->shelfdir + name + extstr;
 							if (!exists(newpath)) {
 								boost::filesystem::copy_file(mainprogram->dragbinel->path, newpath);
 								mainprogram->dragbinel->path = newpath;
@@ -6247,8 +6259,8 @@ void Preferences::load() {
 				if (brk) break;
 			}
 		}
-		mainprogram->currshelfdir = mainprogram->shelfdir;
-		mainprogram->currbinsdir = mainprogram->binsdir;
+		mainprogram->currshelfdir = mainprogram->project->shelfdir;
+		mainprogram->currbinsdir = mainprogram->project->binsdir;
 		if (istring == "CURRFILESDIR") {
 			getline(rfile, istring);
 			boost::filesystem::path p(istring);
@@ -6405,62 +6417,6 @@ PIDirs::PIDirs() {
 	this->items.push_back(pdi);
 	pos++;
 	
-	pdi = new PrefItem(this, pos, "General mediabins", PREF_PATH, (void*)&mainprogram->binsdir);
-	pdi->namebox->tooltiptitle = "General mediabins directory ";
-	pdi->namebox->tooltip = "This directory contains general mediabins, that can be accessed from every project. ";
-	pdi->valuebox->tooltiptitle = "Set general mediabins directory ";
-	pdi->valuebox->tooltip = "Leftclick starts keyboard entry of location of general mediabins directory. ";
-	pdi->iconbox->tooltiptitle = "Browse to set general mediabins directory ";
-	pdi->iconbox->tooltip = "Leftclick allows browsing for location of general mediabins directory. ";
-	#ifdef _WIN64
-	pdi->path = mainprogram->docpath + "bins/";
-	#else
-	#ifdef __linux__
-	std::string homedir (getenv("HOME"));
-	pdi->path = homedir + "/.ewocvj2/bins/";
-	#endif
-	#endif
-	mainprogram->binsdir = pdi->path;
-	this->items.push_back(pdi);
-	pos++;
-	
-	pdi = new PrefItem(this, pos, "General shelves", PREF_PATH, (void*)&mainprogram->shelfdir);
-	pdi->namebox->tooltiptitle = "General shelves directory ";
-	pdi->namebox->tooltip = "This directory contains general shelves, that can be accessed from every project. ";
-	pdi->valuebox->tooltiptitle = "Set general shelves directory ";
-	pdi->valuebox->tooltip = "Leftclick starts keyboard entry of location of general shelves directory. ";
-	pdi->iconbox->tooltiptitle = "Browse to set general shelves directory ";
-	pdi->iconbox->tooltip = "Leftclick allows browsing for location of general shelves directory. ";
-	#ifdef _WIN64
-	pdi->path = mainprogram->docpath + "shelves/";
-	# else
-	#ifdef __linux__
-	std::string homedir (getenv("HOME"));
-	pdi->path = homedir + "/.ewocvj2/shelves/";
-	#endif
-	#endif
-	mainprogram->shelfdir = pdi->path;
-	this->items.push_back(pdi);
-	pos++;
-
-	pdi = new PrefItem(this, pos, "Recordings", PREF_PATH, (void*)&mainprogram->recdir);
-	pdi->namebox->tooltiptitle = "Recordings directory ";
-	pdi->namebox->tooltip = "Video file recordings of the program output stream are saved in this directory. ";
-	pdi->valuebox->tooltiptitle = "Set recordings directory ";
-	pdi->valuebox->tooltip = "Leftclick starts keyboard entry of location of recordings directory. ";
-	pdi->iconbox->tooltiptitle = "Browse to set recordings directory ";
-	pdi->iconbox->tooltip = "Leftclick allows browsing for location of recordings directory. ";
-	#ifdef _WIN64
-	pdi->path = mainprogram->docpath + "recordings/";
-	#else
-	#ifdef __linux__
-	pdi->path = homedir + "/.ewocvj2/recordings/";
-	#endif
-	#endif
-	mainprogram->recdir = pdi->path;
-	this->items.push_back(pdi);
-	pos++;
-
 	pdi = new PrefItem(this, pos, "Autosaves", PREF_PATH, (void*)&mainprogram->autosavedir);
 	pdi->namebox->tooltiptitle = "Autosaves directory ";
 	pdi->namebox->tooltip = "Project state autosaves are saved in this directory. ";
@@ -6509,13 +6465,14 @@ void PIMidi::populate() {
 				break;
 			}
 		}
-		for (int j = 0; j < itemsleft.size(); j++) {
-			if (itemsleft[i]->name == pmi->name) {
+		std::vector<PrefItem*> itemslefttemp = itemsleft;
+		while (itemslefttemp.size()) {
+			if (itemslefttemp.back()->name == pmi->name) {
 				// items already in list
 				// erase from itemsleft to allow for multiple same names  reminder: test!
-				itemsleft.erase(itemsleft.begin() + j);
-				continue;
+				itemsleft.erase(itemsleft.begin() + itemslefttemp.size() - 1);
 			}
+			itemslefttemp.pop_back();
 		}
 		intrmitems.push_back(pmi);
 	}
@@ -7418,79 +7375,7 @@ bool preferences() {
 					 mci->items[i]->renaming = false;
 				}
 				else {
-					std::vector<float> textwvec = render_text(mainprogram->inputtext, white, mci->items[i]->valuebox->vtxcoords->x1 + 0.1f, mci->items[i]->valuebox->vtxcoords->y1 + 0.03f, 0.0024f, 0.004f, 1, 0);
-					float distin = 0.0f;
-					if (mainprogram->leftmousedown or mainprogram->leftmouse) {
-						bool found = false;
-						for (int j = 0; j < textwvec.size(); j++) {
-							if (my < mainprogram->yvtxtoscr(1.0f - (mci->items[i]->valuebox->vtxcoords->y1 + 0.027f)) and my > mainprogram->yvtxtoscr(1.0f - (mci->items[i]->valuebox->vtxcoords->y1 + 0.027f + mainprogram->texth))) {
-								if (mx > mainprogram->xvtxtoscr(mci->items[i]->valuebox->vtxcoords->x1 + 1.1f + distin) and mx < mainprogram->xvtxtoscr(mci->items[i]->valuebox->vtxcoords->x1 + 1.1f + distin + (j > 0) * textwvec[j - 1 + (j == 0)] / 2.0f + textwvec[j] / 2.0f)) {
-									// click or drag inside path moves edit cursor
-									found = true;
-									if (mainprogram->leftmousedown) {
-										if (!mainprogram->cursorreset) {
-											if (mainprogram->cursorpos1 == -1) {
-												mainprogram->cursorpos1 = j;
-												mainprogram->cursorpos2 = j + 1;
-											}
-											else mainprogram->cursorpos2 = j + 1;
-										}
-										else {
-											if (mainprogram->cursortemp1 == -1) {
-												mainprogram->cursortemp1 = j + 1;
-												mainprogram->cursortemp2 = j + 1;
-											}
-											else mainprogram->cursortemp2 = j + 1;
-											if (mainprogram->cursortemp1 != mainprogram->cursortemp2) {
-												mainprogram->cursorreset = false;
-											}
-										}
-									}
-									if (mainprogram->leftmouse) {
-										mainprogram->cursorpos0 = j + 1;
-										if (mainprogram->cursorreset) {
-											mainprogram->cursorpos1 = -1;
-											mainprogram->cursorpos2 = -1;
-										}
-										mainprogram->cursorreset = true;
-										mainprogram->cursortemp1 = -1;
-										mainprogram->cursortemp2 = -1;
-									}
-									mainprogram->leftmouse = false;
-									break;
-								}
-							}
-							if (j > 0) distin += textwvec[j - 1] / 4.0f;
-							distin += textwvec[j] / 4.0f;
-						}
-						if (found == false) {
-							//when clicked outside path, cancel edit
-							mci->items[i]->renaming = false;
-							mainprogram->renaming = EDIT_NONE;
-							SDL_StopTextInput();
-						}
-					}
-					if (mainprogram->cursorpos1 == -1) {
-						std::string part = mainprogram->inputtext.substr(0, mainprogram->cursorpos0);
-						textwvec = render_text(part, white, mci->items[i]->valuebox->vtxcoords->x1 + 0.1f, mci->items[i]->valuebox->vtxcoords->y1 + 0.03f, 0.0024f, 0.004f, 1, 0);
-						float textw = textwvec_total(textwvec) * 0.5f;
-						part = mainprogram->inputtext.substr(mainprogram->cursorpos0, mainprogram->inputtext.length() - mainprogram->cursorpos0);
-						render_text(part, white, mci->items[i]->valuebox->vtxcoords->x1 + 0.1f + textw, mci->items[i]->valuebox->vtxcoords->y1 + 0.03f, 0.0024f, 0.004f, 1, 0);
-						draw_line(white, mci->items[i]->valuebox->vtxcoords->x1 + 0.1f + textw, mci->items[i]->valuebox->vtxcoords->y1 + 0.028f, mci->items[i]->valuebox->vtxcoords->x1 + 0.102f + textw, mci->items[i]->valuebox->vtxcoords->y1 + 0.028f + mainprogram->texth);
-					}
-					else {
-						std::string part = mainprogram->inputtext.substr(0, mainprogram->cursorpos1);
-						textwvec = render_text(part, white, mci->items[i]->valuebox->vtxcoords->x1 + 0.1f, mci->items[i]->valuebox->vtxcoords->y1 + 0.03f, 0.0024f, 0.004f, 1, 0);
-						float textw1 = textwvec_total(textwvec) * 0.5f;
-						part = mainprogram->inputtext.substr(mainprogram->cursorpos1, mainprogram->cursorpos2 - mainprogram->cursorpos1);
-						textwvec = render_text(part, white, mci->items[i]->valuebox->vtxcoords->x1 + 0.1f + textw1, mci->items[i]->valuebox->vtxcoords->y1 + 0.03f, 0.0024f, 0.004f, 1, 0);
-						float textw2 = textwvec_total(textwvec) * 0.5f;
-						part = mainprogram->inputtext.substr(mainprogram->cursorpos2, mainprogram->inputtext.length() - mainprogram->cursorpos2);
-						render_text(part, white, mci->items[i]->valuebox->vtxcoords->x1 + 0.1f + textw1 + textw2, mci->items[i]->valuebox->vtxcoords->y1 + 0.03f, 0.0024f, 0.004f, 1, 0);
-						glBlendFunc(GL_ONE_MINUS_DST_COLOR, GL_ZERO);
-						draw_box(white, white, mci->items[i]->valuebox->vtxcoords->x1 + 0.1f + textw1, mci->items[i]->valuebox->vtxcoords->y1 + 0.020f, textw2, mainprogram->texth, -1);
-						glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
-					}
+					do_text_input(mci->items[i]->valuebox->vtxcoords->x1 + 0.1f, mci->items[i]->valuebox->vtxcoords->y1 + 0.03f, 0.0024f, 0.004f, mx, my, mainprogram->xvtxtoscr(0.7f), 1, mci->items[i]);
 				}
 			}
 			if (mci->items[i]->valuebox->in(mx, my)) {
@@ -7498,7 +7383,7 @@ bool preferences() {
 					for (int i = 0; i < mci->items.size(); i++) {
 						if (mci->items[i]->renaming) {
 							mci->items[i]->renaming = false;
-							SDL_StopTextInput();
+							end_input();
 							break;
 						}
 					}
@@ -7545,7 +7430,7 @@ bool preferences() {
 			for (int i = 0; i < mci->items.size(); i++) {
 				if (mci->items[i]->renaming) {
 					mci->items[i]->renaming = false;
-					SDL_StopTextInput();
+					end_input();
 					break;
 				}
 			}
@@ -7569,7 +7454,7 @@ bool preferences() {
 				if (mci->items[i]->renaming) {
 					if (mci->items[i]->type == PREF_PATH) {
 						mci->items[i]->path = mainprogram->inputtext;
-						SDL_StopTextInput();
+						end_input();
 						break;
 					}
 					if (mci->items[i]->type == PREF_NUMBER) {
@@ -7577,8 +7462,8 @@ bool preferences() {
 							mci->items[i]->value = std::stoi(mainprogram->inputtext);
 						 }
 						 catch (...) {}
-						SDL_StopTextInput();
-						break;
+						 end_input();
+						 break;
 					}
 				}
 			}
@@ -7609,7 +7494,165 @@ bool preferences() {
 	
 	return 1;
 }
-		
+	
+void do_text_input(float x, float y, float sx, float sy, int mx, int my, float width, int smflag, PrefItem *item) {
+	// handle display and mouse selection of keyboard input
+	float white[] = { 1.0f, 1.0f, 1.0f, 1.0f };
+
+	float textw;
+	std::vector<float> textwvec;
+	std::vector<float> totvec = render_text(mainprogram->inputtext, white, x, y, sx, sy, smflag, 0, 0);
+	float cps = textwvec_total(totvec);
+	if (mainprogram->cursorpixels == -1) {
+		// initialize: cursor at end, shift string if bigger than space
+		mainprogram->cursorpixels = mainprogram->xvtxtoscr(cps);
+		float total2 = 0.0f;
+		for (int j = 0; j < totvec.size(); j++) {
+			total2 += mainprogram->xvtxtoscr(totvec[j]);
+			if (total2 + width > mainprogram->cursorpixels) {
+				mainprogram->startcursor = j + 1;
+				std::string part = mainprogram->inputtext.substr(mainprogram->startcursor, mainprogram->inputtext.length() - mainprogram->startcursor);
+				std::vector<float> parttextvec = render_text(part, white, x, y, sx, sy, smflag, 0, 0);
+				float parttextw = textwvec_total(parttextvec);
+				mainprogram->startpos = mainprogram->xvtxtoscr(cps - parttextw);
+				mainprogram->endcursor = totvec.size();
+				break;
+			}
+		}
+	}
+	float distin = 0.0f;
+	if (mainprogram->leftmousedown or mainprogram->leftmouse) {
+		bool found = false;
+		for (int j = 0; j < totvec.size(); j++) {
+			if (my < mainprogram->yvtxtoscr(1.0f - (y - 0.003f)) and my > mainprogram->yvtxtoscr(1.0f - (y - 0.003f + mainprogram->texth))) {
+				if (mx > mainprogram->xvtxtoscr(x + 1.0f + distin) - mainprogram->startpos and mx < mainprogram->xvtxtoscr(x + 1.0f + distin + (j > 0) * totvec[j - 1 + (j == 0)] / 2.0f + totvec[j] / 2.0f) - mainprogram->startpos) {
+					// click or drag inside path moves edit cursor
+					found = true;
+					if (mainprogram->leftmousedown) {
+						if (!mainprogram->cursorreset) {
+							if (mainprogram->cursorpos1 == -1) {
+								mainprogram->cursorpos1 = j;
+								mainprogram->cursorpos2 = j;
+	
+							}
+							else {
+								mainprogram->cursorpos2 = j;
+							}
+						}
+						else {
+							if (mainprogram->cursortemp1 == -1) {
+								mainprogram->cursortemp1 = j;
+								mainprogram->cursortemp2 = j;
+							}
+							else mainprogram->cursortemp2 = j;
+							if (mainprogram->cursortemp1 != mainprogram->cursortemp2) {
+								mainprogram->cursorpos1 = -1;
+								mainprogram->cursorpos2 = -1;
+								mainprogram->cursorreset = false;
+							}
+						}
+					}
+					if (mainprogram->leftmouse) {
+						mainprogram->cursorpos0 = j;
+						if (mainprogram->cursorreset) {
+							mainprogram->cursorpos1 = -1;
+							mainprogram->cursorpos2 = -1;
+						}
+						mainprogram->cursorreset = true;
+						mainprogram->cursortemp1 = -1;
+						mainprogram->cursortemp2 = -1;
+					}
+					mainprogram->leftmouse = false;
+					break;
+				}
+			}
+			if (j > 0) distin += totvec[j - 1] / 2.0f;
+			distin += totvec[j] / 2.0f;
+		}
+		if (found == false) {
+			//when clicked outside path, cancel edit
+			if (item) item->renaming = false;
+			mainprogram->renaming = EDIT_NONE;
+			end_input();
+		}
+	}
+	if (mainprogram->renaming != EDIT_NONE) {
+		std::string part = mainprogram->inputtext.substr(0, mainprogram->cursorpos0);
+		textwvec = render_text(part, white, x, y, sx, sy, smflag, 0, 0);
+		textw = textwvec_total(textwvec);
+		mainprogram->cursorpixels = mainprogram->xvtxtoscr(textw);
+		if (mainprogram->cursorpixels < mainprogram->startpos) {
+			// cursor goes beyond left space border
+			float total1 = 0.0f;
+			for (int i = 0; i < totvec.size(); i++) {
+				if (total1 > mainprogram->cursorpixels) {
+					mainprogram->startpos = mainprogram->cursorpixels;
+					mainprogram->startcursor = i - 1;
+					break;
+				}
+				total1 += mainprogram->xvtxtoscr(totvec[i]);
+			}
+			float total2 = 0.0f;
+			for (int i = 0; i < totvec.size(); i++) {
+				total2 += mainprogram->xvtxtoscr(totvec[i]);
+				if (total2 > mainprogram->startpos + width) {
+					mainprogram->endcursor = i + 1;
+					break;
+				}
+			}
+		}
+		else if (mainprogram->cursorpixels - mainprogram->startpos > width) {
+			// cursor goes beyond right space border
+			float total1 = 0.0f;
+			for (int i = 0; i < totvec.size(); i++) {
+				total1 += mainprogram->xvtxtoscr(totvec[i]);
+				if (total1 > mainprogram->startpos + width) {
+					mainprogram->endcursor = i + 1;
+					float total2 = 0.0f;
+					for (int j = 0; j < totvec.size(); j++) {
+						total2 += mainprogram->xvtxtoscr(totvec[j]);
+						if (total2 + width > mainprogram->cursorpixels) {
+							mainprogram->startcursor = j + 1;
+							part = mainprogram->inputtext.substr(mainprogram->startcursor, mainprogram->inputtext.length() - mainprogram->startcursor);
+							std::vector<float> parttextvec = render_text(part, white, x, y, sx, sy, smflag, 0, 0);
+							float parttextw = textwvec_total(parttextvec);
+							mainprogram->startpos = mainprogram->xvtxtoscr(cps - parttextw);
+							break;
+						}
+					}
+					break;
+				}
+			}
+		}
+		part = mainprogram->inputtext.substr(mainprogram->startcursor, mainprogram->endcursor - mainprogram->startcursor);
+		render_text(part, white, x, y, sx, sy, smflag, 0);
+		if (mainprogram->cursorpos1 == -1) {
+			// draw cursor line
+			draw_line(white, x + textw - mainprogram->xscrtovtx(mainprogram->startpos), y - 0.010f, x + textw - mainprogram->xscrtovtx(mainprogram->startpos), y - 0.005f + (mainprogram->texth / ((float)(smflag == 0) + 1)) / (2070.0f / glob->h));
+		}
+		else {
+			// draw cursor block
+			int c1 = mainprogram->cursorpos1;
+			int c2 = mainprogram->cursorpos2;
+			if (c2 < c1) {
+				// when selecting from right to left
+				std::swap(c1, c2);
+				c1++;
+				c2++;
+				c2++;
+			}
+			std::string part = mainprogram->inputtext.substr(mainprogram->startcursor, c1 - mainprogram->startcursor);
+			textwvec = render_text(part, white, x, y, sx, sy, smflag, 0, 0);
+			float textw1 = textwvec_total(textwvec);
+			part = mainprogram->inputtext.substr(c1, c2 - c1);
+			textwvec = render_text(part, white, x + textw1, y, sx, sy, smflag, 0, 0);
+			float textw2 = textwvec_total(textwvec);
+			glBlendFunc(GL_ONE_MINUS_DST_COLOR, GL_ZERO);
+			draw_box(white, white, x + textw1, y - 0.010f, textw2, (mainprogram->texth / ((float)(smflag == 0) + 1)) / (2070.0f / glob->h), -1);
+			glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
+		}
+	}
+}
 	
 int tune_midi() {
 	int mx = -1;
@@ -8010,6 +8053,14 @@ void enddrag() {
 	}
 
 	mainprogram->dragmousedown = false;
+}
+
+void end_input() {
+	SDL_StopTextInput();
+	mainprogram->cursorpos0 = -1;
+	mainprogram->cursorpos1 = -1;
+	mainprogram->cursorpos2 = -1;
+	mainprogram->cursorpixels = -1;
 }
 
 void Layer::mute_handle() {
@@ -10335,8 +10386,8 @@ void the_loop() {
 	if (mainprogram->prefon) {
 		SDL_GL_MakeCurrent(mainprogram->prefwindow, glc_pr);
 		prret = preferences();
-		glBlitNamedFramebuffer(mainprogram->smglobfbo_pr, mainprogram->prfbo, 0, 0, smw, smh , 0, 0, smw, smh, GL_COLOR_BUFFER_BIT, GL_NEAREST);
 		glFlush();
+		glBlitNamedFramebuffer(mainprogram->smglobfbo_pr, mainprogram->prfbo, 0, 0, smw, smh , 0, 0, smw, smh, GL_COLOR_BUFFER_BIT, GL_NEAREST);
 	}
 	if (mainprogram->tunemidi) {
 		if (mainprogram->waitmidi){
@@ -11502,6 +11553,10 @@ int main(int argc, char* argv[]){
 	SDL_GL_GetDrawableSize(win, &wi, &he);
 	glob->w = (float)wi;
 	glob->h = (float)he;
+	printf("height %f\n", glob->h);
+	SDL_DisplayMode DM;
+	SDL_GetCurrentDisplayMode(0, &DM);
+	glob->resfac = (float)DM.w / (float)DM.h;
 
 	mainprogram = new Program;	
  	mainprogram->mainwindow = win;
@@ -11937,15 +11992,9 @@ int main(int argc, char* argv[]){
 #ifdef _WIN64
 	boost::filesystem::path p0{mainprogram->docpath};
 	if (!exists(mainprogram->docpath)) boost::filesystem::create_directory(p0);
-	boost::filesystem::path p1{mainprogram->docpath + "bins" };
-	mainprogram->currbinsdir = p1.string();
-	if (!exists("mainprogram->docpath + /bins")) boost::filesystem::create_directory(p1);
 	boost::filesystem::path p2{mainprogram->docpath + "recordings"};
-	mainprogram->currrecdir = p1.string();
+	mainprogram->currrecdir = p2.string();
 	if (!exists("mainprogram->docpath + /recordings")) boost::filesystem::create_directory(p2);
-	boost::filesystem::path p3{mainprogram->docpath + "shelves"};
-	mainprogram->currshelfdir = p3.string();
-	if (!exists("mainprogram->docpath + /shelves")) boost::filesystem::create_directory(p3);
 	boost::filesystem::path p4{mainprogram->temppath};
 	if (!exists(mainprogram->temppath)) boost::filesystem::create_directory(p4);
 	boost::filesystem::path p5{mainprogram->docpath + "projects"};
@@ -11960,15 +12009,9 @@ int main(int argc, char* argv[]){
 	std::string homedir (getenv("HOME"));
 	boost::filesystem::path e{homedir + "/.ewocvj2"};
 	if (!exists(homedir + "/.ewocvj2")) boost::filesystem::create_directory(e);
-	boost::filesystem::path p1{homedir + "/.ewocvj2/recordings"};
-	mainprogram->currbinsdir = p1.string();
-	if (!exists(homedir + "/.ewocvj2/bins")) boost::filesystem::create_directory(p1);
 	boost::filesystem::path p2{homedir + "/.ewocvj2/recordings"};
 	mainprogram->currrecdir = p2.string();
 	if (!exists(homedir + "/recordings")) boost::filesystem::create_directory(p2);
-	boost::filesystem::path p3{homedir + "/.ewocvj2/shelves"};
-	mainprogram->currshelfdir = p3.string();
-	if (!exists(homedir + "/.ewocvj2/shelves")) boost::filesystem::create_directory(p3);
 	boost::filesystem::path p4{homedir + "/.ewocvj2/temp"};
 	if (!exists(homedir + "/.ewocvj2/temp")) boost::filesystem::create_directory(p4);
 	boost::filesystem::path p5{homedir + "/.ewocvj2/projects"};
@@ -12297,17 +12340,26 @@ int main(int argc, char* argv[]){
 		while (SDL_PollEvent(&e)){
 			SDL_PumpEvents();
 			if (mainprogram->renaming != EDIT_NONE) {
-                if (e.type == SDL_TEXTINPUT) {
+				std::string old = mainprogram->inputtext;
+				int c1 = mainprogram->cursorpos1;
+				int c2 = mainprogram->cursorpos2;
+				if (c2 < c1) {
+					std::swap(c1, c2);
+					c1++;
+					c2++;
+					c2++;
+				}
+				if (e.type == SDL_TEXTINPUT) {
                     /* Add new text onto the end of our text */
-                    if( !( ( e.text.text[ 0 ] == 'c' || e.text.text[ 0 ] == 'C' ) && ( e.text.text[ 0 ] == 'v' || e.text.text[ 0 ] == 'V' ) && SDL_GetModState() & KMOD_CTRL ) ) {
-						if (mainprogram->cursorpos1 != -1) {
-							mainprogram->cursorpos0 = mainprogram->cursorpos1;
+					if (!((e.text.text[0] == 'c' || e.text.text[0] == 'C') && (e.text.text[0] == 'v' || e.text.text[0] == 'V') && SDL_GetModState() & KMOD_CTRL)) {
+						if (c1 != -1) {
+							mainprogram->cursorpos0 = c1;
 						}
 						else if (mainprogram->cursorpos0 != 0) {
-							mainprogram->cursorpos1 = mainprogram->cursorpos0;
-							mainprogram->cursorpos2 = mainprogram->cursorpos0;
+							c1 = mainprogram->cursorpos0;
+							c2 = mainprogram->cursorpos0;
 						}
-						mainprogram->inputtext = mainprogram->inputtext.substr(0, mainprogram->cursorpos1) + e.text.text + mainprogram->inputtext.substr(mainprogram->cursorpos2, mainprogram->inputtext.length() - mainprogram->cursorpos2);
+						mainprogram->inputtext = mainprogram->inputtext.substr(0, c1) + e.text.text + mainprogram->inputtext.substr(c2, mainprogram->inputtext.length() - c2);
 						mainprogram->cursorpos0++;
 						mainprogram->cursorpos1 = -1;
 						mainprogram->cursorpos2 = -1;
@@ -12323,49 +12375,69 @@ int main(int argc, char* argv[]){
 					} 
 					//Handle backspace 
 					if (e.key.keysym.sym == SDLK_BACKSPACE and mainprogram->inputtext.length() > 0) {
-						if (mainprogram->cursorpos1 != -1) {
-							mainprogram->cursorpos0 = mainprogram->cursorpos1;
+						if (c1 != -1) {
+							mainprogram->cursorpos0 = c1;
 						}
 						else if (mainprogram->cursorpos0 != 0) {
 							mainprogram->cursorpos0--;
-							mainprogram->cursorpos1 = mainprogram->cursorpos0;
-							mainprogram->cursorpos2 = mainprogram->cursorpos0;
+							c1 = mainprogram->cursorpos0;
+							c2 = mainprogram->cursorpos0 + 1;
 						}
-						mainprogram->inputtext = mainprogram->inputtext.substr(0, mainprogram->cursorpos1) + mainprogram->inputtext.substr(mainprogram->cursorpos2, mainprogram->inputtext.length() - mainprogram->cursorpos2);
+						if (!((c1 == -1) and mainprogram->cursorpos0 == 0)) {
+							mainprogram->inputtext = mainprogram->inputtext.substr(0, c1) + mainprogram->inputtext.substr(c2, mainprogram->inputtext.length() - c2);
+						}
+						mainprogram->cursorpos1 = -1;
+						mainprogram->cursorpos2 = -1;
+					}
+					//Handle delete
+					if (e.key.keysym.sym == SDLK_DELETE and mainprogram->inputtext.length() > 0) {
+						if (c1 != -1) {
+							mainprogram->cursorpos0 = c1;
+						}
+						else if (mainprogram->cursorpos0 != mainprogram->inputtext.length()) {
+							c1 = mainprogram->cursorpos0;
+							c2 = mainprogram->cursorpos0 + 1;
+						}
+						if (!((c1 == -1) and mainprogram->cursorpos0 == mainprogram->inputtext.length())) {
+							mainprogram->inputtext = mainprogram->inputtext.substr(0, c1) + mainprogram->inputtext.substr(c2, mainprogram->inputtext.length() - c2);
+						}
 						mainprogram->cursorpos1 = -1;
 						mainprogram->cursorpos2 = -1;
 					}
 					//Handle cut
 					else if (e.key.keysym.sym == SDLK_x and SDL_GetModState() & KMOD_CTRL) {
 						if (mainprogram->cursorpos1 != -1) {
-							SDL_SetClipboardText(mainprogram->inputtext.substr(mainprogram->cursorpos1, mainprogram->cursorpos2 - mainprogram->cursorpos1).c_str());
-							if (mainprogram->cursorpos1 != -1) {
-								mainprogram->cursorpos0 = mainprogram->cursorpos1;
+							SDL_SetClipboardText(mainprogram->inputtext.substr(c1, c2 - c1).c_str());
+							if (c1 != -1) {
+								mainprogram->cursorpos0 = c1;
 							}
 							else if (mainprogram->cursorpos0 != 0) {
 								mainprogram->cursorpos0--;
-								mainprogram->cursorpos1 = mainprogram->cursorpos0;
-								mainprogram->cursorpos2 = mainprogram->cursorpos0;
+								c1 = mainprogram->cursorpos0;
+								c2 = mainprogram->cursorpos0 + 1;
 							}
-							mainprogram->inputtext = mainprogram->inputtext.substr(0, mainprogram->cursorpos1) + mainprogram->inputtext.substr(mainprogram->cursorpos2, mainprogram->inputtext.length() - mainprogram->cursorpos2);
+							mainprogram->inputtext = mainprogram->inputtext.substr(0, c1) + mainprogram->inputtext.substr(c2, mainprogram->inputtext.length() - c2);
 							mainprogram->cursorpos1 = -1;
 							mainprogram->cursorpos2 = -1;
 						}
 					}
 					//Handle copy 
 					else if (e.key.keysym.sym == SDLK_c and SDL_GetModState() & KMOD_CTRL) {
-						if (mainprogram->cursorpos1 != -1) {
-							SDL_SetClipboardText(mainprogram->inputtext.substr(mainprogram->cursorpos1, mainprogram->cursorpos2 - mainprogram->cursorpos1).c_str());
+						if (c1 != -1) {
+							SDL_SetClipboardText(mainprogram->inputtext.substr(c1, c2 - c1).c_str());
 						}
 					}
 					//Handle paste 
 					else if (e.key.keysym.sym == SDLK_v and SDL_GetModState() & KMOD_CTRL) { 
-						if (mainprogram->cursorpos1 == -1) {
-							mainprogram->cursorpos1 = mainprogram->cursorpos0;
-							mainprogram->cursorpos2 = mainprogram->cursorpos0;
+						if (c1 == -1) {
+							c1 = mainprogram->cursorpos0;
+							c2 = mainprogram->cursorpos0 + 1;
 						}
-						mainprogram->inputtext = mainprogram->inputtext.substr(0, mainprogram->cursorpos1) + SDL_GetClipboardText() + mainprogram->inputtext.substr(mainprogram->cursorpos2, mainprogram->inputtext.length() - mainprogram->cursorpos2);
-						mainprogram->cursorpos0 = mainprogram->cursorpos1;
+						mainprogram->inputtext = mainprogram->inputtext.substr(0, c1) + SDL_GetClipboardText() + mainprogram->inputtext.substr(c2, mainprogram->inputtext.length() - c2);
+						
+						if (mainprogram->cursorpos1 != -1) {
+							mainprogram->cursorpos0 = mainprogram->cursorpos1;
+						}
 						mainprogram->cursorpos1 = -1;
 						mainprogram->cursorpos2 = -1;
 					}
@@ -12387,34 +12459,36 @@ int main(int argc, char* argv[]){
 							mainmix->adaptnumparam = nullptr;
 						}
 						mainprogram->renaming = EDIT_NONE;
-						SDL_StopTextInput();
+						end_input();
 						continue;
 					}
-					if (mainprogram->prefon) {
-						GUIString* gs = mainprogram->prguitextmap[mainprogram->inputtext];
-						if (gs) {
-							for (int i = 0; i < gs->texturevec.size(); i++) {
-								glDeleteTextures(1, &gs->texturevec[i]);
+					if (mainprogram->inputtext != old) {
+						if (mainprogram->prefon) {
+							GUIString* gs = mainprogram->prguitextmap[mainprogram->inputtext];
+							if (gs) {
+								for (int i = 0; i < gs->texturevec.size(); i++) {
+									glDeleteTextures(1, &gs->texturevec[i]);
+								}
+								delete gs;
+								mainprogram->prguitextmap.erase(mainprogram->inputtext);
+							}
+						}
+						else if (!mainprogram->tunemidi) {
+							GUIString* gs = mainprogram->tmguitextmap[mainprogram->inputtext];
+							if (gs) {
+								for (int i = 0; i < gs->texturevec.size(); i++) {
+									glDeleteTextures(1, &gs->texturevec[i]);
+								}
 							}
 							delete gs;
-							mainprogram->prguitextmap.erase(mainprogram->inputtext);
+							mainprogram->tmguitextmap.erase(mainprogram->inputtext);
 						}
-					}
-					else if (!mainprogram->tunemidi) {
-						GUIString* gs = mainprogram->tmguitextmap[mainprogram->inputtext];
-						if (gs) {
-							for (int i = 0; i < gs->texturevec.size(); i++) {
-								glDeleteTextures(1, &gs->texturevec[i]);
-							}
-						}
-						delete gs;
-						mainprogram->tmguitextmap.erase(mainprogram->inputtext);
 					}
 				}
 				if (mainprogram->renaming == EDIT_BINNAME) {
 					binsmain->menubin->name = mainprogram->inputtext;
-					std::string oldpath = mainprogram->binsdir + mainprogram->backupname;
-					std::string newpath = mainprogram->binsdir + mainprogram->inputtext;
+					std::string oldpath = mainprogram->project->binsdir + mainprogram->backupname;
+					std::string newpath = mainprogram->project->binsdir + mainprogram->inputtext;
 					if (exists(oldpath)) boost::filesystem::rename(oldpath, newpath);
 					oldpath += ".bin";
 					newpath += ".bin";
@@ -12474,101 +12548,103 @@ int main(int argc, char* argv[]){
 			
 			//If user presses any key
 			mainprogram->del = 0;
-			if (e.type == SDL_KEYDOWN){
-				if (e.key.keysym.sym == SDLK_LCTRL or e.key.keysym.sym == SDLK_RCTRL) {
-					mainprogram->ctrl = true;
+			if (mainprogram->renaming == EDIT_NONE) {
+				if (e.type == SDL_KEYDOWN) {
+					if (e.key.keysym.sym == SDLK_LCTRL or e.key.keysym.sym == SDLK_RCTRL) {
+						mainprogram->ctrl = true;
+					}
+					if (mainprogram->ctrl) {
+						if (e.key.keysym.sym == SDLK_s) {
+							mainprogram->pathto = "SAVESTATE";
+							std::thread filereq(&Program::get_outname, mainprogram, "Save state file", "application/ewocvj2-state", boost::filesystem::canonical(mainprogram->currstatedir).generic_string());
+							filereq.detach();
+						}
+						if (e.key.keysym.sym == SDLK_o) {
+							mainprogram->pathto = "OPENSTATE";
+							std::thread filereq(&Program::get_inname, mainprogram, "Open state file", "application/ewocvj2-state", boost::filesystem::canonical(mainprogram->currstatedir).generic_string());
+							filereq.detach();
+						}
+						if (e.key.keysym.sym == SDLK_n) {
+							mainmix->new_file(2, 1);
+						}
+					}
+					else {
+						if (e.key.keysym.sym == SDLK_r) {
+							// toggle record button for current loopstation element
+							loopstation->currelem->recbut->value = !loopstation->currelem->recbut->value;
+							loopstation->currelem->recbut->oldvalue = !loopstation->currelem->recbut->value;
+						}
+						else if (e.key.keysym.sym == SDLK_t) {
+							// toggle loop button for current loopstation element
+							loopstation->currelem->loopbut->value = !loopstation->currelem->loopbut->value;
+							loopstation->currelem->loopbut->oldvalue = !loopstation->currelem->loopbut->value;
+						}
+						if (e.key.keysym.sym == SDLK_y) {
+							// toggle "one shot play" button for current loopstation element
+							loopstation->currelem->playbut->value = !loopstation->currelem->playbut->value;
+							loopstation->currelem->playbut->oldvalue = !loopstation->currelem->playbut->value;
+						}
+					}
 				}
-				if (mainprogram->ctrl) {
-					if (e.key.keysym.sym == SDLK_s) {
-						mainprogram->pathto = "SAVESTATE";
-						std::thread filereq (&Program::get_outname, mainprogram, "Save state file", "application/ewocvj2-state", boost::filesystem::canonical(mainprogram->currstatedir).generic_string());
-						filereq.detach();
+				if (e.type == SDL_KEYUP) {
+					if (e.key.keysym.sym == SDLK_LCTRL or e.key.keysym.sym == SDLK_RCTRL) {
+						mainprogram->ctrl = false;
 					}
-					if (e.key.keysym.sym == SDLK_o) {
-						mainprogram->pathto = "OPENSTATE";
-						std::thread filereq (&Program::get_inname, mainprogram, "Open state file", "application/ewocvj2-state", boost::filesystem::canonical(mainprogram->currstatedir).generic_string());
-						filereq.detach();
+					if (e.key.keysym.sym == SDLK_DELETE) {
+						mainprogram->del = 1;
 					}
-					if (e.key.keysym.sym == SDLK_n) {
-						mainmix->new_file(2, 1);
+					if (e.key.keysym.sym == SDLK_ESCAPE) {
+						mainprogram->fullscreen = -1;
 					}
-				}
-				else {
-					if (e.key.keysym.sym == SDLK_r) {
-						// toggle record button for current loopstation element
-						loopstation->currelem->recbut->value = !loopstation->currelem->recbut->value;
-						loopstation->currelem->recbut->oldvalue = !loopstation->currelem->recbut->value;
+					else if (e.key.keysym.sym == SDLK_SPACE) {
+						if (mainmix->currlay) {
+							if (mainmix->currlay->playbut->value) {
+								mainmix->currlay->playkind = 0;
+								mainmix->currlay->playbut->value = false;
+							}
+							else if (mainmix->currlay->revbut->value) {
+								mainmix->currlay->playkind = 1;
+								mainmix->currlay->revbut->value = false;
+							}
+							else if (mainmix->currlay->bouncebut->value == 1) {
+								mainmix->currlay->playkind = 2;
+								mainmix->currlay->bouncebut->value = false;
+							}
+							else if (mainmix->currlay->bouncebut->value == 2) {
+								mainmix->currlay->playkind = 3;
+								mainmix->currlay->bouncebut->value = false;
+							}
+							else {
+								if (mainmix->currlay->playkind == 0) {
+									mainmix->currlay->playbut->value = true;
+								}
+								else if (mainmix->currlay->playkind == 1) {
+									mainmix->currlay->revbut->value = true;
+								}
+								else if (mainmix->currlay->playkind == 2) {
+									mainmix->currlay->bouncebut->value = 1;
+								}
+								else if (mainmix->currlay->playkind == 3) {
+									mainmix->currlay->bouncebut->value = 2;
+								}
+							}
+						}
 					}
-					else if (e.key.keysym.sym == SDLK_t) {
-						// toggle loop button for current loopstation element
-						loopstation->currelem->loopbut->value = !loopstation->currelem->loopbut->value;
-						loopstation->currelem->loopbut->oldvalue = !loopstation->currelem->loopbut->value;
+					else if (e.key.keysym.sym == SDLK_RIGHT) {
+						if (mainmix->currlay) {
+							mainmix->currlay->frame += 1;
+							if (mainmix->currlay->frame >= mainmix->currlay->numf) mainmix->currlay->frame = 0;
+						}
 					}
-					if (e.key.keysym.sym == SDLK_y) {
-						// toggle "one shot play" button for current loopstation element
-						loopstation->currelem->playbut->value = !loopstation->currelem->playbut->value;
-						loopstation->currelem->playbut->oldvalue = !loopstation->currelem->playbut->value;
+					else if (e.key.keysym.sym == SDLK_LEFT) {
+						if (mainmix->currlay) {
+							mainmix->currlay->frame -= 1;
+							if (mainmix->currlay->frame < 0) mainmix->currlay->frame = mainmix->currlay->numf - 1;
+						}
 					}
 				}
 			}
-			if (e.type == SDL_KEYUP){
-				if (e.key.keysym.sym == SDLK_LCTRL or e.key.keysym.sym == SDLK_RCTRL) {
-					mainprogram->ctrl = false;
-				}
-				if (e.key.keysym.sym == SDLK_DELETE) {
-					mainprogram->del = 1;
-				}
-				if (e.key.keysym.sym == SDLK_ESCAPE) {
-					mainprogram->fullscreen = -1;
-				}
-				else if (e.key.keysym.sym == SDLK_SPACE) {
-					if (mainmix->currlay) {
-						if (mainmix->currlay->playbut->value) {
-							mainmix->currlay->playkind = 0;
-							mainmix->currlay->playbut->value = false;
-						}
-						else if (mainmix->currlay->revbut->value) {
-							mainmix->currlay->playkind = 1;
-							mainmix->currlay->revbut->value = false;
-						}
-						else if (mainmix->currlay->bouncebut->value == 1) {
-							mainmix->currlay->playkind = 2;
-							mainmix->currlay->bouncebut->value = false;
-						}
-						else if (mainmix->currlay->bouncebut->value == 2) {
-							mainmix->currlay->playkind = 3;
-							mainmix->currlay->bouncebut->value = false;
-						}
-						else {
-							if (mainmix->currlay->playkind == 0) {
-								mainmix->currlay->playbut->value = true;
-							}
-							else if (mainmix->currlay->playkind == 1) {
-								mainmix->currlay->revbut->value = true;
-							}
-							else if (mainmix->currlay->playkind == 2) {
-								mainmix->currlay->bouncebut->value = 1;
-							}
-							else if (mainmix->currlay->playkind == 3) {
-								mainmix->currlay->bouncebut->value = 2;
-							}
-						}
-					}
-				}
-				else if (e.key.keysym.sym == SDLK_RIGHT) {
-					if (mainmix->currlay) {
-						mainmix->currlay->frame += 1;
-						if (mainmix->currlay->frame >= mainmix->currlay->numf) mainmix->currlay->frame = 0;
-					}
-				}
-				else if (e.key.keysym.sym == SDLK_LEFT) {
-					if (mainmix->currlay) {
-						mainmix->currlay->frame -= 1;
-						if (mainmix->currlay->frame < 0) mainmix->currlay->frame = mainmix->currlay->numf - 1;
-					}
-				}
-			}
-			
+
 			if (focus and SDL_GetMouseFocus() != mainprogram->prefwindow and SDL_GetMouseFocus() != mainprogram->tunemidiwindow) {
 				SDL_GetMouseState(&mainprogram->mx, &mainprogram->my);
 			}

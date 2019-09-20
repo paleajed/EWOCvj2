@@ -639,26 +639,28 @@ void BinsMain::handle(bool draw) {
 			bin->box->vtxcoords->y1 = (i + 1) * -0.05f;
 			bin->box->upvtxtoscr();
 			if (bin->box->in() and !this->dragbin) {
-				if (mainprogram->leftmousedown and !this->dragbinsense) {
-					this->dragbinsense = true;
-					this->dragbox = bin->box;
-					this->dragbinpos = i + this->binsscroll;
-					mainprogram->leftmousedown = false;
+				if (mainprogram->renaming == EDIT_NONE) {
+					if (mainprogram->leftmousedown and !this->dragbinsense) {
+						this->dragbinsense = true;
+						this->dragbox = bin->box;
+						this->dragbinpos = i + this->binsscroll;
+						mainprogram->leftmousedown = false;
+					}
+					if (mainprogram->leftmouse) {
+						// click to choose current bin
+						make_currbin(i);
+						this->dragbox = nullptr;
+						this->dragbinsense = false;
+					}
+					if (i + this->binsscroll == this->dragbinpos) {
+						// mouse over box thats being dragged: first stage drag startup, allows user to just choose current bin without starting drag
+						this->indragbox = true;
+					}
+					bin->box->acolor[0] = 0.5f;
+					bin->box->acolor[1] = 0.5f;
+					bin->box->acolor[2] = 1.0f;
+					bin->box->acolor[3] = 1.0f;
 				}
-				if (mainprogram->leftmouse) {
-					// click to choose current bin
-					make_currbin(i);
-					this->dragbox = nullptr;
-					this->dragbinsense = false;
-				}
-				if (i + this->binsscroll == this->dragbinpos) {
-					// mouse over box thats being dragged: first stage drag startup, allows user to just choose current bin without starting drag
-					this->indragbox = true;
-				}
-				bin->box->acolor[0] = 0.5f;
-				bin->box->acolor[1] = 0.5f;
-				bin->box->acolor[2] = 1.0f;
-				bin->box->acolor[3] = 1.0f;
 			}
 			else if (i == this->currbin->pos) {
 				// curent bin colored differently
@@ -676,14 +678,21 @@ void BinsMain::handle(bool draw) {
 			draw_box(bin->box, -1);
 			if (mainprogram->renaming != EDIT_NONE and bin == this->menubin) {
 				// bin renaming with keyboard
-				std::string part = mainprogram->inputtext.substr(0, mainprogram->cursorpos0);
-				float textw = textwvec_total(render_text(part, white, bin->box->vtxcoords->x1 + tf(0.01f), bin->box->vtxcoords->y1 + tf(0.012f), tf(0.0003f), tf(0.0005f)));
-				part = mainprogram->inputtext.substr(mainprogram->cursorpos0, mainprogram->inputtext.length() - mainprogram->cursorpos0);
-				render_text(part, white, bin->box->vtxcoords->x1 + tf(0.01f) + textw, bin->box->vtxcoords->y1 + tf(0.012f), tf(0.0003f), tf(0.0005f));
-				draw_line(white, bin->box->vtxcoords->x1 + tf(0.011f) + textw, bin->box->vtxcoords->y1 + tf(0.01f), bin->box->vtxcoords->x1 + tf(0.011f) + textw, bin->box->vtxcoords->y1 + tf(0.028f));
+				do_text_input(bin->box->vtxcoords->x1 + tf(0.01f), bin->box->vtxcoords->y1 + tf(0.012f), tf(0.0003f), tf(0.0005f), mainprogram->mx, mainprogram->my, mainprogram->xvtxtoscr(0.3f - tf(0.02f)), 0, nullptr);
 			}
 			else {
-				render_text(bin->name, white, bin->box->vtxcoords->x1 + tf(0.01f), bin->box->vtxcoords->y1 + tf(0.012f), tf(0.0003f), tf(0.0005f));
+				std::vector<float> totvec = render_text(bin->name, white, bin->box->vtxcoords->x1 + tf(0.01f), bin->box->vtxcoords->y1 + tf(0.012f), tf(0.0003f), tf(0.0005f), 0, 0, 0);
+				float total = 0.0f;
+				for (int j = 0; j < totvec.size(); j++) {
+					if (total > mainprogram->xvtxtoscr(0.3f - tf(0.02f))) {
+						mainprogram->startcursor = 0;
+						mainprogram->endcursor = j;
+						break;
+					}
+					total += mainprogram->xvtxtoscr(totvec[j]);
+				}
+				std::string part = bin->name.substr(mainprogram->startcursor, mainprogram->endcursor - mainprogram->startcursor);
+				render_text(part, white, bin->box->vtxcoords->x1 + tf(0.01f), bin->box->vtxcoords->y1 + tf(0.012f), tf(0.0003f), tf(0.0005f), 0, 0);
 			}
 		}
 		if (!this->indragbox and this->dragbinsense) {

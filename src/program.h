@@ -229,6 +229,7 @@ class Globals {
 	public:
 		float w;
 		float h;
+		float resfac;
 };
 
 class Program {
@@ -459,6 +460,10 @@ class Program {
 		int cursortemp1 = -1;
 		int cursortemp2 = -1;
 		bool cursorreset = true;
+		float cursorpixels = -1;
+		float startpos = 0;
+		int startcursor = 0;
+		int endcursor = 0;
 
 		int numcores = 0;
 		int maxthreads;
@@ -584,7 +589,8 @@ extern void draw_triangle(float *linec, float *areac, float x1, float y1, float 
 extern void draw_line(float *linec, float x1, float y1, float x2, float y2);
 
 extern std::vector<float> render_text(std::string text, float *textc, float x, float y, float sx, float sy);
-extern std::vector<float> render_text(std::string text, float *textc, float x, float y, float sx, float sy, int smflag, bool vertical = false);
+extern std::vector<float> render_text(std::string text, float* textc, float x, float y, float sx, float sy, int smflag, bool vertical = false);
+extern std::vector<float> render_text(std::string text, float* textc, float x, float y, float sx, float sy, int smflag, bool display, bool vertical);
 extern float textwvec_total(std::vector<float> textwvec);
 
 extern float xscrtovtx(float scrcoord);
@@ -641,6 +647,9 @@ extern std::string remove_version(std::string filename);
 extern bool isimage(const std::string &path);
 
 extern void drag_into_layerstack(std::vector<Layer*>& layers, bool deck);
+
+extern void do_text_input(float x, float y, float sx, float sy, int mx, int my, float width, int smflag, PrefItem* item);
+extern void end_input();
 
 extern void onestepfrom(bool stage, Node *node, Node *prevnode, GLuint prevfbotex, GLuint prevfbo);
 

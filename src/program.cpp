@@ -956,8 +956,6 @@ void Program::quit(std::string msg)
 		boost::filesystem::remove(it->path());
 	}
 
-	mainprogram->prefs->save();
-
 	printf("%s: %s\n", msg.c_str(), SDL_GetError());
     printf("stopped\n");
 
@@ -1103,9 +1101,6 @@ void Project::newp(const std::string &path) {
 	boost::filesystem::create_directory(p2);
 	boost::filesystem::path p3{this->shelfdir};
 	boost::filesystem::create_directory(p3);
-	mainprogram->binsdir = this->binsdir;
-	mainprogram->recdir = this->recdir;
-	mainprogram->shelfdir = this->shelfdir;
 	for (int i = 0; i < binsmain->bins.size(); i++) {
 		delete binsmain->bins[i];
 	}
@@ -1116,8 +1111,8 @@ void Project::newp(const std::string &path) {
 	mainprogram->shelves[1]->erase();
 	mainprogram->shelves[0]->basepath = "shelfsA.shelf";
 	mainprogram->shelves[1]->basepath = "shelfsB.shelf";
-	mainprogram->shelves[0]->save(mainprogram->shelfdir + "shelfsA.shelf");
-	mainprogram->shelves[1]->save(mainprogram->shelfdir + "shelfsB.shelf");
+	mainprogram->shelves[0]->save(mainprogram->project->shelfdir + "shelfsA.shelf");
+	mainprogram->shelves[1]->save(mainprogram->project->shelfdir + "shelfsB.shelf");
 	mainprogram->project->do_save(path);
 }
 	
@@ -1133,9 +1128,6 @@ void Project::open(const std::string &path) {
 	this->binsdir = dir + "bins/";
 	this->recdir = dir + "recordings/";
 	this->shelfdir = dir + "shelves/";
-	mainprogram->binsdir = this->binsdir;
-	mainprogram->recdir = this->recdir;
-	mainprogram->shelfdir = this->shelfdir;
 	int cb = binsmain->read_binslist();
 	for (int i = 0; i < binsmain->bins.size(); i++) {
 		std::string binname = this->binsdir + binsmain->bins[i]->name + ".bin";
