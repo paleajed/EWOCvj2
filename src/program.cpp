@@ -1,3 +1,6 @@
+//#define _AFXDLL
+//#include <afxwin.h>
+#include <boost/algorithm/string.hpp>
 #include <boost/filesystem.hpp>
 
 #include "GL/glew.h"
@@ -11,10 +14,13 @@
 #include "paths.h"
 #endif
 
-#include <windows.h>
+#ifdef _WIN64
+#include <atlstr.h>
+#include <Commdlg.h>
 #include <initguid.h>
 #include <KnownFolders.h>
 #include <ShlObj.h>
+#endif
 #include <wchar.h>
 #include <string>
 
@@ -407,105 +413,142 @@ void Program::make_menu(const std::string &name, Menu *&menu, std::vector<std::s
 	menu->box->upscrtovtx();
 }
 
-std::string Program::mime_to_wildcard(std::string filters) {
+LPCTSTR Program::mime_to_wildcard(std::string filters) {
 	if (filters == "") return "";
-	if (filters == "application/ewocvj2-layer") return "*.layer";
-	if (filters == "application/ewocvj2-deck") return "*.deck";
-	if (filters == "application/ewocvj2-mix") return "*.mix";
-	if (filters == "application/ewocvj2-state") return "*.state";
-	if (filters == "application/ewocvj2-project") return "*.ewocvj";
-	if (filters == "application/ewocvj2-shelf") return "*.shelf";
+	if (filters == "application/ewocvj2-layer") return ".layer (EWOCvj2 layer file)\0*.layer\0";
+	if (filters == "application/ewocvj2-deck") return ".deck (EWOCvj2 deck file)\0*.deck\0";
+	if (filters == "application/ewocvj2-mix") return ".mix (EWOCvj2 mix file)\0*.mix\0";
+	if (filters == "application/ewocvj2-state") return ".state (EWOCvj2 state file)\0*.state\0";
+	if (filters == "application/ewocvj2-project") return ".ewocvj (EWOCvj2 project file)\0*.deck\0";
+	if (filters == "application/ewocvj2-shelf") return ".shelf (EWOCvj2 shelf file)\0*.deck\0";
 }
 
-void Program::get_inname(const char *title, std::string filters, std::string defaultdir) {
+void Program::win_dialog(const char* title, LPCTSTR filters, std::string defaultdir, bool open, bool multi) {
+	boost::replace_all(defaultdir, "/", "\\");
+	boost::filesystem::path p(defaultdir);
+	std::string name;
+	if (!boost::filesystem::is_directory(p)) {
+		name = basename(defaultdir);
+		defaultdir = defaultdir.substr(0, defaultdir.length() - name.length() - 1);
+	}
+	OPENFILENAME ofn;
+	char szFile[MAX_PATH];
+	if (name != "") {
+		int pos = 0;
+		do {
+			szFile[pos] = name[pos];
+			pos++;
+		} while (pos < name.length());
+		szFile[pos] = '\0';
+	}
+	ZeroMemory(&ofn, sizeof(ofn));
+	ofn.lStructSize = sizeof(ofn);
+	ofn.hwndOwner = NULL;
+	ofn.lpstrFile = szFile;
+	if (name == "") ofn.lpstrFile[0] = '\0';
+	ofn.nMaxFile = sizeof(szFile);
+	ofn.lpstrFilter = filters;
+	ofn.nFilterIndex = 1;
+	ofn.lpstrTitle = title;
+	ofn.lpstrFileTitle = NULL;
+	ofn.nMaxFileTitle = 0;
+	ofn.lpstrInitialDir = defaultdir.c_str();
+	ofn.Flags = OFN_PATHMUSTEXIST | OFN_FILEMUSTEXIST;
+	if (multi) ofn.Flags = ofn.Flags | OFN_ALLOWMULTISELECT | OFN_EXPLORER;
+	if (open) GetOpenFileName(&ofn);
+	else GetSaveFileName(&ofn);
+	if (ofn.lpstrFile == "") {
+		binsmain->openbinfile = false;
+		return;
+	}
+	char* wstr = ofn.lpstrFile;
+	std::string directory(wstr);
+	wstr += (directory.length() + 1);
+	while (*wstr) {
+		std::string filename = wstr;
+		this->paths.push_back(directory + "/" + filename);
+		wstr += (filename.length() + 1);
+		// use the filename, e.g. add it to a vector
+	}
+}
+
+void Program::get_inname(const char *title, LPCTSTR filters, std::string defaultdir) {
 	bool as = mainprogram->autosave;
 	mainprogram->autosave = false;
-	boost::filesystem::path p(defaultdir);
-	if (boost::filesystem::is_directory(p)) defaultdir += "/";
-	#ifdef _WIN64
-	std::string dir = replace_string(defaultdir, "/", "\\");
-	#endif
-	char const* const dd = (dir == "") ? "" : dir.c_str();
 	#ifdef _WIN64
 	filters = this->mime_to_wildcard(filters);
+	this->win_dialog(title, filters, defaultdir, true, false);
 	#endif
-	const char* fi[1];
-	fi[0] = filters.c_str();
-	if (fi[0] == "") {
-		this->path = tinyfd_openFileDialog(title, dd, 0, nullptr, nullptr, 0);
-	}
-	else {
-		this->path = tinyfd_openFileDialog(title, dd, 1, fi, nullptr, 0);
-	}
 	mainprogram->autosave = as;
 }
 
-void Program::get_outname(const char *title, std::string filters, std::string defaultdir) {
+void Program::get_outname(const char *title, LPCTSTR filters, std::string defaultdir) {
 	bool as = mainprogram->autosave;
 	mainprogram->autosave = false;
-	boost::filesystem::path p(defaultdir);
-	if (boost::filesystem::is_directory(p)) defaultdir += "/";
-	#ifdef _WIN64
-	std::string dir = replace_string(defaultdir, "/", "\\");
-	#endif
-	char const* const dd = (dir == "") ? "" : dir.c_str();
+
 	#ifdef _WIN64
 	filters = this->mime_to_wildcard(filters);
+	this->win_dialog(title, filters, defaultdir, false, false);
 	#endif
-	const char* fi[1];
-	fi[0] = filters.c_str();
-	if (fi[0] == "") {
-		this->path = tinyfd_saveFileDialog(title, dd, 0, nullptr, nullptr);
-	}
-	else {
-		this->path = tinyfd_saveFileDialog(title, dd, 1, fi, nullptr);
-	}
 	mainprogram->autosave = as;
 }
 
 void Program::get_multinname(const char* title, std::string defaultdir) {
+	SetThreadPriority(GetCurrentThread(), THREAD_MODE_BACKGROUND_BEGIN);
 	bool as = this->autosave;
 	this->autosave = false;
-	const char* outpaths;
-	boost::filesystem::path p(defaultdir);
-	if (boost::filesystem::is_directory(p)) defaultdir += "/";
-#ifdef _WIN64
-	std::string dir = replace_string(defaultdir, "/", "\\");
-#endif
-	char const* const dd = (dir == "") ? "" : dir.c_str();
-	outpaths = tinyfd_openFileDialog(title, dd, 0, nullptr, nullptr, 1);
-	if (outpaths == nullptr) {
-		binsmain->openbinfile = false;
-		return;
+	//outpaths = tinyfd_openFileDialog(title, dd, 0, nullptr, nullptr, 1);
+	#ifdef _WIN64
+	this->win_dialog(title, "", defaultdir, true, true);
+	#endif
+	#ifdef __linux__
+	#endif
+	if (mainprogram->paths.size()) {
+		this->path = (char*)"ENTER";
+		this->counting = 0;
 	}
-	std::string opaths(outpaths);
-	std::string currstr = "";
-	std::string charstr;
-	for (int i = 0; i < opaths.length(); i++) {
-		charstr = opaths[i];
-		if (charstr == "|") {
-			this->paths.push_back(currstr);
-			currstr = "";
-			continue;
-		}
-		currstr += charstr;
-		if (i == opaths.length() - 1) this->paths.push_back(currstr);
-	}
-	this->path = (char*)"ENTER";
-	this->counting = 0;
 	this->autosave = as;
 }
 
-void Program::get_dir(const char *title, std::string defaultdir) {
-	boost::filesystem::path p(defaultdir);
-	if (boost::filesystem::is_directory(p)) defaultdir += "/";
-	#ifdef _WIN64
-	std::string dir = replace_string(defaultdir, "/", "\\");
-	#endif
-	char const* const dd = (dir == "") ? "" : dir.c_str();
+void Program::get_dir(std::string title, std::string defaultdir) {
 	bool as = mainprogram->autosave;
 	mainprogram->autosave = false;
-	this->path = tinyfd_selectFolderDialog(title, dd) ;
+
+	//boost::replace_all(defaultdir, "/", "\\");
+	//LPITEMIDLIST pidl;
+	//LPSHELLFOLDER pDesktopFolder; 
+	//char szPath[MAX_PATH];
+	//OLECHAR olePath[MAX_PATH];
+	//HRESULT hr;
+	//strncpy(szPath, defaultdir.c_str(), MAX_PATH);
+	//SHGetDesktopFolder(&pDesktopFolder);
+	//MultiByteToWideChar(CP_ACP, MB_PRECOMPOSED, szPath, -1, olePath, MAX_PATH);
+	//hr = pDesktopFolder->ParseDisplayName(NULL, NULL, olePath, nullptr, &pidl, nullptr);
+
+	OleInitialize(NULL); 
+	TCHAR* szDir = new TCHAR[MAX_PATH];
+	BROWSEINFO bInfo;
+	ZeroMemory(&bInfo, sizeof(bInfo));
+	bInfo.hwndOwner = nullptr;
+	bInfo.pidlRoot = nullptr;
+	bInfo.pszDisplayName = szDir;
+	bInfo.lpszTitle = title.c_str();
+	bInfo.ulFlags = 0;
+	bInfo.lpfn = nullptr;
+	bInfo.lParam = 0;
+	bInfo.iImage = 0;
+	bInfo.ulFlags = BIF_RETURNONLYFSDIRS | BIF_USENEWUI | BIF_BROWSEINCLUDEFILES;
+
+	LPITEMIDLIST lpItem = SHBrowseForFolder(&bInfo);
+	if (lpItem != NULL)
+	{
+		SHGetPathFromIDList(lpItem, szDir);
+		CoTaskMemFree(lpItem);
+	}
+	this->path = (char*)szDir;
+	OleUninitialize();
+
+	//this->path = tinyfd_selectFolderDialog(title, dd) ;
 	mainprogram->autosave = as;
 }
 
@@ -1030,7 +1073,7 @@ GLuint Program::set_shader() {
  	else mainprogram->quit("Unable to find vertex shader \"shader.vs\" in current directory");
  	#else
  	#ifdef __linux__
- 	std::string ddir (DATADIR);
+ 	std::string ddir (mainprogram->datadir);
  	if (exists("./shader.vs")) strcpy (vshader, "./shader.vs");
  	else if (exists(ddir + "/shader.vs")) strcpy (vshader, (ddir + "/shader.vs").c_str());
  	else mainprogram->quit("Unable to find vertex shader \"shader.vs\" in " + ddir);

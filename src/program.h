@@ -165,6 +165,7 @@ class PIInt: public PrefCat {
 		
 class PIVid: public PrefCat {
 	public:
+		int oldvalue;
 		PIVid();
 };
 		
@@ -270,6 +271,7 @@ class Program {
 		GLuint tm_texvao;
 		GLuint tm_rtvbo;
 		GLuint tm_rttbo;
+		GLuint bgtex;
 		std::vector<OutputEntry*> outputentries;
 		std::vector<Button*> buttons;
 		Box *scrollboxes[2];
@@ -488,6 +490,9 @@ class Program {
 		std::string currbinfilesdir;
 		std::string currfilesdir;
 		std::string currstatedir;
+		std::string homedir;
+		std::string datadir;
+		std::string fontdir = "/usr/share/fonts";
 		bool openshelfdir = false;
 		std::string shelfpath;
 		int shelfdircount;
@@ -529,10 +534,11 @@ class Program {
 		void handle_changed_owoh();
 		void handle_fullscreen();
 		void make_menu(const std::string &name, Menu *&menu, std::vector<std::string> &entries);
-		void get_outname(const char *title, std::string filters, std::string defaultdir);
-		void get_inname(const char *title, std::string filters, std::string defaultdir);
+		void get_outname(const char *title, LPCTSTR filters, std::string defaultdir);
+		void get_inname(const char *title, LPCTSTR filters, std::string defaultdir);
 		void get_multinname(const char* title, std::string defaultdir);
-		void get_dir(const char *title, std::string defaultdir);
+		void get_dir(std::string , std::string defaultdir);
+		void win_dialog(const char* title, LPCTSTR filters, std::string defaultdir, bool open, bool multi);
 		float xscrtovtx(float scrcoord);
 		float yscrtovtx(float scrcoord);
 		float xvtxtoscr(float vtxcoord);
@@ -545,7 +551,7 @@ class Program {
 		Program();
 		
 	private:
-		std::string mime_to_wildcard(std::string filters);
+		LPCTSTR mime_to_wildcard(std::string filters);
 		bool do_order_paths();
 };
 
@@ -589,7 +595,8 @@ extern void draw_triangle(float *linec, float *areac, float x1, float y1, float 
 extern void draw_line(float *linec, float x1, float y1, float x2, float y2);
 
 extern std::vector<float> render_text(std::string text, float *textc, float x, float y, float sx, float sy);
-extern std::vector<float> render_text(std::string text, float* textc, float x, float y, float sx, float sy, int smflag, bool vertical = false);
+extern std::vector<float> render_text(std::string text, float* textc, float x, float y, float sx, float sy, int smflag);
+extern std::vector<float> render_text(std::string text, float* textc, float x, float y, float sx, float sy, int smflag, bool vertical);
 extern std::vector<float> render_text(std::string text, float* textc, float x, float y, float sx, float sy, int smflag, bool display, bool vertical);
 extern float textwvec_total(std::vector<float> textwvec);
 

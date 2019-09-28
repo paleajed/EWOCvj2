@@ -1,8 +1,8 @@
-#include <boost/bind.hpp>
-#include <boost/asio.hpp>
-#include <boost/date_time/posix_time/posix_time.hpp>
-#include <boost/filesystem.hpp>
-#include <boost/foreach.hpp>
+#include "boost/bind.hpp"
+#include "boost/asio.hpp"
+#include "boost/date_time/posix_time/posix_time.hpp"
+#include "boost/filesystem.hpp"
+#include "boost/foreach.hpp"
 
 #include <stdio.h>
 #include <stdlib.h>
@@ -17,10 +17,8 @@
 #include <iostream>
 #include <fstream>
 #include <sstream>
-#include <intrin.h>
 #include <ios>
 #include <vector>
-#include "dirent.h"
 #include <algorithm>
 #include <numeric>
 #include <unordered_set>
@@ -37,6 +35,8 @@
 #endif
 
 #ifdef _WIN64
+#include "dirent.h"
+#include <intrin.h>
 #include <shobjidl.h>
 #include <Vfw.h>
 #define STRSAFE_NO_DEPRECATE
@@ -46,16 +46,19 @@
 #pragma comment (lib, "Quartz.lib")
 #pragma comment (lib, "ole32.lib")
 #include <windows.h>
+#include <tlhelp32.h>
+#include <tchar.h>
 #include <shellscalingapi.h>
 #include <comdef.h>
 #endif
 
-#include "RtMidi.h"
+#include <RtMidi.h>
 #include <jpeglib.h>
 #define SDL_MAIN_HANDLED
 #include "GL/glew.h"
 #include "GL/gl.h"
 #ifdef __linux__
+#include </usr/include/dirent.h>
 #include <sys/ioctl.h>
 #include <linux/videodev2.h>
 //#include <linux/v4l2-common.h>
@@ -84,8 +87,8 @@ extern "C" {
 }
 
 #include <ft2build.h>
-#include FT_FREETYPE_H
-#include FT_MODULE_H
+#include	 FT_FREETYPE_H
+#include	 FT_MODULE_H
 #define  FT_HINTING_ADOBE     0
 
 // my own headers
@@ -227,6 +230,31 @@ bool isimage(const std::string &path) {
 
 
 #ifdef _WIN64
+void SetProcessPriority(LPWSTR ProcessName, int Priority)
+{
+	PROCESSENTRY32 proc32;
+	HANDLE hSnap;
+	if (hSnap = CreateToolhelp32Snapshot(TH32CS_SNAPPROCESS, 0));
+	if (hSnap == INVALID_HANDLE_VALUE)
+	{
+
+	}
+	else
+	{
+		proc32.dwSize = sizeof(PROCESSENTRY32);
+		while ((Process32Next(hSnap, &proc32)) == TRUE)
+		{
+			if (_wcsicmp((wchar_t*)(proc32.szExeFile), ProcessName) == 0)
+			{
+				HANDLE h = OpenProcess(PROCESS_SET_INFORMATION, TRUE, proc32.th32ProcessID);
+				SetPriorityClass(h, Priority);
+				CloseHandle(h);
+			}
+		}
+		CloseHandle(hSnap);
+	}
+}
+
 HRESULT EnumerateDevices(REFGUID category, IEnumMoniker **ppEnum)
 {
     // Create the System Device Enumerator.
@@ -920,6 +948,9 @@ static int decode_packet(Layer *lay, bool show)
 			printf("codec %d", lay->decpkt);
             return ret;
         }
+		if (err2 == AVERROR_EOF) {
+			avcodec_flush_buffers(lay->video_dec_ctx);
+		}
         if (show) {
             /* copy decoded frame to destination buffer:
              * this is required since rawvideo expects non aligned data */
@@ -1133,7 +1164,7 @@ void Layer::get_cpu_frame(int framenr, int prevframe, int errcount)
 			if (framenr != prevframe + 1) {
 				int r = av_read_frame(this->videoseek, &this->decpktseek);
 				int readpos = ((this->decpktseek.dts - this->video_stream->first_dts) * this->numf) / this->video_duration;
-				if (readpos < framenr) {
+				if (readpos <= framenr) {
 					// readpos at keyframe before framenr
 					if (framenr > prevframe and prevframe > readpos) {
 						// starting from just past prevframe here is more efficient than decoding from readpos keyframe
@@ -1151,7 +1182,6 @@ void Layer::get_cpu_frame(int framenr, int prevframe, int errcount)
 					}
 				}
 			}
-			else printf("frn %d %d \n", framenr);
 		}
 		ret = decode_packet(this, true);
 		if (ret == 0) {
@@ -2151,6 +2181,11 @@ void draw_triangle(float *linec, float *areac, float x1, float y1, float xsize, 
 
 std::vector<float> render_text(std::string text, float* textc, float x, float y, float sx, float sy) {
 	std::vector<float> ret = render_text(text, textc, x, y, sx, sy, 0, 1, 0);
+	return ret;
+}
+
+std::vector<float> render_text(std::string text, float* textc, float x, float y, float sx, float sy, int smflag) {
+	std::vector<float> ret = render_text(text, textc, x, y, sx, sy, smflag, 1, 0);
 	return ret;
 }
 
@@ -6410,7 +6445,7 @@ PIDirs::PIDirs() {
 	pdi->path = mainprogram->docpath + "projects/";
 	#else
 	#ifdef __linux__
-	pdi->path = homedir + "/.ewocvj2/projects/";
+	pdi->path = mainprogram->homedir + "/.ewocvj2/projects/";
 	#endif
 	#endif
 	mainprogram->projdir = pdi->path;
@@ -6428,7 +6463,7 @@ PIDirs::PIDirs() {
 	pdi->path = mainprogram->docpath + "autosaves/";
 	#else
 	#ifdef __linux__
-	pdi->path = homedir + "/.ewocvj2/autosaves/";
+	pdi->path = mainprogram->homedir + "/.ewocvj2/autosaves/";
 	#endif
 	#endif
 	mainprogram->autosavedir = pdi->path;
@@ -7180,9 +7215,6 @@ int handle_menu(Menu *menu, float xshift, float yshift) {
 						return k - numsubs;
 					}
 				}
-				else if (menu->currsub == k - 1) {
-					draw_box(lc, ac2, menu->box->vtxcoords->x1 + vmx + xoff, menu->box->vtxcoords->y1 - (k - koff - numsubs) * tf(0.05f) - vmy + yshift, tf(menu->width), tf(0.05f), -1);
-				}
 				else {
 					draw_box(lc, ac1, menu->box->vtxcoords->x1 + vmx + xoff, menu->box->vtxcoords->y1 - (k - koff - numsubs) * tf(0.05f) - vmy + yshift, tf(menu->width), tf(0.05f), -1);
 				}
@@ -7333,17 +7365,15 @@ bool preferences() {
 					 try {
 					 	mci->items[i]->value = std::stoi(mainprogram->inputtext);
 					 }
-					 catch (...) {}
+					 catch (...) {
+						 mci->items[i]->value = ((PIVid*)(mci->items[i]))->oldvalue;
+					 }
 				}
 				else if (mainprogram->renaming == EDIT_CANCEL) {
 					 mci->items[i]->renaming = false;
 				}
 				else {
-					std::string part = mainprogram->inputtext.substr(0, mainprogram->cursorpos0);
-					float textw = textwvec_total(render_text(part, white, mci->items[i]->valuebox->vtxcoords->x1 + 0.1f, mci->items[i]->valuebox->vtxcoords->y1 + 0.06f, 0.0024f, 0.004f, 1, 0)) * 0.5f;
-					part = mainprogram->inputtext.substr(mainprogram->cursorpos0, mainprogram->inputtext.length() - mainprogram->cursorpos0);
-					render_text(part, white, mci->items[i]->valuebox->vtxcoords->x1 + 0.102f + textw, mci->items[i]->valuebox->vtxcoords->y1 + 0.06f, 0.0024f, 0.004f, 1, 0);
-					draw_line(white, mci->items[i]->valuebox->vtxcoords->x1 + 0.102f + textw, mci->items[i]->valuebox->vtxcoords->y1 + 0.06f, mci->items[i]->valuebox->vtxcoords->x1 + 0.102f + textw, mci->items[i]->valuebox->vtxcoords->y1 + tf(0.09f));
+					do_text_input(mci->items[i]->valuebox->vtxcoords->x1 + 0.1f, mci->items[i]->valuebox->vtxcoords->y1 + 0.06f, 0.0024f, 0.004f, mx, my, mainprogram->xvtxtoscr(0.15f), 1, mci->items[i]);
 				}
 			}
 			else {
@@ -7352,6 +7382,7 @@ bool preferences() {
 			if (mci->items[i]->valuebox->in(mx, my)) {
 				if (mainprogram->leftmouse and mainprogram->renaming == EDIT_NONE) {
 					mci->items[i]->renaming = true;
+					((PIVid*)(mci->items[i]))->oldvalue = mci->items[i]->value;
 					mainprogram->renaming = EDIT_NUMBER;
 					mainprogram->inputtext = std::to_string(mci->items[i]->value);
 					mainprogram->cursorpos0 = mainprogram->inputtext.length();
@@ -7402,11 +7433,14 @@ bool preferences() {
 					mci->items[i]->choosing = true;
 					mainprogram->pathto = "CHOOSEDIR";
 					std::string title = "Open " + mci->items[i]->name + " directory";
-					std::thread filereq (&Program::get_dir, mainprogram, title.c_str(), boost::filesystem::canonical(mci->items[i]->path).generic_string());
+					std::thread filereq (&Program::get_dir, mainprogram, title, boost::filesystem::canonical(mci->items[i]->path).generic_string());
 					filereq.detach();
 				}
 			}
 			if (mci->items[i]->choosing and mainprogram->choosedir != "") {
+				#ifdef _WIN64
+				boost::replace_all(mainprogram->choosedir, "/", "\\");
+				#endif			
 				mci->items[i]->path = mainprogram->choosedir;
 				mainprogram->choosedir = "";
 				mci->items[i]->choosing = false;
@@ -7506,6 +7540,8 @@ void do_text_input(float x, float y, float sx, float sy, int mx, int my, float w
 	if (mainprogram->cursorpixels == -1) {
 		// initialize: cursor at end, shift string if bigger than space
 		mainprogram->cursorpixels = mainprogram->xvtxtoscr(cps);
+		mainprogram->startcursor = 0;
+		mainprogram->endcursor = totvec.size();
 		float total2 = 0.0f;
 		for (int j = 0; j < totvec.size(); j++) {
 			total2 += mainprogram->xvtxtoscr(totvec[j]);
@@ -7515,7 +7551,6 @@ void do_text_input(float x, float y, float sx, float sy, int mx, int my, float w
 				std::vector<float> parttextvec = render_text(part, white, x, y, sx, sy, smflag, 0, 0);
 				float parttextw = textwvec_total(parttextvec);
 				mainprogram->startpos = mainprogram->xvtxtoscr(cps - parttextw);
-				mainprogram->endcursor = totvec.size();
 				break;
 			}
 		}
@@ -7624,6 +7659,13 @@ void do_text_input(float x, float y, float sx, float sy, int mx, int my, float w
 				}
 			}
 		}
+		if (cps < width) {
+			mainprogram->startcursor = 0;
+			mainprogram->endcursor = mainprogram->inputtext.length();
+			mainprogram->startpos = 0;
+		}
+		mainprogram->startcursor = std::clamp(mainprogram->startcursor, 0, (int)mainprogram->inputtext.length());
+		mainprogram->endcursor = std::clamp(mainprogram->endcursor, 0, (int)mainprogram->inputtext.length());
 		part = mainprogram->inputtext.substr(mainprogram->startcursor, mainprogram->endcursor - mainprogram->startcursor);
 		render_text(part, white, x, y, sx, sy, smflag, 0);
 		if (mainprogram->cursorpos1 == -1) {
@@ -8041,7 +8083,7 @@ void enddrag() {
 		//glDeleteTextures(1, &binsmain->dragtex);  maybe needs implementing in one case, check history
 	}
 
-	if (binsmain->movingtex != -1) {
+	if (0) {
 		bool temp = binsmain->currbinel->full;
 		binsmain->currbinel->full = binsmain->movingbinel->full;
 		binsmain->movingbinel->full = temp;
@@ -8132,6 +8174,11 @@ void the_loop() {
 	float grey[] = {0.5f, 0.5f, 0.5f, 1.0f};
 	float darkgrey[] = {0.2f, 0.2f, 0.2f, 1.0f};
 	float lightblue[] = {0.5f, 0.5f, 1.0f, 1.0f};
+
+	if (!mainprogram->binsscreen) {
+		// draw background graphic
+		draw_box(nullptr, black, -1.0f, -1.0f, 2.0f, 2.0f, mainprogram->bgtex);
+	}
 	
 	if (mainprogram->blocking) {
 		// when waiting for some activity spread out per loop
@@ -8300,7 +8347,7 @@ void the_loop() {
 		}
 
 		//blue bars designating layer selection
-		float blue[4] = { 0.1, 0.1, 0.6, 1.0 };
+		float blue[4] = { 0.1f, 0.1f, 0.6f, 0.5f };
 		if (mainmix->currlay) {
 			draw_box(nullptr, blue, -1.0f + mainprogram->numw + mainmix->currlay->deck * 1.0f + (mainmix->currlay->pos - mainmix->scenes[mainmix->currlay->deck][mainmix->currscene[mainmix->currlay->deck]]->scrollpos) * mainprogram->layw, 0.1f + tf(0.05f), mainprogram->layw, 0.9f, -1);
 		}
@@ -8945,11 +8992,29 @@ void the_loop() {
 					SDL_RaiseWindow(mainprogram->mainwindow);
 					mainprogram->mixwindows.push_back(mwin);
 					SDL_GL_MakeCurrent(mainprogram->mainwindow, glc);
+					#ifdef _WIN64
 					HGLRC c1 = wglGetCurrentContext();
 					mwin->glc = SDL_GL_CreateContext(mwin->win);
 					SDL_GL_MakeCurrent(mwin->win, mwin->glc);
 					HGLRC c2 = wglGetCurrentContext();
 					wglShareLists(c1, c2);
+					#endif
+					#ifdef __linux__
+					GLXContext c1 = glXGetCurrentContext();
+					static int	dblBuf[] = { GLX_RGBA,
+									GLX_RED_SIZE, 1,
+									GLX_GREEN_SIZE, 1,
+									GLX_BLUE_SIZE, 1,
+									GLX_DEPTH_SIZE, 12,
+									GLX_DOUBLEBUFFER,
+									None };
+					Display* dpy = XOpenDisplay(NULL);
+					XVisualInfo* vi = glXChooseVisual(dpy, DefaultScreen(dpy), dblBuf);
+					GLXContext c2 = glXCreateContext(dpy, vi,
+						c1,	/* sharing of display lists */
+						True	/* direct rendering if possible */
+					);
+					#endif
 					glUseProgram(mainprogram->ShaderProgram);
 
 					std::thread vidoutput(output_video, mwin);
@@ -9045,9 +9110,9 @@ void the_loop() {
 			}
 			if (k == 1) {
 				mainprogram->pathto = "OPENFILES";
+				mainprogram->loadlay = mainmix->mouselayer;
 				std::thread filereq (&Program::get_multinname, mainprogram, "Open video/image/layer file", boost::filesystem::canonical(mainprogram->currfilesdir).generic_string());
 				filereq.detach();
-				mainprogram->loadlay = mainmix->mouselayer;
 			}
 			else if (k == 2) {
 				mainprogram->pathto = "SAVELAYFILE";
@@ -9251,24 +9316,27 @@ void the_loop() {
 			filereq.detach();
 		}
 		else if (k == 2) {
+			mainprogram->project->save(mainprogram->project->path);
+		}
+		else if (k == 3) {
 			mainprogram->pathto = "SAVEPROJECT";
 			std::thread filereq(&Program::get_outname, mainprogram, "Save project file", "application/ewocvj2-project", boost::filesystem::canonical(mainprogram->project->path).generic_string());
 			filereq.detach();
 		}
-		else if (k == 3) {
+		else if (k == 4) {
 			mainmix->new_state();
 		}
-		else if (k == 4) {
+		else if (k == 5) {
 			mainprogram->pathto = "OPENSTATE";
 			std::thread filereq (&Program::get_inname, mainprogram, "Open state file", "application/ewocvj2-state", boost::filesystem::canonical(mainprogram->currstatedir).generic_string());
 			filereq.detach();
 		}
-		else if (k == 5) {
+		else if (k == 6) {
 			mainprogram->pathto = "SAVESTATE";
 			std::thread filereq (&Program::get_outname, mainprogram, "Save state file", "application/ewocvj2-state", boost::filesystem::canonical(mainprogram->currstatedir).generic_string());
 			filereq.detach();
 		}
-		else if (k == 6) {
+		else if (k == 7) {
 			if (!mainprogram->prefon) {
 				mainprogram->prefon = true;
 				SDL_ShowWindow(mainprogram->prefwindow);
@@ -9286,7 +9354,7 @@ void the_loop() {
 				SDL_RaiseWindow(mainprogram->prefwindow);
 			}
 		}
-		else if (k == 7) {
+		else if (k == 8) {
 			if (!mainprogram->tunemidi) {
 				SDL_ShowWindow(mainprogram->tunemidiwindow);
 				SDL_RaiseWindow(mainprogram->tunemidiwindow);
@@ -9311,7 +9379,7 @@ void the_loop() {
 				SDL_RaiseWindow(mainprogram->tunemidiwindow);
 			}
 		}
-		else if (k == 8) {
+		else if (k == 9) {
 			mainprogram->quit("quitted");
 		}
 
@@ -9348,7 +9416,7 @@ void the_loop() {
 			std::string path;
 			int count = 0;
 			while (1) {
-				path = mainprogram->project->shelfdir + name + ".deck";
+				path = mainprogram->temppath + name + ".deck";
 				if (!exists(path)) {
 					break;
 				}
@@ -9365,7 +9433,7 @@ void the_loop() {
 			std::string path;
 			int count = 0;
 			while (1) {
-				path = mainprogram->project->shelfdir + name + ".mix";
+				path = mainprogram->temppath + name + ".mix";
 				if (!exists(path)) {
 					break;
 				}
@@ -10696,7 +10764,7 @@ void Shelf::save(const std::string &path) {
 		wfile << "TYPE\n";
 		wfile << std::to_string(elem->type);
 		wfile << "\n";
-		if (elem->type == ELEM_LAYER) {
+		if (elem->type == ELEM_LAYER or elem->type == ELEM_DECK or elem->type == ELEM_MIX) {
 			filestoadd.push_back(elem->path);
 		}
 		filestoadd.push_back(elem->jpegpath);
@@ -10742,6 +10810,7 @@ void Shelf::save(const std::string &path) {
 	filestoadd2.push_back(filestoadd);
 	concat_files(outputfile, path, filestoadd2);
 	outputfile.close();
+	if (exists(str)) boost::filesystem::remove(str);
 	boost::filesystem::rename(mainprogram->temppath + "tempconcatshelf", str);
 }
 
@@ -10966,6 +11035,7 @@ bool Shelf::insert_deck(const std::string& path, bool deck, int pos) {
 	else elem->tex = copy_tex(mainprogram->nodesmain->mixnodescomp[deck]->mixtex);
 	std::string jpegpath = path + ".jpeg";
 	save_thumb(jpegpath, elem->tex);
+	elem->jpegpath = jpegpath;
 	return 1;
 }
 
@@ -10977,6 +11047,7 @@ bool Shelf::insert_mix(const std::string& path, int pos) {
 	else elem->tex = copy_tex(mainprogram->nodesmain->mixnodescomp[2]->mixtex);
 	std::string jpegpath = path + ".jpeg";
 	save_thumb(jpegpath, elem->tex);
+	elem->jpegpath = jpegpath;
 	return 1;
 }
 
@@ -11055,12 +11126,16 @@ bool Shelf::open(const std::string &path) {
 				if (istring == "TYPE") {
 					getline(rfile, istring);
 					elem->type = (ELEM_TYPE)std::stoi(istring);
-					if (elem->type == ELEM_LAYER) {
+					std::string suf = "";
+					if (elem->type == ELEM_LAYER) suf = ".layer";
+					if (elem->type == ELEM_DECK) suf = ".deck";
+					if (elem->type == ELEM_MIX) suf = ".mix";
+					if (suf != "") {
 						if (concat) {
 							std::string name = remove_extension(basename(elem->path));
 							int pcount = 0;
 							while (1) {
-								elem->path = mainprogram->temppath + name + ".layer";
+								elem->path = mainprogram->temppath + name + ".suf";
 								if (!exists(elem->path)) {
 									break;
 								}
@@ -11602,11 +11677,29 @@ int main(int argc, char* argv[]){
 	glFramebufferTexture2D(GL_FRAMEBUFFER, GL_COLOR_ATTACHMENT0, GL_TEXTURE_2D, mainprogram->smglobfbotex_pr, 0);
 
 	SDL_GL_MakeCurrent(mainprogram->mainwindow, glc);
+	#ifdef _WIN64
 	HGLRC c1 = wglGetCurrentContext();
 	glc_th = SDL_GL_CreateContext(mainprogram->dummywindow);
 	SDL_GL_MakeCurrent(mainprogram->dummywindow, glc_th);
 	HGLRC c2 = wglGetCurrentContext();
 	wglShareLists(c1, c2);
+	#endif
+	#ifdef __linux__
+	GLXContext c1 = glXGetCurrentContext();
+	static int	dblBuf[] = { GLX_RGBA,
+					GLX_RED_SIZE, 1,
+					GLX_GREEN_SIZE, 1,
+					GLX_BLUE_SIZE, 1,
+					GLX_DEPTH_SIZE, 12,
+					GLX_DOUBLEBUFFER,
+					None };
+	Display* dpy = XOpenDisplay(NULL);
+	XVisualInfo* vi = glXChooseVisual(dpy, DefaultScreen(dpy), dblBuf);
+	GLXContext c2 = glXCreateContext(dpy, vi,
+		c1,	/* sharing of display lists */
+		True	/* direct rendering if possible */
+	);
+	#endif
 
 	SDL_GL_MakeCurrent(mainprogram->mainwindow, glc);
 	mainprogram->ShaderProgram = mainprogram->set_shader();
@@ -11642,7 +11735,7 @@ int main(int argc, char* argv[]){
 	if (!exists(fstr)) mainprogram->quit("Can't find \"expressway.ttf\" TrueType font in current directory");
 	#else
 	#ifdef __linux__
-	std::string fdir (FONTDIR);
+	std::string fdir (mainprogram->fontdir);
 	std::string fstr = fdir + "/expressway.ttf";
 	if (!exists(fdir + "/expressway.ttf"))  mainprogram->quit("Can't find \"expressway.ttf\" TrueType font in " + fdir);
 	#endif
@@ -11922,8 +12015,9 @@ int main(int argc, char* argv[]){
 	std::vector<std::string> generic;
   	generic.push_back("New project");
   	generic.push_back("Open project");
-  	generic.push_back("Save project");
-  	generic.push_back("New state");
+	generic.push_back("Save project");
+	generic.push_back("Save project as");
+	generic.push_back("New state");
   	generic.push_back("Open state");
   	generic.push_back("Save state");
   	generic.push_back("Preferences");
@@ -12007,7 +12101,9 @@ int main(int argc, char* argv[]){
 #else
 	#ifdef __linux__
 	std::string homedir (getenv("HOME"));
+	mainprogram->homedir = homedir;
 	boost::filesystem::path e{homedir + "/.ewocvj2"};
+	mainprogram->datadir = e.string();
 	if (!exists(homedir + "/.ewocvj2")) boost::filesystem::create_directory(e);
 	boost::filesystem::path p2{homedir + "/.ewocvj2/recordings"};
 	mainprogram->currrecdir = p2.string();
@@ -12102,7 +12198,22 @@ int main(int argc, char* argv[]){
 	GLint preff = glGetUniformLocation(mainprogram->ShaderProgram, "preff");
 	glUniform1i(preff, 1);
 	
-	
+	// load background graphic
+	glGenTextures(1, &mainprogram->bgtex);
+	glActiveTexture(GL_TEXTURE0);
+	glBindTexture(GL_TEXTURE_2D, mainprogram->bgtex);
+	glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR);
+	glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
+	glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_BORDER);
+	glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_BORDER);
+
+	#ifdef _WIN64
+	open_thumb("./background.jpg", mainprogram->bgtex);
+	#endif
+	#ifdef __linux__
+	open_thumb(mainprogram->homedir + "background.jpg", mainprogram->bgtex);
+	#endif
+
 	// get number of cores
 	#ifdef _WIN64
 	typedef BOOL (WINAPI *LPFN_GLPI)(
@@ -12193,11 +12304,9 @@ int main(int argc, char* argv[]){
 	
 	#ifdef _WIN64
 	std::string dir = mainprogram->docpath;
-	#else
-	#ifdef __linux__
-	std::string homedir (getenv("HOME"));
-	std::string dir = homedir + "/.ewocvj2/"
 	#endif
+	#ifdef __linux__
+	std::string dir = homedir + "/.ewocvj2/";
 	#endif
 	if (exists(dir + "recentprojectslist")) {
 		std::ifstream rfile;
@@ -12210,7 +12319,12 @@ int main(int argc, char* argv[]){
 		}
 	}
 
-	
+	#ifdef _WIN64
+	SetPriorityClass(GetCurrentProcess(), HIGH_PRIORITY_CLASS);
+	#endif
+
+
+
 	while (!quit){
 
 		io.poll();
@@ -12302,15 +12416,16 @@ int main(int argc, char* argv[]){
 			}
 			else if (mainprogram->pathto == "CHOOSEDIR") {
 				std::string str(mainprogram->path);
-				std::string driveletter1 = str.substr(0, 1);
-				std::string abspath = boost::filesystem::canonical(mainprogram->docpath).string();
-				std::string driveletter2 = abspath.substr(0, 1);
-				if (driveletter1 == driveletter2) {
-					mainprogram->choosedir = mainprogram->docpath + boost::filesystem::relative(str, mainprogram->docpath).string() + "/";
-				}
-				else {
-					mainprogram->choosedir = str + "/";
-				}
+				mainprogram->choosedir = str + "/";
+				//std::string driveletter1 = str.substr(0, 1);
+				//std::string abspath = boost::filesystem::canonical(mainprogram->docpath).string();
+				//std::string driveletter2 = abspath.substr(0, 1);
+				//if (driveletter1 == driveletter2) {
+				//	mainprogram->choosedir = boost::filesystem::relative(str, mainprogram->docpath).string() + "/";
+				//}
+				//else {
+				//	mainprogram->choosedir = str + "/";
+				//}
 			}
 			else if (mainprogram->pathto == "NEWPROJECT") {
 				std::string str(mainprogram->path);
@@ -12338,7 +12453,7 @@ int main(int argc, char* argv[]){
 		mainprogram->mousewheel = 0;
 		SDL_Event e;
 		while (SDL_PollEvent(&e)){
-			SDL_PumpEvents();
+			//SDL_PumpEvents();
 			if (mainprogram->renaming != EDIT_NONE) {
 				std::string old = mainprogram->inputtext;
 				int c1 = mainprogram->cursorpos1;
@@ -12355,11 +12470,13 @@ int main(int argc, char* argv[]){
 						if (c1 != -1) {
 							mainprogram->cursorpos0 = c1;
 						}
-						else if (mainprogram->cursorpos0 != 0) {
+						else {
 							c1 = mainprogram->cursorpos0;
 							c2 = mainprogram->cursorpos0;
 						}
-						mainprogram->inputtext = mainprogram->inputtext.substr(0, c1) + e.text.text + mainprogram->inputtext.substr(c2, mainprogram->inputtext.length() - c2);
+						std::string part = "";
+						if (c1 == c2) part = mainprogram->inputtext.substr(c2, mainprogram->inputtext.length() - c2);
+						mainprogram->inputtext = mainprogram->inputtext.substr(0, c1) + e.text.text + part;
 						mainprogram->cursorpos0++;
 						mainprogram->cursorpos1 = -1;
 						mainprogram->cursorpos2 = -1;
@@ -12807,7 +12924,7 @@ int main(int argc, char* argv[]){
 						break;
 					}
 				}
-				render_text(mainprogram->recentprojectpaths[i], white, box.vtxcoords->x1 + 0.015f, box.vtxcoords->y1 + 0.03f, 0.001f, 0.0016f);
+				render_text(remove_extension(basename(mainprogram->recentprojectpaths[i])), white, box.vtxcoords->x1 + 0.015f, box.vtxcoords->y1 + 0.03f, 0.001f, 0.0016f);
 				box.vtxcoords->y1 -= 0.125f;
 				box.upvtxtoscr();
 			}
