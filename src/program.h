@@ -2,11 +2,16 @@
 
 #include <string>
 #include "GL/gl.h"
-#include "dirent.h""
-#include "RtMidi.h"
+#ifdef _WIN64
+#include "dirent.h"
+#endif
+#include <RtMidi.h>
 #include <istream>
 #include <lo/lo.h>
 #include <lo/lo_cpp.h>
+#ifdef __linux__
+#include <dirent.h>
+#endif
 
 
 class PrefCat;
@@ -321,6 +326,8 @@ class Program {
 		bool test = false;
 		int mx;
 		int my;
+		int oldmx;
+		int oldmy;
 		float ow = 1920.0f;
 		float oh = 1080.0f;
 		float ow3, oh3;
@@ -350,10 +357,11 @@ class Program {
 		bool menuondisplay = false;
 		bool orderondisplay = false;
 		bool blocking = false;
+		bool eXit = false;
 		std::string temppath;
 		std::string docpath;
 		std::string fontpath;
-		const char *path;
+		std::string path;
 		std::vector<std::string> paths;
 		int counting;
 		std::string pathto;
@@ -361,7 +369,6 @@ class Program {
 		Button *backtopre;
 		Button *modusbut;
 		bool prevmodus = true;
-		Param *deckspeed[2];
 		BlendNode *bnodeend;
 		BlendNode *bnodeendcomp;
 		Box *outputmonitor;
@@ -428,6 +435,7 @@ class Program {
 		bool autosave;
 		float asminutes = 1;
 		int astimestamp = 0;
+		int qualfr = 3;
 
 		std::unordered_map <std::string, GUIString*> guitextmap;
 		std::unordered_map <std::string, GUIString*> prguitextmap;
@@ -482,8 +490,8 @@ class Program {
 		std::string autosavedir;
 		std::string currprojdir;
 		std::string currbinsdir;
-		std::string currrecdir;
 		std::string currshelfdir;
+		std::string currrecdir;
 		std::string currshelfdirdir;
 		std::string currshelffilesdir;
 		std::string currclipfilesdir;
@@ -509,7 +517,8 @@ class Program {
 		int clipfilescount = 0;
 		Clip* clipfilesclip = nullptr;
 		Layer* clipfileslay = nullptr;
-		bool openfiles = false;
+		bool openfileslayers = false;
+		bool openfilesqueue = false;
 		int filescount = 0;
 		Layer* fileslay = nullptr;
 		int multistage = 0;
@@ -526,19 +535,20 @@ class Program {
 		Box* dragbox;
 		bool dragright = false;
 		bool dragout[2] = { true, true };
+		std::string quitting;
 
-		void quit(std::string msg);
+		int quit_requester();
 		GLuint set_shader();
 		int load_shader(char* filename, char** ShaderSource, unsigned long len);
 		void set_ow3oh3();
 		void handle_changed_owoh();
 		void handle_fullscreen();
 		void make_menu(const std::string &name, Menu *&menu, std::vector<std::string> &entries);
-		void get_outname(const char *title, LPCTSTR filters, std::string defaultdir);
-		void get_inname(const char *title, LPCTSTR filters, std::string defaultdir);
+		void get_outname(const char *title, std::string filters, std::string defaultdir);
+		void get_inname(const char *title, std::string filters, std::string defaultdir);
 		void get_multinname(const char* title, std::string defaultdir);
 		void get_dir(std::string , std::string defaultdir);
-		void win_dialog(const char* title, LPCTSTR filters, std::string defaultdir, bool open, bool multi);
+		void win_dialog(const char* title, std::string filters, std::string defaultdir, bool open, bool multi);
 		float xscrtovtx(float scrcoord);
 		float yscrtovtx(float scrcoord);
 		float xvtxtoscr(float vtxcoord);
@@ -551,7 +561,7 @@ class Program {
 		Program();
 		
 	private:
-		LPCTSTR mime_to_wildcard(std::string filters);
+		std::string mime_to_wildcard(std::string filters);
 		bool do_order_paths();
 };
 
@@ -564,6 +574,7 @@ extern LoopStation *lp;
 extern LoopStation *lpc;
 extern Menu *effectmenu;
 extern Menu *mixmodemenu;
+extern SDL_GLContext glc_pr;
 extern SDL_GLContext glc_th;
 
 
@@ -641,7 +652,7 @@ int open_codec_context(int *stream_idx, AVFormatContext *video, enum AVMediaType
 
 void set_live_base(Layer *lay, std::string livename);
 
-extern void set_queueing(Layer* lay, bool onoff);
+extern void set_queueing(bool onoff);
 
 extern float tf(float vtxcoord);
 extern bool exists(const std::string &name);

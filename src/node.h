@@ -103,9 +103,9 @@ class NodesMain {
 		int numpages = 0;
 		NodePage *currpage;
         std::vector<NodePage*> pages;
-        std::vector<MixNode*> mixnodescomp;
-        std::vector<MixNode*> mixnodes;
-        bool linked = true;
+		std::vector<MixNode*> mixnodescomp;
+		std::vector<MixNode*> mixnodes;
+		bool linked = true;
         Node *floatingnode = nullptr;
         void add_nodepages(int num);
 };

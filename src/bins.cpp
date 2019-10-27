@@ -21,8 +21,6 @@
 #include <iostream>
 #include <ios>
 
-#include "tinyfiledialogs.h"
-
 extern "C" {
 #include "libavformat/avformat.h"
 #include "libavcodec/avcodec.h"
@@ -116,13 +114,23 @@ BinsMain::BinsMain() {
 			box->lcolor[3] = 1.0f;
 			box->acolor[3] = 1.0f;
 			box->tooltiptitle = "Media bin element ";
-			box->tooltip = "Shows thumbnail of media bin element, either being a video file (grey border) or an image (pink border) or a layer file (orange border) or belonging to a deck file (purple border) or mix file (green border).  Hovering over this element shows video resolution and video compression method (CPU or HAP).  Mousewheel skips through the element contents (previewed in larger monitor topmiddle).  Leftdrag allows dragging to mix screen via wormhole.  Leftclick allows moving inside the media bin. Rightclickmenu allows among other things, HAP encoding. ";
+			box->tooltip = "Shows thumbnail of media bin element, either being a video file (grey border) or an image (pink border) or a layer file (orange border) or a deck file (purple border) or mix file (green border).  Hovering over this element shows video resolution and video compression method (CPU or HAP).  Mousewheel skips through the element contents (previewed in larger monitor topmiddle).  Leftdrag allows dragging to mix screen via wormhole.  Leftclick allows moving inside the media bin. Rightclickmenu allows among other things, HAP encoding. ";
 		}
 	}
 	
+	// box to click to load a bin into the bins list
+	this->loadbinbox = new Box;
+	this->loadbinbox->vtxcoords->x1 = 0.50f;
+	this->loadbinbox->vtxcoords->y1 = -0.95f;
+	this->loadbinbox->vtxcoords->w = 0.3f;
+	this->loadbinbox->vtxcoords->h = 0.05f;
+	this->loadbinbox->upvtxtoscr();
+	this->loadbinbox->tooltiptitle = "Load bin ";
+	this->loadbinbox->tooltip = "Leftclick to browse for a bin to be loaded. ";
 	// box to click to add another bin to bins list
 	this->newbinbox = new Box;
 	this->newbinbox->vtxcoords->x1 = 0.50f;
+	this->newbinbox->vtxcoords->y1 = -1.0f;
 	this->newbinbox->vtxcoords->w = 0.3f;
 	this->newbinbox->vtxcoords->h = 0.05f;
 	this->newbinbox->upvtxtoscr();
@@ -204,6 +212,16 @@ void BinsMain::handle(bool draw) {
 			mainprogram->menuactivation = false;
 		}
 	}
+	if (mainprogram->renaming == EDIT_BINNAME) {
+		if (mainprogram->rightmouse) {
+			mainprogram->renaming = EDIT_NONE;
+			SDL_StopTextInput();
+			this->menubin->name = mainprogram->backupname;
+			this->menubin = nullptr;
+			mainprogram->rightmouse = false;
+			mainprogram->menuactivation = false;
+		}
+	}
 
 	//draw binelements
 	if (!mainprogram->menuondisplay) this->menubinel = nullptr;
@@ -216,89 +234,108 @@ void BinsMain::handle(bool draw) {
 				if (box->in()) {
 					this->menubinel = binel;
 					if (mainprogram->menuactivation) {
+						this->menuactbinel = binel;
 						if (binel->path != "") {
 							// Set menu when over non-empty element
 							this->binelmenuoptions.clear();
-							std::vector<std::string> binel;
-							binel.push_back("Delete element");
-							binelmenuoptions.push_back(BET_DELETE);
-							binel.push_back("Rename element");
-							binelmenuoptions.push_back(BET_RENAME);
-							binel.push_back("Open file(s) from disk");
-							binelmenuoptions.push_back(BET_OPENFILES);
-							binel.push_back("Insert deck A");
-							binelmenuoptions.push_back(BET_INSDECKA);
-							binel.push_back("Insert deck B");
-							binelmenuoptions.push_back(BET_INSDECKB);
-							binel.push_back("Insert full mix");
-							binelmenuoptions.push_back(BET_INSMIX);
-							binel.push_back("Load block in shelf A");
-							binelmenuoptions.push_back(BET_LOADSHELFA);
-							binel.push_back("Load block in shelf B");
-							binelmenuoptions.push_back(BET_LOADSHELFB);
-							binel.push_back("HAP encode element");
-							binelmenuoptions.push_back(BET_HAPELEM);
-							binel.push_back("Quit");
-							binelmenuoptions.push_back(BET_QUIT);
-							mainprogram->make_menu("binelmenu", mainprogram->binelmenu, binel);
+							std::vector<std::string> bnlm;
+							if (!binel->encoding) {
+								bnlm.push_back("Delete element");
+								binelmenuoptions.push_back(BET_DELETE);
+								bnlm.push_back("Rename element");
+								binelmenuoptions.push_back(BET_RENAME);
+								bnlm.push_back("Open file(s) from disk");
+								binelmenuoptions.push_back(BET_OPENFILES);
+								bnlm.push_back("Insert deck A");
+								binelmenuoptions.push_back(BET_INSDECKA);
+								bnlm.push_back("Insert deck B");
+								binelmenuoptions.push_back(BET_INSDECKB);
+								bnlm.push_back("Insert full mix");
+								binelmenuoptions.push_back(BET_INSMIX);
+								bnlm.push_back("Load block in shelf A");
+								binelmenuoptions.push_back(BET_LOADSHELFA);
+								bnlm.push_back("Load block in shelf B");
+								binelmenuoptions.push_back(BET_LOADSHELFB);
+								bnlm.push_back("HAP encode element");
+								binelmenuoptions.push_back(BET_HAPELEM);
+								bnlm.push_back("Quit");
+								binelmenuoptions.push_back(BET_QUIT);
+							}
+							else {
+								bnlm.push_back("Cancel element HAP encoding");
+								binelmenuoptions.push_back(BET_HAPELEM);
+							}
+							mainprogram->make_menu("binelmenu", mainprogram->binelmenu, bnlm);
 						}
 						if (binel->type == ELEM_DECK) {
 							// set binelmenu entries when mouse over deck
 							this->binelmenuoptions.clear();
-							std::vector<std::string> binel;
-							binel.push_back("Load in deck A");
-							binelmenuoptions.push_back(BET_LOADDECKA);
-							binel.push_back("Load in deck B");
-							binelmenuoptions.push_back(BET_LOADDECKB);
-							binel.push_back("Delete deck");
-							binelmenuoptions.push_back(BET_DELETE);
-							binel.push_back("Rename deck");
-							binelmenuoptions.push_back(BET_RENAME);
-							binel.push_back("Open file(s) from disk");
-							binelmenuoptions.push_back(BET_OPENFILES);
-							binel.push_back("Insert deck A");
-							binelmenuoptions.push_back(BET_INSDECKA);
-							binel.push_back("Insert deck B");
-							binelmenuoptions.push_back(BET_INSDECKB);
-							binel.push_back("Insert full mix");
-							binelmenuoptions.push_back(BET_INSMIX);
-							binel.push_back("Load block in shelf A");
-							binelmenuoptions.push_back(BET_LOADSHELFA);
-							binel.push_back("Load block in shelf B");
-							binelmenuoptions.push_back(BET_LOADSHELFB);
-							binel.push_back("HAP encode deck");
-							binelmenuoptions.push_back(BET_HAPELEM);
-							binel.push_back("Quit");
-							binelmenuoptions.push_back(BET_QUIT);
-							mainprogram->make_menu("binelmenu", mainprogram->binelmenu, binel);
+							std::vector<std::string> bnlm;
+							if (!binel->encoding) {
+								bnlm.push_back("Load in deck A");
+								binelmenuoptions.push_back(BET_LOADDECKA);
+								bnlm.push_back("Load in deck B");
+								binelmenuoptions.push_back(BET_LOADDECKB);
+								bnlm.push_back("Delete deck");
+								binelmenuoptions.push_back(BET_DELETE);
+								bnlm.push_back("Rename deck");
+								binelmenuoptions.push_back(BET_RENAME);
+								bnlm.push_back("Open file(s) from disk");
+								binelmenuoptions.push_back(BET_OPENFILES);
+								bnlm.push_back("Insert deck A");
+								binelmenuoptions.push_back(BET_INSDECKA);
+								bnlm.push_back("Insert deck B");
+								binelmenuoptions.push_back(BET_INSDECKB);
+								bnlm.push_back("Insert full mix");
+								binelmenuoptions.push_back(BET_INSMIX);
+								bnlm.push_back("Load block in shelf A");
+								binelmenuoptions.push_back(BET_LOADSHELFA);
+								bnlm.push_back("Load block in shelf B");
+								binelmenuoptions.push_back(BET_LOADSHELFB);
+								bnlm.push_back("HAP encode deck");
+								binelmenuoptions.push_back(BET_HAPELEM);
+								bnlm.push_back("Quit");
+								binelmenuoptions.push_back(BET_QUIT);
+							}
+							else {
+								bnlm.push_back("Cancel deck HAP encoding");
+								binelmenuoptions.push_back(BET_HAPELEM);
+							}
+							mainprogram->make_menu("binelmenu", mainprogram->binelmenu, bnlm);
 						}
 						else if (binel->type == ELEM_MIX) {
 							// set binelmenu entries when mouse over mix
 							this->binelmenuoptions.clear();
-							std::vector<std::string> binel;
-							binel.push_back("Load in mix");
-							binelmenuoptions.push_back(BET_LOADMIX);
-							binel.push_back("Delete mix");
-							binelmenuoptions.push_back(BET_DELETE);
-							binel.push_back("Rename mix");
-							binelmenuoptions.push_back(BET_RENAME);
-							binel.push_back("Open file(s) from disk");
-							binelmenuoptions.push_back(BET_OPENFILES);
-							binel.push_back("Insert deck A");
-							binelmenuoptions.push_back(BET_INSDECKA);
-							binel.push_back("Insert deck B");
-							binelmenuoptions.push_back(BET_INSDECKB);
-							binel.push_back("Insert full mix");
-							binelmenuoptions.push_back(BET_INSMIX);
-							binel.push_back("Load block in shelf A");
-							binelmenuoptions.push_back(BET_LOADSHELFA);
-							binel.push_back("Load block in shelf B");
-							binelmenuoptions.push_back(BET_LOADSHELFB);
-							binel.push_back("HAP encode mix");
-							binelmenuoptions.push_back(BET_HAPELEM);
-							binel.push_back("Quit");
-							binelmenuoptions.push_back(BET_QUIT);
-							mainprogram->make_menu("binelmenu", mainprogram->binelmenu, binel);
+							std::vector<std::string> bnlm;
+							if (!binel->encoding) {
+								bnlm.push_back("Load in mix");
+								binelmenuoptions.push_back(BET_LOADMIX);
+								bnlm.push_back("Delete mix");
+								binelmenuoptions.push_back(BET_DELETE);
+								bnlm.push_back("Rename mix");
+								binelmenuoptions.push_back(BET_RENAME);
+								bnlm.push_back("Open file(s) from disk");
+								binelmenuoptions.push_back(BET_OPENFILES);
+								bnlm.push_back("Insert deck A");
+								binelmenuoptions.push_back(BET_INSDECKA);
+								bnlm.push_back("Insert deck B");
+								binelmenuoptions.push_back(BET_INSDECKB);
+								bnlm.push_back("Insert full mix");
+								binelmenuoptions.push_back(BET_INSMIX);
+								bnlm.push_back("Load block in shelf A");
+								binelmenuoptions.push_back(BET_LOADSHELFA);
+								bnlm.push_back("Load block in shelf B");
+								binelmenuoptions.push_back(BET_LOADSHELFB);
+								bnlm.push_back("HAP encode mix");
+								binelmenuoptions.push_back(BET_HAPELEM);
+								bnlm.push_back("Quit");
+								binelmenuoptions.push_back(BET_QUIT);
+							}
+							else {
+								bnlm.push_back("Cancel mix HAP encoding");
+								binelmenuoptions.push_back(BET_HAPELEM);
+							}
+							mainprogram->make_menu("binelmenu", mainprogram->binelmenu, bnlm);
 						}
 					}
 				}
@@ -488,7 +525,7 @@ void BinsMain::handle(bool draw) {
 			if (this->menubinel) {
 				if (this->menubinel->path != "") full = true;
 			}
-			if (mainprogram->leftmousedown and !full and !this->inputtexes.size() and !mainprogram->intopmenu) {
+			if (mainprogram->leftmousedown and !full and !this->inputtexes.size() and !mainprogram->intopmenu and !this->renamingelem) {
 				mainprogram->leftmousedown = false;
 				if (!this->selboxing) {
 					this->selboxing = true;
@@ -680,20 +717,6 @@ void BinsMain::handle(bool draw) {
 				// bin renaming with keyboard
 				do_text_input(bin->box->vtxcoords->x1 + tf(0.01f), bin->box->vtxcoords->y1 + tf(0.012f), tf(0.0003f), tf(0.0005f), mainprogram->mx, mainprogram->my, mainprogram->xvtxtoscr(0.3f - tf(0.02f)), 0, nullptr);
 			}
-			else {
-				std::vector<float> totvec = render_text(bin->name, white, bin->box->vtxcoords->x1 + tf(0.01f), bin->box->vtxcoords->y1 + tf(0.012f), tf(0.0003f), tf(0.0005f), 0, 0, 0);
-				float total = 0.0f;
-				for (int j = 0; j < totvec.size(); j++) {
-					if (total > mainprogram->xvtxtoscr(0.3f - tf(0.02f))) {
-						mainprogram->startcursor = 0;
-						mainprogram->endcursor = j;
-						break;
-					}
-					total += mainprogram->xvtxtoscr(totvec[j]);
-				}
-				std::string part = bin->name.substr(mainprogram->startcursor, mainprogram->endcursor - mainprogram->startcursor);
-				render_text(part, white, bin->box->vtxcoords->x1 + tf(0.01f), bin->box->vtxcoords->y1 + tf(0.012f), tf(0.0003f), tf(0.0005f), 0, 0);
-			}
 		}
 		if (!this->indragbox and this->dragbinsense) {
 			// dragging has moved (!this->draginbox) so start doing it
@@ -703,8 +726,6 @@ void BinsMain::handle(bool draw) {
 
 		// draw and handle box that allows adding a new bin to the end of the list0
 		Box* box = this->newbinbox;
-		box->vtxcoords->y1 = -1.0f;
-		box->upvtxtoscr();
 		if (box->in()) {
 			if (mainprogram->leftmouse and !this->dragbin) {
 				std::string name = "new bin";
@@ -734,6 +755,28 @@ void BinsMain::handle(bool draw) {
 		}
 		draw_box(box, -1);
 		render_text("+ NEW BIN", red, 0.62f, -1.0f + 0.018f, tf(0.0003f), tf(0.0005f));
+
+		// draw and handle box that allows loading a bin at the end of the list
+		box = this->loadbinbox;
+		if (box->in()) {
+			if (mainprogram->leftmouse and !this->dragbin) {
+				mainprogram->pathto = "OPENBIN";
+				std::thread filereq(&Program::get_inname, mainprogram, "Open file(s)", "application/ewocvj2-bin", boost::filesystem::canonical(mainprogram->currbinsdir).generic_string());
+				filereq.detach();
+			}
+			box->acolor[0] = 0.5f;
+			box->acolor[1] = 0.5f;
+			box->acolor[2] = 1.0f;
+			box->acolor[3] = 1.0f;
+		}
+		else {
+			box->acolor[0] = 0.0f;
+			box->acolor[1] = 0.0f;
+			box->acolor[2] = 0.0f;
+			box->acolor[3] = 1.0f;
+		}
+		draw_box(box, -1);
+		render_text("+ LOAD BIN", red, 0.62f, -0.95f + 0.018f, tf(0.0003f), tf(0.0005f));
 
 		// handle bin drag in binslist
 		if (this->dragbin) {
@@ -796,14 +839,36 @@ void BinsMain::handle(bool draw) {
 		if (mainprogram->renaming != EDIT_NONE and this->renamingelem) {
 			// bin element renaming with keyboard
 			draw_box(white, black, this->renamingbox, -1);
-			std::string part = mainprogram->inputtext.substr(0, mainprogram->cursorpos0);
-			float textw = textwvec_total(render_text(part, white, -0.5f + 0.1f, -0.2f + 0.05f, tf(0.0006f), tf(0.001f)));
-			part = mainprogram->inputtext.substr(mainprogram->cursorpos0, mainprogram->inputtext.length() - mainprogram->cursorpos0);
-			render_text(part, white, -0.5f + 0.1f + textw, -0.2f + 0.05f, tf(0.0006f), tf(0.001f));
-			draw_line(white, -0.5f + 0.1f + textw, -0.2f + 0.05f, -0.5f + 0.1f + textw, -0.2f + tf(0.056f));
+			do_text_input(-0.5f + 0.1f, -0.2f + 0.05f, tf(0.0006f), tf(0.001f), mainprogram->mx, mainprogram->my, mainprogram->xvtxtoscr(0.8f), 0, nullptr);
 		}
 
-
+		// render hap encoding text on elems
+		for (int j = 0; j < 12; j++) {
+			for (int i = 0; i < 12; i++) {
+				// handle elements, row per row
+				Box* box = this->elemboxes[i * 12 + j];
+				box->upvtxtoscr();
+				BinElement* binel = this->currbin->elements[i * 12 + j];
+				if (draw) {
+					// show if element encoding/awaiting encoding
+					if (binel->encwaiting) {
+						render_text("Waiting...", white, box->vtxcoords->x1 + tf(0.005f), box->vtxcoords->y1 + box->vtxcoords->h - tf(0.015f), 0.0005f, 0.0008f);
+					}
+					else if (binel->encoding) {
+						float progress = binel->encodeprogress;
+						if (binel->type == ELEM_DECK or binel->type == ELEM_MIX) {
+							if (binel->allhaps) {
+								progress /= binel->allhaps;
+							}
+							else progress = 0.0f;
+						}
+						render_text("Encoding...", white, box->vtxcoords->x1 + tf(0.005f), box->vtxcoords->y1 + box->vtxcoords->h - tf(0.015f), 0.0005f, 0.0008f);
+						draw_box(black, white, box->vtxcoords->x1, box->vtxcoords->y1 + box->vtxcoords->h - tf(0.045f), progress * 0.1f, 0.02f, -1);
+					}
+				}
+			}
+		}
+		
 		// Draw and handle binselmenu
 		int k = handle_menu(mainprogram->binselmenu);
 		if (k == 0) {
@@ -898,6 +963,7 @@ void BinsMain::handle(bool draw) {
 	int k = handle_menu(mainprogram->binelmenu);
 	//if (k > -1) this->currbinel = nullptr;
 	if (binelmenuoptions.size() and k > -1) {
+		if (binelmenuoptions[k] != BET_OPENFILES) this->menuactbinel = nullptr;
 		if (binelmenuoptions[k] == BET_DELETE) {
 			// delete hovered bin element
 			this->delbinels.push_back(this->menubinel);
@@ -1024,16 +1090,19 @@ void BinsMain::handle(bool draw) {
 			}
 		}
 		else if (binelmenuoptions[k] == BET_HAPELEM) {
-			// hap encode hovered bin element
-			if (this->menubinel->type == ELEM_DECK) {
-				this->hap_mix(this->menubinel);
+			if (!this->menubinel->encoding) {
+				// hap encode hovered bin element
+				if (this->menubinel->type == ELEM_DECK) {
+					this->hap_mix(this->menubinel);
+				}
+				else if (this->menubinel->type == ELEM_MIX) {
+					this->hap_deck(this->menubinel);
+				}
+				else {
+					this->hap_binel(this->menubinel, nullptr);
+				}
 			}
-			else if (this->menubinel->type == ELEM_MIX) {
-				this->hap_deck(this->menubinel);
-			}
-			else {
-				this->hap_binel(this->menubinel, nullptr);
-			}
+			else this->menubinel->encoding = false; // signal stopping the encoding of this elem
 		}
 		else if (binelmenuoptions[k] == BET_HAPBIN) {
 			// hap encode entire bin
@@ -1055,7 +1124,7 @@ void BinsMain::handle(bool draw) {
 		}
 		else if (binelmenuoptions[k] == BET_QUIT) {
 			// quit program
-			mainprogram->quit("quitted");
+			mainprogram->quitting = "quitted";
 		}
 	}
 
@@ -1070,32 +1139,21 @@ void BinsMain::handle(bool draw) {
 
 	if (mainprogram->menuactivation and !this->inputtexes.size() and !lay->vidmoving and this->movingtex == -1) {
 		// activate binslist or bin menu
-		int dt = 0;
-		int mt = 0;
-		if (this->menubinel) {
-			dt = this->menubinel->encthreads;
+		this->menubin = nullptr;
+		for (int i = 0; i < this->bins.size(); i++) {
+			if (this->bins[i]->box->in()) {
+				this->menubin = this->bins[i];
+				break;
+			}
 		}
-		else if (this->menubinel) {
-			mt = this->menubinel->encthreads;
+		mainprogram->menuondisplay = true;
+		if (this->menubin) {
+			mainprogram->binmenu->state = 2;
+			mainprogram->bin2menu->state = 2;
 		}
-		if (dt == 0 and mt == 0) {
-			// only when not encoding
-			this->menubin = nullptr;
-			for (int i = 0; i < this->bins.size(); i++) {
-				if (this->bins[i]->box->in()) {
-					this->menubin = this->bins[i];
-					break;
-				}
-			}
-			mainprogram->menuondisplay = true;
-			if (this->menubin) {
-				mainprogram->binmenu->state = 2;
-				mainprogram->bin2menu->state = 2;
-			}
-			else {
-				mainprogram->binelmenu->state = 2;
-				mainprogram->leftmousedown = false;
-			}
+		else {
+			mainprogram->binelmenu->state = 2;
+			mainprogram->leftmousedown = false;
 		}
 		mainprogram->menuactivation = false;
 		mainprogram->rightmouse = false;
@@ -1111,29 +1169,12 @@ void BinsMain::handle(bool draw) {
 				Box* box = this->elemboxes[i * 12 + j];
 				box->upvtxtoscr();
 				BinElement* binel = this->currbin->elements[i * 12 + j];
-				if (draw) {
-					// show if element encoding/awaiting encoding
-					if (binel->encwaiting) {
-						render_text("Waiting...", white, box->vtxcoords->x1 + tf(0.005f), box->vtxcoords->y1 + box->vtxcoords->h - tf(0.015f), 0.0005f, 0.0008f);
-					}
-					else if (binel->encoding) {
-						float progress = binel->encodeprogress;
-						if (binel->type == ELEM_DECK or binel->type == ELEM_MIX) {
-							if (binel->allhaps) {
-								progress /= binel->allhaps;
-							}
-							else progress = 0.0f;
-						}
-						render_text("Encoding...", white, box->vtxcoords->x1 + tf(0.005f), box->vtxcoords->y1 + box->vtxcoords->h - tf(0.015f), 0.0005f, 0.0008f);
-						draw_box(black, white, box->vtxcoords->x1, box->vtxcoords->y1 + box->vtxcoords->h - tf(0.045f), progress * 0.1f, 0.02f, -1);
-					}
-				}
 				if (binel->encoding and binel->encthreads == 0 and (binel->type == ELEM_DECK or binel->type == ELEM_MIX)) {
 					binel->encoding = false;
 					boost::filesystem::rename(remove_extension(binel->path) + ".temp", binel->path);
 					this->do_save_bin(mainprogram->project->binsdir + this->currbin->name + ".bin");
 				}
-				if ((box->in() or mainprogram->rightmouse) and !binel->encoding) {
+				if ((box->in() or mainprogram->rightmouse or binel == menuactbinel) and !this->openbinfile and !binel->encoding) {
 					if (draw) {
 						inbinel = true;
 						// don't preview when encoding
@@ -1563,7 +1604,7 @@ void BinsMain::handle(bool draw) {
 							this->currbinel = binel;
 						}	
 
-						if (this->inputtexes.size()) {
+						if (this->inputtexes.size() and !this->menuactbinel) {
 							bool cont = false;
 							if (this->prevbinel) {
 								// when inputting files, set old texes back
@@ -1605,10 +1646,12 @@ void BinsMain::handle(bool draw) {
 							// set new texes of inputted files
 							int offset = 0;
 							cont = false;
+							int ii = i;
+							int jj = j;
 							for (int k = 0; k < this->inputtexes.size(); k++) {
-								int offj = (int)((i + offset + k) / 12) - (i + offset + k < 0);
-								int el = ((i + offset + k + 144) % 12) * 12 + j + offj;
-								if (j + offj > 11) {
+								int offj = (int)((ii + offset + k) / 12) - (ii + offset + k < 0);
+								int el = ((ii + offset + k + 144) % 12) * 12 + jj + offj;
+								if (jj + offj > 11) {
 									offset = k - this->inputtexes.size();
 									cont = true;
 									break;
@@ -1619,8 +1662,8 @@ void BinsMain::handle(bool draw) {
 							offset = 0;
 							if (!cont) {
 								for (int k = 0; k < this->inputtexes.size(); k++) {
-									int offj = (int)((i + offset + k) / 12) - (i + offset + k < 0);
-									int el = ((i + offset + k + 144) % 12) * 12 + j + offj;
+									int offj = (int)((ii + offset + k) / 12) - (ii + offset + k < 0);
+									int el = ((ii + offset + k + 144) % 12) * 12 + jj + offj;
 									BinElement *dirbinel = this->currbin->elements[el];
 									// set input texes
 									dirbinel->oldselect = dirbinel->select;
@@ -1647,6 +1690,32 @@ void BinsMain::handle(bool draw) {
 							this->prevj = j;
 						}
 					}
+
+					if (this->inputtexes.size() and binel == this->menuactbinel and !this->openbinfile) {
+						bool cont = false;
+						// set values of elems of inputted files
+						for (int k = 0; k < this->inputtexes.size(); k++) {
+							int intm = (144 - (i + j * 12) - this->inputtexes.size());
+							intm = (intm < 0) * intm;
+							int jj = j + (int)((k + i + intm) / 12) - ((k + this->previ + intm) < 0);
+							int ii = ((k + intm + 144) % 12 + i + 144) % 12;
+							BinElement* dirbinel = this->currbin->elements[ii * 12 + jj];
+							dirbinel->tex = this->inputtexes[k];
+							dirbinel->type = this->inputtypes[k];
+							dirbinel->path = this->newpaths[k];
+							dirbinel->name = remove_extension(basename(dirbinel->path));
+							dirbinel->oldjpegpath = dirbinel->jpegpath;
+							dirbinel->jpegpath = this->inputjpegpaths[k];
+						}
+						std::string path = mainprogram->project->binsdir + this->currbin->name + ".bin";
+						save_bin(path);
+						// clean up
+						this->inputtexes.clear();
+						this->inputtypes.clear();
+						this->menuactbinel = nullptr;
+						this->newpaths.clear();
+					}
+
 
 					BinElement *tempbinel = this->currbinel;
 					if (this->currbinel and this->movingtex != -1) {
@@ -1712,6 +1781,7 @@ void BinsMain::handle(bool draw) {
 					save_bin(path);
 					// clean up
 					this->inputtexes.clear();
+					if (this->currbinel == this->menuactbinel) this->menuactbinel = nullptr;
 					this->currbinel = nullptr;
 					this->prevbinel = nullptr;
 					this->inputtypes.clear();
@@ -1857,9 +1927,18 @@ void BinsMain::open_bin(const std::string &path, Bin *bin) {
 					if (bin->elements[pos]->path != "") {
 						if (bin->elements[pos]->jpegpath != "") {
 							if (concat) {
-								boost::filesystem::rename(result + "_" + std::to_string(filecount) + ".file", result + "_" + std::to_string(filecount) + ".jpeg");
-								open_thumb(result + "_" + std::to_string(filecount) + ".jpeg", bin->elements[pos]->tex);
-								bin->elements[pos]->jpegpath = result + "_" + std::to_string(filecount) + ".jpeg";
+								std::string name = remove_extension(basename(bin->elements[pos]->jpegpath));
+								int count = 0;
+								while (1) {
+									bin->elements[pos]->jpegpath = mainprogram->temppath + this->currbin->name + "_" + name + ".jpg";
+									if (!exists(bin->elements[pos]->jpegpath)) {
+										break;
+									}
+									count++;
+									name = remove_version(name) + "_" + std::to_string(count);
+								}
+								boost::filesystem::rename(result + "_" + std::to_string(filecount) + ".file", bin->elements[pos]->jpegpath);
+								open_thumb(bin->elements[pos]->jpegpath, bin->elements[pos]->tex);
 								filecount++;
 							}
 							else open_thumb(bin->elements[pos]->jpegpath, bin->elements[pos]->tex);
@@ -1951,6 +2030,7 @@ void BinsMain::do_save_bin(const std::string& path) {
 	filestoadd2.push_back(filestoadd);
 	concat_files(outputfile, path, filestoadd2);
 	outputfile.close();
+	boost::filesystem::remove(path);
 	boost::filesystem::rename(tcbpath, path);
 }
 
@@ -2063,6 +2143,7 @@ void BinsMain::open_binfiles() {
 		save_bin(path);
 		this->openbinfile = false;
 		mainprogram->paths.clear();
+		mainprogram->multistage = 0;
 		mainprogram->blocking = false;
 		SDL_SetCursor(SDL_CreateSystemCursor(SDL_SYSTEM_CURSOR_ARROW));
 		return;
@@ -2228,6 +2309,7 @@ std::tuple<std::string, std::string> BinsMain::hap_binel(BinElement *binel, BinE
 		else printf("Can't find file to encode");
 		wfile.close();
 		rfile.close();
+
 		boost::filesystem::rename(remove_extension(binel->path) + ".temp", binel->path);
 	}
 	if (!bdm) {
@@ -2237,7 +2319,7 @@ std::tuple<std::string, std::string> BinsMain::hap_binel(BinElement *binel, BinE
 
 	return {apath, rpath};
 }				
-	
+
 void BinsMain::hap_deck(BinElement* bd) {
 	bd->allhaps = 0;
 	bd->encodeprogress = 0.0f;
@@ -2397,7 +2479,6 @@ void BinsMain::hap_encode(const std::string srcpath, BinElement *binel, BinEleme
 	pkt.size = 0;
 	/* open it */
     c->time_base = source_dec_ctx->time_base;
-	printf("ctb %d\n", c->time_base.num);
     //c->framerate = (AVRational){source_stream->r_frame_rate.num, source_stream->r_frame_rate.den};
 	c->sample_aspect_ratio = source_dec_cpm->sample_aspect_ratio;
     c->pix_fmt = codec->pix_fmts[0];  
@@ -2408,7 +2489,7 @@ void BinsMain::hap_encode(const std::string srcpath, BinElement *binel, BinEleme
     //c->global_quality = 0;
    	r = avcodec_open2(c, codec, nullptr);
        
-    std::string destpath = remove_extension(srcpath) + "_hap.mov";
+    std::string destpath = remove_extension(srcpath) + "_temp.mov";
     avformat_alloc_output_context2(&dest, av_guess_format("mov", nullptr, "video/mov"), nullptr, destpath.c_str());
     dest_stream = avformat_new_stream(dest, codec);
     dest_stream->time_base = source_stream->time_base;
@@ -2446,7 +2527,19 @@ void BinsMain::hap_encode(const std::string srcpath, BinElement *binel, BinEleme
 	decframe = av_frame_alloc();
 	int frame = 0;
 	int count = 0;
-    while (count < numf) {
+	while (count < numf) {
+		bool cond = false;
+		if (bdm) cond = (bdm->encoding == false);
+		if (binel->encoding == false or cond) {
+			if (bdm) {
+				bdm->encthreads--;
+				delete binel;  // temp bin elements populate bdm binelements
+			}
+			mainprogram->encthreads--;
+			avio_close(dest->pb);
+			boost::filesystem::remove(destpath); // delete the hap file under construction
+			return;
+		}
 		binel->encodeprogress = (float)count / (float)numf;
 		if (bdm) bdm->encodeprogress += binel->encodeprogress - oldprogress;
 		oldprogress = binel->encodeprogress;
@@ -2503,9 +2596,10 @@ void BinsMain::hap_encode(const std::string srcpath, BinElement *binel, BinEleme
     av_frame_free(&nv12frame);
     av_packet_unref(&pkt);
 	binel->path = remove_extension(binel->path) + "_hap.mov";
+	boost::filesystem::rename(destpath, binel->path);
 	binel->encoding = false;
     if (bdm) {
-    	bdm->encthreads--;
+   		bdm->encthreads--;
 		delete binel;  // temp bin elements populate bdm binelements
     }
  	mainprogram->encthreads--;

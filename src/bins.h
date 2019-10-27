@@ -29,6 +29,7 @@ class BinsMain {
 		std::vector<BINELMENU_OPTION> binelmenuoptions;
 		int previ;
 		int prevj;
+		Box* loadbinbox;
 		Box* newbinbox;
 		Box* renamingbox;
 		GLuint binelpreviewtex;
@@ -54,6 +55,7 @@ class BinsMain {
 		BinElement* movingbinel = nullptr;
 		BinElement *backupbinel = nullptr;
 		BinElement* menubinel = nullptr;
+		BinElement* menuactbinel = nullptr;
 		std::vector<BinElement*> delbinels;
 		std::vector<BinElement*> movebinels;
 		Bin* dragbin = nullptr;

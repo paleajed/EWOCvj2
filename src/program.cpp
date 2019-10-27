@@ -27,8 +27,6 @@
 #include "SDL2/SDL.h"
 #include "SDL2/SDL_syswm.h"
 
-#include "tinyfiledialogs.h"
-
 #include <istream>
 #include <ostream>
 #include <iostream>
@@ -140,36 +138,6 @@ Program::Program() {
 	this->modusbut->tcol[1] = 0.0f;
 	this->modusbut->tcol[2] = 0.0f;
 	this->modusbut->tcol[3] = 1.0f;
-	
-	this->deckspeed[0] = new Param;
-	this->deckspeed[0]->name = "Speed A"; 
-	this->deckspeed[0]->value = 1.0f;
-	this->deckspeed[0]->range[0] = 0.0f;
-	this->deckspeed[0]->range[1] = 3.33f;
-	this->deckspeed[0]->sliding = true;
-	this->deckspeed[0]->powertwo = true;
-	this->deckspeed[0]->box->vtxcoords->x1 = -0.3 - (0.3 / 2.0) - 0.15f;
-	this->deckspeed[0]->box->vtxcoords->y1 = -1.0f + this->monh;
-	this->deckspeed[0]->box->vtxcoords->w = 0.3 / 2.0;
-	this->deckspeed[0]->box->vtxcoords->h = 0.3 / 3.0;
-	this->deckspeed[0]->box->upvtxtoscr();
-	this->deckspeed[0]->box->tooltiptitle = "Global deck A speed setting ";
-	this->deckspeed[0]->box->tooltip = "Change global deck A speed factor. Leftdrag changes value. Doubleclick allows numeric entry. ";
-	
-	this->deckspeed[1] = new Param;
-	this->deckspeed[1]->name = "Speed B"; 
-	this->deckspeed[1]->value = 1.0f;
-	this->deckspeed[1]->range[0] = 0.0f;
-	this->deckspeed[1]->range[1] = 3.33f;
-	this->deckspeed[1]->sliding = true;
-	this->deckspeed[1]->powertwo = true;
-	this->deckspeed[1]->box->vtxcoords->x1 = -0.3 - (0.3 / 2.0) + 0.9f;
-	this->deckspeed[1]->box->vtxcoords->y1 = -1.0f + this->monh;
-	this->deckspeed[1]->box->vtxcoords->w = 0.3 / 2.0;
-	this->deckspeed[1]->box->vtxcoords->h = 0.3 / 3.0;
-	this->deckspeed[1]->box->upvtxtoscr();
-	this->deckspeed[1]->box->tooltiptitle = "Global deck B speed setting ";
-	this->deckspeed[1]->box->tooltip = "Change global deck B speed factor. Leftdrag changes value. Doubleclick allows numeric entry. ";
 	
 	this->outputmonitor = new Box;
 	this->outputmonitor->vtxcoords->x1 = -0.15f;
@@ -413,17 +381,19 @@ void Program::make_menu(const std::string &name, Menu *&menu, std::vector<std::s
 	menu->box->upscrtovtx();
 }
 
-LPCTSTR Program::mime_to_wildcard(std::string filters) {
+std::string Program::mime_to_wildcard(std::string filters) {
 	if (filters == "") return "";
 	if (filters == "application/ewocvj2-layer") return ".layer (EWOCvj2 layer file)\0*.layer\0";
 	if (filters == "application/ewocvj2-deck") return ".deck (EWOCvj2 deck file)\0*.deck\0";
 	if (filters == "application/ewocvj2-mix") return ".mix (EWOCvj2 mix file)\0*.mix\0";
 	if (filters == "application/ewocvj2-state") return ".state (EWOCvj2 state file)\0*.state\0";
 	if (filters == "application/ewocvj2-project") return ".ewocvj (EWOCvj2 project file)\0*.deck\0";
-	if (filters == "application/ewocvj2-shelf") return ".shelf (EWOCvj2 shelf file)\0*.deck\0";
+	if (filters == "application/ewocvj2-shelf") return ".shelf (EWOCvj2 shelf file)\0*.shelf\0";
+	if (filters == "application/ewocvj2-bin") return ".bin (EWOCvj2 bin file)\0*.bin\0";
 }
 
-void Program::win_dialog(const char* title, LPCTSTR filters, std::string defaultdir, bool open, bool multi) {
+void Program::win_dialog(const char* title, std::string filters, std::string defaultdir, bool open, bool multi) {
+	SetThreadPriority(GetCurrentThread(), THREAD_MODE_BACKGROUND_BEGIN);
 	boost::replace_all(defaultdir, "/", "\\");
 	boost::filesystem::path p(defaultdir);
 	std::string name;
@@ -431,6 +401,7 @@ void Program::win_dialog(const char* title, LPCTSTR filters, std::string default
 		name = basename(defaultdir);
 		defaultdir = defaultdir.substr(0, defaultdir.length() - name.length() - 1);
 	}
+#ifdef _WIN64
 	OPENFILENAME ofn;
 	char szFile[MAX_PATH];
 	if (name != "") {
@@ -447,7 +418,7 @@ void Program::win_dialog(const char* title, LPCTSTR filters, std::string default
 	ofn.lpstrFile = szFile;
 	if (name == "") ofn.lpstrFile[0] = '\0';
 	ofn.nMaxFile = sizeof(szFile);
-	ofn.lpstrFilter = filters;
+	ofn.lpstrFilter = filters.c_str();
 	ofn.nFilterIndex = 1;
 	ofn.lpstrTitle = title;
 	ofn.lpstrFileTitle = NULL;
@@ -457,44 +428,52 @@ void Program::win_dialog(const char* title, LPCTSTR filters, std::string default
 	if (multi) ofn.Flags = ofn.Flags | OFN_ALLOWMULTISELECT | OFN_EXPLORER;
 	if (open) GetOpenFileName(&ofn);
 	else GetSaveFileName(&ofn);
-	if (ofn.lpstrFile == "") {
+	if (strlen(ofn.lpstrFile) == 0) {
 		binsmain->openbinfile = false;
 		return;
 	}
 	char* wstr = ofn.lpstrFile;
 	std::string directory(wstr);
-	wstr += (directory.length() + 1);
-	while (*wstr) {
-		std::string filename = wstr;
-		this->paths.push_back(directory + "/" + filename);
-		wstr += (filename.length() + 1);
-		// use the filename, e.g. add it to a vector
+	if (!multi) this->path = directory;
+	else {
+		if (wstr[directory.length() + 1] == 0) {
+			// only one file in selection
+			this->paths.push_back(directory);
+		}
+		else {
+			wstr += (directory.length() + 1);
+			while (*wstr) {
+				std::string filename = wstr;
+				this->paths.push_back(directory + "/" + filename);
+				wstr += (filename.length() + 1);
+			}
+		}
 	}
+#endif
 }
 
-void Program::get_inname(const char *title, LPCTSTR filters, std::string defaultdir) {
+void Program::get_inname(const char *title, std::string filters, std::string defaultdir) {
 	bool as = mainprogram->autosave;
 	mainprogram->autosave = false;
 	#ifdef _WIN64
 	filters = this->mime_to_wildcard(filters);
-	this->win_dialog(title, filters, defaultdir, true, false);
+	this->win_dialog(title, filters.c_str(), defaultdir, true, false);
 	#endif
 	mainprogram->autosave = as;
 }
 
-void Program::get_outname(const char *title, LPCTSTR filters, std::string defaultdir) {
+void Program::get_outname(const char *title, std::string filters, std::string defaultdir) {
 	bool as = mainprogram->autosave;
 	mainprogram->autosave = false;
 
 	#ifdef _WIN64
 	filters = this->mime_to_wildcard(filters);
-	this->win_dialog(title, filters, defaultdir, false, false);
+	this->win_dialog(title, filters.c_str(), defaultdir, false, false);
 	#endif
 	mainprogram->autosave = as;
 }
 
 void Program::get_multinname(const char* title, std::string defaultdir) {
-	SetThreadPriority(GetCurrentThread(), THREAD_MODE_BACKGROUND_BEGIN);
 	bool as = this->autosave;
 	this->autosave = false;
 	//outpaths = tinyfd_openFileDialog(title, dd, 0, nullptr, nullptr, 1);
@@ -525,6 +504,7 @@ void Program::get_dir(std::string title, std::string defaultdir) {
 	//MultiByteToWideChar(CP_ACP, MB_PRECOMPOSED, szPath, -1, olePath, MAX_PATH);
 	//hr = pDesktopFolder->ParseDisplayName(NULL, NULL, olePath, nullptr, &pidl, nullptr);
 
+#ifdef _WIN64
 	OleInitialize(NULL); 
 	TCHAR* szDir = new TCHAR[MAX_PATH];
 	BROWSEINFO bInfo;
@@ -547,6 +527,7 @@ void Program::get_dir(std::string title, std::string defaultdir) {
 	}
 	this->path = (char*)szDir;
 	OleUninitialize();
+#endif
 
 	//this->path = tinyfd_selectFolderDialog(title, dd) ;
 	mainprogram->autosave = as;
@@ -559,7 +540,7 @@ bool Program::order_paths(bool dodeckmix) {
 		mainprogram->multistage = 1;
 	}
 	if (mainprogram->multistage == 1) {
-			mainprogram->orderondisplay = true;
+		mainprogram->orderondisplay = true;
 		// first get one file texture per loop
 		std::string str = mainprogram->paths[mainprogram->filescount];
 		mainprogram->filescount++;
@@ -637,7 +618,6 @@ bool Program::do_order_paths() {
 
 	// draw and handle orderlist scrollboxes
 	this->pathscroll = mainprogram->handle_scrollboxes(this->orderscrollup, this->orderscrolldown, this->paths.size(), this->pathscroll, 17);
-	printf("numl scrp %d %d\n", this->paths.size(), this->pathscroll);
 	bool indragbox = false;
 	for (int j = this->pathscroll; j < this->pathscroll + limit; j++) {
 		Box* box = this->pathboxes[j];
@@ -787,7 +767,7 @@ void Program::handle_wormhole(bool hole) {
 				if (!mainprogram->inwormhole and !mainprogram->menuondisplay) {
 					if (mainprogram->mx == hole * (glob->w - 1)) {
 						if (!mainprogram->binsscreen) {
-							set_queueing(mainmix->currlay, false);
+							set_queueing(false);
 						}
 						mainprogram->binsscreen = !mainprogram->binsscreen;
 						mainprogram->inwormhole = true;
@@ -987,25 +967,93 @@ int Program::handle_scrollboxes(Box* upperbox, Box* lowerbox, int numlines, int 
 
 
 
-/* A simple function that prints a message, the error code returned by SDL,
- * and quits the application */
-void Program::quit(std::string msg)
-{
-	//save midi map
-	//save_genmidis(mainprogram->docpath + "midiset.gm");
-	//empty temp dir
-	boost::filesystem::path path_to_remove(mainprogram->temppath);
-	for (boost::filesystem::directory_iterator end_dir_it, it(path_to_remove); it!=end_dir_it; ++it) {
-		boost::filesystem::remove(it->path());
+int Program::quit_requester() {
+	int mx = -1;
+	int my = -1;
+	if (SDL_GetMouseFocus() == mainprogram->prefwindow) {
+		//SDL_PumpEvents();
+		SDL_GetMouseState(&mx, &my);
+		mx *= 2.0f;
+		my *= 2.0f;
 	}
 
-	printf("%s: %s\n", msg.c_str(), SDL_GetError());
-    printf("stopped\n");
+	float white[] = { 1.0f, 1.0f, 1.0f, 1.0f };
+	float black[] = { 0.0f, 0.0f, 0.0f, 1.0f };
+	float red[] = { 1.0f, 0.0f, 0.0f, 1.0f };
+	float lightblue[] = { 0.5f, 0.5f, 1.0f, 1.0f };
 
-    SDL_Quit();
-    exit(1);
+	mainprogram->insmall = true;
+	mainprogram->bvao = mainprogram->prboxvao;
+	mainprogram->bvbuf = mainprogram->prboxvbuf;
+	mainprogram->btbuf = mainprogram->prboxtbuf;
+	glClear(GL_COLOR_BUFFER_BIT);
+
+	int ret = 0;
+
+	render_text("Are you sure about quitting the program?", white, -0.5f, 0.2f, 0.0024f, 0.004f, 1, 0);
+	for (int j = 0; j < 12; j++) {
+		for (int i = 0; i < 12; i++) {
+			Box* box = binsmain->elemboxes[i * 12 + j];
+			box->upvtxtoscr();
+			BinElement* binel = binsmain->currbin->elements[i * 12 + j];
+			if (binel->encoding) {
+				render_text("!!! There are still videos being encoded to HAP !!!", red, -0.5f, 0.0f, 0.0024f, 0.004f, 1, 0);
+				break;
+			}
+		}
+	}
+
+	Box box;
+	box.vtxcoords->x1 = 0.15f;
+	box.vtxcoords->y1 = -1.0f;
+	box.vtxcoords->w = 0.3f;
+	box.vtxcoords->h = 0.2f;
+	box.upvtxtoscr();
+	draw_box(white, black, &box, -1);
+	if (box.in(mx, my)) {
+		draw_box(white, lightblue, &box, -1);
+		if (mainprogram->leftmouse) {
+			mainprogram->project->do_save(mainprogram->project->path);
+			ret = 1;
+		}
+	}
+	render_text("SAVE PROJECT", white, box.vtxcoords->x1 + 0.02f, box.vtxcoords->y1 + 0.03f, 0.0024f, 0.004f, 1, 0);
+
+	box.vtxcoords->x1 = 0.45f;
+	box.upvtxtoscr();
+	draw_box(white, black, &box, -1);
+	if (box.in(mx, my)) {
+		draw_box(white, lightblue, &box, -1);
+		if (mainprogram->leftmouse) {
+			ret = 2;
+		}
+	}
+	render_text("QUIT", white, box.vtxcoords->x1 + 0.02f, box.vtxcoords->y1 + 0.03f, 0.0024f, 0.004f, 1, 0);
+
+	box.vtxcoords->x1 = 0.75f;
+	box.upvtxtoscr();
+	draw_box(white, black, &box, -1);
+	if (box.in(mx, my)) {
+		draw_box(white, lightblue, &box, -1);
+		if (mainprogram->leftmouse) {
+			ret = 3;
+		}
+	}
+	render_text("CANCEL", white, box.vtxcoords->x1 + 0.02f, box.vtxcoords->y1 + 0.03f, 0.0024f, 0.004f, 1, 0);
+
+	mainprogram->bvao = mainprogram->boxvao;
+	mainprogram->bvbuf = mainprogram->boxvbuf;
+	mainprogram->btbuf = mainprogram->boxtbuf;
+	mainprogram->middlemouse = 0;
+	mainprogram->rightmouse = 0;
+	mainprogram->menuactivation = false;
+	mainprogram->mx = -1;
+	mainprogram->my = -1;
+
+	mainprogram->insmall = false;
+
+	return ret;
 }
-
 void Program::preview_init() {
 	// extra initialization when prevmodus is changed (preview modus)
 	std::vector<Layer*> &lvec = choose_layers(mainmix->currlay->deck);
@@ -1070,13 +1118,11 @@ GLuint Program::set_shader() {
  	char *vshader = (char*)malloc(100);
  	#ifdef _WIN64
  	if (exists("./shader.vs")) strcpy (vshader, "./shader.vs");
- 	else mainprogram->quit("Unable to find vertex shader \"shader.vs\" in current directory");
+ 	else mainprogram->quitting = "Unable to find vertex shader \"shader.vs\" in current directory";
  	#else
- 	#ifdef __linux__
- 	std::string ddir (mainprogram->datadir);
- 	if (exists("./shader.vs")) strcpy (vshader, "./shader.vs");
+ 	#ifdef __linuxd::string ddir (mainprogram(exists("./shader.vs")) strcpy (vshader, "./shader.vs");
  	else if (exists(ddir + "/shader.vs")) strcpy (vshader, (ddir + "/shader.vs").c_str());
- 	else mainprogram->quit("Unable to find vertex shader \"shader.vs\" in " + ddir);
+ 	else mainprogram->quitting = "Unable to find vertex shader \"shader.vs\" in " + ddir;
  	#endif
  	#endif
  	load_shader(vshader, &VShaderSource, vlen);
@@ -1084,12 +1130,12 @@ GLuint Program::set_shader() {
  	char *fshader = (char*)malloc(100);
  	#ifdef _WIN64
  	if (exists("./shader.fs")) strcpy (fshader, "./shader.fs");
- 	else mainprogram->quit("Unable to find fragment shader \"shader.fs\" in current directory");
+ 	else mainprogram->quitting = "Unable to find fragment shader \"shader.fs\" in current directory";
  	#else
  	#ifdef __linux__
  	if (exists("./shader.fs")) strcpy (fshader, "./shader.fs");
  	else if (exists(ddir + "/shader.fs")) strcpy (fshader, (ddir + "/shader.fs").c_str());
- 	else mainprogram->quit("Unable to find fragment shader \"shader.fs\" in " + ddir);
+ 	else mainprogram->quitting = "Unable to find fragment shader \"shader.fs\" in " + ddir;
  	#endif
  	#endif
 	load_shader(fshader, &FShaderSource, flen);
@@ -1213,6 +1259,19 @@ void Project::open(const std::string &path) {
 				mainprogram->shelves[1]->erase();
 			}
 		}
+
+		if (istring == "CURRBINSDIR") {
+			getline(rfile, istring);
+			mainprogram->currbinsdir = istring;
+		}
+		if (istring == "CURRSHELFDIR") {
+			getline(rfile, istring);
+			mainprogram->currshelfdir = istring;
+		}
+		if (istring == "CURRRECDIR") {
+			getline(rfile, istring);
+			mainprogram->currrecdir = istring;
+		}
 	}
 	
 	rfile.close();
@@ -1252,6 +1311,16 @@ void Project::do_save(const std::string& path) {
 	wfile << mainprogram->shelves[1]->basepath;
 	wfile << "\n";
 	
+	wfile << "CURRBINSDIR\n";
+	wfile << mainprogram->currbinsdir;
+	wfile << "\n";
+	wfile << "CURRSHELFDIR\n";
+	wfile << mainprogram->currshelfdir;
+	wfile << "\n";
+	wfile << "CURRRECDIR\n";
+	wfile << mainprogram->currrecdir;
+	wfile << "\n";
+
 	wfile.close();
 	
 	mainmix->do_save_state(mainprogram->temppath + "current.state", false);

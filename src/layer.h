@@ -41,6 +41,7 @@ typedef enum
 
 struct frame_result {
 	char *data = nullptr;
+	bool newdata = false;
 	int height = 0;
 	int width = 0;
 	int size = 0;
@@ -75,7 +76,6 @@ class Layer {
 		bool deck = 0;
 		bool comp = true;
 		std::vector<Layer*>* layers;
-		bool clonedeck = -1;
 		int clonepos = -1;
 		std::vector<Clip*> clips;
 		Clip* currclip = nullptr;
@@ -86,9 +86,11 @@ class Layer {
 		int queuescroll = 0;
 		float scrollcol[4] = {0.5f, 0.5f, 0.5f, 0.0f};
 		Button *mutebut;
-		Button *solobut;
+		Button* solobut;
+		Button* queuebut;
 		bool muting = false;
 		bool soloing = false;
+		bool mousequeue = false;
 		int numefflines[2] = {0,0};
 		int effscroll[2] = {0,0};
 		std::vector<Effect*> effects[2];
@@ -100,7 +102,8 @@ class Layer {
 		void set_clones();
 		void mute_handle();
 		void set_aspectratio(int lw, int lh);
-		void open_files();
+		void open_files_layers();
+		void open_files_queue();
 		void open_video(float frame, const std::string& filename, int reset);
 		void open_image(const std::string &path);
 		void initialize(int w, int h);
@@ -191,6 +194,8 @@ class Layer {
 		bool copying = false;
 		bool firsttime = true;
 		bool newframe = false;
+		int imageloaded = 0;
+		bool newtexdata = false;
 		frame_result *decresult;
 		std::thread decoding;
 		void get_frame();
@@ -212,7 +217,13 @@ class Layer {
 		GLuint vao;
 		GLuint endtex;
 		GLuint endbuf;
+		GLuint pbo[3];
+		GLubyte* mapptr[3];
+		GLsync syncobj[3];
+		char pbodi = 0;
+		char pboui = 1;
 		bool drawfbo2 = false;
+		int bpp;
 		
 		Box *vidbox;
 		bool changed;
@@ -254,6 +265,7 @@ class Layer {
 		
 		std::unordered_map<EFFECT_TYPE, int> numoftypemap;
 		int clonesetnr = -1;
+		bool isclone = false;
 	
 	private:
 		void get_hap_frame();
@@ -273,8 +285,6 @@ class Scene {
 class Mixer {
 	private:
 		void do_deletelay(Layer *testlay, std::vector<Layer*> &layers, bool add);
-		void delete_layers(std::vector<Layer*>& layers, bool alive);
-		void do_delete_layers(std::vector<Layer*> layers, bool alive);
 		void loopstation_copy(bool comp);
 		void clonesets_copy(bool comp);
 		void event_write(std::ostream &wfile, Param *par);
@@ -285,9 +295,15 @@ class Mixer {
 		std::vector<Layer*> layersA;
 		std::vector<Layer*> layersB;
 		std::vector<Scene*> scenes[2];
+		std::vector<Layer*> bulrs[2];
+		std::vector<Layer*> bulrscopy[2];
+		std::vector<GLuint> butexes[2];
+		bool bualive;
 		Layer *currlay = nullptr;
 		Layer *add_layer(std::vector<Layer*> &layers, int pos);
 		void delete_layer(std::vector<Layer*> &layers, Layer *lay, bool add);
+		void delete_layers(std::vector<Layer*>& layers, bool alive);
+		void do_delete_layers(std::vector<Layer*> layers, bool alive);
 		Layer* clone_layer(std::vector<Layer*> &lvec, Layer* slay);
 		void lay_copy(std::vector<Layer*> &slayers, std::vector<Layer*> &dlayers, bool comp);
 		void copy_to_comp(std::vector<Layer*> &sourcelayersA, std::vector<Layer*> &destlayersA, std::vector<Layer*> &sourcelayersB, std::vector<Layer*> &destlayersB, std::vector<Node*> &sourcenodes, std::vector<Node*> &destnodes, std::vector<MixNode*> &destmixnodes, bool comp);
@@ -367,7 +383,8 @@ class Mixer {
 		Param *wipex[2];
 		Param *wipey[2];
 		bool addlay = false;
-		
+		Param* deckspeed[2][2];
+
 		float time = 0;
 		float oldtime = 0;
 		float cbduration = 0.0f;

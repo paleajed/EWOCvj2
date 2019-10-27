@@ -1642,10 +1642,12 @@ void main()
     	if (intcoloring) FragColor = vec4(intcol.rgb * drywet + (1.0f - drywet) * texcol.rgb, intcol.a * opacity);
 	}
 	else if (mixmode > 0) {
-		vec2 size0 = textureSize(endSampler0, 0);
-		vec2 size1 = textureSize(endSampler1, 0);
-		tex0 = texture2D(endSampler0, vec2((texco.x - 0.5f) * fbowidth * fcdiv / size0.x + 0.5f, (texco.y - 0.5f) * fboheight * fcdiv / size0.y + 0.5f));
-		tex1 = texture2D(endSampler1, vec2((texco.x - 0.5f) * fbowidth * fcdiv / size1.x + 0.5f, (texco.y - 0.5f) * fboheight * fcdiv / size1.y + 0.5f));
+		//vec2 size0 = textureSize(endSampler0, 0);
+		//vec2 size1 = textureSize(endSampler1, 0);
+		//tex0 = texture2D(endSampler0, vec2((texco.x - 0.5f) * fbowidth * fcdiv / size0.x + 0.5f, (texco.y - 0.5f) * fboheight * fcdiv / size0.y + 0.5f));
+		//tex1 = texture2D(endSampler1, vec2((texco.x - 0.5f) * fbowidth * fcdiv / size1.x + 0.5f, (texco.y - 0.5f) * fboheight * fcdiv / size1.y + 0.5f));
+		tex0 = texture2D(endSampler0, texco);
+		tex1 = texture2D(endSampler1, texco);
 		tex0 = vec4(tex0.rgb * tex0.a, tex0.a);
 		tex1 = vec4(tex1.rgb * tex1.a, tex1.a);
 	}
@@ -1735,7 +1737,7 @@ void main()
 	}
 	else if (mixmode == 20) {
 		//DISPLACEMENT alpha
-		fc = texture2D(endSampler0, TexCoord0.st+(texture2D(endSampler1, TexCoord0.st).rb)*.1*tex1.a);
+		fc = texture2D(endSampler0, (TexCoord0.st+(texture2D(endSampler1, TexCoord0.st).rb)*.1*tex1.a) * 0.91f);
 	}
 	else if (mixmode == 21) {
 		//CROSSFADING alpha
@@ -1785,8 +1787,9 @@ void main()
 		FragColor = vec4(texture2D(Sampler0, TexCoord0.st).rgb, 0.7f);
 	}
 	else if (singlelayer == 1) {
-		vec2 size0 = textureSize(Sampler0, 0);
-		vec4 ic = texture2D(Sampler0, vec2((texco.x - 0.5f) * fbowidth * fcdiv / size0.x + 0.5f, (texco.y - 0.5f) * fboheight * fcdiv / size0.y + 0.5f));
+		//vec2 size0 = textureSize(Sampler0, 0);
+		//vec4 ic = texture2D(Sampler0, vec2((texco.x - 0.5f) * fbowidth * fcdiv / size0.x + 0.5f, (texco.y - 0.5f) * fboheight * fcdiv / size0.y + 0.5f));
+		vec4 ic = texture2D(Sampler0, texco);
 		FragColor = vec4(ic.r, ic.g, ic.b, ic.a * opacity);
 	}
 	else if (down == 1) {
@@ -2205,6 +2208,7 @@ void main()
 					break;
 				case 10:  //repel - alpha?
 					float rad = xamount / 1.7f;
+					if (dir == 1) rad = (1.0f - xamount) / 1.7f;
 					xxpos = 0.5f + (xxpos - 0.5f) * (1.0f - xamount);
 					xypos = 0.5f + (xypos - 0.5f) * (1.0f - xamount);
 					tc = TexCoord0.st;
@@ -2212,16 +2216,24 @@ void main()
 					dist = distance(tc, vec2(xxpos, xypos));
 					cond = (dist < rad);
 					if (cond) {
-						FragColor = vec4((data1.rgb * data1.a + data0.rgb * (1.0f - data1.a)), max(data0.a, data1.a)) * (1 - dir) + data1 * dir;
+						if (dir == 0) {
+							FragColor = vec4((data1.rgb * data1.a + data0.rgb * (1.0f - data1.a)), max(data0.a, data1.a)) * (1 - dir) + data1 * dir;
+						}
+						else FragColor = vec4((data0.rgb * data0.a + data1.rgb * (1.0f - data0.a)), max(data1.a, data0.a)) * dir + data1 * (1 - dir);
 					}
 					else {
-						FragColor = vec4((data0.rgb * data0.a + data1.rgb * (1.0f - data0.a)), max(data0.a, data1.a)) * dir + data0 * (1 - dir);
+						if (dir == 0) {
+							FragColor = vec4((data0.rgb * data0.a + data1.rgb * (1.0f - data0.a)), max(data0.a, data1.a)) * dir + data0 * (1 - dir);
+						}
+						else FragColor = vec4((data1.rgb * data1.a + data0.rgb * (1.0f - data1.a)), max(data1.a, data0.a)) * (1 - dir) + data1 * dir;
+						cond = (dist < rad * 2.0f);
 						if (dist < rad * 2.0f) {
 							vec2 distvec = vec2(xxpos - tc.x, xypos - tc.y);
 							distvec *= (dist - 2.0f * rad) / rad;
 							//distvec.y *= fbowidth / fboheight;
 							vec2 newtexco = TexCoord0.st - distvec;
-							FragColor = texture2D(endSampler0, newtexco);
+							if (dir == 0) FragColor = texture2D(endSampler0, newtexco);
+							else FragColor = texture2D(endSampler1, newtexco);
 						}
 					}
 					break;

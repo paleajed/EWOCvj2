@@ -14,6 +14,7 @@ uniform float colorrot = 0.5f;
 uniform float dotsize = 300.0f;
 uniform int fbowidth = 1920;
 uniform int fboheight = 1080;
+uniform bool inverted = false;
 uniform float fcdiv = 1.0f;
 uniform int preff = 1;
 uniform float drywet = 1.0f;
@@ -25,6 +26,7 @@ uniform float radialX = 0.0f;
 uniform float radialY = 0.0f; 
 uniform float nSamples = 10.0f;
 uniform float glowblur = 10.0f;  
+uniform float jump = 20;  
 uniform float glowfac = 1.2f;
 uniform float contrastamount = 2.0f;
 uniform float brightamount = 1.0f;    
@@ -66,7 +68,7 @@ uniform float pixel_h = 32.0f;
 uniform float rotamount = 45.0f;
 uniform float iGlobalTime = 0.0f;
 uniform float asciisize = 50.0f;
-uniform float vardotsize = 64.0f;
+uniform float vardotsize = 0.1f;
 
 uniform float hatchsize = 10.0f;
 uniform float hatch_y_offset = 5.0f;
@@ -105,7 +107,7 @@ uniform float feather = 2.0f;
 uniform float mixfac = 0.5f;
 	
 uniform float htdotsize = 1.48f;
-uniform float hts = 0.2f;
+uniform float hts = 100.0f;
 uniform float cut = 0.5f;
 uniform float glitchstr = 1.0f;
 uniform float glitchspeed = 1.0f;
@@ -312,7 +314,6 @@ vec4 blur(vec2 texc) //tutorial on rastergrid seems free
 vec4 boxblur(vec2 texc)  //blog.trsquarelab.com free
 {
 	float alpha = texture2D(fboSampler, texc).a;
-	const int jump = 20;
 	vec2 size = textureSize(fboSampler, 0);
 	vec2 point;
 	vec4 finalcol = vec4(0.0, 0.0, 0.0, 0.0);
@@ -320,7 +321,7 @@ vec4 boxblur(vec2 texc)  //blog.trsquarelab.com free
     float pxdistX = 1 / float(fbowidth);
     float pxdistY = 1 / float(fboheight);
     if (!horizontal) {
-		for (int i = int(-glowblur); i < glowblur; i+= jump) 
+		for (int i = int(-glowblur); i < glowblur; i+= int(jump)) 
 		{
       		point.x = texc.x;
             point.y = texc.y  + i * pxdistY;
@@ -330,7 +331,7 @@ vec4 boxblur(vec2 texc)  //blog.trsquarelab.com free
 		finalcol /= float(count);
 	}
 	else {
-		for (int i = int(-glowblur); i < glowblur; i+= jump) 
+		for (int i = int(-glowblur); i < glowblur; i+= int(jump)) 
 		{
      		point.x = texc.x  + i * pxdistX;
             point.y = texc.y;
@@ -478,7 +479,7 @@ vec4 swirl(vec2 texco)  //geeks3D seems free
 	}
 	normtc += center;
 	normtc.y = normtc.y * fbowidth / fboheight;
-	return texture2D(Sampler0, (normtc / 2.0f + 0.5f));
+	return texture2D(Sampler0, (normtc + 0.5f));
 }
 
 vec4 ripple() {  //geeks3d seems free
@@ -539,13 +540,13 @@ vec4 crosshatch(vec4 col, vec2 uv)  //geeks3D
   
     if (lum < lum_threshold_1) 
     {
-      	if (mod(int(uv.x * fboheight) + int(uv.y * fboheight), int(hatchsize)) == 0.0) 
+      	if (mod(int(uv.x * fboheight) + int(uv.y * fboheight) - int(hatch_y_offset), int(hatchsize)) == 0.0) 
         	tc = vec3(0.0, 0.0, 0.0);
     }
   
     if (lum < lum_threshold_2) 
     {
-      	if (mod(int(uv.x * fboheight) - int(uv.y * fboheight), int(hatchsize)) == 0.0) 
+      	if (mod(int(uv.x * fboheight) - int(uv.y * fboheight) - int(hatch_y_offset), int(hatchsize)) == 0.0) 
         	tc = vec3(0.0, 0.0, 0.0);
     }  
   
@@ -652,7 +653,7 @@ float pattern(vec2 texco)
    vec2 point = vec2(
        c * tex.x - s * tex.y,
        s * tex.x + c * tex.y
-   ) * vardotsize;
+   ) * (0.2f - vardotsize);
    return ((sin(point.x) * sin(point.y)) - 0.3f) / 2.0f;
 }
 
@@ -794,7 +795,7 @@ float aastep(float threshold, float value) {
 vec4 halftone(vec4 rgba, vec2 st) {  //glslify mit
 	vec3 texcolor = rgba.rgb;
   st.y = st.y * fboheight /fbowidth;
-  float frequency = hts;
+  float frequency = (201.0f - hts);
   float n = 0.1*snoise2(st*200.0); // Fractal noise
   n += 0.05*snoise2(st*400.0);
   n += 0.025*snoise2(st*800.0);
@@ -886,7 +887,7 @@ vec4 cartoon(vec2 texco)  //geeks3d free
 	//vec4 tc = vec4(1.0, 0.0, 0.0, 1.0);
     vec4 colorOrg = texture2D(Sampler0, texco).rgba;
     vec3 vHSV =  rgb2hsv(colorOrg.rgb);
-    vHSV.x = floor(vHSV.x * 50.0f) / 50.0f;
+    vHSV.x = floor(vHSV.x * 25.0f) / 25.0f;
     vHSV.y = floor(vHSV.y * 7.0f + 1) / 7.0f;
     vHSV.z = floor(vHSV.z * 4.0f + 1) / 4.0f;
     float edg = IsEdge(texco);
@@ -1634,14 +1635,19 @@ void main()
 			case 39:
 				intcoloring = true;
 				intcol = mirror(texco); break;
+			case 40:
+				intcoloring = true;
+				intcol = boxblur(texco); break;
 		}
     	if (intcoloring) FragColor = vec4(intcol.rgb * drywet + (1.0f - drywet) * texcol.rgb, intcol.a * opacity);
 	}
 	else if (mixmode > 0) {
-		vec2 size0 = textureSize(endSampler0, 0);
-		vec2 size1 = textureSize(endSampler1, 0);
-		tex0 = texture2D(endSampler0, vec2((texco.x - 0.5f) * fbowidth * fcdiv / size0.x + 0.5f, (texco.y - 0.5f) * fboheight * fcdiv / size0.y + 0.5f));
-		tex1 = texture2D(endSampler1, vec2((texco.x - 0.5f) * fbowidth * fcdiv / size1.x + 0.5f, (texco.y - 0.5f) * fboheight * fcdiv / size1.y + 0.5f));
+		//vec2 size0 = textureSize(endSampler0, 0);
+		//vec2 size1 = textureSize(endSampler1, 0);
+		//tex0 = texture2D(endSampler0, vec2((texco.x - 0.5f) * fbowidth * fcdiv / size0.x + 0.5f, (texco.y - 0.5f) * fboheight * fcdiv / size0.y + 0.5f));
+		//tex1 = texture2D(endSampler1, vec2((texco.x - 0.5f) * fbowidth * fcdiv / size1.x + 0.5f, (texco.y - 0.5f) * fboheight * fcdiv / size1.y + 0.5f));
+		tex0 = texture2D(endSampler0, texco);
+		tex1 = texture2D(endSampler1, texco);
 		tex0 = vec4(tex0.rgb * tex0.a, tex0.a);
 		tex1 = vec4(tex1.rgb * tex1.a, tex1.a);
 	}
@@ -1731,7 +1737,7 @@ void main()
 	}
 	else if (mixmode == 20) {
 		//DISPLACEMENT alpha
-		fc = texture2D(endSampler0, TexCoord0.st+(texture2D(endSampler1, TexCoord0.st).rb)*.1*tex1.a);
+		fc = texture2D(endSampler0, (TexCoord0.st+(texture2D(endSampler1, TexCoord0.st).rb)*.1*tex1.a) * 0.91f);
 	}
 	else if (mixmode == 21) {
 		//CROSSFADING alpha
@@ -1781,13 +1787,15 @@ void main()
 		FragColor = vec4(texture2D(Sampler0, TexCoord0.st).rgb, 0.7f);
 	}
 	else if (singlelayer == 1) {
-		vec2 size0 = textureSize(Sampler0, 0);
-		vec4 ic = texture2D(Sampler0, vec2((texco.x - 0.5f) * fbowidth * fcdiv / size0.x + 0.5f, (texco.y - 0.5f) * fboheight * fcdiv / size0.y + 0.5f));
+		//vec2 size0 = textureSize(Sampler0, 0);
+		//vec4 ic = texture2D(Sampler0, vec2((texco.x - 0.5f) * fbowidth * fcdiv / size0.x + 0.5f, (texco.y - 0.5f) * fboheight * fcdiv / size0.y + 0.5f));
+		vec4 ic = texture2D(Sampler0, texco);
 		FragColor = vec4(ic.r, ic.g, ic.b, ic.a * opacity);
 	}
 	else if (down == 1) {
 		vec4 ic = texture2D(Sampler0, TexCoord0.st).rgba;
-		FragColor = vec4(ic.r, ic.g, ic.b, ic.a * opacity);
+		if (!inverted) FragColor = vec4(ic.r, ic.g, ic.b, ic.a * opacity);
+		else FragColor = vec4(1.0f - ic.r, 1.0f - ic.g, 1.0f - ic.b, ic.a * opacity);
 	}
 	else if (circle == 1) {
 		if (distance(vec2(cirx, ciry), gl_FragCoord.xy) < circleradius - 1.0f) {
@@ -1864,6 +1872,7 @@ void main()
 					if (dir == 0) {
 						tc.x -= xpix / (fbowidth * fcdiv);
 						if (xc < xpix) {
+							tc.x = 1.0f + tc.x;
 							FragColor = vec4(texture2D(endSampler1, tc).rgb, 1.0f);
 						}
 						else {
@@ -1873,6 +1882,7 @@ void main()
 					else if (dir == 2) {
 						tc.y -= ypix / (fboheight * fcdiv);
 						if (yc < ypix) {
+							tc.y = 1.0f + tc.y;
 							FragColor = vec4(texture2D(endSampler1, tc).rgb, 1.0f);
 						}
 						else {
@@ -1885,6 +1895,7 @@ void main()
 							FragColor = vec4(texture2D(endSampler1, tc).rgb, 1.0f);
 						}
 						else {
+							tc.x = 1.0f + tc.x;
 							FragColor = vec4(texture2D(endSampler0, tc).rgb, 1.0f);
 						}
 					}
@@ -1894,6 +1905,7 @@ void main()
 							FragColor = vec4(texture2D(endSampler1, tc).rgb, 1.0f);
 						}
 						else {
+							tc.y = 1.0f + tc.y;
 							FragColor = vec4(texture2D(endSampler0, tc).rgb, 1.0f);
 						}
 					}
@@ -1915,7 +1927,7 @@ void main()
 							FragColor = vec4(texture2D(endSampler1, tc).rgb, 1.0f);
 						}
 						else {
-							tc.x = -(fbowidth * fcdiv - xc) / (fbowidth * fcdiv - xpix);
+							tc.x = (fbowidth * fcdiv - xc) / (fbowidth * fcdiv - xpix);
 							FragColor = vec4(texture2D(endSampler0, tc).rgb, 1.0f);
 						}
 					}
@@ -1925,7 +1937,7 @@ void main()
 							FragColor = vec4(texture2D(endSampler0, tc).rgb, 1.0f);
 						}
 						else {
-							tc.x = -(fbowidth * fcdiv - xc) / (fbowidth * fcdiv - xpix);
+							tc.x = (fbowidth * fcdiv - xc) / (fbowidth * fcdiv - xpix);
 							FragColor = vec4(texture2D(endSampler1, tc).rgb, 1.0f);
 						}
 					}
@@ -1935,7 +1947,7 @@ void main()
 							FragColor = vec4(texture2D(endSampler1, tc).rgb, 1.0f);
 						}
 						else {
-							tc.y = -(fboheight * fcdiv - yc) / (fboheight * fcdiv - ypix);
+							tc.y = (fboheight * fcdiv - yc) / (fboheight * fcdiv - ypix);
 							FragColor = vec4(texture2D(endSampler0, tc).rgb, 1.0f);
 						}
 					}
@@ -1945,7 +1957,7 @@ void main()
 							FragColor = vec4(texture2D(endSampler0, tc).rgb, 1.0f);
 						}
 						else {
-							tc.y = -(fboheight * fcdiv - yc) / (fboheight * fcdiv - ypix);
+							tc.y = (fboheight * fcdiv - yc) / (fboheight * fcdiv - ypix);
 							FragColor = vec4(texture2D(endSampler1, tc).rgb, 1.0f);
 						}
 					}
@@ -1959,8 +1971,8 @@ void main()
 					if (dir == 0) dist = fardist * xamount;
 					else dist = fardist * (1 - xamount);
 					tc = TexCoord0.st;
-					a = abs(tc.x - xxpos);
-					b = abs(tc.y - xypos);
+					a = abs(tc.x - xxpos - (xxpos - 0.7f) * (xamount));
+					b = abs(tc.y - xypos - (xypos - 0.7f) * (xamount));
 					if (dir == 0) cond = sqrt(a * a + b * b) <= dist;
 					else cond = sqrt(a * a + b * b) >= dist;
 					if (cond) {
@@ -1972,16 +1984,16 @@ void main()
 					break;
 				case 4:  //rectangle
 					if (dir == 0) {
-						xl = xxpos * (1 - xamount);
-						xh = xxpos + (1 - xxpos) * (xamount);
-						yl = xypos * (1 - xamount);
-						yh = xypos + (1 - xypos) * (xamount);
+						xl = (xxpos - 0.6f) * (xamount) + (xxpos * (1 - xamount));
+						xh = (xxpos - 0.6f) * (xamount) + (xxpos + (1 - xxpos) * (xamount));
+						yl = (xypos - 0.6f) * (xamount) + (xypos * (1 - xamount));
+						yh = (xypos - 0.6f) * (xamount) + (xypos + (1 - xypos) * (xamount));
 					}
 					else {
-						xl = xxpos * (xamount);
-						xh = xxpos + (1 - xxpos) * (1 - xamount);
-						yl = xypos * (xamount);
-						yh = xypos + (1 - xypos) * (1 - xamount);
+						xl = (xxpos - 0.6f) * (1 - xamount) + (xxpos * (xamount));
+						xh = (xxpos - 0.6f) * (1 - xamount) + (xxpos + (1 - xxpos) * (1 - xamount));
+						yl = (xypos - 0.6f) * (1 - xamount) + (xypos * (xamount));
+						yh = (xypos - 0.6f) * (1 - xamount) + (xypos + (1 - xypos) * (1 - xamount));
 					}
 					tc = TexCoord0.st;
 					if (dir == 0) cond = (tc.x > xl) && (tc.x < xh) && (tc.y > yl) && (tc.y < yh);
@@ -1995,22 +2007,22 @@ void main()
 					break;
 				case 5:  //zoomed rectangle
 					if (dir == 0) {
-						xl = xxpos * (1 - xamount);
-						xh = xxpos + (1 - xxpos) * (xamount);
-						yl = xypos * (1 - xamount);
-						yh = xypos + (1 - xypos) * (xamount);
+						xl = (xxpos - 0.6f) * (xamount) + (xxpos * (1 - xamount));
+						xh = (xxpos - 0.6f) * (xamount) + (xxpos + (1 - xxpos) * (xamount));
+						yl = (xypos - 0.6f) * (xamount) + (xypos * (1 - xamount));
+						yh = (xypos - 0.6f) * (xamount) + (xypos + (1 - xypos) * (xamount));
 					}
 					else {
-						xl = xxpos * (xamount);
-						xh = xxpos + (1 - xxpos) * (1 - xamount);
-						yl = xypos * (xamount);
-						yh = xypos + (1 - xypos) * (1 - xamount);
+						xl = (xxpos - 0.6f) * (1 - xamount) + (xxpos * (xamount));
+						xh = (xxpos - 0.6f) * (1 - xamount) + (xxpos + (1 - xxpos) * (1 - xamount));
+						yl = (xypos - 0.6f) * (1 - xamount) + (xypos * (xamount));
+						yh = (xypos - 0.6f) * (1 - xamount) + (xypos + (1 - xypos) * (1 - xamount));
 					}
 					tc = TexCoord0.st;
 					cond = (tc.x > xl) && (tc.x < xh) && (tc.y > yl) && (tc.y < yh);
 					if (cond) {
-						tc.x = (tc.x - xl) / (xh - xl);
-						tc.y = (tc.y - yl) / (yh - yl);
+						tc.x = ((tc.x - xl) / (xh - xl)) - (xl * 0.5f) - xl;					
+						tc.y = ((tc.y - yl) / (yh - yl)) - (yl * 0.5f) - yl;
 						if (dir == 0) {
 							data1 = vec4(texture2D(endSampler1, tc).rgba);
 						}
@@ -2196,6 +2208,7 @@ void main()
 					break;
 				case 10:  //repel - alpha?
 					float rad = xamount / 1.7f;
+					if (dir == 1) rad = (1.0f - xamount) / 1.7f;
 					xxpos = 0.5f + (xxpos - 0.5f) * (1.0f - xamount);
 					xypos = 0.5f + (xypos - 0.5f) * (1.0f - xamount);
 					tc = TexCoord0.st;
@@ -2203,16 +2216,24 @@ void main()
 					dist = distance(tc, vec2(xxpos, xypos));
 					cond = (dist < rad);
 					if (cond) {
-						FragColor = vec4((data1.rgb * data1.a + data0.rgb * (1.0f - data1.a)), max(data0.a, data1.a)) * (1 - dir) + data1 * dir;
+						if (dir == 0) {
+							FragColor = vec4((data1.rgb * data1.a + data0.rgb * (1.0f - data1.a)), max(data0.a, data1.a)) * (1 - dir) + data1 * dir;
+						}
+						else FragColor = vec4((data0.rgb * data0.a + data1.rgb * (1.0f - data0.a)), max(data1.a, data0.a)) * dir + data1 * (1 - dir);
 					}
 					else {
-						FragColor = vec4((data0.rgb * data0.a + data1.rgb * (1.0f - data0.a)), max(data0.a, data1.a)) * dir + data0 * (1 - dir);
+						if (dir == 0) {
+							FragColor = vec4((data0.rgb * data0.a + data1.rgb * (1.0f - data0.a)), max(data0.a, data1.a)) * dir + data0 * (1 - dir);
+						}
+						else FragColor = vec4((data1.rgb * data1.a + data0.rgb * (1.0f - data1.a)), max(data1.a, data0.a)) * (1 - dir) + data1 * dir;
+						cond = (dist < rad * 2.0f);
 						if (dist < rad * 2.0f) {
 							vec2 distvec = vec2(xxpos - tc.x, xypos - tc.y);
 							distvec *= (dist - 2.0f * rad) / rad;
 							//distvec.y *= fbowidth / fboheight;
 							vec2 newtexco = TexCoord0.st - distvec;
-							FragColor = texture2D(endSampler0, newtexco);
+							if (dir == 0) FragColor = texture2D(endSampler0, newtexco);
+							else FragColor = texture2D(endSampler1, newtexco);
 						}
 					}
 					break;

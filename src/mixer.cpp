@@ -155,6 +155,66 @@ Mixer::Mixer() {
 	this->recbut->box->upvtxtoscr();
 	this->recbut->box->tooltiptitle = "Record output to video file ";
 	this->recbut->box->tooltip = "Start/stop recording the output stream to an MJPEG video file in the recordings directory (set in preferences). ";
+
+	this->deckspeed[0][0] = new Param;
+	this->deckspeed[0][0]->name = "Speed A";
+	this->deckspeed[0][0]->value = 1.0f;
+	this->deckspeed[0][0]->range[0] = 0.0f;
+	this->deckspeed[0][0]->range[1] = 3.33f;
+	this->deckspeed[0][0]->sliding = true;
+	this->deckspeed[0][0]->powertwo = true;
+	this->deckspeed[0][0]->box->vtxcoords->x1 = -0.3 - (0.3 / 2.0) - 0.15f;
+	this->deckspeed[0][0]->box->vtxcoords->y1 = -1.0f + mainprogram->monh;
+	this->deckspeed[0][0]->box->vtxcoords->w = 0.3 / 2.0;
+	this->deckspeed[0][0]->box->vtxcoords->h = 0.3 / 3.0;
+	this->deckspeed[0][0]->box->upvtxtoscr();
+	this->deckspeed[0][0]->box->tooltiptitle = "Global preview deck A speed setting ";
+	this->deckspeed[0][0]->box->tooltip = "Change global deck A speed factor for preview streams. Leftdrag changes value. Doubleclick allows numeric entry. ";
+
+	this->deckspeed[0][1] = new Param;
+	this->deckspeed[0][1]->name = "Speed B";
+	this->deckspeed[0][1]->value = 1.0f;
+	this->deckspeed[0][1]->range[0] = 0.0f;
+	this->deckspeed[0][1]->range[1] = 3.33f;
+	this->deckspeed[0][1]->sliding = true;
+	this->deckspeed[0][1]->powertwo = true;
+	this->deckspeed[0][1]->box->vtxcoords->x1 = -0.3 - (0.3 / 2.0) + 0.9f;
+	this->deckspeed[0][1]->box->vtxcoords->y1 = -1.0f + mainprogram->monh;
+	this->deckspeed[0][1]->box->vtxcoords->w = 0.3 / 2.0;
+	this->deckspeed[0][1]->box->vtxcoords->h = 0.3 / 3.0;
+	this->deckspeed[0][1]->box->upvtxtoscr();
+	this->deckspeed[0][1]->box->tooltiptitle = "Global preview deck B speed setting ";
+	this->deckspeed[0][1]->box->tooltip = "Change global deck B speed factor for preview streams. Leftdrag changes value. Doubleclick allows numeric entry. ";
+
+	this->deckspeed[1][0] = new Param;
+	this->deckspeed[1][0]->name = "Speed A";
+	this->deckspeed[1][0]->value = 1.0f;
+	this->deckspeed[1][0]->range[0] = 0.0f;
+	this->deckspeed[1][0]->range[1] = 3.33f;
+	this->deckspeed[1][0]->sliding = true;
+	this->deckspeed[1][0]->powertwo = true;
+	this->deckspeed[1][0]->box->vtxcoords->x1 = -0.3 - (0.3 / 2.0) - 0.15f;
+	this->deckspeed[1][0]->box->vtxcoords->y1 = -1.0f + mainprogram->monh;
+	this->deckspeed[1][0]->box->vtxcoords->w = 0.3 / 2.0;
+	this->deckspeed[1][0]->box->vtxcoords->h = 0.3 / 3.0;
+	this->deckspeed[1][0]->box->upvtxtoscr();
+	this->deckspeed[1][0]->box->tooltiptitle = "Global preview deck A speed setting ";
+	this->deckspeed[1][0]->box->tooltip = "Change global deck A speed factor for preview streams. Leftdrag changes value. Doubleclick allows numeric entry. ";
+
+	this->deckspeed[1][1] = new Param;
+	this->deckspeed[1][1]->name = "Speed B";
+	this->deckspeed[1][1]->value = 1.0f;
+	this->deckspeed[1][1]->range[0] = 0.0f;
+	this->deckspeed[1][1]->range[1] = 3.33f;
+	this->deckspeed[1][1]->sliding = true;
+	this->deckspeed[1][1]->powertwo = true;
+	this->deckspeed[1][1]->box->vtxcoords->x1 = -0.3 - (0.3 / 2.0) + 0.9f;
+	this->deckspeed[1][1]->box->vtxcoords->y1 = -1.0f + mainprogram->monh;
+	this->deckspeed[1][1]->box->vtxcoords->w = 0.3 / 2.0;
+	this->deckspeed[1][1]->box->vtxcoords->h = 0.3 / 3.0;
+	this->deckspeed[1][1]->box->upvtxtoscr();
+	this->deckspeed[1][1]->box->tooltiptitle = "Global preview deck B speed setting ";
+	this->deckspeed[1][1]->box->tooltip = "Change global deck B speed factor for preview streams. Leftdrag changes value. Doubleclick allows numeric entry. ";
 }
 
 
@@ -234,11 +294,7 @@ void Param::handle() {
 		}
 	}
 	if (this == mainmix->adaptnumparam) {
-		std::string part = mainprogram->inputtext.substr(0, mainprogram->cursorpos0);
-		float textw = textwvec_total(render_text(part, white, box->vtxcoords->x1 + tf(0.01f), box->vtxcoords->y1 + tf(0.05f) - tf(0.03f), tf(0.0003f), tf(0.0005f), 1)) * 0.5f;
-		part = mainprogram->inputtext.substr(mainprogram->cursorpos0, mainprogram->inputtext.length() - mainprogram->cursorpos0);
-		render_text(part, white, box->vtxcoords->x1 + tf(0.01f) + textw * 4, box->vtxcoords->y1 + tf(0.05f) - tf(0.03f), tf(0.0003f), tf(0.0005f), 1);
-		draw_line(white, box->vtxcoords->x1 + tf(0.01f) + textw * 4, box->vtxcoords->y1 + tf(0.04f) - tf(0.03f), box->vtxcoords->x1 + tf(0.01f) + textw * 4, box->vtxcoords->y1 + tf(0.04f));
+		do_text_input(box->vtxcoords->x1 + tf(0.01f), box->vtxcoords->y1 + tf(0.02f), tf(0.0003f), tf(0.0005f), mainprogram->mx, mainprogram->my, mainprogram->xvtxtoscr(box->vtxcoords->w - tf(0.02f)), 0, nullptr);
 	}
 }
 
@@ -2095,7 +2151,7 @@ void Mixer::do_deletelay(Layer *testlay, std::vector<Layer*> &layers, bool add) 
 		else {
 			if (nextlay) {
 				nextlay->lasteffnode[0]->out.clear();
-				mainprogram->nodesmain->currpage->connect_nodes(nextlay->lasteffnode[0], nextlay->lasteffnode[1]->out[0]);
+				if (nextlay->lasteffnode[1]->out.size()) mainprogram->nodesmain->currpage->connect_nodes(nextlay->lasteffnode[0], nextlay->lasteffnode[1]->out[0]);
 				nextlay->lasteffnode[1] = nextlay->lasteffnode[0];
 				mainprogram->nodesmain->currpage->delete_node(nextlay->blendnode);
 				nextlay->blendnode = new BlendNode;
@@ -2306,13 +2362,19 @@ Layer::Layer(bool comp) {
    	this->mutebut->box->vtxcoords->h = 0.05f;
     this->mutebut->box->tooltiptitle = "Layer mute ";
     this->mutebut->box->tooltip = "Leftclick temporarily mutes/unmutes this layer. ";
-    this->solobut = new Button(false);
-    this->solobut->box->vtxcoords->y1 = 1.0f - mainprogram->layh;
+	this->solobut = new Button(false);
+	this->solobut->box->vtxcoords->y1 = 1.0f - mainprogram->layh;
 	this->solobut->box->vtxcoords->w = 0.03f;
-   	this->solobut->box->vtxcoords->h = 0.05f;
-    this->solobut->box->tooltiptitle = "Layer solo ";
-    this->solobut->box->tooltip = "Leftclick temporarily soloes/unsoloes this layer (all other layers in deck are muted). ";
-    this->mixbox = new Box;
+	this->solobut->box->vtxcoords->h = 0.05f;
+	this->solobut->box->tooltiptitle = "Layer solo ";
+	this->solobut->box->tooltip = "Leftclick temporarily soloes/unsoloes this layer (all other layers in deck are muted). ";
+	this->queuebut = new Button(false);
+	this->queuebut->box->vtxcoords->y1 = 1.0f - mainprogram->layh;
+	this->queuebut->box->vtxcoords->w = 0.03f;
+	this->queuebut->box->vtxcoords->h = 0.05f;
+	this->queuebut->box->tooltiptitle = "Layer clip queue ";
+	this->queuebut->box->tooltip = "Leftclick folds/unfolds the layer clip queue. ";
+	this->mixbox = new Box;
     this->mixbox->tooltiptitle = "Set layer mix mode ";
     this->mixbox->tooltip = "Left or rightclick for choosing how to mix this layer with the previous ones: blendmode or local wipe.  Also accesses colorkeying. ";
     this->colorbox = new Box;
@@ -2437,8 +2499,8 @@ Layer::Layer(bool comp) {
 	glVertexAttribPointer(1, 2, GL_FLOAT, GL_FALSE, 8, nullptr);
  	glBindVertexArray(this->vao);
 
- 	//glDisableVertexAttribArray(0);
- 	//glDisableVertexAttribArray(1);
+	// using double PBOs for DMA pixel transfer
+	glGenBuffers(3, this->pbo);
 
 	this->decresult = new frame_result;
 	this->decresult->data = nullptr;
@@ -2492,6 +2554,20 @@ void Layer::initialize(int w, int h, int compression) {
 	else {
 		glTexStorage2D(GL_TEXTURE_2D, 1, GL_RGBA8, this->iw, this->ih);
 	}
+
+	// map three buffers persistently for pixel transfer from cpu to gpu
+	int bsize = w * h * this->bpp;
+	int flags = GL_MAP_WRITE_BIT | GL_MAP_PERSISTENT_BIT | GL_MAP_COHERENT_BIT;
+	glBindBuffer(GL_ARRAY_BUFFER, this->pbo[0]);
+	glBufferStorage(GL_ARRAY_BUFFER, bsize, 0, flags);
+	this->mapptr[0] = (GLubyte*)glMapBufferRange(GL_ARRAY_BUFFER, 0, bsize, flags);
+	glBindBuffer(GL_ARRAY_BUFFER, this->pbo[1]);
+	glBufferStorage(GL_ARRAY_BUFFER, bsize, 0, flags);
+	this->mapptr[1] = (GLubyte*)glMapBufferRange(GL_ARRAY_BUFFER, 0, bsize, flags);
+	glBindBuffer(GL_ARRAY_BUFFER, this->pbo[2]);
+	glBufferStorage(GL_ARRAY_BUFFER, bsize, 0, flags);
+	this->mapptr[2] = (GLubyte*)glMapBufferRange(GL_ARRAY_BUFFER, 0, bsize, flags);
+
 	this->oldvidformat = this->vidformat;
 	this->oldcompression = compression;
 	this->oldtype = this->type;
@@ -2499,6 +2575,7 @@ void Layer::initialize(int w, int h, int compression) {
 }
 
 void Layer::set_aspectratio(int lw, int lh) {
+	return; //reminder
 	float ow, oh;
 	if (this->comp) {
 		ow = mainprogram->ow;
@@ -2543,6 +2620,11 @@ void Layer::set_aspectratio(int lw, int lh) {
 		tex = set_texes(this->effects[1][i]->fbotex, &this->effects[1][i]->fbo, w, h);
 		this->effects[1][i]->fbotex = tex;
 	}
+
+	if (this->type == ELEM_IMAGE) {
+		this->imageloaded = 0;
+		this->decresult->newdata = true;
+	}
 }
 
 void Layer::open_image(const std::string &path) {
@@ -2581,6 +2663,7 @@ void Layer::open_image(const std::string &path) {
 	}
 	ilGenImages(1, &this->boundimage);
 	ilBindImage(this->boundimage);
+	ilActiveImage(0);
 	ILboolean ret = ilLoadImage(path.c_str());
 	if (ret == IL_FALSE) {
 		printf("can't load image %s\n", path.c_str());
@@ -2592,13 +2675,18 @@ void Layer::open_image(const std::string &path) {
 	this->endframe = this->numf;
 	int w = ilGetInteger(IL_IMAGE_WIDTH);
 	int h = ilGetInteger(IL_IMAGE_HEIGHT);
+	this->bpp = ilGetInteger(IL_IMAGE_BPP);
 	this->filename = path;
 	this->vidformat = -1;
 	this->initialize(w, h);
 	this->type = ELEM_IMAGE;
+	this->decresult->size = w * h * this->bpp;
 	this->decresult->width = -1;
 	this->decresult->hap = false;
+	this->decresult->data = (char*)ilGetData();
+	this->decresult->newdata = true;
 
+	this->imageloaded = 0;
 	this->vidopen = false;
 }
 
@@ -2726,7 +2814,42 @@ void Layer::clip_followup(bool startend, bool alive){
 	}
 }
 
-void Layer::open_files() {
+void Layer::open_files_layers() {
+	// order elements
+	bool cont = mainprogram->order_paths(false);
+	if (!cont) return;
+
+	// load one element of ordered list each loop
+	std::vector<Layer*>& lvec = choose_layers(mainprogram->fileslay->deck);
+	std::string str = mainprogram->paths[mainprogram->filescount];
+	Layer* lay = mainprogram->fileslay;
+	if (mainprogram->filescount > 0) lay = mainmix->add_layer(lvec, mainprogram->fileslay->pos + mainprogram->filescount);
+	if (isimage(str)) {
+		lay->open_image(str);
+	}
+	else if (str.substr(str.length() - 6, std::string::npos) == ".layer") {
+		mainmix->open_layerfile(str, lay, true, true);
+		std::unique_lock<std::mutex> olock(lay->endopenlock);
+		lay->endopenvar.wait(olock, [&] {return lay->opened; });
+		lay->opened = false;
+		olock.unlock();
+	}
+	else {
+		lay->open_video(0, str, true);
+		std::unique_lock<std::mutex> olock(lay->endopenlock);
+		lay->endopenvar.wait(olock, [&] {return lay->opened; });
+		lay->opened = false;
+		olock.unlock();
+	}
+	mainprogram->filescount++;
+	if (mainprogram->filescount == mainprogram->paths.size()) {
+		mainprogram->openfileslayers = false;
+		mainprogram->paths.clear();
+		mainprogram->multistage = 0;
+	}
+}
+
+void Layer::open_files_queue() {
 	// order elements
 	bool cont = mainprogram->order_paths(false);
 	if (!cont) return;
@@ -2790,7 +2913,7 @@ void Layer::open_files() {
 	mainprogram->filescount++;
 	if (mainprogram->filescount == mainprogram->paths.size()) {
 		mainprogram->fileslay->cliploading = false;
-		mainprogram->openfiles = false;
+		mainprogram->openfilesqueue = false;
 		mainprogram->paths.clear();
 		mainprogram->multistage = 0;
 	}
@@ -2823,10 +2946,10 @@ void Mixer::set_values(Layer *clay, Layer *lay, bool open) {
 			if (lay->type == ELEM_IMAGE) clay->open_image(lay->filename);
 			else {
 				clay->open_video(lay->frame, lay->filename, false);
-				std::unique_lock<std::mutex> lock(lay->enddecodelock);
-				lay->enddecodevar.wait(lock, [&] {return lay->processed; });
-				lay->processed = false;
-				lock.unlock();
+				//std::unique_lock<std::mutex> lock(lay->endopenlock);
+				//lay->endopenvar.wait(lock, [&] {return lay->opened; });
+				//lay->opened = false;
+				//lock.unlock();
 			}
 		}
 	}
@@ -2884,6 +3007,7 @@ void Mixer::loopstation_copy(bool comp) {
 
 Layer* Mixer::clone_layer(std::vector<Layer*> &lvec, Layer* slay) {
 	Layer *dlay = mainmix->add_layer(lvec, slay->pos + 1);
+	dlay->isclone = true;
 	this->set_values(dlay, slay, true);
 	dlay->pos = slay->pos + 1;
 	dlay->blendnode->blendtype = slay->blendnode->blendtype;
@@ -2896,7 +3020,7 @@ Layer* Mixer::clone_layer(std::vector<Layer*> &lvec, Layer* slay) {
 	dlay->blendnode->wipedir = slay->blendnode->wipedir;
 	dlay->blendnode->wipex->value = slay->blendnode->wipex->value;
 	dlay->blendnode->wipey->value = slay->blendnode->wipey->value;
-	
+
 	int buval = mainprogram->effcat[dlay->deck]->value;
 	mainprogram->effcat[dlay->deck]->value = 0;
 	for (int i = 0; i < slay->effects[0].size(); i++) {
@@ -2929,6 +3053,9 @@ Layer* Mixer::clone_layer(std::vector<Layer*> &lvec, Layer* slay) {
 		}
 	}
 	mainprogram->effcat[dlay->deck]->value = buval;
+
+	dlay->initialized = true;
+	dlay->decresult->width = -1;
 	
 	return dlay;
 }
@@ -3893,47 +4020,53 @@ void Mixer::event_read(std::istream &rfile, Param *par, Layer *lay) {
 bool Mixer::set_prevshelfdragelem(Layer *lay) {
 	if (lay->prevshelfdragelem) {
 		std::vector<Layer*>& lvec1 = choose_layers(lay->deck);
-		if (lvec1[0]->prevshelfdragelem->type == ELEM_DECK) {
-			if (lvec1[0]->prevshelfdragelem->launchtype == 1) {
-				lvec1[0]->prevshelfdragelem->cframes.clear();
-				for (int i = 0; i < lvec1.size(); i++) {
-					lvec1[i]->prevshelfdragelem->cframes.push_back(lvec1[i]->frame);
-					lvec1[i]->prevshelfdragelem = nullptr;
+		bool cond = true;
+		if (lvec1[0]->prevshelfdragelem) {
+			if (lvec1[0]->prevshelfdragelem->type == ELEM_DECK) {
+				cond = false;
+				if (lvec1[0]->prevshelfdragelem->launchtype == 1) {
+					lvec1[0]->prevshelfdragelem->cframes.clear();
+					for (int i = 0; i < lvec1.size(); i++) {
+						lvec1[i]->prevshelfdragelem->cframes.push_back(lvec1[i]->frame);
+						lvec1[i]->prevshelfdragelem = nullptr;
+					}
 				}
-			}
-			else if (lvec1[0]->prevshelfdragelem->launchtype == 2) {
-				lvec1[0]->prevshelfdragelem->nbframes.clear();
-				for (int i = 0; i < lvec1.size(); i++) {
-					lvec1[i]->olddeckspeed = mainprogram->deckspeed[lay->deck]->value;
-					lvec1[i]->prevshelfdragelem->nbframes.push_back(lvec1[i]);
-					lvec1[i]->prevshelfdragelem = nullptr;
-				}
-			}
-		}
-		else if (lvec1[0]->prevshelfdragelem->type == ELEM_MIX) {
-			if (lvec1[0]->prevshelfdragelem->launchtype == 1) {
-				lvec1[0]->prevshelfdragelem->cframes.clear();
-				for (int m = 0; m < 2; m++) {
-					std::vector<Layer*>& lvec2 = choose_layers(m);
-					for (int i = 0; i < lvec2.size(); i++) {
-						lvec2[i]->prevshelfdragelem->cframes.push_back(lvec2[i]->frame);
-						lvec2[i]->prevshelfdragelem = nullptr;
+				else if (lvec1[0]->prevshelfdragelem->launchtype == 2) {
+					lvec1[0]->prevshelfdragelem->nbframes.clear();
+					for (int i = 0; i < lvec1.size(); i++) {
+						lvec1[i]->olddeckspeed = mainmix->deckspeed[!mainprogram->prevmodus][lay->deck]->value;
+						lvec1[i]->prevshelfdragelem->nbframes.push_back(lvec1[i]);
+						lvec1[i]->prevshelfdragelem = nullptr;
 					}
 				}
 			}
-			else if (lvec1[0]->prevshelfdragelem->launchtype == 2) {
-				lvec1[0]->prevshelfdragelem->nbframes.clear();
-				for (int m = 0; m < 2; m++) {
-					std::vector<Layer*>& lvec2 = choose_layers(m);
-					for (int i = 0; i < lvec2.size(); i++) {
-						lvec2[i]->olddeckspeed = mainprogram->deckspeed[m]->value;
-						lvec2[i]->prevshelfdragelem->nbframes.push_back(lvec2[i]);
-						lvec2[i]->prevshelfdragelem = nullptr;
+			else if (lvec1[0]->prevshelfdragelem->type == ELEM_MIX) {
+				cond = false;
+				if (lvec1[0]->prevshelfdragelem->launchtype == 1) {
+					lvec1[0]->prevshelfdragelem->cframes.clear();
+					for (int m = 0; m < 2; m++) {
+						std::vector<Layer*>& lvec2 = choose_layers(m);
+						for (int i = 0; i < lvec2.size(); i++) {
+							lvec2[i]->prevshelfdragelem->cframes.push_back(lvec2[i]->frame);
+							lvec2[i]->prevshelfdragelem = nullptr;
+						}
+					}
+				}
+				else if (lvec1[0]->prevshelfdragelem->launchtype == 2) {
+					lvec1[0]->prevshelfdragelem->nbframes.clear();
+					for (int m = 0; m < 2; m++) {
+						std::vector<Layer*>& lvec2 = choose_layers(m);
+						for (int i = 0; i < lvec2.size(); i++) {
+							lvec2[i]->olddeckspeed = mainmix->deckspeed[!mainprogram->prevmodus][m]->value;
+							lvec2[i]->prevshelfdragelem->nbframes.push_back(lvec2[i]);
+							lvec2[i]->prevshelfdragelem = nullptr;
+						}
 					}
 				}
 			}
+			else cond = true;
 		}
-		else {
+		if (cond) {
 			if (lay->prevshelfdragelem->launchtype == 1) {
 				lay->prevshelfdragelem->cframes.clear();
 				lay->prevshelfdragelem->cframes.push_back(lay->frame);
@@ -3985,34 +4118,34 @@ void Mixer::do_save_mix(const std::string & path, bool modus, bool save) {
 	par = mainmix->crossfadecomp;
 	mainmix->event_write(wfile, par);
 	wfile << "DECKSPEEDA\n";
-	wfile << std::to_string(mainprogram->deckspeed[0]->value);
+	wfile << std::to_string(mainmix->deckspeed[modus][0]->value);
 	wfile << "\n";
 	wfile << "DECKSPEEDAEVENT\n";
-	par = mainprogram->deckspeed[0];
+	par = mainmix->deckspeed[modus][0];
 	mainmix->event_write(wfile, par);
 	wfile << "DECKSPEEDAMIDI0\n";
-	wfile << std::to_string(mainprogram->deckspeed[0]->midi[0]);
+	wfile << std::to_string(mainmix->deckspeed[modus][0]->midi[0]);
 	wfile << "\n";
 	wfile << "DECKSPEEDAMIDI1\n";
-	wfile << std::to_string(mainprogram->deckspeed[0]->midi[1]);
+	wfile << std::to_string(mainmix->deckspeed[modus][0]->midi[1]);
 	wfile << "\n";
 	wfile << "DECKSPEEDAMIDIPORT\n";
-	wfile << mainprogram->deckspeed[0]->midiport;
+	wfile << mainmix->deckspeed[modus][0]->midiport;
 	wfile << "\n";
 	wfile << "DECKSPEEDB\n";
-	wfile << std::to_string(mainprogram->deckspeed[1]->value);
+	wfile << std::to_string(mainmix->deckspeed[modus][1]->value);
 	wfile << "\n";
 	wfile << "DECKSPEEDBEVENT\n";
-	par = mainprogram->deckspeed[1];
+	par = mainmix->deckspeed[modus][1];
 	mainmix->event_write(wfile, par);
 	wfile << "DECKSPEEDBMIDI0\n";
-	wfile << std::to_string(mainprogram->deckspeed[1]->midi[0]);
+	wfile << std::to_string(mainmix->deckspeed[modus][1]->midi[0]);
 	wfile << "\n";
 	wfile << "DECKSPEEDBMIDI1\n";
-	wfile << std::to_string(mainprogram->deckspeed[1]->midi[1]);
+	wfile << std::to_string(mainmix->deckspeed[modus][1]->midi[1]);
 	wfile << "\n";
 	wfile << "DECKSPEEDBMIDIPORT\n";
-	wfile << mainprogram->deckspeed[1]->midiport;
+	wfile << mainmix->deckspeed[modus][1]->midiport;
 	wfile << "\n";
 	wfile << "WIPE\n";
 	wfile << std::to_string(mainmix->wipe[0]);
@@ -4109,19 +4242,19 @@ void Mixer::do_save_deck(const std::string &path, bool save, bool doclips) {
 	wfile << "EWOCvj DECKFILE V0.2\n";
 	
 	wfile << "DECKSPEED\n";
-	wfile << std::to_string(mainprogram->deckspeed[mainmix->mousedeck]->value);
+	wfile << std::to_string(mainmix->deckspeed[!mainprogram->prevmodus][mainmix->mousedeck]->value);
 	wfile << "\n";
 	wfile << "DECKSPEEDEVENT\n";
-	Param *par = mainprogram->deckspeed[mainmix->mousedeck];
+	Param *par = mainmix->deckspeed[!mainprogram->prevmodus][mainmix->mousedeck];
 	mainmix->event_write(wfile, par);
 	wfile << "DECKSPEEDMIDI0\n";
-	wfile << std::to_string(mainprogram->deckspeed[mainmix->mousedeck]->midi[0]);
+	wfile << std::to_string(mainmix->deckspeed[!mainprogram->prevmodus][mainmix->mousedeck]->midi[0]);
 	wfile << "\n";
 	wfile << "DECKSPEEDMIDI1\n";
-	wfile << std::to_string(mainprogram->deckspeed[mainmix->mousedeck]->midi[1]);
+	wfile << std::to_string(mainmix->deckspeed[!mainprogram->prevmodus][mainmix->mousedeck]->midi[1]);
 	wfile << "\n";
 	wfile << "DECKSPEEDMIDIPORT\n";
-	wfile << mainprogram->deckspeed[mainmix->mousedeck]->midiport;
+	wfile << mainmix->deckspeed[!mainprogram->prevmodus][mainmix->mousedeck]->midiport;
 	wfile << "\n";
 	
 	std::vector<std::vector<std::string>> jpegpaths;
@@ -4417,35 +4550,35 @@ void Mixer::open_mix(const std::string &path, bool alive) {
 		}
 		if (istring == "DECKSPEEDA") {
 			getline(rfile, istring);
-			mainprogram->deckspeed[0]->value = std::stof(istring);
+			mainmix->deckspeed[!mainprogram->prevmodus][0]->value = std::stof(istring);
 		}
 		if (istring == "DECKSPEEDAMIDI0") {
 			getline(rfile, istring);
-			mainprogram->deckspeed[0]->midi[0] = std::stoi(istring);
+			mainmix->deckspeed[!mainprogram->prevmodus][0]->midi[0] = std::stoi(istring);
 		}
 		if (istring == "DECKSPEEDAMIDI1") {
 			getline(rfile, istring);
-			mainprogram->deckspeed[0]->midi[1] = std::stoi(istring);
+			mainmix->deckspeed[!mainprogram->prevmodus][0]->midi[1] = std::stoi(istring);
 		}
 		if (istring == "DECKSPEEDAMIDIPORT") {
 			getline(rfile, istring);
-			mainprogram->deckspeed[0]->midiport = istring;
+			mainmix->deckspeed[!mainprogram->prevmodus][0]->midiport = istring;
 		}
 		if (istring == "DECKSPEEDB") {
 			getline(rfile, istring);
-			mainprogram->deckspeed[1]->value = std::stof(istring);
+			mainmix->deckspeed[!mainprogram->prevmodus][1]->value = std::stof(istring);
 		}
 		if (istring == "DECKSPEEDBMIDI0") {
 			getline(rfile, istring);
-			mainprogram->deckspeed[1]->midi[0] = std::stoi(istring);
+			mainmix->deckspeed[!mainprogram->prevmodus][1]->midi[0] = std::stoi(istring);
 		}
 		if (istring == "DECKSPEEDBMIDI1") {
 			getline(rfile, istring);
-			mainprogram->deckspeed[1]->midi[1] = std::stoi(istring);
+			mainmix->deckspeed[!mainprogram->prevmodus][1]->midi[1] = std::stoi(istring);
 		}
 		if (istring == "DECKSPEEDBMIDIPORT") {
 			getline(rfile, istring);
-			mainprogram->deckspeed[1]->midiport = istring;
+			mainmix->deckspeed[!mainprogram->prevmodus][1]->midiport = istring;
 		}
 		if (istring == "WIPE") {
 			getline(rfile, istring); 
@@ -4581,19 +4714,17 @@ int Mixer::read_layers(std::istream &rfile, const std::string &result, std::vect
 	std::string istring;
 	int jpegcount = 0;
 	if (mainprogram->filecount) jpegcount = mainprogram->filecount;
-	int lw = 0;
-	int lh = 0;
 	bool newlay = false;
 	while (getline(rfile, istring)) {
 		if (istring == "LAYERSB" or istring == "ENDOFCLIPLAYER" or istring == "ENDOFFILE") {
-			return jpegcount;	
+			break;	
 		}
 		if (istring == "DECKSPEED") {
 			getline(rfile, istring);
-			mainprogram->deckspeed[deck]->value = std::stof(istring);
+			mainmix->deckspeed[!mainprogram->prevmodus][deck]->value = std::stof(istring);
 		}
 		if (istring == "DECKSPEEDEVENT") {
-			Param *par = mainprogram->deckspeed[deck];
+			Param *par = mainmix->deckspeed[!mainprogram->prevmodus][deck];
 			getline(rfile, istring);
 			if (istring == "EVENTELEM") {
 				mainmix->event_read(rfile, par, lay);
@@ -4601,15 +4732,15 @@ int Mixer::read_layers(std::istream &rfile, const std::string &result, std::vect
 		}
 		if (istring == "DECKSPEEDMIDI0") {
 			getline(rfile, istring);
-			mainprogram->deckspeed[deck]->midi[0] = std::stoi(istring);
+			mainmix->deckspeed[!mainprogram->prevmodus][deck]->midi[0] = std::stoi(istring);
 		}
 		if (istring == "DECKSPEEDMIDI1") {
 			getline(rfile, istring);
-			mainprogram->deckspeed[deck]->midi[1] = std::stoi(istring);
+			mainmix->deckspeed[!mainprogram->prevmodus][deck]->midi[1] = std::stoi(istring);
 		}
 		if (istring == "DECKSPEEDMIDIPORT") {
 			getline(rfile, istring);
-			mainprogram->deckspeed[deck]->midiport = istring;
+			mainmix->deckspeed[!mainprogram->prevmodus][deck]->midiport = istring;
 		}
 		if (istring == "POS") {
 			getline(rfile, istring);
@@ -4695,11 +4826,11 @@ int Mixer::read_layers(std::istream &rfile, const std::string &result, std::vect
 		}
 		if (istring == "WIDTH") {
 			getline(rfile, istring);
-			lw = std::stoi(istring);
+			lay->iw = std::stoi(istring);
 		}
 		if (istring == "HEIGHT") {
 			getline(rfile, istring); 
-			lh = std::stoi(istring);
+			lay->ih = std::stoi(istring);
 		}
 		if (istring == "ASPECTRATIO") {
 			getline(rfile, istring); 
@@ -5031,7 +5162,6 @@ int Mixer::read_layers(std::istream &rfile, const std::string &result, std::vect
 				}
 				getline(rfile, istring);
 			}
-			if (lw) lay->set_aspectratio(lw, lh);
 		}
 		if (istring == "STREAMEFFECTS") {
 			mainprogram->effcat[lay->deck]->value = 1;
@@ -5132,6 +5262,7 @@ int Mixer::read_layers(std::istream &rfile, const std::string &result, std::vect
 	std::vector<Layer*> &lvec = choose_layers(deck);
 	for (int i = 0; i < lvec.size(); i++) {
 		if (lvec[i]->mutebut->value) lvec[i]->mute_handle();
+		lvec[i]->set_aspectratio(lvec[i]->iw, lvec[i]->ih);
 	}
 	
 	return jpegcount;
@@ -5145,15 +5276,29 @@ void Mixer::new_file(int decks, bool alive) {
 	// reset layers
 	bool currdeck = 0;
 	if (mainmix->currlay) currdeck = mainmix->currlay->deck;
+	mainmix->bualive = alive;
 	if (decks == 0 or decks == 2) {
 		std::vector<Layer*> &lvec = choose_layers(0);
+		mainmix->butexes[0].clear();
 		for (int i = 0; i < lvec.size(); i++) {
 			lvec[i]->mutebut->value = false;
 			lvec[i]->mute_handle();
+			GLuint butex;
+			if (lvec[i]->effects[0].size() == 0) {
+				if (lvec[i]->node == lvec[i]->lasteffnode[0]) butex = lvec[i]->fbotex;
+				else butex = lvec[i]->fbotexintm;
+			}
+			else {
+				butex = lvec[i]->effects[0][lvec[i]->effects[0].size() - 1]->fbotex;
+			}
+			int sw, sh;
+			glBindTexture(GL_TEXTURE_2D, butex);
+			glGetTexLevelParameteriv(GL_TEXTURE_2D, 0, GL_TEXTURE_WIDTH, &sw);
+			glGetTexLevelParameteriv(GL_TEXTURE_2D, 0, GL_TEXTURE_HEIGHT, &sh);
+			mainmix->butexes[0].push_back(copy_tex(butex, sw, sh));
 		}
-		std::vector<Layer*> lrs = lvec;
+		mainmix->bulrs[0] = lvec;
 		lvec.clear();
-		this->delete_layers(lrs, alive);
 		Layer *lay = mainmix->add_layer(lvec, 0);
 		if (mainprogram->prevmodus) {
 			mainprogram->nodesmain->currpage->connect_nodes(lvec[lvec.size() - 1]->lasteffnode[0], mainprogram->nodesmain->mixnodes[0]);
@@ -5165,13 +5310,26 @@ void Mixer::new_file(int decks, bool alive) {
 	}
 	if (decks == 1 or decks == 2) {
 		std::vector<Layer*> &lvec = choose_layers(1);
+		mainmix->butexes[1].clear();
 		for (int i = 0; i < lvec.size(); i++) {
 			lvec[i]->mutebut->value = false;
 			lvec[i]->mute_handle();
+			GLuint butex;
+			if (lvec[i]->effects[0].size() == 0) {
+				if (lvec[i]->node == lvec[i]->lasteffnode[0]) butex = lvec[i]->fbotex;
+				else butex = lvec[i]->fbotexintm;
+			}
+			else {
+				butex = lvec[i]->effects[0][lvec[i]->effects[0].size() - 1]->fbotex;
+			}
+			int sw, sh;
+			glBindTexture(GL_TEXTURE_2D, butex);
+			glGetTexLevelParameteriv(GL_TEXTURE_2D, 0, GL_TEXTURE_WIDTH, &sw);
+			glGetTexLevelParameteriv(GL_TEXTURE_2D, 0, GL_TEXTURE_HEIGHT, &sh);
+			mainmix->butexes[1].push_back(copy_tex(butex, sw, sh));
 		}
-		std::vector<Layer*> lrs = lvec;
+		mainmix->bulrs[1] = lvec;
 		lvec.clear();
-		this->do_delete_layers(lrs, alive);  //reminder: change to threaded variant?
 		Layer *lay = mainmix->add_layer(lvec, 0);
 		if (mainprogram->prevmodus) {
 			mainprogram->nodesmain->currpage->connect_nodes(lvec[lvec.size() - 1]->lasteffnode[0], mainprogram->nodesmain->mixnodes[1]);
