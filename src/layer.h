@@ -102,6 +102,8 @@ class Layer {
 		void set_clones();
 		void mute_handle();
 		void set_aspectratio(int lw, int lh);
+		bool calc_texture(bool comp, bool alive);
+		void load_frame();
 		void open_files_layers();
 		void open_files_queue();
 		void open_video(float frame, const std::string& filename, int reset);
@@ -124,8 +126,6 @@ class Layer {
 		float millif = 0.0f;
 		std::chrono::high_resolution_clock::time_point prevtime;
 		bool timeinit = false;
-		int fps[25];
-		int fpscount = 0;
 		Box *mixbox;
 		Box *colorbox;
 		Param *chtol;
@@ -268,7 +268,8 @@ class Layer {
 		bool isclone = false;
 	
 	private:
-		void get_hap_frame();
+		void trigger();
+		bool get_hap_frame();
 		void get_cpu_frame(int framenr, int prevframe, int errcount);
 };
 
@@ -384,6 +385,9 @@ class Mixer {
 		Param *wipey[2];
 		bool addlay = false;
 		Param* deckspeed[2][2];
+		int fps[25];
+		int fpscount = 0;
+		int rate;
 
 		float time = 0;
 		float oldtime = 0;

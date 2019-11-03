@@ -399,6 +399,7 @@ void BinsMain::handle(bool draw) {
 		if (this->menubinel) cond1 = (this->menubinel->path == "");
 		if (!mainprogram->menuondisplay) this->mouseshelfnum = -1;
 		Box *insertbox = nullptr;
+		mainprogram->frontbatch = true;
 		for (int i = 0; i < 3; i++) {
 			for (int j = 0; j < 3; j++) {
 				Box *box = new Box;
@@ -496,6 +497,8 @@ void BinsMain::handle(bool draw) {
 			draw_box(red, nullptr, insertbox, -1);
 			delete insertbox;
 		}
+		mainprogram->frontbatch = false;
+
 
 		if (this->mouseshelfnum == -1 and !this->menubinel and mainprogram->menuactivation) {
 			// set binelmenu entries when mouse over nothing

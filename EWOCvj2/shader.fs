@@ -1,12 +1,18 @@
-#version 430
+#version 430 core
  
 in vec2 TexCoord0;
+in flat int Vertex0;
 
 layout(location = 0) out vec4 FragColor;
 
 uniform sampler2D Sampler0;
 uniform sampler2D endSampler0, endSampler1;
 uniform sampler2D fboSampler;
+uniform sampler2D boxSampler[128];
+uniform samplerBuffer boxcolSampler;
+uniform usamplerBuffer boxtexSampler;
+uniform samplerBuffer boxbrdSampler;
+uniform samplerBuffer texSampler;
 uniform float cf = 0.5f;
 uniform float opacity = 1.0f;
 uniform float satamount = 4.0f;
@@ -16,9 +22,11 @@ uniform int fbowidth = 1920;
 uniform int fboheight = 1080;
 uniform bool inverted = false;
 uniform float fcdiv = 1.0f;
+uniform int numverts = 0;
 uniform int preff = 1;
 uniform float drywet = 1.0f;
 uniform vec4 color = vec4(0.0f, 0.0f, 0.0f, 1.0f);
+uniform vec4 lcolor = vec4(1.0f, 1.0f, 1.0f, 1.0f);
 uniform bool horizontal;
 uniform float BlurStart = 0.0f;
 uniform float radialwidth = 0.6f; 
@@ -44,8 +52,19 @@ uniform float cirx = 0.0f;
 uniform float ciry = 0.0f;
 uniform float circleradius = 0.0f;
 uniform int thumb = 0;
+uniform int glbox = 0;
 uniform int box = 0;
+uniform int border = 0;
+uniform int batch = 0;
+uniform int linetriangle = 0;
 uniform int textmode = 0;
+uniform int orquad = 0;
+uniform float pixelw;
+uniform float pixelh;
+uniform int numquads;
+uniform float bdw;
+uniform float bdh;
+uniform int istex = 0;
 uniform int interm = 0;
 uniform float riptime = 0.01f;
 uniform float fishamount = 0.7f;
@@ -1765,10 +1784,12 @@ void main()
 			if (chinv) fc = vec4(tex1.rgb * ia + tex0.rgb * a, max(tex0.a, tex1.a));
 			else fc = vec4(tex0.rgb * ia + tex1.rgb * a, max(tex0.a, tex1.a));
 		}
-	} 
+	}
+
 	if (textmode == 1) {
 		float c = texture2D(Sampler0, vec2(TexCoord0.s, TexCoord0.t)).r;
 		FragColor = vec4(color.rgb, c);
+		return;
 	}
 	else if (edgethickmode == 1) {
 		float thx = 1.0f / fbowidth;
@@ -1779,9 +1800,6 @@ void main()
 		float under = texture2D(fboSampler, vec2(TexCoord0.s, TexCoord0.t + thy)).r;
 		float border = max(max(max(left, right), above), under);
 		FragColor = vec4(border, border, border, texture2D(fboSampler, TexCoord0).a);
-	}
-	else if (box == 1) {
-		FragColor = color;
 	}
 	else if (thumb == 1) {
 		FragColor = vec4(texture2D(Sampler0, TexCoord0.st).rgb, 0.7f);
@@ -1809,6 +1827,59 @@ void main()
 			}
 		}
 	}
+	else if (linetriangle == 1) {
+		FragColor = color;
+	}
+	else if (box == 1 || pixelw != 0.0f) {
+		if (pixelw != 0.0f) {
+			float maxX;
+			float minX;
+			float maxY;
+			float minY;
+			if (box == 1) {
+				maxX = 1.0 - pixelw;
+				minX = pixelw;
+				maxY = 1.0 - pixelh;
+				minY = pixelh;
+			}
+			else {
+				vec2 size = textureSize(Sampler0, 0);
+				float pw = 1.0f / size.x;
+				float ph = 1.0f / size.y;
+				maxX = 1.0 - pw;
+				minX = pw;
+				maxY = 1.0 - ph;
+				minY = ph;
+			}
+
+			if (TexCoord0.x < maxX && TexCoord0.x > minX && TexCoord0.y < maxY && TexCoord0.y > minY) {
+				if (box == 1) FragColor = color;
+				else FragColor = texture2D(Sampler0, TexCoord0.st).rgba;
+			} 
+			else {
+				FragColor = lcolor;
+			}
+		}
+		else {
+			if (box == 1) FragColor = color;
+			else FragColor = texture2D(Sampler0, TexCoord0.st).rgba;
+		}
+	}
+	if (glbox == 1) {
+		int quadnr;
+		if (orquad != 0) quadnr = orquad;
+		else quadnr = Vertex0 / 4;
+		uint Tex0 = texelFetch(boxtexSampler, quadnr).r;
+		if (Tex0 > 127) {
+			float c = texture2D(boxSampler[Tex0 - 128], vec2(TexCoord0.s, TexCoord0.t)).r;
+			if (c == 0.0) discard;
+			vec4 sam = texelFetch(boxcolSampler, quadnr).rgba;
+			FragColor = vec4(sam.rgb, 1.0);
+		}
+		else if (Tex0 != 127) FragColor = texture2D(boxSampler[Tex0], vec2(TexCoord0.s, TexCoord0.t)).rgba;
+		else FragColor = texelFetch(boxcolSampler, quadnr).rgba;
+	}
+
 	if (mixmode > 0) {
 		//alpha demultiplying
 		FragColor = vec4(fc.rgb / fc.a, fc.a);

@@ -50,6 +50,13 @@ typedef enum
 
 typedef enum
 {
+	GUI_LINE = 0,
+	GUI_TRIANGLE = 1,
+	GUI_BOX = 2,
+} GUI_ELEM_TYPE;
+
+typedef enum
+{
 	PREF_ONOFF = 0,
 	PREF_NUMBER = 1,
 	PREF_PATH = 2,
@@ -58,6 +65,45 @@ typedef enum
 struct mix_target_struct {
 	int width;
 	int height;
+};
+
+struct gui_line {
+	float linec[4];
+	float x1;
+	float y1;
+	float x2;
+	float y2;
+};
+
+struct gui_triangle {
+	float linec[4];
+	float areac[4];
+	float x1;
+	float y1;
+	float xsize;
+	float ysize;
+	ORIENTATION orient;
+	TRIANGLE_TYPE type;
+};
+
+struct gui_box {
+	float linec[4];
+	float areac[4];
+	float x;
+	float y;
+	float wi;
+	float he;
+	int circle;
+	GLuint tex;
+	bool text;
+};
+
+class GUI_Element {
+public:
+	GUI_ELEM_TYPE type;
+	gui_line* line = nullptr;
+	gui_triangle* triangle = nullptr;
+	gui_box* box = nullptr;
 };
 
 
@@ -248,6 +294,7 @@ class Program {
 		GLuint fbovao;
 		GLuint globfbo;
 		GLuint globfbotex;
+		GLuint globdepthtex;
 		GLuint smglobfbo_tm;
 		GLuint smglobfbotex_tm;
 		GLuint prfbo;
@@ -324,6 +371,7 @@ class Program {
 		bool intopmenu = false;
 		int fullscreen = -1;
 		bool test = false;
+		float z = 0.0f;
 		int mx;
 		int my;
 		int oldmx;
@@ -390,7 +438,43 @@ class Program {
 		std::vector<std::string> recentprojectpaths;
 		bool wiping = false;
 		float texth;
-		
+		float bdcoords[32][65536];
+		float bdtexcoords[32][65536];
+		char bdcolors[32][4096];
+		char bdtexes[32][2048];
+		std::vector<float> bdwi;
+		std::vector<float> bdhe;
+		float* bdvptr[32];
+		float* bdtcptr[32];
+		char* bdcptr[32];
+		char* bdtptr[32];
+		GLuint* bdtnptr[32];
+		int bdtexnum = 10;
+		GLuint bdvao;
+		GLuint bdvbo;
+		GLuint bdtcbo;
+		GLuint bdibo;
+		int boxcount;
+		GLuint boxdatablock;
+		GLint maxtexes = 16;
+		int countingtexes[32];
+		GLuint boxtexes[32][1024];
+		int boxoffset[32];
+		int currbatch = 0;
+		short indices[6144];
+		float boxz = 0.0f;
+		bool directmode = false;
+		bool frontbatch = false;
+		std::vector<GUI_Element*> guielems;
+
+		GLuint drawbuffer;
+		GLuint boxcoltbo;
+		GLuint boxtextbo;
+		GLuint boxbrdtbo;
+		GLuint bdcoltex;
+		GLuint bdtextex;
+		GLuint bdbrdtex;
+
 		lo::ServerThread *st;
 		std::unordered_map<std::string, int> wipesmap;
 		std::unordered_map<EFFECT_TYPE, std::string> effectsmap;
@@ -592,8 +676,10 @@ extern void make_layboxes();
 extern int handle_menu(Menu *menu, float xshift, float yshift);
 extern int handle_menu(Menu *menu);
 extern void new_file(int decks, bool alive);
-extern void draw_box(float *linec, float *areac, float x, float y, float wi, float he, float dx, float dy, float scale, float opacity, int circle, GLuint tex, float fw, float fh);
-extern void draw_box(float *linec, float *areac, float x, float y, float wi, float he, GLuint tex);
+extern void draw_box(float* linec, float* areac, float x, float y, float wi, float he, float dx, float dy, float scale, float opacity, int circle, GLuint tex, float fw, float fh, bool text, bool vertical);
+extern void draw_box(float* linec, float* areac, float x, float y, float wi, float he, float dx, float dy, float scale, float opacity, int circle, GLuint tex, float fw, float fh, bool text);
+extern void draw_box(float* linec, float* areac, float x, float y, float wi, float he, GLuint tex, bool text, bool vertical);
+extern void draw_box(float* linec, float* areac, float x, float y, float wi, float he, GLuint tex);
 extern void draw_box(float *color, float x, float y, float radius, int circle);
 extern void draw_box(float *color, float x, float y, float radius, int circle, float fw, float fh);
 extern void draw_box(Box *box, GLuint tex);
@@ -601,9 +687,9 @@ extern void draw_box(float *linec, float *areac, Box *box, GLuint tex);
 extern void draw_box(Box *box, float opacity, GLuint tex);
 extern void draw_box(Box *box, float dx, float dy, float scale, GLuint tex);
 
-extern void draw_triangle(float *linec, float *areac, float x1, float y1, float xsize, float ysize, ORIENTATION orient, TRIANGLE_TYPE type);
+extern void register_triangle_draw(float *linec, float *areac, float x1, float y1, float xsize, float ysize, ORIENTATION orient, TRIANGLE_TYPE type);
 
-extern void draw_line(float *linec, float x1, float y1, float x2, float y2);
+extern void register_line_draw(float *linec, float x1, float y1, float x2, float y2);
 
 extern std::vector<float> render_text(std::string text, float *textc, float x, float y, float sx, float sy);
 extern std::vector<float> render_text(std::string text, float* textc, float x, float y, float sx, float sy, int smflag);
@@ -672,3 +758,6 @@ extern void end_input();
 extern void onestepfrom(bool stage, Node *node, Node *prevnode, GLuint prevfbotex, GLuint prevfbo);
 
 extern int osc_param(const char *path, const char *types, lo_arg **argv, int argc, lo_message m, void *data);
+
+extern void LockBuffer(GLsync& syncObj);
+extern void WaitBuffer(GLsync& syncObj);

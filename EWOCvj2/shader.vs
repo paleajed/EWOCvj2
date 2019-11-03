@@ -1,14 +1,16 @@
-#version 330
+#version 430 core
 
-layout (location = 0) in vec2 Position;
+
+layout (location = 0) in vec3 Position;
 layout (location = 1) in vec2 TexCoord;
 
 out vec2 TexCoord0;
+out flat int Vertex0;
 
-uniform vec2 translation = vec2(0.0f, 0.0f);
 
 void main()
 {
-   gl_Position = vec4(Position + translation, 1.0f, 1.0f);
-   TexCoord0 = TexCoord;
+	gl_Position = vec4(Position, 1.0f);
+	Vertex0 = gl_VertexID;
+	TexCoord0 = TexCoord;
 };

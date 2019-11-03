@@ -403,7 +403,7 @@ void Program::win_dialog(const char* title, std::string filters, std::string def
 	}
 #ifdef _WIN64
 	OPENFILENAME ofn;
-	char szFile[MAX_PATH];
+	char szFile[4096];
 	if (name != "") {
 		int pos = 0;
 		do {
@@ -608,7 +608,6 @@ bool Program::do_order_paths() {
 	// mousewheel scroll
 	this->pathscroll -= mainprogram->mousewheel;
 	if (this->dragstr != "" and mainmix->time - mainmix->oldtime> 0.1f) {
-		mainmix->oldtime = mainmix->time;
 		// border scroll when dragging
 		if (mainprogram->my < yvtxtoscr(0.1f)) this->pathscroll--;
 		if (mainprogram->my > yvtxtoscr(1.9f)) this->pathscroll++;
@@ -725,17 +724,17 @@ void Program::handle_wormhole(bool hole) {
 	else box = mainprogram->wormhole2->box;
 
 	if (hole == 0) {
-		draw_triangle(white, white, -1.0 + box->vtxcoords->w, box->vtxcoords->y1 + box->vtxcoords->h / 4.0f, box->vtxcoords->h / 4.0f, box->vtxcoords->h / 2.0f, LEFT, OPEN);
+		register_triangle_draw(white, white, -1.0 + box->vtxcoords->w, box->vtxcoords->y1 + box->vtxcoords->h / 4.0f, box->vtxcoords->h / 4.0f, box->vtxcoords->h / 2.0f, LEFT, OPEN);
 		if (mainprogram->binsscreen) render_text("MIX", white, -0.9f, -0.29f, 0.0006f, 0.001f);
 		else render_text("BINS", white, -0.9f, -0.29f, 0.0006f, 0.001f);
 	}
 	else {
 		if (mainprogram->binsscreen) {
-			draw_triangle(white, white, 1.0f - box->vtxcoords->w - box->vtxcoords->h / 4.0f * 0.866f, box->vtxcoords->y1 + box->vtxcoords->h / 4.0f + 0.3f, box->vtxcoords->h / 4.0f, box->vtxcoords->h / 2.0f, RIGHT, OPEN);
+			register_triangle_draw(white, white, 1.0f - box->vtxcoords->w - box->vtxcoords->h / 4.0f * 0.866f, box->vtxcoords->y1 + box->vtxcoords->h / 4.0f + 0.3f, box->vtxcoords->h / 4.0f, box->vtxcoords->h / 2.0f, RIGHT, OPEN);
 			render_text("MIX", white, 0.86f, 0.01f, 0.0006f, 0.001f);
 		}
 		else {
-			draw_triangle(white, white, 1.0f - box->vtxcoords->w - box->vtxcoords->h / 4.0f * 0.866f, box->vtxcoords->y1 + box->vtxcoords->h / 4.0f, box->vtxcoords->h / 4.0f, box->vtxcoords->h / 2.0f, RIGHT, OPEN);
+			register_triangle_draw(white, white, 1.0f - box->vtxcoords->w - box->vtxcoords->h / 4.0f * 0.866f, box->vtxcoords->y1 + box->vtxcoords->h / 4.0f, box->vtxcoords->h / 4.0f, box->vtxcoords->h / 2.0f, RIGHT, OPEN);
 			render_text("BINS", white, 0.86f, -0.29f, 0.0006f, 0.001f);
 		}
 	}
@@ -941,7 +940,7 @@ int Program::handle_scrollboxes(Box* upperbox, Box* lowerbox, int numlines, int 
 			upperbox->acolor[3] = 1.0f;
 		}
 		draw_box(upperbox, -1);
-		draw_triangle(white, white, upperbox->vtxcoords->x1 + (lowerbox->vtxcoords->w / tf(0.05f)) * tf(0.0074f), upperbox->vtxcoords->y1 + (lowerbox->vtxcoords->w / tf(0.05f)) * (tf(0.0416f) - tf(0.030f)), tf(0.011f), tf(0.0208f), DOWN, CLOSED);
+		register_triangle_draw(white, white, upperbox->vtxcoords->x1 + (lowerbox->vtxcoords->w / tf(0.05f)) * tf(0.0074f), upperbox->vtxcoords->y1 + (lowerbox->vtxcoords->w / tf(0.05f)) * (tf(0.0416f) - tf(0.030f)), tf(0.011f), tf(0.0208f), DOWN, CLOSED);
 	}
 	if (numlines - scrollpos > scrlines) {
 		if (lowerbox->in()) {
@@ -960,7 +959,7 @@ int Program::handle_scrollboxes(Box* upperbox, Box* lowerbox, int numlines, int 
 			lowerbox->acolor[3] = 1.0f;
 		}
 		draw_box(lowerbox, -1);
-		draw_triangle(white, white, lowerbox->vtxcoords->x1 + (lowerbox->vtxcoords->w / tf(0.05f)) * tf(0.0074f), lowerbox->vtxcoords->y1 + (lowerbox->vtxcoords->w / tf(0.05f)) * (tf(0.0416f) - tf(0.030f)), tf(0.011f), tf(0.0208f), UP, CLOSED);
+		register_triangle_draw(white, white, lowerbox->vtxcoords->x1 + (lowerbox->vtxcoords->w / tf(0.05f)) * tf(0.0074f), lowerbox->vtxcoords->y1 + (lowerbox->vtxcoords->w / tf(0.05f)) * (tf(0.0416f) - tf(0.030f)), tf(0.011f), tf(0.0208f), UP, CLOSED);
 	}
 	return scrollpos;
 }
@@ -1041,16 +1040,16 @@ int Program::quit_requester() {
 	}
 	render_text("CANCEL", white, box.vtxcoords->x1 + 0.02f, box.vtxcoords->y1 + 0.03f, 0.0024f, 0.004f, 1, 0);
 
-	mainprogram->bvao = mainprogram->boxvao;
-	mainprogram->bvbuf = mainprogram->boxvbuf;
-	mainprogram->btbuf = mainprogram->boxtbuf;
-	mainprogram->middlemouse = 0;
-	mainprogram->rightmouse = 0;
-	mainprogram->menuactivation = false;
-	mainprogram->mx = -1;
-	mainprogram->my = -1;
+	this->bvao = this->boxvao;
+	this->bvbuf = this->boxvbuf;
+	this->btbuf = this->boxtbuf;
+	this->middlemouse = 0;
+	this->rightmouse = 0;
+	this->menuactivation = false;
+	this->mx = -1;
+	this->my = -1;
 
-	mainprogram->insmall = false;
+	this->insmall = false;
 
 	return ret;
 }

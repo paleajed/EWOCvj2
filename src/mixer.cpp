@@ -2460,7 +2460,7 @@ Layer::Layer(bool comp) {
 	this->genmidibut->box->tooltip = "Selects (leftclick advances) for this layer which MIDI preset (A, B, C, D or off) is used to control this layers common controls. ";
 	this->loopbox = new Box;
     this->loopbox->tooltiptitle = "Loop bar ";
-	this->loopbox->tooltip = "Loop bar for current layer video.  Green area is looped area, white vertical line is video position. .  Leftdrag on bar scrubs video.  When hovering over green area edges, it turns blue; when this happens middledrag will drag the areas edge.  If area is green, middledrag will drag the looparea left/right.  Rightclicking starts a menu allowing to set loop start or end to the current play position. ";
+	this->loopbox->tooltip = "Loop bar for current layer video.  Green area is looped area, white vertical line is video  .  Leftdrag on bar scrubs video.  When hovering over green area edges, it turns blue; when this happens middledrag will drag the areas edge.  If area is green, middledrag will drag the looparea left/right.  Rightclicking starts a menu allowing to set loop start or end to the current play position. ";
 	this->chdir = new Button(false);
     this->chdir->box->tooltiptitle = "Toggle colorkey direction ";
 	this->chdir->box->tooltip = "Leftclick toggles colorkey direction: does the previous layer stream image fill up the current layer's color or does the current layer fill a color in the previous layer stream image. ";
@@ -2505,10 +2505,13 @@ Layer::Layer(bool comp) {
 	this->decresult = new frame_result;
 	this->decresult->data = nullptr;
 
-    this->decoding = std::thread{&Layer::get_frame, this};
-    this->decoding.detach();
+	this->decoding = std::thread{ &Layer::get_frame, this };
+	this->decoding.detach();
+//	std::thread trig(&Layer::trigger, this);
+//	trig.detach();
 
 	glBindFramebuffer(GL_FRAMEBUFFER, mainprogram->globfbo);
+	mainprogram->drawbuffer = mainprogram->globfbo;
 	glDrawBuffer(GL_COLOR_ATTACHMENT0);
 }
 
@@ -5297,7 +5300,11 @@ void Mixer::new_file(int decks, bool alive) {
 			glGetTexLevelParameteriv(GL_TEXTURE_2D, 0, GL_TEXTURE_HEIGHT, &sh);
 			mainmix->butexes[0].push_back(copy_tex(butex, sw, sh));
 		}
-		mainmix->bulrs[0] = lvec;
+		bool cond = true;;
+		if (lvec.size() == 1) {
+			if (lvec[0]->filename == "") cond = false;
+		}
+		if (cond) mainmix->bulrs[0] = lvec;
 		lvec.clear();
 		Layer *lay = mainmix->add_layer(lvec, 0);
 		if (mainprogram->prevmodus) {
@@ -5328,7 +5335,11 @@ void Mixer::new_file(int decks, bool alive) {
 			glGetTexLevelParameteriv(GL_TEXTURE_2D, 0, GL_TEXTURE_HEIGHT, &sh);
 			mainmix->butexes[1].push_back(copy_tex(butex, sw, sh));
 		}
-		mainmix->bulrs[1] = lvec;
+		bool cond = true;;
+		if (lvec.size() == 1) {
+			if (lvec[0]->filename == "") cond = false;
+		}
+		if (cond) mainmix->bulrs[1] = lvec;
 		lvec.clear();
 		Layer *lay = mainmix->add_layer(lvec, 0);
 		if (mainprogram->prevmodus) {
@@ -5535,5 +5546,6 @@ void Mixer::start_recording() {
 		this->startrecord.notify_one();
 	}
 	glBindFramebuffer(GL_FRAMEBUFFER, mainprogram->globfbo);
+	mainprogram->drawbuffer = mainprogram->globfbo;
 	glDrawBuffer(GL_COLOR_ATTACHMENT0);
 }
