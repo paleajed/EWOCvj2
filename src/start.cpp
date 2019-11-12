@@ -2000,9 +2000,9 @@ void set_fbo() {
 	glGenVertexArrays(1, &mainprogram->prboxvao);
 	glBindVertexArray(mainprogram->prboxvao);
 	glBindBuffer(GL_ARRAY_BUFFER, mainprogram->prboxvbuf);
-	glBufferData(GL_ARRAY_BUFFER, 32, vcoords, GL_DYNAMIC_DRAW);
+	glBufferData(GL_ARRAY_BUFFER, 48, vcoords, GL_DYNAMIC_DRAW);
 	glEnableVertexAttribArray(0);
-	glVertexAttribPointer(0, 2, GL_FLOAT, GL_FALSE, 8, nullptr);
+	glVertexAttribPointer(0, 3, GL_FLOAT, GL_FALSE, 12, nullptr);
 	glBindBuffer(GL_ARRAY_BUFFER, mainprogram->prboxtbuf);
 	glBufferData(GL_ARRAY_BUFFER, 32, tcoords2, GL_DYNAMIC_DRAW);
 	glEnableVertexAttribArray(1);
@@ -2011,9 +2011,9 @@ void set_fbo() {
 	glBindVertexArray(mainprogram->pr_texvao);
 	glGenBuffers(1, &mainprogram->pr_rtvbo);
 	glBindBuffer(GL_ARRAY_BUFFER, mainprogram->pr_rtvbo);
-	glBufferStorage(GL_ARRAY_BUFFER, 32, nullptr, GL_DYNAMIC_STORAGE_BIT);
+	glBufferStorage(GL_ARRAY_BUFFER, 48, nullptr, GL_DYNAMIC_STORAGE_BIT);
 	glEnableVertexAttribArray(0);
-	glVertexAttribPointer(0, 2, GL_FLOAT, GL_FALSE, 8, nullptr);
+	glVertexAttribPointer(0, 3, GL_FLOAT, GL_FALSE, 12, nullptr);
 	glGenBuffers(1, &mainprogram->pr_rttbo);
 	glBindBuffer(GL_ARRAY_BUFFER, mainprogram->pr_rttbo);
 	glBufferStorage(GL_ARRAY_BUFFER, 32, nullptr, GL_DYNAMIC_STORAGE_BIT);
@@ -2025,9 +2025,9 @@ void set_fbo() {
 	glGenVertexArrays(1, &mainprogram->tmboxvao);
 	glBindVertexArray(mainprogram->tmboxvao);
 	glBindBuffer(GL_ARRAY_BUFFER, mainprogram->tmboxvbuf);
-	glBufferData(GL_ARRAY_BUFFER, 32, vcoords, GL_DYNAMIC_DRAW);
+	glBufferData(GL_ARRAY_BUFFER, 48, vcoords, GL_DYNAMIC_DRAW);
 	glEnableVertexAttribArray(0);
-	glVertexAttribPointer(0, 2, GL_FLOAT, GL_FALSE, 8, nullptr);
+	glVertexAttribPointer(0, 3, GL_FLOAT, GL_FALSE, 12, nullptr);
 	glBindBuffer(GL_ARRAY_BUFFER, mainprogram->tmboxtbuf);
 	glBufferData(GL_ARRAY_BUFFER, 32, tcoords2, GL_DYNAMIC_DRAW);
 	glEnableVertexAttribArray(1);
@@ -2036,9 +2036,9 @@ void set_fbo() {
 	glBindVertexArray(mainprogram->tm_texvao);
 	glGenBuffers(1, &mainprogram->tm_rtvbo);
 	glBindBuffer(GL_ARRAY_BUFFER, mainprogram->tm_rtvbo);
-	glBufferStorage(GL_ARRAY_BUFFER, 32, nullptr, GL_DYNAMIC_STORAGE_BIT);
+	glBufferStorage(GL_ARRAY_BUFFER, 48, nullptr, GL_DYNAMIC_STORAGE_BIT);
 	glEnableVertexAttribArray(0);
-	glVertexAttribPointer(0, 2, GL_FLOAT, GL_FALSE, 8, nullptr);
+	glVertexAttribPointer(0, 3, GL_FLOAT, GL_FALSE, 12, nullptr);
 	glGenBuffers(1, &mainprogram->tm_rttbo);
 	glBindBuffer(GL_ARRAY_BUFFER, mainprogram->tm_rttbo);
 	glBufferStorage(GL_ARRAY_BUFFER, 32, nullptr, GL_DYNAMIC_STORAGE_BIT);
@@ -2053,9 +2053,9 @@ void set_fbo() {
 	glBindVertexArray(mainprogram->texvao);
 	glGenBuffers(1, &mainprogram->rtvbo);
 	glBindBuffer(GL_ARRAY_BUFFER, mainprogram->rtvbo);
-	glBufferStorage(GL_ARRAY_BUFFER, 32, nullptr, GL_DYNAMIC_STORAGE_BIT);
+	glBufferStorage(GL_ARRAY_BUFFER, 48, nullptr, GL_DYNAMIC_STORAGE_BIT);
 	glEnableVertexAttribArray(0);
-	glVertexAttribPointer(0, 2, GL_FLOAT, GL_FALSE, 8, nullptr);
+	glVertexAttribPointer(0, 3, GL_FLOAT, GL_FALSE, 12, nullptr);
 	glGenBuffers(1, &mainprogram->rttbo);
 	glBindBuffer(GL_ARRAY_BUFFER, mainprogram->rttbo);
 	glBufferStorage(GL_ARRAY_BUFFER, 32, nullptr, GL_DYNAMIC_STORAGE_BIT);
@@ -2083,6 +2083,10 @@ void set_fbo() {
 
 
 void register_line_draw(float* linec, float x1, float y1, float x2, float y2) {
+	register_line_draw(linec, x1, y1, x2, y2, false);
+}
+
+void register_line_draw(float* linec, float x1, float y1, float x2, float y2, bool directdraw) {
 	gui_line* line = new gui_line;
 	line->linec[0] = linec[0];
 	line->linec[1] = linec[1];
@@ -2095,7 +2099,8 @@ void register_line_draw(float* linec, float x1, float y1, float x2, float y2) {
 	GUI_Element* gelem = new GUI_Element;
 	gelem->type = GUI_LINE;
 	gelem->line = line;
-	mainprogram->guielems.push_back(gelem);
+	if (directdraw) draw_line(gelem->line);
+	else mainprogram->guielems.push_back(gelem);
 }
 
 void draw_line(gui_line *line) {
@@ -2148,9 +2153,11 @@ void draw_direct(float* linec, float* areac, float x, float y, float wi, float h
 		GLfloat lcolor = glGetUniformLocation(mainprogram->ShaderProgram, "lcolor");
 		glUniform4fv(lcolor, 1, linec);
 		if (tex == -1) {
-			glUniform1f(pixelw, 2.0f / (wi * ((float)glob->w / 2.0f)));
+			GLint m_viewport[4];
+			glGetIntegerv(GL_VIEWPORT, m_viewport);
+			glUniform1f(pixelw, 2.0f / (wi * ((float)(m_viewport[2] - m_viewport[0]) / 2.0f)));
 			pixelh = glGetUniformLocation(mainprogram->ShaderProgram, "pixelh");
-			glUniform1f(pixelh, 2.0f / (he * ((float)glob->h / 2.0f)));
+			glUniform1f(pixelh, 2.0f / (he * ((float)(m_viewport[3] - m_viewport[1]) / 2.0f)));
 		}
 	}
 	else {
@@ -2395,6 +2402,10 @@ void draw_box(float* linec, float* areac, float x, float y, float wi, float he, 
 }
 
 void register_triangle_draw(float* linec, float* areac, float x1, float y1, float xsize, float ysize, ORIENTATION orient, TRIANGLE_TYPE type) {
+	register_triangle_draw(linec, areac, x1, y1, xsize, ysize, orient, type, false);
+}
+
+void register_triangle_draw(float* linec, float* areac, float x1, float y1, float xsize, float ysize, ORIENTATION orient, TRIANGLE_TYPE type, bool directdraw) {
 	gui_triangle* triangle = new gui_triangle;
 	triangle->linec[0] = linec[0];
 	triangle->linec[1] = linec[1];
@@ -2413,7 +2424,8 @@ void register_triangle_draw(float* linec, float* areac, float x1, float y1, floa
 	GUI_Element* gelem = new GUI_Element;
 	gelem->type = GUI_TRIANGLE;
 	gelem->triangle = triangle;
-	mainprogram->guielems.push_back(gelem);
+	if (directdraw) draw_triangle(gelem->triangle);
+	else mainprogram->guielems.push_back(gelem);
 }
 
 void draw_triangle(gui_triangle *triangle) {
@@ -2605,11 +2617,21 @@ std::vector<float> render_text(std::string text, float *textc, float x, float y,
 		glPixelStorei(GL_UNPACK_ALIGNMENT, 1);
 
 		std::vector<float> textws;
-		float pixelw = 2.0f / glob->w;
-		float pixelh = 2.0f / glob->h;
+		int w2 = 0;
+		int h2 = 0;
+		if (smflag == 0) {
+			w2 = glob->w;
+			h2 = glob->h;
+		}
+		else {
+			w2 = smw;
+			h2 = smh;
+		}
+		float pixelw = 2.0f / w2;
+		float pixelh = 2.0f / h2;
 		float th;
 		int pxprogress = 0;
-		FT_Set_Pixel_Sizes(face, 0, (int)(sy * 24000.0f * glob->h / 1346.0f)); //
+		FT_Set_Pixel_Sizes(face, 0, (int)(sy * 24000.0f * h2 / 1346.0f)); //
 		x = -1.0f;
 		y = 1.0f;
 		FT_GlyphSlot g = face->glyph;
@@ -2711,23 +2733,35 @@ std::vector<float> render_text(std::string text, float *textc, float x, float y,
 
 	else if (display) {
 		// display string texture after first time preparation - fast!
-		float pixelw = 2.0f / glob->w;
-		float pixelh = 2.0f / glob->h;
+		int w2 = 0;
+		int h2 = 0;
+		if (smflag == 0) {
+			w2 = glob->w;
+			h2 = glob->h;
+		}
+		else {
+			w2 = smw;
+			h2 = smh;
+		}
+		float pixelw = 2.0f / w2;
+		float pixelh = 2.0f / h2;
 		float texth2 = 64.0f * pixelh;
 		wfac = textw / pixelw / 512.0f;
 
 		float wi = 0.0f;
 		float he = 0.0f;
 		if (vertical) {
-			he = texth2 * 8.0f * wfac * glob->w / glob->h;
-			wi = texth2 * glob->h / glob->w;	
+			he = texth2 * 8.0f * wfac * w2 / h2;
+			wi = texth2 * h2 / w2;	
 		}
 		else {
 			wi = texth2 * 8.0f * wfac;
 			he = -texth2;
 		}
 		y -= he;
-			
+		wi /= (smflag > 0) + 1;
+		he /= (smflag > 0) + 1;
+
 		float black[] = { 0.0f, 0.0f, 0.0f, 1.0f };
 		if (textw != 0) draw_box(nullptr, black, x + 0.001f, y - 0.00185f, wi, he, texture, true, vertical);  //draw text shadow
 		if (textw != 0) draw_box(nullptr, textc, x, y, wi, he, texture, true, vertical);	//draw text
@@ -3294,7 +3328,7 @@ void display_layers(Layer *lay, bool deck) {
 					mixstr = "CKey";
 					if (lay->pos > 0) {
 						draw_box(lay->colorbox, -1);
-						render_text("Color", white, lay->mixbox->vtxcoords->x1 + tf(0.08f), 1.0f - (tf(mainprogram->layh)) + tf(0.02f), tf(0.0003f), tf(0.0005f));
+						render_text("Color", white, lay->mixbox->vtxcoords->x1 + tf(0.08f), 1.0f - (mainprogram->layh + tf(0.09f)) + tf(0.02f), tf(0.0003f), tf(0.0005f));
 					}
 					break;
 				case 20:
@@ -3302,33 +3336,39 @@ void display_layers(Layer *lay, bool deck) {
 					break;
 			}
 			if (lay->pos > 0) {
-				render_text(mixstr, white, lay->mixbox->vtxcoords->x1 + tf(0.01f), 1.0f - (tf(mainprogram->layh)) + tf(0.02f), tf(0.0003f), tf(0.0005f));
+				render_text(mixstr, white, lay->mixbox->vtxcoords->x1 + tf(0.01f), 1.0f - (mainprogram->layh + tf(0.09f)) + tf(0.02f), tf(0.0003f), tf(0.0005f));
 			}
 			else {
-				render_text(mixstr, red, lay->mixbox->vtxcoords->x1 + tf(0.01f), 1.0f - (tf(mainprogram->layh)) + tf(0.02f), tf(0.0003f), tf(0.0005f));
+				render_text(mixstr, red, lay->mixbox->vtxcoords->x1 + tf(0.01f), 1.0f - (mainprogram->layh + tf(0.09f)) + tf(0.02f), tf(0.0003f), tf(0.0005f));
 			}
 			
 			// Draw and handle effect category buttons
-			mainprogram->effcat[lay->deck]->handle();	
+			mainprogram->effcat[lay->deck]->handle();
+			float efx = -1.0f + lay->deck * 0.8f + ((mainmix->scenes[lay->deck][mainmix->currscene[lay->deck]]->scrollpos + lay->pos) % 3) * mainprogram->layw;
+			mainprogram->effscrollupA->vtxcoords->x1 = efx;
+			mainprogram->effscrollupB->vtxcoords->x1 = efx;
+			mainprogram->effscrolldownA->vtxcoords->x1 = efx;
+			mainprogram->effscrolldownB->vtxcoords->x1 = efx;
 			Box *box = mainprogram->effcat[lay->deck]->box;
+			box->vtxcoords->x1 = efx;
 			render_text(mainprogram->effcat[lay->deck]->name[mainprogram->effcat[lay->deck]->value], white, box->vtxcoords->x1, box->vtxcoords->y1 + box->vtxcoords->h - tf(0.01f), tf(0.0003f), tf(0.0005f), 0, 1);
 			std::vector<Effect*> &evec = lay->choose_effects();
 			bool cat = mainprogram->effcat[lay->deck]->value;
 				
 			// Draw and handle effect stack scrollboxes
 			if (mainmix->currlay->deck == 0) {
-				lay->effscroll[cat] = mainprogram->handle_scrollboxes(mainprogram->effscrollupA, mainprogram->effscrolldownA, lay->numefflines[cat], lay->effscroll[cat], 10);
+				lay->effscroll[cat] = mainprogram->handle_scrollboxes(mainprogram->effscrollupA, mainprogram->effscrolldownA, lay->numefflines[cat], lay->effscroll[cat], mainprogram->efflines);
 			}
 			else {
-				lay->effscroll[cat] = mainprogram->handle_scrollboxes(mainprogram->effscrollupB, mainprogram->effscrolldownB, lay->numefflines[cat], lay->effscroll[cat], 10);
+				lay->effscroll[cat] = mainprogram->handle_scrollboxes(mainprogram->effscrollupB, mainprogram->effscrolldownB, lay->numefflines[cat], lay->effscroll[cat], mainprogram->efflines);
 			}
 			if (lay->effects[cat].size()) {
 				if ((glob->w / 2.0f > mainprogram->mx and mainmix->currlay->deck == 0) or (glob->w / 2.0f < mainprogram->mx and mainmix->currlay->deck == 1)) {
 					if (mainprogram->my > mainprogram->yvtxtoscr(mainprogram->layh - tf(0.20f))) {
-						if (mainprogram->mousewheel and lay->numefflines[cat] > 10) {
+						if (mainprogram->mousewheel and lay->numefflines[cat] > mainprogram->efflines) {
 							lay->effscroll[cat] -= mainprogram->mousewheel;
 							if (lay->effscroll[cat] < 0) lay->effscroll[cat] = 0;
-							if (lay->numefflines[cat] - lay->effscroll[cat] < 10) lay->effscroll[cat] = lay->numefflines[cat] - 10;
+							if (lay->numefflines[cat] - lay->effscroll[cat] < mainprogram->efflines) lay->effscroll[cat] = lay->numefflines[cat] - mainprogram->efflines;
 						}
 					}
 				}
@@ -3342,8 +3382,8 @@ void display_layers(Layer *lay, bool deck) {
 				x1 = eff->box->vtxcoords->x1 + tf(0.032f);
 				wi = (0.7f - mainprogram->numw - tf(0.032f)) / 4.0f;
 
-				if (eff->box->vtxcoords->y1 < 1.0 - tf(mainprogram->layh) - tf(0.22f) - tf(0.05f) * 9) break;
-				if (eff->box->vtxcoords->y1 <= 1.0 - tf(mainprogram->layh) - tf(0.18f)) {
+				if (eff->box->vtxcoords->y1 < 1.0 - mainprogram->layh - tf(0.09f) - tf(0.22f) - tf(0.05f) * (mainprogram->efflines - 1)) break;
+				if (eff->box->vtxcoords->y1 <= 1.0 - mainprogram->layh - tf(0.09f) - tf(0.18f)) {
 					eff->drywet->handle();		
 					eff->onoffbutton->handle();
 					
@@ -3381,8 +3421,8 @@ void display_layers(Layer *lay, bool deck) {
 					par->box->vtxcoords->h = eff->box->vtxcoords->h;
 					par->box->upvtxtoscr();
 
-					if (par->box->vtxcoords->y1 < 1.0 - tf(mainprogram->layh) - tf(0.22f) - tf(0.05f) * 9) break;
-					if (par->box->vtxcoords->y1 <= 1.0 - tf(mainprogram->layh) - tf(0.18f)) {
+					if (par->box->vtxcoords->y1 < 1.0 - mainprogram->layh - tf(0.09f) - tf(0.22f) - tf(0.05f) * (mainprogram->efflines - 1)) break;
+					if (par->box->vtxcoords->y1 <= 1.0 - mainprogram->layh - tf(0.09f) - tf(0.18f)) {
 						par->handle();
 					}
 				}
@@ -3400,19 +3440,19 @@ void display_layers(Layer *lay, bool deck) {
 					box = eff->onoffbutton->box;
 					sx1 = box->scrcoords->x1;
 					sy1 = box->scrcoords->y1 + (eff->numrows - 1) * mainprogram->yvtxtoscr(tf(0.05f));
-					if (1.0f - mainprogram->yscrtovtx(sy1) < -0.49f) {
-						sy1 = mainprogram->yvtxtoscr(1.49f);
+					if (1.0f - mainprogram->yscrtovtx(sy1) < -0.4f) {
+						sy1 = mainprogram->yvtxtoscr(1.4f);
 					}
 					vx1 = box->vtxcoords->x1;
 					vy1 = box->vtxcoords->y1 - (eff->numrows - 1) * tf(0.05f);
-					if (vy1 < -0.49f) vy1 = -0.49f;
+					if (vy1 < -0.4f) vy1 = -0.4f;
 					sw = tf(mainprogram->layw) * glob->w / 2.0;
 				}
 				else {
 					box = lay->mixbox;
 					sw = tf(mainprogram->layw) * glob->w / 2.0;
 					sx1 = box->scrcoords->x1 + mainprogram->xvtxtoscr(tf(0.025f));
-					sy1 = mainprogram->layh * glob->h / 2.0 + mainprogram->yvtxtoscr(tf(0.25f));
+					sy1 = lay->opacity->box->scrcoords->y1;
 					vx1 = box->vtxcoords->x1 + tf(0.025f);
 					vy1 = 1 - mainprogram->layh - tf(0.25f);
 				}
@@ -3517,14 +3557,14 @@ void display_layers(Layer *lay, bool deck) {
 
 			// Draw effectmenuhints
 			if (!mainprogram->queueing) {
-				if (vy1 < 1.0 - tf(mainprogram->layh) - tf(0.22f) - tf(0.05f) * 9) {
-					vy1 = 1.0 - tf(mainprogram->layh) - tf(0.20f) - tf(0.05f) * 9;
+				if (vy1 < 1.0 - mainprogram->layh - tf(0.09f) - tf(0.22f) - tf(0.05f) * (mainprogram->efflines - 1)) {
+					vy1 = 1.0 - mainprogram->layh - tf(0.09f) - tf(0.20f) - tf(0.05f) * (mainprogram->efflines - 1);
 				}
 
 				mainprogram->addeffectbox->vtxcoords->x1 = vx1;
-				mainprogram->addeffectbox->vtxcoords->y1 = vy1 - tf(0.05f);
+				mainprogram->addeffectbox->vtxcoords->y1 = vy1 - tf(0.04f);
 				mainprogram->addeffectbox->upvtxtoscr();
-				if (bottom) { //true when mouse over Add Effect box
+				if (mainprogram->addeffectbox->in()) {
 					bottom = false;
 					draw_box(white, lightblue, mainprogram->addeffectbox, -1);
 				}
@@ -3645,8 +3685,10 @@ void display_layers(Layer *lay, bool deck) {
 			// Draw speed->box
 			Param *par = lay->speed;
 			par->handle();
-			draw_box(white, nullptr, lay->speed->box->vtxcoords->x1, lay->speed->box->vtxcoords->y1, lay->speed->box->vtxcoords->w * 0.30f, tf(0.05f), -1);
-			
+			mainprogram->frontbatch = true;
+			draw_box(white, nullptr, lay->speed->box->vtxcoords->x1, lay->speed->box->vtxcoords->y1, lay->speed->box->vtxcoords->w * 0.30f, tf(0.05f), -1);			mainprogram->frontbatch = true;
+			mainprogram->frontbatch = false;
+
 			// Draw opacity->box
 			par = lay->opacity;
 			par->handle();
@@ -5871,7 +5913,7 @@ void make_layboxes() {
 			}
 			else if (j == 1) {
 				lvec = mainmix->layersB;
-				xoffset = 1.0f + mainprogram->layw - 0.06f;
+				xoffset = 1.0f - 0.2f;
 			}
 			else if (j == 2) {
 				lvec = mainmix->layersAcomp;
@@ -5879,14 +5921,14 @@ void make_layboxes() {
 			}
 			else if (j == 3) {
 				lvec = mainmix->layersBcomp;
-				xoffset = 1.0f + mainprogram->layw - 0.019f;
+				xoffset = 1.0f - 0.2f;
 			}
 			for (int i = 0; i < lvec.size(); i++) {
 				Layer *testlay = lvec[i];
 				//testlay->node->upeffboxes();
 				// Make mixbox
-				testlay->mixbox->vtxcoords->x1 = -1.0f + mainprogram->numw + xoffset + (testlay->pos % 3) * tf(0.04f);
-				testlay->mixbox->vtxcoords->y1 = 1.0f - tf(mainprogram->layh);
+				testlay->mixbox->vtxcoords->x1 = -1.0f + mainprogram->numw + xoffset + ((mainmix->scenes[testlay->deck][mainmix->currscene[testlay->deck]]->scrollpos + testlay->pos) % 3) * mainprogram->layw;
+				testlay->mixbox->vtxcoords->y1 = 1.0f - mainprogram->layh - tf(0.09f);
 				testlay->mixbox->vtxcoords->w = tf(0.05f);
 				testlay->mixbox->vtxcoords->h = tf(0.05f);
 				testlay->mixbox->upvtxtoscr();
@@ -5901,17 +5943,9 @@ void make_layboxes() {
 				Effect *prevmodus = nullptr;
 				for (int j = 0; j < evec.size(); j++) {
 					Effect *eff = evec[j];
-					if (testlay->deck == 0) {
-						eff->box->vtxcoords->x1 = -1.0f + mainprogram->numw + tf(0.05f);
-						eff->onoffbutton->box->vtxcoords->x1 = -1.0f + mainprogram->numw + tf(0.025f);
-						eff->drywet->box->vtxcoords->x1 =  -1.0f + mainprogram->numw;
-					}
-					else {
-						xoffset = 1.0f + mainprogram->layw - 0.019f;
-						eff->box->vtxcoords->x1 = -1.0f + mainprogram->numw + tf(0.05f) + xoffset;
-						eff->onoffbutton->box->vtxcoords->x1 = -1.0f + mainprogram->numw + tf(0.025f) + xoffset;
-						eff->drywet->box->vtxcoords->x1 =  -1.0f + mainprogram->numw + xoffset;
-					}
+					eff->box->vtxcoords->x1 = testlay->mixbox->vtxcoords->x1 + tf(0.05f);
+					eff->onoffbutton->box->vtxcoords->x1 = testlay->mixbox->vtxcoords->x1 + tf(0.025f);
+					eff->drywet->box->vtxcoords->x1 = testlay->mixbox->vtxcoords->x1;
 					float dy;
 					if (prevmodus) {
 						if (prevmodus->params.size() < 4) {
@@ -5925,7 +5959,7 @@ void make_layboxes() {
 						}
 					}
 					else {
-						eff->box->vtxcoords->y1 = 1.0 - tf(mainprogram->layh) - tf(0.20f) + (tf(0.05f) * testlay->effscroll[mainprogram->effcat[testlay->deck]->value]);
+						eff->box->vtxcoords->y1 = 1.0 - mainprogram->layh - tf(0.29f) + (tf(0.05f) * testlay->effscroll[mainprogram->effcat[testlay->deck]->value]);
 					}
 					eff->box->upvtxtoscr();
 					eff->onoffbutton->box->vtxcoords->y1 = eff->box->vtxcoords->y1;
@@ -7879,7 +7913,6 @@ bool preferences() {
 			mainprogram->drawnonce = false;
 			SDL_HideWindow(mainprogram->prefwindow);
 			SDL_RaiseWindow(mainprogram->mainwindow);
-			return 0;
 		}
 	}
 	render_text("CANCEL", white, box.vtxcoords->x1 + 0.02f, box.vtxcoords->y1 + 0.03f, 0.0024f, 0.004f, 1, 0);
@@ -7913,7 +7946,6 @@ bool preferences() {
 			mainprogram->drawnonce = false;
 			SDL_HideWindow(mainprogram->prefwindow);
 			SDL_RaiseWindow(mainprogram->mainwindow);
-			return 0;
 		}
 	}
 	render_text("SAVE", white, box.vtxcoords->x1 + 0.02f, box.vtxcoords->y1 + 0.03f, 0.0024f, 0.004f, 1, 0);
@@ -7934,8 +7966,12 @@ bool preferences() {
 	return 1;
 }
 	
-void do_text_input(float x, float y, float sx, float sy, int mx, int my, float width, int smflag, PrefItem *item) {
-	// handle display and mouse selection of keyboard input
+void do_text_input(float x, float y, float sx, float sy, int mx, int my, float width, int smflag, PrefItem* item) {
+	do_text_input(x, y, sx, sy, mx, my, width, smflag, item, false);
+}
+
+void do_text_input(float x, float y, float sx, float sy, int mx, int my, float width, int smflag, PrefItem * item, bool directdraw) {
+		// handle display and mouse selection of keyboard input
 	float white[] = { 1.0f, 1.0f, 1.0f, 1.0f };
 
 	float textw;
@@ -8076,7 +8112,7 @@ void do_text_input(float x, float y, float sx, float sy, int mx, int my, float w
 		render_text(part, white, x, y, sx, sy, smflag, 0);
 		if (mainprogram->cursorpos1 == -1) {
 			// draw cursor line
-			register_line_draw(white, x + textw - mainprogram->xscrtovtx(mainprogram->startpos), y - 0.010f, x + textw - mainprogram->xscrtovtx(mainprogram->startpos), y + (mainprogram->texth / ((smflag > 0) + 1)) / (2070.0f / glob->h));
+			register_line_draw(white, x + textw - mainprogram->xscrtovtx(mainprogram->startpos), y - 0.010f, x + textw - mainprogram->xscrtovtx(mainprogram->startpos), y + (mainprogram->texth / ((smflag > 0) + 1)) / (2070.0f / glob->h), directdraw);
 		}
 		else {
 			// draw cursor block
@@ -8198,7 +8234,7 @@ int tune_midi() {
 				mainprogram->tmlearn = TM_PLAY;
 			}
 		}
-		register_triangle_draw(white, white, 0.125f, -0.83f, 0.06f, 0.12f, RIGHT, CLOSED);
+		register_triangle_draw(white, white, 0.125f, -0.83f, 0.06f, 0.12f, RIGHT, CLOSED, true);
 		
 		draw_box(white, black, mainprogram->tmbackw, -1);
 		if (lm->backw[0] != -1) draw_box(white, green, mainprogram->tmbackw, -1);
@@ -8208,7 +8244,7 @@ int tune_midi() {
 				mainprogram->tmlearn = TM_BACKW;
 			}
 		}
-		register_triangle_draw(white, white, -0.185f, -0.83f, 0.06f, 0.12f, LEFT, CLOSED);
+		register_triangle_draw(white, white, -0.185f, -0.83f, 0.06f, 0.12f, LEFT, CLOSED, true);
 		
 		draw_box(white, black, mainprogram->tmbounce, -1);
 		if (lm->bounce[0] != -1) draw_box(white, green, mainprogram->tmbounce, -1);
@@ -8218,8 +8254,8 @@ int tune_midi() {
 				mainprogram->tmlearn = TM_BOUNCE;
 			}
 		}
-		register_triangle_draw(white, white, -0.045f, -0.83f, 0.04f, 0.12f, LEFT, CLOSED);
-		register_triangle_draw(white, white, 0.01f, -0.83f, 0.04f, 0.12f, RIGHT, CLOSED);
+		register_triangle_draw(white, white, -0.045f, -0.83f, 0.04f, 0.12f, LEFT, CLOSED, true);
+		register_triangle_draw(white, white, 0.01f, -0.83f, 0.04f, 0.12f, RIGHT, CLOSED, true);
 		
 		draw_box(white, black, mainprogram->tmfrforw, -1);
 		if (lm->frforw[0] != -1) draw_box(white, green, mainprogram->tmfrforw, -1);
@@ -8229,7 +8265,7 @@ int tune_midi() {
 				mainprogram->tmlearn = TM_FRFORW;
 			}
 		}
-		register_triangle_draw(white, white, 0.275f, -0.83f, 0.06f, 0.12f, RIGHT, OPEN);
+		register_triangle_draw(white, white, 0.275f, -0.83f, 0.06f, 0.12f, RIGHT, OPEN, true);
 		
 		draw_box(white, black, mainprogram->tmfrbackw, -1);
 		if (lm->frbackw[0] != -1) draw_box(white, green, mainprogram->tmfrbackw, -1);
@@ -8239,7 +8275,7 @@ int tune_midi() {
 				mainprogram->tmlearn = TM_FRBACKW;
 			}
 		}
-		register_triangle_draw(white, white, -0.335f, -0.83f, 0.06f, 0.12f, LEFT, OPEN);
+		register_triangle_draw(white, white, -0.335f, -0.83f, 0.06f, 0.12f, LEFT, OPEN, true);
 		
 		draw_box(white, black, mainprogram->tmspeed, -1);
 		if (lm->speed[0] != -1) draw_box(white, green, mainprogram->tmspeed, -1);
@@ -8346,7 +8382,6 @@ int tune_midi() {
 			mainprogram->tmlearn = TM_NONE;
 			mainprogram->tunemidi = false;
 			SDL_HideWindow(mainprogram->tunemidiwindow);
-			return 0;
 		}
 	}
 	render_text("CANCEL", white, box.vtxcoords->x1 + 0.02f, box.vtxcoords->y1 + 0.03f, 0.0024f, 0.004f, 2);
@@ -8360,7 +8395,6 @@ int tune_midi() {
 			mainprogram->tmlearn = TM_NONE;
 			mainprogram->tunemidi = false;
 			SDL_HideWindow(mainprogram->tunemidiwindow);
-			return 0;
 		}
 	}
 	render_text("SAVE", white, box.vtxcoords->x1 + 0.02f, box.vtxcoords->y1 + 0.03f, 0.0024f, 0.004f, 2);
@@ -10924,12 +10958,18 @@ void the_loop() {
 		lock.unlock();
 	}
 	
+	bool dmbu = mainprogram->directmode;
 	bool prret = false;
 	GLuint tex, fbo;
 	if (mainprogram->quitting != "") {
+		mainprogram->directmode = true;
 		SDL_ShowWindow(mainprogram->prefwindow);
 		SDL_RaiseWindow(mainprogram->prefwindow);
 		SDL_GL_MakeCurrent(mainprogram->prefwindow, glc_pr);
+		glBindFramebuffer(GL_FRAMEBUFFER, mainprogram->smglobfbo_pr);
+		mainprogram->drawbuffer = mainprogram->smglobfbo_pr;
+		glDrawBuffer(GL_COLOR_ATTACHMENT0);
+		glViewport(0, 0, glob->w / 2.0f, glob->h / 2.0f);
 		glEnable(GL_BLEND);
 		glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
 		SDL_FlushEvents(SDL_FIRSTEVENT, SDL_LASTEVENT);
@@ -10971,15 +11011,16 @@ void the_loop() {
 			glBlitNamedFramebuffer(mainprogram->smglobfbo_pr, 0, 0, 0, smw, smh, 0, 0, smw, smh, GL_COLOR_BUFFER_BIT, GL_NEAREST);
 			SDL_GL_SwapWindow(mainprogram->prefwindow);
 		}
+		SDL_GL_MakeCurrent(mainprogram->mainwindow, glc);
 	}
 
-	bool dmbu = mainprogram->directmode;
 	if (mainprogram->prefon) {
 		mainprogram->directmode = true;
 		SDL_GL_MakeCurrent(mainprogram->prefwindow, glc_pr);
 		glBindFramebuffer(GL_FRAMEBUFFER, mainprogram->smglobfbo_pr);
 		mainprogram->drawbuffer = mainprogram->smglobfbo_pr;
 		glDrawBuffer(GL_COLOR_ATTACHMENT0);
+		glViewport(0, 0, glob->w / 2.0f, glob->h / 2.0f);
 		glEnable(GL_BLEND);
 		glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
 		SDL_FlushEvents(SDL_FIRSTEVENT, SDL_LASTEVENT);
@@ -11019,10 +11060,11 @@ void the_loop() {
 	mainprogram->directmode = dmbu;
 
 	glBindFramebuffer(GL_FRAMEBUFFER, mainprogram->globfbo);
-	mainprogram->drawbuffer = mainprogram->globfbo;
+	mainprogram->drawbuffer = mainprogram->
+		globfbo;
 	glDrawBuffer(GL_COLOR_ATTACHMENT0);
 
-	if (!mainprogram->directmode and mainprogram->quitting == "") {
+	if (!mainprogram->directmode) {
 
 		glEnable(GL_DEPTH_TEST);
 		glClearDepth(1.0f);
@@ -11094,7 +11136,6 @@ void the_loop() {
 		}
 		mainprogram->directmode = false;
 	}
-	mainprogram->directmode = dmbu;
 
 	glBlitNamedFramebuffer(mainprogram->globfbo, 0, 0, 0, glob->w, glob->h , 0, 0, glob->w, glob->h, GL_COLOR_BUFFER_BIT, GL_NEAREST);
 	

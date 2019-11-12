@@ -1819,13 +1819,16 @@ void main()
 		if (distance(vec2(cirx, ciry), gl_FragCoord.xy) < circleradius - 1.0f) {
 			FragColor = color;
 		}
+		else discard;
 	}
 	else if (circle == 2) {
 		if (distance(vec2(cirx, ciry), gl_FragCoord.xy) < circleradius - 1.0f) {
 			if (distance(vec2(cirx, ciry), gl_FragCoord.xy) > circleradius - 3.0f) {
 				FragColor = color;
 			}
+			else discard;
 		}
+		else discard;
 	}
 	else if (linetriangle == 1) {
 		FragColor = color;
@@ -1853,7 +1856,10 @@ void main()
 			}
 
 			if (TexCoord0.x < maxX && TexCoord0.x > minX && TexCoord0.y < maxY && TexCoord0.y > minY) {
-				if (box == 1) FragColor = color;
+				if (box == 1) {
+					if (color.a == 0.0) discard;
+					FragColor = color;
+				}
 				else FragColor = texture2D(Sampler0, TexCoord0.st).rgba;
 			} 
 			else {

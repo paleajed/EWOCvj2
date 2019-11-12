@@ -101,7 +101,7 @@ Mixer::Mixer() {
 	this->genmidi[0]->box->vtxcoords->h = mainprogram->numh;
 	this->genmidi[0]->box->upvtxtoscr();
 	this->genmidi[0]->box->tooltiptitle = "Deck A global MIDI preset ";
-	this->genmidi[0]->box->tooltip = "Leftclick toggles between MIDI presets for deck A (A, B, C, D or off).  Rightclick shows menu allowing settings for the current MIDI preset. ";
+	this->genmidi[0]->box->tooltip = "Leftclick toggles between MIDI presets for deck A (A, B, C, D or off). ";
 	this->genmidi[1]->box->acolor[0] = 0.5;
 	this->genmidi[1]->box->acolor[1] = 0.2;
 	this->genmidi[1]->box->acolor[2] = 0.5;
@@ -112,7 +112,7 @@ Mixer::Mixer() {
 	this->genmidi[1]->box->vtxcoords->h = mainprogram->numh;
 	this->genmidi[1]->box->upvtxtoscr();
 	this->genmidi[1]->box->tooltiptitle = "Deck B global MIDI preset ";
-	this->genmidi[1]->box->tooltip = "Leftclick toggles between MIDI presets for deck B (A, B, C, D or off).  Rightclick shows menu allowing settings for the current MIDI preset. ";
+	this->genmidi[1]->box->tooltip = "Leftclick toggles between MIDI presets for deck B (A, B, C, D or off). ";
 	
 	this->crossfade = new Param;
 	this->crossfade->name = "Crossfade"; 

@@ -426,6 +426,7 @@ class Program {
 		bool cwon = false;
 		int cwmouse = false;
 		Button *effcat[2];
+		int efflines = 7;
 		Box *effscrollupA;
 		Box *effscrolldownA;
 		Box *effscrollupB;
@@ -687,9 +688,13 @@ extern void draw_box(float *linec, float *areac, Box *box, GLuint tex);
 extern void draw_box(Box *box, float opacity, GLuint tex);
 extern void draw_box(Box *box, float dx, float dy, float scale, GLuint tex);
 
-extern void register_triangle_draw(float *linec, float *areac, float x1, float y1, float xsize, float ysize, ORIENTATION orient, TRIANGLE_TYPE type);
+extern void register_triangle_draw(float* linec, float* areac, float x1, float y1, float xsize, float ysize, ORIENTATION orient, TRIANGLE_TYPE type);
+extern void register_triangle_draw(float* linec, float* areac, float x1, float y1, float xsize, float ysize, ORIENTATION orient, TRIANGLE_TYPE type, bool directdraw);
+extern void draw_triangle(gui_triangle* triangle);
 
-extern void register_line_draw(float *linec, float x1, float y1, float x2, float y2);
+extern void register_line_draw(float* linec, float x1, float y1, float x2, float y2);
+extern void register_line_draw(float* linec, float x1, float y1, float x2, float y2, bool directdraw);
+extern void draw_line(gui_line* line);
 
 extern std::vector<float> render_text(std::string text, float *textc, float x, float y, float sx, float sy);
 extern std::vector<float> render_text(std::string text, float* textc, float x, float y, float sx, float sy, int smflag);
@@ -753,6 +758,7 @@ extern bool isimage(const std::string &path);
 extern void drag_into_layerstack(std::vector<Layer*>& layers, bool deck);
 
 extern void do_text_input(float x, float y, float sx, float sy, int mx, int my, float width, int smflag, PrefItem* item);
+extern void do_text_input(float x, float y, float sx, float sy, int mx, int my, float width, int smflag, PrefItem* item, bool directdraw);
 extern void end_input();
 
 extern void onestepfrom(bool stage, Node *node, Node *prevnode, GLuint prevfbotex, GLuint prevfbo);

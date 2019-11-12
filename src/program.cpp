@@ -1204,7 +1204,7 @@ void Project::newp(const std::string &path) {
 	mainprogram->project->do_save(path);
 }
 	
-void Project::open(const std::string &path) {
+void Project::open(const std::string& path) {
 	std::string result = deconcat_files(path);
 	bool concat = (result != "");
 	std::ifstream rfile;
@@ -1278,6 +1278,28 @@ void Project::open(const std::string &path) {
 	mainprogram->set_ow3oh3();
 	//mainmix->new_state();
 	mainmix->open_state(result + "_0.file");
+
+	int pos = std::find(mainprogram->recentprojectpaths.begin(), mainprogram->recentprojectpaths.end(), path) - mainprogram->recentprojectpaths.begin();
+	if (pos < mainprogram->recentprojectpaths.size()) {
+		std::swap(mainprogram->recentprojectpaths[pos], mainprogram->recentprojectpaths[0]);
+		std::ofstream wfile;
+		#ifdef _WIN64
+		std::string dir = mainprogram->docpath;
+		#else
+		#ifdef __linux__
+		std::string homedir(getenv("HOME"));
+		std::string dir = homedir + "/.ewocvj2/";
+		#endif
+		#endif
+		wfile.open(dir + "recentprojectslist");
+		wfile << "EWOCvj RECENTPROJECTS V0.1\n";
+		for (int i = 0; i < mainprogram->recentprojectpaths.size(); i++) {
+			wfile << mainprogram->recentprojectpaths[i];
+			wfile << "\n";
+		}
+		wfile << "ENDOFFILE\n";
+		wfile.close();
+	}
 }
 
 void Project::save(const std::string& path) {
