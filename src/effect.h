@@ -68,6 +68,7 @@ class Param {
 	public:
 		std::string name;
 		float value;
+		float deflt;
 		float range[2];
 		int midi[2] = {-1, -1};
 		std::string midiport;
@@ -91,6 +92,8 @@ class Effect {
 		Layer *layer;
 		GLuint fbo = -1;
 		GLuint fbotex = -1;
+		GLuint fbointm = -1;
+		GLuint fbotexintm = -1;
 		EffectNode *node = NULL;
 		std::vector<Param*> params;
 		virtual float get_speed() { return -1; };

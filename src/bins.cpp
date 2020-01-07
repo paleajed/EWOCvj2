@@ -179,28 +179,18 @@ BinsMain::BinsMain() {
 }
 
 void BinsMain::handle(bool draw) {
-	float white[] = { 1.0f, 1.0f, 1.0f, 1.0f };
-	float black[] = { 0.0f, 0.0f, 0.0f, 1.0f };
-	float darkgrey[] = { 0.2f, 0.2f, 0.2f, 1.0f };
-	float lightblue[] = { 0.5f, 0.5f, 1.0f, 1.0f };
-	float red[] = { 1.0f, 0.5f, 0.5f, 1.0f };
-	float lightgreen[] = { 0.5f, 1.0f, 0.5f, 1.0f };
-	float yellow[] = { 1.0f, 1.0f, 0.0f, 1.0f };
-
 	GLint inverted = glGetUniformLocation(mainprogram->ShaderProgram, "inverted");
 
 	if (this->renamingelem) {
 		if (mainprogram->renaming == EDIT_NONE) {
 			this->renamingelem = nullptr;
-			std::string path = mainprogram->project->binsdir + this->currbin->name + ".bin";
-			save_bin(path);
+			save_bin(this->currbin->path);
 		}
 		if (mainprogram->leftmousedown and !this->renamingbox->in()) {
 			mainprogram->renaming = EDIT_NONE;
 			this->renamingelem = nullptr;
 			SDL_StopTextInput();
-			std::string path = mainprogram->project->binsdir + this->currbin->name + ".bin";
-			save_bin(path);
+			save_bin(this->currbin->path);
 			mainprogram->leftmousedown = false;
 		}
 		if (mainprogram->rightmouse) {
@@ -720,6 +710,7 @@ void BinsMain::handle(bool draw) {
 				// bin renaming with keyboard
 				do_text_input(bin->box->vtxcoords->x1 + tf(0.01f), bin->box->vtxcoords->y1 + tf(0.012f), tf(0.0003f), tf(0.0005f), mainprogram->mx, mainprogram->my, mainprogram->xvtxtoscr(0.3f - tf(0.02f)), 0, nullptr);
 			}
+			else render_text(bin->name, white, bin->box->vtxcoords->x1 + tf(0.01f), bin->box->vtxcoords->y1 + tf(0.012f), tf(0.0003f), tf(0.0005f));
 		}
 		if (!this->indragbox and this->dragbinsense) {
 			// dragging has moved (!this->draginbox) so start doing it
@@ -764,7 +755,7 @@ void BinsMain::handle(bool draw) {
 		if (box->in()) {
 			if (mainprogram->leftmouse and !this->dragbin) {
 				mainprogram->pathto = "OPENBIN";
-				std::thread filereq(&Program::get_inname, mainprogram, "Open file(s)", "application/ewocvj2-bin", boost::filesystem::canonical(mainprogram->currbinsdir).generic_string());
+				std::thread filereq(&Program::get_multinname, mainprogram, "Open file(s)", "application/ewocvj2-bin", boost::filesystem::canonical(mainprogram->currbinsdir).generic_string());
 				filereq.detach();
 			}
 			box->acolor[0] = 0.5f;
@@ -779,7 +770,7 @@ void BinsMain::handle(bool draw) {
 			box->acolor[3] = 1.0f;
 		}
 		draw_box(box, -1);
-		render_text("+ LOAD BIN", red, 0.62f, -0.95f + 0.018f, tf(0.0003f), tf(0.0005f));
+		render_text("+ LOAD BIN(S)", red, 0.62f, -0.95f + 0.018f, tf(0.0003f), tf(0.0005f));
 
 		// handle bin drag in binslist
 		if (this->dragbin) {
@@ -873,7 +864,7 @@ void BinsMain::handle(bool draw) {
 		}
 		
 		// Draw and handle binselmenu
-		int k = handle_menu(mainprogram->binselmenu);
+		int k = mainprogram->handle_menu(mainprogram->binselmenu);
 		if (k == 0) {
 			// delete selected bin elements
 			for (int i = 0; i < 12; i++) {
@@ -913,11 +904,10 @@ void BinsMain::handle(bool draw) {
 
 		// Draw and handle binmenu and binelmenu	
 		if (this->bins.size() > 1) {
-			int k = handle_menu(mainprogram->binmenu);
+			int k = mainprogram->handle_menu(mainprogram->binmenu);
 			if (k == 0) {
 				// delete bin
-				std::string path = mainprogram->project->binsdir + this->menubin->name + ".bin";
-				boost::filesystem::remove(path);
+				boost::filesystem::remove(this->menubin->path);
 				if (this->currbin->name == this->menubin->name) {
 					if (this->currbin->pos == 0) make_currbin(1);
 					else make_currbin(this->currbin->pos - 1);
@@ -939,9 +929,15 @@ void BinsMain::handle(bool draw) {
 				SDL_StartTextInput();
 				mainprogram->renaming = EDIT_BINNAME;
 			}
+			else if (k == 2) {
+				// import bin
+				mainprogram->pathto = "IMPORTBIN";
+				std::thread filereq(&Program::get_inname, mainprogram, "Import bin(s)", "application/ewocvj2-bin", boost::filesystem::canonical(mainprogram->currbinfilesdir).generic_string());
+				filereq.detach();
+			}
 		}
 		else {
-			int k = handle_menu(mainprogram->bin2menu);  // rightclick on bin when there's only one (can't delete)
+			int k = mainprogram->handle_menu(mainprogram->bin2menu);  // rightclick on bin when there's only one (can't delete)
 			if (k == 0) {
 				// start renaming bin
 				mainprogram->backupname = this->menubin->name;
@@ -963,7 +959,7 @@ void BinsMain::handle(bool draw) {
 
 
 	// handle binelmenu thats been populated above, menuset controls which options sets are used
-	int k = handle_menu(mainprogram->binelmenu);
+	int k = mainprogram->handle_menu(mainprogram->binelmenu);
 	//if (k > -1) this->currbinel = nullptr;
 	if (binelmenuoptions.size() and k > -1) {
 		if (binelmenuoptions[k] != BET_OPENFILES) this->menuactbinel = nullptr;
@@ -1003,7 +999,7 @@ void BinsMain::handle(bool draw) {
 		else if (binelmenuoptions[k] == BET_OPENFILES) {
 			// open videos/images/layer files into bin
 			mainprogram->pathto = "OPENBINFILES";
-			std::thread filereq(&Program::get_multinname, mainprogram, "Open file(s)", boost::filesystem::canonical(mainprogram->currbinfilesdir).generic_string());
+			std::thread filereq(&Program::get_multinname, mainprogram, "Open file(s)", "", boost::filesystem::canonical(mainprogram->currbinfilesdir).generic_string());
 			filereq.detach();
 		}
 		else if (binelmenuoptions[k] == BET_INSDECKA) {
@@ -1175,7 +1171,7 @@ void BinsMain::handle(bool draw) {
 				if (binel->encoding and binel->encthreads == 0 and (binel->type == ELEM_DECK or binel->type == ELEM_MIX)) {
 					binel->encoding = false;
 					boost::filesystem::rename(remove_extension(binel->path) + ".temp", binel->path);
-					this->do_save_bin(mainprogram->project->binsdir + this->currbin->name + ".bin");
+					this->do_save_bin(this->currbin->path);
 				}
 				if ((box->in() or mainprogram->rightmouse or binel == menuactbinel) and !this->openbinfile and !binel->encoding) {
 					if (draw) {
@@ -1710,8 +1706,7 @@ void BinsMain::handle(bool draw) {
 							dirbinel->oldjpegpath = dirbinel->jpegpath;
 							dirbinel->jpegpath = this->inputjpegpaths[k];
 						}
-						std::string path = mainprogram->project->binsdir + this->currbin->name + ".bin";
-						save_bin(path);
+						save_bin(this->currbin->path);
 						// clean up
 						this->inputtexes.clear();
 						this->inputtypes.clear();
@@ -1749,8 +1744,7 @@ void BinsMain::handle(bool draw) {
 						this->delbinels[k]->select = false;
 						boost::filesystem::remove(this->delbinels[k]->jpegpath);
 					}
-					std::string path = mainprogram->project->binsdir + this->currbin->name + ".bin";
-					save_bin(path);
+					save_bin(this->currbin->path);
 					this->delbinels.clear();
 					mainprogram->del = false;
 				}
@@ -1780,8 +1774,7 @@ void BinsMain::handle(bool draw) {
 						this->movebinels[i]->erase();
 					}
 					this->movebinels.clear();
-					std::string path = mainprogram->project->binsdir + this->currbin->name + ".bin";
-					save_bin(path);
+					save_bin(this->currbin->path);
 					// clean up
 					this->inputtexes.clear();
 					if (this->currbinel == this->menuactbinel) this->menuactbinel = nullptr;
@@ -1818,8 +1811,7 @@ void BinsMain::handle(bool draw) {
 					name = remove_version(name) + "_" + std::to_string(count);
 				}
 			}
-			std::string path = mainprogram->project->binsdir + this->currbin->name + ".bin";
-			save_bin(path);
+			save_bin(this->currbin->path);
 			this->currbinel = nullptr;
 			enddrag();
 			lay->vidmoving = false;
@@ -1867,7 +1859,7 @@ void BinsMain::handle(bool draw) {
 					this->currbinel = nullptr;
 					this->movingbinel = nullptr;
 					this->movingtex = -1;
-					this->save_bin(mainprogram->project->binsdir + this->currbin->name + ".bin");
+					this->save_bin(this->currbin->path);
 				}
 			}
 			enddrag();
@@ -2051,9 +2043,9 @@ Bin *BinsMain::new_bin(const std::string &name) {
 	}
 	make_currbin(this->bins.size() - 1);
 	std::string path;
-	path = mainprogram->project->binsdir + name + ".bin";
-	if (!exists(path)) {
-		save_bin(path);
+	bin->path = mainprogram->project->binsdir + name + ".bin";
+	if (!exists(bin->path)) {
+		save_bin(bin->path);
 		this->save_binslist();
 	}
 	boost::filesystem::path p1{mainprogram->project->binsdir + name};
@@ -2065,6 +2057,7 @@ void BinsMain::make_currbin(int pos) {
 	// make bin on position pos current
 	this->currbin->pos = pos;
 	this->currbin->name = this->bins[pos]->name;
+	this->currbin->path = this->bins[pos]->path;
 	this->currbin->elements = this->bins[pos]->elements;
 	this->save_binslist();
 	this->prevbinel = nullptr;
@@ -2127,6 +2120,19 @@ void BinsMain::save_binslist() {
 	wfile.close();
 }
 
+void BinsMain::import_bins() {
+	Bin* bin = binsmain->new_bin(remove_extension(basename(mainprogram->paths[binsmain->binscount])));
+	binsmain->open_bin(mainprogram->paths[binsmain->binscount], bin);
+	std::string path = mainprogram->project->binsdir + bin->name + ".bin";
+	binsmain->save_bin(path);
+	if (binsmain->bins.size() >= 20) binsmain->binsscroll++;
+	binsmain->binscount++;
+	if (binsmain->binscount == mainprogram->paths.size()) {
+		binsmain->importbins = false;
+		mainprogram->paths.clear();
+	}
+}
+
 void BinsMain::open_binfiles() {
 	// open videos/images/layer files into bin
 
@@ -2142,8 +2148,8 @@ void BinsMain::open_binfiles() {
 		SDL_SetCursor(SDL_CreateSystemCursor(SDL_SYSTEM_CURSOR_WAIT));
 	} 
 	if (mainprogram->counting == mainprogram->paths.size()) {
-		std::string path = mainprogram->project->binsdir + this->currbin->name + ".bin";
-		save_bin(path);
+		this->currbin->path = mainprogram->project->binsdir + this->currbin->name + ".bin";
+		save_bin(this->currbin->path);
 		this->openbinfile = false;
 		mainprogram->paths.clear();
 		mainprogram->multistage = 0;
@@ -2316,8 +2322,7 @@ std::tuple<std::string, std::string> BinsMain::hap_binel(BinElement *binel, BinE
 		boost::filesystem::rename(remove_extension(binel->path) + ".temp", binel->path);
 	}
 	if (!bdm) {
-		std::string bpath = mainprogram->project->binsdir + this->currbin->name + ".bin";
-		this->do_save_bin(bpath);
+		this->do_save_bin(this->currbin->path);
 	}
 
 	return {apath, rpath};

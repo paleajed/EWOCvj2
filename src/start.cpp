@@ -102,8 +102,8 @@ extern "C" {
 }
 
 #include <ft2build.h>
-#include	 FT_FREETYPE_H
-#include	 FT_MODULE_H
+#include FT_FREETYPE_H
+#include FT_MODULE_H
 #define  FT_HINTING_ADOBE     0
 
 // my own headers
@@ -133,6 +133,34 @@ BinsMain *binsmain = nullptr;
 LoopStation *loopstation = nullptr;
 LoopStation *lp = nullptr;
 LoopStation *lpc = nullptr;
+float smw, smh;
+SDL_GLContext glc;
+SDL_GLContext glc_tm;
+SDL_GLContext glc_pr;
+SDL_GLContext glc_th;
+float white[] = { 1.0f, 1.0f, 1.0f, 1.0f };
+float halfwhite[] = { 1.0f, 1.0f, 1.0f, 0.5f };
+float black[] = { 0.0f, 0.0f, 0.0f, 1.0f };
+float alpha[] = { 0.0f, 0.0f, 0.0f, 0.0f };
+float orange[] = { 1.0f, 0.5f, 0.0f, 1.0f };
+float purple[] = { 0.5f, 0.5f, 1.0f, 1.0f };
+float yellow[] = { 0.9f, 0.8f, 0.0f, 1.0f };
+float lightblue[4] = { 0.5f, 0.5f, 1.0f, 1.0f };
+float darkblue[] = { 0.1f, 0.5f, 1.0f, 1.0f };
+float red[] = { 1.0f, 0.0f, 0.0f, 1.0f };
+float grey[] = { 0.4f, 0.4f, 0.4f, 1.0f };
+float pink[] = { 1.0f, 0.5f, 0.5f, 1.0f };
+float green[] = { 0.0f, 1.0f, 0.2f, 1.0f };
+float lightgreen[] = { 0.5f, 1.0f, 0.5f, 1.0f };
+float darkgreen1[] = { 0.0f, 0.75f, 0.0f, 1.0f };
+float darkgreen2[] = { 0.0f, 0.4f, 0.0f, 1.0f };
+float blue[] = { 0.0f, 0.2f, 1.0f, 1.0f };
+float alphawhite[] = { 1.0f, 1.0f, 1.0f, 0.5f };
+float alphablue[] = { 0.7f, 0.7f, 1.0f, 0.5f };
+float alphagreen[] = { 0.0f, 1.0f, 0.2f, 0.5f };
+float darkred1[] = { 0.75f, 0.0f, 0.0f, 1.0f };
+float darkred2[] = { 0.4f, 0.0f, 0.0f, 0.5f };
+float darkgrey[] = { 0.2f, 0.2f, 0.2f, 1.0f };
 
 //TCHAR buf [MAX_PATH];
 //int retgtp = Getmainprogram->temppath(MAX_PATH, buf);
@@ -142,11 +170,6 @@ static GLuint thmvbuf;
 static GLuint thmvao;
 static GLuint boxvao;
 FT_Face face;
-float smw, smh;
-SDL_GLContext glc;
-SDL_GLContext glc_tm;
-SDL_GLContext glc_pr;
-SDL_GLContext glc_th;
 LayMidi *laymidiA;
 LayMidi *laymidiB;
 LayMidi *laymidiC;
@@ -183,10 +206,11 @@ std::string dirname(std::string pathname)
 	if (last_slash_idx2 == std::string::npos) last_slash_idx2 = 0;
 	size_t maxpos = last_slash_idx2;
 	if (last_slash_idx1 > last_slash_idx2) maxpos = last_slash_idx1;
-	if (std::string::npos != maxpos)
+	if (pathname.size() != maxpos)
 	{
 		pathname.erase(maxpos + 1, std::string::npos);
 	}
+	if (maxpos == 0) pathname = "";
     return pathname;
 }
 
@@ -244,200 +268,6 @@ bool isimage(const std::string &path) {
 }
 
 
-#ifdef _WIN64
-void SetProcessPriority(LPWSTR ProcessName, int Priority)
-{
-	PROCESSENTRY32 proc32;
-	HANDLE hSnap;
-	if (hSnap = CreateToolhelp32Snapshot(TH32CS_SNAPPROCESS, 0));
-	if (hSnap == INVALID_HANDLE_VALUE)
-	{
-
-	}
-	else
-	{
-		proc32.dwSize = sizeof(PROCESSENTRY32);
-		while ((Process32Next(hSnap, &proc32)) == TRUE)
-		{
-			if (_wcsicmp((wchar_t*)(proc32.szExeFile), ProcessName) == 0)
-			{
-				HANDLE h = OpenProcess(PROCESS_SET_INFORMATION, TRUE, proc32.th32ProcessID);
-				SetPriorityClass(h, Priority);
-				CloseHandle(h);
-			}
-		}
-		CloseHandle(hSnap);
-	}
-}
-
-HRESULT EnumerateDevices(REFGUID category, IEnumMoniker **ppEnum)
-{
-    // Create the System Device Enumerator.
-    ICreateDevEnum *pDevEnum;
-    HRESULT hr = CoCreateInstance(CLSID_SystemDeviceEnum, nullptr,  
-        CLSCTX_INPROC_SERVER, IID_PPV_ARGS(&pDevEnum));
-
-    if (SUCCEEDED(hr))
-    {
-        // Create an enumerator for the category.
-        hr = pDevEnum->CreateClassEnumerator(category, ppEnum, 0);
-        if (hr == S_FALSE)
-        {
-            hr = VFW_E_NOT_FOUND;  // The category is empty. Treat as an error.
-        }
-        pDevEnum->Release();
-    }
-    return hr;
-}
-
-void DisplayDeviceInformation(IEnumMoniker *pEnum)
-{
-    IMoniker *pMoniker = nullptr;
-	mainprogram->livedevices.clear();
-    
-    while (pEnum->Next(1, &pMoniker, nullptr) == S_OK)
-    {
-        IPropertyBag *pPropBag;
-        HRESULT hr = pMoniker->BindToStorage(0, 0, IID_PPV_ARGS(&pPropBag));
-        if (FAILED(hr))
-        {
-            pMoniker->Release();
-            continue;  
-        } 
-
-        VARIANT var;
-        VariantInit(&var);
-
-        // Get description or friendly name.
-        hr = pPropBag->Read(L"Description", &var, 0);
-        if (FAILED(hr))
-        {
-            hr = pPropBag->Read(L"FriendlyName", &var, 0);
-        }
-        if (SUCCEEDED(hr))
-        {
-            printf("%S\n", var.bstrVal);
-			std::wstring string(var.bstrVal);
-            mainprogram->livedevices.push_back(string);
-            VariantClear(&var); 
-        }
-
-        hr = pPropBag->Write(L"FriendlyName", &var);
-
-        // WaveInID applies only to audio capture devices.
-        hr = pPropBag->Read(L"WaveInID", &var, 0);
-        if (SUCCEEDED(hr))
-        {
-            printf("WaveIn ID: %d\n", var.lVal);
-            VariantClear(&var); 
-        }
-
-        hr = pPropBag->Read(L"DevicePath", &var, 0);
-        if (SUCCEEDED(hr))
-        {
-            // The device path is not intended for display.
-            printf("Device path: %S\n", var.bstrVal);
-            VariantClear(&var); 
-        }
-
-        pPropBag->Release();
-        pMoniker->Release();
-    }
-}
-#endif
-
-void get_cameras()
-{
-	#ifdef _WIN64
-    HRESULT hr;
-    if (1)
-     {
-       	IEnumMoniker *pEnum;
-
-        hr = EnumerateDevices(CLSID_VideoInputDeviceCategory, &pEnum);
-        if (SUCCEEDED(hr))
-        {
-            DisplayDeviceInformation(pEnum);
-            pEnum->Release();
-        }
-        //hr = EnumerateDevices(CLSID_AudioInputDeviceCategory, &pEnum);
-        //if (SUCCEEDED(hr))
-        //{
-            //DisplayDeviceInformation(pEnum);
-            //pEnum->Release();
-        //}
-        //CoUninitialize();
-    }
-    #endif
-    #ifdef __linux__
-    mainprogram->livedevices.clear();
-    std::map<std::string, std::wstring> map;
-	boost::filesystem::path dir("/sys/class/video4linux");
-	for (boost::filesystem::directory_iterator iter(dir), end; iter != end; ++iter) {
-		std::ifstream name;
-		name.open(iter->path().string() + "/name");
-		std::string istring;
-		getline(name, istring);
-		istring = istring.substr(0, istring.find(":"));
-		std::wstring wstr (istring.begin(), istring.end());
-		map["/dev/" + basename(iter->path().string())] = wstr;
-	}
-	std::map<std::string, std::wstring>::iterator it;
-    for (it = map.begin(); it != map.end(); it++) {
-		struct v4l2_capability cap;
-		int fd = open(it->first.c_str(), O_RDONLY);
-		ioctl(fd, VIDIOC_QUERYCAP, &cap);
-		if (cap.capabilities & V4L2_CAP_VIDEO_CAPTURE) mainprogram->livedevices.push_back(it->second);
-		close(fd);
-    }
-    #endif
-}
-
-void set_live_base(Layer *lay, std::string livename) {
-	lay->decresult->width = 0;
-	lay->initialized = false;
-	lay->audioplaying = false;
-	if (lay->clonesetnr != -1) {
-		mainmix->clonesets[lay->clonesetnr]->erase(lay);
-		if (mainmix->clonesets[lay->clonesetnr]->size() == 0) {
-			mainmix->cloneset_destroy(mainmix->clonesets[lay->clonesetnr]);
-		}
-		lay->clonesetnr = -1;
-	}
-	lay->type = ELEM_LIVE;
-	lay->filename = livename;
-	if (lay->video) {
-		std::unique_lock<std::mutex> lock(lay->enddecodelock);
-		lay->enddecodevar.wait(lock, [&]{return lay->processed;});
-		lock.unlock();
-		lay->processed = false;
-		avformat_close_input(&lay->video);
-	}
-	avdevice_register_all();
-	ptrdiff_t pos = std::find(mainprogram->busylist.begin(), mainprogram->busylist.end(), livename) - mainprogram->busylist.begin();
-	if (pos >= mainprogram->busylist.size()) {
-		mainprogram->busylist.push_back(lay->filename);
-		mainprogram->busylayers.push_back(lay);
-		#ifdef _WIN64
-		AVInputFormat *ifmt = av_find_input_format("dshow");
-		#else
-		#ifdef __linux__
-		AVInputFormat *ifmt = av_find_input_format("v4l2");
-		#endif
-		#endif
-		lay->reset = false;
-		lay->frame = 0.0f;
-		lay->prevframe = -1;
-		lay->numf = 0;
-		lay->startframe = 0;
-		lay->endframe = 0;
-		thread_vidopen(lay, ifmt, false);
-	}
-	else {
-		lay->liveinput = mainprogram->busylayers[pos];
-		mainprogram->mimiclayers.push_back(lay);
-	}
-}					
 					
 
 class Deadline 
@@ -655,12 +485,12 @@ void mycallback( double deltatime, std::vector< unsigned char > *message, void *
    		return;
    	}
   	
-  	if (mainprogram->tunemidi) {
+  	if (mainprogram->midipresets) {
   		LayMidi *lm = nullptr;
-  		if (mainprogram->tunemidiset == 1) lm = laymidiA;
-  		else if (mainprogram->tunemidiset == 2) lm = laymidiB;
-  		else if (mainprogram->tunemidiset == 3) lm = laymidiC;
-  		else if (mainprogram->tunemidiset == 4) lm = laymidiD;
+  		if (mainprogram->midipresetsset == 1) lm = laymidiA;
+  		else if (mainprogram->midipresetsset == 2) lm = laymidiB;
+  		else if (mainprogram->midipresetsset == 3) lm = laymidiC;
+  		else if (mainprogram->midipresetsset == 4) lm = laymidiD;
 		switch (mainprogram->tmlearn) {
 			case TM_NONE:
 				if (lm->play[0] == midi0 and lm->play[1] == midi1 and lm->playstr == midiport) mainprogram->tmchoice = TM_PLAY;
@@ -746,7 +576,7 @@ void mycallback( double deltatime, std::vector< unsigned char > *message, void *
 	
 	
   	if (mainmix->learn) {
-  		if (midi0 == 176 and mainmix->learnparam and mainmix->learnparam->sliding) {
+  		if (midi0 == 176 and midi2 == 127 and mainmix->learnparam and mainmix->learnparam->sliding) {
 			mainmix->learn = false;
 			mainmix->learnparam->midi[0] = midi0;
 			mainmix->learnparam->midi[1] = midi1;
@@ -771,10 +601,36 @@ void mycallback( double deltatime, std::vector< unsigned char > *message, void *
 		//	}
 		//}
   		else if (midi0 == 176 and mainmix->learnbutton) {
-			mainmix->learn = false;
-			mainmix->learnbutton->midi[0] = midi0;
-			mainmix->learnbutton->midi[1] = midi1;
-			mainmix->learnbutton->midiport = midiport;
+			if (mainmix->midishelfstage == 1) {
+				// start midi button
+				mainmix->midishelfstage = 2;
+				mainmix->midishelfstart = midi1;
+				mainmix->learnbutton->midi[0] = midi0;
+				mainmix->learnbutton->midi[1] = midi1;
+				mainmix->learnbutton->midiport = midiport;
+			}
+			else if (mainmix->midishelfstage == 2) {
+				// end midi button
+				mainmix->midishelfstage = 0;
+				mainmix->learnbutton->midi[0] = midi0;
+				mainmix->learnbutton->midi[1] = midi1;
+				mainmix->learnbutton->midiport = midiport;
+				if (midi1 > mainmix->midishelfstart and midi1 < mainmix->midishelfstart + (16 - mainmix->midishelfpos)) {
+					for (int i = mainmix->midishelfstart; i < midi1 + 1; i++) {
+						mainmix->midishelf->elements[mainmix->midishelfpos + i - mainmix->midishelfstart]->button->midi[0] = midi0;
+						mainmix->midishelf->elements[mainmix->midishelfpos + i - mainmix->midishelfstart]->button->midi[1] = i;
+						mainmix->midishelf->elements[mainmix->midishelfpos + i - mainmix->midishelfstart]->button->midiport = midiport;
+					}
+				}
+				mainmix->learn = false;
+			}
+			else {
+				mainmix->learnbutton->midi[0] = midi0;
+				mainmix->learnbutton->midi[1] = midi1;
+				mainmix->learnbutton->midiport = midiport;
+				mainmix->learn = false;
+			}
+
 /* 			mainmix->learnbutton->node = new MidiNode;
 			mainmix->learnbutton->node->button = mainmix->learnbutton;
 			mainprogram->nodesmain->currpage->nodes.push_back(mainmix->learnbutton->node);
@@ -783,11 +639,36 @@ void mycallback( double deltatime, std::vector< unsigned char > *message, void *
 			}
 IMPLEMENT */		}
 		else if (midi0 == 144 and mainmix->learnbutton) {
-			mainmix->learn = false;
-			mainmix->learnbutton->midi[0] = midi0;
-			mainmix->learnbutton->midi[1] = midi1;
-			mainmix->learnbutton->midiport = midiport;
-/* 			mainmix->learnparam->node = new MidiNode;
+			if (mainmix->midishelfstage == 1) {
+				// start midi button
+				mainmix->midishelfstage = 2;
+				mainmix->midishelfstart = midi1;
+				mainmix->learnbutton->midi[0] = midi0;
+				mainmix->learnbutton->midi[1] = midi1;
+				mainmix->learnbutton->midiport = midiport;
+			}
+			else if (mainmix->midishelfstage == 2) {
+				// end midi button
+				mainmix->midishelfstage = 0;
+				mainmix->learnbutton->midi[0] = midi0;
+				mainmix->learnbutton->midi[1] = midi1;
+				mainmix->learnbutton->midiport = midiport;
+				if (midi1 > mainmix->midishelfstart and midi1 < mainmix->midishelfstart + (16 - mainmix->midishelfpos)) {
+					for (int i = mainmix->midishelfstart; i < midi1 + 1; i++) {
+						mainmix->midishelf->elements[mainmix->midishelfpos + i - mainmix->midishelfstart]->button->midi[0] = midi0;
+						mainmix->midishelf->elements[mainmix->midishelfpos + i - mainmix->midishelfstart]->button->midi[1] = i;
+						mainmix->midishelf->elements[mainmix->midishelfpos + i - mainmix->midishelfstart]->button->midiport = midiport;
+					}
+				}
+				mainmix->learn = false;
+			}
+			else {
+				mainmix->learnbutton->midi[0] = midi0;
+				mainmix->learnbutton->midi[1] = midi1;
+				mainmix->learnbutton->midiport = midiport;
+				mainmix->learn = false;
+			}
+			/* 			mainmix->learnparam->node = new MidiNode;
 			mainmix->learnparam->node->param = mainmix->learnparam;
 			mainprogram->nodesmain->currpage->nodes.push_back(mainmix->learnparam->node);
 			if (mainmix->learnparam->effect) {
@@ -981,6 +862,8 @@ static int decode_packet(Layer *lay, bool show)
 				lay->rgbframe->linesize
 			);
 			if (h < 1) return 0;
+			std::mutex datalock;
+			datalock.lock();
 			lay->decresult->hap = false;
 			lay->decresult->data = (char*) * (lay->rgbframe->extended_data);
 			lay->decresult->height = lay->video_dec_ctx->height;
@@ -995,6 +878,7 @@ static int decode_packet(Layer *lay, bool show)
 					clay->decresult->newdata = true;
 				}
 			}
+			datalock.unlock();
 		}
 	}
     else if (lay->decpkt.stream_index == lay->audio_stream_idx) {
@@ -1271,10 +1155,13 @@ bool Layer::get_hap_frame() {
 
 	if (!this->databuf) {
 	//	this->decresult->width = 0;
-		this->databuf = (char*)malloc(this->video_dec_ctx->width * this->video_dec_ctx->height * sizeof(int));
+		this->databuf = (char*)malloc(this->video_dec_ctx->width * this->video_dec_ctx->height * 4);
+		if (this->databuf == nullptr) return 0;
 		this->databufready = true;
 	}
 
+	std::mutex malock;
+	malock.lock();
 	long long seekTarget = av_rescale(this->video_stream->duration, this->frame, this->numf) + this->video_stream->first_dts;
 	int r = av_seek_frame(this->video, this->video_stream->index, seekTarget, 0);
 	//av_new_packet(&this->decpkt, this->video_dec_ctx->width * this->video_dec_ctx->height * 4);
@@ -1289,7 +1176,8 @@ bool Layer::get_hap_frame() {
 	char *bptrData = (char*)(&this->decpkt)->data;
 	size_t size = (&this->decpkt)->size;
 	if (size == 0) { 
-		return false; 
+		malock.unlock();
+		return false;
 	}
 	size_t uncomp;
 	int headerl = 4;
@@ -1298,8 +1186,6 @@ bool Layer::get_hap_frame() {
 	}
 	this->decresult->compression = *(bptrData + 3);
 
-	std::mutex lock;
-	lock.lock();
 	int st = -1;
 	if (this->databufready) {
 		st = snappy_uncompress(bptrData + headerl, size - headerl, this->databuf, &uncomp);
@@ -1309,7 +1195,7 @@ bool Layer::get_hap_frame() {
 	if (st != SNAPPY_OK) {
 		this->decresult->data = nullptr;
 		this->decresult->width = 0;
-		lock.unlock();
+		malock.unlock();
 		return false;
 	}
 	else this->decresult->data = this->databuf;
@@ -1326,11 +1212,12 @@ bool Layer::get_hap_frame() {
 			clay->decresult->newdata = true;
 		}
 	}
-	lock.unlock();
+	malock.unlock();
 	return true;
 }
 
 void Layer::trigger() {
+	//reminder: comment
 	if (this->dummy) return;
 	while (!this->closethread) {
 		this->ready = true;
@@ -1374,7 +1261,7 @@ void Layer::get_frame(){
 				lock.unlock();
 				avformat_close_input(&this->video);
 			}
-			bool r = thread_vidopen(this, nullptr, false);
+			bool r = this->thread_vidopen();
 			this->vidopen = false;
 			if (r == 0) {
 				printf("load error\n");
@@ -1410,8 +1297,10 @@ void Layer::get_frame(){
 			}
 			continue;
 		}
-		if (this->liveinput == nullptr) {
-			if ((!this->initialized and this->decresult->width) or this->filename == "") continue;
+		if (!this->liveinput) {
+			if ((!this->initialized and this->decresult->width) or this->filename == "") {
+				continue;
+			}
 			if (this->vidformat != 188 and this->vidformat != 187) {
 				if ((int)(this->frame) != this->prevframe or this->type == ELEM_LIVE) {
 					get_cpu_frame((int)this->frame, this->prevframe, 0);
@@ -1429,7 +1318,10 @@ void Layer::get_frame(){
 				continue;
 			}
 			if ((int)(this->frame) != this->prevframe) {
-				this->get_hap_frame();
+				bool ret = this->get_hap_frame();
+				if (!ret) {	
+					this->get_hap_frame();
+				}
 			}
 		}
 		if (this->dummy) {
@@ -1470,9 +1362,51 @@ void Layer::open_video(float frame, const std::string &filename, int reset) {
 			}
 		}
 		else if (!ret) {
-			this->inhibit(); // lay is passed over into only framecounting
+			LoopStation* l;
+			if (!mainprogram->prevmodus) {
+				l = lpc;
+			}
+			else {
+				l = lp;
+			}
 			this->layers->erase(std::find(this->layers->begin(), this->layers->end(), this));
 			Layer *lay = mainmix->add_layer(*this->layers, this->pos);
+			for (int m = 0; m < 2; m++) {
+				for (int j = 0; j < this->effects[m].size(); j++) {
+					Effect *eff = lay->add_effect(this->effects[m][j]->type, j);
+					for (int k = 0; k < this->effects[m][j]->params.size(); k++) {
+						Param* par = this->effects[m][j]->params[k];
+						Param* cpar = lay->effects[m][j]->params[k];
+						LoopStationElement* lpe = l->elemmap[par];
+						if (lpe) {
+							for (int i = 0; i < lpe->eventlist.size(); i++) {
+								if (std::get<1>(lpe->eventlist[i]) == par) {
+									std::get<1>(lpe->eventlist[i]) = cpar;
+								}
+							}
+							cpar->box->acolor[0] = lpe->colbox->acolor[0];
+							cpar->box->acolor[1] = lpe->colbox->acolor[1];
+							cpar->box->acolor[2] = lpe->colbox->acolor[2];
+							cpar->box->acolor[3] = lpe->colbox->acolor[3];
+							l->elemmap[cpar] = lpe;
+							l->elemmap.erase(par);
+							lpe->params.erase(par);
+							lpe->params.emplace(cpar);
+							lpe->params.erase(par);
+							lpe->layers.emplace(lay);
+							lpe->layers.erase(this);
+							l->parmap[par] = l->parmap[cpar];
+							l->allparams.erase(std::find(l->allparams.begin(), l->allparams.end(), par));
+							l->allparams.push_back(cpar);
+						}
+						cpar->value = par->value;
+						cpar->midi[0] = par->midi[0];
+						cpar->midi[1] = par->midi[1];
+						cpar->effect = eff;
+					}
+				}
+			}
+			this->inhibit(); // lay is passed over into only framecounting
 			mainmix->set_values(lay, this, false);
 			if (this == mainmix->currlay) mainmix->currlay = lay;
 			lay->open_video(0, filename, true);
@@ -1488,6 +1422,8 @@ void Layer::open_video(float frame, const std::string &filename, int reset) {
 	if (frame >= 0.0f) this->frame = frame;
 	this->prevframe = this->frame - 1;
 	this->reset = reset;
+	this->skip = false;
+	this->ifmt = nullptr;
 	this->vidopen = true;
 	if (!this->isclone) this->decresult->width = 0;
 	this->ready = true;
@@ -1503,200 +1439,213 @@ void Layer::open_video(float frame, const std::string &filename, int reset) {
 	}
 }
 
-bool thread_vidopen(Layer *lay, AVInputFormat *ifmt, bool skip) {
-	if (lay->video) avformat_close_input(&lay->video);
-	lay->video = nullptr;
-	lay->video_dec_ctx = nullptr;
-	lay->liveinput = nullptr;
+bool Layer::thread_vidopen() {
+	if (this->video) avformat_close_input(&this->video);
+	this->video = nullptr;
+	this->video_dec_ctx = nullptr;
+	this->liveinput = nullptr;
 		
-	if (!skip) {
+	if (!this->skip) {
 		bool foundnew = false;
-		ptrdiff_t pos = std::find(mainprogram->busylayers.begin(), mainprogram->busylayers.end(), lay) - mainprogram->busylayers.begin();
+		ptrdiff_t pos = std::find(mainprogram->busylayers.begin(), mainprogram->busylayers.end(), this) - mainprogram->busylayers.begin();
 		if (pos < mainprogram->busylayers.size()) {
 			int size = mainprogram->mimiclayers.size();
 			for (int i = 0; i < size; i++) {
 				Layer *mlay = mainprogram->mimiclayers[i]; 
 				if (mlay->liveinputpos != -1) continue;
-				if (mlay->liveinput == lay) {
+				if (mlay->liveinput == this) {
 					mlay->liveinput = nullptr;
+					mlay->texture = -1;
+					mlay->initialized = false;
 					mainprogram->mimiclayers.erase(mainprogram->mimiclayers.begin() + i);
+					mainprogram->busylist[pos] = mlay->filename;
 					mainprogram->busylayers[pos] = mlay;
 					#ifdef _WIN64
-					AVInputFormat *ifmt = av_find_input_format("dshow");
+					mlay->ifmt = av_find_input_format("dshow");
 					#else
 					#ifdef __linux__
-					AVInputFormat *ifmt = av_find_input_format("v4l2");
+					mlay->ifmt = av_find_input_format("v4l2");
 					#endif
 					#endif
-					thread_vidopen(mlay, ifmt, true);
+					mlay->skip = true;
+					mlay->vidopen = true;
+					mlay->ready = true;
+					while (mlay->ready) {
+						mlay->startdecode.notify_one();
+					}
 					for (int j = 0; j < mainprogram->mimiclayers.size(); j++) {
-						if (mainprogram->mimiclayers[j]->liveinput == lay) {
-							mainprogram->mimiclayers[j]->liveinput == mlay;
+						if (mainprogram->mimiclayers[j]->liveinput == this) {
+							mainprogram->mimiclayers[j]->liveinput = mlay;
 						}
 					}
 					foundnew = true;
 					break;
 				}
 			}
-			if (!foundnew and lay->filename != mainprogram->busylist[pos]) {
+			if (!foundnew and this->filename != mainprogram->busylist[pos]) {
 				mainprogram->busylayers.erase(mainprogram->busylayers.begin() + pos);
 				mainprogram->busylist.erase(mainprogram->busylist.begin() + pos);
 			}
 		}
-		pos = std::find(mainprogram->mimiclayers.begin(), mainprogram->mimiclayers.end(), lay) - mainprogram->mimiclayers.begin();
+		pos = std::find(mainprogram->mimiclayers.begin(), mainprogram->mimiclayers.end(), this) - mainprogram->mimiclayers.begin();
 		if (pos < mainprogram->mimiclayers.size()) {
 			mainprogram->mimiclayers.erase(mainprogram->mimiclayers.begin() + pos);
 		}
 	}
 	
-	//av_opt_set_int(lay->video, "probesize2", INT_MAX, 0);
-	lay->video = avformat_alloc_context();
-	lay->video->flags |= AVFMT_FLAG_NONBLOCK;
-	int r = avformat_open_input(&(lay->video), lay->filename.c_str(), ifmt, nullptr);
-	printf("loading... %s\n", lay->filename.c_str());
+	//av_opt_set_int(this->video, "probesize2", INT_MAX, 0);
+	this->video = avformat_alloc_context();
+	if (this->type != ELEM_LIVE) this->video->flags |= AVFMT_FLAG_NONBLOCK;
+	int r = avformat_open_input(&(this->video), this->filename.c_str(), this->ifmt, nullptr);
+	printf("loading... %s\n", this->filename.c_str());
 	if (r < 0) {
-		lay->filename = "";
-		lay->openerr = true;
+		this->filename = "";
+		this->openerr = true;
 		printf("%s\n", "Couldnt open video");
 		return 0;
 	}
 
-	//av_opt_set_int(lay->video, "max_analyze_duration2", 100000000, 0);
-	if (avformat_find_stream_info(lay->video, nullptr) < 0) {
+	//av_opt_set_int(this->video, "max_analyze_duration2", 100000000, 0);
+	if (avformat_find_stream_info(this->video, nullptr) < 0) {
         fprintf(stderr, "Could not find stream information\n");
         return 0;
     }
-	lay->video->max_picture_buffer = 20000000;
-	avformat_open_input(&(lay->videoseek), lay->filename.c_str(), ifmt, nullptr);
+	//this->video->max_picture_buffer = 20000000;
+	if (this->type != ELEM_LIVE) avformat_open_input(&(this->videoseek), this->filename.c_str(), this->ifmt, nullptr);
 
-    if (open_codec_context(&(lay->video_stream_idx), lay->video, AVMEDIA_TYPE_VIDEO) >= 0) {
-     	lay->video_stream = lay->video->streams[lay->video_stream_idx];
-		AVCodec *dec = avcodec_find_decoder(lay->video_stream->codecpar->codec_id);
-        lay->vidformat = lay->video_stream->codecpar->codec_id;
-        lay->video_dec_ctx = avcodec_alloc_context3(dec);
-		avcodec_parameters_to_context(lay->video_dec_ctx, lay->video_stream->codecpar);
-		avcodec_open2(lay->video_dec_ctx, dec, nullptr);
-		lay->bpp = 4;
-		if (lay->vidformat == 188 or lay->vidformat == 187) {
-			lay->numf = lay->video_stream->nb_frames;
-			if (lay->numf == 0) {
-				lay->numf = (double)lay->video->duration * (double)lay->video_stream->avg_frame_rate.num / (double)lay->video_stream->avg_frame_rate.den / (double)1000000.0f;
-				lay->video_duration = lay->video->duration / (1000000.0f * lay->video_stream->time_base.num / lay->video_stream->time_base.den);
+	if (open_codec_context(&(this->video_stream_idx), this->video, AVMEDIA_TYPE_VIDEO) >= 0) {
+		this->video_stream = this->video->streams[this->video_stream_idx];
+		AVCodec* dec = avcodec_find_decoder(this->video_stream->codecpar->codec_id);
+		this->vidformat = this->video_stream->codecpar->codec_id;
+		this->video_dec_ctx = avcodec_alloc_context3(dec);
+		avcodec_parameters_to_context(this->video_dec_ctx, this->video_stream->codecpar);
+		avcodec_open2(this->video_dec_ctx, dec, nullptr);
+		this->bpp = 4;
+		if (this->vidformat == 188 or this->vidformat == 187) {
+			this->numf = this->video_stream->nb_frames;
+			if (this->numf == 0) {
+				this->numf = (double)this->video->duration * (double)this->video_stream->avg_frame_rate.num / (double)this->video_stream->avg_frame_rate.den / (double)1000000.0f;
+				this->video_duration = this->video->duration / (1000000.0f * this->video_stream->time_base.num / this->video_stream->time_base.den);
 			}
-			else lay->video_duration = lay->video_stream->duration;
-			float tbperframe = (float)lay->video_stream->duration / (float)lay->numf;
-			lay->millif = tbperframe * (((float)lay->video_stream->time_base.num * 1000.0) / (float)lay->video_stream->time_base.den);
+			else this->video_duration = this->video_stream->duration;
+			float tbperframe = (float)this->video_stream->duration / (float)this->numf;
+			this->millif = tbperframe * (((float)this->video_stream->time_base.num * 1000.0) / (float)this->video_stream->time_base.den);
 
-			lay->startframe = 0;
-			lay->endframe = lay->numf;
-			if (0) { // lay->reset?
-				lay->frame = 0.0f;
+			this->startframe = 0;
+			this->endframe = this->numf;
+			if (0) { // this->reset?
+				this->frame = 0.0f;
 			}
-			lay->decframe = av_frame_alloc();
+			this->decframe = av_frame_alloc();
 
-			if (lay->databuf) free(lay->databuf);
-			lay->databuf = nullptr;
+			std::mutex flock;
+			flock.lock();
+			if (this->databuf) free(this->databuf);
+			this->databuf = nullptr;
+			flock.unlock();
 
 			return 1;
-        }
-		else avformat_open_input(&(lay->videoseek), lay->filename.c_str(), ifmt, nullptr);
-  	}
+		}
+		else if (this->type != ELEM_LIVE) {
+			avformat_open_input(&(this->videoseek), this->filename.c_str(), this->ifmt, nullptr);
+		}
+	}
     else {
     	printf("Error2\n");
     	return 0;
     }
 
-    if (lay->rgbframe) {
-    	//avcodec_close(lay->video_dec_ctx);
-    	//avcodec_close(lay->audio_dec_ctx);
-	    av_frame_free(&lay->decframe);
-	    av_frame_free(&lay->rgbframe);
+    if (this->rgbframe) {
+    	//avcodec_close(this->video_dec_ctx);
+    	//avcodec_close(this->audio_dec_ctx);
+	    av_frame_free(&this->decframe);
+	    av_frame_free(&this->rgbframe);
     }
 
-	if (lay->type != ELEM_LIVE) {
-		lay->numf = lay->video_stream->nb_frames;
-		if (lay->numf == 0) {
-			lay->numf = (double)lay->video->duration * (double)lay->video_stream->avg_frame_rate.num / (double)lay->video_stream->avg_frame_rate.den / (double)1000000.0f;
-			lay->video_duration = lay->video->duration / (1000000.0f * lay->video_stream->time_base.num / lay->video_stream->time_base.den);
+	if (this->type != ELEM_LIVE) {
+		this->numf = this->video_stream->nb_frames;
+		if (this->numf == 0) {
+			this->numf = (double)this->video->duration * (double)this->video_stream->avg_frame_rate.num / (double)this->video_stream->avg_frame_rate.den / (double)1000000.0f;
+			this->video_duration = this->video->duration / (1000000.0f * this->video_stream->time_base.num / this->video_stream->time_base.den);
 		}
-		else lay->video_duration = lay->video_stream->duration;
-		if (lay->reset) {
-			lay->startframe = 0;
-			lay->endframe = lay->numf - 1;
+		else this->video_duration = this->video_stream->duration;
+		if (this->reset) {
+			this->startframe = 0;
+			this->endframe = this->numf - 1;
 		}
-		//if (lay->numf == 0) return 0;	//reminder: implement!
-		float tbperframe = (float)lay->video_duration / (float)lay->numf;
-		lay->millif = tbperframe * (((float)lay->video_stream->time_base.num * 1000.0) / (float)lay->video_stream->time_base.den);
+		//if (this->numf == 0) return 0;	//reminder: implement!
+		float tbperframe = (float)this->video_duration / (float)this->numf;
+		this->millif = tbperframe * (((float)this->video_stream->time_base.num * 1000.0) / (float)this->video_stream->time_base.den);
 	}
 
-	if (open_codec_context(&(lay->audio_stream_idx), lay->video, AVMEDIA_TYPE_AUDIO) >= 0 and !lay->dummy) {
-		lay->audio_stream = lay->video->streams[lay->audio_stream_idx];
-		AVCodec *dec = avcodec_find_decoder(lay->audio_stream->codecpar->codec_id);
-        lay->audio_dec_ctx = avcodec_alloc_context3(dec);
-		avcodec_parameters_to_context(lay->audio_dec_ctx, lay->audio_stream->codecpar);
-		avcodec_open2(lay->audio_dec_ctx, dec, nullptr);
-		lay->sample_rate = lay->audio_dec_ctx->sample_rate;
-		lay->channels = lay->audio_dec_ctx->channels;
-		lay->channels = 1;
-		switch (lay->audio_dec_ctx->sample_fmt) {
+	if (open_codec_context(&(this->audio_stream_idx), this->video, AVMEDIA_TYPE_AUDIO) >= 0 and !this->dummy) {
+		this->audio_stream = this->video->streams[this->audio_stream_idx];
+		AVCodec *dec = avcodec_find_decoder(this->audio_stream->codecpar->codec_id);
+        this->audio_dec_ctx = avcodec_alloc_context3(dec);
+		avcodec_parameters_to_context(this->audio_dec_ctx, this->audio_stream->codecpar);
+		avcodec_open2(this->audio_dec_ctx, dec, nullptr);
+		this->sample_rate = this->audio_dec_ctx->sample_rate;
+		this->channels = this->audio_dec_ctx->channels;
+		this->channels = 1;
+		switch (this->audio_dec_ctx->sample_fmt) {
 			case AV_SAMPLE_FMT_U8:
-				if (lay->channels == 1) lay->sampleformat = AL_FORMAT_MONO8;
-				else lay->sampleformat = AL_FORMAT_STEREO8;
+				if (this->channels == 1) this->sampleformat = AL_FORMAT_MONO8;
+				else this->sampleformat = AL_FORMAT_STEREO8;
 				break;
 			case AV_SAMPLE_FMT_S16:
-				if (lay->channels == 1) lay->sampleformat = AL_FORMAT_MONO16;
-				else lay->sampleformat = AL_FORMAT_STEREO16;
+				if (this->channels == 1) this->sampleformat = AL_FORMAT_MONO16;
+				else this->sampleformat = AL_FORMAT_STEREO16;
 				break;
 			case AV_SAMPLE_FMT_S32:
-				if (lay->channels == 1) lay->sampleformat = AL_FORMAT_MONO_FLOAT32;
-				else lay->sampleformat = AL_FORMAT_STEREO_FLOAT32;
+				if (this->channels == 1) this->sampleformat = AL_FORMAT_MONO_FLOAT32;
+				else this->sampleformat = AL_FORMAT_STEREO_FLOAT32;
 				break;
 			case AV_SAMPLE_FMT_FLT:
-				if (lay->channels == 1) lay->sampleformat = AL_FORMAT_MONO_FLOAT32;
-				else lay->sampleformat = AL_FORMAT_STEREO_FLOAT32;
+				if (this->channels == 1) this->sampleformat = AL_FORMAT_MONO_FLOAT32;
+				else this->sampleformat = AL_FORMAT_STEREO_FLOAT32;
 				break;
 			case AV_SAMPLE_FMT_U8P:
-				if (lay->channels == 1) lay->sampleformat = AL_FORMAT_MONO8;
-				else lay->sampleformat = AL_FORMAT_STEREO8;
+				if (this->channels == 1) this->sampleformat = AL_FORMAT_MONO8;
+				else this->sampleformat = AL_FORMAT_STEREO8;
 				break;
 			case AV_SAMPLE_FMT_S16P:
-				if (lay->channels == 1) lay->sampleformat = AL_FORMAT_MONO16;
-				else lay->sampleformat = AL_FORMAT_STEREO16;
+				if (this->channels == 1) this->sampleformat = AL_FORMAT_MONO16;
+				else this->sampleformat = AL_FORMAT_STEREO16;
 				break;
 			case AV_SAMPLE_FMT_S32P:
-				if (lay->channels == 1) lay->sampleformat = AL_FORMAT_MONO_FLOAT32;
-				else lay->sampleformat = AL_FORMAT_STEREO_FLOAT32;
+				if (this->channels == 1) this->sampleformat = AL_FORMAT_MONO_FLOAT32;
+				else this->sampleformat = AL_FORMAT_STEREO_FLOAT32;
 				break;
 			case AV_SAMPLE_FMT_FLTP:
-				if (lay->channels == 1) lay->sampleformat = AL_FORMAT_MONO_FLOAT32;
-				else lay->sampleformat = AL_FORMAT_STEREO_FLOAT32;
+				if (this->channels == 1) this->sampleformat = AL_FORMAT_MONO_FLOAT32;
+				else this->sampleformat = AL_FORMAT_STEREO_FLOAT32;
 				break;
 		}
 		
-		lay->audioplaying = true;
-    	lay->audiot = std::thread{&Layer::playaudio, lay};
-    	lay->audiot.detach();
+		this->audioplaying = true;
+    	this->audiot = std::thread{&Layer::playaudio, this};
+    	this->audiot.detach();
     }
 
-    lay->rgbframe = av_frame_alloc();
-    lay->rgbframe->format = AV_PIX_FMT_BGRA;
-    lay->rgbframe->width  = lay->video_dec_ctx->width;
-    lay->rgbframe->height = lay->video_dec_ctx->height;
-	int storage = av_image_alloc(lay->rgbframe->data, lay->rgbframe->linesize, lay->rgbframe->width, lay->rgbframe->height, AV_PIX_FMT_BGRA, 1);
-  	lay->sws_ctx = sws_getContext
+    this->rgbframe = av_frame_alloc();
+    this->rgbframe->format = AV_PIX_FMT_BGRA;
+    this->rgbframe->width  = this->video_dec_ctx->width;
+    this->rgbframe->height = this->video_dec_ctx->height;
+	int storage = av_image_alloc(this->rgbframe->data, this->rgbframe->linesize, this->rgbframe->width, this->rgbframe->height, AV_PIX_FMT_BGRA, 1);
+  	this->sws_ctx = sws_getContext
     (
-        lay->video_dec_ctx->width,
-       	lay->video_dec_ctx->height,
-        lay->video_dec_ctx->pix_fmt,
-        lay->video_dec_ctx->width,
-        lay->video_dec_ctx->height,
+        this->video_dec_ctx->width,
+       	this->video_dec_ctx->height,
+        this->video_dec_ctx->pix_fmt,
+        this->video_dec_ctx->width,
+        this->video_dec_ctx->height,
         AV_PIX_FMT_BGRA,
         SWS_BILINEAR,
         nullptr,
         nullptr,
         nullptr);
 
-    lay->decframe = av_frame_alloc();
+    this->decframe = av_frame_alloc();
 	
     return 1;
 }
@@ -2019,7 +1968,7 @@ void set_fbo() {
 	glBufferStorage(GL_ARRAY_BUFFER, 32, nullptr, GL_DYNAMIC_STORAGE_BIT);
 	glEnableVertexAttribArray(1);
 	glVertexAttribPointer(1, 2, GL_FLOAT, GL_FALSE, 8, nullptr);
-	SDL_GL_MakeCurrent(mainprogram->tunemidiwindow, glc_tm);
+	SDL_GL_MakeCurrent(mainprogram->config_midipresetswindow, glc_tm);
 	glGenBuffers(1, &mainprogram->tmboxvbuf);
 	glGenBuffers(1, &mainprogram->tmboxtbuf);
 	glGenVertexArrays(1, &mainprogram->tmboxvao);
@@ -2108,16 +2057,16 @@ void draw_line(gui_line *line) {
 	glUniform1i(linetriangle, 1);
 	GLint color = glGetUniformLocation(mainprogram->ShaderProgram, "color");
 	glUniform4fv(color, 1, line->linec);
-	GLfloat fvcoords[6] = { line->x1, line->y1, 0.0f, line->x2, line->y2, 0.0f};
+	GLfloat fvcoords[6] = { line->x1, line->y1, 1.0f, line->x2, line->y2, 1.0f};
  	GLuint fvbuf, fvao;
     glGenBuffers(1, &fvbuf);
 	glBindBuffer(GL_ARRAY_BUFFER, fvbuf);
-    glBufferData(GL_ARRAY_BUFFER, 16, fvcoords, GL_STATIC_DRAW);
+    glBufferData(GL_ARRAY_BUFFER, 24, fvcoords, GL_STATIC_DRAW);
 	glGenVertexArrays(1, &fvao);
 	glBindVertexArray(fvao);
 	glBindBuffer(GL_ARRAY_BUFFER, fvbuf);
 	glEnableVertexAttribArray(0);
-	glVertexAttribPointer(0, 2, GL_FLOAT, GL_FALSE, 8, nullptr);
+	glVertexAttribPointer(0, 3, GL_FLOAT, GL_FALSE, 12, nullptr);
 	glDrawArrays(GL_LINES, 0, 2);
 	glUniform1i(linetriangle, 0);
 	
@@ -2164,10 +2113,8 @@ void draw_direct(float* linec, float* areac, float x, float y, float wi, float h
 		glUniform1f(pixelw, 0.0f);
 	}
 
-	if (opacity != 1.0f) {
-		GLint opa = glGetUniformLocation(mainprogram->ShaderProgram, "opacity");
-		glUniform1f(opa, opacity);
-	}
+	GLint opa = glGetUniformLocation(mainprogram->ShaderProgram, "opacity");
+	glUniform1f(opa, opacity);
 
 	if (areac) {
 		float shx = -dx * 6.0f;
@@ -2231,7 +2178,7 @@ void draw_direct(float* linec, float* areac, float x, float y, float wi, float h
 	}
 
 	if (areac) glUniform1i(box, 0);
-	//glUniform1f(opa, 1.0f);
+	glUniform1f(opa, 1.0f);
 }
 
 void draw_box(Box *box, GLuint tex) {
@@ -2506,7 +2453,8 @@ std::vector<float> render_text(std::string text, float *textc, float x, float y,
 	std::vector<float> textwsplay;
 	if (text == "") return textwsplay;
 	float white[4] = { 1.0f, 1.0f, 1.0f, 1.0f };
-	y -= 0.008f;
+	y -= 0.013f;
+	if (smflag > 0) y -= 0.03f;
 	GLuint texture;
 	float wfac;
 	float textw = 0.0f;
@@ -2660,7 +2608,7 @@ std::vector<float> render_text(std::string text, float *textc, float x, float y,
 			glGenFramebuffers(1, &glyphfrbuf);
 			glBindFramebuffer(GL_FRAMEBUFFER, glyphfrbuf);
 			glFramebufferTexture2D(GL_FRAMEBUFFER, GL_COLOR_ATTACHMENT0, GL_TEXTURE_2D, ftex, 0);
-			glBlitNamedFramebuffer(glyphfrbuf, texfrbuf, 0, 0, g->bitmap.width, g->bitmap.rows, pxprogress, g->bitmap_top + 8, pxprogress + g->bitmap.width, g->bitmap_top - g->bitmap.rows + 8, GL_COLOR_BUFFER_BIT, GL_NEAREST);
+			glBlitNamedFramebuffer(glyphfrbuf, texfrbuf, 0, 0, g->bitmap.width, g->bitmap.rows, pxprogress, g->bitmap_top + 12, pxprogress + g->bitmap.width, g->bitmap_top - g->bitmap.rows + 12, GL_COLOR_BUFFER_BIT, GL_NEAREST);
 	
 			pxprogress += g->advance.x / 64.0f;
 	
@@ -2861,7 +2809,7 @@ bool Layer::calc_texture(bool comp, bool alive) {
 					if (this->scritching != 4) {
 						if (this->bouncebut->value == 0) {
 							this->frame = this->startframe;
-							this->clip_followup(0, alive);
+							this->clip_display_next(0, alive);
 						}
 						else {
 							this->frame = this->endframe - (this->frame - this->endframe);
@@ -2873,7 +2821,7 @@ bool Layer::calc_texture(bool comp, bool alive) {
 					if (this->scritching != 4) {
 						if (this->bouncebut->value == 0) {
 							this->frame = this->endframe;
-							this->clip_followup(1, alive);
+							this->clip_display_next(1, alive);
 						}
 						else {
 							this->frame = this->startframe + (this->startframe - this->frame);
@@ -2894,7 +2842,7 @@ bool Layer::calc_texture(bool comp, bool alive) {
 					this->open_image(this->filename);
 				}
 				else if (this->type == ELEM_LIVE) {
-					set_live_base(this, this->filename);
+					this->set_live_base(this->filename);
 				}
 				this->oldalive = true;
 			}
@@ -2936,7 +2884,7 @@ void Layer::load_frame() {
 	if (!srclay->decresult->newdata) {
 		return;
 	}	
-	srclay->decresult->newdata = false;
+	if (srclay->liveinput) srclay->decresult->newdata = false;
 
 
 	glActiveTexture(GL_TEXTURE0);
@@ -2950,15 +2898,18 @@ void Layer::load_frame() {
 				return;
 			}
 
-			if (srclay->decresult->hap and srclay->video_dec_ctx) {
-				if (!srclay->databufready) return;
-
-				// HAP video layers
+			if ((this->vidformat == 188 or this->vidformat == 187) and srclay->video_dec_ctx) {
 				if (!this->initialized) {
 					float w = srclay->video_dec_ctx->width;
 					float h = srclay->video_dec_ctx->height;
 					this->initialize(w, h, srclay->decresult->compression);
 				}
+
+				if (!srclay->databufready) {
+					return;
+				}
+
+				// HAP video layers
 				if (srclay->decresult->compression == 187 or srclay->decresult->compression == 171) {
 					if (srclay->decresult->data) glCompressedTexSubImage2D(GL_TEXTURE_2D, 0, 0, 0, srclay->decresult->width, srclay->decresult->height, GL_COMPRESSED_RGBA_S3TC_DXT1_EXT, srclay->decresult->size, 0);
 				}
@@ -3000,25 +2951,32 @@ void Layer::load_frame() {
 		}
 	}
 
-	if (!this->isclone) {
+	if (!this->isclone and !this->liveinput) {
 		// start transferring to pbou
 		// bind PBO to update pixel values
 		//glBindBuffer(GL_PIXEL_UNPACK_BUFFER, srclay->pbo[srclay->pboui]);
 		if (srclay->mapptr[srclay->pbodi]) {
-			WaitBuffer(srclay->syncobj[srclay->pbodi]);
+			if (mainprogram->encthreads == 0) WaitBuffer(srclay->syncobj[srclay->pbodi]);
 			// update data directly on the mapped buffer
 			memcpy(srclay->mapptr[srclay->pbodi], srclay->decresult->data, srclay->decresult->size);
-			LockBuffer(srclay->syncobj[srclay->pbodi]);
+			if (mainprogram->encthreads == 0) LockBuffer(srclay->syncobj[srclay->pbodi]);
 		}
-		// round robin triple pbos: currently deactivated
-		srclay->pbodi++;
-		srclay->pboui++;
-		if (srclay->pbodi == 3) srclay->pbodi = 0;
-		if (srclay->pboui == 3) srclay->pboui = 0;
-
-		glBindBuffer(GL_PIXEL_UNPACK_BUFFER, 0);
 	}
 	else this->initialized = true;  //reminder: trick, is set false somewhere
+
+	// round robin triple pbos: currently deactivated
+	srclay->pbodi++;
+	srclay->pboui++;
+	if (srclay->pbodi == 3) srclay->pbodi = 0;
+	if (srclay->pboui == 3) srclay->pboui = 0;
+
+	glBindBuffer(GL_PIXEL_UNPACK_BUFFER, 0);
+
+
+	if (this->liveinput) {  // mimiclayers trick/// :(
+		this->texture = this->liveinput->texture;
+	}
+
 	this->newtexdata = true;
 }
 
@@ -3038,979 +2996,6 @@ void set_queueing(bool onoff) {
 }
 	
 	
-void display_layers(Layer *lay, bool deck) {
-	float green[4] = {0.0f, 1.0f, 0.2f, 1.0f};
-	float darkgreen1[4] = {0.0f, 0.75f, 0.0f, 1.0f};
-	float darkgreen2[4] = {0.0f, 0.4f, 0.0f, 1.0f};
-	float lightblue[4] = { 0.5f, 0.5f, 1.0f, 1.0f };
-	float blue[4] = { 0.0f, 0.2f, 1.0f, 1.0f };
-	float white[4] = { 1.0f, 1.0f, 1.0f, 1.0f };
-	float alphawhite[4] = { 1.0f, 1.0f, 1.0f, 0.5f };
-	float alphablue[4] = { 0.7f, 0.7f, 1.0f, 0.5f };
-	float alphagreen[4] = { 0.0f, 1.0f, 0.2f, 0.5f };
-	float red[4] = {1.0f, 0.0f, 0.0f, 1.0f};
-	float darkred1[4] = {0.75f, 0.0f, 0.0f, 1.0f};
-	float darkred2[4] = {0.4f, 0.0f, 0.0f, 0.5f};
-	float black[4] = {0.0f, 0.0f, 0.0f, 1.0f};
-
-	glBindFramebuffer(GL_FRAMEBUFFER, mainprogram->globfbo);
-	mainprogram->drawbuffer = mainprogram->globfbo;
-	glDrawBuffer(GL_COLOR_ATTACHMENT0);
-	
-	std::vector<Layer*>& lvec = choose_layers(deck);
-	bool notyet = false;
-	for (int i = 0; i < lvec.size(); i++) {
-		if (!lvec[i]->newtexdata) {
-			notyet = true;
-			break;
-		}
-	}
-	if (notyet and lay->filename != "") {
-		if (lay->node == lay->lasteffnode[0]) {
-			lay->drawfbo2 = true;
-		}
-		else {
-			lay->drawfbo2 = false;
-		}
-		if (mainmix->bulrs[lay->deck].size() > lay->pos) {
-			lay->node->vidbox->tex = mainmix->butexes[lay->deck][lay->pos];
-		}
-	}
-	if (mainmix->scenes[deck][mainmix->currscene[deck]]->scrollpos > lvec.size() - 2) mainmix->scenes[deck][mainmix->currscene[deck]]->scrollpos = lvec.size() - 2;
-	if (mainmix->scenes[deck][mainmix->currscene[deck]]->scrollpos < 0) mainmix->scenes[deck][mainmix->currscene[deck]]->scrollpos = 0;
-	if (lay->pos >= mainmix->scenes[deck][mainmix->currscene[deck]]->scrollpos and lay->pos < mainmix->scenes[deck][mainmix->currscene[deck]]->scrollpos + 3) {
-		Box *box = lay->node->vidbox;
-		if (!lay->mutebut->value) {
-			draw_box(box, box->tex);
-		}
-		else {
-			draw_box(box, box->tex);
-			draw_box(white, darkred2, box, -1);
-		}
-
-		if (mainmix->mode == 0 and mainprogram->nodesmain->linked) {
-			// Trigger mainprogram->laymenu1
-			if (box->in()) {
-				std::string deckstr;
-				if (deck == 0) deckstr = "A";
-				else if (deck == 1) deckstr = "B";
-				render_text("Layer " + deckstr + std::to_string(lay->pos + 1), white, box->vtxcoords->x1 + tf(0.01f), box->vtxcoords->y1 + box->vtxcoords->h - tf(0.03f), 0.0005f, 0.0008f);
-				GLenum err;
-				while ((err = glGetError()) != GL_NO_ERROR) {
-					cerr << "OpenGL error2: " << err << endl;
-				}
-				render_text(remove_extension(basename(lay->filename)), white, box->vtxcoords->x1 + tf(0.01f), box->vtxcoords->y1 + box->vtxcoords->h - tf(0.06f), 0.0005f, 0.0008f);
-				if (lay->vidformat == -1) {
-					if (lay->type == ELEM_IMAGE) {
-						render_text("IMAGE", white, box->vtxcoords->x1 + tf(0.01f), box->vtxcoords->y1 + box->vtxcoords->h - tf(0.09f), 0.0005f, 0.0008f);
-					}
-				}
-				else if (lay->vidformat == 188 or lay->vidformat == 187) {
-					render_text("HAP", white, box->vtxcoords->x1 + tf(0.01f), box->vtxcoords->y1 + box->vtxcoords->h - tf(0.09f), 0.0005f, 0.0008f);
-				}
-				else {
-					render_text("CPU", white, box->vtxcoords->x1 + tf(0.01f), box->vtxcoords->y1 + box->vtxcoords->h - tf(0.09f), 0.0005f, 0.0008f);
-				}
-				if (!mainprogram->needsclick or mainprogram->leftmouse) {
-					if (!mainmix->moving and !mainprogram->cwon) {
-						mainmix->currlay = lay;
-						mainprogram->effcat[lay->deck]->value = 0;
-						if (mainprogram->menuactivation) {
-							if (lay->type == ELEM_IMAGE or lay->type == ELEM_LIVE) mainprogram->laymenu2->state = 2;
-							else mainprogram->laymenu1->state = 2;
-							mainmix->mouselayer = lay;
-							mainmix->mousedeck = deck;
-							mainprogram->menuactivation = false;
-						}
-					}
-				}
-
-				//draw and handle layer mute and solo buttons
-				lay->mutebut->box->vtxcoords->x1 = box->vtxcoords->x1 + mainprogram->layw - 0.06f;
-				lay->mutebut->box->upvtxtoscr();
-				if (lay->mutebut->box->in()) {
-					render_text("M", alphablue, lay->mutebut->box->vtxcoords->x1 + 0.0078f, lay->mutebut->box->vtxcoords->y1 + 0.0078f, 0.0006, 0.001);
-					if (mainprogram->leftmousedown) {
-						lay->muting = true;
-						mainprogram->leftmousedown = false;
-					}
-					if (lay->muting and mainprogram->leftmouse) {
-						lay->muting = false;
-						lay->mutebut->value = !lay->mutebut->value;
-						lay->mute_handle();
-					}
-					if (mainprogram->menuactivation and !mainprogram->menuondisplay) {
-						mainprogram->parammenu1->state = 2;
-						mainmix->learnparam = nullptr;
-						mainmix->learnbutton = lay->mutebut;
-						mainprogram->menuactivation = false;
-					}
-				}
-				else if (!lay->mutebut->value) {
-					render_text("M", alphawhite, lay->mutebut->box->vtxcoords->x1 + 0.0078f, lay->mutebut->box->vtxcoords->y1 + 0.0078f, 0.0006, 0.001);
-				}
-				lay->solobut->box->vtxcoords->x1 = lay->mutebut->box->vtxcoords->x1 + 0.03f;
-				lay->solobut->box->upvtxtoscr();
-				if (lay->solobut->box->in()) {
-					render_text("S", alphablue, lay->solobut->box->vtxcoords->x1 + 0.0078f, lay->solobut->box->vtxcoords->y1 + 0.0078f, 0.0006, 0.001);
-					if (mainprogram->leftmousedown) {
-						lay->soloing = true;
-						mainprogram->leftmousedown = false;
-					}
-					if (lay->soloing and mainprogram->leftmouse) {
-						mainprogram->leftmouse = false;
-						lay->soloing = false;
-						lay->solobut->value = !lay->solobut->value;
-						if (lay->solobut->value) {
-							if (lay->mutebut->value) {
-								lay->mutebut->value = false;
-								lay->mute_handle();
-							}
-							for (int k = 0; k < lvec.size(); k++) {
-								if (k != lay->pos) {
-									if (lvec[k]->mutebut->value == false) {
-										lvec[k]->mutebut->value = true;
-										lvec[k]->mute_handle();
-									}
-									else {
-										lvec[k]->mutebut->value = false;
-										lvec[k]->mute_handle();
-										lvec[k]->mutebut->value = true;
-										lvec[k]->mute_handle();
-									}
-									lvec[k]->solobut->value = false;
-								}
-							}
-						}
-						else {
-							for (int k = 0; k < lvec.size(); k++) {
-								if (k != lay->pos) {
-									lvec[k]->mutebut->value = false;
-									lvec[k]->mute_handle();
-								}
-							}
-						}
-					}
-					if (mainprogram->menuactivation and !mainprogram->menuondisplay) {
-						mainprogram->parammenu1->state = 2;
-						mainmix->learnparam = nullptr;
-						mainmix->learnbutton = lay->solobut;
-						mainprogram->menuactivation = false;
-					}
-				}
-				else if (!lay->solobut->value) {
-					render_text("S", alphawhite, lay->solobut->box->vtxcoords->x1 + 0.0078f, lay->solobut->box->vtxcoords->y1 + 0.0078f, 0.0006, 0.001);
-				}
-
-				// queue fold/unfold button
-				lay->queuebut->box->vtxcoords->x1 = box->vtxcoords->x1 + 0.015f;
-				lay->queuebut->box->upvtxtoscr();
-				if (lay->queuebut->box->in()) {
-					render_text("I", alphablue, lay->queuebut->box->vtxcoords->x1 + 0.0108f, lay->queuebut->box->vtxcoords->y1 + 0.018f, 0.0006, 0.001);
-					render_text("V", alphablue, lay->queuebut->box->vtxcoords->x1 + 0.0078f, lay->queuebut->box->vtxcoords->y1 + 0.0078f, 0.0006, 0.001);
-					if (mainprogram->leftmousedown) {
-						lay->mousequeue = true;
-						mainprogram->leftmousedown = false;
-					}
-					if (lay->mousequeue and mainprogram->leftmouse) {
-						lay->mousequeue = false;
-						mainprogram->leftmouse = false;
-						lay->queueing = !lay->queueing;
-						if (lay->queueing) mainprogram->queueing = true;
-						else {
-							bool found = false;
-							for (int i = 0; i < 2; i++) {
-								std::vector<Layer*>& lvec = choose_layers(i);
-								for (int j = 0; j < lvec.size(); j++) {
-									if (lvec[j]->queueing) {
-										found = true;
-										break;
-									}
-								}
-							}
-							if (!found)	mainprogram->queueing = false;
-						}
-					}
-				}
-				else {
-					render_text("I", alphawhite, lay->queuebut->box->vtxcoords->x1 + 0.0108f, lay->queuebut->box->vtxcoords->y1 + 0.018f, 0.0006, 0.001);
-					render_text("V", alphawhite, lay->queuebut->box->vtxcoords->x1 + 0.0078f, lay->queuebut->box->vtxcoords->y1 + 0.0078f, 0.0006, 0.001);
-				}
-			}
-			else {
-				int size = lvec.size();
-				int numonscreen = size - mainmix->scenes[deck][mainmix->currscene[deck]]->scrollpos;
-				if (0 <= numonscreen and numonscreen <= 2) {
-					if (mainprogram->xvtxtoscr(mainprogram->numw + deck * 1.0f + numonscreen * mainprogram->layw) < mainprogram->mx and mainprogram->mx < deck * (glob->w / 2.0f) + glob->w / 2.0f) {
-						if (0 < mainprogram->my and mainprogram->my < mainprogram->yvtxtoscr(mainprogram->layh)) {
-							if (mainprogram->menuactivation) {
-								mainprogram->loadmenu->state = 2;
-								mainmix->mousedeck = deck;
-								mainprogram->menuactivation = false;
-							}
-						}
-					}
-				}
-			}
-			if (lay->mutebut->value) {
-				render_text("M", alphagreen, lay->mutebut->box->vtxcoords->x1 + 0.0078f, lay->mutebut->box->vtxcoords->y1 + 0.0078f, 0.0006, 0.001);
-			}
-			if (lay->solobut->value) {
-				render_text("S", alphagreen, lay->solobut->box->vtxcoords->x1 + 0.0078f, lay->solobut->box->vtxcoords->y1 + 0.0078f, 0.0006, 0.001);
-			}
-		}
-		
-
-		// Show current layer controls
-		if (lay != mainmix->currlay) return;
-		
-		if (!mainprogram->queueing) {
-			// Draw mixbox
-			std::string mixstr;
-			box = lay->mixbox;
-			draw_box(box, -1);
-			switch (lay->blendnode->blendtype) {
-				case 1:
-					mixstr = "Mix";
-					break;
-				case 2:
-					mixstr = "Mult";
-					break;
-				case 3:
-					mixstr = "Scrn";
-					break;
-				case 4:
-					mixstr = "Ovrl";
-					break;
-				case 5:
-					mixstr = "HaLi";
-					break;
-				case 6:
-					mixstr = "SoLi";
-					break;
-				case 7:
-					mixstr = "Divi";
-					break;
-				case 8:
-					mixstr = "Add";
-					break;
-				case 9:
-					mixstr = "Sub";
-					break;
-				case 10:
-					mixstr = "Diff";
-					break;
-				case 11:
-					mixstr = "Dodg";
-					break;
-				case 12:
-					mixstr = "CoBu";
-					break;
-				case 13:
-					mixstr = "LiBu";
-					break;
-				case 14:
-					mixstr = "ViLi";
-					break;
-				case 15:
-					mixstr = "LiLi";
-					break;
-				case 16:
-					mixstr = "DaOn";
-					break;
-				case 17:
-					mixstr = "LiOn";
-					break;
-				case 18:
-					mixstr = "Wipe";
-					break;
-				case 19:
-					mixstr = "CKey";
-					if (lay->pos > 0) {
-						draw_box(lay->colorbox, -1);
-						render_text("Color", white, lay->mixbox->vtxcoords->x1 + tf(0.08f), 1.0f - (mainprogram->layh + tf(0.09f)) + tf(0.02f), tf(0.0003f), tf(0.0005f));
-					}
-					break;
-				case 20:
-					mixstr = "Disp";
-					break;
-			}
-			if (lay->pos > 0) {
-				render_text(mixstr, white, lay->mixbox->vtxcoords->x1 + tf(0.01f), 1.0f - (mainprogram->layh + tf(0.09f)) + tf(0.02f), tf(0.0003f), tf(0.0005f));
-			}
-			else {
-				render_text(mixstr, red, lay->mixbox->vtxcoords->x1 + tf(0.01f), 1.0f - (mainprogram->layh + tf(0.09f)) + tf(0.02f), tf(0.0003f), tf(0.0005f));
-			}
-			
-			// Draw and handle effect category buttons
-			mainprogram->effcat[lay->deck]->handle();
-			float efx = -1.0f + lay->deck * 0.8f + ((mainmix->scenes[lay->deck][mainmix->currscene[lay->deck]]->scrollpos + lay->pos) % 3) * mainprogram->layw;
-			mainprogram->effscrollupA->vtxcoords->x1 = efx;
-			mainprogram->effscrollupB->vtxcoords->x1 = efx;
-			mainprogram->effscrolldownA->vtxcoords->x1 = efx;
-			mainprogram->effscrolldownB->vtxcoords->x1 = efx;
-			Box *box = mainprogram->effcat[lay->deck]->box;
-			box->vtxcoords->x1 = efx;
-			render_text(mainprogram->effcat[lay->deck]->name[mainprogram->effcat[lay->deck]->value], white, box->vtxcoords->x1, box->vtxcoords->y1 + box->vtxcoords->h - tf(0.01f), tf(0.0003f), tf(0.0005f), 0, 1);
-			std::vector<Effect*> &evec = lay->choose_effects();
-			bool cat = mainprogram->effcat[lay->deck]->value;
-				
-			// Draw and handle effect stack scrollboxes
-			if (mainmix->currlay->deck == 0) {
-				lay->effscroll[cat] = mainprogram->handle_scrollboxes(mainprogram->effscrollupA, mainprogram->effscrolldownA, lay->numefflines[cat], lay->effscroll[cat], mainprogram->efflines);
-			}
-			else {
-				lay->effscroll[cat] = mainprogram->handle_scrollboxes(mainprogram->effscrollupB, mainprogram->effscrolldownB, lay->numefflines[cat], lay->effscroll[cat], mainprogram->efflines);
-			}
-			if (lay->effects[cat].size()) {
-				if ((glob->w / 2.0f > mainprogram->mx and mainmix->currlay->deck == 0) or (glob->w / 2.0f < mainprogram->mx and mainmix->currlay->deck == 1)) {
-					if (mainprogram->my > mainprogram->yvtxtoscr(mainprogram->layh - tf(0.20f))) {
-						if (mainprogram->mousewheel and lay->numefflines[cat] > mainprogram->efflines) {
-							lay->effscroll[cat] -= mainprogram->mousewheel;
-							if (lay->effscroll[cat] < 0) lay->effscroll[cat] = 0;
-							if (lay->numefflines[cat] - lay->effscroll[cat] < mainprogram->efflines) lay->effscroll[cat] = lay->numefflines[cat] - mainprogram->efflines;
-						}
-					}
-				}
-			}
-			// Draw effectboxes and parameters
-			std::string effstr;
-			for(int i = 0; i < evec.size(); i++) {
-				Effect *eff = evec[i];
-				Box *box;
-				float x1, y1, wi;
-				x1 = eff->box->vtxcoords->x1 + tf(0.032f);
-				wi = (0.7f - mainprogram->numw - tf(0.032f)) / 4.0f;
-
-				if (eff->box->vtxcoords->y1 < 1.0 - mainprogram->layh - tf(0.09f) - tf(0.22f) - tf(0.05f) * (mainprogram->efflines - 1)) break;
-				if (eff->box->vtxcoords->y1 <= 1.0 - mainprogram->layh - tf(0.09f) - tf(0.18f)) {
-					eff->drywet->handle();		
-					eff->onoffbutton->handle();
-					
-					box = eff->box;
-					if (mainprogram->effcat[lay->deck]->value == 0) {
-						if (eff->onoffbutton->value) draw_box(white, darkred1, box, -1);
-						else draw_box(white, darkred2, box, -1);
-					}
-					else {
-						if (eff->onoffbutton->value) draw_box(white, darkgreen1, box, -1);
-						else draw_box(white, darkgreen2, box, -1);
-					}
-					effstr = eff->get_namestring();
-					float textw = tf(textwvec_total(render_text(effstr, white, eff->box->vtxcoords->x1 + tf(0.01f), eff->box->vtxcoords->y1 + tf(0.05f) - tf(0.030f), tf(0.0003f), tf(0.0005f))));
-					eff->box->vtxcoords->w = textw + tf(0.032f);
-					x1 = eff->box->vtxcoords->x1 + tf(0.032f) + textw;
-					wi = (0.7f - mainprogram->numw - tf(0.032f) - textw) / 4.0f;
-				}
-				y1 = eff->box->vtxcoords->y1;
-				for (int j = 0; j < eff->params.size(); j++) {
-					Param* par = eff->params[j];
-					par->box->lcolor[0] = 1.0;
-					par->box->lcolor[1] = 1.0;
-					par->box->lcolor[2] = 1.0;
-					par->box->lcolor[3] = 1.0;
-					if (par->nextrow) {
-						x1 = eff->box->vtxcoords->x1 + tf(0.02f);
-						y1 -= tf(0.05f);
-						wi = (0.7f - mainprogram->numw - tf(0.02f)) / 4.0;
-					}
-					par->box->vtxcoords->x1 = x1;
-					x1 += wi + tf(0.01f);
-					par->box->vtxcoords->y1 = y1;
-					par->box->vtxcoords->w = wi;
-					par->box->vtxcoords->h = eff->box->vtxcoords->h;
-					par->box->upvtxtoscr();
-
-					if (par->box->vtxcoords->y1 < 1.0 - mainprogram->layh - tf(0.09f) - tf(0.22f) - tf(0.05f) * (mainprogram->efflines - 1)) break;
-					if (par->box->vtxcoords->y1 <= 1.0 - mainprogram->layh - tf(0.09f) - tf(0.18f)) {
-						par->handle();
-					}
-				}
-			}
-
-			// Draw effectboxes
-			// Bottom bar
-			float sx1, sy1, vx1, vy1, vx2, vy2, sw;
-			bool bottom = false;
-			bool inbetween = false;
-			Effect* eff = nullptr;
-			if (!mainprogram->queueing) {
-				if (evec.size()) {
-					eff = evec[evec.size() - 1];
-					box = eff->onoffbutton->box;
-					sx1 = box->scrcoords->x1;
-					sy1 = box->scrcoords->y1 + (eff->numrows - 1) * mainprogram->yvtxtoscr(tf(0.05f));
-					if (1.0f - mainprogram->yscrtovtx(sy1) < -0.4f) {
-						sy1 = mainprogram->yvtxtoscr(1.4f);
-					}
-					vx1 = box->vtxcoords->x1;
-					vy1 = box->vtxcoords->y1 - (eff->numrows - 1) * tf(0.05f);
-					if (vy1 < -0.4f) vy1 = -0.4f;
-					sw = tf(mainprogram->layw) * glob->w / 2.0;
-				}
-				else {
-					box = lay->mixbox;
-					sw = tf(mainprogram->layw) * glob->w / 2.0;
-					sx1 = box->scrcoords->x1 + mainprogram->xvtxtoscr(tf(0.025f));
-					sy1 = lay->opacity->box->scrcoords->y1;
-					vx1 = box->vtxcoords->x1 + tf(0.025f);
-					vy1 = 1 - mainprogram->layh - tf(0.25f);
-				}
-				if (!mainprogram->menuondisplay) {
-					if (sx1 < mainprogram->mx and mainprogram->mx < sx1 + sw) {
-						bool cond1 = (sy1 + mainprogram->yvtxtoscr(tf(0.01f)) < mainprogram->my and mainprogram->my < sy1 + mainprogram->yvtxtoscr(tf(0.048f)));
-						bool cond2 = (sy1 - 7.5 <= mainprogram->my and mainprogram->my <= sy1 + 7.5);
-						if (cond2) {
-							inbetween = true;
-							vx2 = vx1;
-							vy2 = vy1 - tf(0.011f);
-						}
-						if (cond1 or cond2) {
-							if ((mainprogram->menuactivation or mainprogram->leftmouse) and !mainprogram->drageff) {
-								mainprogram->effectmenu->state = 2;
-								mainmix->insert = 1;
-								mainmix->mouseeffect = evec.size();
-								mainmix->mouselayer = lay;
-								mainprogram->effectmenu->menux = mainprogram->mx;
-								mainprogram->effectmenu->menuy = mainprogram->my;
-								mainprogram->menuactivation = false;
-								mainprogram->menuondisplay = true;
-							}
-							bottom = true;
-						}
-					}
-				}
-				mainprogram->indragbox = false;
-				for (int j = 0; j < evec.size(); j++) {
-					eff = evec[j];
-					box = eff->box;
-					eff->box->acolor[0] = 0.75f;
-					eff->box->acolor[1] = 0.0f;
-					eff->box->acolor[2] = 0.0f;
-					eff->box->acolor[3] = 1.0f;
-					if (!mainprogram->menuondisplay) {
-						if (box->scrcoords->x1 < mainprogram->mx and mainprogram->mx < box->scrcoords->x1 + box->scrcoords->w) {
-							if (box->scrcoords->y1 - box->scrcoords->h + 7.5 <= mainprogram->my and mainprogram->my <= box->scrcoords->y1 - 7.5) {
-								if (mainprogram->del) {
-									lay->delete_effect(j);
-									mainprogram->del = 0;
-									break;
-								}
-								if ((mainprogram->menuactivation or mainprogram->leftmouse) and !mainprogram->drageff) {
-									mainprogram->effectmenu->state = 2;
-									mainmix->mouselayer = lay;
-									mainmix->mouseeffect = j;
-									mainmix->insert = false;
-									mainprogram->effectmenu->menux = mainprogram->mx;
-									mainprogram->effectmenu->menuy = mainprogram->my;
-									mainprogram->menuactivation = false;
-									mainprogram->menuondisplay = true;
-									mainprogram->dragbox = nullptr;
-									mainprogram->drageffsense = false;
-								}
-								eff->box->acolor[0] = 0.5;
-								eff->box->acolor[1] = 0.5;
-								eff->box->acolor[2] = 1.0;
-								eff->box->acolor[3] = 1.0;
-
-								// prepare effect dragging
-								eff->pos = j;
-								if (!mainprogram->drageff) {
-									if (mainprogram->leftmousedown and !mainprogram->drageffsense) {
-										mainprogram->drageffsense = true;
-										mainprogram->dragbox = eff->box;
-										mainprogram->drageffpos = j;
-										mainprogram->leftmousedown = false;
-									}
-									if (j == mainprogram->drageffpos) {
-										mainprogram->indragbox = true;
-									}
-								}
-							}
-						}
-						box = eff->onoffbutton->box;
-						if (box->scrcoords->x1 < mainprogram->mx and mainprogram->mx < box->scrcoords->x1 + tf(mainprogram->layw) * glob->w / 2.0) {
-							if (box->scrcoords->y1 - box->scrcoords->h - 7.5 < mainprogram->my and mainprogram->my < box->scrcoords->y1 - box->scrcoords->h + 7.5) {
-								// mouse over "Insert Effect" box, inbetween effects
-								if ((mainprogram->menuactivation or mainprogram->leftmouse) and !mainprogram->drageff) {
-									mainprogram->effectmenu->state = 2;
-									mainmix->insert = true;
-									mainmix->mouseeffect = j;
-									mainmix->mouselayer = lay;
-									mainprogram->effectmenu->menux = mainprogram->mx;
-									mainprogram->effectmenu->menuy = mainprogram->my;
-									mainprogram->menuactivation = false;
-								}
-								mainprogram->menuondisplay = true;
-								inbetween = true;
-								vx2 = box->vtxcoords->x1;
-								vy2 = box->vtxcoords->y1 + box->vtxcoords->h - tf(0.011f);
-							}
-						}
-					}
-				}
-				if (!mainprogram->indragbox and mainprogram->drageffsense) {
-					mainprogram->drageff = evec[mainprogram->drageffpos];
-					mainprogram->drageffsense = false;
-				}
-			}
-
-			// Draw effectmenuhints
-			if (!mainprogram->queueing) {
-				if (vy1 < 1.0 - mainprogram->layh - tf(0.09f) - tf(0.22f) - tf(0.05f) * (mainprogram->efflines - 1)) {
-					vy1 = 1.0 - mainprogram->layh - tf(0.09f) - tf(0.20f) - tf(0.05f) * (mainprogram->efflines - 1);
-				}
-
-				mainprogram->addeffectbox->vtxcoords->x1 = vx1;
-				mainprogram->addeffectbox->vtxcoords->y1 = vy1 - tf(0.04f);
-				mainprogram->addeffectbox->upvtxtoscr();
-				if (mainprogram->addeffectbox->in()) {
-					bottom = false;
-					draw_box(white, lightblue, mainprogram->addeffectbox, -1);
-				}
-				else {
-					draw_box(white, black, mainprogram->addeffectbox, -1);
-				}
-				render_text("+ Add effect", white, vx1 + tf(0.01f), vy1 - tf(0.035f), tf(0.0003f), tf(0.0005f));
-				mainprogram->addeffectbox->in();
-
-				if (inbetween) { //true when mouse inbetween effect stack entries
-					inbetween = false;
-					draw_box(lightblue, lightblue, vx2, vy2, tf(mainprogram->layw), tf(0.022f), -1);
-					draw_box(white, lightblue, mainprogram->mx * 2.0f / glob->w - 1.0f - tf(0.08f), 1.0f - (mainprogram->my * 2.0f / glob->h) - tf(0.019f), tf(0.16f), tf(0.038f), -1);
-					render_text("+ Insert effect", white, mainprogram->mx * 2.0f / glob->w - 1.0f - tf(0.07f), 1.0f - (mainprogram->my * 2.0f / glob->h) - tf(0.004f), tf(0.0003f), tf(0.0005f));
-				}
-			}
-
-			// handle effect drag
-			if (mainprogram->drageff) {
-				int pos;
-				for (int j = lay->effscroll[cat]; j < evec.size() + 1; j++) {
-					// calculate dragged effect temporary position pos when mouse between
-					//limits under and upper
-					int under1, under2, upper;
-					if (j == lay->effscroll[cat]) {
-						// mouse above first bin
-						under2 = 0;
-						under1 = evec[lay->effscroll[cat]]->box->scrcoords->y1 - evec[lay->effscroll[cat]]->box->scrcoords->h * 0.5f;
-					}
-					else {
-						under1 = evec[j - 1]->box->scrcoords->y1 + evec[j - 1]->box->scrcoords->h * 0.5f;
-						under2 = under1;
-					}
-					if (j == evec.size()) {
-						// mouse under last bin
-						upper = glob->h;
-					}
-					else upper = evec[j]->box->scrcoords->y1 + evec[j]->box->scrcoords->h * 0.5f;
-					if (mainprogram->my > under2 and mainprogram->my < upper) {
-						std::string name = mainprogram->drageff->get_namestring();
-						draw_box(white, darkred1, mainprogram->drageff->box->vtxcoords->x1, 1.0f - mainprogram->yscrtovtx(under1), mainprogram->drageff->box->vtxcoords->w, mainprogram->drageff->box->vtxcoords->h, -1);
-						render_text(name, white, mainprogram->drageff->box->vtxcoords->x1 + tf(0.01f), 1.0f - mainprogram->yscrtovtx(under1) + tf(0.05f) - tf(0.030f), tf(0.0003f), tf(0.0005f));
-						pos = j;
-						break;
-					}
-				}
-				if (mainprogram->lmover) {
-					// do effect drag
-					Node* bulastoutnode = lay->lasteffnode[0]->out[0];
-					if (mainprogram->drageffpos < pos) {
-						std::rotate(evec.begin() + mainprogram->drageffpos, evec.begin() + mainprogram->drageffpos + 1, evec.begin() + pos);
-					}
-					else {
-						std::rotate(evec.begin() + pos, evec.begin() + mainprogram->drageffpos, evec.begin() + mainprogram->drageffpos + 1);
-					}
-					for (int k = 0; k < evec.size(); k++) {
-						// set pos and box y1 and connect nodes for all effects in new list
-						if (k == 0) {
-							mainprogram->nodesmain->currpage->connect_nodes(lay->node, evec[0]->node);
-						}
-						else if (k < evec.size()) {
-							mainprogram->nodesmain->currpage->connect_nodes(evec[k-1]->node, evec[k]->node);
-						}
-						if (k == evec.size() - 1) {
-							lay->lasteffnode[0] = evec[k]->node;
-							mainprogram->nodesmain->currpage->connect_nodes(evec[k]->node, bulastoutnode);
-						}
-						if (lay->pos == 0 and lay->effects[1].size() == 0) {
-							lay->lasteffnode[1] = lay->lasteffnode[0];
-						}
-						evec[k]->pos = k;
-						//evec->box->vtxcoords->y1 = (i + 1) * -0.05f;
-						//evec->box->upvtxtoscr();
-					}
-					mainprogram->drageff = nullptr;
-				}
-				if (mainprogram->rightmouse) {
-					// cancel bin drag
-					mainprogram->drageff = nullptr;
-					mainprogram->rightmouse = false;
-					mainprogram->menuactivation = false;
-					for (int i = 0; i < mainprogram->menulist.size(); i++) {
-						mainprogram->menulist[i]->state = 0;
-					}
-				}
-			}
-
-
-			// Handle color tolerance
-			if (lay->pos > 0) {
-				if (lay->blendnode->blendtype == COLOURKEY) {
-					Param *par = lay->chtol;
-					par->box->lcolor[0] = 1.0;
-					par->box->lcolor[1] = 1.0;
-					par->box->lcolor[2] = 1.0;
-					par->box->lcolor[3] = 1.0;
-					par->box->acolor[0] = 0.2;
-					par->box->acolor[1] = 0.2;
-					par->box->acolor[2] = 0.2;
-					par->box->acolor[3] = 1.0;
-					par->box->vtxcoords->x1 = lay->colorbox->vtxcoords->x1 + tf(0.07f);
-					par->box->vtxcoords->y1 = lay->colorbox->vtxcoords->y1;
-					par->box->vtxcoords->w = tf(0.08f);
-					par->box->vtxcoords->h = lay->colorbox->vtxcoords->h;
-					par->box->upvtxtoscr();
-					
-					par->handle();
-				}
-			}
-			
-					
-			// Draw mixfac->box
-			if (lay->pos > 0 and lay->blendnode->blendtype != COLOURKEY) {
-				Param *par = lay->blendnode->mixfac;
-				par->handle();
-			}
-				
-			// Draw speed->box
-			Param *par = lay->speed;
-			par->handle();
-			mainprogram->frontbatch = true;
-			draw_box(white, nullptr, lay->speed->box->vtxcoords->x1, lay->speed->box->vtxcoords->y1, lay->speed->box->vtxcoords->w * 0.30f, tf(0.05f), -1);			mainprogram->frontbatch = true;
-			mainprogram->frontbatch = false;
-
-			// Draw opacity->box
-			par = lay->opacity;
-			par->handle();
-			
-			// Draw volume->box
-			if (lay->audioplaying) {
-				par = lay->volume;
-				par->handle();
-			}
-				
-			// Draw and handle playbutton revbutton bouncebutton
-			if (lay->playbut->box->in()) {
-				lay->playbut->box->acolor[0] = 0.5;
-				lay->playbut->box->acolor[1] = 0.5;
-				lay->playbut->box->acolor[2] = 1.0;
-				lay->playbut->box->acolor[3] = 1.0;
-				if (mainprogram->leftmouse) {
-					lay->playbut->value = !lay->playbut->value;
-					lay->set_clones();
-					if (lay->playbut->value) {
-						lay->revbut->value = false;
-						lay->bouncebut->value = false;
-					}
-				}
-			}
-			else {
-				lay->playbut->box->acolor[0] = 0.5;
-				lay->playbut->box->acolor[1] = 0.2;
-				lay->playbut->box->acolor[2] = 0.5;
-				lay->playbut->box->acolor[3] = 1.0;
-				if (lay->playbut->value) {
-					lay->playbut->box->acolor[0] = 1.0;
-					lay->playbut->box->acolor[1] = 0.5;
-					lay->playbut->box->acolor[2] = 0.0;
-					lay->playbut->box->acolor[3] = 1.0;
-				}
-			}
-			draw_box(lay->playbut->box, -1);
-			register_triangle_draw(white, white, lay->playbut->box->vtxcoords->x1 + tf(0.0078f), lay->playbut->box->vtxcoords->y1 + tf(0.0416f) - tf(0.030f), tf(0.011f), tf(0.0208f), RIGHT, CLOSED);
-			if (lay->revbut->box->in()) {
-				lay->revbut->box->acolor[0] = 0.5;
-				lay->revbut->box->acolor[1] = 0.5;
-				lay->revbut->box->acolor[2] = 1.0;
-				lay->revbut->box->acolor[3] = 1.0;
-				if (mainprogram->leftmouse) {
-					lay->revbut->value = !lay->revbut->value;
-					lay->set_clones();
-					if (lay->revbut->value) {
-						lay->playbut->value = false;
-						lay->bouncebut->value = false;
-					}
-				}
-			}
-			else {
-				lay->revbut->box->acolor[0] = 0.5;
-				lay->revbut->box->acolor[1] = 0.2;
-				lay->revbut->box->acolor[2] = 0.5;
-				lay->revbut->box->acolor[3] = 1.0;
-				if (lay->revbut->value) {
-					lay->revbut->box->acolor[0] = 1.0;
-					lay->revbut->box->acolor[1] = 0.5;
-					lay->revbut->box->acolor[2] = 0.0;
-					lay->revbut->box->acolor[3] = 1.0;
-				}
-			}
-			draw_box(lay->revbut->box, -1);
-			register_triangle_draw(white, white, lay->revbut->box->vtxcoords->x1 + tf(0.00625f), lay->revbut->box->vtxcoords->y1 + tf(0.0416f) - tf(0.030f), tf(0.011f), tf(0.0208f), LEFT, CLOSED);
-			if (lay->bouncebut->box->in()) {
-				lay->bouncebut->box->acolor[0] = 0.5;
-				lay->bouncebut->box->acolor[1] = 0.5;
-				lay->bouncebut->box->acolor[2] = 1.0;
-				lay->bouncebut->box->acolor[3] = 1.0;
-				if (mainprogram->leftmouse) {
-					lay->bouncebut->value = !lay->bouncebut->value;
-					lay->set_clones();
-					if (lay->bouncebut->value) {
-						if (lay->revbut->value) {
-							lay->bouncebut->value = 2;
-							lay->revbut->value = 0;
-						}
-						else lay->playbut->value = 0;
-					}
-				}
-			}
-			else {
-				lay->bouncebut->box->acolor[0] = 0.5;
-				lay->bouncebut->box->acolor[1] = 0.2;
-				lay->bouncebut->box->acolor[2] = 0.5;
-				lay->bouncebut->box->acolor[3] = 1.0;
-				if (lay->bouncebut->value) {
-					lay->bouncebut->box->acolor[0] = 1.0;
-					lay->bouncebut->box->acolor[1] = 0.5;
-					lay->bouncebut->box->acolor[2] = 0.0;
-					lay->bouncebut->box->acolor[3] = 1.0;
-				}
-			}
-			draw_box(lay->bouncebut->box, -1);
-			register_triangle_draw(white, white, lay->bouncebut->box->vtxcoords->x1 + tf(0.00625f), lay->bouncebut->box->vtxcoords->y1 + tf(0.0416f) - tf(0.030f), tf(0.0078f), tf(0.0208f), LEFT, CLOSED);
-			register_triangle_draw(white, white, lay->bouncebut->box->vtxcoords->x1 + tf(0.017f), lay->bouncebut->box->vtxcoords->y1 + tf(0.0416f) - tf(0.030f), tf(0.0078f), tf(0.0208f), RIGHT, CLOSED);
-			
-			// Draw and handle frameforward framebackward
-			if (lay->frameforward->box->in()) {
-				lay->frameforward->box->acolor[0] = 0.5;
-				lay->frameforward->box->acolor[1] = 0.5;
-				lay->frameforward->box->acolor[2] = 1.0;
-				lay->frameforward->box->acolor[3] = 1.0;
-				if (mainprogram->leftmouse) {
-					lay->frame += 1;
-					if (lay->frame >= lay->numf) lay->frame = 0.0f;
-					lay->frameforward->box->acolor[0] = 1.0;
-					lay->frameforward->box->acolor[1] = 0.5;
-					lay->frameforward->box->acolor[2] = 0.0;
-					lay->frameforward->box->acolor[3] = 1.0;
-					lay->prevffw = true;
-					lay->prevfbw = false;
-				}
-			}
-			else {
-				lay->frameforward->box->acolor[0] = 0.5;
-				lay->frameforward->box->acolor[1] = 0.2;
-				lay->frameforward->box->acolor[2] = 0.5;
-				lay->frameforward->box->acolor[3] = 1.0;
-			}
-			draw_box(lay->frameforward->box, -1);
-			register_triangle_draw(white, white, lay->frameforward->box->vtxcoords->x1 + tf(0.0075f), lay->frameforward->box->vtxcoords->y1 + tf(0.0416f) - tf(0.030f), tf(0.011f), tf(0.0208f), RIGHT, OPEN);
-			if (lay->framebackward->box->in()) {
-				lay->framebackward->box->acolor[0] = 0.5;
-				lay->framebackward->box->acolor[1] = 0.5;
-				lay->framebackward->box->acolor[2] = 1.0;
-				lay->framebackward->box->acolor[3] = 1.0;
-				if (mainprogram->leftmouse) {
-					lay->frame -= 1;
-					if (lay->frame < 0) lay->frame = lay->numf - 1.0f;
-					lay->framebackward->box->acolor[0] = 1.0;
-					lay->framebackward->box->acolor[1] = 0.5;
-					lay->framebackward->box->acolor[2] = 0.0;
-					lay->framebackward->box->acolor[3] = 1.0;
-					lay->prevfbw = true;
-					lay->prevffw = false;
-				}
-			}
-			else {
-				lay->framebackward->box->acolor[0] = 0.5;
-				lay->framebackward->box->acolor[1] = 0.2;
-				lay->framebackward->box->acolor[2] = 0.5;
-				lay->framebackward->box->acolor[3] = 1.0;
-			}
-			draw_box(lay->framebackward->box, -1);
-			register_triangle_draw(white, white, lay->framebackward->box->vtxcoords->x1 + tf(0.00625f), lay->framebackward->box->vtxcoords->y1 + tf(0.0416f) - tf(0.030f), tf(0.011f), tf(0.0208f), LEFT, OPEN);
-		
-			// Draw and handle genmidibutton
-			if (lay->genmidibut->box->in()) {
-				lay->genmidibut->box->acolor[0] = 0.5;
-				lay->genmidibut->box->acolor[1] = 0.5;
-				lay->genmidibut->box->acolor[2] = 1.0;
-				lay->genmidibut->box->acolor[3] = 1.0;
-				if (mainprogram->leftmouse) {
-					lay->genmidibut->value++;
-					if (lay->genmidibut->value == 5) lay->genmidibut->value = 0;
-					lay->set_clones();
-				}
-			}
-			else {
-				lay->genmidibut->box->acolor[0] = 0.5;
-				lay->genmidibut->box->acolor[1] = 0.2;
-				lay->genmidibut->box->acolor[2] = 0.5;
-				lay->genmidibut->box->acolor[3] = 1.0;
-				if (lay->genmidibut->value) {
-					lay->genmidibut->box->acolor[0] = 1.0;
-					lay->genmidibut->box->acolor[1] = 0.5;
-					lay->genmidibut->box->acolor[2] = 0.0;
-					lay->genmidibut->box->acolor[3] = 1.0;
-				}
-			}
-			draw_box(lay->genmidibut->box, -1);
-			std::string butstr;
-			if (lay->genmidibut->value == 0) butstr = "off";
-			else if (lay->genmidibut->value == 1) butstr = "A";
-			else if (lay->genmidibut->value == 2) butstr = "B";
-			else if (lay->genmidibut->value == 3) butstr = "C";
-			else if (lay->genmidibut->value == 4) butstr = "D";
-			render_text(butstr, white, lay->genmidibut->box->vtxcoords->x1 + tf(0.0078f), lay->genmidibut->box->vtxcoords->y1 + tf(0.0416f) - tf(0.030f), tf(0.0003f), tf(0.0005f));
-			
-			// Draw and handle loopbox
-			bool ends = false;
-			if (lay->loopbox->in()) {
-				if (mainprogram->menuactivation) {
-					mainprogram->loopmenu->state = 2;
-					mainmix->mouselayer = lay;
-					mainprogram->menuactivation = false;
-				}
-				
-				if (pdistance(mainprogram->mx, mainprogram->my, lay->loopbox->scrcoords->x1 + lay->startframe * (lay->loopbox->scrcoords->w / (lay->numf - 1)), lay->loopbox->scrcoords->y1, lay->loopbox->scrcoords->x1 + lay->startframe * (lay->loopbox->scrcoords->w / (lay->numf - 1)), lay->loopbox->scrcoords->y1 - mainprogram->yvtxtoscr(0.045f)) < 6) {
-					ends = true;
-					if (mainprogram->middlemousedown) {
-						lay->scritching = 2;
-						mainprogram->middlemousedown = false;
-					}
-				}
-				else if (pdistance(mainprogram->mx, mainprogram->my, lay->loopbox->scrcoords->x1 + lay->startframe * (lay->loopbox->scrcoords->w / (lay->numf - 1)) +  (lay->endframe - lay->startframe) * (lay->loopbox->scrcoords->w / (lay->numf - 1)), lay->loopbox->scrcoords->y1, lay->loopbox->scrcoords->x1 + lay->startframe * (lay->loopbox->scrcoords->w / (lay->numf - 1)) +  (lay->endframe - lay->startframe) * (lay->loopbox->scrcoords->w / (lay->numf - 1)), lay->loopbox->scrcoords->y1 - mainprogram->yvtxtoscr(0.045f)) < 6) {
-					ends = true;
-					if (mainprogram->middlemousedown) {
-						lay->scritching = 3;
-						mainprogram->middlemousedown = false;
-					}
-				}
-				else if (mainprogram->mx > lay->loopbox->scrcoords->x1 + lay->startframe * (lay->loopbox->scrcoords->w / (lay->numf - 1)) and mainprogram->mx  < lay->loopbox->scrcoords->x1 + lay->startframe * (lay->loopbox->scrcoords->w / (lay->numf - 1)) +  (lay->endframe - lay->startframe) * (lay->loopbox->scrcoords->w / (lay->numf - 1))) {
-					if (mainprogram->middlemousedown) {
-						mainmix->prevx = mainprogram->mx;
-						lay->scritching = 5;
-						mainprogram->middlemousedown = false;
-					}
-				}
-			}
-			if (lay->loopbox->in()) {
-				if (mainprogram->leftmousedown) {
-					lay->scritching = 1;
-					lay->frame = (lay->numf - 1.0f) * ((mainprogram->mx - lay->loopbox->scrcoords->x1) / lay->loopbox->scrcoords->w);
-					lay->set_clones();
-				}
-			}
-			if (lay->scritching) mainprogram->leftmousedown = false;
-			if (lay->scritching == 1) {
-				lay->frame = (lay->numf - 1) * ((mainprogram->mx - lay->loopbox->scrcoords->x1) / lay->loopbox->scrcoords->w);
-				if (lay->frame < 0) lay->frame = 0.0f;
-				else if (lay->frame >= lay->numf) lay->frame = lay->numf - 1;
-				lay->set_clones();
-				if (mainprogram->leftmouse and !mainprogram->menuondisplay) lay->scritching = 4;
-			}
-			else if (lay->scritching == 2) {
-				lay->startframe = (lay->numf - 1) * ((mainprogram->mx - lay->loopbox->scrcoords->x1) / lay->loopbox->scrcoords->w);
-				if (lay->startframe < 0) lay->startframe = 0.0f;
-				else if (lay->startframe >= lay->numf) lay->startframe = lay->numf - 1;
-				if (lay->startframe > lay->frame) lay->frame = lay->startframe;
-				if (lay->startframe > lay->endframe) lay->startframe = lay->endframe;
-				lay->set_clones();
-				if (mainprogram->middlemouse) lay->scritching = 0;
-			}
-			else if (lay->scritching == 3) {
-				lay->endframe = (lay->numf - 1) * ((mainprogram->mx - lay->loopbox->scrcoords->x1) / lay->loopbox->scrcoords->w);
-				if (lay->endframe < 0) lay->endframe = 0.0f;
-				else if (lay->endframe >= lay->numf) lay->endframe = lay->numf - 1;
-				//if (lay->endframe < lay->frame) lay->frame = lay->endframe;
-				//if (lay->endframe < lay->startframe) lay->endframe = lay->startframe;
-				lay->set_clones();
-				if (mainprogram->middlemouse) lay->scritching = 0;
-			}
-			else if (lay->scritching == 5) {
-				float start = 0.0f;
-				float end = 0.0f;
-				lay->startframe += (mainprogram->mx - mainmix->prevx) / (lay->loopbox->scrcoords->w / (lay->numf - 1));
-				if (lay->startframe < 0) {
-					start = lay->startframe - 1;
-					lay->startframe = 0.0f;
-				}
-				else if (lay->startframe >= lay->numf) lay->startframe = lay->numf - 1;
-				if (lay->startframe > lay->frame) lay->frame = lay->startframe;
-				if (lay->startframe > lay->endframe) lay->startframe = lay->endframe;
-				lay->endframe += (mainprogram->mx - mainmix->prevx) / (lay->loopbox->scrcoords->w / (lay->numf - 1)) - start;
-				if (lay->endframe < 0) lay->endframe = 0.0f;
-				else if (lay->endframe >= lay->numf) {
-					end = lay->endframe - (lay->numf - 1);
-					lay->startframe -= end;
-					lay->endframe = lay->numf - 1;
-				}
-				mainmix->prevx = mainprogram->mx;
-				//if (lay->endframe < lay->frame) lay->frame = lay->endframe;
-				//if (lay->endframe < lay->startframe) lay->endframe = lay->startframe;
-				lay->set_clones();
-				if (mainprogram->middlemouse) lay->scritching = 0;
-			}
-			glBindFramebuffer(GL_FRAMEBUFFER, mainprogram->globfbo);
-			mainprogram->drawbuffer = mainprogram->globfbo;
-			glDrawBuffer(GL_COLOR_ATTACHMENT0);
-			draw_box(lay->loopbox, -1);
-			if (ends) {
-				draw_box(white, blue, lay->loopbox->vtxcoords->x1 + lay->startframe * (lay->loopbox->vtxcoords->w / (lay->numf - 1)), lay->loopbox->vtxcoords->y1, (lay->endframe - lay->startframe) * (lay->loopbox->vtxcoords->w / (lay->numf - 1)), tf(0.05f), -1);
-			}
-			else {
-				draw_box(white, green, lay->loopbox->vtxcoords->x1 + lay->startframe * (lay->loopbox->vtxcoords->w / (lay->numf - 1)), lay->loopbox->vtxcoords->y1, (lay->endframe - lay->startframe) * (lay->loopbox->vtxcoords->w / (lay->numf - 1)), tf(0.05f), -1);
-			}
-			draw_box(white, white, lay->loopbox->vtxcoords->x1 + lay->frame * (lay->loopbox->vtxcoords->w / (lay->numf - 1)), lay->loopbox->vtxcoords->y1, tf(0.00078f), tf(0.05f), -1);
-			
-			// Draw and handle chdir chinv
-			if (lay->pos > 0) {
-				if (lay->blendnode->blendtype == COLOURKEY) {
-					if (lay->chdir->box->in()) {
-						if (mainprogram->leftmouse) {
-							lay->chdir->value = !lay->chdir->value;
-							GLint chdir = glGetUniformLocation(mainprogram->ShaderProgram, "chdir");
-							glUniform1i(chdir, lay->chdir->value);
-						}
-					}
-					if (lay->chdir->value) {
-						lay->chdir->box->acolor[1] = 0.7f;
-					}
-					else {
-						lay->chdir->box->acolor[1] = 0.0f;
-					}
-					draw_box(lay->chdir->box, -1);
-					render_text("D", white, lay->chdir->box->vtxcoords->x1 + tf(0.0078f), lay->chdir->box->vtxcoords->y1 + tf(0.0416f) - tf(0.030f), tf(0.0003f), tf(0.0005f));
-					if (lay->chinv->box->in()) {
-						if (mainprogram->leftmouse) {
-							lay->chinv->value = !lay->chinv->value;
-							GLint chinv = glGetUniformLocation(mainprogram->ShaderProgram, "chinv");
-							glUniform1i(chinv, lay->chinv->value);
-						}
-					}
-					if (lay->chinv->value) {
-						lay->chinv->box->acolor[1] = 0.7f;
-					}
-					else {
-						lay->chinv->box->acolor[1] = 0.0f;
-					}
-					draw_box(lay->chinv->box, -1);
-					render_text("I", white, lay->chinv->box->vtxcoords->x1 + tf(0.0078f), lay->chinv->box->vtxcoords->y1 + tf(0.0416f) - tf(0.030f), tf(0.0003f), tf(0.0005f));
-				}
-			}
-		}
-	}
-}
-
 void do_blur(bool stage, GLuint prevfbotex, int iter) {
 	glActiveTexture(GL_TEXTURE5);
 	glBindTexture(GL_TEXTURE_2D, mainprogram->fbotex[0 + stage * 2]);
@@ -4096,7 +3081,7 @@ void midi_set() {
 			
 		for (int i = 0; i < loopstation->elems.size(); i++) {
 			if (loopstation->elems[i]->recbut->value) {
-				loopstation->elems[i]->add_param();
+				loopstation->elems[i]->add_param(mainmix->midiparam);
 			}
 		}
 		
@@ -4766,6 +3751,8 @@ void onestepfrom(bool stage, Node *node, Node *prevnode, GLuint prevfbotex, GLui
 				glBindTexture(GL_TEXTURE_2D, bnode->in2tex);
 				glActiveTexture(GL_TEXTURE0);
 				glBindVertexArray(mainprogram->fbovao);
+				GLfloat opacity = glGetUniformLocation(mainprogram->ShaderProgram, "opacity");
+				glUniform1f(opacity, 1.0f);
 				glDisable(GL_BLEND);
 				glDrawArrays(GL_TRIANGLE_STRIP, 0, 4);
 				glEnable(GL_BLEND);
@@ -5142,245 +4129,14 @@ bool display_mix() {
 }
 
 
-bool handle_clips(std::vector<Layer*> &layers, bool deck) {
-	float white[] = {1.0f, 1.0f, 1.0f, 1.0f};
-	float transp[] = {0.0f, 0.0f, 0.0f, 0.0f};
-	float black[] = {0.0f, 0.0f, 0.0f, 1.0f};
-	float lightblue[] = {0.5f, 0.5f, 1.0f, 1.0f};
-
-	Layer *lay;
-	for (int i = 0; i < layers.size(); i++) {
-		lay = layers[i];
-		if (lay->pos < mainmix->scenes[deck][mainmix->currscene[deck]]->scrollpos or lay->pos > mainmix->scenes[deck][mainmix->currscene[deck]]->scrollpos + 2) continue;
-		Box *box = lay->node->vidbox;
-		int endx = false;
-		if ((i == layers.size() - 1 or i == mainmix->scenes[deck][mainmix->currscene[deck]]->scrollpos + 2) and (box->scrcoords->x1 + box->scrcoords->w - mainprogram->xvtxtoscr(tf(0.075f)) < mainprogram->mx and mainprogram->mx < box->scrcoords->x1 + box->scrcoords->w + mainprogram->xvtxtoscr(0.075f))) {
-			endx = true;
-		}
-		
-		// handle dragging things into clip queue
-		if (lay->queueing and lay->filename != "") {
-			if (box->scrcoords->x1 < mainprogram->mx and mainprogram->mx < box->scrcoords->x1 + box->scrcoords->w) {
-				for (int j = 0; j < lay->clips.size() - lay->queuescroll; j++) {
-					float last = (j == lay->clips.size() - lay->queuescroll - 1) * 0.25f;
-					if (box->scrcoords->y1 + (j - 0.25f) * box->scrcoords->h < mainprogram->my and mainprogram->my < box->scrcoords->y1 + (j + 0.25) * box->scrcoords->h) {
-						if (j == 0) {
-							if (box->scrcoords->x1 + mainprogram->xvtxtoscr(0.075f) > mainprogram->mx or mainprogram->mx > box->scrcoords->x1 + box->scrcoords->w - mainprogram->xvtxtoscr(0.075f)) {
-								continue;
-							}
-						}
-						// inserting
-						if (mainprogram->lmover) {
-							if (mainprogram->dragbinel) {
-								if (mainprogram->draglay == lay and j == 0) {
-									enddrag();
-									return true;
-								}
-							}
-							if (mainprogram->dragbinel) {
-								Clip *nc = new Clip;
-								nc->tex = copy_tex(mainprogram->dragbinel->tex);
-								nc->type = mainprogram->dragbinel->type;
-								nc->path = mainprogram->dragbinel->path;
-								if (nc->type == ELEM_IMAGE) {
-									nc->get_imageframes();
-								}
-								else if (nc->type == ELEM_FILE) {
-									nc->get_videoframes();
-								}
-								else if (nc->type == ELEM_LAYER) {
-									nc->get_layerframes();
-								}
-								lay->clips.insert(lay->clips.begin() + j + lay->queuescroll, nc);
-								enddrag();
-								if (j + lay->queuescroll == lay->clips.size() - 1) {
-									Clip *clip = new Clip;
-									lay->clips.push_back(clip);
-									if (lay->clips.size() > 4) lay->queuescroll++;
-								}
-								if (mainprogram->dragclip) mainprogram->dragclip = nullptr;								return true;
-							}
-						}
-					}
-					else if (box->scrcoords->y1 + (j + 0.25f) * box->scrcoords->h < mainprogram->my and mainprogram->my < box->scrcoords->y1 + (j + 0.75 + last) * box->scrcoords->h) {
-						// replacing
-						Clip* jc = lay->clips[j + lay->queuescroll];
-						if (mainprogram->lmover) {
-							if (mainprogram->dragbinel) {
-								if (mainprogram->dragclip) {
-									mainprogram->dragclip->tex = jc->tex;
-									mainprogram->dragclip->type = jc->type;
-									mainprogram->dragclip->path = jc->path;
-									mainprogram->draglay->clips.insert(mainprogram->draglay->clips.begin() + mainprogram->dragpos, mainprogram->dragclip);
-									mainprogram->dragclip = nullptr;
-								}
-								jc->tex = copy_tex(mainprogram->dragbinel->tex);
-								jc->type = mainprogram->dragbinel->type;
-								jc->path = mainprogram->dragbinel->path;
-								if (jc->type == ELEM_IMAGE) {
-									jc->get_imageframes();
-								}
-								else if (jc->type == ELEM_FILE) {
-									jc->get_videoframes();
-								}
-								else if (jc->type == ELEM_LAYER) {
-									jc->get_layerframes();
-								}
-								enddrag();
-								if (j + lay->queuescroll == lay->clips.size() - 1) {
-									Clip* clip = new Clip;
-									lay->clips.push_back(clip);
-									if (lay->clips.size() > 4) lay->queuescroll++;
-								}
-								return true;
-							}
-						}
-						if (mainprogram->menuactivation) {
-							mainprogram->clipmenu->state = 2;
-							mainmix->mouseclip = jc;
-							mainprogram->menuactivation = false;
-						}
-					}
-				}
-			}
-		}
-
-		if (!mainmix->moving) {
-			bool no = false;
-			if (mainprogram->dragbinel) {
-				if (mainprogram->dragbinel->type == ELEM_DECK or mainprogram->dragbinel->type == ELEM_MIX) {
-					no = true;
-				}
-			}
-			if (!no) {
-				if (box->scrcoords->y1 < mainprogram->my + box->scrcoords->h and mainprogram->my < box->scrcoords->y1) {
-					if (box->scrcoords->x1 + box->scrcoords->w * 0.25f < mainprogram->mx and mainprogram->mx < box->scrcoords->x1 + box->scrcoords->w * 0.75f) {
-						// handle dragging things into layer monitors of deck
-						lay->queueing = true;
-						mainprogram->queueing = true;
-						mainmix->currlay = lay;
-						if (mainprogram->lmover or mainprogram->laymenu1->state > 1 or mainprogram->laymenu2->state > 1 or mainprogram->loadmenu->state > 1) {
-							set_queueing(false);
-							if (mainprogram->dragbinel) {
-								mainprogram->laymenu1->state = 0;
-								mainprogram->laymenu2->state = 0;
-								mainprogram->loadmenu->state = 0;
-								if (mainprogram->dragright) {
-									mainprogram->dragright = false;
-									while (!lay->effects[0].empty()) {
-										lay->delete_effect(lay->effects[0].size() - 1);
-									}
-									lay->scale->value = 1.0f;
-									lay->shiftx->value = 0.0f;
-									lay->shifty->value = 0.0f;
-								}
-								if (mainprogram->dragbinel->type == ELEM_LAYER) {
-									mainmix->open_layerfile(mainprogram->dragbinel->path, lay, 1, 1);
-									if (mainprogram->shelfdragelem) {
-										if (mainprogram->shelfdragelem->launchtype == 2) {
-											mainprogram->shelfdragelem->nbframes.clear();
-											mainprogram->shelfdragelem->nbframes.push_back(lay);
-										}
-									}
-								}
-								else if (mainprogram->dragbinel->type == ELEM_FILE) {
-									lay->open_video(0, mainprogram->dragbinel->path, true);
-								}
-								else if (mainprogram->dragbinel->type == ELEM_IMAGE) {
-									lay->open_image(mainprogram->dragbinel->path);
-								}
-							
-								// when something new is dragged into layer, set frames from framecounters set in Mixer::set_prevshelfdragelem()
-								if (mainprogram->shelfdragelem) {
-									if (mainprogram->shelfdragelem->launchtype == 1) {
-										if (mainprogram->shelfdragelem->cframes.size()) {
-											lay->frame = mainprogram->shelfdragelem->cframes[0];
-										}
-									}
-									else if (mainprogram->shelfdragelem->launchtype == 2) {
-										if (mainprogram->shelfdragelem->nbframes.size()) {
-											lay->frame = mainprogram->shelfdragelem->nbframes[0]->frame;
-										}
-									}
-									lay->prevshelfdragelem = mainprogram->shelfdragelem;
-								}
-							}
-							else {
-								lay->open_video(0, mainprogram->dragbinel->path, true);
-							}
-							mainprogram->rightmouse = true;
-							binsmain->handle(0);
-							enddrag();
-							return 1;
-						}
-					}
-					else if (endx or (box->scrcoords->x1 - mainprogram->xvtxtoscr(0.075f) < mainprogram->mx and mainprogram->mx < box->scrcoords->x1 + mainprogram->xvtxtoscr(0.075f))) {
-						// handle dragging things to the end of the last visible layer monitor of deck
-						if (mainprogram->lmover) {
-							Layer* inlay = mainmix->add_layer(layers, lay->pos + endx);
-							if (inlay->pos == mainmix->scenes[deck][mainmix->currscene[deck]]->scrollpos + 3) mainmix->scenes[deck][mainmix->currscene[deck]]->scrollpos++;
-							if (mainprogram->dragbinel) {
-								if (mainprogram->dragbinel->type == ELEM_LAYER) {
-									mainmix->open_layerfile(mainprogram->dragbinel->path, inlay, 1, 1);
-								}
-								else {
-									inlay->open_video(0, mainprogram->dragbinel->path, true);
-								}
-							}
-							else {
-								inlay->open_video(0, mainprogram->dragbinel->path, true);
-							}
-							mainprogram->rightmouse = true;
-							binsmain->handle(0);
-							enddrag();
-							return 1;
-						}
-					}
-				}
-
-				int numonscreen = layers.size() - mainmix->scenes[deck][mainmix->currscene[deck]]->scrollpos;
-				if (0 <= numonscreen and numonscreen <= 2) {
-					if (mainprogram->xvtxtoscr(mainprogram->numw + deck * 1.0f + numonscreen * mainprogram->layw) < mainprogram->mx and mainprogram->mx < deck * (glob->w / 2.0f) + glob->w / 2.0f) {
-						if (0 < mainprogram->my and mainprogram->my < mainprogram->yvtxtoscr(mainprogram->layh)) {
-							float blue[] = { 0.5, 0.5 , 1.0, 1.0 };
-							draw_box(nullptr, blue, -1.0f + mainprogram->numw + deck * 1.0f + numonscreen * mainprogram->layw, 1.0f - mainprogram->layh, mainprogram->layw, mainprogram->layh, -1);
-							if (mainprogram->lmover) {
-								// handle dragging into black space to the right of deck layer monitors
-								lay = mainmix->add_layer(layers, layers.size());
-								if (mainprogram->dragbinel) {
-									if (mainprogram->dragbinel->type == ELEM_LAYER) {
-										mainmix->open_layerfile(mainprogram->dragbinel->path, lay, 1, 1);
-									}
-									else if (mainprogram->dragbinel->type == ELEM_FILE) {
-										lay->open_video(0, mainprogram->dragbinel->path, true);
-									}
-									else if (mainprogram->dragbinel->type == ELEM_IMAGE) {
-										lay->open_image(mainprogram->dragbinel->path);
-									}
-								}
-								else {
-									lay->open_video(0, mainprogram->dragbinel->path, true);
-								}
-								mainprogram->rightmouse = true;
-								binsmain->handle(0);
-								enddrag();
-								return 1;
-							}
-						}
-					}
-				}
-			}
-		}
-	}
-	return 0;
-}
-
-
 void drag_into_layerstack(std::vector<Layer*>& layers, bool deck) {
 	Layer* lay;
 	for (int i = 0; i < layers.size(); i++) {
 		lay = layers[i];
-		if (lay->pos < mainmix->scenes[deck][mainmix->currscene[deck]]->scrollpos or lay->pos > mainmix->scenes[deck][mainmix->currscene[deck]]->scrollpos + 2) continue;
+		if (mainprogram->draginscrollbarlay) {
+			lay = mainprogram->draginscrollbarlay;
+		}
+		else if (lay->pos < mainmix->scenes[deck][mainmix->currscene[deck]]->scrollpos or lay->pos > mainmix->scenes[deck][mainmix->currscene[deck]]->scrollpos + 2) continue;
 		Box* box = lay->node->vidbox;
 		int endx = false;
 		if ((i == layers.size() - 1 or i == mainmix->scenes[deck][mainmix->currscene[deck]]->scrollpos + 2) and (box->scrcoords->x1 + box->scrcoords->w - mainprogram->xvtxtoscr(tf(0.075f)) < mainprogram->mx and mainprogram->mx < box->scrcoords->x1 + box->scrcoords->w + mainprogram->xvtxtoscr(0.075f))) {
@@ -5395,88 +4151,89 @@ void drag_into_layerstack(std::vector<Layer*>& layers, bool deck) {
 				}
 			}
 			if (!no) {
-				if (box->scrcoords->y1 < mainprogram->my + box->scrcoords->h and mainprogram->my < box->scrcoords->y1) {
-					if (box->scrcoords->x1 + box->scrcoords->w * 0.25f < mainprogram->mx and mainprogram->mx < box->scrcoords->x1 + box->scrcoords->w * 0.75f) {
-						// handle dragging things into layer monitors of deck
-						lay->queueing = true;
-						mainprogram->queueing = true;
-						mainmix->currlay = lay;
-						if (mainprogram->lmover or mainprogram->laymenu1->state > 1 or mainprogram->laymenu2->state > 1 or mainprogram->loadmenu->state > 1) {
-							set_queueing(false);
-							if (mainprogram->dragbinel) {
-								mainprogram->laymenu1->state = 0;
-								mainprogram->laymenu2->state = 0;
-								mainprogram->loadmenu->state = 0;
-								if (mainprogram->dragright) {
-									mainprogram->dragright = false;
-									while (!lay->effects[0].empty()) {
-										lay->delete_effect(lay->effects[0].size() - 1);
-									}
-									lay->scale->value = 1.0f;
-									lay->shiftx->value = 0.0f;
-									lay->shifty->value = 0.0f;
+				bool cond1 = (box->scrcoords->y1 < mainprogram->my + box->scrcoords->h and mainprogram->my < box->scrcoords->y1);
+				bool cond2 = (box->scrcoords->x1 + box->scrcoords->w * 0.25f < mainprogram->mx and mainprogram->mx < box->scrcoords->x1 + box->scrcoords->w * 0.75f);
+				if (mainprogram->draginscrollbarlay or (cond1 and cond2)) {
+					mainprogram->draginscrollbarlay = nullptr;
+					// handle dragging things into layer monitors of deck
+					lay->queueing = true;
+					mainprogram->queueing = true;
+					mainmix->currlay = lay;
+					if (mainprogram->lmover or mainprogram->laymenu1->state > 1 or mainprogram->laymenu2->state > 1 or mainprogram->newlaymenu->state > 1) {
+						set_queueing(false);
+						if (mainprogram->dragbinel) {
+							mainprogram->laymenu1->state = 0;
+							mainprogram->laymenu2->state = 0;
+							mainprogram->newlaymenu->state = 0;
+							if (mainprogram->dragright) {
+								mainprogram->dragright = false;
+								while (!lay->effects[0].empty()) {
+									lay->delete_effect(lay->effects[0].size() - 1);
 								}
-								if (mainprogram->dragbinel->type == ELEM_LAYER) {
-									mainmix->open_layerfile(mainprogram->dragbinel->path, lay, 1, 1);
-									if (mainprogram->shelfdragelem) {
-										if (mainprogram->shelfdragelem->launchtype == 2) {
-											mainprogram->shelfdragelem->nbframes.clear();
-											mainprogram->shelfdragelem->nbframes.push_back(lay);
-										}
-									}
-								}
-								else if (mainprogram->dragbinel->type == ELEM_FILE) {
-									lay->open_video(0, mainprogram->dragbinel->path, true);
-								}
-								else if (mainprogram->dragbinel->type == ELEM_IMAGE) {
-									lay->open_image(mainprogram->dragbinel->path);
-								}
-
-								// when something new is dragged into layer, set frames from framecounters set in Mixer::set_prevshelfdragelem()
+								lay->scale->value = 1.0f;
+								lay->shiftx->value = 0.0f;
+								lay->shifty->value = 0.0f;
+							}
+							if (mainprogram->dragbinel->type == ELEM_LAYER) {
+								mainmix->open_layerfile(mainprogram->dragbinel->path, lay, 1, 1);
 								if (mainprogram->shelfdragelem) {
-									if (mainprogram->shelfdragelem->launchtype == 1) {
-										if (mainprogram->shelfdragelem->cframes.size()) {
-											lay->frame = mainprogram->shelfdragelem->cframes[0];
-										}
+									if (mainprogram->shelfdragelem->launchtype == 2) {
+										mainprogram->shelfdragelem->nbframes.clear();
+										mainprogram->shelfdragelem->nbframes.push_back(lay);
 									}
-									else if (mainprogram->shelfdragelem->launchtype == 2) {
-										if (mainprogram->shelfdragelem->nbframes.size()) {
-											lay->frame = mainprogram->shelfdragelem->nbframes[0]->frame;
-										}
-									}
-									lay->prevshelfdragelem = mainprogram->shelfdragelem;
 								}
 							}
-							else {
+							else if (mainprogram->dragbinel->type == ELEM_FILE) {
 								lay->open_video(0, mainprogram->dragbinel->path, true);
 							}
-							mainprogram->rightmouse = true;
-							binsmain->handle(0);
-							enddrag();
-							return;
+							else if (mainprogram->dragbinel->type == ELEM_IMAGE) {
+								lay->open_image(mainprogram->dragbinel->path);
+							}
+
+							// when something new is dragged into layer, set frames from framecounters set in Mixer::set_prevshelfdragelem()
+							if (mainprogram->shelfdragelem) {
+								if (mainprogram->shelfdragelem->launchtype == 1) {
+									if (mainprogram->shelfdragelem->cframes.size()) {
+										lay->frame = mainprogram->shelfdragelem->cframes[0];
+									}
+								}
+								else if (mainprogram->shelfdragelem->launchtype == 2) {
+									if (mainprogram->shelfdragelem->nbframes.size()) {
+										lay->frame = mainprogram->shelfdragelem->nbframes[0]->frame;
+									}
+								}
+								lay->prevshelfdragelem = mainprogram->shelfdragelem;
+							}
 						}
+						else {
+							lay->open_video(0, mainprogram->dragbinel->path, true);
+						}
+						mainprogram->rightmouse = true;
+						binsmain->handle(0);
+						enddrag();
+						return;
 					}
-					else if (endx or (box->scrcoords->x1 - mainprogram->xvtxtoscr(0.075f) < mainprogram->mx and mainprogram->mx < box->scrcoords->x1 + mainprogram->xvtxtoscr(0.075f))) {
-						// handle dragging things to the end of the last visible layer monitor of deck
-						if (mainprogram->lmover) {
-							Layer* inlay = mainmix->add_layer(layers, lay->pos + endx);
-							if (inlay->pos == mainmix->scenes[deck][mainmix->currscene[deck]]->scrollpos + 3) mainmix->scenes[deck][mainmix->currscene[deck]]->scrollpos++;
-							if (mainprogram->dragbinel) {
-								if (mainprogram->dragbinel->type == ELEM_LAYER) {
-									mainmix->open_layerfile(mainprogram->dragbinel->path, inlay, 1, 1);
-								}
-								else {
-									inlay->open_video(0, mainprogram->dragbinel->path, true);
-								}
+				}
+				else if (endx or (box->scrcoords->x1 - mainprogram->xvtxtoscr(0.075f) < mainprogram->mx and mainprogram->mx < box->scrcoords->x1 + mainprogram->xvtxtoscr(0.075f))) {
+					// handle dragging things to the end of the last visible layer monitor of deck
+					if (mainprogram->lmover) {
+						Layer* inlay = mainmix->add_layer(layers, lay->pos + endx);
+						if (inlay->pos == mainmix->scenes[deck][mainmix->currscene[deck]]->scrollpos + 3) mainmix->scenes[deck][mainmix->currscene[deck]]->scrollpos++;
+						if (mainprogram->dragbinel) {
+							if (mainprogram->dragbinel->type == ELEM_LAYER) {
+								mainmix->open_layerfile(mainprogram->dragbinel->path, inlay, 1, 1);
 							}
 							else {
 								inlay->open_video(0, mainprogram->dragbinel->path, true);
 							}
-							mainprogram->rightmouse = true;
-							binsmain->handle(0);
-							enddrag();
-							return;
 						}
+						else {
+							inlay->open_video(0, mainprogram->dragbinel->path, true);
+						}
+						mainprogram->rightmouse = true;
+						binsmain->handle(0);
+						enddrag();
+						return;
 					}
 				}
 
@@ -5520,16 +4277,6 @@ void drag_into_layerstack(std::vector<Layer*>& layers, bool deck) {
 // check all STATIC/DYNAMIC draws
 void Shelf::handle() {
 	// draw shelves and handle shelves
-	float white[4] = { 1.0f, 1.0f, 1.0f, 1.0f };
-	float black[4] = { 0.0f, 0.0f, 0.0f, 1.0f };
-	float orange[] = { 1.0f, 0.5f, 0.0f, 1.0f };
-	float purple[] = { 0.5f, 0.5f, 1.0f, 1.0f };
-	float green[] = { 0.5f, 1.0f, 0.5f, 1.0f };
-	float yellow[] = { 0.9f, 0.8f, 0.0f, 1.0f };
-	float darkblue[] = { 0.1f, 0.5f, 1.0f, 1.0f };
-	float red[] = { 1.0f, 0.0f, 0.0f, 1.0f };
-	float grey[] = { 0.4f, 0.4f, 0.4f, 1.0f };
-	float pink[] = { 1.0f, 0.5f, 0.5f, 1.0f };
 	int inelem = -1;
 	for (int i = 0; i < 16; i++) {
 		ShelfElement* elem = this->elements[i];
@@ -5722,77 +4469,6 @@ void Shelf::handle() {
 	else if (!mainprogram->dragout[this->side]) this->prevnum = this->newnum;
 }
 
-void clip_intest(std::vector<Layer*>& layers, bool deck) {
-	// test if inside a clip
-	Layer* lay;
-	mainprogram->inclips = -1;
-	for (int i = 0; i < layers.size(); i++) {
-		lay = layers[i];
-		if (lay->pos < mainmix->scenes[deck][mainmix->currscene[deck]]->scrollpos or lay->pos > mainmix->scenes[deck][mainmix->currscene[deck]]->scrollpos + 2) continue;
-		Box* box = lay->node->vidbox;
-		if (lay->queueing and lay->filename != "") {
-			if (box->scrcoords->x1 < mainprogram->mx and mainprogram->mx < box->scrcoords->x1 + box->scrcoords->w) {
-				int limit = lay->clips.size() - lay->queuescroll;
-				if (limit > 4) limit = 4;
-				for (int j = 0; j < limit; j++) {
-					Clip* jc = lay->clips[j + lay->queuescroll];
-					jc->box->vtxcoords->x1 = box->vtxcoords->x1;
-					jc->box->vtxcoords->y1 = box->vtxcoords->y1 - (j + 1) * box->vtxcoords->h;
-					jc->box->vtxcoords->w = box->vtxcoords->w;
-					jc->box->vtxcoords->h = box->vtxcoords->h;
-					jc->box->upvtxtoscr();
-					if (jc->box->in()) {
-						if (mainprogram->menuactivation) {
-							mainprogram->clipmenu->state = 2;
-							mainmix->mouseclip = jc;
-							mainmix->mouselayer = lay;
-							mainprogram->menuactivation = false;
-						}
-						else mainprogram->inclips = i;
-						break;
-					}
-				}
-			}
-		}
-	}
-}
-
-void clip_dragging() {
-	//handle dragging into clips
-	if (mainprogram->dragbinel) {
-		if (mainprogram->dragbinel->type != ELEM_DECK and mainprogram->dragbinel->type != ELEM_MIX) {
-			if (mainprogram->prevmodus) {
-				if (handle_clips(mainmix->layersA, 0)) return;
-				if (handle_clips(mainmix->layersB, 1)) return;
-			}
-			else {
-				if (handle_clips(mainmix->layersAcomp, 0)) return;
-				if (handle_clips(mainmix->layersBcomp, 1)) return;
-			}
-			if (!mainprogram->binsscreen) {
-				if (mainprogram->lmover) {
-					// leftmouse dragging clip into nothing destroys the dragged clip
-					bool inlayers = false;
-					for (int deck = 0; deck < 2; deck++) {
-						if (mainprogram->xvtxtoscr(mainprogram->numw + deck * 1.0f) < mainprogram->mx and mainprogram->mx < deck * (glob->w / 2.0f) + glob->w / 2.0f) {
-							if (0 < mainprogram->my and mainprogram->my < mainprogram->yvtxtoscr(mainprogram->layh)) {
-								// but not when dragged into layer stack field, even when there's no layer there
-								inlayers = true;
-								break;
-							}
-						}
-					}
-					if (!inlayers) {
-						delete mainprogram->dragclip;
-						mainprogram->dragclip = nullptr;
-						enddrag();
-					}
-				}
-			}
-		}
-	}
-}
-
 
 void make_layboxes() {
 
@@ -5926,7 +4602,7 @@ void make_layboxes() {
 			for (int i = 0; i < lvec.size(); i++) {
 				Layer *testlay = lvec[i];
 				//testlay->node->upeffboxes();
-				// Make mixbox
+				// set mixbox position and dimensions
 				testlay->mixbox->vtxcoords->x1 = -1.0f + mainprogram->numw + xoffset + ((mainmix->scenes[testlay->deck][mainmix->currscene[testlay->deck]]->scrollpos + testlay->pos) % 3) * mainprogram->layw;
 				testlay->mixbox->vtxcoords->y1 = 1.0f - mainprogram->layh - tf(0.09f);
 				testlay->mixbox->vtxcoords->w = tf(0.05f);
@@ -6220,56 +4896,16 @@ bool Box::in(int mx, int my) {
 	if (mainprogram->menuondisplay) return false;
 	if (this->scrcoords->x1 <= mx and mx <= this->scrcoords->x1 + this->scrcoords->w) {
 		if (this->scrcoords->y1 - this->scrcoords->h <= my and my <= this->scrcoords->y1) {
-			if (mainprogram->showtooltips and mainprogram->tooltipbox == nullptr and this->tooltiptitle != "") mainprogram->tooltipbox = this;
+			if (mainprogram->showtooltips and !mainprogram->ttreserved) {
+				mainprogram->tooltipbox = this;
+				mainprogram->ttreserved = this->reserved;
+			}
 			return true;
 		}
 	}
 	return false;
 }
 
-
-void tooltips_handle(int win) {
-	// draw tooltip
-	float black[] = {0.0f, 0.0f, 0.0f, 1.0f};
-	float orange[] = {1.0f, 0.5f, 0.0f, 1.0f};
-	float white[] = {1.0f, 1.0f, 1.0f, 1.0f};
-	float fac = 1.0f;
-	if (mainprogram->prefon or mainprogram->tunemidi) fac = 4.0f;
-
-	if (mainprogram->tooltipmilli > 3000) {
-		if (mainprogram->longtooltips) {
-			std::vector<std::string> texts;
-			int pos = 0;
-			while (pos < mainprogram->tooltipbox->tooltip.length() - 1) {
-				int oldpos = pos;
-				pos = mainprogram->tooltipbox->tooltip.rfind(" ", pos + 58);
-				if (pos == -1) break;
-				texts.push_back(mainprogram->tooltipbox->tooltip.substr(oldpos, pos - oldpos));
-			}
-			float x = mainprogram->tooltipbox->vtxcoords->x1 + mainprogram->tooltipbox->vtxcoords->w + tf(0.01f);  //first print offscreen
-			float y = mainprogram->tooltipbox->vtxcoords->y1 - tf(0.01f) * glob->w / glob->h - tf(0.01f);
-			float textw = 0.5f * sqrt(fac);
-			float texth = 0.092754f * sqrt(fac);
-			if ((x + textw) > 1.0f) x = x - textw - tf(0.02f) - mainprogram->tooltipbox->vtxcoords->w;
-			if ((y - texth * (texts.size() + 1) - tf(0.01f)) < -1.0f) y = -1.0f + texth * (texts.size() + 1) - tf(0.01f);
-			if (x < -1.0f) x = -1.0f;
-			draw_box(nullptr, black, x, y - texth, textw, texth + tf(0.01f), -1);
-			render_text(mainprogram->tooltipbox->tooltiptitle, orange, x + tf(0.015f) * sqrt(fac), y - texth + tf(0.03f) * sqrt(fac), tf(0.0003f) * fac, tf(0.0005f) * fac, win, 0);
-			for (int i = 0; i < texts.size(); i++) {
-				y -= texth;
-				draw_box(nullptr, black, x, y - texth, textw, texth + tf(0.01f), -1);
-				render_text(texts[i], white, x + tf(0.015f) * sqrt(fac), y - texth + tf(0.03f) * sqrt(fac), tf(0.0003f) * fac, tf(0.0005f) * fac, win, 0);
-			}
-		}
-		else {
-			float x = mainprogram->tooltipbox->vtxcoords->x1 + mainprogram->tooltipbox->vtxcoords->w + tf(0.01f);  //first print offscreen
-			float y = mainprogram->tooltipbox->vtxcoords->y1 - tf(0.01f) * glob->w / glob->h - tf(0.01f);
-			float textw = 0.25f * sqrt(fac);
-			draw_box(nullptr, black, x, y - 0.092754f, textw, 0.092754f + tf(0.01f), -1);
-			render_text(mainprogram->tooltipbox->tooltiptitle, orange, x + tf(0.015f) * sqrt(fac), y - 0.092754f + tf(0.03f) * sqrt(fac), tf(0.0003f) * fac, tf(0.0005f) * fac, win, 0);
-		}
-	}
-}
 
 	
 Clip::Clip() {
@@ -6751,7 +5387,7 @@ void Preferences::save() {
 	#endif
 	#endif
 	wfile.open(prstr);
-	wfile << "EWOCvj PREFERENCES V0.2\n";
+	wfile << "EWOCvj Preferences V0.2\n";
 	
 	for (int i = 0; i < mainprogram->prefs->items.size(); i++) {
 		PrefCat *pc = mainprogram->prefs->items[i];
@@ -6921,7 +5557,7 @@ void PIMidi::populate() {
 		intrmitems.push_back(pmi);
 	}
 	for (int i = 0; i < this->items.size(); i++) {
-		if (this->items[i]->connected) delete this->items[i];
+		//if (this->items[i]->connected) delete this->items[i];
 	}
 	this->items = intrmitems;
 	this->items.insert(this->items.end(), ncitems.begin(), ncitems.end());
@@ -6988,12 +5624,12 @@ PIVid::PIVid() {
 	this->items.push_back(pvi);
 	pos++;
 
-	pvi = new PrefItem(this, pos, "High-compressed video quality", PREF_NUMBER, (void*)&mainprogram->qualfr);
+	pvi = new PrefItem(this, pos, "Highly compressed video quality", PREF_NUMBER, (void*)&mainprogram->qualfr);
 	pvi->value = 3;
-	pvi->namebox->tooltiptitle = "Video decompression quality of high-compressed streams ";
-	pvi->namebox->tooltip = "Sets the quality of the video stream decompression for streams that don't have one keyframe per frame. A tradeoff between quality and framerate. ";
-	pvi->valuebox->tooltiptitle = "Video decompression quality of high-compressed streams ";
-	pvi->valuebox->tooltip = "Leftclicking the value allows setting the quality in the range of 1 to 10.  Lower is better quality and worse framerate. ";
+	pvi->namebox->tooltiptitle = "Video playback quality of highly compressed streams ";
+	pvi->namebox->tooltip = "Sets the quality of the video stream playback for streams that don't have one keyframe per frame encoded. A tradeoff between quality and framerate. ";
+	pvi->valuebox->tooltiptitle = "Video playback quality of highly compressed streams ";
+	pvi->valuebox->tooltip = "Leftclicking the value allows setting the quality in the range of 1 to 10.  Lower is better quality and worse framerate/choppier playback. ";
 	mainprogram->qualfr = pvi->value;
 	this->items.push_back(pvi);
 	pos++;
@@ -7136,380 +5772,6 @@ void handle_scenes(Scene *scene) {
 	}
 }
 
-// regulates the reordering of layers around the stacks by dragging
-// both exchanging two layers and moving one layer
-bool exchange(Layer *lay, std::vector<Layer*> &slayers, std::vector<Layer*> &dlayers, bool deck) {
-	bool ret = false;
-	int size = dlayers.size();
-	Layer* inlay = nullptr;
-	for (int i = 0; i < size; i++) {
-		inlay = dlayers[i];
-		if (inlay->pos < mainmix->scenes[deck][mainmix->currscene[deck]]->scrollpos or inlay->pos > mainmix->scenes[deck][mainmix->currscene[deck]]->scrollpos + 2) continue;
-		Box *box = inlay->node->vidbox;
-		int endx = 0;
-		if ((i == dlayers.size() - 1 - mainmix->scenes[deck][mainmix->currscene[deck]]->scrollpos) and (box->scrcoords->x1 + box->scrcoords->w - mainprogram->xvtxtoscr(tf(0.075f)) < mainprogram->mx and mainprogram->mx < box->scrcoords->x1 + box->scrcoords->w + mainprogram->xvtxtoscr(0.075f) * (i != dlayers.size() - 1 - mainmix->scenes[deck][mainmix->currscene[deck]]->scrollpos))) {
-			endx = 1;
-		}
-		bool dropin = false;
-		int numonscreen = size - mainmix->scenes[deck][mainmix->currscene[deck]]->scrollpos;
-		if (0 <= numonscreen and numonscreen <= 2) {
-			if (mainprogram->xvtxtoscr(mainprogram->numw + deck * 1.0f + numonscreen * mainprogram->layw) < mainprogram->mx and mainprogram->mx < deck * (glob->w / 2.0f) + glob->w / 2.0f) {
-				if (0 < mainprogram->my and mainprogram->my < mainprogram->yvtxtoscr(mainprogram->layh)) {
-					if (size == i + 1) {
-						dropin = true;
-						endx = 1;
-					}
-				}
-			}
-		}
-		if (dropin or (box->scrcoords->y1 < mainprogram->my + box->scrcoords->h and mainprogram->my < box->scrcoords->y1)) {
-			if ((box->scrcoords->x1 + mainprogram->xvtxtoscr(0.075f) < mainprogram->mx and mainprogram->mx < box->scrcoords->x1 + box->scrcoords->w - mainprogram->xvtxtoscr(0.075f))) {
-				if (lay == inlay) return false;
-				ret = true;
-				//exchange two layers
-				bool indeck = inlay->deck;
-				BlendNode *bnode = inlay->blendnode;
-				BLEND_TYPE btype = bnode->blendtype;
-				VideoNode *node = inlay->node;
-				Node *len1 = inlay->lasteffnode[1];
-				
-				slayers[lay->pos] = inlay;
-				slayers[lay->pos]->pos = lay->pos;
-				slayers[lay->pos]->deck = lay->deck;
-				slayers[lay->pos]->node = lay->node;
-				slayers[lay->pos]->node->layer = inlay;
-				slayers[lay->pos]->blendnode = lay->blendnode;
-				slayers[lay->pos]->blendnode->blendtype = lay->blendnode->blendtype;
-				slayers[lay->pos]->blendnode->mixfac->value = lay->blendnode->mixfac->value;
-				slayers[lay->pos]->blendnode->wipetype = lay->blendnode->wipetype;
-				slayers[lay->pos]->blendnode->wipedir = lay->blendnode->wipedir;
-				slayers[lay->pos]->blendnode->wipex->value = lay->blendnode->wipex->value;
-				slayers[lay->pos]->blendnode->wipey->value = lay->blendnode->wipey->value;
-				if (lay->pos == 0) inlay->lasteffnode[1] = inlay->lasteffnode[0];
-				else inlay->lasteffnode[1] = lay->lasteffnode[1];
-
-				dlayers[i] = lay;
-				dlayers[i]->pos = i;
-				dlayers[i]->deck = indeck;
-				dlayers[i]->node = node;
-				dlayers[i]->node->layer = lay;
-				dlayers[i]->blendnode = bnode;
-				dlayers[i]->blendnode->blendtype = btype;
-				dlayers[i]->blendnode->mixfac->value = bnode->mixfac->value;
-				dlayers[i]->blendnode->wipetype = bnode->wipetype;
-				dlayers[i]->blendnode->wipedir = bnode->wipedir;
-				dlayers[i]->blendnode->wipex->value = bnode->wipex->value;
-				dlayers[i]->blendnode->wipey->value = bnode->wipey->value;
-				if (i == 0) lay->lasteffnode[1] = lay->lasteffnode[0];
-				else lay->lasteffnode[1] = len1;
-				
-				Node *inlayout = inlay->lasteffnode[0]->out[0];
-				Node *layout = lay->lasteffnode[0]->out[0];
-				if (inlay->effects[0].size()) {
-					inlay->node->out.clear();
-					mainprogram->nodesmain->currpage->connect_nodes(inlay->node, inlay->effects[0][0]->node);
-					inlay->lasteffnode[0] = inlay->effects[0][inlay->effects[0].size() - 1]->node;
-				}
-				else inlay->lasteffnode[0] = inlay->node;
-				inlay->lasteffnode[0]->out.clear();
-				if (inlay->pos == 0) {
-					layout->in = nullptr;
-					mainprogram->nodesmain->currpage->connect_nodes(inlay->lasteffnode[0], layout);
-				}
-				else {
-					((BlendNode*)(layout))->in2 = nullptr;
-					mainprogram->nodesmain->currpage->connect_in2(inlay->lasteffnode[0], (BlendNode*)(layout));
-				}	
-				for (int j = 0; j < inlay->effects[0].size(); j++) {
-					inlay->effects[0][j]->node->align = inlay->node;
-				}
-				if (lay->effects[0].size()) {
-					lay->node->out.clear();
-					mainprogram->nodesmain->currpage->connect_nodes(lay->node, lay->effects[0][0]->node);
-					lay->lasteffnode[0] = lay->effects[0][lay->effects[0].size() - 1]->node;
-				}
-				else lay->lasteffnode[0] = lay->node;
-				lay->lasteffnode[0]->out.clear();
-				if (lay->pos == 0) {
-					inlayout->in = nullptr;
-					mainprogram->nodesmain->currpage->connect_nodes(lay->lasteffnode[0], inlayout);
-				}
-				else {
-					((BlendNode*)(inlayout))->in2 = nullptr;
-					mainprogram->nodesmain->currpage->connect_in2(lay->lasteffnode[0], (BlendNode*)inlayout);
-				}			
-				for (int j = 0; j < lay->effects[0].size(); j++) {
-					lay->effects[0][j]->node->align = lay->node;
-				}
-				//if (inlay->filename == "") {
-				//	mainmix->delete_layer(slayers, inlay, false);
-				//}
-				if (slayers.size() == 0) {
-					Layer* newlay = mainmix->add_layer(slayers, 0);
-					if (&slayers == &mainmix->layersA) {
-						mainprogram->nodesmain->currpage->connect_nodes(newlay->lasteffnode[0], mainprogram->nodesmain->mixnodes[0]);
-					}
-					else if (&slayers == &mainmix->layersB) {
-						mainprogram->nodesmain->currpage->connect_nodes(newlay->lasteffnode[0], mainprogram->nodesmain->mixnodes[1]);
-					}
-					else if (&slayers == &mainmix->layersAcomp) {
-						mainprogram->nodesmain->currpage->connect_nodes(newlay->lasteffnode[0], mainprogram->nodesmain->mixnodescomp[0]);
-					}
-					else if (&slayers == &mainmix->layersBcomp) {
-						mainprogram->nodesmain->currpage->connect_nodes(newlay->lasteffnode[0], mainprogram->nodesmain->mixnodescomp[1]);
-					}
-				}
-				break;
-			}
-			else if (dropin or endx or (box->scrcoords->x1 - mainprogram->xvtxtoscr(0.075f) * (i - mainmix->scenes[deck][mainmix->currscene[deck]]->scrollpos != 0) < mainprogram->mx and mainprogram->mx < box->scrcoords->x1 + mainprogram->xvtxtoscr(0.075f))) {
-				if (lay == dlayers[i]) return false;
-				ret = true;
-				//move one layer
-				BLEND_TYPE nextbtype;
-				float nextmfval = 0.0f;
-				int nextwipetype = 0;
-				int nextwipedir = 0;
-				float nextwipex = 0.0f;
-				float nextwipey = 0.0f;
-				Layer* nextlay = nullptr;
-				Layer* nextnextlay = nullptr;
-				if (slayers.size() > lay->pos + 1) {
-					nextlay = slayers[lay->pos + 1];
-					nextbtype = nextlay->blendnode->blendtype;
-					if (slayers.size() > nextlay->pos + 1) {
-						nextnextlay = slayers[nextlay->pos + 1];
-						//nextbtype = nextlay->blendnode->blendtype;
-					}
-					else nextnextlay = lay;
-				}
-				lay->deck = deck;
-				BLEND_TYPE btype = lay->blendnode->blendtype;
-				BlendNode *firstbnode = (BlendNode*)dlayers[0]->lasteffnode[0]->out[0];
-				Node *firstlasteffnode = dlayers[0]->lasteffnode[0];
-				float mfval = lay->blendnode->mixfac->value;
-				int wipetype = lay->blendnode->wipetype;
-				int wipedir = lay->blendnode->wipedir;
-				float wipex = lay->blendnode->wipex->value;
-				float wipey = lay->blendnode->wipey->value;
-				if (lay->pos > 0) {
-					lay->blendnode->in->out.clear();
-					mainprogram->nodesmain->currpage->connect_nodes(lay->blendnode->in, lay->lasteffnode[1]->out[0]);
-					mainprogram->nodesmain->currpage->delete_node(lay->blendnode);
-				}
-				else if (i + endx != 0) {
-					if (nextlay) {
-						if (nextlay->effects[1].size()) {
-							nextlay->lasteffnode[0]->out.clear();
-							mainprogram->nodesmain->currpage->connect_nodes(nextlay->lasteffnode[0], nextlay->effects[1][0]->node);
-						}
-						mainprogram->nodesmain->currpage->delete_node(nextlay->blendnode);
-						nextlay->blendnode = new BlendNode;
-						nextlay->blendnode->blendtype = nextbtype;
-						nextlay->blendnode->mixfac->value = nextmfval;
-						nextlay->blendnode->wipetype = nextwipetype;
-						nextlay->blendnode->wipedir = nextwipedir;
-						nextlay->blendnode->wipex->value = nextwipex;
-						nextlay->blendnode->wipey->value = nextwipey;
-						if (!nextlay->effects[1].size()) {
-							nextlay->lasteffnode[1] = nextlay->lasteffnode[0];
-						}
-					}
-				}
-				lay->blendnode = nullptr;
-				bool lastisvid = false;
-				if (lay->lasteffnode[0] == lay->node) lastisvid = true;
-				mainprogram->nodesmain->currpage->delete_node(lay->node);
-				
-				// do layer move in layer vectors
-				int slayerssize = slayers.size();
-				for (int j = 0; j < slayerssize; j++) {
-					if (slayers[j] == lay) {
-						slayers.erase(slayers.begin() + j);
-						if (slayers == dlayers and i > j) endx--;
-						break;
-					}
-				}
-				bool comp;
-				if (dlayers == mainmix->layersA or dlayers == mainmix->layersB) comp = false;
-				else comp = true;
-				for (int j = 0; j < slayers.size(); j++) {
-					slayers[j]->pos = j;
-				}
-				if (endx) {
-					dlayers.insert(dlayers.end(), lay);
-					if (slayers == dlayers) endx = 0;
-				}
-				else dlayers.insert(dlayers.begin() + i, lay);
-				for (int j = 0; j < dlayers.size(); j++) {
-					dlayers[j]->pos = j;
-				}
-				//// end of layer move
-
-				if (dlayers[i + endx]->pos == mainmix->scenes[deck][mainmix->currscene[deck]]->scrollpos + 3) {
-					mainmix->scenes[deck][mainmix->currscene[deck]]->scrollpos++;
-				}
-				dlayers[i + endx]->node = mainprogram->nodesmain->currpage->add_videonode(comp);
-				dlayers[i + endx]->node->layer = dlayers[i + endx];
-				for (int j = 0; j < dlayers[i + endx]->effects[0].size(); j++) {
-					if (j == 0) mainprogram->nodesmain->currpage->connect_nodes(dlayers[i + endx]->node, dlayers[i + endx]->effects[0][j]->node);
-					dlayers[i + endx]->effects[0][j]->node->align = dlayers[i + endx]->node;
-				}
-				if (lastisvid) dlayers[i + endx]->lasteffnode[0] = dlayers[i + endx]->node;
-				if (dlayers[i + endx]->pos > 0) {
-					Layer *prevlay = dlayers[dlayers[i + endx]->pos - 1];
-					BlendNode *bnode = mainprogram->nodesmain->currpage->add_blendnode(MIXING, comp);
-					bnode->blendtype = btype;
-					dlayers[i + endx]->blendnode = bnode;
-					dlayers[i + endx]->blendnode->mixfac->value = mfval;
-					dlayers[i + endx]->blendnode->wipetype = wipetype;
-					dlayers[i + endx]->blendnode->wipedir = wipedir;
-					dlayers[i + endx]->blendnode->wipex->value = wipex;
-					dlayers[i + endx]->blendnode->wipey->value = wipey;
-					mainprogram->nodesmain->currpage->connect_nodes(prevlay->lasteffnode[1], dlayers[i + endx]->lasteffnode[0], dlayers[i + endx]->blendnode);
-					if (dlayers[i + endx]->effects[1].size()) {
-						dlayers[i + endx]->blendnode->out.clear();
-						mainprogram->nodesmain->currpage->connect_nodes(dlayers[i + endx]->blendnode, dlayers[i + endx]->effects[1][0]->node);
-					}
-					else {
-						dlayers[i + endx]->lasteffnode[1] = dlayers[i + endx]->blendnode;
-					}
-					if (dlayers[i + endx]->pos == dlayers.size() - 1 and mainprogram->nodesmain->mixnodes.size()) {
-						if (&dlayers == &mainmix->layersA) {
-							mainprogram->nodesmain->currpage->connect_nodes(dlayers[i + endx]->lasteffnode[1], mainprogram->nodesmain->mixnodes[0]);
-						}
-						else if (&dlayers == &mainmix->layersB) {
-							mainprogram->nodesmain->currpage->connect_nodes(dlayers[i + endx]->lasteffnode[1], mainprogram->nodesmain->mixnodes[1]);
-						}
-						else if (&dlayers == &mainmix->layersAcomp) {
-							mainprogram->nodesmain->currpage->connect_nodes(dlayers[i + endx]->lasteffnode[1], mainprogram->nodesmain->mixnodescomp[0]);
-						}
-						else if (&dlayers == &mainmix->layersBcomp) {
-							mainprogram->nodesmain->currpage->connect_nodes(dlayers[i + endx]->lasteffnode[1], mainprogram->nodesmain->mixnodescomp[1]);
-						}
-					}
-					else if (dlayers[i + endx]->pos < dlayers.size() - 1) {
-						mainprogram->nodesmain->currpage->connect_nodes(dlayers[i + endx]->lasteffnode[1], dlayers[dlayers[i + endx]->pos + 1]->blendnode);
-					}	
-				}
-				else {
-					dlayers[i + endx]->blendnode = new BlendNode;
-					//BlendNode *bnode = mainprogram->nodesmain->currpage->add_blendnode(MIXING, false);
-					if (dlayers[i + endx]->effects[1].size()) {
-						dlayers[i + endx]->lasteffnode[0]->out.clear();
-						mainprogram->nodesmain->currpage->connect_nodes(dlayers[i + endx]->lasteffnode[0], dlayers[i + endx]->effects[1][0]->node);
-					}
-					else {
-						dlayers[i + endx]->lasteffnode[1] = dlayers[i + endx]->lasteffnode[0];
-					}
-					Layer *nxlay = nullptr;
-					if (dlayers.size() > 2) nxlay = dlayers[1];
-					if (nxlay) {
-						Node *cpn = nxlay->lasteffnode[1]->out[0];
-						firstlasteffnode->out.clear();
-						BlendNode *bnode = mainprogram->nodesmain->currpage->add_blendnode(MIXING, comp);
-						nxlay->blendnode = bnode;
-						dlayers[i + endx]->lasteffnode[1]->out.clear();
-						mainprogram->nodesmain->currpage->connect_nodes(dlayers[i + endx]->lasteffnode[1], firstlasteffnode, bnode);
-						if (nxlay->effects[1].size()) {
-							mainprogram->nodesmain->currpage->connect_nodes(bnode, nxlay->effects[1][0]->node);
-							nxlay->lasteffnode[1]->out.clear();
-							mainprogram->nodesmain->currpage->connect_nodes(nxlay->lasteffnode[1], cpn);
-						}
-						else mainprogram->nodesmain->currpage->connect_nodes(bnode, cpn);
-					}
-					else {
-						BlendNode *bnode = mainprogram->nodesmain->currpage->add_blendnode(MIXING, comp);
-						dlayers[i + endx]->lasteffnode[1]->out.clear();
-						dlayers[1]->blendnode = bnode;
-						dlayers[1]->blendnode->blendtype = MIXING;
-						mainprogram->nodesmain->currpage->connect_nodes(dlayers[i + endx]->lasteffnode[1], dlayers[1]->lasteffnode[0], bnode);
-						dlayers[1]->lasteffnode[1] = bnode;
-						if (&dlayers == &mainmix->layersA) {
-							mainprogram->nodesmain->currpage->connect_nodes(bnode, mainprogram->nodesmain->mixnodes[0]);
-						}
-						else if (&dlayers == &mainmix->layersB) {
-							mainprogram->nodesmain->currpage->connect_nodes(bnode, mainprogram->nodesmain->mixnodes[1]);
-						}
-						else if (&dlayers == &mainmix->layersAcomp) {
-							mainprogram->nodesmain->currpage->connect_nodes(bnode, mainprogram->nodesmain->mixnodescomp[0]);
-						}
-						else if (&dlayers == &mainmix->layersBcomp) {
-							mainprogram->nodesmain->currpage->connect_nodes(bnode, mainprogram->nodesmain->mixnodescomp[1]);
-						}
-					}
-
-				}
-				dlayers[i + endx]->blendnode->blendtype = btype;
-				dlayers[i + endx]->blendnode->mixfac->value = mfval;
-				dlayers[i + endx]->blendnode->wipetype = wipetype;
-				dlayers[i + endx]->blendnode->wipedir = wipedir;
-				dlayers[i + endx]->blendnode->wipex->value = wipex;
-				dlayers[i + endx]->blendnode->wipey->value = wipey;
-				if (nextnextlay) {
-					nextlay->lasteffnode[1]->out.clear();
-					nextnextlay->blendnode->in = nullptr;
-					mainprogram->nodesmain->currpage->connect_nodes(nextlay->lasteffnode[1], nextnextlay->blendnode);
-				}
-				if (slayers.size() == 0) {
-					Layer *newlay = mainmix->add_layer(slayers, 0);
-					if (&slayers == &mainmix->layersA) {
-						mainprogram->nodesmain->currpage->connect_nodes(newlay->lasteffnode[0], mainprogram->nodesmain->mixnodes[0]);
-					}
-					else if (&slayers == &mainmix->layersB) {
-						mainprogram->nodesmain->currpage->connect_nodes(newlay->lasteffnode[0], mainprogram->nodesmain->mixnodes[1]);
-					}
-					else if (&slayers == &mainmix->layersAcomp) {
-						mainprogram->nodesmain->currpage->connect_nodes(newlay->lasteffnode[0], mainprogram->nodesmain->mixnodescomp[0]);
-					}
-					else if (&slayers == &mainmix->layersBcomp) {
-						mainprogram->nodesmain->currpage->connect_nodes(newlay->lasteffnode[0], mainprogram->nodesmain->mixnodescomp[1]);
-					}
-				}
-				break;
-			}
-		}
-	}
-
-	if (ret) {
-		if (!lay->dummy) {
-			ShelfElement* elem = lay->prevshelfdragelem;
-			bool ret = mainmix->set_prevshelfdragelem(lay);
-			if (!ret and elem->type == ELEM_DECK) {
-				if (elem->launchtype == 2) {
-					mainmix->mousedeck = elem->nbframes[0]->deck;
-					mainmix->do_save_deck(mainprogram->temppath + "tempdeck_lnch.deck", false, false);
-					mainmix->open_deck(mainprogram->temppath + "tempdeck_lnch.deck", false);
-				}
-			}
-			else if (!ret and elem->type == ELEM_MIX) {
-				if (elem->launchtype == 2) {
-					mainmix->do_save_mix(mainprogram->temppath + "tempdeck_lnch.deck", mainprogram->prevmodus, false);
-					mainmix->open_mix(mainprogram->temppath + "tempdeck_lnch.deck", false);
-				}
-			}
-		}
-		if (!inlay->dummy) {
-			ShelfElement* elem = inlay->prevshelfdragelem;
-			bool ret = mainmix->set_prevshelfdragelem(inlay);
-			if (!ret and elem->type == ELEM_DECK) {
-				if (elem->launchtype == 2) {
-					mainmix->mousedeck = elem->nbframes[0]->deck;
-					mainmix->do_save_deck(mainprogram->temppath + "tempdeck_lnch.deck", false, false);
-					mainmix->open_deck(mainprogram->temppath + "tempdeck_lnch.deck", false);
-				}
-			}
-			else if (!ret and elem->type == ELEM_MIX) {
-				if (elem->launchtype == 2) {
-					mainmix->do_save_mix(mainprogram->temppath + "tempdeck_lnch.deck", mainprogram->prevmodus, false);
-					mainmix->open_mix(mainprogram->temppath + "tempdeck_lnch.deck", false);
-				}
-			}
-		}
-	}
-
-	return ret;
-}
-
 std::vector<Effect*>& Layer::choose_effects() {
 	if (mainprogram->effcat[this->deck]->value) {
 		return this->effects[1];
@@ -7596,375 +5858,8 @@ void pick_color(Layer *lay, Box *cbox) {
 	}
 }
 
-int handle_menu(Menu *menu) {
-	int ret = handle_menu(menu, 0.0f, 0.0f);
-	return ret;
-}
-int handle_menu(Menu *menu, float xshift, float yshift) {
-	float white[] = {1.0, 1.0, 1.0, 1.0};
-	mainprogram->frontbatch = true;
-	if (menu->state > 1) {
-		if (std::find(mainprogram->actmenulist.begin(), mainprogram->actmenulist.end(), menu) == mainprogram->actmenulist.end()) {
-			mainprogram->actmenulist.clear();
-		}
-		int size = 0;
-		for(int k = 0; k < menu->entries.size(); k++) {
-			std::size_t sub = menu->entries[k].find("submenu");
-			if (sub != 0) size++;
-		}
-		if (menu->menuy + mainprogram->yvtxtoscr(yshift) > glob->h - size * mainprogram->yvtxtoscr(tf(0.05f))) menu->menuy = glob->h - size * mainprogram->yvtxtoscr(tf(0.05f)) + mainprogram->yvtxtoscr(yshift);
-		if (size > 21) menu->menuy = mainprogram->yvtxtoscr(mainprogram->layh) - mainprogram->yvtxtoscr(yshift);
-		float vmx = (float)menu->menux * 2.0 / glob->w;
-		float vmy = (float)menu->menuy * 2.0 / glob->h;
-		float lc[] = {0.0, 0.0, 0.0, 1.0};
-		float ac1[] = {0.3, 0.3, 0.3, 1.0};
-		float ac2[] = {0.5, 0.5, 1.0, 1.0};
-		int numsubs = 0;
-		float limit = 1.0f;
-		int notsubk = 0;
-		for(int k = 0; k < menu->entries.size(); k++) {
-			float xoff;
-			int koff;
-			if (notsubk > 20) {
-				if (mainprogram->xscrtovtx(menu->menux) > limit) xoff = -tf(0.195f) + xshift;
-				else xoff = tf(0.195f) + xshift;
-				koff = menu->entries.size() - 21;
-			}
-			else {
-				xoff = 0.0f + xshift;
-				koff = 0;
-			}
-			std::size_t sub = menu->entries[k].find("submenu");
-			if (sub != 0) {
-				notsubk++;
-				if (menu->box->scrcoords->x1 + menu->menux + mainprogram->xvtxtoscr(xoff) < mainprogram->mx and mainprogram->mx < menu->box->scrcoords->x1 + menu->box->scrcoords->w + menu->menux + mainprogram->xvtxtoscr(xoff) and menu->box->scrcoords->y1 - menu->box->scrcoords->h + menu->menuy + (k - koff - numsubs) * mainprogram->yvtxtoscr(tf(0.05f)) - mainprogram->yvtxtoscr(yshift) < mainprogram->my and mainprogram->my < menu->box->scrcoords->y1 + menu->menuy + (k - koff - numsubs) * mainprogram->yvtxtoscr(tf(0.05f)) - mainprogram->yvtxtoscr(yshift)) {
-					draw_box(lc, ac2, menu->box->vtxcoords->x1 + vmx + xoff, menu->box->vtxcoords->y1 - (k - koff - numsubs) * tf(0.05f) - vmy + yshift, tf(menu->width), tf(0.05f), -1);
-					if (mainprogram->leftmousedown) mainprogram->leftmousedown = false;
-					if (mainprogram->lmover) {
-						for (int i = 0; i < mainprogram->menulist.size(); i++) {
-							mainprogram->menulist[i]->state = 0;
-						}
-						mainprogram->menuchosen = true;
-						menu->currsub = -1;
-						mainprogram->frontbatch = false;
-						return k - numsubs;
-					}
-				}
-				else {
-					draw_box(lc, ac1, menu->box->vtxcoords->x1 + vmx + xoff, menu->box->vtxcoords->y1 - (k - koff - numsubs) * tf(0.05f) - vmy + yshift, tf(menu->width), tf(0.05f), -1);
-				}
-				render_text(menu->entries[k], white, menu->box->vtxcoords->x1 + vmx + tf(0.0078f) + xoff, menu->box->vtxcoords->y1 - (k - koff - numsubs) * tf(0.05f) - vmy + yshift + tf(0.015f), tf(0.0003f), tf(0.0005f));
-			}
-			else {
-				numsubs++;
-				if (menu->currsub == k or (menu->box->scrcoords->x1 + menu->menux + mainprogram->xvtxtoscr(xoff) < mainprogram->mx and mainprogram->mx < menu->box->scrcoords->x1 + menu->box->scrcoords->w + menu->menux + mainprogram->xvtxtoscr(xoff) and menu->box->scrcoords->y1 - menu->box->scrcoords->h + menu->menuy + (k - koff - numsubs + 1) * mainprogram->yvtxtoscr(tf(0.05f)) - mainprogram->yvtxtoscr(yshift) < mainprogram->my and mainprogram->my < menu->box->scrcoords->y1 + menu->menuy + (k - koff - numsubs + 1) * mainprogram->yvtxtoscr(tf(0.05f)) - mainprogram->yvtxtoscr(yshift))) {
-					if (menu->currsub == k or mainprogram->lmover) {
-						if (menu->currsub != k) mainprogram->lmover = false;
-						std::string name = menu->entries[k].substr(8, std::string::npos);
-						for (int i = 0; i < mainprogram->menulist.size(); i++) {
-							if (mainprogram->menulist[i]->name == name) {
-								menu->currsub = k;
-								mainprogram->menulist[i]->state = 2;
-								mainprogram->actmenulist.push_back(menu);
-								mainprogram->actmenulist.push_back(mainprogram->menulist[i]);
-								float xs;
-								if (mainprogram->xscrtovtx(menu->menux) > limit) {
-									xs = xshift - tf(0.195f);
-								}
-								else {
-									xs = xshift + tf(0.195f);
-								}
-								//float ys = (k - mainprogram->menulist[i]->entries.size() / 2.0f) * tf(-0.05f) + yshift;
-								//float intm = std::clamp(ys + mainprogram->yscrtovtx(menu->menuy), 0.0f, 2.0f - mainprogram->menulist[i]->entries.size() * tf(0.05f));
-								//ys = intm + mainprogram->menulist[i]->entries.size() * tf(0.05f);
-								if (menu == mainprogram->filemenu and k - numsubs == 2) {
-									// special rule: one layer choice less when saving layer
-									mainprogram->laylistmenu1->entries.pop_back();
-									mainprogram->laylistmenu2->entries.pop_back();
-								}
-								// start submenu
-								int ret = handle_menu(mainprogram->menulist[i], xs, yshift);
-								if (mainprogram->menuchosen) {
-									menu->state = 0;
-									mainprogram->menuresults.insert(mainprogram->menuresults.begin(), ret);
-									menu->currsub = -1;
-									mainprogram->frontbatch = false;
-									return k - numsubs + 1;
-								}
-								mainprogram->menulist[i]->state = 0;
-								break;
-							}
-						}
-					}
-				}
-			}
-		}
-		for (int i = 0; i < mainprogram->menulist.size(); i++) {
-			if (std::find(mainprogram->actmenulist.begin(), mainprogram->actmenulist.end(), menu) == mainprogram->actmenulist.end()) {
-				if (mainprogram->menulist[i] != menu) mainprogram->menulist[i]->state = 0;
-			}
-		}
-	}
-	mainprogram->frontbatch = false;
-	return -1;
-}
 
 
-bool preferences() {
-	int mx = -1;
-	int my = -1;
-	if (SDL_GetMouseFocus() == mainprogram->prefwindow) {
-		//SDL_PumpEvents();
-		SDL_GetMouseState(&mx, &my);
-		mx *= 2.0f;
-		my *= 2.0f;
-	}
-	if (mainprogram->rightmouse) mainprogram->renaming = EDIT_CANCEL;
-	
-	mainprogram->insmall = true;
-	float white[] = {1.0f, 1.0f, 1.0f, 1.0f};
-	float black[] = {0.0f, 0.0f, 0.0f, 1.0f};
-	float lightblue[] = {0.5f, 0.5f, 1.0f, 1.0f};
-	float green[] = {0.0f, 0.7f, 0.0f, 1.0f};
-
-	mainprogram->bvao = mainprogram->prboxvao;
-	mainprogram->bvbuf = mainprogram->prboxvbuf;
-	mainprogram->btbuf = mainprogram->prboxtbuf;
-	glClear(GL_COLOR_BUFFER_BIT);
-	
-	for (int i = 0; i < mainprogram->prefs->items.size(); i++) {
-		PrefCat *item = mainprogram->prefs->items[i];
-		if (item->box->in(mx, my)) {
-			draw_box(white, lightblue, item->box, -1);
-			if (mainprogram->leftmouse and mainprogram->prefs->curritem != i) {
-				mainprogram->renaming = EDIT_NONE;
-				mainprogram->prefs->curritem = i;
-			}
-		}
-		else if (mainprogram->prefs->curritem == i) {
-			draw_box(white, green, item->box, -1);
-		}
-		else {
-			draw_box(white, black, item->box, -1);
-		}
-		render_text(item->name, white, item->box->vtxcoords->x1 + 0.03f, item->box->vtxcoords->y1 + 0.03f, 0.0024f, 0.004f, 1, 0);
-	}
-	draw_box(white, nullptr, -0.5f, -1.0f, 1.5f, 2.0f, -1);
-	
-	PrefCat *mci = mainprogram->prefs->items[mainprogram->prefs->curritem];
-	if (mci->name == "MIDI Devices") ((PIMidi*)mci)->populate();
-	for (int i = 0; i < mci->items.size(); i++) {
-		if (mci->items[i]->type == PREF_ONOFF) {
-			if (!mci->items[i]->connected) continue;
-			draw_box(white, black, mci->items[i]->namebox, -1);
-			render_text(mci->items[i]->name, white, mci->items[i]->namebox->vtxcoords->x1 + 0.23f, mci->items[i]->namebox->vtxcoords->y1 + 0.06f, 0.0024f, 0.004f, 1, 0);		
-			if (mci->items[i]->valuebox->in(mx, my)) {
-				draw_box(white, lightblue, mci->items[i]->valuebox, -1);
-				if (mainprogram->leftmouse) {
-					mci->items[i]->onoff = !mci->items[i]->onoff;
-					if (mci->name == "MIDI Devices") {
-						PIMidi *midici = (PIMidi*)mci;
-						if (!midici->items[i]->onoff) {
-							if (std::find(midici->onnames.begin(), midici->onnames.end(), midici->items[i]->name) != midici->onnames.end()) {
-								midici->onnames.erase(std::find(midici->onnames.begin(), midici->onnames.end(), midici->items[i]->name));
-								//midici->items[i]->midiin->cancelCallback();
-								midici->items[i]->midiin->closePort();
-								delete midici->items[i]->midiin;
-							}
-						}
-						else {
-							midici->onnames.push_back(midici->items[i]->name);
-							RtMidiIn *midiin = new RtMidiIn();
-							midiin->openPort(i);
-							midiin->setCallback(&mycallback, (void*)mci->items[i]);
-							mainprogram->openports.push_back(i);
-							midiin->ignoreTypes( true, true, true );
-							midici->items[i]->midiin = midiin;
-							midici->items[i]->midiin = midiin;
-						}
-					}
-				}
-			}
-			else if (mci->items[i]->onoff) {
-				draw_box(white, green, mci->items[i]->valuebox, -1);
-			}
-			else {
-				draw_box(white, black, mci->items[i]->valuebox, -1);
-			}
-		}
-		else if (mci->items[i]->type == PREF_NUMBER) {
-			draw_box(white, black, mci->items[i]->namebox, -1);
-			render_text(mci->items[i]->name, white, mci->items[i]->namebox->vtxcoords->x1 + 0.23f, mci->items[i]->namebox->vtxcoords->y1 + 0.06f, 0.0024f, 0.004f, 1, 0);		
-			draw_box(white, black, mci->items[i]->valuebox, -1);
-			if (mci->items[i]->renaming) {
-				if (mainprogram->renaming == EDIT_NONE) {
-					 mci->items[i]->renaming = false;
-					 try {
-					 	mci->items[i]->value = std::stoi(mainprogram->inputtext);
-					 }
-					 catch (...) {
-						 mci->items[i]->value = ((PIVid*)(mci->items[i]))->oldvalue;
-					 }
-				}
-				else if (mainprogram->renaming == EDIT_CANCEL) {
-					 mci->items[i]->renaming = false;
-				}
-				else {
-					do_text_input(mci->items[i]->valuebox->vtxcoords->x1 + 0.1f, mci->items[i]->valuebox->vtxcoords->y1 + 0.06f, 0.0024f, 0.004f, mx, my, mainprogram->xvtxtoscr(0.15f), 1, mci->items[i]);
-				}
-			}
-			else {
-				render_text(std::to_string(mci->items[i]->value), white, mci->items[i]->valuebox->vtxcoords->x1 + 0.1f, mci->items[i]->valuebox->vtxcoords->y1 + 0.06f, 0.0024f, 0.004f, 1, 0);
-			}
-			if (mci->items[i]->valuebox->in(mx, my)) {
-				if (mainprogram->leftmouse and mainprogram->renaming == EDIT_NONE) {
-					mci->items[i]->renaming = true;
-					((PIVid*)(mci->items[i]))->oldvalue = mci->items[i]->value;
-					mainprogram->renaming = EDIT_NUMBER;
-					mainprogram->inputtext = std::to_string(mci->items[i]->value);
-					mainprogram->cursorpos0 = mainprogram->inputtext.length();
-					SDL_StartTextInput();
-				}
-			}
-		}
-		else if (mci->items[i]->type == PREF_PATH) {
-			draw_box(white, black, mci->items[i]->namebox, -1);
-			render_text(mci->items[i]->name, white, -0.5f + 0.1f, mci->items[i]->namebox->vtxcoords->y1 + 0.03f, 0.0024f, 0.004f, 1, 0);
-			draw_box(white, black, mci->items[i]->valuebox, -1);
-			if (mci->items[i]->renaming == false) {
-				render_text(mci->items[i]->path, white, mci->items[i]->valuebox->vtxcoords->x1 + 0.1f, mci->items[i]->valuebox->vtxcoords->y1 + 0.03f, 0.0024f, 0.004f, 1, 0);
-			}
-			else {
-				if (mainprogram->renaming == EDIT_NONE) {
-					mci->items[i]->renaming = false;
-				 	mci->items[i]->path = mainprogram->inputtext;
-				}
-				else if (mainprogram->renaming == EDIT_CANCEL) {
-					 mci->items[i]->renaming = false;
-				}
-				else {
-					do_text_input(mci->items[i]->valuebox->vtxcoords->x1 + 0.1f, mci->items[i]->valuebox->vtxcoords->y1 + 0.03f, 0.0024f, 0.004f, mx, my, mainprogram->xvtxtoscr(0.7f), 1, mci->items[i]);
-				}
-			}
-			if (mci->items[i]->valuebox->in(mx, my)) {
-				if (mainprogram->leftmouse) {
-					for (int i = 0; i < mci->items.size(); i++) {
-						if (mci->items[i]->renaming) {
-							mci->items[i]->renaming = false;
-							end_input();
-							break;
-						}
-					}
-					mci->items[i]->renaming = true;
-					mainprogram->renaming = EDIT_STRING;
-					mainprogram->inputtext = mci->items[i]->path;
-					mainprogram->cursorpos0 = mainprogram->inputtext.length();
-					SDL_StartTextInput();
-				}
-			}
-			draw_box(white, black, mci->items[i]->iconbox, -1);
-			draw_box(white, black, mci->items[i]->iconbox->vtxcoords->x1 + 0.02f, mci->items[i]->iconbox->vtxcoords->y1 + 0.05f, 0.06f, 0.07f, -1);
-			draw_box(white, black, mci->items[i]->iconbox->vtxcoords->x1 + 0.05f, mci->items[i]->iconbox->vtxcoords->y1 + 0.11f, 0.025f, 0.03f, -1);
-			if (mci->items[i]->iconbox->in(mx, my)) {
-				if (mainprogram->leftmouse) {
-					mci->items[i]->choosing = true;
-					mainprogram->pathto = "CHOOSEDIR";
-					std::string title = "Open " + mci->items[i]->name + " directory";
-					std::thread filereq (&Program::get_dir, mainprogram, title, boost::filesystem::canonical(mci->items[i]->path).generic_string());
-					filereq.detach();
-				}
-			}
-			if (mci->items[i]->choosing and mainprogram->choosedir != "") {
-				#ifdef _WIN64
-				boost::replace_all(mainprogram->choosedir, "/", "\\");
-				#endif			
-				mci->items[i]->path = mainprogram->choosedir;
-				mainprogram->choosedir = "";
-				mci->items[i]->choosing = false;
-			}
-		}
-		
-		if (mci->items[i]->connected) mci->items[i]->namebox->in(mx, my); //trigger tooltip
-
-	}
-
-	mainprogram->qualfr = std::clamp(mainprogram->qualfr, 1, 10);
-
-	Box box;
-	box.vtxcoords->x1 = 0.75f;
-	box.vtxcoords->y1 = -1.0f;
-	box.vtxcoords->w = 0.3f;
-	box.vtxcoords->h = 0.2f;
-	box.upvtxtoscr();
-	draw_box(white, black, &box, -1);
-	if (box.in(mx, my)) {
-		draw_box(white, lightblue, &box, -1);
-		if (mainprogram->leftmouse) {
-			for (int i = 0; i < mci->items.size(); i++) {
-				if (mci->items[i]->renaming) {
-					mci->items[i]->renaming = false;
-					end_input();
-					break;
-				}
-			}
-			mainprogram->renaming = EDIT_NONE;
-			mainprogram->prefs->load();
-			mainprogram->prefon = false;
-			mainprogram->drawnonce = false;
-			SDL_HideWindow(mainprogram->prefwindow);
-			SDL_RaiseWindow(mainprogram->mainwindow);
-		}
-	}
-	render_text("CANCEL", white, box.vtxcoords->x1 + 0.02f, box.vtxcoords->y1 + 0.03f, 0.0024f, 0.004f, 1, 0);
-	box.vtxcoords->x1 = 0.45f;
-	box.upvtxtoscr();
-	draw_box(white, black, &box, -1);
-	if (box.in(mx, my)) {
-		draw_box(white, lightblue, &box, -1);
-		if (mainprogram->leftmouse) {
-			for (int i = 0; i < mci->items.size(); i++) {
-				if (mci->items[i]->renaming) {
-					if (mci->items[i]->type == PREF_PATH) {
-						mci->items[i]->path = mainprogram->inputtext;
-						end_input();
-						break;
-					}
-					if (mci->items[i]->type == PREF_NUMBER) {
-						 try {
-							mci->items[i]->value = std::stoi(mainprogram->inputtext);
-						 }
-						 catch (...) {}
-						 end_input();
-						 break;
-					}
-				}
-			}
-			mainprogram->renaming = EDIT_NONE;
-			mainprogram->prefs->save();
-			mainprogram->prefs->load();
-			mainprogram->prefon = false;
-			mainprogram->drawnonce = false;
-			SDL_HideWindow(mainprogram->prefwindow);
-			SDL_RaiseWindow(mainprogram->mainwindow);
-		}
-	}
-	render_text("SAVE", white, box.vtxcoords->x1 + 0.02f, box.vtxcoords->y1 + 0.03f, 0.0024f, 0.004f, 1, 0);
-			
-	tooltips_handle(1);
-		
-	mainprogram->bvao = mainprogram->boxvao;
-	mainprogram->bvbuf = mainprogram->boxvbuf;
-	mainprogram->btbuf = mainprogram->boxtbuf;
-	mainprogram->middlemouse = 0;
-	mainprogram->rightmouse = 0;
-	mainprogram->menuactivation = false;
-	mainprogram->mx = -1;
-	mainprogram->my = -1;
-	
-	mainprogram->insmall = false;
-	
-	return 1;
-}
 	
 void do_text_input(float x, float y, float sx, float sy, int mx, int my, float width, int smflag, PrefItem* item) {
 	do_text_input(x, y, sx, sy, mx, my, width, smflag, item, false);
@@ -8112,7 +6007,7 @@ void do_text_input(float x, float y, float sx, float sy, int mx, int my, float w
 		render_text(part, white, x, y, sx, sy, smflag, 0);
 		if (mainprogram->cursorpos1 == -1) {
 			// draw cursor line
-			register_line_draw(white, x + textw - mainprogram->xscrtovtx(mainprogram->startpos), y - 0.010f, x + textw - mainprogram->xscrtovtx(mainprogram->startpos), y + (mainprogram->texth / ((smflag > 0) + 1)) / (2070.0f / glob->h), directdraw);
+			register_line_draw(white, x + textw - mainprogram->xscrtovtx(mainprogram->startpos), y - 0.010f + (smflag > 0) * 0.03f, x + textw - mainprogram->xscrtovtx(mainprogram->startpos), y + (mainprogram->texth / ((smflag > 0) + 1)) / (2070.0f / glob->h) + (smflag > 0) * 0.03f, directdraw);
 		}
 		else {
 			// draw cursor block
@@ -8135,358 +6030,7 @@ void do_text_input(float x, float y, float sx, float sy, int mx, int my, float w
 	}
 }
 	
-int tune_midi() {
-	int mx = -1;
-	int my = -1;
-	if (SDL_GetMouseFocus() == mainprogram->tunemidiwindow) {
-		SDL_PumpEvents();
-		SDL_GetMouseState(&mx, &my);
-		mx *= 2.0f;
-		my *= 2.0f;
-	}
-	
-	mainprogram->insmall = true;
-	float white[] = {1.0f, 1.0f, 1.0f, 1.0f};
-	float black[] = { 0.0f, 0.0f, 0.0f, 1.0f };
-	float grey[] = { 0.5f, 0.5f, 0.5f, 1.0f };
-	float lightblue[] = {0.5f, 0.5f, 1.0f, 1.0f};
-	float green[] = { 0.0f, 0.7f, 0.0f, 1.0f };
-	float red[] = { 0.9f, 0.0f, 0.0f, 1.0f };
-	float yellow[] = { 1.0f, 1.0f, 0.0f, 1.0f };
 
-	SDL_GL_MakeCurrent(mainprogram->tunemidiwindow, glc_tm);
-	mainprogram->bvao = mainprogram->tmboxvao;
-	mainprogram->bvbuf = mainprogram->tmboxvbuf;
-	mainprogram->btbuf = mainprogram->tmboxtbuf;
-	glClear(GL_COLOR_BUFFER_BIT);
-	
-	if (mainprogram->rightmouse) {
-		mainprogram->tmlearn = TM_NONE;
-		mainprogram->menuactivation = false;
-	}
-	
-	std::string lmstr;
-	if (mainprogram->tunemidiset == 1) lmstr = "A";
-	else if (mainprogram->tunemidiset == 2) lmstr = "B";
-	else if (mainprogram->tunemidiset == 3) lmstr = "C";
-	else if (mainprogram->tunemidiset == 4) lmstr = "D";
-	if (mainprogram->tmlearn != TM_NONE) render_text("Creating settings for midideck " + lmstr, white, -0.3f, 0.2f, 0.0024f, 0.004f, 2);
-	switch (mainprogram->tmlearn) {
-		case TM_NONE:
-			break;
-		case TM_PLAY:
-			render_text("Learn MIDI Play Forward", white, -0.3f, 0.0f, 0.0024f, 0.004f, 2);
-			break;
-		case TM_BACKW:
-			render_text("Learn MIDI Play Backward", white, -0.3f, 0.0f, 0.0024f, 0.004f, 2);
-			break;
-		case TM_BOUNCE:
-			render_text("Learn MIDI Play Bounce", white, -0.3f, 0.0f, 0.0024f, 0.004f, 2);
-			break;
-		case TM_FRFORW:
-			render_text("Learn MIDI Frame Forward", white, -0.3f, 0.0f, 0.0024f, 0.004f, 2);
-			break;
-		case TM_FRBACKW:
-			render_text("Learn MIDI Frame Backward", white, -0.3f, 0.0f, 0.0024f, 0.004f, 2);
-			break;
-		case TM_SPEED:
-			render_text("Learn MIDI Set Play Speed", white, -0.3f, 0.0f, 0.0024f, 0.004f, 2);
-			break;
-		case TM_SPEEDZERO:
-			render_text("Learn MIDI Set Play Speed to Zero", white, -0.3f, 0.0f, 0.0024f, 0.004f, 2);
-			break;
-		case TM_OPACITY:
-			render_text("Learn MIDI Set Opacity", white, -0.3f, 0.0f, 0.0024f, 0.004f, 2);
-			break;
-		case TM_FREEZE:
-			render_text("Learn MIDI Scratchwheel Freeze", white, -0.3f, 0.0f, 0.0024f, 0.004f, 2);
-			break;
-		case TM_SCRATCH:
-			render_text("Learn MIDI Scratchwheel", white, -0.3f, 0.0f, 0.0024f, 0.004f, 2);
-			break;
-	}
-	
-	if (mainprogram->tmlearn == TM_NONE) {
-		//draw tune_midi screen
-		draw_box(yellow, grey, mainprogram->tmset, -1);
-		if (mainprogram->tmset->in(mx, my)) {
-			draw_box(red, lightblue, mainprogram->tmset, -1);
-			if (mainprogram->leftmouse) {
-				mainprogram->tunemidiset++;
-				if (mainprogram->tunemidiset == 5) mainprogram->tunemidiset = 1;
-			}
-		}
-		if (mainprogram->tunemidiset == 1) render_text("set A", yellow, 0.01f, 0.78f, 0.0024f, 0.004f, 2);
-		else if (mainprogram->tunemidiset == 2) render_text("set B", yellow, 0.01f, 0.78f, 0.0024f, 0.004f, 2);
-		else if (mainprogram->tunemidiset == 3) render_text("set C", yellow, 0.01f, 0.78f, 0.0024f, 0.004f, 2);
-		else if (mainprogram->tunemidiset == 4) render_text("set D", yellow, 0.01f, 0.78f, 0.0024f, 0.004f, 2);
-		LayMidi* lm = nullptr;
-		if (mainprogram->tunemidiset == 1) lm = laymidiA;
-		else if (mainprogram->tunemidiset == 2) lm = laymidiB;
-		else if (mainprogram->tunemidiset == 3) lm = laymidiC;
-		else if (mainprogram->tunemidiset == 4) lm = laymidiD;
-
-		draw_box(white, black, mainprogram->tmplay, -1);
-		if (lm->play[0] != -1) draw_box(white, green, mainprogram->tmplay, -1);
-		if (mainprogram->tmplay->in(mx, my)) {
-			draw_box(white, lightblue, mainprogram->tmplay, -1);
-			if (mainprogram->leftmouse) {
-				mainprogram->tmlearn = TM_PLAY;
-			}
-		}
-		register_triangle_draw(white, white, 0.125f, -0.83f, 0.06f, 0.12f, RIGHT, CLOSED, true);
-		
-		draw_box(white, black, mainprogram->tmbackw, -1);
-		if (lm->backw[0] != -1) draw_box(white, green, mainprogram->tmbackw, -1);
-		if (mainprogram->tmbackw->in(mx, my)) {
-			draw_box(white, lightblue, mainprogram->tmbackw, -1);
-			if (mainprogram->leftmouse) {
-				mainprogram->tmlearn = TM_BACKW;
-			}
-		}
-		register_triangle_draw(white, white, -0.185f, -0.83f, 0.06f, 0.12f, LEFT, CLOSED, true);
-		
-		draw_box(white, black, mainprogram->tmbounce, -1);
-		if (lm->bounce[0] != -1) draw_box(white, green, mainprogram->tmbounce, -1);
-		if (mainprogram->tmbounce->in(mx, my)) {
-			draw_box(white, lightblue, mainprogram->tmbounce, -1);
-			if (mainprogram->leftmouse) {
-				mainprogram->tmlearn = TM_BOUNCE;
-			}
-		}
-		register_triangle_draw(white, white, -0.045f, -0.83f, 0.04f, 0.12f, LEFT, CLOSED, true);
-		register_triangle_draw(white, white, 0.01f, -0.83f, 0.04f, 0.12f, RIGHT, CLOSED, true);
-		
-		draw_box(white, black, mainprogram->tmfrforw, -1);
-		if (lm->frforw[0] != -1) draw_box(white, green, mainprogram->tmfrforw, -1);
-		if (mainprogram->tmfrforw->in(mx, my)) {
-			draw_box(white, lightblue, mainprogram->tmfrforw, -1);
-			if (mainprogram->leftmouse) {
-				mainprogram->tmlearn = TM_FRFORW;
-			}
-		}
-		register_triangle_draw(white, white, 0.275f, -0.83f, 0.06f, 0.12f, RIGHT, OPEN, true);
-		
-		draw_box(white, black, mainprogram->tmfrbackw, -1);
-		if (lm->frbackw[0] != -1) draw_box(white, green, mainprogram->tmfrbackw, -1);
-		if (mainprogram->tmfrbackw->in(mx, my)) {
-			draw_box(white, lightblue, mainprogram->tmfrbackw, -1);
-			if (mainprogram->leftmouse) {
-				mainprogram->tmlearn = TM_FRBACKW;
-			}
-		}
-		register_triangle_draw(white, white, -0.335f, -0.83f, 0.06f, 0.12f, LEFT, OPEN, true);
-		
-		draw_box(white, black, mainprogram->tmspeed, -1);
-		if (lm->speed[0] != -1) draw_box(white, green, mainprogram->tmspeed, -1);
-		if (mainprogram->tmspeedzero->in(mx, my)) {
-			draw_box(white, lightblue, mainprogram->tmspeedzero, -1);
-			if (mainprogram->leftmouse) {
-				mainprogram->tmlearn = TM_SPEEDZERO;
-			}
-		}
-		else if (mainprogram->tmspeed->in(mx, my)) {
-			draw_box(white, lightblue, mainprogram->tmspeed, -1);
-			if (mainprogram->leftmouse) {
-				mainprogram->tmlearn = TM_SPEED;
-			}
-			draw_box(white, black, mainprogram->tmspeedzero, -1);
-			if (lm->speedzero[0] != -1) draw_box(white, green, mainprogram->tmspeedzero, -1);
-		}
-		else {
-			draw_box(white, black, mainprogram->tmspeedzero, -1);
-			if (lm->speedzero[0] != -1) draw_box(white, green, mainprogram->tmspeedzero, -1);
-		}
-		render_text("ONE", white, -0.755f, -0.08f, 0.0024f, 0.004f, 2);
-		render_text("SPEED", white, -0.765f, -0.48f, 0.0024f, 0.004f, 2);
-		
-		draw_box(white, black, mainprogram->tmopacity, -1);
-		if (lm->opacity[0] != -1) draw_box(white, green, mainprogram->tmopacity, -1);
-		if (mainprogram->tmopacity->in(mx, my)) {
-			draw_box(white, lightblue, mainprogram->tmopacity, -1);
-			if (mainprogram->leftmouse) {
-				mainprogram->tmlearn = TM_OPACITY;
-			}
-		}
-		render_text("OPACITY", white, 0.605f, -0.48f, 0.0024f, 0.004f, 2);
-		
-		if (mainprogram->tmfreeze->in(mx, my)) {
-			draw_box(white, lightblue, mainprogram->tmfreeze, -1);
-			if (mainprogram->leftmouse) {
-				mainprogram->tmlearn = TM_FREEZE;
-			}
-		}
-		else {
-			if (lm->scratch[0] != -1) draw_box(green, 0.0f, 0.1f, 0.6f, 1, smw, smh);
-			if (sqrt(pow((mx / (glob->w / 2.0f) - 1.0f) * glob->w / glob->h, 2) + pow((glob->h - my) / (glob->h / 2.0f) - 1.1f, 2)) < 0.6f) {
-				draw_box(lightblue, 0.0f, 0.1f, 0.6f, 1, smw, smh);
-				mainprogram->tmscratch->in(mx, my);  //tooltip
-				if (mainprogram->leftmouse) {
-					mainprogram->tmlearn = TM_SCRATCH;
-				}
-			}
-			draw_box(white, black, mainprogram->tmfreeze, -1);
-			if (lm->scratchtouch[0] != -1) draw_box(white, green, mainprogram->tmfreeze, -1);
-		}
-		draw_box(white, 0.0f, 0.1f, 0.6f, 2, smw, smh);
-		render_text("SCRATCH", white, -0.1f, -0.3f, 0.0024f, 0.004f, 2);
-		render_text("FREEZE", white, -0.08f, 0.12f, 0.0024f, 0.004f, 2);
-
-		Box box;
-		box.vtxcoords->x1 = -1.0f;
-		box.vtxcoords->y1 = -1.0f;
-		box.vtxcoords->w = 0.3f;
-		box.vtxcoords->h = 0.2f;
-		box.upvtxtoscr();
-		draw_box(white, black, &box, -1);
-		if (box.in(mx, my)) {
-			draw_box(white, lightblue, &box, -1);
-			if (mainprogram->leftmouse) {
-				lm->play[0] = -1;
-				lm->backw[0] = -1;
-				lm->bounce[0] = -1;
-				lm->frforw[0] = -1;
-				lm->frbackw[0] = -1;
-				lm->scratch[0] = -1;
-				lm->scratchtouch[0] = -1;
-				lm->speed[0] = -1;
-				lm->speedzero[0] = -1;
-				lm->opacity[0] = -1;
-				lm->play[1] = -1;
-				lm->backw[1] = -1;
-				lm->bounce[1] = -1;
-				lm->frforw[1] = -1;
-				lm->frbackw[1] = -1;
-				lm->scratch[1] = -1;
-				lm->scratchtouch[1] = -1;
-				lm->speed[1] = -1;
-				lm->speedzero[1] = -1;
-				lm->opacity[1] = -1;
-				return 0;
-			}
-		}
-		render_text("NEW", white, box.vtxcoords->x1 + 0.02f, box.vtxcoords->y1 + 0.03f, 0.0024f, 0.004f, 2);
-	}
-	
-	Box box;
-	box.vtxcoords->x1 = 0.75f;
-	box.vtxcoords->y1 = -1.0f;
-	box.vtxcoords->w = 0.3f;
-	box.vtxcoords->h = 0.2f;
-	box.upvtxtoscr();
-	draw_box(white, black, &box, -1);
-	if (box.in(mx, my)) {
-		draw_box(white, lightblue, &box, -1);
-		if (mainprogram->leftmouse) {
-			open_genmidis(mainprogram->docpath + "midiset.gm");
-			mainprogram->tmlearn = TM_NONE;
-			mainprogram->tunemidi = false;
-			SDL_HideWindow(mainprogram->tunemidiwindow);
-		}
-	}
-	render_text("CANCEL", white, box.vtxcoords->x1 + 0.02f, box.vtxcoords->y1 + 0.03f, 0.0024f, 0.004f, 2);
-	box.vtxcoords->x1 = 0.45f;
-	box.upvtxtoscr();
-	draw_box(white, black, &box, -1);
-	if (box.in(mx, my)) {
-		draw_box(white, lightblue, &box, -1);
-		if (mainprogram->leftmouse) {
-			save_genmidis(mainprogram->docpath + "midiset.gm");
-			mainprogram->tmlearn = TM_NONE;
-			mainprogram->tunemidi = false;
-			SDL_HideWindow(mainprogram->tunemidiwindow);
-		}
-	}
-	render_text("SAVE", white, box.vtxcoords->x1 + 0.02f, box.vtxcoords->y1 + 0.03f, 0.0024f, 0.004f, 2);
-	
-	tooltips_handle(2);
-		
-	mainprogram->bvao = mainprogram->boxvao;
-	mainprogram->bvbuf = mainprogram->boxvbuf;
-	mainprogram->btbuf = mainprogram->boxtbuf;
-	mainprogram->middlemouse = 0;
-	mainprogram->rightmouse = 0;
-	mainprogram->menuactivation = false;
-	mainprogram->mx = -1;
-	mainprogram->my = -1;
-	
-	mainprogram->insmall = false;
-	
-	return 1;
-}
-
-
-void output_video(EWindow *mwin) {
-	SDL_GL_MakeCurrent(mwin->win, mwin->glc);
-	//glXMakeCurrent(dpy, sdl_win, c2);
-	
-	GLfloat vcoords1[8];
-	GLfloat *p = vcoords1;
-	*p++ = -1.0f; *p++ = 1.0f;
-	*p++ = -1.0f; *p++ = -1.0f;
-	*p++ = 1.0f; *p++ = 1.0f;
-	*p++ = 1.0f; *p++ = -1.0f;
-	GLfloat tcoords[] = {0.0f, 0.0f,
-						0.0f, 1.0f,
-						1.0f, 0.0f,
-						1.0f, 1.0f};
-	glGenBuffers(1, &mwin->vbuf);
-	glBindBuffer(GL_ARRAY_BUFFER, mwin->vbuf);
-	glBufferData(GL_ARRAY_BUFFER, 32, vcoords1, GL_STATIC_DRAW);
-	glGenBuffers(1, &mwin->tbuf);
-	glBindBuffer(GL_ARRAY_BUFFER, mwin->tbuf);
-	glBufferData(GL_ARRAY_BUFFER, 32, tcoords, GL_STATIC_DRAW);
-	glGenVertexArrays(1, &mwin->vao);
-	glBindVertexArray(mwin->vao);
-	glBindBuffer(GL_ARRAY_BUFFER, mwin->vbuf);
-	glEnableVertexAttribArray(0);
-	glVertexAttribPointer(0, 2, GL_FLOAT, GL_FALSE, 8, nullptr);
-	glBindBuffer(GL_ARRAY_BUFFER, mwin->tbuf);
-	glEnableVertexAttribArray(1);
-	glVertexAttribPointer(1, 2, GL_FLOAT, GL_FALSE, 8, nullptr);
-
-	MixNode *node;
-	while(1) {
-		std::unique_lock<std::mutex> lock(mwin->syncmutex);
-		mwin->sync.wait(lock, [&]{return mwin->syncnow;});
-		mwin->syncnow = false;
-		lock.unlock();
-		
-		// receive end of thread signal
-		if (mwin->closethread) {
-			mwin->closethread = false;
-			return;
-		}
-		
-		if (1) node = (MixNode*)mainprogram->nodesmain->mixnodescomp[2];
-		else node = (MixNode*)mainprogram->nodesmain->mixnodes[mwin->mixid];
-		printf("%d %d\n", mwin->mixid, mainprogram->nodesmain->mixnodes.size());
-		
-		GLfloat cf = glGetUniformLocation(mainprogram->ShaderProgram, "cf");
-		GLint wipe = glGetUniformLocation(mainprogram->ShaderProgram, "wipe");
-		GLint mixmode = glGetUniformLocation(mainprogram->ShaderProgram, "mixmode");
-		if (mainmix->wipe[mwin->mixid == 2] > -1) {
-			if (mwin->mixid == 2) glUniform1f(cf, mainmix->crossfadecomp->value);
-			else glUniform1f(cf, mainmix->crossfade->value);
-			glUniform1i(wipe, 1);
-			glUniform1i(mixmode, 18);
-		}
-		GLint down = glGetUniformLocation(mainprogram->ShaderProgram, "down");
-		glUniform1i(down, 1);
-		glActiveTexture(GL_TEXTURE0);
-		glBindTexture(GL_TEXTURE_2D, node->mixtex);
-		glBindVertexArray(mwin->vao);
-		glDrawArrays(GL_TRIANGLE_STRIP, 0, 4);
-		glUniform1i(down, 0);
-		glUniform1i(wipe, 0);
-		glUniform1i(mixmode, 0);
-		mwin->syncendnow = true;
-		while (mwin->syncendnow) {
-			mwin->syncend.notify_one();
-		}
-		SDL_GL_SwapWindow(mwin->win);
-	}
-}
 
 
 void enddrag() {
@@ -8658,16 +6202,19 @@ void the_loop() {
 	}
 	else mainprogram->lmover = false;
 	if (SDL_GetMouseFocus() != mainprogram->mainwindow) {
-		// when in prefs or tunemidi windows
+		// when in prefs or config_midipresets_init windows
 		mainprogram->mx = -1;
 		mainprogram->my = -1;
 		//mainprogram->leftmouse = false;
 		mainprogram->menuactivation = false;
 	}
+
 	if (mainmix->adaptparam) {
 		// no hovering while adapting param
 		mainprogram->my = -1;
 	}
+	mainprogram->iemy = mainprogram->my;  // allow Insert effect click on border of parameter box
+	
 	// set mouse button values to enable blocking when item ordering overlay is on (reminder|maybe not the best solution)
 	if (mainprogram->orderondisplay) {
 		mainprogram->orderleftmouse = mainprogram->leftmouse;
@@ -8836,7 +6383,10 @@ void the_loop() {
 		//blue bars designating layer selection
 		float blue[4] = { 0.1f, 0.1f, 0.6f, 0.5f };
 		if (mainmix->currlay) {
-			draw_box(nullptr, blue, -1.0f + mainprogram->numw + mainmix->currlay->deck * 1.0f + (mainmix->currlay->pos - mainmix->scenes[mainmix->currlay->deck][mainmix->currscene[mainmix->currlay->deck]]->scrollpos) * mainprogram->layw, 0.1f + tf(0.05f), mainprogram->layw, 0.9f, -1);
+			int pos = mainmix->currlay->pos - mainmix->scenes[mainmix->currlay->deck][mainmix->currscene[mainmix->currlay->deck]]->scrollpos;
+			if (pos >= 0 and pos <= 2) {
+				draw_box(nullptr, blue, -1.0f + mainprogram->numw + mainmix->currlay->deck * 1.0f + pos * mainprogram->layw, 0.1f + tf(0.05f), mainprogram->layw, 0.9f, -1);
+			}
 		}
 
 		// Draw and handle crossfade->box
@@ -8851,22 +6401,22 @@ void the_loop() {
 			// when previewing
 			for (int i = 0; i < mainmix->layersA.size(); i++) {
 				Layer* testlay = mainmix->layersA[i];
-				display_layers(testlay, 0);
+				testlay->display();
 			}
 			for (int i = 0; i < mainmix->layersB.size(); i++) {
 				Layer* testlay = mainmix->layersB[i];
-				display_layers(testlay, 1);
+				testlay->display();
 			}
 		}
 		else {
 			// when performing
 			for (int i = 0; i < mainmix->layersAcomp.size(); i++) {
 				Layer* testlay = mainmix->layersAcomp[i];
-				display_layers(testlay, 0);
+				testlay->display();
 			}
 			for (int i = 0; i < mainmix->layersBcomp.size(); i++) {
 				Layer* testlay = mainmix->layersBcomp[i];
-				display_layers(testlay, 1);
+				testlay->display();
 			}
 		}
 
@@ -8881,42 +6431,10 @@ void the_loop() {
 
 
 		// draw and handle overall genmidi button
-		mainmix->handle_genmidi();
+		mainmix->handle_genmidibuttons();
 
 
-		// Draw and handle buttons
-		if (mainprogram->prevmodus) {
-			mainprogram->toscreen->handle();
-			if (mainprogram->toscreen->toggled()) {
-				mainprogram->toscreen->value = 0;
-				mainprogram->toscreen->oldvalue = 0;
-				// SEND UP button copies preview set entirely to comp set
-				mainmix->copy_to_comp(mainmix->layersA, mainmix->layersAcomp, mainmix->layersB, mainmix->layersBcomp, mainprogram->nodesmain->currpage->nodes, mainprogram->nodesmain->currpage->nodescomp, mainprogram->nodesmain->mixnodescomp, true);
-			}
-			Box* box = mainprogram->toscreen->box;
-			register_triangle_draw(white, white, box->vtxcoords->x1 + box->vtxcoords->w / 2.0f + tf(0.0078f), box->vtxcoords->y1 + tf(0.015f), tf(0.011f), tf(0.0208f), DOWN, CLOSED);
-			render_text(mainprogram->toscreen->name[0], white, box->vtxcoords->x1 + tf(0.0078f), box->vtxcoords->y1 + tf(0.015f), 0.0006f, 0.001f);
-		}
-		if (mainprogram->prevmodus) {
-			mainprogram->backtopre->handle();
-			if (mainprogram->backtopre->toggled()) {
-				mainprogram->backtopre->value = 0;
-				mainprogram->backtopre->oldvalue = 0;
-				// SEND DOWN button copies comp set entirely back to preview set
-				mainmix->copy_to_comp(mainmix->layersAcomp, mainmix->layersA, mainmix->layersBcomp, mainmix->layersB, mainprogram->nodesmain->currpage->nodescomp, mainprogram->nodesmain->currpage->nodes, mainprogram->nodesmain->mixnodes, false);
-			}
-			Box* box = mainprogram->backtopre->box;
-			register_triangle_draw(white, white, box->vtxcoords->x1 + box->vtxcoords->w / 2.0f + tf(0.0078f), box->vtxcoords->y1 + tf(0.015f), tf(0.011f), tf(0.0208f), UP, CLOSED);
-			render_text(mainprogram->backtopre->name[0], white, mainprogram->backtopre->box->vtxcoords->x1 + tf(0.0078f), mainprogram->backtopre->box->vtxcoords->y1 + tf(0.015f), 0.0006, 0.001);
-		}
-
-		mainprogram->modusbut->handle();
-		if (mainprogram->modusbut->toggled()) {
-			mainprogram->prevmodus = !mainprogram->prevmodus;
-			//modusbut is button that toggles effect preview mode to performance mode and back
-			mainprogram->preview_init();
-		}
-		render_text(mainprogram->modusbut->name[mainprogram->prevmodus], white, mainprogram->modusbut->box->vtxcoords->x1 + tf(0.0078f), mainprogram->modusbut->box->vtxcoords->y1 + tf(0.015f), 0.00042, 0.00070);
+		mainprogram->preview_modus_buttons();
 
 
 		//draw and handle global deck speed sliders
@@ -8942,152 +6460,23 @@ void the_loop() {
 		float rady = mainmix->recbut->box->vtxcoords->h / 2.0f;
 
 
-		//Handle layer scrollbar
-		bool inbox = false;
-		for (int i = 0; i < 2; i++) {
-			std::vector<Layer*>& lvec = choose_layers(i);
-			Box box;
-			Box boxbefore;
-			Box boxafter;
-			Box boxlayer;
-			int size = lvec.size() + 1;
-			if (size < 3) size = 3;
-			float slidex = 0.0f;
-			if (mainmix->scrollon == i + 1) {
-				slidex = (mainmix->scrollon != 0) * mainprogram->xscrtovtx(mainprogram->mx - mainmix->scrollmx);
-			}
-			box.vtxcoords->x1 = -1.0f + mainprogram->numw + i + mainmix->scenes[i][mainmix->currscene[i]]->scrollpos * (mainprogram->layw * 3.0f / size) + slidex;
-			if (box.vtxcoords->x1 < -1.0f + mainprogram->numw + i) {
-				box.vtxcoords->x1 = -1.0f + mainprogram->numw + i;
-				slidex = 0.0f;
-			}
-			if (box.vtxcoords->x1 > -1.0f + mainprogram->numw + i + (lvec.size() - 2) * (mainprogram->layw * 3.0f / size)) {
-				box.vtxcoords->x1 = -1.0f + mainprogram->numw + i + (lvec.size() - 2) * (mainprogram->layw * 3.0f / size);
-				slidex = 0.0f;
-			}
-			box.vtxcoords->y1 = 1.0f - mainprogram->layh - 0.05f;
-			box.vtxcoords->w = (3.0f / size) * mainprogram->layw * 3.0f;
-			box.vtxcoords->h = 0.05f;
-			box.upvtxtoscr();
-			boxbefore.vtxcoords->x1 = -1.0f + mainprogram->numw + i;
-			boxbefore.vtxcoords->y1 = 1.0f - mainprogram->layh - 0.05f;
-			boxbefore.vtxcoords->w = (3.0f / size) * mainprogram->layw * mainmix->scenes[i][mainmix->currscene[i]]->scrollpos;
-			boxbefore.vtxcoords->h = 0.05f;
-			boxbefore.upvtxtoscr();
-			boxafter.vtxcoords->x1 = -1.0f + mainprogram->numw + i + (mainmix->scenes[i][mainmix->currscene[i]]->scrollpos + 3) * (mainprogram->layw * 3.0f / size);
-			boxafter.vtxcoords->y1 = 1.0f - mainprogram->layh - 0.05f;
-			boxafter.vtxcoords->w = (3.0f / size) * mainprogram->layw * (size - 3);
-			boxafter.vtxcoords->h = 0.05f;
-			boxafter.upvtxtoscr();
-			bool inbox = false;
-			if (box.in()) {
-				inbox = true;
-				if (mainprogram->leftmousedown and mainmix->scrollon == 0 and !mainprogram->menuondisplay) {
-					mainmix->scrollon = i + 1;
-					mainmix->scrollmx = mainprogram->mx;
-					mainprogram->leftmousedown = false;
-				}
-			}
-			else {
-				boxlayer.vtxcoords->y1 = 1.0f - mainprogram->layh - 0.05f;
-				boxlayer.vtxcoords->w = 0.031f;
-				boxlayer.vtxcoords->h = 0.05f;
-				for (int j = 0; j < lvec.size(); j++) {
-					boxlayer.vtxcoords->x1 = -1.0f + mainprogram->numw + i + (j + mainmix->scenes[i][mainmix->currscene[i]]->scrollpos) * (mainprogram->layw * 3.0f / size);
-					boxlayer.upvtxtoscr();
-					draw_box(nullptr, lvec[j]->scrollcol, &boxlayer, -1);
-				}
-			}
-			box.vtxcoords->w /= 3.0f;
-			if (mainmix->scrollon == i + 1) {
-				if (mainprogram->lmover) {
-					mainmix->scrollon = 0;
+
+		mainprogram->layerstack_scrollbar_handle();
+
+
+		//handle dragging into layerstack
+		if (mainprogram->dragbinel) {
+			if (mainprogram->dragbinel->type != ELEM_DECK and mainprogram->dragbinel->type != ELEM_MIX) {
+				if (mainprogram->prevmodus) {
+					drag_into_layerstack(mainmix->layersA, 0);
+					drag_into_layerstack(mainmix->layersB, 1);
 				}
 				else {
-					if ((mainprogram->mx - mainmix->scrollmx) > mainprogram->xvtxtoscr(box.vtxcoords->w)) {
-						if (mainmix->scenes[i][mainmix->currscene[i]]->scrollpos < size - 3) {
-							mainmix->scenes[i][mainmix->currscene[i]]->scrollpos++;
-							mainmix->scrollmx += mainprogram->xvtxtoscr(box.vtxcoords->w);
-						}
-					}
-					else if ((mainprogram->mx - mainmix->scrollmx) < -mainprogram->xvtxtoscr(box.vtxcoords->w)) {
-						if (mainmix->scenes[i][mainmix->currscene[i]]->scrollpos > 0) {
-							mainmix->scenes[i][mainmix->currscene[i]]->scrollpos--;
-							mainmix->scrollmx -= mainprogram->xvtxtoscr(box.vtxcoords->w);
-						}
-					}
+					drag_into_layerstack(mainmix->layersAcomp, 0);
+					drag_into_layerstack(mainmix->layersBcomp, 1);
 				}
 			}
-			box.vtxcoords->x1 = -1.0f + mainprogram->numw + i + slidex;
-			float remw = box.vtxcoords->w;
-			for (int j = 0; j < size; j++) {
-				//draw scrollbar numbers+divisions
-				if (j == 0) {
-					if (slidex < 0.0f) box.vtxcoords->x1 -= slidex;
-				}
-				if (j == size - 1) {
-					if (slidex > 0.0f) box.vtxcoords->w -= slidex;
-				}
-				if (j >= mainmix->scenes[i][mainmix->currscene[i]]->scrollpos and j < mainmix->scenes[i][mainmix->currscene[i]]->scrollpos + 3) {
-					if (inbox) draw_box(white, lightblue, &box, -1);
-					else draw_box(white, grey, &box, -1);
-				}
-				else draw_box(white, black, &box, -1);
-				if (j == 0) {
-					if (slidex < 0.0f) box.vtxcoords->x1 += slidex;
-				}
-				render_text(std::to_string(j + 1), white, box.vtxcoords->x1 + 0.0078f - slidex, box.vtxcoords->y1 + 0.0078f, 0.0006, 0.001);
-				const int s = lvec.size() - mainmix->scenes[i][mainmix->currscene[i]]->scrollpos;
-				bool greycond = (j >= mainmix->scenes[i][mainmix->currscene[i]]->scrollpos and j < mainmix->scenes[i][mainmix->currscene[i]]->scrollpos + std::min(s, 3));
-				if (!greycond) {
-					box.vtxcoords->x1 += box.vtxcoords->w;
-					box.upvtxtoscr();
-					continue;
-				}
-
-				box.vtxcoords->x1 += box.vtxcoords->w;
-				box.upvtxtoscr();
-			}
-			if (boxbefore.in()) {
-				//mouse in empty scrollbar part before the lightgrey visible layers part
-				inbox = true;
-				if (mainprogram->dragbinel) {
-					if (mainmix->scrolltime == 0.0f) {
-						mainmix->scrolltime = mainmix->time;
-					}
-					else {
-						if (mainmix->time - mainmix->scrolltime > 1.0f) {
-							mainmix->scenes[i][mainmix->currscene[i]]->scrollpos--;
-							mainmix->scrolltime = mainmix->time;
-						}
-					}
-				}
-				if (mainprogram->leftmouse) {
-					mainmix->scenes[i][mainmix->currscene[i]]->scrollpos--;
-				}
-			}
-			else if (boxafter.in()) {
-				//mouse in empty scrollbar part after the lightgrey visible layers part
-				inbox = true;
-				if (mainprogram->dragbinel) {
-					if (mainmix->scrolltime == 0.0f) {
-						mainmix->scrolltime = mainmix->time;
-					}
-					else {
-						if (mainmix->time - mainmix->scrolltime > 1.0f) {
-							mainmix->scenes[i][mainmix->currscene[i]]->scrollpos++;
-							mainmix->scrolltime = mainmix->time;
-						}
-					}
-				}
-				if (mainprogram->leftmouse) {
-					mainmix->scenes[i][mainmix->currscene[i]]->scrollpos++;
-				}
-			}
-			//trigger scrollbar tooltips
-			mainprogram->scrollboxes[i]->in();
 		}
-		if (!inbox) mainmix->scrolltime = 0.0f;
 
 
 		// draw and handle loopstation
@@ -9106,1121 +6495,18 @@ void the_loop() {
 		mainprogram->shelves[0]->handle();
 		mainprogram->shelves[1]->handle();
 
-		Box *box;
-		for (int i = 0; i < 2; i++) {
-			std::vector<Layer*>& lays = choose_layers(i);
-			for (int j = 0; j < lays.size(); j++) {
-				Layer* lay2 = lays[j];
-				box = lay2->node->vidbox;
-				if (lay2->queueing and lay2->filename != "") {
-					// drawing clip queue
-					int sc = mainmix->scenes[lay2->deck][mainmix->currscene[lay2->deck]]->scrollpos;
-					int max = 4;
-					if (mainprogram->dragclip) {
-						if (mainprogram->inshelf == 0 and (lay2->pos == sc or lay2->pos == sc + 1) and lay2->deck == 0) {
-							max = 3;
-						}
-						if (mainprogram->inshelf == 1 and (lay2->pos == sc + 1 or lay2->pos == sc + 2) and lay2->deck == 1) {
-							max = 3;
-						}
-					}
-					int until = lay2->clips.size() - lay2->queuescroll;
-					if (until > max) until = max;
-					for (int k = 0; k < until; k++) {
-						draw_box(white, black, box->vtxcoords->x1, box->vtxcoords->y1 - (k + 1) * mainprogram->layh, box->vtxcoords->w, box->vtxcoords->h, lay2->clips[k + lay2->queuescroll]->tex);
-						render_text("Queued clip #" + std::to_string(k + lay2->queuescroll + 1), white, box->vtxcoords->x1 + tf(0.01f), box->vtxcoords->y1 - k * box->vtxcoords->h - tf(0.03f), 0.0005f, 0.0008f);
-					}
-					for (int k = 0; k < max; k++) {
-						if (box->scrcoords->x1 + (k == 0) * mainprogram->xvtxtoscr(0.075f) < mainprogram->mx and mainprogram->mx < box->scrcoords->x1 + box->scrcoords->w - (k == 0) * mainprogram->xvtxtoscr(0.075f)) {
-							if (box->scrcoords->y1 + (k - 0.25f) * box->scrcoords->h < mainprogram->my and mainprogram->my < box->scrcoords->y1 + (k + 0.25) * box->scrcoords->h) {
-						
-								if (mainprogram->dragbinel) draw_box(lightblue, lightblue, box->vtxcoords->x1 + (k == 0) * 0.075f, box->vtxcoords->y1 - (k + 0.25f) * mainprogram->layh, box->vtxcoords->w - ((k == 0) * 0.075) * 2.0f, box->vtxcoords->h / 2.0f, -1);
-							}
-							if (box->scrcoords->y1 + k * box->scrcoords->h < mainprogram->my and mainprogram->my < box->scrcoords->y1 + (k + 1) * box->scrcoords->h) {
-								if (mainprogram->mousewheel) {
-									lay2->queuescroll -= mainprogram->mousewheel;
-									if (lay2->clips.size() >= 4) {
-										lay2->queuescroll = std::clamp(lay2->queuescroll, 0, (int)(lay2->clips.size() - 4));
-									}
-									break;
-								}
-								if (mainprogram->leftmousedown) {
-									// starting dragging a clip
-									if (k + lay2->queuescroll != lay2->clips.size() - 1) {
-										Clip* clip = lay2->clips[k + lay2->queuescroll];
-										mainprogram->dragbinel = new BinElement;
-										mainprogram->dragbinel->type = clip->type;
-										mainprogram->dragbinel->path = clip->path;
-										mainprogram->dragbinel->tex = clip->tex;
-										binsmain->dragtex = clip->tex;
-										lay2->vidmoving = true;
-										lay2->clips.erase(lay2->clips.begin() + k + lay2->queuescroll);
-										mainprogram->dragclip = clip;
-										mainprogram->draglay = lay2;
-										mainprogram->dragpos = k + lay2->queuescroll;
-									}
-									mainprogram->leftmousedown = false;
-								}
-							}
-						}
-					}
-				}
-			}
-		}
-		//clip menu?
-		if (mainprogram->prevmodus) {
-			clip_intest(mainmix->layersA, 0);
-			clip_intest(mainmix->layersB, 1);
-		}
-		else {
-			clip_intest(mainmix->layersAcomp, 0);
-			clip_intest(mainmix->layersBcomp, 1);
-		}
-		//handle clip dragging
-		clip_dragging();
+
+		// handle the layer clips queue
+		mainmix->clips_handle();
 
 
-		//handle dragging into layerstack
-		if (mainprogram->dragbinel) {
-			if (mainprogram->dragbinel->type != ELEM_DECK and mainprogram->dragbinel->type != ELEM_MIX) {
-				if (mainprogram->prevmodus) {
-					drag_into_layerstack(mainmix->layersA, 0);
-					drag_into_layerstack(mainmix->layersB, 1);
-				}
-				else {
-					drag_into_layerstack(mainmix->layersAcomp, 0);
-					drag_into_layerstack(mainmix->layersBcomp, 1);
-				}
-			}
-		}
 
 
-		int k = -1;
-		// Do mainprogram->mixenginemenu
-		k = handle_menu(mainprogram->mixenginemenu);
-		if (k == 0) {
-			if (mainmix->mousenode and mainprogram->menuresults.size()) {
-				if (mainmix->mousenode->type == BLEND) {
-					((BlendNode*)mainmix->mousenode)->blendtype = (BLEND_TYPE)(mainprogram->menuresults[0] + 1);
-				}
-				mainmix->mousenode = nullptr;
-			}
-		}
-		else if (k == 1) {
-			if (mainmix->mousenode) {
-				if (mainmix->mousenode->type == BLEND) {
-					if (mainprogram->menuresults.size()) {
-						if (mainprogram->menuresults[0] == 0) {
-							((BlendNode*)mainmix->mousenode)->blendtype = MIXING;
-						}
-						else {
-							if (mainprogram->menuresults.size() == 2) {
-								((BlendNode*)mainmix->mousenode)->blendtype = WIPE;
-								((BlendNode*)mainmix->mousenode)->wipetype = mainprogram->menuresults[0] - 1;
-								((BlendNode*)mainmix->mousenode)->wipedir = mainprogram->menuresults[1];
-							}
-						}
-					}
-				}
-				mainmix->mousenode = nullptr;
-			}
-		}
-		if (mainprogram->menuchosen) {
-			mainprogram->menuchosen = false;
-			mainprogram->menuactivation = 0;
-			mainprogram->menuresults.clear();
-		}
-
-		// Draw and handle mainprogram->effectmenu
-		k = handle_menu(mainprogram->effectmenu);
-		if (k > -1) {
-			if (k == 0) {
-				if (mainmix->mouseeffect > -1) mainmix->mouselayer->delete_effect(mainmix->mouseeffect);
-			}
-			else if (mainmix->insert) mainmix->mouselayer->add_effect((EFFECT_TYPE)mainprogram->abeffects[k - 1], mainmix->mouseeffect);
-			else {
-				std::vector<Effect*>& evec = mainmix->mouselayer->choose_effects();
-				int mon = evec[mainmix->mouseeffect]->node->monitor;
-				mainmix->mouselayer->replace_effect((EFFECT_TYPE)mainprogram->abeffects[k - 1], mainmix->mouseeffect);
-				evec[mainmix->mouseeffect]->node->monitor = mon;
-			}
-			mainmix->mouselayer = nullptr;
-			mainmix->mouseeffect = -1;
-		}
-		if (mainprogram->menuchosen) {
-			mainprogram->menuchosen = false;
-			mainprogram->menuactivation = 0;
-			mainprogram->menuresults.clear();
-		}
-
-		// Draw and handle mainprogram->parammenu1
-		k = handle_menu(mainprogram->parammenu1);
-		if (k > -1) {
-			if (k == 0) {
-				mainmix->learn = true;
-			}
-		}
-		if (mainprogram->menuchosen) {
-			mainprogram->menuchosen = false;
-			mainprogram->menuactivation = 0;
-			mainprogram->menuresults.clear();
-		}
-
-		// Draw and handle mainprogram->parammenu2
-		k = handle_menu(mainprogram->parammenu2);
-		if (k > -1) {
-			if (k == 0) {
-				mainmix->learn = true;
-			}
-			else if (k == 1) {
-				LoopStationElement* elem = loopstation->elemmap[mainmix->learnparam];
-				elem->params.erase(mainmix->learnparam);
-				if (mainmix->learnparam->effect) elem->layers.erase(mainmix->learnparam->effect->layer);
-				for (int i = elem->eventlist.size() - 1; i >= 0; i--) {
-					if (std::get<1>(elem->eventlist[i]) == mainmix->learnparam) elem->eventlist.erase(elem->eventlist.begin() + i);
-				}
-				loopstation->elemmap.erase(mainmix->learnparam);
-				mainmix->learnparam->box->acolor[0] = 0.2f;
-				mainmix->learnparam->box->acolor[1] = 0.2f;
-				mainmix->learnparam->box->acolor[2] = 0.2f;
-				mainmix->learnparam->box->acolor[3] = 1.0f;
-			}
-		}
-		if (mainprogram->menuchosen) {
-			mainprogram->menuchosen = false;
-			mainprogram->menuactivation = 0;
-			mainprogram->menuresults.clear();
-		}
-
-		// Draw and handle mainprogram->loopmenu
-		k = handle_menu(mainprogram->loopmenu);
-		if (k > -1) {
-			if (k == 0) {
-				mainmix->mouselayer->startframe = mainmix->mouselayer->frame;
-				if (mainmix->mouselayer->startframe > mainmix->mouselayer->endframe) {
-					mainmix->mouselayer->endframe = mainmix->mouselayer->startframe;
-				}
-				mainmix->mouselayer->set_clones();
-			}
-			else if (k == 1) {
-				mainmix->mouselayer->endframe = mainmix->mouselayer->frame;
-				if (mainmix->mouselayer->startframe > mainmix->mouselayer->endframe) {
-					mainmix->mouselayer->startframe = mainmix->mouselayer->endframe;
-				}
-				mainmix->mouselayer->set_clones();
-			}
-			else if (k == 2) {
-				float fac = mainmix->deckspeed[!mainprogram->prevmodus][mainmix->mouselayer->deck]->value;
-				if (mainmix->mouselayer->clonesetnr != -1) {
-					std::unordered_set<Layer*>::iterator it;
-					for (it = mainmix->clonesets[mainmix->mouselayer->clonesetnr]->begin(); it != mainmix->clonesets[mainmix->mouselayer->clonesetnr]->end(); it++) {
-						Layer* lay = *it;
-						if (lay->deck == !mainmix->mouselayer->deck) {
-							fac *= mainmix->deckspeed[!mainprogram->prevmodus][!mainmix->mouselayer->deck]->value;
-							break;
-						}
-					}
-				}
-				mainmix->cbduration = ((float)(mainmix->mouselayer->endframe - mainmix->mouselayer->startframe) * mainmix->mouselayer->millif) / (mainmix->mouselayer->speed->value * mainmix->mouselayer->speed->value * fac * fac);
-				printf("fac %f\n", fac);
-			}
-			else if (k == 3) {
-				float fac = mainmix->deckspeed[!mainprogram->prevmodus][mainmix->mouselayer->deck]->value;
-				if (mainmix->mouselayer->clonesetnr != -1) {
-					std::unordered_set<Layer*>::iterator it;
-					for (it = mainmix->clonesets[mainmix->mouselayer->clonesetnr]->begin(); it != mainmix->clonesets[mainmix->mouselayer->clonesetnr]->end(); it++) {
-						Layer* lay = *it;
-						if (lay->deck == !mainmix->mouselayer->deck) {
-							fac *= mainmix->deckspeed[!mainprogram->prevmodus][!mainmix->mouselayer->deck]->value;
-							break;
-						}
-					}
-				}
-				mainmix->mouselayer->speed->value = sqrt(((float)(mainmix->mouselayer->endframe - mainmix->mouselayer->startframe) * mainmix->mouselayer->millif) / mainmix->cbduration / (fac * fac));
-				mainmix->mouselayer->set_clones();
-			}
-			else if (k == 4) {
-				float sf, ef;
-				float loop = mainmix->mouselayer->endframe - mainmix->mouselayer->startframe;
-				float dsp = mainmix->deckspeed[!mainprogram->prevmodus][mainmix->mouselayer->deck]->value;
-				if (mainmix->mouselayer->clonesetnr != -1) {
-					std::unordered_set<Layer*>::iterator it;
-					for (it = mainmix->clonesets[mainmix->mouselayer->clonesetnr]->begin(); it != mainmix->clonesets[mainmix->mouselayer->clonesetnr]->end(); it++) {
-						Layer* lay = *it;
-						if (lay->deck == !mainmix->mouselayer->deck) {
-							dsp *= mainmix->deckspeed[!mainprogram->prevmodus][!mainmix->mouselayer->deck]->value;
-							break;
-						}
-					}
-				}
-				float fac = ((loop * mainmix->mouselayer->millif) / mainmix->cbduration) / (mainmix->mouselayer->speed->value * mainmix->mouselayer->speed->value * dsp * dsp);
-				float end = mainmix->mouselayer->numf - (mainmix->mouselayer->startframe + loop / fac);
-				if (end > 0) {
-					mainmix->mouselayer->endframe = mainmix->mouselayer->startframe + loop / fac;
-				}
-				else {
-					mainmix->mouselayer->endframe = mainmix->mouselayer->numf;
-					float start = mainmix->mouselayer->startframe + end;
-					if (start > 0) {
-						mainmix->mouselayer->startframe += end;
-					}
-					else {
-						mainmix->mouselayer->startframe = 0.0f;
-						mainmix->mouselayer->endframe = mainmix->mouselayer->numf;
-						mainmix->mouselayer->speed->value *= sqrt((float)mainmix->mouselayer->numf / ((float)mainmix->mouselayer->numf - start));
-					}
-				}
-				mainmix->mouselayer->set_clones();
-			}
-		}
-		if (mainprogram->menuchosen) {
-			mainprogram->menuchosen = false;
-			mainprogram->menuactivation = 0;
-			mainprogram->menuresults.clear();
-		}
-
-		// Draw and handle mixtargetmenu
-		std::vector<OutputEntry*> currentries;
-		std::vector<int> possscreens;
-		std::vector<OutputEntry*> takenentries;
-		if (mainprogram->mixtargetmenu->state > 1) {
-			// make the output display menu (SDL_GetNumVideoDisplays() doesn't allow hotplugging screens... :( )
-			int numd = SDL_GetNumVideoDisplays();
-			std::vector<std::string> mixtargets;
-			mixtargets.push_back("View full screen");
-			mixtargets.push_back("submenu wipemenu");
-			mixtargets.push_back("Choose wipe");
-			std::vector<int> currscreens;
-			if (numd == 1) mixtargets.push_back("No external displays");
-			else {
-				for (int i = 0; i < mainprogram->outputentries.size(); i++) {
-					if (mainprogram->outputentries[i]->win->mixid == mainprogram->mixtargetmenu->value) {
-						// current display(s) of chosen mixwindow, allow shutting down
-						currentries.push_back(mainprogram->outputentries[i]);
-						if (currentries.size() == 1) mixtargets.push_back("Stop displaying at:");
-						mixtargets.push_back(SDL_GetDisplayName(currentries.back()->screen));
-						currscreens.push_back(currentries.back()->screen);
-					}
-					else {
-						// other entries taking up chosen screen
-						takenentries.push_back(mainprogram->outputentries[i]);
-					}
-				}
-			}
-			bool first = true;
-			for (int i = 1; i < numd; i++) {
-				if (std::find(currscreens.begin(), currscreens.end(), i) == currscreens.end()) {
-					// possible new screens to start outputting to
-					if (first) {
-						first = false;
-						mixtargets.push_back("Mix down to display:");
-					}
-					mixtargets.push_back(SDL_GetDisplayName(i));
-					possscreens.push_back(i);
-				}
-			}
-			mainprogram->make_menu("mixtargetmenu", mainprogram->mixtargetmenu, mixtargets);
-		}
-		k = handle_menu(mainprogram->mixtargetmenu);
-		if (k > -1) {
-			if (k == 0) {
-				mainprogram->fullscreen = mainprogram->mixtargetmenu->value;
-			}
-			else if (k == 1) {
-				if (mainprogram->menuresults.size() == 2) {
-					if (mainprogram->menuresults[0] != 0) {
-						mainmix->wipe[!mainprogram->prevmodus] = mainprogram->menuresults[0] - 1;
-						mainmix->wipedir[!mainprogram->prevmodus] = mainprogram->menuresults[1];
-					}
-				}
-				if (mainprogram->menuresults.size() == 1) {
-					if (mainprogram->menuresults[0] == 0) {
-						mainmix->wipe[!mainprogram->prevmodus] = -1;
-					}
-				}
-			}
-			else if (k > 2) {
-				// chosen output screen already used? re-use window
-				bool switched = false;
-				for (int i = 0; i < takenentries.size(); i++) {
-					if (takenentries[i]->screen == k - currentries.size() - 1 - (currentries.size() != 0)) {
-						takenentries[i]->win->mixid = mainprogram->mixtargetmenu->value;
-						switched = true;
-					}
-				}
-				if (switched) {}
-				else if (currentries.size()) {
-					// stop output display of chosen mixwindow on chosen screen
-					if (k > 1 and k < 2 + currentries.size()) {
-						SDL_DestroyWindow(currentries[k - 2]->win->win);
-						mainprogram->outputentries.erase(std::find(mainprogram->outputentries.begin(), mainprogram->outputentries.end(), currentries[k - 2]));
-						// deleting entry itself?  closethread...
-						currentries[k - 2]->win->closethread = true;
-						while (currentries[k - 2]->win->closethread) {
-							currentries[k - 2]->win->syncnow = true;
-							while (currentries[k - 2]->win->syncnow) {
-								currentries[k - 2]->win->sync.notify_one();
-							}
-						}
-					}
-				}
-				else {
-					// open new window on chosen ouput screen and start display thread (synced at end of the_loop)
-					int screen;
-					if (currentries.size()) screen = possscreens[k - currentries.size() - 3];
-					else screen = possscreens[k - currentries.size() - 3];
-					EWindow* mwin = new EWindow;
-					mwin->mixid = mainprogram->mixtargetmenu->value;
-					OutputEntry* entry = new OutputEntry;
-					entry->screen = screen;
-					entry->win = mwin;
-					mainprogram->outputentries.push_back(entry);
-					SDL_Rect rc1;
-					SDL_GetDisplayBounds(screen, &rc1);										SDL_Rect rc2;
-					SDL_GetDisplayUsableBounds(screen, &rc2);
-					mwin->w = rc2.w;
-					mwin->h = rc2.h;
-					mwin->win = SDL_CreateWindow(PROGRAM_NAME, rc1.x, rc1.y, mwin->w, mwin->h, SDL_WINDOW_OPENGL | SDL_WINDOW_MAXIMIZED | SDL_WINDOW_RESIZABLE |
-						SDL_WINDOW_FULLSCREEN_DESKTOP | SDL_WINDOW_ALLOW_HIGHDPI);
-					SDL_RaiseWindow(mainprogram->mainwindow);
-					mainprogram->mixwindows.push_back(mwin);
-					SDL_GL_MakeCurrent(mainprogram->mainwindow, glc);
-					#ifdef _WIN64
-					HGLRC c1 = wglGetCurrentContext();
-					mwin->glc = SDL_GL_CreateContext(mwin->win);
-					SDL_GL_MakeCurrent(mwin->win, mwin->glc);
-					HGLRC c2 = wglGetCurrentContext();
-					wglShareLists(c1, c2);
-					#endif
-					#ifdef __linux__
-					GLXContext c1 = glXGetCurrentContext();
-					static int	dblBuf[] = { GLX_RGBA,
-									GLX_RED_SIZE, 1,
-									GLX_GREEN_SIZE, 1,
-									GLX_BLUE_SIZE, 1,
-									GLX_DEPTH_SIZE, 12,
-									GLX_DOUBLEBUFFER,
-									None };
-					Display* dpy = XOpenDisplay(NULL);
-					XVisualInfo* vi = glXChooseVisual(dpy, DefaultScreen(dpy), dblBuf);
-					GLXContext c2 = glXCreateContext(dpy, vi,
-						c1,	/* sharing of display lists */
-						True	/* direct rendering if possible */
-					);
-					#endif
-					glUseProgram(mainprogram->ShaderProgram);
-
-					std::thread vidoutput(output_video, mwin);
-					vidoutput.detach();
-
-					SDL_GL_MakeCurrent(mainprogram->mainwindow, glc);
-				}
-			}
-		}
-		if (mainprogram->menuchosen) {
-			mainprogram->menuchosen = false;
-			mainprogram->menuactivation = 0;
-			mainprogram->menuresults.clear();
-		}
-
-		// Draw and handle wipemenu
-		k = handle_menu(mainprogram->wipemenu);
-		if (k > 0) {
-			if (mainprogram->menuresults.size()) {
-				mainmix->wipe[!mainprogram->prevmodus] = k - 1;
-				mainmix->wipedir[!mainprogram->prevmodus] = mainprogram->menuresults[0];
-			}
-		}
-		else if (k == 0) {
-			mainmix->wipe[!mainprogram->prevmodus] = -1;
-		}
-		
-		if (mainprogram->menuchosen) {
-			mainprogram->menuchosen = false;
-			mainprogram->menuactivation = 0;
-			mainprogram->menuresults.clear();
-		}
-				
-		// Draw and handle deckmenu
-		k = handle_menu(mainprogram->deckmenu);
-		if (k == 0) {
-			mainprogram->pathto = "OPENDECK";
-			std::thread filereq (&Program::get_inname, mainprogram, "Open deck file", "application/ewocvj2-deck", boost::filesystem::canonical(mainprogram->currfilesdir).generic_string());
-			filereq.detach();
-		}
-		else if (k == 1) {
-			mainprogram->pathto = "SAVEDECK";
-			std::thread filereq (&Program::get_outname, mainprogram, "Save deck file", "application/ewocvj2-deck", boost::filesystem::canonical(mainprogram->currfilesdir).generic_string());
-			filereq.detach();
-		}
-		else if (k == 2) {
-			mainmix->learn = true;
-		}
-		if (mainprogram->menuchosen) {
-			mainprogram->menuchosen = false;
-			mainprogram->menuactivation = 0;
-			mainprogram->menuresults.clear();
-		}
-		
-		
-		// Draw and handle mainprogram->laymenu1
-		if (mainprogram->laymenu1->state > 1 or mainprogram->laymenu2->state > 1 or mainprogram->loadmenu->state > 1 or mainprogram->clipmenu->state > 1) {
-			if (!mainprogram->gotcameras) {
-				get_cameras();
-				mainprogram->devices.clear();
-				int numd = mainprogram->livedevices.size();
-				if (numd == 0) mainprogram->devices.push_back("No live devices");
-				else mainprogram->devices.push_back("Connect live to:");
-				for (int i = 0; i < numd; i++) {
-					std::string str(mainprogram->livedevices[i].begin(), mainprogram->livedevices[i].end());
-					mainprogram->devices.push_back(str);
-				}
-				mainprogram->make_menu("livemenu", mainprogram->livemenu, mainprogram->devices);
-				mainprogram->livemenu->box->upscrtovtx();
-				mainprogram->gotcameras = true;
-			}
-		}
-		else mainprogram->gotcameras = false;
-		if (mainprogram->laymenu1->state > 1) k = handle_menu(mainprogram->laymenu1);
-		else if (mainprogram->laymenu2->state > 1) {
-			k = handle_menu(mainprogram->laymenu2);
-			if (k > 10) k++;
-		}
-		if (k > -1) {
-			if (k == 0) {
-				if (mainprogram->menuresults.size()) {
-					if (mainprogram->menuresults[0] > 0) {
-						#ifdef _WIN64
-						std::string livename = "video=" + mainprogram->devices[mainprogram->menuresults[0]];
-						#else
-						#ifdef __linux__
-						std::string livename = "/dev/video" + std::to_string(mainprogram->menuresults[0] - 1);
-						#endif
-						#endif
-						set_live_base(mainmix->mouselayer, livename);
-					}
-				}
-			}
-			if (k == 1) {
-				mainprogram->pathto = "OPENFILESLAYERS";
-				mainprogram->loadlay = mainmix->mouselayer;
-				std::thread filereq(&Program::get_multinname, mainprogram, "Open video/image/layer file", boost::filesystem::canonical(mainprogram->currfilesdir).generic_string());
-				filereq.detach();
-			}
-			if (k == 2) {
-				mainprogram->pathto = "OPENFILESQUEUE";
-				mainprogram->loadlay = mainmix->mouselayer;
-				std::thread filereq(&Program::get_multinname, mainprogram, "Open video/image/layer file", boost::filesystem::canonical(mainprogram->currfilesdir).generic_string());
-				filereq.detach();
-			}
-			else if (k == 3) {
-				mainprogram->pathto = "SAVELAYFILE";
-				std::thread filereq (&Program::get_outname, mainprogram, "Save layer file", "application/ewocvj2-layer", boost::filesystem::canonical(mainprogram->currfilesdir).generic_string());
-				filereq.detach();
-			}
-			else if (k == 4) {
-				mainmix->new_file(mainmix->mousedeck, 1);
-			}
-			else if (k == 5) {
-				mainprogram->pathto = "OPENDECK";
-				std::thread filereq (&Program::get_inname, mainprogram, "Open deck file", "application/ewocvj2-deck", boost::filesystem::canonical(mainprogram->currfilesdir).generic_string());
-				filereq.detach();
-			}
-			else if (k == 6) {
-				mainprogram->pathto = "SAVEDECK";
-				std::thread filereq (&Program::get_outname, mainprogram, "Save deck file", "application/ewocvj2-deck", boost::filesystem::canonical(mainprogram->currfilesdir).generic_string());
-				filereq.detach();
-			}
-			else if (k == 7) {
-				mainmix->new_file(2, 1);
-			}
-			else if (k == 8) {
-				mainprogram->pathto = "OPENMIX";
-				std::thread filereq (&Program::get_inname, mainprogram, "Open mix file", "application/ewocvj2-mix", boost::filesystem::canonical(mainprogram->currfilesdir).generic_string());
-				filereq.detach();
-			}
-			else if (k == 9) {
-				mainprogram->pathto = "SAVEMIX";
-				std::thread filereq (&Program::get_outname, mainprogram, "Open mix file", "application/ewocvj2-mix", boost::filesystem::canonical(mainprogram->currfilesdir).generic_string());
-				filereq.detach();
-			}
-			else if (k == 10) {
-				if (std::find(mainmix->layersA.begin(), mainmix->layersA.end(), mainmix->mouselayer) != mainmix->layersA.end()) {
-					mainmix->delete_layer(mainmix->layersA, mainmix->mouselayer, true);
-				}
-				else if (std::find(mainmix->layersB.begin(), mainmix->layersB.end(), mainmix->mouselayer) != mainmix->layersB.end()) {
-					mainmix->delete_layer(mainmix->layersB, mainmix->mouselayer, true);
-				}
-				else if (std::find(mainmix->layersAcomp.begin(), mainmix->layersAcomp.end(), mainmix->mouselayer) != mainmix->layersAcomp.end()) {
-					mainmix->delete_layer(mainmix->layersAcomp, mainmix->mouselayer, true);
-				}
-				else if (std::find(mainmix->layersBcomp.begin(), mainmix->layersBcomp.end(), mainmix->mouselayer) != mainmix->layersBcomp.end()) {
-					mainmix->delete_layer(mainmix->layersBcomp, mainmix->mouselayer, true);
-				}
-			}
-			else if (k == 11) {
-				std::vector<Layer*> &lvec = choose_layers(mainmix->mouselayer->deck);
-				Layer *clonelay = mainmix->clone_layer(lvec, mainmix->mouselayer);
-				if (mainmix->mouselayer->clonesetnr == -1) {
-					std::unordered_set<Layer*> *uset = new std::unordered_set<Layer*>;
-					mainmix->clonesets.push_back(uset);
-					uset->emplace(mainmix->mouselayer);
-					mainmix->mouselayer->clonesetnr = mainmix->clonesets.size() - 1;
-				}
-				clonelay->clonesetnr = mainmix->mouselayer->clonesetnr;
-				mainmix->clonesets[mainmix->mouselayer->clonesetnr]->emplace(clonelay);
-			}
-			else if (k == 12) {
-				mainmix->mouselayer->shiftx->value = 0.0f;
-				mainmix->mouselayer->shifty->value = 0.0f;
-			}
-			else if (k == 13) {
-				mainmix->mouselayer->aspectratio = (RATIO_TYPE)mainprogram->menuresults[0];
-				if (mainmix->mouselayer->type == ELEM_IMAGE) {
-					ilBindImage(mainmix->mouselayer->boundimage);
-					ilActiveImage((int)mainmix->mouselayer->frame);
-					mainmix->mouselayer->set_aspectratio(ilGetInteger(IL_IMAGE_WIDTH), ilGetInteger(IL_IMAGE_HEIGHT));
-					mainmix->mouselayer->decresult->newdata = true;
-				}
-				else {
-					mainmix->mouselayer->set_aspectratio(mainmix->mouselayer->video_dec_ctx->width, mainmix->mouselayer->video_dec_ctx->height);
-				}
-			}
-		}
-	
-		if (mainprogram->menuchosen) {
-			mainprogram->menuchosen = false;
-			mainprogram->menuactivation = 0;
-			mainprogram->menuresults.clear();
-		}
-		
-			
-		k = handle_menu(mainprogram->loadmenu);
-		if (k > -1) {
-			std::vector<Layer*> &lvec = choose_layers(mainmix->mousedeck);
-			if (k == 0) {
-				if (mainprogram->menuresults.size()) {
-					if (mainprogram->menuresults[0] > 0) {
-						mainmix->mouselayer = mainmix->add_layer(lvec, lvec.size());
-						#ifdef _WIN64
-						std::string livename = "video=" + mainprogram->devices[mainprogram->menuresults[0]];
-						#else
-						#ifdef __linux__
-						std::string livename = "/dev/video" + std::to_string(mainprogram->menuresults[0] - 1);
-						#endif
-						#endif
-						set_live_base(mainmix->mouselayer, livename);
-					}
-				}
-			}
-			if (k == 1) {
-				mainprogram->pathto = "OPENFILESLAYERS";
-				std::thread filereq(&Program::get_multinname, mainprogram, "Open video/image/layer file", boost::filesystem::canonical(mainprogram->currfilesdir).generic_string());
-				filereq.detach();
-				mainmix->addlay = true;
-			}
-			else if (k == 2) {
-				mainprogram->pathto = "OPENFILESQUEUE";
-				std::thread filereq(&Program::get_multinname, mainprogram, "Open video/image/layer file", boost::filesystem::canonical(mainprogram->currfilesdir).generic_string());
-				filereq.detach();
-				mainmix->addlay = true;
-			}
-			else if (k == 3) {
-				mainmix->new_file(mainmix->mousedeck, 1);
-			}
-			else if (k == 4) {
-				mainprogram->pathto = "OPENDECK";
-				std::thread filereq (&Program::get_inname, mainprogram, "Open deck file", "application/ewocvj2-deck", boost::filesystem::canonical(mainprogram->currfilesdir).generic_string());
-				filereq.detach();
-			}
-			else if (k == 5) {
-				mainprogram->pathto = "SAVEDECK";
-				std::thread filereq (&Program::get_outname, mainprogram, "Save deck file", "application/ewocvj2-deck", boost::filesystem::canonical(mainprogram->currfilesdir).generic_string());
-				filereq.detach();
-			}
-			else if (k == 6) {
-				mainmix->new_file(2, 1);
-			}
-			else if (k == 7) {
-				mainprogram->pathto = "OPENMIX";
-				std::thread filereq (&Program::get_inname, mainprogram, "Open mix file", "application/ewocvj2-mix", boost::filesystem::canonical(mainprogram->currfilesdir).generic_string());
-				filereq.detach();
-			}
-			else if (k == 8) {
-				mainprogram->pathto = "SAVEMIX";
-				std::thread filereq (&Program::get_outname, mainprogram, "Save mix file", "application/ewocvj2-mix", boost::filesystem::canonical(mainprogram->currfilesdir).generic_string());
-				filereq.detach();
-			}
-		}
-	
-		if (mainprogram->menuchosen) {
-			mainprogram->menuchosen = false;
-			mainprogram->menuactivation = 0;
-			mainprogram->menuresults.clear();
-		}
-		
-		
-		// Draw and handle clipmenu
-		k = handle_menu(mainprogram->clipmenu);
-		if (k > -1) {
-			std::vector<Layer*>& lvec = choose_layers(mainmix->mousedeck);
-			if (k == 0) {
-				if (mainprogram->menuresults.size()) {
-					if (mainprogram->menuresults[0] > 0) {
-						mainmix->mouselayer = mainmix->add_layer(lvec, lvec.size());
-#ifdef _WIN64
-						std::string livename = "video=" + mainprogram->devices[mainprogram->menuresults[0]];
-#else
-#ifdef __linux__
-						std::string livename = "/dev/video" + std::to_string(mainprogram->menuresults[0] - 1);
-#endif
-#endif
-						set_live_base(mainmix->mouselayer, livename);
-					}
-				}
-			}
-			if (k == 1) {
-				mainprogram->pathto = "CLIPOPENFILES";
-				std::thread filereq(&Program::get_multinname, mainprogram, "Open clip video file", boost::filesystem::canonical(mainprogram->currclipfilesdir).generic_string());
-				filereq.detach();
-			}
-			if (k == 2) {
-				mainmix->mouselayer->clips.erase(std::find(mainmix->mouselayer->clips.begin(), mainmix->mouselayer->clips.end(), mainmix->mouseclip));
-				delete mainmix->mouseclip;
-			}
-			if (mainprogram->menuchosen) {
-				mainprogram->menuchosen = false;
-				mainprogram->menuactivation = 0;
-				mainprogram->menuresults.clear();
-			}
-		}
 
 
-		// Draw and handle genericmenu
-		k = handle_menu(mainprogram->genericmenu);
-		if (k == 0) {
-			mainprogram->pathto = "NEWPROJECT";
-			std::string reqdir = mainprogram->projdir;
-			if (reqdir.substr(0, 1) == ".") reqdir.erase(0, 2);
-			std::string name = "Untitled";
-			std::string path;
-			int count = 0;
-			while (1) {
-				path = mainprogram->projdir + name;
-				if (!exists(path + ".ewocvj")) {
-					break;
-				}
-				count++;
-				name = remove_version(name) + "_" + std::to_string(count);
-			}
-			std::thread filereq (&Program::get_outname, mainprogram, "New project", "application/ewocvj2-project", boost::filesystem::absolute(reqdir + name).generic_string());
-			filereq.detach();
-		}
-		else if (k == 1) {
-			mainprogram->pathto = "OPENPROJECT";
-			std::thread filereq (&Program::get_inname, mainprogram, "Open project file", "application/ewocvj2-project", boost::filesystem::canonical(mainprogram->currprojdir).generic_string());
-			filereq.detach();
-		}
-		else if (k == 2) {
-			mainprogram->project->save(mainprogram->project->path);
-		}
-		else if (k == 3) {
-			mainprogram->pathto = "SAVEPROJECT";
-			std::thread filereq(&Program::get_outname, mainprogram, "Save project file", "application/ewocvj2-project", boost::filesystem::canonical(mainprogram->project->path).generic_string());
-			filereq.detach();
-		}
-		else if (k == 4) {
-			mainmix->new_state();
-		}
-		else if (k == 5) {
-			mainprogram->pathto = "OPENSTATE";
-			std::thread filereq (&Program::get_inname, mainprogram, "Open state file", "application/ewocvj2-state", boost::filesystem::canonical(mainprogram->currstatedir).generic_string());
-			filereq.detach();
-		}
-		else if (k == 6) {
-			mainprogram->pathto = "SAVESTATE";
-			std::thread filereq (&Program::get_outname, mainprogram, "Save state file", "application/ewocvj2-state", boost::filesystem::canonical(mainprogram->currstatedir).generic_string());
-			filereq.detach();
-		}
-		else if (k == 7) {
-			if (!mainprogram->prefon) {
-				mainprogram->prefon = true;
-				SDL_ShowWindow(mainprogram->prefwindow);
-				//SDL_RaiseWindow(mainprogram->prefwindow);
-				//SDL_GL_MakeCurrent(mainprogram->prefwindow, glc_pr);
-				//glUseProgram(mainprogram->ShaderProgram_pr);
-				for (int i = 0; i < mainprogram->prefs->items.size(); i++) {
-					PrefCat *item = mainprogram->prefs->items[i];
-					item->box->upvtxtoscr();
-				}
-			}
-			else {
-				SDL_RaiseWindow(mainprogram->prefwindow);
-			}
-		}
-		else if (k == 8) {
-			if (!mainprogram->tunemidi) {
-				mainprogram->tunemidi = true;
-				SDL_ShowWindow(mainprogram->tunemidiwindow);
-				//SDL_RaiseWindow(mainprogram->tunemidiwindow);
-				//SDL_GL_MakeCurrent(mainprogram->tunemidiwindow, glc_tm);
-				//glUseProgram(mainprogram->ShaderProgram_tm);
-				mainprogram->tmset->upvtxtoscr();
-				mainprogram->tmscratch->upvtxtoscr();
-				mainprogram->tmfreeze->upvtxtoscr();
-				mainprogram->tmplay->upvtxtoscr();
-				mainprogram->tmbackw->upvtxtoscr();
-				mainprogram->tmbounce->upvtxtoscr();
-				mainprogram->tmfrforw->upvtxtoscr();
-				mainprogram->tmfrbackw->upvtxtoscr();
-				mainprogram->tmspeed->upvtxtoscr();
-				mainprogram->tmspeedzero->upvtxtoscr();
-				mainprogram->tmopacity->upvtxtoscr();
-			}
-			else {
-				SDL_RaiseWindow(mainprogram->tunemidiwindow);
-			}
-		}
-		else if (k == 9) {
-			mainprogram->quitting = "quitted";
-		}
 
-		if (mainprogram->menuchosen) {
-			mainprogram->menuchosen = false;
-			mainprogram->menuactivation = 0;
-			mainprogram->menuresults.clear();
-		}
-				
-		// Draw and handle shelfmenu
-		k = handle_menu(mainprogram->shelfmenu);
-		if (k == 0) {
-			// new shelf
-			mainmix->mouseshelf->erase();
-		}
-		else if (k == 1) {
-			mainprogram->pathto = "OPENSHELF";
-			std::thread filereq (&Program::get_inname, mainprogram, "Open shelf file", "application/ewocvj2-shelf", boost::filesystem::canonical(mainprogram->currshelfdir).generic_string());
-			filereq.detach();
-		}
-		else if (k == 2) {
-			mainprogram->pathto = "SAVESHELF";
-			std::thread filereq (&Program::get_outname, mainprogram, "Save shelf file", "application/ewocvj2-shelf", boost::filesystem::canonical(mainprogram->currshelfdir).generic_string());
-			filereq.detach();
-		}
-		else if (k == 3) {
-			mainprogram->pathto = "OPENSHELFFILES";
-			std::thread filereq (&Program::get_multinname, mainprogram,  "Load file(s) in shelf", boost::filesystem::canonical(mainprogram->currshelffilesdir).generic_string());
-			filereq.detach();
-		}
-		else if (k == 4 or k == 5) {
-			// insert one of current decks into shelf element
-			std::string name = remove_extension(basename(mainprogram->project->path));
-			std::string path;
-			int count = 0;
-			while (1) {
-				path = mainprogram->temppath + name + ".deck";
-				if (!exists(path)) {
-					break;
-				}
-				count++;
-				name = remove_version(name) + "_" + std::to_string(count);
-			}
-			mainmix->mousedeck = k - 4;
-			mainmix->save_deck(path);
-			mainmix->mouseshelf->insert_deck(path, k - 4, mainmix->mouseshelfelem);
-		}
-		else if (k == 6) {
-			// insert current mix into shelf element
-			std::string name = remove_extension(basename(mainprogram->project->path));
-			std::string path;
-			int count = 0;
-			while (1) {
-				path = mainprogram->temppath + name + ".mix";
-				if (!exists(path)) {
-					break;
-				}
-				count++;
-				name = remove_version(name) + "_" + std::to_string(count);
-			}
-			mainmix->save_mix(path);
-			mainmix->mouseshelf->insert_mix(path, mainmix->mouseshelfelem);
-		}
-		else if (k == 7) {
-			// insert entire shelf in a bin block
-			binsmain->insertshelf = mainmix->mouseshelf;
-			mainprogram->binsscreen = true;
-		}
-		else if (k == 8) {
-			// learn MIDI for element layer load
-			mainmix->learn = true;
-			mainmix->learnparam = nullptr;
-			mainmix->learnbutton = mainmix->mouseshelf->buttons[mainmix->mouseshelfelem];
-		}
 
-		if (mainprogram->menuchosen) {
-			mainprogram->menuchosen = false;
-			mainprogram->menuactivation = 0;
-			mainprogram->menuresults.clear();
-		}
-		
-		// Draw and handle filemenu
-		if (mainprogram->filemenu->state > 1) {
-			// make menus with layer numbers, one for each deck
-			std::vector<Layer*>& lvec = choose_layers(0);
-			std::vector<std::string> laylist1;
-			for (int i = 0; i < lvec.size() + 1; i++) {
-				laylist1.push_back("Layer " + std::to_string(i + 1));
-			}
-			mainprogram->make_menu("laylistmenu1", mainprogram->laylistmenu1, laylist1);
-			std::vector<Layer*>& lvec2 = choose_layers(1);
-			std::vector<std::string> laylist2;
-			for (int i = 0; i < lvec2.size() + 1; i++) {
-				laylist2.push_back("Layer " + std::to_string(i + 1));
-			}
-			mainprogram->make_menu("laylistmenu2", mainprogram->laylistmenu2, laylist2);
-		}
-		
-		k = handle_menu(mainprogram->filemenu);
-		if (k == 0) {
-			if (mainprogram->menuresults[0] == 0) {
-				// new project
-				mainprogram->pathto = "NEWPROJECT";
-				std::string reqdir = mainprogram->projdir;
-				if (reqdir.substr(0, 1) == ".") reqdir.erase(0, 2);
-				std::string name = "Untitled";
-				std::string path;
-				int count = 0;
-				while (1) {
-					path = mainprogram->projdir + name;
-					if (!exists(path + ".ewocvj")) {
-						break;
-					}
-					count++;
-					name = remove_version(name) + "_" + std::to_string(count);
-				}
-				std::thread filereq(&Program::get_outname, mainprogram, "New project", "application/ewocvj2-project", boost::filesystem::absolute(reqdir + name).generic_string());
-				filereq.detach();
-			}
-			else if (mainprogram->menuresults[0] == 1) {
-				// new state
-				mainmix->new_state();
-			}
-			else if (mainprogram->menuresults[0] == 2) {
-				// new mix
-				mainmix->new_file(2, 1);
-			}
-			else if (mainprogram->menuresults[0] == 3) {
-				// new deck in deck A
-				mainmix->new_file(0, 1);
-			}
-			else if (mainprogram->menuresults[0] == 4) {
-				// open deck in deck B
-				mainmix->new_file(1, 1);
-			}
-			else if (mainprogram->menuresults[0] == 5) {
-				// open new layer in deck A
-				std::vector<Layer*>& lvec = choose_layers(0);
-				mainmix->add_layer(lvec, mainprogram->menuresults[1]);
-			}
-			else if (mainprogram->menuresults[0] == 5) {
-				// open new layer in deck B
-				std::vector<Layer*>& lvec = choose_layers(1);
-				mainmix->add_layer(lvec, mainprogram->menuresults[1]);
-			}
-		}
-		else if (k == 1) {
-			if (mainprogram->menuresults[0] == 0) {
-				mainprogram->pathto = "OPENPROJECT";
-				std::thread filereq(&Program::get_inname, mainprogram, "Open project file", "application/ewocvj2-project", boost::filesystem::canonical(mainprogram->currprojdir).generic_string());
-				filereq.detach();
-			}
-			else if (mainprogram->menuresults[0] == 1) {
-				mainprogram->pathto = "OPENSTATE";
-				std::thread filereq(&Program::get_inname, mainprogram, "Open state file", "application/ewocvj2-state", boost::filesystem::canonical(mainprogram->currstatedir).generic_string());
-				filereq.detach();
-			}
-			else if (mainprogram->menuresults[0] == 2) {
-				// open mix file
-				mainprogram->pathto = "OPENMIX";
-				std::thread filereq(&Program::get_inname, mainprogram, "Open mix file", "application/ewocvj2-mix", boost::filesystem::canonical(mainprogram->currfilesdir).generic_string());
-				filereq.detach();
-			}
-			else if (mainprogram->menuresults[0] == 3) {
-				// open deck file in deck A
-				mainmix->mousedeck = 0;
-				mainprogram->pathto = "OPENDECK";
-				std::thread filereq(&Program::get_inname, mainprogram, "Open deck file", "application/ewocvj2-deck", boost::filesystem::canonical(mainprogram->currfilesdir).generic_string());
-				filereq.detach();
-			}
-			else if (mainprogram->menuresults[0] == 4) {
-				// open deck file in deck B
-				mainmix->mousedeck = 1;
-				mainprogram->pathto = "OPENDECK";
-				std::thread filereq(&Program::get_inname, mainprogram, "Open deck file", "application/ewocvj2-deck", boost::filesystem::canonical(mainprogram->currfilesdir).generic_string());
-				filereq.detach();
-			}
-			else if (mainprogram->menuresults[0] == 5) {
-				// open files in in deck A
-				std::vector<Layer*>& lvec = choose_layers(0);
-				mainprogram->pathto = "OPENFILESLAYERS";
-				if (mainprogram->menuresults[1] == lvec.size()) {
-					mainmix->addlay = true;
-				}
-				else {
-					mainprogram->loadlay = lvec[mainprogram->menuresults[1]];
-				}
-				std::thread filereq(&Program::get_multinname, mainprogram, "Open video/image/layer file", boost::filesystem::canonical(mainprogram->currfilesdir).generic_string());
-				filereq.detach();
-			}
-			else if (mainprogram->menuresults[0] == 6) {
-				// open files in layer in deck B
-				std::vector<Layer*>& lvec = choose_layers(1);
-				mainprogram->pathto = "OPENFILESLAYERS";
-				if (mainprogram->menuresults[1] == lvec.size()) {
-					mainmix->addlay = true;
-				}
-				else {
-					mainprogram->loadlay = lvec[mainprogram->menuresults[1]];
-				}
-				std::thread filereq(&Program::get_multinname, mainprogram, "Open video/image/layer file", boost::filesystem::canonical(mainprogram->currfilesdir).generic_string());
-				filereq.detach();
-			}
-			else if (mainprogram->menuresults[0] == 7) {
-				// open files in in deck A
-				std::vector<Layer*>& lvec = choose_layers(0);
-				mainprogram->pathto = "OPENFILESQUEUE";
-				std::thread filereq(&Program::get_multinname, mainprogram, "Open video/image/layer file", boost::filesystem::canonical(mainprogram->currfilesdir).generic_string());
-				filereq.detach();
-				if (mainprogram->menuresults[1] == lvec.size()) {
-					mainmix->addlay = true;
-				}
-				else {
-					mainprogram->loadlay = lvec[mainprogram->menuresults[1]];
-				}
-			}
-			else if (mainprogram->menuresults[0] == 8) {
-				// open files in layer in deck B
-				std::vector<Layer*>& lvec = choose_layers(1);
-				mainprogram->pathto = "OPENFILESQUEUE";
-				std::thread filereq(&Program::get_multinname, mainprogram, "Open video/image/layer file", boost::filesystem::canonical(mainprogram->currfilesdir).generic_string());
-				filereq.detach();
-				if (mainprogram->menuresults[1] == lvec.size()) {
-					mainmix->addlay = true;
-				}
-				else {
-					mainprogram->loadlay = lvec[mainprogram->menuresults[1]];
-				}
-			}
-		}
-		else if (k == 2) {
-			if (mainprogram->menuresults[0] == 0) {
-				mainprogram->pathto = "SAVEPROJECT";
-				std::thread filereq(&Program::get_outname, mainprogram, "Save project file", "application/ewocvj2-project", boost::filesystem::canonical(mainprogram->project->path).generic_string());
-				filereq.detach();
-			}
-			else if (mainprogram->menuresults[0] == 1) {
-				mainprogram->pathto = "SAVESTATE";
-				std::thread filereq(&Program::get_outname, mainprogram, "Save state file", "application/ewocvj2-state", boost::filesystem::canonical(mainprogram->currstatedir).generic_string());
-				filereq.detach();
-			}
-			else if (mainprogram->menuresults[0] == 2) {
-				mainprogram->pathto = "SAVEMIX";
-				std::thread filereq(&Program::get_outname, mainprogram, "Open mix file", "application/ewocvj2-mix", boost::filesystem::canonical(mainprogram->currfilesdir).generic_string());
-				filereq.detach();
-			}
-			else if (mainprogram->menuresults[0] == 3) {
-				mainmix->mousedeck = 0;
-				mainprogram->pathto = "SAVEDECK";
-				std::thread filereq(&Program::get_outname, mainprogram, "Save deck file", "application/ewocvj2-deck", boost::filesystem::canonical(mainprogram->currfilesdir).generic_string());
-				filereq.detach();
-			}
-			else if (mainprogram->menuresults[0] == 4) {
-				mainmix->mousedeck = 1;
-				mainprogram->pathto = "SAVEDECK";
-				std::thread filereq(&Program::get_outname, mainprogram, "Save deck file", "application/ewocvj2-deck", boost::filesystem::canonical(mainprogram->currfilesdir).generic_string());
-				filereq.detach();
-			}
-			else if (mainprogram->menuresults[0] == 5) {
-				// save layer from deck A
-				std::vector<Layer*>& lvec = choose_layers(0);
-				mainmix->mouselayer = lvec[mainprogram->menuresults[1]];
-				mainprogram->pathto = "SAVELAYFILE";
-				std::thread filereq(&Program::get_outname, mainprogram, "Save layer file", "application/ewocvj2-layer", boost::filesystem::canonical(mainprogram->currfilesdir).generic_string());
-				filereq.detach();
-			}
-			else if (mainprogram->menuresults[0] == 6) {
-				// save layer from deck B
-				std::vector<Layer*>& lvec = choose_layers(1);
-				mainmix->mouselayer = lvec[mainprogram->menuresults[1]];
-				mainprogram->pathto = "SAVELAYFILE";
-				std::thread filereq(&Program::get_outname, mainprogram, "Save layer file", "application/ewocvj2-layer", boost::filesystem::canonical(mainprogram->currfilesdir).generic_string());
-				filereq.detach();
-			}
-		}
-		else if (k == 3) {
-			mainprogram->quitting = "quitted";
-		}
 
-		if (mainprogram->menuchosen) {
-			mainprogram->menuchosen = false;
-			mainprogram->menuactivation = 0;
-			mainprogram->menuresults.clear();
-		}
-
-		// Draw and handle editmenu
-		k = handle_menu(mainprogram->editmenu);
-		if (k == 0) {
-			if (!mainprogram->prefon) {
-				mainprogram->prefon = true;
-				SDL_ShowWindow(mainprogram->prefwindow);
-				SDL_RaiseWindow(mainprogram->prefwindow);
-				SDL_GL_MakeCurrent(mainprogram->prefwindow, glc_pr);
-				glUseProgram(mainprogram->ShaderProgram_pr);
-				glEnable(GL_BLEND);
-				glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
-				for (int i = 0; i < mainprogram->prefs->items.size(); i++) {
-					PrefCat* item = mainprogram->prefs->items[i];
-					item->box->upvtxtoscr();
-				}
-			}
-			else {
-				SDL_RaiseWindow(mainprogram->prefwindow);
-			}
-		}
-		else if (k == 1) {
-			if (!mainprogram->tunemidi) {
-				SDL_ShowWindow(mainprogram->tunemidiwindow);
-				SDL_RaiseWindow(mainprogram->tunemidiwindow);
-				SDL_GL_MakeCurrent(mainprogram->tunemidiwindow, glc_tm);
-				glUseProgram(mainprogram->ShaderProgram_tm);
-				mainprogram->tmset->upvtxtoscr();
-				mainprogram->tmscratch->upvtxtoscr();
-				mainprogram->tmfreeze->upvtxtoscr();
-				mainprogram->tmplay->upvtxtoscr();
-				mainprogram->tmbackw->upvtxtoscr();
-				mainprogram->tmbounce->upvtxtoscr();
-				mainprogram->tmfrforw->upvtxtoscr();
-				mainprogram->tmfrbackw->upvtxtoscr();
-				mainprogram->tmspeed->upvtxtoscr();
-				mainprogram->tmspeedzero->upvtxtoscr();
-				mainprogram->tmopacity->upvtxtoscr();
-				glEnable(GL_BLEND);
-				glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
-				mainprogram->tunemidi = true;
-			}
-			else {
-				SDL_RaiseWindow(mainprogram->tunemidiwindow);
-			}
-		}
-
-		if (mainprogram->menuchosen) {
-			mainprogram->menuchosen = false;
-			mainprogram->menuactivation = 0;
-			mainprogram->menuresults.clear();
-		}
-
-		// end of menu code
-		
 
 		// draw "layer insert into stack" blue boxes
 		if (!mainprogram->menuondisplay and mainprogram->dragbinel) {
@@ -10254,377 +6540,15 @@ void the_loop() {
 		}		
 		
 		
-		//add/delete layer
-		if (!mainprogram->menuondisplay and !mainprogram->dragbinel) {
-			for (int j = 0; j < 2; j++) {
-				std::vector<Layer*>& lvec = choose_layers(j);
-				for (int i = 0; i < lvec.size(); i++) {
-					Layer* lay = lvec[i];
-					if (lay->pos < mainmix->scenes[j][mainmix->currscene[j]]->scrollpos or lay->pos > mainmix->scenes[j][mainmix->currscene[j]]->scrollpos + 2) continue;
-					Box* box = lay->node->vidbox;
-					float thick = mainprogram->xvtxtoscr(tf(0.006f));
-					if (box->scrcoords->y1 - box->scrcoords->h < mainprogram->my and mainprogram->my < box->scrcoords->y1) {
-						if (box->scrcoords->x1 - thick + (i - mainmix->scenes[j][mainmix->currscene[j]]->scrollpos == 0) * thick < mainprogram->mx and mainprogram->mx < box->scrcoords->x1 + thick + (i - mainmix->scenes[j][mainmix->currscene[j]]->scrollpos == 0) * thick) {
-							// handle vertical boxes at layer side for adding and deleting layer
-							// this block handles the first boxes, just not the last
-							mainprogram->leftmousedown = false;
-							float blue[] = { 0.5, 0.5, 1.0, 1.0 };
-							float red[] = { 1.0, 0.0 , 0.0, 1.0 };
-							draw_box(blue, blue, box->vtxcoords->x1 - mainprogram->xscrtovtx(thick) + (i - mainmix->scenes[j][mainmix->currscene[j]]->scrollpos == 0) * mainprogram->xscrtovtx(thick), box->vtxcoords->y1, mainprogram->xscrtovtx(thick) * 2.0f, mainprogram->layh, -1);
-							render_text("ADD LAYER", white, box->vtxcoords->x1 - mainprogram->xscrtovtx(thick) + (i - mainmix->scenes[j][mainmix->currscene[j]]->scrollpos == 0) * mainprogram->xscrtovtx(thick), box->vtxcoords->y1 + box->vtxcoords->h - tf(0.09f), tf(0.00024f), tf(0.0004f), 0, 1);
-							if (lay->pos > 0) {
-								draw_box(red, red, box->vtxcoords->x1 - mainprogram->xscrtovtx(thick) + (i - mainmix->scenes[j][mainmix->currscene[j]]->scrollpos == 0) * mainprogram->xscrtovtx(thick), box->vtxcoords->y1 + box->vtxcoords->h, mainprogram->xscrtovtx(thick * 2.0f), -tf(0.05f), -1);
-								render_text("DEL", white, box->vtxcoords->x1 - mainprogram->xscrtovtx(thick) + (i - mainmix->scenes[j][mainmix->currscene[j]]->scrollpos == 0) * mainprogram->xscrtovtx(thick), box->vtxcoords->y1 + box->vtxcoords->h - tf(0.01f), tf(0.00024f), tf(0.0004f), 0, 1);
-							}
-							if (mainprogram->leftmouse and !mainmix->moving and !mainprogram->intopmenu) {
-								// do add/delete layer
-								if (lay->pos > 0 and box->scrcoords->y1 - box->scrcoords->h < mainprogram->my and mainprogram->my < box->scrcoords->y1 - box->scrcoords->h + mainprogram->yvtxtoscr(tf(0.05f))) {
-									mainmix->delete_layer(lvec, lvec[lay->pos - 1], true);
-								}
-								else {
-									Layer* lay1;
-									lay1 = mainmix->add_layer(lvec, lay->pos);
-									make_layboxes();
-								}
-							}
-						}
-						else if (box->scrcoords->x1 + box->scrcoords->w - thick - (i - mainmix->scenes[j][mainmix->currscene[j]]->scrollpos == 2) * thick < mainprogram->mx and mainprogram->mx < box->scrcoords->x1 + box->scrcoords->w + (i - mainmix->scenes[j][mainmix->currscene[j]]->scrollpos != 2) * thick) {
-							mainprogram->leftmousedown = false;
-							if (lay->pos == lvec.size() - 1 or lay->pos == mainmix->scenes[j][mainmix->currscene[j]]->scrollpos + 2) {
-								// handle vertical boxes at layer side for adding and deleting layer
-								// this block handles the last box
-								float blue[] = { 0.5, 0.5 , 1.0, 1.0 };
-								float red[] = { 1.0, 0.0 , 0.0, 1.0 };
-								draw_box(blue, blue, box->vtxcoords->x1 + box->vtxcoords->w - mainprogram->xscrtovtx(thick) * 2.0f + mainprogram->xscrtovtx(thick * ((i - mainmix->scenes[j][mainmix->currscene[j]]->scrollpos != 2))), box->vtxcoords->y1, mainprogram->xscrtovtx(thick) * 2.0f, mainprogram->layh, -1);
-								render_text("ADD LAYER", white, box->vtxcoords->x1 + box->vtxcoords->w - mainprogram->xscrtovtx(thick) * 2.0f + mainprogram->xscrtovtx(thick * ((i - mainmix->scenes[j][mainmix->currscene[j]]->scrollpos != 2))), box->vtxcoords->y1 + box->vtxcoords->h - tf(0.09f), tf(0.00024f), tf(0.0004f), 0, 1);
-								draw_box(red, red, box->vtxcoords->x1 + box->vtxcoords->w - mainprogram->xscrtovtx(thick) * 2.0f + mainprogram->xscrtovtx(thick * ((i - mainmix->scenes[j][mainmix->currscene[j]]->scrollpos != 2))), box->vtxcoords->y1 + box->vtxcoords->h, mainprogram->xscrtovtx(thick) * 2.0f, -tf(0.05f), -1);
-								render_text("DEL", white, box->vtxcoords->x1 + box->vtxcoords->w - mainprogram->xscrtovtx(thick) * 2.0f + mainprogram->xscrtovtx(thick * ((i - mainmix->scenes[j][mainmix->currscene[j]]->scrollpos != 2))), box->vtxcoords->y1 + box->vtxcoords->h - tf(0.01f), tf(0.00024f), tf(0.0004f), 0, 1);
-								if (mainprogram->leftmouse and !mainmix->moving) {
-									// do add/delete layer
-									if ((box->scrcoords->y1 - box->scrcoords->h < mainprogram->my and mainprogram->my < box->scrcoords->y1 - box->scrcoords->h + mainprogram->yvtxtoscr(tf(0.05f)))) {
-										mainmix->delete_layer(lvec, lay, true);
-									}
-									else {
-										Layer* lay1 = mainmix->add_layer(lvec, lay->pos + 1);
-										make_layboxes();
-									}
-								}
-							}
-						}
-					}
-				}
-			}
-		}
-		
+		mainmix->vidbox_handle();
 
-		if (mainprogram->nodesmain->linked and mainmix->currlay) {
-			// Handle vidbox
-			std::vector<Layer*> &lvec = choose_layers(mainmix->currlay->deck);
-			Layer *lay = mainmix->currlay;
-			Box *box = lay->node->vidbox;
-			if (box->in() and !lay->transforming) {
-				draw_box(black, halfwhite, box->vtxcoords->x1 + (box->vtxcoords->w / 2.0f) - 0.015f, box->vtxcoords->y1 + (box->vtxcoords->h / 2.0f) - 0.025f, 0.03f, 0.05f, -1);
-				if (box->scrcoords->x1 + (box->scrcoords->w / 2.0f) - mainprogram->xvtxtoscr(0.015f) < mainprogram->mx and mainprogram->mx < box->scrcoords->x1 + (box->scrcoords->w / 2.0f) + mainprogram->xvtxtoscr(0.015f) and box->scrcoords->y1 - (box->scrcoords->h / 2.0f) - mainprogram->yvtxtoscr(0.025f) < mainprogram->my and mainprogram->my < box->scrcoords->y1 - (box->scrcoords->h / 2.0f) + mainprogram->yvtxtoscr(0.025f)) {
-					draw_box(black, lightblue, box->vtxcoords->x1 + (box->vtxcoords->w / 2.0f) - 0.015f, box->vtxcoords->y1 + (box->vtxcoords->h / 2.0f) - 0.025f, 0.03f, 0.05f, -1);
-					if (mainprogram->leftmousedown) {
-						// layer view pan
-						mainprogram->leftmousedown = false;
-						mainprogram->transforming = true;
-						lay->transforming = 1;
-						lay->transmx = mainprogram->mx - (lay->shiftx->value * (float)glob->w / 2.0f);
-						printf("transmx %d\n", lay->transmx);
-						lay->transmy = mainprogram->my - (lay->shifty->value * (float)glob->w / 2.0f);
-					}
-				}
-				//if (mainprogram->middlemousedown) {
-				//	mainprogram->middlemousedown = false;
-				//	lay->transforming = 2;
-				//	lay->transmx = mainprogram->mx;
-				//	lay->transmy = mainprogram->my;
-				//}
-				else if (box->in()) {
-					// move layer
-					if (mainprogram->leftmousedown and !mainprogram->intopmenu) {
-						if (!lay->vidmoving and !mainmix->moving and !lay->cliploading) {
-							binsmain->dragtex = copy_tex(lay->node->vidbox->tex);
-							mainprogram->draglay = lay;
-							
-							mainprogram->dragbinel = new BinElement;
-							mainprogram->dragbinel->tex = binsmain->dragtex;
-							if (lay->type == ELEM_LIVE) {
-								mainprogram->dragbinel->path = lay->filename;
-								mainprogram->dragbinel->type = ELEM_LIVE;
-							}
-							else {
-								std::string name = remove_extension(basename(mainprogram->draglay->filename));
-								int count = 0;
-								while (1) {
-									mainprogram->dragpath = mainprogram->temppath + "cliptemp_" + name + ".layer";
-									if (!exists(mainprogram->dragpath)) {
-										mainmix->save_layerfile(mainprogram->dragpath, mainprogram->draglay, 1, 0);
-										break;
-									}
-									count++;
-									name = remove_version(name) + "_" + std::to_string(count);
-								}
-								mainprogram->dragbinel->path = mainprogram->dragpath;
-								mainprogram->dragbinel->type = ELEM_LAYER;
-								mainprogram->draglay = lay;
-							}
-	
-							mainprogram->leftmousedown = false;
-							lay->vidmoving = true;
-							mainmix->moving = true;
-							binsmain->currbinel = nullptr;
-						}
-					}
-				}
-			}	
-			if (box->in()) {
-				if (mainprogram->mousewheel) {
-					// scaling layer view
-					lay->scale->value -= mainprogram->mousewheel * lay->scale->value / 10.0f;
-					for (int i = 0; i < loopstation->elems.size(); i++) {
-						if (loopstation->elems[i]->recbut->value) {
-							mainmix->adaptparam = lay->scale;
-							loopstation->elems[i]->add_param();
-						}
-					}
-					if (lay->type == ELEM_IMAGE) {
-						lay->decresult->newdata = true;
-					}
-				}
-			}
-			
-			if (lay->transforming == 1) {
-				lay->shiftx->value = (float)(mainprogram->mx - lay->transmx) / ((float)glob->w / 2.0f);
+		mainmix->outputmonitors_handle();
 
-				lay->shifty->value = (float)(mainprogram->my - lay->transmy) / ((float)glob->w / 2.0f);
-				for (int i = 0; i < loopstation->elems.size(); i++) {
-					if (loopstation->elems[i]->recbut->value) {
-						mainmix->adaptparam = lay->shiftx;
-						loopstation->elems[i]->add_param();
-					}
-				}
-				if (mainprogram->leftmouse) {
-					lay->transforming = 0;
-					mainprogram->transforming = false;
-				}
-				if (lay->type == ELEM_IMAGE) {
-					lay->decresult->newdata = true;
-				}
-			}
-			//if (lay->transforming == 2) {
-			//	lay->scale = 5.0f / (((float)(mainprogram->my - lay->transmy) / 20.0f) + 5.0f);
-			//	if (lay->scale > 1.0f) lay->scale *= lay->scale;
-			//	lay->scale *= lay->oldscale;
-			//	if (mainprogram->middlemouse) {
-			//		lay->oldscale = lay->scale;
-			//		lay->transforming = 0;
-			//	}
-			//}
-		}
-			
-			
-		// Draw mix view
-		if (mainmix->mode == 0) {
-			// Handle mixtargets
-			for (int i = 0; i < mainprogram->nodesmain->mixnodes.size(); i++) {
-				Box *box = mainprogram->nodesmain->mixnodes[i]->outputbox;
-				if (box->in()) {
-					if (i == 0) {
-						render_text("Deck A Monitor", white, box->vtxcoords->x1 + tf(0.01f), box->vtxcoords->y1 + box->vtxcoords->h - tf(0.03f), 0.0005f, 0.0008f);
-					}
-					else if (i == 1) {
-						render_text("Deck B Monitor", white, box->vtxcoords->x1 + tf(0.01f), box->vtxcoords->y1 + box->vtxcoords->h - tf(0.03f), 0.0005f, 0.0008f);
-					}
-					if (mainprogram->menuactivation) {
-						mainprogram->mixtargetmenu->state = 2;
-						mainprogram->mixtargetmenu->value = i;
-						mainprogram->menuactivation = false;
-					}
-				}
-			}
-			box = mainprogram->nodesmain->mixnodescomp[2]->outputbox;
-			if (mainprogram->prevmodus) {
-				box->vtxcoords->y1 = -0.4f + tf(0.075f);
-				box->vtxcoords->x1 = -0.15f;
-				box->vtxcoords->w = 0.3f;
-				box->vtxcoords->h = 0.3f;
-			}
-			else {
-				box->vtxcoords->y1 = -1.0f;
-				box->vtxcoords->x1 = -0.3f;
-				box->vtxcoords->w = 0.6f;
-				box->vtxcoords->h = 0.6f;
-			}
-			box->upvtxtoscr();
-			if (!mainprogram->menuondisplay) {
-				if (box->scrcoords->x1 < mainprogram->mx and mainprogram->mx < box->scrcoords->x1 + box->scrcoords->w) {
-					if (box->scrcoords->y1 - box->scrcoords->h <= mainprogram->my and mainprogram->my <= box->scrcoords->y1) {
-						if (mainprogram->prevmodus) {
-							render_text("Output Mix Monitor", white, box->vtxcoords->x1 + tf(0.01f), box->vtxcoords->y1 + box->vtxcoords->h - tf(0.03f), 0.0005f, 0.0008f);
-							if (mainprogram->menuactivation) {
-								mainprogram->mixtargetmenu->state = 2;
-								mainprogram->mixtargetmenu->value = mainprogram->nodesmain->mixnodes.size();
-								mainprogram->menuactivation = false;
-							}
-						}
-					}
-				}
-			}
-			
-			// Handle wipes
-			std::vector<MixNode*> m;
-			bool pm = !mainprogram->prevmodus;
-			if (mainprogram->prevmodus) {
-				m = mainprogram->nodesmain->mixnodes;
-			}
-			else {
-				m = mainprogram->nodesmain->mixnodescomp;
-			}
-			int deck = -1;
-			if (mainprogram->deckmonitor[0]->in()) deck = 0;
-			else if (mainprogram->deckmonitor[1]->in()) deck = 1;
-			if (deck > -1) {
-				if (mainprogram->leftmousedown) {
-					mainprogram->wiping = true;
-					mainmix->currlay->blendnode->wipex->value = -(((1.0f - ((mainprogram->xscrtovtx(mainprogram->mx) - 0.55f - deck * 0.9f) / 0.3f)) - 0.5f) * 2.0f - 1.5f);
-					mainmix->currlay->blendnode->wipey->value = -((((2.0f - mainprogram->yscrtovtx(mainprogram->my)) / 0.3f) - 0.5f) * 2.0f - 0.50f);
-					if (mainmix->currlay->blendnode->wipetype == 8 or mainmix->currlay->blendnode->wipetype == 9) {
-						mainmix->currlay->blendnode->wipex->value *= 16.0f;
-						mainmix->currlay->blendnode->wipey->value *= 16.0f;
-					}
-					for (int i = 0; i < loopstation->elems.size(); i++) {
-						if (loopstation->elems[i]->recbut->value) {
-							mainmix->adaptparam = mainmix->currlay->blendnode->wipex;
-							loopstation->elems[i]->add_param();
-						}
-					}
-				}
-				else {
-					mainprogram->wiping = false;
-				}
-			}
-			
-			Box *box = m[2]->outputbox;
-			if (box->in()) {
-				if (mainprogram->prevmodus) render_text("Preview Mix Monitor", white, box->vtxcoords->x1 + tf(0.01f), box->vtxcoords->y1 + box->vtxcoords->h - tf(0.03f), 0.0005f, 0.0008f);
-				else render_text("Output Mix Monitor", white, box->vtxcoords->x1 + tf(0.01f), box->vtxcoords->y1 + box->vtxcoords->h - tf(0.03f), 0.0005f, 0.0008f);
-				if (mainprogram->menuactivation) {
-					mainprogram->wipemenu->state = 2;
-					mainprogram->mixtargetmenu->value = m.size();
-					mainprogram->menuactivation = false;
-				}
-				if (mainprogram->leftmousedown) {
-					mainmix->wipex[pm]->value = -(((1.0f - ((mainprogram->xscrtovtx(mainprogram->mx) - 0.7f) / 0.6f)) - 0.5f) * 2.0f - 0.5f);
-					mainmix->wipey[pm]->value = -((((2.0f - mainprogram->yscrtovtx(mainprogram->my)) / 0.6f) - 0.5f) * 2.0f - 0.5f);
-					if (mainmix->currlay->blendnode->wipetype == 8 or mainmix->currlay->blendnode->wipetype == 9) {
-						mainmix->wipex[pm]->value *= 16.0f;
-						mainmix->wipey[pm]->value *= 16.0f;
-					}
-					for (int i = 0; i < loopstation->elems.size(); i++) {
-						if (loopstation->elems[i]->recbut->value) {
-							mainmix->adaptparam = mainmix->wipex[pm];
-							loopstation->elems[i]->add_param();
-						}
-					}
-				}
-				if (mainprogram->middlemouse) {
-					GLint wipe = glGetUniformLocation(mainprogram->ShaderProgram, "wipe");
-					glUniform1i(wipe, 0);
-				}
-			}
-			
-			// Handle vidboxes
-			Layer *lay = mainmix->currlay;
-			Effect *eff;
-			
-			if (mainmix->currlay) {
-				// Handle mixbox
-				box = lay->mixbox;
-				box->acolor[0] = 0.0;
-				box->acolor[1] = 0.0;
-				box->acolor[2] = 0.0;
-				box->acolor[3] = 1.0;
-				if (!mainprogram->menuondisplay) {
-					if (box->in()) {
-						if (mainprogram->menuactivation or mainprogram->leftmouse) {
-							mainprogram->mixenginemenu->state = 2;
-							for (int i = 0; i < mainprogram->menulist.size(); i++) {
-								mainprogram->menulist[i]->menux = mainprogram->mx;
-								mainprogram->menulist[i]->menuy = mainprogram->my;
-							}
-							mainmix->mousenode = lay->blendnode;
-							mainprogram->menuactivation = false;
-						}
-						box->acolor[0] = 0.5;
-						box->acolor[1] = 0.5;
-						box->acolor[2] = 1.0;
-						box->acolor[3] = 1.0;
-					}
-				}
-				
-				// Handle colorbox
-				pick_color(lay, lay->colorbox);
-				if (lay->cwon) {
-					lay->blendnode->chred = lay->rgb[0];
-					lay->blendnode->chgreen = lay->rgb[1];
-					lay->blendnode->chblue = lay->rgb[2];
-				}
-			}
-		}
-	
+		mainmix->layerdrag_handle();
+
 	}	
 
 		
-	// layer dragging
-	if (mainprogram->nodesmain->linked and mainmix->currlay) {
-		std::vector<Layer*> &lvec = choose_layers(mainmix->currlay->deck);
-		Layer *lay = mainmix->currlay;
-		Box *box = lay->node->vidbox;
-		if (lay->vidmoving) {
-			if (!mainprogram->binsscreen) {
-				for (int i = 0; i < 2; i++) {
-					std::vector<Layer*> &lays = choose_layers(i);
-					for (int j = 0; j < lays.size(); j++) {
-						if (lays[j]->node->vidbox->in()) {
-							if (mainprogram->draglay != lays[j]) {
-								lays[j]->queueing = true;
-								mainprogram->queueing = true;
-								break;
-							}
-						}
-					}
-				}
-			}				
-			
-			if (mainprogram->binsscreen) {
-				float boxwidth = tf(0.2f);
-				float nmx = mainprogram->xscrtovtx(mainprogram->mx) + boxwidth / 2.0f;
-				float nmy = 2.0 - mainprogram->yscrtovtx(mainprogram->my) - boxwidth / 2.0f;
-				draw_box(nullptr, black, -1.0f - 0.5 * boxwidth + nmx, -1.0f - 0.5 * boxwidth + nmy, boxwidth, boxwidth, mainprogram->dragbinel->tex);
-			}
-				
-			if (mainprogram->lmover) {
-				enddrag();
-				mainprogram->rightmouse = true;
-				binsmain->handle(0);
-				bool ret;
-				if (!mainprogram->binsscreen) {
-					if (mainprogram->prevmodus) {
-						if (mainprogram->mx < glob->w / 2.0f) ret = exchange(lay, lvec, mainmix->layersA, 0);
-						else ret = exchange(lay, lvec, mainmix->layersB, 1);
-					}
-					else {
-						if (mainprogram->mx < glob->w / 2.0f) ret = exchange(lay, lvec, mainmix->layersAcomp, 0);
-						else ret = exchange(lay, lvec, mainmix->layersBcomp, 1);
-					}
-				}
-				if (ret) set_queueing(false);
-			}				
-		}
-	}
 		
 	if (mainprogram->rightmouse) {
 		if (mainprogram->dragclip) {
@@ -10638,9 +6562,39 @@ void the_loop() {
 		}
 	}
 				
+	mainprogram->handle_mixenginemenu();
+
+	mainprogram->handle_effectmenu();
+
+	mainprogram->handle_parammenu1();
+
+	mainprogram->handle_parammenu2();
+
+	mainprogram->handle_loopmenu();
+
+	mainprogram->handle_mixtargetmenu();
+
+	mainprogram->handle_wipemenu();
+
+	mainprogram->handle_deckmenu();
+
+	mainprogram->handle_laymenu1();
+
+	mainprogram->handle_newlaymenu();
+
+	mainprogram->handle_clipmenu();
+
+	mainprogram->handle_mainmenu();
+
+	mainprogram->handle_shelfmenu();
+
+	mainprogram->handle_filemenu();
+
+	mainprogram->handle_editmenu();
+
 	if (mainprogram->menuactivation == true) {
 		// main menu triggered
-		mainprogram->genericmenu->state = 2;
+		mainprogram->mainmenu->state = 2;
 		mainprogram->menuactivation = false;
 	}
 	
@@ -10668,64 +6622,7 @@ void the_loop() {
 		float nmy = 2.0 - mainprogram->yscrtovtx(mainprogram->my) - boxwidth / 2.0f;
 		draw_box(nullptr, black, -1.0f - 0.5 * boxwidth + nmx, -1.0f - 0.5 * boxwidth + nmy, boxwidth, boxwidth, mainprogram->dragbinel->tex);
 
-		//deck and mix dragging
-		if (mainprogram->dragbinel->type == ELEM_DECK) {
-			if (!mainprogram->binsscreen) {
-				// check drop of dragged deck into mix
-				float lightblue[] = { 0.5f, 0.5f, 1.0f, 1.0f };
-				Box boxA;
-				boxA.vtxcoords->x1 = -1.0f + mainprogram->numw;
-				boxA.vtxcoords->y1 = 1.0f - mainprogram->layh;
-				boxA.vtxcoords->w = mainprogram->layw * 3;
-				boxA.vtxcoords->h = mainprogram->layh;
-				boxA.upvtxtoscr();
-				Box boxB;
-				boxB.vtxcoords->x1 = mainprogram->numw;
-				boxB.vtxcoords->y1 = 1.0f - mainprogram->layh;
-				boxB.vtxcoords->w = mainprogram->layw * 3;
-				boxB.vtxcoords->h = mainprogram->layh;
-				boxB.upvtxtoscr();
-				if (boxA.in(mainprogram->mx, mainprogram->my)) {
-					draw_box(nullptr, lightblue, -1.0f + mainprogram->numw, 1.0f - mainprogram->layh, mainprogram->layw * 3, mainprogram->layh, -1);
-					if (mainprogram->lmover) {
-						mainmix->mousedeck = 0;
-						mainmix->open_deck(mainprogram->dragbinel->path, 1);
-						mainprogram->rightmouse = true;
-						binsmain->handle(0);
-						enddrag();
-					}
-				}
-				else if (boxB.in(mainprogram->mx, mainprogram->my)) {
-					draw_box(nullptr, lightblue, mainprogram->numw, 1.0f - mainprogram->layh, mainprogram->layw * 3, mainprogram->layh, -1);
-					if (mainprogram->lmover) {
-						mainmix->mousedeck = 1;
-						mainmix->open_deck(mainprogram->dragbinel->path, 1);
-						enddrag();
-					}
-				}
-			}
-		}
-		else if (mainprogram->dragbinel->type == ELEM_MIX) {
-			if (!mainprogram->binsscreen) {
-				// check drop of dragged mix into mix
-				Box box;
-				box.vtxcoords->x1 = -1.0f + mainprogram->numw;
-				box.vtxcoords->y1 = 1.0f - mainprogram->layh;
-				box.vtxcoords->w = mainprogram->layw * 6 + mainprogram->numw;
-				box.vtxcoords->h = mainprogram->layh;
-				box.upvtxtoscr();
-				if (box.in(mainprogram->mx, mainprogram->my)) {
-					draw_box(nullptr, lightblue, -1.0f + mainprogram->numw, 1.0f - mainprogram->layh, mainprogram->layw * 6 + mainprogram->numw, mainprogram->layh, -1);
-					if (mainprogram->lmover) {
-						mainmix->open_mix(mainprogram->dragbinel->path.c_str(), true);
-						enddrag();
-						mainprogram->rightmouse = true;
-						binsmain->handle(0);
-						enddrag();
-					}
-				}
-			}
-		}
+		mainmix->deckmixdrag_handle();
 	}
 
 	if (mainprogram->shelfdragelem) {
@@ -10741,95 +6638,7 @@ void the_loop() {
 	}
 
 
-	// do midi load from shelf, set up in callback, executed here at a fixed the_loop position
-	ShelfElement* elem = mainprogram->midishelfelem;
-	if (elem) {
-		if (elem->type == ELEM_FILE) {
-			mainmix->currlay->open_video(0, elem->path, true);
-		}
-		else if (elem->type == ELEM_IMAGE) {
-			mainmix->currlay->open_image(elem->path);
-		}
-		else if (elem->type == ELEM_LAYER) {
-			mainmix->open_layerfile(elem->path, mainmix->currlay, true, false);
-		}
-		else if (elem->type == ELEM_DECK) {
-			mainmix->mousedeck = mainmix->currlay->deck;
-			mainmix->open_deck(elem->path, true);
-		}
-		else if (elem->type == ELEM_MIX) {
-			mainmix->open_mix(elem->path, true);
-		}
-		// setup framecounters for layers something was previously dragged into
-		// when something new is dragged into layer, set frames from
-		if (elem->launchtype == 1) {
-			if (elem->cframes.size()) {
-				if (elem->type == ELEM_DECK) {
-					std::vector<Layer*>& lvec = choose_layers(mainmix->currlay->deck);
-					for (int i = 0; i < lvec.size(); i++) {
-						lvec[i]->frame = elem->cframes[i];
-						lvec[i]->prevshelfdragelem = mainprogram->midishelfelem;
-					}
-				}
-				else if (elem->type == ELEM_MIX) {
-					for (int m = 0; m < 2; m++) {
-						std::vector<Layer*>& lvec = choose_layers(m);
-						for (int i = 0; i < lvec.size(); i++) {
-							lvec[i]->frame = elem->cframes[i];
-							lvec[i]->prevshelfdragelem = mainprogram->midishelfelem;
-						}
-					}
-				}
-				else {
-					mainmix->currlay->frame = elem->cframes[0];
-				}
-				elem->cframes.clear();
-			}
-		}
-		else if (elem->launchtype == 2) {
-			if (elem->nbframes.size()) {
-				if (elem->type == ELEM_DECK) {
-					std::vector<Layer*>& lvec = choose_layers(mainmix->currlay->deck);
-					for (int i = 0; i < lvec.size(); i++) {
-						lvec[i]->frame = elem->nbframes[i]->frame;
-						lvec[i]->prevshelfdragelem = mainprogram->midishelfelem;
-					}
-				}
-				else if (elem->type == ELEM_MIX) {
-					int count = 0;
-					for (int m = 0; m < 2; m++) {
-						std::vector<Layer*>& lvec = choose_layers(m);
-						for (int i = 0; i < lvec.size(); i++) {
-							lvec[i]->frame = elem->nbframes[count]->frame;
-							lvec[i]->prevshelfdragelem = mainprogram->midishelfelem;
-							count++;
-						}
-					}
-				}
-				else {
-					mainmix->currlay->frame = elem->nbframes[0]->frame;
-				}
-				elem->nbframes.clear();
-			}
-		}
-		if (elem->type == ELEM_DECK) {
-			std::vector<Layer*>& lvec = choose_layers(mainmix->currlay->deck);
-			for (int i = 0; i < lvec.size(); i++) {
-				lvec[i]->prevshelfdragelem = mainprogram->midishelfelem;
-			}
-		}
-		else if (elem->type == ELEM_MIX) {
-			for (int m = 0; m < 2; m++) {
-				std::vector<Layer*>& lvec = choose_layers(m);
-				for (int i = 0; i < lvec.size(); i++) {
-					lvec[i]->prevshelfdragelem = mainprogram->midishelfelem;
-				}
-			}
-		}
-
-		mainmix->currlay->prevshelfdragelem = mainprogram->midishelfelem;
-		mainprogram->midishelfelem = nullptr;
-	}
+	mainprogram->shelf_miditriggering();
 
 
 	// multi opening of files, handle one per loop
@@ -10852,6 +6661,10 @@ void the_loop() {
 		mainmix->mouseshelf->open_shelffiles();
 	}
 
+	if (binsmain->importbins) {
+		// load one item from mainprogram->paths into binslist, one each loop not to slowdown output stream
+		binsmain->import_bins();
+	}
 
 	// implementation of a basic menu when mouse at top of screen
 	if (mainprogram->my == 0 and !mainprogram->transforming) {
@@ -10901,8 +6714,18 @@ void the_loop() {
 
 	if (mainmix->learn) {
 		draw_box(red, blue, -0.3f, -0.0f, 0.6f, 0.3f, -1);
-		render_text("Awaiting MIDI input.", white, -0.1f, 0.2f, 0.001f, 0.0016f);
-		render_text("Rightclick cancels.", white, -0.1f, 0.06f, 0.001f, 0.0016f);
+		if (mainmix->midishelfstage == 1) {
+			render_text("Awaiting start point MIDI input.", white, -0.15f, 0.2f, 0.001f, 0.0016f);
+			render_text("Rightclick cancels.", white, -0.1f, 0.06f, 0.001f, 0.0016f);
+		}
+		else if (mainmix->midishelfstage == 2) {
+			render_text("Awaiting end point MIDI input.", white, -0.16f, 0.2f, 0.001f, 0.0016f);
+			render_text("Rightclick cancels.", white, -0.1f, 0.06f, 0.001f, 0.0016f);
+		}
+		else {
+			render_text("Awaiting MIDI input.", white, -0.1f, 0.2f, 0.001f, 0.0016f);
+			render_text("Rightclick cancels.", white, -0.1f, 0.06f, 0.001f, 0.0016f);
+		}
 		// allow exiting with x icon during MIDI learn
 		draw_box(nullptr, deepred, 1.0f - 0.05f, 1.0f - tf(0.05f), 0.05f, tf(0.05f), -1);
 		render_text("x", white, 0.966f, 1.019f - tf(0.05f), 0.0012f, 0.002f);
@@ -10917,7 +6740,7 @@ void the_loop() {
 		enddrag();
 	}
 
-	if (!mainprogram->prefon and !mainprogram->tunemidi) tooltips_handle(0);
+	if (!mainprogram->prefon and !mainprogram->midipresets) mainprogram->tooltips_handle(0);
 	
 	if (!mainprogram->binsscreen) {
 		// leftmouse outside clip queue cancels clip queue visualisation
@@ -10931,18 +6754,30 @@ void the_loop() {
 	if (mainprogram->autosave and mainmix->time > mainprogram->astimestamp + mainprogram->asminutes * 60) {
 		mainprogram->astimestamp = (int)mainmix->time;
 		
-		std::string name = "autosave_" + remove_extension(basename(mainprogram->project->path)) + "_0";
-		std::string path;
-		int count = 0;
-		while (1) {
-			path = mainprogram->autosavedir + name;
-			if (!exists(path + ".state")) {
-				break;
-			}
-			count++;
-			name = remove_version(name) + "_" + std::to_string(count);
+		std::string name;
+		if (mainprogram->autosavelist.size()) {
+			name = remove_extension(mainprogram->autosavelist.back());
 		}
-		mainmix->save_state(path, true);
+		else {
+			name = mainprogram->autosavedir + "autosave_" + remove_extension(basename(mainprogram->project->path)) + "_0";
+		}
+		int num = std::stoi(name.substr(name.rfind('_') + 1, name.length() - name.rfind('_') - 1));
+		name = remove_version(name) + "_" + std::to_string(num + 1);
+		std::string path = name + ".state";
+
+		mainmix->do_save_state(path, true);
+
+		mainprogram->autosavelist.push_back(path);
+		if (mainprogram->autosavelist.size() > 20) mainprogram->autosavelist.erase(mainprogram->autosavelist.begin());
+		std::ofstream wfile;
+		wfile.open(mainprogram->autosavedir + "autosavelist");
+		wfile << "EWOCvj AUTOSAVELIST V0.1\n";
+		for (int i = 0; i < mainprogram->autosavelist.size(); i++) {
+			wfile << mainprogram->autosavelist[i];
+			wfile << "\n";
+		}
+		wfile << "ENDOFFILE\n";
+		wfile.close();
 	}
 	
 	// sync with output views
@@ -11014,54 +6849,20 @@ void the_loop() {
 		SDL_GL_MakeCurrent(mainprogram->mainwindow, glc);
 	}
 
-	if (mainprogram->prefon) {
-		mainprogram->directmode = true;
-		SDL_GL_MakeCurrent(mainprogram->prefwindow, glc_pr);
-		glBindFramebuffer(GL_FRAMEBUFFER, mainprogram->smglobfbo_pr);
-		mainprogram->drawbuffer = mainprogram->smglobfbo_pr;
-		glDrawBuffer(GL_COLOR_ATTACHMENT0);
-		glViewport(0, 0, glob->w / 2.0f, glob->h / 2.0f);
-		glEnable(GL_BLEND);
-		glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
-		SDL_FlushEvents(SDL_FIRSTEVENT, SDL_LASTEVENT);
-		prret = preferences();
-		if (prret) {
-			glBlitNamedFramebuffer(mainprogram->smglobfbo_pr, 0, 0, 0, smw, smh, 0, 0, smw, smh, GL_COLOR_BUFFER_BIT, GL_NEAREST);
-			SDL_GL_SwapWindow(mainprogram->prefwindow);
-		}
-		SDL_GL_MakeCurrent(mainprogram->mainwindow, glc);
-	}
-	if (mainprogram->tunemidi) {
-		mainprogram->directmode = true;
-		if (mainprogram->waitmidi){
-			clock_t t = clock() - mainprogram->stt;
-			double time_taken = ((double)t) / CLOCKS_PER_SEC; // in seconds
-			if (time_taken > 0.1f) {
-				mainprogram->waitmidi = 2;
-				mycallback(0.0f, &mainprogram->savedmessage, mainprogram->savedmidiitem);
-				mainprogram->waitmidi = 0;
-			}
-		}
-		SDL_GL_MakeCurrent(mainprogram->tunemidiwindow, glc_tm);
-		glBindFramebuffer(GL_FRAMEBUFFER, mainprogram->smglobfbo_tm);
-		mainprogram->drawbuffer = mainprogram->smglobfbo_tm;
-		glDrawBuffer(GL_COLOR_ATTACHMENT0);
-		glEnable(GL_BLEND);
-		glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
-		SDL_FlushEvents(SDL_FIRSTEVENT, SDL_LASTEVENT);
-		bool ret = tune_midi();
-		if (ret) {
-			mainprogram->drawbuffer = -1;
-			glBlitNamedFramebuffer(mainprogram->smglobfbo_tm, 0, 0, 0, smw, smh , 0, 0, smw, smh, GL_COLOR_BUFFER_BIT, GL_NEAREST);
-			SDL_GL_SwapWindow(mainprogram->tunemidiwindow);
-		}
-		SDL_GL_MakeCurrent(mainprogram->mainwindow, glc);
-	}
+
+
+	mainprogram->preferences();
+
+	mainprogram->config_midipresets_init();
+
+
+
+
 	mainprogram->directmode = dmbu;
 
+
 	glBindFramebuffer(GL_FRAMEBUFFER, mainprogram->globfbo);
-	mainprogram->drawbuffer = mainprogram->
-		globfbo;
+	mainprogram->drawbuffer = mainprogram->globfbo;
 	glDrawBuffer(GL_COLOR_ATTACHMENT0);
 
 	if (!mainprogram->directmode) {
@@ -11144,6 +6945,7 @@ void the_loop() {
 	mainprogram->drawbuffer = mainprogram->globfbo;
 	glDrawBuffer(GL_COLOR_ATTACHMENT0);
 	
+	mainprogram->ttreserved = false;
 	mainprogram->leftmouse = 0;
 	mainprogram->orderleftmouse = 0;
 	mainprogram->doubleleftmouse = 0;
@@ -11298,11 +7100,11 @@ void open_thumb(std::string path, GLuint tex) {
 	
 }
 
-long getFileSize(std::string filename)
+std::ifstream::pos_type getFileSize(std::string filename)
 {
-    struct stat stat_buf;
-    int rc = stat(filename.c_str(), &stat_buf);
-    return rc == 0 ? stat_buf.st_size : -1;
+	std::ifstream in(filename, std::ifstream::ate | std::ifstream::binary);
+
+	return ((int)in.tellg());
 }
 
 void concat_files(std::ostream &ofile, const std::string &path, std::vector<std::vector<std::string>> &filepaths) {
@@ -11328,9 +7130,9 @@ void concat_files(std::ostream &ofile, const std::string &path, std::vector<std:
 	for (int i = 0; i < paths.size(); i++) {
 		// save body
 		if (paths[i] == "") continue;
+		int fileSize = getFileSize(paths[i]);
 		ifstream fileInput;
 		fileInput.open(paths[i], ios::in | ios::binary);
-		int fileSize = getFileSize(paths[i]);
 		printf("path %s\n", paths[i].c_str());
 		fflush(stdout);
 		char *inputBuffer = new char[fileSize];
@@ -12335,6 +8137,12 @@ int main(int argc, char* argv[]){
 	if (!exists(homedir + "/.ewocvj2/elems")) boost::filesystem::create_directory(p7);
 #endif
 #endif
+	//empty temp dir if program crashed last time
+	boost::filesystem::path path_to_remove(mainprogram->temppath);
+	for (boost::filesystem::directory_iterator end_dir_it, it(path_to_remove); it != end_dir_it; ++it) {
+		boost::filesystem::remove(it->path());
+	}
+
 
 	glc = SDL_GL_CreateContext(mainprogram->mainwindow);
 
@@ -12342,14 +8150,14 @@ int main(int argc, char* argv[]){
 	glewInit();
 
 	mainprogram->dummywindow = SDL_CreateWindow("", 0, 0, 32, 32, SDL_WINDOW_OPENGL | SDL_WINDOW_HIDDEN | SDL_WINDOW_ALLOW_HIGHDPI);
-	mainprogram->tunemidiwindow = SDL_CreateWindow("Tune MIDI", glob->w / 4, glob->h / 4, glob->w / 2, glob->h / 2, SDL_WINDOW_OPENGL | SDL_WINDOW_HIDDEN | SDL_WINDOW_ALLOW_HIGHDPI);
+	mainprogram->config_midipresetswindow = SDL_CreateWindow("Tune MIDI", glob->w / 4, glob->h / 4, glob->w / 2, glob->h / 2, SDL_WINDOW_OPENGL | SDL_WINDOW_HIDDEN | SDL_WINDOW_ALLOW_HIGHDPI);
 	mainprogram->prefwindow = SDL_CreateWindow("Preferences", glob->w / 4, glob->h / 4, glob->w / 2, glob->h / 2, SDL_WINDOW_OPENGL | SDL_WINDOW_HIDDEN | SDL_WINDOW_ALLOW_HIGHDPI);
 	SDL_GL_GetDrawableSize(mainprogram->prefwindow, &wi, &he);
 	smw = (float)wi;
 	smh = (float)he;
 	
-	glc_tm = SDL_GL_CreateContext(mainprogram->tunemidiwindow);
-	SDL_GL_MakeCurrent(mainprogram->tunemidiwindow, glc_tm);
+	glc_tm = SDL_GL_CreateContext(mainprogram->config_midipresetswindow);
+	SDL_GL_MakeCurrent(mainprogram->config_midipresetswindow, glc_tm);
 	mainprogram->ShaderProgram_tm = mainprogram->set_shader();
 	glUseProgram(mainprogram->ShaderProgram_tm);
 	glGenTextures(1, &mainprogram->smglobfbotex_tm);
@@ -12546,13 +8354,15 @@ int main(int argc, char* argv[]){
  	
 	std::vector<std::string> parammodes1;
 	parammodes1.push_back("MIDI Learn");
+	parammodes1.push_back("Reset to default");
  	mainprogram->make_menu("parammenu1", mainprogram->parammenu1, parammodes1);
  	
 	std::vector<std::string> parammodes2;
 	parammodes2.push_back("MIDI Learn");
 	parammodes2.push_back("Remove automation");
- 	mainprogram->make_menu("parammenu2", mainprogram->parammenu2, parammodes2);
- 	
+	parammodes1.push_back("Reset to default");
+	mainprogram->make_menu("parammenu2", mainprogram->parammenu2, parammodes2);
+
 	std::vector<std::string> mixtargets;
  	mainprogram->make_menu("mixtargetmenu", mainprogram->mixtargetmenu, mixtargets);
  	
@@ -12632,7 +8442,7 @@ int main(int argc, char* argv[]){
 	loadops.push_back("New mix");
 	loadops.push_back("Open mix");
 	loadops.push_back("Save mix");
-	mainprogram->make_menu("loadmenu", mainprogram->loadmenu, loadops);
+	mainprogram->make_menu("newlaymenu", mainprogram->newlaymenu, loadops);
 
 	std::vector<std::string> clipops;
 	clipops.push_back("submenu livemenu");
@@ -12734,7 +8544,7 @@ int main(int argc, char* argv[]){
   	generic.push_back("Preferences");
 	generic.push_back("Configure general MIDI");
 	generic.push_back("Quit");
-  	mainprogram->make_menu("genericmenu", mainprogram->genericmenu, generic);
+  	mainprogram->make_menu("mainmenu", mainprogram->mainmenu, generic);
 
  	std::vector<std::string> shelf1;
   	shelf1.push_back("New shelf");
@@ -12784,6 +8594,14 @@ int main(int argc, char* argv[]){
 	edit.push_back("Preferences");
 	edit.push_back("Configure general MIDI");
 	mainprogram->make_menu("editmenu", mainprogram->editmenu, edit);
+
+	//make menu item names bitmaps
+	for (int i = 0; i < mainprogram->menulist.size(); i++) {
+		for (int j = 0; j < mainprogram->menulist[i]->entries.size(); j++) {
+			render_text(mainprogram->menulist[i]->entries[j], white, 2.0f, 2.0f, tf(0.0003f), tf(0.0005f));
+		}
+	}
+
 
 
 	mainprogram->nodesmain = new NodesMain;
@@ -12997,6 +8815,16 @@ int main(int argc, char* argv[]){
 			mainprogram->recentprojectpaths.push_back(istring);
 		}
 	}
+	if (exists(mainprogram->autosavedir + "autosavelist")) {
+		std::ifstream rfile;
+		rfile.open(mainprogram->autosavedir + "autosavelist");
+		std::string istring;
+		getline(rfile, istring);
+		while (getline(rfile, istring)) {
+			if (istring == "ENDOFFILE") break;
+			mainprogram->autosavelist.push_back(istring);
+		}
+	}
 
 	#ifdef _WIN64
 	//SetPriorityClass(GetCurrentProcess(), HIGH_PRIORITY_CLASS);  reminder: what with priorities?
@@ -13103,12 +8931,11 @@ int main(int argc, char* argv[]){
 				binsmain->openbinfile = true;
 			}
 			else if (mainprogram->pathto == "OPENBIN") {
-				mainprogram->currbinsdir = dirname(mainprogram->path);
-				Bin *bin = binsmain->new_bin(remove_extension(basename(mainprogram->path)));
-				binsmain->open_bin(mainprogram->path, bin);
-				if (binsmain->bins.size() >= 20) binsmain->binsscroll++;
-				std::string path = mainprogram->project->binsdir + bin->name + ".bin";
-				binsmain->save_bin(path);
+				if (mainprogram->paths.size() > 0) {
+					mainprogram->currbinsdir = dirname(mainprogram->paths[0]);
+					binsmain->importbins = true;
+					binsmain->binscount = 0;
+				}
 			}
 			else if (mainprogram->pathto == "CHOOSEDIR") {
 				mainprogram->choosedir = mainprogram->path + "/";
@@ -13132,9 +8959,21 @@ int main(int argc, char* argv[]){
 				mainprogram->project->open(mainprogram->path);
 			}
 			else if (mainprogram->pathto == "SAVEPROJECT") {
-				mainprogram->currprojdir = dirname(mainprogram->path);
-				if (!exists(mainprogram->path)) mainprogram->project->newp(mainprogram->path);
-				mainprogram->project->save(mainprogram->path);
+				if (dirname(mainprogram->path) != "") {
+					mainprogram->currprojdir = dirname(mainprogram->path);
+					if (!exists(mainprogram->path)) {
+						mainprogram->project->create_dirs();
+					}
+					else {
+						mainprogram->project->delete_dirs();
+						mainprogram->project->create_dirs();
+					}
+					for (int i = 0; i < binsmain->bins.size(); i++) {
+						binsmain->save_bin(binsmain->bins[i]->path);
+					}
+					binsmain->save_binslist();
+					mainprogram->project->save(mainprogram->path);
+				}
 			}
 			mainprogram->path = "";
 			mainprogram->pathto = "";
@@ -13279,7 +9118,7 @@ int main(int argc, char* argv[]){
 								mainprogram->prguitextmap.erase(mainprogram->inputtext);
 							}
 						}
-						else if (!mainprogram->tunemidi) {
+						else if (!mainprogram->midipresets) {
 							GUIString* gs = mainprogram->tmguitextmap[mainprogram->inputtext];
 							if (gs) {
 								for (int i = 0; i < gs->texturevec.size(); i++) {
@@ -13322,12 +9161,12 @@ int main(int argc, char* argv[]){
 						if (e.window.windowID == SDL_GetWindowID(mainprogram->mainwindow)) {
 							quit = true;
 						}
-						if (mainprogram->tunemidiwindow) {
-							if (e.window.windowID == SDL_GetWindowID(mainprogram->tunemidiwindow)) {
-								mainprogram->tunemidi = false;
+						if (mainprogram->config_midipresetswindow) {
+							if (e.window.windowID == SDL_GetWindowID(mainprogram->config_midipresetswindow)) {
+								mainprogram->midipresets = false;
 								mainprogram->tmlearn = TM_NONE;
 								mainprogram->drawnonce = false;
-								SDL_HideWindow(mainprogram->tunemidiwindow);
+								SDL_HideWindow(mainprogram->config_midipresetswindow);
 							}
 						}
 						if (mainprogram->prefwindow) {
@@ -13451,7 +9290,7 @@ int main(int argc, char* argv[]){
 				}
 			}
 
-			if (focus and SDL_GetMouseFocus() != mainprogram->prefwindow and SDL_GetMouseFocus() != mainprogram->tunemidiwindow) {
+			if (focus and SDL_GetMouseFocus() != mainprogram->prefwindow and SDL_GetMouseFocus() != mainprogram->config_midipresetswindow) {
 				SDL_GetMouseState(&mainprogram->mx, &mainprogram->my);
 			}
 			else {

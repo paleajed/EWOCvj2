@@ -121,9 +121,9 @@ void LoopStationElement::handle() {
 						lvec[j]->scrollcol[3] = this->colbox->acolor[3];
 					}
 					else {
-						lvec[j]->scrollcol[0] = 0.5f;
-						lvec[j]->scrollcol[1] = 0.5f;
-						lvec[j]->scrollcol[2] = 0.5f;
+						lvec[j]->scrollcol[0] = 0.4f;
+						lvec[j]->scrollcol[1] = 0.4f;
+						lvec[j]->scrollcol[2] = 0.4f;
 						lvec[j]->scrollcol[3] = 0.0f;
 					}
 				}
@@ -300,60 +300,60 @@ void LoopStationElement::set_params() {
 	}
 }		
 		
-void LoopStationElement::add_param() {
+void LoopStationElement::add_param(Param *par) {
 	std::chrono::high_resolution_clock::time_point now = std::chrono::high_resolution_clock::now();
 	std::chrono::duration<double> elapsed;
 	elapsed = std::chrono::duration_cast<std::chrono::duration<double>>(now - this->starttime);
 	long long millicount = std::chrono::duration_cast<std::chrono::milliseconds>(elapsed).count();
 	std::tuple<long long, Param*, float> event;
-	event = std::make_tuple(millicount, mainmix->adaptparam, mainmix->adaptparam->value);
+	event = std::make_tuple(millicount, par, par->value);
 	this->eventlist.push_back(event);
-	this->params.emplace(mainmix->adaptparam);
-	loopstation->elemmap[mainmix->adaptparam] = this;
-	if (mainmix->adaptparam->effect) {
-		this->layers.emplace(mainmix->adaptparam->effect->layer);
+	this->params.emplace(par);
+	loopstation->elemmap[par] = this;
+	if (par->effect) {
+		this->layers.emplace(par->effect->layer);
 	}
-	mainmix->adaptparam->box->acolor[0] = this->colbox->acolor[0];
-	mainmix->adaptparam->box->acolor[1] = this->colbox->acolor[1];
-	mainmix->adaptparam->box->acolor[2] = this->colbox->acolor[2];
-	mainmix->adaptparam->box->acolor[3] = this->colbox->acolor[3];
+	par->box->acolor[0] = this->colbox->acolor[0];
+	par->box->acolor[1] = this->colbox->acolor[1];
+	par->box->acolor[2] = this->colbox->acolor[2];
+	par->box->acolor[3] = this->colbox->acolor[3];
 	for (int i = 0; i < 2; i++) {
 		std::vector<Layer*> &lvec = choose_layers(i);
 		for (int j = 0; j < lvec.size(); j++) {
-			if (mainmix->adaptparam == lvec[j]->speed) this->layers.emplace(lvec[j]);
-			if (mainmix->adaptparam == lvec[j]->opacity) this->layers.emplace(lvec[j]);
-			if (mainmix->adaptparam == lvec[j]->volume) this->layers.emplace(lvec[j]);
-			if (mainmix->adaptparam == lvec[j]->shiftx) {
+			if (par == lvec[j]->speed) this->layers.emplace(lvec[j]);
+			if (par == lvec[j]->opacity) this->layers.emplace(lvec[j]);
+			if (par == lvec[j]->volume) this->layers.emplace(lvec[j]);
+			if (par == lvec[j]->shiftx) {
 				this->layers.emplace(lvec[j]);
-				mainmix->adaptparam = lvec[j]->shifty;
-				this->add_param();
-				mainmix->adaptparam = nullptr;
+				par = lvec[j]->shifty;
+				this->add_param(par);
+				par = nullptr;
 				return;
 			}
-			if (mainmix->adaptparam == lvec[j]->blendnode->wipex) {
+			if (par == lvec[j]->blendnode->wipex) {
 				this->layers.emplace(lvec[j]);
-				mainmix->adaptparam = lvec[j]->blendnode->wipey;
-				this->add_param();
-				mainmix->adaptparam = nullptr;
+				par = lvec[j]->blendnode->wipey;
+				this->add_param(par);
+				par = nullptr;
 				return;
 			}
-			if (mainmix->adaptparam == lvec[j]->scale) {
+			if (par == lvec[j]->scale) {
 				this->layers.emplace(lvec[j]);
-				mainmix->adaptparam = nullptr;
+				par = nullptr;
 				return;
 			}
 		}
 	}
-	if (mainmix->adaptparam == mainmix->wipex[0]) {
-		mainmix->adaptparam = mainmix->wipey[0];
-		this->add_param();
-		mainmix->adaptparam = nullptr;
+	if (par == mainmix->wipex[0]) {
+		par = mainmix->wipey[0];
+		this->add_param(par);
+		par = nullptr;
 		return;
 	}
-	if (mainmix->adaptparam == mainmix->wipex[1]) {
-		mainmix->adaptparam = mainmix->wipey[1];
-		this->add_param();
-		mainmix->adaptparam = nullptr;
+	if (par == mainmix->wipex[1]) {
+		par = mainmix->wipey[1];
+		this->add_param(par);
+		par = nullptr;
 		return;
 	}
 }

@@ -68,6 +68,8 @@ class BinsMain {
 		Box* binsscrollup;
 		Bin *menubin = nullptr;
 		bool openbinfile = false;
+		bool importbins = false;
+		int binscount;
 		bool movingstruct = false;
 		std::vector<BinElement*> prevelems;
 		int mouseshelfnum = -1;
@@ -85,6 +87,7 @@ class BinsMain {
 		Bin *new_bin(const std::string &name);
 		void open_bin(const std::string &path, Bin *bin);
 		void save_bin(const std::string &path);
+		void import_bins();
 		void open_binfiles();
 		void open_handlefile(const std::string &path);
 		std::tuple<std::string, std::string> hap_binel(BinElement *binel, BinElement* bdm);
@@ -100,6 +103,7 @@ class BinsMain {
 class Bin {
 	public:
 		std::string name;
+		std::string path;
 		std::vector<BinElement*> elements;
 		int encthreads = 0;
 		int pos;

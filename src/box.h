@@ -27,8 +27,11 @@ class Box {
 		BOX_COORDS *scrcoords;
 		BOX_COORDS *vtxcoords;
 		GLuint tex = -1;
+
 		std::string tooltiptitle = "";
 		std::string tooltip = "";
+		bool reserved = false;
+
 		void upscrtovtx();
 		void upvtxtoscr();
 		bool in();

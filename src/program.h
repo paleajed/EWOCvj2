@@ -158,7 +158,9 @@ class Project {
 		void open(const std::string &path);
 		void save(const std::string& path);
 		void do_save(const std::string& path);
-	private:
+		void delete_dirs();
+		void create_dirs();
+private:
 };
 
 class Preferences {
@@ -336,12 +338,13 @@ class Program {
 		Menu *effectmenu = nullptr;
 		Menu *mixmodemenu = nullptr;
 		Menu *parammenu1 = nullptr;
-		Menu *parammenu2 = nullptr;
+		Menu* parammenu2 = nullptr;
+		Menu* speedmenu = nullptr;
 		Menu *loopmenu = nullptr;
 		Menu *deckmenu = nullptr;
 		Menu *laymenu1 = nullptr;
 		Menu *laymenu2 = nullptr;
-		Menu* loadmenu = nullptr;
+		Menu* newlaymenu = nullptr;
 		Menu* clipmenu = nullptr;
 		Menu *aspectmenu = nullptr;
 		Menu *mixtargetmenu = nullptr;
@@ -358,7 +361,7 @@ class Program {
 		Menu *binmenu = nullptr;
 		Menu* bin2menu = nullptr;
 		Menu* binselmenu = nullptr;
-		Menu *genericmenu = nullptr;
+		Menu *mainmenu = nullptr;
 		Menu* shelfmenu = nullptr;
 		Menu* filemenu = nullptr;
 		Menu* filedomenu = nullptr;
@@ -376,6 +379,7 @@ class Program {
 		int my;
 		int oldmx;
 		int oldmy;
+		int iemy;
 		float ow = 1920.0f;
 		float oh = 1080.0f;
 		float ow3, oh3;
@@ -482,10 +486,10 @@ class Program {
 		std::vector<EFFECT_TYPE> abeffects;
 		
 		SDL_Window* dummywindow = nullptr;
-		SDL_Window* tunemidiwindow = nullptr;
+		SDL_Window* config_midipresetswindow = nullptr;
 		bool drawnonce = false;
-		bool tunemidi = false;
-		int tunemidiset = 1;
+		bool midipresets = false;
+		int midipresetsset = 1;
 		Box* tmset;
 		Box* tmscratch;
 		Box *tmfreeze;
@@ -517,9 +521,11 @@ class Program {
 		bool longtooltips = true;
 		Box *tooltipbox = nullptr;
 		float tooltipmilli = 0.0f;
+		bool ttreserved = false;
 		bool autosave;
 		float asminutes = 1;
 		int astimestamp = 0;
+		std::vector<std::string> autosavelist;
 		int qualfr = 3;
 
 		std::unordered_map <std::string, GUIString*> guitextmap;
@@ -621,19 +627,22 @@ class Program {
 		bool dragright = false;
 		bool dragout[2] = { true, true };
 		std::string quitting;
+		Layer* draginscrollbarlay = nullptr;
 
 		int quit_requester();
 		GLuint set_shader();
 		int load_shader(char* filename, char** ShaderSource, unsigned long len);
 		void set_ow3oh3();
 		void handle_changed_owoh();
+		int handle_menu(Menu* menu);
+		int handle_menu(Menu* menu, float xshift, float yshift);
 		void handle_fullscreen();
 		void make_menu(const std::string &name, Menu *&menu, std::vector<std::string> &entries);
 		void get_outname(const char *title, std::string filters, std::string defaultdir);
 		void get_inname(const char *title, std::string filters, std::string defaultdir);
-		void get_multinname(const char* title, std::string defaultdir);
+		void get_multinname(const char* title, std::string filters, std::string defaultdir);
 		void get_dir(std::string , std::string defaultdir);
-		void win_dialog(const char* title, std::string filters, std::string defaultdir, bool open, bool multi);
+		void win_dialog(const char* title, LPCSTR filters, std::string defaultdir, bool open, bool multi);
 		float xscrtovtx(float scrcoord);
 		float yscrtovtx(float scrcoord);
 		float xvtxtoscr(float vtxcoord);
@@ -643,10 +652,34 @@ class Program {
 		bool order_paths(bool dodeckmix);
 		void handle_wormhole(bool hole);
 		int handle_scrollboxes(Box *upperbox, Box *lowerbox, int numlines, int scrollpos, int scrlines);
+		void shelf_miditriggering();
+		int config_midipresets_handle();
+		bool config_midipresets_init();
+		void preferences();
+		bool preferences_handle();
+		void layerstack_scrollbar_handle();
+		void preview_modus_buttons();
+		void tooltips_handle(int win);
+		void handle_mixenginemenu();
+		void handle_effectmenu();
+		void handle_parammenu1();
+		void handle_parammenu2();
+		void handle_speedmenu();
+		void handle_loopmenu();
+		void handle_mixtargetmenu();
+		void handle_wipemenu();
+		void handle_deckmenu();
+		void handle_laymenu1();
+		void handle_newlaymenu();
+		void handle_clipmenu();
+		void handle_mainmenu();
+		void handle_shelfmenu();
+		void handle_filemenu();
+		void handle_editmenu();		
 		Program();
 		
 	private:
-		std::string mime_to_wildcard(std::string filters);
+		LPCSTR mime_to_wildcard(std::string filters);
 		bool do_order_paths();
 };
 
@@ -659,9 +692,42 @@ extern LoopStation *lp;
 extern LoopStation *lpc;
 extern Menu *effectmenu;
 extern Menu *mixmodemenu;
+extern float smw, smh;
+extern SDL_GLContext glc;
+extern SDL_GLContext glc_tm;
 extern SDL_GLContext glc_pr;
 extern SDL_GLContext glc_th;
+extern LayMidi* laymidiA;
+extern LayMidi* laymidiB;
+extern LayMidi* laymidiC;
+extern LayMidi* laymidiD;
 
+extern float yellow[];
+extern float white[];
+extern float halfwhite[];
+extern float black[];
+extern float alpha[];
+extern float orange[];
+extern float purple[];
+extern float lightgreen[];
+extern float yellow[];
+extern float lightblue[];
+extern float darkblue[];
+extern float red[];
+extern float grey[];
+extern float pink[];
+extern float green[];
+extern float darkgreen1[];
+extern float darkgreen2[];
+extern float blue[];
+extern float alphawhite[];
+extern float alphablue[];
+extern float alphagreen[];
+extern float darkred1[];
+extern float darkred2[];
+extern float darkgrey[];
+
+extern void mycallback(double deltatime, std::vector< unsigned char >* message, void* userData);
 
 extern mix_target_struct mixtarget[2];
 
@@ -674,8 +740,6 @@ extern int encode_frame(AVFormatContext *fmtctx, AVFormatContext *srcctx, AVCode
 extern std::vector<Layer*>& choose_layers(bool j);
 extern void make_layboxes();
 
-extern int handle_menu(Menu *menu, float xshift, float yshift);
-extern int handle_menu(Menu *menu);
 extern void new_file(int decks, bool alive);
 extern void draw_box(float* linec, float* areac, float x, float y, float wi, float he, float dx, float dy, float scale, float opacity, int circle, GLuint tex, float fw, float fh, bool text, bool vertical);
 extern void draw_box(float* linec, float* areac, float x, float y, float wi, float he, float dx, float dy, float scale, float opacity, int circle, GLuint tex, float fw, float fh, bool text);
@@ -733,8 +797,6 @@ extern GLuint set_texes(GLuint tex, GLuint *fbo, float ow, float oh);
 void open_genmidis(std::string path);
 void save_genmidis(std::string path);
 
-bool thread_vidopen(Layer *lay, AVInputFormat *ifmt, bool skip);
-
 void screenshot();
 
 void calctexture(Layer *lay);
@@ -744,6 +806,8 @@ int open_codec_context(int *stream_idx, AVFormatContext *video, enum AVMediaType
 void set_live_base(Layer *lay, std::string livename);
 
 extern void set_queueing(bool onoff);
+
+extern Effect* new_effect(EFFECT_TYPE type);
 
 extern float tf(float vtxcoord);
 extern bool exists(const std::string &name);

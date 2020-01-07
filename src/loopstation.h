@@ -63,7 +63,7 @@ class LoopStationElement {
 		void init();
 		void handle();
 		void erase_elem();
-		void add_param();
+		void add_param(Param *par);
 		void set_params();
 		LoopStationElement();
 		~LoopStationElement();

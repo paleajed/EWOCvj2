@@ -340,7 +340,7 @@ vec4 boxblur(vec2 texc)  //blog.trsquarelab.com free
     float pxdistX = 1 / float(fbowidth);
     float pxdistY = 1 / float(fboheight);
     if (!horizontal) {
-		for (int i = int(-glowblur); i < glowblur; i+= int(jump)) 
+		for (int i = int(-glowblur); i < glowblur; i+= int(41 - jump)) 
 		{
       		point.x = texc.x;
             point.y = texc.y  + i * pxdistY;
@@ -350,7 +350,7 @@ vec4 boxblur(vec2 texc)  //blog.trsquarelab.com free
 		finalcol /= float(count);
 	}
 	else {
-		for (int i = int(-glowblur); i < glowblur; i+= int(jump)) 
+		for (int i = int(-glowblur); i < glowblur; i+= int(41 - jump)) 
 		{
      		point.x = texc.x  + i * pxdistX;
             point.y = texc.y;
@@ -1658,7 +1658,7 @@ void main()
 				intcoloring = true;
 				intcol = boxblur(texco); break;
 		}
-    	if (intcoloring) FragColor = vec4(intcol.rgb * drywet + (1.0f - drywet) * texcol.rgb, intcol.a * opacity);
+    	if (intcoloring) FragColor = vec4(intcol.rgb * drywet + (1.0f - drywet) * texcol.rgb, intcol.a);
 	}
 	else if (mixmode > 0) {
 		//vec2 size0 = textureSize(endSampler0, 0);
@@ -1667,16 +1667,17 @@ void main()
 		//tex1 = texture2D(endSampler1, vec2((texco.x - 0.5f) * fbowidth * fcdiv / size1.x + 0.5f, (texco.y - 0.5f) * fboheight * fcdiv / size1.y + 0.5f));
 		tex0 = texture2D(endSampler0, texco);
 		tex1 = texture2D(endSampler1, texco);
-		tex0 = vec4(tex0.rgb * tex0.a, tex0.a);
-		tex1 = vec4(tex1.rgb * tex1.a, tex1.a);
+		//tex0 = vec4(tex0.rgb * tex0.a, tex0.a);
+		//tex1 = vec4(tex1.rgb * tex1.a, tex1.a);
 	}
 	if (cwon) {
 		colorwheel();
 	}
 	else if (mixmode == 1) {
 		//MIX alpha
-		float fac1 = clamp((1.0f - mixfac) * 2.0f, 0.0f, 1.0f);
-		float fac2 = clamp(mixfac * 2.0f, 0.0f, 1.0f);
+		float mf = mixfac;
+		float fac1 = clamp((1.0f - mf) * 2.0f, 0.0f, 1.0f);
+		float fac2 = clamp(mf * 2.0f, 0.0f, 1.0f);
 		float term0 = (1.0f - fac2 * tex1.a / 2.0f) * fac1;
 		float term1 = (1.0f - fac1 * tex0.a / 2.0f) * fac2;
 		fc = vec4((tex0.rgb * (term0 + (1.0f - tex1.a) * (1.0f - term0)) + tex1.rgb * (term1 + (1.0f - tex0.a) * (1.0f - term1))), max(tex0.a, tex1.a));
@@ -1786,7 +1787,11 @@ void main()
 		}
 	}
 
-	if (textmode == 1) {
+	if (mixmode > 0) {
+		//alpha demultiplying
+		FragColor = vec4(fc.rgb, fc.a);
+	}
+	else if (textmode == 1) {
 		float c = texture2D(Sampler0, vec2(TexCoord0.s, TexCoord0.t)).r;
 		FragColor = vec4(color.rgb, c);
 		return;
@@ -1877,19 +1882,22 @@ void main()
 		else quadnr = Vertex0 / 4;
 		uint Tex0 = texelFetch(boxtexSampler, quadnr).r;
 		if (Tex0 > 127) {
+			// text
 			float c = texture2D(boxSampler[Tex0 - 128], vec2(TexCoord0.s, TexCoord0.t)).r;
 			if (c == 0.0) discard;
 			vec4 sam = texelFetch(boxcolSampler, quadnr).rgba;
 			FragColor = vec4(sam.rgb, 1.0);
 		}
-		else if (Tex0 != 127) FragColor = texture2D(boxSampler[Tex0], vec2(TexCoord0.s, TexCoord0.t)).rgba;
-		else FragColor = texelFetch(boxcolSampler, quadnr).rgba;
+		else if (Tex0 != 127) {
+			// image
+			FragColor = vec4(texture2D(boxSampler[Tex0], vec2(TexCoord0.s, TexCoord0.t)).rgb, 1.0f);
+		}
+		else {
+			// flat
+			FragColor = texelFetch(boxcolSampler, quadnr).rgba;
+		}
 	}
 
-	if (mixmode > 0) {
-		//alpha demultiplying
-		FragColor = vec4(fc.rgb / fc.a, fc.a);
-	}
 	if (wipe) {
 		if (mixmode == 18) {
 			float xamount = cf;

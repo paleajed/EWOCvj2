@@ -84,7 +84,7 @@ class Layer {
 		RATIO_TYPE aspectratio = RATIO_OUTPUT;
 		bool queueing = false;
 		int queuescroll = 0;
-		float scrollcol[4] = {0.5f, 0.5f, 0.5f, 0.0f};
+		float scrollcol[4] = {0.4f, 0.4f, 0.4f, 0.0f};
 		Button *mutebut;
 		Button* solobut;
 		Button* queuebut;
@@ -94,29 +94,7 @@ class Layer {
 		int numefflines[2] = {0,0};
 		int effscroll[2] = {0,0};
 		std::vector<Effect*> effects[2];
-		Effect *add_effect(EFFECT_TYPE type, int pos);
-		Effect *replace_effect(EFFECT_TYPE type, int pos);
-		void delete_effect(int pos);
-		void inhibit();
-		std::vector<Effect*>& choose_effects();
-		void set_clones();
-		void mute_handle();
-		void set_aspectratio(int lw, int lh);
-		bool calc_texture(bool comp, bool alive);
-		void load_frame();
-		void open_files_layers();
-		void open_files_queue();
-		void open_video(float frame, const std::string& filename, int reset);
-		void open_image(const std::string &path);
-		void initialize(int w, int h);
-		void initialize(int w, int h, int compression);
-		void clip_followup(bool startend, bool alive);
-		Layer *next();
-		Layer *prev();
-		Layer();
-		Layer(bool comp);
-		Layer(const Layer &lay);
-		~Layer();
+		Box* panbox;
 		
 		bool initialized = true;
 		float frame = 0.0f;
@@ -237,6 +215,8 @@ class Layer {
 		std::string layerfilepath = "";
 		AVFormatContext* video = nullptr;
 		AVFormatContext* videoseek = nullptr;
+		AVInputFormat *ifmt;
+		bool skip = false;
 		AVFrame *rgbframe = nullptr;
 		AVFrame *decframe = nullptr;
 		AVFrame *audioframe = nullptr;
@@ -267,6 +247,37 @@ class Layer {
 		int clonesetnr = -1;
 		bool isclone = false;
 	
+		void display();
+		Effect* add_effect(EFFECT_TYPE type, int pos);
+		Effect* replace_effect(EFFECT_TYPE type, int pos);
+		void delete_effect(int pos);
+		void inhibit();
+		std::vector<Effect*>& choose_effects();
+		Layer* clone();
+		void set_clones();
+		void mute_handle();
+		void set_aspectratio(int lw, int lh);
+		bool calc_texture(bool comp, bool alive);
+		void load_frame();
+		bool exchange(std::vector<Layer*>& slayers, std::vector<Layer*>& dlayers, bool deck);
+		void open_dragbinel();
+		void open_files_layers();
+		void open_files_queue();
+		bool thread_vidopen();
+		void open_video(float frame, const std::string& filename, int reset);
+		void open_image(const std::string& path);
+		void initialize(int w, int h);
+		void initialize(int w, int h, int compression);
+		void clip_display_next(bool startend, bool alive);
+		void set_live_base(std::string livename);
+		Layer* next();
+		Layer* prev();
+		Layer();
+		Layer(bool comp);
+		Layer(const Layer& lay);
+		~Layer();
+
+
 	private:
 		void trigger();
 		bool get_hap_frame();
@@ -290,6 +301,10 @@ class Mixer {
 		void clonesets_copy(bool comp);
 		void event_write(std::ostream &wfile, Param *par);
 		void event_read(std::istream &rfile, Param *par, Layer *lay);
+		void add_del_bar();
+		void clip_dragging();
+		bool clip_drag_per_layervec(std::vector<Layer*>& layers, bool deck);
+		void clip_inside_test(std::vector<Layer*>& layers, bool deck);
 	public:
 		std::vector<Layer*> layersAcomp;
 		std::vector<Layer*> layersBcomp;
@@ -305,11 +320,12 @@ class Mixer {
 		void delete_layer(std::vector<Layer*> &layers, Layer *lay, bool add);
 		void delete_layers(std::vector<Layer*>& layers, bool alive);
 		void do_delete_layers(std::vector<Layer*> layers, bool alive);
-		Layer* clone_layer(std::vector<Layer*> &lvec, Layer* slay);
 		void lay_copy(std::vector<Layer*> &slayers, std::vector<Layer*> &dlayers, bool comp);
 		void copy_to_comp(std::vector<Layer*> &sourcelayersA, std::vector<Layer*> &destlayersA, std::vector<Layer*> &sourcelayersB, std::vector<Layer*> &destlayersB, std::vector<Node*> &sourcenodes, std::vector<Node*> &destnodes, std::vector<MixNode*> &destmixnodes, bool comp);
 		void set_values(Layer* clay, Layer* lay, bool open);
+		void copy_effects(Layer* slay, Layer* dlay, bool comp);
 		void handle_adaptparam();
+		void clips_handle();
 		void record_video();
 		void new_file(int decks, bool alive);
 		void save_layerfile(const std::string &path, Layer* lay, bool doclips, bool dojpeg);
@@ -328,8 +344,12 @@ class Mixer {
 		int read_layers(std::istream &rfile, const std::string &result, std::vector<Layer*> &layers, bool deck, int type, bool doclips, bool concat, bool load, bool loadevents, bool save);
 		void start_recording();
 		void cloneset_destroy(std::unordered_set<Layer*>* cs);
-		void handle_genmidi();
+		void handle_genmidibuttons();
 		bool set_prevshelfdragelem(Layer *lay);
+		void vidbox_handle();
+		void outputmonitors_handle();
+		void layerdrag_handle();
+		void deckmixdrag_handle();
 		Mixer();
 		
 		std::mutex recordlock;
@@ -388,6 +408,10 @@ class Mixer {
 		int fps[25];
 		int fpscount = 0;
 		int rate;
+		int midishelfstage = 0;
+		int midishelfpos = 0;
+		Shelf* midishelf = nullptr;
+		int midishelfstart = 0;
 
 		float time = 0;
 		float oldtime = 0;
