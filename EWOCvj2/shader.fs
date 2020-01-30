@@ -8,7 +8,7 @@ layout(location = 0) out vec4 FragColor;
 uniform sampler2D Sampler0;
 uniform sampler2D endSampler0, endSampler1;
 uniform sampler2D fboSampler;
-uniform sampler2D boxSampler[128];
+uniform sampler2D boxSampler[24];   // reminder: number ~ card
 uniform samplerBuffer boxcolSampler;
 uniform usamplerBuffer boxtexSampler;
 uniform samplerBuffer boxbrdSampler;
@@ -20,6 +20,8 @@ uniform float colorrot = 0.5f;
 uniform float dotsize = 300.0f;
 uniform int fbowidth = 1920;
 uniform int fboheight = 1080;
+uniform float globw = 1920.0;
+uniform float globh = 1080.0;
 uniform bool inverted = false;
 uniform float fcdiv = 1.0f;
 uniform int numverts = 0;
@@ -1197,13 +1199,13 @@ vec3 getHueColor(vec2 pos)
 
 void colorwheel()
 {
-	vec2 uv = vec2(8.0, -8.0) * (gl_FragCoord.xy - vec2(cwx, cwy) * vec2(fbowidth, fboheight)) / fboheight;
-	vec2 mouse = vec2(8.0, -8.0) * (vec2(mx, fboheight - my) - vec2(cwx, cwy) * vec2(fbowidth, fboheight)) / fboheight;
+	vec2 uv = vec2(8.0, -8.0) * (gl_FragCoord.xy - vec2(cwx, cwy) * vec2(globw, globh)) / float(globh);
+	vec2 mouse = vec2(8.0, -8.0) * (vec2(mx, globh - my) - vec2(cwx, cwy) * vec2(globw, globh)) / globh;
 	
 	float l = length(uv);
 	float m = length(mouse);
 	
-	FragColor = vec4(0.0f, 0.0f, 0.0f, 0.0f);
+	FragColor = vec4(0.0, 0.0f, 0.0f, 0.0f);
 
 	if (l >= 0.75 && l <= 1.0)
 	{
@@ -1672,6 +1674,7 @@ void main()
 	}
 	if (cwon) {
 		colorwheel();
+		return;
 	}
 	else if (mixmode == 1) {
 		//MIX alpha

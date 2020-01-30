@@ -19,6 +19,8 @@ typedef struct {
 	float x1, y1, w, h;
 } BOX_COORDS;
 
+class Layer;
+
 class Box {
 	public:
 		float lcolor[4] = {1.0, 1.0, 1.0, 1.0};
@@ -47,11 +49,14 @@ class Button {
 		Box *box;
 		int value = 0;
 		int oldvalue = 0;
+		int toggle = 0;
 		float tcol[4] = {0.0f, 0.7f, 0.0f, 1.0f};
 		float ccol[4] = {1.0f, 0.0f, 0.0f, 1.0f};
 		int midi[2] = {-1, -1};
 		std::string midiport;
-		void handle(bool circlein = false);
+		Layer* layer = nullptr;
+		bool handle(bool circlein = false);
+		bool handle(bool circlein, bool automation);
 		bool toggled();
 		Button(bool state);
 		~Button();

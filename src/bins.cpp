@@ -114,7 +114,7 @@ BinsMain::BinsMain() {
 			box->lcolor[3] = 1.0f;
 			box->acolor[3] = 1.0f;
 			box->tooltiptitle = "Media bin element ";
-			box->tooltip = "Shows thumbnail of media bin element, either being a video file (grey border) or an image (pink border) or a layer file (orange border) or a deck file (purple border) or mix file (green border).  Hovering over this element shows video resolution and video compression method (CPU or HAP).  Mousewheel skips through the element contents (previewed in larger monitor topmiddle).  Leftdrag allows dragging to mix screen via wormhole.  Leftclick allows moving inside the media bin. Rightclickmenu allows among other things, HAP encoding. ";
+			box->tooltip = "Shows thumbnail of media bin element, either being a video file (grey border) or an image (pink border) or a layer file (orange border) or a deck file (purple border) or mix file (green border).  Hovering over this element shows video resolution and video compression method (CPU or HAP).  Mousewheel skips through the element contents (previewed in larger monitor topmiddle).  Leftdrag allows dragging to mix screen via wormhole.  Leftclick allows moving inside the media bin. Rightclickmenu allows among other things, HAP encoding and also loading of a yellowbordered grid-block of mediabin elements into one of the shelves. ";
 		}
 	}
 	
@@ -179,6 +179,10 @@ BinsMain::BinsMain() {
 }
 
 void BinsMain::handle(bool draw) {
+	glBindFramebuffer(GL_FRAMEBUFFER, mainprogram->globfbo);
+	mainprogram->drawbuffer = mainprogram->globfbo;
+	glDrawBuffer(GL_COLOR_ATTACHMENT0);
+
 	GLint inverted = glGetUniformLocation(mainprogram->ShaderProgram, "inverted");
 
 	if (this->renamingelem) {
@@ -457,7 +461,10 @@ void BinsMain::handle(bool draw) {
 						}
 						this->oldmouseshelfnum = this->mouseshelfnum;
 					}
-					else delete box;
+					else {
+						delete box;
+						mainprogram->tooltipbox = nullptr;
+					}
 					if ((!this->menubinel or cond1) and mainprogram->menuactivation) {
 						// set binelmenu entries when mouse in shelf block box but not on full bin element
 						std::vector<std::string> binel;
@@ -486,6 +493,7 @@ void BinsMain::handle(bool draw) {
 		if (insertbox) {
 			draw_box(red, nullptr, insertbox, -1);
 			delete insertbox;
+			mainprogram->tooltipbox = nullptr;
 		}
 		mainprogram->frontbatch = false;
 
@@ -540,7 +548,9 @@ void BinsMain::handle(bool draw) {
 			box.vtxcoords->y1 -= box.vtxcoords->h;
 			box.vtxcoords->w = mainprogram->xscrtovtx(mainprogram->mx - this->selboxx);
 			box.upvtxtoscr();
+			mainprogram->frontbatch = true;
 			draw_box(white, nullptr, &box, -1);
+			mainprogram->frontbatch = false;
 			// select bin elements entirely inside selection box
 			for (int i = 0; i < 12; i++) {
 				for (int j = 0; j < 12; j++) {
@@ -1018,9 +1028,20 @@ void BinsMain::handle(bool draw) {
 				name = remove_version(name) + "_" + std::to_string(count);
 			}
 			mainmix->do_save_deck(path, true, true);
-			mainprogram->paths.push_back(path);
-			mainprogram->counting = 0;
-			this->openbinfile = true;
+			open_handlefile(path);
+			this->menubinel->tex = this->inputtexes[0];
+			this->menubinel->type = this->inputtypes[0];
+			this->menubinel->path = this->newpaths[0];
+			this->menubinel->name = remove_extension(basename(this->menubinel->path));
+			this->menubinel->oldjpegpath = this->menubinel->jpegpath;
+			this->menubinel->jpegpath = this->inputjpegpaths[0];
+			save_bin(this->currbin->path);
+			// clean up: maybe too much cleared here, doesn't really matter
+			this->inputtexes.clear();
+			this->inputtypes.clear();
+			this->inputjpegpaths.clear();
+			this->menuactbinel = nullptr;
+			this->newpaths.clear();
 			this->prevbinel = nullptr;
 		}
 		else if (binelmenuoptions[k] == BET_INSDECKB) {
@@ -1039,9 +1060,20 @@ void BinsMain::handle(bool draw) {
 				name = remove_version(name) + "_" + std::to_string(count);
 			}
 			mainmix->do_save_deck(path, true, true);
-			mainprogram->paths.push_back(path);
-			mainprogram->counting = 0;
-			this->openbinfile = true;
+			open_handlefile(path);
+			this->menubinel->tex = this->inputtexes[0];
+			this->menubinel->type = this->inputtypes[0];
+			this->menubinel->path = this->newpaths[0];
+			this->menubinel->name = remove_extension(basename(this->menubinel->path));
+			this->menubinel->oldjpegpath = this->menubinel->jpegpath;
+			this->menubinel->jpegpath = this->inputjpegpaths[0];
+			save_bin(this->currbin->path);
+			// clean up: maybe too much cleared here, doesn't really matter
+			this->inputtexes.clear();
+			this->inputtypes.clear();
+			this->inputjpegpaths.clear();
+			this->menuactbinel = nullptr;
+			this->newpaths.clear();
 			this->prevbinel = nullptr;
 		}
 		else if (binelmenuoptions[k] == BET_INSMIX) {
@@ -1059,9 +1091,20 @@ void BinsMain::handle(bool draw) {
 				name = remove_version(name) + "_" + std::to_string(count);
 			}
 			mainmix->do_save_mix(path, mainprogram->prevmodus, true);
-			mainprogram->paths.push_back(path);
-			mainprogram->counting = 0;
-			this->openbinfile = true;
+			open_handlefile(path);
+			this->menubinel->tex = this->inputtexes[0];
+			this->menubinel->type = this->inputtypes[0];
+			this->menubinel->path = this->newpaths[0];
+			this->menubinel->name = remove_extension(basename(this->menubinel->path));
+			this->menubinel->oldjpegpath = this->menubinel->jpegpath;
+			this->menubinel->jpegpath = this->inputjpegpaths[0];
+			save_bin(this->currbin->path);
+			// clean up: maybe too much cleared here, doesn't really matter
+			this->inputtexes.clear();
+			this->inputtypes.clear();
+			this->inputjpegpaths.clear();
+			this->menuactbinel = nullptr;
+			this->newpaths.clear();
 			this->prevbinel = nullptr;
 		}
 		else if (binelmenuoptions[k] == BET_LOADSHELFA) {
@@ -1190,6 +1233,7 @@ void BinsMain::handle(bool draw) {
 								this->previewimage = "";
 								this->previewbinel = nullptr;
 							}
+							mainprogram->frontbatch = true;
 							if ((this->previewimage != "" or binel->type == ELEM_IMAGE) and !this->binpreview) {
 								// do first entry preview preperation/visualisation when image hovered
 								this->binpreview = true;  // just entering preview, or already done preparation (different if clauses)
@@ -1559,6 +1603,7 @@ void BinsMain::handle(bool draw) {
 									}
 								}
 							}
+							mainprogram->frontbatch = false;
 						}
 
 						if (binel->path != "") {
@@ -1733,6 +1778,7 @@ void BinsMain::handle(bool draw) {
 					// handle element deleting
 					for (int k = 0; k < this->delbinels.size(); k++) {
 						// deleting single bin element
+						blacken(this->delbinels[k]->oldtex);
 						this->delbinels[k]->tex = this->delbinels[k]->oldtex;
 						std::string name = remove_extension(basename(this->delbinels[k]->path));
 						//if (this->delbinels[k]->type == ELEM_LAYER or this->delbinels[k]->type == ELEM_LAYERthis->movingbinel->type == ELEM_LAYER) boost::filesystem::remove(this->delbinels[k]->path);  reminder
@@ -1789,11 +1835,7 @@ void BinsMain::handle(bool draw) {
 
 		if (!inbinel) this->binpreview = false;
 
-		bool cond = false;
-		if (mainprogram->dragbinel) {
-			cond = (mainprogram->dragbinel->type == ELEM_DECK or mainprogram->dragbinel->type == ELEM_MIX);
-		}
-		if (inbinel and !mainprogram->rightmouse and (lay->vidmoving or cond) and mainprogram->lmover) {
+		if (inbinel and !mainprogram->rightmouse and (lay->vidmoving) and mainprogram->lmover) {
 			// confirm layer dragging from main view and set influenced bin element to the right values
 			this->currbinel->type = mainprogram->dragbinel->type;
 			this->currbinel->path = mainprogram->dragbinel->path;
@@ -1823,7 +1865,7 @@ void BinsMain::handle(bool draw) {
 			if (mainprogram->dragbinel) {
 				cond = (mainprogram->dragbinel->type == ELEM_DECK or mainprogram->dragbinel->type == ELEM_MIX);
 			}
-			if (lay->vidmoving or cond) {
+			if (lay->vidmoving) {
 				// when layer/mix/deck dragging from mix view
 				if (this->currbinel) {
 					this->currbinel->tex = this->currbinel->oldtex;
@@ -1954,7 +1996,7 @@ void BinsMain::save_bin(const std::string& path) {
 
 void BinsMain::do_save_bin(const std::string& path) {
 	// save bin file
-	SDL_GL_MakeCurrent(mainprogram->dummywindow, glc_th);
+	//SDL_GL_MakeCurrent(mainprogram->dummywindow, glc_th);
 	std::vector<std::string> filestoadd;
 	std::ofstream wfile;
 	wfile.open(path.c_str());
@@ -2003,7 +2045,7 @@ void BinsMain::do_save_bin(const std::string& path) {
 	}
 	wfile << "ENDOFELEMS\n";
 	
-	SDL_GL_MakeCurrent(nullptr, nullptr);
+	//SDL_GL_MakeCurrent(nullptr, nullptr);
 		
 	wfile << "ENDOFFILE\n";
 	wfile.close();
@@ -2045,7 +2087,7 @@ Bin *BinsMain::new_bin(const std::string &name) {
 	std::string path;
 	bin->path = mainprogram->project->binsdir + name + ".bin";
 	if (!exists(bin->path)) {
-		save_bin(bin->path);
+		do_save_bin(bin->path);
 		this->save_binslist();
 	}
 	boost::filesystem::path p1{mainprogram->project->binsdir + name};
@@ -2149,7 +2191,7 @@ void BinsMain::open_binfiles() {
 	} 
 	if (mainprogram->counting == mainprogram->paths.size()) {
 		this->currbin->path = mainprogram->project->binsdir + this->currbin->name + ".bin";
-		save_bin(this->currbin->path);
+		do_save_bin(this->currbin->path);
 		this->openbinfile = false;
 		mainprogram->paths.clear();
 		mainprogram->multistage = 0;
@@ -2320,9 +2362,6 @@ std::tuple<std::string, std::string> BinsMain::hap_binel(BinElement *binel, BinE
 		rfile.close();
 
 		boost::filesystem::rename(remove_extension(binel->path) + ".temp", binel->path);
-	}
-	if (!bdm) {
-		this->do_save_bin(this->currbin->path);
 	}
 
 	return {apath, rpath};
@@ -2591,7 +2630,7 @@ void BinsMain::hap_encode(const std::string srcpath, BinElement *binel, BinEleme
 		//av_frame_unref(decframe);
 		//av_frame_unref(nv12frame);
         frame++;
-    }
+	}
     /* flush the encoder */
     // int got_frame;
     // while (1) {
@@ -2610,7 +2649,10 @@ void BinsMain::hap_encode(const std::string srcpath, BinElement *binel, BinEleme
    		bdm->encthreads--;
 		delete binel;  // temp bin elements populate bdm binelements
     }
- 	mainprogram->encthreads--;
+	else {
+		this->do_save_bin(this->currbin->path);
+	}
+	mainprogram->encthreads--;
 	mainprogram->hapnow = true;
 	mainprogram->hap.notify_all();
 }

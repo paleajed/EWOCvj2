@@ -32,23 +32,28 @@ void LoopStation::init() {
 		this->elems[i]->init();
 		this->elems[i]->lpst = this;
 	}
-	this->elemmap.clear();
+	this->parelemmap.clear();
+	this->butelemmap.clear();
 	this->currelem = this->elems[0];
 }
 
 LoopStationElement::LoopStationElement() {
 	this->recbut = new Button(0);
+	this->recbut->toggle = 1;
 	this->recbut->box->tooltiptitle = "Record loopstation row ";
 	this->recbut->box->tooltip = "Start recording non-automated parameter movements on this loopstation row.  ";
 	this->loopbut = new Button(0);
+	this->loopbut->toggle = 1;
 	this->loopbut->box->tooltiptitle = "Loop play loopstation row ";
 	this->loopbut->box->tooltip = "Start loop-playing of recorded parameter movements for this loopstation row. Stops recording if it was still running. ";
 	this->playbut = new Button(0);
+	this->playbut->toggle = 1;
 	this->playbut->box->tooltiptitle = "One-off play loopstation row ";
 	this->playbut->box->tooltip = "Start one-off-play of recorded parameter movements for this loopstation row. Stops at end of recording. ";
 	this->speed = new Param;
 	this->speed->name = "Speed";
 	this->speed->value = 1.0f;
+	this->speed->deflt = 1.0f;
 	this->speed->range[0] = 0.0f;
 	this->speed->range[1] = 4.0f;
 	this->speed->sliding = true;
@@ -131,7 +136,7 @@ void LoopStationElement::handle() {
 		}
 	}
 	
-	if ((this->loopbut->value or this->playbut->value) and this->eventlist.size()) this->set_params();
+	if ((this->loopbut->value or this->playbut->value) and this->eventlist.size()) this->set_values();
 }
 
 void LoopStationElement::init() {
@@ -176,9 +181,9 @@ void LoopStationElement::visualize() {
 }
 	
 void LoopStationElement::erase_elem() {
-	std::unordered_set<Param*>::iterator it;
-	for (it = this->params.begin(); it != this->params.end(); it++) {
-		Param *par = *it;
+	std::unordered_set<Param*>::iterator it1;
+	for (it1 = this->params.begin(); it1 != this->params.end(); it1++) {
+		Param* par = *it1;
 		if (par->name.length()) {
 			par->box->acolor[0] = 0.2f;
 			par->box->acolor[1] = 0.2f;
@@ -186,14 +191,25 @@ void LoopStationElement::erase_elem() {
 			par->box->acolor[3] = 1.0f;
 		}
 	}
+	std::unordered_set<Button*>::iterator it2;
+	for (it2 = this->buttons.begin(); it2 != this->buttons.end(); it2++) {
+		Button* but = *it2;
+		if (but) {
+			but->box->acolor[0] = 0.2f;
+			but->box->acolor[1] = 0.2f;
+			but->box->acolor[2] = 0.2f;
+			but->box->acolor[3] = 1.0f;
+		}
+	}
 	this->init();
 	this->eventlist.clear();
 	this->params.clear();
+	this->buttons.clear();
 	this->layers.clear();
 }
 
 void LoopStationElement::mouse_handle() {
-	this->recbut->handle(1);
+	this->recbut->handle(1, 0);
 	if (this->recbut->toggled()) {
 		if (this->recbut->value) {
 			this->loopbut->value = false;
@@ -210,7 +226,7 @@ void LoopStationElement::mouse_handle() {
 			}
 		}
 	}
-	this->loopbut->handle(1);
+	this->loopbut->handle(1, 0);
 	if (this->loopbut->toggled()) {
 		// start/stop loop play of recording
 		if (this->eventlist.size()) {
@@ -230,7 +246,7 @@ void LoopStationElement::mouse_handle() {
 			this->loopbut->oldvalue = false;
 		}
 	}
-	this->playbut->handle(1);
+	this->playbut->handle(1, 0);
 	if (this->playbut->toggled()) {
 		// start/stop one-shot play of recording
 		if (this->eventlist.size()) {
@@ -254,7 +270,7 @@ void LoopStationElement::mouse_handle() {
 	if (this->box->in() and mainprogram->leftmouse) loopstation->currelem = this;
 }
 	
-void LoopStationElement::set_params() {
+void LoopStationElement::set_values() {
 	// if current elapsed time in loop > eventtime of events starting from eventpos then set their params to stored values
 	std::chrono::high_resolution_clock::time_point now = std::chrono::high_resolution_clock::now();
 	std::chrono::duration<double> elapsed;
@@ -263,14 +279,22 @@ void LoopStationElement::set_params() {
 	int passed = millicount - this->interimtime;
 	this->interimtime = millicount;
 	this->speedadaptedtime = this->speedadaptedtime + passed * this->speed->value;
-	std::tuple<long long, Param*, float> event;
+	std::tuple<long long, Param*, Button*, float> event;
 	event = this->eventlist[this->eventpos];
 	while (this->speedadaptedtime > std::get<0>(event)) {
 		Param *par = std::get<1>(event);
+		Button *but = std::get<2>(event);
 		lpc = lpc;
-		if (par != mainmix->adaptparam) {
-			if (std::find(this->lpst->allparams.begin(), this->lpst->allparams.end(), par) != this->lpst->allparams.end()) {
-				par->value = std::get<2>(event);
+		if (par) {
+			if (par != mainmix->adaptparam) {
+				if (std::find(this->lpst->allparams.begin(), this->lpst->allparams.end(), par) != this->lpst->allparams.end()) {
+					par->value = std::get<3>(event);
+				}
+			}
+		}
+		else if (but) {
+			if (std::find(this->lpst->allbuttons.begin(), this->lpst->allbuttons.end(), but) != this->lpst->allbuttons.end()) {
+				but->value = (int)(std::get<3>(event) + 0.5f);
 			}
 		}
 		this->eventpos++;
@@ -300,16 +324,16 @@ void LoopStationElement::set_params() {
 	}
 }		
 		
-void LoopStationElement::add_param(Param *par) {
+void LoopStationElement::add_param(Param* par) {
 	std::chrono::high_resolution_clock::time_point now = std::chrono::high_resolution_clock::now();
 	std::chrono::duration<double> elapsed;
 	elapsed = std::chrono::duration_cast<std::chrono::duration<double>>(now - this->starttime);
 	long long millicount = std::chrono::duration_cast<std::chrono::milliseconds>(elapsed).count();
-	std::tuple<long long, Param*, float> event;
-	event = std::make_tuple(millicount, par, par->value);
+	std::tuple<long long, Param*, Button*, float> event;
+	event = std::make_tuple(millicount, par, nullptr, par->value);
 	this->eventlist.push_back(event);
 	this->params.emplace(par);
-	loopstation->elemmap[par] = this;
+	loopstation->parelemmap[par] = this;
 	if (par->effect) {
 		this->layers.emplace(par->effect->layer);
 	}
@@ -318,7 +342,7 @@ void LoopStationElement::add_param(Param *par) {
 	par->box->acolor[2] = this->colbox->acolor[2];
 	par->box->acolor[3] = this->colbox->acolor[3];
 	for (int i = 0; i < 2; i++) {
-		std::vector<Layer*> &lvec = choose_layers(i);
+		std::vector<Layer*>& lvec = choose_layers(i);
 		for (int j = 0; j < lvec.size(); j++) {
 			if (par == lvec[j]->speed) this->layers.emplace(lvec[j]);
 			if (par == lvec[j]->opacity) this->layers.emplace(lvec[j]);
@@ -357,6 +381,26 @@ void LoopStationElement::add_param(Param *par) {
 		return;
 	}
 }
+
+void LoopStationElement::add_button(Button* but) {
+	std::chrono::high_resolution_clock::time_point now = std::chrono::high_resolution_clock::now();
+	std::chrono::duration<double> elapsed;
+	elapsed = std::chrono::duration_cast<std::chrono::duration<double>>(now - this->starttime);
+	long long millicount = std::chrono::duration_cast<std::chrono::milliseconds>(elapsed).count();
+	std::tuple<long long, Param*, Button*, float> event;
+	event = std::make_tuple(millicount, nullptr, but, (float)but->value);
+	this->eventlist.push_back(event);
+	this->buttons.emplace(but);
+	loopstation->butelemmap[but] = this;
+	if (but->layer) {
+		this->layers.emplace(but->layer);
+	}
+	but->box->acolor[0] = this->colbox->acolor[0];
+	but->box->acolor[1] = this->colbox->acolor[1];
+	but->box->acolor[2] = this->colbox->acolor[2];
+	but->box->acolor[3] = this->colbox->acolor[3];
+}
+
 
 LoopStationElement* LoopStation::free_element() {
 	LoopStationElement *loop = nullptr;

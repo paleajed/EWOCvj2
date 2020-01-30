@@ -142,7 +142,6 @@ class Layer {
 		bool vidmoving = false;
 		bool live = false;
 		Layer *liveinput = nullptr;
-		int liveinputpos = -1;
 		int imagenum = 0;
 		ILuint boundimage = -1;
 		bool cliploading = false;
@@ -174,6 +173,7 @@ class Layer {
 		bool newframe = false;
 		int imageloaded = 0;
 		bool newtexdata = false;
+		bool startup = false;
 		frame_result *decresult;
 		std::thread decoding;
 		void get_frame();
@@ -269,6 +269,7 @@ class Layer {
 		void initialize(int w, int h);
 		void initialize(int w, int h, int compression);
 		void clip_display_next(bool startend, bool alive);
+		bool find_new_live_base(int pos);
 		void set_live_base(std::string livename);
 		Layer* next();
 		Layer* prev();
@@ -286,11 +287,15 @@ class Layer {
 
 class Scene {
 	public:
+		bool comp;
 		bool deck;
 		Box* box;
 		Button* button;
-		std::vector<Layer*> nbframes;
-		std::vector<Layer*> tempnbframes;
+		bool loaded;
+		std::vector<Layer*> nblayers;
+		std::vector<float> nbframes;
+		std::vector<Layer*> tempnblayers;
+		std::vector<float> tempnbframes;
 		int scrollpos = 0;
 };
 
@@ -299,8 +304,8 @@ class Mixer {
 		void do_deletelay(Layer *testlay, std::vector<Layer*> &layers, bool add);
 		void loopstation_copy(bool comp);
 		void clonesets_copy(bool comp);
-		void event_write(std::ostream &wfile, Param *par);
-		void event_read(std::istream &rfile, Param *par, Layer *lay);
+		void event_write(std::ostream &wfile, Param *par, Button *but);
+		void event_read(std::istream &rfile, Param *par, Button *but, Layer *lay);
 		void add_del_bar();
 		void clip_dragging();
 		bool clip_drag_per_layervec(std::vector<Layer*>& layers, bool deck);
@@ -310,7 +315,7 @@ class Mixer {
 		std::vector<Layer*> layersBcomp;
 		std::vector<Layer*> layersA;
 		std::vector<Layer*> layersB;
-		std::vector<Scene*> scenes[2];
+		std::vector<Scene*> scenes[2][2];
 		std::vector<Layer*> bulrs[2];
 		std::vector<Layer*> bulrscopy[2];
 		std::vector<GLuint> butexes[2];
@@ -364,6 +369,7 @@ class Mixer {
 		void *rgbdata = nullptr;
 		GLuint ioBuf;
 		
+		Box* decknamebox[2];
 		Box *modebox;
 		int mode = 0;
 		bool staged = true;
@@ -373,7 +379,7 @@ class Mixer {
 		Param *crossfadecomp;
 		int numaudiochannels = 0;
 		
-		int currscene[2] = {0, 0};
+		int currscene[2][2] = {{0, 0}, {0, 0}};
 		bool deck = 0;
 		int scrollon = 0;
 		int scrollmx;

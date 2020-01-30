@@ -12,8 +12,11 @@ class LoopStation {
 		std::vector<LoopStationElement*> readelems;
 		std::vector<int> readelemnrs;
 		std::vector<Param*> allparams;
+		std::vector<Button*> allbuttons;
 		std::unordered_map<Param*, Param*> parmap;
-		std::unordered_map<Param*, LoopStationElement*> elemmap;
+		std::unordered_map<Button*, Button*> butmap;
+		std::unordered_map<Param*, LoopStationElement*> parelemmap;
+		std::unordered_map<Button*, LoopStationElement*> butelemmap;
 		std::vector<float> colvals = {1.0f, 0.0f, 0.0f
 									, 0.0f, 0.5f, 0.0f
 									, 0.0f, 0.0f, 1.0f
@@ -46,6 +49,7 @@ class LoopStationElement {
 	public:
 		int pos = 0;
 		std::unordered_set<Param*> params;
+		std::unordered_set<Button*> buttons;
 		std::unordered_set<Layer*> layers;
 		LoopStation* lpst;
 		Button *recbut;
@@ -57,14 +61,15 @@ class LoopStationElement {
 		long long interimtime = 0;
 		long long speedadaptedtime = 0;
 		Param *speed;
-		std::vector<std::tuple<long long, Param*, float>> eventlist;
+		std::vector<std::tuple<long long, Param*, Button*, float>> eventlist;
 		int eventpos = 0;
 		bool didsomething = false;	
 		void init();
 		void handle();
 		void erase_elem();
-		void add_param(Param *par);
-		void set_params();
+		void add_param(Param* par);
+		void add_button(Button* but);
+		void set_values();
 		LoopStationElement();
 		~LoopStationElement();
 		

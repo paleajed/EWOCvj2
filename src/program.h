@@ -95,7 +95,8 @@ struct gui_box {
 	float he;
 	int circle;
 	GLuint tex;
-	bool text;
+	bool text = false;
+	bool vertical = false;
 };
 
 class GUI_Element {
@@ -143,7 +144,7 @@ public:
 	Box* cbox;
 	int launchtype = 0;
 	std::vector<int> cframes;
-	std::vector<Layer*> nbframes;
+	std::vector<Layer*> nblayers;
 	ShelfElement(bool side, int pos, Button *but);
 	~ShelfElement();
 };
@@ -159,7 +160,7 @@ class Project {
 		void save(const std::string& path);
 		void do_save(const std::string& path);
 		void delete_dirs();
-		void create_dirs();
+		void create_dirs(const std::string &path);
 private:
 };
 
@@ -339,6 +340,8 @@ class Program {
 		Menu *mixmodemenu = nullptr;
 		Menu *parammenu1 = nullptr;
 		Menu* parammenu2 = nullptr;
+		Menu* parammenu3 = nullptr;
+		Menu* parammenu4 = nullptr;
 		Menu* speedmenu = nullptr;
 		Menu *loopmenu = nullptr;
 		Menu *deckmenu = nullptr;
@@ -471,6 +474,10 @@ class Program {
 		bool directmode = false;
 		bool frontbatch = false;
 		std::vector<GUI_Element*> guielems;
+		Button* onscenebutton;
+		float onscenemilli;
+		Box* delbox;
+		Box* addbox;
 
 		GLuint drawbuffer;
 		GLuint boxcoltbo;
@@ -659,11 +666,14 @@ class Program {
 		bool preferences_handle();
 		void layerstack_scrollbar_handle();
 		void preview_modus_buttons();
+		void pick_color(Layer* lay, Box* cbox);
 		void tooltips_handle(int win);
 		void handle_mixenginemenu();
 		void handle_effectmenu();
 		void handle_parammenu1();
 		void handle_parammenu2();
+		void handle_parammenu3();
+		void handle_parammenu4();
 		void handle_speedmenu();
 		void handle_loopmenu();
 		void handle_mixtargetmenu();
