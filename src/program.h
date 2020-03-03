@@ -122,10 +122,6 @@ public:
 	void save(const std::string& path);
 	bool open(const std::string& path);
 	void open_shelffiles();
-	bool open_videofile(const std::string& path, int pos);
-	bool open_layer(const std::string& path, int pos);
-	void open_dir();
-	bool open_image(const std::string& path, int pos);
 	bool insert_deck(const std::string& path, bool deck, int pos);
 	bool insert_mix(const std::string& path, int pos);
 	Shelf(bool side);

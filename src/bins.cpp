@@ -545,24 +545,27 @@ void BinsMain::handle(bool draw) {
 			box.vtxcoords->x1 = -1.0f + mainprogram->xscrtovtx(this->selboxx);
 			box.vtxcoords->h = mainprogram->yscrtovtx(mainprogram->my - this->selboxy);
 			box.vtxcoords->y1 = 1.0f - mainprogram->yscrtovtx(this->selboxy);
-			box.vtxcoords->y1 -= box.vtxcoords->h;
+			if (box.vtxcoords->h > 0) box.vtxcoords->y1 -= box.vtxcoords->h;
+			else box.vtxcoords->h = -box.vtxcoords->h;
 			box.vtxcoords->w = mainprogram->xscrtovtx(mainprogram->mx - this->selboxx);
+			if (box.vtxcoords->w < 0) {
+				box.vtxcoords->x1 += box.vtxcoords->w;
+				box.vtxcoords->w = -box.vtxcoords->w;
+			}
 			box.upvtxtoscr();
 			mainprogram->frontbatch = true;
 			draw_box(white, nullptr, &box, -1);
 			mainprogram->frontbatch = false;
-			// select bin elements entirely inside selection box
+			// select bin elements inside selection box
 			for (int i = 0; i < 12; i++) {
 				for (int j = 0; j < 12; j++) {
 					Box* ebox = this->elemboxes[i * 12 + j];
 					BinElement* binel = this->currbin->elements[i * 12 + j];
 					if (binel->path == "") continue;
 					binel->select = false;
-					if (box.in(ebox->scrcoords->x1, ebox->scrcoords->y1)) {
-						if (box.in(ebox->scrcoords->x1 + ebox->scrcoords->w, ebox->scrcoords->y1 - ebox->scrcoords->h)) {
-							binel->select = true;
-							found = true;
-						}
+					if (box.in(ebox->scrcoords->x1, ebox->scrcoords->y1) or box.in(ebox->scrcoords->x1 + ebox->scrcoords->w, ebox->scrcoords->y1) or box.in(ebox->scrcoords->x1, ebox->scrcoords->y1 - ebox->scrcoords->h) or box.in(ebox->scrcoords->x1 + ebox->scrcoords->w, ebox->scrcoords->y1 - ebox->scrcoords->h)) {
+						binel->select = true;
+						found = true;
 					}
 				}
 			}

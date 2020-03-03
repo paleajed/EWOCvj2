@@ -68,17 +68,12 @@
 Program::Program() {
 	this->project = new Project;
 
-	#ifdef _WIN64
+#ifdef _WIN64
 	PWSTR charbuf;
 	HRESULT hr = SHGetKnownFolderPath(FOLDERID_Documents, 0, NULL, &charbuf);
 	std::wstring ws1(charbuf);
 	std::string str1(ws1.begin(), ws1.end());
 	this->docpath = boost::filesystem::canonical(str1).string() + "/EWOCvj2/";
-	this->currfilesdir = this->docpath + "elems/";
-	this->currclipfilesdir = this->docpath + "elems/";
-	this->currshelffilesdir = this->docpath + "elems/";
-	this->currbinfilesdir = this->docpath + "elems/";
-	this->currstatedir = this->docpath + "elems/";
 	hr = SHGetKnownFolderPath(FOLDERID_Fonts, 0, NULL, &charbuf);
 	std::wstring ws2(charbuf);
 	std::string str2(ws2.begin(), ws2.end());
@@ -92,13 +87,19 @@ Program::Program() {
 	if (GetTempPathW(MAX_PATH, wcharPath)) ws3 = wcharPath;
 	std::string str3(ws3.begin(), ws3.end());
 	this->temppath = str3 + "EWOCvj2/";
-	#else
-	#ifdef __linux__
-	std::string homedir (getenv("HOME"));
+#endif
+#ifdef __linux__
+	std::string homedir(getenv("HOME"));
 	this->temppath = homedir + "/.ewocvj2/temp/";
-	#endif
-	#endif
-	
+	this->docpath = homedir + "/.ewocvj2";
+#endif
+	this->currfilesdir = this->docpath + "elems/";
+	this->currclipfilesdir = this->docpath + "elems/";
+	this->currshelffilesdir = this->docpath + "elems/";
+	this->currbinfilesdir = this->docpath + "elems/";
+	this->currstatedir = this->docpath + "elems/";
+	this->currbinsdir = this->docpath + "elems/";
+
 	this->numh = this->numh * glob->w / glob->h;
 	this->layh = this->layh * (glob->w / glob->h) / (1920.0f /  1080.0f);
 	this->monh = this->monh * (glob->w / glob->h) / (1920.0f /  1080.0f);
@@ -584,7 +585,6 @@ void Program::get_dir(std::string title, std::string defaultdir) {
 }
 
 bool Program::order_paths(bool dodeckmix) {
-	if (mainprogram->paths.size() == 1) return true;
 	if (mainprogram->multistage == 0) {
 		mainprogram->filescount = 0;
 		mainprogram->multistage = 1;
@@ -611,6 +611,7 @@ bool Program::order_paths(bool dodeckmix) {
 			tex = get_videotex(str);
 		}
 		mainprogram->pathtexes.push_back(tex);
+		render_text(str, white, 2.0f, 2.0f, tf(0.0003f), tf(0.0005f));
 		if (mainprogram->filescount < mainprogram->paths.size()) return false;
 		for (int j = 0; j < mainprogram->paths.size(); j++) {
 			mainprogram->pathboxes.push_back(new Box);
@@ -626,14 +627,27 @@ bool Program::order_paths(bool dodeckmix) {
 	}
 	if (mainprogram->multistage == 2) {
 		// then do interactive ordering
-		bool cont = mainprogram->do_order_paths();
-		if (!cont) return false;
+		if (mainprogram->paths.size() != 1) {
+			bool cont = mainprogram->do_order_paths();
+			if (!cont) return false;
+		}
 		mainprogram->multistage = 3;
 	}
 	if (mainprogram->multistage == 3) {
+		if (mainprogram->openshelffiles) {
+			// special case: reuse pathtexes as shelfelement texes
+			for (int i = 0; i < mainprogram->paths.size(); i++) {
+				ShelfElement* elem = mainmix->mouseshelf->elements[i + mainprogram->shelffileselem];
+				elem->path = mainprogram->paths[i];
+				elem->tex = mainprogram->pathtexes[i];
+			}
+			mainprogram->pathtexes.clear();
+		}
 		// then cleanup
-		for (int j = 0; j < mainprogram->paths.size(); j++) {
+		for (int j = 0; j < mainprogram->pathboxes.size(); j++) {
 			delete mainprogram->pathboxes[j];
+		}
+		for (int j = 0; j < mainprogram->pathtexes.size(); j++) {
 			glDeleteTextures(1, &mainprogram->pathtexes[j]);
 		}
 		mainprogram->pathboxes.clear();
@@ -648,7 +662,7 @@ bool Program::order_paths(bool dodeckmix) {
 
 	
 bool Program::do_order_paths() {
-		if (this->paths.size() == 1) return true;
+	if (this->paths.size() == 1) return true;
 	// show interactive list with draggable elements to allow element ordering of mainprogram->paths, result of get_multinname
 	float white[4] = { 1.0f, 1.0f, 1.0f, 1.0f };
 	float black[4] = { 0.0f, 0.0f, 0.0f, 1.0f };
@@ -676,7 +690,7 @@ bool Program::do_order_paths() {
 		draw_box(white, black, box, -1);
 		draw_box(white, black, 0.3f, box->vtxcoords->y1, 0.1f, 0.1f, this->pathtexes[j]);
 		render_text(this->paths[j], white, -0.4f + tf(0.01f), box->vtxcoords->y1 + tf(0.05f) - tf(0.030f), tf(0.0003f), tf(0.0005f));
-		// prepare effect dragging
+		// prepare element dragging
 		if (box->in()) {
 			std::string path = this->paths[j];
 			if (this->dragstr == "") {
@@ -707,7 +721,7 @@ bool Program::do_order_paths() {
 	applybox.upvtxtoscr();
 	draw_box(white, black, &applybox, -1);
 	render_text("APPLY ORDER", white, -0.4f + tf(0.01f), 0.8f - limit * 0.1f + tf(0.05f) - tf(0.030f), tf(0.0003f), tf(0.0005f));
-	if (applybox.in() and this->dragstr == "") {
+	if (applybox.in2() and this->dragstr == "") {
 		if (mainprogram->orderleftmouse) return true;
 	}
 
@@ -1079,7 +1093,7 @@ void Program::layerstack_scrollbar_handle() {
 		boxafter.vtxcoords->h = 0.05f;
 		boxafter.upvtxtoscr();
 		bool inbox = false;
-		if (box.in()) {
+		if (box.in2()) {
 			inbox = true;
 			if (mainprogram->leftmousedown and mainmix->scrollon == 0 and !mainprogram->menuondisplay) {
 				mainmix->scrollon = i + 1;
@@ -1136,7 +1150,7 @@ void Program::layerstack_scrollbar_handle() {
 			render_text(std::to_string(j + 1), white, box.vtxcoords->x1 + 0.0078f - slidex, box.vtxcoords->y1 + 0.0078f, 0.0006, 0.001);
 			const int s = lvec.size() - mainmix->scenes[comp][i][mainmix->currscene[comp][i]]->scrollpos;
 			if (mainprogram->dragbinel) {
-				if (box.in()) {
+				if (box.in2()) {
 					if (mainprogram->lmover) {
 						if (j < lvec.size()) {
 							mainprogram->draginscrollbarlay = lvec[j];
@@ -1150,7 +1164,7 @@ void Program::layerstack_scrollbar_handle() {
 			box.vtxcoords->x1 += box.vtxcoords->w;
 			box.upvtxtoscr();
 		}
-		if (boxbefore.in()) {
+		if (boxbefore.in2()) {
 			//mouse in empty scrollbar part before the lightgrey visible layers part
 			if (mainprogram->dragbinel) {
 				if (mainmix->scrolltime == 0.0f) {
@@ -1167,7 +1181,7 @@ void Program::layerstack_scrollbar_handle() {
 				mainmix->scenes[comp][i][mainmix->currscene[comp][i]]->scrollpos--;
 			}
 		}
-		else if (boxafter.in()) {
+		else if (boxafter.in2()) {
 			//mouse in empty scrollbar part after the lightgrey visible layers part
 			if (mainprogram->dragbinel) {
 				if (mainmix->scrolltime == 0.0f) {
@@ -1235,7 +1249,7 @@ int Program::quit_requester() {
 	box.vtxcoords->h = 0.2f;
 	box.upvtxtoscr();
 	draw_box(white, black, &box, -1);
-	if (box.in(mx, my)) {
+	if (box.in2(mx, my)) {
 		draw_box(white, lightblue, &box, -1);
 		if (mainprogram->leftmouse or mainprogram->orderleftmouse) {
 			mainprogram->project->do_save(mainprogram->project->path);
@@ -1247,7 +1261,7 @@ int Program::quit_requester() {
 	box.vtxcoords->x1 = 0.45f;
 	box.upvtxtoscr();
 	draw_box(white, black, &box, -1);
-	if (box.in(mx, my)) {
+	if (box.in2(mx, my)) {
 		draw_box(white, lightblue, &box, -1);
 		if (mainprogram->leftmouse or mainprogram->orderleftmouse) {
 			ret = 2;
@@ -1258,7 +1272,7 @@ int Program::quit_requester() {
 	box.vtxcoords->x1 = 0.75f;
 	box.upvtxtoscr();
 	draw_box(white, black, &box, -1);
-	if (box.in(mx, my)) {
+	if (box.in2(mx, my)) {
 		draw_box(white, lightblue, &box, -1);
 		if (mainprogram->leftmouse or mainprogram->orderleftmouse) {
 			ret = 3;
@@ -3130,7 +3144,7 @@ bool Program::preferences_handle() {
 	box.vtxcoords->h = 0.2f;
 	box.upvtxtoscr();
 	draw_box(white, black, &box, -1);
-	if (box.in(mx, my)) {
+	if (box.in2(mx, my)) {
 		draw_box(white, lightblue, &box, -1);
 		if (mainprogram->leftmouse) {
 			for (int i = 0; i < mci->items.size(); i++) {
@@ -3152,7 +3166,7 @@ bool Program::preferences_handle() {
 	box.vtxcoords->x1 = 0.45f;
 	box.upvtxtoscr();
 	draw_box(white, black, &box, -1);
-	if (box.in(mx, my)) {
+	if (box.in2(mx, my)) {
 		draw_box(white, lightblue, &box, -1);
 		if (mainprogram->leftmouse) {
 			for (int i = 0; i < mci->items.size(); i++) {
@@ -3445,7 +3459,7 @@ int Program::config_midipresets_handle() {
 		box.vtxcoords->h = 0.2f;
 		box.upvtxtoscr();
 		draw_box(white, black, &box, -1);
-		if (box.in(mx, my)) {
+		if (box.in2(mx, my)) {
 			draw_box(white, lightblue, &box, -1);
 			if (mainprogram->leftmouse) {
 				lm->play[0] = -1;
@@ -3481,7 +3495,7 @@ int Program::config_midipresets_handle() {
 	box.vtxcoords->h = 0.2f;
 	box.upvtxtoscr();
 	draw_box(white, black, &box, -1);
-	if (box.in(mx, my)) {
+	if (box.in2(mx, my)) {
 		draw_box(white, lightblue, &box, -1);
 		if (mainprogram->leftmouse) {
 			open_genmidis(mainprogram->docpath + "midiset.gm");
@@ -3494,7 +3508,7 @@ int Program::config_midipresets_handle() {
 	box.vtxcoords->x1 = 0.45f;
 	box.upvtxtoscr();
 	draw_box(white, black, &box, -1);
-	if (box.in(mx, my)) {
+	if (box.in2(mx, my)) {
 		draw_box(white, lightblue, &box, -1);
 		if (mainprogram->leftmouse) {
 			save_genmidis(mainprogram->docpath + "midiset.gm");

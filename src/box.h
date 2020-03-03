@@ -39,6 +39,8 @@ class Box {
 		bool in();
 		bool in(int mx, int my);
 		bool in(bool menu);
+		bool in2();
+		bool in2(int mx, int my);
 		Box();
 		~Box();
 };

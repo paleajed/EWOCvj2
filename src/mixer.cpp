@@ -2068,14 +2068,6 @@ void Mixer::do_deletelay(Layer *testlay, std::vector<Layer*> &layers, bool add) 
 	
 	if (testlay->node) mainprogram->nodesmain->currpage->delete_node(testlay->node);
 	
-	if (testlay->clonesetnr != -1) {
-		mainmix->clonesets[testlay->clonesetnr]->erase(testlay);
-		if (mainmix->clonesets[testlay->clonesetnr]->size() == 0) {
-			mainmix->cloneset_destroy(mainmix->clonesets[testlay->clonesetnr]);
-			testlay->clonesetnr = -1;
-		}
-	}
-
 	delete testlay;
 }
 
@@ -2111,7 +2103,56 @@ void Mixer::delete_layer(std::vector<Layer*> &layers, Layer *testlay, bool add) 
 		testlay->mute_handle();
 	}
 	
-	this->do_deletelay(testlay, layers, add);
+	if (mainmix->firstlayers[testlay->clonesetnr] == testlay) {
+		mainmix->clonesets[testlay->clonesetnr]->erase(testlay);
+		Layer* l = *mainmix->clonesets[testlay->clonesetnr]->begin();
+		testlay->effects[0] = l->effects[0];
+		testlay->effects[1] = l->effects[1];
+		l->effects[0].clear();
+		l->effects[1].clear();  // program recconect function!!!! reminder
+		testlay->node->out.clear();
+		mainprogram->nodesmain->currpage->connect_nodes(testlay->node, testlay->effects[0][0]->node);
+		if (testlay->effects[1].size()) testlay->lasteffnode[1] = testlay->effects[1].back()->node;
+		else if (l->pos == 0) testlay->lasteffnode[1] = testlay->node;
+		else testlay->lasteffnode[1] = testlay->blendnode;
+		int pos1 = l->pos;
+		int pos2 = testlay->pos;
+		std::vector<Layer*>& lvec1 = choose_layers(l->deck);
+		std::vector<Layer*>& lvec2 = choose_layers(testlay->deck);
+		if (lvec1 == lvec2 and testlay->pos > l->pos) pos2++;
+		lvec1.insert(lvec1.begin() + pos1, testlay);
+		lvec2.erase(lvec2.begin() + pos2);
+		lvec1.erase(std::find(lvec1.begin(), lvec1.end(), l));
+		this->do_deletelay(l, lvec1, false);
+		if (lvec1.size() > 0) {
+			for (int j = 0; j < lvec1.size() - 1; j++) {
+				// reconnect everything
+				if (lvec1[j]->lasteffnode[1]->out.size()) {
+					lvec1[j]->lasteffnode[1]->out[0]->in = nullptr;
+					lvec1[j]->lasteffnode[1]->out.clear();
+				}
+				mainprogram->nodesmain->currpage->connect_nodes(lvec1[j]->lasteffnode[1], lvec1[j + 1]->blendnode);
+			}
+		}
+		if (lvec2.size() > 0) {
+			for (int j = 0; j < lvec2.size() - 1; j++) {
+				// reconnect everything
+				if (lvec2[j]->lasteffnode[1]->out.size()) {
+					lvec2[j]->lasteffnode[1]->out[0]->in = nullptr;
+					lvec2[j]->lasteffnode[1]->out.clear();
+				}
+				mainprogram->nodesmain->currpage->connect_nodes(lvec2[j]->lasteffnode[1], lvec2[j + 1]->blendnode);
+			}
+		}
+		mainmix->clonesets[testlay->clonesetnr]->emplace(testlay);
+		mainmix->clonesets[testlay->clonesetnr]->erase(l);
+		if (mainmix->clonesets[testlay->clonesetnr]->size() == 1) {
+			mainmix->cloneset_destroy(mainmix->clonesets[testlay->clonesetnr]);
+			testlay->clonesetnr = -1;
+		}
+		mainmix->firstlayers.clear();
+	}
+	else this->do_deletelay(testlay, layers, add);
 }
 
 
