@@ -116,7 +116,7 @@ Program::Program() {
 	this->addbox->upvtxtoscr();
 	this->addbox->reserved = true;
 	this->addbox->tooltiptitle = "Add layer ";
-	this->addbox->tooltip = "Leftclick this bue box to add a layer at this point. ";
+	this->addbox->tooltip = "Leftclick this blue box to add a layer at this point. ";
 
 	this->delbox = new Box;
 	this->delbox->vtxcoords->y1 = 0.925f;
@@ -254,7 +254,7 @@ Program::Program() {
 	
 	this->effscrollupA = new Box;
 	this->effscrollupA->vtxcoords->x1 = -1.0;
-	this->effscrollupA->vtxcoords->y1 = 1.0 - tf(this->layh) - tf(0.25f);
+	this->effscrollupA->vtxcoords->y1 = 1.0 - tf(this->layh);
 	this->effscrollupA->vtxcoords->w = tf(0.025f);
 	this->effscrollupA->vtxcoords->h = tf(0.05f);
 	this->effscrollupA->upvtxtoscr();
@@ -263,7 +263,7 @@ Program::Program() {
 	
 	this->effscrollupB = new Box;
 	this->effscrollupB->vtxcoords->x1 = 1.0 - tf(0.05f);
-	this->effscrollupB->vtxcoords->y1 = 1.0 - tf(this->layh) - tf(0.25f);
+	this->effscrollupB->vtxcoords->y1 = 1.0 - tf(this->layh);
 	this->effscrollupB->vtxcoords->w = tf(0.025f);
 	this->effscrollupB->vtxcoords->h = tf(0.05f);     
 	this->effscrollupB->upvtxtoscr();
@@ -311,7 +311,13 @@ Program::Program() {
 	this->addeffectbox->vtxcoords->h = tf(0.038f);
 	this->addeffectbox->tooltiptitle = "Add effect ";
 	this->addeffectbox->tooltip = "Add effect to end of layer effect queue ";
-	
+
+	this->inserteffectbox = new Box;
+	this->inserteffectbox->vtxcoords->w = tf(0.16f);
+	this->inserteffectbox->vtxcoords->h = tf(0.038f);
+	this->inserteffectbox->tooltiptitle = "Add effect ";
+	this->inserteffectbox->tooltip = "Add effect to end of layer effect queue ";
+
 	this->tmset = new Box;
 	this->tmset->vtxcoords->x1 = -0.2f;
 	this->tmset->vtxcoords->y1 = 0.74f;
@@ -1017,6 +1023,7 @@ int Program::handle_scrollboxes(Box* upperbox, Box* lowerbox, int numlines, int 
 	float white[] = { 1.0f, 1.0f, 1.0f, 1.0f };
 	if (scrollpos > 0) {
 		if (upperbox->in()) {
+			// scroll up
 			upperbox->acolor[0] = 0.5f;
 			upperbox->acolor[1] = 0.5f;
 			upperbox->acolor[2] = 1.0f;
@@ -1036,6 +1043,7 @@ int Program::handle_scrollboxes(Box* upperbox, Box* lowerbox, int numlines, int 
 	}
 	if (numlines - scrollpos > scrlines) {
 		if (lowerbox->in()) {
+			// scroll down
 			lowerbox->acolor[0] = 0.5f;
 			lowerbox->acolor[1] = 0.5f;
 			lowerbox->acolor[2] = 1.0f;
@@ -2209,6 +2217,11 @@ void Program::handle_deckmenu() {
 
 void Program::handle_laymenu1() {
 	int k = -1;
+	if (mainmix->mouselayer) {
+		if (mainmix->mouselayer->filename == "") {
+			mainprogram->laymenu1->entries[3] = "Open file(s) in stack";
+		}
+	}
 	// Draw and Program::handle mainprogram->laymenu1 (with clone layer) and laymenu2 (without)
 	if (mainprogram->laymenu1->state > 1 || mainprogram->laymenu2->state > 1 || mainprogram->newlaymenu->state > 1 || mainprogram->clipmenu->state > 1) {
 		if (!mainprogram->gotcameras) {
@@ -2232,6 +2245,7 @@ void Program::handle_laymenu1() {
 		k = mainprogram->handle_menu(mainprogram->laymenu2);
 		if (k > 10) k++;
 	}
+	mainprogram->laymenu1->entries[3] = "Open file(s) in stack before layer";
 	if (k > -1) {
 		if (k == 0) {
 			if (mainprogram->menuresults.size()) {
@@ -2248,13 +2262,13 @@ void Program::handle_laymenu1() {
 			}
 		}
 		if (k == 1) {
-			mainprogram->pathto = "OPENFILESLAYERS";
+			mainprogram->pathto = "OPENFILESQUEUE";
 			mainprogram->loadlay = mainmix->mouselayer;
 			std::thread filereq(&Program::get_multinname, mainprogram, "Open video/image/layer file", "", boost::filesystem::canonical(mainprogram->currfilesdir).generic_string());
 			filereq.detach();
 		}
 		if (k == 2) {
-			mainprogram->pathto = "OPENFILESQUEUE";
+			mainprogram->pathto = "OPENFILESLAYERS";
 			mainprogram->loadlay = mainmix->mouselayer;
 			std::thread filereq(&Program::get_multinname, mainprogram, "Open video/image/layer file", "", boost::filesystem::canonical(mainprogram->currfilesdir).generic_string());
 			filereq.detach();
@@ -2361,13 +2375,13 @@ void Program::handle_newlaymenu() {
 			}
 		}
 		if (k == 1) {
-			mainprogram->pathto = "OPENFILESLAYERS";
+			mainprogram->pathto = "OPENFILESQUEUE";
 			std::thread filereq(&Program::get_multinname, mainprogram, "Open video/image/layer file", "", boost::filesystem::canonical(mainprogram->currfilesdir).generic_string());
 			filereq.detach();
 			mainmix->addlay = true;
 		}
 		else if (k == 2) {
-			mainprogram->pathto = "OPENFILESQUEUE";
+			mainprogram->pathto = "OPENFILESLAYERS";
 			std::thread filereq(&Program::get_multinname, mainprogram, "Open video/image/layer file", "", boost::filesystem::canonical(mainprogram->currfilesdir).generic_string());
 			filereq.detach();
 			mainmix->addlay = true;
@@ -2589,7 +2603,7 @@ void Program::handle_shelfmenu() {
 			name = remove_version(name) + "_" + std::to_string(count);
 		}
 		mainmix->mousedeck = k - 4;
-		mainmix->save_deck(path);
+		mainmix->do_save_deck(path, false, true);
 		mainmix->mouseshelf->insert_deck(path, k - 4, mainmix->mouseshelfelem);
 	}
 	else if (k == 6) {
@@ -2605,7 +2619,7 @@ void Program::handle_shelfmenu() {
 			count++;
 			name = remove_version(name) + "_" + std::to_string(count);
 		}
-		mainmix->save_mix(path);
+		mainmix->do_save_mix(path, mainprogram->prevmodus, false);
 		mainmix->mouseshelf->insert_mix(path, mainmix->mouseshelfelem);
 	}
 	else if (k == 7) {
@@ -3973,7 +3987,7 @@ void Project::do_save(const std::string& path) {
 		#else
 		#ifdef POSIX
 		std::string homedir (getenv("HOME"));
-		std::string dir = homedir + "/.ewocvj2/";
+		std::string dir = homedir + "f/.ewocvj2/";
 		#endif
 		#endif
 		wfile.open(dir + "recentprojectslist");

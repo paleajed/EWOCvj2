@@ -449,6 +449,7 @@ void BinsMain::handle(bool draw) {
 								binel->path = elem->path;
 								binel->jpegpath = elem->jpegpath;
 							}
+							save_bin(this->currbin->path);
 							this->insertshelf = nullptr;
 							mainprogram->binsscreen = false;
 						}

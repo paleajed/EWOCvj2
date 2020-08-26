@@ -2810,7 +2810,7 @@ bool Layer::calc_texture(bool comp, bool alive) {
 	if (mainprogram->tooltipbox && this->deck == 0 && this->pos == 0) {
 		mainprogram->tooltipmilli += thismilli;
 	}
-	if (mainprogram->dragbinel && !mainmix->moving && mainprogram->onscenebutton && this->deck == 0 && this->pos == 0) {
+	if (mainprogram->dragbinel and mainprogram->onscenebutton and this->deck == 0 and this->pos == 0) {
 		mainprogram->onscenemilli += thismilli;
 	}
 
@@ -4073,6 +4073,7 @@ void walk_nodes(bool stage) {
 		
 
 bool display_mix() {
+	mainprogram->directmode = true;
 	float xs = 0.0f;
 	float ys = 0.0f;
 	float fraco = mainprogram->ow / mainprogram->oh;
@@ -4207,7 +4208,8 @@ bool display_mix() {
 		draw_box(node->outputbox->lcolor, node->outputbox->acolor, box->vtxcoords->x1 + xs, box->vtxcoords->y1 + ys, box->vtxcoords->w - xs * 2.0f, box->vtxcoords->h - ys * 2.0f, node->mixtex);
 		mainprogram->deckmonitor[1]->in();
 	}
-	
+	mainprogram->directmode = false;
+
 	return true;
 }
 
@@ -5838,7 +5840,7 @@ void handle_scenes(Scene* scene) {
 					mainprogram->onscenebutton = but;
 					mainprogram->onscenemilli = 0;
 				}
-				if (((mainprogram->onscenemilli > 6000 || mainprogram->leftmouse) && !mainmix->moving && !mainprogram->menuondisplay) || but->value) {
+				if (((mainprogram->onscenemilli > 6000 or mainprogram->leftmouse) and !mainprogram->menuondisplay) or but->value) {
 					but->value = false;
 					// switch scenes
 					Scene* si = mainmix->scenes[comp][scene->deck][i];
@@ -5883,6 +5885,8 @@ void handle_scenes(Scene* scene) {
 							loopstation->elems[j]->erase_elem();
 						}
 					}
+					mainmix->mousedeck = scene->deck;
+					Layer* bulay = mainmix->currlay;
 					mainmix->open_deck(mainprogram->temppath + "tempdeck_" + std::to_string(comp) + std::to_string(scene->deck) + std::to_string(i) + ".deck", false);
 					boost::filesystem::rename(mainprogram->temppath + "tempdeck_xch.deck", mainprogram->temppath + "tempdeck_" + std::to_string(comp) + std::to_string(scene->deck) + std::to_string(mainmix->currscene[comp][scene->deck]) + ".deck");
 					std::vector<Layer*>& lvec2 = choose_layers(scene->deck);
@@ -5900,6 +5904,8 @@ void handle_scenes(Scene* scene) {
 							lvec2[j]->oldalive = si->tempnblayers[j]->oldalive;
 						}
 					}
+					const int max = lvec.size() - 1;
+					if (scene->deck == !bulay->deck) mainmix->currlay = lvec2[std::clamp(bulay->pos, 0, max)];
 					mainmix->currscene[comp][scene->deck] = i;
 					si->loaded = false;
 
@@ -7133,6 +7139,7 @@ void save_thumb(std::string path, GLuint tex) {
 	int he = mainprogram->oh3;
 	char *buf = (char*)malloc(wi * he * 3);
 
+	tex = copy_tex(tex);
 	GLuint texfrbuf, endfrbuf;
 	glGenFramebuffers(1, &texfrbuf);
 	glBindFramebuffer(GL_FRAMEBUFFER, texfrbuf);
@@ -8329,8 +8336,8 @@ int main(int argc, char* argv[]){
  	std::vector<std::string> layops1;
  	layops1.push_back("submenu livemenu");
  	layops1.push_back("Connect live");
-	layops1.push_back("Open file(s) before layer");
 	layops1.push_back("Open file(s) into queue");
+	layops1.push_back("Open file(s) in stack before layer");
 	layops1.push_back("Save layer");
  	layops1.push_back("New deck");
 	layops1.push_back("Open deck");
@@ -8348,8 +8355,8 @@ int main(int argc, char* argv[]){
  	std::vector<std::string> layops2;
  	layops2.push_back("submenu livemenu");
  	layops2.push_back("Connect live");
-	layops2.push_back("Open file(s) before layer");
 	layops2.push_back("Open file(s) into queue");
+	layops2.push_back("Open file(s) in stack");
 	layops2.push_back("Save layer");
  	layops2.push_back("New deck");
 	layops2.push_back("Open deck");
@@ -8366,8 +8373,8 @@ int main(int argc, char* argv[]){
 	std::vector<std::string> loadops;
 	loadops.push_back("submenu livemenu");
 	loadops.push_back("Connect live");
-	loadops.push_back("Open file(s) into layers");
 	loadops.push_back("Open file(s) into queue");
+	loadops.push_back("Open file(s) in stack");
 	loadops.push_back("New deck");
 	loadops.push_back("Open deck");
 	loadops.push_back("Save deck");
@@ -8777,13 +8784,18 @@ int main(int argc, char* argv[]){
 				std::string str(mainprogram->paths[0]);
 				if (mainmix->addlay) {
 					mainmix->addlay = false;
-					if (lvec.size() == 1 && mainprogram->loadlay->filename == "") {
+					if (mainprogram->loadlay->filename == "") {
 						mainprogram->loadlay = lvec[0];
 					}
 					else mainprogram->loadlay = mainmix->add_layer(lvec, lvec.size());
 					mainmix->currlay = mainprogram->loadlay;
 				}
-				else mainprogram->loadlay = mainmix->add_layer(lvec, mainprogram->loadlay->pos);
+				else {
+					if (mainprogram->loadlay->filename == "") {
+						mainprogram->loadlay = lvec[0];
+					}
+					else mainprogram->loadlay = mainmix->add_layer(lvec, mainprogram->loadlay->pos);
+				}
 				mainprogram->currfilesdir = dirname(str);
 				mainprogram->filescount = 0;
 				mainprogram->fileslay = mainprogram->loadlay;
@@ -8814,12 +8826,12 @@ int main(int argc, char* argv[]){
 			}
 			else if (mainprogram->pathto == "OPENSHELF") {
 				mainprogram->currshelfdir = dirname(mainprogram->path);
-				mainprogram->project->save(mainprogram->project->path);
+				//mainprogram->project->save(mainprogram->project->path);
 				mainmix->mouseshelf->open(mainprogram->path);
 			}
 			else if (mainprogram->pathto == "SAVESHELF") {
 				mainprogram->currshelfdir = dirname(mainprogram->path);
-				mainprogram->project->save(mainprogram->project->path);
+				//mainprogram->project->save(mainprogram->project->path);
 				mainmix->mouseshelf->save(mainprogram->path);
 			}
 			else if (mainprogram->pathto == "OPENSHELFFILES") {
