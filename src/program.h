@@ -434,7 +434,8 @@ class Program {
 		Box *effscrolldownA;
 		Box *effscrollupB;
 		Box *effscrolldownB;
-		Box *addeffectbox;
+		Box* addeffectbox;
+		Box* inserteffectbox;
 		Box* orderscrolldown;
 		Box* orderscrollup;
 		bool startloop = false;

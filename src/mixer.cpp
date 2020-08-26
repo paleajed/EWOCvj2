@@ -1,4 +1,4 @@
-#include <boost/filesystem.hpp>
+#include <boost/filesystem.hpp>f
 
 #include "IL/il.h"
 extern "C" {
@@ -327,7 +327,7 @@ void Param::handle() {
 	if (this != mainmix->adaptnumparam) {
 		render_text(parstr, white, this->box->vtxcoords->x1 + tf(0.01f), this->box->vtxcoords->y1 + tf(0.05f) - tf(0.030f), tf(0.0003f), tf(0.0005f));
 		if (this->box->in()) {
-			if (mainprogram->leftmousedown) {
+			if (mainprogram->leftmousedown and !mainprogram->inserteffectbox->in()) {
 				mainprogram->leftmousedown = false;
 				mainmix->adaptparam = this;
 				mainmix->prevx = mainprogram->mx;
@@ -1728,11 +1728,9 @@ Effect *do_add_effect(Layer *lay, EFFECT_TYPE type, int pos, bool comp) {
 		}
 		else {
 			if (lay->pos == 0) {
-				lay->lasteffnode[0]->out.clear();
 				mainprogram->nodesmain->currpage->connect_nodes(lay->lasteffnode[0], effnode1);
 			}
 			else {
-				lay->blendnode->out.clear();
 				mainprogram->nodesmain->currpage->connect_nodes(lay->blendnode, effnode1);
 			}
 		}
@@ -3274,6 +3272,10 @@ void Layer::display() {
 			mainprogram->effscrollupB->vtxcoords->x1 = efx;
 			mainprogram->effscrolldownA->vtxcoords->x1 = efx;
 			mainprogram->effscrolldownB->vtxcoords->x1 = efx;
+			mainprogram->effscrollupA->upvtxtoscr();
+			mainprogram->effscrollupB->upvtxtoscr();
+			mainprogram->effscrolldownA->upvtxtoscr();
+			mainprogram->effscrolldownB->upvtxtoscr();
 			Box* box = mainprogram->effcat[this->deck]->box;
 			box->vtxcoords->x1 = efx;
 			box->upvtxtoscr();
@@ -3392,27 +3394,23 @@ void Layer::display() {
 					vy1 = 1 - mainprogram->layh - tf(0.25f);
 				}
 				if (!mainprogram->menuondisplay) {
-					if (sx1 < mainprogram->mx and mainprogram->mx < sx1 + sw) {
-						bool cond1 = (sy1 + mainprogram->yvtxtoscr(tf(0.01f)) < mainprogram->my and mainprogram->my < sy1 + mainprogram->yvtxtoscr(tf(0.048f)));
-						bool cond2 = (sy1 - 7.5 <= mainprogram->my and mainprogram->my <= sy1 + 7.5);
-						if (cond2) {
-							inbetween = true;
-							vx2 = vx1;
-							vy2 = vy1 - tf(0.011f);
+					if (sy1 - 7.5 <= mainprogram->my and mainprogram->my <= sy1 + 7.5) {
+						inbetween = true;
+						vx2 = vx1;
+						vy2 = vy1 - tf(0.011f);
+					}
+					if (mainprogram->addeffectbox->in() or mainprogram->inserteffectbox->in()) {
+						if ((mainprogram->menuactivation or mainprogram->leftmouse) and !mainprogram->drageff) {
+							mainprogram->effectmenu->state = 2;
+							mainmix->insert = 1;
+							mainmix->mouseeffect = evec.size();
+							mainmix->mouselayer = this;
+							mainprogram->effectmenu->menux = mainprogram->mx;
+							mainprogram->effectmenu->menuy = mainprogram->my;
+							mainprogram->menuactivation = false;
+							mainprogram->menuondisplay = true;
 						}
-						if (cond1 or cond2) {
-							if ((mainprogram->menuactivation or mainprogram->leftmouse) and !mainprogram->drageff) {
-								mainprogram->effectmenu->state = 2;
-								mainmix->insert = 1;
-								mainmix->mouseeffect = evec.size();
-								mainmix->mouselayer = this;
-								mainprogram->effectmenu->menux = mainprogram->mx;
-								mainprogram->effectmenu->menuy = mainprogram->my;
-								mainprogram->menuactivation = false;
-								mainprogram->menuondisplay = true;
-							}
-							bottom = true;
-						}
+						bottom = true;
 					}
 				}
 				mainprogram->indragbox = false;
@@ -3491,6 +3489,7 @@ void Layer::display() {
 			}
 
 			// Draw effectmenuhints
+			mainprogram->inserteffectbox->vtxcoords->x1 = 1.0f; // shove inserteffectbox offscreen
 			if (!mainprogram->queueing) {
 				if (vy1 < 1.0 - mainprogram->layh - tf(0.09f) - tf(0.22f) - tf(0.05f) * (mainprogram->efflines - 1)) {
 					vy1 = 1.0 - mainprogram->layh - tf(0.09f) - tf(0.20f) - tf(0.05f) * (mainprogram->efflines - 1);
@@ -3512,7 +3511,10 @@ void Layer::display() {
 				if (inbetween) { //true when mouse inbetween effect stack entries
 					inbetween = false;
 					draw_box(lightblue, lightblue, vx2, vy2, tf(mainprogram->layw), tf(0.022f), -1);
-					draw_box(white, lightblue, mainprogram->mx * 2.0f / glob->w - 1.0f - tf(0.08f), 1.0f - (mainprogram->my * 2.0f / glob->h) - tf(0.019f), tf(0.16f), tf(0.038f), -1);
+					mainprogram->inserteffectbox->vtxcoords->x1 = mainprogram->mx * 2.0f / glob->w - 1.0f - tf(0.08f);
+					mainprogram->inserteffectbox->vtxcoords->y1 = 1.0f - (mainprogram->my * 2.0f / glob->h) - tf(0.019f);
+					mainprogram->inserteffectbox->upvtxtoscr();
+					draw_box(white, lightblue, mainprogram->inserteffectbox, -1);
 					render_text("+ Insert effect", white, mainprogram->mx * 2.0f / glob->w - 1.0f - tf(0.07f), 1.0f - (mainprogram->my * 2.0f / glob->h) - tf(0.004f), tf(0.0003f), tf(0.0005f));
 				}
 			}
@@ -3548,7 +3550,7 @@ void Layer::display() {
 				}
 				if (mainprogram->lmover) {
 					// do effect drag
-					Node* bulastoutnode = this->lasteffnode[0]->out[0];
+					Node* bulastoutnode = this->lasteffnode[cat]->out[0];
 					if (mainprogram->drageffpos < pos) {
 						std::rotate(evec.begin() + mainprogram->drageffpos, evec.begin() + mainprogram->drageffpos + 1, evec.begin() + pos);
 					}
@@ -3558,13 +3560,23 @@ void Layer::display() {
 					for (int k = 0; k < evec.size(); k++) {
 						// set pos and box y1 and connect nodes for all effects in new list
 						if (k == 0) {
-							mainprogram->nodesmain->currpage->connect_nodes(this->node, evec[0]->node);
+							if (cat) {
+								if (this->pos == 0) {
+									mainprogram->nodesmain->currpage->connect_nodes(this->lasteffnode[0], evec[0]->node);
+								}
+								else {
+									mainprogram->nodesmain->currpage->connect_nodes(this->blendnode, evec[0]->node);
+								}
+							}
+							else {
+								mainprogram->nodesmain->currpage->connect_nodes(this->node, evec[0]->node);
+							}
 						}
 						else if (k < evec.size()) {
 							mainprogram->nodesmain->currpage->connect_nodes(evec[k - 1]->node, evec[k]->node);
 						}
 						if (k == evec.size() - 1) {
-							this->lasteffnode[0] = evec[k]->node;
+							this->lasteffnode[cat] = evec[k]->node;
 							mainprogram->nodesmain->currpage->connect_nodes(evec[k]->node, bulastoutnode);
 						}
 						if (this->pos == 0 and this->effects[1].size() == 0) {
@@ -5689,7 +5701,12 @@ void Mixer::open_mix(const std::string &path, bool alive) {
 						map[layers[i]->clonesetnr] = mainmix->clonesets.size() - 1;
 						layers[i]->clonesetnr = mainmix->clonesets.size() - 1;
 					}
-					else layers[i]->clonesetnr = map[layers[i]->clonesetnr];
+					else {
+						layers[i]->clonesetnr = map[layers[i]->clonesetnr];
+						layers[i]->isclone = true;
+						layers[i]->initialized = true;
+						layers[i]->decresult->width = -1;
+					}
 					mainmix->clonesets[layers[i]->clonesetnr]->emplace(layers[i]);
 				}
 			}
@@ -6272,7 +6289,7 @@ int Mixer::read_layers(std::istream &rfile, const std::string &result, std::vect
 				lay = layers[0];
 				lay->numefflines[0] = 0;
 				if (type == 1) mainmix->currlay = lay;
-				lay->lasteffnode[1]->out.clear();
+				if (lay->lasteffnode[0] != lay->lasteffnode[1]) lay->lasteffnode[1]->out.clear();
 			}
 			else {
 				lay = mainmix->add_layer(layers, pos);

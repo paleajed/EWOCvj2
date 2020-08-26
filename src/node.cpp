@@ -192,6 +192,7 @@ void VideoNode::upeffboxes() {
 }
 
 void NodePage::connect_nodes(Node *node1, Node *node2) {
+	node1->out.clear();  // reminder: implement multiple out nodes
 	if (node2->in != nullptr) {
 		if (node2->in->out.size()) {
 			if (std::find(node2->in->out.begin(), node2->in->out.end(), node2) != node2->in->out.end()) {
