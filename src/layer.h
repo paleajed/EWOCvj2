@@ -197,7 +197,7 @@ class Layer {
 		GLuint endbuf;
 		GLuint pbo[3];
 		GLubyte* mapptr[3];
-		GLsync syncobj[3];
+		GLsync syncobj[3] = {nullptr, nullptr, nullptr};
 		char pbodi = 0;
 		char pboui = 1;
 		bool drawfbo2 = false;

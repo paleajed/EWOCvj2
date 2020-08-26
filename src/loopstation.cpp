@@ -136,7 +136,7 @@ void LoopStationElement::handle() {
 		}
 	}
 	
-	if ((this->loopbut->value or this->playbut->value) and this->eventlist.size()) this->set_values();
+	if ((this->loopbut->value || this->playbut->value) && this->eventlist.size()) this->set_values();
 }
 
 void LoopStationElement::init() {
@@ -267,7 +267,7 @@ void LoopStationElement::mouse_handle() {
 		}
 	}
 	//current loopstation element selection
-	if (this->box->in() and mainprogram->leftmouse) loopstation->currelem = this;
+	if (this->box->in() && mainprogram->leftmouse) loopstation->currelem = this;
 }
 	
 void LoopStationElement::set_values() {
@@ -406,7 +406,7 @@ LoopStationElement* LoopStation::free_element() {
 	LoopStationElement *loop = nullptr;
 	for (int i = 0; i < this->elems.size(); i++) {
 		LoopStationElement *elem = this->elems[i];
-		if (!elem->recbut->value and elem->eventlist.size() == 0) {
+		if (!elem->recbut->value && elem->eventlist.size() == 0) {
 			loop = elem;
 			break;
 		}

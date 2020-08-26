@@ -626,8 +626,8 @@ void NodePage::handle_nodes() {
 		}
 		
 		
-		if (node->box->scrcoords->x1 - 10 < mainprogram->mx and mainprogram->mx < node->box->scrcoords->x1 + 10) {
-			if (node->box->scrcoords->y1 - node->box->scrcoords->h / 2 - 10 < mainprogram->my and mainprogram->my < node->box->scrcoords->y1 - node->box->scrcoords->h / 2 + 10) {
+		if (node->box->scrcoords->x1 - 10 < mainprogram->mx && mainprogram->mx < node->box->scrcoords->x1 + 10) {
+			if (node->box->scrcoords->y1 - node->box->scrcoords->h / 2 - 10 < mainprogram->my && mainprogram->my < node->box->scrcoords->y1 - node->box->scrcoords->h / 2 + 10) {
 				draw_box(blue, blue, node->box->vtxcoords->x1 - mainprogram->xscrtovtx(10), node->box->vtxcoords->y1 + node->box->vtxcoords->h / 2.0f - mainprogram->yscrtovtx(10), mainprogram->xscrtovtx(20), mainprogram->yscrtovtx(20), -1);
 				if (mainprogram->leftmousedown) {
 					mainprogram->leftmousedown = false;
@@ -641,8 +641,8 @@ void NodePage::handle_nodes() {
 			}
 		}
 		if (node->type == BLEND) {
-			if (node->box->scrcoords->x1 + node->box->scrcoords->w / 2 - 10 < mainprogram->mx and mainprogram->mx < node->box->scrcoords->x1 + node->box->scrcoords->w / 2 + 10) {
-				if (node->box->scrcoords->y1 - 10 < mainprogram->my and mainprogram->my < node->box->scrcoords->y1 + 10) {
+			if (node->box->scrcoords->x1 + node->box->scrcoords->w / 2 - 10 < mainprogram->mx && mainprogram->mx < node->box->scrcoords->x1 + node->box->scrcoords->w / 2 + 10) {
+				if (node->box->scrcoords->y1 - 10 < mainprogram->my && mainprogram->my < node->box->scrcoords->y1 + 10) {
 					draw_box(blue, blue, node->box->vtxcoords->x1 + node->box->vtxcoords->w / 2.0f - mainprogram->xscrtovtx(10), node->box->vtxcoords->y1 - mainprogram->yscrtovtx(10), mainprogram->xscrtovtx(20), mainprogram->yscrtovtx(20), -1);
 					if (mainprogram->leftmousedown) {
 						mainprogram->leftmousedown = false;
@@ -651,8 +651,8 @@ void NodePage::handle_nodes() {
 				}
 			}
 		}
-		if (node->box->scrcoords->x1 + node->box->scrcoords->w - 10 < mainprogram->mx and mainprogram->mx < node->box->scrcoords->x1 + node->box->scrcoords->w + 10) {
-			if (node->box->scrcoords->y1 - node->box->scrcoords->h / 2 - 10 < mainprogram->my and mainprogram->my < node->box->scrcoords->y1 - node->box->scrcoords->h / 2 + 10) {
+		if (node->box->scrcoords->x1 + node->box->scrcoords->w - 10 < mainprogram->mx && mainprogram->mx < node->box->scrcoords->x1 + node->box->scrcoords->w + 10) {
+			if (node->box->scrcoords->y1 - node->box->scrcoords->h / 2 - 10 < mainprogram->my && mainprogram->my < node->box->scrcoords->y1 - node->box->scrcoords->h / 2 + 10) {
 				draw_box(blue, blue, node->box->vtxcoords->x1 + node->box->vtxcoords->w - mainprogram->xscrtovtx(10), node->box->vtxcoords->y1 + node->box->vtxcoords->h / 2.0f - mainprogram->yscrtovtx(10), mainprogram->xscrtovtx(20), mainprogram->yscrtovtx(20), -1);
 				if (mainprogram->leftmousedown) {
 					mainprogram->leftmousedown = false;
@@ -678,8 +678,8 @@ void NodePage::handle_nodes() {
 				bool found = false;
 				for (int i = 0; i < mainprogram->nodesmain->currpage->nodes.size(); i++) {
 					Node *conn = mainprogram->nodesmain->currpage->nodes[i];
-					if (conn->box->scrcoords->x1 - 10 < mainprogram->mx and mainprogram->mx < conn->box->scrcoords->x1 + 10) {
-						if (conn->box->scrcoords->y1 - conn->box->scrcoords->h / 2 - 10 < mainprogram->my and mainprogram->my < conn->box->scrcoords->y1 - conn->box->scrcoords->h / 2 + 10) {
+					if (conn->box->scrcoords->x1 - 10 < mainprogram->mx && mainprogram->mx < conn->box->scrcoords->x1 + 10) {
+						if (conn->box->scrcoords->y1 - conn->box->scrcoords->h / 2 - 10 < mainprogram->my && mainprogram->my < conn->box->scrcoords->y1 - conn->box->scrcoords->h / 2 + 10) {
 							node->out.push_back(conn);
 							if (conn->in) {
 								conn->in->out.erase(std::find(conn->in->out.begin(), conn->in->out.end(), conn));
@@ -690,8 +690,8 @@ void NodePage::handle_nodes() {
 					}
 					if (conn->type == BLEND) {
 						BlendNode *bconn = (BlendNode*)conn;
-						if (bconn->box->scrcoords->x1 + bconn->box->scrcoords->w / 2 - 10 < mainprogram->mx and mainprogram->mx < bconn->box->scrcoords->x1 + bconn->box->scrcoords->w / 2 + 10) {
-							if (bconn->box->scrcoords->y1 - 10 < mainprogram->my and mainprogram->my < bconn->box->scrcoords->y1 + 10) {
+						if (bconn->box->scrcoords->x1 + bconn->box->scrcoords->w / 2 - 10 < mainprogram->mx && mainprogram->mx < bconn->box->scrcoords->x1 + bconn->box->scrcoords->w / 2 + 10) {
+							if (bconn->box->scrcoords->y1 - 10 < mainprogram->my && mainprogram->my < bconn->box->scrcoords->y1 + 10) {
 								if (bconn->in2) {
 									bconn->in2->out.erase(std::find(bconn->in2->out.begin(), bconn->in2->out.end(), bconn));
 								}
@@ -702,7 +702,7 @@ void NodePage::handle_nodes() {
 						}
 					}
 				}
-				if (!found and !node->nocutting) {
+				if (!found && !node->nocutting) {
 					for (int i = 0; i < node->out.size(); i++) node->out[i]->in = nullptr;
 					for (int i = 0; i < node->out.size(); i++) node->out.erase(node->out.begin() + i);
 				}
@@ -711,8 +711,8 @@ void NodePage::handle_nodes() {
 			else if (node->dragging == C_IN) {
 				for (int i = 0; i < mainprogram->nodesmain->currpage->nodes.size(); i++) {
 					Node *conn = mainprogram->nodesmain->currpage->nodes[i];
-					if (conn->box->scrcoords->x1 + conn->box->scrcoords->w - 10 < mainprogram->mx and mainprogram->mx < conn->box->scrcoords->x1 + conn->box->scrcoords->w + 10) {
-						if (conn->box->scrcoords->y1 - conn->box->scrcoords->h / 2 - 10 < mainprogram->my and mainprogram->my < conn->box->scrcoords->y1 - conn->box->scrcoords->h / 2 + 10) {
+					if (conn->box->scrcoords->x1 + conn->box->scrcoords->w - 10 < mainprogram->mx && mainprogram->mx < conn->box->scrcoords->x1 + conn->box->scrcoords->w + 10) {
+						if (conn->box->scrcoords->y1 - conn->box->scrcoords->h / 2 - 10 < mainprogram->my && mainprogram->my < conn->box->scrcoords->y1 - conn->box->scrcoords->h / 2 + 10) {
 							conn->out.push_back(node);
 							node->in = conn;
 						}
@@ -722,8 +722,8 @@ void NodePage::handle_nodes() {
 			else if (node->dragging == C_IN2) {
 				for (int i = 0; i < mainprogram->nodesmain->currpage->nodes.size(); i++) {
 					Node *conn = mainprogram->nodesmain->currpage->nodes[i];
-					if (conn->box->scrcoords->x1 + conn->box->scrcoords->w - 10 < mainprogram->mx and mainprogram->mx < conn->box->scrcoords->x1 + conn->box->scrcoords->w + 10) {
-						if (conn->box->scrcoords->y1 - conn->box->scrcoords->h / 2 - 10 < mainprogram->my and mainprogram->my < conn->box->scrcoords->y1 - conn->box->scrcoords->h / 2 + 10) {
+					if (conn->box->scrcoords->x1 + conn->box->scrcoords->w - 10 < mainprogram->mx && mainprogram->mx < conn->box->scrcoords->x1 + conn->box->scrcoords->w + 10) {
+						if (conn->box->scrcoords->y1 - conn->box->scrcoords->h / 2 - 10 < mainprogram->my && mainprogram->my < conn->box->scrcoords->y1 - conn->box->scrcoords->h / 2 + 10) {
 							mainprogram->nodesmain->currpage->connect_in2(conn, (BlendNode*)node);
 						}
 					}
@@ -738,7 +738,7 @@ void NodePage::handle_nodes() {
 				if (node->monitor == i + mainmix->currscene[0][0] * 6) {
 					draw_box(white, red, node->box->vtxcoords->x1 + mainprogram->xscrtovtx(1) + i * mainprogram->xscrtovtx(21), node->box->vtxcoords->y1 + node->box->vtxcoords->h, mainprogram->xscrtovtx(21), mainprogram->yscrtovtx(10), -1);
 				}
-				else if (node->box->scrcoords->x1 + 1 + i * 21 < mainprogram->mx and mainprogram->mx < node->box->scrcoords->x1 + 22 + i * 21 and node->box->scrcoords->y1 - node->box->scrcoords->h - 21 < mainprogram->my and mainprogram->my < node->box->scrcoords->y1 - node->box->scrcoords->h) {
+				else if (node->box->scrcoords->x1 + 1 + i * 21 < mainprogram->mx && mainprogram->mx < node->box->scrcoords->x1 + 22 + i * 21 && node->box->scrcoords->y1 - node->box->scrcoords->h - 21 < mainprogram->my && mainprogram->my < node->box->scrcoords->y1 - node->box->scrcoords->h) {
 					if (mainprogram->leftmouse) {
 						for (int k = 0; k < mainprogram->nodesmain->currpage->nodes.size(); k++){
 							if (mainprogram->nodesmain->currpage->nodes[k]->monitor == i + mainmix->currscene[0][0] * 6) {
@@ -756,8 +756,8 @@ void NodePage::handle_nodes() {
 				
 		if (node->type == MIX) {
 			draw_box(node->box, ((MixNode*)node)->mixtex);					
-			if (node->box->scrcoords->x1 - 10 < mainprogram->mx and mainprogram->mx < node->box->scrcoords->x1 + 10) {
-				if (node->box->scrcoords->y1 - 45 < mainprogram->my and mainprogram->my < node->box->scrcoords->y1 - 25) {
+			if (node->box->scrcoords->x1 - 10 < mainprogram->mx && mainprogram->mx < node->box->scrcoords->x1 + 10) {
+				if (node->box->scrcoords->y1 - 45 < mainprogram->my && mainprogram->my < node->box->scrcoords->y1 - 25) {
 					draw_box(blue, blue, node->box->vtxcoords->x1 - mainprogram->xscrtovtx(10), node->box->vtxcoords->y1 + mainprogram->yscrtovtx(25), mainprogram->xscrtovtx(20), mainprogram->yscrtovtx(20), -1);
 					if (mainprogram->leftmousedown) {
 						mainprogram->leftmousedown = false;
@@ -778,8 +778,8 @@ void NodePage::handle_nodes() {
 				if (node->dragging == C_IN) {
 					for (int i = 0; i < mainprogram->nodesmain->currpage->nodes.size(); i++) {
 						Node *conn = mainprogram->nodesmain->currpage->nodes[i];
-						if (conn->box->scrcoords->x1 + conn->box->scrcoords->w - 10 < mainprogram->mx and mainprogram->mx < conn->box->scrcoords->x1 + conn->box->scrcoords->w + 10) {
-							if (conn->box->scrcoords->y1 - 45 < mainprogram->my and mainprogram->my < conn->box->scrcoords->y1 - 25) {
+						if (conn->box->scrcoords->x1 + conn->box->scrcoords->w - 10 < mainprogram->mx && mainprogram->mx < conn->box->scrcoords->x1 + conn->box->scrcoords->w + 10) {
+							if (conn->box->scrcoords->y1 - 45 < mainprogram->my && mainprogram->my < conn->box->scrcoords->y1 - 25) {
 								conn->out.push_back(node);
 								node->in = conn;
 							}
@@ -794,7 +794,7 @@ void NodePage::handle_nodes() {
 					if (node->monitor == i + mainmix->currscene[0][0] * 6) {
 						draw_box(white, red, node->box->vtxcoords->x1 + mainprogram->xscrtovtx(1) + i * mainprogram->xscrtovtx(21), node->box->vtxcoords->y1 + node->box->vtxcoords->h, mainprogram->xscrtovtx(21), mainprogram->yscrtovtx(10), -1);
 					}
-					else if (node->box->scrcoords->x1 + 1 + i * 21 < mainprogram->mx and mainprogram->mx < node->box->scrcoords->x1 + 22 + i * 21 and node->box->scrcoords->y1 - node->box->scrcoords->h - 21 < mainprogram->my and mainprogram->my < node->box->scrcoords->y1 - node->box->scrcoords->h) {
+					else if (node->box->scrcoords->x1 + 1 + i * 21 < mainprogram->mx && mainprogram->mx < node->box->scrcoords->x1 + 22 + i * 21 && node->box->scrcoords->y1 - node->box->scrcoords->h - 21 < mainprogram->my && mainprogram->my < node->box->scrcoords->y1 - node->box->scrcoords->h) {
 						if (mainprogram->leftmouse) {
 							for (int k = 0; k < mainprogram->nodesmain->currpage->nodes.size(); k++){
 								if (mainprogram->nodesmain->currpage->nodes[k]->monitor == i + mainmix->currscene[0][0] * 6) {

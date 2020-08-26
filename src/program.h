@@ -1,15 +1,16 @@
 #include <boost/filesystem.hpp>
 
+#include "dirent.h"
 #include <string>
 #include "GL/gl.h"
-#ifdef _WIN64
+#ifdef WINDOWS
 #include "dirent.h"
 #endif
 #include <RtMidi.h>
 #include <istream>
 #include <lo/lo.h>
 #include <lo/lo_cpp.h>
-#ifdef __linux__
+#ifdef POSIX
 #include <dirent.h>
 #endif
 
@@ -553,7 +554,7 @@ class Program {
 		Button* wormhole2;
 		DIR *opendir;
 		bool gotcameras = false;
-		
+
 		EDIT_TYPE renaming = EDIT_NONE;
 		std::string choosedir = "";
 		std::string inputtext;

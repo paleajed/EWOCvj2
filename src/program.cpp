@@ -1,3 +1,9 @@
+#if defined(WIN32) && !defined(UNIX)
+#define WINDOWS
+#elif defined(UNIX) && !defined(WIN32)
+#define POSIX
+#endif
+
 //#define _AFXDLL
 //#include <afxwin.h>
 #include <boost/algorithm/string.hpp>
@@ -6,7 +12,7 @@
 #include "GL/glew.h"
 #include "GL/gl.h"
 #include "GL/glut.h"
-#ifdef __linux__
+#ifdef POSIX
 #include "GL/glx.h"
 #include <X11/Xlib.h>
 #include <X11/Xutil.h>
@@ -14,7 +20,8 @@
 #include "paths.h"
 #endif
 
-#ifdef _WIN64
+#ifdef WINDOWS
+#include <tchar.h>
 #include "dirent.h"
 #include <intrin.h>
 #include <shobjidl.h>
@@ -27,13 +34,11 @@
 #pragma comment (lib, "ole32.lib")
 #include <windows.h>
 #include <tlhelp32.h>
-#include <tchar.h>
 #include <shellscalingapi.h>
 #include <comdef.h>
 #endif
 
-#ifdef _WIN64
-#include <atlstr.h>
+#ifdef WINDOWS
 #include <Commdlg.h>
 #include <initguid.h>
 #include <KnownFolders.h>
@@ -68,7 +73,7 @@
 Program::Program() {
 	this->project = new Project;
 
-#ifdef _WIN64
+#ifdef WINDOWS
 	PWSTR charbuf;
 	HRESULT hr = SHGetKnownFolderPath(FOLDERID_Documents, 0, NULL, &charbuf);
 	std::wstring ws1(charbuf);
@@ -88,7 +93,7 @@ Program::Program() {
 	std::string str3(ws3.begin(), ws3.end());
 	this->temppath = str3 + "EWOCvj2/";
 #endif
-#ifdef __linux__
+#ifdef POSIX
 	std::string homedir(getenv("HOME"));
 	this->temppath = homedir + "/.ewocvj2/temp/";
 	this->docpath = homedir + "/.ewocvj2";
@@ -439,6 +444,7 @@ LPCSTR Program::mime_to_wildcard(std::string filters) {
 	if (filters == "application/ewocvj2-project") return "EWOCvj2 project file (.ewocvj)\0*.ewocvj\0";
 	if (filters == "application/ewocvj2-shelf") return "EWOCvj2 shelf file (.shelf)\0*.shelf\0";
 	if (filters == "application/ewocvj2-bin") return "EWOCvj2 bin file (.bin)\0*.bin\0";
+	return "";
 }
 
 void Program::win_dialog(const char* title, LPCSTR filters, std::string defaultdir, bool open, bool multi) {
@@ -450,7 +456,7 @@ void Program::win_dialog(const char* title, LPCSTR filters, std::string defaultd
 		name = basename(defaultdir);
 		defaultdir = defaultdir.substr(0, defaultdir.length() - name.length() - 1);
 	}
-#ifdef _WIN64
+#ifdef WINDOWS
 	OPENFILENAME ofn;
 	char szFile[4096];
 	if (name != "") {
@@ -478,7 +484,7 @@ void Program::win_dialog(const char* title, LPCSTR filters, std::string defaultd
 	bool ret;
 	if (open) ret = GetOpenFileName(&ofn);
 	else ret = GetSaveFileName(&ofn);
-	if (strlen(ofn.lpstrFile) == 0 or ret == 0) {
+	if (strlen(ofn.lpstrFile) == 0 || ret == 0) {
 		binsmain->openbinfile = false;
 		return;
 	}
@@ -505,7 +511,7 @@ void Program::win_dialog(const char* title, LPCSTR filters, std::string defaultd
 void Program::get_inname(const char *title, std::string filters, std::string defaultdir) {
 	bool as = mainprogram->autosave;
 	mainprogram->autosave = false;
-	#ifdef _WIN64
+	#ifdef WINDOWS
 	LPCSTR lpcfilters = this->mime_to_wildcard(filters);
 	this->win_dialog(title, lpcfilters, defaultdir, true, false);
 	#endif
@@ -516,7 +522,7 @@ void Program::get_outname(const char *title, std::string filters, std::string de
 	bool as = mainprogram->autosave;
 	mainprogram->autosave = false;
 
-	#ifdef _WIN64
+	#ifdef WINDOWS
 	LPCSTR lpcfilters = this->mime_to_wildcard(filters);
 	this->win_dialog(title, lpcfilters, defaultdir, false, false);
 	#endif
@@ -527,11 +533,11 @@ void Program::get_multinname(const char* title, std::string filters, std::string
 	bool as = this->autosave;
 	this->autosave = false;
 	//outpaths = tinyfd_openFileDialog(title, dd, 0, nullptr, nullptr, 1);
-	#ifdef _WIN64
+	#ifdef WINDOWS
 	LPCSTR lpcfilters = this->mime_to_wildcard(filters);
 	this->win_dialog(title, lpcfilters, defaultdir, true, true);
 	#endif
-	#ifdef __linux__
+	#ifdef POSIX
 	#endif
 	if (mainprogram->paths.size()) {
 		this->path = (char*)"ENTER";
@@ -555,7 +561,7 @@ void Program::get_dir(std::string title, std::string defaultdir) {
 	//MultiByteToWideChar(CP_ACP, MB_PRECOMPOSED, szPath, -1, olePath, MAX_PATH);
 	//hr = pDesktopFolder->ParseDisplayName(NULL, NULL, olePath, nullptr, &pidl, nullptr);
 
-#ifdef _WIN64
+#ifdef WINDOWS
 	OleInitialize(NULL); 
 	TCHAR* szDir = new TCHAR[MAX_PATH];
 	BROWSEINFO bInfo;
@@ -601,10 +607,10 @@ bool Program::order_paths(bool dodeckmix) {
 		else if (str.substr(str.length() - 6, std::string::npos) == ".layer") {
 			tex = get_layertex(str);
 		}
-		else if (dodeckmix and str.substr(str.length() - 5, std::string::npos) == ".deck") {
+		else if (dodeckmix && str.substr(str.length() - 5, std::string::npos) == ".deck") {
 			tex = get_deckmixtex(str);
 		}
-		else if (dodeckmix and str.substr(str.length() - 4, std::string::npos) == ".mix") {
+		else if (dodeckmix && str.substr(str.length() - 4, std::string::npos) == ".mix") {
 			tex = get_deckmixtex(str);
 		}
 		else {
@@ -671,13 +677,13 @@ bool Program::do_order_paths() {
 
 	// mousewheel scroll
 	this->pathscroll -= mainprogram->mousewheel;
-	if (this->dragstr != "" and mainmix->time - mainmix->oldtime> 0.1f) {
+	if (this->dragstr != "" && mainmix->time - mainmix->oldtime> 0.1f) {
 		// border scroll when dragging
 		if (mainprogram->my < yvtxtoscr(0.1f)) this->pathscroll--;
 		if (mainprogram->my > yvtxtoscr(1.9f)) this->pathscroll++;
 	}
 	if (this->pathscroll < 0) this->pathscroll = 0;
-	if (this->paths.size() > 18 and this->paths.size() - this->pathscroll < 18) this->pathscroll = this->paths.size() - 17;
+	if (this->paths.size() > 18 && this->paths.size() - this->pathscroll < 18) this->pathscroll = this->paths.size() - 17;
 
 	mainprogram->frontbatch = true;
 	// draw and handle orderlist scrollboxes
@@ -694,7 +700,7 @@ bool Program::do_order_paths() {
 		if (box->in()) {
 			std::string path = this->paths[j];
 			if (this->dragstr == "") {
-				if (mainprogram->orderleftmousedown and !this->dragpathsense) {
+				if (mainprogram->orderleftmousedown && !this->dragpathsense) {
 					this->dragpathsense = true;
 					dragbox = box;
 					this->dragpathpos = j;
@@ -707,7 +713,7 @@ bool Program::do_order_paths() {
 		}
 	}
 
-	if (!indragbox and this->dragpathsense) {
+	if (!indragbox && this->dragpathsense) {
 		this->dragstr = this->paths[this->dragpathpos];
 		this->dragpathsense = false;
 	}
@@ -721,7 +727,7 @@ bool Program::do_order_paths() {
 	applybox.upvtxtoscr();
 	draw_box(white, black, &applybox, -1);
 	render_text("APPLY ORDER", white, -0.4f + tf(0.01f), 0.8f - limit * 0.1f + tf(0.05f) - tf(0.030f), tf(0.0003f), tf(0.0005f));
-	if (applybox.in2() and this->dragstr == "") {
+	if (applybox.in2() && this->dragstr == "") {
 		if (mainprogram->orderleftmouse) return true;
 	}
 
@@ -746,7 +752,7 @@ bool Program::do_order_paths() {
 				upper = glob->h;
 			}
 			else upper = this->pathboxes[j]->scrcoords->y1 + this->pathboxes[j]->scrcoords->h * 0.5f;
-			if (mainprogram->my > under2 and mainprogram->my < upper) {
+			if (mainprogram->my > under2 && mainprogram->my < upper) {
 				draw_box(white, black, this->pathboxes[this->dragpathpos]->vtxcoords->x1, 1.0f - mainprogram->yscrtovtx(under1), this->pathboxes[this->dragpathpos]->vtxcoords->w, this->pathboxes[this->dragpathpos]->vtxcoords->h, -1);
 				draw_box(white, black, 0.3f, 1.0f - mainprogram->yscrtovtx(under1), 0.1f, 0.1f, this->pathtexes[this->dragpathpos]);
 				render_text(this->dragstr, white, -0.4f + tf(0.01f), 1.0f - mainprogram->yscrtovtx(under1) + tf(0.05f) - tf(0.030f), tf(0.0003f), tf(0.0005f));
@@ -844,7 +850,7 @@ void Program::handle_wormhole(bool hole) {
 			}
 			if (mainprogram->dragbinel) {
 				//dragging something inside wormhole
-				if (!mainprogram->inwormhole and !mainprogram->menuondisplay) {
+				if (!mainprogram->inwormhole && !mainprogram->menuondisplay) {
 					if (mainprogram->mx == hole * (glob->w - 1)) {
 						if (!mainprogram->binsscreen) {
 							set_queueing(false);
@@ -882,7 +888,7 @@ void Program::set_ow3oh3() {
 }
 
 void Program::handle_changed_owoh() {
-	if (this->ow != this->oldow or this->oh != this->oldoh) {
+	if (this->ow != this->oldow || this->oh != this->oldoh) {
 		for (int i = 0; i < this->nodesmain->pages.size(); i++) {
 			for (int j = 0; j < this->nodesmain->pages[i]->nodes.size(); j++) {
 				Node* node = this->nodesmain->pages[i]->nodes[j];
@@ -1015,7 +1021,7 @@ int Program::handle_scrollboxes(Box* upperbox, Box* lowerbox, int numlines, int 
 			upperbox->acolor[1] = 0.5f;
 			upperbox->acolor[2] = 1.0f;
 			upperbox->acolor[3] = 1.0f;
-			if (mainprogram->leftmouse or mainprogram->orderleftmouse) {
+			if (mainprogram->leftmouse || mainprogram->orderleftmouse) {
 				scrollpos--;
 			}
 		}
@@ -1034,7 +1040,7 @@ int Program::handle_scrollboxes(Box* upperbox, Box* lowerbox, int numlines, int 
 			lowerbox->acolor[1] = 0.5f;
 			lowerbox->acolor[2] = 1.0f;
 			lowerbox->acolor[3] = 1.0f;
-			if (mainprogram->leftmouse or mainprogram->orderleftmouse) {
+			if (mainprogram->leftmouse || mainprogram->orderleftmouse) {
 				scrollpos++;
 			}
 		}
@@ -1095,7 +1101,7 @@ void Program::layerstack_scrollbar_handle() {
 		bool inbox = false;
 		if (box.in2()) {
 			inbox = true;
-			if (mainprogram->leftmousedown and mainmix->scrollon == 0 and !mainprogram->menuondisplay) {
+			if (mainprogram->leftmousedown && mainmix->scrollon == 0 && !mainprogram->menuondisplay) {
 				mainmix->scrollon = i + 1;
 				mainmix->scrollmx = mainprogram->mx;
 				mainprogram->leftmousedown = false;
@@ -1131,7 +1137,7 @@ void Program::layerstack_scrollbar_handle() {
 			if (j == size - 1) {
 				if (slidex > 0.0f) box.vtxcoords->w -= slidex;
 			}
-			if (j >= mainmix->scenes[comp][i][mainmix->currscene[comp][i]]->scrollpos and j < mainmix->scenes[comp][i][mainmix->currscene[comp][i]]->scrollpos + 3) {
+			if (j >= mainmix->scenes[comp][i][mainmix->currscene[comp][i]]->scrollpos && j < mainmix->scenes[comp][i][mainmix->currscene[comp][i]]->scrollpos + 3) {
 				if (inbox) draw_box(white, lightblue, &box, -1);
 				else draw_box(white, grey, &box, -1);
 			}
@@ -1139,7 +1145,7 @@ void Program::layerstack_scrollbar_handle() {
 			// boxlayer: small coloured box (default grey) signalling there's a loopstation parameter in this layer
 			boxlayer.vtxcoords->x1 = box.vtxcoords->x1 + 0.031f;
 			if (j < lvec.size()) {
-				if (j >= mainmix->scenes[comp][i][mainmix->currscene[comp][i]]->scrollpos and j < mainmix->scenes[comp][i][mainmix->currscene[comp][i]]->scrollpos + 3) {
+				if (j >= mainmix->scenes[comp][i][mainmix->currscene[comp][i]]->scrollpos && j < mainmix->scenes[comp][i][mainmix->currscene[comp][i]]->scrollpos + 3) {
 					draw_box(nullptr, lvec[j]->scrollcol, &boxlayer, -1);
 				}
 			}
@@ -1251,7 +1257,7 @@ int Program::quit_requester() {
 	draw_box(white, black, &box, -1);
 	if (box.in2(mx, my)) {
 		draw_box(white, lightblue, &box, -1);
-		if (mainprogram->leftmouse or mainprogram->orderleftmouse) {
+		if (mainprogram->leftmouse || mainprogram->orderleftmouse) {
 			mainprogram->project->do_save(mainprogram->project->path);
 			ret = 1;
 		}
@@ -1263,7 +1269,7 @@ int Program::quit_requester() {
 	draw_box(white, black, &box, -1);
 	if (box.in2(mx, my)) {
 		draw_box(white, lightblue, &box, -1);
-		if (mainprogram->leftmouse or mainprogram->orderleftmouse) {
+		if (mainprogram->leftmouse || mainprogram->orderleftmouse) {
 			ret = 2;
 		}
 	}
@@ -1274,7 +1280,7 @@ int Program::quit_requester() {
 	draw_box(white, black, &box, -1);
 	if (box.in2(mx, my)) {
 		draw_box(white, lightblue, &box, -1);
-		if (mainprogram->leftmouse or mainprogram->orderleftmouse) {
+		if (mainprogram->leftmouse || mainprogram->orderleftmouse) {
 			ret = 3;
 		}
 	}
@@ -1461,7 +1467,7 @@ void output_video(EWindow* mwin) {
 }
 
 
-#ifdef _WIN64
+#ifdef WINDOWS
 void SetProcessPriority(LPWSTR ProcessName, int Priority)
 {
 	PROCESSENTRY32 proc32;
@@ -1569,7 +1575,7 @@ void DisplayDeviceInformation(IEnumMoniker* pEnum)
 
 void get_cameras()
 {
-#ifdef _WIN64
+#ifdef WINDOWS
 	HRESULT hr;
 	if (1)
 	{
@@ -1590,7 +1596,7 @@ void get_cameras()
 		//CoUninitialize();
 	}
 #endif
-#ifdef __linux__
+#ifdef POSIX
 	mainprogram->livedevices.clear();
 	std::map<std::string, std::wstring> map;
 	boost::filesystem::path dir("/sys/class/video4linux");
@@ -1656,7 +1662,7 @@ int Program::handle_menu(Menu* menu, float xshift, float yshift) {
 			std::size_t sub = menu->entries[k].find("submenu");
 			if (sub != 0) {
 				notsubk++;
-				if (menu->box->scrcoords->x1 + menu->menux + mainprogram->xvtxtoscr(xoff) < mainprogram->mx and mainprogram->mx < menu->box->scrcoords->x1 + menu->box->scrcoords->w + menu->menux + mainprogram->xvtxtoscr(xoff) and menu->box->scrcoords->y1 - menu->box->scrcoords->h + menu->menuy + (k - koff - numsubs) * mainprogram->yvtxtoscr(tf(0.05f)) - mainprogram->yvtxtoscr(yshift) < mainprogram->my and mainprogram->my < menu->box->scrcoords->y1 + menu->menuy + (k - koff - numsubs) * mainprogram->yvtxtoscr(tf(0.05f)) - mainprogram->yvtxtoscr(yshift)) {
+				if (menu->box->scrcoords->x1 + menu->menux + mainprogram->xvtxtoscr(xoff) < mainprogram->mx && mainprogram->mx < menu->box->scrcoords->x1 + menu->box->scrcoords->w + menu->menux + mainprogram->xvtxtoscr(xoff) && menu->box->scrcoords->y1 - menu->box->scrcoords->h + menu->menuy + (k - koff - numsubs) * mainprogram->yvtxtoscr(tf(0.05f)) - mainprogram->yvtxtoscr(yshift) < mainprogram->my && mainprogram->my < menu->box->scrcoords->y1 + menu->menuy + (k - koff - numsubs) * mainprogram->yvtxtoscr(tf(0.05f)) - mainprogram->yvtxtoscr(yshift)) {
 					draw_box(lc, ac2, menu->box->vtxcoords->x1 + vmx + xoff, menu->box->vtxcoords->y1 - (k - koff - numsubs) * tf(0.05f) - vmy + yshift, tf(menu->width), tf(0.05f), -1);
 					if (mainprogram->leftmousedown) mainprogram->leftmousedown = false;
 					if (mainprogram->lmover) {
@@ -1676,8 +1682,8 @@ int Program::handle_menu(Menu* menu, float xshift, float yshift) {
 			}
 			else {
 				numsubs++;
-				if (menu->currsub == k or (menu->box->scrcoords->x1 + menu->menux + mainprogram->xvtxtoscr(xoff) < mainprogram->mx and mainprogram->mx < menu->box->scrcoords->x1 + menu->box->scrcoords->w + menu->menux + mainprogram->xvtxtoscr(xoff) and menu->box->scrcoords->y1 - menu->box->scrcoords->h + menu->menuy + (k - koff - numsubs + 1) * mainprogram->yvtxtoscr(tf(0.05f)) - mainprogram->yvtxtoscr(yshift) < mainprogram->my and mainprogram->my < menu->box->scrcoords->y1 + menu->menuy + (k - koff - numsubs + 1) * mainprogram->yvtxtoscr(tf(0.05f)) - mainprogram->yvtxtoscr(yshift))) {
-					if (menu->currsub == k or mainprogram->lmover) {
+				if (menu->currsub == k || (menu->box->scrcoords->x1 + menu->menux + mainprogram->xvtxtoscr(xoff) < mainprogram->mx && mainprogram->mx < menu->box->scrcoords->x1 + menu->box->scrcoords->w + menu->menux + mainprogram->xvtxtoscr(xoff) && menu->box->scrcoords->y1 - menu->box->scrcoords->h + menu->menuy + (k - koff - numsubs + 1) * mainprogram->yvtxtoscr(tf(0.05f)) - mainprogram->yvtxtoscr(yshift) < mainprogram->my && mainprogram->my < menu->box->scrcoords->y1 + menu->menuy + (k - koff - numsubs + 1) * mainprogram->yvtxtoscr(tf(0.05f)) - mainprogram->yvtxtoscr(yshift))) {
+					if (menu->currsub == k || mainprogram->lmover) {
 						if (menu->currsub != k) mainprogram->lmover = false;
 						std::string name = menu->entries[k].substr(8, std::string::npos);
 						for (int i = 0; i < mainprogram->menulist.size(); i++) {
@@ -1696,7 +1702,7 @@ int Program::handle_menu(Menu* menu, float xshift, float yshift) {
 								//float ys = (k - mainprogram->menulist[i]->entries.size() / 2.0f) * tf(-0.05f) + yshift;
 								//float intm = std::clamp(ys + mainprogram->yscrtovtx(menu->menuy), 0.0f, 2.0f - mainprogram->menulist[i]->entries.size() * tf(0.05f));
 								//ys = intm + mainprogram->menulist[i]->entries.size() * tf(0.05f);
-								if (menu == mainprogram->filemenu and k - numsubs == 2) {
+								if (menu == mainprogram->filemenu && k - numsubs == 2) {
 									// special rule: one layer choice less when saving layer
 									mainprogram->laylistmenu1->entries.pop_back();
 									mainprogram->laylistmenu2->entries.pop_back();
@@ -1734,7 +1740,7 @@ void Program::handle_mixenginemenu() {
 	// Do mainprogram->mixenginemenu
 	k = mainprogram->handle_menu(mainprogram->mixenginemenu);
 	if (k == 0) {
-		if (mainmix->mousenode and mainprogram->menuresults.size()) {
+		if (mainmix->mousenode && mainprogram->menuresults.size()) {
 			if (mainmix->mousenode->type == BLEND) {
 				((BlendNode*)mainmix->mousenode)->blendtype = (BLEND_TYPE)(mainprogram->menuresults[0] + 1);
 			}
@@ -2082,7 +2088,7 @@ void Program::handle_mixtargetmenu() {
 			if (switched) {}
 			else if (currentries.size()) {
 				// stop output display of chosen mixwindow on chosen screen
-				if (k > 1 and k < 2 + currentries.size()) {
+				if (k > 1 && k < 2 + currentries.size()) {
 					SDL_DestroyWindow(currentries[k - 2]->win->win);
 					mainprogram->outputentries.erase(std::find(mainprogram->outputentries.begin(), mainprogram->outputentries.end(), currentries[k - 2]));
 					// deleting entry itself?  closethread...
@@ -2116,14 +2122,14 @@ void Program::handle_mixtargetmenu() {
 				SDL_RaiseWindow(mainprogram->mainwindow);
 				mainprogram->mixwindows.push_back(mwin);
 				SDL_GL_MakeCurrent(mainprogram->mainwindow, glc);
-#ifdef _WIN64
+#ifdef WINDOWS
 				HGLRC c1 = wglGetCurrentContext();
 				mwin->glc = SDL_GL_CreateContext(mwin->win);
 				SDL_GL_MakeCurrent(mwin->win, mwin->glc);
 				HGLRC c2 = wglGetCurrentContext();
 				wglShareLists(c1, c2);
 #endif
-#ifdef __linux__
+#ifdef POSIX
 				GLXContext c1 = glXGetCurrentContext();
 				static int	dblBuf[] = { GLX_RGBA,
 								GLX_RED_SIZE, 1,
@@ -2204,7 +2210,7 @@ void Program::handle_deckmenu() {
 void Program::handle_laymenu1() {
 	int k = -1;
 	// Draw and Program::handle mainprogram->laymenu1 (with clone layer) and laymenu2 (without)
-	if (mainprogram->laymenu1->state > 1 or mainprogram->laymenu2->state > 1 or mainprogram->newlaymenu->state > 1 or mainprogram->clipmenu->state > 1) {
+	if (mainprogram->laymenu1->state > 1 || mainprogram->laymenu2->state > 1 || mainprogram->newlaymenu->state > 1 || mainprogram->clipmenu->state > 1) {
 		if (!mainprogram->gotcameras) {
 			get_cameras();
 			mainprogram->devices.clear();
@@ -2230,10 +2236,10 @@ void Program::handle_laymenu1() {
 		if (k == 0) {
 			if (mainprogram->menuresults.size()) {
 				if (mainprogram->menuresults[0] > 0) {
-#ifdef _WIN64
+#ifdef WINDOWS
 					std::string livename = "video=" + mainprogram->devices[mainprogram->menuresults[0]];
 #else
-#ifdef __linux__
+#ifdef POSIX
 					std::string livename = "/dev/video" + std::to_string(mainprogram->menuresults[0] - 1);
 #endif
 #endif
@@ -2343,10 +2349,10 @@ void Program::handle_newlaymenu() {
 			if (mainprogram->menuresults.size()) {
 				if (mainprogram->menuresults[0] > 0) {
 					mainmix->mouselayer = mainmix->add_layer(lvec, lvec.size());
-#ifdef _WIN64
+#ifdef WINDOWS
 					std::string livename = "video=" + mainprogram->devices[mainprogram->menuresults[0]];
 #else
-#ifdef __linux__
+#ifdef POSIX
 					std::string livename = "/dev/video" + std::to_string(mainprogram->menuresults[0] - 1);
 #endif
 #endif
@@ -2412,10 +2418,10 @@ void Program::handle_clipmenu() {
 			// get_cameras() is done in handle_laymenu1()
 			if (mainprogram->menuresults.size()) {
 				if (mainprogram->menuresults[0] > 0) {
-#ifdef _WIN64
+#ifdef WINDOWS
 					std::string livename = "video=" + mainprogram->devices[mainprogram->menuresults[0]];
 #else
-#ifdef __linux__
+#ifdef POSIX
 					std::string livename = "/dev/video" + std::to_string(mainprogram->menuresults[0] - 1);
 #endif
 #endif
@@ -2569,7 +2575,7 @@ void Program::handle_shelfmenu() {
 		std::thread filereq(&Program::get_multinname, mainprogram, "Load file(s) in shelf", "", boost::filesystem::canonical(mainprogram->currshelffilesdir).generic_string());
 		filereq.detach();
 	}
-	else if (k == 4 or k == 5) {
+	else if (k == 4 || k == 5) {
 		// insert one of current decks into shelf element
 		std::string name = remove_extension(basename(mainprogram->project->path));
 		std::string path;
@@ -2983,7 +2989,7 @@ bool Program::preferences_handle() {
 		PrefCat* item = mainprogram->prefs->items[i];
 		if (item->box->in(mx, my)) {
 			draw_box(white, lightblue, item->box, -1);
-			if (mainprogram->leftmouse and mainprogram->prefs->curritem != i) {
+			if (mainprogram->leftmouse && mainprogram->prefs->curritem != i) {
 				mainprogram->renaming = EDIT_NONE;
 				mainprogram->prefs->curritem = i;
 			}
@@ -3064,7 +3070,7 @@ bool Program::preferences_handle() {
 				render_text(std::to_string(mci->items[i]->value), white, mci->items[i]->valuebox->vtxcoords->x1 + 0.1f, mci->items[i]->valuebox->vtxcoords->y1 + 0.06f, 0.0024f, 0.004f, 1, 0);
 			}
 			if (mci->items[i]->valuebox->in(mx, my)) {
-				if (mainprogram->leftmouse and mainprogram->renaming == EDIT_NONE) {
+				if (mainprogram->leftmouse && mainprogram->renaming == EDIT_NONE) {
 					mci->items[i]->renaming = true;
 					((PIVid*)(mci->items[i]))->oldvalue = mci->items[i]->value;
 					mainprogram->renaming = EDIT_NUMBER;
@@ -3121,8 +3127,8 @@ bool Program::preferences_handle() {
 					filereq.detach();
 				}
 			}
-			if (mci->items[i]->choosing and mainprogram->choosedir != "") {
-#ifdef _WIN64
+			if (mci->items[i]->choosing && mainprogram->choosedir != "") {
+#ifdef WINDOWS
 				boost::replace_all(mainprogram->choosedir, "/", "\\");
 #endif			
 				mci->items[i]->path = mainprogram->choosedir;
@@ -3223,7 +3229,7 @@ void Program::tooltips_handle(int win) {
 
 	mainprogram->frontbatch = true;
 
-	if (mainprogram->prefon or mainprogram->midipresets) fac = 4.0f;
+	if (mainprogram->prefon || mainprogram->midipresets) fac = 4.0f;
 
 	if (mainprogram->tooltipmilli > 4000) {
 		if (mainprogram->longtooltips) {
@@ -3591,13 +3597,13 @@ void Program::pick_color(Layer* lay, Box* cbox) {
 			length /= glob->h / 8.0f;
 			if (mainprogram->cwmouse) {
 				if (mainprogram->lmover) {
-					if (length > 0.75f and length < 1.0f) {
+					if (length > 0.75f && length < 1.0f) {
 						mainprogram->cwmouse = 0;
 					}
 					else mainprogram->cwmouse = 3;
 				}
 				else {
-					if (length > 0.75f and length < 1.0f) {
+					if (length > 0.75f && length < 1.0f) {
 						GLint cwmouse = glGetUniformLocation(mainprogram->ShaderProgram, "cwmouse");
 						glUniform1i(cwmouse, 1);
 						mainprogram->cwmouse = 2;
@@ -3633,7 +3639,7 @@ void Program::pick_color(Layer* lay, Box* cbox) {
 				draw_box(nullptr, box->acolor, box->vtxcoords->x1, box->vtxcoords->y1, box->vtxcoords->w, box->vtxcoords->h, -1);
 				mainprogram->directmode = false;
 				glUniform1i(cwon, 0);
-				if (length <= 0.75f or length >= 1.0f) {
+				if (length <= 0.75f || length >= 1.0f) {
 					glBindFramebuffer(GL_FRAMEBUFFER, mainprogram->globfbo);
 					glReadBuffer(GL_COLOR_ATTACHMENT0);
 					glReadPixels(mainprogram->mx, glob->h - mainprogram->my, 1, 1, GL_RGBA, GL_FLOAT, &lay->rgb);
@@ -3700,7 +3706,7 @@ GLuint Program::set_shader() {
 	unsigned long flen = 0;
 	char *VShaderSource;
  	char *vshader = (char*)malloc(100);
- 	#ifdef _WIN64
+ 	#ifdef WINDOWS
  	if (exists("./shader.vs")) strcpy (vshader, "./shader.vs");
  	else mainprogram->quitting = "Unable to find vertex shader \"shader.vs\" in current directory";
  	#else
@@ -3712,11 +3718,11 @@ GLuint Program::set_shader() {
  	load_shader(vshader, &VShaderSource, vlen);
 	char *FShaderSource;
  	char *fshader = (char*)malloc(100);
- 	#ifdef _WIN64
+ 	#ifdef WINDOWS
  	if (exists("./shader.fs")) strcpy (fshader, "./shader.fs");
  	else mainprogram->quitting = "Unable to find fragment shader \"shader.fs\" in current directory";
  	#else
- 	#ifdef __linux__
+ 	#ifdef POSIX
  	if (exists("./shader.fs")) strcpy (fshader, "./shader.fs");
  	else if (exists(ddir + "/shader.fs")) strcpy (fshader, (ddir + "/shader.fs").c_str());
  	else mainprogram->quitting = "Unable to find fragment shader \"shader.fs\" in " + ddir;
@@ -3885,10 +3891,10 @@ void Project::open(const std::string& path) {
 	if (pos < mainprogram->recentprojectpaths.size()) {
 		std::swap(mainprogram->recentprojectpaths[pos], mainprogram->recentprojectpaths[0]);
 		std::ofstream wfile;
-		#ifdef _WIN64
+		#ifdef WINDOWS
 		std::string dir = mainprogram->docpath;
 		#else
-		#ifdef __linux__
+		#ifdef POSIX
 		std::string homedir(getenv("HOME"));
 		std::string dir = homedir + "/.ewocvj2/";
 		#endif
@@ -3962,10 +3968,10 @@ void Project::do_save(const std::string& path) {
 		if (mainprogram->recentprojectpaths.size() > 10) {
 			mainprogram->recentprojectpaths.pop_back();
 		}
-		#ifdef _WIN64
+		#ifdef WINDOWS
 		std::string dir = mainprogram->docpath;
 		#else
-		#ifdef __linux__
+		#ifdef POSIX
 		std::string homedir (getenv("HOME"));
 		std::string dir = homedir + "/.ewocvj2/";
 		#endif
