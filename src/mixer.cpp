@@ -334,7 +334,7 @@ void Param::handle() {
 	if (this != mainmix->adaptnumparam) {
 		render_text(parstr, white, this->box->vtxcoords->x1 + tf(0.01f), this->box->vtxcoords->y1 + tf(0.05f) - tf(0.030f), tf(0.0003f), tf(0.0005f));
 		if (this->box->in()) {
-			if (mainprogram->leftmousedown and !mainprogram->inserteffectbox->in()) {
+			if (mainprogram->leftmousedown && !mainprogram->inserteffectbox->in()) {
 				mainprogram->leftmousedown = false;
 				mainmix->adaptparam = this;
 				mainmix->prevx = mainprogram->mx;
@@ -3401,13 +3401,13 @@ void Layer::display() {
 					vy1 = 1 - mainprogram->layh - tf(0.25f);
 				}
 				if (!mainprogram->menuondisplay) {
-					if (sy1 - 7.5 <= mainprogram->my and mainprogram->my <= sy1 + 7.5) {
+					if (sy1 - 7.5 <= mainprogram->my && mainprogram->my <= sy1 + 7.5) {
 						inbetween = true;
 						vx2 = vx1;
 						vy2 = vy1 - tf(0.011f);
 					}
-					if (mainprogram->addeffectbox->in() or mainprogram->inserteffectbox->in()) {
-						if ((mainprogram->menuactivation or mainprogram->leftmouse) and !mainprogram->drageff) {
+					if (mainprogram->addeffectbox->in() || mainprogram->inserteffectbox->in()) {
+						if ((mainprogram->menuactivation || mainprogram->leftmouse) && !mainprogram->drageff) {
 							mainprogram->effectmenu->state = 2;
 							mainmix->insert = 1;
 							mainmix->mouseeffect = evec.size();
@@ -3471,7 +3471,7 @@ void Layer::display() {
 						box = eff->onoffbutton->box;
 						if (box->scrcoords->x1 < mainprogram->mx && mainprogram->mx < box->scrcoords->x1 + tf(mainprogram->layw) * glob->w / 2.0) {
 							if (box->scrcoords->y1 - box->scrcoords->h - 7.5 < mainprogram->iemy && mainprogram->iemy < box->scrcoords->y1 - box->scrcoords->h + 7.5) {
-								// mouse over "Insert Effect" box, inbetween effects
+    							// mouse over "Insert Effect" box, inbetween effects
 								if ((mainprogram->menuactivation || mainprogram->leftmouse || mainprogram->lmover) && !mainprogram->drageff) {
 									mainprogram->effectmenu->state = 2;
 									mainmix->insert = true;
@@ -6909,6 +6909,8 @@ std::vector<std::string> Mixer::write_layer(Layer* lay, std::ostream& wfile, boo
 			count++;
 			name = remove_version(name) + "_" + std::to_string(count);
 		}
+		printf("jpegpath %s", jpegpath.c_str());
+		fflush(stdout);
 		save_thumb(jpegpath, lay->node->vidbox->tex);
 		jpegpaths.push_back(jpegpath);
 		wfile << "JPEGPATH\n";

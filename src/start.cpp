@@ -77,7 +77,7 @@ typedef struct char4 {
 #endif
 
 #include <RtMidi.h>
-#include <jpeglib.h>
+#include <turbojpeg.h>
 #define SDL_MAIN_HANDLED
 #include "GL/glew.h"
 #include "GL/gl.h"
@@ -131,6 +131,11 @@ extern "C" {
 #define PROGRAM_NAME "EWOCvj"
 #define _M_AMD64 100
 
+FILE _iob[] = {*stdin, *stdout, *stderr};
+extern "C" FILE * __cdecl __iob_func(void)
+{
+    return _iob;
+}
 
 //#include "debug_new.h"
 //#define _DEBUG_NEW_EMULATE_MALLOC 1
@@ -289,7 +294,7 @@ public:
 
     void timeout() {
         cout << "tick" << endl;
-        screenshot();
+        //screenshot();
         wait();
     }
 
@@ -379,51 +384,6 @@ private:
 
 
 
-void screenshot() {
-	return;
-	int wi = mainprogram->ow;
-	int he = mainprogram->oh;
-	char *buf = (char*)malloc(wi * he * 3);
-	MixNode *node = (MixNode*)mainprogram->nodesmain->mixnodescomp[2];
-
-	glBindFramebuffer(GL_FRAMEBUFFER, node->mixfbo);
-	//glFramebufferTexture2D(GL_FRAMEBUFFER, GL_COLOR_ATTACHMENT0, GL_TEXTURE_2D, node->mixtex, 0);
-	glReadBuffer(GL_COLOR_ATTACHMENT0);
-	glReadPixels(0, 0, wi, he, GL_RGB, GL_UNSIGNED_BYTE, buf);
-	glBindFramebuffer(GL_FRAMEBUFFER, mainprogram->globfbo);
-	mainprogram->drawbuffer = mainprogram->globfbo;
-	glDrawBuffer(GL_COLOR_ATTACHMENT0);
-	
-	std::string name = mainprogram->docpath + "screenshots/screenshot" + std::to_string(sscount) + ".jpg";
-	sscount++;
-	FILE* outfile = fopen(name.c_str(), "wb");
-	
-	struct jpeg_compress_struct cinfo;
-	struct jpeg_error_mgr       jerr;
-	 
-	cinfo.err = jpeg_std_error(&jerr);
-	jpeg_create_compress(&cinfo);
-	jpeg_stdio_dest(&cinfo, outfile);
-	 
-	cinfo.image_width      = wi;
-	cinfo.image_height     = he;
-	cinfo.input_components = 3;
-	cinfo.in_color_space   = JCS_RGB;
-	
-	jpeg_set_defaults(&cinfo);
-	jpeg_set_quality (&cinfo, 80, true);
-	jpeg_start_compress(&cinfo, true);
-	JSAMPROW row_pointer;          /* pointer to a single row */
-	while (cinfo.next_scanline < cinfo.image_height) {
-		row_pointer = (JSAMPROW) &buf[cinfo.next_scanline * 3 * wi];
-		jpeg_write_scanlines(&cinfo, &row_pointer, 1);
-	}
-	jpeg_finish_compress(&cinfo);
-	free(buf);
-	fclose(outfile);
-}
-	
-	
 void handle_midi(LayMidi *laymidi, int deck, int midi0, int midi1, int midi2, std::string &midiport) {
 	std::vector<Layer*> &lvec = choose_layers(deck);
 	int genmidideck = mainmix->genmidi[deck]->value;
@@ -2810,7 +2770,7 @@ bool Layer::calc_texture(bool comp, bool alive) {
 	if (mainprogram->tooltipbox && this->deck == 0 && this->pos == 0) {
 		mainprogram->tooltipmilli += thismilli;
 	}
-	if (mainprogram->dragbinel and mainprogram->onscenebutton and this->deck == 0 and this->pos == 0) {
+	if (mainprogram->dragbinel && mainprogram->onscenebutton && this->deck == 0 && this->pos == 0) {
 		mainprogram->onscenemilli += thismilli;
 	}
 
@@ -5840,7 +5800,7 @@ void handle_scenes(Scene* scene) {
 					mainprogram->onscenebutton = but;
 					mainprogram->onscenemilli = 0;
 				}
-				if (((mainprogram->onscenemilli > 6000 or mainprogram->leftmouse) and !mainprogram->menuondisplay) or but->value) {
+				if (((mainprogram->onscenemilli > 6000 || mainprogram->leftmouse) && !mainprogram->menuondisplay) || but->value) {
 					but->value = false;
 					// switch scenes
 					Scene* si = mainmix->scenes[comp][scene->deck][i];
@@ -7135,103 +7095,87 @@ GLuint copy_tex(GLuint tex, int tw, int th, bool yflip) {
 }
 
 void save_thumb(std::string path, GLuint tex) {
-	int wi = mainprogram->ow3;
-	int he = mainprogram->oh3;
-	char *buf = (char*)malloc(wi * he * 3);
+    int wi = mainprogram->ow3;
+    int he = mainprogram->oh3;
+    unsigned char *buf = (unsigned char*)malloc(wi * he * 3);
 
-	tex = copy_tex(tex);
-	GLuint texfrbuf, endfrbuf;
-	glGenFramebuffers(1, &texfrbuf);
-	glBindFramebuffer(GL_FRAMEBUFFER, texfrbuf);
-	glFramebufferTexture2D(GL_FRAMEBUFFER, GL_COLOR_ATTACHMENT0, GL_TEXTURE_2D, tex, 0);
-	GLuint smalltex;
-	glGenTextures(1, &smalltex);
-	glBindTexture(GL_TEXTURE_2D, smalltex);
-	glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_BORDER);
-	glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_BORDER);
-	glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR);
-	glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
-	glTexStorage2D(GL_TEXTURE_2D, 1, GL_RGBA8, wi, he);
-	glGenFramebuffers(1, &endfrbuf);
-	glBindFramebuffer(GL_FRAMEBUFFER, endfrbuf);
-	glFramebufferTexture2D(GL_FRAMEBUFFER, GL_COLOR_ATTACHMENT0, GL_TEXTURE_2D, smalltex, 0);
-	int sw, sh;
-	glBindTexture(GL_TEXTURE_2D, tex);
-	glGetTexLevelParameteriv(GL_TEXTURE_2D, 0, GL_TEXTURE_WIDTH, &sw);
-	glGetTexLevelParameteriv(GL_TEXTURE_2D, 0, GL_TEXTURE_HEIGHT, &sh);
-	glBlitNamedFramebuffer(texfrbuf, endfrbuf, 0, 0, sw, sh, 0, 0, wi, he, GL_COLOR_BUFFER_BIT, GL_LINEAR);
-	glReadBuffer(GL_COLOR_ATTACHMENT0);
-	glReadPixels(0, 0, wi, he, GL_RGB, GL_UNSIGNED_BYTE, buf);
-	glDeleteTextures(1, &smalltex);
-	
-	FILE* outfile = fopen(path.c_str(), "wb");
-	
-	struct jpeg_compress_struct cinfo;
-	struct jpeg_error_mgr       jerr;
-	 
-	cinfo.err = jpeg_std_error(&jerr);
-	jpeg_create_compress(&cinfo);
-	jpeg_stdio_dest(&cinfo, outfile);
-	 
-	cinfo.image_width      = wi;
-	cinfo.image_height     = he;
-	cinfo.input_components = 3;
-	cinfo.in_color_space   = JCS_RGB;
-	
-	jpeg_set_defaults(&cinfo);
-	jpeg_set_quality (&cinfo, 80, true);
-	jpeg_start_compress(&cinfo, true);
-	JSAMPROW row_pointer;          /* pointer to a single row */
-	while (cinfo.next_scanline < cinfo.image_height) {
-		row_pointer = (JSAMPROW) &buf[cinfo.next_scanline * 3 * wi];
-		jpeg_write_scanlines(&cinfo, &row_pointer, 1);
-	}
-	jpeg_finish_compress(&cinfo);
+    tex = copy_tex(tex);
+    GLuint texfrbuf, endfrbuf;
+    glGenFramebuffers(1, &texfrbuf);
+    glBindFramebuffer(GL_FRAMEBUFFER, texfrbuf);
+    glFramebufferTexture2D(GL_FRAMEBUFFER, GL_COLOR_ATTACHMENT0, GL_TEXTURE_2D, tex, 0);
+    GLuint smalltex;
+    glGenTextures(1, &smalltex);
+    glBindTexture(GL_TEXTURE_2D, smalltex);
+    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_BORDER);
+    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_BORDER);
+    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR);
+    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
+    glTexStorage2D(GL_TEXTURE_2D, 1, GL_RGBA8, wi, he);
+    glGenFramebuffers(1, &endfrbuf);
+    glBindFramebuffer(GL_FRAMEBUFFER, endfrbuf);
+    glFramebufferTexture2D(GL_FRAMEBUFFER, GL_COLOR_ATTACHMENT0, GL_TEXTURE_2D, smalltex, 0);
+    int sw, sh;
+    glBindTexture(GL_TEXTURE_2D, tex);
+    glGetTexLevelParameteriv(GL_TEXTURE_2D, 0, GL_TEXTURE_WIDTH, &sw);
+    glGetTexLevelParameteriv(GL_TEXTURE_2D, 0, GL_TEXTURE_HEIGHT, &sh);
+    glBlitNamedFramebuffer(texfrbuf, endfrbuf, 0, 0, sw, sh, 0, 0, wi, he, GL_COLOR_BUFFER_BIT, GL_LINEAR);
+    glReadBuffer(GL_COLOR_ATTACHMENT0);
+    glReadPixels(0, 0, wi, he, GL_RGB, GL_UNSIGNED_BYTE, buf);
+    glDeleteTextures(1, &smalltex);
+
+    const int JPEG_QUALITY = 75;
+    const int COLOR_COMPONENTS = 3;
+    long unsigned int _jpegSize = 0;
+    unsigned char* _compressedImage = NULL; //!< Memory is allocated by tjCompress2 if _jpegSize == 0
+
+    tjhandle _jpegCompressor = tjInitCompress();
+
+    tjCompress2(_jpegCompressor, buf, wi, 0, he, TJPF_RGB,
+                &_compressedImage, &_jpegSize, TJSAMP_444, JPEG_QUALITY,
+                TJFLAG_FASTDCT);
+
+    tjDestroy(_jpegCompressor);
+
+    std::ofstream outfile(path, std::ios::binary | std::ios::ate);
+    outfile.write(reinterpret_cast<const char *>(_compressedImage), _jpegSize);
+
+    //to free the memory allocated by TurboJPEG (either by tjAlloc(),
+    //or by the Compress/Decompress) after you are done working on it:
+    tjFree(_compressedImage);
 	free(buf);
-	fclose(outfile);
+	outfile.close();
 }
-	
+
 void open_thumb(std::string path, GLuint tex) {
-	struct jpeg_decompress_struct cinfo;
-	struct jpeg_error_mgr jerr;
+    const int COLOR_COMPONENTS = 3;
 
-	JSAMPROW row_pointer[1];
-	
-	FILE *infile = fopen(path.c_str(), "rb");
-	unsigned long location = 0;
-	int i = 0;
-	
-	if (!infile)
-	{
-		printf("Error opening jpeg file %s\n!", path.c_str() );
-		return;
-	}
+    std::ifstream infile(path, std::ios::binary | std::ios::ate);
+    std::streamsize sz = infile.tellg();
+    unsigned char *buf = (unsigned char*)malloc(sz);
+    infile.read((char*)buf, sz);
 
-	cinfo.err = jpeg_std_error(&jerr);
-	jpeg_create_decompress(&cinfo);
-	jpeg_stdio_src(&cinfo, infile);
-	jpeg_read_header(&cinfo, TRUE);
-	jpeg_start_decompress(&cinfo);
+    long unsigned int _jpegSize = sz; //!< _jpegSize from above
+    unsigned char* _compressedImage = buf; //!< _compressedImage from above
 
-	unsigned char* raw_image = (unsigned char*)malloc(cinfo.output_width*cinfo.output_height*cinfo.num_components);
-	row_pointer[0] = (unsigned char *)malloc(cinfo.output_width*cinfo.num_components);
+    int jpegSubsamp, width, height;
+    unsigned char *uncbuffer = (unsigned char*)malloc(width*height*COLOR_COMPONENTS); //!< will contain the decompressed image
 
-	while(cinfo.output_scanline < cinfo.image_height)
-	{
-		jpeg_read_scanlines(&cinfo, row_pointer, 1);
-		for (i = 0; i < cinfo.image_width*cinfo.num_components; i++) raw_image[location++] = row_pointer[0][i];
-	}
+    tjhandle _jpegDecompressor = tjInitDecompress();
 
-	jpeg_finish_decompress(&cinfo);
-	
-	glBindTexture(GL_TEXTURE_2D, tex);
-	glTexImage2D(GL_TEXTURE_2D, 0, GL_RGB, cinfo.image_width, cinfo.image_height, 0, GL_RGB, GL_UNSIGNED_BYTE, raw_image);
+    tjDecompressHeader2(_jpegDecompressor, _compressedImage, _jpegSize, &width, &height, &jpegSubsamp);
 
-	jpeg_destroy_decompress(&cinfo);
-	
-	free(row_pointer[0]);
-	fclose(infile);
-	
+    tjDecompress2(_jpegDecompressor, _compressedImage, _jpegSize, uncbuffer, width, 0/*pitch*/, height, TJPF_RGB, TJFLAG_FASTDCT);
+
+    tjDestroy(_jpegDecompressor);
+
+    glBindTexture(GL_TEXTURE_2D, tex);
+	glTexImage2D(GL_TEXTURE_2D, 0, GL_RGB, width, height, 0, GL_RGB, GL_UNSIGNED_BYTE, uncbuffer);
+
+	free(buf);
+	free(uncbuffer);
+	infile.close();
+
 }
 
 std::ifstream::pos_type getFileSize(std::string filename)

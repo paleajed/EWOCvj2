@@ -385,7 +385,7 @@ class Mixer {
 		int scrollmx;
 		float scrolltime = 0.0f;
 		int mouseeffect = -1;
-		Layer *mouselayer;
+		Layer *mouselayer = nullptr;
 		int mousedeck = -1;
 		Shelf *mouseshelf;
 		int mouseshelfelem;

@@ -368,8 +368,8 @@ class Program {
 		Menu* laylistmenu1 = nullptr;
 		Menu* laylistmenu2 = nullptr;
 		Menu* editmenu = nullptr;
-		bool menuactivation;
-		bool menuchosen;
+		bool menuactivation = false;
+		bool menuchosen = false;
 		std::vector<int> menuresults;
 		bool intopmenu = false;
 		int fullscreen = -1;
@@ -514,7 +514,7 @@ class Program {
 		clock_t stt;
 		std::vector<unsigned char> savedmessage;
 		PrefItem* savedmidiitem;
-		bool queueing;
+		bool queueing = false;
 		int filecount;
 		
 		SDL_Window *prefwindow = nullptr;
