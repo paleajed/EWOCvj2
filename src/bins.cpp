@@ -1,6 +1,6 @@
-#if defined(WIN32) && !defined(UNIX)
+#if defined(WIN32) && !defined(__linux__)
 #define WINDOWS
-#elif defined(UNIX) && !defined(WIN32)
+#elif defined(__linux__) && !defined(WIN32)
 #define POSIX
 #endif
 
@@ -71,6 +71,8 @@ BinElement::BinElement() {
 	glBindTexture(GL_TEXTURE_2D, this->tex);
 	glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR);
 	glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
+    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_BORDER);
+    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_BORDER);
 }
 
 BinElement::~BinElement() {
@@ -186,10 +188,6 @@ BinsMain::BinsMain() {
 }
 
 void BinsMain::handle(bool draw) {
-	glBindFramebuffer(GL_FRAMEBUFFER, mainprogram->globfbo);
-	mainprogram->drawbuffer = mainprogram->globfbo;
-	glDrawBuffer(GL_COLOR_ATTACHMENT0);
-
 	GLint inverted = glGetUniformLocation(mainprogram->ShaderProgram, "inverted");
 
 	if (this->renamingelem) {
@@ -445,6 +443,9 @@ void BinsMain::handle(bool draw) {
 							for (int i = 0; i < 16; i++) {
 								BinElement* binel = this->currbin->elements[this->mouseshelfnum / 3 * 48 + (this->mouseshelfnum % 3) * 4 + i / 4 + (i % 4) * 12];
 								ShelfElement* elem = this->insertshelf->elements[i];
+                                GLuint butex = elem->tex;
+                                elem->tex = copy_tex(binel->tex);
+                                if (butex != -1) glDeleteTextures(1, &butex);
 								binel->tex = copy_tex(elem->tex);
 								binel->path = elem->path;
 								binel->jpegpath = elem->jpegpath;
@@ -1127,7 +1128,9 @@ void BinsMain::handle(bool draw) {
 				elem->path = binel->path;
 				elem->jpegpath = binel->jpegpath;
 				elem->type = binel->type;
-				elem->tex = copy_tex(binel->tex);
+                GLuint butex = elem->tex;
+                elem->tex = copy_tex(binel->tex);
+                if (butex != -1) glDeleteTextures(1, &butex);
 			}
 		}
 		else if (binelmenuoptions[k] == BET_LOADSHELFB) {
@@ -1139,7 +1142,9 @@ void BinsMain::handle(bool draw) {
 				elem->path = binel->path;
 				elem->jpegpath = binel->jpegpath;
 				elem->type = binel->type;
+				GLuint butex = elem->tex;
 				elem->tex = copy_tex(binel->tex);
+                if (butex != -1) glDeleteTextures(1, &butex);
 			}
 		}
 		else if (binelmenuoptions[k] == BET_HAPELEM) {
@@ -1381,7 +1386,9 @@ void BinsMain::handle(bool draw) {
 										glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA8, mainprogram->prelay->decresult->width, mainprogram->prelay->decresult->height, 0, GL_BGRA, GL_UNSIGNED_BYTE, mainprogram->prelay->decresult->data);
 									}
 									mainprogram->prelay->initialized = true;
+									GLuint butex = mainprogram->prelay->fbotex;
 									mainprogram->prelay->fbotex = copy_tex(mainprogram->prelay->texture);
+                                    if (butex != -1) glDeleteTextures(1, &butex);
 									// calculate effects
 									onestepfrom(0, mainprogram->prelay->node, nullptr, -1, -1);
 									if (mainprogram->prelay->effects[0].size()) {
@@ -1450,7 +1457,9 @@ void BinsMain::handle(bool draw) {
 									else {
 										glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA8, mainprogram->prelay->decresult->width, mainprogram->prelay->decresult->height, 0, GL_BGRA, GL_UNSIGNED_BYTE, mainprogram->prelay->decresult->data);
 									}
+									GLuint butex = mainprogram->prelay->fbotex;
 									mainprogram->prelay->fbotex = copy_tex(mainprogram->prelay->texture);
+                                    if (butex != -1) glDeleteTextures(1, &butex);
 									// calculate effects
 									onestepfrom(0, mainprogram->prelay->node, nullptr, -1, -1);
 									if (mainprogram->prelay->effects[0].size()) {
@@ -1824,7 +1833,9 @@ void BinsMain::handle(bool draw) {
 							this->movebinels.erase(this->movebinels.begin() + pos);
 						}
 						if (this->movebinels.size()) {
+						    GLuint butex = dirbinel->tex;
 							dirbinel->tex = copy_tex(dirbinel->tex);
+                            if (butex != -1) glDeleteTextures(1, &butex);
 						}
 					}
 					for (int i = 0; i < this->movebinels.size(); i++) {
@@ -2007,7 +2018,6 @@ void BinsMain::save_bin(const std::string& path) {
 
 void BinsMain::do_save_bin(const std::string& path) {
 	// save bin file
-	//SDL_GL_MakeCurrent(mainprogram->dummywindow, glc_th);
 	std::vector<std::string> filestoadd;
 	std::ofstream wfile;
 	wfile.open(path.c_str());
@@ -2056,8 +2066,6 @@ void BinsMain::do_save_bin(const std::string& path) {
 	}
 	wfile << "ENDOFELEMS\n";
 	
-	//SDL_GL_MakeCurrent(nullptr, nullptr);
-		
 	wfile << "ENDOFFILE\n";
 	wfile.close();
 	

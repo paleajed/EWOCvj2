@@ -102,8 +102,8 @@ class BinsMain {
 		
 class Bin {
 	public:
-		std::string name;
-		std::string path;
+		std::string name = "";
+		std::string path = "";
 		std::vector<BinElement*> elements;
 		int encthreads = 0;
 		int pos;
@@ -134,8 +134,8 @@ class BinElement {
 		bool oldselect = false;
 		bool encwaiting = false;
 		bool encoding = false;
-		int encthreads;
-		float encodeprogress;
+		int encthreads = 0;
+		float encodeprogress = 0.0f;
 		int allhaps = 0;
 		BinElement* next();
 		void erase();

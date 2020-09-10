@@ -1,6 +1,6 @@
-#if defined(WIN32) && !defined(UNIX)
+#if defined(WIN32) && !defined(__linux__)
 #define WINDOWS
-#elif defined(UNIX) && !defined(WIN32)
+#elif defined(__linux__) && !defined(WIN32)
 #define POSIX
 #endif
 
@@ -18,6 +18,9 @@
 #include <X11/Xutil.h>
 #include <X11/Xos.h>
 #include "paths.h"
+#include <linux/videodev2.h>
+#include <sys/ioctl.h>
+#include "tinyfiledialogs.h"
 #endif
 
 #ifdef WINDOWS
@@ -46,6 +49,7 @@
 #endif
 #include <wchar.h>
 #include <string>
+#include <numeric>
 
 #include "SDL2/SDL.h"
 #include "SDL2/SDL_syswm.h"
@@ -96,7 +100,7 @@ Program::Program() {
 #ifdef POSIX
 	std::string homedir(getenv("HOME"));
 	this->temppath = homedir + "/.ewocvj2/temp/";
-	this->docpath = homedir + "/.ewocvj2";
+	this->docpath = homedir + "/.ewocvj2/";
 #endif
 	this->currfilesdir = this->docpath + "elems/";
 	this->currclipfilesdir = this->docpath + "elems/";
@@ -230,6 +234,10 @@ Program::Program() {
 	this->buttons.push_back(this->effcat[0]);
 	this->effcat[0]->name[0] = "Layer effects";
 	this->effcat[0]->name[1] = "Stream effects";
+    this->effcat[0]->box->lcolor[0] = 0.7;
+    this->effcat[0]->box->lcolor[1] = 0.7;
+    this->effcat[0]->box->lcolor[2] = 0.7;
+    this->effcat[0]->box->lcolor[3] = 1.0;
 	this->effcat[0]->box->vtxcoords->x1 = -1.0f;
 	this->effcat[0]->box->vtxcoords->y1 = 1.0f - tf(this->layh) - tf(0.19f);
 	this->effcat[0]->box->vtxcoords->w = tf(0.025f);
@@ -244,6 +252,10 @@ Program::Program() {
 	this->effcat[1]->name[0] = "Layer effects";
 	this->effcat[1]->name[1] = "Stream effects";
 	float xoffset = 1.0f + this->layw - 0.019f;
+    this->effcat[1]->box->lcolor[0] = 0.7;
+    this->effcat[1]->box->lcolor[1] = 0.7;
+    this->effcat[1]->box->lcolor[2] = 0.7;
+    this->effcat[1]->box->lcolor[3] = 1.0;
 	this->effcat[1]->box->vtxcoords->x1 = -1.0f + this->numw - tf(0.025f) + xoffset;
 	this->effcat[1]->box->vtxcoords->y1 = 1.0f - tf(this->layh) - tf(0.19f);
 	this->effcat[1]->box->vtxcoords->w = tf(0.025f);
@@ -441,6 +453,7 @@ void Program::make_menu(const std::string &name, Menu *&menu, std::vector<std::s
 	menu->box->upscrtovtx();
 }
 
+#ifdef WINDOWS
 LPCSTR Program::mime_to_wildcard(std::string filters) {
 	if (filters == "") return "";
 	if (filters == "application/ewocvj2-layer") return "EWOCvj2 layer file (.layer)\0*.layer\0";
@@ -513,26 +526,51 @@ void Program::win_dialog(const char* title, LPCSTR filters, std::string defaultd
 	}
 #endif
 }
+#endif
 
 void Program::get_inname(const char *title, std::string filters, std::string defaultdir) {
 	bool as = mainprogram->autosave;
-	mainprogram->autosave = false;
+    this->autosave = false;
 	#ifdef WINDOWS
 	LPCSTR lpcfilters = this->mime_to_wildcard(filters);
 	this->win_dialog(title, lpcfilters, defaultdir, true, false);
-	#endif
-	mainprogram->autosave = as;
+    #endif
+    #ifdef POSIX
+	char const *p;
+    const char* fi[1];
+    fi[0] = filters.c_str();
+    if (fi[0] == "") {
+        p = tinyfd_openFileDialog(title, defaultdir.c_str(), 0, nullptr, nullptr, 0);
+    }
+    else {
+        p = tinyfd_openFileDialog(title, defaultdir.c_str(), 1, fi, nullptr, 0);
+    }
+    if (p) this->path = p;
+    #endif
+    this->autosave = as;
 }
 
 void Program::get_outname(const char *title, std::string filters, std::string defaultdir) {
 	bool as = mainprogram->autosave;
-	mainprogram->autosave = false;
+    this->autosave = false;
 
 	#ifdef WINDOWS
 	LPCSTR lpcfilters = this->mime_to_wildcard(filters);
 	this->win_dialog(title, lpcfilters, defaultdir, false, false);
 	#endif
-	mainprogram->autosave = as;
+    #ifdef POSIX
+    char const *p;
+    const char* fi[1];
+    fi[0] = filters.c_str();
+    if (fi[0] == "") {
+        p = tinyfd_saveFileDialog(title, defaultdir.c_str(), 0, nullptr, nullptr);
+    }
+    else {
+        p = tinyfd_saveFileDialog(title, defaultdir.c_str(), 1, fi, nullptr);
+    }
+    if (p) this->path = p;
+    #endif
+    this->autosave = as;
 }
 
 void Program::get_multinname(const char* title, std::string filters, std::string defaultdir) {
@@ -544,6 +582,26 @@ void Program::get_multinname(const char* title, std::string filters, std::string
 	this->win_dialog(title, lpcfilters, defaultdir, true, true);
 	#endif
 	#ifdef POSIX
+    const char *outpaths;
+    char const* const dd = (defaultdir == "") ? "" : defaultdir.c_str();
+    outpaths = tinyfd_openFileDialog(title, dd, 0, nullptr, nullptr, 1);
+    if (outpaths == nullptr) {
+        binsmain->openbinfile = false;
+        return;
+    }
+    std::string opaths(outpaths);
+    std::string currstr = "";
+    std::string charstr;
+    for (int i = 0; i < opaths.length(); i++) {
+        charstr = opaths[i];
+        if (charstr == "|") {
+            this->paths.push_back(currstr);
+            currstr = "";
+            continue;
+        }
+        currstr += charstr;
+        if (i == opaths.length() - 1) this->paths.push_back(currstr);
+    }
 	#endif
 	if (mainprogram->paths.size()) {
 		this->path = (char*)"ENTER";
@@ -808,27 +866,27 @@ void Program::handle_wormhole(bool hole) {
 	else box = mainprogram->wormhole2->box;
 
 	if (hole == 0) {
-		register_triangle_draw(white, white, -1.0 + box->vtxcoords->w, box->vtxcoords->y1 + box->vtxcoords->h / 4.0f, box->vtxcoords->h / 4.0f, box->vtxcoords->h / 2.0f, LEFT, OPEN);
+		register_triangle_draw(lightgrey, lightgrey, -1.0 + box->vtxcoords->w, box->vtxcoords->y1 + box->vtxcoords->h / 4.0f - 0.15f, box->vtxcoords->h / 4.0f, box->vtxcoords->h / 2.0f, LEFT, OPEN);
 		GUI_Element* elem = mainprogram->guielems.back();
 		mainprogram->guielems.pop_back();
 		draw_triangle(elem->triangle);
-		if (mainprogram->binsscreen) render_text("MIX", white, -0.9f, -0.29f, 0.0006f, 0.001f);
-		else render_text("BINS", white, -0.9f, -0.29f, 0.0006f, 0.001f);
+		if (mainprogram->binsscreen) render_text("MIX", lightgrey, -0.9f, -0.29f, 0.0006f, 0.001f);
+		else render_text("BINS", lightgrey, -0.9f, -0.44f, 0.0006f, 0.001f);
 	}
 	else {
 		if (mainprogram->binsscreen) {
-			register_triangle_draw(white, white, 1.0f - box->vtxcoords->w - box->vtxcoords->h / 4.0f * 0.866f, box->vtxcoords->y1 + box->vtxcoords->h / 4.0f + 0.3f, box->vtxcoords->h / 4.0f, box->vtxcoords->h / 2.0f, RIGHT, OPEN);
+			register_triangle_draw(lightgrey, lightgrey, 1.0f - box->vtxcoords->w - box->vtxcoords->h / 4.0f * 0.866f, box->vtxcoords->y1 + box->vtxcoords->h / 4.0f + 0.15f, box->vtxcoords->h / 4.0f, box->vtxcoords->h / 2.0f, RIGHT, OPEN);
 			GUI_Element* elem = mainprogram->guielems.back();
 			mainprogram->guielems.pop_back();
 			draw_triangle(elem->triangle);
-			render_text("MIX", white, 0.86f, 0.01f, 0.0006f, 0.001f);
+			render_text("MIX", lightgrey, 0.86f, -0.14f, 0.0006f, 0.001f);
 		}
 		else {
-			register_triangle_draw(white, white, 1.0f - box->vtxcoords->w - box->vtxcoords->h / 4.0f * 0.866f, box->vtxcoords->y1 + box->vtxcoords->h / 4.0f, box->vtxcoords->h / 4.0f, box->vtxcoords->h / 2.0f, RIGHT, OPEN);
+			register_triangle_draw(lightgrey, lightgrey, 1.0f - box->vtxcoords->w - box->vtxcoords->h / 4.0f * 0.866f, box->vtxcoords->y1 + box->vtxcoords->h / 4.0f - 0.15f, box->vtxcoords->h / 4.0f, box->vtxcoords->h / 2.0f, RIGHT, OPEN);
 			GUI_Element* elem = mainprogram->guielems.back();
 			mainprogram->guielems.pop_back();
 			draw_triangle(elem->triangle);
-			render_text("BINS", white, 0.86f, -0.29f, 0.0006f, 0.001f);
+			render_text("BINS", lightgrey, 0.86f, -0.44f, 0.0006f, 0.001f);
 		}
 	}
 
@@ -841,7 +899,7 @@ void Program::handle_wormhole(bool hole) {
 	//draw and handle BINS wormhole
 	if (mainprogram->fullscreen == -1) {
 		if (box->in()) {
-			draw_box(white, lightblue, box, -1);
+			draw_box(lightgrey, lightblue, box, -1);
 			mainprogram->tooltipbox = mainprogram->wormhole1->box;
 			if (!mainprogram->menuondisplay) {
 				if (mainprogram->leftmouse) {
@@ -868,7 +926,7 @@ void Program::handle_wormhole(bool hole) {
 			}
 		}
 		else {
-			draw_box(white, white, box, -1);
+			draw_box(lightgrey, lightgrey, box, -1);
 		}
 	}
 
@@ -1146,10 +1204,10 @@ void Program::layerstack_scrollbar_handle() {
 				if (slidex > 0.0f) box.vtxcoords->w -= slidex;
 			}
 			if (j >= mainmix->scenes[comp][i][mainmix->currscene[comp][i]]->scrollpos && j < mainmix->scenes[comp][i][mainmix->currscene[comp][i]]->scrollpos + 3) {
-				if (inbox) draw_box(white, lightblue, &box, -1);
-				else draw_box(white, grey, &box, -1);
+				if (inbox) draw_box(lightgrey, lightblue, &box, -1);
+				else draw_box(lightgrey, grey, &box, -1);
 			}
-			else draw_box(white, black, &box, -1);
+			else draw_box(lightgrey, black, &box, -1);
 			// boxlayer: small coloured box (default grey) signalling there's a loopstation parameter in this layer
 			boxlayer.vtxcoords->x1 = box.vtxcoords->x1 + 0.031f;
 			if (j < lvec.size()) {
@@ -1403,8 +1461,8 @@ void Program::shelf_miditriggering() {
 
 
 void output_video(EWindow* mwin) {
+
 	SDL_GL_MakeCurrent(mwin->win, mwin->glc);
-	//glXMakeCurrent(dpy, sdl_win, c2);
 
 	GLfloat vcoords1[8];
 	GLfloat* p = vcoords1;
@@ -1446,7 +1504,6 @@ void output_video(EWindow* mwin) {
 
 		if (1) node = (MixNode*)mainprogram->nodesmain->mixnodescomp[2];
 		else node = (MixNode*)mainprogram->nodesmain->mixnodes[mwin->mixid];
-		printf("%d %d\n", mwin->mixid, mainprogram->nodesmain->mixnodes.size());
 
 		GLfloat cf = glGetUniformLocation(mainprogram->ShaderProgram, "cf");
 		GLint wipe = glGetUniformLocation(mainprogram->ShaderProgram, "wipe");
@@ -1782,14 +1839,19 @@ void Program::handle_mixenginemenu() {
 }
 
 void Program::handle_effectmenu() {
+    if (!mainmix->insert) {
+        mainprogram->effectmenu->entries.insert(mainprogram->effectmenu->entries.begin(), "Delete effect");
+    }
 	int k = -1;
-	// Draw and Program::handle mainprogram->effectmenu
+	// Draw and handle mainprogram->effectmenu
 	k = mainprogram->handle_menu(mainprogram->effectmenu);
 	if (k > -1) {
 		if (k == 0) {
 			if (mainmix->mouseeffect > -1) mainmix->mouselayer->delete_effect(mainmix->mouseeffect);
 		}
-		else if (mainmix->insert) mainmix->mouselayer->add_effect((EFFECT_TYPE)mainprogram->abeffects[k - 1], mainmix->mouseeffect);
+		else if (mainmix->insert) {
+		    mainmix->mouselayer->add_effect((EFFECT_TYPE)mainprogram->abeffects[k], mainmix->mouseeffect);
+		}
 		else {
 			std::vector<Effect*>& evec = mainmix->mouselayer->choose_effects();
 			int mon = evec[mainmix->mouseeffect]->node->monitor;
@@ -1799,12 +1861,15 @@ void Program::handle_effectmenu() {
 		mainmix->mouselayer = nullptr;
 		mainmix->mouseeffect = -1;
 	}
+    if (!mainmix->insert) {
+        mainprogram->effectmenu->entries.erase(mainprogram->effectmenu->entries.begin());
+    }
 	if (mainprogram->menuchosen) {
 		mainprogram->menuchosen = false;
 		mainprogram->menuactivation = 0;
 		mainprogram->menuresults.clear();
 	}
-}
+ }
 
 void Program::handle_parammenu1() {
 	// Draw and Program::handle mainprogram->parammenu1
@@ -2110,7 +2175,7 @@ void Program::handle_mixtargetmenu() {
 				}
 			}
 			else {
-				// open new window on chosen ouput screen and start display thread (synced at end of the_loop)
+				// open new window on chosen output screen and start display thread (synced at end of the_loop)
 				int screen;
 				if (currentries.size()) screen = possscreens[k - currentries.size() - 3];
 				else screen = possscreens[k - currentries.size() - 3];
@@ -2125,34 +2190,13 @@ void Program::handle_mixtargetmenu() {
 				SDL_GetDisplayUsableBounds(screen, &rc2);
 				mwin->w = rc2.w;
 				mwin->h = rc2.h;
+                SDL_GL_SetAttribute(SDL_GL_SHARE_WITH_CURRENT_CONTEXT, 1);
 				mwin->win = SDL_CreateWindow(PROGRAM_NAME, rc1.x, rc1.y, mwin->w, mwin->h, SDL_WINDOW_OPENGL | SDL_WINDOW_MAXIMIZED | SDL_WINDOW_RESIZABLE |
 					SDL_WINDOW_FULLSCREEN_DESKTOP | SDL_WINDOW_ALLOW_HIGHDPI);
 				SDL_RaiseWindow(mainprogram->mainwindow);
 				mainprogram->mixwindows.push_back(mwin);
-				SDL_GL_MakeCurrent(mainprogram->mainwindow, glc);
-#ifdef WINDOWS
-				HGLRC c1 = wglGetCurrentContext();
 				mwin->glc = SDL_GL_CreateContext(mwin->win);
-				SDL_GL_MakeCurrent(mwin->win, mwin->glc);
-				HGLRC c2 = wglGetCurrentContext();
-				wglShareLists(c1, c2);
-#endif
-#ifdef POSIX
-				GLXContext c1 = glXGetCurrentContext();
-				static int	dblBuf[] = { GLX_RGBA,
-								GLX_RED_SIZE, 1,
-								GLX_GREEN_SIZE, 1,
-								GLX_BLUE_SIZE, 1,
-								GLX_DEPTH_SIZE, 12,
-								GLX_DOUBLEBUFFER,
-								None };
-				Display* dpy = XOpenDisplay(NULL);
-				XVisualInfo* vi = glXChooseVisual(dpy, DefaultScreen(dpy), dblBuf);
-				GLXContext c2 = glXCreateContext(dpy, vi,
-					c1,	/* sharing of display lists */
-					True	/* direct rendering if possible */
-				);
-#endif
+
 				glUseProgram(mainprogram->ShaderProgram);
 
 				std::thread vidoutput(output_video, mwin);
@@ -2254,7 +2298,9 @@ void Program::handle_laymenu1() {
 					std::string livename = "video=" + mainprogram->devices[mainprogram->menuresults[0]];
 #else
 #ifdef POSIX
-					std::string livename = "/dev/video" + std::to_string(mainprogram->menuresults[0] - 1);
+                    std::string livename;
+                    if (exists("dev/video")) livename = "/dev/video" + std::to_string(mainprogram->menuresults[0] - 1);
+                    livename = "/dev/video0" + std::to_string(mainprogram->menuresults[0] - 1);
 #endif
 #endif
 					mainmix->mouselayer->set_live_base(livename);
@@ -2367,7 +2413,9 @@ void Program::handle_newlaymenu() {
 					std::string livename = "video=" + mainprogram->devices[mainprogram->menuresults[0]];
 #else
 #ifdef POSIX
-					std::string livename = "/dev/video" + std::to_string(mainprogram->menuresults[0] - 1);
+                    std::string livename;
+                    if (exists("dev/video")) livename = "/dev/video" + std::to_string(mainprogram->menuresults[0] - 1);
+                    livename = "/dev/video0" + std::to_string(mainprogram->menuresults[0] - 1);
 #endif
 #endif
 					mainmix->mouselayer->set_live_base(livename);
@@ -2520,9 +2568,6 @@ void Program::handle_mainmenu() {
 		if (!mainprogram->prefon) {
 			mainprogram->prefon = true;
 			SDL_ShowWindow(mainprogram->prefwindow);
-			//SDL_RaiseWindow(mainprogram->prefwindow);
-			//SDL_GL_MakeCurrent(mainprogram->prefwindow, glc_pr);
-			//glUseProgram(mainprogram->ShaderProgram_pr);
 			for (int i = 0; i < mainprogram->prefs->items.size(); i++) {
 				PrefCat* item = mainprogram->prefs->items[i];
 				item->box->upvtxtoscr();
@@ -2536,9 +2581,6 @@ void Program::handle_mainmenu() {
 		if (!mainprogram->midipresets) {
 			mainprogram->midipresets = true;
 			SDL_ShowWindow(mainprogram->config_midipresetswindow);
-			//SDL_RaiseWindow(mainprogram->config_midipresetswindow);
-			//SDL_GL_MakeCurrent(mainprogram->config_midipresetswindow, glc_tm);
-			//glUseProgram(mainprogram->ShaderProgram_tm);
 			mainprogram->tmset->upvtxtoscr();
 			mainprogram->tmscratch->upvtxtoscr();
 			mainprogram->tmfreeze->upvtxtoscr();
@@ -3654,7 +3696,6 @@ void Program::pick_color(Layer* lay, Box* cbox) {
 				mainprogram->directmode = false;
 				glUniform1i(cwon, 0);
 				if (length <= 0.75f || length >= 1.0f) {
-					glBindFramebuffer(GL_FRAMEBUFFER, mainprogram->globfbo);
 					glReadBuffer(GL_COLOR_ATTACHMENT0);
 					glReadPixels(mainprogram->mx, glob->h - mainprogram->my, 1, 1, GL_RGBA, GL_FLOAT, &lay->rgb);
 					box = cbox;
@@ -3724,8 +3765,10 @@ GLuint Program::set_shader() {
  	if (exists("./shader.vs")) strcpy (vshader, "./shader.vs");
  	else mainprogram->quitting = "Unable to find vertex shader \"shader.vs\" in current directory";
  	#else
- 	#ifdef __linuxd::string ddir (mainprogram(exists("./shader.vs")) strcpy (vshader, "./shader.vs");
- 	else if (exists(ddir + "/shader.vs")) strcpy (vshader, (ddir + "/shader.vs").c_str());
+    #ifdef __linux__
+    std::string ddir (this->docpath);
+    if (exists("./shader.vs")) strcpy (vshader, "./shader.vs");
+    else if (exists("/usr/share/ewocvj2/shader.vs")) strcpy (vshader, "/usr/share/ewocvj2/shader.vs");
  	else mainprogram->quitting = "Unable to find vertex shader \"shader.vs\" in " + ddir;
  	#endif
  	#endif
@@ -3737,8 +3780,8 @@ GLuint Program::set_shader() {
  	else mainprogram->quitting = "Unable to find fragment shader \"shader.fs\" in current directory";
  	#else
  	#ifdef POSIX
- 	if (exists("./shader.fs")) strcpy (fshader, "./shader.fs");
- 	else if (exists(ddir + "/shader.fs")) strcpy (fshader, (ddir + "/shader.fs").c_str());
+    if (exists("./shader.fs")) strcpy (fshader, "./shader.fs");
+ 	else if (exists("/usr/share/ewocvj2/shader.fs")) strcpy (fshader, "/usr/share/ewocvj2/shader.fs");
  	else mainprogram->quitting = "Unable to find fragment shader \"shader.fs\" in " + ddir;
  	#endif
  	#endif
@@ -3787,7 +3830,7 @@ void Project::delete_dirs() {
 }
 
 void Project::create_dirs(const std::string &path) {
-	std::string dir = remove_extension(path) + "/";
+	std::string dir = path + "/";
 	this->binsdir = dir + "bins/";
 	this->recdir = dir + "recordings/";
 	this->shelfdir = dir + "shelves/";
@@ -3804,11 +3847,18 @@ void Project::create_dirs(const std::string &path) {
 void Project::newp(const std::string &path) {
 	std::string ext = path.substr(path.length() - 7, std::string::npos);
 	std::string str;
-	if (ext != ".ewocvj") str = path + ".ewocvj";
-	else str = path;
+	std::string path2;
+	if (ext != ".ewocvj") {
+	    str = path + ".ewocvj";
+	    path2 = path;
+	}
+	else {
+	    str = path;
+	    path2 = path.substr(0, path.size() - 7);
+	}
 	this->path = str;
 	
-	this->create_dirs(path);
+	this->create_dirs(path2);
 	for (int i = 0; i < binsmain->bins.size(); i++) {
 		delete binsmain->bins[i];
 	}
@@ -3821,7 +3871,7 @@ void Project::newp(const std::string &path) {
 	mainprogram->shelves[1]->basepath = "shelfsB.shelf";
 	mainprogram->shelves[0]->save(mainprogram->project->shelfdir + "shelfsA.shelf");
 	mainprogram->shelves[1]->save(mainprogram->project->shelfdir + "shelfsB.shelf");
-	mainprogram->project->do_save(path);
+	mainprogram->project->do_save(str);
 }
 	
 void Project::open(const std::string& path) {

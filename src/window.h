@@ -1,5 +1,11 @@
 #include <string>
 #include <vector>
+#ifdef POSIX
+#include "GL/glx.h"
+#include <X11/Xlib.h>
+#include <X11/Xutil.h>
+#include <X11/Xos.h>
+#endif
 
 class EWindow {
 	public:
@@ -18,6 +24,10 @@ class EWindow {
 		std::mutex syncendmutex;
 		std::condition_variable syncend;
 		bool syncendnow = false;
+        #ifdef POSIX
+		Display *dpy;
+		GLXContext ctx;
+        #endif
 };
 
 class Menu {

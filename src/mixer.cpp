@@ -1,6 +1,6 @@
-#if defined(WIN32) && !defined(UNIX)
+#if defined(WIN32) && !defined(__linux__)
 #define WINDOWS
-#elif defined(UNIX) && !defined(WIN32)
+#elif defined(__linux__) && !defined(WIN32)
 #define POSIX
 #endif
 
@@ -83,10 +83,10 @@ Mixer::Mixer() {
 				this->scenes[m][j][i]->button = button;
 				box->tooltiptitle = "Scene toggle deck A";
 				box->tooltip = "Leftclick activates one of the four scenes (separate layer stacks) for deck A. ";
-				box->lcolor[0] = 1.0;
-				box->lcolor[1] = 1.0;
-				box->lcolor[2] = 1.0;
-				box->lcolor[3] = 1.0;
+				box->lcolor[0] = 0.4f;
+				box->lcolor[1] = 0.4f;
+				box->lcolor[2] = 0.4f;
+				box->lcolor[3] = 1.0f;
 				box->vtxcoords->x1 = -1 + j;
 				box->vtxcoords->y1 = 1 - (i + 2) * mainprogram->numh;
 				box->vtxcoords->w = mainprogram->numw;
@@ -289,10 +289,14 @@ void Mixer::handle_genmidibuttons() {
 
 Param::Param() {
 	this->box = new Box;
-	this->box->acolor[0] = 0.2;
-	this->box->acolor[1] = 0.2;
-	this->box->acolor[2] = 0.2;
-	this->box->acolor[3] = 1.0;
+    this->box->lcolor[0] = 0.7;
+    this->box->lcolor[1] = 0.7;
+    this->box->lcolor[2] = 0.7;
+    this->box->lcolor[3] = 1.0;
+    this->box->acolor[0] = 0.2;
+    this->box->acolor[1] = 0.2;
+    this->box->acolor[2] = 0.2;
+    this->box->acolor[3] = 1.0;
 	if (mainprogram) {
 		if (mainprogram->prevmodus) {
 			if (lp) lp->allparams.push_back(this);
@@ -2285,9 +2289,9 @@ Layer::Layer(bool comp) {
 	this->speed->range[1] = 3.33f;
 	this->speed->sliding = true;
 	this->speed->powertwo = true;
-	this->speed->box->acolor[0] = 0.5;
-	this->speed->box->acolor[1] = 0.2;
-	this->speed->box->acolor[2] = 0.5;
+	this->speed->box->acolor[0] = 0.1;
+	this->speed->box->acolor[1] = 0.3;
+	this->speed->box->acolor[2] = 0.2;
 	this->speed->box->acolor[3] = 1.0;
     this->speed->box->tooltiptitle = "Set layer speed ";
 	this->speed->box->tooltip = "Leftdrag sets current layer video playing speed factor. Doubleclicking allows numeric entry. ";
@@ -2298,9 +2302,9 @@ Layer::Layer(bool comp) {
 	this->opacity->range[0] = 0.0f;
 	this->opacity->range[1] = 1.0f;
 	this->opacity->sliding = true;
-	this->opacity->box->acolor[0] = 0.5;
-	this->opacity->box->acolor[1] = 0.2;
-	this->opacity->box->acolor[2] = 0.5;
+	this->opacity->box->acolor[0] = 0.1;
+	this->opacity->box->acolor[1] = 0.3;
+	this->opacity->box->acolor[2] = 0.2;
 	this->opacity->box->acolor[3] = 1.0;
     this->opacity->box->tooltiptitle = "Set layer opacity ";
 	this->opacity->box->tooltip = "Leftdrag sets current layer opacity. Doubleclicking allows numeric entry. ";
@@ -2400,10 +2404,6 @@ Layer::Layer(bool comp) {
 	this->decoding.detach();
 //	std::thread trig(&Layer::trigger, this);
 //	trig.detach();
-
-	glBindFramebuffer(GL_FRAMEBUFFER, mainprogram->globfbo);
-	mainprogram->drawbuffer = mainprogram->globfbo;
-	glDrawBuffer(GL_COLOR_ATTACHMENT0);
 }
 
 Layer::~Layer() {
@@ -2458,6 +2458,8 @@ void Layer::initialize(int w, int h, int compression) {
 	glBindTexture(GL_TEXTURE_2D, this->texture);
 	glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR);
 	glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
+    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_BORDER);
+    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_BORDER);
 	glPixelStorei(GL_UNPACK_ALIGNMENT, 1);
 	glPixelStorei(GL_UNPACK_ROW_LENGTH, 0);
 	glPixelStorei(GL_UNPACK_SKIP_PIXELS, 0);
@@ -2839,7 +2841,9 @@ void Mixer::vidbox_handle() {
 				// move layer
 				if (mainprogram->leftmousedown && !mainprogram->intopmenu) {
 					if (!lay->vidmoving && !mainmix->moving && !lay->cliploading) {
+					    GLuint butex = binsmain->dragtex;
 						binsmain->dragtex = copy_tex(lay->node->vidbox->tex);
+                        if (butex != -1) glDeleteTextures(1, &butex);
 						mainprogram->draglay = lay;
 
 						mainprogram->dragbinel = new BinElement;
@@ -2922,10 +2926,6 @@ void Mixer::vidbox_handle() {
 
 void Layer::display() {
 
-	glBindFramebuffer(GL_FRAMEBUFFER, mainprogram->globfbo);
-	mainprogram->drawbuffer = mainprogram->globfbo;
-	glDrawBuffer(GL_COLOR_ATTACHMENT0);
-
 	std::vector<Layer*>& lvec = choose_layers(this->deck);
 	bool notyet = false;
 	for (int i = 0; i < lvec.size(); i++) {
@@ -2949,17 +2949,32 @@ void Layer::display() {
 	if (mainmix->scenes[this->comp][this->deck][mainmix->currscene[this->comp][this->deck]]->scrollpos < 0) mainmix->scenes[this->comp][this->deck][mainmix->currscene[this->comp][this->deck]]->scrollpos = 0;
 	if (this->pos >= mainmix->scenes[this->comp][this->deck][mainmix->currscene[this->comp][this->deck]]->scrollpos && this->pos < mainmix->scenes[this->comp][this->deck][mainmix->currscene[this->comp][this->deck]]->scrollpos + 3) {
 		Box* box = this->node->vidbox;
+        mainprogram->frontbatch = true;  // allow alpha
 		if (!this->mutebut->value) {
-			draw_box(box, box->tex);
+            draw_box(box, -1);
+            draw_box(box, box->tex);
 		}
 		else {
+            draw_box(box, -1);
 			draw_box(box, box->tex);
-			mainprogram->frontbatch = true;  // allow alpha
-			draw_box(white, darkred2, box, -1);
+			draw_box(white, darkred3, box, -1);
 		}
+		if (this == mainmix->currlay) {
+		    mainprogram->frontbatch = true;
+            float pixelw = 2.0f / glob->w;
+            float pixelh = 2.0f / glob->h;
+            draw_box(white, nullptr, box->vtxcoords->x1 - pixelw, box->vtxcoords->y1 - pixelh, box->vtxcoords->w + 2.0f * pixelw, box->vtxcoords->h + 2.0f * pixelh, -1);
+            draw_box(black, nullptr, box, -1);
+            mainprogram->frontbatch = false;
+		}
+        mainprogram->frontbatch = false;
 
 		if (mainmix->mode == 0 && mainprogram->nodesmain->linked) {
-			// Trigger mainprogram->laymenu1
+		    // set x1 for mute and solo always
+            this->mutebut->box->vtxcoords->x1 = box->vtxcoords->x1 + mainprogram->layw - 0.06f;
+            this->mutebut->box->upvtxtoscr();
+            this->solobut->box->vtxcoords->x1 = this->mutebut->box->vtxcoords->x1 + 0.03f;
+            this->solobut->box->upvtxtoscr();
 			if (box->in()) {
 				std::string deckstr;
 				if (this->deck == 0) deckstr = "A";
@@ -2986,7 +3001,8 @@ void Layer::display() {
 						mainmix->currlay = this;
 						mainprogram->effcat[this->deck]->value = 0;
 						if (mainprogram->menuactivation) {
-							if (this->type == ELEM_IMAGE || this->type == ELEM_LIVE) mainprogram->laymenu2->state = 2;
+                            // Trigger mainprogram->laymenu#
+                            if (this->type == ELEM_IMAGE || this->type == ELEM_LIVE) mainprogram->laymenu2->state = 2;
 							else mainprogram->laymenu1->state = 2;
 							mainmix->mouselayer = this;
 							mainmix->mousedeck = this->deck;
@@ -2996,8 +3012,6 @@ void Layer::display() {
 				}
 
 				//draw and handle layer mute and solo buttons
-				this->mutebut->box->vtxcoords->x1 = box->vtxcoords->x1 + mainprogram->layw - 0.06f;
-				this->mutebut->box->upvtxtoscr();
 				if (this->mutebut->box->in()) {
 					render_text("M", alphablue, this->mutebut->box->vtxcoords->x1 + 0.0078f, this->mutebut->box->vtxcoords->y1 + 0.0078f, 0.0006, 0.001);
 					if (mainprogram->leftmousedown) {
@@ -3195,7 +3209,10 @@ void Layer::display() {
 		// Show current layer controls
 		if (this != mainmix->currlay) return;
 
-		if (!mainprogram->queueing) {
+        // Draw controls/effects background box
+        draw_box(lightgrey, darkgreygreen, this->mixbox->vtxcoords->x1, mainmix->crossfade->box->vtxcoords->y1 + mainmix->crossfade->box->vtxcoords->h, 0.6f, this->mixbox->vtxcoords->y1 - mainmix->crossfade->box->vtxcoords->y1, -1);
+
+        if (!mainprogram->queueing) {
 			// Draw mixbox
 			std::string mixstr;
 			box = this->mixbox;
@@ -3270,11 +3287,11 @@ void Layer::display() {
 				render_text(mixstr, white, this->mixbox->vtxcoords->x1 + tf(0.01f), 1.0f - (mainprogram->layh + tf(0.09f)) + tf(0.02f), tf(0.0003f), tf(0.0005f));
 			}
 			else {
-				render_text(mixstr, red, this->mixbox->vtxcoords->x1 + tf(0.01f), 1.0f - (mainprogram->layh + tf(0.09f)) + tf(0.02f), tf(0.0003f), tf(0.0005f));
+				render_text(mixstr, darkred1, this->mixbox->vtxcoords->x1 + tf(0.01f), 1.0f - (mainprogram->layh + tf(0.09f)) + tf(0.02f), tf(0.0003f), tf(0.0005f));
 			}
 
 			// Draw and handle effect category buttons
-			float efx = -1.0f + this->deck * 0.8f + ((mainmix->scenes[this->comp][this->deck][mainmix->currscene[this->comp][this->deck]]->scrollpos + this->pos) % 3) * mainprogram->layw;
+            float efx = -1.0f + this->deck * 0.8f + ((mainmix->scenes[this->comp][this->deck][mainmix->currscene[this->comp][this->deck]]->scrollpos + this->pos) % 3) * mainprogram->layw;
 			mainprogram->effscrollupA->vtxcoords->x1 = efx;
 			mainprogram->effscrollupB->vtxcoords->x1 = efx;
 			mainprogram->effscrolldownA->vtxcoords->x1 = efx;
@@ -3332,12 +3349,12 @@ void Layer::display() {
 
 					box = eff->box;
 					if (mainprogram->effcat[this->deck]->value == 0) {
-						if (eff->onoffbutton->value) draw_box(white, darkred1, box, -1);
-						else draw_box(white, darkred2, box, -1);
+						if (eff->onoffbutton->value) draw_box(lightgrey, darkred1, box, -1);
+						else draw_box(lightgrey, darkred2, box, -1);
 					}
 					else {
-						if (eff->onoffbutton->value) draw_box(white, darkgreen1, box, -1);
-						else draw_box(white, darkgreen2, box, -1);
+						if (eff->onoffbutton->value) draw_box(lightgrey, darkgreen1, box, -1);
+						else draw_box(lightgrey, darkgreen2, box, -1);
 					}
 					effstr = eff->get_namestring();
 					float textw = tf(textwvec_total(render_text(effstr, white, eff->box->vtxcoords->x1 + tf(0.01f), eff->box->vtxcoords->y1 + tf(0.05f) - tf(0.030f), tf(0.0003f), tf(0.0005f))));
@@ -3402,20 +3419,22 @@ void Layer::display() {
 				}
 				if (!mainprogram->menuondisplay) {
 					if (sy1 - 7.5 <= mainprogram->my && mainprogram->my <= sy1 + 7.5) {
-						inbetween = true;
+						//inbetween = true;
 						vx2 = vx1;
 						vy2 = vy1 - tf(0.011f);
 					}
-					if (mainprogram->addeffectbox->in() || mainprogram->inserteffectbox->in()) {
+					if (mainprogram->addeffectbox->in()) {
 						if ((mainprogram->menuactivation || mainprogram->leftmouse) && !mainprogram->drageff) {
 							mainprogram->effectmenu->state = 2;
-							mainmix->insert = 1;
+							mainmix->insert = true;
 							mainmix->mouseeffect = evec.size();
 							mainmix->mouselayer = this;
 							mainprogram->effectmenu->menux = mainprogram->mx;
 							mainprogram->effectmenu->menuy = mainprogram->my;
 							mainprogram->menuactivation = false;
 							mainprogram->menuondisplay = true;
+                            mainprogram->drageffsense = false;
+                            mainprogram->drageff = nullptr;
 						}
 						bottom = true;
 					}
@@ -3430,7 +3449,8 @@ void Layer::display() {
 					eff->box->acolor[3] = 1.0f;
 					if (!mainprogram->menuondisplay) {
 						if (box->scrcoords->x1 < mainprogram->mx && mainprogram->mx < box->scrcoords->x1 + box->scrcoords->w) {
-							if (box->scrcoords->y1 - box->scrcoords->h + 7.5 <= mainprogram->my && mainprogram->my <= box->scrcoords->y1 - 7.5) {
+							if (box->scrcoords->y1 - box->scrcoords->h + 7 <= mainprogram->my && mainprogram->my <= box->scrcoords->y1 - 7) {
+							    // mouse on effect box
 								if (mainprogram->del) {
 									this->delete_effect(j);
 									mainprogram->del = 0;
@@ -3471,7 +3491,7 @@ void Layer::display() {
 						box = eff->onoffbutton->box;
 						if (box->scrcoords->x1 < mainprogram->mx && mainprogram->mx < box->scrcoords->x1 + tf(mainprogram->layw) * glob->w / 2.0) {
 							if (box->scrcoords->y1 - box->scrcoords->h - 7.5 < mainprogram->iemy && mainprogram->iemy < box->scrcoords->y1 - box->scrcoords->h + 7.5) {
-    							// mouse over "Insert Effect" box, inbetween effects
+    							// mouse inbetween effects
 								if ((mainprogram->menuactivation || mainprogram->leftmouse || mainprogram->lmover) && !mainprogram->drageff) {
 									mainprogram->effectmenu->state = 2;
 									mainmix->insert = true;
@@ -3640,7 +3660,7 @@ void Layer::display() {
 			Param* par = this->speed;
 			par->handle();
 			mainprogram->frontbatch = true;
-			draw_box(white, nullptr, this->speed->box->vtxcoords->x1, this->speed->box->vtxcoords->y1, this->speed->box->vtxcoords->w * 0.30f, tf(0.05f), -1);			mainprogram->frontbatch = true;
+			draw_box(lightgrey, nullptr, this->speed->box->vtxcoords->x1, this->speed->box->vtxcoords->y1, this->speed->box->vtxcoords->w * 0.30f, tf(0.05f), -1);			mainprogram->frontbatch = true;
 			mainprogram->frontbatch = false;
 
 			// Draw opacity->box
@@ -3674,14 +3694,14 @@ void Layer::display() {
 				}
 			}
 			else {
-				this->playbut->box->acolor[0] = 0.5;
-				this->playbut->box->acolor[1] = 0.2;
-				this->playbut->box->acolor[2] = 0.5;
+				this->playbut->box->acolor[0] = 0.3;
+				this->playbut->box->acolor[1] = 0.6;
+				this->playbut->box->acolor[2] = 0.4;
 				this->playbut->box->acolor[3] = 1.0;
 				if (this->playbut->value) {
-					this->playbut->box->acolor[0] = 1.0;
-					this->playbut->box->acolor[1] = 0.5;
-					this->playbut->box->acolor[2] = 0.0;
+					this->playbut->box->acolor[0] = 0.3;
+					this->playbut->box->acolor[1] = 0.4;
+					this->playbut->box->acolor[2] = 0.7;
 					this->playbut->box->acolor[3] = 1.0;
 				}
 			}
@@ -3707,14 +3727,14 @@ void Layer::display() {
 				}
 			}
 			else {
-				this->revbut->box->acolor[0] = 0.5;
-				this->revbut->box->acolor[1] = 0.2;
-				this->revbut->box->acolor[2] = 0.5;
+				this->revbut->box->acolor[0] = 0.3;
+				this->revbut->box->acolor[1] = 0.6;
+				this->revbut->box->acolor[2] = 0.4;
 				this->revbut->box->acolor[3] = 1.0;
 				if (this->revbut->value) {
-					this->revbut->box->acolor[0] = 1.0;
-					this->revbut->box->acolor[1] = 0.5;
-					this->revbut->box->acolor[2] = 0.0;
+					this->revbut->box->acolor[0] = 0.3;
+					this->revbut->box->acolor[1] = 0.4;
+					this->revbut->box->acolor[2] = 0.7;
 					this->revbut->box->acolor[3] = 1.0;
 				}
 			}
@@ -3743,14 +3763,14 @@ void Layer::display() {
 				}
 			}
 			else {
-				this->bouncebut->box->acolor[0] = 0.5;
-				this->bouncebut->box->acolor[1] = 0.2;
-				this->bouncebut->box->acolor[2] = 0.5;
+				this->bouncebut->box->acolor[0] = 0.3;
+				this->bouncebut->box->acolor[1] = 0.6;
+				this->bouncebut->box->acolor[2] = 0.4;
 				this->bouncebut->box->acolor[3] = 1.0;
 				if (this->bouncebut->value) {
-					this->bouncebut->box->acolor[0] = 1.0;
-					this->bouncebut->box->acolor[1] = 0.5;
-					this->bouncebut->box->acolor[2] = 0.0;
+					this->bouncebut->box->acolor[0] = 0.3;
+					this->bouncebut->box->acolor[1] = 0.4;
+					this->bouncebut->box->acolor[2] = 0.7;
 					this->bouncebut->box->acolor[3] = 1.0;
 				}
 			}
@@ -3767,9 +3787,9 @@ void Layer::display() {
 				if (mainprogram->leftmouse) {
 					this->frame += 1;
 					if (this->frame >= this->numf) this->frame = 0.0f;
-					this->frameforward->box->acolor[0] = 1.0;
-					this->frameforward->box->acolor[1] = 0.5;
-					this->frameforward->box->acolor[2] = 0.0;
+					this->frameforward->box->acolor[0] = 0.3;
+					this->frameforward->box->acolor[1] = 0.4;
+					this->frameforward->box->acolor[2] = 0.7;
 					this->frameforward->box->acolor[3] = 1.0;
 					this->prevffw = true;
 					this->prevfbw = false;
@@ -3781,9 +3801,9 @@ void Layer::display() {
 				}
 			}
 			else {
-				this->frameforward->box->acolor[0] = 0.5;
-				this->frameforward->box->acolor[1] = 0.2;
-				this->frameforward->box->acolor[2] = 0.5;
+				this->frameforward->box->acolor[0] = 0.3;
+				this->frameforward->box->acolor[1] = 0.6;
+				this->frameforward->box->acolor[2] = 0.4;
 				this->frameforward->box->acolor[3] = 1.0;
 			}
 			draw_box(this->frameforward->box, -1);
@@ -3796,9 +3816,9 @@ void Layer::display() {
 				if (mainprogram->leftmouse) {
 					this->frame -= 1;
 					if (this->frame < 0) this->frame = this->numf - 1.0f;
-					this->framebackward->box->acolor[0] = 1.0;
-					this->framebackward->box->acolor[1] = 0.5;
-					this->framebackward->box->acolor[2] = 0.0;
+					this->framebackward->box->acolor[0] = 0.3;
+					this->framebackward->box->acolor[1] = 0.4;
+					this->framebackward->box->acolor[2] = 0.7;
 					this->framebackward->box->acolor[3] = 1.0;
 					this->prevfbw = true;
 					this->prevffw = false;
@@ -3810,9 +3830,9 @@ void Layer::display() {
 				}
 			}
 			else {
-				this->framebackward->box->acolor[0] = 0.5;
-				this->framebackward->box->acolor[1] = 0.2;
-				this->framebackward->box->acolor[2] = 0.5;
+				this->framebackward->box->acolor[0] = 0.3;
+				this->framebackward->box->acolor[1] = 0.6;
+				this->framebackward->box->acolor[2] = 0.4;
 				this->framebackward->box->acolor[3] = 1.0;
 			}
 			draw_box(this->framebackward->box, -1);
@@ -3917,15 +3937,12 @@ void Layer::display() {
 				this->set_clones();
 				if (mainprogram->middlemouse) this->scritching = 0;
 			}
-			glBindFramebuffer(GL_FRAMEBUFFER, mainprogram->globfbo);
-			mainprogram->drawbuffer = mainprogram->globfbo;
-			glDrawBuffer(GL_COLOR_ATTACHMENT0);
 			draw_box(this->loopbox, -1);
 			if (ends) {
-				draw_box(white, blue, this->loopbox->vtxcoords->x1 + this->startframe * (this->loopbox->vtxcoords->w / (this->numf - 1)), this->loopbox->vtxcoords->y1, (this->endframe - this->startframe) * (this->loopbox->vtxcoords->w / (this->numf - 1)), tf(0.05f), -1);
+				draw_box(lightgrey, greygreen, this->loopbox->vtxcoords->x1 + this->startframe * (this->loopbox->vtxcoords->w / (this->numf - 1)), this->loopbox->vtxcoords->y1, (this->endframe - this->startframe) * (this->loopbox->vtxcoords->w / (this->numf - 1)), tf(0.05f), -1);
 			}
 			else {
-				draw_box(white, green, this->loopbox->vtxcoords->x1 + this->startframe * (this->loopbox->vtxcoords->w / (this->numf - 1)), this->loopbox->vtxcoords->y1, (this->endframe - this->startframe) * (this->loopbox->vtxcoords->w / (this->numf - 1)), tf(0.05f), -1);
+				draw_box(lightgrey, greygreen, this->loopbox->vtxcoords->x1 + this->startframe * (this->loopbox->vtxcoords->w / (this->numf - 1)), this->loopbox->vtxcoords->y1, (this->endframe - this->startframe) * (this->loopbox->vtxcoords->w / (this->numf - 1)), tf(0.05f), -1);
 			}
 			draw_box(white, white, this->loopbox->vtxcoords->x1 + this->frame * (this->loopbox->vtxcoords->w / (this->numf - 1)), this->loopbox->vtxcoords->y1, tf(0.00078f), tf(0.05f), -1);
 
@@ -5292,6 +5309,8 @@ void Mixer::open_state(const std::string &path) {
  		glBindTexture(GL_TEXTURE_2D, mainprogram->bnodeend->fbotex);
 		glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR);
 		glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
+        glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_BORDER);
+        glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_BORDER);
 		glGenFramebuffers(1, &(mainprogram->bnodeend->fbo));
 		glBindFramebuffer(GL_FRAMEBUFFER, mainprogram->bnodeend->fbo);
 		glFramebufferTexture2D(GL_FRAMEBUFFER, GL_COLOR_ATTACHMENT0, GL_TEXTURE_2D, mainprogram->bnodeend->fbotex, 0);
@@ -5301,6 +5320,8 @@ void Mixer::open_state(const std::string &path) {
  		glBindTexture(GL_TEXTURE_2D, mainprogram->bnodeendcomp->fbotex);
 		glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR);
 		glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
+        glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_BORDER);
+        glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_BORDER);
 		glGenFramebuffers(1, &(mainprogram->bnodeendcomp->fbo));
 		glBindFramebuffer(GL_FRAMEBUFFER, mainprogram->bnodeendcomp->fbo);
 		glFramebufferTexture2D(GL_FRAMEBUFFER, GL_COLOR_ATTACHMENT0, GL_TEXTURE_2D, mainprogram->bnodeendcomp->fbotex, 0);
@@ -5315,6 +5336,8 @@ void Mixer::open_state(const std::string &path) {
 			glBindTexture(GL_TEXTURE_2D, mainprogram->nodesmain->mixnodes[i]->mixtex);
 			glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR);
 			glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
+            glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_BORDER);
+            glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_BORDER);
 			glGenFramebuffers(1, &(mainprogram->nodesmain->mixnodes[i]->mixfbo));
 			glBindFramebuffer(GL_FRAMEBUFFER, mainprogram->nodesmain->mixnodes[i]->mixfbo);
 			glFramebufferTexture2D(GL_FRAMEBUFFER, GL_COLOR_ATTACHMENT0, GL_TEXTURE_2D, mainprogram->nodesmain->mixnodes[i]->mixtex, 0);
@@ -5328,6 +5351,8 @@ void Mixer::open_state(const std::string &path) {
 			glBindTexture(GL_TEXTURE_2D, mainprogram->nodesmain->mixnodescomp[i]->mixtex);
 			glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR);
 			glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
+            glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_BORDER);
+            glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_BORDER);
 			glGenFramebuffers(1, &(mainprogram->nodesmain->mixnodescomp[i]->mixfbo));
 			glBindFramebuffer(GL_FRAMEBUFFER, mainprogram->nodesmain->mixnodescomp[i]->mixfbo);
 			glFramebufferTexture2D(GL_FRAMEBUFFER, GL_COLOR_ATTACHMENT0, GL_TEXTURE_2D, mainprogram->nodesmain->mixnodescomp[i]->mixtex, 0);
@@ -5738,9 +5763,7 @@ void Mixer::save_mix(const std::string& path) {
 }
 
 void Mixer::do_save_mix(const std::string & path, bool modus, bool save) {
-	//SDL_GL_MakeCurrent(mainprogram->dummywindow, glc_th);
-
-	std::string ext = path.substr(path.length() - 4, std::string::npos);
+    std::string ext = path.substr(path.length() - 4, std::string::npos);
 	std::string str;
 	if (ext != ".mix") str = path + ".mix";
 	else str = path;
@@ -5870,8 +5893,6 @@ void Mixer::do_save_mix(const std::string & path, bool modus, bool save) {
 	concat_files(outputfile, str, jpegpaths);
 	outputfile.close();
 	boost::filesystem::rename(tcpath, str);
-	
-	//SDL_GL_MakeCurrent(nullptr, nullptr);
 }
 
 
@@ -5948,7 +5969,6 @@ void Mixer::save_deck(const std::string& path) {
 }
 
 void Mixer::do_save_deck(const std::string& path, bool save, bool doclips) {
-	//SDL_GL_MakeCurrent(mainprogram->dummywindow, glc_th);
 	std::string ext = path.substr(path.length() - 5, std::string::npos);
 	std::string str;
 	if (ext != ".deck") str = path + ".deck";
@@ -5999,8 +6019,6 @@ void Mixer::do_save_deck(const std::string& path, bool save, bool doclips) {
 	concat_files(outputfile, str, jpegpaths);
 	outputfile.close();
 	boost::filesystem::rename(mainprogram->temppath + "/tempconcat", str);
-
-	//SDL_GL_MakeCurrent(nullptr, nullptr);
 }
 
 
@@ -6329,12 +6347,14 @@ int Mixer::read_layers(std::istream &rfile, const std::string &result, std::vect
 							lay->liveinput = nullptr;
 						}
 					}
-					else if (lay->type == ELEM_FILE || lay->type == ELEM_LAYER) {
-						lay->open_video(-1, lay->filename, false);
-					}
-					else if (lay->type == ELEM_IMAGE) {
-						lay->open_image(lay->filename);
-					}
+                    if (exists(lay->filename)) {
+                        if (lay->type == ELEM_FILE || lay->type == ELEM_LAYER) {
+                            lay->open_video(-1, lay->filename, false);
+                        }
+                        else if (lay->type == ELEM_IMAGE) {
+                            lay->open_image(lay->filename);
+                        }
+                    }
 				}
 				if (type > 0) lay->prevframe = -1;
 			}
@@ -6633,6 +6653,8 @@ int Mixer::read_layers(std::istream &rfile, const std::string &result, std::vect
 						glBindTexture(GL_TEXTURE_2D, clip->tex);
 						glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR);
 						glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
+                        glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_BORDER);
+                        glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_BORDER);
 						//glTexStorage2D(GL_TEXTURE_2D, 1, GL_RGBA8, (int)(mainprogram->ow3), (int)(mainprogram->oh3));
 						if (concat) {
 							boost::filesystem::rename(result + "_" + std::to_string(jpegcount) + ".file", result + "_" + std::to_string(jpegcount) + ".jpeg");
@@ -7727,9 +7749,6 @@ void Mixer::start_recording() {
 	while (this->recordnow) {
 		this->startrecord.notify_one();
 	}
-	glBindFramebuffer(GL_FRAMEBUFFER, mainprogram->globfbo);
-	mainprogram->drawbuffer = mainprogram->globfbo;
-	glDrawBuffer(GL_COLOR_ATTACHMENT0);
 }
 
 
@@ -7807,7 +7826,9 @@ bool Mixer::clip_drag_per_layervec(std::vector<Layer*>& layers, bool deck) {
 							}
 							if (mainprogram->dragbinel) {
 								Clip* nc = new Clip;
+								GLuint butex = nc->tex;
 								nc->tex = copy_tex(mainprogram->dragbinel->tex);
+                                if (butex != -1) glDeleteTextures(1, &butex);
 								nc->type = mainprogram->dragbinel->type;
 								nc->path = mainprogram->dragbinel->path;
 								if (nc->type == ELEM_IMAGE) {
@@ -7842,7 +7863,9 @@ bool Mixer::clip_drag_per_layervec(std::vector<Layer*>& layers, bool deck) {
 									mainprogram->draglay->clips.insert(mainprogram->draglay->clips.begin() + mainprogram->dragpos, mainprogram->dragclip);
 									mainprogram->dragclip = nullptr;
 								}
+								GLuint butex = jc->tex;
 								jc->tex = copy_tex(mainprogram->dragbinel->tex);
+                                if (butex != -1) glDeleteTextures(1, &butex);
 								jc->type = mainprogram->dragbinel->type;
 								jc->path = mainprogram->dragbinel->path;
 								if (jc->type == ELEM_IMAGE) {
@@ -8008,6 +8031,7 @@ void Layer::clip_display_next(bool startend, bool alive) {
 		}
 		VideoNode* node = (VideoNode*)this->node;
 		if (alive) {
+		    GLuint butex = oldclip->tex;
 			if (oldclip->type == ELEM_LAYER && this->effects[0].size()) {
 				oldclip->tex = copy_tex(node->vidbox->tex);
 				std::string name = remove_extension(basename(this->filename));
@@ -8034,6 +8058,7 @@ void Layer::clip_display_next(bool startend, bool alive) {
 				oldclip->tex = copy_tex(this->fbotex);
 				oldclip->path = this->filename;
 			}
+            if (butex != -1) glDeleteTextures(1, &butex);
 		}
 		else {
 			if (oldclip->type == ELEM_LAYER) {

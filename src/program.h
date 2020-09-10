@@ -89,7 +89,7 @@ struct gui_triangle {
 
 struct gui_box {
 	float linec[4];
-	float areac[4];
+	float areac[4] = {0.0f, 0.0f, 0.0f, 0.0f};
 	float x;
 	float y;
 	float wi;
@@ -115,7 +115,7 @@ public:
 	std::string basepath = "";
 	std::vector<ShelfElement*> elements;
 	std::vector<Button*> buttons;
-	int prevnum;
+	int prevnum = -1;
 	int newnum = -1;
 	bool ret;
 	void handle();
@@ -323,7 +323,8 @@ class Program {
 		GLuint tm_texvao;
 		GLuint tm_rtvbo;
 		GLuint tm_rttbo;
-		GLuint bgtex;
+        GLuint bgtex;
+        GLuint bg_oltex;
 		std::vector<OutputEntry*> outputentries;
 		std::vector<Button*> buttons;
 		Box *scrollboxes[2];
@@ -477,7 +478,7 @@ class Program {
 		Box* delbox;
 		Box* addbox;
 
-		GLuint drawbuffer;
+        GLuint drawbuffer;
 		GLuint boxcoltbo;
 		GLuint boxtextbo;
 		GLuint boxbrdtbo;
@@ -578,7 +579,7 @@ class Program {
 		std::mutex hapmutex;
 		std::condition_variable hap;
 		bool hapnow = false;
-		
+
 		std::string projdir;
 		std::string binsdir;
 		std::string recdir;
@@ -647,7 +648,9 @@ class Program {
 		void get_inname(const char *title, std::string filters, std::string defaultdir);
 		void get_multinname(const char* title, std::string filters, std::string defaultdir);
 		void get_dir(std::string , std::string defaultdir);
+#ifdef WINDOWS
 		void win_dialog(const char* title, LPCSTR filters, std::string defaultdir, bool open, bool multi);
+#endif
 		float xscrtovtx(float scrcoord);
 		float yscrtovtx(float scrcoord);
 		float xvtxtoscr(float vtxcoord);
@@ -687,7 +690,9 @@ class Program {
 		Program();
 		
 	private:
+#ifdef WINDOWS
 		LPCSTR mime_to_wildcard(std::string filters);
+#endif
 		bool do_order_paths();
 };
 
@@ -722,9 +727,13 @@ extern float yellow[];
 extern float lightblue[];
 extern float darkblue[];
 extern float red[];
+extern float lightgrey[];
 extern float grey[];
 extern float pink[];
 extern float green[];
+extern float lightgreygreen[];
+extern float greygreen[];
+extern float darkgreygreen[];
 extern float darkgreen1[];
 extern float darkgreen2[];
 extern float blue[];
@@ -733,6 +742,7 @@ extern float alphablue[];
 extern float alphagreen[];
 extern float darkred1[];
 extern float darkred2[];
+extern float darkred3[];
 extern float darkgrey[];
 
 extern void mycallback(double deltatime, std::vector< unsigned char >* message, void* userData);

@@ -111,14 +111,14 @@ Node::~Node() {
 
 BlendNode::~BlendNode() {
 	glDeleteTextures(1, &this->fbotex);
-	glDeleteBuffers(1, &this->fbo);
+	glDeleteFramebuffers(1, &this->fbo);
 	if (this->intex != -1) glDeleteTextures(1, &this->intex);
 	if (this->in2tex != -1) glDeleteTextures(1, &this->in2tex);
 }
 	
 MixNode::~MixNode() {
 	glDeleteTextures(1, &this->mixtex);
-	glDeleteBuffers(1, &this->mixfbo);
+	glDeleteFramebuffers(1, &this->mixfbo);
 }
 	
 
@@ -543,7 +543,7 @@ void NodePage::handle_nodes() {
 						if (found) break;
 					}
 					if (!found) mainmix->mousenode = node;
-					mainmix->insert = 0;
+					mainmix->insert = false;
 				}
 			}
 		}

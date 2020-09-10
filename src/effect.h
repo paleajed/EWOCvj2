@@ -167,8 +167,8 @@ class OldFilmEffect: public Effect {
 
 class RippleEffect: public Effect {
 	public:
-		float ripplecount;
-		float speed;
+		float ripplecount = 0.0f;
+		float speed = 0.0f;
 		float get_speed();
 		float get_ripplecount();
 		void set_ripplecount(float count);

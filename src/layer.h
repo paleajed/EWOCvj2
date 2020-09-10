@@ -419,8 +419,8 @@ class Mixer {
 		Shelf* midishelf = nullptr;
 		int midishelfstart = 0;
 
-		float time = 0;
-		float oldtime = 0;
+		float time = 0.0f;
+		float oldtime = 0.0f;
 		float cbduration = 0.0f;
 		
 		std::vector<GLuint> fbotexes;

@@ -40,14 +40,26 @@ void LoopStation::init() {
 LoopStationElement::LoopStationElement() {
 	this->recbut = new Button(0);
 	this->recbut->toggle = 1;
+    this->recbut->box->lcolor[0] = 0.4f;
+    this->recbut->box->lcolor[1] = 0.4f;
+    this->recbut->box->lcolor[2] = 0.4f;
+    this->recbut->box->lcolor[3] = 1.0f;
 	this->recbut->box->tooltiptitle = "Record loopstation row ";
 	this->recbut->box->tooltip = "Start recording non-automated parameter movements on this loopstation row.  ";
 	this->loopbut = new Button(0);
 	this->loopbut->toggle = 1;
+    this->loopbut->box->lcolor[0] = 0.4f;
+    this->loopbut->box->lcolor[1] = 0.4f;
+    this->loopbut->box->lcolor[2] = 0.4f;
+    this->loopbut->box->lcolor[3] = 1.0f;
 	this->loopbut->box->tooltiptitle = "Loop play loopstation row ";
 	this->loopbut->box->tooltip = "Start loop-playing of recorded parameter movements for this loopstation row. Stops recording if it was still running. ";
 	this->playbut = new Button(0);
 	this->playbut->toggle = 1;
+    this->playbut->box->lcolor[0] = 0.4f;
+    this->playbut->box->lcolor[1] = 0.4f;
+    this->playbut->box->lcolor[2] = 0.4f;
+    this->playbut->box->lcolor[3] = 1.0f;
 	this->playbut->box->tooltiptitle = "One-off play loopstation row ";
 	this->playbut->box->tooltip = "Start one-off-play of recorded parameter movements for this loopstation row. Stops at end of recording. ";
 	this->speed = new Param;
@@ -57,18 +69,30 @@ LoopStationElement::LoopStationElement() {
 	this->speed->range[0] = 0.0f;
 	this->speed->range[1] = 4.0f;
 	this->speed->sliding = true;
+    this->speed->box->lcolor[0] = 0.4f;
+    this->speed->box->lcolor[1] = 0.4f;
+    this->speed->box->lcolor[2] = 0.4f;
+    this->speed->box->lcolor[3] = 1.0f;
 	this->speed->box->vtxcoords->w = tf(0.1f);
 	this->speed->box->vtxcoords->h = tf(0.05f);
 	this->speed->box->upvtxtoscr();
 	this->speed->box->tooltiptitle = "Loopstation row speed ";
 	this->speed->box->tooltip = "Allows multiplying the recorded event's speed of this loopstation row.  Leftdrag sets value. Doubleclick allows numeric entry. ";
 	this->colbox = new Box;
+    this->colbox->lcolor[0] = 0.4f;
+    this->colbox->lcolor[1] = 0.4f;
+    this->colbox->lcolor[2] = 0.4f;
+    this->colbox->lcolor[3] = 1.0f;
 	this->colbox->vtxcoords->w = tf(0.031f);
 	this->colbox->vtxcoords->h = tf(0.05f);
 	this->colbox->upvtxtoscr();
 	this->colbox->tooltiptitle = "Loopstation row color code ";
 	this->colbox->tooltip = "Leftclicking this box shows colored boxes on the layer stack scroll strips for layers that contain parameters automated by this loopstation row. A white circle is drawn here when this loopstation row contains data. ";
 	this->box = new Box;
+    this->box->lcolor[0] = 0.4f;
+    this->box->lcolor[1] = 0.4f;
+    this->box->lcolor[2] = 0.4f;
+    this->box->lcolor[3] = 1.0f;
 	this->box->vtxcoords->w = 0.02f;
 	this->box->vtxcoords->h = tf(0.05f);
 	this->box->upvtxtoscr();
@@ -174,10 +198,10 @@ void LoopStationElement::visualize() {
 	this->colbox->upvtxtoscr();
 	this->box->upvtxtoscr();
 	this->speed->handle();
-	draw_box(this->colbox, -1);
+	draw_box(grey, this->colbox->acolor, this->colbox, -1);
 	if (this->eventlist.size()) draw_box(this->colbox->lcolor, this->colbox->vtxcoords->x1 + tf(0.0155f) , this->colbox->vtxcoords->y1 + tf(0.025f), tf(0.015f), 1);
-	if (this == loopstation->currelem) draw_box(white, white, this->box, -1);
-	else draw_box(white, nullptr, this->box, -1);
+	if (this == loopstation->currelem) draw_box(grey, white, this->box, -1);
+	else draw_box(grey, nullptr, this->box, -1);
 }
 	
 void LoopStationElement::erase_elem() {
