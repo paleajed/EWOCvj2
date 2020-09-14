@@ -2935,12 +2935,6 @@ void Layer::display() {
 		}
 	}
 	if (notyet && this->filename != "") {
-		if (this->node == this->lasteffnode[0]) {
-			this->drawfbo2 = true;
-		}
-		else {
-			this->drawfbo2 = false;
-		}
 		if (mainmix->bulrs[this->deck].size() > this->pos) {
 			this->node->vidbox->tex = mainmix->butexes[this->deck][this->pos];
 		}
@@ -6904,7 +6898,7 @@ std::vector<std::string> Mixer::write_layer(Layer* lay, std::ostream& wfile, boo
 	if (lay->type != ELEM_LIVE) {
 		wfile << "RELPATH\n";
 		if (lay->filename != "") {
-			wfile << mainprogram->docpath + boost::filesystem::relative(lay->filename, mainprogram->docpath).string();
+			wfile << boost::filesystem::relative(lay->filename, mainprogram->docpath).string();
 		}
 		else {
 			wfile << lay->filename;

@@ -92,8 +92,8 @@ class Effect {
 		Layer *layer;
 		GLuint fbo = -1;
 		GLuint fbotex = -1;
-		GLuint fbointm = -1;
-		GLuint fbotexintm = -1;
+		GLuint pfbo = -1;
+		GLuint pfbotex = -1;
 		EffectNode *node = NULL;
 		std::vector<Param*> params;
 		virtual float get_speed() { return -1; };

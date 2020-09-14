@@ -3002,7 +3002,7 @@ void Layer::load_frame() {
 	glBindTexture(GL_TEXTURE_2D, this->texture);
 
 	if (srclay->imageloaded >= 4 && srclay->type == ELEM_IMAGE && srclay->numf == 0) return;
-	glBindBuffer(GL_PIXEL_UNPACK_BUFFER, srclay->pbo[srclay->pbodi]);
+	glBindBuffer(GL_PIXEL_UNPACK_BUFFER, srclay->pbo[srclay->pboui]);
 	if (!this->liveinput) {
 		if ((!this->isclone)) {  // decresult contains new frame width, height, number of bitmaps && data
 			if (!srclay->decresult->width) {
@@ -3257,7 +3257,7 @@ void onestepfrom(bool stage, Node *node, Node *prevnode, GLuint prevfbotex, GLui
 						prevfbotex = mainprogram->fbotex[1 + stage * 2];
 						break;
 					 }
-		
+
 					case BOXBLUR: {
 						fxid = glGetUniformLocation(mainprogram->ShaderProgram, "fxid");
 						glUniform1i(fxid, BOXBLUR);
@@ -3274,7 +3274,7 @@ void onestepfrom(bool stage, Node *node, Node *prevnode, GLuint prevfbotex, GLui
 						glUniform1i(fxid, RADIALBLUR);
 						break;
 					 }
-		
+
 					case GLOW: {
 						fxid = glGetUniformLocation(mainprogram->ShaderProgram, "fxid");
 						glUniform1i(fxid, GLOW);
@@ -3285,49 +3285,49 @@ void onestepfrom(bool stage, Node *node, Node *prevnode, GLuint prevfbotex, GLui
 						prevfbotex = mainprogram->fbotex[1 + stage * 2];
 						break;
 					 }
-		
+
 					case CONTRAST: {
 						fxid = glGetUniformLocation(mainprogram->ShaderProgram, "fxid");
 						glUniform1i(fxid, CONTRAST);
 						break;
 					 }
-		
+
 					case BRIGHTNESS: {
 						fxid = glGetUniformLocation(mainprogram->ShaderProgram, "fxid");
 						glUniform1i(fxid, BRIGHTNESS);
 						break;
 					 }
-		
+
 					case SCALE: {
 						fxid = glGetUniformLocation(mainprogram->ShaderProgram, "fxid");
 						glUniform1i(fxid, SCALE);
 						break;
 					 }
-		
+
 					case SWIRL: {
 						fxid = glGetUniformLocation(mainprogram->ShaderProgram, "fxid");
 						glUniform1i(fxid, SWIRL);
 						break;
 					 }
-		
+
 					case CHROMAROTATE: {
 						fxid = glGetUniformLocation(mainprogram->ShaderProgram, "fxid");
 						glUniform1i(fxid, CHROMAROTATE);
 						break;
 					 }
-		
+
 					case DOT: {
 						fxid = glGetUniformLocation(mainprogram->ShaderProgram, "fxid");
 						glUniform1i(fxid, DOT);
 						break;
 					 }
-		
+
 					case SATURATION: {
 						fxid = glGetUniformLocation(mainprogram->ShaderProgram, "fxid");
 						glUniform1i(fxid, SATURATION);
 						break;
 					 }
-		
+
 					case OLDFILM: {
 						GLfloat RandomValue = glGetUniformLocation(mainprogram->ShaderProgram, "RandomValue");
 						glUniform1f(RandomValue, (float)(rand() % 100) / 100.0);
@@ -3335,7 +3335,7 @@ void onestepfrom(bool stage, Node *node, Node *prevnode, GLuint prevfbotex, GLui
 						glUniform1i(fxid, OLDFILM);
 						break;
 					 }
-		
+
 					case RIPPLE: {
 						float riptime = glGetUniformLocation(mainprogram->ShaderProgram, "riptime");
 						glUniform1f(riptime, effect->get_ripplecount());
@@ -3343,19 +3343,19 @@ void onestepfrom(bool stage, Node *node, Node *prevnode, GLuint prevfbotex, GLui
 						glUniform1i(fxid, RIPPLE);
 						break;
 					 }
-		
+
 					case FISHEYE: {
 						fxid = glGetUniformLocation(mainprogram->ShaderProgram, "fxid");
 						glUniform1i(fxid, FISHEYE);
 						break;
 					 }
-		
+
 					case TRESHOLD: {
 						fxid = glGetUniformLocation(mainprogram->ShaderProgram, "fxid");
 						glUniform1i(fxid, TRESHOLD);
 						break;
 					 }
-		
+
 					case STROBE: {
 						if (((StrobeEffect*)effect)->get_phase() == 0) ((StrobeEffect*)effect)->set_phase(1);
 						else ((StrobeEffect*)effect)->set_phase(0);
@@ -3365,67 +3365,67 @@ void onestepfrom(bool stage, Node *node, Node *prevnode, GLuint prevfbotex, GLui
 						glUniform1i(fxid, STROBE);
 						break;
 					}
-		
+
 					case POSTERIZE: {
 						fxid = glGetUniformLocation(mainprogram->ShaderProgram, "fxid");
 						glUniform1i(fxid, POSTERIZE);
 						break;
 					 }
-		
+
 					case PIXELATE: {
 						fxid = glGetUniformLocation(mainprogram->ShaderProgram, "fxid");
 						glUniform1i(fxid, PIXELATE);
 						break;
 					 }
-		
+
 					case CROSSHATCH: {
 						fxid = glGetUniformLocation(mainprogram->ShaderProgram, "fxid");
 						glUniform1i(fxid, CROSSHATCH);
 						break;
 					 }
-		
+
 					case INVERT: {
 						fxid = glGetUniformLocation(mainprogram->ShaderProgram, "fxid");
 						glUniform1i(fxid, INVERT);
 						break;
 					 }
-		
+
 					case ROTATE: {
 						fxid = glGetUniformLocation(mainprogram->ShaderProgram, "fxid");
 						glUniform1i(fxid, ROTATE);
 						break;
 					}
-		
+
 					case EMBOSS: {
 						fxid = glGetUniformLocation(mainprogram->ShaderProgram, "fxid");
 						glUniform1i(fxid, EMBOSS);
 						break;
 					 }
-		
+
 					case ASCII: {
 						fxid = glGetUniformLocation(mainprogram->ShaderProgram, "fxid");
 						glUniform1i(fxid, ASCII);
 						break;
 					 }
-		
+
 					case SOLARIZE: {
 						fxid = glGetUniformLocation(mainprogram->ShaderProgram, "fxid");
 						glUniform1i(fxid, SOLARIZE);
 						break;
 					 }
-		
+
 					case VARDOT: {
 						fxid = glGetUniformLocation(mainprogram->ShaderProgram, "fxid");
 						glUniform1i(fxid, VARDOT);
 						break;
 					 }
-		
+
 					case CRT: {
 						fxid = glGetUniformLocation(mainprogram->ShaderProgram, "fxid");
 						glUniform1i(fxid, CRT);
 						break;
 					 }
-					 
+
 					case EDGEDETECT: {
 						fxid = glGetUniformLocation(mainprogram->ShaderProgram, "fxid");
 						glUniform1i(fxid, EDGEDETECT);
@@ -3442,7 +3442,7 @@ void onestepfrom(bool stage, Node *node, Node *prevnode, GLuint prevfbotex, GLui
 						glBindVertexArray(mainprogram->fbovao);
 						glDrawArrays(GL_TRIANGLE_STRIP, 0, 4);
 						glUniform1i(interm, 0);
-						
+
 						glUniform1i(edgethickmode, 1);
 						glActiveTexture(GL_TEXTURE6);
 						glBindTexture(GL_TEXTURE_2D, mainprogram->fbotex[1 + stage * 2]);
@@ -3473,79 +3473,79 @@ void onestepfrom(bool stage, Node *node, Node *prevnode, GLuint prevfbotex, GLui
 						else prevfbotex = mainprogram->fbotex[0 + stage * 2];
 						break;
 					}
-					 
+
 					case KALEIDOSCOPE: {
 						fxid = glGetUniformLocation(mainprogram->ShaderProgram, "fxid");
 						glUniform1i(fxid, KALEIDOSCOPE);
 						break;
 					 }
-					 
+
 					case HTONE: {
 						fxid = glGetUniformLocation(mainprogram->ShaderProgram, "fxid");
 						glUniform1i(fxid, HTONE);
 						break;
 					 }
-					 
+
 					case CARTOON: {
 						fxid = glGetUniformLocation(mainprogram->ShaderProgram, "fxid");
 						glUniform1i(fxid, CARTOON);
 						break;
 					 }
-					 
+
 					case CUTOFF: {
 						fxid = glGetUniformLocation(mainprogram->ShaderProgram, "fxid");
 						glUniform1i(fxid, CUTOFF);
 						break;
 					 }
-					 
+
 					case GLITCH: {
 						fxid = glGetUniformLocation(mainprogram->ShaderProgram, "fxid");
 						glUniform1i(fxid, GLITCH);
 						break;
 					 }
-					 
+
 					case COLORIZE: {
 						fxid = glGetUniformLocation(mainprogram->ShaderProgram, "fxid");
 						glUniform1i(fxid, COLORIZE);
 						break;
 					 }
-					 
+
 					case NOISE: {
 						fxid = glGetUniformLocation(mainprogram->ShaderProgram, "fxid");
 						glUniform1i(fxid, NOISE);
 						break;
 					 }
-					 
+
 					case GAMMA: {
 						fxid = glGetUniformLocation(mainprogram->ShaderProgram, "fxid");
 						glUniform1i(fxid, GAMMA);
 						break;
 					 }
-					 
+
 					case THERMAL: {
 						fxid = glGetUniformLocation(mainprogram->ShaderProgram, "fxid");
 						glUniform1i(fxid, THERMAL);
 						break;
 					 }
-					 
+
 					case BOKEH: {
 						fxid = glGetUniformLocation(mainprogram->ShaderProgram, "fxid");
 						glUniform1i(fxid, BOKEH);
 						break;
 					 }
-					 
+
 					case SHARPEN: {
 						fxid = glGetUniformLocation(mainprogram->ShaderProgram, "fxid");
 						glUniform1i(fxid, SHARPEN);
 						break;
 					 }
-					 
+
 					case DITHER: {
 						fxid = glGetUniformLocation(mainprogram->ShaderProgram, "fxid");
 						glUniform1i(fxid, DITHER);
 						break;
 					 }
-					 
+
 					case FLIP: {
 						fxid = glGetUniformLocation(mainprogram->ShaderProgram, "fxid");
 						glUniform1i(fxid, FLIP);
@@ -3559,55 +3559,54 @@ void onestepfrom(bool stage, Node *node, Node *prevnode, GLuint prevfbotex, GLui
 					}
 				}
 			}
-			
+
 			glActiveTexture(GL_TEXTURE0);
 			if (effect->fbo == -1) {
-				glGenTextures(1, &(effect->fbotex));
-				glBindTexture(GL_TEXTURE_2D, effect->fbotex);
-				if ((stage == 0)) {
+                glGenTextures(1, &(effect->fbotex));
+                glBindTexture(GL_TEXTURE_2D, effect->fbotex);
+                if ((stage == 0)) {
 
-					glTexStorage2D(GL_TEXTURE_2D, 1, GL_RGBA8, mainprogram->ow3, mainprogram->oh3);
-				}
-				else {
-					glTexStorage2D(GL_TEXTURE_2D, 1, GL_RGBA8, mainprogram->ow, mainprogram->oh);
-				}
-				glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR);
-				glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
+                    glTexStorage2D(GL_TEXTURE_2D, 1, GL_RGBA8, mainprogram->ow3, mainprogram->oh3);
+                }
+                else {
+                    glTexStorage2D(GL_TEXTURE_2D, 1, GL_RGBA8, mainprogram->ow, mainprogram->oh);
+                }
+                glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR);
+                glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
                 glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_BORDER);
                 glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_BORDER);
 
-				glGenFramebuffers(1, &(effect->fbo));
-				glBindFramebuffer(GL_FRAMEBUFFER, effect->fbo);
-				glFramebufferTexture2D(GL_FRAMEBUFFER, GL_COLOR_ATTACHMENT0, GL_TEXTURE_2D, effect->fbotex, 0);
+                glGenFramebuffers(1, &(effect->fbo));
+                glBindFramebuffer(GL_FRAMEBUFFER, effect->fbo);
+                glFramebufferTexture2D(GL_FRAMEBUFFER, GL_COLOR_ATTACHMENT0, GL_TEXTURE_2D, effect->fbotex, 0);
 			}
 			GLuint down = glGetUniformLocation(mainprogram->ShaderProgram, "down");
 			if (effect->onoffbutton->value) glUniform1i(interm, 1);
-			else glUniform1i(down, 1);
 			GLfloat opacity = glGetUniformLocation(mainprogram->ShaderProgram, "opacity");
 			if (effect->node == (EffectNode*)(effect->layer->lasteffnode[0])) {
 				glUniform1f(opacity, effect->layer->opacity->value);
 			}
 			else glUniform1f(opacity, 1.0f);
-			
-			
+
+
 	// #define BUFFER_OFFSET(i) ((char *)nullptr + (i))
 			// GLuint ioBuf;
-			// glGenBuffers(1, &ioBuf); 
+			// glGenBuffers(1, &ioBuf);
 			// glBindBuffer(GL_PIXEL_PACK_BUFFER_ARB, ioBuf);
 			// glBufferData(GL_PIXEL_PACK_BUFFER_ARB, mainprogram->ow * mainprogram->oh, nullptr, GL_STREAM_READ);
 			// glBindFramebuffer(GL_FRAMEBUFFER, ((VideoNode*)(node->in))->layer->fbo);
 			// glReadBuffer(GL_COLOR_ATTACHMENT0);
 			// glReadPixels(0, 0, mainprogram->ow, mainprogram->oh, GL_BGRA, GL_UNSIGNED_BYTE, BUFFER_OFFSET(0));
-			// void* mem = glMapBuffer(GL_PIXEL_PACK_BUFFER_ARB, GL_READ_ONLY);   
+			// void* mem = glMapBuffer(GL_PIXEL_PACK_BUFFER_ARB, GL_READ_ONLY);
 			// assert(mem);
 			// CopyMemory((void*)effect->pbuf, mem, 2073600);
 			// //memcpy((void*)effect->pbuf, "SECRET", 7);
 			// glUnmapBuffer(GL_PIXEL_PACK_BUFFER_ARB);
-			// glBindBuffer(GL_PIXEL_PACK_BUFFER_ARB, 0);		
+			// glBindBuffer(GL_PIXEL_PACK_BUFFER_ARB, 0);
 			// //while((const char*)effect->pbuf != "TERCES") {}
 			// //glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA8, mainprogram->ow, mainprogram->oh, 0, GL_BGRA, GL_UNSIGNED_BYTE, effect->pbuf);
-			
-	 
+
+
 			glBindFramebuffer(GL_FRAMEBUFFER, effect->fbo);
 			mainprogram->drawbuffer = effect->fbo;
 			glDrawBuffer(GL_COLOR_ATTACHMENT0);
@@ -3615,37 +3614,27 @@ void onestepfrom(bool stage, Node *node, Node *prevnode, GLuint prevfbotex, GLui
 			else glViewport(0, 0, mainprogram->ow3, mainprogram->oh3);
 			glClearColor( 0.f, 0.f, 0.f, 0.f );
 			glClear(GL_COLOR_BUFFER_BIT);
-			glActiveTexture(GL_TEXTURE0);
-			glBindTexture(GL_TEXTURE_2D, prevfbotex);
-			glBindVertexArray(mainprogram->fbovao);
-			glDrawArrays(GL_TRIANGLE_STRIP, 0, 4);
-			glUniform1i(interm, 0);
-			glUniform1i(down, 0);
-			glUniform1i(edgethickmode, 0);
-			prevfbotex = effect->fbotex;
-			prevfbo = effect->fbo;
-	
+
 			Layer *lay = effect->layer;
+			float sx, sy, sc, op;
 			if (effect->node == lay->lasteffnode[0]) {
-				GLuint fbocopy;
-				glDisable(GL_BLEND);
-				int sw, sh;
-				glBindTexture(GL_TEXTURE_2D, effect->fbotex);
-				glGetTexLevelParameteriv(GL_TEXTURE_2D, 0, GL_TEXTURE_WIDTH, &sw);
-				glGetTexLevelParameteriv(GL_TEXTURE_2D, 0, GL_TEXTURE_HEIGHT, &sh);
-				fbocopy = copy_tex(effect->fbotex, sw, sh);
-				glViewport(0, 0, sw, sh);
-				glBindFramebuffer(GL_FRAMEBUFFER, effect->fbo);
-				mainprogram->drawbuffer = effect->fbo;
-				glDrawBuffer(GL_COLOR_ATTACHMENT0);
-				glClearColor(0.0f, 0.0f, 0.0f, 0.0f);
-				glClear(GL_COLOR_BUFFER_BIT);
-				float black[4] = {0.0f, 0.0f, 0.0f, 0.0f};
-				draw_box(nullptr, black, -1.0f, 1.0f, 2.0f, -2.0f, lay->shiftx->value, lay->shifty->value, lay->scale->value, lay->opacity->value, 0, fbocopy, 0, 0, false);
-				glEnable(GL_BLEND);
-				glDeleteTextures(1, &fbocopy);
+                sx = lay->shiftx->value;
+                sy = lay->shifty->value;
+                sc = lay->scale->value;
+                op = lay->opacity->value;
+           }
+			else {
+			    sx = 0.0f;
+                sy = 0.0f;
+                sc = 1.0f;
+                op = 1.0f;
 			}
 
+            draw_box(nullptr, black, -1.0f, 1.0f, 2.0f, -2.0f, sx, sy, sc, op, 0, prevfbotex, 0, 0, false);
+            prevfbotex = effect->fbotex;
+            prevfbo = effect->fbo;
+
+            glUniform1i(interm, 0);
 			glBindFramebuffer(GL_FRAMEBUFFER, mainprogram->globfbo);
 			mainprogram->drawbuffer = mainprogram->globfbo;
 			glDrawBuffer(GL_COLOR_ATTACHMENT0);
@@ -3655,12 +3644,6 @@ void onestepfrom(bool stage, Node *node, Node *prevnode, GLuint prevfbotex, GLui
 	else if (node->type == VIDEO) {
 		Layer *lay = ((VideoNode*)node)->layer;
 		if (!lay->newtexdata && mainmix->bulrs[lay->deck].size()) {
-			if (lay->node == lay->lasteffnode[0]) {
-				lay->drawfbo2 = true;
-			}
-			else {
-				lay->drawfbo2 = false;
-			}
 			return;
 		}
 		else {
@@ -3746,40 +3729,29 @@ void onestepfrom(bool stage, Node *node, Node *prevnode, GLuint prevfbotex, GLui
 			int sys = ys * sch / 2.0f;
 			scix = scix * scw / 2.0f;
 			sciy = sciy * sch / 2.0f;
-			glBindFramebuffer(GL_FRAMEBUFFER, lay->fbointm);
-			mainprogram->drawbuffer = lay->fbointm;
-			glDrawBuffer(GL_COLOR_ATTACHMENT0);
-			glClearColor(0.0f, 0.0f, 0.0f, 0.0f);
-			glClear(GL_COLOR_BUFFER_BIT);
 			glViewport(sxs, sys, scw - sxs * 2.0f, sch - sys * 2.0f);
-			float black[4] = { 0.0f, 0.0f, 0.0f, 0.0f };
-			draw_box(nullptr, black, -1.0f, 1.0f, 2.0f, -2.0f, lay->texture);
+			float sx, sy, sc, op;
+            if (lay->node == lay->lasteffnode[0]) {
+                sx = lay->shiftx->value;
+                sy = lay->shifty->value;
+                sc = lay->scale->value;
+                op = lay->opacity->value;
+            }
+            else {
+                sx = 0.0f;
+                sy = 0.0f;
+                sc = 1.0f;
+                op = 1.0f;
+            }
+            glBindFramebuffer(GL_FRAMEBUFFER, lay->fbo);
+            mainprogram->drawbuffer = lay->fbo;
+            glDrawBuffer(GL_COLOR_ATTACHMENT0);
+            glClearColor(0.0f, 0.0f, 0.0f, 0.0f);
+            glClear(GL_COLOR_BUFFER_BIT);
+            draw_box(nullptr, black, -1.0f, 1.0f, 2.0f, -2.0f, sx, sy, sc, op, 0, lay->texture, 0, 0, false);
+            prevfbotex = lay->fbotex;
+            prevfbo = lay->fbo;
 
-			if (lay->node == lay->lasteffnode[0]) {
-				lay->drawfbo2 = true;
-				glDisable(GL_BLEND);
-				glBindTexture(GL_TEXTURE_2D, lay->fbotexintm);
-				glGetTexLevelParameteriv(GL_TEXTURE_2D, 0, GL_TEXTURE_WIDTH, &sw);
-				glGetTexLevelParameteriv(GL_TEXTURE_2D, 0, GL_TEXTURE_HEIGHT, &sh);
-				glViewport(0, 0, sw, sh);
-				glBindFramebuffer(GL_FRAMEBUFFER, lay->fbo);
-				mainprogram->drawbuffer = lay->fbo;
-				glDrawBuffer(GL_COLOR_ATTACHMENT0);
-				glClearColor(0.0f, 0.0f, 0.0f, 0.0f);
-				glClear(GL_COLOR_BUFFER_BIT);
-				float black[4] = { 0.0f, 0.0f, 0.0f, 0.0f };
-
-				
-				draw_box(nullptr, black, -1.0f, 1.0f, 2.0f, -2.0f, lay->shiftx->value, lay->shifty->value, lay->scale->value, lay->opacity->value, 0, lay->fbotexintm, 0, 0, false);
-				glEnable(GL_BLEND);
-				prevfbotex = lay->fbotex;
-				prevfbo = lay->fbo;
-			}
-			else {
-				lay->drawfbo2 = false;
-				prevfbotex = lay->fbotexintm;
-				prevfbo = lay->fbointm;
-			}
 			glBindFramebuffer(GL_FRAMEBUFFER, mainprogram->globfbo);
 			mainprogram->drawbuffer = mainprogram->globfbo;
 			glDrawBuffer(GL_COLOR_ATTACHMENT0);
@@ -4622,8 +4594,7 @@ void make_layboxes() {
 					vnode->vidbox->lcolor[2] = 0.0;
 					vnode->vidbox->lcolor[3] = 1.0;
 					if (vnode->layer->effects[0].size() == 0) {
-						if (vnode->layer->drawfbo2) vnode->vidbox->tex = vnode->layer->fbotex;
-						else vnode->vidbox->tex = vnode->layer->fbotexintm;
+						vnode->vidbox->tex = vnode->layer->fbotex;
 					}
 					else {
 						vnode->vidbox->tex = vnode->layer->effects[0][vnode->layer->effects[0].size() - 1]->fbotex;
@@ -4665,8 +4636,7 @@ void make_layboxes() {
 						vnode->vidbox->lcolor[2] = 0.0;
 						vnode->vidbox->lcolor[3] = 1.0;
 						if ((vnode)->layer->effects[0].size() == 0) {
-							if (vnode->layer->drawfbo2) vnode->vidbox->tex = vnode->layer->fbotex;
-							else vnode->vidbox->tex = vnode->layer->fbotexintm;
+							vnode->vidbox->tex = vnode->layer->fbotex;
 						}
 						else {
 							vnode->vidbox->tex = vnode->layer->effects[0][vnode->layer->effects[0].size() - 1]->fbotex;
@@ -5328,8 +5298,7 @@ GLuint get_layertex(const std::string& path) {
 		ctex = copy_tex(lay->effects[0][lay->effects[0].size() - 1]->fbotex);
 	}
 	else {
-		if (lay->drawfbo2) ctex = copy_tex(lay->fbotex);
-		else ctex = copy_tex(lay->fbotexintm);
+		ctex = copy_tex(lay->fbotex);
 	}
 	return ctex;
 }

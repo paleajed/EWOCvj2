@@ -1395,12 +1395,7 @@ void BinsMain::handle(bool draw) {
 										draw_box(red, black, 0.52f, 0.5f, 0.4f, 0.4f, mainprogram->prelay->effects[0][mainprogram->prelay->effects[0].size() - 1]->fbotex);
 									}
 									else {
-										if (mainprogram->prelay->drawfbo2) {
-											draw_box(red, black, 0.52f, 0.5f, 0.4f, 0.4f, mainprogram->prelay->fbotex);
-										}
-										else {
-											draw_box(red, black, 0.52f, 0.5f, 0.4f, 0.4f, mainprogram->prelay->fbotexintm);
-										}
+									    draw_box(red, black, 0.52f, 0.5f, 0.4f, 0.4f, mainprogram->prelay->fbotex);
 									}
 									if (!binel->encoding) {
 										// show video format
@@ -1466,12 +1461,7 @@ void BinsMain::handle(bool draw) {
 										draw_box(red, black, 0.52f, 0.5f, 0.4f, 0.4f, mainprogram->prelay->effects[0][mainprogram->prelay->effects[0].size() - 1]->fbotex);
 									}
 									else {
-										if (mainprogram->prelay->drawfbo2) {
-											draw_box(red, black, 0.52f, 0.5f, 0.4f, 0.4f, mainprogram->prelay->fbotex);
-										}
-										else {
-											draw_box(red, black, 0.52f, 0.5f, 0.4f, 0.4f, mainprogram->prelay->fbotexintm);
-										}
+										draw_box(red, black, 0.52f, 0.5f, 0.4f, 0.4f, mainprogram->prelay->fbotex);
 									}
 								}
 								else {
@@ -1480,12 +1470,7 @@ void BinsMain::handle(bool draw) {
 										draw_box(red, black, 0.52f, 0.5f, 0.4f, 0.4f, mainprogram->prelay->effects[0][mainprogram->prelay->effects[0].size() - 1]->fbotex);
 									}
 									else {
-										if (mainprogram->prelay->drawfbo2) {
-											draw_box(red, black, 0.52f, 0.5f, 0.4f, 0.4f, mainprogram->prelay->fbotex);
-										}
-										else {
-											draw_box(red, black, 0.52f, 0.5f, 0.4f, 0.4f, mainprogram->prelay->fbotexintm);
-										}
+										draw_box(red, black, 0.52f, 0.5f, 0.4f, 0.4f, mainprogram->prelay->fbotex);
 									}
 								}
 								if (!binel->encoding && remove_extension(basename(binel->path)) != "") {
