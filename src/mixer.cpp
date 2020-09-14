@@ -5297,7 +5297,7 @@ void Mixer::open_state(const std::string &path) {
 	else rfile.open(path);
 	
 	std::string istring;
-	getline(rfile, istring);
+	safegetline(rfile, istring);
 	
 	GLuint tex;
 	tex = set_texes(mainprogram->fbotex[2], &mainprogram->frbuf[2], mainprogram->ow, mainprogram->oh);
@@ -5364,20 +5364,20 @@ void Mixer::open_state(const std::string &path) {
 	
 	int deckcnt = 2;
 	bool old = true;
-	while (getline(rfile, istring)) {
+	while (safegetline(rfile, istring)) {
 		if (istring == "ENDOFFILE") break;
 		Layer* bulay = nullptr;
 		if (istring == "MAINSCENE0") {
-			getline(rfile, istring);
+			safegetline(rfile, istring);
 			mainmix->currscene[0][0] = std::stoi(istring);
-			getline(rfile, istring);
+			safegetline(rfile, istring);
 			mainmix->currscene[0][1] = std::stoi(istring);
 		}
 		if (istring == "MAINSCENE1") {
 			old = false;
-			getline(rfile, istring);
+			safegetline(rfile, istring);
 			mainmix->currscene[1][0] = std::stoi(istring);
-			getline(rfile, istring);
+			safegetline(rfile, istring);
 			mainmix->currscene[1][1] = std::stoi(istring);
 			mainprogram->prevmodus = true;
 			if (exists(result + "_0.file")) {
@@ -5401,44 +5401,44 @@ void Mixer::open_state(const std::string &path) {
 					mainmix->open_mix(result + "_1.file", true);
 				}
 			}
-			getline(rfile, istring);
+			safegetline(rfile, istring);
 			mainprogram->prevmodus = std::stoi(istring);
 			if (mainprogram->prevmodus) mainmix->currlay = bulay;
 		}
 		if (istring == "TOSCREENMIDI0") {
-			getline(rfile, istring);
+			safegetline(rfile, istring);
 			mainprogram->toscreen->midi[0] = std::stoi(istring);
 		}
 		if (istring == "TOSCREENMIDI1") {
-			getline(rfile, istring);
+			safegetline(rfile, istring);
 			mainprogram->toscreen->midi[1] = std::stoi(istring);
 		}
 		if (istring == "TOSCREENMIDIPORT") {
-			getline(rfile, istring);
+			safegetline(rfile, istring);
 			mainprogram->toscreen->midiport = istring;
 		}
 		if (istring == "BACKTOPREMIDI0") {
-			getline(rfile, istring);
+			safegetline(rfile, istring);
 			mainprogram->backtopre->midi[0] = std::stoi(istring);
 		}
 		if (istring == "BACKTOPREMIDI1") {
-			getline(rfile, istring);
+			safegetline(rfile, istring);
 			mainprogram->backtopre->midi[1] = std::stoi(istring);
 		}
 		if (istring == "BACKTOPREMIDIPORT") {
-			getline(rfile, istring);
+			safegetline(rfile, istring);
 			mainprogram->backtopre->midiport = istring;
 		}
 		if (istring == "MODUSBUTMIDI0") {
-			getline(rfile, istring);
+			safegetline(rfile, istring);
 			mainprogram->modusbut->midi[0] = std::stoi(istring);
 		}
 		if (istring == "MODUSBUTMIDI1") {
-			getline(rfile, istring);
+			safegetline(rfile, istring);
 			mainprogram->modusbut->midi[1] = std::stoi(istring);
 		}
 		if (istring == "MODUSBUTMIDIPORT") {
-			getline(rfile, istring);
+			safegetline(rfile, istring);
 			mainprogram->modusbut->midiport = istring;
 		}
 
@@ -5450,9 +5450,9 @@ void Mixer::open_state(const std::string &path) {
 				boost::filesystem::rename(result + "_" + std::to_string(deckcnt) + ".file", mainprogram->temppath + "tempdeck_" + std::to_string(scncomp) + std::to_string(scndeck) + std::to_string(scnnum) + ".deck");
 				deckcnt++;
 				mainmix->scenes[scncomp][scndeck][scnnum]->nblayers.clear();
-				while (getline(rfile, istring)) {
+				while (safegetline(rfile, istring)) {
 					if (istring == "FRAMES") {
-						while (getline(rfile, istring)) {
+						while (safegetline(rfile, istring)) {
 							if (istring == "ENDFRAMES") {
 								mainmix->scenes[scncomp][scndeck][scnnum]->loaded = true;
 								break;
@@ -5594,17 +5594,17 @@ void Mixer::open_mix(const std::string &path, bool alive) {
 	
 	int clpos, cldeck;
 	Layer *lay = nullptr;
-	while (getline(rfile, istring)) {
+	while (safegetline(rfile, istring)) {
 		if (istring == "CURRLAY") {
-			getline(rfile, istring);
+			safegetline(rfile, istring);
 			clpos = std::stoi(istring);
 		}
 		if (istring == "CURRDECK") {
-			getline(rfile, istring);
+			safegetline(rfile, istring);
 			cldeck = std::stoi(istring);
 		}
 		if (istring == "CROSSFADE") {
-			getline(rfile, istring); 
+			safegetline(rfile, istring);
 			mainmix->crossfade->value = std::stof(istring);
 			if (mainprogram->prevmodus) {
 				GLfloat cf = glGetUniformLocation(mainprogram->ShaderProgram, "cf");
@@ -5613,13 +5613,13 @@ void Mixer::open_mix(const std::string &path, bool alive) {
 		}
 		if (istring == "CROSSFADEEVENT") {
 			Param *par = mainmix->crossfade;
-			getline(rfile, istring);
+			safegetline(rfile, istring);
 			if (istring == "EVENTELEM") {
 				mainmix->event_read(rfile, par, nullptr, lay);
 			}
 		}
 		if (istring == "CROSSFADECOMP") {
-			getline(rfile, istring); 
+			safegetline(rfile, istring);
 			mainmix->crossfadecomp->value = std::stof(istring);
 			if (!mainprogram->prevmodus) {
 				GLfloat cf = glGetUniformLocation(mainprogram->ShaderProgram, "cf");
@@ -5628,73 +5628,73 @@ void Mixer::open_mix(const std::string &path, bool alive) {
 		}
 		if (istring == "CROSSFADECOMPEVENT") {
 			Param *par = mainmix->crossfadecomp;
-			getline(rfile, istring);
+			safegetline(rfile, istring);
 			if (istring == "EVENTELEM") {
 				mainmix->event_read(rfile, par, nullptr, lay);
 			}
 		}
 		if (istring == "DECKSPEEDA") {
-			getline(rfile, istring);
+			safegetline(rfile, istring);
 			mainmix->deckspeed[!mainprogram->prevmodus][0]->value = std::stof(istring);
 		}
 		if (istring == "DECKSPEEDAMIDI0") {
-			getline(rfile, istring);
+			safegetline(rfile, istring);
 			mainmix->deckspeed[!mainprogram->prevmodus][0]->midi[0] = std::stoi(istring);
 		}
 		if (istring == "DECKSPEEDAMIDI1") {
-			getline(rfile, istring);
+			safegetline(rfile, istring);
 			mainmix->deckspeed[!mainprogram->prevmodus][0]->midi[1] = std::stoi(istring);
 		}
 		if (istring == "DECKSPEEDAMIDIPORT") {
-			getline(rfile, istring);
+			safegetline(rfile, istring);
 			mainmix->deckspeed[!mainprogram->prevmodus][0]->midiport = istring;
 		}
 		if (istring == "DECKSPEEDB") {
-			getline(rfile, istring);
+			safegetline(rfile, istring);
 			mainmix->deckspeed[!mainprogram->prevmodus][1]->value = std::stof(istring);
 		}
 		if (istring == "DECKSPEEDBMIDI0") {
-			getline(rfile, istring);
+			safegetline(rfile, istring);
 			mainmix->deckspeed[!mainprogram->prevmodus][1]->midi[0] = std::stoi(istring);
 		}
 		if (istring == "DECKSPEEDBMIDI1") {
-			getline(rfile, istring);
+			safegetline(rfile, istring);
 			mainmix->deckspeed[!mainprogram->prevmodus][1]->midi[1] = std::stoi(istring);
 		}
 		if (istring == "DECKSPEEDBMIDIPORT") {
-			getline(rfile, istring);
+			safegetline(rfile, istring);
 			mainmix->deckspeed[!mainprogram->prevmodus][1]->midiport = istring;
 		}
 		if (istring == "WIPE") {
-			getline(rfile, istring); 
+			safegetline(rfile, istring);
 			mainmix->wipe[0] = std::stoi(istring);
 		}
 		if (istring == "WIPEDIR") {
-			getline(rfile, istring);
+			safegetline(rfile, istring);
 			mainmix->wipedir[0] = std::stoi(istring);
 		}
 		if (istring == "WIPEX") {
-			getline(rfile, istring);
+			safegetline(rfile, istring);
 			mainmix->wipex[0]->value = std::stof(istring);
 		}
 		if (istring == "WIPEY") {
-			getline(rfile, istring);
+			safegetline(rfile, istring);
 			mainmix->wipey[0]->value = std::stof(istring);
 		}
 		if (istring == "WIPECOMP") {
-			getline(rfile, istring); 
+			safegetline(rfile, istring);
 			mainmix->wipe[1] = std::stoi(istring);
 		}
 		if (istring == "WIPEDIRCOMP") {
-			getline(rfile, istring); 
+			safegetline(rfile, istring);
 			mainmix->wipedir[1] = std::stoi(istring);
 		}
 		if (istring == "WIPEXCOMP") {
-			getline(rfile, istring);
+			safegetline(rfile, istring);
 			mainmix->wipex[1]->value = std::stof(istring);
 		}
 		if (istring == "WIPEYCOMP") {
-			getline(rfile, istring);
+			safegetline(rfile, istring);
 			mainmix->wipey[1]->value = std::stof(istring);
 		}
 		int deck;
@@ -6280,35 +6280,35 @@ int Mixer::read_layers(std::istream &rfile, const std::string &result, std::vect
 	int jpegcount = 0;
 	if (mainprogram->filecount) jpegcount = mainprogram->filecount;
 	bool newlay = false;
-	while (getline(rfile, istring)) {
+	while (safegetline(rfile, istring)) {
 		if (istring == "LAYERSB" || istring == "ENDOFCLIPLAYER" || istring == "ENDOFFILE") {
 			break;	
 		}
 		if (istring == "DECKSPEED") {
-			getline(rfile, istring);
+			safegetline(rfile, istring);
 			mainmix->deckspeed[!mainprogram->prevmodus][deck]->value = std::stof(istring);
 		}
 		if (istring == "DECKSPEEDEVENT") {
 			Param *par = mainmix->deckspeed[!mainprogram->prevmodus][deck];
-			getline(rfile, istring);
+			safegetline(rfile, istring);
 			if (istring == "EVENTELEM") {
 				mainmix->event_read(rfile, par, nullptr, lay);
 			}
 		}
 		if (istring == "DECKSPEEDMIDI0") {
-			getline(rfile, istring);
+			safegetline(rfile, istring);
 			mainmix->deckspeed[!mainprogram->prevmodus][deck]->midi[0] = std::stoi(istring);
 		}
 		if (istring == "DECKSPEEDMIDI1") {
-			getline(rfile, istring);
+			safegetline(rfile, istring);
 			mainmix->deckspeed[!mainprogram->prevmodus][deck]->midi[1] = std::stoi(istring);
 		}
 		if (istring == "DECKSPEEDMIDIPORT") {
-			getline(rfile, istring);
+			safegetline(rfile, istring);
 			mainmix->deckspeed[!mainprogram->prevmodus][deck]->midiport = istring;
 		}
 		if (istring == "POS") {
-			getline(rfile, istring);
+			safegetline(rfile, istring);
 			int pos = std::stoi(istring);
 			if (pos == 0 || type == 0) {
 				lay = layers[0];
@@ -6322,11 +6322,11 @@ int Mixer::read_layers(std::istream &rfile, const std::string &result, std::vect
 			lay->deck = deck;
 		}
 		if (istring == "TYPE") {
-			getline(rfile, istring);
+			safegetline(rfile, istring);
 			lay->type = (ELEM_TYPE)std::stoi(istring);
 		}
 		if (istring == "FILENAME") {
-			getline(rfile, istring);
+			safegetline(rfile, istring);
 			lay->filename = istring;
 			if (load) {
 				lay->timeinit = false;
@@ -6355,16 +6355,16 @@ int Mixer::read_layers(std::istream &rfile, const std::string &result, std::vect
                             lay->open_image(lay->filename);
                         }
                     }
+                    else lay->filename = "";
 				}
 				if (type > 0) lay->prevframe = -1;
 			}
 		}
 		if (istring == "RELPATH") {
-			getline(rfile, istring);
+			safegetline(rfile, istring);
 			if (lay->filename == "" && istring != "") {
-				lay->filename = boost::filesystem::canonical(istring).string();
+				lay->filename = pathtoplatform(boost::filesystem::absolute(istring).string());
 				if (load) {
-					lay->filename = boost::filesystem::canonical(istring).string();
 					lay->timeinit = false;
 					if (lay->type == ELEM_FILE || lay->type == ELEM_LAYER) {
 						lay->open_video(-1, lay->filename, false);
@@ -6377,238 +6377,238 @@ int Mixer::read_layers(std::istream &rfile, const std::string &result, std::vect
 			newlay = true;
 		}
 		if (istring == "JPEGPATH") {
-			getline(rfile, istring);
+			safegetline(rfile, istring);
 			jpegcount++;
 		}
 		if (istring == "WIDTH") {
-			getline(rfile, istring);
+			safegetline(rfile, istring);
 			lay->iw = std::stoi(istring);
 		}
 		if (istring == "HEIGHT") {
-			getline(rfile, istring); 
+			safegetline(rfile, istring);
 			lay->ih = std::stoi(istring);
 		}
 		if (istring == "ASPECTRATIO") {
-			getline(rfile, istring); 
+			safegetline(rfile, istring);
 			lay->aspectratio = (RATIO_TYPE)std::stoi(istring);
 		}
 		if (istring == "MUTE") {
-			getline(rfile, istring); 
+			safegetline(rfile, istring);
 			lay->mutebut->value = std::stoi(istring);
 		}
 		if (istring == "MUTEEVENT") {
 			Button* but = lay->mutebut;
-			getline(rfile, istring);
+			safegetline(rfile, istring);
 			if (istring == "EVENTELEM") {
 				mainmix->event_read(rfile, nullptr, but, lay);
 			}
 		}
 		if (istring == "SOLO") {
-			getline(rfile, istring); 
+			safegetline(rfile, istring);
 			lay->solobut->value = std::stoi(istring);
 		}
 		if (istring == "SOLOEVENT") {
 			Button* but = lay->solobut;
-			getline(rfile, istring);
+			safegetline(rfile, istring);
 			if (istring == "EVENTELEM") {
 				mainmix->event_read(rfile, nullptr, but, lay);
 			}
 		}
 		if (istring == "CLONESETNR") {
-			getline(rfile, istring); 
+			safegetline(rfile, istring);
 			lay->clonesetnr = std::stoi(istring);
 		}
 		if (istring == "SPEEDVAL") {
-			getline(rfile, istring); 
+			safegetline(rfile, istring);
 			lay->speed->value = std::stof(istring);
 		}
 		if (istring == "SPEEDEVENT") {
 			Param *par = lay->speed;
-			getline(rfile, istring);
+			safegetline(rfile, istring);
 			if (istring == "EVENTELEM") {
 				mainmix->event_read(rfile, par, nullptr, lay);
 			}
 		}
 		if (istring == "PLAYBUTVAL") {
-			getline(rfile, istring); 
+			safegetline(rfile, istring);
 			lay->playbut->value = std::stoi(istring);
 		}
 		if (istring == "PLAYBUTEVENT") {
 			Button* but = lay->playbut;
-			getline(rfile, istring);
+			safegetline(rfile, istring);
 			if (istring == "EVENTELEM") {
 				mainmix->event_read(rfile, nullptr, but, lay);
 			}
 		}
 		if (istring == "REVBUTVAL") {
-			getline(rfile, istring); 
+			safegetline(rfile, istring);
 			lay->revbut->value = std::stoi(istring);
 		}
 		if (istring == "REVBUTEVENT") {
 			Button* but = lay->revbut;
-			getline(rfile, istring);
+			safegetline(rfile, istring);
 			if (istring == "EVENTELEM") {
 				mainmix->event_read(rfile, nullptr, but, lay);
 			}
 		}
 		if (istring == "BOUNCEBUTVAL") {
-			getline(rfile, istring); 
+			safegetline(rfile, istring);
 			lay->bouncebut->value = std::stoi(istring);
 		}
 		if (istring == "BOUNCEBUTEVENT") {
 			Button* but = lay->bouncebut;
-			getline(rfile, istring);
+			safegetline(rfile, istring);
 			if (istring == "EVENTELEM") {
 				mainmix->event_read(rfile, nullptr, but, lay);
 			}
 		}
 		if (istring == "PLAYKIND") {
-			getline(rfile, istring); 
+			safegetline(rfile, istring);
 			lay->playkind = std::stoi(istring);
 		}
 		if (istring == "GENMIDIBUTVAL") {
-			getline(rfile, istring); 
+			safegetline(rfile, istring);
 			lay->genmidibut->value = std::stoi(istring);
 		}
 		if (istring == "GENMIDIBUTEVENT") {
 			Button* but = lay->genmidibut;
-			getline(rfile, istring);
+			safegetline(rfile, istring);
 			if (istring == "EVENTELEM") {
 				mainmix->event_read(rfile, nullptr, but, lay);
 			}
 		}
 		if (istring == "FRAMEFORWARDEVENT") {
 			Button* but = lay->frameforward;
-			getline(rfile, istring);
+			safegetline(rfile, istring);
 			if (istring == "EVENTELEM") {
 				mainmix->event_read(rfile, nullptr, but, lay);
 			}
 		}
 		if (istring == "FRAMEBACKWARDEVENT") {
 			Button* but = lay->framebackward;
-			getline(rfile, istring);
+			safegetline(rfile, istring);
 			if (istring == "EVENTELEM") {
 				mainmix->event_read(rfile, nullptr, but, lay);
 			}
 		}
 		if (istring == "SHIFTX") {
-			getline(rfile, istring); 
+			safegetline(rfile, istring);
 			lay->shiftx->value = std::stof(istring);
 		}
 		if (istring == "SHIFTXEVENT") {
 			Param *par = lay->shiftx;
-			getline(rfile, istring);
+			safegetline(rfile, istring);
 			if (istring == "EVENTELEM") {
 				mainmix->event_read(rfile, par, nullptr, lay);
 			}
 		}
 		if (istring == "SHIFTY") {
-			getline(rfile, istring); 
+			safegetline(rfile, istring);
 			lay->shifty->value = std::stof(istring);
 		}
 		if (istring == "SHIFTYEVENT") {
 			Param *par = lay->shifty;
-			getline(rfile, istring);
+			safegetline(rfile, istring);
 			if (istring == "EVENTELEM") {
 				mainmix->event_read(rfile, par, nullptr, lay);
 			}
 		}
 		if (istring == "SCALE") {
-			getline(rfile, istring);
+			safegetline(rfile, istring);
 			lay->scale->value = std::stof(istring);
 		}
 		if (istring == "SCALEEVENT") {
 			Param *par = lay->scale;
-			getline(rfile, istring);
+			safegetline(rfile, istring);
 			if (istring == "EVENTELEM") {
 				mainmix->event_read(rfile, par, nullptr, lay);
 			}
 		}
 		if (istring == "OPACITYVAL") {
-			getline(rfile, istring); 
+			safegetline(rfile, istring);
 			lay->opacity->value = std::stof(istring);
 		}
 		if (istring == "OPACITYEVENT") {
 			Param *par = lay->opacity;
-			getline(rfile, istring);
+			safegetline(rfile, istring);
 			if (istring == "EVENTELEM") {
 				mainmix->event_read(rfile, par, nullptr, lay);
 			}
 		}
 		if (istring == "VOLUMEVAL") {
-			getline(rfile, istring); 
+			safegetline(rfile, istring);
 			lay->volume->value = std::stof(istring);
 		}
 		if (istring == "VOLUMEEVENT") {
 			Param *par = lay->volume;
-			getline(rfile, istring);
+			safegetline(rfile, istring);
 			if (istring == "EVENTELEM") {
 				mainmix->event_read(rfile, par, nullptr, lay);
 			}
 		}
 		if (istring == "CHTOLVAL") {
-			getline(rfile, istring); 
+			safegetline(rfile, istring);
 			lay->chtol->value = std::stof(istring);
 		}
 		if (istring == "CHDIRVAL") {
-			getline(rfile, istring); 
+			safegetline(rfile, istring);
 			lay->chdir->value = std::stoi(istring);
 		}
 		if (istring == "CHINVVAL") {
-			getline(rfile, istring); 
+			safegetline(rfile, istring);
 			lay->chinv->value = std::stoi(istring);
 		}
 		if (istring == "FRAME") {
-			getline(rfile, istring); 
+			safegetline(rfile, istring);
 			lay->frame = std::stof(istring);
 		}
 		if (istring == "STARTFRAME") {
-			getline(rfile, istring); 
+			safegetline(rfile, istring);
 			lay->startframe = std::stoi(istring);
 		}
 		if (istring == "ENDFRAME") {
-			getline(rfile, istring); 
+			safegetline(rfile, istring);
 			lay->endframe = std::stoi(istring);
 		}
 		if (lay) {
 			if (!lay->dummy) {
 				if (istring == "MIXMODE") {
-					getline(rfile, istring); 
+					safegetline(rfile, istring);
 					lay->blendnode->blendtype = (BLEND_TYPE)std::stoi(istring);
 				}
 				if (istring == "MIXFACVAL") {
-					getline(rfile, istring); 
+					safegetline(rfile, istring);
 					lay->blendnode->mixfac->value = std::stof(istring);
 				}
 				if (istring == "CHRED") {
-					getline(rfile, istring); 
+					safegetline(rfile, istring);
 					lay->blendnode->chred = std::stof(istring);
 					lay->colorbox->acolor[0] = lay->blendnode->chred;
 				}
 				if (istring == "CHGREEN") {
-					getline(rfile, istring); 
+					safegetline(rfile, istring);
 					lay->blendnode->chgreen = std::stof(istring);
 					lay->colorbox->acolor[1] = lay->blendnode->chgreen;
 				}
 				if (istring == "CHBLUE") {
-					getline(rfile, istring); 
+					safegetline(rfile, istring);
 					lay->blendnode->chblue = std::stof(istring);
 					lay->colorbox->acolor[2] = lay->blendnode->chblue;
 				}
 				if (istring == "WIPETYPE") {
-					getline(rfile, istring); 
+					safegetline(rfile, istring);
 					lay->blendnode->wipetype = std::stoi(istring);
 				}
 				if (istring == "WIPEDIR") {
-					getline(rfile, istring); 
+					safegetline(rfile, istring);
 					lay->blendnode->wipedir = std::stoi(istring);
 				}
 				if (istring == "WIPEX") {
-					getline(rfile, istring); 
+					safegetline(rfile, istring);
 					lay->blendnode->wipex->value = std::stof(istring);
 				}
 				if (istring == "WIPEY") {
-					getline(rfile, istring); 
+					safegetline(rfile, istring);
 					lay->blendnode->wipey->value = std::stof(istring);
 				}
 			}
@@ -6616,17 +6616,17 @@ int Mixer::read_layers(std::istream &rfile, const std::string &result, std::vect
 		
 		if (istring == "CLIPS") {
 			Clip *clip = nullptr;
-			while (getline(rfile, istring)) {
+			while (safegetline(rfile, istring)) {
 				if (istring == "ENDOFCLIPS") break;
 				if (doclips) {
 					if (istring == "TYPE") {
 						clip = new Clip;
-						getline(rfile, istring);
+						safegetline(rfile, istring);
 						clip->type = (ELEM_TYPE)std::stoi(istring);
 						lay->clips.insert(lay->clips.end() - 1, clip);
 					}
 					if (istring == "FILENAME") {
-						getline(rfile, istring);
+						safegetline(rfile, istring);
 						clip->path = istring;					
 					}
 					if (istring == "CLIPLAYER") {
@@ -6647,7 +6647,7 @@ int Mixer::read_layers(std::istream &rfile, const std::string &result, std::vect
 						mainmix->delete_layer(cliplayers, cliplay, false);
 					}
 					if (istring == "JPEGPATH") {
-						getline(rfile, istring);
+						safegetline(rfile, istring);
 						std::string jpegpath = istring;
 						glGenTextures(1, &clip->tex);
 						glBindTexture(GL_TEXTURE_2D, clip->tex);
@@ -6664,15 +6664,15 @@ int Mixer::read_layers(std::istream &rfile, const std::string &result, std::vect
 						else open_thumb(jpegpath, clip->tex);
 					}
 					if (istring == "FRAME") {
-						getline(rfile, istring);
+						safegetline(rfile, istring);
 						clip->frame = std::stof(istring);
 					}
 					if (istring == "STARTFRAME") {
-						getline(rfile, istring);
+						safegetline(rfile, istring);
 						clip->startframe = std::stoi(istring);
 					}
 					if (istring == "ENDFRAME") {
-						getline(rfile, istring);
+						safegetline(rfile, istring);
 						clip->endframe = std::stoi(istring);
 					}
 				}
@@ -6682,64 +6682,64 @@ int Mixer::read_layers(std::istream &rfile, const std::string &result, std::vect
 			mainprogram->effcat[lay->deck]->value = 0;
 			int type;
 			Effect *eff = nullptr;
-			getline(rfile, istring);
+			safegetline(rfile, istring);
 			while (istring != "ENDOFEFFECTS") {
 				if (istring == "TYPE") {
-					getline(rfile, istring);
+					safegetline(rfile, istring);
 					type = std::stoi(istring);
 				}
 				if (istring == "POS") {
-					getline(rfile, istring);
+					safegetline(rfile, istring);
 					int pos = std::stoi(istring);
 					eff = lay->add_effect((EFFECT_TYPE)type, pos);
 				}
 				if (istring == "ONOFFVAL") {
-					getline(rfile, istring);
+					safegetline(rfile, istring);
 					eff->onoffbutton->value = std::stoi(istring);
 				}
 				if (istring == "ONOFFMIDI0") {
-					getline(rfile, istring);
+					safegetline(rfile, istring);
 					eff->onoffbutton->midi[0] = std::stoi(istring);
 				}
 				if (istring == "ONOFFMIDI1") {
-					getline(rfile, istring);
+					safegetline(rfile, istring);
 					eff->onoffbutton->midi[1] = std::stoi(istring);
 				}
 				if (istring == "ONOFFMIDIPORT") {
-					getline(rfile, istring);
+					safegetline(rfile, istring);
 					eff->onoffbutton->midiport = istring;
 				}
 				if (istring == "ONOFFEVENT") {
 					Button* but = eff->onoffbutton;
-					getline(rfile, istring);
+					safegetline(rfile, istring);
 					if (istring == "EVENTELEM") {
 						mainmix->event_read(rfile, nullptr, but, lay);
 					}
 				}
 				if (istring == "DRYWETVAL") {
-					getline(rfile, istring);
+					safegetline(rfile, istring);
 					eff->drywet->value = std::stof(istring);
 				}
 				if (istring == "DRYWETMIDI0") {
-					getline(rfile, istring);
+					safegetline(rfile, istring);
 					eff->drywet->midi[0] = std::stoi(istring);
 				}
 				if (istring == "DRYWETMIDI1") {
-					getline(rfile, istring);
+					safegetline(rfile, istring);
 					eff->drywet->midi[1] = std::stoi(istring);
 				}
 				if (istring == "DRYWETMIDIPORT") {
-					getline(rfile, istring);
+					safegetline(rfile, istring);
 					eff->drywet->midiport = istring;
 				}
 				if (eff) {
 					if (eff->type == RIPPLE) {
 						if (istring == "RIPPLESPEED") {
-							getline(rfile, istring);
+							safegetline(rfile, istring);
 							((RippleEffect*)eff)->speed = std::stof(istring);
 						}
 						if (istring == "RIPPLECOUNT") {
-							getline(rfile, istring);
+							safegetline(rfile, istring);
 							((RippleEffect*)eff)->ripplecount = std::stof(istring);
 						}
 					}
@@ -6749,24 +6749,24 @@ int Mixer::read_layers(std::istream &rfile, const std::string &result, std::vect
 					int pos = 0;
 					Param *par = nullptr;
 					while (istring != "ENDOFPARAMS") {
-						getline(rfile, istring);
+						safegetline(rfile, istring);
 						if (istring == "VAL") {
 							par = eff->params[pos];
 							pos++;
-							getline(rfile, istring);
+							safegetline(rfile, istring);
 							par->value = std::stof(istring);
 							par->effect = eff;
 						}
 						if (istring == "MIDI0") {
-							getline(rfile, istring);
+							safegetline(rfile, istring);
 							par->midi[0] = std::stoi(istring);
 						}
 						if (istring == "MIDI1") {
-							getline(rfile, istring);
+							safegetline(rfile, istring);
 							par->midi[1] = std::stoi(istring);
 						}
 						if (istring == "MIDIPORT") {
-							getline(rfile, istring);
+							safegetline(rfile, istring);
 							par->midiport = istring;
 						}
 						if (istring == "EVENTELEM") {
@@ -6774,47 +6774,47 @@ int Mixer::read_layers(std::istream &rfile, const std::string &result, std::vect
 								mainmix->event_read(rfile, par, nullptr, lay);
 							}
 							else {
-								while (getline(rfile, istring)) {
+								while (safegetline(rfile, istring)) {
 									if (istring == "ENDOFEVENT") break;
 								}
 							}
 						}
 					}
 				}
-				getline(rfile, istring);
+				safegetline(rfile, istring);
 			}
 		}
 		if (istring == "STREAMEFFECTS") {
 			mainprogram->effcat[lay->deck]->value = 1;
 			int type;
 			Effect *eff = nullptr;
-			getline(rfile, istring);
+			safegetline(rfile, istring);
 			while (istring != "ENDOFSTREAMEFFECTS") {
 				if (istring == "TYPE") {
-					getline(rfile, istring);
+					safegetline(rfile, istring);
 					type = std::stoi(istring);
 				}
 				if (istring == "POS") {
-					getline(rfile, istring);
+					safegetline(rfile, istring);
 					int pos = std::stoi(istring);
 					eff = lay->add_effect((EFFECT_TYPE)type, pos);
 				}
 				if (istring == "ONOFFVAL") {
-					getline(rfile, istring);
+					safegetline(rfile, istring);
 					eff->onoffbutton->value = std::stoi(istring);
 				}
 				if (istring == "DRYWETVAL") {
-					getline(rfile, istring);
+					safegetline(rfile, istring);
 					eff->drywet->value = std::stof(istring);
 				}
 				if (eff) {
 					if (eff->type == RIPPLE) {
 						if (istring == "RIPPLESPEED") {
-							getline(rfile, istring);
+							safegetline(rfile, istring);
 							((RippleEffect*)eff)->speed = std::stof(istring);
 						}
 						if (istring == "RIPPLECOUNT") {
-							getline(rfile, istring);
+							safegetline(rfile, istring);
 							((RippleEffect*)eff)->ripplecount = std::stof(istring);
 						}
 					}
@@ -6824,24 +6824,24 @@ int Mixer::read_layers(std::istream &rfile, const std::string &result, std::vect
 					int pos = 0;
 					Param *par = nullptr;
 					while (istring != "ENDOFPARAMS") {
-						getline(rfile, istring);
+						safegetline(rfile, istring);
 						if (istring == "VAL") {
 							par = eff->params[pos];
 							pos++;
-							getline(rfile, istring);
+							safegetline(rfile, istring);
 							par->value = std::stof(istring);
 							par->effect = eff;
 						}
 						if (istring == "MIDI0") {
-							getline(rfile, istring);
+							safegetline(rfile, istring);
 							par->midi[0] = std::stoi(istring);
 						}
 						if (istring == "MIDI1") {
-							getline(rfile, istring);
+							safegetline(rfile, istring);
 							par->midi[1] = std::stoi(istring);
 						}
 						if (istring == "MIDIPORT") {
-							getline(rfile, istring);
+							safegetline(rfile, istring);
 							par->midiport = istring;
 						}
 						if (istring == "EVENTELEM") {
@@ -6849,18 +6849,18 @@ int Mixer::read_layers(std::istream &rfile, const std::string &result, std::vect
 								mainmix->event_read(rfile, par, nullptr, lay);
 							}
 							else {
-								while (getline(rfile, istring)) {
+								while (safegetline(rfile, istring)) {
 									if (istring == "ENDOFEVENT") break;
 								}
 							}
 						}
 					}
 				}
-				getline(rfile, istring);
+				safegetline(rfile, istring);
 			}
 		}
 		if (istring == "EFFCAT") {
-			getline(rfile, istring);
+			safegetline(rfile, istring);
 			mainprogram->effcat[lay->deck]->value = std::atoi(istring.c_str());
 		}
 
@@ -7083,7 +7083,7 @@ std::vector<std::string> Mixer::write_layer(Layer* lay, std::ostream& wfile, boo
 				if (result != "") rfile.open(result);
 				else rfile.open(clip->path);
 				std::string istring;
-				while (getline(rfile, istring)) {
+				while (safegetline(rfile, istring)) {
 					wfile << istring;
 					wfile << "\n";
 					if (istring == "ENDOFFILE") break;
@@ -7328,7 +7328,7 @@ void Mixer::event_read(std::istream &rfile, Param *par, Button* but, Layer *lay)
 	// load loopstation events for this parameter
 	std::string istring;
 	LoopStationElement *loop = nullptr;
-	getline(rfile, istring);
+	safegetline(rfile, istring);
 	int elemnr = std::stoi(istring);
 	LoopStation *ls;
 	if (mainprogram->prevmodus) ls = lp;
@@ -7343,7 +7343,7 @@ void Mixer::event_read(std::istream &rfile, Param *par, Button* but, Layer *lay)
 		// other parameter(s) of this rfile using this loopstation line already exist
 		loop = ls->readelems[std::find(ls->readelemnrs.begin(), ls->readelemnrs.end(), elemnr) - ls->readelemnrs.begin()];
 	}
-	getline(rfile, istring);
+	safegetline(rfile, istring);
 	if (loop) {
 		loop->loopbut->value = std::stoi(istring);
 		loop->loopbut->oldvalue = std::stoi(istring);
@@ -7352,7 +7352,7 @@ void Mixer::event_read(std::istream &rfile, Param *par, Button* but, Layer *lay)
 			loop->starttime = std::chrono::high_resolution_clock::now();
 		}
 	}
-	getline(rfile, istring);
+	safegetline(rfile, istring);
 	if (loop) {
 		loop->playbut->value = std::stoi(istring);
 		loop->playbut->oldvalue = std::stoi(istring);
@@ -7361,15 +7361,15 @@ void Mixer::event_read(std::istream &rfile, Param *par, Button* but, Layer *lay)
 			loop->starttime = std::chrono::high_resolution_clock::now();
 		}
 	}
-	getline(rfile, istring);
+	safegetline(rfile, istring);
 	if (loop) {
 		loop->speed->value = std::stof(istring);
 		if (lay) loop->layers.emplace(lay);
 	}
-	while (getline(rfile, istring)) {
+	while (safegetline(rfile, istring)) {
 		if (istring == "ENDOFEVENT") break;
 		int time = std::stoi(istring);
-		getline(rfile, istring);
+		safegetline(rfile, istring);
 		float value = std::stof(istring);
 		bool inserted = false;
 		if (loop) {

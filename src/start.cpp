@@ -280,12 +280,53 @@ std::string remove_version(std::string filename) {
 	return filename;
 }
 
+std::string pathtoplatform(std::string path) {
+#ifdef WINDOWS
+    std::replace(path.begin(), path.end(), '/', '\\');
+#endif
+#ifdef POSIX
+    std::replace(path.begin(), path.end(), '\\', '/');
+#endif
+    return path;
+}
+
 bool isimage(const std::string &path) {
 	ILboolean ret = ilLoadImage(path.c_str());
 	return (bool)ret;
 }
 
+std::istream& safegetline(std::istream& is, std::string& t)
+{
+    t.clear();
 
+    // The characters in the stream are read one-by-one using a std::streambuf.
+    // That is faster than reading them one-by-one using the std::istream.
+    // Code that uses streambuf this way must be guarded by a sentry object.
+    // The sentry object performs various tasks,
+    // such as thread synchronization and updating the stream state.
+
+    std::istream::sentry se(is, true);
+    std::streambuf* sb = is.rdbuf();
+
+    for(;;) {
+        int c = sb->sbumpc();
+        switch (c) {
+            case '\n':
+                return is;
+            case '\r':
+                if(sb->sgetc() == '\n')
+                    sb->sbumpc();
+                return is;
+            case std::streambuf::traits_type::eof():
+                // Also handle the case when the last line has no line ending
+                if(t.empty())
+                    is.setstate(std::ios::eofbit);
+                return is;
+            default:
+                t += (char)c;
+        }
+    }
+}
 					
 
 class Deadline 
@@ -5302,18 +5343,18 @@ bool Clip::get_layerframes() {
 
 	std::string istring;
 
-	while (getline(rfile, istring)) {
+	while (safegetline(rfile, istring)) {
 		if (istring == "ENDOFFILE") break;
 		if (istring == "STARTFRAME") {
-			getline(rfile, istring);
+			safegetline(rfile, istring);
 			this->startframe = std::stoi(istring);
 		}
 		if (istring == "ENDFRAME") {
-			getline(rfile, istring);
+			safegetline(rfile, istring);
 			this->endframe = std::stoi(istring);
 		}
 		if (istring == "FRAME") {
-			getline(rfile, istring);
+			safegetline(rfile, istring);
 			this->frame = std::stof(istring);
 		}
 	}
@@ -5447,19 +5488,19 @@ void Preferences::load() {
 	if (!exists(prstr)) return;
 	rfile.open(prstr);
 	std::string istring;
-	getline(rfile, istring);
-	while (getline(rfile, istring)) {
+	safegetline(rfile, istring);
+	while (safegetline(rfile, istring)) {
 		if (istring == "ENDOFFILE") break;
 		
 		else if (istring == "PREFCAT") {
-			while (getline(rfile, istring)) {
+			while (safegetline(rfile, istring)) {
 				if (istring == "ENDOFPREFCAT") break;
 				bool brk = false;
 				for (int i = 0; i < mainprogram->prefs->items.size(); i++) {
 					if (mainprogram->prefs->items[i]->name == istring) {
 						std::string catname = istring;
 						if (istring == "MIDI Devices") ((PIMidi*)(mainprogram->prefs->items[i]))->populate();
-						while (getline(rfile, istring)) {
+						while (safegetline(rfile, istring)) {
 							if (istring == "ENDOFPREFCAT") {
 								brk = true;
 								break;
@@ -5470,7 +5511,7 @@ void Preferences::load() {
 								pi = mainprogram->prefs->items[i]->items[j];
 								if (pi->name == istring && pi->connected) {
 									foundpos = j;
-									getline(rfile, istring);
+									safegetline(rfile, istring);
 									if (pi->type == PREF_ONOFF) {
 										pi->onoff = std::stoi(istring);
 										if (pi->dest) *(bool*)pi->dest = pi->onoff;
@@ -5496,7 +5537,7 @@ void Preferences::load() {
 							if (catname == "MIDI Devices") {
 								if (foundpos == -1) {
 									std::string name = istring;
-									getline(rfile, istring);
+									safegetline(rfile, istring);
 									bool onoff = std::stoi(istring);
 									PrefItem *pmi = new PrefItem(mainprogram->prefs->items[i], mainprogram->prefs->items[i]->items.size(), name, PREF_ONOFF, nullptr);
 									mainprogram->prefs->items[i]->items.push_back(pmi);
@@ -5533,32 +5574,32 @@ void Preferences::load() {
 			}
 		}
 		if (istring == "CURRFILESDIR") {
-			getline(rfile, istring);
+			safegetline(rfile, istring);
 			boost::filesystem::path p(istring);
 			if (boost::filesystem::exists(p)) mainprogram->currfilesdir = istring;
 		}
 		else if (istring == "CURRCLIPFILESDIR") {
-			getline(rfile, istring);
+			safegetline(rfile, istring);
 			boost::filesystem::path p(istring);
 			if (boost::filesystem::exists(p)) mainprogram->currclipfilesdir = istring;
 		}
 		else if (istring == "CURRSHELFFILESDIR") {
-			getline(rfile, istring);
+			safegetline(rfile, istring);
 			boost::filesystem::path p(istring);
 			if (boost::filesystem::exists(p)) mainprogram->currshelffilesdir = istring;
 		}
 		else if (istring == "CURRBINFILESDIR") {
-			getline(rfile, istring);
+			safegetline(rfile, istring);
 			boost::filesystem::path p(istring);
 			if (boost::filesystem::exists(p)) mainprogram->currbinfilesdir = istring;
 		}
 		else if (istring == "CURRSTATEDIR") {
-			getline(rfile, istring);
+			safegetline(rfile, istring);
 			boost::filesystem::path p(istring);
 			if (boost::filesystem::exists(p)) mainprogram->currstatedir = istring;
 		}
 		else if (istring == "CURRSHELFFILESDIR") {
-			getline(rfile, istring);
+			safegetline(rfile, istring);
 			boost::filesystem::path p(istring);
 			if (boost::filesystem::exists(p)) mainprogram->currshelffilesdir = istring;
 		}
@@ -7138,6 +7179,8 @@ void the_loop() {
     glBlitNamedFramebuffer(mainprogram->globfbo, 0, 0, 0, glob->w, glob->h, 0, 0, glob->w, glob->h,
                            GL_COLOR_BUFFER_BIT, GL_NEAREST);
 
+    glFlush();
+    glFinish();
     SDL_GL_SwapWindow(mainprogram->mainwindow);
     glBindFramebuffer(GL_FRAMEBUFFER, mainprogram->globfbo);
     mainprogram->drawbuffer = mainprogram->globfbo;
@@ -7567,18 +7610,18 @@ bool Shelf::open(const std::string &path) {
 	this->erase();
 	int filecount = 0;
 	std::string istring;
-	getline(rfile, istring);
-	while (getline(rfile, istring)) {
+	safegetline(rfile, istring);
+	while (safegetline(rfile, istring)) {
 		if (istring == "ENDOFFILE") {
 			break;
 		}
 		else if (istring == "ELEMS") {
 			int count = 0;
 			ShelfElement* elem = nullptr;
-			while (getline(rfile, istring)) {
+			while (safegetline(rfile, istring)) {
 				if (istring == "ENDOFELEMS") break;
 				if (istring == "PATH") {
-					getline(rfile, istring);
+					safegetline(rfile, istring);
 					elem = this->elements[count];
 					elem->path = istring;
 					count++;
@@ -7587,7 +7630,7 @@ bool Shelf::open(const std::string &path) {
 					}
 				}
 				if (istring == "TYPE") {
-					getline(rfile, istring);
+					safegetline(rfile, istring);
 					elem->type = (ELEM_TYPE)std::stoi(istring);
 					std::string suf = "";
 					if (elem->type == ELEM_LAYER) suf = ".layer";
@@ -7611,44 +7654,44 @@ bool Shelf::open(const std::string &path) {
 					}
 				}
 				if (istring == "JPEGPATH") {
-					getline(rfile, istring);
+					safegetline(rfile, istring);
 					elem->jpegpath = result + "_" + std::to_string(filecount) + ".file";
 					open_thumb(result + "_" + std::to_string(filecount) + ".file", elem->tex);
 					filecount++;
 				}
 				if (istring == "LAUNCHTYPE") {
-					getline(rfile, istring);
+					safegetline(rfile, istring);
 					elem->launchtype = std::stoi(istring);
 				}
 				if (istring == "MIDI0") {
-					getline(rfile, istring);
+					safegetline(rfile, istring);
 					elem->button->midi[0] = std::stoi(istring);
 				}
 				if (istring == "MIDI1") {
-					getline(rfile, istring);
+					safegetline(rfile, istring);
 					elem->button->midi[1] = std::stoi(istring);
 				}
 				if (istring == "MIDIPORT") {
-					getline(rfile, istring);
+					safegetline(rfile, istring);
 					elem->button->midiport = istring;
 				}
 			}
 		}
 		else if (istring == "ELEMMIDI") {
 			int count = 0;
-			while (getline(rfile, istring)) {
+			while (safegetline(rfile, istring)) {
 				ShelfElement* elem = this->elements[count];
 				if (istring == "ENDOFELEMMIDI") break;
 				if (istring == "MIDI0") {
-					getline(rfile, istring);
+					safegetline(rfile, istring);
 					elem->button->midi[0] = std::stoi(istring);
 				}
 				if (istring == "MIDI1") {
-					getline(rfile, istring);
+					safegetline(rfile, istring);
 					elem->button->midi[1] = std::stoi(istring);
 				}
 				if (istring == "MIDIPORT") {
-					getline(rfile, istring);
+					safegetline(rfile, istring);
 					elem->button->midiport = istring;
 				}
 			}
@@ -7855,7 +7898,7 @@ void open_genmidis(std::string path) {
 	std::string istring;
 
 	LayMidi *lm = nullptr;
-	while (getline(rfile, istring)) {
+	while (safegetline(rfile, istring)) {
 		if (istring == "ENDOFFILE") break;
 	
 		if (istring == "LAYMIDIA") lm = laymidiA;
@@ -7864,134 +7907,134 @@ void open_genmidis(std::string path) {
 		if (istring == "LAYMIDID") lm = laymidiD;
 		
 		if (istring == "PLAY") {
-			getline(rfile, istring);
+			safegetline(rfile, istring);
 			lm->play[0] = std::stoi(istring);
-			getline(rfile, istring);
+			safegetline(rfile, istring);
 			lm->play[1] = std::stoi(istring);
-			getline(rfile, istring);
+			safegetline(rfile, istring);
 			lm->playstr = istring;
 		}
 		if (istring == "BACKW") {
-			getline(rfile, istring);
+			safegetline(rfile, istring);
 			lm->backw[0] = std::stoi(istring);
-			getline(rfile, istring);
+			safegetline(rfile, istring);
 			lm->backw[1] = std::stoi(istring);
-			getline(rfile, istring);
+			safegetline(rfile, istring);
 			lm->backwstr = istring;
 		}
 		if (istring == "BOUNCE") {
-			getline(rfile, istring);
+			safegetline(rfile, istring);
 			lm->bounce[0] = std::stoi(istring);
-			getline(rfile, istring);
+			safegetline(rfile, istring);
 			lm->bounce[1] = std::stoi(istring);
-			getline(rfile, istring);
+			safegetline(rfile, istring);
 			lm->bouncestr = istring;
 		}
 		if (istring == "FRFORW") {
-			getline(rfile, istring);
+			safegetline(rfile, istring);
 			lm->frforw[0] = std::stoi(istring);
-			getline(rfile, istring);
+			safegetline(rfile, istring);
 			lm->frforw[1] = std::stoi(istring);
-			getline(rfile, istring);
+			safegetline(rfile, istring);
 			lm->frforwstr = istring;
 		}
 		if (istring == "FRBACKW") {
-			getline(rfile, istring);
+			safegetline(rfile, istring);
 			lm->frbackw[0] = std::stoi(istring);
-			getline(rfile, istring);
+			safegetline(rfile, istring);
 			lm->frbackw[1] = std::stoi(istring);
-			getline(rfile, istring);
+			safegetline(rfile, istring);
 			lm->frbackwstr = istring;
 		}
 		if (istring == "SPEED") {
-			getline(rfile, istring);
+			safegetline(rfile, istring);
 			lm->speed[0] = std::stoi(istring);
-			getline(rfile, istring);
+			safegetline(rfile, istring);
 			lm->speed[1] = std::stoi(istring);
-			getline(rfile, istring);
+			safegetline(rfile, istring);
 			lm->speedstr = istring;
 		}
 		if (istring == "SPEEDZERO") {
-			getline(rfile, istring);
+			safegetline(rfile, istring);
 			lm->speedzero[0] = std::stoi(istring);
-			getline(rfile, istring);
+			safegetline(rfile, istring);
 			lm->speedzero[1] = std::stoi(istring);
-			getline(rfile, istring);
+			safegetline(rfile, istring);
 			lm->speedzerostr = istring;
 		}
 		if (istring == "OPACITY") {
-			getline(rfile, istring);
+			safegetline(rfile, istring);
 			lm->opacity[0] = std::stoi(istring);
-			getline(rfile, istring);
+			safegetline(rfile, istring);
 			lm->opacity[1] = std::stoi(istring);
-			getline(rfile, istring);
+			safegetline(rfile, istring);
 			lm->opacitystr = istring;
 		}
 		if (istring == "FREEZE") {
-			getline(rfile, istring);
+			safegetline(rfile, istring);
 			lm->scratchtouch[0] = std::stoi(istring);
-			getline(rfile, istring);
+			safegetline(rfile, istring);
 			lm->scratchtouch[1] = std::stoi(istring);
-			getline(rfile, istring);
+			safegetline(rfile, istring);
 			lm->scratchtouchstr = istring;
 		}
 		if (istring == "SCRATCH") {
-			getline(rfile, istring);
+			safegetline(rfile, istring);
 			lm->scratch[0] = std::stoi(istring);
-			getline(rfile, istring);
+			safegetline(rfile, istring);
 			lm->scratch[1] = std::stoi(istring);
-			getline(rfile, istring);
+			safegetline(rfile, istring);
 			lm->scratchstr = istring;
 		}
 		
 		if (istring == "WORMHOLE0MIDI0") {
-			getline(rfile, istring);
+			safegetline(rfile, istring);
 			mainprogram->wormhole1->midi[0] = std::stoi(istring);
 		}
 		if (istring == "WORMHOLEMIDI1") {
-			getline(rfile, istring);
+			safegetline(rfile, istring);
 			mainprogram->wormhole1->midi[1] = std::stoi(istring);
 		}
 		if (istring == "WORMHOLEMIDIPORT") {
-			getline(rfile, istring);
+			safegetline(rfile, istring);
 			mainprogram->wormhole1->midiport = istring;
 		}
 		
 		if (istring == "EFFCAT0MIDI0") {
-			getline(rfile, istring);
+			safegetline(rfile, istring);
 			mainprogram->effcat[0]->midi[0] = std::stoi(istring);
 		}
 		if (istring == "EFFCAT0MIDI1") {
-			getline(rfile, istring);
+			safegetline(rfile, istring);
 			mainprogram->effcat[0]->midi[1] = std::stoi(istring);
 		}
 		if (istring == "EFFCAT0MIDIPORT") {
-			getline(rfile, istring);
+			safegetline(rfile, istring);
 			mainprogram->effcat[0]->midiport = istring;
 		}
 		if (istring == "EFFCAT1MIDI0") {
-			getline(rfile, istring);
+			safegetline(rfile, istring);
 			mainprogram->effcat[1]->midi[0] = std::stoi(istring);
 		}
 		if (istring == "EFFCAT1MIDI1") {
-			getline(rfile, istring);
+			safegetline(rfile, istring);
 			mainprogram->effcat[1]->midi[1] = std::stoi(istring);
 		}
 		if (istring == "EFFCAT1MIDIPORT") {
-			getline(rfile, istring);
+			safegetline(rfile, istring);
 			mainprogram->effcat[1]->midiport = istring;
 		}
 			
 		if (istring == "RECORDMIDI0") {
-			getline(rfile, istring);
+			safegetline(rfile, istring);
 			mainmix->recbut->midi[0] = std::stoi(istring);
 		}
 		if (istring == "RECORDMIDI1") {
-			getline(rfile, istring);
+			safegetline(rfile, istring);
 			mainmix->recbut->midi[1] = std::stoi(istring);
 		}
 		if (istring == "RECORDMIDIPORT") {
-			getline(rfile, istring);
+			safegetline(rfile, istring);
 			mainmix->recbut->midiport = istring;
 		}
 			
@@ -8001,35 +8044,35 @@ void open_genmidis(std::string path) {
 				if (i == 0) ls = lp;
 				else ls = lpc;
 				for (int j = 0; j < ls->numelems; j++) {
-					getline(rfile, istring);
+					safegetline(rfile, istring);
 					if (istring == "LOOPSTATIONMIDI0:" + std::to_string(i) + ":" + std::to_string(j)) {
-						getline(rfile, istring);
+						safegetline(rfile, istring);
 						ls->elems[j]->recbut->midi[0] = std::stoi(istring);
-						getline(rfile, istring);
+						safegetline(rfile, istring);
 						ls->elems[j]->loopbut->midi[0] = std::stoi(istring);
-						getline(rfile, istring);
+						safegetline(rfile, istring);
 						ls->elems[j]->playbut->midi[0] = std::stoi(istring);
-						getline(rfile, istring);
+						safegetline(rfile, istring);
 						ls->elems[j]->speed->midi[0] = std::stoi(istring);
 					}
 					if (istring == "LOOPSTATIONMIDI1:" + std::to_string(i) + ":" + std::to_string(j)) {
-						getline(rfile, istring);
+						safegetline(rfile, istring);
 						ls->elems[j]->recbut->midi[1] = std::stoi(istring);
-						getline(rfile, istring);
+						safegetline(rfile, istring);
 						ls->elems[j]->loopbut->midi[1] = std::stoi(istring);
-						getline(rfile, istring);
+						safegetline(rfile, istring);
 						ls->elems[j]->playbut->midi[1] = std::stoi(istring);
-						getline(rfile, istring);
+						safegetline(rfile, istring);
 						ls->elems[j]->speed->midi[1] = std::stoi(istring);
 					}
 					if (istring == "LOOPSTATIONMIDIPORT:" + std::to_string(i) + ":" + std::to_string(j)) {
-						getline(rfile, istring);
+						safegetline(rfile, istring);
 						ls->elems[j]->recbut->midiport = istring;
-						getline(rfile, istring);
+						safegetline(rfile, istring);
 						ls->elems[j]->loopbut->midiport = istring;
-						getline(rfile, istring);
+						safegetline(rfile, istring);
 						ls->elems[j]->playbut->midiport = istring;
-						getline(rfile, istring);
+						safegetline(rfile, istring);
 						ls->elems[j]->speed->midiport = istring;
 					}
 				}
@@ -8838,8 +8881,8 @@ int main(int argc, char* argv[]) {
         std::ifstream rfile;
         rfile.open(dir + "recentprojectslist");
         std::string istring;
-        getline(rfile, istring);
-        while (getline(rfile, istring)) {
+        safegetline(rfile, istring);
+        while (safegetline(rfile, istring)) {
             if (istring == "ENDOFFILE") break;
             mainprogram->recentprojectpaths.push_back(istring);
         }
@@ -8848,8 +8891,8 @@ int main(int argc, char* argv[]) {
         std::ifstream rfile;
         rfile.open(mainprogram->autosavedir + "autosavelist");
         std::string istring;
-        getline(rfile, istring);
-        while (getline(rfile, istring)) {
+        safegetline(rfile, istring);
+        while (safegetline(rfile, istring)) {
             if (istring == "ENDOFFILE") break;
             mainprogram->autosavelist.push_back(istring);
         }

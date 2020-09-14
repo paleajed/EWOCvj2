@@ -1947,30 +1947,30 @@ void BinsMain::open_bin(const std::string &path, Bin *bin) {
 	int filecount = 0;
 	int pos;
 	std::string istring;
-	getline(rfile, istring);
+	safegetline(rfile, istring);
 	//check if binfile
-	while (getline(rfile, istring)) {
+	while (safegetline(rfile, istring)) {
 		if (istring == "ENDOFFILE") {
 			break;
 		}
 		else if (istring == "ELEMS") {
 			// open bin elements
-			while (getline(rfile, istring)) {
+			while (safegetline(rfile, istring)) {
 				if (istring == "ENDOFELEMS") break;
 				if (istring == "POS") {
-					getline(rfile, istring);
+					safegetline(rfile, istring);
 					pos = std::stoi(istring);
 				}
 				if (istring == "PATH") {
-					getline(rfile, istring);
+					safegetline(rfile, istring);
 					bin->elements[pos]->path = istring;
 				}
 				if (istring == "NAME") {
-					getline(rfile, istring);
+					safegetline(rfile, istring);
 					bin->elements[pos]->name = istring;
 				}
 				if (istring == "TYPE") {
-					getline(rfile, istring);
+					safegetline(rfile, istring);
 					bin->elements[pos]->type = (ELEM_TYPE)std::stoi(istring);
 					ELEM_TYPE type = bin->elements[pos]->type;
 					if ((type == ELEM_LAYER || type == ELEM_DECK || type == ELEM_MIX) && bin->elements[pos]->path != "") {
@@ -1981,7 +1981,7 @@ void BinsMain::open_bin(const std::string &path, Bin *bin) {
 					}
 				}
 				if (istring == "JPEGPATH") {
-					getline(rfile, istring);
+					safegetline(rfile, istring);
 					bin->elements[pos]->jpegpath = istring;
 					if (bin->elements[pos]->path != "") {
 						if (bin->elements[pos]->jpegpath != "") {
@@ -2134,25 +2134,25 @@ int BinsMain::read_binslist() {
 		return 0;
 	}
 	std::string istring;
-	getline(rfile, istring);
+	safegetline(rfile, istring);
 	//check if is binslistfile
-	getline(rfile, istring);
+	safegetline(rfile, istring);
 	int currbin = std::stoi(istring);
 	for (int i = 0; i < this->bins.size(); i++) {
 		delete this->bins[i];
 	}
 	this->bins.clear();
-	while (getline(rfile, istring)) {
+	while (safegetline(rfile, istring)) {
 		Bin *newbin;
 		if (istring == "ENDOFFILE") break;
 		if (istring == "BINS") {
-			while (getline(rfile, istring)) {
+			while (safegetline(rfile, istring)) {
 				if (istring == "ENDOFBINS") break;
 				newbin = new_bin(istring);
 			}
 		}
 		if (istring == "BINSSCROLL") {
-			getline(rfile, istring);
+			safegetline(rfile, istring);
 			this->binsscroll = std::stoi(istring);
 		}
 	}
@@ -2299,9 +2299,9 @@ std::tuple<std::string, std::string> BinsMain::hap_binel(BinElement *binel, BinE
 		wfile.open(remove_extension(binel->path) + ".temp");
 		std::string istring;
 		std::string path = "";
-		while (getline(rfile, istring)) {
+		while (safegetline(rfile, istring)) {
 			if (istring == "FILENAME") {
-				getline(rfile, istring);
+				safegetline(rfile, istring);
 				apath = istring;
 				if (exists(istring)) {
 					path = istring;
@@ -2316,7 +2316,7 @@ std::tuple<std::string, std::string> BinsMain::hap_binel(BinElement *binel, BinE
 				}
 			}
 			else if (istring == "RELPATH") {
-				getline(rfile, istring);
+				safegetline(rfile, istring);
 				if (path == "") {
 					rpath = istring;
 					if (exists(istring)) {
@@ -2401,9 +2401,9 @@ void BinsMain::hap_deck(BinElement* bd) {
 	std::string apath = "";
 	std::string rpath = "";
 
-	while (getline(rfile, istring)) {
+	while (safegetline(rfile, istring)) {
 		if (istring == "FILENAME") {
-			getline(rfile, istring);
+			safegetline(rfile, istring);
 			BinElement *binel = new BinElement;
 			binel->path = istring;
 			binel->type = ELEM_FILE;
@@ -2419,7 +2419,7 @@ void BinsMain::hap_deck(BinElement* bd) {
 			wfile << "\n";
 		}
 		else if (istring == "RELPATH") {
-			getline(rfile, istring);
+			safegetline(rfile, istring);
 		}
 		else {
 			wfile << istring;
@@ -2445,9 +2445,9 @@ void BinsMain::hap_mix(BinElement * bm) {
 	std::string apath;
 	std::string rpath;
 	if (bm->path != "") {
-		while (getline(rfile, istring)) {
+		while (safegetline(rfile, istring)) {
 			if (istring == "FILENAME") {
-				getline(rfile, istring);
+				safegetline(rfile, istring);
 				BinElement *binel = new BinElement;
 				binel->path = istring;
 				binel->type = ELEM_FILE;
@@ -2463,7 +2463,7 @@ void BinsMain::hap_mix(BinElement * bm) {
 				wfile << "\n";
 			}
 			else if (istring == "RELPATH") {
-				getline(rfile, istring);
+				safegetline(rfile, istring);
 			}
 			else {
 				wfile << istring;
