@@ -1524,7 +1524,6 @@ void main()
     vec4 intcol, texcol;
     vec4 tex0, tex1;
     vec4 fc;
-    bool intcoloring = false;
     int brk = 0;
 	vec2 texco;
 	texco = TexCoord0.st;
@@ -1532,135 +1531,95 @@ void main()
 		texcol = texture2D(Sampler0, texco);
 		switch (fxid) {
 			case 0:
-				intcoloring = true;
 				intcol = blur(texco);
 				break;
 			case 5:
-				intcoloring = true;
 				intcol = boxblur(texco);
 				intcol = vec4(intcol.rgb * glowfac, intcol.a);
 				break;
 			case 1:
-				intcoloring = true;
 				intcol = brightness(texcol); break;
 			case 2:
-				intcoloring = true;
 				intcol = chromarotate(texcol); break;
 			case 3:
-				intcoloring = true;
 				intcol = contrast(texcol); break;
 			case 4:
-				intcoloring = true;
 				intcol = dotf(texco); break;
 			case 6:
-				intcoloring = true;
 				intcol = radialblur(texco); break;
 			case 7:
-				intcoloring = true;
 				intcol = saturation(texcol); break;
 			case 8:
-				intcoloring = true;
 				intcol = texture2D(Sampler0, scale(texco)); break;
 			case 9:
-				intcoloring = true;
 				intcol = swirl(texco); break;
 			case 10:
-				intcoloring = true;
 				intcol = oldfilm(texco); break;
 			case 11:
-				intcoloring = true;
 				intcol = ripple(); break;
 			case 12:
-				intcoloring = true;
 				intcol = fisheye(texco); break;
 			case 13:
-				intcoloring = true;
 				intcol = treshold(texcol); break;
 			case 14:
-				intcoloring = true;
 				if (strobephase == 0) intcol = texcol;
 				else intcol = vec4(strobered, strobegreen, strobeblue, 1.0); break;
 			case 15:
-				intcoloring = true;
 				intcol = posterize(texcol); break;
 			case 16:
-				intcoloring = true;
 				intcol = pixelate(texco); break;
 			case 17:
-				intcoloring = true;
 				intcol = crosshatch(texcol, texco); break;
 			case 18:
 				// Invert
-				intcoloring = true;
 				intcol = vec4(1.0 - texcol.r, 1.0 - texcol.g, 1.0 - texcol.b, 1.0); break;
 			case 19:
-				intcoloring = true;
 				intcol = rotate(texco); break;
 			case 20:
-				intcoloring = true;
 				intcol = emboss(texco); break;
 			case 21:
-				intcoloring = true;
 				intcol = ascii(texco); break;
 			case 22:
-				intcoloring = true;
 				intcol = solarize(texco); break;
 			case 23:
-				intcoloring = true;
 				intcol = vardot(texco); break;
 			case 24:
-				intcoloring = true;
 				intcol = crt(texco); break;
 			case 25:
-				intcoloring = true;
 				intcol = edgedetect(texco); break;
 			case 26:
-				intcoloring = true;
 				intcol = kaleidoscope(texco); break;
 			case 27:
-				intcoloring = true;
 				intcol = halftone(texcol, texco); break;
 			case 28:
-				intcoloring = true;
 				intcol = cartoon(texco); break;
 			case 29:
-				intcoloring = true;
 				intcol = cutoff(texco); break;
 			case 30:
-				intcoloring = true;
 				intcol = glitch(texco); break;
 			case 31:
-				intcoloring = true;
 				intcol = colorize(texcol); break;
 			case 32:
-				intcoloring = true;
 				intcol = noise(texco); break;
 			case 33:
-				intcoloring = true;
 				intcol = gammamain(texco); break;
 			case 34:
-				intcoloring = true;
 				intcol = thermal(texco); break;
 			case 35:
-				intcoloring = true;
 				intcol = bokehmain(texco); break;
 			case 36:
-				intcoloring = true;
 				intcol = sharpen(texco); break;
 			case 37:
-				intcoloring = true;
 				intcol = dither(texco); break;
 			case 38:
-				intcoloring = true;
 				intcol = flip(texco); break;
 			case 39:
-				intcoloring = true;
 				intcol = mirror(texco); break;
 			case 40:
-				intcoloring = true;
 				intcol = boxblur(texco); break;
 		}
-    	if (intcoloring) FragColor = vec4(intcol.rgb * drywet + (1.0f - drywet) * texcol.rgb, intcol.a);
+    	FragColor = vec4(intcol.rgb * drywet + (1.0f - drywet) * texcol.rgb, intcol.a * opacity);
+    	return;
 	}
 	else if (mixmode > 0) {
 		//vec2 size0 = textureSize(endSampler0, 0);

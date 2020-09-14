@@ -195,12 +195,13 @@ class Layer {
 		GLuint vao;
 		GLuint endtex;
 		GLuint endbuf;
+        GLuint frb;
+        GLuint frt = -1;
 		GLuint pbo[3];
 		GLubyte* mapptr[3];
 		GLsync syncobj[3] = {nullptr, nullptr, nullptr};
 		char pbodi = 0;
-		char pboui = 1;
-		bool drawfbo2 = false;
+		char pboui = 2;
 		int bpp;
 		
 		Box *vidbox;
