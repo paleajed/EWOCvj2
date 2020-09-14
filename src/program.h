@@ -691,9 +691,12 @@ class Program {
 		
 	private:
 #ifdef WINDOWS
-		LPCSTR mime_to_wildcard(std::string filters);
+        LPCSTR mime_to_wildcard(std::string filters);
 #endif
-		bool do_order_paths();
+#ifdef POSIX
+        char const* mime_to_tinyfds(std::string filters);
+#endif
+        bool do_order_paths();
 };
 
 extern Globals *glob;
@@ -745,6 +748,7 @@ extern float darkred2[];
 extern float darkred3[];
 extern float darkgrey[];
 
+extern std::istream& safegetline(std::istream& is, std::string& t);
 extern void mycallback(double deltatime, std::vector< unsigned char >* message, void* userData);
 
 extern mix_target_struct mixtarget[2];
@@ -835,6 +839,7 @@ extern std::string basename(std::string pathname);
 extern std::string remove_extension(std::string filename);
 extern std::string chop_off(std::string filename);
 extern std::string remove_version(std::string filename);
+extern std::string pathtoplatform(std::string path);
 extern bool isimage(const std::string &path);
 
 extern void drag_into_layerstack(std::vector<Layer*>& layers, bool deck);

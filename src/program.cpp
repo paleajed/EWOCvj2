@@ -453,6 +453,20 @@ void Program::make_menu(const std::string &name, Menu *&menu, std::vector<std::s
 	menu->box->upscrtovtx();
 }
 
+#ifdef POSIX
+char const* Program::mime_to_tinyfds(std::string filters) {
+	if (filters == "") return "";
+	if (filters == "application/ewocvj2-layer") return "*.layer";
+	if (filters == "application/ewocvj2-deck") return "*.deck";
+	if (filters == "application/ewocvj2-mix") return "*.mix";
+	if (filters == "application/ewocvj2-state") return "*.state";
+	if (filters == "application/ewocvj2-project") return "*.ewocvj";
+	if (filters == "application/ewocvj2-shelf") return "*.shelf";
+	if (filters == "application/ewocvj2-bin") return "*.bin";
+	return "";
+}
+#endif
+
 #ifdef WINDOWS
 LPCSTR Program::mime_to_wildcard(std::string filters) {
 	if (filters == "") return "";
@@ -538,7 +552,7 @@ void Program::get_inname(const char *title, std::string filters, std::string def
     #ifdef POSIX
 	char const *p;
     const char* fi[1];
-    fi[0] = filters.c_str();
+    fi[0] = this->mime_to_tinyfds(filters);
     if (fi[0] == "") {
         p = tinyfd_openFileDialog(title, defaultdir.c_str(), 0, nullptr, nullptr, 0);
     }
@@ -561,7 +575,7 @@ void Program::get_outname(const char *title, std::string filters, std::string de
     #ifdef POSIX
     char const *p;
     const char* fi[1];
-    fi[0] = filters.c_str();
+    fi[0] = this->mime_to_tinyfds(filters);
     if (fi[0] == "") {
         p = tinyfd_saveFileDialog(title, defaultdir.c_str(), 0, nullptr, nullptr);
     }
@@ -1669,7 +1683,7 @@ void get_cameras()
 		std::ifstream name;
 		name.open(iter->path().string() + "/name");
 		std::string istring;
-		getline(name, istring);
+		safegetline(name, istring);
 		istring = istring.substr(0, istring.find(":"));
 		std::wstring wstr(istring.begin(), istring.end());
 		map["/dev/" + basename(iter->path().string())] = wstr;
@@ -3896,22 +3910,22 @@ void Project::open(const std::string& path) {
 	binsmain->make_currbin(cb);
 	
 	std::string istring;
-	getline(rfile, istring);
+	safegetline(rfile, istring);
 	
-	while (getline(rfile, istring)) {
+	while (safegetline(rfile, istring)) {
 		if (istring == "ENDOFFILE") break;
 		if (istring == "OUTPUTWIDTH") {  // reminder: what to do? project or program level?
-			getline(rfile, istring);
+			safegetline(rfile, istring);
 			//mainprogram->ow = std::stoi(istring);
 			//mainprogram->oldow = mainprogram->ow;
 		}
 		else if (istring == "OUTPUTHEIGHT") {
-			getline(rfile, istring);
+			safegetline(rfile, istring);
 			//mainprogram->oh = std::stoi(istring);
 			//mainprogram->oldoh = mainprogram->oh;
 		}
 		if (istring == "CURRSHELFA") {
-			getline(rfile, istring);
+			safegetline(rfile, istring);
 			if (istring != "") {
 				mainprogram->shelves[0]->open(this->shelfdir + istring);
 				mainprogram->shelves[0]->basepath = istring;
@@ -3921,7 +3935,7 @@ void Project::open(const std::string& path) {
 			}
 		}
 		if (istring == "CURRSHELFB") {
-			getline(rfile, istring);
+			safegetline(rfile, istring);
 			if (istring != "") {
 				mainprogram->shelves[1]->open(this->shelfdir + istring);
 				mainprogram->shelves[1]->basepath = istring;
@@ -3932,15 +3946,15 @@ void Project::open(const std::string& path) {
 		}
 
 		if (istring == "CURRBINSDIR") {
-			getline(rfile, istring);
+			safegetline(rfile, istring);
 			mainprogram->currbinsdir = istring;
 		}
 		if (istring == "CURRSHELFDIR") {
-			getline(rfile, istring);
+			safegetline(rfile, istring);
 			mainprogram->currshelfdir = istring;
 		}
 		if (istring == "CURRRECDIR") {
-			getline(rfile, istring);
+			safegetline(rfile, istring);
 			mainprogram->currrecdir = istring;
 		}
 	}
