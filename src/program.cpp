@@ -25,7 +25,7 @@
 
 #ifdef WINDOWS
 #include <tchar.h>
-#include "dirent.h"
+#include "direnthwin/dirent.h"
 #include <intrin.h>
 #include <shobjidl.h>
 #include <Vfw.h>

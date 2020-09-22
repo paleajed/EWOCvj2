@@ -1,17 +1,22 @@
+#if defined(WIN32) && !defined(__linux__)
+#define WINDOWS
+#elif defined(__linux__) && !defined(WIN32)
+#define POSIX
+#endif
+
 #include <boost/filesystem.hpp>
 
-#include "dirent.h"
 #include <string>
 #include "GL/gl.h"
 #ifdef WINDOWS
-#include "dirent.h"
+#include "direnthwin/dirent.h"
 #endif
 #include <RtMidi.h>
 #include <istream>
 #include <lo/lo.h>
 #include <lo/lo_cpp.h>
 #ifdef POSIX
-#include <dirent.h>
+#include "dirent.h"
 #endif
 
 

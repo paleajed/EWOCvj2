@@ -59,7 +59,7 @@ typedef struct char4 {
 
 #define NTDDI_VERSION NTDDI_WIN10
 #ifdef WINDOWS
-#include "dirent.h"
+#include "direnthwin/dirent.h"
 #include <intrin.h>
 #include <shobjidl.h>
 #include <Vfw.h>
