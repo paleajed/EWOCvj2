@@ -297,14 +297,6 @@ class Program {
 		GLuint ShaderProgram_tm;
 		GLuint ShaderProgram_pr;
 		GLuint fbovao;
-		GLuint globfbo;
-		GLuint globfbotex;
-		GLuint globdepthtex;
-		GLuint smglobfbo_tm;
-		GLuint smglobfbotex_tm;
-		GLuint prfbo;
-		GLuint smglobfbo_pr;
-		GLuint smglobfbotex_pr;
 		GLuint fbotex[4];
 		GLuint frbuf[4];
 		GLuint bvao;
@@ -329,10 +321,10 @@ class Program {
 		GLuint tm_rtvbo;
 		GLuint tm_rttbo;
         GLuint bgtex;
-        GLuint bg_oltex;
 		std::vector<OutputEntry*> outputentries;
 		std::vector<Button*> buttons;
 		Box *scrollboxes[2];
+		Box *prevbox;
 		Layer *loadlay;
 		Layer *prelay = nullptr;
 		SDL_Window *mainwindow;
@@ -411,7 +403,8 @@ class Program {
 		bool rightmouse = false;
 		float mousewheel = false;
 		bool del = false;
-		bool ctrl = false;
+        bool ctrl = false;
+        bool shift = false;
 		bool menuondisplay = false;
 		bool orderondisplay = false;
 		bool blocking = false;
@@ -483,7 +476,6 @@ class Program {
 		Box* delbox;
 		Box* addbox;
 
-        GLuint drawbuffer;
 		GLuint boxcoltbo;
 		GLuint boxtextbo;
 		GLuint boxbrdtbo;
@@ -532,7 +524,8 @@ class Program {
 		bool longtooltips = true;
 		Box *tooltipbox = nullptr;
 		float tooltipmilli = 0.0f;
-		bool ttreserved = false;
+        bool ttreserved = false;
+        bool boxhit = false;
 		bool autosave;
 		float asminutes = 1;
 		int astimestamp = 0;
@@ -696,9 +689,12 @@ class Program {
 		
 	private:
 #ifdef WINDOWS
-		LPCSTR mime_to_wildcard(std::string filters);
+        LPCSTR mime_to_wildcard(std::string filters);
 #endif
-		bool do_order_paths();
+#ifdef POSIX
+        char const* mime_to_tinyfds(std::string filters);
+#endif
+        bool do_order_paths();
 };
 
 extern Globals *glob;
@@ -712,8 +708,8 @@ extern Menu *effectmenu;
 extern Menu *mixmodemenu;
 extern float smw, smh;
 extern SDL_GLContext glc;
-extern SDL_GLContext glc_tm;
-extern SDL_GLContext glc_pr;
+extern SDL_GLContext glc;
+extern SDL_GLContext glc;
 extern SDL_GLContext glc_th;
 extern LayMidi* laymidiA;
 extern LayMidi* laymidiB;
@@ -750,6 +746,7 @@ extern float darkred2[];
 extern float darkred3[];
 extern float darkgrey[];
 
+extern std::istream& safegetline(std::istream& is, std::string& t);
 extern void mycallback(double deltatime, std::vector< unsigned char >* message, void* userData);
 
 extern mix_target_struct mixtarget[2];
@@ -840,6 +837,7 @@ extern std::string basename(std::string pathname);
 extern std::string remove_extension(std::string filename);
 extern std::string chop_off(std::string filename);
 extern std::string remove_version(std::string filename);
+extern std::string pathtoplatform(std::string path);
 extern bool isimage(const std::string &path);
 
 extern void drag_into_layerstack(std::vector<Layer*>& layers, bool deck);

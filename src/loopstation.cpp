@@ -39,6 +39,7 @@ void LoopStation::init() {
 
 LoopStationElement::LoopStationElement() {
 	this->recbut = new Button(0);
+	this->recbut->name[0] = "R";
 	this->recbut->toggle = 1;
     this->recbut->box->lcolor[0] = 0.4f;
     this->recbut->box->lcolor[1] = 0.4f;
@@ -47,6 +48,7 @@ LoopStationElement::LoopStationElement() {
 	this->recbut->box->tooltiptitle = "Record loopstation row ";
 	this->recbut->box->tooltip = "Start recording non-automated parameter movements on this loopstation row.  ";
 	this->loopbut = new Button(0);
+    this->loopbut->name[0] = "L";
 	this->loopbut->toggle = 1;
     this->loopbut->box->lcolor[0] = 0.4f;
     this->loopbut->box->lcolor[1] = 0.4f;
@@ -55,6 +57,7 @@ LoopStationElement::LoopStationElement() {
 	this->loopbut->box->tooltiptitle = "Loop play loopstation row ";
 	this->loopbut->box->tooltip = "Start loop-playing of recorded parameter movements for this loopstation row. Stops recording if it was still running. ";
 	this->playbut = new Button(0);
+    this->playbut->name[0] = "1";
 	this->playbut->toggle = 1;
     this->playbut->box->lcolor[0] = 0.4f;
     this->playbut->box->lcolor[1] = 0.4f;
@@ -127,7 +130,6 @@ LoopStationElement* LoopStation::add_elem() {
 }
 
 void LoopStation::handle() {
-	float white[] = {1.0f, 1.0f, 1.0f, 1.0f};
 	for (int i = 0; i < this->elems.size(); i++) {
 		elems[i]->handle();
 	}
@@ -178,13 +180,12 @@ void LoopStationElement::init() {
 }
 
 void LoopStationElement::visualize() {
-	float white[] = { 1.0f, 1.0f, 1.0f, 1.0f };
-	this->recbut->box->vtxcoords->x1 = -0.8f + 1.1f * !mainmix->currlay->deck;
+	this->recbut->box->vtxcoords->x1 = -0.8f + 1.1f * !mainmix->currlay[!mainprogram->prevmodus]->deck;
 	this->box->vtxcoords->x1 = this->recbut->box->vtxcoords->x1 - 0.02f;
-	this->loopbut->box->vtxcoords->x1 = -0.8f + 1.1f * !mainmix->currlay->deck + this->loopbut->box->vtxcoords->w;
-	this->playbut->box->vtxcoords->x1 = -0.8f + 1.1f * !mainmix->currlay->deck + this->playbut->box->vtxcoords->w * 2.0f;		
-	this->speed->box->vtxcoords->x1 = -0.8f + 1.1f * !mainmix->currlay->deck + this->recbut->box->vtxcoords->w * 3.0f;
-	this->colbox->vtxcoords->x1 = -0.8f + 1.1f * !mainmix->currlay->deck + this->recbut->box->vtxcoords->w * 3.0f + this->speed->box->vtxcoords->w;
+	this->loopbut->box->vtxcoords->x1 = -0.8f + 1.1f * !mainmix->currlay[!mainprogram->prevmodus]->deck + this->loopbut->box->vtxcoords->w;
+	this->playbut->box->vtxcoords->x1 = -0.8f + 1.1f * !mainmix->currlay[!mainprogram->prevmodus]->deck + this->playbut->box->vtxcoords->w * 2.0f;
+	this->speed->box->vtxcoords->x1 = -0.8f + 1.1f * !mainmix->currlay[!mainprogram->prevmodus]->deck + this->recbut->box->vtxcoords->w * 3.0f;
+	this->colbox->vtxcoords->x1 = -0.8f + 1.1f * !mainmix->currlay[!mainprogram->prevmodus]->deck + this->recbut->box->vtxcoords->w * 3.0f + this->speed->box->vtxcoords->w;
 	this->recbut->box->vtxcoords->y1 = 0.4f - tf(0.05f) * this->pos;
 	this->loopbut->box->vtxcoords->y1 = 0.4f - tf(0.05f) * this->pos;
 	this->playbut->box->vtxcoords->y1 = 0.4f - tf(0.05f) * this->pos;
@@ -370,7 +371,9 @@ void LoopStationElement::add_param(Param* par) {
 		for (int j = 0; j < lvec.size(); j++) {
 			if (par == lvec[j]->speed) this->layers.emplace(lvec[j]);
 			if (par == lvec[j]->opacity) this->layers.emplace(lvec[j]);
-			if (par == lvec[j]->volume) this->layers.emplace(lvec[j]);
+            if (par == lvec[j]->volume) this->layers.emplace(lvec[j]);
+            if (par == lvec[j]->scritch) this->layers.emplace(lvec[j]);
+            if (par == lvec[j]->blendnode->mixfac) this->layers.emplace(lvec[j]);
 			if (par == lvec[j]->shiftx) {
 				this->layers.emplace(lvec[j]);
 				par = lvec[j]->shifty;

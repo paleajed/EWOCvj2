@@ -97,7 +97,8 @@ class Layer {
 		Box* panbox;
 		
 		bool initialized = true;
-		float frame = 0.0f;
+        float frame = 0.0f;
+        float oldframe = 0.0f;
 		int prevframe = -1;
 		int numf = 0;
 		int video_duration;
@@ -134,7 +135,8 @@ class Layer {
 		int ih = 1;
 		Param *shiftx;
 		Param *shifty;
-		Param *scale;
+        Param *scale;
+        Param *scritch;
 		float oldscale = 1.0f;
 		float scratch = 0.0f;
 		bool scratchtouch = 0;
@@ -171,7 +173,7 @@ class Layer {
 		bool copying = false;
 		bool firsttime = true;
 		bool newframe = false;
-		int imageloaded = 0;
+		int loaded = 0;
 		bool newtexdata = false;
 		bool startup = false;
 		frame_result *decresult;
@@ -321,7 +323,8 @@ class Mixer {
 		std::vector<Layer*> bulrscopy[2];
 		std::vector<GLuint> butexes[2];
 		bool bualive;
-		Layer *currlay = nullptr;
+		Layer *currlay[2] = {nullptr, nullptr};
+        std::vector<Layer*> currlays[2];
 		Layer *add_layer(std::vector<Layer*> &layers, int pos);
 		void delete_layer(std::vector<Layer*> &layers, Layer *lay, bool add);
 		void delete_layers(std::vector<Layer*>& layers, bool alive);
