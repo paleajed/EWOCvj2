@@ -607,7 +607,7 @@ void BinsMain::handle(bool draw) {
 
 	// set lay to current layer or start layer
 	Layer *lay = nullptr;		
-	if (mainmix->currlay) lay = mainmix->currlay;
+	if (mainmix->currlay[!mainprogram->prevmodus]) lay = mainmix->currlay[!mainprogram->prevmodus];
 	else {
 		if (mainprogram->prevmodus) lay = mainmix->layersA[0];
 		else lay = mainmix->layersAcomp[0];

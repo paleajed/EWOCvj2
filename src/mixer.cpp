@@ -97,15 +97,19 @@ Mixer::Mixer() {
 	}
 
 	this->wipex[0] = new Param;
+    this->wipex[0]->value = 0.5f;
 	this->wipex[0]->shadervar = "xpos";
 	this->wipey[0] = new Param;
-	this->wipex[0]->shadervar = "ypos";
+    this->wipey[0]->value = 0.5f;
+	this->wipey[0]->shadervar = "ypos";
 	lp->allparams.push_back(this->wipex[0]);
 	lp->allparams.push_back(this->wipey[0]);
 	this->wipex[1] = new Param;
+    this->wipex[1]->value = 0.5f;
 	this->wipex[1]->shadervar = "xpos";
 	this->wipey[1] = new Param;
-	this->wipex[1]->shadervar = "ypos";
+    this->wipey[1]->value = 0.5f;
+	this->wipey[1]->shadervar = "ypos";
 	lpc->allparams.push_back(this->wipex[1]);
 	lpc->allparams.push_back(this->wipey[1]);
 
@@ -183,6 +187,7 @@ Mixer::Mixer() {
 	lpc->allparams.push_back(this->crossfadecomp);
 	
 	this->recbut = new Button(false);
+    this->recbut->name[0] = "R";
 	this->recbut->toggle = 1;
 	this->recbut->box->vtxcoords->x1 = 0.15f;
 	this->recbut->box->vtxcoords->y1 = -1.0f + mainprogram->monh * 2.0f;
@@ -260,7 +265,6 @@ Mixer::Mixer() {
 // GENERAL MIDI PRESET BUTTONS
 
 void Mixer::handle_genmidibuttons() {
-	float white[] = { 1.0f, 1.0f, 1.0f, 1.0f };
 	Button* but;
 	for (int i = 0; i < 2; i++) {
 		std::vector<Layer*>& lvec = choose_layers(i);
@@ -319,7 +323,6 @@ Param::~Param() {
 
 void Param::handle() {
 	float green[4] = {0.0, 1.0, 0.2, 1.0};
-	float white[4] = {1.0, 1.0, 1.0, 1.0};
 	std::string parstr;
 	draw_box(this->box, -1);
 	int val;
@@ -384,10 +387,18 @@ void Mixer::handle_adaptparam() {
 	}
 	this->prevx = mainprogram->mx;
 
-	if (this->adaptparam == this->currlay->speed) this->currlay->set_clones();
-	if (this->adaptparam == this->currlay->opacity) this->currlay->set_clones();
+	if (this->adaptparam == this->currlay[!mainprogram->prevmodus]->speed) {
+	    for (int i = 0; i < this->currlays[!mainprogram->prevmodus].size(); i++) {
+	        this->currlays[!mainprogram->prevmodus][i]->set_clones();
+	    }
+	}
+	if (this->adaptparam == this->currlay[!mainprogram->prevmodus]->opacity) {
+	    for (int i = 0; i < this->currlays[!mainprogram->prevmodus].size(); i++) {
+            this->currlays[!mainprogram->prevmodus][i]->set_clones();
+        }
+	}
 
-	if (this->adaptparam->shadervar == "ripple") {
+    if (this->adaptparam->shadervar == "ripple") {
 		((RippleEffect*)this->adaptparam->effect)->speed = this->adaptparam->value;
 	}
 	else {
@@ -1992,16 +2003,16 @@ Layer* Mixer::add_layer(std::vector<Layer*> &layers, int pos) {
 }
 
 void Mixer::do_deletelay(Layer *testlay, std::vector<Layer*> &layers, bool add) {
-	if (testlay == mainmix->currlay) {
-		if (testlay->pos == 0 && layers.size() == 1) mainmix->currlay = nullptr;
-		else if (testlay->pos == layers.size() - 1) mainmix->currlay = layers[testlay->pos - 1];
-		else mainmix->currlay = layers[testlay->pos + 1];
-		if (layers.size() == 1) mainmix->currlay = nullptr;
+	if (testlay == mainmix->currlay[!mainprogram->prevmodus]) {
+		if (testlay->pos == 0 && layers.size() == 1) mainmix->currlay[!mainprogram->prevmodus] = nullptr;
+		else if (testlay->pos == layers.size() - 1) mainmix->currlay[!mainprogram->prevmodus] = layers[testlay->pos - 1];
+		else mainmix->currlay[!mainprogram->prevmodus] = layers[testlay->pos + 1];
+		if (layers.size() == 1) mainmix->currlay[!mainprogram->prevmodus] = nullptr;
 	}
 
 	if (layers.size() == 1 && add) {
 		Layer *lay = mainmix->add_layer(layers, 1);
-		if (!mainmix->currlay) mainmix->currlay = lay;
+		if (!mainmix->currlay[!mainprogram->prevmodus]) mainmix->currlay[!mainprogram->prevmodus] = lay;
 	}
 	
 	BLEND_TYPE nextbtype;
@@ -2202,6 +2213,9 @@ Layer::Layer(bool comp) {
 	glGenFramebuffers(1, &this->fbo);
 	glBindFramebuffer(GL_FRAMEBUFFER, this->fbo);
 	glFramebufferTexture2D(GL_FRAMEBUFFER, GL_COLOR_ATTACHMENT0, GL_TEXTURE_2D, this->fbotex, 0);
+    glDrawBuffer(GL_COLOR_ATTACHMENT0);
+    glClearColor(0.0f, 0.0f, 0.0f, 1.0f);
+    glClear(GL_COLOR_BUFFER_BIT);
 
 	glGenTextures(1, &this->fbotexintm);
 	glActiveTexture(GL_TEXTURE0);
@@ -2271,7 +2285,9 @@ Layer::Layer(bool comp) {
     this->scale->value = 1.0f;
     this->scale->range[0] = 0.001f;
     this->scale->range[1] = 1000.0f;
-    
+    this->scritch = new Param;
+    this->scritch->value = 0.0f;
+
     this->chtol = new Param;
     this->chtol->name = "Tolerance";
 	this->chtol->value = 0.8f;
@@ -2478,21 +2494,21 @@ void Layer::initialize(int w, int h, int compression) {
 	}
 
 	// map three buffers persistently for pixel transfer from cpu to gpu
-		// using double PBOs for DMA pixel transfer
-	glDeleteBuffers(3, this->pbo);
+	// using double PBOs for DMA pixel transfer
+	if (this->initialized) glDeleteBuffers(3, this->pbo);
 	glGenBuffers(3, this->pbo);
 	int bsize = w * h * this->bpp;
 	int flags = GL_MAP_WRITE_BIT | GL_MAP_PERSISTENT_BIT | GL_MAP_COHERENT_BIT;
 	glBindBuffer(GL_ARRAY_BUFFER, this->pbo[0]);
-	glUnmapBuffer(GL_ARRAY_BUFFER);
+    if (this->initialized) glUnmapBuffer(GL_ARRAY_BUFFER);
 	glBufferStorage(GL_ARRAY_BUFFER, bsize, 0, flags);
 	this->mapptr[0] = (GLubyte*)glMapBufferRange(GL_ARRAY_BUFFER, 0, bsize, flags);
 	glBindBuffer(GL_ARRAY_BUFFER, this->pbo[1]);
-	glUnmapBuffer(GL_ARRAY_BUFFER);
+    if (this->initialized) glUnmapBuffer(GL_ARRAY_BUFFER);
 	glBufferStorage(GL_ARRAY_BUFFER, bsize, 0, flags);
 	this->mapptr[1] = (GLubyte*)glMapBufferRange(GL_ARRAY_BUFFER, 0, bsize, flags);
 	glBindBuffer(GL_ARRAY_BUFFER, this->pbo[2]);
-	glUnmapBuffer(GL_ARRAY_BUFFER);
+    if (this->initialized) glUnmapBuffer(GL_ARRAY_BUFFER);
 	glBufferStorage(GL_ARRAY_BUFFER, bsize, 0, flags);
 	this->mapptr[2] = (GLubyte*)glMapBufferRange(GL_ARRAY_BUFFER, 0, bsize, flags);
 
@@ -2551,7 +2567,6 @@ void Layer::set_aspectratio(int lw, int lh) {
 	}
 
 	if (this->type == ELEM_IMAGE || this->type == ELEM_LIVE) {
-		this->imageloaded = 0;
 		this->decresult->newdata = true;
 	}
 }
@@ -2807,120 +2822,120 @@ void Mixer::vidbox_handle() {
 	// handles layer monitor controls
 	mainmix->add_del_bar();
 
-	if (mainprogram->nodesmain->linked && mainmix->currlay) {
+	if (mainprogram->nodesmain->linked && mainmix->currlay[!mainprogram->prevmodus]) {
 		// Handle vidbox
-		std::vector<Layer*>& lvec = choose_layers(mainmix->currlay->deck);
-		Layer* lay = mainmix->currlay;
-		Box* box = lay->node->vidbox;
-		if (box->in() && !lay->transforming) {
-			mainprogram->frontbatch = true;
-			lay->panbox->vtxcoords->x1 = box->vtxcoords->x1 + (box->vtxcoords->w / 2.0f) - 0.015f;
-			lay->panbox->vtxcoords->y1 = box->vtxcoords->y1 + (box->vtxcoords->h / 2.0f) - 0.025f;
-			lay->panbox->vtxcoords->w = 0.03f;
-			lay->panbox->vtxcoords->h = 0.05f;
-			lay->panbox->upvtxtoscr();
-			draw_box(black, halfwhite, lay->panbox, -1);
-			if (lay->panbox->in()) {
-				draw_box(black, lightblue, lay->panbox, -1);
-				if (mainprogram->leftmousedown) {
-					// layer view pan
-					mainprogram->leftmousedown = false;
-					mainprogram->transforming = true;
-					lay->transforming = 1;
-					lay->transmx = mainprogram->mx - (lay->shiftx->value * (float)glob->w / 2.0f);
-					lay->transmy = mainprogram->my - (lay->shifty->value * (float)glob->w / 2.0f);
-				}
-			}
-			//if (mainprogram->middlemousedown) {
-			//	mainprogram->middlemousedown = false;
-			//	lay->transforming = 2;
-			//	lay->transmx = mainprogram->mx;
-			//	lay->transmy = mainprogram->my;
-			//}
-			else if (box->in()) {
-				// move layer
-				if (mainprogram->leftmousedown && !mainprogram->intopmenu) {
-					if (!lay->vidmoving && !mainmix->moving && !lay->cliploading) {
-					    GLuint butex = binsmain->dragtex;
-						binsmain->dragtex = copy_tex(lay->node->vidbox->tex);
-                        if (butex != -1) glDeleteTextures(1, &butex);
-						mainprogram->draglay = lay;
+		for (int i = 0; i < this->currlays[!mainprogram->prevmodus].size(); i++) {
+            Layer* lay = this->currlays[!mainprogram->prevmodus][i];
+            std::vector<Layer*>& lvec = choose_layers(lay->deck);
+            Box* box = lay->node->vidbox;
+            if (box->in() && !lay->transforming) {
+                mainprogram->frontbatch = true;
+                lay->panbox->vtxcoords->x1 = box->vtxcoords->x1 + (box->vtxcoords->w / 2.0f) - 0.015f;
+                lay->panbox->vtxcoords->y1 = box->vtxcoords->y1 + (box->vtxcoords->h / 2.0f) - 0.025f;
+                lay->panbox->vtxcoords->w = 0.03f;
+                lay->panbox->vtxcoords->h = 0.05f;
+                lay->panbox->upvtxtoscr();
+                draw_box(black, halfwhite, lay->panbox, -1);
+                if (lay->panbox->in()) {
+                    draw_box(black, lightblue, lay->panbox, -1);
+                    if (mainprogram->leftmousedown) {
+                        // layer view pan
+                        mainprogram->leftmousedown = false;
+                        mainprogram->transforming = true;
+                        lay->transforming = 1;
+                        lay->transmx = mainprogram->mx - (lay->shiftx->value * (float)glob->w / 2.0f);
+                        lay->transmy = mainprogram->my - (lay->shifty->value * (float)glob->w / 2.0f);
+                    }
+                }
+                //if (mainprogram->middlemousedown) {
+                //	mainprogram->middlemousedown = false;
+                //	lay->transforming = 2;
+                //	lay->transmx = mainprogram->mx;
+                //	lay->transmy = mainprogram->my;
+                //}
+                else if (box->in()) {
+                    // move layer
+                    if (mainprogram->leftmousedown && !mainprogram->intopmenu) {
+                        if (!lay->vidmoving && !mainmix->moving && !lay->cliploading) {
+                            GLuint butex = binsmain->dragtex;
+                            binsmain->dragtex = copy_tex(lay->node->vidbox->tex);
+                            if (butex != -1) glDeleteTextures(1, &butex);
+                            mainprogram->draglay = lay;
 
-						mainprogram->dragbinel = new BinElement;
-						mainprogram->dragbinel->tex = binsmain->dragtex;
-						if (lay->type == ELEM_LIVE) {
-							mainprogram->dragbinel->path = lay->filename;
-							mainprogram->dragbinel->type = ELEM_LIVE;
-						}
-						else {
-							std::string name = remove_extension(basename(mainprogram->draglay->filename));
-							int count = 0;
-							while (1) {
-								mainprogram->dragpath = mainprogram->temppath + "cliptemp_" + name + ".layer";
-								if (!exists(mainprogram->dragpath)) {
-									mainmix->save_layerfile(mainprogram->dragpath, mainprogram->draglay, 1, 0);
-									break;
-								}
-								count++;
-								name = remove_version(name) + "_" + std::to_string(count);
-							}
-							mainprogram->dragbinel->path = mainprogram->dragpath;
-							mainprogram->dragbinel->type = ELEM_LAYER;
-							mainprogram->draglay = lay;
-						}
+                            mainprogram->dragbinel = new BinElement;
+                            mainprogram->dragbinel->tex = binsmain->dragtex;
+                            if (lay->type == ELEM_LIVE) {
+                                mainprogram->dragbinel->path = lay->filename;
+                                mainprogram->dragbinel->type = ELEM_LIVE;
+                            }
+                            else {
+                                std::string name = remove_extension(basename(mainprogram->draglay->filename));
+                                int count = 0;
+                                while (1) {
+                                    mainprogram->dragpath = mainprogram->temppath + "cliptemp_" + name + ".layer";
+                                    if (!exists(mainprogram->dragpath)) {
+                                        mainmix->save_layerfile(mainprogram->dragpath, mainprogram->draglay, 1, 0);
+                                        break;
+                                    }
+                                    count++;
+                                    name = remove_version(name) + "_" + std::to_string(count);
+                                }
+                                mainprogram->dragbinel->path = mainprogram->dragpath;
+                                mainprogram->dragbinel->type = ELEM_LAYER;
+                                mainprogram->draglay = lay;
+                            }
 
-						mainprogram->leftmousedown = false;
-						lay->vidmoving = true;
-						mainmix->moving = true;
-						binsmain->currbinel = nullptr;
-					}
-				}
-			}
-			mainprogram->frontbatch = false;
-		}
-		if (box->in()) {
-			if (mainprogram->mousewheel) {
-				// scaling layer view
-				lay->scale->value -= mainprogram->mousewheel * lay->scale->value / 10.0f;
-				for (int i = 0; i < loopstation->elems.size(); i++) {
-					if (loopstation->elems[i]->recbut->value) {
-						mainmix->adaptparam = lay->scale;
-						loopstation->elems[i]->add_param(mainmix->adaptparam);
-					}
-				}
-				if (lay->type == ELEM_IMAGE || lay->type == ELEM_LIVE) {
-					lay->decresult->newdata = true;
-				}
-			}
-		}
+                            mainprogram->leftmousedown = false;
+                            lay->vidmoving = true;
+                            mainmix->moving = true;
+                            binsmain->currbinel = nullptr;
+                        }
+                    }
+                }
+                mainprogram->frontbatch = false;
+            }
+            if (box->in()) {
+                if (mainprogram->mousewheel) {
+                    // scaling layer view
+                    lay->scale->value -= mainprogram->mousewheel * lay->scale->value / 10.0f;
+                    for (int i = 0; i < loopstation->elems.size(); i++) {
+                        if (loopstation->elems[i]->recbut->value) {
+                            loopstation->elems[i]->add_param(lay->scale);
+                        }
+                    }
+                    if (lay->type == ELEM_IMAGE || lay->type == ELEM_LIVE) {
+                        lay->decresult->newdata = true;
+                    }
+                }
+            }
 
-		if (lay->transforming == 1) {
-			lay->shiftx->value = (float)(mainprogram->mx - lay->transmx) / ((float)glob->w / 2.0f);
+            if (lay->transforming == 1) {
+                lay->shiftx->value = (float)(mainprogram->mx - lay->transmx) / ((float)glob->w / 2.0f);
 
-			lay->shifty->value = (float)(mainprogram->my - lay->transmy) / ((float)glob->w / 2.0f);
-			for (int i = 0; i < loopstation->elems.size(); i++) {
-				if (loopstation->elems[i]->recbut->value) {
-					mainmix->adaptparam = lay->shiftx;
-					loopstation->elems[i]->add_param(mainmix->adaptparam);
-				}
-			}
-			if (mainprogram->leftmouse) {
-				lay->transforming = 0;
-				mainprogram->transforming = false;
-			}
-			if (lay->type == ELEM_IMAGE || lay->type == ELEM_LIVE) {
-				lay->decresult->newdata = true;
-			}
-		}
-		//if (lay->transforming == 2) {
-		//	lay->scale = 5.0f / (((float)(mainprogram->my - lay->transmy) / 20.0f) + 5.0f);
-		//	if (lay->scale > 1.0f) lay->scale *= lay->scale;
-		//	lay->scale *= lay->oldscale;
-		//	if (mainprogram->middlemouse) {
-		//		lay->oldscale = lay->scale;
-		//		lay->transforming = 0;
-		//	}
-		//}
+                lay->shifty->value = (float)(mainprogram->my - lay->transmy) / ((float)glob->w / 2.0f);
+                for (int i = 0; i < loopstation->elems.size(); i++) {
+                    if (loopstation->elems[i]->recbut->value) {
+                        loopstation->elems[i]->add_param(lay->shiftx);
+                    }
+                }
+                if (mainprogram->leftmouse) {
+                    lay->transforming = 0;
+                    mainprogram->transforming = false;
+                }
+                if (lay->type == ELEM_IMAGE || lay->type == ELEM_LIVE) {
+                    lay->decresult->newdata = true;
+                }
+            }
+            //if (lay->transforming == 2) {
+            //	lay->scale = 5.0f / (((float)(mainprogram->my - lay->transmy) / 20.0f) + 5.0f);
+            //	if (lay->scale > 1.0f) lay->scale *= lay->scale;
+            //	lay->scale *= lay->oldscale;
+            //	if (mainprogram->middlemouse) {
+            //		lay->oldscale = lay->scale;
+            //		lay->transforming = 0;
+            //	}
+            //}
+        }
 	}
 }
 
@@ -2953,7 +2968,7 @@ void Layer::display() {
 			draw_box(box, box->tex);
 			draw_box(white, darkred3, box, -1);
 		}
-		if (this == mainmix->currlay) {
+		if (std::find(mainmix->currlays[!mainprogram->prevmodus].begin(), mainmix->currlays[!mainprogram->prevmodus].end(), this) != mainmix->currlays[!mainprogram->prevmodus].end()) {
 		    mainprogram->frontbatch = true;
             float pixelw = 2.0f / glob->w;
             float pixelh = 2.0f / glob->h;
@@ -2969,15 +2984,11 @@ void Layer::display() {
             this->mutebut->box->upvtxtoscr();
             this->solobut->box->vtxcoords->x1 = this->mutebut->box->vtxcoords->x1 + 0.03f;
             this->solobut->box->upvtxtoscr();
-			if (box->in()) {
+			if (std::find(mainmix->currlays[!mainprogram->prevmodus].begin(), mainmix->currlays[!mainprogram->prevmodus].end(), this) != mainmix->currlays[!mainprogram->prevmodus].end()) {
 				std::string deckstr;
 				if (this->deck == 0) deckstr = "A";
 				else if (this->deck == 1) deckstr = "B";
 				render_text("Layer " + deckstr + std::to_string(this->pos + 1), white, box->vtxcoords->x1 + tf(0.01f), box->vtxcoords->y1 + box->vtxcoords->h - tf(0.03f), 0.0005f, 0.0008f);
-				GLenum err;
-				while ((err = glGetError()) != GL_NO_ERROR) {
-					std::cerr << "OpenGL error2: " << err << std::endl;
-				}
 				render_text(remove_extension(basename(this->filename)), white, box->vtxcoords->x1 + tf(0.01f), box->vtxcoords->y1 + box->vtxcoords->h - tf(0.06f), 0.0005f, 0.0008f);
 				if (this->vidformat == -1) {
 					if (this->type == ELEM_IMAGE) {
@@ -2990,20 +3001,43 @@ void Layer::display() {
 				else {
 					render_text("CPU", white, box->vtxcoords->x1 + tf(0.01f), box->vtxcoords->y1 + box->vtxcoords->h - tf(0.09f), 0.0005f, 0.0008f);
 				}
-				if (!mainprogram->needsclick || mainprogram->leftmouse) {
-					if (!mainmix->moving && !mainprogram->cwon) {
-						mainmix->currlay = this;
-						mainprogram->effcat[this->deck]->value = 0;
-						if (mainprogram->menuactivation) {
-                            // Trigger mainprogram->laymenu#
-                            if (this->type == ELEM_IMAGE || this->type == ELEM_LIVE) mainprogram->laymenu2->state = 2;
-							else mainprogram->laymenu1->state = 2;
-							mainmix->mouselayer = this;
-							mainmix->mousedeck = this->deck;
-							mainprogram->menuactivation = false;
-						}
-					}
-				}
+			}
+			if (box->in()) {
+			    if (box != mainprogram->prevbox) {
+			        mainprogram->prevbox = box;
+                    if (!mainprogram->needsclick || mainprogram->leftmouse) {
+                        if (!mainmix->moving && !mainprogram->cwon) {
+                            mainmix->currlay[!mainprogram->prevmodus] = this;
+                            if (mainprogram->shift || mainprogram->ctrl) {
+                                if (std::find(mainmix->currlays[!mainprogram->prevmodus].begin(), mainmix->currlays[!mainprogram->prevmodus].end(), this) ==
+                                    mainmix->currlays[!mainprogram->prevmodus].end()) {
+                                    mainmix->currlays[!mainprogram->prevmodus].push_back(this);
+                                } else {
+                                    if (mainmix->currlays[!mainprogram->prevmodus].size() > 1) {
+                                        mainmix->currlays[!mainprogram->prevmodus].erase(std::find(mainmix->currlays[!mainprogram->prevmodus].begin(), mainmix->currlays[!mainprogram->prevmodus].end(), this));
+                                        mainmix->currlay[!mainprogram->prevmodus] = mainmix->currlays[!mainprogram->prevmodus][mainmix->currlays[!mainprogram->prevmodus].size() - 1];
+                                    }
+                                }
+                            } else {
+                                mainmix->currlays[!mainprogram->prevmodus].clear();
+                                if (std::find(mainmix->currlays[!mainprogram->prevmodus].begin(), mainmix->currlays[!mainprogram->prevmodus].end(), this) ==
+                                    mainmix->currlays[!mainprogram->prevmodus].end()) {
+                                    mainmix->currlays[!mainprogram->prevmodus].push_back(this);
+                                }
+                            }
+                            mainprogram->effcat[this->deck]->value = 0;
+                        }
+                    }
+                }
+                if (mainprogram->menuactivation) {
+                    // Trigger mainprogram->laymenu#
+                    if (this->type == ELEM_IMAGE || this->type == ELEM_LIVE)
+                        mainprogram->laymenu2->state = 2;
+                    else mainprogram->laymenu1->state = 2;
+                    mainmix->mouselayer = this;
+                    mainmix->mousedeck = this->deck;
+                    mainprogram->menuactivation = false;
+                }
 
 				//draw and handle layer mute and solo buttons
 				if (this->mutebut->box->in()) {
@@ -3135,6 +3169,7 @@ void Layer::display() {
 				}
 			}
 			else {
+                if (mainprogram->prevbox == box) mainprogram->prevbox = nullptr;
 				int size = lvec.size();
 				int numonscreen = size - mainmix->scenes[this->comp][this->deck][mainmix->currscene[this->comp][this->deck]]->scrollpos;
 				if (0 <= numonscreen && numonscreen <= 2) {
@@ -3201,742 +3236,879 @@ void Layer::display() {
 
 
 		// Show current layer controls
-		if (this != mainmix->currlay) return;
-
+        if (this != mainmix->currlay[!mainprogram->prevmodus]) {
+            return;
+        }
         // Draw controls/effects background box
         draw_box(lightgrey, darkgreygreen, this->mixbox->vtxcoords->x1, mainmix->crossfade->box->vtxcoords->y1 + mainmix->crossfade->box->vtxcoords->h, 0.6f, this->mixbox->vtxcoords->y1 - mainmix->crossfade->box->vtxcoords->y1, -1);
 
         if (!mainprogram->queueing) {
-			// Draw mixbox
-			std::string mixstr;
-			box = this->mixbox;
-			draw_box(box, -1);
-			switch (this->blendnode->blendtype) {
-			case 1:
-				mixstr = "Mix";
-				break;
-			case 2:
-				mixstr = "Mult";
-				break;
-			case 3:
-				mixstr = "Scrn";
-				break;
-			case 4:
-				mixstr = "Ovrl";
-				break;
-			case 5:
-				mixstr = "HaLi";
-				break;
-			case 6:
-				mixstr = "SoLi";
-				break;
-			case 7:
-				mixstr = "Divi";
-				break;
-			case 8:
-				mixstr = "Add";
-				break;
-			case 9:
-				mixstr = "Sub";
-				break;
-			case 10:
-				mixstr = "Diff";
-				break;
-			case 11:
-				mixstr = "Dodg";
-				break;
-			case 12:
-				mixstr = "CoBu";
-				break;
-			case 13:
-				mixstr = "LiBu";
-				break;
-			case 14:
-				mixstr = "ViLi";
-				break;
-			case 15:
-				mixstr = "LiLi";
-				break;
-			case 16:
-				mixstr = "DaOn";
-				break;
-			case 17:
-				mixstr = "LiOn";
-				break;
-			case 18:
-				mixstr = "Wipe";
-				break;
-			case 19:
-				mixstr = "CKey";
-				if (this->pos > 0) {
-					draw_box(this->colorbox, -1);
-					render_text("Color", white, this->mixbox->vtxcoords->x1 + tf(0.08f), 1.0f - (mainprogram->layh + tf(0.09f)) + tf(0.02f), tf(0.0003f), tf(0.0005f));
-				}
-				break;
-			case 20:
-				mixstr = "Disp";
-				break;
-			}
-			if (this->pos > 0) {
-				render_text(mixstr, white, this->mixbox->vtxcoords->x1 + tf(0.01f), 1.0f - (mainprogram->layh + tf(0.09f)) + tf(0.02f), tf(0.0003f), tf(0.0005f));
-			}
-			else {
-				render_text(mixstr, darkred1, this->mixbox->vtxcoords->x1 + tf(0.01f), 1.0f - (mainprogram->layh + tf(0.09f)) + tf(0.02f), tf(0.0003f), tf(0.0005f));
-			}
+            // Draw mixbox
+            std::string mixstr;
+            box = this->mixbox;
+            draw_box(box, -1);
+            switch (this->blendnode->blendtype) {
+                case 1:
+                    mixstr = "Mix";
+                    break;
+                case 2:
+                    mixstr = "Mult";
+                    break;
+                case 3:
+                    mixstr = "Scrn";
+                    break;
+                case 4:
+                    mixstr = "Ovrl";
+                    break;
+                case 5:
+                    mixstr = "HaLi";
+                    break;
+                case 6:
+                    mixstr = "SoLi";
+                    break;
+                case 7:
+                    mixstr = "Divi";
+                    break;
+                case 8:
+                    mixstr = "Add";
+                    break;
+                case 9:
+                    mixstr = "Sub";
+                    break;
+                case 10:
+                    mixstr = "Diff";
+                    break;
+                case 11:
+                    mixstr = "Dodg";
+                    break;
+                case 12:
+                    mixstr = "CoBu";
+                    break;
+                case 13:
+                    mixstr = "LiBu";
+                    break;
+                case 14:
+                    mixstr = "ViLi";
+                    break;
+                case 15:
+                    mixstr = "LiLi";
+                    break;
+                case 16:
+                    mixstr = "DaOn";
+                    break;
+                case 17:
+                    mixstr = "LiOn";
+                    break;
+                case 18:
+                    mixstr = "Wipe";
+                    break;
+                case 19:
+                    mixstr = "CKey";
+                    if (this->pos > 0) {
+                        draw_box(this->colorbox, -1);
+                        render_text("Color", white, this->mixbox->vtxcoords->x1 + tf(0.08f),
+                                    1.0f - (mainprogram->layh + tf(0.09f)) + tf(0.02f), tf(0.0003f), tf(0.0005f));
+                    }
+                    break;
+                case 20:
+                    mixstr = "Disp";
+                    break;
+            }
+            if (this->pos > 0) {
+                render_text(mixstr, white, this->mixbox->vtxcoords->x1 + tf(0.01f),
+                            1.0f - (mainprogram->layh + tf(0.09f)) + tf(0.02f), tf(0.0003f), tf(0.0005f));
+            } else {
+                render_text(mixstr, darkred1, this->mixbox->vtxcoords->x1 + tf(0.01f),
+                            1.0f - (mainprogram->layh + tf(0.09f)) + tf(0.02f), tf(0.0003f), tf(0.0005f));
+            }
 
-			// Draw and handle effect category buttons
-            float efx = -1.0f + this->deck * 0.8f + ((mainmix->scenes[this->comp][this->deck][mainmix->currscene[this->comp][this->deck]]->scrollpos + this->pos) % 3) * mainprogram->layw;
-			mainprogram->effscrollupA->vtxcoords->x1 = efx;
-			mainprogram->effscrollupB->vtxcoords->x1 = efx;
-			mainprogram->effscrolldownA->vtxcoords->x1 = efx;
-			mainprogram->effscrolldownB->vtxcoords->x1 = efx;
-			mainprogram->effscrollupA->upvtxtoscr();
-			mainprogram->effscrollupB->upvtxtoscr();
-			mainprogram->effscrolldownA->upvtxtoscr();
-			mainprogram->effscrolldownB->upvtxtoscr();
-			Box* box = mainprogram->effcat[this->deck]->box;
-			box->vtxcoords->x1 = efx;
-			box->upvtxtoscr();
-			mainprogram->effcat[this->deck]->handle();
-			if (this->effects[1].size() && mainprogram->effcat[this->deck]->value == 0) {
-				box->acolor[0] = 0.5f;
-				box->acolor[1] = 0.0f;
-				box->acolor[2] = 0.0f;
-				box->acolor[3] = 1.0f;
-			}
-			draw_box(box, -1);
-			render_text(mainprogram->effcat[this->deck]->name[mainprogram->effcat[this->deck]->value], white, box->vtxcoords->x1, box->vtxcoords->y1 + box->vtxcoords->h + 0.03f, tf(0.0003f), tf(0.0005f), 0, 1);
-			std::vector<Effect*>& evec = this->choose_effects();
-			bool cat = mainprogram->effcat[this->deck]->value;
+            // Draw and handle effect category buttons
+            float efx = -1.0f + this->deck * 0.8f +
+                        ((mainmix->scenes[this->comp][this->deck][mainmix->currscene[this->comp][this->deck]]->scrollpos +
+                          this->pos) % 3) * mainprogram->layw;
+            mainprogram->effscrollupA->vtxcoords->x1 = efx;
+            mainprogram->effscrollupB->vtxcoords->x1 = efx;
+            mainprogram->effscrolldownA->vtxcoords->x1 = efx;
+            mainprogram->effscrolldownB->vtxcoords->x1 = efx;
+            mainprogram->effscrollupA->upvtxtoscr();
+            mainprogram->effscrollupB->upvtxtoscr();
+            mainprogram->effscrolldownA->upvtxtoscr();
+            mainprogram->effscrolldownB->upvtxtoscr();
+            Box *box = mainprogram->effcat[this->deck]->box;
+            box->vtxcoords->x1 = efx;
+            box->upvtxtoscr();
+            mainprogram->effcat[this->deck]->handle();
+            if (this->effects[1].size() && mainprogram->effcat[this->deck]->value == 0) {
+                box->acolor[0] = 0.5f;
+                box->acolor[1] = 0.0f;
+                box->acolor[2] = 0.0f;
+                box->acolor[3] = 1.0f;
+            }
+            draw_box(box, -1);
+            render_text(mainprogram->effcat[this->deck]->name[mainprogram->effcat[this->deck]->value], white,
+                        box->vtxcoords->x1, box->vtxcoords->y1 + box->vtxcoords->h + 0.03f, tf(0.0003f), tf(0.0005f), 0,
+                        1);
+            std::vector<Effect *> &evec = this->choose_effects();
+            bool cat = mainprogram->effcat[this->deck]->value;
 
-			// Draw and handle effect stack scrollboxes
-			if (mainmix->currlay->deck == 0) {
-				this->effscroll[cat] = mainprogram->handle_scrollboxes(mainprogram->effscrollupA, mainprogram->effscrolldownA, this->numefflines[cat], this->effscroll[cat], mainprogram->efflines);
-			}
-			else {
-				this->effscroll[cat] = mainprogram->handle_scrollboxes(mainprogram->effscrollupB, mainprogram->effscrolldownB, this->numefflines[cat], this->effscroll[cat], mainprogram->efflines);
-			}
-			if (this->effects[cat].size()) {
-				if ((glob->w / 2.0f > mainprogram->mx && mainmix->currlay->deck == 0) || (glob->w / 2.0f < mainprogram->mx && mainmix->currlay->deck == 1)) {
-					if (mainprogram->my > mainprogram->yvtxtoscr(mainprogram->layh - tf(0.20f))) {
-						if (mainprogram->mousewheel && this->numefflines[cat] > mainprogram->efflines) {
-							this->effscroll[cat] -= mainprogram->mousewheel;
-							if (this->effscroll[cat] < 0) this->effscroll[cat] = 0;
-							if (this->numefflines[cat] - this->effscroll[cat] < mainprogram->efflines) this->effscroll[cat] = this->numefflines[cat] - mainprogram->efflines;
-						}
-					}
-				}
-			}
-			// Draw effectboxes and parameters
-			std::string effstr;
-			for (int i = 0; i < evec.size(); i++) {
-				Effect* eff = evec[i];
-				Box* box;
-				float x1, y1, wi;
-				x1 = eff->box->vtxcoords->x1 + tf(0.032f);
-				wi = (0.7f - mainprogram->numw - tf(0.032f)) / 4.0f;
+            // Draw and handle effect stack scrollboxes
+            if (mainmix->currlay[!mainprogram->prevmodus]->deck == 0) {
+                this->effscroll[cat] = mainprogram->handle_scrollboxes(mainprogram->effscrollupA,
+                                                                       mainprogram->effscrolldownA,
+                                                                       this->numefflines[cat], this->effscroll[cat],
+                                                                       mainprogram->efflines);
+            } else {
+                this->effscroll[cat] = mainprogram->handle_scrollboxes(mainprogram->effscrollupB,
+                                                                       mainprogram->effscrolldownB,
+                                                                       this->numefflines[cat], this->effscroll[cat],
+                                                                       mainprogram->efflines);
+            }
+            if (this->effects[cat].size()) {
+                if ((glob->w / 2.0f > mainprogram->mx && mainmix->currlay[!mainprogram->prevmodus]->deck == 0) ||
+                    (glob->w / 2.0f < mainprogram->mx && mainmix->currlay[!mainprogram->prevmodus]->deck == 1)) {
+                    if (mainprogram->my > mainprogram->yvtxtoscr(mainprogram->layh - tf(0.20f))) {
+                        if (mainprogram->mousewheel && this->numefflines[cat] > mainprogram->efflines) {
+                            this->effscroll[cat] -= mainprogram->mousewheel;
+                            if (this->effscroll[cat] < 0) this->effscroll[cat] = 0;
+                            if (this->numefflines[cat] - this->effscroll[cat] < mainprogram->efflines)
+                                this->effscroll[cat] = this->numefflines[cat] - mainprogram->efflines;
+                        }
+                    }
+                }
+            }
+            // Draw effectboxes and parameters
+            std::string effstr;
+            for (int i = 0; i < evec.size(); i++) {
+                Effect *eff = evec[i];
+                Box *box;
+                float x1, y1, wi;
+                x1 = eff->box->vtxcoords->x1 + tf(0.032f);
+                wi = (0.7f - mainprogram->numw - tf(0.032f)) / 4.0f;
 
-				if (eff->box->vtxcoords->y1 < 1.0 - mainprogram->layh - tf(0.09f) - tf(0.22f) - tf(0.05f) * (mainprogram->efflines - 1)) break;
-				if (eff->box->vtxcoords->y1 <= 1.0 - mainprogram->layh - tf(0.09f) - tf(0.18f)) {
-					eff->drywet->handle();
-					eff->onoffbutton->handle();
+                if (eff->box->vtxcoords->y1 <
+                    1.0 - mainprogram->layh - tf(0.09f) - tf(0.22f) - tf(0.05f) * (mainprogram->efflines - 1))
+                    break;
+                if (eff->box->vtxcoords->y1 <= 1.0 - mainprogram->layh - tf(0.09f) - tf(0.18f)) {
+                    eff->drywet->handle();
+                    eff->onoffbutton->handle();
 
-					box = eff->box;
-					if (mainprogram->effcat[this->deck]->value == 0) {
-						if (eff->onoffbutton->value) draw_box(lightgrey, darkred1, box, -1);
-						else draw_box(lightgrey, darkred2, box, -1);
-					}
-					else {
-						if (eff->onoffbutton->value) draw_box(lightgrey, darkgreen1, box, -1);
-						else draw_box(lightgrey, darkgreen2, box, -1);
-					}
-					effstr = eff->get_namestring();
-					float textw = tf(textwvec_total(render_text(effstr, white, eff->box->vtxcoords->x1 + tf(0.01f), eff->box->vtxcoords->y1 + tf(0.05f) - tf(0.030f), tf(0.0003f), tf(0.0005f))));
-					eff->box->vtxcoords->w = textw + tf(0.032f);
-					x1 = eff->box->vtxcoords->x1 + tf(0.032f) + textw;
-					wi = (0.7f - mainprogram->numw - tf(0.032f) - textw) / 4.0f;
-				}
-				y1 = eff->box->vtxcoords->y1;
-				// draw parameters
-				for (int j = 0; j < eff->params.size(); j++) {
-					Param* par = eff->params[j];
-					par->box->lcolor[0] = 1.0;
-					par->box->lcolor[1] = 1.0;
-					par->box->lcolor[2] = 1.0;
-					par->box->lcolor[3] = 1.0;
-					if (par->nextrow) {
-						x1 = eff->box->vtxcoords->x1 + tf(0.02f);
-						y1 -= tf(0.05f);
-						wi = (0.7f - mainprogram->numw - tf(0.02f)) / 4.0;
-					}
-					par->box->vtxcoords->x1 = x1;
-					x1 += wi + tf(0.01f);
-					par->box->vtxcoords->y1 = y1;
-					par->box->vtxcoords->w = wi;
-					par->box->vtxcoords->h = eff->box->vtxcoords->h;
-					par->box->upvtxtoscr();
+                    box = eff->box;
+                    if (mainprogram->effcat[this->deck]->value == 0) {
+                        if (eff->onoffbutton->value) draw_box(lightgrey, darkred1, box, -1);
+                        else draw_box(lightgrey, darkred2, box, -1);
+                    } else {
+                        if (eff->onoffbutton->value) draw_box(lightgrey, darkgreen1, box, -1);
+                        else draw_box(lightgrey, darkgreen2, box, -1);
+                    }
+                    effstr = eff->get_namestring();
+                    float textw = tf(textwvec_total(render_text(effstr, white, eff->box->vtxcoords->x1 + tf(0.01f),
+                                                                eff->box->vtxcoords->y1 + tf(0.05f) - tf(0.030f),
+                                                                tf(0.0003f), tf(0.0005f))));
+                    eff->box->vtxcoords->w = textw + tf(0.032f);
+                    x1 = eff->box->vtxcoords->x1 + tf(0.032f) + textw;
+                    wi = (0.7f - mainprogram->numw - tf(0.032f) - textw) / 4.0f;
+                }
+                y1 = eff->box->vtxcoords->y1;
+                // draw parameters
+                for (int j = 0; j < eff->params.size(); j++) {
+                    Param *par = eff->params[j];
+                    par->box->lcolor[0] = 1.0;
+                    par->box->lcolor[1] = 1.0;
+                    par->box->lcolor[2] = 1.0;
+                    par->box->lcolor[3] = 1.0;
+                    if (par->nextrow) {
+                        x1 = eff->box->vtxcoords->x1 + tf(0.02f);
+                        y1 -= tf(0.05f);
+                        wi = (0.7f - mainprogram->numw - tf(0.02f)) / 4.0;
+                    }
+                    par->box->vtxcoords->x1 = x1;
+                    x1 += wi + tf(0.01f);
+                    par->box->vtxcoords->y1 = y1;
+                    par->box->vtxcoords->w = wi;
+                    par->box->vtxcoords->h = eff->box->vtxcoords->h;
+                    par->box->upvtxtoscr();
 
-					if (par->box->vtxcoords->y1 < 1.0 - mainprogram->layh - tf(0.09f) - tf(0.22f) - tf(0.05f) * (mainprogram->efflines - 1)) break;
-					if (par->box->vtxcoords->y1 <= 1.0 - mainprogram->layh - tf(0.09f) - tf(0.18f)) {
-						par->handle();
-					}
-				}
-			}
+                    if (par->box->vtxcoords->y1 <
+                        1.0 - mainprogram->layh - tf(0.09f) - tf(0.22f) - tf(0.05f) * (mainprogram->efflines - 1))
+                        break;
+                    if (par->box->vtxcoords->y1 <= 1.0 - mainprogram->layh - tf(0.09f) - tf(0.18f)) {
+                        par->handle();
+                    }
+                }
+            }
 
-			// Draw effectboxes
-			// Bottom bar
-			float sx1, sy1, vx1, vy1, vx2, vy2, sw;
-			bool bottom = false;
-			bool inbetween = false;
-			Effect* eff = nullptr;
-			if (!mainprogram->queueing) {
-				if (evec.size()) {
-					eff = evec[evec.size() - 1];
-					box = eff->onoffbutton->box;
-					sx1 = box->scrcoords->x1;
-					sy1 = box->scrcoords->y1 + (eff->numrows - 1) * mainprogram->yvtxtoscr(tf(0.05f));
-					if (1.0f - mainprogram->yscrtovtx(sy1) < -0.4f) {
-						sy1 = mainprogram->yvtxtoscr(1.4f);
-					}
-					vx1 = box->vtxcoords->x1;
-					vy1 = box->vtxcoords->y1 - (eff->numrows - 1) * tf(0.05f);
-					if (vy1 < -0.4f) vy1 = -0.4f;
-					sw = tf(mainprogram->layw) * glob->w / 2.0;
-				}
-				else {
-					box = this->mixbox;
-					sw = tf(mainprogram->layw) * glob->w / 2.0;
-					sx1 = box->scrcoords->x1 + mainprogram->xvtxtoscr(tf(0.025f));
-					sy1 = this->opacity->box->scrcoords->y1;
-					vx1 = box->vtxcoords->x1 + tf(0.025f);
-					vy1 = 1 - mainprogram->layh - tf(0.25f);
-				}
-				if (!mainprogram->menuondisplay) {
-					if (sy1 - 7.5 <= mainprogram->my && mainprogram->my <= sy1 + 7.5) {
-						//inbetween = true;
-						vx2 = vx1;
-						vy2 = vy1 - tf(0.011f);
-					}
-					if (mainprogram->addeffectbox->in()) {
-						if ((mainprogram->menuactivation || mainprogram->leftmouse) && !mainprogram->drageff) {
-							mainprogram->effectmenu->state = 2;
-							mainmix->insert = true;
-							mainmix->mouseeffect = evec.size();
-							mainmix->mouselayer = this;
-							mainprogram->effectmenu->menux = mainprogram->mx;
-							mainprogram->effectmenu->menuy = mainprogram->my;
-							mainprogram->menuactivation = false;
-							mainprogram->menuondisplay = true;
+            // Draw effectboxes
+            // Bottom bar
+            float sx1, sy1, vx1, vy1, vx2, vy2, sw;
+            bool bottom = false;
+            bool inbetween = false;
+            Effect *eff = nullptr;
+            if (!mainprogram->queueing) {
+                if (evec.size()) {
+                    eff = evec[evec.size() - 1];
+                    box = eff->onoffbutton->box;
+                    sx1 = box->scrcoords->x1;
+                    sy1 = box->scrcoords->y1 + (eff->numrows - 1) * mainprogram->yvtxtoscr(tf(0.05f));
+                    if (1.0f - mainprogram->yscrtovtx(sy1) < -0.4f) {
+                        sy1 = mainprogram->yvtxtoscr(1.4f);
+                    }
+                    vx1 = box->vtxcoords->x1;
+                    vy1 = box->vtxcoords->y1 - (eff->numrows - 1) * tf(0.05f);
+                    if (vy1 < -0.4f) vy1 = -0.4f;
+                    sw = tf(mainprogram->layw) * glob->w / 2.0;
+                } else {
+                    box = this->mixbox;
+                    sw = tf(mainprogram->layw) * glob->w / 2.0;
+                    sx1 = box->scrcoords->x1 + mainprogram->xvtxtoscr(tf(0.025f));
+                    sy1 = this->opacity->box->scrcoords->y1;
+                    vx1 = box->vtxcoords->x1 + tf(0.025f);
+                    vy1 = 1 - mainprogram->layh - tf(0.25f);
+                }
+                if (!mainprogram->menuondisplay) {
+                    if (sy1 - 7.5 <= mainprogram->my && mainprogram->my <= sy1 + 7.5) {
+                        //inbetween = true;
+                        vx2 = vx1;
+                        vy2 = vy1 - tf(0.011f);
+                    }
+                    if (mainprogram->addeffectbox->in()) {
+                        if ((mainprogram->menuactivation || mainprogram->leftmouse) && !mainprogram->drageff) {
+                            mainprogram->effectmenu->state = 2;
+                            mainmix->insert = true;
+                            mainmix->mouseeffect = evec.size();
+                            mainmix->mouselayer = this;
+                            mainprogram->effectmenu->menux = mainprogram->mx;
+                            mainprogram->effectmenu->menuy = mainprogram->my;
+                            mainprogram->menuactivation = false;
+                            mainprogram->menuondisplay = true;
                             mainprogram->drageffsense = false;
                             mainprogram->drageff = nullptr;
-						}
-						bottom = true;
-					}
-				}
-				mainprogram->indragbox = false;
-				for (int j = 0; j < evec.size(); j++) {
-					eff = evec[j];
-					box = eff->box;
-					eff->box->acolor[0] = 0.75f;
-					eff->box->acolor[1] = 0.0f;
-					eff->box->acolor[2] = 0.0f;
-					eff->box->acolor[3] = 1.0f;
-					if (!mainprogram->menuondisplay) {
-						if (box->scrcoords->x1 < mainprogram->mx && mainprogram->mx < box->scrcoords->x1 + box->scrcoords->w) {
-							if (box->scrcoords->y1 - box->scrcoords->h + 7 <= mainprogram->my && mainprogram->my <= box->scrcoords->y1 - 7) {
-							    // mouse on effect box
-								if (mainprogram->del) {
-									this->delete_effect(j);
-									mainprogram->del = 0;
-									break;
-								}
-								if ((mainprogram->menuactivation || mainprogram->leftmouse) && !mainprogram->drageff) {
-									mainprogram->effectmenu->state = 2;
-									mainmix->mouselayer = this;
-									mainmix->mouseeffect = j;
-									mainmix->insert = false;
-									mainprogram->effectmenu->menux = mainprogram->mx;
-									mainprogram->effectmenu->menuy = mainprogram->my;
-									mainprogram->menuactivation = false;
-									mainprogram->menuondisplay = true;
-									mainprogram->dragbox = nullptr;
-									mainprogram->drageffsense = false;
-								}
-								eff->box->acolor[0] = 0.5;
-								eff->box->acolor[1] = 0.5;
-								eff->box->acolor[2] = 1.0;
-								eff->box->acolor[3] = 1.0;
+                        }
+                        bottom = true;
+                    }
+                }
+                mainprogram->indragbox = false;
+                for (int j = 0; j < evec.size(); j++) {
+                    eff = evec[j];
+                    box = eff->box;
+                    eff->box->acolor[0] = 0.75f;
+                    eff->box->acolor[1] = 0.0f;
+                    eff->box->acolor[2] = 0.0f;
+                    eff->box->acolor[3] = 1.0f;
+                    if (!mainprogram->menuondisplay) {
+                        if (box->scrcoords->x1 < mainprogram->mx &&
+                            mainprogram->mx < box->scrcoords->x1 + box->scrcoords->w) {
+                            if (box->scrcoords->y1 - box->scrcoords->h + 7 <= mainprogram->my &&
+                                mainprogram->my <= box->scrcoords->y1 - 7) {
+                                // mouse on effect box
+                                if (mainprogram->del) {
+                                    this->delete_effect(j);
+                                    mainprogram->del = 0;
+                                    break;
+                                }
+                                if ((mainprogram->menuactivation || mainprogram->leftmouse) && !mainprogram->drageff) {
+                                    mainprogram->effectmenu->state = 2;
+                                    mainmix->mouselayer = this;
+                                    mainmix->mouseeffect = j;
+                                    mainmix->insert = false;
+                                    mainprogram->effectmenu->menux = mainprogram->mx;
+                                    mainprogram->effectmenu->menuy = mainprogram->my;
+                                    mainprogram->menuactivation = false;
+                                    mainprogram->menuondisplay = true;
+                                    mainprogram->dragbox = nullptr;
+                                    mainprogram->drageffsense = false;
+                                }
+                                eff->box->acolor[0] = 0.5;
+                                eff->box->acolor[1] = 0.5;
+                                eff->box->acolor[2] = 1.0;
+                                eff->box->acolor[3] = 1.0;
 
-								// prepare effect dragging
-								eff->pos = j;
-								if (!mainprogram->drageff) {
-									if (mainprogram->leftmousedown && !mainprogram->drageffsense) {
-										mainprogram->drageffsense = true;
-										mainprogram->dragbox = eff->box;
-										mainprogram->drageffpos = j;
-										mainprogram->leftmousedown = false;
-									}
-									if (j == mainprogram->drageffpos) {
-										mainprogram->indragbox = true;
-									}
-								}
-							}
-						}
-						box = eff->onoffbutton->box;
-						if (box->scrcoords->x1 < mainprogram->mx && mainprogram->mx < box->scrcoords->x1 + tf(mainprogram->layw) * glob->w / 2.0) {
-							if (box->scrcoords->y1 - box->scrcoords->h - 7.5 < mainprogram->iemy && mainprogram->iemy < box->scrcoords->y1 - box->scrcoords->h + 7.5) {
-    							// mouse inbetween effects
-								if ((mainprogram->menuactivation || mainprogram->leftmouse || mainprogram->lmover) && !mainprogram->drageff) {
-									mainprogram->effectmenu->state = 2;
-									mainmix->insert = true;
-									mainmix->mouseeffect = j;
-									mainmix->mouselayer = this;
-									mainprogram->effectmenu->menux = mainprogram->mx;
-									mainprogram->effectmenu->menuy = mainprogram->iemy;
-									mainprogram->menuactivation = false;
-									mainprogram->menuondisplay = true;
-								}
-								if (!mainmix->adaptparam) inbetween = true;
-								vx2 = box->vtxcoords->x1;
-								vy2 = box->vtxcoords->y1 + box->vtxcoords->h - tf(0.011f);
-							}
-						}
-					}
-				}
-				if (!mainprogram->indragbox && mainprogram->drageffsense) {
-					mainprogram->drageff = evec[mainprogram->drageffpos];
-					mainprogram->drageffsense = false;
-				}
-			}
+                                // prepare effect dragging
+                                eff->pos = j;
+                                if (!mainprogram->drageff) {
+                                    if (mainprogram->leftmousedown && !mainprogram->drageffsense) {
+                                        mainprogram->drageffsense = true;
+                                        mainprogram->dragbox = eff->box;
+                                        mainprogram->drageffpos = j;
+                                        mainprogram->leftmousedown = false;
+                                    }
+                                    if (j == mainprogram->drageffpos) {
+                                        mainprogram->indragbox = true;
+                                    }
+                                }
+                            }
+                        }
+                        box = eff->onoffbutton->box;
+                        if (box->scrcoords->x1 < mainprogram->mx &&
+                            mainprogram->mx < box->scrcoords->x1 + tf(mainprogram->layw) * glob->w / 2.0) {
+                            if (box->scrcoords->y1 - box->scrcoords->h - 7.5 < mainprogram->iemy &&
+                                mainprogram->iemy < box->scrcoords->y1 - box->scrcoords->h + 7.5) {
+                                // mouse inbetween effects
+                                if ((mainprogram->menuactivation || mainprogram->leftmouse || mainprogram->lmover) &&
+                                    !mainprogram->drageff) {
+                                    mainprogram->effectmenu->state = 2;
+                                    mainmix->insert = true;
+                                    mainmix->mouseeffect = j;
+                                    mainmix->mouselayer = this;
+                                    mainprogram->effectmenu->menux = mainprogram->mx;
+                                    mainprogram->effectmenu->menuy = mainprogram->iemy;
+                                    mainprogram->menuactivation = false;
+                                    mainprogram->menuondisplay = true;
+                                }
+                                if (!mainmix->adaptparam) inbetween = true;
+                                vx2 = box->vtxcoords->x1;
+                                vy2 = box->vtxcoords->y1 + box->vtxcoords->h - tf(0.011f);
+                            }
+                        }
+                    }
+                }
+                if (!mainprogram->indragbox && mainprogram->drageffsense) {
+                    mainprogram->drageff = evec[mainprogram->drageffpos];
+                    mainprogram->drageffsense = false;
+                }
+            }
 
-			// Draw effectmenuhints
-			mainprogram->inserteffectbox->vtxcoords->x1 = 1.0f; // shove inserteffectbox offscreen
-			if (!mainprogram->queueing) {
-				if (vy1 < 1.0 - mainprogram->layh - tf(0.09f) - tf(0.22f) - tf(0.05f) * (mainprogram->efflines - 1)) {
-					vy1 = 1.0 - mainprogram->layh - tf(0.09f) - tf(0.20f) - tf(0.05f) * (mainprogram->efflines - 1);
-				}
+            // Draw effectmenuhints
+            mainprogram->inserteffectbox->vtxcoords->x1 = 1.0f; // shove inserteffectbox offscreen
+            if (!mainprogram->queueing) {
+                if (vy1 < 1.0 - mainprogram->layh - tf(0.09f) - tf(0.22f) - tf(0.05f) * (mainprogram->efflines - 1)) {
+                    vy1 = 1.0 - mainprogram->layh - tf(0.09f) - tf(0.20f) - tf(0.05f) * (mainprogram->efflines - 1);
+                }
 
-				mainprogram->addeffectbox->vtxcoords->x1 = vx1;
-				mainprogram->addeffectbox->vtxcoords->y1 = vy1 - tf(0.04f);
-				mainprogram->addeffectbox->upvtxtoscr();
-				if (mainprogram->addeffectbox->in()) {
-					bottom = false;
-					draw_box(white, lightblue, mainprogram->addeffectbox, -1);
-				}
-				else {
-					draw_box(white, black, mainprogram->addeffectbox, -1);
-				}
-				render_text("+ Add effect", white, vx1 + tf(0.01f), vy1 - tf(0.028f), tf(0.0003f), tf(0.0005f));
-				mainprogram->addeffectbox->in();
+                mainprogram->addeffectbox->vtxcoords->x1 = vx1;
+                mainprogram->addeffectbox->vtxcoords->y1 = vy1 - tf(0.04f);
+                mainprogram->addeffectbox->upvtxtoscr();
+                if (mainprogram->addeffectbox->in()) {
+                    bottom = false;
+                    draw_box(white, lightblue, mainprogram->addeffectbox, -1);
+                } else {
+                    draw_box(white, black, mainprogram->addeffectbox, -1);
+                }
+                render_text("+ Add effect", white, vx1 + tf(0.01f), vy1 - tf(0.028f), tf(0.0003f), tf(0.0005f));
+                mainprogram->addeffectbox->in();
 
-				if (inbetween) { //true when mouse inbetween effect stack entries
-					inbetween = false;
-					draw_box(lightblue, lightblue, vx2, vy2, tf(mainprogram->layw), tf(0.022f), -1);
-					mainprogram->inserteffectbox->vtxcoords->x1 = mainprogram->mx * 2.0f / glob->w - 1.0f - tf(0.08f);
-					mainprogram->inserteffectbox->vtxcoords->y1 = 1.0f - (mainprogram->my * 2.0f / glob->h) - tf(0.019f);
-					mainprogram->inserteffectbox->upvtxtoscr();
-					draw_box(white, lightblue, mainprogram->inserteffectbox, -1);
-					render_text("+ Insert effect", white, mainprogram->mx * 2.0f / glob->w - 1.0f - tf(0.07f), 1.0f - (mainprogram->my * 2.0f / glob->h) - tf(0.004f), tf(0.0003f), tf(0.0005f));
-				}
-			}
+                if (inbetween) { //true when mouse inbetween effect stack entries
+                    inbetween = false;
+                    draw_box(lightblue, lightblue, vx2, vy2, tf(mainprogram->layw), tf(0.022f), -1);
+                    mainprogram->inserteffectbox->vtxcoords->x1 = mainprogram->mx * 2.0f / glob->w - 1.0f - tf(0.08f);
+                    mainprogram->inserteffectbox->vtxcoords->y1 =
+                            1.0f - (mainprogram->my * 2.0f / glob->h) - tf(0.019f);
+                    mainprogram->inserteffectbox->upvtxtoscr();
+                    draw_box(white, lightblue, mainprogram->inserteffectbox, -1);
+                    render_text("+ Insert effect", white, mainprogram->mx * 2.0f / glob->w - 1.0f - tf(0.07f),
+                                1.0f - (mainprogram->my * 2.0f / glob->h) - tf(0.004f), tf(0.0003f), tf(0.0005f));
+                }
+            }
 
-			// handle effect drag
-			if (mainprogram->drageff) {
-				int pos;
-				for (int j = this->effscroll[cat]; j < evec.size() + 1; j++) {
-					// calculate dragged effect temporary position pos when mouse between
-					//limits under and upper
-					int under1, under2, upper;
-					if (j == this->effscroll[cat]) {
-						// mouse above first bin
-						under2 = 0;
-						under1 = evec[this->effscroll[cat]]->box->scrcoords->y1 - evec[this->effscroll[cat]]->box->scrcoords->h * 0.5f;
-					}
-					else {
-						under1 = evec[j - 1]->box->scrcoords->y1 + evec[j - 1]->box->scrcoords->h * 0.5f;
-						under2 = under1;
-					}
-					if (j == evec.size()) {
-						// mouse under last bin
-						upper = glob->h;
-					}
-					else upper = evec[j]->box->scrcoords->y1 + evec[j]->box->scrcoords->h * 0.5f;
-					if (mainprogram->my > under2 && mainprogram->my < upper) {
-						std::string name = mainprogram->drageff->get_namestring();
-						draw_box(white, darkred1, mainprogram->drageff->box->vtxcoords->x1, 1.0f - mainprogram->yscrtovtx(under1), mainprogram->drageff->box->vtxcoords->w, mainprogram->drageff->box->vtxcoords->h, -1);
-						render_text(name, white, mainprogram->drageff->box->vtxcoords->x1 + tf(0.01f), 1.0f - mainprogram->yscrtovtx(under1) + tf(0.05f) - tf(0.030f), tf(0.0003f), tf(0.0005f));
-						pos = j;
-						break;
-					}
-				}
-				if (mainprogram->lmover) {
-					// do effect drag
-					Node* bulastoutnode = this->lasteffnode[cat]->out[0];
-					if (mainprogram->drageffpos < pos) {
-						std::rotate(evec.begin() + mainprogram->drageffpos, evec.begin() + mainprogram->drageffpos + 1, evec.begin() + pos);
-					}
-					else {
-						std::rotate(evec.begin() + pos, evec.begin() + mainprogram->drageffpos, evec.begin() + mainprogram->drageffpos + 1);
-					}
-					for (int k = 0; k < evec.size(); k++) {
-						// set pos and box y1 and connect nodes for all effects in new list
-						if (k == 0) {
-							if (cat) {
-								if (this->pos == 0) {
-									mainprogram->nodesmain->currpage->connect_nodes(this->lasteffnode[0], evec[0]->node);
-								}
-								else {
-									mainprogram->nodesmain->currpage->connect_nodes(this->blendnode, evec[0]->node);
-								}
-							}
-							else {
-								mainprogram->nodesmain->currpage->connect_nodes(this->node, evec[0]->node);
-							}
-						}
-						else if (k < evec.size()) {
-							mainprogram->nodesmain->currpage->connect_nodes(evec[k - 1]->node, evec[k]->node);
-						}
-						if (k == evec.size() - 1) {
-							this->lasteffnode[cat] = evec[k]->node;
-							mainprogram->nodesmain->currpage->connect_nodes(evec[k]->node, bulastoutnode);
-						}
-						if (this->pos == 0 && this->effects[1].size() == 0) {
-							this->lasteffnode[1] = this->lasteffnode[0];
-						}
-						evec[k]->pos = k;
-						//evec->box->vtxcoords->y1 = (i + 1) * -0.05f;
-						//evec->box->upvtxtoscr();
-					}
-					mainprogram->drageff = nullptr;
-				}
-				if (mainprogram->rightmouse) {
-					// cancel bin drag
-					mainprogram->drageff = nullptr;
-					mainprogram->rightmouse = false;
-					mainprogram->menuactivation = false;
-					for (int i = 0; i < mainprogram->menulist.size(); i++) {
-						mainprogram->menulist[i]->state = 0;
-					}
-				}
-			}
-
-
-			// Handle color tolerance
-			if (this->pos > 0) {
-				if (this->blendnode->blendtype == COLOURKEY) {
-					Param* par = this->chtol;
-					par->box->lcolor[0] = 1.0;
-					par->box->lcolor[1] = 1.0;
-					par->box->lcolor[2] = 1.0;
-					par->box->lcolor[3] = 1.0;
-					par->box->acolor[0] = 0.2;
-					par->box->acolor[1] = 0.2;
-					par->box->acolor[2] = 0.2;
-					par->box->acolor[3] = 1.0;
-					par->box->vtxcoords->x1 = this->colorbox->vtxcoords->x1 + tf(0.07f);
-					par->box->vtxcoords->y1 = this->colorbox->vtxcoords->y1;
-					par->box->vtxcoords->w = tf(0.08f);
-					par->box->vtxcoords->h = this->colorbox->vtxcoords->h;
-					par->box->upvtxtoscr();
-
-					par->handle();
-				}
-			}
+            // handle effect drag
+            if (mainprogram->drageff) {
+                int pos;
+                for (int j = this->effscroll[cat]; j < evec.size() + 1; j++) {
+                    // calculate dragged effect temporary position pos when mouse between
+                    //limits under and upper
+                    int under1, under2, upper;
+                    if (j == this->effscroll[cat]) {
+                        // mouse above first bin
+                        under2 = 0;
+                        under1 = evec[this->effscroll[cat]]->box->scrcoords->y1 -
+                                 evec[this->effscroll[cat]]->box->scrcoords->h * 0.5f;
+                    } else {
+                        under1 = evec[j - 1]->box->scrcoords->y1 + evec[j - 1]->box->scrcoords->h * 0.5f;
+                        under2 = under1;
+                    }
+                    if (j == evec.size()) {
+                        // mouse under last bin
+                        upper = glob->h;
+                    } else upper = evec[j]->box->scrcoords->y1 + evec[j]->box->scrcoords->h * 0.5f;
+                    if (mainprogram->my > under2 && mainprogram->my < upper) {
+                        std::string name = mainprogram->drageff->get_namestring();
+                        draw_box(white, darkred1, mainprogram->drageff->box->vtxcoords->x1,
+                                 1.0f - mainprogram->yscrtovtx(under1), mainprogram->drageff->box->vtxcoords->w,
+                                 mainprogram->drageff->box->vtxcoords->h, -1);
+                        render_text(name, white, mainprogram->drageff->box->vtxcoords->x1 + tf(0.01f),
+                                    1.0f - mainprogram->yscrtovtx(under1) + tf(0.05f) - tf(0.030f), tf(0.0003f),
+                                    tf(0.0005f));
+                        pos = j;
+                        break;
+                    }
+                }
+                if (mainprogram->lmover) {
+                    // do effect drag
+                    Node *bulastoutnode = this->lasteffnode[cat]->out[0];
+                    if (mainprogram->drageffpos < pos) {
+                        std::rotate(evec.begin() + mainprogram->drageffpos, evec.begin() + mainprogram->drageffpos + 1,
+                                    evec.begin() + pos);
+                    } else {
+                        std::rotate(evec.begin() + pos, evec.begin() + mainprogram->drageffpos,
+                                    evec.begin() + mainprogram->drageffpos + 1);
+                    }
+                    for (int k = 0; k < evec.size(); k++) {
+                        // set pos and box y1 and connect nodes for all effects in new list
+                        if (k == 0) {
+                            if (cat) {
+                                if (this->pos == 0) {
+                                    mainprogram->nodesmain->currpage->connect_nodes(this->lasteffnode[0],
+                                                                                    evec[0]->node);
+                                } else {
+                                    mainprogram->nodesmain->currpage->connect_nodes(this->blendnode, evec[0]->node);
+                                }
+                            } else {
+                                mainprogram->nodesmain->currpage->connect_nodes(this->node, evec[0]->node);
+                            }
+                        } else if (k < evec.size()) {
+                            mainprogram->nodesmain->currpage->connect_nodes(evec[k - 1]->node, evec[k]->node);
+                        }
+                        if (k == evec.size() - 1) {
+                            this->lasteffnode[cat] = evec[k]->node;
+                            mainprogram->nodesmain->currpage->connect_nodes(evec[k]->node, bulastoutnode);
+                        }
+                        if (this->pos == 0 && this->effects[1].size() == 0) {
+                            this->lasteffnode[1] = this->lasteffnode[0];
+                        }
+                        evec[k]->pos = k;
+                        //evec->box->vtxcoords->y1 = (i + 1) * -0.05f;
+                        //evec->box->upvtxtoscr();
+                    }
+                    mainprogram->drageff = nullptr;
+                }
+                if (mainprogram->rightmouse) {
+                    // cancel bin drag
+                    mainprogram->drageff = nullptr;
+                    mainprogram->rightmouse = false;
+                    mainprogram->menuactivation = false;
+                    for (int i = 0; i < mainprogram->menulist.size(); i++) {
+                        mainprogram->menulist[i]->state = 0;
+                    }
+                }
+            }
 
 
-			// Draw mixfac->box
-			if (this->pos > 0 && (this->blendnode->blendtype == MIXING || this->blendnode->blendtype == WIPE)) {
-				Param* par = this->blendnode->mixfac;
-				par->handle();
-			}
+            // Handle color tolerance
+            if (this->pos > 0) {
+                if (this->blendnode->blendtype == COLOURKEY) {
+                    Param *par = this->chtol;
+                    par->box->lcolor[0] = 1.0;
+                    par->box->lcolor[1] = 1.0;
+                    par->box->lcolor[2] = 1.0;
+                    par->box->lcolor[3] = 1.0;
+                    par->box->acolor[0] = 0.2;
+                    par->box->acolor[1] = 0.2;
+                    par->box->acolor[2] = 0.2;
+                    par->box->acolor[3] = 1.0;
+                    par->box->vtxcoords->x1 = this->colorbox->vtxcoords->x1 + tf(0.07f);
+                    par->box->vtxcoords->y1 = this->colorbox->vtxcoords->y1;
+                    par->box->vtxcoords->w = tf(0.08f);
+                    par->box->vtxcoords->h = this->colorbox->vtxcoords->h;
+                    par->box->upvtxtoscr();
 
-			// Draw speed->box
-			Param* par = this->speed;
-			par->handle();
-			mainprogram->frontbatch = true;
-			draw_box(lightgrey, nullptr, this->speed->box->vtxcoords->x1, this->speed->box->vtxcoords->y1, this->speed->box->vtxcoords->w * 0.30f, tf(0.05f), -1);			mainprogram->frontbatch = true;
-			mainprogram->frontbatch = false;
+                    par->handle();
+                }
+            }
 
-			// Draw opacity->box
-			par = this->opacity;
-			par->handle();
 
-			// Draw volume->box
-			if (this->audioplaying) {
-				par = this->volume;
-				par->handle();
-			}
+            // Draw mixfac->box
+            if (this->pos > 0 && (this->blendnode->blendtype == MIXING || this->blendnode->blendtype == WIPE)) {
+                Param *par = this->blendnode->mixfac;
+                par->handle();
+            }
 
-			// Draw and handle playbutton revbutton bouncebutton
-			if (this->playbut->box->in()) {
-				this->playbut->box->acolor[0] = 0.5;
-				this->playbut->box->acolor[1] = 0.5;
-				this->playbut->box->acolor[2] = 1.0;
-				this->playbut->box->acolor[3] = 1.0;
-				if (mainprogram->leftmouse) {
-					this->playbut->value = !this->playbut->value;
-					this->set_clones();
-					if (this->playbut->value) {
-						this->revbut->value = false;
-						this->bouncebut->value = false;
-					}
-					for (int i = 0; i < loopstation->elems.size(); i++) {
-						if (loopstation->elems[i]->recbut->value) {
-							loopstation->elems[i]->add_button(this->playbut);
-						}
-					}
-				}
-			}
-			else {
-				this->playbut->box->acolor[0] = 0.3;
-				this->playbut->box->acolor[1] = 0.6;
-				this->playbut->box->acolor[2] = 0.4;
-				this->playbut->box->acolor[3] = 1.0;
-				if (this->playbut->value) {
-					this->playbut->box->acolor[0] = 0.3;
-					this->playbut->box->acolor[1] = 0.4;
-					this->playbut->box->acolor[2] = 0.7;
-					this->playbut->box->acolor[3] = 1.0;
-				}
-			}
-			draw_box(this->playbut->box, -1);
-			register_triangle_draw(white, white, this->playbut->box->vtxcoords->x1 + tf(0.0078f), this->playbut->box->vtxcoords->y1 + tf(0.0416f) - tf(0.030f), tf(0.011f), tf(0.0208f), RIGHT, CLOSED);
-			if (this->revbut->box->in()) {
-				this->revbut->box->acolor[0] = 0.5;
-				this->revbut->box->acolor[1] = 0.5;
-				this->revbut->box->acolor[2] = 1.0;
-				this->revbut->box->acolor[3] = 1.0;
-				if (mainprogram->leftmouse) {
-					this->revbut->value = !this->revbut->value;
-					this->set_clones();
-					if (this->revbut->value) {
-						this->playbut->value = false;
-						this->bouncebut->value = false;
-					}
-					for (int i = 0; i < loopstation->elems.size(); i++) {
-						if (loopstation->elems[i]->recbut->value) {
-							loopstation->elems[i]->add_button(this->revbut);
-						}
-					}
-				}
-			}
-			else {
-				this->revbut->box->acolor[0] = 0.3;
-				this->revbut->box->acolor[1] = 0.6;
-				this->revbut->box->acolor[2] = 0.4;
-				this->revbut->box->acolor[3] = 1.0;
-				if (this->revbut->value) {
-					this->revbut->box->acolor[0] = 0.3;
-					this->revbut->box->acolor[1] = 0.4;
-					this->revbut->box->acolor[2] = 0.7;
-					this->revbut->box->acolor[3] = 1.0;
-				}
-			}
-			draw_box(this->revbut->box, -1);
-			register_triangle_draw(white, white, this->revbut->box->vtxcoords->x1 + tf(0.00625f), this->revbut->box->vtxcoords->y1 + tf(0.0416f) - tf(0.030f), tf(0.011f), tf(0.0208f), LEFT, CLOSED);
-			if (this->bouncebut->box->in()) {
-				this->bouncebut->box->acolor[0] = 0.5;
-				this->bouncebut->box->acolor[1] = 0.5;
-				this->bouncebut->box->acolor[2] = 1.0;
-				this->bouncebut->box->acolor[3] = 1.0;
-				if (mainprogram->leftmouse) {
-					this->bouncebut->value = !this->bouncebut->value;
-					this->set_clones();
-					if (this->bouncebut->value) {
-						if (this->revbut->value) {
-							this->bouncebut->value = 2;
-							this->revbut->value = 0;
-						}
-						else this->playbut->value = 0;
-					}
-					for (int i = 0; i < loopstation->elems.size(); i++) {
-						if (loopstation->elems[i]->recbut->value) {
-							loopstation->elems[i]->add_button(this->bouncebut);
-						}
-					}
-				}
-			}
-			else {
-				this->bouncebut->box->acolor[0] = 0.3;
-				this->bouncebut->box->acolor[1] = 0.6;
-				this->bouncebut->box->acolor[2] = 0.4;
-				this->bouncebut->box->acolor[3] = 1.0;
-				if (this->bouncebut->value) {
-					this->bouncebut->box->acolor[0] = 0.3;
-					this->bouncebut->box->acolor[1] = 0.4;
-					this->bouncebut->box->acolor[2] = 0.7;
-					this->bouncebut->box->acolor[3] = 1.0;
-				}
-			}
-			draw_box(this->bouncebut->box, -1);
-			register_triangle_draw(white, white, this->bouncebut->box->vtxcoords->x1 + tf(0.00625f), this->bouncebut->box->vtxcoords->y1 + tf(0.0416f) - tf(0.030f), tf(0.0078f), tf(0.0208f), LEFT, CLOSED);
-			register_triangle_draw(white, white, this->bouncebut->box->vtxcoords->x1 + tf(0.017f), this->bouncebut->box->vtxcoords->y1 + tf(0.0416f) - tf(0.030f), tf(0.0078f), tf(0.0208f), RIGHT, CLOSED);
+            // Draw speed->box
+            Param *par = this->speed;
+            if (this->filename == "" or this->type == ELEM_LIVE) {
+                draw_box(lightgrey, darkgrey, this->speed->box->vtxcoords->x1, this->speed->box->vtxcoords->y1,
+                         this->speed->box->vtxcoords->w * 0.30f, tf(0.05f), -1);
+            } else par->handle();
+            if (par == mainmix->adaptparam) {
+                for (int i = 0; i < mainmix->currlays[!mainprogram->prevmodus].size(); i++) {
+                    mainmix->currlays[!mainprogram->prevmodus][i]->speed->value = par->value;
+                }
+            }
+            mainprogram->frontbatch = true;
+            draw_box(lightgrey, nullptr, this->speed->box->vtxcoords->x1, this->speed->box->vtxcoords->y1,
+                     this->speed->box->vtxcoords->w * 0.30f, tf(0.05f), -1);
+            mainprogram->frontbatch = false;
 
-			// Draw and handle frameforward framebackward
-			if (this->frameforward->box->in()) {
-				this->frameforward->box->acolor[0] = 0.5;
-				this->frameforward->box->acolor[1] = 0.5;
-				this->frameforward->box->acolor[2] = 1.0;
-				this->frameforward->box->acolor[3] = 1.0;
-				if (mainprogram->leftmouse) {
-					this->frame += 1;
-					if (this->frame >= this->numf) this->frame = 0.0f;
-					this->frameforward->box->acolor[0] = 0.3;
-					this->frameforward->box->acolor[1] = 0.4;
-					this->frameforward->box->acolor[2] = 0.7;
-					this->frameforward->box->acolor[3] = 1.0;
-					this->prevffw = true;
-					this->prevfbw = false;
-					for (int i = 0; i < loopstation->elems.size(); i++) {
-						if (loopstation->elems[i]->recbut->value) {
-							loopstation->elems[i]->add_button(this->frameforward);
-						}
-					}
-				}
-			}
-			else {
-				this->frameforward->box->acolor[0] = 0.3;
-				this->frameforward->box->acolor[1] = 0.6;
-				this->frameforward->box->acolor[2] = 0.4;
-				this->frameforward->box->acolor[3] = 1.0;
-			}
-			draw_box(this->frameforward->box, -1);
-			register_triangle_draw(white, white, this->frameforward->box->vtxcoords->x1 + tf(0.0075f), this->frameforward->box->vtxcoords->y1 + tf(0.0416f) - tf(0.030f), tf(0.011f), tf(0.0208f), RIGHT, OPEN);
-			if (this->framebackward->box->in()) {
-				this->framebackward->box->acolor[0] = 0.5;
-				this->framebackward->box->acolor[1] = 0.5;
-				this->framebackward->box->acolor[2] = 1.0;
-				this->framebackward->box->acolor[3] = 1.0;
-				if (mainprogram->leftmouse) {
-					this->frame -= 1;
-					if (this->frame < 0) this->frame = this->numf - 1.0f;
-					this->framebackward->box->acolor[0] = 0.3;
-					this->framebackward->box->acolor[1] = 0.4;
-					this->framebackward->box->acolor[2] = 0.7;
-					this->framebackward->box->acolor[3] = 1.0;
-					this->prevfbw = true;
-					this->prevffw = false;
-					for (int i = 0; i < loopstation->elems.size(); i++) {
-						if (loopstation->elems[i]->recbut->value) {
-							loopstation->elems[i]->add_button(this->framebackward);
-						}
-					}
-				}
-			}
-			else {
-				this->framebackward->box->acolor[0] = 0.3;
-				this->framebackward->box->acolor[1] = 0.6;
-				this->framebackward->box->acolor[2] = 0.4;
-				this->framebackward->box->acolor[3] = 1.0;
-			}
-			draw_box(this->framebackward->box, -1);
-			register_triangle_draw(white, white, this->framebackward->box->vtxcoords->x1 + tf(0.00625f), this->framebackward->box->vtxcoords->y1 + tf(0.0416f) - tf(0.030f), tf(0.011f), tf(0.0208f), LEFT, OPEN);
+            // Draw opacity->box
+            par = this->opacity;
+            if (this->filename == "" or this->type == ELEM_LIVE) {
+                draw_box(lightgrey, darkgrey, this->opacity->box, -1);
+            } else par->handle();
+            if (par == mainmix->adaptparam) {
+                for (int i = 0; i < mainmix->currlays[!mainprogram->prevmodus].size(); i++) {
+                    mainmix->currlays[!mainprogram->prevmodus][i]->opacity->value = par->value;
+                }
+            }
 
-			// Draw and handle genmidibutton
-			this->genmidibut->handle(0, 0);
-			this->set_clones();  // reminder: only if changed
-			std::string butstr;
-			if (this->genmidibut->value == 0) butstr = "off";
-			else if (this->genmidibut->value == 1) butstr = "A";
-			else if (this->genmidibut->value == 2) butstr = "B";
-			else if (this->genmidibut->value == 3) butstr = "C";
-			else if (this->genmidibut->value == 4) butstr = "D";
-			render_text(butstr, white, this->genmidibut->box->vtxcoords->x1 + tf(0.0078f), this->genmidibut->box->vtxcoords->y1 + tf(0.0416f) - tf(0.030f), tf(0.0003f), tf(0.0005f));
+            // Draw volume->box
+            if (this->audioplaying) {
+                par = this->volume;
+                par->handle();
+            }
 
-			// Draw and handle loopbox
-			bool ends = false;
-			if (this->loopbox->in()) {
-				if (mainprogram->menuactivation) {
-					mainprogram->loopmenu->state = 2;
-					mainmix->mouselayer = this;
-					mainprogram->menuactivation = false;
-				}
+            // Draw and handle playbutton revbutton bouncebutton
+            if (this->playbut->box->in()) {
+                this->playbut->box->acolor[0] = 0.5;
+                this->playbut->box->acolor[1] = 0.5;
+                this->playbut->box->acolor[2] = 1.0;
+                this->playbut->box->acolor[3] = 1.0;
+                if (mainprogram->leftmouse) {
+                    this->playbut->value = !this->playbut->value;
+                    for (int i = 0; i < mainmix->currlays[!mainprogram->prevmodus].size(); i++) {
+                        mainmix->currlays[!mainprogram->prevmodus][i]->playbut->value = this->playbut->value;
+                        mainmix->currlays[!mainprogram->prevmodus][i]->set_clones();
+                        if (mainmix->currlays[!mainprogram->prevmodus][i]->playbut->value) {
+                            mainmix->currlays[!mainprogram->prevmodus][i]->revbut->value = false;
+                            mainmix->currlays[!mainprogram->prevmodus][i]->bouncebut->value = false;
+                        }
+                        for (int i = 0; i < loopstation->elems.size(); i++) {
+                            if (loopstation->elems[i]->recbut->value) {
+                                loopstation->elems[i]->add_button(mainmix->currlays[!mainprogram->prevmodus][i]->playbut);
+                            }
+                        }
+                    }
+                }
+            } else {
+                if (this->filename == "" or this->type == ELEM_LIVE) {
+                    this->playbut->box->acolor[0] = 0.3;
+                    this->playbut->box->acolor[1] = 0.3;
+                    this->playbut->box->acolor[2] = 0.3;
+                    this->playbut->box->acolor[3] = 1.0;
+                } else {
+                    this->playbut->box->acolor[0] = 0.3;
+                    this->playbut->box->acolor[1] = 0.6;
+                    this->playbut->box->acolor[2] = 0.4;
+                    this->playbut->box->acolor[3] = 1.0;
+                    if (this->playbut->value) {
+                        this->playbut->box->acolor[0] = 0.3;
+                        this->playbut->box->acolor[1] = 0.4;
+                        this->playbut->box->acolor[2] = 0.7;
+                        this->playbut->box->acolor[3] = 1.0;
+                    }
+                }
+            }
+            draw_box(this->playbut->box, -1);
+            register_triangle_draw(white, white, this->playbut->box->vtxcoords->x1 + tf(0.0078f),
+                                   this->playbut->box->vtxcoords->y1 + tf(0.0416f) - tf(0.030f), tf(0.011f),
+                                   tf(0.0208f), RIGHT, CLOSED);
+            if (this->revbut->box->in()) {
+                this->revbut->box->acolor[0] = 0.5;
+                this->revbut->box->acolor[1] = 0.5;
+                this->revbut->box->acolor[2] = 1.0;
+                this->revbut->box->acolor[3] = 1.0;
+                if (mainprogram->leftmouse) {
+                    this->revbut->value = !this->revbut->value;
+                    for (int i = 0; i < mainmix->currlays[!mainprogram->prevmodus].size(); i++) {
+                        mainmix->currlays[!mainprogram->prevmodus][i]->revbut->value = this->revbut->value;
+                        mainmix->currlays[!mainprogram->prevmodus][i]->set_clones();
+                        if (mainmix->currlays[!mainprogram->prevmodus][i]->revbut->value) {
+                            mainmix->currlays[!mainprogram->prevmodus][i]->playbut->value = false;
+                            mainmix->currlays[!mainprogram->prevmodus][i]->bouncebut->value = false;
+                        }
+                        for (int i = 0; i < loopstation->elems.size(); i++) {
+                            if (loopstation->elems[i]->recbut->value) {
+                                loopstation->elems[i]->add_button(mainmix->currlays[!mainprogram->prevmodus][i]->revbut);
+                            }
+                        }
+                    }
+                }
+            } else {
+                if (this->filename == "" or this->type == ELEM_LIVE) {
+                    this->revbut->box->acolor[0] = 0.3;
+                    this->revbut->box->acolor[1] = 0.3;
+                    this->revbut->box->acolor[2] = 0.3;
+                    this->revbut->box->acolor[3] = 1.0;
+                } else {
+                    this->revbut->box->acolor[0] = 0.3;
+                    this->revbut->box->acolor[1] = 0.6;
+                    this->revbut->box->acolor[2] = 0.4;
+                    this->revbut->box->acolor[3] = 1.0;
+                    if (this->revbut->value) {
+                        this->revbut->box->acolor[0] = 0.3;
+                        this->revbut->box->acolor[1] = 0.4;
+                        this->revbut->box->acolor[2] = 0.7;
+                        this->revbut->box->acolor[3] = 1.0;
+                    }
+                }
+            }
+            draw_box(this->revbut->box, -1);
+            register_triangle_draw(white, white, this->revbut->box->vtxcoords->x1 + tf(0.00625f),
+                                   this->revbut->box->vtxcoords->y1 + tf(0.0416f) - tf(0.030f), tf(0.011f), tf(0.0208f),
+                                   LEFT, CLOSED);
+            if (this->bouncebut->box->in()) {
+                this->bouncebut->box->acolor[0] = 0.5;
+                this->bouncebut->box->acolor[1] = 0.5;
+                this->bouncebut->box->acolor[2] = 1.0;
+                this->bouncebut->box->acolor[3] = 1.0;
+                if (mainprogram->leftmouse) {
+                    this->bouncebut->value = !this->bouncebut->value;
+                    for (int i = 0; i < mainmix->currlays[!mainprogram->prevmodus].size(); i++) {
+                        mainmix->currlays[!mainprogram->prevmodus][i]->bouncebut->value = this->bouncebut->value;
+                        mainmix->currlays[!mainprogram->prevmodus][i]->set_clones();
+                        if (mainmix->currlays[!mainprogram->prevmodus][i]->bouncebut->value) {
+                            if (mainmix->currlays[!mainprogram->prevmodus][i]->revbut->value) {
+                                mainmix->currlays[!mainprogram->prevmodus][i]->bouncebut->value = 2;
+                                mainmix->currlays[!mainprogram->prevmodus][i]->revbut->value = 0;
+                            } else mainmix->currlays[!mainprogram->prevmodus][i]->playbut->value = 0;
+                        }
+                        for (int i = 0; i < loopstation->elems.size(); i++) {
+                            if (loopstation->elems[i]->recbut->value) {
+                                loopstation->elems[i]->add_button(mainmix->currlays[!mainprogram->prevmodus][i]->bouncebut);
+                            }
+                        }
+                    }
+                }
+            } else {
+                if (this->filename == "" or this->type == ELEM_LIVE) {
+                    this->bouncebut->box->acolor[0] = 0.3;
+                    this->bouncebut->box->acolor[1] = 0.3;
+                    this->bouncebut->box->acolor[2] = 0.3;
+                    this->bouncebut->box->acolor[3] = 1.0;
+                } else {
+                    this->bouncebut->box->acolor[0] = 0.3;
+                    this->bouncebut->box->acolor[1] = 0.6;
+                    this->bouncebut->box->acolor[2] = 0.4;
+                    this->bouncebut->box->acolor[3] = 1.0;
+                    if (this->bouncebut->value) {
+                        this->bouncebut->box->acolor[0] = 0.3;
+                        this->bouncebut->box->acolor[1] = 0.4;
+                        this->bouncebut->box->acolor[2] = 0.7;
+                        this->bouncebut->box->acolor[3] = 1.0;
+                    }
+                }
+            }
+            draw_box(this->bouncebut->box, -1);
+            register_triangle_draw(white, white, this->bouncebut->box->vtxcoords->x1 + tf(0.00625f),
+                                   this->bouncebut->box->vtxcoords->y1 + tf(0.0416f) - tf(0.030f), tf(0.0078f),
+                                   tf(0.0208f), LEFT, CLOSED);
+            register_triangle_draw(white, white, this->bouncebut->box->vtxcoords->x1 + tf(0.017f),
+                                   this->bouncebut->box->vtxcoords->y1 + tf(0.0416f) - tf(0.030f), tf(0.0078f),
+                                   tf(0.0208f), RIGHT, CLOSED);
 
-				if (pdistance(mainprogram->mx, mainprogram->my, this->loopbox->scrcoords->x1 + this->startframe * (this->loopbox->scrcoords->w / (this->numf - 1)), this->loopbox->scrcoords->y1, this->loopbox->scrcoords->x1 + this->startframe * (this->loopbox->scrcoords->w / (this->numf - 1)), this->loopbox->scrcoords->y1 - mainprogram->yvtxtoscr(0.045f)) < 6) {
-					ends = true;
-					if (mainprogram->middlemousedown) {
-						this->scritching = 2;
-						mainprogram->middlemousedown = false;
-					}
-				}
-				else if (pdistance(mainprogram->mx, mainprogram->my, this->loopbox->scrcoords->x1 + this->startframe * (this->loopbox->scrcoords->w / (this->numf - 1)) + (this->endframe - this->startframe) * (this->loopbox->scrcoords->w / (this->numf - 1)), this->loopbox->scrcoords->y1, this->loopbox->scrcoords->x1 + this->startframe * (this->loopbox->scrcoords->w / (this->numf - 1)) + (this->endframe - this->startframe) * (this->loopbox->scrcoords->w / (this->numf - 1)), this->loopbox->scrcoords->y1 - mainprogram->yvtxtoscr(0.045f)) < 6) {
-					ends = true;
-					if (mainprogram->middlemousedown) {
-						this->scritching = 3;
-						mainprogram->middlemousedown = false;
-					}
-				}
-				else if (mainprogram->mx > this->loopbox->scrcoords->x1 + this->startframe * (this->loopbox->scrcoords->w / (this->numf - 1)) && mainprogram->mx < this->loopbox->scrcoords->x1 + this->startframe * (this->loopbox->scrcoords->w / (this->numf - 1)) + (this->endframe - this->startframe) * (this->loopbox->scrcoords->w / (this->numf - 1))) {
-					if (mainprogram->middlemousedown) {
-						mainmix->prevx = mainprogram->mx;
-						this->scritching = 5;
-						mainprogram->middlemousedown = false;
-					}
-				}
-			}
-			if (this->loopbox->in()) {
-				if (mainprogram->leftmousedown) {
-					this->scritching = 1;
-					this->frame = (this->numf - 1.0f) * ((mainprogram->mx - this->loopbox->scrcoords->x1) / this->loopbox->scrcoords->w);
-					this->set_clones();
-				}
-			}
-			if (this->scritching) mainprogram->leftmousedown = false;
-			if (this->scritching == 1) {
-				this->frame = (this->numf - 1) * ((mainprogram->mx - this->loopbox->scrcoords->x1) / this->loopbox->scrcoords->w);
-				if (this->frame < 0) this->frame = 0.0f;
-				else if (this->frame >= this->numf) this->frame = this->numf - 1;
-				this->set_clones();
-				if (mainprogram->leftmouse && !mainprogram->menuondisplay) this->scritching = 4;
-			}
-			else if (this->scritching == 2) {
-				this->startframe = (this->numf - 1) * ((mainprogram->mx - this->loopbox->scrcoords->x1) / this->loopbox->scrcoords->w);
-				if (this->startframe < 0) this->startframe = 0.0f;
-				else if (this->startframe >= this->numf) this->startframe = this->numf - 1;
-				if (this->startframe > this->frame) this->frame = this->startframe;
-				if (this->startframe > this->endframe) this->startframe = this->endframe;
-				this->set_clones();
-				if (mainprogram->middlemouse) this->scritching = 0;
-			}
-			else if (this->scritching == 3) {
-				this->endframe = (this->numf - 1) * ((mainprogram->mx - this->loopbox->scrcoords->x1) / this->loopbox->scrcoords->w);
-				if (this->endframe < 0) this->endframe = 0.0f;
-				else if (this->endframe >= this->numf) this->endframe = this->numf - 1;
-				//if (this->endframe < this->frame) this->frame = this->endframe;
-				//if (this->endframe < this->startframe) this->endframe = this->startframe;
-				this->set_clones();
-				if (mainprogram->middlemouse) this->scritching = 0;
-			}
-			else if (this->scritching == 5) {
-				float start = 0.0f;
-				float end = 0.0f;
-				this->startframe += (mainprogram->mx - mainmix->prevx) / (this->loopbox->scrcoords->w / (this->numf - 1));
-				if (this->startframe < 0) {
-					start = this->startframe - 1;
-					this->startframe = 0.0f;
-				}
-				else if (this->startframe >= this->numf) this->startframe = this->numf - 1;
-				if (this->startframe > this->frame) this->frame = this->startframe;
-				if (this->startframe > this->endframe) this->startframe = this->endframe;
-				this->endframe += (mainprogram->mx - mainmix->prevx) / (this->loopbox->scrcoords->w / (this->numf - 1)) - start;
-				if (this->endframe < 0) this->endframe = 0.0f;
-				else if (this->endframe >= this->numf) {
-					end = this->endframe - (this->numf - 1);
-					this->startframe -= end;
-					this->endframe = this->numf - 1;
-				}
-				mainmix->prevx = mainprogram->mx;
-				//if (this->endframe < this->frame) this->frame = this->endframe;
-				//if (this->endframe < this->startframe) this->endframe = this->startframe;
-				this->set_clones();
-				if (mainprogram->middlemouse) this->scritching = 0;
-			}
+            // Draw and handle frameforward framebackward
+            if (this->frameforward->box->in()) {
+                this->frameforward->box->acolor[0] = 0.5;
+                this->frameforward->box->acolor[1] = 0.5;
+                this->frameforward->box->acolor[2] = 1.0;
+                this->frameforward->box->acolor[3] = 1.0;
+                if (mainprogram->leftmouse) {
+                    for (int i = 0; i < mainmix->currlays[!mainprogram->prevmodus].size(); i++) {
+                        mainmix->currlays[!mainprogram->prevmodus][i]->frame += 1;
+                        if (mainmix->currlays[!mainprogram->prevmodus][i]->frame >= mainmix->currlays[!mainprogram->prevmodus][i]->numf)
+                            mainmix->currlays[!mainprogram->prevmodus][i]->frame = 0.0f;
+                    }
+                    this->frameforward->box->acolor[0] = 0.3;
+                    this->frameforward->box->acolor[1] = 0.4;
+                    this->frameforward->box->acolor[2] = 0.7;
+                    this->frameforward->box->acolor[3] = 1.0;
+                    this->prevffw = true;
+                    this->prevfbw = false;
+                    for (int i = 0; i < loopstation->elems.size(); i++) {
+                        if (loopstation->elems[i]->recbut->value) {
+                            loopstation->elems[i]->add_button(this->frameforward);
+                        }
+                    }
+                }
+            } else {
+                if (this->filename == "" or this->type == ELEM_LIVE) {
+                    this->frameforward->box->acolor[0] = 0.3;
+                    this->frameforward->box->acolor[1] = 0.3;
+                    this->frameforward->box->acolor[2] = 0.3;
+                    this->frameforward->box->acolor[3] = 1.0;
+                } else {
+                    this->frameforward->box->acolor[0] = 0.3;
+                    this->frameforward->box->acolor[1] = 0.6;
+                    this->frameforward->box->acolor[2] = 0.4;
+                    this->frameforward->box->acolor[3] = 1.0;
+                }
+            }
+            draw_box(this->frameforward->box, -1);
+            register_triangle_draw(white, white, this->frameforward->box->vtxcoords->x1 + tf(0.0075f),
+                                   this->frameforward->box->vtxcoords->y1 + tf(0.0416f) - tf(0.030f), tf(0.011f),
+                                   tf(0.0208f), RIGHT, OPEN);
+            if (this->framebackward->box->in()) {
+                this->framebackward->box->acolor[0] = 0.5;
+                this->framebackward->box->acolor[1] = 0.5;
+                this->framebackward->box->acolor[2] = 1.0;
+                this->framebackward->box->acolor[3] = 1.0;
+                if (mainprogram->leftmouse) {
+                    for (int i = 0; i < mainmix->currlays[!mainprogram->prevmodus].size(); i++) {
+                        mainmix->currlays[!mainprogram->prevmodus][i]->frame -= 1;
+                        if (mainmix->currlays[!mainprogram->prevmodus][i]->frame < 0)
+                            mainmix->currlays[!mainprogram->prevmodus][i]->frame = mainmix->currlays[!mainprogram->prevmodus][i]->numf - 1.0f;
+                    }
+                    this->framebackward->box->acolor[0] = 0.3;
+                    this->framebackward->box->acolor[1] = 0.4;
+                    this->framebackward->box->acolor[2] = 0.7;
+                    this->framebackward->box->acolor[3] = 1.0;
+                    this->prevfbw = true;
+                    this->prevffw = false;
+                    for (int i = 0; i < loopstation->elems.size(); i++) {
+                        if (loopstation->elems[i]->recbut->value) {
+                            loopstation->elems[i]->add_button(this->framebackward);
+                        }
+                    }
+                }
+            } else {
+                if (this->filename == "" or this->type == ELEM_LIVE) {
+                    this->framebackward->box->acolor[0] = 0.3;
+                    this->framebackward->box->acolor[1] = 0.3;
+                    this->framebackward->box->acolor[2] = 0.3;
+                    this->framebackward->box->acolor[3] = 1.0;
+                } else {
+                    this->framebackward->box->acolor[0] = 0.3;
+                    this->framebackward->box->acolor[1] = 0.6;
+                    this->framebackward->box->acolor[2] = 0.4;
+                    this->framebackward->box->acolor[3] = 1.0;
+                }
+            }
+            draw_box(this->framebackward->box, -1);
+            register_triangle_draw(white, white, this->framebackward->box->vtxcoords->x1 + tf(0.00625f),
+                                   this->framebackward->box->vtxcoords->y1 + tf(0.0416f) - tf(0.030f), tf(0.011f),
+                                   tf(0.0208f), LEFT, OPEN);
+
+            // Draw and handle genmidibutton
+            this->genmidibut->handle(0, 0);
+            for (int i = 0; i < mainmix->currlays[!mainprogram->prevmodus].size(); i++) {
+                mainmix->currlays[!mainprogram->prevmodus][i]->genmidibut->value = this->genmidibut->value;
+                mainmix->currlays[!mainprogram->prevmodus][i]->set_clones();  // reminder: only if changed
+            }
+            std::string butstr;
+            if (this->genmidibut->value == 0) butstr = "off";
+            else if (this->genmidibut->value == 1) butstr = "A";
+            else if (this->genmidibut->value == 2) butstr = "B";
+            else if (this->genmidibut->value == 3) butstr = "C";
+            else if (this->genmidibut->value == 4) butstr = "D";
+            render_text(butstr, white, this->genmidibut->box->vtxcoords->x1 + tf(0.0078f),
+                        this->genmidibut->box->vtxcoords->y1 + tf(0.0416f) - tf(0.030f), tf(0.0003f), tf(0.0005f));
+
+            // Draw and handle loopbox
+            bool ends = false;
+            if (this->loopbox->in()) {
+                if (mainprogram->menuactivation) {
+                    mainprogram->loopmenu->state = 2;
+                    mainmix->mouselayer = this;
+                    mainprogram->menuactivation = false;
+                }
+
+                if (pdistance(mainprogram->mx, mainprogram->my, this->loopbox->scrcoords->x1 + this->startframe *
+                                                                                               (this->loopbox->scrcoords->w /
+                                                                                                (this->numf - 1)),
+                              this->loopbox->scrcoords->y1, this->loopbox->scrcoords->x1 + this->startframe *
+                                                                                           (this->loopbox->scrcoords->w /
+                                                                                            (this->numf - 1)),
+                              this->loopbox->scrcoords->y1 - mainprogram->yvtxtoscr(0.045f)) < 6) {
+                    ends = true;
+                    if (mainprogram->middlemousedown) {
+                        this->scritching = 2;
+                        mainprogram->middlemousedown = false;
+                    }
+                } else if (pdistance(mainprogram->mx, mainprogram->my, this->loopbox->scrcoords->x1 + this->startframe *
+                                                                                                      (this->loopbox->scrcoords->w /
+                                                                                                       (this->numf -
+                                                                                                        1)) +
+                                                                       (this->endframe - this->startframe) *
+                                                                       (this->loopbox->scrcoords->w / (this->numf - 1)),
+                                     this->loopbox->scrcoords->y1, this->loopbox->scrcoords->x1 + this->startframe *
+                                                                                                  (this->loopbox->scrcoords->w /
+                                                                                                   (this->numf - 1)) +
+                                                                   (this->endframe - this->startframe) *
+                                                                   (this->loopbox->scrcoords->w / (this->numf - 1)),
+                                     this->loopbox->scrcoords->y1 - mainprogram->yvtxtoscr(0.045f)) < 6) {
+                    ends = true;
+                    if (mainprogram->middlemousedown) {
+                        this->scritching = 3;
+                        mainprogram->middlemousedown = false;
+                    }
+                } else if (mainprogram->mx > this->loopbox->scrcoords->x1 +
+                                             this->startframe * (this->loopbox->scrcoords->w / (this->numf - 1)) &&
+                           mainprogram->mx < this->loopbox->scrcoords->x1 +
+                                             this->startframe * (this->loopbox->scrcoords->w / (this->numf - 1)) +
+                                             (this->endframe - this->startframe) *
+                                             (this->loopbox->scrcoords->w / (this->numf - 1))) {
+                    if (mainprogram->middlemousedown) {
+                        mainmix->prevx = mainprogram->mx;
+                        this->scritching = 5;
+                        mainprogram->middlemousedown = false;
+                    }
+                }
+            }
+            this->oldframe = this->frame;
+            if (this->loopbox->in()) {
+                if (mainprogram->leftmousedown) {
+                    this->scritching = 1;
+                    this->frame = (this->numf - 1.0f) *
+                                  ((mainprogram->mx - this->loopbox->scrcoords->x1) / this->loopbox->scrcoords->w);
+                    this->set_clones();
+                }
+            }
+            if (this->scritching) mainprogram->leftmousedown = false;
+            if (this->scritching == 1) {
+                this->frame = (this->numf - 1) *
+                              ((mainprogram->mx - this->loopbox->scrcoords->x1) / this->loopbox->scrcoords->w);
+                if (this->frame < 0) this->frame = 0.0f;
+                else if (this->frame >= this->numf) this->frame = this->numf - 1;
+                this->set_clones();
+                if (mainprogram->leftmouse && !mainprogram->menuondisplay) this->scritching = 4;
+            } else if (this->scritching == 2) {
+                this->startframe = (this->numf - 1) *
+                                   ((mainprogram->mx - this->loopbox->scrcoords->x1) / this->loopbox->scrcoords->w);
+                if (this->startframe < 0) this->startframe = 0.0f;
+                else if (this->startframe >= this->numf) this->startframe = this->numf - 1;
+                if (this->startframe > this->frame) this->frame = this->startframe;
+                if (this->startframe > this->endframe) this->startframe = this->endframe;
+                this->set_clones();
+                if (mainprogram->middlemouse) this->scritching = 0;
+            } else if (this->scritching == 3) {
+                this->endframe = (this->numf - 1) *
+                                 ((mainprogram->mx - this->loopbox->scrcoords->x1) / this->loopbox->scrcoords->w);
+                if (this->endframe < 0) this->endframe = 0.0f;
+                else if (this->endframe >= this->numf) this->endframe = this->numf - 1;
+                //if (this->endframe < this->frame) this->frame = this->endframe;
+                //if (this->endframe < this->startframe) this->endframe = this->startframe;
+                this->set_clones();
+                if (mainprogram->middlemouse) this->scritching = 0;
+            } else if (this->scritching == 5) {
+                float start = 0.0f;
+                float end = 0.0f;
+                this->startframe +=
+                        (mainprogram->mx - mainmix->prevx) / (this->loopbox->scrcoords->w / (this->numf - 1));
+                if (this->startframe < 0) {
+                    start = this->startframe - 1;
+                    this->startframe = 0.0f;
+                } else if (this->startframe >= this->numf) this->startframe = this->numf - 1;
+                if (this->startframe > this->frame) this->frame = this->startframe;
+                if (this->startframe > this->endframe) this->startframe = this->endframe;
+                this->endframe +=
+                        (mainprogram->mx - mainmix->prevx) / (this->loopbox->scrcoords->w / (this->numf - 1)) - start;
+                if (this->endframe < 0) this->endframe = 0.0f;
+                else if (this->endframe >= this->numf) {
+                    end = this->endframe - (this->numf - 1);
+                    this->startframe -= end;
+                    this->endframe = this->numf - 1;
+                }
+                mainmix->prevx = mainprogram->mx;
+                //if (this->endframe < this->frame) this->frame = this->endframe;
+                //if (this->endframe < this->startframe) this->endframe = this->startframe;
+                this->set_clones();
+                if (mainprogram->middlemouse) this->scritching = 0;
+            }
+            if (this->frame != this->oldframe) {
+                this->scritch->value = this->frame;  // set scritching parameter for loopstation
+                for (int i = 0; i < loopstation->elems.size(); i++) {
+                    if (loopstation->elems[i]->recbut->value) {
+                        loopstation->elems[i]->add_param(this->scritch);
+                    }
+                }
+                this->loopbox->acolor[0] = this->scritch->box->acolor[0];
+                this->loopbox->acolor[1] = this->scritch->box->acolor[1];
+                this->loopbox->acolor[2] = this->scritch->box->acolor[2];
+                this->loopbox->acolor[3] = this->scritch->box->acolor[3];
+            }
 			draw_box(this->loopbox, -1);
 			if (ends) {
-				draw_box(lightgrey, greygreen, this->loopbox->vtxcoords->x1 + this->startframe * (this->loopbox->vtxcoords->w / (this->numf - 1)), this->loopbox->vtxcoords->y1, (this->endframe - this->startframe) * (this->loopbox->vtxcoords->w / (this->numf - 1)), tf(0.05f), -1);
+				draw_box(lightgrey, this->loopbox->acolor, this->loopbox->vtxcoords->x1 + this->startframe * (this->loopbox->vtxcoords->w / (this->numf - 1)), this->loopbox->vtxcoords->y1, (this->endframe - this->startframe) * (this->loopbox->vtxcoords->w / (this->numf - 1)), tf(0.05f), -1);
 			}
 			else {
-				draw_box(lightgrey, greygreen, this->loopbox->vtxcoords->x1 + this->startframe * (this->loopbox->vtxcoords->w / (this->numf - 1)), this->loopbox->vtxcoords->y1, (this->endframe - this->startframe) * (this->loopbox->vtxcoords->w / (this->numf - 1)), tf(0.05f), -1);
+				draw_box(lightgrey, this->loopbox->acolor, this->loopbox->vtxcoords->x1 + this->startframe * (this->loopbox->vtxcoords->w / (this->numf - 1)), this->loopbox->vtxcoords->y1, (this->endframe - this->startframe) * (this->loopbox->vtxcoords->w / (this->numf - 1)), tf(0.05f), -1);
 			}
 			draw_box(white, white, this->loopbox->vtxcoords->x1 + this->frame * (this->loopbox->vtxcoords->w / (this->numf - 1)), this->loopbox->vtxcoords->y1, tf(0.00078f), tf(0.05f), -1);
 
@@ -4004,19 +4176,7 @@ void Mixer::outputmonitors_handle() {
 			}
 		}
 		outputbox = mainprogram->nodesmain->mixnodescomp[2]->outputbox;
-		if (mainprogram->prevmodus) {
-			outputbox->vtxcoords->y1 = -0.4f + tf(0.075f);
-			outputbox->vtxcoords->x1 = -0.15f;
-			outputbox->vtxcoords->w = 0.3f;
-			outputbox->vtxcoords->h = 0.3f;
-		}
-		else {
-			outputbox->vtxcoords->y1 = -1.0f;
-			outputbox->vtxcoords->x1 = -0.3f;
-			outputbox->vtxcoords->w = 0.6f;
-			outputbox->vtxcoords->h = 0.6f;
-		}
-		outputbox->upvtxtoscr();
+
 		if (!mainprogram->menuondisplay) {
 			if (outputbox->scrcoords->x1 < mainprogram->mx && mainprogram->mx < outputbox->scrcoords->x1 + outputbox->scrcoords->w) {
 				if (outputbox->scrcoords->y1 - outputbox->scrcoords->h <= mainprogram->my && mainprogram->my <= outputbox->scrcoords->y1) {
@@ -4047,16 +4207,15 @@ void Mixer::outputmonitors_handle() {
 		if (deck > -1) {
 			if (mainprogram->leftmousedown) {
 				mainprogram->wiping = true;
-				this->currlay->blendnode->wipex->value = -(((1.0f - ((mainprogram->xscrtovtx(mainprogram->mx) - 0.55f - deck * 0.9f) / 0.3f)) - 0.5f) * 2.0f - 1.5f);
-				this->currlay->blendnode->wipey->value = -((((2.0f - mainprogram->yscrtovtx(mainprogram->my)) / 0.3f) - 0.5f) * 2.0f - 0.50f);
-				if (this->currlay->blendnode->wipetype == 8 || this->currlay->blendnode->wipetype == 9) {
-					this->currlay->blendnode->wipex->value *= 16.0f;
-					this->currlay->blendnode->wipey->value *= 16.0f;
+				this->currlay[!mainprogram->prevmodus]->blendnode->wipex->value = -(((1.0f - ((mainprogram->xscrtovtx(mainprogram->mx) - 0.55f - deck * 0.9f) / 0.3f)) - 0.5f) * 2.0f - 1.5f);
+				this->currlay[!mainprogram->prevmodus]->blendnode->wipey->value = -((((2.0f - mainprogram->yscrtovtx(mainprogram->my)) / 0.3f) - 0.5f) * 2.0f - 0.50f);
+				if (this->currlay[!mainprogram->prevmodus]->blendnode->wipetype == 8 || this->currlay[!mainprogram->prevmodus]->blendnode->wipetype == 9) {
+					this->currlay[!mainprogram->prevmodus]->blendnode->wipex->value *= 16.0f;
+					this->currlay[!mainprogram->prevmodus]->blendnode->wipey->value *= 16.0f;
 				}
 				for (int i = 0; i < loopstation->elems.size(); i++) {
 					if (loopstation->elems[i]->recbut->value) {
-						this->adaptparam = this->currlay->blendnode->wipex;
-						loopstation->elems[i]->add_param(this->adaptparam);
+						loopstation->elems[i]->add_param(this->currlay[!mainprogram->prevmodus]->blendnode->wipex);
 					}
 				}
 			}
@@ -4077,14 +4236,13 @@ void Mixer::outputmonitors_handle() {
 			if (mainprogram->leftmousedown) {
 				this->wipex[pm]->value = -(((1.0f - ((mainprogram->xscrtovtx(mainprogram->mx) - 0.7f) / 0.6f)) - 0.5f) * 2.0f - 0.5f);
 				this->wipey[pm]->value = -((((2.0f - mainprogram->yscrtovtx(mainprogram->my)) / 0.6f) - 0.5f) * 2.0f - 0.5f);
-				if (this->currlay->blendnode->wipetype == 8 || this->currlay->blendnode->wipetype == 9) {
+				if (this->currlay[!mainprogram->prevmodus]->blendnode->wipetype == 8 || this->currlay[!mainprogram->prevmodus]->blendnode->wipetype == 9) {
 					this->wipex[pm]->value *= 16.0f;
 					this->wipey[pm]->value *= 16.0f;
 				}
 				for (int i = 0; i < loopstation->elems.size(); i++) {
 					if (loopstation->elems[i]->recbut->value) {
-						this->adaptparam = this->wipex[pm];
-						loopstation->elems[i]->add_param(this->adaptparam);
+						loopstation->elems[i]->add_param(this->wipex[pm]);
 					}
 				}
 			}
@@ -4095,10 +4253,10 @@ void Mixer::outputmonitors_handle() {
 		}
 
 		// Handle vidboxes
-		Layer* lay = this->currlay;
+		Layer* lay = this->currlay[!mainprogram->prevmodus];
 		Effect* eff;
 
-		if (this->currlay) {
+		if (this->currlay[!mainprogram->prevmodus]) {
 			// Handle mixbox
 			box = lay->mixbox;
 			box->acolor[0] = 0.0;
@@ -4185,7 +4343,7 @@ void Layer::set_live_base(std::string livename) {
 		}
 		std::unique_lock<std::mutex> lock(this->enddecodelock);
 		this->enddecodevar.wait(lock, [&] {return this->processed; });
-		this->type = ELEM_LIVE;
+		this->vidopen = true;
 		lock.unlock();
 		this->processed = false;
 		avformat_close_input(&this->video);
@@ -4228,9 +4386,9 @@ void Layer::set_live_base(std::string livename) {
 
 void Mixer::layerdrag_handle() {
 	// dragging layers around
-	if (mainprogram->nodesmain->linked && this->currlay) {
-		std::vector<Layer*>& lvec = choose_layers(this->currlay->deck);
-		Layer* lay = this->currlay;
+	if (mainprogram->nodesmain->linked && this->currlay[!mainprogram->prevmodus]) {
+		std::vector<Layer*>& lvec = choose_layers(this->currlay[!mainprogram->prevmodus]->deck);
+		Layer* lay = this->currlay[!mainprogram->prevmodus];
 		Box* box = lay->node->vidbox;
 		if (lay->vidmoving) {
 			if (!mainprogram->binsscreen) {
@@ -5002,33 +5160,27 @@ void Mixer::lay_copy(std::vector<Layer*> &slayers, std::vector<Layer*> &dlayers,
 	if (comp) {
 		lp1 = lp;
 		lp2 = lpc;
-		lp1->parmap[mainmix->crossfade] = mainmix->crossfadecomp;
-		lp1->parmap[mainmix->wipex[0]] = mainmix->wipex[1];
-		lp1->parmap[mainmix->wipey[0]] = mainmix->wipey[1];
+		lp1->parmap[this->crossfade] = this->crossfadecomp;
+		lp1->parmap[this->wipex[0]] = this->wipex[1];
+		lp1->parmap[this->wipey[0]] = this->wipey[1];
 	}
 	else {
 		lp1 = lpc;
 		lp2 = lp;
-		lp1->parmap[mainmix->crossfadecomp] = mainmix->crossfade;
-		lp1->parmap[mainmix->wipex[1]] = mainmix->wipex[0];
-		lp1->parmap[mainmix->wipey[1]] = mainmix->wipey[0];
+		lp1->parmap[this->crossfadecomp] = this->crossfade;
+		lp1->parmap[this->wipex[1]] = this->wipex[0];
+		lp1->parmap[this->wipey[1]] = this->wipey[0];
 	}
-	int pos = std::find(dlayers.begin(), dlayers.end(), mainmix->currlay) - dlayers.begin();
 	while (!dlayers.empty()) {
 		dlayers.back()->node = nullptr;
 		dlayers.back()->blendnode = nullptr;
-		mainmix->delete_layer(dlayers, dlayers.back(), false);
+		Layer *bulay = this->currlay[!mainprogram->prevmodus];
+		this->delete_layer(dlayers, dlayers.back(), false);
+		this->currlay[!mainprogram->prevmodus] = bulay;
 	}
 	for (int i = 0; i < slayers.size(); i++) {
 		Layer *lay = slayers[i];
-		Layer *clay;
-		if (&dlayers == &mainmix->layersA || &dlayers == &mainmix->layersB) {
-			clay = new Layer(false);
-			if (i == pos) mainmix->currlay = clay;
-		}
-		else {
-			clay = new Layer(true);
-		}
+		Layer *clay = new Layer(comp);
 		this->set_values(clay, lay, true);
 		lp1->parmap[lay->speed] = clay->speed;
 		lp2->allparams.push_back(clay->speed);
@@ -5056,7 +5208,7 @@ void Mixer::lay_copy(std::vector<Layer*> &slayers, std::vector<Layer*> &dlayers,
 			clay->blendnode->wipex->value = lay->blendnode->wipex->value;
 			clay->blendnode->wipey->value = lay->blendnode->wipey->value;
 		}
-		mainmix->copy_effects(slayers[i], dlayers[i], comp);
+		this->copy_effects(slayers[i], dlayers[i], comp);
 		clay->aspectratio = lay->aspectratio;
 		if (lay->video_dec_ctx) clay->set_aspectratio(lay->video_dec_ctx->width, lay->video_dec_ctx->height);
 	}
@@ -5077,10 +5229,22 @@ void Mixer::copy_to_comp(std::vector<Layer*> &sourcelayersA, std::vector<Layer*>
 		mainmix->wipex[0]->value = mainmix->wipex[1]->value;
 		mainmix->wipey[0]->value = mainmix->wipey[1]->value;
 	}
-	
+
 	this->lay_copy(sourcelayersA, destlayersA, comp);
 	this->lay_copy(sourcelayersB, destlayersB, comp);
-	this->loopstation_copy(comp);
+    this->currlays[comp].clear();
+    std::vector<Layer*> lvec;
+	for (int m = 0; m < 2; m++) {
+        if (m == 0) lvec = destlayersA;
+        else lvec = destlayersB;
+        for (int j = 0; j < this->currlays[!comp].size(); j++) {
+            if (this->currlays[!comp][j]->deck == m) {
+                this->currlays[comp].push_back(lvec[this->currlays[!comp][j]->pos]);
+            }
+        }
+    }
+    this->currlay[comp] = lvec[this->currlay[!comp]->pos];
+ 	this->loopstation_copy(comp);
 	this->clonesets_copy(comp);
 	
 	for (int i = 0; i < destnodes.size(); i++) {
@@ -5361,6 +5525,7 @@ void Mixer::open_state(const std::string &path) {
 	while (safegetline(rfile, istring)) {
 		if (istring == "ENDOFFILE") break;
 		Layer* bulay = nullptr;
+		std::vector<Layer*> bulays;
 		if (istring == "MAINSCENE0") {
 			safegetline(rfile, istring);
 			mainmix->currscene[0][0] = std::stoi(istring);
@@ -5377,7 +5542,8 @@ void Mixer::open_state(const std::string &path) {
 			if (exists(result + "_0.file")) {
 				mainmix->open_mix(result + "_0.file", true);
 			}
-			bulay = mainmix->currlay;
+			bulay = mainmix->currlay[!mainprogram->prevmodus];
+			bulays = mainmix->currlays[!mainprogram->prevmodus];
 			if (exists(result + "_1.file")) {
 				mainprogram->prevmodus = false;
 				mainmix->open_mix(result + "_1.file", true);
@@ -5389,7 +5555,8 @@ void Mixer::open_state(const std::string &path) {
 				if (exists(result + "_0.file")) {
 					mainmix->open_mix(result + "_0.file", true);
 				}
-				bulay = mainmix->currlay;
+				bulay = mainmix->currlay[!mainprogram->prevmodus];
+                bulays = mainmix->currlays[!mainprogram->prevmodus];
 				if (exists(result + "_1.file")) {
 					mainprogram->prevmodus = false;
 					mainmix->open_mix(result + "_1.file", true);
@@ -5397,7 +5564,8 @@ void Mixer::open_state(const std::string &path) {
 			}
 			safegetline(rfile, istring);
 			mainprogram->prevmodus = std::stoi(istring);
-			if (mainprogram->prevmodus) mainmix->currlay = bulay;
+            if (mainprogram->prevmodus) mainmix->currlay[!mainprogram->prevmodus] = bulay;
+            if (mainprogram->prevmodus) mainmix->currlays[!mainprogram->prevmodus] = bulays;
 		}
 		if (istring == "TOSCREENMIDI0") {
 			safegetline(rfile, istring);
@@ -5587,12 +5755,22 @@ void Mixer::open_mix(const std::string &path, bool alive) {
 	loopstation->readelemnrs.clear();
 	
 	int clpos, cldeck;
+    std::vector<int> cls1;
+    std::vector<int> cls2;
 	Layer *lay = nullptr;
 	while (safegetline(rfile, istring)) {
-		if (istring == "CURRLAY") {
-			safegetline(rfile, istring);
-			clpos = std::stoi(istring);
-		}
+        if (istring == "CURRLAY") {
+            safegetline(rfile, istring);
+            clpos = std::stoi(istring);
+        }
+        if (istring == "CURRLAYS") {
+            while (safegetline(rfile, istring)) {
+                if (istring == "ENDCLS") break;
+                cls1.push_back(std::stoi(istring));
+                safegetline(rfile, istring);
+                cls2.push_back(std::stoi(istring));
+            }
+        }
 		if (istring == "CURRDECK") {
 			safegetline(rfile, istring);
 			cldeck = std::stoi(istring);
@@ -5671,10 +5849,24 @@ void Mixer::open_mix(const std::string &path, bool alive) {
 			safegetline(rfile, istring);
 			mainmix->wipex[0]->value = std::stof(istring);
 		}
+        if (istring == "WIPEXEVENT") {
+            Param *par = mainmix->wipex[0];
+            safegetline(rfile, istring);
+            if (istring == "EVENTELEM") {
+                mainmix->event_read(rfile, par, nullptr, lay);
+            }
+        }
 		if (istring == "WIPEY") {
 			safegetline(rfile, istring);
 			mainmix->wipey[0]->value = std::stof(istring);
 		}
+        if (istring == "WIPEYEVENT") {
+            Param *par = mainmix->wipey[0];
+            safegetline(rfile, istring);
+            if (istring == "EVENTELEM") {
+                mainmix->event_read(rfile, par, nullptr, lay);
+            }
+        }
 		if (istring == "WIPECOMP") {
 			safegetline(rfile, istring);
 			mainmix->wipe[1] = std::stoi(istring);
@@ -5687,10 +5879,24 @@ void Mixer::open_mix(const std::string &path, bool alive) {
 			safegetline(rfile, istring);
 			mainmix->wipex[1]->value = std::stof(istring);
 		}
+        if (istring == "WIPEXCOMPEVENT") {
+            Param *par = mainmix->wipex[1];
+            safegetline(rfile, istring);
+            if (istring == "EVENTELEM") {
+                mainmix->event_read(rfile, par, nullptr, lay);
+            }
+        }
 		if (istring == "WIPEYCOMP") {
 			safegetline(rfile, istring);
 			mainmix->wipey[1]->value = std::stof(istring);
 		}
+        if (istring == "WIPEYCOMPEVENT") {
+            Param *par = mainmix->wipey[1];
+            safegetline(rfile, istring);
+            if (istring == "EVENTELEM") {
+                mainmix->event_read(rfile, par, nullptr, lay);
+            }
+        }
 		int deck;
 		if (istring == "LAYERSA") {
 			std::vector<Layer*> &layersA = choose_layers(0);
@@ -5742,11 +5948,17 @@ void Mixer::open_mix(const std::string &path, bool alive) {
 	std::vector<Layer*> &lvec2 = choose_layers(cldeck);
 	for (int i = 0; i < lvec2.size(); i++) {
 		if (lvec2[i]->pos == clpos) {
-			mainmix->currlay = lvec2[i];
+			mainmix->currlay[!mainprogram->prevmodus] = lvec2[i];
 			break;
 		}
 	}
-	
+
+    mainmix->currlays[!mainprogram->prevmodus].clear();
+	for (int i = 0; i < cls1.size(); i++) {
+        std::vector<Layer*> &lvec2 = choose_layers(cls1[i]);
+        mainmix->currlays[!mainprogram->prevmodus].push_back(lvec2[cls2[i]]);
+	}
+
 	rfile.close();
 }
 
@@ -5764,14 +5976,22 @@ void Mixer::do_save_mix(const std::string & path, bool modus, bool save) {
 	std::ofstream wfile;
 	wfile.open(str);
 	wfile << "EWOCvj SAVEMIX V0.2\n";
-	
-	wfile << "CURRLAY\n";
-	wfile << std::to_string(mainmix->currlay->pos);
+
+    wfile << "CURRLAY\n";
+    wfile << std::to_string(mainmix->currlay[!modus]->pos);
+    wfile << "\n";
+    wfile << "CURRDECK\n";
+	wfile << std::to_string(mainmix->currlay[!modus]->deck);
 	wfile << "\n";
-	wfile << "CURRDECK\n";
-	wfile << std::to_string(mainmix->currlay->deck);
-	wfile << "\n";
-	wfile << "CROSSFADE\n";
+    wfile << "CURRLAYS\n";
+    for (int i = 0; i < mainmix->currlays[!modus].size(); i++) {
+        wfile << std::to_string(mainmix->currlays[!modus][i]->deck);
+        wfile << "\n";
+        wfile << std::to_string(mainmix->currlays[!modus][i]->pos);
+        wfile << "\n";
+    }
+    wfile << "ENDCLS\n";
+    wfile << "CROSSFADE\n";
 	wfile << std::to_string(mainmix->crossfade->value);
 	wfile << "\n";
 	wfile << "CROSSFADEEVENT\n";
@@ -5822,9 +6042,13 @@ void Mixer::do_save_mix(const std::string & path, bool modus, bool save) {
 	wfile << "WIPEX\n";
 	wfile << std::to_string(mainmix->wipex[0]->value);
 	wfile << "\n";
+    wfile << "WIPEXEVENT\n";
+    mainmix->event_write(wfile, mainmix->wipex[0], nullptr);
 	wfile << "WIPEY\n";
 	wfile << std::to_string(mainmix->wipey[0]->value);
 	wfile << "\n";
+    wfile << "WIPEYEVENT\n";
+    mainmix->event_write(wfile, mainmix->wipey[0], nullptr);
 	wfile << "WIPECOMP\n";
 	wfile << std::to_string(mainmix->wipe[1]);
 	wfile << "\n";
@@ -5834,9 +6058,13 @@ void Mixer::do_save_mix(const std::string & path, bool modus, bool save) {
 	wfile << "WIPEXCOMP\n";
 	wfile << std::to_string(mainmix->wipex[1]->value);
 	wfile << "\n";
+    wfile << "WIPEXCOMPEVENT\n";
+    mainmix->event_write(wfile, mainmix->wipex[1], nullptr);
 	wfile << "WIPEYCOMP\n";
 	wfile << std::to_string(mainmix->wipey[1]->value);
 	wfile << "\n";
+    wfile << "WIPEYCOMPEVENT\n";
+    mainmix->event_write(wfile, mainmix->wipey[1], nullptr);
 
 	std::vector<std::vector<std::string>> jpegpaths;
 	wfile << "LAYERSA\n";
@@ -6113,7 +6341,7 @@ void Layer::open_image(const std::string &path) {
 			this->layers->erase(std::find(this->layers->begin(), this->layers->end(), this));
 			Layer* lay = mainmix->add_layer(*this->layers, this->pos);
 			mainmix->set_values(lay, this, false);
-			if (this == mainmix->currlay) mainmix->currlay = lay;
+			if (this == mainmix->currlay[!mainprogram->prevmodus]) mainmix->currlay[!mainprogram->prevmodus] = lay;
 			lay->open_image(filename);
 			return;
 		}
@@ -6150,7 +6378,7 @@ void Layer::open_image(const std::string &path) {
 	this->decresult->data = (char*)ilGetData();
 	this->decresult->newdata = true;
 
-	this->imageloaded = 0;
+	this->loaded = 0;
 	this->vidopen = false;
 }
 
@@ -6307,7 +6535,7 @@ int Mixer::read_layers(std::istream &rfile, const std::string &result, std::vect
 			if (pos == 0 || type == 0) {
 				lay = layers[0];
 				lay->numefflines[0] = 0;
-				if (type == 1) mainmix->currlay = lay;
+				if (type == 1) mainmix->currlay[!mainprogram->prevmodus] = lay;
 				if (lay->lasteffnode[0] != lay->lasteffnode[1]) lay->lasteffnode[1]->out.clear();
 			}
 			else {
@@ -6511,13 +6739,20 @@ int Mixer::read_layers(std::istream &rfile, const std::string &result, std::vect
 			safegetline(rfile, istring);
 			lay->scale->value = std::stof(istring);
 		}
-		if (istring == "SCALEEVENT") {
-			Param *par = lay->scale;
-			safegetline(rfile, istring);
-			if (istring == "EVENTELEM") {
-				mainmix->event_read(rfile, par, nullptr, lay);
-			}
-		}
+        if (istring == "SCALEEVENT") {
+            Param *par = lay->scale;
+            safegetline(rfile, istring);
+            if (istring == "EVENTELEM") {
+                mainmix->event_read(rfile, par, nullptr, lay);
+            }
+        }
+        if (istring == "SCRITCHEVENT") {
+            Param *par = lay->scritch;
+            safegetline(rfile, istring);
+            if (istring == "EVENTELEM") {
+                mainmix->event_read(rfile, par, nullptr, lay);
+            }
+        }
 		if (istring == "OPACITYVAL") {
 			safegetline(rfile, istring);
 			lay->opacity->value = std::stof(istring);
@@ -6540,6 +6775,13 @@ int Mixer::read_layers(std::istream &rfile, const std::string &result, std::vect
 				mainmix->event_read(rfile, par, nullptr, lay);
 			}
 		}
+        if (istring == "MIXFACEVENT") {
+            Param *par = lay->blendnode->mixfac;
+            safegetline(rfile, istring);
+            if (istring == "EVENTELEM") {
+                mainmix->event_read(rfile, par, nullptr, lay);
+            }
+        }
 		if (istring == "CHTOLVAL") {
 			safegetline(rfile, istring);
 			lay->chtol->value = std::stof(istring);
@@ -6601,10 +6843,24 @@ int Mixer::read_layers(std::istream &rfile, const std::string &result, std::vect
 					safegetline(rfile, istring);
 					lay->blendnode->wipex->value = std::stof(istring);
 				}
+                if (istring == "WIPEXEVENT") {
+                    Param *par = lay->blendnode->wipex;
+                    safegetline(rfile, istring);
+                    if (istring == "EVENTELEM") {
+                        mainmix->event_read(rfile, par, nullptr, lay);
+                    }
+                }
 				if (istring == "WIPEY") {
 					safegetline(rfile, istring);
 					lay->blendnode->wipey->value = std::stof(istring);
 				}
+                if (istring == "WIPEYEVENT") {
+                    Param *par = lay->blendnode->wipey;
+                    safegetline(rfile, istring);
+                    if (istring == "EVENTELEM") {
+                        mainmix->event_read(rfile, par, nullptr, lay);
+                    }
+                }
 			}
 		}
 		
@@ -6996,8 +7252,10 @@ std::vector<std::string> Mixer::write_layer(Layer* lay, std::ostream& wfile, boo
 	wfile << "SCALE\n";
 	wfile << std::to_string(lay->scale->value);
 	wfile << "\n";
-	wfile << "SCALEEVENT\n";
-	mainmix->event_write(wfile, lay->scale, nullptr);
+    wfile << "SCALEEVENT\n";
+    mainmix->event_write(wfile, lay->scale, nullptr);
+    wfile << "SCRITCHEVENT\n";
+    mainmix->event_write(wfile, lay->scritch, nullptr);
 	wfile << "OPACITYVAL\n";
 	wfile << std::to_string(lay->opacity->value);
 	wfile << "\n";
@@ -7006,8 +7264,10 @@ std::vector<std::string> Mixer::write_layer(Layer* lay, std::ostream& wfile, boo
 	wfile << "VOLUMEVAL\n";
 	wfile << std::to_string(lay->volume->value);
 	wfile << "\n";
-	wfile << "VOLUMEEVENT\n";
-	mainmix->event_write(wfile, lay->volume, nullptr);
+    wfile << "VOLUMEEVENT\n";
+    mainmix->event_write(wfile, lay->volume, nullptr);
+    wfile << "MIXFACEVENT\n";
+    mainmix->event_write(wfile, lay->blendnode->mixfac, nullptr);
 	wfile << "CHTOLVAL\n";
 	wfile << std::to_string(lay->chtol->value);
 	wfile << "\n";
@@ -7055,9 +7315,13 @@ std::vector<std::string> Mixer::write_layer(Layer* lay, std::ostream& wfile, boo
 	wfile << "WIPEX\n";
 	wfile << std::to_string(lay->blendnode->wipex->value);
 	wfile << "\n";
+    wfile << "WIPEXEVENT\n";
+    mainmix->event_write(wfile, lay->blendnode->wipex, nullptr);
 	wfile << "WIPEY\n";
 	wfile << std::to_string(lay->blendnode->wipey->value);
 	wfile << "\n";
+    wfile << "WIPEYEVENT\n";
+    mainmix->event_write(wfile, lay->blendnode->wipey, nullptr);
 
 	if (doclips && lay->clips.size()) {
 		wfile << "CLIPS\n";
@@ -7414,7 +7678,7 @@ void Mixer::new_file(int decks, bool alive) {
 	
 	// reset layers
 	bool currdeck = 0;
-	if (mainmix->currlay) currdeck = mainmix->currlay->deck;
+	if (mainmix->currlay[!mainprogram->prevmodus]) currdeck = mainmix->currlay[!mainprogram->prevmodus]->deck;
 	mainmix->bualive = alive;
 	bool pm[2];
 	int ns = 1;
@@ -7495,7 +7759,7 @@ void Mixer::new_file(int decks, bool alive) {
 			else {
 				mainprogram->nodesmain->currpage->connect_nodes(lvec[lvec.size() - 1]->lasteffnode[0], mainprogram->nodesmain->mixnodescomp[0]);
 			}
-			if (currdeck == 0) mainmix->currlay = lay;
+			if (currdeck == 0) mainmix->currlay[!mainprogram->prevmodus] = lay;
 
 			if (mainprogram->prevmodus) {
 				mainprogram->nodesmain->mixnodes[0]->mixfbo = -1;
@@ -7552,7 +7816,7 @@ void Mixer::new_file(int decks, bool alive) {
 			else {
 				mainprogram->nodesmain->currpage->connect_nodes(lvec[lvec.size() - 1]->lasteffnode[0], mainprogram->nodesmain->mixnodescomp[1]);
 			}
-			if (currdeck == 1) mainmix->currlay = lay;
+			if (currdeck == 1) mainmix->currlay[!mainprogram->prevmodus] = lay;
 
 			if (mainprogram->prevmodus) {
 				mainprogram->nodesmain->mixnodes[1]->mixfbo = -1;
@@ -7784,9 +8048,7 @@ void Mixer::clip_dragging() {
 	}
 }
 bool Mixer::clip_drag_per_layervec(std::vector<Layer*>& layers, bool deck) {
-	float white[] = { 1.0f, 1.0f, 1.0f, 1.0f };
 	float transp[] = { 0.0f, 0.0f, 0.0f, 0.0f };
-	float black[] = { 0.0f, 0.0f, 0.0f, 1.0f };
 	float lightblue[] = { 0.5f, 0.5f, 1.0f, 1.0f };
 
 	Layer* lay;

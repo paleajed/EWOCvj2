@@ -292,14 +292,6 @@ class Program {
 		GLuint ShaderProgram_tm;
 		GLuint ShaderProgram_pr;
 		GLuint fbovao;
-		GLuint globfbo;
-		GLuint globfbotex;
-		GLuint globdepthtex;
-		GLuint smglobfbo_tm;
-		GLuint smglobfbotex_tm;
-		GLuint prfbo;
-		GLuint smglobfbo_pr;
-		GLuint smglobfbotex_pr;
 		GLuint fbotex[4];
 		GLuint frbuf[4];
 		GLuint bvao;
@@ -324,10 +316,10 @@ class Program {
 		GLuint tm_rtvbo;
 		GLuint tm_rttbo;
         GLuint bgtex;
-        GLuint bg_oltex;
 		std::vector<OutputEntry*> outputentries;
 		std::vector<Button*> buttons;
 		Box *scrollboxes[2];
+		Box *prevbox;
 		Layer *loadlay;
 		Layer *prelay = nullptr;
 		SDL_Window *mainwindow;
@@ -406,7 +398,8 @@ class Program {
 		bool rightmouse = false;
 		float mousewheel = false;
 		bool del = false;
-		bool ctrl = false;
+        bool ctrl = false;
+        bool shift = false;
 		bool menuondisplay = false;
 		bool orderondisplay = false;
 		bool blocking = false;
@@ -478,7 +471,6 @@ class Program {
 		Box* delbox;
 		Box* addbox;
 
-        GLuint drawbuffer;
 		GLuint boxcoltbo;
 		GLuint boxtextbo;
 		GLuint boxbrdtbo;
@@ -527,7 +519,8 @@ class Program {
 		bool longtooltips = true;
 		Box *tooltipbox = nullptr;
 		float tooltipmilli = 0.0f;
-		bool ttreserved = false;
+        bool ttreserved = false;
+        bool boxhit = false;
 		bool autosave;
 		float asminutes = 1;
 		int astimestamp = 0;
@@ -710,8 +703,8 @@ extern Menu *effectmenu;
 extern Menu *mixmodemenu;
 extern float smw, smh;
 extern SDL_GLContext glc;
-extern SDL_GLContext glc_tm;
-extern SDL_GLContext glc_pr;
+extern SDL_GLContext glc;
+extern SDL_GLContext glc;
 extern SDL_GLContext glc_th;
 extern LayMidi* laymidiA;
 extern LayMidi* laymidiB;

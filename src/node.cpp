@@ -92,7 +92,9 @@ BlendNode::BlendNode() {
 	this->fbo = -1;
 	this->fbotex = -1;
 	this->wipex = new Param;
+	this->wipex->value = 0.5f;
 	this->wipey = new Param;
+    this->wipey->value = 0.5f;
 	this->mixfac = new Param;
     this->mixfac->name = "Factor";
     this->mixfac->value = 0.5f;
@@ -301,7 +303,7 @@ MixNode *NodePage::add_mixnode(int scr, bool comp) {
 	node->outputbox->acolor[1] = 0.0;
 	node->outputbox->acolor[2] = 0.0;
 	node->outputbox->acolor[3] = 1.0;
-		
+
 	return node;
 }
 
@@ -404,8 +406,6 @@ void NodePage::handle_nodes() {
 	for (int j = 0; j < mainprogram->nodesmain->currpage->nodes.size(); j++) {
 		Node *node = mainprogram->nodesmain->currpage->nodes[j];
 		Effect *eff;
-		float white[] = {1.0, 1.0, 1.0, 1.0};
-		float black[] = {0.0, 0.0, 0.0, 1.0};
 		float red[] = {1.0, 0.0, 0.0, 1.0};
 		float blue[] = {0.5, 0.5, 1.0, 1.0};
 		if (node->monitor != -1) {  // reminder: nodes structure
