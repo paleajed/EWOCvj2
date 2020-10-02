@@ -76,7 +76,6 @@ class Layer {
 		bool deck = 0;
 		bool comp = true;
 		std::vector<Layer*>* layers;
-		int clonepos = -1;
 		std::vector<Clip*> clips;
 		Clip* currclip = nullptr;
 		ELEM_TYPE type = ELEM_FILE;
@@ -248,8 +247,9 @@ class Layer {
 		
 		std::unordered_map<EFFECT_TYPE, int> numoftypemap;
 		int clonesetnr = -1;
-		bool isclone = false;
-	
+        bool isclone = false;
+        Layer *isduplay = nullptr;
+
 		void display();
 		Effect* add_effect(EFFECT_TYPE type, int pos);
 		Effect* replace_effect(EFFECT_TYPE type, int pos);
@@ -267,13 +267,14 @@ class Layer {
 		void open_files_layers();
 		void open_files_queue();
 		bool thread_vidopen();
-		void open_video(float frame, const std::string& filename, int reset);
+		Layer* open_video(float frame, const std::string& filename, int reset);
 		void open_image(const std::string& path);
 		void initialize(int w, int h);
 		void initialize(int w, int h, int compression);
 		void clip_display_next(bool startend, bool alive);
 		bool find_new_live_base(int pos);
 		void set_live_base(std::string livename);
+		void deautomate();
 		Layer* next();
 		Layer* prev();
 		Layer();
@@ -421,7 +422,8 @@ class Mixer {
 		int midishelfstage = 0;
 		int midishelfpos = 0;
 		Shelf* midishelf = nullptr;
-		int midishelfstart = 0;
+        int midishelfstart = 0;
+        int midishelfend = 0;
 
 		float time = 0.0f;
 		float oldtime = 0.0f;

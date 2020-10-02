@@ -1946,10 +1946,17 @@ void BinsMain::open_bin(const std::string &path, Bin *bin) {
 					safegetline(rfile, istring);
 					pos = std::stoi(istring);
 				}
-				if (istring == "PATH") {
-					safegetline(rfile, istring);
-					bin->elements[pos]->path = istring;
-				}
+                if (istring == "ABSPATH") {
+                    safegetline(rfile, istring);
+                    bin->elements[pos]->path = istring;
+                }
+                if (istring == "RELPATH") {
+                    safegetline(rfile, istring);
+                    if (bin->elements[pos]->path == "") {
+                        boost::filesystem::current_path(mainprogram->contentpath);
+                        bin->elements[pos]->path = pathtoplatform(boost::filesystem::absolute(istring).string());
+                    }
+                }
 				if (istring == "NAME") {
 					safegetline(rfile, istring);
 					bin->elements[pos]->name = istring;
@@ -1997,8 +2004,9 @@ void BinsMain::open_bin(const std::string &path, Bin *bin) {
 }
 
 void BinsMain::save_bin(const std::string& path) {
-	std::thread binsav(&BinsMain::do_save_bin, this, path);
-	binsav.detach();
+	//std::thread binsav(&BinsMain::do_save_bin, this, path);
+	//binsav.detach();
+	this->do_save_bin(path);
 }
 
 void BinsMain::do_save_bin(const std::string& path) {
@@ -2015,9 +2023,12 @@ void BinsMain::do_save_bin(const std::string& path) {
 			wfile << "POS\n";
 			wfile << i * 12 + j;
 			wfile << "\n";
-			wfile << "PATH\n";
+			wfile << "ABSPATH\n";
 			wfile << this->currbin->elements[i * 12 + j]->path;
 			wfile << "\n";
+            wfile << "RELPATH\n";
+            wfile << boost::filesystem::relative(this->currbin->elements[i * 12 + j]->path, mainprogram->contentpath).string();
+            wfile << "\n";
 			wfile << "NAME\n";
 			wfile << this->currbin->elements[i * 12 + j]->name;
 			wfile << "\n";

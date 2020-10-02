@@ -9,16 +9,18 @@
 #include <boost/algorithm/string.hpp>
 #include <boost/filesystem.hpp>
 
+#include <ostream>
+
 #include "GL/glew.h"
 #include "GL/gl.h"
 #include "GL/glut.h"
 #ifdef POSIX
-#include "GL/glx.h"
+#define __LINUX_ALSA__
 #include <X11/Xlib.h>
-#include <X11/Xutil.h>
 #include <X11/Xos.h>
-#include "paths.h"
+#include <rtmidi/RtMidi.h>
 #include <linux/videodev2.h>
+#include <alsa/asoundlib.h>
 #include <sys/ioctl.h>
 #include "tinyfiledialogs.h"
 #endif
@@ -87,10 +89,10 @@ Program::Program() {
 	std::wstring ws2(charbuf);
 	std::string str2(ws2.begin(), ws2.end());
 	this->fontpath = str2;
-	//hr = SHGetKnownFolderPath(FOLDERID_Videos, 0, NULL, &charbuf);
-	//std::wstring ws4(charbuf);
-	//std::string str4(ws4.begin(), ws4.end());
-	//str4 += "/";   reminder: do something with Videos dir?
+	hr = SHGetKnownFolderPath(FOLDERID_Videos, 0, NULL, &charbuf);
+	std::wstring ws4(charbuf);
+	std::string str4(ws4.begin(), ws4.end());
+	this->contentpath = str4;
 	std::wstring ws3;
 	wchar_t wcharPath[MAX_PATH];
 	if (GetTempPathW(MAX_PATH, wcharPath)) ws3 = wcharPath;
@@ -100,14 +102,13 @@ Program::Program() {
 #ifdef POSIX
 	std::string homedir(getenv("HOME"));
 	this->temppath = homedir + "/.ewocvj2/temp/";
-	this->docpath = homedir + "/.ewocvj2/";
+    this->docpath = homedir + "/Documents/EWOCvj2/";
+    this->contentpath = homedir + "/Videos/";
 #endif
-	this->currfilesdir = this->docpath + "elems/";
-	this->currclipfilesdir = this->docpath + "elems/";
-	this->currshelffilesdir = this->docpath + "elems/";
-	this->currbinfilesdir = this->docpath + "elems/";
-	this->currstatedir = this->docpath + "elems/";
-	this->currbinsdir = this->docpath + "elems/";
+	this->currfilesdir = this->contentpath;
+	this->currclipfilesdir = this->contentpath;
+	this->currshelffilesdir = this->contentpath;
+	this->currbinfilesdir = this->contentpath;
 
 	this->numh = this->numh * glob->w / glob->h;
 	this->layh = this->layh * (glob->w / glob->h) / (1920.0f /  1080.0f);
@@ -1383,15 +1384,22 @@ void Program::shelf_miditriggering() {
 	// do midi trigger from shelf, set up in callback, executed here at a fixed the_loop position
 	ShelfElement* elem = mainprogram->midishelfelem;
 	if (elem) {
-	    for (int k = 0; k < mainmix->currlays[!mainprogram->prevmodus].size(); k++) {
+	    std::vector<Layer*> clays = mainmix->currlays[!mainprogram->prevmodus];
+	    for (int k = 0; k < clays.size(); k++) {
+	        Layer *lay = clays[k];
+            clays[k]->deautomate();
             if (elem->type == ELEM_FILE) {
-                mainmix->currlays[!mainprogram->prevmodus][k]->open_video(0, elem->path, true);
+                clays[k] = clays[k]->open_video(0, elem->path, true);
             } else if (elem->type == ELEM_IMAGE) {
-                mainmix->currlays[!mainprogram->prevmodus][k]->open_image(elem->path);
+                clays[k]->open_image(elem->path);
+                clays[k] = (*(clays[k]->layers))[clays[k]->pos];
+                clays[k]->frame = 0.0f;
             } else if (elem->type == ELEM_LAYER) {
-                mainmix->open_layerfile(elem->path, mainmix->currlays[!mainprogram->prevmodus][k], true, false);
+                mainmix->open_layerfile(elem->path, clays[k], true, false);
+                clays[k] = (*(clays[k]->layers))[clays[k]->pos];
+                clays[k]->frame = 0.0f;
             } else if (elem->type == ELEM_DECK) {
-                mainmix->mousedeck = mainmix->currlays[!mainprogram->prevmodus][k]->deck;
+                mainmix->mousedeck = clays[k]->deck;
                 mainmix->open_deck(elem->path, true);
             } else if (elem->type == ELEM_MIX) {
                 mainmix->open_mix(elem->path, true);
@@ -1401,7 +1409,7 @@ void Program::shelf_miditriggering() {
             if (elem->launchtype == 1) {
                 if (elem->cframes.size()) {
                     if (elem->type == ELEM_DECK) {
-                        std::vector<Layer *> &lvec = choose_layers(mainmix->currlays[!mainprogram->prevmodus][k]->deck);
+                        std::vector<Layer *> &lvec = choose_layers(clays[k]->deck);
                         for (int i = 0; i < lvec.size(); i++) {
                             lvec[i]->frame = elem->cframes[i];
                             lvec[i]->prevshelfdragelem = mainprogram->midishelfelem;
@@ -1415,14 +1423,14 @@ void Program::shelf_miditriggering() {
                             }
                         }
                     } else {
-                        mainmix->currlays[!mainprogram->prevmodus][k]->frame = elem->cframes[0];
+                        clays[k]->frame = elem->cframes[0];
                     }
                     elem->cframes.clear();
                 }
             } else if (elem->launchtype == 2) {
                 if (elem->nblayers.size()) {
                     if (elem->type == ELEM_DECK) {
-                        std::vector<Layer *> &lvec = choose_layers(mainmix->currlays[!mainprogram->prevmodus][k]->deck);
+                        std::vector<Layer *> &lvec = choose_layers(clays[k]->deck);
                         for (int i = 0; i < lvec.size(); i++) {
                             lvec[i]->frame = elem->nblayers[i]->frame;
                             lvec[i]->prevshelfdragelem = mainprogram->midishelfelem;
@@ -1438,13 +1446,13 @@ void Program::shelf_miditriggering() {
                             }
                         }
                     } else {
-                        mainmix->currlays[!mainprogram->prevmodus][k]->frame = elem->nblayers[0]->frame;
+                        clays[k]->frame = elem->nblayers[0]->frame;
                     }
                     elem->nblayers.clear();
                 }
             }
             if (elem->type == ELEM_DECK) {
-                std::vector<Layer *> &lvec = choose_layers(mainmix->currlays[!mainprogram->prevmodus][k]->deck);
+                std::vector<Layer *> &lvec = choose_layers(clays[k]->deck);
                 for (int i = 0; i < lvec.size(); i++) {
                     lvec[i]->prevshelfdragelem = mainprogram->midishelfelem;
                 }
@@ -1457,7 +1465,7 @@ void Program::shelf_miditriggering() {
                 }
             }
 
-            mainmix->currlays[!mainprogram->prevmodus][k]->prevshelfdragelem = mainprogram->midishelfelem;
+            clays[k]->prevshelfdragelem = mainprogram->midishelfelem;
             mainprogram->midishelfelem = nullptr;
         }
 	}
@@ -1960,32 +1968,8 @@ void Program::handle_parammenu4() {
 			mainmix->learn = true;
 		}
 		else if (k == 1) {
-			if (mainmix->learnparam) {
-				LoopStationElement* elem = loopstation->parelemmap[mainmix->learnparam];
-				elem->params.erase(mainmix->learnparam);
-				if (mainmix->learnparam->effect) elem->layers.erase(mainmix->learnparam->effect->layer);
-				for (int i = elem->eventlist.size() - 1; i >= 0; i--) {
-					if (std::get<1>(elem->eventlist[i]) == mainmix->learnparam) elem->eventlist.erase(elem->eventlist.begin() + i);
-				}
-				loopstation->parelemmap.erase(mainmix->learnparam);
-				mainmix->learnparam->box->acolor[0] = 0.2f;
-				mainmix->learnparam->box->acolor[1] = 0.2f;
-				mainmix->learnparam->box->acolor[2] = 0.2f;
-				mainmix->learnparam->box->acolor[3] = 1.0f;
-			}
-			else if (mainmix->learnbutton) {
-				LoopStationElement* elem = loopstation->butelemmap[mainmix->learnbutton];
-				elem->buttons.erase(mainmix->learnbutton);
-				if (mainmix->learnbutton->layer) elem->layers.erase(mainmix->learnbutton->layer);
-				for (int i = elem->eventlist.size() - 1; i >= 0; i--) {
-					if (std::get<2>(elem->eventlist[i]) == mainmix->learnbutton) elem->eventlist.erase(elem->eventlist.begin() + i);
-				}
-				loopstation->butelemmap.erase(mainmix->learnbutton);
-				mainmix->learnbutton->box->acolor[0] = 0.2f;
-				mainmix->learnbutton->box->acolor[1] = 0.2f;
-				mainmix->learnbutton->box->acolor[2] = 0.2f;
-				mainmix->learnbutton->box->acolor[3] = 1.0f;
-			}
+            mainmix->learnparam->deautomate();
+            mainmix->learnbutton->deautomate();
 		}
 	}
 	if (mainprogram->menuchosen) {
@@ -2361,22 +2345,27 @@ void Program::handle_laymenu1() {
 				mainmix->delete_layer(mainmix->layersBcomp, mainmix->mouselayer, true);
 			}
 		}
-		else if (k == 11) {
-			Layer* clonelay = mainmix->mouselayer->clone();
-			if (mainmix->mouselayer->clonesetnr == -1) {
-				std::unordered_set<Layer*>* uset = new std::unordered_set<Layer*>;
-				mainmix->clonesets.push_back(uset);
-				uset->emplace(mainmix->mouselayer);
-				mainmix->mouselayer->clonesetnr = mainmix->clonesets.size() - 1;
-			}
-			clonelay->clonesetnr = mainmix->mouselayer->clonesetnr;
-			mainmix->clonesets[mainmix->mouselayer->clonesetnr]->emplace(clonelay);
-		}
-		else if (k == 12) {
+        else if (k == 11) {
+            Layer* duplay = mainmix->mouselayer->clone();
+            duplay->isclone = false;
+            duplay->isduplay = mainmix->mouselayer;
+        }
+        else if (k == 12) {
+            Layer* clonelay = mainmix->mouselayer->clone();
+            if (mainmix->mouselayer->clonesetnr == -1) {
+                std::unordered_set<Layer*>* uset = new std::unordered_set<Layer*>;
+                mainmix->clonesets.push_back(uset);
+                uset->emplace(mainmix->mouselayer);
+                mainmix->mouselayer->clonesetnr = mainmix->clonesets.size() - 1;
+            }
+            clonelay->clonesetnr = mainmix->mouselayer->clonesetnr;
+            mainmix->clonesets[mainmix->mouselayer->clonesetnr]->emplace(clonelay);
+        }
+		else if (k == 13) {
 			mainmix->mouselayer->shiftx->value = 0.0f;
 			mainmix->mouselayer->shifty->value = 0.0f;
 		}
-		else if (k == 13) {
+		else if (k == 14) {
 			mainmix->mouselayer->aspectratio = (RATIO_TYPE)mainprogram->menuresults[0];
 			if (mainmix->mouselayer->type == ELEM_IMAGE) {
 				ilBindImage(mainmix->mouselayer->boundimage);
@@ -2665,7 +2654,17 @@ void Program::handle_shelfmenu() {
 		binsmain->insertshelf = mainmix->mouseshelf;
 		mainprogram->binsscreen = true;
 	}
-	else if (k == 8) {
+    else if (k == 8) {
+        ShelfElement *elem = mainmix->mouseshelf->elements[mainmix->mouseshelfelem];
+        elem->path = "";
+        elem->type = ELEM_FILE;
+        blacken(elem->tex);
+        blacken(elem->oldtex);
+        elem->button->midi[0] = -1;
+        elem->button->midi[1] = -1;
+        elem->button->midiport = "";
+    }
+    else if (k == 9) {
 		// learn MIDI for element layer load
 		mainmix->learn = true;
 		mainmix->learnparam = nullptr;
@@ -3083,7 +3082,7 @@ bool Program::preferences_handle() {
 						}
 						else {
 							midici->onnames.push_back(midici->items[i]->name);
-							RtMidiIn* midiin = new RtMidiIn();
+							RtMidiIn* midiin = new RtMidiIn(RtMidi::UNIX_JACK);
 							if (std::find(mainprogram->openports.begin(), mainprogram->openports.end(), i) == mainprogram->openports.end()) {
 								midiin->openPort(i);
 								midiin->setCallback(&mycallback, (void*)midici->items[i]);
@@ -3817,6 +3816,12 @@ GLuint Program::set_shader() {
 }
 
 
+
+
+//  THINGS PROJECT RELATED
+
+
+
 void Project::delete_dirs() {
 	this->path = mainprogram->path;
 	std::string dir = remove_extension(path) + "/";
@@ -3832,15 +3837,18 @@ void Project::create_dirs(const std::string &path) {
 	std::string dir = path + "/";
 	this->binsdir = dir + "bins/";
 	this->recdir = dir + "recordings/";
-	this->shelfdir = dir + "shelves/";
+    this->shelfdir = dir + "shelves/";
+    this->autosavedir = dir + "autosaves/";
 	boost::filesystem::path d{ dir };
 	boost::filesystem::create_directory(d);
 	boost::filesystem::path p1{ this->binsdir };
 	boost::filesystem::create_directory(p1);
 	boost::filesystem::path p2{ this->recdir };
 	boost::filesystem::create_directory(p2);
-	boost::filesystem::path p3{ this->shelfdir };
-	boost::filesystem::create_directory(p3);
+    boost::filesystem::path p3{ this->shelfdir };
+    boost::filesystem::create_directory(p3);
+    boost::filesystem::path p4{ this->autosavedir };
+    boost::filesystem::create_directory(p4);
 }
 
 void Project::newp(const std::string &path) {
@@ -3974,6 +3982,17 @@ void Project::open(const std::string& path) {
     }
     wfile << "ENDOFFILE\n";
     wfile.close();
+
+    if (exists(this->autosavedir + "autosavelist")) {
+        std::ifstream rfile;
+        rfile.open(this->autosavedir + "autosavelist");
+        std::string istring;
+        safegetline(rfile, istring);
+        while (safegetline(rfile, istring)) {
+            if (istring == "ENDOFFILE") break;
+            this->autosavelist.push_back(istring);
+        }
+    }
 }
 
 void Project::save(const std::string& path) {
@@ -4039,7 +4058,7 @@ void Project::do_save(const std::string& path) {
 		#else
 		#ifdef POSIX
 		std::string homedir (getenv("HOME"));
-		std::string dir = homedir + "f/.ewocvj2/";
+		std::string dir = homedir + "/.ewocvj2/";
 		#endif
 		#endif
 		wfile.open(dir + "recentprojectslist");
@@ -4052,5 +4071,494 @@ void Project::do_save(const std::string& path) {
 		wfile.close();
 	}
 }
-	
+
+void Project::autosave() {
+    mainprogram->astimestamp = (int) mainmix->time;
+
+    std::string name;
+    if (this->autosavelist.size()) {
+        name = remove_extension(this->autosavelist.back());
+    } else {
+        name = this->autosavedir + "autosave_" +
+               remove_extension(basename(this->path)) + "_0";
+    }
+    int num = std::stoi(name.substr(name.rfind('_') + 1, name.length() - name.rfind('_') - 1));
+    name = remove_version(name) + "_" + std::to_string(num + 1);
+    std::string path = name + ".state";
+
+    mainmix->do_save_state(path, true);
+
+    this->autosavelist.push_back(path);
+    if (this->autosavelist.size() > 20)
+        this->autosavelist.erase(this->autosavelist.begin());
+    std::ofstream wfile;
+    wfile.open(this->autosavedir + "autosavelist");
+    wfile << "EWOCvj AUTOSAVELIST V0.1\n";
+    for (int i = 0; i < this->autosavelist.size(); i++) {
+        wfile << this->autosavelist[i];
+        wfile << "\n";
+    }
+    wfile << "ENDOFFILE\n";
+    wfile.close();
+}
+
+
+
+//  THINGS PREFERENCES RELATED
+
+
+Preferences::Preferences() {
+    PIVid *pvi = new PIVid;
+    pvi->box = new Box;
+    pvi->box->tooltiptitle = "Video settings ";
+    pvi->box->tooltip = "Left click to set video related preferences ";
+    this->items.push_back(pvi);
+    PIInt *pii = new PIInt;
+    pii->box = new Box;
+    pii->box->tooltiptitle = "Interface settings ";
+    pii->box->tooltip = "Left click to set interface related preferences ";
+    this->items.push_back(pii);
+    PIProg *pip = new PIProg;
+    pip->box = new Box;
+    pip->box->tooltiptitle = "Program settings ";
+    pip->box->tooltip = "Left click to set program related preferences ";
+    this->items.push_back(pip);
+    PIDirs *pidirs = new PIDirs;
+    pidirs->box = new Box;
+    pidirs->box->tooltiptitle = "Directory settings ";
+    pidirs->box->tooltip = "Left click to set default directories ";
+    this->items.push_back(pidirs);
+    PIMidi *pimidi = new PIMidi;
+    pimidi->populate();
+    pimidi->box = new Box;
+    pimidi->box->tooltiptitle = "MIDI device settings ";
+    pimidi->box->tooltip = "Left click to set MIDI device related preferences ";
+    this->items.push_back(pimidi);
+    for (int i = 0; i < this->items.size(); i++) {
+        PrefCat *item = this->items[i];
+        item->box->vtxcoords->x1 = -1.0f;
+        item->box->vtxcoords->y1 = 1.0f - (i + 1) * 0.2f;
+        item->box->vtxcoords->w = 0.5f;
+        item->box->vtxcoords->h = 0.2f;
+    }
+}
+
+void Preferences::load() {
+    std::ifstream rfile;
+#ifdef WINDOWS
+    std::string prstr = mainprogram->docpath + "preferences.prefs";
+#else
+#ifdef POSIX
+    std::string homedir (getenv("HOME"));
+    std::string prstr = homedir + "/.ewocvj2/preferences.prefs";
+#endif
+#endif
+    if (!exists(prstr)) return;
+    rfile.open(prstr);
+    std::string istring;
+    safegetline(rfile, istring);
+    while (safegetline(rfile, istring)) {
+        if (istring == "ENDOFFILE") break;
+
+        else if (istring == "PREFCAT") {
+            while (safegetline(rfile, istring)) {
+                if (istring == "ENDOFPREFCAT") break;
+                bool brk = false;
+                for (int i = 0; i < mainprogram->prefs->items.size(); i++) {
+                    if (mainprogram->prefs->items[i]->name == istring) {
+                        std::string catname = istring;
+                        if (istring == "MIDI Devices") ((PIMidi*)(mainprogram->prefs->items[i]))->populate();
+                        while (safegetline(rfile, istring)) {
+                            if (istring == "ENDOFPREFCAT") {
+                                brk = true;
+                                break;
+                            }
+                            int foundpos = -1;
+                            PrefItem *pi = nullptr;
+                            for (int j = 0; j < mainprogram->prefs->items[i]->items.size(); j++) {
+                                pi = mainprogram->prefs->items[i]->items[j];
+                                if (pi->name == istring && pi->connected) {
+                                    foundpos = j;
+                                    safegetline(rfile, istring);
+                                    if (pi->type == PREF_ONOFF) {
+                                        pi->onoff = std::stoi(istring);
+                                        if (pi->dest) *(bool*)pi->dest = pi->onoff;
+                                    }
+                                    else if (pi->type == PREF_NUMBER) {
+                                        pi->value = std::stoi(istring);
+                                        if (pi->dest) *(float*)pi->dest = pi->value;
+                                    }
+                                    else if (pi->type == PREF_PATH) {
+                                        boost::filesystem::path p(istring);
+                                        if (!boost::filesystem::exists(p)) {
+                                            pi->path = *(std::string*)pi->dest;
+                                            continue;
+                                        }
+                                        pi->path = istring;
+                                        std::string lastchar = pi->path.substr(pi->path.length() - 1, std::string::npos);
+                                        if (lastchar != "/" && lastchar != "\\") pi->path += "/";
+                                        if (pi->dest) *(std::string*)pi->dest = pi->path;
+                                    }
+                                    break;
+                                }
+                            }
+                            if (catname == "MIDI Devices") {
+                                if (foundpos == -1) {
+                                    std::string name = istring;
+                                    safegetline(rfile, istring);
+                                    bool onoff = std::stoi(istring);
+                                    PrefItem *pmi = new PrefItem(mainprogram->prefs->items[i], mainprogram->prefs->items[i]->items.size(), name, PREF_ONOFF, nullptr);
+                                    mainprogram->prefs->items[i]->items.push_back(pmi);
+                                    pmi->onoff = onoff;
+                                    pmi->connected = false;
+                                }
+                                else {
+                                    PIMidi *pim = (PIMidi*)mainprogram->prefs->items[i];
+                                    if (!pi->onoff) {
+                                        if (std::find(pim->onnames.begin(), pim->onnames.end(), pi->name) != pim->onnames.end()) {
+                                            pim->onnames.erase(std::find(pim->onnames.begin(), pim->onnames.end(), pi->name));
+                                            mainprogram->openports.erase(std::find(mainprogram->openports.begin(), mainprogram->openports.end(), foundpos));
+                                            pi->midiin->cancelCallback();
+                                            delete pi->midiin;
+                                        }
+                                    }
+                                    else {
+                                        pim->onnames.push_back(pi->name);
+                                        RtMidiIn *midiin = new RtMidiIn(RtMidi::UNIX_JACK);
+                                        if (std::find(mainprogram->openports.begin(), mainprogram->openports.end(), foundpos) == mainprogram->openports.end()) {
+                                            midiin->openPort(foundpos);
+                                            midiin->setCallback(&mycallback, (void*)pim->items[foundpos]);
+                                            mainprogram->openports.push_back(foundpos);
+                                        }
+                                        pi->midiin = midiin;
+                                    }
+                                }
+                            }
+                        }
+                        if (brk) break;
+                    }
+                }
+                if (brk) break;
+            }
+        }
+        if (istring == "CURRFILESDIR") {
+            safegetline(rfile, istring);
+            boost::filesystem::path p(istring);
+            if (boost::filesystem::exists(p)) mainprogram->currfilesdir = istring;
+        }
+        else if (istring == "CURRCLIPFILESDIR") {
+            safegetline(rfile, istring);
+            boost::filesystem::path p(istring);
+            if (boost::filesystem::exists(p)) mainprogram->currclipfilesdir = istring;
+        }
+        else if (istring == "CURRSHELFFILESDIR") {
+            safegetline(rfile, istring);
+            boost::filesystem::path p(istring);
+            if (boost::filesystem::exists(p)) mainprogram->currshelffilesdir = istring;
+        }
+        else if (istring == "CURRBINFILESDIR") {
+            safegetline(rfile, istring);
+            boost::filesystem::path p(istring);
+            if (boost::filesystem::exists(p)) mainprogram->currbinfilesdir = istring;
+        }
+        else if (istring == "CURRSTATEDIR") {
+            safegetline(rfile, istring);
+            boost::filesystem::path p(istring);
+            if (boost::filesystem::exists(p)) mainprogram->currstatedir = istring;
+        }
+        else if (istring == "CURRSHELFFILESDIR") {
+            safegetline(rfile, istring);
+            boost::filesystem::path p(istring);
+            if (boost::filesystem::exists(p)) mainprogram->currshelffilesdir = istring;
+        }
+    }
+
+    mainprogram->set_ow3oh3();
+    rfile.close();
+}
+
+void Preferences::save() {
+    std::ofstream wfile;
+#ifdef WINDOWS
+    std::string prstr = mainprogram->docpath + "preferences.prefs";
+#else
+#ifdef POSIX
+    std::string homedir (getenv("HOME"));
+    std::string prstr = homedir + "/.ewocvj2/preferences.prefs";
+#endif
+#endif
+    wfile.open(prstr);
+    wfile << "EWOCvj Preferences V0.2\n";
+
+    for (int i = 0; i < mainprogram->prefs->items.size(); i++) {
+        PrefCat *pc = mainprogram->prefs->items[i];
+        wfile << "PREFCAT\n";
+        wfile << pc->name;
+        wfile << "\n";
+        for (int j = 0; j < pc->items.size(); j++) {
+            wfile << pc->items[j]->name;
+            wfile << "\n";
+            if (pc->items[j]->type == PREF_ONOFF) {
+                wfile << std::to_string(pc->items[j]->onoff);
+                wfile << "\n";
+            }
+            else if (pc->items[j]->type == PREF_NUMBER) {
+                wfile << std::to_string(pc->items[j]->value);
+                wfile << "\n";
+            }
+            else if (pc->items[j]->type == PREF_PATH) {
+                wfile << pc->items[j]->path;
+                wfile << "\n";
+            }
+        }
+        wfile << "ENDOFPREFCAT\n";
+    }
+
+    wfile << "CURRFILESDIR\n";
+    wfile << mainprogram->currfilesdir;
+    wfile << "\n";
+    wfile << "CURRCLIPFILESDIR\n";
+    wfile << mainprogram->currclipfilesdir;
+    wfile << "\n";
+    wfile << "CURRSHELFFILESDIR\n";
+    wfile << mainprogram->currshelffilesdir;
+    wfile << "\n";
+    wfile << "CURRBINFILESDIR\n";
+    wfile << mainprogram->currshelffilesdir;
+    wfile << "\n";
+    wfile << "CURRSTATEDIR\n";
+    wfile << mainprogram->currstatedir;
+    wfile << "\n";
+
+    wfile << "ENDOFFILE\n";
+    wfile.close();
+}
+
+
+PrefItem::PrefItem(PrefCat *cat, int pos, std::string name, PREF_TYPE type, void *dest) {
+    this->name = name;
+    this->type = type;
+    this->dest = dest;
+    this->namebox = new Box;
+    this->namebox->vtxcoords->x1 = -0.5f;
+    this->namebox->vtxcoords->y1 = 1.0f - (pos + 1) * 0.2f;
+    this->namebox->vtxcoords->w = 1.5f;
+    if (type == PREF_PATH) this->namebox->vtxcoords->w = 0.6f;
+    this->namebox->vtxcoords->h = 0.2f;
+    this->namebox->upvtxtoscr();
+    this->valuebox = new Box;
+    if (type == PREF_ONOFF) {
+        this->valuebox->vtxcoords->x1 = -0.425f;
+        this->valuebox->vtxcoords->y1 = 1.05f - (pos + 1) * 0.2f;
+        this->valuebox->vtxcoords->w = 0.1f;
+        this->valuebox->vtxcoords->h = 0.1f;
+    }
+    else if (type == PREF_NUMBER) {
+        this->valuebox->vtxcoords->x1 = 0.25f;
+        this->valuebox->vtxcoords->y1 = 1.0f - (pos + 1) * 0.2f;
+        this->valuebox->vtxcoords->w = 0.3f;
+        this->valuebox->vtxcoords->h = 0.2f;
+    }
+    else if (type == PREF_PATH) {
+        this->valuebox->vtxcoords->x1 = 0.1f;
+        this->valuebox->vtxcoords->y1 = 1.0f - (pos + 1) * 0.2f;
+        this->valuebox->vtxcoords->w = 0.8f;
+        this->valuebox->vtxcoords->h = 0.2f;
+        this->iconbox = new Box;
+        this->iconbox->vtxcoords->x1 = 0.9f;
+        this->iconbox->vtxcoords->y1 = 1.0f - (pos + 1) * 0.2f;
+        this->iconbox->vtxcoords->w = 0.1f;
+        this->iconbox->vtxcoords->h = 0.2f;
+        this->iconbox->upvtxtoscr();
+    }
+    this->valuebox->upvtxtoscr();
+}
+
+PIDirs::PIDirs() {
+    PrefItem *pdi;
+    int pos = 0;
+    this->name = "Directories";
+
+    pdi = new PrefItem(this, pos, "Projects", PREF_PATH, (void*)&mainprogram->projdir);
+    pdi->namebox->tooltiptitle = "Projects directory ";
+    pdi->namebox->tooltip = "Directory where new projects will be created in. ";
+    pdi->valuebox->tooltiptitle = "Set projects directory ";
+    pdi->valuebox->tooltip = "Leftclick starts keyboard entry of location of projects directory. ";
+    pdi->iconbox->tooltiptitle = "Browse to set projects directory ";
+    pdi->iconbox->tooltip = "Leftclick allows browsing for location of projects directory. ";
+#ifdef WINDOWS
+    pdi->path = mainprogram->docpath + "projects/";
+#else
+#ifdef POSIX
+    pdi->path = mainprogram->homedir + "/Documents/EWOCvj2/projects/";
+#endif
+#endif
+    mainprogram->projdir = pdi->path;
+    this->items.push_back(pdi);
+    pos++;
+
+    pdi = new PrefItem(this, pos, "Content root", PREF_PATH, (void*)&mainprogram->contentpath);
+    pdi->namebox->tooltiptitle = "Content root directory ";
+    pdi->namebox->tooltip = "Root directory relative to which referenced content will be searched. ";
+    pdi->valuebox->tooltiptitle = "Set content root directory ";
+    pdi->valuebox->tooltip = "Leftclick starts keyboard entry of location of content root directory. ";
+    pdi->iconbox->tooltiptitle = "Browse to set content root directory ";
+    pdi->iconbox->tooltip = "Leftclick allows browsing for location of content root directory. ";
+#ifdef WINDOWS
+    pdi->path = mainprogram->docpath + "projects/";
+#else
+#ifdef POSIX
+    pdi->path = mainprogram->homedir + "/Videos/";
+#endif
+#endif
+    mainprogram->projdir = pdi->path;
+    this->items.push_back(pdi);
+    pos++;
+}
+
+PIMidi::PIMidi() {
+    this->name = "MIDI Devices";
+}
+
+void PIMidi::populate() {
+    std::vector<PrefItem*> ncitems;
+    for (int i = 0; i < this->items.size(); i++) {
+        if (!this->items[i]->connected) ncitems.push_back(this->items[i]);
+    }
+    RtMidiIn midiin;
+    int nPorts = midiin.getPortCount();
+    std::string portName;
+    std::vector<PrefItem*> intrmitems;
+    std::vector<PrefItem*> itemsleft = this->items;
+    for (int i = 0; i < nPorts; i++) {
+        std::string nm = midiin.getPortName(i);
+        PrefItem *pmi = new PrefItem(this, i, nm, PREF_ONOFF, nullptr);
+        pmi->onoff = (std::find(this->onnames.begin(), this->onnames.end(), pmi->name) != this->onnames.end());
+        pmi->connected = true;
+        pmi->namebox->tooltiptitle = "MIDI device ";
+        pmi->namebox->tooltip = "Name of a connected MIDI device. ";
+        pmi->valuebox->tooltiptitle = "MIDI device on/off ";
+        pmi->valuebox->tooltip = "Leftclicking toggles if this MIDI device is used by EWOCvj2. ";
+        for (int j = 0; j < itemsleft.size(); j++) {
+            if (itemsleft[j]->name == pmi->name) {
+                // already opened ports, just assign
+                pmi->midiin = itemsleft[j]->midiin;
+                break;
+            }
+        }
+        std::vector<PrefItem*> itemslefttemp = itemsleft;
+        while (itemslefttemp.size()) {
+            if (itemslefttemp.back()->name == pmi->name) {
+                // items already in list
+                // erase from itemsleft to allow for multiple same names  reminder: test!
+                itemsleft.erase(itemsleft.begin() + itemslefttemp.size() - 1);
+            }
+            itemslefttemp.pop_back();
+        }
+        intrmitems.push_back(pmi);
+    }
+    for (int i = 0; i < this->items.size(); i++) {
+        //if (this->items[i]->connected) delete this->items[i];
+    }
+    this->items = intrmitems;
+    this->items.insert(this->items.end(), ncitems.begin(), ncitems.end());
+}
+
+PIInt::PIInt() {
+    this->name = "Interface";
+    PrefItem *pii;
+    int pos = 0;
+
+    pii = new PrefItem(this, pos, "Select needs click", PREF_ONOFF, (void*)&mainprogram->needsclick);
+    pii->onoff = 0;
+    pii->namebox->tooltiptitle = "Select needs click ";
+    pii->namebox->tooltip = "Toggles if layer selection needs a click or not. ";
+    pii->valuebox->tooltiptitle = "Select needs click ";
+    pii->valuebox->tooltip = "Toggles if layer selection needs a click or not. ";
+    mainprogram->needsclick = pii->onoff;
+    this->items.push_back(pii);
+    pos++;
+
+    pii = new PrefItem(this, pos, "Show tooltips", PREF_ONOFF, (void*)& mainprogram->showtooltips);
+    pii->onoff = 1;
+    pii->namebox->tooltiptitle = "Show tooltips toggle ";
+    pii->namebox->tooltip = "Toggles if tooltips will be shown when hovering mouse over an interface element. ";
+    pii->valuebox->tooltiptitle = "Show tooltips toggle ";
+    pii->valuebox->tooltip = "Toggles if tooltips will be shown when hovering mouse over an interface element. ";
+    mainprogram->showtooltips = pii->onoff;
+    this->items.push_back(pii);
+    pos++;
+
+    pii = new PrefItem(this, pos, "Long tooltips", PREF_ONOFF, (void*)& mainprogram->longtooltips);
+    pii->onoff = 1;
+    pii->namebox->tooltiptitle = "Long tooltips toggle ";
+    pii->namebox->tooltip = "Toggles if tooltips will be long, if off only tooltip titles will be shown. ";
+    pii->valuebox->tooltiptitle = "Long tooltips toggle ";
+    pii->valuebox->tooltip = "Toggles if tooltips will be long, if off only tooltip titles will be shown. ";
+    mainprogram->showtooltips = pii->onoff;
+    this->items.push_back(pii);
+    pos++;
+}
+
+PIVid::PIVid() {
+    this->name = "Video";
+    PrefItem *pvi;
+    int pos = 0;
+
+    pvi = new PrefItem(this, pos, "Output video width", PREF_NUMBER, (void*)&mainprogram->ow);
+    pvi->value = 1920;
+    pvi->namebox->tooltiptitle = "Output video width ";
+    pvi->namebox->tooltip = "Sets the width in pixels of the video stream sent to the output. ";
+    pvi->valuebox->tooltiptitle = "Output video width ";
+    pvi->valuebox->tooltip = "Leftclicking the value allows setting the width in pixels of the video stream sent to the output. ";
+    mainprogram->ow = pvi->value;
+    this->items.push_back(pvi);
+    pos++;
+
+    pvi = new PrefItem(this, pos, "Output video height", PREF_NUMBER, (void*)&mainprogram->oh);
+    pvi->value = 1080;
+    pvi->namebox->tooltiptitle = "Output video height ";
+    pvi->namebox->tooltip = "Sets the height in pixels of the video stream sent to the output. ";
+    pvi->valuebox->tooltiptitle = "Output video height ";
+    pvi->valuebox->tooltip = "Leftclicking the value allows setting the height in pixels of the video stream sent to the output. ";
+    mainprogram->oh = pvi->value;
+    this->items.push_back(pvi);
+    pos++;
+
+    pvi = new PrefItem(this, pos, "Highly compressed video quality", PREF_NUMBER, (void*)&mainprogram->qualfr);
+    pvi->value = 3;
+    pvi->namebox->tooltiptitle = "Video playback quality of highly compressed streams ";
+    pvi->namebox->tooltip = "Sets the quality of the video stream playback for streams that don't have one keyframe per frame encoded. A tradeoff between quality and framerate. ";
+    pvi->valuebox->tooltiptitle = "Video playback quality of highly compressed streams ";
+    pvi->valuebox->tooltip = "Leftclicking the value allows setting the quality in the range of 1 to 10.  Lower is better quality and worse framerate/choppier playback. ";
+    mainprogram->qualfr = pvi->value;
+    this->items.push_back(pvi);
+    pos++;
+}
+
+PIProg::PIProg() {
+    this->name = "Program";
+    PrefItem *ppi;
+    int pos = 0;
+
+    ppi = new PrefItem(this, pos, "Autosave", PREF_ONOFF, (void*)&mainprogram->autosave);
+    ppi->onoff = 1;
+    ppi->namebox->tooltiptitle = "Autosave ";
+    ppi->namebox->tooltip = "Saves project states at specified intervals in specified directory. ";
+    ppi->valuebox->tooltiptitle = "Autosave toggle ";
+    ppi->valuebox->tooltip = "Leftclick to turn on/off autosave functionality. ";
+    mainprogram->autosave = ppi->onoff;
+    this->items.push_back(ppi);
+    pos++;
+
+    ppi = new PrefItem(this, pos, "Autosave interval (minutes)", PREF_NUMBER, (void*)&mainprogram->asminutes);
+    ppi->value = 1;
+    ppi->namebox->tooltiptitle = "Autosave interval ";
+    ppi->namebox->tooltip = "Sets the time interval between successive autosaves. ";
+    ppi->valuebox->tooltiptitle = "Set autosave interval ";
+    ppi->valuebox->tooltip = "Leftclicking the value allows typing the autosave interval as number of minutes. ";
+    mainprogram->asminutes = ppi->value;
+    this->items.push_back(ppi);
+    pos++;
+}
 

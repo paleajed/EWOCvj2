@@ -244,6 +244,10 @@ void LoopStationElement::mouse_handle() {
 		}
 		else {
 			if (this->eventlist.size()) {
+                std::chrono::high_resolution_clock::time_point now = std::chrono::high_resolution_clock::now();
+                std::chrono::duration<double> elapsed;
+                elapsed = std::chrono::duration_cast<std::chrono::duration<double>>(now - this->starttime);
+                this->totaltime = std::chrono::duration_cast<std::chrono::milliseconds>(elapsed).count();
 				this->loopbut->value = true;
 				this->starttime = std::chrono::high_resolution_clock::now();
 				this->interimtime = 0;
@@ -323,31 +327,30 @@ void LoopStationElement::set_values() {
 			}
 		}
 		this->eventpos++;
-		if (this->eventpos >= this->eventlist.size()) {
-			if (this->eventlist.size() == 0) {
-				// end loop when one-shot playing or no of the params exist anymore
-				this->playbut->value = false;
-				this->loopbut->value = false;
-			}
-			if (this->eventpos >= this->eventlist.size()) {
-				if (this->loopbut->value) {
-					//start loop again
-					this->eventpos = 0;
-					this->starttime = std::chrono::high_resolution_clock::now();
-					this->interimtime = 0;
-					this->speedadaptedtime = 0;
-				}
-				else if (this->playbut->value) {
-					//end of single shot eventlist play
-					this->playbut->value = false;
-					this->playbut->oldvalue = true;
-				}
-			}
-			break;
-		}
 		event = this->eventlist[this->eventpos];
 	}
-}		
+    if (this->interimtime >= this->totaltime) {
+        if (this->eventlist.size() == 0) {
+            // end loop when one-shot playing or no of the params exist anymore
+            this->playbut->value = false;
+            this->loopbut->value = false;
+        }
+        else {
+            if (this->loopbut->value) {
+                //start loop again
+                this->eventpos = 0;
+                this->starttime = std::chrono::high_resolution_clock::now();
+                this->interimtime = 0;
+                this->speedadaptedtime = 0;
+            }
+            else if (this->playbut->value) {
+                //end of single shot eventlist play
+                this->playbut->value = false;
+                this->playbut->oldvalue = true;
+            }
+        }
+    }
+}
 		
 void LoopStationElement::add_param(Param* par) {
 	std::chrono::high_resolution_clock::time_point now = std::chrono::high_resolution_clock::now();

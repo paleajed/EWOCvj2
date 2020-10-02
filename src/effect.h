@@ -81,6 +81,7 @@ class Param {
 		bool nextrow = false;
 		std::vector<std::string> oscpaths;
 		void handle();
+        void deautomate();
 		Param();
 		~Param();
 };

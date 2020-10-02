@@ -60,6 +60,7 @@ class Button {
 		bool handle(bool circlein = false);
 		bool handle(bool circlein, bool automation);
 		bool toggled();
+		void deautomate();
 		Button(bool state);
 		~Button();
 };

@@ -58,7 +58,8 @@ class LoopStationElement {
 		Box *colbox;
 		Box *box;
 		std::chrono::high_resolution_clock::time_point starttime;
-		long long interimtime = 0;
+        long long interimtime = 0;
+        long long totaltime = 0;
 		long long speedadaptedtime = 0;
 		Param *speed;
 		std::vector<std::tuple<long long, Param*, Button*, float>> eventlist;

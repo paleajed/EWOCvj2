@@ -6,7 +6,8 @@
 #ifdef WINDOWS
 #include "dirent.h"
 #endif
-#include <RtMidi.h>
+#define __LINUX_ALSA__
+#include <rtmidi/RtMidi.h>
 #include <istream>
 #include <lo/lo.h>
 #include <lo/lo_cpp.h>
@@ -151,10 +152,13 @@ class Project {
 		std::string path;
 		std::string binsdir;
 		std::string recdir;
-		std::string shelfdir;
+        std::string shelfdir;
+        std::string autosavedir;
+        std::vector<std::string> autosavelist;
 		void newp(const std::string &path);
 		void open(const std::string &path);
-		void save(const std::string& path);
+        void save(const std::string& path);
+        void autosave();
 		void do_save(const std::string& path);
 		void delete_dirs();
 		void create_dirs(const std::string &path);
@@ -406,7 +410,8 @@ class Program {
 		bool eXit = false;
 		std::string temppath;
 		std::string docpath;
-		std::string fontpath;
+        std::string fontpath;
+        std::string contentpath;
 		std::string path;
 		std::vector<std::string> paths;
 		int counting;
@@ -524,7 +529,6 @@ class Program {
 		bool autosave;
 		float asminutes = 1;
 		int astimestamp = 0;
-		std::vector<std::string> autosavelist;
 		int qualfr = 3;
 
 		std::unordered_map <std::string, GUIString*> guitextmap;
@@ -575,9 +579,6 @@ class Program {
 
 		std::string projdir;
 		std::string binsdir;
-		std::string recdir;
-		std::string shelfdir;
-		std::string autosavedir;
 		std::string currprojdir;
 		std::string currbinsdir;
 		std::string currshelfdir;
@@ -623,7 +624,7 @@ class Program {
 		int pathscroll = 0;
 		bool indragbox = false;
 		Box* dragbox;
-		bool dragright = false;
+		bool dragmiddle = false;
 		bool dragout[2] = { true, true };
 		std::string quitting;
 		Layer* draginscrollbarlay = nullptr;

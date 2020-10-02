@@ -28,7 +28,7 @@ add_executable(EWOCvj2
         tinyfiledialogs.c
         tinyfiledialogs.h
         window.h
-        RtMidi.cpp)
+        )
 
 include_directories(.)
 
@@ -43,7 +43,7 @@ if (WIN32)
     endif (MSVC)
 endif (WIN32)
 if (UNIX)
-    include_directories(/usr/include/rtmidi)
+    #include_directories(/usr/include/rtmidi)
     include_directories(/usr/include/libjpeg-turbo)
     include_directories(/usr/include/freetype2)
 endif (UNIX)
@@ -140,7 +140,9 @@ if (UNIX)
     find_library(TJPEG_LIBRARY turbojpeg HINTS /opt/libjpeg-turbo/lib64 /usr/lib /usr/lib64 /usr/local/lib /usr/local/lib64)
     target_link_libraries(EWOCvj2 PUBLIC ${TJPEG_LIBRARY})
     find_library(RTMIDI_LIBRARY rtmidi HINTS /usr/lib /usr/lib64 /usr/local/lib /usr/local/lib64)
-    target_link_libraries(EWOCvj2 PUBLIC optimized ${RTMIDI_LIBRARY})
+    target_link_libraries(EWOCvj2 PUBLIC ${RTMIDI_LIBRARY})
+    find_library(ALSA_LIBRARY asound HINTS /usr/lib /usr/lib64 /usr/local/lib /usr/local/lib64)
+    target_link_libraries(EWOCvj2 PUBLIC ${ALSA_LIBRARY})
 endif (UNIX)
 
 if (WIN32)
