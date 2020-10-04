@@ -629,7 +629,7 @@ void Program::get_multinname(const char* title, std::string filters, std::string
 	this->autosave = as;
 }
 
-void Program::get_dir(std::string title, std::string defaultdir) {
+void Program::get_dir(const char* title, std::string defaultdir) {
 	bool as = mainprogram->autosave;
 	mainprogram->autosave = false;
 
@@ -668,8 +668,10 @@ void Program::get_dir(std::string title, std::string defaultdir) {
 	this->path = (char*)szDir;
 	OleUninitialize();
 #endif
-
-	//this->path = tinyfd_selectFolderDialog(title, dd) ;
+#ifdef POSIX
+    char const* const dd = (defaultdir == "") ? "" : defaultdir.c_str();
+	this->path = tinyfd_selectFolderDialog(title, dd);
+	#endif
 	mainprogram->autosave = as;
 }
 
@@ -1985,6 +1987,7 @@ void Program::handle_loopmenu() {
 	k = mainprogram->handle_menu(mainprogram->loopmenu);
 	if (k > -1) {
 		if (k == 0) {
+		    // set start of playloop to frame position
 			mainmix->mouselayer->startframe = mainmix->mouselayer->frame;
 			if (mainmix->mouselayer->startframe > mainmix->mouselayer->endframe) {
 				mainmix->mouselayer->endframe = mainmix->mouselayer->startframe;
@@ -1992,6 +1995,7 @@ void Program::handle_loopmenu() {
 			mainmix->mouselayer->set_clones();
 		}
 		else if (k == 1) {
+            // set end of playloop to frame position
 			mainmix->mouselayer->endframe = mainmix->mouselayer->frame;
 			if (mainmix->mouselayer->startframe > mainmix->mouselayer->endframe) {
 				mainmix->mouselayer->startframe = mainmix->mouselayer->endframe;
@@ -1999,6 +2003,7 @@ void Program::handle_loopmenu() {
 			mainmix->mouselayer->set_clones();
 		}
 		else if (k == 2) {
+		    // copy playloop duration
 			float fac = mainmix->deckspeed[!mainprogram->prevmodus][mainmix->mouselayer->deck]->value;
 			if (mainmix->mouselayer->clonesetnr != -1) {
 				std::unordered_set<Layer*>::iterator it;
@@ -2010,10 +2015,10 @@ void Program::handle_loopmenu() {
 					}
 				}
 			}
-			mainmix->cbduration = ((float)(mainmix->mouselayer->endframe - mainmix->mouselayer->startframe) * mainmix->mouselayer->millif) / (mainmix->mouselayer->speed->value * mainmix->mouselayer->speed->value * fac * fac);
-			printf("fac %f\n", fac);
+			mainmix->cbduration = ((float)(mainmix->mouselayer->numf) * mainmix->mouselayer->millif) / (mainmix->mouselayer->speed->value * mainmix->mouselayer->speed->value * fac * fac);
 		}
 		else if (k == 3) {
+		    // paste playloop duration by changing the speed
 			float fac = mainmix->deckspeed[!mainprogram->prevmodus][mainmix->mouselayer->deck]->value;
 			if (mainmix->mouselayer->clonesetnr != -1) {
 				std::unordered_set<Layer*>::iterator it;
@@ -2025,10 +2030,11 @@ void Program::handle_loopmenu() {
 					}
 				}
 			}
-			mainmix->mouselayer->speed->value = sqrt(((float)(mainmix->mouselayer->endframe - mainmix->mouselayer->startframe) * mainmix->mouselayer->millif) / mainmix->cbduration / (fac * fac));
+			mainmix->mouselayer->speed->value = sqrt(((float)(mainmix->mouselayer->numf) * mainmix->mouselayer->millif) / mainmix->cbduration / (fac * fac));
 			mainmix->mouselayer->set_clones();
 		}
 		else if (k == 4) {
+		    // paste playloop duration by changing the duration itself
 			float sf, ef;
 			float loop = mainmix->mouselayer->endframe - mainmix->mouselayer->startframe;
 			float dsp = mainmix->deckspeed[!mainprogram->prevmodus][mainmix->mouselayer->deck]->value;
@@ -2893,58 +2899,84 @@ void Program::handle_filemenu() {
 }
 
 void Program::handle_editmenu() {
-	int k = -1;
-	// Draw and Program::handle editmenu
-	k = mainprogram->handle_menu(mainprogram->editmenu);
-	if (k == 0) {
-		if (!mainprogram->prefon) {
-			mainprogram->prefon = true;
-			SDL_ShowWindow(mainprogram->prefwindow);
-			SDL_RaiseWindow(mainprogram->prefwindow);
-			SDL_GL_MakeCurrent(mainprogram->prefwindow, glc);
-			glUseProgram(mainprogram->ShaderProgram_pr);
-			glEnable(GL_BLEND);
-			glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
-			for (int i = 0; i < mainprogram->prefs->items.size(); i++) {
-				PrefCat* item = mainprogram->prefs->items[i];
-				item->box->upvtxtoscr();
-			}
-		}
-		else {
-			SDL_RaiseWindow(mainprogram->prefwindow);
-		}
-	}
-	else if (k == 1) {
-		if (!mainprogram->midipresets) {
-			SDL_ShowWindow(mainprogram->config_midipresetswindow);
-			SDL_RaiseWindow(mainprogram->config_midipresetswindow);
-			SDL_GL_MakeCurrent(mainprogram->config_midipresetswindow, glc);
-			glUseProgram(mainprogram->ShaderProgram_tm);
-			mainprogram->tmset->upvtxtoscr();
-			mainprogram->tmscratch->upvtxtoscr();
-			mainprogram->tmfreeze->upvtxtoscr();
-			mainprogram->tmplay->upvtxtoscr();
-			mainprogram->tmbackw->upvtxtoscr();
-			mainprogram->tmbounce->upvtxtoscr();
-			mainprogram->tmfrforw->upvtxtoscr();
-			mainprogram->tmfrbackw->upvtxtoscr();
-			mainprogram->tmspeed->upvtxtoscr();
-			mainprogram->tmspeedzero->upvtxtoscr();
-			mainprogram->tmopacity->upvtxtoscr();
-			glEnable(GL_BLEND);
-			glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
-			mainprogram->midipresets = true;
-		}
-		else {
-			SDL_RaiseWindow(mainprogram->config_midipresetswindow);
-		}
-	}
+    int k = -1;
+    // Draw and Program::handle editmenu
+    k = mainprogram->handle_menu(mainprogram->editmenu);
+    if (k == 0) {
+        if (!mainprogram->prefon) {
+            mainprogram->prefon = true;
+            SDL_ShowWindow(mainprogram->prefwindow);
+            SDL_RaiseWindow(mainprogram->prefwindow);
+            SDL_GL_MakeCurrent(mainprogram->prefwindow, glc);
+            glUseProgram(mainprogram->ShaderProgram_pr);
+            glEnable(GL_BLEND);
+            glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
+            for (int i = 0; i < mainprogram->prefs->items.size(); i++) {
+                PrefCat* item = mainprogram->prefs->items[i];
+                item->box->upvtxtoscr();
+            }
+        }
+        else {
+            SDL_RaiseWindow(mainprogram->prefwindow);
+        }
+    }
+    else if (k == 1) {
+        if (!mainprogram->midipresets) {
+            SDL_ShowWindow(mainprogram->config_midipresetswindow);
+            SDL_RaiseWindow(mainprogram->config_midipresetswindow);
+            SDL_GL_MakeCurrent(mainprogram->config_midipresetswindow, glc);
+            glUseProgram(mainprogram->ShaderProgram_tm);
+            mainprogram->tmset->upvtxtoscr();
+            mainprogram->tmscratch->upvtxtoscr();
+            mainprogram->tmfreeze->upvtxtoscr();
+            mainprogram->tmplay->upvtxtoscr();
+            mainprogram->tmbackw->upvtxtoscr();
+            mainprogram->tmbounce->upvtxtoscr();
+            mainprogram->tmfrforw->upvtxtoscr();
+            mainprogram->tmfrbackw->upvtxtoscr();
+            mainprogram->tmspeed->upvtxtoscr();
+            mainprogram->tmspeedzero->upvtxtoscr();
+            mainprogram->tmopacity->upvtxtoscr();
+            glEnable(GL_BLEND);
+            glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
+            mainprogram->midipresets = true;
+        }
+        else {
+            SDL_RaiseWindow(mainprogram->config_midipresetswindow);
+        }
+    }
 
-	if (mainprogram->menuchosen) {
-		mainprogram->menuchosen = false;
-		mainprogram->menuactivation = 0;
-		mainprogram->menuresults.clear();
-	}
+    if (mainprogram->menuchosen) {
+        mainprogram->menuchosen = false;
+        mainprogram->menuactivation = 0;
+        mainprogram->menuresults.clear();
+    }
+}
+
+void Program::handle_lpstmenu() {
+    if (!mainmix->mouselpstelem) return;
+    if (mainmix->mouselpstelem->eventlist.size() == 0) return;
+    int k = -1;
+    // Draw and handle lpstmenu
+    k = mainprogram->handle_menu(mainprogram->lpstmenu);
+    if (k == 0) {
+        mainmix->cbduration = mainmix->mouselpstelem->totaltime;
+    }
+    else if (k == 1) {
+        float buspeed = mainmix->mouselpstelem->speed->value;
+        mainmix->mouselpstelem->speed->value = mainmix->mouselpstelem->totaltime / mainmix->cbduration;
+        mainmix->mouselpstelem->speedadaptedtime *= buspeed / mainmix->mouselpstelem->speed->value;
+        mainmix->mouselpstelem->interimtime *= buspeed / mainmix->mouselpstelem->speed->value;
+    }
+    else if (k == 2) {
+        mainmix->mouselpstelem->totaltime = mainmix->cbduration;
+    }
+
+    if (mainprogram->menuchosen) {
+        mainprogram->menuchosen = false;
+        mainprogram->menuactivation = 0;
+        mainprogram->menuresults.clear();
+    }
 }
 
 // end of menu code
@@ -3178,7 +3210,7 @@ bool Program::preferences_handle() {
 					mci->items[i]->choosing = true;
 					mainprogram->pathto = "CHOOSEDIR";
 					std::string title = "Open " + mci->items[i]->name + " directory";
-					std::thread filereq(&Program::get_dir, mainprogram, title, boost::filesystem::canonical(mci->items[i]->path).generic_string());
+					std::thread filereq(&Program::get_dir, mainprogram, title.c_str(), boost::filesystem::canonical(mci->items[i]->path).generic_string());
 					filereq.detach();
 				}
 			}

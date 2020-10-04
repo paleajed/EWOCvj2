@@ -5127,7 +5127,6 @@ void Mixer::loopstation_copy(bool comp) {
 		}
 		lp2->elems[i]->speed->value = lp1->elems[i]->speed->value;
 		lp2->elems[i]->starttime = lp1->elems[i]->starttime;
-		lp2->elems[i]->interimtime = lp1->elems[i]->interimtime;
 		lp2->elems[i]->speedadaptedtime = lp1->elems[i]->speedadaptedtime;
 		lp2->elems[i]->eventpos = lp1->elems[i]->eventpos;
 		lp2->elems[i]->loopbut->value = lp1->elems[i]->loopbut->value;
@@ -7693,7 +7692,7 @@ void Mixer::event_read(std::istream &rfile, Param *par, Button* but, Layer *lay)
         safegetline(rfile, istring);
         if (istring == "TOTALTIME") {
             safegetline(rfile, istring);
-            loop->totaltime = std::stoi(istring);
+            loop->totaltime = std::stof(istring);
          }
     }
 }

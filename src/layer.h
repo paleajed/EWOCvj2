@@ -52,6 +52,7 @@ struct frame_result {
 class Button;
 class Shelf;
 class ShelfElement;
+class LoopStationElement;
 
 class Clip {
 	public:
@@ -397,6 +398,7 @@ class Mixer {
 		bool insert;
 		Node *mousenode = nullptr;
 		Clip* mouseclip;
+		LoopStationElement *mouselpstelem = nullptr;
 		Param *learnparam;
 		Button *learnbutton;
 		bool learn = false;

@@ -364,7 +364,8 @@ class Program {
 		Menu* filedomenu = nullptr;
 		Menu* laylistmenu1 = nullptr;
 		Menu* laylistmenu2 = nullptr;
-		Menu* editmenu = nullptr;
+        Menu* editmenu = nullptr;
+        Menu* lpstmenu = nullptr;
 		bool menuactivation = false;
 		bool menuchosen = false;
 		std::vector<int> menuresults;
@@ -641,7 +642,7 @@ class Program {
 		void get_outname(const char *title, std::string filters, std::string defaultdir);
 		void get_inname(const char *title, std::string filters, std::string defaultdir);
 		void get_multinname(const char* title, std::string filters, std::string defaultdir);
-		void get_dir(std::string , std::string defaultdir);
+		void get_dir(const char *title , std::string defaultdir);
 #ifdef WINDOWS
 		void win_dialog(const char* title, LPCSTR filters, std::string defaultdir, bool open, bool multi);
 #endif
@@ -680,8 +681,9 @@ class Program {
 		void handle_mainmenu();
 		void handle_shelfmenu();
 		void handle_filemenu();
-		void handle_editmenu();		
-		Program();
+        void handle_editmenu();
+        void handle_lpstmenu();
+        Program();
 		
 	private:
 #ifdef WINDOWS

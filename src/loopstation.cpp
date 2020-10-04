@@ -198,11 +198,21 @@ void LoopStationElement::visualize() {
 	this->speed->box->upvtxtoscr();
 	this->colbox->upvtxtoscr();
 	this->box->upvtxtoscr();
+	float buspeed = this->speed->value;
 	this->speed->handle();
-	draw_box(grey, this->colbox->acolor, this->colbox, -1);
+    draw_box(grey, this->colbox->acolor, this->colbox, -1);
 	if (this->eventlist.size()) draw_box(this->colbox->lcolor, this->colbox->vtxcoords->x1 + tf(0.0155f) , this->colbox->vtxcoords->y1 + tf(0.025f), tf(0.015f), 1);
 	if (this == loopstation->currelem) draw_box(grey, white, this->box, -1);
 	else draw_box(grey, nullptr, this->box, -1);
+	if (this->box->in() || this->recbut->box->in() || this->loopbut->box->in() || this->playbut->box->in() || this->speed->box->in() || this->colbox->in()) {
+        if (!mainprogram->menuondisplay) {
+            if (mainprogram->menuactivation) {
+                mainprogram->lpstmenu->state = 2;
+                mainmix->mouselpstelem = this;
+                mainprogram->menuactivation = false;
+            }
+        }
+	}
 }
 	
 void LoopStationElement::erase_elem() {
@@ -310,7 +320,30 @@ void LoopStationElement::set_values() {
 	this->speedadaptedtime = this->speedadaptedtime + passed * this->speed->value;
 	std::tuple<long long, Param*, Button*, float> event;
 	event = this->eventlist[this->eventpos];
+    if (this->speedadaptedtime >= this->totaltime) {
+        // reached end of loopstation element recording
+        if (this->eventlist.size() == 0) {
+            // end loop when one-shot playing or no of the params exist anymore
+            this->playbut->value = false;
+            this->loopbut->value = false;
+        }
+        else {
+            if (this->loopbut->value) {
+                //start loop again
+                this->eventpos = 0;
+                this->speedadaptedtime -= this->totaltime;
+                this->interimtime = this->speedadaptedtime * this->speed->value;
+                this->starttime = std::chrono::high_resolution_clock::now() - std::chrono::milliseconds((long long)this->interimtime);
+            }
+            else if (this->playbut->value) {
+                //end of single shot eventlist play
+                this->playbut->value = false;
+                this->playbut->oldvalue = true;
+            }
+        }
+    }
 	while (this->speedadaptedtime > std::get<0>(event)) {
+	    // play all recorded events upto now
 		Param *par = std::get<1>(event);
 		Button *but = std::get<2>(event);
 		lpc = lpc;
@@ -329,27 +362,6 @@ void LoopStationElement::set_values() {
 		this->eventpos++;
 		event = this->eventlist[this->eventpos];
 	}
-    if (this->interimtime >= this->totaltime) {
-        if (this->eventlist.size() == 0) {
-            // end loop when one-shot playing or no of the params exist anymore
-            this->playbut->value = false;
-            this->loopbut->value = false;
-        }
-        else {
-            if (this->loopbut->value) {
-                //start loop again
-                this->eventpos = 0;
-                this->starttime = std::chrono::high_resolution_clock::now();
-                this->interimtime = 0;
-                this->speedadaptedtime = 0;
-            }
-            else if (this->playbut->value) {
-                //end of single shot eventlist play
-                this->playbut->value = false;
-                this->playbut->oldvalue = true;
-            }
-        }
-    }
 }
 		
 void LoopStationElement::add_param(Param* par) {

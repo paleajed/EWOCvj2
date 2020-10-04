@@ -2662,7 +2662,7 @@ std::vector<float> render_text(std::string text, float *textc, float x, float y,
 
             x += (g->advance.x/64.0f) * pixelw;
 			textw += (g->advance.x/64.0f) * pixelw;
-			textws.push_back((g->advance.x / 64.0f) * pixelw * ((smflag == 0) + 1) * 0.5f / 1.1f); //1.1 *
+			textws.push_back((g->advance.x / 64.0f) * pixelw * ((smflag == 0) + 1) * 0.5f); //1.1 *
 			texth = 64.0f * pixelh;
 			th = (std::max)(th, (g->metrics.height / 64.0f) * pixelh);
 
@@ -2858,7 +2858,7 @@ bool Layer::calc_texture(bool comp, bool alive) {
 
 			// on end of video (or beginning if reverse play) switch to next clip in queue
 			if (this->oldalive || !alive) {
-				if (this->frame >= (this->endframe) && this->startframe != this->endframe) {
+				if (this->frame > (this->endframe) && this->startframe != this->endframe) {
 					if (this->scritching != 4) {
 						if (this->bouncebut->value == 0) {
 							this->frame = this->startframe;
@@ -6356,7 +6356,9 @@ void the_loop() {
 
 	mainprogram->handle_filemenu();
 
-	mainprogram->handle_editmenu();
+    mainprogram->handle_editmenu();
+
+    mainprogram->handle_lpstmenu();
 
     mainprogram->frontbatch = false;
 
@@ -8117,6 +8119,12 @@ int main(int argc, char* argv[]) {
     edit.push_back("Preferences");
     edit.push_back("Configure general MIDI");
     mainprogram->make_menu("editmenu", mainprogram->editmenu, edit);
+
+    std::vector<std::string> lpst;
+    lpst.push_back("Copy loop duration");
+    lpst.push_back("Paste loop duration by changing speed");
+    lpst.push_back("Paste loop duration by changing loop length");
+    mainprogram->make_menu("lpstmenu", mainprogram->lpstmenu, lpst);
 
     //make menu item names bitmaps
     for (int i = 0; i < mainprogram->menulist.size(); i++) {
