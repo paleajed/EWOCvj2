@@ -487,6 +487,7 @@ Effect::Effect() {
 
 Effect::~Effect() {
 	delete this->box;
+	delete this->drywet;
 	delete this->onoffbutton;
 	glDeleteTextures(1, &this->fbotex);
 	glDeleteFramebuffers(1, &this->fbo);
@@ -1878,7 +1879,7 @@ void do_delete_effect(Layer *lay, int pos) {
 			if (cat) evec[pos]->node->out[0]->in = lay->lasteffnode[1];
 		}
 		if (lay->pos == 0) {
-			lay->lasteffnode[1] = lay->lasteffnode[0];
+			lay->lasteffnode[1] = lay->lasteffnode[0];  // reminder
 		}
 		if (!cat) {
 			if (lay->pos == 0) {
@@ -1907,6 +1908,15 @@ void do_delete_effect(Layer *lay, int pos) {
 	
 	lay->node->page->delete_node(evec[pos]->node);
 	lay->node->upeffboxes();
+
+	for (int i = 0; i < effect->params.size(); i++) {
+	    Param *par = effect->params[i];
+	    par->deautomate();
+	    delete par;
+	}
+    effect->drywet->deautomate();
+	effect->onoffbutton->deautomate();
+
 
 	evec.erase(evec.begin() + pos);
 	delete effect;

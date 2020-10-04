@@ -320,6 +320,26 @@ void LoopStationElement::set_values() {
 	this->speedadaptedtime = this->speedadaptedtime + passed * this->speed->value;
 	std::tuple<long long, Param*, Button*, float> event;
 	event = this->eventlist[this->eventpos];
+	while (this->speedadaptedtime > std::get<0>(event)) {
+	    // play all recorded events upto now
+		Param *par = std::get<1>(event);
+		Button *but = std::get<2>(event);
+		lpc = lpc;
+		if (par) {
+			if (par != mainmix->adaptparam) {
+				if (std::find(this->lpst->allparams.begin(), this->lpst->allparams.end(), par) != this->lpst->allparams.end()) {
+					par->value = std::get<3>(event);
+				}
+			}
+		}
+		else if (but) {
+			if (std::find(this->lpst->allbuttons.begin(), this->lpst->allbuttons.end(), but) != this->lpst->allbuttons.end()) {
+				but->value = (int)(std::get<3>(event) + 0.5f);
+			}
+		}
+		this->eventpos++;
+		event = this->eventlist[this->eventpos];
+	}
     if (this->speedadaptedtime >= this->totaltime) {
         // reached end of loopstation element recording
         if (this->eventlist.size() == 0) {
@@ -342,29 +362,10 @@ void LoopStationElement::set_values() {
             }
         }
     }
-	while (this->speedadaptedtime > std::get<0>(event)) {
-	    // play all recorded events upto now
-		Param *par = std::get<1>(event);
-		Button *but = std::get<2>(event);
-		lpc = lpc;
-		if (par) {
-			if (par != mainmix->adaptparam) {
-				if (std::find(this->lpst->allparams.begin(), this->lpst->allparams.end(), par) != this->lpst->allparams.end()) {
-					par->value = std::get<3>(event);
-				}
-			}
-		}
-		else if (but) {
-			if (std::find(this->lpst->allbuttons.begin(), this->lpst->allbuttons.end(), but) != this->lpst->allbuttons.end()) {
-				but->value = (int)(std::get<3>(event) + 0.5f);
-			}
-		}
-		this->eventpos++;
-		event = this->eventlist[this->eventpos];
-	}
 }
 		
 void LoopStationElement::add_param(Param* par) {
+    if (loopstation->parelemmap[par]) return;  // each parameter can be automated only once to avoid chaos
 	std::chrono::high_resolution_clock::time_point now = std::chrono::high_resolution_clock::now();
 	std::chrono::duration<double> elapsed;
 	elapsed = std::chrono::duration_cast<std::chrono::duration<double>>(now - this->starttime);
@@ -425,6 +426,7 @@ void LoopStationElement::add_param(Param* par) {
 }
 
 void LoopStationElement::add_button(Button* but) {
+    if (loopstation->butelemmap[but]) return;  // each button can be automated only once to avoid chaos
 	std::chrono::high_resolution_clock::time_point now = std::chrono::high_resolution_clock::now();
 	std::chrono::duration<double> elapsed;
 	elapsed = std::chrono::duration_cast<std::chrono::duration<double>>(now - this->starttime);

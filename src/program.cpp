@@ -3295,8 +3295,8 @@ bool Program::preferences_handle() {
 	mainprogram->bvao = mainprogram->boxvao;
 	mainprogram->bvbuf = mainprogram->boxvbuf;
 	mainprogram->btbuf = mainprogram->boxtbuf;
-	mainprogram->middlemouse = 0;
-	mainprogram->rightmouse = 0;
+	mainprogram->middlemouse = false;
+	mainprogram->rightmouse = false;
 	mainprogram->menuactivation = false;
 	mainprogram->mx = -1;
 	mainprogram->my = -1;
@@ -3615,8 +3615,8 @@ int Program::config_midipresets_handle() {
 	mainprogram->bvao = mainprogram->boxvao;
 	mainprogram->bvbuf = mainprogram->boxvbuf;
 	mainprogram->btbuf = mainprogram->boxtbuf;
-	mainprogram->middlemouse = 0;
-	mainprogram->rightmouse = 0;
+	mainprogram->middlemouse = false;
+	mainprogram->rightmouse = false;
 	mainprogram->menuactivation = false;
 	mainprogram->mx = -1;
 	mainprogram->my = -1;

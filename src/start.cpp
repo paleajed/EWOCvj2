@@ -1808,7 +1808,7 @@ ShelfElement::ShelfElement(bool side, int pos, Button *but) {
 	box->vtxcoords->w = boxwidth;
 	box->upvtxtoscr();
 	box->tooltiptitle = "Video launch shelf";
-	box->tooltip = "Shelf containing up to 16 videos/layerfiles for quick and easy video launching.  Left drag'n'drop from other areas, both videos and layerfiles.  Rightdrag of videos to layers launches with empty effect stack.  Rightclick launches shelf menu. ";
+	box->tooltip = "Shelf containing up to 16 videos/layerfiles for quick and easy video launching.  Left drag'n'drop from other areas, both videos and layerfiles.  Middlemousedrag of videos or images to layer stack launches with empty effect stack.  Doubleclick, either left or middlemouse loads the shelf element contents into all selected layers. Rightclick launches shelf menu. ";
 	this->sbox = new Box;
 	this->sbox->vtxcoords->x1 = box->vtxcoords->x1;
 	this->sbox->vtxcoords->y1 = box->vtxcoords->y1 + 0.05f + tf(0.006f);
@@ -4226,54 +4226,13 @@ void drag_into_layerstack(std::vector<Layer*>& layers, bool deck) {
 					lay->queueing = true;
 					mainprogram->queueing = true;
 					mainmix->currlay[!mainprogram->prevmodus] = lay;
-					if (mainprogram->lmover || mainprogram->laymenu1->state > 1 || mainprogram->laymenu2->state > 1 || mainprogram->newlaymenu->state > 1) {
+					if (mainprogram->lmover || mainprogram->middlemouse || mainprogram->laymenu1->state > 1 || mainprogram->laymenu2->state > 1 || mainprogram->newlaymenu->state > 1) {
 						set_queueing(false);
 						if (mainprogram->dragbinel) {
 							mainprogram->laymenu1->state = 0;
 							mainprogram->laymenu2->state = 0;
 							mainprogram->newlaymenu->state = 0;
-							if (mainprogram->dragmiddle) {
-								mainprogram->dragmiddle = false;
-								while (!lay->effects[0].empty()) {
-									lay->delete_effect(lay->effects[0].size() - 1);
-								}
-								lay->scale->value = 1.0f;
-								lay->shiftx->value = 0.0f;
-								lay->shifty->value = 0.0f;
-							}
-							if (mainprogram->dragbinel->type == ELEM_LAYER) {
-								mainmix->open_layerfile(mainprogram->dragbinel->path, lay, 1, 1);
-								if (mainprogram->shelfdragelem) {
-									if (mainprogram->shelfdragelem->launchtype == 2) {
-										mainprogram->shelfdragelem->nblayers.clear();
-										mainprogram->shelfdragelem->nblayers.push_back(lay);
-									}
-								}
-							}
-							else if (mainprogram->dragbinel->type == ELEM_FILE) {
-								lay->open_video(0, mainprogram->dragbinel->path, true);
-							}
-							else if (mainprogram->dragbinel->type == ELEM_IMAGE) {
-								lay->open_image(mainprogram->dragbinel->path);
-							}
-
-							// when something new is dragged into layer, set frames from framecounters set in Mixer::set_prevshelfdragelem()
-							if (mainprogram->shelfdragelem) {
-								if (mainprogram->shelfdragelem->launchtype == 1) {
-									if (mainprogram->shelfdragelem->cframes.size()) {
-										lay->frame = mainprogram->shelfdragelem->cframes[0];
-									}
-								}
-								else if (mainprogram->shelfdragelem->launchtype == 2) {
-									if (mainprogram->shelfdragelem->nblayers.size()) {
-										lay->frame = mainprogram->shelfdragelem->nblayers[0]->frame;
-									}
-								}
-								lay->prevshelfdragelem = mainprogram->shelfdragelem;
-							}
-						}
-						else {
-							lay->open_video(0, mainprogram->dragbinel->path, true);
+                            lay->open_dragbinel();
 						}
 						mainprogram->rightmouse = true;
 						binsmain->handle(0);
@@ -4419,7 +4378,31 @@ void Shelf::handle() {
 		}
 
 		if (cond) {
+		    // mouse over shelf element
 			inelem = i;
+            if (mainprogram->doubleleftmouse || mainprogram->doublemiddlemouse) {
+                // doubleclick loads elem in currlay layer slots
+                mainprogram->dragmiddle = mainprogram->middlemousedown;
+                if (elem->type != ELEM_FILE && elem->type != ELEM_IMAGE && elem->type != ELEM_LIVE) {
+                    mainprogram->dragmiddle = false;
+                }
+                mainprogram->shelfdragelem = elem;
+                mainprogram->shelfdragnum = i;
+                mainprogram->doubleleftmouse = false;
+                mainprogram->doublemiddlemouse = false;
+                mainprogram->leftmouse = false;
+                mainprogram->leftmousedown = false;
+                mainprogram->middlemouse = false;
+                mainprogram->middlemousedown = false;
+                mainprogram->dragbinel = new BinElement;
+                mainprogram->dragbinel->path = elem->path;
+                mainprogram->dragbinel->type = elem->type;
+                mainprogram->dragbinel->tex = elem->tex;
+                for (int i = 0; i < mainmix->currlays[!mainprogram->prevmodus].size(); i++) {
+                    mainmix->currlays[!mainprogram->prevmodus][i]->open_dragbinel();
+                }
+                enddrag();
+            }
 			if (mainprogram->rightmouse) {
 				if (mainprogram->dragbinel) {
 					if (mainprogram->shelfdragelem) {
@@ -6752,7 +6735,8 @@ void the_loop() {
 	mainprogram->leftmouse = 0;
 	mainprogram->orderleftmouse = 0;
 	mainprogram->doubleleftmouse = 0;
-	mainprogram->middlemouse = 0;
+    mainprogram->middlemouse = 0;
+    mainprogram->middlemousedown = false;
 	mainprogram->rightmouse = 0;
 }
 
@@ -8872,6 +8856,7 @@ int main(int argc, char* argv[]) {
                     mainprogram->leftmousedown = true;
                 }
                 if (e.button.button == SDL_BUTTON_MIDDLE) {
+                    if (e.button.clicks == 2) mainprogram->doublemiddlemouse = true;
                     mainprogram->middlemousedown = true;
                 }
                 if (e.button.button == SDL_BUTTON_RIGHT) {

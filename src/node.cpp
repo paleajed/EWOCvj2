@@ -854,7 +854,7 @@ void NodePage::handle_nodes() {
 				if (mainprogram->middlemouse) {
 					node->in->out.erase(std::find(node->in->out.begin(), node->in->out.end(), node));
 					node->in = nullptr;
-					mainprogram->middlemouse = 0;
+					mainprogram->middlemouse = false;
 				}
 			}
 			glLineWidth(1.0);
@@ -869,7 +869,7 @@ void NodePage::handle_nodes() {
 					if (mainprogram->middlemouse) {
 						nin2->out.erase(std::find(nin2->out.begin(), nin2->out.end(), node));
 						((BlendNode*)node)->in2 = nullptr;
-						mainprogram->middlemouse = 0;
+						mainprogram->middlemouse = false;
 					}
 				}
 				glLineWidth(1.0);
@@ -878,7 +878,7 @@ void NodePage::handle_nodes() {
 		
 		if (node->box->in()) {
 			if (mainprogram->middlemouse) {
-				mainprogram->middlemouse = 0;
+				mainprogram->middlemouse = false;
 				if (node->type == VIDEO) {
 					if (mainmix->deck == 0) mainmix->delete_layer(mainmix->layersA, ((VideoNode*)node)->layer, true);
 					else mainmix->delete_layer(mainmix->layersB, ((VideoNode*)node)->layer, true);

@@ -398,7 +398,8 @@ class Program {
 		bool orderleftmouse = false;
 		bool orderleftmousedown = false;
 		bool lmover = false;
-		bool doubleleftmouse = false;
+        bool doubleleftmouse = false;
+        bool doublemiddlemouse = false;
 		bool middlemouse = false;
 		bool rightmouse = false;
 		float mousewheel = false;
