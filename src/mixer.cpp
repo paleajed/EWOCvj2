@@ -3000,14 +3000,11 @@ void Layer::display() {
 			draw_box(white, darkred3, box, -1);
 		}
 		if (std::find(mainmix->currlays[!mainprogram->prevmodus].begin(), mainmix->currlays[!mainprogram->prevmodus].end(), this) != mainmix->currlays[!mainprogram->prevmodus].end()) {
-		    mainprogram->frontbatch = true;
             float pixelw = 2.0f / glob->w;
             float pixelh = 2.0f / glob->h;
             draw_box(white, nullptr, box->vtxcoords->x1 - pixelw, box->vtxcoords->y1 - pixelh, box->vtxcoords->w + 2.0f * pixelw, box->vtxcoords->h + 2.0f * pixelh, -1);
             draw_box(black, nullptr, box, -1);
-            mainprogram->frontbatch = false;
 		}
-        mainprogram->frontbatch = false;
 
 		if (mainmix->mode == 0 && mainprogram->nodesmain->linked) {
 		    // set x1 for mute and solo always
@@ -3016,7 +3013,8 @@ void Layer::display() {
             this->solobut->box->vtxcoords->x1 = this->mutebut->box->vtxcoords->x1 + 0.03f;
             this->solobut->box->upvtxtoscr();
 			if (std::find(mainmix->currlays[!mainprogram->prevmodus].begin(), mainmix->currlays[!mainprogram->prevmodus].end(), this) != mainmix->currlays[!mainprogram->prevmodus].end()) {
-				std::string deckstr;
+				// print layer monitors overlay text
+			    std::string deckstr;
 				if (this->deck == 0) deckstr = "A";
 				else if (this->deck == 1) deckstr = "B";
 				render_text("Layer " + deckstr + std::to_string(this->pos + 1), white, box->vtxcoords->x1 + tf(0.01f), box->vtxcoords->y1 + box->vtxcoords->h - tf(0.03f), 0.0005f, 0.0008f);
@@ -3033,6 +3031,17 @@ void Layer::display() {
 					render_text("CPU", white, box->vtxcoords->x1 + tf(0.01f), box->vtxcoords->y1 + box->vtxcoords->h - tf(0.09f), 0.0005f, 0.0008f);
 				}
 			}
+
+            if (this->hapbinel) {
+                // show that layer is hapencoding on-the-fly
+                float progress = this->hapbinel->encodeprogress;
+                render_text("Encoding...", white, box->vtxcoords->x1 + tf(0.015f), box->vtxcoords->y1 + tf(0.07f), 0.001f, 0.0016f);
+                draw_box(white, nullptr, box->vtxcoords->x1 + tf(0.015f), box->vtxcoords->y1 + tf(0.03f), box->vtxcoords->w - tf(0.03f), 0.04f, -1);
+                draw_box(white, white, box->vtxcoords->x1 + tf(0.015f), box->vtxcoords->y1 + tf(0.03f), progress * (box->vtxcoords->w - tf(0.03f)), 0.04f, -1);
+            }
+
+            mainprogram->frontbatch = false;
+
 			if (box->in()) {
 			    if (box != mainprogram->prevbox) {
 			        mainprogram->prevbox = box;

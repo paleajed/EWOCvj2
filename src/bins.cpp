@@ -2249,7 +2249,7 @@ std::tuple<std::string, std::string> BinsMain::hap_binel(BinElement *binel, BinE
 	std::string rpath = "";
 	if (binel->type == ELEM_FILE) {
 		std::thread hap (&BinsMain::hap_encode, this, binel->path, binel, bdm);
-		if (!mainprogram->threadmode) {
+		if (!mainprogram->threadmode || binel->bin == nullptr) {
 			#ifdef WINDOWS
 			SetThreadPriority((void*)hap.native_handle(), THREAD_PRIORITY_LOWEST);
 			#else
@@ -2483,12 +2483,14 @@ void BinsMain::hap_encode(const std::string srcpath, BinElement *binel, BinEleme
 		return;
 	}
 
-	while (mainprogram->encthreads >= mainprogram->maxthreads) {
-		mainprogram->hapnow = false;
-		std::unique_lock<std::mutex> lock(mainprogram->hapmutex);
-		mainprogram->hap.wait(lock, [&]{return mainprogram->hapnow;});
-		lock.unlock();
-	}
+	if (binel->bin) {
+        while (mainprogram->encthreads >= mainprogram->maxthreads) {
+            mainprogram->hapnow = false;
+            std::unique_lock<std::mutex> lock(mainprogram->hapmutex);
+            mainprogram->hap.wait(lock, [&] { return mainprogram->hapnow; });
+            lock.unlock();
+        }
+    }
 
 	mainprogram->encthreads++;
 	binel->encwaiting = false;
@@ -2632,9 +2634,13 @@ void BinsMain::hap_encode(const std::string srcpath, BinElement *binel, BinEleme
     avcodec_free_context(&c);
     av_frame_free(&nv12frame);
     av_packet_unref(&pkt);
-	binel->path = remove_extension(binel->path) + "_hap.mov";
+    binel->path = remove_extension(binel->path) + "_hap.mov";
 	boost::filesystem::rename(destpath, binel->path);
-	binel->encoding = false;
+    binel->encoding = false;
+    if (binel->otflay) {
+        binel->otflay->open_video(binel->otflay->frame, binel->path, false);
+        binel->otflay->hapbinel = nullptr;
+    }
     if (bdm) {
    		bdm->encthreads--;
 		delete binel;  // temp bin elements populate bdm binelements

@@ -7888,6 +7888,7 @@ int main(int argc, char* argv[]) {
     layops1.push_back("Center image");
     layops1.push_back("submenu aspectmenu");
     layops1.push_back("Aspect ratio");
+    layops1.push_back("HAP encode on-the-fly");
     mainprogram->make_menu("laymenu1", mainprogram->laymenu1, layops1);
 
     std::vector<std::string> layops2;
@@ -8320,15 +8321,13 @@ int main(int argc, char* argv[]) {
                 std::vector<Layer *> &lvec = choose_layers(mainmix->mousedeck);
                 std::string str(mainprogram->paths[0]);
                 if (mainmix->addlay) {
-                    mainmix->addlay = false;
-                    if (mainprogram->loadlay->filename == "") {
-                        mainprogram->loadlay = lvec[0];
-                    } else mainprogram->loadlay = mainmix->add_layer(lvec, lvec.size());
+                    mainprogram->loadlay = mainmix->add_layer(lvec, lvec.size());
                     mainmix->currlay[!mainprogram->prevmodus] = mainprogram->loadlay;
-                } else {
-                    if (mainprogram->loadlay->filename == "") {
-                        mainprogram->loadlay = lvec[0];
-                    } else mainprogram->loadlay = mainmix->add_layer(lvec, mainprogram->loadlay->pos);
+                }
+                else {
+                    if (mainprogram->loadlay->filename != "") {
+                        mainprogram->loadlay = mainmix->add_layer(lvec, mainprogram->loadlay->pos);
+                    }
                 }
                 mainprogram->currfilesdir = dirname(str);
                 mainprogram->filescount = 0;

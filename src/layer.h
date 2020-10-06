@@ -53,6 +53,7 @@ class Button;
 class Shelf;
 class ShelfElement;
 class LoopStationElement;
+class BinElement;
 
 class Clip {
 	public:
@@ -238,6 +239,7 @@ class Layer {
 		ALuint sample_rate;
 		int channels;
 		ALuint sampleformat;
+		BinElement *hapbinel = nullptr;
 		
 		std::unordered_map<EFFECT_TYPE, int> numoftypemap;
 		int clonesetnr = -1;

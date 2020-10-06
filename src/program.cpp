@@ -2302,6 +2302,7 @@ void Program::handle_laymenu1() {
 		if (k == 2) {
 			mainprogram->pathto = "OPENFILESLAYERS";
 			mainprogram->loadlay = mainmix->mouselayer;
+            mainmix->addlay = false;
 			std::thread filereq(&Program::get_multinname, mainprogram, "Open video/image/layer file", "", boost::filesystem::canonical(mainprogram->currfilesdir).generic_string());
 			filereq.detach();
 		}
@@ -2382,6 +2383,15 @@ void Program::handle_laymenu1() {
 				mainmix->mouselayer->set_aspectratio(mainmix->mouselayer->video_dec_ctx->width, mainmix->mouselayer->video_dec_ctx->height);
 			}
 		}
+		else if (k == 15) {
+		    BinElement *binel = new BinElement;
+		    binel->bin = nullptr;
+            binel->type = ELEM_FILE;
+            binel->path = mainmix->mouselayer->filename;
+            binel->otflay = mainmix->mouselayer;
+            mainmix->mouselayer->hapbinel = binel;
+            binsmain->hap_binel(binel, nullptr);
+		}
 	}
 
 	if (mainprogram->menuchosen) {
@@ -2420,9 +2430,9 @@ void Program::handle_newlaymenu() {
 		}
 		else if (k == 2) {
 			mainprogram->pathto = "OPENFILESLAYERS";
+            mainmix->addlay = true;
 			std::thread filereq(&Program::get_multinname, mainprogram, "Open video/image/layer file", "", boost::filesystem::canonical(mainprogram->currfilesdir).generic_string());
 			filereq.detach();
-			mainmix->addlay = true;
 		}
 		else if (k == 3) {
 			mainmix->new_file(mainmix->mousedeck, 1);

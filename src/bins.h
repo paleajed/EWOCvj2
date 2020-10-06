@@ -137,6 +137,7 @@ class BinElement {
 		int encthreads = 0;
 		float encodeprogress = 0.0f;
 		int allhaps = 0;
+		Layer *otflay = nullptr;
 		BinElement* next();
 		void erase();
 		BinElement();
