@@ -2,9 +2,7 @@
 #include "GL/gl.h"
 #include "GL/glut.h"
 
-#include <iostream>
 #include <chrono>
-#include <ctime>
 #include <algorithm>
 
 #include "node.h"
@@ -166,10 +164,8 @@ void LoopStationElement::handle() {
 }
 
 void LoopStationElement::init() {
-	//this->recbut->value = 0;
 	this->loopbut->value = 0;
 	this->playbut->value = 0;
-	//this->recbut->oldvalue = 0;
 	this->loopbut->oldvalue = 0;
 	this->playbut->oldvalue = 0;
 	this->speed->value = 1.0f;
@@ -198,7 +194,6 @@ void LoopStationElement::visualize() {
 	this->speed->box->upvtxtoscr();
 	this->colbox->upvtxtoscr();
 	this->box->upvtxtoscr();
-	float buspeed = this->speed->value;
 	this->speed->handle();
     draw_box(grey, this->colbox->acolor, this->colbox, -1);
 	if (this->eventlist.size()) draw_box(this->colbox->lcolor, this->colbox->vtxcoords->x1 + tf(0.0155f) , this->colbox->vtxcoords->y1 + tf(0.025f), tf(0.015f), 1);

@@ -4,18 +4,16 @@
 #define POSIX
 #endif
 
-//#define _AFXDLL
-//#include <afxwin.h>
 #include <boost/algorithm/string.hpp>
 #include <boost/filesystem.hpp>
 
 #include <ostream>
+#include <string>
 
 #include "GL/glew.h"
 #include "GL/gl.h"
 #include "GL/glut.h"
 #ifdef POSIX
-#define __LINUX_ALSA__
 #include <X11/Xlib.h>
 #include <X11/Xos.h>
 #include <rtmidi/RtMidi.h>
@@ -49,17 +47,9 @@
 #include <KnownFolders.h>
 #include <ShlObj.h>
 #endif
-#include <wchar.h>
-#include <string>
-#include <numeric>
 
 #include "SDL2/SDL.h"
 #include "SDL2/SDL_syswm.h"
-
-#include <istream>
-#include <ostream>
-#include <iostream>
-#include <string>
 
 // my own headers
 #include "box.h"
@@ -413,26 +403,26 @@ Program::Program() {
 	this->tmscratch->tooltiptitle = "Set MIDI for scratch wheel ";
 	this->tmscratch->tooltip = "Leftclick to start waiting for a MIDI command that will trigger the scratch wheel  for this preset. ";
 	
-	this->wormhole1 = new Button(false);
-	this->wormhole1->toggle = 1;
-	this->wormhole1->box->vtxcoords->x1 = -1.0f;
-	this->wormhole1->box->vtxcoords->y1 = -0.58f;
-	this->wormhole1->box->vtxcoords->w = tf(0.025f);
-	this->wormhole1->box->vtxcoords->h = 0.6f;
-	this->wormhole1->box->upvtxtoscr();
-	this->wormhole1->box->tooltiptitle = "Screen switching wormgate ";
-	this->wormhole1->box->tooltip = "Connects mixing screen and media bins screen.  Leftclick to switch screen.  Drag content inside white rectangle up to the very edge of the screen to travel to the other screen. ";
-	this->buttons.push_back(this->wormhole1);
-	this->wormhole2 = new Button(false);
-	this->wormhole2->toggle = 1;
-	this->wormhole2->box->vtxcoords->x1 = 1.0f - tf(0.025f);
-	this->wormhole2->box->vtxcoords->y1 = -0.58f;
-	this->wormhole2->box->vtxcoords->w = tf(0.025f);
-	this->wormhole2->box->vtxcoords->h = 0.6f;
-	this->wormhole2->box->upvtxtoscr();
-	this->wormhole2->box->tooltiptitle = "Screen switching wormgate ";
-	this->wormhole2->box->tooltip = "Connects mixing screen and media bins screen.  Leftclick to switch screen.  Leftclick to switch screen.  Drag content inside white rectangle up to the very edge of the screen to travel to the other screen. ";
-	this->buttons.push_back(this->wormhole2);
+	this->wormgate1 = new Button(false);
+	this->wormgate1->toggle = 1;
+	this->wormgate1->box->vtxcoords->x1 = -1.0f;
+	this->wormgate1->box->vtxcoords->y1 = -0.58f;
+	this->wormgate1->box->vtxcoords->w = tf(0.025f);
+	this->wormgate1->box->vtxcoords->h = 0.6f;
+	this->wormgate1->box->upvtxtoscr();
+	this->wormgate1->box->tooltiptitle = "Screen switching wormgate ";
+	this->wormgate1->box->tooltip = "Connects mixing screen and media bins screen.  Leftclick to switch screen.  Drag content inside white rectangle up to the very edge of the screen to travel to the other screen. ";
+	this->buttons.push_back(this->wormgate1);
+	this->wormgate2 = new Button(false);
+	this->wormgate2->toggle = 1;
+	this->wormgate2->box->vtxcoords->x1 = 1.0f - tf(0.025f);
+	this->wormgate2->box->vtxcoords->y1 = -0.58f;
+	this->wormgate2->box->vtxcoords->w = tf(0.025f);
+	this->wormgate2->box->vtxcoords->h = 0.6f;
+	this->wormgate2->box->upvtxtoscr();
+	this->wormgate2->box->tooltiptitle = "Screen switching wormgate ";
+	this->wormgate2->box->tooltip = "Connects mixing screen and media bins screen.  Leftclick to switch screen.  Leftclick to switch screen.  Drag content inside white rectangle up to the very edge of the screen to travel to the other screen. ";
+	this->buttons.push_back(this->wormgate2);
 }
 
 void Program::make_menu(const std::string &name, Menu *&menu, std::vector<std::string> &entries) {
@@ -876,14 +866,14 @@ bool Program::do_order_paths() {
 }
 
 
-void Program::handle_wormhole(bool hole) {
-	float lightblue[] = { 0.5f, 0.5f, 1.0f, 1.0f };
-
+void Program::handle_wormgate(bool gate) {
 	Box* box;
-	if (hole == 0) box = mainprogram->wormhole1->box;
-	else box = mainprogram->wormhole2->box;
+	if (gate == 0) box = mainprogram->wormgate1->box;
+	else box = mainprogram->wormgate2->box;
 
-	if (hole == 0) {
+    glBindFramebuffer(GL_FRAMEBUFFER, 0);
+    glDrawBuffer(GL_BACK_LEFT);
+	if (gate == 0) {
 		register_triangle_draw(lightgrey, lightgrey, -1.0 + box->vtxcoords->w, box->vtxcoords->y1 + box->vtxcoords->h / 4.0f - 0.15f, box->vtxcoords->h / 4.0f, box->vtxcoords->h / 2.0f, LEFT, OPEN);
 		GUI_Element* elem = mainprogram->guielems.back();
 		mainprogram->guielems.pop_back();
@@ -914,11 +904,11 @@ void Program::handle_wormhole(bool hole) {
 		box->upvtxtoscr();
 	}
 
-	//draw and handle BINS wormhole
+	//draw and handle BINS wormgate
 	if (mainprogram->fullscreen == -1) {
 		if (box->in()) {
 			draw_box(lightgrey, lightblue, box, -1);
-			mainprogram->tooltipbox = mainprogram->wormhole1->box;
+			mainprogram->tooltipbox = mainprogram->wormgate1->box;
 			if (!mainprogram->menuondisplay) {
 				if (mainprogram->leftmouse) {
 					mainprogram->binsscreen = !mainprogram->binsscreen;
@@ -926,19 +916,19 @@ void Program::handle_wormhole(bool hole) {
 				if (mainprogram->menuactivation) {
 					mainprogram->parammenu1->state = 2;
 					mainmix->learnparam = nullptr;
-					mainmix->learnbutton = mainprogram->wormhole1;
+					mainmix->learnbutton = mainprogram->wormgate1;
 					mainprogram->menuactivation = false;
 				}
 			}
 			if (mainprogram->dragbinel) {
-				//dragging something inside wormhole
-				if (!mainprogram->inwormhole && !mainprogram->menuondisplay) {
-					if (mainprogram->mx == hole * (glob->w - 1)) {
+				//dragging something inside wormgate
+				if (!mainprogram->inwormgate && !mainprogram->menuondisplay) {
+					if (mainprogram->mx == gate * (glob->w - 1)) {
 						if (!mainprogram->binsscreen) {
 							set_queueing(false);
 						}
 						mainprogram->binsscreen = !mainprogram->binsscreen;
-						mainprogram->inwormhole = true;
+						mainprogram->inwormgate = true;
 					}
 				}
 			}
@@ -1007,7 +997,10 @@ void Program::handle_changed_owoh() {
 
 
 void Program::handle_fullscreen() {
-	GLfloat vcoords1[8];
+    glBindFramebuffer(GL_FRAMEBUFFER, 0);
+    glDrawBuffer(GL_BACK_LEFT);
+
+    GLfloat vcoords1[8];
 	GLfloat* p = vcoords1;
 	*p++ = -1.0f; *p++ = 1.0f;
 	*p++ = -1.0f; *p++ = -1.0f;
@@ -1018,6 +1011,7 @@ void Program::handle_fullscreen() {
 						1.0f, 0.0f,
 						1.0f, 1.0f };
 	GLuint vbuf, tbuf, vao;
+
 	glGenBuffers(1, &vbuf);
 	glBindBuffer(GL_ARRAY_BUFFER, vbuf);
 	glBufferData(GL_ARRAY_BUFFER, 32, vcoords1, GL_STATIC_DRAW);
@@ -1056,6 +1050,10 @@ void Program::handle_fullscreen() {
 	glUniform1i(down, 0);
 	glUniform1i(wipe, 0);
 	glUniform1i(mixmode, 0);
+	if (this->doubleleftmouse) {
+        this->fullscreen = -1;
+        mainprogram->directmode = false;
+    }
 	if (this->menuactivation) {
 		this->fullscreenmenu->state = 2;
 		this->menuondisplay = true;
@@ -1304,9 +1302,6 @@ int Program::quit_requester() {
 		mx *= 2.0f;
 		my *= 2.0f;
 	}
-
-	float red[] = { 1.0f, 0.0f, 0.0f, 1.0f };
-	float lightblue[] = { 0.5f, 0.5f, 1.0f, 1.0f };
 
 	mainprogram->insmall = true;
 	mainprogram->bvao = mainprogram->prboxvao;
@@ -1706,6 +1701,7 @@ int Program::handle_menu(Menu* menu) {
 }
 int Program::handle_menu(Menu* menu, float xshift, float yshift) {
 	if (menu->state > 1) {
+	    mainprogram->frontbatch = true;
 		if (std::find(mainprogram->actmenulist.begin(), mainprogram->actmenulist.end(), menu) == mainprogram->actmenulist.end()) {
 			mainprogram->actmenulist.clear();
 		}
@@ -1748,6 +1744,7 @@ int Program::handle_menu(Menu* menu, float xshift, float yshift) {
 						}
 						mainprogram->menuchosen = true;
 						menu->currsub = -1;
+                        mainprogram->frontbatch = false;
 						return k - numsubs;
 					}
 				}
@@ -1789,6 +1786,7 @@ int Program::handle_menu(Menu* menu, float xshift, float yshift) {
 									menu->state = 0;
 									mainprogram->menuresults.insert(mainprogram->menuresults.begin(), ret);
 									menu->currsub = -1;
+                                    mainprogram->frontbatch = false;
 									return k - numsubs + 1;
 								}
 								mainprogram->menulist[i]->state = 0;
@@ -1805,6 +1803,7 @@ int Program::handle_menu(Menu* menu, float xshift, float yshift) {
 			}
 		}
 	}
+    mainprogram->frontbatch = false;
 	return -1;
 }
 
@@ -3924,7 +3923,8 @@ void Project::open(const std::string& path) {
 	std::string dir = remove_extension(path) + "/";
 	this->binsdir = dir + "bins/";
 	this->recdir = dir + "recordings/";
-	this->shelfdir = dir + "shelves/";
+    this->shelfdir = dir + "shelves/";
+    this->autosavedir = dir + "autosaves/";
 	int cb = binsmain->read_binslist();
 	for (int i = 0; i < binsmain->bins.size(); i++) {
 		std::string binname = this->binsdir + binsmain->bins[i]->name + ".bin";
@@ -4071,7 +4071,12 @@ void Project::do_save(const std::string& path) {
 	
 	mainmix->do_save_state(mainprogram->temppath + "current.state", false);
 	filestoadd.push_back(mainprogram->temppath + "current.state");
-	
+
+    for (int i = 0; i < binsmain->bins.size(); i++) {
+        binsmain->save_bin(binsmain->bins[i]->path);
+    }
+    binsmain->save_binslist();
+
     std::ofstream outputfile;
 	outputfile.open(mainprogram->temppath + "tempconcatproj", std::ios::out | std::ios::binary);
 	std::vector<std::vector<std::string>> filestoadd2;
@@ -4528,6 +4533,16 @@ PIInt::PIInt() {
     pii->valuebox->tooltiptitle = "Long tooltips toggle ";
     pii->valuebox->tooltip = "Toggles if tooltips will be long, if off only tooltip titles will be shown. ";
     mainprogram->showtooltips = pii->onoff;
+    this->items.push_back(pii);
+    pos++;
+
+    pii = new PrefItem(this, pos, "Looped playback default", PREF_ONOFF, (void*)&mainprogram->repeatdefault);
+    pii->onoff = 1;
+    pii->namebox->tooltiptitle = "Looped playback default ";
+    pii->namebox->tooltip = "Sets looped video playback default. ";
+    pii->valuebox->tooltiptitle = "Looped playback default toggle ";
+    pii->valuebox->tooltip = "Leftclick to set looped video playback default to on(green) or off(black). ";
+    mainprogram->autosave = pii->onoff;
     this->items.push_back(pii);
     pos++;
 }

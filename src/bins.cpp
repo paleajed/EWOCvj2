@@ -13,19 +13,13 @@
 #include "GL/glut.h"
 
 #ifdef POSIX
-#include <X11/Xlib.h>
-#include <X11/Xutil.h>
 #include <X11/Xos.h>
-#include <X11/cursorfont.h>
 #endif
 
 #include "SDL2/SDL.h"
 #include "SDL2/SDL_syswm.h"
 
-#include <algorithm>
 #include <ostream>
-#include <istream>
-#include <iostream>
 #include <ios>
 
 extern "C" {
@@ -123,7 +117,7 @@ BinsMain::BinsMain() {
 			box->lcolor[3] = 1.0f;
 			box->acolor[3] = 1.0f;
 			box->tooltiptitle = "Media bin element ";
-			box->tooltip = "Shows thumbnail of media bin element, either being a video file (grey border) or an image (pink border) or a layer file (orange border) or a deck file (purple border) or mix file (green border).  Hovering over this element shows video resolution and video compression method (CPU or HAP).  Mousewheel skips through the element contents (previewed in larger monitor topmiddle).  Leftdrag allows dragging to mix screen via wormhole.  Leftclick allows moving inside the media bin. Rightclickmenu allows among other things, HAP encoding and also loading of a yellowbordered grid-block of mediabin elements into one of the shelves. ";
+			box->tooltip = "Shows thumbnail of media bin element, either being a video file (grey border) or an image (pink border) or a layer file (orange border) or a deck file (purple border) or mix file (green border).  Hovering over this element shows video resolution and video compression method (CPU or HAP).  Mousewheel skips through the element contents (previewed in larger monitor topmiddle).  Leftdrag allows dragging to mix screen via wormgate.  Leftclick allows moving inside the media bin. Rightclickmenu allows among other things, HAP encoding and also loading of a yellowbordered grid-block of mediabin elements into one of the shelves. ";
 		}
 	}
 	
@@ -193,13 +187,11 @@ void BinsMain::handle(bool draw) {
 	if (this->renamingelem) {
 		if (mainprogram->renaming == EDIT_NONE) {
 			this->renamingelem = nullptr;
-			save_bin(this->currbin->path);
 		}
 		if (mainprogram->leftmousedown && !this->renamingbox->in()) {
 			mainprogram->renaming = EDIT_NONE;
 			this->renamingelem = nullptr;
 			SDL_StopTextInput();
-			save_bin(this->currbin->path);
 			mainprogram->leftmousedown = false;
 		}
 		if (mainprogram->rightmouse) {
@@ -234,7 +226,7 @@ void BinsMain::handle(bool draw) {
 					this->menubinel = binel;
 					if (mainprogram->menuactivation) {
 						this->menuactbinel = binel;
-						if (binel->path != "") {
+						if (binel->name != "") {
 							// Set menu when over non-empty element
 							this->binelmenuoptions.clear();
 							std::vector<std::string> bnlm;
@@ -385,7 +377,7 @@ void BinsMain::handle(bool draw) {
 				}
 				draw_box(box, binel->tex);
 				glUniform1i(inverted, 0);
-				if (binel->path != "") {
+				if (binel->name != "") {
 					if (binel->name != "") render_text(binel->name.substr(0, 20), white, box->vtxcoords->x1, box->vtxcoords->y1 - 0.02f, 0.00045f, 0.00075f);
 				}
 			}
@@ -395,7 +387,7 @@ void BinsMain::handle(bool draw) {
 		}
 
 		bool cond1 = false;
-		if (this->menubinel) cond1 = (this->menubinel->path == "");
+		if (this->menubinel) cond1 = (this->menubinel->name == "");
 		if (!mainprogram->menuondisplay) this->mouseshelfnum = -1;
 		Box *insertbox = nullptr;
 		mainprogram->frontbatch = true;
@@ -450,7 +442,6 @@ void BinsMain::handle(bool draw) {
 								binel->path = elem->path;
 								binel->jpegpath = elem->jpegpath;
 							}
-							save_bin(this->currbin->path);
 							this->insertshelf = nullptr;
 							mainprogram->binsscreen = false;
 						}
@@ -533,7 +524,7 @@ void BinsMain::handle(bool draw) {
 			// not in bin element -> leftmouse draws selection box
 			bool full = false;
 			if (this->menubinel) {
-				if (this->menubinel->path != "") full = true;
+				if (this->menubinel->name != "") full = true;
 			}
 			if (mainprogram->leftmousedown && !full && !this->inputtexes.size() && !mainprogram->intopmenu && !this->renamingelem) {
 				mainprogram->leftmousedown = false;
@@ -570,7 +561,7 @@ void BinsMain::handle(bool draw) {
 				for (int j = 0; j < 12; j++) {
 					Box* ebox = this->elemboxes[i * 12 + j];
 					BinElement* binel = this->currbin->elements[i * 12 + j];
-					if (binel->path == "") continue;
+					if (binel->name == "") continue;
 					binel->select = false;
 					if (box.in(ebox->scrcoords->x1, ebox->scrcoords->y1) || box.in(ebox->scrcoords->x1 + ebox->scrcoords->w, ebox->scrcoords->y1) || box.in(ebox->scrcoords->x1, ebox->scrcoords->y1 - ebox->scrcoords->h) || box.in(ebox->scrcoords->x1 + ebox->scrcoords->w, ebox->scrcoords->y1 - ebox->scrcoords->h)) {
 						binel->select = true;
@@ -1047,7 +1038,6 @@ void BinsMain::handle(bool draw) {
 			this->menubinel->name = remove_extension(basename(this->menubinel->path));
 			this->menubinel->oldjpegpath = this->menubinel->jpegpath;
 			this->menubinel->jpegpath = this->inputjpegpaths[0];
-			save_bin(this->currbin->path);
 			// clean up: maybe too much cleared here, doesn't really matter
 			this->inputtexes.clear();
 			this->inputtypes.clear();
@@ -1079,7 +1069,6 @@ void BinsMain::handle(bool draw) {
 			this->menubinel->name = remove_extension(basename(this->menubinel->path));
 			this->menubinel->oldjpegpath = this->menubinel->jpegpath;
 			this->menubinel->jpegpath = this->inputjpegpaths[0];
-			save_bin(this->currbin->path);
 			// clean up: maybe too much cleared here, doesn't really matter
 			this->inputtexes.clear();
 			this->inputtypes.clear();
@@ -1110,7 +1099,6 @@ void BinsMain::handle(bool draw) {
 			this->menubinel->name = remove_extension(basename(this->menubinel->path));
 			this->menubinel->oldjpegpath = this->menubinel->jpegpath;
 			this->menubinel->jpegpath = this->inputjpegpaths[0];
-			save_bin(this->currbin->path);
 			// clean up: maybe too much cleared here, doesn't really matter
 			this->inputtexes.clear();
 			this->inputtypes.clear();
@@ -1168,7 +1156,7 @@ void BinsMain::handle(bool draw) {
 				for (int j = 0; j < 12; j++) {
 					// elements
 					BinElement* binel = this->currbin->elements[i * 12 + j];
-					if (binel->path != "" && (binel->type == ELEM_FILE || binel->type == ELEM_LAYER)) {
+					if (binel->name != "" && (binel->type == ELEM_FILE || binel->type == ELEM_LAYER)) {
 						this->hap_binel(binel, nullptr);
 					}
 					else if (binel->type == ELEM_DECK) {
@@ -1230,7 +1218,6 @@ void BinsMain::handle(bool draw) {
 				if (binel->encoding && binel->encthreads == 0 && (binel->type == ELEM_DECK || binel->type == ELEM_MIX)) {
 					binel->encoding = false;
 					boost::filesystem::rename(remove_extension(binel->path) + ".temp", binel->path);
-					this->do_save_bin(this->currbin->path);
 				}
 				if ((box->in() || mainprogram->rightmouse || binel == menuactbinel) && !this->openbinfile && !binel->encoding) {
 					if (draw) {
@@ -1243,7 +1230,7 @@ void BinsMain::handle(bool draw) {
 						else if (this->menubinel) {
 							if (this->menubinel->encthreads) continue;
 						}
-						if (!binel->encwaiting && !binel->encoding && binel->path != "" && !this->inputtexes.size() && !lay->vidmoving && !this->insertshelf) {
+						if (!binel->encwaiting && !binel->encoding && binel->name != "" && !this->inputtexes.size() && !lay->vidmoving && !this->insertshelf) {
 							if (this->previewbinel != binel) {
 								// reset when new element hovered
 								this->previewimage = "";
@@ -1611,10 +1598,10 @@ void BinsMain::handle(bool draw) {
 							mainprogram->frontbatch = false;
 						}
 
-						if (binel->path != "") {
+						if (binel->name != "") {
 							if (!this->inputtexes.size() && mainprogram->leftmousedown && !mainprogram->dragbinel) {
 								// dragging single bin element
-								if (binel->path != "") {
+								if (binel->name != "") {
 									mainprogram->dragbinel = new BinElement;
 									mainprogram->dragbinel->tex = binel->tex;
 									mainprogram->dragbinel->path = binel->path;
@@ -1756,7 +1743,6 @@ void BinsMain::handle(bool draw) {
 							dirbinel->oldjpegpath = dirbinel->jpegpath;
 							dirbinel->jpegpath = this->inputjpegpaths[k];
 						}
-						save_bin(this->currbin->path);
 						// clean up
 						this->inputtexes.clear();
 						this->inputtypes.clear();
@@ -1791,11 +1777,9 @@ void BinsMain::handle(bool draw) {
 						this->delbinels[k]->name = this->delbinels[k]->oldname;
 						this->delbinels[k]->jpegpath = this->delbinels[k]->oldjpegpath;
 						this->delbinels[k]->type = this->delbinels[k]->oldtype;
-						this->delbinels[k]->path == "";
 						this->delbinels[k]->select = false;
 						boost::filesystem::remove(this->delbinels[k]->jpegpath);
 					}
-					save_bin(this->currbin->path);
 					this->delbinels.clear();
 					mainprogram->del = false;
 				}
@@ -1827,7 +1811,6 @@ void BinsMain::handle(bool draw) {
 						this->movebinels[i]->erase();
 					}
 					this->movebinels.clear();
-					save_bin(this->currbin->path);
 					// clean up
 					this->inputtexes.clear();
 					if (this->currbinel == this->menuactbinel) this->menuactbinel = nullptr;
@@ -1860,7 +1843,6 @@ void BinsMain::handle(bool draw) {
 					name = remove_version(name) + "_" + std::to_string(count);
 				}
 			}
-			save_bin(this->currbin->path);
 			this->currbinel = nullptr;
 			enddrag();
 			lay->vidmoving = false;
@@ -1907,9 +1889,7 @@ void BinsMain::handle(bool draw) {
 					std::swap(this->currbinel->jpegpath, this->movingbinel->jpegpath);  // one way?
 					this->currbinel = nullptr;
 					this->movingbinel = nullptr;
-					this->movingtex = -1;
-					this->save_bin(this->currbin->path);
-				}
+					this->movingtex = -1; }
 			}
 			enddrag();
 		}
@@ -1952,7 +1932,7 @@ void BinsMain::open_bin(const std::string &path, Bin *bin) {
                 }
                 if (istring == "RELPATH") {
                     safegetline(rfile, istring);
-                    if (bin->elements[pos]->path == "") {
+                    if (bin->elements[pos]->name == "") {
                         boost::filesystem::current_path(mainprogram->contentpath);
                         bin->elements[pos]->path = pathtoplatform(boost::filesystem::absolute(istring).string());
                     }
@@ -1965,7 +1945,7 @@ void BinsMain::open_bin(const std::string &path, Bin *bin) {
 					safegetline(rfile, istring);
 					bin->elements[pos]->type = (ELEM_TYPE)std::stoi(istring);
 					ELEM_TYPE type = bin->elements[pos]->type;
-					if ((type == ELEM_LAYER || type == ELEM_DECK || type == ELEM_MIX) && bin->elements[pos]->path != "") {
+					if ((type == ELEM_LAYER || type == ELEM_DECK || type == ELEM_MIX) && bin->elements[pos]->name != "") {
 						if (concat) {
 							boost::filesystem::rename(result + "_" + std::to_string(filecount) + ".file", bin->elements[pos]->path);
 							filecount++;
@@ -1975,7 +1955,7 @@ void BinsMain::open_bin(const std::string &path, Bin *bin) {
 				if (istring == "JPEGPATH") {
 					safegetline(rfile, istring);
 					bin->elements[pos]->jpegpath = istring;
-					if (bin->elements[pos]->path != "") {
+					if (bin->elements[pos]->name != "") {
 						if (bin->elements[pos]->jpegpath != "") {
 							if (concat) {
 								std::string name = remove_extension(basename(bin->elements[pos]->jpegpath));
@@ -2027,7 +2007,7 @@ void BinsMain::do_save_bin(const std::string& path) {
 			wfile << this->currbin->elements[i * 12 + j]->path;
 			wfile << "\n";
             wfile << "RELPATH\n";
-            wfile << boost::filesystem::relative(this->currbin->elements[i * 12 + j]->path, mainprogram->contentpath).string();
+            wfile << boost::filesystem::relative(this->currbin->elements[i * 12 + j]->path, mainprogram->contentpath).string();  // reminder binsdir?
             wfile << "\n";
 			wfile << "NAME\n";
 			wfile << this->currbin->elements[i * 12 + j]->name;
@@ -2036,10 +2016,10 @@ void BinsMain::do_save_bin(const std::string& path) {
 			wfile << std::to_string(this->currbin->elements[i * 12 + j]->type);
 			wfile << "\n";
 			ELEM_TYPE type = this->currbin->elements[i * 12 + j]->type;
-			if ((type == ELEM_LAYER || type == ELEM_DECK || type == ELEM_MIX) && this->currbin->elements[i * 12 + j]->path != "") {
+			if ((type == ELEM_LAYER || type == ELEM_DECK || type == ELEM_MIX) && this->currbin->elements[i * 12 + j]->name != "") {
 				filestoadd.push_back(this->currbin->elements[i * 12 + j]->path);
 			}
-			if (this->currbin->elements[i * 12 + j]->path != "") {
+			if (this->currbin->elements[i * 12 + j]->name != "") {
 				if (this->currbin->elements[i * 12 + j]->jpegpath == "") {
 					std::string name = remove_extension(basename(this->currbin->elements[i * 12 + j]->path));
 					int count = 0;
@@ -2101,10 +2081,6 @@ Bin *BinsMain::new_bin(const std::string &name) {
 	make_currbin(this->bins.size() - 1);
 	std::string path;
 	bin->path = mainprogram->project->binsdir + name + ".bin";
-	if (!exists(bin->path)) {
-		do_save_bin(bin->path);
-		this->save_binslist();
-	}
 	boost::filesystem::path p1{mainprogram->project->binsdir + name};
 	boost::filesystem::create_directory(p1);
 	return bin;
@@ -2181,7 +2157,6 @@ void BinsMain::import_bins() {
 	Bin* bin = binsmain->new_bin(remove_extension(basename(mainprogram->paths[binsmain->binscount])));
 	binsmain->open_bin(mainprogram->paths[binsmain->binscount], bin);
 	std::string path = mainprogram->project->binsdir + bin->name + ".bin";
-	binsmain->save_bin(path);
 	if (binsmain->bins.size() >= 20) binsmain->binsscroll++;
 	binsmain->binscount++;
 	if (binsmain->binscount == mainprogram->paths.size()) {
@@ -2206,7 +2181,6 @@ void BinsMain::open_binfiles() {
 	} 
 	if (mainprogram->counting == mainprogram->paths.size()) {
 		this->currbin->path = mainprogram->project->binsdir + this->currbin->name + ".bin";
-		do_save_bin(this->currbin->path);
 		this->openbinfile = false;
 		mainprogram->paths.clear();
 		mainprogram->multistage = 0;
@@ -2665,9 +2639,6 @@ void BinsMain::hap_encode(const std::string srcpath, BinElement *binel, BinEleme
    		bdm->encthreads--;
 		delete binel;  // temp bin elements populate bdm binelements
     }
-	else {
-		this->do_save_bin(this->currbin->path);
-	}
 	mainprogram->encthreads--;
 	mainprogram->hapnow = true;
 	mainprogram->hap.notify_all();

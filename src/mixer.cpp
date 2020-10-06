@@ -24,10 +24,6 @@ extern "C" {
 #include "GL/glut.h"
 
 #include <ostream>
-#include <istream>
-#include <iostream>
-#include <fstream>
-#include <sstream>
 #include <ios>
 #include <list>
 #include <map>
@@ -322,7 +318,6 @@ Param::~Param() {
 }
 
 void Param::handle() {
-	float green[4] = {0.0, 1.0, 0.2, 1.0};
 	std::string parstr;
 	draw_box(this->box, -1);
 	int val;
@@ -2355,6 +2350,12 @@ Layer::Layer(bool comp) {
 	this->bouncebut->layer = this;
 	this->bouncebut->box->tooltiptitle = "Toggle bounce play ";
 	this->bouncebut->box->tooltip = "Leftclick toggles current layer video bounce play on/off.  Bounce play plays the video first forward than backward. ";
+    this->repeatbut = new Button(false);
+    this->repeatbut->toggle = 1;
+    this->repeatbut->value = mainprogram->repeatdefault;
+    this->repeatbut->layer = this;
+    this->repeatbut->box->tooltiptitle = "Toggle looped playback ";
+    this->repeatbut->box->tooltip = "Leftclick toggles current layer video looped playback on/off. ";
 	this->genmidibut = new Button(false);
 	this->genmidibut->toggle = 4;
 	this->genmidibut->layer = this;
@@ -2775,26 +2776,54 @@ void Mixer::add_del_bar() {
 	//add/delete layer bar when right side of layer monitor hovered
 	if (!mainprogram->menuondisplay && !mainprogram->dragbinel) {
 		for (int j = 0; j < 2; j++) {
-			std::vector<Layer*>& lvec = choose_layers(j);
-			for (int i = 0; i < lvec.size(); i++) {
+            std::vector<Layer*> &lvec = choose_layers(j);
+            int sz = lvec.size();
+			for (int i = 0; i < sz; i++) {
 				Layer* lay = lvec[i];
 				bool comp = !mainprogram->prevmodus;
 				if (lay->pos < this->scenes[comp][j][this->currscene[comp][j]]->scrollpos || lay->pos > this->scenes[comp][j][this->currscene[comp][j]]->scrollpos + 2) continue;
 				Box* box = lay->node->vidbox;
 				float thick = mainprogram->xvtxtoscr(tf(0.006f));
-				if (box->scrcoords->y1 - box->scrcoords->h < mainprogram->my && mainprogram->my < box->scrcoords->y1) {
+                if (box->scrcoords->x1 + box->scrcoords->w - thick - (i - this->scenes[comp][j][this->currscene[comp][j]]->scrollpos == 2) * thick < mainprogram->mx && mainprogram->mx < box->scrcoords->x1 + box->scrcoords->w + (i - this->scenes[comp][j][this->currscene[comp][j]]->scrollpos != 2) * thick) {
+                    mainprogram->leftmousedown = false;
+                    if (lay->pos == lvec.size() - 1 || lay->pos == this->scenes[comp][j][this->currscene[comp][j]]->scrollpos + 2) {
+                        // handle vertical boxes at layer side for adding and deleting layer
+                        // this block handles the rightmost box onscreen
+                        mainprogram->addbox->vtxcoords->x1 = box->vtxcoords->x1 + box->vtxcoords->w - mainprogram->xscrtovtx(thick) * 2.0f + mainprogram->xscrtovtx(thick * ((i - this->scenes[comp][j][this->currscene[comp][j]]->scrollpos != 2)));
+                        mainprogram->addbox->upvtxtoscr();
+                        mainprogram->delbox->vtxcoords->x1 = box->vtxcoords->x1 + box->vtxcoords->w - mainprogram->xscrtovtx(thick) * 2.0f + mainprogram->xscrtovtx(thick * ((i - this->scenes[comp][j][this->currscene[comp][j]]->scrollpos != 2)));
+                        mainprogram->delbox->upvtxtoscr();
+                        mainprogram->frontbatch = true;
+                        draw_box(lightblue, lightblue, mainprogram->addbox, -1);
+                        render_text("ADD LAYER", white, mainprogram->addbox->vtxcoords->x1 - mainprogram->addbox->vtxcoords->w * 0.75f, mainprogram->addbox->vtxcoords->y1 + mainprogram->addbox->vtxcoords->h - 0.05f, tf(0.00024f), tf(0.0004f), 0, 1);
+                        draw_box(red, red, mainprogram->delbox, -1);
+                        render_text("DEL", white, mainprogram->delbox->vtxcoords->x1 - mainprogram->delbox->vtxcoords->w * 0.75f, mainprogram->delbox->vtxcoords->y1 + mainprogram->delbox->vtxcoords->h + 0.05f, tf(0.00024f), tf(0.0004f), 0, 1);
+                        mainprogram->frontbatch = false;
+                        bool cond1 = mainprogram->delbox->in();
+                        bool cond2 = mainprogram->addbox->in();
+                        if (mainprogram->leftmouse && !this->moving) {
+                            // do add/delete layer
+                            if (cond1) {
+                                this->delete_layer(lvec, lay, true);
+                            }
+                            else if (cond2) {
+                                Layer* lay1 = this->add_layer(lvec, lay->pos + 1);
+                                make_layboxes();
+                            }
+                        }
+                    }
+                }
+                else if (box->scrcoords->y1 - box->scrcoords->h < mainprogram->my && mainprogram->my < box->scrcoords->y1) {
 					if (box->scrcoords->x1 - thick + (i - this->scenes[comp][j][this->currscene[comp][j]]->scrollpos == 0) * thick < mainprogram->mx && mainprogram->mx < box->scrcoords->x1 + thick + (i - this->scenes[comp][j][this->currscene[comp][j]]->scrollpos == 0) * thick) {
 						// handle vertical boxes at layer side for adding and deleting layer
-						// this block handles the first boxes, just not the last
+						// this block handles the first boxes onscreen, just not the last
 						mainprogram->leftmousedown = false;
-						float blue[] = { 0.5, 0.5, 1.0, 1.0 };
-						float red[] = { 1.0, 0.0 , 0.0, 1.0 };
 						mainprogram->addbox->vtxcoords->x1 = box->vtxcoords->x1 - mainprogram->xscrtovtx(thick) + (i - this->scenes[comp][j][this->currscene[comp][j]]->scrollpos == 0) * mainprogram->xscrtovtx(thick);
 						mainprogram->addbox->upvtxtoscr();
 						mainprogram->delbox->vtxcoords->x1 = box->vtxcoords->x1 - mainprogram->xscrtovtx(thick) + (i - this->scenes[comp][j][this->currscene[comp][j]]->scrollpos == 0) * mainprogram->xscrtovtx(thick);
 						mainprogram->delbox->upvtxtoscr();
                         mainprogram->frontbatch = true;
-                        draw_box(blue, blue, mainprogram->addbox, -1);
+                        draw_box(lightblue, lightblue, mainprogram->addbox, -1);
 						render_text("ADD LAYER", white, mainprogram->addbox->vtxcoords->x1 - mainprogram->addbox->vtxcoords->w * 0.75f, mainprogram->addbox->vtxcoords->y1 + mainprogram->addbox->vtxcoords->h - 0.05f, tf(0.00024f), tf(0.0004f), 0, 1);
 						if (lay->pos > 0) {
 							draw_box(red, red, mainprogram->delbox, -1);
@@ -2812,37 +2841,6 @@ void Mixer::add_del_bar() {
 								Layer* lay1;
 								lay1 = this->add_layer(lvec, lay->pos);
 								make_layboxes();
-							}
-						}
-					}
-					else if (box->scrcoords->x1 + box->scrcoords->w - thick - (i - this->scenes[comp][j][this->currscene[comp][j]]->scrollpos == 2) * thick < mainprogram->mx && mainprogram->mx < box->scrcoords->x1 + box->scrcoords->w + (i - this->scenes[comp][j][this->currscene[comp][j]]->scrollpos != 2) * thick) {
-						mainprogram->leftmousedown = false;
-						if (lay->pos == lvec.size() - 1 || lay->pos == this->scenes[comp][j][this->currscene[comp][j]]->scrollpos + 2) {
-							// handle vertical boxes at layer side for adding and deleting layer
-							// this block handles the last box
-							float blue[] = { 0.5, 0.5 , 1.0, 1.0 };
-							float red[] = { 1.0, 0.0 , 0.0, 1.0 };
-							mainprogram->addbox->vtxcoords->x1 = box->vtxcoords->x1 + box->vtxcoords->w - mainprogram->xscrtovtx(thick) * 2.0f + mainprogram->xscrtovtx(thick * ((i - this->scenes[comp][j][this->currscene[comp][j]]->scrollpos != 2)));
-							mainprogram->addbox->upvtxtoscr();
-							mainprogram->delbox->vtxcoords->x1 = box->vtxcoords->x1 + box->vtxcoords->w - mainprogram->xscrtovtx(thick) * 2.0f + mainprogram->xscrtovtx(thick * ((i - this->scenes[comp][j][this->currscene[comp][j]]->scrollpos != 2)));
-							mainprogram->delbox->upvtxtoscr();
-                            mainprogram->frontbatch = true;
-							draw_box(blue, blue, mainprogram->addbox, -1);
-							render_text("ADD LAYER", white, mainprogram->addbox->vtxcoords->x1 - mainprogram->addbox->vtxcoords->w * 0.75f, mainprogram->addbox->vtxcoords->y1 + mainprogram->addbox->vtxcoords->h - 0.05f, tf(0.00024f), tf(0.0004f), 0, 1);
-							draw_box(red, red, mainprogram->delbox, -1);
-							render_text("DEL", white, mainprogram->delbox->vtxcoords->x1 - mainprogram->delbox->vtxcoords->w * 0.75f, mainprogram->delbox->vtxcoords->y1 + mainprogram->delbox->vtxcoords->h + 0.05f, tf(0.00024f), tf(0.0004f), 0, 1);
-                            mainprogram->frontbatch = false;
-							bool cond1 = mainprogram->delbox->in();
-							bool cond2 = mainprogram->addbox->in();
-							if (mainprogram->leftmouse && !this->moving) {
-								// do add/delete layer
-								if (cond1) {
-									this->delete_layer(lvec, lay, true);
-								}
-								else if (cond2) {
-									Layer* lay1 = this->add_layer(lvec, lay->pos + 1);
-									make_layboxes();
-								}
 							}
 						}
 					}
@@ -3998,6 +3996,36 @@ void Layer::display() {
                                    this->framebackward->box->vtxcoords->y1 + tf(0.0416f) - tf(0.030f), tf(0.011f),
                                    tf(0.0208f), LEFT, OPEN);
 
+            if (this->repeatbut->box->in()) {
+                this->repeatbut->box->acolor[0] = 0.5;
+                this->repeatbut->box->acolor[1] = 0.5;
+                this->repeatbut->box->acolor[2] = 1.0;
+                this->repeatbut->box->acolor[3] = 1.0;
+                if (mainprogram->leftmouse) {
+                    this->repeatbut->value = !this->repeatbut->value;
+                }
+            } else {
+                if (this->type == ELEM_LIVE) {
+                    this->repeatbut->box->acolor[0] = 0.3;
+                    this->repeatbut->box->acolor[1] = 0.3;
+                    this->repeatbut->box->acolor[2] = 0.3;
+                    this->repeatbut->box->acolor[3] = 1.0;
+                } else {
+                    this->repeatbut->box->acolor[0] = 0.3;
+                    this->repeatbut->box->acolor[1] = 0.6;
+                    this->repeatbut->box->acolor[2] = 0.4;
+                    this->repeatbut->box->acolor[3] = 1.0;
+                    if (this->repeatbut->value) {
+                        this->repeatbut->box->acolor[0] = 0.3;
+                        this->repeatbut->box->acolor[1] = 0.4;
+                        this->repeatbut->box->acolor[2] = 0.7;
+                        this->repeatbut->box->acolor[3] = 1.0;
+                    }
+                }
+            }
+            draw_box(this->repeatbut->box, -1);
+            render_text("LP", white, this->repeatbut->box->vtxcoords->x1 + tf(0.00625f),
+                                   this->repeatbut->box->vtxcoords->y1 + tf(0.0416f) - tf(0.030f), tf(0.0005f), tf(0.0008f));
             // Draw and handle genmidibutton
             this->genmidibut->handle(0, 0);
             for (int i = 0; i < mainmix->currlays[!mainprogram->prevmodus].size(); i++) {
@@ -4195,12 +4223,16 @@ void Mixer::outputmonitors_handle() {
 		for (int i = 0; i < mainprogram->nodesmain->mixnodes.size(); i++) {
 			Box* outputbox = mainprogram->nodesmain->mixnodes[i]->outputbox;
 			if (outputbox->in()) {
+
 				if (i == 0) {
 					render_text("Deck A Monitor", white, outputbox->vtxcoords->x1 + tf(0.01f), outputbox->vtxcoords->y1 + outputbox->vtxcoords->h - tf(0.03f), 0.0005f, 0.0008f);
 				}
 				else if (i == 1) {
 					render_text("Deck B Monitor", white, outputbox->vtxcoords->x1 + tf(0.01f), outputbox->vtxcoords->y1 + outputbox->vtxcoords->h - tf(0.03f), 0.0005f, 0.0008f);
 				}
+				if (mainprogram->doubleleftmouse) {
+                    mainprogram->fullscreen = i;
+                }
 				if (mainprogram->menuactivation) {
 					mainprogram->mixtargetmenu->state = 2;
 					mainprogram->mixtargetmenu->value = i;
@@ -4215,6 +4247,9 @@ void Mixer::outputmonitors_handle() {
 				if (outputbox->scrcoords->y1 - outputbox->scrcoords->h <= mainprogram->my && mainprogram->my <= outputbox->scrcoords->y1) {
 					if (mainprogram->prevmodus) {
 						render_text("Output Mix Monitor", white, outputbox->vtxcoords->x1 + tf(0.01f), outputbox->vtxcoords->y1 + outputbox->vtxcoords->h - tf(0.03f), 0.0005f, 0.0008f);
+                        if (mainprogram->doubleleftmouse) {
+                            mainprogram->fullscreen = mainprogram->nodesmain->mixnodes.size();
+                        }
 						if (mainprogram->menuactivation) {
 							mainprogram->mixtargetmenu->state = 2;
 							mainprogram->mixtargetmenu->value = mainprogram->nodesmain->mixnodes.size();
@@ -6712,17 +6747,28 @@ int Mixer::read_layers(std::istream &rfile, const std::string &result, std::vect
 				mainmix->event_read(rfile, nullptr, but, lay);
 			}
 		}
-		if (istring == "BOUNCEBUTVAL") {
-			safegetline(rfile, istring);
-			lay->bouncebut->value = std::stoi(istring);
-		}
-		if (istring == "BOUNCEBUTEVENT") {
-			Button* but = lay->bouncebut;
-			safegetline(rfile, istring);
-			if (istring == "EVENTELEM") {
-				mainmix->event_read(rfile, nullptr, but, lay);
-			}
-		}
+        if (istring == "BOUNCEBUTVAL") {
+            safegetline(rfile, istring);
+            lay->bouncebut->value = std::stoi(istring);
+        }
+        if (istring == "BOUNCEBUTEVENT") {
+            Button* but = lay->bouncebut;
+            safegetline(rfile, istring);
+            if (istring == "EVENTELEM") {
+                mainmix->event_read(rfile, nullptr, but, lay);
+            }
+        }
+        if (istring == "REPEATBUTVAL") {
+            safegetline(rfile, istring);
+            lay->repeatbut->value = std::stoi(istring);
+        }
+        if (istring == "REPEATBUTEVENT") {
+            Button* but = lay->repeatbut;
+            safegetline(rfile, istring);
+            if (istring == "EVENTELEM") {
+                mainmix->event_read(rfile, nullptr, but, lay);
+            }
+        }
 		if (istring == "PLAYKIND") {
 			safegetline(rfile, istring);
 			lay->playkind = std::stoi(istring);
@@ -7260,11 +7306,16 @@ std::vector<std::string> Mixer::write_layer(Layer* lay, std::ostream& wfile, boo
 		wfile << "\n";
 		wfile << "REVBUTEVENT\n";
 		mainmix->event_write(wfile, nullptr, lay->revbut);
-		wfile << "BOUNCEBUTVAL\n";
-		wfile << std::to_string(lay->bouncebut->value);;
-		wfile << "\n";
-		wfile << "BOUNCEBUTEVENT\n";
-		mainmix->event_write(wfile, nullptr, lay->bouncebut);
+        wfile << "BOUNCEBUTVAL\n";
+        wfile << std::to_string(lay->bouncebut->value);;
+        wfile << "\n";
+        wfile << "BOUNCEBUTEVENT\n";
+        mainmix->event_write(wfile, nullptr, lay->bouncebut);
+        wfile << "REPEATBUTVAL\n";
+        wfile << std::to_string(lay->repeatbut->value);;
+        wfile << "\n";
+        wfile << "REPEATBUTEVENT\n";
+        mainmix->event_write(wfile, nullptr, lay->repeatbut);
 		wfile << "PLAYKIND\n";
 		wfile << std::to_string(lay->playkind);;
 		wfile << "\n";
@@ -8087,9 +8138,6 @@ void Mixer::clip_dragging() {
 	}
 }
 bool Mixer::clip_drag_per_layervec(std::vector<Layer*>& layers, bool deck) {
-	float transp[] = { 0.0f, 0.0f, 0.0f, 0.0f };
-	float lightblue[] = { 0.5f, 0.5f, 1.0f, 1.0f };
-
 	Layer* lay;
 	for (int i = 0; i < layers.size(); i++) {
 		lay = layers[i];

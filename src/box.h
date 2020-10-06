@@ -23,7 +23,7 @@ class Layer;
 
 class Box {
 	public:
-		float lcolor[4] = {1.0, 1.0, 1.0, 1.0};
+		float lcolor[4] = {0.7, 0.7, 0.7, 1.0};
 		float acolor[4] = {0.0, 0.0, 0.0, 0.0};
 		void set_vtxcoords(BOX_COORDS *vtxcoords);
 		BOX_COORDS *scrcoords;

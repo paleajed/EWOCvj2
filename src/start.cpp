@@ -7,17 +7,14 @@
 
 #include "boost/bind.hpp"
 #include "boost/asio.hpp"
-#include "boost/chrono.hpp"
 #include "boost/thread/thread.hpp"
 #include "boost/date_time/posix_time/posix_time.hpp"
 #include "boost/filesystem.hpp"
 #include "boost/foreach.hpp"
 
 #include <stdio.h>
-#include <stdlib.h>
 #include <stdint.h>
 #include <cstdlib>
-#include <cstdint>
 
 typedef struct float4 {
 	float x;
@@ -25,12 +22,6 @@ typedef struct float4 {
 	float z;
 	float w;
 } float4;
-typedef struct char4 {
-	char x;
-	char y;
-	char z;
-	char w;
-} char4;
 
 #include <cstring>
 #include <string>
@@ -39,20 +30,15 @@ typedef struct char4 {
 #include <istream>
 #include <iostream>
 #include <fstream>
-#include <sstream>
 #include <ios>
 #include <vector>
-#include <algorithm>
 #include <numeric>
 #include <unordered_set>
-#include <unordered_map>
 #include <list>
 #include <map>
 #include <time.h>
 #include <thread>
 #include <mutex>
-#include <condition_variable>
-#include <sys/stat.h>
 #ifndef UINT64_C
 #define UINT64_C(c) (c ## ULL)
 #endif
@@ -77,25 +63,17 @@ typedef struct char4 {
 #endif
 
 #include <turbojpeg.h>
-#define SDL_MAIN_HANDLED
 #include "GL/glew.h"
 #include "GL/gl.h"
-#ifdef POSIX
-#define __LINUX_ALSA__
-#include </usr/include/dirent.h>
-#include <sys/ioctl.h>
-#include <linux/videodev2.h>
-#include <alsa/asoundlib.h>
-//#include <linux/v4l2-common.h>
-#include "GL/glx.h"
-#endif
 #include "GL/glut.h"
+#ifdef POSIX
+#include <alsa/asoundlib.h>
+#endif
 #include "SDL2/SDL.h"
 #include "SDL2/SDL_syswm.h"
 #include <AL/al.h>
 #include <AL/alc.h>
 #include <AL/alext.h>
-#include "snappy.h"
 #include "snappy-c.h"
 
 #include "IL/il.h"
@@ -115,7 +93,6 @@ extern "C" {
 #include FT_FREETYPE_H
 #include FT_BITMAP_H
 #include FT_MODULE_H
-#define  FT_HINTING_ADOBE     0
 
 // my own headers
 #include "box.h"
@@ -127,17 +104,12 @@ extern "C" {
 #include "loopstation.h"
 #include "bins.h"
 
-//#include "debug_new.h"
-
 #define PROGRAM_NAME "EWOCvj"
-#define _M_AMD64 100
 
 #ifdef WINDOWS
 
 #endif
 
-//#include "debug_new.h"
-//#define _DEBUG_NEW_EMULATE_MALLOC 1
 
 FT_Library ft;
 Globals *glob = nullptr;
@@ -149,13 +121,10 @@ LoopStation *lp = nullptr;
 LoopStation *lpc = nullptr;
 float smw, smh;
 SDL_GLContext glc;
-//SDL_GLContext glc;
-//SDL_GLContext glc;
 SDL_GLContext glc_th;
 float white[] = { 1.0f, 1.0f, 1.0f, 1.0f };
 float halfwhite[] = { 1.0f, 1.0f, 1.0f, 0.5f };
 float black[] = { 0.0f, 0.0f, 0.0f, 1.0f };
-float alpha[] = { 0.0f, 0.0f, 0.0f, 0.0f };
 float orange[] = { 1.0f, 0.5f, 0.0f, 1.0f };
 float purple[] = { 0.5f, 0.5f, 1.0f, 1.0f };
 float yellow[] = { 0.9f, 0.8f, 0.0f, 1.0f };
@@ -166,10 +135,7 @@ float lightgrey[] = { 0.7f, 0.7f, 0.7f, 1.0f };
 float grey[] = { 0.4f, 0.4f, 0.4f, 1.0f };
 float pink[] = { 1.0f, 0.5f, 0.5f, 1.0f };
 float green[] = { 0.0f, 1.0f, 0.2f, 1.0f };
-float lightgreygreen[] = { 0.3f, 0.6f, 0.4f, 1.0f };
-float greygreen[] = { 0.0f, 0.2f, 0.1f, 1.0f };
 float darkgreygreen[] = { 0.0f, 0.15f, 0.0f, 1.0f };
-float lightgreen[] = { 0.5f, 1.0f, 0.5f, 1.0f };
 float darkgreen1[] = { 0.0f, 0.4f, 0.0f, 1.0f };
 float darkgreen2[] = { 0.0f, 0.2f, 0.0f, 1.0f };
 float blue[] = { 0.0f, 0.2f, 1.0f, 1.0f };
@@ -181,9 +147,6 @@ float darkred2[] = { 0.2f, 0.0f, 0.0f, 1.0f };
 float darkred3[] = { 0.2f, 0.0f, 0.0f, 0.5f };
 float darkgrey[] = { 0.2f, 0.2f, 0.2f, 1.0f };
 
-//TCHAR buf [MAX_PATH];
-//int retgtp = Getmainprogram->temppath(MAX_PATH, buf);
-//std::string mainprogram->temppath (buf);
 static GLuint mixvao;
 static GLuint thmvbuf;
 static GLuint thmvao;
@@ -206,15 +169,6 @@ bool exists(const std::string &name) {
     } else {
         return false;
     }   
-}
-
-std::string replace_string(std::string subject, const std::string& search, const std::string& replace) {
-	size_t pos = 0;
-	while ((pos = subject.find(search, pos)) != std::string::npos) {
-		subject.replace(pos, search.length(), replace);
-		pos += replace.length();
-	}
-	return subject;
 }
 
 std::string dirname(std::string pathname)
@@ -1077,6 +1031,7 @@ void Layer::get_cpu_frame(int framenr, int prevframe, int errcount)
 		long long seekTarget = av_rescale(this->video_duration, framenr, this->numf) + this->video_stream->first_dts;
 		if (framenr != 0) {
 			if (framenr != prevframe + 1) {
+			    // hop to not-next-frame
 				avformat_seek_file(this->videoseek, this->video_stream->index, this->video_stream->first_dts, seekTarget, seekTarget, 0);
 				//avcodec_flush_buffers(this->video_dec_ctx);
 				//int r = av_read_frame(this->videoseek, &this->decpktseek);
@@ -1092,28 +1047,26 @@ void Layer::get_cpu_frame(int framenr, int prevframe, int errcount)
 		do {
 			decode_audio(this);
 		} while (this->decpkt.stream_index != this->video_stream_idx);
-		if (!this->dummy) {
-			if (framenr != prevframe + 1) {
-				int r = av_read_frame(this->videoseek, &this->decpktseek);
-				int readpos = ((this->decpktseek.dts - this->video_stream->first_dts) * this->numf) / this->video_duration;
-				if (readpos <= framenr) {
-					// readpos at keyframe after framenr
-					if (framenr > prevframe && prevframe > readpos) {
-						// starting from just past prevframe here is more efficient than decoding from readpos keyframe
-						readpos = prevframe + 1;
-					}
-					else {
-						avformat_seek_file(this->video, this->video_stream->index, this->video_stream->first_dts, seekTarget, seekTarget, 0);
-					}
-					for (int f = readpos; f < framenr; f = f + mainprogram->qualfr) {
-						// decode sequentially frames starting from keyframe readpos to current framenr
-						ret = decode_packet(this, false);
-						do  {
-							decode_audio(this);
-						} while (this->decpkt.stream_index != this->video_stream_idx);
-					}
-				}
-			}
+        if (framenr != prevframe + 1) {
+            int r = av_read_frame(this->videoseek, &this->decpktseek);
+            int readpos = ((this->decpktseek.dts - this->video_stream->first_dts) * this->numf) / this->video_duration;
+            if (readpos <= framenr) {
+                // readpos at keyframe after framenr
+                if (framenr > prevframe && prevframe > readpos) {
+                    // starting from just past prevframe here is more efficient than decoding from readpos keyframe
+                    readpos = prevframe + 1;
+                } else {
+                    avformat_seek_file(this->video, this->video_stream->index, this->video_stream->first_dts,
+                                       seekTarget, seekTarget, 0);
+                }
+                for (int f = readpos; f < framenr; f = f + mainprogram->qualfr) {
+                    // decode sequentially frames starting from keyframe readpos to current framenr
+                    ret = decode_packet(this, false);
+                    do {
+                        decode_audio(this);
+                    } while (this->decpkt.stream_index != this->video_stream_idx);
+                }
+            }
 		}
 		ret = decode_packet(this, true);
 		if (ret == 0) {
@@ -2860,7 +2813,10 @@ bool Layer::calc_texture(bool comp, bool alive) {
 			if (this->oldalive || !alive) {
 				if (this->frame > (this->endframe) && this->startframe != this->endframe) {
 					if (this->scritching != 4) {
-						if (this->bouncebut->value == 0) {
+                        if (this->bouncebut->value == 0) {
+                            if (this->repeatbut->value == 0) {
+                                this->playbut->value = 0;
+                            }
 							this->frame = this->startframe;
 							this->clip_display_next(0, alive);
 						}
@@ -2873,6 +2829,9 @@ bool Layer::calc_texture(bool comp, bool alive) {
 				else if (this->frame < this->startframe && this->startframe != this->endframe) {
 					if (this->scritching != 4) {
 						if (this->bouncebut->value == 0) {
+                            if (this->repeatbut->value == 0) {
+                                this->revbut->value = 0;
+                            }
 							this->frame = this->endframe;
 							this->clip_display_next(1, alive);
 						}
@@ -3113,7 +3072,7 @@ void midi_set() {
 		but->value++;
 		if (but->value > but->toggle) but->value = 0;
 		if (but->toggle == 0) but->value = 1;
-		if (but == mainprogram->wormhole1 || but == mainprogram->wormhole2) mainprogram->binsscreen = but->value;
+		if (but == mainprogram->wormgate1 || but == mainprogram->wormgate2) mainprogram->binsscreen = but->value;
 		
 		for (int i = 0; i < loopstation->elems.size(); i++) {
 			if (loopstation->elems[i]->recbut->value) {
@@ -4860,8 +4819,23 @@ void make_layboxes() {
 				testlay->framebackward->box->vtxcoords->w = tf(0.025f);
 				testlay->framebackward->box->vtxcoords->h = tf(0.05f);
 				testlay->framebackward->box->upvtxtoscr();
-				
-				// GUI box of specific general midi set for layer switch
+
+                // GUI box of reverse play video button
+                testlay->repeatbut->box->lcolor[0] = 0.7;
+                testlay->repeatbut->box->lcolor[1] = 0.7;
+                testlay->repeatbut->box->lcolor[2] = 0.7;
+                testlay->repeatbut->box->lcolor[3] = 1.0;
+                testlay->repeatbut->box->acolor[0] = 0.5;
+                testlay->repeatbut->box->acolor[1] = 0.2;
+                testlay->repeatbut->box->acolor[2] = 0.5;
+                testlay->repeatbut->box->acolor[3] = 1.0;
+                testlay->repeatbut->box->vtxcoords->x1 = testlay->mixbox->vtxcoords->x1 + tf(mainprogram->layw) * 0.5f + tf(0.138f);
+                testlay->repeatbut->box->vtxcoords->y1 = testlay->mixbox->vtxcoords->y1 - tf(0.05f);
+                testlay->repeatbut->box->vtxcoords->w = tf(0.025f);
+                testlay->repeatbut->box->vtxcoords->h = tf(0.05f);
+                testlay->repeatbut->box->upvtxtoscr();
+
+                // GUI box of specific general midi set for layer switch
                 testlay->genmidibut->box->lcolor[0] = 0.7;
                 testlay->genmidibut->box->lcolor[1] = 0.7;
                 testlay->genmidibut->box->lcolor[2] = 0.7;
@@ -4870,7 +4844,7 @@ void make_layboxes() {
                 testlay->genmidibut->box->acolor[1] = 0.2;
                 testlay->genmidibut->box->acolor[2] = 0.5;
                 testlay->genmidibut->box->acolor[3] = 1.0;
-				testlay->genmidibut->box->vtxcoords->x1 = testlay->mixbox->vtxcoords->x1 + tf(mainprogram->layw) * 0.5f + tf(0.138f);
+				testlay->genmidibut->box->vtxcoords->x1 = testlay->mixbox->vtxcoords->x1 + tf(mainprogram->layw) * 0.5f + tf(0.163f);
 				testlay->genmidibut->box->vtxcoords->y1 = testlay->mixbox->vtxcoords->y1 - tf(0.05f);
 				testlay->genmidibut->box->vtxcoords->w = tf(0.025f);
 				testlay->genmidibut->box->vtxcoords->h = tf(0.05f);
@@ -6059,16 +6033,7 @@ void the_loop() {
 	walk_nodes(1);
 
 
-    // draw and handle wormgates
-	if (!mainprogram->binsscreen) mainprogram->handle_wormhole(0);
-	mainprogram->handle_wormhole(1);
-	if (mainprogram->dragbinel) {
-		if (!mainprogram->wormhole1->box->in() && !mainprogram->wormhole2->box->in()) {
-			mainprogram->inwormhole = false;
-		}
-	}
-
-	for (int i = 0; i < mainprogram->menulist.size(); i++) {
+ 	for (int i = 0; i < mainprogram->menulist.size(); i++) {
 		// set menuondisplay: is there a menu active (state > 1)?
 		if (mainprogram->menulist[i]->state > 1) {
 			mainprogram->leftmousedown = false;
@@ -6079,17 +6044,6 @@ void the_loop() {
 			mainprogram->menuondisplay = false;
 		}
 	}
-
-    // draw and handle loopstation
-    if (mainprogram->prevmodus) {
-        lp->handle();
-        for (int i = 0; i < lpc->elems.size(); i++) {
-            if (lpc->elems[i]->loopbut->value || lpc->elems[i]->playbut->value) lpc->elems[i]->set_values();
-        }
-    }
-    else {
-        lpc->handle();
-    }
 
 
     /////////////// STUFF THAT BELONGS TO EITHER BINS OR MIX OR FULL SCREEN
@@ -6237,14 +6191,6 @@ void the_loop() {
 		mainmix->clips_handle();
 
 
-
-
-
-
-
-
-
-
 		// draw "layer insert into stack" blue boxes
 		if (!mainprogram->menuondisplay && mainprogram->dragbinel) {
 			for (int j = 0; j < 2; j++) {
@@ -6278,7 +6224,19 @@ void the_loop() {
 		}
 
 
-		mainmix->vidbox_handle();
+        // draw and handle loopstation
+        if (mainprogram->prevmodus) {
+            lp->handle();
+            for (int i = 0; i < lpc->elems.size(); i++) {
+                if (lpc->elems[i]->loopbut->value || lpc->elems[i]->playbut->value) lpc->elems[i]->set_values();
+            }
+        }
+        else {
+            lpc->handle();
+        }
+
+
+        mainmix->vidbox_handle();
 
 		mainmix->outputmonitors_handle();
 
@@ -6610,16 +6568,27 @@ void the_loop() {
 
 
 
-	// render code
+    // render code
 
     mainprogram->directmode = dmbu;
 
     glBindFramebuffer(GL_FRAMEBUFFER, 0);
     glDrawBuffer(GL_BACK_LEFT);
-    glClearColor(0.2f, 0.2f, 0.2f, 1.0f);
-    glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
-    // display the deck monitors and output monitors on the bottom of the screen
-    display_mix();
+    if (mainprogram->fullscreen == -1) {
+        glClearColor(0.2f, 0.2f, 0.2f, 1.0f);
+        glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
+        // draw and handle wormgates
+        if (!mainprogram->binsscreen) mainprogram->handle_wormgate(0);
+        mainprogram->handle_wormgate(1);
+        if (mainprogram->dragbinel) {
+            if (!mainprogram->wormgate1->box->in() && !mainprogram->wormgate2->box->in()) {
+                mainprogram->inwormgate = false;
+            }
+        }
+
+        // display the deck monitors and output monitors on the bottom of the screen
+        display_mix();
+    }
 
     if (!mainprogram->directmode) {
 
@@ -6721,7 +6690,7 @@ void the_loop() {
         mainprogram->directmode = false;
     }
 
-    if (!mainprogram->binsscreen) {
+    if (!mainprogram->binsscreen && mainprogram->fullscreen == -1) {
         draw_direct(nullptr, black, -1.0f, -1.0f, 2.0f, 2.0f, 0.0f, 0.0f, 1.0f, 0.2f, 0, mainprogram->bgtex,
                     glob->w, glob->h, false);
     }
@@ -7345,14 +7314,14 @@ void save_genmidis(std::string path) {
 	write_genmidi(wfile, laymidiD);
 	
 	
-	wfile << "WORMHOLEMIDI0\n";
-	wfile << std::to_string(mainprogram->wormhole1->midi[0]);
+	wfile << "WORMGATEMIDI0\n";
+	wfile << std::to_string(mainprogram->wormgate1->midi[0]);
 	wfile << "\n";
-	wfile << "WORMHOLEMIDI1\n";
-	wfile << std::to_string(mainprogram->wormhole1->midi[1]);
+	wfile << "WORMGATEMIDI1\n";
+	wfile << std::to_string(mainprogram->wormgate1->midi[1]);
 	wfile << "\n";
-	wfile << "WORMHOLEMIDIPORT\n";
-	wfile << mainprogram->wormhole1->midiport;
+	wfile << "WORMGATEMIDIPORT\n";
+	wfile << mainprogram->wormgate1->midiport;
 	wfile << "\n";
 	
 	wfile << "EFFCAT0MIDI0\n";
@@ -7509,17 +7478,17 @@ void open_genmidis(std::string path) {
 			lm->scratchstr = istring;
 		}
 		
-		if (istring == "WORMHOLE0MIDI0") {
+		if (istring == "WORMGATE0MIDI0") {
 			safegetline(rfile, istring);
-			mainprogram->wormhole1->midi[0] = std::stoi(istring);
+			mainprogram->wormgate1->midi[0] = std::stoi(istring);
 		}
-		if (istring == "WORMHOLEMIDI1") {
+		if (istring == "WORMGATEMIDI1") {
 			safegetline(rfile, istring);
-			mainprogram->wormhole1->midi[1] = std::stoi(istring);
+			mainprogram->wormgate1->midi[1] = std::stoi(istring);
 		}
-		if (istring == "WORMHOLEMIDIPORT") {
+		if (istring == "WORMGATEMIDIPORT") {
 			safegetline(rfile, istring);
-			mainprogram->wormhole1->midiport = istring;
+			mainprogram->wormgate1->midiport = istring;
 		}
 		
 		if (istring == "EFFCAT0MIDI0") {
@@ -8468,11 +8437,7 @@ int main(int argc, char* argv[]) {
                         mainprogram->project->delete_dirs();
                         mainprogram->project->create_dirs(path2);
                     }
-                    for (int i = 0; i < binsmain->bins.size(); i++) {
-                        binsmain->save_bin(binsmain->bins[i]->path);
-                    }
-                    binsmain->save_binslist();
-                    mainprogram->project->do_save(mainprogram->path);
+                     mainprogram->project->do_save(mainprogram->path);
                 }
             }
             mainprogram->path = "";
@@ -8931,7 +8896,7 @@ int main(int argc, char* argv[]) {
                     std::string path;
                     count = 0;
                     while (1) {
-                        path = mainprogram->projdir + name;
+                        path = mainprogram->currprojdir + name;
                         if (!exists(path + ".ewocvj")) {
                             break;
                         }

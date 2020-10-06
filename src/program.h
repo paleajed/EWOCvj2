@@ -6,7 +6,6 @@
 #ifdef WINDOWS
 #include "dirent.h"
 #endif
-#define __LINUX_ALSA__
 #include <rtmidi/RtMidi.h>
 #include <istream>
 #include <lo/lo.h>
@@ -63,11 +62,6 @@ typedef enum
 	PREF_NUMBER = 1,
 	PREF_PATH = 2,
 } PREF_TYPE;
-
-struct mix_target_struct {
-	int width;
-	int height;
-};
 
 struct gui_line {
 	float linec[4];
@@ -270,9 +264,7 @@ class GUIString {
 		std::vector<float> sxvec;
 		GLuint texture;
 		std::vector<GLuint> texturevec;
-		GLuint vbo;
 		GLuint tbo;
-		GLuint vao;
 };
 
 class OutputEntry {
@@ -456,13 +448,11 @@ class Program {
 		char* bdcptr[32];
 		char* bdtptr[32];
 		GLuint* bdtnptr[32];
-		int bdtexnum = 10;
 		GLuint bdvao;
 		GLuint bdvbo;
 		GLuint bdtcbo;
 		GLuint bdibo;
 		int boxcount;
-		GLuint boxdatablock;
 		GLint maxtexes = 16;
 		int countingtexes[32];
 		GLuint boxtexes[32][1024];
@@ -477,6 +467,7 @@ class Program {
 		float onscenemilli;
 		Box* delbox;
 		Box* addbox;
+		bool repeatdefault = true;
 
 		GLuint boxcoltbo;
 		GLuint boxtextbo;
@@ -550,9 +541,9 @@ class Program {
 		int dragpos; 
 		bool drag = false;
 		bool dragmousedown = false;
-		bool inwormhole = false;
-		Button* wormhole1;
-		Button* wormhole2;
+		bool inwormgate = false;
+		Button* wormgate1;
+		Button* wormgate2;
 		DIR *opendir;
 		bool gotcameras = false;
 
@@ -654,7 +645,7 @@ class Program {
 		void preview_init();
 		void add_main_oscmethods();
 		bool order_paths(bool dodeckmix);
-		void handle_wormhole(bool hole);
+		void handle_wormgate(bool gate);
 		int handle_scrollboxes(Box *upperbox, Box *lowerbox, int numlines, int scrollpos, int scrlines);
 		void shelf_miditriggering();
 		int config_midipresets_handle();
@@ -704,7 +695,6 @@ extern LoopStation *loopstation;
 extern LoopStation *lp;
 extern LoopStation *lpc;
 extern Menu *effectmenu;
-extern Menu *mixmodemenu;
 extern float smw, smh;
 extern SDL_GLContext glc;
 extern SDL_GLContext glc;
@@ -719,10 +709,8 @@ extern float yellow[];
 extern float white[];
 extern float halfwhite[];
 extern float black[];
-extern float alpha[];
 extern float orange[];
 extern float purple[];
-extern float lightgreen[];
 extern float yellow[];
 extern float lightblue[];
 extern float darkblue[];
@@ -731,8 +719,6 @@ extern float lightgrey[];
 extern float grey[];
 extern float pink[];
 extern float green[];
-extern float lightgreygreen[];
-extern float greygreen[];
 extern float darkgreygreen[];
 extern float darkgreen1[];
 extern float darkgreen2[];
@@ -747,8 +733,6 @@ extern float darkgrey[];
 
 extern std::istream& safegetline(std::istream& is, std::string& t);
 extern void mycallback(double deltatime, std::vector< unsigned char >* message, void* userData);
-
-extern mix_target_struct mixtarget[2];
 
 extern GLuint get_imagetex(const std::string& path);
 extern GLuint get_videotex(const std::string& path);
@@ -792,13 +776,7 @@ extern float pdistance(float x, float y, float x1, float y1, float x2, float y2)
 extern void enddrag();
 
 extern void open_binfiles();
-extern void open_bindir();
-extern void open_handlefile(const std::string &path);
 extern void save_bin(const std::string &path);
-extern void open_bin(const std::string &path);
-extern Bin *new_bin(const std::string &name);
-extern int read_binslist();
-extern void make_currbin(int pos);
 extern void save_thumb(std::string path, GLuint tex);
 extern void open_thumb(std::string path, GLuint tex);
 extern void new_state();
@@ -818,8 +796,6 @@ void save_genmidis(std::string path);
 
 void screenshot();
 
-void calctexture(Layer *lay);
-
 int open_codec_context(int *stream_idx, AVFormatContext *video, enum AVMediaType type);
 
 void set_live_base(Layer *lay, std::string livename);
@@ -830,7 +806,6 @@ extern Effect* new_effect(EFFECT_TYPE type);
 
 extern float tf(float vtxcoord);
 extern bool exists(const std::string &name);
-extern std::string replace_string(std::string subject, const std::string& search, const std::string& replace);
 extern std::string dirname(std::string pathname);
 extern std::string basename(std::string pathname);
 extern std::string remove_extension(std::string filename);

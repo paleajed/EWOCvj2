@@ -122,7 +122,8 @@ class Layer {
 		bool prevffw = false;
 		Button *framebackward;
 		bool prevfbw = false;
-		Button *genmidibut;
+        Button *repeatbut;
+        Button *genmidibut;
 		Box *loopbox;
 		int playkind = 0;
 		int startframe = 0;
@@ -153,19 +154,15 @@ class Layer {
 		std::mutex enddecodelock;
 		std::mutex endopenlock;
 		std::mutex chunklock;
-		std::mutex endchunklock;
-		std::mutex protectlock;
 		std::condition_variable startdecode;
 		std::condition_variable enddecodevar;
 		std::condition_variable endopenvar;
 		std::condition_variable newchunk;
-		std::condition_variable endchunk;
 		std::condition_variable protect;
 		bool processed = false;
 		bool opened = false;
 		bool ready = false;
 		bool chready = false;
-		bool endready = false;
 		bool closethread = false;
 		bool waiting = true;
 		bool vidopen = false;
@@ -182,11 +179,9 @@ class Layer {
 		std::thread audiot;
 		void playaudio();
 		bool audioplaying = false;
-		bool notdecoding = true;
 		std::list<char*> snippets;
 		std::list<int> pslens;
 		GLuint texture;
-		GLuint comptexture;
 		GLuint fbotex;
 		GLuint fbo;
 		GLuint fbotexintm;
@@ -196,10 +191,8 @@ class Layer {
 		GLuint tbuf;
 		GLuint vao;
 		GLuint endtex;
-		GLuint endbuf;
         GLuint frb;
-        GLuint frt = -1;
-		GLuint pbo[3];
+ 		GLuint pbo[3];
 		GLubyte* mapptr[3];
 		GLsync syncobj[3] = {nullptr, nullptr, nullptr};
 		char pbodi = 0;
@@ -238,8 +231,8 @@ class Layer {
 		char *databuf = nullptr;
 		bool databufready = false;
 		int vidformat = -1;
-		int oldvidformat = -2;  //different from -1
-		int oldcompression = -1;
+        int oldvidformat = -1;
+        int oldcompression = -1;
 		bool oldalive = true;
 		std::vector<char*> audio_chunks;
 		ALuint sample_rate;
@@ -383,8 +376,7 @@ class Mixer {
 		Button *recbut;
 		Param *crossfade;
 		Param *crossfadecomp;
-		int numaudiochannels = 0;
-		
+
 		int currscene[2][2] = {{0, 0}, {0, 0}};
 		bool deck = 0;
 		int scrollon = 0;
@@ -432,8 +424,7 @@ class Mixer {
 		float cbduration = 0.0f;
 		
 		std::vector<GLuint> fbotexes;
-		GLuint tempbuf, temptex;
-		
+
 		std::vector<std::unordered_set<Layer*>*> clonesets;
 		std::unordered_map<int, Layer*> firstlayers;  //first decompressed layer per cloneset
 };
