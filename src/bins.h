@@ -36,7 +36,7 @@ class BinsMain {
 		bool binpreview = false;
 		std::string newpath;
 		std::string binpath;
-		std::vector<std::string> newpaths;
+		std::vector<std::string> addpaths;
 		std::string tempjpegpath;
 		GLuint movingtex = -1;
 		GLuint dragtex = -1;
@@ -79,8 +79,10 @@ class BinsMain {
 		int selboxy;
 		Box *hapmodebox;
 		BinElement *renamingelem = nullptr;
-		
-		void handle(bool draw);
+        std::vector<std::string> newbinelpaths;
+
+
+    void handle(bool draw);
 		int read_binslist();
 		void save_binslist();
 		void make_currbin(int pos);

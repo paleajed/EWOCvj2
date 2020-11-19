@@ -18,6 +18,7 @@
 class PrefCat;
 class Menu;
 class LoopStation;
+class Retarget;
 class BinsMain;
 class Bin;
 class BinElement;
@@ -60,7 +61,8 @@ typedef enum
 {
 	PREF_ONOFF = 0,
 	PREF_NUMBER = 1,
-	PREF_PATH = 2,
+    PREF_PATH = 2,
+    PREF_PATHS = 3,
 } PREF_TYPE;
 
 struct gui_line {
@@ -430,8 +432,12 @@ class Program {
 		Box *effscrolldownB;
 		Box* addeffectbox;
 		Box* inserteffectbox;
-		Box* orderscrolldown;
-		Box* orderscrollup;
+        Box* orderscrolldown;
+        Box* orderscrollup;
+        Box* defaultsearchscrolldown;
+        Box* defaultsearchscrollup;
+        Box* searchscrolldown;
+        Box* searchscrollup;
 		bool startloop = false;
 		bool newproject = false;
 		std::vector<std::string> recentprojectpaths;
@@ -646,7 +652,9 @@ class Program {
 		void add_main_oscmethods();
 		bool order_paths(bool dodeckmix);
 		void handle_wormgate(bool gate);
-		int handle_scrollboxes(Box *upperbox, Box *lowerbox, int numlines, int scrollpos, int scrlines);
+        int handle_scrollboxes(Box *upperbox, Box *lowerbox, int numlines, int scrollpos, int scrlines);
+        int handle_scrollboxes(Box* upperbox, Box* lowerbox, int numlines, int scrollpos, int scrlines, int mx, int
+            my);
 		void shelf_miditriggering();
 		int config_midipresets_handle();
 		bool config_midipresets_init();
@@ -694,6 +702,7 @@ extern BinsMain *binsmain;
 extern LoopStation *loopstation;
 extern LoopStation *lp;
 extern LoopStation *lpc;
+extern Retarget *retarget;
 extern Menu *effectmenu;
 extern float smw, smh;
 extern SDL_GLContext glc;
@@ -730,6 +739,8 @@ extern float darkred1[];
 extern float darkred2[];
 extern float darkred3[];
 extern float darkgrey[];
+
+extern "C" int kdialogPresent();
 
 extern std::istream& safegetline(std::istream& is, std::string& t);
 extern void mycallback(double deltatime, std::vector< unsigned char >* message, void* userData);
@@ -804,7 +815,6 @@ extern void set_queueing(bool onoff);
 
 extern Effect* new_effect(EFFECT_TYPE type);
 
-extern float tf(float vtxcoord);
 extern bool exists(const std::string &name);
 extern std::string dirname(std::string pathname);
 extern std::string basename(std::string pathname);
@@ -826,3 +836,5 @@ extern int osc_param(const char *path, const char *types, lo_arg **argv, int arg
 
 extern void LockBuffer(GLsync& syncObj);
 extern void WaitBuffer(GLsync& syncObj);
+
+extern void make_searchbox();

@@ -3780,7 +3780,7 @@ static int zenity3Present()
 }
 
 
-static int kdialogPresent( )
+int kdialogPresent( )
 {
 	static int lKdialogPresent = -1 ;
 	char lBuff [MAX_PATH_OR_CMD] ;
@@ -3789,7 +3789,7 @@ static int kdialogPresent( )
 
 	if ( lKdialogPresent < 0 )
 	{
-		if ( zenityPresent() )
+		if ( 0 )
 		{
 			lDesktop = getenv("XDG_SESSION_DESKTOP");
 			if ( !lDesktop  || ( strcmp(lDesktop, "KDE") && strcmp(lDesktop, "lxqt") ) )

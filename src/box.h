@@ -41,6 +41,7 @@ class Box {
 		bool in(bool menu);
 		bool in2();
 		bool in2(int mx, int my);
+		Box* copy();
 		Box();
 		~Box();
 };

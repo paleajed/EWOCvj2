@@ -28,7 +28,7 @@ add_executable(EWOCvj2
         tinyfiledialogs.c
         tinyfiledialogs.h
         window.h
-        )
+        retarget.h)
 
 include_directories(.)
 
@@ -180,7 +180,8 @@ endif (UNIX)
 
 if (UNIX)
     install(TARGETS EWOCvj2 RUNTIME DESTINATION bin)
-    install(FILES ewocvj2-*.xml DESTINATION share/mime)
+    install(FILES ewocvj2-*.xml DESTINATION share/mime/application)
+    install(CODE "execute_process(COMMAND update-mime-database /usr/share/mime)")
     install(DIRECTORY DESTINATION share/ewocvj2)
     install(FILES shader.* DESTINATION share/ewocvj2)
     install(FILES background.jpg DESTINATION share/ewocvj2)

@@ -721,9 +721,9 @@ void BinsMain::handle(bool draw) {
 			draw_box(bin->box, -1);
 			if (mainprogram->renaming != EDIT_NONE && bin == this->menubin) {
 				// bin renaming with keyboard
-				do_text_input(bin->box->vtxcoords->x1 + tf(0.01f), bin->box->vtxcoords->y1 + tf(0.012f), tf(0.0003f), tf(0.0005f), mainprogram->mx, mainprogram->my, mainprogram->xvtxtoscr(0.3f - tf(0.02f)), 0, nullptr);
+				do_text_input(bin->box->vtxcoords->x1 + 0.015f, bin->box->vtxcoords->y1 + 0.018f, 0.00045f, 0.00075f, mainprogram->mx, mainprogram->my, mainprogram->xvtxtoscr(0.3f - 0.03f), 0, nullptr);
 			}
-			else render_text(bin->name, white, bin->box->vtxcoords->x1 + tf(0.01f), bin->box->vtxcoords->y1 + tf(0.012f), tf(0.0003f), tf(0.0005f));
+			else render_text(bin->name, white, bin->box->vtxcoords->x1 + 0.015f, bin->box->vtxcoords->y1 + 0.018f, 0.00045f, 0.00075f);
 		}
 		if (!this->indragbox && this->dragbinsense) {
 			// dragging has moved (!this->draginbox) so start doing it
@@ -761,7 +761,7 @@ void BinsMain::handle(bool draw) {
 			box->acolor[3] = 1.0f;
 		}
 		draw_box(box, -1);
-		render_text("+ NEW BIN", red, 0.62f, -1.0f + 0.018f, tf(0.0003f), tf(0.0005f));
+		render_text("+ NEW BIN", red, 0.62f, -1.0f + 0.018f, 0.00045f, 0.00075f);
 
 		// draw and handle box that allows loading a bin at the end of the list
 		box = this->loadbinbox;
@@ -783,7 +783,7 @@ void BinsMain::handle(bool draw) {
 			box->acolor[3] = 1.0f;
 		}
 		draw_box(box, -1);
-		render_text("+ LOAD BIN(S)", red, 0.62f, -0.95f + 0.018f, tf(0.0003f), tf(0.0005f));
+		render_text("+ LOAD BIN(S)", red, 0.62f, -0.95f + 0.018f, 0.00045f, 0.00075f);
 
 		// handle bin drag in binslist
 		if (this->dragbin) {
@@ -809,7 +809,7 @@ void BinsMain::handle(bool draw) {
 				if (mainprogram->my > under2 && mainprogram->my < upper) {
 					// draw dragged box
 					draw_box(white, black, this->dragbin->box->vtxcoords->x1, 1.0f - mainprogram->yscrtovtx(under1), this->dragbin->box->vtxcoords->w, this->dragbin->box->vtxcoords->h, -1);
-					render_text(this->dragbin->name, white, this->dragbin->box->vtxcoords->x1 + tf(0.01f), 1.0f - mainprogram->yscrtovtx(under1) + tf(0.012f), tf(0.0003f), tf(0.0005f));
+					render_text(this->dragbin->name, white, this->dragbin->box->vtxcoords->x1 + 0.015f, 1.0f - mainprogram->yscrtovtx(under1) + 0.018f, 0.00045f, 0.00075f);
 					pos = i;
 					break;
 				}
@@ -846,7 +846,8 @@ void BinsMain::handle(bool draw) {
 		if (mainprogram->renaming != EDIT_NONE && this->renamingelem) {
 			// bin element renaming with keyboard
 			draw_box(white, black, this->renamingbox, -1);
-			do_text_input(-0.5f + 0.1f, -0.2f + 0.05f, tf(0.0006f), tf(0.001f), mainprogram->mx, mainprogram->my, mainprogram->xvtxtoscr(0.8f), 0, nullptr);
+			do_text_input(-0.5f + 0.1f, -0.2f + 0.05f, 0.0009f, 0.0015f, mainprogram->mx, mainprogram->my,
+                 mainprogram->xvtxtoscr(0.8f), 0, nullptr);
 		}
 
 		// render hap encoding text on elems
@@ -859,7 +860,7 @@ void BinsMain::handle(bool draw) {
 				if (draw) {
 					// show if element encoding/awaiting encoding
 					if (binel->encwaiting) {
-						render_text("Waiting...", white, box->vtxcoords->x1 + tf(0.005f), box->vtxcoords->y1 + box->vtxcoords->h - tf(0.015f), 0.0005f, 0.0008f);
+						render_text("Waiting...", white, box->vtxcoords->x1 + 0.0075f, box->vtxcoords->y1 + box->vtxcoords->h - 0.0225f, 0.0005f, 0.0008f);
 					}
 					else if (binel->encoding) {
 						float progress = binel->encodeprogress;
@@ -869,8 +870,8 @@ void BinsMain::handle(bool draw) {
 							}
 							else progress = 0.0f;
 						}
-						render_text("Encoding...", white, box->vtxcoords->x1 + tf(0.005f), box->vtxcoords->y1 + box->vtxcoords->h - tf(0.015f), 0.0005f, 0.0008f);
-						draw_box(black, white, box->vtxcoords->x1, box->vtxcoords->y1 + box->vtxcoords->h - tf(0.045f), progress * 0.1f, 0.02f, -1);
+						render_text("Encoding...", white, box->vtxcoords->x1 + 0.0075f, box->vtxcoords->y1 + box->vtxcoords->h - 0.0225f, 0.0005f, 0.0008f);
+						draw_box(black, white, box->vtxcoords->x1, box->vtxcoords->y1 + box->vtxcoords->h - 0.0675f, progress * 0.1f, 0.02f, -1);
 					}
 				}
 			}
@@ -897,7 +898,7 @@ void BinsMain::handle(bool draw) {
 					BinElement* binel = this->currbin->elements[i * 12 + j];
 					if (binel->select) {
 						this->movebinels.push_back(binel);
-						this->newpaths.push_back(binel->path);
+						this->addpaths.push_back(binel->path);
 						this->inputtexes.push_back(binel->tex);
 						this->inputtypes.push_back(binel->type);
 						this->inputjpegpaths.push_back(binel->jpegpath);
@@ -1034,7 +1035,7 @@ void BinsMain::handle(bool draw) {
 			open_handlefile(path);
 			this->menubinel->tex = this->inputtexes[0];
 			this->menubinel->type = this->inputtypes[0];
-			this->menubinel->path = this->newpaths[0];
+			this->menubinel->path = this->addpaths[0];
 			this->menubinel->name = remove_extension(basename(this->menubinel->path));
 			this->menubinel->oldjpegpath = this->menubinel->jpegpath;
 			this->menubinel->jpegpath = this->inputjpegpaths[0];
@@ -1043,7 +1044,7 @@ void BinsMain::handle(bool draw) {
 			this->inputtypes.clear();
 			this->inputjpegpaths.clear();
 			this->menuactbinel = nullptr;
-			this->newpaths.clear();
+			this->addpaths.clear();
 			this->prevbinel = nullptr;
 		}
 		else if (binelmenuoptions[k] == BET_INSDECKB) {
@@ -1065,7 +1066,7 @@ void BinsMain::handle(bool draw) {
 			open_handlefile(path);
 			this->menubinel->tex = this->inputtexes[0];
 			this->menubinel->type = this->inputtypes[0];
-			this->menubinel->path = this->newpaths[0];
+			this->menubinel->path = this->addpaths[0];
 			this->menubinel->name = remove_extension(basename(this->menubinel->path));
 			this->menubinel->oldjpegpath = this->menubinel->jpegpath;
 			this->menubinel->jpegpath = this->inputjpegpaths[0];
@@ -1074,7 +1075,7 @@ void BinsMain::handle(bool draw) {
 			this->inputtypes.clear();
 			this->inputjpegpaths.clear();
 			this->menuactbinel = nullptr;
-			this->newpaths.clear();
+			this->addpaths.clear();
 			this->prevbinel = nullptr;
 		}
 		else if (binelmenuoptions[k] == BET_INSMIX) {
@@ -1095,7 +1096,7 @@ void BinsMain::handle(bool draw) {
 			open_handlefile(path);
 			this->menubinel->tex = this->inputtexes[0];
 			this->menubinel->type = this->inputtypes[0];
-			this->menubinel->path = this->newpaths[0];
+			this->menubinel->path = this->addpaths[0];
 			this->menubinel->name = remove_extension(basename(this->menubinel->path));
 			this->menubinel->oldjpegpath = this->menubinel->jpegpath;
 			this->menubinel->jpegpath = this->inputjpegpaths[0];
@@ -1104,7 +1105,7 @@ void BinsMain::handle(bool draw) {
 			this->inputtypes.clear();
 			this->inputjpegpaths.clear();
 			this->menuactbinel = nullptr;
-			this->newpaths.clear();
+			this->addpaths.clear();
 			this->prevbinel = nullptr;
 		}
 		else if (binelmenuoptions[k] == BET_LOADSHELFA) {
@@ -1273,8 +1274,8 @@ void BinsMain::handle(bool draw) {
 									glTexSubImage2D(GL_TEXTURE_2D, 0, 0, 0, w, h, mode, GL_UNSIGNED_BYTE, ilGetData());
 								}
 								draw_box(red, black, 0.52f, 0.5f, 0.4f, 0.4f, mainprogram->prelay->texture);
-								render_text("IMAGE", white, box->vtxcoords->x1 + tf(0.005f), box->vtxcoords->y1 + box->vtxcoords->h - tf(0.015f), 0.0005f, 0.0008f);
-								render_text(std::to_string(w) + "x" + std::to_string(h), white, box->vtxcoords->x1 + tf(0.005f), box->vtxcoords->y1 + box->vtxcoords->h - tf(0.045f), 0.0005f, 0.0008f);
+								render_text("IMAGE", white, box->vtxcoords->x1 + 0.0075f, box->vtxcoords->y1 + box->vtxcoords->h - 0.0225f, 0.0005f, 0.0008f);
+								render_text(std::to_string(w) + "x" + std::to_string(h), white, box->vtxcoords->x1 + 0.0075f, box->vtxcoords->y1 + box->vtxcoords->h - 0.0675f, 0.0005f, 0.0008f);
 							}
 							else if (this->previewimage != "" || binel->type == ELEM_IMAGE) {
 								// do second entry preview visualisation when image hovered
@@ -1301,8 +1302,8 @@ void BinsMain::handle(bool draw) {
 									glTexSubImage2D(GL_TEXTURE_2D, 0, 0, 0, w, h, mode, GL_UNSIGNED_BYTE, ilGetData());
 								}
 								draw_box(red, black, 0.52f, 0.5f, 0.4f, 0.4f, mainprogram->prelay->texture);
-								render_text("IMAGE", white, box->vtxcoords->x1 + tf(0.005f), box->vtxcoords->y1 + box->vtxcoords->h - tf(0.015f), 0.0005f, 0.0008f);
-								render_text(std::to_string(w) + "x" + std::to_string(h), white, box->vtxcoords->x1 + tf(0.005f), box->vtxcoords->y1 + box->vtxcoords->h - tf(0.045f), 0.0005f, 0.0008f);
+								render_text("IMAGE", white, box->vtxcoords->x1 + 0.0075f, box->vtxcoords->y1 + box->vtxcoords->h - 0.0225f, 0.0005f, 0.0008f);
+								render_text(std::to_string(w) + "x" + std::to_string(h), white, box->vtxcoords->x1 + 0.0075f, box->vtxcoords->y1 + box->vtxcoords->h - 0.0675f, 0.0005f, 0.0008f);
 							}
 							else if ((binel->type == ELEM_LAYER) && !this->binpreview) {
 								// do first entry preview preperation/visualisation when layer file hovered
@@ -1387,12 +1388,12 @@ void BinsMain::handle(bool draw) {
 									if (!binel->encoding) {
 										// show video format
 										if (mainprogram->prelay->vidformat == 188 || mainprogram->prelay->vidformat == 187) {
-											render_text("HAP", white, box->vtxcoords->x1 + tf(0.005f), box->vtxcoords->y1 + box->vtxcoords->h - tf(0.015f), 0.0005f, 0.0008f);
-											render_text(std::to_string(mainprogram->prelay->decresult->width) + "x" + std::to_string(mainprogram->prelay->decresult->height), white, box->vtxcoords->x1 + tf(0.005f), box->vtxcoords->y1 + box->vtxcoords->h - tf(0.045f), 0.0005f, 0.0008f);
+											render_text("HAP", white, box->vtxcoords->x1 + 0.0075f, box->vtxcoords->y1 + box->vtxcoords->h - 0.0225f, 0.0005f, 0.0008f);
+											render_text(std::to_string(mainprogram->prelay->decresult->width) + "x" + std::to_string(mainprogram->prelay->decresult->height), white, box->vtxcoords->x1 + 0.0075f, box->vtxcoords->y1 + box->vtxcoords->h - 0.0675f, 0.0005f, 0.0008f);
 										}
 										else if (mainprogram->prelay->type != ELEM_IMAGE) {
-											render_text("CPU", white, box->vtxcoords->x1 + tf(0.005f), box->vtxcoords->y1 + box->vtxcoords->h - tf(0.015f), 0.0005f, 0.0008f);
-											render_text(std::to_string(mainprogram->prelay->decresult->width) + "x" + std::to_string(mainprogram->prelay->decresult->height), white, box->vtxcoords->x1 + tf(0.005f), box->vtxcoords->y1 + box->vtxcoords->h - tf(0.045f), 0.0005f, 0.0008f);
+											render_text("CPU", white, box->vtxcoords->x1 + 0.0075f, box->vtxcoords->y1 + box->vtxcoords->h - 0.0225f, 0.0005f, 0.0008f);
+											render_text(std::to_string(mainprogram->prelay->decresult->width) + "x" + std::to_string(mainprogram->prelay->decresult->height), white, box->vtxcoords->x1 + 0.0075f, box->vtxcoords->y1 + box->vtxcoords->h - 0.0675f, 0.0005f, 0.0008f);
 										}
 									}
 								}
@@ -1463,12 +1464,12 @@ void BinsMain::handle(bool draw) {
 								if (!binel->encoding && remove_extension(basename(binel->path)) != "") {
 									// show video format
 									if (mainprogram->prelay->vidformat == 188 || mainprogram->prelay->vidformat == 187) {
-										render_text("HAP", white, box->vtxcoords->x1 + tf(0.005f), box->vtxcoords->y1 + box->vtxcoords->h - tf(0.015f), 0.0005f, 0.0008f);
-										render_text(std::to_string(mainprogram->prelay->decresult->width) + "x" + std::to_string(mainprogram->prelay->decresult->height), white, box->vtxcoords->x1 + tf(0.005f), box->vtxcoords->y1 + box->vtxcoords->h - tf(0.045f), 0.0005f, 0.0008f);
+										render_text("HAP", white, box->vtxcoords->x1 + 0.0075f, box->vtxcoords->y1 + box->vtxcoords->h - 0.0225f, 0.0005f, 0.0008f);
+										render_text(std::to_string(mainprogram->prelay->decresult->width) + "x" + std::to_string(mainprogram->prelay->decresult->height), white, box->vtxcoords->x1 + 0.0075f, box->vtxcoords->y1 + box->vtxcoords->h - 0.0675f, 0.0005f, 0.0008f);
 									}
 									else if (mainprogram->prelay->type != ELEM_IMAGE) {
-										render_text("CPU", white, box->vtxcoords->x1 + tf(0.005f), box->vtxcoords->y1 + box->vtxcoords->h - tf(0.015f), 0.0005f, 0.0008f);
-										render_text(std::to_string(mainprogram->prelay->decresult->width) + "x" + std::to_string(mainprogram->prelay->decresult->height), white, box->vtxcoords->x1 + tf(0.005f), box->vtxcoords->y1 + box->vtxcoords->h - tf(0.045f), 0.0005f, 0.0008f);
+										render_text("CPU", white, box->vtxcoords->x1 + 0.0075f, box->vtxcoords->y1 + box->vtxcoords->h - 0.0225f, 0.0005f, 0.0008f);
+										render_text(std::to_string(mainprogram->prelay->decresult->width) + "x" + std::to_string(mainprogram->prelay->decresult->height), white, box->vtxcoords->x1 + 0.0075f, box->vtxcoords->y1 + box->vtxcoords->h - 0.0675f, 0.0005f, 0.0008f);
 									}
 								}
 							}
@@ -1523,13 +1524,13 @@ void BinsMain::handle(bool draw) {
 									if (!binel->encoding) {
 										// show video format
 										if (mainprogram->prelay->vidformat == 188 || mainprogram->prelay->vidformat == 187) {
-											render_text("HAP", white, box->vtxcoords->x1 + tf(0.005f), box->vtxcoords->y1 + box->vtxcoords->h - tf(0.015f), 0.0005f, 0.0008f);
-											render_text(std::to_string(mainprogram->prelay->video_dec_ctx->width) + "x" + std::to_string(mainprogram->prelay->video_dec_ctx->height), white, box->vtxcoords->x1 + tf(0.005f), box->vtxcoords->y1 + box->vtxcoords->h - tf(0.045f), 0.0005f, 0.0008f);
+											render_text("HAP", white, box->vtxcoords->x1 + 0.0075f, box->vtxcoords->y1 + box->vtxcoords->h - 0.0225f, 0.0005f, 0.0008f);
+											render_text(std::to_string(mainprogram->prelay->video_dec_ctx->width) + "x" + std::to_string(mainprogram->prelay->video_dec_ctx->height), white, box->vtxcoords->x1 + 0.0075f, box->vtxcoords->y1 + box->vtxcoords->h - 0.0675f, 0.0005f, 0.0008f);
 										}
 										else {
 											if (mainprogram->prelay->type == ELEM_FILE) {
-												render_text("CPU", white, box->vtxcoords->x1 + tf(0.005f), box->vtxcoords->y1 + box->vtxcoords->h - tf(0.015f), 0.0005f, 0.0008f);
-												render_text(std::to_string(mainprogram->prelay->video_dec_ctx->width) + "x" + std::to_string(mainprogram->prelay->video_dec_ctx->height), white, box->vtxcoords->x1 + tf(0.005f), box->vtxcoords->y1 + box->vtxcoords->h - tf(0.045f), 0.0005f, 0.0008f);
+												render_text("CPU", white, box->vtxcoords->x1 + 0.0075f, box->vtxcoords->y1 + box->vtxcoords->h - 0.0225f, 0.0005f, 0.0008f);
+												render_text(std::to_string(mainprogram->prelay->video_dec_ctx->width) + "x" + std::to_string(mainprogram->prelay->video_dec_ctx->height), white, box->vtxcoords->x1 + 0.0075f, box->vtxcoords->y1 + box->vtxcoords->h - 0.0675f, 0.0005f, 0.0008f);
 											}
 										}
 									}
@@ -1584,13 +1585,13 @@ void BinsMain::handle(bool draw) {
 								if (!binel->encoding && remove_extension(basename(binel->path)) != "") {
 									// show video format
 									if (mainprogram->prelay->vidformat == 188 || mainprogram->prelay->vidformat == 187) {
-										render_text("HAP", white, box->vtxcoords->x1 + tf(0.005f), box->vtxcoords->y1 + box->vtxcoords->h - tf(0.015f), 0.0005f, 0.0008f);
-										render_text(std::to_string(mainprogram->prelay->video_dec_ctx->width) + "x" + std::to_string(mainprogram->prelay->video_dec_ctx->height), white, box->vtxcoords->x1 + tf(0.005f), box->vtxcoords->y1 + box->vtxcoords->h - tf(0.045f), 0.0005f, 0.0008f);
+										render_text("HAP", white, box->vtxcoords->x1 + 0.0075f, box->vtxcoords->y1 + box->vtxcoords->h - 0.0225f, 0.0005f, 0.0008f);
+										render_text(std::to_string(mainprogram->prelay->video_dec_ctx->width) + "x" + std::to_string(mainprogram->prelay->video_dec_ctx->height), white, box->vtxcoords->x1 + 0.0075f, box->vtxcoords->y1 + box->vtxcoords->h - 0.0675f, 0.0005f, 0.0008f);
 									}
 									else {
 										if (mainprogram->prelay->type == ELEM_FILE) {
-											render_text("CPU", white, box->vtxcoords->x1 + tf(0.005f), box->vtxcoords->y1 + box->vtxcoords->h - tf(0.015f), 0.0005f, 0.0008f);
-											render_text(std::to_string(mainprogram->prelay->video_dec_ctx->width) + "x" + std::to_string(mainprogram->prelay->video_dec_ctx->height), white, box->vtxcoords->x1 + tf(0.005f), box->vtxcoords->y1 + box->vtxcoords->h - tf(0.045f), 0.0005f, 0.0008f);
+											render_text("CPU", white, box->vtxcoords->x1 + 0.0075f, box->vtxcoords->y1 + box->vtxcoords->h - 0.0225f, 0.0005f, 0.0008f);
+											render_text(std::to_string(mainprogram->prelay->video_dec_ctx->width) + "x" + std::to_string(mainprogram->prelay->video_dec_ctx->height), white, box->vtxcoords->x1 + 0.0075f, box->vtxcoords->y1 + box->vtxcoords->h - 0.0675f, 0.0005f, 0.0008f);
 										}
 									}
 								}
@@ -1738,7 +1739,7 @@ void BinsMain::handle(bool draw) {
 							BinElement* dirbinel = this->currbin->elements[ii * 12 + jj];
 							dirbinel->tex = this->inputtexes[k];
 							dirbinel->type = this->inputtypes[k];
-							dirbinel->path = this->newpaths[k];
+							dirbinel->path = this->addpaths[k];
 							dirbinel->name = remove_extension(basename(dirbinel->path));
 							dirbinel->oldjpegpath = dirbinel->jpegpath;
 							dirbinel->jpegpath = this->inputjpegpaths[k];
@@ -1747,7 +1748,7 @@ void BinsMain::handle(bool draw) {
 						this->inputtexes.clear();
 						this->inputtypes.clear();
 						this->menuactbinel = nullptr;
-						this->newpaths.clear();
+						this->addpaths.clear();
 					}
 
 
@@ -1793,7 +1794,7 @@ void BinsMain::handle(bool draw) {
 						int ii = ((k + intm + 144) % 12 + this->previ + 144) % 12;
 						BinElement *dirbinel = this->currbin->elements[ii * 12 + jj];
 						dirbinel->type = this->inputtypes[k];
-						dirbinel->path = this->newpaths[k];
+						dirbinel->path = this->addpaths[k];
 						dirbinel->name = remove_extension(basename(dirbinel->path));
 						dirbinel->oldjpegpath = dirbinel->jpegpath;
 						dirbinel->jpegpath = this->inputjpegpaths[k];
@@ -1817,7 +1818,7 @@ void BinsMain::handle(bool draw) {
 					this->currbinel = nullptr;
 					this->prevbinel = nullptr;
 					this->inputtypes.clear();
-					this->newpaths.clear();
+					this->addpaths.clear();
 					mainprogram->leftmouse = false;
 				}
 			}
@@ -1929,12 +1930,18 @@ void BinsMain::open_bin(const std::string &path, Bin *bin) {
                 if (istring == "ABSPATH") {
                     safegetline(rfile, istring);
                     bin->elements[pos]->path = istring;
+                    if (!exists(bin->elements[pos]->path)) bin->elements[pos]->path = "";
                 }
                 if (istring == "RELPATH") {
                     safegetline(rfile, istring);
-                    if (bin->elements[pos]->name == "") {
+                    if (bin->elements[pos]->path == "") {
                         boost::filesystem::current_path(mainprogram->contentpath);
                         bin->elements[pos]->path = pathtoplatform(boost::filesystem::absolute(istring).string());
+                        if (!exists(bin->elements[pos]->path)) {
+                            mainmix->retargeting = true;
+                            mainmix->newbinelpaths.push_back(bin->elements[pos]->path);
+                            mainmix->newpathbinels.push_back(bin->elements[pos]);
+                        }
                     }
                 }
 				if (istring == "NAME") {
@@ -2223,7 +2230,7 @@ void BinsMain::open_handlefile(const std::string &path) {
 		endtex = get_videotex(path);
 	}
 	if (endtex == -1) return;
-	this->newpaths.push_back(path);
+	this->addpaths.push_back(path);
 	this->inputtexes.push_back(endtex);
 	this->inputtypes.push_back(endtype);
 	std::string jpath;
