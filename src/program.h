@@ -11,7 +11,7 @@
 #ifdef WINDOWS
 #include "direnthwin/dirent.h"
 #endif
-#include <RtMidi.h>
+#include <rtmidi/RtMidi.h>
 #include <istream>
 #include <lo/lo.h>
 #include <lo/lo_cpp.h>
@@ -23,6 +23,7 @@
 class PrefCat;
 class Menu;
 class LoopStation;
+class Retarget;
 class BinsMain;
 class Bin;
 class BinElement;
@@ -65,13 +66,9 @@ typedef enum
 {
 	PREF_ONOFF = 0,
 	PREF_NUMBER = 1,
-	PREF_PATH = 2,
+    PREF_PATH = 2,
+    PREF_PATHS = 3,
 } PREF_TYPE;
-
-struct mix_target_struct {
-	int width;
-	int height;
-};
 
 struct gui_line {
 	float linec[4];
@@ -102,7 +99,8 @@ struct gui_box {
 	int circle;
 	GLuint tex;
 	bool text = false;
-	bool vertical = false;
+    bool vertical = false;
+    bool inverted = false;
 };
 
 class GUI_Element {
@@ -127,7 +125,7 @@ public:
 	void erase();
 	void save(const std::string& path);
 	bool open(const std::string& path);
-	void open_shelffiles();
+	void open_files_shelf();
 	bool insert_deck(const std::string& path, bool deck, int pos);
 	bool insert_mix(const std::string& path, int pos);
 	Shelf(bool side);
@@ -154,12 +152,18 @@ public:
 class Project {
 	public:
 		std::string path;
+		std::string name;
 		std::string binsdir;
 		std::string recdir;
-		std::string shelfdir;
+        std::string shelfdir;
+        std::string autosavedir;
+        std::vector<std::string> autosavelist;
+        float ow = 1920.0f;
+        float oh = 1080.0f;
 		void newp(const std::string &path);
 		void open(const std::string &path);
-		void save(const std::string& path);
+        void save(const std::string& path);
+        void autosave();
 		void do_save(const std::string& path);
 		void delete_dirs();
 		void create_dirs(const std::string &path);
@@ -209,11 +213,16 @@ class PIMidi: public PrefCat {
 		PIMidi();
 };
 
-class PIDirs: public PrefCat {
-	public:
-		PIDirs();
+class PIProj: public PrefCat {
+public:
+    PIProj();
 };
-		
+
+class PIDirs: public PrefCat {
+public:
+    PIDirs();
+};
+
 class PIInt: public PrefCat {
 	public:
 		PIInt();
@@ -271,9 +280,7 @@ class GUIString {
 		std::vector<float> sxvec;
 		GLuint texture;
 		std::vector<GLuint> texturevec;
-		GLuint vbo;
 		GLuint tbo;
-		GLuint vao;
 };
 
 class OutputEntry {
@@ -365,7 +372,8 @@ class Program {
 		Menu* filedomenu = nullptr;
 		Menu* laylistmenu1 = nullptr;
 		Menu* laylistmenu2 = nullptr;
-		Menu* editmenu = nullptr;
+        Menu* editmenu = nullptr;
+        Menu* lpstmenu = nullptr;
 		bool menuactivation = false;
 		bool menuchosen = false;
 		std::vector<int> menuresults;
@@ -398,7 +406,8 @@ class Program {
 		bool orderleftmouse = false;
 		bool orderleftmousedown = false;
 		bool lmover = false;
-		bool doubleleftmouse = false;
+        bool doubleleftmouse = false;
+        bool doublemiddlemouse = false;
 		bool middlemouse = false;
 		bool rightmouse = false;
 		float mousewheel = false;
@@ -411,7 +420,8 @@ class Program {
 		bool eXit = false;
 		std::string temppath;
 		std::string docpath;
-		std::string fontpath;
+        std::string fontpath;
+        std::string contentpath;
 		std::string path;
 		std::vector<std::string> paths;
 		int counting;
@@ -436,8 +446,12 @@ class Program {
 		Box *effscrolldownB;
 		Box* addeffectbox;
 		Box* inserteffectbox;
-		Box* orderscrolldown;
-		Box* orderscrollup;
+        Box* orderscrolldown;
+        Box* orderscrollup;
+        Box* defaultsearchscrolldown;
+        Box* defaultsearchscrollup;
+        Box* searchscrolldown;
+        Box* searchscrollup;
 		bool startloop = false;
 		bool newproject = false;
 		std::vector<std::string> recentprojectpaths;
@@ -454,13 +468,11 @@ class Program {
 		char* bdcptr[32];
 		char* bdtptr[32];
 		GLuint* bdtnptr[32];
-		int bdtexnum = 10;
 		GLuint bdvao;
 		GLuint bdvbo;
 		GLuint bdtcbo;
 		GLuint bdibo;
 		int boxcount;
-		GLuint boxdatablock;
 		GLint maxtexes = 16;
 		int countingtexes[32];
 		GLuint boxtexes[32][1024];
@@ -475,6 +487,7 @@ class Program {
 		float onscenemilli;
 		Box* delbox;
 		Box* addbox;
+		bool repeatdefault = true;
 
 		GLuint boxcoltbo;
 		GLuint boxtextbo;
@@ -514,7 +527,8 @@ class Program {
 		PrefItem* savedmidiitem;
 		bool queueing = false;
 		int filecount;
-		
+        bool openerr = false;
+
 		SDL_Window *prefwindow = nullptr;
 		bool prefon = false;
 		Preferences *prefs;
@@ -529,7 +543,6 @@ class Program {
 		bool autosave;
 		float asminutes = 1;
 		int astimestamp = 0;
-		std::vector<std::string> autosavelist;
 		int qualfr = 3;
 
 		std::unordered_map <std::string, GUIString*> guitextmap;
@@ -549,9 +562,9 @@ class Program {
 		int dragpos; 
 		bool drag = false;
 		bool dragmousedown = false;
-		bool inwormhole = false;
-		Button* wormhole1;
-		Button* wormhole2;
+		bool inwormgate = false;
+		Button* wormgate1;
+		Button* wormgate2;
 		DIR *opendir;
 		bool gotcameras = false;
 
@@ -580,9 +593,6 @@ class Program {
 
 		std::string projdir;
 		std::string binsdir;
-		std::string recdir;
-		std::string shelfdir;
-		std::string autosavedir;
 		std::string currprojdir;
 		std::string currbinsdir;
 		std::string currshelfdir;
@@ -599,7 +609,7 @@ class Program {
 		bool openshelfdir = false;
 		std::string shelfpath;
 		int shelfdircount;
-		bool openshelffiles = false;
+		bool openfilesshelf = false;
 		int shelffileselem;
 		int shelffilescount;
 		int shelfdragnum = -1;
@@ -628,10 +638,15 @@ class Program {
 		int pathscroll = 0;
 		bool indragbox = false;
 		Box* dragbox;
-		bool dragright = false;
+		bool dragmiddle = false;
 		bool dragout[2] = { true, true };
 		std::string quitting;
 		Layer* draginscrollbarlay = nullptr;
+		bool projnamechanged = false;
+		bool saveproject = false;
+
+		std::vector<int> connsockets;
+		int sock = 0;
 
 		int quit_requester();
 		GLuint set_shader();
@@ -645,7 +660,7 @@ class Program {
 		void get_outname(const char *title, std::string filters, std::string defaultdir);
 		void get_inname(const char *title, std::string filters, std::string defaultdir);
 		void get_multinname(const char* title, std::string filters, std::string defaultdir);
-		void get_dir(std::string , std::string defaultdir);
+		void get_dir(const char *title , std::string defaultdir);
 #ifdef WINDOWS
 		void win_dialog(const char* title, LPCSTR filters, std::string defaultdir, bool open, bool multi);
 #endif
@@ -656,8 +671,10 @@ class Program {
 		void preview_init();
 		void add_main_oscmethods();
 		bool order_paths(bool dodeckmix);
-		void handle_wormhole(bool hole);
-		int handle_scrollboxes(Box *upperbox, Box *lowerbox, int numlines, int scrollpos, int scrlines);
+		void handle_wormgate(bool gate);
+        int handle_scrollboxes(Box *upperbox, Box *lowerbox, int numlines, int scrollpos, int scrlines);
+        int handle_scrollboxes(Box* upperbox, Box* lowerbox, int numlines, int scrollpos, int scrlines, int mx, int
+            my);
 		void shelf_miditriggering();
 		int config_midipresets_handle();
 		bool config_midipresets_init();
@@ -667,6 +684,7 @@ class Program {
 		void preview_modus_buttons();
 		void pick_color(Layer* lay, Box* cbox);
 		void tooltips_handle(int win);
+		void define_menus();
 		void handle_mixenginemenu();
 		void handle_effectmenu();
 		void handle_parammenu1();
@@ -684,8 +702,11 @@ class Program {
 		void handle_mainmenu();
 		void handle_shelfmenu();
 		void handle_filemenu();
-		void handle_editmenu();		
-		Program();
+        void handle_editmenu();
+        void handle_lpstmenu();
+        void write_recentprojectlist();
+        void socket_server(struct sockaddr_in serv_addr, int opt);
+        Program();
 		
 	private:
 #ifdef WINDOWS
@@ -704,8 +725,8 @@ extern BinsMain *binsmain;
 extern LoopStation *loopstation;
 extern LoopStation *lp;
 extern LoopStation *lpc;
+extern Retarget *retarget;
 extern Menu *effectmenu;
-extern Menu *mixmodemenu;
 extern float smw, smh;
 extern SDL_GLContext glc;
 extern SDL_GLContext glc;
@@ -720,10 +741,8 @@ extern float yellow[];
 extern float white[];
 extern float halfwhite[];
 extern float black[];
-extern float alpha[];
 extern float orange[];
 extern float purple[];
-extern float lightgreen[];
 extern float yellow[];
 extern float lightblue[];
 extern float darkblue[];
@@ -732,8 +751,6 @@ extern float lightgrey[];
 extern float grey[];
 extern float pink[];
 extern float green[];
-extern float lightgreygreen[];
-extern float greygreen[];
 extern float darkgreygreen[];
 extern float darkgreen1[];
 extern float darkgreen2[];
@@ -746,10 +763,10 @@ extern float darkred2[];
 extern float darkred3[];
 extern float darkgrey[];
 
+extern "C" int kdialogPresent();
+
 extern std::istream& safegetline(std::istream& is, std::string& t);
 extern void mycallback(double deltatime, std::vector< unsigned char >* message, void* userData);
-
-extern mix_target_struct mixtarget[2];
 
 extern GLuint get_imagetex(const std::string& path);
 extern GLuint get_videotex(const std::string& path);
@@ -761,9 +778,11 @@ extern std::vector<Layer*>& choose_layers(bool j);
 extern void make_layboxes();
 
 extern void new_file(int decks, bool alive);
-extern void draw_box(float* linec, float* areac, float x, float y, float wi, float he, float dx, float dy, float scale, float opacity, int circle, GLuint tex, float fw, float fh, bool text, bool vertical);
+extern void draw_box(float* linec, float* areac, float x, float y, float wi, float he, float dx, float dy, float
+scale, float opacity, int circle, GLuint tex, float fw, float fh, bool text, bool vertical, bool inverted);
 extern void draw_box(float* linec, float* areac, float x, float y, float wi, float he, float dx, float dy, float scale, float opacity, int circle, GLuint tex, float fw, float fh, bool text);
-extern void draw_box(float* linec, float* areac, float x, float y, float wi, float he, GLuint tex, bool text, bool vertical);
+extern void draw_box(float* linec, float* areac, float x, float y, float wi, float he, GLuint tex, bool text, bool
+vertical, bool inverted);
 extern void draw_box(float* linec, float* areac, float x, float y, float wi, float he, GLuint tex);
 extern void draw_box(float *color, float x, float y, float radius, int circle);
 extern void draw_box(float *color, float x, float y, float radius, int circle, float fw, float fh);
@@ -792,14 +811,8 @@ extern float yscrtovtx(float scrcoord);
 extern float pdistance(float x, float y, float x1, float y1, float x2, float y2);
 extern void enddrag();
 
-extern void open_binfiles();
-extern void open_bindir();
-extern void open_handlefile(const std::string &path);
+extern void open_files_bin();
 extern void save_bin(const std::string &path);
-extern void open_bin(const std::string &path);
-extern Bin *new_bin(const std::string &name);
-extern int read_binslist();
-extern void make_currbin(int pos);
 extern void save_thumb(std::string path, GLuint tex);
 extern void open_thumb(std::string path, GLuint tex);
 extern void new_state();
@@ -819,8 +832,6 @@ void save_genmidis(std::string path);
 
 void screenshot();
 
-void calctexture(Layer *lay);
-
 int open_codec_context(int *stream_idx, AVFormatContext *video, enum AVMediaType type);
 
 void set_live_base(Layer *lay, std::string livename);
@@ -829,9 +840,7 @@ extern void set_queueing(bool onoff);
 
 extern Effect* new_effect(EFFECT_TYPE type);
 
-extern float tf(float vtxcoord);
 extern bool exists(const std::string &name);
-extern std::string replace_string(std::string subject, const std::string& search, const std::string& replace);
 extern std::string dirname(std::string pathname);
 extern std::string basename(std::string pathname);
 extern std::string remove_extension(std::string filename);
@@ -839,6 +848,7 @@ extern std::string chop_off(std::string filename);
 extern std::string remove_version(std::string filename);
 extern std::string pathtoplatform(std::string path);
 extern bool isimage(const std::string &path);
+extern bool isvideo(const std::string &path);
 
 extern void drag_into_layerstack(std::vector<Layer*>& layers, bool deck);
 
@@ -852,3 +862,7 @@ extern int osc_param(const char *path, const char *types, lo_arg **argv, int arg
 
 extern void LockBuffer(GLsync& syncObj);
 extern void WaitBuffer(GLsync& syncObj);
+
+extern void make_searchbox();
+
+extern std::string find_unused_filename(std::string basename, std::string path, std::string extension);

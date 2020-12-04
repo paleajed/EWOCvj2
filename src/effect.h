@@ -81,6 +81,7 @@ class Param {
 		bool nextrow = false;
 		std::vector<std::string> oscpaths;
 		void handle();
+        void deautomate();
 		Param();
 		~Param();
 };
@@ -92,8 +93,6 @@ class Effect {
 		Layer *layer;
 		GLuint fbo = -1;
 		GLuint fbotex = -1;
-		GLuint pfbo = -1;
-		GLuint pfbotex = -1;
 		EffectNode *node = NULL;
 		std::vector<Param*> params;
 		virtual float get_speed() { return -1; };

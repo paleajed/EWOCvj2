@@ -23,7 +23,7 @@ class Layer;
 
 class Box {
 	public:
-		float lcolor[4] = {1.0, 1.0, 1.0, 1.0};
+		float lcolor[4] = {0.7, 0.7, 0.7, 1.0};
 		float acolor[4] = {0.0, 0.0, 0.0, 0.0};
 		void set_vtxcoords(BOX_COORDS *vtxcoords);
 		BOX_COORDS *scrcoords;
@@ -41,6 +41,7 @@ class Box {
 		bool in(bool menu);
 		bool in2();
 		bool in2(int mx, int my);
+		Box* copy();
 		Box();
 		~Box();
 };
@@ -60,6 +61,7 @@ class Button {
 		bool handle(bool circlein = false);
 		bool handle(bool circlein, bool automation);
 		bool toggled();
+		void deautomate();
 		Button(bool state);
 		~Button();
 };

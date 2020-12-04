@@ -58,8 +58,9 @@ class LoopStationElement {
 		Box *colbox;
 		Box *box;
 		std::chrono::high_resolution_clock::time_point starttime;
-		long long interimtime = 0;
-		long long speedadaptedtime = 0;
+        float interimtime = 0;
+        float totaltime = 0;
+		float speedadaptedtime = 0;
 		Param *speed;
 		std::vector<std::tuple<long long, Param*, Button*, float>> eventlist;
 		int eventpos = 0;
@@ -67,8 +68,8 @@ class LoopStationElement {
 		void init();
 		void handle();
 		void erase_elem();
-		void add_param(Param* par);
-		void add_button(Button* but);
+		void add_param_automationentry(Param* par);
+		void add_button_automationentry(Button* but);
 		void set_values();
 		LoopStationElement();
 		~LoopStationElement();

@@ -36,7 +36,7 @@ class BinsMain {
 		bool binpreview = false;
 		std::string newpath;
 		std::string binpath;
-		std::vector<std::string> newpaths;
+		std::vector<std::string> addpaths;
 		std::string tempjpegpath;
 		GLuint movingtex = -1;
 		GLuint dragtex = -1;
@@ -67,7 +67,7 @@ class BinsMain {
 		Box* binsscrolldown;
 		Box* binsscrollup;
 		Bin *menubin = nullptr;
-		bool openbinfile = false;
+		bool openfilesbin = false;
 		bool importbins = false;
 		int binscount;
 		bool movingstruct = false;
@@ -79,8 +79,10 @@ class BinsMain {
 		int selboxy;
 		Box *hapmodebox;
 		BinElement *renamingelem = nullptr;
-		
-		void handle(bool draw);
+        std::vector<std::string> newbinelpaths;
+
+
+    void handle(bool draw);
 		int read_binslist();
 		void save_binslist();
 		void make_currbin(int pos);
@@ -88,7 +90,7 @@ class BinsMain {
 		void open_bin(const std::string &path, Bin *bin);
 		void save_bin(const std::string &path);
 		void import_bins();
-		void open_binfiles();
+		void open_files_bin();
 		void open_handlefile(const std::string &path);
 		std::tuple<std::string, std::string> hap_binel(BinElement *binel, BinElement* bdm);
 		void hap_deck(BinElement * bd);
@@ -137,6 +139,7 @@ class BinElement {
 		int encthreads = 0;
 		float encodeprogress = 0.0f;
 		int allhaps = 0;
+		Layer *otflay = nullptr;
 		BinElement* next();
 		void erase();
 		BinElement();

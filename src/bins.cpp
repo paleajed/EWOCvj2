@@ -13,19 +13,13 @@
 #include "GL/glut.h"
 
 #ifdef POSIX
-#include <X11/Xlib.h>
-#include <X11/Xutil.h>
 #include <X11/Xos.h>
-#include <X11/cursorfont.h>
 #endif
 
 #include "SDL2/SDL.h"
 #include "SDL2/SDL_syswm.h"
 
-#include <algorithm>
 #include <ostream>
-#include <istream>
-#include <iostream>
 #include <ios>
 
 extern "C" {
@@ -123,7 +117,7 @@ BinsMain::BinsMain() {
 			box->lcolor[3] = 1.0f;
 			box->acolor[3] = 1.0f;
 			box->tooltiptitle = "Media bin element ";
-			box->tooltip = "Shows thumbnail of media bin element, either being a video file (grey border) or an image (pink border) or a layer file (orange border) or a deck file (purple border) or mix file (green border).  Hovering over this element shows video resolution and video compression method (CPU or HAP).  Mousewheel skips through the element contents (previewed in larger monitor topmiddle).  Leftdrag allows dragging to mix screen via wormhole.  Leftclick allows moving inside the media bin. Rightclickmenu allows among other things, HAP encoding and also loading of a yellowbordered grid-block of mediabin elements into one of the shelves. ";
+			box->tooltip = "Shows thumbnail of media bin element, either being a video file (grey border) or an image (pink border) or a layer file (orange border) or a deck file (purple border) or mix file (green border).  Hovering over this element shows video resolution and video compression method (CPU or HAP).  Mousewheel skips through the element contents (previewed in larger monitor topmiddle).  Leftdrag allows dragging to mix screen via wormgate.  Leftclick allows moving inside the media bin. Rightclickmenu allows among other things, HAP encoding and also loading of a yellowbordered grid-block of mediabin elements into one of the shelves. ";
 		}
 	}
 	
@@ -193,13 +187,11 @@ void BinsMain::handle(bool draw) {
 	if (this->renamingelem) {
 		if (mainprogram->renaming == EDIT_NONE) {
 			this->renamingelem = nullptr;
-			save_bin(this->currbin->path);
 		}
 		if (mainprogram->leftmousedown && !this->renamingbox->in()) {
 			mainprogram->renaming = EDIT_NONE;
 			this->renamingelem = nullptr;
 			SDL_StopTextInput();
-			save_bin(this->currbin->path);
 			mainprogram->leftmousedown = false;
 		}
 		if (mainprogram->rightmouse) {
@@ -234,7 +226,7 @@ void BinsMain::handle(bool draw) {
 					this->menubinel = binel;
 					if (mainprogram->menuactivation) {
 						this->menuactbinel = binel;
-						if (binel->path != "") {
+						if (binel->name != "") {
 							// Set menu when over non-empty element
 							this->binelmenuoptions.clear();
 							std::vector<std::string> bnlm;
@@ -385,7 +377,7 @@ void BinsMain::handle(bool draw) {
 				}
 				draw_box(box, binel->tex);
 				glUniform1i(inverted, 0);
-				if (binel->path != "") {
+				if (binel->name != "") {
 					if (binel->name != "") render_text(binel->name.substr(0, 20), white, box->vtxcoords->x1, box->vtxcoords->y1 - 0.02f, 0.00045f, 0.00075f);
 				}
 			}
@@ -395,7 +387,7 @@ void BinsMain::handle(bool draw) {
 		}
 
 		bool cond1 = false;
-		if (this->menubinel) cond1 = (this->menubinel->path == "");
+		if (this->menubinel) cond1 = (this->menubinel->name == "");
 		if (!mainprogram->menuondisplay) this->mouseshelfnum = -1;
 		Box *insertbox = nullptr;
 		mainprogram->frontbatch = true;
@@ -450,7 +442,6 @@ void BinsMain::handle(bool draw) {
 								binel->path = elem->path;
 								binel->jpegpath = elem->jpegpath;
 							}
-							save_bin(this->currbin->path);
 							this->insertshelf = nullptr;
 							mainprogram->binsscreen = false;
 						}
@@ -533,7 +524,7 @@ void BinsMain::handle(bool draw) {
 			// not in bin element -> leftmouse draws selection box
 			bool full = false;
 			if (this->menubinel) {
-				if (this->menubinel->path != "") full = true;
+				if (this->menubinel->name != "") full = true;
 			}
 			if (mainprogram->leftmousedown && !full && !this->inputtexes.size() && !mainprogram->intopmenu && !this->renamingelem) {
 				mainprogram->leftmousedown = false;
@@ -570,7 +561,7 @@ void BinsMain::handle(bool draw) {
 				for (int j = 0; j < 12; j++) {
 					Box* ebox = this->elemboxes[i * 12 + j];
 					BinElement* binel = this->currbin->elements[i * 12 + j];
-					if (binel->path == "") continue;
+					if (binel->name == "") continue;
 					binel->select = false;
 					if (box.in(ebox->scrcoords->x1, ebox->scrcoords->y1) || box.in(ebox->scrcoords->x1 + ebox->scrcoords->w, ebox->scrcoords->y1) || box.in(ebox->scrcoords->x1, ebox->scrcoords->y1 - ebox->scrcoords->h) || box.in(ebox->scrcoords->x1 + ebox->scrcoords->w, ebox->scrcoords->y1 - ebox->scrcoords->h)) {
 						binel->select = true;
@@ -730,9 +721,9 @@ void BinsMain::handle(bool draw) {
 			draw_box(bin->box, -1);
 			if (mainprogram->renaming != EDIT_NONE && bin == this->menubin) {
 				// bin renaming with keyboard
-				do_text_input(bin->box->vtxcoords->x1 + tf(0.01f), bin->box->vtxcoords->y1 + tf(0.012f), tf(0.0003f), tf(0.0005f), mainprogram->mx, mainprogram->my, mainprogram->xvtxtoscr(0.3f - tf(0.02f)), 0, nullptr);
+				do_text_input(bin->box->vtxcoords->x1 + 0.015f, bin->box->vtxcoords->y1 + 0.018f, 0.00045f, 0.00075f, mainprogram->mx, mainprogram->my, mainprogram->xvtxtoscr(0.3f - 0.03f), 0, nullptr);
 			}
-			else render_text(bin->name, white, bin->box->vtxcoords->x1 + tf(0.01f), bin->box->vtxcoords->y1 + tf(0.012f), tf(0.0003f), tf(0.0005f));
+			else render_text(bin->name, white, bin->box->vtxcoords->x1 + 0.015f, bin->box->vtxcoords->y1 + 0.018f, 0.00045f, 0.00075f);
 		}
 		if (!this->indragbox && this->dragbinsense) {
 			// dragging has moved (!this->draginbox) so start doing it
@@ -744,18 +735,7 @@ void BinsMain::handle(bool draw) {
 		Box* box = this->newbinbox;
 		if (box->in()) {
 			if (mainprogram->leftmouse && !this->dragbin) {
-				std::string name = "new bin";
-				std::string path;
-				int count = 0;
-				while (1) {
-					path = mainprogram->project->binsdir + name + ".bin";
-					if (!exists(path)) {
-						new_bin(name);
-						break;
-					}
-					count++;
-					name = remove_version(name) + "_" + std::to_string(count);
-				}
+			    new_bin(find_unused_filename("new bin", mainprogram->project->binsdir, ".bin"));
 				if (this->bins.size() >= 20) this->binsscroll++;
 			}
 			box->acolor[0] = 0.5f;
@@ -770,7 +750,7 @@ void BinsMain::handle(bool draw) {
 			box->acolor[3] = 1.0f;
 		}
 		draw_box(box, -1);
-		render_text("+ NEW BIN", red, 0.62f, -1.0f + 0.018f, tf(0.0003f), tf(0.0005f));
+		render_text("+ NEW BIN", red, 0.62f, -1.0f + 0.018f, 0.00045f, 0.00075f);
 
 		// draw and handle box that allows loading a bin at the end of the list
 		box = this->loadbinbox;
@@ -792,7 +772,7 @@ void BinsMain::handle(bool draw) {
 			box->acolor[3] = 1.0f;
 		}
 		draw_box(box, -1);
-		render_text("+ LOAD BIN(S)", red, 0.62f, -0.95f + 0.018f, tf(0.0003f), tf(0.0005f));
+		render_text("+ LOAD BIN(S)", red, 0.62f, -0.95f + 0.018f, 0.00045f, 0.00075f);
 
 		// handle bin drag in binslist
 		if (this->dragbin) {
@@ -818,7 +798,7 @@ void BinsMain::handle(bool draw) {
 				if (mainprogram->my > under2 && mainprogram->my < upper) {
 					// draw dragged box
 					draw_box(white, black, this->dragbin->box->vtxcoords->x1, 1.0f - mainprogram->yscrtovtx(under1), this->dragbin->box->vtxcoords->w, this->dragbin->box->vtxcoords->h, -1);
-					render_text(this->dragbin->name, white, this->dragbin->box->vtxcoords->x1 + tf(0.01f), 1.0f - mainprogram->yscrtovtx(under1) + tf(0.012f), tf(0.0003f), tf(0.0005f));
+					render_text(this->dragbin->name, white, this->dragbin->box->vtxcoords->x1 + 0.015f, 1.0f - mainprogram->yscrtovtx(under1) + 0.018f, 0.00045f, 0.00075f);
 					pos = i;
 					break;
 				}
@@ -854,8 +834,11 @@ void BinsMain::handle(bool draw) {
 		// bin element renaming
 		if (mainprogram->renaming != EDIT_NONE && this->renamingelem) {
 			// bin element renaming with keyboard
+			mainprogram->frontbatch = true;
 			draw_box(white, black, this->renamingbox, -1);
-			do_text_input(-0.5f + 0.1f, -0.2f + 0.05f, tf(0.0006f), tf(0.001f), mainprogram->mx, mainprogram->my, mainprogram->xvtxtoscr(0.8f), 0, nullptr);
+			do_text_input(-0.5f + 0.1f, -0.2f + 0.05f, 0.0009f, 0.0015f, mainprogram->mx, mainprogram->my,
+                 mainprogram->xvtxtoscr(0.8f), 0, nullptr);
+            mainprogram->frontbatch = false;
 		}
 
 		// render hap encoding text on elems
@@ -868,7 +851,7 @@ void BinsMain::handle(bool draw) {
 				if (draw) {
 					// show if element encoding/awaiting encoding
 					if (binel->encwaiting) {
-						render_text("Waiting...", white, box->vtxcoords->x1 + tf(0.005f), box->vtxcoords->y1 + box->vtxcoords->h - tf(0.015f), 0.0005f, 0.0008f);
+						render_text("Waiting...", white, box->vtxcoords->x1 + 0.0075f, box->vtxcoords->y1 + box->vtxcoords->h - 0.0225f, 0.0005f, 0.0008f);
 					}
 					else if (binel->encoding) {
 						float progress = binel->encodeprogress;
@@ -878,8 +861,8 @@ void BinsMain::handle(bool draw) {
 							}
 							else progress = 0.0f;
 						}
-						render_text("Encoding...", white, box->vtxcoords->x1 + tf(0.005f), box->vtxcoords->y1 + box->vtxcoords->h - tf(0.015f), 0.0005f, 0.0008f);
-						draw_box(black, white, box->vtxcoords->x1, box->vtxcoords->y1 + box->vtxcoords->h - tf(0.045f), progress * 0.1f, 0.02f, -1);
+						render_text("Encoding...", white, box->vtxcoords->x1 + 0.0075f, box->vtxcoords->y1 + box->vtxcoords->h - 0.0225f, 0.0005f, 0.0008f);
+						draw_box(black, white, box->vtxcoords->x1, box->vtxcoords->y1 + box->vtxcoords->h - 0.0675f, progress * 0.1f, 0.02f, -1);
 					}
 				}
 			}
@@ -906,7 +889,7 @@ void BinsMain::handle(bool draw) {
 					BinElement* binel = this->currbin->elements[i * 12 + j];
 					if (binel->select) {
 						this->movebinels.push_back(binel);
-						this->newpaths.push_back(binel->path);
+						this->addpaths.push_back(binel->path);
 						this->inputtexes.push_back(binel->tex);
 						this->inputtypes.push_back(binel->type);
 						this->inputjpegpaths.push_back(binel->jpegpath);
@@ -1020,7 +1003,7 @@ void BinsMain::handle(bool draw) {
 		}
 		else if (binelmenuoptions[k] == BET_OPENFILES) {
 			// open videos/images/layer files into bin
-			mainprogram->pathto = "OPENBINFILES";
+			mainprogram->pathto = "OPENFILESBIN";
 			std::thread filereq(&Program::get_multinname, mainprogram, "Open file(s)", "", boost::filesystem::canonical(mainprogram->currbinfilesdir).generic_string());
 			filereq.detach();
 		}
@@ -1028,95 +1011,64 @@ void BinsMain::handle(bool draw) {
 			// insert deck A into bin
 			mainprogram->paths.clear();
 			mainmix->mousedeck = 0;
-			std::string name = "deckA";
-			std::string path;
-			int count = 0;
-			while (1) {
-				path = mainprogram->temppath + name + ".deck";
-				if (!exists(path)) {
-					break;
-				}
-				count++;
-				name = remove_version(name) + "_" + std::to_string(count);
-			}
+			std::string path = find_unused_filename("deckA", mainprogram->temppath, ".deck");
 			mainmix->do_save_deck(path, true, true);
 			open_handlefile(path);
 			this->menubinel->tex = this->inputtexes[0];
 			this->menubinel->type = this->inputtypes[0];
-			this->menubinel->path = this->newpaths[0];
+			this->menubinel->path = this->addpaths[0];
 			this->menubinel->name = remove_extension(basename(this->menubinel->path));
 			this->menubinel->oldjpegpath = this->menubinel->jpegpath;
 			this->menubinel->jpegpath = this->inputjpegpaths[0];
-			save_bin(this->currbin->path);
 			// clean up: maybe too much cleared here, doesn't really matter
 			this->inputtexes.clear();
 			this->inputtypes.clear();
 			this->inputjpegpaths.clear();
 			this->menuactbinel = nullptr;
-			this->newpaths.clear();
+			this->addpaths.clear();
 			this->prevbinel = nullptr;
 		}
 		else if (binelmenuoptions[k] == BET_INSDECKB) {
 			// insert deck B into bin
 			mainprogram->paths.clear();
 			mainmix->mousedeck = 1;
-			std::string name = "deckB";
-			std::string path;
-			int count = 0;
-			while (1) {
-				path = mainprogram->temppath + name + ".deck";
-				if (!exists(path)) {
-					break;
-				}
-				count++;
-				name = remove_version(name) + "_" + std::to_string(count);
-			}
+
+            std::string path = find_unused_filename("deckB", mainprogram->temppath, ".deck");
 			mainmix->do_save_deck(path, true, true);
 			open_handlefile(path);
 			this->menubinel->tex = this->inputtexes[0];
 			this->menubinel->type = this->inputtypes[0];
-			this->menubinel->path = this->newpaths[0];
+			this->menubinel->path = this->addpaths[0];
 			this->menubinel->name = remove_extension(basename(this->menubinel->path));
 			this->menubinel->oldjpegpath = this->menubinel->jpegpath;
 			this->menubinel->jpegpath = this->inputjpegpaths[0];
-			save_bin(this->currbin->path);
 			// clean up: maybe too much cleared here, doesn't really matter
 			this->inputtexes.clear();
 			this->inputtypes.clear();
 			this->inputjpegpaths.clear();
 			this->menuactbinel = nullptr;
-			this->newpaths.clear();
+			this->addpaths.clear();
 			this->prevbinel = nullptr;
 		}
 		else if (binelmenuoptions[k] == BET_INSMIX) {
 			// insert live mix into bin
 			mainprogram->paths.clear();
-			std::string name = "mix";
-			std::string path;
-			int count = 0;
-			while (1) {
-				path = mainprogram->temppath + name + ".mix";
-				if (!exists(path)) {
-					break;
-				}
-				count++;
-				name = remove_version(name) + "_" + std::to_string(count);
-			}
+
+            std::string path = find_unused_filename("mix", mainprogram->temppath, ".mix");
 			mainmix->do_save_mix(path, mainprogram->prevmodus, true);
 			open_handlefile(path);
 			this->menubinel->tex = this->inputtexes[0];
 			this->menubinel->type = this->inputtypes[0];
-			this->menubinel->path = this->newpaths[0];
+			this->menubinel->path = this->addpaths[0];
 			this->menubinel->name = remove_extension(basename(this->menubinel->path));
 			this->menubinel->oldjpegpath = this->menubinel->jpegpath;
 			this->menubinel->jpegpath = this->inputjpegpaths[0];
-			save_bin(this->currbin->path);
 			// clean up: maybe too much cleared here, doesn't really matter
 			this->inputtexes.clear();
 			this->inputtypes.clear();
 			this->inputjpegpaths.clear();
 			this->menuactbinel = nullptr;
-			this->newpaths.clear();
+			this->addpaths.clear();
 			this->prevbinel = nullptr;
 		}
 		else if (binelmenuoptions[k] == BET_LOADSHELFA) {
@@ -1168,7 +1120,7 @@ void BinsMain::handle(bool draw) {
 				for (int j = 0; j < 12; j++) {
 					// elements
 					BinElement* binel = this->currbin->elements[i * 12 + j];
-					if (binel->path != "" && (binel->type == ELEM_FILE || binel->type == ELEM_LAYER)) {
+					if (binel->name != "" && (binel->type == ELEM_FILE || binel->type == ELEM_LAYER)) {
 						this->hap_binel(binel, nullptr);
 					}
 					else if (binel->type == ELEM_DECK) {
@@ -1230,9 +1182,8 @@ void BinsMain::handle(bool draw) {
 				if (binel->encoding && binel->encthreads == 0 && (binel->type == ELEM_DECK || binel->type == ELEM_MIX)) {
 					binel->encoding = false;
 					boost::filesystem::rename(remove_extension(binel->path) + ".temp", binel->path);
-					this->do_save_bin(this->currbin->path);
 				}
-				if ((box->in() || mainprogram->rightmouse || binel == menuactbinel) && !this->openbinfile && !binel->encoding) {
+				if ((box->in() || mainprogram->rightmouse || binel == menuactbinel) && !this->openfilesbin && !binel->encoding) {
 					if (draw) {
 						inbinel = true;
 						// don't preview when encoding
@@ -1243,7 +1194,7 @@ void BinsMain::handle(bool draw) {
 						else if (this->menubinel) {
 							if (this->menubinel->encthreads) continue;
 						}
-						if (!binel->encwaiting && !binel->encoding && binel->path != "" && !this->inputtexes.size() && !lay->vidmoving && !this->insertshelf) {
+						if (!binel->encwaiting && !binel->encoding && binel->name != "" && !this->inputtexes.size() && !lay->vidmoving && !this->insertshelf) {
 							if (this->previewbinel != binel) {
 								// reset when new element hovered
 								this->previewimage = "";
@@ -1286,8 +1237,8 @@ void BinsMain::handle(bool draw) {
 									glTexSubImage2D(GL_TEXTURE_2D, 0, 0, 0, w, h, mode, GL_UNSIGNED_BYTE, ilGetData());
 								}
 								draw_box(red, black, 0.52f, 0.5f, 0.4f, 0.4f, mainprogram->prelay->texture);
-								render_text("IMAGE", white, box->vtxcoords->x1 + tf(0.005f), box->vtxcoords->y1 + box->vtxcoords->h - tf(0.015f), 0.0005f, 0.0008f);
-								render_text(std::to_string(w) + "x" + std::to_string(h), white, box->vtxcoords->x1 + tf(0.005f), box->vtxcoords->y1 + box->vtxcoords->h - tf(0.045f), 0.0005f, 0.0008f);
+								render_text("IMAGE", white, box->vtxcoords->x1 + 0.0075f, box->vtxcoords->y1 + box->vtxcoords->h - 0.0225f, 0.0005f, 0.0008f);
+								render_text(std::to_string(w) + "x" + std::to_string(h), white, box->vtxcoords->x1 + 0.0075f, box->vtxcoords->y1 + box->vtxcoords->h - 0.0675f, 0.0005f, 0.0008f);
 							}
 							else if (this->previewimage != "" || binel->type == ELEM_IMAGE) {
 								// do second entry preview visualisation when image hovered
@@ -1314,8 +1265,8 @@ void BinsMain::handle(bool draw) {
 									glTexSubImage2D(GL_TEXTURE_2D, 0, 0, 0, w, h, mode, GL_UNSIGNED_BYTE, ilGetData());
 								}
 								draw_box(red, black, 0.52f, 0.5f, 0.4f, 0.4f, mainprogram->prelay->texture);
-								render_text("IMAGE", white, box->vtxcoords->x1 + tf(0.005f), box->vtxcoords->y1 + box->vtxcoords->h - tf(0.015f), 0.0005f, 0.0008f);
-								render_text(std::to_string(w) + "x" + std::to_string(h), white, box->vtxcoords->x1 + tf(0.005f), box->vtxcoords->y1 + box->vtxcoords->h - tf(0.045f), 0.0005f, 0.0008f);
+								render_text("IMAGE", white, box->vtxcoords->x1 + 0.0075f, box->vtxcoords->y1 + box->vtxcoords->h - 0.0225f, 0.0005f, 0.0008f);
+								render_text(std::to_string(w) + "x" + std::to_string(h), white, box->vtxcoords->x1 + 0.0075f, box->vtxcoords->y1 + box->vtxcoords->h - 0.0675f, 0.0005f, 0.0008f);
 							}
 							else if ((binel->type == ELEM_LAYER) && !this->binpreview) {
 								// do first entry preview preperation/visualisation when layer file hovered
@@ -1400,12 +1351,12 @@ void BinsMain::handle(bool draw) {
 									if (!binel->encoding) {
 										// show video format
 										if (mainprogram->prelay->vidformat == 188 || mainprogram->prelay->vidformat == 187) {
-											render_text("HAP", white, box->vtxcoords->x1 + tf(0.005f), box->vtxcoords->y1 + box->vtxcoords->h - tf(0.015f), 0.0005f, 0.0008f);
-											render_text(std::to_string(mainprogram->prelay->decresult->width) + "x" + std::to_string(mainprogram->prelay->decresult->height), white, box->vtxcoords->x1 + tf(0.005f), box->vtxcoords->y1 + box->vtxcoords->h - tf(0.045f), 0.0005f, 0.0008f);
+											render_text("HAP", white, box->vtxcoords->x1 + 0.0075f, box->vtxcoords->y1 + box->vtxcoords->h - 0.0225f, 0.0005f, 0.0008f);
+											render_text(std::to_string(mainprogram->prelay->decresult->width) + "x" + std::to_string(mainprogram->prelay->decresult->height), white, box->vtxcoords->x1 + 0.0075f, box->vtxcoords->y1 + box->vtxcoords->h - 0.0675f, 0.0005f, 0.0008f);
 										}
 										else if (mainprogram->prelay->type != ELEM_IMAGE) {
-											render_text("CPU", white, box->vtxcoords->x1 + tf(0.005f), box->vtxcoords->y1 + box->vtxcoords->h - tf(0.015f), 0.0005f, 0.0008f);
-											render_text(std::to_string(mainprogram->prelay->decresult->width) + "x" + std::to_string(mainprogram->prelay->decresult->height), white, box->vtxcoords->x1 + tf(0.005f), box->vtxcoords->y1 + box->vtxcoords->h - tf(0.045f), 0.0005f, 0.0008f);
+											render_text("CPU", white, box->vtxcoords->x1 + 0.0075f, box->vtxcoords->y1 + box->vtxcoords->h - 0.0225f, 0.0005f, 0.0008f);
+											render_text(std::to_string(mainprogram->prelay->decresult->width) + "x" + std::to_string(mainprogram->prelay->decresult->height), white, box->vtxcoords->x1 + 0.0075f, box->vtxcoords->y1 + box->vtxcoords->h - 0.0675f, 0.0005f, 0.0008f);
 										}
 									}
 								}
@@ -1476,12 +1427,12 @@ void BinsMain::handle(bool draw) {
 								if (!binel->encoding && remove_extension(basename(binel->path)) != "") {
 									// show video format
 									if (mainprogram->prelay->vidformat == 188 || mainprogram->prelay->vidformat == 187) {
-										render_text("HAP", white, box->vtxcoords->x1 + tf(0.005f), box->vtxcoords->y1 + box->vtxcoords->h - tf(0.015f), 0.0005f, 0.0008f);
-										render_text(std::to_string(mainprogram->prelay->decresult->width) + "x" + std::to_string(mainprogram->prelay->decresult->height), white, box->vtxcoords->x1 + tf(0.005f), box->vtxcoords->y1 + box->vtxcoords->h - tf(0.045f), 0.0005f, 0.0008f);
+										render_text("HAP", white, box->vtxcoords->x1 + 0.0075f, box->vtxcoords->y1 + box->vtxcoords->h - 0.0225f, 0.0005f, 0.0008f);
+										render_text(std::to_string(mainprogram->prelay->decresult->width) + "x" + std::to_string(mainprogram->prelay->decresult->height), white, box->vtxcoords->x1 + 0.0075f, box->vtxcoords->y1 + box->vtxcoords->h - 0.0675f, 0.0005f, 0.0008f);
 									}
 									else if (mainprogram->prelay->type != ELEM_IMAGE) {
-										render_text("CPU", white, box->vtxcoords->x1 + tf(0.005f), box->vtxcoords->y1 + box->vtxcoords->h - tf(0.015f), 0.0005f, 0.0008f);
-										render_text(std::to_string(mainprogram->prelay->decresult->width) + "x" + std::to_string(mainprogram->prelay->decresult->height), white, box->vtxcoords->x1 + tf(0.005f), box->vtxcoords->y1 + box->vtxcoords->h - tf(0.045f), 0.0005f, 0.0008f);
+										render_text("CPU", white, box->vtxcoords->x1 + 0.0075f, box->vtxcoords->y1 + box->vtxcoords->h - 0.0225f, 0.0005f, 0.0008f);
+										render_text(std::to_string(mainprogram->prelay->decresult->width) + "x" + std::to_string(mainprogram->prelay->decresult->height), white, box->vtxcoords->x1 + 0.0075f, box->vtxcoords->y1 + box->vtxcoords->h - 0.0675f, 0.0005f, 0.0008f);
 									}
 								}
 							}
@@ -1536,13 +1487,13 @@ void BinsMain::handle(bool draw) {
 									if (!binel->encoding) {
 										// show video format
 										if (mainprogram->prelay->vidformat == 188 || mainprogram->prelay->vidformat == 187) {
-											render_text("HAP", white, box->vtxcoords->x1 + tf(0.005f), box->vtxcoords->y1 + box->vtxcoords->h - tf(0.015f), 0.0005f, 0.0008f);
-											render_text(std::to_string(mainprogram->prelay->video_dec_ctx->width) + "x" + std::to_string(mainprogram->prelay->video_dec_ctx->height), white, box->vtxcoords->x1 + tf(0.005f), box->vtxcoords->y1 + box->vtxcoords->h - tf(0.045f), 0.0005f, 0.0008f);
+											render_text("HAP", white, box->vtxcoords->x1 + 0.0075f, box->vtxcoords->y1 + box->vtxcoords->h - 0.0225f, 0.0005f, 0.0008f);
+											render_text(std::to_string(mainprogram->prelay->video_dec_ctx->width) + "x" + std::to_string(mainprogram->prelay->video_dec_ctx->height), white, box->vtxcoords->x1 + 0.0075f, box->vtxcoords->y1 + box->vtxcoords->h - 0.0675f, 0.0005f, 0.0008f);
 										}
 										else {
 											if (mainprogram->prelay->type == ELEM_FILE) {
-												render_text("CPU", white, box->vtxcoords->x1 + tf(0.005f), box->vtxcoords->y1 + box->vtxcoords->h - tf(0.015f), 0.0005f, 0.0008f);
-												render_text(std::to_string(mainprogram->prelay->video_dec_ctx->width) + "x" + std::to_string(mainprogram->prelay->video_dec_ctx->height), white, box->vtxcoords->x1 + tf(0.005f), box->vtxcoords->y1 + box->vtxcoords->h - tf(0.045f), 0.0005f, 0.0008f);
+												render_text("CPU", white, box->vtxcoords->x1 + 0.0075f, box->vtxcoords->y1 + box->vtxcoords->h - 0.0225f, 0.0005f, 0.0008f);
+												render_text(std::to_string(mainprogram->prelay->video_dec_ctx->width) + "x" + std::to_string(mainprogram->prelay->video_dec_ctx->height), white, box->vtxcoords->x1 + 0.0075f, box->vtxcoords->y1 + box->vtxcoords->h - 0.0675f, 0.0005f, 0.0008f);
 											}
 										}
 									}
@@ -1597,13 +1548,13 @@ void BinsMain::handle(bool draw) {
 								if (!binel->encoding && remove_extension(basename(binel->path)) != "") {
 									// show video format
 									if (mainprogram->prelay->vidformat == 188 || mainprogram->prelay->vidformat == 187) {
-										render_text("HAP", white, box->vtxcoords->x1 + tf(0.005f), box->vtxcoords->y1 + box->vtxcoords->h - tf(0.015f), 0.0005f, 0.0008f);
-										render_text(std::to_string(mainprogram->prelay->video_dec_ctx->width) + "x" + std::to_string(mainprogram->prelay->video_dec_ctx->height), white, box->vtxcoords->x1 + tf(0.005f), box->vtxcoords->y1 + box->vtxcoords->h - tf(0.045f), 0.0005f, 0.0008f);
+										render_text("HAP", white, box->vtxcoords->x1 + 0.0075f, box->vtxcoords->y1 + box->vtxcoords->h - 0.0225f, 0.0005f, 0.0008f);
+										render_text(std::to_string(mainprogram->prelay->video_dec_ctx->width) + "x" + std::to_string(mainprogram->prelay->video_dec_ctx->height), white, box->vtxcoords->x1 + 0.0075f, box->vtxcoords->y1 + box->vtxcoords->h - 0.0675f, 0.0005f, 0.0008f);
 									}
 									else {
 										if (mainprogram->prelay->type == ELEM_FILE) {
-											render_text("CPU", white, box->vtxcoords->x1 + tf(0.005f), box->vtxcoords->y1 + box->vtxcoords->h - tf(0.015f), 0.0005f, 0.0008f);
-											render_text(std::to_string(mainprogram->prelay->video_dec_ctx->width) + "x" + std::to_string(mainprogram->prelay->video_dec_ctx->height), white, box->vtxcoords->x1 + tf(0.005f), box->vtxcoords->y1 + box->vtxcoords->h - tf(0.045f), 0.0005f, 0.0008f);
+											render_text("CPU", white, box->vtxcoords->x1 + 0.0075f, box->vtxcoords->y1 + box->vtxcoords->h - 0.0225f, 0.0005f, 0.0008f);
+											render_text(std::to_string(mainprogram->prelay->video_dec_ctx->width) + "x" + std::to_string(mainprogram->prelay->video_dec_ctx->height), white, box->vtxcoords->x1 + 0.0075f, box->vtxcoords->y1 + box->vtxcoords->h - 0.0675f, 0.0005f, 0.0008f);
 										}
 									}
 								}
@@ -1611,10 +1562,10 @@ void BinsMain::handle(bool draw) {
 							mainprogram->frontbatch = false;
 						}
 
-						if (binel->path != "") {
+						if (binel->name != "") {
 							if (!this->inputtexes.size() && mainprogram->leftmousedown && !mainprogram->dragbinel) {
 								// dragging single bin element
-								if (binel->path != "") {
+								if (binel->name != "") {
 									mainprogram->dragbinel = new BinElement;
 									mainprogram->dragbinel->tex = binel->tex;
 									mainprogram->dragbinel->path = binel->path;
@@ -1740,7 +1691,7 @@ void BinsMain::handle(bool draw) {
 						}
 					}
 
-					if (this->inputtexes.size() && binel == this->menuactbinel && !this->openbinfile) {
+					if (this->inputtexes.size() && binel == this->menuactbinel && !this->openfilesbin) {
 						bool cont = false;
 						// set values of elems of inputted files
 						for (int k = 0; k < this->inputtexes.size(); k++) {
@@ -1751,17 +1702,16 @@ void BinsMain::handle(bool draw) {
 							BinElement* dirbinel = this->currbin->elements[ii * 12 + jj];
 							dirbinel->tex = this->inputtexes[k];
 							dirbinel->type = this->inputtypes[k];
-							dirbinel->path = this->newpaths[k];
+							dirbinel->path = this->addpaths[k];
 							dirbinel->name = remove_extension(basename(dirbinel->path));
 							dirbinel->oldjpegpath = dirbinel->jpegpath;
 							dirbinel->jpegpath = this->inputjpegpaths[k];
 						}
-						save_bin(this->currbin->path);
 						// clean up
 						this->inputtexes.clear();
 						this->inputtypes.clear();
 						this->menuactbinel = nullptr;
-						this->newpaths.clear();
+						this->addpaths.clear();
 					}
 
 
@@ -1786,16 +1736,13 @@ void BinsMain::handle(bool draw) {
 						blacken(this->delbinels[k]->oldtex);
 						this->delbinels[k]->tex = this->delbinels[k]->oldtex;
 						std::string name = remove_extension(basename(this->delbinels[k]->path));
-						//if (this->delbinels[k]->type == ELEM_LAYER || this->delbinels[k]->type == ELEM_LAYERthis->movingbinel->type == ELEM_LAYER) boost::filesystem::remove(this->delbinels[k]->path);  reminder
 						this->delbinels[k]->path = this->delbinels[k]->oldpath;
 						this->delbinels[k]->name = this->delbinels[k]->oldname;
 						this->delbinels[k]->jpegpath = this->delbinels[k]->oldjpegpath;
 						this->delbinels[k]->type = this->delbinels[k]->oldtype;
-						this->delbinels[k]->path == "";
 						this->delbinels[k]->select = false;
 						boost::filesystem::remove(this->delbinels[k]->jpegpath);
 					}
-					save_bin(this->currbin->path);
 					this->delbinels.clear();
 					mainprogram->del = false;
 				}
@@ -1809,7 +1756,7 @@ void BinsMain::handle(bool draw) {
 						int ii = ((k + intm + 144) % 12 + this->previ + 144) % 12;
 						BinElement *dirbinel = this->currbin->elements[ii * 12 + jj];
 						dirbinel->type = this->inputtypes[k];
-						dirbinel->path = this->newpaths[k];
+						dirbinel->path = this->addpaths[k];
 						dirbinel->name = remove_extension(basename(dirbinel->path));
 						dirbinel->oldjpegpath = dirbinel->jpegpath;
 						dirbinel->jpegpath = this->inputjpegpaths[k];
@@ -1827,14 +1774,13 @@ void BinsMain::handle(bool draw) {
 						this->movebinels[i]->erase();
 					}
 					this->movebinels.clear();
-					save_bin(this->currbin->path);
 					// clean up
 					this->inputtexes.clear();
 					if (this->currbinel == this->menuactbinel) this->menuactbinel = nullptr;
 					this->currbinel = nullptr;
 					this->prevbinel = nullptr;
 					this->inputtypes.clear();
-					this->newpaths.clear();
+					this->addpaths.clear();
 					mainprogram->leftmouse = false;
 				}
 			}
@@ -1847,20 +1793,11 @@ void BinsMain::handle(bool draw) {
 			this->currbinel->type = mainprogram->dragbinel->type;
 			this->currbinel->path = mainprogram->dragbinel->path;
 			if (this->currbinel->type == ELEM_LAYER) {
-				std::string name = remove_extension(basename(lay->filename));
-				int count = 0;
-				while (1) {
-					this->currbinel->path = mainprogram->project->binsdir + this->currbin->name + "/" + name + ".layer";
-					this->currbinel->name = name;
-					if (!exists(this->currbinel->path)) {
-						mainmix->save_layerfile(this->currbinel->path, lay, 1, 0);
-						break;
-					}
-					count++;
-					name = remove_version(name) + "_" + std::to_string(count);
-				}
+			    this->currbinel->path = find_unused_filename( basename(lay->filename),
+                                                    mainprogram->project->binsdir + this->currbin->name + "/", ""
+                                                                                                               ".layer");
+			    mainmix->save_layerfile(this->currbinel->path, lay, 1, 0);
 			}
-			save_bin(this->currbin->path);
 			this->currbinel = nullptr;
 			enddrag();
 			lay->vidmoving = false;
@@ -1907,17 +1844,15 @@ void BinsMain::handle(bool draw) {
 					std::swap(this->currbinel->jpegpath, this->movingbinel->jpegpath);  // one way?
 					this->currbinel = nullptr;
 					this->movingbinel = nullptr;
-					this->movingtex = -1;
-					this->save_bin(this->currbin->path);
-				}
+					this->movingtex = -1; }
 			}
 			enddrag();
 		}
 	}
 
 	// load one file into bin each loop, at end to allow drawing ordering dialog on top
-	if (this->openbinfile) {
-		open_binfiles();
+	if (this->openfilesbin) {
+		open_files_bin();
 	}
 }
 
@@ -1946,10 +1881,24 @@ void BinsMain::open_bin(const std::string &path, Bin *bin) {
 					safegetline(rfile, istring);
 					pos = std::stoi(istring);
 				}
-				if (istring == "PATH") {
-					safegetline(rfile, istring);
-					bin->elements[pos]->path = istring;
-				}
+                if (istring == "ABSPATH") {
+                    safegetline(rfile, istring);
+                    bin->elements[pos]->path = istring;
+                    if (!exists(bin->elements[pos]->path)) bin->elements[pos]->path = "";
+                }
+                if (istring == "RELPATH") {
+                    safegetline(rfile, istring);
+                    if (bin->elements[pos]->path == "") {
+                        boost::filesystem::current_path(mainprogram->project->binsdir);
+                        bin->elements[pos]->path = pathtoplatform(boost::filesystem::absolute(istring).string());
+                        boost::filesystem::current_path(mainprogram->contentpath);
+                        if (!exists(bin->elements[pos]->path)) {
+                            mainmix->retargeting = true;
+                            mainmix->newbinelpaths.push_back(bin->elements[pos]->path);
+                            mainmix->newpathbinels.push_back(bin->elements[pos]);
+                        }
+                    }
+                }
 				if (istring == "NAME") {
 					safegetline(rfile, istring);
 					bin->elements[pos]->name = istring;
@@ -1958,7 +1907,7 @@ void BinsMain::open_bin(const std::string &path, Bin *bin) {
 					safegetline(rfile, istring);
 					bin->elements[pos]->type = (ELEM_TYPE)std::stoi(istring);
 					ELEM_TYPE type = bin->elements[pos]->type;
-					if ((type == ELEM_LAYER || type == ELEM_DECK || type == ELEM_MIX) && bin->elements[pos]->path != "") {
+					if ((type == ELEM_LAYER || type == ELEM_DECK || type == ELEM_MIX) && bin->elements[pos]->name != "") {
 						if (concat) {
 							boost::filesystem::rename(result + "_" + std::to_string(filecount) + ".file", bin->elements[pos]->path);
 							filecount++;
@@ -1968,19 +1917,11 @@ void BinsMain::open_bin(const std::string &path, Bin *bin) {
 				if (istring == "JPEGPATH") {
 					safegetline(rfile, istring);
 					bin->elements[pos]->jpegpath = istring;
-					if (bin->elements[pos]->path != "") {
+					if (bin->elements[pos]->name != "") {
 						if (bin->elements[pos]->jpegpath != "") {
 							if (concat) {
-								std::string name = remove_extension(basename(bin->elements[pos]->jpegpath));
-								int count = 0;
-								while (1) {
-									bin->elements[pos]->jpegpath = mainprogram->temppath + this->currbin->name + "_" + name + ".jpg";
-									if (!exists(bin->elements[pos]->jpegpath)) {
-										break;
-									}
-									count++;
-									name = remove_version(name) + "_" + std::to_string(count);
-								}
+								bin->elements[pos]->jpegpath = find_unused_filename(this->currbin->name + "_" +
+								        basename(bin->elements[pos]->jpegpath), mainprogram->temppath, ".jpg");
 								boost::filesystem::rename(result + "_" + std::to_string(filecount) + ".file", bin->elements[pos]->jpegpath);
 								open_thumb(bin->elements[pos]->jpegpath, bin->elements[pos]->tex);
 								filecount++;
@@ -1997,8 +1938,9 @@ void BinsMain::open_bin(const std::string &path, Bin *bin) {
 }
 
 void BinsMain::save_bin(const std::string& path) {
-	std::thread binsav(&BinsMain::do_save_bin, this, path);
-	binsav.detach();
+	//std::thread binsav(&BinsMain::do_save_bin, this, path);
+	//binsav.detach();
+	this->do_save_bin(path);
 }
 
 void BinsMain::do_save_bin(const std::string& path) {
@@ -2006,7 +1948,7 @@ void BinsMain::do_save_bin(const std::string& path) {
 	std::vector<std::string> filestoadd;
 	std::ofstream wfile;
 	wfile.open(path.c_str());
-	wfile << "EWOCvj BINFILE V0.2\n";
+	wfile << "EWOCvj BINFILE\n";
 	
 	wfile << "ELEMS\n";
 	// save elements
@@ -2015,9 +1957,12 @@ void BinsMain::do_save_bin(const std::string& path) {
 			wfile << "POS\n";
 			wfile << i * 12 + j;
 			wfile << "\n";
-			wfile << "PATH\n";
+			wfile << "ABSPATH\n";
 			wfile << this->currbin->elements[i * 12 + j]->path;
 			wfile << "\n";
+            wfile << "RELPATH\n";
+            wfile << boost::filesystem::relative(this->currbin->elements[i * 12 + j]->path, mainprogram->project->binsdir).string();
+            wfile << "\n";
 			wfile << "NAME\n";
 			wfile << this->currbin->elements[i * 12 + j]->name;
 			wfile << "\n";
@@ -2025,10 +1970,10 @@ void BinsMain::do_save_bin(const std::string& path) {
 			wfile << std::to_string(this->currbin->elements[i * 12 + j]->type);
 			wfile << "\n";
 			ELEM_TYPE type = this->currbin->elements[i * 12 + j]->type;
-			if ((type == ELEM_LAYER || type == ELEM_DECK || type == ELEM_MIX) && this->currbin->elements[i * 12 + j]->path != "") {
+			if ((type == ELEM_LAYER || type == ELEM_DECK || type == ELEM_MIX) && this->currbin->elements[i * 12 + j]->name != "") {
 				filestoadd.push_back(this->currbin->elements[i * 12 + j]->path);
 			}
-			if (this->currbin->elements[i * 12 + j]->path != "") {
+			if (this->currbin->elements[i * 12 + j]->name != "") {
 				if (this->currbin->elements[i * 12 + j]->jpegpath == "") {
 					std::string name = remove_extension(basename(this->currbin->elements[i * 12 + j]->path));
 					int count = 0;
@@ -2054,17 +1999,7 @@ void BinsMain::do_save_bin(const std::string& path) {
 	wfile << "ENDOFFILE\n";
 	wfile.close();
 	
-	std::string tcbpath;
-	std::string name = "tempconcatbin";
-	int count = 0;
-	while (1) {
-		tcbpath = mainprogram->temppath + name;
-		if (!exists(tcbpath)) {
-			break;
-		}
-		count++;
-		name = remove_version(name) + "_" + std::to_string(count);
-	}
+	std::string tcbpath = find_unused_filename("tempconcatbin", mainprogram->temppath, "");
 	std::ofstream outputfile;
 	outputfile.open(tcbpath, std::ios::out | std::ios::binary);
 	std::vector<std::vector<std::string>> filestoadd2;
@@ -2090,10 +2025,6 @@ Bin *BinsMain::new_bin(const std::string &name) {
 	make_currbin(this->bins.size() - 1);
 	std::string path;
 	bin->path = mainprogram->project->binsdir + name + ".bin";
-	if (!exists(bin->path)) {
-		do_save_bin(bin->path);
-		this->save_binslist();
-	}
 	boost::filesystem::path p1{mainprogram->project->binsdir + name};
 	boost::filesystem::create_directory(p1);
 	return bin;
@@ -2167,22 +2098,45 @@ void BinsMain::save_binslist() {
 }
 
 void BinsMain::import_bins() {
+    auto next_bin = []()
+    {
+        mainprogram->shelffileselem++;
+        mainprogram->shelffilescount++;
+        binsmain->binscount++;
+        if (binsmain->binscount == mainprogram->paths.size()) {
+            binsmain->importbins = false;
+            mainprogram->paths.clear();
+        }
+    };
+
+    std::string result = deconcat_files(mainprogram->paths[binsmain->binscount]);
+    bool concat = (result != "");
+    std::ifstream rfile;
+    if (concat) rfile.open(result);
+    else rfile.open(mainprogram->paths[binsmain->binscount]);
+    std::string istring;
+    safegetline(rfile, istring);
+    if (istring != "EWOCvj BINFILE") {
+        next_bin();
+        return;
+    }
+
 	Bin* bin = binsmain->new_bin(remove_extension(basename(mainprogram->paths[binsmain->binscount])));
 	binsmain->open_bin(mainprogram->paths[binsmain->binscount], bin);
 	std::string path = mainprogram->project->binsdir + bin->name + ".bin";
-	binsmain->save_bin(path);
 	if (binsmain->bins.size() >= 20) binsmain->binsscroll++;
-	binsmain->binscount++;
-	if (binsmain->binscount == mainprogram->paths.size()) {
-		binsmain->importbins = false;
-		mainprogram->paths.clear();
-	}
+    next_bin();
 }
 
-void BinsMain::open_binfiles() {
+void BinsMain::open_files_bin() {
 	// open videos/images/layer files into bin
 
 	// order elements
+    if (mainprogram->paths.size() == 0) {
+        binsmain->openfilesbin = false;
+        mainprogram->multistage = 0;
+        return;
+    }
 	bool cont = mainprogram->order_paths(false);
 	if (!cont) return;
 
@@ -2195,8 +2149,7 @@ void BinsMain::open_binfiles() {
 	} 
 	if (mainprogram->counting == mainprogram->paths.size()) {
 		this->currbin->path = mainprogram->project->binsdir + this->currbin->name + ".bin";
-		do_save_bin(this->currbin->path);
-		this->openbinfile = false;
+		this->openfilesbin = false;
 		mainprogram->paths.clear();
 		mainprogram->multistage = 0;
 		mainprogram->blocking = false;
@@ -2212,46 +2165,47 @@ void BinsMain::open_handlefile(const std::string &path) {
 	// prepare value lists for inputting videos/images/layer files from disk
 	ELEM_TYPE endtype;
 	GLuint endtex;
-	if (isimage(path)) {
-		// prepare image file for bin entry
-		endtype = ELEM_IMAGE;
-		endtex = get_imagetex(path);
-	}
-	else if (path.substr(path.length() - 6, std::string::npos) == ".layer") {
-		// prepare layer file for bin entry
-		endtype = ELEM_LAYER;
-		endtex = get_layertex(path);
-	}
-	else if (path.substr(path.length() - 5, std::string::npos) == ".deck") {
-		// prepare layer file for bin entry
-		endtype = ELEM_DECK;
-		endtex = get_deckmixtex(path);
-	}
-	else if (path.substr(path.length() - 4, std::string::npos) == ".mix") {
-		// prepare layer file for bin entry
-		endtype = ELEM_MIX;
-		endtex = get_deckmixtex(path);
-	}
-	else {
-		// prepare video file for bin entry
-		endtype = ELEM_FILE;
-		endtex = get_videotex(path);
-	}
+
+    // determine file type
+    std::string istring = "";
+    std::string result = deconcat_files(path);
+    if (!mainprogram->openerr) {
+        bool concat = (result != "");
+        std::ifstream rfile;
+        if (concat) rfile.open(result);
+        else rfile.open(path);
+        safegetline(rfile, istring);
+    }
+    else mainprogram->openerr = false;
+    if (istring == "EWOCvj LAYERFILE") {
+        // prepare layer file for bin entry
+        endtype = ELEM_LAYER;
+        endtex = get_layertex(path);
+    } else if (istring == "EWOCvj DECKFILE") {
+        // prepare layer file for bin entry
+        endtype = ELEM_DECK;
+        endtex = get_deckmixtex(path);
+    } else if (istring == "EWOCvj MIXFILE") {
+        // prepare layer file for bin entry
+        endtype = ELEM_MIX;
+        endtex = get_deckmixtex(path);
+    } else if (isimage(path)) {
+        // prepare image file for bin entry
+        endtype = ELEM_IMAGE;
+        endtex = get_imagetex(path);
+    } else if (isvideo(path)) {
+        // prepare video file for bin entry
+        endtype = ELEM_FILE;
+        endtex = get_videotex(path);
+    } else if (mainprogram->openerr) {
+        return;
+    }
+
 	if (endtex == -1) return;
-	this->newpaths.push_back(path);
+	this->addpaths.push_back(path);
 	this->inputtexes.push_back(endtex);
 	this->inputtypes.push_back(endtype);
-	std::string jpath;
-	std::string name = remove_extension(basename(path));
-	int count = 0;
-	while (1) {
-		jpath = mainprogram->temppath + name + ".jpg";
-		if (!exists(jpath)) {
-			break;
-		}
-		count++;
-		name = remove_version(name) + "_" + std::to_string(count);
-	}
+	std::string jpath = find_unused_filename(basename(path), mainprogram->temppath, ".jpg");
 	save_thumb(jpath, copy_tex(endtex));
 	this->inputjpegpaths.push_back(jpath);
 }
@@ -2264,7 +2218,7 @@ std::tuple<std::string, std::string> BinsMain::hap_binel(BinElement *binel, BinE
 	std::string rpath = "";
 	if (binel->type == ELEM_FILE) {
 		std::thread hap (&BinsMain::hap_encode, this, binel->path, binel, bdm);
-		if (!mainprogram->threadmode) {
+		if (!mainprogram->threadmode || binel->bin == nullptr) {
 			#ifdef WINDOWS
 			SetThreadPriority((void*)hap.native_handle(), THREAD_PRIORITY_LOWEST);
 			#else
@@ -2498,12 +2452,14 @@ void BinsMain::hap_encode(const std::string srcpath, BinElement *binel, BinEleme
 		return;
 	}
 
-	while (mainprogram->encthreads >= mainprogram->maxthreads) {
-		mainprogram->hapnow = false;
-		std::unique_lock<std::mutex> lock(mainprogram->hapmutex);
-		mainprogram->hap.wait(lock, [&]{return mainprogram->hapnow;});
-		lock.unlock();
-	}
+	if (binel->bin) {
+        while (mainprogram->encthreads >= mainprogram->maxthreads) {
+            mainprogram->hapnow = false;
+            std::unique_lock<std::mutex> lock(mainprogram->hapmutex);
+            mainprogram->hap.wait(lock, [&] { return mainprogram->hapnow; });
+            lock.unlock();
+        }
+    }
 
 	mainprogram->encthreads++;
 	binel->encwaiting = false;
@@ -2647,16 +2603,17 @@ void BinsMain::hap_encode(const std::string srcpath, BinElement *binel, BinEleme
     avcodec_free_context(&c);
     av_frame_free(&nv12frame);
     av_packet_unref(&pkt);
-	binel->path = remove_extension(binel->path) + "_hap.mov";
+    binel->path = remove_extension(binel->path) + "_hap.mov";
 	boost::filesystem::rename(destpath, binel->path);
-	binel->encoding = false;
+    binel->encoding = false;
+    if (binel->otflay) {
+        binel->otflay->open_video(binel->otflay->frame, binel->path, false);
+        binel->otflay->hapbinel = nullptr;
+    }
     if (bdm) {
    		bdm->encthreads--;
 		delete binel;  // temp bin elements populate bdm binelements
     }
-	else {
-		this->do_save_bin(this->currbin->path);
-	}
 	mainprogram->encthreads--;
 	mainprogram->hapnow = true;
 	mainprogram->hap.notify_all();

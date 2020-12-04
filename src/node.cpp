@@ -194,7 +194,7 @@ void VideoNode::upeffboxes() {
 }
 
 void NodePage::connect_nodes(Node *node1, Node *node2) {
-	node1->out.clear();  // reminder: implement multiple out nodes
+	node1->out.clear();
 	if (node2->in != nullptr) {
 		if (node2->in->out.size()) {
 			if (std::find(node2->in->out.begin(), node2->in->out.end(), node2) != node2->in->out.end()) {
@@ -408,7 +408,7 @@ void NodePage::handle_nodes() {
 		Effect *eff;
 		float red[] = {1.0, 0.0, 0.0, 1.0};
 		float blue[] = {0.5, 0.5, 1.0, 1.0};
-		if (node->monitor != -1) {  // reminder: nodes structure
+		if (node->monitor != -1) {
 			if (mainmix->currscene[0][0] == node->monitor / 6) {
 				draw_box(node->monbox, node->monbox->tex);
 			}
@@ -854,7 +854,7 @@ void NodePage::handle_nodes() {
 				if (mainprogram->middlemouse) {
 					node->in->out.erase(std::find(node->in->out.begin(), node->in->out.end(), node));
 					node->in = nullptr;
-					mainprogram->middlemouse = 0;
+					mainprogram->middlemouse = false;
 				}
 			}
 			glLineWidth(1.0);
@@ -869,7 +869,7 @@ void NodePage::handle_nodes() {
 					if (mainprogram->middlemouse) {
 						nin2->out.erase(std::find(nin2->out.begin(), nin2->out.end(), node));
 						((BlendNode*)node)->in2 = nullptr;
-						mainprogram->middlemouse = 0;
+						mainprogram->middlemouse = false;
 					}
 				}
 				glLineWidth(1.0);
@@ -878,7 +878,7 @@ void NodePage::handle_nodes() {
 		
 		if (node->box->in()) {
 			if (mainprogram->middlemouse) {
-				mainprogram->middlemouse = 0;
+				mainprogram->middlemouse = false;
 				if (node->type == VIDEO) {
 					if (mainmix->deck == 0) mainmix->delete_layer(mainmix->layersA, ((VideoNode*)node)->layer, true);
 					else mainmix->delete_layer(mainmix->layersB, ((VideoNode*)node)->layer, true);

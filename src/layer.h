@@ -52,6 +52,8 @@ struct frame_result {
 class Button;
 class Shelf;
 class ShelfElement;
+class LoopStationElement;
+class BinElement;
 
 class Clip {
 	public:
@@ -62,8 +64,11 @@ class Clip {
 		int startframe = -1;
 		int endframe = -1;
 		Box* box;
+		Layer* layer = nullptr;
 		Clip();
 		~Clip();
+		Clip* copy();
+		void insert(Layer* lay, std::vector<Clip*>::iterator it);
 		bool get_imageframes();
 		bool get_videoframes();
 		bool get_layerframes();
@@ -76,7 +81,6 @@ class Layer {
 		bool deck = 0;
 		bool comp = true;
 		std::vector<Layer*>* layers;
-		int clonepos = -1;
 		std::vector<Clip*> clips;
 		Clip* currclip = nullptr;
 		ELEM_TYPE type = ELEM_FILE;
@@ -117,12 +121,15 @@ class Layer {
 		Param *volume;
 		Button *playbut;
 		Button *revbut;
-		Button *bouncebut;
+        Button *bouncebut;
+        Button *stopbut;
 		Button *frameforward;
 		bool prevffw = false;
 		Button *framebackward;
 		bool prevfbw = false;
-		Button *genmidibut;
+        Button *lpbut;
+        bool onhold = false;
+        Button *genmidibut;
 		Box *loopbox;
 		int playkind = 0;
 		int startframe = 0;
@@ -153,23 +160,18 @@ class Layer {
 		std::mutex enddecodelock;
 		std::mutex endopenlock;
 		std::mutex chunklock;
-		std::mutex endchunklock;
-		std::mutex protectlock;
 		std::condition_variable startdecode;
 		std::condition_variable enddecodevar;
 		std::condition_variable endopenvar;
 		std::condition_variable newchunk;
-		std::condition_variable endchunk;
 		std::condition_variable protect;
 		bool processed = false;
 		bool opened = false;
 		bool ready = false;
 		bool chready = false;
-		bool endready = false;
 		bool closethread = false;
 		bool waiting = true;
 		bool vidopen = false;
-		bool openerr = false;
 		bool copying = false;
 		bool firsttime = true;
 		bool newframe = false;
@@ -182,11 +184,10 @@ class Layer {
 		std::thread audiot;
 		void playaudio();
 		bool audioplaying = false;
-		bool notdecoding = true;
 		std::list<char*> snippets;
 		std::list<int> pslens;
+		GLuint jpegtex;
 		GLuint texture;
-		GLuint comptexture;
 		GLuint fbotex;
 		GLuint fbo;
 		GLuint fbotexintm;
@@ -196,10 +197,8 @@ class Layer {
 		GLuint tbuf;
 		GLuint vao;
 		GLuint endtex;
-		GLuint endbuf;
         GLuint frb;
-        GLuint frt = -1;
-		GLuint pbo[3];
+ 		GLuint pbo[3];
 		GLubyte* mapptr[3];
 		GLsync syncobj[3] = {nullptr, nullptr, nullptr};
 		char pbodi = 0;
@@ -238,18 +237,20 @@ class Layer {
 		char *databuf = nullptr;
 		bool databufready = false;
 		int vidformat = -1;
-		int oldvidformat = -2;  //different from -1
-		int oldcompression = -1;
+        int oldvidformat = -1;
+        int oldcompression = -1;
 		bool oldalive = true;
 		std::vector<char*> audio_chunks;
 		ALuint sample_rate;
 		int channels;
 		ALuint sampleformat;
+		BinElement *hapbinel = nullptr;
 		
 		std::unordered_map<EFFECT_TYPE, int> numoftypemap;
 		int clonesetnr = -1;
-		bool isclone = false;
-	
+        bool isclone = false;
+        Layer *isduplay = nullptr;
+
 		void display();
 		Effect* add_effect(EFFECT_TYPE type, int pos);
 		Effect* replace_effect(EFFECT_TYPE type, int pos);
@@ -267,13 +268,14 @@ class Layer {
 		void open_files_layers();
 		void open_files_queue();
 		bool thread_vidopen();
-		void open_video(float frame, const std::string& filename, int reset);
+		Layer* open_video(float frame, const std::string& filename, int reset);
 		void open_image(const std::string& path);
 		void initialize(int w, int h);
 		void initialize(int w, int h, int compression);
 		void clip_display_next(bool startend, bool alive);
 		bool find_new_live_base(int pos);
 		void set_live_base(std::string livename);
+		void deautomate();
 		Layer* next();
 		Layer* prev();
 		Layer();
@@ -320,8 +322,22 @@ class Mixer {
 		std::vector<Layer*> layersB;
 		std::vector<Scene*> scenes[2][2];
 		std::vector<Layer*> bulrs[2];
-		std::vector<Layer*> bulrscopy[2];
-		std::vector<GLuint> butexes[2];
+        std::vector<Layer*> bulrscopy[2];
+        std::vector<GLuint> butexes[2];
+        std::vector<Layer*> newpathlayers;
+        std::vector<Clip*> newpathclips;
+        std::vector<ShelfElement*> newpathshelfelems;
+        std::vector<BinElement*> newpathbinels;
+        std::vector<std::string> *newpaths;
+        std::vector<std::string> newlaypaths;
+        std::vector<std::string> newclippaths;
+        std::vector<std::string> newshelfpaths;
+        std::vector<std::string> newbinelpaths;
+        int newpathpos = 0;
+        int retargetstage = 0;
+        bool retargeting = false;
+        bool retargetingdone = false;
+        bool renaming = false;
 		bool bualive;
 		Layer *currlay[2] = {nullptr, nullptr};
         std::vector<Layer*> currlays[2];
@@ -334,7 +350,7 @@ class Mixer {
 		void set_values(Layer* clay, Layer* lay, bool open);
 		void copy_effects(Layer* slay, Layer* dlay, bool comp);
 		void handle_adaptparam();
-		void clips_handle();
+		void handle_clips();
 		void record_video();
 		void new_file(int decks, bool alive);
 		void save_layerfile(const std::string &path, Layer* lay, bool doclips, bool dojpeg);
@@ -350,7 +366,7 @@ class Mixer {
 		void save_state(const std::string &path, bool autosave);
 		void do_save_state(const std::string& path, bool autosave);
 		std::vector<std::string> write_layer(Layer *lay, std::ostream& wfile, bool doclips, bool dojpeg);
-		int read_layers(std::istream &rfile, const std::string &result, std::vector<Layer*> &layers, bool deck, int type, bool doclips, bool concat, bool load, bool loadevents, bool save);
+		Layer* read_layers(std::istream &rfile, const std::string &result, std::vector<Layer*> &layers, bool deck, int type, bool doclips, bool concat, bool load, bool loadevents, bool save);
 		void start_recording();
 		void cloneset_destroy(std::unordered_set<Layer*>* cs);
 		void handle_genmidibuttons();
@@ -381,8 +397,7 @@ class Mixer {
 		Button *recbut;
 		Param *crossfade;
 		Param *crossfadecomp;
-		int numaudiochannels = 0;
-		
+
 		int currscene[2][2] = {{0, 0}, {0, 0}};
 		bool deck = 0;
 		int scrollon = 0;
@@ -396,6 +411,7 @@ class Mixer {
 		bool insert;
 		Node *mousenode = nullptr;
 		Clip* mouseclip;
+		LoopStationElement *mouselpstelem = nullptr;
 		Param *learnparam;
 		Button *learnbutton;
 		bool learn = false;
@@ -421,15 +437,15 @@ class Mixer {
 		int midishelfstage = 0;
 		int midishelfpos = 0;
 		Shelf* midishelf = nullptr;
-		int midishelfstart = 0;
+        int midishelfstart = 0;
+        int midishelfend = 0;
 
 		float time = 0.0f;
 		float oldtime = 0.0f;
 		float cbduration = 0.0f;
 		
 		std::vector<GLuint> fbotexes;
-		GLuint tempbuf, temptex;
-		
+
 		std::vector<std::unordered_set<Layer*>*> clonesets;
 		std::unordered_map<int, Layer*> firstlayers;  //first decompressed layer per cloneset
 };
