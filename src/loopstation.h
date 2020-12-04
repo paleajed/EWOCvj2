@@ -68,8 +68,8 @@ class LoopStationElement {
 		void init();
 		void handle();
 		void erase_elem();
-		void add_param(Param* par);
-		void add_button(Button* but);
+		void add_param_automationentry(Param* par);
+		void add_button_automationentry(Button* but);
 		void set_values();
 		LoopStationElement();
 		~LoopStationElement();

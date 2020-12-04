@@ -735,18 +735,7 @@ void BinsMain::handle(bool draw) {
 		Box* box = this->newbinbox;
 		if (box->in()) {
 			if (mainprogram->leftmouse && !this->dragbin) {
-				std::string name = "new bin";
-				std::string path;
-				int count = 0;
-				while (1) {
-					path = mainprogram->project->binsdir + name + ".bin";
-					if (!exists(path)) {
-						new_bin(name);
-						break;
-					}
-					count++;
-					name = remove_version(name) + "_" + std::to_string(count);
-				}
+			    new_bin(find_unused_filename("new bin", mainprogram->project->binsdir, ".bin"));
 				if (this->bins.size() >= 20) this->binsscroll++;
 			}
 			box->acolor[0] = 0.5f;
@@ -845,9 +834,11 @@ void BinsMain::handle(bool draw) {
 		// bin element renaming
 		if (mainprogram->renaming != EDIT_NONE && this->renamingelem) {
 			// bin element renaming with keyboard
+			mainprogram->frontbatch = true;
 			draw_box(white, black, this->renamingbox, -1);
 			do_text_input(-0.5f + 0.1f, -0.2f + 0.05f, 0.0009f, 0.0015f, mainprogram->mx, mainprogram->my,
                  mainprogram->xvtxtoscr(0.8f), 0, nullptr);
+            mainprogram->frontbatch = false;
 		}
 
 		// render hap encoding text on elems
@@ -1012,7 +1003,7 @@ void BinsMain::handle(bool draw) {
 		}
 		else if (binelmenuoptions[k] == BET_OPENFILES) {
 			// open videos/images/layer files into bin
-			mainprogram->pathto = "OPENBINFILES";
+			mainprogram->pathto = "OPENFILESBIN";
 			std::thread filereq(&Program::get_multinname, mainprogram, "Open file(s)", "", boost::filesystem::canonical(mainprogram->currbinfilesdir).generic_string());
 			filereq.detach();
 		}
@@ -1020,17 +1011,7 @@ void BinsMain::handle(bool draw) {
 			// insert deck A into bin
 			mainprogram->paths.clear();
 			mainmix->mousedeck = 0;
-			std::string name = "deckA";
-			std::string path;
-			int count = 0;
-			while (1) {
-				path = mainprogram->temppath + name + ".deck";
-				if (!exists(path)) {
-					break;
-				}
-				count++;
-				name = remove_version(name) + "_" + std::to_string(count);
-			}
+			std::string path = find_unused_filename("deckA", mainprogram->temppath, ".deck");
 			mainmix->do_save_deck(path, true, true);
 			open_handlefile(path);
 			this->menubinel->tex = this->inputtexes[0];
@@ -1051,17 +1032,8 @@ void BinsMain::handle(bool draw) {
 			// insert deck B into bin
 			mainprogram->paths.clear();
 			mainmix->mousedeck = 1;
-			std::string name = "deckB";
-			std::string path;
-			int count = 0;
-			while (1) {
-				path = mainprogram->temppath + name + ".deck";
-				if (!exists(path)) {
-					break;
-				}
-				count++;
-				name = remove_version(name) + "_" + std::to_string(count);
-			}
+
+            std::string path = find_unused_filename("deckB", mainprogram->temppath, ".deck");
 			mainmix->do_save_deck(path, true, true);
 			open_handlefile(path);
 			this->menubinel->tex = this->inputtexes[0];
@@ -1081,17 +1053,8 @@ void BinsMain::handle(bool draw) {
 		else if (binelmenuoptions[k] == BET_INSMIX) {
 			// insert live mix into bin
 			mainprogram->paths.clear();
-			std::string name = "mix";
-			std::string path;
-			int count = 0;
-			while (1) {
-				path = mainprogram->temppath + name + ".mix";
-				if (!exists(path)) {
-					break;
-				}
-				count++;
-				name = remove_version(name) + "_" + std::to_string(count);
-			}
+
+            std::string path = find_unused_filename("mix", mainprogram->temppath, ".mix");
 			mainmix->do_save_mix(path, mainprogram->prevmodus, true);
 			open_handlefile(path);
 			this->menubinel->tex = this->inputtexes[0];
@@ -1220,7 +1183,7 @@ void BinsMain::handle(bool draw) {
 					binel->encoding = false;
 					boost::filesystem::rename(remove_extension(binel->path) + ".temp", binel->path);
 				}
-				if ((box->in() || mainprogram->rightmouse || binel == menuactbinel) && !this->openbinfile && !binel->encoding) {
+				if ((box->in() || mainprogram->rightmouse || binel == menuactbinel) && !this->openfilesbin && !binel->encoding) {
 					if (draw) {
 						inbinel = true;
 						// don't preview when encoding
@@ -1728,7 +1691,7 @@ void BinsMain::handle(bool draw) {
 						}
 					}
 
-					if (this->inputtexes.size() && binel == this->menuactbinel && !this->openbinfile) {
+					if (this->inputtexes.size() && binel == this->menuactbinel && !this->openfilesbin) {
 						bool cont = false;
 						// set values of elems of inputted files
 						for (int k = 0; k < this->inputtexes.size(); k++) {
@@ -1773,7 +1736,6 @@ void BinsMain::handle(bool draw) {
 						blacken(this->delbinels[k]->oldtex);
 						this->delbinels[k]->tex = this->delbinels[k]->oldtex;
 						std::string name = remove_extension(basename(this->delbinels[k]->path));
-						//if (this->delbinels[k]->type == ELEM_LAYER || this->delbinels[k]->type == ELEM_LAYERthis->movingbinel->type == ELEM_LAYER) boost::filesystem::remove(this->delbinels[k]->path);  reminder
 						this->delbinels[k]->path = this->delbinels[k]->oldpath;
 						this->delbinels[k]->name = this->delbinels[k]->oldname;
 						this->delbinels[k]->jpegpath = this->delbinels[k]->oldjpegpath;
@@ -1831,18 +1793,10 @@ void BinsMain::handle(bool draw) {
 			this->currbinel->type = mainprogram->dragbinel->type;
 			this->currbinel->path = mainprogram->dragbinel->path;
 			if (this->currbinel->type == ELEM_LAYER) {
-				std::string name = remove_extension(basename(lay->filename));
-				int count = 0;
-				while (1) {
-					this->currbinel->path = mainprogram->project->binsdir + this->currbin->name + "/" + name + ".layer";
-					this->currbinel->name = name;
-					if (!exists(this->currbinel->path)) {
-						mainmix->save_layerfile(this->currbinel->path, lay, 1, 0);
-						break;
-					}
-					count++;
-					name = remove_version(name) + "_" + std::to_string(count);
-				}
+			    this->currbinel->path = find_unused_filename( basename(lay->filename),
+                                                    mainprogram->project->binsdir + this->currbin->name + "/", ""
+                                                                                                               ".layer");
+			    mainmix->save_layerfile(this->currbinel->path, lay, 1, 0);
 			}
 			this->currbinel = nullptr;
 			enddrag();
@@ -1897,8 +1851,8 @@ void BinsMain::handle(bool draw) {
 	}
 
 	// load one file into bin each loop, at end to allow drawing ordering dialog on top
-	if (this->openbinfile) {
-		open_binfiles();
+	if (this->openfilesbin) {
+		open_files_bin();
 	}
 }
 
@@ -1935,8 +1889,9 @@ void BinsMain::open_bin(const std::string &path, Bin *bin) {
                 if (istring == "RELPATH") {
                     safegetline(rfile, istring);
                     if (bin->elements[pos]->path == "") {
-                        boost::filesystem::current_path(mainprogram->contentpath);
+                        boost::filesystem::current_path(mainprogram->project->binsdir);
                         bin->elements[pos]->path = pathtoplatform(boost::filesystem::absolute(istring).string());
+                        boost::filesystem::current_path(mainprogram->contentpath);
                         if (!exists(bin->elements[pos]->path)) {
                             mainmix->retargeting = true;
                             mainmix->newbinelpaths.push_back(bin->elements[pos]->path);
@@ -1965,16 +1920,8 @@ void BinsMain::open_bin(const std::string &path, Bin *bin) {
 					if (bin->elements[pos]->name != "") {
 						if (bin->elements[pos]->jpegpath != "") {
 							if (concat) {
-								std::string name = remove_extension(basename(bin->elements[pos]->jpegpath));
-								int count = 0;
-								while (1) {
-									bin->elements[pos]->jpegpath = mainprogram->temppath + this->currbin->name + "_" + name + ".jpg";
-									if (!exists(bin->elements[pos]->jpegpath)) {
-										break;
-									}
-									count++;
-									name = remove_version(name) + "_" + std::to_string(count);
-								}
+								bin->elements[pos]->jpegpath = find_unused_filename(this->currbin->name + "_" +
+								        basename(bin->elements[pos]->jpegpath), mainprogram->temppath, ".jpg");
 								boost::filesystem::rename(result + "_" + std::to_string(filecount) + ".file", bin->elements[pos]->jpegpath);
 								open_thumb(bin->elements[pos]->jpegpath, bin->elements[pos]->tex);
 								filecount++;
@@ -2001,7 +1948,7 @@ void BinsMain::do_save_bin(const std::string& path) {
 	std::vector<std::string> filestoadd;
 	std::ofstream wfile;
 	wfile.open(path.c_str());
-	wfile << "EWOCvj BINFILE V0.2\n";
+	wfile << "EWOCvj BINFILE\n";
 	
 	wfile << "ELEMS\n";
 	// save elements
@@ -2014,7 +1961,7 @@ void BinsMain::do_save_bin(const std::string& path) {
 			wfile << this->currbin->elements[i * 12 + j]->path;
 			wfile << "\n";
             wfile << "RELPATH\n";
-            wfile << boost::filesystem::relative(this->currbin->elements[i * 12 + j]->path, mainprogram->contentpath).string();  // reminder binsdir?
+            wfile << boost::filesystem::relative(this->currbin->elements[i * 12 + j]->path, mainprogram->project->binsdir).string();
             wfile << "\n";
 			wfile << "NAME\n";
 			wfile << this->currbin->elements[i * 12 + j]->name;
@@ -2052,17 +1999,7 @@ void BinsMain::do_save_bin(const std::string& path) {
 	wfile << "ENDOFFILE\n";
 	wfile.close();
 	
-	std::string tcbpath;
-	std::string name = "tempconcatbin";
-	int count = 0;
-	while (1) {
-		tcbpath = mainprogram->temppath + name;
-		if (!exists(tcbpath)) {
-			break;
-		}
-		count++;
-		name = remove_version(name) + "_" + std::to_string(count);
-	}
+	std::string tcbpath = find_unused_filename("tempconcatbin", mainprogram->temppath, "");
 	std::ofstream outputfile;
 	outputfile.open(tcbpath, std::ios::out | std::ios::binary);
 	std::vector<std::vector<std::string>> filestoadd2;
@@ -2161,21 +2098,45 @@ void BinsMain::save_binslist() {
 }
 
 void BinsMain::import_bins() {
+    auto next_bin = []()
+    {
+        mainprogram->shelffileselem++;
+        mainprogram->shelffilescount++;
+        binsmain->binscount++;
+        if (binsmain->binscount == mainprogram->paths.size()) {
+            binsmain->importbins = false;
+            mainprogram->paths.clear();
+        }
+    };
+
+    std::string result = deconcat_files(mainprogram->paths[binsmain->binscount]);
+    bool concat = (result != "");
+    std::ifstream rfile;
+    if (concat) rfile.open(result);
+    else rfile.open(mainprogram->paths[binsmain->binscount]);
+    std::string istring;
+    safegetline(rfile, istring);
+    if (istring != "EWOCvj BINFILE") {
+        next_bin();
+        return;
+    }
+
 	Bin* bin = binsmain->new_bin(remove_extension(basename(mainprogram->paths[binsmain->binscount])));
 	binsmain->open_bin(mainprogram->paths[binsmain->binscount], bin);
 	std::string path = mainprogram->project->binsdir + bin->name + ".bin";
 	if (binsmain->bins.size() >= 20) binsmain->binsscroll++;
-	binsmain->binscount++;
-	if (binsmain->binscount == mainprogram->paths.size()) {
-		binsmain->importbins = false;
-		mainprogram->paths.clear();
-	}
+    next_bin();
 }
 
-void BinsMain::open_binfiles() {
+void BinsMain::open_files_bin() {
 	// open videos/images/layer files into bin
 
 	// order elements
+    if (mainprogram->paths.size() == 0) {
+        binsmain->openfilesbin = false;
+        mainprogram->multistage = 0;
+        return;
+    }
 	bool cont = mainprogram->order_paths(false);
 	if (!cont) return;
 
@@ -2188,7 +2149,7 @@ void BinsMain::open_binfiles() {
 	} 
 	if (mainprogram->counting == mainprogram->paths.size()) {
 		this->currbin->path = mainprogram->project->binsdir + this->currbin->name + ".bin";
-		this->openbinfile = false;
+		this->openfilesbin = false;
 		mainprogram->paths.clear();
 		mainprogram->multistage = 0;
 		mainprogram->blocking = false;
@@ -2204,46 +2165,47 @@ void BinsMain::open_handlefile(const std::string &path) {
 	// prepare value lists for inputting videos/images/layer files from disk
 	ELEM_TYPE endtype;
 	GLuint endtex;
-	if (isimage(path)) {
-		// prepare image file for bin entry
-		endtype = ELEM_IMAGE;
-		endtex = get_imagetex(path);
-	}
-	else if (path.substr(path.length() - 6, std::string::npos) == ".layer") {
-		// prepare layer file for bin entry
-		endtype = ELEM_LAYER;
-		endtex = get_layertex(path);
-	}
-	else if (path.substr(path.length() - 5, std::string::npos) == ".deck") {
-		// prepare layer file for bin entry
-		endtype = ELEM_DECK;
-		endtex = get_deckmixtex(path);
-	}
-	else if (path.substr(path.length() - 4, std::string::npos) == ".mix") {
-		// prepare layer file for bin entry
-		endtype = ELEM_MIX;
-		endtex = get_deckmixtex(path);
-	}
-	else {
-		// prepare video file for bin entry
-		endtype = ELEM_FILE;
-		endtex = get_videotex(path);
-	}
+
+    // determine file type
+    std::string istring = "";
+    std::string result = deconcat_files(path);
+    if (!mainprogram->openerr) {
+        bool concat = (result != "");
+        std::ifstream rfile;
+        if (concat) rfile.open(result);
+        else rfile.open(path);
+        safegetline(rfile, istring);
+    }
+    else mainprogram->openerr = false;
+    if (istring == "EWOCvj LAYERFILE") {
+        // prepare layer file for bin entry
+        endtype = ELEM_LAYER;
+        endtex = get_layertex(path);
+    } else if (istring == "EWOCvj DECKFILE") {
+        // prepare layer file for bin entry
+        endtype = ELEM_DECK;
+        endtex = get_deckmixtex(path);
+    } else if (istring == "EWOCvj MIXFILE") {
+        // prepare layer file for bin entry
+        endtype = ELEM_MIX;
+        endtex = get_deckmixtex(path);
+    } else if (isimage(path)) {
+        // prepare image file for bin entry
+        endtype = ELEM_IMAGE;
+        endtex = get_imagetex(path);
+    } else if (isvideo(path)) {
+        // prepare video file for bin entry
+        endtype = ELEM_FILE;
+        endtex = get_videotex(path);
+    } else if (mainprogram->openerr) {
+        return;
+    }
+
 	if (endtex == -1) return;
 	this->addpaths.push_back(path);
 	this->inputtexes.push_back(endtex);
 	this->inputtypes.push_back(endtype);
-	std::string jpath;
-	std::string name = remove_extension(basename(path));
-	int count = 0;
-	while (1) {
-		jpath = mainprogram->temppath + name + ".jpg";
-		if (!exists(jpath)) {
-			break;
-		}
-		count++;
-		name = remove_version(name) + "_" + std::to_string(count);
-	}
+	std::string jpath = find_unused_filename(basename(path), mainprogram->temppath, ".jpg");
 	save_thumb(jpath, copy_tex(endtex));
 	this->inputjpegpaths.push_back(jpath);
 }

@@ -121,7 +121,8 @@ class Layer {
 		Param *volume;
 		Button *playbut;
 		Button *revbut;
-		Button *bouncebut;
+        Button *bouncebut;
+        Button *stopbut;
 		Button *frameforward;
 		bool prevffw = false;
 		Button *framebackward;
@@ -171,7 +172,6 @@ class Layer {
 		bool closethread = false;
 		bool waiting = true;
 		bool vidopen = false;
-		bool openerr = false;
 		bool copying = false;
 		bool firsttime = true;
 		bool newframe = false;

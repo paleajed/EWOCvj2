@@ -94,7 +94,8 @@ struct gui_box {
 	int circle;
 	GLuint tex;
 	bool text = false;
-	bool vertical = false;
+    bool vertical = false;
+    bool inverted = false;
 };
 
 class GUI_Element {
@@ -119,7 +120,7 @@ public:
 	void erase();
 	void save(const std::string& path);
 	bool open(const std::string& path);
-	void open_shelffiles();
+	void open_files_shelf();
 	bool insert_deck(const std::string& path, bool deck, int pos);
 	bool insert_mix(const std::string& path, int pos);
 	Shelf(bool side);
@@ -146,11 +147,14 @@ public:
 class Project {
 	public:
 		std::string path;
+		std::string name;
 		std::string binsdir;
 		std::string recdir;
         std::string shelfdir;
         std::string autosavedir;
         std::vector<std::string> autosavelist;
+        float ow = 1920.0f;
+        float oh = 1080.0f;
 		void newp(const std::string &path);
 		void open(const std::string &path);
         void save(const std::string& path);
@@ -204,11 +208,16 @@ class PIMidi: public PrefCat {
 		PIMidi();
 };
 
-class PIDirs: public PrefCat {
-	public:
-		PIDirs();
+class PIProj: public PrefCat {
+public:
+    PIProj();
 };
-		
+
+class PIDirs: public PrefCat {
+public:
+    PIDirs();
+};
+
 class PIInt: public PrefCat {
 	public:
 		PIInt();
@@ -513,7 +522,8 @@ class Program {
 		PrefItem* savedmidiitem;
 		bool queueing = false;
 		int filecount;
-		
+        bool openerr = false;
+
 		SDL_Window *prefwindow = nullptr;
 		bool prefon = false;
 		Preferences *prefs;
@@ -594,7 +604,7 @@ class Program {
 		bool openshelfdir = false;
 		std::string shelfpath;
 		int shelfdircount;
-		bool openshelffiles = false;
+		bool openfilesshelf = false;
 		int shelffileselem;
 		int shelffilescount;
 		int shelfdragnum = -1;
@@ -627,6 +637,11 @@ class Program {
 		bool dragout[2] = { true, true };
 		std::string quitting;
 		Layer* draginscrollbarlay = nullptr;
+		bool projnamechanged = false;
+		bool saveproject = false;
+
+		std::vector<int> connsockets;
+		int sock = 0;
 
 		int quit_requester();
 		GLuint set_shader();
@@ -664,6 +679,7 @@ class Program {
 		void preview_modus_buttons();
 		void pick_color(Layer* lay, Box* cbox);
 		void tooltips_handle(int win);
+		void define_menus();
 		void handle_mixenginemenu();
 		void handle_effectmenu();
 		void handle_parammenu1();
@@ -683,6 +699,8 @@ class Program {
 		void handle_filemenu();
         void handle_editmenu();
         void handle_lpstmenu();
+        void write_recentprojectlist();
+        void socket_server(struct sockaddr_in serv_addr, int opt);
         Program();
 		
 	private:
@@ -755,9 +773,11 @@ extern std::vector<Layer*>& choose_layers(bool j);
 extern void make_layboxes();
 
 extern void new_file(int decks, bool alive);
-extern void draw_box(float* linec, float* areac, float x, float y, float wi, float he, float dx, float dy, float scale, float opacity, int circle, GLuint tex, float fw, float fh, bool text, bool vertical);
+extern void draw_box(float* linec, float* areac, float x, float y, float wi, float he, float dx, float dy, float
+scale, float opacity, int circle, GLuint tex, float fw, float fh, bool text, bool vertical, bool inverted);
 extern void draw_box(float* linec, float* areac, float x, float y, float wi, float he, float dx, float dy, float scale, float opacity, int circle, GLuint tex, float fw, float fh, bool text);
-extern void draw_box(float* linec, float* areac, float x, float y, float wi, float he, GLuint tex, bool text, bool vertical);
+extern void draw_box(float* linec, float* areac, float x, float y, float wi, float he, GLuint tex, bool text, bool
+vertical, bool inverted);
 extern void draw_box(float* linec, float* areac, float x, float y, float wi, float he, GLuint tex);
 extern void draw_box(float *color, float x, float y, float radius, int circle);
 extern void draw_box(float *color, float x, float y, float radius, int circle, float fw, float fh);
@@ -786,7 +806,7 @@ extern float yscrtovtx(float scrcoord);
 extern float pdistance(float x, float y, float x1, float y1, float x2, float y2);
 extern void enddrag();
 
-extern void open_binfiles();
+extern void open_files_bin();
 extern void save_bin(const std::string &path);
 extern void save_thumb(std::string path, GLuint tex);
 extern void open_thumb(std::string path, GLuint tex);
@@ -823,6 +843,7 @@ extern std::string chop_off(std::string filename);
 extern std::string remove_version(std::string filename);
 extern std::string pathtoplatform(std::string path);
 extern bool isimage(const std::string &path);
+extern bool isvideo(const std::string &path);
 
 extern void drag_into_layerstack(std::vector<Layer*>& layers, bool deck);
 
@@ -838,3 +859,5 @@ extern void LockBuffer(GLsync& syncObj);
 extern void WaitBuffer(GLsync& syncObj);
 
 extern void make_searchbox();
+
+extern std::string find_unused_filename(std::string basename, std::string path, std::string extension);

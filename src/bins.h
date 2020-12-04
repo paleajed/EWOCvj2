@@ -67,7 +67,7 @@ class BinsMain {
 		Box* binsscrolldown;
 		Box* binsscrollup;
 		Bin *menubin = nullptr;
-		bool openbinfile = false;
+		bool openfilesbin = false;
 		bool importbins = false;
 		int binscount;
 		bool movingstruct = false;
@@ -90,7 +90,7 @@ class BinsMain {
 		void open_bin(const std::string &path, Bin *bin);
 		void save_bin(const std::string &path);
 		void import_bins();
-		void open_binfiles();
+		void open_files_bin();
 		void open_handlefile(const std::string &path);
 		std::tuple<std::string, std::string> hap_binel(BinElement *binel, BinElement* bdm);
 		void hap_deck(BinElement * bd);

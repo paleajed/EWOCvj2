@@ -421,14 +421,13 @@ void Mixer::handle_adaptparam() {
 		}
 		else {
 			glUniform1f(var, (int)(this->adaptparam->value + 0.5f));
-			printf("value %f\n", this->adaptparam->value);
 		}
 		this->midiparam = nullptr;
 	}
 
 	for (int i = 0; i < loopstation->elems.size(); i++) {
 		if (loopstation->elems[i]->recbut->value) {
-			loopstation->elems[i]->add_param(mainmix->adaptparam);
+			loopstation->elems[i]->add_param_automationentry(mainmix->adaptparam);
 		}
 	}
 
@@ -2353,6 +2352,11 @@ Layer::Layer(bool comp) {
 	this->bouncebut->layer = this;
 	this->bouncebut->box->tooltiptitle = "Toggle bounce play ";
 	this->bouncebut->box->tooltip = "Leftclick toggles current layer video bounce play on/off.  Bounce play plays the video first forward than backward. ";
+    this->stopbut = new Button(false);
+    this->stopbut->toggle = 1;
+    this->stopbut->layer = this;
+    this->stopbut->box->tooltiptitle = "Stop playback ";
+    this->stopbut->box->tooltip = "Leftclick stops current layer playback. ";
     this->lpbut = new Button(false);
     this->lpbut->toggle = 1;
     this->lpbut->value = mainprogram->repeatdefault;
@@ -2407,8 +2411,7 @@ Layer::Layer(bool comp) {
 	glVertexAttribPointer(1, 2, GL_FLOAT, GL_FALSE, 8, nullptr);
  	glBindVertexArray(this->vao);
 
-	// using double PBOs for DMA pixel transfer
-	glGenBuffers(3, this->pbo);
+    glDeleteBuffers(1, &tbuf);
 
 	this->decresult = new frame_result;
 	this->decresult->data = nullptr;
@@ -2420,13 +2423,16 @@ Layer::Layer(bool comp) {
 }
 
 Layer::~Layer() {
-	glDeleteTextures(1, &this->fbotex);
+    glDeleteTextures(1, &this->jpegtex);
+    glDeleteTextures(1, &this->texture);
+    glDeleteTextures(1, &this->fbotex);
 	glDeleteTextures(1, &this->fbotexintm);
 	glDeleteBuffers(1, &(this->vbuf));
     glDeleteBuffers(1, &(this->tbuf));
 	glDeleteFramebuffers(1, &(this->fbo));
 	glDeleteFramebuffers(1, &(this->fbointm));
 	glDeleteVertexArrays(1, &(this->vao));
+    glDeleteBuffers(3, this->pbo);
 }
 
 Layer* Layer::next() {
@@ -2782,73 +2788,111 @@ void Mixer::add_del_bar() {
             std::vector<Layer*> &lvec = choose_layers(j);
             int sz = lvec.size();
 			for (int i = 0; i < sz; i++) {
-				Layer* lay = lvec[i];
-				bool comp = !mainprogram->prevmodus;
-				if (lay->pos < this->scenes[comp][j][this->currscene[comp][j]]->scrollpos || lay->pos > this->scenes[comp][j][this->currscene[comp][j]]->scrollpos + 2) continue;
-				Box* box = lay->node->vidbox;
-				float thick = mainprogram->xvtxtoscr(0.009f);
-                if (box->scrcoords->x1 + box->scrcoords->w - thick - (i - this->scenes[comp][j][this->currscene[comp][j]]->scrollpos == 2) * thick < mainprogram->mx && mainprogram->mx < box->scrcoords->x1 + box->scrcoords->w + (i - this->scenes[comp][j][this->currscene[comp][j]]->scrollpos != 2) * thick) {
-                    mainprogram->leftmousedown = false;
-                    if (lay->pos == lvec.size() - 1 || lay->pos == this->scenes[comp][j][this->currscene[comp][j]]->scrollpos + 2) {
+                Layer *lay = lvec[i];
+                bool comp = !mainprogram->prevmodus;
+                if (lay->pos < this->scenes[comp][j][this->currscene[comp][j]]->scrollpos ||
+                    lay->pos > this->scenes[comp][j][this->currscene[comp][j]]->scrollpos + 2)
+                    continue;
+                Box *box = lay->node->vidbox;
+                float thick = mainprogram->xvtxtoscr(0.009f);
+                if (box->scrcoords->y1 - box->scrcoords->h < mainprogram->my && mainprogram->my < box->scrcoords->y1) {
+                    if (box->scrcoords->x1 + box->scrcoords->w - thick -
+                        (i - this->scenes[comp][j][this->currscene[comp][j]]->scrollpos == 2) * thick <
+                        mainprogram->mx && mainprogram->mx < box->scrcoords->x1 + box->scrcoords->w + (i -
+                                                                                                       this->scenes[comp][j][this->currscene[comp][j]]->scrollpos !=
+                                                                                                       2) * thick) {
+                        mainprogram->leftmousedown = false;
+                        if (lay->pos == lvec.size() - 1 ||
+                            lay->pos == this->scenes[comp][j][this->currscene[comp][j]]->scrollpos + 2) {
+                            // handle vertical boxes at layer side for adding and deleting layer
+                            // this block handles the rightmost box onscreen
+                            mainprogram->addbox->vtxcoords->x1 =
+                                    box->vtxcoords->x1 + box->vtxcoords->w - mainprogram->xscrtovtx(thick) * 2.0f +
+                                    mainprogram->xscrtovtx(thick * ((i -
+                                                                     this->scenes[comp][j][this->currscene[comp][j]]->scrollpos !=
+                                                                     2)));
+                            mainprogram->addbox->upvtxtoscr();
+                            mainprogram->delbox->vtxcoords->x1 =
+                                    box->vtxcoords->x1 + box->vtxcoords->w - mainprogram->xscrtovtx(thick) * 2.0f +
+                                    mainprogram->xscrtovtx(thick * ((i -
+                                                                     this->scenes[comp][j][this->currscene[comp][j]]->scrollpos !=
+                                                                     2)));
+                            mainprogram->delbox->upvtxtoscr();
+                            mainprogram->frontbatch = true;
+                            draw_box(lightblue, lightblue, mainprogram->addbox, -1);
+                            render_text("ADD LAYER", white,
+                                        mainprogram->addbox->vtxcoords->x1 - mainprogram->addbox->vtxcoords->w * 0.75f,
+                                        mainprogram->addbox->vtxcoords->y1 + mainprogram->addbox->vtxcoords->h - 0.05f,
+                                        0.00036f, 0.0006f, 0, 1);
+                            draw_box(red, red, mainprogram->delbox, -1);
+                            render_text("DEL", white,
+                                        mainprogram->delbox->vtxcoords->x1 - mainprogram->delbox->vtxcoords->w * 0.75f,
+                                        mainprogram->delbox->vtxcoords->y1 + mainprogram->delbox->vtxcoords->h + 0.05f,
+                                        0.00036f, 0.0006f, 0, 1);
+                            mainprogram->frontbatch = false;
+                            bool cond1 = mainprogram->delbox->in();
+                            bool cond2 = mainprogram->addbox->in();
+                            if (mainprogram->leftmouse && !this->moving) {
+                                // do add/delete layer
+                                if (cond1) {
+                                    this->delete_layer(lvec, lay, true);
+                                } else if (cond2) {
+                                    Layer *lay1 = this->add_layer(lvec, lay->pos + 1);
+                                    make_layboxes();
+                                }
+                            }
+                        }
+                    } else if (
+                            box->scrcoords->x1 - thick + (i - this->scenes[comp][j][this->currscene[comp][j]]->scrollpos
+                                                          == 0) * thick < mainprogram->mx && mainprogram->mx <
+                                                                                             box->scrcoords->x1 +
+                                                                                             thick + (i -
+                                                                                                      this->scenes[comp][j][this->currscene[comp][j]]->scrollpos ==
+                                                                                                      0) * thick) {
                         // handle vertical boxes at layer side for adding and deleting layer
-                        // this block handles the rightmost box onscreen
-                        mainprogram->addbox->vtxcoords->x1 = box->vtxcoords->x1 + box->vtxcoords->w - mainprogram->xscrtovtx(thick) * 2.0f + mainprogram->xscrtovtx(thick * ((i - this->scenes[comp][j][this->currscene[comp][j]]->scrollpos != 2)));
+                        // this block handles the first boxes onscreen, just not the last
+                        mainprogram->leftmousedown = false;
+                        mainprogram->addbox->vtxcoords->x1 = box->vtxcoords->x1 - mainprogram->xscrtovtx(thick) + (i -
+                                                                                                                   this->scenes[comp][j][this->currscene[comp][j]]->scrollpos ==
+                                                                                                                   0) *
+                                                                                                                  mainprogram->xscrtovtx(
+                                                                                                                          thick);
                         mainprogram->addbox->upvtxtoscr();
-                        mainprogram->delbox->vtxcoords->x1 = box->vtxcoords->x1 + box->vtxcoords->w - mainprogram->xscrtovtx(thick) * 2.0f + mainprogram->xscrtovtx(thick * ((i - this->scenes[comp][j][this->currscene[comp][j]]->scrollpos != 2)));
+                        mainprogram->delbox->vtxcoords->x1 = box->vtxcoords->x1 - mainprogram->xscrtovtx(thick) + (i -
+                                                                                                                   this->scenes[comp][j][this->currscene[comp][j]]->scrollpos ==
+                                                                                                                   0) *
+                                                                                                                  mainprogram->xscrtovtx(
+                                                                                                                          thick);
                         mainprogram->delbox->upvtxtoscr();
                         mainprogram->frontbatch = true;
                         draw_box(lightblue, lightblue, mainprogram->addbox, -1);
-                        render_text("ADD LAYER", white, mainprogram->addbox->vtxcoords->x1 - mainprogram->addbox->vtxcoords->w * 0.75f, mainprogram->addbox->vtxcoords->y1 + mainprogram->addbox->vtxcoords->h - 0.05f, 0.00036f, 0.0006f, 0, 1);
-                        draw_box(red, red, mainprogram->delbox, -1);
-                        render_text("DEL", white, mainprogram->delbox->vtxcoords->x1 - mainprogram->delbox->vtxcoords->w * 0.75f, mainprogram->delbox->vtxcoords->y1 + mainprogram->delbox->vtxcoords->h + 0.05f, 0.00036f, 0.0006f, 0, 1);
+                        render_text("ADD LAYER", white,
+                                    mainprogram->addbox->vtxcoords->x1 - mainprogram->addbox->vtxcoords->w * 0.75f,
+                                    mainprogram->addbox->vtxcoords->y1 + mainprogram->addbox->vtxcoords->h - 0.05f,
+                                    0.00036f, 0.0006f, 0, 1);
+                        if (lay->pos > 0) {
+                            draw_box(red, red, mainprogram->delbox, -1);
+                            render_text("DEL", white,
+                                        mainprogram->delbox->vtxcoords->x1 - mainprogram->delbox->vtxcoords->w * 0.75f,
+                                        mainprogram->delbox->vtxcoords->y1 + mainprogram->delbox->vtxcoords->h + 0.05f,
+                                        0.00036f, 0.0006f, 0, 1);
+                        }
                         mainprogram->frontbatch = false;
                         bool cond1 = mainprogram->delbox->in();
                         bool cond2 = mainprogram->addbox->in();
-                        if (mainprogram->leftmouse && !this->moving) {
+                        if (mainprogram->leftmouse && !this->moving && !mainprogram->intopmenu) {
                             // do add/delete layer
-                            if (cond1) {
-                                this->delete_layer(lvec, lay, true);
-                            }
-                            else if (cond2) {
-                                Layer* lay1 = this->add_layer(lvec, lay->pos + 1);
+                            if (lay->pos > 0 && cond1) {
+                                this->delete_layer(lvec, lvec[lay->pos - 1], true);
+                            } else if (cond2) {
+                                Layer *lay1;
+                                lay1 = this->add_layer(lvec, lay->pos);
                                 make_layboxes();
                             }
                         }
                     }
                 }
-                else if (box->scrcoords->y1 - box->scrcoords->h < mainprogram->my && mainprogram->my < box->scrcoords->y1) {
-					if (box->scrcoords->x1 - thick + (i - this->scenes[comp][j][this->currscene[comp][j]]->scrollpos == 0) * thick < mainprogram->mx && mainprogram->mx < box->scrcoords->x1 + thick + (i - this->scenes[comp][j][this->currscene[comp][j]]->scrollpos == 0) * thick) {
-						// handle vertical boxes at layer side for adding and deleting layer
-						// this block handles the first boxes onscreen, just not the last
-						mainprogram->leftmousedown = false;
-						mainprogram->addbox->vtxcoords->x1 = box->vtxcoords->x1 - mainprogram->xscrtovtx(thick) + (i - this->scenes[comp][j][this->currscene[comp][j]]->scrollpos == 0) * mainprogram->xscrtovtx(thick);
-						mainprogram->addbox->upvtxtoscr();
-						mainprogram->delbox->vtxcoords->x1 = box->vtxcoords->x1 - mainprogram->xscrtovtx(thick) + (i - this->scenes[comp][j][this->currscene[comp][j]]->scrollpos == 0) * mainprogram->xscrtovtx(thick);
-						mainprogram->delbox->upvtxtoscr();
-                        mainprogram->frontbatch = true;
-                        draw_box(lightblue, lightblue, mainprogram->addbox, -1);
-						render_text("ADD LAYER", white, mainprogram->addbox->vtxcoords->x1 - mainprogram->addbox->vtxcoords->w * 0.75f, mainprogram->addbox->vtxcoords->y1 + mainprogram->addbox->vtxcoords->h - 0.05f, 0.00036f, 0.0006f, 0, 1);
-						if (lay->pos > 0) {
-							draw_box(red, red, mainprogram->delbox, -1);
-							render_text("DEL", white, mainprogram->delbox->vtxcoords->x1 - mainprogram->delbox->vtxcoords->w * 0.75f, mainprogram->delbox->vtxcoords->y1 + mainprogram->delbox->vtxcoords->h + 0.05f, 0.00036f, 0.0006f, 0, 1);
-						}
-                        mainprogram->frontbatch = false;
-						bool cond1 = mainprogram->delbox->in();
-						bool cond2 = mainprogram->addbox->in();
-						if (mainprogram->leftmouse && !this->moving && !mainprogram->intopmenu) {
-							// do add/delete layer
-							if (lay->pos > 0 && cond1) {
-								this->delete_layer(lvec, lvec[lay->pos - 1], true);
-							}
-							else if (cond2){
-								Layer* lay1;
-								lay1 = this->add_layer(lvec, lay->pos);
-								make_layboxes();
-							}
-						}
-					}
-				}
-			}
+            }
 		}
 	}
 }
@@ -2903,17 +2947,8 @@ void Mixer::vidbox_handle() {
                                 mainprogram->dragbinel->type = ELEM_LIVE;
                             }
                             else {
-                                std::string name = remove_extension(basename(mainprogram->draglay->filename));
-                                int count = 0;
-                                while (1) {
-                                    mainprogram->dragpath = mainprogram->temppath + "cliptemp_" + name + ".layer";
-                                    if (!exists(mainprogram->dragpath)) {
-                                        mainmix->save_layerfile(mainprogram->dragpath, mainprogram->draglay, 1, 0);
-                                        break;
-                                    }
-                                    count++;
-                                    name = remove_version(name) + "_" + std::to_string(count);
-                                }
+                                mainprogram->dragpath = find_unused_filename("cliptemp_" + basename(mainprogram->draglay->filename), mainprogram->temppath, ".layer");
+                                mainmix->save_layerfile(mainprogram->dragpath, mainprogram->draglay, 1, 0);
                                 mainprogram->dragbinel->path = mainprogram->dragpath;
                                 mainprogram->dragbinel->type = ELEM_LAYER;
                                 mainprogram->draglay = lay;
@@ -2934,7 +2969,7 @@ void Mixer::vidbox_handle() {
                     lay->scale->value -= mainprogram->mousewheel * lay->scale->value / 10.0f;
                     for (int i = 0; i < loopstation->elems.size(); i++) {
                         if (loopstation->elems[i]->recbut->value) {
-                            loopstation->elems[i]->add_param(lay->scale);
+                            loopstation->elems[i]->add_param_automationentry(lay->scale);
                         }
                     }
                     if (lay->type == ELEM_IMAGE || lay->type == ELEM_LIVE) {
@@ -2949,7 +2984,7 @@ void Mixer::vidbox_handle() {
                 lay->shifty->value = (float)(mainprogram->my - lay->transmy) / ((float)glob->w / 2.0f);
                 for (int i = 0; i < loopstation->elems.size(); i++) {
                     if (loopstation->elems[i]->recbut->value) {
-                        loopstation->elems[i]->add_param(lay->shiftx);
+                        loopstation->elems[i]->add_param_automationentry(lay->shiftx);
                     }
                 }
                 if (mainprogram->leftmouse) {
@@ -3097,7 +3132,7 @@ void Layer::display() {
 						this->mute_handle();
 						for (int i = 0; i < loopstation->elems.size(); i++) {
 							if (loopstation->elems[i]->recbut->value) {
-								loopstation->elems[i]->add_button(this->mutebut);
+								loopstation->elems[i]->add_button_automationentry(this->mutebut);
 							}
 						}
 					}
@@ -3161,7 +3196,7 @@ void Layer::display() {
 						}
 						for (int i = 0; i < loopstation->elems.size(); i++) {
 							if (loopstation->elems[i]->recbut->value) {
-								loopstation->elems[i]->add_button(this->solobut);
+								loopstation->elems[i]->add_button_automationentry(this->solobut);
 							}
 						}
 					}
@@ -3806,7 +3841,7 @@ void Layer::display() {
                         }
                         for (int i = 0; i < loopstation->elems.size(); i++) {
                             if (loopstation->elems[i]->recbut->value) {
-                                loopstation->elems[i]->add_button(mainmix->currlays[!mainprogram->prevmodus][i]->playbut);
+                                loopstation->elems[i]->add_button_automationentry(mainmix->currlays[!mainprogram->prevmodus][i]->playbut);
                             }
                         }
                     }
@@ -3851,7 +3886,7 @@ void Layer::display() {
                         }
                         for (int i = 0; i < loopstation->elems.size(); i++) {
                             if (loopstation->elems[i]->recbut->value) {
-                                loopstation->elems[i]->add_button(mainmix->currlays[!mainprogram->prevmodus][i]->revbut);
+                                loopstation->elems[i]->add_button_automationentry(mainmix->currlays[!mainprogram->prevmodus][i]->revbut);
                             }
                         }
                     }
@@ -3898,7 +3933,7 @@ void Layer::display() {
                         }
                         for (int i = 0; i < loopstation->elems.size(); i++) {
                             if (loopstation->elems[i]->recbut->value) {
-                                loopstation->elems[i]->add_button(mainmix->currlays[!mainprogram->prevmodus][i]->bouncebut);
+                                loopstation->elems[i]->add_button_automationentry(mainmix->currlays[!mainprogram->prevmodus][i]->bouncebut);
                             }
                         }
                     }
@@ -3950,7 +3985,7 @@ void Layer::display() {
                     this->prevfbw = false;
                     for (int i = 0; i < loopstation->elems.size(); i++) {
                         if (loopstation->elems[i]->recbut->value) {
-                            loopstation->elems[i]->add_button(this->frameforward);
+                            loopstation->elems[i]->add_button_automationentry(this->frameforward);
                         }
                     }
                 }
@@ -3990,7 +4025,7 @@ void Layer::display() {
                     this->prevffw = false;
                     for (int i = 0; i < loopstation->elems.size(); i++) {
                         if (loopstation->elems[i]->recbut->value) {
-                            loopstation->elems[i]->add_button(this->framebackward);
+                            loopstation->elems[i]->add_button_automationentry(this->framebackward);
                         }
                     }
                 }
@@ -4012,6 +4047,46 @@ void Layer::display() {
                                    this->framebackward->box->vtxcoords->y1 + 0.0624f - 0.045f, 0.0165f,
                                    0.0312f, LEFT, OPEN);
 
+
+            if (this->stopbut->box->in()) {
+                this->stopbut->box->acolor[0] = 0.5;
+                this->stopbut->box->acolor[1] = 0.5;
+                this->stopbut->box->acolor[2] = 1.0;
+                this->stopbut->box->acolor[3] = 1.0;
+                if (mainprogram->leftmouse) {
+                   this->onhold = true;
+                    for (int i = 0; i < mainmix->currlays[!mainprogram->prevmodus].size(); i++) {
+                        mainmix->currlays[!mainprogram->prevmodus][i]->set_clones();
+                        mainmix->currlays[!mainprogram->prevmodus][i]->playbut->value = false;
+                        mainmix->currlays[!mainprogram->prevmodus][i]->revbut->value = false;
+                        mainmix->currlays[!mainprogram->prevmodus][i]->bouncebut->value = false;
+                        this->frame = 0.0f;
+                        for (int i = 0; i < loopstation->elems.size(); i++) {
+                            if (loopstation->elems[i]->recbut->value) {
+                                loopstation->elems[i]->add_button_automationentry(mainmix->currlays[!mainprogram->prevmodus][i]->stopbut);
+                            }
+                        }
+                    }
+                }
+            } else {
+                if (this->filename == "" or this->type == ELEM_LIVE) {
+                    this->stopbut->box->acolor[0] = 0.3;
+                    this->stopbut->box->acolor[1] = 0.3;
+                    this->stopbut->box->acolor[2] = 0.3;
+                    this->stopbut->box->acolor[3] = 1.0;
+                } else {
+                    this->stopbut->box->acolor[0] = 0.3;
+                    this->stopbut->box->acolor[1] = 0.6;
+                    this->stopbut->box->acolor[2] = 0.4;
+                    this->stopbut->box->acolor[3] = 1.0;
+                }
+            }
+            draw_box(this->stopbut->box, -1);
+            draw_box(white, white, this->stopbut->box->vtxcoords->x1 + 0.0117f,
+                                   this->stopbut->box->vtxcoords->y1 + 0.0624f - 0.045f, 0.0165f,
+                                   0.0312f, -1);
+            
+            
             if (this->lpbut->box->in()) {
                 this->lpbut->box->acolor[0] = 0.5;
                 this->lpbut->box->acolor[1] = 0.5;
@@ -4172,7 +4247,7 @@ void Layer::display() {
                 this->scritch->value = this->frame;  // set scritching parameter for loopstation
                 for (int i = 0; i < loopstation->elems.size(); i++) {
                     if (loopstation->elems[i]->recbut->value) {
-                        loopstation->elems[i]->add_param(this->scritch);
+                        loopstation->elems[i]->add_param_automationentry(this->scritch);
                     }
                 }
                 this->loopbox->acolor[0] = this->scritch->box->acolor[0];
@@ -4301,7 +4376,7 @@ void Mixer::outputmonitors_handle() {
 				}
 				for (int i = 0; i < loopstation->elems.size(); i++) {
 					if (loopstation->elems[i]->recbut->value) {
-						loopstation->elems[i]->add_param(this->currlay[!mainprogram->prevmodus]->blendnode->wipex);
+						loopstation->elems[i]->add_param_automationentry(this->currlay[!mainprogram->prevmodus]->blendnode->wipex);
 					}
 				}
 			}
@@ -4328,7 +4403,7 @@ void Mixer::outputmonitors_handle() {
 				}
 				for (int i = 0; i < loopstation->elems.size(); i++) {
 					if (loopstation->elems[i]->recbut->value) {
-						loopstation->elems[i]->add_param(this->wipex[pm]);
+						loopstation->elems[i]->add_param_automationentry(this->wipex[pm]);
 					}
 				}
 			}
@@ -5541,13 +5616,17 @@ void Mixer::new_state() {
 
 void Mixer::open_state(const std::string &path) {
 	std::string result = deconcat_files(path);
+    if (mainprogram->openerr) return;
 	bool concat = (result != "");
 	std::ifstream rfile;
 	if (concat) rfile.open(result);
 	else rfile.open(path);
-	
 	std::string istring;
-	safegetline(rfile, istring);
+    safegetline(rfile, istring);
+    if (istring != "EWOCvj STATEFILE") {
+        mainprogram->openerr = true;
+        return;
+    }
 	
 	GLuint tex;
 	tex = set_texes(mainprogram->fbotex[2], &mainprogram->frbuf[2], mainprogram->ow, mainprogram->oh);
@@ -5736,7 +5815,9 @@ void Mixer::do_save_state(const std::string& path, bool autosave) {
 	else str = path;
 	std::ofstream wfile;
 	wfile.open(str);
-	wfile << "EWOCvj SAVESTATE V0.2\n";
+
+	wfile << "EWOCvj STATEFILE\n";
+
 	wfile << "MAINSCENE0\n";
 	wfile << std::to_string(mainmix->currscene[0][0]);
 	wfile << "\n";
@@ -5823,13 +5904,19 @@ void Mixer::do_save_state(const std::string& path, bool autosave) {
 
 void Mixer::open_mix(const std::string &path, bool alive) {
 	std::string result = deconcat_files(path);
+    if (mainprogram->openerr) return;
 	bool concat = (result != "");
 	std::ifstream rfile;
 	if (concat) rfile.open(result);
 	else rfile.open(path);
 	std::string istring;
-	
-	std::vector<Layer*>& lvec = choose_layers(0);
+    safegetline(rfile, istring);
+    if (istring != "EWOCvj MIXFILE") {
+        mainprogram->openerr = true;
+        return;
+    }
+
+    std::vector<Layer*>& lvec = choose_layers(0);
 	bool ret = this->set_prevshelfdragelem(lvec[0]);
 	if (!ret) alive = false;
 	this->new_file(2, alive);
@@ -6065,7 +6152,7 @@ void Mixer::do_save_mix(const std::string & path, bool modus, bool save) {
 	else str = path;
 	std::ofstream wfile;
 	wfile.open(str);
-	wfile << "EWOCvj SAVEMIX V0.2\n";
+	wfile << "EWOCvj MIXFILE\n";
 
     wfile << "CURRLAY\n";
     wfile << std::to_string(mainmix->currlay[!modus]->pos);
@@ -6189,17 +6276,7 @@ void Mixer::do_save_mix(const std::string & path, bool modus, bool save) {
 		}
 	}
 
-	std::string tcpath;
-	std::string name = "tempconcat_" + std::to_string(modus);
-	int count = 0;
-	while (1) {
-		tcpath = mainprogram->temppath + name;
-		if (!exists(tcpath)) {
-			break;
-		}
-		count++;
-		name = remove_version(name) + "_" + std::to_string(count);
-	}
+	std::string tcpath = find_unused_filename("tempconcat_" + std::to_string(modus), mainprogram->temppath, "");
 	std::ofstream outputfile;
 	outputfile.open(tcpath, std::ios::out | std::ios::binary);
 	concat_files(outputfile, str, jpegpaths);
@@ -6213,12 +6290,18 @@ void Mixer::do_save_mix(const std::string & path, bool modus, bool save) {
 void Mixer::open_deck(const std::string & path, bool alive) {
 		
 	std::string result = deconcat_files(path);
+	if (mainprogram->openerr) return;
 	bool concat = (result != "");
 	std::ifstream rfile;
 	if (concat) rfile.open(result);
 	else rfile.open(path);
 	std::string istring;
-	
+    safegetline(rfile, istring);
+    if (istring != "EWOCvj DECKFILE") {
+        mainprogram->openerr = true;
+        return;
+    }
+
 	std::vector<Layer*>& lvec = choose_layers(mainmix->mousedeck);
 	if (lvec.size()) {
 		bool ret = this->set_prevshelfdragelem(lvec[0]);
@@ -6271,6 +6354,11 @@ void Mixer::open_deck(const std::string & path, bool alive) {
 		}
 	}
 
+    for (int i = 0; i < mainmix->currlays[!mainprogram->prevmodus].size(); i++) {
+        Layer *lay = mainmix->currlays[!mainprogram->prevmodus][i];
+        if (lay == nullptr) mainmix->currlays[!mainprogram->prevmodus].erase(mainmix->currlays[!mainprogram->prevmodus].begin() + i);
+    }
+
 	rfile.close();
 }
 
@@ -6287,7 +6375,7 @@ void Mixer::do_save_deck(const std::string& path, bool save, bool doclips) {
 	else str = path;
 	std::ofstream wfile;
 	wfile.open(str);
-	wfile << "EWOCvj DECKFILE V0.2\n";
+	wfile << "EWOCvj DECKFILE\n";
 
 	wfile << "DECKSPEED\n";
 	wfile << std::to_string(mainmix->deckspeed[!mainprogram->prevmodus][mainmix->mousedeck]->value);
@@ -6341,12 +6429,17 @@ void Mixer::open_layerfile(const std::string& path, Layer* lay, bool loadevents,
 	lay->initialized = false;
 
 	std::string result = deconcat_files(path);
+    if (mainprogram->openerr) return;
 	bool concat = (result != "");
 	std::ifstream rfile;
 	if (concat) rfile.open(result);
 	else rfile.open(path);
-
 	std::string istring;
+    safegetline(rfile, istring);
+    if (istring != "EWOCvj LAYERFILE") {
+        mainprogram->openerr = true;
+        return;
+    }
 
 	while (!lay->effects[0].empty()) {
 	    lay->delete_effect(lay->effects[0].size() - 1);
@@ -6372,7 +6465,7 @@ void Mixer::save_layerfile(const std::string& path, Layer* lay, bool doclips, bo
 	else str = path;
 	std::ofstream wfile;
 	wfile.open(str);
-	wfile << "EWOCvj LAYERFILE V0.2\n";
+	wfile << "EWOCvj LAYERFILE\n";
 
 	std::vector<std::vector<std::string>> jpegpaths;
 	jpegpaths.push_back(mainmix->write_layer(lay, wfile, doclips, dojpeg));
@@ -6459,6 +6552,12 @@ void Layer::open_image(const std::string &path) {
 
 void Layer::open_files_layers() {
 	// order elements
+
+	if (mainprogram->paths.size() == 0) {
+        mainprogram->openfilesshelf = false;
+        mainprogram->multistage = 0;
+        return;
+    }
 	bool cont = mainprogram->order_paths(false);
 	if (!cont) return;
 
@@ -6493,66 +6592,40 @@ void Layer::open_files_layers() {
 }
 
 void Layer::open_files_queue() {
-	// order elements
-	bool cont = mainprogram->order_paths(false);
-	if (!cont) return;
+    // order elements
+    bool cont = mainprogram->order_paths(false);
+    if (!cont) return;
 
-	// load one element of ordered list each loop
-	std::string str = mainprogram->paths[mainprogram->filescount];
-	if (mainprogram->filescount == 1) {
-		mainprogram->clipfilesclip = mainprogram->fileslay->clips[0];
-	}
-	int pos;
-	if (mainprogram->filescount != 0) {
-		pos = std::find(mainprogram->fileslay->clips.begin(), mainprogram->fileslay->clips.end(), mainprogram->clipfilesclip) - mainprogram->fileslay->clips.begin();
-		if (pos == mainprogram->fileslay->clips.size() - 1) {
-			Clip* clip = new Clip;
-			mainprogram->clipfilesclip = clip;
-			clip->insert(mainprogram->fileslay, mainprogram->fileslay->clips.end() - 1);
-		}
-	}
-	if (isimage(str)) {
-		if (mainprogram->filescount == 0) mainprogram->fileslay->open_image(str);
-		else {
-			mainprogram->clipfilesclip->path = str;
-			mainprogram->clipfilesclip->tex = get_imagetex(str);
-			mainprogram->clipfilesclip->type = ELEM_IMAGE;
-			mainprogram->clipfilesclip->get_imageframes();
-		}
-	}
-	else if (str.substr(str.length() - 6, std::string::npos) == ".layer") {
-		if (mainprogram->filescount == 0) {
-			mainmix->open_layerfile(str, mainprogram->fileslay, true, true);
-			std::unique_lock<std::mutex> olock(mainprogram->fileslay->endopenlock);
-			mainprogram->fileslay->endopenvar.wait(olock, [&] {return mainprogram->loadlay->opened; });
-			mainprogram->fileslay->opened = false;
-			olock.unlock();
-		}
-		else {
-			mainprogram->clipfilesclip->path = str;
-			mainprogram->clipfilesclip->tex = get_layertex(str);
-			mainprogram->clipfilesclip->type = ELEM_LAYER;
-			mainprogram->clipfilesclip->get_layerframes();
-		}
-	}
-	else {
-		if (mainprogram->filescount == 0) {
-			mainprogram->fileslay->open_video(0, str, true);
-			std::unique_lock<std::mutex> olock(mainprogram->fileslay->endopenlock);
-			mainprogram->fileslay->endopenvar.wait(olock, [&] {return mainprogram->loadlay->opened; });
-			mainprogram->fileslay->opened = false;
-			olock.unlock();
-		}
-		else {
-			mainprogram->clipfilesclip->path = str;
-			mainprogram->clipfilesclip->tex = get_videotex(str);
-			mainprogram->clipfilesclip->type = ELEM_FILE;
-			mainprogram->clipfilesclip->get_videoframes();
-		}
-	}
-	if (mainprogram->filescount != 0) {
-		mainprogram->clipfilesclip = mainprogram->fileslay->clips[pos + 1];
-	}
+    // load one element of ordered list each loop
+    std::string str = mainprogram->paths[mainprogram->filescount];
+    if (mainprogram->filescount == 0) {
+        mainprogram->clipfilesclip = mainprogram->fileslay->clips[0];
+    }
+    int pos = std::find(mainprogram->fileslay->clips.begin(), mainprogram->fileslay->clips.end(),
+                    mainprogram->clipfilesclip) - mainprogram->fileslay->clips.begin();
+    if (pos == mainprogram->fileslay->clips.size() - 1) {
+        Clip *clip = new Clip;
+        mainprogram->clipfilesclip = clip;
+        clip->insert(mainprogram->fileslay, mainprogram->fileslay->clips.end() - 1);
+    }
+    if (isimage(str)) {
+        mainprogram->clipfilesclip->path = str;
+        mainprogram->clipfilesclip->tex = get_imagetex(str);
+        mainprogram->clipfilesclip->type = ELEM_IMAGE;
+        mainprogram->clipfilesclip->get_imageframes();
+    } else if (str.substr(str.length() - 6, std::string::npos) == ".layer") {
+        mainprogram->clipfilesclip->path = str;
+        mainprogram->clipfilesclip->tex = get_layertex(str);
+        mainprogram->clipfilesclip->type = ELEM_LAYER;
+        mainprogram->clipfilesclip->get_layerframes();
+    } else {
+        mainprogram->clipfilesclip->path = str;
+        mainprogram->clipfilesclip->tex = get_videotex(str);
+        mainprogram->clipfilesclip->type = ELEM_FILE;
+        mainprogram->clipfilesclip->get_videoframes();
+    }
+    mainprogram->clipfilesclip = mainprogram->fileslay->clips[pos + 1];
+
 	mainprogram->filescount++;
 	if (mainprogram->filescount == mainprogram->paths.size()) {
 		mainprogram->fileslay->cliploading = false;
@@ -7005,17 +7078,8 @@ Layer* Mixer::read_layers(std::istream &rfile, const std::string &result, std::v
 						std::vector<Layer*> cliplayers;
 						Layer *cliplay = mainmix->add_layer(cliplayers, 0);
 						mainmix->read_layers(rfile, result, cliplayers, 0, 0, 0, 1, 0, 0, 0);
-						std::string name = remove_extension(remove_extension(basename(result)));
-						int count = 0;
-						while (1) {
-							clip->path = mainprogram->temppath + "cliptemp_" + name + ".layer";
-							if (!exists(clip->path)) {
-								mainmix->save_layerfile(clip->path, cliplay, 0, 0);
-								break;
-							}
-							count++;
-							name = remove_version(name) + "_" + std::to_string(count);
-						}
+						clip->path = find_unused_filename("cliptemp_" + remove_extension(basename(result)), mainprogram->temppath, ".layer");
+						mainmix->save_layerfile(clip->path, cliplay, 0, 0);
 						mainmix->delete_layer(cliplayers, cliplay, false);
 					}
 					if (istring == "JPEGPATH") {
@@ -7238,17 +7302,8 @@ Layer* Mixer::read_layers(std::istream &rfile, const std::string &result, std::v
 
 		if (newlay && save) {
 			newlay = false;
-			std::string name = remove_extension(basename(lay->filename));
-			int count = 0;
-			while (1) {
-				lay->layerfilepath = mainprogram->temppath + name + ".layer";
-				if (!exists(lay->layerfilepath)) {
-					mainmix->save_layerfile(lay->layerfilepath, lay, false, false);
-					break;
-				}
-				count++;
-				name = remove_version(name) + "_" + std::to_string(count);
-			}
+			lay->layerfilepath = find_unused_filename(basename(lay->filename), mainprogram->temppath, ".layer");
+			mainmix->save_layerfile(lay->layerfilepath, lay, false, false);
 		}
 	}
 	
@@ -7292,17 +7347,7 @@ std::vector<std::string> Mixer::write_layer(Layer* lay, std::ostream& wfile, boo
 		wfile << "\n";
 	}
 	if (lay->node->vidbox && dojpeg && lay->filename != "") {
-		std::string jpegpath;
-		std::string name = remove_extension(basename(lay->filename));
-		int count = 0;
-		while (1) {
-			jpegpath = mainprogram->temppath + name + ".jpg";
-			if (!exists(jpegpath)) {
-				break;
-			}
-			count++;
-			name = remove_version(name) + "_" + std::to_string(count);
-		}
+		std::string jpegpath = find_unused_filename(basename(lay->filename), mainprogram->temppath, ".jpg");
 		save_thumb(jpegpath, lay->node->vidbox->tex);
 		jpegpaths.push_back(jpegpath);
 		wfile << "JPEGPATH\n";
@@ -7484,17 +7529,7 @@ std::vector<std::string> Mixer::write_layer(Layer* lay, std::ostream& wfile, boo
 				}
 				wfile << "ENDOFCLIPLAYER\n";
 			}
-			std::string clipjpegpath;
-			std::string name = remove_extension(basename(clip->path));
-			int count = 0;
-			while (1) {
-				clipjpegpath = mainprogram->temppath + name + ".jpg";
-				if (!exists(clipjpegpath)) {
-					break;
-				}
-				count++;
-				name = remove_version(name) + "_" + std::to_string(count);
-			}
+			std::string clipjpegpath = find_unused_filename(basename(clip->path), mainprogram->temppath, ".jpg");
 			save_thumb(clipjpegpath, clip->tex);
 			jpegpaths.push_back(clipjpegpath);
 			wfile << "JPEGPATH\n";
@@ -7706,6 +7741,19 @@ void Mixer::event_write(std::ostream &wfile, Param* par, Button* but) {
                 wfile << "TOTALTIME\n";
                 wfile << std::to_string(elem->totaltime);
                 wfile << "\n";
+                std::chrono::high_resolution_clock::time_point now = std::chrono::high_resolution_clock::now();
+                std::chrono::duration<double> elapsed;
+                elapsed = std::chrono::duration_cast<std::chrono::duration<double>>(now - elem->starttime);
+                long long millicount = std::chrono::duration_cast<std::chrono::milliseconds>(elapsed).count();
+                int passed = millicount - elem->interimtime;
+                elem->interimtime = millicount;
+                elem->speedadaptedtime = elem->speedadaptedtime + passed * elem->speed->value;
+                wfile << "INTERIMTIME\n";
+                wfile << std::to_string(elem->interimtime);
+                wfile << "\n";
+                wfile << "SPEEDADAPTEDTIME\n";
+                wfile << std::to_string(elem->speedadaptedtime);
+                wfile << "\n";
 			}
 		}
 	}
@@ -7800,7 +7848,15 @@ void Mixer::event_read(std::istream &rfile, Param *par, Button* but, Layer *lay)
         if (istring == "TOTALTIME") {
             safegetline(rfile, istring);
             loop->totaltime = std::stof(istring);
-         }
+        }
+        if (istring == "INTERIMTIME") {
+            safegetline(rfile, istring);
+            loop->interimtime = std::stof(istring);
+        }
+        if (istring == "SPEEDADAPTEDTIME") {
+            safegetline(rfile, istring);
+            loop->speedadaptedtime = std::stof(istring);
+        }
     }
 }
 
@@ -8010,18 +8066,7 @@ void Mixer::record_video() {
     /* open it */
     ret = avcodec_open2(c, codec, nullptr);
     
-	std::string path;
-	std::string name = "recording_0";
-	int count = 0;
-	while (1) {
-		path = mainprogram->project->recdir + name + "_hap.mov";
-		if (!exists(path)) {
-			break;
-		}
-		count++;
-		name = remove_version(name) + "_" + std::to_string(count);
-	}
-    
+	std::string path = find_unused_filename("recording_0", mainprogram->project->recdir, "_hap.mov");
 	avformat_alloc_output_context2(&dest, av_guess_format("mov", nullptr, "video/mov"), nullptr, path.c_str());
 	dest_stream = avformat_new_stream(dest, codec);
 	//dest_stream->time_base = source_stream->time_base;
@@ -8064,7 +8109,7 @@ void Mixer::record_video() {
         nullptr);
     
 	/* record */
-	count = 0;
+	int count = 0;
     while (mainmix->recording) {
 		std::unique_lock<std::mutex> lock(this->recordlock);
 		this->startrecord.wait(lock, [&]{return this->recordnow;});
@@ -8362,7 +8407,8 @@ void Mixer::handle_clips() {
 					lay2->clips[k +
 					lay2->queuescroll]->tex);
 					render_text("Queued clip #" + std::to_string(k + lay2->queuescroll + 1), white,
-                 clipbox->vtxcoords->x1 + 0.015f, clipbox->vtxcoords->y1 - k * clipbox->vtxcoords->h -0.45f - 0.05f - 0.075f, 0.0005f, 0.0008f);
+                 clipbox->vtxcoords->x1 + 0.015f, clipbox->vtxcoords->y1 - k * clipbox->vtxcoords->h -0.045f - 0.05f
+                 - 0.075f, 0.0005f, 0.0008f);
 					if (lay2->clips[k + lay2->queuescroll]->type == ELEM_LIVE) {
 						render_text(lay2->clips[k + lay2->queuescroll]->path, white, clipbox->vtxcoords->x1 + 0.015f
 						, clipbox->vtxcoords->y1 - (k + 1) * (clipbox->vtxcoords->h / 2.0f) - 0.075f, 0.0005f, 0.0008f);
@@ -8439,17 +8485,8 @@ void Layer::clip_display_next(bool startend, bool alive) {
 		    GLuint butex = oldclip->tex;
 			if (oldclip->type == ELEM_LAYER && this->effects[0].size()) {
 				oldclip->tex = copy_tex(node->vidbox->tex);
-				std::string name = remove_extension(basename(this->filename));
-				int count = 0;
-				while (1) {
-					oldclip->path = mainprogram->temppath + "cliptemp_" + name + ".layer";
-					if (!exists(oldclip->path)) {
-						mainmix->save_layerfile(oldclip->path, this, 0, 0);
-						break;
-					}
-					count++;
-					name = remove_version(name) + "_" + std::to_string(count);
-				}
+				oldclip->path = find_unused_filename("cliptemp_" + this->filename, mainprogram->temppath, ".layer");
+				mainmix->save_layerfile(oldclip->path, this, 0, 0);
 			}
 			else if (oldclip->type == ELEM_LIVE) {
 				oldclip->tex = copy_tex(node->vidbox->tex);

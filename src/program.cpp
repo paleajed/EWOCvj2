@@ -549,10 +549,12 @@ void Program::win_dialog(const char* title, LPCSTR filters, std::string defaultd
 	ofn.Flags = OFN_PATHMUSTEXIST | OFN_FILEMUSTEXIST;
 	if (multi) ofn.Flags = ofn.Flags | OFN_ALLOWMULTISELECT | OFN_EXPLORER;
 	bool ret;
+    mainprogram->blocking = true;
 	if (open) ret = GetOpenFileName(&ofn);
 	else ret = GetSaveFileName(&ofn);
+    mainprogram->blocking = false;
 	if (strlen(ofn.lpstrFile) == 0 || ret == 0) {
-		binsmain->openbinfile = false;
+		binsmain->openfilesbin = false;
 		return;
 	}
 	char* wstr = ofn.lpstrFile;
@@ -592,6 +594,7 @@ void Program::get_inname(const char *title, std::string filters, std::string def
     else {
         fi[0] = this->mime_to_tinyfds(filters);
     }
+    mainprogram->blocking = true;
     if (fi[0] == "") {
         p = tinyfd_openFileDialog(title, defaultdir.c_str(), 0, nullptr, nullptr, 0);
     }
@@ -601,6 +604,7 @@ void Program::get_inname(const char *title, std::string filters, std::string def
     if (p) this->path = p;
     #endif
     this->autosave = as;
+    mainprogram->blocking = false;
 }
 
 void Program::get_outname(const char *title, std::string filters, std::string defaultdir) {
@@ -620,6 +624,7 @@ void Program::get_outname(const char *title, std::string filters, std::string de
     else {
         fi[0] = this->mime_to_tinyfds(filters);
     }
+    mainprogram->blocking = true;
     if (fi[0] == "") {
         p = tinyfd_saveFileDialog(title, defaultdir.c_str(), 0, nullptr, nullptr);
     }
@@ -629,6 +634,7 @@ void Program::get_outname(const char *title, std::string filters, std::string de
     if (p) this->path = p;
     #endif
     this->autosave = as;
+    mainprogram->blocking = false;
 }
 
 void Program::get_multinname(const char* title, std::string filters, std::string defaultdir) {
@@ -642,9 +648,11 @@ void Program::get_multinname(const char* title, std::string filters, std::string
 	#ifdef POSIX
     const char *outpaths;
     char const* const dd = (defaultdir == "") ? "" : defaultdir.c_str();
+    mainprogram->blocking = true;
     outpaths = tinyfd_openFileDialog(title, dd, 0, nullptr, nullptr, 1);
+    mainprogram->blocking = false;
     if (outpaths == nullptr) {
-        binsmain->openbinfile = false;
+        binsmain->openfilesbin = false;
         return;
     }
     std::string opaths(outpaths);
@@ -698,7 +706,9 @@ void Program::get_dir(const char* title, std::string defaultdir) {
 	bInfo.iImage = 0;
 	bInfo.ulFlags = BIF_RETURNONLYFSDIRS | BIF_USENEWUI | BIF_BROWSEINCLUDEFILES;
 
+    mainprogram->blocking = true;
 	LPITEMIDLIST lpItem = SHBrowseForFolder(&bInfo);
+    mainprogram->blocking = false;
 	if (lpItem != NULL)
 	{
 		SHGetPathFromIDList(lpItem, szDir);
@@ -710,7 +720,9 @@ void Program::get_dir(const char* title, std::string defaultdir) {
 #ifdef POSIX
     char const* const dd = (defaultdir == "") ? "" : defaultdir.c_str();
     const char *dir;
+    mainprogram->blocking = true;
 	dir = tinyfd_selectFolderDialog(title, dd);
+    mainprogram->blocking = false;
 	if (dir) this->path = dir;
 	#endif
 	mainprogram->autosave = as;
@@ -726,22 +738,37 @@ bool Program::order_paths(bool dodeckmix) {
 		// first get one file texture per loop
 		std::string str = mainprogram->paths[mainprogram->filescount];
 		mainprogram->filescount++;
+
 		GLuint tex;
-		if (isimage(str)) {
-			tex = get_imagetex(str);
-		}
-		else if (str.substr(str.length() - 6, std::string::npos) == ".layer") {
-			tex = get_layertex(str);
-		}
-		else if (dodeckmix && str.substr(str.length() - 5, std::string::npos) == ".deck") {
-			tex = get_deckmixtex(str);
-		}
-		else if (dodeckmix && str.substr(str.length() - 4, std::string::npos) == ".mix") {
-			tex = get_deckmixtex(str);
-		}
-		else {
-			tex = get_videotex(str);
-		}
+        // determine file type
+        std::string istring = "";
+        std::string result = deconcat_files(str);
+        if (!mainprogram->openerr) {
+            bool concat = (result != "");
+            std::ifstream rfile;
+            if (concat) rfile.open(result);
+            else rfile.open(str);
+            safegetline(rfile, istring);
+        }
+        else mainprogram->openerr = false;
+        if (istring == "EWOCvj LAYERFILE") {
+            tex = get_layertex(str);
+        } else if (dodeckmix && istring == "EWOCvj DECKFILE") {
+            tex = get_deckmixtex(str);
+        } else if (dodeckmix && istring == "EWOCvj MIXFILE") {
+            tex = get_deckmixtex(str);
+        } else if (isimage(str)) {
+            tex = get_imagetex(str);
+        } else if (isvideo(str)) {
+            tex = get_videotex(str);
+        } else {
+            mainprogram->orderondisplay = false;
+            mainprogram->paths.erase(mainprogram->paths.begin() + mainprogram->filescount);
+            mainprogram->filescount -= 2;
+            if (mainprogram->filescount < 0) mainprogram->filescount = 0;
+            return false;
+        }
+
 		mainprogram->pathtexes.push_back(tex);
 		render_text(str, white, 2.0f, 2.0f, 0.00045f, 0.00075f);
 		if (mainprogram->filescount < mainprogram->paths.size()) return false;
@@ -766,7 +793,7 @@ bool Program::order_paths(bool dodeckmix) {
 		mainprogram->multistage = 3;
 	}
 	if (mainprogram->multistage == 3) {
-		if (mainprogram->openshelffiles) {
+		if (mainprogram->openfilesshelf) {
 			// special case: reuse pathtexes as shelfelement texes
 			for (int i = 0; i < mainprogram->paths.size(); i++) {
 				ShelfElement* elem = mainmix->mouseshelf->elements[i + mainprogram->shelffileselem];
@@ -927,6 +954,7 @@ void Program::handle_wormgate(bool gate) {
 
     glBindFramebuffer(GL_FRAMEBUFFER, 0);
     glDrawBuffer(GL_BACK_LEFT);
+    mainprogram->directmode = true;
 	if (gate == 0) {
 		register_triangle_draw(lightgrey, lightgrey, -1.0 + box->vtxcoords->w, box->vtxcoords->y1 + box->vtxcoords->h / 4.0f - 0.15f, box->vtxcoords->h / 4.0f, box->vtxcoords->h / 2.0f, LEFT, OPEN);
 		GUI_Element* elem = mainprogram->guielems.back();
@@ -951,6 +979,7 @@ void Program::handle_wormgate(bool gate) {
 			render_text("BINS", lightgrey, 0.86f, -0.44f, 0.0006f, 0.001f);
 		}
 	}
+    mainprogram->directmode = false;
 
 	if (mainprogram->binsscreen) {
 		box->vtxcoords->y1 = -1.0f;
@@ -1125,6 +1154,10 @@ void Program::handle_fullscreen() {
 		this->menuactivation = 0;
 		this->menuresults.clear();
 	}
+
+    glDeleteBuffers(1, &vbuf);
+    glDeleteBuffers(1, &tbuf);
+    glDeleteVertexArrays(1, &vao);
 }
 
 
@@ -1596,7 +1629,7 @@ bool Button::handle(bool circlein, bool automation) {
             if (automation) {
                 for (int i = 0; i < loopstation->elems.size(); i++) {
                     if (loopstation->elems[i]->recbut->value) {
-                        loopstation->elems[i]->add_button(this);
+                        loopstation->elems[i]->add_button_automationentry(this);
                     }
                 }
             }
@@ -1822,6 +1855,9 @@ void output_video(EWindow* mwin) {
 		}
 		SDL_GL_SwapWindow(mwin->win);
 	}
+    glDeleteBuffers(1, &mwin->vbuf);
+    glDeleteBuffers(1, &mwin->tbuf);
+    glDeleteVertexArrays(1, &mwin->vao);
 }
 
 
@@ -2531,11 +2567,6 @@ void Program::handle_deckmenu() {
 
 void Program::handle_laymenu1() {
 	int k = -1;
-	if (mainmix->mouselayer) {
-		if (mainmix->mouselayer->filename == "") {
-			mainprogram->laymenu1->entries[3] = "Open file(s) in stack";
-		}
-	}
 	// Draw and Program::handle mainprogram->laymenu1 (with clone layer) and laymenu2 (without)
 	if (mainprogram->laymenu1->state > 1 || mainprogram->laymenu2->state > 1 || mainprogram->newlaymenu->state > 1 || mainprogram->clipmenu->state > 1) {
 		if (!mainprogram->gotcameras) {
@@ -2554,12 +2585,29 @@ void Program::handle_laymenu1() {
 		}
 	}
 	else mainprogram->gotcameras = false;
-	if (mainprogram->laymenu1->state > 1) k = mainprogram->handle_menu(mainprogram->laymenu1);
+
+	if (mainprogram->laymenu1->state > 1) {
+        if ((mainmix->mouselayer->vidformat == 188 || mainmix->mouselayer->vidformat == 187) or
+        mainmix->mouselayer->filename == "" || mainmix->mouselayer->type == ELEM_IMAGE || mainmix->mouselayer->type
+        == ELEM_LIVE) {
+            if (mainprogram->laymenu1->entries.back() == "HAP encode on-the-fly") {
+                mainprogram->laymenu1->entries.pop_back();
+            }
+        }
+        else {
+            if (mainprogram->laymenu1->entries.back() != "HAP encode on-the-fly") {
+                mainprogram->laymenu1->entries.push_back("HAP encode on-the-fly");
+            }
+        }
+        k = mainprogram->handle_menu(mainprogram->laymenu1);
+	}
 	else if (mainprogram->laymenu2->state > 1) {
 		k = mainprogram->handle_menu(mainprogram->laymenu2);
 		if (k > 10) k++;
 	}
-	mainprogram->laymenu1->entries[3] = "Open file(s) in stack before layer";
+
+
+    bool cond = mainprogram->laymenu2->state;
 	if (k > -1) {
 		if (k == 0) {
 			if (mainprogram->menuresults.size()) {
@@ -2576,51 +2624,57 @@ void Program::handle_laymenu1() {
 				}
 			}
 		}
-		if (k == 1) {
-			mainprogram->pathto = "OPENFILESQUEUE";
-			mainprogram->loadlay = mainmix->mouselayer;
-			std::thread filereq(&Program::get_multinname, mainprogram, "Open video/image/layer file", "", boost::filesystem::canonical(mainprogram->currfilesdir).generic_string());
-			filereq.detach();
-		}
-		if (k == 2) {
-			mainprogram->pathto = "OPENFILESLAYERS";
+        if (k == 1) {
+            mainprogram->pathto = "OPENFILESLAYER";
+            mainprogram->loadlay = mainmix->mouselayer;
+            std::thread filereq(&Program::get_multinname, mainprogram, "Open video/image/layer file", "", boost::filesystem::canonical(mainprogram->currfilesdir).generic_string());
+            filereq.detach();
+        }
+        if (k == 2) {
+            mainprogram->pathto = "OPENFILESQUEUE";
+            mainprogram->loadlay = mainmix->mouselayer;
+            std::thread filereq(&Program::get_multinname, mainprogram, "Open video/image/layer file", "", boost::filesystem::canonical(mainprogram->currfilesdir).generic_string());
+            filereq.detach();
+        }
+		if (k == 3 and !cond) {
+			mainprogram->pathto = "OPENFILESSTACK";
 			mainprogram->loadlay = mainmix->mouselayer;
             mainmix->addlay = false;
 			std::thread filereq(&Program::get_multinname, mainprogram, "Open video/image/layer file", "", boost::filesystem::canonical(mainprogram->currfilesdir).generic_string());
 			filereq.detach();
 		}
-		else if (k == 3) {
+		else if (k == 4 - cond) {
 			mainprogram->pathto = "SAVELAYFILE";
 			std::thread filereq(&Program::get_outname, mainprogram, "Save layer file", "application/ewocvj2-layer", boost::filesystem::canonical(mainprogram->currfilesdir).generic_string());
 			filereq.detach();
 		}
-		else if (k == 4) {
+		else if (k == 5 - cond) {
 			mainmix->new_file(mainmix->mousedeck, 1);
 		}
-		else if (k == 5) {
+		else if (k == 6 - cond) {
 			mainprogram->pathto = "OPENDECK";
 			std::thread filereq(&Program::get_inname, mainprogram, "Open deck file", "application/ewocvj2-deck", boost::filesystem::canonical(mainprogram->currfilesdir).generic_string());
 			filereq.detach();
 		}
-		else if (k == 6) {
+		else if (k == 7 - cond) {
 			mainprogram->pathto = "SAVEDECK";
 			std::thread filereq(&Program::get_outname, mainprogram, "Save deck file", "application/ewocvj2-deck", boost::filesystem::canonical(mainprogram->currfilesdir).generic_string());
 			filereq.detach();
 		}
-		else if (k == 7) {
+		else if (k == 8 - cond) {
 			mainmix->new_file(2, 1);
 		}
-		else if (k == 8) {
+		else if (k == 9 - cond) {
 			mainprogram->pathto = "OPENMIX";
 			std::thread filereq(&Program::get_inname, mainprogram, "Open mix file", "application/ewocvj2-mix", boost::filesystem::canonical(mainprogram->currfilesdir).generic_string());
 			filereq.detach();
 		}
-		else if (k == 9) {
+		else if (k == 10 - cond) {
 			mainprogram->pathto = "SAVEMIX";
 			std::thread filereq(&Program::get_outname, mainprogram, "Open mix file", "application/ewocvj2-mix", boost::filesystem::canonical(mainprogram->currfilesdir).generic_string());
 			filereq.detach();
 		}
-		else if (k == 10) {
+		else if (k == 11 - cond) {
 			if (std::find(mainmix->layersA.begin(), mainmix->layersA.end(), mainmix->mouselayer) != mainmix->layersA.end()) {
 				mainmix->delete_layer(mainmix->layersA, mainmix->mouselayer, true);
 			}
@@ -2634,12 +2688,12 @@ void Program::handle_laymenu1() {
 				mainmix->delete_layer(mainmix->layersBcomp, mainmix->mouselayer, true);
 			}
 		}
-        else if (k == 11) {
+        else if (k == 12 - cond) {
             Layer* duplay = mainmix->mouselayer->clone();
             duplay->isclone = false;
             duplay->isduplay = mainmix->mouselayer;
         }
-        else if (k == 12) {
+        else if (k == 13 - cond) {
             Layer* clonelay = mainmix->mouselayer->clone();
             if (mainmix->mouselayer->clonesetnr == -1) {
                 std::unordered_set<Layer*>* uset = new std::unordered_set<Layer*>;
@@ -2650,11 +2704,11 @@ void Program::handle_laymenu1() {
             clonelay->clonesetnr = mainmix->mouselayer->clonesetnr;
             mainmix->clonesets[mainmix->mouselayer->clonesetnr]->emplace(clonelay);
         }
-		else if (k == 13) {
+		else if (k == 14 - cond) {
 			mainmix->mouselayer->shiftx->value = 0.0f;
 			mainmix->mouselayer->shifty->value = 0.0f;
 		}
-		else if (k == 14) {
+		else if (k == 15 - cond) {
 			mainmix->mouselayer->aspectratio = (RATIO_TYPE)mainprogram->menuresults[0];
 			if (mainmix->mouselayer->type == ELEM_IMAGE) {
 				ilBindImage(mainmix->mouselayer->boundimage);
@@ -2666,7 +2720,7 @@ void Program::handle_laymenu1() {
 				mainmix->mouselayer->set_aspectratio(mainmix->mouselayer->video_dec_ctx->width, mainmix->mouselayer->video_dec_ctx->height);
 			}
 		}
-		else if (k == 15) {
+		else if (k == 16 - cond) {
 		    BinElement *binel = new BinElement;
 		    binel->bin = nullptr;
             binel->type = ELEM_FILE;
@@ -2705,40 +2759,35 @@ void Program::handle_newlaymenu() {
 				}
 			}
 		}
-		if (k == 1) {
-			mainprogram->pathto = "OPENFILESQUEUE";
+		 if (k == 1) {
+			mainprogram->pathto = "OPENFILESSTACK";
+			mainmix->addlay = true;
+			mainmix->mouselayer = nullptr;
 			std::thread filereq(&Program::get_multinname, mainprogram, "Open video/image/layer file", "", boost::filesystem::canonical(mainprogram->currfilesdir).generic_string());
 			filereq.detach();
-			mainmix->addlay = true;
 		}
 		else if (k == 2) {
-			mainprogram->pathto = "OPENFILESLAYERS";
-            mainmix->addlay = true;
-			std::thread filereq(&Program::get_multinname, mainprogram, "Open video/image/layer file", "", boost::filesystem::canonical(mainprogram->currfilesdir).generic_string());
-			filereq.detach();
-		}
-		else if (k == 3) {
 			mainmix->new_file(mainmix->mousedeck, 1);
 		}
-		else if (k == 4) {
+		else if (k == 3) {
 			mainprogram->pathto = "OPENDECK";
 			std::thread filereq(&Program::get_inname, mainprogram, "Open deck file", "application/ewocvj2-deck", boost::filesystem::canonical(mainprogram->currfilesdir).generic_string());
 			filereq.detach();
 		}
-		else if (k == 5) {
+		else if (k == 4) {
 			mainprogram->pathto = "SAVEDECK";
 			std::thread filereq(&Program::get_outname, mainprogram, "Save deck file", "application/ewocvj2-deck", boost::filesystem::canonical(mainprogram->currfilesdir).generic_string());
 			filereq.detach();
 		}
-		else if (k == 6) {
+		else if (k == 5) {
 			mainmix->new_file(2, 1);
 		}
-		else if (k == 7) {
+		else if (k == 6) {
 			mainprogram->pathto = "OPENMIX";
 			std::thread filereq(&Program::get_inname, mainprogram, "Open mix file", "application/ewocvj2-mix", boost::filesystem::canonical(mainprogram->currfilesdir).generic_string());
 			filereq.detach();
 		}
-		else if (k == 8) {
+		else if (k == 7) {
 			mainprogram->pathto = "SAVEMIX";
 			std::thread filereq(&Program::get_outname, mainprogram, "Save mix file", "application/ewocvj2-mix", boost::filesystem::canonical(mainprogram->currfilesdir).generic_string());
 			filereq.detach();
@@ -2807,17 +2856,17 @@ void Program::handle_mainmenu() {
 		mainprogram->pathto = "NEWPROJECT";
 		std::string reqdir = mainprogram->projdir;
 		if (reqdir.substr(0, 1) == ".") reqdir.erase(0, 2);
-		std::string name = "Untitled";
 		std::string path;
-		int count = 0;
-		while (1) {
-			path = mainprogram->projdir + name;
-			if (!exists(path + ".ewocvj")) {
-				break;
-			}
-			count++;
-			name = remove_version(name) + "_" + std::to_string(count);
-		}
+        std::string name = "Untitled";
+        int count = 0;
+        while (1) {
+            path = mainprogram->projdir + name + ".ewocvj";
+            if (!exists(path)) {
+                break;
+            }
+            count++;
+            name = remove_version(name) + "_" + std::to_string(count);
+        }
 		std::thread filereq(&Program::get_outname, mainprogram, "New project", "application/ewocvj2-project", boost::filesystem::absolute(reqdir + name).generic_string());
 		filereq.detach();
 	}
@@ -2910,40 +2959,20 @@ void Program::handle_shelfmenu() {
 		filereq.detach();
 	}
 	else if (k == 3) {
-		mainprogram->pathto = "OPENSHELFFILES";
+		mainprogram->pathto = "OPENFILESSHELF";
 		std::thread filereq(&Program::get_multinname, mainprogram, "Load file(s) in shelf", "", boost::filesystem::canonical(mainprogram->currshelffilesdir).generic_string());
 		filereq.detach();
 	}
 	else if (k == 4 || k == 5) {
 		// insert one of current decks into shelf element
-		std::string name = remove_extension(basename(mainprogram->project->path));
-		std::string path;
-		int count = 0;
-		while (1) {
-			path = mainprogram->temppath + name + ".deck";
-			if (!exists(path)) {
-				break;
-			}
-			count++;
-			name = remove_version(name) + "_" + std::to_string(count);
-		}
+		std::string path = find_unused_filename(basename(mainprogram->project->path), mainprogram->temppath, ".deck");
 		mainmix->mousedeck = k - 4;
 		mainmix->do_save_deck(path, false, true);
 		mainmix->mouseshelf->insert_deck(path, k - 4, mainmix->mouseshelfelem);
 	}
 	else if (k == 6) {
 		// insert current mix into shelf element
-		std::string name = remove_extension(basename(mainprogram->project->path));
-		std::string path;
-		int count = 0;
-		while (1) {
-			path = mainprogram->temppath + name + ".mix";
-			if (!exists(path)) {
-				break;
-			}
-			count++;
-			name = remove_version(name) + "_" + std::to_string(count);
-		}
+        std::string path = find_unused_filename(basename(mainprogram->project->path), mainprogram->temppath, ".mix");
 		mainmix->do_save_mix(path, mainprogram->prevmodus, false);
 		mainmix->mouseshelf->insert_mix(path, mainmix->mouseshelfelem);
 	}
@@ -3005,17 +3034,17 @@ void Program::handle_filemenu() {
 			mainprogram->pathto = "NEWPROJECT";
 			std::string reqdir = mainprogram->projdir;
 			if (reqdir.substr(0, 1) == ".") reqdir.erase(0, 2);
-			std::string name = "Untitled";
-			std::string path;
-			int count = 0;
-			while (1) {
-				path = mainprogram->projdir + name;
-				if (!exists(path + ".ewocvj")) {
-					break;
-				}
-				count++;
-				name = remove_version(name) + "_" + std::to_string(count);
-			}
+            std::string path;
+            std::string name = "Untitled";
+            int count = 0;
+            while (1) {
+                path = mainprogram->projdir + name + ".ewocvj";
+                if (!exists(path)) {
+                    break;
+                }
+                count++;
+                name = remove_version(name) + "_" + std::to_string(count);
+            }
 			std::thread filereq(&Program::get_outname, mainprogram, "New project", "application/ewocvj2-project", boost::filesystem::absolute(reqdir + name).generic_string());
 			filereq.detach();
 		}
@@ -3081,7 +3110,7 @@ void Program::handle_filemenu() {
 			// open files in in deck A
 			std::vector<Layer*>& lvec = choose_layers(0);
             mainmix->mousedeck = 0;
-			mainprogram->pathto = "OPENFILESLAYERS";
+			mainprogram->pathto = "OPENFILESSTACK";
 			if (mainprogram->menuresults[1] == lvec.size()) {
 				mainmix->addlay = true;
 			}
@@ -3095,7 +3124,7 @@ void Program::handle_filemenu() {
 			// open files in layer in deck B
 			std::vector<Layer*>& lvec = choose_layers(1);
             mainmix->mousedeck = 1;
-			mainprogram->pathto = "OPENFILESLAYERS";
+			mainprogram->pathto = "OPENFILESSTACK";
 			if (mainprogram->menuresults[1] == lvec.size()) {
 				mainmix->addlay = true;
 			}
@@ -3437,6 +3466,9 @@ bool Program::preferences_handle() {
 					catch (...) {
 						mci->items[i]->value = ((PIVid*)(mci->items[i]))->oldvalue;
 					}
+                    if (mci->items[i]->dest == &mainprogram->project->ow or mci->items[i]->dest == &mainprogram->project->oh) {
+                        mainprogram->saveproject = true;
+                    }
 				}
 				else if (mainprogram->renaming == EDIT_CANCEL) {
 					mci->items[i]->renaming = false;
@@ -3496,6 +3528,10 @@ bool Program::preferences_handle() {
                     if (mainprogram->renaming == EDIT_NONE) {
                         mci->items[i]->renaming = false;
                         paths[j + (mainprogram->pathscroll * cond2)] = mainprogram->inputtext;
+                        if (mci->items[i]->dest == &mainprogram->project->name) {
+                            mainprogram->projnamechanged = true;
+                            mainprogram->saveproject = true;
+                        }
                     }
                     else if (mainprogram->renaming == EDIT_CANCEL) {
                         mci->items[i]->renaming = false;
@@ -3520,25 +3556,32 @@ bool Program::preferences_handle() {
                         SDL_StartTextInput();
                     }
                 }
-                draw_box(white, black, mci->items[i]->iconbox->vtxcoords->x1, mci->items[i]->iconbox->vtxcoords->y1 - j * 0.2f, mci->items[i]->iconbox->vtxcoords->w, mci->items[i]->iconbox->vtxcoords->h, -1);
-                draw_box(white, black, mci->items[i]->iconbox->vtxcoords->x1 + 0.02f, mci->items[i]->iconbox->vtxcoords->y1 - j * 0.2f + 0.05f, 0.06f, 0.07f, -1);
-                draw_box(white, black, mci->items[i]->iconbox->vtxcoords->x1 + 0.05f, mci->items[i]->iconbox->vtxcoords->y1 - j * 0.2f + 0.11f, 0.025f, 0.03f, -1);
-                if (mci->items[i]->iconbox->in(mx, my)) {
-                    if (mainprogram->leftmouse) {
-                        mci->items[i]->choosing = true;
-                        mainprogram->pathto = "CHOOSEDIR";
-                        std::string title = "Open " + mci->items[i]->name + " directory";
-                        std::thread filereq(&Program::get_dir, mainprogram, title.c_str(), boost::filesystem::canonical(mci->items[i]->path).generic_string());
-                        filereq.detach();
+                if (mci->items[i]->dest != &mainprogram->project->name) {
+                    draw_box(white, black, mci->items[i]->iconbox->vtxcoords->x1,
+                             mci->items[i]->iconbox->vtxcoords->y1 - j * 0.2f, mci->items[i]->iconbox->vtxcoords->w,
+                             mci->items[i]->iconbox->vtxcoords->h, -1);
+                    draw_box(white, black, mci->items[i]->iconbox->vtxcoords->x1 + 0.02f,
+                             mci->items[i]->iconbox->vtxcoords->y1 - j * 0.2f + 0.05f, 0.06f, 0.07f, -1);
+                    draw_box(white, black, mci->items[i]->iconbox->vtxcoords->x1 + 0.05f,
+                             mci->items[i]->iconbox->vtxcoords->y1 - j * 0.2f + 0.11f, 0.025f, 0.03f, -1);
+                    if (mci->items[i]->iconbox->in(mx, my)) {
+                        if (mainprogram->leftmouse) {
+                            mci->items[i]->choosing = true;
+                            mainprogram->pathto = "CHOOSEDIR";
+                            std::string title = "Open " + mci->items[i]->name + " directory";
+                            std::thread filereq(&Program::get_dir, mainprogram, title.c_str(),
+                                                boost::filesystem::canonical(mci->items[i]->path).generic_string());
+                            filereq.detach();
+                        }
                     }
-                }
-                if (mci->items[i]->choosing && mainprogram->choosedir != "") {
-                    #ifdef WINDOWS
-                    boost::replace_all(mainprogram->choosedir, "/", "\\");
-                    #endif			
-                    paths[j] = mainprogram->choosedir;
-                    mainprogram->choosedir = "";
-                    mci->items[i]->choosing = false;
+                    if (mci->items[i]->choosing && mainprogram->choosedir != "") {
+#ifdef WINDOWS
+                        boost::replace_all(mainprogram->choosedir, "/", "\\");
+#endif
+                        paths[j] = mainprogram->choosedir;
+                        mainprogram->choosedir = "";
+                        mci->items[i]->choosing = false;
+                    }
                 }
             }
 
@@ -3619,18 +3662,52 @@ bool Program::preferences_handle() {
 					}
 				}
 			}
+			if (mainprogram->projnamechanged) {  // project name not included in preferences file, only change if
+			    // user clicks SAVE
+                if (mainprogram->project->name != remove_extension(basename(mainprogram->project->path))) {
+                    // project name changed
+                    // rename project file
+                    boost::filesystem::rename(mainprogram->project->path, dirname(mainprogram->project->path) +
+                                                                          mainprogram->project->name + ".ewocvj");
+                    // rename project directory
+                    boost::filesystem::rename(remove_extension(mainprogram->project->path), dirname
+                                                                                                    (mainprogram->project->path) + mainprogram->project->name);
+                    int pos = std::find(mainprogram->recentprojectpaths.begin(), mainprogram->recentprojectpaths.end(), mainprogram->project->path) - mainprogram->recentprojectpaths.begin();
+                    mainprogram->project->path = dirname(mainprogram->project->path) +
+                                                 mainprogram->project->name + ".ewocvj";
+                    if (pos < mainprogram->recentprojectpaths.size()) {
+                        mainprogram->recentprojectpaths[pos] = mainprogram->project->path;
+                        mainprogram->write_recentprojectlist();
+                    }
+                    std::string dir = remove_extension(mainprogram->project->path) + "/";
+                    mainprogram->project->binsdir = dir + "bins/";
+                    mainprogram->project->recdir = dir + "recordings/";
+                    mainprogram->project->shelfdir = dir + "shelves/";
+                    mainprogram->project->autosavedir = dir + "autosaves/";
+                }
+            }
+			// set output resolution from project settings
+            mainprogram->projnamechanged = false;
 			mainprogram->renaming = EDIT_NONE;
 			mainprogram->prefs->save();
 			mainprogram->prefs->load();
 			mainprogram->prefon = false;
 			mainprogram->drawnonce = false;
-			SDL_HideWindow(mainprogram->prefwindow);
+
+			if (mainprogram->saveproject) mainprogram->project->do_save(mainprogram->project->path);
+            mainprogram->ow = mainprogram->project->ow;
+            mainprogram->oh = mainprogram->project->oh;
+            mainprogram->set_ow3oh3();
+            mainprogram->handle_changed_owoh();
+
+            SDL_HideWindow(mainprogram->prefwindow);
 			SDL_RaiseWindow(mainprogram->mainwindow);
 		}
 	}
 	render_text("SAVE", white, box.vtxcoords->x1 + 0.02f, box.vtxcoords->y1 + 0.03f, 0.0024f, 0.004f, 1, 0);
+    if (saveproject) render_text("+PROJECT", white, box.vtxcoords->x1 + 0.06f, box.vtxcoords->y1 + 0.1f, 0.0024f, 0.004f, 1, 0);
 
-	mainprogram->tooltips_handle(1);
+    mainprogram->tooltips_handle(1);
 
 	mainprogram->bvao = mainprogram->boxvao;
 	mainprogram->bvbuf = mainprogram->boxvbuf;
@@ -4236,7 +4313,32 @@ void Project::newp(const std::string &path) {
 	    path2 = path.substr(0, path.size() - 7);
 	}
 	this->path = str;
-	
+	this->name = remove_extension(basename(this->path));
+
+	// set project output width and height
+    for (PrefCat *item : mainprogram->prefs->items) {
+        // get the default output width and height
+        for (PrefItem *pri : item->items) {
+            if (pri->dest == &mainprogram->ow) {
+                this->ow = pri->value;
+            } else if (pri->dest == &mainprogram->oh) {
+                this->oh = pri->value;
+            }
+        }
+    }
+    for (PrefCat *item : mainprogram->prefs->items) {
+        // set the preferences destinations for project output width and height
+        for (PrefItem *pri : item->items) {
+            if (pri->dest == &mainprogram->project->ow) {
+                pri->dest = &this->ow;
+                pri->value = this->ow;
+            } else if (pri->dest == &mainprogram->project->oh) {
+                pri->dest = &this->oh;
+                pri->value = this->oh;
+            }
+        }
+    }
+
 	this->create_dirs(path2);
 	for (int i = 0; i < binsmain->bins.size(); i++) {
 		delete binsmain->bins[i];
@@ -4259,8 +4361,24 @@ void Project::open(const std::string& path) {
 	std::ifstream rfile;
 	if (concat) rfile.open(result);
 	else rfile.open(path);
-	
+
+	void **namedest;
+	void **owdest;
+	void **ohdest;
+    for (PrefCat *item : mainprogram->prefs->items) {
+        for (PrefItem *mci : item->items) {
+            if (mci->dest == &mainprogram->project->name) {
+                namedest = &mci->dest;
+            } else if (mci->dest == &mainprogram->project->ow) {
+                owdest = &mci->dest;
+            } else if (mci->dest == &mainprogram->project->oh) {
+                ohdest = &mci->dest;
+            }
+        }
+    }
 	mainprogram->project->path = path;
+    mainprogram->project->name = remove_extension(basename(path));
+    *namedest = &mainprogram->project->name;
 	std::string dir = remove_extension(path) + "/";
 	this->binsdir = dir + "bins/";
 	this->recdir = dir + "recordings/";
@@ -4284,15 +4402,19 @@ void Project::open(const std::string& path) {
 	
 	while (safegetline(rfile, istring)) {
 		if (istring == "ENDOFFILE") break;
-		if (istring == "OUTPUTWIDTH") {  // reminder: what to do? project or program level?
-			safegetline(rfile, istring);
-			//mainprogram->ow = std::stoi(istring);
-			//mainprogram->oldow = mainprogram->ow;
-		}
+        if (istring == "OUTPUTWIDTH") {  // reminder: what to do? project or program level?
+            safegetline(rfile, istring);
+            this->ow = std::stoi(istring);
+            *owdest = &this->ow;
+            ((PrefItem*)(*owdest))->value = this->ow;
+            mainprogram->ow = this->ow;
+        }
 		else if (istring == "OUTPUTHEIGHT") {
 			safegetline(rfile, istring);
-			//mainprogram->oh = std::stoi(istring);
-			//mainprogram->oldoh = mainprogram->oh;
+			this->oh = std::stoi(istring);
+            *ohdest = &this->oh;
+            ((PrefItem*)(*ohdest))->value = this->oh;
+            mainprogram->oh = this->oh;
 		}
 		if (istring == "CURRSHELFA") {
 			safegetline(rfile, istring);
@@ -4328,7 +4450,9 @@ void Project::open(const std::string& path) {
 			mainprogram->currrecdir = istring;
 		}
 	}
-	
+    mainprogram->set_ow3oh3();
+    mainprogram->handle_changed_owoh();
+
 	rfile.close();
 	
 	int pos = std::find(mainprogram->recentprojectpaths.begin(), mainprogram->recentprojectpaths.end(), path) - mainprogram->recentprojectpaths.begin();
@@ -4338,23 +4462,7 @@ void Project::open(const std::string& path) {
 	else {
         mainprogram->recentprojectpaths.insert(mainprogram->recentprojectpaths.begin(), path);
 	}
-    std::ofstream wfile;
-#ifdef WINDOWS
-    std::string dir2 = mainprogram->docpath;
-#else
-#ifdef POSIX
-    std::string homedir(getenv("HOME"));
-    std::string dir2 = homedir + "/.ewocvj2/";
-#endif
-#endif
-    wfile.open(dir2 + "recentprojectslist");
-    wfile << "EWOCvj RECENTPROJECTS V0.1\n";
-    for (int i = 0; i < mainprogram->recentprojectpaths.size(); i++) {
-        wfile << mainprogram->recentprojectpaths[i];
-        wfile << "\n";
-    }
-    wfile << "ENDOFFILE\n";
-    wfile.close();
+    mainprogram->write_recentprojectlist();
 
     if (exists(this->autosavedir + "autosavelist")) {
         std::ifstream rfile;
@@ -4383,11 +4491,11 @@ void Project::do_save(const std::string& path) {
 	std::vector<std::string> filestoadd;
 	
 	wfile << "EWOCvj PROJECT V0.1\n";
-	wfile << "OUTPUTWIDTH\n";
-	wfile << std::to_string((int)mainprogram->ow);
-	wfile << "\n";
+    wfile << "OUTPUTWIDTH\n";
+    wfile << std::to_string((int)this->ow);
+    wfile << "\n";
 	wfile << "OUTPUTHEIGHT\n";
-	wfile << std::to_string((int)mainprogram->oh);
+	wfile << std::to_string((int)this->oh);
 	wfile << "\n";
 	mainprogram->shelves[0]->save(this->shelfdir + mainprogram->shelves[0]->basepath);
 	wfile << "CURRSHELFA\n";
@@ -4461,7 +4569,7 @@ void Project::autosave() {
                remove_extension(basename(this->path)) + "_0";
     }
     int num = std::stoi(name.substr(name.rfind('_') + 1, name.length() - name.rfind('_') - 1));
-    name = remove_version(name) + "_" + std::to_string(num + 1);
+    name = this->autosavedir + "autosave_" + basename(remove_version(name)) + "_" + std::to_string(num + 1);
     std::string path = name + ".state";
 
     mainmix->do_save_state(path, true);
@@ -4486,6 +4594,11 @@ void Project::autosave() {
 
 
 Preferences::Preferences() {
+    PIProj *pipr = new PIProj;
+    pipr->box = new Box;
+    pipr->box->tooltiptitle = "Project settings ";
+    pipr->box->tooltip = "Left click to set project related preferences ";
+    this->items.push_back(pipr);
     PIVid *pvi = new PIVid;
     pvi->box = new Box;
     pvi->box->tooltiptitle = "Video settings ";
@@ -4564,7 +4677,7 @@ void Preferences::load() {
                                     }
                                     else if (pi->type == PREF_NUMBER) {
                                         pi->value = std::stoi(istring);
-                                        if (pi->dest) *(float*)pi->dest = pi->value;
+                                        if (pi->dest) *(float*)pi->dest = (float)pi->value;
                                     }
                                     else if (pi->type == PREF_PATH) {
                                         boost::filesystem::path p(istring);
@@ -4777,6 +4890,43 @@ PrefItem::PrefItem(PrefCat *cat, int pos, std::string name, PREF_TYPE type, void
     this->valuebox->upvtxtoscr();
 }
 
+
+PIProj::PIProj() {
+    // Set all preferences items that appear under the Directories tab
+    PrefItem *pip;
+    int pos = 0;
+    this->name = "Project";
+
+    pip = new PrefItem(this, pos, "Project name", PREF_PATH, (void *) &mainprogram->project->name);
+    pip->namebox->tooltiptitle = "Project name ";
+    pip->namebox->tooltip = "Name of current project. ";
+    pip->valuebox->tooltiptitle = "Set name of current project ";
+    pip->valuebox->tooltip = "Leftclick starts keyboard entry of current project name. It also changes the name of "
+                             "the project on disk.";
+
+    this->items.push_back(pip);
+    pos++;
+
+    pip = new PrefItem(this, pos, "Project output video width", PREF_NUMBER, (void*)&mainprogram->project->ow);
+    pip->namebox->tooltiptitle = "Project output video width ";
+    pip->namebox->tooltip = "Sets the width in pixels of the video stream sent to the output for this project. ";
+    pip->valuebox->tooltiptitle = "Project output video width ";
+    pip->valuebox->tooltip = "Leftclicking the value allows setting the width in pixels of the video stream sent to the output for this project. ";
+    mainprogram->ow = pip->value;
+    this->items.push_back(pip);
+    pos++;
+
+    pip = new PrefItem(this, pos, "Project output video height", PREF_NUMBER, (void*)&mainprogram->project->oh);
+    pip->namebox->tooltiptitle = "Project output video height ";
+    pip->namebox->tooltip = "Sets the height in pixels of the video stream sent to the output for this project. ";
+    pip->valuebox->tooltiptitle = "Project output video height ";
+    pip->valuebox->tooltip = "Leftclicking the value allows setting the height in pixels of the video stream sent to the output for this project. ";
+    this->items.push_back(pip);
+    pos++;
+    
+}
+
+
 PIDirs::PIDirs() {
     // Set all preferences items that appear under the Directories tab
     PrefItem *pdi;
@@ -4936,22 +5086,22 @@ PIVid::PIVid() {
     PrefItem *pvi;
     int pos = 0;
 
-    pvi = new PrefItem(this, pos, "Output video width", PREF_NUMBER, (void*)&mainprogram->ow);
+    pvi = new PrefItem(this, pos, "Default output video width", PREF_NUMBER, (void*)&mainprogram->ow);
     pvi->value = 1920;
-    pvi->namebox->tooltiptitle = "Output video width ";
-    pvi->namebox->tooltip = "Sets the width in pixels of the video stream sent to the output. ";
-    pvi->valuebox->tooltiptitle = "Output video width ";
-    pvi->valuebox->tooltip = "Leftclicking the value allows setting the width in pixels of the video stream sent to the output. ";
+    pvi->namebox->tooltiptitle = "Default output video width ";
+    pvi->namebox->tooltip = "Sets the width in pixels of the video stream sent to the output for new projects. ";
+    pvi->valuebox->tooltiptitle = "Default output video width ";
+    pvi->valuebox->tooltip = "Leftclicking the value allows setting the width in pixels of the video stream sent to the output for new projects. ";
     mainprogram->ow = pvi->value;
     this->items.push_back(pvi);
     pos++;
 
-    pvi = new PrefItem(this, pos, "Output video height", PREF_NUMBER, (void*)&mainprogram->oh);
+    pvi = new PrefItem(this, pos, "Default output video height", PREF_NUMBER, (void*)&mainprogram->oh);
     pvi->value = 1080;
-    pvi->namebox->tooltiptitle = "Output video height ";
-    pvi->namebox->tooltip = "Sets the height in pixels of the video stream sent to the output. ";
-    pvi->valuebox->tooltiptitle = "Output video height ";
-    pvi->valuebox->tooltip = "Leftclicking the value allows setting the height in pixels of the video stream sent to the output. ";
+    pvi->namebox->tooltiptitle = "Default output video height ";
+    pvi->namebox->tooltip = "Sets the height in pixels of the video stream sent to the output for new projects. ";
+    pvi->valuebox->tooltiptitle = "Default output video height ";
+    pvi->valuebox->tooltip = "Leftclicking the value allows setting the height in pixels of the video stream sent to the output for new projects. ";
     mainprogram->oh = pvi->value;
     this->items.push_back(pvi);
     pos++;
@@ -4995,3 +5145,414 @@ PIProg::PIProg() {
     pos++;
 }
 
+
+void Program::define_menus() {
+    std::vector<std::string> effects;
+    effects.push_back("BLUR");
+    effects.push_back("BRIGHTNESS");
+    effects.push_back("CHROMAROTATE");
+    effects.push_back("CONTRAST");
+    effects.push_back("DOT");
+    effects.push_back("GLOW");
+    effects.push_back("RADIALBLUR");
+    effects.push_back("SATURATION");
+    effects.push_back("SCALE");
+    effects.push_back("SWIRL");
+    effects.push_back("OLDFILM");
+    effects.push_back("RIPPLE");
+    effects.push_back("FISHEYE");
+    effects.push_back("TRESHOLD");
+    effects.push_back("STROBE");
+    effects.push_back("POSTERIZE");
+    effects.push_back("PIXELATE");
+    effects.push_back("CROSSHATCH");
+    effects.push_back("INVERT");
+    effects.push_back("ROTATE");
+    effects.push_back("EMBOSS");
+    effects.push_back("ASCII");
+    effects.push_back("SOLARIZE");
+    effects.push_back("VARDOT");
+    effects.push_back("CRT");
+    effects.push_back("EDGEDETECT");
+    effects.push_back("KALEIDOSCOPE");
+    effects.push_back("HALFTONE");
+    effects.push_back("CARTOON");
+    effects.push_back("CUTOFF");
+    effects.push_back("GLITCH");
+    effects.push_back("COLORIZE");
+    effects.push_back("NOISE");
+    effects.push_back("GAMMA");
+    effects.push_back("THERMAL");
+    effects.push_back("BOKEH");
+    effects.push_back("SHARPEN");
+    effects.push_back("DITHER");
+    effects.push_back("FLIP");
+    effects.push_back("MIRROR");
+    effects.push_back("BOXBLUR");
+    std::vector<std::string> meffects = effects;
+    std::sort(meffects.begin(), meffects.end());
+    for (int i = 0; i < meffects.size(); i++) {
+        for (int j = 0; j < effects.size(); j++) {
+            if (meffects[i] == effects[j]) {
+                mainprogram->abeffects.push_back((EFFECT_TYPE) j);
+                break;
+            }
+        }
+    }
+    mainprogram->make_menu("effectmenu", mainprogram->effectmenu, meffects);
+    for (int i = 0; i < effects.size(); i++) {
+        mainprogram->effectsmap[(EFFECT_TYPE) (i - 1)] = effects[i];
+    }
+
+    std::vector<std::string> mixengines;
+    mixengines.push_back("submenu mixmodemenu");
+    mixengines.push_back("Choose mixmode...");
+    mixengines.push_back("submenu wipemenu");
+    mixengines.push_back("Choose wipe...");
+    mainprogram->make_menu("mixenginemenu", mainprogram->mixenginemenu, mixengines);
+
+    std::vector<std::string> mixmodes;
+    mixmodes.push_back("MIX");
+    mixmodes.push_back("MULTIPLY");
+    mixmodes.push_back("SCREEN");
+    mixmodes.push_back("OVERLAY");
+    mixmodes.push_back("HARD LIGHT");
+    mixmodes.push_back("SOFT LIGHT");
+    mixmodes.push_back("DIVIDE");
+    mixmodes.push_back("ADD");
+    mixmodes.push_back("SUBTRACT");
+    mixmodes.push_back("DIFFERENCE");
+    mixmodes.push_back("DODGE");
+    mixmodes.push_back("COLOR BURN");
+    mixmodes.push_back("LINEAR BURN");
+    mixmodes.push_back("VIVID LIGHT");
+    mixmodes.push_back("LINEAR LIGHT");
+    mixmodes.push_back("DARKEN ONLY");
+    mixmodes.push_back("LIGHTEN ONLY");
+    mixmodes.push_back("WIPE");
+    mixmodes.push_back("COLORKEY");
+    mixmodes.push_back("DISPLACEMENT");
+    mainprogram->make_menu("mixmodemenu", mainprogram->mixmodemenu, mixmodes);
+
+    std::vector<std::string> parammodes1;
+    parammodes1.push_back("MIDI Learn");
+    parammodes1.push_back("Reset to default");
+    mainprogram->make_menu("parammenu1", mainprogram->parammenu1, parammodes1);
+
+    std::vector<std::string> parammodes2;
+    parammodes2.push_back("MIDI Learn");
+    parammodes2.push_back("Remove automation");
+    parammodes1.push_back("Reset to default");
+    mainprogram->make_menu("parammenu2", mainprogram->parammenu2, parammodes2);
+
+    std::vector<std::string> parammodes3;
+    parammodes3.push_back("MIDI Learn");
+    mainprogram->make_menu("parammenu3", mainprogram->parammenu3, parammodes3);
+
+    std::vector<std::string> parammodes4;
+    parammodes4.push_back("MIDI Learn");
+    parammodes4.push_back("Remove automation");
+    mainprogram->make_menu("parammenu4", mainprogram->parammenu4, parammodes4);
+
+    std::vector<std::string> mixtargets;
+    mainprogram->make_menu("mixtargetmenu", mainprogram->mixtargetmenu, mixtargets);
+
+    std::vector<std::string> fullscreen;
+    fullscreen.push_back("Exit fullscreen");
+    mainprogram->make_menu("fullscreenmenu", mainprogram->fullscreenmenu, fullscreen);
+
+    std::vector<std::string> livesources;
+    mainprogram->make_menu("livemenu", mainprogram->livemenu, livesources);
+
+    std::vector<std::string> loopops;
+    loopops.push_back("Set loop start to current frame");
+    loopops.push_back("Set loop end to current frame");
+    loopops.push_back("Copy duration");
+    loopops.push_back("Paste duration (speed)");
+    loopops.push_back("Paste duration (loop length)");
+    mainprogram->make_menu("loopmenu", mainprogram->loopmenu, loopops);
+    mainprogram->loopmenu->width = 0.2f;
+
+    std::vector<std::string> deckops;
+    deckops.push_back("Open deck");
+    deckops.push_back("Save deck");
+    deckops.push_back("MIDI Learn");
+    mainprogram->make_menu("deckmenu", mainprogram->deckmenu, deckops);
+
+    std::vector<std::string> aspectops;
+    aspectops.push_back("Same as output");
+    aspectops.push_back("Original inside");
+    aspectops.push_back("Original outside");
+    mainprogram->make_menu("aspectmenu", mainprogram->aspectmenu, aspectops);
+
+    std::vector<std::string> layops1;
+    layops1.push_back("submenu livemenu");
+    layops1.push_back("Connect live");
+    layops1.push_back("Open file(s) into layer");
+    layops1.push_back("Open file(s) into queue");
+    layops1.push_back("Insert file(s) in stack before layer");
+    layops1.push_back("Save layer");
+    layops1.push_back("New deck");
+    layops1.push_back("Open deck");
+    layops1.push_back("Save deck");
+    layops1.push_back("New mix");
+    layops1.push_back("Open mix");
+    layops1.push_back("Save mix");
+    layops1.push_back("Delete layer");
+    layops1.push_back("Duplicate layer");
+    layops1.push_back("Clone layer");
+    layops1.push_back("Center image");
+    layops1.push_back("submenu aspectmenu");
+    layops1.push_back("Aspect ratio");
+    layops1.push_back("HAP encode on-the-fly");
+    mainprogram->make_menu("laymenu1", mainprogram->laymenu1, layops1);
+
+    std::vector<std::string> layops2;
+    layops2.push_back("submenu livemenu");
+    layops2.push_back("Connect live");
+    layops2.push_back("Open file(s) into layer");
+    layops2.push_back("Open file(s) into queue");
+    layops2.push_back("Save layer");
+    layops2.push_back("New deck");
+    layops2.push_back("Open deck");
+    layops2.push_back("Save deck");
+    layops2.push_back("New mix");
+    layops2.push_back("Open mix");
+    layops2.push_back("Save mix");
+    layops2.push_back("Delete layer");
+    layops2.push_back("Center image");
+    layops2.push_back("submenu aspectmenu");
+    layops2.push_back("Aspect ratio");
+    mainprogram->make_menu("laymenu2", mainprogram->laymenu2, layops2);
+
+    std::vector<std::string> loadops;
+    loadops.push_back("submenu livemenu");
+    loadops.push_back("Connect live");
+    loadops.push_back("Open file(s) in stack");
+    loadops.push_back("New deck");
+    loadops.push_back("Open deck");
+    loadops.push_back("Save deck");
+    loadops.push_back("New mix");
+    loadops.push_back("Open mix");
+    loadops.push_back("Save mix");
+    mainprogram->make_menu("newlaymenu", mainprogram->newlaymenu, loadops);
+
+    std::vector<std::string> clipops;
+    clipops.push_back("submenu livemenu");
+    clipops.push_back("Connect live");
+    clipops.push_back("Open file(s)");
+    clipops.push_back("Delete clip");
+    mainprogram->make_menu("clipmenu", mainprogram->clipmenu, clipops);
+
+    std::vector<std::string> wipes;
+    wipes.push_back("CROSSFADE");
+    wipes.push_back("submenu dir1menu");
+    wipes.push_back("CLASSIC");
+    wipes.push_back("submenu dir1menu");
+    wipes.push_back("PUSH/PULL");
+    wipes.push_back("submenu dir1menu");
+    wipes.push_back("SQUASHED");
+    wipes.push_back("submenu dir2menu");
+    wipes.push_back("ELLIPSE");
+    wipes.push_back("submenu dir2menu");
+    wipes.push_back("RECTANGLE");
+    wipes.push_back("submenu dir2menu");
+    wipes.push_back("ZOOMED RECTANGLE");
+    wipes.push_back("submenu dir4menu");
+    wipes.push_back("CLOCK");
+    wipes.push_back("submenu dir2menu");
+    wipes.push_back("DOUBLE CLOCK");
+    wipes.push_back("submenu dir3menu");
+    wipes.push_back("BARS");
+    wipes.push_back("submenu dir3menu");
+    wipes.push_back("PATTERN");
+    wipes.push_back("submenu dir2menu");
+    wipes.push_back("REPEL");
+    mainprogram->make_menu("wipemenu", mainprogram->wipemenu, wipes);
+    int count = 0;
+    for (int i = 0; i < wipes.size(); i++) {
+        if (wipes[i].find("submenu") != std::string::npos) {
+            mainprogram->wipesmap[wipes[i]] = count;
+            count++;
+        }
+    }
+
+    std::vector<std::string> direction1;
+    direction1.push_back("Left->Right");
+    direction1.push_back("Right->Left");
+    direction1.push_back("Up->Down");
+    direction1.push_back("Down->Up");
+    mainprogram->make_menu("dir1menu", mainprogram->dir1menu, direction1);
+
+    std::vector<std::string> direction2;
+    direction2.push_back("In->Out");
+    direction2.push_back("Out->In");
+    mainprogram->make_menu("dir2menu", mainprogram->dir2menu, direction2);
+
+    std::vector<std::string> direction3;
+    direction3.push_back("Left->Right");
+    direction3.push_back("Right->Left");
+    direction3.push_back("LeftRight/InOut");
+    direction3.push_back("Up->Down");
+    direction3.push_back("Down->Up");
+    direction3.push_back("UpDown/InOut");
+    mainprogram->make_menu("dir3menu", mainprogram->dir3menu, direction3);
+
+    std::vector<std::string> direction4;
+    direction4.push_back("Up/Right->LeftUp");
+    direction4.push_back("Up/Left->Right");
+    direction4.push_back("Right/Down->Up");
+    direction4.push_back("Right/Up->Down");
+    direction4.push_back("Down/Left->Right");
+    direction4.push_back("Down/Right->Left");
+    direction4.push_back("Left/Up->Down");
+    direction4.push_back("Left/Down->Up");
+    mainprogram->make_menu("dir4menu", mainprogram->dir4menu, direction4);
+
+    std::vector<std::string> binel;
+    mainprogram->make_menu("binelmenu", mainprogram->binelmenu, binel);
+
+    std::vector<std::string> bin;
+    bin.push_back("Delete bin");
+    bin.push_back("Rename bin");
+    mainprogram->make_menu("binmenu", mainprogram->binmenu, bin);
+
+    std::vector<std::string> bin2;
+    bin2.push_back("Rename bin");
+    mainprogram->make_menu("bin2menu", mainprogram->bin2menu, bin2);
+
+    std::vector<std::string> binsel;
+    binsel.push_back("Delete elements");
+    binsel.push_back("Move elements");
+    mainprogram->make_menu("binselmenu", mainprogram->binselmenu, binsel);
+
+    std::vector<std::string> generic;
+    generic.push_back("New project");
+    generic.push_back("Open project");
+    generic.push_back("Save project");
+    generic.push_back("Save project as");
+    generic.push_back("New state");
+    generic.push_back("Open state");
+    generic.push_back("Save state");
+    generic.push_back("Preferences");
+    generic.push_back("Configure general MIDI");
+    generic.push_back("Quit");
+    mainprogram->make_menu("mainmenu", mainprogram->mainmenu, generic);
+
+    std::vector<std::string> shelf1;
+    shelf1.push_back("New shelf");
+    shelf1.push_back("Open shelf");
+    shelf1.push_back("Save shelf");
+    shelf1.push_back("Open file(s)");
+    shelf1.push_back("Insert deck A");
+    shelf1.push_back("Insert deck B");
+    shelf1.push_back("Insert full mix");
+    shelf1.push_back("Insert in bin");
+    shelf1.push_back("Erase element");
+    shelf1.push_back("MIDI Learn");
+    mainprogram->make_menu("shelfmenu", mainprogram->shelfmenu, shelf1);
+
+    std::vector<std::string> file;
+    file.push_back("submenu filedomenu");
+    file.push_back("New");
+    file.push_back("submenu filedomenu");
+    file.push_back("Open");
+    file.push_back("submenu filedomenu");
+    file.push_back("Save");
+    file.push_back("Quit");
+    mainprogram->make_menu("filemenu", mainprogram->filemenu, file);
+
+    std::vector<std::string> laylist1;
+    mainprogram->make_menu("laylistmenu1", mainprogram->laylistmenu1, laylist1);
+
+    std::vector<std::string> laylist2;
+    mainprogram->make_menu("laylistmenu2", mainprogram->laylistmenu2, laylist2);
+
+    std::vector<std::string> filedo;
+    filedo.push_back("Project");
+    filedo.push_back("State");
+    filedo.push_back("Mix");
+    filedo.push_back("Deck A");
+    filedo.push_back("Deck B");
+    filedo.push_back("submenu laylistmenu1");
+    filedo.push_back("Files into layers in deck A before");
+    filedo.push_back("submenu laylistmenu2");
+    filedo.push_back("Files into layers in deck B before");
+    filedo.push_back("submenu laylistmenu1");
+    filedo.push_back("Files into queue in deck A on");
+    filedo.push_back("submenu laylistmenu2");
+    filedo.push_back("Files into queue in deck B on");
+    mainprogram->make_menu("filedomenu", mainprogram->filedomenu, filedo);
+
+    std::vector<std::string> edit;
+    edit.push_back("Preferences");
+    edit.push_back("Configure general MIDI");
+    mainprogram->make_menu("editmenu", mainprogram->editmenu, edit);
+
+    std::vector<std::string> lpst;
+    lpst.push_back("Copy loop duration");
+    lpst.push_back("Paste loop duration by changing speed");
+    lpst.push_back("Paste loop duration by changing loop length");
+    mainprogram->make_menu("lpstmenu", mainprogram->lpstmenu, lpst);
+
+    //make menu item names bitmaps
+    for (int i = 0; i < mainprogram->menulist.size(); i++) {
+        for (int j = 0; j < mainprogram->menulist[i]->entries.size(); j++) {
+            render_text(mainprogram->menulist[i]->entries[j], white, 2.0f, 2.0f, 0.00045f, 0.00075f, 0, 0, 0);
+        }
+    }
+}
+
+
+void Program::write_recentprojectlist() {
+    std::ofstream wfile;
+#ifdef WINDOWS
+    std::string dir2 = mainprogram->docpath;
+#else
+#ifdef POSIX
+    std::string homedir(getenv("HOME"));
+    std::string dir2 = homedir + "/.ewocvj2/";
+#endif
+#endif
+    wfile.open(dir2 + "recentprojectslist");
+    wfile << "EWOCvj RECENTPROJECTS V0.1\n";
+    for (int i = 0; i < mainprogram->recentprojectpaths.size(); i++) {
+        wfile << mainprogram->recentprojectpaths[i];
+        wfile << "\n";
+    }
+    wfile << "ENDOFFILE\n";
+    wfile.close();
+}
+
+
+void Program::socket_server(struct sockaddr_in serv_addr, int opt) {
+    int new_socket;
+    int addrlen = sizeof(serv_addr);
+    if (setsockopt(this->sock, SOL_SOCKET, SO_REUSEADDR | SO_REUSEPORT,
+                   &opt, sizeof(opt)))
+    {
+        perror("setsockopt");
+        exit(EXIT_FAILURE);
+    }
+    // Forcefully attaching socket to the port 8000
+    if (bind(this->sock, (struct sockaddr *)&serv_addr,
+             sizeof(serv_addr))<0)
+    {
+        perror("bind failed");
+        exit(EXIT_FAILURE);
+    }
+    while (listen(this->sock, 3) >= 0)
+    {
+        if ((new_socket = accept(this->sock, (struct sockaddr *)&serv_addr,
+                                 (socklen_t*)&addrlen))<0)
+        {
+            perror("accept");
+            exit(EXIT_FAILURE);
+        }
+        mainprogram->connsockets.push_back(new_socket);
+        send(new_socket , std::to_string(mainprogram->connsockets.size()).c_str() , strlen(std::to_string(mainprogram->connsockets.size()).c_str()) , 0 );
+        printf("CONNECTED\n");
+    }
+    perror("listen");
+    exit(EXIT_FAILURE);
+}

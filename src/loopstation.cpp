@@ -75,7 +75,7 @@ LoopStationElement::LoopStationElement() {
     this->speed->box->lcolor[2] = 0.4f;
     this->speed->box->lcolor[3] = 1.0f;
 	this->speed->box->vtxcoords->w = 0.15f;
-	this->speed->box->vtxcoords->h = 0.75f;
+	this->speed->box->vtxcoords->h = 0.075f;
 	this->speed->box->upvtxtoscr();
 	this->speed->box->tooltiptitle = "Loopstation row speed ";
 	this->speed->box->tooltip = "Allows multiplying the recorded event's speed of this loopstation row.  Leftdrag sets value. Doubleclick allows numeric entry. ";
@@ -85,7 +85,7 @@ LoopStationElement::LoopStationElement() {
     this->colbox->lcolor[2] = 0.4f;
     this->colbox->lcolor[3] = 1.0f;
 	this->colbox->vtxcoords->w = 0.0465f;
-	this->colbox->vtxcoords->h = 0.75f;
+	this->colbox->vtxcoords->h = 0.075f;
 	this->colbox->upvtxtoscr();
 	this->colbox->tooltiptitle = "Loopstation row color code ";
 	this->colbox->tooltip = "Leftclicking this box shows colored boxes on the layer stack scroll strips for layers that contain parameters automated by this loopstation row. A white circle is drawn here when this loopstation row contains data. ";
@@ -95,7 +95,7 @@ LoopStationElement::LoopStationElement() {
     this->box->lcolor[2] = 0.4f;
     this->box->lcolor[3] = 1.0f;
 	this->box->vtxcoords->w = 0.02f;
-	this->box->vtxcoords->h = 0.75f;
+	this->box->vtxcoords->h = 0.075f;
 	this->box->upvtxtoscr();
 	this->box->tooltiptitle = "Loopstation row select current ";
 	this->box->tooltip = "Leftclicking this box selects this loopstation row for use of R(record), L(loop play this row) and S(one shot play this row) keyboard shortcuts. ";
@@ -361,8 +361,9 @@ void LoopStationElement::set_values() {
     }
 }
 		
-void LoopStationElement::add_param(Param* par) {
-    if (loopstation->parelemmap[par]) return;  // each parameter can be automated only once to avoid chaos
+void LoopStationElement::add_param_automationentry(Param* par) {
+    if (loopstation->parelemmap[par] != this && loopstation->parelemmap[par] != nullptr) return;  // each parameter can
+    // be automated only once to avoid chaos
 	std::chrono::high_resolution_clock::time_point now = std::chrono::high_resolution_clock::now();
 	std::chrono::duration<double> elapsed;
 	elapsed = std::chrono::duration_cast<std::chrono::duration<double>>(now - this->starttime);
@@ -390,14 +391,14 @@ void LoopStationElement::add_param(Param* par) {
 			if (par == lvec[j]->shiftx) {
 				this->layers.emplace(lvec[j]);
 				par = lvec[j]->shifty;
-				this->add_param(par);
+				this->add_param_automationentry(par);
 				par = nullptr;
 				return;
 			}
 			if (par == lvec[j]->blendnode->wipex) {
 				this->layers.emplace(lvec[j]);
 				par = lvec[j]->blendnode->wipey;
-				this->add_param(par);
+				this->add_param_automationentry(par);
 				par = nullptr;
 				return;
 			}
@@ -410,20 +411,21 @@ void LoopStationElement::add_param(Param* par) {
 	}
 	if (par == mainmix->wipex[0]) {
 		par = mainmix->wipey[0];
-		this->add_param(par);
+		this->add_param_automationentry(par);
 		par = nullptr;
 		return;
 	}
 	if (par == mainmix->wipex[1]) {
 		par = mainmix->wipey[1];
-		this->add_param(par);
+		this->add_param_automationentry(par);
 		par = nullptr;
 		return;
 	}
 }
 
-void LoopStationElement::add_button(Button* but) {
-    if (loopstation->butelemmap[but]) return;  // each button can be automated only once to avoid chaos
+void LoopStationElement::add_button_automationentry(Button* but) {
+    if (loopstation->butelemmap[but] != this && loopstation->butelemmap[but] != nullptr) return;  // each button can be
+    // automated only once to avoid chaos
 	std::chrono::high_resolution_clock::time_point now = std::chrono::high_resolution_clock::now();
 	std::chrono::duration<double> elapsed;
 	elapsed = std::chrono::duration_cast<std::chrono::duration<double>>(now - this->starttime);
