@@ -1888,6 +1888,7 @@ void BinsMain::open_bin(const std::string &path, Bin *bin) {
                 }
                 if (istring == "RELPATH") {
                     safegetline(rfile, istring);
+                    if (istring == "") return;
                     if (bin->elements[pos]->path == "") {
                         boost::filesystem::current_path(mainprogram->project->binsdir);
                         bin->elements[pos]->path = pathtoplatform(boost::filesystem::absolute(istring).string());

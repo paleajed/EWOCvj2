@@ -49,6 +49,8 @@ typedef struct float4 {
 #include <intrin.h>
 #include <shobjidl.h>
 #include <Vfw.h>
+#include <winsock2.h>
+#include <winbase.h>
 #define STRSAFE_NO_DEPRECATE
 #include <tchar.h>
 #include <initguid.h>
@@ -5926,7 +5928,7 @@ void the_loop() {
 	mainprogram->iemy = mainprogram->my;  // allow Insert effect click on border of parameter box
 
 	// set mouse button values to enable blocking when item ordering overlay is on (reminder|maybe not the best solution)
-	if (mainprogram->orderondisplay or mainmix->retargeting) {
+	if (mainprogram->orderondisplay || mainmix->retargeting) {
 		mainprogram->orderleftmouse = mainprogram->leftmouse;
 		mainprogram->orderleftmousedown = mainprogram->leftmousedown;
 		mainprogram->leftmousedown = false;
@@ -7876,8 +7878,13 @@ void open_genmidis(std::string path) {
 
 
 
-
+#ifdef WINDOWS
+int CALLBACK WinMain(HINSTANCE hInstance, HINSTANCE hPrevInstance, LPSTR pCmdLine, int nCmdShow) {
+#endif
+#ifdef POSIX
 int main(int argc, char* argv[]) {
+    #endif
+
     bool quit = false;
 
 #ifdef WINDOWS
@@ -8112,6 +8119,8 @@ int main(int argc, char* argv[]) {
 
     Layer *layA1 = mainmix->layersA[0];
     Layer *layB1 = mainmix->layersB[0];
+    layA1->clips.clear();
+    layB1->clips.clear();
     mainprogram->nodesmain->currpage->connect_nodes(layA1->node, mixnodeA);
     mainprogram->nodesmain->currpage->connect_nodes(layB1->node, mixnodeB);
     mainmix->currlay[0] = mainmix->layersA[0];
@@ -8218,7 +8227,7 @@ int main(int argc, char* argv[]) {
     // socket communication
     struct sockaddr_in serv_addr;
     int opt = 1;
-    char buffer[1024] = {0};
+    char buf[1024] = {0};
     if ((mainprogram->sock = socket(AF_INET, SOCK_STREAM, 0)) < 0)
     {
         printf("\n Socket creation error \n");
@@ -8243,8 +8252,8 @@ int main(int argc, char* argv[]) {
         sockserver.detach();
     }
     else {
-        int valread = read( mainprogram->sock , buffer, 1024);
-        oscport = 9000 + std::stoi(buffer);
+        int valread = recv( mainprogram->sock , buf, 1024, 0);
+        oscport = 9000 + std::stoi(buf);
     }
 
     // OSC
@@ -8856,7 +8865,12 @@ int main(int argc, char* argv[]) {
         glClearColor(0.2f, 0.2f, 0.2f, 0.2f);
         glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
 
-        boost::filesystem::current_path(mainprogram->docpath.c_str());
+#ifdef WINDOWS
+        SetCurrentDirectory((LPCTSTR)((pathtoplatform(mainprogram->docpath).c_str())));
+#endif
+#ifdef POSIX
+        boost::filesystem::current_path(pathtoplatform(mainprogram->docpath));
+#endif
 
         if (!mainprogram->startloop) {
             //initial switch to live mode

@@ -10,7 +10,10 @@ set(CMAKE_C_FLAGS "${CMAKE_C_FLAGS} -O0")
 set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -O0")
 endif (!MSVC)
 
-add_executable(EWOCvj2
+ADD_DEFINITIONS(-D_AFXDLL)
+SET(CMAKE_MFC_FLAG 2)
+
+add_executable(EWOCvj2 WIN32
         bins.cpp
         bins.h
         box.h

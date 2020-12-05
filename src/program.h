@@ -646,7 +646,12 @@ class Program {
 		bool saveproject = false;
 
 		std::vector<int> connsockets;
-		int sock = 0;
+    #ifdef WINDOWS
+        SOCKET sock;
+    #endif
+    #ifdef POSIX
+        int sock;
+    #endif
 
 		int quit_requester();
 		GLuint set_shader();

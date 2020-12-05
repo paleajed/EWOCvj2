@@ -3792,7 +3792,7 @@ void Layer::display() {
 
             // Draw speed->box
             Param *par = this->speed;
-            if (this->filename == "" or this->type == ELEM_LIVE) {
+            if (this->filename == "" || this->type == ELEM_LIVE) {
                 draw_box(lightgrey, darkgrey, this->speed->box->vtxcoords->x1, this->speed->box->vtxcoords->y1,
                          this->speed->box->vtxcoords->w * 0.30f, 0.075f, -1);
             } else par->handle();
@@ -3808,7 +3808,7 @@ void Layer::display() {
 
             // Draw opacity->box
             par = this->opacity;
-            if (this->filename == "" or this->type == ELEM_LIVE) {
+            if (this->filename == "" || this->type == ELEM_LIVE) {
                 draw_box(lightgrey, darkgrey, this->opacity->box, -1);
             } else par->handle();
             if (par == mainmix->adaptparam) {
@@ -3847,7 +3847,7 @@ void Layer::display() {
                     }
                 }
             } else {
-                if (this->filename == "" or this->type == ELEM_LIVE) {
+                if (this->filename == "" || this->type == ELEM_LIVE) {
                     this->playbut->box->acolor[0] = 0.3;
                     this->playbut->box->acolor[1] = 0.3;
                     this->playbut->box->acolor[2] = 0.3;
@@ -3892,7 +3892,7 @@ void Layer::display() {
                     }
                 }
             } else {
-                if (this->filename == "" or this->type == ELEM_LIVE) {
+                if (this->filename == "" || this->type == ELEM_LIVE) {
                     this->revbut->box->acolor[0] = 0.3;
                     this->revbut->box->acolor[1] = 0.3;
                     this->revbut->box->acolor[2] = 0.3;
@@ -3939,7 +3939,7 @@ void Layer::display() {
                     }
                 }
             } else {
-                if (this->filename == "" or this->type == ELEM_LIVE) {
+                if (this->filename == "" || this->type == ELEM_LIVE) {
                     this->bouncebut->box->acolor[0] = 0.3;
                     this->bouncebut->box->acolor[1] = 0.3;
                     this->bouncebut->box->acolor[2] = 0.3;
@@ -3990,7 +3990,7 @@ void Layer::display() {
                     }
                 }
             } else {
-                if (this->filename == "" or this->type == ELEM_LIVE) {
+                if (this->filename == "" || this->type == ELEM_LIVE) {
                     this->frameforward->box->acolor[0] = 0.3;
                     this->frameforward->box->acolor[1] = 0.3;
                     this->frameforward->box->acolor[2] = 0.3;
@@ -4030,7 +4030,7 @@ void Layer::display() {
                     }
                 }
             } else {
-                if (this->filename == "" or this->type == ELEM_LIVE) {
+                if (this->filename == "" || this->type == ELEM_LIVE) {
                     this->framebackward->box->acolor[0] = 0.3;
                     this->framebackward->box->acolor[1] = 0.3;
                     this->framebackward->box->acolor[2] = 0.3;
@@ -4069,7 +4069,7 @@ void Layer::display() {
                     }
                 }
             } else {
-                if (this->filename == "" or this->type == ELEM_LIVE) {
+                if (this->filename == "" || this->type == ELEM_LIVE) {
                     this->stopbut->box->acolor[0] = 0.3;
                     this->stopbut->box->acolor[1] = 0.3;
                     this->stopbut->box->acolor[2] = 0.3;
@@ -6738,7 +6738,7 @@ Layer* Mixer::read_layers(std::istream &rfile, const std::string &result, std::v
                     this->newlaypaths.push_back(lay->filename);
                     lay->filename = "";
                 }
-				if (load and !notfound) {
+				if (load && !notfound) {
 					lay->timeinit = false;
 					if (lay->type == ELEM_FILE || lay->type == ELEM_LAYER) {
 						lay = lay->open_video(-1, lay->filename, false);

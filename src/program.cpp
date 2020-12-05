@@ -29,6 +29,7 @@
 #include <intrin.h>
 #include <shobjidl.h>
 #include <Vfw.h>
+#include <winsock2.h>
 #define STRSAFE_NO_DEPRECATE
 #include <initguid.h>
 #include <dshow.h>
@@ -699,7 +700,7 @@ void Program::get_dir(const char* title, std::string defaultdir) {
 	bInfo.hwndOwner = nullptr;
 	bInfo.pidlRoot = nullptr;
 	bInfo.pszDisplayName = szDir;
-	bInfo.lpszTitle = title.c_str();
+	bInfo.lpszTitle = title;
 	bInfo.ulFlags = 0;
 	bInfo.lpfn = nullptr;
 	bInfo.lParam = 0;
@@ -2587,7 +2588,7 @@ void Program::handle_laymenu1() {
 	else mainprogram->gotcameras = false;
 
 	if (mainprogram->laymenu1->state > 1) {
-        if ((mainmix->mouselayer->vidformat == 188 || mainmix->mouselayer->vidformat == 187) or
+        if ((mainmix->mouselayer->vidformat == 188 || mainmix->mouselayer->vidformat == 187) ||
         mainmix->mouselayer->filename == "" || mainmix->mouselayer->type == ELEM_IMAGE || mainmix->mouselayer->type
         == ELEM_LIVE) {
             if (mainprogram->laymenu1->entries.back() == "HAP encode on-the-fly") {
@@ -2636,7 +2637,7 @@ void Program::handle_laymenu1() {
             std::thread filereq(&Program::get_multinname, mainprogram, "Open video/image/layer file", "", boost::filesystem::canonical(mainprogram->currfilesdir).generic_string());
             filereq.detach();
         }
-		if (k == 3 and !cond) {
+		if (k == 3 && !cond) {
 			mainprogram->pathto = "OPENFILESSTACK";
 			mainprogram->loadlay = mainmix->mouselayer;
             mainmix->addlay = false;
@@ -3466,7 +3467,7 @@ bool Program::preferences_handle() {
 					catch (...) {
 						mci->items[i]->value = ((PIVid*)(mci->items[i]))->oldvalue;
 					}
-                    if (mci->items[i]->dest == &mainprogram->project->ow or mci->items[i]->dest == &mainprogram->project->oh) {
+                    if (mci->items[i]->dest == &mainprogram->project->ow || mci->items[i]->dest == &mainprogram->project->oh) {
                         mainprogram->saveproject = true;
                     }
 				}
@@ -5528,27 +5529,17 @@ void Program::write_recentprojectlist() {
 void Program::socket_server(struct sockaddr_in serv_addr, int opt) {
     int new_socket;
     int addrlen = sizeof(serv_addr);
-    if (setsockopt(this->sock, SOL_SOCKET, SO_REUSEADDR | SO_REUSEPORT,
-                   &opt, sizeof(opt)))
-    {
-        perror("setsockopt");
-        exit(EXIT_FAILURE);
-    }
+    setsockopt(this->sock, SOL_SOCKET, SO_REUSEADDR,
+                   (const char*)&opt, sizeof(opt));
+
     // Forcefully attaching socket to the port 8000
-    if (bind(this->sock, (struct sockaddr *)&serv_addr,
-             sizeof(serv_addr))<0)
-    {
-        perror("bind failed");
-        exit(EXIT_FAILURE);
-    }
+    bind(this->sock, (struct sockaddr *)&serv_addr,
+             sizeof(serv_addr));
+
     while (listen(this->sock, 3) >= 0)
     {
-        if ((new_socket = accept(this->sock, (struct sockaddr *)&serv_addr,
-                                 (socklen_t*)&addrlen))<0)
-        {
-            perror("accept");
-            exit(EXIT_FAILURE);
-        }
+        new_socket = accept(this->sock, (struct sockaddr *)&serv_addr,
+                                 (socklen_t*)&addrlen);
         mainprogram->connsockets.push_back(new_socket);
         send(new_socket , std::to_string(mainprogram->connsockets.size()).c_str() , strlen(std::to_string(mainprogram->connsockets.size()).c_str()) , 0 );
         printf("CONNECTED\n");
