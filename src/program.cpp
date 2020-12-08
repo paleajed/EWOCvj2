@@ -5553,7 +5553,9 @@ void Program::socket_server(struct sockaddr_in serv_addr, int opt) {
     {
         new_socket = accept(this->sock, (struct sockaddr *)&serv_addr,
                                  (socklen_t*)&addrlen);
-        set_nonblock(new_socket);
+ #ifdef POSIX
+       set_nonblock(new_socket);
+ #endif
         mainprogram->connsockets.push_back(new_socket);
         send(new_socket , std::to_string(mainprogram->connsockets.size()).c_str() , strlen(std::to_string(mainprogram->connsockets.size()).c_str()) , 0 );
         printf("CONNECTED\n");

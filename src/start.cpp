@@ -311,13 +311,14 @@ std::string find_unused_filename(std::string basename, std::string path, std::st
     }
 }
 
-
+#ifdef POSIX
 void set_nonblock(int socket) {
     int flags;
     flags = fcntl(socket,F_GETFL,0);
     assert(flags != -1);
     fcntl(socket, F_SETFL, flags | O_NONBLOCK);
 }
+#endif
 
 
 void check_stage() {
@@ -8277,7 +8278,9 @@ int main(int argc, char* argv[]) {
     }
     else {
         int valread = recv( mainprogram->sock , buf, 1024, 0);
+#ifdef POSIX
         set_nonblock(mainprogram->sock);
+#endif
         oscport = 9000 + std::stoi(buf);
     }
 

@@ -2416,8 +2416,8 @@ Layer::Layer(bool comp) {
 	this->decresult = new frame_result;
 	this->decresult->data = nullptr;
 
-	//this->decoding = std::thread{ &Layer::get_frame, this };
-	//this->decoding.detach();
+	this->decoding = std::thread{ &Layer::get_frame, this };
+	this->decoding.detach();
 }
 
 Layer::~Layer() {

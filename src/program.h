@@ -645,12 +645,13 @@ class Program {
 		bool projnamechanged = false;
 		bool saveproject = false;
 
-		std::vector<int> connsockets;
     #ifdef WINDOWS
         SOCKET sock;
+		std::vector<SOCKET> connsockets;
     #endif
     #ifdef POSIX
         int sock;
+		std::vector<int> connsockets;
     #endif
         bool server = false;
 
