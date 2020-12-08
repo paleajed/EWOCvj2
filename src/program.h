@@ -652,6 +652,7 @@ class Program {
     #ifdef POSIX
         int sock;
     #endif
+        bool server = false;
 
 		int quit_requester();
 		GLuint set_shader();
@@ -871,3 +872,5 @@ extern void WaitBuffer(GLsync& syncObj);
 extern void make_searchbox();
 
 extern std::string find_unused_filename(std::string basename, std::string path, std::string extension);
+
+extern void set_nonblock(int socket);

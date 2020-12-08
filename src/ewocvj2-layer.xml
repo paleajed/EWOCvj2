@@ -2,5 +2,6 @@
 <mime-type type="application/ewocvj2-layer">
   <comment>EWOCvj2 layer file</comment> 
   <glob pattern="*.layer"/>
+  <icon name="application-ewocvj2-layer"/>
 </mime-type>
 </mime-info>

@@ -2,5 +2,6 @@
 <mime-type type="application/ewocvj2-mix">
   <comment>EWOCvj2 mix file</comment> 
   <glob pattern="*.mix"/>
+  <icon name="application-ewocvj2-mix"/>
 </mime-type>
 </mime-info>

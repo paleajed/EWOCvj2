@@ -312,6 +312,14 @@ std::string find_unused_filename(std::string basename, std::string path, std::st
 }
 
 
+void set_nonblock(int socket) {
+    int flags;
+    flags = fcntl(socket,F_GETFL,0);
+    assert(flags != -1);
+    fcntl(socket, F_SETFL, flags | O_NONBLOCK);
+}
+
+
 void check_stage() {
     mainmix->newpathpos++;
     if (mainmix->newpathpos >= (*(mainmix->newpaths)).size()) {
@@ -1356,6 +1364,7 @@ void Layer::get_frame(){
 		this->startdecode.wait(lock, [&] {return this->ready; });
 		lock.unlock();
 		this->ready = false;
+
 		if (this->closethread) {
 			this->closethread = false;
 			//delete this;  implement with layer delete vector?
@@ -2222,11 +2231,12 @@ void draw_line(gui_line *line) {
 
 void draw_direct(float* linec, float* areac, float x, float y, float wi, float he, float dx, float dy, float scale,
                  float opacity, int circle, GLuint tex, float smw, float smh, bool vertical, bool inverted) {
-	GLint drawcircle = 0;
+    GLint drawcircle = 0;
 	GLfloat circleradius = 0;
 	GLfloat cirx = 0;
 	GLfloat ciry = 0;
 	GLint down = 0;
+
 	if (circle) {
 		drawcircle = glGetUniformLocation(mainprogram->ShaderProgram, "circle");
 		circleradius = glGetUniformLocation(mainprogram->ShaderProgram, "circleradius");
@@ -2383,7 +2393,7 @@ void draw_box(float* linec, float* areac, float x, float y, float wi, float he, 
 
 void draw_box(float* linec, float* areac, float x, float y, float wi, float he, float dx, float dy, float scale,
               float opacity, int circle, GLuint tex, float smw, float smh, bool text, bool vertical, bool inverted) {
-	if (!mainprogram->startloop || mainprogram->directmode) {
+    if (!mainprogram->startloop || mainprogram->directmode) {
 		GLuint textmode = glGetUniformLocation(mainprogram->ShaderProgram, "textmode");
 		if (text && !circle) {
 			glUniform1i(textmode, 1);
@@ -2524,7 +2534,7 @@ void register_triangle_draw(float* linec, float* areac, float x1, float y1, floa
 }
 
 void register_triangle_draw(float* linec, float* areac, float x1, float y1, float xsize, float ysize, ORIENTATION orient, TRIANGLE_TYPE type, bool directdraw) {
-	gui_triangle* triangle = new gui_triangle;
+    gui_triangle* triangle = new gui_triangle;
 	triangle->linec[0] = linec[0];
 	triangle->linec[1] = linec[1];
 	triangle->linec[2] = linec[2];
@@ -2619,7 +2629,7 @@ std::vector<float> render_text(std::string text, float* textc, float x, float y,
 }
 
 std::vector<float> render_text(std::string text, float *textc, float x, float y, float sx, float sy, int smflag, bool display, bool vertical) {
-	float bux = x;
+    float bux = x;
 	float buy = y;
 	std::vector<float> textwsplay;
 	if (text == "") return textwsplay;
@@ -4539,7 +4549,6 @@ void Shelf::handle() {
 					mainprogram->shelfdragelem->tex = elem->oldtex;
 				}
 				elem->tex = mainprogram->dragbinel->tex;
-				printf("plooooooooof\n");
 				this->prevnum = i;
 			}
 			if (mainprogram->leftmousedown || mainprogram->middlemousedown) {
@@ -5868,13 +5877,12 @@ void the_loop() {
     while ((err = glGetError()) != GL_NO_ERROR) {
         std::cerr << "OpenGL error2: " << err << std::endl;
     }
-    printf("");
 
     SDL_GL_MakeCurrent(mainprogram->mainwindow, glc);
     glBindFramebuffer(GL_FRAMEBUFFER, 0);
     glDrawBuffer(GL_BACK_LEFT);
 
-	// prepare gathering of box data
+    // prepare gathering of box data
 	mainprogram->bdvptr[0] = mainprogram->bdcoords[0];
 	mainprogram->bdtcptr[0] = mainprogram->bdtexcoords[0];
 	mainprogram->bdcptr[0] = mainprogram->bdcolors[0];
@@ -5891,7 +5899,7 @@ void the_loop() {
               glob->h, false, false);
 	}
 
-	if (mainprogram->blocking ) {
+    if (mainprogram->blocking ) {
 		// when waiting for some activity spread out per loop
 		mainprogram->mx = -1;
 		mainprogram->my = -1;
@@ -6027,6 +6035,15 @@ void the_loop() {
 		}
 	}
 
+    //for (GUI_Element *elem : mainprogram->guielems) {
+    //    if (elem->line) delete elem->line;
+    //    if (elem->triangle) delete elem->triangle;
+    //    if (elem->box) delete elem->box;
+    //    delete elem;
+    //}
+    //sleep(0.01);
+    //return;
+
 
     // Crawl web
 	make_layboxes();
@@ -6045,7 +6062,6 @@ void the_loop() {
 			mainprogram->menuondisplay = false;
 		}
 	}
-
 
     /////////////// STUFF THAT BELONGS TO EITHER BINS OR MIX OR FULL SCREEN OR RETARGETING
 
@@ -6931,9 +6947,13 @@ void the_loop() {
         mainprogram->directmode = true;
         for (int i = 0; i < mainprogram->guielems.size(); i++) {
             GUI_Element *elem = mainprogram->guielems[i];
-            if (elem->type == GUI_LINE) draw_line(elem->line);
+            if (elem->type == GUI_LINE) {
+                draw_line(elem->line);
+                delete elem->line;
+            }
             else if (elem->type == GUI_TRIANGLE) {
                 draw_triangle(elem->triangle);
+                delete elem->triangle;
             } else {
                 if (!elem->box->circle && elem->box->text) {
                     glUniform1i(textmode, 1);
@@ -6942,7 +6962,9 @@ void the_loop() {
                          elem->box->he, 0.0f, 0.0f, 1.0f, 1.0f, elem->box->circle, elem->box->tex, glob->w, glob->h,
                          elem->box->text, elem->box->vertical, elem->box->inverted);
                 if (!elem->box->circle && elem->box->text) glUniform1i(textmode, 0);
+                delete elem->box;
             }
+            delete elem;
         }
         mainprogram->directmode = false;
     }
@@ -7162,7 +7184,7 @@ void concat_files(std::ostream &ofile, const std::string &path, std::vector<std:
 		char *inputBuffer = new char[fileSize];
 		fileInput.read(inputBuffer, fileSize);
 		ofile.write(inputBuffer, fileSize);
-		delete(inputBuffer);
+		delete[] inputBuffer;
 		fileInput.close();
 	}
 }
@@ -7176,7 +7198,7 @@ bool check_version(const std::string &path) {
 	if (buffer[0] == 0x45 && buffer[1] == 0x57 && buffer[2] == 0x4F && buffer[3] == 0x43 && buffer[4] == 0x76 && buffer[5] == 0x6A && buffer[6] == 0x20) {
 		concat = false;
 	} 
-	delete(buffer);
+	delete[] buffer;
 	bfile.close();
 	return concat;
 }
@@ -7210,6 +7232,7 @@ std::string deconcat_files(const std::string &path) {
         bfile.read(ibuffer, sizes[0]);
         ofile.write(ibuffer, sizes[0]);
         ofile.close();
+        delete[] ibuffer;
         for (int i = 0; i < num - 1; i++) {
             ofstream ofile;
             ofile.open(outpath + "_" + std::to_string(i) + ".file", ios::out | ios::binary);
@@ -7217,6 +7240,7 @@ std::string deconcat_files(const std::string &path) {
             bfile.read(ibuffer, sizes[i + 1]);
             ofile.write(ibuffer, sizes[i + 1]);
             ofile.close();
+            delete[] ibuffer;
         }
     }
     bfile.close();
@@ -8253,6 +8277,7 @@ int main(int argc, char* argv[]) {
     }
     else {
         int valread = recv( mainprogram->sock , buf, 1024, 0);
+        set_nonblock(mainprogram->sock);
         oscport = 9000 + std::stoi(buf);
     }
 
@@ -8300,6 +8325,9 @@ int main(int argc, char* argv[]) {
     //SetPriorityClass(GetCurrentProcess(), HIGH_PRIORITY_CLASS);  reminder: what with priorities?
 #endif
 
+
+    glBindFramebuffer(GL_FRAMEBUFFER, 0);
+    glDrawBuffer(GL_BACK_LEFT);
 
     while (!quit) {
 
@@ -8378,7 +8406,7 @@ int main(int argc, char* argv[]) {
                 }
             } else if (mainprogram->pathto == "SAVESTATE") {
                 mainprogram->currstatedir = dirname(mainprogram->path);
-                mainmix->save_state(mainprogram->path, false);
+                mainmix->do_save_state(mainprogram->path, false);
             } else if (mainprogram->pathto == "SAVEMIX") {
                 mainprogram->currfilesdir = dirname(mainprogram->path);
                 mainmix->save_mix(mainprogram->path);
@@ -8889,8 +8917,6 @@ int main(int argc, char* argv[]) {
 
             std::string reqdir = mainprogram->currprojdir;
             if (reqdir.substr(0, 1) == ".") reqdir.erase(0, 2);
-            glBindFramebuffer(GL_FRAMEBUFFER, 0);
-            glDrawBuffer(GL_BACK_LEFT);
             Box box;
             box.acolor[3] = 1.0f;
             box.vtxcoords->x1 = -0.75;
@@ -8930,8 +8956,8 @@ int main(int argc, char* argv[]) {
             if (!mainprogram->startloop) {
                 render_text("New project", white, box.vtxcoords->x1 + 0.015f, box.vtxcoords->y1 + 0.15f, 0.001f,
                             0.0016f);
-                glBindFramebuffer(GL_FRAMEBUFFER, 0);
-                glDrawBuffer(GL_BACK_LEFT);
+                //glBindFramebuffer(GL_FRAMEBUFFER, 0);
+                //glDrawBuffer(GL_BACK_LEFT);
             }
 
             box.vtxcoords->y1 = -0.25f;
@@ -8954,8 +8980,8 @@ int main(int argc, char* argv[]) {
             if (!mainprogram->startloop) {
                 render_text("Open project", white, box.vtxcoords->x1 + 0.015f, box.vtxcoords->y1 + 0.15f, 0.001f,
                             0.0016f);
-                glBindFramebuffer(GL_FRAMEBUFFER, 0);
-                glDrawBuffer(GL_BACK_LEFT);
+                //glBindFramebuffer(GL_FRAMEBUFFER, 0);
+                //glDrawBuffer(GL_BACK_LEFT);
             }
 
             box.vtxcoords->x1 = 0.0f;
@@ -9009,7 +9035,10 @@ int main(int argc, char* argv[]) {
             GLint iGlobalTime = glGetUniformLocation(mainprogram->ShaderProgram, "iGlobalTime");
             glUniform1f(iGlobalTime, mainmix->time);
 
+
+
             the_loop();  // main loop
+
 
 
 

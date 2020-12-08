@@ -2,5 +2,6 @@
 <mime-type type="application/ewocvj2-state">
   <comment>EWOCvj2 state file</comment> 
   <glob pattern="*.state"/>
+  <icon name="application-ewocvj2-state"/>
 </mime-type>
 </mime-info>

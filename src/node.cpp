@@ -139,8 +139,7 @@ void Node::draw_connection(Node *node, CONN_TYPE ct) {
 }
 
 GLuint set_texes(GLuint tex, GLuint *fbo, float ow, float oh) {
-	if (*fbo == -1) glGenFramebuffers(1, fbo);
-	glBindFramebuffer(GL_FRAMEBUFFER, *fbo);
+    if (*fbo != -1) glBindFramebuffer(GL_FRAMEBUFFER, *fbo);
 	glDeleteTextures(1, &tex);
 	GLuint newtex;
 	glGenTextures(1, &newtex);
@@ -151,7 +150,7 @@ GLuint set_texes(GLuint tex, GLuint *fbo, float ow, float oh) {
 	glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_BORDER);
 	glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_BORDER);
 	glTexStorage2D(GL_TEXTURE_2D, 1, GL_RGBA8, ow, oh);
-	glFramebufferTexture2D(GL_FRAMEBUFFER, GL_COLOR_ATTACHMENT0, GL_TEXTURE_2D, newtex, 0);
+    if (*fbo != -1) glFramebufferTexture2D(GL_FRAMEBUFFER, GL_COLOR_ATTACHMENT0, GL_TEXTURE_2D, newtex, 0);
 	return newtex;
 }
 

@@ -2,5 +2,6 @@
 <mime-type type="application/ewocvj2-deck">
   <comment>EWOCvj2 deck file</comment> 
   <glob pattern="*.deck"/>
+  <icon name="application-ewocvj2-deck"/>
 </mime-type>
 </mime-info>

@@ -580,6 +580,94 @@ void BinsMain::handle(bool draw) {
 		}
 	}
 
+	// manage SEND button
+#ifdef WINDOWS
+    std::vector<SOCKET> sendtosocks = mainprogram->connsockets;
+#endif
+#ifdef POSIX
+    std::vector<int> sendtosocks = mainprogram->connsockets;
+#endif
+    if (mainprogram->server == false) {
+        // program instance is client
+        sendtosocks.push_back(mainprogram->sock);
+    }
+    Box box;
+    box.vtxcoords->x1 = -0.28f;
+    box.vtxcoords->y1 = -0.98f;
+    box.vtxcoords->w = 0.1f;
+    box.vtxcoords->h = 0.085f;
+    box.upvtxtoscr();
+    draw_box(white, nullptr, &box, -1);
+    render_text("SEND", white, -0.255f, -0.95f, 0.00075f, 0.0012f);
+    if (box.in()) {
+        if (mainprogram->leftmouse) {
+            char buf[148480] = {0};
+            char* walk = buf;
+            auto put_in_buffer = [](const char* str, char* walk) {
+                for (int i = 0; i < strlen(str); i++) {
+                    *walk++ = str[i];
+                }
+                char *nll = "\0";
+                *walk++ = *nll;
+                return walk;
+            };
+
+            for (int i = 0; i < sendtosocks.size(); i++) {
+                auto sock = sendtosocks[i];
+                walk = put_in_buffer(this->currbin->name.c_str(), walk);
+                for (int i = 0; i < 12; i++) {
+                    for (int j = 0; j < 12; j++) {
+                        BinElement *binel = this->currbin->elements[j * 12 + i];
+                        walk = put_in_buffer(binel->name.c_str(), walk);
+                        walk = put_in_buffer(binel->path.c_str(), walk);
+                    }
+                }
+                send(sock, buf, walk - &buf[0], 0);
+            }
+        }
+    }
+    // recieve sent bin
+    char buf[148480] = {0};
+    char* walk = buf;
+
+    for (int i = 0; i < sendtosocks.size(); i++) {
+        auto sock = sendtosocks[i];
+        int valread = recv( sock , walk, 148480, 0);
+        std::string str(walk);
+        walk += strlen(walk ) + 1;
+#ifdef WINDOWS
+    if (valread != SOCKET_ERROR) {
+#endif
+#ifdef POSIX
+        if (valread >= 0) {
+#endif
+            Bin *binis = nullptr;
+            for (Bin *bin : binsmain->bins) {
+                if (bin->name == str + " (FROZEN)") {
+                    binis = bin;
+                    break;
+                }
+            }
+            if (!binis) binis = new_bin(str + " (FROZEN)");
+            make_currbin(binis->pos);
+            binis->frozen = true;
+
+            for (int i = 0; i < 12; i++) {
+                for (int j = 0; j < 12; j++) {
+                    BinElement *binel = this->currbin->elements[j * 12 + i];
+                    std::string name(walk);
+                    walk += strlen(walk) + 1;
+                    std::string path(walk);
+                    walk += strlen(walk) + 1;
+                    binel->name = name;
+                    mainprogram->paths.push_back(path);
+                }
+            }
+            this->openfilesbin = true;
+            this->menuactbinel = binsmain->currbin->elements[0];  // loading starts from first bin element
+        }
+    }
+
 
 	// set threadmode for hap encoding
 	render_text("HAP Encoding Mode", white, 0.62f, 0.8f, 0.00075f, 0.0012f);
@@ -1700,6 +1788,7 @@ void BinsMain::handle(bool draw) {
 							int jj = j + (int)((k + i + intm) / 12) - ((k + this->previ + intm) < 0);
 							int ii = ((k + intm + 144) % 12 + i + 144) % 12;
 							BinElement* dirbinel = this->currbin->elements[ii * 12 + jj];
+                            if (this->addpaths[k] == dirbinel->path) continue;
 							dirbinel->tex = this->inputtexes[k];
 							dirbinel->type = this->inputtypes[k];
 							dirbinel->path = this->addpaths[k];
@@ -1888,7 +1977,7 @@ void BinsMain::open_bin(const std::string &path, Bin *bin) {
                 }
                 if (istring == "RELPATH") {
                     safegetline(rfile, istring);
-                    if (istring == "") return;
+                    if (istring == "") continue;
                     if (bin->elements[pos]->path == "") {
                         boost::filesystem::current_path(mainprogram->project->binsdir);
                         bin->elements[pos]->path = pathtoplatform(boost::filesystem::absolute(istring).string());
@@ -2015,6 +2104,7 @@ Bin *BinsMain::new_bin(const std::string &name) {
 	Bin *bin = new Bin(this->bins.size());
 	bin->name = name;
 	this->bins.push_back(bin);
+	bin->pos = this->bins.size() - 1;
 	//this->currbin->elements.clear();
 	
 	for (int i = 0; i < 12; i++) {
@@ -2033,7 +2123,7 @@ Bin *BinsMain::new_bin(const std::string &name) {
 
 void BinsMain::make_currbin(int pos) {
 	// make bin on position pos current
-	this->currbin->pos = pos;
+	this->currbin = this->bins[pos];
 	this->currbin->name = this->bins[pos]->name;
 	this->currbin->path = this->bins[pos]->path;
 	this->currbin->elements = this->bins[pos]->elements;
@@ -2130,24 +2220,27 @@ void BinsMain::import_bins() {
 }
 
 void BinsMain::open_files_bin() {
-	// open videos/images/layer files into bin
+    // open videos/images/layer files into bin
 
-	// order elements
-    if (mainprogram->paths.size() == 0) {
-        binsmain->openfilesbin = false;
-        mainprogram->multistage = 0;
-        return;
+    if (!currbin->frozen) {
+        // order elements
+        if (mainprogram->paths.size() == 0) {
+            binsmain->openfilesbin = false;
+            mainprogram->multistage = 0;
+            return;
+        }
+        bool cont = mainprogram->order_paths(false);
+        if (!cont) return;
+
+
+        mainprogram->blocking = true;
+        if (SDL_GetMouseFocus() != mainprogram->mainwindow) {
+            SDL_SetCursor(SDL_CreateSystemCursor(SDL_SYSTEM_CURSOR_ARROW));
+        } else {
+            SDL_SetCursor(SDL_CreateSystemCursor(SDL_SYSTEM_CURSOR_WAIT));
+        }
     }
-	bool cont = mainprogram->order_paths(false);
-	if (!cont) return;
 
-	mainprogram->blocking = true;
-	if (SDL_GetMouseFocus() != mainprogram->mainwindow) {
-		SDL_SetCursor(SDL_CreateSystemCursor(SDL_SYSTEM_CURSOR_ARROW));
-	}
-	else {
-		SDL_SetCursor(SDL_CreateSystemCursor(SDL_SYSTEM_CURSOR_WAIT));
-	} 
 	if (mainprogram->counting == mainprogram->paths.size()) {
 		this->currbin->path = mainprogram->project->binsdir + this->currbin->name + ".bin";
 		this->openfilesbin = false;
@@ -2163,52 +2256,58 @@ void BinsMain::open_files_bin() {
 }
 
 void BinsMain::open_handlefile(const std::string &path) {
-	// prepare value lists for inputting videos/images/layer files from disk
-	ELEM_TYPE endtype;
-	GLuint endtex;
+    if (path != "") {
+        // prepare value lists for inputting videos/images/layer files from disk
+        ELEM_TYPE endtype;
+        GLuint endtex;
 
-    // determine file type
-    std::string istring = "";
-    std::string result = deconcat_files(path);
-    if (!mainprogram->openerr) {
-        bool concat = (result != "");
-        std::ifstream rfile;
-        if (concat) rfile.open(result);
-        else rfile.open(path);
-        safegetline(rfile, istring);
-    }
-    else mainprogram->openerr = false;
-    if (istring == "EWOCvj LAYERFILE") {
-        // prepare layer file for bin entry
-        endtype = ELEM_LAYER;
-        endtex = get_layertex(path);
-    } else if (istring == "EWOCvj DECKFILE") {
-        // prepare layer file for bin entry
-        endtype = ELEM_DECK;
-        endtex = get_deckmixtex(path);
-    } else if (istring == "EWOCvj MIXFILE") {
-        // prepare layer file for bin entry
-        endtype = ELEM_MIX;
-        endtex = get_deckmixtex(path);
-    } else if (isimage(path)) {
-        // prepare image file for bin entry
-        endtype = ELEM_IMAGE;
-        endtex = get_imagetex(path);
-    } else if (isvideo(path)) {
-        // prepare video file for bin entry
-        endtype = ELEM_FILE;
-        endtex = get_videotex(path);
-    } else if (mainprogram->openerr) {
-        return;
-    }
+        // determine file type
+        std::string istring = "";
+        std::string result = deconcat_files(path);
+        if (!mainprogram->openerr) {
+            bool concat = (result != "");
+            std::ifstream rfile;
+            if (concat) rfile.open(result);
+            else rfile.open(path);
+            safegetline(rfile, istring);
+        } else mainprogram->openerr = false;
+        if (istring == "EWOCvj LAYERFILE") {
+            // prepare layer file for bin entry
+            endtype = ELEM_LAYER;
+            endtex = get_layertex(path);
+        } else if (istring == "EWOCvj DECKFILE") {
+            // prepare layer file for bin entry
+            endtype = ELEM_DECK;
+            endtex = get_deckmixtex(path);
+        } else if (istring == "EWOCvj MIXFILE") {
+            // prepare layer file for bin entry
+            endtype = ELEM_MIX;
+            endtex = get_deckmixtex(path);
+        } else if (isimage(path)) {
+            // prepare image file for bin entry
+            endtype = ELEM_IMAGE;
+            endtex = get_imagetex(path);
+        } else if (isvideo(path)) {
+            // prepare video file for bin entry
+            endtype = ELEM_FILE;
+            endtex = get_videotex(path);
+        } else if (mainprogram->openerr) {
+            return;
+        }
 
-	if (endtex == -1) return;
-	this->addpaths.push_back(path);
-	this->inputtexes.push_back(endtex);
-	this->inputtypes.push_back(endtype);
-	std::string jpath = find_unused_filename(basename(path), mainprogram->temppath, ".jpg");
-	save_thumb(jpath, copy_tex(endtex));
-	this->inputjpegpaths.push_back(jpath);
+        if (endtex == -1) return;
+        this->inputtexes.push_back(endtex);
+        this->inputtypes.push_back(endtype);
+        std::string jpath = find_unused_filename(basename(path), mainprogram->temppath, ".jpg");
+        save_thumb(jpath, copy_tex(endtex));
+        this->inputjpegpaths.push_back(jpath);
+    }
+    else {
+        this->inputtexes.push_back(-1);
+        this->inputtypes.push_back(ELEM_FILE);
+        this->inputjpegpaths.push_back("");
+    }
+    this->addpaths.push_back(path);
 }
 
 

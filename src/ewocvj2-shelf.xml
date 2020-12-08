@@ -2,5 +2,6 @@
 <mime-type type="application/ewocvj2-shelf">
   <comment>EWOCvj2 shelf file</comment> 
   <glob pattern="*.shelf"/>
+  <icon name="application-ewocvj2-shelf"/>
 </mime-type>
 </mime-info>

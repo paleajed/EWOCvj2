@@ -109,6 +109,7 @@ class Bin {
 		std::vector<BinElement*> elements;
 		int encthreads = 0;
 		int pos;
+		bool frozen = false;
 		Bin(int pos);
 		~Bin();
 		

@@ -961,6 +961,8 @@ void Program::handle_wormgate(bool gate) {
 		GUI_Element* elem = mainprogram->guielems.back();
 		mainprogram->guielems.pop_back();
 		draw_triangle(elem->triangle);
+		delete elem->triangle;
+		delete elem;
 		if (mainprogram->binsscreen) render_text("MIX", lightgrey, -0.9f, -0.29f, 0.0006f, 0.001f);
 		else render_text("BINS", lightgrey, -0.9f, -0.44f, 0.0006f, 0.001f);
 	}
@@ -970,6 +972,8 @@ void Program::handle_wormgate(bool gate) {
 			GUI_Element* elem = mainprogram->guielems.back();
 			mainprogram->guielems.pop_back();
 			draw_triangle(elem->triangle);
+            delete elem->triangle;
+            delete elem;
 			render_text("MIX", lightgrey, 0.86f, -0.14f, 0.0006f, 0.001f);
 		}
 		else {
@@ -977,6 +981,8 @@ void Program::handle_wormgate(bool gate) {
 			GUI_Element* elem = mainprogram->guielems.back();
 			mainprogram->guielems.pop_back();
 			draw_triangle(elem->triangle);
+            delete elem->triangle;
+            delete elem;
 			render_text("BINS", lightgrey, 0.86f, -0.44f, 0.0006f, 0.001f);
 		}
 	}
@@ -1216,6 +1222,8 @@ my) {
             GUI_Element *elem = mainprogram->guielems.back();
             mainprogram->guielems.pop_back();
             draw_triangle(elem->triangle);
+            delete elem->triangle;
+            delete elem;
         }
 	}
 	if (numlines - scrollpos > scrlines) {
@@ -1240,11 +1248,13 @@ my) {
 		register_triangle_draw(white, white, lowerbox->vtxcoords->x1 + (lowerbox->vtxcoords->w / 0.075f) * 0.0111f, lowerbox->vtxcoords->y1 + (lowerbox->vtxcoords->w / 0.075f) * (0.0624f - 0.045f), 0.0165f, 0.0312f, UP, CLOSED);
         }
         else {
-                register_triangle_draw(white, white, lowerbox->vtxcoords->x1 + (lowerbox->vtxcoords->w / 0.075f) * 0.0111f, lowerbox->vtxcoords->y1 + (lowerbox->vtxcoords->w / 0.075f) * (0.0624f - 0.045f),
-             0.033f, 0.0624f, UP, CLOSED);
-                GUI_Element *elem = mainprogram->guielems.back();
-                mainprogram->guielems.pop_back();
-                draw_triangle(elem->triangle);
+            register_triangle_draw(white, white, lowerbox->vtxcoords->x1 + (lowerbox->vtxcoords->w / 0.075f) * 0.0111f, lowerbox->vtxcoords->y1 + (lowerbox->vtxcoords->w / 0.075f) * (0.0624f - 0.045f),
+         0.033f, 0.0624f, UP, CLOSED);
+            GUI_Element *elem = mainprogram->guielems.back();
+            mainprogram->guielems.pop_back();
+            draw_triangle(elem->triangle);
+            delete elem->triangle;
+            delete elem;
         }
 	}
 	return scrollpos;
@@ -1738,10 +1748,12 @@ bool Box::in() {
 
 bool Box::in(int mx, int my) {
     if (mainprogram->menuondisplay) return false;
+    this->upvtxtoscr();
     if (this->scrcoords->x1 <= mx && mx <= this->scrcoords->x1 + this->scrcoords->w) {
         if (this->scrcoords->y1 - this->scrcoords->h <= my && my <= this->scrcoords->y1) {
             mainprogram->boxhit = true;
             if (mainprogram->showtooltips && !mainprogram->ttreserved) {
+                if (mainprogram->tooltipbox) delete mainprogram->tooltipbox;
                 mainprogram->tooltipbox = this->copy();
                 mainprogram->ttreserved = this->reserved;
             }
@@ -1757,7 +1769,7 @@ bool Box::in2() {
 }
 
 bool Box::in2(int mx, int my) {
-    // for boxes in limited scope (non-dynamically allocated)
+    // for boxes in limited scope (non-dynamically allocated)  reminder: new tooltip mechanism makes this redundant
     if (mainprogram->menuondisplay) return false;
     if (this->scrcoords->x1 <= mx && mx <= this->scrcoords->x1 + this->scrcoords->w) {
         if (this->scrcoords->y1 - this->scrcoords->h <= my && my <= this->scrcoords->y1) {
@@ -4570,7 +4582,7 @@ void Project::autosave() {
                remove_extension(basename(this->path)) + "_0";
     }
     int num = std::stoi(name.substr(name.rfind('_') + 1, name.length() - name.rfind('_') - 1));
-    name = this->autosavedir + "autosave_" + basename(remove_version(name)) + "_" + std::to_string(num + 1);
+    name = this->autosavedir + basename(remove_version(name)) + "_" + std::to_string(num + 1);
     std::string path = name + ".state";
 
     mainmix->do_save_state(path, true);
@@ -5527,19 +5539,21 @@ void Program::write_recentprojectlist() {
 
 
 void Program::socket_server(struct sockaddr_in serv_addr, int opt) {
+    this->server = true;
     int new_socket;
     int addrlen = sizeof(serv_addr);
-    setsockopt(this->sock, SOL_SOCKET, SO_REUSEADDR,
+    int ret = setsockopt(this->sock, SOL_SOCKET, SO_REUSEADDR,
                    (const char*)&opt, sizeof(opt));
 
     // Forcefully attaching socket to the port 8000
-    bind(this->sock, (struct sockaddr *)&serv_addr,
+    ret = bind(this->sock, (struct sockaddr *)&serv_addr,
              sizeof(serv_addr));
 
     while (listen(this->sock, 3) >= 0)
     {
         new_socket = accept(this->sock, (struct sockaddr *)&serv_addr,
                                  (socklen_t*)&addrlen);
+        set_nonblock(new_socket);
         mainprogram->connsockets.push_back(new_socket);
         send(new_socket , std::to_string(mainprogram->connsockets.size()).c_str() , strlen(std::to_string(mainprogram->connsockets.size()).c_str()) , 0 );
         printf("CONNECTED\n");
