@@ -4600,19 +4600,19 @@ void Mixer::deckmixdrag_handle() {
             if (!mainprogram->binsscreen) {
                 // check drop of dragged deck into mix
                 float lightblue[] = {0.5f, 0.5f, 1.0f, 1.0f};
-                Box boxA;
-                boxA.vtxcoords->x1 = -1.0f + mainprogram->numw;
-                boxA.vtxcoords->y1 = 1.0f - mainprogram->layh;
-                boxA.vtxcoords->w = mainprogram->layw * 3;
-                boxA.vtxcoords->h = mainprogram->layh;
-                boxA.upvtxtoscr();
-                Box boxB;
-                boxB.vtxcoords->x1 = mainprogram->numw;
-                boxB.vtxcoords->y1 = 1.0f - mainprogram->layh;
-                boxB.vtxcoords->w = mainprogram->layw * 3;
-                boxB.vtxcoords->h = mainprogram->layh;
-                boxB.upvtxtoscr();
-                if (boxA.in(mainprogram->mx, mainprogram->my)) {
+                std::unique_ptr <Box> boxA = std::make_unique <Box> ();;
+                boxA->vtxcoords->x1 = -1.0f + mainprogram->numw;
+                boxA->vtxcoords->y1 = 1.0f - mainprogram->layh;
+                boxA->vtxcoords->w = mainprogram->layw * 3;
+                boxA->vtxcoords->h = mainprogram->layh;
+                boxA->upvtxtoscr();
+                std::unique_ptr <Box> boxB = std::make_unique <Box> ();;
+                boxB->vtxcoords->x1 = mainprogram->numw;
+                boxB->vtxcoords->y1 = 1.0f - mainprogram->layh;
+                boxB->vtxcoords->w = mainprogram->layw * 3;
+                boxB->vtxcoords->h = mainprogram->layh;
+                boxB->upvtxtoscr();
+                if (boxA->in(mainprogram->mx, mainprogram->my)) {
                     draw_box(nullptr, lightblue, -1.0f + mainprogram->numw, 1.0f - mainprogram->layh,
                              mainprogram->layw * 3, mainprogram->layh, -1);
                     if (mainprogram->lmover) {
@@ -4622,7 +4622,7 @@ void Mixer::deckmixdrag_handle() {
                         binsmain->handle(0);
                         enddrag();
                     }
-                } else if (boxB.in(mainprogram->mx, mainprogram->my)) {
+                } else if (boxB->in(mainprogram->mx, mainprogram->my)) {
                     draw_box(nullptr, lightblue, mainprogram->numw, 1.0f - mainprogram->layh, mainprogram->layw * 3,
                              mainprogram->layh, -1);
                     if (mainprogram->lmover) {
@@ -4635,13 +4635,13 @@ void Mixer::deckmixdrag_handle() {
         } else if (mainprogram->dragbinel->type == ELEM_MIX) {
             if (!mainprogram->binsscreen) {
                 // check drop of dragged mix into layer stacks
-                Box box;
-                box.vtxcoords->x1 = -1.0f + mainprogram->numw;
-                box.vtxcoords->y1 = 1.0f - mainprogram->layh;
-                box.vtxcoords->w = mainprogram->layw * 6 + mainprogram->numw;
-                box.vtxcoords->h = mainprogram->layh;
-                box.upvtxtoscr();
-                if (box.in(mainprogram->mx, mainprogram->my)) {
+                std::unique_ptr <Box> box = std::make_unique <Box> ();;
+                box->vtxcoords->x1 = -1.0f + mainprogram->numw;
+                box->vtxcoords->y1 = 1.0f - mainprogram->layh;
+                box->vtxcoords->w = mainprogram->layw * 6 + mainprogram->numw;
+                box->vtxcoords->h = mainprogram->layh;
+                box->upvtxtoscr();
+                if (box->in(mainprogram->mx, mainprogram->my)) {
                     draw_box(nullptr, lightblue, -1.0f + mainprogram->numw, 1.0f - mainprogram->layh,
                              mainprogram->layw * 6 + mainprogram->numw, mainprogram->layh, -1);
                     if (mainprogram->lmover) {

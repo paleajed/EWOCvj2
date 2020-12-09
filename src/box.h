@@ -25,7 +25,6 @@ class Box {
 	public:
 		float lcolor[4] = {0.7, 0.7, 0.7, 1.0};
 		float acolor[4] = {0.0, 0.0, 0.0, 0.0};
-		void set_vtxcoords(BOX_COORDS *vtxcoords);
 		BOX_COORDS *scrcoords;
 		BOX_COORDS *vtxcoords;
 		GLuint tex = -1;

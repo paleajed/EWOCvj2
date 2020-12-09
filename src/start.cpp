@@ -16,13 +16,6 @@
 #include <stdint.h>
 #include <cstdlib>
 
-typedef struct float4 {
-	float x;
-	float y;
-	float z;
-	float w;
-} float4;
-
 #include <cstring>
 #include <string>
 #include <assert.h>
@@ -2360,7 +2353,11 @@ void draw_box(Box *box, GLuint tex) {
 }
 
 void draw_box(float *linec, float *areac, Box *box, GLuint tex) {
-	draw_box(linec, areac, box->vtxcoords->x1, box->vtxcoords->y1, box->vtxcoords->w, box->vtxcoords->h, 0.0f, 0.0f, 1.0f, 1.0f, 0, tex, glob->w, glob->h, 0);
+    draw_box(linec, areac, box->vtxcoords->x1, box->vtxcoords->y1, box->vtxcoords->w, box->vtxcoords->h, 0.0f, 0.0f, 1.0f, 1.0f, 0, tex, glob->w, glob->h, 0);
+}
+
+void draw_box(float *linec, float *areac, std::unique_ptr <Box> const &box, GLuint tex) {
+    draw_box(linec, areac, box->vtxcoords->x1, box->vtxcoords->y1, box->vtxcoords->w, box->vtxcoords->h, 0.0f, 0.0f, 1.0f, 1.0f, 0, tex, glob->w, glob->h, 0);
 }
 
 void draw_box(Box *box, float opacity, GLuint tex) {
@@ -5873,7 +5870,6 @@ void the_loop() {
 	float grey[] = { 0.5f, 0.5f, 0.5f, 1.0f };
 	float darkgrey[] = { 0.2f, 0.2f, 0.2f, 1.0f };
 	float lightblue[] = { 0.5f, 0.5f, 1.0f, 1.0f };
-
     GLenum err;
     while ((err = glGetError()) != GL_NO_ERROR) {
         std::cerr << "OpenGL error2: " << err << std::endl;
@@ -5882,6 +5878,7 @@ void the_loop() {
     SDL_GL_MakeCurrent(mainprogram->mainwindow, glc);
     glBindFramebuffer(GL_FRAMEBUFFER, 0);
     glDrawBuffer(GL_BACK_LEFT);
+    glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT | GL_STENCIL_BUFFER_BIT);
 
     // prepare gathering of box data
 	mainprogram->bdvptr[0] = mainprogram->bdcoords[0];
@@ -6304,17 +6301,17 @@ void the_loop() {
                     if (brk) break;
                 }
                 float y2 = -0.2f - std::min(6, totalsize) * 0.1f;
-                Box box;
-                box.vtxcoords->x1 = -0.15f;
-                box.vtxcoords->y1 = y2;
-                box.vtxcoords->w = 0.15f;
-                box.vtxcoords->h = 0.1f;
-                box.upvtxtoscr();
-                draw_box(white, black, &box, -1);
+                std::unique_ptr <Box> box = std::make_unique <Box> ();;
+                box->vtxcoords->x1 = -0.15f;
+                box->vtxcoords->y1 = y2;
+                box->vtxcoords->w = 0.15f;
+                box->vtxcoords->h = 0.1f;
+                box->upvtxtoscr();
+                draw_box(white, black, box, -1);
                 render_text("SEARCH ONE", white, -0.15f + 0.015f, y2 + 0.075f - 0.045f,
                             0.00045f,
                             0.00075f);
-                if (box.in()) {
+                if (box->in()) {
                     if (mainprogram->orderleftmouse) {
                         bool ret = retarget_search();
                         if (ret) {
@@ -6324,16 +6321,16 @@ void the_loop() {
                         else retarget->notfound = true;
                     }
                 }
-                box.vtxcoords->x1 = 0.0f;
-                box.vtxcoords->y1 = y2;
-                box.vtxcoords->w = 0.15f;
-                box.vtxcoords->h = 0.1f;
-                box.upvtxtoscr();
-                draw_box(white, black, &box, -1);
+                box->vtxcoords->x1 = 0.0f;
+                box->vtxcoords->y1 = y2;
+                box->vtxcoords->w = 0.15f;
+                box->vtxcoords->h = 0.1f;
+                box->upvtxtoscr();
+                draw_box(white, black, box, -1);
                 render_text("SEARCH ALL", white, 0.0f + 0.015f, y2 + 0.075f - 0.045f,
                             0.00045f,
                             0.00075f);
-                if (box.in()) {
+                if (box->in()) {
                     if (mainprogram->orderleftmouse) {
                         retarget->searchall = true;
                         retarget->notfound = false;
@@ -6341,12 +6338,12 @@ void the_loop() {
                 }
 
                 if (retarget->notfound) {
-                    box.vtxcoords->x1 = -0.075f;
-                    box.vtxcoords->y1 = y2 - 0.1f;
-                    box.vtxcoords->w = 0.15f;
-                    box.vtxcoords->h = 0.1f;
-                    box.upvtxtoscr();
-                    draw_box(white, black, &box, -1);
+                    box->vtxcoords->x1 = -0.075f;
+                    box->vtxcoords->y1 = y2 - 0.1f;
+                    box->vtxcoords->w = 0.15f;
+                    box->vtxcoords->h = 0.1f;
+                    box->upvtxtoscr();
+                    draw_box(white, black, box, -1);
                     render_text("NOT FOUND!", white, -0.075f + 0.015f, y2 -0.1f + 0.075f - 0.045f,
                                 0.00045f,
                                 0.00075f);
@@ -8920,16 +8917,16 @@ int main(int argc, char* argv[]) {
 
             std::string reqdir = mainprogram->currprojdir;
             if (reqdir.substr(0, 1) == ".") reqdir.erase(0, 2);
-            Box box;
-            box.acolor[3] = 1.0f;
-            box.vtxcoords->x1 = -0.75;
-            box.vtxcoords->y1 = 0.0f;
-            box.vtxcoords->w = 0.5f;
-            box.vtxcoords->h = 0.25f;
-            box.upvtxtoscr();
-            draw_box(&box, -1);
-            if (box.in2()) {
-                draw_box(white, lightblue, &box, -1);
+            std::unique_ptr <Box> box = std::make_unique <Box> ();
+            box->acolor[3] = 1.0f;
+            box->vtxcoords->x1 = -0.75;
+            box->vtxcoords->y1 = 0.0f;
+            box->vtxcoords->w = 0.5f;
+            box->vtxcoords->h = 0.25f;
+            box->upvtxtoscr();
+            draw_box(box->lcolor, box->acolor, box, -1);
+            if (box->in()) {
+                draw_box(white, lightblue, box, -1);
                 if (mainprogram->leftmouse) {
                     //start new project
                     std::string name = "Untitled_0";
@@ -8957,17 +8954,17 @@ int main(int argc, char* argv[]) {
                 }
             }
             if (!mainprogram->startloop) {
-                render_text("New project", white, box.vtxcoords->x1 + 0.015f, box.vtxcoords->y1 + 0.15f, 0.001f,
+                render_text("New project", white, box->vtxcoords->x1 + 0.015f, box->vtxcoords->y1 + 0.15f, 0.001f,
                             0.0016f);
                 //glBindFramebuffer(GL_FRAMEBUFFER, 0);
                 //glDrawBuffer(GL_BACK_LEFT);
             }
 
-            box.vtxcoords->y1 = -0.25f;
-            box.upvtxtoscr();
-            draw_box(&box, -1);
-            if (box.in2()) {
-                draw_box(white, lightblue, &box, -1);
+            box->vtxcoords->y1 = -0.25f;
+            box->upvtxtoscr();
+            draw_box(box->lcolor, box->acolor, box, -1);
+            if (box->in()) {
+                draw_box(white, lightblue, box, -1);
                 if (mainprogram->leftmouse) {
                     mainprogram->get_inname("Open project", "application/ewocvj2-project",
                                             boost::filesystem::canonical(mainprogram->currprojdir).generic_string());
@@ -8981,24 +8978,24 @@ int main(int argc, char* argv[]) {
                 }
             }
             if (!mainprogram->startloop) {
-                render_text("Open project", white, box.vtxcoords->x1 + 0.015f, box.vtxcoords->y1 + 0.15f, 0.001f,
+                render_text("Open project", white, box->vtxcoords->x1 + 0.015f, box->vtxcoords->y1 + 0.15f, 0.001f,
                             0.0016f);
                 //glBindFramebuffer(GL_FRAMEBUFFER, 0);
                 //glDrawBuffer(GL_BACK_LEFT);
             }
 
-            box.vtxcoords->x1 = 0.0f;
-            box.vtxcoords->y1 = 0.5f;
-            box.vtxcoords->w = 0.95f;
-            box.vtxcoords->h = 0.125f;
-            box.upvtxtoscr();
+            box->vtxcoords->x1 = 0.0f;
+            box->vtxcoords->y1 = 0.5f;
+            box->vtxcoords->w = 0.95f;
+            box->vtxcoords->h = 0.125f;
+            box->upvtxtoscr();
 
-            render_text("Recent project files:", white, box.vtxcoords->x1 + 0.015f,
-                        box.vtxcoords->y1 + box.vtxcoords->h * 2.0f + 0.03f, 0.001f, 0.0016f);
+            render_text("Recent project files:", white, box->vtxcoords->x1 + 0.015f,
+                        box->vtxcoords->y1 + box->vtxcoords->h * 2.0f + 0.03f, 0.001f, 0.0016f);
             for (int i = 0; i < mainprogram->recentprojectpaths.size(); i++) {
-                draw_box(&box, -1);
-                if (box.in2()) {
-                    draw_box(white, lightblue, &box, -1);
+                draw_box(box->lcolor, box->acolor, box, -1);
+                if (box->in()) {
+                    draw_box(white, lightblue, box, -1);
                     if (mainprogram->leftmouse) {
                         SDL_GL_MakeCurrent(mainprogram->mainwindow, glc);
                         mainprogram->project->open(mainprogram->recentprojectpaths[i]);
@@ -9008,9 +9005,9 @@ int main(int argc, char* argv[]) {
                     }
                 }
                 render_text(remove_extension(basename(mainprogram->recentprojectpaths[i])), white,
-                            box.vtxcoords->x1 + 0.015f, box.vtxcoords->y1 + 0.03f, 0.001f, 0.0016f);
-                box.vtxcoords->y1 -= 0.125f;
-                box.upvtxtoscr();
+                            box->vtxcoords->x1 + 0.015f, box->vtxcoords->y1 + 0.03f, 0.001f, 0.0016f);
+                box->vtxcoords->y1 -= 0.125f;
+                box->upvtxtoscr();
             }
 
            // allow exiting with x icon during project setup
@@ -9028,6 +9025,8 @@ int main(int argc, char* argv[]) {
             mainprogram->leftmouse = false;
 
             SDL_GL_SwapWindow(mainprogram->mainwindow);
+
+
         } else {
             // update global timer iGlobalTime, used by some effects shaders
             std::chrono::high_resolution_clock::time_point now = std::chrono::high_resolution_clock::now();

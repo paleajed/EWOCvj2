@@ -795,6 +795,7 @@ extern void draw_box(float *color, float x, float y, float radius, int circle);
 extern void draw_box(float *color, float x, float y, float radius, int circle, float fw, float fh);
 extern void draw_box(Box *box, GLuint tex);
 extern void draw_box(float *linec, float *areac, Box *box, GLuint tex);
+extern void draw_box(float *linec, float *areac, std::unique_ptr <Box> const &box, GLuint tex);
 extern void draw_box(Box *box, float opacity, GLuint tex);
 extern void draw_box(Box *box, float dx, float dy, float scale, GLuint tex);
 

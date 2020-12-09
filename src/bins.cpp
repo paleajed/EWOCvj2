@@ -517,7 +517,7 @@ void BinsMain::handle(bool draw) {
 			mainprogram->make_menu("binelmenu", mainprogram->binelmenu, binel);
 		}
 
-		Box box;
+        std::unique_ptr <Box> box = std::make_unique <Box> ();
 		bool found = false;
 		bool cond2 = (mainprogram->mx < mainprogram->xvtxtoscr(1.475f));
 		if ((!this->menubinel || cond1) && cond2) {
@@ -542,19 +542,19 @@ void BinsMain::handle(bool draw) {
 			}
 		}
 		if (this->selboxing) {
-			box.vtxcoords->x1 = -1.0f + mainprogram->xscrtovtx(this->selboxx);
-			box.vtxcoords->h = mainprogram->yscrtovtx(mainprogram->my - this->selboxy);
-			box.vtxcoords->y1 = 1.0f - mainprogram->yscrtovtx(this->selboxy);
-			if (box.vtxcoords->h > 0) box.vtxcoords->y1 -= box.vtxcoords->h;
-			else box.vtxcoords->h = -box.vtxcoords->h;
-			box.vtxcoords->w = mainprogram->xscrtovtx(mainprogram->mx - this->selboxx);
-			if (box.vtxcoords->w < 0) {
-				box.vtxcoords->x1 += box.vtxcoords->w;
-				box.vtxcoords->w = -box.vtxcoords->w;
+			box->vtxcoords->x1 = -1.0f + mainprogram->xscrtovtx(this->selboxx);
+			box->vtxcoords->h = mainprogram->yscrtovtx(mainprogram->my - this->selboxy);
+			box->vtxcoords->y1 = 1.0f - mainprogram->yscrtovtx(this->selboxy);
+			if (box->vtxcoords->h > 0) box->vtxcoords->y1 -= box->vtxcoords->h;
+			else box->vtxcoords->h = -box->vtxcoords->h;
+			box->vtxcoords->w = mainprogram->xscrtovtx(mainprogram->mx - this->selboxx);
+			if (box->vtxcoords->w < 0) {
+				box->vtxcoords->x1 += box->vtxcoords->w;
+				box->vtxcoords->w = -box->vtxcoords->w;
 			}
-			box.upvtxtoscr();
+			box->upvtxtoscr();
 			mainprogram->frontbatch = true;
-			draw_box(white, nullptr, &box, -1);
+			draw_box(white, nullptr, box, -1);
 			mainprogram->frontbatch = false;
 			// select bin elements inside selection box
 			for (int i = 0; i < 12; i++) {
@@ -563,7 +563,7 @@ void BinsMain::handle(bool draw) {
 					BinElement* binel = this->currbin->elements[i * 12 + j];
 					if (binel->name == "") continue;
 					binel->select = false;
-					if (box.in(ebox->scrcoords->x1, ebox->scrcoords->y1) || box.in(ebox->scrcoords->x1 + ebox->scrcoords->w, ebox->scrcoords->y1) || box.in(ebox->scrcoords->x1, ebox->scrcoords->y1 - ebox->scrcoords->h) || box.in(ebox->scrcoords->x1 + ebox->scrcoords->w, ebox->scrcoords->y1 - ebox->scrcoords->h)) {
+					if (box->in(ebox->scrcoords->x1, ebox->scrcoords->y1) || box->in(ebox->scrcoords->x1 + ebox->scrcoords->w, ebox->scrcoords->y1) || box->in(ebox->scrcoords->x1, ebox->scrcoords->y1 - ebox->scrcoords->h) || box->in(ebox->scrcoords->x1 + ebox->scrcoords->w, ebox->scrcoords->y1 - ebox->scrcoords->h)) {
 						binel->select = true;
 						found = true;
 					}
@@ -572,8 +572,8 @@ void BinsMain::handle(bool draw) {
 			if (mainprogram->leftmouse) {
 				if (found) {
 					mainprogram->binselmenu->state = 2;
-					mainprogram->binselmenu->menux = box.scrcoords->x1 + box.scrcoords->w / 2.0f;
-					mainprogram->binselmenu->menuy = box.scrcoords->y1 - box.scrcoords->h / 2.0f;
+					mainprogram->binselmenu->menux = box->scrcoords->x1 + box->scrcoords->w / 2.0f;
+					mainprogram->binselmenu->menuy = box->scrcoords->y1 - box->scrcoords->h / 2.0f;
 				}
 				this->selboxing = false;
 			}
@@ -591,15 +591,15 @@ void BinsMain::handle(bool draw) {
         // program instance is client
         sendtosocks.push_back(mainprogram->sock);
     }
-    Box box;
-    box.vtxcoords->x1 = -0.28f;
-    box.vtxcoords->y1 = -0.98f;
-    box.vtxcoords->w = 0.1f;
-    box.vtxcoords->h = 0.085f;
-    box.upvtxtoscr();
-    draw_box(white, nullptr, &box, -1);
+    std::unique_ptr <Box> box = std::make_unique <Box> ();;
+    box->vtxcoords->x1 = -0.28f;
+    box->vtxcoords->y1 = -0.98f;
+    box->vtxcoords->w = 0.1f;
+    box->vtxcoords->h = 0.085f;
+    box->upvtxtoscr();
+    draw_box(white, nullptr, box, -1);
     render_text("SEND", white, -0.255f, -0.95f, 0.00075f, 0.0012f);
-    if (box.in()) {
+    if (box->in()) {
         if (mainprogram->leftmouse) {
             char buf[148480] = {0};
             char* walk = buf;

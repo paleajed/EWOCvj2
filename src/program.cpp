@@ -871,15 +871,16 @@ bool Program::do_order_paths() {
 	}
 
 	// confirm box
-	Box applybox;
-	applybox.vtxcoords->x1 = this->pathboxes.back()->vtxcoords->x1;
-	applybox.vtxcoords->y1 = 0.8f - limit * 0.1f;
-	applybox.vtxcoords->w = this->pathboxes.back()->vtxcoords->w;
-	applybox.vtxcoords->h = this->pathboxes.back()->vtxcoords->h;
-	applybox.upvtxtoscr();
-	draw_box(white, black, &applybox, -1);
+
+    std::unique_ptr <Box> applybox = std::make_unique <Box> ();
+	applybox->vtxcoords->x1 = this->pathboxes.back()->vtxcoords->x1;
+	applybox->vtxcoords->y1 = 0.8f - limit * 0.1f;
+	applybox->vtxcoords->w = this->pathboxes.back()->vtxcoords->w;
+	applybox->vtxcoords->h = this->pathboxes.back()->vtxcoords->h;
+	applybox->upvtxtoscr();
+	draw_box(white, black, applybox, -1);
 	render_text("APPLY ORDER", white, -0.4f + 0.015f, 0.8f - limit * 0.1f + 0.075f - 0.045f, 0.00045f, 0.00075f);
-	if (applybox.in2() && this->dragstr == "") {
+	if (applybox->in() && this->dragstr == "") {
 		if (mainprogram->orderleftmouse) {
 		    this->pathscroll = 0;
 		    return true;
@@ -1266,44 +1267,44 @@ void Program::layerstack_scrollbar_handle() {
 	bool comp = !mainprogram->prevmodus;
 	for (int i = 0; i < 2; i++) {
 		std::vector<Layer*>& lvec = choose_layers(i);
-		Box box;
-		Box boxbefore;
-		Box boxafter;
-		Box boxlayer;
-		boxlayer.vtxcoords->y1 = 1.0f - mainprogram->layh - 0.045f;
-		boxlayer.vtxcoords->w = 0.031f;
-		boxlayer.vtxcoords->h = 0.04f;
+        std::unique_ptr <Box> box = std::make_unique <Box> ();
+        std::unique_ptr <Box> boxbefore = std::make_unique <Box> ();
+        std::unique_ptr <Box> boxafter = std::make_unique <Box> ();
+        std::unique_ptr <Box> boxlayer = std::make_unique <Box> ();
+		boxlayer->vtxcoords->y1 = 1.0f - mainprogram->layh - 0.045f;
+		boxlayer->vtxcoords->w = 0.031f;
+		boxlayer->vtxcoords->h = 0.04f;
 		int size = lvec.size() + 1;
 		if (size < 3) size = 3;
 		float slidex = 0.0f;
 		if (mainmix->scrollon == i + 1) {
 			slidex = (mainmix->scrollon != 0) * mainprogram->xscrtovtx(mainprogram->mx - mainmix->scrollmx);
 		}
-		box.vtxcoords->x1 = -1.0f + mainprogram->numw + i + mainmix->scenes[comp][i][mainmix->currscene[comp][i]]->scrollpos * (mainprogram->layw * 3.0f / size) + slidex;
-		if (box.vtxcoords->x1 < -1.0f + mainprogram->numw + i) {
-			box.vtxcoords->x1 = -1.0f + mainprogram->numw + i;
+		box->vtxcoords->x1 = -1.0f + mainprogram->numw + i + mainmix->scenes[comp][i][mainmix->currscene[comp][i]]->scrollpos * (mainprogram->layw * 3.0f / size) + slidex;
+		if (box->vtxcoords->x1 < -1.0f + mainprogram->numw + i) {
+			box->vtxcoords->x1 = -1.0f + mainprogram->numw + i;
 			slidex = 0.0f;
 		}
-		if (box.vtxcoords->x1 > -1.0f + mainprogram->numw + i + (lvec.size() - 2) * (mainprogram->layw * 3.0f / size)) {
-			box.vtxcoords->x1 = -1.0f + mainprogram->numw + i + (lvec.size() - 2) * (mainprogram->layw * 3.0f / size);
+		if (box->vtxcoords->x1 > -1.0f + mainprogram->numw + i + (lvec.size() - 2) * (mainprogram->layw * 3.0f / size)) {
+			box->vtxcoords->x1 = -1.0f + mainprogram->numw + i + (lvec.size() - 2) * (mainprogram->layw * 3.0f / size);
 			slidex = 0.0f;
 		}
-		box.vtxcoords->y1 = 1.0f - mainprogram->layh - 0.05f;
-		box.vtxcoords->w = (3.0f / size) * mainprogram->layw * 3.0f;
-		box.vtxcoords->h = 0.05f;
-		box.upvtxtoscr();
-		boxbefore.vtxcoords->x1 = -1.0f + mainprogram->numw + i;
-		boxbefore.vtxcoords->y1 = 1.0f - mainprogram->layh - 0.05f;
-		boxbefore.vtxcoords->w = (3.0f / size) * mainprogram->layw * mainmix->scenes[comp][i][mainmix->currscene[comp][i]]->scrollpos;
-		boxbefore.vtxcoords->h = 0.05f;
-		boxbefore.upvtxtoscr();
-		boxafter.vtxcoords->x1 = -1.0f + mainprogram->numw + i + (mainmix->scenes[comp][i][mainmix->currscene[comp][i]]->scrollpos + 3) * (mainprogram->layw * 3.0f / size);
-		boxafter.vtxcoords->y1 = 1.0f - mainprogram->layh - 0.05f;
-		boxafter.vtxcoords->w = (3.0f / size) * mainprogram->layw * (size - 3);
-		boxafter.vtxcoords->h = 0.05f;
-		boxafter.upvtxtoscr();
+		box->vtxcoords->y1 = 1.0f - mainprogram->layh - 0.05f;
+		box->vtxcoords->w = (3.0f / size) * mainprogram->layw * 3.0f;
+		box->vtxcoords->h = 0.05f;
+		box->upvtxtoscr();
+		boxbefore->vtxcoords->x1 = -1.0f + mainprogram->numw + i;
+		boxbefore->vtxcoords->y1 = 1.0f - mainprogram->layh - 0.05f;
+		boxbefore->vtxcoords->w = (3.0f / size) * mainprogram->layw * mainmix->scenes[comp][i][mainmix->currscene[comp][i]]->scrollpos;
+		boxbefore->vtxcoords->h = 0.05f;
+		boxbefore->upvtxtoscr();
+		boxafter->vtxcoords->x1 = -1.0f + mainprogram->numw + i + (mainmix->scenes[comp][i][mainmix->currscene[comp][i]]->scrollpos + 3) * (mainprogram->layw * 3.0f / size);
+		boxafter->vtxcoords->y1 = 1.0f - mainprogram->layh - 0.05f;
+		boxafter->vtxcoords->w = (3.0f / size) * mainprogram->layw * (size - 3);
+		boxafter->vtxcoords->h = 0.05f;
+		boxafter->upvtxtoscr();
 		bool inbox = false;
-		if (box.in2()) {
+		if (box->in()) {
 			inbox = true;
 			if (mainprogram->leftmousedown && mainmix->scrollon == 0 && !mainprogram->menuondisplay) {
 				mainmix->scrollon = i + 1;
@@ -1311,56 +1312,56 @@ void Program::layerstack_scrollbar_handle() {
 				mainprogram->leftmousedown = false;
 			}
 		}
-		box.vtxcoords->w = 3.0f * mainprogram->layw / size;
+		box->vtxcoords->w = 3.0f * mainprogram->layw / size;
 		if (mainmix->scrollon == i + 1) {
 			if (mainprogram->lmover) {
 				mainmix->scrollon = 0;
 			}
 			else {
-				if ((mainprogram->mx - mainmix->scrollmx) > mainprogram->xvtxtoscr(box.vtxcoords->w)) {
+				if ((mainprogram->mx - mainmix->scrollmx) > mainprogram->xvtxtoscr(box->vtxcoords->w)) {
 					if (mainmix->scenes[comp][i][mainmix->currscene[comp][i]]->scrollpos < size - 3) {
 						mainmix->scenes[comp][i][mainmix->currscene[comp][i]]->scrollpos++;
-						mainmix->scrollmx += mainprogram->xvtxtoscr(box.vtxcoords->w);
+						mainmix->scrollmx += mainprogram->xvtxtoscr(box->vtxcoords->w);
 					}
 				}
-				else if ((mainprogram->mx - mainmix->scrollmx) < -mainprogram->xvtxtoscr(box.vtxcoords->w)) {
+				else if ((mainprogram->mx - mainmix->scrollmx) < -mainprogram->xvtxtoscr(box->vtxcoords->w)) {
 					if (mainmix->scenes[comp][i][mainmix->currscene[comp][i]]->scrollpos > 0) {
 						mainmix->scenes[comp][i][mainmix->currscene[comp][i]]->scrollpos--;
-						mainmix->scrollmx -= mainprogram->xvtxtoscr(box.vtxcoords->w);
+						mainmix->scrollmx -= mainprogram->xvtxtoscr(box->vtxcoords->w);
 					}
 				}
 			}
 		}
-		box.vtxcoords->x1 = -1.0f + mainprogram->numw + i + slidex;
-		float remw = box.vtxcoords->w;
+		box->vtxcoords->x1 = -1.0f + mainprogram->numw + i + slidex;
+		float remw = box->vtxcoords->w;
 		for (int j = 0; j < size; j++) {
 			//draw scrollbar numbers+divisions+blocks
 			if (j == 0) {
-				if (slidex < 0.0f) box.vtxcoords->x1 -= slidex;
+				if (slidex < 0.0f) box->vtxcoords->x1 -= slidex;
 			}
 			if (j == size - 1) {
-				if (slidex > 0.0f) box.vtxcoords->w -= slidex;
+				if (slidex > 0.0f) box->vtxcoords->w -= slidex;
 			}
 			if (j >= mainmix->scenes[comp][i][mainmix->currscene[comp][i]]->scrollpos && j < mainmix->scenes[comp][i][mainmix->currscene[comp][i]]->scrollpos + 3) {
-				if (inbox) draw_box(lightgrey, lightblue, &box, -1);
-				else draw_box(lightgrey, grey, &box, -1);
+				if (inbox) draw_box(lightgrey, lightblue, box, -1);
+				else draw_box(lightgrey, grey, box, -1);
 			}
-			else draw_box(lightgrey, black, &box, -1);
+			else draw_box(lightgrey, black, box, -1);
 			// boxlayer: small coloured box (default grey) signalling there's a loopstation parameter in this layer
-			boxlayer.vtxcoords->x1 = box.vtxcoords->x1 + 0.031f;
+			boxlayer->vtxcoords->x1 = box->vtxcoords->x1 + 0.031f;
 			if (j < lvec.size()) {
 				if (j >= mainmix->scenes[comp][i][mainmix->currscene[comp][i]]->scrollpos && j < mainmix->scenes[comp][i][mainmix->currscene[comp][i]]->scrollpos + 3) {
-					draw_box(nullptr, lvec[j]->scrollcol, &boxlayer, -1);
+					draw_box(nullptr, lvec[j]->scrollcol, boxlayer, -1);
 				}
 			}
  
 			if (j == 0) {
-				if (slidex < 0.0f) box.vtxcoords->x1 += slidex;
+				if (slidex < 0.0f) box->vtxcoords->x1 += slidex;
 			}
-			render_text(std::to_string(j + 1), white, box.vtxcoords->x1 + 0.0078f - slidex, box.vtxcoords->y1 + 0.0078f, 0.0006, 0.001);
+			render_text(std::to_string(j + 1), white, box->vtxcoords->x1 + 0.0078f - slidex, box->vtxcoords->y1 + 0.0078f, 0.0006, 0.001);
 			const int s = lvec.size() - mainmix->scenes[comp][i][mainmix->currscene[comp][i]]->scrollpos;
 			if (mainprogram->dragbinel) {
-				if (box.in2()) {
+				if (box->in()) {
 					if (mainprogram->lmover) {
 						if (j < lvec.size()) {
 							mainprogram->draginscrollbarlay = lvec[j];
@@ -1371,10 +1372,10 @@ void Program::layerstack_scrollbar_handle() {
 					}
 				}
 			}
-			box.vtxcoords->x1 += box.vtxcoords->w;
-			box.upvtxtoscr();
+			box->vtxcoords->x1 += box->vtxcoords->w;
+			box->upvtxtoscr();
 		}
-		if (boxbefore.in2()) {
+		if (boxbefore->in()) {
 			//mouse in empty scrollbar part before the lightgrey visible layers part
 			if (mainprogram->dragbinel) {
 				if (mainmix->scrolltime == 0.0f) {
@@ -1391,7 +1392,7 @@ void Program::layerstack_scrollbar_handle() {
 				mainmix->scenes[comp][i][mainmix->currscene[comp][i]]->scrollpos--;
 			}
 		}
-		else if (boxafter.in2()) {
+		else if (boxafter->in()) {
 			//mouse in empty scrollbar part after the lightgrey visible layers part
 			if (mainprogram->dragbinel) {
 				if (mainmix->scrolltime == 0.0f) {
@@ -1447,43 +1448,43 @@ int Program::quit_requester() {
 		}
 	}
 
-	Box box;
-	box.vtxcoords->x1 = 0.15f;
-	box.vtxcoords->y1 = -1.0f;
-	box.vtxcoords->w = 0.3f;
-	box.vtxcoords->h = 0.2f;
-	box.upvtxtoscr();
-	draw_box(white, black, &box, -1);
-	if (box.in2(mx, my)) {
-		draw_box(white, lightblue, &box, -1);
+    std::unique_ptr <Box> box = std::make_unique <Box> ();
+	box->vtxcoords->x1 = 0.15f;
+	box->vtxcoords->y1 = -1.0f;
+	box->vtxcoords->w = 0.3f;
+	box->vtxcoords->h = 0.2f;
+	box->upvtxtoscr();
+	draw_box(white, black, box, -1);
+	if (box->in(mx, my)) {
+		draw_box(white, lightblue, box, -1);
 		if (mainprogram->leftmouse || mainprogram->orderleftmouse) {
 			mainprogram->project->do_save(mainprogram->project->path);
 			ret = 1;
 		}
 	}
-	render_text("SAVE PROJECT", white, box.vtxcoords->x1 + 0.02f, box.vtxcoords->y1 + 0.03f, 0.0024f, 0.004f, 1, 0);
+	render_text("SAVE PROJECT", white, box->vtxcoords->x1 + 0.02f, box->vtxcoords->y1 + 0.03f, 0.0024f, 0.004f, 1, 0);
 
-	box.vtxcoords->x1 = 0.45f;
-	box.upvtxtoscr();
-	draw_box(white, black, &box, -1);
-	if (box.in2(mx, my)) {
-		draw_box(white, lightblue, &box, -1);
+	box->vtxcoords->x1 = 0.45f;
+	box->upvtxtoscr();
+	draw_box(white, black, box, -1);
+	if (box->in(mx, my)) {
+		draw_box(white, lightblue, box, -1);
 		if (mainprogram->leftmouse || mainprogram->orderleftmouse) {
 			ret = 2;
 		}
 	}
-	render_text("QUIT", white, box.vtxcoords->x1 + 0.02f, box.vtxcoords->y1 + 0.03f, 0.0024f, 0.004f, 1, 0);
+	render_text("QUIT", white, box->vtxcoords->x1 + 0.02f, box->vtxcoords->y1 + 0.03f, 0.0024f, 0.004f, 1, 0);
 
-	box.vtxcoords->x1 = 0.75f;
-	box.upvtxtoscr();
-	draw_box(white, black, &box, -1);
-	if (box.in2(mx, my)) {
-		draw_box(white, lightblue, &box, -1);
+	box->vtxcoords->x1 = 0.75f;
+	box->upvtxtoscr();
+	draw_box(white, black, box, -1);
+	if (box->in(mx, my)) {
+		draw_box(white, lightblue, box, -1);
 		if (mainprogram->leftmouse || mainprogram->orderleftmouse) {
 			ret = 3;
 		}
 	}
-	render_text("CANCEL", white, box.vtxcoords->x1 + 0.02f, box.vtxcoords->y1 + 0.03f, 0.0024f, 0.004f, 1, 0);
+	render_text("CANCEL", white, box->vtxcoords->x1 + 0.02f, box->vtxcoords->y1 + 0.03f, 0.0024f, 0.004f, 1, 0);
 
 	this->bvao = this->boxvao;
 	this->bvbuf = this->boxvbuf;
@@ -1600,8 +1601,8 @@ Box::Box() {
 }
 
 Box::~Box() {
-    //delete this->vtxcoords;  reminder: throws breakpoint
-    //delete this->scrcoords;
+    delete this->vtxcoords;
+    delete this->scrcoords;
 }
 
 Button::Button(bool state) {
@@ -1753,26 +1754,10 @@ bool Box::in(int mx, int my) {
         if (this->scrcoords->y1 - this->scrcoords->h <= my && my <= this->scrcoords->y1) {
             mainprogram->boxhit = true;
             if (mainprogram->showtooltips && !mainprogram->ttreserved) {
-                if (mainprogram->tooltipbox) delete mainprogram->tooltipbox;
-                mainprogram->tooltipbox = this->copy();
+                if (mainprogram->tooltipbox) mainprogram->tooltipbox = this->copy();
                 mainprogram->ttreserved = this->reserved;
             }
-            return true;
-        }
-    }
-    return false;
-}
-
-bool Box::in2() {
-    bool ret = this->in2(mainprogram->mx, mainprogram->my);
-    return ret;
-}
-
-bool Box::in2(int mx, int my) {
-    // for boxes in limited scope (non-dynamically allocated)  reminder: new tooltip mechanism makes this redundant
-    if (mainprogram->menuondisplay) return false;
-    if (this->scrcoords->x1 <= mx && mx <= this->scrcoords->x1 + this->scrcoords->w) {
-        if (this->scrcoords->y1 - this->scrcoords->h <= my && my <= this->scrcoords->y1) {
+            else mainprogram->tooltipbox = nullptr;
             return true;
         }
     }
@@ -3603,15 +3588,15 @@ bool Program::preferences_handle() {
         }
 
         if (cond2) {
-            Box box;
-            box.vtxcoords->x1 = -0.3f;
-            box.vtxcoords->y1 = -0.8f;
-            box.vtxcoords->w = 0.4f;
-            box.vtxcoords->h = 0.2f;
-            box.upvtxtoscr();
-            draw_box(white, black, &box, -1);
+            std::unique_ptr <Box> box = std::make_unique <Box> ();
+            box->vtxcoords->x1 = -0.3f;
+            box->vtxcoords->y1 = -0.8f;
+            box->vtxcoords->w = 0.4f;
+            box->vtxcoords->h = 0.2f;
+            box->upvtxtoscr();
+            draw_box(white, black, box, -1);
             render_text("+ DEFAULT SEARCH DIR", white, -0.25f, -0.8f + 0.03f, 0.0024f, 0.004f, 1, 0);
-            if (box.in(mx, my) && mainprogram->leftmouse) {
+            if (box->in(mx, my) && mainprogram->leftmouse) {
                 mainprogram->pathto = "ADDSEARCHDIR";
                 std::thread filereq(&Program::get_dir, mainprogram, "Add a search location",
                                     boost::filesystem::canonical(mainprogram->currfilesdir).generic_string());
@@ -3625,15 +3610,15 @@ bool Program::preferences_handle() {
 
 	mainprogram->qualfr = std::clamp(mainprogram->qualfr, 1, 10);
 
-	Box box;
-	box.vtxcoords->x1 = 0.75f;
-	box.vtxcoords->y1 = -1.0f;
-	box.vtxcoords->w = 0.3f;
-	box.vtxcoords->h = 0.2f;
-	box.upvtxtoscr();
-	draw_box(white, black, &box, -1);
-	if (box.in2(mx, my)) {
-		draw_box(white, lightblue, &box, -1);
+    std::unique_ptr <Box> box = std::make_unique <Box> ();
+	box->vtxcoords->x1 = 0.75f;
+	box->vtxcoords->y1 = -1.0f;
+	box->vtxcoords->w = 0.3f;
+	box->vtxcoords->h = 0.2f;
+	box->upvtxtoscr();
+	draw_box(white, black, box, -1);
+	if (box->in(mx, my)) {
+		draw_box(white, lightblue, box, -1);
 		if (mainprogram->leftmouse) {
 			for (int i = 0; i < mci->items.size(); i++) {
 				if (mci->items[i]->renaming) {
@@ -3651,12 +3636,12 @@ bool Program::preferences_handle() {
 			SDL_RaiseWindow(mainprogram->mainwindow);
 		}
 	}
-	render_text("CANCEL", white, box.vtxcoords->x1 + 0.02f, box.vtxcoords->y1 + 0.03f, 0.0024f, 0.004f, 1, 0);
-	box.vtxcoords->x1 = 0.45f;
-	box.upvtxtoscr();
-	draw_box(white, black, &box, -1);
-	if (box.in2(mx, my)) {
-		draw_box(white, lightblue, &box, -1);
+	render_text("CANCEL", white, box->vtxcoords->x1 + 0.02f, box->vtxcoords->y1 + 0.03f, 0.0024f, 0.004f, 1, 0);
+	box->vtxcoords->x1 = 0.45f;
+	box->upvtxtoscr();
+	draw_box(white, black, box, -1);
+	if (box->in(mx, my)) {
+		draw_box(white, lightblue, box, -1);
 		if (mainprogram->leftmouse) {
 			for (int i = 0; i < mci->items.size(); i++) {
 				if (mci->items[i]->renaming) {
@@ -3717,8 +3702,8 @@ bool Program::preferences_handle() {
 			SDL_RaiseWindow(mainprogram->mainwindow);
 		}
 	}
-	render_text("SAVE", white, box.vtxcoords->x1 + 0.02f, box.vtxcoords->y1 + 0.03f, 0.0024f, 0.004f, 1, 0);
-    if (saveproject) render_text("+PROJECT", white, box.vtxcoords->x1 + 0.06f, box.vtxcoords->y1 + 0.1f, 0.0024f, 0.004f, 1, 0);
+	render_text("SAVE", white, box->vtxcoords->x1 + 0.02f, box->vtxcoords->y1 + 0.03f, 0.0024f, 0.004f, 1, 0);
+    if (saveproject) render_text("+PROJECT", white, box->vtxcoords->x1 + 0.06f, box->vtxcoords->y1 + 0.1f, 0.0024f, 0.004f, 1, 0);
 
     mainprogram->tooltips_handle(1);
 
@@ -3973,15 +3958,15 @@ int Program::config_midipresets_handle() {
 		render_text("SCRATCH", white, -0.1f, -0.3f, 0.0024f, 0.004f, 2);
 		render_text("FREEZE", white, -0.08f, 0.12f, 0.0024f, 0.004f, 2);
 
-		Box box;
-		box.vtxcoords->x1 = -1.0f;
-		box.vtxcoords->y1 = -1.0f;
-		box.vtxcoords->w = 0.3f;
-		box.vtxcoords->h = 0.2f;
-		box.upvtxtoscr();
-		draw_box(white, black, &box, -1);
-		if (box.in2(mx, my)) {
-			draw_box(white, lightblue, &box, -1);
+        std::unique_ptr <Box> box = std::make_unique <Box> ();
+		box->vtxcoords->x1 = -1.0f;
+		box->vtxcoords->y1 = -1.0f;
+		box->vtxcoords->w = 0.3f;
+		box->vtxcoords->h = 0.2f;
+		box->upvtxtoscr();
+		draw_box(white, black, box, -1);
+		if (box->in(mx, my)) {
+			draw_box(white, lightblue, box, -1);
 			if (mainprogram->leftmouse) {
 				lm->play[0] = -1;
 				lm->backw[0] = -1;
@@ -4006,18 +3991,18 @@ int Program::config_midipresets_handle() {
 				return 0;
 			}
 		}
-		render_text("NEW", white, box.vtxcoords->x1 + 0.02f, box.vtxcoords->y1 + 0.03f, 0.0024f, 0.004f, 2);
+		render_text("NEW", white, box->vtxcoords->x1 + 0.02f, box->vtxcoords->y1 + 0.03f, 0.0024f, 0.004f, 2);
 	}
 
-	Box box;
-	box.vtxcoords->x1 = 0.75f;
-	box.vtxcoords->y1 = -1.0f;
-	box.vtxcoords->w = 0.3f;
-	box.vtxcoords->h = 0.2f;
-	box.upvtxtoscr();
-	draw_box(white, black, &box, -1);
-	if (box.in2(mx, my)) {
-		draw_box(white, lightblue, &box, -1);
+    std::unique_ptr <Box> box = std::make_unique <Box> ();
+	box->vtxcoords->x1 = 0.75f;
+	box->vtxcoords->y1 = -1.0f;
+	box->vtxcoords->w = 0.3f;
+	box->vtxcoords->h = 0.2f;
+	box->upvtxtoscr();
+	draw_box(white, black, box, -1);
+	if (box->in(mx, my)) {
+		draw_box(white, lightblue, box, -1);
 		if (mainprogram->leftmouse) {
 			open_genmidis(mainprogram->docpath + "midiset.gm");
 			mainprogram->tmlearn = TM_NONE;
@@ -4025,12 +4010,12 @@ int Program::config_midipresets_handle() {
 			SDL_HideWindow(mainprogram->config_midipresetswindow);
 		}
 	}
-	render_text("CANCEL", white, box.vtxcoords->x1 + 0.02f, box.vtxcoords->y1 + 0.03f, 0.0024f, 0.004f, 2);
-	box.vtxcoords->x1 = 0.45f;
-	box.upvtxtoscr();
-	draw_box(white, black, &box, -1);
-	if (box.in2(mx, my)) {
-		draw_box(white, lightblue, &box, -1);
+	render_text("CANCEL", white, box->vtxcoords->x1 + 0.02f, box->vtxcoords->y1 + 0.03f, 0.0024f, 0.004f, 2);
+	box->vtxcoords->x1 = 0.45f;
+	box->upvtxtoscr();
+	draw_box(white, black, box, -1);
+	if (box->in(mx, my)) {
+		draw_box(white, lightblue, box, -1);
 		if (mainprogram->leftmouse) {
 			save_genmidis(mainprogram->docpath + "midiset.gm");
 			mainprogram->tmlearn = TM_NONE;
@@ -4038,7 +4023,7 @@ int Program::config_midipresets_handle() {
 			SDL_HideWindow(mainprogram->config_midipresetswindow);
 		}
 	}
-	render_text("SAVE", white, box.vtxcoords->x1 + 0.02f, box.vtxcoords->y1 + 0.03f, 0.0024f, 0.004f, 2);
+	render_text("SAVE", white, box->vtxcoords->x1 + 0.02f, box->vtxcoords->y1 + 0.03f, 0.0024f, 0.004f, 2);
 
 	mainprogram->tooltips_handle(2);
 
