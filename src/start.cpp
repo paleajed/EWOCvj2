@@ -3775,7 +3775,8 @@ void onestepfrom(bool stage, Node *node, Node *prevnode, GLuint prevfbotex, GLui
 				}
 			}
 			if (lay->blendnode) {
-				if (lay->blendnode->blendtype == 19) {
+				if (lay->blendnode->blendtype == 19 || lay->blendnode->blendtype == 20 || lay->blendnode->blendtype
+				== 21) {
 					GLfloat colortol = glGetUniformLocation(mainprogram->ShaderProgram, "colortol");
 					glUniform1f(colortol, lay->chtol->value);
 					GLfloat chdir = glGetUniformLocation(mainprogram->ShaderProgram, "chdir");
@@ -3908,7 +3909,7 @@ void onestepfrom(bool stage, Node *node, Node *prevnode, GLuint prevfbotex, GLui
 				
 				GLint mixmode = glGetUniformLocation(mainprogram->ShaderProgram, "mixmode");
 				glUniform1i(mixmode, bnode->blendtype);
-				if (bnode->blendtype == 19) {
+				if (bnode->blendtype == 19 || bnode->blendtype == 20 || bnode->blendtype == 21) {
 					GLfloat chred = glGetUniformLocation(mainprogram->ShaderProgram, "chred");
 					glUniform1f(chred, bnode->chred);
 					GLfloat chgreen = glGetUniformLocation(mainprogram->ShaderProgram, "chgreen");

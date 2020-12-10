@@ -2285,8 +2285,8 @@ Layer::Layer(bool comp) {
 	this->chtol->range[0] = -0.1f;
     this->chtol->range[1] = 3.3f;
     this->chtol->shadervar = "colortol";
-    this->chtol->box->tooltiptitle = "Set colorkey tolerance ";
-    this->chtol->box->tooltip = "Leftdrag to set color tolerance (\"spread\") around colorkey color.  Doubleclicking allows numeric entry. ";
+    this->chtol->box->tooltiptitle = "Set key tolerance ";
+    this->chtol->box->tooltip = "Leftdrag to set tolerance (\"spread\") around key color/hue/grayscale.  Doubleclicking allows numeric entry. ";
 	this->speed = new Param;
 	this->speed->name = "Speed"; 
 	this->speed->value = 1.0f;
@@ -2373,12 +2373,12 @@ Layer::Layer(bool comp) {
 	this->loopbox->tooltip = "Loop bar for current layer video.  Green area is looped area, white vertical line is video  .  Leftdrag on bar scrubs video.  When hovering over green area edges, it turns blue; when this happens middledrag will drag the areas edge.  If area is green, middledrag will drag the looparea left/right.  Rightclicking starts a menu allowing to set loop start or end to the current play position. ";
 	this->chdir = new Button(false);
 	this->chdir->toggle = 1;
-	this->chdir->box->tooltiptitle = "Toggle colorkey direction ";
-	this->chdir->box->tooltip = "Leftclick toggles colorkey direction: does the previous layer stream image fill up the current layer's color or does the current layer fill a color in the previous layer stream image. ";
+	this->chdir->box->tooltiptitle = "Toggle key direction ";
+	this->chdir->box->tooltip = "Leftclick toggles key direction: does the previous layer stream image fill up the current layer's color/hue/grayscale or does the current layer fill a color/hue/grayscale in the previous layer stream image. ";
 	this->chinv = new Button(false);
 	this->chinv->toggle = 1;
-	this->chinv->box->tooltiptitle = "Toggle colorkey inverse modus ";
-	this->chinv->box->tooltip = "Leftclick toggles colorkey inverse modus: either the selected color is exchanged or all colors but the selected color are exchanged. ";
+	this->chinv->box->tooltiptitle = "Toggle key inverse modus ";
+	this->chinv->box->tooltip = "Leftclick toggles key inverse modus: either the selected color/hue/grayscale is exchanged or all colors/hues/grayscales but the selected color/hue/grayscale are exchanged. ";
 	this->chdir->box->acolor[3] = 1.0f;
 	this->chinv->box->acolor[3] = 1.0f;
 
@@ -3388,6 +3388,22 @@ void Layer::display() {
                     }
                     break;
                 case 20:
+                    mixstr = "ChrKey";
+                    if (this->pos > 0) {
+                        draw_box(this->colorbox, -1);
+                        render_text("Color", white, this->mixbox->vtxcoords->x1 + 0.12f,
+                                    1.0f - (mainprogram->layh + 0.135f) + 0.03f, 0.00045f, 0.00075f);
+                    }
+                    break;
+                case 21:
+                    mixstr = "LumKey";
+                    if (this->pos > 0) {
+                        draw_box(this->colorbox, -1);
+                        render_text("Color", white, this->mixbox->vtxcoords->x1 + 0.12f,
+                                    1.0f - (mainprogram->layh + 0.135f) + 0.03f, 0.00045f, 0.00075f);
+                    }
+                    break;
+                case 22:
                     mixstr = "Disp";
                     break;
             }
@@ -3761,7 +3777,7 @@ void Layer::display() {
 
             // Handle color tolerance
             if (this->pos > 0) {
-                if (this->blendnode->blendtype == COLOURKEY) {
+                if (this->blendnode->blendtype == COLOURKEY || this->blendnode->blendtype == CHROMAKEY || this->blendnode->blendtype == LUMAKEY) {
                     Param *par = this->chtol;
                     par->box->lcolor[0] = 1.0;
                     par->box->lcolor[1] = 1.0;
@@ -4266,7 +4282,8 @@ void Layer::display() {
 
 			// Draw and handle chdir chinv
 			if (this->pos > 0) {
-				if (this->blendnode->blendtype == COLOURKEY) {
+                if (this->blendnode->blendtype == COLOURKEY || this->blendnode->blendtype == CHROMAKEY ||
+                this->blendnode->blendtype == LUMAKEY) {
 					if (this->chdir->box->in()) {
 						if (mainprogram->leftmouse) {
 							this->chdir->value = !this->chdir->value;

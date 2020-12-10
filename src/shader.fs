@@ -1717,18 +1717,18 @@ void main()
 		//LIGHTEN_ONLY alpha
 		fc = vec4(max(tex0.r, tex1.r), max(tex0.g, tex1.g), max(tex0.b, tex1.b), max(tex0.a, tex1.a));
 	}
-	else if (mixmode == 20) {
+	else if (mixmode == 22) {
 		//DISPLACEMENT alpha
 		fc = texture2D(endSampler0, (TexCoord0.st+(texture2D(endSampler1, TexCoord0.st).rb)*.1*tex1.a) * 0.91f);
 	}
-	else if (mixmode == 21) {
+	else if (mixmode == 23) {
 		//CROSSFADING alpha
 		float fac1 = clamp(cf2 * 2.0f, 0.0f, 1.0f);
 		float fac2 = clamp(cf * 2.0f, 0.0f, 1.0f);
 		fc = vec4((tex0.rgb * (1.0f - fac2 * tex1.a / 2.0f) * fac1 + tex1.rgb * (1.0f - fac1 * tex0.a / 2.0f) * fac2), max(fac1 * tex0.a, fac2 * tex1.a));
 	}
 	else if (mixmode == 19) {
-		//COLOURKEY alpha
+		//COLORKEY alpha
 		if (chdir) {
 			vec4 bu;
 			bu = tex0;
@@ -1742,6 +1742,55 @@ void main()
 		}
 		else {
 			float ia = (colortol - totdiff) * -(feather - 5.2f);
+			if (ia > 1.0f) ia = 1.0f;
+			float a = 1.0f - ia;
+			if (chinv) fc = vec4(tex1.rgb * ia + tex0.rgb * a, max(tex0.a, tex1.a));
+			else fc = vec4(tex0.rgb * ia + tex1.rgb * a, max(tex0.a, tex1.a));
+		}
+	}
+	else if (mixmode == 20) {
+		//CHROMAKEY alpha
+		if (chdir) {
+			vec4 bu;
+			bu = tex0;
+			tex0 = tex1;
+			tex1 = bu;
+		}
+
+		float huetol = colortol / 4.0f;
+
+		float huediff = abs(rgb2hsv(vec3(chred, chgreen, chblue)).x - rgb2hsv(vec3(tex1.r, tex1.g, tex1.b)).x);
+		if (huediff > 0.5f) huediff = 1.0f - huediff;
+		if (huediff > huetol) {
+			if (chinv) fc = vec4(tex0.rgb, 1.0f);
+			else fc = vec4(tex1.rgb, 1.0f);
+		}
+		else {
+			float ia = ((huetol - huediff) * (-(feather - 5.2f) / 4.0f)) * 4.0f;
+			if (ia > 1.0f) ia = 1.0f;
+			float a = 1.0f - ia;
+		    if (chinv) fc = vec4(tex1.rgb * ia + tex0.rgb * a, max(tex0.a, tex1.a));
+			else fc = vec4(tex0.rgb * ia + tex1.rgb * a, max(tex0.a, tex1.a));
+		}
+	}
+	else if (mixmode == 21) {
+		//LUMAKEY alpha
+		if (chdir) {
+			vec4 bu;
+			bu = tex0;
+			tex0 = tex1;
+			tex1 = bu;
+		}
+
+		float lumtol = colortol / 3.0f;
+
+		float lumdiff = abs(rgb2hsv(vec3(chred, chgreen, chblue)).z - rgb2hsv(vec3(tex1.r, tex1.g, tex1.b)).z);
+		if (lumdiff > lumtol) {
+			if (chinv) fc = vec4(tex0.rgb, 1.0f);
+			else fc = vec4(tex1.rgb, 1.0f);
+		}
+		else {
+			float ia = ((lumtol - lumdiff) * (-(feather - 5.2f) / 3.0f)) * 3.0f;
 			if (ia > 1.0f) ia = 1.0f;
 			float a = 1.0f - ia;
 			if (chinv) fc = vec4(tex1.rgb * ia + tex0.rgb * a, max(tex0.a, tex1.a));

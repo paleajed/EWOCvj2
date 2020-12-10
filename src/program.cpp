@@ -69,6 +69,123 @@
 
 
 
+typedef struct {
+    double r;       // a fraction between 0 and 1
+    double g;       // a fraction between 0 and 1
+    double b;       // a fraction between 0 and 1
+} rgb;
+
+typedef struct {
+    double h;       // angle in degrees
+    double s;       // a fraction between 0 and 1
+    double v;       // a fraction between 0 and 1
+} hsv;
+
+hsv rgb2hsv(rgb in)
+{
+    hsv         out;
+    double      min, max, delta;
+
+    min = in.r < in.g ? in.r : in.g;
+    min = min  < in.b ? min  : in.b;
+
+    max = in.r > in.g ? in.r : in.g;
+    max = max  > in.b ? max  : in.b;
+
+    out.v = max;                                // v
+    delta = max - min;
+    if (delta < 0.00001)
+    {
+        out.s = 0;
+        out.h = 0; // undefined, maybe nan?
+        return out;
+    }
+    if( max > 0.0 ) { // NOTE: if Max is == 0, this divide would cause a crash
+        out.s = (delta / max);                  // s
+    } else {
+        // if max is 0, then r = g = b = 0
+        // s = 0, h is undefined
+        out.s = 0.0;
+        out.h = NAN;                            // its now undefined
+        return out;
+    }
+    if( in.r >= max )                           // > is bogus, just keeps compilor happy
+        out.h = ( in.g - in.b ) / delta;        // between yellow & magenta
+    else
+    if( in.g >= max )
+        out.h = 2.0 + ( in.b - in.r ) / delta;  // between cyan & yellow
+    else
+        out.h = 4.0 + ( in.r - in.g ) / delta;  // between magenta & cyan
+
+    out.h *= 60.0;                              // degrees
+
+    if( out.h < 0.0 )
+        out.h += 360.0;
+
+    return out;
+}
+
+
+rgb hsv2rgb(hsv in)
+{
+    double      hh, p, q, t, ff;
+    long        i;
+    rgb         out;
+
+    if(in.s <= 0.0) {       // < is bogus, just shuts up warnings
+        out.r = in.v;
+        out.g = in.v;
+        out.b = in.v;
+        return out;
+    }
+    hh = in.h;
+    if(hh >= 360.0) hh = 0.0;
+    hh /= 60.0;
+    i = (long)hh;
+    ff = hh - i;
+    p = in.v * (1.0 - in.s);
+    q = in.v * (1.0 - (in.s * ff));
+    t = in.v * (1.0 - (in.s * (1.0 - ff)));
+
+    switch(i) {
+        case 0:
+            out.r = in.v;
+            out.g = t;
+            out.b = p;
+            break;
+        case 1:
+            out.r = q;
+            out.g = in.v;
+            out.b = p;
+            break;
+        case 2:
+            out.r = p;
+            out.g = in.v;
+            out.b = t;
+            break;
+
+        case 3:
+            out.r = p;
+            out.g = q;
+            out.b = in.v;
+            break;
+        case 4:
+            out.r = t;
+            out.g = p;
+            out.b = in.v;
+            break;
+        case 5:
+        default:
+            out.r = in.v;
+            out.g = p;
+            out.b = q;
+            break;
+    }
+    return out;
+}
+
+
+
 
 Program::Program() {
 	this->project = new Project;
@@ -4141,9 +4258,35 @@ void Program::pick_color(Layer* lay, Box* cbox) {
 				mainprogram->directmode = false;
 				glUniform1i(cwon, 0);
 				if (length <= 0.75f || length >= 1.0f) {
-					glReadBuffer(GL_COLOR_ATTACHMENT0);
+				    glReadBuffer(GL_COLOR_ATTACHMENT0);
 					glReadPixels(mainprogram->mx, glob->h - mainprogram->my, 1, 1, GL_RGBA, GL_FLOAT, &lay->rgb);
 					box = cbox;
+                    if (lay->blendnode->blendtype == CHROMAKEY) {
+                        rgb c1;
+                        c1.r = lay->rgb[0];
+                        c1.g = lay->rgb[1];
+                        c1.b = lay->rgb[2];
+                        hsv c2 = rgb2hsv(c1);
+                        c2.s = 1.0f;
+                        c2.v = 1.0f;
+                        c1 = hsv2rgb(c2);
+                        lay->rgb[0] = c1.r;
+                        lay->rgb[1] = c1.g;
+                        lay->rgb[2] = c1.b;
+                    }
+                    else if (lay->blendnode->blendtype == LUMAKEY) {
+                        rgb c1;
+                        c1.r = lay->rgb[0];
+                        c1.g = lay->rgb[1];
+                        c1.b = lay->rgb[2];
+                        hsv c2 = rgb2hsv(c1);
+                        c2.s = 0.0f;
+                        c2.h = 0.0f;
+                        c1 = hsv2rgb(c2);
+                        lay->rgb[0] = c1.r;
+                        lay->rgb[1] = c1.g;
+                        lay->rgb[2] = c1.b;
+                    }
 					box->acolor[0] = lay->rgb[0];
 					box->acolor[1] = lay->rgb[1];
 					box->acolor[2] = lay->rgb[2];
@@ -5229,6 +5372,8 @@ void Program::define_menus() {
     mixmodes.push_back("LIGHTEN ONLY");
     mixmodes.push_back("WIPE");
     mixmodes.push_back("COLORKEY");
+    mixmodes.push_back("CHROMAKEY");
+    mixmodes.push_back("LUMAKEY");
     mixmodes.push_back("DISPLACEMENT");
     mainprogram->make_menu("mixmodemenu", mainprogram->mixmodemenu, mixmodes);
 
