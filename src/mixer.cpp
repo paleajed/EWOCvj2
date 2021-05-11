@@ -1797,7 +1797,7 @@ Effect *do_add_effect(Layer *lay, EFFECT_TYPE type, int pos, bool comp) {
 		effect->params[i]->oscpaths.push_back(path);
 		printf("osc %s\n", path.c_str());
 		fflush(stdout);
-		mainprogram->st->add_method(path, "f", osc_param, effect->params[i]);
+		//mainprogram->st->add_method(path, "f", osc_param, effect->params[i]);
 	}
 	
 	return effect;
@@ -1871,11 +1871,9 @@ void do_delete_effect(Layer *lay, int pos) {
 			lay->lasteffnode[cat]->out[0] = evec[pos]->node->out[0];
 			if (cat) evec[pos]->node->out[0]->in = lay->lasteffnode[1];
 		}
-		if (lay->pos == 0) {
-			lay->lasteffnode[1] = lay->lasteffnode[0];  // reminder
-		}
 		if (!cat) {
 			if (lay->pos == 0) {
+                lay->lasteffnode[1] = lay->lasteffnode[0];
 				mainprogram->nodesmain->currpage->connect_nodes(lay->lasteffnode[0], evec[pos]->node->out[0]);
 			}
 			else {
@@ -2022,95 +2020,110 @@ Layer* Mixer::add_layer(std::vector<Layer*> &layers, int pos) {
 }
 
 void Mixer::do_deletelay(Layer *testlay, std::vector<Layer*> &layers, bool add) {
-	if (testlay == mainmix->currlay[!mainprogram->prevmodus]) {
-		if (testlay->pos == 0 && layers.size() == 1) mainmix->currlay[!mainprogram->prevmodus] = nullptr;
-		else if (testlay->pos == layers.size() - 1) mainmix->currlay[!mainprogram->prevmodus] = layers[testlay->pos - 1];
-		else mainmix->currlay[!mainprogram->prevmodus] = layers[testlay->pos + 1];
-		if (layers.size() == 1) mainmix->currlay[!mainprogram->prevmodus] = nullptr;
-	}
-	if (layers.size() == 1 && add) {
-		Layer *lay = mainmix->add_layer(layers, 1);
-		if (!mainmix->currlay[!mainprogram->prevmodus]) mainmix->currlay[!mainprogram->prevmodus] = lay;
-	}
-
-    if (std::find(mainmix->currlays[!mainprogram->prevmodus].begin(), mainmix->currlays[!mainprogram->prevmodus].end(), testlay) != mainmix->currlays[!mainprogram->prevmodus].end()) {
-        mainmix->currlays[!mainprogram->prevmodus].erase(std::find(mainmix->currlays[!mainprogram->prevmodus].begin(), mainmix->currlays[!mainprogram->prevmodus].end(), testlay));
+    if (testlay == mainmix->currlay[!mainprogram->prevmodus]) {
+        if (testlay->pos == 0 && layers.size() == 1) mainmix->currlay[!mainprogram->prevmodus] = nullptr;
+        else if (testlay->pos == layers.size() - 1)
+            mainmix->currlay[!mainprogram->prevmodus] = layers[testlay->pos - 1];
+        else mainmix->currlay[!mainprogram->prevmodus] = layers[testlay->pos + 1];
+        if (layers.size() == 1) mainmix->currlay[!mainprogram->prevmodus] = nullptr;
     }
-    if (std::find(mainmix->currlays[!mainprogram->prevmodus].begin(), mainmix->currlays[!mainprogram->prevmodus].end(), mainmix->currlay[!mainprogram->prevmodus]) == mainmix->currlays[!mainprogram->prevmodus].end()) {
+    if (layers.size() == 1 && add) {
+        Layer *lay = mainmix->add_layer(layers, 1);
+        if (!mainmix->currlay[!mainprogram->prevmodus]) mainmix->currlay[!mainprogram->prevmodus] = lay;
+    }
+
+    if (std::find(mainmix->currlays[!mainprogram->prevmodus].begin(), mainmix->currlays[!mainprogram->prevmodus].end(),
+                  testlay) != mainmix->currlays[!mainprogram->prevmodus].end()) {
+        mainmix->currlays[!mainprogram->prevmodus].erase(std::find(mainmix->currlays[!mainprogram->prevmodus].begin(),
+                                                                   mainmix->currlays[!mainprogram->prevmodus].end(),
+                                                                   testlay));
+    }
+    if (std::find(mainmix->currlays[!mainprogram->prevmodus].begin(), mainmix->currlays[!mainprogram->prevmodus].end(),
+                  mainmix->currlay[!mainprogram->prevmodus]) == mainmix->currlays[!mainprogram->prevmodus].end()) {
         mainmix->currlays[!mainprogram->prevmodus].push_back(mainmix->currlay[!mainprogram->prevmodus]);
     }
 
     BLEND_TYPE nextbtype;
-	Layer* nextlay = nullptr;
-	if (layers.size() > testlay->pos + 1) {
-		nextlay = layers[testlay->pos + 1];
-		nextbtype = nextlay->blendnode->blendtype;
-	}
-	Layer* prevlay = nullptr;
-	if (testlay->pos > 0) {
-		prevlay = layers[testlay->pos - 1];
-	}
+    Layer *nextlay = nullptr;
+    if (layers.size() > testlay->pos + 1) {
+        nextlay = layers[testlay->pos + 1];
+        nextbtype = nextlay->blendnode->blendtype;
+    }
+    Layer *prevlay = nullptr;
+    if (testlay->pos > 0) {
+        prevlay = layers[testlay->pos - 1];
+    }
 
-	int size = layers.size();
-	for (int i = 0; i < size; i++) {
-		if (layers[i] == testlay) {
-			layers.erase(layers.begin() + i);
-			break;
-		}
-	}
-		
+    int size = layers.size();
+    for (int i = 0; i < size; i++) {
+        if (layers[i] == testlay) {
+            layers.erase(layers.begin() + i);
+            break;
+        }
+    }
+
     if (mainprogram->nodesmain->linked) {
-		while (!testlay->clips.empty()) {
-			delete testlay->clips.back();
-			testlay->clips.pop_back();
-		}
-			
-		Node *bulasteffnode1out = nullptr;
-		if (testlay->pos > 0 && testlay->lasteffnode[1]->out.size()) bulasteffnode1out = testlay->lasteffnode[1]->out[0];
-		while (!testlay->effects[0].empty()) {
-			mainprogram->nodesmain->currpage->delete_node(testlay->effects[0].back()->node);
-			for (int j = 0; j < testlay->effects[0].back()->params.size(); j++) {
-				delete testlay->effects[0].back()->params[j];
-			}
-			delete testlay->effects[0].back();
-			testlay->effects[0].pop_back();
-		}
-		while (!testlay->effects[1].empty()) {
-			mainprogram->nodesmain->currpage->delete_node(testlay->effects[1].back()->node);
-			for (int j = 0; j < testlay->effects[1].back()->params.size(); j++) {
-				delete testlay->effects[1].back()->params[j];
-			}
-			delete testlay->effects[1].back();
-			testlay->effects[1].pop_back();
-		}
+        while (!testlay->clips.empty()) {
+            delete testlay->clips.back();
+            testlay->clips.pop_back();
+        }
 
-		if (testlay->pos > 0 && testlay->blendnode) {
-			if (bulasteffnode1out) mainprogram->nodesmain->currpage->connect_nodes(prevlay->lasteffnode[1], bulasteffnode1out);
-			mainprogram->nodesmain->currpage->delete_node(testlay->blendnode);
-			testlay->blendnode = 0;
-		}
-		else {
-			if (nextlay) {
-				nextlay->lasteffnode[0]->out.clear();
-				if (nextlay->lasteffnode[1]->out.size()) mainprogram->nodesmain->currpage->connect_nodes(nextlay->lasteffnode[0], nextlay->lasteffnode[1]->out[0]);
-				nextlay->lasteffnode[1] = nextlay->lasteffnode[0];
-				mainprogram->nodesmain->currpage->delete_node(nextlay->blendnode);
-				nextlay->blendnode = new BlendNode;
-				nextlay->blendnode->blendtype = nextbtype;
-			}
-		}
-		
-		for(int i = testlay->pos; i < layers.size(); i++) {
-			layers[i]->pos = i;
-		}
-	}
-	
-	if (std::find(mainprogram->busylayers.begin(), mainprogram->busylayers.end(), testlay) != mainprogram->busylayers.end()) {
-		mainprogram->busylayers.erase(std::find(mainprogram->busylayers.begin(), mainprogram->busylayers.end(), testlay));
-		mainprogram->busylist.erase(std::find(mainprogram->busylist.begin(), mainprogram->busylist.end(), testlay->filename));
-	}
+        Node *bulasteffnode1out = nullptr;
+        if (testlay->pos > 0 && testlay->lasteffnode[1]->out.size())
+            bulasteffnode1out = testlay->lasteffnode[1]->out[0];
+        while (!testlay->effects[0].empty()) {
+            mainprogram->nodesmain->currpage->delete_node(testlay->effects[0].back()->node);
+            for (int j = 0; j < testlay->effects[0].back()->params.size(); j++) {
+                delete testlay->effects[0].back()->params[j];
+            }
+            delete testlay->effects[0].back();
+            testlay->effects[0].pop_back();
+        }
+        while (!testlay->effects[1].empty()) {
+            mainprogram->nodesmain->currpage->delete_node(testlay->effects[1].back()->node);
+            for (int j = 0; j < testlay->effects[1].back()->params.size(); j++) {
+                delete testlay->effects[1].back()->params[j];
+            }
+            delete testlay->effects[1].back();
+            testlay->effects[1].pop_back();
+        }
+
+        if (testlay->pos > 0 && testlay->blendnode) {
+            if (bulasteffnode1out)
+                mainprogram->nodesmain->currpage->connect_nodes(prevlay->lasteffnode[1], bulasteffnode1out);
+            mainprogram->nodesmain->currpage->delete_node(testlay->blendnode);
+            testlay->blendnode = 0;
+        } else {
+            if (nextlay) {
+                nextlay->lasteffnode[0]->out.clear();
+                if (nextlay->lasteffnode[1]->out.size())
+                    mainprogram->nodesmain->currpage->connect_nodes(nextlay->lasteffnode[0],
+                                                                    nextlay->lasteffnode[1]->out[0]);
+                nextlay->lasteffnode[1] = nextlay->lasteffnode[0];
+                mainprogram->nodesmain->currpage->delete_node(nextlay->blendnode);
+                nextlay->blendnode = new BlendNode;
+                nextlay->blendnode->blendtype = nextbtype;
+            }
+        }
+
+        for (int i = testlay->pos; i < layers.size(); i++) {
+            layers[i]->pos = i;
+        }
+    }
+
+    // if layer is active webcam connection: look to activate a mimiclayer
+    int pos = std::find(mainprogram->busylayers.begin(), mainprogram->busylayers.end(), testlay) -
+              mainprogram->busylayers.begin();
+    if (pos != mainprogram->busylayers.size()) {
+        bool found = testlay->find_new_live_base(pos);
+        if (!found) {
+            mainprogram->busylayers.erase(mainprogram->busylayers.begin() + pos);
+            mainprogram->busylist.erase(
+                    std::find(mainprogram->busylist.begin(), mainprogram->busylist.end(), testlay->filename));
+        }
+    }
 	avformat_close_input(&testlay->video);
-	
+
 	if (testlay->node) mainprogram->nodesmain->currpage->delete_node(testlay->node);
 	
 	delete testlay;
@@ -2521,7 +2534,6 @@ void Layer::initialize(int w, int h, int compression) {
 }
 
 void Layer::set_aspectratio(int lw, int lh) {
-	return; //reminder
 	float ow, oh;
 	if (this->comp) {
 		ow = mainprogram->ow;
@@ -3265,7 +3277,6 @@ void Layer::display() {
 				this->mute_handle();
 			}
 			if (this->solobut->toggled()) {
-				// reminder: code duplication?
 				if (this->solobut->value) {
 					if (this->mutebut->value) {
 						this->mutebut->value = false;
@@ -4161,7 +4172,8 @@ void Layer::display() {
                               this->loopbox->scrcoords->y1, this->loopbox->scrcoords->x1 + this->startframe *
                                                                                            (this->loopbox->scrcoords->w /
                                                                                             (this->numf - 1)),
-                              this->loopbox->scrcoords->y1 - mainprogram->yvtxtoscr(0.045f)) < 6) {
+                              this->loopbox->scrcoords->y1 - mainprogram->yvtxtoscr(0.045f)) < 6 && this->startframe
+                              > 0.0f) {
                     ends = true;
                     if (mainprogram->middlemousedown) {
                         this->scritching = 2;
@@ -4215,24 +4227,34 @@ void Layer::display() {
                 this->set_clones();
                 if (mainprogram->leftmouse && !mainprogram->menuondisplay) this->scritching = 4;
             } else if (this->scritching == 2) {
+                // middlemouse dragging loop start
                 this->startframe = (this->numf - 1) *
                                    ((mainprogram->mx - this->loopbox->scrcoords->x1) / this->loopbox->scrcoords->w);
                 if (this->startframe < 0) this->startframe = 0.0f;
                 else if (this->startframe >= this->numf) this->startframe = this->numf - 1;
                 if (this->startframe > this->frame) this->frame = this->startframe;
-                if (this->startframe > this->endframe) this->startframe = this->endframe;
+                if (this->startframe > this->endframe) {
+                    this->startframe = this->endframe;
+                    this->frame = this->endframe;
+                }
                 this->set_clones();
                 if (mainprogram->middlemouse) this->scritching = 0;
             } else if (this->scritching == 3) {
+                // middlemouse dragging loop end
                 this->endframe = (this->numf - 1) *
                                  ((mainprogram->mx - this->loopbox->scrcoords->x1) / this->loopbox->scrcoords->w);
-                if (this->endframe < 0) this->endframe = 0.0f;
+                if (this->endframe < this->frame) this->frame = this->endframe;
+                if (this->endframe < this->startframe) {
+                    this->endframe = this->startframe;
+                    this->frame = this->endframe;
+                }
                 else if (this->endframe >= this->numf) this->endframe = this->numf - 1;
                 //if (this->endframe < this->frame) this->frame = this->endframe;
                 //if (this->endframe < this->startframe) this->endframe = this->startframe;
                 this->set_clones();
                 if (mainprogram->middlemouse) this->scritching = 0;
             } else if (this->scritching == 5) {
+                // middlemouse dragging loop
                 float start = 0.0f;
                 float end = 0.0f;
                 this->startframe +=
@@ -4245,6 +4267,7 @@ void Layer::display() {
                 if (this->startframe > this->endframe) this->startframe = this->endframe;
                 this->endframe +=
                         (mainprogram->mx - mainmix->prevx) / (this->loopbox->scrcoords->w / (this->numf - 1)) - start;
+                if (this->endframe < this->frame) this->frame = this->endframe;
                 if (this->endframe < 0) this->endframe = 0.0f;
                 else if (this->endframe >= this->numf) {
                     end = this->endframe - (this->numf - 1);
@@ -4271,10 +4294,10 @@ void Layer::display() {
             }
 			draw_box(this->loopbox, -1);
 			if (ends) {
-				draw_box(lightgrey, this->loopbox->acolor, this->loopbox->vtxcoords->x1 + this->startframe * (this->loopbox->vtxcoords->w / (this->numf - 1)), this->loopbox->vtxcoords->y1, (this->endframe - this->startframe) * (this->loopbox->vtxcoords->w / (this->numf - 1)), 0.075f, -1);
+				draw_box(lightgrey, green, this->loopbox->vtxcoords->x1 + this->startframe * (this->loopbox->vtxcoords->w / (this->numf - 1)), this->loopbox->vtxcoords->y1, (this->endframe - this->startframe) * (this->loopbox->vtxcoords->w / (this->numf - 1)), 0.075f, -1);
 			}
 			else {
-				draw_box(lightgrey, this->loopbox->acolor, this->loopbox->vtxcoords->x1 + this->startframe * (this->loopbox->vtxcoords->w / (this->numf - 1)), this->loopbox->vtxcoords->y1, (this->endframe - this->startframe) * (this->loopbox->vtxcoords->w / (this->numf - 1)), 0.075f, -1);
+				draw_box(lightgrey, green, this->loopbox->vtxcoords->x1 + this->startframe * (this->loopbox->vtxcoords->w / (this->numf - 1)), this->loopbox->vtxcoords->y1, (this->endframe - this->startframe) * (this->loopbox->vtxcoords->w / (this->numf - 1)), 0.075f, -1);
 			}
 			draw_box(white, white, this->loopbox->vtxcoords->x1 + this->frame * (this->loopbox->vtxcoords->w /
                                                                                  (this->numf - 1)),
@@ -4464,6 +4487,7 @@ void Mixer::outputmonitors_handle() {
 
 // SWITCH LAYER TO LIVE INPUT (WEBCAM,...)
 bool Layer::find_new_live_base(int pos) {
+    avformat_close_input(&mainprogram->busylayers[pos]->video);
 	int size = mainprogram->mimiclayers.size();
 	for (int i = 0; i < size; i++) {
 		Layer* mlay = mainprogram->mimiclayers[i];
@@ -4478,7 +4502,7 @@ bool Layer::find_new_live_base(int pos) {
 			mlay->ifmt = av_find_input_format("dshow");
 #else
 #ifdef POSIX
-			mlay->ifmt = av_find_input_format("v4l2");
+			mlay->ifmt = (AVInputFormat*)av_find_input_format("v4l2");
 #endif
 #endif
 			mlay->skip = true;
@@ -4534,7 +4558,7 @@ void Layer::set_live_base(std::string livename) {
 		this->ifmt = av_find_input_format("dshow");
 #else
 #ifdef POSIX
-		this->ifmt = av_find_input_format("v4l2");
+		this->ifmt = (AVInputFormat*)av_find_input_format("v4l2");
 #endif
 #endif
 		this->reset = false;
@@ -8093,7 +8117,7 @@ void Mixer::record_video() {
 	dest_stream->r_frame_rate = c->framerate;
 	dest_stream->avg_frame_rate = c->framerate;
 	dest_stream->first_dts = 0;
-	dest->oformat->flags |= AVFMT_NOFILE;
+    ((AVOutputFormat*)(dest->oformat))->flags |= AVFMT_NOFILE;
 	//avformat_init_output(dest, nullptr);
 	r = avio_open(&dest->pb, path.c_str(), AVIO_FLAG_WRITE);
 	r = avformat_write_header(dest, nullptr);

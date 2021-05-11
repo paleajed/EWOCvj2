@@ -29,6 +29,10 @@ class Bin;
 class BinElement;
 class ShelfElement;
 
+#ifdef POSIX
+typedef int SOCKET;
+#endif
+
 typedef enum
 {
 	TM_NONE = 0,
@@ -346,7 +350,6 @@ class Program {
 		Menu* parammenu4 = nullptr;
 		Menu* speedmenu = nullptr;
 		Menu *loopmenu = nullptr;
-		Menu *deckmenu = nullptr;
 		Menu *laymenu1 = nullptr;
 		Menu *laymenu2 = nullptr;
 		Menu* newlaymenu = nullptr;
@@ -374,6 +377,7 @@ class Program {
 		Menu* laylistmenu2 = nullptr;
         Menu* editmenu = nullptr;
         Menu* lpstmenu = nullptr;
+        Menu* sendmenu = nullptr;
 		bool menuactivation = false;
 		bool menuchosen = false;
 		std::vector<int> menuresults;
@@ -653,7 +657,25 @@ class Program {
         int sock;
 		std::vector<int> connsockets;
     #endif
+		std::string sockname;
+		std::vector<std::string> connsocknames;
         bool server = false;
+        bool connected = false;
+        std::string seatname = "";
+        std::string serverip = "";
+        bool serveripchanged = false;
+        char localip[80];
+        struct sockaddr_in serv_addr;
+#ifdef WINDOWS
+        std::unordered_map<std::string, SOCKET> connmap;
+#endif
+#ifdef POSIX
+        std::unordered_map<std::string, int> connmap;
+        #endif
+        std::mutex clientmutex;
+        std::condition_variable startclient;
+
+        std::vector<std::string> v4l2lbdevices;
 
 		int quit_requester();
 		GLuint set_shader();
@@ -702,7 +724,6 @@ class Program {
 		void handle_loopmenu();
 		void handle_mixtargetmenu();
 		void handle_wipemenu();
-		void handle_deckmenu();
 		void handle_laymenu1();
 		void handle_newlaymenu();
 		void handle_clipmenu();
@@ -713,6 +734,9 @@ class Program {
         void handle_lpstmenu();
         void write_recentprojectlist();
         void socket_server(struct sockaddr_in serv_addr, int opt);
+        void socket_client(struct sockaddr_in serv_addr, int opt);
+        void socket_server_recieve(SOCKET sock);
+        void stream_to_v4l2loopbacks();
         Program();
 		
 	private:
@@ -874,5 +898,7 @@ extern void WaitBuffer(GLsync& syncObj);
 extern void make_searchbox();
 
 extern std::string find_unused_filename(std::string basename, std::string path, std::string extension);
+
+extern std::string exec(const char* cmd);
 
 extern void set_nonblock(int socket);

@@ -285,7 +285,6 @@ class Layer {
 
 
 	private:
-		void trigger();
 		bool get_hap_frame();
 		void get_cpu_frame(int framenr, int prevframe, int errcount);
 };

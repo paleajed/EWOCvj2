@@ -70,6 +70,8 @@
 #include <AL/alc.h>
 #include <AL/alext.h>
 #include "snappy-c.h"
+#include <lo/lo.h>
+#include <lo/lo_cpp.h>
 
 #include "IL/il.h"
 extern "C" {
@@ -304,12 +306,20 @@ std::string find_unused_filename(std::string basename, std::string path, std::st
     }
 }
 
+
 #ifdef POSIX
-void set_nonblock(int socket) {
-    int flags;
-    flags = fcntl(socket,F_GETFL,0);
-    assert(flags != -1);
-    fcntl(socket, F_SETFL, flags | O_NONBLOCK);
+std::string exec(const char* cmd) {
+    // executes Linux command cmd and returns output in result
+    std::array<char, 128> buffer;
+    std::string result;
+    std::unique_ptr<FILE, decltype(&pclose)> pipe(popen(cmd, "r"), pclose);
+    if (!pipe) {
+        throw std::runtime_error("popen() failed!");
+    }
+    while (fgets(buffer.data(), buffer.size(), pipe.get()) != nullptr) {
+        result += buffer.data();
+    }
+    return result;
 }
 #endif
 
@@ -1033,7 +1043,7 @@ int open_codec_context(int *stream_idx,
     int ret;
     AVStream *st;
     AVCodecContext *dec_ctx = nullptr;
-    AVCodec *dec = nullptr;
+    const AVCodec *dec = nullptr;
     AVDictionary *opts = nullptr;
     ret = av_find_best_stream(video, type, -1, -1, nullptr, 0);
     if (ret <0) {
@@ -1238,7 +1248,6 @@ void Layer::get_cpu_frame(int framenr, int prevframe, int errcount)
 		av_packet_unref(&this->decpkt);
 	}
 	else {
-		//av_frame_unref(this->decframe);  reminder: leak?
 		int r = av_read_frame(this->video, &this->decpkt);
 		if (r < 0) printf("problem reading frame\n");
 		else decode_packet(this, &got_frame);
@@ -1332,22 +1341,6 @@ bool Layer::get_hap_frame() {
 	return true;
 }
 
-void Layer::trigger() {
-	//reminder: comment
-	if (this->dummy) return;
-	while (!this->closethread) {
-		this->ready = true;
-		while (this->ready) {
-			this->startdecode.notify_one();
-		}
-		std::unique_lock<std::mutex> lock2(this->enddecodelock);
-		this->enddecodevar.wait(lock2, [&] {return this->processed; });
-		this->processed = false;
-		lock2.unlock();
-		//boost::this_thread::sleep(boost::posix_time::milliseconds(10));
-	}
-}
-
 void Layer::get_frame(){
 
 	float speed = 1.0;
@@ -1364,11 +1357,6 @@ void Layer::get_frame(){
 			//delete this;  implement with layer delete vector?
 			return;
 		}
-
-		// calculate frame numbers, trigger clips in queue
-		//bool ret = this->calc_texture(this->comp, true);
-		//if (!this->comp && !mainprogram->prevmodus) continue;
-		// reminder :: experiment failed -> no it works (priority non-realtime) - test both systems on slower computer!
 
 		if (this->vidopen) {
 			if (!this->dummy && this->video) {
@@ -1663,7 +1651,7 @@ bool Layer::thread_vidopen() {
 
 	if (open_codec_context(&(this->video_stream_idx), this->video, AVMEDIA_TYPE_VIDEO) >= 0) {
 		this->video_stream = this->video->streams[this->video_stream_idx];
-		AVCodec* dec = avcodec_find_decoder(this->video_stream->codecpar->codec_id);
+		const AVCodec* dec = avcodec_find_decoder(this->video_stream->codecpar->codec_id);
 		this->vidformat = this->video_stream->codecpar->codec_id;
 		this->video_dec_ctx = avcodec_alloc_context3(dec);
 		avcodec_parameters_to_context(this->video_dec_ctx, this->video_stream->codecpar);
@@ -1721,14 +1709,13 @@ bool Layer::thread_vidopen() {
 			this->startframe = 0;
 			this->endframe = this->numf - 1;
 		}
-		//if (this->numf == 0) return 0;	//reminder: implement!
 		float tbperframe = (float)this->video_duration / (float)this->numf;
 		this->millif = tbperframe * (((float)this->video_stream->time_base.num * 1000.0) / (float)this->video_stream->time_base.den);
 	}
 
 	if (open_codec_context(&(this->audio_stream_idx), this->video, AVMEDIA_TYPE_AUDIO) >= 0 && !this->dummy) {
 		this->audio_stream = this->video->streams[this->audio_stream_idx];
-		AVCodec *dec = avcodec_find_decoder(this->audio_stream->codecpar->codec_id);
+		const AVCodec *dec = avcodec_find_decoder(this->audio_stream->codecpar->codec_id);
         this->audio_dec_ctx = avcodec_alloc_context3(dec);
 		avcodec_parameters_to_context(this->audio_dec_ctx, this->audio_stream->codecpar);
 		avcodec_open2(this->audio_dec_ctx, dec, nullptr);
@@ -1953,7 +1940,6 @@ void set_glstructures() {
 
 	// tbo for quad color transfer to shader
 	glGetIntegerv(GL_MAX_TEXTURE_IMAGE_UNITS, &mainprogram->maxtexes);
-	mainprogram->maxtexes = 32;   // reminder card#
 	glGenBuffers(1, &mainprogram->boxcoltbo);
 	glBindBuffer(GL_TEXTURE_BUFFER, mainprogram->boxcoltbo);
 	glBufferData(GL_TEXTURE_BUFFER, 1024 * 4, nullptr, GL_DYNAMIC_DRAW);
@@ -3767,7 +3753,6 @@ void onestepfrom(bool stage, Node *node, Node *prevnode, GLuint prevfbotex, GLui
 						mainmix->bulrscopy[m].erase(mainmix->bulrscopy[m].begin());
 						mainmix->delete_layers(mainmix->bulrscopy[m], mainmix->bualive);  //reminder: change to threaded variant?
 						mainmix->bulrs[m].clear();
-						// delete the butexes when idle, reminder: <-
 						for (int i = 0; i < mainmix->butexes[m].size(); i++) {
 							glDeleteTextures(1, &mainmix->butexes[m][i]);
 						}
@@ -4066,7 +4051,7 @@ void walk_nodes(bool stage) {
 				((BlendNode*)node)->in2tex = -1;
 			}
 			if (mainprogram->nodesmain->linked) {
-				if (node->monitor != -1) { //reminder: nodes structure
+				if (node->monitor != -1) {
 					if (node->monitor / 6 == mainmix->currscene[0][0]) {
 						fromnodes.push_back(node);
 					}
@@ -5530,12 +5515,6 @@ void handle_scenes(Scene* scene) {
 			box->acolor[1] = 0.5;
 			box->acolor[2] = 1.0;
 			box->acolor[3] = 1.0;
-			if (mainprogram->menuactivation) {
-				mainprogram->deckmenu->state = 2;
-				mainmix->learnbutton = but;
-				mainmix->mousedeck = scene->deck;
-				mainprogram->menuactivation = false;
-			}
 		}
 
 		std::string s = std::to_string(i + 1);
@@ -5954,6 +5933,9 @@ void the_loop() {
 	// check if general video resolution changed, and reinitialize all textures concerned
 	mainprogram->handle_changed_owoh();
 
+	// if not server then try to connect the client
+	if (!mainprogram->server) mainprogram->startclient.notify_one();
+
 	// calculate and visualize fps
 	mainmix->fps[mainmix->fpscount] = (int)(1.0f / (mainmix->time - mainmix->oldtime));
 	int total = 0;
@@ -6002,11 +5984,11 @@ void the_loop() {
             if (testlay->filename != "") testlay->calc_texture(1, 1);
 			testlay->load_frame();
 		}
-		for(int i = 0; i < mainprogram->busylayers.size(); i++) {
-			Layer *testlay = mainprogram->busylayers[i];  // needs to be revised, reminder: dont remember why, something with doubling...?
-            if (testlay->filename != "") testlay->calc_texture(1, 1);
-			testlay->load_frame();
-		}
+		//for(int i = 0; i < mainprogram->busylayers.size(); i++) {
+		//	Layer *testlay = mainprogram->busylayers[i];  // needs to be revised, reminder: dont remember why, something with doubling...?
+        //    if (testlay->filename != "") testlay->calc_texture(1, 1);
+		//	testlay->load_frame();
+		//}
 	}
 	// when in preview modus, do frame texture load for both mixes (preview and output)
 	if (mainprogram->prevmodus) {
@@ -6061,6 +6043,11 @@ void the_loop() {
 			mainprogram->menuondisplay = false;
 		}
 	}
+
+
+    mainprogram->stream_to_v4l2loopbacks();
+
+
 
     /////////////// STUFF THAT BELONGS TO EITHER BINS OR MIX OR FULL SCREEN OR RETARGETING
 
@@ -6369,7 +6356,6 @@ void the_loop() {
 		}
 
 
-		// reminder: what to do with color wheel
 		if (mainprogram->cwon) {
 			if (mainprogram->leftmousedown) {
 				mainprogram->cwmouse = 1;
@@ -6574,8 +6560,6 @@ void the_loop() {
 
 	mainprogram->handle_wipemenu();
 
-	mainprogram->handle_deckmenu();
-
 	mainprogram->handle_laymenu1();
 
 	mainprogram->handle_newlaymenu();
@@ -6718,7 +6702,6 @@ void the_loop() {
             mainprogram->frontbatch = true;
             draw_box(nullptr, alphagreen, mainmix->learnbutton->box, -1);
             mainprogram->frontbatch = false;
-			// reminder: delete midi info for multiple buttons (shelf)
 		}
         else if (mainmix->midishelfstage == 2) {
             render_text("Awaiting end point MIDI input.", white, -0.16f, 0.2f, 0.001f, 0.0016f);
@@ -6825,6 +6808,27 @@ void the_loop() {
 				}
 			}
 			while (mainprogram->encthreads) {}
+
+			// close all webcams
+			for (Layer *lay : mainprogram->busylayers) {
+			    avformat_close_input(&lay->video);
+			}
+
+			// close socket communication
+			// if server ask other socket to become server else signal all other sockets that we're quitting
+			if (mainprogram->server) {
+			    send(mainprogram->connsockets.back(), "BECOME_SERVER", 13, 0);
+                mainprogram->connsockets.pop_back();
+                for (auto sock : mainprogram->connsockets) {
+                    send(mainprogram->connsockets.back(), mainprogram->localip, strlen(mainprogram->localip), 0);
+                }
+			}
+            else {
+                for (auto sock : mainprogram->connsockets) {
+                    send(sock, "I_AM_QUITTING", 13, 0);
+                }
+            }
+            close(mainprogram->sock);
 
 			mainprogram->prefs->save();
 
@@ -7906,7 +7910,7 @@ int CALLBACK WinMain(HINSTANCE hInstance, HINSTANCE hPrevInstance, LPSTR pCmdLin
 #endif
 #ifdef POSIX
 int main(int argc, char* argv[]) {
-    #endif
+#endif
 
     bool quit = false;
 
@@ -7929,7 +7933,7 @@ int main(int argc, char* argv[]) {
     //snd_seq_t *seq_handle;
     //if (snd_seq_open(&seq_handle, "hw", SND_SEQ_OPEN_INPUT, 0) < 0) {
     //    fprintf(stderr, "Error opening ALSA sequencer.\n");
-     //   exit(1);
+    //   exit(1);
     //}
 
     // initializing devIL
@@ -7985,14 +7989,14 @@ int main(int argc, char* argv[]) {
 #ifdef POSIX
     std::string homedir(getenv("HOME"));
     mainprogram->homedir = homedir;
-    boost::filesystem::path p1{ homedir + "/Documents/EWOCvj2" };
+    boost::filesystem::path p1{homedir + "/Documents/EWOCvj2"};
     std::string docdir = p1.string();
     if (!exists(homedir + "/Documents/EWOCvj2")) boost::filesystem::create_directory(p1);
-    boost::filesystem::path e{ homedir + "/.ewocvj2" };
+    boost::filesystem::path e{homedir + "/.ewocvj2"};
     if (!exists(homedir + "/.ewocvj2")) boost::filesystem::create_directory(e);
-   boost::filesystem::path p4{ homedir + "/.ewocvj2/temp" };
+    boost::filesystem::path p4{homedir + "/.ewocvj2/temp"};
     if (!exists(homedir + "/.ewocvj2/temp")) boost::filesystem::create_directory(p4);
-    boost::filesystem::path p5{ docdir + "/projects" };
+    boost::filesystem::path p5{docdir + "/projects"};
     mainprogram->currprojdir = p5.string();
     if (!exists(docdir + "/projects")) boost::filesystem::create_directory(p5);
 #endif
@@ -8051,9 +8055,12 @@ int main(int argc, char* argv[]) {
     if (!exists(fstr)) mainprogram->quitting = "Can't find \"expressway.ttf\" TrueType font in current directory";
 #else
 #ifdef POSIX
-    std::string fdir (mainprogram->fontdir);
+    std::string fdir(mainprogram->fontdir);
     std::string fstr = fdir + "/expressway.ttf";
-    if (!exists(fdir + "/expressway.ttf"))  mainprogram->quitting = "Can't find \"expressway.ttf\" TrueType font in " + fdir;
+    printf("%s /n", fstr.c_str());
+    fflush(stdout);
+    if (!exists(fdir + "/expressway.ttf"))
+        mainprogram->quitting = "Can't find \"expressway.ttf\" TrueType font in " + fdir;
 #endif
 #endif
     if (FT_New_Face(ft, fstr.c_str(), 0, &face)) {
@@ -8246,41 +8253,79 @@ int main(int argc, char* argv[]) {
     mainprogram->numcores = sysconf(_SC_NPROCESSORS_ONLN);
 #endif
 
+
     int oscport = 9000;
-    // socket communication
-    struct sockaddr_in serv_addr;
-    int opt = 1;
-    char buf[1024] = {0};
-    if ((mainprogram->sock = socket(AF_INET, SOCK_STREAM, 0)) < 0)
-    {
-        printf("\n Socket creation error \n");
-        return -1;
+
+
+    // Multi-user code using sockets - reminder: postponed till later version
+    if (0) {
+        //get local ip by connecting to Google DNS
+        const char *google_dns_server = "8.8.8.8";
+        int dns_port = 53;
+
+        struct sockaddr_in serv;
+        int sock = socket(AF_INET, SOCK_DGRAM, 0);
+
+        //Socket could not be created
+        if (sock < 0) {
+            std::cout << "Socket error" << std::endl;
+        }
+
+        memset(&serv, 0, sizeof(serv));
+        serv.sin_family = AF_INET;
+        serv.sin_addr.s_addr = inet_addr(google_dns_server);
+        serv.sin_port = htons(dns_port);
+
+        int err = connect(sock, (const struct sockaddr *) &serv, sizeof(serv));
+        if (err < 0) {
+            std::cout << "Error number: " << errno
+                      << ". Error message: " << strerror(errno) << std::endl;
+        }
+
+        struct sockaddr_in name;
+        socklen_t namelen = sizeof(name);
+        err = getsockname(sock, (struct sockaddr *) &name, &namelen);
+
+        const char *p = inet_ntop(AF_INET, &name.sin_addr, mainprogram->localip, 80);
+        if (p != NULL) {
+            std::cout << "Local IP address is: " << mainprogram->localip << std::endl;
+        } else {
+            std::cout << "Error number: " << errno
+                      << ". Error message: " << strerror(errno) << std::endl;
+        }
+
+        // socket communication for sharing bins one-way
+        int opt = 1;
+        char buf[1024] = {0};
+        if ((mainprogram->sock = socket(AF_INET, SOCK_STREAM, 0)) < 0) {
+            printf("\n Socket creation error \n");
+            return -1;
+        }
+
+        mainprogram->serv_addr.sin_family = AF_INET;
+        mainprogram->serv_addr.sin_addr.s_addr = INADDR_ANY;
+        mainprogram->serv_addr.sin_port = 0;  // comm port 0 :  OS chooses an available port
+
+        // Convert IPv4 and IPv6 addresses from text to binary form
+        if (mainprogram->serverip == "0.0.0.0") {
+            if (inet_pton(AF_INET, mainprogram->localip, &mainprogram->serv_addr.sin_addr) <= 0) {
+                printf("\nInvalid server address/ Address not supported \n");
+                return -1;
+            }
+        } else {
+            if (inet_pton(AF_INET, mainprogram->serverip.c_str(), &mainprogram->serv_addr.sin_addr) <= 0) {
+                printf("\nInvalid server address/ Address not supported \n");
+                return -1;
+            }
+        };
+
+        // this thread gets working when seat is/becomes a client
+        std::thread sockclient(&Program::socket_client, mainprogram, mainprogram->serv_addr,
+                               opt);
+        sockclient.detach();
     }
 
-    serv_addr.sin_family = AF_INET;
-    serv_addr.sin_port = htons(8000);  // comm port
 
-    // Convert IPv4 and IPv6 addresses from text to binary form
-    if(inet_pton(AF_INET, "127.20.1.75", &serv_addr.sin_addr)<=0)
-    {
-        printf("\nInvalid address/ Address not supported \n");
-        return -1;
-    }
-
-    if (connect(mainprogram->sock, (struct sockaddr *)&serv_addr, sizeof(serv_addr)) < 0)
-    {
-        // this is the first program instance: make it the server
-        std::thread sockserver(&Program::socket_server, mainprogram, serv_addr,
-                      opt);
-        sockserver.detach();
-    }
-    else {
-        int valread = recv( mainprogram->sock , buf, 1024, 0);
-#ifdef POSIX
-        set_nonblock(mainprogram->sock);
-#endif
-        oscport = 9000 + std::stoi(buf);
-    }
 
     // OSC
     mainprogram->st = new lo::ServerThread(oscport);
@@ -8322,11 +8367,6 @@ int main(int argc, char* argv[]) {
         }
     }
 
-#ifdef WINDOWS
-    //SetPriorityClass(GetCurrentProcess(), HIGH_PRIORITY_CLASS);  reminder: what with priorities?
-#endif
-
-
     glBindFramebuffer(GL_FRAMEBUFFER, 0);
     glDrawBuffer(GL_BACK_LEFT);
 
@@ -8353,11 +8393,6 @@ int main(int argc, char* argv[]) {
             } else if (mainprogram->pathto == "OPENFILESLAYER") {
                 std::vector<Layer *> &lvec = choose_layers(mainmix->mousedeck);
                 std::string str(mainprogram->paths[0]);
-                if (!mainmix->addlay) {
-                    if (mainprogram->loadlay->filename != "") {
-                        mainprogram->loadlay = mainmix->add_layer(lvec, mainprogram->loadlay->pos);
-                    }
-                }
                 mainprogram->currfilesdir = dirname(str);
                 mainprogram->filescount = 0;
                 mainprogram->fileslay = mainprogram->loadlay;
@@ -8453,19 +8488,26 @@ int main(int argc, char* argv[]) {
                 mainmix->new_state();
                 mainprogram->project->newp(mainprogram->path);
             } else if (mainprogram->pathto == "OPENPROJECT") {
-                mainprogram->currprojdir = dirname(mainprogram->path);
-                mainprogram->project->open(mainprogram->path);
+                std::string p = dirname(mainprogram->path);
+                mainprogram->currprojdir = dirname(p.substr(0, p.length() - 1));
+                if (exists(mainprogram->path)) {
+                    mainprogram->project->open(mainprogram->path);
+                }
             } else if (mainprogram->pathto == "SAVEPROJECT") {
                 if (dirname(mainprogram->path) != "") {
                     mainprogram->currprojdir = dirname(mainprogram->path);
                     std::string ext = mainprogram->path.substr(mainprogram->path.length() - 7, std::string::npos);
                     std::string path2;
+                    std::string str;
                     if (ext != ".ewocvj") {
+                        str = mainprogram->path + "/" + basename(mainprogram->path) + ".ewocvj";
                         path2 = mainprogram->path;
                     }
                     else {
                         path2 = mainprogram->path.substr(0, mainprogram->path.size() - 7);
+                        str = path2 + "/" + basename(path2) + ".ewocvj";
                     }
+                    mainprogram->path = str;
                     if (!exists(path2)) {
                         mainprogram->project->create_dirs(path2);
                     } else {
@@ -8919,6 +8961,8 @@ int main(int argc, char* argv[]) {
             std::string reqdir = mainprogram->currprojdir;
             if (reqdir.substr(0, 1) == ".") reqdir.erase(0, 2);
             std::unique_ptr <Box> box = std::make_unique <Box> ();
+
+            // handle starting with a new project on the drive
             box->acolor[3] = 1.0f;
             box->vtxcoords->x1 = -0.75;
             box->vtxcoords->y1 = 0.0f;
@@ -8961,18 +9005,19 @@ int main(int argc, char* argv[]) {
                 //glDrawBuffer(GL_BACK_LEFT);
             }
 
+            // handle opening an existing project on the drive
             box->vtxcoords->y1 = -0.25f;
             box->upvtxtoscr();
             draw_box(box->lcolor, box->acolor, box, -1);
             if (box->in()) {
                 draw_box(white, lightblue, box, -1);
                 if (mainprogram->leftmouse) {
-                    mainprogram->get_inname("Open project", "application/ewocvj2-project",
-                                            boost::filesystem::canonical(mainprogram->currprojdir).generic_string());
+                    mainprogram->get_inname("Open project", "application/ewocvj2-project", boost::filesystem::canonical(mainprogram->currprojdir).generic_string());
                     if (mainprogram->path != "") {
                         SDL_GL_MakeCurrent(mainprogram->mainwindow, glc);
-                         mainprogram->project->open(mainprogram->path);
-                        mainprogram->currprojdir = dirname(mainprogram->path);
+                        mainprogram->project->open(mainprogram->path);
+                        std::string p = dirname(mainprogram->path);
+                        mainprogram->currprojdir = dirname(p.substr(0, p.length() - 1));
                         mainprogram->path = "";
                         mainprogram->startloop = true;
                     }
@@ -8991,6 +9036,7 @@ int main(int argc, char* argv[]) {
             box->vtxcoords->h = 0.125f;
             box->upvtxtoscr();
 
+            // handle choosing recently used projects
             render_text("Recent project files:", white, box->vtxcoords->x1 + 0.015f,
                         box->vtxcoords->y1 + box->vtxcoords->h * 2.0f + 0.03f, 0.001f, 0.0016f);
             for (int i = 0; i < mainprogram->recentprojectpaths.size(); i++) {
@@ -9000,7 +9046,8 @@ int main(int argc, char* argv[]) {
                     if (mainprogram->leftmouse) {
                         SDL_GL_MakeCurrent(mainprogram->mainwindow, glc);
                         mainprogram->project->open(mainprogram->recentprojectpaths[i]);
-                        mainprogram->currprojdir = dirname(mainprogram->recentprojectpaths[i]);
+                        std::string p = dirname(mainprogram->recentprojectpaths[i]);
+                        mainprogram->currprojdir = dirname(p.substr(0, p.length() - 1));
                         mainprogram->startloop = true;
                         break;
                     }

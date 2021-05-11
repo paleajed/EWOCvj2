@@ -80,9 +80,13 @@ class BinsMain {
 		Box *hapmodebox;
 		BinElement *renamingelem = nullptr;
         std::vector<std::string> newbinelpaths;
+        std::vector<char*> messages;
+        std::vector<char*> rawmessages;
+        std::vector<std::string> messagesocknames;
+        std::vector<int> messagelengths;
 
 
-    void handle(bool draw);
+        void handle(bool draw);
 		int read_binslist();
 		void save_binslist();
 		void make_currbin(int pos);
@@ -110,6 +114,7 @@ class Bin {
 		int encthreads = 0;
 		int pos;
 		bool frozen = false;
+		std::vector<std::string> sendtonames;
 		Bin(int pos);
 		~Bin();
 		

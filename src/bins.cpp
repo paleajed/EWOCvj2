@@ -581,16 +581,16 @@ void BinsMain::handle(bool draw) {
 	}
 
 	// manage SEND button
-#ifdef WINDOWS
-    std::vector<SOCKET> sendtosocks = mainprogram->connsockets;
-#endif
-#ifdef POSIX
-    std::vector<int> sendtosocks = mainprogram->connsockets;
-#endif
-    if (mainprogram->server == false) {
-        // program instance is client
-        sendtosocks.push_back(mainprogram->sock);
-    }
+    auto put_in_buffer = [](const char* str, char* walk) {
+	    // buffer utility
+        for (int i = 0; i < strlen(str); i++) {
+            *walk++ = str[i];
+        }
+        char *nll = "\0";
+        *walk++ = *nll;
+        return walk;
+    };
+
     std::unique_ptr <Box> box = std::make_unique <Box> ();;
     box->vtxcoords->x1 = -0.28f;
     box->vtxcoords->y1 = -0.98f;
@@ -601,46 +601,58 @@ void BinsMain::handle(bool draw) {
     render_text("SEND", white, -0.255f, -0.95f, 0.00075f, 0.0012f);
     if (box->in()) {
         if (mainprogram->leftmouse) {
-            char buf[148480] = {0};
-            char* walk = buf;
-            auto put_in_buffer = [](const char* str, char* walk) {
-                for (int i = 0; i < strlen(str); i++) {
-                    *walk++ = str[i];
-                }
-                char *nll = "\0";
-                *walk++ = *nll;
-                return walk;
-            };
-
-            for (int i = 0; i < sendtosocks.size(); i++) {
-                auto sock = sendtosocks[i];
-                walk = put_in_buffer(this->currbin->name.c_str(), walk);
-                for (int i = 0; i < 12; i++) {
-                    for (int j = 0; j < 12; j++) {
-                        BinElement *binel = this->currbin->elements[j * 12 + i];
-                        walk = put_in_buffer(binel->name.c_str(), walk);
-                        walk = put_in_buffer(binel->path.c_str(), walk);
-                    }
-                }
-                send(sock, buf, walk - &buf[0], 0);
-            }
+            mainprogram->make_menu("sendmenu", mainprogram->sendmenu, mainprogram->connsocknames);
+            mainprogram->sendmenu->state = 2;
         }
     }
-    // recieve sent bin
-    char buf[148480] = {0};
-    char* walk = buf;
 
-    for (int i = 0; i < sendtosocks.size(); i++) {
-        auto sock = sendtosocks[i];
-        int valread = recv( sock , walk, 148480, 0);
-        std::string str(walk);
-        walk += strlen(walk ) + 1;
-#ifdef WINDOWS
-    if (valread != SOCKET_ERROR) {
-#endif
-#ifdef POSIX
-        if (valread >= 0) {
-#endif
+    // handle sendmenu
+    int k = mainprogram->handle_menu(mainprogram->sendmenu);
+    if (k > -1) {
+        binsmain->currbin->sendtonames.push_back(mainprogram->connsocknames[k]);
+        int sock;
+        if (mainprogram->server) sock = mainprogram->connsockets[k];
+        else sock = mainprogram->sock;
+        char buf[148480] = {0};
+        char* walk = buf;
+        walk = put_in_buffer(mainprogram->sockname.c_str(), walk);
+        walk = put_in_buffer(this->currbin->name.c_str(), walk);
+        for (int i = 0; i < 12; i++) {
+            for (int j = 0; j < 12; j++) {
+                BinElement *binel = this->currbin->elements[j * 12 + i];
+                walk = put_in_buffer(binel->name.c_str(), walk);
+                walk = put_in_buffer(binel->path.c_str(), walk);
+            }
+        }
+        char buf2[148495] = {0};
+        char *walk2 = buf2;
+        walk2 = put_in_buffer("BIN_SENT", walk2);
+        walk2 = put_in_buffer((std::to_string(walk - &buf[0] + (std::to_string(walk - &buf[0])).size() + 10)).c_str(),
+                walk2);
+        for (int i = 0; i < walk - &buf[0]; i++) {
+            *walk2 = buf[i];
+            walk2++;
+        }
+        send(sock, buf2, walk2 - &buf2[0], 0);
+    }
+    if (mainprogram->menuchosen) {
+        mainprogram->menuchosen = false;
+        mainprogram->menuactivation = 0;
+        mainprogram->menuresults.clear();
+    }
+
+    // recieve sent bins
+    for (int i = 0; i < binsmain->messages.size(); i++) {
+        if (mainprogram->server) {
+            // send recieved bins through from server to destination clients
+            send(mainprogram->connmap[binsmain->messagesocknames[i]], binsmain->rawmessages[i],
+                 binsmain->messagelengths[i], 0);
+        }
+        else {
+            char *walk = binsmain->messages[i];
+            std::string str(walk);
+            walk += strlen(walk) + 1;
+
             Bin *binis = nullptr;
             for (Bin *bin : binsmain->bins) {
                 if (bin->name == str + " (FROZEN)") {
@@ -663,10 +675,15 @@ void BinsMain::handle(bool draw) {
                     mainprogram->paths.push_back(path);
                 }
             }
-            this->openfilesbin = true;
-            this->menuactbinel = binsmain->currbin->elements[0];  // loading starts from first bin element
         }
+
+        this->openfilesbin = true;
+        this->menuactbinel = binsmain->currbin->elements[0];  // loading starts from first bin element
     }
+    binsmain->messages.clear();
+    binsmain->rawmessages.clear();
+    binsmain->messagelengths.clear();
+    binsmain->messagesocknames.clear();
 
 
 	// set threadmode for hap encoding
@@ -1052,7 +1069,7 @@ void BinsMain::handle(bool draw) {
 
 
 	// handle binelmenu thats been populated above, menuset controls which options sets are used
-	int k = mainprogram->handle_menu(mainprogram->binelmenu);
+	k = mainprogram->handle_menu(mainprogram->binelmenu);
 	//if (k > -1) this->currbinel = nullptr;
 	if (binelmenuoptions.size() && k > -1) {
 		if (binelmenuoptions[k] != BET_OPENFILES) this->menuactbinel = nullptr;
@@ -2537,7 +2554,7 @@ void BinsMain::hap_encode(const std::string srcpath, BinElement *binel, BinEleme
 	open_codec_context(&source_stream_idx, source, AVMEDIA_TYPE_VIDEO);
 	source_stream = source->streams[source_stream_idx];
 	source_dec_cpm = source_stream->codecpar;
-	AVCodec *scodec = avcodec_find_decoder(source_stream->codecpar->codec_id);
+	const AVCodec *scodec = avcodec_find_decoder(source_stream->codecpar->codec_id);
 	source_dec_ctx = avcodec_alloc_context3(scodec);
 	r = avcodec_parameters_to_context(source_dec_ctx, source_dec_cpm);
 	source_dec_ctx->time_base = { 1, 1000 };
@@ -2607,7 +2624,7 @@ void BinsMain::hap_encode(const std::string srcpath, BinElement *binel, BinEleme
 		av_log(nullptr, AV_LOG_ERROR, "Copying parameters for stream #%u failed\n");
     }   
     dest_stream->r_frame_rate = source_stream->r_frame_rate;
-    dest->oformat->flags |= AVFMT_NOFILE;
+    ((AVOutputFormat*)(dest->oformat))->flags |= AVFMT_NOFILE;
     //avformat_init_output(dest, nullptr);
     r = avio_open(&dest->pb, destpath.c_str(), AVIO_FLAG_WRITE);
   	r = avformat_write_header(dest, nullptr);

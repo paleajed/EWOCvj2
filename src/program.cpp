@@ -28,6 +28,7 @@
 #include "direnthwin/dirent.h"
 #include <intrin.h>
 #include <shobjidl.h>
+#include <winsock2.h>
 #include <Vfw.h>
 #include <winsock2.h>
 #define STRSAFE_NO_DEPRECATE
@@ -64,6 +65,7 @@
 #include "retarget.h"
 
 #include <tinyfiledialogs.h>
+#include <arpa/inet.h>
 
 #define PROGRAM_NAME "EWOCvj"
 
@@ -1976,6 +1978,38 @@ void output_video(EWindow* mwin) {
 }
 
 
+void Program::stream_to_v4l2loopbacks() {
+
+    for (std::string device : v4l2lbdevices) {
+
+        int output = open(device.c_str(), O_RDWR);
+        if (output < 0) {
+            std::cerr << "ERROR: could not open output device!\n" <<
+                      strerror(errno);
+            break;
+        }
+
+        int framesize = mainprogram->ow * mainprogram->oh * 4;
+        char *data = (char *) calloc(framesize, 1);
+        if (mainprogram->prevmodus) {
+            glBindTexture(GL_TEXTURE_2D, mainprogram->nodesmain->mixnodes[2]->mixtex);
+        }
+        else {
+            glBindTexture(GL_TEXTURE_2D, mainprogram->nodesmain->mixnodescomp[2]->mixtex);
+        }
+        glGetTexImage(GL_TEXTURE_2D, 0, GL_RGBA, GL_UNSIGNED_BYTE, data);
+        size_t written = write(output, data, framesize);
+        free(data);
+        if (written < 0) {
+            std::cerr << "ERROR: could not write to output device!\n";
+            close(output);
+            break;
+        }
+        close(output);
+    }
+}
+
+
 #ifdef WINDOWS
 void SetProcessPriority(LPWSTR ProcessName, int Priority)
 {
@@ -2107,7 +2141,7 @@ void get_cameras()
 #endif
 #ifdef POSIX
 	mainprogram->livedevices.clear();
-	std::map<std::string, std::wstring> map;
+	std::unordered_map<std::string, std::wstring> map;
 	boost::filesystem::path dir("/sys/class/video4linux");
 	for (boost::filesystem::directory_iterator iter(dir), end; iter != end; ++iter) {
 		std::ifstream name;
@@ -2118,7 +2152,7 @@ void get_cameras()
 		std::wstring wstr(istring.begin(), istring.end());
 		map["/dev/" + basename(iter->path().string())] = wstr;
 	}
-	std::map<std::string, std::wstring>::iterator it;
+	std::unordered_map<std::string, std::wstring>::iterator it;
 	for (it = map.begin(); it != map.end(); it++) {
 		struct v4l2_capability cap;
 		int fd = open(it->first.c_str(), O_RDONLY);
@@ -2514,6 +2548,7 @@ void Program::handle_mixtargetmenu() {
 	std::vector<OutputEntry*> currentries;
 	std::vector<int> possscreens;
 	std::vector<OutputEntry*> takenentries;
+    int v4lstart = 0;
 	if (mainprogram->mixtargetmenu->state > 1) {
 		// make the output display menu (SDL_GetNumVideoDisplays() doesn't allow hotplugging screens... :( )
 		int numd = SDL_GetNumVideoDisplays();
@@ -2550,7 +2585,35 @@ void Program::handle_mixtargetmenu() {
 				possscreens.push_back(i);
 			}
 		}
+#ifdef POSIX
+		// handle selection of active v4l2loopback devices used to stream video at
+		v4lstart = mixtargets.size();
+        mixtargets.push_back("Send to v4l2 loopback device:");
+		std::string res = exec("v4l2-ctl --list-devices");
+		int pos = res.find("platform:v4l2loopback",0);
+		if (pos == std::string::npos) mixtargets.back() = "No v4l2 loopback devices found";
+		while (pos != std::string::npos) {
+            int pos2 = res.find("/dev/video", pos);
+            int n = std::stoi(res.substr(pos2 + 10, 1));
+            int tot = n;
+            pos2++;
+            while (res.substr(pos2 + 11, 1) != "\n") {
+                int n = std::stoi(res.substr(pos2, 1));
+                tot *= 10;
+                tot += n;
+                pos2++;
+            }
+            std::string device = "/dev/video" + std::to_string(tot);
+            if (std::find(v4l2lbdevices.begin(), v4l2lbdevices.end(), device) != v4l2lbdevices.end()) {
+                mixtargets.push_back("V " + device);
+            }
+            else {
+                mixtargets.push_back("  " + device);
+            }
+            pos = res.find("platform:v4l2loopback", pos + 1);
+		}
 		mainprogram->make_menu("mixtargetmenu", mainprogram->mixtargetmenu, mixtargets);
+#endif
 	}
 	k = mainprogram->handle_menu(mainprogram->mixtargetmenu);
 	if (k > -1) {
@@ -2570,7 +2633,7 @@ void Program::handle_mixtargetmenu() {
 				}
 			}
 		}
-		else if (k > 2) {
+		else if (k > 2 && k < v4lstart - 1) {
 			// chosen output screen already used? re-use window
 			bool switched = false;
 			for (int i = 0; i < takenentries.size(); i++) {
@@ -2626,6 +2689,57 @@ void Program::handle_mixtargetmenu() {
 				SDL_GL_MakeCurrent(mainprogram->mainwindow, glc);
 			}
 		}
+#ifdef POSIX
+        else if (k > v4lstart - 1) {
+	        // send output to v4l2 loopback device
+
+	        do {
+                // open output device
+                std::string device = mainprogram->mixtargetmenu->entries[k + 1];
+                device = device.substr(2, device.size() - 2);
+
+                if (std::find(v4l2lbdevices.begin(), v4l2lbdevices.end(), device) != v4l2lbdevices.end()) {
+                    v4l2lbdevices.erase(std::find(v4l2lbdevices.begin(), v4l2lbdevices.end(), device));
+                }
+                else {
+                    v4l2lbdevices.push_back(device);
+
+                    int output = open(device.c_str(), O_RDWR);
+                    if (output < 0) {
+                        std::cerr << "ERROR: could not open output device!\n" <<
+                                  strerror(errno);
+                        break;
+                    }
+
+                    // acquire video format from device
+                    struct v4l2_format vid_format;
+                    memset(&vid_format, 0, sizeof(vid_format));
+                    vid_format.type = V4L2_BUF_TYPE_VIDEO_OUTPUT;
+
+                    if (ioctl(output, VIDIOC_G_FMT, &vid_format) < 0) {
+                        std::cerr << "ERROR: unable to get video format!\n" <<
+                                  strerror(errno);
+                        break;
+                    }
+
+                    // configure desired video format on device
+                    size_t framesize = mainprogram->ow * mainprogram->oh * 4;
+                    vid_format.fmt.pix.width = mainprogram->ow;
+                    vid_format.fmt.pix.height = mainprogram->oh;
+                    vid_format.fmt.pix.pixelformat = V4L2_PIX_FMT_RGB32;
+                    vid_format.fmt.pix.sizeimage = framesize;
+                    vid_format.fmt.pix.field = V4L2_FIELD_NONE;
+
+                    if (ioctl(output, VIDIOC_S_FMT, &vid_format) < 0) {
+                        std::cerr << "ERROR: unable to set video format!\n" <<
+                                  strerror(errno);
+                        break;
+                    }
+                }
+            }
+	        while(0);
+        }
+#endif
 	}
 	if (mainprogram->menuchosen) {
 		mainprogram->menuchosen = false;
@@ -2655,34 +2769,10 @@ void Program::handle_wipemenu() {
 	}
 }
 
-void Program::handle_deckmenu() {
-	int k = -1;
-	// Draw and Program::handle deckmenu
-	// reminder: not necessary?
-	k = mainprogram->handle_menu(mainprogram->deckmenu);
-	if (k == 0) {
-		mainprogram->pathto = "OPENDECK";
-		std::thread filereq(&Program::get_inname, mainprogram, "Open deck file", "application/ewocvj2-deck", boost::filesystem::canonical(mainprogram->currfilesdir).generic_string());
-		filereq.detach();
-	}
-	else if (k == 1) {
-		mainprogram->pathto = "SAVEDECK";
-		std::thread filereq(&Program::get_outname, mainprogram, "Save deck file", "application/ewocvj2-deck", boost::filesystem::canonical(mainprogram->currfilesdir).generic_string());
-		filereq.detach();
-	}
-	else if (k == 2) {
-		mainmix->learn = true;
-	}
-	if (mainprogram->menuchosen) {
-		mainprogram->menuchosen = false;
-		mainprogram->menuactivation = 0;
-		mainprogram->menuresults.clear();
-	}
-}
-
 void Program::handle_laymenu1() {
 	int k = -1;
 	// Draw and Program::handle mainprogram->laymenu1 (with clone layer) and laymenu2 (without)
+    bool cond = (mainprogram->laymenu2->state == 2);
 	if (mainprogram->laymenu1->state > 1 || mainprogram->laymenu2->state > 1 || mainprogram->newlaymenu->state > 1 || mainprogram->clipmenu->state > 1) {
 		if (!mainprogram->gotcameras) {
 			get_cameras();
@@ -2722,7 +2812,6 @@ void Program::handle_laymenu1() {
 	}
 
 
-    bool cond = mainprogram->laymenu2->state;
 	if (k > -1) {
 		if (k == 0) {
 			if (mainprogram->menuresults.size()) {
@@ -2742,6 +2831,7 @@ void Program::handle_laymenu1() {
         if (k == 1) {
             mainprogram->pathto = "OPENFILESLAYER";
             mainprogram->loadlay = mainmix->mouselayer;
+            mainmix->addlay = false;
             std::thread filereq(&Program::get_multinname, mainprogram, "Open video/image/layer file", "", boost::filesystem::canonical(mainprogram->currfilesdir).generic_string());
             filereq.detach();
         }
@@ -2786,7 +2876,8 @@ void Program::handle_laymenu1() {
 		}
 		else if (k == 10 - cond) {
 			mainprogram->pathto = "SAVEMIX";
-			std::thread filereq(&Program::get_outname, mainprogram, "Open mix file", "application/ewocvj2-mix", boost::filesystem::canonical(mainprogram->currfilesdir).generic_string());
+			std::thread filereq(&Program::get_outname, mainprogram, "Save mix file", "application/ewocvj2-mix",
+                       boost::filesystem::canonical(mainprogram->currfilesdir).generic_string());
 			filereq.detach();
 		}
 		else if (k == 11 - cond) {
@@ -2987,8 +3078,8 @@ void Program::handle_mainmenu() {
 	}
 	else if (k == 1) {
 		mainprogram->pathto = "OPENPROJECT";
-		std::thread filereq(&Program::get_inname, mainprogram, "Open project file", "application/ewocvj2-project", boost::filesystem::canonical(mainprogram->currprojdir).generic_string());
-		filereq.detach();
+        std::thread filereq(&Program::get_inname, mainprogram, "Open project", "application/ewocvj2-project", boost::filesystem::canonical(mainprogram->currprojdir).generic_string());
+        filereq.detach();
 	}
 	else if (k == 2) {
 		mainprogram->project->do_save(mainprogram->project->path);
@@ -3193,8 +3284,8 @@ void Program::handle_filemenu() {
 	else if (k == 1) {
 		if (mainprogram->menuresults[0] == 0) {
 			mainprogram->pathto = "OPENPROJECT";
-			std::thread filereq(&Program::get_inname, mainprogram, "Open project file", "application/ewocvj2-project", boost::filesystem::canonical(mainprogram->currprojdir).generic_string());
-			filereq.detach();
+            std::thread filereq(&Program::get_inname, mainprogram, "Open project", "application/ewocvj2-project", boost::filesystem::canonical(mainprogram->currprojdir).generic_string());
+            filereq.detach();
 		}
 		else if (mainprogram->menuresults[0] == 1) {
 			mainprogram->pathto = "OPENSTATE";
@@ -3538,6 +3629,21 @@ bool Program::preferences_handle() {
 				draw_box(white, lightblue, mci->items[i]->valuebox, -1);
 				if (mainprogram->leftmouse) {
 					mci->items[i]->onoff = !mci->items[i]->onoff;
+					if (mci->items[i]->onoff && (mci->items[i]->dest == &mainprogram->server)) {
+                        // start the server
+                        int opt = 1;
+                        mainprogram->serverip = mainprogram->localip; // local ip is server ip
+                        mainprogram->serveripchanged = true;
+                        if(inet_pton(AF_INET, mainprogram->localip, &mainprogram->serv_addr.sin_addr)<=0)
+                        {
+                            printf("\nInvalid server address/ Address not supported \n");
+                            return -1;
+                        }
+                        std::thread sockserver(&Program::socket_server, mainprogram, mainprogram->serv_addr,
+                                               opt);
+                        sockserver.detach();
+
+                    }
 					if (mci->name == "MIDI Devices") {
 						PIMidi* midici = (PIMidi*)mci;
 						if (!midici->items[i]->onoff) {
@@ -3550,7 +3656,7 @@ bool Program::preferences_handle() {
 						}
 						else {
 							midici->onnames.push_back(midici->items[i]->name);
-							RtMidiIn* midiin = new RtMidiIn(RtMidi::UNIX_JACK);
+							RtMidiIn* midiin = new RtMidiIn();
 							if (std::find(mainprogram->openports.begin(), mainprogram->openports.end(), i) == mainprogram->openports.end()) {
 								midiin->openPort(i);
 								midiin->setCallback(&mycallback, (void*)midici->items[i]);
@@ -3671,7 +3777,8 @@ bool Program::preferences_handle() {
                         SDL_StartTextInput();
                     }
                 }
-                if (mci->items[i]->dest != &mainprogram->project->name) {
+                if (mci->items[i]->dest != &mainprogram->project->name  && mci->items[i]->dest !=
+                &mainprogram->seatname) {
                     draw_box(white, black, mci->items[i]->iconbox->vtxcoords->x1,
                              mci->items[i]->iconbox->vtxcoords->y1 - j * 0.2f, mci->items[i]->iconbox->vtxcoords->w,
                              mci->items[i]->iconbox->vtxcoords->h, -1);
@@ -3698,6 +3805,10 @@ bool Program::preferences_handle() {
                         mci->items[i]->choosing = false;
                     }
                 }
+            }
+            if (mci->items[i]->dest == &mainprogram->serverip && mainprogram->serveripchanged) {
+                *(std::string*)mci->items[i]->dest = mainprogram->serverip;
+                mainprogram->serveripchanged = false;
             }
 
             if (cond1) *(std::string*)mci->items[i]->dest = paths[0];
@@ -4446,12 +4557,12 @@ void Project::newp(const std::string &path) {
 	std::string str;
 	std::string path2;
 	if (ext != ".ewocvj") {
-	    str = path + ".ewocvj";
+	    str = path + "/" + basename(path) + ".ewocvj";
 	    path2 = path;
 	}
 	else {
-	    str = path;
 	    path2 = path.substr(0, path.size() - 7);
+        str = path2 + "/" + basename(path2) + ".ewocvj";
 	}
 	this->path = str;
 	this->name = remove_extension(basename(this->path));
@@ -4493,7 +4604,7 @@ void Project::newp(const std::string &path) {
 	mainprogram->shelves[1]->basepath = "shelfsB.shelf";
 	mainprogram->shelves[0]->save(mainprogram->project->shelfdir + "shelfsA.shelf");
 	mainprogram->shelves[1]->save(mainprogram->project->shelfdir + "shelfsB.shelf");
-	mainprogram->project->do_save(str);
+	mainprogram->project->do_save(this->path);
 }
 	
 void Project::open(const std::string& path) {
@@ -4520,7 +4631,7 @@ void Project::open(const std::string& path) {
 	mainprogram->project->path = path;
     mainprogram->project->name = remove_extension(basename(path));
     *namedest = &mainprogram->project->name;
-	std::string dir = remove_extension(path) + "/";
+	std::string dir = dirname(path);
 	this->binsdir = dir + "bins/";
 	this->recdir = dir + "recordings/";
     this->shelfdir = dir + "shelves/";
@@ -4543,7 +4654,7 @@ void Project::open(const std::string& path) {
 	
 	while (safegetline(rfile, istring)) {
 		if (istring == "ENDOFFILE") break;
-        if (istring == "OUTPUTWIDTH") {  // reminder: what to do? project or program level?
+        if (istring == "OUTPUTWIDTH") {
             safegetline(rfile, istring);
             this->ow = std::stoi(istring);
             *owdest = &this->ow;
@@ -4873,7 +4984,7 @@ void Preferences::load() {
                                     }
                                     else {
                                         pim->onnames.push_back(pi->name);
-                                        RtMidiIn *midiin = new RtMidiIn(RtMidi::UNIX_JACK);
+                                        RtMidiIn *midiin = new RtMidiIn();
                                         if (std::find(mainprogram->openports.begin(), mainprogram->openports.end(), foundpos) == mainprogram->openports.end()) {
                                             midiin->openPort(foundpos);
                                             midiin->setCallback(&mycallback, (void*)pim->items[foundpos]);
@@ -5265,6 +5376,37 @@ PIProg::PIProg() {
     PrefItem *ppi;
     int pos = 0;
 
+    ppi = new PrefItem(this, pos, "Seat name", PREF_PATH, (void*)&mainprogram->seatname);
+    ppi->namebox->tooltiptitle = "Name of this program seat ";
+    ppi->namebox->tooltip = "This is the name other seats can send bin information to. ";
+    ppi->valuebox->tooltiptitle = "Set program seat name ";
+    ppi->valuebox->tooltip = "Leftclick starts keyboard entry of program seat name. ";
+    ppi->path = "SEAT";
+    mainprogram->seatname = ppi->path;
+    this->items.push_back(ppi);
+    pos++;
+
+    ppi = new PrefItem(this, pos, "Server", PREF_ONOFF, (void*)&mainprogram->server);
+    ppi->onoff = 0;
+    ppi->namebox->tooltiptitle = "Server ";
+    ppi->namebox->tooltip = "Choose one of your active seats as server for bin information sharing. ";
+    ppi->valuebox->tooltiptitle = "Server toggle ";
+    ppi->valuebox->tooltip = "Leftclick to set/unset this seats' server status. ";
+    mainprogram->server = ppi->onoff;
+    this->items.push_back(ppi);
+    pos++;
+
+    ppi = new PrefItem(this, pos, "Server IP", PREF_PATH, (void*)&mainprogram->serverip);
+    ppi->namebox->tooltiptitle = "IP address of the server ";
+    ppi->namebox->tooltip = "This is the address of the seat that has server status when transmitting bin information"
+                            " to other seats. ";
+    ppi->valuebox->tooltiptitle = "Set IP address of the server ";
+    ppi->valuebox->tooltip = "Leftclick starts keyboard entry of the server IP address. ";
+    ppi->path = "0.0.0.0";
+    mainprogram->serverip = ppi->path;
+    this->items.push_back(ppi);
+    pos++;
+
     ppi = new PrefItem(this, pos, "Autosave", PREF_ONOFF, (void*)&mainprogram->autosave);
     ppi->onoff = 1;
     ppi->namebox->tooltiptitle = "Autosave ";
@@ -5415,12 +5557,6 @@ void Program::define_menus() {
     loopops.push_back("Paste duration (loop length)");
     mainprogram->make_menu("loopmenu", mainprogram->loopmenu, loopops);
     mainprogram->loopmenu->width = 0.2f;
-
-    std::vector<std::string> deckops;
-    deckops.push_back("Open deck");
-    deckops.push_back("Save deck");
-    deckops.push_back("MIDI Learn");
-    mainprogram->make_menu("deckmenu", mainprogram->deckmenu, deckops);
 
     std::vector<std::string> aspectops;
     aspectops.push_back("Same as output");
@@ -5672,24 +5808,133 @@ void Program::socket_server(struct sockaddr_in serv_addr, int opt) {
     this->server = true;
     int new_socket;
     int addrlen = sizeof(serv_addr);
+
     int ret = setsockopt(this->sock, SOL_SOCKET, SO_REUSEADDR,
-                   (const char*)&opt, sizeof(opt));
+                         (const char *) &opt, sizeof(opt));
 
-    // Forcefully attaching socket to the port 8000
-    ret = bind(this->sock, (struct sockaddr *)&serv_addr,
-             sizeof(serv_addr));
-
-    while (listen(this->sock, 3) >= 0)
+    // Forcefully attaching socket to the port
+    if (bind(this->sock, (struct sockaddr *) &serv_addr,
+               addrlen) < 0)
     {
-        new_socket = accept(this->sock, (struct sockaddr *)&serv_addr,
-                                 (socklen_t*)&addrlen);
- #ifdef POSIX
-       set_nonblock(new_socket);
- #endif
+        //print the error message
+        perror("bind failed. Error");
+    }
+
+    while (1) {
+        ret = listen(this->sock, 3);
+        new_socket = accept(this->sock, (struct sockaddr *) &serv_addr,
+                            (socklen_t *) &addrlen);
+
+        // check self-connection
+        sockaddr_in addr_client;
+        socklen_t len;
+        getsockname(new_socket, (struct sockaddr *)&addr_client, &len);
+        if(addr_client.sin_port == serv_addr.sin_port &&
+           addr_client.sin_addr.s_addr == serv_addr.sin_addr.s_addr) {
+            //self connection
+            continue;
+        }
+
         mainprogram->connsockets.push_back(new_socket);
-        send(new_socket , std::to_string(mainprogram->connsockets.size()).c_str() , strlen(std::to_string(mainprogram->connsockets.size()).c_str()) , 0 );
+        // start thread for recieving BIN_SENT messages from every client
+        std::thread sockservrecv(&Program::socket_server_recieve, mainprogram, new_socket);
+        sockservrecv.detach();
+
+        // send number of clients for choosing unique osc address
+        send(new_socket, std::to_string(mainprogram->connsockets.size()).c_str(),
+             strlen(std::to_string(mainprogram->connsockets.size()).c_str()), 0);
+        //get new socket name
+        char name[1024];
+        char buf[1037];
+        recv(new_socket, name, 1024, 0);
+        mainprogram->connsocknames.push_back(name);
+        mainprogram->connmap[name] = new_socket;
+        //send server name to client
+        send(new_socket, mainprogram->sockname.c_str(), mainprogram->sockname.size(), 0);
+        //send new socket name to all other client sockets
+        char *walk2 = buf;
+        auto put_in_buffer = [](const char* str, char* walk) {
+            for (int i = 0; i < strlen(str); i++) {
+                *walk++ = str[i];
+            }
+            char *nll = "\0";
+            *walk++ = *nll;
+            return walk;
+        };
+        walk2 = put_in_buffer("NEW_SIBLING", walk2);
+        walk2 = put_in_buffer(name, walk2);
+        for (auto sock : mainprogram->connsockets) {
+            send(sock, buf, 1037, 0);
+        }
         printf("CONNECTED\n");
     }
-    perror("listen");
-    exit(EXIT_FAILURE);
+}
+
+void Program::socket_client(struct sockaddr_in serv_addr, int opt) {
+    char buf[1024];
+    while (1) {
+        std::unique_lock<std::mutex> lock(this->clientmutex);
+        this->startclient.wait(lock, [&] {return !this->server; });
+        lock.unlock();
+        inet_pton(AF_INET, this->serverip.c_str(), &serv_addr.sin_addr);
+        if (connect(this->sock, (struct sockaddr *)&serv_addr, sizeof(serv_addr)) >= 0) {
+            // server found and connected succesfully!
+            recv( this->sock , buf, 1024, 0);
+            if (buf == "LOOP") return;
+            send(this->sock, this->sockname.c_str(), this->sockname.size(), 0);
+            // receive server name
+            recv(this->sock , buf, 1024, 0);
+            this->connsocknames.push_back(buf);
+            this->connected = true;
+            break;
+        }  
+    } 
+    
+    // wait for messages
+    while (1) {
+        char *buf = (char *) malloc(148489);
+        int valread = recv(mainprogram->sock, buf, 148489, 0);
+        if (buf == "BIN_SENT") {
+            binsmain->messagelengths.push_back(std::stoi(buf));
+            buf += strlen(buf) + 1;
+            binsmain->messagesocknames.push_back(buf);
+            buf += strlen(buf) + 1;
+            binsmain->messages.push_back(buf);
+        } else if (buf == "BECOME_SERVER") {
+            // this socket becomes the server
+            std::thread sockserver(&Program::socket_server, mainprogram, serv_addr,
+                                   opt);
+            sockserver.detach();
+            return;
+        } else if (buf == "NEW_SIBLING") {
+            buf += 12;
+            mainprogram->connsocknames.push_back(buf);
+        } else {
+            // reconnect to new server
+            serv_addr.sin_family = AF_INET;
+            serv_addr.sin_port = htons(8000);  // comm port
+
+            // Convert IPv4 and IPv6 addresses from text to binary form
+            if (inet_pton(AF_INET, buf, &serv_addr.sin_addr) <= 0) {
+                printf("\nInvalid address/ Address not supported \n");
+                return;
+            }
+            connect(mainprogram->sock, (struct sockaddr *) &serv_addr, sizeof(serv_addr));
+        }
+    }
+}
+
+void Program::socket_server_recieve(SOCKET sock) {
+    // wait for messages
+    char *buf = (char *) malloc(148489);
+    while (recv(sock, buf, 148489, 0)) {
+        if (buf == "BIN_SENT") {
+            binsmain->rawmessages.push_back(buf);
+            binsmain->messagelengths.push_back(std::stoi(buf));
+            buf += strlen(buf) + 1;
+            binsmain->messagesocknames.push_back(buf);
+            buf += strlen(buf) + 1;
+            binsmain->messages.push_back(buf);
+        }
+    }
 }
