@@ -39,21 +39,39 @@ typedef enum
 	RATIO_ORIGINAL_OUTSIDE = 2,
 } RATIO_TYPE;
 
-struct frame_result {
-	char *data = nullptr;
-	bool newdata = false;
-	int height = 0;
-	int width = 0;
-	int size = 0;
-	unsigned char compression = 0;
-	bool hap = false;
-};
-
 class Button;
 class Shelf;
 class ShelfElement;
 class LoopStationElement;
 class BinElement;
+class MidiElement;
+
+struct frame_result {
+    char *data = nullptr;
+    bool newdata = false;
+    int height = 0;
+    int width = 0;
+    int size = 0;
+    unsigned char compression = 0;
+    bool hap = false;
+};
+
+struct remaining_frames {
+    int compression = -1;
+    int vidformat = -1;
+    bool initialized = false;
+    bool liveinput = false;
+    bool isclone = false;
+    int width = 1;
+    int height = 1;
+    int size;
+};
+
+struct registered_midi {
+    Button *but = nullptr;
+    Param *par = nullptr;
+    MidiElement *midielem = nullptr;
+};
 
 class Clip {
 	public:
@@ -100,7 +118,7 @@ class Layer {
 		std::vector<Effect*> effects[2];
 		Box* panbox;
 		
-		bool initialized = true;
+		bool initialized = false;
         float frame = 0.0f;
         float oldframe = 0.0f;
 		int prevframe = -1;
@@ -175,10 +193,10 @@ class Layer {
 		bool copying = false;
 		bool firsttime = true;
 		bool newframe = false;
-		int loaded = 0;
 		bool newtexdata = false;
 		bool startup = false;
 		frame_result *decresult;
+		remaining_frames *remfr[3];
 		std::thread decoding;
 		void get_frame();
 		std::thread audiot;
@@ -190,20 +208,19 @@ class Layer {
 		GLuint texture;
 		GLuint fbotex;
 		GLuint fbo;
-		GLuint fbotexintm;
-		GLuint fbointm;
 		GLuint texpos = 0;
 		GLuint vbuf;
 		GLuint tbuf;
 		GLuint vao;
 		GLuint endtex;
         GLuint frb;
- 		GLuint pbo[3];
+        GLuint pbo[3];
 		GLubyte* mapptr[3];
 		GLsync syncobj[3] = {nullptr, nullptr, nullptr};
 		char pbodi = 0;
-		char pboui = 2;
+		char pboui = 1;
 		int bpp;
+		bool nonewpbos = false;
 		
 		Box *vidbox;
 		bool changed;
@@ -264,11 +281,13 @@ class Layer {
 		bool calc_texture(bool comp, bool alive);
 		void load_frame();
 		bool exchange(std::vector<Layer*>& slayers, std::vector<Layer*>& dlayers, bool deck);
-		void open_dragbinel();
+        void open_dragbinel(int i);
+        void open_dragbinel();
 		void open_files_layers();
 		void open_files_queue();
 		bool thread_vidopen();
-		Layer* open_video(float frame, const std::string& filename, int reset);
+        Layer* open_video(float frame, const std::string& filename, int reset);
+        Layer* open_video(float frame, const std::string& filename, int reset, bool copy, bool noeffects);
 		void open_image(const std::string& path);
 		void initialize(int w, int h);
 		void initialize(int w, int h, int compression);
@@ -287,6 +306,7 @@ class Layer {
 	private:
 		bool get_hap_frame();
 		void get_cpu_frame(int framenr, int prevframe, int errcount);
+		Layer* transfer();
 };
 
 class Scene {
@@ -340,13 +360,15 @@ class Mixer {
 		bool bualive;
 		Layer *currlay[2] = {nullptr, nullptr};
         std::vector<Layer*> currlays[2];
-		Layer *add_layer(std::vector<Layer*> &layers, int pos);
+
+        Layer *add_layer(std::vector<Layer*> &layers, int pos);
 		void delete_layer(std::vector<Layer*> &layers, Layer *lay, bool add);
 		void delete_layers(std::vector<Layer*>& layers, bool alive);
 		void do_delete_layers(std::vector<Layer*> layers, bool alive);
 		void lay_copy(std::vector<Layer*> &slayers, std::vector<Layer*> &dlayers, bool comp);
 		void copy_to_comp(std::vector<Layer*> &sourcelayersA, std::vector<Layer*> &destlayersA, std::vector<Layer*> &sourcelayersB, std::vector<Layer*> &destlayersB, std::vector<Node*> &sourcenodes, std::vector<Node*> &destnodes, std::vector<MixNode*> &destmixnodes, bool comp);
-		void set_values(Layer* clay, Layer* lay, bool open);
+        void copy_pbos(Layer *clay, Layer *lay);
+        void set_values(Layer* clay, Layer* lay, bool open);
 		void copy_effects(Layer* slay, Layer* dlay, bool comp);
 		void handle_adaptparam();
 		void handle_clips();
@@ -357,7 +379,7 @@ class Mixer {
 		void do_save_mix(const std::string& path, bool modus, bool save);
 		void save_deck(const std::string &path);
 		void do_save_deck(const std::string& path, bool save, bool doclips);
-		void open_layerfile(const std::string &path, Layer *lay, bool loadevents, bool doclips);
+		Layer* open_layerfile(const std::string &path, Layer *lay, bool loadevents, bool doclips);
 		void open_mix(const std::string &path, bool alive);
 		void open_deck(const std::string &path, bool alive);
 		void new_state();
@@ -442,6 +464,8 @@ class Mixer {
 		float time = 0.0f;
 		float oldtime = 0.0f;
 		float cbduration = 0.0f;
+
+		std::unordered_map<int, std::unordered_map<int, std::unordered_map<std::string, registered_midi>>> midi_registrations;
 		
 		std::vector<GLuint> fbotexes;
 

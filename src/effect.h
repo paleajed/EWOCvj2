@@ -82,6 +82,8 @@ class Param {
 		std::vector<std::string> oscpaths;
 		void handle();
         void deautomate();
+        void register_midi();
+        void unregister_midi();
 		Param();
 		~Param();
 };

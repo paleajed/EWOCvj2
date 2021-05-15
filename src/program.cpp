@@ -188,6 +188,71 @@ rgb hsv2rgb(hsv in)
 
 
 
+LayMidi::LayMidi() {
+    MidiElement *play = new MidiElement;
+    MidiElement *backw = new MidiElement;
+    MidiElement *pausestop = new MidiElement;
+    MidiElement *bounce = new MidiElement;
+    MidiElement *frforw = new MidiElement;
+    MidiElement *frbackw = new MidiElement;
+    MidiElement *stop = new MidiElement;
+    MidiElement *loop = new MidiElement;
+    MidiElement *scratch = new MidiElement;
+    MidiElement *scratchtouch = new MidiElement;
+    MidiElement *speed = new MidiElement;
+    MidiElement *speedzero = new MidiElement;
+    MidiElement *opacity = new MidiElement;
+    MidiElement *setcue = new MidiElement;
+    MidiElement *tocue = new MidiElement;
+}
+
+LayMidi::~LayMidi() {
+    delete(this->play);
+    delete(this->backw);
+    delete(this->pausestop);
+    delete(this->bounce);
+    delete(this->frforw);
+    delete(this->frbackw);
+    delete(this->stop);
+    delete(this->loop);
+    delete(this->scratch);
+    delete(this->scratchtouch);
+    delete(this->speed);
+    delete(this->speedzero);
+    delete(this->opacity);
+    delete(this->setcue);
+    delete(this->tocue);
+}
+
+void MidiElement::register_midi() {
+    registered_midi rm = mainmix->midi_registrations[this->midi0][this->midi1][this->midiport];
+    if (rm.but) {
+        rm.but->midi[0] = -1;
+        rm.but->midi[1] = -1;
+        rm.but->midiport = "";
+        rm.but = nullptr;
+    }
+    else if (rm.par) {
+        rm.par->midi[0] = -1;
+        rm.par->midi[1] = -1;
+        rm.par->midiport = "";
+        rm.par = nullptr;
+    }
+    else if (rm.midielem) {
+        rm.midielem->midi0 = -1;
+        rm.midielem->midi1= -1;
+        rm.midielem->midiport = "";
+        rm.midielem = nullptr;
+    }
+
+    mainmix->midi_registrations[this->midi0][this->midi1][this->midiport].midielem = this;
+}
+
+void MidiElement::unregister_midi() {
+    mainmix->midi_registrations[this->midi0][this->midi1][this->midiport].midielem = nullptr;
+}
+
+
 
 Program::Program() {
 	this->project = new Project;
@@ -492,40 +557,54 @@ Program::Program() {
 	this->tmset->tooltiptitle = "Toggle MIDI set to configure ";
 	this->tmset->tooltip = "Leftclick to toggle the MIDI set that is being configured. ";
 	this->tmplay = new Box;
-	this->tmplay->vtxcoords->x1 = 0.075;
+	this->tmplay->vtxcoords->x1 = -0.075;
 	this->tmplay->vtxcoords->y1 = -0.9f;
 	this->tmplay->vtxcoords->w = 0.15f;
 	this->tmplay->vtxcoords->h = 0.26f;
 	this->tmplay->tooltiptitle = "Set MIDI for play button ";
 	this->tmplay->tooltip = "Leftclick to start waiting for a MIDI command that will trigger normal video play for this preset. ";
 	this->tmbackw = new Box;
-	this->tmbackw->vtxcoords->x1 = -0.225f;
+	this->tmbackw->vtxcoords->x1 = -0.375f;
 	this->tmbackw->vtxcoords->y1 = -0.9f;
 	this->tmbackw->vtxcoords->w = 0.15f;
 	this->tmbackw->vtxcoords->h = 0.26f;
 	this->tmbackw->tooltiptitle = "Set MIDI for reverse play button ";
 	this->tmbackw->tooltip = "Leftclick to start waiting for a MIDI command that will trigger reverse video play for this preset. ";
 	this->tmbounce = new Box;
-	this->tmbounce->vtxcoords->x1 = -0.075f;
+	this->tmbounce->vtxcoords->x1 = -0.225f;
 	this->tmbounce->vtxcoords->y1 = -0.9f;
 	this->tmbounce->vtxcoords->w = 0.15f;
 	this->tmbounce->vtxcoords->h = 0.26f;
 	this->tmbounce->tooltiptitle = "Set MIDI for bounce play button ";
 	this->tmbounce->tooltip = "Leftclick to start waiting for a MIDI command that will trigger bounce video play for this preset. ";
 	this->tmfrforw = new Box;
-	this->tmfrforw->vtxcoords->x1 = 0.225f;
+	this->tmfrforw->vtxcoords->x1 = 0.075f;
 	this->tmfrforw->vtxcoords->y1 = -0.9f;
 	this->tmfrforw->vtxcoords->w = 0.15;
 	this->tmfrforw->vtxcoords->h = 0.26f;
 	this->tmfrforw->tooltiptitle = "Set MIDI for frame forward button ";
 	this->tmfrforw->tooltip = "Leftclick to start waiting for a MIDI command that will trigger frame forward for this preset. ";
-	this->tmfrbackw = new Box;
-	this->tmfrbackw->vtxcoords->x1 = -0.375f;
-	this->tmfrbackw->vtxcoords->y1 = -0.9f;
-	this->tmfrbackw->vtxcoords->w = 0.15;
-	this->tmfrbackw->vtxcoords->h = 0.26f;
-	this->tmfrbackw->tooltiptitle = "Set MIDI for frame backward button ";
-	this->tmfrbackw->tooltip = "Leftclick to start waiting for a MIDI command that will trigger frame backward for this preset. ";
+    this->tmfrbackw = new Box;
+    this->tmfrbackw->vtxcoords->x1 = -0.525f;
+    this->tmfrbackw->vtxcoords->y1 = -0.9f;
+    this->tmfrbackw->vtxcoords->w = 0.15;
+    this->tmfrbackw->vtxcoords->h = 0.26f;
+    this->tmfrbackw->tooltiptitle = "Set MIDI for frame backward button ";
+    this->tmfrbackw->tooltip = "Leftclick to start waiting for a MIDI command that will trigger frame backward for this preset. ";
+    this->tmstop = new Box;
+    this->tmstop->vtxcoords->x1 = 0.225f;
+    this->tmstop->vtxcoords->y1 = -0.9f;
+    this->tmstop->vtxcoords->w = 0.15;
+    this->tmstop->vtxcoords->h = 0.26f;
+    this->tmstop->tooltiptitle = "Set MIDI for stop play button ";
+    this->tmstop->tooltip = "Leftclick to start waiting for a MIDI command that will trigger play stop for this preset. ";
+    this->tmloop = new Box;
+    this->tmloop->vtxcoords->x1 = 0.375f;
+    this->tmloop->vtxcoords->y1 = -0.9f;
+    this->tmloop->vtxcoords->w = 0.15;
+    this->tmloop->vtxcoords->h = 0.26f;
+    this->tmloop->tooltiptitle = "Set MIDI for loop play toggle button ";
+    this->tmloop->tooltip = "Leftclick to start waiting for a MIDI command that will trigger loop play toggle for this preset. ";
 	this->tmspeed = new Box;
 	this->tmspeed->vtxcoords->x1 = -0.8f;
 	this->tmspeed->vtxcoords->y1 = -0.5f;
@@ -1200,6 +1279,41 @@ void Program::handle_changed_owoh() {
 		tex = set_texes(this->fbotex[3], &this->frbuf[3], this->ow, this->oh);
 		this->fbotex[3] = tex;
 
+		for (std::string device : v4l2lbdevices) {
+		    // set v4l2 loopback devices parameters
+            int output = open(device.c_str(), O_RDWR);
+            if (output < 0) {
+                std::cerr << "ERROR: could not open output device!\n" <<
+                          strerror(errno);
+                break;
+            }
+
+            // acquire video format from device
+            struct v4l2_format vid_format;
+            memset(&vid_format, 0, sizeof(vid_format));
+            vid_format.type = V4L2_BUF_TYPE_VIDEO_OUTPUT;
+
+            if (ioctl(output, VIDIOC_G_FMT, &vid_format) < 0) {
+                std::cerr << "ERROR: unable to get video format!\n" <<
+                          strerror(errno);
+                break;
+            }
+
+            // configure desired video format on device
+            size_t framesize = mainprogram->ow * mainprogram->oh * 4;
+            vid_format.fmt.pix.width = mainprogram->ow;
+            vid_format.fmt.pix.height = mainprogram->oh;
+            vid_format.fmt.pix.pixelformat = V4L2_PIX_FMT_RGB32;
+            vid_format.fmt.pix.sizeimage = framesize;
+            vid_format.fmt.pix.field = V4L2_FIELD_NONE;
+
+            if (ioctl(output, VIDIOC_S_FMT, &vid_format) < 0) {
+                std::cerr << "ERROR: unable to set video format!\n" <<
+                          strerror(errno);
+                break;
+            }
+        }
+
 		this->oldow = this->ow;
 		this->oldoh = this->oh;
 	}
@@ -1239,8 +1353,8 @@ void Program::handle_fullscreen() {
 
 	MixNode* node;
 	if (this->fullscreen == this->nodesmain->mixnodes.size()) node = (MixNode*)this->nodesmain->mixnodescomp[this->fullscreen - 1];
-	else node = (MixNode*)this->nodesmain->mixnodes[this->fullscreen];
-	if (this->prevmodus == false) node = (MixNode*)this->nodesmain->mixnodescomp[this->fullscreen];
+	else node = (MixNode*)this->nodesmain->mixnodescomp[this->fullscreen];
+	if (this->prevmodus) node = (MixNode*)this->nodesmain->mixnodes[this->fullscreen];
 	GLfloat cf = glGetUniformLocation(this->ShaderProgram, "cf");
 	GLint wipe = glGetUniformLocation(this->ShaderProgram, "wipe");
 	GLint mixmode = glGetUniformLocation(this->ShaderProgram, "mixmode");
@@ -1285,6 +1399,8 @@ void Program::handle_fullscreen() {
     glDeleteBuffers(1, &vbuf);
     glDeleteBuffers(1, &tbuf);
     glDeleteVertexArrays(1, &vao);
+
+    mainprogram->directmode = false;
 }
 
 
@@ -1630,21 +1746,33 @@ void Program::shelf_miditriggering() {
             clays[k]->deautomate();
             if (elem->type == ELEM_FILE) {
                 clays[k] = clays[k]->open_video(0, elem->path, true);
+                mainmix->currlay[!mainprogram->prevmodus] = clays[k];
+                mainmix->copy_pbos(clays[k], lay);
+                clays[k]->prevshelfdragelem = mainprogram->shelfdragelem;
             } else if (elem->type == ELEM_IMAGE) {
                 clays[k]->open_image(elem->path);
                 clays[k] = (*(clays[k]->layers))[clays[k]->pos];
                 clays[k]->frame = 0.0f;
             } else if (elem->type == ELEM_LAYER) {
-                mainmix->open_layerfile(elem->path, clays[k], true, false);
-                clays[k] = (*(clays[k]->layers))[clays[k]->pos];
+                clays[k] = mainmix->open_layerfile(elem->path, clays[k], true, false);
+                mainmix->currlay[!mainprogram->prevmodus] = clays[k];
+                mainmix->copy_pbos(clays[k], lay);
+                int pos = lay->pos;
+                std::vector<Layer*> &lrs = *lay->layers;
+                mainmix->delete_layer(*lay->layers, lay, false);
+                lrs.insert(lrs.begin() + pos, clays[k]);
+                clays[k]->layers = &lrs;
                 clays[k]->frame = 0.0f;
-            } else if (elem->type == ELEM_DECK) {
+           } else if (elem->type == ELEM_DECK) {
                 mainmix->mousedeck = clays[k]->deck;
+                std::vector<Layer*>& lvec = choose_layers(mainmix->mousedeck);
                 mainmix->open_deck(elem->path, true);
             } else if (elem->type == ELEM_MIX) {
+                std::vector<Layer*>& lvec = choose_layers(0);
+                lvec = choose_layers(1);
                 mainmix->open_mix(elem->path, true);
             }
-            // setup framecounters for layers something was previously dragged into
+           // setup framecounters for layers something was previously dragged into
             // when something new is dragged into layer, set frames from
             if (elem->launchtype == 1) {
                 if (elem->cframes.size()) {
@@ -1705,10 +1833,12 @@ void Program::shelf_miditriggering() {
                 }
             }
 
-            clays[k]->prevshelfdragelem = mainprogram->midishelfelem;
-            mainprogram->midishelfelem = nullptr;
+            if (elem->launchtype > 0) {
+                clays[k]->prevshelfdragelem = mainprogram->midishelfelem;
+            }
         }
-	}
+        mainprogram->midishelfelem = nullptr;
+    }
 }
 
 
@@ -1838,6 +1968,35 @@ void Button::deautomate() {
     }
 }
 
+void Button::register_midi() {
+    registered_midi rm = mainmix->midi_registrations[this->midi[0]][this->midi[1]][this->midiport];
+    if (rm.but) {
+        rm.but->midi[0] = -1;
+        rm.but->midi[1] = -1;
+        rm.but->midiport = "";
+        rm.but = nullptr;
+    }
+    else if (rm.par) {
+        rm.par->midi[0] = -1;
+        rm.par->midi[1] = -1;
+        rm.par->midiport = "";
+        rm.par = nullptr;
+    }
+    else if (rm.midielem) {
+        rm.midielem->midi0 = -1;
+        rm.midielem->midi1= -1;
+        rm.midielem->midiport = "";
+        rm.midielem = nullptr;
+    }
+
+    mainmix->midi_registrations[this->midi[0]][this->midi[1]][this->midiport].but = this;
+}
+
+void Button::unregister_midi() {
+    mainmix->midi_registrations[this->midi[0]][this->midi[1]][this->midiport].but = nullptr;
+}
+
+
 void Box::upscrtovtx() {
     int hw = glob->w / 2;
     int hh = glob->h / 2;
@@ -1874,6 +2033,7 @@ bool Box::in(int mx, int my) {
             mainprogram->boxhit = true;
             if (mainprogram->showtooltips && !mainprogram->ttreserved) {
                 if (mainprogram->tooltipbox) mainprogram->tooltipbox = this->copy();
+                else mainprogram->tooltipbox = this;
                 mainprogram->ttreserved = this->reserved;
             }
             else mainprogram->tooltipbox = nullptr;
@@ -1893,8 +2053,14 @@ Box* Box::copy() {
     box->acolor[1] = this->acolor[1];
     box->acolor[2] = this->acolor[2];
     box->acolor[3] = this->acolor[3];
-    box->vtxcoords = this->vtxcoords;
-    box->scrcoords = this->scrcoords;
+    box->vtxcoords->x1 = this->vtxcoords->x1;
+    box->vtxcoords->y1 = this->vtxcoords->y1;
+    box->vtxcoords->w = this->vtxcoords->w;
+    box->vtxcoords->h = this->vtxcoords->h;
+    box->scrcoords->x1 = this->scrcoords->x1;
+    box->scrcoords->y1 = this->scrcoords->y1;
+    box->scrcoords->w = this->scrcoords->w;
+    box->scrcoords->h = this->scrcoords->h;
     box->tex = this->tex;
     box->tooltiptitle = this->tooltiptitle;
     box->tooltip = this->tooltip;
@@ -2550,7 +2716,7 @@ void Program::handle_mixtargetmenu() {
 	std::vector<OutputEntry*> takenentries;
     int v4lstart = 0;
 	if (mainprogram->mixtargetmenu->state > 1) {
-		// make the output display menu (SDL_GetNumVideoDisplays() doesn't allow hotplugging screens... :( )
+		// reminder : make the output display menu (SDL_GetNumVideoDisplays() doesn't allow hotplugging screens... :( )
 		int numd = SDL_GetNumVideoDisplays();
 		std::vector<std::string> mixtargets;
 		mixtargets.push_back("View full screen");
@@ -2894,12 +3060,12 @@ void Program::handle_laymenu1() {
 				mainmix->delete_layer(mainmix->layersBcomp, mainmix->mouselayer, true);
 			}
 		}
-        else if (k == 12 - cond) {
+        else if (!cond && k == 12) {
             Layer* duplay = mainmix->mouselayer->clone();
             duplay->isclone = false;
             duplay->isduplay = mainmix->mouselayer;
         }
-        else if (k == 13 - cond) {
+        else if (!cond && k == 13) {
             Layer* clonelay = mainmix->mouselayer->clone();
             if (mainmix->mouselayer->clonesetnr == -1) {
                 std::unordered_set<Layer*>* uset = new std::unordered_set<Layer*>;
@@ -2910,11 +3076,11 @@ void Program::handle_laymenu1() {
             clonelay->clonesetnr = mainmix->mouselayer->clonesetnr;
             mainmix->clonesets[mainmix->mouselayer->clonesetnr]->emplace(clonelay);
         }
-		else if (k == 14 - cond) {
+		else if (k == (14 - cond * 2)) {
 			mainmix->mouselayer->shiftx->value = 0.0f;
 			mainmix->mouselayer->shifty->value = 0.0f;
 		}
-		else if (k == 15 - cond) {
+		else if (k == 15 - cond * 2) {
 			mainmix->mouselayer->aspectratio = (RATIO_TYPE)mainprogram->menuresults[0];
 			if (mainmix->mouselayer->type == ELEM_IMAGE) {
 				ilBindImage(mainmix->mouselayer->boundimage);
@@ -2926,7 +3092,7 @@ void Program::handle_laymenu1() {
 				mainmix->mouselayer->set_aspectratio(mainmix->mouselayer->video_dec_ctx->width, mainmix->mouselayer->video_dec_ctx->height);
 			}
 		}
-		else if (k == 16 - cond) {
+		else if (!cond && k == 16) {
 		    BinElement *binel = new BinElement;
 		    binel->bin = nullptr;
             binel->type = ELEM_FILE;
@@ -3063,10 +3229,10 @@ void Program::handle_mainmenu() {
 		std::string reqdir = mainprogram->projdir;
 		if (reqdir.substr(0, 1) == ".") reqdir.erase(0, 2);
 		std::string path;
-        std::string name = "Untitled";
+        std::string name = "Untitled_0";
         int count = 0;
         while (1) {
-            path = mainprogram->projdir + name + ".ewocvj";
+            path = mainprogram->projdir + name;
             if (!exists(path)) {
                 break;
             }
@@ -3196,6 +3362,7 @@ void Program::handle_shelfmenu() {
         elem->button->midi[0] = -1;
         elem->button->midi[1] = -1;
         elem->button->midiport = "";
+        elem->button->unregister_midi();
     }
     else if (k == 9) {
 		// learn MIDI for element layer load
@@ -3562,6 +3729,7 @@ void Program::preferences() {
 	if (mainprogram->prefon) {
         mainprogram->directmode = true;
         SDL_GL_MakeCurrent(mainprogram->prefwindow, glc);
+        SDL_RaiseWindow(mainprogram->prefwindow);
         glBindFramebuffer(GL_FRAMEBUFFER, 0);
         glDrawBuffer(GL_BACK_LEFT);
 		glViewport(0, 0, glob->w / 2.0f, glob->h / 2.0f);
@@ -3576,6 +3744,7 @@ void Program::preferences() {
         glBindFramebuffer(GL_FRAMEBUFFER, 0);
         glDrawBuffer(GL_BACK_LEFT);
         glViewport(0, 0, glob->w, glob->h);
+        mainprogram->directmode = false;
 	}
 }
 
@@ -3893,23 +4062,55 @@ bool Program::preferences_handle() {
                 if (mainprogram->project->name != remove_extension(basename(mainprogram->project->path))) {
                     // project name changed
                     // rename project file
-                    boost::filesystem::rename(mainprogram->project->path, dirname(mainprogram->project->path) +
-                                                                          mainprogram->project->name + ".ewocvj");
+                    std::string pathdir = dirname(mainprogram->project->path);
+                    std::string newdir = dirname(pathdir.substr(0, pathdir.size() - 2)) + mainprogram->project->name + "/";
+                    boost::filesystem::rename(pathdir, newdir);
                     // rename project directory
-                    boost::filesystem::rename(remove_extension(mainprogram->project->path), dirname
-                                                                                                    (mainprogram->project->path) + mainprogram->project->name);
                     int pos = std::find(mainprogram->recentprojectpaths.begin(), mainprogram->recentprojectpaths.end(), mainprogram->project->path) - mainprogram->recentprojectpaths.begin();
-                    mainprogram->project->path = dirname(mainprogram->project->path) +
+                    mainprogram->project->path = newdir +
                                                  mainprogram->project->name + ".ewocvj";
                     if (pos < mainprogram->recentprojectpaths.size()) {
                         mainprogram->recentprojectpaths[pos] = mainprogram->project->path;
                         mainprogram->write_recentprojectlist();
                     }
-                    std::string dir = remove_extension(mainprogram->project->path) + "/";
-                    mainprogram->project->binsdir = dir + "bins/";
-                    mainprogram->project->recdir = dir + "recordings/";
-                    mainprogram->project->shelfdir = dir + "shelves/";
-                    mainprogram->project->autosavedir = dir + "autosaves/";
+                    std::string bubd = mainprogram->project->binsdir;
+                    std::string busd = mainprogram->project->shelfdir;
+                    std::string buad = mainprogram->project->autosavedir;
+                    mainprogram->project->binsdir = newdir + "bins/";
+                    mainprogram->project->recdir = newdir + "recordings/";
+                    mainprogram->project->shelfdir = newdir + "shelves/";
+                    mainprogram->project->autosavedir = newdir + "autosaves/";
+                    for (int i = 0; i < binsmain->bins.size(); i++) {
+                        binsmain->bins[i]->path = mainprogram->project->binsdir + basename(binsmain->bins[i]->path);
+                        for (int j = 0; j < binsmain->bins[i]->elements.size(); j++) {
+                            std::string str = binsmain->bins[i]->elements[j]->path;
+                            if (str.find(bubd) != std::string::npos) {
+                                str = str.replace(str.find(bubd), bubd.size(), mainprogram->project->binsdir);
+                                binsmain->bins[i]->elements[j]->path = str;
+                            }
+                        }
+                    }
+                    for (int i = 0; i < 2; i++) {
+                        for (int j = 0; j < mainprogram->shelves[i]->elements.size(); j++) {
+                            std::string str = mainprogram->shelves[i]->elements[j]->path;
+                            std::string jstr = mainprogram->shelves[i]->elements[j]->jpegpath;
+                            if (str.find(busd) != std::string::npos) {
+                                str = str.replace(str.find(busd), busd.size(), mainprogram->project->shelfdir);
+                                mainprogram->shelves[i]->elements[j]->path = str;
+                            }
+                            if (jstr.find(busd) != std::string::npos) {
+                                jstr = jstr.replace(jstr.find(busd), busd.size(), mainprogram->project->shelfdir);
+                                mainprogram->shelves[i]->elements[j]->jpegpath = jstr;
+                            }
+                        }
+                    }
+                    for (int i = 0; i < mainprogram->project->autosavelist.size(); i++) {
+                        std::string str = mainprogram->project->autosavelist[i];
+                        if (str.find(buad) != std::string::npos) {
+                            str = str.replace(str.find(buad), buad.size(), mainprogram->project->autosavedir);
+                            mainprogram->project->autosavelist[i] = str;
+                        }
+                    }
                 }
             }
 			// set output resolution from project settings
@@ -3959,7 +4160,7 @@ void Program::tooltips_handle(int win) {
 
 	if (mainprogram->prefon || mainprogram->midipresets) fac = 4.0f;
 
-	if (mainprogram->tooltipmilli > 4000) {
+	if (mainprogram->tooltipmilli > 10000) {
 		if (mainprogram->longtooltips) {
 			std::vector<std::string> texts;
 			int pos = 0;
@@ -4040,9 +4241,15 @@ int Program::config_midipresets_handle() {
 	case TM_FRFORW:
 		render_text("Learn MIDI Frame Forward", white, -0.3f, 0.0f, 0.0024f, 0.004f, 2);
 		break;
-	case TM_FRBACKW:
-		render_text("Learn MIDI Frame Backward", white, -0.3f, 0.0f, 0.0024f, 0.004f, 2);
-		break;
+    case TM_FRBACKW:
+        render_text("Learn MIDI Frame Backward", white, -0.3f, 0.0f, 0.0024f, 0.004f, 2);
+        break;
+    case TM_STOP:
+        render_text("Learn MIDI Stop play", white, -0.3f, 0.0f, 0.0024f, 0.004f, 2);
+        break;
+    case TM_LOOP:
+        render_text("Learn MIDI Loop Play", white, -0.3f, 0.0f, 0.0024f, 0.004f, 2);
+        break;
 	case TM_SPEED:
 		render_text("Learn MIDI Set Play Speed", white, -0.3f, 0.0f, 0.0024f, 0.004f, 2);
 		break;
@@ -4081,58 +4288,78 @@ int Program::config_midipresets_handle() {
 		else if (mainprogram->midipresetsset == 4) lm = laymidiD;
 
 		draw_box(white, black, mainprogram->tmplay, -1);
-		if (lm->play[0] != -1) draw_box(white, darkgreen2, mainprogram->tmplay, -1);
+		if (lm->play->midi0 != -1) draw_box(white, darkgreen2, mainprogram->tmplay, -1);
 		if (mainprogram->tmplay->in(mx, my)) {
 			draw_box(white, lightblue, mainprogram->tmplay, -1);
 			if (mainprogram->leftmouse) {
 				mainprogram->tmlearn = TM_PLAY;
 			}
 		}
-		register_triangle_draw(white, white, 0.125f, -0.83f, 0.06f, 0.12f, RIGHT, CLOSED, true);
+		register_triangle_draw(white, white, -0.025f, -0.83f, 0.06f, 0.12f, RIGHT, CLOSED, true);
 
 		draw_box(white, black, mainprogram->tmbackw, -1);
-		if (lm->backw[0] != -1) draw_box(white, darkgreen2, mainprogram->tmbackw, -1);
+		if (lm->backw->midi0 != -1) draw_box(white, darkgreen2, mainprogram->tmbackw, -1);
 		if (mainprogram->tmbackw->in(mx, my)) {
 			draw_box(white, lightblue, mainprogram->tmbackw, -1);
 			if (mainprogram->leftmouse) {
 				mainprogram->tmlearn = TM_BACKW;
 			}
 		}
-		register_triangle_draw(white, white, -0.185f, -0.83f, 0.06f, 0.12f, LEFT, CLOSED, true);
+		register_triangle_draw(white, white, -0.335f, -0.83f, 0.06f, 0.12f, LEFT, CLOSED, true);
 
 		draw_box(white, black, mainprogram->tmbounce, -1);
-		if (lm->bounce[0] != -1) draw_box(white, darkgreen2, mainprogram->tmbounce, -1);
+		if (lm->bounce->midi0 != -1) draw_box(white, darkgreen2, mainprogram->tmbounce, -1);
 		if (mainprogram->tmbounce->in(mx, my)) {
 			draw_box(white, lightblue, mainprogram->tmbounce, -1);
 			if (mainprogram->leftmouse) {
 				mainprogram->tmlearn = TM_BOUNCE;
 			}
 		}
-		register_triangle_draw(white, white, -0.045f, -0.83f, 0.04f, 0.12f, LEFT, CLOSED, true);
-		register_triangle_draw(white, white, 0.01f, -0.83f, 0.04f, 0.12f, RIGHT, CLOSED, true);
+		register_triangle_draw(white, white, -0.195f, -0.83f, 0.04f, 0.12f, LEFT, CLOSED, true);
+		register_triangle_draw(white, white, -0.14f, -0.83f, 0.04f, 0.12f, RIGHT, CLOSED, true);
 
 		draw_box(white, black, mainprogram->tmfrforw, -1);
-		if (lm->frforw[0] != -1) draw_box(white, darkgreen2, mainprogram->tmfrforw, -1);
+		if (lm->frforw->midi0 != -1) draw_box(white, darkgreen2, mainprogram->tmfrforw, -1);
 		if (mainprogram->tmfrforw->in(mx, my)) {
 			draw_box(white, lightblue, mainprogram->tmfrforw, -1);
 			if (mainprogram->leftmouse) {
 				mainprogram->tmlearn = TM_FRFORW;
 			}
 		}
-		register_triangle_draw(white, white, 0.275f, -0.83f, 0.06f, 0.12f, RIGHT, OPEN, true);
+		register_triangle_draw(white, white, 0.125f, -0.83f, 0.06f, 0.12f, RIGHT, OPEN, true);
 
-		draw_box(white, black, mainprogram->tmfrbackw, -1);
-		if (lm->frbackw[0] != -1) draw_box(white, darkgreen2, mainprogram->tmfrbackw, -1);
-		if (mainprogram->tmfrbackw->in(mx, my)) {
-			draw_box(white, lightblue, mainprogram->tmfrbackw, -1);
-			if (mainprogram->leftmouse) {
-				mainprogram->tmlearn = TM_FRBACKW;
-			}
-		}
-		register_triangle_draw(white, white, -0.335f, -0.83f, 0.06f, 0.12f, LEFT, OPEN, true);
+        draw_box(white, black, mainprogram->tmstop, -1);
+        if (lm->stop->midi0 != -1) draw_box(white, darkgreen2, mainprogram->tmstop, -1);
+        if (mainprogram->tmstop->in(mx, my)) {
+            draw_box(white, lightblue, mainprogram->tmstop, -1);
+            if (mainprogram->leftmouse) {
+                mainprogram->tmlearn = TM_STOP;
+            }
+        }
+        draw_box(white, white, mainprogram->tmstop->vtxcoords->x1 + 0.04f, mainprogram->tmstop->vtxcoords->y1 + 0.065f, 0.07f, 0.13f, -1);
 
-		draw_box(white, black, mainprogram->tmspeed, -1);
-		if (lm->speed[0] != -1) draw_box(white, darkgreen2, mainprogram->tmspeed, -1);
+        draw_box(white, black, mainprogram->tmloop, -1);
+        if (lm->loop->midi0 != -1) draw_box(white, darkgreen2, mainprogram->tmloop, -1);
+        if (mainprogram->tmloop->in(mx, my)) {
+            draw_box(white, lightblue, mainprogram->tmloop, -1);
+            if (mainprogram->leftmouse) {
+                mainprogram->tmlearn = TM_LOOP;
+            }
+        }
+        render_text("LP", white, mainprogram->tmloop->vtxcoords->x1 + 0.06f, mainprogram->tmloop->vtxcoords->y1 + 0.1f, 0.0024f, 0.004f, 2);
+
+        draw_box(white, black, mainprogram->tmfrbackw, -1);
+        if (lm->frbackw->midi0 != -1) draw_box(white, darkgreen2, mainprogram->tmfrbackw, -1);
+        if (mainprogram->tmfrbackw->in(mx, my)) {
+            draw_box(white, lightblue, mainprogram->tmfrbackw, -1);
+            if (mainprogram->leftmouse) {
+                mainprogram->tmlearn = TM_FRBACKW;
+            }
+        }
+        register_triangle_draw(white, white, -0.485f, -0.83f, 0.06f, 0.12f, LEFT, OPEN, true);
+
+        draw_box(white, black, mainprogram->tmspeed, -1);
+		if (lm->speed->midi0 != -1) draw_box(white, darkgreen2, mainprogram->tmspeed, -1);
 		if (mainprogram->tmspeedzero->in(mx, my)) {
 			draw_box(white, lightblue, mainprogram->tmspeedzero, -1);
 			if (mainprogram->leftmouse) {
@@ -4145,17 +4372,17 @@ int Program::config_midipresets_handle() {
 				mainprogram->tmlearn = TM_SPEED;
 			}
 			draw_box(white, black, mainprogram->tmspeedzero, -1);
-			if (lm->speedzero[0] != -1) draw_box(white, darkgreen2, mainprogram->tmspeedzero, -1);
+			if (lm->speedzero->midi0 != -1) draw_box(white, darkgreen2, mainprogram->tmspeedzero, -1);
 		}
 		else {
 			draw_box(white, black, mainprogram->tmspeedzero, -1);
-			if (lm->speedzero[0] != -1) draw_box(white, darkgreen2, mainprogram->tmspeedzero, -1);
+			if (lm->speedzero->midi0 != -1) draw_box(white, darkgreen2, mainprogram->tmspeedzero, -1);
 		}
 		render_text("ONE", white, -0.755f, -0.08f, 0.0024f, 0.004f, 2);
 		render_text("SPEED", white, -0.765f, -0.48f, 0.0024f, 0.004f, 2);
 
 		draw_box(white, black, mainprogram->tmopacity, -1);
-		if (lm->opacity[0] != -1) draw_box(white, darkgreen2, mainprogram->tmopacity, -1);
+		if (lm->opacity->midi0 != -1) draw_box(white, darkgreen2, mainprogram->tmopacity, -1);
 		if (mainprogram->tmopacity->in(mx, my)) {
 			draw_box(white, lightblue, mainprogram->tmopacity, -1);
 			if (mainprogram->leftmouse) {
@@ -4171,7 +4398,7 @@ int Program::config_midipresets_handle() {
 			}
 		}
 		else {
-			if (lm->scratch[0] != -1) draw_box(darkgreen2, 0.0f, 0.1f, 0.6f, 1, smw, smh);
+			if (lm->scratch->midi0 != -1) draw_box(darkgreen2, 0.0f, 0.1f, 0.6f, 1, smw, smh);
 			if (sqrt(pow((mx / (glob->w / 2.0f) - 1.0f) * glob->w / glob->h, 2) + pow((glob->h - my) / (glob->h / 2.0f) - 1.1f, 2)) < 0.6f) {
 				draw_box(lightblue, 0.0f, 0.1f, 0.6f, 1, smw, smh);
 				mainprogram->tmscratch->in(mx, my);  //tooltip
@@ -4180,7 +4407,7 @@ int Program::config_midipresets_handle() {
 				}
 			}
 			draw_box(white, black, mainprogram->tmfreeze, -1);
-			if (lm->scratchtouch[0] != -1) draw_box(white, darkgreen2, mainprogram->tmfreeze, -1);
+			if (lm->scratchtouch->midi0 != -1) draw_box(white, darkgreen2, mainprogram->tmfreeze, -1);
 		}
 		draw_box(white, 0.0f, 0.1f, 0.6f, 2, smw, smh);
 		render_text("SCRATCH", white, -0.1f, -0.3f, 0.0024f, 0.004f, 2);
@@ -4196,26 +4423,42 @@ int Program::config_midipresets_handle() {
 		if (box->in(mx, my)) {
 			draw_box(white, lightblue, box, -1);
 			if (mainprogram->leftmouse) {
-				lm->play[0] = -1;
-				lm->backw[0] = -1;
-				lm->bounce[0] = -1;
-				lm->frforw[0] = -1;
-				lm->frbackw[0] = -1;
-				lm->scratch[0] = -1;
-				lm->scratchtouch[0] = -1;
-				lm->speed[0] = -1;
-				lm->speedzero[0] = -1;
-				lm->opacity[0] = -1;
-				lm->play[1] = -1;
-				lm->backw[1] = -1;
-				lm->bounce[1] = -1;
-				lm->frforw[1] = -1;
-				lm->frbackw[1] = -1;
-				lm->scratch[1] = -1;
-				lm->scratchtouch[1] = -1;
-				lm->speed[1] = -1;
-				lm->speedzero[1] = -1;
-				lm->opacity[1] = -1;
+				lm->play->midi0 = -1;
+				lm->backw->midi0 = -1;
+				lm->bounce->midi0 = -1;
+				lm->frforw->midi0 = -1;
+                lm->frbackw->midi0 = -1;
+                lm->stop->midi0 = -1;
+                lm->loop->midi0 = -1;
+				lm->scratch->midi0 = -1;
+				lm->scratchtouch->midi0 = -1;
+				lm->speed->midi0 = -1;
+				lm->speedzero->midi0 = -1;
+				lm->opacity->midi0 = -1;
+				lm->play->midi1 = -1;
+				lm->backw->midi1 = -1;
+				lm->bounce->midi1 = -1;
+				lm->frforw->midi1 = -1;
+                lm->frbackw->midi1 = -1;
+                lm->stop->midi1 = -1;
+                lm->loop->midi1 = -1;
+				lm->scratch->midi1 = -1;
+				lm->scratchtouch->midi1 = -1;
+				lm->speed->midi1 = -1;
+				lm->speedzero->midi1 = -1;
+				lm->opacity->midi1 = -1;
+                lm->play->unregister_midi();
+                lm->backw->unregister_midi();
+                lm->bounce->unregister_midi();
+                lm->frforw->unregister_midi();
+                lm->frbackw->unregister_midi();
+                lm->stop->unregister_midi();
+                lm->loop->unregister_midi();
+                lm->scratch->unregister_midi();
+                lm->scratchtouch->unregister_midi();
+                lm->speed->unregister_midi();
+                lm->speedzero->unregister_midi();
+                lm->opacity->unregister_midi();
 				return 0;
 			}
 		}
@@ -4223,9 +4466,9 @@ int Program::config_midipresets_handle() {
 	}
 
     std::unique_ptr <Box> box = std::make_unique <Box> ();
-	box->vtxcoords->x1 = 0.75f;
+	box->vtxcoords->x1 = 0.80f;
 	box->vtxcoords->y1 = -1.0f;
-	box->vtxcoords->w = 0.3f;
+	box->vtxcoords->w = 0.2f;
 	box->vtxcoords->h = 0.2f;
 	box->upvtxtoscr();
 	draw_box(white, black, box, -1);
@@ -4239,7 +4482,7 @@ int Program::config_midipresets_handle() {
 		}
 	}
 	render_text("CANCEL", white, box->vtxcoords->x1 + 0.02f, box->vtxcoords->y1 + 0.03f, 0.0024f, 0.004f, 2);
-	box->vtxcoords->x1 = 0.45f;
+	box->vtxcoords->x1 = 0.60f;
 	box->upvtxtoscr();
 	draw_box(white, black, box, -1);
 	if (box->in(mx, my)) {
@@ -4283,6 +4526,7 @@ bool Program::config_midipresets_init() {
 			}
 		}
 		SDL_GL_MakeCurrent(mainprogram->config_midipresetswindow, glc);
+        SDL_RaiseWindow(mainprogram->config_midipresetswindow);
         glBindFramebuffer(GL_FRAMEBUFFER, 0);
         glDrawBuffer(GL_BACK_LEFT);
         glViewport(0, 0, glob->w / 2.0f, glob->h / 2.0f);
@@ -4297,6 +4541,7 @@ bool Program::config_midipresets_init() {
         glBindFramebuffer(GL_FRAMEBUFFER, 0);
         glDrawBuffer(GL_BACK_LEFT);
         glViewport(0, 0, glob->w, glob->h);
+        mainprogram->directmode = false;
 	}
 	return true;
 }
@@ -4557,12 +4802,12 @@ void Project::newp(const std::string &path) {
 	std::string str;
 	std::string path2;
 	if (ext != ".ewocvj") {
-	    str = path + "/" + basename(path) + ".ewocvj";
+	    str = path + ".ewocvj";
 	    path2 = path;
 	}
 	else {
 	    path2 = path.substr(0, path.size() - 7);
-        str = path2 + "/" + basename(path2) + ".ewocvj";
+        str = path2 + ".ewocvj";
 	}
 	this->path = str;
 	this->name = remove_extension(basename(this->path));
@@ -4591,7 +4836,7 @@ void Project::newp(const std::string &path) {
         }
     }
 
-	this->create_dirs(path2);
+	this->create_dirs(dirname(path2));
 	for (int i = 0; i < binsmain->bins.size(); i++) {
 		delete binsmain->bins[i];
 	}
@@ -4604,6 +4849,8 @@ void Project::newp(const std::string &path) {
 	mainprogram->shelves[1]->basepath = "shelfsB.shelf";
 	mainprogram->shelves[0]->save(mainprogram->project->shelfdir + "shelfsA.shelf");
 	mainprogram->shelves[1]->save(mainprogram->project->shelfdir + "shelfsB.shelf");
+    mainmix->currlays[0].clear();
+    mainmix->currlays[1].clear();
 	mainprogram->project->do_save(this->path);
 }
 	

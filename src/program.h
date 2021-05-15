@@ -40,12 +40,14 @@ typedef enum
 	TM_BACKW = 2,
 	TM_BOUNCE = 3,
 	TM_FRFORW = 4,
-	TM_FRBACKW = 5,
-	TM_SPEED = 6,
-	TM_OPACITY = 7,
-	TM_FREEZE = 8,
-	TM_SCRATCH = 9,
-	TM_SPEEDZERO = 10,
+    TM_FRBACKW = 5,
+    TM_STOP = 6,
+    TM_LOOP = 7,
+	TM_SPEED = 8,
+	TM_OPACITY = 9,
+	TM_FREEZE = 10,
+	TM_SCRATCH = 11,
+	TM_SPEEDZERO = 12,
 } TM_LEARN;
 
 typedef enum
@@ -243,35 +245,35 @@ class PIProg: public PrefCat {
 		PIProg();
 };
 		
+class MidiElement {
+    public:
+        int midi0;
+        int midi1;
+        std::string midiport;
+        void register_midi();
+        void unregister_midi();
+};
 
 class LayMidi {
 	public:
-		int play[2] = {-1, -1};
-		std::string playstr;
-		int backw[2] = {-1, -1};
-		std::string backwstr;
-		int pausestop[2] = {-1, -1};
-		std::string pausestopstr;
-		int bounce[2] = {-1, -1};
-		std::string bouncestr;
-		int frforw[2] = {-1, -1};
-		std::string frforwstr;
-		int frbackw[2] = {-1, -1};
-		std::string frbackwstr;
-		int scratch[2] = {-1, -1};
-		std::string scratchstr;
-		int scratchtouch[2] = {-1, -1};
-		std::string scratchtouchstr;
-		int speed[2] = {-1, -1};
-		std::string speedstr;
-		int speedzero[2] = {-1, -1};
-		std::string speedzerostr;
-		int opacity[2] = {-1, -1};
-		std::string opacitystr;
-		int setcue[2] = {-1, -1};
-		std::string setcuestr;
-		int tocue[2] = {-1, -1};
-		std::string tocuestr;
+        MidiElement *play;
+        MidiElement *backw;
+        MidiElement *pausestop;
+        MidiElement *bounce;
+        MidiElement *frforw;
+        MidiElement *frbackw;
+        MidiElement *stop;
+        MidiElement *loop;
+        MidiElement *scratch;
+        MidiElement *scratchtouch;
+        MidiElement *speed;
+        MidiElement *speedzero;
+        MidiElement *opacity;
+        MidiElement *setcue;
+        MidiElement *tocue;
+
+        LayMidi();
+        ~LayMidi();
 };
 
 class GUIString {
@@ -302,6 +304,7 @@ class Globals {
 
 class Program {
 	public:
+        int jav = 0;
 		Project *project;
 		NodesMain *nodesmain;
 		GLuint ShaderProgram;
@@ -389,6 +392,8 @@ class Program {
 		int my;
 		int oldmx;
 		int oldmy;
+        int shelfmx;
+        int shelfmy;
 		int iemy;
 		float ow = 1920.0f;
 		float oh = 1080.0f;
@@ -517,7 +522,9 @@ class Program {
 		Box *tmbackw;
 		Box *tmbounce;
 		Box *tmfrforw;
-		Box *tmfrbackw;
+        Box *tmfrbackw;
+        Box *tmstop;
+        Box *tmloop;
 		Box *tmspeed;
 		Box *tmspeedzero;
 		Box *tmopacity;

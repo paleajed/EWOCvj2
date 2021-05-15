@@ -61,6 +61,8 @@ class Button {
 		bool handle(bool circlein, bool automation);
 		bool toggled();
 		void deautomate();
+        void register_midi();
+        void unregister_midi();
 		Button(bool state);
 		~Button();
 };

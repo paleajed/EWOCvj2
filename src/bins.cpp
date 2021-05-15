@@ -580,6 +580,7 @@ void BinsMain::handle(bool draw) {
 		}
 	}
 
+	/*
 	// manage SEND button
     auto put_in_buffer = [](const char* str, char* walk) {
 	    // buffer utility
@@ -684,6 +685,7 @@ void BinsMain::handle(bool draw) {
     binsmain->rawmessages.clear();
     binsmain->messagelengths.clear();
     binsmain->messagesocknames.clear();
+    */
 
 
 	// set threadmode for hap encoding
@@ -1069,7 +1071,7 @@ void BinsMain::handle(bool draw) {
 
 
 	// handle binelmenu thats been populated above, menuset controls which options sets are used
-	k = mainprogram->handle_menu(mainprogram->binelmenu);
+	int k = mainprogram->handle_menu(mainprogram->binelmenu);
 	//if (k > -1) this->currbinel = nullptr;
 	if (binelmenuoptions.size() && k > -1) {
 		if (binelmenuoptions[k] != BET_OPENFILES) this->menuactbinel = nullptr;
@@ -1390,6 +1392,7 @@ void BinsMain::handle(bool draw) {
 									mainprogram->prelay = new Layer(false);
 									mainprogram->prelay->dummy = true;
 									mainprogram->prelay->pos = 0;
+									mainprogram->prelay->blendnode = mainprogram->nodesmain->currpage->add_blendnode(MIXING, !mainprogram->prevmodus);
 									mainprogram->prelay->node = mainprogram->nodesmain->currpage->add_videonode(2);
 									mainprogram->prelay->node->layer = mainprogram->prelay;
 									mainprogram->prelay->lasteffnode[0] = mainprogram->prelay->node;
@@ -1899,11 +1902,13 @@ void BinsMain::handle(bool draw) {
 			this->currbinel->type = mainprogram->dragbinel->type;
 			this->currbinel->path = mainprogram->dragbinel->path;
 			if (this->currbinel->type == ELEM_LAYER) {
-			    this->currbinel->path = find_unused_filename( basename(lay->filename),
+                this->currbinel->path = find_unused_filename( basename(lay->filename),
                                                     mainprogram->project->binsdir + this->currbin->name + "/", ""
                                                                                                                ".layer");
 			    mainmix->save_layerfile(this->currbinel->path, lay, 1, 0);
 			}
+			this->currbinel->name = remove_extension(basename(this->currbinel->path));
+			this->currbinel->full = true;
 			this->currbinel = nullptr;
 			enddrag();
 			lay->vidmoving = false;

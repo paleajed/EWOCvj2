@@ -532,33 +532,44 @@ void handle_midi(LayMidi *laymidi, int deck, int midi0, int midi1, int midi2, st
 	int genmidideck = mainmix->genmidi[deck]->value;
 	for (int j = 0; j < lvec.size(); j++) {
 		if (lvec[j]->genmidibut->value == genmidideck) {
-			if (midi0 == laymidi->play[0] && midi1 == laymidi->play[1] && midi2 == 127 && midiport == laymidi->playstr) {
-				lvec[j]->playbut->value = !lvec[j]->playbut->value;
+            if (midi0 == laymidi->play->midi0 && midi1 == laymidi->play->midi1 && midi2 == 127 && midiport == laymidi->play->midiport) {
+                lvec[j]->playbut->value = !lvec[j]->playbut->value;
+                lvec[j]->revbut->value = false;
+                lvec[j]->bouncebut->value = false;
+            }
+            if (midi0 == laymidi->backw->midi0 && midi1 == laymidi->backw->midi1 && midi2 == 127 && midiport == laymidi->backw->midiport) {
+                lvec[j]->revbut->value = !lvec[j]->revbut->value;
+                lvec[j]->playbut->value = false;
+                lvec[j]->bouncebut->value = false;
+            }
+			if (midi0 == laymidi->pausestop->midi0 && midi1 == laymidi->pausestop->midi1 && midi2 == 127 && midiport == laymidi->pausestop->midiport) {
+                lvec[j]->playbut->value = false;
+                lvec[j]->revbut->value = false;
+                lvec[j]->bouncebut->value = false;
 			}
-			if (midi0 == laymidi->pausestop[0] && midi1 == laymidi->pausestop[1] && midi2 == 127 && midiport == laymidi->pausestopstr) {
-				lvec[j]->playbut->value = false;
-			}
-			if (midi0 == laymidi->bounce[0] && midi1 == laymidi->bounce[1] && midi2 == 127 && midiport == laymidi->bouncestr) {
+			if (midi0 == laymidi->bounce->midi0 && midi1 == laymidi->bounce->midi1 && midi2 == 127 && midiport == laymidi->bounce->midiport) {
 				lvec[j]->bouncebut->value = !lvec[j]->bouncebut->value;
-			}
-			if (midi0 == laymidi->scratch[0] && midi1 == laymidi->scratch[1] && midiport == laymidi->scratchstr) {
+                lvec[j]->playbut->value = false;
+                lvec[j]->revbut->value = false;
+            }
+			if (midi0 == laymidi->scratch->midi0 && midi1 == laymidi->scratch->midi1 && midiport == laymidi->scratch->midiport) {
 				lvec[j]->scratch = ((float)midi2 - 64.0f) / 4.0f;
 			}
-			if (midi0 == laymidi->frforw[0] && midi1 == laymidi->frforw[1] && midi2 == 127 && midiport == laymidi->frforwstr) {
+			if (midi0 == laymidi->frforw->midi0 && midi1 == laymidi->frforw->midi1 && midi2 == 127 && midiport == laymidi->frforw->midiport) {
 				lvec[j]->frame += 1;
 				if (lvec[j]->frame >= lvec[j]->numf) lvec[j]->frame = 0;
 			}
-			if (midi0 == laymidi->frbackw[0] && midi1 == laymidi->frbackw[1] && midi2 == 127 && midiport == laymidi->frbackwstr) {
+			if (midi0 == laymidi->frbackw->midi0 && midi1 == laymidi->frbackw->midi1 && midi2 == 127 && midiport == laymidi->frbackw->midiport) {
 				lvec[j]->frame -= 1;
 				if (lvec[j]->frame < 0) lvec[j]->frame = lvec[j]->numf - 1;
 			}
-			if (midi0 == laymidi->scratchtouch[0] && midi1 == laymidi->scratchtouch[1] && midi2 == 127 && midiport == laymidi->scratchtouchstr) {
+			if (midi0 == laymidi->scratchtouch->midi0 && midi1 == laymidi->scratchtouch->midi1 && midi2 == 127 && midiport == laymidi->scratchtouch->midiport) {
 				lvec[j]->scratchtouch = 1;
 			}
-			if (midi0 == laymidi->scratchtouch[0] && midi1 == laymidi->scratchtouch[1] && midi2 == 0 && midiport == laymidi->scratchtouchstr) {
+			if (midi0 == laymidi->scratchtouch->midi0 && midi1 == laymidi->scratchtouch->midi1 && midi2 == 0 && midiport == laymidi->scratchtouch->midiport) {
 				lvec[j]->scratchtouch = 0;
 			}
-			if (midi0 == laymidi->speed[0] && midi1 == laymidi->speed[1] && midiport == laymidi->speedstr) {
+			if (midi0 == laymidi->speed->midi0 && midi1 == laymidi->speed->midi1 && midiport == laymidi->speed->midiport) {
 				int m2 = -(midi2 - 127);
 				if (m2 >= 64.0f) {
 					lvec[j]->speed->value = 1.0f + (2.33f / 64.0f) * (m2 - 64.0f);
@@ -567,10 +578,10 @@ void handle_midi(LayMidi *laymidi, int deck, int midi0, int midi1, int midi2, st
 					lvec[j]->speed->value = 0.0f + (1.0f / 64.0f) * m2;
 				}
 			}
-			if (midi0 == laymidi->speedzero[0] && midi1 == laymidi->speedzero[1] && midiport == laymidi->speedzerostr) {
+			if (midi0 == laymidi->speedzero->midi0 && midi1 == laymidi->speedzero->midi1 && midiport == laymidi->speedzero->midiport) {
 				lvec[j]->speed->value = 1.0f;
 			}
-			if (midi0 == laymidi->opacity[0] && midi1 == laymidi->opacity[1] && midiport == laymidi->opacitystr) {
+			if (midi0 == laymidi->opacity->midi0 && midi1 == laymidi->opacity->midi1 && midiport == laymidi->opacity->midiport) {
 				lvec[j]->opacity->value = (float)midi2 / 127.0f;
 			}
 		}
@@ -606,81 +617,109 @@ void mycallback( double deltatime, std::vector< unsigned char > *message, void *
   		else if (mainprogram->midipresetsset == 4) lm = laymidiD;
 		switch (mainprogram->tmlearn) {
 			case TM_NONE:
-				if (lm->play[0] == midi0 && lm->play[1] == midi1 && lm->playstr == midiport) mainprogram->tmchoice = TM_PLAY;
-				else if (lm->backw[0] == midi0 && lm->backw[1] == midi1 && lm->backwstr == midiport) mainprogram->tmchoice = TM_BACKW;
-				else if (lm->bounce[0] == midi0 && lm->bounce[1] == midi1 && lm->bouncestr == midiport) mainprogram->tmchoice = TM_BOUNCE;
-				else if (lm->frforw[0] == midi0 && lm->frforw[1] == midi1 && lm->frforwstr == midiport) mainprogram->tmchoice = TM_FRFORW;
-				else if (lm->frbackw[0] == midi0 && lm->frbackw[1] == midi1 && lm->frbackwstr == midiport) mainprogram->tmchoice = TM_FRBACKW;
-				else if (lm->speed[0] == midi0 && lm->speed[1] == midi1 && lm->speedstr == midiport) mainprogram->tmchoice = TM_SPEED;
-				else if (lm->speedzero[0] == midi0 && lm->speedzero[1] == midi1 && lm->speedzerostr == midiport) mainprogram->tmchoice = TM_SPEEDZERO;
-				else if (lm->opacity[0] == midi0 && lm->opacity[1] == midi1 && lm->opacitystr == midiport) mainprogram->tmchoice = TM_OPACITY;
-				else if (lm->scratchtouch[0] == midi0 && lm->scratchtouch[1] == midi1 && lm->scratchtouchstr == midiport) mainprogram->tmchoice = TM_FREEZE;
-				else if (lm->scratch[0] == midi0 && lm->scratch[1] == midi1 && lm->scratchstr == midiport) mainprogram->tmchoice = TM_SCRATCH;
+				if (lm->play->midi0 == midi0 && lm->play->midi1 == midi1 && lm->play->midiport== midiport) mainprogram->tmchoice = TM_PLAY;
+				else if (lm->backw->midi0 == midi0 && lm->backw->midi1 == midi1 && lm->backw->midiport== midiport) mainprogram->tmchoice = TM_BACKW;
+				else if (lm->bounce->midi0 == midi0 && lm->bounce->midi1 == midi1 && lm->bounce->midiport== midiport) mainprogram->tmchoice = TM_BOUNCE;
+				else if (lm->frforw->midi0 == midi0 && lm->frforw->midi1 == midi1 && lm->frforw->midiport== midiport) mainprogram->tmchoice = TM_FRFORW;
+				else if (lm->frbackw->midi0 == midi0 && lm->frbackw->midi1 == midi1 && lm->frbackw->midiport== midiport) mainprogram->tmchoice = TM_FRBACKW;
+                else if (lm->stop->midi0 == midi0 && lm->stop->midi1 == midi1 && lm->stop->midiport == midiport) mainprogram->tmchoice = TM_STOP;
+                else if (lm->loop->midi0 == midi0 && lm->loop->midi1 == midi1 && lm->loop->midiport == midiport) mainprogram->tmchoice = TM_LOOP;
+                else if (lm->speed->midi0 == midi0 && lm->speed->midi1 == midi1 && lm->speed->midiport == midiport) mainprogram->tmchoice = TM_SPEED;
+				else if (lm->speedzero->midi0 == midi0 && lm->speedzero->midi1 == midi1 && lm->speedzero->midiport == midiport) mainprogram->tmchoice = TM_SPEEDZERO;
+				else if (lm->opacity->midi0 == midi0 && lm->opacity->midi1 == midi1 && lm->opacity->midiport == midiport) mainprogram->tmchoice = TM_OPACITY;
+				else if (lm->scratchtouch->midi0 == midi0 && lm->scratchtouch->midi0 == midi1 && lm->scratchtouch->midiport == midiport) mainprogram->tmchoice = TM_FREEZE;
+				else if (lm->scratch->midi0 == midi0 && lm->scratch->midi1 == midi1 && lm->scratch->midiport == midiport) mainprogram->tmchoice = TM_SCRATCH;
 				else mainprogram->tmchoice = TM_NONE;
 				return;
 				break;
 			case TM_PLAY:
-				lm->play[0] = midi0;
-				lm->play[1] = midi1;
-				lm->playstr = midiport;
+				lm->play->midi0 = midi0;
+				lm->play->midi1 = midi1;
+				lm->play->midiport= midiport;
+				lm->play->register_midi();
 				mainprogram->tmlearn = TM_NONE;
 				break;
 			case TM_BACKW:
-				lm->backw[0] = midi0;
-				lm->backw[1] = midi1;
-				lm->backwstr = midiport;
+				lm->backw->midi0 = midi0;
+				lm->backw->midi1 = midi1;
+				lm->backw->midiport= midiport;
+                lm->backw->register_midi();
 				mainprogram->tmlearn = TM_NONE;
 				break;
 			case TM_BOUNCE:
-				lm->bounce[0] = midi0;
-				lm->bounce[1] = midi1;
-				lm->bouncestr = midiport;
+				lm->bounce->midi0 = midi0;
+				lm->bounce->midi1 = midi1;
+				lm->bounce->midiport= midiport;
+                lm->bounce->register_midi();
 				mainprogram->tmlearn = TM_NONE;
 				break;
 			case TM_FRFORW:
-				lm->frforw[0] = midi0;
-				lm->frforw[1] = midi1;
-				lm->frforwstr = midiport;
+				lm->frforw->midi0 = midi0;
+				lm->frforw->midi1 = midi1;
+				lm->frforw->midiport= midiport;
+                lm->frforw->register_midi();
 				mainprogram->tmlearn = TM_NONE;
 				break;
 			case TM_FRBACKW:
-				lm->frbackw[0] = midi0;
-				lm->frbackw[1] = midi1;
-				lm->frbackwstr = midiport;
+				lm->frbackw->midi0 = midi0;
+				lm->frbackw->midi1 = midi1;
+				lm->frbackw->midiport= midiport;
+                lm->frbackw->register_midi();
 				mainprogram->tmlearn = TM_NONE;
 				break;
-			case TM_SPEED:
-				if (midi0 == 144) return;
-				lm->speed[0] = midi0;
-				lm->speed[1] = midi1;
-				lm->speedstr = midiport;
-				mainprogram->tmlearn = TM_NONE;
-				break;
+            case TM_STOP:
+                if (midi0 == 144) return;
+                lm->stop->midi0 = midi0;
+                lm->stop->midi1 = midi1;
+                lm->stop->midiport = midiport;
+                lm->stop->register_midi();
+                mainprogram->tmlearn = TM_NONE;
+                break;
+            case TM_LOOP:
+                if (midi0 == 144) return;
+                lm->loop->midi0 = midi0;
+                lm->loop->midi1 = midi1;
+                lm->loop->midiport = midiport;
+                lm->loop->register_midi();
+                mainprogram->tmlearn = TM_NONE;
+                break;
+            case TM_SPEED:
+                if (midi0 == 144) return;
+                lm->speed->midi0 = midi0;
+                lm->speed->midi1 = midi1;
+                lm->speed->midiport = midiport;
+                lm->speed->register_midi();
+                mainprogram->tmlearn = TM_NONE;
+                break;
 			case TM_SPEEDZERO:
 				if (midi0 == 176) return;
-				lm->speedzero[0] = midi0;
-				lm->speedzero[1] = midi1;
-				lm->speedzerostr = midiport;
+				lm->speedzero->midi0 = midi0;
+				lm->speedzero->midi1 = midi1;
+				lm->speedzero->midiport = midiport;
+                lm->speedzero->register_midi();
 				mainprogram->tmlearn = TM_NONE;
 				break;
 			case TM_OPACITY:
-				lm->opacity[0] = midi0;
-				lm->opacity[1] = midi1;
-				lm->opacitystr = midiport;
+				lm->opacity->midi0 = midi0;
+				lm->opacity->midi1 = midi1;
+				lm->opacity->midiport = midiport;
+                lm->opacity->register_midi();
 				mainprogram->tmlearn = TM_NONE;
 				break;
 			case TM_FREEZE:
 				if (midi0 == 176) return;
-				lm->scratchtouch[0] = midi0;
-				lm->scratchtouch[1] = midi1;
-				lm->scratchtouchstr = midiport;
+				lm->scratchtouch->midi0 = midi0;
+				lm->scratchtouch->midi0 = midi1;
+				lm->scratchtouch->midiport = midiport;
+                lm->scratchtouch->register_midi();
 				mainprogram->tmlearn = TM_NONE;
 				break;
 			case TM_SCRATCH:
 				if (midi0 == 144) return;
-				lm->scratch[0] = midi0;
-				lm->scratch[1] = midi1;
-				lm->scratchstr = midiport;
+				lm->scratch->midi0 = midi0;
+				lm->scratch->midi1 = midi1;
+				lm->scratch->midiport = midiport;
+                lm->scratch->register_midi();
 				mainprogram->tmlearn = TM_NONE;
 				break;
 		}
@@ -694,6 +733,7 @@ void mycallback( double deltatime, std::vector< unsigned char > *message, void *
 			mainmix->learnparam->midi[0] = midi0;
 			mainmix->learnparam->midi[1] = midi1;
 			mainmix->learnparam->midiport = midiport;
+            mainmix->learnparam->register_midi();
 			mainmix->learnparam->node = new MidiNode;
 			mainmix->learnparam->node->param = mainmix->learnparam;
 			mainprogram->nodesmain->currpage->nodes.push_back(mainmix->learnparam->node);
@@ -721,6 +761,7 @@ void mycallback( double deltatime, std::vector< unsigned char > *message, void *
 				mainmix->learnbutton->midi[0] = midi0;
 				mainmix->learnbutton->midi[1] = midi1;
 				mainmix->learnbutton->midiport = midiport;
+                mainmix->learnbutton->register_midi();
 			}
 			else if (mainmix->midishelfstage == 2) {
 				// end midi button
@@ -728,11 +769,13 @@ void mycallback( double deltatime, std::vector< unsigned char > *message, void *
 				mainmix->learnbutton->midi[0] = midi0;
 				mainmix->learnbutton->midi[1] = midi1;
 				mainmix->learnbutton->midiport = midiport;
+                mainmix->learnbutton->register_midi();
 				if (midi1 > mainmix->midishelfstart && midi1 < mainmix->midishelfstart + (16 - mainmix->midishelfpos)) {
 					for (int i = mainmix->midishelfstart; i < midi1 + 1; i++) {
 						mainmix->midishelf->elements[mainmix->midishelfpos + i - mainmix->midishelfstart]->button->midi[0] = midi0;
 						mainmix->midishelf->elements[mainmix->midishelfpos + i - mainmix->midishelfstart]->button->midi[1] = i;
 						mainmix->midishelf->elements[mainmix->midishelfpos + i - mainmix->midishelfstart]->button->midiport = midiport;
+                        mainmix->midishelf->elements[mainmix->midishelfpos + i - mainmix->midishelfstart]->button->register_midi();
 					}
 				}
 				mainmix->learn = false;
@@ -741,6 +784,7 @@ void mycallback( double deltatime, std::vector< unsigned char > *message, void *
 				mainmix->learnbutton->midi[0] = midi0;
 				mainmix->learnbutton->midi[1] = midi1;
 				mainmix->learnbutton->midiport = midiport;
+                mainmix->learnbutton->register_midi();
 				mainmix->learn = false;
 			}
 
@@ -751,7 +795,7 @@ void mycallback( double deltatime, std::vector< unsigned char > *message, void *
 				mainprogram->nodesmain->currpage->connect_in2(mainmix->learnbutton->node, mainmix->learnbutton->effect->node);
 			}
 IMPLEMENT */		}
-		else if (midi0 == 144 && mainmix->learnbutton) {
+		else if (midi0 == 144 && midi2 == 127 && mainmix->learnbutton) {
 			if (mainmix->midishelfstage == 1) {
 				// start midi button
 				mainmix->midishelfstage = 2;
@@ -759,10 +803,11 @@ IMPLEMENT */		}
 				mainmix->learnbutton->midi[0] = midi0;
 				mainmix->learnbutton->midi[1] = midi1;
 				mainmix->learnbutton->midiport = midiport;
+                mainmix->learnbutton->register_midi();
 			}
             else if (mainmix->midishelfstage == 2) {
                 // end midi button
-                if (midi1 > mainmix->midishelfstart && midi1 < mainmix->midishelfstart + (16 - mainmix->midishelfpos)) {
+                if (midi1 >= mainmix->midishelfstart && midi1 < mainmix->midishelfstart + (16 - mainmix->midishelfpos)) {
                     mainmix->midishelfstage = 3;
                     mainmix->midishelfend = midi1;
                 }
@@ -778,6 +823,8 @@ IMPLEMENT */		}
                                                      mainmix->midishelfstart]->button->midi[1] = i;
                         mainmix->midishelf->elements[mainmix->midishelfpos + i -
                                                      mainmix->midishelfstart]->button->midiport = midiport;
+                        mainmix->midishelf->elements[mainmix->midishelfpos + i -
+                                                     mainmix->midishelfstart]->button->register_midi();
                     }
                 }
 				mainmix->learn = false;
@@ -786,6 +833,7 @@ IMPLEMENT */		}
 				mainmix->learnbutton->midi[0] = midi0;
 				mainmix->learnbutton->midi[1] = midi1;
 				mainmix->learnbutton->midiport = midiport;
+                mainmix->learnbutton->register_midi();
 				mainmix->learn = false;
 			}
 			/* 			mainmix->learnparam->node = new MidiNode;
@@ -802,7 +850,7 @@ IMPLEMENT */		}
   	if (midi0 == 176 || midi0 == 144) {
 		for (int i = 0; i < mainprogram->buttons.size(); i++) {
 			Button *but = mainprogram->buttons[i];
-			if (midi0 == but->midi[0] && midi1 == but->midi[1] && midiport == but->midiport) {
+			if (midi0 == but->midi[0] && midi1 == but->midi[1] && midi2 == 127 && midiport == but->midiport) {
 				mainmix->midi2 = midi2;
 				mainmix->midibutton = but;
 			}
@@ -810,10 +858,11 @@ IMPLEMENT */		}
 		for (int m = 0; m < 2; m++) {
 			for (int i = 0; i < 16; i++) {
 				Button *but = mainprogram->shelves[m]->buttons[i];
-				if (midi0 == but->midi[0] && midi1 == but->midi[1] && midiport == but->midiport) {
+				if (midi0 == but->midi[0] && midi1 == but->midi[1] && midi2 == 127 && midiport == but->midiport) {
 					mainmix->midi2 = midi2;
 					mainmix->midibutton = nullptr;
-					mainmix->midishelfbutton = but;
+                    mainmix->midishelfbutton = but;
+                    mainmix->midibutton = nullptr;
 				}
 			}
 		}
@@ -1317,7 +1366,6 @@ bool Layer::get_hap_frame() {
 
 	if (!this->vidopen) {
 		if (st != SNAPPY_OK) {
-			this->decresult->data = nullptr;
 			this->decresult->width = 0;
 			malock.unlock();
 			return false;
@@ -1471,114 +1519,34 @@ Layer* Layer::open_video(float frame, const std::string &filename, int reset) {
     this->databufready = false;
 	//delete this->decresult;
 	//this->decresult = new frame_result;
-	if (this->boundimage != -1) {
-		glDeleteTextures(1, &this->boundimage);
-		this->boundimage = -1;
-	}
 
 	if (!this->dummy) {
 		ShelfElement* elem = this->prevshelfdragelem;
 		bool ret = mainmix->set_prevshelfdragelem(this);
-		if (!ret && elem->type == ELEM_DECK) {
-			if (elem->launchtype == 2) {
-				mainmix->mousedeck = elem->nblayers[0]->deck;
-				mainmix->do_save_deck(mainprogram->temppath + "tempdeck_lnch.deck", false, false);
-				mainmix->open_deck(mainprogram->temppath + "tempdeck_lnch.deck", false);
-			}
-		}
-		else if (!ret && elem->type == ELEM_MIX) {
-			if (elem->launchtype == 2) {
-				mainmix->do_save_mix(mainprogram->temppath + "tempdeck_lnch.deck", mainprogram->prevmodus, false);
-				mainmix->open_mix(mainprogram->temppath + "tempdeck_lnch.deck", false);
-			}
-		}
-		else if (!ret) {
-			LoopStation* l;
-			if (!mainprogram->prevmodus) {
-				l = lpc;
-			}
-			else {
-				l = lp;
-			}
-			this->layers->erase(std::find(this->layers->begin(), this->layers->end(), this));
-			Layer *lay = mainmix->add_layer(*this->layers, this->pos);
-            (*(this->layers))[this->pos] = lay;
-            mainprogram->nodesmain->currpage->connect_nodes(lay->node, this->lasteffnode[0]->out[0]);
-            for (int m = 0; m < 2; m++) {
-				for (int j = 0; j < this->effects[m].size(); j++) {
-					Effect *eff = lay->add_effect(this->effects[m][j]->type, j);
-					for (int k = 0; k < this->effects[m][j]->params.size(); k++) {
-						Param* par = this->effects[m][j]->params[k];
-						Param* cpar = lay->effects[m][j]->params[k];
-						LoopStationElement* lpe = l->parelemmap[par];
-						if (lpe) {
-							for (int i = 0; i < lpe->eventlist.size(); i++) {
-								if (std::get<1>(lpe->eventlist[i]) == par) {
-									std::get<1>(lpe->eventlist[i]) = cpar;
-								}
-							}
-							cpar->box->acolor[0] = lpe->colbox->acolor[0];
-							cpar->box->acolor[1] = lpe->colbox->acolor[1];
-							cpar->box->acolor[2] = lpe->colbox->acolor[2];
-							cpar->box->acolor[3] = lpe->colbox->acolor[3];
-							l->parelemmap[cpar] = lpe;
-							l->parelemmap.erase(par);
-							lpe->params.erase(par);
-							lpe->params.emplace(cpar);
-							lpe->params.erase(par);
-							lpe->layers.emplace(lay);
-							lpe->layers.erase(this);
-							l->parmap[par] = l->parmap[cpar];
-							l->allparams.erase(std::find(l->allparams.begin(), l->allparams.end(), par));
-							l->allparams.push_back(cpar);
-						}
-						cpar->value = par->value;
-						cpar->midi[0] = par->midi[0];
-						cpar->midi[1] = par->midi[1];
-						cpar->effect = eff;
-					}
-					Button* but = this->effects[m][j]->onoffbutton;
-					Button* cbut = eff->onoffbutton;
-					LoopStationElement* lpe = l->butelemmap[but];
-					if (lpe) {
-						for (int i = 0; i < lpe->eventlist.size(); i++) {
-							if (std::get<2>(lpe->eventlist[i]) == but) {
-								std::get<2>(lpe->eventlist[i]) = cbut;
-							}
-						}
-						//cbut->box->acolor[0] = lpe->colbox->acolor[0];
-						//cbut->box->acolor[1] = lpe->colbox->acolor[1];
-						//cbut->box->acolor[2] = lpe->colbox->acolor[2];
-						//cbut->box->acolor[3] = lpe->colbox->acolor[3];
-						l->butelemmap[cbut] = lpe;
-						l->butelemmap.erase(but);
-						lpe->buttons.erase(but);
-						lpe->buttons.emplace(cbut);
-						lpe->buttons.erase(but);
-						lpe->layers.emplace(lay);
-						lpe->layers.erase(this);
-						l->butmap[but] = l->butmap[cbut];
-						l->allbuttons.erase(std::find(l->allbuttons.begin(), l->allbuttons.end(), but));
-						l->allbuttons.push_back(cbut);
-					}
-					cbut->value = but->value;
-					cbut->midi[0] = but->midi[0];
-					cbut->midi[1] = but->midi[1];
-				}
-			}
-			this->inhibit(); // lay is passed over into only framecounting
-			mainmix->set_values(lay, this, false);
-			if (this == mainmix->currlay[!mainprogram->prevmodus]) mainmix->currlay[!mainprogram->prevmodus] = lay;
-            if (std::find(mainmix->currlays[!mainprogram->prevmodus].begin(), mainmix->currlays[!mainprogram->prevmodus].end(), this) != mainmix->currlays[!mainprogram->prevmodus].end()) {
-                mainmix->currlays[!mainprogram->prevmodus].erase(std::find(mainmix->currlays[!mainprogram->prevmodus].begin(), mainmix->currlays[!mainprogram->prevmodus].end(), this));
-                mainmix->currlays[!mainprogram->prevmodus].push_back(lay);
+        if (!ret && elem->type == ELEM_DECK) {
+            if (elem->launchtype == 2) {
+                mainmix->mousedeck = elem->nblayers[0]->deck;
+                mainmix->do_save_deck(mainprogram->temppath + "tempdeck_lnch.deck", false, false);
+                mainmix->open_deck(mainprogram->temppath + "tempdeck_lnch.deck", false);
             }
-			lay->open_video(0, filename, true);
+        } else if (!ret && elem->type == ELEM_MIX) {
+            if (elem->launchtype == 2) {
+                mainmix->do_save_mix(mainprogram->temppath + "tempdeck_lnch.deck", mainprogram->prevmodus, false);
+                mainmix->open_mix(mainprogram->temppath + "tempdeck_lnch.deck", false);
+            }
+        }
+		else if (!ret) {
+            Layer *lay = this->transfer();
+            lay->open_video(0, filename, true);
 			return lay;
 		}
 	}
 
 	//this->video_dec_ctx = nullptr;
+    if (this->boundimage != -1) {
+        glDeleteTextures(1, &this->boundimage);
+        this->boundimage = -1;
+    }
 	this->audioplaying = false;
 	if (this->effects[0].size() == 0) this->type = ELEM_FILE;
 	else this->type = ELEM_LAYER;
@@ -1589,8 +1557,8 @@ Layer* Layer::open_video(float frame, const std::string &filename, int reset) {
 	this->skip = false;
 	this->ifmt = nullptr;
     this->vidopen = true;
-    this->loaded = 5;
-	this->decresult->width = 0;
+    this->decresult->newdata = false;
+    this->decresult->width = 0;
 	this->decresult->compression = 0;
 	this->ready = true;
 	while (this->ready) {
@@ -2389,7 +2357,7 @@ void draw_box(float* linec, float* areac, float x, float y, float wi, float he, 
 		return;
 	}
 
-	if (circle || mainprogram->frontbatch || text) {
+    if (circle || mainprogram->frontbatch || text) {
 		gui_box *box = new gui_box;
 		if (linec) {
 			box->linec[0] = linec[0];
@@ -2712,8 +2680,6 @@ std::vector<float> render_text(std::string text, float *textc, float x, float y,
 		glBindFramebuffer(GL_FRAMEBUFFER, texfrbuf);
 		glFramebufferTexture2D(GL_FRAMEBUFFER, GL_COLOR_ATTACHMENT0, GL_TEXTURE_2D, texture, 0);
 		glDrawBuffer(GL_COLOR_ATTACHMENT0);
-		glClearColor(0, 0, 0, 0);
-		glClear(GL_COLOR_BUFFER_BIT);
 
 		GLuint ftex;
 		glGenTextures(1, &ftex);
@@ -2793,9 +2759,7 @@ std::vector<float> render_text(std::string text, float *textc, float x, float y,
 		glBindFramebuffer(GL_FRAMEBUFFER, endfrbuf);
 		glFramebufferTexture2D(GL_FRAMEBUFFER, GL_COLOR_ATTACHMENT0, GL_TEXTURE_2D, endtex, 0);
         glDrawBuffer(GL_COLOR_ATTACHMENT0);
-        glClearColor(0, 0, 0, 0);
-        glClear(GL_COLOR_BUFFER_BIT);
-		glBlitNamedFramebuffer(texfrbuf, endfrbuf, 0, 0, w, 64 , 0, 0, w, 64, GL_COLOR_BUFFER_BIT, GL_NEAREST);
+ 		glBlitNamedFramebuffer(texfrbuf, endfrbuf, 0, 0, w, 64 , 0, 0, w, 64, GL_COLOR_BUFFER_BIT, GL_NEAREST);
 
 		if (pos == 0) {
 			gs = new GUIString;
@@ -2815,6 +2779,8 @@ std::vector<float> render_text(std::string text, float *textc, float x, float y,
 		glDeleteTextures(1, &ftex);
 		glDeleteTextures(1, &texture);
 
+        glBindFramebuffer(GL_FRAMEBUFFER, 0);
+        glDrawBuffer(GL_BACK_LEFT);
         //display
 		textws = render_text(text, textc, bux, buy, sx, sy, smflag, display, vertical);
 		return textws;
@@ -3032,6 +2998,7 @@ void Layer::load_frame() {
 	// checks if new frame has been decompressed and loads it into layer
 	Layer* srclay = this;
 	bool ret = false;
+	//if (this->vidopen) return;
 	if (this->liveinput || this->type == ELEM_IMAGE);
 	else if (this->startframe != this->endframe || this->type == ELEM_LIVE) {
 		if (mainmix->firstlayers.count(this->clonesetnr) == 0) {
@@ -3072,7 +3039,7 @@ void Layer::load_frame() {
                     float w = this->video_dec_ctx->width;
                     float h = this->video_dec_ctx->height;
                     this->initialize(w, h);
-                }
+               }
 			}
 		}
 		else {
@@ -3090,35 +3057,39 @@ void Layer::load_frame() {
 		this->texture = this->liveinput->texture;
 	}
 
-	if (!srclay->decresult->newdata && srclay->loaded > 3) {
-		return;
-	}
 	if (this->isclone) return;
-	if (srclay->loaded == 5) srclay->loaded = 0;
-	if (srclay->liveinput) srclay->decresult->newdata = false;
 
 
-	glActiveTexture(GL_TEXTURE0);
-	glBindTexture(GL_TEXTURE_2D, this->texture);
+    GLenum err;
+    while ((err = glGetError()) != GL_NO_ERROR) {
+        std::cerr << "OpenGL error3: " << err << std::endl;
+    }
 
-	glBindBuffer(GL_PIXEL_UNPACK_BUFFER, srclay->pbo[srclay->pbodi]);
-	if (!this->liveinput && srclay->loaded > 2) {
-		if ((!this->isclone)) {  // decresult contains new frame width, height, number of bitmaps && data
-			if (!srclay->decresult->width) {
-                glBindBuffer(GL_PIXEL_UNPACK_BUFFER, 0);
-				return;
-			}
-			if ((this->vidformat == 188 || this->vidformat == 187) && srclay->video_dec_ctx) {
-				if (!srclay->databufready) {
-                    glBindBuffer(GL_PIXEL_UNPACK_BUFFER, 0);
-					return;
-				}
+
+    glActiveTexture(GL_TEXTURE0);
+	glBindTexture(GL_TEXTURE_2D, srclay->texture);
+
+	glBindBuffer(GL_PIXEL_UNPACK_BUFFER, srclay->pbo[srclay->pboui]);
+
+
+
+    if (!this->remfr[this->pboui]->liveinput && this->remfr[this->pboui]->initialized) {
+		if ((!this->remfr[this->pboui]->isclone)) {  // decresult contains new frame width, height, number of bitmaps && data
+			//if (!srclay->decresult->width) {
+            //    glBindBuffer(GL_PIXEL_UNPACK_BUFFER, 0);
+			//	return;
+			//}
+			if ((this->remfr[this->pboui]->vidformat == 188 || this->remfr[this->pboui]->vidformat == 187)) {
+				//if (!srclay->databufready) {
+                //    glBindBuffer(GL_PIXEL_UNPACK_BUFFER, 0);
+				//	return;
+				//}
 				// HAP video layers
-				if (srclay->decresult->compression == 187 || srclay->decresult->compression == 171) {
-					if (srclay->decresult->data) glCompressedTexSubImage2D(GL_TEXTURE_2D, 0, 0, 0, srclay->decresult->width, srclay->decresult->height, GL_COMPRESSED_RGBA_S3TC_DXT1_EXT, srclay->decresult->size, 0);
+				if (this->remfr[this->pboui]->compression == 187 || this->remfr[this->pboui]->compression == 171) {
+					glCompressedTexSubImage2D(GL_TEXTURE_2D, 0, 0, 0, this->remfr[this->pboui]->width, this->remfr[this->pboui]->height, GL_COMPRESSED_RGBA_S3TC_DXT1_EXT, this->remfr[this->pboui]->size, 0);
 				}
-				else if (srclay->decresult->compression == 190) {
-					if (srclay->decresult->data) glCompressedTexSubImage2D(GL_TEXTURE_2D, 0, 0, 0, srclay->decresult->width, srclay->decresult->height, GL_COMPRESSED_RGBA_S3TC_DXT5_EXT, srclay->decresult->size, 0);
+				else if (this->remfr[this->pboui]->compression == 190) {
+					glCompressedTexSubImage2D(GL_TEXTURE_2D, 0, 0, 0, this->remfr[this->pboui]->width, this->remfr[this->pboui]->height, GL_COMPRESSED_RGBA_S3TC_DXT5_EXT, this->remfr[this->pboui]->size, 0);
 				}
 			}
 			else {
@@ -3136,14 +3107,16 @@ void Layer::load_frame() {
 					if (imageformat == IL_BGR) mode = GL_BGR;
 					glTexSubImage2D(GL_TEXTURE_2D, 0, 0, 0, w, h, mode, GL_UNSIGNED_BYTE, 0);
 				}
-				else if (this->video_dec_ctx) {
-					glTexSubImage2D(GL_TEXTURE_2D, 0, 0, 0, srclay->decresult->width, srclay->decresult->height, GL_BGRA, GL_UNSIGNED_BYTE, 0);
+				else if (1) {
+					glTexSubImage2D(GL_TEXTURE_2D, 0, 0, 0, this->remfr[this->pboui]->width, this->remfr[this->pboui]->height, GL_BGRA, GL_UNSIGNED_BYTE, 0);
 				}
 			}
 		}
 	}
 
-	srclay->decresult->newdata = false;
+    if (!srclay->decresult->newdata) {
+        return;
+    }
 
 	if (!this->isclone && !this->liveinput) {
 		// start transferring to pbou
@@ -3159,11 +3132,17 @@ void Layer::load_frame() {
 	else this->initialized = true;  //reminder: trick, is set false somewhere
 
 	// round robin triple pbos: currently deactivated
-	srclay->pbodi++;
+    this->remfr[this->pbodi]->compression = srclay->decresult->compression;
+    this->remfr[this->pbodi]->vidformat = srclay->vidformat;
+    this->remfr[this->pbodi]->initialized = srclay->initialized;
+    this->remfr[this->pbodi]->liveinput = srclay->liveinput;
+    this->remfr[this->pbodi]->isclone = srclay->isclone;
+    this->remfr[this->pbodi]->width = srclay->decresult->width;
+    this->remfr[this->pbodi]->height = srclay->decresult->height;
+    this->remfr[this->pbodi]->size = srclay->decresult->size;
 	srclay->pboui++;
 	if (srclay->pbodi == 3) srclay->pbodi = 0;
 	if (srclay->pboui == 3) srclay->pboui = 0;
-	if (srclay->loaded < 4) srclay->loaded++;
 
 	glBindBuffer(GL_PIXEL_UNPACK_BUFFER, 0);
 
@@ -3222,7 +3201,27 @@ void do_blur(bool stage, GLuint prevfbotex, int iter) {
 void midi_set() {
 	if (mainprogram->midishelfelem) return;
 
-	if (mainmix->midibutton) {
+    if (mainmix->midishelfbutton) {
+        bool shelf = 0;
+        int pos = std::find(mainprogram->shelves[0]->buttons.begin(), mainprogram->shelves[0]->buttons.end(), mainmix->midishelfbutton) - mainprogram->shelves[0]->buttons.begin();
+        if (pos == 16) {
+            pos = std::find(mainprogram->shelves[1]->buttons.begin(), mainprogram->shelves[1]->buttons.end(), mainmix->midishelfbutton) - mainprogram->shelves[1]->buttons.begin();
+            shelf = 1;
+        }
+        // the next elem is used in code somewhere at end of the_loop
+        mainprogram->midishelfelem = mainprogram->shelves[shelf]->elements[pos];
+
+        for (int i = 0; i < loopstation->elems.size(); i++) {
+            if (loopstation->elems[i]->recbut->value) {
+                loopstation->elems[i]->add_button_automationentry(mainmix->midishelfbutton);
+            }
+        }
+
+        mainmix->midishelfbutton = nullptr;
+        mainmix->midibutton = nullptr;
+    }
+
+	else if (mainmix->midibutton) {
 		Button *but = mainmix->midibutton;
 		but->value++;
 		if (but->value > but->toggle) but->value = 0;
@@ -3238,26 +3237,7 @@ void midi_set() {
 		mainmix->midibutton = nullptr;
 	}
 
-	if (mainmix->midishelfbutton) {
-		bool shelf = 0;
-		int pos = std::find(mainprogram->shelves[0]->buttons.begin(), mainprogram->shelves[0]->buttons.end(), mainmix->midishelfbutton) - mainprogram->shelves[0]->buttons.begin();
-		if (pos == 16) {
-			pos = std::find(mainprogram->shelves[1]->buttons.begin(), mainprogram->shelves[1]->buttons.end(), mainmix->midishelfbutton) - mainprogram->shelves[1]->buttons.begin();
-			shelf = 1;
-		}
-		// the next elem is used in code somewhere at end of the_loop
-		mainprogram->midishelfelem = mainprogram->shelves[shelf]->elements[pos];
-
-		for (int i = 0; i < loopstation->elems.size(); i++) {
-			if (loopstation->elems[i]->recbut->value) {
-				loopstation->elems[i]->add_button_automationentry(mainmix->midishelfbutton);
-			}
-		}
-
-		mainmix->midishelfbutton = nullptr;
-	}
-
-	if (mainmix->midiparam) {
+	else if (mainmix->midiparam) {
 		Param *par = mainmix->midiparam;
 		par->value = par->range[0] + mainmix->midi2 * ((par->range[1] - par->range[0]) / 127.0);
 		if (par->shadervar == "ripple") {
@@ -3317,12 +3297,11 @@ void onestepfrom(bool stage, Node *node, Node *prevnode, GLuint prevfbotex, GLui
 
 	node->walked = true;
 	
-	midi_set();
-	
 	if (node->type == EFFECT) {
 		Effect *effect = ((EffectNode*)node)->effect;
 
-		if (effect->layer->initialized) {
+		if (1) {
+		//if (effect->layer->initialized) {
 			GLint drywet = glGetUniformLocation(mainprogram->ShaderProgram, "drywet");
 			glUniform1f(drywet, effect->drywet->value);
 			if (effect->onoffbutton->value) {
@@ -3732,8 +3711,9 @@ void onestepfrom(bool stage, Node *node, Node *prevnode, GLuint prevfbotex, GLui
 		}
 	}
 	else if (node->type == VIDEO) {
-		Layer *lay = ((VideoNode*)node)->layer;
-		if (!lay->newtexdata && mainmix->bulrs[lay->deck].size()) {
+	    Layer *lay = ((VideoNode*)node)->layer;
+	    if (lay->vidopen) return;
+ 		if (!lay->newtexdata && mainmix->bulrs[lay->deck].size()) {
 			return;
 		}
 		else {
@@ -3782,7 +3762,9 @@ void onestepfrom(bool stage, Node *node, Node *prevnode, GLuint prevfbotex, GLui
 				ilActiveImage((int)lay->frame);
 				frac = (float)ilGetInteger(IL_IMAGE_WIDTH) / (float)ilGetInteger(IL_IMAGE_HEIGHT);
 			}
-			else frac = (float)lay->decresult->width / (float)lay->decresult->height;
+			else {
+			    frac = lay->remfr[lay->pboui]->width / lay->remfr[lay->pboui]->height;
+			}
 			if (fraco > frachd) {
 				ys = 1.0f - frachd / fraco;
 				sciy = ys;
@@ -4069,8 +4051,11 @@ void walk_nodes(bool stage) {
 		int mutes = 0;
 		bool muted = false;
 		for (int i = 0; i < mainmix->layersA.size(); i++) {
-			Layer* lay = mainmix->layersA[i];
-			if (!lay->liveinput && !lay->decresult->width && lay->filename != "") return;
+            Layer *lay = mainmix->layersA[i];
+            //if (!lay->liveinput && !lay->decresult->width && lay->filename != "") {
+            //    mainprogram->directmode = false;
+            //    return;
+            //}
 			if (lay->mutebut->value) mutes++;
 			walk_forward(lay->node);
 			onestepfrom(0, lay->node, nullptr, -1, -1);
@@ -4085,7 +4070,10 @@ void walk_nodes(bool stage) {
 		mutes = 0;
 		for (int i = 0; i < mainmix->layersB.size(); i++) {
 			Layer* lay = mainmix->layersB[i];
-			if (!lay->liveinput && !lay->decresult->width && lay->filename != "") return;
+            //if (!lay->liveinput && !lay->decresult->width && lay->filename != "") {
+            //    mainprogram->directmode = false;
+            //    return;
+            //}
 			if (lay->mutebut->value) mutes++;
 			walk_forward(lay->node);
 			onestepfrom(0, lay->node, nullptr, -1, -1);
@@ -4109,7 +4097,10 @@ void walk_nodes(bool stage) {
 		bool muted = false;
 		for (int i = 0; i < mainmix->layersAcomp.size(); i++) {
 			Layer* lay = mainmix->layersAcomp[i];
-			if (!lay->liveinput && !lay->decresult->width && lay->filename != "" && lay->vidopen == false) return;
+            //if (!lay->liveinput && !lay->decresult->width && lay->filename != "") {
+            //    mainprogram->directmode = false;
+            //    return;
+            //}
 			if (lay->mutebut->value) mutes++;
 			walk_forward(lay->node);
 			onestepfrom(1, lay->node, nullptr, -1, -1);
@@ -4124,7 +4115,10 @@ void walk_nodes(bool stage) {
 		mutes = 0;
 		for (int i = 0; i < mainmix->layersBcomp.size(); i++) {
 			Layer* lay = mainmix->layersBcomp[i];
-			if (!lay->liveinput && !lay->decresult->width && lay->filename != "" && lay->vidopen == false) return;
+            //if (!lay->liveinput && !lay->decresult->width && lay->filename != "") {
+            //    mainprogram->directmode = false;
+            //    return;
+            //}
 			if (lay->mutebut->value) mutes++;
 			walk_forward(lay->node);
 			onestepfrom(1, lay->node, nullptr, -1, -1);
@@ -4498,6 +4492,7 @@ void Shelf::handle() {
                 mainprogram->shelfdragnum = i;
                 mainprogram->doubleleftmouse = false;
                 mainprogram->doublemiddlemouse = false;
+                //mainprogram->lmover = false;
                 mainprogram->leftmouse = false;
                 mainprogram->leftmousedown = false;
                 mainprogram->middlemouse = false;
@@ -4507,7 +4502,7 @@ void Shelf::handle() {
                 mainprogram->dragbinel->type = elem->type;
                 mainprogram->dragbinel->tex = elem->tex;
                 for (int i = 0; i < mainmix->currlays[!mainprogram->prevmodus].size(); i++) {
-                    mainmix->currlays[!mainprogram->prevmodus][i]->open_dragbinel();
+                    mainmix->currlays[!mainprogram->prevmodus][i]->open_dragbinel(i);
                 }
                 enddrag();
             }
@@ -4540,6 +4535,8 @@ void Shelf::handle() {
 					if (!mainprogram->dragbinel) {
 						// user starts dragging shelf element
 						if (elem->path != "") {
+                            mainprogram->shelfmx = mainprogram->mx;
+                            mainprogram->shelfmy = mainprogram->my;
 							mainprogram->dragmiddle = mainprogram->middlemousedown;
 							mainprogram->shelfdragelem = elem;
 							mainprogram->shelfdragnum = i;
@@ -4555,43 +4552,43 @@ void Shelf::handle() {
 			}
 			else if (mainprogram->lmover) {
 				// user drops file/layer/deck/mix in shelf element
-				if (mainprogram->dragbinel) {
-					std::string newpath;
-					std::string extstr = "";
-					if (mainprogram->dragbinel->type == ELEM_LAYER) {
-						extstr = ".layer";
-					}
-					else if (mainprogram->dragbinel->type == ELEM_DECK) {
-						extstr = ".deck";
-					}
-					else if (mainprogram->dragbinel->type == ELEM_MIX) {
-						extstr = ".mix";
-					}
-					if (extstr != "") {
-						std::string base = basename(mainprogram->dragbinel->path);
-                        boost::filesystem::copy_file(mainprogram->dragbinel->path, find_unused_filename("shelf_" + base, mainprogram->project->shelfdir, extstr));
-                        mainprogram->dragbinel->path = newpath;
-					}
-					if (mainprogram->shelfdragelem) {
-						std::swap(elem->path, mainprogram->shelfdragelem->path);
-						std::swap(elem->jpegpath, mainprogram->shelfdragelem->jpegpath);
-						std::swap(elem->type, mainprogram->shelfdragelem->type);
-					}
-					else {
-						elem->path = mainprogram->dragbinel->path;
-						elem->type = mainprogram->dragbinel->type;
-					}
-                    elem->tex = copy_tex(mainprogram->dragbinel->tex);
-                    elem->jpegpath = find_unused_filename(basename(elem->path), mainprogram->temppath, ".jpg");
-                    save_thumb(elem->jpegpath, elem->tex);
-                    blacken(elem->oldtex);
-					this->prevnum = -1;
-					mainprogram->shelfdragelem = nullptr;
-					mainprogram->rightmouse = true;
-					binsmain->handle(0);
-					enddrag();
-					return;
-				}
+				if (mainprogram->mx != mainprogram->shelfmx || mainprogram->my != mainprogram->shelfmy) {
+                    if (mainprogram->dragbinel) {
+                        std::string newpath;
+                        std::string extstr = "";
+                        if (mainprogram->dragbinel->type == ELEM_LAYER) {
+                            extstr = ".layer";
+                        } else if (mainprogram->dragbinel->type == ELEM_DECK) {
+                            extstr = ".deck";
+                        } else if (mainprogram->dragbinel->type == ELEM_MIX) {
+                            extstr = ".mix";
+                        }
+                        if (extstr != "") {
+                            std::string base = basename(mainprogram->dragbinel->path);
+                            newpath = find_unused_filename("shelf_" + base, mainprogram->project->shelfdir, extstr);
+                            boost::filesystem::copy_file(mainprogram->dragbinel->path, newpath);
+                            mainprogram->dragbinel->path = newpath;
+                        }
+                        if (mainprogram->shelfdragelem) {
+                            std::swap(elem->path, mainprogram->shelfdragelem->path);
+                            std::swap(elem->jpegpath, mainprogram->shelfdragelem->jpegpath);
+                            std::swap(elem->type, mainprogram->shelfdragelem->type);
+                        } else {
+                            elem->path = mainprogram->dragbinel->path;
+                            elem->type = mainprogram->dragbinel->type;
+                        }
+                        elem->tex = copy_tex(mainprogram->dragbinel->tex);
+                        elem->jpegpath = find_unused_filename(basename(elem->path), mainprogram->temppath, ".jpg");
+                        save_thumb(elem->jpegpath, elem->tex);
+                        blacken(elem->oldtex);
+                        this->prevnum = -1;
+                        mainprogram->shelfdragelem = nullptr;
+                        mainprogram->rightmouse = true;
+                        binsmain->handle(0);
+                        enddrag();
+                        return;
+                    }
+                }
 			}
 			if (mainprogram->menuactivation) {
 				mainprogram->shelfmenu->state = 2;
@@ -5890,7 +5887,7 @@ void the_loop() {
 	if (mainmix->learn) {
 		// when waiting MIDI learn, can't click anywhere else
 		mainprogram->mx = -1;
-		mainprogram->my = -1;
+		mainprogram->my = 100;
 	}
 
 	if (mainprogram->leftmouse && (mainprogram->cwon || mainprogram->menuondisplay || mainprogram->wiping || mainmix->adaptparam || mainmix->scrollon || binsmain->dragbin || mainmix->moving || mainprogram->dragbinel || mainprogram->drageff || mainprogram->dragclip || mainprogram->shelfdragelem)) {
@@ -5960,7 +5957,24 @@ void the_loop() {
 			}
 		}
 	}
-	mainmix->firstlayers.clear();
+
+
+    // draw and handle overall genmidi button
+    mainmix->handle_genmidibuttons();
+
+
+    // MIDI stuff
+    midi_set();
+    mainprogram->shelf_miditriggering();
+
+
+    //handle shelves
+    mainprogram->inshelf = -1;
+    mainprogram->shelves[0]->handle();
+    mainprogram->shelves[1]->handle();
+
+
+    mainmix->firstlayers.clear();
     if (!mainprogram->prevmodus) {
 		//when in performance mode: keep advancing frame counters for preview layer stacks (alive = 0)
 		for(int i = 0; i < mainmix->layersA.size(); i++) {
@@ -5990,7 +6004,7 @@ void the_loop() {
 		//	testlay->load_frame();
 		//}
 	}
-	// when in preview modus, do frame texture load for both mixes (preview and output)
+    // when in preview modus, do frame texture load for both mixes (preview and output)
 	if (mainprogram->prevmodus) {
 		for(int i = 0; i < mainmix->layersA.size(); i++) {
 			Layer *testlay = mainmix->layersA[i];
@@ -6046,7 +6060,6 @@ void the_loop() {
 
 
     mainprogram->stream_to_v4l2loopbacks();
-
 
 
     /////////////// STUFF THAT BELONGS TO EITHER BINS OR MIX OR FULL SCREEN OR RETARGETING
@@ -6377,10 +6390,6 @@ void the_loop() {
 		par->handle();
 
 
-        // draw and handle overall genmidi button
-        mainmix->handle_genmidibuttons();
-
-
         // draw and handle layer stacks, effect stacks and params
 		if (mainprogram->prevmodus) {
 			// when previewing
@@ -6458,18 +6467,13 @@ void the_loop() {
 		}
 
 
-		//handle shelves
-		mainprogram->inshelf = -1;
-		mainprogram->shelves[0]->handle();
-		mainprogram->shelves[1]->handle();
-
-
 		// handle the layer clips queue
 		mainmix->handle_clips();
 
 
 		// draw "layer insert into stack" blue boxes
 		if (!mainprogram->menuondisplay && mainprogram->dragbinel) {
+		    mainprogram->frontbatch = true;
 			for (int j = 0; j < 2; j++) {
 				std::vector<Layer*>& lvec = choose_layers(j);
 				for (int i = 0; i < lvec.size(); i++) {
@@ -6498,6 +6502,7 @@ void the_loop() {
 					}
 				}
 			}
+            mainprogram->frontbatch = false;
 		}
 
 
@@ -6616,9 +6621,6 @@ void the_loop() {
 	}
 
 
-	mainprogram->shelf_miditriggering();
-
-
 	// multi opening of files, handle one per loop
 	if (mainprogram->openfileslayers) {
 		// load one item from mainprogram->paths into layer and clips, one each loop not to slowdown output stream
@@ -6695,7 +6697,9 @@ void the_loop() {
 	}
 
 	if (mainmix->learn) {
+        mainprogram->frontbatch = true;
 		draw_box(red, blue, -0.3f, -0.0f, 0.6f, 0.3f, -1);
+        mainprogram->frontbatch = false;
 		if (mainmix->midishelfstage == 1) {
 			render_text("Awaiting start point MIDI input.", white, -0.15f, 0.2f, 0.001f, 0.0016f);
 			render_text("Rightclick cancels.", white, -0.1f, 0.06f, 0.001f, 0.0016f);
@@ -6779,7 +6783,6 @@ void the_loop() {
 		lock.unlock();
 	}
 
-    bool dmbu = mainprogram->directmode;
 	bool prret = false;
 	GLuint tex, fbo;
 	if (mainprogram->quitting != "") {
@@ -6854,6 +6857,7 @@ void the_loop() {
         glBindFramebuffer(GL_FRAMEBUFFER, 0);
         glDrawBuffer(GL_BACK_LEFT);
         glViewport(0, 0, glob->w, glob->h);
+        mainprogram->directmode = false;
 	}
 
 
@@ -6865,8 +6869,6 @@ void the_loop() {
 
 
     // render code
-
-    mainprogram->directmode = dmbu;
 
     glBindFramebuffer(GL_FRAMEBUFFER, 0);
     glDrawBuffer(GL_BACK_LEFT);
@@ -6886,7 +6888,11 @@ void the_loop() {
         display_mix();
     }
 
-    if (!mainprogram->directmode) {
+    mainprogram->directmode = false;
+    glBindFramebuffer(GL_FRAMEBUFFER, 0);
+    glDrawBuffer(GL_BACK_LEFT);
+    glViewport(0, 0, glob->w, glob->h);
+    if (1) {
 
         glEnable(GL_DEPTH_TEST);
         glClearDepth(1.0f);
@@ -6906,6 +6912,8 @@ void the_loop() {
         glBindBuffer(GL_ELEMENT_ARRAY_BUFFER, mainprogram->bdibo);
         glBindVertexArray(mainprogram->bdvao);
         glDisable(GL_BLEND);
+
+        //printf("%d\n", mainprogram->maxtexes);
         for (int i = mainprogram->currbatch + ((intptr_t) mainprogram->bdtptr[mainprogram->currbatch] -
                                                (intptr_t) mainprogram->bdtexes[mainprogram->currbatch] > 0) - 1;
              i >= 0; i--) {
@@ -7052,7 +7060,7 @@ GLuint copy_tex(GLuint tex, int tw, int th, bool yflip) {
 	else {
 		draw_box(nullptr, black, -1.0f, -1.0f + 2.0f, 2.0f, -2.0f, 0.0f, 0.0f, 1.0f, 1.0f, 0, tex, glob->w, glob->h, false);
 	}
-    mainprogram->directmode = true;
+    mainprogram->directmode = false;
 	glViewport(0, 0, glob->w, glob->h);
 	glDeleteFramebuffers(1, &dfbo);
 	return smalltex;
@@ -7510,6 +7518,7 @@ bool Shelf::open(const std::string &path) {
 				if (istring == "MIDIPORT") {
 					safegetline(rfile, istring);
 					elem->button->midiport = istring;
+                    elem->button->register_midi();
 				}
 			}
 		}
@@ -7537,89 +7546,106 @@ void Shelf::erase() {
         elem->button->midi[0] = -1;
         elem->button->midi[1] = -1;
         elem->button->midiport = "";
+        elem->button->unregister_midi();
 	}
 }
 	
 
 void write_genmidi(ostream& wfile, LayMidi *lm) {
 	wfile << "PLAY\n";
-	wfile << std::to_string(lm->play[0]);
+	wfile << std::to_string(lm->play->midi0);
 	wfile << "\n";
-	wfile << std::to_string(lm->play[1]);
+	wfile << std::to_string(lm->play->midi1);
 	wfile << "\n";
-	wfile << lm->playstr;
+	wfile << lm->play->midiport;
 	wfile << "\n";
 
 	wfile << "BACKW\n";
-	wfile << std::to_string(lm->backw[0]);
+	wfile << std::to_string(lm->backw->midi0);
 	wfile << "\n";
-	wfile << std::to_string(lm->backw[1]);
+	wfile << std::to_string(lm->backw->midi1);
 	wfile << "\n";
-	wfile << lm->backwstr;
+	wfile << lm->backw->midiport;
 	wfile << "\n";
 	
 	wfile << "BOUNCE\n";
-	wfile << std::to_string(lm->bounce[0]);
+	wfile << std::to_string(lm->bounce->midi0);
 	wfile << "\n";
-	wfile << std::to_string(lm->bounce[1]);
+	wfile << std::to_string(lm->bounce->midi1);
 	wfile << "\n";
-	wfile << lm->bouncestr;
+	wfile << lm->bounce->midiport;
 	wfile << "\n";
 
 	wfile << "FRFORW\n";
-	wfile << std::to_string(lm->frforw[0]);
+	wfile << std::to_string(lm->frforw->midi0);
 	wfile << "\n";
-	wfile << std::to_string(lm->frforw[1]);
+	wfile << std::to_string(lm->frforw->midi1);
 	wfile << "\n";
-	wfile << lm->frforwstr;
-	wfile << "\n";
-
-	wfile << "FRBACKW\n";
-	wfile << std::to_string(lm->frbackw[0]);
-	wfile << "\n";
-	wfile << std::to_string(lm->frbackw[1]);
-	wfile << "\n";
-	wfile << lm->frbackwstr;
+	wfile << lm->frforw->midiport;
 	wfile << "\n";
 
-	wfile << "SPEED\n";
-	wfile << std::to_string(lm->speed[0]);
+    wfile << "FRBACKW\n";
+    wfile << std::to_string(lm->frbackw->midi0);
+    wfile << "\n";
+    wfile << std::to_string(lm->frbackw->midi1);
+    wfile << "\n";
+    wfile << lm->frbackw->midiport;
+    wfile << "\n";
+
+    wfile << "STOP\n";
+    wfile << std::to_string(lm->stop->midi0);
+    wfile << "\n";
+    wfile << std::to_string(lm->stop->midi1);
+    wfile << "\n";
+    wfile << lm->stop->midiport;
+    wfile << "\n";
+
+    wfile << "LOOP\n";
+    wfile << std::to_string(lm->loop->midi0);
+    wfile << "\n";
+    wfile << std::to_string(lm->loop->midi1);
+    wfile << "\n";
+    wfile << lm->loop->midiport;
+    wfile << "\n";
+
+    wfile << "SPEED\n";
+	wfile << std::to_string(lm->speed->midi0);
 	wfile << "\n";
-	wfile << std::to_string(lm->speed[1]);
+	wfile << std::to_string(lm->speed->midi1);
 	wfile << "\n";
-	wfile << lm->speedstr;
+	wfile << lm->speed->midiport;
 	wfile << "\n";
 
 	wfile << "SPEEDZERO\n";
-	wfile << std::to_string(lm->speedzero[0]);
+	wfile << std::to_string(lm->speedzero->midi0);
 	wfile << "\n";
-	wfile << std::to_string(lm->speedzero[1]);
+	wfile << std::to_string(lm->speedzero->midi1);
 	wfile << "\n";
-	wfile << lm->speedzerostr;
+	wfile << lm->speedzero->midiport;
 	wfile << "\n";
 
 	wfile << "OPACITY\n";
-	wfile << std::to_string(lm->opacity[0]);
+	wfile << std::to_string(lm->opacity->midi0);
 	wfile << "\n";
-	wfile << std::to_string(lm->opacity[1]);
+	wfile << std::to_string(lm->opacity->midi1);
 	wfile << "\n";
-	wfile << lm->opacitystr;
+	wfile << lm->opacity->midiport;
 	wfile << "\n";
 
 	wfile << "FREEZE\n";
-	wfile << std::to_string(lm->scratchtouch[0]);
+	wfile << std::to_string(lm->scratchtouch->midi0);
 	wfile << "\n";
-	wfile << std::to_string(lm->scratchtouch[1]);
+	wfile << std::to_string(lm->scratchtouch->midi1);
 	wfile << "\n";
-	wfile << lm->scratchtouchstr;
+	wfile << lm->scratchtouch->midiport;
 	wfile << "\n";
 
 	wfile << "SCRATCH\n";
-	wfile << std::to_string(lm->scratch[0]);
+	wfile << std::to_string(lm->scratch->midi0);
 	wfile << "\n";
-	wfile << std::to_string(lm->scratch[1]);
+	wfile << std::to_string(lm->scratch->midi1);
 	wfile << "\n";
-	wfile << lm->scratchstr;
+	wfile << lm->scratch->midiport;
 	wfile << "\n";
 }
 
@@ -7728,83 +7754,111 @@ void open_genmidis(std::string path) {
 		
 		if (istring == "PLAY") {
 			safegetline(rfile, istring);
-			lm->play[0] = std::stoi(istring);
+			lm->play->midi0 = std::stoi(istring);
 			safegetline(rfile, istring);
-			lm->play[1] = std::stoi(istring);
+			lm->play->midi1 = std::stoi(istring);
 			safegetline(rfile, istring);
-			lm->playstr = istring;
+			lm->play->midiport= istring;
+			lm->play->register_midi();
 		}
 		if (istring == "BACKW") {
 			safegetline(rfile, istring);
-			lm->backw[0] = std::stoi(istring);
+			lm->backw->midi0 = std::stoi(istring);
 			safegetline(rfile, istring);
-			lm->backw[1] = std::stoi(istring);
+			lm->backw->midi1 = std::stoi(istring);
 			safegetline(rfile, istring);
-			lm->backwstr = istring;
+			lm->backw->midiport= istring;
+            lm->backw->register_midi();
 		}
 		if (istring == "BOUNCE") {
 			safegetline(rfile, istring);
-			lm->bounce[0] = std::stoi(istring);
+			lm->bounce->midi0 = std::stoi(istring);
 			safegetline(rfile, istring);
-			lm->bounce[1] = std::stoi(istring);
+			lm->bounce->midi1 = std::stoi(istring);
 			safegetline(rfile, istring);
-			lm->bouncestr = istring;
+			lm->bounce->midiport= istring;
+            lm->bounce->register_midi();
 		}
 		if (istring == "FRFORW") {
 			safegetline(rfile, istring);
-			lm->frforw[0] = std::stoi(istring);
+			lm->frforw->midi0 = std::stoi(istring);
 			safegetline(rfile, istring);
-			lm->frforw[1] = std::stoi(istring);
+			lm->frforw->midi1 = std::stoi(istring);
 			safegetline(rfile, istring);
-			lm->frforwstr = istring;
+			lm->frforw->midiport= istring;
+            lm->frforw->register_midi();
 		}
-		if (istring == "FRBACKW") {
-			safegetline(rfile, istring);
-			lm->frbackw[0] = std::stoi(istring);
-			safegetline(rfile, istring);
-			lm->frbackw[1] = std::stoi(istring);
-			safegetline(rfile, istring);
-			lm->frbackwstr = istring;
-		}
+        if (istring == "FRBACKW") {
+            safegetline(rfile, istring);
+            lm->frbackw->midi0 = std::stoi(istring);
+            safegetline(rfile, istring);
+            lm->frbackw->midi1 = std::stoi(istring);
+            safegetline(rfile, istring);
+            lm->frbackw->midiport= istring;
+            lm->frbackw->register_midi();
+        }
+        if (istring == "STOP") {
+            safegetline(rfile, istring);
+            lm->stop->midi0 = std::stoi(istring);
+            safegetline(rfile, istring);
+            lm->stop->midi1 = std::stoi(istring);
+            safegetline(rfile, istring);
+            lm->stop->midiport = istring;
+            lm->stop->register_midi();
+        }
+        if (istring == "LOOP") {
+            safegetline(rfile, istring);
+            lm->loop->midi0 = std::stoi(istring);
+            safegetline(rfile, istring);
+            lm->loop->midi1 = std::stoi(istring);
+            safegetline(rfile, istring);
+            lm->loop->midiport = istring;
+            lm->loop->register_midi();
+        }
 		if (istring == "SPEED") {
 			safegetline(rfile, istring);
-			lm->speed[0] = std::stoi(istring);
+			lm->speed->midi0 = std::stoi(istring);
 			safegetline(rfile, istring);
-			lm->speed[1] = std::stoi(istring);
+			lm->speed->midi1 = std::stoi(istring);
 			safegetline(rfile, istring);
-			lm->speedstr = istring;
+			lm->speed->midiport = istring;
+            lm->speed->register_midi();
 		}
 		if (istring == "SPEEDZERO") {
 			safegetline(rfile, istring);
-			lm->speedzero[0] = std::stoi(istring);
+			lm->speedzero->midi0 = std::stoi(istring);
 			safegetline(rfile, istring);
-			lm->speedzero[1] = std::stoi(istring);
+			lm->speedzero->midi1 = std::stoi(istring);
 			safegetline(rfile, istring);
-			lm->speedzerostr = istring;
+			lm->speedzero->midiport = istring;
+            lm->speedzero->register_midi();
 		}
 		if (istring == "OPACITY") {
 			safegetline(rfile, istring);
-			lm->opacity[0] = std::stoi(istring);
+			lm->opacity->midi0 = std::stoi(istring);
 			safegetline(rfile, istring);
-			lm->opacity[1] = std::stoi(istring);
+			lm->opacity->midi1 = std::stoi(istring);
 			safegetline(rfile, istring);
-			lm->opacitystr = istring;
+			lm->opacity->midiport = istring;
+            lm->opacity->register_midi();
 		}
 		if (istring == "FREEZE") {
 			safegetline(rfile, istring);
-			lm->scratchtouch[0] = std::stoi(istring);
+			lm->scratchtouch->midi0 = std::stoi(istring);
 			safegetline(rfile, istring);
-			lm->scratchtouch[1] = std::stoi(istring);
+			lm->scratchtouch->midi1 = std::stoi(istring);
 			safegetline(rfile, istring);
-			lm->scratchtouchstr = istring;
+			lm->scratchtouch->midiport = istring;
+            lm->scratchtouch->register_midi();
 		}
 		if (istring == "SCRATCH") {
 			safegetline(rfile, istring);
-			lm->scratch[0] = std::stoi(istring);
+			lm->scratch->midi0 = std::stoi(istring);
 			safegetline(rfile, istring);
-			lm->scratch[1] = std::stoi(istring);
+			lm->scratch->midi1 = std::stoi(istring);
 			safegetline(rfile, istring);
-			lm->scratchstr = istring;
+			lm->scratch->midiport = istring;
+            lm->scratch->register_midi();
 		}
 		
 		if (istring == "WORMGATE0MIDI0") {
@@ -7818,6 +7872,7 @@ void open_genmidis(std::string path) {
 		if (istring == "WORMGATEMIDIPORT") {
 			safegetline(rfile, istring);
 			mainprogram->wormgate1->midiport = istring;
+            mainprogram->wormgate1->register_midi();
 		}
 		
 		if (istring == "EFFCAT0MIDI0") {
@@ -7831,6 +7886,7 @@ void open_genmidis(std::string path) {
 		if (istring == "EFFCAT0MIDIPORT") {
 			safegetline(rfile, istring);
 			mainprogram->effcat[0]->midiport = istring;
+            mainprogram->effcat[0]->register_midi();
 		}
 		if (istring == "EFFCAT1MIDI0") {
 			safegetline(rfile, istring);
@@ -7843,6 +7899,7 @@ void open_genmidis(std::string path) {
 		if (istring == "EFFCAT1MIDIPORT") {
 			safegetline(rfile, istring);
 			mainprogram->effcat[1]->midiport = istring;
+            mainprogram->effcat[1]->register_midi();
 		}
 			
 		if (istring == "RECORDMIDI0") {
@@ -7856,6 +7913,7 @@ void open_genmidis(std::string path) {
 		if (istring == "RECORDMIDIPORT") {
 			safegetline(rfile, istring);
 			mainmix->recbut->midiport = istring;
+            mainmix->recbut->register_midi();
 		}
 			
 		if (istring == "LOOPSTATIONMIDI") {
@@ -7888,12 +7946,16 @@ void open_genmidis(std::string path) {
 					if (istring == "LOOPSTATIONMIDIPORT:" + std::to_string(i) + ":" + std::to_string(j)) {
 						safegetline(rfile, istring);
 						ls->elems[j]->recbut->midiport = istring;
+                        ls->elems[j]->recbut->register_midi();
 						safegetline(rfile, istring);
 						ls->elems[j]->loopbut->midiport = istring;
+                        ls->elems[j]->loopbut->register_midi();
 						safegetline(rfile, istring);
 						ls->elems[j]->playbut->midiport = istring;
+                        ls->elems[j]->playbut->register_midi();
 						safegetline(rfile, istring);
 						ls->elems[j]->speed->midiport = istring;
+                        ls->elems[j]->speed->register_midi();
 					}
 				}
 			}
@@ -8328,9 +8390,9 @@ int main(int argc, char* argv[]) {
 
 
     // OSC
-    mainprogram->st = new lo::ServerThread(oscport);
-    mainprogram->st->start();
-    mainprogram->add_main_oscmethods();
+    //mainprogram->st = new lo::ServerThread(oscport);
+    //mainprogram->st->start();
+    //mainprogram->add_main_oscmethods();
 
 
     io_service io;
@@ -8486,7 +8548,7 @@ int main(int argc, char* argv[]) {
             } else if (mainprogram->pathto == "NEWPROJECT") {
                 mainprogram->currprojdir = dirname(mainprogram->path);
                 mainmix->new_state();
-                mainprogram->project->newp(mainprogram->path);
+                mainprogram->project->newp(mainprogram->path + "/" + basename(mainprogram->path) + ".ewocvj");
             } else if (mainprogram->pathto == "OPENPROJECT") {
                 std::string p = dirname(mainprogram->path);
                 mainprogram->currprojdir = dirname(p.substr(0, p.length() - 1));
@@ -8800,10 +8862,11 @@ int main(int argc, char* argv[]) {
                                 mainmix->learnparam->midi[0] = -1;
                                 mainmix->learnparam->midi[1] = -1;
                                 mainmix->learnparam->midiport = "";
+                                mainmix->learnparam->unregister_midi();
                             } else if (mainmix->learnbutton) {
                                 mainmix->learnbutton->midi[0] = -1;
                                 mainmix->learnbutton->midi[1] = -1;
-                                mainmix->learnbutton->midiport = "";
+                                mainmix->learnbutton->unregister_midi();
                             }
                             mainmix->learn = false;
                         } else mainprogram->del = 1;
@@ -8979,18 +9042,18 @@ int main(int argc, char* argv[]) {
                     int count = 0;
                     while (1) {
                         path = mainprogram->currprojdir + "/" + name;
-                        if (!exists(path + ".ewocvj")) {
+                        if (!exists(path)) {
                             break;
                         }
                         count++;
                         name = remove_version(name) + "_" + std::to_string(count);
                     }
                     mainprogram->get_outname("New project", "application/ewocvj2-project",
-                                             boost::filesystem::absolute(reqdir + "/" + name + ".ewocvj").generic_string
+                                             boost::filesystem::absolute(reqdir + "/" + name).generic_string
                                              ());
                     if (mainprogram->path != "") {
                         SDL_GL_MakeCurrent(mainprogram->mainwindow, glc);
-                        mainprogram->project->newp(mainprogram->path);
+                        mainprogram->project->newp(mainprogram->path + "/" + basename(mainprogram->path) + ".ewocvj");
                         mainprogram->currprojdir = dirname(mainprogram->path);
                         mainprogram->path = "";
                         mainprogram->startloop = true;
