@@ -326,33 +326,87 @@ Program::Program() {
 	
 	this->cwbox = new Box;
 
-	this->toscreen = new Button(false);
-	this->toscreen->toggle = 0;
-	this->buttons.push_back(this->toscreen);
-	this->toscreen->name[0] = "SEND";
-	this->toscreen->name[1] = "SEND";
-	this->toscreen->box->vtxcoords->x1 = -0.3;
-	this->toscreen->box->vtxcoords->y1 = -1.0f + this->monh;
-	this->toscreen->box->vtxcoords->w = 0.3 / 2.0;
-	this->toscreen->box->vtxcoords->h = 0.3 / 3.0;
-	this->toscreen->box->upvtxtoscr();
-	this->toscreen->box->tooltiptitle = "Send preview streams to output ";
-	this->toscreen->box->tooltip = "Leftclick sends/copies the streams being previewed to the output streams ";
-	
-	this->backtopre = new Button(false);
-	this->backtopre->toggle = 0;
-	this->buttons.push_back(this->backtopre);
-	this->backtopre->name[0] = "SEND";
-	this->backtopre->name[1] = "SEND";
-	this->backtopre->box->vtxcoords->x1 = -0.3;
-	this->backtopre->box->vtxcoords->y1 = -1.0f + this->monh - 0.1f;
-	this->backtopre->box->vtxcoords->w = 0.15f;
-	this->backtopre->box->vtxcoords->h = 0.1f;
-	this->backtopre->box->upvtxtoscr();
-	this->backtopre->box->tooltiptitle = "Send output streams to preview ";
-	this->backtopre->box->tooltip = "Leftclick sends/copies the streams being output back into the preview streams ";
-	
-	this->modusbut = new Button(false);
+    this->toscreenA = new Button(false);
+    this->toscreenA->toggle = 0;
+    this->buttons.push_back(this->toscreenA);
+    this->toscreenA->name[0] = "SEND";
+    this->toscreenA->name[1] = "SEND";
+    this->toscreenA->box->vtxcoords->x1 = -0.3;
+    this->toscreenA->box->vtxcoords->y1 = -1.0f + this->monh / 2.0f;
+    this->toscreenA->box->vtxcoords->w = 0.3 / 2.0;
+    this->toscreenA->box->vtxcoords->h = 0.3 / 3.0;
+    this->toscreenA->box->upvtxtoscr();
+    this->toscreenA->box->tooltiptitle = "Send preview deck A stream to output ";
+    this->toscreenA->box->tooltip = "Leftclick sends/copies the deck A stream being previewed to the output streams ";
+
+    this->toscreenB = new Button(false);
+    this->toscreenB->toggle = 0;
+    this->buttons.push_back(this->toscreenB);
+    this->toscreenB->name[0] = "SEND";
+    this->toscreenB->name[1] = "SEND";
+    this->toscreenB->box->vtxcoords->x1 = 0.15;
+    this->toscreenB->box->vtxcoords->y1 = -1.0f + this->monh / 2.0f;
+    this->toscreenB->box->vtxcoords->w = 0.3 / 2.0;
+    this->toscreenB->box->vtxcoords->h = 0.3 / 3.0;
+    this->toscreenB->box->upvtxtoscr();
+    this->toscreenB->box->tooltiptitle = "Send preview deck B stream to output ";
+    this->toscreenB->box->tooltip = "Leftclick sends/copies the deck B stream being previewed to the output streams ";
+
+    this->toscreenM = new Button(false);
+    this->toscreenM->toggle = 0;
+    this->buttons.push_back(this->toscreenM);
+    this->toscreenM->name[0] = "SEND";
+    this->toscreenM->name[1] = "SEND";
+    this->toscreenM->box->vtxcoords->x1 = 0.15;
+    this->toscreenM->box->vtxcoords->y1 = -1.0f + this->monh * 2.0f - 0.1f;
+    this->toscreenM->box->vtxcoords->w = 0.3 / 2.0;
+    this->toscreenM->box->vtxcoords->h = 0.3 / 3.0;
+    this->toscreenM->box->upvtxtoscr();
+    this->toscreenM->box->tooltiptitle = "Send entire preview stream to output ";
+    this->toscreenM->box->tooltip = "Leftclick sends/copies the entire stream being previewed to the output streams ";
+
+
+    this->backtopreA = new Button(false);
+    this->backtopreA->toggle = 0;
+    this->buttons.push_back(this->backtopreA);
+    this->backtopreA->name[0] = "SEND";
+    this->backtopreA->name[1] = "SEND";
+    this->backtopreA->box->vtxcoords->x1 = -0.3;
+    this->backtopreA->box->vtxcoords->y1 = -1.0f + this->monh / 2.0f - 0.1f;
+    this->backtopreA->box->vtxcoords->w = 0.15f;
+    this->backtopreA->box->vtxcoords->h = 0.1f;
+    this->backtopreA->box->upvtxtoscr();
+    this->backtopreA->box->tooltiptitle = "Send output streams to preview ";
+    this->backtopreA->box->tooltip = "Leftclick sends/copies the streams being output back into the preview streams ";
+
+    this->backtopreB = new Button(false);
+    this->backtopreB->toggle = 0;
+    this->buttons.push_back(this->backtopreB);
+    this->backtopreB->name[0] = "SEND";
+    this->backtopreB->name[1] = "SEND";
+    this->backtopreB->box->vtxcoords->x1 = 0.15;
+    this->backtopreB->box->vtxcoords->y1 = -1.0f + this->monh / 2.0f - 0.1f;
+    this->backtopreB->box->vtxcoords->w = 0.15f;
+    this->backtopreB->box->vtxcoords->h = 0.1f;
+    this->backtopreB->box->upvtxtoscr();
+    this->backtopreB->box->tooltiptitle = "Send output streams to preview ";
+    this->backtopreB->box->tooltip = "Leftclick sends/copies the streams being output back into the preview streams ";
+
+    this->backtopreM = new Button(false);
+    this->backtopreM->toggle = 0;
+    this->buttons.push_back(this->backtopreM);
+    this->backtopreM->name[0] = "SEND";
+    this->backtopreM->name[1] = "SEND";
+    this->backtopreM->box->vtxcoords->x1 = -0.3;
+    this->backtopreM->box->vtxcoords->y1 = -1.0f + this->monh * 2.0f - 0.1f;
+    this->backtopreM->box->vtxcoords->w = 0.15f;
+    this->backtopreM->box->vtxcoords->h = 0.1f;
+    this->backtopreM->box->upvtxtoscr();
+    this->backtopreM->box->tooltiptitle = "Send entire output stream to preview ";
+    this->backtopreM->box->tooltip = "Leftclick sends/copies the entire stream being output back into the preview streams ";
+
+
+    this->modusbut = new Button(false);
 	this->modusbut->toggle = 1;
 	this->buttons.push_back(this->modusbut);
 	this->modusbut->name[0] = "LIVE MODUS";
@@ -3704,29 +3758,74 @@ void Program::handle_lpstmenu() {
 void Program::preview_modus_buttons() {
 	// Draw and handle buttons
 	if (mainprogram->prevmodus) {
-		mainprogram->toscreen->handle();
-		if (mainprogram->toscreen->toggled()) {
-			mainprogram->toscreen->value = 0;
-			mainprogram->toscreen->oldvalue = 0;
-			// SEND UP button copies preview set entirely to comp set
-			mainmix->copy_to_comp(true);
-		}
-		Box* box = mainprogram->toscreen->box;
-		register_triangle_draw(white, white, box->vtxcoords->x1 + box->vtxcoords->w / 2.0f + 0.0117f, box->vtxcoords->y1 + 0.0225f, 0.0165f, 0.0312f, DOWN, CLOSED);
-		render_text(mainprogram->toscreen->name[0], white, box->vtxcoords->x1 + 0.0117f, box->vtxcoords->y1 + 0.0225f, 0.0006f, 0.001f);
+        mainprogram->toscreenA->handle();
+        if (mainprogram->toscreenA->toggled()) {
+            mainprogram->toscreenA->value = 0;
+            mainprogram->toscreenA->oldvalue = 0;
+            // SEND UP button copies preview set entirely to comp set
+            mainmix->copy_to_comp(true, false, true);
+        }
+        Box* box = mainprogram->toscreenA->box;
+        register_triangle_draw(white, white, box->vtxcoords->x1 + box->vtxcoords->w / 2.0f + 0.0117f, box->vtxcoords->y1 + 0.0225f, 0.0165f, 0.0312f, DOWN, CLOSED);
+        render_text(mainprogram->toscreenA->name[0], white, box->vtxcoords->x1 + 0.0117f, box->vtxcoords->y1 + 0.0225f, 0.0006f, 0.001f);
+
+        mainprogram->toscreenB->handle();
+        if (mainprogram->toscreenB->toggled()) {
+            mainprogram->toscreenB->value = 0;
+            mainprogram->toscreenB->oldvalue = 0;
+            // SEND UP button copies preview set entirely to comp set
+            mainmix->copy_to_comp(false, true, true);
+        }
+        box = mainprogram->toscreenB->box;
+        register_triangle_draw(white, white, box->vtxcoords->x1 + box->vtxcoords->w / 2.0f + 0.0117f, box->vtxcoords->y1 + 0.0225f, 0.0165f, 0.0312f, DOWN, CLOSED);
+        render_text(mainprogram->toscreenB->name[0], white, box->vtxcoords->x1 + 0.0117f, box->vtxcoords->y1 + 0.0225f, 0.0006f, 0.001f);
+        
+        mainprogram->toscreenM->handle();
+        if (mainprogram->toscreenM->toggled()) {
+            mainprogram->toscreenM->value = 0;
+            mainprogram->toscreenM->oldvalue = 0;
+            // SEND UP button copies preview set entirely to comp set
+            mainmix->copy_to_comp(true, true, true);
+        }
+        box = mainprogram->toscreenM->box;
+        register_triangle_draw(white, white, box->vtxcoords->x1 + box->vtxcoords->w / 2.0f + 0.0117f, box->vtxcoords->y1 + 0.0225f, 0.0165f, 0.0312f, DOWN, CLOSED);
+        render_text(mainprogram->toscreenM->name[0], white, box->vtxcoords->x1 + 0.0117f, box->vtxcoords->y1 + 0.0225f, 0.0006f, 0.001f);
 	}
 	if (mainprogram->prevmodus) {
-		mainprogram->backtopre->handle();
-		if (mainprogram->backtopre->toggled()) {
-			mainprogram->backtopre->value = 0;
-			mainprogram->backtopre->oldvalue = 0;
-			// SEND DOWN button copies comp set entirely back to preview set
-			mainmix->copy_to_comp(false);
-		}
-		Box* box = mainprogram->backtopre->box;
-		register_triangle_draw(white, white, box->vtxcoords->x1 + box->vtxcoords->w / 2.0f + 0.0117f, box->vtxcoords->y1 + 0.0225f, 0.0165f, 0.0312f, UP, CLOSED);
-		render_text(mainprogram->backtopre->name[0], white, mainprogram->backtopre->box->vtxcoords->x1 + 0.0117f, mainprogram->backtopre->box->vtxcoords->y1 + 0.0225f, 0.0006, 0.001);
-	}
+        mainprogram->backtopreA->handle();
+        if (mainprogram->backtopreA->toggled()) {
+            mainprogram->backtopreA->value = 0;
+            mainprogram->backtopreA->oldvalue = 0;
+            // SEND DOWN button copies comp set entirely back to preview set
+            mainmix->copy_to_comp(true, false, false);
+        }
+        Box* box = mainprogram->backtopreA->box;
+        register_triangle_draw(white, white, box->vtxcoords->x1 + box->vtxcoords->w / 2.0f + 0.0117f, box->vtxcoords->y1 + 0.0225f, 0.0165f, 0.0312f, UP, CLOSED);
+        render_text(mainprogram->backtopreA->name[0], white, mainprogram->backtopreA->box->vtxcoords->x1 + 0.0117f, mainprogram->backtopreA->box->vtxcoords->y1 + 0.0225f, 0.0006, 0.001);
+
+        mainprogram->backtopreB->handle();
+        if (mainprogram->backtopreB->toggled()) {
+            mainprogram->backtopreB->value = 0;
+            mainprogram->backtopreB->oldvalue = 0;
+            // SEND DOWN button copies comp set entirely back to preview set
+            mainmix->copy_to_comp(false, true, false);
+        }
+        box = mainprogram->backtopreB->box;
+        register_triangle_draw(white, white, box->vtxcoords->x1 + box->vtxcoords->w / 2.0f + 0.0117f, box->vtxcoords->y1 + 0.0225f, 0.0165f, 0.0312f, UP, CLOSED);
+        render_text(mainprogram->backtopreB->name[0], white, mainprogram->backtopreB->box->vtxcoords->x1 + 0.0117f, mainprogram->backtopreB->box->vtxcoords->y1 + 0.0225f, 0.0006, 0.001);
+
+        mainprogram->backtopreM->handle();
+        if (mainprogram->backtopreM->toggled()) {
+            mainprogram->backtopreM->value = 0;
+            mainprogram->backtopreM->oldvalue = 0;
+            // SEND DOWN button copies comp set entirely back to preview set
+            mainmix->copy_to_comp(true, true, false);
+        }
+        box = mainprogram->backtopreM->box;
+        register_triangle_draw(white, white, box->vtxcoords->x1 + box->vtxcoords->w / 2.0f + 0.0117f, box->vtxcoords->y1 + 0.0225f, 0.0165f, 0.0312f, UP, CLOSED);
+        render_text(mainprogram->backtopreM->name[0], white, mainprogram->backtopreM->box->vtxcoords->x1 + 0.0117f, mainprogram->backtopreM->box->vtxcoords->y1 + 0.0225f, 0.0006, 0.001);
+
+    }
 
 	mainprogram->modusbut->handle();
 	if (mainprogram->modusbut->toggled()) {

@@ -5340,33 +5340,42 @@ void Mixer::set_values(Layer *clay, Layer *lay, bool open) {
 }
 
 
-void Mixer::copy_to_comp(bool comp) {
-    mainmix->wipe[comp] = mainmix->wipe[!comp];
-    mainmix->wipedir[comp] = mainmix->wipedir[!comp];
-    mainmix->wipex[comp]->value = mainmix->wipex[!comp]->value;
-    mainmix->wipey[comp]->value = mainmix->wipey[!comp]->value;
-	if (comp) {
-		mainmix->crossfadecomp->value = mainmix->crossfade->value;
-	}
-	else {
-		mainmix->crossfade->value = mainmix->crossfadecomp->value;
-	}
+void Mixer::copy_to_comp(bool deckA, bool deckB, bool comp) {
+    if (deckA && deckB) {
+        mainmix->wipe[comp] = mainmix->wipe[!comp];
+        mainmix->wipedir[comp] = mainmix->wipedir[!comp];
+        mainmix->wipex[comp]->value = mainmix->wipex[!comp]->value;
+        mainmix->wipey[comp]->value = mainmix->wipey[!comp]->value;
+        if (comp) {
+            mainmix->crossfadecomp->value = mainmix->crossfade->value;
+        } else {
+            mainmix->crossfade->value = mainmix->crossfadecomp->value;
+        }
+    }
 
 	bool bupm = mainprogram->prevmodus;
     mainprogram->prevmodus = comp;
     if (comp) loopstation = lp;
     else loopstation = lpc;
-    mainmix->mousedeck = 0;
-    mainmix->do_save_deck(mainprogram->temppath + "copytocompdeckA", false, true);
-    mainmix->mousedeck = 1;
-    mainmix->do_save_deck(mainprogram->temppath + "copytocompdeckB", false, true);
+    if (deckA) {
+        mainmix->mousedeck = 0;
+        mainmix->do_save_deck(mainprogram->temppath + "copytocompdeckA", false, true);
+    }
+    if (deckB) {
+        mainmix->mousedeck = 1;
+        mainmix->do_save_deck(mainprogram->temppath + "copytocompdeckB", false, true);
+    }
     mainprogram->prevmodus = !comp;
     if (comp) loopstation = lpc;
     else loopstation = lp;
-    mainmix->mousedeck = 0;
-    mainmix->open_deck(mainprogram->temppath + "copytocompdeckA.deck", true);
-    mainmix->mousedeck = 1;
-    mainmix->open_deck(mainprogram->temppath + "copytocompdeckB.deck", true);
+    if (deckA) {
+        mainmix->mousedeck = 0;
+        mainmix->open_deck(mainprogram->temppath + "copytocompdeckA.deck", true);
+    }
+    if (deckB) {
+        mainmix->mousedeck = 1;
+        mainmix->open_deck(mainprogram->temppath + "copytocompdeckB.deck", true);
+    }
     mainprogram->prevmodus = bupm;
     if (bupm) loopstation = lp;
     else loopstation = lpc;
@@ -5532,32 +5541,84 @@ void Mixer::open_state(const std::string &path) {
             if (mainprogram->prevmodus) mainmix->currlay[!mainprogram->prevmodus] = bulay;
             if (mainprogram->prevmodus) mainmix->currlays[!mainprogram->prevmodus] = bulays;
 		}
-		if (istring == "TOSCREENMIDI0") {
-			safegetline(rfile, istring);
-			mainprogram->toscreen->midi[0] = std::stoi(istring);
-		}
-		if (istring == "TOSCREENMIDI1") {
-			safegetline(rfile, istring);
-			mainprogram->toscreen->midi[1] = std::stoi(istring);
-		}
-		if (istring == "TOSCREENMIDIPORT") {
-			safegetline(rfile, istring);
-			mainprogram->toscreen->midiport = istring;
-            mainprogram->toscreen->register_midi();
-		}
-		if (istring == "BACKTOPREMIDI0") {
-			safegetline(rfile, istring);
-			mainprogram->backtopre->midi[0] = std::stoi(istring);
-		}
-		if (istring == "BACKTOPREMIDI1") {
-			safegetline(rfile, istring);
-			mainprogram->backtopre->midi[1] = std::stoi(istring);
-		}
-		if (istring == "BACKTOPREMIDIPORT") {
-			safegetline(rfile, istring);
-			mainprogram->backtopre->midiport = istring;
-            mainprogram->backtopre->register_midi();
-		}
+        if (istring == "TOSCREENAMIDI0") {
+            safegetline(rfile, istring);
+            mainprogram->toscreenA->midi[0] = std::stoi(istring);
+        }
+        if (istring == "TOSCREENAMIDI1") {
+            safegetline(rfile, istring);
+            mainprogram->toscreenA->midi[1] = std::stoi(istring);
+        }
+        if (istring == "TOSCREENAMIDIPORT") {
+            safegetline(rfile, istring);
+            mainprogram->toscreenA->midiport = istring;
+            mainprogram->toscreenA->register_midi();
+        }
+        if (istring == "TOSCREENBMIDI0") {
+            safegetline(rfile, istring);
+            mainprogram->toscreenB->midi[0] = std::stoi(istring);
+        }
+        if (istring == "TOSCREENBMIDI1") {
+            safegetline(rfile, istring);
+            mainprogram->toscreenB->midi[1] = std::stoi(istring);
+        }
+        if (istring == "TOSCREENBMIDIPORT") {
+            safegetline(rfile, istring);
+            mainprogram->toscreenB->midiport = istring;
+            mainprogram->toscreenB->register_midi();
+        }
+        if (istring == "TOSCREENMMIDI0") {
+            safegetline(rfile, istring);
+            mainprogram->toscreenM->midi[0] = std::stoi(istring);
+        }
+        if (istring == "TOSCREENMMIDI1") {
+            safegetline(rfile, istring);
+            mainprogram->toscreenM->midi[1] = std::stoi(istring);
+        }
+        if (istring == "TOSCREENMMIDIPORT") {
+            safegetline(rfile, istring);
+            mainprogram->toscreenM->midiport = istring;
+            mainprogram->toscreenM->register_midi();
+        }
+        if (istring == "BACKTOPREAMIDI0") {
+            safegetline(rfile, istring);
+            mainprogram->backtopreA->midi[0] = std::stoi(istring);
+        }
+        if (istring == "BACKTOPREAMIDI1") {
+            safegetline(rfile, istring);
+            mainprogram->backtopreA->midi[1] = std::stoi(istring);
+        }
+        if (istring == "BACKTOPREAMIDIPORT") {
+            safegetline(rfile, istring);
+            mainprogram->backtopreA->midiport = istring;
+            mainprogram->backtopreA->register_midi();
+        }
+        if (istring == "BACKTOPREBMIDI0") {
+            safegetline(rfile, istring);
+            mainprogram->backtopreB->midi[0] = std::stoi(istring);
+        }
+        if (istring == "BACKTOPREBMIDI1") {
+            safegetline(rfile, istring);
+            mainprogram->backtopreB->midi[1] = std::stoi(istring);
+        }
+        if (istring == "BACKTOPREBMIDIPORT") {
+            safegetline(rfile, istring);
+            mainprogram->backtopreB->midiport = istring;
+            mainprogram->backtopreB->register_midi();
+        }
+        if (istring == "BACKTOPREMMIDI0") {
+            safegetline(rfile, istring);
+            mainprogram->backtopreM->midi[0] = std::stoi(istring);
+        }
+        if (istring == "BACKTOPREMMIDI1") {
+            safegetline(rfile, istring);
+            mainprogram->backtopreM->midi[1] = std::stoi(istring);
+        }
+        if (istring == "BACKTOPREMMIDIPORT") {
+            safegetline(rfile, istring);
+            mainprogram->backtopreM->midiport = istring;
+            mainprogram->backtopreM->register_midi();
+        }
 		if (istring == "MODUSBUTMIDI0") {
 			safegetline(rfile, istring);
 			mainprogram->modusbut->midi[0] = std::stoi(istring);
@@ -5628,24 +5689,60 @@ void Mixer::do_save_state(const std::string& path, bool autosave) {
 	wfile << "PREVMODUS\n";
 	wfile << std::to_string(mainprogram->prevmodus);
 	wfile << "\n";
-	wfile << "TOSCREENMIDI0\n";
-	wfile << std::to_string(mainprogram->toscreen->midi[0]);
-	wfile << "\n";
-	wfile << "TOSCREENMIDI1\n";
-	wfile << std::to_string(mainprogram->toscreen->midi[1]);
-	wfile << "\n";
-	wfile << "TOSCREENMIDIPORT\n";
-	wfile << mainprogram->toscreen->midiport;
-	wfile << "\n";
-	wfile << "BACKTOPREMIDI0\n";
-	wfile << std::to_string(mainprogram->backtopre->midi[0]);
-	wfile << "\n";
-	wfile << "BACKTOPREMIDI1\n";
-	wfile << std::to_string(mainprogram->backtopre->midi[1]);
-	wfile << "\n";
-	wfile << "BACKTOPREMIDIPORT\n";
-	wfile << mainprogram->backtopre->midiport;
-	wfile << "\n";
+    wfile << "TOSCREENAMIDI0\n";
+    wfile << std::to_string(mainprogram->toscreenA->midi[0]);
+    wfile << "\n";
+    wfile << "TOSCREENAMIDI1\n";
+    wfile << std::to_string(mainprogram->toscreenA->midi[1]);
+    wfile << "\n";
+    wfile << "TOSCREENAMIDIPORT\n";
+    wfile << mainprogram->toscreenA->midiport;
+    wfile << "\n";
+    wfile << "TOSCREENBMIDI0\n";
+    wfile << std::to_string(mainprogram->toscreenB->midi[0]);
+    wfile << "\n";
+    wfile << "TOSCREENBMIDI1\n";
+    wfile << std::to_string(mainprogram->toscreenB->midi[1]);
+    wfile << "\n";
+    wfile << "TOSCREENBMIDIPORT\n";
+    wfile << mainprogram->toscreenB->midiport;
+    wfile << "\n";
+    wfile << "TOSCREENMMIDI0\n";
+    wfile << std::to_string(mainprogram->toscreenM->midi[0]);
+    wfile << "\n";
+    wfile << "TOSCREENMMIDI1\n";
+    wfile << std::to_string(mainprogram->toscreenM->midi[1]);
+    wfile << "\n";
+    wfile << "TOSCREENMMIDIPORT\n";
+    wfile << mainprogram->toscreenM->midiport;
+    wfile << "\n";
+    wfile << "BACKTOPREAMIDI0\n";
+    wfile << std::to_string(mainprogram->backtopreA->midi[0]);
+    wfile << "\n";
+    wfile << "BACKTOPREAMIDI1\n";
+    wfile << std::to_string(mainprogram->backtopreA->midi[1]);
+    wfile << "\n";
+    wfile << "BACKTOPREAMIDIPORT\n";
+    wfile << mainprogram->backtopreA->midiport;
+    wfile << "\n";
+    wfile << "BACKTOPREBMIDI0\n";
+    wfile << std::to_string(mainprogram->backtopreB->midi[0]);
+    wfile << "\n";
+    wfile << "BACKTOPREBMIDI1\n";
+    wfile << std::to_string(mainprogram->backtopreB->midi[1]);
+    wfile << "\n";
+    wfile << "BACKTOPREBMIDIPORT\n";
+    wfile << mainprogram->backtopreB->midiport;
+    wfile << "\n";
+    wfile << "BACKTOPREMMIDI0\n";
+    wfile << std::to_string(mainprogram->backtopreM->midi[0]);
+    wfile << "\n";
+    wfile << "BACKTOPREMMIDI1\n";
+    wfile << std::to_string(mainprogram->backtopreM->midi[1]);
+    wfile << "\n";
+    wfile << "BACKTOPREMMIDIPORT\n";
+    wfile << mainprogram->backtopreM->midiport;
+    wfile << "\n";
 	wfile << "MODUSBUTMIDI0\n";
 	wfile << std::to_string(mainprogram->modusbut->midi[0]);
 	wfile << "\n";

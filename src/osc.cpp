@@ -39,7 +39,7 @@ void Program::add_main_oscmethods() {
 	mainprogram->st->add_method("/mix/output/wipe/xpos", "i", [](lo_arg **argv, int){mainmix->wipex[1]->value = argv[0]->i;});
 	mainprogram->st->add_method("/mix/output/wipe/ypos", "i", [](lo_arg **argv, int){mainmix->wipey[1]->value = argv[0]->i;});
 	// makelive, back, previewmodes
-	mainprogram->st->add_method("/mix/makelive", "", [](){mainmix->copy_to_comp(true);});
-	mainprogram->st->add_method("/mix/back", "", [](){mainmix->copy_to_comp(false);});
+	mainprogram->st->add_method("/mix/makelive", "", [](){mainmix->copy_to_comp(true, true, true);});
+	mainprogram->st->add_method("/mix/back", "", [](){mainmix->copy_to_comp(true, true, false);});
 	mainprogram->st->add_method("/mix/effectpreview", "i",[](lo_arg **argv, int){mainprogram->prevmodus = argv[0]->i;});
 }

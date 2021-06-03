@@ -15,20 +15,31 @@
 #include "bins.h"
 
 LoopStation::LoopStation() {
+    this->upscrbox = new Box;
+    this->upscrbox->vtxcoords->y1 = 0.4f - 0.075f * 0;
+    this->upscrbox->vtxcoords->w = 0.04f;
+    this->upscrbox->vtxcoords->h = 0.075f;
+    this->upscrbox->upvtxtoscr();
+    this->upscrbox->tooltiptitle = "Loopstation scroll up box ";
+    this->upscrbox->tooltip = "Leftclicking this box scrolls the loopstation element list upwards. ";
+    this->downscrbox = new Box;
+    this->downscrbox->vtxcoords->y1 = 0.4f - 0.075f * 7;
+    this->downscrbox->vtxcoords->w = 0.04f;
+    this->downscrbox->vtxcoords->h = 0.075f;
+    this->downscrbox->upvtxtoscr();
+    this->downscrbox->tooltiptitle = "Loopstation scroll down box ";
+    this->downscrbox->tooltip = "Leftclicking this box scrolls the loopstation element list downwards. ";
+
 	for (int i = 0; i < this->numelems; i++) {
 		LoopStationElement *elem = this->add_elem();
-		elem->colbox->acolor[0] = this->colvals[i*3];
-		elem->colbox->acolor[1] = this->colvals[i*3 + 1];
-		elem->colbox->acolor[2] = this->colvals[i*3 + 2];
-		elem->colbox->acolor[3] = 1.0f;
 	}
+    this->add_elem();  // scroll element
 	this->init();
 }
 
 void LoopStation::init() {
 	for (int i = 0; i < this->elems.size(); i++) {
 		this->elems[i]->init();
-		this->elems[i]->lpst = this;
 	}
 	this->parelemmap.clear();
 	this->butelemmap.clear();
@@ -89,17 +100,17 @@ LoopStationElement::LoopStationElement() {
 	this->colbox->upvtxtoscr();
 	this->colbox->tooltiptitle = "Loopstation row color code ";
 	this->colbox->tooltip = "Leftclicking this box shows colored boxes on the layer stack scroll strips for layers that contain parameters automated by this loopstation row. A white circle is drawn here when this loopstation row contains data. ";
-	this->box = new Box;
+    this->box = new Box;
     this->box->lcolor[0] = 0.4f;
     this->box->lcolor[1] = 0.4f;
     this->box->lcolor[2] = 0.4f;
     this->box->lcolor[3] = 1.0f;
-	this->box->vtxcoords->w = 0.02f;
-	this->box->vtxcoords->h = 0.075f;
-	this->box->upvtxtoscr();
-	this->box->tooltiptitle = "Loopstation row select current ";
-	this->box->tooltip = "Leftclicking this box selects this loopstation row for use of R(record), L(loop play this row) and S(one shot play this row) keyboard shortcuts. ";
-}
+    this->box->vtxcoords->w = 0.02f;
+    this->box->vtxcoords->h = 0.075f;
+    this->box->upvtxtoscr();
+    this->box->tooltiptitle = "Loopstation row select current ";
+    this->box->tooltip = "Leftclicking this box selects this loopstation row for use of R(record), L(loop play this row) and S(one shot play this row) keyboard shortcuts. ";
+ }
 
 LoopStationElement::~LoopStationElement() {
 	delete this->recbut;
@@ -120,17 +131,28 @@ LoopStationElement* LoopStation::add_elem() {
 	LoopStationElement *elem = new LoopStationElement;
 	this->elems.push_back(elem);
 	elem->pos = this->elems.size() - 1;
+	elem->lpst = this;
 	// float values are colors for circles in boxes
 	this->setbut(elem->recbut, 0.8f, 0.0f, 0.0f);
 	this->setbut(elem->loopbut, 0.0f, 0.8f, 0.0f);
 	this->setbut(elem->playbut, 0.0f, 0.0f, 0.8f);
+    elem->colbox->acolor[0] = this->colvals[(elem->pos % 8) * 3];
+    elem->colbox->acolor[1] = this->colvals[(elem->pos % 8) * 3 + 1];
+    elem->colbox->acolor[2] = this->colvals[(elem->pos % 8) * 3 + 2];
+    elem->colbox->acolor[3] = 1.0f;
 	return elem;
 }
 
 void LoopStation::handle() {
-	for (int i = 0; i < this->elems.size(); i++) {
-		elems[i]->handle();
+    this->scrpos = mainprogram->handle_scrollboxes(this->upscrbox, this->downscrbox, this->elems.size(), this->scrpos, 8);
+    for (int i = 0; this->elems.size() - this->scrpos < 9; i++) {
+	    this->add_elem();
 	}
+    for (int i = this->scrpos; i < this->scrpos + this->numelems; i++) {
+		this->elems[i]->handle();
+	}
+    this->upscrbox->vtxcoords->x1 = this->elems[0]->colbox->vtxcoords->x1 + 0.0465f;
+    this->downscrbox->vtxcoords->x1 = this->elems[0]->colbox->vtxcoords->x1 + 0.0465f;
 	render_text("Loopstation", white, elems[0]->recbut->box->vtxcoords->x1 + 0.015f,
              elems[0]->recbut->box->vtxcoords->y1 + elems[0]->recbut->box->vtxcoords->h * 2.0f - 0.045f, 0.0005f, 0.0008f);
 }
@@ -183,12 +205,12 @@ void LoopStationElement::visualize() {
 	this->playbut->box->vtxcoords->x1 = -0.8f + 1.1f * !mainmix->currlay[!mainprogram->prevmodus]->deck + this->playbut->box->vtxcoords->w * 2.0f;
 	this->speed->box->vtxcoords->x1 = -0.8f + 1.1f * !mainmix->currlay[!mainprogram->prevmodus]->deck + this->recbut->box->vtxcoords->w * 3.0f;
 	this->colbox->vtxcoords->x1 = -0.8f + 1.1f * !mainmix->currlay[!mainprogram->prevmodus]->deck + this->recbut->box->vtxcoords->w * 3.0f + this->speed->box->vtxcoords->w;
-	this->recbut->box->vtxcoords->y1 = 0.4f - 0.075f * this->pos;
-	this->loopbut->box->vtxcoords->y1 = 0.4f - 0.075f * this->pos;
-	this->playbut->box->vtxcoords->y1 = 0.4f - 0.075f * this->pos;
-	this->speed->box->vtxcoords->y1 = 0.4f - 0.075f * this->pos;
-	this->colbox->vtxcoords->y1 = 0.4f - 0.075f * this->pos;
-	this->box->vtxcoords->y1 = 0.4f - 0.075f * this->pos;
+	this->recbut->box->vtxcoords->y1 = 0.4f - 0.075f * (this->pos - this->lpst->scrpos);
+	this->loopbut->box->vtxcoords->y1 = 0.4f - 0.075f * (this->pos - this->lpst->scrpos);
+	this->playbut->box->vtxcoords->y1 = 0.4f - 0.075f * (this->pos - this->lpst->scrpos);
+	this->speed->box->vtxcoords->y1 = 0.4f - 0.075f * (this->pos - this->lpst->scrpos);
+	this->colbox->vtxcoords->y1 = 0.4f - 0.075f * (this->pos - this->lpst->scrpos);
+	this->box->vtxcoords->y1 = 0.4f - 0.075f * (this->pos - this->lpst->scrpos);
 	this->recbut->box->upvtxtoscr();
 	this->loopbut->box->upvtxtoscr();
 	this->playbut->box->upvtxtoscr();

@@ -8263,8 +8263,12 @@ int main(int argc, char* argv[]) {
     mainprogram->nodesmain = new NodesMain;
     mainprogram->nodesmain->add_nodepages(8);
     mainprogram->nodesmain->currpage = mainprogram->nodesmain->pages[0];
-    mainprogram->toscreen->box->upvtxtoscr();
-    mainprogram->backtopre->box->upvtxtoscr();
+    mainprogram->toscreenA->box->upvtxtoscr();
+    mainprogram->toscreenB->box->upvtxtoscr();
+    mainprogram->toscreenM->box->upvtxtoscr();
+    mainprogram->backtopreA->box->upvtxtoscr();
+    mainprogram->backtopreB->box->upvtxtoscr();
+    mainprogram->backtopreM->box->upvtxtoscr();
     mainprogram->modusbut->box->upvtxtoscr();
 
 

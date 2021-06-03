@@ -34,6 +34,9 @@ class LoopStation {
 									, 0.0f, 0.0f, 0.5f
 									, 0.5f, 0.0f, 0.5f
 									, 0.0f, 0.5f, 0.5f};
+		Box *upscrbox;
+		Box *downscrbox;
+		int scrpos = 0;
 		LoopStationElement* currelem;
 		LoopStationElement* add_elem();
 		LoopStationElement* free_element();

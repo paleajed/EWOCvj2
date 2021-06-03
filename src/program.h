@@ -445,8 +445,12 @@ class Program {
 		std::vector<std::string> paths;
 		int counting;
 		std::string pathto;
-		Button *toscreen;
-		Button *backtopre;
+        Button *toscreenA;
+        Button *toscreenB;
+        Button *toscreenM;
+        Button *backtopreA;
+        Button *backtopreB;
+        Button *backtopreM;
 		Button *modusbut;
 		bool prevmodus = true;
 		BlendNode *bnodeend;
