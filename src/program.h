@@ -72,8 +72,9 @@ typedef enum
 {
 	PREF_ONOFF = 0,
 	PREF_NUMBER = 1,
-    PREF_PATH = 2,
-    PREF_PATHS = 3,
+    PREF_STRING = 2,
+    PREF_PATH = 3,
+    PREF_PATHS = 4,
 } PREF_TYPE;
 
 struct gui_line {
@@ -162,6 +163,7 @@ class Project {
 		std::string binsdir;
 		std::string recdir;
         std::string shelfdir;
+        std::string elementsdir;
         std::string autosavedir;
         std::vector<std::string> autosavelist;
         float ow = 1920.0f;
@@ -171,7 +173,8 @@ class Project {
         void save(const std::string& path);
         void autosave();
 		void do_save(const std::string& path);
-		void delete_dirs();
+        void delete_dirs(const std::string &path);
+        void copy_dirs(const std::string &path);
 		void create_dirs(const std::string &path);
 private:
 };
@@ -192,9 +195,11 @@ class PrefItem {
 		void *dest;
 		bool onoff = false;
 		int value;
-		std::string path;
+        std::string str;
+        std::string path;
 		bool renaming = false;
 		bool choosing = false;
+		bool onfile = true;
 		Box *namebox;
 		Box *valuebox;
 		Box *iconbox;
@@ -217,6 +222,11 @@ class PIMidi: public PrefCat {
 		std::vector<std::string> onnames;
 		void populate();
 		PIMidi();
+};
+
+class PIInvisible: public PrefCat {
+public:
+    PIInvisible();
 };
 
 class PIProj: public PrefCat {
@@ -247,9 +257,9 @@ class PIProg: public PrefCat {
 		
 class MidiElement {
     public:
-        int midi0;
-        int midi1;
-        std::string midiport;
+        int midi0 = -1;
+        int midi1 = -1;
+        std::string midiport = "";
         void register_midi();
         void unregister_midi();
 };
@@ -541,7 +551,8 @@ class Program {
         bool openerr = false;
 
 		SDL_Window *prefwindow = nullptr;
-		bool prefon = false;
+        bool prefon = false;
+        bool prefoff = true;
 		Preferences *prefs;
 		bool needsclick = false;
 		bool insmall;
@@ -559,7 +570,8 @@ class Program {
 		std::unordered_map <std::string, GUIString*> guitextmap;
 		std::unordered_map <std::string, GUIString*> prguitextmap;
 		std::unordered_map <std::string, GUIString*> tmguitextmap;
-		std::vector<std::wstring> livedevices;
+        std::unordered_map <std::string, std::string> devvideomap;
+        std::vector<std::wstring> livedevices;
 		std::vector<std::string> devices;
 		std::vector<std::string> busylist;
 		std::vector<Layer*> busylayers;
@@ -580,6 +592,8 @@ class Program {
 		bool gotcameras = false;
 
 		EDIT_TYPE renaming = EDIT_NONE;
+        bool renamingseat = false;
+        bool renamingip = false;
 		std::string choosedir = "";
 		std::string inputtext;
 		std::string backupname;
@@ -612,8 +626,8 @@ class Program {
 		std::string currshelffilesdir;
 		std::string currclipfilesdir;
 		std::string currbinfilesdir;
-		std::string currfilesdir;
-		std::string currstatedir;
+        std::string currfilesdir;
+        std::string currelemsdir;
 		std::string homedir;
 		std::string datadir;
 		std::string fontdir = "/usr/share/fonts";
@@ -655,6 +669,9 @@ class Program {
 		Layer* draginscrollbarlay = nullptr;
 		bool projnamechanged = false;
 		bool saveproject = false;
+        bool adaptivelprow = false;
+        bool steplprow = false;
+        bool waitonetime = false;
 
     #ifdef WINDOWS
         SOCKET sock;
@@ -667,12 +684,17 @@ class Program {
 		std::string sockname;
 		std::vector<std::string> connsocknames;
         bool server = false;
-        bool connected = false;
+        int connected = 0;
+        bool connfailed = false;
+        int connfailedmilli = 0;
         std::string seatname = "";
-        std::string serverip = "";
+        std::string oldseatname = "";
+        std::string serverip = "0.0.0.0";
         bool serveripchanged = false;
-        char localip[80];
-        struct sockaddr_in serv_addr;
+        std::string localip;
+        struct sockaddr_in serv_addr_server;
+        struct sockaddr_in serv_addr_client;
+        std::thread *clientthread;
 #ifdef WINDOWS
         std::unordered_map<std::string, SOCKET> connmap;
 #endif
@@ -683,6 +705,8 @@ class Program {
         std::condition_variable startclient;
 
         std::vector<std::string> v4l2lbdevices;
+
+        std::vector<std::string> *prefsearchdirs;
 
 		int quit_requester();
 		GLuint set_shader();
@@ -704,7 +728,6 @@ class Program {
 		float yscrtovtx(float scrcoord);
 		float xvtxtoscr(float vtxcoord);
 		float yvtxtoscr(float vtxcoord);
-		void preview_init();
 		void add_main_oscmethods();
 		bool order_paths(bool dodeckmix);
 		void handle_wormgate(bool gate);
@@ -754,6 +777,7 @@ class Program {
         char const* mime_to_tinyfds(std::string filters);
 #endif
         bool do_order_paths();
+        char* bl_recv(int sock, char *buf, size_t sz, int flags);
 };
 
 extern Globals *glob;
@@ -886,6 +910,7 @@ extern std::string remove_extension(std::string filename);
 extern std::string chop_off(std::string filename);
 extern std::string remove_version(std::string filename);
 extern std::string pathtoplatform(std::string path);
+extern void copy_dir(std::string &src, std::string &dest);
 extern bool isimage(const std::string &path);
 extern bool isvideo(const std::string &path);
 
@@ -907,5 +932,3 @@ extern void make_searchbox();
 extern std::string find_unused_filename(std::string basename, std::string path, std::string extension);
 
 extern std::string exec(const char* cmd);
-
-extern void set_nonblock(int socket);

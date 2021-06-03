@@ -38,6 +38,7 @@ class Retarget {
         Box* iconbox;
         Box* valuebox;
         Box* searchbox;
+        Box* skipbox;
 
         Retarget();
 

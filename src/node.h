@@ -127,6 +127,7 @@ class MixNode: public Node {
 		Box* outputbox = nullptr;
 		GLuint mixfbo = -1;
 		GLuint mixtex = -1;
+		bool newmixfbo = false;
 		MixNode() {}
 		MixNode(const MixNode &node);
 		~MixNode();

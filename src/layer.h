@@ -194,7 +194,6 @@ class Layer {
 		bool firsttime = true;
 		bool newframe = false;
 		bool newtexdata = false;
-		bool startup = false;
 		frame_result *decresult;
 		remaining_frames *remfr[3];
 		std::thread decoding;
@@ -262,11 +261,16 @@ class Layer {
 		int channels;
 		ALuint sampleformat;
 		BinElement *hapbinel = nullptr;
+		bool encodeload = false;
 		
 		std::unordered_map<EFFECT_TYPE, int> numoftypemap;
 		int clonesetnr = -1;
         bool isclone = false;
         Layer *isduplay = nullptr;
+
+        int oldwidth = -1;
+        int oldheight = -1;
+        int oldbpp = -1;
 
 		void display();
 		Effect* add_effect(EFFECT_TYPE type, int pos);
@@ -281,8 +285,6 @@ class Layer {
 		bool calc_texture(bool comp, bool alive);
 		void load_frame();
 		bool exchange(std::vector<Layer*>& slayers, std::vector<Layer*>& dlayers, bool deck);
-        void open_dragbinel(int i);
-        void open_dragbinel();
 		void open_files_layers();
 		void open_files_queue();
 		bool thread_vidopen();
@@ -295,12 +297,14 @@ class Layer {
 		bool find_new_live_base(int pos);
 		void set_live_base(std::string livename);
 		void deautomate();
-		Layer* next();
+        void set_inlayer(Layer* lay);
+        Layer* next();
 		Layer* prev();
+        void del();
 		Layer();
 		Layer(bool comp);
 		Layer(const Layer& lay);
-		~Layer();
+		//~Layer();
 
 
 	private:
@@ -326,8 +330,6 @@ class Scene {
 class Mixer {
 	private:
 		void do_deletelay(Layer *testlay, std::vector<Layer*> &layers, bool add);
-		void loopstation_copy(bool comp);
-		void clonesets_copy(bool comp);
 		void event_write(std::ostream &wfile, Param *par, Button *but);
 		void event_read(std::istream &rfile, Param *par, Button *but, Layer *lay);
 		void add_del_bar();
@@ -365,8 +367,7 @@ class Mixer {
 		void delete_layer(std::vector<Layer*> &layers, Layer *lay, bool add);
 		void delete_layers(std::vector<Layer*>& layers, bool alive);
 		void do_delete_layers(std::vector<Layer*> layers, bool alive);
-		void lay_copy(std::vector<Layer*> &slayers, std::vector<Layer*> &dlayers, bool comp);
-		void copy_to_comp(std::vector<Layer*> &sourcelayersA, std::vector<Layer*> &destlayersA, std::vector<Layer*> &sourcelayersB, std::vector<Layer*> &destlayersB, std::vector<Node*> &sourcenodes, std::vector<Node*> &destnodes, std::vector<MixNode*> &destmixnodes, bool comp);
+		void copy_to_comp(bool comp);
         void copy_pbos(Layer *clay, Layer *lay);
         void set_values(Layer* clay, Layer* lay, bool open);
 		void copy_effects(Layer* slay, Layer* dlay, bool comp);
@@ -396,6 +397,9 @@ class Mixer {
 		void outputmonitors_handle();
 		void layerdrag_handle();
 		void deckmixdrag_handle();
+        void open_dragbinel(Layer *lay, int i);
+        void open_dragbinel(Layer *lay);
+        void reconnect_all(std::vector<Layer*> &layers);
 		Mixer();
 		
 		std::mutex recordlock;
@@ -464,6 +468,9 @@ class Mixer {
 		float time = 0.0f;
 		float oldtime = 0.0f;
 		float cbduration = 0.0f;
+
+		bool domix;
+		int waitmixtex = 0;
 
 		std::unordered_map<int, std::unordered_map<int, std::unordered_map<std::string, registered_midi>>> midi_registrations;
 		

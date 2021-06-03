@@ -160,8 +160,6 @@ void Node::renew_texes(float ow, float oh) {
 		VideoNode* vnode = (VideoNode*)this;
 		tex = set_texes(vnode->layer->fbotex, &vnode->layer->fbo, ow, oh);
 		vnode->layer->fbotex = tex;
-		tex = set_texes(vnode->layer->fbotexintm, &vnode->layer->fbointm, ow, oh);
-		vnode->layer->fbotexintm = tex;
 	}
 	else if (this->type == EFFECT) {
 		EffectNode* enode = (EffectNode*)this;
@@ -207,7 +205,7 @@ void NodePage::connect_nodes(Node *node1, Node *node2) {
 
 void NodePage::connect_in2(Node *node1, BlendNode *node2) {
 	if (node2->in2) {
-		if (node2->in->out.size()) {
+		if (node2->in2->out.size()) {
 			if (std::find(node2->in2->out.begin(), node2->in2->out.end(), node2) != node2->in2->out.end()) {
 				node2->in2->out.erase(std::find(node2->in2->out.begin(), node2->in2->out.end(), node2));
 			}

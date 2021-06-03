@@ -9,6 +9,7 @@
 
 #include <ostream>
 #include <string>
+#include <codecvt>
 
 #include "GL/glew.h"
 #include "GL/gl.h"
@@ -189,21 +190,21 @@ rgb hsv2rgb(hsv in)
 
 
 LayMidi::LayMidi() {
-    MidiElement *play = new MidiElement;
-    MidiElement *backw = new MidiElement;
-    MidiElement *pausestop = new MidiElement;
-    MidiElement *bounce = new MidiElement;
-    MidiElement *frforw = new MidiElement;
-    MidiElement *frbackw = new MidiElement;
-    MidiElement *stop = new MidiElement;
-    MidiElement *loop = new MidiElement;
-    MidiElement *scratch = new MidiElement;
-    MidiElement *scratchtouch = new MidiElement;
-    MidiElement *speed = new MidiElement;
-    MidiElement *speedzero = new MidiElement;
-    MidiElement *opacity = new MidiElement;
-    MidiElement *setcue = new MidiElement;
-    MidiElement *tocue = new MidiElement;
+    this->play = new MidiElement;
+    this->backw = new MidiElement;
+    this->pausestop = new MidiElement;
+    this->bounce = new MidiElement;
+    this->frforw = new MidiElement;
+    this->frbackw = new MidiElement;
+    this->stop = new MidiElement;
+    this->loop = new MidiElement;
+    this->scratch = new MidiElement;
+    this->scratchtouch = new MidiElement;
+    this->speed = new MidiElement;
+    this->speedzero = new MidiElement;
+    this->opacity = new MidiElement;
+    this->setcue = new MidiElement;
+    this->tocue = new MidiElement;
 }
 
 LayMidi::~LayMidi() {
@@ -238,7 +239,7 @@ void MidiElement::register_midi() {
         rm.par->midiport = "";
         rm.par = nullptr;
     }
-    else if (rm.midielem) {
+    else if (rm.midielem && rm.midielem != this) {
         rm.midielem->midi0 = -1;
         rm.midielem->midi1= -1;
         rm.midielem->midiport = "";
@@ -283,10 +284,6 @@ Program::Program() {
     this->docpath = homedir + "/Documents/EWOCvj2/";
     this->contentpath = homedir + "/Videos/";
 #endif
-	this->currfilesdir = this->contentpath;
-	this->currclipfilesdir = this->contentpath;
-	this->currshelffilesdir = this->contentpath;
-	this->currbinfilesdir = this->contentpath;
 
 	this->numh = this->numh * glob->w / glob->h;
 	this->layh = this->layh * (glob->w / glob->h) / (1920.0f /  1080.0f);
@@ -364,10 +361,10 @@ Program::Program() {
     this->modusbut->box->lcolor[1] = 0.7f;
     this->modusbut->box->lcolor[2] = 0.7f;
     this->modusbut->box->lcolor[3] = 1.0f;
-	this->modusbut->box->vtxcoords->x1 = -0.3 - (0.3 / 2.0);
+	this->modusbut->box->vtxcoords->x1 = -0.3f - (0.3f / 2.0f);
 	this->modusbut->box->vtxcoords->y1 = -1.0f + this->monh;
-	this->modusbut->box->vtxcoords->w = 0.3 / 2.0;
-	this->modusbut->box->vtxcoords->h = 0.3 / 3.0;
+	this->modusbut->box->vtxcoords->w = 0.3f / 2.0f;
+	this->modusbut->box->vtxcoords->h = 0.3f / 3.0f;
 	this->modusbut->box->upvtxtoscr();
 	this->modusbut->box->tooltiptitle = "LIVE/PREVIEW modus switch ";
 	this->modusbut->box->tooltip = "Leftclicking toggles between preview modus (changes are previewed, then sent to/from output) and live modus (changes appear in output immediately) ";
@@ -994,10 +991,12 @@ bool Program::order_paths(bool dodeckmix) {
 	if (mainprogram->multistage == 3) {
 		if (mainprogram->openfilesshelf) {
 			// special case: reuse pathtexes as shelfelement texes
-			for (int i = 0; i < mainprogram->paths.size(); i++) {
-				ShelfElement* elem = mainmix->mouseshelf->elements[i + mainprogram->shelffileselem];
-				elem->path = mainprogram->paths[i];
-				elem->tex = mainprogram->pathtexes[i];
+			int size = mainprogram->shelffileselem + mainprogram->paths.size();
+			if (size > 16) size = 16;
+			for (int i = mainprogram->shelffileselem; i < size; i++) {
+				ShelfElement* elem = mainmix->mouseshelf->elements[i];
+				elem->path = mainprogram->paths[i - mainprogram->shelffileselem];
+				elem->tex = mainprogram->pathtexes[i- mainprogram->shelffileselem];
 			}
 			mainprogram->pathtexes.clear();
 		}
@@ -1045,8 +1044,15 @@ bool Program::do_order_paths() {
 		box->upvtxtoscr();
 		draw_box(white, black, box, -1);
 		draw_box(white, black, 0.3f, box->vtxcoords->y1, 0.1f, 0.1f, this->pathtexes[j]);
-		render_text(this->paths[j], white, -0.4f + 0.015f, box->vtxcoords->y1 + 0.075f - 0.045f, 0.00045f, 0.00075f);
-		// prepare element dragging
+        if (mainprogram->openfilesshelf && j > 15 - mainprogram->shelffileselem) {
+            render_text(this->paths[j], grey, -0.4f + 0.015f, box->vtxcoords->y1 + 0.075f - 0.045f, 0.00045f,
+                        0.00075f);
+        }
+        else {
+            render_text(this->paths[j], white, -0.4f + 0.015f, box->vtxcoords->y1 + 0.075f - 0.045f, 0.00045f,
+                        0.00075f);
+        }
+        // prepare element dragging
 		if (box->in()) {
 			std::string path = this->paths[j];
 			if (this->dragstr == "") {
@@ -1081,6 +1087,7 @@ bool Program::do_order_paths() {
 	if (applybox->in() && this->dragstr == "") {
 		if (mainprogram->orderleftmouse) {
 		    this->pathscroll = 0;
+            mainprogram->frontbatch = false;
 		    return true;
 		}
 	}
@@ -1321,6 +1328,8 @@ void Program::handle_changed_owoh() {
 
 
 void Program::handle_fullscreen() {
+    mainprogram->frontbatch = true;
+
     glBindFramebuffer(GL_FRAMEBUFFER, 0);
     glDrawBuffer(GL_BACK_LEFT);
 
@@ -1364,19 +1373,11 @@ void Program::handle_fullscreen() {
 		glUniform1i(wipe, 1);
 		glUniform1i(mixmode, 18);
 	}
-	GLint down = glGetUniformLocation(this->ShaderProgram, "down");
-	glUniform1i(down, 1);
-	glActiveTexture(GL_TEXTURE0);
-	glBindTexture(GL_TEXTURE_2D, node->mixtex);
-	glBindVertexArray(vao);
-	glDrawArrays(GL_TRIANGLE_STRIP, 0, 4);
-	mainprogram->directmode = true;
-	glUniform1i(down, 0);
+	draw_box(nullptr, nullptr, -1.0f, -1.0f, 2.0f, 2.0f, node->mixtex);
 	glUniform1i(wipe, 0);
 	glUniform1i(mixmode, 0);
 	if (this->doubleleftmouse) {
         this->fullscreen = -1;
-        mainprogram->directmode = false;
     }
 	if (this->menuactivation) {
 		this->fullscreenmenu->state = 2;
@@ -1388,7 +1389,6 @@ void Program::handle_fullscreen() {
 	int k = mainprogram->handle_menu(this->fullscreenmenu);
 	if (k == 0) {
 		this->fullscreen = -1;
-		mainprogram->directmode = false;
 	}
 	if (this->menuchosen) {
 		this->menuchosen = false;
@@ -1400,7 +1400,7 @@ void Program::handle_fullscreen() {
     glDeleteBuffers(1, &tbuf);
     glDeleteVertexArrays(1, &vao);
 
-    mainprogram->directmode = false;
+    mainprogram->frontbatch = false;
 }
 
 
@@ -1747,7 +1747,7 @@ void Program::shelf_miditriggering() {
             if (elem->type == ELEM_FILE) {
                 clays[k] = clays[k]->open_video(0, elem->path, true);
                 mainmix->currlay[!mainprogram->prevmodus] = clays[k];
-                mainmix->copy_pbos(clays[k], lay);
+                if (lay->initialized) mainmix->copy_pbos(clays[k], lay);
                 clays[k]->prevshelfdragelem = mainprogram->shelfdragelem;
             } else if (elem->type == ELEM_IMAGE) {
                 clays[k]->open_image(elem->path);
@@ -1755,13 +1755,8 @@ void Program::shelf_miditriggering() {
                 clays[k]->frame = 0.0f;
             } else if (elem->type == ELEM_LAYER) {
                 clays[k] = mainmix->open_layerfile(elem->path, clays[k], true, false);
+                lay->set_inlayer(clays[k]);
                 mainmix->currlay[!mainprogram->prevmodus] = clays[k];
-                mainmix->copy_pbos(clays[k], lay);
-                int pos = lay->pos;
-                std::vector<Layer*> &lrs = *lay->layers;
-                mainmix->delete_layer(*lay->layers, lay, false);
-                lrs.insert(lrs.begin() + pos, clays[k]);
-                clays[k]->layers = &lrs;
                 clays[k]->frame = 0.0f;
            } else if (elem->type == ELEM_DECK) {
                 mainmix->mousedeck = clays[k]->deck;
@@ -1926,7 +1921,11 @@ bool Button::handle(bool circlein, bool automation) {
         float radx = this->box->vtxcoords->w / 2.0f;
         float rady = this->box->vtxcoords->h / 2.0f;
         if (this->value) {
-            draw_box(this->ccol, this->box->vtxcoords->x1 + radx, this->box->vtxcoords->y1 + rady, 0.0225f, 1);
+            int cs = 1;
+            if (this == mainmix->recbut) {
+                if ((int)(mainmix->time * 10) % 10 > 5) cs = 2;
+            }
+            draw_box(this->ccol, this->box->vtxcoords->x1 + radx, this->box->vtxcoords->y1 + rady, 0.0225f, cs);
         }
         else draw_box(this->ccol, this->box->vtxcoords->x1 + radx, this->box->vtxcoords->y1 + rady, 0.0225f, 2);
         float x = render_text(this->name[0], white, 0.0f, 0.0f, radx / 50.0f, rady / 50.0f, 0, 0, 0)[0] / 2.0f;
@@ -1970,7 +1969,7 @@ void Button::deautomate() {
 
 void Button::register_midi() {
     registered_midi rm = mainmix->midi_registrations[this->midi[0]][this->midi[1]][this->midiport];
-    if (rm.but) {
+    if (rm.but && rm.but != this) {
         rm.but->midi[0] = -1;
         rm.but->midi[1] = -1;
         rm.but->midiport = "";
@@ -2306,7 +2305,8 @@ void get_cameras()
 	}
 #endif
 #ifdef POSIX
-	mainprogram->livedevices.clear();
+    mainprogram->devvideomap.clear();
+    mainprogram->livedevices.clear();
 	std::unordered_map<std::string, std::wstring> map;
 	boost::filesystem::path dir("/sys/class/video4linux");
 	for (boost::filesystem::directory_iterator iter(dir), end; iter != end; ++iter) {
@@ -2318,12 +2318,17 @@ void get_cameras()
 		std::wstring wstr(istring.begin(), istring.end());
 		map["/dev/" + basename(iter->path().string())] = wstr;
 	}
+    using convert_type = std::codecvt_utf8<wchar_t>;
+    std::wstring_convert<convert_type, wchar_t> converter;
 	std::unordered_map<std::string, std::wstring>::iterator it;
 	for (it = map.begin(); it != map.end(); it++) {
 		struct v4l2_capability cap;
 		int fd = open(it->first.c_str(), O_RDONLY);
 		ioctl(fd, VIDIOC_QUERYCAP, &cap);
-		if (cap.device_caps & V4L2_CAP_VIDEO_CAPTURE) mainprogram->livedevices.push_back(it->second);
+		if (cap.device_caps & V4L2_CAP_VIDEO_CAPTURE) {
+		    mainprogram->livedevices.push_back(it->second);
+            mainprogram->devvideomap[converter.to_bytes(it->second)] = it->first;
+		}
 		close(fd);
 	}
 #endif
@@ -2359,12 +2364,14 @@ int Program::handle_menu(Menu* menu, float xshift, float yshift) {
 			float xoff;
 			int koff;
 			if (notsubk > 20) {
-				if (mainprogram->xscrtovtx(menu->menux) > limit) xoff = -0.2925f + xshift;
+				if (mainprogram->xscrtovtx(menu->menux) > limit) xoff = xoff = -0.2925f + xshift;
 				else xoff = 0.2925f + xshift;
 				koff = menu->entries.size() - 21;
 			}
 			else {
-				xoff = 0.0f + xshift;
+                if (mainprogram->xscrtovtx(menu->menux) > limit) xoff = -0.585f + xshift;
+                else xoff = 0.0f + xshift;
+                if (menu->entries.size() < 22) xoff = 0.0f + xshift;
 				koff = 0;
 			}
 			std::size_t sub = menu->entries[k].find("submenu");
@@ -2423,6 +2430,7 @@ int Program::handle_menu(Menu* menu, float xshift, float yshift) {
                                     mainprogram->frontbatch = false;
 									return k - numsubs + 1;
 								}
+								else mainprogram->frontbatch = true;
 								mainprogram->menulist[i]->state = 0;
 								break;
 							}
@@ -2436,8 +2444,8 @@ int Program::handle_menu(Menu* menu, float xshift, float yshift) {
 				if (mainprogram->menulist[i] != menu) mainprogram->menulist[i]->state = 0;
 			}
 		}
+        mainprogram->frontbatch = false;
 	}
-    mainprogram->frontbatch = false;
 	return -1;
 }
 
@@ -2487,14 +2495,14 @@ void Program::handle_effectmenu() {
 	// Draw and handle mainprogram->effectmenu
 	k = mainprogram->handle_menu(mainprogram->effectmenu);
 	if (k > -1) {
-		if (k == 0) {
-			if (mainmix->mouseeffect > -1) mainmix->mouselayer->delete_effect(mainmix->mouseeffect);
+        std::vector<Effect*>& evec = mainmix->mouselayer->choose_effects();
+		if (k == 0 && mainmix->mouseeffect != evec.size()) {
+			mainmix->mouselayer->delete_effect(mainmix->mouseeffect);
 		}
 		else if (mainmix->insert) {
 		    mainmix->mouselayer->add_effect((EFFECT_TYPE)mainprogram->abeffects[k], mainmix->mouseeffect);
 		}
 		else {
-			std::vector<Effect*>& evec = mainmix->mouselayer->choose_effects();
 			int mon = evec[mainmix->mouseeffect]->node->monitor;
 			mainmix->mouselayer->replace_effect((EFFECT_TYPE)mainprogram->abeffects[k - 1], mainmix->mouseeffect);
 			evec[mainmix->mouseeffect]->node->monitor = mon;
@@ -2987,7 +2995,7 @@ void Program::handle_laymenu1() {
 #else
 #ifdef POSIX
                     std::string livename;
-                    livename = "/dev/video" + std::to_string(mainprogram->menuresults[0] - 1);
+                    livename = mainprogram->devvideomap[mainprogram->livemenu->entries[mainprogram->menuresults[0]]];
 #endif
 #endif
 					mainmix->mouselayer->set_live_base(livename);
@@ -3011,12 +3019,12 @@ void Program::handle_laymenu1() {
 			mainprogram->pathto = "OPENFILESSTACK";
 			mainprogram->loadlay = mainmix->mouselayer;
             mainmix->addlay = false;
-			std::thread filereq(&Program::get_multinname, mainprogram, "Open video/image/layer file", "", boost::filesystem::canonical(mainprogram->currfilesdir).generic_string());
+			std::thread filereq(&Program::get_multinname, mainprogram, "Open video/image/layer file", "", boost::filesystem::canonical(mainprogram->currelemsdir).generic_string());
 			filereq.detach();
 		}
 		else if (k == 4 - cond) {
 			mainprogram->pathto = "SAVELAYFILE";
-			std::thread filereq(&Program::get_outname, mainprogram, "Save layer file", "application/ewocvj2-layer", boost::filesystem::canonical(mainprogram->currfilesdir).generic_string());
+			std::thread filereq(&Program::get_outname, mainprogram, "Save layer file", "application/ewocvj2-layer", boost::filesystem::canonical(mainprogram->currelemsdir).generic_string());
 			filereq.detach();
 		}
 		else if (k == 5 - cond) {
@@ -3024,12 +3032,12 @@ void Program::handle_laymenu1() {
 		}
 		else if (k == 6 - cond) {
 			mainprogram->pathto = "OPENDECK";
-			std::thread filereq(&Program::get_inname, mainprogram, "Open deck file", "application/ewocvj2-deck", boost::filesystem::canonical(mainprogram->currfilesdir).generic_string());
+			std::thread filereq(&Program::get_inname, mainprogram, "Open deck file", "application/ewocvj2-deck", boost::filesystem::canonical(mainprogram->currelemsdir).generic_string());
 			filereq.detach();
 		}
 		else if (k == 7 - cond) {
 			mainprogram->pathto = "SAVEDECK";
-			std::thread filereq(&Program::get_outname, mainprogram, "Save deck file", "application/ewocvj2-deck", boost::filesystem::canonical(mainprogram->currfilesdir).generic_string());
+			std::thread filereq(&Program::get_outname, mainprogram, "Save deck file", "application/ewocvj2-deck", boost::filesystem::canonical(mainprogram->currelemsdir).generic_string());
 			filereq.detach();
 		}
 		else if (k == 8 - cond) {
@@ -3037,13 +3045,13 @@ void Program::handle_laymenu1() {
 		}
 		else if (k == 9 - cond) {
 			mainprogram->pathto = "OPENMIX";
-			std::thread filereq(&Program::get_inname, mainprogram, "Open mix file", "application/ewocvj2-mix", boost::filesystem::canonical(mainprogram->currfilesdir).generic_string());
+			std::thread filereq(&Program::get_inname, mainprogram, "Open mix file", "application/ewocvj2-mix", boost::filesystem::canonical(mainprogram->currelemsdir).generic_string());
 			filereq.detach();
 		}
 		else if (k == 10 - cond) {
 			mainprogram->pathto = "SAVEMIX";
 			std::thread filereq(&Program::get_outname, mainprogram, "Save mix file", "application/ewocvj2-mix",
-                       boost::filesystem::canonical(mainprogram->currfilesdir).generic_string());
+                       boost::filesystem::canonical(mainprogram->currelemsdir).generic_string());
 			filereq.detach();
 		}
 		else if (k == 11 - cond) {
@@ -3124,7 +3132,7 @@ void Program::handle_newlaymenu() {
 #else
 #ifdef POSIX
                     std::string livename;
-                    livename = "/dev/video" + std::to_string(mainprogram->menuresults[0] - 1);
+                    livename = mainprogram->devvideomap[mainprogram->livemenu->entries[mainprogram->menuresults[0]]];
 #endif
 #endif
 					mainmix->mouselayer->set_live_base(livename);
@@ -3143,12 +3151,12 @@ void Program::handle_newlaymenu() {
 		}
 		else if (k == 3) {
 			mainprogram->pathto = "OPENDECK";
-			std::thread filereq(&Program::get_inname, mainprogram, "Open deck file", "application/ewocvj2-deck", boost::filesystem::canonical(mainprogram->currfilesdir).generic_string());
+			std::thread filereq(&Program::get_inname, mainprogram, "Open deck file", "application/ewocvj2-deck", boost::filesystem::canonical(mainprogram->currelemsdir).generic_string());
 			filereq.detach();
 		}
 		else if (k == 4) {
 			mainprogram->pathto = "SAVEDECK";
-			std::thread filereq(&Program::get_outname, mainprogram, "Save deck file", "application/ewocvj2-deck", boost::filesystem::canonical(mainprogram->currfilesdir).generic_string());
+			std::thread filereq(&Program::get_outname, mainprogram, "Save deck file", "application/ewocvj2-deck", boost::filesystem::canonical(mainprogram->currelemsdir).generic_string());
 			filereq.detach();
 		}
 		else if (k == 5) {
@@ -3156,12 +3164,12 @@ void Program::handle_newlaymenu() {
 		}
 		else if (k == 6) {
 			mainprogram->pathto = "OPENMIX";
-			std::thread filereq(&Program::get_inname, mainprogram, "Open mix file", "application/ewocvj2-mix", boost::filesystem::canonical(mainprogram->currfilesdir).generic_string());
+			std::thread filereq(&Program::get_inname, mainprogram, "Open mix file", "application/ewocvj2-mix", boost::filesystem::canonical(mainprogram->currelemsdir).generic_string());
 			filereq.detach();
 		}
 		else if (k == 7) {
 			mainprogram->pathto = "SAVEMIX";
-			std::thread filereq(&Program::get_outname, mainprogram, "Save mix file", "application/ewocvj2-mix", boost::filesystem::canonical(mainprogram->currfilesdir).generic_string());
+			std::thread filereq(&Program::get_outname, mainprogram, "Save mix file", "application/ewocvj2-mix", boost::filesystem::canonical(mainprogram->currelemsdir).generic_string());
 			filereq.detach();
 		}
 	}
@@ -3252,7 +3260,18 @@ void Program::handle_mainmenu() {
 	}
 	else if (k == 3) {
 		mainprogram->pathto = "SAVEPROJECT";
-		std::thread filereq(&Program::get_outname, mainprogram, "Save project file", "application/ewocvj2-project", boost::filesystem::canonical(mainprogram->project->path).generic_string());
+        std::string name = "Untitled_0";
+        std::string path;
+        int count = 0;
+        while (1) {
+            path = mainprogram->currprojdir + name;
+            if (!exists(path)) {
+                break;
+            }
+            count++;
+            name = remove_version(name) + "_" + std::to_string(count);
+        }
+		std::thread filereq(&Program::get_outname, mainprogram, "Save project file", "", path);
 		filereq.detach();
 	}
 	else if (k == 4) {
@@ -3260,28 +3279,33 @@ void Program::handle_mainmenu() {
 	}
 	else if (k == 5) {
 		mainprogram->pathto = "OPENSTATE";
-		std::thread filereq(&Program::get_inname, mainprogram, "Open state file", "application/ewocvj2-state", boost::filesystem::canonical(mainprogram->currstatedir).generic_string());
+		std::thread filereq(&Program::get_inname, mainprogram, "Open state file", "application/ewocvj2-state", boost::filesystem::canonical(mainprogram->currelemsdir).generic_string());
 		filereq.detach();
 	}
-	else if (k == 6) {
-		mainprogram->pathto = "SAVESTATE";
-		std::thread filereq(&Program::get_outname, mainprogram, "Save state file", "application/ewocvj2-state", boost::filesystem::canonical(mainprogram->currstatedir).generic_string());
-		filereq.detach();
-	}
-	else if (k == 7) {
+    else if (k == 6) {
+        mainprogram->pathto = "SAVESTATE";
+        std::thread filereq(&Program::get_outname, mainprogram, "Save state file", "application/ewocvj2-state", boost::filesystem::canonical(mainprogram->currelemsdir).generic_string());
+        filereq.detach();
+    }
+    else if (k == 7) {
+        mainprogram->pathto = "OPENSTATE";
+        std::thread filereq(&Program::get_inname, mainprogram, "Open autosave state", "application/ewocvj2-state", boost::filesystem::canonical(mainprogram->project->autosavedir).generic_string());
+        filereq.detach();
+    }
+    else if (k == 8) {
 		if (!mainprogram->prefon) {
 			mainprogram->prefon = true;
 			SDL_ShowWindow(mainprogram->prefwindow);
 			for (int i = 0; i < mainprogram->prefs->items.size(); i++) {
 				PrefCat* item = mainprogram->prefs->items[i];
-				item->box->upvtxtoscr();
+				if (item->name != "Invisible") item->box->upvtxtoscr();
 			}
 		}
 		else {
 			SDL_RaiseWindow(mainprogram->prefwindow);
 		}
 	}
-	else if (k == 8) {
+	else if (k == 9) {
 		if (!mainprogram->midipresets) {
 			mainprogram->midipresets = true;
 			SDL_ShowWindow(mainprogram->config_midipresetswindow);
@@ -3301,7 +3325,7 @@ void Program::handle_mainmenu() {
 			SDL_RaiseWindow(mainprogram->config_midipresetswindow);
 		}
 	}
-	else if (k == 9) {
+	else if (k == 10) {
 		mainprogram->quitting = "quitted";
 	}
 
@@ -3456,27 +3480,27 @@ void Program::handle_filemenu() {
 		}
 		else if (mainprogram->menuresults[0] == 1) {
 			mainprogram->pathto = "OPENSTATE";
-			std::thread filereq(&Program::get_inname, mainprogram, "Open state file", "application/ewocvj2-state", boost::filesystem::canonical(mainprogram->currstatedir).generic_string());
+			std::thread filereq(&Program::get_inname, mainprogram, "Open state file", "application/ewocvj2-state", boost::filesystem::canonical(mainprogram->currelemsdir).generic_string());
 			filereq.detach();
 		}
 		else if (mainprogram->menuresults[0] == 2) {
 			// open mix file
 			mainprogram->pathto = "OPENMIX";
-			std::thread filereq(&Program::get_inname, mainprogram, "Open mix file", "application/ewocvj2-mix", boost::filesystem::canonical(mainprogram->currfilesdir).generic_string());
+			std::thread filereq(&Program::get_inname, mainprogram, "Open mix file", "application/ewocvj2-mix", boost::filesystem::canonical(mainprogram->currelemsdir).generic_string());
 			filereq.detach();
 		}
 		else if (mainprogram->menuresults[0] == 3) {
 			// open deck file in deck A
 			mainmix->mousedeck = 0;
 			mainprogram->pathto = "OPENDECK";
-			std::thread filereq(&Program::get_inname, mainprogram, "Open deck file", "application/ewocvj2-deck", boost::filesystem::canonical(mainprogram->currfilesdir).generic_string());
+			std::thread filereq(&Program::get_inname, mainprogram, "Open deck file", "application/ewocvj2-deck", boost::filesystem::canonical(mainprogram->currelemsdir).generic_string());
 			filereq.detach();
 		}
 		else if (mainprogram->menuresults[0] == 4) {
 			// open deck file in deck B
 			mainmix->mousedeck = 1;
 			mainprogram->pathto = "OPENDECK";
-			std::thread filereq(&Program::get_inname, mainprogram, "Open deck file", "application/ewocvj2-deck", boost::filesystem::canonical(mainprogram->currfilesdir).generic_string());
+			std::thread filereq(&Program::get_inname, mainprogram, "Open deck file", "application/ewocvj2-deck", boost::filesystem::canonical(mainprogram->currelemsdir).generic_string());
 			filereq.detach();
 		}
 		else if (mainprogram->menuresults[0] == 5) {
@@ -3544,24 +3568,24 @@ void Program::handle_filemenu() {
 		}
 		else if (mainprogram->menuresults[0] == 1) {
 			mainprogram->pathto = "SAVESTATE";
-			std::thread filereq(&Program::get_outname, mainprogram, "Save state file", "application/ewocvj2-state", boost::filesystem::canonical(mainprogram->currstatedir).generic_string());
+			std::thread filereq(&Program::get_outname, mainprogram, "Save state file", "application/ewocvj2-state", boost::filesystem::canonical(mainprogram->currelemsdir).generic_string());
 			filereq.detach();
 		}
 		else if (mainprogram->menuresults[0] == 2) {
 			mainprogram->pathto = "SAVEMIX";
-			std::thread filereq(&Program::get_outname, mainprogram, "Open mix file", "application/ewocvj2-mix", boost::filesystem::canonical(mainprogram->currfilesdir).generic_string());
+			std::thread filereq(&Program::get_outname, mainprogram, "Open mix file", "application/ewocvj2-mix", boost::filesystem::canonical(mainprogram->currelemsdir).generic_string());
 			filereq.detach();
 		}
 		else if (mainprogram->menuresults[0] == 3) {
 			mainmix->mousedeck = 0;
 			mainprogram->pathto = "SAVEDECK";
-			std::thread filereq(&Program::get_outname, mainprogram, "Save deck file", "application/ewocvj2-deck", boost::filesystem::canonical(mainprogram->currfilesdir).generic_string());
+			std::thread filereq(&Program::get_outname, mainprogram, "Save deck file", "application/ewocvj2-deck", boost::filesystem::canonical(mainprogram->currelemsdir).generic_string());
 			filereq.detach();
 		}
 		else if (mainprogram->menuresults[0] == 4) {
 			mainmix->mousedeck = 1;
 			mainprogram->pathto = "SAVEDECK";
-			std::thread filereq(&Program::get_outname, mainprogram, "Save deck file", "application/ewocvj2-deck", boost::filesystem::canonical(mainprogram->currfilesdir).generic_string());
+			std::thread filereq(&Program::get_outname, mainprogram, "Save deck file", "application/ewocvj2-deck", boost::filesystem::canonical(mainprogram->currelemsdir).generic_string());
 			filereq.detach();
 		}
 		else if (mainprogram->menuresults[0] == 5) {
@@ -3569,7 +3593,7 @@ void Program::handle_filemenu() {
 			std::vector<Layer*>& lvec = choose_layers(0);
 			mainmix->mouselayer = lvec[mainprogram->menuresults[1]];
 			mainprogram->pathto = "SAVELAYFILE";
-			std::thread filereq(&Program::get_outname, mainprogram, "Save layer file", "application/ewocvj2-layer", boost::filesystem::canonical(mainprogram->currfilesdir).generic_string());
+			std::thread filereq(&Program::get_outname, mainprogram, "Save layer file", "application/ewocvj2-layer", boost::filesystem::canonical(mainprogram->currelemsdir).generic_string());
 			filereq.detach();
 		}
 		else if (mainprogram->menuresults[0] == 6) {
@@ -3577,7 +3601,7 @@ void Program::handle_filemenu() {
 			std::vector<Layer*>& lvec = choose_layers(1);
 			mainmix->mouselayer = lvec[mainprogram->menuresults[1]];
 			mainprogram->pathto = "SAVELAYFILE";
-			std::thread filereq(&Program::get_outname, mainprogram, "Save layer file", "application/ewocvj2-layer", boost::filesystem::canonical(mainprogram->currfilesdir).generic_string());
+			std::thread filereq(&Program::get_outname, mainprogram, "Save layer file", "application/ewocvj2-layer", boost::filesystem::canonical(mainprogram->currelemsdir).generic_string());
 			filereq.detach();
 		}
 	}
@@ -3685,7 +3709,7 @@ void Program::preview_modus_buttons() {
 			mainprogram->toscreen->value = 0;
 			mainprogram->toscreen->oldvalue = 0;
 			// SEND UP button copies preview set entirely to comp set
-			mainmix->copy_to_comp(mainmix->layersA, mainmix->layersAcomp, mainmix->layersB, mainmix->layersBcomp, mainprogram->nodesmain->currpage->nodes, mainprogram->nodesmain->currpage->nodescomp, mainprogram->nodesmain->mixnodescomp, true);
+			mainmix->copy_to_comp(true);
 		}
 		Box* box = mainprogram->toscreen->box;
 		register_triangle_draw(white, white, box->vtxcoords->x1 + box->vtxcoords->w / 2.0f + 0.0117f, box->vtxcoords->y1 + 0.0225f, 0.0165f, 0.0312f, DOWN, CLOSED);
@@ -3697,7 +3721,7 @@ void Program::preview_modus_buttons() {
 			mainprogram->backtopre->value = 0;
 			mainprogram->backtopre->oldvalue = 0;
 			// SEND DOWN button copies comp set entirely back to preview set
-			mainmix->copy_to_comp(mainmix->layersAcomp, mainmix->layersA, mainmix->layersBcomp, mainmix->layersB, mainprogram->nodesmain->currpage->nodescomp, mainprogram->nodesmain->currpage->nodes, mainprogram->nodesmain->mixnodes, false);
+			mainmix->copy_to_comp(false);
 		}
 		Box* box = mainprogram->backtopre->box;
 		register_triangle_draw(white, white, box->vtxcoords->x1 + box->vtxcoords->w / 2.0f + 0.0117f, box->vtxcoords->y1 + 0.0225f, 0.0165f, 0.0312f, UP, CLOSED);
@@ -3708,76 +3732,72 @@ void Program::preview_modus_buttons() {
 	if (mainprogram->modusbut->toggled()) {
 		mainprogram->prevmodus = !mainprogram->prevmodus;
 		//modusbut is button that toggles effect preview mode to performance mode and back
-		mainprogram->preview_init();
 	}
 	render_text(mainprogram->modusbut->name[mainprogram->prevmodus], white, mainprogram->modusbut->box->vtxcoords->x1 + 0.0117f, mainprogram->modusbut->box->vtxcoords->y1 + 0.0225f, 0.00042, 0.00070);
 }
 
-void Program::preview_init() {
-	// extra initialization when prevmodus is changed (preview modus)
-    //std::vector<Layer *> &lvec = choose_layers(mainmix->currlay[mainprogram->prevmodus]->deck);
-    //int p = mainmix->currlay[mainprogram->prevmodus]->pos;
-    //if (p > lvec.size() - 1) p = lvec.size() - 1;
-    //mainmix->currlay[!mainprogram->prevmodus] = lvec[p];
-
-	GLint preff = glGetUniformLocation(this->ShaderProgram, "preff");
-	glUniform1i(preff, this->prevmodus);
-}
-
-
 void Program::preferences() {
-	if (mainprogram->prefon) {
-        mainprogram->directmode = true;
-        SDL_GL_MakeCurrent(mainprogram->prefwindow, glc);
-        SDL_RaiseWindow(mainprogram->prefwindow);
+	if (this->prefon) {
+        this->directmode = true;
+        SDL_GL_MakeCurrent(this->prefwindow, glc);
+        SDL_RaiseWindow(this->prefwindow);
         glBindFramebuffer(GL_FRAMEBUFFER, 0);
         glDrawBuffer(GL_BACK_LEFT);
 		glViewport(0, 0, glob->w / 2.0f, glob->h / 2.0f);
 		glEnable(GL_BLEND);
 		glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
 		SDL_FlushEvents(SDL_FIRSTEVENT, SDL_LASTEVENT);
-		bool prret = mainprogram->preferences_handle();
+		bool prret = this->preferences_handle();
 		if (prret) {
-			SDL_GL_SwapWindow(mainprogram->prefwindow);
+			SDL_GL_SwapWindow(this->prefwindow);
 		}
-		SDL_GL_MakeCurrent(mainprogram->mainwindow, glc);
+		SDL_GL_MakeCurrent(this->mainwindow, glc);
         glBindFramebuffer(GL_FRAMEBUFFER, 0);
         glDrawBuffer(GL_BACK_LEFT);
         glViewport(0, 0, glob->w, glob->h);
-        mainprogram->directmode = false;
+        if (this->prefoff) {
+            this->prefoff = false;
+        }
+        this->directmode = false;
+	}
+	else {
+	    this->prefoff = true;
+	    this->prefsearchdirs = &retarget->globalsearchdirs;
+	    this->oldseatname = this->seatname;
 	}
 }
 
 bool Program::preferences_handle() {
 	int mx = -1;
 	int my = -1;
-	if (SDL_GetMouseFocus() == mainprogram->prefwindow) {
+	if (SDL_GetMouseFocus() == this->prefwindow) {
 		//SDL_PumpEvents();
 		SDL_GetMouseState(&mx, &my);
 		mx *= 2.0f;
 		my *= 2.0f;
 	}
-	if (mainprogram->rightmouse) mainprogram->renaming = EDIT_CANCEL;
+	if (this->rightmouse) this->renaming = EDIT_CANCEL;
 
-	mainprogram->insmall = true;
+	this->insmall = true;
 	float lightblue[] = { 0.5f, 0.5f, 1.0f, 1.0f };
 	float green[] = { 0.0f, 0.7f, 0.0f, 1.0f };
 
-	mainprogram->bvao = mainprogram->prboxvao;
-	mainprogram->bvbuf = mainprogram->prboxvbuf;
-	mainprogram->btbuf = mainprogram->prboxtbuf;
+	this->bvao = this->prboxvao;
+	this->bvbuf = this->prboxvbuf;
+	this->btbuf = this->prboxtbuf;
 	glClear(GL_COLOR_BUFFER_BIT);
 
-	for (int i = 0; i < mainprogram->prefs->items.size(); i++) {
-		PrefCat* item = mainprogram->prefs->items[i];
+	for (int i = 0; i < this->prefs->items.size(); i++) {
+		PrefCat* item = this->prefs->items[i];
+        if (item->name == "Invisible") continue;
 		if (item->box->in(mx, my)) {
 			draw_box(white, lightblue, item->box, -1);
-			if (mainprogram->leftmouse && mainprogram->prefs->curritem != i) {
-				mainprogram->renaming = EDIT_NONE;
-				mainprogram->prefs->curritem = i;
+			if (this->leftmouse && this->prefs->curritem != i) {
+				this->renaming = EDIT_NONE;
+				this->prefs->curritem = i;
 			}
 		}
-		else if (mainprogram->prefs->curritem == i) {
+		else if (this->prefs->curritem == i) {
 			draw_box(white, green, item->box, -1);
 		}
 		else {
@@ -3787,38 +3807,34 @@ bool Program::preferences_handle() {
 	}
 	draw_box(white, nullptr, -0.5f, -1.0f, 1.5f, 2.0f, -1);
 
-	PrefCat* mci = mainprogram->prefs->items[mainprogram->prefs->curritem];
+	PrefCat* mci = this->prefs->items[this->prefs->curritem];
 	if (mci->name == "MIDI Devices") ((PIMidi*)mci)->populate();
 	for (int i = 0; i < mci->items.size(); i++) {
+        if (this->prefoff) {
+            if (mci->items[i]->dest == &this->project->name) {
+                mci->items[i]->str = this->project->name;
+            }
+            else if (mci->items[i]->dest == &this->project->ow) {
+                mci->items[i]->value = this->project->ow;
+            }
+            else if (mci->items[i]->dest == &this->project->oh) {
+                mci->items[i]->value = this->project->oh;
+            }
+        }
 		if (mci->items[i]->type == PREF_ONOFF) {
 			if (!mci->items[i]->connected) continue;
 			draw_box(white, black, mci->items[i]->namebox, -1);
 			render_text(mci->items[i]->name, white, mci->items[i]->namebox->vtxcoords->x1 + 0.23f, mci->items[i]->namebox->vtxcoords->y1 + 0.06f, 0.0024f, 0.004f, 1, 0);
 			if (mci->items[i]->valuebox->in(mx, my)) {
 				draw_box(white, lightblue, mci->items[i]->valuebox, -1);
-				if (mainprogram->leftmouse) {
+				if (this->leftmouse) {
 					mci->items[i]->onoff = !mci->items[i]->onoff;
-					if (mci->items[i]->onoff && (mci->items[i]->dest == &mainprogram->server)) {
-                        // start the server
-                        int opt = 1;
-                        mainprogram->serverip = mainprogram->localip; // local ip is server ip
-                        mainprogram->serveripchanged = true;
-                        if(inet_pton(AF_INET, mainprogram->localip, &mainprogram->serv_addr.sin_addr)<=0)
-                        {
-                            printf("\nInvalid server address/ Address not supported \n");
-                            return -1;
-                        }
-                        std::thread sockserver(&Program::socket_server, mainprogram, mainprogram->serv_addr,
-                                               opt);
-                        sockserver.detach();
-
-                    }
-					if (mci->name == "MIDI Devices") {
+                    if (mci->name == "MIDI Devices") {
 						PIMidi* midici = (PIMidi*)mci;
 						if (!midici->items[i]->onoff) {
 							if (std::find(midici->onnames.begin(), midici->onnames.end(), midici->items[i]->name) != midici->onnames.end()) {
 								midici->onnames.erase(std::find(midici->onnames.begin(), midici->onnames.end(), midici->items[i]->name));
-								mainprogram->openports.erase(std::find(mainprogram->openports.begin(), mainprogram->openports.end(), i));
+								this->openports.erase(std::find(this->openports.begin(), this->openports.end(), i));
 								mci->items[i]->midiin->cancelCallback();
 								delete mci->items[i]->midiin;
 							}
@@ -3826,10 +3842,10 @@ bool Program::preferences_handle() {
 						else {
 							midici->onnames.push_back(midici->items[i]->name);
 							RtMidiIn* midiin = new RtMidiIn();
-							if (std::find(mainprogram->openports.begin(), mainprogram->openports.end(), i) == mainprogram->openports.end()) {
+							if (std::find(this->openports.begin(), this->openports.end(), i) == this->openports.end()) {
 								midiin->openPort(i);
 								midiin->setCallback(&mycallback, (void*)midici->items[i]);
-								mainprogram->openports.push_back(i);
+								this->openports.push_back(i);
 							}
 							mci->items[i]->midiin = midiin;
 						}
@@ -3842,63 +3858,118 @@ bool Program::preferences_handle() {
 			else {
 				draw_box(white, black, mci->items[i]->valuebox, -1);
 			}
+            if (mci->items[i]->onoff && mci->items[i]->dest == &this->server) {
+                // set server ip pref to localip
+                for (int j = 0; j < mci->items.size(); j++) {
+                    if (mci->items[j]->dest == &this->serverip) {
+                        mci->items[j]->path = this->localip;
+                    }
+                }
+            }
 		}
 		else if (mci->items[i]->type == PREF_NUMBER) {
 			draw_box(white, black, mci->items[i]->namebox, -1);
 			render_text(mci->items[i]->name, white, mci->items[i]->namebox->vtxcoords->x1 + 0.23f, mci->items[i]->namebox->vtxcoords->y1 + 0.06f, 0.0024f, 0.004f, 1, 0);
 			draw_box(white, black, mci->items[i]->valuebox, -1);
 			if (mci->items[i]->renaming) {
-				if (mainprogram->renaming == EDIT_NONE) {
+				if (this->renaming == EDIT_NONE) {
 					mci->items[i]->renaming = false;
 					try {
-						mci->items[i]->value = std::stoi(mainprogram->inputtext);
+						mci->items[i]->value = std::stoi(this->inputtext);
 					}
 					catch (...) {
 						mci->items[i]->value = ((PIVid*)(mci->items[i]))->oldvalue;
 					}
-                    if (mci->items[i]->dest == &mainprogram->project->ow || mci->items[i]->dest == &mainprogram->project->oh) {
-                        mainprogram->saveproject = true;
+                    if (mci->items[i]->dest == &this->project->ow || mci->items[i]->dest == &this->project->oh) {
+                        this->saveproject = true;
                     }
 				}
-				else if (mainprogram->renaming == EDIT_CANCEL) {
+				else if (this->renaming == EDIT_CANCEL) {
 					mci->items[i]->renaming = false;
 				}
 				else {
-					do_text_input(mci->items[i]->valuebox->vtxcoords->x1 + 0.1f, mci->items[i]->valuebox->vtxcoords->y1 + 0.06f, 0.0024f, 0.004f, mx, my, mainprogram->xvtxtoscr(0.15f), 1, mci->items[i], true);
+					do_text_input(mci->items[i]->valuebox->vtxcoords->x1 + 0.1f, mci->items[i]->valuebox->vtxcoords->y1 + 0.06f, 0.0024f, 0.004f, mx, my, this->xvtxtoscr(0.15f), 1, mci->items[i], true);
 				}
 			}
 			else {
 				render_text(std::to_string(mci->items[i]->value), white, mci->items[i]->valuebox->vtxcoords->x1 + 0.1f, mci->items[i]->valuebox->vtxcoords->y1 + 0.06f, 0.0024f, 0.004f, 1, 0);
 			}
 			if (mci->items[i]->valuebox->in(mx, my)) {
-				if (mainprogram->leftmouse && mainprogram->renaming == EDIT_NONE) {
+				if (this->leftmouse && this->renaming == EDIT_NONE) {
 					mci->items[i]->renaming = true;
 					((PIVid*)(mci->items[i]))->oldvalue = mci->items[i]->value;
-					mainprogram->renaming = EDIT_NUMBER;
-					mainprogram->inputtext = std::to_string(mci->items[i]->value);
-					mainprogram->cursorpos0 = mainprogram->inputtext.length();
+					this->renaming = EDIT_NUMBER;
+					this->inputtext = std::to_string(mci->items[i]->value);
+					this->cursorpos0 = this->inputtext.length();
 					SDL_StartTextInput();
 				}
 			}
 		}
+        else if (mci->items[i]->type == PREF_STRING) {
+            draw_box(white, black, mci->items[i]->namebox->vtxcoords->x1,
+                     mci->items[i]->namebox->vtxcoords->y1, mci->items[i]->namebox->vtxcoords->w,
+                     mci->items[i]->namebox->vtxcoords->h, -1);
+            render_text(mci->items[i]->name, white, -0.5f + 0.1f,
+                        mci->items[i]->namebox->vtxcoords->y1 + 0.03f, 0.0024f, 0.004f, 1, 0);
+            draw_box(white, black, mci->items[i]->valuebox->vtxcoords->x1,
+                     mci->items[i]->valuebox->vtxcoords->y1, mci->items[i]->valuebox->vtxcoords->w,
+                     mci->items[i]->valuebox->vtxcoords->h, -1);
+            if (mci->items[i]->renaming == false) {
+                render_text(mci->items[i]->str, white,
+                            mci->items[i]->valuebox->vtxcoords->x1 + 0.1f,
+                            mci->items[i]->valuebox->vtxcoords->y1 + 0.03f, 0.0024f, 0.004f, 1, 0);
+            } else {
+                if (this->renaming == EDIT_NONE) {
+                    mci->items[i]->renaming = false;
+                    mci->items[i]->str = this->inputtext;
+                    if (mci->items[i]->dest == &this->project->name) {
+                        this->projnamechanged = true;
+                        this->saveproject = true;
+                    }
+                } else if (this->renaming == EDIT_CANCEL) {
+                    mci->items[i]->renaming = false;
+                } else {
+                    do_text_input(mci->items[i]->valuebox->vtxcoords->x1 + 0.1f,
+                                  mci->items[i]->valuebox->vtxcoords->y1 + 0.03f, 0.0024f, 0.004f, mx, my,
+                                  this->xvtxtoscr(0.7f), 1, mci->items[i], true);
+                }
+            }
+            if (mci->items[i]->valuebox->in(mx, my)) {
+                if (this->leftmouse) {
+                    for (int i = 0; i < mci->items.size(); i++) {
+                        if (mci->items[i]->renaming) {
+                            mci->items[i]->renaming = false;
+                            end_input();
+                            break;
+                        }
+                    }
+                    mci->items[i]->renaming = true;
+                    this->renaming = EDIT_STRING;
+                    this->inputtext = mci->items[i]->str;
+                    this->cursorpos0 = this->inputtext.length();
+                    SDL_StartTextInput();
+                }
+            }
+        }
+
         bool cond1 = (mci->items[i]->type == PREF_PATH);
         bool cond2 = (mci->items[i]->type == PREF_PATHS);
         if (cond1 || cond2) {
             std::vector<std::string> paths;
-            if (cond1) paths.push_back(*(std::string *) (mci->items[i]->dest));
-            else paths = *(std::vector<std::string> *) (mci->items[i]->dest);
+            if (cond1) paths.push_back(mci->items[i]->path);
+            else paths = *this->prefsearchdirs;
 
             if (cond2) {
                 // mousewheel scroll
-                mainprogram->pathscroll -= mainprogram->mousewheel;
-                if (mainprogram->pathscroll < 0) mainprogram->pathscroll = 0;
-                if (paths.size() > 7 && paths.size() - mainprogram->pathscroll < 7)
-                    mainprogram->pathscroll = paths.size() - 6;
+                this->pathscroll -= this->mousewheel;
+                if (this->pathscroll < 0) this->pathscroll = 0;
+                if (paths.size() > 7 && paths.size() - this->pathscroll < 7)
+                    this->pathscroll = paths.size() - 6;
 
                 // GUI arrow scroll
-                mainprogram->pathscroll = mainprogram->handle_scrollboxes(mainprogram->defaultsearchscrollup,
-                                                                          mainprogram->defaultsearchscrolldown,
-                                                                          paths.size(), mainprogram->pathscroll, 6,
+                this->pathscroll = this->handle_scrollboxes(this->defaultsearchscrollup,
+                                                                          this->defaultsearchscrolldown,
+                                                                          paths.size(), this->pathscroll, 6,
                                                                           mx, my);
             }
 
@@ -3911,27 +3982,28 @@ bool Program::preferences_handle() {
                 render_text(mci->items[i]->name, white, -0.5f + 0.1f, mci->items[i]->namebox->vtxcoords->y1 - j * 0.2f + 0.03f, 0.0024f, 0.004f, 1, 0);
                 draw_box(white, black, mci->items[i]->valuebox->vtxcoords->x1, mci->items[i]->valuebox->vtxcoords->y1 - j * 0.2f, mci->items[i]->valuebox->vtxcoords->w, mci->items[i]->valuebox->vtxcoords->h, -1);
                 if (mci->items[i]->renaming == false) {
-                    render_text(paths[j + (mainprogram->pathscroll * cond2)], white,
+                    render_text(paths[j + (this->pathscroll * cond2)], white,
                                 mci->items[i]->valuebox->vtxcoords->x1 + 0.1f, mci->items[i]->valuebox->vtxcoords->y1 - j * 0.2f + 0.03f, 0.0024f, 0.004f, 1, 0);
                 }
                 else {
-                    if (mainprogram->renaming == EDIT_NONE) {
+                    if (this->renaming == EDIT_NONE) {
                         mci->items[i]->renaming = false;
-                        paths[j + (mainprogram->pathscroll * cond2)] = mainprogram->inputtext;
-                        if (mci->items[i]->dest == &mainprogram->project->name) {
-                            mainprogram->projnamechanged = true;
-                            mainprogram->saveproject = true;
+                        paths[j + (this->pathscroll * cond2)] = this->inputtext;
+                        if (size == 1) mci->items[i]->path = this->inputtext;
+                        if (mci->items[i]->dest == &this->project->name) {
+                            this->projnamechanged = true;
+                            this->saveproject = true;
                         }
                     }
-                    else if (mainprogram->renaming == EDIT_CANCEL) {
+                    else if (this->renaming == EDIT_CANCEL) {
                         mci->items[i]->renaming = false;
                     }
                     else {
-                        do_text_input(mci->items[i]->valuebox->vtxcoords->x1 + 0.1f, mci->items[i]->valuebox->vtxcoords->y1 - j * 0.2f + 0.03f, 0.0024f, 0.004f, mx, my, mainprogram->xvtxtoscr(0.7f), 1, mci->items[i], true);
+                        do_text_input(mci->items[i]->valuebox->vtxcoords->x1 + 0.1f, mci->items[i]->valuebox->vtxcoords->y1 - j * 0.2f + 0.03f, 0.0024f, 0.004f, mx, my, this->xvtxtoscr(0.7f), 1, mci->items[i], true);
                     }
                 }
                 if (mci->items[i]->valuebox->in(mx, my)) {
-                    if (mainprogram->leftmouse) {
+                    if (this->leftmouse) {
                         for (int i = 0; i < mci->items.size(); i++) {
                             if (mci->items[i]->renaming) {
                                 mci->items[i]->renaming = false;
@@ -3940,14 +4012,13 @@ bool Program::preferences_handle() {
                             }
                         }
                         mci->items[i]->renaming = true;
-                        mainprogram->renaming = EDIT_STRING;
-                        mainprogram->inputtext = paths[j];
-                        mainprogram->cursorpos0 = mainprogram->inputtext.length();
+                        this->renaming = EDIT_STRING;
+                        this->inputtext = paths[j];
+                        this->cursorpos0 = this->inputtext.length();
                         SDL_StartTextInput();
                     }
                 }
-                if (mci->items[i]->dest != &mainprogram->project->name  && mci->items[i]->dest !=
-                &mainprogram->seatname) {
+                if (mci->items[i]->dest != &this->project->name) {
                     draw_box(white, black, mci->items[i]->iconbox->vtxcoords->x1,
                              mci->items[i]->iconbox->vtxcoords->y1 - j * 0.2f, mci->items[i]->iconbox->vtxcoords->w,
                              mci->items[i]->iconbox->vtxcoords->h, -1);
@@ -3956,28 +4027,24 @@ bool Program::preferences_handle() {
                     draw_box(white, black, mci->items[i]->iconbox->vtxcoords->x1 + 0.05f,
                              mci->items[i]->iconbox->vtxcoords->y1 - j * 0.2f + 0.11f, 0.025f, 0.03f, -1);
                     if (mci->items[i]->iconbox->in(mx, my)) {
-                        if (mainprogram->leftmouse) {
+                        if (this->leftmouse) {
                             mci->items[i]->choosing = true;
-                            mainprogram->pathto = "CHOOSEDIR";
+                            this->pathto = "CHOOSEDIR";
                             std::string title = "Open " + mci->items[i]->name + " directory";
-                            std::thread filereq(&Program::get_dir, mainprogram, title.c_str(),
+                            std::thread filereq(&Program::get_dir, this, title.c_str(),
                                                 boost::filesystem::canonical(mci->items[i]->path).generic_string());
                             filereq.detach();
                         }
                     }
-                    if (mci->items[i]->choosing && mainprogram->choosedir != "") {
+                    if (mci->items[i]->choosing && this->choosedir != "") {
 #ifdef WINDOWS
-                        boost::replace_all(mainprogram->choosedir, "/", "\\");
+                        boost::replace_all(this->choosedir, "/", "\\");
 #endif
-                        paths[j] = mainprogram->choosedir;
-                        mainprogram->choosedir = "";
+                        paths[j] = this->choosedir;
+                        this->choosedir = "";
                         mci->items[i]->choosing = false;
                     }
                 }
-            }
-            if (mci->items[i]->dest == &mainprogram->serverip && mainprogram->serveripchanged) {
-                *(std::string*)mci->items[i]->dest = mainprogram->serverip;
-                mainprogram->serveripchanged = false;
             }
 
             if (cond1) *(std::string*)mci->items[i]->dest = paths[0];
@@ -3993,10 +4060,10 @@ bool Program::preferences_handle() {
             box->upvtxtoscr();
             draw_box(white, black, box, -1);
             render_text("+ DEFAULT SEARCH DIR", white, -0.25f, -0.8f + 0.03f, 0.0024f, 0.004f, 1, 0);
-            if (box->in(mx, my) && mainprogram->leftmouse) {
-                mainprogram->pathto = "ADDSEARCHDIR";
-                std::thread filereq(&Program::get_dir, mainprogram, "Add a search location",
-                                    boost::filesystem::canonical(mainprogram->currfilesdir).generic_string());
+            if (box->in(mx, my) && this->leftmouse) {
+                this->pathto = "ADDSEARCHDIR";
+                std::thread filereq(&Program::get_dir, this, "Add a search location",
+                                    boost::filesystem::canonical(this->currfilesdir).generic_string());
                 filereq.detach();
             }
         }
@@ -4005,7 +4072,7 @@ bool Program::preferences_handle() {
 
 	}
 
-	mainprogram->qualfr = std::clamp(mainprogram->qualfr, 1, 10);
+	this->qualfr = std::clamp(this->qualfr, 1, 10);
 
     std::unique_ptr <Box> box = std::make_unique <Box> ();
 	box->vtxcoords->x1 = 0.75f;
@@ -4016,7 +4083,7 @@ bool Program::preferences_handle() {
 	draw_box(white, black, box, -1);
 	if (box->in(mx, my)) {
 		draw_box(white, lightblue, box, -1);
-		if (mainprogram->leftmouse) {
+		if (this->leftmouse) {
 			for (int i = 0; i < mci->items.size(); i++) {
 				if (mci->items[i]->renaming) {
 					mci->items[i]->renaming = false;
@@ -4024,13 +4091,13 @@ bool Program::preferences_handle() {
 					break;
 				}
 			}
-			mainprogram->renaming = EDIT_NONE;
-			mainprogram->prefs->load();
-			mainprogram->prefon = false;
-			mainprogram->drawnonce = false;
-            mainprogram->pathscroll = 0;  // needed after default search listing
-			SDL_HideWindow(mainprogram->prefwindow);
-			SDL_RaiseWindow(mainprogram->mainwindow);
+			this->renaming = EDIT_NONE;
+			this->prefs->load();
+			this->prefon = false;
+			this->drawnonce = false;
+            this->pathscroll = 0;  // needed after default search listing
+			SDL_HideWindow(this->prefwindow);
+			SDL_RaiseWindow(this->mainwindow);
 		}
 	}
 	render_text("CANCEL", white, box->vtxcoords->x1 + 0.02f, box->vtxcoords->y1 + 0.03f, 0.0024f, 0.004f, 1, 0);
@@ -4039,113 +4106,149 @@ bool Program::preferences_handle() {
 	draw_box(white, black, box, -1);
 	if (box->in(mx, my)) {
 		draw_box(white, lightblue, box, -1);
-		if (mainprogram->leftmouse) {
+		if (this->leftmouse) {
 			for (int i = 0; i < mci->items.size(); i++) {
 				if (mci->items[i]->renaming) {
-					if (mci->items[i]->type == PREF_PATH) {
-						mci->items[i]->path = mainprogram->inputtext;
-						end_input();
-						break;
-					}
+                    if (mci->items[i]->type == PREF_ONOFF) {
+                        *(std::string*)mci->items[i]->dest = mci->items[i]->value;
+                        break;
+                    }
+                    if (mci->items[i]->type == PREF_STRING) {
+                        mci->items[i]->str = this->inputtext;
+                        end_input();
+                        *(std::string*)mci->items[i]->dest = mci->items[i]->str;
+                        break;
+                    }
+                    if (mci->items[i]->type == PREF_PATH) {
+                        mci->items[i]->path = this->inputtext;
+                        end_input();
+                        *(std::string*)mci->items[i]->dest = mci->items[i]->path;
+                        break;
+                    }
 					if (mci->items[i]->type == PREF_NUMBER) {
 						try {
-							mci->items[i]->value = std::stoi(mainprogram->inputtext);
+							mci->items[i]->value = std::stoi(this->inputtext);
+                            *(int*)mci->items[i]->dest = mci->items[i]->value;
 						}
 						catch (...) {}
 						end_input();
 						break;
 					}
 				}
+
+                if (mci->items[i]->type == PREF_STRING) {
+                    *(std::string*)mci->items[i]->dest = mci->items[i]->str;
+                    break;
+                }
+                if (mci->items[i]->type == PREF_PATH) {
+                    *(std::string*)mci->items[i]->dest = mci->items[i]->path;
+                    break;
+                }
+                if (mci->items[i]->type == PREF_NUMBER) {
+                    *(int*)mci->items[i]->dest = mci->items[i]->value;
+                }
+
+                if (mci->items[i]->dest = &this->seatname) {
+                    if (mci->items[i]->str != this->oldseatname) {
+                        send(this->sock, "CHANGE_NAME", 11, 0);
+                        send(this->sock, this->seatname.c_str(), this->seatname.size(), 0);
+                    }
+                }
 			}
-			if (mainprogram->projnamechanged) {  // project name not included in preferences file, only change if
+			if (this->projnamechanged) {  // project name not included in preferences file, only change if
 			    // user clicks SAVE
-                if (mainprogram->project->name != remove_extension(basename(mainprogram->project->path))) {
+                if (this->project->name != remove_extension(basename(this->project->path))) {
                     // project name changed
                     // rename project file
-                    std::string pathdir = dirname(mainprogram->project->path);
-                    std::string newdir = dirname(pathdir.substr(0, pathdir.size() - 2)) + mainprogram->project->name + "/";
+                    std::string pathdir = dirname(this->project->path);
+                    std::string newdir = dirname(pathdir.substr(0, pathdir.size() - 2)) + this->project->name + "/";
                     boost::filesystem::rename(pathdir, newdir);
                     // rename project directory
-                    int pos = std::find(mainprogram->recentprojectpaths.begin(), mainprogram->recentprojectpaths.end(), mainprogram->project->path) - mainprogram->recentprojectpaths.begin();
-                    mainprogram->project->path = newdir +
-                                                 mainprogram->project->name + ".ewocvj";
-                    if (pos < mainprogram->recentprojectpaths.size()) {
-                        mainprogram->recentprojectpaths[pos] = mainprogram->project->path;
-                        mainprogram->write_recentprojectlist();
+                    int pos = std::find(this->recentprojectpaths.begin(), this->recentprojectpaths.end(), this->project->path) - this->recentprojectpaths.begin();
+                    this->project->path = newdir +
+                                                 this->project->name + ".ewocvj";
+                    if (pos < this->recentprojectpaths.size()) {
+                        this->recentprojectpaths[pos] = this->project->path;
+                        this->write_recentprojectlist();
                     }
-                    std::string bubd = mainprogram->project->binsdir;
-                    std::string busd = mainprogram->project->shelfdir;
-                    std::string buad = mainprogram->project->autosavedir;
-                    mainprogram->project->binsdir = newdir + "bins/";
-                    mainprogram->project->recdir = newdir + "recordings/";
-                    mainprogram->project->shelfdir = newdir + "shelves/";
-                    mainprogram->project->autosavedir = newdir + "autosaves/";
+                    std::string bubd = this->project->binsdir;
+                    std::string busd = this->project->shelfdir;
+                    std::string buad = this->project->autosavedir;
+                    std::string bued = this->project->elementsdir;
+                    this->project->binsdir = newdir + "bins/";
+                    this->project->recdir = newdir + "recordings/";
+                    this->project->shelfdir = newdir + "shelves/";
+                    this->project->autosavedir = newdir + "autosaves/";
+                    this->project->elementsdir = newdir + "elements/";
                     for (int i = 0; i < binsmain->bins.size(); i++) {
-                        binsmain->bins[i]->path = mainprogram->project->binsdir + basename(binsmain->bins[i]->path);
+                        binsmain->bins[i]->path = this->project->binsdir + basename(binsmain->bins[i]->path);
                         for (int j = 0; j < binsmain->bins[i]->elements.size(); j++) {
                             std::string str = binsmain->bins[i]->elements[j]->path;
                             if (str.find(bubd) != std::string::npos) {
-                                str = str.replace(str.find(bubd), bubd.size(), mainprogram->project->binsdir);
+                                str = str.replace(str.find(bubd), bubd.size(), this->project->binsdir);
                                 binsmain->bins[i]->elements[j]->path = str;
                             }
                         }
                     }
                     for (int i = 0; i < 2; i++) {
-                        for (int j = 0; j < mainprogram->shelves[i]->elements.size(); j++) {
-                            std::string str = mainprogram->shelves[i]->elements[j]->path;
-                            std::string jstr = mainprogram->shelves[i]->elements[j]->jpegpath;
+                        for (int j = 0; j < this->shelves[i]->elements.size(); j++) {
+                            std::string str = this->shelves[i]->elements[j]->path;
+                            std::string jstr = this->shelves[i]->elements[j]->jpegpath;
                             if (str.find(busd) != std::string::npos) {
-                                str = str.replace(str.find(busd), busd.size(), mainprogram->project->shelfdir);
-                                mainprogram->shelves[i]->elements[j]->path = str;
+                                str = str.replace(str.find(busd), busd.size(), this->project->shelfdir);
+                                this->shelves[i]->elements[j]->path = str;
                             }
                             if (jstr.find(busd) != std::string::npos) {
-                                jstr = jstr.replace(jstr.find(busd), busd.size(), mainprogram->project->shelfdir);
-                                mainprogram->shelves[i]->elements[j]->jpegpath = jstr;
+                                jstr = jstr.replace(jstr.find(busd), busd.size(), this->project->shelfdir);
+                                this->shelves[i]->elements[j]->jpegpath = jstr;
                             }
                         }
                     }
-                    for (int i = 0; i < mainprogram->project->autosavelist.size(); i++) {
-                        std::string str = mainprogram->project->autosavelist[i];
+                    for (int i = 0; i < this->project->autosavelist.size(); i++) {
+                        std::string str = this->project->autosavelist[i];
                         if (str.find(buad) != std::string::npos) {
-                            str = str.replace(str.find(buad), buad.size(), mainprogram->project->autosavedir);
-                            mainprogram->project->autosavelist[i] = str;
+                            str = str.replace(str.find(buad), buad.size(), this->project->autosavedir);
+                            this->project->autosavelist[i] = str;
                         }
                     }
                 }
             }
+
+			retarget->globalsearchdirs = *this->prefsearchdirs;
+
 			// set output resolution from project settings
-            mainprogram->projnamechanged = false;
-			mainprogram->renaming = EDIT_NONE;
-			mainprogram->prefs->save();
-			mainprogram->prefs->load();
-			mainprogram->prefon = false;
-			mainprogram->drawnonce = false;
+            this->projnamechanged = false;
+			this->renaming = EDIT_NONE;
+			this->prefs->save();
+			this->prefs->load();
+			this->prefon = false;
+			this->drawnonce = false;
 
-			if (mainprogram->saveproject) mainprogram->project->do_save(mainprogram->project->path);
-            mainprogram->ow = mainprogram->project->ow;
-            mainprogram->oh = mainprogram->project->oh;
-            mainprogram->set_ow3oh3();
-            mainprogram->handle_changed_owoh();
+			if (this->saveproject) this->project->do_save(this->project->path);
+            this->ow = this->project->ow;
+            this->oh = this->project->oh;
+            this->set_ow3oh3();
+            this->handle_changed_owoh();
 
-            SDL_HideWindow(mainprogram->prefwindow);
-			SDL_RaiseWindow(mainprogram->mainwindow);
+            SDL_HideWindow(this->prefwindow);
+			SDL_RaiseWindow(this->mainwindow);
 		}
 	}
 	render_text("SAVE", white, box->vtxcoords->x1 + 0.02f, box->vtxcoords->y1 + 0.03f, 0.0024f, 0.004f, 1, 0);
     if (saveproject) render_text("+PROJECT", white, box->vtxcoords->x1 + 0.06f, box->vtxcoords->y1 + 0.1f, 0.0024f, 0.004f, 1, 0);
 
-    mainprogram->tooltips_handle(1);
+    this->tooltips_handle(1);
 
-	mainprogram->bvao = mainprogram->boxvao;
-	mainprogram->bvbuf = mainprogram->boxvbuf;
-	mainprogram->btbuf = mainprogram->boxtbuf;
-	mainprogram->middlemouse = false;
-	mainprogram->rightmouse = false;
-	mainprogram->menuactivation = false;
-	mainprogram->mx = -1;
-	mainprogram->my = -1;
+	this->bvao = this->boxvao;
+	this->bvbuf = this->boxvbuf;
+	this->btbuf = this->boxtbuf;
+	this->middlemouse = false;
+	this->rightmouse = false;
+	this->menuactivation = false;
+	this->mx = -1;
+	this->my = -1;
 
-	mainprogram->insmall = false;
+	this->insmall = false;
 
 	return true;
 }
@@ -4160,7 +4263,7 @@ void Program::tooltips_handle(int win) {
 
 	if (mainprogram->prefon || mainprogram->midipresets) fac = 4.0f;
 
-	if (mainprogram->tooltipmilli > 10000) {
+	if (mainprogram->tooltipmilli > 4000) {
 		if (mainprogram->longtooltips) {
 			std::vector<std::string> texts;
 			int pos = 0;
@@ -4177,11 +4280,11 @@ void Program::tooltips_handle(int win) {
 			if ((x + textw) > 1.0f) x = x - textw - 0.03f - mainprogram->tooltipbox->vtxcoords->w;
 			if ((y - texth * (texts.size() + 1) - 0.015f) < -1.0f) y = -1.0f + texth * (texts.size() + 1) - 0.015f;
 			if (x < -1.0f) x = -1.0f;
-			draw_box(nullptr, black, x, y - texth, textw, texth + 0.015f, -1);
+			draw_box(black, black, x, y - texth, textw, texth + 0.015f, -1);
 			render_text(mainprogram->tooltipbox->tooltiptitle, orange, x + 0.0225f * sqrt(fac), y - texth + 0.045f * sqrt(fac), 0.00045f * fac, 0.00075f * fac, win, 0);
 			for (int i = 0; i < texts.size(); i++) {
 				y -= texth;
-				draw_box(nullptr, black, x, y - texth, textw, texth + 0.015f, -1);
+				draw_box(black, black, x, y - texth, textw, texth + 0.015f, -1);
 				render_text(texts[i], white, x + 0.0225f * sqrt(fac), y - texth + 0.045f * sqrt(fac), 0.00045f * fac, 0.00075f * fac, win, 0);
 			}
 		}
@@ -4189,7 +4292,7 @@ void Program::tooltips_handle(int win) {
 			float x = mainprogram->tooltipbox->vtxcoords->x1 + mainprogram->tooltipbox->vtxcoords->w + 0.015f;  //first print offscreen
 			float y = mainprogram->tooltipbox->vtxcoords->y1 - 0.015f * glob->w / glob->h - 0.015f;
 			float textw = 0.25f * sqrt(fac);
-			draw_box(nullptr, black, x, y - 0.092754f, textw, 0.092754f + 0.015f, -1);
+			draw_box(black, black, x, y - 0.092754f, textw, 0.092754f + 0.015f, -1);
 			render_text(mainprogram->tooltipbox->tooltiptitle, orange, x + 0.0225f * sqrt(fac), y - 0.092754f + 0.045f * sqrt(fac), 0.00045f * fac, 0.00075f * fac, win, 0);
 		}
 	}
@@ -4768,8 +4871,7 @@ GLuint Program::set_shader() {
 
 
 
-void Project::delete_dirs() {
-	this->path = mainprogram->path;
+void Project::delete_dirs(const std::string &path) {
 	std::string dir = remove_extension(path) + "/";
 	boost::filesystem::path d{ dir };
 	boost::filesystem::remove_all(d);
@@ -4779,12 +4881,25 @@ void Project::delete_dirs() {
 	binsmain->save_binslist();
 }
 
+void Project::copy_dirs(const std::string &path) {
+    std::string src = dirname(this->path);
+    std::string dest = path;
+    copy_dir(src, dest);
+    boost::filesystem::remove(path + "/" + basename(this->path));
+    this->binsdir = path + "/bins/";
+    this->recdir = path + "/recordings/";
+    this->shelfdir = path + "/shelves/";
+    this->autosavedir = path + "/autosaves/";
+    this->elementsdir = path + "/elements/";
+}
+
 void Project::create_dirs(const std::string &path) {
-	std::string dir = path + "/";
+	std::string dir = path;
 	this->binsdir = dir + "bins/";
 	this->recdir = dir + "recordings/";
     this->shelfdir = dir + "shelves/";
     this->autosavedir = dir + "autosaves/";
+    this->elementsdir = dir + "elements/";
 	boost::filesystem::path d{ dir };
 	boost::filesystem::create_directory(d);
 	boost::filesystem::path p1{ this->binsdir };
@@ -4795,6 +4910,8 @@ void Project::create_dirs(const std::string &path) {
     boost::filesystem::create_directory(p3);
     boost::filesystem::path p4{ this->autosavedir };
     boost::filesystem::create_directory(p4);
+    boost::filesystem::path p5{ this->elementsdir };
+    boost::filesystem::create_directory(p5);
 }
 
 void Project::newp(const std::string &path) {
@@ -4807,7 +4924,7 @@ void Project::newp(const std::string &path) {
 	}
 	else {
 	    path2 = path.substr(0, path.size() - 7);
-        str = path2 + ".ewocvj";
+        str = path2 + "/" + basename(path) + ".ewocvj";
 	}
 	this->path = str;
 	this->name = remove_extension(basename(this->path));
@@ -4845,13 +4962,13 @@ void Project::newp(const std::string &path) {
 	binsmain->save_binslist();
 	mainprogram->shelves[0]->erase();
 	mainprogram->shelves[1]->erase();
-	mainprogram->shelves[0]->basepath = "shelfsA.shelf";
-	mainprogram->shelves[1]->basepath = "shelfsB.shelf";
-	mainprogram->shelves[0]->save(mainprogram->project->shelfdir + "shelfsA.shelf");
-	mainprogram->shelves[1]->save(mainprogram->project->shelfdir + "shelfsB.shelf");
+	mainprogram->shelves[0]->basepath = "shelfsA";
+	mainprogram->shelves[1]->basepath = "shelfsB";
+	mainprogram->shelves[0]->save(mainprogram->project->shelfdir + "shelfsA");
+	mainprogram->shelves[1]->save(mainprogram->project->shelfdir + "shelfsB");
     mainmix->currlays[0].clear();
     mainmix->currlays[1].clear();
-	mainprogram->project->do_save(this->path);
+    mainprogram->project->do_save(this->path);
 }
 	
 void Project::open(const std::string& path) {
@@ -4883,6 +5000,13 @@ void Project::open(const std::string& path) {
 	this->recdir = dir + "recordings/";
     this->shelfdir = dir + "shelves/";
     this->autosavedir = dir + "autosaves/";
+    this->elementsdir = dir + "elements/";
+    if (!exists(mainprogram->currfilesdir)) mainprogram->currfilesdir = this->elementsdir;
+    if (!exists(mainprogram->currclipfilesdir)) mainprogram->currclipfilesdir = this->elementsdir;
+    if (!exists(mainprogram->currshelffilesdir))
+        mainprogram->currshelffilesdir = this->elementsdir;
+    if (!exists(mainprogram->currbinfilesdir)) mainprogram->currbinfilesdir = this->elementsdir;
+    if (!exists(mainprogram->currelemsdir)) mainprogram->currelemsdir = this->elementsdir;
 	int cb = binsmain->read_binslist();
 	for (int i = 0; i < binsmain->bins.size(); i++) {
 		std::string binname = this->binsdir + binsmain->bins[i]->name + ".bin";
@@ -4918,7 +5042,7 @@ void Project::open(const std::string& path) {
 		if (istring == "CURRSHELFA") {
 			safegetline(rfile, istring);
 			if (istring != "") {
-				mainprogram->shelves[0]->open(this->shelfdir + istring);
+				mainprogram->shelves[0]->open(this->shelfdir + istring + "/" + istring + ".ewocvj");
 				mainprogram->shelves[0]->basepath = istring;
 			}
 			else {
@@ -4928,7 +5052,7 @@ void Project::open(const std::string& path) {
 		if (istring == "CURRSHELFB") {
 			safegetline(rfile, istring);
 			if (istring != "") {
-				mainprogram->shelves[1]->open(this->shelfdir + istring);
+				mainprogram->shelves[1]->open(this->shelfdir + istring + "/" + istring + ".ewocvj");
 				mainprogram->shelves[1]->basepath = istring;
 			}
 			else {
@@ -4955,11 +5079,9 @@ void Project::open(const std::string& path) {
 	rfile.close();
 	
 	int pos = std::find(mainprogram->recentprojectpaths.begin(), mainprogram->recentprojectpaths.end(), path) - mainprogram->recentprojectpaths.begin();
+    mainprogram->recentprojectpaths.insert(mainprogram->recentprojectpaths.begin(), path);
 	if (pos < mainprogram->recentprojectpaths.size()) {
-		std::swap(mainprogram->recentprojectpaths[pos], mainprogram->recentprojectpaths[0]);
-	}
-	else {
-        mainprogram->recentprojectpaths.insert(mainprogram->recentprojectpaths.begin(), path);
+        mainprogram->recentprojectpaths.erase(mainprogram->recentprojectpaths.begin() + pos + 1);
 	}
     mainprogram->write_recentprojectlist();
 
@@ -5035,7 +5157,7 @@ void Project::do_save(const std::string& path) {
 	
 	if (std::find(mainprogram->recentprojectpaths.begin(), mainprogram->recentprojectpaths.end(), str) == mainprogram->recentprojectpaths.end()) {
 		mainprogram->recentprojectpaths.insert(mainprogram->recentprojectpaths.begin(), str);
-		if (mainprogram->recentprojectpaths.size() > 10) {
+		while (mainprogram->recentprojectpaths.size() > 10) {
 			mainprogram->recentprojectpaths.pop_back();
 		}
 		#ifdef WINDOWS
@@ -5093,6 +5215,8 @@ void Project::autosave() {
 
 
 Preferences::Preferences() {
+    PIInvisible *piin = new PIInvisible;
+    this->items.push_back(piin);
     PIProj *pipr = new PIProj;
     pipr->box = new Box;
     pipr->box->tooltiptitle = "Project settings ";
@@ -5126,6 +5250,7 @@ Preferences::Preferences() {
     this->items.push_back(pimidi);
     for (int i = 0; i < this->items.size(); i++) {
         PrefCat *item = this->items[i];
+        if(item->name == "Invisible") continue;
         item->box->vtxcoords->x1 = -1.0f;
         item->box->vtxcoords->y1 = 1.0f - (i + 1) * 0.2f;
         item->box->vtxcoords->w = 0.5f;
@@ -5177,6 +5302,10 @@ void Preferences::load() {
                                     else if (pi->type == PREF_NUMBER) {
                                         pi->value = std::stoi(istring);
                                         if (pi->dest) *(float*)pi->dest = (float)pi->value;
+                                    }
+                                    else if (pi->type == PREF_STRING) {
+                                        pi->str = istring;
+                                        if (pi->dest) *(std::string*)pi->dest = pi->str;
                                     }
                                     else if (pi->type == PREF_PATH) {
                                         boost::filesystem::path p(istring);
@@ -5253,6 +5382,16 @@ void Preferences::load() {
             boost::filesystem::path p(istring);
             if (boost::filesystem::exists(p)) mainprogram->currfilesdir = istring;
         }
+        else if (istring == "CURRELEMSDIR") {
+            safegetline(rfile, istring);
+            boost::filesystem::path p(istring);
+            if (boost::filesystem::exists(p)) mainprogram->currelemsdir = istring;
+        }
+        else if (istring == "CURRELEMSDIR") {
+            safegetline(rfile, istring);
+            boost::filesystem::path p(istring);
+            if (boost::filesystem::exists(p)) mainprogram->currelemsdir = istring;
+        }
         else if (istring == "CURRCLIPFILESDIR") {
             safegetline(rfile, istring);
             boost::filesystem::path p(istring);
@@ -5268,10 +5407,10 @@ void Preferences::load() {
             boost::filesystem::path p(istring);
             if (boost::filesystem::exists(p)) mainprogram->currbinfilesdir = istring;
         }
-        else if (istring == "CURRSTATEDIR") {
+        else if (istring == "currelemsdir") {
             safegetline(rfile, istring);
             boost::filesystem::path p(istring);
-            if (boost::filesystem::exists(p)) mainprogram->currstatedir = istring;
+            if (boost::filesystem::exists(p)) mainprogram->currelemsdir = istring;
         }
         else if (istring == "CURRSHELFFILESDIR") {
             safegetline(rfile, istring);
@@ -5297,12 +5436,26 @@ void Preferences::save() {
     wfile.open(prstr);
     wfile << "EWOCvj Preferences V0.2\n";
 
+    for (PrefCat *cat : mainprogram->prefs->items) {
+        if (cat->name == "Invisible") {
+            for (PrefItem *item : cat->items) {
+                if (item->name == "Server IP") {
+                    item->str = mainprogram->serverip;
+                }
+                else if (item->name == "Seat name") {
+                    item->str = mainprogram->seatname;
+                }
+            }
+        }
+    }
+
     for (int i = 0; i < mainprogram->prefs->items.size(); i++) {
         PrefCat *pc = mainprogram->prefs->items[i];
         wfile << "PREFCAT\n";
         wfile << pc->name;
         wfile << "\n";
         for (int j = 0; j < pc->items.size(); j++) {
+            if (!pc->items[j]->onfile) continue;
             wfile << pc->items[j]->name;
             wfile << "\n";
             if (pc->items[j]->type == PREF_ONOFF) {
@@ -5311,6 +5464,10 @@ void Preferences::save() {
             }
             else if (pc->items[j]->type == PREF_NUMBER) {
                 wfile << std::to_string(pc->items[j]->value);
+                wfile << "\n";
+            }
+            else if (pc->items[j]->type == PREF_STRING) {
+                wfile << pc->items[j]->str;
                 wfile << "\n";
             }
             else if (pc->items[j]->type == PREF_PATH) {
@@ -5332,6 +5489,9 @@ void Preferences::save() {
     wfile << "CURRFILESDIR\n";
     wfile << mainprogram->currfilesdir;
     wfile << "\n";
+    wfile << "CURRELEMSDIR\n";
+    wfile << mainprogram->currelemsdir;
+    wfile << "\n";
     wfile << "CURRCLIPFILESDIR\n";
     wfile << mainprogram->currclipfilesdir;
     wfile << "\n";
@@ -5341,8 +5501,8 @@ void Preferences::save() {
     wfile << "CURRBINFILESDIR\n";
     wfile << mainprogram->currshelffilesdir;
     wfile << "\n";
-    wfile << "CURRSTATEDIR\n";
-    wfile << mainprogram->currstatedir;
+    wfile << "currelemsdir\n";
+    wfile << mainprogram->currelemsdir;
     wfile << "\n";
 
     wfile << "ENDOFFILE\n";
@@ -5358,7 +5518,7 @@ PrefItem::PrefItem(PrefCat *cat, int pos, std::string name, PREF_TYPE type, void
     this->namebox->vtxcoords->x1 = -0.5f;
     this->namebox->vtxcoords->y1 = 1.0f - (pos + 1) * 0.2f;
     this->namebox->vtxcoords->w = 1.5f;
-    if (type == PREF_PATH || type == PREF_PATHS) this->namebox->vtxcoords->w = 0.6f;
+    if (type == PREF_STRING || type == PREF_PATH || type == PREF_PATHS) this->namebox->vtxcoords->w = 0.6f;
     this->namebox->vtxcoords->h = 0.2f;
     this->namebox->upvtxtoscr();
     this->valuebox = new Box;
@@ -5372,6 +5532,12 @@ PrefItem::PrefItem(PrefCat *cat, int pos, std::string name, PREF_TYPE type, void
         this->valuebox->vtxcoords->x1 = 0.25f;
         this->valuebox->vtxcoords->y1 = 1.0f - (pos + 1) * 0.2f;
         this->valuebox->vtxcoords->w = 0.3f;
+        this->valuebox->vtxcoords->h = 0.2f;
+    }
+    else if (type == PREF_STRING) {
+        this->valuebox->vtxcoords->x1 = 0.1f;
+        this->valuebox->vtxcoords->y1 = 1.0f - (pos + 1) * 0.2f;
+        this->valuebox->vtxcoords->w = 0.8f;
         this->valuebox->vtxcoords->h = 0.2f;
     }
     else if (type == PREF_PATH || type == PREF_PATHS) {
@@ -5396,13 +5562,14 @@ PIProj::PIProj() {
     int pos = 0;
     this->name = "Project";
 
-    pip = new PrefItem(this, pos, "Project name", PREF_PATH, (void *) &mainprogram->project->name);
+    pip = new PrefItem(this, pos, "Project name", PREF_STRING, (void *) &mainprogram->project->name);
     pip->namebox->tooltiptitle = "Project name ";
     pip->namebox->tooltip = "Name of current project. ";
     pip->valuebox->tooltiptitle = "Set name of current project ";
     pip->valuebox->tooltip = "Leftclick starts keyboard entry of current project name. It also changes the name of "
                              "the project on disk.";
 
+    pip->onfile = false;  // isn't saved on main prefs file but in the project
     this->items.push_back(pip);
     pos++;
 
@@ -5411,7 +5578,7 @@ PIProj::PIProj() {
     pip->namebox->tooltip = "Sets the width in pixels of the video stream sent to the output for this project. ";
     pip->valuebox->tooltiptitle = "Project output video width ";
     pip->valuebox->tooltip = "Leftclicking the value allows setting the width in pixels of the video stream sent to the output for this project. ";
-    mainprogram->ow = pip->value;
+    pip->onfile = false;  // isn't saved on main prefs file but in the project
     this->items.push_back(pip);
     pos++;
 
@@ -5420,6 +5587,7 @@ PIProj::PIProj() {
     pip->namebox->tooltip = "Sets the height in pixels of the video stream sent to the output for this project. ";
     pip->valuebox->tooltiptitle = "Project output video height ";
     pip->valuebox->tooltip = "Leftclicking the value allows setting the height in pixels of the video stream sent to the output for this project. ";
+    pip->onfile = false;  // isn't saved on main prefs file but in the project
     this->items.push_back(pip);
     pos++;
     
@@ -5576,6 +5744,26 @@ PIInt::PIInt() {
     mainprogram->autosave = pii->onoff;
     this->items.push_back(pii);
     pos++;
+
+    pii = new PrefItem(this, pos, "Loopstation element follow", PREF_ONOFF, (void*)&mainprogram->adaptivelprow);
+    pii->onoff = 0;
+    pii->namebox->tooltiptitle = "Loopstation element follow ";
+    pii->namebox->tooltip = "Sets Loopstation element follow mode. ";
+    pii->valuebox->tooltiptitle = "Loopstation element follow toggle ";
+    pii->valuebox->tooltip = "Leftclick makes the current loopstation element follow elment row button clicks. ";
+    mainprogram->adaptivelprow = pii->onoff;
+    this->items.push_back(pii);
+    pos++;
+
+    pii = new PrefItem(this, pos, "Loopstation element stepping", PREF_ONOFF, (void*)&mainprogram->steplprow);
+    pii->onoff = 0;
+    pii->namebox->tooltiptitle = "Loopstation element stepping ";
+    pii->namebox->tooltip = "Sets Loopstation element stepping mode. ";
+    pii->valuebox->tooltiptitle = "Loopstation element stepping toggle ";
+    pii->valuebox->tooltip = "Leftclick makes the current loopstation element step one further on record end. ";
+    mainprogram->steplprow = pii->onoff;
+    this->items.push_back(pii);
+    pos++;
 }
 
 PIVid::PIVid() {
@@ -5610,9 +5798,38 @@ PIVid::PIVid() {
     pvi->namebox->tooltiptitle = "Video playback quality of highly compressed streams ";
     pvi->namebox->tooltip = "Sets the quality of the video stream playback for streams that don't have one keyframe per frame encoded. A tradeoff between quality and framerate. ";
     pvi->valuebox->tooltiptitle = "Video playback quality of highly compressed streams ";
-    pvi->valuebox->tooltip = "Leftclicking the value allows setting the quality in the range of 1 to 10.  Lower is better quality and worse framerate/choppier playback. ";
+    pvi->valuebox->tooltip = "Leftclicking the value allows setting the quality in the range of 1 to 10.  Lower is better quality and worse framerate/chopdier playback. ";
     mainprogram->qualfr = pvi->value;
     this->items.push_back(pvi);
+    pos++;
+}
+
+PIInvisible::PIInvisible() {
+    // Set all preferences items that appear under the Program tab
+
+    this->name = "Invisible";
+    PrefItem *pii;
+    int pos = 0;
+
+    pii = new PrefItem(this, pos, "Seat name", PREF_STRING, (void *) &mainprogram->seatname);
+    pii->namebox->tooltiptitle = "Name of this program seat ";
+    pii->namebox->tooltip = "This is the name other seats can send bin information to. ";
+    pii->valuebox->tooltiptitle = "Set program seat name ";
+    pii->valuebox->tooltip = "Leftclick starts keyboard entry of program seat name. ";
+    pii->str = "SEAT";
+    mainprogram->seatname = pii->str;
+    this->items.push_back(pii);
+    pos++;
+
+    pii = new PrefItem(this, pos, "Server IP", PREF_STRING, (void*)&mainprogram->serverip);
+    pii->namebox->tooltiptitle = "IP address of the server ";
+    pii->namebox->tooltip = "This is the address of the seat that has server status when transmitting bin information"
+                            " to other seats. ";
+    pii->valuebox->tooltiptitle = "Set IP address of the server ";
+    pii->valuebox->tooltip = "Leftclick starts keyboard entry of the server IP address. ";
+    pii->str = "0.0.0.0";
+    mainprogram->serverip = pii->str;
+    this->items.push_back(pii);
     pos++;
 }
 
@@ -5620,58 +5837,27 @@ PIProg::PIProg() {
     // Set all preferences items that appear under the Program tab
 
     this->name = "Program";
-    PrefItem *ppi;
+    PrefItem *pdi;
     int pos = 0;
 
-    ppi = new PrefItem(this, pos, "Seat name", PREF_PATH, (void*)&mainprogram->seatname);
-    ppi->namebox->tooltiptitle = "Name of this program seat ";
-    ppi->namebox->tooltip = "This is the name other seats can send bin information to. ";
-    ppi->valuebox->tooltiptitle = "Set program seat name ";
-    ppi->valuebox->tooltip = "Leftclick starts keyboard entry of program seat name. ";
-    ppi->path = "SEAT";
-    mainprogram->seatname = ppi->path;
-    this->items.push_back(ppi);
+    pdi = new PrefItem(this, pos, "Autosave", PREF_ONOFF, (void*)&mainprogram->autosave);
+    pdi->onoff = 1;
+    pdi->namebox->tooltiptitle = "Autosave ";
+    pdi->namebox->tooltip = "Saves project states at specified intervals in specified directory. ";
+    pdi->valuebox->tooltiptitle = "Autosave toggle ";
+    pdi->valuebox->tooltip = "Leftclick to turn on/off autosave functionality. ";
+    mainprogram->autosave = pdi->onoff;
+    this->items.push_back(pdi);
     pos++;
 
-    ppi = new PrefItem(this, pos, "Server", PREF_ONOFF, (void*)&mainprogram->server);
-    ppi->onoff = 0;
-    ppi->namebox->tooltiptitle = "Server ";
-    ppi->namebox->tooltip = "Choose one of your active seats as server for bin information sharing. ";
-    ppi->valuebox->tooltiptitle = "Server toggle ";
-    ppi->valuebox->tooltip = "Leftclick to set/unset this seats' server status. ";
-    mainprogram->server = ppi->onoff;
-    this->items.push_back(ppi);
-    pos++;
-
-    ppi = new PrefItem(this, pos, "Server IP", PREF_PATH, (void*)&mainprogram->serverip);
-    ppi->namebox->tooltiptitle = "IP address of the server ";
-    ppi->namebox->tooltip = "This is the address of the seat that has server status when transmitting bin information"
-                            " to other seats. ";
-    ppi->valuebox->tooltiptitle = "Set IP address of the server ";
-    ppi->valuebox->tooltip = "Leftclick starts keyboard entry of the server IP address. ";
-    ppi->path = "0.0.0.0";
-    mainprogram->serverip = ppi->path;
-    this->items.push_back(ppi);
-    pos++;
-
-    ppi = new PrefItem(this, pos, "Autosave", PREF_ONOFF, (void*)&mainprogram->autosave);
-    ppi->onoff = 1;
-    ppi->namebox->tooltiptitle = "Autosave ";
-    ppi->namebox->tooltip = "Saves project states at specified intervals in specified directory. ";
-    ppi->valuebox->tooltiptitle = "Autosave toggle ";
-    ppi->valuebox->tooltip = "Leftclick to turn on/off autosave functionality. ";
-    mainprogram->autosave = ppi->onoff;
-    this->items.push_back(ppi);
-    pos++;
-
-    ppi = new PrefItem(this, pos, "Autosave interval (minutes)", PREF_NUMBER, (void*)&mainprogram->asminutes);
-    ppi->value = 1;
-    ppi->namebox->tooltiptitle = "Autosave interval ";
-    ppi->namebox->tooltip = "Sets the time interval between successive autosaves. ";
-    ppi->valuebox->tooltiptitle = "Set autosave interval ";
-    ppi->valuebox->tooltip = "Leftclicking the value allows typing the autosave interval as number of minutes. ";
-    mainprogram->asminutes = ppi->value;
-    this->items.push_back(ppi);
+    pdi = new PrefItem(this, pos, "Autosave interval (minutes)", PREF_NUMBER, (void*)&mainprogram->asminutes);
+    pdi->value = 1;
+    pdi->namebox->tooltiptitle = "Autosave interval ";
+    pdi->namebox->tooltip = "Sets the time interval between successive autosaves. ";
+    pdi->valuebox->tooltiptitle = "Set autosave interval ";
+    pdi->valuebox->tooltip = "Leftclicking the value allows typing the autosave interval as number of minutes. ";
+    mainprogram->asminutes = pdi->value;
+    this->items.push_back(pdi);
     pos++;
 }
 
@@ -5719,6 +5905,7 @@ void Program::define_menus() {
     effects.push_back("FLIP");
     effects.push_back("MIRROR");
     effects.push_back("BOXBLUR");
+    effects.push_back("CHROMASTRETCH");
     std::vector<std::string> meffects = effects;
     std::sort(meffects.begin(), meffects.end());
     for (int i = 0; i < meffects.size(); i++) {
@@ -5816,7 +6003,7 @@ void Program::define_menus() {
     layops1.push_back("Connect live");
     layops1.push_back("Open file(s) into layer");
     layops1.push_back("Open file(s) into queue");
-    layops1.push_back("Insert file(s) in stack before layer");
+    layops1.push_back("Insert file(s) before");
     layops1.push_back("Save layer");
     layops1.push_back("New deck");
     layops1.push_back("Open deck");
@@ -5960,6 +6147,7 @@ void Program::define_menus() {
     generic.push_back("New state");
     generic.push_back("Open state");
     generic.push_back("Save state");
+    generic.push_back("Open autosave");
     generic.push_back("Preferences");
     generic.push_back("Configure general MIDI");
     generic.push_back("Quit");
@@ -6042,6 +6230,9 @@ void Program::write_recentprojectlist() {
 #endif
     wfile.open(dir2 + "recentprojectslist");
     wfile << "EWOCvj RECENTPROJECTS V0.1\n";
+    while (mainprogram->recentprojectpaths.size() > 10) {
+        mainprogram->recentprojectpaths.pop_back();
+    }
     for (int i = 0; i < mainprogram->recentprojectpaths.size(); i++) {
         wfile << mainprogram->recentprojectpaths[i];
         wfile << "\n";
@@ -6052,8 +6243,13 @@ void Program::write_recentprojectlist() {
 
 
 void Program::socket_server(struct sockaddr_in serv_addr, int opt) {
-    this->server = true;
+    this->serverip = this->localip;
     int new_socket;
+
+    if (inet_pton(AF_INET, this->serverip.c_str(), &serv_addr.sin_addr) <= 0) {
+        printf("\nInvalid server address/ Address not supported \n");
+    }
+
     int addrlen = sizeof(serv_addr);
 
     int ret = setsockopt(this->sock, SOL_SOCKET, SO_REUSEADDR,
@@ -6069,8 +6265,15 @@ void Program::socket_server(struct sockaddr_in serv_addr, int opt) {
 
     while (1) {
         ret = listen(this->sock, 3);
+        if (!this->server) return;
+        if (ret < 0) {
+            printf("listen errno %d\n", errno);
+            continue;
+        }
         new_socket = accept(this->sock, (struct sockaddr *) &serv_addr,
                             (socklen_t *) &addrlen);
+        int flags = fcntl(new_socket, F_GETFL);
+        fcntl(new_socket, F_SETFL, flags | O_NONBLOCK);
 
         // check self-connection
         sockaddr_in addr_client;
@@ -6083,21 +6286,18 @@ void Program::socket_server(struct sockaddr_in serv_addr, int opt) {
         }
 
         mainprogram->connsockets.push_back(new_socket);
-        // start thread for recieving BIN_SENT messages from every client
-        std::thread sockservrecv(&Program::socket_server_recieve, mainprogram, new_socket);
-        sockservrecv.detach();
 
         // send number of clients for choosing unique osc address
         send(new_socket, std::to_string(mainprogram->connsockets.size()).c_str(),
              strlen(std::to_string(mainprogram->connsockets.size()).c_str()), 0);
         //get new socket name
-        char name[1024];
+        char *name = (char*)malloc(1024);
         char buf[1037];
-        recv(new_socket, name, 1024, 0);
+        name = bl_recv(new_socket, name, 1024, 0);
         mainprogram->connsocknames.push_back(name);
         mainprogram->connmap[name] = new_socket;
         //send server name to client
-        send(new_socket, mainprogram->sockname.c_str(), mainprogram->sockname.size(), 0);
+        send(new_socket, mainprogram->seatname.c_str(), mainprogram->seatname.size(), 0);
         //send new socket name to all other client sockets
         char *walk2 = buf;
         auto put_in_buffer = [](const char* str, char* walk) {
@@ -6111,58 +6311,83 @@ void Program::socket_server(struct sockaddr_in serv_addr, int opt) {
         walk2 = put_in_buffer("NEW_SIBLING", walk2);
         walk2 = put_in_buffer(name, walk2);
         for (auto sock : mainprogram->connsockets) {
-            send(sock, buf, 1037, 0);
+            if (sock != new_socket) send(sock, buf, 1037, 0);
         }
-        printf("CONNECTED\n");
+
+        free(name);
+        // start thread for recieving BIN_SENT messages from every client
+        std::thread sockservrecv(&Program::socket_server_recieve, mainprogram, new_socket);
+        sockservrecv.detach();
     }
 }
 
 void Program::socket_client(struct sockaddr_in serv_addr, int opt) {
-    char buf[1024];
+    char *buf = (char*)malloc(1024);
     while (1) {
         std::unique_lock<std::mutex> lock(this->clientmutex);
         this->startclient.wait(lock, [&] {return !this->server; });
         lock.unlock();
-        inet_pton(AF_INET, this->serverip.c_str(), &serv_addr.sin_addr);
-        if (connect(this->sock, (struct sockaddr *)&serv_addr, sizeof(serv_addr)) >= 0) {
+
+        if (inet_pton(AF_INET, this->serverip.c_str(), &serv_addr.sin_addr) <= 0) {
+            printf("\nInvalid server address/ Address not supported \n");
+        }
+
+        int flags = fcntl(sock, F_GETFL);
+        fcntl(sock, F_SETFL, flags | O_NONBLOCK);
+        int ret = connect(this->sock, (struct sockaddr *)&serv_addr, sizeof(serv_addr));
+        if (ret < 0) {
+            sleep(1);
+            ret = connect(this->sock, (struct sockaddr *)&serv_addr, sizeof(serv_addr));
+        }
+
+        if (ret >= 0) {
             // server found and connected succesfully!
-            recv( this->sock , buf, 1024, 0);
+            buf = bl_recv( this->sock , buf, 1024, 0);
             if (buf == "LOOP") return;
-            send(this->sock, this->sockname.c_str(), this->sockname.size(), 0);
+            send(this->sock, this->seatname.c_str(), this->seatname.size(), 0);
             // receive server name
-            recv(this->sock , buf, 1024, 0);
+            buf = bl_recv(this->sock , buf, 1024, 0);
             this->connsocknames.push_back(buf);
-            this->connected = true;
+            this->connected = 1;
+            this->prefs->save();
             break;
-        }  
-    } 
-    
+        }
+        else {
+            this->connfailed = true;
+            this->connfailedmilli = 0;
+            return;
+        }
+    }
+    free(buf);
+
+    char *buf2 = (char *) calloc(148489, 1);
     // wait for messages
     while (1) {
-        char *buf = (char *) malloc(148489);
-        int valread = recv(mainprogram->sock, buf, 148489, 0);
-        if (buf == "BIN_SENT") {
-            binsmain->messagelengths.push_back(std::stoi(buf));
-            buf += strlen(buf) + 1;
-            binsmain->messagesocknames.push_back(buf);
-            buf += strlen(buf) + 1;
-            binsmain->messages.push_back(buf);
-        } else if (buf == "BECOME_SERVER") {
-            // this socket becomes the server
-            std::thread sockserver(&Program::socket_server, mainprogram, serv_addr,
-                                   opt);
-            sockserver.detach();
-            return;
-        } else if (buf == "NEW_SIBLING") {
-            buf += 12;
-            mainprogram->connsocknames.push_back(buf);
-        } else {
-            // reconnect to new server
-            serv_addr.sin_family = AF_INET;
-            serv_addr.sin_port = htons(8000);  // comm port
+        buf2 = bl_recv(this->sock, buf2, 148489, 0);
+        std::string str(buf2);
+        if (buf2 != "") {
+            if (str == "BIN_SENT") {
+                buf2 += strlen(buf2) + 1;
+                binsmain->messagelengths.push_back(std::stoi(buf2));
+                buf2 += strlen(buf2) + 1;
+                binsmain->messagesocknames.push_back(buf2);
+                buf2 += strlen(buf2) + 1;
+                binsmain->messages.push_back(buf2);
+            } else if (str == "NEW_SIBLING") {
+                buf2 += 12;
+                mainprogram->connsocknames.push_back(buf2);
+            } else if (str == "SERVER_QUITS") {
+                // disconnect
+                this->connected = 0;
+            } else if (str == "CHANGE_NAME") {
+                buf += strlen(buf) + 1;
+                int pos =
+                        std::find(this->connsockets.begin(), this->connsockets.end(), sock) - this->connsockets.begin();
+                this->connsocknames[pos] = buf;
+            }
 
             // Convert IPv4 and IPv6 addresses from text to binary form
-            if (inet_pton(AF_INET, buf, &serv_addr.sin_addr) <= 0) {
+            if (inet_pton(AF_INET, buf2, &serv_addr.sin_addr) <= 0) {
                 printf("\nInvalid address/ Address not supported \n");
                 return;
             }
@@ -6174,14 +6399,31 @@ void Program::socket_client(struct sockaddr_in serv_addr, int opt) {
 void Program::socket_server_recieve(SOCKET sock) {
     // wait for messages
     char *buf = (char *) malloc(148489);
-    while (recv(sock, buf, 148489, 0)) {
-        if (buf == "BIN_SENT") {
+    while (1) {
+        buf = bl_recv(sock, buf, 148489, 0);
+        if (!this->server) return;
+        std::string str(buf);
+        if (str == "BIN_SENT") {
             binsmain->rawmessages.push_back(buf);
+            buf += strlen(buf) + 1;
             binsmain->messagelengths.push_back(std::stoi(buf));
             buf += strlen(buf) + 1;
             binsmain->messagesocknames.push_back(buf);
             buf += strlen(buf) + 1;
             binsmain->messages.push_back(buf);
         }
+        else if (str == "CHANGE_NAME") {
+            buf += strlen(buf) + 1;
+            int pos = std::find(this->connsockets.begin(), this->connsockets.end(), sock) - this->connsockets.begin();
+            this->connsocknames[pos] = buf;
+        }
     }
+}
+
+char* Program::bl_recv(int sock, char *buf, size_t sz, int flags) {
+    int flags2 = fcntl(sock, F_GETFL);
+    fcntl(sock, F_SETFL, flags2 & ~O_NONBLOCK);
+    recv(sock, buf, sz, flags);
+    fcntl(sock, F_SETFL, flags2);
+    return buf;
 }

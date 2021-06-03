@@ -197,8 +197,8 @@ void LoopStationElement::visualize() {
 	this->box->upvtxtoscr();
 	this->speed->handle();
     draw_box(grey, this->colbox->acolor, this->colbox, -1);
-	if (this->eventlist.size()) draw_box(this->colbox->lcolor, this->colbox->vtxcoords->x1 + 0.02325f ,
-                                      this->colbox->vtxcoords->y1 + 0.0375f, 0.0225f, 1);
+	if (this->eventlist.size()) draw_box(this->colbox->lcolor, this->colbox->lcolor, this->colbox->vtxcoords->x1 + 0.02325f ,
+                                      this->colbox->vtxcoords->y1 + 0.0375f, 0.0225f, 0.03f, -1);
 	if (this == loopstation->currelem) draw_box(grey, white, this->box, -1);
 	else draw_box(grey, nullptr, this->box, -1);
 	if (this->box->in() || this->recbut->box->in() || this->loopbut->box->in() || this->playbut->box->in() || this->speed->box->in() || this->colbox->in()) {
@@ -241,8 +241,16 @@ void LoopStationElement::erase_elem() {
 }
 
 void LoopStationElement::mouse_handle() {
+    //current loopstation element selection
+    if (this->box->in() && mainprogram->leftmouse) {
+        loopstation->currelem = this;
+    }
+
 	this->recbut->handle(1, 0);
 	if (this->recbut->toggled()) {
+        if (mainprogram->adaptivelprow) {
+            loopstation->currelem = this;
+        }
 		if (this->recbut->value) {
 			this->loopbut->value = false;
 			this->playbut->value = false;
@@ -250,15 +258,18 @@ void LoopStationElement::mouse_handle() {
 			this->starttime = std::chrono::high_resolution_clock::now();
 		}
 		else {
+            if (mainprogram->steplprow) {
+                int rowpos = loopstation->currelem->pos;
+                rowpos++;
+                if (rowpos > 7) {
+                    rowpos = 0;
+                }
+                loopstation->currelem = loopstation->elems[rowpos];
+                mainprogram->waitonetime = true;
+            }
 			if (this->eventlist.size()) {
-                std::chrono::high_resolution_clock::time_point now = std::chrono::high_resolution_clock::now();
-                std::chrono::duration<double> elapsed;
-                elapsed = std::chrono::duration_cast<std::chrono::duration<double>>(now - this->starttime);
-                this->totaltime = std::chrono::duration_cast<std::chrono::milliseconds>(elapsed).count();
-				this->loopbut->value = true;
-				this->starttime = std::chrono::high_resolution_clock::now();
-				this->interimtime = 0;
-				this->speedadaptedtime = 0;
+                this->loopbut->value = true;
+                this->loopbut->oldvalue = false;
 			}
 		}
 	}
@@ -266,11 +277,19 @@ void LoopStationElement::mouse_handle() {
 	if (this->loopbut->toggled()) {
 		// start/stop loop play of recording
 		if (this->eventlist.size()) {
+            if (mainprogram->adaptivelprow && !mainprogram->waitonetime) {
+                loopstation->currelem = this;
+            }
+            else mainprogram->waitonetime = true;
 			this->recbut->value = false;
 			this->recbut->oldvalue = false;
 			this->playbut->value = false;
 			this->playbut->oldvalue = false;
 			if (this->loopbut->value) {
+                std::chrono::high_resolution_clock::time_point now = std::chrono::high_resolution_clock::now();
+                std::chrono::duration<double> elapsed;
+                elapsed = std::chrono::duration_cast<std::chrono::duration<double>>(now - this->starttime);
+                this->totaltime = std::chrono::duration_cast<std::chrono::milliseconds>(elapsed).count();
 				this->eventpos = 0;
 				this->starttime = std::chrono::high_resolution_clock::now();
 				this->interimtime = 0;
@@ -286,6 +305,7 @@ void LoopStationElement::mouse_handle() {
 	if (this->playbut->toggled()) {
 		// start/stop one-shot play of recording
 		if (this->eventlist.size()) {
+            if (mainprogram->adaptivelprow) loopstation->currelem = this;
 			this->recbut->value = false;
 			this->recbut->oldvalue = false;
 			this->loopbut->value = false;
@@ -302,8 +322,6 @@ void LoopStationElement::mouse_handle() {
 			this->playbut->oldvalue = false;
 		}
 	}
-	//current loopstation element selection
-	if (this->box->in() && mainprogram->leftmouse) loopstation->currelem = this;
 }
 	
 void LoopStationElement::set_values() {
@@ -348,8 +366,10 @@ void LoopStationElement::set_values() {
             if (this->loopbut->value) {
                 //start loop again
                 this->eventpos = 0;
-                this->speedadaptedtime -= this->totaltime;
-                this->interimtime = this->speedadaptedtime * this->speed->value;
+                this->speedadaptedtime = 0;
+                this->interimtime = 0;
+                //reminder: this->speedadaptedtime -= this->totaltime;
+                //this->interimtime = this->speedadaptedtime * this->speed->value;
                 this->starttime = std::chrono::high_resolution_clock::now() - std::chrono::milliseconds((long long)this->interimtime);
             }
             else if (this->playbut->value) {

@@ -113,7 +113,7 @@ class Bin {
 		std::vector<BinElement*> elements;
 		int encthreads = 0;
 		int pos;
-		bool frozen = false;
+		bool shared = false;
 		std::vector<std::string> sendtonames;
 		Bin(int pos);
 		~Bin();

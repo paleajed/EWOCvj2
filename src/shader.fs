@@ -8,7 +8,7 @@ layout(location = 0) out vec4 FragColor;
 uniform sampler2D Sampler0;
 uniform sampler2D endSampler0, endSampler1;
 uniform sampler2D fboSampler;
-uniform sampler2D boxSampler[24];   // reminder: number ~ card
+uniform sampler2D boxSampler[128];
 uniform samplerBuffer boxcolSampler;
 uniform usamplerBuffer boxtexSampler;
 uniform samplerBuffer boxbrdSampler;
@@ -17,6 +17,8 @@ uniform float cf = 0.5f;
 uniform float opacity = 1.0f;
 uniform float satamount = 4.0f;
 uniform float colorrot = 0.5f;
+uniform float cshue = 0.0f;
+uniform float csfac = 0.0f;
 uniform float dotsize = 300.0f;
 uniform int fbowidth = 1920;
 uniform int fboheight = 1080;
@@ -25,7 +27,6 @@ uniform float globh = 1080.0;
 uniform bool inverted = false;
 uniform float fcdiv = 1.0f;
 uniform int numverts = 0;
-uniform int preff = 1;
 uniform float drywet = 1.0f;
 uniform vec4 color = vec4(0.0f, 0.0f, 0.0f, 1.0f);
 uniform vec4 lcolor = vec4(1.0f, 1.0f, 1.0f, 1.0f);
@@ -287,6 +288,15 @@ vec4 chromarotate(vec4 color)  //selfmade
 	vec3 hsv = rgb2hsv(color.rgb);
 	hsv.x += colorrot;
 	if (hsv.x < 0) hsv.x += 1;
+	vec3 rgb = hsv2rgb(hsv);
+	return vec4(rgb.x, rgb.y, rgb.z, color.a);
+}
+
+vec4 chromastretch(vec4 color)  //selfmade
+{
+	vec3 hsv = rgb2hsv(color.rgb);
+	hsv.x = hsv.x - ((1.0 - abs(hsv.x - cshue)) * csfac);
+	if (hsv.x < 0.0) hsv.x += 1.0;
 	vec3 rgb = hsv2rgb(hsv);
 	return vec4(rgb.x, rgb.y, rgb.z, color.a);
 }
@@ -1617,6 +1627,8 @@ void main()
 				intcol = mirror(texco); break;
 			case 40:
 				intcol = boxblur(texco); break;
+			case 41:
+				intcol = chromastretch(texcol); break;
 		}
     	FragColor = vec4(intcol.rgb * drywet + (1.0f - drywet) * texcol.rgb, intcol.a * opacity);
     	return;
@@ -2267,6 +2279,7 @@ void main()
 					}
 					break;
 				case 8:  //bars
+				    xamount *= 1.001f;
 					if (xxpos >= 1) xl = fbowidth * fcdiv / xxpos;
 					else xl = fbowidth * fcdiv;
 					if (xypos >= 1) yl = fboheight * fcdiv / xypos;
@@ -2288,6 +2301,7 @@ void main()
 					}
 					break;
 				case 9:  //pattern
+				    xamount *= 1.001f;
 					if (xxpos >= 1) xl = fbowidth * fcdiv / xxpos;
 					else xl = fbowidth * fcdiv;
 					if (xypos >= 1) yl = fboheight * fcdiv / xypos;

@@ -45,7 +45,8 @@ typedef enum
    	DITHER = 37,
    	FLIP = 38,
 	MIRROR = 39,
-	BOXBLUR = 40,
+    BOXBLUR = 40,
+    CHROMASTRETCH = 41,
 } EFFECT_TYPE;
 
 typedef enum
@@ -322,6 +323,11 @@ public:
 
 class BoxblurEffect : public Effect {
 public:
-	BoxblurEffect();
+    BoxblurEffect();
+};
+
+class ChromastretchEffect : public Effect {
+public:
+    ChromastretchEffect();
 };
 

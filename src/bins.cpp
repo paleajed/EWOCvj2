@@ -21,6 +21,7 @@
 
 #include <ostream>
 #include <ios>
+#include <arpa/inet.h>
 
 extern "C" {
 #include "libavformat/avformat.h"
@@ -443,7 +444,9 @@ void BinsMain::handle(bool draw) {
 								binel->jpegpath = elem->jpegpath;
 							}
 							this->insertshelf = nullptr;
-							mainprogram->binsscreen = false;
+                            this->mouseshelfnum = -1;
+                            this->oldmouseshelfnum = -1;
+							//mainprogram->binsscreen = false;
 						}
 						if (mainprogram->rightmouse) {
 							// cancel insert
@@ -580,7 +583,7 @@ void BinsMain::handle(bool draw) {
 		}
 	}
 
-	/*
+
 	// manage SEND button
     auto put_in_buffer = [](const char* str, char* walk) {
 	    // buffer utility
@@ -592,89 +595,231 @@ void BinsMain::handle(bool draw) {
         return walk;
     };
 
-    std::unique_ptr <Box> box = std::make_unique <Box> ();;
-    box->vtxcoords->x1 = -0.28f;
+    std::unique_ptr <Box> box = std::make_unique <Box> ();
+    box->vtxcoords->x1 = -0.83f;
     box->vtxcoords->y1 = -0.98f;
-    box->vtxcoords->w = 0.1f;
+    box->vtxcoords->w = 0.16f;
     box->vtxcoords->h = 0.085f;
     box->upvtxtoscr();
-    draw_box(white, nullptr, box, -1);
-    render_text("SEND", white, -0.255f, -0.95f, 0.00075f, 0.0012f);
-    if (box->in()) {
+    std::unique_ptr <Box> ipbox = std::make_unique <Box> ();
+    ipbox->vtxcoords->x1 = -0.67f;
+    ipbox->vtxcoords->y1 = -0.98f;
+    ipbox->vtxcoords->w = 0.15f;
+    ipbox->vtxcoords->h = 0.085f;
+    ipbox->upvtxtoscr();
+    std::unique_ptr <Box> connbox = std::make_unique <Box> ();
+    connbox->vtxcoords->x1 = -0.47f;
+    connbox->vtxcoords->y1 = -0.98f;
+    connbox->vtxcoords->w = 0.15f;
+    connbox->vtxcoords->h = 0.085f;
+    connbox->upvtxtoscr();
+    std::unique_ptr <Box> seatbox = std::make_unique <Box> ();
+    seatbox->vtxcoords->x1 = 0.04f;
+    seatbox->vtxcoords->y1 = -0.98f;
+    seatbox->vtxcoords->w = 0.3f;
+    seatbox->vtxcoords->h = 0.085f;
+    seatbox->upvtxtoscr();
+    draw_box(white, nullptr, seatbox, -1);
+    render_text("Seatname:", white, -0.05f, -0.95f, 0.00075f, 0.0012f);
+    if (seatbox->in()) {
         if (mainprogram->leftmouse) {
-            mainprogram->make_menu("sendmenu", mainprogram->sendmenu, mainprogram->connsocknames);
-            mainprogram->sendmenu->state = 2;
+            mainprogram->renamingseat = true;
+            mainprogram->renaming = EDIT_STRING;
+            mainprogram->inputtext = mainprogram->seatname;
+            mainprogram->cursorpos0 = mainprogram->inputtext.length();
+            SDL_StartTextInput();
+        }
+    }
+    if (mainprogram->renamingseat == false) {
+        render_text(mainprogram->seatname, white, 0.05f, -0.95f, 0.00075f, 0.0012f);
+    } else {
+        if (mainprogram->renaming == EDIT_NONE) {
+            mainprogram->renamingseat = false;
+            mainprogram->seatname = mainprogram->inputtext;
+        } else if (mainprogram->renaming == EDIT_CANCEL) {
+            mainprogram->renamingseat = false;
+        } else {
+            do_text_input(seatbox->vtxcoords->x1 + 0.02f,
+                          seatbox->vtxcoords->y1 + 0.03f, 0.00075f, 0.0012f, mainprogram->mx, mainprogram->my,
+                          mainprogram->xvtxtoscr(0.3f), 0, nullptr, false);
+        }
+    }
+    if (!mainprogram->server) {
+         draw_box(white, nullptr, box, -1);
+         if (mainprogram->connected == 0) {
+            render_text("START SERVER", white, -0.805f, -0.95f, 0.00075f, 0.0012f);
+            if (inet_pton(AF_INET, mainprogram->serverip.c_str(), &mainprogram->serv_addr_server.sin_addr) <= 0) {
+                printf("\nInvalid server address/ Address not supported \n");
+            }
+            else {
+                if (mainprogram->connfailed) {
+                    if (mainprogram->connfailedmilli > 1000) mainprogram->connfailed = false;
+                    draw_box(white, darkred1, connbox, -1);
+                    render_text("FAILED", white, -0.445f, -0.95f, 0.00075f, 0.0012f);
+                }
+                else {
+                    draw_box(white, nullptr, connbox, -1);
+                    render_text("TRY CONNECT", white, -0.450f, -0.95f, 0.00075f, 0.0012f);
+                    if (connbox->in() && mainprogram->leftmouse) {
+                        int opt = 1;
+                        std::thread sockclient(&Program::socket_client, mainprogram, mainprogram->serv_addr_client,
+                                               opt);
+                        sockclient.detach();
+                    }
+                }
+            }
+        }
+        else if (mainprogram->connected == 1) {
+            draw_box(white, darkgreen1, box, -1);
+            render_text("CONNECTED", white, -0.805f, -0.95f, 0.00075f, 0.0012f);
+        }
+        draw_box(white, nullptr, ipbox, -1);
+        if (ipbox->in()) {
+            if (mainprogram->leftmouse) {
+                mainprogram->renamingip = true;
+                mainprogram->renaming = EDIT_STRING;
+                mainprogram->inputtext = mainprogram->serverip;
+                mainprogram->cursorpos0 = mainprogram->inputtext.length();
+                SDL_StartTextInput();
+            }
+        }
+        if (mainprogram->renamingip == false) {
+            render_text(mainprogram->serverip, white, -0.65f, -0.95f, 0.00075f, 0.0012f);
+        } else {
+            if (mainprogram->renaming == EDIT_NONE) {
+                mainprogram->renamingip = false;
+                mainprogram->serverip = mainprogram->inputtext;
+            } else if (mainprogram->renaming == EDIT_CANCEL) {
+                mainprogram->renamingip = false;
+            } else {
+                do_text_input(ipbox->vtxcoords->x1 + 0.02f,
+                              ipbox->vtxcoords->y1 + 0.03f, 0.00075f, 0.0012f, mainprogram->mx, mainprogram->my,
+                              mainprogram->xvtxtoscr(0.15f), 0, nullptr, false);
+            }
+        }
+    }
+    else {
+        draw_box(white, darkgreen1, ipbox, -1);
+        render_text("SERVER @", white, -0.645f, -0.95f, 0.00075f, 0.0012f);
+        render_text(mainprogram->serverip, white, -0.45f, -0.95f, 0.00075f, 0.0012f);
+    }
+    if (box->in() && mainprogram->connected == 0) {
+        if (mainprogram->leftmouse) {
+            // start server
+            mainprogram->serverip = mainprogram->localip; // local ip is server ip
+            if (inet_pton(AF_INET, mainprogram->localip.c_str(), &mainprogram->serv_addr_server.sin_addr) <= 0) {
+                printf("\nInvalid server address/ Address not supported \n");
+            } else {
+                int opt = 1;
+                mainprogram->server = true;
+                std::thread sockserver(&Program::socket_server, mainprogram, mainprogram->serv_addr_server,
+                                       opt);
+                sockserver.detach();
+            }
+        }
+    }
+
+    if (mainprogram->connsocknames.size()) {
+        box->vtxcoords->x1 = -0.28f;
+        box->vtxcoords->y1 = -0.98f;
+        box->vtxcoords->w = 0.15f;
+        box->vtxcoords->h = 0.085f;
+        box->upvtxtoscr();
+        draw_box(white, nullptr, box, -1);
+        render_text("SHARE BIN", white, -0.255f, -0.95f, 0.00075f, 0.0012f);
+        if (box->in()) {
+            if (mainprogram->leftmouse) {
+                mainprogram->make_menu("sendmenu", mainprogram->sendmenu, mainprogram->connsocknames);
+                mainprogram->sendmenu->state = 2;
+                mainprogram->sendmenu->menux = mainprogram->mx;
+                mainprogram->sendmenu->menuy = mainprogram->my;
+            }
         }
     }
 
     // handle sendmenu
-    int k = mainprogram->handle_menu(mainprogram->sendmenu);
-    if (k > -1) {
-        binsmain->currbin->sendtonames.push_back(mainprogram->connsocknames[k]);
-        int sock;
-        if (mainprogram->server) sock = mainprogram->connsockets[k];
-        else sock = mainprogram->sock;
-        char buf[148480] = {0};
-        char* walk = buf;
-        walk = put_in_buffer(mainprogram->sockname.c_str(), walk);
-        walk = put_in_buffer(this->currbin->name.c_str(), walk);
-        for (int i = 0; i < 12; i++) {
-            for (int j = 0; j < 12; j++) {
-                BinElement *binel = this->currbin->elements[j * 12 + i];
-                walk = put_in_buffer(binel->name.c_str(), walk);
-                walk = put_in_buffer(binel->path.c_str(), walk);
+    int k;
+    if (mainprogram->sendmenu) {
+        k = mainprogram->handle_menu(mainprogram->sendmenu);
+        if (k > -1) {
+            binsmain->currbin->sendtonames.push_back(mainprogram->connsocknames[k]);
+            int sock;
+            if (mainprogram->server) sock = mainprogram->connsockets[k];
+            else sock = mainprogram->sock;
+            char buf[148480] = {0};
+            char *walk = buf;
+            walk = put_in_buffer(mainprogram->seatname.c_str(), walk);
+            if (this->currbin->shared) {
+                walk = put_in_buffer(this->currbin->name.c_str(), walk);
             }
+            else  {
+                binsmain->do_save_bin(mainprogram->temppath + "bin_to_copy");
+                binsmain->new_bin(this->currbin->name + " (SHARED)");
+                binsmain->open_bin(mainprogram->temppath + "bin_to_copy", binsmain->currbin);
+                walk = put_in_buffer((this->currbin->name + " (SHARED)").c_str(), walk);
+            }
+            for (int i = 0; i < 12; i++) {
+                for (int j = 0; j < 12; j++) {
+                    BinElement *binel = this->currbin->elements[j * 12 + i];
+                    walk = put_in_buffer(binel->name.c_str(), walk);
+                    walk = put_in_buffer(binel->path.c_str(), walk);
+                }
+            }
+            char buf2[148495] = {0};
+            char *walk2 = buf2;
+            walk2 = put_in_buffer("BIN_SENT", walk2);
+            walk2 = put_in_buffer(
+                    (std::to_string(walk - &buf[0] + (std::to_string(walk - &buf[0])).size() + 10)).c_str(),
+                    walk2);
+            for (int i = 0; i < walk - &buf[0]; i++) {
+                *walk2 = buf[i];  // append buf to buf2
+                walk2++;
+            }
+            send(sock, buf2, walk2 - &buf2[0], 0);
         }
-        char buf2[148495] = {0};
-        char *walk2 = buf2;
-        walk2 = put_in_buffer("BIN_SENT", walk2);
-        walk2 = put_in_buffer((std::to_string(walk - &buf[0] + (std::to_string(walk - &buf[0])).size() + 10)).c_str(),
-                walk2);
-        for (int i = 0; i < walk - &buf[0]; i++) {
-            *walk2 = buf[i];
-            walk2++;
+        if (mainprogram->menuchosen) {
+            mainprogram->menuchosen = false;
+            mainprogram->menuactivation = 0;
+            mainprogram->menuresults.clear();
         }
-        send(sock, buf2, walk2 - &buf2[0], 0);
-    }
-    if (mainprogram->menuchosen) {
-        mainprogram->menuchosen = false;
-        mainprogram->menuactivation = 0;
-        mainprogram->menuresults.clear();
     }
 
     // recieve sent bins
     for (int i = 0; i < binsmain->messages.size(); i++) {
         if (mainprogram->server) {
             // send recieved bins through from server to destination clients
-            send(mainprogram->connmap[binsmain->messagesocknames[i]], binsmain->rawmessages[i],
-                 binsmain->messagelengths[i], 0);
-        }
-        else {
-            char *walk = binsmain->messages[i];
-            std::string str(walk);
-            walk += strlen(walk) + 1;
-
-            Bin *binis = nullptr;
-            for (Bin *bin : binsmain->bins) {
-                if (bin->name == str + " (FROZEN)") {
-                    binis = bin;
-                    break;
+            for (int j = 0; j < mainprogram->connsockets.size(); j++) {
+                if (mainprogram->connsockets[j] != mainprogram->connmap[binsmain->messagesocknames[i]]) {
+                    send(mainprogram->connsockets[j], binsmain->rawmessages[i],
+                         binsmain->messagelengths[i], 0);
                 }
             }
-            if (!binis) binis = new_bin(str + " (FROZEN)");
-            make_currbin(binis->pos);
-            binis->frozen = true;
+        }
+        // process messages
+        char *walk = binsmain->messages[i];
+        std::string str(walk);
+        walk += strlen(walk) + 1;
 
-            for (int i = 0; i < 12; i++) {
-                for (int j = 0; j < 12; j++) {
-                    BinElement *binel = this->currbin->elements[j * 12 + i];
-                    std::string name(walk);
-                    walk += strlen(walk) + 1;
-                    std::string path(walk);
-                    walk += strlen(walk) + 1;
-                    binel->name = name;
-                    mainprogram->paths.push_back(path);
-                }
+        Bin *binis = nullptr;
+        for (Bin *bin : binsmain->bins) {
+            if (bin->name == str) {
+                binis = bin;
+                break;
+            }
+        }
+        if (!binis) binis = new_bin(str);
+        make_currbin(binis->pos);
+        binis->shared = true;
+
+        for (int i = 0; i < 12; i++) {
+            for (int j = 0; j < 12; j++) {
+                BinElement *binel = this->currbin->elements[j * 12 + i];
+                std::string name(walk);
+                walk += strlen(walk) + 1;
+                std::string path(walk);
+                walk += strlen(walk) + 1;
+                binel->name = name;
+                mainprogram->paths.push_back(path);
             }
         }
 
@@ -685,7 +830,7 @@ void BinsMain::handle(bool draw) {
     binsmain->rawmessages.clear();
     binsmain->messagelengths.clear();
     binsmain->messagesocknames.clear();
-    */
+
 
 
 	// set threadmode for hap encoding
@@ -925,7 +1070,6 @@ void BinsMain::handle(bool draw) {
 					this->bins[i]->box->upvtxtoscr();
 				}
 				this->dragbin = nullptr;
-				this->save_binslist();
 			}
 			if (mainprogram->rightmouse) {
 				// cancel bin drag
@@ -1031,7 +1175,6 @@ void BinsMain::handle(bool draw) {
 					this->bins[i]->box->vtxcoords->y1 = (i + 1) * -0.05f;
 					this->bins[i]->box->upvtxtoscr();
 				}
-				this->save_binslist();
 			}
 			else if (k == 1) {
 				// start renaming bin
@@ -1071,7 +1214,7 @@ void BinsMain::handle(bool draw) {
 
 
 	// handle binelmenu thats been populated above, menuset controls which options sets are used
-	int k = mainprogram->handle_menu(mainprogram->binelmenu);
+	k = mainprogram->handle_menu(mainprogram->binelmenu);
 	//if (k > -1) this->currbinel = nullptr;
 	if (binelmenuoptions.size() && k > -1) {
 		if (binelmenuoptions[k] != BET_OPENFILES) this->menuactbinel = nullptr;
@@ -1118,13 +1261,13 @@ void BinsMain::handle(bool draw) {
 			// insert deck A into bin
 			mainprogram->paths.clear();
 			mainmix->mousedeck = 0;
-			std::string path = find_unused_filename("deckA", mainprogram->temppath, ".deck");
+			std::string path = find_unused_filename("deckA", mainprogram->binsdir, ".deck");
 			mainmix->do_save_deck(path, true, true);
 			open_handlefile(path);
 			this->menubinel->tex = this->inputtexes[0];
 			this->menubinel->type = this->inputtypes[0];
 			this->menubinel->path = this->addpaths[0];
-			this->menubinel->name = remove_extension(basename(this->menubinel->path));
+			this->menubinel->name = remove_extension(this->menubinel->path);
 			this->menubinel->oldjpegpath = this->menubinel->jpegpath;
 			this->menubinel->jpegpath = this->inputjpegpaths[0];
 			// clean up: maybe too much cleared here, doesn't really matter
@@ -1140,13 +1283,13 @@ void BinsMain::handle(bool draw) {
 			mainprogram->paths.clear();
 			mainmix->mousedeck = 1;
 
-            std::string path = find_unused_filename("deckB", mainprogram->temppath, ".deck");
+            std::string path = find_unused_filename("deckB", mainprogram->binsdir, ".deck");
 			mainmix->do_save_deck(path, true, true);
 			open_handlefile(path);
 			this->menubinel->tex = this->inputtexes[0];
 			this->menubinel->type = this->inputtypes[0];
 			this->menubinel->path = this->addpaths[0];
-			this->menubinel->name = remove_extension(basename(this->menubinel->path));
+			this->menubinel->name = remove_extension(this->menubinel->path);
 			this->menubinel->oldjpegpath = this->menubinel->jpegpath;
 			this->menubinel->jpegpath = this->inputjpegpaths[0];
 			// clean up: maybe too much cleared here, doesn't really matter
@@ -1161,13 +1304,13 @@ void BinsMain::handle(bool draw) {
 			// insert live mix into bin
 			mainprogram->paths.clear();
 
-            std::string path = find_unused_filename("mix", mainprogram->temppath, ".mix");
-			mainmix->do_save_mix(path, mainprogram->prevmodus, true);
+            std::string path = find_unused_filename("mix", mainprogram->binsdir, ".mix");
+            mainmix->do_save_mix(path, mainprogram->prevmodus, true);
 			open_handlefile(path);
 			this->menubinel->tex = this->inputtexes[0];
 			this->menubinel->type = this->inputtypes[0];
 			this->menubinel->path = this->addpaths[0];
-			this->menubinel->name = remove_extension(basename(this->menubinel->path));
+			this->menubinel->name = remove_extension(this->menubinel->path);
 			this->menubinel->oldjpegpath = this->menubinel->jpegpath;
 			this->menubinel->jpegpath = this->inputjpegpaths[0];
 			// clean up: maybe too much cleared here, doesn't really matter
@@ -1395,9 +1538,9 @@ void BinsMain::handle(bool draw) {
 									mainprogram->prelay->blendnode = mainprogram->nodesmain->currpage->add_blendnode(MIXING, !mainprogram->prevmodus);
 									mainprogram->prelay->node = mainprogram->nodesmain->currpage->add_videonode(2);
 									mainprogram->prelay->node->layer = mainprogram->prelay;
-									mainprogram->prelay->lasteffnode[0] = mainprogram->prelay->node;
-									mainprogram->prelay->lasteffnode[1] = mainprogram->prelay->node;
-									mainmix->open_layerfile(binel->path, mainprogram->prelay, true, 0);
+                                    mainprogram->prelay = mainmix->open_layerfile(binel->path, mainprogram->prelay, true, 0);
+                                    mainprogram->prelay->lasteffnode[0] = mainprogram->prelay->node;
+                                    mainprogram->prelay->lasteffnode[1] = mainprogram->prelay->node;
 									if (isimage(mainprogram->prelay->filename)) {
 										// if layer file contains an image, relay preview to image specific code above
 										this->previewimage = mainprogram->prelay->filename;
@@ -1691,11 +1834,13 @@ void BinsMain::handle(bool draw) {
 
 					if (binel != this->currbinel) {
 						if (this->currbinel) this->binpreview = false;
-						bool cond = false;
+                        bool cond1 = false;
+                        bool cond2 = false;
 						if (mainprogram->dragbinel) {
-							cond = (mainprogram->dragbinel->type == ELEM_DECK || mainprogram->dragbinel->type == ELEM_MIX);
+						    cond1 = (mainprogram->shelfdragelem);
+							cond2 = (mainprogram->dragbinel->type == ELEM_DECK || mainprogram->dragbinel->type == ELEM_MIX);
 						}
-						if (lay->vidmoving || cond) {
+						if (lay->vidmoving || cond1 || cond2) {
 							// when dragging layer/mix/deck in from mix view
 							if (this->currbinel) {
 								//reset old currbinel
@@ -1897,15 +2042,19 @@ void BinsMain::handle(bool draw) {
 
 		if (!inbinel) this->binpreview = false;
 
-		if (inbinel && !mainprogram->rightmouse && (lay->vidmoving) && mainprogram->lmover) {
+		if (inbinel && !mainprogram->rightmouse && (lay->vidmoving || mainprogram->shelfdragelem) && mainprogram->lmover) {
 			// confirm layer dragging from main view and set influenced bin element to the right values
 			this->currbinel->type = mainprogram->dragbinel->type;
 			this->currbinel->path = mainprogram->dragbinel->path;
 			if (this->currbinel->type == ELEM_LAYER) {
-                this->currbinel->path = find_unused_filename( basename(lay->filename),
+			    std::string p1;
+			    if (lay->vidmoving) p1 = lay->filename;
+			    else p1 = mainprogram->shelfdragelem->path;
+                this->currbinel->path = find_unused_filename( basename(p1),
                                                     mainprogram->project->binsdir + this->currbin->name + "/", ""
                                                                                                                ".layer");
-			    mainmix->save_layerfile(this->currbinel->path, lay, 1, 0);
+                this->currbinel->name = remove_extension(basename(this->currbinel->path));
+                mainmix->save_layerfile(this->currbinel->path, lay, 1, 0);
 			}
 			this->currbinel->name = remove_extension(basename(this->currbinel->path));
 			this->currbinel->full = true;
@@ -2044,6 +2193,11 @@ void BinsMain::open_bin(const std::string &path, Bin *bin) {
 				}
 			}
 		}
+        else if (istring == "SHARED") {
+            // shared state
+            safegetline(rfile, istring);
+            bin->shared = std::stoi(istring);
+        }
 	}
 
 	rfile.close();
@@ -2107,7 +2261,11 @@ void BinsMain::do_save_bin(const std::string& path) {
 		}
 	}
 	wfile << "ENDOFELEMS\n";
-	
+
+    wfile << "SHARED\n";
+    wfile << this->currbin->shared;
+    wfile << "\n";
+
 	wfile << "ENDOFFILE\n";
 	wfile.close();
 	
@@ -2149,7 +2307,6 @@ void BinsMain::make_currbin(int pos) {
 	this->currbin->name = this->bins[pos]->name;
 	this->currbin->path = this->bins[pos]->path;
 	this->currbin->elements = this->bins[pos]->elements;
-	this->save_binslist();
 	this->prevbinel = nullptr;
 }
 
@@ -2244,7 +2401,7 @@ void BinsMain::import_bins() {
 void BinsMain::open_files_bin() {
     // open videos/images/layer files into bin
 
-    if (!currbin->frozen) {
+    if (!currbin->shared) {
         // order elements
         if (mainprogram->paths.size() == 0) {
             binsmain->openfilesbin = false;
@@ -2629,7 +2786,7 @@ void BinsMain::hap_encode(const std::string srcpath, BinElement *binel, BinEleme
 		av_log(nullptr, AV_LOG_ERROR, "Copying parameters for stream #%u failed\n");
     }   
     dest_stream->r_frame_rate = source_stream->r_frame_rate;
-    ((AVOutputFormat*)(dest->oformat))->flags |= AVFMT_NOFILE;
+    dest->oformat->flags = AVFMT_NOFILE;
     //avformat_init_output(dest, nullptr);
     r = avio_open(&dest->pb, destpath.c_str(), AVIO_FLAG_WRITE);
   	r = avformat_write_header(dest, nullptr);
@@ -2729,7 +2886,9 @@ void BinsMain::hap_encode(const std::string srcpath, BinElement *binel, BinEleme
 	boost::filesystem::rename(destpath, binel->path);
     binel->encoding = false;
     if (binel->otflay) {
+        binel->otflay->encodeload = true;
         binel->otflay->open_video(binel->otflay->frame, binel->path, false);
+        binel->otflay->encodeload = false;
         binel->otflay->hapbinel = nullptr;
     }
     if (bdm) {
