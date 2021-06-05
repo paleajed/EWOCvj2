@@ -1976,7 +1976,7 @@ bool Button::handle(bool circlein, bool automation) {
         float rady = this->box->vtxcoords->h / 2.0f;
         if (this->value) {
             int cs = 1;
-            if (this == mainmix->recbut) {
+            if (this == mainmix->recbutS || this == mainmix->recbutQ) {
                 if ((int)(mainmix->time * 10) % 10 > 5) cs = 2;
             }
             draw_box(this->ccol, this->box->vtxcoords->x1 + radx, this->box->vtxcoords->y1 + rady, 0.0225f, cs);

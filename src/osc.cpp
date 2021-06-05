@@ -25,8 +25,10 @@ void Program::add_main_oscmethods() {
 	mainprogram->st->add_method("/mix/preview/crossfade", "f",[](lo_arg **argv, float){mainmix->crossfade->value = argv[0]->f;});
 	mainprogram->st->add_method("/mix/output/crossfade", "f",[](lo_arg **argv, float){mainmix->crossfadecomp->value = argv[0]->f;});
 	// output recording
-	mainprogram->st->add_method("/mix/output/record", "s",[](const char* path, const lo::Message &msg){if (&msg.argv()[0]->s == "start") mainmix->start_recording(); else if (&msg.argv()[0]->s == "stop") mainmix->recording = false;});
-	mainprogram->st->add_method("/mix/output/record", "i",[](lo_arg **argv, int){if (argv[0]->i) mainmix->start_recording(); else mainmix->recording = false;});
+    mainprogram->st->add_method("/mix/output/recordS", "s",[](const char* path, const lo::Message &msg){if (&msg.argv()[0]->s == "start") mainmix->start_recording(); else if (&msg.argv()[0]->s == "stop") mainmix->recording[0] = false;});
+    mainprogram->st->add_method("/mix/output/recordS", "i",[](lo_arg **argv, int){if (argv[0]->i) mainmix->start_recording(); else mainmix->recording[0] = false;});
+    mainprogram->st->add_method("/mix/output/recordQ", "s",[](const char* path, const lo::Message &msg){if (&msg.argv()[0]->s == "start") mainmix->start_recording(); else if (&msg.argv()[0]->s == "stop") mainmix->recording[1] = false;});
+    mainprogram->st->add_method("/mix/output/recordQ", "i",[](lo_arg **argv, int){if (argv[0]->i) mainmix->start_recording(); else mainmix->recording[1] = false;});
 	// main wipes
 	mainprogram->st->add_method("/mix/preview/wipe/type", "s", [](const char* path, const lo::Message &msg){mainmix->wipe[0] = mainprogram->wipesmap[&msg.argv()[0]->s];});
 	mainprogram->st->add_method("/mix/preview/wipe/type", "i", [](lo_arg **argv, int){mainmix->wipe[0] = argv[0]->i;});

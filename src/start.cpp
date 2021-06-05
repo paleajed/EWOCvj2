@@ -502,6 +502,8 @@ private:
     Deadline &dl;
 };
 
+
+
 class Deadline2
 {
 public:
@@ -510,22 +512,32 @@ public:
     }
 
     void timeout() {
-        if (!mainmix->donerec) {
-			#define BUFFER_OFFSET(i) ((char *)nullptr + (i))
-			glBindBuffer(GL_PIXEL_PACK_BUFFER, mainmix->ioBuf);
-			glBufferData(GL_PIXEL_PACK_BUFFER, (int)(mainprogram->ow * mainprogram->oh) * 4, nullptr, GL_DYNAMIC_READ);
-			glBindFramebuffer(GL_FRAMEBUFFER, ((MixNode*)mainprogram->nodesmain->mixnodescomp[2])->mixfbo);
-			glReadBuffer(GL_COLOR_ATTACHMENT0);
-			glReadPixels(0, 0, mainprogram->ow, (int)mainprogram->oh, GL_BGRA, GL_UNSIGNED_BYTE, BUFFER_OFFSET(0));
-			mainmix->rgbdata = glMapBuffer(GL_PIXEL_PACK_BUFFER, GL_READ_ONLY);
-			assert(mainmix->rgbdata);
-			mainmix->recordnow = true;
-			while (mainmix->recordnow && !mainmix->donerec) {
-				mainmix->startrecord.notify_one();
-			}
-		}
-        glUnmapBuffer(GL_PIXEL_PACK_BUFFER);
-        glBindBuffer(GL_PIXEL_PACK_BUFFER, 0);
+        if (!mainmix->donerec[0] || !mainmix->donerec[1]) {
+            // grab frames for output recording
+#define BUFFER_OFFSET(i) ((char *)nullptr + (i))
+            glBindBuffer(GL_PIXEL_PACK_BUFFER, mainmix->ioBuf);
+            glBufferData(GL_PIXEL_PACK_BUFFER, (int) (mainprogram->ow * mainprogram->oh) * 4, nullptr,
+                         GL_DYNAMIC_READ);
+            glBindFramebuffer(GL_FRAMEBUFFER, ((MixNode *) mainprogram->nodesmain->mixnodescomp[2])->mixfbo);
+            glReadBuffer(GL_COLOR_ATTACHMENT0);
+            glReadPixels(0, 0, mainprogram->ow, (int) mainprogram->oh, GL_BGRA, GL_UNSIGNED_BYTE, BUFFER_OFFSET(0));
+            mainmix->rgbdata = glMapBuffer(GL_PIXEL_PACK_BUFFER, GL_READ_ONLY);
+            assert(mainmix->rgbdata);
+            if (mainmix->recording[0]) {
+                mainmix->recordnow[0] = true;
+                while (mainmix->recordnow[0] && !mainmix->donerec[0]) {
+                    mainmix->startrecord[0].notify_one();
+                }
+            }
+            if (mainmix->recording[1]) {
+                mainmix->recordnow[1] = true;
+                while (mainmix->recordnow[1] && !mainmix->donerec[1]) {
+                    mainmix->startrecord[1].notify_one();
+                }
+            }
+            glUnmapBuffer(GL_PIXEL_PACK_BUFFER);
+            glBindBuffer(GL_PIXEL_PACK_BUFFER, 0);
+        }
 
         wait();
     }
@@ -1659,6 +1671,9 @@ bool Layer::thread_vidopen() {
 		const AVCodec* dec = avcodec_find_decoder(this->video_stream->codecpar->codec_id);
 		this->vidformat = this->video_stream->codecpar->codec_id;
 		this->video_dec_ctx = avcodec_alloc_context3(dec);
+        if (this->video_stream->codecpar->codec_id == AV_CODEC_ID_MPEG2VIDEO || this->video_stream->codecpar->codec_id == AV_CODEC_ID_H264 || this->video_stream->codecpar->codec_id == AV_CODEC_ID_H264) {
+            //this->video_dec_ctx->ticks_per_frame = 2;
+        }
 		avcodec_parameters_to_context(this->video_dec_ctx, this->video_stream->codecpar);
 		avcodec_open2(this->video_dec_ctx, dec, nullptr);
 		this->bpp = 4;
@@ -2039,8 +2054,8 @@ void set_glstructures() {
 	
 	
 	// record buffer
-	glGenBuffers(1, &mainmix->ioBuf);
-	
+    glGenBuffers(1, &mainmix->ioBuf);
+
 	glGenTextures(1, &binsmain->binelpreviewtex);
 	glBindTexture(GL_TEXTURE_2D, binsmain->binelpreviewtex);
 	glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR);
@@ -3075,6 +3090,7 @@ void Layer::load_frame() {
 
     // initialize layer?
 	if (this->isduplay) return;
+	if (!srclay->video_dec_ctx) return;
     if (this->remfr[this->pboui]->width != srclay->video_dec_ctx->width || this->remfr[this->pboui]->height != srclay->video_dec_ctx->height) {
         // reminder : test with different bpp
         if (!this->liveinput) {
@@ -6549,23 +6565,83 @@ void the_loop() {
 		draw_box(white, darkgrey, mainmix->deckspeed[!mainprogram->prevmodus][1]->box->vtxcoords->x1, mainmix->deckspeed[!mainprogram->prevmodus][1]->box->vtxcoords->y1, mainmix->deckspeed[!mainprogram->prevmodus][1]->box->vtxcoords->w * 0.30f, 0.1f, -1);
 		par->handle();
 
-		//draw and handle recbut
-		mainmix->recbut->handle(1, 0);
-		if (mainmix->recbut->toggled()) {
-			if (!mainmix->recording) {
-				// start recording
-				mainmix->start_recording();
-			}
-			else {
-				mainmix->recording = false;
-			}
-		}
-		float radx = mainmix->recbut->box->vtxcoords->w / 2.0f;
-		float rady = mainmix->recbut->box->vtxcoords->h / 2.0f;
+		//draw and handle recbuts
+		mainmix->recbutS->handle(1, 0);
+        if (mainmix->recbutS->toggled()) {
+            if (!mainmix->recording[0]) {
+                // start recording
+                mainmix->reccodec = "libxvid";
+                mainmix->start_recording();
+            }
+            else {
+                mainmix->recording[0] = false;
+            }
+        }
+        mainmix->recbutQ->handle(1, 0);
+        if (mainmix->recbutQ->toggled()) {
+            if (!mainmix->recording[1]) {
+                // start recording
+                mainmix->reccodec = "hap";
+                mainmix->start_recording();
+             }
+            else {
+                mainmix->recording[1] = false;
+            }
+        }
+        // draw and handle lastly recorded video snippets
+        if (mainmix->recswitch[0]) {
+            mainmix->recswitch[0] = false;
+            mainmix->recSthumbshow = copy_tex(mainmix->recSthumb);
+        }
+        if (mainmix->recswitch[1]) {
+            mainmix->recswitch[1] = false;
+            mainmix->recQthumbshow = copy_tex(mainmix->recQthumb);
+        }
+        if (mainmix->recSthumbshow != -1) {
+            int sw, sh;
+            glBindTexture(GL_TEXTURE_2D, mainmix->recSthumbshow);
+            glGetTexLevelParameteriv(GL_TEXTURE_2D, 0, GL_TEXTURE_WIDTH, &sw);
+            glGetTexLevelParameteriv(GL_TEXTURE_2D, 0, GL_TEXTURE_HEIGHT, &sh);
+            Box box;
+            box.vtxcoords->x1 = 0.15f + 0.0465f;
+            box.vtxcoords->y1 = -1.0f + mainprogram->monh * 2.0f;
+            box.vtxcoords->w = 0.0465f * (sw / sh);
+            box.vtxcoords->h = 0.075f;
+            box.upvtxtoscr();
+            draw_box(&box, mainmix->recSthumbshow);
+            if (box.in() && mainprogram->leftmousedown) {
+                mainprogram->leftmousedown = false;
+                mainprogram->dragbinel = new BinElement;
+                mainprogram->dragbinel->tex = mainmix->recSthumbshow;
+                mainprogram->dragbinel->path = mainmix->recpath[0];
+                mainprogram->dragbinel->type = ELEM_FILE;
+            }
+        }
+        if (mainmix->recQthumbshow != -1) {
+            int sw, sh;
+            glBindTexture(GL_TEXTURE_2D, mainmix->recQthumbshow);
+            glGetTexLevelParameteriv(GL_TEXTURE_2D, 0, GL_TEXTURE_WIDTH, &sw);
+            glGetTexLevelParameteriv(GL_TEXTURE_2D, 0, GL_TEXTURE_HEIGHT, &sh);
+            Box box;
+            box.vtxcoords->x1 = -0.15f - 0.0465f - 0.0465f * (sw / sh);
+            box.vtxcoords->y1 = -1.0f + mainprogram->monh * 2.0f;
+            box.vtxcoords->w = 0.0465f * (sw / sh);
+            box.vtxcoords->h = 0.075f;
+            box.upvtxtoscr();
+            draw_box(&box, mainmix->recQthumbshow);
+            if (box.in() && mainprogram->leftmousedown) {
+                mainprogram->leftmousedown = false;
+                mainprogram->dragbinel = new BinElement;
+                mainprogram->dragbinel->tex = mainmix->recQthumbshow;
+                mainprogram->dragbinel->path = mainmix->recpath[1];
+                mainprogram->dragbinel->type = ELEM_FILE;
+            }
+        }
 
 
 
 		mainprogram->layerstack_scrollbar_handle();
+
 
 
         //handle dragging into layerstack
@@ -7822,17 +7898,26 @@ void save_genmidis(std::string path) {
 	wfile << "EFFCAT1MIDIPORT\n";
 	wfile << mainprogram->effcat[1]->midiport;
 	wfile << "\n";
-	
-	wfile << "RECORDMIDI0\n";
-	wfile << std::to_string(mainmix->recbut->midi[0]);
-	wfile << "\n";
-	wfile << "RECORDMIDI1\n";
-	wfile << std::to_string(mainmix->recbut->midi[1]);
-	wfile << "\n";
-	wfile << "RECORDMIDIPORT\n";
-	wfile << mainmix->recbut->midiport;
-	wfile << "\n";
-	
+
+    wfile << "RECORDSMIDI0\n";
+    wfile << std::to_string(mainmix->recbutS->midi[0]);
+    wfile << "\n";
+    wfile << "RECORDSMIDI1\n";
+    wfile << std::to_string(mainmix->recbutS->midi[1]);
+    wfile << "\n";
+    wfile << "RECORDSMIDIPORT\n";
+    wfile << mainmix->recbutS->midiport;
+    wfile << "\n";
+    wfile << "RECORDQMIDI0\n";
+    wfile << std::to_string(mainmix->recbutQ->midi[0]);
+    wfile << "\n";
+    wfile << "RECORDQMIDI1\n";
+    wfile << std::to_string(mainmix->recbutQ->midi[1]);
+    wfile << "\n";
+    wfile << "RECORDQMIDIPORT\n";
+    wfile << mainmix->recbutQ->midiport;
+    wfile << "\n";
+
 	wfile << "LOOPSTATIONMIDI\n";
 	LoopStation *ls;
 	for (int i = 0; i < 2; i++) {
@@ -8026,21 +8111,34 @@ void open_genmidis(std::string path) {
 			mainprogram->effcat[1]->midiport = istring;
             mainprogram->effcat[1]->register_midi();
 		}
-			
-		if (istring == "RECORDMIDI0") {
-			safegetline(rfile, istring);
-			mainmix->recbut->midi[0] = std::stoi(istring);
-		}
-		if (istring == "RECORDMIDI1") {
-			safegetline(rfile, istring);
-			mainmix->recbut->midi[1] = std::stoi(istring);
-		}
-		if (istring == "RECORDMIDIPORT") {
-			safegetline(rfile, istring);
-			mainmix->recbut->midiport = istring;
-            mainmix->recbut->register_midi();
-		}
-			
+
+        if (istring == "RECORDSMIDI0") {
+            safegetline(rfile, istring);
+            mainmix->recbutS->midi[0] = std::stoi(istring);
+        }
+        if (istring == "RECORDSMIDI1") {
+            safegetline(rfile, istring);
+            mainmix->recbutS->midi[1] = std::stoi(istring);
+        }
+        if (istring == "RECORDSMIDIPORT") {
+            safegetline(rfile, istring);
+            mainmix->recbutS->midiport = istring;
+            mainmix->recbutS->register_midi();
+        }
+        if (istring == "RECORDQMIDI0") {
+            safegetline(rfile, istring);
+            mainmix->recbutQ->midi[0] = std::stoi(istring);
+        }
+        if (istring == "RECORDQMIDI1") {
+            safegetline(rfile, istring);
+            mainmix->recbutQ->midi[1] = std::stoi(istring);
+        }
+        if (istring == "RECORDQMIDIPORT") {
+            safegetline(rfile, istring);
+            mainmix->recbutQ->midiport = istring;
+            mainmix->recbutQ->register_midi();
+        }
+
 		if (istring == "LOOPSTATIONMIDI") {
 			LoopStation *ls;
 			for (int i = 0; i < 2; i++) {
@@ -8556,6 +8654,7 @@ int main(int argc, char* argv[]) {
     CancelDeadline2 cd2(d2);
     std::thread thr2(cd2);
     thr2.detach();
+
 
     set_glstructures();
 

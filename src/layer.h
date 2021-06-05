@@ -373,7 +373,7 @@ class Mixer {
 		void copy_effects(Layer* slay, Layer* dlay, bool comp);
 		void handle_adaptparam();
 		void handle_clips();
-		void record_video();
+		void record_video(std::string reccod);
 		void new_file(int decks, bool alive);
 		void save_layerfile(const std::string &path, Layer* lay, bool doclips, bool dojpeg);
 		void save_mix(const std::string &path);
@@ -402,15 +402,22 @@ class Mixer {
         void reconnect_all(std::vector<Layer*> &layers);
 		Mixer();
 		
-		std::mutex recordlock;
-		std::condition_variable startrecord;
-		std::thread recording_video;
-		bool recordnow = false;
-		bool recording = false;
-		bool donerec = true;
-		struct SwsContext *sws_ctx = nullptr;
+		std::mutex recordlock[2];
+		std::condition_variable startrecord[2];
+		std::thread recording_video[2];
+        bool recordnow[2] = {false, false};
+        bool recording[2] = {false, false};
+        bool donerec[2] = {true, true};
+        std::string reccodec;
+        Button *recbutQ;
+        Button *recbutS;
+        GLuint recSthumb = -1;
+        GLuint recQthumb = -1;
+        GLuint recSthumbshow = -1;
+        GLuint recQthumbshow = -1;
+        std::string recpath[2];
+        bool recswitch[2] = {false, false};
 		uint8_t *avbuffer = nullptr;
-		AVFrame *yuvframe = nullptr;
 		void *rgbdata = nullptr;
 		GLuint ioBuf;
 		
@@ -419,7 +426,6 @@ class Mixer {
 		int mode = 0;
 		bool staged = true;
 		Button *genmidi[2];
-		Button *recbut;
 		Param *crossfade;
 		Param *crossfadecomp;
 

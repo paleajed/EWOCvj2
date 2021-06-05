@@ -182,19 +182,30 @@ Mixer::Mixer() {
 	this->crossfadecomp->box->tooltip = "Leftdrag crossfades between deck A and deck B streams. Doubleclick allows numeric entry. ";
 	this->crossfadecomp->box->acolor[3] = 1.0f;
 	lpc->allparams.push_back(this->crossfadecomp);
-	
-	this->recbut = new Button(false);
-    this->recbut->name[0] = "R";
-	this->recbut->toggle = 1;
-	this->recbut->box->vtxcoords->x1 = 0.15f;
-	this->recbut->box->vtxcoords->y1 = -1.0f + mainprogram->monh * 2.0f;
-	this->recbut->box->vtxcoords->w = 0.0465f;
-	this->recbut->box->vtxcoords->h = 0.075f;
-	this->recbut->box->upvtxtoscr();
-	this->recbut->box->tooltiptitle = "Record output to video file ";
-	this->recbut->box->tooltip = "Start/stop recording the output stream to an MJPEG video file in the recordings directory (set in preferences_handle). ";
 
-	this->deckspeed[0][0] = new Param;
+    this->recbutS = new Button(false);
+    this->recbutS->name[0] = "S";
+    this->recbutS->toggle = 1;
+    this->recbutS->box->vtxcoords->x1 = 0.15f;
+    this->recbutS->box->vtxcoords->y1 = -1.0f + mainprogram->monh * 2.0f;
+    this->recbutS->box->vtxcoords->w = 0.0465f;
+    this->recbutS->box->vtxcoords->h = 0.075f;
+    this->recbutS->box->upvtxtoscr();
+    this->recbutS->box->tooltiptitle = "Record output to video file in xvid codec. ";
+    this->recbutS->box->tooltip = "Start/stop recording the output stream to an XviD video file in the recordings directory of the project.  Favours file size over quality.  Mainly for archival purposes. ";
+
+    this->recbutQ = new Button(false);
+    this->recbutQ->name[0] = "Q";
+    this->recbutQ->toggle = 1;
+    this->recbutQ->box->vtxcoords->x1 = -0.1965f;
+    this->recbutQ->box->vtxcoords->y1 = -1.0f + mainprogram->monh * 2.0f;
+    this->recbutQ->box->vtxcoords->w = 0.0465f;
+    this->recbutQ->box->vtxcoords->h = 0.075f;
+    this->recbutQ->box->upvtxtoscr();
+    this->recbutQ->box->tooltiptitle = "Record output to video file in hap codec. ";
+    this->recbutQ->box->tooltip = "Start/stop recording the output stream to a HAP video file in the recordings directory of the project.  Favours quality over file size.  Mainly for remixing the outputted videos. ";
+
+    this->deckspeed[0][0] = new Param;
 	this->deckspeed[0][0]->name = "Speed A";
 	this->deckspeed[0][0]->value = 1.0f;
 	this->deckspeed[0][0]->deflt = 1.0f;
@@ -8043,7 +8054,15 @@ void Mixer::new_file(int decks, bool alive) {
 
 // OUTPUT RECORDING TO VIDEO
 
-void Mixer::record_video() {
+void Mixer::record_video(std::string reccod) {
+    bool cbool;
+    if (reccod == "hap") {
+        cbool = 1;
+    }
+    else if (reccod == "libxvid") {
+        cbool = 0;
+    }
+
 	AVFormatContext* dest = avformat_alloc_context();
 	AVStream* dest_stream;
 	const AVCodec *codec = nullptr;
@@ -8052,7 +8071,7 @@ void Mixer::record_video() {
     AVFrame *frame;
     AVPacket *pkt;
     uint8_t endcode[] = { 0, 0, 1, 0xb7 };
-    codec = avcodec_find_encoder_by_name("hap");
+    codec = avcodec_find_encoder_by_name(reccodec.c_str());
     c = avcodec_alloc_context3(codec);
     pkt = av_packet_alloc();
     c->width = mainprogram->ow;
@@ -8062,16 +8081,24 @@ void Mixer::record_video() {
 	rem = c->height % 4;
 	c->height = c->height + (4 - rem) * (rem > 0);
 	/* frames per second */
-    c->time_base = {1, 25};
+    c->time_base = {1, 25 * (!cbool + 1)};
     c->framerate = {25, 1};
 	c->pix_fmt = codec->pix_fmts[0];
     /* open it */
     ret = avcodec_open2(c, codec, nullptr);
-    
-	std::string path = find_unused_filename("recording_0", mainprogram->project->recdir, "_hap.mov");
-	avformat_alloc_output_context2(&dest, av_guess_format("mov", nullptr, "video/mov"), nullptr, path.c_str());
-	dest_stream = avformat_new_stream(dest, codec);
-	//dest_stream->time_base = source_stream->time_base;
+
+    std::string path;
+   if (cbool) {
+        path = find_unused_filename("recording_0", mainprogram->project->recdir, "_hap.mov");
+        avformat_alloc_output_context2(&dest, av_guess_format("mov", nullptr, "video/mov"), nullptr, path.c_str());
+    }
+    else {
+        path = find_unused_filename("recording_0", mainprogram->project->recdir, "_xvid.avi");
+        avformat_alloc_output_context2(&dest, av_guess_format("avi", nullptr, "video/avi"), nullptr, path.c_str());
+        //c->ticks_per_frame = 2;
+    }
+    dest_stream = avformat_new_stream(dest, codec);
+    dest_stream->time_base = {1, 25};
 	int r = avcodec_parameters_from_context(dest_stream->codecpar, c);
 	if (r < 0) {
 		av_log(nullptr, AV_LOG_ERROR, "Copying stream context failed\n");
@@ -8092,12 +8119,12 @@ void Mixer::record_video() {
     //}
 
 	// Determine required buffer size and allocate buffer
-	this->yuvframe = av_frame_alloc();
-    this->yuvframe->format = c->pix_fmt;
-    this->yuvframe->width  = c->width;
-    this->yuvframe->height = c->height;
- 
-  	this->sws_ctx = sws_getContext
+    AVFrame *yuvframe = av_frame_alloc();
+    yuvframe->format = c->pix_fmt;
+    yuvframe->width  = c->width;
+    yuvframe->height = c->height;
+
+    struct SwsContext *sws_ctx = sws_getContext
     (
         c->width,
        	c->height,
@@ -8112,11 +8139,11 @@ void Mixer::record_video() {
     
 	/* record */
 	int count = 0;
-    while (mainmix->recording) {
-		std::unique_lock<std::mutex> lock(this->recordlock);
-		this->startrecord.wait(lock, [&]{return this->recordnow;});
+    while (this->recording[cbool]) {
+		std::unique_lock<std::mutex> lock(this->recordlock[cbool]);
+		this->startrecord[cbool].wait(lock, [&]{return this->recordnow[cbool];});
 		lock.unlock();
-		this->recordnow = false;
+		this->recordnow[cbool] = false;
 		
 		AVFrame *rgbaframe;
 		rgbaframe = av_frame_alloc();
@@ -8128,23 +8155,23 @@ void Mixer::record_video() {
 		//av_image_fill_arrays(picture->data, picture->linesize,
                                // ptr, pix_fmt, width, height, 1);		avpicture_fill(&rgbaframe, (uint8_t *)mainmix->rgbdata, AV_PIX_FMT_BGRA, c->width, c->height);
 		rgbaframe->linesize[0] = mainprogram->ow * 4;
-		int storage = av_image_alloc(this->yuvframe->data, this->yuvframe->linesize, this->yuvframe->width, this->yuvframe->height, c->pix_fmt, 32);
+		int storage = av_image_alloc(yuvframe->data, yuvframe->linesize, yuvframe->width, yuvframe->height, c->pix_fmt, 32);
 		sws_scale
 		(
-			this->sws_ctx,
+			sws_ctx,
 			rgbaframe->data,
 			rgbaframe->linesize,
 			0,
 			c->height,
-			this->yuvframe->data,
-			this->yuvframe->linesize
+			yuvframe->data,
+			yuvframe->linesize
 		);
-		this->yuvframe->pts++;
+		yuvframe->pts++;
 
         /* encode the image */
-        encode_frame(dest, nullptr, c, this->yuvframe, pkt, nullptr, count);
+        encode_frame(dest, nullptr, c, yuvframe, pkt, nullptr, count);
 		
-		av_freep(this->yuvframe->data);
+		av_freep(yuvframe->data);
 		av_packet_unref(pkt);
 		
 		count++;
@@ -8156,25 +8183,36 @@ void Mixer::record_video() {
 	av_write_trailer(dest);
 	avio_close(dest->pb);
     avcodec_free_context(&c);
-    av_frame_free(&this->yuvframe);
+    av_frame_free(&yuvframe);
     av_packet_free(&pkt);
-    mainmix->donerec = true;
-	mainmix->recordnow = false;
+
+    this->donerec[cbool] = true;
+    this->recordnow[cbool] = false;
+    this->recswitch[cbool] = true;
+    this->recpath[cbool] = path;
 }
 
 void Mixer::start_recording() {
 	// start recording main output
-	this->donerec = false;
-	this->recording = true;
+    std::string reccod = this->reccodec;
+	bool cbool;
+    if (reccod == "libxvid") {
+        cbool = 0;
+    }
+    if (reccod == "hap") {
+        cbool = 1;
+    }
+    this->donerec[cbool] = false;
+    this->recording[cbool] = true;
 	// recording is done in separate low priority thread
-	this->recording_video = std::thread{&Mixer::record_video, this};
+	this->recording_video[cbool] = std::thread{&Mixer::record_video, this, reccod};
 	#ifdef WINDOWS
 	SetThreadPriority((void*)this->recording_video.native_handle(), THREAD_PRIORITY_LOWEST);
 	#else
 	struct sched_param params;
-	params.sched_priority = sched_get_priority_min(SCHED_FIFO);		pthread_setschedparam(this->recording_video.native_handle(), SCHED_FIFO, &params);
+	params.sched_priority = sched_get_priority_min(SCHED_FIFO);		pthread_setschedparam(this->recording_video[cbool].native_handle(), SCHED_FIFO, &params);
 	#endif
-	this->recording_video.detach();
+	this->recording_video[cbool].detach();
 	#define BUFFER_OFFSET(i) ((char *)nullptr + (i))
 	glBindBuffer(GL_PIXEL_PACK_BUFFER, this->ioBuf);
 	glBufferData(GL_PIXEL_PACK_BUFFER, (int)(mainprogram->ow * mainprogram->oh) * 4, nullptr, GL_DYNAMIC_READ);
@@ -8183,10 +8221,20 @@ void Mixer::start_recording() {
 	glReadPixels(0, 0, mainprogram->ow, (int)mainprogram->oh, GL_BGRA, GL_UNSIGNED_BYTE, BUFFER_OFFSET(0));
 	this->rgbdata = glMapBuffer(GL_PIXEL_PACK_BUFFER, GL_READ_ONLY);
 	//assert(this->rgbdata);
-	this->recordnow = true;
-	while (this->recordnow) {
-		this->startrecord.notify_one();
+	this->recordnow[cbool] = true;
+	while (this->recordnow[cbool]) {
+		this->startrecord[cbool].notify_one();
 	}
+
+	// make a thumbnail for display afterwards
+    if (!cbool) {
+        if (this->recSthumb != -1) glDeleteTextures(1, &this->recSthumb);
+        this->recSthumb = copy_tex(mainprogram->nodesmain->mixnodescomp[2]->mixtex);
+    }
+    else {
+        if (this->recQthumb != -1) glDeleteTextures(1, &this->recQthumb);
+        this->recQthumb = copy_tex(mainprogram->nodesmain->mixnodescomp[2]->mixtex);
+    }
 }
 
 
