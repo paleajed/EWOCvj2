@@ -448,6 +448,7 @@ class Program {
         Button *toscreenA;
         Button *toscreenB;
         Button *toscreenM;
+        Button *toscene[2][3];
         Button *backtopreA;
         Button *backtopreB;
         Button *backtopreM;

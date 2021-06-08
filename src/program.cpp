@@ -366,6 +366,26 @@ Program::Program() {
     this->toscreenM->box->tooltip = "Leftclick sends/copies the entire stream being previewed to the output streams ";
 
 
+    for (int m = 0; m < 2; m++) {
+        std::string ab = "A";
+        if (m == 1) ab = "B";
+        for (int i = 0; i < 3; i++) {
+            this->toscene[m][i] = new Button(false);
+            this->toscene[m][i]->toggle = 0;
+            this->buttons.push_back(this->toscene[m][i]);
+            this->toscene[m][i]->name[0] = "";
+            this->toscene[m][i]->name[1] = "";
+            this->toscene[m][i]->box->vtxcoords->x1 = -0.225f + m * (0.3f + 0.075f);
+            this->toscene[m][i]->box->vtxcoords->h = (((-1.0f + this->monh * 2.0f - 0.1f) - (-1.0f + this->monh / 2.0f) - 0.1f) / 3.0f);
+            this->toscene[m][i]->box->vtxcoords->y1 = (-1.0f + this->monh / 2.0f) + (2 - i) * this->toscene[m][i]->box->vtxcoords->h + 0.1f;
+            this->toscene[m][i]->box->vtxcoords->w = 0.3f / 4.0f;
+            this->toscene[m][i]->box->upvtxtoscr();
+            this->toscene[m][i]->box->tooltiptitle = "Send deck" + ab + " preview stream to scene ";
+            this->toscene[m][i]->box->tooltip = "Leftclick sends/copies the deck" + ab + " stream being previewed to the scene number on the button ";
+        }
+    }
+
+
     this->backtopreA = new Button(false);
     this->backtopreA->toggle = 0;
     this->buttons.push_back(this->backtopreA);
@@ -2206,7 +2226,7 @@ void output_video(EWindow* mwin) {
 		glUniform1i(mixmode, 0);
 		mwin->syncendnow = true;
 		while (mwin->syncendnow) {
-			mwin->syncend.notify_one();
+			mwin->syncend.notify_all();
 		}
 		SDL_GL_SwapWindow(mwin->win);
 	}
@@ -2900,7 +2920,7 @@ void Program::handle_mixtargetmenu() {
 					while (currentries[k - 2]->win->closethread) {
 						currentries[k - 2]->win->syncnow = true;
 						while (currentries[k - 2]->win->syncnow) {
-							currentries[k - 2]->win->sync.notify_one();
+							currentries[k - 2]->win->sync.notify_all();
 						}
 					}
 				}
@@ -3784,9 +3804,11 @@ void Program::preview_modus_buttons() {
             // SEND UP button copies preview set entirely to comp set
             mainmix->copy_to_comp(true, false, true);
         }
-        Box* box = mainprogram->toscreenA->box;
-        register_triangle_draw(white, white, box->vtxcoords->x1 + box->vtxcoords->w / 2.0f + 0.0117f, box->vtxcoords->y1 + 0.0225f, 0.0165f, 0.0312f, DOWN, CLOSED);
-        render_text(mainprogram->toscreenA->name[0], white, box->vtxcoords->x1 + 0.0117f, box->vtxcoords->y1 + 0.0225f, 0.0006f, 0.001f);
+        Box *box = mainprogram->toscreenA->box;
+        register_triangle_draw(white, white, box->vtxcoords->x1 + box->vtxcoords->w / 2.0f + 0.0117f,
+                               box->vtxcoords->y1 + 0.0225f, 0.0165f, 0.0312f, DOWN, CLOSED);
+        render_text(mainprogram->toscreenA->name[0], white, box->vtxcoords->x1 + 0.0117f, box->vtxcoords->y1 + 0.0225f,
+                    0.0006f, 0.001f);
 
         mainprogram->toscreenB->handle();
         if (mainprogram->toscreenB->toggled()) {
@@ -3796,9 +3818,11 @@ void Program::preview_modus_buttons() {
             mainmix->copy_to_comp(false, true, true);
         }
         box = mainprogram->toscreenB->box;
-        register_triangle_draw(white, white, box->vtxcoords->x1 + box->vtxcoords->w / 2.0f + 0.0117f, box->vtxcoords->y1 + 0.0225f, 0.0165f, 0.0312f, DOWN, CLOSED);
-        render_text(mainprogram->toscreenB->name[0], white, box->vtxcoords->x1 + 0.0117f, box->vtxcoords->y1 + 0.0225f, 0.0006f, 0.001f);
-        
+        register_triangle_draw(white, white, box->vtxcoords->x1 + box->vtxcoords->w / 2.0f + 0.0117f,
+                               box->vtxcoords->y1 + 0.0225f, 0.0165f, 0.0312f, DOWN, CLOSED);
+        render_text(mainprogram->toscreenB->name[0], white, box->vtxcoords->x1 + 0.0117f, box->vtxcoords->y1 + 0.0225f,
+                    0.0006f, 0.001f);
+
         mainprogram->toscreenM->handle();
         if (mainprogram->toscreenM->toggled()) {
             mainprogram->toscreenM->value = 0;
@@ -3807,9 +3831,35 @@ void Program::preview_modus_buttons() {
             mainmix->copy_to_comp(true, true, true);
         }
         box = mainprogram->toscreenM->box;
-        register_triangle_draw(white, white, box->vtxcoords->x1 + box->vtxcoords->w / 2.0f + 0.0117f, box->vtxcoords->y1 + 0.0225f, 0.0165f, 0.0312f, DOWN, CLOSED);
-        render_text(mainprogram->toscreenM->name[0], white, box->vtxcoords->x1 + 0.0117f, box->vtxcoords->y1 + 0.0225f, 0.0006f, 0.001f);
-	}
+        register_triangle_draw(white, white, box->vtxcoords->x1 + box->vtxcoords->w / 2.0f + 0.0117f,
+                               box->vtxcoords->y1 + 0.0225f, 0.0165f, 0.0312f, DOWN, CLOSED);
+        render_text(mainprogram->toscreenM->name[0], white, box->vtxcoords->x1 + 0.0117f, box->vtxcoords->y1 + 0.0225f,
+                    0.0006f, 0.001f);
+
+        for (int m = 0; m < 2; m++) {
+            std::vector<int> scns;
+            for (int j = 0; j < 4; j++) {
+                if (j != mainmix->currscene[0][m]) {
+                    scns.push_back(j + 1);
+                }
+            }
+            for (int i = 0; i < 3; i++) {
+                mainprogram->toscene[m][i]->handle();
+                if (mainprogram->toscene[m][i]->toggled()) {
+                    mainprogram->toscene[m][i]->value = 0;
+                    mainprogram->toscene[m][i]->oldvalue = 0;
+                    // SEND UP button copies deck preview set to scene
+                    mainmix->mousedeck = m;
+                    mainmix->do_save_deck(mainprogram->temppath + "tempdeck_" + std::to_string(0) + std::to_string(m) + std::to_string(scns[i] - 1) + ".deck", false, true);
+                }
+                box = mainprogram->toscene[m][i]->box;
+                register_triangle_draw(white, white, box->vtxcoords->x1 + box->vtxcoords->w / 2.0f + 0.0117f,
+                                       box->vtxcoords->y1 + 0.0225f, 0.0165f, 0.0312f, DOWN, CLOSED);
+                render_text(std::to_string(scns[i]), white, box->vtxcoords->x1 + 0.0117f,
+                            box->vtxcoords->y1 + 0.0225f, 0.0006f, 0.001f);
+            }
+        }
+    }
 	if (mainprogram->prevmodus) {
         mainprogram->backtopreA->handle();
         if (mainprogram->backtopreA->toggled()) {

@@ -526,13 +526,13 @@ public:
             if (mainmix->recording[0]) {
                 mainmix->recordnow[0] = true;
                 while (mainmix->recordnow[0] && !mainmix->donerec[0]) {
-                    mainmix->startrecord[0].notify_one();
+                    mainmix->startrecord[0].notify_all();
                 }
             }
             if (mainmix->recording[1]) {
                 mainmix->recordnow[1] = true;
                 while (mainmix->recordnow[1] && !mainmix->donerec[1]) {
-                    mainmix->startrecord[1].notify_one();
+                    mainmix->startrecord[1].notify_all();
                 }
             }
             glUnmapBuffer(GL_PIXEL_PACK_BUFFER);
@@ -1247,7 +1247,7 @@ void decode_audio(Layer *lay) {
 	if (snippet) {
 		lay->chready = true;
 		while (lay->chready) {
-			lay->newchunk.notify_one();
+			lay->newchunk.notify_all();
 		}
 	}
 }	
@@ -1478,12 +1478,12 @@ void Layer::get_frame(){
 				if (this->dummy) {
 					this->opened = true;
 					while (this->opened) {
-						this->endopenvar.notify_one();
+						this->endopenvar.notify_all();
 					}
 				}
 				else {
                     this->opened = true;
-                    this->endopenvar.notify_one();
+                    this->endopenvar.notify_all();
 				}
 			}
 			else {
@@ -1491,12 +1491,12 @@ void Layer::get_frame(){
 				if (this->dummy) {
 					this->opened = true;
 					while (this->opened) {
-						this->endopenvar.notify_one();
+						this->endopenvar.notify_all();
 					}
 				}
                 else {
                     this->opened = true;
-                    this->endopenvar.notify_one();
+                    this->endopenvar.notify_all();
                 }
 			}
 			continue;
@@ -1514,12 +1514,12 @@ void Layer::get_frame(){
 				if (this->dummy) {
 					this->processed = true;
 					while (this->processed) {
-						this->enddecodevar.notify_one();
+						this->enddecodevar.notify_all();
 					}
 				}
 				else {
 					this->processed = true;
-					this->enddecodevar.notify_one();
+					this->enddecodevar.notify_all();
 				}
 				continue;
 			}
@@ -1533,12 +1533,12 @@ void Layer::get_frame(){
 		if (this->dummy) {
 			this->processed = true;
 			while (this->processed) {
-				this->enddecodevar.notify_one();
+				this->enddecodevar.notify_all();
 			}
 		}
 		else {
 			this->processed = true;
-			this->enddecodevar.notify_one();
+			this->enddecodevar.notify_all();
 		}
 		continue;
 	}
@@ -1620,7 +1620,7 @@ Layer* Layer::open_video(float frame, const std::string &filename, int reset, bo
 	this->decresult->compression = 0;
 	this->ready = true;
 	while (this->ready) {
-		this->startdecode.notify_one();
+		this->startdecode.notify_all();
 	}
 	if (this->clonesetnr != -1) {
 		mainmix->clonesets[this->clonesetnr]->erase(this);
@@ -3088,7 +3088,7 @@ void Layer::load_frame() {
 		if (mainmix->firstlayers.count(this->clonesetnr) == 0) {
 		    // promote first layer found in layer stack with this clonesetnr to element of firstlayers
 			this->ready = true;
-			this->startdecode.notify_one();
+			this->startdecode.notify_all();
 			if (this->clonesetnr != -1) {
 				mainmix->firstlayers[this->clonesetnr] = this;
 				this->isclone = false;
@@ -5254,7 +5254,7 @@ GLuint get_imagetex(const std::string& path) {
 	lay->closethread = true;
 	while (lay->closethread) {
 		lay->ready = true;
-		lay->startdecode.notify_one();
+		lay->startdecode.notify_all();
 	}
 	return ctex;
 }
@@ -5306,7 +5306,7 @@ GLuint get_videotex(const std::string& path) {
     lay->keyframe = true;
     lay->ready = true;
     while (lay->ready) {
-        lay->startdecode.notify_one();
+        lay->startdecode.notify_all();
     }
     std::unique_lock<std::mutex> lock2(lay->enddecodelock);
     lay->enddecodevar.wait(lock2, [&] {return lay->processed; });
@@ -5315,7 +5315,7 @@ GLuint get_videotex(const std::string& path) {
     lay->closethread = true;
     while (lay->closethread) {
         lay->ready = true;
-        lay->startdecode.notify_one();
+        lay->startdecode.notify_all();
     }
     lay->keyframe = false;
     if (lay->vidformat == 188 || lay->vidformat == 187) {
@@ -5384,7 +5384,7 @@ GLuint get_layertex(const std::string& path) {
     lay->keyframe = true;
 	lay->ready = true;
 	while (lay->ready) {
-		lay->startdecode.notify_one();
+		lay->startdecode.notify_all();
 	}
 	std::unique_lock<std::mutex> lock(lay->enddecodelock);
 	lay->enddecodevar.wait(lock, [&] {return lay->processed; });
@@ -6088,7 +6088,7 @@ void the_loop() {
 	mainprogram->handle_changed_owoh();
 
 	// if not server then try to connect the client
-	if (!mainprogram->server && !mainprogram->connfailed) mainprogram->startclient.notify_one();
+	if (!mainprogram->server && !mainprogram->connfailed) mainprogram->startclient.notify_all();
 
 	// calculate and visualize fps
 	mainmix->fps[mainmix->fpscount] = (int)(1.0f / (mainmix->time - mainmix->oldtime));
@@ -7005,7 +7005,7 @@ void the_loop() {
 		EWindow *win = mainprogram->outputentries[i]->win;
 		win->syncnow = true;
 		while (win->syncnow) {
-			win->sync.notify_one();
+			win->sync.notify_all();
 		}
 		std::unique_lock<std::mutex> lock(win->syncendmutex);
 		win->syncend.wait(lock, [&]{return win->syncendnow;});
@@ -9114,7 +9114,7 @@ int main(int argc, char* argv[]) {
                                 mainprogram->mixwindows[i]->closethread = true;
                                 while (mainprogram->mixwindows[i]->closethread) {
                                     mainprogram->mixwindows[i]->syncnow = true;
-                                    mainprogram->mixwindows[i]->sync.notify_one();
+                                    mainprogram->mixwindows[i]->sync.notify_all();
                                 }
                                 mainprogram->mixwindows.erase(mainprogram->mixwindows.begin() + i);
                             }

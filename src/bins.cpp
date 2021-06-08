@@ -1459,7 +1459,7 @@ void BinsMain::handle(bool draw) {
 									mainprogram->prelay->closethread = true;
 									while (mainprogram->prelay->closethread) {
 										mainprogram->prelay->ready = true;
-										mainprogram->prelay->startdecode.notify_one();
+										mainprogram->prelay->startdecode.notify_all();
 									}
 									//delete mainprogram->prelay;
 								}
@@ -1526,7 +1526,7 @@ void BinsMain::handle(bool draw) {
 										mainprogram->prelay->closethread = true;
 										while (mainprogram->prelay->closethread) {
 											mainprogram->prelay->ready = true;
-											mainprogram->prelay->startdecode.notify_one();
+											mainprogram->prelay->startdecode.notify_all();
 										}
 										//delete mainprogram->prelay;
 									}
@@ -1567,7 +1567,7 @@ void BinsMain::handle(bool draw) {
 									mainprogram->prelay->ready = true;
 									while (mainprogram->prelay->ready) {
 										// start decode frame
-										mainprogram->prelay->startdecode.notify_one();
+										mainprogram->prelay->startdecode.notify_all();
 									}
 									// wait for decode end
 									std::unique_lock<std::mutex> lock2(mainprogram->prelay->enddecodelock);
@@ -1635,7 +1635,7 @@ void BinsMain::handle(bool draw) {
 									mainprogram->prelay->ready = true;
 									while (mainprogram->prelay->ready) {
 										// start decode frame
-										mainprogram->prelay->startdecode.notify_one();
+										mainprogram->prelay->startdecode.notify_all();
 									}
 									// wait for decode finished
 									std::unique_lock<std::mutex> lock(mainprogram->prelay->enddecodelock);
@@ -1695,7 +1695,7 @@ void BinsMain::handle(bool draw) {
 										mainprogram->prelay->closethread = true;
 										while (mainprogram->prelay->closethread) {
 											mainprogram->prelay->ready = true;
-											mainprogram->prelay->startdecode.notify_one();
+											mainprogram->prelay->startdecode.notify_all();
 										}
 										//delete mainprogram->prelay;
 									}
@@ -1715,7 +1715,7 @@ void BinsMain::handle(bool draw) {
 									mainprogram->prelay->ready = true;
 									while (mainprogram->prelay->ready) {
 										// start decode frame
-										mainprogram->prelay->startdecode.notify_one();
+										mainprogram->prelay->startdecode.notify_all();
 									}
 									// wait for decode finished
 									std::unique_lock<std::mutex> lock2(mainprogram->prelay->enddecodelock);
@@ -1768,7 +1768,7 @@ void BinsMain::handle(bool draw) {
 										mainprogram->prelay->ready = true;
 										while (mainprogram->prelay->ready) {
 											// start decode frame
-											mainprogram->prelay->startdecode.notify_one();
+											mainprogram->prelay->startdecode.notify_all();
 										}
 										// wait for decode finished
 										std::unique_lock<std::mutex> lock(mainprogram->prelay->enddecodelock);

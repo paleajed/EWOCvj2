@@ -2240,7 +2240,7 @@ void Mixer::delete_layer(std::vector<Layer*> &layers, Layer *testlay, bool add) 
 	testlay->closethread = true;
 	while (testlay->closethread) {
 		testlay->ready = true;
-		testlay->startdecode.notify_one();
+		testlay->startdecode.notify_all();
 	}
 	
 	testlay->audioplaying = false;
@@ -4585,7 +4585,7 @@ bool Layer::find_new_live_base(int pos) {
 			mlay->vidopen = true;
 			mlay->ready = true;
 			while (mlay->ready) {
-				mlay->startdecode.notify_one();
+				mlay->startdecode.notify_all();
 			}
 			for (int j = 0; j < mainprogram->mimiclayers.size(); j++) {
 				if (mainprogram->mimiclayers[j]->liveinput == this) {
@@ -4615,7 +4615,7 @@ void Layer::set_live_base(std::string livename) {
 	if (this->video) {
 		this->ready = true;
 		while (this->ready) {
-			this->startdecode.notify_one();
+			this->startdecode.notify_all();
 		}
 		std::unique_lock<std::mutex> lock(this->enddecodelock);
 		this->enddecodevar.wait(lock, [&] {return this->processed; });
@@ -4647,7 +4647,7 @@ void Layer::set_live_base(std::string livename) {
 		this->vidopen = true;
 		this->ready = true;
 		while (this->ready) {
-			this->startdecode.notify_one();
+			this->startdecode.notify_all();
 		}
 	}
 	else {
@@ -5360,9 +5360,12 @@ void Mixer::copy_pbos(Layer *clay, Layer *lay) {
     clay->mapptr[1] = lay->mapptr[1];
     clay->mapptr[2] = lay->mapptr[2];
     clay->remfr[0] = lay->remfr[0];
-    std::unique_lock<std::mutex> olock(clay->endopenlock);
-    lay->endopenvar.wait(olock, [&] {return clay->opened; });
-    lay->opened = false;
+    if (clay->opened == true) {
+        std::unique_lock<std::mutex> olock(clay->endopenlock);
+        clay->endopenvar.wait(olock, [&] { return clay->opened; });
+        clay->opened = false;
+        olock.unlock();
+    }
     if (clay->remfr[0]->width != clay->video_dec_ctx->width || clay->remfr[0]->height != clay->video_dec_ctx->height) {
         clay->initialized = false;
     }
@@ -5440,7 +5443,7 @@ void Mixer::copy_to_comp(bool deckA, bool deckB, bool comp) {
         }
     }
 
-	bool bupm = mainprogram->prevmodus;
+    bool bupm = mainprogram->prevmodus;
     mainprogram->prevmodus = comp;
     if (comp) loopstation = lp;
     else loopstation = lpc;
@@ -5468,6 +5471,7 @@ void Mixer::copy_to_comp(bool deckA, bool deckB, bool comp) {
     else loopstation = lpc;
 
 }
+
 
 
 
@@ -5667,6 +5671,84 @@ void Mixer::open_state(const std::string &path) {
             mainprogram->toscreenM->midiport = istring;
             mainprogram->toscreenM->register_midi();
         }
+        if (istring == "TOSCENEA0MIDI0") {
+            safegetline(rfile, istring);
+            mainprogram->toscene[0][0]->midi[0] = std::stoi(istring);
+        }
+        if (istring == "TOSCENEA0MIDI1") {
+            safegetline(rfile, istring);
+            mainprogram->toscene[0][0]->midi[1] = std::stoi(istring);
+        }
+        if (istring == "TOSCENEA0MIDIPORT") {
+            safegetline(rfile, istring);
+            mainprogram->toscene[0][0]->midiport = istring;
+            mainprogram->toscene[0][0]->register_midi();
+        }
+        if (istring == "TOSCENEA1MIDI0") {
+            safegetline(rfile, istring);
+            mainprogram->toscene[0][1]->midi[0] = std::stoi(istring);
+        }
+        if (istring == "TOSCENEA1MIDI1") {
+            safegetline(rfile, istring);
+            mainprogram->toscene[0][1]->midi[1] = std::stoi(istring);
+        }
+        if (istring == "TOSCENEA1MIDIPORT") {
+            safegetline(rfile, istring);
+            mainprogram->toscene[0][1]->midiport = istring;
+            mainprogram->toscene[0][1]->register_midi();
+        }
+        if (istring == "TOSCENEA2MIDI0") {
+            safegetline(rfile, istring);
+            mainprogram->toscene[0][2]->midi[0] = std::stoi(istring);
+        }
+        if (istring == "TOSCENEA2MIDI1") {
+            safegetline(rfile, istring);
+            mainprogram->toscene[0][2]->midi[1] = std::stoi(istring);
+        }
+        if (istring == "TOSCENEA2MIDIPORT") {
+            safegetline(rfile, istring);
+            mainprogram->toscene[0][2]->midiport = istring;
+            mainprogram->toscene[0][2]->register_midi();
+        }
+        if (istring == "TOSCENEB0MIDI0") {
+            safegetline(rfile, istring);
+            mainprogram->toscene[1][0]->midi[0] = std::stoi(istring);
+        }
+        if (istring == "TOSCENEB0MIDI1") {
+            safegetline(rfile, istring);
+            mainprogram->toscene[1][0]->midi[1] = std::stoi(istring);
+        }
+        if (istring == "TOSCENEB0MIDIPORT") {
+            safegetline(rfile, istring);
+            mainprogram->toscene[1][0]->midiport = istring;
+            mainprogram->toscene[1][0]->register_midi();
+        }
+        if (istring == "TOSCENEB1MIDI0") {
+            safegetline(rfile, istring);
+            mainprogram->toscene[1][1]->midi[0] = std::stoi(istring);
+        }
+        if (istring == "TOSCENEB1MIDI1") {
+            safegetline(rfile, istring);
+            mainprogram->toscene[1][1]->midi[1] = std::stoi(istring);
+        }
+        if (istring == "TOSCENEB1MIDIPORT") {
+            safegetline(rfile, istring);
+            mainprogram->toscene[1][1]->midiport = istring;
+            mainprogram->toscene[1][1]->register_midi();
+        }
+        if (istring == "TOSCENEB2MIDI0") {
+            safegetline(rfile, istring);
+            mainprogram->toscene[1][2]->midi[0] = std::stoi(istring);
+        }
+        if (istring == "TOSCENEB2MIDI1") {
+            safegetline(rfile, istring);
+            mainprogram->toscene[1][2]->midi[1] = std::stoi(istring);
+        }
+        if (istring == "TOSCENEB2MIDIPORT") {
+            safegetline(rfile, istring);
+            mainprogram->toscene[1][2]->midiport = istring;
+            mainprogram->toscene[1][2]->register_midi();
+        }
         if (istring == "BACKTOPREAMIDI0") {
             safegetline(rfile, istring);
             mainprogram->backtopreA->midi[0] = std::stoi(istring);
@@ -5802,6 +5884,60 @@ void Mixer::do_save_state(const std::string& path, bool autosave) {
     wfile << "\n";
     wfile << "TOSCREENMMIDIPORT\n";
     wfile << mainprogram->toscreenM->midiport;
+    wfile << "\n";
+    wfile << "TOSCENEA0MIDI0\n";
+    wfile << std::to_string(mainprogram->toscene[0][0]->midi[0]);
+    wfile << "\n";
+    wfile << "TOSCENEA0MIDI1\n";
+    wfile << std::to_string(mainprogram->toscene[0][0]->midi[1]);
+    wfile << "\n";
+    wfile << "TOSCENEA0MIDIPORT\n";
+    wfile << mainprogram->toscene[0][0]->midiport;
+    wfile << "\n";
+    wfile << "TOSCENEA1MIDI0\n";
+    wfile << std::to_string(mainprogram->toscene[0][1]->midi[0]);
+    wfile << "\n";
+    wfile << "TOSCENEA1MIDI1\n";
+    wfile << std::to_string(mainprogram->toscene[0][1]->midi[1]);
+    wfile << "\n";
+    wfile << "TOSCENEA1MIDIPORT\n";
+    wfile << mainprogram->toscene[0][1]->midiport;
+    wfile << "\n";
+    wfile << "TOSCENEA2MIDI0\n";
+    wfile << std::to_string(mainprogram->toscene[0][2]->midi[0]);
+    wfile << "\n";
+    wfile << "TOSCENEA2MIDI1\n";
+    wfile << std::to_string(mainprogram->toscene[0][2]->midi[1]);
+    wfile << "\n";
+    wfile << "TOSCENEA2MIDIPORT\n";
+    wfile << mainprogram->toscene[0][2]->midiport;
+    wfile << "\n";
+    wfile << "TOSCENEB0MIDI0\n";
+    wfile << std::to_string(mainprogram->toscene[1][0]->midi[0]);
+    wfile << "\n";
+    wfile << "TOSCENEB0MIDI1\n";
+    wfile << std::to_string(mainprogram->toscene[1][0]->midi[1]);
+    wfile << "\n";
+    wfile << "TOSCENEB0MIDIPORT\n";
+    wfile << mainprogram->toscene[1][0]->midiport;
+    wfile << "\n";
+    wfile << "TOSCENEB1MIDI0\n";
+    wfile << std::to_string(mainprogram->toscene[1][1]->midi[0]);
+    wfile << "\n";
+    wfile << "TOSCENEB1MIDI1\n";
+    wfile << std::to_string(mainprogram->toscene[1][1]->midi[1]);
+    wfile << "\n";
+    wfile << "TOSCENEB1MIDIPORT\n";
+    wfile << mainprogram->toscene[1][1]->midiport;
+    wfile << "\n";
+    wfile << "TOSCENEB2MIDI0\n";
+    wfile << std::to_string(mainprogram->toscene[1][2]->midi[0]);
+    wfile << "\n";
+    wfile << "TOSCENEB2MIDI1\n";
+    wfile << std::to_string(mainprogram->toscene[1][2]->midi[1]);
+    wfile << "\n";
+    wfile << "TOSCENEB2MIDIPORT\n";
+    wfile << mainprogram->toscene[1][2]->midiport;
     wfile << "\n";
     wfile << "BACKTOPREAMIDI0\n";
     wfile << std::to_string(mainprogram->backtopreA->midi[0]);
@@ -8072,14 +8208,14 @@ void Mixer::new_file(int decks, bool alive) {
 				glGetTexLevelParameteriv(GL_TEXTURE_2D, 0, GL_TEXTURE_HEIGHT, &sh);
 				mainmix->butexes[0].push_back(copy_tex(butex, sw, sh));*/
 			}
-			bool cond = true;;
+			bool cond = true;
 			if (lvec.size() == 1) {
 				if (lvec[0]->filename == "") {
 					cond = false;
 					mainmix->delete_layers(lvec, true);
 				}
 			}
-			if (cond) mainmix->bulrs[0] = lvec;
+			if (cond && alive) mainmix->bulrs[0] = lvec;
 			else mainmix->bulrs[0].clear();
 			lvec.clear();
 			Layer* lay = mainmix->add_layer(lvec, 0);
@@ -8133,7 +8269,7 @@ void Mixer::new_file(int decks, bool alive) {
 					mainmix->delete_layers(lvec, true);
 				}
 			}
-			if (cond) mainmix->bulrs[1] = lvec;
+			if (cond && alive) mainmix->bulrs[1] = lvec;
 			else mainmix->bulrs[1].clear();
 			lvec.clear();
 			Layer* lay = mainmix->add_layer(lvec, 0);
@@ -8338,7 +8474,7 @@ void Mixer::start_recording() {
 	//assert(this->rgbdata);
 	this->recordnow[cbool] = true;
 	while (this->recordnow[cbool]) {
-		this->startrecord[cbool].notify_one();
+		this->startrecord[cbool].notify_all();
 	}
 
 	// make a thumbnail for display afterwards
