@@ -2877,6 +2877,7 @@ void BinsMain::hap_encode(const std::string srcpath, BinElement *binel, BinEleme
     	// got_frame = encode_frame(dest, c, nullptr, &pkt, nullptr);
     	// if (!got_frame) break;
     // }
+    dest_stream->duration = (count + 1) * av_rescale_q(1, c->time_base, dest_stream->time_base);
     av_write_trailer(dest);
     avio_close(dest->pb);
     avcodec_free_context(&c);

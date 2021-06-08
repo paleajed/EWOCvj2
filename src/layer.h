@@ -30,6 +30,7 @@ typedef enum
 	ELEM_DECK = 3,
 	ELEM_MIX = 4,
 	ELEM_LIVE = 5,
+	ELEM_NONE = 6,
 } ELEM_TYPE;
 
 typedef enum
@@ -64,7 +65,9 @@ struct remaining_frames {
     bool isclone = false;
     int width = 1;
     int height = 1;
+    int bpp = 0;
     int size;
+    bool changeinit = false;
 };
 
 struct registered_midi {
@@ -77,7 +80,7 @@ class Clip {
 	public:
 		std::string path = "";
 		ELEM_TYPE type;
-		GLuint tex;
+		GLuint tex = -1;
 		int frame = 0.0f;
 		int startframe = -1;
 		int endframe = -1;
@@ -102,16 +105,18 @@ class Layer {
 		std::vector<Clip*> clips;
 		Clip* currclip = nullptr;
 		ELEM_TYPE type = ELEM_FILE;
-		ELEM_TYPE oldtype = ELEM_FILE;
+        ELEM_TYPE oldtype = ELEM_FILE;
 		RATIO_TYPE aspectratio = RATIO_OUTPUT;
 		bool queueing = false;
 		int queuescroll = 0;
 		float scrollcol[4] = {0.4f, 0.4f, 0.4f, 0.0f};
 		Button *mutebut;
-		Button* solobut;
+        Button* solobut;
+        Button* keepeffbut;
 		Button* queuebut;
 		bool muting = false;
-		bool soloing = false;
+        bool soloing = false;
+        bool keepeffing = false;
 		bool mousequeue = false;
 		int numefflines[2] = {0,0};
 		int effscroll[2] = {0,0};
@@ -196,6 +201,7 @@ class Layer {
 		bool newtexdata = false;
 		frame_result *decresult;
 		remaining_frames *remfr[3];
+		int changeinit = -1;
 		std::thread decoding;
 		void get_frame();
 		std::thread audiot;
@@ -262,15 +268,14 @@ class Layer {
 		ALuint sampleformat;
 		BinElement *hapbinel = nullptr;
 		bool encodeload = false;
+		bool nopbodel = false;
 		
 		std::unordered_map<EFFECT_TYPE, int> numoftypemap;
 		int clonesetnr = -1;
         bool isclone = false;
         Layer *isduplay = nullptr;
 
-        int oldwidth = -1;
-        int oldheight = -1;
-        int oldbpp = -1;
+        bool keyframe = false;
 
 		void display();
 		Effect* add_effect(EFFECT_TYPE type, int pos);
@@ -288,7 +293,7 @@ class Layer {
 		void open_files_layers();
 		void open_files_queue();
 		bool thread_vidopen();
-        Layer* open_video(float frame, const std::string& filename, int reset);
+        Layer* open_video(float frame, const std::string& filename, int reset, bool dontdeleffs = false);
         Layer* open_video(float frame, const std::string& filename, int reset, bool copy, bool noeffects);
 		void open_image(const std::string& path);
 		void initialize(int w, int h);
@@ -297,7 +302,7 @@ class Layer {
 		bool find_new_live_base(int pos);
 		void set_live_base(std::string livename);
 		void deautomate();
-        void set_inlayer(Layer* lay);
+        void set_inlayer(Layer* lay, bool pbos);
         Layer* next();
 		Layer* prev();
         void del();
@@ -388,7 +393,7 @@ class Mixer {
 		void save_state(const std::string &path, bool autosave);
 		void do_save_state(const std::string& path, bool autosave);
 		std::vector<std::string> write_layer(Layer *lay, std::ostream& wfile, bool doclips, bool dojpeg);
-		Layer* read_layers(std::istream &rfile, const std::string &result, std::vector<Layer*> &layers, bool deck, int type, bool doclips, bool concat, bool load, bool loadevents, bool save);
+		Layer* read_layers(std::istream &rfile, const std::string &result, std::vector<Layer*> &layers, bool deck, int type, bool doclips, bool concat, bool load, bool loadevents, bool save, bool keepeff = false);
 		void start_recording();
 		void cloneset_destroy(std::unordered_set<Layer*>* cs);
 		void handle_genmidibuttons();

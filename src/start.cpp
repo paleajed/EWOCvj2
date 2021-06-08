@@ -1291,21 +1291,23 @@ void Layer::get_cpu_frame(int framenr, int prevframe, int errcount)
         if (framenr != prevframe + 1) {
             int r = av_read_frame(this->videoseek, &this->decpktseek);
             int readpos = ((this->decpktseek.dts - this->video_stream->first_dts) * this->numf) / this->video_duration;
-            if (readpos <= framenr) {
-                // readpos at keyframe after framenr
-                if (framenr > prevframe && prevframe > readpos) {
-                    // starting from just past prevframe here is more efficient than decoding from readpos keyframe
-                    readpos = prevframe + 1;
-                } else {
-                    avformat_seek_file(this->video, this->video_stream->index, this->video_stream->first_dts,
-                                       seekTarget, seekTarget, 0);
-                }
-                for (int f = readpos; f < framenr; f = f + mainprogram->qualfr) {
-                    // decode sequentially frames starting from keyframe readpos to current framenr
-                    ret = decode_packet(this, false);
-                    do {
-                        decode_audio(this);
-                    } while (this->decpkt.stream_index != this->video_stream_idx);
+            if (!this->keyframe) {
+                if (readpos <= framenr) {
+                    // readpos at keyframe after framenr
+                    if (framenr > prevframe && prevframe > readpos) {
+                        // starting from just past prevframe here is more efficient than decoding from readpos keyframe
+                        readpos = prevframe + 1;
+                    } else {
+                        avformat_seek_file(this->video, this->video_stream->index, this->video_stream->first_dts,
+                                           seekTarget, seekTarget, 0);
+                    }
+                    for (int f = readpos; f < framenr; f = f + mainprogram->qualfr) {
+                        // decode sequentially frames starting from keyframe readpos to current framenr
+                        ret = decode_packet(this, false);
+                        do {
+                            decode_audio(this);
+                        } while (this->decpkt.stream_index != this->video_stream_idx);
+                    }
                 }
             }
 		}
@@ -1486,9 +1488,6 @@ void Layer::get_frame(){
 			}
 			else {
 				this->opened = true;
-                //if (this->oldwidth != this->video_dec_ctx->width || this->oldheight != this->video_dec_ctx->height) {
-                    this->initialized = true;
-                //}
 				if (this->dummy) {
 					this->opened = true;
 					while (this->opened) {
@@ -1503,7 +1502,7 @@ void Layer::get_frame(){
 			continue;
 		}
 		if (!this->liveinput) {
-			if ((!this->initialized && this->decresult->width) || this->filename == "" || this->isclone) {
+			if (this->filename == "" || this->isclone) {
 				continue;
 			}
 			if (this->vidformat != 188 && this->vidformat != 187) {
@@ -1545,7 +1544,7 @@ void Layer::get_frame(){
 	}
 }
 
-Layer* Layer::open_video(float frame, const std::string &filename, int reset) {
+Layer* Layer::open_video(float frame, const std::string &filename, int reset, bool dontdeleffs) {
     // do configuration and thread launch for opening a video into a layer
 
     if (!isvideo(filename)) {
@@ -1595,6 +1594,18 @@ Layer* Layer::open_video(float frame, const std::string &filename, int reset) {
         this->boundimage = -1;
     }
 	this->audioplaying = false;
+    if (!this->keepeffbut->value && !dontdeleffs) {
+        // remove effects if keep effects isnt on
+        while (!this->effects[0].empty()) {
+            // reminder : code duplication
+            mainprogram->nodesmain->currpage->delete_node(this->effects[0].back()->node);
+            for (int j = 0; j < this->effects[0].back()->params.size(); j++) {
+                delete this->effects[0].back()->params[j];
+            }
+            delete this->effects[0].back();
+            this->effects[0].pop_back();
+        }
+    }
 	if (this->effects[0].size() == 0) this->type = ELEM_FILE;
 	else this->type = ELEM_LAYER;
 	this->filename = filename;
@@ -1678,6 +1689,12 @@ bool Layer::thread_vidopen() {
 		avcodec_open2(this->video_dec_ctx, dec, nullptr);
 		this->bpp = 4;
 		if (this->vidformat == 188 || this->vidformat == 187) {
+			if (oldvidformat != -1) {
+                if (this->oldvidformat != 188 && this->oldvidformat != 187) {
+                    // hap cpu change needs new texstorage
+                    this->initialized = false;
+                }
+            }
 			this->numf = this->video_stream->nb_frames;
 			if (this->numf == 0) {
 				this->numf = (double)this->video->duration * (double)this->video_stream->avg_frame_rate.num / (double)this->video_stream->avg_frame_rate.den / (double)1000000.0f;
@@ -1705,6 +1722,12 @@ bool Layer::thread_vidopen() {
 		else if (this->type != ELEM_LIVE) {
 			avformat_open_input(&(this->videoseek), this->filename.c_str(), this->ifmt, nullptr);
 		}
+        if (oldvidformat != -1) {
+            if (this->oldvidformat == 188 || this->oldvidformat == 187) {
+                // hap cpu change needs new texstorage
+                this->initialized = false;
+            }
+        }
 	}
     else {
     	printf("Error2\n");
@@ -3028,7 +3051,7 @@ bool Layer::calc_texture(bool comp, bool alive) {
 				}
 				else if (this->type == ELEM_LAYER) {
 					Layer *l = mainmix->open_layerfile(this->layerfilepath, this, 1, 0);
-                    this->set_inlayer(l);
+                    this->set_inlayer(l, true);
 				}
 				else if (this->type == ELEM_IMAGE) {
 					this->open_image(this->filename);
@@ -3091,7 +3114,7 @@ void Layer::load_frame() {
     // initialize layer?
 	if (this->isduplay) return;
 	if (!srclay->video_dec_ctx) return;
-    if (this->remfr[this->pboui]->width != srclay->video_dec_ctx->width || this->remfr[this->pboui]->height != srclay->video_dec_ctx->height) {
+    if (!this->remfr[this->pboui]->initialized || this->changeinit == this->pboui) {
         // reminder : test with different bpp
         if (!this->liveinput) {
             if (this->video_dec_ctx) {
@@ -3099,6 +3122,7 @@ void Layer::load_frame() {
                     if (srclay->decresult->compression) {
                         float w = srclay->video_dec_ctx->width;
                         float h = srclay->video_dec_ctx->height;
+                        printf("initializing\n");
                         this->initialize(w, h, srclay->decresult->compression);
                     }
                 } else {
@@ -3151,6 +3175,7 @@ void Layer::load_frame() {
 				//}
 				// HAP video layers
 				if (this->remfr[this->pboui]->compression == 187 || this->remfr[this->pboui]->compression == 171) {
+
 					glCompressedTexSubImage2D(GL_TEXTURE_2D, 0, 0, 0, this->remfr[this->pboui]->width, this->remfr[this->pboui]->height,
                                GL_COMPRESSED_RGBA_S3TC_DXT1_EXT, this->remfr[this->pboui]->size, 0);
 				}
@@ -3185,18 +3210,21 @@ void Layer::load_frame() {
         return;
     }
 
+    if (this->changeinit == this->pbodi) this->changeinit = -1;
+    if (this->changeinit == 3 || this->remfr[this->pbodi]->width != this->video_dec_ctx->width || this->remfr[this->pbodi]->height != this->video_dec_ctx->height || this->remfr[this->pbodi]->bpp != this->bpp) {
+        // video (size) changed
+        this->changeinit = this->pbodi;
+    }
     if (!this->isclone && !this->liveinput) {
 		// start transferring to pbou
 		// bind PBO to update pixel values
 		//glBindBuffer(GL_PIXEL_UNPACK_BUFFER, srclay->pbo[srclay->pboui]);
 		if (srclay->mapptr[srclay->pbodi]) {
-		    // first check of new size content is loaded, if so, make new pbo for current write operation
-		    glBindBuffer(GL_ARRAY_BUFFER, srclay->pbo[srclay->pbodi]);
-            int bsize = 0;
-            glGetBufferParameteriv(GL_ARRAY_BUFFER, GL_BUFFER_SIZE, &bsize);
+            // first check of new size content is loaded, if so, make new pbo for current write operation
             int w = srclay->video_dec_ctx->width;
             int h = srclay->video_dec_ctx->height;
-            if (bsize != w * h * srclay->bpp) {
+            if (this->changeinit != -1) {
+                printf("changepbo %d\n", srclay->pbodi);
                 glDeleteBuffers(1, &srclay->pbo[srclay->pbodi]);
                 glGenBuffers(1, &srclay->pbo[srclay->pbodi]);
                 int bsize = w * h * srclay->bpp;
@@ -3205,11 +3233,13 @@ void Layer::load_frame() {
                 glBufferStorage(GL_ARRAY_BUFFER, bsize, 0, flags);
                 this->mapptr[srclay->pbodi] = (GLubyte *) glMapBufferRange(GL_ARRAY_BUFFER, 0, bsize, flags);
             }
-            glUnmapBuffer(GL_ARRAY_BUFFER);
 
             if (mainprogram->encthreads == 0) WaitBuffer(srclay->syncobj[srclay->pbodi]);
 			// update data directly on the mapped buffer
 			memcpy(srclay->mapptr[srclay->pbodi], srclay->decresult->data, srclay->decresult->size);
+			if (srclay->comp == true && srclay->pos == 2 && srclay->deck == 0) {
+                printf("pbodi %d\n", srclay->pbodi);
+            }
 			if (mainprogram->encthreads == 0) LockBuffer(srclay->syncobj[srclay->pbodi]);
 		}
 	}
@@ -3223,6 +3253,7 @@ void Layer::load_frame() {
     this->remfr[this->pbodi]->isclone = srclay->isclone;
     this->remfr[this->pbodi]->width = srclay->decresult->width;
     this->remfr[this->pbodi]->height = srclay->decresult->height;
+    this->remfr[this->pbodi]->bpp = srclay->bpp;
     this->remfr[this->pbodi]->size = srclay->decresult->size;
     srclay->pbodi++;
     srclay->pboui++;
@@ -4455,7 +4486,7 @@ void drag_into_layerstack(std::vector<Layer*>& layers, bool deck) {
 						if (mainprogram->dragbinel) {
 							if (mainprogram->dragbinel->type == ELEM_LAYER) {
 								Layer *l = mainmix->open_layerfile(mainprogram->dragbinel->path, inlay, 1, 1);
-                                inlay->set_inlayer(l);
+                                inlay->set_inlayer(l, true);
 							}
 							else {
 								inlay->open_video(0, mainprogram->dragbinel->path, true);
@@ -4483,7 +4514,7 @@ void drag_into_layerstack(std::vector<Layer*>& layers, bool deck) {
 								if (mainprogram->dragbinel) {
 									if (mainprogram->dragbinel->type == ELEM_LAYER) {
 										Layer *l = mainmix->open_layerfile(mainprogram->dragbinel->path, lay, 1, 1);
-                                        lay->set_inlayer(l);
+                                        lay->set_inlayer(l, false);
 									}
 									else if (mainprogram->dragbinel->type == ELEM_FILE) {
 										lay->open_video(0, mainprogram->dragbinel->path, true);
@@ -5247,56 +5278,58 @@ bool Clip::get_imageframes() {
 
 GLuint get_videotex(const std::string& path) {
     // get the middle frame of this video and put it in a GL texture, as representation for the video
-	Layer* lay = new Layer(true);
-	lay->dummy = 1;
-	GLuint ctex;
-	glGenTextures(1, &ctex);
-	glActiveTexture(GL_TEXTURE0);
-	glBindTexture(GL_TEXTURE_2D, ctex);
-	glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR);
-	glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
-	glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_BORDER);
-	glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_BORDER);
-	lay = lay->open_video(0, path, true);
-	if (mainprogram->openerr) return 0;
-	std::unique_lock<std::mutex> olock(lay->endopenlock);
-	lay->endopenvar.wait(olock, [&] {return lay->opened; });
-	lay->opened = false;
-	olock.unlock();
-	if (mainprogram->openerr) {
-		printf("error loading video texture!\n");
-		mainprogram->openerr = false;
-		//delete lay;
-		return -1;
-	}
-	lay->frame = lay->numf / 2.0f;
-	lay->prevframe = lay->frame - 1;
-	lay->initialized = true;
-	lay->ready = true;
-	while (lay->ready) {
-		lay->startdecode.notify_one();
-	}
-	std::unique_lock<std::mutex> lock2(lay->enddecodelock);
-	lay->enddecodevar.wait(lock2, [&] {return lay->processed; });
-	lay->processed = false;
-	lock2.unlock();
-	lay->closethread = true;
-	while (lay->closethread) {
-		lay->ready = true;
-		lay->startdecode.notify_one();
-	}
-	if (lay->vidformat == 188 || lay->vidformat == 187) {
-		if (lay->decresult->compression == 187) {
-			glCompressedTexImage2D(GL_TEXTURE_2D, 0, GL_COMPRESSED_RGBA_S3TC_DXT1_EXT, lay->decresult->width, lay->decresult->height, 0, lay->decresult->size, lay->decresult->data);
-		}
-		else if (lay->decresult->compression == 190) {
-			glCompressedTexImage2D(GL_TEXTURE_2D, 0, GL_COMPRESSED_RGBA_S3TC_DXT5_EXT, lay->decresult->width, lay->decresult->height, 0, lay->decresult->size, lay->decresult->data);
-		}
-	}
-	else {
-		glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA8, lay->decresult->width, lay->decresult->height, 0, GL_BGRA, GL_UNSIGNED_BYTE, lay->decresult->data);
-	}
-	return ctex;
+    Layer* lay = new Layer(true);
+    lay->dummy = 1;
+    GLuint ctex;
+    glGenTextures(1, &ctex);
+    glActiveTexture(GL_TEXTURE0);
+    glBindTexture(GL_TEXTURE_2D, ctex);
+    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR);
+    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
+    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_BORDER);
+    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_BORDER);
+    lay = lay->open_video(0, path, true);
+    if (mainprogram->openerr) return 0;
+    std::unique_lock<std::mutex> olock(lay->endopenlock);
+    lay->endopenvar.wait(olock, [&] {return lay->opened; });
+    lay->opened = false;
+    olock.unlock();
+    if (mainprogram->openerr) {
+        printf("error loading video texture!\n");
+        mainprogram->openerr = false;
+        //delete lay;
+        return -1;
+    }
+    lay->frame = lay->numf / 2.0f;
+    lay->prevframe = lay->frame - 1;
+    lay->initialized = true;
+    lay->keyframe = true;
+    lay->ready = true;
+    while (lay->ready) {
+        lay->startdecode.notify_one();
+    }
+    std::unique_lock<std::mutex> lock2(lay->enddecodelock);
+    lay->enddecodevar.wait(lock2, [&] {return lay->processed; });
+    lay->processed = false;
+    lock2.unlock();
+    lay->closethread = true;
+    while (lay->closethread) {
+        lay->ready = true;
+        lay->startdecode.notify_one();
+    }
+    lay->keyframe = false;
+    if (lay->vidformat == 188 || lay->vidformat == 187) {
+        if (lay->decresult->compression == 187) {
+            glCompressedTexImage2D(GL_TEXTURE_2D, 0, GL_COMPRESSED_RGBA_S3TC_DXT1_EXT, lay->decresult->width, lay->decresult->height, 0, lay->decresult->size, lay->decresult->data);
+        }
+        else if (lay->decresult->compression == 190) {
+            glCompressedTexImage2D(GL_TEXTURE_2D, 0, GL_COMPRESSED_RGBA_S3TC_DXT5_EXT, lay->decresult->width, lay->decresult->height, 0, lay->decresult->size, lay->decresult->data);
+        }
+    }
+    else {
+        glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA8, lay->decresult->width, lay->decresult->height, 0, GL_BGRA, GL_UNSIGNED_BYTE, lay->decresult->data);
+    }
+    return ctex;
 }
 
 bool Clip::get_videoframes() {
@@ -5321,19 +5354,21 @@ bool Clip::get_videoframes() {
 
 GLuint get_layertex(const std::string& path) {
     // get the middle frame of this layer files' video and put it in a GL texture, as representation for the video
-	Layer* lay = new Layer(false);
-	lay->dummy = true;
-	lay->pos = 0;
-	lay->node = mainprogram->nodesmain->currpage->add_videonode(2);
-	lay->node->layer = lay;
-	lay->lasteffnode[0] = lay->node;
-	lay->lasteffnode[1] = lay->node;
-	Layer *l = mainmix->open_layerfile(path, lay, true, 0);
-    lay->set_inlayer(l);
-	std::unique_lock<std::mutex> olock(lay->endopenlock);
-	lay->endopenvar.wait(olock, [&] {return lay->opened; });
-	lay->opened = false;
-	olock.unlock();
+    Layer *lay = new Layer(false);
+    lay->dummy = true;
+    lay->pos = 0;
+    lay->node = mainprogram->nodesmain->currpage->add_videonode(2);
+    lay->node->layer = lay;
+    lay->lasteffnode[0] = lay->node;
+    lay->lasteffnode[1] = lay->node;
+    Layer *l = mainmix->open_layerfile(path, lay, true, 0);
+    lay->set_inlayer(l, true);
+    if (lay->opened == true) {
+        std::unique_lock<std::mutex> olock(lay->endopenlock);
+        lay->endopenvar.wait(olock, [&] { return lay->opened; });
+        lay->opened = false;
+        olock.unlock();
+    }
 	if (lay->filename == "") return -1;
 	lay->node->calc = true;
 	lay->node->walked = false;
@@ -5346,6 +5381,7 @@ GLuint get_layertex(const std::string& path) {
 	}
     lay->frame = lay->numf / 2.0f;
     lay->prevframe = lay->frame - 1;
+    lay->keyframe = true;
 	lay->ready = true;
 	while (lay->ready) {
 		lay->startdecode.notify_one();
@@ -5354,6 +5390,7 @@ GLuint get_layertex(const std::string& path) {
 	lay->enddecodevar.wait(lock, [&] {return lay->processed; });
 	lay->processed = false;
 	lock.unlock();
+	lay->keyframe = false;
 
 	lay->initialized = true;
 	glActiveTexture(GL_TEXTURE0);
@@ -6605,7 +6642,7 @@ void the_loop() {
             Box box;
             box.vtxcoords->x1 = 0.15f + 0.0465f;
             box.vtxcoords->y1 = -1.0f + mainprogram->monh * 2.0f;
-            box.vtxcoords->w = 0.0465f * (sw / sh);
+            box.vtxcoords->w = 0.040f * ((float)sw / (float)sh);
             box.vtxcoords->h = 0.075f;
             box.upvtxtoscr();
             draw_box(&box, mainmix->recSthumbshow);
@@ -6623,9 +6660,9 @@ void the_loop() {
             glGetTexLevelParameteriv(GL_TEXTURE_2D, 0, GL_TEXTURE_WIDTH, &sw);
             glGetTexLevelParameteriv(GL_TEXTURE_2D, 0, GL_TEXTURE_HEIGHT, &sh);
             Box box;
-            box.vtxcoords->x1 = -0.15f - 0.0465f - 0.0465f * (sw / sh);
+            box.vtxcoords->x1 = -0.15f - 0.0465f - 0.040f * ((float)sw / (float)sh);
             box.vtxcoords->y1 = -1.0f + mainprogram->monh * 2.0f;
-            box.vtxcoords->w = 0.0465f * (sw / sh);
+            box.vtxcoords->w = 0.040f * ((float)sw / (float)sh);
             box.vtxcoords->h = 0.075f;
             box.upvtxtoscr();
             draw_box(&box, mainmix->recQthumbshow);
@@ -8802,7 +8839,7 @@ int main(int argc, char* argv[]) {
             else if (mainprogram->pathto == "OPENLAYFILE") {
                 mainprogram->currelemsdir = dirname(mainprogram->path);
                 Layer *l = mainmix->open_layerfile(mainprogram->path, mainmix->mouselayer, 1, 1);
-                mainmix->mouselayer->set_inlayer(l);
+                mainmix->mouselayer->set_inlayer(l, true);
             }
             else if (mainprogram->pathto == "OPENSTATE") {
                 mainprogram->currelemsdir = dirname(mainprogram->path);

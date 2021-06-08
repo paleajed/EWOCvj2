@@ -978,18 +978,19 @@ void Program::get_dir(const char* title, std::string defaultdir) {
 	mainprogram->autosave = as;
 }
 
-bool Program::order_paths(bool dodeckmix) {
-	if (mainprogram->multistage == 0) {
-		mainprogram->filescount = 0;
-		mainprogram->multistage = 1;
-	}
-	if (mainprogram->multistage == 1) {
-		mainprogram->orderondisplay = true;
-		// first get one file texture per loop
-		std::string str = mainprogram->paths[mainprogram->filescount];
-		mainprogram->filescount++;
 
-		GLuint tex;
+bool Program::order_paths(bool dodeckmix) {
+    if (mainprogram->multistage == 0) {
+        mainprogram->filescount = 0;
+        mainprogram->multistage = 1;
+    }
+    if (mainprogram->multistage == 1) {
+        mainprogram->orderondisplay = true;
+        // first get one file texture per loop
+        std::string str = mainprogram->paths[mainprogram->filescount];
+        mainprogram->filescount++;
+
+        GLuint tex;
         // determine file type
         std::string istring = "";
         std::string result = deconcat_files(str);
@@ -1019,58 +1020,74 @@ bool Program::order_paths(bool dodeckmix) {
             return false;
         }
 
-		mainprogram->pathtexes.push_back(tex);
-		render_text(str, white, 2.0f, 2.0f, 0.00045f, 0.00075f);
-		if (mainprogram->filescount < mainprogram->paths.size()) return false;
-		for (int j = 0; j < mainprogram->paths.size(); j++) {
-			mainprogram->pathboxes.push_back(new Box);
-			mainprogram->pathboxes[j]->vtxcoords->x1 = -0.4f;
-			mainprogram->pathboxes[j]->vtxcoords->y1 = 0.8f - j * 0.1f;
-			mainprogram->pathboxes[j]->vtxcoords->w = 0.8f;
-			mainprogram->pathboxes[j]->vtxcoords->h = 0.1f;
-			mainprogram->pathboxes[j]->upvtxtoscr();
-			mainprogram->pathboxes[j]->tooltiptitle = "Order files to be opened ";
-			mainprogram->pathboxes[j]->tooltip = "Leftmouse drag the files in the list to set the order in which they will be loaded.  Use arrows/mousewheel to scroll list when its bigger then the screen.  Click APPLY ORDER to continue. ";
-		}
-		mainprogram->multistage = 2;
-	}
-	if (mainprogram->multistage == 2) {
-		// then do interactive ordering
-		if (mainprogram->paths.size() != 1) {
-			bool cont = mainprogram->do_order_paths();
-			if (!cont) return false;
-		}
-		mainprogram->multistage = 3;
-	}
-	if (mainprogram->multistage == 3) {
-		if (mainprogram->openfilesshelf) {
-			// special case: reuse pathtexes as shelfelement texes
-			int size = mainprogram->shelffileselem + mainprogram->paths.size();
-			if (size > 16) size = 16;
-			for (int i = mainprogram->shelffileselem; i < size; i++) {
-				ShelfElement* elem = mainmix->mouseshelf->elements[i];
-				elem->path = mainprogram->paths[i - mainprogram->shelffileselem];
-				elem->tex = mainprogram->pathtexes[i- mainprogram->shelffileselem];
-			}
-			mainprogram->pathtexes.clear();
-		}
-		// then cleanup
-		for (int j = 0; j < mainprogram->pathboxes.size(); j++) {
-			delete mainprogram->pathboxes[j];
-		}
-		for (int j = 0; j < mainprogram->pathtexes.size(); j++) {
-			glDeleteTextures(1, &mainprogram->pathtexes[j]);
-		}
-		mainprogram->pathboxes.clear();
-		mainprogram->pathtexes.clear();
-		mainprogram->filescount = 0;
-		mainprogram->orderondisplay = false;
-		mainprogram->multistage = 4;
-	}
+        mainprogram->pathtexes.push_back(tex);
+        render_text(str, white, 2.0f, 2.0f, 0.00045f, 0.00075f);
+        if (mainprogram->filescount < mainprogram->paths.size()) {
+            std::chrono::high_resolution_clock::time_point now = std::chrono::high_resolution_clock::now();
+            this->ordertime = now;
+            mainprogram->multistage = 5;
+            return false;
+        }
+        for (int j = 0; j < mainprogram->paths.size(); j++) {
+            mainprogram->pathboxes.push_back(new Box);
+            mainprogram->pathboxes[j]->vtxcoords->x1 = -0.4f;
+            mainprogram->pathboxes[j]->vtxcoords->y1 = 0.8f - j * 0.1f;
+            mainprogram->pathboxes[j]->vtxcoords->w = 0.8f;
+            mainprogram->pathboxes[j]->vtxcoords->h = 0.1f;
+            mainprogram->pathboxes[j]->upvtxtoscr();
+            mainprogram->pathboxes[j]->tooltiptitle = "Order files to be opened ";
+            mainprogram->pathboxes[j]->tooltip = "Leftmouse drag the files in the list to set the order in which they will be loaded.  Use arrows/mousewheel to scroll list when its bigger then the screen.  Click APPLY ORDER to continue. ";
+        }
+        mainprogram->multistage = 2;
+    }
 
-	return true;
+    if (mainprogram->multistage == 5) {
+        std::chrono::high_resolution_clock::time_point now = std::chrono::high_resolution_clock::now();
+        std::chrono::duration<double> elapsed;
+        elapsed = std::chrono::duration_cast<std::chrono::duration<double>>(now - this->ordertime);
+        long long microcount = std::chrono::duration_cast<std::chrono::microseconds>(elapsed).count();
+        if (microcount > 40000) {
+            mainprogram->multistage = 1;
+        }
+        return false;
+    }
+
+    if (mainprogram->multistage == 2) {
+        // then do interactive ordering
+        if (mainprogram->paths.size() != 1) {
+            bool cont = mainprogram->do_order_paths();
+            if (!cont) return false;
+        }
+        mainprogram->multistage = 3;
+    }
+    if (mainprogram->multistage == 3) {
+        if (mainprogram->openfilesshelf) {
+            // special case: reuse pathtexes as shelfelement texes
+            int size = mainprogram->shelffileselem + mainprogram->paths.size();
+            if (size > 16) size = 16;
+            for (int i = mainprogram->shelffileselem; i < size; i++) {
+                ShelfElement* elem = mainmix->mouseshelf->elements[i];
+                elem->path = mainprogram->paths[i - mainprogram->shelffileselem];
+                elem->tex = mainprogram->pathtexes[i- mainprogram->shelffileselem];
+            }
+            mainprogram->pathtexes.clear();
+        }
+        // then cleanup
+        for (int j = 0; j < mainprogram->pathboxes.size(); j++) {
+            delete mainprogram->pathboxes[j];
+        }
+        for (int j = 0; j < mainprogram->pathtexes.size(); j++) {
+            glDeleteTextures(1, &mainprogram->pathtexes[j]);
+        }
+        mainprogram->pathboxes.clear();
+        mainprogram->pathtexes.clear();
+        mainprogram->filescount = 0;
+        mainprogram->orderondisplay = false;
+        mainprogram->multistage = 4;
+    }
+
+    return true;
 }
-
 	
 bool Program::do_order_paths() {
 	if (this->paths.size() == 1) return true;
@@ -1383,6 +1400,8 @@ void Program::handle_changed_owoh() {
 
 void Program::handle_fullscreen() {
     mainprogram->frontbatch = true;
+
+    loopstation->handle();
 
     glBindFramebuffer(GL_FRAMEBUFFER, 0);
     glDrawBuffer(GL_BACK_LEFT);
@@ -1809,7 +1828,7 @@ void Program::shelf_miditriggering() {
                 clays[k]->frame = 0.0f;
             } else if (elem->type == ELEM_LAYER) {
                 clays[k] = mainmix->open_layerfile(elem->path, clays[k], true, false);
-                lay->set_inlayer(clays[k]);
+                lay->set_inlayer(clays[k], true);
                 mainmix->currlay[!mainprogram->prevmodus] = clays[k];
                 clays[k]->frame = 0.0f;
            } else if (elem->type == ELEM_DECK) {

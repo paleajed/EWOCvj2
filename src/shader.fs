@@ -88,6 +88,7 @@ uniform float numColors = 8.0f;
 uniform float pixel_w = 32.0f;
 uniform float pixel_h = 32.0f;
 uniform float rotamount = 45.0f;
+uniform bool rotmode = false;
 uniform float iGlobalTime = 0.0f;
 uniform float asciisize = 50.0f;
 uniform float vardotsize = 0.1f;
@@ -599,11 +600,11 @@ vec4 rotate(vec2 texco)  // selfmade
 {
     float rot = radians(rotamount);
     texco -= 0.5f;
-    texco.y *= fbowidth / fboheight;
+    if (!rotmode) texco.y *= float(fboheight) / float(fbowidth);
     //rotation matrix
     mat2 m = mat2(cos(rot), -sin(rot), sin(rot), cos(rot));
    	texco  = m * texco;
-    //texco.y *= fboheight / fbowidth;
+    if (!rotmode) texco.y *= float(fbowidth) / float(fboheight);
     texco += 0.5f;
     
     return texture2D(Sampler0, texco);
@@ -1447,10 +1448,12 @@ vec4 sharpen(vec2 texco)    //https://github.com/libretro/glsl-shaders - the fol
 
 
 // dither stuff
-vec4 outsize = vec4(vec2(fbowidth, fboheight), 1.0 / vec2(fbowidth, fboheight));
+float fbw = 1920.0f;
+float fbh = 1080.0f * (1080.0f / 1920.0f) * (float(fbowidth) / float(fboheight));
+vec4 outsize = vec4(vec2(fbw, fbh), 1.0 / vec2(fbw, fbh));
 
 uniform float animate = 0.0f;
-uniform float dither_size = 0.95f;
+uniform float dither_size = 4.9f;
 
 float find_closest(int x, int y, float c0)
 {

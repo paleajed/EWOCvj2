@@ -676,6 +676,7 @@ class Program {
         bool adaptivelprow = false;
         bool steplprow = false;
         bool waitonetime = false;
+        std::chrono::high_resolution_clock::time_point ordertime;
 
     #ifdef WINDOWS
         SOCKET sock;
