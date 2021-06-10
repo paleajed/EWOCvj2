@@ -2369,6 +2369,14 @@ Layer::Layer(bool comp) {
     this->scale->range[1] = 1000.0f;
     this->scritch = new Param;
     this->scritch->value = 0.0f;
+    this->startframe = new Param;
+    this->startframe->value = 0.0f;
+    this->startframe->range[0] = 0.0f;
+    this->startframe->range[1] = 9999999.0f;
+    this->endframe = new Param;
+    this->endframe->value = 0.0f;
+    this->endframe->range[0] = 0.0f;
+    this->endframe->range[1] = 9999999.0f;
 
     this->chtol = new Param;
     this->chtol->name = "Tolerance";
@@ -2462,7 +2470,7 @@ Layer::Layer(bool comp) {
 	this->genmidibut->box->tooltip = "Selects (leftclick advances) for this layer which MIDI preset (A, B, C, D or off) is used to control this layers common controls. ";
 	this->loopbox = new Box;
     this->loopbox->tooltiptitle = "Loop bar ";
-	this->loopbox->tooltip = "Loop bar for current layer video.  Green area is looped area, white vertical line is video  .  Leftdrag on bar scrubs video.  When hovering over green area edges, it turns blue; when this happens middledrag will drag the areas edge.  If area is green, middledrag will drag the looparea left/right.  Rightclicking starts a menu allowing to set loop start or end to the current play position. ";
+	this->loopbox->tooltip = "Loop bar for current layer video.  Green area is looped area, white vertical line is video  .  Leftdrag on bar scrubs video.  When hovering over green area edges, the area turns blue; when this happens ctrl+leftdrag will drag the area edge.  If area is green, ctrl+leftdrag on the area will drag the looparea left/right.  Rightclicking starts a menu allowing to set loop start or end to the current play position. ";
 	this->chdir = new Button(false);
 	this->chdir->toggle = 1;
 	this->chdir->box->tooltiptitle = "Toggle key direction ";
@@ -2737,8 +2745,8 @@ void Layer::set_clones() {
 			lay->bouncebut->value = this->bouncebut->value;
 			lay->genmidibut->value = this->genmidibut->value;
 			lay->frame = this->frame;
-			lay->startframe = this->startframe;
-			lay->endframe = this->endframe;
+			lay->startframe->value = this->startframe->value;
+			lay->endframe->value = this->endframe->value;
 		}
 	}
 }
@@ -2992,12 +3000,6 @@ void Mixer::vidbox_handle() {
                         lay->transmy = mainprogram->my - (lay->shifty->value * (float)glob->w / 2.0f);
                     }
                 }
-                //if (mainprogram->middlemousedown) {
-                //	mainprogram->middlemousedown = false;
-                //	lay->transforming = 2;
-                //	lay->transmx = mainprogram->mx;
-                //	lay->transmy = mainprogram->my;
-                //}
                 else if (box->in()) {
                     // move layer
                     if (mainprogram->leftmousedown && !mainprogram->intopmenu) {
@@ -3060,15 +3062,6 @@ void Mixer::vidbox_handle() {
                     lay->decresult->newdata = true;
                 }
             }
-            //if (lay->transforming == 2) {
-            //	lay->scale = 5.0f / (((float)(mainprogram->my - lay->transmy) / 20.0f) + 5.0f);
-            //	if (lay->scale > 1.0f) lay->scale *= lay->scale;
-            //	lay->scale *= lay->oldscale;
-            //	if (mainprogram->middlemouse) {
-            //		lay->oldscale = lay->scale;
-            //		lay->transforming = 0;
-            //	}
-            //}
         }
 	}
 }
@@ -4251,56 +4244,75 @@ void Layer::display() {
             // Draw and handle loopbox
             bool ends = false;
             if (this->loopbox->in()) {
-                if (mainprogram->menuactivation) {
+                if (pdistance(mainprogram->mx, mainprogram->my, this->loopbox->scrcoords->x1 + this->startframe->value *
+                                                                                               (this->loopbox->scrcoords->w /
+                                                                                                (this->numf - 1)),
+                              this->loopbox->scrcoords->y1, this->loopbox->scrcoords->x1 + this->startframe->value *
+                                                                                           (this->loopbox->scrcoords->w /
+                                                                                            (this->numf - 1)),
+                              this->loopbox->scrcoords->y1 - mainprogram->yvtxtoscr(0.045f)) < 6) {
+                    ends = true;
+                    if (mainprogram->ctrl && mainprogram->leftmousedown) {
+                        this->scritching = 2;
+                        mainprogram->leftmousedown = false;
+                    }
+                    if (mainprogram->ctrl && mainprogram->leftmousedown) {
+                        this->scritching = 2;
+                        mainprogram->leftmousedown = false;
+                    }
+                    if (mainprogram->menuactivation) {
+                        mainprogram->parammenu3->state = 2;
+                        mainmix->learnparam = this->startframe;
+                        mainmix->learnbutton = nullptr;
+                        this->startframe->range[1] = this->numf - 1.0f;
+                        mainprogram->menuactivation = false;
+                    }
+                } else if (pdistance(mainprogram->mx, mainprogram->my, this->loopbox->scrcoords->x1 + this->startframe->value *
+                                                                                                      (this->loopbox->scrcoords->w /
+                                                                                                       (this->numf -
+                                                                                                        1)) +
+                                                                       (this->endframe->value - this->startframe->value) *
+                                                                       (this->loopbox->scrcoords->w / (this->numf - 1)),
+                                     this->loopbox->scrcoords->y1, this->loopbox->scrcoords->x1 + this->startframe->value *
+                                                                                                  (this->loopbox->scrcoords->w /
+                                                                                                   (this->numf - 1)) +
+                                                                   (this->endframe->value - this->startframe->value) *
+                                                                   (this->loopbox->scrcoords->w / (this->numf - 1)),
+                                     this->loopbox->scrcoords->y1 - mainprogram->yvtxtoscr(0.045f)) < 6) {
+                    ends = true;
+                    if (mainprogram->ctrl && mainprogram->leftmousedown) {
+                        this->scritching = 3;
+                        mainprogram->leftmousedown = false;
+                    }
+                    if (mainprogram->menuactivation) {
+                        mainprogram->parammenu3->state = 2;
+                        mainmix->learnparam = this->endframe;
+                        mainmix->learnbutton = nullptr;
+                        this->endframe->range[1] = this->numf - 1.0f;
+                        mainprogram->menuactivation = false;
+                    }
+                } else if (mainprogram->mx > this->loopbox->scrcoords->x1 +
+                                             this->startframe->value * (this->loopbox->scrcoords->w / (this->numf - 1)) &&
+                           mainprogram->mx < this->loopbox->scrcoords->x1 +
+                                             this->startframe->value * (this->loopbox->scrcoords->w / (this->numf - 1)) +
+                                             (this->endframe->value - this->startframe->value) *
+                                             (this->loopbox->scrcoords->w / (this->numf - 1))) {
+                    if (mainprogram->ctrl && mainprogram->leftmousedown) {
+                        mainmix->prevx = mainprogram->mx;
+                        this->scritching = 5;
+                        mainprogram->leftmousedown = false;
+                    }
+                }
+                if (mainprogram->menuactivation && !ends) {
                     mainprogram->loopmenu->state = 2;
                     mainmix->mouselayer = this;
                     mainprogram->menuactivation = false;
                 }
 
-                if (pdistance(mainprogram->mx, mainprogram->my, this->loopbox->scrcoords->x1 + this->startframe *
-                                                                                               (this->loopbox->scrcoords->w /
-                                                                                                (this->numf - 1)),
-                              this->loopbox->scrcoords->y1, this->loopbox->scrcoords->x1 + this->startframe *
-                                                                                           (this->loopbox->scrcoords->w /
-                                                                                            (this->numf - 1)),
-                              this->loopbox->scrcoords->y1 - mainprogram->yvtxtoscr(0.045f)) < 6 && this->startframe
-                              > 0.0f) {
-                    ends = true;
-                    if (mainprogram->middlemousedown) {
-                        this->scritching = 2;
-                        mainprogram->middlemousedown = false;
-                    }
-                } else if (pdistance(mainprogram->mx, mainprogram->my, this->loopbox->scrcoords->x1 + this->startframe *
-                                                                                                      (this->loopbox->scrcoords->w /
-                                                                                                       (this->numf -
-                                                                                                        1)) +
-                                                                       (this->endframe - this->startframe) *
-                                                                       (this->loopbox->scrcoords->w / (this->numf - 1)),
-                                     this->loopbox->scrcoords->y1, this->loopbox->scrcoords->x1 + this->startframe *
-                                                                                                  (this->loopbox->scrcoords->w /
-                                                                                                   (this->numf - 1)) +
-                                                                   (this->endframe - this->startframe) *
-                                                                   (this->loopbox->scrcoords->w / (this->numf - 1)),
-                                     this->loopbox->scrcoords->y1 - mainprogram->yvtxtoscr(0.045f)) < 6) {
-                    ends = true;
-                    if (mainprogram->middlemousedown) {
-                        this->scritching = 3;
-                        mainprogram->middlemousedown = false;
-                    }
-                } else if (mainprogram->mx > this->loopbox->scrcoords->x1 +
-                                             this->startframe * (this->loopbox->scrcoords->w / (this->numf - 1)) &&
-                           mainprogram->mx < this->loopbox->scrcoords->x1 +
-                                             this->startframe * (this->loopbox->scrcoords->w / (this->numf - 1)) +
-                                             (this->endframe - this->startframe) *
-                                             (this->loopbox->scrcoords->w / (this->numf - 1))) {
-                    if (mainprogram->middlemousedown) {
-                        mainmix->prevx = mainprogram->mx;
-                        this->scritching = 5;
-                        mainprogram->middlemousedown = false;
-                    }
-                }
             }
             this->oldframe = this->frame;
+            this->oldstartframe = this->startframe->value;
+            this->oldendframe = this->endframe->value;
             if (this->loopbox->in()) {
                 if (mainprogram->leftmousedown) {
                     this->scritching = 1;
@@ -4318,60 +4330,63 @@ void Layer::display() {
                 this->set_clones();
                 if (mainprogram->leftmouse && !mainprogram->menuondisplay) this->scritching = 4;
             } else if (this->scritching == 2) {
-                // middlemouse dragging loop start
-                this->startframe = (this->numf - 1) *
+                // ctrl leftmouse dragging loop start
+                this->startframe->value = (this->numf - 1) *
                                    ((mainprogram->mx - this->loopbox->scrcoords->x1) / this->loopbox->scrcoords->w);
-                if (this->startframe < 0) this->startframe = 0.0f;
-                else if (this->startframe >= this->numf) this->startframe = this->numf - 1;
-                if (this->startframe > this->frame) this->frame = this->startframe;
-                if (this->startframe > this->endframe) {
-                    this->startframe = this->endframe;
-                    this->frame = this->endframe;
+                if (this->startframe->value < 0) this->startframe->value = 0.0f;
+                else if (this->startframe->value >= this->numf) this->startframe->value = this->numf - 1;
+                if (this->startframe->value > this->frame) this->frame = this->startframe->value;
+                if (this->startframe->value > this->endframe->value) {
+                    this->startframe->value = this->endframe->value;
+                    this->frame = this->endframe->value;
                 }
                 this->set_clones();
-                if (mainprogram->middlemouse) this->scritching = 0;
+                if (mainprogram->leftmouse) this->scritching = 0;
             } else if (this->scritching == 3) {
-                // middlemouse dragging loop end
-                this->endframe = (this->numf - 1) *
+                // ctrl leftmouse dragging loop end
+                this->endframe->value = (this->numf - 1) *
                                  ((mainprogram->mx - this->loopbox->scrcoords->x1) / this->loopbox->scrcoords->w);
-                if (this->endframe < this->frame) this->frame = this->endframe;
-                if (this->endframe < this->startframe) {
-                    this->endframe = this->startframe;
-                    this->frame = this->endframe;
+                if (this->endframe->value < this->frame) this->frame = this->endframe->value;
+                if (this->endframe->value < this->startframe->value) {
+                    this->endframe->value = this->startframe->value;
+                    this->frame = this->endframe->value;
                 }
-                else if (this->endframe >= this->numf) this->endframe = this->numf - 1;
-                //if (this->endframe < this->frame) this->frame = this->endframe;
-                //if (this->endframe < this->startframe) this->endframe = this->startframe;
+                else if (this->endframe->value >= this->numf) this->endframe->value = this->numf - 1;
+                //if (this->endframe->value < this->frame) this->frame = this->endframe->value;
+                //if (this->endframe->value < this->startframe->value) this->endframe->value = this->startframe->value;
                 this->set_clones();
-                if (mainprogram->middlemouse) this->scritching = 0;
+                if (mainprogram->leftmouse) this->scritching = 0;
             } else if (this->scritching == 5) {
-                // middlemouse dragging loop
-                float start = 0.0f;
-                float end = 0.0f;
-                this->startframe +=
+                // ctrl leftmouse dragging loop
+                //float start = 0.0f;
+                //float end = 0.0f;
+                float looplen = this->endframe->value - this->startframe->value;
+                this->startframe->value +=
                         (mainprogram->mx - mainmix->prevx) / (this->loopbox->scrcoords->w / (this->numf - 1));
-                if (this->startframe < 0) {
-                    start = this->startframe - 1;
-                    this->startframe = 0.0f;
-                } else if (this->startframe >= this->numf) this->startframe = this->numf - 1;
-                if (this->startframe > this->frame) this->frame = this->startframe;
-                if (this->startframe > this->endframe) this->startframe = this->endframe;
-                this->endframe +=
-                        (mainprogram->mx - mainmix->prevx) / (this->loopbox->scrcoords->w / (this->numf - 1)) - start;
-                if (this->endframe < this->frame) this->frame = this->endframe;
-                if (this->endframe < 0) this->endframe = 0.0f;
-                else if (this->endframe >= this->numf) {
-                    end = this->endframe - (this->numf - 1);
-                    this->startframe -= end;
-                    this->endframe = this->numf - 1;
+                if (this->startframe->value + looplen >= this->numf) this->startframe->value = this->oldstartframe;
+                if (this->startframe->value < 0) {
+                    //start = this->startframe->value - 1;
+                    this->startframe->value = 0.0f;
+                } else if (this->startframe->value >= this->numf) this->startframe->value = this->numf - 1;
+                if (this->startframe->value > this->frame) this->frame = this->startframe->value;
+                if (this->startframe->value > this->endframe->value) this->startframe->value = this->endframe->value;
+                this->endframe->value +=
+                        (mainprogram->mx - mainmix->prevx) / (this->loopbox->scrcoords->w / (this->numf - 1));
+                if (this->endframe->value - looplen < 0.0f) this->endframe->value = this->oldendframe;
+                if (this->endframe->value < this->frame) this->frame = this->endframe->value;
+                if (this->endframe->value < 0) this->endframe->value = 0.0f;
+                else if (this->endframe->value >= this->numf) {
+                    //end = this->endframe->value - (this->numf - 1);
+                    this->endframe->value = this->numf - 1;
                 }
                 mainmix->prevx = mainprogram->mx;
-                //if (this->endframe < this->frame) this->frame = this->endframe;
-                //if (this->endframe < this->startframe) this->endframe = this->startframe;
+                //if (this->endframe->value < this->frame) this->frame = this->endframe->value;
+                //if (this->endframe->value < this->startframe->value) this->endframe->value = this->startframe->value;
                 this->set_clones();
-                if (mainprogram->middlemouse) this->scritching = 0;
+                if (mainprogram->leftmouse) this->scritching = 0;
             }
-            if (this->frame != this->oldframe) {
+            if (this->frame != this->oldframe && this->scritching == 1) {
+                // standard scritching is loopstationed
                 this->scritch->value = this->frame;  // set scritching parameter for loopstation
                 for (int i = 0; i < loopstation->elems.size(); i++) {
                     if (loopstation->elems[i]->recbut->value) {
@@ -4383,12 +4398,29 @@ void Layer::display() {
                 this->loopbox->acolor[2] = this->scritch->box->acolor[2];
                 this->loopbox->acolor[3] = this->scritch->box->acolor[3];
             }
-			draw_box(this->loopbox, -1);
+            if (this->startframe->value != this->oldstartframe) {
+                // startframe is loopstationed
+                for (int i = 0; i < loopstation->elems.size(); i++) {
+                    if (loopstation->elems[i]->recbut->value) {
+                        loopstation->elems[i]->add_param_automationentry(this->startframe);
+                    }
+                }
+            }
+            if (this->endframe->value != this->oldendframe) {
+                // endframe is loopstationed
+                for (int i = 0; i < loopstation->elems.size(); i++) {
+                    if (loopstation->elems[i]->recbut->value) {
+                        loopstation->elems[i]->add_param_automationentry(this->endframe);
+                    }
+                }
+            }
+            draw_box(this->loopbox, -1);
 			if (ends) {
-				draw_box(lightgrey, green, this->loopbox->vtxcoords->x1 + this->startframe * (this->loopbox->vtxcoords->w / (this->numf - 1)), this->loopbox->vtxcoords->y1, (this->endframe - this->startframe) * (this->loopbox->vtxcoords->w / (this->numf - 1)), 0.075f, -1);
+			    // mouse over looparea start or end
+				draw_box(lightgrey, blue, this->loopbox->vtxcoords->x1 + this->startframe->value * (this->loopbox->vtxcoords->w / (this->numf - 1)), this->loopbox->vtxcoords->y1, (this->endframe->value - this->startframe->value) * (this->loopbox->vtxcoords->w / (this->numf - 1)), 0.075f, -1);
 			}
 			else {
-				draw_box(lightgrey, green, this->loopbox->vtxcoords->x1 + this->startframe * (this->loopbox->vtxcoords->w / (this->numf - 1)), this->loopbox->vtxcoords->y1, (this->endframe - this->startframe) * (this->loopbox->vtxcoords->w / (this->numf - 1)), 0.075f, -1);
+				draw_box(lightgrey, green, this->loopbox->vtxcoords->x1 + this->startframe->value * (this->loopbox->vtxcoords->w / (this->numf - 1)), this->loopbox->vtxcoords->y1, (this->endframe->value - this->startframe->value) * (this->loopbox->vtxcoords->w / (this->numf - 1)), 0.075f, -1);
 			}
 			draw_box(white, white, this->loopbox->vtxcoords->x1 + this->frame * (this->loopbox->vtxcoords->w /
                                                                                  (this->numf - 1)),
@@ -4432,6 +4464,11 @@ void Layer::display() {
 			}
 		}
 	}
+
+    //this->startframe->handle();
+    this->startframe->range[1] = this->numf - 1.0f;
+    //this->endframe->handle();
+    this->endframe->range[1] = this->numf - 1.0f;
 }
 
 
@@ -4641,8 +4678,8 @@ void Layer::set_live_base(std::string livename) {
 		this->frame = 0.0f;
 		this->prevframe = -1;
 		this->numf = 0;
-		this->startframe = 0;
-		this->endframe = 0;
+		this->startframe->value = 0;
+		this->endframe->value = 0;
 		this->skip = true;
 		this->vidopen = true;
 		this->ready = true;
@@ -4886,15 +4923,6 @@ void Mixer::open_dragbinel(Layer *thislay, int i) {
     // open element dragged to layer stack or double-clicked from shelf
     Layer *newlay = thislay;
     std::vector<Layer*> &lvec = *thislay->layers;
-    if (mainprogram->dragmiddle) {
-        mainprogram->dragmiddle = false;
-        while (!thislay->effects[0].empty()) {
-            thislay->delete_effect(thislay->effects[0].size() - 1);
-        }
-        thislay->scale->value = 1.0f;
-        thislay->shiftx->value = 0.0f;
-        thislay->shifty->value = 0.0f;
-    }
     if (mainprogram->dragbinel->type == ELEM_LAYER) {
         newlay = mainmix->open_layerfile(mainprogram->dragbinel->path, thislay, 1, 1);
         thislay->set_inlayer(newlay, true);
@@ -4923,7 +4951,7 @@ void Mixer::open_dragbinel(Layer *thislay, int i) {
             //if (thislay->initialized) mainmix->copy_pbos(newlay, thislay);
             //mainmix->delete_layer(*thislay->layers, thislay, false);
         }
-        newlay->prevshelfdragelem = mainprogram->shelfdragelem;
+        //newlay->prevshelfdragelem = mainprogram->shelfdragelem;
     } else if (mainprogram->dragbinel->type == ELEM_IMAGE) {
         thislay->open_image(mainprogram->dragbinel->path);
         newlay = (*(thislay->layers))[thislay->pos];
@@ -5420,8 +5448,8 @@ void Mixer::set_values(Layer *clay, Layer *lay, bool open) {
     clay->prevtime = lay->prevtime;
     clay->frame = lay->frame;
     clay->prevframe = lay->frame - 1;
-    clay->startframe = lay->startframe;
-    clay->endframe = lay->endframe;
+    clay->startframe->value = lay->startframe->value;
+    clay->endframe->value = lay->endframe->value;
     clay->numf = lay->numf;
     clay->clips.clear();
     for (Clip *clip : lay->clips) {
@@ -6251,7 +6279,7 @@ void Mixer::open_mix(const std::string &path, bool alive) {
 			}
 		}
 	}
-	
+
 	std::vector<Layer*> &lvec2 = choose_layers(cldeck);
 	for (int i = 0; i < lvec2.size(); i++) {
 		if (lvec2[i]->pos == clpos) {
@@ -6719,8 +6747,8 @@ void Layer::open_image(const std::string &path) {
 	}
 	this->numf = ilGetInteger(IL_NUM_IMAGES);
 	this->frame = 0.0f;
-	this->startframe = 0;
-	this->endframe = this->numf;
+	this->startframe->value = 0;
+	this->endframe->value = this->numf;
 	int w = ilGetInteger(IL_IMAGE_WIDTH);
 	int h = ilGetInteger(IL_IMAGE_HEIGHT);
 	this->bpp = ilGetInteger(IL_IMAGE_BPP);
@@ -7198,13 +7226,13 @@ Layer* Mixer::read_layers(std::istream &rfile, const std::string &result, std::v
 			safegetline(rfile, istring);
 			lay->frame = std::stof(istring);
 		}
-		if (istring == "STARTFRAME") {
+		if (istring == "startframe->value") {
 			safegetline(rfile, istring);
-			lay->startframe = std::stoi(istring);
+			lay->startframe->value = std::stoi(istring);
 		}
-        if (istring == "ENDFRAME") {
+        if (istring == "endframe->value") {
             safegetline(rfile, istring);
-            lay->endframe = std::stoi(istring);
+            lay->endframe->value = std::stoi(istring);
         }
         if (istring == "MILLIF") {
             safegetline(rfile, istring);
@@ -7331,13 +7359,13 @@ Layer* Mixer::read_layers(std::istream &rfile, const std::string &result, std::v
 						safegetline(rfile, istring);
 						clip->frame = std::stof(istring);
 					}
-					if (istring == "STARTFRAME") {
+					if (istring == "startframe->value") {
 						safegetline(rfile, istring);
-						clip->startframe = std::stoi(istring);
+						clip->startframe->value = std::stoi(istring);
 					}
-					if (istring == "ENDFRAME") {
+					if (istring == "endframe->value") {
 						safegetline(rfile, istring);
-						clip->endframe = std::stoi(istring);
+						clip->endframe->value = std::stoi(istring);
 					}
 				}
 			}
@@ -7709,11 +7737,11 @@ std::vector<std::string> Mixer::write_layer(Layer* lay, std::ostream& wfile, boo
 		wfile << "FRAME\n";
 		wfile << std::to_string(lay->frame);
 		wfile << "\n";
-		wfile << "STARTFRAME\n";
-		wfile << std::to_string(lay->startframe);
+		wfile << "startframe->value\n";
+		wfile << std::to_string(lay->startframe->value);
 		wfile << "\n";
-        wfile << "ENDFRAME\n";
-        wfile << std::to_string(lay->endframe);
+        wfile << "endframe->value\n";
+        wfile << std::to_string(lay->endframe->value);
         wfile << "\n";
         wfile << "MILLIF\n";
         wfile << std::to_string(lay->millif);
@@ -7796,11 +7824,11 @@ std::vector<std::string> Mixer::write_layer(Layer* lay, std::ostream& wfile, boo
 			wfile << "FRAME\n";
 			wfile << std::to_string(clip->frame);
 			wfile << "\n";
-			wfile << "STARTFRAME\n";
-			wfile << std::to_string(clip->startframe);
+			wfile << "startframe->value\n";
+			wfile << std::to_string(clip->startframe->value);
 			wfile << "\n";
-			wfile << "ENDFRAME\n";
-			wfile << std::to_string(clip->endframe);
+			wfile << "endframe->value\n";
+			wfile << std::to_string(clip->endframe->value);
 			wfile << "\n";
 		}
 		wfile << "ENDOFCLIPS\n";
@@ -8692,7 +8720,33 @@ void Mixer::handle_clips() {
                             }
                         }
                     }
-				}
+                    if (mainprogram->dragbinel) {
+                        if (!mainprogram->binsscreen) {
+                            if (mainprogram->lmover) {
+                                // leftmouse dragging clip into nothing destroys the dragged clip
+                                bool inlayers = false;
+                                for (int deck = 0; deck < 2; deck++) {
+                                    if (mainprogram->xvtxtoscr(mainprogram->numw + deck * 1.0f) <
+                                        mainprogram->mx &&
+                                        mainprogram->mx < deck * (glob->w / 2.0f) + glob->w / 2.0f) {
+                                        if (0 < mainprogram->my &&
+                                            mainprogram->my < mainprogram->yvtxtoscr(mainprogram->layh)) {
+                                            // but not when dragged into layer stack field, even when there's no layer there
+                                            inlayers = true;
+                                            break;
+                                        }
+                                    }
+                                }
+                                if (!inlayers) {
+                                    mainprogram->draglay->clips.erase(std::find(mainprogram->draglay->clips.begin(), mainprogram->draglay->clips.end(), mainprogram->dragclip));
+                                    delete mainprogram->dragclip;
+                                    mainprogram->dragclip = nullptr;
+                                    enddrag();
+                                }
+                            }
+                        }
+                    }
+                }
 			}
 		}
 	}
@@ -8706,32 +8760,6 @@ void Mixer::handle_clips() {
 		clip_inside_test(this->layersBcomp, 1);
 	}
 
-    if (mainprogram->dragbinel) {
-        if (!mainprogram->binsscreen) {
-            if (mainprogram->lmover) {
-                // leftmouse dragging clip into nothing destroys the dragged clip
-                bool inlayers = false;
-                for (int deck = 0; deck < 2; deck++) {
-                    if (mainprogram->xvtxtoscr(mainprogram->numw + deck * 1.0f) <
-                        mainprogram->mx &&
-                        mainprogram->mx < deck * (glob->w / 2.0f) + glob->w / 2.0f) {
-                        if (0 < mainprogram->my &&
-                            mainprogram->my < mainprogram->yvtxtoscr(mainprogram->layh)) {
-                            // but not when dragged into layer stack field, even when there's no layer there
-                            inlayers = true;
-                            break;
-                        }
-                    }
-                }
-                if (!inlayers) {
-                    mainprogram->draglay->clips.erase(std::find(mainprogram->draglay->clips.begin(), mainprogram->draglay->clips.end(), mainprogram->dragclip));
-                    delete mainprogram->dragclip;
-                    mainprogram->dragclip = nullptr;
-                    enddrag();
-                }
-            }
-        }
-    }
 }
 
 void Layer::clip_display_next(bool startend, bool alive) {
@@ -8744,9 +8772,9 @@ void Layer::clip_display_next(bool startend, bool alive) {
 		//}
 		if (oldclip->type == ELEM_LAYER) oldclip->frame = this->frame;
 		else oldclip->frame = 0.0f;
-		if (startend) oldclip->frame = this->endframe;
-		oldclip->startframe = this->startframe;
-		oldclip->endframe = this->endframe;
+		if (startend) oldclip->frame = this->endframe->value;
+		oldclip->startframe->value = this->startframe->value;
+		oldclip->endframe->value = this->endframe->value;
 		if (!alive && this->currclip) {
 			oldclip->tex = this->currclip->tex;
 		}
@@ -8781,8 +8809,8 @@ void Layer::clip_display_next(bool startend, bool alive) {
 
 		this->currclip = this->clips[0];
 		this->frame = this->currclip->frame;
-		this->startframe = this->currclip->startframe;
-		this->endframe = this->currclip->endframe;
+		this->startframe->value = this->currclip->startframe->value;
+		this->endframe->value = this->currclip->endframe->value;
 		this->type = this->currclip->type;
 		this->layerfilepath = this->currclip->path;
 		this->filename = this->currclip->path;

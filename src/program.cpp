@@ -621,6 +621,7 @@ Program::Program() {
 	this->inserteffectbox->tooltip = "Add effect to end of layer effect queue ";
 
 	this->tmset = new Box;
+    this->tmset->smflag = 2;
 	this->tmset->vtxcoords->x1 = -0.2f;
 	this->tmset->vtxcoords->y1 = 0.74f;
 	this->tmset->vtxcoords->w = 0.4f;
@@ -628,6 +629,7 @@ Program::Program() {
 	this->tmset->tooltiptitle = "Toggle MIDI set to configure ";
 	this->tmset->tooltip = "Leftclick to toggle the MIDI set that is being configured. ";
 	this->tmplay = new Box;
+    this->tmplay->smflag = 2;
 	this->tmplay->vtxcoords->x1 = -0.075;
 	this->tmplay->vtxcoords->y1 = -0.9f;
 	this->tmplay->vtxcoords->w = 0.15f;
@@ -635,6 +637,7 @@ Program::Program() {
 	this->tmplay->tooltiptitle = "Set MIDI for play button ";
 	this->tmplay->tooltip = "Leftclick to start waiting for a MIDI command that will trigger normal video play for this preset. ";
 	this->tmbackw = new Box;
+    this->tmbackw->smflag = 2;
 	this->tmbackw->vtxcoords->x1 = -0.375f;
 	this->tmbackw->vtxcoords->y1 = -0.9f;
 	this->tmbackw->vtxcoords->w = 0.15f;
@@ -642,6 +645,7 @@ Program::Program() {
 	this->tmbackw->tooltiptitle = "Set MIDI for reverse play button ";
 	this->tmbackw->tooltip = "Leftclick to start waiting for a MIDI command that will trigger reverse video play for this preset. ";
 	this->tmbounce = new Box;
+    this->tmbounce->smflag = 2;
 	this->tmbounce->vtxcoords->x1 = -0.225f;
 	this->tmbounce->vtxcoords->y1 = -0.9f;
 	this->tmbounce->vtxcoords->w = 0.15f;
@@ -649,6 +653,7 @@ Program::Program() {
 	this->tmbounce->tooltiptitle = "Set MIDI for bounce play button ";
 	this->tmbounce->tooltip = "Leftclick to start waiting for a MIDI command that will trigger bounce video play for this preset. ";
 	this->tmfrforw = new Box;
+    this->tmfrforw->smflag = 2;
 	this->tmfrforw->vtxcoords->x1 = 0.075f;
 	this->tmfrforw->vtxcoords->y1 = -0.9f;
 	this->tmfrforw->vtxcoords->w = 0.15;
@@ -656,6 +661,7 @@ Program::Program() {
 	this->tmfrforw->tooltiptitle = "Set MIDI for frame forward button ";
 	this->tmfrforw->tooltip = "Leftclick to start waiting for a MIDI command that will trigger frame forward for this preset. ";
     this->tmfrbackw = new Box;
+    this->tmfrbackw->smflag = 2;
     this->tmfrbackw->vtxcoords->x1 = -0.525f;
     this->tmfrbackw->vtxcoords->y1 = -0.9f;
     this->tmfrbackw->vtxcoords->w = 0.15;
@@ -663,6 +669,7 @@ Program::Program() {
     this->tmfrbackw->tooltiptitle = "Set MIDI for frame backward button ";
     this->tmfrbackw->tooltip = "Leftclick to start waiting for a MIDI command that will trigger frame backward for this preset. ";
     this->tmstop = new Box;
+    this->tmstop->smflag = 2;
     this->tmstop->vtxcoords->x1 = 0.225f;
     this->tmstop->vtxcoords->y1 = -0.9f;
     this->tmstop->vtxcoords->w = 0.15;
@@ -670,6 +677,7 @@ Program::Program() {
     this->tmstop->tooltiptitle = "Set MIDI for stop play button ";
     this->tmstop->tooltip = "Leftclick to start waiting for a MIDI command that will trigger play stop for this preset. ";
     this->tmloop = new Box;
+    this->tmloop->smflag = 2;
     this->tmloop->vtxcoords->x1 = 0.375f;
     this->tmloop->vtxcoords->y1 = -0.9f;
     this->tmloop->vtxcoords->w = 0.15;
@@ -677,6 +685,7 @@ Program::Program() {
     this->tmloop->tooltiptitle = "Set MIDI for loop play toggle button ";
     this->tmloop->tooltip = "Leftclick to start waiting for a MIDI command that will trigger loop play toggle for this preset. ";
 	this->tmspeed = new Box;
+    this->tmspeed->smflag = 2;
 	this->tmspeed->vtxcoords->x1 = -0.8f;
 	this->tmspeed->vtxcoords->y1 = -0.5f;
 	this->tmspeed->vtxcoords->w = 0.2f;
@@ -684,6 +693,7 @@ Program::Program() {
 	this->tmspeed->tooltiptitle = "Set MIDI for setting video play speed ";
 	this->tmspeed->tooltip = "Leftclick to start waiting for a MIDI command that will set the play speed factor for this preset. ";
 	this->tmspeedzero = new Box;
+    this->tmspeedzero->smflag = 2;
 	this->tmspeedzero->vtxcoords->x1 = -0.775f;
 	this->tmspeedzero->vtxcoords->y1 = -0.1f;
 	this->tmspeedzero->vtxcoords->w = 0.15f;
@@ -691,6 +701,7 @@ Program::Program() {
 	this->tmspeedzero->tooltiptitle = "Set MIDI for setting video play speed to one";
 	this->tmspeedzero->tooltip = "Leftclick to start waiting for a MIDI command that will set the play speed factor back to one for this preset. ";
 	this->tmopacity = new Box;
+    this->tmopacity->smflag = 2;
 	this->tmopacity->vtxcoords->x1 = 0.6f;
 	this->tmopacity->vtxcoords->y1 = -0.5f;
 	this->tmopacity->vtxcoords->w = 0.2f;
@@ -698,6 +709,7 @@ Program::Program() {
 	this->tmopacity->tooltiptitle = "Set MIDI for setting video opacity ";
 	this->tmopacity->tooltip = "Leftclick to start waiting for a MIDI command that will set the opacity for this preset. ";
 	this->tmfreeze = new Box;
+    this->tmfreeze->smflag = 2;
 	this->tmfreeze->vtxcoords->x1 = -0.1f;
 	this->tmfreeze->vtxcoords->y1 = 0.1f;
 	this->tmfreeze->vtxcoords->w = 0.2f;
@@ -705,6 +717,7 @@ Program::Program() {
 	this->tmfreeze->tooltiptitle = "Set MIDI for scratch wheel freeze ";
 	this->tmfreeze->tooltip = "Leftclick to start waiting for a MIDI command that will trigger scratch wheel freeze for this preset. ";
 	this->tmscratch = new Box;
+    this->tmscratch->smflag = 2;
 	this->tmscratch->vtxcoords->x1 = -1.0f;
 	this->tmscratch->vtxcoords->y1 = -1.0f;
 	this->tmscratch->vtxcoords->w = 2.0f;
@@ -1041,7 +1054,7 @@ bool Program::order_paths(bool dodeckmix) {
         }
 
         mainprogram->pathtexes.push_back(tex);
-        render_text(str, white, 2.0f, 2.0f, 0.00045f, 0.00075f);
+        render_text(str, white, 2.0f, 2.0f, 0.00045f, 0.00075f); // init text string, to avoid slowdown later
         if (mainprogram->filescount < mainprogram->paths.size()) {
             std::chrono::high_resolution_clock::time_point now = std::chrono::high_resolution_clock::now();
             this->ordertime = now;
@@ -1586,6 +1599,7 @@ my) {
             delete elem;
         }
 	}
+	if (numlines > scrlines && scrollpos + scrlines > numlines) scrollpos = numlines - scrlines;
 	return scrollpos;
 }
 
@@ -1935,11 +1949,13 @@ void Program::shelf_miditriggering() {
 Box::Box() {
     this->vtxcoords = new BOX_COORDS;
     this->scrcoords = new BOX_COORDS;
+    allboxes.push_back(this);
 }
 
 Box::~Box() {
     delete this->vtxcoords;
     delete this->scrcoords;
+    allboxes.erase(std::find(allboxes.begin(), allboxes.end(), this));
 }
 
 Button::Button(bool state) {
@@ -2722,17 +2738,17 @@ void Program::handle_loopmenu() {
 	if (k > -1) {
 		if (k == 0) {
 		    // set start of playloop to frame position
-			mainmix->mouselayer->startframe = mainmix->mouselayer->frame;
-			if (mainmix->mouselayer->startframe > mainmix->mouselayer->endframe) {
-				mainmix->mouselayer->endframe = mainmix->mouselayer->startframe;
+			mainmix->mouselayer->startframe->value = mainmix->mouselayer->frame;
+			if (mainmix->mouselayer->startframe->value > mainmix->mouselayer->endframe->value) {
+				mainmix->mouselayer->endframe->value = mainmix->mouselayer->startframe->value;
 			}
 			mainmix->mouselayer->set_clones();
 		}
 		else if (k == 1) {
             // set end of playloop to frame position
-			mainmix->mouselayer->endframe = mainmix->mouselayer->frame;
-			if (mainmix->mouselayer->startframe > mainmix->mouselayer->endframe) {
-				mainmix->mouselayer->startframe = mainmix->mouselayer->endframe;
+			mainmix->mouselayer->endframe->value = mainmix->mouselayer->frame;
+			if (mainmix->mouselayer->startframe->value > mainmix->mouselayer->endframe->value) {
+				mainmix->mouselayer->startframe->value = mainmix->mouselayer->endframe->value;
 			}
 			mainmix->mouselayer->set_clones();
 		}
@@ -2770,7 +2786,7 @@ void Program::handle_loopmenu() {
 		else if (k == 4) {
 		    // paste playloop duration by changing the duration itself
 			float sf, ef;
-			float loop = mainmix->mouselayer->endframe - mainmix->mouselayer->startframe;
+			float loop = mainmix->mouselayer->endframe->value - mainmix->mouselayer->startframe->value;
 			float dsp = mainmix->deckspeed[!mainprogram->prevmodus][mainmix->mouselayer->deck]->value;
 			if (mainmix->mouselayer->clonesetnr != -1) {
 				std::unordered_set<Layer*>::iterator it;
@@ -2783,24 +2799,27 @@ void Program::handle_loopmenu() {
 				}
 			}
 			float fac = ((loop * mainmix->mouselayer->millif) / mainmix->cbduration) / (mainmix->mouselayer->speed->value * mainmix->mouselayer->speed->value * dsp * dsp);
-			float end = mainmix->mouselayer->numf - (mainmix->mouselayer->startframe + loop / fac);
+			float end = mainmix->mouselayer->numf - (mainmix->mouselayer->startframe->value + loop / fac);
 			if (end > 0) {
-				mainmix->mouselayer->endframe = mainmix->mouselayer->startframe + loop / fac;
+				mainmix->mouselayer->endframe->value = mainmix->mouselayer->startframe->value + loop / fac;
 			}
 			else {
-				mainmix->mouselayer->endframe = mainmix->mouselayer->numf;
-				float start = mainmix->mouselayer->startframe + end;
+				mainmix->mouselayer->endframe->value = mainmix->mouselayer->numf;
+				float start = mainmix->mouselayer->startframe->value + end;
 				if (start > 0) {
-					mainmix->mouselayer->startframe += end;
+					mainmix->mouselayer->startframe->value += end;
 				}
 				else {
-					mainmix->mouselayer->startframe = 0.0f;
-					mainmix->mouselayer->endframe = mainmix->mouselayer->numf;
+					mainmix->mouselayer->startframe->value = 0.0f;
+					mainmix->mouselayer->endframe->value = mainmix->mouselayer->numf;
 					mainmix->mouselayer->speed->value *= sqrt((float)mainmix->mouselayer->numf / ((float)mainmix->mouselayer->numf - start));
 				}
 			}
 			mainmix->mouselayer->set_clones();
 		}
+        else if (k == 4) {
+            mainmix->learn = true;
+        }
 	}
 	if (mainprogram->menuchosen) {
 		mainprogram->menuchosen = false;
@@ -3698,9 +3717,12 @@ void Program::handle_filemenu() {
 			filereq.detach();
 		}
 	}
-	else if (k == 3) {
-		mainprogram->quitting = "quitted";
-	}
+    else if (k == 3) {
+        mainprogram->project->do_save(mainprogram->project->path);
+    }
+    else if (k == 4) {
+        mainprogram->quitting = "quitted";
+    }
 
 	if (mainprogram->menuchosen) {
 		mainprogram->menuchosen = false;
@@ -3771,15 +3793,18 @@ void Program::handle_lpstmenu() {
     // Draw and handle lpstmenu
     k = mainprogram->handle_menu(mainprogram->lpstmenu);
     if (k == 0) {
+        mainmix->mouselpstelem->erase_elem();
+    }
+    if (k == 1) {
         mainmix->cbduration = mainmix->mouselpstelem->totaltime;
     }
-    else if (k == 1) {
+    else if (k == 2) {
         float buspeed = mainmix->mouselpstelem->speed->value;
         mainmix->mouselpstelem->speed->value = mainmix->mouselpstelem->totaltime / mainmix->cbduration;
         mainmix->mouselpstelem->speedadaptedtime *= buspeed / mainmix->mouselpstelem->speed->value;
         mainmix->mouselpstelem->interimtime *= buspeed / mainmix->mouselpstelem->speed->value;
     }
-    else if (k == 2) {
+    else if (k == 3) {
         mainmix->mouselpstelem->totaltime = mainmix->cbduration;
     }
 
@@ -4421,6 +4446,28 @@ bool Program::preferences_handle() {
 	return true;
 }
 
+void Program::longtooltip_prepare(Box *box) {
+    float fac = 1.0f;
+    if (box->smflag) fac = 4.0f;
+
+    std::vector<std::string> texts;
+    int pos = 0;
+    while (pos < box->tooltip.length() - 1) {
+        int oldpos = pos;
+        pos = box->tooltip.rfind(" ", pos + 58);
+        if (pos == -1) break;
+        texts.push_back(box->tooltip.substr(oldpos, pos - oldpos));
+    }
+    float x = 99.0f;  //first print offscreen
+    float y = 99.0f;
+    float textw = 0.5f * sqrt(1.0f);
+    float texth = 0.092754f * sqrt(1.0f);
+    render_text(box->tooltiptitle, orange, x, y, 0.00045f * fac, 0.00075f * fac, box->smflag, 0);
+    for (int i = 0; i < texts.size(); i++) {
+        render_text(texts[i], white, x, y, 0.00045f * fac, 0.00075f * fac, box->smflag, 0);
+    }
+
+}
 
 void Program::tooltips_handle(int win) {
 	// draw tooltip
@@ -4441,7 +4488,7 @@ void Program::tooltips_handle(int win) {
 				if (pos == -1) break;
 				texts.push_back(mainprogram->tooltipbox->tooltip.substr(oldpos, pos - oldpos));
 			}
-			float x = mainprogram->tooltipbox->vtxcoords->x1 + mainprogram->tooltipbox->vtxcoords->w + 0.015f;  //first print offscreen
+			float x = mainprogram->tooltipbox->vtxcoords->x1 + mainprogram->tooltipbox->vtxcoords->w + 0.015f;
 			float y = mainprogram->tooltipbox->vtxcoords->y1 - 0.015f * glob->w / glob->h - 0.015f;
 			float textw = 0.5f * sqrt(fac);
 			float texth = 0.092754f * sqrt(fac);
@@ -5136,6 +5183,9 @@ void Project::newp(const std::string &path) {
 	mainprogram->shelves[1]->save(mainprogram->project->shelfdir + "shelfsB");
     mainmix->currlays[0].clear();
     mainmix->currlays[1].clear();
+    std::vector<Layer*> &lvec = choose_layers(0);
+    mainmix->currlays[1].push_back(lvec[0]);
+    mainmix->currlay[1] = lvec[0];
     mainprogram->project->do_save(this->path);
 }
 	
@@ -5387,38 +5437,45 @@ Preferences::Preferences() {
     this->items.push_back(piin);
     PIProj *pipr = new PIProj;
     pipr->box = new Box;
+    pipr->box->smflag = 1;
     pipr->box->tooltiptitle = "Project settings ";
     pipr->box->tooltip = "Left click to set project related preferences ";
     this->items.push_back(pipr);
     PIVid *pvi = new PIVid;
     pvi->box = new Box;
+    pvi->box->smflag = 1;
     pvi->box->tooltiptitle = "Video settings ";
     pvi->box->tooltip = "Left click to set video related preferences ";
     this->items.push_back(pvi);
     PIInt *pii = new PIInt;
     pii->box = new Box;
+    pii->box->smflag = 1;
     pii->box->tooltiptitle = "Interface settings ";
     pii->box->tooltip = "Left click to set interface related preferences ";
     this->items.push_back(pii);
     PIProg *pip = new PIProg;
     pip->box = new Box;
+    pip->box->smflag = 1;
     pip->box->tooltiptitle = "Program settings ";
     pip->box->tooltip = "Left click to set program related preferences ";
     this->items.push_back(pip);
     PIDirs *pidirs = new PIDirs;
     pidirs->box = new Box;
+    pidirs->box->smflag = 1;
     pidirs->box->tooltiptitle = "Directory settings ";
     pidirs->box->tooltip = "Left click to set default directories ";
     this->items.push_back(pidirs);
     PIMidi *pimidi = new PIMidi;
     pimidi->populate();
     pimidi->box = new Box;
+    pimidi->box->smflag = 1;
     pimidi->box->tooltiptitle = "MIDI device settings ";
     pimidi->box->tooltip = "Left click to set MIDI device related preferences ";
     this->items.push_back(pimidi);
     for (int i = 0; i < this->items.size(); i++) {
         PrefCat *item = this->items[i];
         if(item->name == "Invisible") continue;
+        item->box->smflag = 1;
         item->box->vtxcoords->x1 = -1.0f;
         item->box->vtxcoords->y1 = 1.0f - (i + 1) * 0.2f;
         item->box->vtxcoords->w = 0.5f;
@@ -5683,6 +5740,7 @@ PrefItem::PrefItem(PrefCat *cat, int pos, std::string name, PREF_TYPE type, void
     this->type = type;
     this->dest = dest;
     this->namebox = new Box;
+    this->namebox->smflag = 1;
     this->namebox->vtxcoords->x1 = -0.5f;
     this->namebox->vtxcoords->y1 = 1.0f - (pos + 1) * 0.2f;
     this->namebox->vtxcoords->w = 1.5f;
@@ -5690,6 +5748,7 @@ PrefItem::PrefItem(PrefCat *cat, int pos, std::string name, PREF_TYPE type, void
     this->namebox->vtxcoords->h = 0.2f;
     this->namebox->upvtxtoscr();
     this->valuebox = new Box;
+    this->valuebox->smflag = 1;
     if (type == PREF_ONOFF) {
         this->valuebox->vtxcoords->x1 = -0.425f;
         this->valuebox->vtxcoords->y1 = 1.05f - (pos + 1) * 0.2f;
@@ -5714,6 +5773,7 @@ PrefItem::PrefItem(PrefCat *cat, int pos, std::string name, PREF_TYPE type, void
         this->valuebox->vtxcoords->w = 0.8f;
         this->valuebox->vtxcoords->h = 0.2f;
         this->iconbox = new Box;
+        this->iconbox->smflag = 1;
         this->iconbox->vtxcoords->x1 = 0.9f;
         this->iconbox->vtxcoords->y1 = 1.0f - (pos + 1) * 0.2f;
         this->iconbox->vtxcoords->w = 0.1f;
@@ -5735,7 +5795,7 @@ PIProj::PIProj() {
     pip->namebox->tooltip = "Name of current project. ";
     pip->valuebox->tooltiptitle = "Set name of current project ";
     pip->valuebox->tooltip = "Leftclick starts keyboard entry of current project name. It also changes the name of "
-                             "the project on disk.";
+                             "the project on disk. ";
 
     pip->onfile = false;  // isn't saved on main prefs file but in the project
     this->items.push_back(pip);
@@ -6157,6 +6217,7 @@ void Program::define_menus() {
     loopops.push_back("Copy duration");
     loopops.push_back("Paste duration (speed)");
     loopops.push_back("Paste duration (loop length)");
+    loopops.push_back("MIDI Learn move loop area");
     mainprogram->make_menu("loopmenu", mainprogram->loopmenu, loopops);
     mainprogram->loopmenu->width = 0.2f;
 
@@ -6247,6 +6308,8 @@ void Program::define_menus() {
     wipes.push_back("BARS");
     wipes.push_back("submenu dir3menu");
     wipes.push_back("PATTERN");
+    wipes.push_back("submenu dir2menu");
+    wipes.push_back("DOT");
     wipes.push_back("submenu dir2menu");
     wipes.push_back("REPEL");
     mainprogram->make_menu("wipemenu", mainprogram->wipemenu, wipes);
@@ -6340,7 +6403,8 @@ void Program::define_menus() {
     file.push_back("submenu filedomenu");
     file.push_back("Open");
     file.push_back("submenu filedomenu");
-    file.push_back("Save");
+    file.push_back("Save as");
+    file.push_back("Save project");
     file.push_back("Quit");
     mainprogram->make_menu("filemenu", mainprogram->filemenu, file);
 
@@ -6372,6 +6436,7 @@ void Program::define_menus() {
     mainprogram->make_menu("editmenu", mainprogram->editmenu, edit);
 
     std::vector<std::string> lpst;
+    lpst.push_back("Clear loopstation line");
     lpst.push_back("Copy loop duration");
     lpst.push_back("Paste loop duration by changing speed");
     lpst.push_back("Paste loop duration by changing loop length");

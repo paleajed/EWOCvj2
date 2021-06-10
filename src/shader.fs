@@ -2327,7 +2327,40 @@ void main()
 						FragColor = vec4((data1.rgb * data1.a + data0.rgb * (1.0f - data1.a)), 1.0f);
 					}
 					break;
-				case 10:  //repel - alpha? reminder
+
+				case 10:  //dot
+					a = 1.0f - xxpos;
+					b = 1.0f - xypos;
+					if (dir == 1) xamount = 0.5f + xamount * 0.5f;
+					else xamount = xamount * 0.5f;
+					fardist = sqrt(a * a + b * b);
+					if (dir == 0) dist = abs(fardist * xamount);
+					else dist = abs(fardist * (1 - xamount));
+					tc = TexCoord0.st;
+					tc -= 0.5f;
+					tc = abs(tc);
+					tc.x /= float(fboheight) / float(fbowidth);
+					if (dir == 0) {
+                        a = abs((tc.x - (int(tc.x / a) * a + a / 2)) * (1.0 - xamount));
+                        b = abs((tc.y - (int(tc.y / b) * b + b / 2)) * (1.0 - xamount));
+					}
+					else {
+                        a = abs((tc.x - (int(tc.x / a) * a + a / 2)) * (xamount));
+                        b = abs((tc.y - (int(tc.y / b) * b + b / 2)) * (xamount));
+					}
+					if (dir == 0) cond = sqrt(a * a + b * b) <= dist;
+					else cond = sqrt(a * a + b * b) >= dist;
+					if (cond) {
+						FragColor = vec4((data0.rgb * data0.a + data1.rgb * (1.0f - data0.a)), 1.0f);
+						//FragColor = vec4((data1.rgb * data1.a + data0.rgb * (1.0f - data1.a)), max(data0.a, data1.a)) * (1 - dir) + data1 * dir;
+					}
+					else {
+						FragColor = vec4((data1.rgb * data1.a + data0.rgb * (1.0f - data1.a)), 1.0f);
+						//FragColor = vec4((data0.rgb * data0.a + data1.rgb * (1.0f - data0.a)), max(data0.a, data1.a)) * dir + data0 * (1 - dir);
+					}
+					break;
+
+				case 11:  //repel - alpha? reminder
 					float rad = xamount / 1.7f;
 					if (dir == 1) rad = (1.0f - xamount) / 1.7f;
 					xxpos = 0.5f + (xxpos - 0.5f) * (1.0f - xamount);

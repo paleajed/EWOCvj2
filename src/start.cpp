@@ -155,6 +155,7 @@ LayMidi *laymidiA;
 LayMidi *laymidiB;
 LayMidi *laymidiC;
 LayMidi *laymidiD;
+std::vector<Box*> allboxes;
 int sscount = 0;
 
 using namespace boost::asio;
@@ -1329,8 +1330,8 @@ void Layer::get_cpu_frame(int framenr, int prevframe, int errcount)
 				framenr--;
 			}
 			else framenr++;	
-			if (framenr > this->endframe) framenr = this->startframe;
-			else if (framenr < this->startframe) framenr = this->endframe;
+			if (framenr > this->endframe->value) framenr = this->startframe->value;
+			else if (framenr < this->startframe->value) framenr = this->endframe->value;
 			//avcodec_flush_buffers(this->video_dec_ctx);
 			errcount++;
 			if (errcount == 1000) {
@@ -1460,6 +1461,7 @@ void Layer::get_frame(){
 				this->processed = false;
 				lock.unlock();
 				avformat_close_input(&this->video);
+				if (this->videoseek) avformat_close_input(&this->videoseek);
 			}
 			bool r = this->thread_vidopen();
 			this->vidopen = false;
@@ -1473,13 +1475,11 @@ void Layer::get_frame(){
 				mainprogram->openerr = true;
 				this->opened = true;
 				if (!this->isclone) this->initialized = false;
-				this->startframe = 0;
-				this->endframe = 0;
+				this->startframe->value = 0;
+				this->endframe->value = 0;
 				if (this->dummy) {
-					this->opened = true;
-					while (this->opened) {
-						this->endopenvar.notify_all();
-					}
+                    this->opened = true;
+                    this->endopenvar.notify_all();
 				}
 				else {
                     this->opened = true;
@@ -1489,10 +1489,8 @@ void Layer::get_frame(){
 			else {
 				this->opened = true;
 				if (this->dummy) {
-					this->opened = true;
-					while (this->opened) {
-						this->endopenvar.notify_all();
-					}
+                    this->opened = true;
+                    this->endopenvar.notify_all();
 				}
                 else {
                     this->opened = true;
@@ -1615,6 +1613,7 @@ Layer* Layer::open_video(float frame, const std::string &filename, int reset, bo
 	this->skip = false;
 	this->ifmt = nullptr;
     this->vidopen = true;
+    this->opened = true;
     this->decresult->newdata = false;
     this->decresult->width = 0;
 	this->decresult->compression = 0;
@@ -1633,7 +1632,8 @@ Layer* Layer::open_video(float frame, const std::string &filename, int reset, bo
 }
 
 bool Layer::thread_vidopen() {
-	if (this->video) avformat_close_input(&this->video);
+    if (this->video) avformat_close_input(&this->video);
+    if (this->videoseek) avformat_close_input(&this->videoseek);
 	this->video = nullptr;
 	this->video_dec_ctx = nullptr;
 	this->liveinput = nullptr;
@@ -1704,8 +1704,8 @@ bool Layer::thread_vidopen() {
 			float tbperframe = (float)this->video_stream->duration / (float)this->numf;
 			this->millif = tbperframe * (((float)this->video_stream->time_base.num * 1000.0) / (float)this->video_stream->time_base.den);
 
-			this->startframe = 0;
-			this->endframe = this->numf;
+			this->startframe->value = 0;
+			this->endframe->value = this->numf;
 			if (0) { // this->reset?
 				this->frame = 0.0f;
 			}
@@ -1720,6 +1720,8 @@ bool Layer::thread_vidopen() {
 			return 1;
 		}
 		else if (this->type != ELEM_LIVE) {
+            this->videoseek = avformat_alloc_context();
+            this->videoseek->flags |= AVFMT_FLAG_NONBLOCK;
 			avformat_open_input(&(this->videoseek), this->filename.c_str(), this->ifmt, nullptr);
 		}
         if (oldvidformat != -1) {
@@ -1749,8 +1751,8 @@ bool Layer::thread_vidopen() {
 		}
 		else this->video_duration = this->video_stream->duration;
 		if (this->reset) {
-			this->startframe = 0;
-			this->endframe = this->numf - 1;
+			this->startframe->value = 0;
+			this->endframe->value = this->numf - 1;
 		}
 		float tbperframe = (float)this->video_duration / (float)this->numf;
 		this->millif = tbperframe * (((float)this->video_stream->time_base.num * 1000.0) / (float)this->video_stream->time_base.den);
@@ -1943,7 +1945,7 @@ ShelfElement::ShelfElement(bool side, int pos, Button *but) {
 	box->vtxcoords->w = boxwidth;
 	box->upvtxtoscr();
 	box->tooltiptitle = "Video launch shelf";
-	box->tooltip = "Shelf containing up to 16 videos/layerfiles for quick and easy video launching.  Left drag'n'drop from other areas, both videos and layerfiles.  Middlemousedrag of videos or images to layer stack launches with empty effect stack.  Doubleclick, either left or middlemouse loads the shelf element contents into all selected layers. Rightclick launches shelf menu. ";
+	box->tooltip = "Shelf containing up to 16 videos/layerfiles for quick and easy video launching.  Left drag'n'drop from other areas, both videos and layerfiles.  Doubleclick left loads the shelf element contents into all selected layers. Rightclick launches shelf menu. ";
 	this->sbox = new Box;
 	this->sbox->vtxcoords->x1 = box->vtxcoords->x1;
 	this->sbox->vtxcoords->y1 = box->vtxcoords->y1 + 0.05f + 0.009f;
@@ -3012,31 +3014,31 @@ bool Layer::calc_texture(bool comp, bool alive) {
 			if (this->oldalive || !alive) {
 			    if (this->scritching == 0) {
                     if (this->bouncebut->value || this->playbut->value || this->revbut->value) {
-                        if (this->frame > (this->endframe) && this->startframe != this->endframe) {
+                        if (this->frame > (this->endframe->value) && this->startframe->value != this->endframe->value) {
                             if (this->scritching != 4) {
                                 if (this->bouncebut->value == 0) {
                                     if (this->lpbut->value == 0) {
                                         this->playbut->value = 0;
                                         this->onhold = true;
                                     }
-                                    this->frame = this->startframe;
+                                    this->frame = this->startframe->value;
                                     this->clip_display_next(0, alive);
                                 } else {
-                                    this->frame = this->endframe - (this->frame - this->endframe);
+                                    this->frame = this->endframe->value - (this->frame - this->endframe->value);
                                     this->bouncebut->value = 2;
                                 }
                             }
-                        } else if (this->frame < this->startframe && this->startframe != this->endframe) {
+                        } else if (this->frame < this->startframe->value && this->startframe->value != this->endframe->value) {
                             if (this->scritching != 4) {
                                 if (this->bouncebut->value == 0) {
                                     if (this->lpbut->value == 0) {
                                         this->revbut->value = 0;
                                         this->onhold = true;
                                     }
-                                    this->frame = this->endframe;
+                                    this->frame = this->endframe->value;
                                     this->clip_display_next(1, alive);
                                 } else {
-                                    this->frame = this->startframe + (this->startframe - this->frame);
+                                    this->frame = this->startframe->value + (this->startframe->value - this->frame);
                                     this->bouncebut->value = 1;
                                 }
                             }
@@ -3084,7 +3086,7 @@ void Layer::load_frame() {
 	bool ret = false;
 	//if (this->vidopen) return;
 	if (this->liveinput || this->type == ELEM_IMAGE);
-	else if (this->startframe != this->endframe || this->type == ELEM_LIVE) {
+	else if (this->startframe->value != this->endframe->value || this->type == ELEM_LIVE) {
 		if (mainmix->firstlayers.count(this->clonesetnr) == 0) {
 		    // promote first layer found in layer stack with this clonesetnr to element of firstlayers
 			this->ready = true;
@@ -4614,12 +4616,8 @@ void Shelf::handle() {
 		if (cond) {
 		    // mouse over shelf element
 			inelem = i;
-            if (mainprogram->doubleleftmouse || mainprogram->doublemiddlemouse) {
+            if (mainprogram->doubleleftmouse) {
                 // doubleclick loads elem in currlay layer slots
-                mainprogram->dragmiddle = mainprogram->middlemousedown;
-                if (elem->type != ELEM_FILE && elem->type != ELEM_IMAGE && elem->type != ELEM_LIVE) {
-                    mainprogram->dragmiddle = false;
-                }
                 mainprogram->shelfdragelem = elem;
                 mainprogram->shelfdragnum = i;
                 mainprogram->doubleleftmouse = false;
@@ -4662,18 +4660,16 @@ void Shelf::handle() {
 				elem->tex = mainprogram->dragbinel->tex;
 				this->prevnum = i;
 			}
-			if (mainprogram->leftmousedown || mainprogram->middlemousedown) {
+			if (mainprogram->leftmousedown) {
 				if (!elem->sbox->in() && !elem->pbox->in() && !elem->cbox->in()) {
 					if (!mainprogram->dragbinel) {
 						// user starts dragging shelf element
 						if (elem->path != "") {
                             mainprogram->shelfmx = mainprogram->mx;
                             mainprogram->shelfmy = mainprogram->my;
-							mainprogram->dragmiddle = mainprogram->middlemousedown;
 							mainprogram->shelfdragelem = elem;
 							mainprogram->shelfdragnum = i;
 							mainprogram->leftmousedown = false;
-							mainprogram->middlemousedown = false;
 							mainprogram->dragbinel = new BinElement;
 							mainprogram->dragbinel->path = elem->path;
 							mainprogram->dragbinel->type = elem->type;
@@ -4686,39 +4682,43 @@ void Shelf::handle() {
 				// user drops file/layer/deck/mix in shelf element
 				if (mainprogram->mx != mainprogram->shelfmx || mainprogram->my != mainprogram->shelfmy) {
                     if (mainprogram->dragbinel) {
-                        std::string newpath;
-                        std::string extstr = "";
-                        if (mainprogram->dragbinel->type == ELEM_LAYER) {
-                            extstr = ".layer";
-                        } else if (mainprogram->dragbinel->type == ELEM_DECK) {
-                            extstr = ".deck";
-                        } else if (mainprogram->dragbinel->type == ELEM_MIX) {
-                            extstr = ".mix";
+                        if (elem != mainprogram->shelfdragelem) {
+                            std::string newpath;
+                            std::string extstr = "";
+                            if (mainprogram->dragbinel->type == ELEM_LAYER) {
+                                extstr = ".layer";
+                            } else if (mainprogram->dragbinel->type == ELEM_DECK) {
+                                extstr = ".deck";
+                            } else if (mainprogram->dragbinel->type == ELEM_MIX) {
+                                extstr = ".mix";
+                            }
+                            if (extstr != "") {
+                                std::string base = basename(mainprogram->dragbinel->path);
+                                newpath = find_unused_filename("shelf_" + base,
+                                                               mainprogram->project->shelfdir + this->basepath + "/",
+                                                               extstr);
+                                boost::filesystem::copy_file(mainprogram->dragbinel->path, newpath);
+                                mainprogram->dragbinel->path = newpath;
+                            }
+                            if (mainprogram->shelfdragelem) {
+                                std::swap(elem->path, mainprogram->shelfdragelem->path);
+                                std::swap(elem->jpegpath, mainprogram->shelfdragelem->jpegpath);
+                                std::swap(elem->type, mainprogram->shelfdragelem->type);
+                            } else {
+                                elem->path = mainprogram->dragbinel->path;
+                                elem->type = mainprogram->dragbinel->type;
+                            }
+                            elem->tex = copy_tex(mainprogram->dragbinel->tex);
+                            elem->jpegpath = find_unused_filename(basename(elem->path), mainprogram->temppath, ".jpg");
+                            save_thumb(elem->jpegpath, elem->tex);
+                            blacken(elem->oldtex);
+                            this->prevnum = -1;
+                            mainprogram->shelfdragelem = nullptr;
+                            mainprogram->rightmouse = true;
+                            binsmain->handle(0);
+                            enddrag();
+                            return;
                         }
-                        if (extstr != "") {
-                            std::string base = basename(mainprogram->dragbinel->path);
-                            newpath = find_unused_filename("shelf_" + base, mainprogram->project->shelfdir + this->basepath + "/", extstr);
-                            boost::filesystem::copy_file(mainprogram->dragbinel->path, newpath);
-                            mainprogram->dragbinel->path = newpath;
-                        }
-                        if (mainprogram->shelfdragelem) {
-                            std::swap(elem->path, mainprogram->shelfdragelem->path);
-                            std::swap(elem->jpegpath, mainprogram->shelfdragelem->jpegpath);
-                            std::swap(elem->type, mainprogram->shelfdragelem->type);
-                        } else {
-                            elem->path = mainprogram->dragbinel->path;
-                            elem->type = mainprogram->dragbinel->type;
-                        }
-                        elem->tex = copy_tex(mainprogram->dragbinel->tex);
-                        elem->jpegpath = find_unused_filename(basename(elem->path), mainprogram->temppath, ".jpg");
-                        save_thumb(elem->jpegpath, elem->tex);
-                        blacken(elem->oldtex);
-                        this->prevnum = -1;
-                        mainprogram->shelfdragelem = nullptr;
-                        mainprogram->rightmouse = true;
-                        binsmain->handle(0);
-                        enddrag();
-                        return;
                     }
                 }
 			}
@@ -5199,6 +5199,10 @@ Clip::Clip() {
 	this->box->tooltiptitle = "Clip queue ";
 	this->box->tooltip = "Clip queue: clips (videos, images, layer files, live feeds) loaded here are played in order after the current clip.  Rightclick menu allows loading live feed / opening content into clip / deleting clip.  Clips can be dragged anywhere and anything can be dragged into or inserted between them. ";
 	this->tex = -1;
+    this->startframe = new Param;
+    this->startframe->value = -1;
+    this->endframe = new Param;
+    this->endframe->value = -1;
 }
 
 Clip::~Clip() {
@@ -5216,8 +5220,8 @@ Clip* Clip::copy() {
     clip->type = this->type;
     clip->tex = copy_tex(this->tex);
     clip->frame = this->frame;
-    clip->startframe = this->startframe;
-    clip->endframe = this->endframe;
+    clip->startframe->value = this->startframe->value;
+    clip->endframe->value = this->endframe->value;
     clip->box = this->box->copy();
     return clip;
 }
@@ -5269,9 +5273,9 @@ bool Clip::get_imageframes() {
 		return false;
 	}
 	int numf = ilGetInteger(IL_NUM_IMAGES);
-	this->startframe = 0;
+	this->startframe->value = 0;
 	this->frame = 0.0f;
-	this->endframe = numf;
+	this->endframe->value = numf;
 
 	return true;
 }
@@ -5346,8 +5350,8 @@ bool Clip::get_videoframes() {
 	open_codec_context(&(video_stream_idx), video, AVMEDIA_TYPE_VIDEO);
 	video_stream = video->streams[video_stream_idx];
 	this->frame = 0.0f;
-	this->startframe = 0;
-	this->endframe = video_stream->nb_frames;
+	this->startframe->value = 0;
+	this->endframe->value = video_stream->nb_frames;
 
 	return true;
 }
@@ -5432,13 +5436,13 @@ bool Clip::get_layerframes() {
 
 	while (safegetline(rfile, istring)) {
 		if (istring == "ENDOFFILE") break;
-		if (istring == "STARTFRAME") {
+		if (istring == "startframe->value") {
 			safegetline(rfile, istring);
-			this->startframe = std::stoi(istring);
+			this->startframe->value = std::stoi(istring);
 		}
-		if (istring == "ENDFRAME") {
+		if (istring == "endframe->value") {
 			safegetline(rfile, istring);
-			this->endframe = std::stoi(istring);
+			this->endframe->value = std::stoi(istring);
 		}
 		if (istring == "FRAME") {
 			safegetline(rfile, istring);
@@ -5644,8 +5648,8 @@ void handle_scenes(Scene* scene) {
 						if (si->loaded) lvec2[j]->frame = si->nbframes[j];
 						else {
 							lvec2[j]->frame = si->tempnbframes[j];
-							lvec2[j]->startframe = si->tempnblayers[j]->startframe;
-							lvec2[j]->endframe = si->tempnblayers[j]->endframe;
+							lvec2[j]->startframe->value = si->tempnblayers[j]->startframe->value;
+							lvec2[j]->endframe->value = si->tempnblayers[j]->endframe->value;
 							lvec2[j]->layerfilepath = si->tempnblayers[j]->layerfilepath;
 							lvec2[j]->filename = si->tempnblayers[j]->filename;
 							lvec2[j]->type = si->tempnblayers[j]->type;
@@ -6772,7 +6776,7 @@ void the_loop() {
 	}
 
 
-	if (mainprogram->shelfdragelem) {
+	if (mainprogram->shelfdragelem && mainprogram->inshelf == -1) {
 		if (mainprogram->lmover) {
 			// delete dragged shelf element when dropped outside shelf
 			ShelfElement* elem = mainprogram->shelfdragelem;
@@ -8718,6 +8722,12 @@ int main(int argc, char* argv[]) {
     glBindFramebuffer(GL_FRAMEBUFFER, 0);
     glDrawBuffer(GL_BACK_LEFT);
 
+    for (Box *box : allboxes) {
+        // predraw all tooltips so no slowdowns will happen when stringtextures are initialized
+        mainprogram->longtooltip_prepare(box);
+    }
+
+
     while (!quit) {
 
         io.poll();
@@ -9152,6 +9162,7 @@ int main(int argc, char* argv[]) {
                             mainmix->new_file(2, 1);
                         }
                     } else {
+                        // loopstation keyboard shortcuts
                         if (e.key.keysym.sym == SDLK_r) {
                             // toggle record button for current loopstation element
                             loopstation->currelem->recbut->value = !loopstation->currelem->recbut->value;
@@ -9165,6 +9176,20 @@ int main(int argc, char* argv[]) {
                             // toggle "one shot play" button for current loopstation element
                             loopstation->currelem->playbut->value = !loopstation->currelem->playbut->value;
                             //loopstation->currelem->playbut->oldvalue = !loopstation->currelem->playbut->value;
+                        }
+
+                        // video loop keyboard shortcuts
+                        if (e.key.keysym.sym == SDLK_l) {
+                            // set video loop start frame
+                            Layer *lay = mainmix->currlay[!mainprogram->prevmodus];
+                            lay->startframe->value = lay->frame;
+                            if (lay->startframe->value > lay->endframe->value) lay->startframe->value = lay->endframe->value;
+                        }
+                        if (e.key.keysym.sym == SDLK_p) {
+                            // set video loop start frame
+                            Layer *lay = mainmix->currlay[!mainprogram->prevmodus];
+                            lay->endframe->value = lay->frame;
+                            if (lay->startframe->value > lay->endframe->value) lay->endframe->value = lay->startframe->value;
                         }
                     }
                 }

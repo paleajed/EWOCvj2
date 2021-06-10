@@ -82,8 +82,8 @@ class Clip {
 		ELEM_TYPE type;
 		GLuint tex = -1;
 		int frame = 0.0f;
-		int startframe = -1;
-		int endframe = -1;
+		Param *startframe = nullptr;
+        Param *endframe = nullptr;
 		Box* box;
 		Layer* layer = nullptr;
 		Clip();
@@ -155,8 +155,10 @@ class Layer {
         Button *genmidibut;
 		Box *loopbox;
 		int playkind = 0;
-		int startframe = 0;
-		int endframe = 0;
+		Param *startframe = nullptr;
+        Param *endframe = nullptr;
+        float oldstartframe = 0.0f;
+        float oldendframe = 0.0f;
 		int scritching = 0;
 		int transforming = 0;
 		int transmx;

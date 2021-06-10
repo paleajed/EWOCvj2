@@ -418,17 +418,25 @@ void LoopStationElement::add_param_automationentry(Param* par) {
 	if (par->effect) {
 		this->layers.emplace(par->effect->layer);
 	}
-	par->box->acolor[0] = this->colbox->acolor[0];
-	par->box->acolor[1] = this->colbox->acolor[1];
-	par->box->acolor[2] = this->colbox->acolor[2];
-	par->box->acolor[3] = this->colbox->acolor[3];
+	bool frame = false;
 	for (int i = 0; i < 2; i++) {
 		std::vector<Layer*>& lvec = choose_layers(i);
 		for (int j = 0; j < lvec.size(); j++) {
 			if (par == lvec[j]->speed) this->layers.emplace(lvec[j]);
 			if (par == lvec[j]->opacity) this->layers.emplace(lvec[j]);
             if (par == lvec[j]->volume) this->layers.emplace(lvec[j]);
-            if (par == lvec[j]->scritch) this->layers.emplace(lvec[j]);
+            if (par == lvec[j]->scritch) {
+                this->layers.emplace(lvec[j]);
+                frame = true;
+            }
+            if (par == lvec[j]->startframe) {
+                this->layers.emplace(lvec[j]);
+                frame = true;
+            }
+            if (par == lvec[j]->endframe) {
+                this->layers.emplace(lvec[j]);
+                frame = true;
+            }
             if (par == lvec[j]->blendnode->mixfac) this->layers.emplace(lvec[j]);
 			if (par == lvec[j]->shiftx) {
 				this->layers.emplace(lvec[j]);
@@ -463,6 +471,13 @@ void LoopStationElement::add_param_automationentry(Param* par) {
 		par = nullptr;
 		return;
 	}
+
+	if (!frame) {
+        par->box->acolor[0] = this->colbox->acolor[0];
+        par->box->acolor[1] = this->colbox->acolor[1];
+        par->box->acolor[2] = this->colbox->acolor[2];
+        par->box->acolor[3] = this->colbox->acolor[3];
+    }
 }
 
 void LoopStationElement::add_button_automationentry(Button* but) {

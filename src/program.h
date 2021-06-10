@@ -346,7 +346,7 @@ class Program {
 		GLuint tm_rttbo;
         GLuint bgtex;
 		std::vector<OutputEntry*> outputentries;
-		std::vector<Button*> buttons;
+        std::vector<Button*> buttons;
 		Box *scrollboxes[2];
 		Box *prevbox;
 		Layer *loadlay;
@@ -773,6 +773,7 @@ class Program {
         void socket_client(struct sockaddr_in serv_addr, int opt);
         void socket_server_recieve(SOCKET sock);
         void stream_to_v4l2loopbacks();
+        void longtooltip_prepare(Box *box);
         Program();
 		
 	private:
@@ -804,6 +805,7 @@ extern LayMidi* laymidiA;
 extern LayMidi* laymidiB;
 extern LayMidi* laymidiC;
 extern LayMidi* laymidiD;
+extern std::vector<Box*> allboxes;
 
 extern float yellow[];
 extern float white[];

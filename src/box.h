@@ -32,6 +32,7 @@ class Box {
 		std::string tooltiptitle = "";
 		std::string tooltip = "";
 		bool reserved = false;
+		int smflag = 0;
 
 		void upscrtovtx();
 		void upvtxtoscr();
