@@ -204,7 +204,8 @@ class Layer {
 		frame_result *decresult;
 		remaining_frames *remfr[3];
 		int changeinit = -1;
-		std::thread decoding;
+        std::thread decoding;
+        std::thread triggering;
 		void get_frame();
 		std::thread audiot;
 		void playaudio();
@@ -222,7 +223,7 @@ class Layer {
 		GLuint endtex;
         GLuint frb;
         GLuint pbo[3];
-		GLubyte* mapptr[3];
+		GLubyte* mapptr[3] = {0, 0, 0};
 		GLsync syncobj[3] = {nullptr, nullptr, nullptr};
 		char pbodi = 0;
 		char pboui = 1;
@@ -271,6 +272,7 @@ class Layer {
 		BinElement *hapbinel = nullptr;
 		bool encodeload = false;
 		bool nopbodel = false;
+		bool tobedeleted = true;
 		
 		std::unordered_map<EFFECT_TYPE, int> numoftypemap;
 		int clonesetnr = -1;
@@ -305,6 +307,7 @@ class Layer {
 		void set_live_base(std::string livename);
 		void deautomate();
         void set_inlayer(Layer* lay, bool pbos);
+        void trigger();
         Layer* next();
 		Layer* prev();
         void del();
@@ -322,7 +325,6 @@ class Layer {
 
 class Scene {
 	public:
-		bool comp;
 		bool deck;
 		Box* box;
 		Button* button;
@@ -348,7 +350,7 @@ class Mixer {
 		std::vector<Layer*> layersBcomp;
 		std::vector<Layer*> layersA;
 		std::vector<Layer*> layersB;
-		std::vector<Scene*> scenes[2][2];
+		std::vector<Scene*> scenes[2];
 		std::vector<Layer*> bulrs[2];
         std::vector<Layer*> bulrscopy[2];
         std::vector<GLuint> butexes[2];
@@ -436,7 +438,7 @@ class Mixer {
 		Param *crossfade;
 		Param *crossfadecomp;
 
-		int currscene[2][2] = {{0, 0}, {0, 0}};
+		int currscene[2] = {0, 0};
 		bool deck = 0;
 		int scrollon = 0;
 		int scrollmx;

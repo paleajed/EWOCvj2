@@ -363,16 +363,26 @@ void LoopStationElement::set_values() {
 		Button *but = std::get<2>(event);
 		lpc = lpc;
 		if (par) {
-			if (par != mainmix->adaptparam) {
-				if (std::find(this->lpst->allparams.begin(), this->lpst->allparams.end(), par) != this->lpst->allparams.end()) {
-					par->value = std::get<3>(event);
-				}
-			}
+            elapsed = std::chrono::duration_cast<std::chrono::duration<double>>(now - par->midistarttime);
+            long long mc = std::chrono::duration_cast<std::chrono::milliseconds>(elapsed).count();
+			if (mc > 500 || mc < 0) {
+                if (par != mainmix->adaptparam) {
+                    if (std::find(this->lpst->allparams.begin(), this->lpst->allparams.end(), par) !=
+                        this->lpst->allparams.end()) {
+                        par->value = std::get<3>(event);
+                    }
+                }
+            }
 		}
 		else if (but) {
-			if (std::find(this->lpst->allbuttons.begin(), this->lpst->allbuttons.end(), but) != this->lpst->allbuttons.end()) {
-				but->value = (int)(std::get<3>(event) + 0.5f);
-			}
+            elapsed = std::chrono::duration_cast<std::chrono::duration<double>>(now - but->midistarttime);
+            long long mc = std::chrono::duration_cast<std::chrono::milliseconds>(elapsed).count();
+            if (mc > 500 || mc < 0) {
+                if (std::find(this->lpst->allbuttons.begin(), this->lpst->allbuttons.end(), but) !=
+                    this->lpst->allbuttons.end()) {
+                    but->value = (int) (std::get<3>(event) + 0.5f);
+                }
+            }
 		}
 		this->eventpos++;
 		event = this->eventlist[this->eventpos];
@@ -404,7 +414,7 @@ void LoopStationElement::set_values() {
 }
 		
 void LoopStationElement::add_param_automationentry(Param* par) {
-    if (loopstation->parelemmap[par] != this && loopstation->parelemmap[par] != nullptr) return;  // each parameter can
+    //if (loopstation->parelemmap[par] != this && loopstation->parelemmap[par] != nullptr) return;  // each parameter can
     // be automated only once to avoid chaos
 	std::chrono::high_resolution_clock::time_point now = std::chrono::high_resolution_clock::now();
 	std::chrono::duration<double> elapsed;

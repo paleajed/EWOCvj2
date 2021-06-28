@@ -81,7 +81,8 @@ class Param {
 		MidiNode *node = NULL;
 		bool nextrow = false;
 		std::vector<std::string> oscpaths;
-		void handle();
+        std::chrono::high_resolution_clock::time_point midistarttime;
+        void handle();
         void deautomate();
         void register_midi();
         void unregister_midi();

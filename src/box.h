@@ -1,4 +1,5 @@
 #include <string>
+#include <chrono>
 
 
 typedef enum
@@ -16,7 +17,10 @@ typedef enum
 } TRIANGLE_TYPE;
 
 typedef struct {
-	float x1, y1, w, h;
+    float x1 = 0.0f;
+    float y1 = 0.0f;
+    float w = 0.0f;
+    float h = 0.0f;
 } BOX_COORDS;
 
 class Layer;
@@ -58,7 +62,9 @@ class Button {
 		int midi[2] = {-1, -1};
 		std::string midiport;
 		Layer* layer = nullptr;
-		bool handle(bool circlein = false);
+        std::chrono::high_resolution_clock::time_point midistarttime;
+
+        bool handle(bool circlein = false);
 		bool handle(bool circlein, bool automation);
 		bool toggled();
 		void deautomate();

@@ -56,7 +56,7 @@ class Node {
 	public:
 		NODE_TYPE type;
 		int pos;
-		NodePage *page;
+		NodePage *page = nullptr;
 		Node *in = nullptr;
 		std::vector<Node*> out;
 		Box *box;
@@ -124,7 +124,6 @@ class MixNode: public Node {
 	public:
 		bool fullscreen = false;
 		int screen = 0;
-		Box* outputbox = nullptr;
 		GLuint mixfbo = -1;
 		GLuint mixtex = -1;
 		bool newmixfbo = false;

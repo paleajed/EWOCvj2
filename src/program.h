@@ -97,7 +97,7 @@ struct gui_triangle {
 };
 
 struct gui_box {
-	float linec[4];
+	float linec[4] = {0.0f, 0.0f, 0.0f, 0.0f};
 	float areac[4] = {0.0f, 0.0f, 0.0f, 0.0f};
 	float x;
 	float y;
@@ -169,20 +169,21 @@ class Project {
         float ow = 1920.0f;
         float oh = 1080.0f;
 		void newp(const std::string &path);
-		void open(const std::string &path);
+		void open(const std::string &path, bool autosave);
         void save(const std::string& path);
         void autosave();
-		void do_save(const std::string& path);
+		void do_save(const std::string& path, bool autosave = false);
         void delete_dirs(const std::string &path);
         void copy_dirs(const std::string &path);
-		void create_dirs(const std::string &path);
+        void create_dirs(const std::string &path);
+        void create_dirs_autosave(const std::string &path);
 private:
 };
 
 class Preferences {
 	public:
 		std::vector<PrefCat*> items;
-		int curritem = 0;
+		int curritem = 1;
 		void load();
 		void save();
 		Preferences();
@@ -294,9 +295,9 @@ class GUIString {
 		std::vector<std::vector<float>> textwvecvec;
 		float sx;
 		std::vector<float> sxvec;
-		GLuint texture;
 		std::vector<GLuint> texturevec;
-		GLuint tbo;
+
+		~GUIString();
 };
 
 class OutputEntry {
@@ -309,7 +310,6 @@ class Globals {
 	public:
 		float w;
 		float h;
-		float resfac;
 };
 
 class Program {
@@ -319,31 +319,32 @@ class Program {
 		NodesMain *nodesmain;
 		GLuint ShaderProgram;
 		GLuint ShaderProgram_tm;
-		GLuint ShaderProgram_pr;
+        GLuint ShaderProgram_pr;
+        GLuint ShaderProgram_qu;
 		GLuint fbovao;
 		GLuint fbotex[4];
 		GLuint frbuf[4];
 		GLuint bvao;
-		GLuint boxvao;
-		GLuint prboxvao;
+        GLuint boxvao;
+        GLuint binvao;
+        GLuint quboxvao;
+        GLuint prboxvao;
 		GLuint tmboxvao;
 		GLuint bvbuf;
-		GLuint boxvbuf;
-		GLuint prboxvbuf;
+        GLuint boxvbuf;
+        GLuint binvbuf;
+        GLuint quboxvbuf;
+        GLuint prboxvbuf;
 		GLuint tmboxvbuf;
 		GLuint btbuf;
-		GLuint boxtbuf;
-		GLuint prboxtbuf;
+        GLuint boxtbuf;
+        GLuint bintbuf;
+        GLuint quboxtbuf;
+        GLuint prboxtbuf;
 		GLuint tmboxtbuf;
 		GLuint texvao;
 		GLuint rtvbo;
 		GLuint rttbo;
-		GLuint pr_texvao;
-		GLuint pr_rtvbo;
-		GLuint pr_rttbo;
-		GLuint tm_texvao;
-		GLuint tm_rtvbo;
-		GLuint tm_rttbo;
         GLuint bgtex;
 		std::vector<OutputEntry*> outputentries;
         std::vector<Button*> buttons;
@@ -368,7 +369,8 @@ class Program {
 		Menu* newlaymenu = nullptr;
 		Menu* clipmenu = nullptr;
 		Menu *aspectmenu = nullptr;
-		Menu *mixtargetmenu = nullptr;
+        Menu *mixtargetmenu = nullptr;
+        Menu *bintargetmenu = nullptr;
 		Menu *fullscreenmenu = nullptr;
 		Menu *mixenginemenu = nullptr;
 		Menu *livemenu = nullptr;
@@ -391,7 +393,8 @@ class Program {
         Menu* editmenu = nullptr;
         Menu* lpstmenu = nullptr;
         Menu* sendmenu = nullptr;
-		bool menuactivation = false;
+        bool menuactivation = false;
+        bool binmenuactivation = false;
 		bool menuchosen = false;
 		std::vector<int> menuresults;
 		bool intopmenu = false;
@@ -404,6 +407,8 @@ class Program {
 		int oldmy;
         int shelfmx;
         int shelfmy;
+        int binmx;
+        int binmy;
 		int iemy;
 		float ow = 1920.0f;
 		float oh = 1080.0f;
@@ -417,6 +422,8 @@ class Program {
 		float monh = 0.3f;
 		float cwx;
 		float cwy;
+		float globw;
+		float globh;
 		bool transforming = false;
 		bool leftmousedown = false;
 		bool middlemousedown = false;
@@ -424,7 +431,8 @@ class Program {
 		bool leftmouse = false;
 		bool orderleftmouse = false;
 		bool orderleftmousedown = false;
-		bool lmover = false;
+        bool lmover = false;
+        bool binlmover = false;
         bool doubleleftmouse = false;
         bool doublemiddlemouse = false;
 		bool middlemouse = false;
@@ -441,14 +449,14 @@ class Program {
 		std::string docpath;
         std::string fontpath;
         std::string contentpath;
-		std::string path;
+		std::string path ;
 		std::vector<std::string> paths;
 		int counting;
 		std::string pathto;
         Button *toscreenA;
         Button *toscreenB;
         Button *toscreenM;
-        Button *toscene[2][3];
+        Button *toscene[2][2][3];
         Button *backtopreA;
         Button *backtopreB;
         Button *backtopreM;
@@ -506,12 +514,14 @@ class Program {
 		float boxz = 0.0f;
 		bool directmode = false;
 		bool frontbatch = false;
-		std::vector<GUI_Element*> guielems;
+        std::vector<GUI_Element*> guielems;
+        std::vector<GUI_Element*> binguielems;
 		Button* onscenebutton;
 		float onscenemilli;
 		Box* delbox;
 		Box* addbox;
-		bool repeatdefault = true;
+        bool repeatdefault = true;
+        bool autoplay = true;
 
 		GLuint boxcoltbo;
 		GLuint boxtextbo;
@@ -524,9 +534,10 @@ class Program {
 		std::unordered_map<std::string, int> wipesmap;
 		std::unordered_map<EFFECT_TYPE, std::string> effectsmap;
 		std::vector<EFFECT_TYPE> abeffects;
-		
-		SDL_Window* dummywindow = nullptr;
-		SDL_Window* config_midipresetswindow = nullptr;
+
+        SDL_Window* quitwindow = nullptr;
+
+        SDL_Window* config_midipresetswindow = nullptr;
 		bool drawnonce = false;
 		bool midipresets = false;
 		int midipresetsset = 1;
@@ -664,7 +675,8 @@ class Program {
 		int dragpathpos = -1;
 		bool dragpathsense = false;
 		std::vector<Box*> pathboxes;
-		std::vector<GLuint> pathtexes;
+        std::vector<GLuint> pathtexes;
+        std::vector<std::string> pathtstrs;
 		int pathscroll = 0;
 		bool indragbox = false;
 		Box* dragbox;
@@ -678,6 +690,7 @@ class Program {
         bool steplprow = false;
         bool waitonetime = false;
         std::chrono::high_resolution_clock::time_point ordertime;
+        bool collectingboxes = true;  // during startup
 
     #ifdef WINDOWS
         SOCKET sock;
@@ -758,7 +771,8 @@ class Program {
 		void handle_parammenu4();
 		void handle_speedmenu();
 		void handle_loopmenu();
-		void handle_mixtargetmenu();
+        void handle_mixtargetmenu();
+        void handle_bintargetmenu();
 		void handle_wipemenu();
 		void handle_laymenu1();
 		void handle_newlaymenu();
@@ -774,6 +788,7 @@ class Program {
         void socket_server_recieve(SOCKET sock);
         void stream_to_v4l2loopbacks();
         void longtooltip_prepare(Box *box);
+        void postponed_to_front(std::string title);
         Program();
 		
 	private:
@@ -903,7 +918,7 @@ void save_genmidis(std::string path);
 
 void screenshot();
 
-int open_codec_context(int *stream_idx, AVFormatContext *video, enum AVMediaType type);
+int find_stream_index(int *stream_idx, AVFormatContext *video, enum AVMediaType type);
 
 void set_live_base(Layer *lay, std::string livename);
 

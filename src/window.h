@@ -28,6 +28,8 @@ class EWindow {
 		Display *dpy;
 		GLXContext ctx;
         #endif
+
+		~EWindow();
 };
 
 class Menu {

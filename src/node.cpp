@@ -286,21 +286,6 @@ MixNode *NodePage::add_mixnode(int scr, bool comp) {
 	node->box->lcolor[2] = 0.0;
 	node->box->lcolor[3] = 1.0;
 	
-	node->outputbox = new Box;
-	node->outputbox->vtxcoords->x1 = -0.3;
-	node->outputbox->vtxcoords->y1 = -1;
-	node->outputbox->vtxcoords->w = 0.6;
-	node->outputbox->vtxcoords->h = 0.6;
-	node->outputbox->upvtxtoscr();
-	node->outputbox->lcolor[0] = 1.0;
-	node->outputbox->lcolor[1] = 0.0;
-	node->outputbox->lcolor[2] = 0.0;
-	node->outputbox->lcolor[3] = 1.0;
-	node->outputbox->acolor[0] = 0.0;
-	node->outputbox->acolor[1] = 0.0;
-	node->outputbox->acolor[2] = 0.0;
-	node->outputbox->acolor[3] = 1.0;
-
 	return node;
 }
 
@@ -375,18 +360,20 @@ void NodePage::delete_node(Node *node) {
 			}
 		}
 	}
-	for (int i = 0; i < node->page->nodes.size(); i++) {
-		if (node->page->nodes[i] == node) {
-			node->page->nodes.erase(node->page->nodes.begin() + i);
-			break;
-		}
-	}
-	for (int i = 0; i < node->page->nodescomp.size(); i++) {
-		if (node->page->nodescomp[i] == node) {
-			node->page->nodescomp.erase(node->page->nodescomp.begin() + i);
-			break;
-		}
-	}
+	if (node->page) {
+        for (int i = 0; i < node->page->nodes.size(); i++) {
+            if (node->page->nodes[i] == node) {
+                node->page->nodes.erase(node->page->nodes.begin() + i);
+                break;
+            }
+        }
+        for (int i = 0; i < node->page->nodescomp.size(); i++) {
+            if (node->page->nodescomp[i] == node) {
+                node->page->nodescomp.erase(node->page->nodescomp.begin() + i);
+                break;
+            }
+        }
+    }
 	delete node;
 }
 
@@ -406,7 +393,7 @@ void NodePage::handle_nodes() {
 		float red[] = {1.0, 0.0, 0.0, 1.0};
 		float blue[] = {0.5, 0.5, 1.0, 1.0};
 		if (node->monitor != -1) {
-			if (mainmix->currscene[0][0] == node->monitor / 6) {
+			if (mainmix->currscene[0] == node->monitor / 6) {
 				draw_box(node->monbox, node->monbox->tex);
 			}
 		}
@@ -733,17 +720,17 @@ void NodePage::handle_nodes() {
 		
 		if (!mainprogram->nodesmain->linked) {
 			for (int i = 0; i < 6; i++) {
-				if (node->monitor == i + mainmix->currscene[0][0] * 6) {
+				if (node->monitor == i + mainmix->currscene[0] * 6) {
 					draw_box(white, red, node->box->vtxcoords->x1 + mainprogram->xscrtovtx(1) + i * mainprogram->xscrtovtx(21), node->box->vtxcoords->y1 + node->box->vtxcoords->h, mainprogram->xscrtovtx(21), mainprogram->yscrtovtx(10), -1);
 				}
 				else if (node->box->scrcoords->x1 + 1 + i * 21 < mainprogram->mx && mainprogram->mx < node->box->scrcoords->x1 + 22 + i * 21 && node->box->scrcoords->y1 - node->box->scrcoords->h - 21 < mainprogram->my && mainprogram->my < node->box->scrcoords->y1 - node->box->scrcoords->h) {
 					if (mainprogram->leftmouse) {
 						for (int k = 0; k < mainprogram->nodesmain->currpage->nodes.size(); k++){
-							if (mainprogram->nodesmain->currpage->nodes[k]->monitor == i + mainmix->currscene[0][0] * 6) {
+							if (mainprogram->nodesmain->currpage->nodes[k]->monitor == i + mainmix->currscene[0] * 6) {
 								mainprogram->nodesmain->currpage->nodes[k]->monitor = -1;
 							}
 						}
-						node->monitor = i + mainmix->currscene[0][0] * 6;
+						node->monitor = i + mainmix->currscene[0] * 6;
 						make_layboxes();
 					}
 					draw_box(white, blue, node->box->vtxcoords->x1 + mainprogram->xscrtovtx(1) + i * mainprogram->xscrtovtx(21), node->box->vtxcoords->y1 + node->box->vtxcoords->h, mainprogram->xscrtovtx(21), mainprogram->yscrtovtx(10), -1);
@@ -789,17 +776,17 @@ void NodePage::handle_nodes() {
 			
 			if (!mainprogram->nodesmain->linked) {
 				for (int i = 0; i < 6; i++) {
-					if (node->monitor == i + mainmix->currscene[0][0] * 6) {
+					if (node->monitor == i + mainmix->currscene[0] * 6) {
 						draw_box(white, red, node->box->vtxcoords->x1 + mainprogram->xscrtovtx(1) + i * mainprogram->xscrtovtx(21), node->box->vtxcoords->y1 + node->box->vtxcoords->h, mainprogram->xscrtovtx(21), mainprogram->yscrtovtx(10), -1);
 					}
 					else if (node->box->scrcoords->x1 + 1 + i * 21 < mainprogram->mx && mainprogram->mx < node->box->scrcoords->x1 + 22 + i * 21 && node->box->scrcoords->y1 - node->box->scrcoords->h - 21 < mainprogram->my && mainprogram->my < node->box->scrcoords->y1 - node->box->scrcoords->h) {
 						if (mainprogram->leftmouse) {
 							for (int k = 0; k < mainprogram->nodesmain->currpage->nodes.size(); k++){
-								if (mainprogram->nodesmain->currpage->nodes[k]->monitor == i + mainmix->currscene[0][0] * 6) {
+								if (mainprogram->nodesmain->currpage->nodes[k]->monitor == i + mainmix->currscene[0] * 6) {
 									mainprogram->nodesmain->currpage->nodes[k]->monitor = -1;
 								}
 							}
-							node->monitor = i + mainmix->currscene[0][0] * 6;
+							node->monitor = i + mainmix->currscene[0] * 6;
 							make_layboxes();
 						}
 						draw_box(white, blue, node->box->vtxcoords->x1 + mainprogram->xscrtovtx(1) + i * mainprogram->xscrtovtx(21), node->box->vtxcoords->y1 + node->box->vtxcoords->h, mainprogram->xscrtovtx(21), mainprogram->yscrtovtx(10), -1);

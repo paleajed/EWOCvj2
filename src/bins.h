@@ -13,7 +13,8 @@ typedef enum
 	BET_LOADSHELFB = 10,
 	BET_HAPELEM = 11,
 	BET_HAPBIN = 12,
-	BET_QUIT = 13,
+    BET_QUIT = 13,
+    BET_SAVPROJ = 14,
 } BINELMENU_OPTION;
 
 class Bin;
@@ -39,7 +40,6 @@ class BinsMain {
 		std::vector<std::string> addpaths;
 		std::string tempjpegpath;
 		GLuint movingtex = -1;
-		GLuint dragtex = -1;
 		std::vector<GLuint> inputtexes;
 		std::vector<ELEM_TYPE> inputtypes;
 		std::vector<std::string> inputjpegpaths;
@@ -65,8 +65,23 @@ class BinsMain {
 		Box* dragbox;
 		int binsscroll = 0;
 		Box* binsscrolldown;
-		Box* binsscrollup;
-		Bin *menubin = nullptr;
+        Box* binsscrollup;
+
+        Box* floatbox;
+        bool floating = false;
+        bool inbin = false;
+        SDL_Window *win;
+        SDL_GLContext glc;
+        float globw;
+        float globh;
+        std::mutex syncmutex;
+        std::condition_variable sync;
+        bool syncnow = false;
+        std::mutex syncendmutex;
+        std::condition_variable syncend;
+        bool syncendnow = false;
+
+        Bin *menubin = nullptr;
 		bool openfilesbin = false;
 		bool importbins = false;
 		int binscount;
@@ -95,7 +110,7 @@ class BinsMain {
 		void save_bin(const std::string &path);
 		void import_bins();
 		void open_files_bin();
-		void open_handlefile(const std::string &path);
+		void open_handlefile(const std::string &path, GLuint tex = -1);
 		std::tuple<std::string, std::string> hap_binel(BinElement *binel, BinElement* bdm);
 		void hap_deck(BinElement * bd);
 		void hap_mix(BinElement * bm);
