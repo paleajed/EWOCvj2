@@ -128,7 +128,6 @@ public:
 	int prevnum = -1;
 	int newnum = -1;
 	bool ret;
-	void handle();
 	void erase();
 	void save(const std::string& path);
 	bool open(const std::string& path);
@@ -540,8 +539,10 @@ class Program {
         SDL_Window* config_midipresetswindow = nullptr;
 		bool drawnonce = false;
 		bool midipresets = false;
-		int midipresetsset = 1;
-		Box* tmset;
+		int midipresetsset = 0;
+		int configcatmidi = 0;
+        Box* tmcat[3];
+        Box* tmset[4];
 		Box* tmscratch;
 		Box *tmfreeze;
 		Box *tmplay;
@@ -581,7 +582,7 @@ class Program {
 		bool autosave;
 		float asminutes = 1;
 		int astimestamp = 0;
-		int qualfr = 3;
+		float qualfr = 3;
 
 		std::unordered_map <std::string, GUIString*> guitextmap;
 		std::unordered_map <std::string, GUIString*> prguitextmap;
@@ -655,7 +656,8 @@ class Program {
 		int shelffilescount;
 		int shelfdragnum = -1;
 		ShelfElement *shelfdragelem = nullptr;
-		ShelfElement* midishelfelem = nullptr;
+        ShelfElement* midishelfelem = nullptr;
+        ShelfElement* midiconfigshelfelem = nullptr;
 		Shelf *shelves[2];
 		int inshelf = -1;
 		int inclips = -1;
@@ -691,6 +693,7 @@ class Program {
         bool waitonetime = false;
         std::chrono::high_resolution_clock::time_point ordertime;
         bool collectingboxes = true;  // during startup
+        bool sameeight = false;
 
     #ifdef WINDOWS
         SOCKET sock;
@@ -706,8 +709,8 @@ class Program {
         int connected = 0;
         bool connfailed = false;
         int connfailedmilli = 0;
-        std::string seatname = "";
-        std::string oldseatname = "";
+        std::string seatname = "SEAT";
+        std::string oldseatname = "SEAT";
         std::string serverip = "0.0.0.0";
         bool serveripchanged = false;
         std::string localip;
@@ -732,6 +735,8 @@ class Program {
 		int load_shader(char* filename, char** ShaderSource, unsigned long len);
 		void set_ow3oh3();
 		void handle_changed_owoh();
+        bool handle_button(Button *but, bool circlein = false);
+        bool handle_button(Button *but, bool circlein, bool automation);
 		int handle_menu(Menu* menu);
 		int handle_menu(Menu* menu, float xshift, float yshift);
 		void handle_fullscreen();
@@ -753,7 +758,8 @@ class Program {
         int handle_scrollboxes(Box *upperbox, Box *lowerbox, int numlines, int scrollpos, int scrlines);
         int handle_scrollboxes(Box* upperbox, Box* lowerbox, int numlines, int scrollpos, int scrlines, int mx, int
             my);
-		void shelf_miditriggering();
+        void handle_shelf(Shelf *shelf);
+        void shelf_miditriggering();
 		int config_midipresets_handle();
 		bool config_midipresets_init();
 		void preferences();

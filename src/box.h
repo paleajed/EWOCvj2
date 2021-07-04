@@ -29,7 +29,8 @@ class Box {
 	public:
 		float lcolor[4] = {0.7, 0.7, 0.7, 1.0};
 		float acolor[4] = {0.0, 0.0, 0.0, 0.0};
-		BOX_COORDS *scrcoords;
+        BOX_COORDS *dummycoords;
+        BOX_COORDS *scrcoords;
 		BOX_COORDS *vtxcoords;
 		GLuint tex = -1;
 
@@ -64,8 +65,6 @@ class Button {
 		Layer* layer = nullptr;
         std::chrono::high_resolution_clock::time_point midistarttime;
 
-        bool handle(bool circlein = false);
-		bool handle(bool circlein, bool automation);
 		bool toggled();
 		void deautomate();
         void register_midi();

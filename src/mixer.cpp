@@ -275,7 +275,7 @@ void Mixer::handle_genmidibuttons() {
 		std::vector<Layer*>& lvec = choose_layers(i);
 		if (i == 0) but = this->genmidi[0];
 		else but = this->genmidi[1];
-		bool ch = but->handle(0, 0);
+		bool ch = mainprogram->handle_button(but, 0, 0);
 		if (ch) {
 			for (int j = 0; j < lvec.size(); j++) {
 				lvec[j]->genmidibut->value = but->value;
@@ -324,55 +324,55 @@ Param::~Param() {
 	lock.unlock();
 }
 
-void Param::handle() {
+void Mixer::handle_param(Param* par) {
 	std::string parstr;
-	draw_box(this->box, -1);
+	draw_box(par->box, -1);
 	int val;
-	if (!this->powertwo) val = round(this->value * 1000.0f);
-	else val = round(this->value * this->value * 1000.0f);
+	if (!par->powertwo) val = round(par->value * 1000.0f);
+	else val = round(par->value * par->value * 1000.0f);
 	int val2 = val;
 	val += 1000000;
 	int firstdigit = 7 - std::to_string(val2).length();
 	if (firstdigit > 3) firstdigit = 3;
-	if (mainmix->learnparam == this && mainmix->learn) {
+	if (mainmix->learnparam == par && mainmix->learn) {
 		parstr = "MIDI";
 	}
-	else if (this != mainmix->adaptparam) parstr = this->name;
-	else if (this->sliding) parstr = std::to_string(val).substr(firstdigit, 4 - firstdigit) + "." + std::to_string(val).substr(std::to_string(val).length() - 3, std::string::npos); 
-	else parstr = std::to_string((int)(this->value + (float)(0.5f * (this->effect->type == FLIP || this->effect->type == MIRROR))));
-	if (this != mainmix->adaptnumparam) {
-		render_text(parstr, white, this->box->vtxcoords->x1 + 0.015f, this->box->vtxcoords->y1 + 0.075f - 0.045f, 0.00045f, 0.00075f);
-		if (this->box->in()) {
+	else if (par != mainmix->adaptparam) parstr = par->name;
+	else if (par->sliding) parstr = std::to_string(val).substr(firstdigit, 4 - firstdigit) + "." + std::to_string(val).substr(std::to_string(val).length() - 3, std::string::npos); 
+	else parstr = std::to_string((int)(par->value + (float)(0.5f * (par->effect->type == FLIP || par->effect->type == MIRROR))));
+	if (par != mainmix->adaptnumparam) {
+		render_text(parstr, white, par->box->vtxcoords->x1 + 0.015f, par->box->vtxcoords->y1 + 0.075f - 0.045f, 0.00045f, 0.00075f);
+		if (par->box->in()) {
 			if (mainprogram->leftmousedown && !mainprogram->inserteffectbox->in()) {
 				mainprogram->leftmousedown = false;
-				mainmix->adaptparam = this;
+				mainmix->adaptparam = par;
 				mainmix->prevx = mainprogram->mx;
 			}
 			if (mainprogram->doubleleftmouse) {
 				mainprogram->renaming = EDIT_PARAM;
-				mainmix->adaptnumparam = this;
+				mainmix->adaptnumparam = par;
 				mainprogram->inputtext = "";
 				mainprogram->cursorpos0 = mainprogram->inputtext.length();
 				SDL_StartTextInput();
 				mainprogram->doubleleftmouse = false;
 			}
 			if (mainprogram->menuactivation && !mainprogram->menuondisplay) {
-				if (loopstation->parelemmap.find(this) != loopstation->parelemmap.end()) mainprogram->parammenu2->state = 2;
+				if (loopstation->parelemmap.find(par) != loopstation->parelemmap.end()) mainprogram->parammenu2->state = 2;
 				else mainprogram->parammenu1->state = 2;
 				mainmix->learnbutton = nullptr;
-				mainmix->learnparam = this;
+				mainmix->learnparam = par;
 				mainprogram->menuactivation = false;
 			}
 		}
-		if (this->sliding) {
-			draw_box(green, green, this->box->vtxcoords->x1 + this->box->vtxcoords->w * ((this->value - this->range[0]) / (this->range[1] - this->range[0])) - 0.002f, this->box->vtxcoords->y1, 0.004f, this->box->vtxcoords->h, -1);
+		if (par->sliding) {
+			draw_box(green, green, par->box->vtxcoords->x1 + par->box->vtxcoords->w * ((par->value - par->range[0]) / (par->range[1] - par->range[0])) - 0.002f, par->box->vtxcoords->y1, 0.004f, par->box->vtxcoords->h, -1);
 		}
 		else {
-			draw_box(green, green, this->box->vtxcoords->x1 + this->box->vtxcoords->w * (((int)(this->value + 0.5f) - this->range[0]) / (this->range[1] - this->range[0])) - 0.002f, this->box->vtxcoords->y1, 0.004f, this->box->vtxcoords->h, -1);
+			draw_box(green, green, par->box->vtxcoords->x1 + par->box->vtxcoords->w * (((int)(par->value + 0.5f) - par->range[0]) / (par->range[1] - par->range[0])) - 0.002f, par->box->vtxcoords->y1, 0.004f, par->box->vtxcoords->h, -1);
 		}
 	}
-	if (this == mainmix->adaptnumparam) {
-		do_text_input(box->vtxcoords->x1 + 0.015f, box->vtxcoords->y1 + 0.03f, 0.00045f, 0.00075f, mainprogram->mx, mainprogram->my, mainprogram->xvtxtoscr(box->vtxcoords->w - 0.03f), 0, nullptr);
+	if (par == mainmix->adaptnumparam) {
+		do_text_input(par->box->vtxcoords->x1 + 0.015f, par->box->vtxcoords->y1 + 0.03f, 0.00045f, 0.00075f, mainprogram->mx, mainprogram->my, mainprogram->xvtxtoscr(par->box->vtxcoords->w - 0.03f), 0, nullptr);
 	}
 }
 
@@ -3588,7 +3588,7 @@ void Layer::display() {
             Box *box = mainprogram->effcat[this->deck]->box;
             box->vtxcoords->x1 = efx;
             box->upvtxtoscr();
-            mainprogram->effcat[this->deck]->handle();
+            mainprogram->handle_button(mainprogram->effcat[this->deck]);
             if (this->effects[1].size() && mainprogram->effcat[this->deck]->value == 0) {
                 box->acolor[0] = 0.5f;
                 box->acolor[1] = 0.0f;
@@ -3640,8 +3640,8 @@ void Layer::display() {
                     1.0 - mainprogram->layh - 0.135f - 0.33f - 0.075f * (mainprogram->efflines - 1))
                     break;
                 if (eff->box->vtxcoords->y1 <= 1.0 - mainprogram->layh - 0.135f - 0.27f) {
-                    eff->drywet->handle();
-                    eff->onoffbutton->handle();
+                    mainmix->handle_param(eff->drywet);
+                    mainprogram->handle_button(eff->onoffbutton);
 
                     box = eff->box;
                     if (mainprogram->effcat[this->deck]->value == 0) {
@@ -3683,7 +3683,7 @@ void Layer::display() {
                         1.0 - mainprogram->layh - 0.135f - 0.33f - 0.075f * (mainprogram->efflines - 1))
                         break;
                     if (par->box->vtxcoords->y1 <= 1.0 - mainprogram->layh - 0.135f - 0.27f) {
-                        par->handle();
+                        mainmix->handle_param(par);
                     }
                 }
             }
@@ -3947,7 +3947,7 @@ void Layer::display() {
                     par->box->vtxcoords->h = this->colorbox->vtxcoords->h;
                     par->box->upvtxtoscr();
 
-                    par->handle();
+                    mainmix->handle_param(par);
                 }
             }
 
@@ -3955,7 +3955,7 @@ void Layer::display() {
             // Draw mixfac->box
             if (this->pos > 0 && (this->blendnode->blendtype == MIXING || this->blendnode->blendtype == WIPE)) {
                 Param *par = this->blendnode->mixfac;
-                par->handle();
+                mainmix->handle_param(par);
             }
 
             // Draw speed->box
@@ -3963,7 +3963,7 @@ void Layer::display() {
             if (this->filename == "" || this->type == ELEM_LIVE) {
                 draw_box(lightgrey, darkgrey, this->speed->box->vtxcoords->x1, this->speed->box->vtxcoords->y1,
                          this->speed->box->vtxcoords->w * 0.30f, 0.075f, -1);
-            } else par->handle();
+            } else mainmix->handle_param(par);
             if (par == mainmix->adaptparam) {
                 for (int i = 0; i < mainmix->currlays[!mainprogram->prevmodus].size(); i++) {
                     mainmix->currlays[!mainprogram->prevmodus][i]->speed->value = par->value;
@@ -3978,7 +3978,7 @@ void Layer::display() {
             par = this->opacity;
             if (this->filename == "" || this->type == ELEM_LIVE) {
                 draw_box(lightgrey, darkgrey, this->opacity->box, -1);
-            } else par->handle();
+            } else mainmix->handle_param(par);
             if (par == mainmix->adaptparam) {
                 for (int i = 0; i < mainmix->currlays[!mainprogram->prevmodus].size(); i++) {
                     mainmix->currlays[!mainprogram->prevmodus][i]->opacity->value = par->value;
@@ -4286,7 +4286,7 @@ void Layer::display() {
             render_text("LP", white, this->lpbut->box->vtxcoords->x1 + 0.009375f,
                                    this->lpbut->box->vtxcoords->y1 + 0.0624f - 0.045f, 0.00075f, 0.0012f);
             // Draw and handle genmidibutton
-            this->genmidibut->handle(0, 0);
+            mainprogram->handle_button(this->genmidibut, 0, 0);
             for (int i = 0; i < mainmix->currlays[!mainprogram->prevmodus].size(); i++) {
                 mainmix->currlays[!mainprogram->prevmodus][i]->genmidibut->value = this->genmidibut->value;
                 mainmix->currlays[!mainprogram->prevmodus][i]->set_clones();  // reminder: only if changed

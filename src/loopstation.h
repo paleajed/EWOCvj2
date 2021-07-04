@@ -8,7 +8,7 @@ class LoopStationElement;
 class LoopStation {
 	public:
 		std::vector<LoopStationElement*> elems;
-		int numelems = 8;
+		int numelems = 256;
 		std::vector<LoopStationElement*> readelems;
 		std::vector<int> readelemnrs;
 		std::vector<Param*> allparams;
@@ -34,9 +34,12 @@ class LoopStation {
 									, 0.0f, 0.0f, 0.5f
 									, 0.5f, 0.0f, 0.5f
 									, 0.0f, 0.5f, 0.5f};
-		Box *upscrbox;
-		Box *downscrbox;
-		int scrpos = 0;
+        Box *upscrbox;
+        Box *downscrbox;
+        Box *confupscrbox;
+        Box *confdownscrbox;
+        int scrpos = 0;
+        int confscrpos = 0;
 		LoopStationElement* currelem;
 		LoopStationElement* add_elem();
 		LoopStationElement* free_element();

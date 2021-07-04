@@ -380,7 +380,8 @@ class Mixer {
         void copy_pbos(Layer *clay, Layer *lay);
         void set_values(Layer* clay, Layer* lay, bool open);
 		void copy_effects(Layer* slay, Layer* dlay, bool comp);
-		void handle_adaptparam();
+        void handle_param(Param* par);
+        void handle_adaptparam();
 		void handle_clips();
 		void record_video(std::string reccod);
 		void new_file(int decks, bool alive);
@@ -474,11 +475,6 @@ class Mixer {
 		int fps[25];
 		int fpscount = 0;
 		int rate;
-		int midishelfstage = 0;
-		int midishelfpos = 0;
-		Shelf* midishelf = nullptr;
-        int midishelfstart = 0;
-        int midishelfend = 0;
 
 		float time = 0.0f;
 		float oldtime = 0.0f;

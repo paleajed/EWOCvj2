@@ -8,6 +8,10 @@
 #include <boost/filesystem.hpp>
 
 #include <ostream>
+#include <istream>
+#include <iostream>
+#include <fstream>
+#include <ios>
 #include <string>
 #include <codecvt>
 
@@ -632,20 +636,68 @@ Program::Program() {
 	this->inserteffectbox->tooltiptitle = "Add effect ";
 	this->inserteffectbox->tooltip = "Add effect to end of layer effect queue ";
 
-	this->tmset = new Box;
-    this->tmset->smflag = 2;
-	this->tmset->vtxcoords->x1 = -0.2f;
-	this->tmset->vtxcoords->y1 = 0.74f;
-	this->tmset->vtxcoords->w = 0.4f;
-	this->tmset->vtxcoords->h = 0.26f;
-	this->tmset->tooltiptitle = "Toggle MIDI set to configure ";
-	this->tmset->tooltip = "Leftclick to toggle the MIDI set that is being configured. ";
+    this->tmcat[0] = new Box;
+    this->tmcat[0]->smflag = 2;
+    this->tmcat[0]->vtxcoords->x1 = -0.3f;
+    this->tmcat[0]->vtxcoords->y1 = 0.92f;
+    this->tmcat[0]->vtxcoords->w = 0.5f;
+    this->tmcat[0]->vtxcoords->h = 0.08f;
+    this->tmcat[0]->tooltiptitle = "Edit general MIDI layer controls ";
+    this->tmcat[0]->tooltip = "Leftclick to toggle the settings window to the general MIDI layer controls settings. ";
+    this->tmcat[1] = new Box;
+    this->tmcat[1]->smflag = 2;
+    this->tmcat[1]->vtxcoords->x1 = -0.3f;
+    this->tmcat[1]->vtxcoords->y1 = 0.84f;
+    this->tmcat[1]->vtxcoords->w = 0.5f;
+    this->tmcat[1]->vtxcoords->h = 0.08f;
+    this->tmcat[1]->tooltiptitle = "Edit shelf buttons MIDI ";
+    this->tmcat[1]->tooltip = "Leftclick to toggle the settings window to the shelf buttons MIDI settings. ";
+    this->tmcat[2] = new Box;
+    this->tmcat[2]->smflag = 2;
+    this->tmcat[2]->vtxcoords->x1 = -0.3f;
+    this->tmcat[2]->vtxcoords->y1 = 0.76f;
+    this->tmcat[2]->vtxcoords->w = 0.5f;
+    this->tmcat[2]->vtxcoords->h = 0.08f;
+    this->tmcat[2]->tooltiptitle = "Edit loopstation buttons MIDI";
+    this->tmcat[2]->tooltip = "Leftclick to toggle the settings window to the loopstation buttons MIDI settings. ";
+    this->tmset[0] = new Box;
+    this->tmset[0]->smflag = 2;
+    this->tmset[0]->vtxcoords->x1 = 0.2f;
+    this->tmset[0]->vtxcoords->y1 = 0.94f;
+    this->tmset[0]->vtxcoords->w = 0.1f;
+    this->tmset[0]->vtxcoords->h = 0.06f;
+    this->tmset[0]->tooltiptitle = "Switch to set A ";
+    this->tmset[0]->tooltip = "Leftclick to toggle the MIDI set that is being configured to set A. ";
+    this->tmset[1] = new Box;
+    this->tmset[1]->smflag = 2;
+    this->tmset[1]->vtxcoords->x1 = 0.2f;
+    this->tmset[1]->vtxcoords->y1 = 0.88f;
+    this->tmset[1]->vtxcoords->w = 0.1f;
+    this->tmset[1]->vtxcoords->h = 0.06f;
+    this->tmset[1]->tooltiptitle = "Switch to set B ";
+    this->tmset[1]->tooltip = "Leftclick to toggle the MIDI set that is being configured to set B. ";
+    this->tmset[2] = new Box;
+    this->tmset[2]->smflag = 2;
+    this->tmset[2]->vtxcoords->x1 = 0.2f;
+    this->tmset[2]->vtxcoords->y1 = 0.82f;
+    this->tmset[2]->vtxcoords->w = 0.1f;
+    this->tmset[2]->vtxcoords->h = 0.06f;
+    this->tmset[2]->tooltiptitle = "Switch to set C ";
+    this->tmset[2]->tooltip = "Leftclick to toggle the MIDI set that is being configured to set C. ";
+    this->tmset[3] = new Box;
+    this->tmset[3]->smflag = 2;
+    this->tmset[3]->vtxcoords->x1 = 0.2f;
+    this->tmset[3]->vtxcoords->y1 = 0.76f;
+    this->tmset[3]->vtxcoords->w = 0.1f;
+    this->tmset[3]->vtxcoords->h = 0.06f;
+    this->tmset[3]->tooltiptitle = "Switch to set D ";
+    this->tmset[3]->tooltip = "Leftclick to toggle the MIDI set that is being configured to set D. ";
 	this->tmplay = new Box;
     this->tmplay->smflag = 2;
 	this->tmplay->vtxcoords->x1 = -0.075;
 	this->tmplay->vtxcoords->y1 = -0.9f;
 	this->tmplay->vtxcoords->w = 0.15f;
-	this->tmplay->vtxcoords->h = 0.26f;
+	this->tmplay->vtxcoords->h = 0.06f;
 	this->tmplay->tooltiptitle = "Set MIDI for play button ";
 	this->tmplay->tooltip = "Leftclick to start waiting for a MIDI command that will trigger normal video play for this preset. ";
 	this->tmbackw = new Box;
@@ -2061,67 +2113,67 @@ Button::~Button() {
     this->deautomate();
 }
 
-bool Button::handle(bool circlein) {
-    bool ret = this->handle(circlein, true);
+bool Program::handle_button(Button *but, bool circlein) {
+    bool ret = this->handle_button(but, circlein, true);
     return ret;
 }
 
-bool Button::handle(bool circlein, bool automation) {
+bool Program::handle_button(Button *but, bool circlein, bool automation) {
     bool changed = false;
-    if (this->box->in()) {
+    if (but->box->in()) {
         if (mainprogram->leftmouse || mainprogram->orderleftmouse) {
-            this->oldvalue = this->value;
-            this->value++;
-            if (this->value > this->toggle) this->value = 0;
-            if (this->toggle == 0) this->value = 1;
+            but->oldvalue = but->value;
+            but->value++;
+            if (but->value > but->toggle) but->value = 0;
+            if (but->toggle == 0) but->value = 1;
             if (automation) {
                 for (int i = 0; i < loopstation->elems.size(); i++) {
                     if (loopstation->elems[i]->recbut->value) {
-                        loopstation->elems[i]->add_button_automationentry(this);
+                        loopstation->elems[i]->add_button_automationentry(but);
                     }
                 }
             }
             changed = true;
         }
         if (mainprogram->menuactivation && !mainprogram->menuondisplay) {
-            if (loopstation->butelemmap.find(this) != loopstation->butelemmap.end()) mainprogram->parammenu4->state = 2;
+            if (loopstation->butelemmap.find(but) != loopstation->butelemmap.end()) mainprogram->parammenu4->state = 2;
             else mainprogram->parammenu3->state = 2;
             mainmix->learnparam = nullptr;
-            mainmix->learnbutton = this;
+            mainmix->learnbutton = but;
             mainprogram->menuactivation = false;
         }
-        this->box->acolor[0] = 0.5f;
-        this->box->acolor[1] = 0.5f;
-        this->box->acolor[2] = 1.0f;
-        this->box->acolor[3] = 1.0f;
+        but->box->acolor[0] = 0.5f;
+        but->box->acolor[1] = 0.5f;
+        but->box->acolor[2] = 1.0f;
+        but->box->acolor[3] = 1.0f;
     }
-    else if (this->value && !circlein) {
-        this->box->acolor[0] = this->tcol[0];
-        this->box->acolor[1] = this->tcol[1];
-        this->box->acolor[2] = this->tcol[2];
-        this->box->acolor[3] = this->tcol[3];
+    else if (but->value && !circlein) {
+        but->box->acolor[0] = but->tcol[0];
+        but->box->acolor[1] = but->tcol[1];
+        but->box->acolor[2] = but->tcol[2];
+        but->box->acolor[3] = but->tcol[3];
     }
     else {
-        this->box->acolor[0] = 0.0f;
-        this->box->acolor[1] = 0.0f;
-        this->box->acolor[2] = 0.0f;
-        this->box->acolor[3] = 1.0f;
+        but->box->acolor[0] = 0.0f;
+        but->box->acolor[1] = 0.0f;
+        but->box->acolor[2] = 0.0f;
+        but->box->acolor[3] = 1.0f;
     }
-    draw_box(this->box, -1);
+    draw_box(but->box, -1);
 
     if (circlein) {
-        float radx = this->box->vtxcoords->w / 2.0f;
-        float rady = this->box->vtxcoords->h / 2.0f;
-        if (this->value) {
+        float radx = but->box->vtxcoords->w / 2.0f;
+        float rady = but->box->vtxcoords->h / 2.0f;
+        if (but->value) {
             int cs = 1;
-            if (this == mainmix->recbutS || this == mainmix->recbutQ) {
+            if (but == mainmix->recbutS || but == mainmix->recbutQ) {
                 if ((int)(mainmix->time * 10) % 10 > 5) cs = 2;
             }
-            draw_box(this->ccol, this->box->vtxcoords->x1 + radx, this->box->vtxcoords->y1 + rady, 0.0225f, cs);
+            draw_box(but->ccol, but->box->vtxcoords->x1 + radx, but->box->vtxcoords->y1 + rady, 0.0225f, cs);
         }
-        else draw_box(this->ccol, this->box->vtxcoords->x1 + radx, this->box->vtxcoords->y1 + rady, 0.0225f, 2);
-        float x = render_text(this->name[0], white, 0.0f, 0.0f, radx / 50.0f, rady / 50.0f, 0, 0, 0)[0] / 2.0f;
-        render_text(this->name[0], white, this->box->vtxcoords->x1 - x + radx / 4.0f, this->box->vtxcoords->y1 - x * rady / radx + rady / 4.0f, radx / 50.0f, rady / 50.0f);
+        else draw_box(but->ccol, but->box->vtxcoords->x1 + radx, but->box->vtxcoords->y1 + rady, 0.0225f, 2);
+        float x = render_text(but->name[0], white, 0.0f, 0.0f, radx / 50.0f, rady / 50.0f, 0, 0, 0)[0] / 2.0f;
+        render_text(but->name[0], white, but->box->vtxcoords->x1 - x + radx / 4.0f, but->box->vtxcoords->y1 - x * rady / radx + rady / 4.0f, radx / 50.0f, rady / 50.0f);
     }
 
     return changed;
@@ -3599,99 +3651,105 @@ void Program::handle_clipmenu() {
 void Program::handle_mainmenu() {
 	int k = -1;
 	// Draw and Program::handle mainmenu
-	k = mainprogram->handle_menu(mainprogram->mainmenu);
+	k = this->handle_menu(this->mainmenu);
 	if (k == 0) {
-		mainprogram->pathto = "NEWPROJECT";
-		std::string reqdir = mainprogram->projdir;
+		this->pathto = "NEWPROJECT";
+		std::string reqdir = this->projdir;
 		if (reqdir.substr(0, 1) == ".") reqdir.erase(0, 2);
 		std::string path;
         std::string name = "Untitled_0";
         int count = 0;
         while (1) {
-            path = mainprogram->projdir + name;
+            path = this->projdir + name;
             if (!exists(path)) {
                 break;
             }
             count++;
             name = remove_version(name) + "_" + std::to_string(count);
         }
-		std::thread filereq(&Program::get_outname, mainprogram, "New project", "application/ewocvj2-project", boost::filesystem::absolute(reqdir + name).generic_string());
+		std::thread filereq(&Program::get_outname, this, "New project", "application/ewocvj2-project", boost::filesystem::absolute(reqdir + name).generic_string());
 		filereq.detach();
 	}
 	else if (k == 1) {
-		mainprogram->pathto = "OPENPROJECT";
-        std::thread filereq(&Program::get_inname, mainprogram, "Open project", "application/ewocvj2-project", boost::filesystem::canonical(mainprogram->currprojdir).generic_string());
+		this->pathto = "OPENPROJECT";
+        std::thread filereq(&Program::get_inname, this, "Open project", "application/ewocvj2-project", boost::filesystem::canonical(this->currprojdir).generic_string());
         filereq.detach();
 	}
 	else if (k == 2) {
-		mainprogram->project->do_save(mainprogram->project->path);
+		this->project->do_save(this->project->path);
 	}
 	else if (k == 3) {
-		mainprogram->pathto = "SAVEPROJECT";
-        std::string path = find_unused_filename(basename(mainprogram->project->path), mainprogram->currprojdir, "");
-		std::thread filereq(&Program::get_outname, mainprogram, "Save project file", "", path);
+		this->pathto = "SAVEPROJECT";
+        std::string path = find_unused_filename(basename(this->project->path), this->currprojdir, "");
+		std::thread filereq(&Program::get_outname, this, "Save project file", "", path);
 		filereq.detach();
 	}
     else if (k == 4) {
         // load autosave
-        mainprogram->pathto = "OPENAUTOSAVE";
-        std::thread filereq(&Program::get_inname, mainprogram, "Open autosaved project", "application/ewocvj2-project", boost::filesystem::canonical(mainprogram->project->autosavedir).generic_string());
+        this->pathto = "OPENAUTOSAVE";
+        std::thread filereq(&Program::get_inname, this, "Open autosaved project", "application/ewocvj2-project", boost::filesystem::canonical(this->project->autosavedir).generic_string());
         filereq.detach();
     }
 	else if (k == 5) {
 		mainmix->new_state();
 	}
      else if (k == 6) {
-		if (!mainprogram->prefon) {
-			mainprogram->prefon = true;
-			SDL_ShowWindow(mainprogram->prefwindow);
+		if (!this->prefon) {
+			this->prefon = true;
+			SDL_ShowWindow(this->prefwindow);
 
             std::string tt = "EWOCvj2 Preferences";
             std::thread tofront = std::thread{&Program::postponed_to_front, this, tt};
             tofront.detach();
 
-            for (int i = 0; i < mainprogram->prefs->items.size(); i++) {
-				PrefCat* item = mainprogram->prefs->items[i];
+            for (int i = 0; i < this->prefs->items.size(); i++) {
+				PrefCat* item = this->prefs->items[i];
 				if (item->name != "Invisible") item->box->upvtxtoscr();
 			}
 		}
 		else {
-			SDL_RaiseWindow(mainprogram->prefwindow);
+			SDL_RaiseWindow(this->prefwindow);
 		}
 	}
 	else if (k == 7) {
-		if (!mainprogram->midipresets) {
-			mainprogram->midipresets = true;
-			SDL_ShowWindow(mainprogram->config_midipresetswindow);
+		if (!this->midipresets) {
+			this->midipresets = true;
+			SDL_ShowWindow(this->config_midipresetswindow);
 
             std::string tt = "Tune MIDI";
             std::thread tofront = std::thread{&Program::postponed_to_front, this, tt};
             tofront.detach();
 
-            mainprogram->tmset->upvtxtoscr();
-			mainprogram->tmscratch->upvtxtoscr();
-			mainprogram->tmfreeze->upvtxtoscr();
-			mainprogram->tmplay->upvtxtoscr();
-			mainprogram->tmbackw->upvtxtoscr();
-			mainprogram->tmbounce->upvtxtoscr();
-			mainprogram->tmfrforw->upvtxtoscr();
-			mainprogram->tmfrbackw->upvtxtoscr();
-			mainprogram->tmspeed->upvtxtoscr();
-			mainprogram->tmspeedzero->upvtxtoscr();
-			mainprogram->tmopacity->upvtxtoscr();
+            this->tmcat[0]->upvtxtoscr();
+            this->tmcat[1]->upvtxtoscr();
+            this->tmcat[2]->upvtxtoscr();
+            this->tmset[0]->upvtxtoscr();
+            this->tmset[1]->upvtxtoscr();
+            this->tmset[2]->upvtxtoscr();
+            this->tmset[3]->upvtxtoscr();
+			this->tmscratch->upvtxtoscr();
+			this->tmfreeze->upvtxtoscr();
+			this->tmplay->upvtxtoscr();
+			this->tmbackw->upvtxtoscr();
+			this->tmbounce->upvtxtoscr();
+			this->tmfrforw->upvtxtoscr();
+			this->tmfrbackw->upvtxtoscr();
+			this->tmspeed->upvtxtoscr();
+			this->tmspeedzero->upvtxtoscr();
+			this->tmopacity->upvtxtoscr();
 		}
 		else {
-			SDL_RaiseWindow(mainprogram->config_midipresetswindow);
+			SDL_RaiseWindow(this->config_midipresetswindow);
 		}
 	}
 	else if (k == 8) {
-		mainprogram->quitting = "quitted";
+		this->quitting = "quitted";
 	}
 
-	if (mainprogram->menuchosen) {
-		mainprogram->menuchosen = false;
-		mainprogram->menuactivation = 0;
-		mainprogram->menuresults.clear();
+	if (this->menuchosen) {
+		this->menuchosen = false;
+		this->menuactivation = 0;
+		this->menuresults.clear();
 	}
 }
 
@@ -3751,9 +3809,6 @@ void Program::handle_shelfmenu() {
 		// learn MIDI for element layer load
 		mainmix->learn = true;
 		mainmix->learnparam = nullptr;
-		mainmix->midishelfstage = 1;
-		mainmix->midishelfpos = mainmix->mouseshelfelem;
-		mainmix->midishelf = mainmix->mouseshelf;
 		mainmix->learnbutton = mainmix->mouseshelf->buttons[mainmix->mouseshelfelem];
 	}
 
@@ -4017,7 +4072,13 @@ void Program::handle_editmenu() {
             SDL_RaiseWindow(mainprogram->config_midipresetswindow);
             SDL_GL_MakeCurrent(mainprogram->config_midipresetswindow, glc);
             glUseProgram(mainprogram->ShaderProgram_tm);
-            mainprogram->tmset->upvtxtoscr();
+            mainprogram->tmcat[0]->upvtxtoscr();
+            mainprogram->tmcat[1]->upvtxtoscr();
+            mainprogram->tmcat[2]->upvtxtoscr();
+            mainprogram->tmset[0]->upvtxtoscr();
+            mainprogram->tmset[1]->upvtxtoscr();
+            mainprogram->tmset[2]->upvtxtoscr();
+            mainprogram->tmset[3]->upvtxtoscr();
             mainprogram->tmscratch->upvtxtoscr();
             mainprogram->tmfreeze->upvtxtoscr();
             mainprogram->tmplay->upvtxtoscr();
@@ -4080,7 +4141,7 @@ void Program::handle_lpstmenu() {
 void Program::preview_modus_buttons() {
 	// Draw and handle buttons
 	if (mainprogram->prevmodus) {
-        mainprogram->toscreenA->handle();
+        mainprogram->handle_button(mainprogram->toscreenA);
         if (mainprogram->toscreenA->toggled()) {
             mainprogram->toscreenA->value = 0;
             mainprogram->toscreenA->oldvalue = 0;
@@ -4093,7 +4154,7 @@ void Program::preview_modus_buttons() {
         render_text(mainprogram->toscreenA->name[0], white, box->vtxcoords->x1 + 0.0117f, box->vtxcoords->y1 + 0.0225f,
                     0.0006f, 0.001f);
 
-        mainprogram->toscreenB->handle();
+        mainprogram->handle_button(mainprogram->toscreenB);
         if (mainprogram->toscreenB->toggled()) {
             mainprogram->toscreenB->value = 0;
             mainprogram->toscreenB->oldvalue = 0;
@@ -4106,7 +4167,7 @@ void Program::preview_modus_buttons() {
         render_text(mainprogram->toscreenB->name[0], white, box->vtxcoords->x1 + 0.0117f, box->vtxcoords->y1 + 0.0225f,
                     0.0006f, 0.001f);
 
-        mainprogram->toscreenM->handle();
+        mainprogram->handle_button(mainprogram->toscreenM);
         if (mainprogram->toscreenM->toggled()) {
             mainprogram->toscreenM->value = 0;
             mainprogram->toscreenM->oldvalue = 0;
@@ -4127,7 +4188,7 @@ void Program::preview_modus_buttons() {
                 }
             }
             for (int i = 0; i < 3; i++) {
-                mainprogram->toscene[m][0][i]->handle();
+                mainprogram->handle_button(mainprogram->toscene[m][0][i]);
                 if (mainprogram->toscene[m][0][i]->toggled()) {
                     mainprogram->toscene[m][0][i]->value = 0;
                     mainprogram->toscene[m][0][i]->oldvalue = 0;
@@ -4141,7 +4202,7 @@ void Program::preview_modus_buttons() {
                 render_text(std::to_string(scns[i]), white, box->vtxcoords->x1 + 0.0117f,
                             box->vtxcoords->y1 + 0.0225f, 0.0006f, 0.001f);
 
-                mainprogram->toscene[m][1][i]->handle();
+                mainprogram->handle_button(mainprogram->toscene[m][1][i]);
                 if (mainprogram->toscene[m][1][i]->toggled()) {
                     mainprogram->toscene[m][1][i]->value = 0;
                     mainprogram->toscene[m][1][i]->oldvalue = 0;
@@ -4158,7 +4219,7 @@ void Program::preview_modus_buttons() {
         }
     }
 	if (mainprogram->prevmodus) {
-        mainprogram->backtopreA->handle();
+        mainprogram->handle_button(mainprogram->backtopreA);
         if (mainprogram->backtopreA->toggled()) {
             mainprogram->backtopreA->value = 0;
             mainprogram->backtopreA->oldvalue = 0;
@@ -4169,7 +4230,7 @@ void Program::preview_modus_buttons() {
         register_triangle_draw(white, white, box->vtxcoords->x1 + box->vtxcoords->w / 2.0f + 0.0117f, box->vtxcoords->y1 + 0.0225f, 0.0165f, 0.0312f, UP, CLOSED);
         render_text(mainprogram->backtopreA->name[0], white, mainprogram->backtopreA->box->vtxcoords->x1 + 0.0117f, mainprogram->backtopreA->box->vtxcoords->y1 + 0.0225f, 0.0006, 0.001);
 
-        mainprogram->backtopreB->handle();
+        mainprogram->handle_button(mainprogram->backtopreB);
         if (mainprogram->backtopreB->toggled()) {
             mainprogram->backtopreB->value = 0;
             mainprogram->backtopreB->oldvalue = 0;
@@ -4180,7 +4241,7 @@ void Program::preview_modus_buttons() {
         register_triangle_draw(white, white, box->vtxcoords->x1 + box->vtxcoords->w / 2.0f + 0.0117f, box->vtxcoords->y1 + 0.0225f, 0.0165f, 0.0312f, UP, CLOSED);
         render_text(mainprogram->backtopreB->name[0], white, mainprogram->backtopreB->box->vtxcoords->x1 + 0.0117f, mainprogram->backtopreB->box->vtxcoords->y1 + 0.0225f, 0.0006, 0.001);
 
-        mainprogram->backtopreM->handle();
+        mainprogram->handle_button(mainprogram->backtopreM);
         if (mainprogram->backtopreM->toggled()) {
             mainprogram->backtopreM->value = 0;
             mainprogram->backtopreM->oldvalue = 0;
@@ -4193,7 +4254,7 @@ void Program::preview_modus_buttons() {
 
     }
 
-	mainprogram->modusbut->handle();
+    mainprogram->handle_button(mainprogram->modusbut);
 	if (mainprogram->modusbut->toggled()) {
 		mainprogram->prevmodus = !mainprogram->prevmodus;
 		//modusbut is button that toggles effect preview mode to performance mode and back
@@ -4252,9 +4313,8 @@ bool Program::preferences_handle() {
 	this->btbuf = this->prboxtbuf;
 	glClear(GL_COLOR_BUFFER_BIT);
 
-	for (int i = 0; i < this->prefs->items.size(); i++) {
+	for (int i = 1; i < this->prefs->items.size(); i++) {
 		PrefCat* item = this->prefs->items[i];
-        if (item->name == "Invisible") continue;
 		if (item->box->in(mx, my)) {
 			draw_box(white, lightblue, item->box, -1);
 			if (this->leftmouse && this->prefs->curritem != i) {
@@ -4301,20 +4361,25 @@ bool Program::preferences_handle() {
 						if (!midici->items[i]->onoff) {
 							if (std::find(midici->onnames.begin(), midici->onnames.end(), midici->items[i]->name) != midici->onnames.end()) {
 								midici->onnames.erase(std::find(midici->onnames.begin(), midici->onnames.end(), midici->items[i]->name));
-								this->openports.erase(std::find(this->openports.begin(), this->openports.end(), i));
+								if (std::find(this->openports.begin(), this->openports.end(), i) != this->openports.end()) {
+                                    this->openports.erase(std::find(this->openports.begin(), this->openports.end(), i));
+                                }
 								mci->items[i]->midiin->cancelCallback();
 								delete mci->items[i]->midiin;
 							}
 						}
 						else {
-							midici->onnames.push_back(midici->items[i]->name);
-							RtMidiIn* midiin = new RtMidiIn();
-							if (std::find(this->openports.begin(), this->openports.end(), i) == this->openports.end()) {
-								midiin->openPort(i);
-								midiin->setCallback(&mycallback, (void*)midici->items[i]);
-								this->openports.push_back(i);
-							}
-							mci->items[i]->midiin = midiin;
+                            if (std::find(midici->onnames.begin(), midici->onnames.end(), midici->items[i]->name) == midici->onnames.end()) {
+                                midici->onnames.push_back(midici->items[i]->name);
+                                RtMidiIn *midiin = new RtMidiIn();
+                                if (std::find(this->openports.begin(), this->openports.end(), i) ==
+                                    this->openports.end()) {
+                                    midiin->openPort(i);
+                                    midiin->setCallback(&mycallback, (void *) midici->items[i]);
+                                    this->openports.push_back(i);
+                                }
+                                mci->items[i]->midiin = midiin;
+                            }
 						}
 					}
 				}
@@ -4514,8 +4579,8 @@ bool Program::preferences_handle() {
                 }
             }
 
-            if (cond1) *(std::string*)mci->items[i]->dest = paths[0];
-            else *(std::vector<std::string>*)mci->items[i]->dest = paths;
+            //if (cond1) *(std::string*)mci->items[i]->dest = paths[0];
+            //else *(std::vector<std::string>*)mci->items[i]->dest = paths;
         }
 
         if (cond2) {
@@ -4539,7 +4604,7 @@ bool Program::preferences_handle() {
 
 	}
 
-	this->qualfr = std::clamp(this->qualfr, 1, 10);
+	this->qualfr = std::clamp((int)this->qualfr, 1, 10);
 
     std::unique_ptr <Box> box = std::make_unique <Box> ();
 	box->vtxcoords->x1 = 0.75f;
@@ -4574,54 +4639,59 @@ bool Program::preferences_handle() {
 	if (box->in(mx, my)) {
 		draw_box(white, lightblue, box, -1);
 		if (this->leftmouse) {
-			for (int i = 0; i < mci->items.size(); i++) {
-				if (mci->items[i]->renaming) {
-                    if (mci->items[i]->type == PREF_ONOFF) {
-                        *(std::string*)mci->items[i]->dest = mci->items[i]->value;
-                        break;
+            for (int j = 1; j < this->prefs->items.size(); j++) {
+                PrefCat *item = this->prefs->items[j];
+                for (int i = 0; i < item->items.size(); i++) {
+                    if (item->items[i]->renaming) {
+                        if (item->items[i]->type == PREF_ONOFF) {
+                            *(bool *) item->items[i]->dest = item->items[i]->value;
+                            break;
+                        }
+                        if (item->items[i]->type == PREF_STRING) {
+                            item->items[i]->str = this->inputtext;
+                            end_input();
+                            *(std::string *) item->items[i]->dest = item->items[i]->str;
+                            break;
+                        }
+                        if (item->items[i]->type == PREF_PATH) {
+                            item->items[i]->path = this->inputtext;
+                            end_input();
+                            *(std::string *) item->items[i]->dest = item->items[i]->path;
+                            break;
+                        }
+                        if (item->items[i]->type == PREF_NUMBER) {
+                            try {
+                                item->items[i]->value = std::stoi(this->inputtext);
+                                *(int *) item->items[i]->dest = item->items[i]->value;
+                            }
+                            catch (...) {}
+                            end_input();
+                            break;
+                        }
                     }
-                    if (mci->items[i]->type == PREF_STRING) {
-                        mci->items[i]->str = this->inputtext;
-                        end_input();
-                        *(std::string*)mci->items[i]->dest = mci->items[i]->str;
-                        break;
-                    }
-                    if (mci->items[i]->type == PREF_PATH) {
-                        mci->items[i]->path = this->inputtext;
-                        end_input();
-                        *(std::string*)mci->items[i]->dest = mci->items[i]->path;
-                        break;
-                    }
-					if (mci->items[i]->type == PREF_NUMBER) {
-						try {
-							mci->items[i]->value = std::stoi(this->inputtext);
-                            *(int*)mci->items[i]->dest = mci->items[i]->value;
-						}
-						catch (...) {}
-						end_input();
-						break;
-					}
-				}
 
-                if (mci->items[i]->type == PREF_STRING) {
-                    *(std::string*)mci->items[i]->dest = mci->items[i]->str;
-                    break;
-                }
-                if (mci->items[i]->type == PREF_PATH) {
-                    *(std::string*)mci->items[i]->dest = mci->items[i]->path;
-                    break;
-                }
-                if (mci->items[i]->type == PREF_NUMBER) {
-                    *(int*)mci->items[i]->dest = mci->items[i]->value;
-                }
+                    /*if (item->items[i]->type == PREF_STRING) {
+                        *(std::string *) item->items[i]->dest = item->items[i]->str;
+                        break;
+                    }
+                    if (item->items[i]->type == PREF_PATH) {
+                        *(std::string *) item->items[i]->dest = item->items[i]->path;
+                        break;
+                    }
+                    if (item->items[i]->type == PREF_NUMBER) {
+                        *(float*) item->items[i]->dest = (float)item->items[i]->value;
+                    }*/
 
-                if (mci->items[i]->dest = &this->seatname) {
-                    if (mci->items[i]->str != this->oldseatname) {
-                        send(this->sock, "CHANGE_NAME", 11, 0);
-                        send(this->sock, this->seatname.c_str(), this->seatname.size(), 0);
+                    if (item->items[i]->dest == &this->seatname) {
+                        if (item->items[i]->str != this->oldseatname) {
+                            if (mainprogram->connected > 0) {
+                                send(this->sock, "CHANGE_NAME", 12, 0);
+                                send(this->sock, this->seatname.c_str(), this->seatname.size(), 0);
+                            }
+                        }
                     }
                 }
-			}
+            }
 			if (this->projnamechanged) {  // project name not included in preferences file, only change if
 			    // user clicks SAVE
                 if (this->project->name != remove_extension(basename(this->project->path))) {
@@ -4801,6 +4871,8 @@ int Program::config_midipresets_handle() {
 
 	mainprogram->insmall = true;
 
+	mainprogram->directmode = true;
+
 	SDL_GL_MakeCurrent(mainprogram->config_midipresetswindow, glc);
 	mainprogram->bvao = mainprogram->tmboxvao;
 	mainprogram->bvbuf = mainprogram->tmboxvbuf;
@@ -4860,202 +4932,324 @@ int Program::config_midipresets_handle() {
 	}
 
 	if (mainprogram->tmlearn == TM_NONE) {
-		//draw config_midipresets_handle screen
-		draw_box(yellow, grey, mainprogram->tmset, -1);
-		if (mainprogram->tmset->in(mx, my)) {
-			draw_box(red, lightblue, mainprogram->tmset, -1);
-			if (mainprogram->leftmouse) {
-				mainprogram->midipresetsset++;
-				if (mainprogram->midipresetsset == 5) mainprogram->midipresetsset = 1;
-			}
-		}
-		if (mainprogram->midipresetsset == 1) render_text("set A", yellow, 0.01f, 0.78f, 0.0024f, 0.004f, 2);
-		else if (mainprogram->midipresetsset == 2) render_text("set B", yellow, 0.01f, 0.78f, 0.0024f, 0.004f, 2);
-		else if (mainprogram->midipresetsset == 3) render_text("set C", yellow, 0.01f, 0.78f, 0.0024f, 0.004f, 2);
-		else if (mainprogram->midipresetsset == 4) render_text("set D", yellow, 0.01f, 0.78f, 0.0024f, 0.004f, 2);
-		LayMidi* lm = nullptr;
-		if (mainprogram->midipresetsset == 1) lm = laymidiA;
-		else if (mainprogram->midipresetsset == 2) lm = laymidiB;
-		else if (mainprogram->midipresetsset == 3) lm = laymidiC;
-		else if (mainprogram->midipresetsset == 4) lm = laymidiD;
-
-		draw_box(white, black, mainprogram->tmplay, -1);
-		if (lm->play->midi0 != -1) draw_box(white, darkgreen2, mainprogram->tmplay, -1);
-		if (mainprogram->tmplay->in(mx, my)) {
-			draw_box(white, lightblue, mainprogram->tmplay, -1);
-			if (mainprogram->leftmouse) {
-				mainprogram->tmlearn = TM_PLAY;
-			}
-		}
-		register_triangle_draw(white, white, -0.025f, -0.83f, 0.06f, 0.12f, RIGHT, CLOSED, true);
-
-		draw_box(white, black, mainprogram->tmbackw, -1);
-		if (lm->backw->midi0 != -1) draw_box(white, darkgreen2, mainprogram->tmbackw, -1);
-		if (mainprogram->tmbackw->in(mx, my)) {
-			draw_box(white, lightblue, mainprogram->tmbackw, -1);
-			if (mainprogram->leftmouse) {
-				mainprogram->tmlearn = TM_BACKW;
-			}
-		}
-		register_triangle_draw(white, white, -0.335f, -0.83f, 0.06f, 0.12f, LEFT, CLOSED, true);
-
-		draw_box(white, black, mainprogram->tmbounce, -1);
-		if (lm->bounce->midi0 != -1) draw_box(white, darkgreen2, mainprogram->tmbounce, -1);
-		if (mainprogram->tmbounce->in(mx, my)) {
-			draw_box(white, lightblue, mainprogram->tmbounce, -1);
-			if (mainprogram->leftmouse) {
-				mainprogram->tmlearn = TM_BOUNCE;
-			}
-		}
-		register_triangle_draw(white, white, -0.195f, -0.83f, 0.04f, 0.12f, LEFT, CLOSED, true);
-		register_triangle_draw(white, white, -0.14f, -0.83f, 0.04f, 0.12f, RIGHT, CLOSED, true);
-
-		draw_box(white, black, mainprogram->tmfrforw, -1);
-		if (lm->frforw->midi0 != -1) draw_box(white, darkgreen2, mainprogram->tmfrforw, -1);
-		if (mainprogram->tmfrforw->in(mx, my)) {
-			draw_box(white, lightblue, mainprogram->tmfrforw, -1);
-			if (mainprogram->leftmouse) {
-				mainprogram->tmlearn = TM_FRFORW;
-			}
-		}
-		register_triangle_draw(white, white, 0.125f, -0.83f, 0.06f, 0.12f, RIGHT, OPEN, true);
-
-        draw_box(white, black, mainprogram->tmstop, -1);
-        if (lm->stop->midi0 != -1) draw_box(white, darkgreen2, mainprogram->tmstop, -1);
-        if (mainprogram->tmstop->in(mx, my)) {
-            draw_box(white, lightblue, mainprogram->tmstop, -1);
-            if (mainprogram->leftmouse) {
-                mainprogram->tmlearn = TM_STOP;
+        //draw config_midipresets_handle screen
+        for (int i = 0; i < 3; i++) {
+            if (mainprogram->configcatmidi == i) draw_box(white, darkgreen1, mainprogram->tmcat[i], -1);
+            else draw_box(white, black, mainprogram->tmcat[i], -1);
+            if (mainprogram->tmcat[i]->in(mx, my)) {
+                draw_box(red, lightblue, mainprogram->tmcat[i], -1);
+                if (mainprogram->leftmouse) {
+                    mainprogram->configcatmidi = i;
+                }
             }
         }
-        draw_box(white, white, mainprogram->tmstop->vtxcoords->x1 + 0.04f, mainprogram->tmstop->vtxcoords->y1 + 0.065f, 0.07f, 0.13f, -1);
+        render_text("Layer controls", white, -0.25f, 0.94f, 0.0024f, 0.004f, 2);
+        render_text("Shelf buttons", white, -0.25f, 0.86f, 0.0024f, 0.004f, 2);
+        render_text("Loopstation buttons", white, -0.25f, 0.78f, 0.0024f, 0.004f, 2);
 
-        draw_box(white, black, mainprogram->tmloop, -1);
-        if (lm->loop->midi0 != -1) draw_box(white, darkgreen2, mainprogram->tmloop, -1);
-        if (mainprogram->tmloop->in(mx, my)) {
-            draw_box(white, lightblue, mainprogram->tmloop, -1);
-            if (mainprogram->leftmouse) {
-                mainprogram->tmlearn = TM_LOOP;
+        if (mainprogram->configcatmidi == 0) {
+            for (int i = 0; i < 4; i++) {
+                if (mainprogram->midipresetsset == i) draw_box(white, darkgreen1, mainprogram->tmset[i], -1);
+                else draw_box(white, black, mainprogram->tmset[i], -1);
+                if (mainprogram->tmset[i]->in(mx, my)) {
+                    draw_box(red, lightblue, mainprogram->tmset[i], -1);
+                    if (mainprogram->leftmouse) {
+                        mainprogram->midipresetsset = i;
+                    }
+                }
             }
-        }
-        render_text("LP", white, mainprogram->tmloop->vtxcoords->x1 + 0.06f, mainprogram->tmloop->vtxcoords->y1 + 0.1f, 0.0024f, 0.004f, 2);
+            render_text("Set A", white, 0.21f, 0.96f, 0.0018f, 0.003f, 2);
+            render_text("Set B", white, 0.21f, 0.90f, 0.0018f, 0.003f, 2);
+            render_text("Set C", white, 0.21f, 0.84f, 0.0018f, 0.003f, 2);
+            render_text("Set D", white, 0.21f, 0.78f, 0.0018f, 0.003f, 2);
+            LayMidi *lm = nullptr;
+            if (mainprogram->midipresetsset == 0) lm = laymidiA;
+            else if (mainprogram->midipresetsset == 1) lm = laymidiB;
+            else if (mainprogram->midipresetsset == 2) lm = laymidiC;
+            else if (mainprogram->midipresetsset == 3) lm = laymidiD;
 
-        draw_box(white, black, mainprogram->tmfrbackw, -1);
-        if (lm->frbackw->midi0 != -1) draw_box(white, darkgreen2, mainprogram->tmfrbackw, -1);
-        if (mainprogram->tmfrbackw->in(mx, my)) {
-            draw_box(white, lightblue, mainprogram->tmfrbackw, -1);
-            if (mainprogram->leftmouse) {
-                mainprogram->tmlearn = TM_FRBACKW;
+            draw_box(white, black, mainprogram->tmplay, -1);
+            if (lm->play->midi0 != -1) draw_box(white, darkgreen2, mainprogram->tmplay, -1);
+            if (mainprogram->tmplay->in(mx, my)) {
+                draw_box(white, lightblue, mainprogram->tmplay, -1);
+                if (mainprogram->leftmouse) {
+                    mainprogram->tmlearn = TM_PLAY;
+                }
             }
+            register_triangle_draw(white, white, -0.025f, -0.83f, 0.06f, 0.12f, RIGHT, CLOSED, true);
+
+            draw_box(white, black, mainprogram->tmbackw, -1);
+            if (lm->backw->midi0 != -1) draw_box(white, darkgreen2, mainprogram->tmbackw, -1);
+            if (mainprogram->tmbackw->in(mx, my)) {
+                draw_box(white, lightblue, mainprogram->tmbackw, -1);
+                if (mainprogram->leftmouse) {
+                    mainprogram->tmlearn = TM_BACKW;
+                }
+            }
+            register_triangle_draw(white, white, -0.335f, -0.83f, 0.06f, 0.12f, LEFT, CLOSED, true);
+
+            draw_box(white, black, mainprogram->tmbounce, -1);
+            if (lm->bounce->midi0 != -1) draw_box(white, darkgreen2, mainprogram->tmbounce, -1);
+            if (mainprogram->tmbounce->in(mx, my)) {
+                draw_box(white, lightblue, mainprogram->tmbounce, -1);
+                if (mainprogram->leftmouse) {
+                    mainprogram->tmlearn = TM_BOUNCE;
+                }
+            }
+            register_triangle_draw(white, white, -0.195f, -0.83f, 0.04f, 0.12f, LEFT, CLOSED, true);
+            register_triangle_draw(white, white, -0.14f, -0.83f, 0.04f, 0.12f, RIGHT, CLOSED, true);
+
+            draw_box(white, black, mainprogram->tmfrforw, -1);
+            if (lm->frforw->midi0 != -1) draw_box(white, darkgreen2, mainprogram->tmfrforw, -1);
+            if (mainprogram->tmfrforw->in(mx, my)) {
+                draw_box(white, lightblue, mainprogram->tmfrforw, -1);
+                if (mainprogram->leftmouse) {
+                    mainprogram->tmlearn = TM_FRFORW;
+                }
+            }
+            register_triangle_draw(white, white, 0.125f, -0.83f, 0.06f, 0.12f, RIGHT, OPEN, true);
+
+            draw_box(white, black, mainprogram->tmstop, -1);
+            if (lm->stop->midi0 != -1) draw_box(white, darkgreen2, mainprogram->tmstop, -1);
+            if (mainprogram->tmstop->in(mx, my)) {
+                draw_box(white, lightblue, mainprogram->tmstop, -1);
+                if (mainprogram->leftmouse) {
+                    mainprogram->tmlearn = TM_STOP;
+                }
+            }
+            draw_box(white, white, mainprogram->tmstop->vtxcoords->x1 + 0.04f,
+                     mainprogram->tmstop->vtxcoords->y1 + 0.065f, 0.07f, 0.13f, -1);
+
+            draw_box(white, black, mainprogram->tmloop, -1);
+            if (lm->loop->midi0 != -1) draw_box(white, darkgreen2, mainprogram->tmloop, -1);
+            if (mainprogram->tmloop->in(mx, my)) {
+                draw_box(white, lightblue, mainprogram->tmloop, -1);
+                if (mainprogram->leftmouse) {
+                    mainprogram->tmlearn = TM_LOOP;
+                }
+            }
+            render_text("LP", white, mainprogram->tmloop->vtxcoords->x1 + 0.06f,
+                        mainprogram->tmloop->vtxcoords->y1 + 0.1f, 0.0024f, 0.004f, 2);
+
+            draw_box(white, black, mainprogram->tmfrbackw, -1);
+            if (lm->frbackw->midi0 != -1) draw_box(white, darkgreen2, mainprogram->tmfrbackw, -1);
+            if (mainprogram->tmfrbackw->in(mx, my)) {
+                draw_box(white, lightblue, mainprogram->tmfrbackw, -1);
+                if (mainprogram->leftmouse) {
+                    mainprogram->tmlearn = TM_FRBACKW;
+                }
+            }
+            register_triangle_draw(white, white, -0.485f, -0.83f, 0.06f, 0.12f, LEFT, OPEN, true);
+
+            draw_box(white, black, mainprogram->tmspeed, -1);
+            if (lm->speed->midi0 != -1) draw_box(white, darkgreen2, mainprogram->tmspeed, -1);
+            if (mainprogram->tmspeedzero->in(mx, my)) {
+                draw_box(white, lightblue, mainprogram->tmspeedzero, -1);
+                if (mainprogram->leftmouse) {
+                    mainprogram->tmlearn = TM_SPEEDZERO;
+                }
+            } else if (mainprogram->tmspeed->in(mx, my)) {
+                draw_box(white, lightblue, mainprogram->tmspeed, -1);
+                if (mainprogram->leftmouse) {
+                    mainprogram->tmlearn = TM_SPEED;
+                }
+                draw_box(white, black, mainprogram->tmspeedzero, -1);
+                if (lm->speedzero->midi0 != -1) draw_box(white, darkgreen2, mainprogram->tmspeedzero, -1);
+            } else {
+                draw_box(white, black, mainprogram->tmspeedzero, -1);
+                if (lm->speedzero->midi0 != -1) draw_box(white, darkgreen2, mainprogram->tmspeedzero, -1);
+            }
+            render_text("ONE", white, -0.755f, -0.08f, 0.0024f, 0.004f, 2);
+            render_text("SPEED", white, -0.765f, -0.48f, 0.0024f, 0.004f, 2);
+
+            draw_box(white, black, mainprogram->tmopacity, -1);
+            if (lm->opacity->midi0 != -1) draw_box(white, darkgreen2, mainprogram->tmopacity, -1);
+            if (mainprogram->tmopacity->in(mx, my)) {
+                draw_box(white, lightblue, mainprogram->tmopacity, -1);
+                if (mainprogram->leftmouse) {
+                    mainprogram->tmlearn = TM_OPACITY;
+                }
+            }
+            render_text("OPACITY", white, 0.605f, -0.48f, 0.0024f, 0.004f, 2);
+
+            if (mainprogram->tmfreeze->in(mx, my)) {
+                draw_box(white, lightblue, mainprogram->tmfreeze, -1);
+                if (mainprogram->leftmouse) {
+                    mainprogram->tmlearn = TM_FREEZE;
+                }
+            } else {
+                if (lm->scratch->midi0 != -1) draw_box(darkgreen2, 0.0f, 0.1f, 0.6f, 1, smw, smh);
+                if (sqrt(pow((mx / (glob->w / 2.0f) - 1.0f) * glob->w / glob->h, 2) +
+                         pow((glob->h - my) / (glob->h / 2.0f) - 1.1f, 2)) < 0.6f) {
+                    draw_box(lightblue, 0.0f, 0.1f, 0.6f, 1, smw, smh);
+                    mainprogram->tmscratch->in(mx, my);  //tooltip
+                    if (mainprogram->leftmouse) {
+                        mainprogram->tmlearn = TM_SCRATCH;
+                    }
+                }
+                draw_box(white, black, mainprogram->tmfreeze, -1);
+                if (lm->scratchtouch->midi0 != -1) draw_box(white, darkgreen2, mainprogram->tmfreeze, -1);
+            }
+            draw_box(white, 0.0f, 0.1f, 0.6f, 2, smw, smh);
+            render_text("SCRATCH", white, -0.1f, -0.3f, 0.0024f, 0.004f, 2);
+            render_text("FREEZE", white, -0.08f, 0.12f, 0.0024f, 0.004f, 2);
+
+            std::unique_ptr<Box> box = std::make_unique<Box>();
+            box->vtxcoords->x1 = -1.0f;
+            box->vtxcoords->y1 = -1.0f;
+            box->vtxcoords->w = 0.3f;
+            box->vtxcoords->h = 0.2f;
+            box->upvtxtoscr();
+            draw_box(white, black, box, -1);
+            if (box->in(mx, my)) {
+                draw_box(white, lightblue, box, -1);
+                if (mainprogram->leftmouse) {
+                    lm->play->midi0 = -1;
+                    lm->backw->midi0 = -1;
+                    lm->bounce->midi0 = -1;
+                    lm->frforw->midi0 = -1;
+                    lm->frbackw->midi0 = -1;
+                    lm->stop->midi0 = -1;
+                    lm->loop->midi0 = -1;
+                    lm->scratch->midi0 = -1;
+                    lm->scratchtouch->midi0 = -1;
+                    lm->speed->midi0 = -1;
+                    lm->speedzero->midi0 = -1;
+                    lm->opacity->midi0 = -1;
+                    lm->play->midi1 = -1;
+                    lm->backw->midi1 = -1;
+                    lm->bounce->midi1 = -1;
+                    lm->frforw->midi1 = -1;
+                    lm->frbackw->midi1 = -1;
+                    lm->stop->midi1 = -1;
+                    lm->loop->midi1 = -1;
+                    lm->scratch->midi1 = -1;
+                    lm->scratchtouch->midi1 = -1;
+                    lm->speed->midi1 = -1;
+                    lm->speedzero->midi1 = -1;
+                    lm->opacity->midi1 = -1;
+                    lm->play->unregister_midi();
+                    lm->backw->unregister_midi();
+                    lm->bounce->unregister_midi();
+                    lm->frforw->unregister_midi();
+                    lm->frbackw->unregister_midi();
+                    lm->stop->unregister_midi();
+                    lm->loop->unregister_midi();
+                    lm->scratch->unregister_midi();
+                    lm->scratchtouch->unregister_midi();
+                    lm->speed->unregister_midi();
+                    lm->speedzero->unregister_midi();
+                    lm->opacity->unregister_midi();
+                    return 0;
+                }
+            }
+            render_text("NEW", white, box->vtxcoords->x1 + 0.02f, box->vtxcoords->y1 + 0.03f, 0.0024f, 0.004f, 2);
         }
-        register_triangle_draw(white, white, -0.485f, -0.83f, 0.06f, 0.12f, LEFT, OPEN, true);
+    }
 
-        draw_box(white, black, mainprogram->tmspeed, -1);
-		if (lm->speed->midi0 != -1) draw_box(white, darkgreen2, mainprogram->tmspeed, -1);
-		if (mainprogram->tmspeedzero->in(mx, my)) {
-			draw_box(white, lightblue, mainprogram->tmspeedzero, -1);
-			if (mainprogram->leftmouse) {
-				mainprogram->tmlearn = TM_SPEEDZERO;
-			}
-		}
-		else if (mainprogram->tmspeed->in(mx, my)) {
-			draw_box(white, lightblue, mainprogram->tmspeed, -1);
-			if (mainprogram->leftmouse) {
-				mainprogram->tmlearn = TM_SPEED;
-			}
-			draw_box(white, black, mainprogram->tmspeedzero, -1);
-			if (lm->speedzero->midi0 != -1) draw_box(white, darkgreen2, mainprogram->tmspeedzero, -1);
-		}
-		else {
-			draw_box(white, black, mainprogram->tmspeedzero, -1);
-			if (lm->speedzero->midi0 != -1) draw_box(white, darkgreen2, mainprogram->tmspeedzero, -1);
-		}
-		render_text("ONE", white, -0.755f, -0.08f, 0.0024f, 0.004f, 2);
-		render_text("SPEED", white, -0.765f, -0.48f, 0.0024f, 0.004f, 2);
 
-		draw_box(white, black, mainprogram->tmopacity, -1);
-		if (lm->opacity->midi0 != -1) draw_box(white, darkgreen2, mainprogram->tmopacity, -1);
-		if (mainprogram->tmopacity->in(mx, my)) {
-			draw_box(white, lightblue, mainprogram->tmopacity, -1);
-			if (mainprogram->leftmouse) {
-				mainprogram->tmlearn = TM_OPACITY;
-			}
-		}
-		render_text("OPACITY", white, 0.605f, -0.48f, 0.0024f, 0.004f, 2);
-
-		if (mainprogram->tmfreeze->in(mx, my)) {
-			draw_box(white, lightblue, mainprogram->tmfreeze, -1);
-			if (mainprogram->leftmouse) {
-				mainprogram->tmlearn = TM_FREEZE;
-			}
-		}
-		else {
-			if (lm->scratch->midi0 != -1) draw_box(darkgreen2, 0.0f, 0.1f, 0.6f, 1, smw, smh);
-			if (sqrt(pow((mx / (glob->w / 2.0f) - 1.0f) * glob->w / glob->h, 2) + pow((glob->h - my) / (glob->h / 2.0f) - 1.1f, 2)) < 0.6f) {
-				draw_box(lightblue, 0.0f, 0.1f, 0.6f, 1, smw, smh);
-				mainprogram->tmscratch->in(mx, my);  //tooltip
-				if (mainprogram->leftmouse) {
-					mainprogram->tmlearn = TM_SCRATCH;
-				}
-			}
-			draw_box(white, black, mainprogram->tmfreeze, -1);
-			if (lm->scratchtouch->midi0 != -1) draw_box(white, darkgreen2, mainprogram->tmfreeze, -1);
-		}
-		draw_box(white, 0.0f, 0.1f, 0.6f, 2, smw, smh);
-		render_text("SCRATCH", white, -0.1f, -0.3f, 0.0024f, 0.004f, 2);
-		render_text("FREEZE", white, -0.08f, 0.12f, 0.0024f, 0.004f, 2);
-
-        std::unique_ptr <Box> box = std::make_unique <Box> ();
-		box->vtxcoords->x1 = -1.0f;
-		box->vtxcoords->y1 = -1.0f;
-		box->vtxcoords->w = 0.3f;
-		box->vtxcoords->h = 0.2f;
-		box->upvtxtoscr();
-		draw_box(white, black, box, -1);
-		if (box->in(mx, my)) {
-			draw_box(white, lightblue, box, -1);
-			if (mainprogram->leftmouse) {
-				lm->play->midi0 = -1;
-				lm->backw->midi0 = -1;
-				lm->bounce->midi0 = -1;
-				lm->frforw->midi0 = -1;
-                lm->frbackw->midi0 = -1;
-                lm->stop->midi0 = -1;
-                lm->loop->midi0 = -1;
-				lm->scratch->midi0 = -1;
-				lm->scratchtouch->midi0 = -1;
-				lm->speed->midi0 = -1;
-				lm->speedzero->midi0 = -1;
-				lm->opacity->midi0 = -1;
-				lm->play->midi1 = -1;
-				lm->backw->midi1 = -1;
-				lm->bounce->midi1 = -1;
-				lm->frforw->midi1 = -1;
-                lm->frbackw->midi1 = -1;
-                lm->stop->midi1 = -1;
-                lm->loop->midi1 = -1;
-				lm->scratch->midi1 = -1;
-				lm->scratchtouch->midi1 = -1;
-				lm->speed->midi1 = -1;
-				lm->speedzero->midi1 = -1;
-				lm->opacity->midi1 = -1;
-                lm->play->unregister_midi();
-                lm->backw->unregister_midi();
-                lm->bounce->unregister_midi();
-                lm->frforw->unregister_midi();
-                lm->frbackw->unregister_midi();
-                lm->stop->unregister_midi();
-                lm->loop->unregister_midi();
-                lm->scratch->unregister_midi();
-                lm->scratchtouch->unregister_midi();
-                lm->speed->unregister_midi();
-                lm->speedzero->unregister_midi();
-                lm->opacity->unregister_midi();
-				return 0;
-			}
-		}
-		render_text("NEW", white, box->vtxcoords->x1 + 0.02f, box->vtxcoords->y1 + 0.03f, 0.0024f, 0.004f, 2);
+	if (mainprogram->configcatmidi == 1) {
+	    for (int m = 0; m < 2; m++) {
+            for (int j = 0; j < 4; j++) {
+                for (int i = 0; i < 4; i++) {
+                    ShelfElement *elem = mainprogram->shelves[m]->elements[j * 4 + i];
+                    Box box;
+                    box.vtxcoords->x1 = m + i * 0.16f - 0.8f;
+                    box.vtxcoords->y1 = (3 - j) * 0.28f - 0.56f;
+                    box.vtxcoords->w = 0.16f;
+                    box.vtxcoords->h = 0.28f;
+                    box.upvtxtoscr();
+                    box.tooltiptitle = "Shelf button MIDI config ";
+                    box.tooltip = "Leftclicking this box allows setting a MIDI control for this shelf element. ";
+                    if (elem->button->midi[0] != -1) draw_box(white, darkgreen1, &box, -1);
+                    else draw_box(white, black, &box, -1);
+                    if (box.in(mx, my)) {
+                        draw_box(white, lightblue, &box, -1);
+                        if (mainprogram->leftmouse) {
+                            mainmix->learn = true;
+                            mainmix->learnparam = nullptr;
+                            mainmix->learnbutton = mainprogram->shelves[m]->buttons[j * 4 + i];
+                        }
+                    }
+                }
+            }
+	    }
+        if (mainmix->learn) {
+            draw_box(red, blue, -0.3f, -0.0f, 0.6f, 0.3f, -1);
+            render_text("Awaiting MIDI input.", white, -0.1f, 0.2f, 0.001f, 0.0016f);
+            render_text("Rightclick cancels.", white, -0.1f, 0.06f, 0.001f, 0.0016f);
+        }
 	}
+
+    if (mainprogram->configcatmidi == 2) {
+        for (int i = 0; i < 8; i++) {
+            LoopStationElement *elem = loopstation->elems[i + loopstation->confscrpos];
+            loopstation->confscrpos = mainprogram->handle_scrollboxes(loopstation->confupscrbox, loopstation->confdownscrbox, loopstation->elems.size(), loopstation->confscrpos, 8, mx, my);
+
+            Box box;
+            box.vtxcoords->x1 = -0.33f;
+            box.vtxcoords->y1 = 0.45f - 0.15f * i;
+            box.vtxcoords->w = 0.08f;
+            box.vtxcoords->h = 0.15f;
+            box.upvtxtoscr();
+            box.tooltiptitle = "Loopstation record button MIDI config ";
+            box.tooltip = "Leftclicking this box allows setting a MIDI control for the record button of this loopstation element. ";
+            float radx = box.vtxcoords->w / 2.0f;
+            float rady = box.vtxcoords->h / 2.0f;
+            if (elem->recbut->midi[0] != -1) draw_box(white, darkgreen1, &box, -1);
+            else draw_box(white, black, &box, -1);
+            if (box.in(mx, my)) {
+                draw_box(white, lightblue, &box, -1);
+                if (mainprogram->leftmouse) {
+                    mainmix->learn = true;
+                    mainmix->learnparam = nullptr;
+                    mainmix->learnbutton = elem->recbut;
+                }
+            }
+            draw_box(red, box.vtxcoords->x1 + radx, box.vtxcoords->y1 + rady, 0.045f, 2, smw, smh);
+
+            box.vtxcoords->x1 = -0.25f;
+            box.upvtxtoscr();
+            box.tooltiptitle = "Loopstation loop play button MIDI config ";
+            box.tooltip = "Leftclicking this box allows setting a MIDI control for the loop play button of this loopstation element. ";
+            if (elem->loopbut->midi[0] != -1) draw_box(white, darkgreen1, &box, -1);
+            else draw_box(white, black, &box, -1);
+            if (box.in(mx, my)) {
+                draw_box(white, lightblue, &box, -1);
+                if (mainprogram->leftmouse) {
+                    mainmix->learn = true;
+                    mainmix->learnparam = nullptr;
+                    mainmix->learnbutton = elem->loopbut;
+                }
+            }
+            draw_box(green, box.vtxcoords->x1 + radx, box.vtxcoords->y1 + rady, 0.045f, 2, smw, smh);
+
+            box.vtxcoords->x1 = -0.17f;
+            box.upvtxtoscr();
+            box.tooltiptitle = "Loopstation single shot play button MIDI config ";
+            box.tooltip = "Leftclicking this box allows setting a MIDI control for the single shot play button of this loopstation element. ";
+            if (elem->playbut->midi[0] != -1) draw_box(white, darkgreen1, &box, -1);
+            else draw_box(white, black, &box, -1);
+            if (box.in(mx, my)) {
+                draw_box(white, lightblue, &box, -1);
+                if (mainprogram->leftmouse) {
+                    mainmix->learn = true;
+                    mainmix->learnparam = nullptr;
+                    mainmix->learnbutton = elem->playbut;
+                }
+            }
+            draw_box(blue, box.vtxcoords->x1 + radx, box.vtxcoords->y1 + rady, 0.045f, 2, smw, smh);
+
+            render_text(std::to_string(i + loopstation->confscrpos + 1), white, box.vtxcoords->x1 - 0.3f, box.vtxcoords->y1 + 0.03f, 0.0024f, 0.004f, 2);
+        }
+
+        if (mainmix->learn) {
+            draw_box(red, blue, -0.3f, -0.0f, 0.6f, 0.3f, -1);
+            render_text("Awaiting MIDI input.", white, -0.1f, 0.2f, 0.001f, 0.0016f);
+            render_text("Rightclick cancels.", white, -0.1f, 0.06f, 0.001f, 0.0016f);
+        }
+    }
+
 
     std::unique_ptr <Box> box = std::make_unique <Box> ();
 	box->vtxcoords->x1 = 0.80f;
@@ -5100,6 +5294,8 @@ int Program::config_midipresets_handle() {
 	mainprogram->my = -1;
 
 	mainprogram->insmall = false;
+
+    mainprogram->directmode = false;
 
 	return 1;
 }
@@ -5781,7 +5977,7 @@ Preferences::Preferences() {
     this->items.push_back(pimidi);
     for (int i = 0; i < this->items.size(); i++) {
         PrefCat *item = this->items[i];
-        if(item->name == "Invisible") continue;
+        if (item->name == "Invisible") continue;
         item->box->smflag = 1;
         item->box->vtxcoords->x1 = -1.0f;
         item->box->vtxcoords->y1 = 1.0f - (i + 1) * 0.2f;
@@ -5829,10 +6025,10 @@ void Preferences::load() {
                                     safegetline(rfile, istring);
                                     if (pi->type == PREF_ONOFF) {
                                         pi->onoff = std::stoi(istring);
-                                        if (pi->dest) *(bool*)pi->dest = pi->onoff;
+                                        if (pi->dest) *(bool*)pi->dest = (bool)pi->onoff;
                                     }
                                     else if (pi->type == PREF_NUMBER) {
-                                        pi->value = std::stoi(istring);
+                                        pi->value = std::stof(istring);
                                         if (pi->dest) *(float*)pi->dest = (float)pi->value;
                                     }
                                     else if (pi->type == PREF_STRING) {
@@ -5885,20 +6081,27 @@ void Preferences::load() {
                                     if (!pi->onoff) {
                                         if (std::find(pim->onnames.begin(), pim->onnames.end(), pi->name) != pim->onnames.end()) {
                                             pim->onnames.erase(std::find(pim->onnames.begin(), pim->onnames.end(), pi->name));
-                                            mainprogram->openports.erase(std::find(mainprogram->openports.begin(), mainprogram->openports.end(), foundpos));
+                                            if (std::find(mainprogram->openports.begin(), mainprogram->openports.end(), i) == mainprogram->openports.end()) {
+                                                mainprogram->openports.erase(std::find(mainprogram->openports.begin(),
+                                                                                       mainprogram->openports.end(),
+                                                                                       foundpos));
+                                            }
                                             pi->midiin->cancelCallback();
                                             delete pi->midiin;
                                         }
                                     }
                                     else {
-                                        pim->onnames.push_back(pi->name);
-                                        RtMidiIn *midiin = new RtMidiIn();
-                                        if (std::find(mainprogram->openports.begin(), mainprogram->openports.end(), foundpos) == mainprogram->openports.end()) {
-                                            midiin->openPort(foundpos);
-                                            midiin->setCallback(&mycallback, (void*)pim->items[foundpos]);
-                                            mainprogram->openports.push_back(foundpos);
+                                        if (std::find(pim->onnames.begin(), pim->onnames.end(), pi->name) == pim->onnames.end()) {
+                                            pim->onnames.push_back(pi->name);
+                                            RtMidiIn *midiin = new RtMidiIn();
+                                            if (std::find(mainprogram->openports.begin(), mainprogram->openports.end(),
+                                                          foundpos) == mainprogram->openports.end()) {
+                                                midiin->openPort(foundpos);
+                                                midiin->setCallback(&mycallback, (void *) pim->items[foundpos]);
+                                                mainprogram->openports.push_back(foundpos);
+                                            }
+                                            pi->midiin = midiin;
                                         }
-                                        pi->midiin = midiin;
                                     }
                                 }
                             }
@@ -6168,7 +6371,7 @@ PIDirs::PIDirs() {
     pdi->path = mainprogram->homedir + "/Videos/";
 #endif
 #endif
-    mainprogram->projdir = pdi->path;
+    mainprogram->contentpath = pdi->path;
     this->items.push_back(pdi);
     pos++;
 
@@ -6414,6 +6617,16 @@ PIProg::PIProg() {
     pdi->valuebox->tooltiptitle = "Set autosave interval ";
     pdi->valuebox->tooltip = "Leftclicking the value allows typing the autosave interval as number of minutes. ";
     mainprogram->asminutes = pdi->value;
+    this->items.push_back(pdi);
+    pos++;
+
+    pdi = new PrefItem(this, pos, "Loopstation: always same 8 MIDI controls", PREF_ONOFF, (void*)&mainprogram->sameeight);
+    pdi->onoff = false;
+    pdi->namebox->tooltiptitle = "Loopstation: always same 8 MIDI controls ";
+    pdi->namebox->tooltip = "If the program always uses the same 8 MIDI controls even if the list has been scrolled. ";
+    pdi->valuebox->tooltiptitle = "Loopstation: always same 8 MIDI controls: toggle ";
+    pdi->valuebox->tooltip = "Leftclick to turn on/off if the program always uses the same 8 MIDI controls even if the list has been scrolled. ";
+    mainprogram->sameeight = pdi->onoff;
     this->items.push_back(pdi);
     pos++;
 }
@@ -6990,3 +7203,314 @@ char* Program::bl_recv(int sock, char *buf, size_t sz, int flags) {
     fcntl(sock, F_SETFL, flags2);
     return buf;
 }
+
+
+
+
+
+//*************
+
+// SHELVES
+
+//*************
+
+
+void Shelf::save(const std::string &path) {
+    std::string ext = path.substr(path.length() - 6, std::string::npos);
+    std::string str;
+    bool rem = false;
+    if (ext != ".shelf") {
+        str = path;
+    }
+    else {
+        str = dirname(path);
+        rem = true;
+    }
+
+    // save shelf in a directory
+    boost::filesystem::path p{ str };
+    if (!boost::filesystem::exists(p)) {
+        boost::filesystem::create_directory(p);
+    }
+    str += '/' + basename(path);
+
+    std::vector<std::string> filestoadd;
+    std::ofstream wfile;
+    wfile.open(str);
+    wfile << "EWOCvj SHELFFILE V0.1\n";
+
+    wfile << "ELEMS\n";
+    for (int j = 0; j < 16; j++) {
+        ShelfElement* elem = this->elements[j];
+        wfile << "PATH\n";
+        wfile << elem->path;
+        wfile << "\n";
+        wfile << "RELPATH\n";
+        if (elem->path != "") {
+            wfile << boost::filesystem::relative(elem->path, mainprogram->contentpath).string();
+        }
+        else {
+            wfile << elem->path;
+        }
+        wfile << "\n";
+        if (elem->path == "") continue;
+        wfile << "TYPE\n";
+        wfile << std::to_string(elem->type);
+        wfile << "\n";
+        if (elem->type == ELEM_LAYER || elem->type == ELEM_DECK || elem->type == ELEM_MIX) {
+            filestoadd.push_back(elem->path);
+        }
+        filestoadd.push_back(elem->jpegpath);
+        wfile << "LAUNCHTYPE\n";
+        wfile << std::to_string(elem->launchtype);
+        wfile << "\n";
+    }
+    wfile << "ENDOFELEMS\n";
+
+    wfile << "ELEMMIDI\n";
+    for (int j = 0; j < 16; j++) {
+        ShelfElement* elem = this->elements[j];
+        wfile << "MIDI0\n";
+        wfile << std::to_string(this->buttons[j]->midi[0]);
+        wfile << "\n";
+        wfile << "MIDI1\n";
+        wfile << std::to_string(this->buttons[j]->midi[1]);
+        wfile << "\n";
+        wfile << "MIDIPORT\n";
+        wfile << elem->button->midiport;
+        wfile << "\n";
+    }
+    wfile << "ENDOFELEMMIDI\n";
+
+    wfile << "ENDOFFILE\n";
+    wfile.close();
+
+    std::ofstream outputfile;
+    outputfile.open(mainprogram->temppath + "tempconcatshelf", std::ios::out | std::ios::binary);
+    std::vector<std::vector<std::string>> filestoadd2;
+    filestoadd2.push_back(filestoadd);
+    concat_files(outputfile, str, filestoadd2);
+    outputfile.close();
+    if (exists(str)) boost::filesystem::remove(str);
+    if (rem) boost::filesystem::remove(path);
+    boost::filesystem::rename(mainprogram->temppath + "tempconcatshelf", str);
+}
+
+
+void Shelf::open_files_shelf() {
+    auto next_elem = []()
+    {
+        mainprogram->shelffileselem++;
+        mainprogram->shelffilescount++;
+        if (mainprogram->shelffilescount == mainprogram->paths.size() || mainprogram->shelffileselem == 16) {
+            mainprogram->openfilesshelf = false;
+            mainprogram->paths.clear();
+            mainprogram->multistage = 0;
+        }
+    };
+    if (mainprogram->paths.size() == 0) {
+        next_elem();
+        return;
+    }
+
+    // order elements
+    bool cont = mainprogram->order_paths(true);
+    if (!cont) return;
+
+    // set element values
+    ShelfElement* elem = this->elements[mainprogram->shelffileselem];
+    std::string str = mainprogram->paths[mainprogram->shelffilescount];
+    // determine file type
+    std::string istring = "";
+    std::string result = deconcat_files(str);
+    if (!mainprogram->openerr) {
+        bool concat = (result != "");
+        std::ifstream rfile;
+        if (concat) rfile.open(result);
+        else rfile.open(str);
+        safegetline(rfile, istring);
+    }
+    else mainprogram->openerr = false;
+    if (istring == "EWOCvj LAYERFILE") {
+        elem->type = ELEM_LAYER;
+    } else if (istring == "EWOCvj DECKFILE") {
+        elem->jpegpath = "";
+        elem->type = ELEM_DECK;
+    } else if (istring == "EWOCvj MIXFILE") {
+        elem->jpegpath = "";
+        elem->type = ELEM_MIX;
+    } else if (isimage(str)) {
+        elem->type = ELEM_IMAGE;
+    } else if (isvideo(str)) {
+        elem->type = ELEM_FILE;
+    } else if (mainprogram->openerr) {
+        next_elem();
+        return;
+    }
+
+    elem->jpegpath = find_unused_filename("shelftex", mainprogram->temppath, ".jpg");
+    // texes are inserted after phase 2 of order_paths
+    save_thumb(elem->jpegpath, elem->tex);
+
+    // next element, clean up when at end
+    next_elem();
+    mainprogram->currshelffilesdir = dirname(str);
+}
+
+
+bool Shelf::insert_deck(const std::string& path, bool deck, int pos) {
+    ShelfElement* elem = this->elements[pos];
+    elem->path = path;
+    elem->type = ELEM_DECK;
+    GLuint butex = -1;
+    if (mainprogram->prevmodus) {
+        butex = elem->tex;
+        elem->tex = copy_tex(mainprogram->nodesmain->mixnodes[deck]->mixtex);
+    }
+    else {
+        butex = elem->tex;
+        elem->tex = copy_tex(mainprogram->nodesmain->mixnodescomp[deck]->mixtex);
+    }
+    if (butex != -1) glDeleteTextures(1, &butex);
+    std::string jpegpath = path + ".jpeg";
+    save_thumb(jpegpath, elem->tex);
+    elem->jpegpath = jpegpath;
+    return 1;
+}
+
+bool Shelf::insert_mix(const std::string& path, int pos) {
+    ShelfElement* elem = this->elements[pos];
+    elem->path = path;
+    elem->type = ELEM_MIX;
+    GLuint butex = -1;
+    if (mainprogram->prevmodus) {
+        butex = elem->tex;
+        elem->tex = copy_tex(mainprogram->nodesmain->mixnodes[2]->mixtex);
+    }
+    else {
+        butex = elem->tex;
+        elem->tex = copy_tex(mainprogram->nodesmain->mixnodescomp[2]->mixtex);
+    }
+    if (butex != -1) glDeleteTextures(1, &butex);
+    std::string jpegpath = path + ".jpeg";
+    save_thumb(jpegpath, elem->tex);
+    elem->jpegpath = jpegpath;
+    return 1;
+}
+
+bool Shelf::open(const std::string &path) {
+
+    if (!exists(path)) return 0;
+    std::string result = deconcat_files(path);
+    bool concat = (result != "");
+    std::ifstream rfile;
+    if (concat) rfile.open(result);
+    else rfile.open(path);
+
+    this->erase();
+    int filecount = 0;
+    std::string istring;
+    safegetline(rfile, istring);
+    while (safegetline(rfile, istring)) {
+        if (istring == "ENDOFFILE") {
+            break;
+        }
+        else if (istring == "ELEMS") {
+            int count = 0;
+            ShelfElement *elem = nullptr;
+            while (safegetline(rfile, istring)) {
+                if (istring == "ENDOFELEMS") break;
+                if (istring == "PATH") {
+                    safegetline(rfile, istring);
+                    elem = this->elements[count];
+                    elem->path = istring;
+                    count++;
+                    if (!exists(elem->path)) {
+                        elem->path = "";
+                    }
+                }
+                if (istring == "RELPATH") {
+                    safegetline(rfile, istring);
+                    if (elem->path == "" && istring != "") {
+                        boost::filesystem::current_path(mainprogram->contentpath);
+                        elem->path = pathtoplatform(boost::filesystem::absolute(istring).string());
+                    }
+                    if (elem->path == "") {
+                        continue;
+                    }
+                }
+                if (istring == "TYPE") {
+                    safegetline(rfile, istring);
+                    elem->type = (ELEM_TYPE) std::stoi(istring);
+                    std::string suf = "";
+                    if (elem->type == ELEM_LAYER) suf = ".layer";
+                    if (elem->type == ELEM_DECK) suf = ".deck";
+                    if (elem->type == ELEM_MIX) suf = ".mix";
+                    if (suf != "") {
+                        if (concat) {
+                            elem->path = find_unused_filename(basename(elem->path), mainprogram->temppath, suf);
+                            boost::filesystem::rename(result + "_" + std::to_string(filecount) + ".file", elem->path);
+                            filecount++;
+                        }
+                    }
+                    else {
+                        if (!exists(elem->path)) {
+                            mainmix->newshelfpaths.push_back(elem->path);
+                            mainmix->newpathshelfelems.push_back(elem);
+                            elem->path = "";
+                        }
+                    }
+                    safegetline(rfile, istring);
+                    elem->jpegpath = result + "_" + std::to_string(filecount) + ".file";
+                    open_thumb(result + "_" + std::to_string(filecount) + ".file", elem->tex);
+                    filecount++;
+                }
+                if (istring == "LAUNCHTYPE") {
+                    safegetline(rfile, istring);
+                    elem->launchtype = std::stoi(istring);
+                }
+            }
+        }
+        else if (istring == "ELEMMIDI") {
+            int count = 0;
+            ShelfElement* elem;
+            while (safegetline(rfile, istring)) {
+                if (istring == "ENDOFELEMMIDI") break;
+                if (istring == "MIDI0") {
+                    elem = this->elements[count];
+                    count++;
+                    safegetline(rfile, istring);
+                    elem->button->midi[0] = std::stoi(istring);
+                }
+                if (istring == "MIDI1") {
+                    safegetline(rfile, istring);
+                    elem->button->midi[1] = std::stoi(istring);
+                }
+                if (istring == "MIDIPORT") {
+                    safegetline(rfile, istring);
+                    elem->button->midiport = istring;
+                    elem->button->register_midi();
+                }
+            }
+        }
+    }
+
+    rfile.close();
+
+    return 1;
+}
+
+void Shelf::erase() {
+    for (int i = 0; i < 16; i++) {
+        ShelfElement* elem = this->elements[i];
+        elem->path = "";
+        elem->type = ELEM_FILE;
+        blacken(elem->tex);
+        blacken(elem->oldtex);
+        elem->button->midi[0] = -1;
+        elem->button->midi[1] = -1;
+        elem->button->midiport = "";
+        elem->button->unregister_midi();
+    }
+}
+

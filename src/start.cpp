@@ -611,120 +611,146 @@ void mycallback( double deltatime, std::vector< unsigned char > *message, void *
    	}
   	
   	if (mainprogram->midipresets) {
-  		LayMidi *lm = nullptr;
-  		if (mainprogram->midipresetsset == 1) lm = laymidiA;
-  		else if (mainprogram->midipresetsset == 2) lm = laymidiB;
-  		else if (mainprogram->midipresetsset == 3) lm = laymidiC;
-  		else if (mainprogram->midipresetsset == 4) lm = laymidiD;
-		switch (mainprogram->tmlearn) {
-			case TM_NONE:
-				if (lm->play->midi0 == midi0 && lm->play->midi1 == midi1 && lm->play->midiport== midiport) mainprogram->tmchoice = TM_PLAY;
-				else if (lm->backw->midi0 == midi0 && lm->backw->midi1 == midi1 && lm->backw->midiport== midiport) mainprogram->tmchoice = TM_BACKW;
-				else if (lm->bounce->midi0 == midi0 && lm->bounce->midi1 == midi1 && lm->bounce->midiport== midiport) mainprogram->tmchoice = TM_BOUNCE;
-				else if (lm->frforw->midi0 == midi0 && lm->frforw->midi1 == midi1 && lm->frforw->midiport== midiport) mainprogram->tmchoice = TM_FRFORW;
-				else if (lm->frbackw->midi0 == midi0 && lm->frbackw->midi1 == midi1 && lm->frbackw->midiport== midiport) mainprogram->tmchoice = TM_FRBACKW;
-                else if (lm->stop->midi0 == midi0 && lm->stop->midi1 == midi1 && lm->stop->midiport == midiport) mainprogram->tmchoice = TM_STOP;
-                else if (lm->loop->midi0 == midi0 && lm->loop->midi1 == midi1 && lm->loop->midiport == midiport) mainprogram->tmchoice = TM_LOOP;
-                else if (lm->speed->midi0 == midi0 && lm->speed->midi1 == midi1 && lm->speed->midiport == midiport) mainprogram->tmchoice = TM_SPEED;
-				else if (lm->speedzero->midi0 == midi0 && lm->speedzero->midi1 == midi1 && lm->speedzero->midiport == midiport) mainprogram->tmchoice = TM_SPEEDZERO;
-				else if (lm->opacity->midi0 == midi0 && lm->opacity->midi1 == midi1 && lm->opacity->midiport == midiport) mainprogram->tmchoice = TM_OPACITY;
-				else if (lm->scratchtouch->midi0 == midi0 && lm->scratchtouch->midi0 == midi1 && lm->scratchtouch->midiport == midiport) mainprogram->tmchoice = TM_FREEZE;
-				else if (lm->scratch->midi0 == midi0 && lm->scratch->midi1 == midi1 && lm->scratch->midiport == midiport) mainprogram->tmchoice = TM_SCRATCH;
-				else mainprogram->tmchoice = TM_NONE;
-				return;
-				break;
-			case TM_PLAY:
-				lm->play->midi0 = midi0;
-				lm->play->midi1 = midi1;
-				lm->play->midiport= midiport;
-				lm->play->register_midi();
-				mainprogram->tmlearn = TM_NONE;
-				break;
-			case TM_BACKW:
-				lm->backw->midi0 = midi0;
-				lm->backw->midi1 = midi1;
-				lm->backw->midiport= midiport;
-                lm->backw->register_midi();
-				mainprogram->tmlearn = TM_NONE;
-				break;
-			case TM_BOUNCE:
-				lm->bounce->midi0 = midi0;
-				lm->bounce->midi1 = midi1;
-				lm->bounce->midiport= midiport;
-                lm->bounce->register_midi();
-				mainprogram->tmlearn = TM_NONE;
-				break;
-			case TM_FRFORW:
-				lm->frforw->midi0 = midi0;
-				lm->frforw->midi1 = midi1;
-				lm->frforw->midiport= midiport;
-                lm->frforw->register_midi();
-				mainprogram->tmlearn = TM_NONE;
-				break;
-			case TM_FRBACKW:
-				lm->frbackw->midi0 = midi0;
-				lm->frbackw->midi1 = midi1;
-				lm->frbackw->midiport= midiport;
-                lm->frbackw->register_midi();
-				mainprogram->tmlearn = TM_NONE;
-				break;
-            case TM_STOP:
-                if (midi0 == 144) return;
-                lm->stop->midi0 = midi0;
-                lm->stop->midi1 = midi1;
-                lm->stop->midiport = midiport;
-                lm->stop->register_midi();
-                mainprogram->tmlearn = TM_NONE;
-                break;
-            case TM_LOOP:
-                if (midi0 == 144) return;
-                lm->loop->midi0 = midi0;
-                lm->loop->midi1 = midi1;
-                lm->loop->midiport = midiport;
-                lm->loop->register_midi();
-                mainprogram->tmlearn = TM_NONE;
-                break;
-            case TM_SPEED:
-                if (midi0 == 144) return;
-                lm->speed->midi0 = midi0;
-                lm->speed->midi1 = midi1;
-                lm->speed->midiport = midiport;
-                lm->speed->register_midi();
-                mainprogram->tmlearn = TM_NONE;
-                break;
-			case TM_SPEEDZERO:
-				if (midi0 == 176) return;
-				lm->speedzero->midi0 = midi0;
-				lm->speedzero->midi1 = midi1;
-				lm->speedzero->midiport = midiport;
-                lm->speedzero->register_midi();
-				mainprogram->tmlearn = TM_NONE;
-				break;
-			case TM_OPACITY:
-				lm->opacity->midi0 = midi0;
-				lm->opacity->midi1 = midi1;
-				lm->opacity->midiport = midiport;
-                lm->opacity->register_midi();
-				mainprogram->tmlearn = TM_NONE;
-				break;
-			case TM_FREEZE:
-				if (midi0 == 176) return;
-				lm->scratchtouch->midi0 = midi0;
-				lm->scratchtouch->midi0 = midi1;
-				lm->scratchtouch->midiport = midiport;
-                lm->scratchtouch->register_midi();
-				mainprogram->tmlearn = TM_NONE;
-				break;
-			case TM_SCRATCH:
-				if (midi0 == 144) return;
-				lm->scratch->midi0 = midi0;
-				lm->scratch->midi1 = midi1;
-				lm->scratch->midiport = midiport;
-                lm->scratch->register_midi();
-				mainprogram->tmlearn = TM_NONE;
-				break;
-		}
-		return;
+  	    if (mainprogram->configcatmidi == 0) {
+            LayMidi *lm = nullptr;
+            if (mainprogram->midipresetsset == 1) lm = laymidiA;
+            else if (mainprogram->midipresetsset == 2) lm = laymidiB;
+            else if (mainprogram->midipresetsset == 3) lm = laymidiC;
+            else if (mainprogram->midipresetsset == 4) lm = laymidiD;
+            switch (mainprogram->tmlearn) {
+                case TM_NONE:
+                    if (lm->play->midi0 == midi0 && lm->play->midi1 == midi1 &&
+                        lm->play->midiport == midiport)
+                        mainprogram->tmchoice = TM_PLAY;
+                    else if (lm->backw->midi0 == midi0 && lm->backw->midi1 == midi1 &&
+                             lm->backw->midiport == midiport)
+                        mainprogram->tmchoice = TM_BACKW;
+                    else if (lm->bounce->midi0 == midi0 && lm->bounce->midi1 == midi1 &&
+                             lm->bounce->midiport == midiport)
+                        mainprogram->tmchoice = TM_BOUNCE;
+                    else if (lm->frforw->midi0 == midi0 && lm->frforw->midi1 == midi1 &&
+                             lm->frforw->midiport == midiport)
+                        mainprogram->tmchoice = TM_FRFORW;
+                    else if (lm->frbackw->midi0 == midi0 && lm->frbackw->midi1 == midi1 &&
+                             lm->frbackw->midiport == midiport)
+                        mainprogram->tmchoice = TM_FRBACKW;
+                    else if (lm->stop->midi0 == midi0 && lm->stop->midi1 == midi1 &&
+                             lm->stop->midiport == midiport)
+                        mainprogram->tmchoice = TM_STOP;
+                    else if (lm->loop->midi0 == midi0 && lm->loop->midi1 == midi1 &&
+                             lm->loop->midiport == midiport)
+                        mainprogram->tmchoice = TM_LOOP;
+                    else if (lm->speed->midi0 == midi0 && lm->speed->midi1 == midi1 &&
+                             lm->speed->midiport == midiport)
+                        mainprogram->tmchoice = TM_SPEED;
+                    else if (lm->speedzero->midi0 == midi0 && lm->speedzero->midi1 == midi1 &&
+                             lm->speedzero->midiport == midiport)
+                        mainprogram->tmchoice = TM_SPEEDZERO;
+                    else if (lm->opacity->midi0 == midi0 && lm->opacity->midi1 == midi1 &&
+                             lm->opacity->midiport == midiport)
+                        mainprogram->tmchoice = TM_OPACITY;
+                    else if (lm->scratchtouch->midi0 == midi0 && lm->scratchtouch->midi0 == midi1 &&
+                             lm->scratchtouch->midiport == midiport)
+                        mainprogram->tmchoice = TM_FREEZE;
+                    else if (lm->scratch->midi0 == midi0 && lm->scratch->midi1 == midi1 &&
+                             lm->scratch->midiport == midiport)
+                        mainprogram->tmchoice = TM_SCRATCH;
+                    else mainprogram->tmchoice = TM_NONE;
+                    return;
+                    break;
+                case TM_PLAY:
+                    lm->play->midi0 = midi0;
+                    lm->play->midi1 = midi1;
+                    lm->play->midiport = midiport;
+                    lm->play->register_midi();
+                    mainprogram->tmlearn = TM_NONE;
+                    break;
+                case TM_BACKW:
+                    lm->backw->midi0 = midi0;
+                    lm->backw->midi1 = midi1;
+                    lm->backw->midiport = midiport;
+                    lm->backw->register_midi();
+                    mainprogram->tmlearn = TM_NONE;
+                    break;
+                case TM_BOUNCE:
+                    lm->bounce->midi0 = midi0;
+                    lm->bounce->midi1 = midi1;
+                    lm->bounce->midiport = midiport;
+                    lm->bounce->register_midi();
+                    mainprogram->tmlearn = TM_NONE;
+                    break;
+                case TM_FRFORW:
+                    lm->frforw->midi0 = midi0;
+                    lm->frforw->midi1 = midi1;
+                    lm->frforw->midiport = midiport;
+                    lm->frforw->register_midi();
+                    mainprogram->tmlearn = TM_NONE;
+                    break;
+                case TM_FRBACKW:
+                    lm->frbackw->midi0 = midi0;
+                    lm->frbackw->midi1 = midi1;
+                    lm->frbackw->midiport = midiport;
+                    lm->frbackw->register_midi();
+                    mainprogram->tmlearn = TM_NONE;
+                    break;
+                case TM_STOP:
+                    if (midi0 == 144) return;
+                    lm->stop->midi0 = midi0;
+                    lm->stop->midi1 = midi1;
+                    lm->stop->midiport = midiport;
+                    lm->stop->register_midi();
+                    mainprogram->tmlearn = TM_NONE;
+                    break;
+                case TM_LOOP:
+                    if (midi0 == 144) return;
+                    lm->loop->midi0 = midi0;
+                    lm->loop->midi1 = midi1;
+                    lm->loop->midiport = midiport;
+                    lm->loop->register_midi();
+                    mainprogram->tmlearn = TM_NONE;
+                    break;
+                case TM_SPEED:
+                    if (midi0 == 144) return;
+                    lm->speed->midi0 = midi0;
+                    lm->speed->midi1 = midi1;
+                    lm->speed->midiport = midiport;
+                    lm->speed->register_midi();
+                    mainprogram->tmlearn = TM_NONE;
+                    break;
+                case TM_SPEEDZERO:
+                    if (midi0 == 176) return;
+                    lm->speedzero->midi0 = midi0;
+                    lm->speedzero->midi1 = midi1;
+                    lm->speedzero->midiport = midiport;
+                    lm->speedzero->register_midi();
+                    mainprogram->tmlearn = TM_NONE;
+                    break;
+                case TM_OPACITY:
+                    lm->opacity->midi0 = midi0;
+                    lm->opacity->midi1 = midi1;
+                    lm->opacity->midiport = midiport;
+                    lm->opacity->register_midi();
+                    mainprogram->tmlearn = TM_NONE;
+                    break;
+                case TM_FREEZE:
+                    if (midi0 == 176) return;
+                    lm->scratchtouch->midi0 = midi0;
+                    lm->scratchtouch->midi0 = midi1;
+                    lm->scratchtouch->midiport = midiport;
+                    lm->scratchtouch->register_midi();
+                    mainprogram->tmlearn = TM_NONE;
+                    break;
+                case TM_SCRATCH:
+                    if (midi0 == 144) return;
+                    lm->scratch->midi0 = midi0;
+                    lm->scratch->midi1 = midi1;
+                    lm->scratch->midiport = midiport;
+                    lm->scratch->register_midi();
+                    mainprogram->tmlearn = TM_NONE;
+                    break;
+            }
+            return;
+        }
 	}
 	
 	
@@ -755,39 +781,12 @@ void mycallback( double deltatime, std::vector< unsigned char > *message, void *
 		//	}
 		//}
   		else if (midi0 == 176 && mainmix->learnbutton) {
-			if (mainmix->midishelfstage == 1) {
-				// start midi button
-				mainmix->midishelfstage = 2;
-				mainmix->midishelfstart = midi1;
-				mainmix->learnbutton->midi[0] = midi0;
-				mainmix->learnbutton->midi[1] = midi1;
-				mainmix->learnbutton->midiport = midiport;
-                mainmix->learnbutton->register_midi();
-			}
-			else if (mainmix->midishelfstage == 2) {
-				// end midi button
-				mainmix->midishelfstage = 0;
-				mainmix->learnbutton->midi[0] = midi0;
-				mainmix->learnbutton->midi[1] = midi1;
-				mainmix->learnbutton->midiport = midiport;
-                mainmix->learnbutton->register_midi();
-				if (midi1 > mainmix->midishelfstart && midi1 < mainmix->midishelfstart + (16 - mainmix->midishelfpos)) {
-					for (int i = mainmix->midishelfstart; i < midi1 + 1; i++) {
-						mainmix->midishelf->elements[mainmix->midishelfpos + i - mainmix->midishelfstart]->button->midi[0] = midi0;
-						mainmix->midishelf->elements[mainmix->midishelfpos + i - mainmix->midishelfstart]->button->midi[1] = i;
-						mainmix->midishelf->elements[mainmix->midishelfpos + i - mainmix->midishelfstart]->button->midiport = midiport;
-                        mainmix->midishelf->elements[mainmix->midishelfpos + i - mainmix->midishelfstart]->button->register_midi();
-					}
-				}
-				mainmix->learn = false;
-			}
-			else {
-				mainmix->learnbutton->midi[0] = midi0;
-				mainmix->learnbutton->midi[1] = midi1;
-				mainmix->learnbutton->midiport = midiport;
-                mainmix->learnbutton->register_midi();
-				mainmix->learn = false;
-			}
+            mainmix->learnbutton->midi[0] = midi0;
+            mainmix->learnbutton->midi[1] = midi1;
+            mainmix->learnbutton->midiport = midiport;
+            mainmix->learnbutton->register_midi();
+            mainmix->learn = false;
+        }
 
 /* 			mainmix->learnbutton->node = new MidiNode;
 			mainmix->learnbutton->node->button = mainmix->learnbutton;
@@ -795,55 +794,21 @@ void mycallback( double deltatime, std::vector< unsigned char > *message, void *
 			if (mainmix->learnbutton->effect) {
 				mainprogram->nodesmain->currpage->connect_in2(mainmix->learnbutton->node, mainmix->learnbutton->effect->node);
 			}
-IMPLEMENT */		}
+IMPLEMENT */
 		else if (midi0 == 144 && midi2 != 0 && mainmix->learnbutton) {
-			if (mainmix->midishelfstage == 1) {
-				// start midi button
-				mainmix->midishelfstage = 2;
-				mainmix->midishelfstart = midi1;
-				mainmix->learnbutton->midi[0] = midi0;
-				mainmix->learnbutton->midi[1] = midi1;
-				mainmix->learnbutton->midiport = midiport;
-                mainmix->learnbutton->register_midi();
-			}
-            else if (mainmix->midishelfstage == 2) {
-                // end midi button
-                if (midi1 >= mainmix->midishelfstart && midi1 < mainmix->midishelfstart + (16 - mainmix->midishelfpos)) {
-                    mainmix->midishelfstage = 3;
-                    mainmix->midishelfend = midi1;
-                }
-            }
-            else if (mainmix->midishelfstage == 3) {
-                // end midi button
-                mainmix->midishelfstage = 0;
-                if (midi1 == mainmix->midishelfend) {
-                    for (int i = mainmix->midishelfstart; i < midi1 + 1; i++) {
-                        mainmix->midishelf->elements[mainmix->midishelfpos + i -
-                                                     mainmix->midishelfstart]->button->midi[0] = midi0;
-                        mainmix->midishelf->elements[mainmix->midishelfpos + i -
-                                                     mainmix->midishelfstart]->button->midi[1] = i;
-                        mainmix->midishelf->elements[mainmix->midishelfpos + i -
-                                                     mainmix->midishelfstart]->button->midiport = midiport;
-                        mainmix->midishelf->elements[mainmix->midishelfpos + i -
-                                                     mainmix->midishelfstart]->button->register_midi();
-                    }
-                }
-				mainmix->learn = false;
-			}
-			else {
-				mainmix->learnbutton->midi[0] = midi0;
-				mainmix->learnbutton->midi[1] = midi1;
-				mainmix->learnbutton->midiport = midiport;
-                mainmix->learnbutton->register_midi();
-				mainmix->learn = false;
-			}
+            mainmix->learnbutton->midi[0] = midi0;
+            mainmix->learnbutton->midi[1] = midi1;
+            mainmix->learnbutton->midiport = midiport;
+            mainmix->learnbutton->register_midi();
+            mainmix->learn = false;
+        }
 			/* 			mainmix->learnparam->node = new MidiNode;
 			mainmix->learnparam->node->param = mainmix->learnparam;
 			mainprogram->nodesmain->currpage->nodes.push_back(mainmix->learnparam->node);
 			if (mainmix->learnparam->effect) {
 				mainprogram->nodesmain->currpage->connect_in2(mainmix->learnparam->node, mainmix->learnparam->effect->node);
 			}
- */		}
+ */
 		return;
   	}
   	
@@ -852,6 +817,22 @@ IMPLEMENT */		}
 		for (int i = 0; i < mainprogram->buttons.size(); i++) {
 			Button *but = mainprogram->buttons[i];
 			if (midi0 == but->midi[0] && midi1 == but->midi[1] && midi2 != 0 && midiport == but->midiport) {
+                if (mainprogram->sameeight) {
+                    for (int i = 0; i < 8; i++) {
+                        if (but == loopstation->elems[i]->recbut) {
+                            but = loopstation->elems[i + loopstation->scrpos]->recbut;
+                            break;
+                        }
+                        if (but == loopstation->elems[i]->loopbut) {
+                            but = loopstation->elems[i + loopstation->scrpos]->loopbut;
+                            break;
+                        }
+                        if (but == loopstation->elems[i]->playbut) {
+                            but = loopstation->elems[i + loopstation->scrpos]->playbut;
+                            break;
+                        }
+                    }
+                }
 				mainmix->midi2 = midi2;
 				mainmix->midibutton = but;
                 but->midistarttime = std::chrono::high_resolution_clock::now();
@@ -874,6 +855,14 @@ IMPLEMENT */		}
 		if (mainprogram->prevmodus) par = mainmix->crossfade;
 		else par = mainmix->crossfadecomp;
 		if (midi0 == par->midi[0] && midi1 == par->midi[1] && midiport == par->midiport) {
+            if (mainprogram->sameeight) {
+                for (int i = 0; i < 8; i++) {
+                     if (par == loopstation->elems[i]->speed) {
+                        par = loopstation->elems[i + loopstation->scrpos]->speed;
+                        break;
+                    }
+                }
+            }
 			mainmix->midi2 = midi2;
 			mainmix->midiparam = par;
 			par->midistarttime = std::chrono::high_resolution_clock::now();
@@ -4457,31 +4446,31 @@ void drag_into_layerstack(std::vector<Layer*>& layers, bool deck) {
 
 
 // check all STATIC/DYNAMIC draws
-void Shelf::handle() {
+void Program::handle_shelf(Shelf *shelf) {
 	// draw shelves and handle shelves
 	int inelem = -1;
 	for (int i = 0; i < 16; i++) {
-		ShelfElement* elem = this->elements[i];
+		ShelfElement* elem = shelf->elements[i];
 		// border coloring according to element type
 		if (elem->type == ELEM_LAYER) {
-			draw_box(orange, orange, this->buttons[i]->box, -1);
-			draw_box(nullptr, orange, this->buttons[i]->box->vtxcoords->x1 + 0.0075f, this->buttons[i]->box->vtxcoords->y1, this->buttons[i]->box->vtxcoords->w - 0.0075f, this->buttons[i]->box->vtxcoords->h - 0.0075f, elem->tex);
+			draw_box(orange, orange, shelf->buttons[i]->box, -1);
+			draw_box(nullptr, orange, shelf->buttons[i]->box->vtxcoords->x1 + 0.0075f, shelf->buttons[i]->box->vtxcoords->y1, shelf->buttons[i]->box->vtxcoords->w - 0.0075f, shelf->buttons[i]->box->vtxcoords->h - 0.0075f, elem->tex);
 		}
 		else if (elem->type == ELEM_DECK) {
-			draw_box(purple, purple, this->buttons[i]->box, -1);
-			draw_box(nullptr, purple, this->buttons[i]->box->vtxcoords->x1 + 0.0075f, this->buttons[i]->box->vtxcoords->y1, this->buttons[i]->box->vtxcoords->w - 0.0075f, this->buttons[i]->box->vtxcoords->h - 0.0075f, elem->tex);
+			draw_box(purple, purple, shelf->buttons[i]->box, -1);
+			draw_box(nullptr, purple, shelf->buttons[i]->box->vtxcoords->x1 + 0.0075f, shelf->buttons[i]->box->vtxcoords->y1, shelf->buttons[i]->box->vtxcoords->w - 0.0075f, shelf->buttons[i]->box->vtxcoords->h - 0.0075f, elem->tex);
 		}
 		else if (elem->type == ELEM_MIX) {
-			draw_box(green, green, this->buttons[i]->box, -1);
-			draw_box(nullptr, green, this->buttons[i]->box->vtxcoords->x1 + 0.0075f, this->buttons[i]->box->vtxcoords->y1, this->buttons[i]->box->vtxcoords->w - 0.0075f, this->buttons[i]->box->vtxcoords->h - 0.0075f, elem->tex);
+			draw_box(green, green, shelf->buttons[i]->box, -1);
+			draw_box(nullptr, green, shelf->buttons[i]->box->vtxcoords->x1 + 0.0075f, shelf->buttons[i]->box->vtxcoords->y1, shelf->buttons[i]->box->vtxcoords->w - 0.0075f, shelf->buttons[i]->box->vtxcoords->h - 0.0075f, elem->tex);
 		}
 		else if (elem->type == ELEM_IMAGE) {
-			draw_box(pink, pink, this->buttons[i]->box, -1);
-			draw_box(nullptr, pink, this->buttons[i]->box->vtxcoords->x1 + 0.0075f, this->buttons[i]->box->vtxcoords->y1, this->buttons[i]->box->vtxcoords->w - 0.0075f, this->buttons[i]->box->vtxcoords->h - 0.0075f, elem->tex);
+			draw_box(pink, pink, shelf->buttons[i]->box, -1);
+			draw_box(nullptr, pink, shelf->buttons[i]->box->vtxcoords->x1 + 0.0075f, shelf->buttons[i]->box->vtxcoords->y1, shelf->buttons[i]->box->vtxcoords->w - 0.0075f, shelf->buttons[i]->box->vtxcoords->h - 0.0075f, elem->tex);
 		}
 		else {
-			draw_box(grey, grey, this->buttons[i]->box, -1);
-			draw_box(nullptr, grey, this->buttons[i]->box->vtxcoords->x1 + 0.0075f, this->buttons[i]->box->vtxcoords->y1, this->buttons[i]->box->vtxcoords->w - 0.0075f, this->buttons[i]->box->vtxcoords->h - 0.0075f, elem->tex);
+			draw_box(grey, grey, shelf->buttons[i]->box, -1);
+			draw_box(nullptr, grey, shelf->buttons[i]->box->vtxcoords->x1 + 0.0075f, shelf->buttons[i]->box->vtxcoords->y1, shelf->buttons[i]->box->vtxcoords->w - 0.0075f, shelf->buttons[i]->box->vtxcoords->h - 0.0075f, elem->tex);
 		}
 
 		// draw small icons for choice of launch play type of shelf video
@@ -4553,7 +4542,7 @@ void Shelf::handle() {
 			if (mainprogram->rightmouse) {
 				if (mainprogram->dragbinel) {
 					if (mainprogram->shelfdragelem) {
-						if (this->prevnum != -1) std::swap(this->elements[this->prevnum]->tex, this->elements[this->prevnum]->oldtex);
+						if (shelf->prevnum != -1) std::swap(shelf->elements[shelf->prevnum]->tex, shelf->elements[shelf->prevnum]->oldtex);
 						std::swap(elem->tex, mainprogram->shelfdragelem->tex);
 						mainprogram->shelfdragelem->tex = mainprogram->dragbinel->tex;
 						mainprogram->shelfdragelem = nullptr;
@@ -4562,17 +4551,17 @@ void Shelf::handle() {
 					}
 				}
 			}
-			this->newnum = i;
-			mainprogram->inshelf = this->side;
-			if (mainprogram->dragbinel && i != this->prevnum) {
+			shelf->newnum = i;
+			mainprogram->inshelf = shelf->side;
+			if (mainprogram->dragbinel && i != shelf->prevnum) {
 				std::swap(elem->tex, elem->oldtex);
-				if (this->prevnum != -1) std::swap(this->elements[this->prevnum]->tex, this->elements[this->prevnum]->oldtex);
+				if (shelf->prevnum != -1) std::swap(shelf->elements[shelf->prevnum]->tex, shelf->elements[shelf->prevnum]->oldtex);
 				if (mainprogram->shelfdragelem) {
 					std::swap(mainprogram->shelfdragelem->tex, mainprogram->shelfdragelem->oldtex);
 					mainprogram->shelfdragelem->tex = elem->oldtex;
 				}
 				elem->tex = mainprogram->dragbinel->tex;
-				this->prevnum = i;
+				shelf->prevnum = i;
 			}
 			if (mainprogram->leftmousedown) {
 				if (!elem->sbox->in() && !elem->pbox->in() && !elem->cbox->in()) {
@@ -4609,7 +4598,7 @@ void Shelf::handle() {
                             if (extstr != "") {
                                 std::string base = basename(mainprogram->dragbinel->path);
                                 newpath = find_unused_filename("shelf_" + base,
-                                                               mainprogram->project->shelfdir + this->basepath + "/",
+                                                               mainprogram->project->shelfdir + shelf->basepath + "/",
                                                                extstr);
                                 boost::filesystem::copy_file(mainprogram->dragbinel->path, newpath);
                                 mainprogram->dragbinel->path = newpath;
@@ -4627,7 +4616,7 @@ void Shelf::handle() {
                             save_thumb(elem->jpegpath, elem->tex);
                             mainprogram->shelfdragelem->tex = copy_tex(mainprogram->shelfdragelem->tex);
                             blacken(elem->oldtex);
-                            this->prevnum = -1;
+                            shelf->prevnum = -1;
                             mainprogram->shelfdragelem = nullptr;
                             mainprogram->rightmouse = true;
                             binsmain->handle(0);
@@ -4641,23 +4630,23 @@ void Shelf::handle() {
 			}
 			if (mainprogram->menuactivation) {
 				mainprogram->shelfmenu->state = 2;
-				mainmix->mouseshelf = this;
+				mainmix->mouseshelf = shelf;
 				mainmix->mouseshelfelem = i;
 				mainprogram->menuactivation = false;
 			}
 		}
 	}
 	if (inelem > -1 && mainprogram->dragbinel) {
-		mainprogram->dragout[this->side] = false;
-		mainprogram->dragout[!this->side] = true;
+		mainprogram->dragout[shelf->side] = false;
+		mainprogram->dragout[!shelf->side] = true;
 	}
-	if (inelem == -1 && !mainprogram->dragout[this->side] && mainprogram->dragbinel) {
+	if (inelem == -1 && !mainprogram->dragout[shelf->side] && mainprogram->dragbinel) {
 		// mouse not over shelf element
-		mainprogram->dragout[this->side] == true;
-		if (this->prevnum != -1) {
-			std::swap(this->elements[this->prevnum]->tex, this->elements[this->prevnum]->oldtex);
+		mainprogram->dragout[shelf->side] == true;
+		if (shelf->prevnum != -1) {
+			std::swap(shelf->elements[shelf->prevnum]->tex, shelf->elements[shelf->prevnum]->oldtex);
 			if (mainprogram->shelfdragelem) {
-                if (mainprogram->shelfdragnum == this->prevnum) {
+                if (mainprogram->shelfdragnum == shelf->prevnum) {
                     std::swap(mainprogram->shelfdragelem->tex, mainprogram->shelfdragelem->oldtex);
                 }
                 else {
@@ -4665,9 +4654,9 @@ void Shelf::handle() {
                 }
             }
 		}
-		this->prevnum = -1;
+		shelf->prevnum = -1;
 	}
-	else if (!mainprogram->dragout[this->side]) this->prevnum = this->newnum;
+	else if (!mainprogram->dragout[shelf->side]) shelf->prevnum = shelf->newnum;
 }
 
 
@@ -6067,8 +6056,8 @@ void the_loop() {
     if (!mainprogram->binsscreen) {
         //handle shelves
         mainprogram->inshelf = -1;
-        mainprogram->shelves[0]->handle();
-        mainprogram->shelves[1]->handle();
+        mainprogram->handle_shelf(mainprogram->shelves[0]);
+        mainprogram->handle_shelf(mainprogram->shelves[1]);
     }
 
 
@@ -6366,7 +6355,7 @@ void the_loop() {
                                     retarget->searchboxes[count]->vtxcoords->y1 + 0.075f - 0.045f,
                                     0.00045f,
                                     0.00075f);
-                        retarget->searchglobalbuttons[count]->handle();
+                        mainprogram->handle_button(retarget->searchglobalbuttons[count]);
                         render_text("X", white, retarget->searchclearboxes[count]->vtxcoords->x1 + 0.003f,
                                     retarget->searchclearboxes[count]->vtxcoords->y1, 0.001125f,
                                     0.001875f);
@@ -6487,7 +6476,7 @@ void the_loop() {
 		Param* par;
 		if (mainprogram->prevmodus) par = mainmix->crossfade;
 		else par = mainmix->crossfadecomp;
-		par->handle();
+        mainmix->handle_param(par);
 
 
         // draw and handle layer stacks, effect stacks and params
@@ -6532,13 +6521,13 @@ void the_loop() {
 		//draw and handle global deck speed sliders
 		par = mainmix->deckspeed[!mainprogram->prevmodus][0];
 		draw_box(white, darkgrey, mainmix->deckspeed[!mainprogram->prevmodus][0]->box->vtxcoords->x1, mainmix->deckspeed[!mainprogram->prevmodus][0]->box->vtxcoords->y1, mainmix->deckspeed[!mainprogram->prevmodus][0]->box->vtxcoords->w * 0.30f, 0.1f, -1);
-		par->handle();
+        mainmix->handle_param(par);
 		par = mainmix->deckspeed[!mainprogram->prevmodus][1];
 		draw_box(white, darkgrey, mainmix->deckspeed[!mainprogram->prevmodus][1]->box->vtxcoords->x1, mainmix->deckspeed[!mainprogram->prevmodus][1]->box->vtxcoords->y1, mainmix->deckspeed[!mainprogram->prevmodus][1]->box->vtxcoords->w * 0.30f, 0.1f, -1);
-		par->handle();
+        mainmix->handle_param(par);
 
 		//draw and handle recbuts
-		mainmix->recbutS->handle(1, 0);
+        mainprogram->handle_button(mainmix->recbutS, 1, 0);
         if (mainmix->recbutS->toggled()) {
             if (!mainmix->recording[0]) {
                 // start recording
@@ -6549,7 +6538,7 @@ void the_loop() {
                 mainmix->recording[0] = false;
             }
         }
-        mainmix->recbutQ->handle(1, 0);
+        mainprogram->handle_button(mainmix->recbutQ, 1, 0);
         if (mainmix->recbutQ->toggled()) {
             if (!mainmix->recording[1]) {
                 // start recording
@@ -6782,43 +6771,12 @@ void the_loop() {
 		}
 	}
 
-	if (mainmix->learn) {
+	if (mainmix->learn && !mainprogram->prefon && !mainprogram->midipresets) {
         mainprogram->frontbatch = true;
 		draw_box(red, blue, -0.3f, -0.0f, 0.6f, 0.3f, -1);
         mainprogram->frontbatch = false;
-		if (mainmix->midishelfstage == 1) {
-			render_text("Awaiting start point MIDI input.", white, -0.15f, 0.2f, 0.001f, 0.0016f);
-			render_text("Rightclick cancels.", white, -0.1f, 0.06f, 0.001f, 0.0016f);
-            mainprogram->frontbatch = true;
-            draw_box(nullptr, alphagreen, mainmix->learnbutton->box, -1);
-            mainprogram->frontbatch = false;
-		}
-        else if (mainmix->midishelfstage == 2) {
-            render_text("Awaiting end point MIDI input.", white, -0.16f, 0.2f, 0.001f, 0.0016f);
-            render_text("Rightclick cancels.", white, -0.1f, 0.06f, 0.001f, 0.0016f);
-            mainprogram->frontbatch = true;
-            for (int i = mainmix->midishelfstart; i < mainmix->midishelfend + 1; i++) {
-                draw_box(nullptr, alphagreen, mainmix->midishelf->elements[mainmix->midishelfpos + i -
-                                                                                                    mainmix->midishelfstart]->button->box, -1);
-            }
-            draw_box(nullptr, alphagreen, mainmix->learnbutton->box, -1);
-            mainprogram->frontbatch = false;
-        }
-        else if (mainmix->midishelfstage == 3) {
-            render_text("Confirm MIDI inputs?", white, -0.16f, 0.2f, 0.001f, 0.0016f);
-            render_text("Rightclick cancels.", white, -0.1f, 0.06f, 0.001f, 0.0016f);
-            mainprogram->frontbatch = true;
-            for (int i = mainmix->midishelfstart; i < mainmix->midishelfend + 1; i++) {
-                draw_box(nullptr, alphagreen, mainmix->midishelf->elements[mainmix->midishelfpos + i -
-                                                                           mainmix->midishelfstart]->button->box, -1);
-            }
-            draw_box(nullptr, alphagreen, mainmix->learnbutton->box, -1);
-            mainprogram->frontbatch = false;
-        }
-		else {
-			render_text("Awaiting MIDI input.", white, -0.1f, 0.2f, 0.001f, 0.0016f);
-			render_text("Rightclick cancels.", white, -0.1f, 0.06f, 0.001f, 0.0016f);
-		}
+        render_text("Awaiting MIDI input.", white, -0.1f, 0.2f, 0.001f, 0.0016f);
+        render_text("Rightclick cancels.", white, -0.1f, 0.06f, 0.001f, 0.0016f);
 		// allow exiting with x icon during MIDI learn.
 		draw_box(nullptr, deepred, 1.0f - 0.05f, 1.0f - 0.075f, 0.05f, 0.075f, -1);
 		render_text("x", white, 0.966f, 1.019f - 0.075f, 0.0012f, 0.002f);
@@ -7127,7 +7085,6 @@ void the_loop() {
                 }
             }
             glBindBuffer(GL_TEXTURE_BUFFER, mainprogram->boxcoltbo);
-            printf("numquads %d\n", numquads);
             glBufferSubData(GL_TEXTURE_BUFFER, 0, numquads * 4, mainprogram->bdcolors[i]);
             glBindBuffer(GL_TEXTURE_BUFFER, mainprogram->boxtextbo);
             glBufferSubData(GL_TEXTURE_BUFFER, 0, numquads, mainprogram->bdtexes[i]);
@@ -7465,290 +7422,6 @@ std::string deconcat_files(const std::string &path) {
     else return "";
 }
 
-void Shelf::save(const std::string &path) {
-	std::string ext = path.substr(path.length() - 6, std::string::npos);
-	std::string str;
-	bool rem = false;
-	if (ext != ".shelf") {
-	    str = path;
-	}
-	else {
-	    str = dirname(path);
-	    rem = true;
-	}
-
-	// save shelf in a directory
-    boost::filesystem::path p{ str };
-    if (!boost::filesystem::exists(p)) {
-        boost::filesystem::create_directory(p);
-    }
-    str += '/' + basename(path);
-	
-	std::vector<std::string> filestoadd;
-	ofstream wfile;
-	wfile.open(str);
-	wfile << "EWOCvj SHELFFILE V0.1\n";
-	
-	wfile << "ELEMS\n";
-	for (int j = 0; j < 16; j++) {
-		ShelfElement* elem = this->elements[j];
-        wfile << "PATH\n";
-        wfile << elem->path;
-        wfile << "\n";
-        wfile << "RELPATH\n";
-        if (elem->path != "") {
-            wfile << boost::filesystem::relative(elem->path, mainprogram->contentpath).string();
-        }
-        else {
-            wfile << elem->path;
-        }
-        wfile << "\n";
-        if (elem->path == "") continue;
-        wfile << "TYPE\n";
-		wfile << std::to_string(elem->type);
-		wfile << "\n";
-		if (elem->type == ELEM_LAYER || elem->type == ELEM_DECK || elem->type == ELEM_MIX) {
-			filestoadd.push_back(elem->path);
-		}
-		filestoadd.push_back(elem->jpegpath);
-		wfile << "LAUNCHTYPE\n";
-		wfile << std::to_string(elem->launchtype);
-		wfile << "\n";
-	}
-	wfile << "ENDOFELEMS\n";
-
-	wfile << "ELEMMIDI\n";
-	for (int j = 0; j < 16; j++) {
-		ShelfElement* elem = this->elements[j];
-		wfile << "MIDI0\n";
-		wfile << std::to_string(this->buttons[j]->midi[0]);
-		wfile << "\n";
-		wfile << "MIDI1\n";
-		wfile << std::to_string(this->buttons[j]->midi[1]);
-		wfile << "\n";
-		wfile << "MIDIPORT\n";
-		wfile << elem->button->midiport;
-		wfile << "\n";
-	}
-	wfile << "ENDOFELEMMIDI\n";
-
-	wfile << "ENDOFFILE\n";
-	wfile.close();
-	
-    ofstream outputfile;
-	outputfile.open(mainprogram->temppath + "tempconcatshelf", ios::out | ios::binary);
-	std::vector<std::vector<std::string>> filestoadd2;
-	filestoadd2.push_back(filestoadd);
-	concat_files(outputfile, str, filestoadd2);
-	outputfile.close();
-	if (exists(str)) boost::filesystem::remove(str);
-	if (rem) boost::filesystem::remove(path);
-    boost::filesystem::rename(mainprogram->temppath + "tempconcatshelf", str);
-}
-
-
-void Shelf::open_files_shelf() {
-    auto next_elem = []()
-    {
-        mainprogram->shelffileselem++;
-        mainprogram->shelffilescount++;
-        if (mainprogram->shelffilescount == mainprogram->paths.size() || mainprogram->shelffileselem == 16) {
-            mainprogram->openfilesshelf = false;
-            mainprogram->paths.clear();
-            mainprogram->multistage = 0;
-        }
-    };
-    if (mainprogram->paths.size() == 0) {
-        next_elem();
-        return;
-    }
-
-	// order elements
-	bool cont = mainprogram->order_paths(true);
-	if (!cont) return;
-
-	// set element values
-	ShelfElement* elem = this->elements[mainprogram->shelffileselem];
-	std::string str = mainprogram->paths[mainprogram->shelffilescount];
-    // determine file type
-    std::string istring = "";
-    std::string result = deconcat_files(str);
-    if (!mainprogram->openerr) {
-        bool concat = (result != "");
-        std::ifstream rfile;
-        if (concat) rfile.open(result);
-        else rfile.open(str);
-        safegetline(rfile, istring);
-    }
-    else mainprogram->openerr = false;
-    if (istring == "EWOCvj LAYERFILE") {
-        elem->type = ELEM_LAYER;
-    } else if (istring == "EWOCvj DECKFILE") {
-        elem->jpegpath = "";
-        elem->type = ELEM_DECK;
-    } else if (istring == "EWOCvj MIXFILE") {
-        elem->jpegpath = "";
-        elem->type = ELEM_MIX;
-    } else if (isimage(str)) {
-        elem->type = ELEM_IMAGE;
-    } else if (isvideo(str)) {
-        elem->type = ELEM_FILE;
-    } else if (mainprogram->openerr) {
-        next_elem();
-        return;
-    }
-
-    elem->jpegpath = find_unused_filename("shelftex", mainprogram->temppath, ".jpg");
-	// texes are inserted after phase 2 of order_paths
-	save_thumb(elem->jpegpath, elem->tex);
-
-	// next element, clean up when at end
-	next_elem();
-	mainprogram->currshelffilesdir = dirname(str);
-}
-
-	
-bool Shelf::insert_deck(const std::string& path, bool deck, int pos) {
-	ShelfElement* elem = this->elements[pos];
-	elem->path = path;
-	elem->type = ELEM_DECK;
-	GLuint butex = -1;
-	if (mainprogram->prevmodus) {
-        butex = elem->tex;
- 	    elem->tex = copy_tex(mainprogram->nodesmain->mixnodes[deck]->mixtex);
- 	}
-	else {
-        butex = elem->tex;
-	    elem->tex = copy_tex(mainprogram->nodesmain->mixnodescomp[deck]->mixtex);
-	}
-    if (butex != -1) glDeleteTextures(1, &butex);
-	std::string jpegpath = path + ".jpeg";
-	save_thumb(jpegpath, elem->tex);
-	elem->jpegpath = jpegpath;
-	return 1;
-}
-
-bool Shelf::insert_mix(const std::string& path, int pos) {
-	ShelfElement* elem = this->elements[pos];
-	elem->path = path;
-	elem->type = ELEM_MIX;
-    GLuint butex = -1;
-    if (mainprogram->prevmodus) {
-        butex = elem->tex;
-        elem->tex = copy_tex(mainprogram->nodesmain->mixnodes[2]->mixtex);
-    }
-    else {
-        butex = elem->tex;
-        elem->tex = copy_tex(mainprogram->nodesmain->mixnodescomp[2]->mixtex);
-    }
-    if (butex != -1) glDeleteTextures(1, &butex);
-	std::string jpegpath = path + ".jpeg";
-	save_thumb(jpegpath, elem->tex);
-	elem->jpegpath = jpegpath;
-	return 1;
-}
-	
-bool Shelf::open(const std::string &path) {
-	
-	if (!exists(path)) return 0;
-	std::string result = deconcat_files(path);
-	bool concat = (result != "");
-	ifstream rfile;
-	if (concat) rfile.open(result);
-	else rfile.open(path);
-	
-	this->erase();
-	int filecount = 0;
-	std::string istring;
-	safegetline(rfile, istring);
-	while (safegetline(rfile, istring)) {
-		if (istring == "ENDOFFILE") {
-			break;
-		}
-		else if (istring == "ELEMS") {
-            int count = 0;
-            ShelfElement *elem = nullptr;
-            while (safegetline(rfile, istring)) {
-                if (istring == "ENDOFELEMS") break;
-                if (istring == "PATH") {
-                    safegetline(rfile, istring);
-                    elem = this->elements[count];
-                    elem->path = istring;
-                    count++;
-                    if (!exists(elem->path)) {
-                        elem->path = "";
-                    }
-                }
-                if (istring == "RELPATH") {
-                    safegetline(rfile, istring);
-                    if (elem->path == "" && istring != "") {
-                        boost::filesystem::current_path(mainprogram->contentpath);
-                        elem->path = pathtoplatform(boost::filesystem::absolute(istring).string());
-                    }
-                    if (elem->path == "") {
-                        continue;
-                    }
-                }
-                if (istring == "TYPE") {
-                    safegetline(rfile, istring);
-                    elem->type = (ELEM_TYPE) std::stoi(istring);
-                    std::string suf = "";
-                    if (elem->type == ELEM_LAYER) suf = ".layer";
-                    if (elem->type == ELEM_DECK) suf = ".deck";
-                    if (elem->type == ELEM_MIX) suf = ".mix";
-                    if (suf != "") {
-                        if (concat) {
-                            elem->path = find_unused_filename(basename(elem->path), mainprogram->temppath, suf);
-                            boost::filesystem::rename(result + "_" + std::to_string(filecount) + ".file", elem->path);
-                            filecount++;
-                        }
-                    }
-                    else {
-                        if (!exists(elem->path)) {
-                            mainmix->newshelfpaths.push_back(elem->path);
-                            mainmix->newpathshelfelems.push_back(elem);
-                            elem->path = "";
-                        }
-                    }
-                    safegetline(rfile, istring);
-                    elem->jpegpath = result + "_" + std::to_string(filecount) + ".file";
-                    open_thumb(result + "_" + std::to_string(filecount) + ".file", elem->tex);
-                    filecount++;
-                }
-                if (istring == "LAUNCHTYPE") {
-                    safegetline(rfile, istring);
-                    elem->launchtype = std::stoi(istring);
-                }
-            }
-        }
-		else if (istring == "ELEMMIDI") {
-			int count = 0;
-            ShelfElement* elem;
-			while (safegetline(rfile, istring)) {
-                if (istring == "ENDOFELEMMIDI") break;
-				if (istring == "MIDI0") {
-                    elem = this->elements[count];
-                    count++;
-					safegetline(rfile, istring);
-					elem->button->midi[0] = std::stoi(istring);
-				}
-				if (istring == "MIDI1") {
-					safegetline(rfile, istring);
-					elem->button->midi[1] = std::stoi(istring);
-				}
-				if (istring == "MIDIPORT") {
-					safegetline(rfile, istring);
-					elem->button->midiport = istring;
-                    elem->button->register_midi();
-				}
-			}
-		}
-	}
-
-	rfile.close();
-
-	return 1;
-}
 
 void blacken(GLuint tex) {
     GLuint fbo;
@@ -7760,20 +7433,6 @@ void blacken(GLuint tex) {
     glClear(GL_COLOR_BUFFER_BIT);
 }
 
-void Shelf::erase() {
-	for (int i = 0; i < 16; i++) {
-		ShelfElement* elem = this->elements[i];
-		elem->path = "";
-		elem->type = ELEM_FILE;
-		blacken(elem->tex);
-		blacken(elem->oldtex);
-        elem->button->midi[0] = -1;
-        elem->button->midi[1] = -1;
-        elem->button->midiport = "";
-        elem->button->unregister_midi();
-	}
-}
-	
 
 void write_genmidi(ostream& wfile, LayMidi *lm) {
 	wfile << "PLAY\n";
@@ -7941,33 +7600,45 @@ void save_genmidis(std::string path) {
     wfile << mainmix->recbutQ->midiport;
     wfile << "\n";
 
-	wfile << "LOOPSTATIONMIDI\n";
-	LoopStation *ls;
-	for (int i = 0; i < 2; i++) {
-		if (i == 0) ls = lp;
-		else ls = lpc;
-		for (int j = 0; j < ls->numelems; j++) {
-			wfile << "LOOPSTATIONMIDI0:" + std::to_string(i) + ":" + std::to_string(j) + "\n";
-			wfile << std::to_string(ls->elems[j]->recbut->midi[0]) + "\n";
-			wfile << std::to_string(ls->elems[j]->loopbut->midi[0]) + "\n";
-			wfile << std::to_string(ls->elems[j]->playbut->midi[0]) + "\n";
-			wfile << std::to_string(ls->elems[j]->speed->midi[0]) + "\n";
-			wfile << "LOOPSTATIONMIDI1:" + std::to_string(i) + ":" + std::to_string(j) + "\n";
-			wfile << std::to_string(ls->elems[j]->recbut->midi[1]) + "\n";
-			wfile << std::to_string(ls->elems[j]->loopbut->midi[1]) + "\n";
-			wfile << std::to_string(ls->elems[j]->playbut->midi[1]) + "\n";
-			wfile << std::to_string(ls->elems[j]->speed->midi[1]) + "\n";
-			wfile << "LOOPSTATIONMIDIPORT:" + std::to_string(i) + ":" + std::to_string(j) + "\n";
-			wfile << ls->elems[j]->recbut->midiport + "\n";
-			wfile << ls->elems[j]->loopbut->midiport + "\n";
-			wfile << ls->elems[j]->playbut->midiport + "\n";
-			wfile << ls->elems[j]->speed->midiport + "\n";
-		}
-	}
-	wfile << "LOOPSTATIONMIDIEND\n";
-	
+    wfile << "LOOPSTATIONMIDI\n";
+    LoopStation *ls;
+    for (int i = 0; i < 2; i++) {
+        if (i == 0) ls = lp;
+        else ls = lpc;
+        for (int j = 0; j < ls->numelems; j++) {
+            wfile << "LOOPSTATIONMIDI0:" + std::to_string(i) + ":" + std::to_string(j) + "\n";
+            wfile << std::to_string(ls->elems[j]->recbut->midi[0]) + "\n";
+            wfile << std::to_string(ls->elems[j]->loopbut->midi[0]) + "\n";
+            wfile << std::to_string(ls->elems[j]->playbut->midi[0]) + "\n";
+            wfile << std::to_string(ls->elems[j]->speed->midi[0]) + "\n";
+            wfile << "LOOPSTATIONMIDI1:" + std::to_string(i) + ":" + std::to_string(j) + "\n";
+            wfile << std::to_string(ls->elems[j]->recbut->midi[1]) + "\n";
+            wfile << std::to_string(ls->elems[j]->loopbut->midi[1]) + "\n";
+            wfile << std::to_string(ls->elems[j]->playbut->midi[1]) + "\n";
+            wfile << std::to_string(ls->elems[j]->speed->midi[1]) + "\n";
+            wfile << "LOOPSTATIONMIDIPORT:" + std::to_string(i) + ":" + std::to_string(j) + "\n";
+            wfile << ls->elems[j]->recbut->midiport + "\n";
+            wfile << ls->elems[j]->loopbut->midiport + "\n";
+            wfile << ls->elems[j]->playbut->midiport + "\n";
+            wfile << ls->elems[j]->speed->midiport + "\n";
+        }
+    }
+    wfile << "LOOPSTATIONMIDIEND\n";
 
-	wfile << "ENDOFFILE\n";
+    wfile << "SHELFMIDI\n";
+    for (int m = 0; m < 2; m++) {
+        for (int j = 0; j < 16; j++) {
+            ShelfElement *elem = mainprogram->shelves[m]->elements[j];
+            wfile << std::to_string(elem->button->midi[0]) + "\n";
+            wfile << std::to_string(elem->button->midi[1]) + "\n";
+            wfile << elem->button->midiport + "\n";
+        }
+    }
+    wfile << "SHELFMIDIEND\n";
+
+
+
+    wfile << "ENDOFFILE\n";
 	wfile.close();
 }
 
@@ -8206,6 +7877,21 @@ void open_genmidis(std::string path) {
 				}
 			}
 		}
+
+        if (istring == "SHELFMIDI") {
+            for (int m = 0; m < 2; m++) {
+                for (int j = 0; j < 16; j++) {
+                    ShelfElement *elem = mainprogram->shelves[m]->elements[j];
+                    safegetline(rfile, istring);
+                    elem->button->midi[0] = std::stoi(istring);
+                    safegetline(rfile, istring);
+                    elem->button->midi[1] = std::stoi(istring);
+                    safegetline(rfile, istring);
+                    elem->button->midiport = istring;
+                }
+            }
+            safegetline(rfile, istring);
+        }
 	}
 	rfile.close();
 }
@@ -8896,12 +8582,14 @@ int main(int argc, char* argv[]) {
             if (e.type == SDL_WINDOWEVENT) {
                 SDL_WindowEvent we = e.window;
                 if (we.event == SDL_WINDOWEVENT_LEAVE) {
-                    // activate focus on window when its entered (for dragndrop between windows)
-                    if (e.window.windowID == SDL_GetWindowID(mainprogram->mainwindow)) {
-                        SDL_SetWindowInputFocus(binsmain->win);
-                    }
-                    if (e.window.windowID == SDL_GetWindowID(binsmain->win)) {
-                        SDL_SetWindowInputFocus(mainprogram->mainwindow);
+                    if (!mainprogram->prefon && !mainprogram->midipresets) {
+                        // activate focus on window when its entered (for dragndrop between windows)
+                        if (e.window.windowID == SDL_GetWindowID(mainprogram->mainwindow)) {
+                            SDL_SetWindowInputFocus(binsmain->win);
+                        }
+                        if (e.window.windowID == SDL_GetWindowID(binsmain->win)) {
+                            SDL_SetWindowInputFocus(mainprogram->mainwindow);
+                        }
                     }
                 }
             }

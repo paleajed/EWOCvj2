@@ -29,11 +29,26 @@ LoopStation::LoopStation() {
     this->downscrbox->upvtxtoscr();
     this->downscrbox->tooltiptitle = "Loopstation scroll down box ";
     this->downscrbox->tooltip = "Leftclicking this box scrolls the loopstation element list downwards. ";
+    this->confupscrbox = new Box;
+    this->confupscrbox->vtxcoords->x1 = -0.33f;
+    this->confupscrbox->vtxcoords->y1 = 0.45f - 0.15f * -1;
+    this->confupscrbox->vtxcoords->w = 0.08f;
+    this->confupscrbox->vtxcoords->h = 0.15f;
+    this->confupscrbox->upvtxtoscr();
+    this->confupscrbox->tooltiptitle = "Loopstation midi config scroll up box ";
+    this->confupscrbox->tooltip = "Leftclicking this box scrolls the loopstation element list upwards. ";
+    this->confdownscrbox = new Box;
+    this->confdownscrbox->vtxcoords->x1 = -0.33f;
+    this->confdownscrbox->vtxcoords->y1 = 0.45f - 0.15f * 8;
+    this->confdownscrbox->vtxcoords->w = 0.08f;
+    this->confdownscrbox->vtxcoords->h = 0.15f;
+    this->confdownscrbox->upvtxtoscr();
+    this->confdownscrbox->tooltiptitle = "Loopstation midi config scroll down box ";
+    this->confdownscrbox->tooltip = "Leftclicking this box scrolls the loopstation element list downwards. ";
 
 	for (int i = 0; i < this->numelems; i++) {
 		LoopStationElement *elem = this->add_elem();
 	}
-    this->add_elem();  // scroll element
 	this->init();
 }
 
@@ -145,10 +160,7 @@ LoopStationElement* LoopStation::add_elem() {
 
 void LoopStation::handle() {
     this->scrpos = mainprogram->handle_scrollboxes(this->upscrbox, this->downscrbox, this->elems.size(), this->scrpos, 8);
-    for (int i = 0; this->elems.size() - this->scrpos < 9; i++) {
-	    this->add_elem();
-	}
-    for (int i = this->scrpos; i < this->scrpos + this->numelems; i++) {
+    for (int i = this->scrpos; i < this->scrpos + 8; i++) {
 		this->elems[i]->handle();
 	}
     this->upscrbox->vtxcoords->x1 = this->elems[0]->colbox->vtxcoords->x1 + 0.0465f;
@@ -217,7 +229,7 @@ void LoopStationElement::visualize() {
 	this->speed->box->upvtxtoscr();
 	this->colbox->upvtxtoscr();
 	this->box->upvtxtoscr();
-	this->speed->handle();
+	mainmix->handle_param(this->speed);
     draw_box(grey, this->colbox->acolor, this->colbox, -1);
 	if (this->eventlist.size()) draw_box(this->colbox->lcolor, this->colbox->lcolor, this->colbox->vtxcoords->x1 + 0.02325f ,
                                       this->colbox->vtxcoords->y1 + 0.0375f, 0.0225f, 0.03f, -1);
@@ -268,7 +280,7 @@ void LoopStationElement::mouse_handle() {
         loopstation->currelem = this;
     }
 
-	this->recbut->handle(1, 0);
+    mainprogram->handle_button(this->recbut, 1, 0);
 	if (this->recbut->toggled()) {
         if (mainprogram->adaptivelprow) {
             loopstation->currelem = this;
@@ -295,7 +307,7 @@ void LoopStationElement::mouse_handle() {
 			}
 		}
 	}
-	this->loopbut->handle(1, 0);
+    mainprogram->handle_button(this->loopbut, 1, 0);
 	if (this->loopbut->toggled()) {
 		// start/stop loop play of recording
 		if (this->eventlist.size()) {
@@ -323,7 +335,7 @@ void LoopStationElement::mouse_handle() {
 			this->loopbut->oldvalue = false;
 		}
 	}
-	this->playbut->handle(1, 0);
+    mainprogram->handle_button(this->playbut, 1, 0);
 	if (this->playbut->toggled()) {
 		// start/stop one-shot play of recording
 		if (this->eventlist.size()) {
