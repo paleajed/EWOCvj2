@@ -3076,6 +3076,7 @@ void Program::handle_mixtargetmenu() {
         mixtargets.push_back("View full screen");
         mixtargets.push_back("submenu wipemenu");
         mixtargets.push_back("Choose wipe");
+        mixtargets.push_back("MIDI learn wipe position");
         std::vector<int> currscreens;
         if (numd == 1) mixtargets.push_back("No external displays");
         else {
@@ -3153,7 +3154,17 @@ void Program::handle_mixtargetmenu() {
                 }
             }
         }
-        else if (k > 2 && k < v4lstart - 1) {
+        else if (k == 2) {
+            mainmix->learn = true;
+            mainmix->learnbutton = nullptr;
+            if (mainprogram->mixtargetmenu->value > 1) {
+                mainmix->learnparam = mainmix->wipex[mainprogram->mixtargetmenu->value - 2];
+            }
+            else {
+                mainmix->learnparam = mainmix->currlay[!mainprogram->prevmodus]->blendnode->wipex;
+            }
+        }
+        else if (k > 3 && k < v4lstart - 1) {
             // chosen output screen already used? re-use window
             bool switched = false;
             for (int i = 0; i < takenentries.size(); i++) {
@@ -5240,7 +5251,7 @@ int Program::config_midipresets_handle() {
             }
             draw_box(blue, box.vtxcoords->x1 + radx, box.vtxcoords->y1 + rady, 0.045f, 2, smw, smh);
 
-            render_text(std::to_string(i + loopstation->confscrpos + 1), white, box.vtxcoords->x1 - 0.3f, box.vtxcoords->y1 + 0.03f, 0.0024f, 0.004f, 2);
+            render_text(std::to_string(i + loopstation->confscrpos + 1), white, box.vtxcoords->x1 - 0.3f, box.vtxcoords->y1 + 0.06f, 0.0024f, 0.004f, 2);
         }
 
         if (mainmix->learn) {

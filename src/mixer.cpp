@@ -91,18 +91,34 @@ Mixer::Mixer() {
     }
 
 	this->wipex[0] = new Param;
+    this->wipex[0]->name = "wipex";
+    this->wipex[0]->sliding = true;
     this->wipex[0]->value = 0.5f;
+    this->wipex[0]->range[0] = 0.0f;
+    this->wipex[0]->range[1] = 1.0f;
 	this->wipex[0]->shadervar = "xpos";
 	this->wipey[0] = new Param;
+    this->wipey[0]->name = "wipey";
+    this->wipey[0]->sliding = true;
     this->wipey[0]->value = 0.5f;
+    this->wipey[0]->range[0] = 1.0f;
+    this->wipey[0]->range[1] = 0.0f;
 	this->wipey[0]->shadervar = "ypos";
 	lp->allparams.push_back(this->wipex[0]);
 	lp->allparams.push_back(this->wipey[0]);
 	this->wipex[1] = new Param;
+    this->wipex[1]->name = "wipex";
+    this->wipex[1]->sliding = true;
     this->wipex[1]->value = 0.5f;
+    this->wipex[1]->range[0] = 0.0f;
+    this->wipex[1]->range[1] = 1.0f;
 	this->wipex[1]->shadervar = "xpos";
 	this->wipey[1] = new Param;
+    this->wipey[1]->name = "wipey";
+    this->wipey[1]->sliding = true;
     this->wipey[1]->value = 0.5f;
+    this->wipey[1]->range[0] = 1.0f;
+    this->wipey[1]->range[1] = 0.0f;
 	this->wipey[1]->shadervar = "ypos";
 	lpc->allparams.push_back(this->wipex[1]);
 	lpc->allparams.push_back(this->wipey[1]);
@@ -2347,13 +2363,17 @@ Layer::Layer(bool comp) {
     this->colorbox->tooltip = "Leftclick to set colorkey color.  Either use colorwheel or leftclick anywhere on screen.  Hovering mouse shows color that will be selected. ";
     
     this->shiftx = new Param;
+    this->shiftx->name = "shiftx";
+    this->shiftx->sliding = true;
     this->shiftx->value = 0.0f;
-    this->shiftx->range[0] = -10.0f;
-    this->shiftx->range[1] = 10.0f;
+    this->shiftx->range[0] = -mainprogram->monh / 1.5f;
+    this->shiftx->range[1] = mainprogram->monh / 1.5f;
     this->shifty = new Param;
+    this->shifty->name = "shifty";
+    this->shifty->sliding = true;
     this->shifty->value = 0.0f;
-    this->shifty->range[0] = -10.0f;
-    this->shifty->range[1] = 10.0f;
+    this->shifty->range[0] = mainprogram->monh / 1.5f;
+    this->shifty->range[1] = -mainprogram->monh / 1.5f;
     this->scale = new Param;
     this->scale->value = 1.0f;
     this->scale->range[0] = 0.001f;
@@ -3060,6 +3080,12 @@ void Mixer::vidbox_handle() {
                         lay->transmx = mainprogram->mx - (lay->shiftx->value * (float)glob->w / 2.0f);
                         lay->transmy = mainprogram->my - (lay->shifty->value * (float)glob->w / 2.0f);
                     }
+                    if (mainprogram->menuactivation) {
+                        mainprogram->parammenu3->state = 2;
+                        mainmix->learnparam = lay->shiftx;
+                        mainmix->learnbutton = nullptr;
+                        mainprogram->menuactivation = false;
+                    }
                 }
                 else if (box->in()) {
                     // move layer
@@ -3229,7 +3255,7 @@ void Layer::display() {
                         }
                     }
                 }
-                if (mainprogram->menuactivation) {
+                if (mainprogram->menuactivation && !this->panbox->in()) {
                     // Trigger mainprogram->laymenu#
                     if (this->type == ELEM_IMAGE || this->type == ELEM_LIVE)
                         mainprogram->laymenu2->state = 2;
@@ -4563,16 +4589,23 @@ void Mixer::outputmonitors_handle() {
                 } else if (i == 2 && mainprogram->prevmodus) {
                     render_text("Preview Mix Monitor", white, outputbox->vtxcoords->x1 + 0.015f,
                                 outputbox->vtxcoords->y1 + outputbox->vtxcoords->h - 0.045f, 0.0005f, 0.0008f);
-                } else if (i == 3) {
+                } else if (mainprogram->prevmodus && i == 3) {
+                    render_text("Output Mix Monitor", white, outputbox->vtxcoords->x1 + 0.015f,
+                                outputbox->vtxcoords->y1 + outputbox->vtxcoords->h - 0.045f, 0.0005f, 0.0008f);
+                } else if (!mainprogram->prevmodus && i == 2) {
                     render_text("Output Mix Monitor", white, outputbox->vtxcoords->x1 + 0.015f,
                                 outputbox->vtxcoords->y1 + outputbox->vtxcoords->h - 0.045f, 0.0005f, 0.0008f);
                 }
+
                 if (mainprogram->doubleleftmouse) {
                     mainprogram->fullscreen = i;
                 }
                 if (mainprogram->menuactivation) {
                     mainprogram->mixtargetmenu->state = 2;
                     mainprogram->mixtargetmenu->value = i;
+                    if (!mainprogram->prevmodus && i == 2) {
+                        mainprogram->mixtargetmenu->value = 3;
+                    }
                     mainprogram->menuactivation = false;
                 }
             }
@@ -4587,10 +4620,6 @@ void Mixer::outputmonitors_handle() {
                 mainprogram->wiping = true;
                 this->currlay[!mainprogram->prevmodus]->blendnode->wipex->value = -(((1.0f - ((mainprogram->xscrtovtx(mainprogram->mx) - 0.55f - deck * 0.9f) / 0.3f)) - 0.5f) * 2.0f - 1.5f);
                 this->currlay[!mainprogram->prevmodus]->blendnode->wipey->value = -((((2.0f - mainprogram->yscrtovtx(mainprogram->my)) / 0.3f) - 0.5f) * 2.0f - 0.50f);
-                if (this->currlay[!mainprogram->prevmodus]->blendnode->wipetype == 8 || this->currlay[!mainprogram->prevmodus]->blendnode->wipetype == 9) {
-                    this->currlay[!mainprogram->prevmodus]->blendnode->wipex->value *= 16.0f;
-                    this->currlay[!mainprogram->prevmodus]->blendnode->wipey->value *= 16.0f;
-                }
                 for (int i = 0; i < loopstation->elems.size(); i++) {
                     if (loopstation->elems[i]->recbut->value) {
                         loopstation->elems[i]->add_param_automationentry(this->currlay[!mainprogram->prevmodus]->blendnode->wipex);
@@ -4607,22 +4636,18 @@ void Mixer::outputmonitors_handle() {
             if (i == 0) {
                 if (mainprogram->prevmodus) {
                     if (mainprogram->mainmonitor->in()) in = true;
+                    else if (mainprogram->outputmonitor->in()) in = true;
                 }
-                else if (mainprogram->outputmonitor->in()) in = true;
             }
             else if (i == 1) {
-                if (mainprogram->prevmodus) {
+                if (!mainprogram->prevmodus) {
                     if (mainprogram->mainmonitor->in()) in = true;
                 }
             }
             if (!in) continue;
 			if (mainprogram->leftmousedown) {
-				this->wipex[!i]->value = -(((1.0f - ((mainprogram->xscrtovtx(mainprogram->mx) - 0.7f) / 0.6f)) - 0.5f) * 2.0f - 0.5f);
-				this->wipey[!i]->value = -((((2.0f - mainprogram->yscrtovtx(mainprogram->my)) / 0.6f) - 0.5f) * 2.0f - 0.5f);
-				if (this->wipe[!i] == 8 || this->wipe[!i] == 9) {
-					this->wipex[!i]->value *= 16.0f;
-					this->wipey[!i]->value *= 16.0f;
-				}
+				this->wipex[i]->value = -(((1.0f - ((mainprogram->xscrtovtx(mainprogram->mx) - 0.7f) / 0.6f)) - 0.5f) * 2.0f - 0.5f);
+				this->wipey[i]->value = -((((2.0f - mainprogram->yscrtovtx(mainprogram->my)) / 0.6f) - 0.5f) * 2.0f - 0.5f);
 				for (int i = 0; i < loopstation->elems.size(); i++) {
 					if (loopstation->elems[i]->recbut->value) {
 						loopstation->elems[i]->add_param_automationentry(this->wipex[!i]);

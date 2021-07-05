@@ -595,6 +595,7 @@ void mycallback( double deltatime, std::vector< unsigned char > *message, void *
   	int midi0 = (int)message->at(0);
   	int midi1 = (int)message->at(1);
   	float midi2 = (int)message->at(2);
+  	printf("MIDI %d %d %f \n", midi0, midi1, midi2);
   	std::string midiport = ((PrefItem*)userData)->name;
   	
  	if (mainprogram->waitmidi == 0 && mainprogram->tmlearn) {
@@ -756,7 +757,50 @@ void mycallback( double deltatime, std::vector< unsigned char > *message, void *
 	
   	if (mainmix->learn) {
   		if (midi0 == 176 && mainmix->learnparam && mainmix->learnparam->sliding) {
-			mainmix->learn = false;
+            if (mainmix->learnparam->name == "shiftx" && (midi2 == 0.0f || midi2 == 127.0f)) return;
+            if (mainmix->learnparam->name == "wipex" && (midi2 == 0.0f || midi2 == 127.0f)) return;
+            if (mainmix->learnparam->name == "shifty" || mainmix->learnparam->name == "wipey") {
+                for (int m = 0; m < 2; m++) {
+                    if (mainmix->learnparam == mainmix->wipey[0]) {
+                        if ((mainmix->wipex[0]->midi[1] == midi1 && mainmix->wipex[0]->midiport == midiport) ||
+                            midi2 == 0.0f || midi2 == 127.0f) {
+                            return;
+                        }
+                        mainmix->learnparam = mainmix->wipey[0];
+                        mainmix->learn = true;
+                        break;
+                    }
+                    if (mainmix->learnparam == mainmix->wipey[1]) {
+                        if ((mainmix->wipex[1]->midi[1] == midi1 && mainmix->wipex[1]->midiport == midiport) ||
+                            midi2 == 0.0f || midi2 == 127.0f) {
+                            return;
+                        }
+                        mainmix->learnparam = mainmix->wipey[1];
+                        mainmix->learn = true;
+                        break;
+                    }
+                    std::vector<Layer *> &lvec = choose_layers(m);
+                    for (int i = 0; i < lvec.size(); i++) {
+                        if (mainmix->learnparam == lvec[i]->shifty) {
+                            if ((lvec[i]->shiftx->midi[1] == midi1 && lvec[i]->shiftx->midiport == midiport) ||
+                                midi2 == 0.0f || midi2 == 127.0f) {
+                                return;
+                            }
+                            mainmix->learnparam = lvec[i]->shifty;
+                            mainmix->learn = true;
+                        }
+                        if (mainmix->learnparam == lvec[i]->blendnode->wipey) {
+                            if ((lvec[i]->blendnode->wipex->midi[1] == midi1 && lvec[i]->blendnode->wipex->midiport == midiport) ||
+                                midi2 == 0.0f || midi2 == 127.0f) {
+                                return;
+                            }
+                            mainmix->learnparam = lvec[i]->blendnode->wipey;
+                            mainmix->learn = true;
+                        }
+                    }
+                }
+            }
+  		    mainmix->learn = false;
 			mainmix->learnparam->midi[0] = midi0;
 			mainmix->learnparam->midi[1] = midi1;
 			mainmix->learnparam->midiport = midiport;
@@ -767,6 +811,32 @@ void mycallback( double deltatime, std::vector< unsigned char > *message, void *
 			if (mainmix->learnparam->effect) {
 				mainprogram->nodesmain->currpage->connect_in2(mainmix->learnparam->node, mainmix->learnparam->effect->node);
 			}
+
+            if (mainmix->learnparam->name == "shiftx" || mainmix->learnparam->name == "wipex") {
+                for (int m = 0; m < 2; m++) {
+                    if (mainmix->learnparam == mainmix->wipex[0]) {
+                        mainmix->learnparam = mainmix->wipey[0];
+                        mainmix->learn = true;
+                        break;
+                    }
+                    if (mainmix->learnparam == mainmix->wipex[1]) {
+                        mainmix->learnparam = mainmix->wipey[1];
+                        mainmix->learn = true;
+                        break;
+                    }
+                    std::vector<Layer *> &lvec = choose_layers(m);
+                    for (int i = 0; i < lvec.size(); i++) {
+                        if (mainmix->learnparam == lvec[i]->shiftx) {
+                            mainmix->learnparam = lvec[i]->shifty;
+                            mainmix->learn = true;
+                        }
+                        if (mainmix->learnparam == lvec[i]->blendnode->wipex) {
+                            mainmix->learnparam = lvec[i]->blendnode->wipey;
+                            mainmix->learn = true;
+                        }
+                    }
+                }
+            }
 		}
 		//else if (midi0 == 144 && mainmix->learnparam && !mainmix->learnparam->sliding) {
 		//	mainmix->learn = false;
@@ -851,67 +921,20 @@ IMPLEMENT */
 			}
 		}
 
-		Param *par;
-		if (mainprogram->prevmodus) par = mainmix->crossfade;
-		else par = mainmix->crossfadecomp;
-		if (midi0 == par->midi[0] && midi1 == par->midi[1] && midiport == par->midiport) {
-            if (mainprogram->sameeight) {
-                for (int i = 0; i < 8; i++) {
-                     if (par == loopstation->elems[i]->speed) {
-                        par = loopstation->elems[i + loopstation->scrpos]->speed;
-                        break;
+		for (Param *par : loopstation->allparams) {
+            if (midi0 == par->midi[0] && midi1 == par->midi[1] && midiport == par->midiport) {
+                if (mainprogram->sameeight) {
+                    for (int i = 0; i < 8; i++) {
+                        if (par == loopstation->elems[i]->speed) {
+                            par = loopstation->elems[i + loopstation->scrpos]->speed;
+                            break;
+                        }
                     }
                 }
+                mainmix->midi2 = midi2;
+                mainmix->midiparam = par;
+                par->midistarttime = std::chrono::high_resolution_clock::now();
             }
-			mainmix->midi2 = midi2;
-			mainmix->midiparam = par;
-			par->midistarttime = std::chrono::high_resolution_clock::now();
-		}
-
-		std::vector<Node*> ns;
-		if (mainprogram->prevmodus) ns = mainprogram->nodesmain->currpage->nodes;
-		else ns = mainprogram->nodesmain->currpage->nodescomp;
-		for (int i = 0; i < ns.size(); i++) {
-			if (ns[i]->type == EFFECT) {
-				EffectNode *effnode = (EffectNode*)ns[i];
-				for (int j = 0; j < effnode->effect->params.size(); j++) {
-					Param *par = effnode->effect->params[j];
-					if (midi0 == par->midi[0] && midi1 == par->midi[1] && midiport == par->midiport) {
-						mainmix->midi2 = midi2;
-						mainmix->midiparam = par;
-					}
-				}
-			}
-		}
-		mainmix->midiisspeed = false;
-		for (int i = 0; i < ns.size(); i++) {
-			if (ns[i]->type == VIDEO) {
-				VideoNode *vnode = (VideoNode*)ns[i]; 			
-				if (midi0 == vnode->layer->speed->midi[0] && midi1 == vnode->layer->speed->midi[1] && midiport == vnode->layer->speed->midiport) {
-					mainmix->midiisspeed = true;
-					mainmix->midi2 = midi2;
-					mainmix->midiparam = vnode->layer->speed;
-				}
-				if (midi0 == vnode->layer->opacity->midi[0] && midi1 == vnode->layer->opacity->midi[1] && midiport == vnode->layer->opacity->midiport) {
-					mainmix->midi2 = midi2;
-					mainmix->midiparam = vnode->layer->opacity;
-				}
-				if (midi0 == vnode->layer->volume->midi[0] && midi1 == vnode->layer->volume->midi[1] && midiport == vnode->layer->volume->midiport) {
-					mainmix->midi2 = midi2;
-					mainmix->midiparam = vnode->layer->volume;
-				}
-				if (midi0 == vnode->layer->chtol->midi[0] && midi1 == vnode->layer->chtol->midi[1] && midiport == vnode->layer->chtol->midiport) {
-					mainmix->midi2 = midi2;
-					mainmix->midiparam = vnode->layer->chtol;
-				}
-			}
-			if (ns[i]->type == BLEND) {
-				BlendNode *bnode = (BlendNode*)ns[i]; 			
-				if (midi0 == bnode->mixfac->midi[0] && midi1 == bnode->mixfac->midi[1] && midiport == bnode->mixfac->midiport) {
-					mainmix->midi2 = midi2;
-					mainmix->midiparam = bnode->mixfac;
-				}
-			}
 		}
 	}
 	LayMidi *lm = nullptr;

@@ -2282,6 +2282,8 @@ void main()
 					}
 					break;
 				case 8:  //bars
+				    xxpos *= 16.0f;
+				    xypos *= 16.0f;
 				    xamount *= 1.001f;
 					if (xxpos >= 1) xl = fbowidth * fcdiv / xxpos;
 					else xl = fbowidth * fcdiv;
@@ -2304,6 +2306,8 @@ void main()
 					}
 					break;
 				case 9:  //pattern
+				    xxpos *= 16.0f;
+				    xypos *= 16.0f;
 				    xamount *= 1.001f;
 					if (xxpos >= 1) xl = fbowidth * fcdiv / xxpos;
 					else xl = fbowidth * fcdiv;

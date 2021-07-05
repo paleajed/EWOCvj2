@@ -160,6 +160,8 @@ LoopStationElement* LoopStation::add_elem() {
 
 void LoopStation::handle() {
     this->scrpos = mainprogram->handle_scrollboxes(this->upscrbox, this->downscrbox, this->elems.size(), this->scrpos, 8);
+    int ce = std::clamp(this->currelem->pos, this->scrpos, this->scrpos + 7);
+    this->currelem = this->elems[ce];
     for (int i = this->scrpos; i < this->scrpos + 8; i++) {
 		this->elems[i]->handle();
 	}
@@ -235,6 +237,7 @@ void LoopStationElement::visualize() {
                                       this->colbox->vtxcoords->y1 + 0.0375f, 0.0225f, 0.03f, -1);
 	if (this == loopstation->currelem) draw_box(grey, white, this->box, -1);
 	else draw_box(grey, nullptr, this->box, -1);
+    render_text(std::to_string(this->pos + 1), white, this->recbut->box->vtxcoords->x1 - 0.05f, this->recbut->box->vtxcoords->y1 + 0.03f, 0.0012f, 0.002f, 2);
 	if (this->box->in() || this->recbut->box->in() || this->loopbut->box->in() || this->playbut->box->in() || this->speed->box->in() || this->colbox->in()) {
         if (!mainprogram->menuondisplay) {
             if (mainprogram->menuactivation) {
