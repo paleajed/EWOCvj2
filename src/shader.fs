@@ -1540,6 +1540,30 @@ void main()
     int brk = 0;
 	vec2 texco;
 	texco = TexCoord0.st;
+
+	if (glbox == 1) {
+		int quadnr;
+		if (orquad != 0) quadnr = orquad;
+		else quadnr = Vertex0 / 4;
+		uint Tex0 = texelFetch(boxtexSampler, quadnr).r;
+		if (Tex0 > 127) {
+			// text
+			float c = texture2D(boxSampler[Tex0 - 128], vec2(TexCoord0.s, TexCoord0.t)).r;
+			if (c == 0.0) discard;
+			vec4 sam = texelFetch(boxcolSampler, quadnr).rgba;
+			FragColor = vec4(sam.rgb, 1.0);
+		}
+		else if (Tex0 != 127) {
+			// image
+			FragColor = vec4(texture2D(boxSampler[Tex0], vec2(TexCoord0.s, TexCoord0.t)).rgb, 1.0f);
+		}
+		else {
+			// flat
+			FragColor = texelFetch(boxcolSampler, quadnr).rgba;
+		}
+		return;
+	}
+
     if (interm == 1) {
 		texcol = texture2D(Sampler0, texco);
 		switch (fxid) {
@@ -1900,27 +1924,6 @@ void main()
 		else {
 			if (box == 1) FragColor = color;
 			else FragColor = texture2D(Sampler0, TexCoord0.st).rgba;
-		}
-	}
-	if (glbox == 1) {
-		int quadnr;
-		if (orquad != 0) quadnr = orquad;
-		else quadnr = Vertex0 / 4;
-		uint Tex0 = texelFetch(boxtexSampler, quadnr).r;
-		if (Tex0 > 127) {
-			// text
-			float c = texture2D(boxSampler[Tex0 - 128], vec2(TexCoord0.s, TexCoord0.t)).r;
-			if (c == 0.0) discard;
-			vec4 sam = texelFetch(boxcolSampler, quadnr).rgba;
-			FragColor = vec4(sam.rgb, 1.0);
-		}
-		else if (Tex0 != 127) {
-			// image
-			FragColor = vec4(texture2D(boxSampler[Tex0], vec2(TexCoord0.s, TexCoord0.t)).rgb, 1.0f);
-		}
-		else {
-			// flat
-			FragColor = texelFetch(boxcolSampler, quadnr).rgba;
 		}
 	}
 

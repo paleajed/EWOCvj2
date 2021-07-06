@@ -365,6 +365,26 @@ void BinsMain::handle(bool draw) {
 							}
 							mainprogram->make_menu("binelmenu", mainprogram->binelmenu, bnlm);
 						}
+						if (binel->select) {
+                            // set binelmenu entries when mouse over selected element
+                            this->binelmenuoptions.clear();
+                            std::vector<std::string> bnlm;
+                            if (!binel->encoding) {
+                                bnlm.push_back("Move selected elements");
+                                binelmenuoptions.push_back(BET_MOVSEL);
+                                bnlm.push_back("Delete selected elements");
+                                binelmenuoptions.push_back(BET_DELSEL);
+                                bnlm.push_back("HAP encode selected elements");
+                                binelmenuoptions.push_back(BET_HAPSEL);
+                                bnlm.push_back("Quit");
+                                binelmenuoptions.push_back(BET_QUIT);
+                            }
+                            else {
+                                bnlm.push_back("Cancel element HAP encoding");
+                                binelmenuoptions.push_back(BET_HAPELEM);
+                            }
+                            mainprogram->make_menu("binelmenu", mainprogram->binelmenu, bnlm);
+						}
 					}
 				}
 
@@ -559,18 +579,20 @@ void BinsMain::handle(bool draw) {
 			if (this->menubinel) {
 				if (this->menubinel->name != "") full = true;
 			}
-			if (mainprogram->leftmousedown && !full && !this->inputtexes.size() && !mainprogram->intopmenu && !this->renamingelem) {
+			if (mainprogram->leftmousedown && !full && !this->inputtexes.size() && !mainprogram->intopmenu && !this->renamingelem && mainprogram->quitting == "") {
 				mainprogram->leftmousedown = false;
 				if (!this->selboxing) {
 					this->selboxing = true;
 					this->selboxx = mainprogram->mx;
 					this->selboxy = mainprogram->my;
-					for (int i = 0; i < 12; i++) {
-						for (int j = 0; j < 12; j++) {
-							BinElement* binel = this->currbin->elements[i * 12 + j];
-							binel->select = false;
-						}
-					}
+					if (!mainprogram->ctrl && !mainprogram->shift) {
+                        for (int i = 0; i < 12; i++) {
+                            for (int j = 0; j < 12; j++) {
+                                BinElement *binel = this->currbin->elements[i * 12 + j];
+                                binel->select = false;
+                            }
+                        }
+                    }
 				}
 			}
 		}
@@ -595,20 +617,24 @@ void BinsMain::handle(bool draw) {
 					Box* ebox = this->elemboxes[i * 12 + j];
 					BinElement* binel = this->currbin->elements[i * 12 + j];
 					if (binel->name == "") continue;
-					binel->select = false;
+					if (binel->boxselect) binel->select = false;
 					if (box->in(ebox->scrcoords->x1, ebox->scrcoords->y1) || box->in(ebox->scrcoords->x1 + ebox->scrcoords->w, ebox->scrcoords->y1) || box->in(ebox->scrcoords->x1, ebox->scrcoords->y1 - ebox->scrcoords->h) || box->in(ebox->scrcoords->x1 + ebox->scrcoords->w, ebox->scrcoords->y1 - ebox->scrcoords->h)) {
-						binel->select = true;
+                        binel->select = true;
+                        binel->boxselect = true;
+						if (!found) {
+						    this->firsti = i;
+						    this->firstj = j;
+						}
 						found = true;
 					}
 				}
 			}
 			if (mainprogram->leftmouse) {
-				if (found) {
-					mainprogram->binselmenu->state = 2;
-					mainprogram->binselmenu->menux = box->scrcoords->x1 + box->scrcoords->w / 2.0f;
-					mainprogram->binselmenu->menuy = box->scrcoords->y1 - box->scrcoords->h / 2.0f;
-				}
-				this->selboxing = false;
+			    for (int i = 0; i < 144; i++) {
+			       this->currbin->elements[i]->boxselect = false;
+			    }
+			    this->selboxing = false;
+			    mainprogram->leftmouse = false;
 			}
 		}
 	}
@@ -892,43 +918,23 @@ void BinsMain::handle(bool draw) {
 		if (this->prevbinel) {
 			// 
 			if (this->inputtexes.size()) {
-				int offset = 0;
-				for (int k = 0; k < this->inputtexes.size(); k++) {
-					// when opening elements, calculate offset when first element past bin start or end
-					int offj = (int)((this->previ + offset + k) / 12);
-					int el = ((this->previ + offset + k + 144) % 12) * 12 + this->prevj + offj;
-					if (this->prevj + offj > 11) {
-						offset = k - this->inputtexes.size();
-						cont = true;
-						break;
-					}
-					BinElement *dirbinel = this->currbin->elements[el];
-					if (cont) break;
+                int ii = this->previ - this->firsti;
+                int jj = this->prevj - this->firstj;
+                for (int k = 0; k < this->inputtexes.size(); k++) {
+                    int epos = 0;
+                    epos = ii * 12 + jj + k;
+                    BinElement *dirbinel;
+                    if (0 <= epos && epos < 144) {
+                        dirbinel = this->currbin->elements[epos];
+                    }
+                    else continue;
+                    dirbinel->tex = dirbinel->oldtex;
 				}
-				offset = 0;
-				if (!cont) {
-					for (int k = 0; k < this->inputtexes.size(); k++) {
-						int offj = (int)((this->previ + offset + k) / 12);
-						int el = ((this->previ + offset + k + 144) % 12) * 12 + this->prevj + offj;
-						BinElement *dirbinel = this->currbin->elements[el];
-						// reset texes to cancel input
-						dirbinel->tex = dirbinel->oldtex;
-						glDeleteTextures(1, &this->inputtexes[k]);
-					}
-				}
-				else {
-					for (int k = 0; k < this->inputtexes.size(); k++) {
-						int offj = (int)((143 - k + offset) / 12) - (143 - k + offset < 0);
-						int el = ((143 - k + offset) % 12) * 12 + offj;
-						BinElement *dirbinel = this->currbin->elements[el];
-						// reset texes to cancel input
-						dirbinel->tex = dirbinel->oldtex;
-						glDeleteTextures(1, &this->inputtexes[k]);
-					}
-				}
+
 				this->currbinel = nullptr;
 				this->inputtexes.clear();
-				mainprogram->rightmouse = false;
+                mainprogram->rightmouse = false;
+                mainprogram->menuactivation = false;
 			}
 		}
 		for (int i = 0; i < this->movebinels.size(); i++) {
@@ -1148,45 +1154,9 @@ void BinsMain::handle(bool draw) {
 				}
 			}
 		}
-		
-		// Draw and handle binselmenu
-		int k = mainprogram->handle_menu(mainprogram->binselmenu);
-		if (k == 0) {
-			// delete selected bin elements
-			for (int i = 0; i < 12; i++) {
-				for (int j = 0; j < 12; j++) {
-					BinElement* binel = this->currbin->elements[i * 12 + j];
-					if (binel->select) {
-						this->delbinels.push_back(binel);
-					}
-				}
-			}
-			mainprogram->del = true;
-		}
-		else if (k == 1) {
-			// move selected bin elements
-			for (int i = 0; i < 12; i++) {
-				for (int j = 0; j < 12; j++) {
-					BinElement* binel = this->currbin->elements[i * 12 + j];
-					if (binel->select) {
-						this->movebinels.push_back(binel);
-						this->addpaths.push_back(binel->path);
-						this->inputtexes.push_back(binel->tex);
-						this->inputtypes.push_back(binel->type);
-						this->inputjpegpaths.push_back(binel->jpegpath);
-					}
-				}
-			}
-			mainprogram->del = true;
-		}
 
-		if (mainprogram->menuchosen) {
-			// menu cleanup
-			mainprogram->menuchosen = false;
-			mainprogram->menuactivation = 0;
-			mainprogram->menuresults.clear();
-			mainprogram->menuondisplay = false;
-		}
+
+
 
 		// Draw and handle binmenu and binelmenu	
 		if (this->bins.size() > 1) {
@@ -1248,11 +1218,40 @@ void BinsMain::handle(bool draw) {
 	//if (k > -1) this->currbinel = nullptr;
 	if (binelmenuoptions.size() && k > -1) {
 		if (binelmenuoptions[k] != BET_OPENFILES) this->menuactbinel = nullptr;
-		if (binelmenuoptions[k] == BET_DELETE) {
-			// delete hovered bin element
-			this->delbinels.push_back(this->menubinel);
-			mainprogram->del = true;
-		}
+        if (binelmenuoptions[k] == BET_DELETE) {
+            // delete hovered bin element
+            this->delbinels.push_back(this->menubinel);
+            mainprogram->del = true;
+        }
+        else if (binelmenuoptions[k] == BET_DELSEL) {
+            // delete selected bin elements
+            for (int i = 0; i < 144; i++) {
+                BinElement *elem = this->currbin->elements[i];
+                if (elem->select) this->delbinels.push_back(elem);
+            }
+            mainprogram->del = true;
+        }
+        else if (binelmenuoptions[k] == BET_MOVSEL) {
+            // move selected bin elements
+            for (int i = 0; i < 12; i++) {
+                for (int j = 0; j < 12; j++) {
+                    BinElement* binel = this->currbin->elements[i * 12 + j];
+                    if (binel->select) {
+                        this->movebinels.push_back(binel);
+                        this->addpaths.push_back(binel->path);
+                        this->inputtexes.push_back(binel->tex);
+                        this->inputtypes.push_back(binel->type);
+                        this->inputjpegpaths.push_back(binel->jpegpath);
+                    }
+                    else {
+                        this->addpaths.push_back("");
+                        this->inputtexes.push_back(-1);
+                        this->inputtypes.push_back(ELEM_FILE);
+                        this->inputjpegpaths.push_back("");
+                    }
+                }
+            }
+        }
 		else if (binelmenuoptions[k] == BET_RENAME) {
 			// start renaming bin element
 			this->renamingelem = this->menubinel;
@@ -1394,24 +1393,42 @@ void BinsMain::handle(bool draw) {
 			}
 			else this->menubinel->encoding = false; // signal stopping the encoding of this elem
 		}
-		else if (binelmenuoptions[k] == BET_HAPBIN) {
-			// hap encode entire bin
-			for (int i = 0; i < 12; i++) {
-				for (int j = 0; j < 12; j++) {
-					// elements
-					BinElement* binel = this->currbin->elements[i * 12 + j];
-					if (binel->name != "" && (binel->type == ELEM_FILE || binel->type == ELEM_LAYER)) {
-						this->hap_binel(binel, nullptr);
-					}
-					else if (binel->type == ELEM_DECK) {
-						this->hap_deck(this->menubinel);
-					}
-					else if (binel->type == ELEM_MIX) {
-						this->hap_mix(this->menubinel);
-					}
-				}
-			}
-		}
+        else if (binelmenuoptions[k] == BET_HAPBIN) {
+            // hap encode entire bin
+            for (int i = 0; i < 12; i++) {
+                for (int j = 0; j < 12; j++) {
+                    // elements
+                    BinElement* binel = this->currbin->elements[i * 12 + j];
+                    if (binel->name != "" && (binel->type == ELEM_FILE || binel->type == ELEM_LAYER)) {
+                        this->hap_binel(binel, nullptr);
+                    }
+                    else if (binel->type == ELEM_DECK) {
+                        this->hap_deck(binel);
+                    }
+                    else if (binel->type == ELEM_MIX) {
+                        this->hap_mix(binel);
+                    }
+                }
+            }
+        }
+        else if (binelmenuoptions[k] == BET_HAPSEL) {
+            // hap encode entire bin
+            for (int i = 0; i < 12; i++) {
+                for (int j = 0; j < 12; j++) {
+                    // elements
+                    BinElement* binel = this->currbin->elements[i * 12 + j];
+                    if (binel->select) {
+                        if (binel->name != "" && (binel->type == ELEM_FILE || binel->type == ELEM_LAYER)) {
+                            this->hap_binel(binel, nullptr);
+                        } else if (binel->type == ELEM_DECK) {
+                            this->hap_deck(binel);
+                        } else if (binel->type == ELEM_MIX) {
+                            this->hap_mix(binel);
+                        }
+                    }
+                }
+            }
+        }
         else if (binelmenuoptions[k] == BET_QUIT) {
             // quit program
             mainprogram->quitting = "quitted";
@@ -1833,25 +1850,81 @@ void BinsMain::handle(bool draw) {
 						}
 
 						if (binel->name != "") {
-							if (!this->inputtexes.size() && mainprogram->leftmousedown && !mainprogram->dragbinel) {
-								// dragging single bin element
-								if (binel->name != "") {
-									mainprogram->dragbinel = new BinElement;
-									mainprogram->dragbinel->tex = binel->tex;
-									mainprogram->dragbinel->path = binel->path;
-									mainprogram->dragbinel->name = binel->name;
-									mainprogram->dragbinel->type = binel->type;
-									mainprogram->leftmousedown = false;
-									// start drag
-									this->movingtex = binel->tex;
-									this->movingbinel = binel;
-									this->currbinel = binel;
-								}
+							if (!this->inputtexes.size()) {
+                                if (mainprogram->leftmousedown && !mainprogram->dragbinel && !mainprogram->ctrl && !mainprogram->shift) {
+                                    // dragging single bin element
+                                    if (binel->name != "") {
+                                        mainprogram->dragbinel = new BinElement;
+                                        mainprogram->dragbinel->tex = binel->tex;
+                                        mainprogram->dragbinel->path = binel->path;
+                                        mainprogram->dragbinel->name = binel->name;
+                                        mainprogram->dragbinel->type = binel->type;
+                                        mainprogram->leftmousedown = false;
+                                        // start drag
+                                        this->movingtex = binel->tex;
+                                        this->movingbinel = binel;
+                                        this->currbinel = binel;
+                                    }
+                                }
+                                else if (mainprogram->leftmouse) {
+                                    if (mainprogram->ctrl) {
+                                        binel->select = true;
+                                        mainprogram->leftmouse = false;
+                                    }
+                                }
 							}
 						}
 					}
 
-					if (binel != this->currbinel) {
+                    if (this->movebinels.size() && mainprogram->leftmouse) {
+                        // confirm elements move, set elements and clean up
+                        int ii = i - this->firsti;
+                        int jj = j - this->firstj;
+                        for (int k = 0; k < this->inputtexes.size(); k++) {
+                            int epos = 0;
+                            epos = ii * 12 + jj + k;
+                            BinElement *dirbinel;
+                            if (0 <= epos && epos < 144) {
+                                dirbinel = this->currbin->elements[epos];
+                            }
+                            else continue;
+                            if (this->inputtexes[k] != -1) {
+                                dirbinel->type = this->inputtypes[k];
+                                dirbinel->path = this->addpaths[k];
+                                dirbinel->name = remove_extension(basename(dirbinel->path));
+                                dirbinel->oldjpegpath = dirbinel->jpegpath;
+                                dirbinel->jpegpath = this->inputjpegpaths[k];
+                                int pos =
+                                        std::find(this->movebinels.begin(), this->movebinels.end(), dirbinel) -
+                                        this->movebinels.begin();
+                                if (pos < this->movebinels.size()) {
+                                    this->movebinels.erase(this->movebinels.begin() + pos);
+                                }
+                                if (this->movebinels.size()) {
+                                    GLuint butex = dirbinel->tex;
+                                    dirbinel->tex = copy_tex(dirbinel->tex);
+                                    if (butex != -1) glDeleteTextures(1, &butex);
+                                }
+                            }
+                        }
+
+                        for (int i = 0; i < this->movebinels.size(); i++) {
+                            if (this->movebinels[i]->tex != -1) {
+                                this->movebinels[i]->erase();
+                            }
+                        }
+                        this->movebinels.clear();
+                        // clean up
+                        this->inputtexes.clear();
+                        if (this->currbinel == this->menuactbinel) this->menuactbinel = nullptr;
+                        this->currbinel = nullptr;
+                        this->prevbinel = nullptr;
+                        this->inputtypes.clear();
+                        this->addpaths.clear();
+                        mainprogram->leftmouse = false;
+                    }
+
+                    if (binel != this->currbinel) {
 						if (this->currbinel) this->binpreview = false;
                         bool cond1 = false;
                         bool cond2 = false;
@@ -1877,173 +1950,44 @@ void BinsMain::handle(bool draw) {
 						}	
 
 						if (this->inputtexes.size() && !this->menuactbinel) {
-							bool cont = false;
 							if (this->prevbinel) {
 								// when inputting files, set old texes back
-								int offset = 0;
-								for (int k = 0; k < this->inputtexes.size(); k++) {
-									// when opening elements, calculate offset when first element past bin start or end
-                                    int cnt = 0;
+                                int ii = this->previ - this->firsti;
+                                int jj = this->prevj - this->firstj;
+ 								for (int k = 0; k < this->inputtexes.size(); k++) {
                                     int epos = 0;
-                                    bool firstdone = false;
-                                    for (int o = (this->previ / 4) * 3 + this->prevj / 4; o < 9; o++) {
-                                        for (int n = (i % 4) * !firstdone; n < 4; n++) {
-                                            for (int m = (j % 4) * !firstdone; m < 4; m++) {
-                                                if (cnt == k) {
-                                                    epos = (int)(o / 3) * 48 + (int)(o % 3) * 4 + n * 12 + m;
-                                                    break;
-                                                }
-                                                cnt++;
-                                            }
-                                            firstdone = true;
-                                            if (epos) break;
-                                        }
-                                        if(epos) break;
+                                    epos = ii * 12 + jj + k;
+                                    BinElement *dirbinel;
+                                    if (0 <= epos && epos < 144) {
+                                        dirbinel = this->currbin->elements[epos];
                                     }
-                                    if (epos < 144) {
-                                        BinElement *dirbinel = this->currbin->elements[epos];
+                                    else continue;
+                                    if (this->inputtexes[k] != -1) {
+                                        dirbinel->select = dirbinel->oldselect;
+                                        dirbinel->tex = dirbinel->oldtex;
                                     }
-                                    else break;
-									if (cont) break;
-								}
-								offset = 0;
-								if (!cont) {
-									for (int k = 0; k < this->inputtexes.size(); k++) {
-                                        int cnt = 0;
-                                        int epos = 0;
-                                        bool firstdone = false;
-                                        for (int o = (this->previ / 4) * 3 + this->prevj / 4; o < 9; o++) {
-                                            for (int n = (i % 4) * !firstdone; n < 4; n++) {
-                                                for (int m = (j % 4) * !firstdone; m < 4; m++) {
-                                                    if (cnt == k) {
-                                                        epos = (int)(o / 3) * 48 + (int)(o % 3) * 4 + n * 12 + m;
-                                                        break;
-                                                    }
-                                                    cnt++;
-                                                }
-                                                firstdone = true;
-                                                if (epos) break;
-                                            }
-                                            if(epos) break;
-                                        }
-										BinElement *dirbinel = this->currbin->elements[epos];
-										// reset old texes
-										dirbinel->select = dirbinel->oldselect;
-										dirbinel->tex = dirbinel->oldtex;
-									}
-								}
-								else {
-									for (int k = 0; k < this->inputtexes.size(); k++) {
-                                        int cnt = 0;
-                                        int epos = 0;
-                                        bool firstdone = false;
-                                        for (int o = (this->previ / 4) * 3 + this->prevj / 4; o < 9; o++) {
-                                            for (int n = (i % 4) * !firstdone; n < 4; n++) {
-                                                for (int m = (j % 4) * !firstdone; m < 4; m++) {
-                                                    if (cnt == k) {
-                                                        epos = (int)(o / 3) * 48 + (int)(o % 3) * 4 + n * 12 + m;
-                                                        break;
-                                                    }
-                                                    cnt++;
-                                                }
-                                                firstdone = true;
-                                                if (epos) break;
-                                            }
-                                            if(epos) break;
-                                        }
-										BinElement *dirbinel = this->currbin->elements[epos];
-										// reset old texes
-										dirbinel->select = dirbinel->oldselect;
-										dirbinel->tex = dirbinel->oldtex;
-									}
 								}
 							}
+
 							// set new texes of inputted files
-							int offset = 0;
-							cont = false;
-							int ii = i;
-							int jj = j;
-							for (int k = 0; k < this->inputtexes.size(); k++) {
-                                int cnt = 0;
+                            int ii = i - this->firsti;
+                            int jj = j - this->firstj;
+                            for (int k = 0; k < this->inputtexes.size(); k++) {
                                 int epos = 0;
-                                bool firstdone = false;
-                                for (int o = (i / 4) * 3 + j / 4; o < 9; o++) {
-                                    for (int n = (i % 4) * !firstdone; n < 4; n++) {
-                                        for (int m = (j % 4) * !firstdone; m < 4; m++) {
-                                            if (cnt == k) {
-                                                epos = (int)(o / 3) * 48 + (int)(o % 3) * 4 + n * 12 + m;
-                                                break;
-                                            }
-                                            cnt++;
-                                        }
-                                        firstdone = true;
-                                        if (epos) break;
-                                    }
-                                    if(epos) break;
+                                epos = ii * 12 + jj + k;
+                                BinElement *dirbinel;
+                                if (0 <= epos && epos < 144) {
+                                    dirbinel = this->currbin->elements[epos];
                                 }
-                                if (epos < 144) {
-                                    BinElement *dirbinel = this->currbin->elements[epos];
-                                }
-                                else break;
-								if (cont) break;
-							}
-							offset = 0;
-							if (!cont) {
-								for (int k = 0; k < this->inputtexes.size(); k++) {
-									int offi = (int)((jj + offset + k) / 12) - (jj + offset + k < 0);
-									int el = ((jj + offset + k + 144) % 12) * 12 + ii + offi;
-									BinElement *dirbinel = this->currbin->elements[el];
-									// set input texes
-									dirbinel->oldselect = dirbinel->select;
-									dirbinel->select = false;
-                                    int cnt = 0;
-                                    int epos = 0;
-                                    bool firstdone = false;
-                                    for (int o = (i / 4) * 3 + j / 4; o < 9; o++) {
-                                        for (int n = (i % 4) * !firstdone; n < 4; n++) {
-                                            for (int m = (j % 4) * !firstdone; m < 4; m++) {
-                                                if (cnt == k) {
-                                                    epos = (int)(o / 3) * 48 + (int)(o % 3) * 4 + n * 12 + m;
-                                                    break;
-                                                }
-                                                cnt++;
-                                            }
-                                            firstdone = true;
-                                            if (epos) break;
-                                        }
-                                        if(epos) break;
-                                    }
+                                else continue;
+                                if (this->inputtexes[k] != -1) {
+                                    dirbinel->oldselect = dirbinel->select;
+                                    dirbinel->select = false;
                                     dirbinel->oldtex = dirbinel->tex;
-									dirbinel->tex = this->inputtexes[k];
-								}
+                                    dirbinel->tex = this->inputtexes[k];
+                                }
 							}
-							else {
-								for (int k = 0; k < this->inputtexes.size(); k++) {
-                                    int cnt = 0;
-                                    int epos = 0;
-                                    bool firstdone = false;
-                                    for (int o = (i / 4) * 3 + j / 4; o < 9; o++) {
-                                        for (int n = (i % 4) * !firstdone; n < 4; n++) {
-                                            for (int m = (j % 4) * !firstdone; m < 4; m++) {
-                                                if (cnt == k) {
-                                                    epos = (int)(o / 3) * 48 + (int)(o % 3) * 4 + n * 12 + m;
-                                                    break;
-                                                }
-                                                cnt++;
-                                            }
-                                            firstdone = true;
-                                            if (epos) break;
-                                        }
-                                        if(epos) break;
-                                    }
- 									BinElement *dirbinel = this->currbin->elements[epos];
-									// set input texes
-									dirbinel->oldselect = dirbinel->select;
-									dirbinel->select = false;
-									dirbinel->oldtex = dirbinel->tex;
-									dirbinel->tex = this->inputtexes[this->inputtexes.size() - k - 1];
-								}
-							}
+
 							// set values to allow for resetting old texes when inputfiles are moved around
 							this->prevbinel = binel;
 							this->previ = i;
@@ -2053,10 +1997,10 @@ void BinsMain::handle(bool draw) {
 
 					if (this->inputtexes.size() && binel == this->menuactbinel && !this->openfilesbin) {
 						bool cont = false;
-						// set values of elems of inputted files
+						// set values of elems of opened files
 						for (int k = 0; k < this->inputtexes.size(); k++) {
                             int cnt = 0;
-                            int epos = 0;
+                            int epos = -1;
                             bool firstdone = false;
                             for (int o = (i / 4) * 3 + j / 4; o < 9; o++) {
                                 for (int n = (i % 4) * !firstdone; n < 4; n++) {
@@ -2068,9 +2012,9 @@ void BinsMain::handle(bool draw) {
                                         cnt++;
                                     }
                                     firstdone = true;
-                                    if (epos) break;
+                                    if (epos >= 0) break;
                                 }
-                                if(epos) break;
+                                if(epos >= 0) break;
                             }
                             if (epos < 144) {
                                 BinElement *dirbinel = this->currbin->elements[epos];
@@ -2121,59 +2065,6 @@ void BinsMain::handle(bool draw) {
 					}
 					this->delbinels.clear();
 					mainprogram->del = false;
-				}
-				
-				if (this->currbinel && this->inputtexes.size() && mainprogram->leftmouse) {
-					// confirm position of inputted files and set all influenced bin elements to the right values
-					for (int k = 0; k < this->inputtexes.size(); k++) {
-                        int cnt = 0;
-                        int epos = 0;
-                        bool firstdone = false;
-                        for (int o = (i / 4) * 3 + j / 4; o < 9; o++) {
-                            for (int n = (i % 4) * !firstdone; n < 4; n++) {
-                                for (int m = (j % 4) * !firstdone; m < 4; m++) {
-                                    if (cnt == k) {
-                                        epos = (int)(o / 3) * 48 + (int)(o % 3) * 4 + n * 12 + m;
-                                        break;
-                                    }
-                                    cnt++;
-                                }
-                                firstdone = true;
-                                if (epos) break;
-                            }
-                            if(epos) break;
-                        }
-                        if (epos < 144) {
-                            BinElement *dirbinel = this->currbin->elements[epos];
-                            dirbinel->type = this->inputtypes[k];
-                            dirbinel->path = this->addpaths[k];
-                            dirbinel->name = remove_extension(basename(dirbinel->path));
-                            dirbinel->oldjpegpath = dirbinel->jpegpath;
-                            dirbinel->jpegpath = this->inputjpegpaths[k];
-                            int pos = std::find(this->movebinels.begin(), this->movebinels.end(), dirbinel) -
-                                      this->movebinels.begin();
-                            if (pos < this->movebinels.size()) {
-                                this->movebinels.erase(this->movebinels.begin() + pos);
-                            }
-                            if (this->movebinels.size()) {
-                                GLuint butex = dirbinel->tex;
-                                dirbinel->tex = copy_tex(dirbinel->tex);
-                                if (butex != -1) glDeleteTextures(1, &butex);
-                            }
-                        }
-					}
-					for (int i = 0; i < this->movebinels.size(); i++) {
-						this->movebinels[i]->erase();
-					}
-					this->movebinels.clear();
-					// clean up
-					this->inputtexes.clear();
-					if (this->currbinel == this->menuactbinel) this->menuactbinel = nullptr;
-					this->currbinel = nullptr;
-					this->prevbinel = nullptr;
-					this->inputtypes.clear();
-					this->addpaths.clear();
-					mainprogram->leftmouse = false;
 				}
 			}
 		}
@@ -3018,8 +2909,6 @@ void BinsMain::hap_encode(const std::string srcpath, BinElement *binel, BinEleme
     avcodec_free_context(&c);
     av_frame_free(&nv12frame);
     av_packet_unref(&pkt);
-    avformat_close_input(&source);
-    avformat_close_input(&dest);
     binel->path = remove_extension(binel->path) + "_hap.mov";
 	boost::filesystem::rename(destpath, binel->path);
     binel->encoding = false;

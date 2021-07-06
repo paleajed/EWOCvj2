@@ -2275,8 +2275,7 @@ bool Box::in(int mx, int my) {
         if (this->scrcoords->y1 - this->scrcoords->h <= my && my <= this->scrcoords->y1) {
             mainprogram->boxhit = true;
             if (mainprogram->showtooltips && !mainprogram->ttreserved) {
-                if (mainprogram->tooltipbox) mainprogram->tooltipbox = this->copy();
-                else mainprogram->tooltipbox = this;
+                mainprogram->tooltipbox = this->copy();
                 mainprogram->ttreserved = this->reserved;
             }
             else mainprogram->tooltipbox = nullptr;

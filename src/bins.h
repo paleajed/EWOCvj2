@@ -15,6 +15,9 @@ typedef enum
 	BET_HAPBIN = 12,
     BET_QUIT = 13,
     BET_SAVPROJ = 14,
+    BET_MOVSEL = 15,
+    BET_DELSEL = 16,
+    BET_HAPSEL = 17,
 } BINELMENU_OPTION;
 
 class Bin;
@@ -28,8 +31,10 @@ class BinsMain {
 		BinElement *currbinel = nullptr;
 		BinElement *prevbinel = nullptr;
 		std::vector<BINELMENU_OPTION> binelmenuoptions;
-		int previ;
-		int prevj;
+        int previ;
+        int prevj;
+        int firsti;
+        int firstj;
 		Box* loadbinbox;
 		Box* newbinbox;
 		Box* renamingbox;
@@ -155,6 +160,7 @@ class BinElement {
 		bool oldfull = false;
 		bool select = false;
 		bool oldselect = false;
+		bool boxselect = false;
 		bool encwaiting = false;
 		bool encoding = false;
 		int encthreads = 0;
