@@ -78,7 +78,8 @@ struct registered_midi {
 
 class Clip {
 	public:
-		std::string path = "";
+        std::string path = "";
+        std::string jpegpath = "";
 		ELEM_TYPE type;
 		GLuint tex = -1;
 		int frame = 0.0f;
@@ -172,7 +173,7 @@ class Layer {
 		float oldscale = 1.0f;
 		float scratch = 0.0f;
 		bool scratchtouch = 0;
-		float olddeckspeed;
+		float olddeckspeed = 1.0f;
 		bool vidmoving = false;
 		bool live = false;
 		Layer *liveinput = nullptr;
@@ -281,6 +282,9 @@ class Layer {
 
         bool keyframe = false;
 
+        bool lockzoompan = false;
+        bool lockspeed = false;
+
 		void display();
 		Effect* add_effect(EFFECT_TYPE type, int pos);
 		Effect* replace_effect(EFFECT_TYPE type, int pos);
@@ -299,7 +303,7 @@ class Layer {
 		bool thread_vidopen();
         Layer* open_video(float frame, const std::string& filename, int reset, bool dontdeleffs = false);
         Layer* open_video(float frame, const std::string& filename, int reset, bool copy, bool noeffects);
-		void open_image(const std::string& path);
+		void open_image(const std::string& path, bool init = true);
 		void initialize(int w, int h);
 		void initialize(int w, int h, int compression);
 		void clip_display_next(bool startend, bool alive);
@@ -310,8 +314,8 @@ class Layer {
         void trigger();
         Layer* next();
 		Layer* prev();
-        void del();
-		Layer();
+        Layer();
+        ~Layer();
 		Layer(bool comp);
 		Layer(const Layer& lay);
 		//~Layer();
@@ -380,7 +384,7 @@ class Mixer {
         void copy_pbos(Layer *clay, Layer *lay);
         void set_values(Layer* clay, Layer* lay, bool open);
 		void copy_effects(Layer* slay, Layer* dlay, bool comp);
-        void handle_param(Param* par);
+        void handle_param(Param* par, bool smallxpad = false);
         void handle_adaptparam();
 		void handle_clips();
 		void record_video(std::string reccod);
@@ -410,6 +414,7 @@ class Mixer {
         void open_dragbinel(Layer *lay, int i);
         void open_dragbinel(Layer *lay);
         void reconnect_all(std::vector<Layer*> &layers);
+        void change_currlay(Layer *oldcurr, Layer *newcurr);
 		Mixer();
 		
 		std::mutex recordlock[2];
@@ -419,6 +424,9 @@ class Mixer {
         bool recording[2] = {false, false};
         bool donerec[2] = {true, true};
         std::string reccodec;
+        bool reckind = 1;
+        bool recrep = false;
+        Layer *reclay = nullptr;
         Button *recbutQ;
         Button *recbutS;
         GLuint recSthumb = -1;
@@ -427,6 +435,8 @@ class Mixer {
         GLuint recQthumbshow = -1;
         std::string recpath[2];
         bool recswitch[2] = {false, false};
+        bool checkre = false;
+        bool rerun = false;
 		uint8_t *avbuffer = nullptr;
 		void *rgbdata = nullptr;
 		GLuint ioBuf;
@@ -445,7 +455,8 @@ class Mixer {
 		int scrollmx;
 		float scrolltime = 0.0f;
 		int mouseeffect = -1;
-		Layer *mouselayer = nullptr;
+        Layer *mouselayer = nullptr;
+        Layer *menulayer = nullptr;
 		int mousedeck = -1;
 		Shelf *mouseshelf;
 		int mouseshelfelem;
@@ -456,11 +467,15 @@ class Mixer {
 		Param *learnparam;
 		Button *learnbutton;
 		bool learn = false;
+		bool learndouble = false;
 		float midi2;
+        int prevmidi0 = -1;
+        int prevmidi1 = -1;
 		Button *midibutton = nullptr;
 		Button *midishelfbutton = nullptr;
 		Param *midiparam = nullptr;
 		Param *adaptparam = nullptr;
+		Param *prepadaptparam = nullptr;
 		Param *adaptnumparam = nullptr;
 		bool midiisspeed = false;
 		int prevx;
@@ -483,8 +498,21 @@ class Mixer {
 		bool domix;
 		int waitmixtex = 0;
 
-		std::unordered_map<int, std::unordered_map<int, std::unordered_map<std::string, registered_midi>>> midi_registrations;
-		
+		std::unordered_map<Param*, float> buparval;
+		std::unordered_map<Param*, Param*> bupar;
+		std::unordered_map<Param*, bool> buplaybut;
+		std::unordered_map<Param*, bool> buloopbut;
+		std::unordered_map<Param*, int> buevpos;
+		std::unordered_map<Param*, std::chrono::high_resolution_clock::time_point> bustarttime;
+		std::unordered_map<Param*, float> buinterimtime;
+		std::unordered_map<Param*, float> butotaltime;
+		std::unordered_map<Param*, float> buspeedadaptedtime;
+		std::unordered_map<Param*, float> bulpspeed;
+		std::unordered_map<Param*, bool> buelembool;
+		std::unordered_map<Param*, std::vector<std::tuple<long long, Param*, Button*, float>>> bulpstelem;
+
+		std::unordered_map<bool, std::unordered_map<int, std::unordered_map<int, std::unordered_map<std::string, registered_midi>>>> midi_registrations;
+
 		std::vector<GLuint> fbotexes;
 
 		std::vector<std::unordered_set<Layer*>*> clonesets;

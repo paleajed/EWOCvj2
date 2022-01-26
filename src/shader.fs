@@ -8,7 +8,7 @@ layout(location = 0) out vec4 FragColor;
 uniform sampler2D Sampler0;
 uniform sampler2D endSampler0, endSampler1;
 uniform sampler2D fboSampler;
-uniform sampler2D boxSampler[128];
+uniform sampler2D boxSampler[24];
 uniform samplerBuffer boxcolSampler;
 uniform usamplerBuffer boxtexSampler;
 uniform samplerBuffer boxbrdSampler;
@@ -558,7 +558,7 @@ vec4 posterize(vec4 col)  //geeks3d seems free
 vec4 pixelate(vec2 uv)  //selfmade
 {
 	int pw = int(pixel_w * pixel_w);
-	int ph = int(pixel_h * pixel_h);
+	int ph = int(pixel_h * pixel_h / 2.0f);
     float dx = 1.0f / pw;
     float dy = 1.0f / ph;
     vec2 coord = vec2(dx * (floor(uv.x / dx) + 0.5f), dy * (floor(uv.y / dy) + 0.5f));
@@ -1546,14 +1546,14 @@ void main()
 		if (orquad != 0) quadnr = orquad;
 		else quadnr = Vertex0 / 4;
 		uint Tex0 = texelFetch(boxtexSampler, quadnr).r;
-		if (Tex0 > 127) {
+		if (Tex0 > 23) {
 			// text
-			float c = texture2D(boxSampler[Tex0 - 128], vec2(TexCoord0.s, TexCoord0.t)).r;
-			if (c == 0.0) discard;
+			float c = texture2D(boxSampler[Tex0 - 24], vec2(TexCoord0.s, TexCoord0.t)).r;
+			//if (c == 0.0) discard;
 			vec4 sam = texelFetch(boxcolSampler, quadnr).rgba;
 			FragColor = vec4(sam.rgb, 1.0);
 		}
-		else if (Tex0 != 127) {
+		else if (Tex0 != 23) {
 			// image
 			FragColor = vec4(texture2D(boxSampler[Tex0], vec2(TexCoord0.s, TexCoord0.t)).rgb, 1.0f);
 		}
@@ -1846,15 +1846,50 @@ void main()
 		FragColor = vec4(color.rgb, c);
 		return;
 	}
-	else if (edgethickmode == 1) {
-		float thx = 1.0f / fbowidth;
-		float thy = 1.0f / fboheight;
-		float left = texture2D(fboSampler, vec2(TexCoord0.s - thx, TexCoord0.t)).r;
-		float right = texture2D(fboSampler, vec2(TexCoord0.s + thx, TexCoord0.t)).r;
-		float above = texture2D(fboSampler, vec2(TexCoord0.s, TexCoord0.t - thy)).r;
-		float under = texture2D(fboSampler, vec2(TexCoord0.s, TexCoord0.t + thy)).r;
-		float border = max(max(max(left, right), above), under);
-		FragColor = vec4(border, border, border, texture2D(fboSampler, TexCoord0).a);
+	else if (edgethickmode == 1) {  //http://contourtextures.wikidot.com/
+          // Scale texcoords to range ([0,texw], [0,texh])
+          float thx = 1.0f / fbowidth;
+		  float thy = 1.0f / fboheight;
+          vec2 uv = TexCoord0.st * vec2(fbowidth, fboheight);
+
+          // Compute texel-local (u,v) coordinates for the four closest texels
+          vec2 uv00 = floor(uv - vec2(0.5)); // Lower left corner of lower left texel
+          vec2 uvthis = floor(uv); // Lower left corner of texel containing (u,v)
+          vec2 uvlerp = uv - uv00 - vec2(0.5); // Texel-local lerp blends [0,1]
+
+          // Perform explicit texture interpolation of D coefficient.
+          // This works around the currently very bad texture interpolation
+          // precision in ATI hardware.
+
+          // Center st00 on lower left texel and rescale to [0,1] for texture lookup
+          vec2 st00 = (uv00  + vec2(0.5)) * vec2(thx, thy);
+
+          // Compute g_u, g_v, D coefficients from four closest 8-bit RGBA texels
+          vec4 rawtex00 = texture2D(fboSampler, st00);
+          vec4 rawtex10 = texture2D(fboSampler, st00 + vec2(0.5*thx, 0.0));
+          vec4 rawtex01 = texture2D(fboSampler, st00 + vec2(0.0, 0.5*thy));
+          vec4 rawtex11 = texture2D(fboSampler, st00 + vec2(0.5*thx, 0.5*thy));
+
+          // Restore the value for D from its 8-bit encoding
+          vec2 D00_10 = 16.0*(vec2(rawtex00.r, rawtex10.r)-0.80196);
+          vec2 D01_11 = 16.0*(vec2(rawtex01.r, rawtex11.r)-0.80196);
+
+          // Interpolate D between four closest texels
+          vec2 uvlocal = fract(uv)-0.5; // Texel-local uv coordinates [-0.5,0.5]
+          // Interpolate along v
+          vec2 D0_1 = mix(D00_10, D01_11, uvlerp.y);
+          // Interpolate along u
+          float D = mix(D0_1.x, D0_1.y, uvlerp.x);
+
+          // Perform anisotropic analytic antialiasing (fwidth() is slightly wrong)
+          float aastep = length(vec2(dFdx(D), dFdy(D)));
+
+          // 'pattern' is 1 where D>0, 0 where D<0, with proper AA around D=0.
+          float pattern = smoothstep(-aastep, aastep, D);
+
+          // Final fragment color
+          FragColor = vec4(pattern, pattern, pattern, texture2D(fboSampler, TexCoord0).a);
+		return;
 	}
 	else if (thumb == 1) {
 		FragColor = vec4(texture2D(Sampler0, TexCoord0.st).rgb, 0.7f);
@@ -1864,11 +1899,6 @@ void main()
 		//vec4 ic = texture2D(Sampler0, vec2((texco.x - 0.5f) * fbowidth * fcdiv / size0.x + 0.5f, (texco.y - 0.5f) * fboheight * fcdiv / size0.y + 0.5f));
 		vec4 ic = texture2D(Sampler0, texco);
 		FragColor = vec4(ic.r, ic.g, ic.b, ic.a * opacity);
-	}
-	else if (down == 1) {
-		vec4 ic = texture2D(Sampler0, TexCoord0.st).rgba;
-		if (!inverted) FragColor = vec4(ic.r, ic.g, ic.b, ic.a * opacity);
-		else FragColor = vec4(1.0f - ic.r, 1.0f - ic.g, 1.0f - ic.b, ic.a * opacity);
 	}
 	else if (circle == 1) {
 		if (distance(vec2(cirx, ciry), gl_FragCoord.xy) < circleradius - 1.0f) {
@@ -1888,7 +1918,7 @@ void main()
 	else if (linetriangle == 1) {
 		FragColor = color;
 	}
-	else if (box == 1 || pixelw != 0.0f) {
+	else if (down == 1 || box == 1 || pixelw != 0.0f) {
 		if (pixelw != 0.0f) {
 			float maxX;
 			float minX;
@@ -1915,7 +1945,11 @@ void main()
 					if (color.a == 0.0) discard;
 					FragColor = color;
 				}
-				else FragColor = texture2D(Sampler0, TexCoord0.st).rgba;
+				else {
+				    vec4 ic = texture2D(Sampler0, TexCoord0.st).rgba;
+                    if (!inverted) FragColor = vec4(ic.r, ic.g, ic.b, ic.a * opacity);
+                    else FragColor = vec4(1.0f - ic.r, 1.0f - ic.g, 1.0f - ic.b, ic.a * opacity);
+                }
 			} 
 			else {
 				FragColor = lcolor;
@@ -1923,7 +1957,11 @@ void main()
 		}
 		else {
 			if (box == 1) FragColor = color;
-			else FragColor = texture2D(Sampler0, TexCoord0.st).rgba;
+            else {
+                vec4 ic = texture2D(Sampler0, TexCoord0.st).rgba;
+                if (!inverted) FragColor = vec4(ic.r, ic.g, ic.b, ic.a * opacity);
+                else FragColor = vec4(1.0f - ic.r, 1.0f - ic.g, 1.0f - ic.b, ic.a * opacity);
+            }
 		}
 	}
 

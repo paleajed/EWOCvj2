@@ -16,7 +16,8 @@ class EWindow {
 		GLuint vao;
 		GLuint vbuf;
 		GLuint tbuf;
-		int mixid;
+        int mixid;
+        Layer *lay = nullptr;
 		bool closethread = false;
 		std::mutex syncmutex;
 		std::condition_variable sync;

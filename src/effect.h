@@ -82,6 +82,7 @@ class Param {
 		bool nextrow = false;
 		std::vector<std::string> oscpaths;
         std::chrono::high_resolution_clock::time_point midistarttime;
+        bool midistarted = false;
         void deautomate();
         void register_midi();
         void unregister_midi();
@@ -247,7 +248,7 @@ class CRTEffect: public Effect {
 
 class EdgeDetectEffect: public Effect {
 	public:
-		int thickness;
+		int thickness = 0;
 		EdgeDetectEffect();
 };
 

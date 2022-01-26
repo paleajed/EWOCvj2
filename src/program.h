@@ -47,7 +47,8 @@ typedef enum
 	TM_OPACITY = 9,
 	TM_FREEZE = 10,
 	TM_SCRATCH = 11,
-	TM_SPEEDZERO = 12,
+    TM_SPEEDZERO = 12,
+    TM_CROSS = 13,
 } TM_LEARN;
 
 typedef enum
@@ -345,22 +346,29 @@ class Program {
 		GLuint rtvbo;
 		GLuint rttbo;
         GLuint bgtex;
+        GLuint loktex;
 		std::vector<OutputEntry*> outputentries;
         std::vector<Button*> buttons;
 		Box *scrollboxes[2];
 		Box *prevbox;
 		Layer *loadlay;
 		Layer *prelay = nullptr;
+        std::vector<Layer*> dellays;
+        std::vector<Effect*> deleffects;
 		SDL_Window *mainwindow;
 		std::vector<EWindow*> mixwindows;
 		std::vector<Menu*> menulist;
 		std::vector<Menu*> actmenulist;
 		Menu *effectmenu = nullptr;
 		Menu *mixmodemenu = nullptr;
-		Menu *parammenu1 = nullptr;
-		Menu* parammenu2 = nullptr;
+        Menu *parammenu1 = nullptr;
+        Menu* parammenu2 = nullptr;
+        Menu *parammenu1b = nullptr;
+        Menu* parammenu2b = nullptr;
 		Menu* parammenu3 = nullptr;
-		Menu* parammenu4 = nullptr;
+        Menu* parammenu4 = nullptr;
+        Menu* parammenu5 = nullptr;
+        Menu* parammenu6 = nullptr;
 		Menu* speedmenu = nullptr;
 		Menu *loopmenu = nullptr;
 		Menu *laymenu1 = nullptr;
@@ -368,6 +376,7 @@ class Program {
 		Menu* newlaymenu = nullptr;
 		Menu* clipmenu = nullptr;
 		Menu *aspectmenu = nullptr;
+        Menu *monitormenu = nullptr;
         Menu *mixtargetmenu = nullptr;
         Menu *bintargetmenu = nullptr;
 		Menu *fullscreenmenu = nullptr;
@@ -411,6 +420,8 @@ class Program {
 		int iemy;
 		float ow = 1920.0f;
 		float oh = 1080.0f;
+		float sow = 1920.0f;
+		float soh= 1080.0f;
 		float ow3, oh3;
 		float oldow = 1920.0f;
 		float oldoh = 1080.0f;
@@ -442,6 +453,7 @@ class Program {
         bool shift = false;
 		bool menuondisplay = false;
 		bool orderondisplay = false;
+		std::vector<GLuint> ordertexes;
 		bool blocking = false;
 		bool eXit = false;
 		std::string temppath;
@@ -488,16 +500,17 @@ class Program {
 		std::vector<std::string> recentprojectpaths;
 		bool wiping = false;
 		float texth;
+		float buth;
 		float bdcoords[32][65536];
 		float bdtexcoords[32][65536];
-		char bdcolors[32][4096];
-		char bdtexes[32][2048];
+		unsigned char bdcolors[32][8192];
+		unsigned char bdtexes[32][2048];
 		std::vector<float> bdwi;
 		std::vector<float> bdhe;
 		float* bdvptr[32];
 		float* bdtcptr[32];
-		char* bdcptr[32];
-		char* bdtptr[32];
+		unsigned char* bdcptr[32];
+        unsigned char* bdtptr[32];
 		GLuint* bdtnptr[32];
 		GLuint bdvao;
 		GLuint bdvbo;
@@ -517,6 +530,7 @@ class Program {
         std::vector<GUI_Element*> binguielems;
 		Button* onscenebutton;
 		float onscenemilli;
+        bool onscenedeck;
 		Box* delbox;
 		Box* addbox;
         bool repeatdefault = true;
@@ -535,11 +549,12 @@ class Program {
 		std::vector<EFFECT_TYPE> abeffects;
 
         SDL_Window* quitwindow = nullptr;
+        SDL_Window* dummywindow = nullptr;
 
         SDL_Window* config_midipresetswindow = nullptr;
 		bool drawnonce = false;
 		bool midipresets = false;
-		int midipresetsset = 0;
+		int midipresetsset = 1;
 		int configcatmidi = 0;
         Box* tmcat[3];
         Box* tmset[4];
@@ -554,7 +569,8 @@ class Program {
         Box *tmloop;
 		Box *tmspeed;
 		Box *tmspeedzero;
-		Box *tmopacity;
+        Box *tmopacity;
+        Box *tmcross;
 		TM_LEARN tmlearn = TM_NONE;
 		TM_LEARN tmchoice = TM_NONE;
 		int waitmidi = 0;
@@ -583,6 +599,7 @@ class Program {
 		float asminutes = 1;
 		int astimestamp = 0;
 		float qualfr = 3;
+        bool keepeffpref = false;
 
 		std::unordered_map <std::string, GUIString*> guitextmap;
 		std::unordered_map <std::string, GUIString*> prguitextmap;
@@ -633,16 +650,23 @@ class Program {
 		std::condition_variable hap;
 		bool hapnow = false;
 
-		std::string projdir;
+        std::mutex orderglcmutex;
+        std::condition_variable orderglccond;
+        bool orderglcswitch = false;
+        std::vector<std::string> getvideotexpaths;
+        std::vector<Layer*> getvideotexlayers;
+        bool gettinglayertex = false;
+        Layer *gettinglayertexlay = nullptr;
+        std::string result;
+        int32_t resnum = -1;
+
+        std::string projdir;
 		std::string binsdir;
 		std::string currprojdir;
 		std::string currbinsdir;
 		std::string currshelfdir;
 		std::string currrecdir;
 		std::string currshelfdirdir;
-		std::string currshelffilesdir;
-		std::string currclipfilesdir;
-		std::string currbinfilesdir;
         std::string currfilesdir;
         std::string currelemsdir;
 		std::string homedir;
@@ -691,9 +715,10 @@ class Program {
         bool adaptivelprow = false;
         bool steplprow = false;
         bool waitonetime = false;
-        std::chrono::high_resolution_clock::time_point ordertime;
+        float ordertime = 0.0f;
         bool collectingboxes = true;  // during startup
         bool sameeight = false;
+        bool check = false;
 
     #ifdef WINDOWS
         SOCKET sock;
@@ -753,6 +778,7 @@ class Program {
 		float xvtxtoscr(float vtxcoord);
 		float yvtxtoscr(float vtxcoord);
 		void add_main_oscmethods();
+        GLuint get_tex(Layer *lay);
 		bool order_paths(bool dodeckmix);
 		void handle_wormgate(bool gate);
         int handle_scrollboxes(Box *upperbox, Box *lowerbox, int numlines, int scrollpos, int scrlines);
@@ -771,13 +797,18 @@ class Program {
 		void define_menus();
 		void handle_mixenginemenu();
 		void handle_effectmenu();
-		void handle_parammenu1();
-		void handle_parammenu2();
+        void handle_parammenu1();
+        void handle_parammenu2();
+        void handle_parammenu1b();
+        void handle_parammenu2b();
 		void handle_parammenu3();
-		void handle_parammenu4();
-		void handle_speedmenu();
+        void handle_parammenu4();
+        void handle_parammenu5();
+        void handle_parammenu6();
+        void handle_speedmenu();
 		void handle_loopmenu();
-        void handle_mixtargetmenu();
+        void handle_monitormenu();
+        void make_mixtargetmenu();
         void handle_bintargetmenu();
 		void handle_wipemenu();
 		void handle_laymenu1();
@@ -795,6 +826,7 @@ class Program {
         void stream_to_v4l2loopbacks();
         void longtooltip_prepare(Box *box);
         void postponed_to_front(std::string title);
+        void postponed_to_front_win(std::string title, SDL_Window *win = nullptr);
         Program();
 		
 	private:
@@ -819,9 +851,7 @@ extern Retarget *retarget;
 extern Menu *effectmenu;
 extern float smw, smh;
 extern SDL_GLContext glc;
-extern SDL_GLContext glc;
-extern SDL_GLContext glc;
-extern SDL_GLContext glc_th;
+extern SDL_GLContext orderglc;
 extern LayMidi* laymidiA;
 extern LayMidi* laymidiB;
 extern LayMidi* laymidiC;
@@ -859,14 +889,16 @@ extern "C" int kdialogPresent();
 extern std::istream& safegetline(std::istream& is, std::string& t);
 extern void mycallback(double deltatime, std::vector< unsigned char >* message, void* userData);
 
-extern GLuint get_imagetex(const std::string& path);
-extern GLuint get_videotex(const std::string& path);
-extern GLuint get_layertex(const std::string& path);
-extern GLuint get_deckmixtex(const std::string& path);
+extern bool get_imagetex(Layer *lay, const std::string& path);
+extern bool get_videotex(Layer *lay, const std::string& path);
+extern bool get_layertex(Layer *lay, const std::string& path);
+extern bool get_deckmixtex(Layer *lay, const std::string& path);
 extern int encode_frame(AVFormatContext *fmtctx, AVFormatContext *srcctx, AVCodecContext *enc_ctx, AVFrame *frame, AVPacket *pkt, FILE *outfile, int framenr);
 
 extern std::vector<Layer*>& choose_layers(bool j);
 extern void make_layboxes();
+extern void handle_scenes(Scene* scene);
+extern void switch_to_scene(int i, Scene* from_scene, Scene* to_scene);
 
 extern void new_file(int decks, bool alive);
 extern void draw_box(float* linec, float* areac, float x, float y, float wi, float he, float dx, float dy, float
@@ -901,7 +933,7 @@ extern float xscrtovtx(float scrcoord);
 extern float yscrtovtx(float scrcoord);
 
 extern float pdistance(float x, float y, float x1, float y1, float x2, float y2);
-extern void enddrag();
+extern void enddrag(bool clips);
 
 extern void open_files_bin();
 extern void save_bin(const std::string &path);

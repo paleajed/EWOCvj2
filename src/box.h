@@ -58,7 +58,7 @@ class Button {
 		int value = 0;
 		int oldvalue = 0;
 		int toggle = 0;
-		float tcol[4] = {0.0f, 0.7f, 0.0f, 1.0f};
+		float tcol[4] = {0.3f, 0.8f, 0.4f, 1.0f};
 		float ccol[4] = {1.0f, 0.0f, 0.0f, 1.0f};
 		int midi[2] = {-1, -1};
 		std::string midiport;

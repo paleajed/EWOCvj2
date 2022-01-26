@@ -17,23 +17,23 @@ class LoopStation {
 		std::unordered_map<Button*, Button*> butmap;
 		std::unordered_map<Param*, LoopStationElement*> parelemmap;
 		std::unordered_map<Button*, LoopStationElement*> butelemmap;
-		std::vector<float> colvals = {1.0f, 0.0f, 0.0f
-									, 0.0f, 0.5f, 0.0f
-									, 0.0f, 0.0f, 1.0f
-									, 1.0f, 1.0f, 0.0f
-									, 1.0f, 0.0f, 1.0f
-									, 0.0f, 1.0f, 1.0f
-									, 1.0f, 0.5f, 0.0f
-									, 0.5f, 0.5f, 0.0f
-									, 1.0f, 0.0f, 0.5f
-									, 0.5f, 0.0f, 1.0f
-									, 0.0f, 1.0f, 0.5f
-									, 0.0f, 0.5f, 1.0f
-									, 0.5f, 0.0f, 0.0f
-									, 0.0f, 0.5f, 0.0f
-									, 0.0f, 0.0f, 0.5f
-									, 0.5f, 0.0f, 0.5f
-									, 0.0f, 0.5f, 0.5f};
+		std::vector<float> colvals = {0.8f, 0.3f, 0.3f
+									, 0.3f, 0.4f, 0.3f
+									, 0.3f, 0.3f, 0.7f
+									, 0.7f, 0.7f, 0.3f
+									, 0.7f, 0.3f, 0.7f
+									, 0.3f, 0.7f, 0.7f
+									, 0.7f, 0.4f, 0.3f
+									, 0.4f, 0.4f, 0.3f
+									, 0.7f, 0.3f, 0.4f
+									, 0.4f, 0.3f, 0.7f
+									, 0.3f, 0.7f, 0.4f
+									, 0.3f, 0.4f, 0.7f
+									, 0.4f, 0.3f, 0.3f
+									, 0.3f, 0.4f, 0.3f
+									, 0.3f, 0.3f, 0.4f
+									, 0.3f, 0.2f, 0.5f
+									, 0.3f, 0.4f, 0.4f};
         Box *upscrbox;
         Box *downscrbox;
         Box *confupscrbox;
@@ -70,11 +70,13 @@ class LoopStationElement {
 		Param *speed;
 		std::vector<std::tuple<long long, Param*, Button*, float>> eventlist;
 		int eventpos = 0;
+		bool atend = false;
 		bool didsomething = false;	
 		void init();
 		void handle();
 		void erase_elem();
-		void add_param_automationentry(Param* par);
+        void add_param_automationentry(Param* par);
+        void add_param_automationentry(Param* par, long long mc);
 		void add_button_automationentry(Button* but);
 		void set_values();
 		LoopStationElement();

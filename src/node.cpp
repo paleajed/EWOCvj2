@@ -372,13 +372,11 @@ void NodePage::delete_node(Node *node) {
         for (int i = 0; i < node->page->nodes.size(); i++) {
             if (node->page->nodes[i] == node) {
                 node->page->nodes.erase(node->page->nodes.begin() + i);
-                break;
             }
         }
         for (int i = 0; i < node->page->nodescomp.size(); i++) {
             if (node->page->nodescomp[i] == node) {
                 node->page->nodescomp.erase(node->page->nodescomp.begin() + i);
-                break;
             }
         }
     }

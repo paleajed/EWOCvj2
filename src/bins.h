@@ -35,7 +35,8 @@ class BinsMain {
         int prevj;
         int firsti;
         int firstj;
-		Box* loadbinbox;
+        Box* loadbinbox;
+        Box* savebinbox;
 		Box* newbinbox;
 		Box* renamingbox;
 		GLuint binelpreviewtex;
@@ -77,6 +78,7 @@ class BinsMain {
         bool inbin = false;
         SDL_Window *win;
         SDL_GLContext glc;
+        int screen;
         float globw;
         float globh;
         std::mutex syncmutex;
@@ -85,6 +87,7 @@ class BinsMain {
         std::mutex syncendmutex;
         std::condition_variable syncend;
         bool syncendnow = false;
+        float thumbtime;
 
         Bin *menubin = nullptr;
 		bool openfilesbin = false;
