@@ -4384,6 +4384,8 @@ void onestepfrom(bool stage, Node *node, Node *prevnode, GLuint prevfbotex, GLui
 		glDrawBuffer(GL_COLOR_ATTACHMENT0);
 		if (stage) glViewport(0, 0, mainprogram->ow, mainprogram->oh);
 		else glViewport(0, 0, mainprogram->ow3, mainprogram->oh3);
+        glClearColor(0, 0, 0, 0);
+        glClear(GL_COLOR_BUFFER_BIT);
         if (mainmix->waitmixtex == 0) draw_box(nullptr, black, -1.0f, 1.0f, 2.0f, -2.0f, prevfbotex);
 		prevfbotex = mnode->mixtex;
 		prevfbo = mnode->mixfbo;
