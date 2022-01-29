@@ -1152,21 +1152,18 @@ GLuint Program::get_tex(Layer *lay) {
         }
     }
     else {
-        std::mutex malock;
-        malock.lock();
         if (lay->vidformat == 188 || lay->vidformat == 187) {
             if (lay->decresult->compression == 187) {
                 glCompressedTexImage2D(GL_TEXTURE_2D, 0, GL_COMPRESSED_RGBA_S3TC_DXT1_EXT, lay->decresult->width,
-                                       lay->decresult->height, 0, lay->decresult->size, lay->decresult->data);
+                                       lay->decresult->height, 0, lay->decresult->size, lay->remfr[lay->pbofri]->data);
             } else if (lay->decresult->compression == 190) {
                 glCompressedTexImage2D(GL_TEXTURE_2D, 0, GL_COMPRESSED_RGBA_S3TC_DXT5_EXT, lay->decresult->width,
-                                       lay->decresult->height, 0, lay->decresult->size, lay->decresult->data);
+                                       lay->decresult->height, 0, lay->decresult->size, lay->remfr[lay->pbofri]->data);
             }
          } else {
             glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA8, lay->decresult->width, lay->decresult->height, 0, GL_BGRA,
-                         GL_UNSIGNED_BYTE, lay->decresult->data);
+                         GL_UNSIGNED_BYTE, lay->remfr[lay->pbofri]->data);
         }
-        malock.unlock();
     }
 
     GLuint tex = copy_tex(ctex, binsmain->elemboxes[0]->scrcoords->w, binsmain->elemboxes[0]->scrcoords->h);
@@ -1246,7 +1243,7 @@ bool Program::order_paths(bool dodeckmix) {
         } else {
             this->orderondisplay = false;
             this->paths.erase(this->paths.begin() + this->filescount - 1);
-            this->filescount -= 2;
+            this->filescount -= 1;
             if (this->filescount < 0) this->filescount = 0;
             return false;
         }
@@ -1274,21 +1271,18 @@ bool Program::order_paths(bool dodeckmix) {
             if (lay->type == ELEM_LAYER) {
                 //lay->initialize(lay->video_dec_ctx->width, lay->video_dec_ctx->height);
                 glBindTexture(GL_TEXTURE_2D, lay->texture);
-                std::mutex malock;
-                malock.lock();
                 if (lay->vidformat == 188 || lay->vidformat == 187) {
                     if (lay->decresult->compression == 187) {
                         glCompressedTexImage2D(GL_TEXTURE_2D, 0, GL_COMPRESSED_RGBA_S3TC_DXT1_EXT, lay->decresult->width,
-                                               lay->decresult->height, 0, lay->decresult->size, lay->decresult->data);
+                                               lay->decresult->height, 0, lay->decresult->size, lay->remfr[lay->pbofri]->data);
                     } else if (lay->decresult->compression == 190) {
                         glCompressedTexImage2D(GL_TEXTURE_2D, 0, GL_COMPRESSED_RGBA_S3TC_DXT5_EXT, lay->decresult->width,
-                                               lay->decresult->height, 0, lay->decresult->size, lay->decresult->data);
+                                               lay->decresult->height, 0, lay->decresult->size, lay->remfr[lay->pbofri]->data);
                     }
                 } else {
                     glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA8, lay->decresult->width, lay->decresult->height, 0, GL_BGRA,
-                                 GL_UNSIGNED_BYTE, lay->decresult->data);
+                                 GL_UNSIGNED_BYTE, lay->remfr[lay->pbofri]->data);
                 }
-                malock.unlock();
                 GLuint butex = lay->fbotex;
                 lay->fbotex = copy_tex(lay->texture);
                 glDeleteTextures(1, &butex);
@@ -3170,7 +3164,7 @@ void Program::handle_parammenu1b() {
             mainmix->learnparam->value = mainmix->learnparam->deflt;
         }
         else if (k == 2) {
-            mainmix->menulayer->lockspeed = true;
+            mainmix->menulayer->lockspeed = !mainmix->menulayer->lockspeed;
         }
     }
     if (mainprogram->menuchosen) {
@@ -3220,7 +3214,7 @@ void Program::handle_parammenu2b() {
             mainmix->learnparam->value = mainmix->learnparam->deflt;
         }
         else if (k == 3) {
-            mainmix->menulayer->lockspeed = true;
+            mainmix->menulayer->lockspeed = !mainmix->menulayer->lockspeed;
         }
     }
     if (mainprogram->menuchosen) {
@@ -3276,7 +3270,7 @@ void Program::handle_parammenu5() {
         }
         else if (k == 1) {
             // lock zoom and pan
-            mainmix->menulayer->lockzoompan = true;
+            mainmix->menulayer->lockzoompan = !mainmix->menulayer->lockzoompan;
         }
     }
     if (mainprogram->menuchosen) {
@@ -3300,7 +3294,7 @@ void Program::handle_parammenu6() {
         }
         else if (k == 2) {
             // lock zoom and pan
-            mainmix->menulayer->lockzoompan = true;
+            mainmix->menulayer->lockzoompan = !mainmix->menulayer->lockzoompan;
         }
     }
     if (mainprogram->menuchosen) {
@@ -3939,7 +3933,7 @@ void Program::handle_laymenu1() {
 				ilBindImage(mainmix->mouselayer->boundimage);
 				ilActiveImage((int)mainmix->mouselayer->frame);
 				mainmix->mouselayer->set_aspectratio(ilGetInteger(IL_IMAGE_WIDTH), ilGetInteger(IL_IMAGE_HEIGHT));
-				mainmix->mouselayer->decresult->newdata = true;
+				mainmix->mouselayer->remfr[mainmix->mouselayer->pbodi]->newdata = true;
 			}
 			else {
 				mainmix->mouselayer->set_aspectratio(mainmix->mouselayer->video_dec_ctx->width, mainmix->mouselayer->video_dec_ctx->height);
@@ -7016,6 +7010,7 @@ PIInt::PIInt() {
     pii->valuebox->tooltip = "Toggles if tooltips will be shown when hovering mouse over an interface element. ";
     mainprogram->showtooltips = pii->onoff;
     this->items.push_back(pii);
+
     pos++;
 
     pii = new PrefItem(this, pos, "Long tooltips", PREF_ONOFF, (void*)& mainprogram->longtooltips);
@@ -7843,6 +7838,11 @@ void Shelf::save(const std::string &path) {
             filestoadd.push_back(elem->path);
         }
         filestoadd.push_back(elem->jpegpath);
+        if (elem->path != "") {
+            wfile << "FILESIZE\n";
+            wfile << std::to_string(boost::filesystem::file_size(elem->path));
+            wfile << "\n";
+        }
         wfile << "LAUNCHTYPE\n";
         wfile << std::to_string(elem->launchtype);
         wfile << "\n";
@@ -8055,6 +8055,10 @@ bool Shelf::open(const std::string &path) {
                         open_thumb(result + "_" + std::to_string(filecount) + ".file", elem->tex);
                     }
                     filecount++;
+                }
+                if (istring == "FILESIZE") {
+                    safegetline(rfile, istring);
+                    elem->filesize = std::stoll(istring);
                 }
                 if (istring == "LAUNCHTYPE") {
                     safegetline(rfile, istring);

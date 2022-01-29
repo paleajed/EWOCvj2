@@ -77,18 +77,6 @@ BinElement::~BinElement() {
 	glDeleteTextures(1, &this->oldtex);
 }
 
-BinElement* BinElement::next() {
-	// return next bin element or nullptr (when at end)
-	int pos = std::find(this->bin->elements.begin(), this->bin->elements.end(), this) - this->bin->elements.begin();
-	int j = pos / 12;
-	int i = pos / 12;
-	if (i == 11) j++;
-	else i++;
-	int nxt = i * 12 + j;
-	if (nxt == 144) return nullptr;
-	else return this->bin->elements[nxt];
-}
-
 void BinElement::erase() {
 	this->select = false;
 	this->path = "";
@@ -206,7 +194,7 @@ BinsMain::BinsMain() {
 }
 
 void BinsMain::handle(bool draw) {
-	GLint inverted = glGetUniformLocation(mainprogram->ShaderProgram, "inverted");
+	GLint inverteff = glGetUniformLocation(mainprogram->ShaderProgram, "inverteff");
 
     int numd = SDL_GetNumVideoDisplays();
     if (numd > 1) {
@@ -444,17 +432,21 @@ void BinsMain::handle(bool draw) {
 				draw_box(nullptr, color, box->vtxcoords->x1 - 0.01f, box->vtxcoords->y1 - 0.01f, box->vtxcoords->w + 0.02f, box->vtxcoords->h + 0.02f, -1);
 				draw_box(box, -1);  //in case of alpha thumbnail
 				if (binel->select) {
-					glUniform1i(inverted, 1);
+					glUniform1i(inverteff, 1);
 				}
+                if (i * 12 + j == 137) {
+                    i++;
+                    i--;
+                }
 				draw_box(box, binel->tex);
-				glUniform1i(inverted, 0);
+				glUniform1i(inverteff, 0);
 				if (binel->name != "") {
 					if (binel->name != "") render_text(binel->name.substr(0, 20), white, box->vtxcoords->x1, box->vtxcoords->y1 - 0.02f, 0.00045f, 0.00075f);
 				}
 			}
 			// draw big grey areas next to each element column to cut off element titles
-			Box* box = this->elemboxes[j];
-			draw_box(nullptr, darkgrey, box->vtxcoords->x1 + box->vtxcoords->w, -1.0f, 0.12f, 2.0f, -1);
+			Box* box2 = this->elemboxes[j];
+			draw_box(nullptr, darkgrey, box2->vtxcoords->x1 + box2->vtxcoords->w, -1.0f, 0.12f, 2.0f, -1);
 		}
 
 		bool cond1 = false;
@@ -1007,7 +999,9 @@ void BinsMain::handle(bool draw) {
                                     BinElement *dirbinel;
                                     if (0 <= epos && epos < 144) {
                                         dirbinel = this->currbin->elements[epos];
-                                    } else continue;
+                                    } else {
+                                        continue;
+                                    }
                                     if (this->inputtexes[k] != -1) {
                                         dirbinel->select = dirbinel->oldselect;
                                         dirbinel->tex = dirbinel->oldtex;
@@ -1694,20 +1688,17 @@ void BinsMain::handle(bool draw) {
 									lock2.unlock();
 									glActiveTexture(GL_TEXTURE0);
 									glBindTexture(GL_TEXTURE_2D, mainprogram->prelay->texture);
-                                    std::mutex malock;
-                                    malock.lock();
 									if (mainprogram->prelay->vidformat == 188 || mainprogram->prelay->vidformat == 187) {
 										if (mainprogram->prelay->decresult->compression == 187) {
-											glCompressedTexImage2D(GL_TEXTURE_2D, 0, GL_COMPRESSED_RGBA_S3TC_DXT1_EXT, mainprogram->prelay->decresult->width, mainprogram->prelay->decresult->height, 0, mainprogram->prelay->decresult->size, mainprogram->prelay->decresult->data);
+											glCompressedTexImage2D(GL_TEXTURE_2D, 0, GL_COMPRESSED_RGBA_S3TC_DXT1_EXT, mainprogram->prelay->decresult->width, mainprogram->prelay->decresult->height, 0, mainprogram->prelay->decresult->size, mainprogram->prelay->remfr[mainprogram->prelay->pbofri]->data);
 										}
 										else if (mainprogram->prelay->decresult->compression == 190) {
-											glCompressedTexImage2D(GL_TEXTURE_2D, 0, GL_COMPRESSED_RGBA_S3TC_DXT5_EXT, mainprogram->prelay->decresult->width, mainprogram->prelay->decresult->height, 0, mainprogram->prelay->decresult->size, mainprogram->prelay->decresult->data);
+											glCompressedTexImage2D(GL_TEXTURE_2D, 0, GL_COMPRESSED_RGBA_S3TC_DXT5_EXT, mainprogram->prelay->decresult->width, mainprogram->prelay->decresult->height, 0, mainprogram->prelay->decresult->size, mainprogram->prelay->remfr[mainprogram->prelay->pbofri]->data);
 										}
 									}
 									else {
-										glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA8, mainprogram->prelay->decresult->width, mainprogram->prelay->decresult->height, 0, GL_BGRA, GL_UNSIGNED_BYTE, mainprogram->prelay->decresult->data);
+										glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA8, mainprogram->prelay->decresult->width, mainprogram->prelay->decresult->height, 0, GL_BGRA, GL_UNSIGNED_BYTE, mainprogram->prelay->remfr[mainprogram->prelay->pbofri]->data);
 									}
-                                    malock.unlock();
 									mainprogram->prelay->initialized = true;
 									// calculate effects
                                     mainprogram->directmode = true;
@@ -1746,7 +1737,7 @@ void BinsMain::handle(bool draw) {
 									else if (mainprogram->prelay->frame > mainprogram->prelay->numf - 1) {
 										mainprogram->prelay->frame = 0.0f;
 									}
-									//mainprogram->prelay->prevframe = -1;
+                                    mainprogram->prelay->prevframe = mainprogram->prelay->frame - 1.0f;
 									mainprogram->prelay->node->calc = true;
 									mainprogram->prelay->node->walked = false;
 									for (int k = 0; k < mainprogram->prelay->effects[0].size(); k++) {
@@ -1764,20 +1755,17 @@ void BinsMain::handle(bool draw) {
 									mainprogram->prelay->processed = false;
 									lock.unlock();
 									glBindTexture(GL_TEXTURE_2D, mainprogram->prelay->texture);
-                                    std::mutex malock;
-                                    malock.lock();
-									if (mainprogram->prelay->vidformat == 188 || mainprogram->prelay->vidformat == 187) {
+ 									if (mainprogram->prelay->vidformat == 188 || mainprogram->prelay->vidformat == 187) {
 										if (mainprogram->prelay->decresult->compression == 187) {
-											glCompressedTexImage2D(GL_TEXTURE_2D, 0, GL_COMPRESSED_RGBA_S3TC_DXT1_EXT, mainprogram->prelay->decresult->width, mainprogram->prelay->decresult->height, 0, mainprogram->prelay->decresult->size, mainprogram->prelay->decresult->data);
+											glCompressedTexImage2D(GL_TEXTURE_2D, 0, GL_COMPRESSED_RGBA_S3TC_DXT1_EXT, mainprogram->prelay->decresult->width, mainprogram->prelay->decresult->height, 0, mainprogram->prelay->decresult->size, mainprogram->prelay->remfr[mainprogram->prelay->pbofri]->data);
 										}
 										else if (mainprogram->prelay->decresult->compression == 190) {
-											glCompressedTexImage2D(GL_TEXTURE_2D, 0, GL_COMPRESSED_RGBA_S3TC_DXT5_EXT, mainprogram->prelay->decresult->width, mainprogram->prelay->decresult->height, 0, mainprogram->prelay->decresult->size, mainprogram->prelay->decresult->data);
+											glCompressedTexImage2D(GL_TEXTURE_2D, 0, GL_COMPRESSED_RGBA_S3TC_DXT5_EXT, mainprogram->prelay->decresult->width, mainprogram->prelay->decresult->height, 0, mainprogram->prelay->decresult->size, mainprogram->prelay->remfr[mainprogram->prelay->pbofri]->data);
 										}
  									}
 									else {
-										glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA8, mainprogram->prelay->decresult->width, mainprogram->prelay->decresult->height, 0, GL_BGRA, GL_UNSIGNED_BYTE, mainprogram->prelay->decresult->data);
+										glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA8, mainprogram->prelay->decresult->width, mainprogram->prelay->decresult->height, 0, GL_BGRA, GL_UNSIGNED_BYTE, mainprogram->prelay->remfr[mainprogram->prelay->pbofri]->data);
 									}
-                                    malock.unlock();
 
 									// calculate effects
                                     mainprogram->directmode = true;
@@ -1843,20 +1831,17 @@ void BinsMain::handle(bool draw) {
 									mainprogram->prelay->processed = false;
 									lock2.unlock();
 									glBindTexture(GL_TEXTURE_2D, this->binelpreviewtex);
-                                    std::mutex malock;
-                                    malock.lock();
 									if (mainprogram->prelay->vidformat == 188 || mainprogram->prelay->vidformat == 187) {
  										if (mainprogram->prelay->decresult->compression == 187) {
-											glCompressedTexImage2D(GL_TEXTURE_2D, 0, GL_COMPRESSED_RGBA_S3TC_DXT1_EXT, mainprogram->prelay->decresult->width, mainprogram->prelay->decresult->height, 0, mainprogram->prelay->decresult->size, mainprogram->prelay->decresult->data);
+											glCompressedTexImage2D(GL_TEXTURE_2D, 0, GL_COMPRESSED_RGBA_S3TC_DXT1_EXT, mainprogram->prelay->decresult->width, mainprogram->prelay->decresult->height, 0, mainprogram->prelay->decresult->size, mainprogram->prelay->remfr[mainprogram->prelay->pbofri]->data);
 										}
 										else if (mainprogram->prelay->decresult->compression == 190) {
-											glCompressedTexImage2D(GL_TEXTURE_2D, 0, GL_COMPRESSED_RGBA_S3TC_DXT5_EXT, mainprogram->prelay->decresult->width, mainprogram->prelay->decresult->height, 0, mainprogram->prelay->decresult->size, mainprogram->prelay->decresult->data);
+											glCompressedTexImage2D(GL_TEXTURE_2D, 0, GL_COMPRESSED_RGBA_S3TC_DXT5_EXT, mainprogram->prelay->decresult->width, mainprogram->prelay->decresult->height, 0, mainprogram->prelay->decresult->size, mainprogram->prelay->remfr[mainprogram->prelay->pbofri]->data);
 										}
  									}
 									else {
-										glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA8, mainprogram->prelay->decresult->width, mainprogram->prelay->decresult->height, 0, GL_BGRA, GL_UNSIGNED_BYTE, mainprogram->prelay->decresult->data);
+										glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA8, mainprogram->prelay->decresult->width, mainprogram->prelay->decresult->height, 0, GL_BGRA, GL_UNSIGNED_BYTE, mainprogram->prelay->remfr[mainprogram->prelay->pbofri]->data);
 									}
-                                    malock.unlock();
 									draw_box(red, black, 0.52f, 0.5f, 0.4f, 0.4f, this->binelpreviewtex);
 									if (!binel->encoding) {
 										// show video format
@@ -1888,7 +1873,7 @@ void BinsMain::handle(bool draw) {
 										else if (mainprogram->prelay->frame > mainprogram->prelay->numf - 1) {
 											mainprogram->prelay->frame = 0.0f;
 										}
-										//mainprogram->prelay->prevframe = -1;
+										mainprogram->prelay->prevframe = mainprogram->prelay->frame - 1.0f;
 										mainprogram->prelay->ready = true;
 										while (mainprogram->prelay->ready) {
 											// start decode frame
@@ -1900,20 +1885,17 @@ void BinsMain::handle(bool draw) {
 										mainprogram->prelay->processed = false;
 										lock.unlock();
 										glBindTexture(GL_TEXTURE_2D, this->binelpreviewtex);
-                                        std::mutex malock;
-                                        malock.lock();
 										if (mainprogram->prelay->vidformat == 188 || mainprogram->prelay->vidformat == 187) {
 											if (mainprogram->prelay->decresult->compression == 187) {
-												glCompressedTexImage2D(GL_TEXTURE_2D, 0, GL_COMPRESSED_RGBA_S3TC_DXT1_EXT, mainprogram->prelay->decresult->width, mainprogram->prelay->decresult->height, 0, mainprogram->prelay->decresult->size, mainprogram->prelay->decresult->data);
+												glCompressedTexImage2D(GL_TEXTURE_2D, 0, GL_COMPRESSED_RGBA_S3TC_DXT1_EXT, mainprogram->prelay->decresult->width, mainprogram->prelay->decresult->height, 0, mainprogram->prelay->decresult->size, mainprogram->prelay->remfr[mainprogram->prelay->pbofri]->data);
 											}
 											else if (mainprogram->prelay->decresult->compression == 190) {
-												glCompressedTexImage2D(GL_TEXTURE_2D, 0, GL_COMPRESSED_RGBA_S3TC_DXT5_EXT, mainprogram->prelay->decresult->width, mainprogram->prelay->decresult->height, 0, mainprogram->prelay->decresult->size, mainprogram->prelay->decresult->data);
+												glCompressedTexImage2D(GL_TEXTURE_2D, 0, GL_COMPRESSED_RGBA_S3TC_DXT5_EXT, mainprogram->prelay->decresult->width, mainprogram->prelay->decresult->height, 0, mainprogram->prelay->decresult->size, mainprogram->prelay->remfr[mainprogram->prelay->pbofri]->data);
 											}
 										}
 										else {
-											glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA8, mainprogram->prelay->decresult->width, mainprogram->prelay->decresult->height, 0, GL_BGRA, GL_UNSIGNED_BYTE, mainprogram->prelay->decresult->data);
+											glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA8, mainprogram->prelay->decresult->width, mainprogram->prelay->decresult->height, 0, GL_BGRA, GL_UNSIGNED_BYTE, mainprogram->prelay->remfr[mainprogram->prelay->pbofri]->data);
 										}
-                                        malock.unlock();
 										draw_box(red, black, 0.52f, 0.5f, 0.4f, 0.4f, this->binelpreviewtex);
 									}
 									else {
@@ -1989,55 +1971,6 @@ void BinsMain::handle(bool draw) {
 						}
 					}
 
-                    if (this->movebinels.size() && mainprogram->leftmouse) {
-                        // confirm elements move, set elements and clean up
-                        int ii = i - this->firsti;
-                        int jj = j - this->firstj;
-                        for (int k = 0; k < this->inputtexes.size(); k++) {
-                            int epos = 0;
-                            epos = ii * 12 + jj + k;
-                            BinElement *dirbinel;
-                            if (0 <= epos && epos < 144) {
-                                dirbinel = this->currbin->elements[epos];
-                            }
-                            else continue;
-                            if (this->inputtexes[k] != -1) {
-                                dirbinel->type = this->inputtypes[k];
-                                dirbinel->path = this->addpaths[k];
-                                dirbinel->tex = this->inputtexes[k];
-                                dirbinel->name = remove_extension(basename(dirbinel->path));
-                                dirbinel->oldjpegpath = dirbinel->jpegpath;
-                                dirbinel->jpegpath = this->inputjpegpaths[k];
-                                int pos =
-                                        std::find(this->movebinels.begin(), this->movebinels.end(), dirbinel) -
-                                        this->movebinels.begin();
-                                if (pos < this->movebinels.size()) {
-                                    this->movebinels.erase(this->movebinels.begin() + pos);
-                                }
-                                /*if (this->movebinels.size()) {
-                                    GLuint butex = dirbinel->tex;
-                                    dirbinel->tex = copy_tex(dirbinel->tex, this->elemboxes[0]->scrcoords->w, this->elemboxes[0]->scrcoords->h);
-                                    if (butex != -1) glDeleteTextures(1, &butex);
-                                }*/
-                            }
-                        }
-
-                        for (int i = 0; i < this->movebinels.size(); i++) {
-                            if (this->movebinels[i]->tex != -1) {
-                                this->movebinels[i]->erase();
-                            }
-                        }
-                        this->movebinels.clear();
-                        // clean up
-                        this->inputtexes.clear();
-                        if (this->currbinel == this->menuactbinel) this->menuactbinel = nullptr;
-                        this->currbinel = nullptr;
-                        this->prevbinel = nullptr;
-                        this->inputtypes.clear();
-                        this->addpaths.clear();
-                        mainprogram->leftmouse = false;
-                    }
-
                     if (binel != this->currbinel) {
 						if (this->currbinel) this->binpreview = false;
                         bool cond1 = false;
@@ -2074,7 +2007,9 @@ void BinsMain::handle(bool draw) {
                                     if (0 <= epos && epos < 144) {
                                         dirbinel = this->currbin->elements[epos];
                                     }
-                                    else continue;
+                                    else {
+                                        continue;
+                                    }
                                     if (!dirbinel->select || this->movebinels.empty()) {
                                         if (this->inputtexes[k] != -1) {
                                             dirbinel->select = dirbinel->oldselect;
@@ -2094,7 +2029,9 @@ void BinsMain::handle(bool draw) {
                                 if (0 <= epos && epos < 144) {
                                     dirbinel = this->currbin->elements[epos];
                                 }
-                                else continue;
+                                else {
+                                    continue;
+                                }
                                 if (!dirbinel->select || this->movebinels.empty()) {
                                     if (this->inputtexes[k] != -1) {
                                         dirbinel->oldselect = dirbinel->select;
@@ -2153,6 +2090,7 @@ void BinsMain::handle(bool draw) {
 
 
                     if (this->currbinel && this->movingtex != -1) {
+                        // intermediate swapping when moving bin elements in bin
 						if (binel != this->currbinel) {
 							if (this->movingtex != this->movingbinel->tex) {
                                 this->currbinel->tex = this->movingbinel->tex;
@@ -2255,6 +2193,55 @@ void BinsMain::handle(bool draw) {
 			}
 			enddrag(false);
 		}
+
+        if (this->movebinels.size() && mainprogram->leftmouse) {
+            // confirm elements move, set elements and clean up
+            int ii = this->previ - this->firsti;
+            int jj = this->prevj - this->firstj;
+            for (int k = 0; k < this->inputtexes.size(); k++) {
+                int epos = 0;
+                epos = ii * 12 + jj + k;
+                BinElement *dirbinel;
+                if (0 <= epos && epos < 144) {
+                    dirbinel = this->currbin->elements[epos];
+                }
+                else continue;
+                if (this->inputtexes[k] != -1) {
+                    dirbinel->type = this->inputtypes[k];
+                    dirbinel->path = this->addpaths[k];
+                    dirbinel->tex = this->inputtexes[k];
+                    dirbinel->name = remove_extension(basename(dirbinel->path));
+                    dirbinel->oldjpegpath = dirbinel->jpegpath;
+                    dirbinel->jpegpath = this->inputjpegpaths[k];
+                    int pos =
+                            std::find(this->movebinels.begin(), this->movebinels.end(), dirbinel) -
+                            this->movebinels.begin();
+                    if (pos < this->movebinels.size()) {
+                        this->movebinels.erase(this->movebinels.begin() + pos);
+                    }
+                    /*if (this->movebinels.size()) {
+                        GLuint butex = dirbinel->tex;
+                        dirbinel->tex = copy_tex(dirbinel->tex, this->elemboxes[0]->scrcoords->w, this->elemboxes[0]->scrcoords->h);
+                        if (butex != -1) glDeleteTextures(1, &butex);
+                    }*/
+                }
+            }
+
+            for (int k = 0; k < this->movebinels.size(); k++) {
+                if (this->movebinels[k]->tex != -1) {
+                    this->movebinels[k]->erase();
+                }
+            }
+            this->movebinels.clear();
+            // clean up
+            this->inputtexes.clear();
+            if (this->currbinel == this->menuactbinel) this->menuactbinel = nullptr;
+            this->currbinel = nullptr;
+            this->prevbinel = nullptr;
+            this->inputtypes.clear();
+            this->addpaths.clear();
+            mainprogram->leftmouse = false;
+        }
 	}
 
 	// load one file into bin each loop, at end to allow drawing ordering dialog on top
@@ -2338,7 +2325,11 @@ void BinsMain::open_bin(const std::string &path, Bin *bin) {
 						}
 					}
 				}
-			}
+                if (istring == "FILESIZE") {
+                    safegetline(rfile, istring);
+                    bin->elements[pos]->filesize = std::stoll(istring);
+                }
+            }
 		}
         else if (istring == "SHARED") {
             // shared state
@@ -2392,10 +2383,16 @@ void BinsMain::do_save_bin(const std::string& path) {
 					save_thumb(this->currbin->elements[i * 12 + j]->jpegpath, this->currbin->elements[i * 12 + j]->tex);
 				}
 				filestoadd.push_back(this->currbin->elements[i * 12 + j]->jpegpath);
-			}			
-			wfile << "JPEGPATH\n";
-			wfile << this->currbin->elements[i * 12 + j]->jpegpath;
-			wfile << "\n";
+			}
+            wfile << "JPEGPATH\n";
+            wfile << this->currbin->elements[i * 12 + j]->jpegpath;
+            wfile << "\n";
+            if (this->currbin->elements[i * 12 + j]->path != "") {
+                wfile << "FILESIZE\n";
+                wfile << std::to_string(boost::filesystem::file_size(this->currbin->elements[i * 12 + j]->path));
+                wfile << "\n";
+            }
+            else {}
 		}
 	}
 	wfile << "ENDOFELEMS\n";

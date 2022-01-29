@@ -24,6 +24,7 @@ class Retarget {
         ShelfElement *shelem = nullptr;
         BinElement *binel = nullptr;
         GLuint tex;
+        int filesize = 0;
 
         bool searchall = false;
         bool notfound = false;
@@ -39,6 +40,7 @@ class Retarget {
         Box* valuebox;
         Box* searchbox;
         Box* skipbox;
+        Box* skipallbox;
 
         Retarget();
 

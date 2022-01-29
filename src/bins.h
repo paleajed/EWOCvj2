@@ -155,6 +155,7 @@ class BinElement {
 		std::string oldpath = "";
 		std::string jpegpath = "";
 		std::string oldjpegpath = "";
+        long long filesize = 0;
 		int vidw;
 		int vidh;
 		GLuint tex;

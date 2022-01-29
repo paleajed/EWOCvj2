@@ -24,7 +24,7 @@ uniform int fbowidth = 1920;
 uniform int fboheight = 1080;
 uniform float globw = 1920.0;
 uniform float globh = 1080.0;
-uniform bool inverted = false;
+uniform bool inverteff = false;
 uniform float fcdiv = 1.0f;
 uniform int numverts = 0;
 uniform float drywet = 1.0f;
@@ -1947,7 +1947,7 @@ void main()
 				}
 				else {
 				    vec4 ic = texture2D(Sampler0, TexCoord0.st).rgba;
-                    if (!inverted) FragColor = vec4(ic.r, ic.g, ic.b, ic.a * opacity);
+                    if (!inverteff) FragColor = vec4(ic.r, ic.g, ic.b, ic.a * opacity);
                     else FragColor = vec4(1.0f - ic.r, 1.0f - ic.g, 1.0f - ic.b, ic.a * opacity);
                 }
 			} 
@@ -1959,7 +1959,7 @@ void main()
 			if (box == 1) FragColor = color;
             else {
                 vec4 ic = texture2D(Sampler0, TexCoord0.st).rgba;
-                if (!inverted) FragColor = vec4(ic.r, ic.g, ic.b, ic.a * opacity);
+                if (!inverteff) FragColor = vec4(ic.r, ic.g, ic.b, ic.a * opacity);
                 else FragColor = vec4(1.0f - ic.r, 1.0f - ic.g, 1.0f - ic.b, ic.a * opacity);
             }
 		}

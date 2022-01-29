@@ -146,6 +146,7 @@ public:
 	GLuint tex = -1;
 	GLuint oldtex = -1;
 	Button* button;
+    long long filesize = 0;
 	Box* sbox;
 	Box* pbox;
 	Box* cbox;

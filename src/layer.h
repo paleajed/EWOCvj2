@@ -67,6 +67,8 @@ struct remaining_frames {
     int height = 1;
     int bpp = 0;
     int size;
+    char *data = nullptr;
+    bool newdata = false;
     bool changeinit = false;
 };
 
@@ -82,6 +84,7 @@ class Clip {
         std::string jpegpath = "";
 		ELEM_TYPE type;
 		GLuint tex = -1;
+        long long filesize = 0;
 		int frame = 0.0f;
 		Param *startframe = nullptr;
         Param *endframe = nullptr;
@@ -162,8 +165,14 @@ class Layer {
         float oldendframe = 0.0f;
 		int scritching = 0;
 		int transforming = 0;
-		int transmx;
-		int transmy;
+        int transmx;
+        int transmy;
+        int oldmx;
+        int oldmy;
+        float oldshx;
+        float oldshy;
+        bool straightx = false;
+        bool straighty = false;
 		int iw = 1;
 		int ih = 1;
 		Param *shiftx;
@@ -226,8 +235,9 @@ class Layer {
         GLuint pbo[3];
 		GLubyte* mapptr[3] = {0, 0, 0};
 		GLsync syncobj[3] = {nullptr, nullptr, nullptr};
-		char pbodi = 0;
-		char pboui = 1;
+		char pbodi = 2;
+        char pboui = 1;
+        char pbofri = 0;
 		int bpp;
 		bool nonewpbos = false;
 		
@@ -240,12 +250,13 @@ class Layer {
 		ShelfElement* prevshelfdragelem = nullptr;
 
 		std::string filename = "";
+        long long filesize = 0;
 		std::string layerfilepath = "";
 		AVFormatContext* video = nullptr;
 		AVFormatContext* videoseek = nullptr;
 		AVInputFormat *ifmt;
 		bool skip = false;
-		AVFrame *rgbframe = nullptr;
+		AVFrame *rgbframe[3] = {nullptr, nullptr, nullptr};
 		AVFrame *decframe = nullptr;
 		AVFrame *audioframe = nullptr;
 		AVPacket decpkt;
@@ -260,7 +271,7 @@ class Layer {
 		int audio_stream_idx = -1;
 		struct SwsContext *sws_ctx = nullptr;
 		uint8_t *avbuffer = nullptr;
-		char *databuf = nullptr;
+		char *databuf[3] = {nullptr, nullptr, nullptr};
 		bool databufready = false;
 		int vidformat = -1;
         int oldvidformat = -1;
@@ -284,6 +295,8 @@ class Layer {
 
         bool lockzoompan = false;
         bool lockspeed = false;
+        bool started = false;
+        bool started2 = false;
 
 		void display();
 		Effect* add_effect(EFFECT_TYPE type, int pos);
@@ -372,6 +385,7 @@ class Mixer {
         bool retargeting = false;
         bool retargetingdone = false;
         bool renaming = false;
+        bool skipall = false;
 		bool bualive;
 		Layer *currlay[2] = {nullptr, nullptr};
         std::vector<Layer*> currlays[2];

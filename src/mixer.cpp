@@ -2340,7 +2340,6 @@ Layer::Layer() {
 
 Layer::Layer(bool comp) {
 	this->comp = comp;
-	this->databuf = nullptr;
 
     glClearColor(0, 0, 0, 0);
 
@@ -2598,7 +2597,6 @@ Layer::Layer(bool comp) {
     glDeleteBuffers(1, &tbuf);
 
     this->decresult = new frame_result;
-	this->decresult->data = nullptr;
     this->remfr[0] = new remaining_frames;
     this->remfr[1] = new remaining_frames;
     this->remfr[2] = new remaining_frames;
@@ -2638,9 +2636,9 @@ Layer::~Layer() {
     delete this->loopbox;
     delete this->chdir;
     delete this->chinv;
-    delete this->currclip;
+    //delete this->currclip;
     for (Clip *clip : this->clips) {
-        delete clip;
+        //delete clip;  reminder
     }
     delete this->decresult;
 
@@ -2654,23 +2652,40 @@ Layer::~Layer() {
         // dont delete when pbos are copied over
         glDeleteTextures(1, &this->texture);
         if (!this->dummy) {
-            WaitBuffer(this->syncobj[this->pbodi]);
+            if (this->syncobj[0]) {
+                WaitBuffer(this->syncobj[0]);
+            }
+            if (this->syncobj[1]) {
+                WaitBuffer(this->syncobj[1]);
+            }
+            if (this->syncobj[2]) {
+                WaitBuffer(this->syncobj[2]);
+            }
             glDeleteBuffers(3, this->pbo);
         }
         delete this->remfr[0];
         delete this->remfr[1];
         delete this->remfr[2];
     }
-    if (this->vidformat == 188 || this->vidformat == 187) {
-        free(this->databuf);
+    if ((this->vidformat == 188 || this->vidformat == 187)) {
+        free(this->databuf[0]);
+        free(this->databuf[1]);
+        free(this->databuf[2]);
     }
     else{
-        if (this->rgbframe) {
+        for (int k = 0; k < 3; k++) {
+            if (this->rgbframe[k]) {
+                //av_frame_free(&this->rgbframe);
+                //av_frame_free(&this->decframe);
+                if (this->rgbframe[k]->data[0] != nullptr) {
+                    av_freep(&this->rgbframe[k]->data[0]);
+                }
+                //avcodec_free_context(&this->video_dec_ctx);
+            }
+        }
+        if (this->decframe) {
             //av_frame_free(&this->rgbframe);
             //av_frame_free(&this->decframe);
-            if (this->rgbframe->data[0] != nullptr) {
-                av_freep(&this->rgbframe->data[0]);
-            }
             if (this->decframe->data[0] != nullptr) {
                 av_freep(&this->decframe->data[0]);
             }
@@ -2765,10 +2780,11 @@ void Layer::initialize(int w, int h, int compression) {
         if (this->initialized) glUnmapBuffer(GL_ARRAY_BUFFER);
         glBufferStorage(GL_ARRAY_BUFFER, bsize, 0, flags);
         this->mapptr[2] = (GLubyte *) glMapBufferRange(GL_ARRAY_BUFFER, 0, bsize, flags);
-        this->nonewpbos = true;
     }
+    else this->nonewpbos = false;
 
-	this->oldvidformat = this->vidformat;
+    this->changeinit = -1;
+    this->oldvidformat = this->vidformat;
 	this->oldcompression = compression;
 	this->oldtype = this->type;
 	this->initialized = true;
@@ -2819,7 +2835,7 @@ void Layer::set_aspectratio(int lw, int lh) {
 	}*/
 
 	if (this->type == ELEM_IMAGE || this->type == ELEM_LIVE) {
-		this->decresult->newdata = true;
+		this->remfr[this->pbodi]->newdata = true;
 	}
 }
 
@@ -3193,6 +3209,10 @@ void Mixer::vidbox_handle() {
                         mainprogram->leftmousedown = false;
                         mainprogram->transforming = true;
                         lay->transforming = 1;
+                        lay->oldshx = lay->shiftx->value;
+                        lay->oldshy = lay->shifty->value;
+                        lay->oldmx = mainprogram->mx;
+                        lay->oldmy = mainprogram->my;
                         lay->transmx = mainprogram->mx - (lay->shiftx->value * (float)glob->w / 2.0f);
                         lay->transmy = mainprogram->my - (lay->shifty->value * (float)glob->w / 2.0f);
                     }
@@ -3247,26 +3267,51 @@ void Mixer::vidbox_handle() {
                         }
                     }
                     if (lay->type == ELEM_IMAGE || lay->type == ELEM_LIVE) {
-                        lay->decresult->newdata = true;
+                        lay->remfr[lay->pbodi]->newdata = true;
                     }
                 }
             }
 
             if (lay->transforming == 1) {
-                lay->shiftx->value = (float)(mainprogram->mx - lay->transmx) / ((float)glob->w / 2.0f);
+                if (mainprogram->shift) {
+                    // kick-in of straight line pan
+                    if (abs((float)(mainprogram->mx - lay->oldmx)) > glob->h / 80.0f && (abs((float) (mainprogram->mx - lay->oldmx) / (float) (mainprogram->my - lay->oldmy)) > 1.2f) && !lay->straighty && !lay->straightx) {
+                        lay->straightx = true;
+                        lay->transmx = mainprogram->mx - (lay->shiftx->value * (float)glob->w / 2.0f);
+                    } else if (abs((float)(mainprogram->my - lay->oldmy)) > glob->h / 80.0f && (abs((float) (mainprogram->my - lay->oldmy) / (float) (mainprogram->mx - lay->oldmx)) > 1.2f) && !lay->straightx && !lay->straighty) {
+                        lay->straighty = true;
+                        lay->transmy = mainprogram->my - (lay->shifty->value * (float)glob->w / 2.0f);
+                    }
+                }
+                if (lay->straightx) {
+                    // straight x pan
+                    lay->shiftx->value = (float) (mainprogram->mx - lay->transmx) / ((float) glob->w / 2.0f);
+                    lay->shifty->value = lay->oldshy;
+                }
+                else if (lay->straighty) {
+                    // straight x pan
+                    lay->shifty->value = (float) (mainprogram->my - lay->transmy) / ((float) glob->w / 2.0f);
+                    lay->shiftx->value = lay->oldshx;
+                }
+                else if (!mainprogram->shift && !lay->straightx && !lay->straighty) {
+                    // free pan
+                    lay->shiftx->value = (float) (mainprogram->mx - lay->transmx) / ((float) glob->w / 2.0f);
+                    lay->shifty->value = (float) (mainprogram->my - lay->transmy) / ((float) glob->w / 2.0f);
+                }
 
-                lay->shifty->value = (float)(mainprogram->my - lay->transmy) / ((float)glob->w / 2.0f);
                 for (int i = 0; i < loopstation->elems.size(); i++) {
                     if (loopstation->elems[i]->recbut->value) {
                         loopstation->elems[i]->add_param_automationentry(lay->shiftx);
                     }
                 }
                 if (mainprogram->leftmouse) {
+                    lay->straightx = false;
+                    lay->straighty = false;
                     lay->transforming = 0;
                     mainprogram->transforming = false;
                 }
                 if (lay->type == ELEM_IMAGE || lay->type == ELEM_LIVE) {
-                    lay->decresult->newdata = true;
+                    lay->remfr[lay->pbodi]->newdata = true;
                 }
             }
         }
@@ -5676,7 +5721,7 @@ void Mixer::copy_pbos(Layer *clay, Layer *lay) {
     clay->endopenvar.wait(olock, [&] { return clay->opened; });
     clay->opened = false;
     olock.unlock();
-    if (clay->remfr[0]->width != clay->video_dec_ctx->width || clay->remfr[0]->height != clay->video_dec_ctx->height) {
+    if (clay->remfr[lay->pbofri]->width != clay->video_dec_ctx->width || clay->remfr[lay->pbofri]->height != clay->video_dec_ctx->height) {
         clay->initialized = false;
     }
     clay->remfr[1] = lay->remfr[1];
@@ -5686,12 +5731,13 @@ void Mixer::copy_pbos(Layer *clay, Layer *lay) {
     clay->syncobj[2] = lay->syncobj[2];
     clay->pbodi = lay->pbodi;
     clay->pboui = lay->pboui;
+    clay->pbofri = lay->pbofri;
 
     clay->texture = lay->texture;    // for open_layerfile
 
-    clay->changeinit = 3;  // toggle start of 3 frame prerun in old rsolution with already loaded mapptrs
+    clay->changeinit = 3;  // toggle start of 3 frame prerun in old resolution with already loaded mapptrs
 
-    if (clay != lay) lay->nopbodel = true;  // so they dont get deleted
+    lay->nopbodel = true;  // so they dont get deleted
 }
 
 void Mixer::set_values(Layer *clay, Layer *lay, bool open) {
@@ -7043,7 +7089,7 @@ void Layer::set_inlayer(Layer* lay, bool pbos) {
     //mainmix->delete_layer(lrs, this, false);
     lrs.erase(lrs.begin() + this->pos);
     lay->queueing = this->queueing;
-    this->closethread = true;
+    //this->closethread = true;
     lrs.insert(lrs.begin() + pos, lay);
     lay->pos = pos;
     lay->layers = &lrs;
@@ -7278,8 +7324,8 @@ void Layer::open_image(const std::string &path, bool init) {
 	this->decresult->size = w * h * this->bpp;
 	this->decresult->width = -1;
 	this->decresult->hap = false;
-	this->decresult->data = (char*)ilGetData();
-	this->decresult->newdata = true;
+	this->remfr[this->pbodi]->data = (char*)ilGetData();
+	this->remfr[this->pbodi]->newdata = true;
 
 	this->vidopen = false;
 }
@@ -7604,10 +7650,14 @@ Layer* Mixer::read_layers(std::istream &rfile, const std::string &result, std::v
 			safegetline(rfile, istring);
             mainprogram->filecount++;  // dojpeg? wherefor?
 		}
-		if (istring == "WIDTH") {
-			safegetline(rfile, istring);
-			lay->iw = std::stoi(istring);
-		}
+        if (istring == "FILESIZE") {
+            safegetline(rfile, istring);
+            lay->filesize = std::stoll(istring);
+        }
+        if (istring == "WIDTH") {
+            safegetline(rfile, istring);
+            lay->iw = std::stoi(istring);
+        }
 		if (istring == "HEIGHT") {
 			safegetline(rfile, istring);
 			lay->ih = std::stoi(istring);
@@ -7940,18 +7990,24 @@ Layer* Mixer::read_layers(std::istream &rfile, const std::string &result, std::v
                         }
                         isvid = false;
                     }
-					if (istring == "CLIPLAYER") {
+                    if (istring == "FILESIZE") {
+                        safegetline(rfile, istring);
+                        clip->filesize = std::stoll(istring);
+                    }
+                    if (istring == "CLIPLAYER") {
 						std::vector<Layer*> cliplayers;
                         Layer *cliplay = mainmix->read_layers(rfile, result, cliplayers, 0, 0, 0, 1, 0, 0, 0);
 						clip->path = find_unused_filename("cliptemp_" + remove_extension(basename(result)), mainprogram->temppath, ".layer");
-						mainmix->save_layerfile(clip->path, cliplay, 0, 0);
                         if (!exists(cliplay->filename)) {
                             mainmix->retargeting = true;
                             this->newclippaths.push_back(cliplay->filename);
                             this->newpathclips.push_back(clip);
                             clip->layer = lay;
                         }
-                        else clip->insert(lay, lay->clips.end() - 1);
+                        else {
+                            mainmix->save_layerfile(clip->path, cliplay, 0, 0);
+                            clip->insert(lay, lay->clips.end() - 1);
+                        }
 						mainmix->delete_layer(cliplayers, cliplay, false);
 					}
 					if (istring == "JPEGPATH") {
@@ -8240,6 +8296,9 @@ std::vector<std::string> Mixer::write_layer(Layer* lay, std::ostream& wfile, boo
 		wfile << "\n";
 	}
 	if (lay->filename != "") {
+        wfile << "FILESIZE\n";
+        wfile << std::to_string(boost::filesystem::file_size(lay->filename));
+        wfile << "\n";
 		wfile << "WIDTH\n";
 		wfile << std::to_string(lay->decresult->width);
 		wfile << "\n";
@@ -8430,6 +8489,11 @@ std::vector<std::string> Mixer::write_layer(Layer* lay, std::ostream& wfile, boo
                 wfile << clip->path;
             }
             wfile << "\n";
+            if (clip->path != "") {
+                wfile << "FILESIZE\n";
+                wfile << std::to_string(boost::filesystem::file_size(clip->path));
+                wfile << "\n";
+            }
 			if (clip->type == ELEM_LAYER && !isvideo(clip->path)) {
 				wfile << "CLIPLAYER\n";
 				std::ifstream rfile;
@@ -9727,6 +9791,14 @@ Retarget::Retarget() {
     this->skipbox->upvtxtoscr();
     this->skipbox->tooltiptitle = "Skip this file ";
     this->skipbox->tooltip = "Leftclick to skip the retargeting step for this file. ";
+    this->skipallbox = new Box;
+    this->skipallbox->vtxcoords->x1 = 0.2f;
+    this->skipallbox->vtxcoords->y1 = 0.1f;
+    this->skipallbox->vtxcoords->w = 0.1f;
+    this->skipallbox->vtxcoords->h = 0.1f;
+    this->skipallbox->upvtxtoscr();
+    this->skipallbox->tooltiptitle = "Skip this file ";
+    this->skipallbox->tooltip = "Leftclick to skip the retargeting step for this file. ";
 }
 
 
