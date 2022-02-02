@@ -26,6 +26,7 @@
 #include <alsa/asoundlib.h>
 #include <sys/ioctl.h>
 #include "tinyfiledialogs.h"
+#include <arpa/inet.h>
 #endif
 
 #ifdef WINDOWS
@@ -70,7 +71,6 @@
 #include "retarget.h"
 
 #include <tinyfiledialogs.h>
-#include <arpa/inet.h>
 
 #define PROGRAM_NAME "EWOCvj"
 
@@ -259,28 +259,41 @@ void MidiElement::unregister_midi() {
 
 
 
+std::string make_double_backslashes(std::string path) {
+    /*//const char *single = "\\";
+    const char *double = "\\\\";
+    std::replace(path.begin(), path.end(), double, single);
+    std::replace(path.begin(), path.end(), single, double);*/
+    return path;
+}
+
 Program::Program() {
 	this->project = new Project;
 
 #ifdef WINDOWS
-	PWSTR charbuf;
-	HRESULT hr = SHGetKnownFolderPath(FOLDERID_Documents, 0, NULL, &charbuf);
-	std::wstring ws1(charbuf);
-	std::string str1(ws1.begin(), ws1.end());
-	this->docpath = boost::filesystem::canonical(str1).string() + "/EWOCvj2/";
-	hr = SHGetKnownFolderPath(FOLDERID_Fonts, 0, NULL, &charbuf);
-	std::wstring ws2(charbuf);
-	std::string str2(ws2.begin(), ws2.end());
-	this->fontpath = str2;
-	hr = SHGetKnownFolderPath(FOLDERID_Videos, 0, NULL, &charbuf);
-	std::wstring ws4(charbuf);
-	std::string str4(ws4.begin(), ws4.end());
-	this->contentpath = str4;
-	std::wstring ws3;
+    wchar_t *wcharPath1 = 0;
+	HRESULT hr = SHGetKnownFolderPath(FOLDERID_Documents, 0, nullptr, &wcharPath1);
+    boost::filesystem::path p1(wcharPath1);
+    CoTaskMemFree(static_cast<void*>(wcharPath1));
+    this->docpath = p1.generic_string() + "/EWOCvj2/";
+	if (!exists(this->docpath)) boost::filesystem::create_directory(boost::filesystem::path(this->docpath));
+    wchar_t *wcharPath2 = 0;
+    HRESULT hr2 = SHGetKnownFolderPath(FOLDERID_Fonts, 0, nullptr, &wcharPath2);
+    boost::filesystem::path p2(wcharPath2);
+    this->fontpath = p2.generic_string();
+    wchar_t *wcharPath3 = 0;
+    HRESULT hr3 = SHGetKnownFolderPath(FOLDERID_Videos, 0, nullptr, &wcharPath3);
+    boost::filesystem::path p3(wcharPath3);
+    this->contentpath = p3.generic_string() + "/";
+	std::wstring wstr4;
 	wchar_t wcharPath[MAX_PATH];
-	if (GetTempPathW(MAX_PATH, wcharPath)) ws3 = wcharPath;
-	std::string str3(ws3.begin(), ws3.end());
-	this->temppath = str3 + "EWOCvj2/";
+	if (GetTempPathW(MAX_PATH, wcharPath)) wstr4 = wcharPath;
+    boost::filesystem::path p4(wstr4);
+	this->temppath = p4.generic_string() + "EWOCvj2/";
+    if (!exists(this->temppath)) boost::filesystem::create_directory(boost::filesystem::path(this->temppath));
+    printf("1\n");
+    printf("11\n");
+    fflush(stdout);
 #endif
 #ifdef POSIX
 	std::string homedir(getenv("HOME"));
@@ -1019,17 +1032,18 @@ void Program::get_multinname(const char* title, std::string filters, std::string
 	this->autosave = false;
 	//outpaths = tinyfd_openFileDialog(title, dd, 0, nullptr, nullptr, 1);
 	#ifdef WINDOWS
-	LPCSTR lpcfilters = this->mime_to_wildcard(filters);
-	this->win_dialog(title, lpcfilters, defaultdir, true, true);
+	//LPCSTR lpcfilters = this->mime_to_wildcard(filters);
+	//this->win_dialog(title, lpcfilters, defaultdir, true, true);
 	#endif
-	#ifdef POSIX
     const char *outpaths;
     char const* const dd = (defaultdir == "") ? "" : defaultdir.c_str();
     mainprogram->blocking = true;
 
+	#ifdef POSIX
     std::string tt(title);
     std::thread tofront = std::thread{&Program::postponed_to_front, this, tt};
     tofront.detach();
+    #endif
 
     outpaths = tinyfd_openFileDialog(title, dd, 0, nullptr, nullptr, 1);
     mainprogram->blocking = false;
@@ -1050,7 +1064,6 @@ void Program::get_multinname(const char* title, std::string filters, std::string
         currstr += charstr;
         if (i == opaths.length() - 1) this->paths.push_back(currstr);
     }
-	#endif
 	if (mainprogram->paths.size()) {
 		this->path = (char*)"ENTER";
 		this->counting = 0;
@@ -1654,6 +1667,7 @@ void Program::handle_changed_owoh() {
 		tex = set_texes(this->fbotex[3], &this->frbuf[3], this->ow, this->oh);
 		this->fbotex[3] = tex;
 
+#ifdef POSIX
 		for (std::string device : v4l2lbdevices) {
 		    // set v4l2 loopback devices parameters
             int output = open(device.c_str(), O_RDWR);
@@ -1688,6 +1702,7 @@ void Program::handle_changed_owoh() {
                 break;
             }
         }
+#endif
 
 		this->oldow = this->ow;
 		this->oldoh = this->oh;
@@ -2705,6 +2720,7 @@ void handle_binwin() {
 }
 
 
+#ifdef POSIX
 void Program::stream_to_v4l2loopbacks() {
 
     for (std::string device : v4l2lbdevices) {
@@ -2735,6 +2751,7 @@ void Program::stream_to_v4l2loopbacks() {
         close(output);
     }
 }
+#endif
 
 
 #ifdef WINDOWS
@@ -2873,12 +2890,12 @@ void get_cameras()
 	boost::filesystem::path dir("/sys/class/video4linux");
 	for (boost::filesystem::directory_iterator iter(dir), end; iter != end; ++iter) {
 		std::ifstream name;
-		name.open(iter->path().string() + "/name");
+		name.open(iter->path().generic_string() + "/name");
 		std::string istring;
 		safegetline(name, istring);
 		istring = istring.substr(0, istring.find(":"));
 		std::wstring wstr(istring.begin(), istring.end());
-		map["/dev/" + basename(iter->path().string())] = wstr;
+		map["/dev/" + basename(iter->path().generic_string())] = wstr;
 	}
     using convert_type = std::codecvt_utf8<wchar_t>;
     std::wstring_convert<convert_type, wchar_t> converter;
@@ -3449,6 +3466,7 @@ void Program::handle_monitormenu() {
         monitors.push_back("MIDI learn wipe position");
         monitors.push_back("submenu mixtargetmenu");
         monitors.push_back("Show on display");
+        mainprogram->make_menu("monitormenu", mainprogram->monitormenu, monitors);
 
         mainprogram->make_mixtargetmenu();
 
@@ -6060,6 +6078,7 @@ GLuint Program::set_shader() {
  	#endif
  	#endif
  	load_shader(vshader, &VShaderSource, vlen);
+    printf("7\n");
 	char *FShaderSource;
  	char *fshader = (char*)malloc(100);
  	#ifdef WINDOWS
@@ -6073,10 +6092,13 @@ GLuint Program::set_shader() {
  	#endif
  	#endif
 	load_shader(fshader, &FShaderSource, flen);
+    printf("8\n");
 	glShaderSource(vertexShaderObject, 1, &VShaderSource, nullptr);
 	glShaderSource(fragmentShaderObject, 1, &FShaderSource, nullptr);
 	glCompileShader(vertexShaderObject);
+    printf("9\n");
 	glCompileShader(fragmentShaderObject);
+    printf("10\n");
 
 	GLint maxLength = 0;
 	glGetShaderiv(fragmentShaderObject, GL_INFO_LOG_LENGTH, &maxLength);
@@ -6902,13 +6924,12 @@ PIDirs::PIDirs() {
     pdi->iconbox->tooltiptitle = "Browse to set content root directory ";
     pdi->iconbox->tooltip = "Leftclick allows browsing for location of content root directory. ";
 #ifdef WINDOWS
-    pdi->path = mainprogram->docpath + "projects/";
+    pdi->path = mainprogram->contentpath;
 #else
 #ifdef POSIX
     pdi->path = mainprogram->homedir + "/Videos/";
 #endif
 #endif
-    mainprogram->contentpath = pdi->path;
     this->items.push_back(pdi);
     pos++;
 
@@ -7625,8 +7646,14 @@ void Program::socket_server(struct sockaddr_in serv_addr, int opt) {
         }
         new_socket = accept(this->sock, (struct sockaddr *) &serv_addr,
                             (socklen_t *) &addrlen);
+#ifdef POSIX
         int flags = fcntl(new_socket, F_GETFL);
         fcntl(new_socket, F_SETFL, flags | O_NONBLOCK);
+#endif
+#ifdef WINDOWS
+        u_long flags = 1;
+        ioctlsocket(this->sock, FIONBIO, &flags);
+#endif
 
         // check self-connection
         sockaddr_in addr_client;
@@ -7685,11 +7712,22 @@ void Program::socket_client(struct sockaddr_in serv_addr, int opt) {
             printf("\nInvalid server address/ Address not supported \n");
         }
 
-        int flags = fcntl(sock, F_GETFL);
-        fcntl(sock, F_SETFL, flags | O_NONBLOCK);
+#ifdef POSIX
+        int flags = fcntl(new_socket, F_GETFL);
+        fcntl(new_socket, F_SETFL, flags | O_NONBLOCK);
+#endif
+#ifdef WINDOWS
+        u_long flags = 1;
+        ioctlsocket(this->sock, FIONBIO, &flags);
+#endif
         int ret = connect(this->sock, (struct sockaddr *)&serv_addr, sizeof(serv_addr));
         if (ret < 0) {
+#ifdef POSIX
             sleep(1);
+#endif
+#ifdef WINDOWS
+        Sleep(1000);
+#endif
             ret = connect(this->sock, (struct sockaddr *)&serv_addr, sizeof(serv_addr));
         }
 
@@ -7774,10 +7812,19 @@ void Program::socket_server_recieve(SOCKET sock) {
 }
 
 char* Program::bl_recv(int sock, char *buf, size_t sz, int flags) {
+#ifdef POSIX
     int flags2 = fcntl(sock, F_GETFL);
     fcntl(sock, F_SETFL, flags2 & ~O_NONBLOCK);
     recv(sock, buf, sz, flags);
     fcntl(sock, F_SETFL, flags2);
+#endif
+#ifdef WINDOWS
+    u_long flags2 = 0;
+    ioctlsocket(sock, FIONBIO, &flags2);
+    recv(sock, buf, sz, flags);
+    flags2 = 1;
+    ioctlsocket(sock, FIONBIO, &flags2);
+#endif
     return buf;
 }
 
@@ -7824,7 +7871,7 @@ void Shelf::save(const std::string &path) {
         wfile << "\n";
         wfile << "RELPATH\n";
         if (elem->path != "") {
-            wfile << boost::filesystem::relative(elem->path, mainprogram->contentpath).string();
+            wfile << boost::filesystem::relative(elem->path, mainprogram->contentpath).generic_string();
         }
         else {
             wfile << elem->path;
@@ -8015,7 +8062,7 @@ bool Shelf::open(const std::string &path) {
                     safegetline(rfile, istring);
                     if (elem->path == "" && istring != "") {
                         boost::filesystem::current_path(mainprogram->contentpath);
-                        elem->path = pathtoplatform(boost::filesystem::absolute(istring).string());
+                        elem->path = pathtoplatform(boost::filesystem::absolute(istring).generic_string());
                     }
                     if (elem->path == "") {
                         continue;

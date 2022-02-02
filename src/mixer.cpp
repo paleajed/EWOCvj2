@@ -7596,7 +7596,7 @@ Layer* Mixer::read_layers(std::istream &rfile, const std::string &result, std::v
 			safegetline(rfile, istring);
 			if (lay->filename == "" && istring != "") {
                 boost::filesystem::current_path(mainprogram->contentpath);
-				lay->filename = pathtoplatform(boost::filesystem::absolute(istring).string());
+				lay->filename = pathtoplatform(boost::filesystem::absolute(istring).generic_string());
 				if (!exists(lay->filename)) {
 				    notfound = true;
                     this->newlaypaths.push_back(lay->filename);
@@ -7977,7 +7977,7 @@ Layer* Mixer::read_layers(std::istream &rfile, const std::string &result, std::v
                         safegetline(rfile, istring);
                         if (clip->path == "" && istring != "") {
                             boost::filesystem::current_path(mainprogram->contentpath);
-                            clip->path = pathtoplatform(boost::filesystem::absolute(istring).string());
+                            clip->path = pathtoplatform(boost::filesystem::absolute(istring).generic_string());
                             if (!exists(clip->path)) {
                                 if (isvid) {
                                     mainmix->retargeting = true;
@@ -8288,7 +8288,7 @@ std::vector<std::string> Mixer::write_layer(Layer* lay, std::ostream& wfile, boo
 	if (lay->type != ELEM_LIVE) {
 		wfile << "RELPATH\n";
 		if (lay->filename != "") {
-			wfile << boost::filesystem::relative(lay->filename, mainprogram->contentpath).string();
+			wfile << boost::filesystem::relative(lay->filename, mainprogram->contentpath).generic_string();
 		}
 		else {
 			wfile << lay->filename;
@@ -8483,7 +8483,7 @@ std::vector<std::string> Mixer::write_layer(Layer* lay, std::ostream& wfile, boo
 			wfile << "\n";
             wfile << "RELPATH\n";
             if (clip->path != "") {
-                wfile << boost::filesystem::relative(clip->path, mainprogram->contentpath).string();
+                wfile << boost::filesystem::relative(clip->path, mainprogram->contentpath).generic_string();
             }
             else {
                 wfile << clip->path;
@@ -9215,7 +9215,7 @@ void Mixer::start_recording() {
 	// recording is done in separate low priority thread
 	this->recording_video[this->reckind] = std::thread{&Mixer::record_video, this, reccod};
 	#ifdef WINDOWS
-	SetThreadPriority((void*)this->recording_video.native_handle(), THREAD_PRIORITY_LOWEST);
+	SetThreadPriority((void*)this->recording_video[this->reckind].native_handle(), THREAD_PRIORITY_LOWEST);
 	#else
 	struct sched_param params;
 	params.sched_priority = sched_get_priority_min(SCHED_FIFO);

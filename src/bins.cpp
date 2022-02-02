@@ -14,6 +14,7 @@
 
 #ifdef POSIX
 #include <X11/Xos.h>
+#include <arpa/inet.h>
 #endif
 
 #include "SDL2/SDL.h"
@@ -21,7 +22,6 @@
 
 #include <ostream>
 #include <ios>
-#include <arpa/inet.h>
 
 extern "C" {
 #include "libavformat/avformat.h"
@@ -2285,7 +2285,7 @@ void BinsMain::open_bin(const std::string &path, Bin *bin) {
                     if (istring == "") continue;
                     if (bin->elements[pos]->path == "") {
                         boost::filesystem::current_path(mainprogram->project->binsdir);
-                        bin->elements[pos]->path = pathtoplatform(boost::filesystem::absolute(istring).string());
+                        bin->elements[pos]->path = pathtoplatform(boost::filesystem::absolute(istring).generic_string());
                         boost::filesystem::current_path(mainprogram->contentpath);
                         if (!exists(bin->elements[pos]->path)) {
                             mainmix->retargeting = true;
@@ -2365,7 +2365,7 @@ void BinsMain::do_save_bin(const std::string& path) {
 			wfile << this->currbin->elements[i * 12 + j]->path;
 			wfile << "\n";
             wfile << "RELPATH\n";
-            wfile << boost::filesystem::relative(this->currbin->elements[i * 12 + j]->path, mainprogram->project->binsdir).string();
+            wfile << boost::filesystem::relative(this->currbin->elements[i * 12 + j]->path, mainprogram->project->binsdir).generic_string();
             wfile << "\n";
 			wfile << "NAME\n";
 			wfile << this->currbin->elements[i * 12 + j]->name;
@@ -2724,7 +2724,7 @@ std::tuple<std::string, std::string> BinsMain::hap_binel(BinElement *binel, BinE
 		}
 		hap.detach();
 		apath = binel->path;
-		rpath = mainprogram->docpath + boost::filesystem::relative(apath, mainprogram->docpath).string();
+		rpath = mainprogram->docpath + boost::filesystem::relative(apath, mainprogram->docpath).generic_string();
 	}
 	else {
 		std::ifstream rfile;
@@ -2744,8 +2744,8 @@ std::tuple<std::string, std::string> BinsMain::hap_binel(BinElement *binel, BinE
 					wfile << apath;
 					wfile << "\n";
 					wfile << "RELPATH\n";
-					wfile << mainprogram->docpath + boost::filesystem::relative(apath, mainprogram->docpath).string();
-					rpath = mainprogram->docpath + boost::filesystem::relative(apath, mainprogram->docpath).string();
+					wfile << mainprogram->docpath + boost::filesystem::relative(apath, mainprogram->docpath).generic_string();
+					rpath = mainprogram->docpath + boost::filesystem::relative(apath, mainprogram->docpath).generic_string();
 					wfile << "\n";
 				}
 			}
@@ -2754,22 +2754,22 @@ std::tuple<std::string, std::string> BinsMain::hap_binel(BinElement *binel, BinE
 				if (path == "") {
 					rpath = istring;
 					if (exists(istring)) {
-						path = boost::filesystem::canonical(istring).string();
+						path = boost::filesystem::canonical(istring).generic_string();
 						rpath = remove_extension(rpath) + "_hap.mov";
 						wfile << "FILENAME\n";
-						wfile << boost::filesystem::canonical(rpath).string();
+						wfile << boost::filesystem::canonical(rpath).generic_string();
 						wfile << "\n";
 						wfile << "RELPATH\n";
 						wfile << path;
 						wfile << "\n";
-						apath = boost::filesystem::canonical(rpath).string();
+						apath = boost::filesystem::canonical(rpath).generic_string();
 					}
 					else {
 						wfile << "FILENAME\n";
 						wfile << path;
 						wfile << "\n";
 						wfile << "RELPATH\n";
-						wfile << mainprogram->docpath + boost::filesystem::relative(path, mainprogram->docpath).string();
+						wfile << mainprogram->docpath + boost::filesystem::relative(path, mainprogram->docpath).generic_string();
 						wfile << "\n";
 					}
 				}
@@ -2789,7 +2789,7 @@ std::tuple<std::string, std::string> BinsMain::hap_binel(BinElement *binel, BinE
 			cpm = video->streams[idx]->codecpar;
 			if (cpm->codec_id == 188 || cpm->codec_id == 187) {
     				apath = path;
-    				rpath = mainprogram->docpath + boost::filesystem::relative(path, mainprogram->docpath).string();
+    				rpath = mainprogram->docpath + boost::filesystem::relative(path, mainprogram->docpath).generic_string();
 				wfile.close();
 				rfile.close();
  				boost::filesystem::remove(remove_extension(binel->path) + ".temp");
@@ -3099,16 +3099,21 @@ void BinsMain::hap_encode(const std::string srcpath, BinElement *binel, BinEleme
     avcodec_free_context(&c);
     av_frame_free(&nv12frame);
     av_packet_unref(&pkt);
+    avcodec_free_context(&source_dec_ctx);
+    avformat_close_input(&source);
+    if (binel->otflay) {
+        if (binel->otflay->video_dec_ctx) avcodec_free_context(&binel->otflay->video_dec_ctx);
+        if (binel->otflay->video) avformat_close_input(&binel->otflay->video);
+        if (binel->otflay->videoseek) avformat_close_input(&binel->otflay->videoseek);
+    }
     binel->path = remove_extension(binel->path) + "_hap.mov";
 	boost::filesystem::rename(destpath, binel->path);
     if (!exists(mainprogram->contentpath + "EWOCvj2_CPU_vid_backups")) {
         boost::filesystem::path d{ mainprogram->contentpath + "EWOCvj2_CPU_vid_backups" };
         boost::filesystem::create_directory(d);
     }
-    else {
-        boost::filesystem::path d{ mainprogram->contentpath + "EWOCvj2_CPU_vid_backups/" + basename(dirname(srcpath))};
-        boost::filesystem::create_directory(d);
-    }
+    boost::filesystem::path d2{ mainprogram->contentpath + "EWOCvj2_CPU_vid_backups/" + basename(dirname(srcpath))};
+    boost::filesystem::create_directory(d2);
     boost::filesystem::copy_file(srcpath, mainprogram->contentpath + "EWOCvj2_CPU_vid_backups/" + basename(dirname(srcpath)) + "/" + basename(srcpath), boost::filesystem::copy_option::overwrite_if_exists);  // reminder : warn for overwrite
     boost::filesystem::remove(srcpath);  // reminder : warn for overwrite
     binel->encoding = false;

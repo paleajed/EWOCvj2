@@ -248,6 +248,8 @@ std::string pathtoplatform(std::string path) {
     std::replace(path.begin(), path.end(), '/', '\\');
 #endif
 #ifdef POSIX
+    std::replace(path.begin(), path.end(), '\\', '\');
+    std::replace(path.begin(), path.end(), '\', '\\');
     std::replace(path.begin(), path.end(), '\\', '/');
 #endif
     return path;
@@ -260,7 +262,7 @@ void copy_dir(std::string &src, std::string &dest) {
         throw std::runtime_error("Source directory " + src + " does not exist or is not a directory");
     }
     if (!fs::exists(dest)) {
-        if (!fs::create_directory(dest)) {
+        if (!fs::create_directory(fs::path(dest))) {
             throw std::runtime_error("Cannot create destination directory " + dest);
         }
     }
@@ -268,7 +270,7 @@ void copy_dir(std::string &src, std::string &dest) {
     for (const auto& dirEnt : fs::recursive_directory_iterator{src})
     {
         const auto& path = dirEnt.path();
-        auto relativePathStr = path.string();
+        auto relativePathStr = path.generic_string();
         boost::replace_first(relativePathStr, src, "");
         if (exists(dest + "/" + relativePathStr)) {
             boost::filesystem::remove_all(dest + "/" + relativePathStr);
@@ -392,7 +394,7 @@ bool retarget_search() {
         for (boost::filesystem::recursive_directory_iterator itr(path); itr!=boost::filesystem::recursive_directory_iterator(); ++itr)
         {
             if (boost::filesystem::file_size(itr->path()) == retarget->filesize) {
-                return itr->path().string();
+                return itr->path().generic_string();
             }
         };
         std::string s("");
@@ -1649,7 +1651,12 @@ void Layer::get_frame(){
 
 void Layer::trigger() {
     while(!this->closethread) {
+#ifdef POSIX
         sleep(0.1f);
+#endif
+#ifdef WINDOWS
+        Sleep(100);
+#endif
         this->endopenvar.notify_all();  // use return variable as trigger
         this->enddecodevar.notify_all();  // use return variable as trigger
     }
@@ -2705,7 +2712,7 @@ void draw_box(float* linec, float* areac, float x, float y, float wi, float he, 
 		*mainprogram->bdcptr[mainprogram->currbatch]++ = 0;
 	}
 
-	if (mainprogram->countingtexes[mainprogram->currbatch] == 25) {
+	if (mainprogram->countingtexes[mainprogram->currbatch] == 23) {
 		mainprogram->currbatch++;
 		mainprogram->bdvptr[mainprogram->currbatch] = mainprogram->bdcoords[mainprogram->currbatch];
 		mainprogram->bdtcptr[mainprogram->currbatch] = mainprogram->bdtexcoords[mainprogram->currbatch];
@@ -5878,7 +5885,12 @@ void handle_scenes(Scene* scene) {
                         }
                         for (int k = 0; k < tobeerased.size(); k++) {
                             if (tobeerased[k] == mainmix->crossfadecomp) {
+#ifdef POSIX
                                 sleep(1);
+#endif
+#ifdef WINDOWS
+                                Sleep(1000);
+#endif
                             }
                             loopstation->elems[j]->params.erase(tobeerased[k]);
                         }
@@ -6496,7 +6508,9 @@ void the_loop() {
 
 
 
+#ifdef POSIX
     mainprogram->stream_to_v4l2loopbacks();
+#endif
 
 
     /////////////// STUFF THAT BELONGS TO EITHER BINS OR MIX OR FULL SCREEN OR RETARGETING
@@ -8331,6 +8345,8 @@ void open_genmidis(std::string path) {
 
 #ifdef WINDOWS
 int CALLBACK WinMain(HINSTANCE hInstance, HINSTANCE hPrevInstance, LPSTR pCmdLine, int nCmdShow) {
+    printf("YES\n");
+    fflush(stdout);
 #endif
 #ifdef POSIX
 int main(int argc, char* argv[]) {
@@ -8399,39 +8415,48 @@ int main(int argc, char* argv[]) {
     SDL_GetCurrentDisplayMode(0, &DM);
 
     mainprogram = new Program;
+    printf("12\n");
     mainprogram->mainwindow = win;
     lp = new LoopStation;
     lpc = new LoopStation;
+    printf("13\n");
     loopstation = lp;
     mainmix = new Mixer;
+    printf("14\n");
     binsmain = new BinsMain;
+    printf("15\n");
     retarget = new Retarget;
+    printf("16\n");
+
+    printf("1\n");
 
 #ifdef WINDOWS
     boost::filesystem::path p5{mainprogram->docpath + "projects"};
-    mainprogram->currprojdir = p5.string();
+    mainprogram->currprojdir = p5.generic_string();
     if (!exists(mainprogram->docpath + "/projects")) boost::filesystem::create_directory(p5);
 #else
 #ifdef POSIX
     std::string homedir(getenv("HOME"));
     mainprogram->homedir = homedir;
     boost::filesystem::path p1{homedir + "/Documents/EWOCvj2"};
-    std::string docdir = p1.string();
+    std::string docdir = p1.generic_string();
     if (!exists(homedir + "/Documents/EWOCvj2")) boost::filesystem::create_directory(p1);
     boost::filesystem::path e{homedir + "/.ewocvj2"};
     if (!exists(homedir + "/.ewocvj2")) boost::filesystem::create_directory(e);
     boost::filesystem::path p4{homedir + "/.ewocvj2/temp"};
     if (!exists(homedir + "/.ewocvj2/temp")) boost::filesystem::create_directory(p4);
     boost::filesystem::path p5{docdir + "/projects"};
-    mainprogram->currprojdir = p5.string();
+    mainprogram->currprojdir = p5.generic_string();
     if (!exists(docdir + "/projects")) boost::filesystem::create_directory(p5);
 #endif
 #endif
     //empty temp dir if program crashed last time
+    printf("2\n");
     boost::filesystem::path path_to_remove(mainprogram->temppath);
     for (boost::filesystem::directory_iterator end_dir_it, it(path_to_remove); it != end_dir_it; ++it) {
         boost::filesystem::remove_all(it->path());
     }
+    printf("3\n");
 
     glc = SDL_GL_CreateContext(mainprogram->mainwindow);
     SDL_GL_MakeCurrent(mainprogram->mainwindow, glc);
@@ -8442,11 +8467,13 @@ int main(int argc, char* argv[]) {
     orderglc = SDL_GL_CreateContext(mainprogram->dummywindow);
     SDL_GL_MakeCurrent(mainprogram->mainwindow, glc);
     SDL_GL_SetAttribute(SDL_GL_SHARE_WITH_CURRENT_CONTEXT, 0);
+    printf("4\n");
 
 
     //glewExperimental = GL_TRUE;
     glewInit();
 
+    printf("5\n");
     mainprogram->quitwindow = SDL_CreateWindow("Quit EWOCvj2", glob->w / 4, glob->h / 4, glob->w / 2,
                                                              glob->h / 2, SDL_WINDOW_OPENGL | SDL_WINDOW_HIDDEN |
                                                                           SDL_WINDOW_ALLOW_HIGHDPI);
@@ -8459,18 +8486,10 @@ int main(int argc, char* argv[]) {
     smw = (float) wi;
     smh = (float) he;
 
-    SDL_GL_MakeCurrent(mainprogram->quitwindow, glc);
-    mainprogram->ShaderProgram_qu = mainprogram->set_shader();
-    glUseProgram(mainprogram->ShaderProgram_qu);
-    SDL_GL_MakeCurrent(mainprogram->config_midipresetswindow, glc);
-    mainprogram->ShaderProgram_tm = mainprogram->set_shader();
-    glUseProgram(mainprogram->ShaderProgram_tm);
-    SDL_GL_MakeCurrent(mainprogram->prefwindow, glc);
-    mainprogram->ShaderProgram_pr = mainprogram->set_shader();
-    glUseProgram(mainprogram->ShaderProgram_pr);
-
     SDL_GL_MakeCurrent(mainprogram->mainwindow, glc);
+    printf("6\n");
     mainprogram->ShaderProgram = mainprogram->set_shader();
+    fflush(stdout);
     glUseProgram(mainprogram->ShaderProgram);
 
     mainprogram->shelves[0] = new Shelf(0);
@@ -8502,7 +8521,7 @@ int main(int argc, char* argv[]) {
 #endif
 #endif
     if (FT_New_Face(ft, fstr.c_str(), 0, &face)) {
-        fprintf(stderr, "Could not open font\n");
+        fprintf(stderr, "Could not open font %s\n", fstr.c_str());
         return 1;
     }
     FT_Set_Pixel_Sizes(face, 0, 48);
@@ -8730,8 +8749,14 @@ int main(int argc, char* argv[]) {
 
         struct sockaddr_in serv;
         mainprogram->sock = socket(AF_INET, SOCK_DGRAM, 0);
-        int flags = fcntl(mainprogram->sock, F_GETFL);
-        fcntl(mainprogram->sock, F_SETFL, flags | O_NONBLOCK);
+#ifdef POSIX
+        int flags = fcntl(new_socket, F_GETFL);
+        fcntl(new_socket, F_SETFL, flags | O_NONBLOCK);
+#endif
+#ifdef WINDOWS
+        u_long flags = 1;
+        ioctlsocket(mainprogram->sock, FIONBIO, &flags);
+#endif
         //Socket could not be created
         if (mainprogram->sock < 0) {
             std::cout << "Socket error" << std::endl;
@@ -9002,10 +9027,10 @@ int main(int argc, char* argv[]) {
             }else if (mainprogram->pathto == "CHOOSEDIR") {
                 mainprogram->choosedir = mainprogram->path + "/";
                 //std::string driveletter1 = str.substr(0, 1);
-                //std::string abspath = boost::filesystem::canonical(mainprogram->docpath).string();
+                //std::string abspath = boost::filesystem::canonical(mainprogram->docpath).generic_string();
                 //std::string driveletter2 = abspath.substr(0, 1);
                 //if (driveletter1 == driveletter2) {
-                //	mainprogram->choosedir = boost::filesystem::relative(str, mainprogram->docpath).string() + "/";
+                //	mainprogram->choosedir = boost::filesystem::relative(str, mainprogram->docpath).generic_string() + "/";
                 //}
                 //else {
                 //	mainprogram->choosedir = str + "/";
@@ -9073,7 +9098,7 @@ int main(int argc, char* argv[]) {
                     for (const auto& dirEnt : boost::filesystem::directory_iterator{mainprogram->project->autosavedir})
                     {
                         const auto& path = dirEnt.path();
-                        auto pathstr = path.string();
+                        auto pathstr = path.generic_string();
                         size_t start_pos = pathstr.find(oldprdir);
                         if (start_pos == std::string::npos) continue;
                         std::string newstr = pathstr;
@@ -9089,7 +9114,7 @@ int main(int argc, char* argv[]) {
                     for (const auto& dirEnt : boost::filesystem::recursive_directory_iterator{mainprogram->project->autosavedir})
                     {
                         const auto& path = dirEnt.path();
-                        auto pathstr = path.string();
+                        auto pathstr = path.generic_string();
                         size_t start_pos = pathstr.find(oldprdir);
                         if (start_pos == std::string::npos) continue;
                         std::string newstr = pathstr;
@@ -9140,10 +9165,12 @@ int main(int argc, char* argv[]) {
                         // activate focus on window when its entered (for dragndrop between windows)
                         if (e.window.windowID == SDL_GetWindowID(mainprogram->mainwindow)) {
                             mainprogram->intopmenu = true;
-                            SDL_SetWindowInputFocus(binsmain->win);
+                            if (binsmain->floating) SDL_SetWindowInputFocus(binsmain->win);
                         }
-                        if (e.window.windowID == SDL_GetWindowID(binsmain->win)) {
-                            SDL_SetWindowInputFocus(mainprogram->mainwindow);
+                        if (binsmain->floating) {
+                            if (e.window.windowID == SDL_GetWindowID(binsmain->win)) {
+                                SDL_SetWindowInputFocus(mainprogram->mainwindow);
+                            }
                         }
                     }
                 }
