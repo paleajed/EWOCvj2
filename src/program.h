@@ -46,9 +46,10 @@ typedef enum
 	TM_SPEED = 8,
 	TM_OPACITY = 9,
 	TM_FREEZE = 10,
-	TM_SCRATCH = 11,
-    TM_SPEEDZERO = 12,
-    TM_CROSS = 13,
+    TM_SCRATCH1 = 11,
+    TM_SCRATCH2 = 12,
+    TM_SPEEDZERO = 13,
+    TM_CROSS = 14,
 } TM_LEARN;
 
 typedef enum
@@ -276,13 +277,15 @@ class LayMidi {
         MidiElement *frbackw;
         MidiElement *stop;
         MidiElement *loop;
-        MidiElement *scratch;
+        MidiElement *scratch1;
+        MidiElement *scratch2;
         MidiElement *scratchtouch;
         MidiElement *speed;
         MidiElement *speedzero;
         MidiElement *opacity;
         MidiElement *setcue;
         MidiElement *tocue;
+        bool scrinvert = false;
 
         LayMidi();
         ~LayMidi();
@@ -555,12 +558,15 @@ class Program {
         SDL_Window* config_midipresetswindow = nullptr;
 		bool drawnonce = false;
 		bool midipresets = false;
-		int midipresetsset = 1;
+		int midipresetsset = 0;
 		int configcatmidi = 0;
+        bool scratch2phase = 0;
         Box* tmcat[3];
         Box* tmset[4];
-		Box* tmscratch;
-		Box *tmfreeze;
+        Box* tmscratch1;
+        Box* tmscratch2;
+        Box *tmfreeze;
+        Box *tmscrinvert;
 		Box *tmplay;
 		Box *tmbackw;
 		Box *tmbounce;

@@ -202,7 +202,8 @@ LayMidi::LayMidi() {
     this->frbackw = new MidiElement;
     this->stop = new MidiElement;
     this->loop = new MidiElement;
-    this->scratch = new MidiElement;
+    this->scratch1 = new MidiElement;
+    this->scratch2 = new MidiElement;
     this->scratchtouch = new MidiElement;
     this->speed = new MidiElement;
     this->speedzero = new MidiElement;
@@ -220,7 +221,8 @@ LayMidi::~LayMidi() {
     delete(this->frbackw);
     delete(this->stop);
     delete(this->loop);
-    delete(this->scratch);
+    delete(this->scratch1);
+    delete(this->scratch2);
     delete(this->scratchtouch);
     delete(this->speed);
     delete(this->speedzero);
@@ -274,17 +276,22 @@ Program::Program() {
     wchar_t *wcharPath1 = 0;
 	HRESULT hr = SHGetKnownFolderPath(FOLDERID_Documents, 0, nullptr, &wcharPath1);
     boost::filesystem::path p1(wcharPath1);
-    CoTaskMemFree(static_cast<void*>(wcharPath1));
+    //this->docpath = "D:/EWOCvj2/";
     this->docpath = p1.generic_string() + "/EWOCvj2/";
-	if (!exists(this->docpath)) boost::filesystem::create_directory(boost::filesystem::path(this->docpath));
+    CoTaskMemFree(wcharPath1);
+    if (!exists(this->docpath)) boost::filesystem::create_directory(this->docpath);
     wchar_t *wcharPath2 = 0;
     HRESULT hr2 = SHGetKnownFolderPath(FOLDERID_Fonts, 0, nullptr, &wcharPath2);
     boost::filesystem::path p2(wcharPath2);
+    //this->fontpath = "D:/Fonts/";
     this->fontpath = p2.generic_string();
+    CoTaskMemFree(wcharPath2);
     wchar_t *wcharPath3 = 0;
     HRESULT hr3 = SHGetKnownFolderPath(FOLDERID_Videos, 0, nullptr, &wcharPath3);
     boost::filesystem::path p3(wcharPath3);
+    //this->contentpath = "D:/";
     this->contentpath = p3.generic_string() + "/";
+    CoTaskMemFree(wcharPath3);
 	std::wstring wstr4;
 	wchar_t wcharPath[MAX_PATH];
 	if (GetTempPathW(MAX_PATH, wcharPath)) wstr4 = wcharPath;
@@ -793,23 +800,39 @@ Program::Program() {
     this->tmcross->vtxcoords->h = 0.15f;
     this->tmcross->tooltiptitle = "Set MIDI for crossfade ";
     this->tmcross->tooltip = "Leftclick to start waiting for a MIDI command that will set the crossfader.  This setting is the same for each set. ";
-	this->tmfreeze = new Box;
+    this->tmfreeze = new Box;
     this->tmfreeze->smflag = 2;
-	this->tmfreeze->vtxcoords->x1 = -0.1f;
-	this->tmfreeze->vtxcoords->y1 = 0.1f;
-	this->tmfreeze->vtxcoords->w = 0.2f;
-	this->tmfreeze->vtxcoords->h = 0.2f;
-	this->tmfreeze->tooltiptitle = "Set MIDI for scratch wheel freeze ";
-	this->tmfreeze->tooltip = "Leftclick to start waiting for a MIDI command that will trigger scratch wheel freeze for this preset. ";
-	this->tmscratch = new Box;
-    this->tmscratch->smflag = 2;
-	this->tmscratch->vtxcoords->x1 = -1.0f;
-	this->tmscratch->vtxcoords->y1 = -1.0f;
-	this->tmscratch->vtxcoords->w = 2.0f;
-	this->tmscratch->vtxcoords->h = 2.0f;
-	this->tmscratch->tooltiptitle = "Set MIDI for scratch wheel ";
-	this->tmscratch->tooltip = "Leftclick to start waiting for a MIDI command that will trigger the scratch wheel  for this preset. ";
-	
+    this->tmfreeze->vtxcoords->x1 = -0.1f;
+    this->tmfreeze->vtxcoords->y1 = 0.1f;
+    this->tmfreeze->vtxcoords->w = 0.2f;
+    this->tmfreeze->vtxcoords->h = 0.2f;
+    this->tmfreeze->tooltiptitle = "Set MIDI for scratch wheel freeze ";
+    this->tmfreeze->tooltip = "Leftclick to start waiting for a MIDI command that will trigger scratch wheel freeze for this preset. ";
+    this->tmscrinvert = new Box;
+    this->tmscrinvert->smflag = 2;
+    this->tmscrinvert->vtxcoords->x1 = 0.3f;
+    this->tmscrinvert->vtxcoords->y1 = -0.05f;
+    this->tmscrinvert->vtxcoords->w = 0.05f;
+    this->tmscrinvert->vtxcoords->h = 0.08f;
+    this->tmscrinvert->tooltiptitle = "Toggle inversion of scratch wheel direction ";
+    this->tmscrinvert->tooltip = "Leftclick to toggle inversion of scratch wheel direction for this preset. ";
+    this->tmscratch1 = new Box;
+    this->tmscratch1->smflag = 2;
+    this->tmscratch1->vtxcoords->x1 = -1.0f;
+    this->tmscratch1->vtxcoords->y1 = -2.0f;
+    this->tmscratch1->vtxcoords->w = 2.0f;
+    this->tmscratch1->vtxcoords->h = 1.0f;
+    this->tmscratch1->tooltiptitle = "Set MIDI for scratch wheel when scratchwheel is not touched";
+    this->tmscratch1->tooltip = "Leftclick to start waiting for a MIDI command that will trigger scratching for this preset. ";
+    this->tmscratch2 = new Box;
+    this->tmscratch2->smflag = 2;
+    this->tmscratch2->vtxcoords->x1 = -1.0f;
+    this->tmscratch2->vtxcoords->y1 = -1.0f;
+    this->tmscratch2->vtxcoords->w = 2.0f;
+    this->tmscratch2->vtxcoords->h = 1.0f;
+    this->tmscratch2->tooltiptitle = "Set MIDI for scratch wheel when scratchwheel is touched";
+    this->tmscratch2->tooltip = "Leftclick to start waiting for a MIDI command that will trigger scratching for this preset. ";
+
 	this->wormgate1 = new Button(false);
 	this->wormgate1->toggle = 1;
 	this->wormgate1->box->vtxcoords->x1 = -1.0f;
@@ -954,8 +977,12 @@ void Program::postponed_to_front_win(std::string title, SDL_Window *win) {
     if (win) {
         SDL_ShowWindow(win);
     }
+
+#ifdef POSIX
     std::string command = "sleep 1.5 && wmctrl -F -a \"" + title + "\" -b add,above &";
     system(command.c_str());
+#endif
+
 }
 
 void Program::get_inname(const char *title, std::string filters, std::string defaultdir) {
@@ -4271,7 +4298,8 @@ void Program::handle_mainmenu() {
             this->tmset[1]->upvtxtoscr();
             this->tmset[2]->upvtxtoscr();
             this->tmset[3]->upvtxtoscr();
-			this->tmscratch->upvtxtoscr();
+            this->tmscratch1->upvtxtoscr();
+            this->tmscratch2->upvtxtoscr();
 			this->tmfreeze->upvtxtoscr();
 			this->tmplay->upvtxtoscr();
 			this->tmbackw->upvtxtoscr();
@@ -4615,8 +4643,10 @@ void Program::handle_editmenu() {
             mainprogram->tmset[1]->upvtxtoscr();
             mainprogram->tmset[2]->upvtxtoscr();
             mainprogram->tmset[3]->upvtxtoscr();
-            mainprogram->tmscratch->upvtxtoscr();
+            mainprogram->tmscratch1->upvtxtoscr();
+            mainprogram->tmscratch2->upvtxtoscr();
             mainprogram->tmfreeze->upvtxtoscr();
+            mainprogram->tmscrinvert->upvtxtoscr();
             mainprogram->tmplay->upvtxtoscr();
             mainprogram->tmbackw->upvtxtoscr();
             mainprogram->tmbounce->upvtxtoscr();
@@ -5482,8 +5512,11 @@ int Program::config_midipresets_handle() {
 	case TM_FREEZE:
 		render_text("Learn MIDI Scratchwheel Freeze", white, -0.3f, 0.0f, 0.0024f, 0.004f, 2);
 		break;
-    case TM_SCRATCH:
-        render_text("Learn MIDI Scratchwheel", white, -0.3f, 0.0f, 0.0024f, 0.004f, 2);
+    case TM_SCRATCH1:
+        render_text("Learn MIDI Scratchwheel when wheel not touched", white, -0.3f, 0.0f, 0.0024f, 0.004f, 2);
+        break;
+    case TM_SCRATCH2:
+        render_text("Learn MIDI Scratchwheel when wheel touched", white, -0.3f, 0.0f, 0.0024f, 0.004f, 2);
         break;
     case TM_CROSS:
         render_text("Learn MIDI Crossfade", white, -0.3f, 0.0f, 0.0024f, 0.004f, 2);
@@ -5641,26 +5674,52 @@ int Program::config_midipresets_handle() {
             }
             render_text("OPACITY", white, 0.605f, -0.48f, 0.0024f, 0.004f, 2);
 
+            if (lm->scrinvert) {
+                draw_box(white, green, mainprogram->tmscrinvert, -1);
+            }
+            else {
+                draw_box(white, black, mainprogram->tmscrinvert, -1);
+            }
+            if (mainprogram->tmscrinvert->in(mx, my)) {
+                draw_box(white, lightblue, mainprogram->tmscrinvert, -1);
+                if (mainprogram->leftmouse) {
+                    lm->scrinvert = !lm->scrinvert;
+                }
+            }
+            render_text("INVERT", white, 0.26f, 0.12f, 0.0024f, 0.004f, 2);
+
             if (mainprogram->tmfreeze->in(mx, my)) {
                 draw_box(white, lightblue, mainprogram->tmfreeze, -1);
                 if (mainprogram->leftmouse) {
                     mainprogram->tmlearn = TM_FREEZE;
                 }
             } else {
-                if (lm->scratch->midi0 != -1) draw_box(darkgreen2, 0.0f, 0.1f, 0.4f, 1, smw, smh);
+                if (lm->scratch1->midi0 != -1) draw_box(darkgreen2, 0.0f, 0.1f, 0.4f, 3, smw, smh);
+                if (lm->scratch2->midi0 != -1) draw_box(darkgreen2, 0.0f, 0.1f, 0.4f, 4, smw, smh);
                 if (sqrt(pow((mx / (glob->w / 2.0f) - 1.0f) * glob->w / glob->h, 2) +
                          pow((glob->h - my) / (glob->h / 2.0f) - 1.1f, 2)) < 0.4f) {
-                    draw_box(lightblue, 0.0f, 0.1f, 0.4f, 1, smw, smh);
-                    mainprogram->tmscratch->in(mx, my);  //tooltip
-                    if (mainprogram->leftmouse) {
-                        mainprogram->tmlearn = TM_SCRATCH;
+                    if (my < glob->h - mainprogram->yvtxtoscr(1.1f)) {
+                        draw_box(lightblue, 0.0f, 0.1f, 0.4f, 3, smw, smh);
+                        mainprogram->tmscratch1->in(mx, my);  //tooltip
+                        if (mainprogram->leftmouse) {
+                            mainprogram->tmlearn = TM_SCRATCH1;
+                        }
+                    }
+                    else {
+                        draw_box(lightblue, 0.0f, 0.1f, 0.4f, 4, smw, smh);
+                        mainprogram->tmscratch2->in(mx, my);  //tooltip
+                        if (mainprogram->leftmouse) {
+                            mainprogram->tmlearn = TM_SCRATCH2;
+                        }
                     }
                 }
+                register_line_draw(white, -0.2f, 0.1f, 0.2f, 0.1f, true);
                 draw_box(white, black, mainprogram->tmfreeze, -1);
                 if (lm->scratchtouch->midi0 != -1) draw_box(white, darkgreen2, mainprogram->tmfreeze, -1);
             }
             draw_box(white, 0.0f, 0.1f, 0.4f, 2, smw, smh);
-            render_text("SCRATCH", white, -0.1f, -0.2f, 0.0024f, 0.004f, 2);
+            render_text("SCRATCH1", white, -0.1f, 0.35f, 0.0024f, 0.004f, 2);
+            render_text("SCRATCH2", white, -0.1f, -0.2f, 0.0024f, 0.004f, 2);
             render_text("FREEZE", white, -0.08f, 0.12f, 0.0024f, 0.004f, 2);
 
             std::unique_ptr<Box> box = std::make_unique<Box>();
@@ -5680,7 +5739,8 @@ int Program::config_midipresets_handle() {
                     lm->frbackw->midi0 = -1;
                     lm->stop->midi0 = -1;
                     lm->loop->midi0 = -1;
-                    lm->scratch->midi0 = -1;
+                    lm->scratch1->midi0 = -1;
+                    lm->scratch2->midi0 = -1;
                     lm->scratchtouch->midi0 = -1;
                     lm->speed->midi0 = -1;
                     lm->speedzero->midi0 = -1;
@@ -5692,7 +5752,8 @@ int Program::config_midipresets_handle() {
                     lm->frbackw->midi1 = -1;
                     lm->stop->midi1 = -1;
                     lm->loop->midi1 = -1;
-                    lm->scratch->midi1 = -1;
+                    lm->scratch1->midi1 = -1;
+                    lm->scratch2->midi1 = -1;
                     lm->scratchtouch->midi1 = -1;
                     lm->speed->midi1 = -1;
                     lm->speedzero->midi1 = -1;
@@ -5704,7 +5765,8 @@ int Program::config_midipresets_handle() {
                     lm->frbackw->unregister_midi();
                     lm->stop->unregister_midi();
                     lm->loop->unregister_midi();
-                    lm->scratch->unregister_midi();
+                    lm->scratch1->unregister_midi();
+                    lm->scratch2->unregister_midi();
                     lm->scratchtouch->unregister_midi();
                     lm->speed->unregister_midi();
                     lm->speedzero->unregister_midi();

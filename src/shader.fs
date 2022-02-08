@@ -1915,6 +1915,18 @@ void main()
 		}
 		else discard;
 	}
+	else if (circle == 3) {
+		if (ciry < gl_FragCoord.y && distance(vec2(cirx, ciry), gl_FragCoord.xy) < circleradius - 1.0f) {
+			FragColor = color;
+		}
+		else discard;
+	}
+	else if (circle == 4) {
+		if (ciry >= gl_FragCoord.y && distance(vec2(cirx, ciry), gl_FragCoord.xy) < circleradius - 1.0f) {
+			FragColor = color;
+		}
+		else discard;
+	}
 	else if (linetriangle == 1) {
 		FragColor = color;
 	}

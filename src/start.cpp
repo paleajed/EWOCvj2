@@ -640,9 +640,12 @@ void handle_midi(LayMidi *laymidi, int deck, int midi0, int midi1, int midi2, st
                 lvec[j]->playbut->value = false;
                 lvec[j]->revbut->value = false;
             }
-			if (midi0 == laymidi->scratch->midi0 && midi1 == laymidi->scratch->midi1 && midiport == laymidi->scratch->midiport) {
-				lvec[j]->scratch = ((float)midi2 - 64.0f) / 4.0f;
-			}
+            if (midi0 == laymidi->scratch1->midi0 && midi1 == laymidi->scratch1->midi1 && midiport == laymidi->scratch1->midiport) {
+                lvec[j]->scratch = ((float)midi2 - 64.0f) * (laymidi->scrinvert * 2 - 1) / 4.0f;
+            }
+            if (midi0 == laymidi->scratch2->midi0 && midi1 == laymidi->scratch2->midi1 && midiport == laymidi->scratch2->midiport) {
+                lvec[j]->scratch = ((float)midi2 - 64.0f) * (laymidi->scrinvert * 2 - 1) / 4.0f;
+            }
 			if (midi0 == laymidi->frforw->midi0 && midi1 == laymidi->frforw->midi1 && midi2 != 0 && midiport == laymidi->frforw->midiport) {
 				lvec[j]->frame += 1;
 				if (lvec[j]->frame >= lvec[j]->numf) lvec[j]->frame = 0;
@@ -747,9 +750,12 @@ void mycallback( double deltatime, std::vector< unsigned char > *message, void *
                     else if (lm->scratchtouch->midi0 == midi0 && lm->scratchtouch->midi0 == midi1 &&
                              lm->scratchtouch->midiport == midiport)
                         mainprogram->tmchoice = TM_FREEZE;
-                    else if (lm->scratch->midi0 == midi0 && lm->scratch->midi1 == midi1 &&
-                             lm->scratch->midiport == midiport)
-                        mainprogram->tmchoice = TM_SCRATCH;
+                    else if (lm->scratch1->midi0 == midi0 && lm->scratch1->midi1 == midi1 &&
+                             lm->scratch1->midiport == midiport)
+                        mainprogram->tmchoice = TM_SCRATCH1;
+                    else if (lm->scratch2->midi0 == midi0 && lm->scratch2->midi1 == midi1 &&
+                             lm->scratch2->midiport == midiport)
+                        mainprogram->tmchoice = TM_SCRATCH2;
                     else if (mainmix->crossfade->midi[0] == midi0 && mainmix->crossfade->midi[1] == midi1 &&
                             mainmix->crossfade->midiport == midiport)
                         mainprogram->tmchoice = TM_CROSS;
@@ -884,17 +890,34 @@ void mycallback( double deltatime, std::vector< unsigned char > *message, void *
                     lm->scratchtouch->register_midi();
                     mainprogram->tmlearn = TM_NONE;
                     break;
-                case TM_SCRATCH:
+                case TM_SCRATCH1:
                     if (midi0 == 144) return;
-                    lm->scratch->midi0 = midi0;
-                    lm->scratch->midi1 = midi1;
-                    lm->scratch->midiport = midiport;
+                    lm->scratch1->midi0 = midi0;
+                    lm->scratch1->midi1 = midi1;
+                    lm->scratch1->midiport = midiport;
                     mainprogram->prevmodus = true;
-                    lm->scratch->register_midi();
+                    lm->scratch1->register_midi();
                     mainprogram->prevmodus = false;
-                    lm->scratch->register_midi();
+                    lm->scratch1->register_midi();
                     mainprogram->tmlearn = TM_NONE;
                     break;
+                case TM_SCRATCH2:
+                    if (midi0 == 144) {
+                        mainprogram->scratch2phase = 1;
+                        return;
+                    };
+                    if (mainprogram->scratch2phase == 1) {
+                        lm->scratch2->midi0 = midi0;
+                        lm->scratch2->midi1 = midi1;
+                        lm->scratch2->midiport = midiport;
+                        mainprogram->prevmodus = true;
+                        lm->scratch2->register_midi();
+                        mainprogram->prevmodus = false;
+                        lm->scratch2->register_midi();
+                        mainprogram->tmlearn = TM_NONE;
+                        mainprogram->scratch2phase = 0;
+                        break;
+                    }
             }
             mainprogram->prevmodus = bupm;
             return;
@@ -7912,21 +7935,33 @@ void write_genmidi(ostream& wfile, LayMidi *lm) {
 	wfile << lm->opacity->midiport;
 	wfile << "\n";
 
-	wfile << "FREEZE\n";
-	wfile << std::to_string(lm->scratchtouch->midi0);
-	wfile << "\n";
-	wfile << std::to_string(lm->scratchtouch->midi1);
-	wfile << "\n";
-	wfile << lm->scratchtouch->midiport;
-	wfile << "\n";
+    wfile << "FREEZE\n";
+    wfile << std::to_string(lm->scratchtouch->midi0);
+    wfile << "\n";
+    wfile << std::to_string(lm->scratchtouch->midi1);
+    wfile << "\n";
+    wfile << lm->scratchtouch->midiport;
+    wfile << "\n";
 
-	wfile << "SCRATCH\n";
-	wfile << std::to_string(lm->scratch->midi0);
-	wfile << "\n";
-	wfile << std::to_string(lm->scratch->midi1);
-	wfile << "\n";
-	wfile << lm->scratch->midiport;
-	wfile << "\n";
+    wfile << "SCRINVERT\n";
+    wfile << std::to_string(lm->scrinvert);
+    wfile << "\n";
+
+    wfile << "SCRATCH1\n";
+    wfile << std::to_string(lm->scratch1->midi0);
+    wfile << "\n";
+    wfile << std::to_string(lm->scratch1->midi1);
+    wfile << "\n";
+    wfile << lm->scratch1->midiport;
+    wfile << "\n";
+
+    wfile << "SCRATCH2\n";
+    wfile << std::to_string(lm->scratch2->midi0);
+    wfile << "\n";
+    wfile << std::to_string(lm->scratch2->midi1);
+    wfile << "\n";
+    wfile << lm->scratch2->midiport;
+    wfile << "\n";
 }
 
 
@@ -8189,25 +8224,38 @@ void open_genmidis(std::string path) {
 			lm->opacity->midiport = istring;
             lm->opacity->register_midi();
 		}
-		if (istring == "FREEZE") {
-			safegetline(rfile, istring);
-			lm->scratchtouch->midi0 = std::stoi(istring);
-			safegetline(rfile, istring);
-			lm->scratchtouch->midi1 = std::stoi(istring);
-			safegetline(rfile, istring);
-			lm->scratchtouch->midiport = istring;
+        if (istring == "FREEZE") {
+            safegetline(rfile, istring);
+            lm->scratchtouch->midi0 = std::stoi(istring);
+            safegetline(rfile, istring);
+            lm->scratchtouch->midi1 = std::stoi(istring);
+            safegetline(rfile, istring);
+            lm->scratchtouch->midiport = istring;
             lm->scratchtouch->register_midi();
-		}
-		if (istring == "SCRATCH") {
-			safegetline(rfile, istring);
-			lm->scratch->midi0 = std::stoi(istring);
-			safegetline(rfile, istring);
-			lm->scratch->midi1 = std::stoi(istring);
-			safegetline(rfile, istring);
-			lm->scratch->midiport = istring;
-            lm->scratch->register_midi();
-		}
-		
+        }
+        if (istring == "SCRINVERT") {
+            safegetline(rfile, istring);
+            lm->scrinvert = std::stoi(istring);
+        }
+        if (istring == "SCRATCH1") {
+            safegetline(rfile, istring);
+            lm->scratch1->midi0 = std::stoi(istring);
+            safegetline(rfile, istring);
+            lm->scratch1->midi1 = std::stoi(istring);
+            safegetline(rfile, istring);
+            lm->scratch1->midiport = istring;
+            lm->scratch1->register_midi();
+        }
+        if (istring == "SCRATCH2") {
+            safegetline(rfile, istring);
+            lm->scratch2->midi0 = std::stoi(istring);
+            safegetline(rfile, istring);
+            lm->scratch2->midi1 = std::stoi(istring);
+            safegetline(rfile, istring);
+            lm->scratch2->midiport = istring;
+            lm->scratch2->register_midi();
+        }
+
 		if (istring == "WORMGATE0MIDI0") {
 			safegetline(rfile, istring);
 			mainprogram->wormgate1->midi[0] = std::stoi(istring);
@@ -8574,13 +8622,16 @@ int main(int argc, char* argv[]) {
         Layer *lay = mainmix->add_layer(lvec, 0);
         lay->filename = "";
     }
+    mainprogram->prevmodus = !mainprogram->prevmodus;
     for (int m = 0; m < 2; m++) {
-        for (int i = 0; i < 4; i++) {
-            mainmix->currscene[m] = i;
+        std::vector<Layer *> &lvec = choose_layers(m);
+        Layer *lay = mainmix->add_layer(lvec, 0);
+        lay->filename = "";
+    }
+    mainprogram->prevmodus = !mainprogram->prevmodus;
+    for (int m = 0; m < 2; m++) {
+        for (int i = 1; i < 4; i++) {
             mainmix->mousedeck = m;
-            mainmix->do_save_deck(
-                    mainprogram->temppath + "tempdecksc_" + std::to_string(m) + std::to_string(i) + ".deck", false,
-                    false);
             mainmix->do_save_deck(
                     mainprogram->temppath + "tempdecksc_" + std::to_string(m) + std::to_string(i) + ".deck", false,
                     false);
@@ -8591,22 +8642,6 @@ int main(int argc, char* argv[]) {
     glUniform1i(endSampler0, 1);
     GLint endSampler1 = glGetUniformLocation(mainprogram->ShaderProgram, "endSampler1");
     glUniform1i(endSampler1, 2);
-
-    mainmix->currscene[0] = 0;
-    mainmix->mousedeck = 0;
-    mainmix->open_deck(mainprogram->temppath + "tempdecksc_00.deck", 1);
-    mainmix->currscene[1] = 0;
-    mainmix->mousedeck = 1;
-    mainmix->open_deck(mainprogram->temppath + "tempdecksc_10.deck", 1);
-
-    mainprogram->prevmodus = false;
-    mainmix->currscene[0] = 0;
-    mainmix->mousedeck = 0;
-    mainmix->open_deck(mainprogram->temppath + "tempdecksc_00.deck", 1);
-    mainmix->currscene[1] = 0;
-    mainmix->mousedeck = 1;
-    mainmix->open_deck(mainprogram->temppath + "tempdecksc_10.deck", 1);
-    mainprogram->prevmodus = true;
 
     Layer *layA1 = mainmix->layersA[0];
     Layer *layB1 = mainmix->layersB[0];
