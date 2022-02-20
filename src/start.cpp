@@ -1582,6 +1582,7 @@ bool Layer::get_hap_frame() {
 		this->decresult->width = this->video_dec_ctx->width;
 		this->decresult->size = uncomp;
 		this->decresult->hap = true;
+        this->remfr[this->pbofri]->data = this->databuf[this->pbofri];
 		this->remfr[this->pbofri]->newdata = true;
 		if (this->clonesetnr != -1) {
 			std::unordered_set<Layer*>::iterator it;
@@ -1591,7 +1592,6 @@ bool Layer::get_hap_frame() {
 				clay->remfr[clay->pbofri]->newdata = true;
 			}
 		}
-        this->remfr[this->pbofri]->data = this->databuf[this->pbofri];
 	}
 	return true;
 }
@@ -1674,14 +1674,18 @@ void Layer::get_frame(){
 
 void Layer::trigger() {
     while(!this->closethread) {
+        if (mainprogram->openerr) {
+            this->opened = true;
+            mainprogram->openerr = false;  // reminder : requester
+        }
+        this->endopenvar.notify_all();  // use return variable as trigger
+        this->enddecodevar.notify_all();  // use return variable as trigger
 #ifdef POSIX
         sleep(0.1f);
 #endif
 #ifdef WINDOWS
         Sleep(100);
 #endif
-        this->endopenvar.notify_all();  // use return variable as trigger
-        this->enddecodevar.notify_all();  // use return variable as trigger
     }
     while(this->closethread) {
         this->ready = true;
@@ -1709,12 +1713,6 @@ void reset_par(Param *par, float val) {
 
 Layer* Layer::open_video(float frame, const std::string &filename, int reset, bool dontdeleffs) {
     // do configuration and thread launch for opening a video into a layer
-    if (!isvideo(filename)) {
-        this->filename = "";
-        mainmix->addlay = false;
-        return this;
-    }
-
     this->databufready = false;
 
 	if (!this->dummy) {
@@ -1828,7 +1826,8 @@ bool Layer::thread_vidopen() {
 	printf("loading... %s\n", this->filename.c_str());
 	if (r < 0) {
 		this->filename = "";
-		mainprogram->openerr = true;
+        mainmix->addlay = false;
+        mainprogram->openerr = true;
 		printf("%s\n", "Couldnt open video");
 		return 0;
 	}
@@ -1836,6 +1835,8 @@ bool Layer::thread_vidopen() {
 	//av_opt_set_int(this->video, "max_analyze_duration2", 100000000, 0);
 	if (avformat_find_stream_info(this->video, nullptr) < 0) {
         fprintf(stderr, "Could not find stream information\n");
+        this->filename = "";
+        mainmix->addlay = false;
         mainprogram->openerr = true;
         return 0;
     }
@@ -1873,6 +1874,15 @@ bool Layer::thread_vidopen() {
 			if (0) { // this->reset?
 				this->frame = 0.0f;
 			}
+            if (this->decframe) {
+                //av_frame_free(&this->rgbframe);
+                //av_frame_free(&this->decframe);
+                if (this->decframe->data[0] != nullptr) {
+                    av_freep(&this->decframe->data[0]);
+                }
+                sws_freeContext(this->sws_ctx);
+                //avcodec_free_context(&this->video_dec_ctx);
+            }
 			this->decframe = av_frame_alloc();
 
 			std::mutex flock;
@@ -1903,6 +1913,8 @@ bool Layer::thread_vidopen() {
 	}
     else {
     	printf("Error2\n");
+        this->filename = "";
+        mainmix->addlay = false;
         mainprogram->openerr = true;
     	return 0;
     }
@@ -1993,6 +2005,7 @@ bool Layer::thread_vidopen() {
         int storage = av_image_alloc(this->rgbframe[k]->data, this->rgbframe[k]->linesize, this->rgbframe[k]->width,
                                      this->rgbframe[k]->height, AV_PIX_FMT_BGRA, 32);
         if (storage < 0) {
+            // reminder
             mainprogram->openerr = true;
             return 0;
         }
@@ -3462,8 +3475,8 @@ void Layer::load_frame() {
         // bind PBO to update pixel values
         //glBindBuffer(GL_PIXEL_UNPACK_BUFFER, srclay->pbo[srclay->pboui]);
         if (srclay->mapptr[srclay->pbodi]) {
-            // first check of new size content is loaded, if so, make new pbo for current write operation
             if (srclay->changeinit > -1) {
+                // make new pbos one by one when switching layer
                 printf("changepbo %d\n", srclay->pboui);
                 glDeleteBuffers(1, &srclay->pbo[srclay->pboui]);
                 glGenBuffers(1, &srclay->pbo[srclay->pboui]);
@@ -3473,9 +3486,22 @@ void Layer::load_frame() {
                 glBufferStorage(GL_ARRAY_BUFFER, bsize, 0, flags);
                 srclay->mapptr[srclay->pboui] = (GLubyte *) glMapBufferRange(GL_ARRAY_BUFFER, 0, bsize, flags);
                 glBindBuffer(GL_ARRAY_BUFFER, 0);
+                // free old frame data buffers
+                if ((this->vidformat == 188 || this->vidformat == 187)) {
+                    // free HAP databuf
+                    if (srclay->remfr[srclay->pboui]->data != srclay->databuf[srclay->pboui]) {
+                        free(srclay->remfr[srclay->pboui]->data);
+                    }
+                }
+                else{
+                    //free this->rgbframe
+                    if (srclay->remfr[srclay->pboui]->data != nullptr) {
+                        av_freep(&srclay->remfr[srclay->pboui]->data);
+                    }
+                }
             }
 
-            if (srclay->started) {
+            if (srclay->started && srclay->remfr[srclay->pbodi]->newdata) {
                 if (mainprogram->encthreads == 0) WaitBuffer(srclay->syncobj[srclay->pbodi]);
                 // update data directly on the mapped buffer
                 memcpy(srclay->mapptr[srclay->pbodi], srclay->remfr[srclay->pbodi]->data, srclay->decresult->size);

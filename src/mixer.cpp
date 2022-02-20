@@ -2667,32 +2667,7 @@ Layer::~Layer() {
         delete this->remfr[1];
         delete this->remfr[2];
     }
-    if ((this->vidformat == 188 || this->vidformat == 187)) {
-        free(this->databuf[0]);
-        free(this->databuf[1]);
-        free(this->databuf[2]);
-    }
-    else{
-        for (int k = 0; k < 3; k++) {
-            if (this->rgbframe[k]) {
-                //av_frame_free(&this->rgbframe);
-                //av_frame_free(&this->decframe);
-                if (this->rgbframe[k]->data[0] != nullptr) {
-                    av_freep(&this->rgbframe[k]->data[0]);
-                }
-                //avcodec_free_context(&this->video_dec_ctx);
-            }
-        }
-        if (this->decframe) {
-            //av_frame_free(&this->rgbframe);
-            //av_frame_free(&this->decframe);
-            if (this->decframe->data[0] != nullptr) {
-                av_freep(&this->decframe->data[0]);
-            }
-            sws_freeContext(this->sws_ctx);
-            //avcodec_free_context(&this->video_dec_ctx);
-        }
-    }
+
     if (this->video_dec_ctx) avcodec_free_context(&this->video_dec_ctx);
     if (this->video) avformat_close_input(&this->video);
     if (this->videoseek) avformat_close_input(&this->videoseek);
@@ -3775,11 +3750,7 @@ void Layer::display() {
             }
 
             // Draw and handle effect category buttons
-            float xoffset = 0.8f;
-            int sp = mainmix->scenes[this->deck][mainmix->currscene[this->deck]]->scrollpos;
-            if (this->pos - sp == 2 && this->deck == 1) xoffset -= 0.1f;
-            float efx = -1.0f + this->deck * xoffset +
-                        ((sp + this->pos) % 3) * mainprogram->layw;
+            float efx = this->mixbox->vtxcoords->x1 - mainprogram->numw;
             mainprogram->effscrollupA->vtxcoords->x1 = efx;
             mainprogram->effscrollupB->vtxcoords->x1 = efx;
             mainprogram->effscrolldownA->vtxcoords->x1 = efx;
@@ -6577,10 +6548,33 @@ void Mixer::open_mix(const std::string &path, bool alive) {
 				mainmix->event_read(rfile, par, nullptr, lay);
 			}
 		}
-		if (istring == "DECKSPEEDA") {
-			safegetline(rfile, istring);
-			mainmix->deckspeed[!mainprogram->prevmodus][0]->value = std::stof(istring);
-		}
+        if (istring == "SCROLLPOSA") {
+            safegetline(rfile, istring);
+            mainmix->scenes[0][0]->scrollpos = std::stoi(istring);
+            safegetline(rfile, istring);
+            mainmix->scenes[0][1]->scrollpos = std::stoi(istring);
+            safegetline(rfile, istring);
+            mainmix->scenes[0][2]->scrollpos = std::stoi(istring);
+            safegetline(rfile, istring);
+            mainmix->scenes[0][3]->scrollpos = std::stoi(istring);
+        }
+        if (istring == "SCROLLPOSB") {
+            safegetline(rfile, istring);
+            mainmix->scenes[1][0]->scrollpos = std::stoi(istring);
+            safegetline(rfile, istring);
+            mainmix->scenes[1][1]->scrollpos = std::stoi(istring);
+            safegetline(rfile, istring);
+            mainmix->scenes[1][2]->scrollpos = std::stoi(istring);
+            safegetline(rfile, istring);
+            mainmix->scenes[1][3]->scrollpos = std::stoi(istring);
+        }
+        if (istring == "DECKSPEEDAEVENT") {
+            Param* par = mainmix->deckspeed[!mainprogram->prevmodus][0];
+            safegetline(rfile, istring);
+            if (istring == "EVENTELEM") {
+                mainmix->event_read(rfile, par, nullptr, nullptr);
+            }
+        }
 		if (istring == "DECKSPEEDAMIDI0") {
 			safegetline(rfile, istring);
 			mainmix->deckspeed[!mainprogram->prevmodus][0]->midi[0] = std::stoi(istring);
@@ -6598,7 +6592,14 @@ void Mixer::open_mix(const std::string &path, bool alive) {
 			safegetline(rfile, istring);
 			mainmix->deckspeed[!mainprogram->prevmodus][1]->value = std::stof(istring);
 		}
-		if (istring == "DECKSPEEDBMIDI0") {
+        if (istring == "DECKSPEEDBEVENT") {
+            Param* par = mainmix->deckspeed[!mainprogram->prevmodus][1];
+            safegetline(rfile, istring);
+            if (istring == "EVENTELEM") {
+                mainmix->event_read(rfile, par, nullptr, nullptr);
+            }
+        }
+        if (istring == "DECKSPEEDBMIDI0") {
 			safegetline(rfile, istring);
 			mainmix->deckspeed[!mainprogram->prevmodus][1]->midi[0] = std::stoi(istring);
 		}
@@ -6796,6 +6797,24 @@ void Mixer::do_save_mix(const std::string & path, bool modus, bool save) {
 	wfile << "CROSSFADECOMPEVENT\n";
 	par = mainmix->crossfadecomp;
     mainmix->event_write(wfile, par, nullptr);
+    wfile << "SCROLLPOSA\n";
+    wfile << std::to_string( mainmix->scenes[0][0]->scrollpos);
+    wfile << "\n";
+    wfile << std::to_string( mainmix->scenes[0][1]->scrollpos);
+    wfile << "\n";
+    wfile << std::to_string( mainmix->scenes[0][2]->scrollpos);
+    wfile << "\n";
+    wfile << std::to_string( mainmix->scenes[0][3]->scrollpos);
+    wfile << "\n";
+    wfile << "SCROLLPOSB\n";
+    wfile << std::to_string( mainmix->scenes[1][0]->scrollpos);
+    wfile << "\n";
+    wfile << std::to_string( mainmix->scenes[1][1]->scrollpos);
+    wfile << "\n";
+    wfile << std::to_string( mainmix->scenes[1][2]->scrollpos);
+    wfile << "\n";
+    wfile << std::to_string( mainmix->scenes[1][3]->scrollpos);
+    wfile << "\n";
 	wfile << "DECKSPEEDA\n";
 	wfile << std::to_string(mainmix->deckspeed[modus][0]->value);
 	wfile << "\n";
@@ -6970,12 +6989,52 @@ void Mixer::open_deck(const std::string & path, bool alive) {
 			loopstation->elems[i]->erase_elem();
 		}
 	}
-	loopstation->readelems.clear();
-	loopstation->readelemnrs.clear();
-	std::vector<Layer*> &layers = choose_layers(mainmix->mousedeck);
 
-	mainmix->read_layers(rfile, result, layers, mainmix->mousedeck, 0, 1, concat, 1, 1, 0);
-	
+    std::vector<Layer*> &layers = choose_layers(mainmix->mousedeck);
+    while (safegetline(rfile, istring)) {
+        if (istring == "SCROLLPOS") {
+            safegetline(rfile, istring);
+            mainmix->scenes[mainmix->mousedeck][0]->scrollpos = std::stoi(istring);
+            safegetline(rfile, istring);
+            mainmix->scenes[mainmix->mousedeck][1]->scrollpos = std::stoi(istring);
+            safegetline(rfile, istring);
+            mainmix->scenes[mainmix->mousedeck][2]->scrollpos = std::stoi(istring);
+            safegetline(rfile, istring);
+            mainmix->scenes[mainmix->mousedeck][3]->scrollpos = std::stoi(istring);
+        }
+        else if (istring == "DECKSPEED") {
+            safegetline(rfile, istring);
+            mainmix->deckspeed[!mainprogram->prevmodus][mainmix->mousedeck]->value = std::stof(istring);
+        }
+        else if (istring == "DECKSPEEDEVENT") {
+            Param* par = mainmix->deckspeed[!mainprogram->prevmodus][mainmix->mousedeck];
+            safegetline(rfile, istring);
+            if (istring == "EVENTELEM") {
+                mainmix->event_read(rfile, par, nullptr, nullptr);
+            }
+        }
+        else if (istring == "DECKSPEEDMIDI0") {
+            safegetline(rfile, istring);
+            mainmix->deckspeed[!mainprogram->prevmodus][mainmix->mousedeck]->midi[0] = std::stoi(istring);
+        }
+        else if (istring == "DECKSPEEDMIDI1") {
+            safegetline(rfile, istring);
+            mainmix->deckspeed[!mainprogram->prevmodus][mainmix->mousedeck]->midi[1] = std::stoi(istring);
+        }
+        else if (istring == "DECKSPEEDMIDIPORT") {
+            safegetline(rfile, istring);
+            mainmix->deckspeed[!mainprogram->prevmodus][mainmix->mousedeck]->midiport = istring;
+        }
+        else if (istring == "LAYERS") {
+            loopstation->readelems.clear();
+            loopstation->readelemnrs.clear();
+
+            mainmix->read_layers(rfile, result, layers, mainmix->mousedeck, 0, 1, concat, 1, 1, 0);
+
+            break;
+        }
+    }
+
 	// if mousedeck == 2 then its a background load for bin entries
 	std::map<int, int> map;
 	for (int i = 0; i < layers.size(); i++) {
@@ -7014,6 +7073,9 @@ void Mixer::open_deck(const std::string & path, bool alive) {
         elem->playbut->toggled();
     }
 
+    if (layers.empty()) {
+        mainmix->add_layer(layers, 0);
+    }
     mainmix->reconnect_all(layers);
 
     rfile.close();
@@ -7035,9 +7097,18 @@ void Mixer::do_save_deck(const std::string& path, bool save, bool doclips) {
 	wfile.open(str);
 	wfile << "EWOCvj DECKFILE\n";
 
-	wfile << "DECKSPEED\n";
-	wfile << std::to_string(mainmix->deckspeed[!mainprogram->prevmodus][mainmix->mousedeck]->value);
-	wfile << "\n";
+    wfile << "SCROLLPOS\n";
+    wfile << std::to_string( mainmix->scenes[mainmix->mousedeck][0]->scrollpos);
+    wfile << "\n";
+    wfile << std::to_string( mainmix->scenes[mainmix->mousedeck][1]->scrollpos);
+    wfile << "\n";
+    wfile << std::to_string( mainmix->scenes[mainmix->mousedeck][2]->scrollpos);
+    wfile << "\n";
+    wfile << std::to_string( mainmix->scenes[mainmix->mousedeck][3]->scrollpos);
+    wfile << "\n";
+    wfile << "DECKSPEED\n";
+    wfile << std::to_string(mainmix->deckspeed[!mainprogram->prevmodus][mainmix->mousedeck]->value);
+    wfile << "\n";
 	wfile << "DECKSPEEDEVENT\n";
 	Param* par = mainmix->deckspeed[!mainprogram->prevmodus][mainmix->mousedeck];
 	mainmix->event_write(wfile, par, nullptr);
@@ -7051,6 +7122,7 @@ void Mixer::do_save_deck(const std::string& path, bool save, bool doclips) {
 	wfile << mainmix->deckspeed[!mainprogram->prevmodus][mainmix->mousedeck]->midiport;
 	wfile << "\n";
 
+    wfile << "LAYERS\n";
 	std::vector<std::vector<std::string>> jpegpaths;
 	std::vector<Layer*>& lvec = choose_layers(mainmix->mousedeck);
 	for (int i = 0; i < lvec.size(); i++) {

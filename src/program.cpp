@@ -4824,6 +4824,8 @@ void Program::preview_modus_buttons() {
 	if (mainprogram->modusbut->toggled()) {
 	    mainmix->currlays[!mainprogram->prevmodus].clear();
 		mainprogram->prevmodus = !mainprogram->prevmodus;
+        std::swap(mainmix->swapscrollpos[0], mainmix->scenes[0][mainmix->currscene[0]]->scrollpos);
+        std::swap(mainmix->swapscrollpos[1], mainmix->scenes[1][mainmix->currscene[1]]->scrollpos);
 		//modusbut is button that toggles effect preview mode to performance mode and back
 	}
 	render_text(mainprogram->modusbut->name[mainprogram->prevmodus], white, mainprogram->modusbut->box->vtxcoords->x1 + 0.0117f, mainprogram->modusbut->box->vtxcoords->y1 + 0.0225f, 0.00042, 0.00070);
@@ -6365,6 +6367,16 @@ void Project::open(const std::string& path, bool autosave) {
 	
 	while (safegetline(rfile, istring)) {
 		if (istring == "ENDOFFILE") break;
+        if (istring == "PREVMODUS") {
+            safegetline(rfile, istring);
+            mainprogram->prevmodus = std::stoi(istring);
+        }
+        if (istring == "SWAPSCROLLPOS") {
+            safegetline(rfile, istring);
+            mainmix->swapscrollpos[0] = std::stoi(istring);
+            safegetline(rfile, istring);
+            mainmix->swapscrollpos[1] = std::stoi(istring);
+        }
         if (istring == "OUTPUTWIDTH") {
             safegetline(rfile, istring);
             this->ow = std::stoi(istring);
@@ -6457,6 +6469,14 @@ void Project::do_save(const std::string& path, bool autosave) {
 	std::vector<std::string> filestoadd;
 	
 	wfile << "EWOCvj PROJECT V0.1\n";
+    wfile << "PREVMODUS\n";
+    wfile << std::to_string(mainprogram->prevmodus);
+    wfile << "\n";
+    wfile << "SWAPSCROLLPOS\n";
+    wfile << std::to_string(mainmix->swapscrollpos[0]);
+    wfile << "\n";
+    wfile << std::to_string(mainmix->swapscrollpos[1]);
+    wfile << "\n";
     wfile << "OUTPUTWIDTH\n";
     wfile << std::to_string((int)this->ow);
     wfile << "\n";

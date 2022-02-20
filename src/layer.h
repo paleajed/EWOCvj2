@@ -368,6 +368,7 @@ class Mixer {
 		std::vector<Layer*> layersA;
 		std::vector<Layer*> layersB;
 		std::vector<Scene*> scenes[2];
+        int swapscrollpos[2] = {0, 0};
 		std::vector<Layer*> bulrs[2];
         std::vector<Layer*> bulrscopy[2];
         std::vector<GLuint> butexes[2];
