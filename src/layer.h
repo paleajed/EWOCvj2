@@ -6,6 +6,7 @@
 #include <ostream>
 #include <unordered_set>
 #include <unordered_map>
+#include <map>
 
 #include "SDL2/SDL.h"
 #include <AL/al.h>
@@ -128,6 +129,7 @@ class Layer {
 		Box* panbox;
 		
 		bool initialized = false;
+        bool initdeck = false;
         float frame = 0.0f;
         float oldframe = 0.0f;
 		int prevframe = -1;
@@ -234,7 +236,7 @@ class Layer {
         GLuint frb;
         GLuint pbo[3];
 		GLubyte* mapptr[3] = {0, 0, 0};
-		GLsync syncobj[3] = {nullptr, nullptr, nullptr};
+		GLsync syncobj = nullptr;
 		char pbodi = 2;
         char pboui = 1;
         char pbofri = 0;
@@ -297,6 +299,7 @@ class Layer {
         bool lockspeed = false;
         bool started = false;
         bool started2 = false;
+        bool newload = true;
 
 		void display();
 		Effect* add_effect(EFFECT_TYPE type, int pos);
@@ -369,8 +372,7 @@ class Mixer {
 		std::vector<Layer*> layersB;
 		std::vector<Scene*> scenes[2];
         int swapscrollpos[2] = {0, 0};
-		std::vector<Layer*> bulrs[2];
-        std::vector<Layer*> bulrscopy[2];
+		std::vector<Layer*> bulrs[2][2];
         std::vector<GLuint> butexes[2];
         std::vector<Layer*> newpathlayers;
         std::vector<Clip*> newpathclips;
@@ -403,7 +405,7 @@ class Mixer {
         void handle_adaptparam();
 		void handle_clips();
 		void record_video(std::string reccod);
-		void new_file(int decks, bool alive);
+		void new_file(int decks, bool alive, bool add);
 		void save_layerfile(const std::string &path, Layer* lay, bool doclips, bool dojpeg);
 		void save_mix(const std::string &path);
 		void do_save_mix(const std::string& path, bool modus, bool save);
@@ -411,13 +413,13 @@ class Mixer {
 		void do_save_deck(const std::string& path, bool save, bool doclips);
 		Layer* open_layerfile(const std::string &path, Layer *lay, bool loadevents, bool doclips);
 		void open_mix(const std::string &path, bool alive);
-		void open_deck(const std::string &path, bool alive);
+		void open_deck(const std::string &path, bool alive, bool copycomp = false);
 		void new_state();
 		void open_state(const std::string& path);
 		void save_state(const std::string &path, bool autosave);
 		void do_save_state(const std::string& path, bool autosave);
 		std::vector<std::string> write_layer(Layer *lay, std::ostream& wfile, bool doclips, bool dojpeg);
-		Layer* read_layers(std::istream &rfile, const std::string &result, std::vector<Layer*> &layers, bool deck, int type, bool doclips, bool concat, bool load, bool loadevents, bool save, bool keepeff = false);
+		Layer* read_layers(std::istream &rfile, const std::string &result, std::vector<Layer*> &layers, bool deck, bool isdeck, int type, bool doclips, bool concat, bool load, bool loadevents, bool save, bool keepeff = false);
 		void start_recording();
 		void cloneset_destroy(std::unordered_set<Layer*>* cs);
 		void handle_genmidibuttons();
@@ -512,6 +514,10 @@ class Mixer {
 
 		bool domix;
 		int waitmixtex = 0;
+
+        std::map<std::vector<Layer*>*, std::vector<Layer*>*> swapmap;
+
+        std::vector<Layer*> loadinglays;
 
 		std::unordered_map<Param*, float> buparval;
 		std::unordered_map<Param*, Param*> bupar;

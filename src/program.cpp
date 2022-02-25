@@ -3912,7 +3912,7 @@ void Program::handle_laymenu1() {
 			filereq.detach();
 		}
 		else if (k == 5 - cond) {
-			mainmix->new_file(mainmix->mousedeck, 1);
+			mainmix->new_file(mainmix->mousedeck, 1, true);
 		}
 		else if (k == 6 - cond) {
 			mainprogram->pathto = "OPENDECK";
@@ -3925,7 +3925,7 @@ void Program::handle_laymenu1() {
 			filereq.detach();
 		}
 		else if (k == 8 - cond) {
-			mainmix->new_file(2, 1);
+			mainmix->new_file(2, 1, true);
 		}
 		else if (k == 9 - cond) {
 			mainprogram->pathto = "OPENMIX";
@@ -4140,7 +4140,7 @@ void Program::handle_newlaymenu() {
 			filereq.detach();
 		}
 		else if (k == 2) {
-			mainmix->new_file(mainmix->mousedeck, 1);
+			mainmix->new_file(mainmix->mousedeck, 1, true);
 		}
 		else if (k == 3) {
 			mainprogram->pathto = "OPENDECK";
@@ -4153,7 +4153,7 @@ void Program::handle_newlaymenu() {
 			filereq.detach();
 		}
 		else if (k == 5) {
-			mainmix->new_file(2, 1);
+			mainmix->new_file(2, 1, true);
 		}
 		else if (k == 6) {
 			mainprogram->pathto = "OPENMIX";
@@ -4439,13 +4439,13 @@ void Program::handle_filemenu() {
                 mainmix->new_state();
             } else if (mainprogram->menuresults[0] == 2) {
                 // new mix
-                mainmix->new_file(2, 1);
+                mainmix->new_file(2, 1, true);
             } else if (mainprogram->menuresults[0] == 3) {
                 // new deck in deck A
-                mainmix->new_file(0, 1);
+                mainmix->new_file(0, 1, true);
             } else if (mainprogram->menuresults[0] == 4) {
                 // open deck in deck B
-                mainmix->new_file(1, 1);
+                mainmix->new_file(1, 1, true);
             } else if (mainprogram->menuresults[0] == 5) {
                 // open new layer in deck A
                 std::vector<Layer *> &lvec = choose_layers(0);
@@ -6186,7 +6186,12 @@ GLuint Program::set_shader() {
 	glGetProgramiv(program, GL_LINK_STATUS, &isLinked);
 	printf("log %d\n", isLinked);
 	fflush(stdout);
-	
+
+    free(VShaderSource);
+    free(FShaderSource);
+    free(vshader);
+    free(fshader);
+
 	return program;
 }
 
@@ -7795,8 +7800,8 @@ void Program::socket_client(struct sockaddr_in serv_addr, int opt) {
         }
 
 #ifdef POSIX
-        int flags = fcntl(new_socket, F_GETFL);
-        fcntl(new_socket, F_SETFL, flags | O_NONBLOCK);
+        int flags = fcntl(this->sock, F_GETFL);
+        fcntl(this->sock, F_SETFL, flags | O_NONBLOCK);
 #endif
 #ifdef WINDOWS
         u_long flags = 1;

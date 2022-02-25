@@ -2432,7 +2432,7 @@ Bin *BinsMain::new_bin(const std::string &name) {
 	std::string path;
 	bin->path = mainprogram->project->binsdir + name + ".bin";
 	boost::filesystem::path p1{mainprogram->project->binsdir + name};
-	boost::filesystem::create_directory(p1);
+	boost::filesystem::create_directory(p1);  // reminder : secure
 	return bin;
 }
 

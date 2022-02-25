@@ -322,9 +322,6 @@ class Program {
 		Project *project;
 		NodesMain *nodesmain;
 		GLuint ShaderProgram;
-		GLuint ShaderProgram_tm;
-        GLuint ShaderProgram_pr;
-        GLuint ShaderProgram_qu;
 		GLuint fbovao;
 		GLuint fbotex[4];
 		GLuint frbuf[4];
@@ -907,7 +904,7 @@ extern void make_layboxes();
 extern void handle_scenes(Scene* scene);
 extern void switch_to_scene(int i, Scene* from_scene, Scene* to_scene);
 
-extern void new_file(int decks, bool alive);
+extern void new_file(int decks, bool alive, bool add);
 extern void draw_box(float* linec, float* areac, float x, float y, float wi, float he, float dx, float dy, float
 scale, float opacity, int circle, GLuint tex, float fw, float fh, bool text, bool vertical, bool inverted);
 extern void draw_box(float* linec, float* areac, float x, float y, float wi, float he, float dx, float dy, float scale, float opacity, int circle, GLuint tex, float fw, float fh, bool text);
