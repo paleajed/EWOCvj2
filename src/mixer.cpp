@@ -4685,7 +4685,7 @@ void Layer::display() {
                                                                                  (this->numf - 1)) - 0.002f,
             this->loopbox->vtxcoords->y1, 0.004f, 0.075f, -1);
 
-			if (this->speed->value == 0.0f) {
+			if (this->speed->value == 0.0f || this->type == ELEM_IMAGE || this->type == ELEM_LIVE) {
                 render_text("--:-- / --:--", white, this->loopbox->vtxcoords->x1 + this->loopbox->vtxcoords->w + 0.015f, this->loopbox->vtxcoords->y1 + 0.075f - 0.045f, 0.0006f, 0.001f);
 			}
 			else {
@@ -5218,7 +5218,7 @@ void Mixer::open_dragbinel(Layer *thislay) {
 void Mixer::open_dragbinel(Layer *thislay, int i) {
     // open element dragged to layer stack or double-clicked from shelf
     Layer *newlay = thislay;
-    std::vector<Layer*> &lvec = *thislay->layers;
+    std::vector<Layer*> &lvec = choose_layers(thislay->deck);
     if (mainprogram->dragbinel->type == ELEM_LAYER) {
         newlay = mainmix->open_layerfile(mainprogram->dragbinel->path, thislay, 1, 1);
         thislay->set_inlayer(newlay, true);
@@ -5249,13 +5249,14 @@ void Mixer::open_dragbinel(Layer *thislay, int i) {
         }
         //newlay->prevshelfdragelem = mainprogram->shelfdragelem;
     } else if (mainprogram->dragbinel->type == ELEM_IMAGE) {
-        thislay->open_image(mainprogram->dragbinel->path);
-        newlay = (*(thislay->layers))[thislay->pos];
+        newlay = thislay->open_image(mainprogram->dragbinel->path);
         if (i != -1) {
             mainmix->currlays[!mainprogram->prevmodus][i] = newlay;
             mainmix->currlay[!mainprogram->prevmodus] = newlay;
         }
-        if (thislay->initialized) mainmix->copy_pbos(newlay, thislay);
+        if (thislay->initialized) {
+            mainmix->copy_pbos(newlay, thislay);
+        }
         newlay->prevshelfdragelem = mainprogram->shelfdragelem;
         newlay->frame = 0.0f;
     }
@@ -7068,10 +7069,12 @@ void Mixer::open_deck(const std::string & path, bool alive, bool copycomp) {
         if (mainmix->currlay[!mainprogram->prevmodus]) {
             if (mainmix->currlay[!mainprogram->prevmodus]->deck == mainmix->mousedeck) {
                 mainmix->currlay[!mainprogram->prevmodus] = adaplays[0];
+                mainmix->currlays[!mainprogram->prevmodus].push_back(adaplays[0]);
             }
         }
         if (!mainmix->currlay[!mainprogram->prevmodus]) {
             mainmix->currlay[!mainprogram->prevmodus] = adaplays[0];
+            mainmix->currlays[!mainprogram->prevmodus].push_back(adaplays[0]);
         }
     }
     else {
@@ -7367,7 +7370,8 @@ void Mixer::save_layerfile(const std::string& path, Layer* lay, bool doclips, bo
 
 			// IMAGE
 
-void Layer::open_image(const std::string &path, bool init) {
+Layer* Layer::open_image(const std::string &path, bool init) {
+    Layer *lay = this;
 	if (!this->dummy) {
 		ShelfElement* elem = this->prevshelfdragelem;
 		bool ret = mainmix->set_prevshelfdragelem(this);
@@ -7387,7 +7391,7 @@ void Layer::open_image(const std::string &path, bool init) {
 		else if (!ret) {
             Layer *lay = this->transfer();
 			lay->open_image(path);
-			return;
+			return lay;
 		}
 	}
 
@@ -7403,7 +7407,7 @@ void Layer::open_image(const std::string &path, bool init) {
 	ILboolean ret = ilLoadImage(path.c_str());
 	if (ret == IL_FALSE) {
 		printf("can't load image %s\n", path.c_str());
-		return;
+		return nullptr;
 	}
 	this->numf = ilGetInteger(IL_NUM_IMAGES);
 	this->frame = 0.0f;
@@ -7414,15 +7418,30 @@ void Layer::open_image(const std::string &path, bool init) {
 	this->bpp = ilGetInteger(IL_IMAGE_BPP);
 	this->filename = path;
 	this->vidformat = -1;
-	if (init) this->initialize(w, h);
+	if (init) {
+        this->initialize(w, h);
+        this->remfr[this->pboui]->initialized = true;
+    }
 	this->type = ELEM_IMAGE;
 	this->decresult->size = w * h * this->bpp;
 	this->decresult->width = -1;
 	this->decresult->hap = false;
-	this->remfr[this->pbodi]->data = (char*)ilGetData();
-	this->remfr[this->pbodi]->newdata = true;
+    if (this->numf == 0) {
+        this->remfr[this->pboui]->data = (char *) ilGetData();
+        this->remfr[this->pboui]->newdata = true;
+        this->remfr[this->pboui]->vidformat = -1;
+    }
+    else {
+        this->remfr[this->pbofri]->data = (char *) ilGetData();
+        this->remfr[this->pbofri]->newdata = true;
+    }
 
+    if (mainprogram->autoplay && this->revbut->value == 0 && this->bouncebut->value == 0) {
+        this->playbut->value = 1;
+    }
 	this->vidopen = false;
+
+    return lay;
 }
 
 

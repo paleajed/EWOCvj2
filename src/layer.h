@@ -319,7 +319,7 @@ class Layer {
 		bool thread_vidopen();
         Layer* open_video(float frame, const std::string& filename, int reset, bool dontdeleffs = false);
         Layer* open_video(float frame, const std::string& filename, int reset, bool copy, bool noeffects);
-		void open_image(const std::string& path, bool init = true);
+		Layer* open_image(const std::string& path, bool init = true);
 		void initialize(int w, int h);
 		void initialize(int w, int h, int compression);
 		void clip_display_next(bool startend, bool alive);

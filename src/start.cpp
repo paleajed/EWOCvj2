@@ -3409,7 +3409,7 @@ void Layer::load_frame() {
         WaitBuffer(srclay->syncobj);
     }
 
-    if (srclay->started2) {
+    if (srclay->started2 || srclay->type == ELEM_IMAGE || srclay->type == ELEM_LIVE) {
 
         glBindBuffer(GL_PIXEL_UNPACK_BUFFER, srclay->pbo[srclay->pboui]);
 
@@ -3452,7 +3452,7 @@ void Layer::load_frame() {
                             glBindBuffer(GL_PIXEL_UNPACK_BUFFER, 0);
                             glBindTexture(GL_TEXTURE_2D, srclay->texture);
                             glTexSubImage2D(GL_TEXTURE_2D, 0, 0, 0, w, h, mode, GL_UNSIGNED_BYTE,
-                                            srclay->remfr[srclay->pbodi]->data);
+                                            srclay->remfr[srclay->pboui]->data);
                         } else {
                             glTexSubImage2D(GL_TEXTURE_2D, 0, 0, 0, w, h, mode, GL_UNSIGNED_BYTE, 0);
                         }
@@ -3528,8 +3528,13 @@ void Layer::load_frame() {
     srclay->remfr[srclay->pbofri]->initialized = srclay->initialized;
     srclay->remfr[srclay->pbofri]->liveinput = srclay->liveinput;
     srclay->remfr[srclay->pbofri]->isclone = srclay->isclone;
-    srclay->remfr[srclay->pbofri]->width = srclay->video_dec_ctx->width;
-    srclay->remfr[srclay->pbofri]->height = srclay->video_dec_ctx->height;
+    if (srclay->type == ELEM_IMAGE) {
+        srclay->remfr[srclay->pbofri]->width = ilGetInteger(IL_IMAGE_WIDTH);
+        srclay->remfr[srclay->pbofri]->height = ilGetInteger(IL_IMAGE_HEIGHT);
+    } else {
+        srclay->remfr[srclay->pbofri]->width = srclay->video_dec_ctx->width;
+        srclay->remfr[srclay->pbofri]->height = srclay->video_dec_ctx->height;
+    };
     srclay->remfr[srclay->pbofri]->bpp = srclay->bpp;
     srclay->remfr[srclay->pbofri]->size = srclay->decresult->size;
     srclay->remfr[srclay->pbodi]->newdata = false;
@@ -4830,14 +4835,8 @@ void drag_into_layerstack(std::vector<Layer*>& layers, bool deck) {
 						Layer* inlay = mainmix->add_layer(layers, lay->pos + endx);
 						if (inlay->pos == mainmix->scenes[deck][mainmix->currscene[deck]]->scrollpos + 3) mainmix->scenes[deck][mainmix->currscene[deck]]->scrollpos++;
 						if (mainprogram->dragbinel) {
-							if (mainprogram->dragbinel->type == ELEM_LAYER) {
-								Layer *l = mainmix->open_layerfile(mainprogram->dragbinel->path, inlay, 1, 1);
-                                inlay->set_inlayer(l, false);
-							}
-							else {
-								inlay->open_video(0, mainprogram->dragbinel->path, true);
-							}
-						}
+                            mainmix->open_dragbinel(inlay);
+                        }
 						mainprogram->lmover = false;
 						mainprogram->rightmouse = true;
 						binsmain->handle(0);
@@ -4858,17 +4857,7 @@ void drag_into_layerstack(std::vector<Layer*>& layers, bool deck) {
 								lay = mainmix->add_layer(layers, layers.size());
                                 lay->keepeffbut->value = 0;
                                 if (mainprogram->dragbinel) {
-									if (mainprogram->dragbinel->type == ELEM_LAYER) {
-										Layer *l = mainmix->open_layerfile(mainprogram->dragbinel->path, lay, 1, 1);
-                                        lay->set_inlayer(l, false);
-                                        //lay->initialize(lay->video_dec_ctx->width, lay->video_dec_ctx->height);
-									}
-									else if (mainprogram->dragbinel->type == ELEM_FILE) {
-										lay->open_video(0, mainprogram->dragbinel->path, true);
-									}
-									else if (mainprogram->dragbinel->type == ELEM_IMAGE) {
-										lay->open_image(mainprogram->dragbinel->path);
-									}
+                                    mainmix->open_dragbinel(lay);
 								}
 								mainprogram->rightmouse = true;
 								binsmain->handle(0);
@@ -6524,6 +6513,23 @@ void the_loop() {
             for (Layer *testlay: *it.first) {
                 testlay->initdeck = true;
             }
+
+            /*int sz = mainmix->currlays[((*it.first)[0])->comp].size();
+            for (int i = sz - 1; i >= 0; i--) {
+                if (mainmix->currlays[((*it.first)[0])->comp][i]->deck == deck) {
+                    mainmix->currlays[!((*it.first)[0])->comp].push_back(
+                            mainmix->currlays[((*it.first)[0])->comp][i]);
+                }
+            }
+            if (mainmix->currlay[((*it.first)[0])->comp]) {
+                if (mainmix->currlay[((*it.first)[0])->comp]->deck == deck) {
+                    mainmix->currlay[!((*it.first)[0])->comp] = mainmix->currlay[((*it.first)[0])->comp];
+                }
+            }
+            mainmix->currlays[((*it.first)[0])->comp].clear();
+            mainmix->currlays[((*it.first)[0])->comp].push_back((*it.second)[0]);
+            mainmix->currlay[((*it.first)[0])->comp] = (*it.second)[0];*/
+
             bool deck;
             if (it.first == &mainmix->layersA) {
                 for (Layer *testlay: *it.first) {
@@ -6558,24 +6564,6 @@ void the_loop() {
                 deck = 1;
                 mainmix->reconnect_all(mainmix->layersBcomp);
             }
-
-            //mainmix->bulrs[mainprogram->prevmodus][deck].clear();
-
-            int sz = mainmix->currlays[((*it.first)[0])->comp].size();
-            for (int i = sz - 1; i >= 0; i--) {
-                if (mainmix->currlays[((*it.first)[0])->comp][i]->deck == deck) {
-                    mainmix->currlays[!((*it.first)[0])->comp].push_back(
-                            mainmix->currlays[((*it.first)[0])->comp][i]);
-                }
-            }
-            if (mainmix->currlay[((*it.first)[0])->comp]) {
-                if (mainmix->currlay[((*it.first)[0])->comp]->deck == deck) {
-                    mainmix->currlay[!((*it.first)[0])->comp] = mainmix->currlay[((*it.first)[0])->comp];
-                }
-            }
-            mainmix->currlays[((*it.first)[0])->comp].clear();
-            mainmix->currlays[((*it.first)[0])->comp].push_back((*it.second)[0]);
-            mainmix->currlay[((*it.first)[0])->comp] = (*it.second)[0];
         }
     }
 

@@ -6840,7 +6840,7 @@ void Preferences::save() {
         for (int j = 0; j < pc->items.size(); j++) {
             if (!pc->items[j]->onfile) continue;
             if (pc->name == "MIDI Devices") {
-                if (std::find(mds.begin(), mds.end(), pc->items[j]->str) != mds.end()) {
+                if (std::find(mds.begin(), mds.end(), pc->items[j]->name) != mds.end()) {
                     // reminder : hacky fix for repeated MIDI device entries
                     continue;
                 }
