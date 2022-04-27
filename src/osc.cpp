@@ -1,6 +1,9 @@
 #include "GL/glew.h"
 #include "GL/gl.h"
-#include "GL/glut.h"
+#define FREEGLUT_STATIC
+#define _LIB
+#define FREEGLUT_LIB_PRAGMAS 0
+#include "GL/freeglut.h"
 
 #include <string>
 

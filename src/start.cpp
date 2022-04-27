@@ -60,7 +60,10 @@
 #include <turbojpeg.h>
 #include "GL/glew.h"
 #include "GL/gl.h"
-#include "GL/glut.h"
+#define FREEGLUT_STATIC
+#define _LIB
+#define FREEGLUT_LIB_PRAGMAS 0
+#include "GL/freeglut.h"
 #ifdef POSIX
 #include <alsa/asoundlib.h>
 #endif
@@ -161,6 +164,7 @@ LayMidi *laymidiC;
 LayMidi *laymidiD;
 std::vector<Box*> allboxes;
 int sscount = 0;
+bool collectingboxes = true;  // during startup
 
 using namespace boost::asio;
 using namespace std;
@@ -286,7 +290,7 @@ bool isimage(const std::string &path) {
     ILuint boundimage;
     ilGenImages(1, &boundimage);
     ilBindImage(boundimage);
-    ILboolean ret = ilLoadImage(path.c_str());
+    ILboolean ret = ilLoadImage((const ILstring)path.c_str());
     ilDeleteImages(1, &boundimage);
 	return (bool)ret;
 }
@@ -1105,7 +1109,7 @@ IMPLEMENT */
                 }
 				mainmix->midi2 = midi2;
 				mainmix->midibutton = but;
-                but->midistarttime = std::chrono::high_resolution_clock::now();
+                but->midistarttime = std::chrono::system_clock::now();
 			}
 		}
 		for (int m = 0; m < 2; m++) {
@@ -1116,7 +1120,7 @@ IMPLEMENT */
                         mainmix->midi2 = midi2;
                         mainmix->midibutton = nullptr;
                         mainmix->midishelfbutton = but;
-                        but->midistarttime = std::chrono::high_resolution_clock::now();
+                        but->midistarttime = std::chrono::system_clock::now();
                         mainmix->midibutton = nullptr;
                     }
 				}
@@ -1135,7 +1139,7 @@ IMPLEMENT */
                 }
                 mainmix->midi2 = midi2;
                 mainmix->midiparam = par;
-                par->midistarttime = std::chrono::high_resolution_clock::now();
+                par->midistarttime = std::chrono::system_clock::now();
                 par->midistarted = true;
             }
 		}
@@ -3570,9 +3574,9 @@ void set_queueing(bool onoff) {
 	
 void do_blur(bool stage, GLuint prevfbotex, int iter) {
 	glActiveTexture(GL_TEXTURE5);
-	glBindTexture(GL_TEXTURE_2D, mainprogram->fbotex[0 + stage * 2]);
+	glBindTexture(GL_TEXTURE_2D, mainprogram->fbotex[2]);
 	glActiveTexture(GL_TEXTURE6);
-	glBindTexture(GL_TEXTURE_2D, mainprogram->fbotex[1 + stage * 2]);
+	glBindTexture(GL_TEXTURE_2D, mainprogram->fbotex[3]);
 	if (iter == 0) return;
 	GLboolean horizontal = true, first_iteration = true;
 	GLuint *tex;
@@ -3582,10 +3586,10 @@ void do_blur(bool stage, GLuint prevfbotex, int iter) {
 	if (stage) glViewport(0, 0, mainprogram->ow, mainprogram->oh);
 	else glViewport(0, 0, mainprogram->ow3, mainprogram->oh3);
 	for (GLuint i = 0; i < iter; i++) {
-		glBindFramebuffer(GL_FRAMEBUFFER, mainprogram->frbuf[horizontal + stage * 2]);
+		glBindFramebuffer(GL_FRAMEBUFFER, mainprogram->frbuf[horizontal + 2]);
 		glDrawBuffer(GL_COLOR_ATTACHMENT0);
 		if (first_iteration) tex = &prevfbotex;
-		else tex = &mainprogram->fbotex[!horizontal + stage * 2];
+		else tex = &mainprogram->fbotex[!horizontal + 2];
 		glBindTexture(GL_TEXTURE_2D, *tex);
 		glUniform1i(glGetUniformLocation(mainprogram->ShaderProgram, "horizontal"), horizontal);
 		glBindVertexArray(mainprogram->fbovao);
@@ -3733,7 +3737,7 @@ void onestepfrom(bool stage, Node *node, Node *prevnode, GLuint prevfbotex, GLui
 						glUniform1i(interm, 1);
 						do_blur(stage, prevfbotex, ((BlurEffect*)effect)->times);
 						glActiveTexture(GL_TEXTURE0);
-						prevfbotex = mainprogram->fbotex[1 + stage * 2];
+						prevfbotex = mainprogram->fbotex[3];
 						break;
 					 }
 
@@ -3744,7 +3748,7 @@ void onestepfrom(bool stage, Node *node, Node *prevnode, GLuint prevfbotex, GLui
 						glUniform1i(interm, 1);
 						do_blur(stage, prevfbotex, 2);
 						glActiveTexture(GL_TEXTURE0);
-						prevfbotex = mainprogram->fbotex[1 + stage * 2];
+						prevfbotex = mainprogram->fbotex[3];
 						break;
 					}
 
@@ -3767,7 +3771,7 @@ void onestepfrom(bool stage, Node *node, Node *prevnode, GLuint prevfbotex, GLui
 						glUniform1i(interm, 1);
 						do_blur(stage, prevfbotex, 2);
 						glActiveTexture(GL_TEXTURE0);
-						prevfbotex = mainprogram->fbotex[1 + stage * 2];
+						prevfbotex = mainprogram->fbotex[3];
 						break;
 					 }
 
@@ -3912,22 +3916,23 @@ void onestepfrom(bool stage, Node *node, Node *prevnode, GLuint prevfbotex, GLui
 					 }
 
 					case EDGEDETECT: {
-                        bool swits = true;
+                        bool swits = 0;
 
                         fxid = glGetUniformLocation(mainprogram->ShaderProgram, "fxid");
                         glUniform1i(fxid, EDGEDETECT);
-                        GLint fboSampler = glGetUniformLocation(mainprogram->ShaderProgram, "fboSampler");
                         GLint interm = glGetUniformLocation(mainprogram->ShaderProgram, "interm");
                         glUniform1i(interm, 1);
                         glActiveTexture(GL_TEXTURE0);
-                        glBindFramebuffer(GL_FRAMEBUFFER, mainprogram->frbuf[swits + stage * 2]);
+                        glBindFramebuffer(GL_FRAMEBUFFER, mainprogram->frbuf[swits + 2]);
                         glDrawBuffer(GL_COLOR_ATTACHMENT0);
+                        glClearColor( 0.f, 0.f, 0.f, 0.f );
+                        glClear(GL_COLOR_BUFFER_BIT);
                         if (stage) glViewport(0, 0, mainprogram->ow, mainprogram->oh);
                         else glViewport(0, 0, mainprogram->ow3, mainprogram->oh3);
                         glBindTexture(GL_TEXTURE_2D, prevfbotex);
                         glBindVertexArray(mainprogram->fbovao);
                         glDrawArrays(GL_TRIANGLE_STRIP, 0, 4);
-                        prevfbotex = mainprogram->fbotex[swits + stage * 2];
+                        prevfbotex = mainprogram->fbotex[swits + 2];
                         swits = !swits;
 
                         fxid = glGetUniformLocation(mainprogram->ShaderProgram, "fxid");
@@ -3935,21 +3940,24 @@ void onestepfrom(bool stage, Node *node, Node *prevnode, GLuint prevfbotex, GLui
                         GLuint cut = glGetUniformLocation(mainprogram->ShaderProgram, "cut");
                         glUniform1f(cut, 0.9f);
                         glActiveTexture(GL_TEXTURE0);
-                        glBindFramebuffer(GL_FRAMEBUFFER, mainprogram->frbuf[swits + stage * 2]);
+                        glBindFramebuffer(GL_FRAMEBUFFER, mainprogram->frbuf[swits + 2]);
                         glDrawBuffer(GL_COLOR_ATTACHMENT0);
+                        glClearColor( 0.f, 0.f, 0.f, 0.f );
+                        glClear(GL_COLOR_BUFFER_BIT);
                         if (stage) glViewport(0, 0, mainprogram->ow, mainprogram->oh);
                         else glViewport(0, 0, mainprogram->ow3, mainprogram->oh3);
                         glBindTexture(GL_TEXTURE_2D, prevfbotex);
                         glBindVertexArray(mainprogram->fbovao);
                         glDrawArrays(GL_TRIANGLE_STRIP, 0, 4);
-                        prevfbotex = mainprogram->fbotex[swits + stage * 2];
+                        prevfbotex = mainprogram->fbotex[swits + 2];
                         swits = !swits;
 
                         fxid = glGetUniformLocation(mainprogram->ShaderProgram, "fxid");
                         glUniform1i(fxid, BLUR);
                         if (((EdgeDetectEffect*)effect)->thickness > 1) {
-                            do_blur(stage, prevfbotex, (((EdgeDetectEffect *) effect)->thickness - 1));
-                            prevfbotex = mainprogram->fbotex[swits + stage * 2];
+                            do_blur(stage, prevfbotex, int((((EdgeDetectEffect *) effect)->thickness)));
+                            swits = !(int(((EdgeDetectEffect*)effect)->thickness) % 2);
+                            prevfbotex = mainprogram->fbotex[swits + 2];
                             swits = !swits;
                         }
                         glActiveTexture(GL_TEXTURE0);
@@ -3958,29 +3966,44 @@ void onestepfrom(bool stage, Node *node, Node *prevnode, GLuint prevfbotex, GLui
                             fxid = glGetUniformLocation(mainprogram->ShaderProgram, "fxid");
                             glUniform1i(fxid, GAMMA);
                             GLuint level = glGetUniformLocation(mainprogram->ShaderProgram, "gammaval");
-                            glUniform1f(level, 3.0f);
+                            glUniform1f(level, 2.5f);
                             glActiveTexture(GL_TEXTURE0);
-                            glBindFramebuffer(GL_FRAMEBUFFER, mainprogram->frbuf[swits + stage * 2]);
+                            glBindFramebuffer(GL_FRAMEBUFFER, mainprogram->frbuf[swits + 2]);
                             glDrawBuffer(GL_COLOR_ATTACHMENT0);
                             if (stage) glViewport(0, 0, mainprogram->ow, mainprogram->oh);
                             else glViewport(0, 0, mainprogram->ow3, mainprogram->oh3);
                             glBindTexture(GL_TEXTURE_2D, prevfbotex);
                             glBindVertexArray(mainprogram->fbovao);
                             glDrawArrays(GL_TRIANGLE_STRIP, 0, 4);
-                            prevfbotex = mainprogram->fbotex[swits + stage * 2];
+                            prevfbotex = mainprogram->fbotex[swits + 2];
+                            swits = !swits;
+
+                            fxid = glGetUniformLocation(mainprogram->ShaderProgram, "fxid");
+                            glUniform1i(fxid, CONTRAST);
+                            GLuint am = glGetUniformLocation(mainprogram->ShaderProgram, "contrastamount");
+                            glUniform1f(am, 8.0f);
+                            glActiveTexture(GL_TEXTURE0);
+                            glBindFramebuffer(GL_FRAMEBUFFER, mainprogram->frbuf[swits + 2]);
+                            glDrawBuffer(GL_COLOR_ATTACHMENT0);
+                            if (stage) glViewport(0, 0, mainprogram->ow, mainprogram->oh);
+                            else glViewport(0, 0, mainprogram->ow3, mainprogram->oh3);
+                            glBindTexture(GL_TEXTURE_2D, prevfbotex);
+                            glBindVertexArray(mainprogram->fbovao);
+                            glDrawArrays(GL_TRIANGLE_STRIP, 0, 4);
+                            prevfbotex = mainprogram->fbotex[swits + 2];
                             swits = !swits;
 
                             fxid = glGetUniformLocation(mainprogram->ShaderProgram, "fxid");
                             glUniform1i(fxid, INVERT);
                             glActiveTexture(GL_TEXTURE0);
-                            glBindFramebuffer(GL_FRAMEBUFFER, mainprogram->frbuf[swits + stage * 2]);
+                            glBindFramebuffer(GL_FRAMEBUFFER, mainprogram->frbuf[swits + 2]);
                             glDrawBuffer(GL_COLOR_ATTACHMENT0);
                             if (stage) glViewport(0, 0, mainprogram->ow, mainprogram->oh);
                             else glViewport(0, 0, mainprogram->ow3, mainprogram->oh3);
                             glBindTexture(GL_TEXTURE_2D, prevfbotex);
                             glBindVertexArray(mainprogram->fbovao);
                             glDrawArrays(GL_TRIANGLE_STRIP, 0, 4);
-                            prevfbotex = mainprogram->fbotex[swits + stage * 2];
+                            prevfbotex = mainprogram->fbotex[swits + 2];
                             swits = !swits;
 
                             glUniform1i(interm, 0);
@@ -3989,32 +4012,30 @@ void onestepfrom(bool stage, Node *node, Node *prevnode, GLuint prevfbotex, GLui
                             glUniform1i(mm, 0);
                             GLuint edgethickmode = glGetUniformLocation(mainprogram->ShaderProgram, "edgethickmode");
                             glUniform1i(edgethickmode, 1);
-                            glUniform1i(fboSampler, 0);
                             glActiveTexture(GL_TEXTURE0);
-                            glBindFramebuffer(GL_FRAMEBUFFER, mainprogram->frbuf[swits + stage * 2]);
+                            glBindFramebuffer(GL_FRAMEBUFFER, mainprogram->frbuf[swits + 2]);
                             glDrawBuffer(GL_COLOR_ATTACHMENT0);
                             if (stage) glViewport(0, 0, mainprogram->ow, mainprogram->oh);
                             else glViewport(0, 0, mainprogram->ow3, mainprogram->oh3);
                             glBindTexture(GL_TEXTURE_2D, prevfbotex);
                             glBindVertexArray(mainprogram->fbovao);
                             glDrawArrays(GL_TRIANGLE_STRIP, 0, 4);
-                            prevfbotex = mainprogram->fbotex[swits + stage * 2];
+                            prevfbotex = mainprogram->fbotex[swits + 2];
                             swits = !swits;
-
                             glUniform1i(interm, 1);
-                            glUniform1i(fboSampler, 0);
                             glUniform1i(edgethickmode, 0);
+
                             fxid = glGetUniformLocation(mainprogram->ShaderProgram, "fxid");
                             glUniform1i(fxid, INVERT);
                             glActiveTexture(GL_TEXTURE0);
-                            glBindFramebuffer(GL_FRAMEBUFFER, mainprogram->frbuf[swits + stage * 2]);
+                            glBindFramebuffer(GL_FRAMEBUFFER, mainprogram->frbuf[swits + 2]);
                             glDrawBuffer(GL_COLOR_ATTACHMENT0);
                             if (stage) glViewport(0, 0, mainprogram->ow, mainprogram->oh);
                             else glViewport(0, 0, mainprogram->ow3, mainprogram->oh3);
                             glBindTexture(GL_TEXTURE_2D, prevfbotex);
                             glBindVertexArray(mainprogram->fbovao);
                             glDrawArrays(GL_TRIANGLE_STRIP, 0, 4);
-                            prevfbotex = mainprogram->fbotex[swits + stage * 2];
+                            prevfbotex = mainprogram->fbotex[swits + 2];
                             glUniform1i(interm, 0);
                         }
 
@@ -5588,7 +5609,7 @@ bool Clip::get_imageframes() {
 	ILuint boundimage;
 	ilGenImages(1, &boundimage);
 	ilBindImage(boundimage);
-	ILboolean ret = ilLoadImage(this->path.c_str());
+	ILboolean ret = ilLoadImage((const ILstring)this->path.c_str());
 	if (ret == IL_FALSE) {
 		printf("can't load image %s\n", this->path.c_str());
 		return false;
@@ -6487,7 +6508,7 @@ void the_loop() {
 
 
     // swap bulrs with layer stacks when all layers have a decoded frame
-    std::vector<Layer*> *skip;
+    std::vector<Layer*> skip;
     std::map<std::vector<Layer*>*, std::vector<Layer*>*> tempmap = mainmix->swapmap;
     for (auto& it: tempmap) {
         bool ready = true;
@@ -6533,34 +6554,34 @@ void the_loop() {
             bool deck;
             if (it.first == &mainmix->layersA) {
                 for (Layer *testlay: *it.first) {
-                    mainmix->delete_layer(mainmix->layersA, testlay, false);
+                    mainmix->delete_layer(mainmix->layersA, testlay, true);
                 }
                 mainmix->layersA = *it.second;
-                skip = &mainmix->layersA;
+                skip = mainmix->layersA;
                 deck = 0;
                 mainmix->reconnect_all(mainmix->layersA);
             } else if (it.first == &mainmix->layersB) {
                 for (Layer *testlay: *it.first) {
-                    mainmix->delete_layer(mainmix->layersB, testlay, false);
+                    mainmix->delete_layer(mainmix->layersB, testlay, true);
                 }
                 mainmix->layersB = *it.second;
-                skip = &mainmix->layersB;
+                skip = mainmix->layersB;
                 deck = 1;
                 mainmix->reconnect_all(mainmix->layersB);
             } else if (it.first == &mainmix->layersAcomp) {
                 for (Layer *testlay: *it.first) {
-                    mainmix->delete_layer(mainmix->layersAcomp, testlay, false);
+                    mainmix->delete_layer(mainmix->layersAcomp, testlay, true);
                 }
                 mainmix->layersAcomp = *it.second;
-                skip = &mainmix->layersAcomp;
+                skip = mainmix->layersAcomp;
                 deck = 0;
                 mainmix->reconnect_all(mainmix->layersAcomp);
             } else if (it.first == &mainmix->layersBcomp) {
                 for (Layer *testlay: *it.first) {
-                    mainmix->delete_layer(mainmix->layersBcomp, testlay, false);
+                    mainmix->delete_layer(mainmix->layersBcomp, testlay, true);
                 }
                 mainmix->layersBcomp = *it.second;
-                skip = &mainmix->layersBcomp;
+                skip = mainmix->layersBcomp;
                 deck = 1;
                 mainmix->reconnect_all(mainmix->layersBcomp);
             }
@@ -6570,31 +6591,35 @@ void the_loop() {
     mainmix->firstlayers.clear();
     if (!mainprogram->prevmodus) {
 		//when in performance mode: keep advancing frame counters for preview layer stacks (alive = 0)
-        if (skip != &mainmix->layersA) {
+        if (skip != mainmix->layersA) {
             for (int i = 0; i < mainmix->layersA.size(); i++) {
                 Layer *testlay = mainmix->layersA[i];
+                testlay->layers = &mainmix->layersA;
                 testlay->calc_texture(0, 0);
                 testlay->load_frame();
             }
         }
-        if (skip != &mainmix->layersB) {
+        if (skip != mainmix->layersB) {
             for (int i = 0; i < mainmix->layersB.size(); i++) {
                 Layer *testlay = mainmix->layersB[i];
+                testlay->layers = &mainmix->layersB;
                 testlay->calc_texture(0, 0);
                 testlay->load_frame();
             }
         }
         // performance mode frame calc and load
-        if (skip != &mainmix->layersAcomp) {
+        if (skip != mainmix->layersAcomp) {
             for (int i = 0; i < mainmix->layersAcomp.size(); i++) {
                 Layer *testlay = mainmix->layersAcomp[i];
+                testlay->layers = &mainmix->layersAcomp;
                 if (testlay->filename != "") testlay->calc_texture(1, 1);
                 testlay->load_frame();
             }
         }
-        if (skip != &mainmix->layersBcomp) {
+        if (skip != mainmix->layersBcomp) {
             for (int i = 0; i < mainmix->layersBcomp.size(); i++) {
                 Layer *testlay = mainmix->layersBcomp[i];
+                testlay->layers = &mainmix->layersBcomp;
                 if (testlay->filename != "") testlay->calc_texture(1, 1);
                 testlay->load_frame();
             }
@@ -6607,32 +6632,36 @@ void the_loop() {
 	}
     // when in preview modus, do frame texture load for both mixes (preview and output)
 	if (mainprogram->prevmodus) {
-        if (skip != &mainmix->layersA) {
+        if (skip != mainmix->layersA) {
             for (int i = 0; i < mainmix->layersA.size(); i++) {
                 Layer *testlay = mainmix->layersA[i];
+                testlay->layers = &mainmix->layersA;
                 if (testlay->filename != "") testlay->calc_texture(0, 1);
                 testlay->load_frame();
             }
         }
-        if (skip != &mainmix->layersB) {
+        if (skip != mainmix->layersB) {
             for (int i = 0; i < mainmix->layersB.size(); i++) {
                 Layer *testlay = mainmix->layersB[i];
+                testlay->layers = &mainmix->layersB;
                 if (testlay->filename != "") testlay->calc_texture(0, 1);
                 testlay->load_frame();
             }
         }
 	}
 	if (mainprogram->prevmodus) {
-        if (skip != &mainmix->layersAcomp) {
+        if (skip != mainmix->layersAcomp) {
             for (int i = 0; i < mainmix->layersAcomp.size(); i++) {
                 Layer *testlay = mainmix->layersAcomp[i];
+                testlay->layers = &mainmix->layersAcomp;
                 if (testlay->filename != "") testlay->calc_texture(1, 1);
                 testlay->load_frame();
             }
         }
-        if (skip != &mainmix->layersBcomp) {
+        if (skip != mainmix->layersBcomp) {
             for (int i = 0; i < mainmix->layersBcomp.size(); i++) {
                 Layer *testlay = mainmix->layersBcomp[i];
+                testlay->layers = &mainmix->layersBcomp;
                 if (testlay->filename != "") testlay->calc_texture(1, 1);
                 testlay->load_frame();
             }
@@ -7511,7 +7540,12 @@ void the_loop() {
                     }
                 }
             }
+#ifdef WINDOWS
+            closesocket(mainprogram->sock);
+#endif
+#ifdef POSIX
             close(mainprogram->sock);
+#endif
 
 			mainprogram->prefs->save();
 
@@ -8814,7 +8848,7 @@ int main(int argc, char* argv[]) {
     ilBindImage(bg_ol);
     ilActiveImage(0);
 #ifdef WINDOWS
-    ILboolean ret = ilLoadImage("./background.png");
+    ILboolean ret = ilLoadImage((const ILstring)"./background.png");
 #endif
 #ifdef POSIX
     ILboolean ret = ilLoadImage("/usr/share/ewocvj2/background.png");
@@ -8839,7 +8873,10 @@ int main(int argc, char* argv[]) {
     ilBindImage(lok_ol);
     ilActiveImage(0);
 #ifdef WINDOWS
-    ILboolean ret2 = ilLoadImage("./lock.png");
+    boost::filesystem::path full_path(boost::filesystem::current_path());
+    printf("PATH %s", full_path.string().c_str());
+    std::string pp(full_path.string() + "/lock.png");
+    ILboolean ret2 = ilLoadImage((const ILstring)pp.c_str());
 #endif
 #ifdef POSIX
     ILboolean ret2 = ilLoadImage("/usr/share/ewocvj2/lock.png");
@@ -9025,7 +9062,7 @@ int main(int argc, char* argv[]) {
         // predraw all tooltips so no slowdowns will happen when stringtextures are initialized
         mainprogram->longtooltip_prepare(box);
     }
-    mainprogram->collectingboxes = false;
+    collectingboxes = false;
     // predraw all pref names so no slowdowns will happen when prefs window is first opened
     for (PrefCat *cat : mainprogram->prefs->items) {
         render_text(cat->name, white, 99.0f, 99.0f, 0.00045f * 4.0, 0.00075f * 4.0, 1, 0);
@@ -9035,12 +9072,8 @@ int main(int argc, char* argv[]) {
     }
 
 
-#ifdef WINDOWS
-    SetCurrentDirectory((LPCTSTR)((pathtoplatform(mainprogram->docpath).c_str())));
-#endif
-#ifdef POSIX
     boost::filesystem::current_path(pathtoplatform(mainprogram->docpath));
-#endif
+
 
 
 
@@ -9793,6 +9826,8 @@ int main(int argc, char* argv[]) {
         glClearColor(0.2f, 0.2f, 0.2f, 0.2f);
         glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
 
+        mainprogram->currprojdir = mainprogram->projdir;
+
         if (!mainprogram->startloop) {
             //initial switch to live mode
             mainprogram->prevmodus = false;
@@ -9807,8 +9842,6 @@ int main(int argc, char* argv[]) {
             mainprogram->boxoffset[0] = 0;
             mainprogram->currbatch = 0;
 
-            std::string reqdir = mainprogram->currprojdir;
-            if (reqdir.substr(0, 1) == ".") reqdir.erase(0, 2);
             Box box;
 
             // handle starting with a new project on the drive
@@ -9835,8 +9868,7 @@ int main(int argc, char* argv[]) {
                         name = remove_version(name) + "_" + std::to_string(count);
                     }
                     mainprogram->get_outname("New project", "application/ewocvj2-project",
-                                             boost::filesystem::absolute(reqdir + "/" + name).generic_string
-                                             ());
+                                             boost::filesystem::canonical(mainprogram->currprojdir).generic_string());
                     if (mainprogram->path != "") {
                         SDL_GL_MakeCurrent(mainprogram->mainwindow, glc);
                         mainprogram->project->newp(mainprogram->path + "/" + basename(mainprogram->path));

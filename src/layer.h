@@ -214,7 +214,7 @@ class Layer {
 		bool newframe = false;
 		bool newtexdata = false;
 		frame_result *decresult;
-		remaining_frames *remfr[3];
+		remaining_frames *remfr[3] = {nullptr, nullptr, nullptr};
 		int changeinit = -1;
         std::thread decoding;
         std::thread triggering;

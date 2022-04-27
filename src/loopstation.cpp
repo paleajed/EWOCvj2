@@ -1,6 +1,9 @@
 #include "GL/glew.h"
 #include "GL/gl.h"
-#include "GL/glut.h"
+#define FREEGLUT_STATIC
+#define _LIB
+#define FREEGLUT_LIB_PRAGMAS 0
+#include "GL/freeglut.h"
 
 #include <chrono>
 #include <algorithm>
@@ -383,7 +386,8 @@ void LoopStationElement::mouse_handle() {
 	
 void LoopStationElement::set_values() {
 	// if current elapsed time in loop > eventtime of events starting from eventpos then set their params to stored values
-	std::chrono::high_resolution_clock::time_point now = std::chrono::high_resolution_clock::now();
+    std::chrono::high_resolution_clock::time_point now = std::chrono::high_resolution_clock::now();
+    std::chrono::system_clock::time_point now2 = std::chrono::system_clock::now();
 	std::chrono::duration<double> elapsed;
 	elapsed = std::chrono::duration_cast<std::chrono::duration<double>>(now - this->starttime);
 	long long millicount = std::chrono::duration_cast<std::chrono::milliseconds>(elapsed).count();
@@ -391,14 +395,14 @@ void LoopStationElement::set_values() {
 	this->interimtime = millicount;
 	this->speedadaptedtime = this->speedadaptedtime + passed * this->speed->value;
 	std::tuple<long long, Param*, Button*, float> event;
-	event = this->eventlist[this->eventpos];
+	event = this->eventlist[std::clamp(this->eventpos, 0, (int)this->eventlist.size() - 1)];
 	while (this->speedadaptedtime > std::get<0>(event) && !this->atend) {
 	    // play all recorded events upto now
 		Param *par = std::get<1>(event);
 		Button *but = std::get<2>(event);
 		lpc = lpc;
 		if (par) {
-            elapsed = std::chrono::duration_cast<std::chrono::duration<double>>(now - par->midistarttime);
+            elapsed = std::chrono::duration_cast<std::chrono::duration<double>>(now2 - par->midistarttime);
             long long mc = std::chrono::duration_cast<std::chrono::milliseconds>(elapsed).count();
             if (mc > 500 || mc < 0) {
                 par->midistarted = false;
@@ -411,7 +415,7 @@ void LoopStationElement::set_values() {
             }
 		}
 		else if (but) {
-            elapsed = std::chrono::duration_cast<std::chrono::duration<double>>(now - but->midistarttime);
+            elapsed = std::chrono::duration_cast<std::chrono::duration<double>>(now2 - but->midistarttime);
             long long mc = std::chrono::duration_cast<std::chrono::milliseconds>(elapsed).count();
             if (mc > 500 || mc < 0) {
                 if (std::find(this->lpst->allbuttons.begin(), this->lpst->allbuttons.end(), but) !=

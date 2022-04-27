@@ -10,7 +10,10 @@
 
 #include "GL/glew.h"
 #include "GL/gl.h"
-#include "GL/glut.h"
+#define FREEGLUT_STATIC
+#define _LIB
+#define FREEGLUT_LIB_PRAGMAS 0
+#include "GL/freeglut.h"
 
 #ifdef POSIX
 #include <X11/Xos.h>
@@ -652,7 +655,7 @@ void BinsMain::handle(bool draw) {
         for (int i = 0; i < strlen(str); i++) {
             *walk++ = str[i];
         }
-        char *nll = "\0";
+        char nll[2] = "\0";
         *walk++ = *nll;
         return walk;
     };

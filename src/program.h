@@ -11,7 +11,7 @@
 #ifdef WINDOWS
 #include "direnthwin/dirent.h"
 #endif
-#include <rtmidi/RtMidi.h>
+#include <RtMidi.h>
 #include <istream>
 #include <lo/lo.h>
 #include <lo/lo_cpp.h>
@@ -720,7 +720,6 @@ class Program {
         bool steplprow = false;
         bool waitonetime = false;
         float ordertime = 0.0f;
-        bool collectingboxes = true;  // during startup
         bool sameeight = false;
         bool check = false;
 
@@ -861,6 +860,7 @@ extern LayMidi* laymidiB;
 extern LayMidi* laymidiC;
 extern LayMidi* laymidiD;
 extern std::vector<Box*> allboxes;
+extern bool collectingboxes;
 
 extern float yellow[];
 extern float white[];

@@ -17,7 +17,10 @@
 
 #include "GL/glew.h"
 #include "GL/gl.h"
-#include "GL/glut.h"
+#define FREEGLUT_STATIC
+#define _LIB
+#define FREEGLUT_LIB_PRAGMAS 0
+#include "GL/freeglut.h"
 #ifdef POSIX
 #include <X11/Xlib.h>
 #include <X11/Xos.h>
@@ -1775,7 +1778,20 @@ void Program::handle_fullscreen() {
 	MixNode* node;
 	if (this->fullscreen == this->nodesmain->mixnodes.size()) node = (MixNode*)this->nodesmain->mixnodescomp[this->fullscreen - 1];
 	else node = (MixNode*)this->nodesmain->mixnodescomp[this->fullscreen];
-	if (this->prevmodus) node = (MixNode*)this->nodesmain->mixnodes[this->fullscreen - 2];
+	if (this->prevmodus) {
+        if (this->fullscreen == 0) {
+            node = (MixNode *) this->nodesmain->mixnodes[0];
+        }
+        else if (this->fullscreen == 1) {
+            node = (MixNode *) this->nodesmain->mixnodes[1];
+        }
+        else if (this->fullscreen == 2) {
+            node = (MixNode *) this->nodesmain->mixnodes[2];
+        }
+        else if (this->fullscreen == 3) {
+            node = (MixNode *) this->nodesmain->mixnodescomp[2];
+        }
+    }
 	GLfloat cf = glGetUniformLocation(this->ShaderProgram, "cf");
 	GLint wipe = glGetUniformLocation(this->ShaderProgram, "wipe");
 	GLint mixmode = glGetUniformLocation(this->ShaderProgram, "mixmode");
@@ -2264,7 +2280,7 @@ void Program::shelf_miditriggering() {
 Box::Box() {
     this->vtxcoords = new BOX_COORDS;
     this->scrcoords = new BOX_COORDS;
-    if (mainprogram->collectingboxes) {
+    if (collectingboxes) {
         allboxes.push_back(this);
     }
 }
@@ -2272,7 +2288,7 @@ Box::Box() {
 Box::~Box() {
     delete this->vtxcoords;
     delete this->scrcoords;
-    if (mainprogram->collectingboxes) {
+    if (collectingboxes) {
         if (std::find(allboxes.begin(), allboxes.end(), this) != allboxes.end()) {
             allboxes.erase(std::find(allboxes.begin(), allboxes.end(), this));
         }
@@ -6315,8 +6331,13 @@ void Project::newp(const std::string &path) {
     mainmix->currlays[0].clear();
     mainmix->currlays[1].clear();
     std::vector<Layer*> &lvec = choose_layers(0);
-    mainmix->currlays[1].push_back(lvec[0]);
-    mainmix->currlay[1] = lvec[0];
+    mainmix->currlays[!mainprogram->prevmodus].push_back(lvec[0]);
+    mainmix->currlay[!mainprogram->prevmodus] = lvec[0];
+    mainprogram->prevmodus = !mainprogram->prevmodus;
+    lvec = choose_layers(0);
+    mainmix->currlays[!mainprogram->prevmodus].push_back(lvec[0]);
+    mainmix->currlay[!mainprogram->prevmodus] = lvec[0];
+    mainprogram->prevmodus = !mainprogram->prevmodus;
     mainprogram->project->do_save(this->path);
 }
 	
@@ -6439,7 +6460,7 @@ void Project::open(const std::string& path, bool autosave) {
         int pos = std::find(mainprogram->recentprojectpaths.begin(), mainprogram->recentprojectpaths.end(), path) -
                   mainprogram->recentprojectpaths.begin();
         mainprogram->recentprojectpaths.insert(mainprogram->recentprojectpaths.begin(), path);
-        if (pos < mainprogram->recentprojectpaths.size()) {
+        if (pos < mainprogram->recentprojectpaths.size() - 1) {
             mainprogram->recentprojectpaths.erase(mainprogram->recentprojectpaths.begin() + pos + 1);
         }
         mainprogram->write_recentprojectlist();
@@ -7771,7 +7792,7 @@ void Program::socket_server(struct sockaddr_in serv_addr, int opt) {
             for (int i = 0; i < strlen(str); i++) {
                 *walk++ = str[i];
             }
-            char *nll = "\0";
+            char nll[2] = "\0";
             *walk++ = *nll;
             return walk;
         };

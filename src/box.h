@@ -16,7 +16,7 @@ typedef enum
     CLOSED = 1,
 } TRIANGLE_TYPE;
 
-typedef struct {
+typedef struct BoxCoords{
     float x1 = 0.0f;
     float y1 = 0.0f;
     float w = 0.0f;
@@ -63,7 +63,7 @@ class Button {
 		int midi[2] = {-1, -1};
 		std::string midiport;
 		Layer* layer = nullptr;
-        std::chrono::high_resolution_clock::time_point midistarttime;
+        std::chrono::system_clock::time_point midistarttime;
 
 		bool toggled();
 		void deautomate();
