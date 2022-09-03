@@ -18,21 +18,21 @@
 #include "bins.h"
 
 LoopStation::LoopStation() {
-    this->upscrbox = new Box;
+    this->upscrbox = new Boxx;
     this->upscrbox->vtxcoords->y1 = 0.4f - 0.075f * 0;
     this->upscrbox->vtxcoords->w = 0.04f;
     this->upscrbox->vtxcoords->h = 0.075f;
     this->upscrbox->upvtxtoscr();
     this->upscrbox->tooltiptitle = "Loopstation scroll up box ";
     this->upscrbox->tooltip = "Leftclicking this box scrolls the loopstation element list upwards. ";
-    this->downscrbox = new Box;
+    this->downscrbox = new Boxx;
     this->downscrbox->vtxcoords->y1 = 0.4f - 0.075f * 7;
     this->downscrbox->vtxcoords->w = 0.04f;
     this->downscrbox->vtxcoords->h = 0.075f;
     this->downscrbox->upvtxtoscr();
     this->downscrbox->tooltiptitle = "Loopstation scroll down box ";
     this->downscrbox->tooltip = "Leftclicking this box scrolls the loopstation element list downwards. ";
-    this->confupscrbox = new Box;
+    this->confupscrbox = new Boxx;
     this->confupscrbox->vtxcoords->x1 = -0.33f;
     this->confupscrbox->vtxcoords->y1 = 0.45f - 0.15f * -1;
     this->confupscrbox->vtxcoords->w = 0.08f;
@@ -40,7 +40,7 @@ LoopStation::LoopStation() {
     this->confupscrbox->upvtxtoscr();
     this->confupscrbox->tooltiptitle = "Loopstation midi config scroll up box ";
     this->confupscrbox->tooltip = "Leftclicking this box scrolls the loopstation element list upwards. ";
-    this->confdownscrbox = new Box;
+    this->confdownscrbox = new Boxx;
     this->confdownscrbox->vtxcoords->x1 = -0.33f;
     this->confdownscrbox->vtxcoords->y1 = 0.45f - 0.15f * 8;
     this->confdownscrbox->vtxcoords->w = 0.08f;
@@ -108,7 +108,7 @@ LoopStationElement::LoopStationElement() {
 	this->speed->box->upvtxtoscr();
 	this->speed->box->tooltiptitle = "Loopstation row speed ";
 	this->speed->box->tooltip = "Allows multiplying the recorded event's speed of this loopstation row.  Leftdrag sets value. Doubleclick allows numeric entry. ";
-	this->colbox = new Box;
+	this->colbox = new Boxx;
     this->colbox->lcolor[0] = 0.4f;
     this->colbox->lcolor[1] = 0.4f;
     this->colbox->lcolor[2] = 0.4f;
@@ -118,7 +118,7 @@ LoopStationElement::LoopStationElement() {
 	this->colbox->upvtxtoscr();
 	this->colbox->tooltiptitle = "Loopstation row color code ";
 	this->colbox->tooltip = "Leftclicking this box shows colored boxes on the layer stack scroll strips for layers that contain parameters automated by this loopstation row. A white circle is drawn here when this loopstation row contains data. ";
-    this->box = new Box;
+    this->box = new Boxx;
     this->box->lcolor[0] = 0.4f;
     this->box->lcolor[1] = 0.4f;
     this->box->lcolor[2] = 0.4f;
@@ -163,7 +163,7 @@ LoopStationElement* LoopStation::add_elem() {
 }
 
 void LoopStation::handle() {
-    this->scrpos = mainprogram->handle_scrollboxes(this->upscrbox, this->downscrbox, this->elems.size(), this->scrpos, 8);
+    this->scrpos = mainprogram->handle_scrollboxes(*this->upscrbox, *this->downscrbox, this->elems.size(), this->scrpos, 8);
     int ce = std::clamp(this->currelem->pos, this->scrpos, this->scrpos + 7);
     this->currelem = this->elems[ce];
     for (int i = 0; i < this->elems.size(); i++) {
@@ -171,7 +171,9 @@ void LoopStation::handle() {
 	}
     this->upscrbox->vtxcoords->x1 = this->elems[0]->colbox->vtxcoords->x1 + 0.0465f;
     this->downscrbox->vtxcoords->x1 = this->elems[0]->colbox->vtxcoords->x1 + 0.0465f;
-	render_text("Loopstation", white, elems[0]->recbut->box->vtxcoords->x1 + 0.015f,
+    this->upscrbox->upvtxtoscr();
+    this->downscrbox->upvtxtoscr();
+    render_text("Loopstation", white, elems[0]->recbut->box->vtxcoords->x1 + 0.015f,
              elems[0]->recbut->box->vtxcoords->y1 + elems[0]->recbut->box->vtxcoords->h * 2.0f - 0.045f, 0.0005f, 0.0008f);
 }
 

@@ -37,7 +37,7 @@ class Menu {
 	public:
 		std::string name;
 		std::vector<std::string> entries;
-		Box *box;
+		Boxx *box;
 		int state = 0;
 		int x, y;
 		int menux;

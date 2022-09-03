@@ -27,7 +27,7 @@ class BinsMain {
 	public:
 		std::vector<Bin*> bins;
 		Bin *currbin;
-		std::vector<Box*> elemboxes;
+		std::vector<Boxx*> elemboxes;
 		BinElement *currbinel = nullptr;
 		BinElement *prevbinel = nullptr;
 		std::vector<BINELMENU_OPTION> binelmenuoptions;
@@ -35,10 +35,10 @@ class BinsMain {
         int prevj;
         int firsti;
         int firstj;
-        Box* loadbinbox;
-        Box* savebinbox;
-		Box* newbinbox;
-		Box* renamingbox;
+        Boxx* loadbinbox;
+        Boxx* savebinbox;
+		Boxx* newbinbox;
+		Boxx* renamingbox;
 		GLuint binelpreviewtex;
 		bool binpreview = false;
 		std::string newpath;
@@ -68,12 +68,12 @@ class BinsMain {
 		int dragbinpos = -1;
 		bool dragbinsense = false;
 		bool indragbox = false;
-		Box* dragbox;
+		Boxx* dragbox;
 		int binsscroll = 0;
-		Box* binsscrolldown;
-        Box* binsscrollup;
+		Boxx* binsscrolldown;
+        Boxx* binsscrollup;
 
-        Box* floatbox;
+        Boxx* floatbox;
         bool floating = false;
         bool inbin = false;
         SDL_Window *win;
@@ -100,7 +100,7 @@ class BinsMain {
 		bool selboxing = false;
 		int selboxx;
 		int selboxy;
-		Box *hapmodebox;
+		Boxx *hapmodebox;
 		BinElement *renamingelem = nullptr;
         std::vector<std::string> newbinelpaths;
         std::vector<char*> messages;
@@ -141,7 +141,7 @@ class Bin {
 		Bin(int pos);
 		~Bin();
 		
-		Box *box;
+		Boxx *box;
 };
 
 class BinElement {

@@ -49,7 +49,7 @@ extern "C" {
 // BASIC MIXER METHODS
 
 Mixer::Mixer() {
-	this->decknamebox[0] = new Box;
+	this->decknamebox[0] = new Boxx;
 	this->decknamebox[0]->lcolor[0] = 1.0;
 	this->decknamebox[0]->lcolor[1] = 0.5;
 	this->decknamebox[0]->lcolor[2] = 0.5;
@@ -59,7 +59,7 @@ Mixer::Mixer() {
 	this->decknamebox[0]->vtxcoords->w = mainprogram->numw;
 	this->decknamebox[0]->vtxcoords->h = mainprogram->numh;
 	this->decknamebox[0]->upvtxtoscr();
-	this->decknamebox[1] = new Box;
+	this->decknamebox[1] = new Boxx;
 	this->decknamebox[1]->lcolor[0] = 1.0;
 	this->decknamebox[1]->lcolor[1] = 0.5;
 	this->decknamebox[1]->lcolor[2] = 0.5;
@@ -74,7 +74,7 @@ Mixer::Mixer() {
             Scene* scene = new Scene;
             scene->deck = j;
             this->scenes[j].push_back(scene);
-            Box* box = new Box;
+            Boxx* box = new Boxx;
             Button* button = new Button(false);
             button->toggle = 0;
             scene->box = box;
@@ -126,7 +126,7 @@ Mixer::Mixer() {
 	lpc->allparams.push_back(this->wipex[1]);
 	lpc->allparams.push_back(this->wipey[1]);
 
-	this->modebox = new Box;
+	this->modebox = new Boxx;
 	this->modebox->vtxcoords->x1 = 0.85f;
 	this->modebox->vtxcoords->y1 = -1.0f;
 	this->modebox->vtxcoords->w = 0.15f;
@@ -236,6 +236,7 @@ Mixer::Mixer() {
 	this->deckspeed[0][0]->box->upvtxtoscr();
 	this->deckspeed[0][0]->box->tooltiptitle = "Global preview deck A speed setting ";
 	this->deckspeed[0][0]->box->tooltip = "Change global deck A speed factor for preview streams. Leftdrag changes value. Doubleclick allows numeric entry. ";
+    lp->allparams.push_back(this->deckspeed[0][0]);
 
 	this->deckspeed[0][1] = new Param;
 	this->deckspeed[0][1]->name = "Speed B";
@@ -252,6 +253,7 @@ Mixer::Mixer() {
 	this->deckspeed[0][1]->box->upvtxtoscr();
 	this->deckspeed[0][1]->box->tooltiptitle = "Global preview deck B speed setting ";
 	this->deckspeed[0][1]->box->tooltip = "Change global deck B speed factor for preview streams. Leftdrag changes value. Doubleclick allows numeric entry. ";
+    lp->allparams.push_back(this->deckspeed[0][1]);
 
 	this->deckspeed[1][0] = new Param;
 	this->deckspeed[1][0]->name = "Speed A";
@@ -268,6 +270,7 @@ Mixer::Mixer() {
 	this->deckspeed[1][0]->box->upvtxtoscr();
 	this->deckspeed[1][0]->box->tooltiptitle = "Global preview deck A speed setting ";
 	this->deckspeed[1][0]->box->tooltip = "Change global deck A speed factor for preview streams. Leftdrag changes value. Doubleclick allows numeric entry. ";
+    lpc->allparams.push_back(this->deckspeed[1][0]);
 
 	this->deckspeed[1][1] = new Param;
 	this->deckspeed[1][1]->name = "Speed B";
@@ -284,6 +287,7 @@ Mixer::Mixer() {
 	this->deckspeed[1][1]->box->upvtxtoscr();
 	this->deckspeed[1][1]->box->tooltiptitle = "Global preview deck B speed setting ";
 	this->deckspeed[1][1]->box->tooltip = "Change global deck B speed factor for preview streams. Leftdrag changes value. Doubleclick allows numeric entry. ";
+    lpc->allparams.push_back(this->deckspeed[1][1]);
 }
 
 
@@ -332,7 +336,7 @@ void Mixer::handle_genmidibuttons() {
 // BASIC PARAMETER METHODS
 
 Param::Param() {
-	this->box = new Box;
+	this->box = new Boxx;
     this->box->lcolor[0] = 0.6f;
     this->box->lcolor[1] = 0.6f;
     this->box->lcolor[2] = 0.6f;
@@ -566,7 +570,7 @@ void Mixer::handle_adaptparam() {
 // BASIC EFFECT METHODS
 
 Effect::Effect() {
-	Box *box = new Box;
+	Boxx *box = new Boxx;
 	this->box = box;
 	box->vtxcoords->w = 0.3f;
 	box->vtxcoords->h = 0.075f;
@@ -2385,7 +2389,15 @@ Layer::Layer(bool comp) {
 	glFramebufferTexture2D(GL_FRAMEBUFFER, GL_COLOR_ATTACHMENT0, GL_TEXTURE_2D, this->fbotex, 0);
     glDrawBuffer(GL_COLOR_ATTACHMENT0);
 
-	this->panbox = new Box;
+    glGenTextures(1, &this->minitex);
+    glBindTexture(GL_TEXTURE_2D, this->minitex);
+    glTexStorage2D(GL_TEXTURE_2D, 1, GL_RGBA8, mainprogram->ow3, mainprogram->oh3);
+    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR);
+    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
+    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_BORDER);
+    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_BORDER);
+
+	this->panbox = new Boxx;
 	this->panbox->reserved = true;
 	this->panbox->tooltiptitle = "Pan box ";
 	this->panbox->tooltip = "Leftclickdrag enables dragging/panning the image around. ";
@@ -2426,10 +2438,10 @@ Layer::Layer(bool comp) {
 	this->queuebut->layer = this;
 	this->queuebut->box->tooltiptitle = "Layer clip queue ";
 	this->queuebut->box->tooltip = "Leftclick folds/unfolds the layer clip queue. ";
-	this->mixbox = new Box;
+	this->mixbox = new Boxx;
     this->mixbox->tooltiptitle = "Set layer mix mode ";
     this->mixbox->tooltip = "Left or rightclick for choosing how to mix this layer with the previous ones: blendmode or local wipe.  Also accesses colorkeying. ";
-    this->colorbox = new Box;
+    this->colorbox = new Boxx;
     this->colorbox->acolor[3] = 1.0f;
     this->colorbox->tooltiptitle = "Set colorkey color ";
     this->colorbox->tooltip = "Leftclick to set colorkey color.  Either use colorwheel or leftclick anywhere on screen.  Hovering mouse shows color that will be selected. ";
@@ -2555,7 +2567,7 @@ Layer::Layer(bool comp) {
 	this->genmidibut->layer = this;
 	this->genmidibut->box->tooltiptitle = "Set layer MIDI preset ";
 	this->genmidibut->box->tooltip = "Selects (leftclick advances) for this layer which MIDI preset (A, B, C, D or off) is used to control this layers common controls. ";
-	this->loopbox = new Box;
+	this->loopbox = new Boxx;
     this->loopbox->tooltiptitle = "Loop bar ";
 	this->loopbox->tooltip = "Loop bar for current layer video.  Green area is looped area, white vertical line is video  .  Leftdrag on bar scrubs video.  When hovering over green area edges, the area turns blue; when this happens ctrl+leftdrag will drag the area edge.  If area is green, ctrl+leftdrag on the area will drag the looparea left/right.  Rightclicking starts a menu allowing to set loop start or end to the current play position. ";
 	this->chdir = new Button(false);
@@ -2655,17 +2667,6 @@ Layer::~Layer() {
     glDeleteBuffers(1, &(this->tbuf));
 	glDeleteFramebuffers(1, &(this->fbo));
 	glDeleteVertexArrays(1, &(this->vao));
-    if (!this->nopbodel) {
-        // dont delete when pbos are copied over
-        glDeleteTextures(1, &this->texture);
-        if (!this->dummy) {
-            WaitBuffer(this->syncobj);
-            glDeleteBuffers(3, this->pbo);
-        }
-        delete this->remfr[0];
-        delete this->remfr[1];
-        delete this->remfr[2];
-    }
     if (this->filename != "") {
         if (this->type == ELEM_FILE && this->remfr[0]->data) {
             if ((this->vidformat == 188 || this->vidformat == 187)) {
@@ -2682,6 +2683,17 @@ Layer::~Layer() {
                 av_freep(&this->remfr[2]->data);
             }
         }
+    }
+    if (!this->nopbodel) {
+        // dont delete when pbos are copied over
+        glDeleteTextures(1, &this->texture);
+        if (!this->dummy) {
+            WaitBuffer(this->syncobj);
+            glDeleteBuffers(3, this->pbo);
+        }
+        delete this->remfr[0];
+        delete this->remfr[1];
+        delete this->remfr[2];
     }
 
     if (this->video_dec_ctx) {
@@ -3081,7 +3093,7 @@ void Mixer::add_del_bar() {
                 if (lay->pos < this->scenes[j][this->currscene[j]]->scrollpos ||
                     lay->pos > this->scenes[j][this->currscene[j]]->scrollpos + 2)
                     continue;
-                Box *box = lay->node->vidbox;
+                Boxx *box = lay->node->vidbox;
                 float thick = mainprogram->xvtxtoscr(0.009f);
                 if (box->scrcoords->y1 - box->scrcoords->h < mainprogram->my && mainprogram->my < box->scrcoords->y1) {
                     if (box->scrcoords->x1 + box->scrcoords->w - thick -
@@ -3199,7 +3211,7 @@ void Mixer::vidbox_handle() {
 		for (int i = 0; i < this->currlays[!mainprogram->prevmodus].size(); i++) {
             Layer* lay = this->currlays[!mainprogram->prevmodus][i];
             std::vector<Layer*>& lvec = choose_layers(lay->deck);
-            Box* box = lay->node->vidbox;
+            Boxx* box = lay->node->vidbox;
             if (box->in() && !lay->transforming) {
                 mainprogram->frontbatch = true;
                 lay->panbox->vtxcoords->x1 = box->vtxcoords->x1 + (box->vtxcoords->w / 2.0f) - 0.015f;
@@ -3343,7 +3355,7 @@ void Layer::display() {
 	if (mainmix->scenes[this->deck][mainmix->currscene[this->deck]]->scrollpos < 0) mainmix->scenes[this->deck][mainmix->currscene[this->deck]]->scrollpos = 0;
     make_layboxes();
     if (this->pos >= mainmix->scenes[this->deck][mainmix->currscene[this->deck]]->scrollpos && this->pos < mainmix->scenes[this->deck][mainmix->currscene[this->deck]]->scrollpos + 3) {
-		Box* box = this->node->vidbox;
+		Boxx* box = this->node->vidbox;
         mainprogram->frontbatch = true;  // allow alpha
 		if (!this->mutebut->value) {
             draw_box(box, -1);
@@ -3357,7 +3369,7 @@ void Layer::display() {
 		if (std::find(mainmix->currlays[!mainprogram->prevmodus].begin(), mainmix->currlays[!mainprogram->prevmodus].end(), this) != mainmix->currlays[!mainprogram->prevmodus].end()) {
             float pixelw = 2.0f / glob->w;
             float pixelh = 2.0f / glob->h;
-            draw_box(white, nullptr, box->vtxcoords->x1 - pixelw, box->vtxcoords->y1 - pixelh, box->vtxcoords->w + 2.0f * pixelw, box->vtxcoords->h + 2.0f * pixelh, -1);
+            draw_box(white, nullptr, box->vtxcoords->x1 - pixelw * 2.0f, box->vtxcoords->y1 - pixelh * 2.0f, box->vtxcoords->w + 3.0f * pixelw, box->vtxcoords->h + 3.0f * pixelh, -1);
             draw_box(black, nullptr, box, -1);
 		}
 
@@ -3790,7 +3802,7 @@ void Layer::display() {
             mainprogram->effscrollupB->upvtxtoscr();
             mainprogram->effscrolldownA->upvtxtoscr();
             mainprogram->effscrolldownB->upvtxtoscr();
-            Box *box = mainprogram->effcat[this->deck]->box;
+            Boxx *box = mainprogram->effcat[this->deck]->box;
             box->vtxcoords->x1 = efx;
             box->upvtxtoscr();
             mainprogram->handle_button(mainprogram->effcat[this->deck]);
@@ -3809,13 +3821,13 @@ void Layer::display() {
 
             // Draw and handle effect stack scrollboxes
             if (mainmix->currlay[!mainprogram->prevmodus]->deck == 0) {
-                this->effscroll[cat] = mainprogram->handle_scrollboxes(mainprogram->effscrollupA,
-                                                                       mainprogram->effscrolldownA,
+                this->effscroll[cat] = mainprogram->handle_scrollboxes(*mainprogram->effscrollupA,
+                                                                       *mainprogram->effscrolldownA,
                                                                        this->numefflines[cat], this->effscroll[cat],
                                                                        mainprogram->efflines);
             } else {
-                this->effscroll[cat] = mainprogram->handle_scrollboxes(mainprogram->effscrollupB,
-                                                                       mainprogram->effscrolldownB,
+                this->effscroll[cat] = mainprogram->handle_scrollboxes(*mainprogram->effscrollupB,
+                                                                       *mainprogram->effscrolldownB,
                                                                        this->numefflines[cat], this->effscroll[cat],
                                                                        mainprogram->efflines);
             }
@@ -3836,7 +3848,7 @@ void Layer::display() {
             std::string effstr;
             for (int i = 0; i < evec.size(); i++) {
                 Effect *eff = evec[i];
-                Box *box;
+                Boxx *box;
                 float x1, y1, wi;
                 x1 = eff->box->vtxcoords->x1 + 0.048f;
                 wi = (0.7f - mainprogram->numw - 0.048f) / 4.0f;
@@ -4764,14 +4776,14 @@ void Layer::display() {
 void Mixer::outputmonitors_handle() {
 	// Draw mix view
 	if (this->mode == 0) {
-		std::vector<Box*> boxes;
+		std::vector<Boxx*> boxes;
         boxes.push_back(mainprogram->deckmonitor[0]);
         boxes.push_back(mainprogram->deckmonitor[1]);
         boxes.push_back(mainprogram->mainmonitor);
         boxes.push_back(mainprogram->outputmonitor);
 		// Handle mixtargets
 		for (int i = 0; i < boxes.size(); i++) {
-            Box *outputbox = boxes[i];
+            Boxx *outputbox = boxes[i];
             if (outputbox->in()) {
 
                 if (i == 0) {
@@ -4858,7 +4870,7 @@ void Mixer::outputmonitors_handle() {
 		Layer* lay = this->currlay[!mainprogram->prevmodus];
 		Effect* eff;
 
-		Box *box;
+		Boxx *box;
 		if (this->currlay[!mainprogram->prevmodus]) {
 			// Handle mixbox
 			box = lay->mixbox;
@@ -4993,7 +5005,7 @@ void Mixer::layerdrag_handle() {
 	if (mainprogram->nodesmain->linked && this->currlay[!mainprogram->prevmodus]) {
 		std::vector<Layer*>& lvec = choose_layers(this->currlay[!mainprogram->prevmodus]->deck);
 		Layer* lay = this->currlay[!mainprogram->prevmodus];
-		Box* box = lay->node->vidbox;
+		Boxx* box = lay->node->vidbox;
 		if (lay->vidmoving) {
 			if (mainprogram->binsscreen) {
 				float boxwidth = 0.3f;
@@ -5029,13 +5041,13 @@ void Mixer::deckmixdrag_handle() {
         if (mainprogram->dragbinel->type == ELEM_DECK) {
             if (!mainprogram->binsscreen) {
                 // check drop of dragged deck into mix
-                std::unique_ptr <Box> boxA = std::make_unique <Box> ();;
+                std::unique_ptr <Boxx> boxA = std::make_unique <Boxx> ();;
                 boxA->vtxcoords->x1 = -1.0f + mainprogram->numw;
                 boxA->vtxcoords->y1 = 1.0f - mainprogram->layh;
                 boxA->vtxcoords->w = mainprogram->layw * 3;
                 boxA->vtxcoords->h = mainprogram->layh;
                 boxA->upvtxtoscr();
-                std::unique_ptr <Box> boxB = std::make_unique <Box> ();;
+                std::unique_ptr <Boxx> boxB = std::make_unique <Boxx> ();;
                 boxB->vtxcoords->x1 = mainprogram->numw;
                 boxB->vtxcoords->y1 = 1.0f - mainprogram->layh;
                 boxB->vtxcoords->w = mainprogram->layw * 3;
@@ -5068,7 +5080,7 @@ void Mixer::deckmixdrag_handle() {
         } else if (mainprogram->dragbinel->type == ELEM_MIX) {
             if (!mainprogram->binsscreen) {
                 // check drop of dragged mix into layer stacks
-                std::unique_ptr <Box> box = std::make_unique <Box> ();;
+                std::unique_ptr <Boxx> box = std::make_unique <Boxx> ();;
                 box->vtxcoords->x1 = -1.0f + mainprogram->numw;
                 box->vtxcoords->y1 = 1.0f - mainprogram->layh;
                 box->vtxcoords->w = mainprogram->layw * 6 + mainprogram->numw;
@@ -5300,7 +5312,7 @@ bool Layer::exchange(std::vector<Layer*>& slayers, std::vector<Layer*>& dlayers,
 		inlay = dlayers[i];
 		bool comp = !mainprogram->prevmodus;
 		if (inlay->pos < mainmix->scenes[deck][mainmix->currscene[deck]]->scrollpos || inlay->pos > mainmix->scenes[deck][mainmix->currscene[deck]]->scrollpos + 2) continue;
-		Box* box = inlay->node->vidbox;
+		Boxx* box = inlay->node->vidbox;
 		int endx = false;
 		if ((i == dlayers.size() - 1 || i == mainmix->scenes[deck][mainmix->currscene[deck]]->scrollpos + 2) && (box->scrcoords->x1 + box->scrcoords->w - mainprogram->xvtxtoscr(0.1125f) < mainprogram->mx && mainprogram->mx < box->scrcoords->x1 + box->scrcoords->w + mainprogram->xvtxtoscr(0.075f))) {
 		    endx = true;
@@ -6825,34 +6837,34 @@ void Mixer::do_save_mix(const std::string & path, bool modus, bool save) {
     wfile << std::to_string( mainmix->scenes[1][3]->scrollpos);
     wfile << "\n";
 	wfile << "DECKSPEEDA\n";
-	wfile << std::to_string(mainmix->deckspeed[modus][0]->value);
+	wfile << std::to_string(mainmix->deckspeed[!modus][0]->value);
 	wfile << "\n";
 	wfile << "DECKSPEEDAEVENT\n";
-	par = mainmix->deckspeed[modus][0];
+	par = mainmix->deckspeed[!modus][0];
 	mainmix->event_write(wfile, par, nullptr);
 	wfile << "DECKSPEEDAMIDI0\n";
-	wfile << std::to_string(mainmix->deckspeed[modus][0]->midi[0]);
+	wfile << std::to_string(mainmix->deckspeed[!modus][0]->midi[0]);
 	wfile << "\n";
 	wfile << "DECKSPEEDAMIDI1\n";
-	wfile << std::to_string(mainmix->deckspeed[modus][0]->midi[1]);
+	wfile << std::to_string(mainmix->deckspeed[!modus][0]->midi[1]);
 	wfile << "\n";
 	wfile << "DECKSPEEDAMIDIPORT\n";
-	wfile << mainmix->deckspeed[modus][0]->midiport;
+	wfile << mainmix->deckspeed[!modus][0]->midiport;
 	wfile << "\n";
 	wfile << "DECKSPEEDB\n";
-	wfile << std::to_string(mainmix->deckspeed[modus][1]->value);
+	wfile << std::to_string(mainmix->deckspeed[!modus][1]->value);
 	wfile << "\n";
 	wfile << "DECKSPEEDBEVENT\n";
-	par = mainmix->deckspeed[modus][1];
+	par = mainmix->deckspeed[!modus][1];
 	mainmix->event_write(wfile, par, nullptr);
 	wfile << "DECKSPEEDBMIDI0\n";
-	wfile << std::to_string(mainmix->deckspeed[modus][1]->midi[0]);
+	wfile << std::to_string(mainmix->deckspeed[!modus][1]->midi[0]);
 	wfile << "\n";
 	wfile << "DECKSPEEDBMIDI1\n";
-	wfile << std::to_string(mainmix->deckspeed[modus][1]->midi[1]);
+	wfile << std::to_string(mainmix->deckspeed[!modus][1]->midi[1]);
 	wfile << "\n";
 	wfile << "DECKSPEEDBMIDIPORT\n";
-	wfile << mainmix->deckspeed[modus][1]->midiport;
+	wfile << mainmix->deckspeed[!modus][1]->midiport;
 	wfile << "\n";
 	wfile << "WIPE\n";
 	wfile << std::to_string(mainmix->wipe[0]);
@@ -6887,7 +6899,7 @@ void Mixer::do_save_mix(const std::string & path, bool modus, bool save) {
     wfile << "WIPEYCOMPEVENT\n";
     mainmix->event_write(wfile, mainmix->wipey[1], nullptr);
     wfile << "LPSTCURRELEM\n";
-    if (mainprogram->prevmodus) {
+    if (modus) {
         wfile << std::to_string(lp->currelem->pos);
     }
     else {
@@ -6922,7 +6934,8 @@ void Mixer::do_save_mix(const std::string & path, bool modus, bool save) {
 		if (mns.size()) {
 			std::vector<std::string> jpegpaths2;
 			GLuint tex = ((MixNode*)(mns[2]))->mixtex;
-			save_thumb(mainprogram->temppath + "mix.jpg", tex);
+            this->minitex = copy_tex(tex);
+			save_thumb(mainprogram->temppath + "mix.jpg", this->minitex);
 			jpegpaths2.push_back(mainprogram->temppath + "mix.jpg");
 			jpegpaths.push_back(jpegpaths2);
 		}
@@ -8475,7 +8488,8 @@ std::vector<std::string> Mixer::write_layer(Layer* lay, std::ostream& wfile, boo
 	}
 	if (lay->node->vidbox && dojpeg && lay->filename != "") {
 		std::string jpegpath = find_unused_filename(basename(lay->filename), mainprogram->temppath, ".jpg");
-		save_thumb(jpegpath, lay->node->vidbox->tex);
+        lay->minitex = copy_tex(lay->node->vidbox->tex);
+		save_thumb(jpegpath, lay->minitex);
 		jpegpaths.push_back(jpegpath);
 		wfile << "JPEGPATH\n";
 		wfile << jpegpath;
@@ -8933,14 +8947,14 @@ void Mixer::event_read(std::istream &rfile, Param *par, Button* but, Layer *lay)
 	if (mainprogram->prevmodus) ls = lp;
 	else ls = lpc;
 	if (std::find(ls->readelemnrs.begin(), ls->readelemnrs.end(), elemnr) == ls->readelemnrs.end()) {
-		// new loopstation line taken in use
-		loop = ls->free_element();
+		// new loopstation line taken in use at location elemnr
+		loop = ls->elems[elemnr];
 		ls->readelemnrs.push_back(elemnr);
 		ls->readelems.push_back(loop);
 	}
 	else {
 		// other parameter(s) of this rfile using this loopstation line already exist
-		loop = ls->readelems[std::find(ls->readelemnrs.begin(), ls->readelemnrs.end(), elemnr) - ls->readelemnrs.begin()];
+		loop = ls->free_element();
 	}
 	safegetline(rfile, istring);
 	if (loop) {
@@ -9272,7 +9286,7 @@ void Mixer::record_video(std::string reccod) {
 	//ret = av_frame_get_buffer(frame, 32);
     //if (ret < 0) {
     //    fprintf(stderr, "Could not allocate the video frame data\n");
-    //    exit(1);
+    //    exit(0);
     //}
 
 	// Determine required buffer size and allocate buffer
@@ -9449,7 +9463,7 @@ void Mixer::clip_inside_test(std::vector<Layer*>& layers, bool deck) {
 	for (int i = 0; i < layers.size(); i++) {
 		lay = layers[i];
 		if (lay->pos < mainmix->scenes[deck][mainmix->currscene[deck]]->scrollpos || lay->pos > mainmix->scenes[deck][mainmix->currscene[deck]]->scrollpos + 2) continue;
-		Box* box = lay->node->vidbox;
+		Boxx* box = lay->node->vidbox;
 		if (lay->queueing && lay->filename != "") {
 			if (box->scrcoords->x1 < mainprogram->mx && mainprogram->mx < box->scrcoords->x1 + box->scrcoords->w) {
 				int limit = lay->clips.size() - lay->queuescroll;
@@ -9478,15 +9492,15 @@ void Mixer::clip_inside_test(std::vector<Layer*>& layers, bool deck) {
 }
 
 void Mixer::handle_clips() {
-    Box borderclipbox;
-    Box insideclipbox;
-    Box clipbox;
+    Boxx borderclipbox;
+    Boxx insideclipbox;
+    Boxx clipbox;
     mainprogram->frontbatch = true;
 	for (int i = 0; i < 2; i++) {
 		std::vector<Layer*>& lays = choose_layers(i);
 		for (int j = 0; j < lays.size(); j++) {
 			Layer* lay2 = lays[j];
-			Box *vbox = lay2->node->vidbox;
+			Boxx *vbox = lay2->node->vidbox;
 			if (lay2->queueing) {
 				// drawing clip queue
 				int sc = this->scenes[lay2->deck][this->currscene[lay2->deck]]->scrollpos;
@@ -9941,7 +9955,7 @@ Effect* new_effect(EFFECT_TYPE type) {
 
 
 Retarget::Retarget() {
-    this->iconbox = new Box;
+    this->iconbox = new Boxx;
     this->iconbox->vtxcoords->x1 = 0.2f;
     this->iconbox->vtxcoords->y1 = 0.0f;
     this->iconbox->vtxcoords->w = 0.1f;
@@ -9949,7 +9963,7 @@ Retarget::Retarget() {
     this->iconbox->upvtxtoscr();
     this->iconbox->tooltiptitle = "Browse for file ";
     this->iconbox->tooltip = "Leftclick this icon to browse for the file. ";
-    this->valuebox = new Box;
+    this->valuebox = new Boxx;
     this->valuebox->vtxcoords->x1 = -0.4f;
     this->valuebox->vtxcoords->y1 = 0.0f;
     this->valuebox->vtxcoords->w = 0.6f;
@@ -9957,7 +9971,7 @@ Retarget::Retarget() {
     this->valuebox->upvtxtoscr();
     this->valuebox->tooltiptitle = "Video/image files not found ";
     this->valuebox->tooltip = "Locate video/image files that weren't found on the saved location.  Use arrows/mousewheel to scroll list when its bigger then the screen.  Click DONE to continue. ";
-    this->searchbox = new Box;
+    this->searchbox = new Boxx;
     this->searchbox->vtxcoords->x1 = -0.4f;
     this->searchbox->vtxcoords->y1 = -0.1f;
     this->searchbox->vtxcoords->w = 0.8f;
@@ -9965,7 +9979,7 @@ Retarget::Retarget() {
     this->searchbox->upvtxtoscr();
     this->searchbox->tooltiptitle = "Search video/image files ";
     this->searchbox->tooltip = "Add search location for video/image files that weren't found on their saved location.  Leftclick to browse. ";
-    this->skipbox = new Box;
+    this->skipbox = new Boxx;
     this->skipbox->vtxcoords->x1 = 0.1f;
     this->skipbox->vtxcoords->y1 = 0.1f;
     this->skipbox->vtxcoords->w = 0.1f;
@@ -9973,7 +9987,7 @@ Retarget::Retarget() {
     this->skipbox->upvtxtoscr();
     this->skipbox->tooltiptitle = "Skip this file ";
     this->skipbox->tooltip = "Leftclick to skip the retargeting step for this file. ";
-    this->skipallbox = new Box;
+    this->skipallbox = new Boxx;
     this->skipallbox->vtxcoords->x1 = 0.2f;
     this->skipallbox->vtxcoords->y1 = 0.1f;
     this->skipallbox->vtxcoords->w = 0.1f;

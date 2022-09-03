@@ -162,7 +162,7 @@ LayMidi *laymidiA;
 LayMidi *laymidiB;
 LayMidi *laymidiC;
 LayMidi *laymidiD;
-std::vector<Box*> allboxes;
+std::vector<Boxx*> allboxes;
 int sscount = 0;
 bool collectingboxes = true;  // during startup
 
@@ -276,7 +276,7 @@ void copy_dir(std::string &src, std::string &dest) {
     for (const auto& dirEnt : fs::recursive_directory_iterator{src})
     {
         const auto& path = dirEnt.path();
-        auto relativePathStr = path.generic_string();
+        auto relativePathStr = path.string();
         boost::replace_first(relativePathStr, src, "");
         if (exists(dest + "/" + relativePathStr)) {
             boost::filesystem::remove_all(dest + "/" + relativePathStr);
@@ -493,7 +493,7 @@ void do_retarget() {
 
 void make_searchbox() {
     short j = retarget->searchboxes.size();
-    Box *box = new Box;
+    Boxx *box = new Boxx;
     box->vtxcoords->x1 = -0.4f;
     box->vtxcoords->y1 = -0.2f - j * 0.1f;
     box->vtxcoords->w = 0.8f;
@@ -512,7 +512,7 @@ void make_searchbox() {
     globbut->box->tooltiptitle = "Save to default search list? ";
     globbut->box->tooltip = "Leftclick to toggle if this path will be saved to the permanent search directory list. ";
     retarget->searchglobalbuttons.push_back(globbut);
-    Box *clbox = new Box;
+    Boxx *clbox = new Boxx;
     clbox->vtxcoords->x1 = 0.35f;
     clbox->vtxcoords->y1 = -0.175f - j * 0.1f;
     clbox->vtxcoords->w = 0.025f;
@@ -2155,7 +2155,7 @@ ShelfElement::ShelfElement(bool side, int pos, Button *but) {
 
 	this->button = but;
 	this->button->toggle = false;
-	Box* box = this->button->box;
+	Boxx* box = this->button->box;
 	box->vtxcoords->x1 = -1.0f + (pos % 4) * boxwidth + (2.0f - boxwidth * 4) * side;
 	box->vtxcoords->h = boxwidth * (glob->w / glob->h) / (1920.0f / 1080.0f);
 	box->vtxcoords->y1 = -1.0f + (int)(3 - (pos / 4)) * box->vtxcoords->h;
@@ -2163,7 +2163,7 @@ ShelfElement::ShelfElement(bool side, int pos, Button *but) {
 	box->upvtxtoscr();
 	box->tooltiptitle = "Video launch shelf";
 	box->tooltip = "Shelf containing up to 16 videos/layerfiles for quick and easy video launching.  Left drag'n'drop from other areas, both videos and layerfiles.  Doubleclick left loads the shelf element contents into all selected layers. Rightclick launches shelf menu. ";
-	this->sbox = new Box;
+	this->sbox = new Boxx;
 	this->sbox->vtxcoords->x1 = box->vtxcoords->x1;
 	this->sbox->vtxcoords->y1 = box->vtxcoords->y1 + 0.05f + 0.009f;
 	this->sbox->vtxcoords->w = 0.0075f;
@@ -2171,7 +2171,7 @@ ShelfElement::ShelfElement(bool side, int pos, Button *but) {
 	this->sbox->upvtxtoscr();
 	this->sbox->tooltiptitle = "Restart when triggered";
 	this->sbox->tooltip = "When this video is put in the mix, either through MIDI or dragging, the video will restart from the beginning. ";
-	this->pbox = new Box;
+	this->pbox = new Boxx;
 	this->pbox->vtxcoords->x1 = box->vtxcoords->x1;
 	this->pbox->vtxcoords->y1 = box->vtxcoords->y1 + 0.05f - 0.009f;
 	this->pbox->vtxcoords->w = 0.0075f;
@@ -2179,7 +2179,7 @@ ShelfElement::ShelfElement(bool side, int pos, Button *but) {
 	this->pbox->upvtxtoscr();
 	this->pbox->tooltiptitle = "Continue when triggered";
 	this->pbox->tooltip = "When this video is put in the mix, either through MIDI or dragging, the video will continue from where it was last stopped . ";
-	this->cbox = new Box;
+	this->cbox = new Boxx;
 	this->cbox->vtxcoords->x1 = box->vtxcoords->x1;
 	this->cbox->vtxcoords->y1 = box->vtxcoords->y1 + 0.05f - 0.027f;
 	this->cbox->vtxcoords->w = 0.0075f;
@@ -2417,6 +2417,15 @@ void set_glstructures() {
 	glGenBuffers(1, &mainprogram->bdibo);
 	glBindBuffer(GL_ELEMENT_ARRAY_BUFFER, mainprogram->bdibo);
 	glBufferData(GL_ELEMENT_ARRAY_BUFFER, 12288, nullptr, GL_STATIC_DRAW);
+
+    glGenTextures(1, &mainmix->minitex);
+    glBindTexture(GL_TEXTURE_2D, mainmix->minitex);
+    glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA8, mainprogram->ow3, mainprogram->oh3, 0, GL_BGRA, GL_UNSIGNED_BYTE, nullptr);
+    //glTexStorage2D(GL_TEXTURE_2D, 1, GL_RGBA8, mainprogram->ow3, mainprogram->oh3);
+    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR);
+    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
+    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_BORDER);
+    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_BORDER);
 }
 
 
@@ -2592,23 +2601,23 @@ void draw_direct(float* linec, float* areac, float x, float y, float wi, float h
 	glUniform1f(opa, 1.0f);
 }
 
-void draw_box(Box *box, GLuint tex) {
+void draw_box(Boxx *box, GLuint tex) {
 	draw_box(box->lcolor, box->acolor, box->vtxcoords->x1, box->vtxcoords->y1, box->vtxcoords->w, box->vtxcoords->h, 0.0f, 0.0f, 1.0f, 1.0f, 0, tex, glob->w, glob->h, 0);
 }
 
-void draw_box(float *linec, float *areac, Box *box, GLuint tex) {
+void draw_box(float *linec, float *areac, Boxx *box, GLuint tex) {
     draw_box(linec, areac, box->vtxcoords->x1, box->vtxcoords->y1, box->vtxcoords->w, box->vtxcoords->h, 0.0f, 0.0f, 1.0f, 1.0f, 0, tex, glob->w, glob->h, 0);
 }
 
-void draw_box(float *linec, float *areac, std::unique_ptr <Box> const &box, GLuint tex) {
+void draw_box(float *linec, float *areac, std::unique_ptr <Boxx> const &box, GLuint tex) {
     draw_box(linec, areac, box->vtxcoords->x1, box->vtxcoords->y1, box->vtxcoords->w, box->vtxcoords->h, 0.0f, 0.0f, 1.0f, 1.0f, 0, tex, glob->w, glob->h, 0);
 }
 
-void draw_box(Box *box, float opacity, GLuint tex) {
+void draw_box(Boxx *box, float opacity, GLuint tex) {
 	draw_box(box->lcolor, box->acolor, box->vtxcoords->x1, box->vtxcoords->y1, box->vtxcoords->w, box->vtxcoords->h, 0.0f, 0.0f, 1.0f, opacity, 0, tex, glob->w, glob->h, 0);
 }
 
-void draw_box(Box *box, float dx, float dy, float scale, GLuint tex) {
+void draw_box(Boxx *box, float dx, float dy, float scale, GLuint tex) {
 	draw_box(box->lcolor, box->acolor, box->vtxcoords->x1, box->vtxcoords->y1, box->vtxcoords->w, box->vtxcoords->h, dx, dy, scale, 1.0f, 0, tex, glob->w, glob->h, 0);
 }
 
@@ -2957,7 +2966,7 @@ std::vector<float> render_text(std::string text, float *textc, float x, float y,
 			w2 = smw;
 			h2 = smh;
 		}
-		int psize = (int)(sy * 24000.0f * h2 / 1346.0f);
+		int psize = (int)((sy * 24000.0f * h2 / 1346.0f) * (0.5625f / ((float)h2 / (float)w2)));
 
         if (smflag == 1) SDL_GL_MakeCurrent(mainprogram->prefwindow, glc);
         else if (smflag == 2) SDL_GL_MakeCurrent(mainprogram->config_midipresetswindow, glc);
@@ -4153,6 +4162,7 @@ void onestepfrom(bool stage, Node *node, Node *prevnode, GLuint prevfbotex, GLui
 			GLuint down = glGetUniformLocation(mainprogram->ShaderProgram, "down");
             if (effect->type == EDGEDETECT) glUniform1i(down, 1);
             else if (effect->onoffbutton->value) glUniform1i(interm, 1);
+            else glUniform1i(down, 1);
 			GLfloat opacity = glGetUniformLocation(mainprogram->ShaderProgram, "opacity");
 			if (effect->node == (EffectNode*)(effect->layer->lasteffnode[0])) {
 				glUniform1f(opacity, effect->layer->opacity->value);
@@ -4186,21 +4196,12 @@ void onestepfrom(bool stage, Node *node, Node *prevnode, GLuint prevfbotex, GLui
 			glClear(GL_COLOR_BUFFER_BIT);
 
 			Layer *lay = effect->layer;
-			float sx, sy, sc, op;
-			if (effect->node == lay->lasteffnode[0]) {
-                sx = lay->shiftx->value;
-                sy = lay->shifty->value;
-                sc = lay->scale->value;
-                op = lay->opacity->value;
-           }
-			else {
-			    sx = 0.0f;
-                sy = 0.0f;
-                sc = 1.0f;
-                op = 1.0f;
-			}
 
-			if (mainmix->waitmixtex == 0 && !lay->onhold) draw_box(nullptr, black, -1.0f, 1.0f, 2.0f, -2.0f, sx, sy, sc, op, 0, prevfbotex, 0, 0, false);
+            float op = 1.0f;
+            if (effect->node == lay->lasteffnode[0]) {
+                op = lay->opacity->value;
+            }
+ 			if (mainmix->waitmixtex == 0 && !lay->onhold) draw_box(nullptr, black, -1.0f, 1.0f, 2.0f, -2.0f, 0.0f, 0.0f, 1.0f, op, 0, prevfbotex, 0, 0, false);
             prevfbotex = effect->fbotex;
             prevfbo = effect->fbo;
 
@@ -4308,16 +4309,13 @@ void onestepfrom(bool stage, Node *node, Node *prevnode, GLuint prevfbotex, GLui
 			sciy = sciy * sch / 2.0f;
 			glViewport(sxs, sys, scw - sxs * 2.0f, sch - sys * 2.0f);
 			float sx, sy, sc, op;
+            sx = lay->shiftx->value;
+            sy = lay->shifty->value;
+            sc = lay->scale->value;
             if (lay->node == lay->lasteffnode[0]) {
-                sx = lay->shiftx->value;
-                sy = lay->shifty->value;
-                sc = lay->scale->value;
                 op = lay->opacity->value;
             }
             else {
-                sx = 0.0f;
-                sy = 0.0f;
-                sc = 1.0f;
                 op = 1.0f;
             }
             glBindFramebuffer(GL_FRAMEBUFFER, lay->fbo);
@@ -4668,7 +4666,7 @@ bool display_mix() {
 		xs = 0.15f * (1.0f - fraco / frachd);
 	}
 	MixNode* node;
-	Box *box;
+	Boxx *box;
 	GLfloat cf = glGetUniformLocation(mainprogram->ShaderProgram, "cf");
 	if (mainprogram->prevmodus) {
 		glUniform1f(cf, mainmix->crossfade->value);
@@ -4809,7 +4807,7 @@ void drag_into_layerstack(std::vector<Layer*>& layers, bool deck) {
 			lay = mainprogram->draginscrollbarlay;
 		}
 		else if (lay->pos < mainmix->scenes[deck][mainmix->currscene[deck]]->scrollpos || lay->pos > mainmix->scenes[deck][mainmix->currscene[deck]]->scrollpos + 2) continue;
-		Box* box = lay->node->vidbox;
+		Boxx* box = lay->node->vidbox;
 		int endx = false;
 		if ((i == layers.size() - 1 || i == mainmix->scenes[deck][mainmix->currscene[deck]]->scrollpos + 2)) {
 			endx = true;
@@ -5557,7 +5555,7 @@ int osc_param(const char *path, const char *types, lo_arg **argv, int argc, lo_m
 
 
 Clip::Clip() {
-	this->box = new Box;
+	this->box = new Boxx;
 	this->box->tooltiptitle = "Clip queue ";
 	this->box->tooltip = "Clip queue: clips (videos, images, layer files, live feeds) loaded here are played in order after the current clip.  Rightclick menu allows loading live feed / opening content into clip / deleting clip.  Clips can be dragged anywhere and anything can be dragged into or inserted between them. ";
 	this->tex = -1;
@@ -5865,7 +5863,7 @@ void handle_scenes(Scene* scene) {
 	// Draw scene boxes
 	float red[] = { 1.0, 0.5, 0.5, 1.0 };
 	for (int i = 3; i > -1; i--) {
-		Box* box = mainmix->scenes[scene->deck][i]->box;
+		Boxx* box = mainmix->scenes[scene->deck][i]->box;
 		if (i == mainmix->currscene[scene->deck]) {
 			box->acolor[0] = 1.0f;
 			box->acolor[1] = 0.5f;
@@ -5883,7 +5881,7 @@ void handle_scenes(Scene* scene) {
 	// Handle sceneboxes
     bool found = false;
 	for (int i = 0; i < 4; i++) {
-		Box* box = mainmix->scenes[scene->deck][i]->box;
+		Boxx* box = mainmix->scenes[scene->deck][i]->box;
 		Button* but = mainmix->scenes[scene->deck][i]->button;
 		box->acolor[0] = 0.0;
 		box->acolor[1] = 0.0;
@@ -6884,9 +6882,9 @@ void the_loop() {
                 if (totalsize > 6 && totalsize - mainprogram->pathscroll < 7) mainprogram->pathscroll = totalsize - 6;
 
                 // GUI arrow scroll
-                mainprogram->pathscroll = mainprogram->handle_scrollboxes(mainprogram->searchscrollup, mainprogram->searchscrolldown, totalsize, mainprogram->pathscroll, 6);
+                mainprogram->pathscroll = mainprogram->handle_scrollboxes(*mainprogram->searchscrollup, *mainprogram->searchscrolldown, totalsize, mainprogram->pathscroll, 6);
 
-                std::vector<Box> boxes;
+                std::vector<Boxx> boxes;
                 short count = 0;
                 bool brk = false;
                 for (int i = 0; i < 2; i++) {
@@ -6936,7 +6934,7 @@ void the_loop() {
                     if (brk) break;
                 }
                 float y2 = -0.2f - std::min(6, totalsize) * 0.1f;
-                std::unique_ptr <Box> box = std::make_unique <Box> ();;
+                std::unique_ptr <Boxx> box = std::make_unique <Boxx> ();;
                 box->vtxcoords->x1 = -0.15f;
                 box->vtxcoords->y1 = y2;
                 box->vtxcoords->w = 0.15f;
@@ -7109,7 +7107,7 @@ void the_loop() {
             glBindTexture(GL_TEXTURE_2D, mainmix->recSthumbshow);
             glGetTexLevelParameteriv(GL_TEXTURE_2D, 0, GL_TEXTURE_WIDTH, &sw);
             glGetTexLevelParameteriv(GL_TEXTURE_2D, 0, GL_TEXTURE_HEIGHT, &sh);
-            Box box;
+            Boxx box;
             box.vtxcoords->x1 = 0.15f + 0.0465f;
             box.vtxcoords->y1 = -1.0f + mainprogram->monh * 2.0f;
             box.vtxcoords->w = 0.040f * ((float)sw / (float)sh);
@@ -7129,7 +7127,7 @@ void the_loop() {
             glBindTexture(GL_TEXTURE_2D, mainmix->recQthumbshow);
             glGetTexLevelParameteriv(GL_TEXTURE_2D, 0, GL_TEXTURE_WIDTH, &sw);
             glGetTexLevelParameteriv(GL_TEXTURE_2D, 0, GL_TEXTURE_HEIGHT, &sh);
-            Box box;
+            Boxx box;
             box.vtxcoords->x1 = 0.15f + 0.0465f;
             box.vtxcoords->y1 = -1.0f + mainprogram->monh * 2.0f;
             box.vtxcoords->w = 0.040f * ((float)sw / (float)sh);
@@ -7191,7 +7189,7 @@ void the_loop() {
 					Layer* lay = lvec[i];
 					bool comp = !mainprogram->prevmodus;
 					if (lay->pos < mainmix->scenes[j][mainmix->currscene[j]]->scrollpos || lay->pos > mainmix->scenes[j][mainmix->currscene[j]]->scrollpos + 2) continue;
-					Box* box = lay->node->vidbox;
+					Boxx* box = lay->node->vidbox;
 					float thick = mainprogram->xvtxtoscr(0.075f);
 					if (box->scrcoords->y1 - box->scrcoords->h < mainprogram->my && mainprogram->my < box->scrcoords->y1) {
 						if (box->scrcoords->x1 - thick + (i - mainmix->scenes[j][mainmix->currscene[j]]->scrollpos == 0) * thick < mainprogram->mx && mainprogram->mx < box->scrcoords->x1 + thick) {
@@ -7518,7 +7516,7 @@ void the_loop() {
 			for (int j = 0; j < 12; j++) {
 				for (int i = 0; i < 12; i++) {
 					// cancel hap encoding for all elements
-					Box* box = binsmain->elemboxes[i * 12 + j];
+					Boxx* box = binsmain->elemboxes[i * 12 + j];
 					box->upvtxtoscr();
 					BinElement* binel = binsmain->currbin->elements[i * 12 + j];
 					binel->encoding = false; // delete the hap file under construction
@@ -7557,7 +7555,7 @@ void the_loop() {
 			printf("%s: %s\n", mainprogram->quitting.c_str(), SDL_GetError());
 			printf("stopped\n");
 
-			exit(1);
+			exit(0);
 		}
 		if (ret == 3) {
 			mainprogram->quitting = "";
@@ -7944,7 +7942,6 @@ void concat_files(std::ostream &ofile, const std::string &path, std::vector<std:
 		ifstream fileInput;
 		fileInput.open(paths[i], ios::in | ios::binary);
 		printf("path %s\n", paths[i].c_str());
-		fflush(stdout);
 		char *inputBuffer = new char[fileSize];
 		fileInput.read(inputBuffer, fileSize);
 		ofile.write(inputBuffer, fileSize);
@@ -8595,7 +8592,7 @@ int main(int argc, char* argv[]) {
     //snd_seq_t *seq_handle;
     //if (snd_seq_open(&seq_handle, "hw", SND_SEQ_OPEN_INPUT, 0) < 0) {
     //    fprintf(stderr, "Error opening ALSA sequencer.\n");
-    //   exit(1);
+    //   exit(0);
     //}
 
     // initializing devIL
@@ -9058,7 +9055,7 @@ int main(int argc, char* argv[]) {
     glBindFramebuffer(GL_FRAMEBUFFER, 0);
     glDrawBuffer(GL_BACK_LEFT);
 
-    for (Box *box : allboxes) {
+    for (Boxx *box : allboxes) {
         // predraw all tooltips so no slowdowns will happen when stringtextures are initialized
         mainprogram->longtooltip_prepare(box);
     }
@@ -9842,7 +9839,7 @@ int main(int argc, char* argv[]) {
             mainprogram->boxoffset[0] = 0;
             mainprogram->currbatch = 0;
 
-            Box box;
+            Boxx box;
 
             // handle starting with a new project on the drive
             box.acolor[3] = 1.0f;
@@ -9951,7 +9948,7 @@ int main(int argc, char* argv[]) {
                     if (mainprogram->leftmouse) {
                         printf("stopped\n");
                         SDL_Quit();
-                        exit(1);
+                        exit(0);
                     }
                 }
 

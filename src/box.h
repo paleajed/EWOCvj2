@@ -25,11 +25,10 @@ typedef struct BoxCoords{
 
 class Layer;
 
-class Box {
+class Boxx {
 	public:
 		float lcolor[4] = {0.7, 0.7, 0.7, 1.0};
 		float acolor[4] = {0.0, 0.0, 0.0, 0.0};
-        BOX_COORDS *dummycoords;
         BOX_COORDS *scrcoords;
 		BOX_COORDS *vtxcoords;
 		GLuint tex = -1;
@@ -46,15 +45,15 @@ class Box {
 		bool in(bool menu);
 		bool in2();
 		bool in2(int mx, int my);
-		Box* copy();
-		Box();
-		~Box();
+		Boxx* copy();
+		Boxx();
+		~Boxx();
 };
 
 class Button {
 	public:
 		std::string name[2];
-		Box *box;
+		Boxx *box;
 		int value = 0;
 		int oldvalue = 0;
 		int toggle = 0;

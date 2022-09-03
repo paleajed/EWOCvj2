@@ -89,7 +89,7 @@ class Clip {
 		int frame = 0.0f;
 		Param *startframe = nullptr;
         Param *endframe = nullptr;
-		Box* box;
+		Boxx* box;
 		Layer* layer = nullptr;
 		Clip();
 		~Clip();
@@ -126,7 +126,7 @@ class Layer {
 		int numefflines[2] = {0,0};
 		int effscroll[2] = {0,0};
 		std::vector<Effect*> effects[2];
-		Box* panbox;
+		Boxx* panbox;
 		
 		bool initialized = false;
         bool initdeck = false;
@@ -138,8 +138,8 @@ class Layer {
 		float millif = 0.0f;
 		std::chrono::high_resolution_clock::time_point prevtime;
 		bool timeinit = false;
-		Box *mixbox;
-		Box *colorbox;
+		Boxx *mixbox;
+		Boxx *colorbox;
 		Param *chtol;
 		Button *chdir;
 		Button *chinv;
@@ -159,7 +159,7 @@ class Layer {
         Button *lpbut;
         bool onhold = false;
         Button *genmidibut;
-		Box *loopbox;
+		Boxx *loopbox;
 		int playkind = 0;
 		Param *startframe = nullptr;
         Param *endframe = nullptr;
@@ -228,6 +228,7 @@ class Layer {
 		GLuint texture;
 		GLuint fbotex;
 		GLuint fbo;
+        GLuint minitex;
 		GLuint texpos = 0;
 		GLuint vbuf;
 		GLuint tbuf;
@@ -243,7 +244,7 @@ class Layer {
 		int bpp;
 		bool nonewpbos = false;
 		
-		Box *vidbox;
+		Boxx *vidbox;
 		bool changed;
 		VideoNode *node = nullptr;
 		Node *lasteffnode[2] = {nullptr, nullptr};
@@ -346,7 +347,7 @@ class Layer {
 class Scene {
 	public:
 		bool deck;
-		Box* box;
+		Boxx* box;
 		Button* button;
 		bool loaded;
 		std::vector<Layer*> nblayers;
@@ -392,6 +393,7 @@ class Mixer {
 		bool bualive;
 		Layer *currlay[2] = {nullptr, nullptr};
         std::vector<Layer*> currlays[2];
+        GLuint minitex;
 
         Layer *add_layer(std::vector<Layer*> &layers, int pos);
 		void delete_layer(std::vector<Layer*> &layers, Layer *lay, bool add);
@@ -458,8 +460,8 @@ class Mixer {
 		void *rgbdata = nullptr;
 		GLuint ioBuf;
 		
-		Box* decknamebox[2];
-		Box *modebox;
+		Boxx* decknamebox[2];
+		Boxx *modebox;
 		int mode = 0;
 		bool staged = true;
 		Button *genmidi[2];

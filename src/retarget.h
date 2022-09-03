@@ -32,15 +32,15 @@ class Retarget {
 
         std::vector<std::string> localsearchdirs;
         std::vector<std::string> globalsearchdirs;
-        std::vector<Box*> searchboxes;
+        std::vector<Boxx*> searchboxes;
         std::vector<Button*> searchglobalbuttons;
-        std::vector<Box*> searchclearboxes;
+        std::vector<Boxx*> searchclearboxes;
 
-        Box* iconbox;
-        Box* valuebox;
-        Box* searchbox;
-        Box* skipbox;
-        Box* skipallbox;
+        Boxx* iconbox;
+        Boxx* valuebox;
+        Boxx* searchbox;
+        Boxx* skipbox;
+        Boxx* skipallbox;
 
         Retarget();
 

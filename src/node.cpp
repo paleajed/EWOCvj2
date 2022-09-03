@@ -52,8 +52,8 @@ float pdistance(float x, float y, float x1, float y1, float x2, float y2) {
 
 
 Node::Node() {
-	this->box = new Box;
-	this->monbox = new Box;
+	this->box = new Boxx;
+	this->monbox = new Boxx;
     this->page = mainprogram->nodesmain->currpage;
 }
 
@@ -73,7 +73,7 @@ Node::Node(const Node &node) {
 
 VideoNode::VideoNode() {
 	this->type = VIDEO;
-    this->vidbox = new Box;
+    this->vidbox = new Boxx;
     this->vidbox->tooltiptitle = "Layer stack - layer monitor ";
     this->vidbox->tooltip = "Layer stack: left to right = bottom to top layer. Monitor shows layer video image after all layer effects are applied.  Leftdrag small center box to pan layer image.  Mousewheel scales layer image.  Leftdrag (not on center box) starts layer drag'n'drop: exchange or move layers to/from any layer stack. Drag layer files to shelf or media bins (through the side BINS wormgates), or to any layer clip queue (by hovering over a layer while dragging).  Clicking the triangle pointing down in the leftbottom corner opens the layer clip queue. ";
 }

@@ -1,6 +1,6 @@
 #include <vector>
 
-class Box;
+class Boxx;
 class Layer;
 class Effect;
 class Param;
@@ -59,8 +59,8 @@ class Node {
 		NodePage *page = nullptr;
 		Node *in = nullptr;
 		std::vector<Node*> out;
-		Box *box;
-		Box *monbox;
+		Boxx *box;
+		Boxx *monbox;
 		Node *align = nullptr;
 		int alignpos;
 		int aligned = 0;
@@ -115,7 +115,7 @@ class NodesMain {
 class VideoNode: public Node {
 	public:
 		Layer *layer = nullptr;
-		Box *vidbox;
+		Boxx *vidbox;
 		void upeffboxes();
 		VideoNode();
 };

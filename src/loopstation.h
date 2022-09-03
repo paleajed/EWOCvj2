@@ -34,10 +34,10 @@ class LoopStation {
 									, 0.3f, 0.3f, 0.4f
 									, 0.3f, 0.2f, 0.5f
 									, 0.3f, 0.4f, 0.4f};
-        Box *upscrbox;
-        Box *downscrbox;
-        Box *confupscrbox;
-        Box *confdownscrbox;
+        Boxx *upscrbox;
+        Boxx *downscrbox;
+        Boxx *confupscrbox;
+        Boxx *confdownscrbox;
         int scrpos = 0;
         int confscrpos = 0;
 		LoopStationElement* currelem;
@@ -61,8 +61,8 @@ class LoopStationElement {
 		Button *recbut;
 		Button *loopbut;
 		Button *playbut;
-		Box *colbox;
-		Box *box;
+		Boxx *colbox;
+		Boxx *box;
 		std::chrono::high_resolution_clock::time_point starttime;
         float interimtime = 0;
         float totaltime = 0;

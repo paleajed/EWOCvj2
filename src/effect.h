@@ -58,7 +58,7 @@ typedef enum
 } IMPLEMENTATION;
 
 
-class Box;
+class Boxx;
 class Button;
 class Effect;
 class Layer;
@@ -77,7 +77,7 @@ class Param {
 		bool powertwo = false;
 		std::string shadervar;
 		Effect *effect = nullptr;
-		Box *box = NULL;
+		Boxx *box = NULL;
 		MidiNode *node = NULL;
 		bool nextrow = false;
 		std::vector<std::string> oscpaths;
@@ -106,7 +106,7 @@ class Effect {
 		Effect();
 		~Effect();
 		
-		Box *box;
+		Boxx *box;
 		Param *drywet;
 		Button *onoffbutton;
 		int numrows;

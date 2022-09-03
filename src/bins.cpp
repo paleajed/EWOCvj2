@@ -52,7 +52,7 @@ extern "C" {
 
 Bin::Bin(int pos) {
 	// boxes of bins in binslist
-	this->box = new Box;
+	this->box = new Boxx;
 	this->box->vtxcoords->x1 = 0.50f;
 	this->box->vtxcoords->y1 = (pos + 1) * -0.05f;
 	this->box->vtxcoords->w = 0.3f;
@@ -100,7 +100,7 @@ BinsMain::BinsMain() {
 	for (int i = 0; i < 12; i++) {
 		for (int j = 0; j < 12; j++) {
 			// initialize all 144 bin elements
-			Box *box = new Box;
+			Boxx *box = new Boxx;
 			this->elemboxes.push_back(box);
 			box->vtxcoords->x1 = -0.95f + j * 0.12f;
 			box->vtxcoords->y1 = 0.95f - ((i % 12) + 1) * 0.15f;
@@ -118,7 +118,7 @@ BinsMain::BinsMain() {
 	}
 
 	// box to click to load a bin into the bins list
-	this->loadbinbox = new Box;
+	this->loadbinbox = new Boxx;
 	this->loadbinbox->vtxcoords->x1 = 0.50f;
 	this->loadbinbox->vtxcoords->y1 = -0.90f;
 	this->loadbinbox->vtxcoords->w = 0.3f;
@@ -127,7 +127,7 @@ BinsMain::BinsMain() {
 	this->loadbinbox->tooltiptitle = "Load bin ";
 	this->loadbinbox->tooltip = "Leftclick to browse for a bin to be loaded. ";
 	// box to click to save a bin on disk
-	this->savebinbox = new Box;
+	this->savebinbox = new Boxx;
 	this->savebinbox->vtxcoords->x1 = 0.50f;
 	this->savebinbox->vtxcoords->y1 = -0.95f;
 	this->savebinbox->vtxcoords->w = 0.3f;
@@ -136,7 +136,7 @@ BinsMain::BinsMain() {
 	this->savebinbox->tooltiptitle = "Save bin ";
 	this->savebinbox->tooltip = "Leftclick to browse to save this bin on disk. ";
 	// box to click to add another bin to bins list
-	this->newbinbox = new Box;
+	this->newbinbox = new Boxx;
 	this->newbinbox->vtxcoords->x1 = 0.50f;
 	this->newbinbox->vtxcoords->y1 = -1.0f;
 	this->newbinbox->vtxcoords->w = 0.3f;
@@ -145,7 +145,7 @@ BinsMain::BinsMain() {
 	this->newbinbox->tooltiptitle = "Add new bin ";
 	this->newbinbox->tooltip = "Leftclick to add a new bin and make it current. ";
 
-	this->renamingbox = new Box;
+	this->renamingbox = new Boxx;
 	this->renamingbox->vtxcoords->x1 = -0.5f;
 	this->renamingbox->vtxcoords->y1 = -0.2f;
 	this->renamingbox->vtxcoords->w = 1.0f;
@@ -156,7 +156,7 @@ BinsMain::BinsMain() {
 
 	this->currbin = new Bin(-1);
 	
-	this->hapmodebox = new Box;
+	this->hapmodebox = new Boxx;
 	this->hapmodebox->vtxcoords->x1 = 0.67f;
 	this->hapmodebox->vtxcoords->y1 = 0.65f;
 	this->hapmodebox->vtxcoords->w = 0.1f;
@@ -166,7 +166,7 @@ BinsMain::BinsMain() {
 	this->hapmodebox->tooltip = "Toggles between hap encoding for during live situations (only using one core, not to slow down the realtime video mix, and hap encoding at full power (using 'number of system cores + 1' threads). ";
 
 	// arrow box to scroll bins list up
-	this->binsscrollup = new Box;
+	this->binsscrollup = new Boxx;
 	this->binsscrollup->vtxcoords->x1 = 0.475f;
 	this->binsscrollup->vtxcoords->y1 = -0.05f;
 	this->binsscrollup->vtxcoords->w = 0.025f;
@@ -176,7 +176,7 @@ BinsMain::BinsMain() {
 	this->binsscrollup->tooltip = "Leftclicking scrolls the bins list up ";
 
 	// arrow box to scroll bins list down
-    this->binsscrolldown = new Box;
+    this->binsscrolldown = new Boxx;
     this->binsscrolldown->vtxcoords->x1 = 0.475f;
     this->binsscrolldown->vtxcoords->y1 = -1.0f;
     this->binsscrolldown->vtxcoords->w = 0.025f;
@@ -185,7 +185,7 @@ BinsMain::BinsMain() {
     this->binsscrolldown->tooltiptitle = "Scroll bins list down ";
     this->binsscrolldown->tooltip = "Leftclicking scrolls the bins list down ";
 
-    this->floatbox = new Box;
+    this->floatbox = new Boxx;
     this->floatbox->vtxcoords->x1 = 0.8f;
     this->floatbox->vtxcoords->y1 = 0.95f;
     this->floatbox->vtxcoords->w = 0.15f;
@@ -262,7 +262,7 @@ void BinsMain::handle(bool draw) {
 	if (draw) {
 		for (int j = 0; j < 12; j++) {
 			for (int i = 0; i < 12; i++) {
-				Box* box = this->elemboxes[i * 12 + j];
+				Boxx* box = this->elemboxes[i * 12 + j];
 				BinElement* binel = this->currbin->elements[i * 12 + j];
 				if (box->in()) {
 					this->menubinel = binel;
@@ -448,19 +448,19 @@ void BinsMain::handle(bool draw) {
 				}
 			}
 			// draw big grey areas next to each element column to cut off element titles
-			Box* box2 = this->elemboxes[j];
+			Boxx* box2 = this->elemboxes[j];
 			draw_box(nullptr, darkgrey, box2->vtxcoords->x1 + box2->vtxcoords->w, -1.0f, 0.12f, 2.0f, -1);
 		}
 
 		bool cond1 = false;
 		if (this->menubinel) cond1 = (this->menubinel->name == "");
 		if (!mainprogram->menuondisplay) this->mouseshelfnum = -1;
-        Box *insertbox = nullptr;
+        Boxx *insertbox = nullptr;
 		mainprogram->frontbatch = true;
 		for (int j = 0; j < 3; j++) {
 			for (int i = 0; i < 3; i++) {
-			    Box dumbox;
-			    Box *box = &dumbox;
+			    Boxx dumbox;
+			    Boxx *box = &dumbox;
  				box->vtxcoords->x1 = -0.965f + j * 0.48f;
 				box->vtxcoords->y1 = 0.925f - ((i % 3) + 1) * 0.6f;
 				box->vtxcoords->w = 0.48f;
@@ -579,7 +579,7 @@ void BinsMain::handle(bool draw) {
 			mainprogram->make_menu("binelmenu", mainprogram->binelmenu, binel);
 		}
 
-        std::unique_ptr <Box> box = std::make_unique <Box> ();
+        std::unique_ptr <Boxx> box = std::make_unique <Boxx> ();
 		bool found = false;
 		bool cond2 = (mainprogram->mx < mainprogram->xvtxtoscr(1.475f));
 		if ((!this->menubinel || cond1) && cond2) {
@@ -623,7 +623,7 @@ void BinsMain::handle(bool draw) {
 			// select bin elements inside selection box
 			for (int i = 0; i < 12; i++) {
 				for (int j = 0; j < 12; j++) {
-					Box* ebox = this->elemboxes[i * 12 + j];
+					Boxx* ebox = this->elemboxes[i * 12 + j];
 					BinElement* binel = this->currbin->elements[i * 12 + j];
 					if (binel->name == "") continue;
 					if (binel->boxselect) binel->select = false;
@@ -660,25 +660,25 @@ void BinsMain::handle(bool draw) {
         return walk;
     };
 
-    Box box;
+    Boxx box;
     box.vtxcoords->x1 = -0.83f;
     box.vtxcoords->y1 = -0.98f;
     box.vtxcoords->w = 0.16f;
     box.vtxcoords->h = 0.085f;
     box.upvtxtoscr();
-    Box ipbox;
+    Boxx ipbox;
     ipbox.vtxcoords->x1 = -0.67f;
     ipbox.vtxcoords->y1 = -0.98f;
     ipbox.vtxcoords->w = 0.15f;
     ipbox.vtxcoords->h = 0.085f;
     ipbox.upvtxtoscr();
-    Box connbox;
+    Boxx connbox;
     connbox.vtxcoords->x1 = -0.47f;
     connbox.vtxcoords->y1 = -0.98f;
     connbox.vtxcoords->w = 0.15f;
     connbox.vtxcoords->h = 0.085f;
     connbox.upvtxtoscr();
-    Box seatbox;
+    Boxx seatbox;
     seatbox.vtxcoords->x1 = 0.04f;
     seatbox.vtxcoords->y1 = -0.98f;
     seatbox.vtxcoords->w = 0.3f;
@@ -957,7 +957,7 @@ void BinsMain::handle(bool draw) {
 	
 	if (draw) {
 		//handle binslist scroll
-		Box binsbox;
+		Boxx binsbox;
 		binsbox.vtxcoords->x1 = 0.50f;
 		binsbox.vtxcoords->y1 = -1.0f;
 		binsbox.vtxcoords->w = 0.3f;
@@ -972,7 +972,7 @@ void BinsMain::handle(bool draw) {
 		}
 
 		// draw and handle binslist scrollboxes
-		this->binsscroll = mainprogram->handle_scrollboxes(this->binsscrollup, this->binsscrolldown, this->bins.size(), this->binsscroll, 18);
+		this->binsscroll = mainprogram->handle_scrollboxes(*this->binsscrollup, *this->binsscrolldown, this->bins.size(), this->binsscroll, 18);
 
 		//draw and handle binslist
 		this->indragbox = false;
@@ -1054,7 +1054,7 @@ void BinsMain::handle(bool draw) {
 		}
 
 		// draw and handle box that allows adding a new bin to the end of the list0
-		Box* box = this->newbinbox;
+		Boxx* box = this->newbinbox;
 		if (box->in()) {
 			if (mainprogram->leftmouse && !this->dragbin) {
 			    new_bin(remove_extension(basename(find_unused_filename("new bin", mainprogram->project->binsdir, ".bin"))));
@@ -1188,7 +1188,7 @@ void BinsMain::handle(bool draw) {
 		for (int j = 0; j < 12; j++) {
 			for (int i = 0; i < 12; i++) {
 				// handle elements, row per row
-				Box* box = this->elemboxes[i * 12 + j];
+				Boxx* box = this->elemboxes[i * 12 + j];
 				box->upvtxtoscr();
 				BinElement* binel = this->currbin->elements[i * 12 + j];
 				if (draw) {
@@ -1546,7 +1546,7 @@ void BinsMain::handle(bool draw) {
 		for (int j = 0; j < 12; j++) {
 			for (int i = 0; i < 12; i++) {
 				// handle elements, row per row
-				Box* box = this->elemboxes[i * 12 + j];
+				Boxx* box = this->elemboxes[i * 12 + j];
 				box->upvtxtoscr();
 				BinElement* binel = this->currbin->elements[i * 12 + j];
 				if (binel->encoding && binel->encthreads == 0 && (binel->type == ELEM_DECK || binel->type == ELEM_MIX)) {
@@ -2170,7 +2170,7 @@ void BinsMain::handle(bool draw) {
 				BinElement* foundbinel;
 				for (int j = 0; j < 12; j++) {
 					for (int i = 0; i < 12; i++) {
-						Box* box = this->elemboxes[i * 12 + j];
+						Boxx* box = this->elemboxes[i * 12 + j];
 						foundbinel = this->currbin->elements[i * 12 + j];
 						if (box->in() && this->currbinel == foundbinel) {
 							found = true;

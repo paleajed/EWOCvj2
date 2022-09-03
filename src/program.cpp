@@ -316,7 +316,7 @@ Program::Program() {
 	this->layh = this->layh * (glob->w / glob->h) / (1920.0f /  1080.0f);
 	this->monh = this->monh * (glob->w / glob->h) / (1920.0f /  1080.0f);
 	
-	this->addbox = new Box;
+	this->addbox = new Boxx;
 	this->addbox->vtxcoords->y1 = 1.0f - this->layh;
 	this->addbox->vtxcoords->w = 0.009f * 2.0f;
 	this->addbox->vtxcoords->h = this->layh - 0.075f;
@@ -325,7 +325,7 @@ Program::Program() {
 	this->addbox->tooltiptitle = "Add layer ";
 	this->addbox->tooltip = "Leftclick this blue box to add a layer at this point. ";
 
-	this->delbox = new Box;
+	this->delbox = new Boxx;
 	this->delbox->vtxcoords->y1 = 0.925f;
 	this->delbox->vtxcoords->w = 0.009f * 2.0f;
 	this->delbox->vtxcoords->h = 0.075f;
@@ -334,7 +334,7 @@ Program::Program() {
 	this->delbox->tooltiptitle = "Delete layer to the left ";
 	this->delbox->tooltip = "Leftclick this red box to delete the layer to the left of it. ";
 
-	this->scrollboxes[0] = new Box;
+	this->scrollboxes[0] = new Boxx;
 	this->scrollboxes[0]->vtxcoords->x1 = -1.0f + this->numw;
 	this->scrollboxes[0]->vtxcoords->y1 = 1.0f - this->layh - 0.05f;
 	this->scrollboxes[0]->vtxcoords->w = this->layw * 3.0f;
@@ -342,7 +342,7 @@ Program::Program() {
 	this->scrollboxes[0]->upvtxtoscr();
 	this->scrollboxes[0]->tooltiptitle = "Deck A Layer stack scroll bar ";
 	this->scrollboxes[0]->tooltip = "Scroll bar for layer stack.  Divided in total number of layers parts for deck A. Lightgrey part is the visible layer monitors part.  Leftdragging the lightgrey part allows scrolling.  So does leftclicking the darkgrey parts. ";
-	this->scrollboxes[1] = new Box;
+	this->scrollboxes[1] = new Boxx;
 	this->scrollboxes[1]->vtxcoords->x1 = this->numw;
 	this->scrollboxes[1]->vtxcoords->y1 = 1.0f - this->layh - 0.05f;
 	this->scrollboxes[1]->vtxcoords->w = this->layw * 3.0f;
@@ -351,7 +351,7 @@ Program::Program() {
 	this->scrollboxes[1]->tooltiptitle = "Deck b Layer stack scroll bar ";
 	this->scrollboxes[1]->tooltip = "Scroll bar for layer stack.  Divided in total number of layers parts for deck B. Lightgrey part is the visible layer monitors part.  Leftdragging the lightgrey part allows scrolling.  So does leftclicking the darkgrey parts. ";
 	
-	this->cwbox = new Box;
+	this->cwbox = new Boxx;
 
     this->toscreenA = new Button(false);
     this->toscreenA->toggle = 0;
@@ -486,7 +486,7 @@ Program::Program() {
 	this->modusbut->tcol[2] = 0.0f;
 	this->modusbut->tcol[3] = 1.0f;
 	
-	this->outputmonitor = new Box;
+	this->outputmonitor = new Boxx;
 	this->outputmonitor->vtxcoords->x1 = -0.15f;
 	this->outputmonitor->vtxcoords->y1 = -1.0f + this->monh;
 	this->outputmonitor->vtxcoords->w = 0.3f;
@@ -495,7 +495,7 @@ Program::Program() {
 	this->outputmonitor->tooltiptitle = "Output monitor ";
 	this->outputmonitor->tooltip = "Shows mix of output stream when in preview modus.  Rightclick menu allows sending monitor image fullscreen to another display device. ";
 
-	this->mainmonitor = new Box;
+	this->mainmonitor = new Boxx;
 	this->mainmonitor->vtxcoords->x1 = -0.3f;
 	this->mainmonitor->vtxcoords->y1 = -1.0f;
 	this->mainmonitor->vtxcoords->w = 0.6f;
@@ -504,7 +504,7 @@ Program::Program() {
 	this->mainmonitor->tooltiptitle = "A+B monitor ";
 	this->mainmonitor->tooltip = "Shows crossfaded or wiped A+B mix of preview stream (preview modus) or output stream (live modus).  Rightclick menu allows setting wipes and sending monitor image fullscreen to another display device. Leftclick/drag on image affects some wipe modes. ";
 
-	this->deckmonitor[0] = new Box;
+	this->deckmonitor[0] = new Boxx;
 	this->deckmonitor[0]->vtxcoords->x1 = -0.6f;
 	this->deckmonitor[0]->vtxcoords->y1 = -1.0f;
 	this->deckmonitor[0]->vtxcoords->w = 0.3f;
@@ -513,7 +513,7 @@ Program::Program() {
 	this->deckmonitor[0]->tooltiptitle = "Deck A monitor ";
 	this->deckmonitor[0]->tooltip = "Shows deck A stream.  Rightclick menu allows sending monitor image fullscreen to another display device. Leftclick/drag on image affects some local layer wipe modes. ";
 
-	this->deckmonitor[1] = new Box;
+	this->deckmonitor[1] = new Boxx;
 	this->deckmonitor[1]->vtxcoords->x1 = 0.3f;
 	this->deckmonitor[1]->vtxcoords->y1 = -1.0f;
 	this->deckmonitor[1]->vtxcoords->w = 0.3f;
@@ -557,7 +557,7 @@ Program::Program() {
 	this->effcat[1]->box->tooltiptitle = "Layer/stream effects toggle ";
 	this->effcat[1]->box->tooltip = "Leftclick toggles between layer effects queue (these effects only affect the current layer) and stream effects queue (effects affect mix of all layers upto and including the current one). If set to Layer effects, a red box background notifies the user that there are stream effects enabled on this layer. ";
 	
-	this->effscrollupA = new Box;
+	this->effscrollupA = new Boxx;
 	this->effscrollupA->vtxcoords->x1 = -1.0;
 	this->effscrollupA->vtxcoords->y1 = 1.0 - this->layh * 1.5f;
 	this->effscrollupA->vtxcoords->w = 0.0375f;
@@ -566,7 +566,7 @@ Program::Program() {
 	this->effscrollupA->tooltiptitle = "Scroll effects queue up ";
 	this->effscrollupA->tooltip = "Leftclicking scrolls the effect queue up ";
 	
-	this->effscrollupB = new Box;
+	this->effscrollupB = new Boxx;
 	this->effscrollupB->vtxcoords->x1 = 1.0 - 0.075f;
 	this->effscrollupB->vtxcoords->y1 = 1.0 - this->layh * 1.5f;
 	this->effscrollupB->vtxcoords->w = 0.0375f;
@@ -575,7 +575,7 @@ Program::Program() {
 	this->effscrollupB->tooltiptitle = "Scroll effects queue up ";
 	this->effscrollupB->tooltip = "Leftclicking scrolls the effect queue up ";
 	
-	this->effscrolldownA = new Box;
+	this->effscrolldownA = new Boxx;
 	this->effscrolldownA->vtxcoords->x1 = -1.0;
 	this->effscrolldownA->vtxcoords->y1 = 1.0 - this->layh * 1.5f - 0.375f - 0.075f;
 	this->effscrolldownA->vtxcoords->w = 0.0375f;
@@ -584,7 +584,7 @@ Program::Program() {
 	this->effscrolldownA->tooltiptitle = "Scroll effects queue down ";
 	this->effscrolldownA->tooltip = "Leftclicking scrolls the effect queue down ";
 	
-	this->effscrolldownB = new Box;
+	this->effscrolldownB = new Boxx;
 	this->effscrolldownB->vtxcoords->x1 = 1.0 - 0.075f;
 	this->effscrolldownB->vtxcoords->y1 = 1.0 - this->layh * 1.5f - 0.375f - 0.075f;
 	this->effscrolldownB->vtxcoords->w = 0.0375f;
@@ -593,7 +593,7 @@ Program::Program() {
 	this->effscrolldownB->tooltiptitle = "Scroll effects queue down ";
 	this->effscrolldownB->tooltip = "Leftclicking scrolls the effect queue down ";
 
-    this->orderscrollup = new Box;
+    this->orderscrollup = new Boxx;
     this->orderscrollup->vtxcoords->x1 = -0.45f;
     this->orderscrollup->vtxcoords->y1 = 0.8f;
     this->orderscrollup->vtxcoords->w = 0.05f;
@@ -602,7 +602,7 @@ Program::Program() {
     this->orderscrollup->tooltiptitle = "Scroll orderlist up ";
     this->orderscrollup->tooltip = "Leftclicking scrolls the orderlist up ";
 
-    this->orderscrolldown = new Box;
+    this->orderscrolldown = new Boxx;
     this->orderscrolldown->vtxcoords->x1 = -0.45f;
     this->orderscrolldown->vtxcoords->y1 = 0.7f;
     this->orderscrolldown->vtxcoords->w = 0.05f;
@@ -611,7 +611,7 @@ Program::Program() {
     this->orderscrolldown->tooltiptitle = "Scroll orderlist down ";
     this->orderscrolldown->tooltip = "Leftclicking scrolls the orderlist down ";
 
-    this->defaultsearchscrollup = new Box;
+    this->defaultsearchscrollup = new Boxx;
     this->defaultsearchscrollup->vtxcoords->x1 = -0.6f;
     this->defaultsearchscrollup->vtxcoords->y1 = -0.4f;
     this->defaultsearchscrollup->vtxcoords->w = 0.1f;
@@ -620,7 +620,7 @@ Program::Program() {
     this->defaultsearchscrollup->tooltiptitle = "Scroll default searchlist up ";
     this->defaultsearchscrollup->tooltip = "Leftclicking scrolls the default searchlist up ";
 
-    this->defaultsearchscrolldown = new Box;
+    this->defaultsearchscrolldown = new Boxx;
     this->defaultsearchscrolldown->vtxcoords->x1 = -0.6f;
     this->defaultsearchscrolldown->vtxcoords->y1 = -0.6f;
     this->defaultsearchscrolldown->vtxcoords->w = 0.1f;
@@ -629,7 +629,7 @@ Program::Program() {
     this->defaultsearchscrolldown->tooltiptitle = "Scroll default searchlist down ";
     this->defaultsearchscrolldown->tooltip = "Leftclicking scrolls the default searchlist down ";
 
-    this->searchscrollup = new Box;
+    this->searchscrollup = new Boxx;
     this->searchscrollup->vtxcoords->x1 = -0.45f;
     this->searchscrollup->vtxcoords->y1 = -0.2f;
     this->searchscrollup->vtxcoords->w = 0.05f;
@@ -638,7 +638,7 @@ Program::Program() {
     this->searchscrollup->tooltiptitle = "Scroll searchlist up ";
     this->searchscrollup->tooltip = "Leftclicking scrolls the searchlist up ";
 
-    this->searchscrolldown = new Box;
+    this->searchscrolldown = new Boxx;
     this->searchscrolldown->vtxcoords->x1 = -0.45f;
     this->searchscrolldown->vtxcoords->y1 = -0.3f;
     this->searchscrolldown->vtxcoords->w = 0.05f;
@@ -647,19 +647,19 @@ Program::Program() {
     this->searchscrolldown->tooltiptitle = "Scroll searchlist down ";
     this->searchscrolldown->tooltip = "Leftclicking scrolls the searchlist down ";
 
-    this->addeffectbox = new Box;
+    this->addeffectbox = new Boxx;
 	this->addeffectbox->vtxcoords->w = this->layw * 1.5f;
 	this->addeffectbox->vtxcoords->h = 0.057f;
 	this->addeffectbox->tooltiptitle = "Add effect ";
 	this->addeffectbox->tooltip = "Add effect to end of layer effect queue ";
 
-	this->inserteffectbox = new Box;
+	this->inserteffectbox = new Boxx;
 	this->inserteffectbox->vtxcoords->w = 0.24f;
 	this->inserteffectbox->vtxcoords->h = 0.057f;
 	this->inserteffectbox->tooltiptitle = "Add effect ";
 	this->inserteffectbox->tooltip = "Add effect to end of layer effect queue ";
 
-    this->tmcat[0] = new Box;
+    this->tmcat[0] = new Boxx;
     this->tmcat[0]->smflag = 2;
     this->tmcat[0]->vtxcoords->x1 = -0.3f;
     this->tmcat[0]->vtxcoords->y1 = 0.92f;
@@ -667,7 +667,7 @@ Program::Program() {
     this->tmcat[0]->vtxcoords->h = 0.08f;
     this->tmcat[0]->tooltiptitle = "Edit general MIDI layer controls ";
     this->tmcat[0]->tooltip = "Leftclick to toggle the settings window to the general MIDI layer controls settings. ";
-    this->tmcat[1] = new Box;
+    this->tmcat[1] = new Boxx;
     this->tmcat[1]->smflag = 2;
     this->tmcat[1]->vtxcoords->x1 = -0.3f;
     this->tmcat[1]->vtxcoords->y1 = 0.84f;
@@ -675,7 +675,7 @@ Program::Program() {
     this->tmcat[1]->vtxcoords->h = 0.08f;
     this->tmcat[1]->tooltiptitle = "Edit shelf buttons MIDI ";
     this->tmcat[1]->tooltip = "Leftclick to toggle the settings window to the shelf buttons MIDI settings. ";
-    this->tmcat[2] = new Box;
+    this->tmcat[2] = new Boxx;
     this->tmcat[2]->smflag = 2;
     this->tmcat[2]->vtxcoords->x1 = -0.3f;
     this->tmcat[2]->vtxcoords->y1 = 0.76f;
@@ -683,7 +683,7 @@ Program::Program() {
     this->tmcat[2]->vtxcoords->h = 0.08f;
     this->tmcat[2]->tooltiptitle = "Edit loopstation buttons MIDI";
     this->tmcat[2]->tooltip = "Leftclick to toggle the settings window to the loopstation buttons MIDI settings. ";
-    this->tmset[0] = new Box;
+    this->tmset[0] = new Boxx;
     this->tmset[0]->smflag = 2;
     this->tmset[0]->vtxcoords->x1 = 0.2f;
     this->tmset[0]->vtxcoords->y1 = 0.94f;
@@ -691,7 +691,7 @@ Program::Program() {
     this->tmset[0]->vtxcoords->h = 0.06f;
     this->tmset[0]->tooltiptitle = "Switch to set A ";
     this->tmset[0]->tooltip = "Leftclick to toggle the MIDI set that is being configured to set A. ";
-    this->tmset[1] = new Box;
+    this->tmset[1] = new Boxx;
     this->tmset[1]->smflag = 2;
     this->tmset[1]->vtxcoords->x1 = 0.2f;
     this->tmset[1]->vtxcoords->y1 = 0.88f;
@@ -699,7 +699,7 @@ Program::Program() {
     this->tmset[1]->vtxcoords->h = 0.06f;
     this->tmset[1]->tooltiptitle = "Switch to set B ";
     this->tmset[1]->tooltip = "Leftclick to toggle the MIDI set that is being configured to set B. ";
-    this->tmset[2] = new Box;
+    this->tmset[2] = new Boxx;
     this->tmset[2]->smflag = 2;
     this->tmset[2]->vtxcoords->x1 = 0.2f;
     this->tmset[2]->vtxcoords->y1 = 0.82f;
@@ -707,7 +707,7 @@ Program::Program() {
     this->tmset[2]->vtxcoords->h = 0.06f;
     this->tmset[2]->tooltiptitle = "Switch to set C ";
     this->tmset[2]->tooltip = "Leftclick to toggle the MIDI set that is being configured to set C. ";
-    this->tmset[3] = new Box;
+    this->tmset[3] = new Boxx;
     this->tmset[3]->smflag = 2;
     this->tmset[3]->vtxcoords->x1 = 0.2f;
     this->tmset[3]->vtxcoords->y1 = 0.76f;
@@ -715,7 +715,7 @@ Program::Program() {
     this->tmset[3]->vtxcoords->h = 0.06f;
     this->tmset[3]->tooltiptitle = "Switch to set D ";
     this->tmset[3]->tooltip = "Leftclick to toggle the MIDI set that is being configured to set D. ";
-	this->tmplay = new Box;
+	this->tmplay = new Boxx;
     this->tmplay->smflag = 2;
 	this->tmplay->vtxcoords->x1 = -0.075;
 	this->tmplay->vtxcoords->y1 = -0.9f;
@@ -723,7 +723,7 @@ Program::Program() {
 	this->tmplay->vtxcoords->h = 0.26f;
 	this->tmplay->tooltiptitle = "Set MIDI for play button ";
 	this->tmplay->tooltip = "Leftclick to start waiting for a MIDI command that will trigger normal video play for this preset. ";
-	this->tmbackw = new Box;
+	this->tmbackw = new Boxx;
     this->tmbackw->smflag = 2;
 	this->tmbackw->vtxcoords->x1 = -0.375f;
 	this->tmbackw->vtxcoords->y1 = -0.9f;
@@ -731,7 +731,7 @@ Program::Program() {
 	this->tmbackw->vtxcoords->h = 0.26f;
 	this->tmbackw->tooltiptitle = "Set MIDI for reverse play button ";
 	this->tmbackw->tooltip = "Leftclick to start waiting for a MIDI command that will trigger reverse video play for this preset. ";
-	this->tmbounce = new Box;
+	this->tmbounce = new Boxx;
     this->tmbounce->smflag = 2;
 	this->tmbounce->vtxcoords->x1 = -0.225f;
 	this->tmbounce->vtxcoords->y1 = -0.9f;
@@ -739,7 +739,7 @@ Program::Program() {
 	this->tmbounce->vtxcoords->h = 0.26f;
 	this->tmbounce->tooltiptitle = "Set MIDI for bounce play button ";
 	this->tmbounce->tooltip = "Leftclick to start waiting for a MIDI command that will trigger bounce video play for this preset. ";
-	this->tmfrforw = new Box;
+	this->tmfrforw = new Boxx;
     this->tmfrforw->smflag = 2;
 	this->tmfrforw->vtxcoords->x1 = 0.075f;
 	this->tmfrforw->vtxcoords->y1 = -0.9f;
@@ -747,7 +747,7 @@ Program::Program() {
 	this->tmfrforw->vtxcoords->h = 0.26f;
 	this->tmfrforw->tooltiptitle = "Set MIDI for frame forward button ";
 	this->tmfrforw->tooltip = "Leftclick to start waiting for a MIDI command that will trigger frame forward for this preset. ";
-    this->tmfrbackw = new Box;
+    this->tmfrbackw = new Boxx;
     this->tmfrbackw->smflag = 2;
     this->tmfrbackw->vtxcoords->x1 = -0.525f;
     this->tmfrbackw->vtxcoords->y1 = -0.9f;
@@ -755,7 +755,7 @@ Program::Program() {
     this->tmfrbackw->vtxcoords->h = 0.26f;
     this->tmfrbackw->tooltiptitle = "Set MIDI for frame backward button ";
     this->tmfrbackw->tooltip = "Leftclick to start waiting for a MIDI command that will trigger frame backward for this preset. ";
-    this->tmstop = new Box;
+    this->tmstop = new Boxx;
     this->tmstop->smflag = 2;
     this->tmstop->vtxcoords->x1 = 0.225f;
     this->tmstop->vtxcoords->y1 = -0.9f;
@@ -763,7 +763,7 @@ Program::Program() {
     this->tmstop->vtxcoords->h = 0.26f;
     this->tmstop->tooltiptitle = "Set MIDI for stop play button ";
     this->tmstop->tooltip = "Leftclick to start waiting for a MIDI command that will trigger play stop for this preset. ";
-    this->tmloop = new Box;
+    this->tmloop = new Boxx;
     this->tmloop->smflag = 2;
     this->tmloop->vtxcoords->x1 = 0.375f;
     this->tmloop->vtxcoords->y1 = -0.9f;
@@ -771,7 +771,7 @@ Program::Program() {
     this->tmloop->vtxcoords->h = 0.26f;
     this->tmloop->tooltiptitle = "Set MIDI for loop play toggle button ";
     this->tmloop->tooltip = "Leftclick to start waiting for a MIDI command that will trigger loop play toggle for this preset. ";
-	this->tmspeed = new Box;
+	this->tmspeed = new Boxx;
     this->tmspeed->smflag = 2;
 	this->tmspeed->vtxcoords->x1 = -0.8f;
 	this->tmspeed->vtxcoords->y1 = -0.5f;
@@ -779,7 +779,7 @@ Program::Program() {
 	this->tmspeed->vtxcoords->h = 1.0f;
 	this->tmspeed->tooltiptitle = "Set MIDI for setting video play speed ";
 	this->tmspeed->tooltip = "Leftclick to start waiting for a MIDI command that will set the play speed factor for this preset. ";
-	this->tmspeedzero = new Box;
+	this->tmspeedzero = new Boxx;
     this->tmspeedzero->smflag = 2;
 	this->tmspeedzero->vtxcoords->x1 = -0.775f;
 	this->tmspeedzero->vtxcoords->y1 = -0.1f;
@@ -787,7 +787,7 @@ Program::Program() {
 	this->tmspeedzero->vtxcoords->h = 0.2f;
 	this->tmspeedzero->tooltiptitle = "Set MIDI for setting video play speed to one";
 	this->tmspeedzero->tooltip = "Leftclick to start waiting for a MIDI command that will set the play speed factor back to one for this preset. ";
-    this->tmopacity = new Box;
+    this->tmopacity = new Boxx;
     this->tmopacity->smflag = 2;
     this->tmopacity->vtxcoords->x1 = 0.6f;
     this->tmopacity->vtxcoords->y1 = -0.5f;
@@ -795,7 +795,7 @@ Program::Program() {
     this->tmopacity->vtxcoords->h = 1.0f;
     this->tmopacity->tooltiptitle = "Set MIDI for setting video opacity ";
     this->tmopacity->tooltip = "Leftclick to start waiting for a MIDI command that will set the opacity for this preset. ";
-    this->tmcross = new Box;
+    this->tmcross = new Boxx;
     this->tmcross->smflag = 2;
     this->tmcross->vtxcoords->x1 = -0.25f;
     this->tmcross->vtxcoords->y1 = -0.5f;
@@ -803,7 +803,7 @@ Program::Program() {
     this->tmcross->vtxcoords->h = 0.15f;
     this->tmcross->tooltiptitle = "Set MIDI for crossfade ";
     this->tmcross->tooltip = "Leftclick to start waiting for a MIDI command that will set the crossfader.  This setting is the same for each set. ";
-    this->tmfreeze = new Box;
+    this->tmfreeze = new Boxx;
     this->tmfreeze->smflag = 2;
     this->tmfreeze->vtxcoords->x1 = -0.1f;
     this->tmfreeze->vtxcoords->y1 = 0.1f;
@@ -811,7 +811,7 @@ Program::Program() {
     this->tmfreeze->vtxcoords->h = 0.2f;
     this->tmfreeze->tooltiptitle = "Set MIDI for scratch wheel freeze ";
     this->tmfreeze->tooltip = "Leftclick to start waiting for a MIDI command that will trigger scratch wheel freeze for this preset. ";
-    this->tmscrinvert = new Box;
+    this->tmscrinvert = new Boxx;
     this->tmscrinvert->smflag = 2;
     this->tmscrinvert->vtxcoords->x1 = 0.3f;
     this->tmscrinvert->vtxcoords->y1 = -0.05f;
@@ -819,7 +819,7 @@ Program::Program() {
     this->tmscrinvert->vtxcoords->h = 0.08f;
     this->tmscrinvert->tooltiptitle = "Toggle inversion of scratch wheel direction ";
     this->tmscrinvert->tooltip = "Leftclick to toggle inversion of scratch wheel direction for this preset. ";
-    this->tmscratch1 = new Box;
+    this->tmscratch1 = new Boxx;
     this->tmscratch1->smflag = 2;
     this->tmscratch1->vtxcoords->x1 = -1.0f;
     this->tmscratch1->vtxcoords->y1 = -2.0f;
@@ -827,7 +827,7 @@ Program::Program() {
     this->tmscratch1->vtxcoords->h = 1.0f;
     this->tmscratch1->tooltiptitle = "Set MIDI for scratch wheel when scratchwheel is not touched";
     this->tmscratch1->tooltip = "Leftclick to start waiting for a MIDI command that will trigger scratching for this preset. ";
-    this->tmscratch2 = new Box;
+    this->tmscratch2 = new Boxx;
     this->tmscratch2->smflag = 2;
     this->tmscratch2->vtxcoords->x1 = -1.0f;
     this->tmscratch2->vtxcoords->y1 = -1.0f;
@@ -872,7 +872,7 @@ void Program::make_menu(const std::string &name, Menu *&menu, std::vector<std::s
 		menu->name = name;
 	}
 	menu->entries = entries;
-	Box *box = new Box;
+	Boxx *box = new Boxx;
 	menu->box = box;
 	menu->box->scrcoords->x1 = 0;
 	menu->box->scrcoords->y1 = mainprogram->yvtxtoscr(0.075f);
@@ -1365,7 +1365,7 @@ bool Program::order_paths(bool dodeckmix) {
             return false;
         }
         for (int j = 0; j < this->paths.size(); j++) {
-            this->pathboxes.push_back(new Box);
+            this->pathboxes.push_back(new Boxx);
             this->pathboxes[j]->vtxcoords->x1 = -0.4f;
             this->pathboxes[j]->vtxcoords->y1 = 0.8f - j * 0.1f;
             this->pathboxes[j]->vtxcoords->w = 0.8f;
@@ -1455,10 +1455,10 @@ bool Program::do_order_paths() {
 
 	mainprogram->frontbatch = true;
 	// draw and handle orderlist scrollboxes
-	this->pathscroll = mainprogram->handle_scrollboxes(this->orderscrollup, this->orderscrolldown, this->paths.size(), this->pathscroll, 17);
+	this->pathscroll = mainprogram->handle_scrollboxes(*this->orderscrollup, *this->orderscrolldown, this->paths.size(), this->pathscroll, 17);
 	bool indragbox = false;
 	for (int j = this->pathscroll; j < this->pathscroll + limit; j++) {
-		Box* box = this->pathboxes[j];
+		Boxx* box = this->pathboxes[j];
 		box->vtxcoords->y1 = 0.8f - (j - this->pathscroll) * 0.1f;
 		box->upvtxtoscr();
 		draw_box(white, black, box, -1);
@@ -1495,7 +1495,7 @@ bool Program::do_order_paths() {
 
 	// confirm box
 
-    std::unique_ptr <Box> applybox = std::make_unique <Box> ();
+    std::unique_ptr <Boxx> applybox = std::make_unique <Boxx> ();
 	applybox->vtxcoords->x1 = this->pathboxes.back()->vtxcoords->x1;
 	applybox->vtxcoords->y1 = 0.8f - limit * 0.1f;
 	applybox->vtxcoords->w = this->pathboxes.back()->vtxcoords->w;
@@ -1574,7 +1574,7 @@ bool Program::do_order_paths() {
 
 
 void Program::handle_wormgate(bool gate) {
-	Box* box;
+	Boxx* box;
 	if (gate == 0) box = mainprogram->wormgate1->box;
 	else box = mainprogram->wormgate2->box;
 
@@ -1850,64 +1850,64 @@ float Program::yvtxtoscr(float vtxcoord) {
 
 
 
-int Program::handle_scrollboxes(Box* upperbox, Box* lowerbox, int numlines, int scrollpos, int scrlines) {
+int Program::handle_scrollboxes(Boxx &upperbox, Boxx &lowerbox, int numlines, int scrollpos, int scrlines) {
     int ret = this->handle_scrollboxes(upperbox, lowerbox, numlines, scrollpos, scrlines, mainprogram->mx,
                                     mainprogram->my);
     return ret;
 }
 
-int Program::handle_scrollboxes(Box* upperbox, Box* lowerbox, int numlines, int scrollpos, int scrlines, int mx, int
+int Program::handle_scrollboxes(Boxx &upperbox, Boxx &lowerbox, int numlines, int scrollpos, int scrlines, int mx, int
 my) {
 	// general code for scrollbuttons of scrollable lists
 	if (scrollpos > 0) {
-		if (upperbox->in(mx, my)) {
+		if (upperbox.in(mx, my)) {
 			// scroll up
-			upperbox->acolor[0] = 0.5f;
-			upperbox->acolor[1] = 0.5f;
-			upperbox->acolor[2] = 1.0f;
-			upperbox->acolor[3] = 1.0f;
+			upperbox.acolor[0] = 0.5f;
+			upperbox.acolor[1] = 0.5f;
+			upperbox.acolor[2] = 1.0f;
+			upperbox.acolor[3] = 1.0f;
 			if (mainprogram->leftmouse || mainprogram->orderleftmouse) {
 				scrollpos--;
 			}
 		}
 		else {
-			upperbox->acolor[0] = 0.0f;
-			upperbox->acolor[1] = 0.0f;
-			upperbox->acolor[2] = 0.0f;
-			upperbox->acolor[3] = 1.0f;
+			upperbox.acolor[0] = 0.0f;
+			upperbox.acolor[1] = 0.0f;
+			upperbox.acolor[2] = 0.0f;
+			upperbox.acolor[3] = 1.0f;
 		}
-		draw_box(upperbox, -1);
+		draw_box(&upperbox, -1);
         if (!mainprogram->insmall) {
-            register_triangle_draw(white, white, upperbox->vtxcoords->x1 + (lowerbox->vtxcoords->w / 0.075f) * 0.0111f, upperbox->vtxcoords->y1 + (lowerbox->vtxcoords->w / 0.075f) * (0.0624f - 0.045f), 0.0165f, 0.0312f, DOWN, CLOSED);
+            register_triangle_draw(white, white, upperbox.vtxcoords->x1 + (lowerbox.vtxcoords->w / 0.075f) * 0.0111f, upperbox.vtxcoords->y1 + (lowerbox.vtxcoords->w / 0.075f) * (0.0624f - 0.045f), 0.0165f, 0.0312f, DOWN, CLOSED);
         }
         else {
-            register_triangle_draw(white, white, upperbox->vtxcoords->x1 + (lowerbox->vtxcoords->w / 0.075f) * 0.0111f, upperbox->vtxcoords->y1 + (lowerbox->vtxcoords->w / 0.075f) * (0.0624f - 0.045f),
+            register_triangle_draw(white, white, upperbox.vtxcoords->x1 + (lowerbox.vtxcoords->w / 0.075f) * 0.0111f, upperbox.vtxcoords->y1 + (lowerbox.vtxcoords->w / 0.075f) * (0.0624f - 0.045f),
             0.033f, 0.0624f, DOWN, CLOSED, true);
          }
 	}
 	if (numlines - scrollpos > scrlines) {
-        if (lowerbox->in(mx, my)) {
+        if (lowerbox.in(mx, my)) {
 			// scroll down
-			lowerbox->acolor[0] = 0.5f;
-			lowerbox->acolor[1] = 0.5f;
-			lowerbox->acolor[2] = 1.0f;
-			lowerbox->acolor[3] = 1.0f;
+			lowerbox.acolor[0] = 0.5f;
+			lowerbox.acolor[1] = 0.5f;
+			lowerbox.acolor[2] = 1.0f;
+			lowerbox.acolor[3] = 1.0f;
 			if (mainprogram->leftmouse || mainprogram->orderleftmouse) {
 				scrollpos++;
 			}
 		}
 		else {
-			lowerbox->acolor[0] = 0.0f;
-			lowerbox->acolor[1] = 0.0f;
-			lowerbox->acolor[2] = 0.0f;
-			lowerbox->acolor[3] = 1.0f;
+			lowerbox.acolor[0] = 0.0f;
+			lowerbox.acolor[1] = 0.0f;
+			lowerbox.acolor[2] = 0.0f;
+			lowerbox.acolor[3] = 1.0f;
 		}
-		draw_box(lowerbox, -1);
+		draw_box(&lowerbox, -1);
         if (!mainprogram->insmall) {
-		register_triangle_draw(white, white, lowerbox->vtxcoords->x1 + (lowerbox->vtxcoords->w / 0.075f) * 0.0111f, lowerbox->vtxcoords->y1 + (lowerbox->vtxcoords->w / 0.075f) * (0.0624f - 0.045f), 0.0165f, 0.0312f, UP, CLOSED);
+		register_triangle_draw(white, white, lowerbox.vtxcoords->x1 + (lowerbox.vtxcoords->w / 0.075f) * 0.0111f, lowerbox.vtxcoords->y1 + (lowerbox.vtxcoords->w / 0.075f) * (0.0624f - 0.045f), 0.0165f, 0.0312f, UP, CLOSED);
         }
         else {
-            register_triangle_draw(white, white, lowerbox->vtxcoords->x1 + (lowerbox->vtxcoords->w / 0.075f) * 0.0111f, lowerbox->vtxcoords->y1 + (lowerbox->vtxcoords->w / 0.075f) * (0.0624f - 0.045f),
+            register_triangle_draw(white, white, lowerbox.vtxcoords->x1 + (lowerbox.vtxcoords->w / 0.075f) * 0.0111f, lowerbox.vtxcoords->y1 + (lowerbox.vtxcoords->w / 0.075f) * (0.0624f - 0.045f),
          0.033f, 0.0624f, UP, CLOSED, true);
         }
 	}
@@ -1921,10 +1921,10 @@ void Program::layerstack_scrollbar_handle() {
 	bool comp = !mainprogram->prevmodus;
 	for (int i = 0; i < 2; i++) {
         std::vector<Layer *> &lvec = choose_layers(i);
-        std::unique_ptr<Box> box = std::make_unique<Box>();
-        std::unique_ptr<Box> boxbefore = std::make_unique<Box>();
-        std::unique_ptr<Box> boxafter = std::make_unique<Box>();
-        std::unique_ptr<Box> boxlayer = std::make_unique<Box>();
+        std::unique_ptr<Boxx> box = std::make_unique<Boxx>();
+        std::unique_ptr<Boxx> boxbefore = std::make_unique<Boxx>();
+        std::unique_ptr<Boxx> boxafter = std::make_unique<Boxx>();
+        std::unique_ptr<Boxx> boxlayer = std::make_unique<Boxx>();
         boxlayer->vtxcoords->y1 = 1.0f - mainprogram->layh - 0.045f;
         boxlayer->vtxcoords->w = 0.031f;
         boxlayer->vtxcoords->h = 0.04f;
@@ -2092,7 +2092,7 @@ int Program::quit_requester() {
 	render_text("Are you sure about quitting the program?", white, -0.5f, 0.2f, 0.0024f, 0.004f, 1, 0);
 	for (int j = 0; j < 12; j++) {
 		for (int i = 0; i < 12; i++) {
-			Box* box = binsmain->elemboxes[i * 12 + j];
+			Boxx* box = binsmain->elemboxes[i * 12 + j];
 			box->upvtxtoscr();
 			BinElement* binel = binsmain->currbin->elements[i * 12 + j];
 			if (binel->encoding) {
@@ -2102,7 +2102,7 @@ int Program::quit_requester() {
 		}
 	}
 
-    std::unique_ptr <Box> box = std::make_unique <Box> ();
+    std::unique_ptr <Boxx> box = std::make_unique <Boxx> ();
 	box->vtxcoords->x1 = 0.15f;
 	box->vtxcoords->y1 = -1.0f;
 	box->vtxcoords->w = 0.3f;
@@ -2277,7 +2277,7 @@ void Program::shelf_miditriggering() {
 
 
 
-Box::Box() {
+Boxx::Boxx() {
     this->vtxcoords = new BOX_COORDS;
     this->scrcoords = new BOX_COORDS;
     if (collectingboxes) {
@@ -2285,7 +2285,7 @@ Box::Box() {
     }
 }
 
-Box::~Box() {
+Boxx::~Boxx() {
     delete this->vtxcoords;
     delete this->scrcoords;
     if (collectingboxes) {
@@ -2296,7 +2296,7 @@ Box::~Box() {
 }
 
 Button::Button(bool state) {
-    this->box = new Box;
+    this->box = new Boxx;
     this->value = state;
     this->ccol[3] = 1.0f;
     if (mainprogram) {
@@ -2460,7 +2460,7 @@ void Button::unregister_midi() {
 }
 
 
-void Box::upscrtovtx() {
+void Boxx::upscrtovtx() {
     int hw = glob->w / 2;
     int hh = glob->h / 2;
     this->vtxcoords->x1 = ((this->scrcoords->x1 - hw) / hw);
@@ -2469,7 +2469,7 @@ void Box::upscrtovtx() {
     this->vtxcoords->h = this->scrcoords->h / hh;
 }
 
-void Box::upvtxtoscr() {
+void Boxx::upvtxtoscr() {
     int hw = glob->w / 2;
     int hh = glob->h / 2;
     this->scrcoords->x1 = ((this->vtxcoords->x1 * hw) + hw);
@@ -2478,17 +2478,17 @@ void Box::upvtxtoscr() {
     this->scrcoords->w = this->vtxcoords->w * hw;
 }
 
-bool Box::in(bool menu) {
+bool Boxx::in(bool menu) {
     if (menu) return this->in();
     return false;
 }
 
-bool Box::in() {
+bool Boxx::in() {
     bool ret = this->in(mainprogram->mx, mainprogram->my);
     return ret;
 }
 
-bool Box::in(int mx, int my) {
+bool Boxx::in(int mx, int my) {
     if (mainprogram->menuondisplay) return false;
     this->upvtxtoscr();
     if (this->scrcoords->x1 <= mx && mx <= this->scrcoords->x1 + this->scrcoords->w) {
@@ -2505,8 +2505,8 @@ bool Box::in(int mx, int my) {
     return false;
 }
 
-Box* Box::copy() {
-    Box *box = new Box;
+Boxx* Boxx::copy() {
+    Boxx *box = new Boxx;
     box->lcolor[0] = this->lcolor[0];
     box->lcolor[1] = this->lcolor[1];
     box->lcolor[2] = this->lcolor[2];
@@ -4730,7 +4730,7 @@ void Program::preview_modus_buttons() {
             // SEND UP button copies preview set entirely to comp set
             mainmix->copy_to_comp(true, false, true);
         }
-        Box *box = mainprogram->toscreenA->box;
+        Boxx *box = mainprogram->toscreenA->box;
         register_triangle_draw(white, white, box->vtxcoords->x1 + box->vtxcoords->w / 2.0f + 0.0117f,
                                box->vtxcoords->y1 + 0.0225f, 0.0165f, 0.0312f, DOWN, CLOSED);
         render_text(mainprogram->toscreenA->name[0], white, box->vtxcoords->x1 + 0.0117f, box->vtxcoords->y1 + 0.0225f,
@@ -4808,7 +4808,7 @@ void Program::preview_modus_buttons() {
             // SEND DOWN button copies comp set entirely back to preview set
             mainmix->copy_to_comp(true, false, false);
         }
-        Box* box = mainprogram->backtopreA->box;
+        Boxx* box = mainprogram->backtopreA->box;
         register_triangle_draw(white, white, box->vtxcoords->x1 + box->vtxcoords->w / 2.0f + 0.0117f, box->vtxcoords->y1 + 0.0225f, 0.0165f, 0.0312f, UP, CLOSED);
         render_text(mainprogram->backtopreA->name[0], white, mainprogram->backtopreA->box->vtxcoords->x1 + 0.0117f, mainprogram->backtopreA->box->vtxcoords->y1 + 0.0225f, 0.0006, 0.001);
 
@@ -5093,8 +5093,8 @@ bool Program::preferences_handle() {
                     this->pathscroll = paths.size() - 6;
 
                 // GUI arrow scroll
-                this->pathscroll = this->handle_scrollboxes(this->defaultsearchscrollup,
-                                                                          this->defaultsearchscrolldown,
+                this->pathscroll = this->handle_scrollboxes(*this->defaultsearchscrollup,
+                                                                          *this->defaultsearchscrolldown,
                                                                           paths.size(), this->pathscroll, 6,
                                                                           mx, my);
             }
@@ -5178,7 +5178,7 @@ bool Program::preferences_handle() {
         }
 
         if (cond2) {
-            std::unique_ptr <Box> box = std::make_unique <Box> ();
+            std::unique_ptr <Boxx> box = std::make_unique <Boxx> ();
             box->vtxcoords->x1 = -0.3f;
             box->vtxcoords->y1 = -0.8f;
             box->vtxcoords->w = 0.4f;
@@ -5200,7 +5200,7 @@ bool Program::preferences_handle() {
 
 	this->qualfr = std::clamp((int)this->qualfr, 1, 10);
 
-    std::unique_ptr <Box> box = std::make_unique <Box> ();
+    std::unique_ptr <Boxx> box = std::make_unique <Boxx> ();
 	box->vtxcoords->x1 = 0.75f;
 	box->vtxcoords->y1 = -1.0f;
 	box->vtxcoords->w = 0.3f;
@@ -5393,7 +5393,7 @@ bool Program::preferences_handle() {
 	return true;
 }
 
-void Program::longtooltip_prepare(Box *box) {
+void Program::longtooltip_prepare(Boxx *box) {
     float fac = 1.0f;
     if (box->smflag) fac = 4.0f;
 
@@ -5740,7 +5740,7 @@ int Program::config_midipresets_handle() {
             render_text("SCRATCH2", white, -0.1f, -0.2f, 0.0024f, 0.004f, 2);
             render_text("FREEZE", white, -0.08f, 0.12f, 0.0024f, 0.004f, 2);
 
-            std::unique_ptr<Box> box = std::make_unique<Box>();
+            std::unique_ptr<Boxx> box = std::make_unique<Boxx>();
             box->vtxcoords->x1 = -1.0f;
             box->vtxcoords->y1 = -1.0f;
             box->vtxcoords->w = 0.3f;
@@ -5802,7 +5802,7 @@ int Program::config_midipresets_handle() {
             for (int j = 0; j < 4; j++) {
                 for (int i = 0; i < 4; i++) {
                     ShelfElement *elem = mainprogram->shelves[m]->elements[j * 4 + i];
-                    Box box;
+                    Boxx box;
                     box.vtxcoords->x1 = m + i * 0.16f - 0.8f;
                     box.vtxcoords->y1 = (3 - j) * 0.28f - 0.56f;
                     box.vtxcoords->w = 0.16f;
@@ -5834,9 +5834,9 @@ int Program::config_midipresets_handle() {
     if (mainprogram->configcatmidi == 2) {
         for (int i = 0; i < 8; i++) {
             LoopStationElement *elem = loopstation->elems[i + loopstation->confscrpos];
-            loopstation->confscrpos = mainprogram->handle_scrollboxes(loopstation->confupscrbox, loopstation->confdownscrbox, loopstation->elems.size(), loopstation->confscrpos, 8, mx, my);
+            loopstation->confscrpos = mainprogram->handle_scrollboxes(*loopstation->confupscrbox, *loopstation->confdownscrbox, loopstation->elems.size(), loopstation->confscrpos, 8, mx, my);
 
-            Box box;
+            Boxx box;
             box.vtxcoords->x1 = -0.33f;
             box.vtxcoords->y1 = 0.45f - 0.15f * i;
             box.vtxcoords->w = 0.08f;
@@ -5904,7 +5904,7 @@ int Program::config_midipresets_handle() {
     }
 
 
-    std::unique_ptr <Box> box = std::make_unique <Box> ();
+    std::unique_ptr <Boxx> box = std::make_unique <Boxx> ();
 	box->vtxcoords->x1 = 0.80f;
 	box->vtxcoords->y1 = -1.0f;
 	box->vtxcoords->w = 0.2f;
@@ -5987,7 +5987,7 @@ bool Program::config_midipresets_init() {
 	return true;
 }
 
-void Program::pick_color(Layer* lay, Box* cbox) {
+void Program::pick_color(Layer* lay, Boxx* cbox) {
 	if (lay->pos > 0) {
 		if (cbox->in()) {
 			if (mainprogram->leftmouse) {
@@ -5999,7 +5999,7 @@ void Program::pick_color(Layer* lay, Box* cbox) {
 				glUniform1f(cwx, mainprogram->cwx);
 				GLfloat cwy = glGetUniformLocation(mainprogram->ShaderProgram, "cwy");
 				glUniform1f(cwy, mainprogram->cwy);
-				Box* box = mainprogram->cwbox;
+				Boxx* box = mainprogram->cwbox;
 				box->scrcoords->x1 = mainprogram->mx - (glob->w / 10.0f);
 				box->scrcoords->y1 = mainprogram->my + (glob->w / 5.0f);
 				box->upscrtovtx();
@@ -6049,7 +6049,7 @@ void Program::pick_color(Layer* lay, Box* cbox) {
 				glUniform1i(cwon, 1);
 				printf("x %f\n", 8.0f * (3500 - (mainprogram->cwx * mainprogram->ow)) / mainprogram->oh);
 				printf("y %f\n", -8.0f * (400 - (mainprogram->cwy * mainprogram->oh)) / mainprogram->oh);
-				Box* box = mainprogram->cwbox;
+				Boxx* box = mainprogram->cwbox;
 				mainprogram->directmode = true;
 				draw_box(nullptr, box->acolor, box->vtxcoords->x1, box->vtxcoords->y1, box->vtxcoords->w, box->vtxcoords->h, -1);
 				mainprogram->directmode = false;
@@ -6229,8 +6229,8 @@ void Project::delete_dirs(const std::string &path) {
 }
 
 void Project::copy_dirs(const std::string &path) {
-    std::string src = dirname(this->path);
-    std::string dest = path;
+    std::string src = pathtoplatform(dirname(this->path));
+    std::string dest = pathtoplatform(path);
     copy_dir(src, dest);
     boost::filesystem::remove(path + "/" + basename(this->path));
     this->binsdir = path + "/bins/";
@@ -6509,14 +6509,14 @@ void Project::do_save(const std::string& path, bool autosave) {
 	wfile << "OUTPUTHEIGHT\n";
 	wfile << std::to_string((int)this->oh);
 	wfile << "\n";
-	mainprogram->shelves[0]->save(this->shelfdir + mainprogram->shelves[0]->basepath);
+	/*mainprogram->shelves[0]->save(this->shelfdir + mainprogram->shelves[0]->basepath);
 	wfile << "CURRSHELFA\n";
 	wfile << mainprogram->shelves[0]->basepath;
 	wfile << "\n";
 	mainprogram->shelves[1]->save(this->shelfdir + mainprogram->shelves[1]->basepath);
 	wfile << "CURRSHELFB\n";
 	wfile << mainprogram->shelves[1]->basepath;
-	wfile << "\n";
+	wfile << "\n";*/
 	
 	wfile << "CURRBINSDIR\n";
 	wfile << mainprogram->currbinsdir;
@@ -6529,7 +6529,7 @@ void Project::do_save(const std::string& path, bool autosave) {
 	wfile << "\n";
 
 	wfile.close();
-	
+
 	mainmix->do_save_state(mainprogram->temppath + "current.state", false);
 	filestoadd.push_back(mainprogram->temppath + "current.state");
 
@@ -6627,38 +6627,38 @@ Preferences::Preferences() {
     PIInvisible *piin = new PIInvisible;
     this->items.push_back(piin);
     PIProj *pipr = new PIProj;
-    pipr->box = new Box;
+    pipr->box = new Boxx;
     pipr->box->smflag = 1;
     pipr->box->tooltiptitle = "Project settings ";
     pipr->box->tooltip = "Left click to set project related preferences ";
     this->items.push_back(pipr);
     PIVid *pvi = new PIVid;
-    pvi->box = new Box;
+    pvi->box = new Boxx;
     pvi->box->smflag = 1;
     pvi->box->tooltiptitle = "Video settings ";
     pvi->box->tooltip = "Left click to set video related preferences ";
     this->items.push_back(pvi);
     PIInt *pii = new PIInt;
-    pii->box = new Box;
+    pii->box = new Boxx;
     pii->box->smflag = 1;
     pii->box->tooltiptitle = "Interface settings ";
     pii->box->tooltip = "Left click to set interface related preferences ";
     this->items.push_back(pii);
     PIProg *pip = new PIProg;
-    pip->box = new Box;
+    pip->box = new Boxx;
     pip->box->smflag = 1;
     pip->box->tooltiptitle = "Program settings ";
     pip->box->tooltip = "Left click to set program related preferences ";
     this->items.push_back(pip);
     PIDirs *pidirs = new PIDirs;
-    pidirs->box = new Box;
+    pidirs->box = new Boxx;
     pidirs->box->smflag = 1;
     pidirs->box->tooltiptitle = "Directory settings ";
     pidirs->box->tooltip = "Left click to set default directories ";
     this->items.push_back(pidirs);
     PIMidi *pimidi = new PIMidi;
     pimidi->populate();
-    pimidi->box = new Box;
+    pimidi->box = new Boxx;
     pimidi->box->smflag = 1;
     pimidi->box->tooltiptitle = "MIDI device settings ";
     pimidi->box->tooltip = "Left click to set MIDI device related preferences ";
@@ -6916,7 +6916,7 @@ PrefItem::PrefItem(PrefCat *cat, int pos, std::string name, PREF_TYPE type, void
     this->name = name;
     this->type = type;
     this->dest = dest;
-    this->namebox = new Box;
+    this->namebox = new Boxx;
     this->namebox->smflag = 1;
     this->namebox->vtxcoords->x1 = -0.5f;
     this->namebox->vtxcoords->y1 = 1.0f - (pos + 1) * 0.2f;
@@ -6924,7 +6924,7 @@ PrefItem::PrefItem(PrefCat *cat, int pos, std::string name, PREF_TYPE type, void
     if (type == PREF_STRING || type == PREF_PATH || type == PREF_PATHS) this->namebox->vtxcoords->w = 0.6f;
     this->namebox->vtxcoords->h = 0.2f;
     this->namebox->upvtxtoscr();
-    this->valuebox = new Box;
+    this->valuebox = new Boxx;
     this->valuebox->smflag = 1;
     if (type == PREF_ONOFF) {
         this->valuebox->vtxcoords->x1 = -0.425f;
@@ -6949,7 +6949,7 @@ PrefItem::PrefItem(PrefCat *cat, int pos, std::string name, PREF_TYPE type, void
         this->valuebox->vtxcoords->y1 = 1.0f - (pos + 1) * 0.2f;
         this->valuebox->vtxcoords->w = 0.8f;
         this->valuebox->vtxcoords->h = 0.2f;
-        this->iconbox = new Box;
+        this->iconbox = new Boxx;
         this->iconbox->smflag = 1;
         this->iconbox->vtxcoords->x1 = 0.9f;
         this->iconbox->vtxcoords->y1 = 1.0f - (pos + 1) * 0.2f;
