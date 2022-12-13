@@ -266,11 +266,14 @@ class Layer {
 		AVPacket decpktseek;
 		int reset = 0;
 		AVPacket audiopkt;
-		AVCodecContext *video_dec_ctx = nullptr;
+        AVCodecContext *video_dec_ctx = nullptr;
+        AVCodecContext *videoseek_dec_ctx = nullptr;
 		AVCodecContext *audio_dec_ctx = nullptr;
-		AVStream *video_stream = nullptr;
+        AVStream *video_stream = nullptr;
+        AVStream *videoseek_stream = nullptr;
 		AVStream *audio_stream = nullptr;
-		int video_stream_idx = -1;
+        int video_stream_idx = -1;
+        int videoseek_stream_idx = -1;
 		int audio_stream_idx = -1;
 		struct SwsContext *sws_ctx = nullptr;
 		uint8_t *avbuffer = nullptr;
@@ -469,6 +472,7 @@ class Mixer {
 		Param *crossfadecomp;
 
 		int currscene[2] = {0, 0};
+        int setscene = -1;
 		bool deck = 0;
 		int scrollon = 0;
 		int scrollmx;

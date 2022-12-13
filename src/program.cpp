@@ -4775,6 +4775,20 @@ void Program::preview_modus_buttons() {
                     mainprogram->toscene[m][0][i]->value = 0;
                     mainprogram->toscene[m][0][i]->oldvalue = 0;
                     // SEND UP button copies deck preview set to scene
+                    Scene *scene = mainmix->scenes[m][scns[i] - 1];
+                    std::vector<Layer *> &lvec = choose_layers(m);
+                    for (Layer *nbl: scene->nblayers) {
+                        nbl->tobedeleted = true;
+                    }
+                    scene->nblayers.clear();
+                    scene->nbframes.clear();
+                    for (int j = 0; j < lvec.size(); j++) {
+                        // store layers and frames of current scene into nblayers for running their framecounters in the background (to keep sync)
+                        if (lvec[j]->filename == "") continue;
+                        lvec[j]->tobedeleted = false;
+                        scene->nblayers.push_back(lvec[j]);
+                        scene->nbframes.push_back(lvec[j]->frame);
+                    }
                     mainmix->mousedeck = m;
                     mainmix->do_save_deck(mainprogram->temppath + "tempdecksc_" + std::to_string(m) + std::to_string(scns[i] - 1) + ".deck", false, true);
                 }
@@ -6266,6 +6280,8 @@ void Project::create_dirs_autosave(const std::string &path) {
     this->binsdir = dir + "/bins/";
     this->shelfdir = dir + "/shelves/";
     this->autosavedir = dir + "/autosaves/";
+    this->recdir = dir + "recordings/";
+    this->elementsdir = dir + "elements/";
     boost::filesystem::path d{ dir };
     boost::filesystem::create_directory(d);
     boost::filesystem::path p1{ dir + "/bins/" };
@@ -6274,6 +6290,10 @@ void Project::create_dirs_autosave(const std::string &path) {
     boost::filesystem::create_directory(p2);
     boost::filesystem::path p3{ dir + "/shelves/" };
     boost::filesystem::create_directory(p3);
+    boost::filesystem::path p4{ dir + "/recordings/" };
+    boost::filesystem::create_directory(p4);
+    boost::filesystem::path p5{ dir + "/elements/" };
+    boost::filesystem::create_directory(p5);
 }
 
 void Project::newp(const std::string &path) {

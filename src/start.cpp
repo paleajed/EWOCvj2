@@ -1421,8 +1421,10 @@ void Layer::get_cpu_frame(int framenr, int prevframe, int errcount)
 	av_init_packet(&this->decpkt);
 	av_init_packet(&this->decpktseek);
 	/* flush cached frames */
-	this->decpkt.data = nullptr;
-	this->decpkt.size = 0;
+    this->decpkt.data = nullptr;
+    this->decpkt.size = 0;
+    this->decpktseek.data = nullptr;
+    this->decpktseek.size = 0;
 	//do {
 	//	decode_packet(&got_frame, 1);
 	//} while (got_frame);
@@ -1431,12 +1433,12 @@ void Layer::get_cpu_frame(int framenr, int prevframe, int errcount)
 	if (this->type != ELEM_LIVE) {
 		if (this->numf == 0) return;
 
-		long long seekTarget = av_rescale(this->video_duration, framenr, this->numf) + this->video_stream->first_dts;
+		long long seekTarget = av_rescale(this->video_duration, framenr, this->numf) + this->videoseek_stream->first_dts;
 		if (framenr != (int)this->startframe->value) {
 			if (framenr != prevframe + 1) {
 			    // hop to not-next-frame
-				avformat_seek_file(this->videoseek, this->video_stream->index, this->video_stream->first_dts, seekTarget, seekTarget, 0);
-				//avcodec_flush_buffers(this->video_dec_ctx);
+				av_seek_frame(this->videoseek, this->videoseek_stream->index, seekTarget, AVSEEK_FLAG_BACKWARD );
+ 				//avcodec_flush_buffers(this->video_dec_ctx);
 				//int r = av_read_frame(this->videoseek, &this->decpktseek);
 			}
 			else {
@@ -1453,8 +1455,10 @@ void Layer::get_cpu_frame(int framenr, int prevframe, int errcount)
 			decode_audio(this);
 		} while (this->decpkt.stream_index != this->video_stream_idx);
         if (framenr != prevframe + 1) {
-            int r = av_read_frame(this->videoseek, &this->decpktseek);
-            int readpos = ((this->decpktseek.dts - this->video_stream->first_dts) * this->numf) / this->video_duration;
+            do {
+                int r = av_read_frame(this->videoseek, &this->decpktseek);
+            } while (this->decpktseek.stream_index != this->videoseek_stream_idx);
+            int readpos = ((this->decpktseek.dts - this->videoseek_stream->first_dts) * this->numf) / this->video_duration;
             if (!this->keyframe) {
                 if (readpos <= framenr) {
                     // readpos at keyframe after framenr
@@ -1463,11 +1467,14 @@ void Layer::get_cpu_frame(int framenr, int prevframe, int errcount)
                         readpos = prevframe + 1;
                     } else {
                         avformat_seek_file(this->video, this->video_stream->index, this->video_stream->first_dts,
-                                           seekTarget, seekTarget, 0);
+                                           seekTarget, seekTarget, 0 );
                     }
                     for (int f = readpos; f < framenr; f = f + mainprogram->qualfr) {
                         // decode sequentially frames starting from keyframe readpos to current framenr
-                        ret = decode_packet(this, false);
+                        ret = decode_packet (this, false);
+                        for (int q = 0; q <mainprogram->qualfr - 1; q++) {
+                            int r = av_read_frame(this->video, &this->decpkt);
+                        }
                         do {
                             decode_audio(this);
                         } while (this->decpkt.stream_index != this->video_stream_idx);
@@ -1479,7 +1486,7 @@ void Layer::get_cpu_frame(int framenr, int prevframe, int errcount)
 		if (ret == 0) {
 			return;
 		}
-		this->prevframe = framenr;
+		if (this->scritching != 1) this->prevframe = framenr;
 		if (this->decframe->width == 0) {
 			this->prevframe = framenr;
 			if ((this->speed->value > 0 && (this->playbut->value || this->bouncebut->value == 1)) || (this->speed->value < 0 && (this->revbut->value || this->bouncebut->value == 2))) {
@@ -1671,6 +1678,9 @@ void Layer::get_frame(){
 					if ((int)(this->frame) != this->prevframe || this->type == ELEM_LIVE) {
 						get_cpu_frame((int)this->frame, this->prevframe, 0);
 					}
+                    else {
+                        printf("");
+                    }
 				}
 				this->processed = true;
 				continue;
@@ -1920,8 +1930,12 @@ bool Layer::thread_vidopen() {
 		else if (this->type != ELEM_LIVE) {
             this->videoseek = avformat_alloc_context();
             this->videoseek->flags |= AVFMT_FLAG_NONBLOCK;
-			avformat_open_input(&(this->videoseek), this->filename.c_str(), this->ifmt, nullptr);
-		}
+ 			avformat_open_input(&(this->videoseek), this->filename.c_str(), this->ifmt, nullptr);
+            avformat_find_stream_info(this->videoseek, nullptr);
+            if (find_stream_index(&(this->videoseek_stream_idx), this->videoseek, AVMEDIA_TYPE_VIDEO) >= 0) {
+                this->videoseek_stream = this->videoseek->streams[this->videoseek_stream_idx];
+            }
+        }
         if (oldvidformat != -1) {
             if (this->oldvidformat == 188 || this->oldvidformat == 187) {
                 // hap cpu change needs new texstorage
@@ -5915,9 +5929,9 @@ void handle_scenes(Scene* scene) {
                         }
                     }
                     std::vector<Layer *> &lvec = choose_layers(scene->deck);
-                    for (Layer *nbl: scene->nblayers) {
-                        nbl->tobedeleted = true;
-                    }
+                    //for (Layer *nbl: scene->nblayers) {
+                    //    nbl->tobedeleted = true;
+                    //}
                     scene->nblayers.clear();
                     scene->nbframes.clear();
                     for (int j = 0; j < lvec.size(); j++) {
@@ -5978,9 +5992,19 @@ void handle_scenes(Scene* scene) {
                     boost::filesystem::rename(mainprogram->temppath + "tempdeck_xch.deck",
                                               mainprogram->temppath + "tempdecksc_" + std::to_string(scene->deck) +
                                               std::to_string(mainmix->currscene[scene->deck]) + ".deck");
-                    std::vector<Layer *> &lvec2 = choose_layers(scene->deck);
+                    std::vector<Layer *> lvec2;
+                    bool swap = false;
+                    if (mainmix->swapmap.find(&choose_layers(mainmix->mousedeck)) != mainmix->swapmap.end()) {
+                        lvec2 = *mainmix->swapmap[&choose_layers(mainmix->mousedeck)];
+                        swap = true;
+                    }
+                    else {
+                        lvec2 = choose_layers(scene->deck);
+                    }
                     for (int j = 0; j < lvec2.size(); j++) {
-                        if (lvec2[j]->filename == "") continue;
+                        if (lvec2[j]->filename == "") {
+                            continue;
+                        }
                         // set layer values to (running in background) values of loaded scene
                         if (si->loaded) lvec2[j]->frame = si->nbframes[j];
                         else {
@@ -5993,11 +6017,15 @@ void handle_scenes(Scene* scene) {
                             lvec2[j]->oldalive = si->tempnblayers[j]->oldalive;
                         }
                     }
-                    mainmix->reconnect_all(lvec2);
-                    const int max = lvec.size() - 1;
+                    //mainmix->reconnect_all(lvec2);
+                    const int max = lvec2.size() - 1;
                     if (scene->deck == bulay->deck)
                         mainmix->currlay[!mainprogram->prevmodus] = lvec2[std::clamp(bulay->pos, 0, max)];
-                    mainmix->currscene[scene->deck] = i;
+                    if (!swap) {
+                        mainmix->currscene[scene->deck] = i;
+                        mainmix->setscene = -1;
+                    }
+                    else mainmix->setscene = i;
                     si->loaded = false;
 
                     /*mainmix->bulrs[scene->deck].clear();
@@ -6050,7 +6078,7 @@ void do_text_input(float x, float y, float sx, float sy, int mx, int my, float w
     do_text_input(x, y, sx, sy, mx, my, width, smflag, item, false);
 }
 
-void do_text_input(float x, float y, float sx, float sy, int mx, int my, float width, int smflag, PrefItem * item, bool directdraw) {
+void do_text_input(float x, float y, float sx, float sy, int mx, int my, float width, int smflag, PrefItem *item, bool directdraw) {
 		// handle display and mouse selection of keyboard input
 
 	float textw;
@@ -6082,8 +6110,15 @@ void do_text_input(float x, float y, float sx, float sy, int mx, int my, float w
 		    for (int j = 0; j < totvec.size() + 1; j++) {
 		        if (my < mainprogram->yvtxtoscr(1.0f - (y - 0.005f)) && my > mainprogram->yvtxtoscr(1.0f - (y + (mainprogram->texth / 2.6f)
 		        / (2070.0f / glob->h)))) {
-		            if (mx >= mainprogram->xvtxtoscr(x + 1.0f + distin) * (j != 0) && mx <= mainprogram->xvtxtoscr(x + 1.0f + distin
-		            + (j > 0) * totvec[j - 1 + (j == 0)] / 2.0f + totvec[j] / 2.0f) + (j == totvec.size()) * 99999) {
+                    float maxx;
+                    if (j == totvec.size()) {
+                        maxx = glob->w;
+                    }
+                    else {
+                        maxx = mainprogram->xvtxtoscr(x + 1.0f + distin
+                                                      + (j > 0) * totvec[j - 1 + (j == 0)] / 2.0f + totvec[j] / 2.0f);
+                    }
+		            if (mx >= mainprogram->xvtxtoscr(x + 1.0f + distin) * (j != 0) && mx <= maxx) {
 		                // click or drag inside path moves edit cursor
 		                found = true;
 		                if (mainprogram->leftmousedown || mainprogram->orderleftmousedown) {
@@ -6199,7 +6234,22 @@ void do_text_input(float x, float y, float sx, float sy, int mx, int my, float w
 		if (mainprogram->cursorpos1 == -1) {
 			// draw cursor line
 			if (mainprogram->inputtext == "") {
-			    mainprogram->texth = mainprogram->buth;
+                int w2 = 0;
+                int h2 = 0;
+                if (binsmain->inbin) {
+                    w2 = mainprogram->globw;
+                    h2 = mainprogram->globh;
+                }
+                else if (smflag == 0) {
+                    w2 = glob->w;
+                    h2 = glob->h;
+                }
+                else {
+                    w2 = smw;
+                    h2 = smh;
+                }
+                int psize = (int)((sy * 24000.0f * h2 / 1346.0f) * (0.5625f / ((float)h2 / (float)w2)));
+                mainprogram->texth = mainprogram->yscrtovtx(psize * 3);
 			}
 			else mainprogram->buth = mainprogram->texth;
 			register_line_draw(white, x + textw - mainprogram->xscrtovtx(mainprogram->startpos), y - 0.005f - (smflag
@@ -6567,16 +6617,26 @@ void the_loop() {
                 deck = 1;
                 mainmix->reconnect_all(mainmix->layersB);
             } else if (it.first == &mainmix->layersAcomp) {
-                for (Layer *testlay: *it.first) {
-                    mainmix->delete_layer(mainmix->layersAcomp, testlay, true);
+                if (mainmix->setscene != -1) {
+                    mainmix->currscene[0] = mainmix->setscene;
+                }
+                else {
+                    for (Layer *testlay: *it.first) {
+                        mainmix->delete_layer(mainmix->layersAcomp, testlay, true);
+                    }
                 }
                 mainmix->layersAcomp = *it.second;
                 skip = mainmix->layersAcomp;
                 deck = 0;
                 mainmix->reconnect_all(mainmix->layersAcomp);
             } else if (it.first == &mainmix->layersBcomp) {
-                for (Layer *testlay: *it.first) {
-                    mainmix->delete_layer(mainmix->layersBcomp, testlay, true);
+                if (mainmix->setscene != -1) {
+                    mainmix->currscene[1] = mainmix->setscene;
+                }
+                else {
+                    for (Layer *testlay: *it.first) {
+                        mainmix->delete_layer(mainmix->layersBcomp, testlay, true);
+                    }
                 }
                 mainmix->layersBcomp = *it.second;
                 skip = mainmix->layersBcomp;
