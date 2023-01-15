@@ -127,7 +127,8 @@ class Layer {
 		int effscroll[2] = {0,0};
 		std::vector<Effect*> effects[2];
 		Boxx* panbox;
-		
+
+        std::mutex pboimutex;
 		bool initialized = false;
         bool initdeck = false;
         float frame = 0.0f;

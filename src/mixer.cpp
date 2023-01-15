@@ -4188,7 +4188,7 @@ void Layer::display() {
             }
             mainprogram->frontbatch = true;
             draw_box(lightgrey, nullptr, this->speed->box->vtxcoords->x1, this->speed->box->vtxcoords->y1,
-                     this->speed->box->vtxcoords->w * 0.30f, 0.075f, -1);
+                     this->speed->box->vtxcoords->w * 0.30f + 0.0085f, 0.075f, -1);
             // display lock?
             if (this->lockspeed) {
                 draw_box(nullptr, nullptr, this->speed->box->vtxcoords->x1 + this->speed->box->vtxcoords->w / 2.1f, this->speed->box->vtxcoords->y1 + 0.015f, this->speed->box->vtxcoords->w / 12.0f, this->speed->box->vtxcoords->h * 0.55f, mainprogram->loktex);
@@ -5213,22 +5213,24 @@ void Mixer::reconnect_all(std::vector<Layer*> &layers) {
     int j = layers.size() - 1;
 
     // reconnect to end of layer stack MIX nodes
-    if (&layers == &mainmix->layersA) {
-        mainprogram->nodesmain->mixnodes[0]->in = nullptr;
-        mainprogram->nodesmain->currpage->connect_nodes(layers[j]->lasteffnode[1],
-                                                        mainprogram->nodesmain->mixnodes[0]);
-    } else if (&layers == &mainmix->layersB) {
-        mainprogram->nodesmain->mixnodes[1]->in = nullptr;
-        mainprogram->nodesmain->currpage->connect_nodes(layers[j]->lasteffnode[1],
-                                                        mainprogram->nodesmain->mixnodes[1]);
-    } else if (&layers == &mainmix->layersAcomp) {
-        mainprogram->nodesmain->mixnodescomp[0]->in = nullptr;
-        mainprogram->nodesmain->currpage->connect_nodes(layers[j]->lasteffnode[1],
-                                                        mainprogram->nodesmain->mixnodescomp[0]);
-    } else if (&layers == &mainmix->layersBcomp) {
-        mainprogram->nodesmain->mixnodescomp[1]->in = nullptr;
-        mainprogram->nodesmain->currpage->connect_nodes(layers[j]->lasteffnode[1],
-                                                        mainprogram->nodesmain->mixnodescomp[1]);
+    if (j != -1) {
+        if (&layers == &mainmix->layersA) {
+            mainprogram->nodesmain->mixnodes[0]->in = nullptr;
+            mainprogram->nodesmain->currpage->connect_nodes(layers[j]->lasteffnode[1],
+                                                            mainprogram->nodesmain->mixnodes[0]);
+        } else if (&layers == &mainmix->layersB) {
+            mainprogram->nodesmain->mixnodes[1]->in = nullptr;
+            mainprogram->nodesmain->currpage->connect_nodes(layers[j]->lasteffnode[1],
+                                                            mainprogram->nodesmain->mixnodes[1]);
+        } else if (&layers == &mainmix->layersAcomp) {
+            mainprogram->nodesmain->mixnodescomp[0]->in = nullptr;
+            mainprogram->nodesmain->currpage->connect_nodes(layers[j]->lasteffnode[1],
+                                                            mainprogram->nodesmain->mixnodescomp[0]);
+        } else if (&layers == &mainmix->layersBcomp) {
+            mainprogram->nodesmain->mixnodescomp[1]->in = nullptr;
+            mainprogram->nodesmain->currpage->connect_nodes(layers[j]->lasteffnode[1],
+                                                            mainprogram->nodesmain->mixnodescomp[1]);
+        }
     }
 }
 
@@ -6753,18 +6755,20 @@ void Mixer::open_mix(const std::string &path, bool alive) {
 	}
 
 	std::vector<Layer*> &lvec2 = *mainmix->swapmap[&choose_layers(cldeck)];
-	for (int i = 0; i < lvec2.size(); i++) {
-		if (lvec2[i]->pos == clpos) {
-			mainmix->currlay[!mainprogram->prevmodus] = lvec2[i];
-			break;
-		}
-	}
+    if (&lvec2) {
+        for (int i = 0; i < lvec2.size(); i++) {
+            if (lvec2[i]->pos == clpos) {
+                mainmix->currlay[!mainprogram->prevmodus] = lvec2[i];
+                break;
+            }
+        }
 
-    mainmix->currlays[!mainprogram->prevmodus].clear();
-	for (int i = 0; i < cls1.size(); i++) {
-        std::vector<Layer*> &lvec2 = *mainmix->swapmap[&choose_layers(cls1[i])];
-        mainmix->currlays[!mainprogram->prevmodus].push_back(lvec2[cls2[i]]);
-	}
+        mainmix->currlays[!mainprogram->prevmodus].clear();
+        for (int i = 0; i < cls1.size(); i++) {
+            std::vector<Layer *> &lvec2 = *mainmix->swapmap[&choose_layers(cls1[i])];
+            mainmix->currlays[!mainprogram->prevmodus].push_back(lvec2[cls2[i]]);
+        }
+    }
 
 	LoopStation *templpst = lpc;
     if (mainprogram->prevmodus) templpst = lp;
@@ -8416,39 +8420,37 @@ Layer* Mixer::read_layers(std::istream &rfile, const std::string &result, std::v
         olock.unlock();
     }*/
 
-    if (&to_layers == &this->layersA) {
-        this->layersA = bulrs[mainprogram->prevmodus][lay->deck];
-        bulrs[mainprogram->prevmodus][lay->deck] = layers;
-        for (Layer *lin : layers) {
-            lin->initdeck = true;
+    if (!(bulrs[mainprogram->prevmodus][lay->deck].size() == 1 && bulrs[mainprogram->prevmodus][lay->deck][0]->filename == "")) {
+        if (&to_layers == &this->layersA) {
+            this->layersA = bulrs[mainprogram->prevmodus][lay->deck];
+            bulrs[mainprogram->prevmodus][lay->deck] = layers;
+            for (Layer *lin: layers) {
+                lin->initdeck = true;
+            }
+            swapmap[&this->layersA] = &bulrs[mainprogram->prevmodus][lay->deck];
+        } else if (&to_layers == &this->layersB) {
+            this->layersB = bulrs[mainprogram->prevmodus][lay->deck];
+            bulrs[mainprogram->prevmodus][lay->deck] = layers;
+            for (Layer *lin: layers) {
+                lin->initdeck = true;
+            }
+            swapmap[&this->layersB] = &bulrs[mainprogram->prevmodus][lay->deck];
+        } else if (&to_layers == &this->layersAcomp) {
+            this->layersAcomp = bulrs[mainprogram->prevmodus][lay->deck];
+            bulrs[mainprogram->prevmodus][lay->deck] = layers;
+            for (Layer *lin: layers) {
+                lin->initdeck = true;
+            }
+            swapmap[&this->layersAcomp] = &bulrs[mainprogram->prevmodus][lay->deck];
+        } else if (&to_layers == &this->layersBcomp) {
+            this->layersBcomp = bulrs[mainprogram->prevmodus][lay->deck];
+            bulrs[mainprogram->prevmodus][lay->deck] = layers;
+            for (Layer *lin: layers) {
+                lin->initdeck = true;
+            }
+            swapmap[&this->layersBcomp] = &bulrs[mainprogram->prevmodus][lay->deck];
         }
-        swapmap[&this->layersA] = &bulrs[mainprogram->prevmodus][lay->deck];
     }
-    else if (&to_layers == &this->layersB) {
-        this->layersB = bulrs[mainprogram->prevmodus][lay->deck];
-        bulrs[mainprogram->prevmodus][lay->deck] = layers;
-        for (Layer *lin : layers) {
-            lin->initdeck = true;
-        }
-        swapmap[&this->layersB] = &bulrs[mainprogram->prevmodus][lay->deck];
-    }
-    else if (&to_layers == &this->layersAcomp) {
-        this->layersAcomp = bulrs[mainprogram->prevmodus][lay->deck];
-        bulrs[mainprogram->prevmodus][lay->deck] = layers;
-        for (Layer *lin : layers) {
-            lin->initdeck = true;
-        }
-        swapmap[&this->layersAcomp] = &bulrs[mainprogram->prevmodus][lay->deck];
-    }
-    else if (&to_layers == &this->layersBcomp) {
-        this->layersBcomp = bulrs[mainprogram->prevmodus][lay->deck];
-        bulrs[mainprogram->prevmodus][lay->deck] = layers;
-        for (Layer *lin : layers) {
-            lin->initdeck = true;
-        }
-        swapmap[&this->layersBcomp] = &bulrs[mainprogram->prevmodus][lay->deck];
-    }
-
 
     return lay;  // for when open_video or open_layerfile swaps for a new layer
 }
