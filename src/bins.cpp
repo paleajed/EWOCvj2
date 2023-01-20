@@ -83,7 +83,8 @@ BinElement::~BinElement() {
 void BinElement::erase() {
 	this->select = false;
 	this->path = "";
-	this->oldpath = "";
+    this->oldpath = "";
+    this->relpath = "";
 	this->name = "";
 	this->oldname = "";
 	this->jpegpath = "";
@@ -2281,6 +2282,7 @@ void BinsMain::open_bin(const std::string &path, Bin *bin) {
                 if (istring == "ABSPATH") {
                     safegetline(rfile, istring);
                     bin->elements[pos]->path = istring;
+                    bin->elements[pos]->relpath = boost::filesystem::relative(istring, mainprogram->project->binsdir).generic_string();
                     if (!exists(bin->elements[pos]->path)) bin->elements[pos]->path = "";
                 }
                 if (istring == "RELPATH") {
@@ -2289,6 +2291,7 @@ void BinsMain::open_bin(const std::string &path, Bin *bin) {
                     if (bin->elements[pos]->path == "") {
                         boost::filesystem::current_path(mainprogram->project->binsdir);
                         bin->elements[pos]->path = pathtoplatform(boost::filesystem::absolute(istring).generic_string());
+                        bin->elements[pos]->relpath = boost::filesystem::relative(istring, mainprogram->project->binsdir).generic_string();
                         boost::filesystem::current_path(mainprogram->contentpath);
                         if (!exists(bin->elements[pos]->path)) {
                             mainmix->retargeting = true;
@@ -2368,7 +2371,7 @@ void BinsMain::do_save_bin(const std::string& path) {
 			wfile << this->currbin->elements[i * 12 + j]->path;
 			wfile << "\n";
             wfile << "RELPATH\n";
-            wfile << boost::filesystem::relative(this->currbin->elements[i * 12 + j]->path, mainprogram->project->binsdir).generic_string();
+            wfile << this->currbin->elements[i * 12 + j]->relpath;
             wfile << "\n";
 			wfile << "NAME\n";
 			wfile << this->currbin->elements[i * 12 + j]->name;

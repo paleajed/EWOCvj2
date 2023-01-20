@@ -4111,6 +4111,7 @@ void Program::handle_laymenu1() {
             binel->bin = nullptr;
             binel->type = ELEM_FILE;
             binel->path = mainmix->mouselayer->filename;
+            binel->relpath = boost::filesystem::relative(mainmix->mouselayer->filename, mainprogram->project->binsdir).generic_string();
             if (mainmix->mouselayer->isclone) {
                 mainmix->mouselayer = mainmix->firstlayers[mainmix->mouselayer->clonesetnr];
             }
@@ -5341,6 +5342,7 @@ bool Program::preferences_handle() {
                             if (str.find(bubd) != std::string::npos) {
                                 str = str.replace(str.find(bubd), bubd.size(), this->project->binsdir);
                                 binsmain->bins[i]->elements[j]->path = str;
+                                binsmain->bins[i]->elements[j]->relpath = boost::filesystem::relative(str, mainprogram->project->binsdir).generic_string();
                             }
                         }
                     }

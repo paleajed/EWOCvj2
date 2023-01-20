@@ -65,6 +65,7 @@ if (UNIX)
     include_directories(/opt/libjpeg-turbo/include)
     include_directories(/usr/include/freetype2)
     include_directories(/usr/include/ffmpeg)
+    include_directories(/usr/include/rtmidi)
 endif (UNIX)
 
 set(CMAKE_RUNTIME_OUTPUT_DIRECTORY_DEBUG ${CMAKE_BINARY_DIR}/debug)

@@ -220,12 +220,14 @@ void LoopStationElement::init() {
 }
 
 void LoopStationElement::visualize() {
-	this->recbut->box->vtxcoords->x1 = -0.8f + 1.2f * !mainmix->currlay[!mainprogram->prevmodus]->deck;
+    float offdeck = 0.0f;
+    if (mainmix->currlay[!mainprogram->prevmodus]) offdeck = !mainmix->currlay[!mainprogram->prevmodus]->deck;
+	this->recbut->box->vtxcoords->x1 = -0.8f + 1.2f * offdeck;
 	this->box->vtxcoords->x1 = this->recbut->box->vtxcoords->x1 - 0.02f;
-	this->loopbut->box->vtxcoords->x1 = -0.8f + 1.2f * !mainmix->currlay[!mainprogram->prevmodus]->deck + this->loopbut->box->vtxcoords->w;
-	this->playbut->box->vtxcoords->x1 = -0.8f + 1.2f * !mainmix->currlay[!mainprogram->prevmodus]->deck + this->playbut->box->vtxcoords->w * 2.0f;
-	this->speed->box->vtxcoords->x1 = -0.8f + 1.2f * !mainmix->currlay[!mainprogram->prevmodus]->deck + this->recbut->box->vtxcoords->w * 3.0f;
-	this->colbox->vtxcoords->x1 = -0.8f + 1.2f * !mainmix->currlay[!mainprogram->prevmodus]->deck + this->recbut->box->vtxcoords->w * 3.0f + this->speed->box->vtxcoords->w;
+	this->loopbut->box->vtxcoords->x1 = -0.8f + 1.2f * offdeck + this->loopbut->box->vtxcoords->w;
+	this->playbut->box->vtxcoords->x1 = -0.8f + 1.2f * offdeck + this->playbut->box->vtxcoords->w * 2.0f;
+	this->speed->box->vtxcoords->x1 = -0.8f + 1.2f * offdeck + this->recbut->box->vtxcoords->w * 3.0f;
+	this->colbox->vtxcoords->x1 = -0.8f + 1.2f * offdeck + this->recbut->box->vtxcoords->w * 3.0f + this->speed->box->vtxcoords->w;
 	this->recbut->box->vtxcoords->y1 = 0.4f - 0.075f * (this->pos - this->lpst->scrpos);
 	this->loopbut->box->vtxcoords->y1 = 0.4f - 0.075f * (this->pos - this->lpst->scrpos);
 	this->playbut->box->vtxcoords->y1 = 0.4f - 0.075f * (this->pos - this->lpst->scrpos);

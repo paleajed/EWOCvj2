@@ -2190,7 +2190,7 @@ Layer* Mixer::add_layer(std::vector<Layer*> &layers, int pos) {
 	else layer->lasteffnode[1] = layer->blendnode;
 	
 	make_layboxes();
-	
+
 	return layer;
 }
 
@@ -3252,12 +3252,14 @@ void Mixer::vidbox_handle() {
                             mainprogram->dragbinel->tex = copy_tex(lay->node->vidbox->tex);
                             if (lay->type == ELEM_LIVE) {
                                 mainprogram->dragbinel->path = lay->filename;
+                                mainprogram->dragbinel->relpath = boost::filesystem::relative(lay->filename, mainprogram->project->binsdir).generic_string();
                                 mainprogram->dragbinel->type = ELEM_LIVE;
                             }
                             else {
                                 mainprogram->dragpath = find_unused_filename("cliptemp_" + basename(mainprogram->draglay->filename), mainprogram->temppath, ".layer");
                                 mainmix->save_layerfile(mainprogram->dragpath, mainprogram->draglay, 1, 0);
                                 mainprogram->dragbinel->path = mainprogram->dragpath;
+                                mainprogram->dragbinel->relpath = boost::filesystem::relative(mainprogram->dragpath, mainprogram->project->binsdir).generic_string();
                                 mainprogram->dragbinel->type = ELEM_LAYER;
                                 mainprogram->draglay = lay;
                             }
@@ -5169,6 +5171,14 @@ bool Mixer::set_prevshelfdragelem(Layer* lay) {
 }
 
 void Mixer::reconnect_all(std::vector<Layer*> &layers) {
+    // clean up deleted layers
+    dellayslock.lock();
+    for (Layer* lay : mainprogram->dellays) {
+        if (std::find(layers.begin(), layers.end(), lay) != layers.end()) {
+            layers.erase(std::find(layers.begin(), layers.end(), lay));
+        }
+   }
+    dellayslock.unlock();
     // connect all nodes correctly if (layers.size() > 0) {
     for (int j = 0; j < layers.size(); j++) {
         // set lasteffnodes
@@ -5812,11 +5822,11 @@ void Mixer::copy_to_comp(bool deckA, bool deckB, bool comp) {
     else loopstation = lpc;
     if (deckA) {
         mainmix->mousedeck = 0;
-        mainmix->do_save_deck(mainprogram->temppath + "copytocompdeckA", false, true);
+        mainmix->do_save_deck(mainprogram->temppath + "copytocompdeckA.deck", false, true);
     }
     if (deckB) {
         mainmix->mousedeck = 1;
-        mainmix->do_save_deck(mainprogram->temppath + "copytocompdeckB", false, true);
+        mainmix->do_save_deck(mainprogram->temppath + "copytocompdeckB.deck", false, true);
     }
     mainprogram->prevmodus = !comp;
     if (comp) loopstation = lpc;
@@ -8411,6 +8421,7 @@ Layer* Mixer::read_layers(std::istream &rfile, const std::string &result, std::v
             if (layers[i]->mutebut->value) layers[i]->mute_handle();
             layers[i]->set_aspectratio(layers[i]->iw, layers[i]->ih);
         }
+        //mainmix->reconnect_all(to_layers);
     }
 
     /*for (Layer *lay2 : waitlayers) {
@@ -8420,7 +8431,7 @@ Layer* Mixer::read_layers(std::istream &rfile, const std::string &result, std::v
         olock.unlock();
     }*/
 
-    if (!(bulrs[mainprogram->prevmodus][lay->deck].size() == 1 && bulrs[mainprogram->prevmodus][lay->deck][0]->filename == "")) {
+    //if (bulrs[mainprogram->prevmodus][lay->deck].size() != 0) {
         if (&to_layers == &this->layersA) {
             this->layersA = bulrs[mainprogram->prevmodus][lay->deck];
             bulrs[mainprogram->prevmodus][lay->deck] = layers;
@@ -8450,7 +8461,7 @@ Layer* Mixer::read_layers(std::istream &rfile, const std::string &result, std::v
             }
             swapmap[&this->layersBcomp] = &bulrs[mainprogram->prevmodus][lay->deck];
         }
-    }
+    //}
 
     return lay;  // for when open_video or open_layerfile swaps for a new layer
 }
@@ -9124,8 +9135,10 @@ void Mixer::new_file(int decks, bool alive, bool add) {
 					//mainmix->delete_layers(lvec, true);
 				}
 			}
-			if (cond && alive) mainmix->bulrs[mainprogram->prevmodus][0] = lvec;
-			else mainmix->bulrs[mainprogram->prevmodus][0].clear();
+			if (alive) mainmix->bulrs[mainprogram->prevmodus][0] = lvec;
+			else {
+                mainmix->bulrs[mainprogram->prevmodus][0].clear();
+            }
 			lvec.clear();
             Layer* lay;
 			if (add) {
@@ -9182,8 +9195,10 @@ void Mixer::new_file(int decks, bool alive, bool add) {
 					//mainmix->delete_layers(lvec, true);
 				}
 			}
-			if (cond && alive) mainmix->bulrs[mainprogram->prevmodus][1] = lvec;
-			else mainmix->bulrs[mainprogram->prevmodus][1].clear();
+			if (alive) mainmix->bulrs[mainprogram->prevmodus][1] = lvec;
+			else {
+                mainmix->bulrs[mainprogram->prevmodus][1].clear();
+            }
 			lvec.clear();
             Layer* lay;
             if (add) {
@@ -9579,6 +9594,7 @@ void Mixer::handle_clips() {
                                         if (butex != -1) glDeleteTextures(1, &butex);
                                         newclip->type = mainprogram->dragbinel->type;
                                         newclip->path = mainprogram->dragbinel->path;
+                                        newclip->relpath = mainprogram->dragbinel->relpath;
                                         if (newclip->type == ELEM_IMAGE) {
                                             newclip->get_imageframes();
                                         } else if (newclip->type == ELEM_FILE) {
@@ -9615,6 +9631,7 @@ void Mixer::handle_clips() {
                                 mainprogram->dragbinel = new BinElement;
                                 mainprogram->dragbinel->type = clip->type;
                                 mainprogram->dragbinel->path = clip->path;
+                                mainprogram->dragbinel->relpath = clip->relpath;
                                 mainprogram->dragbinel->tex = clip->tex;
                                 lay2->vidmoving = true;
                                 mainprogram->dragclip = clip;
@@ -9640,6 +9657,7 @@ void Mixer::handle_clips() {
                                     if (butex != -1) glDeleteTextures(1, &butex);
                                     jc->type = mainprogram->dragbinel->type;
                                     jc->path = mainprogram->dragbinel->path;
+                                    jc->relpath = mainprogram->dragbinel->relpath;
                                     if (jc->type == ELEM_IMAGE) {
                                         jc->get_imageframes();
                                     }

@@ -152,7 +152,8 @@ class BinElement {
 		std::string name = "";
 		std::string oldname = "";
 		std::string path = "";
-		std::string oldpath = "";
+        std::string oldpath = "";
+        std::string relpath = "";
 		std::string jpegpath = "";
 		std::string oldjpegpath = "";
         long long filesize = 0;

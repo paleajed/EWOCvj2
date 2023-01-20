@@ -82,6 +82,7 @@ struct registered_midi {
 class Clip {
 	public:
         std::string path = "";
+        std::string relpath = "";
         std::string jpegpath = "";
 		ELEM_TYPE type;
 		GLuint tex = -1;

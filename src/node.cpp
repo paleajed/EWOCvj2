@@ -740,7 +740,6 @@ void NodePage::handle_nodes() {
 							}
 						}
 						node->monitor = i + mainmix->currscene[0] * 6;
-						make_layboxes();
 					}
 					draw_box(white, blue, node->box->vtxcoords->x1 + mainprogram->xscrtovtx(1) + i * mainprogram->xscrtovtx(21), node->box->vtxcoords->y1 + node->box->vtxcoords->h, mainprogram->xscrtovtx(21), mainprogram->yscrtovtx(10), -1);
 			}
@@ -796,7 +795,6 @@ void NodePage::handle_nodes() {
 								}
 							}
 							node->monitor = i + mainmix->currscene[0] * 6;
-							make_layboxes();
 						}
 						draw_box(white, blue, node->box->vtxcoords->x1 + mainprogram->xscrtovtx(1) + i * mainprogram->xscrtovtx(21), node->box->vtxcoords->y1 + node->box->vtxcoords->h, mainprogram->xscrtovtx(21), mainprogram->yscrtovtx(10), -1);
 				}

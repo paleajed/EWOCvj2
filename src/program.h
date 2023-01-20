@@ -861,6 +861,7 @@ extern LayMidi* laymidiC;
 extern LayMidi* laymidiD;
 extern std::vector<Boxx*> allboxes;
 extern bool collectingboxes;
+extern std::mutex dellayslock;
 
 extern float yellow[];
 extern float white[];
