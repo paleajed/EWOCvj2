@@ -208,7 +208,7 @@ class Layer {
 		bool opened = false;
 		bool ready = false;
 		bool chready = false;
-		bool closethread = false;
+		int closethread = 0;
 		bool waiting = true;
 		bool vidopen = false;
 		bool copying = false;

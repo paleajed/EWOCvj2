@@ -134,6 +134,7 @@ class Bin {
 		std::string name = "";
 		std::string path = "";
 		std::vector<BinElement*> elements;
+        std::vector<int> open_positions;
 		int encthreads = 0;
 		int pos;
 		bool shared = false;

@@ -1129,7 +1129,7 @@ void Program::get_dir(const char* title, std::string defaultdir) {
 	bInfo.lpfn = nullptr;
 	bInfo.lParam = 0;
 	bInfo.iImage = 0;
-	bInfo.ulFlags = BIF_RETURNONLYFSDIRS | BIF_USENEWUI | BIF_BROWSEINCLUDEFILES;
+	bInfo.ulFlags = BIF_RETURNONLYFSDIRS | BIF_BROWSEINCLUDEFILES;
 
     mainprogram->blocking = true;
 	LPITEMIDLIST lpItem = SHBrowseForFolder(&bInfo);
@@ -1296,6 +1296,11 @@ bool Program::order_paths(bool dodeckmix) {
         if (mainprogram->getvideotexlayers.empty()) return false;
         std::string str = mainprogram->getvideotexpaths[0];
         Layer *lay = mainprogram->getvideotexlayers[0];
+        if (std::find(mainprogram->errlays.begin(), mainprogram->errlays.end(), lay) != mainprogram->errlays.end()) {
+            mainprogram->getvideotexlayers.erase(mainprogram->getvideotexlayers.begin());
+            mainprogram->getvideotexpaths.erase(mainprogram->getvideotexpaths.begin());
+            return false;
+        }
         GLuint tex;
         if (lay->type == ELEM_DECK or lay->type == ELEM_MIX) {
             glGenTextures(1, &tex);
@@ -1344,7 +1349,7 @@ bool Program::order_paths(bool dodeckmix) {
                     tex = copy_tex(lay->fbotex, binsmain->elemboxes[0]->scrcoords->w,
                                    binsmain->elemboxes[0]->scrcoords->h);
                 }
-                this->gettinglayertexlay->closethread = true;
+                this->gettinglayertexlay->closethread = 1;
                 this->gettinglayertex = false;
             } else {
                 tex = this->get_tex(lay);
@@ -1353,7 +1358,7 @@ bool Program::order_paths(bool dodeckmix) {
 
         glBindTexture(GL_TEXTURE_2D, tex);
 
-        lay->closethread = true;
+        lay->closethread = 1;
         mainprogram->getvideotexlayers.erase(mainprogram->getvideotexlayers.begin());
         mainprogram->getvideotexpaths.erase(mainprogram->getvideotexpaths.begin());
 
@@ -2227,7 +2232,7 @@ void Program::shelf_miditriggering() {
                         std::vector<Layer *> &lvec = choose_layers(clays[k]->deck);
                         for (int i = 0; i < lvec.size(); i++) {
                             lvec[i]->frame = elem->nblayers[i]->frame;
-                            elem->nblayers[i]->closethread = true;
+                            elem->nblayers[i]->closethread = 1;
                             lvec[i]->prevshelfdragelem = mainprogram->midishelfelem;
                         }
                     } else if (elem->type == ELEM_MIX) {
@@ -2236,14 +2241,14 @@ void Program::shelf_miditriggering() {
                             std::vector<Layer *> &lvec = choose_layers(m);
                             for (int i = 0; i < lvec.size(); i++) {
                                 lvec[i]->frame = elem->nblayers[count]->frame;
-                                elem->nblayers[count]->closethread = true;
+                                elem->nblayers[count]->closethread = 1;
                                 lvec[i]->prevshelfdragelem = mainprogram->midishelfelem;
                                 count++;
                             }
                         }
                     } else {
                         clays[k]->frame = elem->nblayers[0]->frame;
-                        elem->nblayers[0]->closethread = true;
+                        elem->nblayers[0]->closethread = 1;
                     }
                 }
             }
@@ -2432,6 +2437,7 @@ void Button::deautomate() {
 }
 
 void Button::register_midi() {
+    if (this->midiport == "") return;
     registered_midi rm = mainmix->midi_registrations[!mainprogram->prevmodus][this->midi[0]][this->midi[1]][this->midiport];
     if (rm.but && rm.but != this) {
         rm.but->midi[0] = -1;
@@ -2532,7 +2538,7 @@ Boxx* Boxx::copy() {
 
 
 EWindow::~EWindow() {
-    this->closethread = true;
+    this->closethread = 1;
     while (this->closethread) {
         this->syncnow = true;
         this->sync.notify_all();
@@ -4947,6 +4953,7 @@ bool Program::preferences_handle() {
 
 	mci = this->prefs->items[this->prefs->curritem];
 	if (mci->name == "MIDI Devices") ((PIMidi*)mci)->populate();
+    bool brk = false;
 	for (int i = 0; i < mci->items.size(); i++) {
 	    if (mci->items[i]->name == "Project name") {
 	        mci->items[i]->dest = &mainprogram->project->name;
@@ -5160,6 +5167,24 @@ bool Program::preferences_handle() {
                     }
                 }
                 if (mci->items[i]->dest != &this->project->name) {
+                    if (cond2) {
+                        draw_box(white, black, mci->items[i]->rembox->vtxcoords->x1,
+                                 mci->items[i]->rembox->vtxcoords->y1 - j * 0.2f, mci->items[i]->rembox->vtxcoords->w,
+                                 mci->items[i]->rembox->vtxcoords->h, -1);
+                        render_text("X", white,
+                                    mci->items[i]->rembox->vtxcoords->x1 + 0.04f, mci->items[i]->rembox->vtxcoords->y1 - j * 0.2f + 0.07f, 0.0024f, 0.004f, 1, 0);
+                        if (mci->items[i]->rembox->in(mx, my)) {
+                            if (this->leftmouse) {
+                                mci->items.erase(mci->items.begin() + i);
+                                brk = true;
+                                break;
+                            }
+                        }
+                    }
+                    draw_box(white, black, mci->items[i]->iconbox->vtxcoords->x1 + 0.02f,
+                             mci->items[i]->iconbox->vtxcoords->y1 - j * 0.2f + 0.05f, 0.06f, 0.07f, -1);
+                    draw_box(white, black, mci->items[i]->iconbox->vtxcoords->x1 + 0.05f,
+                             mci->items[i]->iconbox->vtxcoords->y1 - j * 0.2f + 0.11f, 0.025f, 0.03f, -1);
                     draw_box(white, black, mci->items[i]->iconbox->vtxcoords->x1,
                              mci->items[i]->iconbox->vtxcoords->y1 - j * 0.2f, mci->items[i]->iconbox->vtxcoords->w,
                              mci->items[i]->iconbox->vtxcoords->h, -1);
@@ -5187,6 +5212,7 @@ bool Program::preferences_handle() {
                     }
                 }
             }
+            if (brk) break;
 
             //if (cond1) *(std::string*)mci->items[i]->dest = paths[0];
             //else *(std::vector<std::string>*)mci->items[i]->dest = paths;
@@ -6343,6 +6369,7 @@ void Project::newp(const std::string &path) {
 	}
 	binsmain->bins.clear();
 	binsmain->new_bin("this is a bin");
+    binsmain->save_bin(binsmain->bins[0]->path);
 	binsmain->save_binslist();
 	mainprogram->shelves[0]->erase();
 	mainprogram->shelves[1]->erase();
@@ -6555,9 +6582,12 @@ void Project::do_save(const std::string& path, bool autosave) {
 	mainmix->do_save_state(mainprogram->temppath + "current.state", false);
 	filestoadd.push_back(mainprogram->temppath + "current.state");
 
+    int cbin = binsmain->currbin->pos;
     for (int i = 0; i < binsmain->bins.size(); i++) {
+        binsmain->make_currbin(i);
         binsmain->save_bin(dirname(path) + "bins/" + basename(binsmain->bins[i]->path));
     }
+    binsmain->make_currbin(cbin);
     binsmain->save_binslist();
 
     std::ofstream outputfile;
@@ -6757,10 +6787,10 @@ void Preferences::load() {
                                         if (pi->dest) *(std::string*)pi->dest = pi->path;
                                     }
                                     else if (pi->type == PREF_PATHS) {
-                                        if (istring == "PATHS") {
-                                            retarget->globalsearchdirs.clear();
-                                            while (safegetline(rfile, istring)) {
-                                                if (istring == "ENDPATHS") break;
+                                                if (istring == "PATHS") {
+                                                    retarget->globalsearchdirs.clear();
+                                                    while (safegetline(rfile, istring)) {
+                                                        if (istring == "ENDPATHS") break;
                                                 if (exists(istring)) {
                                                     retarget->globalsearchdirs.push_back(istring);
                                                 }
@@ -6966,11 +6996,31 @@ PrefItem::PrefItem(PrefCat *cat, int pos, std::string name, PREF_TYPE type, void
         this->valuebox->vtxcoords->w = 0.8f;
         this->valuebox->vtxcoords->h = 0.2f;
     }
-    else if (type == PREF_PATH || type == PREF_PATHS) {
+    else if (type == PREF_PATH) {
         this->valuebox->vtxcoords->x1 = 0.1f;
         this->valuebox->vtxcoords->y1 = 1.0f - (pos + 1) * 0.2f;
         this->valuebox->vtxcoords->w = 0.8f;
         this->valuebox->vtxcoords->h = 0.2f;
+        this->iconbox = new Boxx;
+        this->iconbox->smflag = 1;
+        this->iconbox->vtxcoords->x1 = 0.9f;
+        this->iconbox->vtxcoords->y1 = 1.0f - (pos + 1) * 0.2f;
+        this->iconbox->vtxcoords->w = 0.1f;
+        this->iconbox->vtxcoords->h = 0.2f;
+        this->iconbox->upvtxtoscr();
+    }
+    else if (type == PREF_PATHS) {
+        this->valuebox->vtxcoords->x1 = 0.1f;
+        this->valuebox->vtxcoords->y1 = 1.0f - (pos + 1) * 0.2f;
+        this->valuebox->vtxcoords->w = 0.7f;
+        this->valuebox->vtxcoords->h = 0.2f;
+        this->rembox = new Boxx;
+        this->rembox->smflag = 1;
+        this->rembox->vtxcoords->x1 = 0.8f;
+        this->rembox->vtxcoords->y1 = 1.0f - (pos + 1) * 0.2f;
+        this->rembox->vtxcoords->w = 0.1f;
+        this->rembox->vtxcoords->h = 0.2f;
+        this->rembox->upvtxtoscr();
         this->iconbox = new Boxx;
         this->iconbox->smflag = 1;
         this->iconbox->vtxcoords->x1 = 0.9f;
@@ -7387,7 +7437,7 @@ void Program::define_menus() {
     }
     mainprogram->make_menu("effectmenu", mainprogram->effectmenu, meffects);
     for (int i = 0; i < effects.size(); i++) {
-        mainprogram->effectsmap[(EFFECT_TYPE) (i - 1)] = effects[i];
+        mainprogram->effectsmap[(EFFECT_TYPE) i] = effects[i];
     }
 
     std::vector<std::string> mixengines;

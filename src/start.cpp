@@ -170,8 +170,8 @@ using namespace std;
 
 
 bool exists(const std::string &name) {
-    if (FILE *file = fopen(name.c_str(), "r")) {
-        fclose(file);
+
+    if (boost::filesystem::exists(name)) {
         return true;
     } else {
         return false;
@@ -386,38 +386,46 @@ void check_stage() {
 }
 
 bool retarget_search() {
-    std::function<bool(std::string)> search_directory = [&search_directory](std::string path) {
-        boost::filesystem::recursive_directory_iterator end;
-        std::string bn = basename((*(mainmix->newpaths))[mainmix->newpathpos]);
-        auto it = find_if(boost::filesystem::recursive_directory_iterator(path), end, [&bn](boost::filesystem::directory_entry& e) {
-            return (e.path().filename() == bn);
-        });
-        if (it == end) return false;
-        else return true;
-    };
-    std::function<std::string(std::string)> search_directory_for_same_size = [&search_directory_for_same_size](std::string path) {
+    std::function<std::string(std::string)> search_directory = [&search_directory](std::string path) {
+        std::string sn = (*(mainmix->newpaths))[mainmix->newpathpos];
         for (boost::filesystem::recursive_directory_iterator itr(path); itr!=boost::filesystem::recursive_directory_iterator(); ++itr)
         {
-            if (boost::filesystem::file_size(itr->path()) == retarget->filesize) {
-                return itr->path().generic_string();
+            if (boost::filesystem::is_regular_file(itr->path())) {
+                if (basename(itr->path().generic_string()) == basename(sn)) {
+                    return itr->path().generic_string();
+                }
             }
         };
         std::string s("");
         return s;
     };
-    bool ret;
+    std::function<std::string(std::string)> search_directory_for_same_size = [&search_directory_for_same_size](std::string path) {
+        for (boost::filesystem::recursive_directory_iterator itr(path); itr!=boost::filesystem::recursive_directory_iterator(); ++itr)
+        {
+            if (boost::filesystem::is_regular_file(itr->path())) {
+                if (boost::filesystem::file_size(itr->path()) == retarget->filesize) {
+                    return itr->path().generic_string();
+                }
+            }
+        };
+        std::string s("");
+        return s;
+    };
+    bool ret = false;
     for (std::string dirpath : retarget->globalsearchdirs) {
-        ret = search_directory(dirpath);
-        if (ret) {
-            (*(mainmix->newpaths))[mainmix->newpathpos] = dirpath = "/" + basename((*(mainmix->newpaths))[mainmix->newpathpos]);
+        std::string retstr = search_directory(dirpath);
+        if (retstr != "") {
+            ret = true;
+            (*(mainmix->newpaths))[mainmix->newpathpos] = retstr;
             break;
         }
     }
     if (!ret) {
         for (std::string dirpath : retarget->localsearchdirs) {
-            ret = search_directory(dirpath);
-            if (ret) {
-                (*(mainmix->newpaths))[mainmix->newpathpos] = dirpath + "/" + basename((*(mainmix->newpaths))[mainmix->newpathpos]);
+            std::string retstr = search_directory(dirpath);
+            if (retstr != "") {
+                ret = true;
+                (*(mainmix->newpaths))[mainmix->newpathpos] = retstr;
                 break;
             }
         }
@@ -1627,9 +1635,10 @@ void Layer::get_frame(){
 		this->startdecode.wait(lock, [&] {return this->ready; });
 		lock.unlock();
 		this->ready = false;
+        if (this->filename == "") continue;
 
-        if (this->closethread) {
-            //this->closethread = false;
+        if (this->closethread == 1) {
+            this->closethread = 2;
             dellayslock.lock();
             mainprogram->dellays.push_back(this);
             //if (std::find(this->layers->begin(), this->layers->end(), this) != this->layers->end()) {
@@ -1701,7 +1710,12 @@ void Layer::get_frame(){
 }
 
 void Layer::trigger() {
-    while(!this->closethread) {
+    while(this->closethread == 0) {
+        if (mainprogram->shutdown) {
+            // delete all layers on program quit
+            this->closethread = 1;
+            break;
+        }
         if (mainprogram->openerr) {
             this->opened = true;
             mainprogram->openerr = false;  // reminder : requester
@@ -1715,7 +1729,7 @@ void Layer::trigger() {
         Sleep(100);
 #endif
     }
-    while(this->closethread) {
+    while(this->closethread == 1) {
         this->ready = true;
         this->startdecode.notify_all();
     }
@@ -5660,7 +5674,8 @@ bool get_videotex(Layer *lay, const std::string& path) {
 
     lay = lay->open_video(0, path, true, true);
     if (mainprogram->openerr) {
-        lay->closethread = true;
+        mainprogram->errlays.push_back(lay);
+        lay->closethread = 1;
         return false;
     }
     std::unique_lock<std::mutex> olock(lay->endopenlock);
@@ -5669,8 +5684,9 @@ bool get_videotex(Layer *lay, const std::string& path) {
     olock.unlock();
     if (mainprogram->openerr) {
         printf("error loading video texture!\n");
+        mainprogram->errlays.push_back(lay);
         mainprogram->openerr = false;
-        lay->closethread = true;
+        lay->closethread = 1;
         return false;
     }
     lay->frame = lay->numf / 2.0f;
@@ -5716,7 +5732,7 @@ bool get_layertex(Layer *lay, const std::string& path) {
     Layer *l = mainmix->open_layerfile(path, lay, true, 0);
     //lay->set_inlayer(l, true);
     mainprogram->getvideotexlayers[std::find(mainprogram->getvideotexlayers.begin(), mainprogram->getvideotexlayers.end(), lay) - mainprogram->getvideotexlayers.begin()] = l;
-    lay->closethread = true;
+    lay->closethread = 1;
     lay = l;
     std::unique_lock<std::mutex> olock(lay->endopenlock);
     lay->endopenvar.wait(olock, [&] { return lay->opened; });
@@ -5834,7 +5850,7 @@ void Clip::open_clipfiles() {
         lay->processed = false;
         lock2.unlock();
         mainprogram->clipfilesclip->tex = mainprogram->get_tex(lay);
-        lay->closethread = true;
+        lay->closethread = 1;
 
 		mainprogram->clipfilesclip->type = ELEM_LAYER;
 		mainprogram->clipfilesclip->get_imageframes();
@@ -5855,7 +5871,7 @@ void Clip::open_clipfiles() {
         } else {
             mainprogram->clipfilesclip->tex = copy_tex(lay->fbotex, binsmain->elemboxes[0]->scrcoords->w, binsmain->elemboxes[0]->scrcoords->h);
         }
-        lay->closethread = true;
+        lay->closethread = 1;
 
 		mainprogram->clipfilesclip->type = ELEM_LAYER;
 		mainprogram->clipfilesclip->get_layerframes();
@@ -5869,7 +5885,7 @@ void Clip::open_clipfiles() {
         lock2.unlock();
 
         mainprogram->clipfilesclip->tex = mainprogram->get_tex(lay);
-        lay->closethread = true;
+        lay->closethread = 1;
 		mainprogram->clipfilesclip->type = ELEM_LAYER;
 		mainprogram->clipfilesclip->get_videoframes();
 	}
@@ -6626,7 +6642,7 @@ void the_loop() {
                                 brk = true;
                             }
                             testlay->layers = &mainmix->layersA;
-                            mainmix->delete_layer(mainmix->layersA, testlay, false);
+                            mainmix->delete_layer(mainmix->layersA, testlay, true);
                             //mainmix->reconnect_all(mainmix->layersA);
                             if (brk) break;
                         }
@@ -6640,7 +6656,7 @@ void the_loop() {
                             Layer *testlay = it.first->back();
                             if (it.first->size() == 1) brk = true;
                             testlay->layers = &mainmix->layersB;
-                            mainmix->delete_layer(mainmix->layersB, testlay, false);
+                            mainmix->delete_layer(mainmix->layersB, testlay, true);
                             //mainmix->reconnect_all(mainmix->layersB);
                             if (brk) break;
                         }
@@ -6657,7 +6673,7 @@ void the_loop() {
                                 Layer *testlay = it.first->back();
                                 if (it.first->size() == 1) brk = true;
                                 testlay->layers = &mainmix->layersAcomp;
-                                mainmix->delete_layer(mainmix->layersAcomp, testlay, false);
+                                mainmix->delete_layer(mainmix->layersAcomp, testlay, true);
                                 //mainmix->reconnect_all(mainmix->layersAcomp);
                                 if (brk) break;
                             }
@@ -6675,7 +6691,7 @@ void the_loop() {
                                 Layer *testlay = it.first->back();
                                 if (it.first->size() == 1) brk = true;
                                 testlay->layers = &mainmix->layersBcomp;
-                                mainmix->delete_layer(mainmix->layersBcomp, testlay, false);
+                                mainmix->delete_layer(mainmix->layersBcomp, testlay, true);
                                 //mainmix->reconnect_all(mainmix->layersBcomp);
                                 if (brk) break;
                             }
@@ -7531,8 +7547,8 @@ void the_loop() {
                 if (bin->elements[i * 12 + j]->name != "") {
                     if (!exists(bin->elements[i * 12 + j]->jpegpath)) {
                         bin->elements[i * 12 + j]->jpegpath = find_unused_filename(bin->name,
-                                                                                             mainprogram->temppath,
-                                                                                             ".jpg");
+                                                                                   mainprogram->temppath,
+                                                                                   ".jpg");
                         save_thumb(bin->elements[i * 12 + j]->jpegpath,
                                    bin->elements[i * 12 + j]->tex);
                     }
@@ -7543,6 +7559,20 @@ void the_loop() {
             if (brk) break;
         }
         if (brk) break;
+    }
+
+    // every loop iteration, load one bin element jpeg if there are any unloaded ones
+    for (Bin *bin : binsmain->bins) {
+        if (bin->open_positions.size() != 0) {
+            int pos = bin->open_positions[0];
+            if (bin->elements[pos]->name != "") {
+                if (exists(bin->elements[pos]->jpegpath)) {
+                    open_thumb(bin->elements[pos]->jpegpath,
+                               bin->elements[pos]->tex);
+                }
+            }
+            bin->open_positions.erase(bin->open_positions.begin());
+        }
     }
 
 
@@ -7615,6 +7645,7 @@ void the_loop() {
 		SDL_FlushEvents(SDL_FIRSTEVENT, SDL_LASTEVENT);
 		int ret = mainprogram->quit_requester();
 		if (ret == 1 || ret == 2) {
+            mainprogram->shutdown = true;
 			//save midi map
 			//save_genmidis(mainprogram->docpath + "midiset.gm");
 			//empty temp dir
@@ -7633,6 +7664,21 @@ void the_loop() {
 			for (Layer *lay : mainprogram->busylayers) {
 			    avformat_close_input(&lay->video);
 			}
+
+            // clean up alla layers
+            // pause first to allow all layers to be added to dellays
+#ifdef POSIX
+            sleep(0.1f);
+#endif
+#ifdef WINDOWS
+            Sleep(100);
+#endif
+            dellayslock.lock();
+            for (Layer* lay : mainprogram->dellays) {
+                delete lay;
+            }
+            mainprogram->dellays.clear();
+            dellayslock.unlock();
 
 			// close socket communication
 			// if server ask other socket to become server else signal all other sockets that we're quitting

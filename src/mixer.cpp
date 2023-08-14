@@ -485,6 +485,7 @@ void Param::deautomate() {
 }
 
 void Param::register_midi() {
+    if (this->midiport == "") return;
     registered_midi rm = mainmix->midi_registrations[!mainprogram->prevmodus][this->midi[0]][this->midi[1]][this->midiport];
     if (rm.but) {
         rm.but->midi[0] = -1;
@@ -2302,7 +2303,7 @@ void Mixer::do_deletelay(Layer *testlay, std::vector<Layer*> &layers, bool add) 
         }
     }
 
-	testlay->closethread = true;
+	testlay->closethread = 1;
 }
 
 void Mixer::delete_layer(std::vector<Layer*> &layers, Layer *testlay, bool add) {
@@ -2907,20 +2908,23 @@ void Mixer::cloneset_destroy(std::unordered_set<Layer*>* cs) {
 }
 void Layer::set_clones() {
 	if (this->clonesetnr != -1) {
-		std::unordered_set<Layer*>::iterator it;
-		for (it = mainmix->clonesets[this->clonesetnr]->begin(); it != mainmix->clonesets[this->clonesetnr]->end(); it++) {
-			Layer* lay = *it;
-			if (lay == this) continue;
-			lay->speed->value = this->speed->value;
-			lay->opacity->value = this->opacity->value;
-			lay->playbut->value = this->playbut->value;
-			lay->revbut->value = this->revbut->value;
-			lay->bouncebut->value = this->bouncebut->value;
-			lay->genmidibut->value = this->genmidibut->value;
-			lay->frame = this->frame;
-			lay->startframe->value = this->startframe->value;
-			lay->endframe->value = this->endframe->value;
-            lay->vidformat = this->vidformat;
+		if (this == mainmix->firstlayers[this->clonesetnr]) {
+			std::unordered_set<Layer *>::iterator it;
+			for (it = mainmix->clonesets[this->clonesetnr]->begin();
+				 it != mainmix->clonesets[this->clonesetnr]->end(); it++) {
+				Layer *lay = *it;
+				if (lay == this) continue;
+				lay->speed->value = this->speed->value;
+				lay->opacity->value = this->opacity->value;
+				lay->playbut->value = this->playbut->value;
+				lay->revbut->value = this->revbut->value;
+				lay->bouncebut->value = this->bouncebut->value;
+				lay->genmidibut->value = this->genmidibut->value;
+				lay->frame = this->frame;
+				lay->startframe->value = this->startframe->value;
+				lay->endframe->value = this->endframe->value;
+				lay->vidformat = this->vidformat;
+			}
 		}
 	}
 }
@@ -5799,6 +5803,7 @@ void Mixer::set_values(Layer *clay, Layer *lay, bool open) {
         clip->copy()->insert(clay, clay->clips.end());
     }
     clay->prevshelfdragelem = lay->prevshelfdragelem;
+    clay->clonesetnr = lay->clonesetnr;
 }
 
 
@@ -6559,40 +6564,40 @@ void Mixer::open_mix(const std::string &path, bool alive) {
                 cls2.push_back(std::stoi(istring));
             }
         }
-		if (istring == "CURRDECK") {
-			safegetline(rfile, istring);
-			cldeck = std::stoi(istring);
-		}
-		if (istring == "CROSSFADE") {
-			safegetline(rfile, istring);
-			mainmix->crossfade->value = std::stof(istring);
-			if (mainprogram->prevmodus) {
-				GLfloat cf = glGetUniformLocation(mainprogram->ShaderProgram, "cf");
-				glUniform1f(cf, mainmix->crossfade->value);
-			}
-		}
-		if (istring == "CROSSFADEEVENT") {
-			Param *par = mainmix->crossfade;
-			safegetline(rfile, istring);
-			if (istring == "EVENTELEM") {
-				mainmix->event_read(rfile, par, nullptr, lay);
-			}
-         }
-		if (istring == "CROSSFADECOMP") {
-			safegetline(rfile, istring);
-			mainmix->crossfadecomp->value = std::stof(istring);
-			if (!mainprogram->prevmodus) {
-				GLfloat cf = glGetUniformLocation(mainprogram->ShaderProgram, "cf");
-				glUniform1f(cf, mainmix->crossfadecomp->value);
-			}
-		}
-		if (istring == "CROSSFADECOMPEVENT") {
-			Param *par = mainmix->crossfadecomp;
-			safegetline(rfile, istring);
-			if (istring == "EVENTELEM") {
-				mainmix->event_read(rfile, par, nullptr, lay);
-			}
-		}
+        if (istring == "CURRDECK") {
+            safegetline(rfile, istring);
+            cldeck = std::stoi(istring);
+        }
+        if (istring == "CROSSFADE") {
+            safegetline(rfile, istring);
+            mainmix->crossfade->value = std::stof(istring);
+            if (mainprogram->prevmodus) {
+                GLfloat cf = glGetUniformLocation(mainprogram->ShaderProgram, "cf");
+                glUniform1f(cf, mainmix->crossfade->value);
+            }
+        }
+        if (istring == "CROSSFADEEVENT") {
+            Param *par = mainmix->crossfade;
+            safegetline(rfile, istring);
+            if (istring == "EVENTELEM") {
+                mainmix->event_read(rfile, par, nullptr, lay);
+            }
+        }
+        if (istring == "CROSSFADECOMP") {
+            safegetline(rfile, istring);
+            mainmix->crossfadecomp->value = std::stof(istring);
+            if (!mainprogram->prevmodus) {
+                GLfloat cf = glGetUniformLocation(mainprogram->ShaderProgram, "cf");
+                glUniform1f(cf, mainmix->crossfadecomp->value);
+            }
+        }
+        if (istring == "CROSSFADECOMPEVENT") {
+            Param *par = mainmix->crossfadecomp;
+            safegetline(rfile, istring);
+            if (istring == "EVENTELEM") {
+                mainmix->event_read(rfile, par, nullptr, lay);
+            }
+        }
         if (istring == "SCROLLPOSA") {
             safegetline(rfile, istring);
             mainmix->scenes[0][0]->scrollpos = std::stoi(istring);
@@ -6614,61 +6619,61 @@ void Mixer::open_mix(const std::string &path, bool alive) {
             mainmix->scenes[1][3]->scrollpos = std::stoi(istring);
         }
         if (istring == "DECKSPEEDAEVENT") {
-            Param* par = mainmix->deckspeed[!mainprogram->prevmodus][0];
+            Param *par = mainmix->deckspeed[!mainprogram->prevmodus][0];
             safegetline(rfile, istring);
             if (istring == "EVENTELEM") {
                 mainmix->event_read(rfile, par, nullptr, nullptr);
             }
         }
-		if (istring == "DECKSPEEDAMIDI0") {
-			safegetline(rfile, istring);
-			mainmix->deckspeed[!mainprogram->prevmodus][0]->midi[0] = std::stoi(istring);
-		}
-		if (istring == "DECKSPEEDAMIDI1") {
-			safegetline(rfile, istring);
-			mainmix->deckspeed[!mainprogram->prevmodus][0]->midi[1] = std::stoi(istring);
-		}
-		if (istring == "DECKSPEEDAMIDIPORT") {
-			safegetline(rfile, istring);
-			mainmix->deckspeed[!mainprogram->prevmodus][0]->midiport = istring;
+        if (istring == "DECKSPEEDAMIDI0") {
+            safegetline(rfile, istring);
+            mainmix->deckspeed[!mainprogram->prevmodus][0]->midi[0] = std::stoi(istring);
+        }
+        if (istring == "DECKSPEEDAMIDI1") {
+            safegetline(rfile, istring);
+            mainmix->deckspeed[!mainprogram->prevmodus][0]->midi[1] = std::stoi(istring);
+        }
+        if (istring == "DECKSPEEDAMIDIPORT") {
+            safegetline(rfile, istring);
+            mainmix->deckspeed[!mainprogram->prevmodus][0]->midiport = istring;
             mainmix->deckspeed[!mainprogram->prevmodus][0]->register_midi();
-		}
-		if (istring == "DECKSPEEDB") {
-			safegetline(rfile, istring);
-			mainmix->deckspeed[!mainprogram->prevmodus][1]->value = std::stof(istring);
-		}
+        }
+        if (istring == "DECKSPEEDB") {
+            safegetline(rfile, istring);
+            mainmix->deckspeed[!mainprogram->prevmodus][1]->value = std::stof(istring);
+        }
         if (istring == "DECKSPEEDBEVENT") {
-            Param* par = mainmix->deckspeed[!mainprogram->prevmodus][1];
+            Param *par = mainmix->deckspeed[!mainprogram->prevmodus][1];
             safegetline(rfile, istring);
             if (istring == "EVENTELEM") {
                 mainmix->event_read(rfile, par, nullptr, nullptr);
             }
         }
         if (istring == "DECKSPEEDBMIDI0") {
-			safegetline(rfile, istring);
-			mainmix->deckspeed[!mainprogram->prevmodus][1]->midi[0] = std::stoi(istring);
-		}
-		if (istring == "DECKSPEEDBMIDI1") {
-			safegetline(rfile, istring);
-			mainmix->deckspeed[!mainprogram->prevmodus][1]->midi[1] = std::stoi(istring);
-		}
-		if (istring == "DECKSPEEDBMIDIPORT") {
-			safegetline(rfile, istring);
-			mainmix->deckspeed[!mainprogram->prevmodus][1]->midiport = istring;
+            safegetline(rfile, istring);
+            mainmix->deckspeed[!mainprogram->prevmodus][1]->midi[0] = std::stoi(istring);
+        }
+        if (istring == "DECKSPEEDBMIDI1") {
+            safegetline(rfile, istring);
+            mainmix->deckspeed[!mainprogram->prevmodus][1]->midi[1] = std::stoi(istring);
+        }
+        if (istring == "DECKSPEEDBMIDIPORT") {
+            safegetline(rfile, istring);
+            mainmix->deckspeed[!mainprogram->prevmodus][1]->midiport = istring;
             mainmix->deckspeed[!mainprogram->prevmodus][1]->register_midi();
-		}
-		if (istring == "WIPE") {
-			safegetline(rfile, istring);
-			mainmix->wipe[0] = std::stoi(istring);
-		}
-		if (istring == "WIPEDIR") {
-			safegetline(rfile, istring);
-			mainmix->wipedir[0] = std::stoi(istring);
-		}
-		if (istring == "WIPEX") {
-			safegetline(rfile, istring);
-			mainmix->wipex[0]->value = std::stof(istring);
-		}
+        }
+        if (istring == "WIPE") {
+            safegetline(rfile, istring);
+            mainmix->wipe[0] = std::stoi(istring);
+        }
+        if (istring == "WIPEDIR") {
+            safegetline(rfile, istring);
+            mainmix->wipedir[0] = std::stoi(istring);
+        }
+        if (istring == "WIPEX") {
+            safegetline(rfile, istring);
+            mainmix->wipex[0]->value = std::stof(istring);
+        }
         if (istring == "WIPEXEVENT") {
             Param *par = mainmix->wipex[0];
             safegetline(rfile, istring);
@@ -6676,10 +6681,10 @@ void Mixer::open_mix(const std::string &path, bool alive) {
                 mainmix->event_read(rfile, par, nullptr, lay);
             }
         }
-		if (istring == "WIPEY") {
-			safegetline(rfile, istring);
-			mainmix->wipey[0]->value = std::stof(istring);
-		}
+        if (istring == "WIPEY") {
+            safegetline(rfile, istring);
+            mainmix->wipey[0]->value = std::stof(istring);
+        }
         if (istring == "WIPEYEVENT") {
             Param *par = mainmix->wipey[0];
             safegetline(rfile, istring);
@@ -6687,18 +6692,18 @@ void Mixer::open_mix(const std::string &path, bool alive) {
                 mainmix->event_read(rfile, par, nullptr, lay);
             }
         }
-		if (istring == "WIPECOMP") {
-			safegetline(rfile, istring);
-			mainmix->wipe[1] = std::stoi(istring);
-		}
-		if (istring == "WIPEDIRCOMP") {
-			safegetline(rfile, istring);
-			mainmix->wipedir[1] = std::stoi(istring);
-		}
-		if (istring == "WIPEXCOMP") {
-			safegetline(rfile, istring);
-			mainmix->wipex[1]->value = std::stof(istring);
-		}
+        if (istring == "WIPECOMP") {
+            safegetline(rfile, istring);
+            mainmix->wipe[1] = std::stoi(istring);
+        }
+        if (istring == "WIPEDIRCOMP") {
+            safegetline(rfile, istring);
+            mainmix->wipedir[1] = std::stoi(istring);
+        }
+        if (istring == "WIPEXCOMP") {
+            safegetline(rfile, istring);
+            mainmix->wipex[1]->value = std::stof(istring);
+        }
         if (istring == "WIPEXCOMPEVENT") {
             Param *par = mainmix->wipex[1];
             safegetline(rfile, istring);
@@ -6706,10 +6711,10 @@ void Mixer::open_mix(const std::string &path, bool alive) {
                 mainmix->event_read(rfile, par, nullptr, lay);
             }
         }
-		if (istring == "WIPEYCOMP") {
-			safegetline(rfile, istring);
-			mainmix->wipey[1]->value = std::stof(istring);
-		}
+        if (istring == "WIPEYCOMP") {
+            safegetline(rfile, istring);
+            mainmix->wipey[1]->value = std::stof(istring);
+        }
         if (istring == "WIPEYCOMPEVENT") {
             Param *par = mainmix->wipey[1];
             safegetline(rfile, istring);
@@ -6721,48 +6726,27 @@ void Mixer::open_mix(const std::string &path, bool alive) {
             safegetline(rfile, istring);
             if (mainprogram->prevmodus) {
                 lp->currelem = lp->elems[std::stoi(istring)];
-            }
-            else {
+            } else {
                 lpc->currelem = lpc->elems[std::stoi(istring)];
             }
         }
-		int deck;
-		if (istring == "LAYERSA") {
-			std::vector<Layer*> &layersA = choose_layers(0);
+        int deck;
+        if (istring == "LAYERSA") {
+            std::vector<Layer *> &layersA = choose_layers(0);
             mainmix->read_layers(rfile, result, layersA, 0, true, 2, concat, 1, 1, 1, 0);
             if (layersA.empty()) {
                 mainmix->add_layer(layersA, 0);
             }
             mainmix->reconnect_all(layersA);
-			std::vector<Layer*> &layersB = choose_layers(1);
-			mainmix->read_layers(rfile, result, layersB, 1, true, 2, concat, 1, 1, 1, 0);
+            std::vector<Layer *> &layersB = choose_layers(1);
+            mainmix->read_layers(rfile, result, layersB, 1, true, 2, concat, 1, 1, 1, 0);
             if (layersB.empty()) {
                 mainmix->add_layer(layersB, 0);
             }
             mainprogram->filecount = 0;
             mainmix->reconnect_all(layersB);
-		}
-		std::map<int, int> map;
-		for (int m = 0; m < 2; m++) {
-			std::vector<Layer*> &layers = choose_layers(m);
-			for (int i = 0; i < layers.size(); i++) {
-				if (layers[i]->clonesetnr != -1) {
-					if (map.count(layers[i]->clonesetnr) == 0) {
-						std::unordered_set<Layer*> *uset = new std::unordered_set<Layer*>;
-						mainmix->clonesets.push_back(uset);
-						map[layers[i]->clonesetnr] = mainmix->clonesets.size() - 1;
-						layers[i]->clonesetnr = mainmix->clonesets.size() - 1;
-					}
-					else {
-						layers[i]->clonesetnr = map[layers[i]->clonesetnr];
-						layers[i]->isclone = true;
-						layers[i]->decresult->width = -1;
-					}
-					mainmix->clonesets[layers[i]->clonesetnr]->emplace(layers[i]);
-				}
-			}
-		}
-	}
+        }
+    }
 
 	std::vector<Layer*> &lvec2 = *mainmix->swapmap[&choose_layers(cldeck)];
     if (&lvec2) {
@@ -7121,10 +7105,13 @@ void Mixer::open_deck(const std::string & path, bool alive, bool copycomp) {
                         adaplays[mainmix->currlay[adaplays[0]->comp]->pos]);
             }
         }
-        if (mainmix->currlay[adaplays[0]->comp]) {
+        if (mainmix->currlay[!adaplays[0]->comp]) {
             if (mainmix->currlay[adaplays[0]->comp]->deck == mainmix->mousedeck) {
-                mainmix->currlay[!adaplays[0]->comp] = adaplays[mainmix->currlay[adaplays[0]->comp]->pos];
+                mainmix->currlay[adaplays[0]->comp] = adaplays[mainmix->currlay[adaplays[0]->comp]->pos];
             }
+        }
+        if (!mainmix->currlay[adaplays[0]->comp]) {
+            mainmix->currlay[adaplays[0]->comp] = adaplays[0];
         }
     }
 
@@ -7223,7 +7210,7 @@ void Layer::set_inlayer(Layer* lay, bool pbos) {
     //mainmix->delete_layer(lrs, this, false);
     lrs->erase(lrs->begin() + this->pos);
     lay->queueing = this->queueing;
-    //this->closethread = true;
+    //this->closethread = 1;
     lrs->insert(lrs->begin() + pos, lay);
     lay->pos = pos;
     lay->layers = lrs;
@@ -7585,7 +7572,7 @@ void Layer::open_files_queue() {
         lay->processed = false;
         lock2.unlock();
         mainprogram->clipfilesclip->tex = mainprogram->get_tex(lay);
-        lay->closethread = true;
+        lay->closethread = 1;
 
         mainprogram->clipfilesclip->type = ELEM_LAYER;
         mainprogram->clipfilesclip->get_imageframes();
@@ -7607,7 +7594,7 @@ void Layer::open_files_queue() {
         } else {
             mainprogram->clipfilesclip->tex = copy_tex(lay->fbotex, binsmain->elemboxes[0]->scrcoords->w, binsmain->elemboxes[0]->scrcoords->h);
         }
-        lay->closethread = true;
+        lay->closethread = 1;
 
         mainprogram->clipfilesclip->type = ELEM_LAYER;
         mainprogram->clipfilesclip->get_layerframes();
@@ -7622,7 +7609,7 @@ void Layer::open_files_queue() {
         lock2.unlock();
 
         mainprogram->clipfilesclip->tex = mainprogram->get_tex(lay);
-        lay->closethread = true;
+        lay->closethread = 1;
         mainprogram->clipfilesclip->type = ELEM_LAYER;
         mainprogram->clipfilesclip->get_videoframes();
     }
@@ -7652,7 +7639,7 @@ Layer* Mixer::read_layers(std::istream &rfile, const std::string &result, std::v
 	int overridepos = 0;
 	std::vector<Layer*> waitlayers;
     std::vector<Layer*> layers;
-	while (safegetline(rfile, istring)) {
+    while (safegetline(rfile, istring)) {
 		if (istring == "LAYERSB" || istring == "ENDOFCLIPLAYER" || istring == "ENDOFFILE") {
 			break;
 		}
@@ -7709,7 +7696,41 @@ Layer* Mixer::read_layers(std::istream &rfile, const std::string &result, std::v
 			safegetline(rfile, istring);
 			lay->type = (ELEM_TYPE)std::stoi(istring);
 		}
-		if (istring == "FILENAME") {
+        if (istring == "CLONESETNR") {
+            safegetline(rfile, istring);
+            lay->clonesetnr = std::stoi(istring);
+            if (lay->clonesetnr != -1) {
+                if (mainmix->clonesets.size() == 0 || (mainmix->clonesets.size() > 0 && mainmix->clonesets[lay->clonesetnr]->size() == 1)) {
+					mainmix->firstlayers[lay->clonesetnr] = lay;
+                    std::unordered_set<Layer *> *uset = new std::unordered_set<Layer *>;
+                    mainmix->clonesets.push_back(uset);
+                    lay->clonesetnr = mainmix->clonesets.size() - 1;
+                } else {
+					lay = mainmix->firstlayers[lay->clonesetnr]->clone();
+
+					/*lay = mainmix->firstlayers[lay->clonesetnr]->clone();
+					lay->isclone = false;
+					lay->isduplay = mainmix->mouselayer;
+                    lay->clonesetnr = clonemap[lay->clonesetnr];
+                    lay->isclone = true;
+                    lay->decresult->width = -1;
+					mainmix->firstlayers[lay->clonesetnr]->set_clones();
+					if (!lay->remfr[lay->pbofri]->newdata) {
+						// promote first layer found in layer stack with this clonesetnr to element of firstlayers
+						lay->ready = true;
+						if ((int) (lay->frame) != lay->prevframe) {
+							lay->startdecode.notify_all();
+						}
+						if (lay->clonesetnr != -1) {
+							mainmix->firstlayers[lay->clonesetnr] = lay;
+							lay->isclone = false;
+						}
+					}*/
+                }
+                mainmix->clonesets[lay->clonesetnr]->emplace(lay);
+            }
+        }
+        if (istring == "FILENAME") {
 		    notfound = false;
 			safegetline(rfile, istring);
 			filename = istring;
@@ -7732,22 +7753,23 @@ Layer* Mixer::read_layers(std::istream &rfile, const std::string &result, std::v
 							lay->liveinput = nullptr;
 						}
 					}
-                    if (exists(filename)) {
-                        if (lay->type == ELEM_FILE || lay->type == ELEM_LAYER) {
-                            Layer *kplay = lay;
-                            lay = lay->open_video(-1, filename, false, true);
-                            mainmix->loadinglays.push_back(lay);
-                            lay->numefflines[0] = 0;
-                            if (type == 1) mainmix->currlay[!mainprogram->prevmodus] = lay;
-                            //if (lay->lasteffnode[0] != lay->lasteffnode[1]) lay->lasteffnode[1]->out.clear();
-                            lay->lasteffnode[0] = lay->node;
-                            lay->type = kplay->type;
-                            lay->timeinit = kplay->timeinit;
-                            lay->initialized = kplay->initialized;
-                        }
-                        else if (lay->type == ELEM_IMAGE) {
-                            lay->open_image(filename);
-                            mainmix->loadinglays.push_back(lay);
+                    if (lay->clonesetnr == -1 || mainmix->clonesets.size() <= lay->clonesetnr || mainmix->clonesets[lay->clonesetnr]->size() == 1) {
+                        if (exists(filename)) {
+                            if (lay->type == ELEM_FILE || lay->type == ELEM_LAYER) {
+                                Layer *kplay = lay;
+                                lay = lay->open_video(-1, filename, false, true);
+                                mainmix->loadinglays.push_back(lay);
+                                lay->numefflines[0] = 0;
+                                if (type == 1) mainmix->currlay[!mainprogram->prevmodus] = lay;
+                                //if (lay->lasteffnode[0] != lay->lasteffnode[1]) lay->lasteffnode[1]->out.clear();
+                                lay->lasteffnode[0] = lay->node;
+                                lay->type = kplay->type;
+                                lay->timeinit = kplay->timeinit;
+                                lay->initialized = kplay->initialized;
+                            } else if (lay->type == ELEM_IMAGE) {
+                                lay->open_image(filename);
+                                mainmix->loadinglays.push_back(lay);
+                            }
                         }
                     }
                     else filename = "";
@@ -7760,30 +7782,31 @@ Layer* Mixer::read_layers(std::istream &rfile, const std::string &result, std::v
 			if (filename == "" && istring != "") {
                 boost::filesystem::current_path(mainprogram->contentpath);
 				filename = pathtoplatform(boost::filesystem::absolute(istring).generic_string());
-				if (!exists(filename)) {
-				    notfound = true;
-                    this->newlaypaths.push_back(filename);
-                    filename = "";
-                }
-				if (load && !notfound) {
-					lay->timeinit = false;
-					if (lay->type == ELEM_FILE || lay->type == ELEM_LAYER) {
-                        Layer *kplay = lay;
-                        lay = lay->open_video(-1, filename, false, true);
-                        mainmix->loadinglays.push_back(lay);
-                        lay->numefflines[0] = 0;
-                        if (type == 1) mainmix->currlay[!mainprogram->prevmodus] = lay;
-                        //if (lay->lasteffnode[0] != lay->lasteffnode[1]) lay->lasteffnode[1]->out.clear();
-                        lay->lasteffnode[0] = lay->node;
-                        lay->type = kplay->type;
-                        lay->timeinit = kplay->timeinit;
-                        lay->initialized = kplay->initialized;
+                if (lay->clonesetnr == -1 || mainmix->clonesets.size() <= lay->clonesetnr || mainmix->clonesets[lay->clonesetnr]->size() == 1) {
+                    if (!exists(filename)) {
+                        notfound = true;
+                        this->newlaypaths.push_back(filename);
+                        filename = "";
                     }
-					else if (lay->type == ELEM_IMAGE) {
-						lay->open_image(filename);
-                        mainmix->loadinglays.push_back(lay);
-					}
-				}
+                    if (load && !notfound) {
+                        lay->timeinit = false;
+                        if (lay->type == ELEM_FILE || lay->type == ELEM_LAYER) {
+                            Layer *kplay = lay;
+                            lay = lay->open_video(-1, filename, false, true);
+                            mainmix->loadinglays.push_back(lay);
+                            lay->numefflines[0] = 0;
+                            if (type == 1) mainmix->currlay[!mainprogram->prevmodus] = lay;
+                            //if (lay->lasteffnode[0] != lay->lasteffnode[1]) lay->lasteffnode[1]->out.clear();
+                            lay->lasteffnode[0] = lay->node;
+                            lay->type = kplay->type;
+                            lay->timeinit = kplay->timeinit;
+                            lay->initialized = kplay->initialized;
+                        } else if (lay->type == ELEM_IMAGE) {
+                            lay->open_image(filename);
+                            mainmix->loadinglays.push_back(lay);
+                        }
+                    }
+                }
 			}
             lay->filename = filename;  // for CLIPLAYER
 			newlay = true;
@@ -7864,10 +7887,6 @@ Layer* Mixer::read_layers(std::istream &rfile, const std::string &result, std::v
                 mainmix->event_read(rfile, nullptr, but, lay);
             }
         }
-		if (istring == "CLONESETNR") {
-			safegetline(rfile, istring);
-			lay->clonesetnr = std::stoi(istring);
-		}
 		if (istring == "SPEEDVAL") {
 			safegetline(rfile, istring);
 			lay->speed->value = std::stof(istring);
@@ -8475,6 +8494,9 @@ std::vector<std::string> Mixer::write_layer(Layer* lay, std::ostream& wfile, boo
 	wfile << "TYPE\n";
 	wfile << std::to_string(lay->type);
 	wfile << "\n";
+    wfile << "CLONESETNR\n";
+    wfile << std::to_string(lay->clonesetnr);
+    wfile << "\n";
 	wfile << "FILENAME\n";
 	wfile << lay->filename;
 	wfile << "\n";

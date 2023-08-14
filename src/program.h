@@ -205,7 +205,8 @@ class PrefItem {
 		bool onfile = true;
 		Boxx *namebox;
 		Boxx *valuebox;
-		Boxx *iconbox;
+        Boxx *iconbox;
+        Boxx *rembox;
 
 		bool connected = true;
 		RtMidiIn *midiin = nullptr;
@@ -659,6 +660,7 @@ class Program {
         bool orderglcswitch = false;
         std::vector<std::string> getvideotexpaths;
         std::vector<Layer*> getvideotexlayers;
+        std::vector<Layer*> errlays;
         bool gettinglayertex = false;
         Layer *gettinglayertexlay = nullptr;
         std::string result;
@@ -713,6 +715,7 @@ class Program {
 		bool dragmiddle = false;
 		bool dragout[2] = { true, true };
 		std::string quitting;
+        bool shutdown = false;
 		Layer* draginscrollbarlay = nullptr;
 		bool projnamechanged = false;
 		bool saveproject = false;

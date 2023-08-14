@@ -200,6 +200,21 @@ BinsMain::BinsMain() {
 void BinsMain::handle(bool draw) {
 	GLint inverteff = glGetUniformLocation(mainprogram->ShaderProgram, "inverteff");
 
+    for (int i = 0; i < this->bins.size(); i++) {
+        // solve bin name clashes
+        for (int j = i + 1; j < this->bins.size(); j++) {
+            if (this->bins[j]->name == this->bins[i]->name) {
+                this->bins[j]->path = mainprogram->project->binsdir + this->bins[j]->name + "_x" + ".bin";
+                this->bins[j]->name = basename(remove_extension(this->bins[j]->path));
+                break;
+            }
+        }
+    }
+    // correct loaded path when using LOAD BIN
+    for (int i = 0; i < this->bins.size(); i++) {
+        this->bins[i]->path = mainprogram->project->binsdir + this->bins[i]->name + ".bin";
+    }
+
     int numd = SDL_GetNumVideoDisplays();
     if (numd > 1) {
         draw_box(this->floatbox, -1);
@@ -822,6 +837,7 @@ void BinsMain::handle(bool draw) {
                 binsmain->do_save_bin(mainprogram->temppath + "bin_to_copy");
                 binsmain->new_bin(this->currbin->name + " (SHARED)");
                 binsmain->open_bin(mainprogram->temppath + "bin_to_copy", binsmain->currbin);
+                binsmain->do_save_bin(mainprogram->project->binsdir + this->currbin->name + " (SHARED)");
                 walk = put_in_buffer((this->currbin->name + " (SHARED)").c_str(), walk);
             }
             for (int i = 0; i < 12; i++) {
@@ -1059,6 +1075,7 @@ void BinsMain::handle(bool draw) {
 		if (box->in()) {
 			if (mainprogram->leftmouse && !this->dragbin) {
 			    new_bin(remove_extension(basename(find_unused_filename("new bin", mainprogram->project->binsdir, ".bin"))));
+                this->save_bin(this->bins.back()->path);
 				if (this->bins.size() >= 20) this->binsscroll++;
 			}
 			box->acolor[0] = 0.5f;
@@ -1391,7 +1408,7 @@ void BinsMain::handle(bool draw) {
             this->prevbinel = nullptr;
         }
 		else if (binelmenuoptions[k] == BET_INSMIX) {
-			// insert live mix into bin
+			// insert current mix into bin
 			mainprogram->paths.clear();
 
             std::string path = find_unused_filename("mix", mainprogram->project->binsdir, ".mix");
@@ -1401,7 +1418,7 @@ void BinsMain::handle(bool draw) {
             else {
                 this->menubinel->tex = copy_tex(mainprogram->nodesmain->mixnodescomp[2]->mixtex);
             }
-            mainmix->do_save_mix(path, true, true);
+            mainmix->do_save_mix(path, mainprogram->prevmodus, true);
             this->menubinel->type = ELEM_MIX;
             this->menubinel->path = path;
             this->menubinel->name = remove_extension(basename(this->menubinel->path));
@@ -1576,7 +1593,7 @@ void BinsMain::handle(bool draw) {
 								// do first entry preview preperation/visualisation when image hovered
 								this->binpreview = true;  // just entering preview, or already done preparation (different if clauses)
 								if (mainprogram->prelay) {
-                                    mainprogram->prelay->closethread = true;
+                                    mainprogram->prelay->closethread = 1;
 									// close old preview layer
 								}
 								draw_box(red, black, 0.52f, 0.5f, 0.4f, 0.4f, -1);
@@ -1640,7 +1657,7 @@ void BinsMain::handle(bool draw) {
 								// do first entry preview preperation/visualisation when layer file hovered
 								if (binel->name != "") {
                                     if (mainprogram->prelay) {
-                                        mainprogram->prelay->closethread = true;
+                                        mainprogram->prelay->closethread = 1;
                                         // close old preview layer
                                     }
 									this->binpreview = true;
@@ -1808,7 +1825,7 @@ void BinsMain::handle(bool draw) {
 								// do first entry preview preparation/visualisation when video hovered
 								if (remove_extension(basename(binel->path)) != "") {
                                     if (mainprogram->prelay) {
-                                        mainprogram->prelay->closethread = true;
+                                        mainprogram->prelay->closethread = 1;
                                         // close old preview layer
                                     }
 									this->binpreview = true;
@@ -2283,21 +2300,20 @@ void BinsMain::open_bin(const std::string &path, Bin *bin) {
                     safegetline(rfile, istring);
                     bin->elements[pos]->path = istring;
                     bin->elements[pos]->relpath = boost::filesystem::relative(istring, mainprogram->project->binsdir).generic_string();
-                    if (!exists(bin->elements[pos]->path)) bin->elements[pos]->path = "";
                 }
                 if (istring == "RELPATH") {
                     safegetline(rfile, istring);
-                    if (istring == "") continue;
+                    if (istring == "" && bin->elements[pos]->path == "") continue;
                     if (bin->elements[pos]->path == "") {
                         boost::filesystem::current_path(mainprogram->project->binsdir);
                         bin->elements[pos]->path = pathtoplatform(boost::filesystem::absolute(istring).generic_string());
                         bin->elements[pos]->relpath = boost::filesystem::relative(istring, mainprogram->project->binsdir).generic_string();
                         boost::filesystem::current_path(mainprogram->contentpath);
-                        if (!exists(bin->elements[pos]->path)) {
-                            mainmix->retargeting = true;
-                            mainmix->newbinelpaths.push_back(bin->elements[pos]->path);
-                            mainmix->newpathbinels.push_back(bin->elements[pos]);
-                        }
+                    }
+                    if (!exists(bin->elements[pos]->path)) {
+                        mainmix->retargeting = true;
+                        mainmix->newbinelpaths.push_back(bin->elements[pos]->path);
+                        mainmix->newpathbinels.push_back(bin->elements[pos]);
                     }
                 }
 				if (istring == "NAME") {
@@ -2321,14 +2337,19 @@ void BinsMain::open_bin(const std::string &path, Bin *bin) {
 					if (bin->elements[pos]->name != "") {
 						if (bin->elements[pos]->jpegpath != "") {
 							if (concat) {
-								bin->elements[pos]->jpegpath = find_unused_filename(this->currbin->name + "_" +
-								        basename(bin->elements[pos]->jpegpath), mainprogram->temppath, ".jpg");
-								boost::filesystem::rename(result + "_" + std::to_string(filecount) + ".file", bin->elements[pos]->jpegpath);
-								open_thumb(bin->elements[pos]->jpegpath, bin->elements[pos]->tex);
-								filecount++;
+                                if (exists(bin->elements[pos]->jpegpath)) {
+                                    bin->elements[pos]->jpegpath = find_unused_filename(
+                                            basename(bin->elements[pos]->jpegpath), mainprogram->temppath, ".jpg");
+                                }
+                                boost::filesystem::rename(result + "_" + std::to_string(filecount) + ".file", bin->elements[pos]->jpegpath);
+								bin->open_positions.push_back(pos);
+                       		    filecount++;
 							}
-							else open_thumb(bin->elements[pos]->jpegpath, bin->elements[pos]->tex);
-						}
+							else bin->open_positions.push_back(pos);
+                        }
+                        else {
+
+                        }
 					}
 				}
                 if (istring == "FILESIZE") {
@@ -2344,7 +2365,7 @@ void BinsMain::open_bin(const std::string &path, Bin *bin) {
         }
 	}
 
-	rfile.close();
+    rfile.close();
 }
 
 void BinsMain::save_bin(const std::string& path) {
@@ -2457,6 +2478,7 @@ int BinsMain::read_binslist() {
 	rfile.open(mainprogram->project->binsdir + "bins.list");
 	if (!rfile.is_open()) {
 		this->new_bin("this is a bin");
+        this->save_bin(this->bins[0]->path);
 		this->save_binslist();
 		return 0;
 	}
@@ -2628,7 +2650,7 @@ void BinsMain::open_handlefile(const std::string &path, GLuint tex) {
                     } else {
                         endtex = copy_tex(lay->fbotex, binsmain->elemboxes[0]->scrcoords->w, binsmain->elemboxes[0]->scrcoords->h);
                     }
-                    lay->closethread = true;
+                    lay->closethread = 1;
                 }
                 else endtex = tex;
             } else if (istring == "EWOCvj DECKFILE") {
@@ -2671,7 +2693,7 @@ void BinsMain::open_handlefile(const std::string &path, GLuint tex) {
                     lay->processed = false;
                     lock2.unlock();
                     endtex = mainprogram->get_tex(lay);
-                    lay->closethread = true;
+                    lay->closethread = 1;
                 }
                 else endtex = tex;
             } else if (isvideo(path)) {
@@ -2684,7 +2706,7 @@ void BinsMain::open_handlefile(const std::string &path, GLuint tex) {
                     lay->processed = false;
                     lock2.unlock();
                     endtex = mainprogram->get_tex(lay);
-                    lay->closethread = true;
+                    lay->closethread = 1;
                 }
                 else endtex = tex;
 
