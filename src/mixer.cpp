@@ -3144,6 +3144,7 @@ void Mixer::add_del_bar() {
                                     Layer *lay1 = this->add_layer(lvec, lay->pos + 1);
                                     make_layboxes();
                                 }
+                                mainprogram->leftmouse = false;
                                 break;
                             }
                         }
@@ -7619,6 +7620,8 @@ void Layer::open_files_queue() {
 	if (mainprogram->filescount == mainprogram->paths.size()) {
 		mainprogram->fileslay->cliploading = false;
 		mainprogram->openfilesqueue = false;
+        mainprogram->fileslay->queueing = true;
+        mainprogram->queueing = true;
 		mainprogram->paths.clear();
 		mainprogram->multistage = 0;
 	}
@@ -7854,10 +7857,15 @@ Layer* Mixer::read_layers(std::istream &rfile, const std::string &result, std::v
 			safegetline(rfile, istring);
 			lay->aspectratio = (RATIO_TYPE)std::stoi(istring);
 		}
-		if (istring == "MUTE") {
-			safegetline(rfile, istring);
-			lay->mutebut->value = std::stoi(istring);
-		}
+        if (istring == "QUEUEING") {
+            safegetline(rfile, istring);
+            lay->queueing = std::stoi(istring);
+            if (lay->queueing) mainprogram->queueing = true;
+        }
+        if (istring == "MUTE") {
+            safegetline(rfile, istring);
+            lay->mutebut->value = std::stoi(istring);
+        }
 		if (istring == "MUTEEVENT") {
 			Button* but = lay->mutebut;
 			safegetline(rfile, istring);
@@ -8533,9 +8541,12 @@ std::vector<std::string> Mixer::write_layer(Layer* lay, std::ostream& wfile, boo
 	wfile << "ASPECTRATIO\n";
 	wfile << std::to_string(lay->aspectratio);
 	wfile << "\n";
-	wfile << "MUTE\n";
-	wfile << std::to_string(lay->mutebut->value);
-	wfile << "\n";
+    wfile << "QUEUEING\n";
+    wfile << std::to_string(lay->queueing);
+    wfile << "\n";
+    wfile << "MUTE\n";
+    wfile << std::to_string(lay->mutebut->value);
+    wfile << "\n";
 	wfile << "MUTEEVENT\n";
 	mainmix->event_write(wfile, nullptr, lay->mutebut);
     wfile << "SOLO\n";
@@ -9564,6 +9575,23 @@ void Mixer::handle_clips() {
                 draw_box(white, white, lay2->loopbox->vtxcoords->x1 + lay2->frame * (lay2->loopbox->vtxcoords->w /
                                                                                      (lay2->numf - 1)),
                          lay2->loopbox->vtxcoords->y1, 0.00117f, 0.075f, -1);
+                if (lay2->loopbox->in()) {
+                    if (mainprogram->leftmousedown) {
+                        lay2->scritching = 1;
+                        lay2->frame = (lay2->numf - 1.0f) *
+                                      ((mainprogram->mx - lay2->loopbox->scrcoords->x1) / lay2->loopbox->scrcoords->w);
+                        lay2->set_clones();
+                    }
+                }
+                if (lay2->scritching) mainprogram->leftmousedown = false;
+                if (lay2->scritching == 1) {
+                    lay2->frame = (lay2->numf - 1) *
+                                  ((mainprogram->mx - lay2->loopbox->scrcoords->x1) / lay2->loopbox->scrcoords->w);
+                    if (lay2->frame < 0) lay2->frame = 0.0f;
+                    else if (lay2->frame >= lay2->numf) lay2->frame = lay2->numf - 1;
+                    lay2->set_clones();
+                    if (mainprogram->leftmouse && !mainprogram->menuondisplay) lay2->scritching = 4;
+                }
                 lay2->loopbox->vtxcoords->x1 = bux1;
                 lay2->loopbox->vtxcoords->y1 = buy1;
                 for (int k = 0; k < until; k++) {

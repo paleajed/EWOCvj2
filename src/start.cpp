@@ -1546,8 +1546,8 @@ void Layer::get_cpu_frame(int framenr, int prevframe, int errcount)
         ret = get_format_from_sample_fmt(&fmt, sfmt);
     }
 
-    av_free_packet(&this->decpkt);
-    av_free_packet(&this->decpktseek);
+    //av_free_packet(&this->decpkt);
+    //av_free_packet(&this->decpktseek);
 }
 
 
@@ -1635,7 +1635,7 @@ void Layer::get_frame(){
 		this->startdecode.wait(lock, [&] {return this->ready; });
 		lock.unlock();
 		this->ready = false;
-        if (this->filename == "") continue;
+        //if (this->filename == "") continue;
 
         if (this->closethread == 1) {
             this->closethread = 2;
@@ -1860,64 +1860,64 @@ bool Layer::thread_vidopen() {
 		}
 	}
 
-	//av_opt_set_int(this->video, "probesize2", INT_MAX, 0);
-	this->video = avformat_alloc_context();
-	if (!this->ifmt) this->video->flags |= AVFMT_FLAG_NONBLOCK;
+    //av_opt_set_int(this->video, "probesize2", INT_MAX, 0);
+    this->video = avformat_alloc_context();
+    if (!this->ifmt) this->video->flags |= AVFMT_FLAG_NONBLOCK;
     if (this->ifmt) {
         this->type = ELEM_LIVE;
     }
     int r = avformat_open_input(&(this->video), this->filename.c_str(), this->ifmt, nullptr);
-	printf("loading... %s\n", this->filename.c_str());
-	if (r < 0) {
-		this->filename = "";
+    printf("loading... %s\n", this->filename.c_str());
+    if (r < 0) {
+        this->filename = "";
         mainmix->addlay = false;
         mainprogram->openerr = true;
-		printf("%s\n", "Couldnt open video");
-		return 0;
-	}
+        printf("%s\n", "Couldnt open video");
+        return 0;
+    }
 
-	//av_opt_set_int(this->video, "max_analyze_duration2", 100000000, 0);
-	if (avformat_find_stream_info(this->video, nullptr) < 0) {
+    //av_opt_set_int(this->video, "max_analyze_duration2", 100000000, 0);
+    if (avformat_find_stream_info(this->video, nullptr) < 0) {
         fprintf(stderr, "Could not find stream information\n");
         this->filename = "";
         mainmix->addlay = false;
         mainprogram->openerr = true;
         return 0;
     }
-	//this->video->max_picture_buffer = 20000000;
+    //this->video->max_picture_buffer = 20000000;
 
-	if (find_stream_index(&(this->video_stream_idx), this->video, AVMEDIA_TYPE_VIDEO) >= 0) {
-		this->video_stream = this->video->streams[this->video_stream_idx];
-		const AVCodec* dec = avcodec_find_decoder(this->video_stream->codecpar->codec_id);
-		this->vidformat = this->video_stream->codecpar->codec_id;
-		this->video_dec_ctx = avcodec_alloc_context3(dec);
+    if (find_stream_index(&(this->video_stream_idx), this->video, AVMEDIA_TYPE_VIDEO) >= 0) {
+        this->video_stream = this->video->streams[this->video_stream_idx];
+        const AVCodec* dec = avcodec_find_decoder(this->video_stream->codecpar->codec_id);
+        this->vidformat = this->video_stream->codecpar->codec_id;
+        this->video_dec_ctx = avcodec_alloc_context3(dec);
         if (this->video_stream->codecpar->codec_id == AV_CODEC_ID_MPEG2VIDEO || this->video_stream->codecpar->codec_id == AV_CODEC_ID_H264 || this->video_stream->codecpar->codec_id == AV_CODEC_ID_H264) {
             //this->video_dec_ctx->ticks_per_frame = 2;
         }
-		avcodec_parameters_to_context(this->video_dec_ctx, this->video_stream->codecpar);
-		avcodec_open2(this->video_dec_ctx, dec, nullptr);
-		this->bpp = 4;
-		if (this->vidformat == 188 || this->vidformat == 187) {
-			if (oldvidformat != -1) {
+        avcodec_parameters_to_context(this->video_dec_ctx, this->video_stream->codecpar);
+        avcodec_open2(this->video_dec_ctx, dec, nullptr);
+        this->bpp = 4;
+        if (this->vidformat == 188 || this->vidformat == 187) {
+            if (oldvidformat != -1) {
                 if (this->oldvidformat != 188 && this->oldvidformat != 187) {
                     // hap cpu change needs new texstorage
                     this->initialized = false;
                 }
             }
-			this->numf = this->video_stream->nb_frames;
-			if (this->numf == 0) {
-				this->numf = (double)this->video->duration * (double)this->video_stream->avg_frame_rate.num / (double)this->video_stream->avg_frame_rate.den / (double)1000000.0f;
-				this->video_duration = this->video->duration / (1000000.0f * this->video_stream->time_base.num / this->video_stream->time_base.den);
-			}
-			else this->video_duration = this->video_stream->duration;
-			float tbperframe = (float)this->video_stream->duration / (float)this->numf;
-			this->millif = tbperframe * (((float)this->video_stream->time_base.num * 1000.0) / (float)this->video_stream->time_base.den);
+            this->numf = this->video_stream->nb_frames;
+            if (this->numf == 0) {
+                this->numf = (double)this->video->duration * (double)this->video_stream->avg_frame_rate.num / (double)this->video_stream->avg_frame_rate.den / (double)1000000.0f;
+                this->video_duration = this->video->duration / (1000000.0f * this->video_stream->time_base.num / this->video_stream->time_base.den);
+            }
+            else this->video_duration = this->video_stream->duration;
+            float tbperframe = (float)this->video_stream->duration / (float)this->numf;
+            this->millif = tbperframe * (((float)this->video_stream->time_base.num * 1000.0) / (float)this->video_stream->time_base.den);
 
-			this->startframe->value = 0;
-			this->endframe->value = this->numf;
-			if (0) { // this->reset?
-				this->frame = 0.0f;
-			}
+            this->startframe->value = 0;
+            this->endframe->value = this->numf;
+            if (0) { // this->reset?
+                this->frame = 0.0f;
+            }
             if (this->decframe) {
                 //av_frame_free(&this->rgbframe);
                 //av_frame_free(&this->decframe);
@@ -3525,10 +3525,11 @@ void Layer::load_frame() {
     if (srclay->type == ELEM_IMAGE) {
         w = ilGetInteger(IL_IMAGE_WIDTH);
         h = ilGetInteger(IL_IMAGE_HEIGHT);
-    } else {
+    } else if (srclay->video_dec_ctx) {
         w = srclay->video_dec_ctx->width;
         h = srclay->video_dec_ctx->height;
-    };
+    }
+    else return;
     if ((srclay->changeinit == -1 && srclay->initdeck) || srclay->changeinit == 3 || (!srclay->newload && srclay->started2 && (srclay->remfr[srclay->pbofri]->width != w ||
         srclay->remfr[srclay->pbofri]->height != h || srclay->remfr[srclay->pbofri]->bpp != srclay->bpp))) {
         // video (size) changed
@@ -7460,28 +7461,6 @@ void the_loop() {
 		if (mainprogram->tooltipbox->tooltip != "") mainprogram->tooltips_handle(0);
 	}
 
-	if (!mainprogram->binsscreen) {
-		// leftmouse click outside clip queue cancels clip queue visualisation and deselects multiple selected layers
-        bool found = false;
-		for (int i = 0; i < 2; i++) {
-            std::vector<Layer*> &lvec = choose_layers(i);
-            for (int j = 0; j < lvec.size(); j++) {
-                if (lvec[j]->queueing) {
-                    found = true;
-                    break;
-                }
-            }
-        }
-		std::vector<Layer*>& lvec1 = choose_layers(0);
-		if (!found || (mainprogram->leftmouse && !mainprogram->menuondisplay)) {
-			set_queueing(false);
-			/*if (!mainprogram->boxhit && mainmix->currlay[!mainprogram->prevmodus]) {
-                mainmix->currlays[!mainprogram->prevmodus].clear();
-                mainmix->currlays[!mainprogram->prevmodus].push_back(mainmix->currlay[!mainprogram->prevmodus]);
-            }  reminder : what was this?*/
-		}
-	}
-
 
 
     // Menu block
@@ -7728,6 +7707,35 @@ void the_loop() {
     mainprogram->preferences();
 
 	mainprogram->config_midipresets_init();
+
+
+    if (!mainprogram->binsscreen) {
+        // leftmouse click outside clip queue cancels clip queue visualisation and deselects multiple selected layers
+        bool found = false;
+        bool found2 = false;
+        for (int i = 0; i < 2; i++) {
+            std::vector<Layer*> &lvec = choose_layers(i);
+            for (int j = 0; j < lvec.size(); j++) {
+                if (lvec[j]->scritching == 4) {
+                    lvec[j]->scritching = 0;
+                    found2 = true;
+                    break;
+                }
+                if (lvec[j]->queueing) {
+                    found = true;
+                    break;
+                }
+            }
+        }
+        std::vector<Layer*>& lvec1 = choose_layers(0);
+        if (!found2 && (!found || (mainprogram->leftmouse && !mainprogram->menuondisplay))) {
+            set_queueing(false);
+            /*if (!mainprogram->boxhit && mainmix->currlay[!mainprogram->prevmodus]) {
+                mainmix->currlays[!mainprogram->prevmodus].clear();
+                mainmix->currlays[!mainprogram->prevmodus].push_back(mainmix->currlay[!mainprogram->prevmodus]);
+            }  reminder : what was this?*/
+        }
+    }
 
 
 
@@ -10018,7 +10026,7 @@ int main(int argc, char* argv[]) {
                         count++;
                         name = remove_version(name) + "_" + std::to_string(count);
                     }
-                    mainprogram->get_outname("New project", "application/ewocvj2-project",
+                    mainprogram->get_outname("Type name of new project (directory)", "",
                                              boost::filesystem::canonical(mainprogram->currprojdir).generic_string());
                     if (mainprogram->path != "") {
                         SDL_GL_MakeCurrent(mainprogram->mainwindow, glc);
