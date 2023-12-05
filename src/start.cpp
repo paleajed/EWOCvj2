@@ -4867,6 +4867,7 @@ void drag_into_layerstack(std::vector<Layer*>& layers, bool deck) {
 					mainmix->currlay[!mainprogram->prevmodus] = lay;
 					if (mainprogram->lmover || mainprogram->middlemouse || mainprogram->laymenu1->state > 1 || mainprogram->laymenu2->state > 1 || mainprogram->newlaymenu->state > 1) {
 						set_queueing(false);
+                        bool clipup = false;
 						if (mainprogram->dragbinel) {
 							mainprogram->laymenu1->state = 0;
 							mainprogram->laymenu2->state = 0;
@@ -4876,11 +4877,27 @@ void drag_into_layerstack(std::vector<Layer*>& layers, bool deck) {
                                 pos = -1;
                             }
                             mainmix->open_dragbinel(lay, pos);
+
+                            if (mainprogram->dragclip) {
+                                if (lay == mainprogram->draglay) {
+                                    mainprogram->draglay->clips.erase(std::find(mainprogram->draglay->clips.begin(),
+                                                                                mainprogram->draglay->clips.end(),
+                                                                                mainprogram->dragclip));
+                                    delete mainprogram->dragclip;
+                                    mainprogram->dragclip = nullptr;
+                                    clipup = true;
+                                }
+                            }
+                            mainprogram->leftmouse = false;
 						}
 						mainprogram->rightmouse = true;
 						binsmain->handle(0);
 						enddrag(false);
                         mainprogram->rightmouse = false;
+                        if (clipup) {
+                            lay->queueing = true;
+                            mainprogram->queueing = true;
+                        }
 						return;
 					}
 				}
@@ -4892,7 +4909,8 @@ void drag_into_layerstack(std::vector<Layer*>& layers, bool deck) {
 						if (mainprogram->dragbinel) {
                             mainmix->open_dragbinel(inlay);
                         }
-						mainprogram->lmover = false;
+                        mainprogram->lmover = false;
+                        mainprogram->leftmouse = false;
 						mainprogram->rightmouse = true;
 						binsmain->handle(0);
 						enddrag(false);

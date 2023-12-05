@@ -5256,10 +5256,9 @@ void Mixer::open_dragbinel(Layer *thislay) {
 void Mixer::open_dragbinel(Layer *thislay, int i) {
     // open element dragged to layer stack or double-clicked from shelf
     Layer *newlay = thislay;
-    std::vector<Layer*> &lvec = choose_layers(thislay->deck);
     if (mainprogram->dragbinel->type == ELEM_LAYER) {
         newlay = mainmix->open_layerfile(mainprogram->dragbinel->path, thislay, 1, 1);
-        thislay->set_inlayer(newlay, true);
+        thislay->set_inlayer(newlay, false);
         if (i != -1) {
             mainmix->currlays[!mainprogram->prevmodus][i] = newlay;
             mainmix->currlay[!mainprogram->prevmodus] = newlay;
@@ -5298,6 +5297,7 @@ void Mixer::open_dragbinel(Layer *thislay, int i) {
         newlay->prevshelfdragelem = mainprogram->shelfdragelem;
         newlay->frame = 0.0f;
     }
+    std::vector<Layer*> &lvec = choose_layers(thislay->deck);
     mainmix->reconnect_all(lvec);
 
     // when something new is dragged into layer, set frames from framecounters set in Mixer::set_prevshelfdragelem()
@@ -5742,9 +5742,9 @@ void Mixer::copy_pbos(Layer *clay, Layer *lay) {
     else clay->initialized = true;
     clay->started = lay->started;
     clay->started2 = lay->started2;
-    clay->databuf[0] = lay->databuf[0];
-    clay->databuf[1] = lay->databuf[1];
-    clay->databuf[2] = lay->databuf[2];
+    clay->databuf[0] = nullptr;
+    clay->databuf[1] = nullptr;
+    clay->databuf[2] = nullptr;
     clay->databufready = lay->databufready;
     clay->rgbframe[0] = lay->rgbframe[0];
     clay->rgbframe[1] = lay->rgbframe[1];
@@ -7215,6 +7215,8 @@ void Layer::set_inlayer(Layer* lay, bool pbos) {
     lrs->insert(lrs->begin() + pos, lay);
     lay->pos = pos;
     lay->layers = lrs;
+    this->node->in = nullptr;
+    this->node->out.clear();
     mainmix->reconnect_all(*lrs);
 }
 
@@ -7575,7 +7577,7 @@ void Layer::open_files_queue() {
         mainprogram->clipfilesclip->tex = mainprogram->get_tex(lay);
         lay->closethread = 1;
 
-        mainprogram->clipfilesclip->type = ELEM_LAYER;
+        mainprogram->clipfilesclip->type = ELEM_IMAGE;
         mainprogram->clipfilesclip->get_imageframes();
     } else if (istring == "EWOCvj LAYERFILE") {
         mainprogram->clipfilesclip->path = str;
@@ -7601,6 +7603,7 @@ void Layer::open_files_queue() {
         mainprogram->clipfilesclip->get_layerframes();
     } else {
         mainprogram->clipfilesclip->path = str;
+        mainprogram->clipfilesclip->type = ELEM_FILE;
 
         Layer *lay = new Layer(true);
         get_videotex(lay, str);
@@ -7611,7 +7614,6 @@ void Layer::open_files_queue() {
 
         mainprogram->clipfilesclip->tex = mainprogram->get_tex(lay);
         lay->closethread = 1;
-        mainprogram->clipfilesclip->type = ELEM_LAYER;
         mainprogram->clipfilesclip->get_videoframes();
     }
     mainprogram->clipfilesclip = mainprogram->fileslay->clips[pos + 1];
@@ -9514,7 +9516,7 @@ void Mixer::clip_inside_test(std::vector<Layer*>& layers, bool deck) {
 		lay = layers[i];
 		if (lay->pos < mainmix->scenes[deck][mainmix->currscene[deck]]->scrollpos || lay->pos > mainmix->scenes[deck][mainmix->currscene[deck]]->scrollpos + 2) continue;
 		Boxx* box = lay->node->vidbox;
-		if (lay->queueing && lay->filename != "") {
+		if (lay->queueing) {
 			if (box->scrcoords->x1 < mainprogram->mx && mainprogram->mx < box->scrcoords->x1 + box->scrcoords->w) {
 				int limit = lay->clips.size() - lay->queuescroll;
 				if (limit > 4) limit = 4;
@@ -9792,7 +9794,9 @@ void Layer::clip_display_next(bool startend, bool alive) {
         if (1) {
             if (alive) {
                 GLuint butex = oldclip->tex;
-                if (this->currclip->type == ELEM_LAYER) {
+                if (this->currclip->type != ELEM_LIVE) {
+					this->currclip->type = ELEM_LAYER;
+					oldclip->type = ELEM_LAYER;
                     if (currclip->tex == -1) oldclip->tex = copy_tex(node->vidbox->tex);
                     else oldclip->tex = this->currclip->tex;
                     oldclip->path = find_unused_filename("cliptemp_" + basename(this->filename), mainprogram->temppath,

@@ -6630,7 +6630,7 @@ void Project::autosave() {
 
     std::string name;
     if (this->autosavelist.size()) {
-        name = remove_extension(this->autosavelist.back());
+        name = this->autosavelist.back();
     } else {
         name = this->autosavedir + "autosave_" +
                remove_extension(basename(this->path)) + "_0";
