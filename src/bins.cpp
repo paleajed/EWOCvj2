@@ -3004,6 +3004,7 @@ void BinsMain::hap_encode(const std::string srcpath, BinElement *binel, BinEleme
     AVPacket pkt;
     //uint8_t endcode[] = { 0, 0, 1, 0xb7 };
     codec = avcodec_find_encoder_by_name("hap");
+    // reminder : catch when ffmpeg does not contain the hap encoder
     c = avcodec_alloc_context3(codec);
 	av_init_packet(&pkt);
 	pkt.data = nullptr;
