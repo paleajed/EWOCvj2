@@ -240,7 +240,7 @@ void LoopStationElement::visualize() {
 	this->speed->box->upvtxtoscr();
 	this->colbox->upvtxtoscr();
 	this->box->upvtxtoscr();
-	mainmix->handle_param(this->speed);
+    this->speed->handle();
     draw_box(grey, this->colbox->acolor, this->colbox, -1);
 	if (this->eventlist.size()) draw_box(this->colbox->lcolor, this->colbox->lcolor, this->colbox->vtxcoords->x1 + 0.02325f ,
                                       this->colbox->vtxcoords->y1 + 0.0375f, 0.0225f, 0.03f, -1);
@@ -387,7 +387,7 @@ void LoopStationElement::mouse_handle() {
 		}
 	}
 }
-	
+
 void LoopStationElement::set_values() {
 	// if current elapsed time in loop > eventtime of events starting from eventpos then set their params to stored values
     std::chrono::high_resolution_clock::time_point now = std::chrono::high_resolution_clock::now();
@@ -458,6 +458,14 @@ void LoopStationElement::set_values() {
                 this->playbut->oldvalue = true;
             }
         }
+    }
+    std::vector<Layer*> &lvec1 = choose_layers(0);
+    for (Layer *lay : lvec1) {
+        mainmix->copy_lpst(lay, lay, false, true, true);
+    }
+    std::vector<Layer*> &lvec2 = choose_layers(1);
+    for (Layer *lay : lvec2) {
+        mainmix->copy_lpst(lay, lay, false, true, true);
     }
 }
 

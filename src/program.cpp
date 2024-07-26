@@ -355,7 +355,7 @@ Program::Program() {
 
     this->toscreenA = new Button(false);
     this->toscreenA->toggle = 0;
-    this->buttons.push_back(this->toscreenA);
+    this->buttons[0] = this->toscreenA;
     this->toscreenA->name[0] = "SEND";
     this->toscreenA->name[1] = "SEND";
     this->toscreenA->box->vtxcoords->x1 = -0.3;
@@ -368,7 +368,7 @@ Program::Program() {
 
     this->toscreenB = new Button(false);
     this->toscreenB->toggle = 0;
-    this->buttons.push_back(this->toscreenB);
+    this->buttons[1] = this->toscreenB;
     this->toscreenB->name[0] = "SEND";
     this->toscreenB->name[1] = "SEND";
     this->toscreenB->box->vtxcoords->x1 = 0.15;
@@ -381,7 +381,7 @@ Program::Program() {
 
     this->toscreenM = new Button(false);
     this->toscreenM->toggle = 0;
-    this->buttons.push_back(this->toscreenM);
+    this->buttons[2] = this->toscreenM;
     this->toscreenM->name[0] = "SEND";
     this->toscreenM->name[1] = "SEND";
     this->toscreenM->box->vtxcoords->x1 = 0.15;
@@ -399,7 +399,7 @@ Program::Program() {
         for (int i = 0; i < 3; i++) {
             this->toscene[m][0][i] = new Button(false);
             this->toscene[m][0][i]->toggle = 0;
-            this->buttons.push_back(this->toscene[m][0][i]);
+            this->buttons[i + 3 + m * 3] = this->toscene[m][0][i];
             this->toscene[m][0][i]->name[0] = "";
             this->toscene[m][0][i]->name[1] = "";
             this->toscene[m][0][i]->box->vtxcoords->x1 = -0.225f + m * (0.3f + 0.075f);
@@ -411,7 +411,7 @@ Program::Program() {
             this->toscene[m][0][i]->box->tooltip = "Leftclick sends/copies the deck" + ab + " stream being previewed to the scene number " + std::to_string(i) + ". ";
             this->toscene[m][1][i] = new Button(false);
             this->toscene[m][1][i]->toggle = 0;
-            this->buttons.push_back(this->toscene[m][1][i]);
+            this->buttons[i + 6 + m * 3] = this->toscene[m][1][i];
             this->toscene[m][1][i]->name[0] = "";
             this->toscene[m][1][i]->name[1] = "";
             this->toscene[m][1][i]->box->vtxcoords->x1 = -0.3f + m * (0.3f + 0.225f);
@@ -427,7 +427,7 @@ Program::Program() {
 
     this->backtopreA = new Button(false);
     this->backtopreA->toggle = 0;
-    this->buttons.push_back(this->backtopreA);
+    this->buttons[15] = this->backtopreA;
     this->backtopreA->name[0] = "SEND";
     this->backtopreA->name[1] = "SEND";
     this->backtopreA->box->vtxcoords->x1 = -0.3;
@@ -440,7 +440,7 @@ Program::Program() {
 
     this->backtopreB = new Button(false);
     this->backtopreB->toggle = 0;
-    this->buttons.push_back(this->backtopreB);
+    this->buttons[16] = this->backtopreB;
     this->backtopreB->name[0] = "SEND";
     this->backtopreB->name[1] = "SEND";
     this->backtopreB->box->vtxcoords->x1 = 0.15;
@@ -453,7 +453,7 @@ Program::Program() {
 
     this->backtopreM = new Button(false);
     this->backtopreM->toggle = 0;
-    this->buttons.push_back(this->backtopreM);
+    this->buttons[17] = this->backtopreM;
     this->backtopreM->name[0] = "SEND";
     this->backtopreM->name[1] = "SEND";
     this->backtopreM->box->vtxcoords->x1 = -0.3;
@@ -467,7 +467,7 @@ Program::Program() {
 
     this->modusbut = new Button(false);
 	this->modusbut->toggle = 1;
-	this->buttons.push_back(this->modusbut);
+	this->buttons[18] = this->modusbut;
 	this->modusbut->name[0] = "LIVE MODUS";
 	this->modusbut->name[1] = "PREVIEW MODUS";
     this->modusbut->box->lcolor[0] = 0.7f;
@@ -524,7 +524,7 @@ Program::Program() {
 
 	this->effcat[0] = new Button(false);
 	this->effcat[0]->toggle = 1;
-	this->buttons.push_back(this->effcat[0]);
+	this->buttons[19] = this->effcat[0];
 	this->effcat[0]->name[0] = "Layer effects";
 	this->effcat[0]->name[1] = "Stream effects";
     this->effcat[0]->box->lcolor[0] = 0.7;
@@ -541,7 +541,7 @@ Program::Program() {
 	
 	this->effcat[1] = new Button(false);
 	this->effcat[1]->toggle = 1;
-	this->buttons.push_back(this->effcat[1]);
+	this->buttons[20] = this->effcat[1];
 	this->effcat[1]->name[0] = "Layer effects";
 	this->effcat[1]->name[1] = "Stream effects";
 	float xoffset = 1.0f + this->layw - 0.019f;
@@ -845,7 +845,7 @@ Program::Program() {
 	this->wormgate1->box->upvtxtoscr();
 	this->wormgate1->box->tooltiptitle = "Screen switching wormgate ";
 	this->wormgate1->box->tooltip = "Connects mixing screen and media bins screen.  Leftclick to switch screen.  Drag content inside white rectangle up to the very edge of the screen to travel to the other screen. ";
-	this->buttons.push_back(this->wormgate1);
+	this->buttons[21] = this->wormgate1;
 	this->wormgate2 = new Button(false);
 	this->wormgate2->toggle = 1;
 	this->wormgate2->box->vtxcoords->x1 = 1.0f - 0.0375f;
@@ -855,7 +855,7 @@ Program::Program() {
 	this->wormgate2->box->upvtxtoscr();
 	this->wormgate2->box->tooltiptitle = "Screen switching wormgate ";
 	this->wormgate2->box->tooltip = "Connects mixing screen and media bins screen.  Leftclick to switch screen.  Leftclick to switch screen.  Drag content inside white rectangle up to the very edge of the screen to travel to the other screen. ";
-	this->buttons.push_back(this->wormgate2);
+	this->buttons[22] = this->wormgate2;
 }
 
 void Program::make_menu(const std::string &name, Menu *&menu, std::vector<std::string> &entries) {
@@ -2051,6 +2051,7 @@ void Program::layerstack_scrollbar_handle() {
             }
             if (mainprogram->leftmouse) {
                 mainmix->scenes[i][mainmix->currscene[i]]->scrollpos--;
+                mainprogram->leftmouse = false;
             }
         } else if (boxafter->in()) {
             //mouse in empty scrollbar part after the lightgrey visible layers part
@@ -2066,6 +2067,7 @@ void Program::layerstack_scrollbar_handle() {
             }
             if (mainprogram->leftmouse) {
                 mainmix->scenes[i][mainmix->currscene[i]]->scrollpos++;
+                mainprogram->leftmouse = false;
             }
         }
         //trigger scrollbar tooltips
@@ -2160,122 +2162,121 @@ int Program::quit_requester() {
 }
 
 
-void Program::shelf_miditriggering() {
-	// do midi trigger from shelf, set up in callback, executed here at a fixed the_loop position
-	ShelfElement* elem = mainprogram->midishelfelem;
+void Program::shelf_triggering(ShelfElement* elem) {
+	// do trigger from shelf, set up in callback, executed here at a fixed the_loop position
 	if (elem) {
-	    std::vector<Layer*> clays = mainmix->currlays[!mainprogram->prevmodus];
-	    for (int k = 0; k < clays.size(); k++) {
-	        Layer *lay = clays[k];
-            if (elem->launchtype == 1) mainmix->set_prevshelfdragelem(clays[k]);
-            clays[k]->deautomate();
+        std::vector<Layer *> clays = mainmix->currlays[!mainprogram->prevmodus];
+        int checkeddeck = 2;
+        Layer *laydeck0 = nullptr;
+        Layer *laydeck1 = nullptr;
+        for (int k = 0; k < clays.size(); k++) {
+            Layer *lay = clays[k];
+            //clays[k]->deautomate();    reminder : sometimes necessary?
             if (elem->type == ELEM_FILE) {
                 clays[k] = clays[k]->open_video(0, elem->path, true);
                 mainmix->currlay[!mainprogram->prevmodus] = clays[k];
                 if (lay->initialized) mainmix->copy_pbos(clays[k], lay);
-                clays[k]->prevshelfdragelem = mainprogram->shelfdragelem;
+                clays[k]->prevshelfdragelems.push_back(elem);
             } else if (elem->type == ELEM_IMAGE) {
                 clays[k]->open_image(elem->path);
                 clays[k] = (*(clays[k]->layers))[clays[k]->pos];
-           } else if (elem->type == ELEM_LAYER) {
+                clays[k]->prevshelfdragelems.push_back(elem);
+            } else if (elem->type == ELEM_LAYER) {
                 clays[k] = mainmix->open_layerfile(elem->path, clays[k], true, false);  // reminder : doclips?
+                if (mainprogram->shelfdragelem->launchtype == 1) {
+                    clays[k]->prevshelfdragelems = lay->prevshelfdragelems;
+                    clays[k]->prevshelfdragelems.push_back(mainprogram->shelfdragelem);
+                } else if (mainprogram->shelfdragelem->launchtype == 2) {
+                    clays[k]->prevshelfdragelems = lay->prevshelfdragelems;
+                    clays[k]->prevshelfdragelems.push_back(mainprogram->shelfdragelem);
+                }
+                if (elem->launchtype == 1) mainmix->set_prevshelfdragelem(clays[k]);
+                if (elem->launchtype == 2) mainmix->set_prevshelfdragelem(clays[k]);
                 lay->set_inlayer(clays[k], true);
                 mainmix->currlay[!mainprogram->prevmodus] = clays[k];
-           } else if (elem->type == ELEM_DECK) {
-                mainmix->mousedeck = clays[k]->deck;
-                std::vector<Layer*>& lvec = choose_layers(mainmix->mousedeck);
-                mainmix->open_deck(elem->path, true);
-            } else if (elem->type == ELEM_MIX) {
-                std::vector<Layer*>& lvec = choose_layers(0);
-                lvec = choose_layers(1);
-                mainmix->open_mix(elem->path, true);
             }
-           // setup framecounters for layers something was previously dragged into
-            // when something new is dragged into layer, set frames from
-            if (elem->launchtype == 1) {
-                if (elem->type == ELEM_DECK) {
-                    std::vector<Layer *> &lvec = choose_layers(clays[k]->deck);
-                    for (int i = 0; i < lvec.size(); i++) {
-                        if (elem->cframes.size()) {
-                            lvec[i]->frame = elem->cframes[i];
-                        }
-                        else {
-                            elem->cframes.push_back(0.0f);
-                        }
-                        lvec[i]->prevshelfdragelem = mainprogram->midishelfelem;
-                    }
-                } else if (elem->type == ELEM_MIX) {
-                    for (int m = 0; m < 2; m++) {
-
-                        std::vector<Layer *> &lvec = choose_layers(m);
-                        for (int i = 0; i < lvec.size(); i++) {
-                            if (elem->cframes.size()) {
-                                lvec[i]->frame = elem->cframes[i];
-                            }
-                            else {
-                                elem->cframes.push_back(0.0f);
-                            }
-                            lvec[i]->prevshelfdragelem = mainprogram->midishelfelem;
-                        }
-                    }
-                } else {
-                    if (elem->cframes.size()) {
-                        clays[k]->frame = elem->cframes[0];
-                    }
-                    else {
-                        elem->cframes.push_back(0.0f);
-                    }
-                }
-            } else if (elem->launchtype == 2) {
-                if (elem->nblayers.size()) {
-                    if (elem->type == ELEM_DECK) {
-                        std::vector<Layer *> &lvec = choose_layers(clays[k]->deck);
-                        for (int i = 0; i < lvec.size(); i++) {
-                            lvec[i]->frame = elem->nblayers[i]->frame;
-                            elem->nblayers[i]->closethread = 1;
-                            lvec[i]->prevshelfdragelem = mainprogram->midishelfelem;
-                        }
-                    } else if (elem->type == ELEM_MIX) {
-                        int count = 0;
-                        for (int m = 0; m < 2; m++) {
-                            std::vector<Layer *> &lvec = choose_layers(m);
-                            for (int i = 0; i < lvec.size(); i++) {
-                                lvec[i]->frame = elem->nblayers[count]->frame;
-                                elem->nblayers[count]->closethread = 1;
-                                lvec[i]->prevshelfdragelem = mainprogram->midishelfelem;
-                                count++;
-                            }
-                        }
-                    } else {
-                        clays[k]->frame = elem->nblayers[0]->frame;
-                        elem->nblayers[0]->closethread = 1;
-                    }
-                }
-            }
-            if (elem->type == ELEM_DECK) {
-                std::vector<Layer *> &lvec = choose_layers(clays[k]->deck);
-                for (int i = 0; i < lvec.size(); i++) {
-                    lvec[i]->prevshelfdragelem = mainprogram->midishelfelem;
-                }
-            } else if (elem->type == ELEM_MIX) {
-                for (int m = 0; m < 2; m++) {
-                    std::vector<Layer *> &lvec = choose_layers(m);
-                    for (int i = 0; i < lvec.size(); i++) {
-                        lvec[i]->prevshelfdragelem = mainprogram->midishelfelem;
-                    }
-                }
-            }
-
-            if (elem->launchtype > 0) {
-                clays[k]->prevshelfdragelem = mainprogram->midishelfelem;
-            }
-            else clays[k]->frame = 0.0f;
-
-            if (elem->launchtype == 2) mainmix->set_prevshelfdragelem(clays[k]);
+            if (clays[k]->deck == 0) laydeck0 = choose_layers(0)[0];
+            if (clays[k]->deck == 1) laydeck1 = choose_layers(1)[0];
         }
 
+        std::vector<Layer *> decklays;
+        decklays.push_back(laydeck0);
+        decklays.push_back(laydeck1);
+        for (int k = 0; k < decklays.size(); k++) {
+            if (decklays[k] == nullptr) continue;
+            if (elem->type == ELEM_DECK) {
+                mainmix->mousedeck = decklays[k]->deck;
+                if (checkeddeck == decklays[k]->deck)
+                    continue;
+                checkeddeck = decklays[k]->deck;
+                std::vector<Layer *> lvec2 = choose_layers(mainmix->mousedeck);
+                std::vector<Layer *> lvec1 = mainmix->bulrs[mainprogram->prevmodus][mainmix->mousedeck];
+                for (int i = 0; i < std::min(lvec1.size(), lvec2.size()); i++) {
+                    if (mainprogram->shelfdragelem->launchtype == 1) {
+                        lvec2[i]->prevshelfdragelems = lvec1[i]->prevshelfdragelems;
+                        lvec2[i]->prevshelfdragelems.push_back(mainprogram->shelfdragelem);
+                    } else if (mainprogram->shelfdragelem->launchtype == 2) {
+                        lvec2[i]->prevshelfdragelems = lvec1[i]->prevshelfdragelems;
+                        lvec2[i]->prevshelfdragelems.push_back(mainprogram->shelfdragelem);
+                    }
+                }
 
-        mainprogram->midishelfelem = nullptr;
+                if (elem->launchtype == 1) {
+                    if (elem->clayers.size()) elem->needframeset = true;
+                    else elem->needframeset = false;
+                    mainmix->set_prevshelfdragelem(decklays[k]);
+                }
+                if (elem->launchtype == 2) {
+                    if (elem->nblayers.size()) elem->needframeset = true;
+                    else elem->needframeset = false;
+                    mainmix->set_prevshelfdragelem(decklays[k]);
+                }
+
+                // copy_lpst moved to swapmap
+
+                mainmix->open_deck(elem->path, true, true);  // dont load loopstation events from shelf ever
+
+            }
+        }
+
+        if (elem->type == ELEM_MIX) {
+            std::vector<Layer *> &lvec2 = choose_layers(0);
+            std::vector<Layer *> &lvec3 = choose_layers(1);
+            std::vector<Layer *> lvec0 = mainmix->bulrs[mainprogram->prevmodus][mainmix->mousedeck];
+            std::vector<Layer *> lvec1 = mainmix->bulrs[mainprogram->prevmodus][mainmix->mousedeck];
+            for (int i = 0; i < std::min(lvec0.size(), lvec2.size()); i++) {
+                if (mainprogram->shelfdragelem->launchtype == 1) {
+                    lvec2[i]->prevshelfdragelems = lvec0[i]->prevshelfdragelems;
+                    lvec2[i]->prevshelfdragelems.push_back(mainprogram->shelfdragelem);
+                } else if (mainprogram->shelfdragelem->launchtype == 2) {
+                    lvec2[i]->prevshelfdragelems = lvec0[i]->prevshelfdragelems;
+                    lvec2[i]->prevshelfdragelems.push_back(mainprogram->shelfdragelem);
+                }
+            }
+            for (int i = 0; i < std::min(lvec1.size(), lvec3.size()); i++) {
+                if (mainprogram->shelfdragelem->launchtype == 1) {
+                    lvec3[i]->prevshelfdragelems = lvec1[i]->prevshelfdragelems;
+                    lvec3[i]->prevshelfdragelems.push_back(mainprogram->shelfdragelem);
+                } else if (mainprogram->shelfdragelem->launchtype == 2) {
+                    lvec3[i]->prevshelfdragelems = lvec1[i]->prevshelfdragelems;
+                    lvec3[i]->prevshelfdragelems.push_back(mainprogram->shelfdragelem);
+                }
+            }
+            if (elem->launchtype == 1) {
+                if (elem->clayers.size()) elem->needframeset = true;
+                else elem->needframeset = false;
+                mainmix->set_prevshelfdragelem(choose_layers(0)[0]);
+            }
+            if (elem->launchtype == 2) {
+                if (elem->nblayers.size()) elem->needframeset = true;
+                else elem->needframeset = false;
+                mainmix->set_prevshelfdragelem(choose_layers(0)[0]);
+            }
+
+            mainmix->open_mix(elem->path, true, true);  // dont load loopstation events from shelf ever
+        }
+
+        // framesetting moved to after initial swapmap
     }
 }
 
@@ -2305,7 +2306,21 @@ Button::Button(bool state) {
     this->value = state;
     this->ccol[3] = 1.0f;
     if (mainprogram) {
-        mainprogram->buttons.push_back(this);
+        int max = 0;
+        for (int i = 0; i < mainprogram->buttons.size(); i++) {
+            if (mainprogram->buttons.count(i)) {
+                if (i > max) {
+                    max = i;
+                }
+            }
+        }
+        int freepos = 0;
+        for (int n = 0; n < max + 1; n++) {
+            if (mainprogram->buttons.count(n)) continue;
+            freepos = n;
+            break;
+        }
+        mainprogram->buttons[freepos] = this;
         if (mainprogram->prevmodus) {
             if (lp) lp->allbuttons.push_back(this);
         }
@@ -2319,9 +2334,9 @@ Button::~Button() {
     delete this->box;
     this->deautomate();
     if (mainprogram) {
-        int pos = std::find(mainprogram->buttons.begin(), mainprogram->buttons.end(), this) - mainprogram->buttons.begin();
-        if (pos != mainprogram->buttons.size()) {
-            mainprogram->buttons.erase(mainprogram->buttons.begin() + pos);
+        for (auto it = mainprogram->buttons.begin(); it != mainprogram->buttons.end(); ++it) {
+            if (it->second == this)
+                mainprogram->buttons.erase(it->first);
         }
         if (mainprogram->prevmodus) {
             int pos = std::find(lp->allbuttons.begin(), lp->allbuttons.end(), this) - lp->allbuttons.begin();
@@ -4784,16 +4799,16 @@ void Program::preview_modus_buttons() {
                     // SEND UP button copies deck preview set to scene
                     Scene *scene = mainmix->scenes[m][scns[i] - 1];
                     std::vector<Layer *> &lvec = choose_layers(m);
-                    for (Layer *nbl: scene->nblayers) {
+                    for (Layer *nbl: scene->scnblayers) {
                         nbl->tobedeleted = true;
                     }
-                    scene->nblayers.clear();
+                    scene->scnblayers.clear();
                     scene->nbframes.clear();
                     for (int j = 0; j < lvec.size(); j++) {
                         // store layers and frames of current scene into nblayers for running their framecounters in the background (to keep sync)
                         if (lvec[j]->filename == "") continue;
                         lvec[j]->tobedeleted = false;
-                        scene->nblayers.push_back(lvec[j]);
+                        scene->scnblayers.push_back(lvec[j]);
                         scene->nbframes.push_back(lvec[j]->frame);
                     }
                     mainmix->mousedeck = m;

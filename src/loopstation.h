@@ -54,10 +54,18 @@ class LoopStation {
 class LoopStationElement {
 	public:
 		int pos = 0;
+        int comparepos = -1;
 		std::unordered_set<Param*> params;
 		std::unordered_set<Button*> buttons;
-		std::unordered_set<Layer*> layers;
-		LoopStation* lpst;
+        std::unordered_set<Layer*> layers;
+        std::vector<int> effcatposns;  // for shelf triggering nblayers
+        std::vector<int> effposns;  // for shelf triggering nblayers
+        std::vector<int> parposns;  // for shelf triggering nblayers
+        std::vector<int> buteffcatposns;  // for shelf triggering nblayers
+        std::vector<int> buteffposns;  // for shelf triggering nblayers
+        std::vector<int> butposns;  // for shelf triggering nblayers
+        std::vector<int> compareelems;  // for shelf triggering nblayers
+        LoopStation* lpst;
 		Button *recbut;
 		Button *loopbut;
 		Button *playbut;

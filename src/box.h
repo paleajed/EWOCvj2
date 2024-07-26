@@ -54,6 +54,7 @@ class Button {
 	public:
 		std::string name[2];
 		Boxx *box;
+        int butid = 0;
 		int value = 0;
 		int oldvalue = 0;
 		int toggle = 0;

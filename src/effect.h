@@ -83,6 +83,7 @@ class Param {
 		std::vector<std::string> oscpaths;
         std::chrono::system_clock::time_point midistarttime;
         bool midistarted = false;
+        void handle(bool smallxpad = false);
         void deautomate();
         void register_midi();
         void unregister_midi();

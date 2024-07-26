@@ -47,6 +47,7 @@ class ShelfElement;
 class LoopStationElement;
 class BinElement;
 class MidiElement;
+class LoopStation;
 
 struct frame_result {
     char *data = nullptr;
@@ -252,7 +253,10 @@ class Layer {
 		Node *lasteffnode[2] = {nullptr, nullptr};
 		BlendNode *blendnode = nullptr;
 
-		ShelfElement* prevshelfdragelem = nullptr;
+        GLuint bufbotex = -1;
+
+        std::vector<ShelfElement*> prevshelfdragelems;
+        int psde_size = 0;
 
 		std::string filename = "";
         long long filesize = 0;
@@ -307,7 +311,10 @@ class Layer {
         bool started2 = false;
         bool newload = true;
 
-		void display();
+        LoopStation *lpst;
+        bool isnblayer = false;
+
+        void display();
 		Effect* add_effect(EFFECT_TYPE type, int pos);
 		Effect* replace_effect(EFFECT_TYPE type, int pos);
 		void delete_effect(int pos);
@@ -317,6 +324,7 @@ class Layer {
 		void set_clones();
 		void mute_handle();
 		void set_aspectratio(int lw, int lh);
+        void cnt_lpst();
 		bool calc_texture(bool comp, bool alive);
 		void load_frame();
 		bool exchange(std::vector<Layer*>& slayers, std::vector<Layer*>& dlayers, bool deck);
@@ -355,9 +363,9 @@ class Scene {
 		Boxx* box;
 		Button* button;
 		bool loaded;
-		std::vector<Layer*> nblayers;
+		std::vector<Layer*> scnblayers;
 		std::vector<float> nbframes;
-		std::vector<Layer*> tempnblayers;
+		std::vector<Layer*> tempscnblayers;
 		std::vector<float> tempnbframes;
 		int scrollpos = 0;
 };
@@ -396,9 +404,17 @@ class Mixer {
         bool renaming = false;
         bool skipall = false;
 		bool bualive;
+        bool copycomp_busy = false;
 		Layer *currlay[2] = {nullptr, nullptr};
         std::vector<Layer*> currlays[2];
         GLuint minitex;
+
+        std::unordered_map<Layer*, Layer*> nlaymap;
+        Layer *templay;
+        std::vector<float> deckframes;
+        std::vector<Layer *> keep0;
+        std::vector<Layer *> keep1;
+
 
         Layer *add_layer(std::vector<Layer*> &layers, int pos);
 		void delete_layer(std::vector<Layer*> &layers, Layer *lay, bool add);
@@ -408,7 +424,6 @@ class Mixer {
         void copy_pbos(Layer *clay, Layer *lay);
         void set_values(Layer* clay, Layer* lay, bool open);
 		void copy_effects(Layer* slay, Layer* dlay, bool comp);
-        void handle_param(Param* par, bool smallxpad = false);
         void handle_adaptparam();
 		void handle_clips();
 		void record_video(std::string reccod);
@@ -419,8 +434,8 @@ class Mixer {
 		void save_deck(const std::string &path);
 		void do_save_deck(const std::string& path, bool save, bool doclips);
 		Layer* open_layerfile(const std::string &path, Layer *lay, bool loadevents, bool doclips);
-		void open_mix(const std::string &path, bool alive);
-		void open_deck(const std::string &path, bool alive, bool copycomp = false);
+		void open_mix(const std::string &path, bool alive, bool loadevents = true);
+		void open_deck(const std::string &path, bool alive, bool loadevents = true, bool copycomp = false);
 		void new_state();
 		void open_state(const std::string& path);
 		void save_state(const std::string &path, bool autosave);
@@ -439,7 +454,8 @@ class Mixer {
         void open_dragbinel(Layer *lay);
         void reconnect_all(std::vector<Layer*> &layers);
         void change_currlay(Layer *oldcurr, Layer *newcurr);
-		Mixer();
+        void copy_lpst(Layer *destlay, Layer *srclay, bool global, bool back, bool writeevents);
+        Mixer();
 		
 		std::mutex recordlock[2];
 		std::condition_variable startrecord[2];

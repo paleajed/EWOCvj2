@@ -152,8 +152,12 @@ public:
 	Boxx* pbox;
 	Boxx* cbox;
 	int launchtype = 0;
-	std::vector<int> cframes;
-	std::vector<Layer*> nblayers;
+    bool needframeset = false;
+	std::vector<Layer*> clayers;
+    std::vector<Layer*> prevclayers;
+    std::vector<Layer*> nblayers;
+    std::vector<Layer*> prevnblayers;
+    void set_nbclayers(Layer *lay);
 	ShelfElement(bool side, int pos, Button *but);
 	~ShelfElement();
 };
@@ -350,7 +354,7 @@ class Program {
         GLuint bgtex;
         GLuint loktex;
 		std::vector<OutputEntry*> outputentries;
-        std::vector<Button*> buttons;
+        std::unordered_map<int, Button*> buttons;
 		Boxx *scrollboxes[2];
 		Boxx *prevbox;
 		Layer *loadlay;
@@ -686,6 +690,7 @@ class Program {
 		int shelffilescount;
 		int shelfdragnum = -1;
 		ShelfElement *shelfdragelem = nullptr;
+        bool catchup = false;
         ShelfElement* midishelfelem = nullptr;
         ShelfElement* midiconfigshelfelem = nullptr;
 		Shelf *shelves[2];
@@ -725,6 +730,8 @@ class Program {
         float ordertime = 0.0f;
         bool sameeight = false;
         bool check = false;
+
+        ShelfElement *lpstelem = nullptr;
 
     #ifdef WINDOWS
         SOCKET sock;
@@ -791,7 +798,7 @@ class Program {
         int handle_scrollboxes(Boxx &upperbox, Boxx &lowerbox, int numlines, int scrollpos, int scrlines, int mx, int
             my);
         void handle_shelf(Shelf *shelf);
-        void shelf_miditriggering();
+        void shelf_triggering(ShelfElement *elem);
 		int config_midipresets_handle();
 		bool config_midipresets_init();
 		void preferences();
@@ -941,7 +948,7 @@ extern float xscrtovtx(float scrcoord);
 extern float yscrtovtx(float scrcoord);
 
 extern float pdistance(float x, float y, float x1, float y1, float x2, float y2);
-extern void enddrag(bool clips);
+extern void enddrag();
 
 extern void open_files_bin();
 extern void save_bin(const std::string &path);
