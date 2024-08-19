@@ -276,6 +276,7 @@ void BinsMain::handle(bool draw) {
 	if (!mainprogram->menuondisplay) this->menubinel = nullptr;
 	if (mainprogram->menuactivation) this->menubinel = nullptr;
 	if (draw) {
+		if (this->selboxing) mainprogram->menuactivation = false;
 		for (int j = 0; j < 12; j++) {
 			for (int i = 0; i < 12; i++) {
 				Boxx* box = this->elemboxes[i * 12 + j];
@@ -618,6 +619,8 @@ void BinsMain::handle(bool draw) {
                             }
                         }
                     }
+					//mainprogram->rightmouse = false;
+					//mainprogram->rightmousedown = false;
 				}
 			}
 		}
@@ -957,11 +960,15 @@ void BinsMain::handle(bool draw) {
                         dirbinel = this->currbin->elements[epos];
                     }
                     else continue;
-                    dirbinel->tex = dirbinel->oldtex;
+                    if (this->inputtexes[k] != -1) dirbinel->tex = dirbinel->oldtex;
 				}
 
 				this->currbinel = nullptr;
-				this->inputtexes.clear();
+                this->inputtexes.clear();
+                this->inputtypes.clear();
+                this->menuactbinel = nullptr;
+                this->addpaths.clear();
+                this->inputjpegpaths.clear();
                 mainprogram->rightmouse = false;
                 mainprogram->menuactivation = false;
 			}
@@ -1010,7 +1017,7 @@ void BinsMain::handle(bool draw) {
 						// click to choose current bin
                         if (this->inputtexes.size() && !this->menuactbinel) {
                             if (this->prevbinel) {
-                                // when moving files, set old texes back before switching bin
+                                // when moving files, set old texes back before switching bin (move)
                                 int ii = this->previ - this->firsti;
                                 int jj = this->prevj - this->firstj;
                                 for (int k = 0; k < this->inputtexes.size(); k++) {
@@ -1197,6 +1204,9 @@ void BinsMain::handle(bool draw) {
 			// bin element renaming with keyboard
 			mainprogram->frontbatch = true;
 			draw_box(white, black, this->renamingbox, -1);
+			if (this->renamingbox->in()) {
+				mainprogram->tooltipmilli;
+			}
 			do_text_input(-0.5f + 0.1f, -0.2f + 0.05f, 0.0009f, 0.0015f, mainprogram->mx, mainprogram->my,
                  mainprogram->xvtxtoscr(0.8f), 0, nullptr);
             mainprogram->frontbatch = false;
@@ -1946,7 +1956,7 @@ void BinsMain::handle(bool draw) {
 
 						if (binel->name != "") {
                             if (binel->select && mainprogram->leftmousedown && this->movebinels.empty()) {
-                                // start dragging selection around
+                                // start dragging selection around (move)
                                 for (int i = 0; i < 12; i++) {
                                     for (int j = 0; j < 12; j++) {
                                         BinElement* binel = this->currbin->elements[i * 12 + j];
@@ -2107,6 +2117,7 @@ void BinsMain::handle(bool draw) {
 						this->inputtypes.clear();
 						this->menuactbinel = nullptr;
 						this->addpaths.clear();
+                        this->inputjpegpaths.clear();
 					}
 
 
@@ -2147,75 +2158,75 @@ void BinsMain::handle(bool draw) {
 
 		if (!inbinel) this->binpreview = false;
 
-		if (draw) {
-            if (inbinel && !mainprogram->rightmouse && (lay->vidmoving || mainprogram->shelfdragelem) &&
-                mainprogram->lmover) {
-                // confirm layer dragging from main view and set influenced bin element to the right values
-                this->currbinel->type = mainprogram->dragbinel->type;
-                this->currbinel->path = mainprogram->dragbinel->path;
-                if (this->currbinel->type == ELEM_LAYER) {
-                    std::string p1;
-                    if (lay->vidmoving) p1 = lay->filename;
-                    else p1 = mainprogram->shelfdragelem->path;
-                    this->currbinel->path = find_unused_filename(basename(p1),
-                                                                 mainprogram->project->binsdir + this->currbin->name +
-                                                                 "/", ""
-                                                                      ".layer");
-                    this->currbinel->name = remove_extension(basename(this->currbinel->path));
-                    mainmix->save_layerfile(this->currbinel->path, lay, 1, 0);
-                }
-                this->currbinel->name = remove_extension(basename(this->currbinel->path));
-                this->currbinel->full = true;
-                this->currbinel = nullptr;
-                enddrag();
-                lay->vidmoving = false;
-                mainmix->moving = false;
-            } else if ((mainprogram->lmover || mainprogram->rightmouse) && mainprogram->dragbinel) {
-                //when dropping on grey area
-                // or rightmouse canceling from mix view
-                bool cond = false;
-                if (mainprogram->dragbinel) {
-                    cond = (mainprogram->dragbinel->type == ELEM_DECK || mainprogram->dragbinel->type == ELEM_MIX);
-                }
-                if (lay->vidmoving) {
-                    // when layer/mix/deck dragging from mix view
-                    if (this->currbinel) {
-                        this->currbinel->tex = this->currbinel->oldtex;
-                        this->currbinel = nullptr;
-                    }
-                } else if (this->movingtex != -1) {
-                    // drop: when element dragging inside bin
-                    bool found = false;
-                    BinElement *foundbinel;
-                    for (int j = 0; j < 12; j++) {
-                        for (int i = 0; i < 12; i++) {
-                            Boxx *box = this->elemboxes[i * 12 + j];
-                            foundbinel = this->currbin->elements[i * 12 + j];
-                            if (box->in() && this->currbinel == foundbinel) {
-                                found = true;
-                                break;
-                            }
-                        }
-                    }
-                    if (!found) {
-                        this->currbinel->tex = this->movingbinel->tex;
-                        this->movingbinel->tex = this->movingtex;
-                        this->currbinel = nullptr;
-                        this->movingbinel = nullptr;
-                        this->movingtex = -1;
-                    } else {
-                        std::swap(this->currbinel->type, this->movingbinel->type);
-                        std::swap(this->currbinel->path, this->movingbinel->path);
-                        std::swap(this->currbinel->name, this->movingbinel->name);
-                        std::swap(this->currbinel->jpegpath, this->movingbinel->jpegpath);  // one way?
-                        this->currbinel = nullptr;
-                        this->movingbinel = nullptr;
-                        this->movingtex = -1;
-                    }
-                }
-                enddrag();
+        if (inbinel && !mainprogram->rightmouse && (lay->vidmoving || mainprogram->shelfdragelem) &&
+            mainprogram->lmover) {
+            // confirm layer dragging from main view and set influenced bin element to the right values
+            this->currbinel->type = mainprogram->dragbinel->type;
+            this->currbinel->path = mainprogram->dragbinel->path;
+            if (this->currbinel->type == ELEM_LAYER) {
+            	std::string p1;
+            	if (lay->vidmoving) p1 = lay->filename;
+            	else p1 = mainprogram->shelfdragelem->path;
+            	this->currbinel->path = find_unused_filename(basename(p1),
+															 mainprogram->project->binsdir + this->currbin->name +
+															 "/", ""
+																  ".layer");
+            	this->currbinel->name = remove_extension(basename(this->currbinel->path));
+            	mainmix->save_layerfile(this->currbinel->path, lay, 1, 0);
             }
+            this->currbinel->name = remove_extension(basename(this->currbinel->path));
+            this->currbinel->full = true;
+            this->currbinel = nullptr;
+            enddrag();
+            lay->vidmoving = false;
+            mainmix->moving = false;
         }
+        if ((mainprogram->lmover || mainprogram->rightmouse) && mainprogram->dragbinel) {
+            //when dropping on grey area
+            // or rightmouse canceling from mix view
+            bool cond = false;
+            if (mainprogram->dragbinel) {
+            	cond = (mainprogram->dragbinel->type == ELEM_DECK || mainprogram->dragbinel->type == ELEM_MIX);
+            }
+            if (lay->vidmoving) {
+            	// when layer/mix/deck dragging from mix view
+            	if (this->currbinel) {
+            		this->currbinel->tex = this->currbinel->oldtex;
+            		this->currbinel = nullptr;
+            	}
+            } else if (this->movingtex != -1) {
+            	// drop: when element dragging inside bin
+            	bool found = false;
+            	BinElement *foundbinel;
+            	for (int j = 0; j < 12; j++) {
+            		for (int i = 0; i < 12; i++) {
+            			Boxx *box = this->elemboxes[i * 12 + j];
+            			foundbinel = this->currbin->elements[i * 12 + j];
+            			if (box->in() && this->currbinel == foundbinel) {
+            				found = true;
+            				break;
+            			}
+            		}
+            	}
+            	if (!found) {
+            		this->currbinel->tex = this->movingbinel->tex;
+            		this->movingbinel->tex = this->movingtex;
+            		this->currbinel = nullptr;
+            		this->movingbinel = nullptr;
+            		this->movingtex = -1;
+            	} else {
+            		std::swap(this->currbinel->type, this->movingbinel->type);
+            		std::swap(this->currbinel->path, this->movingbinel->path);
+            		std::swap(this->currbinel->name, this->movingbinel->name);
+            		std::swap(this->currbinel->jpegpath, this->movingbinel->jpegpath);  // one way?
+            		this->currbinel = nullptr;
+            		this->movingbinel = nullptr;
+            		this->movingtex = -1;
+            	}
+            }
+            enddrag();
+        }
+
         if (this->movebinels.size() && mainprogram->leftmouse) {
             // confirm elements move, set elements and clean up
             int ii = this->previ - this->firsti;
@@ -2262,6 +2273,7 @@ void BinsMain::handle(bool draw) {
             this->prevbinel = nullptr;
             this->inputtypes.clear();
             this->addpaths.clear();
+            this->inputjpegpaths.clear();
             mainprogram->leftmouse = false;
         }
 	}
@@ -2338,11 +2350,7 @@ void BinsMain::open_bin(const std::string &path, Bin *bin) {
 					if (bin->elements[pos]->name != "") {
 						if (bin->elements[pos]->jpegpath != "") {
 							if (concat) {
-                                if (exists(bin->elements[pos]->jpegpath)) {
-                                    bin->elements[pos]->jpegpath = find_unused_filename(
-                                            basename(bin->elements[pos]->jpegpath), mainprogram->temppath, ".jpg");
-                                }
-                                boost::filesystem::rename(result + "_" + std::to_string(filecount) + ".file", bin->elements[pos]->jpegpath);
+                                bin->elements[pos]->jpegpath = result + "_" + std::to_string(filecount) + ".file";
 								bin->open_positions.push_back(pos);
                        		    filecount++;
 							}
@@ -2410,6 +2418,7 @@ void BinsMain::do_save_bin(const std::string& path) {
                     this->currbin->elements[i * 12 + j]->jpegpath = find_unused_filename(this->currbin->name, mainprogram->temppath, ".jpg");
 					save_thumb(this->currbin->elements[i * 12 + j]->jpegpath, this->currbin->elements[i * 12 + j]->tex);
 				}
+
 				filestoadd.push_back(this->currbin->elements[i * 12 + j]->jpegpath);
 			}
             wfile << "JPEGPATH\n";

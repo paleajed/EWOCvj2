@@ -116,7 +116,6 @@ class Layer {
 		RATIO_TYPE aspectratio = RATIO_OUTPUT;
 		bool queueing = false;
 		int queuescroll = 0;
-		float scrollcol[4] = {0.4f, 0.4f, 0.4f, 0.0f};
 		Button *mutebut;
         Button* solobut;
         Button* keepeffbut;
@@ -313,6 +312,7 @@ class Layer {
 
         LoopStation *lpst;
         bool isnblayer = false;
+        std::vector<std::vector<float>> lpstcolors;
 
         void display();
 		Effect* add_effect(EFFECT_TYPE type, int pos);
@@ -414,6 +414,8 @@ class Mixer {
         std::vector<float> deckframes;
         std::vector<Layer *> keep0;
         std::vector<Layer *> keep1;
+		int dropdeckblue = 0;
+		int dropmixblue = 0;
 
 
         Layer *add_layer(std::vector<Layer*> &layers, int pos);
@@ -454,7 +456,7 @@ class Mixer {
         void open_dragbinel(Layer *lay);
         void reconnect_all(std::vector<Layer*> &layers);
         void change_currlay(Layer *oldcurr, Layer *newcurr);
-        void copy_lpst(Layer *destlay, Layer *srclay, bool global, bool back, bool writeevents);
+        void copy_lpst(Layer *destlay, Layer *srclay, bool global, bool back);
         Mixer();
 		
 		std::mutex recordlock[2];

@@ -2309,7 +2309,7 @@ void Mixer::do_deletelay(Layer *testlay, std::vector<Layer*> &layers, bool add) 
 }
 
 void Mixer::delete_layer(std::vector<Layer*> &layers, Layer *testlay, bool add) {
-	if (!testlay->dummy) {
+	/*if (!testlay->dummy) {
         ShelfElement *elem = nullptr;
         if (testlay->prevshelfdragelems.size()) {
             elem = testlay->prevshelfdragelems.back();
@@ -2328,7 +2328,7 @@ void Mixer::delete_layer(std::vector<Layer*> &layers, Layer *testlay, bool add) 
 				this->open_mix(mainprogram->temppath + "tempdeck_lnch.deck", false);
 			}
 		}
-	}
+	}*/
 
 	testlay->audioplaying = false;
 
@@ -5080,8 +5080,7 @@ void Mixer::deckmixdrag_handle() {
                 boxB->vtxcoords->h = mainprogram->layh;
                 boxB->upvtxtoscr();
                 if (boxA->in(mainprogram->mx, mainprogram->my)) {
-                    draw_box(nullptr, lightblue, -1.0f + mainprogram->numw, 1.0f - mainprogram->layh,
-                             mainprogram->layw * 3, mainprogram->layh, -1);
+                	mainmix->dropdeckblue = 1;
                     if (mainprogram->lmover) {
                         mainmix->mousedeck = 0;
                         mainmix->open_deck(mainprogram->dragbinel->path, 1, loadev);
@@ -5106,8 +5105,7 @@ void Mixer::deckmixdrag_handle() {
                     }
                 }
                 if (boxB->in(mainprogram->mx, mainprogram->my)) {
-                    draw_box(nullptr, lightblue, mainprogram->numw, 1.0f - mainprogram->layh, mainprogram->layw * 3,
-                             mainprogram->layh, -1);
+                	mainmix->dropdeckblue = 2;
                     if (mainprogram->lmover) {
                         mainmix->mousedeck = 1;
                         mainmix->open_deck(mainprogram->dragbinel->path, 1, loadev);
@@ -5128,6 +5126,7 @@ void Mixer::deckmixdrag_handle() {
                 box->vtxcoords->h = mainprogram->layh;
                 box->upvtxtoscr();
                 if (box->in(mainprogram->mx, mainprogram->my)) {
+                	mainmix->dropmixblue = 1;
                     draw_box(nullptr, lightblue, -1.0f + mainprogram->numw, 1.0f - mainprogram->layh,
                              mainprogram->layw * 6 + mainprogram->numw, mainprogram->layh, -1);
                     if (mainprogram->lmover) {
@@ -5351,12 +5350,14 @@ void Mixer::open_dragbinel(Layer *thislay, int i) {
         //newlay->prevshelfdragelems = thislay->prevshelfdragelems;
         //newlay->prevshelfdragelems.push_back(mainprogram->shelfdragelem);
         // when something new is dragged into layer, set frames from framecounters set in Mixer::set_prevshelfdragelem()
-        if (mainprogram->shelfdragelem->launchtype == 1) {
-            newlay->prevshelfdragelems = thislay->prevshelfdragelems;
-            newlay->prevshelfdragelems.push_back(mainprogram->shelfdragelem);
-        } else if (mainprogram->shelfdragelem->launchtype == 2) {
-            newlay->prevshelfdragelems = thislay->prevshelfdragelems;
-            newlay->prevshelfdragelems.push_back(mainprogram->shelfdragelem);
+        if (mainprogram->shelfdragelem) {
+            if (mainprogram->shelfdragelem->launchtype == 1) {
+                newlay->prevshelfdragelems = thislay->prevshelfdragelems;
+                newlay->prevshelfdragelems.push_back(mainprogram->shelfdragelem);
+            } else if (mainprogram->shelfdragelem->launchtype == 2) {
+                newlay->prevshelfdragelems = thislay->prevshelfdragelems;
+                newlay->prevshelfdragelems.push_back(mainprogram->shelfdragelem);
+            }
         }
     } else if (mainprogram->dragbinel->type == ELEM_IMAGE) {
         newlay = thislay->open_image(mainprogram->dragbinel->path);
@@ -5394,18 +5395,18 @@ void Mixer::open_dragbinel(Layer *thislay, int i) {
         if (mainprogram->shelfdragelem->launchtype == 1) {
             if (mainprogram->shelfdragelem->clayers.size()) {
                 newlay->frame = mainprogram->shelfdragelem->clayers[0]->frame;
-                this->copy_lpst(newlay, mainprogram->shelfdragelem->clayers[0], true, false, true);
+                this->copy_lpst(newlay, mainprogram->shelfdragelem->clayers[0], true, false);
             }
         } else if (mainprogram->shelfdragelem->launchtype == 2) {
             if (mainprogram->shelfdragelem->nblayers.size()) {
                 newlay->frame = mainprogram->shelfdragelem->nblayers[0]->frame;
-                this->copy_lpst(newlay, mainprogram->shelfdragelem->nblayers[0], true, false, true);
+                this->copy_lpst(newlay, mainprogram->shelfdragelem->nblayers[0], true, false);
             }
         }
     }
 }
 
-void Mixer::copy_lpst(Layer *destlay, Layer *srclay, bool global, bool back, bool writeevents) {
+void Mixer::copy_lpst(Layer *destlay, Layer *srclay, bool global, bool back) {
     // copy lpst values saved in nblayers or clayers back to the newly created layers (shelf trigger launchtype 2 & 1)
     LoopStation *lpst;
     LoopStation *lpst2;
@@ -5461,10 +5462,17 @@ void Mixer::copy_lpst(Layer *destlay, Layer *srclay, bool global, bool back, boo
         elem->interimtime = layelem->interimtime;
         elem->totaltime = layelem->totaltime;
         elem->speedadaptedtime = layelem->speedadaptedtime;
-        elem->eventpos = layelem->eventpos;
+        std::tuple<long long, Param*, Button*, float> event;
+        for (int j = 0; elem->eventlist.size(); j++) {
+            event = elem->eventlist[std::clamp(j, 0, (int) elem->eventlist.size() - 1)];
+            if (elem->speedadaptedtime > std::get<0>(event)) {
+                elem->eventpos = j;
+                break;
+            }
+        }
         elem->atend = layelem->atend;
 
-        if (writeevents) {
+        /*if (writeevents) {
             Param *par = nullptr;
             Button *but = nullptr;
             for (int i = 0; i < layelem->parposns.size(); i++) {
@@ -5526,7 +5534,7 @@ void Mixer::copy_lpst(Layer *destlay, Layer *srclay, bool global, bool back, boo
                 //    }
                 //}
             }
-        }
+        }*/
     }
 }
 
@@ -9708,9 +9716,11 @@ void Mixer::record_video(std::string reccod) {
         /* encode the image */
         encode_frame(dest, nullptr, c, yuvframe, pkt, nullptr, count);
 		
+		av_freep(rgbaframe->data);
 		av_freep(yuvframe->data);
 		av_packet_unref(pkt);
-		
+    	av_frame_free(&rgbaframe);
+
 		count++;
 
         if (this->rerun) {
@@ -9799,7 +9809,7 @@ void Mixer::start_recording() {
     }
 
 	// make a thumbnail for display afterwards
-    if (this->reckind) {
+    if (this->reckind && !this->recordnow[this->reckind]) {
         if (this->recQthumb != -1) glDeleteTextures(1, &this->recQthumb);
         this->recQthumb = copy_tex(mainprogram->nodesmain->mixnodescomp[2]->mixtex);
     }

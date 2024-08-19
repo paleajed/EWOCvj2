@@ -14,6 +14,7 @@
 #include <ios>
 #include <string>
 #include <codecvt>
+#include <algorithm>
 
 #include "GL/glew.h"
 #include "GL/gl.h"
@@ -2008,12 +2009,18 @@ void Program::layerstack_scrollbar_handle() {
                 if (inbox) draw_box(lightgrey, lightblue, box, -1);
                 else draw_box(lightgrey, grey, box, -1);
             } else draw_box(lightgrey, black, box, -1);
-            // boxlayer: small coloured box (default grey) signalling there's a loopstation parameter in this layer
+            // boxlayer: small coloured boxes(default grey) signalling there's a loopstation parameter in this layer
             boxlayer->vtxcoords->x1 = box->vtxcoords->x1 + 0.031f;
             if (j < lvec.size()) {
                 if (j >= mainmix->scenes[i][mainmix->currscene[i]]->scrollpos &&
                     j < mainmix->scenes[i][mainmix->currscene[i]]->scrollpos + 3) {
-                    draw_box(nullptr, lvec[j]->scrollcol, boxlayer, -1);
+                    const int lpstcsz = lvec[j]->lpstcolors.size();
+                    int sz = std::min(lpstcsz, 6);
+                    for(int k = 0; k < sz; k++) {
+                        float ac[4] = {lvec[j]->lpstcolors[k][0],lvec[j]->lpstcolors[k][1],lvec[j]->lpstcolors[k][2],lvec[j]->lpstcolors[k][3]};
+                        draw_box(nullptr, ac, boxlayer, -1);
+                        boxlayer->vtxcoords->x1 += boxlayer->vtxcoords->w;
+                    }
                 }
             }
 
@@ -2334,7 +2341,8 @@ Button::~Button() {
     delete this->box;
     this->deautomate();
     if (mainprogram) {
-        for (auto it = mainprogram->buttons.begin(); it != mainprogram->buttons.end(); ++it) {
+        std::unordered_map<int, Button*> cpmap = mainprogram->buttons;
+        for (auto it = cpmap.begin(); it != cpmap.end(); ++it) {
             if (it->second == this)
                 mainprogram->buttons.erase(it->first);
         }
@@ -7563,7 +7571,7 @@ void Program::define_menus() {
     std::vector<std::string> layops1;
     layops1.push_back("submenu livemenu");
     layops1.push_back("Connect live");
-    layops1.push_back("Open file(s) into layer");
+    layops1.push_back("Open file(s) into layer stack");
     layops1.push_back("Open file(s) into queue");
     layops1.push_back("Insert file(s) before");
     layops1.push_back("Save layer");
@@ -7588,7 +7596,7 @@ void Program::define_menus() {
     std::vector<std::string> layops2;
     layops2.push_back("submenu livemenu");
     layops2.push_back("Connect live");
-    layops2.push_back("Open file(s) into layer");
+    layops2.push_back("Open file(s) into layer stack");
     layops2.push_back("Open file(s) into queue");
     layops2.push_back("Save layer");
     layops2.push_back("New deck");

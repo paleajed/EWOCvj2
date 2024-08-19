@@ -188,15 +188,19 @@ void LoopStationElement::handle() {
                     std::vector<Layer *> &lvec = choose_layers(i);
                     for (int j = 0; j < lvec.size(); j++) {
                         if (std::find(this->layers.begin(), this->layers.end(), lvec[j]) != this->layers.end()) {
-                            lvec[j]->scrollcol[0] = this->colbox->acolor[0];
-                            lvec[j]->scrollcol[1] = this->colbox->acolor[1];
-                            lvec[j]->scrollcol[2] = this->colbox->acolor[2];
-                            lvec[j]->scrollcol[3] = this->colbox->acolor[3];
-                        } else {
-                            lvec[j]->scrollcol[0] = 0.4f;
-                            lvec[j]->scrollcol[1] = 0.4f;
-                            lvec[j]->scrollcol[2] = 0.4f;
-                            lvec[j]->scrollcol[3] = 0.0f;
+                            std::vector<float> colvec;
+                            colvec.push_back(this->colbox->acolor[0]);
+                            colvec.push_back(this->colbox->acolor[1]);
+                            colvec.push_back(this->colbox->acolor[2]);
+                            colvec.push_back(this->colbox->acolor[3]);
+                            int pos = std::find(lvec[j]->lpstcolors.begin(), lvec[j]->lpstcolors.end(), colvec) - lvec[j]->lpstcolors.begin();
+                            if (pos == lvec[j]->lpstcolors.size()) {
+
+                                lvec[j]->lpstcolors.push_back(colvec);
+                            }
+                            else {
+                                lvec[j]->lpstcolors.erase(lvec[j]->lpstcolors.begin() + pos);
+                            }
                         }
                     }
                 }
@@ -459,14 +463,14 @@ void LoopStationElement::set_values() {
             }
         }
     }
-    std::vector<Layer*> &lvec1 = choose_layers(0);
+    /*std::vector<Layer*> &lvec1 = choose_layers(0);
     for (Layer *lay : lvec1) {
-        mainmix->copy_lpst(lay, lay, false, true, true);
+        mainmix->copy_lpst(lay, lay, false, true);
     }
     std::vector<Layer*> &lvec2 = choose_layers(1);
     for (Layer *lay : lvec2) {
-        mainmix->copy_lpst(lay, lay, false, true, true);
-    }
+        mainmix->copy_lpst(lay, lay, false, true);
+    }*/
 }
 
 void LoopStationElement::add_param_automationentry(Param* par) {

@@ -1762,8 +1762,8 @@ Layer* Layer::open_video(float frame, const std::string &filename, int reset, bo
 		bool ret = mainmix->set_prevshelfdragelem(this);
 		if (!ret && !this->encodeload) {
             Layer *lay = this->transfer();
+            lay->prevshelfdragelems.pop_back();
             lay->open_video(0, filename, true);
-            //lay->prevshelfdragelems.pop_back();
 			return lay;
 		}
 	}
@@ -3210,21 +3210,25 @@ void WaitBuffer(GLsync& syncObj)
 void Layer::cnt_lpst() {
     std::chrono::high_resolution_clock::time_point now = std::chrono::high_resolution_clock::now();
     for (LoopStationElement *elem : this->lpst->elems) {
-        if (elem->eventlist.size() == 0) continue;
         std::chrono::duration<double> elapsed;
         elapsed = std::chrono::duration_cast<std::chrono::duration<double>>(now - elem->starttime);
         long long millicount = std::chrono::duration_cast<std::chrono::milliseconds>(elapsed).count();
         int passed = millicount - elem->interimtime;
         elem->interimtime = millicount;
         elem->speedadaptedtime = elem->speedadaptedtime + passed * this->speed->value;
-        std::tuple<long long, Param *, Button *, float> event;
-        event = elem->eventlist[std::clamp(elem->eventpos, 0, (int) elem->eventlist.size() - 1)];
-        while (elem->speedadaptedtime > std::get<0>(event) && !elem->atend) {
-            // count all recorded events upto now
-            elem->eventpos++;
-            if (elem->eventpos >= elem->eventlist.size()) {
-                elem->atend = true;
-            } else event = elem->eventlist[elem->eventpos];
+        if (elem->speedadaptedtime >= elem->totaltime) {
+            // reached end of loopstation element recording
+            if (elem->loopbut->value) {
+                //start loop again
+                elem->speedadaptedtime = 0;
+                elem->interimtime = 0;
+                elem->starttime = std::chrono::high_resolution_clock::now() - std::chrono::milliseconds((long long)elem->interimtime);
+            }
+            else if (elem->playbut->value) {
+                //end of single shot eventlist play
+                elem->playbut->value = false;
+                elem->playbut->oldvalue = true;
+            }
         }
     }
 }
@@ -3308,7 +3312,7 @@ bool Layer::calc_texture(bool comp, bool alive) {
                                         this->onhold = true;
                                     }
                                     this->frame = this->startframe->value;
-                                    if (mainmix->checkre) mainmix->rerun = true;
+                                    //if (mainmix->checkre) mainmix->rerun = true;
                                     this->clip_display_next(0, alive);
                                 } else {
                                     this->frame = this->endframe->value - (this->frame - this->endframe->value);
@@ -3322,7 +3326,7 @@ bool Layer::calc_texture(bool comp, bool alive) {
                                         this->revbut->value = 0;
                                         this->onhold = true;
                                     }
-                                    if (mainmix->checkre) mainmix->rerun = true;
+                                    //if (mainmix->checkre) mainmix->rerun = true;
                                     this->frame = this->endframe->value;
                                     this->clip_display_next(1, alive);
                                 } else {
@@ -5571,9 +5575,12 @@ void make_layboxes() {
                 testlay->loopbox->lcolor[3] = 1.0;
                 bool found = false;
                 for (int i = 0; i < loopstation->elems.size(); i++) {
-                    if (std::find(loopstation->elems[i]->params.begin(), loopstation->elems[i]->params.end(), testlay->scritch) != loopstation->elems[i]->params.end()) {
-                        found = true;
-                        break;
+                    if (loopstation->elems[i]->params.size()) {
+                        if (std::find(loopstation->elems[i]->params.begin(), loopstation->elems[i]->params.end(),
+                                      testlay->scritch) != loopstation->elems[i]->params.end()) {
+                            found = true;
+                            break;
+                        }
                     }
                 }
                 if (!found) {
@@ -6829,7 +6836,7 @@ void the_loop() {
                                     if (elem->prevclayers[j]->pos == i &&
                                         elem->prevclayers[j]->deck == deck) {
                                         mainmix->copy_lpst(lvec[i],
-                                                           elem->prevclayers[j], true, false, false);
+                                                           elem->prevclayers[j], true, false);
                                         lvec[i]->frame = elem->prevclayers[j]->frame;
                                     }
                                 }
@@ -6840,7 +6847,7 @@ void the_loop() {
                                     if (elem->prevnblayers[j]->pos == i &&
                                         elem->prevnblayers[j]->deck == deck) {
                                         mainmix->copy_lpst(lvec[i],
-                                                           elem->prevnblayers[j], true, false, false);
+                                                           elem->prevnblayers[j], true, false);
                                         lvec[i]->frame = elem->prevnblayers[j]->frame;
                                     }
                                 }
@@ -7686,6 +7693,15 @@ void the_loop() {
         if (brk) break;
     }
 
+    // every loop iteration, save one bin element jpeg if there are any unsaved ones
+    for (Bin *bin : binsmain->bins) {
+        for (BinElement *binel : bin->elements) {
+            if (binel->name != "" && !exists(binel->jpegpath)) {
+                binel->jpegpath = find_unused_filename(bin->name, mainprogram->temppath, ".jpg");
+                save_thumb(binel->jpegpath, binel->tex);
+            }
+        }
+    }
     // every loop iteration, load one bin element jpeg if there are any unloaded ones
     for (Bin *bin : binsmain->bins) {
         if (bin->open_positions.size() != 0) {
@@ -8029,6 +8045,22 @@ void the_loop() {
         // background texture overlay fakes transparency
         draw_direct(nullptr, black, -1.0f, -1.0f, 2.0f, 2.0f, 0.0f, 0.0f, 1.0f, 0.2f, 0, mainprogram->bgtex,
                     glob->w, glob->h, false, false);
+    	// draw blue drop rectangles over monitors
+    	if (mainmix->dropdeckblue == 1) {
+    		mainmix->dropdeckblue = 0;
+    		draw_direct(nullptr, lightblue, -1.0f + mainprogram->numw, 1.0f - mainprogram->layh,
+					 mainprogram->layw * 3, mainprogram->layh, 0.0f, 0.0f, 1.0f, 0.2f, 0, -1, glob->w, glob->h, false, false);
+    	}
+    	if (mainmix->dropdeckblue == 2) {
+    		mainmix->dropdeckblue = 0;
+    		draw_direct(nullptr, lightblue, mainprogram->numw, 1.0f - mainprogram->layh, mainprogram->layw * 3,
+					 mainprogram->layh, 0.0f, 0.0f, 1.0f, 0.2f, 0, -1, glob->w, glob->h, false, false);
+    	}
+    	if (mainmix->dropmixblue == 1) {
+    		mainmix->dropmixblue = 0;
+    		draw_direct(nullptr, lightblue, -1.0f + mainprogram->numw, 1.0f - mainprogram->layh,
+					 mainprogram->layw * 6 + mainprogram->numw, mainprogram->layh, 0.0f, 0.0f, 1.0f, 0.2f, 0, -1, glob->w, glob->h, false, false);
+    	}
     }
 
     mainmix->reconnect_all(mainmix->layersA);
