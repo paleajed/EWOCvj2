@@ -1896,8 +1896,13 @@ bool Layer::thread_vidopen() {
             float tbperframe = (float)this->video_stream->duration / (float)this->numf;
             this->millif = tbperframe * (((float)this->video_stream->time_base.num * 1000.0) / (float)this->video_stream->time_base.den);
 
-            this->startframe->value = 0;
-            this->endframe->value = this->numf;
+			if (!this->framesloaded) {
+				this->startframe->value = 0;
+				this->endframe->value = this->numf;
+			}
+        	else {
+        		this->framesloaded = false;
+        	}
             if (0) { // this->reset?
                 this->frame = 0.0f;
             }
@@ -6155,7 +6160,7 @@ void do_text_input(float x, float y, float sx, float sy, int mx, int my, float w
 
 void do_text_input(float x, float y, float sx, float sy, int mx, int my, float width, int smflag, PrefItem *item, bool directdraw) {
 		// handle display and mouse selection of keyboard input
-
+	mainprogram->tooltipmilli = 0.0f;
 	float textw;
 	std::vector<float> textwvec;
 	std::vector<float> totvec = render_text(mainprogram->inputtext, white, x, y, sx, sy, smflag, 0, 0);
@@ -6235,7 +6240,9 @@ void do_text_input(float x, float y, float sx, float sy, int mx, int my, float w
 		            }
 		        }
 		        if (j > 0) distin += totvec[j - 1] / 2.0f;
-		        distin += totvec[j] / 2.0f;
+		    	if (j != totvec.size()) {
+		    		distin += totvec[j] / 2.0f;
+		    	}
 		    }
 		}
 		if (found == false) {
@@ -6687,6 +6694,30 @@ void the_loop() {
             mainmix->reconnect_all(lvec);
         }
         skip = lvec;
+
+        if (ready) {
+            // done switching to new layers -> delete old ones
+            std::vector<Layer *> &lvec = mainmix->bu_A;
+            for (int i = 0; i < lvec.size(); i++) {
+                lvec[i]->closethread = 1;
+            }
+            lvec = mainmix->bu_B;
+            for (int i = 0; i < lvec.size(); i++) {
+                lvec[i]->closethread = 1;
+            }
+            lvec = mainmix->bu_Acomp;
+            for (int i = 0; i < lvec.size(); i++) {
+                lvec[i]->closethread = 1;
+            }
+            lvec = mainmix->bu_Bcomp;
+            for (int i = 0; i < lvec.size(); i++) {
+                lvec[i]->closethread = 1;
+            }
+            mainmix->bu_A.clear();
+            mainmix->bu_B.clear();
+            mainmix->bu_Acomp.clear();
+            mainmix->bu_Bcomp.clear();
+        }
     }
 
     std::map<std::vector<Layer *> *, std::vector<Layer *> *> tempmap = mainmix->swapmap;
@@ -6750,6 +6781,7 @@ void the_loop() {
                             if (brk) break;
                         }
                         mainmix->keep0 = mainmix->layersA;
+                        mainmix->bu_A = mainmix->layersBcomp;
                         mainmix->layersA = *it.second;
                         skip = mainmix->layersA;
                         deck = 0;
@@ -6768,6 +6800,7 @@ void the_loop() {
                             if (brk) break;
                         }
                         mainmix->keep1 = mainmix->layersB;
+                        mainmix->bu_B = mainmix->layersBcomp;
                         mainmix->layersB = *it.second;
                         skip = mainmix->layersB;
                         deck = 1;
@@ -6790,6 +6823,7 @@ void the_loop() {
                             }
                         }
                         mainmix->keep0 = mainmix->layersAcomp;
+                        mainmix->bu_Acomp = mainmix->layersBcomp;
                         mainmix->layersAcomp = *it.second;
                         skip = mainmix->layersAcomp;
                         deck = 0;
@@ -6812,6 +6846,7 @@ void the_loop() {
                             }
                         }
                         mainmix->keep1 = mainmix->layersBcomp;
+                        mainmix->bu_Bcomp = mainmix->layersBcomp;
                         mainmix->layersBcomp = *it.second;
                         skip = mainmix->layersBcomp;
                         deck = 1;
@@ -7708,8 +7743,10 @@ void the_loop() {
             int pos = bin->open_positions[0];
             if (bin->elements[pos]->name != "") {
                 if (exists(bin->elements[pos]->jpegpath)) {
-                    open_thumb(bin->elements[pos]->jpegpath,
-                               bin->elements[pos]->tex);
+                    boost::filesystem::current_path(mainprogram->project->binsdir);
+                    std::string path = pathtoplatform(boost::filesystem::absolute(bin->elements[pos]->jpegpath).generic_string());
+                    open_thumb(path, bin->elements[pos]->tex);
+                    boost::filesystem::current_path(mainprogram->contentpath);
                 }
             }
             bin->open_positions.erase(bin->open_positions.begin());

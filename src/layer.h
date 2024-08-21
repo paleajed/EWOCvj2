@@ -257,6 +257,10 @@ class Layer {
         std::vector<ShelfElement*> prevshelfdragelems;
         int psde_size = 0;
 
+		int clonesetnr = -1;  // reminder : was below -> overwrite
+		bool isclone = false;
+		Layer *isduplay = nullptr;
+
 		std::string filename = "";
         long long filesize = 0;
 		std::string layerfilepath = "";
@@ -298,9 +302,7 @@ class Layer {
 		bool tobedeleted = true;
 		
 		std::unordered_map<EFFECT_TYPE, int> numoftypemap;
-		int clonesetnr = -1;
-        bool isclone = false;
-        Layer *isduplay = nullptr;
+        // reminder : here was clonesetnr
 
         bool keyframe = false;
 
@@ -309,6 +311,7 @@ class Layer {
         bool started = false;
         bool started2 = false;
         bool newload = true;
+		bool framesloaded = false;
 
         LoopStation *lpst;
         bool isnblayer = false;
@@ -416,6 +419,10 @@ class Mixer {
         std::vector<Layer *> keep1;
 		int dropdeckblue = 0;
 		int dropmixblue = 0;
+        std::vector<Layer*> bu_A;
+        std::vector<Layer*> bu_B;
+        std::vector<Layer*> bu_Acomp;
+        std::vector<Layer*> bu_Bcomp;
 
 
         Layer *add_layer(std::vector<Layer*> &layers, int pos);

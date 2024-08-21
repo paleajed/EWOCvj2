@@ -1204,9 +1204,6 @@ void BinsMain::handle(bool draw) {
 			// bin element renaming with keyboard
 			mainprogram->frontbatch = true;
 			draw_box(white, black, this->renamingbox, -1);
-			if (this->renamingbox->in()) {
-				mainprogram->tooltipmilli;
-			}
 			do_text_input(-0.5f + 0.1f, -0.2f + 0.05f, 0.0009f, 0.0015f, mainprogram->mx, mainprogram->my,
                  mainprogram->xvtxtoscr(0.8f), 0, nullptr);
             mainprogram->frontbatch = false;
@@ -1444,7 +1441,7 @@ void BinsMain::handle(bool draw) {
 			// load hovered block into shelf A
 			Shelf* shelf = mainprogram->shelves[0];
 			for (int i = 0; i < 16; i++) {
-				BinElement* binel = this->currbin->elements[this->mouseshelfnum / 3 * 48 + (this->mouseshelfnum % 3) * 4 + i / 4 + (i % 4) * 12];
+				BinElement* binel = this->currbin->elements[this->mouseshelfnum / 3 * 48 + (this->mouseshelfnum % 3) * 4 + (i / 4) * 12 + (i % 4)];
 				ShelfElement* elem = shelf->elements[i];
 				elem->path = binel->path;
 				elem->jpegpath = binel->jpegpath;
@@ -1577,7 +1574,8 @@ void BinsMain::handle(bool draw) {
 				Boxx* box = this->elemboxes[i * 12 + j];
 				box->upvtxtoscr();
 				BinElement* binel = this->currbin->elements[i * 12 + j];
-				if (binel->encoding && binel->encthreads == 0 && (binel->type == ELEM_DECK || binel->type == ELEM_MIX)) {
+                std::string bujpegpath = binel->jpegpath;
+                if (binel->encoding && binel->encthreads == 0 && (binel->type == ELEM_DECK || binel->type == ELEM_MIX)) {
 					binel->encoding = false;
 					boost::filesystem::rename(remove_extension(binel->path) + ".temp", binel->path);
 				}
@@ -2153,6 +2151,11 @@ void BinsMain::handle(bool draw) {
 					this->delbinels.clear();
 					mainprogram->del = false;
 				}
+
+                if (binel->jpegpath != bujpegpath) {
+                    binel->absjpath = binel->jpegpath;
+                    binel->reljpath = boost::filesystem::relative(binel->absjpath, mainprogram->project->binsdir).generic_string();
+                }
 			}
 		}
 
@@ -2344,23 +2347,28 @@ void BinsMain::open_bin(const std::string &path, Bin *bin) {
 						}
 					}
 				}
-				if (istring == "JPEGPATH") {
+				if (istring == "ABSJPEGPATH") {
 					safegetline(rfile, istring);
-					bin->elements[pos]->jpegpath = istring;
-					if (bin->elements[pos]->name != "") {
-						if (bin->elements[pos]->jpegpath != "") {
-							if (concat) {
-                                bin->elements[pos]->jpegpath = result + "_" + std::to_string(filecount) + ".file";
+                    bin->elements[pos]->absjpath = istring;
+                    bin->elements[pos]->jpegpath = istring;
+                    if (bin->elements[pos]->name != "") {
+						if (bin->elements[pos]->absjpath != "") {
+							/*if (concat) {
+                                bin->elements[pos]->absjpath = result + "_" + std::to_string(filecount) + ".file";
 								bin->open_positions.push_back(pos);
                        		    filecount++;
 							}
-							else bin->open_positions.push_back(pos);
+							else*/ bin->open_positions.push_back(pos);
                         }
                         else {
 
                         }
 					}
 				}
+                if (istring == "RELJPEGPATH") {
+                    safegetline(rfile, istring);
+                    bin->elements[pos]->reljpath = istring;
+                }
                 if (istring == "FILESIZE") {
                     safegetline(rfile, istring);
                     bin->elements[pos]->filesize = std::stoll(istring);
@@ -2414,15 +2422,18 @@ void BinsMain::do_save_bin(const std::string& path) {
 				filestoadd.push_back(this->currbin->elements[i * 12 + j]->path);
 			}
 			if (this->currbin->elements[i * 12 + j]->name != "") {
-				if (!exists(this->currbin->elements[i * 12 + j]->jpegpath)) {
-                    this->currbin->elements[i * 12 + j]->jpegpath = find_unused_filename(this->currbin->name, mainprogram->temppath, ".jpg");
+                if (!exists(this->currbin->elements[i * 12 + j]->absjpath)) {
+                    this->currbin->elements[i * 12 + j]->jpegpath = find_unused_filename(this->currbin->name, mainprogram->project->binsdir, ".jpg");
 					save_thumb(this->currbin->elements[i * 12 + j]->jpegpath, this->currbin->elements[i * 12 + j]->tex);
 				}
 
-				filestoadd.push_back(this->currbin->elements[i * 12 + j]->jpegpath);
+				//filestoadd.push_back(this->currbin->elements[i * 12 + j]->jpegpath);
 			}
-            wfile << "JPEGPATH\n";
-            wfile << this->currbin->elements[i * 12 + j]->jpegpath;
+            wfile << "ABSJPEGPATH\n";
+            wfile << this->currbin->elements[i * 12 + j]->absjpath;
+            wfile << "\n";
+            wfile << "RELJPEGPATH\n";
+            wfile << this->currbin->elements[i * 12 + j]->reljpath;
             wfile << "\n";
             if (this->currbin->elements[i * 12 + j]->path != "") {
                 wfile << "FILESIZE\n";
@@ -2731,7 +2742,7 @@ void BinsMain::open_handlefile(const std::string &path, GLuint tex) {
         if (endtex == -1) return;
         this->inputtexes.push_back(endtex);
         this->inputtypes.push_back(endtype);
-        std::string jpath = find_unused_filename(basename(path), mainprogram->temppath, ".jpg");
+        std::string jpath = find_unused_filename(basename(path), mainprogram->project->binsdir, ".jpg");
         save_thumb(jpath, copy_tex(endtex, this->elemboxes[0]->scrcoords->w, this->elemboxes[0]->scrcoords->h));
         this->inputjpegpaths.push_back(jpath);
     }

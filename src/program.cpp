@@ -2190,12 +2190,12 @@ void Program::shelf_triggering(ShelfElement* elem) {
                 clays[k]->prevshelfdragelems.push_back(elem);
             } else if (elem->type == ELEM_LAYER) {
                 clays[k] = mainmix->open_layerfile(elem->path, clays[k], true, false);  // reminder : doclips?
-                if (mainprogram->shelfdragelem->launchtype == 1) {
+                if (elem->launchtype == 1) {
                     clays[k]->prevshelfdragelems = lay->prevshelfdragelems;
-                    clays[k]->prevshelfdragelems.push_back(mainprogram->shelfdragelem);
-                } else if (mainprogram->shelfdragelem->launchtype == 2) {
+                    clays[k]->prevshelfdragelems.push_back(elem);
+                } else if (elem->launchtype == 2) {
                     clays[k]->prevshelfdragelems = lay->prevshelfdragelems;
-                    clays[k]->prevshelfdragelems.push_back(mainprogram->shelfdragelem);
+                    clays[k]->prevshelfdragelems.push_back(elem);
                 }
                 if (elem->launchtype == 1) mainmix->set_prevshelfdragelem(clays[k]);
                 if (elem->launchtype == 2) mainmix->set_prevshelfdragelem(clays[k]);
@@ -2219,12 +2219,12 @@ void Program::shelf_triggering(ShelfElement* elem) {
                 std::vector<Layer *> lvec2 = choose_layers(mainmix->mousedeck);
                 std::vector<Layer *> lvec1 = mainmix->bulrs[mainprogram->prevmodus][mainmix->mousedeck];
                 for (int i = 0; i < std::min(lvec1.size(), lvec2.size()); i++) {
-                    if (mainprogram->shelfdragelem->launchtype == 1) {
+                    if (elem->launchtype == 1) {
                         lvec2[i]->prevshelfdragelems = lvec1[i]->prevshelfdragelems;
-                        lvec2[i]->prevshelfdragelems.push_back(mainprogram->shelfdragelem);
-                    } else if (mainprogram->shelfdragelem->launchtype == 2) {
+                        lvec2[i]->prevshelfdragelems.push_back(elem);
+                    } else if (elem->launchtype == 2) {
                         lvec2[i]->prevshelfdragelems = lvec1[i]->prevshelfdragelems;
-                        lvec2[i]->prevshelfdragelems.push_back(mainprogram->shelfdragelem);
+                        lvec2[i]->prevshelfdragelems.push_back(elem);
                     }
                 }
 
@@ -2252,21 +2252,21 @@ void Program::shelf_triggering(ShelfElement* elem) {
             std::vector<Layer *> lvec0 = mainmix->bulrs[mainprogram->prevmodus][mainmix->mousedeck];
             std::vector<Layer *> lvec1 = mainmix->bulrs[mainprogram->prevmodus][mainmix->mousedeck];
             for (int i = 0; i < std::min(lvec0.size(), lvec2.size()); i++) {
-                if (mainprogram->shelfdragelem->launchtype == 1) {
+                if (elem->launchtype == 1) {
                     lvec2[i]->prevshelfdragelems = lvec0[i]->prevshelfdragelems;
-                    lvec2[i]->prevshelfdragelems.push_back(mainprogram->shelfdragelem);
-                } else if (mainprogram->shelfdragelem->launchtype == 2) {
+                    lvec2[i]->prevshelfdragelems.push_back(elem);
+                } else if (elem->launchtype == 2) {
                     lvec2[i]->prevshelfdragelems = lvec0[i]->prevshelfdragelems;
-                    lvec2[i]->prevshelfdragelems.push_back(mainprogram->shelfdragelem);
+                    lvec2[i]->prevshelfdragelems.push_back(elem);
                 }
             }
             for (int i = 0; i < std::min(lvec1.size(), lvec3.size()); i++) {
-                if (mainprogram->shelfdragelem->launchtype == 1) {
+                if (elem->launchtype == 1) {
                     lvec3[i]->prevshelfdragelems = lvec1[i]->prevshelfdragelems;
-                    lvec3[i]->prevshelfdragelems.push_back(mainprogram->shelfdragelem);
-                } else if (mainprogram->shelfdragelem->launchtype == 2) {
+                    lvec3[i]->prevshelfdragelems.push_back(elem);
+                } else if (elem->launchtype == 2) {
                     lvec3[i]->prevshelfdragelems = lvec1[i]->prevshelfdragelems;
-                    lvec3[i]->prevshelfdragelems.push_back(mainprogram->shelfdragelem);
+                    lvec3[i]->prevshelfdragelems.push_back(elem);
                 }
             }
             if (elem->launchtype == 1) {
@@ -2284,7 +2284,9 @@ void Program::shelf_triggering(ShelfElement* elem) {
         }
 
         // framesetting moved to after initial swapmap
+
     }
+    mainprogram->midishelfelem = nullptr;
 }
 
 
@@ -3427,7 +3429,8 @@ void Program::handle_loopmenu() {
 					}
 				}
 			}
-			mainmix->cbduration = ((float)(mainmix->mouselayer->numf) * mainmix->mouselayer->millif) / (mainmix->mouselayer->speed->value * mainmix->mouselayer->speed->value * fac * fac);
+			mainmix->cbduration = ((mainmix->mouselayer->endframe->value - mainmix->mouselayer->startframe->value) * mainmix->mouselayer->millif) / (mainmix->mouselayer->speed->value * mainmix->mouselayer->speed->value * fac * fac);
+			int dummy = 0;
 		}
 		else if (k == 3) {
 		    // paste playloop duration by changing the speed
@@ -3442,7 +3445,7 @@ void Program::handle_loopmenu() {
 					}
 				}
 			}
-			mainmix->mouselayer->speed->value = sqrt(((float)(mainmix->mouselayer->numf) * mainmix->mouselayer->millif) / mainmix->cbduration / (fac * fac));
+			mainmix->mouselayer->speed->value = sqrt(((mainmix->mouselayer->endframe->value - mainmix->mouselayer->startframe->value) * mainmix->mouselayer->millif) / mainmix->cbduration / (fac * fac));
 			mainmix->mouselayer->set_clones();
 		}
 		else if (k == 4) {

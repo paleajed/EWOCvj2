@@ -1954,8 +1954,8 @@ Effect *do_add_effect(Layer *lay, EFFECT_TYPE type, int pos, bool comp) {
 	for (int i = 0; i < effect->params.size(); i++) {
 		effect->params[i]->box->tooltip += " - Leftdrag sets value. Doubleclicking allows numeric entry. ";
 	}
-	
-	// add parameters to OSC ssystem
+	/* reminder
+	// add parameters to OSC system
 	if (lay->numoftypemap.find(effect->type) != lay->numoftypemap.end()) lay->numoftypemap[effect->type]++;
 	else lay->numoftypemap[effect->type] = 1;
 	for (int i = 0; i < effect->params.size(); i++) {
@@ -1970,7 +1970,7 @@ Effect *do_add_effect(Layer *lay, EFFECT_TYPE type, int pos, bool comp) {
 		printf("osc %s\n", path.c_str());
 		fflush(stdout);
 		//mainprogram->st->add_method(path, "f", osc_param, effect->params[i]);
-	}
+	}*/
 	
 	return effect;
 }
@@ -6100,6 +6100,9 @@ void Mixer::set_values(Layer *clay, Layer *lay, bool open) {
     }
     clay->prevshelfdragelems = lay->prevshelfdragelems;
     clay->clonesetnr = lay->clonesetnr;
+	if (clay->clonesetnr != -1) {
+		bool dummy = false;
+	}
 }
 
 
@@ -7602,8 +7605,8 @@ Layer* Mixer::open_layerfile(const std::string& path, Layer* lay, bool loadevent
     if (!lay->dummy) {
         out = lay->lasteffnode[1]->out[0];
     }
-    float bulsp = lay->lockspeed;
-    float bulzp = lay->lockzoompan;
+    bool bulsp = lay->lockspeed;
+    bool bulzp = lay->lockzoompan;
 
     prepare_param_cont(lay->speed);
     prepare_param_cont(lay->shiftx);
@@ -7995,6 +7998,7 @@ Layer* Mixer::read_layers(std::istream &rfile, const std::string &result, std::v
                 lay->oldwidth = bulrs[deck][lay->pos]->iw;
                 lay->oldheight = bulrs[deck][lay->pos]->ih;
 			}*/
+
 			overridepos++;
 		}
 		if (istring == "TYPE") {
@@ -8003,40 +8007,41 @@ Layer* Mixer::read_layers(std::istream &rfile, const std::string &result, std::v
 		}
         if (istring == "CLONESETNR") {
             safegetline(rfile, istring);
-            lay->clonesetnr = std::stoi(istring);
-            if (lay->clonesetnr != -1) {
-                if (mainmix->clonesets.size() == 0 || (mainmix->clonesets.size() > 0 && mainmix->clonesets[lay->clonesetnr]->size() == 1)) {
-					mainmix->firstlayers[lay->clonesetnr] = lay;
+            layend->clonesetnr = std::stoi(istring);
+            if (layend->clonesetnr != -1) {
+                if (mainmix->clonesets.size() == 0 || (mainmix->clonesets.size() > 0 && mainmix->clonesets[layend->clonesetnr]->size() == 1)) {
+					mainmix->firstlayers[layend->clonesetnr] = layend;
                     std::unordered_set<Layer *> *uset = new std::unordered_set<Layer *>;
                     mainmix->clonesets.push_back(uset);
-                    lay->clonesetnr = mainmix->clonesets.size() - 1;
+                    layend->clonesetnr = mainmix->clonesets.size() - 1;
                 } else {
-					lay = mainmix->firstlayers[lay->clonesetnr]->clone();
+					layend = mainmix->firstlayers[layend->clonesetnr]->clone();
 
-					/*lay = mainmix->firstlayers[lay->clonesetnr]->clone();
-					lay->isclone = false;
-					lay->isduplay = mainmix->mouselayer;
-                    lay->clonesetnr = clonemap[lay->clonesetnr];
-                    lay->isclone = true;
-                    lay->decresult->width = -1;
-					mainmix->firstlayers[lay->clonesetnr]->set_clones();
-					if (!lay->remfr[lay->pbofri]->newdata) {
+					/*layend = mainmix->firstlayers[layend->clonesetnr]->clone();
+					layend->isclone = false;
+					layend->isduplay = mainmix->mouselayer;
+                    layend->clonesetnr = clonemap[layend->clonesetnr];
+                    layend->isclone = true;
+                    layend->decresult->width = -1;
+					mainmix->firstlayers[layend->clonesetnr]->set_clones();
+					if (!layend->remfr[layend->pbofri]->newdata) {
 						// promote first layer found in layer stack with this clonesetnr to element of firstlayers
-						lay->ready = true;
-						if ((int) (lay->frame) != lay->prevframe) {
-							lay->startdecode.notify_all();
+						layend->ready = true;
+						if ((int) (layend->frame) != layend->prevframe) {
+							layend->startdecode.notify_all();
 						}
-						if (lay->clonesetnr != -1) {
-							mainmix->firstlayers[lay->clonesetnr] = lay;
-							lay->isclone = false;
+						if (layend->clonesetnr != -1) {
+							mainmix->firstlayers[layend->clonesetnr] = layend;
+							layend->isclone = false;
 						}
 					}*/
                 }
-                mainmix->clonesets[lay->clonesetnr]->emplace(lay);
+                mainmix->clonesets[layend->clonesetnr]->emplace(layend);
             }
         }
         if (istring == "FILENAME") {
-		    notfound = false;
+			if (layend->type != 0) layend->framesloaded = true;
+        	notfound = false;
 			safegetline(rfile, istring);
 			filename = istring;
 			if (load) {
@@ -8283,11 +8288,11 @@ Layer* Mixer::read_layers(std::istream &rfile, const std::string &result, std::v
 		}
         if (istring == "LOCKSPEED") {
             safegetline(rfile, istring);
-            layend->lockspeed = std::stof(istring);
+            layend->lockspeed = std::stoi(istring);
         }
         if (istring == "LOCKZOOMPAN") {
             safegetline(rfile, istring);
-            layend->lockzoompan = std::stof(istring);
+            layend->lockzoompan = std::stoi(istring);
         }
         if (istring == "SHIFTX") {
             safegetline(rfile, istring);
@@ -8376,11 +8381,12 @@ Layer* Mixer::read_layers(std::istream &rfile, const std::string &result, std::v
 		}
 		if (istring == "STARTFRAME") {
 			safegetline(rfile, istring);
-			layend->startframe->value = std::stoi(istring);
+			layend->startframe->value = std::stof(istring);
+			bool dummy = false;
 		}
         if (istring == "ENDFRAME") {
             safegetline(rfile, istring);
-            layend->endframe->value = std::stoi(istring);
+            layend->endframe->value = std::stof(istring);
         }
         if (istring == "MILLIF") {
             safegetline(rfile, istring);
@@ -8804,9 +8810,6 @@ std::vector<std::string> Mixer::write_layer(Layer* lay, std::ostream& wfile, boo
 	wfile << "TYPE\n";
 	wfile << std::to_string(lay->type);
 	wfile << "\n";
-    wfile << "CLONESETNR\n";
-    wfile << std::to_string(lay->clonesetnr);
-    wfile << "\n";
 	wfile << "FILENAME\n";
 	wfile << lay->filename;
 	wfile << "\n";
