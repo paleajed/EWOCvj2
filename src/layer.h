@@ -161,13 +161,15 @@ class Layer {
         Button *lpbut;
         bool onhold = false;
         Button *genmidibut;
-		Boxx *loopbox;
+        Boxx *loopbox;
+        Boxx *cliploopbox;
 		int playkind = 0;
 		Param *startframe = nullptr;
         Param *endframe = nullptr;
         float oldstartframe = 0.0f;
         float oldendframe = 0.0f;
-		int scritching = 0;
+        int scritching = 0;
+        int clipscritching = 0;
 		int transforming = 0;
         int transmx;
         int transmy;

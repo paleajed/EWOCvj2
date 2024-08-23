@@ -623,7 +623,9 @@ class Program {
 		bool binsscreen = false;
 		BinElement *dragbinel = nullptr;
 		Clip *dragclip = nullptr;
-		Layer *draglay = nullptr;
+        Layer *draglay = nullptr;
+        int draglaypos = -1;
+        int draglaydeck = -1;
 		std::string dragpath;
 		int dragpos; 
 		bool drag = false;

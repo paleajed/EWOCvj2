@@ -6416,7 +6416,9 @@ void enddrag() {
 		if (mainprogram->draglay) {
             mainprogram->draglay->vidmoving = false;
         }
-		mainprogram->draglay = nullptr;
+        mainprogram->draglay = nullptr;
+        mainprogram->draglaypos = -1;
+        mainprogram->draglaydeck = -1;
 		mainprogram->dragclip = nullptr;
 		mainprogram->dragpath = "";
 		mainmix->moving = false;
@@ -6569,11 +6571,13 @@ void the_loop() {
     if (mainprogram->leftmouse &&
         (mainprogram->cwon || mainprogram->menuondisplay || mainprogram->wiping || mainmix->adaptparam ||
          mainmix->scrollon || binsmain->dragbin || mainmix->moving || mainprogram->dragbinel || mainprogram->drageff ||
-         mainprogram->dragclip || mainprogram->shelfdragelem)) {
+         mainprogram->shelfdragelem)) {
         // special cases when mouse can be released over element that should not be triggered
         mainprogram->lmover = true;
         mainprogram->leftmouse = false;
-    } else mainprogram->lmover = false;
+    } else {
+        mainprogram->lmover = false;
+    }
 
     if (binsmain->floating) {
         if (SDL_GetMouseFocus() == binsmain->win) {
@@ -7988,8 +7992,8 @@ void the_loop() {
         for (int i = 0; i < 2; i++) {
             std::vector<Layer*> &lvec = choose_layers(i);
             for (int j = 0; j < lvec.size(); j++) {
-                if (lvec[j]->scritching == 4) {
-                    lvec[j]->scritching = 0;
+                if (lvec[j]->clipscritching == 4) {
+                    lvec[j]->clipscritching = 0;
                     found2 = true;
                     break;
                 }

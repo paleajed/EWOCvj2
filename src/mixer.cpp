@@ -2585,9 +2585,16 @@ Layer::Layer(bool comp) {
 	this->genmidibut->layer = this;
 	this->genmidibut->box->tooltiptitle = "Set layer MIDI preset ";
 	this->genmidibut->box->tooltip = "Selects (leftclick advances) for this layer which MIDI preset (A, B, C, D or off) is used to control this layers common controls. ";
-	this->loopbox = new Boxx;
+    this->loopbox = new Boxx;
     this->loopbox->tooltiptitle = "Loop bar ";
-	this->loopbox->tooltip = "Loop bar for current layer video.  Green area is looped area, white vertical line is video  .  Leftdrag on bar scrubs video.  When hovering over green area edges, the area turns blue; when this happens ctrl+leftdrag will drag the area edge.  If area is green, ctrl+leftdrag on the area will drag the looparea left/right.  Rightclicking starts a menu allowing to set loop start or end to the current play position. ";
+    this->loopbox->tooltip = "Loop bar for current layer video.  Green area is looped area, white vertical line is video  .  Leftdrag on bar scrubs video.  When hovering over green area edges, the area turns blue; when this happens ctrl+leftdrag will drag the area edge.  If area is green, ctrl+leftdrag on the area will drag the looparea left/right.  Rightclicking starts a menu allowing to set loop start or end to the current play position. ";
+    this->cliploopbox = new Boxx;
+    this->cliploopbox->tooltiptitle = "Clip queue loop bar ";
+    this->cliploopbox->tooltip = "Loop bar for current layer video when clip queue is shown.  Grey area is looped area, white vertical line is video  .  Leftdrag on bar scrubs video. ";
+    this->cliploopbox->acolor[0] = 0.7f;
+    this->cliploopbox->acolor[1] = 0.7f;
+    this->cliploopbox->acolor[2] = 0.7f;
+    this->cliploopbox->acolor[3] = 1.0f;
 	this->chdir = new Button(false);
     this->chdir->butid = 13;
 	this->chdir->toggle = 1;
@@ -2675,6 +2682,7 @@ Layer::~Layer() {
     delete this->lpbut;
     delete this->genmidibut;
     delete this->loopbox;
+    delete this->cliploopbox;
     delete this->chdir;
     delete this->chinv;
     //delete this->currclip;
@@ -3719,7 +3727,7 @@ void Layer::display() {
             return;
         }
 
-        if (!mainprogram->queueing) {
+        if (!this->queueing) {
             // Draw controls/effects background box
             draw_box(grey, darkgreygreen, this->mixbox->vtxcoords->x1, mainmix->crossfade->box->vtxcoords->y1 + mainmix->crossfade->box->vtxcoords->h, 0.6f, this->mixbox->vtxcoords->y1 - mainmix->crossfade->box->vtxcoords->y1, -1);
             // Draw mixbox
@@ -9940,6 +9948,7 @@ void Mixer::handle_clips() {
     Boxx insideclipbox;
     Boxx clipbox;
     mainprogram->frontbatch = true;
+    bool startdrag = false;
 	for (int i = 0; i < 2; i++) {
 		std::vector<Layer*>& lays = choose_layers(i);
 		for (int j = 0; j < lays.size(); j++) {
@@ -9960,37 +9969,32 @@ void Mixer::handle_clips() {
 				if (max > lay2->clips.size()) max = lay2->clips.size();
 				int until = lay2->clips.size() - lay2->queuescroll;
 				if (until > max) until = max;
-				// draw loopbox for following layer play
-                float bux1 = lay2->loopbox->vtxcoords->x1;
-                float buy1 = lay2->loopbox->vtxcoords->y1;
-                float buw = lay2->loopbox->vtxcoords->w;
-                lay2->loopbox->vtxcoords->x1 = vbox->vtxcoords->x1;
-                lay2->loopbox->vtxcoords->y1 = vbox->vtxcoords->y1 - 0.075f - 0.05f;
-                lay2->loopbox->vtxcoords->w = mainprogram->layw;
-                draw_box(lay2->loopbox, -1);
-                draw_box(white, white, lay2->loopbox->vtxcoords->x1 + lay2->frame * (lay2->loopbox->vtxcoords->w /
+				// draw cliploopbox for following layer play
+                lay2->cliploopbox->vtxcoords->x1 = vbox->vtxcoords->x1;
+                lay2->cliploopbox->vtxcoords->y1 = vbox->vtxcoords->y1 - 0.075f - 0.05f;
+                lay2->cliploopbox->vtxcoords->w = mainprogram->layw;
+                lay2->cliploopbox->vtxcoords->h = lay2->loopbox->vtxcoords->h;
+                draw_box(lay2->cliploopbox, -1);
+                draw_box(white, white, lay2->cliploopbox->vtxcoords->x1 + lay2->frame * (lay2->cliploopbox->vtxcoords->w /
                                                                                      (lay2->numf - 1)),
-                         lay2->loopbox->vtxcoords->y1, 0.00117f, 0.075f, -1);
-                if (lay2->loopbox->in()) {
+                         lay2->cliploopbox->vtxcoords->y1, 0.00117f, 0.075f, -1);
+                if (lay2->cliploopbox->in()) {
                     if (mainprogram->leftmousedown) {
-                        lay2->scritching = 1;
+                        lay2->clipscritching = 1;
                         lay2->frame = (lay2->numf - 1.0f) *
-                                      ((mainprogram->mx - lay2->loopbox->scrcoords->x1) / lay2->loopbox->scrcoords->w);
+                                      ((mainprogram->mx - lay2->cliploopbox->scrcoords->x1) / lay2->cliploopbox->scrcoords->w);
                         lay2->set_clones();
                     }
                 }
-                if (lay2->scritching) mainprogram->leftmousedown = false;
-                if (lay2->scritching == 1) {
+                if (lay2->clipscritching) mainprogram->leftmousedown = false;
+                if (lay2->clipscritching == 1) {
                     lay2->frame = (lay2->numf - 1) *
-                                  ((mainprogram->mx - lay2->loopbox->scrcoords->x1) / lay2->loopbox->scrcoords->w);
+                                  ((mainprogram->mx - lay2->cliploopbox->scrcoords->x1) / lay2->cliploopbox->scrcoords->w);
                     if (lay2->frame < 0) lay2->frame = 0.0f;
                     else if (lay2->frame >= lay2->numf) lay2->frame = lay2->numf - 1;
                     lay2->set_clones();
-                    if (mainprogram->leftmouse && !mainprogram->menuondisplay) lay2->scritching = 4;
+                    if (mainprogram->leftmouse && !mainprogram->menuondisplay) lay2->clipscritching = 4;
                 }
-                lay2->loopbox->vtxcoords->x1 = bux1;
-                lay2->loopbox->vtxcoords->y1 = buy1;
-                lay2->loopbox->vtxcoords->w = buw;
                 for (int k = 0; k < until; k++) {
                     clipbox.vtxcoords->x1 = vbox->vtxcoords->x1;
                     clipbox.vtxcoords->y1 = vbox->vtxcoords->y1 - (k + 1) * vbox->vtxcoords->h - 0.125f;
@@ -10028,12 +10032,12 @@ void Mixer::handle_clips() {
                                 // inserting
                                 if (mainprogram->dragbinel->type != ELEM_DECK &&
                                     mainprogram->dragbinel->type != ELEM_MIX) {
-                                    if (mainprogram->dragbinel) {
+                                    /*if (mainprogram->dragbinel) {
                                         if (mainprogram->draglay == lay2) { // && j == 0) {
                                             enddrag();
                                             return;
                                         }
-                                    }
+                                    }*/
                                     if (mainprogram->dragbinel) {
                                         Clip *newclip = new Clip;
                                         GLuint butex = newclip->tex;
@@ -10049,14 +10053,13 @@ void Mixer::handle_clips() {
                                         } else if (newclip->type == ELEM_LAYER) {
                                             newclip->get_layerframes();
                                         }
-                                        newclip->insert(lay2, lay2->clips.begin() + j + lay2->queuescroll + 1);
+                                        newclip->insert(lay2, lay2->clips.begin() + k + lay2->queuescroll);
                                         enddrag();
                                         if (k + lay2->queuescroll == lay2->clips.size() - 1) {
                                             Clip *clip = new Clip;
                                             clip->insert(lay2, lay2->clips.end());
                                             if (lay2->clips.size() > 4) lay2->queuescroll++;
                                         }
-                                        if (mainprogram->dragclip) mainprogram->dragclip = nullptr;
                                         return;
                                     }
                                 }
@@ -10064,43 +10067,22 @@ void Mixer::handle_clips() {
                         }
 					}
                     if (insideclipbox.in()) {
-                        if (mainprogram->mousewheel) {
-                            lay2->queuescroll -= mainprogram->mousewheel;
-                            if (lay2->clips.size() >= 4) {
-                                lay2->queuescroll = std::clamp(lay2->queuescroll, 0, (int)(lay2->clips.size() - 4));
-                            }
-                            break;
-                        }
-                        if (mainprogram->leftmousedown) {
-                            // starting dragging a clip
-                            if (k + lay2->queuescroll < lay2->clips.size() - 1) {
-                                Clip* clip = lay2->clips[k + lay2->queuescroll];
-                                mainprogram->dragbinel = new BinElement;
-                                mainprogram->dragbinel->type = clip->type;
-                                mainprogram->dragbinel->path = clip->path;
-                                mainprogram->dragbinel->relpath = clip->relpath;
-                                mainprogram->dragbinel->tex = clip->tex;
-                                lay2->vidmoving = true;
-                                mainprogram->dragclip = clip;
-                                mainprogram->draglay = lay2;
-                                mainprogram->dragpos = k + lay2->queuescroll;
-                            }
-                            mainprogram->shelves[0]->prevnum = -1;
-                            mainprogram->shelves[1]->prevnum = -1;
-                            mainprogram->leftmousedown = false;
-                        }
                         if (mainprogram->dragbinel) {
                             // replacing
                             Clip* jc = lay2->clips[k + lay2->queuescroll];
                             if (mainprogram->lmover) {
                                 if (mainprogram->dragbinel) {
-                                    if (mainprogram->dragclip) {
+                                    if (jc == mainprogram->dragclip) {
+                                        enddrag();
+                                        continue;
+                                    }
+                                    /*if (mainprogram->dragclip) {
                                         mainprogram->dragclip->tex = jc->tex;
                                         mainprogram->dragclip->type = jc->type;
                                         mainprogram->dragclip->path = jc->path;
                                         mainprogram->dragclip->insert(mainprogram->draglay, mainprogram->draglay->clips.begin() + mainprogram->dragpos);
                                         mainprogram->dragclip = nullptr;
-                                    }
+                                    }*/
                                     GLuint butex = jc->tex;
                                     jc->tex = copy_tex(mainprogram->dragbinel->tex);
                                     if (butex != -1) glDeleteTextures(1, &butex);
@@ -10127,37 +10109,86 @@ void Mixer::handle_clips() {
                             }
                         }
                     }
-                    if (mainprogram->dragbinel) {
-                        if (!mainprogram->binsscreen) {
-                            if (mainprogram->lmover) {
-                                // leftmouse dragging clip into nothing destroys the dragged clip
-                                bool inlayers = false;
-                                for (int deck = 0; deck < 2; deck++) {
-                                    if (mainprogram->xvtxtoscr(mainprogram->numw + deck * 1.0f) <
-                                        mainprogram->mx &&
-                                        mainprogram->mx < deck * (glob->w / 2.0f) + glob->w / 2.0f) {
-                                        if (0 < mainprogram->my &&
-                                            mainprogram->my < mainprogram->yvtxtoscr(mainprogram->layh)) {
-                                            // but not when dragged into layer stack field, even when there's no layer there
-                                            inlayers = true;
-                                            break;
-                                        }
-                                    }
-                                }
-                                if (!inlayers && mainprogram->dragclip) {
-                                    mainprogram->draglay->clips.erase(std::find(mainprogram->draglay->clips.begin(), mainprogram->draglay->clips.end(), mainprogram->dragclip));
-                                    delete mainprogram->dragclip;
-                                    mainprogram->dragclip = nullptr;
-                                    enddrag();
-                                }
+                }
+                for (int k = 0; k < max; k++) {
+                    insideclipbox.vtxcoords->x1 = vbox->vtxcoords->x1;
+                    insideclipbox.vtxcoords->y1 = vbox->vtxcoords->y1 - (k + 0.75f) * vbox->vtxcoords->h - 0.125f;
+                    insideclipbox.vtxcoords->w = vbox->vtxcoords->w;
+                    insideclipbox.vtxcoords->h = vbox->vtxcoords->h / 2.0f;
+                    insideclipbox.upvtxtoscr();
+                    if (insideclipbox.in()) {
+                        if (mainprogram->mousewheel) {
+                            lay2->queuescroll -= mainprogram->mousewheel;
+                            if (lay2->clips.size() >= 4) {
+                                lay2->queuescroll = std::clamp(lay2->queuescroll, 0, (int) (lay2->clips.size() - 4));
                             }
+                            break;
+                        }
+                        if (mainprogram->leftmousedown) {
+                            // starting dragging a clip
+                            if (k + lay2->queuescroll < lay2->clips.size() - 1) {
+                                Clip *clip = lay2->clips[k + lay2->queuescroll];
+                                mainprogram->dragbinel = new BinElement;
+                                mainprogram->dragbinel->type = clip->type;
+                                mainprogram->dragbinel->path = clip->path;
+                                mainprogram->dragbinel->relpath = clip->relpath;
+                                mainprogram->dragbinel->tex = clip->tex;
+                                lay2->vidmoving = true;
+                                mainprogram->dragclip = clip;
+                                mainprogram->draglay = lay2;
+                                mainprogram->draglaypos = lay2->pos;
+                                mainprogram->draglaydeck = lay2->deck;
+                                mainprogram->dragpos = k + lay2->queuescroll;
+                            }
+                            mainprogram->shelves[0]->prevnum = -1;
+                            mainprogram->shelves[1]->prevnum = -1;
+                            mainprogram->leftmousedown = false;
+                            startdrag = true;
                         }
                     }
                 }
 			}
 		}
 	}
-	//clip menu?
+
+    for (int i = 0; i < 2; i++) {
+        std::vector<Layer *> &lays = choose_layers(i);
+        for (int j = 0; j < lays.size(); j++) {
+            Layer *lay2 = lays[j];
+            if (mainprogram->dragbinel && !startdrag) {
+                if (!mainprogram->binsscreen) {
+                    if (mainprogram->lmover) {
+                        if (lay2->pos != mainprogram->draglaypos) continue;
+                        if (lay2->deck != mainprogram->draglaydeck) continue;
+                        // leftmouse dragging clip into nothing destroys the dragged clip
+                        bool inlayers = false;
+                        for (int deck = 0; deck < 2; deck++) {
+                            if (mainprogram->xvtxtoscr(mainprogram->numw + deck * 1.0f) <
+                                mainprogram->mx &&
+                                mainprogram->mx < deck * (glob->w / 2.0f) + glob->w / 2.0f) {
+                                if (0 < mainprogram->my &&
+                                    mainprogram->my < mainprogram->yvtxtoscr(mainprogram->layh)) {
+                                    // but not when dragged into layer stack field, even when there's no layer there
+                                    inlayers = true;
+                                    break;
+                                }
+                            }
+                        }
+                        if (!inlayers && mainprogram->dragclip) {
+                            lay2->clips.erase(
+                                    std::find(lay2->clips.begin(), lay2->clips.end(),
+                                              mainprogram->dragclip));
+                            delete mainprogram->dragclip;
+                            mainprogram->dragclip = nullptr;
+                            enddrag();
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    //clip menu?
 	if (mainprogram->prevmodus) {
 		clip_inside_test(this->layersA, 0);
 		clip_inside_test(this->layersB, 1);
