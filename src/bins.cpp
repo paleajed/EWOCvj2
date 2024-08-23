@@ -114,7 +114,7 @@ BinsMain::BinsMain() {
 			box->lcolor[3] = 1.0f;
 			box->acolor[3] = 1.0f;
 			box->tooltiptitle = "Media bin element ";
-			box->tooltip = "Shows thumbnail of media bin element, either being a video file (grey border) or an image (pink border) or a layer file (orange border) or a deck file (purple border) or mix file (green border).  Hovering over this element shows video resolution and video compression method (CPU or HAP).  Mousewheel skips through the element contents (previewed in larger monitor topmiddle).  Leftdrag allows dragging to mix screen via wormgate.  Leftclick allows moving inside the media bin. Rightclickmenu allows among other things, HAP encoding and also loading of a yellowbordered grid-block of mediabin elements into one of the shelves. ";
+			box->tooltip = "Shows thumbnail of media bin element, either being a video file (grey border) or an image (white border) or a layer file (orange border) or a deck file (purple border) or mix file (green border).  Hovering over this element shows video resolution and video compression method (CPU or HAP).  Mousewheel skips through the element contents (previewed in larger monitor topmiddle).  Leftdrag allows dragging to mix screen via wormgate.  Leftclick allows moving inside the media bin. Rightclickmenu allows among other things, HAP encoding and also loading of a yellowbordered grid-block of mediabin elements into one of the shelves. ";
 		}
 	}
 
@@ -438,8 +438,8 @@ void BinsMain::handle(bool draw) {
 				}
 				else if (binel->type == ELEM_IMAGE) {
 					color[0] = 1.0f;
-					color[1] = 0.5f;
-					color[2] = 0.5f;
+					color[1] = 1.0f;
+					color[2] = 1.0f;
 					color[3] = 1.0f;
 				}
 				else {
@@ -1574,7 +1574,7 @@ void BinsMain::handle(bool draw) {
 				Boxx* box = this->elemboxes[i * 12 + j];
 				box->upvtxtoscr();
 				BinElement* binel = this->currbin->elements[i * 12 + j];
-                std::string bujpegpath = binel->jpegpath;
+                this->currbin->bujpegpaths.push_back(binel->jpegpath);
                 if (binel->encoding && binel->encthreads == 0 && (binel->type == ELEM_DECK || binel->type == ELEM_MIX)) {
 					binel->encoding = false;
 					boost::filesystem::rename(remove_extension(binel->path) + ".temp", binel->path);
@@ -1988,6 +1988,8 @@ void BinsMain::handle(bool draw) {
                                         this->movingtex = binel->tex;
                                         this->movingbinel = binel;
                                         this->currbinel = binel;
+                                        mainprogram->shelves[0]->prevnum = -1;
+                                        mainprogram->shelves[1]->prevnum = -1;
                                     }
                                 }
                                 else if (mainprogram->leftmouse) {
@@ -2138,24 +2140,18 @@ void BinsMain::handle(bool draw) {
 					// handle element deleting
 					for (int k = 0; k < this->delbinels.size(); k++) {
 						// deleting single bin element
+                        boost::filesystem::remove(this->delbinels[k]->jpegpath);
 						blacken(this->delbinels[k]->oldtex);
-						this->delbinels[k]->tex = this->delbinels[k]->oldtex;
-						std::string name = remove_extension(basename(this->delbinels[k]->path));
-						this->delbinels[k]->path = this->delbinels[k]->oldpath;
-						this->delbinels[k]->name = this->delbinels[k]->oldname;
-						this->delbinels[k]->jpegpath = this->delbinels[k]->oldjpegpath;
-						this->delbinels[k]->type = this->delbinels[k]->oldtype;
+						blacken(this->delbinels[k]->tex);
+						this->delbinels[k]->path = "";
+						this->delbinels[k]->name = "";
+						this->delbinels[k]->jpegpath = "";
+						this->delbinels[k]->type = ELEM_FILE;
 						this->delbinels[k]->select = false;
-						boost::filesystem::remove(this->delbinels[k]->jpegpath);
 					}
 					this->delbinels.clear();
 					mainprogram->del = false;
 				}
-
-                if (binel->jpegpath != bujpegpath) {
-                    binel->absjpath = binel->jpegpath;
-                    binel->reljpath = boost::filesystem::relative(binel->absjpath, mainprogram->project->binsdir).generic_string();
-                }
 			}
 		}
 
@@ -2281,6 +2277,26 @@ void BinsMain::handle(bool draw) {
         }
 	}
 
+    int count = 0;
+    for (int j = 0; j < 12; j++) {
+        for (int i = 0; i < 12; i++) {
+            BinElement *binel = this->currbin->elements[i * 12 + j];
+            if (binel->jpegpath == "") {
+                binel->jpegsaved = false;
+            }
+            if (binel->jpegsaved) continue;
+            if (std::find(currbin->open_positions.begin(), currbin->open_positions.end(), i * 12 + j) ==
+                currbin->open_positions.end()) {
+                if (binel->jpegpath != this->currbin->bujpegpaths[i * 12 + j]) {
+                    binel->jpegsaved = true;
+                    binel->absjpath = binel->jpegpath;
+                    binel->reljpath = boost::filesystem::relative(binel->absjpath,
+                                                                  mainprogram->project->binsdir).generic_string();
+                }
+            }
+        }
+    }
+
 	// load one file into bin each loop, at end to allow drawing ordering dialog on top
 	if (this->openfilesbin) {
 		open_files_bin();
@@ -2349,6 +2365,7 @@ void BinsMain::open_bin(const std::string &path, Bin *bin) {
 				}
 				if (istring == "ABSJPEGPATH") {
 					safegetline(rfile, istring);
+                    bin->elements[pos]->jpegsaved = true;
                     bin->elements[pos]->absjpath = istring;
                     bin->elements[pos]->jpegpath = istring;
                     if (bin->elements[pos]->name != "") {

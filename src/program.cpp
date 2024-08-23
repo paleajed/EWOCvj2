@@ -1176,24 +1176,45 @@ GLuint Program::get_tex(Layer *lay) {
     glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
     glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_BORDER);
     glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_BORDER);
+    glPixelStorei(GL_UNPACK_ALIGNMENT, 1);
     if (lay->type == ELEM_IMAGE) {
+        // reminder: race condition with order_paths?
         ilBindImage(lay->boundimage);
-        //ilActiveImage((int)lay->frame);
+        ilActiveImage(lay->numf / 2);
         int w = ilGetInteger(IL_IMAGE_WIDTH);
         int h = ilGetInteger(IL_IMAGE_HEIGHT);
-        int imageformat = ilGetInteger(IL_IMAGE_FORMAT);
-        int bpp = ilGetInteger(IL_IMAGE_BPP);
-        GLuint mode = GL_BGR;
-        if (imageformat == IL_RGBA) mode = GL_RGBA;
-        if (imageformat == IL_BGRA) mode = GL_BGRA;
-        if (imageformat == IL_RGB) mode = GL_RGB;
-        if (imageformat == IL_BGR) mode = GL_BGR;
-        if (bpp == 3) {
+
+        ilConvertImage(IL_RGBA, IL_UNSIGNED_BYTE);
+
+        glBindTexture(GL_TEXTURE_2D, ctex);
+        glTexStorage2D(GL_TEXTURE_2D, 1, GL_RGBA8, w, h);
+
+        glTexSubImage2D(GL_TEXTURE_2D, 0, 0, 0, w, h, GL_RGBA, GL_UNSIGNED_BYTE,
+                        ilGetData());
+        /*glGenBuffers(1, &lay->pbo[0]);
+        int bsize = w * h * bpp;
+        int flags = GL_MAP_WRITE_BIT;
+        glBindBuffer(GL_ARRAY_BUFFER, lay->pbo[0]);
+        glBufferData(GL_ARRAY_BUFFER, bsize, nullptr, GL_STATIC_DRAW);
+        //glBufferStorage(GL_ARRAY_BUFFER, bsize, 0, flags);
+        lay->mapptr[0] = (GLubyte *) glMapBufferRange(GL_ARRAY_BUFFER, 0, bsize, flags);
+        glBindBuffer(GL_ARRAY_BUFFER, 0);
+        // update data directly on the mapped buffer
+        memcpy(lay->mapptr[0], (char *) ilGetData(), bsize);
+
+        glBindTexture(GL_TEXTURE_2D, ctex);
+        glBindBuffer(GL_PIXEL_UNPACK_BUFFER, lay->pbo[0]);
+        glTexSubImage2D(GL_TEXTURE_2D, 0, 0, 0, w, h, mode, GL_UNSIGNED_BYTE, 0);
+        glBindBuffer(GL_PIXEL_UNPACK_BUFFER, 0);
+        /*if (bpp == 3) {
             glTexImage2D(GL_TEXTURE_2D, 0, GL_RGB8, w, h, 0, mode, GL_UNSIGNED_BYTE, ilGetData());
         }
         else if (bpp == 4) {
             glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA8, w, h, 0, mode, GL_UNSIGNED_BYTE, ilGetData());
         }
+        else if (bpp == 1) {
+            glTexImage2D(GL_TEXTURE_2D, 0, GL_LUMINANCE8, w, h, 0, mode, GL_UNSIGNED_BYTE, ilGetData());
+        }*/
     }
     else {
         if (lay->vidformat == 188 || lay->vidformat == 187) {
@@ -1240,7 +1261,17 @@ bool Program::order_paths(bool dodeckmix) {
             safegetline(rfile, istring);
             rfile.close();
         } else this->openerr = false;
-        if (istring == "EWOCvj LAYERFILE") {
+
+        if (isimage(str)) {
+            Layer *lay = new Layer(true);
+            lay->type = ELEM_IMAGE;
+            std::thread tex(&get_imagetex, lay, str);
+            tex.detach();
+            this->getvideotexlayers.push_back(lay);
+            this->getvideotexpaths.push_back(str);
+            this->multistage = 2;
+        }
+        else if (istring == "EWOCvj LAYERFILE") {
             Layer *lay = new Layer(true);
             lay->keepeffbut->value = 0;
             std::vector<Layer*> layers;
@@ -1249,14 +1280,6 @@ bool Program::order_paths(bool dodeckmix) {
             this->gettinglayertexlay->type = ELEM_LAYER;
             this->gettinglayertex = true;
             std::thread tex(&get_layertex, lay, str);
-            tex.detach();
-            this->getvideotexlayers.push_back(lay);
-            this->getvideotexpaths.push_back(str);
-            this->multistage = 2;
-        } else if (isimage(str)) {
-            Layer *lay = new Layer(true);
-            lay->type = ELEM_IMAGE;
-            std::thread tex(&get_imagetex, lay, str);
             tex.detach();
             this->getvideotexlayers.push_back(lay);
             this->getvideotexpaths.push_back(str);
@@ -2182,13 +2205,19 @@ void Program::shelf_triggering(ShelfElement* elem) {
             if (elem->type == ELEM_FILE) {
                 clays[k] = clays[k]->open_video(0, elem->path, true);
                 mainmix->currlay[!mainprogram->prevmodus] = clays[k];
+                mainmix->currlays[!mainprogram->prevmodus][k] = clays[k];
                 if (lay->initialized) mainmix->copy_pbos(clays[k], lay);
-                clays[k]->prevshelfdragelems.push_back(elem);
+                if (elem->launchtype > 0) clays[k]->prevshelfdragelems.push_back(elem);
             } else if (elem->type == ELEM_IMAGE) {
                 clays[k]->open_image(elem->path);
-                clays[k] = (*(clays[k]->layers))[clays[k]->pos];
-                clays[k]->prevshelfdragelems.push_back(elem);
+                // currlay is handled in lay->transfer()
+                //mainmix->currlay[!mainprogram->prevmodus] = clays[k];
+                //clays[k] = (*(clays[k]->layers))[clays[k]->pos];
+                //mainmix->currlays[!mainprogram->prevmodus][k] = clays[k];
+                if (lay->initialized) mainmix->copy_pbos(clays[k], lay);
+                if (elem->launchtype > 0) clays[k]->prevshelfdragelems.push_back(elem);
             } else if (elem->type == ELEM_LAYER) {
+                //clays[k]->transfered = true;
                 clays[k] = mainmix->open_layerfile(elem->path, clays[k], true, false);  // reminder : doclips?
                 if (elem->launchtype == 1) {
                     clays[k]->prevshelfdragelems = lay->prevshelfdragelems;
@@ -2201,6 +2230,7 @@ void Program::shelf_triggering(ShelfElement* elem) {
                 if (elem->launchtype == 2) mainmix->set_prevshelfdragelem(clays[k]);
                 lay->set_inlayer(clays[k], true);
                 mainmix->currlay[!mainprogram->prevmodus] = clays[k];
+                mainmix->currlays[!mainprogram->prevmodus][k] = clays[k];
             }
             if (clays[k]->deck == 0) laydeck0 = choose_layers(0)[0];
             if (clays[k]->deck == 1) laydeck1 = choose_layers(1)[0];

@@ -135,6 +135,7 @@ class Bin {
 		std::string path = "";
 		std::vector<BinElement*> elements;
         std::vector<int> open_positions;
+        std::vector<std::string> bujpegpaths;
 		int encthreads = 0;
 		int pos;
 		bool shared = false;
@@ -159,6 +160,7 @@ class BinElement {
         std::string reljpath = "";
 		std::string jpegpath = "";
 		std::string oldjpegpath = "";
+        bool jpegsaved = false;
         long long filesize = 0;
 		int vidw;
 		int vidh;

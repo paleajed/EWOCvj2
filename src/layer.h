@@ -248,9 +248,9 @@ class Layer {
 		
 		Boxx *vidbox;
 		bool changed;
+        BlendNode *blendnode = nullptr;
 		VideoNode *node = nullptr;
 		Node *lasteffnode[2] = {nullptr, nullptr};
-		BlendNode *blendnode = nullptr;
 
         GLuint bufbotex = -1;
 
@@ -312,6 +312,8 @@ class Layer {
         bool started2 = false;
         bool newload = true;
 		bool framesloaded = false;
+        bool changes = false;
+        bool transfered = false;
 
         LoopStation *lpst;
         bool isnblayer = false;
@@ -423,6 +425,10 @@ class Mixer {
         std::vector<Layer*> bu_B;
         std::vector<Layer*> bu_Acomp;
         std::vector<Layer*> bu_Bcomp;
+        std::vector<Layer*> oldlayersA;
+        std::vector<Layer*> oldlayersB;
+        std::vector<Layer*> oldlayersAcomp;
+        std::vector<Layer*> oldlayersBcomp;
 
 
         Layer *add_layer(std::vector<Layer*> &layers, int pos);
@@ -436,13 +442,13 @@ class Mixer {
         void handle_adaptparam();
 		void handle_clips();
 		void record_video(std::string reccod);
-		void new_file(int decks, bool alive, bool add);
+		void new_file(int decks, bool alive, bool add, bool empty = true);
 		void save_layerfile(const std::string &path, Layer* lay, bool doclips, bool dojpeg);
 		void save_mix(const std::string &path);
 		void do_save_mix(const std::string& path, bool modus, bool save);
 		void save_deck(const std::string &path);
 		void do_save_deck(const std::string& path, bool save, bool doclips);
-		Layer* open_layerfile(const std::string &path, Layer *lay, bool loadevents, bool doclips);
+		Layer* open_layerfile(const std::string &path, Layer *lay, bool loadevents, bool doclips, bool uselayers = true);
 		void open_mix(const std::string &path, bool alive, bool loadevents = true);
 		void open_deck(const std::string &path, bool alive, bool loadevents = true, bool copycomp = false);
 		void new_state();
@@ -459,7 +465,7 @@ class Mixer {
 		void outputmonitors_handle();
 		void layerdrag_handle();
 		void deckmixdrag_handle();
-        void open_dragbinel(Layer *lay, int i);
+        void open_dragbinel(Layer *lay, int i, bool uselayers = true);
         void open_dragbinel(Layer *lay);
         void reconnect_all(std::vector<Layer*> &layers);
         void change_currlay(Layer *oldcurr, Layer *newcurr);
@@ -537,7 +543,7 @@ class Mixer {
 		Param *wipey[2];
 		bool addlay = false;
 		Param* deckspeed[2][2];
-		int fps[25];
+		int fps[25] = {0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0};
 		int fpscount = 0;
 		int rate;
 
