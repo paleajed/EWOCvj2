@@ -2271,7 +2271,7 @@ void Program::shelf_triggering(ShelfElement* elem) {
 
                 // copy_lpst moved to swapmap
 
-                mainmix->open_deck(elem->path, true, true);  // dont load loopstation events from shelf ever
+                mainmix->open_deck(elem->path, true, true);  // dont load loopstation events from shelf ever?
 
             }
         }
@@ -2413,6 +2413,8 @@ bool Program::handle_button(Button *but, bool circlein, bool automation) {
                     }
                 }
             }
+            mainprogram->leftmouse = false;
+            mainprogram->orderleftmouse = false;
             changed = true;
         }
         if (mainprogram->menuactivation && !mainprogram->menuondisplay) {
@@ -4785,6 +4787,18 @@ void Program::handle_lpstmenu() {
 
 void Program::preview_modus_buttons() {
 	// Draw and handle buttons
+    for (Layer *lay : mainmix->layersA) {
+        if (lay->initdeck) return;
+    }
+    for (Layer *lay : mainmix->layersB) {
+        if (lay->initdeck) return;
+    }
+    for (Layer *lay : mainmix->layersAcomp) {
+        if (lay->initdeck) return;
+    }
+    for (Layer *lay : mainmix->layersBcomp) {
+        if (lay->initdeck) return;
+    }
 	if (mainprogram->prevmodus) {
         mainprogram->handle_button(mainprogram->toscreenA);
         if (mainprogram->toscreenA->toggled()) {
@@ -4915,7 +4929,7 @@ void Program::preview_modus_buttons() {
 
     mainprogram->handle_button(mainprogram->modusbut);
 	if (mainprogram->modusbut->toggled()) {
-	    mainmix->currlays[!mainprogram->prevmodus].clear();
+	    //mainmix->currlays[!mainprogram->prevmodus].clear();
 		mainprogram->prevmodus = !mainprogram->prevmodus;
         std::swap(mainmix->swapscrollpos[0], mainmix->scenes[0][mainmix->currscene[0]]->scrollpos);
         std::swap(mainmix->swapscrollpos[1], mainmix->scenes[1][mainmix->currscene[1]]->scrollpos);
@@ -6452,6 +6466,8 @@ void Project::open(const std::string& path, bool autosave) {
 	std::ifstream rfile;
 	if (concat) rfile.open(result);
 	else rfile.open(path);
+
+    mainprogram->newproject = true;
 
 	void **namedest;
 	void **owdest;
