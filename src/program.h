@@ -322,6 +322,7 @@ class Globals {
 		float h;
 };
 
+#ifdef WINDOWS
 class RamDisk
 {
 public:
@@ -373,6 +374,7 @@ public:
 
         sendCMDInput(process);*/
 };
+#endif
 
 class Program {
 	public:

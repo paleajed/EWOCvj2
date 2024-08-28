@@ -8941,11 +8941,13 @@ std::vector<std::string> Mixer::write_layer(Layer* lay, std::ostream& wfile, boo
 			wfile << lay->filename;
 		}
 		wfile << "\n";
+		if (lay->filename != "") {
+			wfile << "FILESIZE\n";
+			wfile << std::to_string(boost::filesystem::file_size(lay->filename));
+			wfile << "\n";
+		}
 	}
 	if (lay->filename != "") {
-        wfile << "FILESIZE\n";
-        wfile << std::to_string(boost::filesystem::file_size(lay->filename));
-        wfile << "\n";
 		wfile << "WIDTH\n";
 		wfile << std::to_string(lay->decresult->width);
 		wfile << "\n";

@@ -6262,9 +6262,11 @@ GLuint Program::set_shader() {
  	if (exists("./shader.vs")) strcpy (vshader, "./shader.vs");
  	else mainprogram->quitting = "Unable to find vertex shader \"shader.vs\" in current directory";
  	#else
-    #ifdef __linux__
+    #ifdef POSIX
     std::string ddir (this->docpath);
-    if (exists("./shader.vs")) strcpy (vshader, "./shader.vs");
+    if (exists("./shader.vs")) {
+	    strcpy (vshader, "./shader.vs");
+    }
     else if (exists("/usr/share/ewocvj2/shader.vs")) strcpy (vshader, "/usr/share/ewocvj2/shader.vs");
  	else mainprogram->quitting = "Unable to find vertex shader \"shader.vs\" in " + ddir;
  	#endif
