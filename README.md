@@ -51,7 +51,9 @@ Compile the rtmidi libraries
 * best to use the latest Boost libraries from:
 https://www.boost.org/
 
-*Use CMake to build the program.  You can find the executable in the cmake-build-debug or cmake-build-release directories.
+* Use CMake to build the program.  You can find the executable in the cmake-build-debug or cmake-build-release directories.
+
+On Linux, copy src/vshader.vs and src/vshader.fs to /usr/share/ewocvj2 (create dir first time).  Also install the expressway.ttf font to your system.
 
 For Windows you will need to have these dll's in your build directory to run the program. (you'll need the "d" version of some dll's) folder must contain
 * avcodec-58.dll
