@@ -16,7 +16,7 @@ Read the CONTRIBUTING.md and CODE_OF_CONDUCT.md files.
 # Installation
 
 The binary installer is not currently available any more.  It followed development with all the problems, bugs and crashes associated with this.  It was decided to take it off the internet until the release of the first stable version.
-Users that want to compile themselves can currently only do this on Windows systems.  The Visual Studio code is replaced by a CMake scheme.  Linux compilation will be worked on the following days.
+Users that want to compile themselves can currently only do this on Windows systems.  The Visual Studio code is replaced by a CMake scheme.  Linux compilation is working now too.
 
 ## Compilation
 
