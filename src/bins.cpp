@@ -940,8 +940,8 @@ void BinsMain::handle(bool draw) {
 	Layer *lay = nullptr;		
 	if (mainmix->currlay[!mainprogram->prevmodus]) lay = mainmix->currlay[!mainprogram->prevmodus];
 	else {
-		if (mainprogram->prevmodus) lay = mainmix->layersA[0];
-		else lay = mainmix->layersAcomp[0];
+		if (mainprogram->prevmodus) lay = mainmix->layers[0][0];
+		else lay = mainmix->layers[2][0];
 	}
 		
 	if (mainprogram->rightmouse && this->currbinel && !mainprogram->dragbinel) {
@@ -1373,10 +1373,10 @@ void BinsMain::handle(bool draw) {
 			mainmix->mousedeck = 0;
 			std::string path = find_unused_filename("deckA", mainprogram->project->binsdir, ".deck");
             if (mainprogram->prevmodus) {
-                this->menubinel->tex = copy_tex(mainprogram->nodesmain->mixnodes[mainmix->mousedeck]->mixtex);
+                this->menubinel->tex = copy_tex(mainprogram->nodesmain->mixnodes[0][mainmix->mousedeck]->mixtex);
             }
             else {
-                this->menubinel->tex = copy_tex(mainprogram->nodesmain->mixnodescomp[mainmix->mousedeck]->mixtex);
+                this->menubinel->tex = copy_tex(mainprogram->nodesmain->mixnodes[1][mainmix->mousedeck]->mixtex);
             }
 			mainmix->do_save_deck(path, true, true);
 			this->menubinel->type = ELEM_DECK;
@@ -1397,10 +1397,10 @@ void BinsMain::handle(bool draw) {
 
             std::string path = find_unused_filename("deckB", mainprogram->project->binsdir, ".deck");
             if (mainprogram->prevmodus) {
-                this->menubinel->tex = copy_tex(mainprogram->nodesmain->mixnodes[mainmix->mousedeck]->mixtex);
+                this->menubinel->tex = copy_tex(mainprogram->nodesmain->mixnodes[0][mainmix->mousedeck]->mixtex);
             }
             else {
-                this->menubinel->tex = copy_tex(mainprogram->nodesmain->mixnodescomp[mainmix->mousedeck]->mixtex);
+                this->menubinel->tex = copy_tex(mainprogram->nodesmain->mixnodes[1][mainmix->mousedeck]->mixtex);
             }
             mainmix->do_save_deck(path, true, true);
             this->menubinel->type = ELEM_DECK;
@@ -1420,10 +1420,10 @@ void BinsMain::handle(bool draw) {
 
             std::string path = find_unused_filename("mix", mainprogram->project->binsdir, ".mix");
             if (mainprogram->prevmodus) {
-                this->menubinel->tex = copy_tex(mainprogram->nodesmain->mixnodes[2]->mixtex);
+                this->menubinel->tex = copy_tex(mainprogram->nodesmain->mixnodes[0][2]->mixtex);
             }
             else {
-                this->menubinel->tex = copy_tex(mainprogram->nodesmain->mixnodescomp[2]->mixtex);
+                this->menubinel->tex = copy_tex(mainprogram->nodesmain->mixnodes[1][2]->mixtex);
             }
             mainmix->do_save_mix(path, mainprogram->prevmodus, true);
             this->menubinel->type = ELEM_MIX;
@@ -3208,8 +3208,8 @@ void BinsMain::hap_encode(const std::string srcpath, BinElement *binel, BinEleme
 	mainprogram->hap.notify_all();
 
     // exchange original for hap version everywhere (layerstacks, shelves, bins)
-    for (int i = 0; i < mainmix->layersA.size(); i++) {
-        Layer *lay = mainmix->layersA[i];
+    for (int i = 0; i < mainmix->layers[0].size(); i++) {
+        Layer *lay = mainmix->layers[0][i];
         if (lay->isclone) continue;
         if (lay == binel->otflay) continue;
         if (lay->filename != srcpath) continue;
@@ -3221,8 +3221,8 @@ void BinsMain::hap_encode(const std::string srcpath, BinElement *binel, BinEleme
         lay->set_clones();
         lay->encodeload = false;
     }
-    for (int i = 0; i < mainmix->layersB.size(); i++) {
-        Layer *lay = mainmix->layersB[i];
+    for (int i = 0; i < mainmix->layers[1].size(); i++) {
+        Layer *lay = mainmix->layers[1][i];
         if (lay->isclone) continue;
         if (lay == binel->otflay) continue;
         if (lay->filename != srcpath) continue;
@@ -3234,8 +3234,8 @@ void BinsMain::hap_encode(const std::string srcpath, BinElement *binel, BinEleme
         lay->set_clones();
         lay->encodeload = false;
     }
-    for (int i = 0; i < mainmix->layersAcomp.size(); i++) {
-        Layer *lay = mainmix->layersAcomp[i];
+    for (int i = 0; i < mainmix->layers[2].size(); i++) {
+        Layer *lay = mainmix->layers[2][i];
         if (lay->isclone) continue;
         if (lay == binel->otflay) continue;
         if (lay->filename != srcpath) continue;
@@ -3247,8 +3247,8 @@ void BinsMain::hap_encode(const std::string srcpath, BinElement *binel, BinEleme
         lay->set_clones();
         lay->encodeload = false;
     }
-    for (int i = 0; i < mainmix->layersBcomp.size(); i++) {
-        Layer *lay = mainmix->layersBcomp[i];
+    for (int i = 0; i < mainmix->layers[3].size(); i++) {
+        Layer *lay = mainmix->layers[3][i];
         if (lay->isclone) continue;
         if (lay == binel->otflay) continue;
         if (lay->filename != srcpath) continue;

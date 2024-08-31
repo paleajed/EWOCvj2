@@ -251,13 +251,15 @@ void LoopStationElement::visualize() {
 	if (this == loopstation->currelem) draw_box(grey, white, this->box, -1);
 	else draw_box(grey, nullptr, this->box, -1);
     render_text(std::to_string(this->pos + 1), white, this->recbut->box->vtxcoords->x1 - 0.05f, this->recbut->box->vtxcoords->y1 + 0.03f, 0.0012f, 0.002f, 2);
-	if (this->box->in() || this->recbut->box->in() || this->loopbut->box->in() || this->playbut->box->in() || this->speed->box->in() || this->colbox->in()) {
-        if (!mainprogram->menuondisplay) {
+	if (this->colbox->in()) {
+        if (!mainprogram->menuondisplay || mainprogram->lpstmenuon) {
             if (mainprogram->menuactivation) {
                 mainprogram->lpstmenu->state = 2;
+                mainprogram->parammenu3->state = 0;
+                mainprogram->parammenu4->state = 0;
                 mainmix->mouselpstelem = this;
                 mainprogram->menuactivation = false;
-            }
+                mainprogram->lpstmenuon = true;            }
         }
 	}
 }

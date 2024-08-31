@@ -151,6 +151,7 @@ float darkgrey[] = { 0.2f, 0.2f, 0.2f, 1.0f };
 
 std::mutex dellayslock;
 std::mutex databufmutex;
+std::mutex glmutex;
 
 static GLuint mixvao;
 static GLuint thmvbuf;
@@ -583,7 +584,7 @@ public:
             glBindBuffer(GL_PIXEL_PACK_BUFFER, mainmix->ioBuf);
             glBufferData(GL_PIXEL_PACK_BUFFER, (int) (mainprogram->ow * mainprogram->oh) * 4, nullptr,
                          GL_DYNAMIC_READ);
-            glBindFramebuffer(GL_FRAMEBUFFER, ((MixNode *) mainprogram->nodesmain->mixnodescomp[2])->mixfbo);
+            glBindFramebuffer(GL_FRAMEBUFFER, ((MixNode *) mainprogram->nodesmain->mixnodes[1][2])->mixfbo);
             glReadBuffer(GL_COLOR_ATTACHMENT0);
             glReadPixels(0, 0, mainprogram->ow, (int)mainprogram->oh, GL_BGRA, GL_UNSIGNED_BYTE, BUFFER_OFFSET(0));
             mainmix->rgbdata = glMapBuffer(GL_PIXEL_PACK_BUFFER, GL_READ_ONLY);
@@ -1554,6 +1555,7 @@ void Layer::get_cpu_frame(int framenr, int prevframe, int errcount)
 bool Layer::get_hap_frame() {
     if (!this->video) return false;
 
+
     databufmutex.lock();
     if (!this->databuf[0]) {
 		//	this->decresult->width = 0;
@@ -1709,6 +1711,8 @@ void Layer::get_frame(){
 }
 
 void Layer::trigger() {
+    // trigger variable checks in mutexes
+
     while(this->closethread == 0) {
         if (mainprogram->shutdown) {
             // delete all layers on program quit
@@ -3386,19 +3390,28 @@ void Layer::load_frame() {
     Layer *srclay = this;
     bool ret = false;
     //if (this->vidopen) return;
-    if (this->liveinput || this->type == ELEM_IMAGE);
+    if (this->liveinput || this->type == ELEM_IMAGE) {
+
+    }
     else if (this->startframe->value != this->endframe->value || this->type == ELEM_LIVE) {
-        if (mainmix->firstlayers.count(this->clonesetnr) == 0) {
+        bool found = false;
+        for (auto &it : mainmix->firstlayers) {
+            if (it.second == srclay) {
+                found = true;
+                break;
+            }
+        }
+        if (found || mainmix->firstlayers.count(this->clonesetnr) == 0) {
             if (!this->remfr[this->pbofri]->newdata) {
                 // promote first layer found in layer stack with this clonesetnr to element of firstlayers
                 this->ready = true;
                 if ((int) (this->frame) != this->prevframe) {
                     this->startdecode.notify_all();
                 }
-                if (this->clonesetnr != -1) {
+                /*if (this->clonesetnr != -1) {
                     mainmix->firstlayers[this->clonesetnr] = this;
                     this->isclone = false;
-                }
+                }*/
             }
         } else {
             srclay = mainmix->firstlayers[this->clonesetnr];
@@ -3422,7 +3435,7 @@ void Layer::load_frame() {
 
     // initialize layer?
     if (this->isduplay) return;
-    if (!srclay->video_dec_ctx && srclay->type != ELEM_IMAGE) return;
+    if (!this->liveinput && !srclay->video_dec_ctx && srclay->type != ELEM_IMAGE) return;
     if ((!srclay->initialized && srclay->initdeck) || (!srclay->mapptr[srclay->pbodi] && srclay->type != ELEM_IMAGE) || (!srclay->initialized && srclay->changeinit < 0) || srclay->changeinit == 4) {
         // reminder : test with different bpp
         if (!this->liveinput) {
@@ -3452,6 +3465,7 @@ void Layer::load_frame() {
     // set frame data to texture
     if (this->liveinput) {  // mimiclayers trick/// :(
         this->texture = this->liveinput->texture;
+        return;
     }
 
     if (this->isclone) return;
@@ -3590,7 +3604,7 @@ void Layer::load_frame() {
         }
     } else srclay->initialized = true;  //reminder: trick, is set false somewhere
 
-	// round robin triple pbos: currently deactivated
+	// round robin triple pbos: currently activated
     srclay->remfr[srclay->pbofri]->compression = srclay->decresult->compression;
     srclay->remfr[srclay->pbofri]->vidformat = srclay->vidformat;
     srclay->remfr[srclay->pbofri]->initialized = srclay->initialized;
@@ -4270,7 +4284,12 @@ void onestepfrom(bool stage, Node *node, Node *prevnode, GLuint prevfbotex, GLui
 		}
 	}
 	else if (node->type == VIDEO) {
-	    Layer *lay = ((VideoNode*)node)->layer;
+        GLenum err;
+        while ((err = glGetError()) != GL_NO_ERROR) {
+            std::cerr << "OpenGL error1: " << err << std::endl;
+        }
+
+        Layer *lay = ((VideoNode*)node)->layer;
 	    if (lay->vidopen) {
 	        mainmix->domix = false;  // freezes output frames during vidopen
             return;
@@ -4357,7 +4376,7 @@ void onestepfrom(bool stage, Node *node, Node *prevnode, GLuint prevfbotex, GLui
 
 			glActiveTexture(GL_TEXTURE0);
 			int sw, sh;
-			glBindTexture(GL_TEXTURE_2D, lay->fbotex);
+            glBindTexture(GL_TEXTURE_2D, lay->fbotex);
 			glGetTexLevelParameteriv(GL_TEXTURE_2D, 0, GL_TEXTURE_WIDTH, &sw);
 			glGetTexLevelParameteriv(GL_TEXTURE_2D, 0, GL_TEXTURE_HEIGHT, &sh);
 			float scw = sw;
@@ -4385,13 +4404,19 @@ void onestepfrom(bool stage, Node *node, Node *prevnode, GLuint prevfbotex, GLui
             prevfbotex = lay->fbotex;
             prevfbo = lay->fbo;
 
-			glViewport(0, 0, glob->w, glob->h);
-			lay->newtexdata = false;
+            //GLenum err;
+            while ((err = glGetError()) != GL_NO_ERROR) {
+                std::cerr << "OpenGL error2: " << err << std::endl;
+            }
+            glViewport(0, 0, glob->w, glob->h);
+
+            lay->newtexdata = false;
 		}
 		if (!lay->dummy && lay->pos == 0) {
             lay->blendnode->fbotex = lay->fbotex;
         }
-	}
+
+    }
 	else if (node->type == BLEND) {
 		BlendNode *bnode = (BlendNode*)node;
 		if (bnode->in == prevnode) {
@@ -4571,17 +4596,17 @@ void walk_forward(Node* node) {
 void walk_nodes(bool stage, std::vector<Layer*> &skip) {
 	std::vector<Node*> fromnodes;
 	if (stage == 0) {
-		for (int i = 0; i < mainprogram->nodesmain->mixnodes.size(); i++) {
-            if (&skip == &mainmix->layersA && i == 0) continue;
-            if (&skip == &mainmix->layersB && i == 0) continue;
-			fromnodes.push_back(mainprogram->nodesmain->mixnodes[i]);
+		for (int i = 0; i < mainprogram->nodesmain->mixnodes[0].size(); i++) {
+            if (&skip == &mainmix->layers[0] && i == 0) continue;
+            if (&skip == &mainmix->layers[1] && i == 0) continue;
+			fromnodes.push_back(mainprogram->nodesmain->mixnodes[0][i]);
 		}
 	}
 	else {
-		for (int i = 0; i < mainprogram->nodesmain->mixnodescomp.size(); i++) {
-            if (&skip == &mainmix->layersAcomp && i == 1) continue;
-            if (&skip == &mainmix->layersBcomp && i == 1) continue;
-			fromnodes.push_back(mainprogram->nodesmain->mixnodescomp[i]);
+		for (int i = 0; i < mainprogram->nodesmain->mixnodes[1].size(); i++) {
+            if (&skip == &mainmix->layers[2] && i == 1) continue;
+            if (&skip == &mainmix->layers[3] && i == 1) continue;
+			fromnodes.push_back(mainprogram->nodesmain->mixnodes[1][i]);
 		}
 	}
 	for (int i = 0; i < mainprogram->nodesmain->pages.size(); i++) {
@@ -4612,100 +4637,57 @@ void walk_nodes(bool stage, std::vector<Layer*> &skip) {
 	}
 
 	mainprogram->directmode = true;
-	if (stage == 0) {
-		int mutes = 0;
-		bool muted = false;
-        mainmix->domix = true;
-		for (int i = 0; i < mainmix->layersA.size(); i++) {
-            Layer *lay = mainmix->layersA[i];
-            //if (!lay->liveinput && !lay->decresult->width && lay->filename != "") {
-            //    mainprogram->directmode = false;
-            //    return;
-            //}
-			if (lay->mutebut->value) mutes++;
-			walk_forward(lay->node);
-			onestepfrom(0, lay->node, nullptr, -1, -1);
-		}
-		if (mutes == mainmix->layersA.size()) {
-			muted = true;
-			glBindFramebuffer(GL_FRAMEBUFFER, mainprogram->nodesmain->mixnodes[0]->mixfbo);
-			glDrawBuffer(GL_COLOR_ATTACHMENT0);
-			glClearColor(0, 0, 0, 0);
-			glClear(GL_COLOR_BUFFER_BIT);
-		}
-		mutes = 0;
-        mainmix->domix = true;
-		for (int i = 0; i < mainmix->layersB.size(); i++) {
-			Layer* lay = mainmix->layersB[i];
-            //if (!lay->liveinput && !lay->decresult->width && lay->filename != "") {
-            //    mainprogram->directmode = false;
-            //    return;
-            //}
-			if (lay->mutebut->value) mutes++;
-			walk_forward(lay->node);
-			onestepfrom(0, lay->node, nullptr, -1, -1);
-		}
-		if (mutes == mainmix->layersB.size()) {
-			muted = true;
-			glBindFramebuffer(GL_FRAMEBUFFER, mainprogram->nodesmain->mixnodes[1]->mixfbo);
-			glDrawBuffer(GL_COLOR_ATTACHMENT0);
-			glClearColor(0, 0, 0, 0);
-			glClear(GL_COLOR_BUFFER_BIT);
-		}
-		if (muted) {
-			mainprogram->bnodeend->intex = -1;
-			mainprogram->bnodeend->in2tex = -1;
-			onestepfrom(0, mainprogram->bnodeend, mainprogram->nodesmain->mixnodes[0], mainprogram->nodesmain->mixnodes[0]->mixtex, mainprogram->nodesmain->mixnodes[0]->mixfbo);
-			onestepfrom(0, mainprogram->bnodeend, mainprogram->nodesmain->mixnodes[1], mainprogram->nodesmain->mixnodes[1]->mixtex, mainprogram->nodesmain->mixnodes[1]->mixfbo);
-		}
-	}
-	else {
-		int mutes = 0;
-		bool muted = false;
-        mainmix->domix = true;
-		for (int i = 0; i < mainmix->layersAcomp.size(); i++) {
-			Layer* lay = mainmix->layersAcomp[i];
-            //if (!lay->liveinput && !lay->decresult->width && lay->filename != "") {
-            //    mainprogram->directmode = false;
-            //    return;
-            //}
-			if (lay->mutebut->value) mutes++;
-			walk_forward(lay->node);
-			onestepfrom(1, lay->node, nullptr, -1, -1);
-		}
-		if (mutes == mainmix->layersAcomp.size()) {
-			muted = true;
-			glBindFramebuffer(GL_FRAMEBUFFER, mainprogram->nodesmain->mixnodescomp[0]->mixfbo);
-			glDrawBuffer(GL_COLOR_ATTACHMENT0);
-			glClearColor(0, 0, 0, 0);
-			glClear(GL_COLOR_BUFFER_BIT);
-		}
-		mutes = 0;
-        mainmix->domix = true;
-		for (int i = 0; i < mainmix->layersBcomp.size(); i++) {
-			Layer* lay = mainmix->layersBcomp[i];
-            //if (!lay->liveinput && !lay->decresult->width && lay->filename != "") {
-            //    mainprogram->directmode = false;
-            //    return;
-            //}
-			if (lay->mutebut->value) mutes++;
-			walk_forward(lay->node);
-			onestepfrom(1, lay->node, nullptr, -1, -1);
-		}
-		if (mutes == mainmix->layersBcomp.size()) {
-			muted = true;
-			glBindFramebuffer(GL_FRAMEBUFFER, mainprogram->nodesmain->mixnodescomp[1]->mixfbo);
-			glDrawBuffer(GL_COLOR_ATTACHMENT0);
-			glClearColor(0, 0, 0, 0);
-			glClear(GL_COLOR_BUFFER_BIT);
-		}
-		if (muted) {
-			mainprogram->bnodeendcomp->intex = -1;
-			mainprogram->bnodeendcomp->in2tex = -1;
-			onestepfrom(1, mainprogram->bnodeendcomp, mainprogram->nodesmain->mixnodescomp[0], mainprogram->nodesmain->mixnodescomp[0]->mixtex, mainprogram->nodesmain->mixnodescomp[0]->mixfbo);
-			onestepfrom(1, mainprogram->bnodeendcomp, mainprogram->nodesmain->mixnodescomp[1], mainprogram->nodesmain->mixnodescomp[1]->mixtex, mainprogram->nodesmain->mixnodescomp[1]->mixfbo);
-		}
-	}
+    for (int i = 0; i < 4; i = i + 2) {
+        if (stage == i / 2) {
+            int mutes = 0;
+            bool muted = false;
+            mainmix->domix = true;
+            for (int j = 0; j < mainmix->layers[i].size(); j++) {
+                Layer *lay = mainmix->layers[i][j];
+                //if (!lay->liveinput && !lay->decresult->width && lay->filename != "") {
+                //    mainprogram->directmode = false;
+                //    return;
+                //}
+                if (lay->mutebut->value) mutes++;
+                walk_forward(lay->node);
+                onestepfrom(i / 2, lay->node, nullptr, -1, -1);
+            }
+            if (mutes == mainmix->layers[i].size()) {
+                muted = true;
+                glBindFramebuffer(GL_FRAMEBUFFER, mainprogram->nodesmain->mixnodes[i / 2][0]->mixfbo);
+                glDrawBuffer(GL_COLOR_ATTACHMENT0);
+                glClearColor(0, 0, 0, 0);
+                glClear(GL_COLOR_BUFFER_BIT);
+            }
+            mutes = 0;
+            mainmix->domix = true;
+            for (int j = 0; j < mainmix->layers[i + 1].size(); j++) {
+                Layer *lay = mainmix->layers[i + 1][j];
+                //if (!lay->liveinput && !lay->decresult->width && lay->filename != "") {
+                //    mainprogram->directmode = false;
+                //    return;
+                //}
+                if (lay->mutebut->value) mutes++;
+                walk_forward(lay->node);
+                onestepfrom(i / 2, lay->node, nullptr, -1, -1);
+            }
+            if (mutes == mainmix->layers[i + 1].size()) {
+                muted = true;
+                glBindFramebuffer(GL_FRAMEBUFFER, mainprogram->nodesmain->mixnodes[i / 2][1]->mixfbo);
+                glDrawBuffer(GL_COLOR_ATTACHMENT0);
+                glClearColor(0, 0, 0, 0);
+                glClear(GL_COLOR_BUFFER_BIT);
+            }
+            if (muted) {
+                mainprogram->bnodeend[i / 2]->intex = -1;
+                mainprogram->bnodeend[i / 2]->in2tex = -1;
+                onestepfrom(i / 2, mainprogram->bnodeend[i / 2], mainprogram->nodesmain->mixnodes[i / 2][0],
+                            mainprogram->nodesmain->mixnodes[i / 2][0]->mixtex, mainprogram->nodesmain->mixnodes[i / 2][0]->mixfbo);
+                onestepfrom(i / 2, mainprogram->bnodeend[i / 2], mainprogram->nodesmain->mixnodes[i / 2][1],
+                            mainprogram->nodesmain->mixnodes[i / 2][1]->mixtex, mainprogram->nodesmain->mixnodes[i / 2][1]->mixfbo);
+            }
+        }
+    }
 
     if (mainmix->waitmixtex) mainmix->waitmixtex++;
     if (mainmix->waitmixtex > 1) mainmix->waitmixtex = 0;
@@ -4755,14 +4737,14 @@ bool display_mix() {
 			GLfloat ypos = glGetUniformLocation(mainprogram->ShaderProgram, "ypos");
 			glUniform1f(ypos, mainmix->wipey[0]->value);
 		}
-		node = (MixNode*)mainprogram->nodesmain->mixnodes[0];
+		node = (MixNode*)mainprogram->nodesmain->mixnodes[0][0];
 		glActiveTexture(GL_TEXTURE1);
 		glBindTexture(GL_TEXTURE_2D, node->mixtex);
-		node = (MixNode*)mainprogram->nodesmain->mixnodes[1];
+		node = (MixNode*)mainprogram->nodesmain->mixnodes[0][1];
 		glActiveTexture(GL_TEXTURE2);
 		glBindTexture(GL_TEXTURE_2D, node->mixtex);
 		glActiveTexture(GL_TEXTURE0);
-		node = (MixNode*)mainprogram->nodesmain->mixnodes[2];
+		node = (MixNode*)mainprogram->nodesmain->mixnodes[0][2];
 		box = mainprogram->mainmonitor;
         box->vtxcoords->x1 = -0.15f;
         box->vtxcoords->y1 = -1.0f;
@@ -4787,15 +4769,15 @@ bool display_mix() {
 			glUniform1f(xpos, mainmix->wipex[1]->value);
 			GLfloat ypos = glGetUniformLocation(mainprogram->ShaderProgram, "ypos");
 			glUniform1f(ypos, mainmix->wipey[1]->value);
-			node = (MixNode*)mainprogram->nodesmain->mixnodescomp[0];
+			node = (MixNode*)mainprogram->nodesmain->mixnodes[1][0];
 			glActiveTexture(GL_TEXTURE1);
 			glBindTexture(GL_TEXTURE_2D, node->mixtex);
-			node = (MixNode*)mainprogram->nodesmain->mixnodescomp[1];
+			node = (MixNode*)mainprogram->nodesmain->mixnodes[1][1];
 			glActiveTexture(GL_TEXTURE2);
 			glBindTexture(GL_TEXTURE_2D, node->mixtex);
 			glActiveTexture(GL_TEXTURE0);
 		}
-		node = (MixNode*)mainprogram->nodesmain->mixnodescomp[2];
+		node = (MixNode*)mainprogram->nodesmain->mixnodes[1][2];
 		box = mainprogram->outputmonitor;
 		draw_box(red, black, box->vtxcoords->x1 + xs, box->vtxcoords->y1 + ys, box->vtxcoords->w - xs * 2.0f, box->vtxcoords->h - ys * 2.0f, node->mixtex);
 		mainprogram->outputmonitor->in();
@@ -4816,15 +4798,15 @@ bool display_mix() {
 			glUniform1f(xpos, mainmix->wipex[1]->value);
 			GLfloat ypos = glGetUniformLocation(mainprogram->ShaderProgram, "ypos");
 			glUniform1f(ypos, mainmix->wipey[1]->value);
-			node = (MixNode*)mainprogram->nodesmain->mixnodescomp[0];
+			node = (MixNode*)mainprogram->nodesmain->mixnodes[1][0];
 			glActiveTexture(GL_TEXTURE1);
 			glBindTexture(GL_TEXTURE_2D, node->mixtex);
-			node = (MixNode*)mainprogram->nodesmain->mixnodescomp[1];
+			node = (MixNode*)mainprogram->nodesmain->mixnodes[1][1];
 			glActiveTexture(GL_TEXTURE2);
 			glBindTexture(GL_TEXTURE_2D, node->mixtex);
 			glActiveTexture(GL_TEXTURE0);
 		}
-		node = (MixNode*)mainprogram->nodesmain->mixnodescomp[2];
+		node = (MixNode*)mainprogram->nodesmain->mixnodes[1][2];
 		box = mainprogram->mainmonitor;
         box->vtxcoords->x1 = -0.3f;
         box->vtxcoords->y1 = -1.0f;
@@ -4838,21 +4820,21 @@ bool display_mix() {
 	glUniform1i(mixmode, 0);
 
 	if (mainprogram->prevmodus) {
-		node = (MixNode*)mainprogram->nodesmain->mixnodes[0];
+		node = (MixNode*)mainprogram->nodesmain->mixnodes[0][0];
 		box = mainprogram->deckmonitor[0];
 		draw_box(red, box->acolor, box->vtxcoords->x1 + xs, box->vtxcoords->y1 + ys, box->vtxcoords->w - xs * 2.0f, box->vtxcoords->h - ys * 2.0f, node->mixtex);
 		box->in();
-		node = (MixNode*)mainprogram->nodesmain->mixnodes[1];
+		node = (MixNode*)mainprogram->nodesmain->mixnodes[0][1];
 		box = mainprogram->deckmonitor[1];
 		draw_box(red, black, box->vtxcoords->x1 + xs, box->vtxcoords->y1 + ys, box->vtxcoords->w - xs * 2.0f, box->vtxcoords->h - ys * 2.0f, node->mixtex);
         box->in();
 	}
 	else {
-		node = (MixNode*)mainprogram->nodesmain->mixnodescomp[0];
+		node = (MixNode*)mainprogram->nodesmain->mixnodes[1][0];
 		box = mainprogram->deckmonitor[0];
 		draw_box(red, black, box->vtxcoords->x1 + xs, box->vtxcoords->y1 + ys, box->vtxcoords->w - xs * 2.0f, box->vtxcoords->h - ys * 2.0f, node->mixtex);
         box->in();
-		node = (MixNode*)mainprogram->nodesmain->mixnodescomp[1];
+		node = (MixNode*)mainprogram->nodesmain->mixnodes[1][1];
 		box = mainprogram->deckmonitor[1];
 		draw_box(red, black, box->vtxcoords->x1 + xs, box->vtxcoords->y1 + ys, box->vtxcoords->w - xs * 2.0f, box->vtxcoords->h - ys * 2.0f, node->mixtex);
         box->in();
@@ -5043,24 +5025,24 @@ void Program::handle_shelf(Shelf *shelf) {
 			}
 		}
 
-        for (Layer *lay : mainmix->layersA) {
-            if (lay->currclip->jpegpath == "") {
-                lay->currclip->jpegpath = find_unused_filename(basename(lay->currclip->path), mainprogram->temppath, ".jpg");
+        for (Layer *lay : mainmix->layers[0]) {
+            if (lay->currclipjpegpath == "") {
+                lay->currclipjpegpath = find_unused_filename(basename(lay->currclippath), mainprogram->temppath, ".jpg");
             }
         }
-        for (Layer *lay : mainmix->layersB) {
-            if (lay->currclip->jpegpath == "") {
-                lay->currclip->jpegpath = find_unused_filename(basename(lay->currclip->path), mainprogram->temppath, ".jpg");
+        for (Layer *lay : mainmix->layers[1]) {
+            if (lay->currclipjpegpath == "") {
+                lay->currclipjpegpath = find_unused_filename(basename(lay->currclippath), mainprogram->temppath, ".jpg");
             }
         }
-        for (Layer *lay : mainmix->layersAcomp) {
-            if (lay->currclip->jpegpath == "") {
-                lay->currclip->jpegpath = find_unused_filename(basename(lay->currclip->path), mainprogram->temppath, ".jpg");
+        for (Layer *lay : mainmix->layers[2]) {
+            if (lay->currclipjpegpath == "") {
+                lay->currclipjpegpath = find_unused_filename(basename(lay->currclippath), mainprogram->temppath, ".jpg");
             }
         }
-        for (Layer *lay : mainmix->layersBcomp) {
-            if (lay->currclip->jpegpath == "") {
-                lay->currclip->jpegpath = find_unused_filename(basename(lay->currclip->path), mainprogram->temppath, ".jpg");
+        for (Layer *lay : mainmix->layers[3]) {
+            if (lay->currclipjpegpath == "") {
+                lay->currclipjpegpath = find_unused_filename(basename(lay->currclippath), mainprogram->temppath, ".jpg");
             }
         }
 
@@ -5236,20 +5218,20 @@ void make_layboxes() {
 				if (node->type == VIDEO) {
 					VideoNode *vnode = (VideoNode*)node;
                     /*bool found = 0;
-                    if (std::find(mainmix->layersA.begin(), mainmix->layersA.begin(), vnode->layer) != mainmix->layersA.end())
+                    if (std::find(mainmix->layers[0].begin(), mainmix->layers[0].begin(), vnode->layer) != mainmix->layers[0].end())
                         found = true;
-                    if (std::find(mainmix->layersB.begin(), mainmix->layersB.begin(), vnode->layer) != mainmix->layersB.end())
+                    if (std::find(mainmix->layers[1].begin(), mainmix->layers[1].begin(), vnode->layer) != mainmix->layers[1].end())
                         found = true;
-                    if (std::find(mainmix->layersAcomp.begin(), mainmix->layersAcomp.begin(), vnode->layer) != mainmix->layersAcomp.end())
+                    if (std::find(mainmix->layers[2].begin(), mainmix->layers[2].begin(), vnode->layer) != mainmix->layers[2].end())
                         found = true;
-                    if (std::find(mainmix->layersBcomp.begin(), mainmix->layersBcomp.begin(), vnode->layer) != mainmix->layersBcomp.end())
+                    if (std::find(mainmix->layers[3].begin(), mainmix->layers[3].begin(), vnode->layer) != mainmix->layers[3].end())
                         found = true;
                     if (!found) continue;*/
 
                     if (vnode->layer->closethread > 0) continue;
 					float xoffset;
 					int deck;
-					if (std::find(mainmix->layersAcomp.begin(), mainmix->layersAcomp.end(), vnode->layer) != mainmix->layersAcomp.end()) {
+					if (std::find(mainmix->layers[2].begin(), mainmix->layers[2].end(), vnode->layer) != mainmix->layers[2].end()) {
 						xoffset = 0.0f;
 						deck = 0;
 					}
@@ -5385,22 +5367,22 @@ void make_layboxes() {
 		for (int j = offs; j < 2 + offs; j++) {
 			std::vector<Layer*> lvec;
 			if (j == 0) {
-				lvec = mainmix->layersA;
+				lvec = mainmix->layers[0];
                 //if (lvec == skip) continue;
 				xoffset = 0.0f;
 			}
 			else if (j == 1) {
-				lvec = mainmix->layersB;
+				lvec = mainmix->layers[1];
                 //if (lvec == skip) continue;
 				xoffset = 1.0f - 0.2f;
 			}
 			else if (j == 2) {
-				lvec = mainmix->layersAcomp;
+				lvec = mainmix->layers[2];
                 //if (lvec == skip) continue;
 				xoffset = 0.0f;
 			}
 			else if (j == 3) {
-				lvec = mainmix->layersBcomp;
+				lvec = mainmix->layers[3];
                 //if (lvec == skip) continue;
 				xoffset = 1.0f - 0.2f;
 			}
@@ -5714,7 +5696,7 @@ Clip::~Clip() {
     delete this->box;
     delete this->startframe;
     delete this->endframe;
-	glDeleteTextures(1, &this->tex);
+	if (this->tex != -1) glDeleteTextures(1, &this->tex);
 	if (this->path.rfind(".layer") != std::string::npos) {
 		if (this->path.find("cliptemp_") != std::string::npos) {
 			boost::filesystem::remove(this->path);			
@@ -5832,7 +5814,7 @@ bool get_layertex(Layer *lay, const std::string& path) {
     lay->node->layer = lay;
     lay->lasteffnode[0] = lay->node;
     lay->lasteffnode[1] = lay->node;
-    Layer *l = mainmix->open_layerfile(path, lay, true, 0);
+    Layer *l = mainmix->open_layerfile(path, lay, true, false, false);
     //lay->set_inlayer(l, true);
     mainprogram->getvideotexlayers[std::find(mainprogram->getvideotexlayers.begin(), mainprogram->getvideotexlayers.end(), lay) - mainprogram->getvideotexlayers.begin()] = l;
     lay->closethread = 1;
@@ -6028,6 +6010,7 @@ void handle_scenes(Scene* scene) {
 		draw_box(box, -1);
 	}
 	// Handle sceneboxes
+    //if (mainmix->swapmap[0].size()) return;   // reminder
     bool found = false;
 	for (int i = 0; i < 4; i++) {
 		Boxx* box = mainmix->scenes[scene->deck][i]->box;
@@ -6129,13 +6112,13 @@ void handle_scenes(Scene* scene) {
                                               mainprogram->temppath + "tempdecksc_" + std::to_string(scene->deck) +
                                               std::to_string(mainmix->currscene[scene->deck]) + ".deck");
                     std::vector<Layer *> lvec2;
-                    bool swap = false;
-                    if (mainmix->swapmap.find(&choose_layers(mainmix->mousedeck)) != mainmix->swapmap.end()) {
+                    //bool swap = false;
+                    /*if (mainmix->swapmap.find(choose_layers(mainmix->mousedeck)[0]) != mainmix->swapmap.end()) {
                         lvec2 = *mainmix->swapmap[&choose_layers(mainmix->mousedeck)];
-                        swap = true;
-                    } else {
+                        //swap = true;
+                    } else {*/
                         lvec2 = choose_layers(scene->deck);
-                    }
+                    //}
                     for (int j = 0; j < lvec2.size(); j++) {
                         if (lvec2[j]->filename == "") {
                             continue;
@@ -6159,11 +6142,11 @@ void handle_scenes(Scene* scene) {
                         mainmix->currlay[!mainprogram->prevmodus] = lvec2[std::clamp(bulay->pos, 0, max)];
                         mainmix->currlays[!mainprogram->prevmodus].push_back(mainmix->currlay[!mainprogram->prevmodus]);
                     }
-                    if (!swap) {
+                    //if (!swap) {
                         mainmix->currscene[scene->deck] = i;
                         mainmix->setscene = -1;
-                    }
-                    else mainmix->setscene = i;
+                    //}
+                    //else mainmix->setscene = i;
                     si->loaded = false;
 
                     /*mainmix->bulrs[scene->deck].clear();
@@ -6201,12 +6184,12 @@ std::vector<Effect*>& Layer::choose_effects() {
 
 std::vector<Layer*>& choose_layers(bool j) {
 	if (mainprogram->prevmodus) {
-		if (j == 0) return mainmix->layersA;
-		else return mainmix->layersB;
+		if (j == 0) return mainmix->layers[0];
+		else return mainmix->layers[1];
 	}
 	else {
-		if (j == 0) return mainmix->layersAcomp;
-		else return mainmix->layersBcomp;
+		if (j == 0) return mainmix->layers[2];
+		else return mainmix->layers[3];
 	}
 }
 
@@ -6504,7 +6487,7 @@ void Layer::mute_handle() {
 			}
 		}
 		else if (this->next() != this) this->next()->blendnode->in = nullptr;
-		this->lasteffnode[1]->out.clear();
+		//this->lasteffnode[1]->out.clear();
 	}
 	else {
 		Layer *templay = this;
@@ -6528,17 +6511,17 @@ void Layer::mute_handle() {
 		while (1) {
 			if (templay == templay->next()) {
 				std::vector<Layer*> &lvec = choose_layers(this->deck);
-				if (&lvec == &mainmix->layersA) {
-					mainprogram->nodesmain->currpage->connect_nodes(this->lasteffnode[1], mainprogram->nodesmain->mixnodes[0]);
+				if (&lvec == &mainmix->layers[0]) {
+					mainprogram->nodesmain->currpage->connect_nodes(this->lasteffnode[1], mainprogram->nodesmain->mixnodes[0][0]);
 				}
-				else if (&lvec == &mainmix->layersB) {
-					mainprogram->nodesmain->currpage->connect_nodes(this->lasteffnode[1], mainprogram->nodesmain->mixnodes[1]);
+				else if (&lvec == &mainmix->layers[1]) {
+					mainprogram->nodesmain->currpage->connect_nodes(this->lasteffnode[1], mainprogram->nodesmain->mixnodes[0][1]);
 				}
-				else if (&lvec == &mainmix->layersAcomp) {
-					mainprogram->nodesmain->currpage->connect_nodes(this->lasteffnode[1], mainprogram->nodesmain->mixnodescomp[0]);
+				else if (&lvec == &mainmix->layers[2]) {
+					mainprogram->nodesmain->currpage->connect_nodes(this->lasteffnode[1], mainprogram->nodesmain->mixnodes[1][0]);
 				}
-				else if (&lvec == &mainmix->layersBcomp) {
-					mainprogram->nodesmain->currpage->connect_nodes(this->lasteffnode[1], mainprogram->nodesmain->mixnodescomp[1]);
+				else if (&lvec == &mainmix->layers[3]) {
+					mainprogram->nodesmain->currpage->connect_nodes(this->lasteffnode[1], mainprogram->nodesmain->mixnodes[1][1]);
 				}
 				break;
 			}
@@ -6760,269 +6743,102 @@ void the_loop() {
         skip = lvec;
     }
 
-    std::map<std::vector<Layer *> *, std::vector<Layer *> *> tempmap = mainmix->swapmap;
-    for (auto &it: tempmap) {
-        bool ready = true;
-        if (it.second) {
-            for (Layer *testlay: *it.second) {
-                testlay->nonewpbos = false;  // get new pbos
-                if (testlay->filename != "") testlay->calc_texture(1, 1);
-                if (testlay->changeinit < 4 && testlay->filename != "") {
-                    testlay->load_frame();
-                    if (testlay->deck == 0) mainmix->keep0 = choose_layers(0);
-                    else mainmix->keep1 = choose_layers(1);
-                    ready = false;
-                } else {
-                    testlay->changeinit = 5;
-                    testlay->initdeck = false;
-                }
-                if (testlay->filename == "") {
-                    testlay->changeinit = 5;
-                    testlay->initdeck = false;
+    std::vector<std::vector<Layer*>> *tempmap;
+    for (int i = 0; i < 4; i++) {
+        if (i == 0) {
+            tempmap = &mainmix->swapmap[0];
+        } else if (i == 1) {
+            tempmap = &mainmix->swapmap[1];
+        } else if (i == 2) {
+            tempmap = &mainmix->swapmap[2];
+        } else if (i == 3) {
+            tempmap = &mainmix->swapmap[3];
+        }
+        if (tempmap->size()) {
+            bool ready = true;
+            for (std::vector<Layer *> lv: *tempmap) {
+                if (lv[1]) {
+                    Layer *testlay = lv[1];
+                    testlay->nonewpbos = false;  // get new pbos
+                    if (testlay->filename != "") testlay->calc_texture(1, 1);
+                    if (!testlay->liveinput && !testlay->isclone && testlay->changeinit < 4 && testlay->filename != "") {
+                        testlay->load_frame();
+                        if (testlay->deck == 0) mainmix->keep0 = choose_layers(0);
+                        else mainmix->keep1 = choose_layers(1);
+                        ready = false;
+                    } else {
+                        testlay->changeinit = 5;
+                        testlay->initdeck = false;
+                    }
+                    if (testlay->filename == "") {
+                        testlay->changeinit = 5;
+                        testlay->initdeck = false;
+                    }
                 }
             }
             if (ready) {
-                mainmix->swapmap.erase(it.first);
-                /*for (Layer *testlay: *it.second) {
-                    testlay->initdeck = false;
+                std::vector<Layer *> oldlayers;
+                if (mainmix->setscene != -1) {
+                    mainmix->currscene[1] = mainmix->setscene;
                 }
-                for (Layer *testlay: *it.first) {
-                    testlay->initdeck = true;
-                }*/
-
-                bool deck;
-                bool brk = false;
-                if (it.first->size()) {
-                    if (it.first->front() == mainmix->layersA[0]) {
-                        //mainmix->reconnect_all(mainmix->layersA);
-                        int cnt = 0;
-                        while (1) {
-                            if (cnt >= it.first->size()) {
-                                Layer *newlay = it.second[0][cnt];
-                                mainmix->oldlayersA.push_back(newlay);
-                                newlay->pos = cnt;
-                                cnt++;
-                                newlay->layers = &mainmix->oldlayersA;
-                                if (it.second->size() == cnt) break;
-                                continue;
-                            }
-                            Layer *testlay = it.first[0][cnt];
-                            Layer *newlay = it.second[0][cnt];
-                            cnt++;
-                            if (it.second->size() == cnt) brk = true;
-                            for (int i = 0; i < mainmix->oldlayersA.size(); i++) {
-                                if (testlay == mainmix->oldlayersA[i] || testlay == newlay) {   // reminder : second part is trick
-                                    mainmix->oldlayersA[i] = newlay;
-                                    for (int j = 0; j < mainmix->currlays[!mainprogram->prevmodus].size(); j++) {
-                                        if (mainmix->currlays[!mainprogram->prevmodus][j] == testlay) {
-                                            mainmix->currlays[!mainprogram->prevmodus][j] = newlay;
-                                        }
-                                    }
-                                    if (mainmix->currlay[!mainprogram->prevmodus] == testlay) {
-                                        mainmix->currlay[!mainprogram->prevmodus] = newlay;
-                                    }
-                                    newlay->pos = i;
-                                    newlay->layers = &mainmix->oldlayersA;
-                                }
-                            }
-                            //testlay->layers = &mainmix->layersA;
-                            if (newlay != testlay) mainmix->bu_A.push_back(testlay);
-                            //mainmix->copy_lpst((*it.second)[mainmix->layersA.size() - 1], testlay, false);
-                            //mainmix->delete_layer(mainmix->layersA, testlay, true);
-                            //mainmix->reconnect_all(mainmix->layersA);
-                            if (brk) break;
+                if (tempmap->size()) {
+                    for (int j = 0; j < tempmap->size(); j++) {
+                        std::vector<Layer *> lv = (*tempmap)[j];
+                        if (lv[1]) {
+                            oldlayers.push_back(lv[1]);
+                            lv[1]->pos = j;
+                        } else if (lv[0]) {
+                            oldlayers.push_back(lv[0]);
+                            lv[0]->pos = j;
                         }
-                        mainmix->keep0 = mainmix->layersA;
-                        mainmix->layersA = mainmix->oldlayersA;
-                        skip = mainmix->layersA;
-                        deck = 0;
-                        mainmix->reconnect_all(mainmix->layersA);
-                    } else if (it.first->front() == mainmix->layersB[0]) {
-                        //mainmix->reconnect_all(mainmix->layersB);
-                        int cnt = 0;
-                        while (1) {
-                            if (cnt >= it.first->size()) {
-                                Layer *newlay = it.second[0][cnt];
-                                mainmix->oldlayersB.push_back(newlay);
-                                newlay->pos = cnt;
-                                cnt++;
-                                newlay->layers = &mainmix->oldlayersB;
-                                if (it.second->size() == cnt) break;
-                                continue;
-                            }
-                            Layer *testlay = it.first[0][cnt];
-                            Layer *newlay = it.second[0][cnt];
-                            cnt++;
-                            if (it.second->size() == cnt) brk = true;
-                            for (int i = 0; i < mainmix->oldlayersB.size(); i++) {
-                                if (testlay == mainmix->oldlayersB[i] || testlay == newlay) {
-                                    mainmix->oldlayersB[i] = newlay;
-                                    for (int j = 0; j < mainmix->currlays[!mainprogram->prevmodus].size(); j++) {
-                                        if (mainmix->currlays[!mainprogram->prevmodus][j] == testlay) {
-                                            mainmix->currlays[!mainprogram->prevmodus][j] = newlay;
-                                        }
-                                    }
-                                    if (mainmix->currlay[!mainprogram->prevmodus] == testlay) {
-                                        mainmix->currlay[!mainprogram->prevmodus] = newlay;
-                                    }
-                                    newlay->pos = i;
-                                    newlay->layers = &mainmix->oldlayersB;
-                                }
-                            }
-                            //testlay->layers = &mainmix->layersB;
-                            if (newlay != testlay) mainmix->bu_B.push_back(testlay);
-                            //mainmix->copy_lpst((*it.second)[mainmix->layersB.size() - 1], testlay, false);
-                            //mainmix->delete_layer(mainmix->layersB, testlay, true);
-                            //mainmix->reconnect_all(mainmix->layersB);
-                            if (brk) break;
+                        if (lv[0] && lv[1]) {
+                            mainmix->bulayers.push_back(lv[0]);
                         }
-                        mainmix->keep1 = mainmix->layersB;
-                        mainmix->layersB = mainmix->oldlayersB;
-                        skip = mainmix->layersB;
-                        deck = 1;
-                        mainmix->reconnect_all(mainmix->layersB);
-                    } else if (it.first->front() == mainmix->layersAcomp[0]) {
-                        if (mainmix->setscene != -1) {
-                            mainmix->currscene[0] = mainmix->setscene;
-                        } else {
-                            //mainmix->reconnect_all(mainmix->layersAcomp);
-                            int cnt = 0;
-                            while (1) {
-                                if (cnt >= it.first->size()) {
-                                    Layer *newlay = it.second[0][cnt];
-                                    mainmix->oldlayersAcomp.push_back(newlay);
-                                    newlay->pos = cnt;
-                                    cnt++;
-                                    newlay->layers = &mainmix->oldlayersAcomp;
-                                    if (it.second->size() == cnt) break;
-                                    continue;
-                                }
-                                Layer *testlay = it.first[0][cnt];
-                                Layer *newlay = it.second[0][cnt];
-                                cnt++;
-                                if (it.second->size() == cnt) brk = true;
-                                for (int i = 0; i < mainmix->oldlayersAcomp.size(); i++) {
-                                    if (testlay == mainmix->oldlayersAcomp[i] || testlay == newlay) {
-                                        mainmix->oldlayersAcomp[i] = newlay;
-                                        for (int j = 0; j < mainmix->currlays[!mainprogram->prevmodus].size(); j++) {
-                                            if (mainmix->currlays[!mainprogram->prevmodus][j] == testlay) {
-                                                mainmix->currlays[!mainprogram->prevmodus][j] = newlay;
-                                            }
-                                        }
-                                        if (mainmix->currlay[!mainprogram->prevmodus] == testlay) {
-                                            mainmix->currlay[!mainprogram->prevmodus] = newlay;
-                                        }
-                                        if (mainmix->currlay[!mainprogram->prevmodus] == testlay) {
-                                            mainmix->currlay[!mainprogram->prevmodus] = newlay;
-                                        }
-                                        newlay->pos = i;
-                                        newlay->layers = &mainmix->oldlayersAcomp;
-                                    }
-                                }
-                                //testlay->layers = &mainmix->layersAcomp;
-                                if (newlay != testlay) mainmix->bu_Acomp.push_back(testlay);
-                                //mainmix->copy_lpst((*it.second)[mainmix->layersAcomp.size() - 1], testlay, false);
-                                //mainmix->delete_layer(mainmix->layersAcomp, testlay, true);
-                                //mainmix->reconnect_all(mainmix->layersAcomp);
-                                if (brk) break;
-                            }
-                        }
-                        mainmix->keep0 = mainmix->layersAcomp;
-                        mainmix->layersAcomp = mainmix->oldlayersAcomp;
-                        skip = mainmix->layersAcomp;
-                        deck = 0;
-                        mainmix->reconnect_all(mainmix->layersAcomp);
-                    } else if (it.first->front() == mainmix->layersBcomp[0]) {
-                        if (mainmix->setscene != -1) {
-                            mainmix->currscene[1] = mainmix->setscene;
-                        } else {
-                            //mainmix->reconnect_all(mainmix->layersBcomp);
-                            int cnt = 0;
-                            while (1) {
-                                if (cnt >= it.first->size()) {
-                                    Layer *newlay = it.second[0][cnt];
-                                    mainmix->oldlayersBcomp.push_back(newlay);
-                                    newlay->pos = cnt;
-                                    cnt++;
-                                    newlay->layers = &mainmix->oldlayersBcomp;
-                                    if (it.second->size() == cnt) break;
-                                    continue;
-                                }
-                                Layer *testlay = it.first[0][cnt];
-                                Layer *newlay = it.second[0][cnt];
-                                cnt++;
-                                if (it.second->size() == cnt) brk = true;
-                                for (int i = 0; i < mainmix->oldlayersBcomp.size(); i++) {
-                                    if (testlay == mainmix->oldlayersBcomp[i] || testlay == newlay) {
-                                        mainmix->oldlayersBcomp[i] = newlay;
-                                        for (int j = 0; j < mainmix->currlays[!mainprogram->prevmodus].size(); j++) {
-                                            if (mainmix->currlays[!mainprogram->prevmodus][j] == testlay) {
-                                                mainmix->currlays[!mainprogram->prevmodus][j] = newlay;
-                                            }
-                                        }
-                                        if (mainmix->currlay[!mainprogram->prevmodus] == testlay) {
-                                            mainmix->currlay[!mainprogram->prevmodus] = newlay;
-                                        }
-                                        newlay->pos = i;
-                                        newlay->layers = &mainmix->oldlayersBcomp;
-                                    }
-                                }
-                                //testlay->layers = &mainmix->layersBcomp;
-                                if (newlay != testlay) mainmix->bu_Bcomp.push_back(testlay);
-                                //mainmix->copy_lpst((*it.second)[mainmix->layersBcomp.size() - 1], testlay, false);
-                                //mainmix->delete_layer(mainmix->layersBcomp, testlay, true);
-                                //mainmix->reconnect_all(mainmix->layersBcomp);
-                                if (brk) {
-                                    break;
-                                }
-                            }
-                        }
-                        mainmix->keep1 = mainmix->layersBcomp;
-                        mainmix->layersBcomp = mainmix->oldlayersBcomp;
-                        skip = mainmix->layersBcomp;
-                        deck = 1;
-                        mainmix->reconnect_all(mainmix->layersBcomp);
                     }
                 }
+                if (i == 0) {
+                    mainmix->keep0 = mainmix->layers[0];
+                    mainmix->layers[0] = oldlayers;
+                    skip = mainmix->layers[0];
+                    mainmix->reconnect_all(mainmix->layers[0]);
+                } else if (i == 1) {
+                    mainmix->keep0 = mainmix->layers[1];
+                    mainmix->layers[1] = oldlayers;
+                    skip = mainmix->layers[1];
+                    mainmix->reconnect_all(mainmix->layers[1]);
+                } else if (i == 2) {
+                    mainmix->keep0 = mainmix->layers[2];
+                    mainmix->layers[2] = oldlayers;
+                    skip = mainmix->layers[2];
+                    mainmix->reconnect_all(mainmix->layers[2]);
+                } else if (i == 3) {
+                    mainmix->keep0 = mainmix->layers[3];
+                    mainmix->layers[3] = oldlayers;
+                    skip = mainmix->layers[3];
+                    mainmix->reconnect_all(mainmix->layers[3]);
+                }
+                tempmap->clear();
             }
         }
     }
 
-    if (tempmap.size() == 0 && !mainprogram->newproject) { //
+    if (mainmix->bulayers.size() && !mainprogram->newproject2) { //
         // done switching to new layers -> delete old ones
-        std::vector<Layer *> &lvec = mainmix->bu_A;
+        std::vector<Layer *> &lvec = mainmix->bulayers;
         for (int i = 0; i < lvec.size(); i++) {
             lvec[i]->closethread = 1;
         }
-        lvec = mainmix->bu_B;
-        for (int i = 0; i < lvec.size(); i++) {
-            lvec[i]->closethread = 1;
-        }
-        lvec = mainmix->bu_Acomp;
-        for (int i = 0; i < lvec.size(); i++) {
-            lvec[i]->closethread = 1;
-        }
-        lvec = mainmix->bu_Bcomp;
-        for (int i = 0; i < lvec.size(); i++) {
-            lvec[i]->closethread = 1;
-        }
-        mainmix->bu_A.clear();
-        mainmix->bu_B.clear();
-        mainmix->bu_Acomp.clear();
-        mainmix->bu_Bcomp.clear();
+        mainmix->bulayers.clear();
     }  //reminder
-    else {
-        mainmix->bu_A.clear();
-        mainmix->bu_B.clear();
-        mainmix->bu_Acomp.clear();
-        mainmix->bu_Bcomp.clear();
+    else if (mainprogram->newproject2) {
+        mainmix->bulayers.clear();
         mainmix->currlays[0].clear();
         mainmix->currlays[1].clear();
-        mainmix->currlay[0] = mainmix->layersA[0];
+        mainmix->currlay[0] = mainmix->layers[0][0];
         mainmix->currlays[0].push_back(mainmix->currlay[0]);
-        mainmix->currlay[1] = mainmix->layersAcomp[0];
+        mainmix->currlay[1] = mainmix->layers[2][0];
         mainmix->currlays[1].push_back(mainmix->currlay[1]);
-        mainprogram->newproject = false;
+        mainprogram->newproject2 = false;
     }
 
 // set frames after launchtype 1 or 2
@@ -7073,40 +6889,40 @@ void the_loop() {
         }
     }
 
-    mainmix->firstlayers.clear();
+    //mainmix->firstlayers.clear();
     if (!mainprogram->prevmodus) {
 		//when in performance mode: keep advancing frame counters for preview layer stacks (alive = 0)
         mainprogram->prevmodus = true;
-        if (skip != mainmix->layersA) {
-            for (int i = 0; i < mainmix->layersA.size(); i++) {
-                Layer *testlay = mainmix->layersA[i];
-                testlay->layers = &mainmix->layersA;
+        if (skip != mainmix->layers[0]) {
+            for (int i = 0; i < mainmix->layers[0].size(); i++) {
+                Layer *testlay = mainmix->layers[0][i];
+                testlay->layers = &mainmix->layers[0];
                 testlay->calc_texture(0, 0);
                 testlay->load_frame();
             }
         }
-        if (skip != mainmix->layersB) {
-            for (int i = 0; i < mainmix->layersB.size(); i++) {
-                Layer *testlay = mainmix->layersB[i];
-                testlay->layers = &mainmix->layersB;
+        if (skip != mainmix->layers[1]) {
+            for (int i = 0; i < mainmix->layers[1].size(); i++) {
+                Layer *testlay = mainmix->layers[1][i];
+                testlay->layers = &mainmix->layers[1];
                 testlay->calc_texture(0, 0);
                 testlay->load_frame();
             }
         }
         mainprogram->prevmodus = false;
         // performance mode frame calc and load
-        if (skip != mainmix->layersAcomp) {
-            for (int i = 0; i < mainmix->layersAcomp.size(); i++) {
-                Layer *testlay = mainmix->layersAcomp[i];
-                testlay->layers = &mainmix->layersAcomp;
+        if (skip != mainmix->layers[2]) {
+            for (int i = 0; i < mainmix->layers[2].size(); i++) {
+                Layer *testlay = mainmix->layers[2][i];
+                testlay->layers = &mainmix->layers[2];
                 testlay->calc_texture(1, 1);
                 testlay->load_frame();
             }
         }
-        if (skip != mainmix->layersBcomp) {
-            for (int i = 0; i < mainmix->layersBcomp.size(); i++) {
-                Layer *testlay = mainmix->layersBcomp[i];
-                testlay->layers = &mainmix->layersBcomp;
+        if (skip != mainmix->layers[3]) {
+            for (int i = 0; i < mainmix->layers[3].size(); i++) {
+                Layer *testlay = mainmix->layers[3][i];
+                testlay->layers = &mainmix->layers[3];
                 testlay->calc_texture(1, 1);
                 testlay->load_frame();
             }
@@ -7119,18 +6935,18 @@ void the_loop() {
 	}
     // when in preview modus, do frame texture load for both mixes (preview and output)
 	if (mainprogram->prevmodus) {
-        if (skip != mainmix->layersA) {
-            for (int i = 0; i < mainmix->layersA.size(); i++) {
-                Layer *testlay = mainmix->layersA[i];
-                testlay->layers = &mainmix->layersA;
+        if (skip != mainmix->layers[0]) {
+            for (int i = 0; i < mainmix->layers[0].size(); i++) {
+                Layer *testlay = mainmix->layers[0][i];
+                testlay->layers = &mainmix->layers[0];
                 testlay->calc_texture(0, 1);
                 testlay->load_frame();
             }
         }
-        if (skip != mainmix->layersB) {
-            for (int i = 0; i < mainmix->layersB.size(); i++) {
-                Layer *testlay = mainmix->layersB[i];
-                testlay->layers = &mainmix->layersB;
+        if (skip != mainmix->layers[1]) {
+            for (int i = 0; i < mainmix->layers[1].size(); i++) {
+                Layer *testlay = mainmix->layers[1][i];
+                testlay->layers = &mainmix->layers[1];
                 testlay->calc_texture(0, 1);
                 testlay->load_frame();
             }
@@ -7138,18 +6954,18 @@ void the_loop() {
 	}
 	if (mainprogram->prevmodus) {
         mainprogram->prevmodus = false;
-        if (skip != mainmix->layersAcomp) {
-            for (int i = 0; i < mainmix->layersAcomp.size(); i++) {
-                Layer *testlay = mainmix->layersAcomp[i];
-                testlay->layers = &mainmix->layersAcomp;
+        if (skip != mainmix->layers[2]) {
+            for (int i = 0; i < mainmix->layers[2].size(); i++) {
+                Layer *testlay = mainmix->layers[2][i];
+                testlay->layers = &mainmix->layers[2];
                 testlay->calc_texture(1, 1);
                 testlay->load_frame();
             }
         }
-        if (skip != mainmix->layersBcomp) {
-            for (int i = 0; i < mainmix->layersBcomp.size(); i++) {
-                Layer *testlay = mainmix->layersBcomp[i];
-                testlay->layers = &mainmix->layersBcomp;
+        if (skip != mainmix->layers[3]) {
+            for (int i = 0; i < mainmix->layers[3].size(); i++) {
+                Layer *testlay = mainmix->layers[3][i];
+                testlay->layers = &mainmix->layers[3];
                 testlay->calc_texture(1, 1);
                 testlay->load_frame();
             }
@@ -7506,23 +7322,23 @@ void the_loop() {
         // draw and handle layer stacks, effect stacks and params
 		if (mainprogram->prevmodus) {
 			// when previewing
-			for (int i = 0; i < mainmix->layersA.size(); i++) {
-				Layer* testlay = mainmix->layersA[i];
+			for (int i = 0; i < mainmix->layers[0].size(); i++) {
+				Layer* testlay = mainmix->layers[0][i];
 				testlay->display();
 			}
-			for (int i = 0; i < mainmix->layersB.size(); i++) {
-				Layer* testlay = mainmix->layersB[i];
+			for (int i = 0; i < mainmix->layers[1].size(); i++) {
+				Layer* testlay = mainmix->layers[1][i];
 				testlay->display();
 			}
 		}
 		else {
 			// when performing
-			for (int i = 0; i < mainmix->layersAcomp.size(); i++) {
-				Layer* testlay = mainmix->layersAcomp[i];
+			for (int i = 0; i < mainmix->layers[2].size(); i++) {
+				Layer* testlay = mainmix->layers[2][i];
 				testlay->display();
 			}
-			for (int i = 0; i < mainmix->layersBcomp.size(); i++) {
-				Layer* testlay = mainmix->layersBcomp[i];
+			for (int i = 0; i < mainmix->layers[3].size(); i++) {
+				Layer* testlay = mainmix->layers[3][i];
 				testlay->display();
 			}
 		}
@@ -7637,12 +7453,12 @@ void the_loop() {
 		if (mainprogram->dragbinel && !mainmix->moving) {
 			if (mainprogram->dragbinel->type != ELEM_DECK && mainprogram->dragbinel->type != ELEM_MIX) {
 				if (mainprogram->prevmodus) {
-					drag_into_layerstack(mainmix->layersA, 0);
-					drag_into_layerstack(mainmix->layersB, 1);
+					drag_into_layerstack(mainmix->layers[0], 0);
+					drag_into_layerstack(mainmix->layers[1], 1);
 				}
 				else {
-					drag_into_layerstack(mainmix->layersAcomp, 0);
-					drag_into_layerstack(mainmix->layersBcomp, 1);
+					drag_into_layerstack(mainmix->layers[2], 0);
+					drag_into_layerstack(mainmix->layers[3], 1);
 				}
 			}
 		}
@@ -8108,10 +7924,6 @@ void the_loop() {
         std::vector<Layer*>& lvec1 = choose_layers(0);
         if (!found2 && (!found || (mainprogram->leftmouse && !mainprogram->menuondisplay && !mainprogram->modusbut->box->in()))) {
             set_queueing(false);
-            /*if (!mainprogram->boxhit && mainmix->currlay[!mainprogram->prevmodus]) {
-                mainmix->currlays[!mainprogram->prevmodus].clear();
-                mainmix->currlays[!mainprogram->prevmodus].push_back(mainmix->currlay[!mainprogram->prevmodus]);
-            }  reminder : what was this?*/
         }
     }
 
@@ -8279,14 +8091,16 @@ void the_loop() {
     	}
     }
 
-    mainmix->reconnect_all(mainmix->layersA);
-    mainmix->reconnect_all(mainmix->layersB);
-    mainmix->reconnect_all(mainmix->layersAcomp);
-    mainmix->reconnect_all(mainmix->layersBcomp);
+    mainmix->reconnect_all(mainmix->layers[0]);
+    mainmix->reconnect_all(mainmix->layers[1]);
+    mainmix->reconnect_all(mainmix->layers[2]);
+    mainmix->reconnect_all(mainmix->layers[3]);
     make_layboxes();
 
     glFlush();   //reminder : test under Windows
+    //glmutex.lock();
     glFinish();
+    //glmutex.unlock();
     //sleep(0.01f);
     SDL_GL_SwapWindow(mainprogram->mainwindow);
 
@@ -9329,16 +9143,16 @@ int main(int argc, char* argv[]) {
     MixNode *mixnodeA = mainprogram->nodesmain->currpage->add_mixnode(0, false);
     MixNode *mixnodeB = mainprogram->nodesmain->currpage->add_mixnode(0, false);
     MixNode *mixnodeAB = mainprogram->nodesmain->currpage->add_mixnode(0, false);
-    mainprogram->bnodeend = mainprogram->nodesmain->currpage->add_blendnode(CROSSFADING, false);
-    mainprogram->nodesmain->currpage->connect_nodes(mixnodeA, mixnodeB, mainprogram->bnodeend);
-    mainprogram->nodesmain->currpage->connect_nodes(mainprogram->bnodeend, mixnodeAB);
+    mainprogram->bnodeend[0] = mainprogram->nodesmain->currpage->add_blendnode(CROSSFADING, false);
+    mainprogram->nodesmain->currpage->connect_nodes(mixnodeA, mixnodeB, mainprogram->bnodeend[0]);
+    mainprogram->nodesmain->currpage->connect_nodes(mainprogram->bnodeend[0], mixnodeAB);
 
     MixNode *mixnodeAcomp = mainprogram->nodesmain->currpage->add_mixnode(0, true);
     MixNode *mixnodeBcomp = mainprogram->nodesmain->currpage->add_mixnode(0, true);
     MixNode *mixnodeABcomp = mainprogram->nodesmain->currpage->add_mixnode(0, true);
-    mainprogram->bnodeendcomp = mainprogram->nodesmain->currpage->add_blendnode(CROSSFADING, true);
-    mainprogram->nodesmain->currpage->connect_nodes(mixnodeAcomp, mixnodeBcomp, mainprogram->bnodeendcomp);
-    mainprogram->nodesmain->currpage->connect_nodes(mainprogram->bnodeendcomp, mixnodeABcomp);
+    mainprogram->bnodeend[1] = mainprogram->nodesmain->currpage->add_blendnode(CROSSFADING, true);
+    mainprogram->nodesmain->currpage->connect_nodes(mixnodeAcomp, mixnodeBcomp, mainprogram->bnodeend[1]);
+    mainprogram->nodesmain->currpage->connect_nodes(mainprogram->bnodeend[1], mixnodeABcomp);
 
     mainprogram->loadlay = new Layer(true);
     bool comp = !mainprogram->prevmodus;
@@ -9368,17 +9182,17 @@ int main(int argc, char* argv[]) {
     GLint endSampler1 = glGetUniformLocation(mainprogram->ShaderProgram, "endSampler1");
     glUniform1i(endSampler1, 2);
 
-    Layer *layA1 = mainmix->layersA[0];
-    Layer *layB1 = mainmix->layersB[0];
+    Layer *layA1 = mainmix->layers[0][0];
+    Layer *layB1 = mainmix->layers[1][0];
     mainprogram->nodesmain->currpage->connect_nodes(layA1->node, mixnodeA);
     mainprogram->nodesmain->currpage->connect_nodes(layB1->node, mixnodeB);
-    mainmix->currlay[0] = mainmix->layersA[0];
+    mainmix->currlay[0] = mainmix->layers[0][0];
     mainmix->currlays[0].push_back(mainmix->currlay[0]);
-    Layer *layA1comp = mainmix->layersAcomp[0];
-    Layer *layB1comp = mainmix->layersBcomp[0];
+    Layer *layA1comp = mainmix->layers[2][0];
+    Layer *layB1comp = mainmix->layers[3][0];
     mainprogram->nodesmain->currpage->connect_nodes(layA1comp->node, mixnodeAcomp);
     mainprogram->nodesmain->currpage->connect_nodes(layB1comp->node, mixnodeBcomp);
-    mainmix->currlay[1] = mainmix->layersAcomp[0];
+    mainmix->currlay[1] = mainmix->layers[2][0];
     mainmix->currlays[1].push_back(mainmix->currlay[1]);
     make_layboxes();
 
@@ -9818,13 +9632,18 @@ int main(int argc, char* argv[]) {
             else if (mainprogram->pathto == "NEWPROJECT") {
                 mainprogram->currprojdir = dirname(mainprogram->path);
                 mainmix->new_state();
+#ifdef POSIX
                 mainprogram->project->newp(mainprogram->path + "/" + basename(mainprogram->path));
+#endif
+#ifdef WINDOWS
+                mainprogram->project->newp(mainprogram->path + "\\" + basename(mainprogram->path));
+#endif
             }
             else if (mainprogram->pathto == "OPENPROJECT") {
                 std::string p = dirname(mainprogram->path);
-                mainprogram->currprojdir = dirname(p.substr(0, p.length() - 1));
                 if (exists(mainprogram->path)) {
                     mainprogram->project->open(mainprogram->path, false);
+                    mainprogram->currprojdir = dirname(p.substr(0, p.length() - 1));
                 }
             }
             else if (mainprogram->pathto == "SAVEPROJECT") {
@@ -10422,7 +10241,12 @@ int main(int argc, char* argv[]) {
                                              boost::filesystem::canonical(mainprogram->currprojdir).generic_string());
                     if (mainprogram->path != "") {
                         SDL_GL_MakeCurrent(mainprogram->mainwindow, glc);
+#ifdef WINDOWS
+                        mainprogram->project->newp(mainprogram->path + "\\" + basename(mainprogram->path));
+#endif
+#ifdef POSIX
                         mainprogram->project->newp(mainprogram->path + "/" + basename(mainprogram->path));
+#endif
                         mainprogram->currprojdir = dirname(mainprogram->path);
                         mainprogram->path = "";
                         mainprogram->startloop = true;

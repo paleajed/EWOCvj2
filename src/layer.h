@@ -111,6 +111,8 @@ class Layer {
 		std::vector<Layer*>* layers;
 		std::vector<Clip*> clips;
 		Clip* currclip = nullptr;
+        std::string currclippath;
+        std::string currclipjpegpath;
 		ELEM_TYPE type = ELEM_FILE;
         ELEM_TYPE oldtype = ELEM_FILE;
 		RATIO_TYPE aspectratio = RATIO_OUTPUT;
@@ -231,12 +233,12 @@ class Layer {
 		GLuint jpegtex;
 		GLuint texture;
 		GLuint fbotex;
-		GLuint fbo;
+		GLuint fbo = -1;
         GLuint minitex;
 		GLuint texpos = 0;
 		GLuint vbuf;
 		GLuint tbuf;
-		GLuint vao;
+		GLuint vao = -1;
 		GLuint endtex;
         GLuint frb;
         GLuint pbo[3];
@@ -387,10 +389,7 @@ class Mixer {
 		bool clip_drag_per_layervec(std::vector<Layer*>& layers, bool deck);
 		void clip_inside_test(std::vector<Layer*>& layers, bool deck);
 	public:
-		std::vector<Layer*> layersAcomp;
-		std::vector<Layer*> layersBcomp;
-		std::vector<Layer*> layersA;
-		std::vector<Layer*> layersB;
+		std::vector<std::vector<Layer*>> layers;
 		std::vector<Scene*> scenes[2];
         int swapscrollpos[2] = {0, 0};
 		std::vector<Layer*> bulrs[2][2];
@@ -423,14 +422,10 @@ class Mixer {
         std::vector<Layer *> keep1;
 		int dropdeckblue = 0;
 		int dropmixblue = 0;
-        std::vector<Layer*> bu_A;
-        std::vector<Layer*> bu_B;
-        std::vector<Layer*> bu_Acomp;
-        std::vector<Layer*> bu_Bcomp;
-        std::vector<Layer*> oldlayersA;
-        std::vector<Layer*> oldlayersB;
-        std::vector<Layer*> oldlayersAcomp;
-        std::vector<Layer*> oldlayersBcomp;
+        std::vector<Layer*> bulayers;
+        std::vector<Layer*> newlrs[4];
+
+        int currclonesize = -1;
 
 
         Layer *add_layer(std::vector<Layer*> &layers, int pos);
@@ -460,7 +455,7 @@ class Mixer {
 		std::vector<std::string> write_layer(Layer *lay, std::ostream& wfile, bool doclips, bool dojpeg);
 		Layer* read_layers(std::istream &rfile, const std::string &result, std::vector<Layer*> &layers, bool deck, bool isdeck, int type, bool doclips, bool concat, bool load, bool loadevents, bool save, bool keepeff = false);
 		void start_recording();
-		void cloneset_destroy(std::unordered_set<Layer*>* cs);
+		void cloneset_destroy(int clnr);
 		void handle_genmidibuttons();
 		bool set_prevshelfdragelem(Layer *lay);
 		void vidbox_handle();
@@ -556,7 +551,7 @@ class Mixer {
 		bool domix;
 		int waitmixtex = 0;
 
-        std::map<std::vector<Layer*>*, std::vector<Layer*>*> swapmap;
+        std::vector<std::vector<Layer*>> swapmap[4];
 
         std::vector<Layer*> loadinglays;
 
@@ -577,6 +572,6 @@ class Mixer {
 
 		std::vector<GLuint> fbotexes;
 
-		std::vector<std::unordered_set<Layer*>*> clonesets;
+		std::unordered_map<int, std::unordered_set<Layer*>*> clonesets;
 		std::unordered_map<int, Layer*> firstlayers;  //first decompressed layer per cloneset
 };

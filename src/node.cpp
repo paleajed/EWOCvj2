@@ -279,12 +279,12 @@ MixNode *NodePage::add_mixnode(int scr, bool comp) {
 	if (comp) {
 		node->pos = this->nodescomp.size();
 		this->nodescomp.push_back(node);
-		mainprogram->nodesmain->mixnodescomp.push_back(node);
+		mainprogram->nodesmain->mixnodes[1].push_back(node);
 	}
 	else {
 		node->pos = this->nodes.size();
 		this->nodes.push_back(node);
-		mainprogram->nodesmain->mixnodes.push_back(node);
+		mainprogram->nodesmain->mixnodes[0].push_back(node);
 	}
 	node->page = this;
 	node->box->scrcoords->x1 = 500 + node->pos * 192;
@@ -520,9 +520,9 @@ void NodePage::handle_nodes() {
 				if (node->box->in()) {
 					mainprogram->effectmenu->state = 3;
 					std::vector<Layer*> AB;
-					AB.reserve(mainmix->layersA.size() + mainmix->layersB.size() ); // preallocate memory
-					AB.insert(AB.end(), mainmix->layersA.begin(), mainmix->layersA.end());
-					AB.insert(AB.end(), mainmix->layersB.begin(), mainmix->layersB.end());
+					AB.reserve(mainmix->layers[0].size() + mainmix->layers[1].size() ); // preallocate memory
+					AB.insert(AB.end(), mainmix->layers[0].begin(), mainmix->layers[0].end());
+					AB.insert(AB.end(), mainmix->layers[1].begin(), mainmix->layers[1].end());
 					bool found = false;
 					for (int m = 0; m < AB.size(); m++) {
 						for (int n = 0; n < AB[m]->effects[0].size(); n++) {
@@ -871,8 +871,8 @@ void NodePage::handle_nodes() {
 			if (mainprogram->middlemouse) {
 				mainprogram->middlemouse = false;
 				if (node->type == VIDEO) {
-					if (mainmix->deck == 0) mainmix->delete_layer(mainmix->layersA, ((VideoNode*)node)->layer, true);
-					else mainmix->delete_layer(mainmix->layersB, ((VideoNode*)node)->layer, true);
+					if (mainmix->deck == 0) mainmix->delete_layer(mainmix->layers[0], ((VideoNode*)node)->layer, true);
+					else mainmix->delete_layer(mainmix->layers[1], ((VideoNode*)node)->layer, true);
 				}
 				else {
 					mainprogram->nodesmain->currpage->delete_node(node);
@@ -885,8 +885,8 @@ void NodePage::handle_nodes() {
 	if (mainprogram->leftmouse) mainprogram->nodesmain->currpage->movingnode = nullptr;
 	
 	std::vector<Layer*> lvec;
-	if (mainmix->deck = 0) lvec = mainmix->layersA;
-	else lvec = mainmix->layersB;
+	if (mainmix->deck = 0) lvec = mainmix->layers[0];
+	else lvec = mainmix->layers[1];
 	for (int i = 0; i < lvec.size(); i++) {
 		Layer *lay = lvec[i];
 		if (lay->node->vidbox->in()) {

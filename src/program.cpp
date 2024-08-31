@@ -1707,12 +1707,12 @@ void Program::handle_changed_owoh() {
 				node->renew_texes(this->ow, this->oh);
 			}
 		}
-		for (int j = 0; j < this->nodesmain->mixnodes.size(); j++) {
-			Node* node = this->nodesmain->mixnodes[j];
+		for (int j = 0; j < this->nodesmain->mixnodes[0].size(); j++) {
+			Node* node = this->nodesmain->mixnodes[0][j];
 			node->renew_texes(this->ow3, this->oh3);
 		}
-		for (int j = 0; j < this->nodesmain->mixnodescomp.size(); j++) {
-			Node* node = this->nodesmain->mixnodescomp[j];
+		for (int j = 0; j < this->nodesmain->mixnodes[1].size(); j++) {
+			Node* node = this->nodesmain->mixnodes[1][j];
 			node->renew_texes(this->ow, this->oh);
 		}
 
@@ -1805,20 +1805,20 @@ void Program::handle_fullscreen() {
 	glVertexAttribPointer(1, 2, GL_FLOAT, GL_FALSE, 8, nullptr);
 
 	MixNode* node;
-	if (this->fullscreen == this->nodesmain->mixnodes.size()) node = (MixNode*)this->nodesmain->mixnodescomp[this->fullscreen - 1];
-	else node = (MixNode*)this->nodesmain->mixnodescomp[this->fullscreen];
+	if (this->fullscreen == this->nodesmain->mixnodes[0].size()) node = (MixNode*)this->nodesmain->mixnodes[1][this->fullscreen - 1];
+	else node = (MixNode*)this->nodesmain->mixnodes[1][this->fullscreen];
 	if (this->prevmodus) {
         if (this->fullscreen == 0) {
-            node = (MixNode *) this->nodesmain->mixnodes[0];
+            node = (MixNode *) this->nodesmain->mixnodes[0][0];
         }
         else if (this->fullscreen == 1) {
-            node = (MixNode *) this->nodesmain->mixnodes[1];
+            node = (MixNode *) this->nodesmain->mixnodes[0][1];
         }
         else if (this->fullscreen == 2) {
-            node = (MixNode *) this->nodesmain->mixnodes[2];
+            node = (MixNode *) this->nodesmain->mixnodes[0][2];
         }
         else if (this->fullscreen == 3) {
-            node = (MixNode *) this->nodesmain->mixnodescomp[2];
+            node = (MixNode *) this->nodesmain->mixnodes[1][2];
         }
     }
 	GLfloat cf = glGetUniformLocation(this->ShaderProgram, "cf");
@@ -2422,6 +2422,7 @@ bool Program::handle_button(Button *but, bool circlein, bool automation) {
             else mainprogram->parammenu3->state = 2;
             mainmix->learnparam = nullptr;
             mainmix->learnbutton = but;
+            mainprogram->lpstmenuon = true;
             mainprogram->menuactivation = false;
         }
         but->box->acolor[0] = 0.5f;
@@ -2620,14 +2621,14 @@ void output_video(EWindow* mwin) {
 		}
 
         if (mwin->mixid == 4) tex = mwin->lay->fbotex;
-        else if (mwin->mixid == 3) tex = ((MixNode*)(mainprogram->nodesmain->mixnodescomp[2]))->mixtex;
-        else if (mwin->mixid == 2) tex = ((MixNode*)(mainprogram->nodesmain->mixnodes[2]))->mixtex;
+        else if (mwin->mixid == 3) tex = ((MixNode*)(mainprogram->nodesmain->mixnodes[1][2]))->mixtex;
+        else if (mwin->mixid == 2) tex = ((MixNode*)(mainprogram->nodesmain->mixnodes[0][2]))->mixtex;
 		else {
             if (mainprogram->prevmodus) {
-                tex = ((MixNode*)(mainprogram->nodesmain->mixnodes[mwin->mixid]))->mixtex;
+                tex = ((MixNode*)(mainprogram->nodesmain->mixnodes[0][mwin->mixid]))->mixtex;
             }
             else {
-                tex = ((MixNode*)(mainprogram->nodesmain->mixnodescomp[mwin->mixid]))->mixtex;
+                tex = ((MixNode*)(mainprogram->nodesmain->mixnodes[1][mwin->mixid]))->mixtex;
             }
 		}
 
@@ -2638,20 +2639,20 @@ void output_video(EWindow* mwin) {
             if (mainmix->wipe[mwin->mixid == 3] > -1) {
                 if (mwin->mixid == 3) {
                     glUniform1f(cf, mainmix->crossfadecomp->value);
-                    MixNode *node = (MixNode*)mainprogram->nodesmain->mixnodescomp[0];
+                    MixNode *node = (MixNode*)mainprogram->nodesmain->mixnodes[1][0];
                     glActiveTexture(GL_TEXTURE1);
                     glBindTexture(GL_TEXTURE_2D, node->mixtex);
-                    node = (MixNode*)mainprogram->nodesmain->mixnodescomp[1];
+                    node = (MixNode*)mainprogram->nodesmain->mixnodes[1][1];
                     glActiveTexture(GL_TEXTURE2);
                     glBindTexture(GL_TEXTURE_2D, node->mixtex);
                     glActiveTexture(GL_TEXTURE0);
                 }
                 else {
                     glUniform1f(cf, mainmix->crossfade->value);
-                    MixNode *node = (MixNode *) mainprogram->nodesmain->mixnodes[0];
+                    MixNode *node = (MixNode *) mainprogram->nodesmain->mixnodes[0][0];
                     glActiveTexture(GL_TEXTURE1);
                     glBindTexture(GL_TEXTURE_2D, node->mixtex);
-                    node = (MixNode *) mainprogram->nodesmain->mixnodes[1];
+                    node = (MixNode *) mainprogram->nodesmain->mixnodes[0][1];
                     glActiveTexture(GL_TEXTURE2);
                     glBindTexture(GL_TEXTURE_2D, node->mixtex);
                     glActiveTexture(GL_TEXTURE0);
@@ -2841,10 +2842,10 @@ void Program::stream_to_v4l2loopbacks() {
         int framesize = mainprogram->ow * mainprogram->oh * 4;
         char *data = (char *) calloc(framesize, 1);
         if (mainprogram->prevmodus) {
-            glBindTexture(GL_TEXTURE_2D, mainprogram->nodesmain->mixnodes[2]->mixtex);
+            glBindTexture(GL_TEXTURE_2D, mainprogram->nodesmain->mixnodes[0][2]->mixtex);
         }
         else {
-            glBindTexture(GL_TEXTURE_2D, mainprogram->nodesmain->mixnodescomp[2]->mixtex);
+            glBindTexture(GL_TEXTURE_2D, mainprogram->nodesmain->mixnodes[1][2]->mixtex);
         }
         glGetTexImage(GL_TEXTURE_2D, 0, GL_RGBA, GL_UNSIGNED_BYTE, data);
         size_t written = write(output, data, framesize);
@@ -3969,6 +3970,7 @@ void Program::handle_laymenu1() {
         if (k == 1) {
             mainprogram->pathto = "OPENFILESLAYER";
             mainprogram->loadlay = mainmix->mouselayer;
+            if (cond) mainprogram->clickednextto = mainmix->mouselayer->deck;
             mainmix->addlay = false;
             std::thread filereq(&Program::get_multinname, mainprogram, "Open video/image/layer file", "", boost::filesystem::canonical(mainprogram->currfilesdir).generic_string());
             filereq.detach();
@@ -4019,17 +4021,17 @@ void Program::handle_laymenu1() {
 			filereq.detach();
 		}
 		else if (k == 11 - cond) {
-			if (std::find(mainmix->layersA.begin(), mainmix->layersA.end(), mainmix->mouselayer) != mainmix->layersA.end()) {
-				mainmix->delete_layer(mainmix->layersA, mainmix->mouselayer, true);
+			if (std::find(mainmix->layers[0].begin(), mainmix->layers[0].end(), mainmix->mouselayer) != mainmix->layers[0].end()) {
+				mainmix->delete_layer(mainmix->layers[0], mainmix->mouselayer, true);
 			}
-			else if (std::find(mainmix->layersB.begin(), mainmix->layersB.end(), mainmix->mouselayer) != mainmix->layersB.end()) {
-				mainmix->delete_layer(mainmix->layersB, mainmix->mouselayer, true);
+			else if (std::find(mainmix->layers[1].begin(), mainmix->layers[1].end(), mainmix->mouselayer) != mainmix->layers[1].end()) {
+				mainmix->delete_layer(mainmix->layers[1], mainmix->mouselayer, true);
 			}
-			else if (std::find(mainmix->layersAcomp.begin(), mainmix->layersAcomp.end(), mainmix->mouselayer) != mainmix->layersAcomp.end()) {
-				mainmix->delete_layer(mainmix->layersAcomp, mainmix->mouselayer, true);
+			else if (std::find(mainmix->layers[2].begin(), mainmix->layers[2].end(), mainmix->mouselayer) != mainmix->layers[2].end()) {
+				mainmix->delete_layer(mainmix->layers[2], mainmix->mouselayer, true);
 			}
-			else if (std::find(mainmix->layersBcomp.begin(), mainmix->layersBcomp.end(), mainmix->mouselayer) != mainmix->layersBcomp.end()) {
-				mainmix->delete_layer(mainmix->layersBcomp, mainmix->mouselayer, true);
+			else if (std::find(mainmix->layers[3].begin(), mainmix->layers[3].end(), mainmix->mouselayer) != mainmix->layers[3].end()) {
+				mainmix->delete_layer(mainmix->layers[3], mainmix->mouselayer, true);
 			}
 		}
         else if (!cond && k == 12) {
@@ -4040,10 +4042,11 @@ void Program::handle_laymenu1() {
         else if (!cond && k == 13) {
             Layer* clonelay = mainmix->mouselayer->clone();
             if (mainmix->mouselayer->clonesetnr == -1) {
-                std::unordered_set<Layer*>* uset = new std::unordered_set<Layer*>;
-                mainmix->clonesets.push_back(uset);
+                mainmix->mouselayer->clonesetnr = mainmix->clonesets.size();
+                mainmix->firstlayers[mainmix->mouselayer->clonesetnr] = mainmix->mouselayer;
+                std::unordered_set<Layer*> *uset = new std::unordered_set<Layer*>;
+                mainmix->clonesets[mainmix->mouselayer->clonesetnr] = uset;
                 uset->emplace(mainmix->mouselayer);
-                mainmix->mouselayer->clonesetnr = mainmix->clonesets.size() - 1;
             }
             clonelay->clonesetnr = mainmix->mouselayer->clonesetnr;
             mainmix->clonesets[mainmix->mouselayer->clonesetnr]->emplace(clonelay);
@@ -4787,16 +4790,16 @@ void Program::handle_lpstmenu() {
 
 void Program::preview_modus_buttons() {
 	// Draw and handle buttons
-    for (Layer *lay : mainmix->layersA) {
+    for (Layer *lay : mainmix->layers[0]) {
         if (lay->initdeck) return;
     }
-    for (Layer *lay : mainmix->layersB) {
+    for (Layer *lay : mainmix->layers[1]) {
         if (lay->initdeck) return;
     }
-    for (Layer *lay : mainmix->layersAcomp) {
+    for (Layer *lay : mainmix->layers[2]) {
         if (lay->initdeck) return;
     }
-    for (Layer *lay : mainmix->layersBcomp) {
+    for (Layer *lay : mainmix->layers[3]) {
         if (lay->initdeck) return;
     }
 	if (mainprogram->prevmodus) {
@@ -6411,7 +6414,9 @@ void Project::newp(const std::string &path) {
 	this->path = str;
 	this->name = remove_extension(basename(this->path));
 
-	// set project output width and height
+    mainprogram->newproject2 = true;
+
+    // set project output width and height
     for (PrefCat *item : mainprogram->prefs->items) {
         // get the default output width and height
         for (PrefItem *pri : item->items) {
@@ -6469,7 +6474,7 @@ void Project::open(const std::string& path, bool autosave) {
 	if (concat) rfile.open(result);
 	else rfile.open(path);
 
-    mainprogram->newproject = true;
+    //mainprogram->newproject2 = true;
 
 	void **namedest;
 	void **owdest;
@@ -6496,7 +6501,7 @@ void Project::open(const std::string& path, bool autosave) {
         this->autosavedir = dir + "autosaves/";
         this->elementsdir = dir + "elements/";
         if (!exists(mainprogram->currfilesdir)) mainprogram->currfilesdir = this->elementsdir;
-        if (!exists(mainprogram->currelemsdir)) mainprogram->currelemsdir = this->elementsdir;
+        mainprogram->currelemsdir = this->elementsdir;
     }
 	int cb = binsmain->read_binslist();
 	for (int i = 0; i < binsmain->bins.size(); i++) {
@@ -6931,7 +6936,7 @@ void Preferences::load() {
             boost::filesystem::path p(istring);
             if (boost::filesystem::exists(p)) mainprogram->currfilesdir = istring;
         }
-        else if (istring == "CURRELEMSDIR") {
+        /*else if (istring == "CURRELEMSDIR") {
             safegetline(rfile, istring);
             boost::filesystem::path p(istring);
             if (boost::filesystem::exists(p)) mainprogram->currelemsdir = istring;
@@ -6945,7 +6950,7 @@ void Preferences::load() {
             safegetline(rfile, istring);
             boost::filesystem::path p(istring);
             if (boost::filesystem::exists(p)) mainprogram->currelemsdir = istring;
-        }
+        }*/
     }
 
     mainprogram->set_ow3oh3();
@@ -7023,7 +7028,7 @@ void Preferences::save() {
         wfile << "ENDOFPREFCAT\n";
     }
 
-    wfile << "CURRFILESDIR\n";
+    /*wfile << "CURRFILESDIR\n";
     wfile << mainprogram->currfilesdir;
     wfile << "\n";
     wfile << "CURRELEMSDIR\n";
@@ -7031,7 +7036,7 @@ void Preferences::save() {
     wfile << "\n";
     wfile << "currelemsdir\n";
     wfile << mainprogram->currelemsdir;
-    wfile << "\n";
+    wfile << "\n";*/
 
     wfile << "ENDOFFILE\n";
     wfile.close();
@@ -8248,11 +8253,11 @@ bool Shelf::insert_deck(const std::string& path, bool deck, int pos) {
     GLuint butex = -1;
     if (mainprogram->prevmodus) {
         butex = elem->tex;
-        elem->tex = copy_tex(mainprogram->nodesmain->mixnodes[deck]->mixtex);
+        elem->tex = copy_tex(mainprogram->nodesmain->mixnodes[0][deck]->mixtex);
     }
     else {
         butex = elem->tex;
-        elem->tex = copy_tex(mainprogram->nodesmain->mixnodescomp[deck]->mixtex);
+        elem->tex = copy_tex(mainprogram->nodesmain->mixnodes[1][deck]->mixtex);
     }
     if (butex != -1) glDeleteTextures(1, &butex);
     std::string jpegpath = path + ".jpeg";
@@ -8268,11 +8273,11 @@ bool Shelf::insert_mix(const std::string& path, int pos) {
     GLuint butex = -1;
     if (mainprogram->prevmodus) {
         butex = elem->tex;
-        elem->tex = copy_tex(mainprogram->nodesmain->mixnodes[2]->mixtex);
+        elem->tex = copy_tex(mainprogram->nodesmain->mixnodes[0][2]->mixtex);
     }
     else {
         butex = elem->tex;
-        elem->tex = copy_tex(mainprogram->nodesmain->mixnodescomp[2]->mixtex);
+        elem->tex = copy_tex(mainprogram->nodesmain->mixnodes[1][2]->mixtex);
     }
     if (butex != -1) glDeleteTextures(1, &butex);
     std::string jpegpath = path + ".jpeg";

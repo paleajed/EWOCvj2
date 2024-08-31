@@ -534,8 +534,7 @@ class Program {
         Button *backtopreM;
 		Button *modusbut;
 		bool prevmodus = true;
-		BlendNode *bnodeend;
-		BlendNode *bnodeendcomp;
+		BlendNode *bnodeend[2];
 		Boxx *outputmonitor;
 		Boxx *mainmonitor;
 		Boxx *deckmonitor[2];
@@ -557,7 +556,8 @@ class Program {
         Boxx* searchscrolldown;
         Boxx* searchscrollup;
 		bool startloop = false;
-		bool newproject = false;
+        bool newproject = false;
+        bool newproject2 = false;
 		std::vector<std::string> recentprojectpaths;
 		bool wiping = false;
 		float texth;
@@ -760,7 +760,9 @@ class Program {
 		bool openfileslayers = false;
 		bool openfilesqueue = false;
 		int filescount = 0;
-		Layer* fileslay = nullptr;
+        Layer* fileslay = nullptr;
+        Layer* prevlayer = nullptr;
+        int laypos = -1;
 		int multistage = 0;
 		Effect* drageff = nullptr;
 		int drageffpos = -1;
@@ -787,6 +789,8 @@ class Program {
         float ordertime = 0.0f;
         bool sameeight = false;
         bool check = false;
+        int clickednextto = -1;
+        bool lpstmenuon = false;
 
         ShelfElement *lpstelem = nullptr;
 
