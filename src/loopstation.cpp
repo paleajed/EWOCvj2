@@ -93,7 +93,7 @@ LoopStationElement::LoopStationElement() {
 	this->playbut->box->tooltiptitle = "One-off play loopstation row ";
 	this->playbut->box->tooltip = "Start one-off-play of recorded parameter movements for this loopstation row. Stops at end of recording. ";
 	this->speed = new Param;
-	this->speed->name = "Speed ";
+	this->speed->name = "lpst speed";
 	this->speed->value = 1.0f;
 	this->speed->deflt = 1.0f;
 	this->speed->range[0] = 0.0f;
@@ -482,6 +482,7 @@ void LoopStationElement::add_param_automationentry(Param* par) {
 void LoopStationElement::add_param_automationentry(Param* par, long long mc) {
     //if (loopstation->parelemmap[par] != this && loopstation->parelemmap[par] != nullptr) return;  // each parameter can
     // be automated only once to avoid chaos
+    if (par->name == "lpst speed") return;
 	std::chrono::high_resolution_clock::time_point now = std::chrono::high_resolution_clock::now();
 	std::chrono::duration<double> elapsed;
 	elapsed = std::chrono::duration_cast<std::chrono::duration<double>>(now - this->starttime);
@@ -563,6 +564,9 @@ void LoopStationElement::add_param_automationentry(Param* par, long long mc) {
 }
 
 void LoopStationElement::add_button_automationentry(Button* but) {
+    if (but->name[0] == "keepeffbut" || but->name[0] == "queuebut" || but->name[0] == "effcat") {
+        return;
+    }
     if (loopstation->butelemmap[but] != this && loopstation->butelemmap[but] != nullptr) return;  // each button can be
     // automated only once to avoid chaos
 	std::chrono::high_resolution_clock::time_point now = std::chrono::high_resolution_clock::now();

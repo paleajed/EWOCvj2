@@ -114,7 +114,8 @@ BinsMain::BinsMain() {
 			box->lcolor[3] = 1.0f;
 			box->acolor[3] = 1.0f;
 			box->tooltiptitle = "Media bin element ";
-			box->tooltip = "Shows thumbnail of media bin element, either being a video file (grey border) or an image (white border) or a layer file (orange border) or a deck file (purple border) or mix file (green border).  Hovering over this element shows video resolution and video compression method (CPU or HAP).  Mousewheel skips through the element contents (previewed in larger monitor topmiddle).  Leftdrag allows dragging to mix screen via wormgate.  Leftclick allows moving inside the media bin. Rightclickmenu allows among other things, HAP encoding and also loading of a yellowbordered grid-block of mediabin elements into one of the shelves. ";
+			box->tooltip = "Shows thumbnail of media bin element, either being a video file ("
+                           "grey border) or an image (white border) or a layer file (orange border) or a deck file (purple border) or mix file (green border).  Hovering over this element shows video resolution and video compression method (CPU or HAP).  Mousewheel skips through the element contents (previewed in larger monitor topmiddle).  Leftdrag allows dragging to mix screen via wormgate.  Leftclick allows moving inside the media bin. Rightclickmenu allows among other things, HAP encoding and also loading of a yellowbordered grid-block of mediabin elements into one of the shelves. ";
 		}
 	}
 
@@ -196,6 +197,23 @@ BinsMain::BinsMain() {
     this->floatbox->tooltip = "Leftclick toggles between a docked bins screen (swapped with mix screen) or a floating bins screen (shown on a separate screen). ";
 
 }
+
+
+void BinElement::remove_elem() {
+    if (this->temp) {
+        if (this->path != "") {
+            if (this->type == ELEM_LAYER || this->type == ELEM_DECK ||
+                this->type == ELEM_MIX) {
+                boost::filesystem::remove(this->path);
+            }
+        }
+        this->temp = false;
+    }
+    if (this->jpegpath != "") {
+        boost::filesystem::remove( this->jpegpath);
+    }
+}
+
 
 void BinsMain::handle(bool draw) {
 	GLint inverteff = glGetUniformLocation(mainprogram->ShaderProgram, "inverteff");
@@ -528,6 +546,7 @@ void BinsMain::handle(bool draw) {
                                 elem->tex = copy_tex(binel->tex);
                                 if (butex != -1) glDeleteTextures(1, &butex);
 								binel->tex = copy_tex(elem->tex, this->elemboxes[0]->scrcoords->w, this->elemboxes[0]->scrcoords->h);
+                                binel->remove_elem();
 								binel->path = elem->path;
 								binel->jpegpath = elem->jpegpath;
 							}
@@ -909,7 +928,6 @@ void BinsMain::handle(bool draw) {
         }
 
         this->openfilesbin = true;
-        this->thumbtime = mainmix->time;
         this->menuactbinel = binsmain->currbin->elements[0];  // loading starts from first bin element
     }
     binsmain->messages.clear();
@@ -1371,7 +1389,7 @@ void BinsMain::handle(bool draw) {
 			// insert deck A into bin
 			mainprogram->paths.clear();
 			mainmix->mousedeck = 0;
-			std::string path = find_unused_filename("deckA", mainprogram->project->binsdir, ".deck");
+			std::string path = find_unused_filename("deckA", mainprogram->project->binsdir + this->currbin->name + "/", ".deck");
             if (mainprogram->prevmodus) {
                 this->menubinel->tex = copy_tex(mainprogram->nodesmain->mixnodes[0][mainmix->mousedeck]->mixtex);
             }
@@ -1380,12 +1398,14 @@ void BinsMain::handle(bool draw) {
             }
 			mainmix->do_save_deck(path, true, true);
 			this->menubinel->type = ELEM_DECK;
+            this->menubinel->remove_elem();
 			this->menubinel->path = path;
 			this->menubinel->name = remove_extension(basename(this->menubinel->path));
 			this->menubinel->oldjpegpath = this->menubinel->jpegpath;
             std::string jpegpath = path + ".jpeg";
             save_thumb(jpegpath, this->menubinel->tex);
 			this->menubinel->jpegpath = jpegpath;
+            this->menubinel->temp = true;
 			// clean up: maybe too much cleared here, doesn't really matter
 			this->menuactbinel = nullptr;
 			this->prevbinel = nullptr;
@@ -1395,7 +1415,7 @@ void BinsMain::handle(bool draw) {
 			mainprogram->paths.clear();
 			mainmix->mousedeck = 1;
 
-            std::string path = find_unused_filename("deckB", mainprogram->project->binsdir, ".deck");
+            std::string path = find_unused_filename("deckB", mainprogram->project->binsdir + this->currbin->name + "/", ".deck");
             if (mainprogram->prevmodus) {
                 this->menubinel->tex = copy_tex(mainprogram->nodesmain->mixnodes[0][mainmix->mousedeck]->mixtex);
             }
@@ -1404,12 +1424,14 @@ void BinsMain::handle(bool draw) {
             }
             mainmix->do_save_deck(path, true, true);
             this->menubinel->type = ELEM_DECK;
+            this->menubinel->remove_elem();
             this->menubinel->path = path;
             this->menubinel->name = remove_extension(basename(this->menubinel->path));
             this->menubinel->oldjpegpath = this->menubinel->jpegpath;
             std::string jpegpath = path + ".jpeg";
             save_thumb(jpegpath, this->menubinel->tex);
             this->menubinel->jpegpath = jpegpath;
+            this->menubinel->temp = true;
             // clean up: maybe too much cleared here, doesn't really matter
             this->menuactbinel = nullptr;
             this->prevbinel = nullptr;
@@ -1418,7 +1440,7 @@ void BinsMain::handle(bool draw) {
 			// insert current mix into bin
 			mainprogram->paths.clear();
 
-            std::string path = find_unused_filename("mix", mainprogram->project->binsdir, ".mix");
+            std::string path = find_unused_filename("mix", mainprogram->project->binsdir + this->currbin->name + "/", ".mix");
             if (mainprogram->prevmodus) {
                 this->menubinel->tex = copy_tex(mainprogram->nodesmain->mixnodes[0][2]->mixtex);
             }
@@ -1427,12 +1449,14 @@ void BinsMain::handle(bool draw) {
             }
             mainmix->do_save_mix(path, mainprogram->prevmodus, true);
             this->menubinel->type = ELEM_MIX;
+            this->menubinel->remove_elem();
             this->menubinel->path = path;
             this->menubinel->name = remove_extension(basename(this->menubinel->path));
             this->menubinel->oldjpegpath = this->menubinel->jpegpath;
             std::string jpegpath = path + ".jpeg";
             save_thumb(jpegpath, this->menubinel->tex);
             this->menubinel->jpegpath = jpegpath;
+            this->menubinel->temp = true;
             // clean up: maybe too much cleared here, doesn't really matter
             this->menuactbinel = nullptr;
             this->prevbinel = nullptr;
@@ -2103,9 +2127,10 @@ void BinsMain::handle(bool draw) {
                             }
                             if (epos >= 0 and epos < 144) {
                                 BinElement *dirbinel = this->currbin->elements[epos];
-                                if (this->addpaths[k] == dirbinel->path) continue;
+                                //if (this->addpaths[k] == dirbinel->path) continue;
                                 dirbinel->tex = this->inputtexes[k];
                                 dirbinel->type = this->inputtypes[k];
+                                dirbinel->remove_elem();
                                 dirbinel->path = this->addpaths[k];
                                 dirbinel->name = remove_extension(basename(dirbinel->path));
                                 dirbinel->oldjpegpath = dirbinel->jpegpath;
@@ -2140,7 +2165,7 @@ void BinsMain::handle(bool draw) {
 					// handle element deleting
 					for (int k = 0; k < this->delbinels.size(); k++) {
 						// deleting single bin element
-                        boost::filesystem::remove(this->delbinels[k]->jpegpath);
+                        this->delbinels[k]->remove_elem();
 						blacken(this->delbinels[k]->oldtex);
 						blacken(this->delbinels[k]->tex);
 						this->delbinels[k]->path = "";
@@ -2171,7 +2196,8 @@ void BinsMain::handle(bool draw) {
 															 "/", ""
 																  ".layer");
             	this->currbinel->name = remove_extension(basename(this->currbinel->path));
-            	mainmix->save_layerfile(this->currbinel->path, lay, 1, 0);
+            	this->currbinel->temp = true;
+                mainmix->save_layerfile(this->currbinel->path, lay, 1, 0);
             }
             this->currbinel->name = remove_extension(basename(this->currbinel->path));
             this->currbinel->full = true;
@@ -2240,6 +2266,7 @@ void BinsMain::handle(bool draw) {
                 else continue;
                 if (this->inputtexes[k] != -1) {
                     dirbinel->type = this->inputtypes[k];
+                    dirbinel->remove_elem();
                     dirbinel->path = this->addpaths[k];
                     dirbinel->tex = this->inputtexes[k];
                     dirbinel->name = remove_extension(basename(dirbinel->path));
@@ -2290,8 +2317,10 @@ void BinsMain::handle(bool draw) {
                 if (binel->jpegpath != this->currbin->bujpegpaths[i * 12 + j]) {
                     binel->jpegsaved = true;
                     binel->absjpath = binel->jpegpath;
-                    binel->reljpath = boost::filesystem::relative(binel->absjpath,
-                                                                  mainprogram->project->binsdir).generic_string();
+                    if (binel->absjpath != "") {
+                        binel->reljpath = boost::filesystem::relative(binel->absjpath,
+                                                                      mainprogram->project->binsdir).generic_string();
+                    }
                 }
             }
         }
@@ -2378,7 +2407,7 @@ void BinsMain::open_bin(const std::string &path, Bin *bin) {
 							else*/ bin->open_positions.push_back(pos);
                         }
                         else {
-
+                            bool dummy = false;
                         }
 					}
 				}
@@ -2440,9 +2469,15 @@ void BinsMain::do_save_bin(const std::string& path) {
 			}
 			if (this->currbin->elements[i * 12 + j]->name != "") {
                 if (!exists(this->currbin->elements[i * 12 + j]->absjpath)) {
-                    this->currbin->elements[i * 12 + j]->jpegpath = find_unused_filename(this->currbin->name, mainprogram->project->binsdir, ".jpg");
-					save_thumb(this->currbin->elements[i * 12 + j]->jpegpath, this->currbin->elements[i * 12 + j]->tex);
-				}
+                    if (!mainprogram->autosaving) {
+                        this->currbin->elements[i * 12 + j]->absjpath = find_unused_filename(this->currbin->name,
+                                                                                             mainprogram->project->binsdir+ this->currbin->name + "/",
+                                                                                             ".jpg");
+                        this->currbin->elements[i * 12 + j]->jpegpath = this->currbin->elements[i * 12 + j]->absjpath;
+                        save_thumb(this->currbin->elements[i * 12 + j]->absjpath,
+                                   this->currbin->elements[i * 12 + j]->tex);
+                    }
+                }
 
 				//filestoadd.push_back(this->currbin->elements[i * 12 + j]->jpegpath);
 			}
@@ -2601,7 +2636,6 @@ void BinsMain::import_bins() {
 
 void BinsMain::open_files_bin() {
     // open videos/images/layer files into bin
-    //if (mainmix->time - this->thumbtime < 0.2f) return;
 
     if (!currbin->shared && mainprogram->multistage < 5) {
         // order elements
@@ -2635,7 +2669,6 @@ void BinsMain::open_files_bin() {
 	std::string str = mainprogram->paths[mainprogram->counting];
 	open_handlefile(str, mainprogram->pathtexes[mainprogram->counting]);
 	mainprogram->counting++;
-	this->thumbtime = mainmix->time;
 }
 
 void BinsMain::open_handlefile(const std::string &path, GLuint tex) {
@@ -2759,7 +2792,7 @@ void BinsMain::open_handlefile(const std::string &path, GLuint tex) {
         if (endtex == -1) return;
         this->inputtexes.push_back(endtex);
         this->inputtypes.push_back(endtype);
-        std::string jpath = find_unused_filename(basename(path), mainprogram->project->binsdir, ".jpg");
+        std::string jpath = find_unused_filename(basename(path), mainprogram->project->binsdir + this->currbin->name + "/", ".jpg");
         save_thumb(jpath, copy_tex(endtex, this->elemboxes[0]->scrcoords->w, this->elemboxes[0]->scrcoords->h));
         this->inputjpegpaths.push_back(jpath);
     }

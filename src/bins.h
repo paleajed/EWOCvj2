@@ -87,7 +87,6 @@ class BinsMain {
         std::mutex syncendmutex;
         std::condition_variable syncend;
         bool syncendnow = false;
-        float thumbtime;
 
         Bin *menubin = nullptr;
 		bool openfilesbin = false;
@@ -171,6 +170,7 @@ class BinElement {
 		bool select = false;
 		bool oldselect = false;
 		bool boxselect = false;
+        bool temp = false;
 		bool encwaiting = false;
 		bool encoding = false;
 		int encthreads = 0;
@@ -179,6 +179,7 @@ class BinElement {
 		Layer *otflay = nullptr;
 		BinElement* next();
 		void erase();
-		BinElement();
+        void remove_elem();
+        BinElement();
 		~BinElement();
 };

@@ -62,6 +62,7 @@
 
 #include "SDL2/SDL.h"
 #include "SDL2/SDL_syswm.h"
+#include <turbojpeg.h>
 
 // my own headers
 #include "box.h"
@@ -524,6 +525,7 @@ Program::Program() {
 	this->deckmonitor[1]->tooltip = "Shows deck B stream.  Rightclick menu allows sending monitor image fullscreen to another display device. Leftclick/drag on image affects some local layer wipe modes. ";
 
 	this->effcat[0] = new Button(false);
+    this->effcat[0]->name[0] = "effcat";
 	this->effcat[0]->toggle = 1;
 	this->buttons[19] = this->effcat[0];
 	this->effcat[0]->name[0] = "Layer effects";
@@ -541,6 +543,7 @@ Program::Program() {
 	this->effcat[0]->box->tooltip = "Leftclick toggles between layer effects queue (these effects only affect the current layer) and stream effects queue (effects affect mix of all layers upto and including the current one). If set to Layer effects, a red box background notifies the user that there are stream effects enabled on this layer. ";
 	
 	this->effcat[1] = new Button(false);
+    this->effcat[1]->name[0] = "effcat";
 	this->effcat[1]->toggle = 1;
 	this->buttons[20] = this->effcat[1];
 	this->effcat[1]->name[0] = "Layer effects";
@@ -1141,6 +1144,10 @@ void Program::get_dir(const char* title, std::string defaultdir) {
 		CoTaskMemFree(lpItem);
 	}
 	this->path = (char*)szDir;
+    if (lpItem == NULL)
+    {
+        this->path = "";
+    }
 	OleUninitialize();
 #endif
 #ifdef POSIX
@@ -1645,6 +1652,17 @@ void Program::handle_wormgate(bool gate) {
 			if (!mainprogram->menuondisplay) {
 				if (mainprogram->leftmouse) {
 					mainprogram->binsscreen = !mainprogram->binsscreen;
+                    if (mainprogram->binsscreen) {
+                        for (int i = 0; i < 4; i++ ) {
+                            for (Layer *lay : mainmix->layers[i]) {
+                                if (lay->clips.size() > 1) {
+                                    lay->compswitched = true;
+                                    GLuint tex = copy_tex(lay->node->vidbox->tex, 192, 108);
+                                    save_thumb(lay->currcliptexpath, tex);
+                                }
+                            }
+                        }
+                    }
 				}
 				if (mainprogram->menuactivation) {
 					mainprogram->parammenu1->state = 2;
@@ -1656,14 +1674,24 @@ void Program::handle_wormgate(bool gate) {
 			if (mainprogram->dragbinel) {
 				//dragging something inside wormgate
 				if (!mainprogram->inwormgate && !mainprogram->menuondisplay) {
-					//if (mainprogram->mx == gate * (glob->w - 1)) {
-						if (!mainprogram->binsscreen) {
-							set_queueing(false);
-						}
-						mainprogram->binsscreen = !mainprogram->binsscreen;
-						mainprogram->inwormgate = true;
-					//}
-				}
+                    //if (mainprogram->mx == gate * (glob->w - 1)) {
+                    if (!mainprogram->binsscreen) {
+                        set_queueing(false);
+                    }
+                    mainprogram->binsscreen = !mainprogram->binsscreen;
+                    mainprogram->inwormgate = true;
+                    if (mainprogram->binsscreen) {
+                        for (int i = 0; i < 4; i++ ) {
+                            for (Layer *lay : mainmix->layers[i]) {
+                                if (lay->clips.size() > 1) {
+                                    lay->compswitched = true;
+                                    GLuint tex = copy_tex(lay->node->vidbox->tex, 192, 108);
+                                    save_thumb(lay->currcliptexpath, tex);
+                                }
+                            }
+                        }
+                    }
+                }
 			}
 		}
 		else {
@@ -3076,6 +3104,7 @@ int Program::handle_menu(Menu* menu, float xshift, float yshift) {
 						mainprogram->menuchosen = true;
 						menu->currsub = -1;
                         mainprogram->frontbatch = false;
+                        mainprogram->lmover = false;
 						return k - numsubs;
 					}
 				}
@@ -3970,7 +3999,9 @@ void Program::handle_laymenu1() {
         if (k == 1) {
             mainprogram->pathto = "OPENFILESLAYER";
             mainprogram->loadlay = mainmix->mouselayer;
-            if (cond) mainprogram->clickednextto = mainmix->mouselayer->deck;
+            if (cond) {
+                //mainprogram->clickednextto = mainmix->mouselayer->deck;
+            }
             mainmix->addlay = false;
             std::thread filereq(&Program::get_multinname, mainprogram, "Open video/image/layer file", "", boost::filesystem::canonical(mainprogram->currfilesdir).generic_string());
             filereq.detach();
@@ -4160,7 +4191,7 @@ void Program::handle_laymenu1() {
                 }
             }
         }
-        else if (!cond && k == 17) {
+        else if ((!cond && k == 17) || k == 17 - cond * 2) {
             if (!mainmix->recording[0]) {
                 // start recording
                 mainmix->reclay = mainmix->mouselayer;
@@ -4937,6 +4968,15 @@ void Program::preview_modus_buttons() {
         std::swap(mainmix->swapscrollpos[0], mainmix->scenes[0][mainmix->currscene[0]]->scrollpos);
         std::swap(mainmix->swapscrollpos[1], mainmix->scenes[1][mainmix->currscene[1]]->scrollpos);
 		//modusbut is button that toggles effect preview mode to performance mode and back
+        for (int i = 0; i < 4; i++ ) {
+            for (Layer *lay : mainmix->layers[i]) {
+                if (lay->clips.size() > 1) {
+                    lay->compswitched = true;
+                    GLuint tex = copy_tex(lay->node->vidbox->tex, 192, 108);
+                    save_thumb(lay->currcliptexpath, tex);
+                }
+            }
+        }
 	}
 	render_text(mainprogram->modusbut->name[mainprogram->prevmodus], white, mainprogram->modusbut->box->vtxcoords->x1 + 0.0117f, mainprogram->modusbut->box->vtxcoords->y1 + 0.0225f, 0.00042, 0.00070);
 }
@@ -6525,6 +6565,10 @@ void Project::open(const std::string& path, bool autosave) {
             safegetline(rfile, istring);
             mainprogram->prevmodus = std::stoi(istring);
         }
+        if (istring == "BINSSCREEN") {
+            safegetline(rfile, istring);
+            mainprogram->binsscreen = std::stoi(istring);
+        }
         if (istring == "SWAPSCROLLPOS") {
             safegetline(rfile, istring);
             mainmix->swapscrollpos[0] = std::stoi(istring);
@@ -6626,6 +6670,9 @@ void Project::do_save(const std::string& path, bool autosave) {
     wfile << "PREVMODUS\n";
     wfile << std::to_string(mainprogram->prevmodus);
     wfile << "\n";
+    wfile << "BINSSCREEN\n";
+    wfile << std::to_string(mainprogram->binsscreen);
+    wfile << "\n";
     wfile << "SWAPSCROLLPOS\n";
     wfile << std::to_string(mainmix->swapscrollpos[0]);
     wfile << "\n";
@@ -6705,6 +6752,18 @@ void Project::do_save(const std::string& path, bool autosave) {
 }
 
 void Project::autosave() {
+    if (binsmain->openfilesbin || binsmain->importbins || mainprogram->openfilesshelf || mainprogram->openfileslayers || mainprogram->openfilesqueue) {
+        return;
+    }
+    bool found = false;
+    for (Bin *bin : binsmain->bins) {
+        if (bin->open_positions.size()) {
+            found = true;
+            break;
+        }
+    }
+    if (found) return;
+
     mainprogram->astimestamp = (int) mainmix->time;
 
     std::string name;
@@ -6726,7 +6785,9 @@ void Project::autosave() {
     std::string buad = this->autosavedir;
     std::string bued = this->elementsdir;
     mainprogram->project->create_dirs_autosave(path);
+    mainprogram->autosaving = true;
     mainprogram->project->do_save(path + "/" + basename(path) + ".ewocvj", true);
+    mainprogram->autosaving = false;
     this->binsdir = bubd;
     this->shelfdir = busd;
     this->recdir = burd;
@@ -8334,18 +8395,16 @@ bool Shelf::open(const std::string &path) {
                     if (elem->type == ELEM_LAYER) suf = ".layer";
                     if (elem->type == ELEM_DECK) suf = ".deck";
                     if (elem->type == ELEM_MIX) suf = ".mix";
-                    if (suf != "") {
+                    if (elem->path != "" && !exists(elem->path)) {
+                        mainmix->newshelfpaths.push_back(elem->path);
+                        mainmix->newpathshelfelems.push_back(elem);
+                        elem->path = "";
+                    }
+                    else if (suf != "") {
                         if (concat) {
                             elem->path = find_unused_filename("shelffile", mainprogram->temppath, suf);
                             boost::filesystem::rename(result + "_" + std::to_string(filecount) + ".file", elem->path);
                             filecount++;
-                        }
-                    }
-                    else {
-                        if (!exists(elem->path)) {
-                            mainmix->newshelfpaths.push_back(elem->path);
-                            mainmix->newpathshelfelems.push_back(elem);
-                            elem->path = "";
                         }
                     }
                     safegetline(rfile, istring);
@@ -8410,4 +8469,368 @@ void Shelf::erase() {
         blacken(elem->oldtex);
     }
 }
+
+// check all STATIC/DYNAMIC draws reminder
+void Program::handle_shelf(Shelf *shelf) {
+    // draw shelves and handle shelves
+    int inelem = -1;
+    for (int i = 0; i < 16; i++) {
+        ShelfElement* elem = shelf->elements[i];
+        // border coloring according to element type
+        if (elem->type == ELEM_LAYER) {
+            draw_box(orange, orange, shelf->buttons[i]->box, -1);
+            draw_box(nullptr, orange, shelf->buttons[i]->box->vtxcoords->x1 + 0.0075f, shelf->buttons[i]->box->vtxcoords->y1, shelf->buttons[i]->box->vtxcoords->w - 0.0075f, shelf->buttons[i]->box->vtxcoords->h - 0.0075f, elem->tex);
+        }
+        else if (elem->type == ELEM_DECK) {
+            draw_box(purple, purple, shelf->buttons[i]->box, -1);
+            draw_box(nullptr, purple, shelf->buttons[i]->box->vtxcoords->x1 + 0.0075f, shelf->buttons[i]->box->vtxcoords->y1, shelf->buttons[i]->box->vtxcoords->w - 0.0075f, shelf->buttons[i]->box->vtxcoords->h - 0.0075f, elem->tex);
+        }
+        else if (elem->type == ELEM_MIX) {
+            draw_box(green, green, shelf->buttons[i]->box, -1);
+            draw_box(nullptr, green, shelf->buttons[i]->box->vtxcoords->x1 + 0.0075f, shelf->buttons[i]->box->vtxcoords->y1, shelf->buttons[i]->box->vtxcoords->w - 0.0075f, shelf->buttons[i]->box->vtxcoords->h - 0.0075f, elem->tex);
+        }
+        else if (elem->type == ELEM_IMAGE) {
+            draw_box(white, white, shelf->buttons[i]->box, -1);
+            draw_box(nullptr, white, shelf->buttons[i]->box->vtxcoords->x1 + 0.0075f, shelf->buttons[i]->box->vtxcoords->y1, shelf->buttons[i]->box->vtxcoords->w - 0.0075f, shelf->buttons[i]->box->vtxcoords->h - 0.0075f, elem->tex);
+        }
+        else {
+            draw_box(grey, grey, shelf->buttons[i]->box, -1);
+            draw_box(nullptr, grey, shelf->buttons[i]->box->vtxcoords->x1 + 0.0075f, shelf->buttons[i]->box->vtxcoords->y1, shelf->buttons[i]->box->vtxcoords->w - 0.0075f, shelf->buttons[i]->box->vtxcoords->h - 0.0075f, elem->tex);
+        }
+
+        // draw small icons for choice of launch play type of shelf video
+        if (elem->launchtype == 0) {
+            draw_box(nullptr, yellow, elem->sbox, -1);
+        }
+        else {
+            draw_box(white, black, elem->sbox, -1);
+        }
+        if (elem->launchtype == 1) {
+            draw_box(nullptr, red, elem->pbox, -1);
+        }
+        else {
+            draw_box(white, black, elem->pbox, -1);
+        }
+        if (elem->launchtype == 2) {
+            draw_box(nullptr, darkblue, elem->cbox, -1);
+        }
+        else {
+            draw_box(white, black, elem->cbox, -1);
+        }
+        bool cond = elem->button->box->in(); // trigger before launchtype boxes, to get the right tooltips
+        if (elem->sbox->in()) {
+            if (mainprogram->leftmouse) {
+                // video restarts at each trigger
+                elem->launchtype = 0;
+            }
+        }
+        if (elem->pbox->in()) {
+            if (mainprogram->leftmouse) {
+                // video pauses when gone, continues when triggered again
+                elem->launchtype = 1;
+            }
+        }
+        if (elem->cbox->in()) {
+            if (mainprogram->leftmouse) {
+                // video keeps on running in background (at least, its frame numbers are counted!)
+                elem->launchtype = 2;
+            }
+        }
+
+        // calculate background frame numbers and loopstation posns for elems with launchtype 2
+        for (int j = 0; j < elem->nblayers.size(); j++) {
+            elem->nblayers[j]->vidopen = false;
+            elem->nblayers[j]->progress(!mainprogram->prevmodus, 0);
+            elem->nblayers[j]->cnt_lpst();
+        }
+
+        if (cond) {
+            // mouse over shelf element
+            inelem = i;
+            if (mainprogram->doubleleftmouse) {
+                // doubleclick loads elem in currlay layer slots
+                mainprogram->shelfdragelem = elem;
+                mainprogram->shelfdragnum = i;
+                mainprogram->doubleleftmouse = false;
+                mainprogram->doublemiddlemouse = false;
+                //mainprogram->lmover = false;
+                mainprogram->leftmouse = false;
+                mainprogram->leftmousedown = false;
+                mainprogram->middlemouse = false;
+                mainprogram->middlemousedown = false;
+                mainprogram->dragbinel = new BinElement;
+                mainprogram->dragbinel->path = elem->path;
+                mainprogram->dragbinel->relpath = boost::filesystem::relative(elem->path, mainprogram->project->binsdir).generic_string();
+                mainprogram->dragbinel->type = elem->type;
+                mainprogram->dragbinel->tex = elem->tex;
+                //if (elem->type == ELEM_DECK || elem->type == ELEM_MIX) {
+                mainprogram->shelf_triggering(elem);
+                mainprogram->lpstelem = elem;
+                //}
+                //else {
+                //    for (int i = 0; i < mainmix->currlays[!mainprogram->prevmodus].size(); i++) {
+                //        mainmix->open_dragbinel(mainmix->currlays[!mainprogram->prevmodus][i], i);
+                //    }
+                //}
+                enddrag();
+            }
+            if (mainprogram->rightmouse) {
+                if (mainprogram->dragbinel) {
+                    if (mainprogram->shelfdragelem) {
+                        if (shelf->prevnum != -1) std::swap(shelf->elements[shelf->prevnum]->tex, shelf->elements[shelf->prevnum]->oldtex);
+                        std::swap(elem->tex, mainprogram->shelfdragelem->tex);
+                        mainprogram->shelfdragelem->tex = mainprogram->dragbinel->tex;
+                        mainprogram->shelfdragelem = nullptr;
+                        enddrag();
+                        //mainprogram->menuactivation = false;
+                    }
+                }
+            }
+            shelf->newnum = i;
+            mainprogram->inshelf = shelf->side;
+            if (mainprogram->dragbinel && i != shelf->prevnum) {
+                std::swap(elem->tex, elem->oldtex);
+                if (shelf->prevnum != -1) std::swap(shelf->elements[shelf->prevnum]->tex, shelf->elements[shelf->prevnum]->oldtex);
+                if (mainprogram->shelfdragelem) {
+                    std::swap(mainprogram->shelfdragelem->tex, mainprogram->shelfdragelem->oldtex);
+                    mainprogram->shelfdragelem->tex = elem->oldtex;
+                }
+                elem->tex = mainprogram->dragbinel->tex;
+                shelf->prevnum = i;
+            }
+            if (mainprogram->leftmousedown) {
+                if (!elem->sbox->in() && !elem->pbox->in() && !elem->cbox->in()) {
+                    if (!mainprogram->dragbinel) {
+                        // user starts dragging shelf element
+                        if (elem->path != "") {
+                            mainprogram->shelfmx = mainprogram->mx;
+                            mainprogram->shelfmy = mainprogram->my;
+                            mainprogram->shelfdragelem = elem;
+                            mainprogram->shelfdragnum = i;
+                            mainprogram->leftmousedown = false;
+                            mainprogram->dragbinel = new BinElement;
+                            mainprogram->dragbinel->path = elem->path;
+                            mainprogram->dragbinel->relpath = boost::filesystem::relative(elem->path, mainprogram->project->binsdir).generic_string();
+                            mainprogram->dragbinel->type = elem->type;
+                            mainprogram->dragbinel->tex = elem->tex;
+                        }
+                    }
+                }
+            }
+            else if (mainprogram->lmover) {
+                // user drops file/layer/deck/mix in shelf element
+                if (mainprogram->mx != mainprogram->shelfmx || mainprogram->my != mainprogram->shelfmy) {
+                    if (mainprogram->dragbinel) {
+//                  if (mainprogram->dragbinel && mainprogram->shelfdragelem) {
+                        if (elem != mainprogram->shelfdragelem) {
+                            std::string newpath;
+                            std::string extstr = "";
+                            if (mainprogram->dragbinel->type == ELEM_LAYER) {
+                                extstr = ".layer";
+                            } else if (mainprogram->dragbinel->type == ELEM_DECK) {
+                                extstr = ".deck";
+                            } else if (mainprogram->dragbinel->type == ELEM_MIX) {
+                                extstr = ".mix";
+                            }
+                            if (extstr != "") {
+                                std::string base = basename(mainprogram->dragbinel->path);
+                                newpath = find_unused_filename("shelf_" + base,
+                                                               mainprogram->project->shelfdir + shelf->basepath + "/",
+                                                               extstr);
+                                boost::filesystem::copy_file(mainprogram->dragbinel->path, newpath);
+                                mainprogram->dragbinel->path = newpath;
+                                mainprogram->dragbinel->relpath = boost::filesystem::relative(newpath, mainprogram->project->binsdir).generic_string();
+                            }
+                            if (mainprogram->shelfdragelem) {
+                                std::swap(elem->path, mainprogram->shelfdragelem->path);
+                                std::swap(elem->jpegpath, mainprogram->shelfdragelem->jpegpath);
+                                std::swap(elem->type, mainprogram->shelfdragelem->type);
+                            } else {
+                                elem->path = mainprogram->dragbinel->path;
+                                elem->type = mainprogram->dragbinel->type;
+                            }
+                            elem->tex = copy_tex(mainprogram->dragbinel->tex);
+                            elem->jpegpath = find_unused_filename(basename(elem->path), mainprogram->temppath, ".jpg");
+                            save_thumb(elem->jpegpath, elem->tex);
+                            if (mainprogram->shelfdragelem) mainprogram->shelfdragelem->tex = copy_tex(mainprogram->shelfdragelem->tex);
+                            blacken(elem->oldtex);
+                            shelf->prevnum = -1;
+                            mainprogram->shelfdragelem = nullptr;
+                            mainprogram->rightmouse = true;
+                            binsmain->handle(0);
+                            enddrag();
+                            mainprogram->rightmouse = false;
+
+                            return;
+                        }
+                        else enddrag();
+                    }
+                }
+            }
+            if (mainprogram->menuactivation) {
+                mainprogram->shelfmenu->state = 2;
+                mainmix->mouseshelf = shelf;
+                mainmix->mouseshelfelem = i;
+                mainprogram->menuactivation = false;
+            }
+        }
+    }
+    if (inelem > -1 && mainprogram->dragbinel) {
+        mainprogram->dragout[shelf->side] = false;
+        mainprogram->dragout[!shelf->side] = true;
+    }
+    if (inelem == -1 && !mainprogram->dragout[shelf->side] && mainprogram->dragbinel) {
+        // mouse not over shelf element
+        mainprogram->dragout[shelf->side] = true;
+        if (shelf->prevnum != -1) {
+            std::swap(shelf->elements[shelf->prevnum]->tex, shelf->elements[shelf->prevnum]->oldtex);
+            if (mainprogram->shelfdragelem) {
+                if (mainprogram->shelfdragnum == shelf->prevnum) {
+                    std::swap(mainprogram->shelfdragelem->tex, mainprogram->shelfdragelem->oldtex);
+                }
+                else {
+                    mainprogram->shelfdragelem->tex = mainprogram->dragbinel->tex;
+                }
+            }
+        }
+        shelf->prevnum = -1;
+    }
+    else if (!mainprogram->dragout[shelf->side]) shelf->prevnum = shelf->newnum;
+}
+
+
+GLuint copy_tex(GLuint tex) {
+    return copy_tex(tex, mainprogram->ow3, mainprogram->oh3, 0);
+}
+
+GLuint copy_tex(GLuint tex, bool yflip) {
+    return copy_tex(tex, mainprogram->ow3, mainprogram->oh3, yflip);
+}
+
+GLuint copy_tex(GLuint tex, int tw, int th) {
+    return copy_tex(tex, tw, th, 0);
+}
+
+GLuint copy_tex(GLuint tex, int tw, int th, bool yflip) {
+    GLuint smalltex = 0;
+    glGenTextures(1, &smalltex);
+    glBindTexture(GL_TEXTURE_2D, smalltex);
+    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_BORDER);
+    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_BORDER);
+    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR);
+    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
+    glTexStorage2D(GL_TEXTURE_2D, 1, GL_RGBA8, tw, th);
+    GLuint dfbo;
+    glGenFramebuffers(1, &dfbo);
+    glBindFramebuffer(GL_FRAMEBUFFER, dfbo);
+    glFramebufferTexture2D(GL_FRAMEBUFFER, GL_COLOR_ATTACHMENT0, GL_TEXTURE_2D, smalltex, 0);
+    glDrawBuffer(GL_COLOR_ATTACHMENT0);
+    glViewport(0, 0, tw, th);
+    int sw, sh;
+    glBindTexture(GL_TEXTURE_2D, tex);
+    glGetTexLevelParameteriv(GL_TEXTURE_2D, 0, GL_TEXTURE_WIDTH, &sw);
+    glGetTexLevelParameteriv(GL_TEXTURE_2D, 0, GL_TEXTURE_HEIGHT, &sh);
+    mainprogram->directmode = true;
+    if (yflip) {
+        draw_box(nullptr, black, -1.0f, -1.0f, 2.0f, 2.0f, 0.0f, 0.0f, 1.0f, 1.0f, 0, tex, glob->w, glob->h, false);
+    }
+    else {
+        draw_box(nullptr, black, -1.0f, -1.0f + 2.0f, 2.0f, -2.0f, 0.0f, 0.0f, 1.0f, 1.0f, 0, tex, glob->w, glob->h, false);
+    }
+    mainprogram->directmode = false;
+    glBindFramebuffer(GL_FRAMEBUFFER, 0);
+    glDrawBuffer(GL_BACK_LEFT);
+    glViewport(0, 0, glob->w, glob->h);
+    glDeleteFramebuffers(1, &dfbo);
+    return smalltex;
+}
+
+void save_thumb(std::string path, GLuint tex) {
+    int wi = mainprogram->ow3;
+    int he = mainprogram->oh3;
+    unsigned char *buf = (unsigned char*)malloc(wi * he * 3);
+
+    GLuint tex2 = copy_tex(tex);
+    GLuint texfrbuf, endfrbuf;
+    glGenFramebuffers(1, &texfrbuf);
+    glBindFramebuffer(GL_FRAMEBUFFER, texfrbuf);
+    glFramebufferTexture2D(GL_FRAMEBUFFER, GL_COLOR_ATTACHMENT0, GL_TEXTURE_2D, tex2, 0);
+    GLuint smalltex;
+    glGenTextures(1, &smalltex);
+    glBindTexture(GL_TEXTURE_2D, smalltex);
+    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_BORDER);
+    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_BORDER);
+    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR);
+    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
+    glTexStorage2D(GL_TEXTURE_2D, 1, GL_RGBA8, wi, he);
+    glGenFramebuffers(1, &endfrbuf);
+    glBindFramebuffer(GL_FRAMEBUFFER, endfrbuf);
+    glFramebufferTexture2D(GL_FRAMEBUFFER, GL_COLOR_ATTACHMENT0, GL_TEXTURE_2D, smalltex, 0);
+    int sw, sh;
+    glBindTexture(GL_TEXTURE_2D, tex2);
+    glGetTexLevelParameteriv(GL_TEXTURE_2D, 0, GL_TEXTURE_WIDTH, &sw);
+    glGetTexLevelParameteriv(GL_TEXTURE_2D, 0, GL_TEXTURE_HEIGHT, &sh);
+    glBlitNamedFramebuffer(texfrbuf, endfrbuf, 0, 0, sw, sh, 0, 0, wi, he, GL_COLOR_BUFFER_BIT, GL_LINEAR);
+    glReadBuffer(GL_COLOR_ATTACHMENT0);
+    glReadPixels(0, 0, wi, he, GL_RGB, GL_UNSIGNED_BYTE, buf);
+    glDeleteTextures(1, &smalltex);
+    glDeleteTextures(1, &tex2);
+    glDeleteFramebuffers(1, &texfrbuf);
+    glDeleteFramebuffers(1, &endfrbuf);
+
+    const int JPEG_QUALITY = 75;
+    const int COLOR_COMPONENTS = 3;
+    long unsigned int _jpegSize = 0;
+    unsigned char* _compressedImage = NULL; //!< Memory is allocated by tjCompress2 if _jpegSize == 0
+
+    tjhandle _jpegCompressor = tjInitCompress();
+
+    tjCompress2(_jpegCompressor, buf, wi, 0, he, TJPF_RGB,
+                &_compressedImage, &_jpegSize, TJSAMP_444, JPEG_QUALITY,
+                TJFLAG_FASTDCT);
+
+    tjDestroy(_jpegCompressor);
+
+    std::ofstream outfile(path, std::ios::binary | std::ios::ate);
+    outfile.write(reinterpret_cast<const char *>(_compressedImage), _jpegSize);
+
+    //to free the memory allocated by TurboJPEG (either by tjAlloc(),
+    //or by the Compress/Decompress) after you are done working on it:
+    tjFree(_compressedImage);
+    free(buf);
+    outfile.close();
+}
+
+void open_thumb(std::string path, GLuint tex) {
+    const int COLOR_COMPONENTS = 3;
+
+    std::ifstream infile(path, std::ios::binary | std::ios::ate);
+    std::streamsize sz = infile.tellg();
+    unsigned char *buf = (unsigned char*)malloc(sz);
+    infile.seekg(0, std::ios::beg);
+    infile.read((char*)buf, sz);
+
+    long unsigned int _jpegSize = sz; //!< _jpegSize from above
+
+    int jpegSubsamp, width, height, dummy;
+
+    tjhandle _jpegDecompressor = tjInitDecompress();
+
+    tjDecompressHeader3(_jpegDecompressor, buf, _jpegSize, &width, &height, &jpegSubsamp, &dummy);
+
+    unsigned char *uncbuffer = (unsigned char*)malloc(width*height*COLOR_COMPONENTS); //!< will contain the decompressed image
+
+    tjDecompress2(_jpegDecompressor, buf, _jpegSize, uncbuffer, width, 0/*pitch*/, height, TJPF_RGB, TJFLAG_FASTDCT);
+
+    tjDestroy(_jpegDecompressor);
+
+    glBindTexture(GL_TEXTURE_2D, tex);
+    glTexImage2D(GL_TEXTURE_2D, 0, GL_RGB, width, height, 0, GL_RGB, GL_UNSIGNED_BYTE, uncbuffer);
+
+    free(buf);
+    free(uncbuffer);
+    infile.close();
+
+}
+
 

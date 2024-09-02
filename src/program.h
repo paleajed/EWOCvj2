@@ -533,7 +533,8 @@ class Program {
         Button *backtopreB;
         Button *backtopreM;
 		Button *modusbut;
-		bool prevmodus = true;
+        bool prevmodus = true;
+        bool bupm = true;
 		BlendNode *bnodeend[2];
 		Boxx *outputmonitor;
 		Boxx *mainmonitor;
@@ -556,6 +557,7 @@ class Program {
         Boxx* searchscrolldown;
         Boxx* searchscrollup;
 		bool startloop = false;
+        bool firsttime = true;
         bool newproject = false;
         bool newproject2 = false;
 		std::vector<std::string> recentprojectpaths;
@@ -664,6 +666,8 @@ class Program {
 		int astimestamp = 0;
 		float qualfr = 3;
         bool keepeffpref = false;
+        bool swappingscene = false;
+        bool autosaving = false;
 
 		std::unordered_map <std::string, GUIString*> guitextmap;
 		std::unordered_map <std::string, GUIString*> prguitextmap;
@@ -789,7 +793,7 @@ class Program {
         float ordertime = 0.0f;
         bool sameeight = false;
         bool check = false;
-        int clickednextto = -1;
+        //int clickednextto = -1;
         bool lpstmenuon = false;
 
         ShelfElement *lpstelem = nullptr;

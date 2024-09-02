@@ -113,6 +113,8 @@ class Layer {
 		Clip* currclip = nullptr;
         std::string currclippath;
         std::string currclipjpegpath;
+        std::string currcliptexpath;
+        bool compswitched = false;
 		ELEM_TYPE type = ELEM_FILE;
         ELEM_TYPE oldtype = ELEM_FILE;
 		RATIO_TYPE aspectratio = RATIO_OUTPUT;
@@ -318,6 +320,9 @@ class Layer {
 		bool framesloaded = false;
         bool changes = false;
         bool transfered = false;
+        bool checkre = false;
+        bool recended = false;
+        bool recstarted = false;
 
         LoopStation *lpst;
         bool isnblayer = false;
@@ -334,7 +339,7 @@ class Layer {
 		void mute_handle();
 		void set_aspectratio(int lw, int lh);
         void cnt_lpst();
-		bool calc_texture(bool comp, bool alive);
+		bool progress(bool comp, bool alive);
 		void load_frame();
 		bool exchange(std::vector<Layer*>& slayers, std::vector<Layer*>& dlayers, bool deck);
 		void open_files_layers();
@@ -424,6 +429,7 @@ class Mixer {
 		int dropmixblue = 0;
         std::vector<Layer*> bulayers;
         std::vector<Layer*> newlrs[4];
+        bool tempmapislayer = false;
 
         int currclonesize = -1;
 
@@ -487,8 +493,6 @@ class Mixer {
         GLuint recQthumbshow = -1;
         std::string recpath[2];
         bool recswitch[2] = {false, false};
-        bool checkre = false;
-        bool rerun = false;
 		uint8_t *avbuffer = nullptr;
 		void *rgbdata = nullptr;
 		GLuint ioBuf;
