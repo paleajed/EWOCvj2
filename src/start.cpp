@@ -305,6 +305,55 @@ bool isvideo(const std::string &path) {
     return true;
 }
 
+bool islayerfile(std::string &path) {
+    std::string istring;
+    std::string result = deconcat_files(path);
+    if (!mainprogram->openerr) {
+        bool concat = (result != "");
+        std::ifstream rfile;
+        if (concat) rfile.open(result);
+        else rfile.open(path);
+        safegetline(rfile, istring);
+    } else mainprogram->openerr = false;
+    if (istring == "EWOCvj LAYERFILE") {
+        return true;
+    }
+    return false;
+}
+
+bool isdeckfile(std::string &path) {
+    std::string istring;
+    std::string result = deconcat_files(path);
+    if (!mainprogram->openerr) {
+        bool concat = (result != "");
+        std::ifstream rfile;
+        if (concat) rfile.open(result);
+        else rfile.open(path);
+        safegetline(rfile, istring);
+    } else mainprogram->openerr = false;
+    if (istring == "EWOCvj DECKFILE") {
+        return true;
+    }
+    return false;
+}
+
+bool ismixfile(std::string &path) {
+    std::string istring;
+    std::string result = deconcat_files(path);
+    if (!mainprogram->openerr) {
+        bool concat = (result != "");
+        std::ifstream rfile;
+        if (concat) rfile.open(result);
+        else rfile.open(path);
+        safegetline(rfile, istring);
+    } else mainprogram->openerr = false;
+    if (istring == "EWOCvj MIXFILE") {
+        return true;
+    }
+    return false;
+}
+
+
 std::istream& safegetline(std::istream& is, std::string& t)
 {
     t.clear();
@@ -5819,6 +5868,13 @@ void the_loop() {
         delete eff;
     }
     mainprogram->deleffects.clear();
+
+    if (mainprogram->dropfiles.size()) {
+        for (char *df : mainprogram->dropfiles) {
+            SDL_free(df);
+        }
+        mainprogram->dropfiles.clear();
+    }
 }
 
 
@@ -6991,7 +7047,8 @@ int main(int argc, char* argv[]) {
 
     boost::filesystem::current_path(pathtoplatform(mainprogram->docpath));
 
-
+    SDL_EventState(SDL_DROPFILE, SDL_ENABLE);
+    SDL_EventState(SDL_DROPBEGIN, SDL_ENABLE);
 
 
 
@@ -7060,7 +7117,7 @@ int main(int argc, char* argv[]) {
                 }
                 mainprogram->fileslay->cliploading = true;
                 mainprogram->openfilesqueue = true;
-            } else if (mainprogram->pathto == "CLIPOPENFILES") {
+            } else if (mainprogram->pathto == "OPENFILESCLIP") {
                 std::string str(mainprogram->paths[0]);
                 mainprogram->currfilesdir = dirname(str);
                 mainprogram->clipfilescount = 0;
@@ -7178,7 +7235,6 @@ int main(int argc, char* argv[]) {
                 for (int j = 0; j < 12; j++) {
                     for (int i = 0; i < 12; i++) {
                         BinElement *binel = binsmain->currbin->elements[i * 12 + j];
-                        std::string s = dirname(mainprogram->path) + remove_extension(basename(mainprogram->path)) + "/";
                         bupaths[i * 12 + j] = binel->absjpath;
                         binel->absjpath = bupaths[i * 12 + j];
                         binel->jpegpath = binel->absjpath;
@@ -7261,11 +7317,12 @@ int main(int argc, char* argv[]) {
                     // adapt autosave entries
                     std::unordered_map<std::string, std::string> smap;
                     // change autosave directory names
-                    for (const auto& dirEnt : boost::filesystem::directory_iterator{mainprogram->project->autosavedir})
+                    for (const auto& dirEnt : boost::filesystem::directory_iterator{dirname(mainprogram->path) + "autosaves/"})
                     {
                         const auto& path = dirEnt.path();
                         auto pathstr = path.generic_string();
-                        size_t start_pos = pathstr.find(oldprdir);
+                        if (basename(pathstr) == "autosavelist") continue;
+                        size_t start_pos = pathstr.rfind(oldprdir);
                         if (start_pos == std::string::npos) continue;
                         std::string newstr = pathstr;
                         newstr.replace(start_pos, oldprdir.length(), basename(path2));
@@ -7280,8 +7337,11 @@ int main(int argc, char* argv[]) {
                     for (const auto& dirEnt : boost::filesystem::recursive_directory_iterator{mainprogram->project->autosavedir})
                     {
                         const auto& path = dirEnt.path();
+                        //if (boost::filesystem::is_directory(path)) continue;
                         auto pathstr = path.generic_string();
-                        size_t start_pos = pathstr.find(oldprdir);
+                        std::string ext2 = pathstr.substr(pathstr.length() - 7, std::string::npos);
+                        if (ext2 != ".ewocvj") continue;
+                        size_t start_pos = pathstr.rfind(oldprdir);
                         if (start_pos == std::string::npos) continue;
                         std::string newstr = pathstr;
                         newstr.replace(start_pos, oldprdir.length(), basename(path2));
@@ -7293,11 +7353,13 @@ int main(int argc, char* argv[]) {
 
                     for (int i = 0; i < mainprogram->project->autosavelist.size(); i++)
                     {
+                        int start_pos = 0;
                         while (1) {
-                            size_t start_pos = mainprogram->project->autosavelist[i].find(oldprdir);
+                            start_pos = mainprogram->project->autosavelist[i].find(oldprdir, start_pos);
                             if (start_pos == std::string::npos) break;
                             std::string newstr = mainprogram->project->autosavelist[i];
                             newstr.replace(start_pos, oldprdir.length(), basename(path2));
+                            start_pos++;
                             mainprogram->project->autosavelist[i] = newstr;
                         }
                     }
@@ -7311,8 +7373,46 @@ int main(int argc, char* argv[]) {
                     wfile << "ENDOFFILE\n";
                     wfile.close();
 
+                    /*std::string src = pathtoplatform(mainprogram->project->binsdir + binsmain->currbin->name + "/");
+                    std::string dest = pathtoplatform(dirname(mainprogram->path) + remove_extension(basename(mainprogram->path)) + "/");
+                    copy_dir(src, dest);*/
+                    std::vector<std::vector<std::string>> bupaths;
+                    for (int k = 0; k < binsmain->bins.size(); k++) {
+                        std::vector<std::string> bup;
+                        for (int j = 0; j < 12; j++) {
+                            for (int i = 0; i < 12; i++) {
+                                BinElement *binel = binsmain->bins[k]->elements[i * 12 + j];
+                                std::string s =
+                                        dirname(mainprogram->path) + remove_extension(basename(mainprogram->path)) +
+                                        "/";
+                                bup.push_back(binel->absjpath);
+                                if (binel->absjpath != "") {
+                                    binel->absjpath = s + basename(binel->absjpath);
+                                    binel->jpegpath = binel->absjpath;
+                                    binel->reljpath = boost::filesystem::relative(binel->absjpath, s).generic_string();
+                                }
+                            }
+                        }
+                        bupaths.push_back(bup);
+                    }
+                    if (exists(mainprogram->path)) {
+                        boost::filesystem::remove(mainprogram->path);
+                    }
                     // save project
                     mainprogram->project->do_save(mainprogram->path, false);
+
+                    for (int k = 0; k < binsmain->bins.size(); k++) {
+                        for (int j = 0; j < 12; j++) {
+                            for (int i = 0; i < 12; i++) {
+                                BinElement *binel = binsmain->bins[k]->elements[i * 12 + j];
+                                bupaths[k][i * 12 + j] = binel->absjpath;
+                                binel->absjpath = bupaths[k][i * 12 + j];
+                                binel->jpegpath = binel->absjpath;
+                                binel->reljpath = boost::filesystem::relative(binel->absjpath,
+                                                                              mainprogram->project->binsdir).generic_string();
+                            }
+                        }
+                    }
                 }
             }
             mainprogram->path = "";
@@ -7775,6 +7875,10 @@ int main(int argc, char* argv[]) {
                 }
             } else if (e.type == SDL_MOUSEWHEEL) {
                 mainprogram->mousewheel = e.wheel.y;
+            }
+
+            if (e.type == SDL_DROPFILE) {
+                mainprogram->dropfiles.push_back(e.drop.file);
             }
         }
 

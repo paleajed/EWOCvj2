@@ -1606,6 +1606,16 @@ void BinsMain::handle(bool draw) {
 				if ((box->in() || mainprogram->rightmouse || binel == menuactbinel) && !this->openfilesbin && !binel->encoding) {
 					if (draw) {
 						inbinel = true;
+                        if (mainprogram->dropfiles.size()) {
+                            // SDL drag'n'drop
+                            mainprogram->path = mainprogram->dropfiles[0];
+                            for (char *df : mainprogram->dropfiles) {
+                                mainprogram->paths.push_back(df);
+                            }
+                            binsmain->menuactbinel = binel;
+                            mainprogram->counting = 0;
+                            mainprogram->pathto = "OPENFILESBIN";
+                        }
 						// don't preview when encoding
 						if (this->currbin->encthreads) continue;
 						if (this->menubinel) {
@@ -2667,7 +2677,7 @@ void BinsMain::open_files_bin() {
 		return;
 	}
 	std::string str = mainprogram->paths[mainprogram->counting];
-	open_handlefile(str, mainprogram->pathtexes[mainprogram->counting]);
+	open_handlefile(str, -1);
 	mainprogram->counting++;
 }
 
@@ -2702,7 +2712,7 @@ void BinsMain::open_handlefile(const std::string &path, GLuint tex) {
             return;
         }
 
-        if (mainprogram->pathtexes.empty()) {
+        if (1) {
             if (istring == "EWOCvj LAYERFILE") {
                 // prepare layer file for bin entry
                 if (tex == -1) {
@@ -2729,9 +2739,9 @@ void BinsMain::open_handlefile(const std::string &path, GLuint tex) {
                 if (tex == -1) {
                     Layer *lay = new Layer(true);
                     get_deckmixtex(lay, path);
-                    glGenTextures(1, &tex);
+                    glGenTextures(1, &endtex);
                     //glActiveTexture(GL_TEXTURE0);
-                    glBindTexture(GL_TEXTURE_2D, tex);
+                    glBindTexture(GL_TEXTURE_2D, endtex);
                     glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR);
                     glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
                     glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_BORDER);
@@ -2744,9 +2754,9 @@ void BinsMain::open_handlefile(const std::string &path, GLuint tex) {
                 if (tex == -1) {
                     Layer *lay = new Layer(true);
                     get_deckmixtex(lay, path);
-                    glGenTextures(1, &tex);
+                    glGenTextures(1, &endtex);
                     //glActiveTexture(GL_TEXTURE0);
-                    glBindTexture(GL_TEXTURE_2D, tex);
+                    glBindTexture(GL_TEXTURE_2D, endtex);
                     glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR);
                     glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
                     glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_BORDER);

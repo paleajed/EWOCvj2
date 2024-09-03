@@ -1291,25 +1291,26 @@ bool Program::order_paths(bool dodeckmix) {
             this->getvideotexlayers.push_back(lay);
             this->getvideotexpaths.push_back(str);
             this->multistage = 2;
-        } else if (isvideo(str)) {
-            Layer *lay = new Layer(true);
-            std::thread tex(&get_videotex, lay, str);
-            tex.detach();
-            this->getvideotexlayers.push_back(lay);
-            this->getvideotexpaths.push_back(str);
-            this->multistage = 2;
         } else if (dodeckmix && istring == "EWOCvj DECKFILE") {
             Layer *lay = new Layer(true);
             lay->type = ELEM_DECK;
-            std::thread tex(&get_deckmixtex, lay, str);
-            tex.detach();
+            //std::thread tex(&get_deckmixtex, lay, str);
+            //tex.detach();
             this->getvideotexlayers.push_back(lay);
             this->getvideotexpaths.push_back(str);
             this->multistage = 2;
         } else if (dodeckmix && istring == "EWOCvj MIXFILE") {
             Layer *lay = new Layer(true);
             lay->type = ELEM_MIX;
-            std::thread tex(&get_deckmixtex, lay, str);
+            //std::thread tex(&get_deckmixtex, lay, str);
+            //tex.detach();
+            this->getvideotexlayers.push_back(lay);
+            this->getvideotexpaths.push_back(str);
+            this->multistage = 2;
+        }
+        else if (isvideo(str)) {
+            Layer *lay = new Layer(true);
+            std::thread tex(&get_videotex, lay, str);
             tex.detach();
             this->getvideotexlayers.push_back(lay);
             this->getvideotexpaths.push_back(str);
@@ -1341,6 +1342,9 @@ bool Program::order_paths(bool dodeckmix) {
             glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
             glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_BORDER);
             glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_BORDER);
+
+            get_deckmixtex(lay, str);
+
             open_thumb(this->result + "_" + std::to_string(this->resnum - 2) + ".file", tex);
         }
         else {
@@ -4320,7 +4324,7 @@ void Program::handle_clipmenu() {
 			}
 		}
 		if (k == 1) {
-			mainprogram->pathto = "CLIPOPENFILES";
+			mainprogram->pathto = "OPENFILESCLIP";
 			std::thread filereq(&Program::get_multinname, mainprogram, "Open clip video file", "", boost::filesystem::canonical(mainprogram->currfilesdir).generic_string());
 			filereq.detach();
 		}
@@ -8546,6 +8550,16 @@ void Program::handle_shelf(Shelf *shelf) {
 
         if (cond) {
             // mouse over shelf element
+            if (mainprogram->dropfiles.size()) {
+                // SDL drag'n'drop
+                mainprogram->path = mainprogram->dropfiles[0];
+                for (char *df : mainprogram->dropfiles) {
+                    mainprogram->paths.push_back(df);
+                }
+                mainprogram->pathto = "OPENFILESSHELF";
+                mainmix->mouseshelf = shelf;
+                mainmix->mouseshelfelem = i;
+            }
             inelem = i;
             if (mainprogram->doubleleftmouse) {
                 // doubleclick loads elem in currlay layer slots

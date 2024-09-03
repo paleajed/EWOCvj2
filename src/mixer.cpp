@@ -4587,6 +4587,25 @@ void Layer::display() {
             mainprogram->frontbatch = false;
 
 			if (box->in()) {
+                if (mainprogram->dropfiles.size()) {
+                    // SDL drag'n'drop
+                    mainprogram->path = mainprogram->dropfiles[0];
+                    for (char *df: mainprogram->dropfiles) {
+                        bool wrong = false;
+                        std::string path = df;
+                        if (isdeckfile(path)) {
+                            wrong = true;
+                        }
+                        if (ismixfile(path)) {
+                            wrong = true;
+                        }
+                        if (!wrong && (isvideo(path) || islayerfile(path))) {
+                            mainprogram->paths.push_back(df);
+                        }
+                    }
+                    mainprogram->pathto = "OPENFILESLAYER";
+                    mainprogram->loadlay = this;
+                }
                 if (!mainprogram->needsclick || mainprogram->leftmouse) {
                     if (box != mainprogram->prevbox) {
                         mainprogram->prevbox = box;
@@ -4787,6 +4806,27 @@ void Layer::display() {
 				if (0 <= numonscreen && numonscreen <= 2) {
 					if (mainprogram->xvtxtoscr(mainprogram->numw + this->deck * 1.0f + numonscreen * mainprogram->layw) < mainprogram->mx && mainprogram->mx < this->deck * (glob->w / 2.0f) + glob->w / 2.0f) {
 						if (0 < mainprogram->my && mainprogram->my < mainprogram->yvtxtoscr(mainprogram->layh)) {
+                            if (mainprogram->dropfiles.size()) {
+                                // SDL drag'n'drop
+                                mainprogram->path = mainprogram->dropfiles[0];
+                                for (char *df: mainprogram->dropfiles) {
+                                    bool wrong = false;
+                                    std::string path = df;
+                                    if (isdeckfile(path)) {
+                                        wrong = true;
+                                    }
+                                    if (ismixfile(path)) {
+                                        wrong = true;
+                                    }
+                                    if (!wrong && (isvideo(path) || islayerfile(path))) {
+                                        mainprogram->paths.push_back(df);
+                                    }
+                                    mainprogram->pathto = "OPENFILESSTACK";
+                                    mainmix->addlay = true;
+                                    mainmix->mouselayer = nullptr;
+                                    mainmix->mousedeck = this->deck;
+                                }
+                            }
 							if (mainprogram->menuactivation) {
 								mainprogram->newlaymenu->state = 2;
 								mainmix->mousedeck = this->deck;
@@ -6206,6 +6246,24 @@ void Mixer::deckmixdrag_handle() {
 	//deck and mix dragging
     bool loadev = true;
     if (mainprogram->shelfdragelem) loadev = false;  // dont load loopstation events from shelf
+
+    if (mainprogram->dropfiles.size()) {
+        // SDL drag'n'drop of decks and mixes
+        std::string df = mainprogram->dropfiles[0];
+        if (isdeckfile(df)) {
+            mainprogram->dragbinel = new BinElement;
+            mainprogram->dragbinel->type = ELEM_DECK;
+            mainprogram->dragbinel->path = df;
+            mainprogram->lmover = true;
+        }
+        if (ismixfile(df)) {
+            mainprogram->dragbinel = new BinElement;
+            mainprogram->dragbinel->type = ELEM_MIX;
+            mainprogram->dragbinel->path = df;
+            mainprogram->lmover = true;
+        }
+    }
+
     if (mainprogram->dragbinel) {
         if (mainprogram->dragbinel->type == ELEM_DECK) {
             if (!mainprogram->binsscreen) {
@@ -8210,11 +8268,16 @@ void Mixer::open_mix(const std::string &path, bool alive, bool loadevents) {
             //mainprogram->filecount = 0;
             mainmix->read_layers(rfile, result, lvec1, 1, true, 2, concat, 1, loadevents, 1, 0);
             mainmix->currclonesize = -1;
-            mainprogram->filecount = 0;
             mainmix->reconnect_all(layers[1]);
         }
     }
 
+
+    if (exists(result + "_" + std::to_string(mainprogram->filecount) + ".file")) {
+        boost::filesystem::rename(result + "_" + std::to_string(mainprogram->filecount) + ".file", result + "_" + std::to_string(mainprogram->filecount) + ".jpeg");
+        mainmix->mixjpegpath = result + "_" + std::to_string(mainprogram->filecount) + ".jpeg";
+    }
+    mainprogram->filecount = 0;
 
     std::vector<Layer*> C_layers;
     if (mainprogram->prevmodus) {
@@ -8432,7 +8495,7 @@ void Mixer::do_save_mix(const std::string & path, bool modus, bool save) {
 		if (mns.size()) {
 			std::vector<std::string> jpegpaths2;
 			GLuint tex = ((MixNode*)(mns[2]))->mixtex;
-            this->minitex = copy_tex(tex);
+            this->minitex = copy_tex(tex, 192, 108);
 			save_thumb(mainprogram->temppath + "mix.jpg", this->minitex);
 			jpegpaths2.push_back(mainprogram->temppath + "mix.jpg");
 			jpegpaths.push_back(jpegpaths2);
@@ -8577,6 +8640,12 @@ void Mixer::open_deck(const std::string & path, bool alive, bool loadevents, boo
             }
         }
 	}*/
+
+    if (exists(result + "_" + std::to_string(mainprogram->filecount) + ".file")) {
+        boost::filesystem::rename(result + "_" + std::to_string(mainprogram->filecount) + ".file", result + "_" + std::to_string(mainprogram->filecount) + ".jpeg");
+        mainmix->deckjpegpath = result + "_" + std::to_string(mainprogram->filecount) + ".jpeg";
+    }
+    mainprogram->filecount = 0;
 
     if (!copycomp) {
         for (int i = 0; i < 4; i++) {
@@ -11007,7 +11076,7 @@ std::vector<std::string> Mixer::write_layer(Layer* lay, std::ostream& wfile, boo
 	}
 	if (lay->node->vidbox && dojpeg && lay->filename != "") {
 		std::string jpegpath = find_unused_filename(basename(lay->filename), mainprogram->temppath, ".jpg");
-        lay->minitex = copy_tex(lay->node->vidbox->tex);
+        lay->minitex = copy_tex(lay->node->vidbox->tex, 192, 108);
 		save_thumb(jpegpath, lay->minitex);
 		jpegpaths.push_back(jpegpath);
 		wfile << "JPEGPATH\n";
@@ -12138,6 +12207,16 @@ void Mixer::handle_clips() {
                         }
 					}
                     if (insideclipbox.in()) {
+                        if (mainprogram->dropfiles.size()) {
+                            // SDL drag'n'drop
+                            mainprogram->path = mainprogram->dropfiles[0];
+                            for (char *df: mainprogram->dropfiles) {
+                                mainprogram->paths.push_back(df);
+                            }
+                            mainprogram->pathto = "OPENFILESCLIP";
+                            mainmix->mouseclip = lay2->clips[k + lay2->queuescroll];
+                            mainmix->mouselayer = lay2;
+                        }
                         if (mainprogram->dragbinel) {
                             // replacing
                             Clip* jc = lay2->clips[k + lay2->queuescroll];

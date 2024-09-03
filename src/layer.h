@@ -419,6 +419,8 @@ class Mixer {
 		Layer *currlay[2] = {nullptr, nullptr};
         std::vector<Layer*> currlays[2];
         GLuint minitex;
+        std::string mixjpegpath;
+        std::string deckjpegpath;
 
         std::unordered_map<Layer*, Layer*> nlaymap;
         Layer *templay;

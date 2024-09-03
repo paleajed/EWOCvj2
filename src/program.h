@@ -523,7 +523,7 @@ class Program {
         std::string contentpath;
 		std::string path ;
 		std::vector<std::string> paths;
-		int counting;
+		int counting = 0;
 		std::string pathto;
         Button *toscreenA;
         Button *toscreenB;
@@ -795,6 +795,7 @@ class Program {
         bool check = false;
         //int clickednextto = -1;
         bool lpstmenuon = false;
+        std::vector<char*> dropfiles;
 
         ShelfElement *lpstelem = nullptr;
 
@@ -1054,6 +1055,9 @@ extern std::string pathtoplatform(std::string path);
 extern void copy_dir(std::string &src, std::string &dest);
 extern bool isimage(const std::string &path);
 extern bool isvideo(const std::string &path);
+extern bool isdeckfile(std::string &path);
+extern bool ismixfile(std::string &path);
+extern bool islayerfile(std::string &path);
 
 extern void drag_into_layerstack(std::vector<Layer*>& layers, bool deck);
 
