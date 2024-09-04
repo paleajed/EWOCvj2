@@ -25,20 +25,35 @@ Users that want to compile themselves can currently only do this on Windows syst
 * Edit the CMakeLists.txt file so everything points to the right directories.  You'll need the packages mentioned below.
 * install dependencies:
   OpenAL32
+  
   freeglut
+
   freetype2
   sdl2
+
   opengl32
+
   glew32
+
   libjpeg
+
   snappy
   ole32
+
   oleaut32
+
   ws2_32
+
   shcore
+
   comdlg32
+
   liblo
+
   devil
+
+  boost system
+*
 * 3 exceptions:
 * the need for ffmpeg 4 with snappy support compiled in
   For Windows, best is to download the ffmpeg distributions from the ffmpeg page:
@@ -48,7 +63,7 @@ Users that want to compile themselves can currently only do this on Windows syst
 * the need for rtmidi latest version
 Get the source from https://www.music.mcgill.ca/~gary/rtmidi/index.html#download
 Compile the rtmidi libraries
-* best to use the latest Boost libraries from:
+* best to use the latest Boost library from:
 https://www.boost.org/
 
 * Use CMake to build the program.  You can find the executable in the cmake-build-debug or cmake-build-release directories.
