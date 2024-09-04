@@ -9,7 +9,6 @@
 #include "boost/asio.hpp"
 #include "boost/thread/thread.hpp"
 #include "boost/date_time/posix_time/posix_time.hpp"
-#include "boost/filesystem.hpp"
 #include "boost/foreach.hpp"
 
 #include <stdio.h>
@@ -169,7 +168,7 @@ using namespace std;
 
 bool exists(const std::string &name) {
 
-    if (boost::filesystem::exists(name)) {
+    if (std::filesystem::exists(name)) {
         return true;
     } else {
         return false;
@@ -259,7 +258,7 @@ std::string pathtoplatform(std::string path) {
 }
 
 void copy_dir(std::string &src, std::string &dest) {
-    namespace fs = boost::filesystem;
+    namespace fs = std::filesystem;
 
     if (!fs::exists(src) || !fs::is_directory(src)) {
         throw std::runtime_error("Source directory " + src + " does not exist or is not a directory");
@@ -276,7 +275,7 @@ void copy_dir(std::string &src, std::string &dest) {
         auto relativePathStr = path.string();
         boost::replace_first(relativePathStr, src, "");
         if (exists(dest + "/" + relativePathStr)) {
-            boost::filesystem::remove_all(dest + "/" + relativePathStr);
+            std::filesystem::remove_all(dest + "/" + relativePathStr);
         }
         fs::copy(path, dest + "/" + relativePathStr);
     }
@@ -435,10 +434,10 @@ void check_stage() {
 bool retarget_search() {
     std::function<std::string(std::string)> search_directory = [&search_directory](std::string path) {
         std::string sn = (*(mainmix->newpaths))[mainmix->newpathpos];
-        boost::filesystem::directory_entry p1(path);
-        for (boost::filesystem::recursive_directory_iterator itr(p1, boost::filesystem::directory_options::skip_permission_denied); itr != boost::filesystem::recursive_directory_iterator(); ++itr)
+        std::filesystem::directory_entry p1(path);
+        for (std::filesystem::recursive_directory_iterator itr(p1, std::filesystem::directory_options::skip_permission_denied); itr != std::filesystem::recursive_directory_iterator(); ++itr)
         {
-            if (boost::filesystem::is_regular_file(itr->path())) {
+            if (std::filesystem::is_regular_file(itr->path())) {
                 if (basename(itr->path().generic_string()) == basename(sn)) {
                     return itr->path().generic_string();
                 }
@@ -448,11 +447,11 @@ bool retarget_search() {
         return s;
     };
     std::function<std::string(std::string)> search_directory_for_same_size = [&search_directory_for_same_size](std::string path) {
-        boost::filesystem::directory_entry p1(path);
-        for (boost::filesystem::recursive_directory_iterator itr(p1, boost::filesystem::directory_options::skip_permission_denied); itr!=boost::filesystem::recursive_directory_iterator(); ++itr)
+        std::filesystem::directory_entry p1(path);
+        for (std::filesystem::recursive_directory_iterator itr(p1, std::filesystem::directory_options::skip_permission_denied); itr!=std::filesystem::recursive_directory_iterator(); ++itr)
         {
-            if (boost::filesystem::is_regular_file(itr->path())) {
-                if (boost::filesystem::file_size(itr->path()) == retarget->filesize) {
+            if (std::filesystem::is_regular_file(itr->path())) {
+                if (std::filesystem::file_size(itr->path()) == retarget->filesize) {
                     return itr->path().generic_string();
                 }
             }
@@ -539,7 +538,7 @@ void do_retarget() {
     }
     for (int i = 0; i < mainmix->newpathbinels.size(); i++) {
         mainmix->newpathbinels[i]->path = mainmix->newbinelpaths[i];
-        mainmix->newpathbinels[i]->relpath = boost::filesystem::relative(mainmix->newbinelpaths[i], mainprogram->project->binsdir).generic_string();
+        mainmix->newpathbinels[i]->relpath = std::filesystem::relative(mainmix->newbinelpaths[i], mainprogram->project->binsdir).generic_string();
         if (mainmix->newpathbinels[i]->path == "") {
             mainmix->newpathbinels[i]->name = "";
             blacken(mainmix->newpathbinels[i]->tex);
@@ -3864,7 +3863,7 @@ void handle_scenes(Scene* scene) {
                     mainprogram->swappingscene = true;
                     mainmix->open_deck(mainprogram->temppath + "tempdecksc_" + std::to_string(scene->deck) +
                                        std::to_string(i) + ".deck", true);
-                    boost::filesystem::rename(mainprogram->temppath + "tempdeck_xch.deck",
+                    std::filesystem::rename(mainprogram->temppath + "tempdeck_xch.deck",
                                               mainprogram->temppath + "tempdecksc_" + std::to_string(scene->deck) +
                                               std::to_string(mainmix->currscene[scene->deck]) + ".deck");
                     std::vector<Layer *> lvec2;
@@ -4157,7 +4156,7 @@ void enddrag() {
 	if (mainprogram->dragbinel) {
 		//if (mainprogram->dragbinel->path.rfind, ".layer", nullptr != std::string::npos) {
 		//	if (mainprogram->dragbinel->path.find("cliptemp_") != std::string::npos) {
-		//		boost::filesystem::remove(mainprogram->dragbinel->path);			
+		//		std::filesystem::remove(mainprogram->dragbinel->path);
 		//	}
 		//}
 		if (mainprogram->shelfdragelem) {
@@ -4833,7 +4832,7 @@ void the_loop() {
             if (retarget->iconbox->in() && mainprogram->orderleftmouse) {
                 mainprogram->pathto = "RETARGETFILE";
                 std::thread filereq(&Program::get_inname, mainprogram, "Find file", "",
-                                    boost::filesystem::canonical(mainprogram->currfilesdir).generic_string());
+                                    std::filesystem::canonical(mainprogram->currfilesdir).generic_string());
                 filereq.detach();
             }
             if (mainmix->renaming == false) {
@@ -4881,7 +4880,7 @@ void the_loop() {
             if (retarget->searchbox->in() && mainprogram->orderleftmouse) {
                 mainprogram->pathto = "SEARCHDIR";
                 std::thread filereq(&Program::get_dir, mainprogram, "Add a search location",
-                                    boost::filesystem::canonical(mainprogram->currfilesdir).generic_string());
+                                    std::filesystem::canonical(mainprogram->currfilesdir).generic_string());
                 filereq.detach();
                 retarget->notfound = false;
             }
@@ -5165,7 +5164,7 @@ void the_loop() {
                 mainprogram->dragbinel = new BinElement;
                 mainprogram->dragbinel->tex = mainmix->recQthumbshow;
                 mainprogram->dragbinel->path = mainmix->recpath[1];
-                mainprogram->dragbinel->relpath = boost::filesystem::relative(mainmix->recpath[1], mainprogram->project->binsdir).generic_string();
+                mainprogram->dragbinel->relpath = std::filesystem::relative(mainmix->recpath[1], mainprogram->project->binsdir).generic_string();
                 mainprogram->dragbinel->type = ELEM_FILE;
                 mainprogram->shelves[0]->prevnum = -1;
                 mainprogram->shelves[1]->prevnum = -1;
@@ -5453,12 +5452,12 @@ void the_loop() {
             int pos = bin->open_positions[0];
             if (bin->elements[pos]->name != "") {
                 bin->elements[pos]->absjpath = bin->elements[pos]->jpegpath;
-                bin->elements[pos]->reljpath = boost::filesystem::relative(bin->elements[pos]->absjpath, mainprogram->project->binsdir).generic_string();
+                bin->elements[pos]->reljpath = std::filesystem::relative(bin->elements[pos]->absjpath, mainprogram->project->binsdir).generic_string();
                 if (exists(bin->elements[pos]->jpegpath)) {
-                    boost::filesystem::current_path(mainprogram->project->binsdir);
-                    std::string path = pathtoplatform(boost::filesystem::absolute(bin->elements[pos]->jpegpath).generic_string());
+                    std::filesystem::current_path(mainprogram->project->binsdir);
+                    std::string path = pathtoplatform(std::filesystem::absolute(bin->elements[pos]->jpegpath).generic_string());
                     open_thumb(path, bin->elements[pos]->tex);
-                    boost::filesystem::current_path(mainprogram->contentpath);
+                    std::filesystem::current_path(mainprogram->contentpath);
                 }
                 bin->elements[pos]->jpegsaved = true;
             }
@@ -5600,9 +5599,9 @@ void the_loop() {
 
 			mainprogram->prefs->save();
 
-			boost::filesystem::path path_to_remove(mainprogram->temppath);
-			for (boost::filesystem::directory_iterator end_dir_it, it(path_to_remove); it != end_dir_it; ++it) {
-				boost::filesystem::remove(it->path());
+			std::filesystem::path path_to_remove(mainprogram->temppath);
+			for (std::filesystem::directory_iterator end_dir_it, it(path_to_remove); it != end_dir_it; ++it) {
+				std::filesystem::remove(it->path());
 			}
 
 			printf("%s: %s\n", mainprogram->quitting.c_str(), SDL_GetError());
@@ -6623,34 +6622,34 @@ int main(int argc, char* argv[]) {
     printf("1\n");
 
 #ifdef WINDOWS
-    boost::filesystem::path p5{mainprogram->docpath + "projects"};
+    std::filesystem::path p5{mainprogram->docpath + "projects"};
     mainprogram->currprojdir = p5.generic_string();
-    if (!exists(mainprogram->docpath + "/projects")) boost::filesystem::create_directory(p5);
+    if (!exists(mainprogram->docpath + "/projects")) std::filesystem::create_directory(p5);
 #else
     #ifdef POSIX
     std::string homedir(getenv("HOME"));
     mainprogram->homedir = homedir;
-    boost::filesystem::path p1{homedir + "/Documents/EWOCvj2"};
+    std::filesystem::path p1{homedir + "/Documents/EWOCvj2"};
     std::string docdir = p1.generic_string();
-    if (!exists(homedir + "/Documents/EWOCvj2")) boost::filesystem::create_directory(p1);
-    boost::filesystem::path e{homedir + "/.ewocvj2"};
-    if (!exists(homedir + "/.ewocvj2")) boost::filesystem::create_directory(e);
-    boost::filesystem::path p4{homedir + "/.ewocvj2/temp"};
-    if (!exists(homedir + "/.ewocvj2/temp")) boost::filesystem::create_directory(p4);
-    boost::filesystem::path p5{docdir + "/projects"};
+    if (!exists(homedir + "/Documents/EWOCvj2")) std::filesystem::create_directory(p1);
+    std::filesystem::path e{homedir + "/.ewocvj2"};
+    if (!exists(homedir + "/.ewocvj2")) std::filesystem::create_directory(e);
+    std::filesystem::path p4{homedir + "/.ewocvj2/temp"};
+    if (!exists(homedir + "/.ewocvj2/temp")) std::filesystem::create_directory(p4);
+    std::filesystem::path p5{docdir + "/projects"};
     mainprogram->currprojdir = p5.generic_string();
-    if (!exists(docdir + "/projects")) boost::filesystem::create_directory(p5);
+    if (!exists(docdir + "/projects")) std::filesystem::create_directory(p5);
 #endif
 #endif
 
-    boost::filesystem::path p6{mainprogram->docpath + "bins"};
+    std::filesystem::path p6{mainprogram->docpath + "bins"};
     mainprogram->currbinsdir = p6.generic_string();
-    if (!exists(mainprogram->docpath + "bins")) boost::filesystem::create_directory(p5);
+    if (!exists(mainprogram->docpath + "bins")) std::filesystem::create_directory(p5);
 
     //empty temp dir if program crashed last time
-    boost::filesystem::path path_to_remove(mainprogram->temppath);
-    for (boost::filesystem::directory_iterator end_dir_it, it(path_to_remove); it != end_dir_it; ++it) {
-        boost::filesystem::remove_all(it->path());
+    std::filesystem::path path_to_remove(mainprogram->temppath);
+    for (std::filesystem::directory_iterator end_dir_it, it(path_to_remove); it != end_dir_it; ++it) {
+        std::filesystem::remove_all(it->path());
     }
 
     glc = SDL_GL_CreateContext(mainprogram->mainwindow);
@@ -6846,7 +6845,7 @@ int main(int argc, char* argv[]) {
     ilBindImage(lok_ol);
     ilActiveImage(0);
 #ifdef WINDOWS
-    boost::filesystem::path full_path(boost::filesystem::current_path());
+    std::filesystem::path full_path(std::filesystem::current_path());
     printf("PATH %s", full_path.string().c_str());
     std::string pp(full_path.string() + "/lock.png");
     ILboolean ret2 = ilLoadImage((const ILstring)pp.c_str());
@@ -7045,7 +7044,7 @@ int main(int argc, char* argv[]) {
     }
 
 
-    boost::filesystem::current_path(pathtoplatform(mainprogram->docpath));
+    std::filesystem::current_path(pathtoplatform(mainprogram->docpath));
 
     SDL_EventState(SDL_DROPFILE, SDL_ENABLE);
     SDL_EventState(SDL_DROPBEGIN, SDL_ENABLE);
@@ -7136,9 +7135,9 @@ int main(int argc, char* argv[]) {
                 std::string dest;
                 if (ext != ".shelf") {
                     dest = mainprogram->path;
-                    boost::filesystem::path p1{dest};
-                    if (!boost::filesystem::exists(p1)) {
-                        boost::filesystem::create_directory(p1);
+                    std::filesystem::path p1{dest};
+                    if (!std::filesystem::exists(p1)) {
+                        std::filesystem::create_directory(p1);
                     }
                     copy_dir(src, dest);
                 }
@@ -7146,17 +7145,17 @@ int main(int argc, char* argv[]) {
                     dest = dirname(mainprogram->path);
                     //if (basename(dest) != remove_extension(basename(mainprogram->path))) {
                     //    std::string dest2 = dest.substr(0, dest.size() - basename(dest).length() - 1) + remove_extension(basename(mainprogram->path));
-                    //    boost::filesystem::path p2{dest2};
-                    //    if (!boost::filesystem::exists(p2)) {
-                    //        boost::filesystem::create_directory(p2);
+                    //    std::filesystem::path p2{dest2};
+                    //    if (!std::filesystem::exists(p2)) {
+                    //        std::filesystem::create_directory(p2);
                     //    }
                     //    copy_dir(dest,dest2);
                     //}
                     copy_dir(src, dest);
                 }
-                boost::filesystem::path p3{dest + "/" + mainmix->mouseshelf->basepath + ".shelf"};
-                if (boost::filesystem::exists(p3)) {
-                    boost::filesystem::remove(mainprogram->path);
+                std::filesystem::path p3{dest + "/" + mainmix->mouseshelf->basepath + ".shelf"};
+                if (std::filesystem::exists(p3)) {
+                    std::filesystem::remove(mainprogram->path);
                 }
                 mainmix->mouseshelf->save(dest + "/" + remove_extension(basename(mainprogram->path)) + ".shelf");
             }
@@ -7224,12 +7223,12 @@ int main(int argc, char* argv[]) {
                         if (binel->absjpath != "") {
                             binel->absjpath = s + basename(binel->absjpath);
                             binel->jpegpath = binel->absjpath;
-                            binel->reljpath = boost::filesystem::relative(binel->absjpath, s).generic_string();
+                            binel->reljpath = std::filesystem::relative(binel->absjpath, s).generic_string();
                         }
                     }
                 }
                 if (exists(mainprogram->path)) {
-                    boost::filesystem::remove(mainprogram->path);
+                    std::filesystem::remove(mainprogram->path);
                 }
                 binsmain->save_bin(find_unused_filename(remove_extension(basename(mainprogram->path)), dirname(mainprogram->path), ".bin"));
                 for (int j = 0; j < 12; j++) {
@@ -7238,16 +7237,16 @@ int main(int argc, char* argv[]) {
                         bupaths[i * 12 + j] = binel->absjpath;
                         binel->absjpath = bupaths[i * 12 + j];
                         binel->jpegpath = binel->absjpath;
-                        binel->reljpath = boost::filesystem::relative(binel->absjpath, mainprogram->project->binsdir).generic_string();
+                        binel->reljpath = std::filesystem::relative(binel->absjpath, mainprogram->project->binsdir).generic_string();
                     }
                 }
             }else if (mainprogram->pathto == "CHOOSEDIR") {
                 mainprogram->choosedir = mainprogram->path + "/";
                 //std::string driveletter1 = str.substr(0, 1);
-                //std::string abspath = boost::filesystem::canonical(mainprogram->docpath).generic_string();
+                //std::string abspath = std::filesystem::canonical(mainprogram->docpath).generic_string();
                 //std::string driveletter2 = abspath.substr(0, 1);
                 //if (driveletter1 == driveletter2) {
-                //	mainprogram->choosedir = boost::filesystem::relative(str, mainprogram->docpath).generic_string() + "/";
+                //	mainprogram->choosedir = std::filesystem::relative(str, mainprogram->docpath).generic_string() + "/";
                 //}
                 //else {
                 //	mainprogram->choosedir = str + "/";
@@ -7317,7 +7316,7 @@ int main(int argc, char* argv[]) {
                     // adapt autosave entries
                     std::unordered_map<std::string, std::string> smap;
                     // change autosave directory names
-                    for (const auto& dirEnt : boost::filesystem::directory_iterator{dirname(mainprogram->path) + "autosaves/"})
+                    for (const auto& dirEnt : std::filesystem::directory_iterator{dirname(mainprogram->path) + "autosaves/"})
                     {
                         const auto& path = dirEnt.path();
                         auto pathstr = path.generic_string();
@@ -7330,14 +7329,14 @@ int main(int argc, char* argv[]) {
                     }
                     std::unordered_map<std::string, std::string>::iterator it;
                     for (it = smap.begin(); it != smap.end(); it++) {
-                        boost::filesystem::rename(it->first, it->second);
+                        std::filesystem::rename(it->first, it->second);
                     }
                     // change autosave project file names
                     smap.clear();
-                    for (const auto& dirEnt : boost::filesystem::recursive_directory_iterator{mainprogram->project->autosavedir})
+                    for (const auto& dirEnt : std::filesystem::recursive_directory_iterator{mainprogram->project->autosavedir})
                     {
                         const auto& path = dirEnt.path();
-                        //if (boost::filesystem::is_directory(path)) continue;
+                        //if (std::filesystem::is_directory(path)) continue;
                         auto pathstr = path.generic_string();
                         std::string ext2 = pathstr.substr(pathstr.length() - 7, std::string::npos);
                         if (ext2 != ".ewocvj") continue;
@@ -7348,7 +7347,7 @@ int main(int argc, char* argv[]) {
                         smap[pathstr] = newstr;
                     }
                     for (it = smap.begin(); it != smap.end(); it++) {
-                        boost::filesystem::rename(it->first, it->second);
+                        std::filesystem::rename(it->first, it->second);
                     }
 
                     for (int i = 0; i < mainprogram->project->autosavelist.size(); i++)
@@ -7389,14 +7388,14 @@ int main(int argc, char* argv[]) {
                                 if (binel->absjpath != "") {
                                     binel->absjpath = s + basename(binel->absjpath);
                                     binel->jpegpath = binel->absjpath;
-                                    binel->reljpath = boost::filesystem::relative(binel->absjpath, s).generic_string();
+                                    binel->reljpath = std::filesystem::relative(binel->absjpath, s).generic_string();
                                 }
                             }
                         }
                         bupaths.push_back(bup);
                     }
                     if (exists(mainprogram->path)) {
-                        boost::filesystem::remove(mainprogram->path);
+                        std::filesystem::remove(mainprogram->path);
                     }
                     // save project
                     mainprogram->project->do_save(mainprogram->path, false);
@@ -7408,7 +7407,7 @@ int main(int argc, char* argv[]) {
                                 bupaths[k][i * 12 + j] = binel->absjpath;
                                 binel->absjpath = bupaths[k][i * 12 + j];
                                 binel->jpegpath = binel->absjpath;
-                                binel->reljpath = boost::filesystem::relative(binel->absjpath,
+                                binel->reljpath = std::filesystem::relative(binel->absjpath,
                                                                               mainprogram->project->binsdir).generic_string();
                             }
                         }
@@ -7594,10 +7593,10 @@ int main(int argc, char* argv[]) {
                     binsmain->menubin->name = mainprogram->inputtext;
                     std::string oldpath = mainprogram->project->binsdir + mainprogram->backupname;
                     std::string newpath = mainprogram->project->binsdir + mainprogram->inputtext;
-                    if (exists(oldpath)) boost::filesystem::rename(oldpath, newpath);
+                    if (exists(oldpath)) std::filesystem::rename(oldpath, newpath);
                     oldpath += ".bin";
                     newpath += ".bin";
-                    if (exists(oldpath)) boost::filesystem::rename(oldpath, newpath);
+                    if (exists(oldpath)) std::filesystem::rename(oldpath, newpath);
                 } else if (mainprogram->renaming == EDIT_BINELEMNAME) {
                     binsmain->renamingelem->name = mainprogram->inputtext;
                 } else if (mainprogram->renaming == EDIT_PARAM) {
@@ -7662,14 +7661,14 @@ int main(int argc, char* argv[]) {
                         if (e.key.keysym.sym == SDLK_s) {
                             mainprogram->pathto = "SAVESTATE";
                             std::thread filereq(&Program::get_outname, mainprogram, "Save state file",
-                                                "application/ewocvj2-state", boost::filesystem::canonical(
+                                                "application/ewocvj2-state", std::filesystem::canonical(
                                             mainprogram->currelemsdir).generic_string());
                             filereq.detach();
                         }
                         if (e.key.keysym.sym == SDLK_o) {
                             mainprogram->pathto = "OPENSTATE";
                             std::thread filereq(&Program::get_inname, mainprogram, "Open state file",
-                                                "application/ewocvj2-state", boost::filesystem::canonical(
+                                                "application/ewocvj2-state", std::filesystem::canonical(
                                             mainprogram->currelemsdir).generic_string());
                             filereq.detach();
                         }
@@ -7935,7 +7934,7 @@ int main(int argc, char* argv[]) {
                         name = remove_version(name) + "_" + std::to_string(count);
                     }
                     mainprogram->get_outname("Type name of new project (directory)", "",
-                                             boost::filesystem::canonical(mainprogram->currprojdir).generic_string());
+                                             std::filesystem::canonical(mainprogram->currprojdir).generic_string());
                     if (mainprogram->path != "") {
                         SDL_GL_MakeCurrent(mainprogram->mainwindow, glc);
 #ifdef WINDOWS
@@ -7965,7 +7964,7 @@ int main(int argc, char* argv[]) {
             if (box.in()) {
                 draw_box(white, lightblue, &box, -1);
                 if (mainprogram->leftmouse) {
-                    mainprogram->get_inname("Open project", "application/ewocvj2-project", boost::filesystem::canonical(mainprogram->currprojdir).generic_string());
+                    mainprogram->get_inname("Open project", "application/ewocvj2-project", std::filesystem::canonical(mainprogram->currprojdir).generic_string());
                     if (mainprogram->path != "") {
                         SDL_GL_MakeCurrent(mainprogram->mainwindow, glc);
                         mainprogram->project->open(mainprogram->path, false);

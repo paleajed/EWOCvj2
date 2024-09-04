@@ -4,8 +4,6 @@
 #define POSIX
 #endif
 
-#include <boost/filesystem.hpp>
-
 #include <string>
 #include "GL/gl.h"
 #ifdef WINDOWS

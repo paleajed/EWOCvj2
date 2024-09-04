@@ -6,8 +6,6 @@
 
 #include "snappy-c.h"
 
-#include <boost/filesystem.hpp>
-
 #include "IL/il.h"
 extern "C" {
 #include "libavformat/avformat.h"
@@ -28,9 +26,11 @@ extern "C" {
 #include "GL/freeglut.h"
 
 #include <ostream>
+#include <fstream>
 #include <ios>
 #include <list>
 #include <map>
+#include <filesystem>
 
 extern "C" {
 #include "libavformat/avformat.h"
@@ -4234,7 +4234,7 @@ void Layer::trigger() {
         sleep(0.1f);
 #endif
 #ifdef WINDOWS
-        Sleep(100);
+        Sleep(10);
 #endif
     }
     while(this->closethread == 1) {
@@ -4416,14 +4416,14 @@ void Mixer::vidbox_handle() {
                             mainprogram->dragbinel->tex = copy_tex(lay->node->vidbox->tex);
                             if (lay->type == ELEM_LIVE) {
                                 mainprogram->dragbinel->path = lay->filename;
-                                mainprogram->dragbinel->relpath = boost::filesystem::relative(lay->filename, mainprogram->project->binsdir).generic_string();
+                                mainprogram->dragbinel->relpath = std::filesystem::relative(lay->filename, mainprogram->project->binsdir).generic_string();
                                 mainprogram->dragbinel->type = ELEM_LIVE;
                             }
                             else {
                                 mainprogram->dragpath = find_unused_filename("cliptemp_" + basename(mainprogram->draglay->filename), mainprogram->temppath, ".layer");
                                 mainmix->save_layerfile(mainprogram->dragpath, mainprogram->draglay, 1, 0);
                                 mainprogram->dragbinel->path = mainprogram->dragpath;
-                                mainprogram->dragbinel->relpath = boost::filesystem::relative(mainprogram->dragpath, mainprogram->project->binsdir).generic_string();
+                                mainprogram->dragbinel->relpath = std::filesystem::relative(mainprogram->dragpath, mainprogram->project->binsdir).generic_string();
                                 mainprogram->dragbinel->type = ELEM_LAYER;
                                 mainprogram->draglay = lay;
                             }
@@ -7358,6 +7358,32 @@ void Mixer::copy_to_comp(bool deckA, bool deckB, bool comp) {
     if (bupm) loopstation = lp;
     else loopstation = lpc;
 
+    std::vector<std::vector<Layer*>> *tempmap;
+    for (int i = comp * 2; i < comp * 2 + 2; i++) {
+        for (int i = 0; i < 4; i++) {
+            int prevl;
+            if (i == 0) {
+                tempmap = &mainmix->swapmap[0];
+                prevl = 2;
+            } else if (i == 1) {
+                tempmap = &mainmix->swapmap[1];
+                prevl = 3;
+            }
+            if (i == 2) {
+                tempmap = &mainmix->swapmap[2];
+                prevl = 0;
+            } else if (i == 3) {
+                tempmap = &mainmix->swapmap[3];
+                prevl = 1;
+            }
+            if (tempmap->size()) {
+                for (std::vector<Layer *> lv: *tempmap) {
+                    lv[1]->timeinit = mainmix->layers[prevl][lv[1]->pos]->timeinit;
+                    lv[1]->prevtime = mainmix->layers[prevl][lv[1]->pos]->prevtime;
+                }
+            }
+        }
+    }
 }
 
 
@@ -7492,15 +7518,15 @@ void Mixer::open_state(const std::string &path) {
             mainmix->currscene[1] = std::stoi(istring);
             bool bumodus = mainprogram->prevmodus;
             mainprogram->prevmodus = true;
-            if (exists(result + "_2.file")) {
+            //if (exists(result + "_2.file")) {
                 mainmix->open_mix(result + "_2.file", true);
-            }
+            //}
             bulay = mainmix->currlay[!mainprogram->prevmodus];
             bulays = mainmix->currlays[!mainprogram->prevmodus];
-            if (exists(result + "_3.file")) {
+            //if (exists(result + "_3.file")) {
                 mainprogram->prevmodus = false;
                 mainmix->open_mix(result + "_3.file", true);
-            }
+            //}
             mainprogram->prevmodus = bumodus;
         }
         if (istring == "TOSCREENAMIDI0") {
@@ -7754,8 +7780,8 @@ void Mixer::open_state(const std::string &path) {
 		if (istring.substr(0, 4) == "DECK") {
 			int scndeck = std::stoi(istring.substr(4, 1));
 			int scnnum = std::stoi(istring.substr(5, 1));
-			if (exists(result + "_" + std::to_string(deckcnt) + ".file")) {
-				boost::filesystem::rename(result + "_" + std::to_string(deckcnt) + ".file", mainprogram->temppath + "tempdecksc_" + std::to_string(scndeck) + std::to_string(scnnum) + ".deck");
+			//if (exists(result + "_" + std::to_string(deckcnt) + ".file")) {
+				std::filesystem::rename(result + "_" + std::to_string(deckcnt) + ".file", mainprogram->temppath + "tempdecksc_" + std::to_string(scndeck) + std::to_string(scnnum) + ".deck");
 				deckcnt++;
 				mainmix->scenes[scndeck][scnnum]->scnblayers.clear();
 				while (safegetline(rfile, istring)) {
@@ -7770,16 +7796,16 @@ void Mixer::open_state(const std::string &path) {
 						break;
 					}
 				}
-			}
+			//}
 		}
 	}
 
-    if (exists(result + "_0.file")) {
+    //if (exists(result + "_0.file")) {
         mainprogram->shelves[0]->open(result + "_0.file");
-    }
-    if (exists(result + "_1.file")) {
+    //
+    //if (exists(result + "_1.file")) {
         mainprogram->shelves[1]->open(result + "_1.file");
-    }
+    //}
 
 	rfile.close();
 }
@@ -8021,7 +8047,7 @@ void Mixer::do_save_state(const std::string& path, bool autosave) {
 	filestoadd2.push_back(filestoadd);
 	concat_files(outputfile, str, filestoadd2);
 	outputfile.close();
-	boost::filesystem::rename(mainprogram->temppath + "tempconcatstate", str);
+	std::filesystem::rename(mainprogram->temppath + "tempconcatstate", str);
 }
 
 
@@ -8273,10 +8299,6 @@ void Mixer::open_mix(const std::string &path, bool alive, bool loadevents) {
     }
 
 
-    if (exists(result + "_" + std::to_string(mainprogram->filecount) + ".file")) {
-        boost::filesystem::rename(result + "_" + std::to_string(mainprogram->filecount) + ".file", result + "_" + std::to_string(mainprogram->filecount) + ".jpeg");
-        mainmix->mixjpegpath = result + "_" + std::to_string(mainprogram->filecount) + ".jpeg";
-    }
     mainprogram->filecount = 0;
 
     std::vector<Layer*> C_layers;
@@ -8507,7 +8529,7 @@ void Mixer::do_save_mix(const std::string & path, bool modus, bool save) {
 	outputfile.open(tcpath, std::ios::out | std::ios::binary);
 	concat_files(outputfile, str, jpegpaths);
 	outputfile.close();
-	boost::filesystem::rename(tcpath, str);
+	std::filesystem::rename(tcpath, str);
 }
 
 
@@ -8641,10 +8663,6 @@ void Mixer::open_deck(const std::string & path, bool alive, bool loadevents, boo
         }
 	}*/
 
-    if (exists(result + "_" + std::to_string(mainprogram->filecount) + ".file")) {
-        boost::filesystem::rename(result + "_" + std::to_string(mainprogram->filecount) + ".file", result + "_" + std::to_string(mainprogram->filecount) + ".jpeg");
-        mainmix->deckjpegpath = result + "_" + std::to_string(mainprogram->filecount) + ".jpeg";
-    }
     mainprogram->filecount = 0;
 
     if (!copycomp) {
@@ -8793,7 +8811,7 @@ void Mixer::do_save_deck(const std::string& path, bool save, bool doclips) {
 	outputfile.open(mainprogram->temppath + "/tempconcat", std::ios::out | std::ios::binary);
 	concat_files(outputfile, str, jpegpaths);
 	outputfile.close();
-	boost::filesystem::rename(mainprogram->temppath + "/tempconcat", str);
+	std::filesystem::rename(mainprogram->temppath + "/tempconcat", str);
 }
 
 
@@ -9433,7 +9451,7 @@ void Mixer::save_layerfile(const std::string& path, Layer* lay, bool doclips, bo
 	outputfile.open(mainprogram->temppath + "tempconcat", std::ios::out | std::ios::binary);
 	concat_files(outputfile, str, jpegpaths);
 	outputfile.close();
-	boost::filesystem::rename(mainprogram->temppath + "tempconcat", str);
+	std::filesystem::rename(mainprogram->temppath + "tempconcat", str);
 	lay->layerfilepath = str;
 }
 
@@ -10250,7 +10268,7 @@ Layer* Mixer::read_layers(std::istream &rfile, const std::string &result, std::v
 						}
 					}
                     else if (layend->clonesetnr == -1 || mainmix->firstlayers.count(layend->clonesetnr) == 1) {
-                        if (exists(filename)) {
+                        //if (exists(filename)) {
                             if (lay->type == ELEM_IMAGE || isimage(filename)) {
                                 //Layer *kplay = lay;
                                 layend->transfered = true;
@@ -10275,7 +10293,7 @@ Layer* Mixer::read_layers(std::istream &rfile, const std::string &result, std::v
                                 layend->timeinit = kplay->timeinit;
                                 layend->initialized = kplay->initialized;
                             }
-                        }
+                        //}
                     }
                     else {
                         filename = "";
@@ -10288,8 +10306,8 @@ Layer* Mixer::read_layers(std::istream &rfile, const std::string &result, std::v
 			safegetline(rfile, istring);
 			if (filename == "") {
                 if (istring != "") {
-                    boost::filesystem::current_path(mainprogram->contentpath);
-                    filename = pathtoplatform(boost::filesystem::absolute(istring).generic_string());
+                    std::filesystem::current_path(mainprogram->contentpath);
+                    filename = pathtoplatform(std::filesystem::absolute(istring).generic_string());
                     if (layend->clonesetnr == -1 || mainmix->firstlayers.count(layend->clonesetnr) == 1) {
                         if (load && !notfound) {
                             lay->timeinit = false;
@@ -10344,7 +10362,7 @@ Layer* Mixer::read_layers(std::istream &rfile, const std::string &result, std::v
             }
             if (notfound) {
                 if (concat) {
-                    boost::filesystem::rename(result + "_" + std::to_string(mainprogram->filecount) + ".file",
+                    std::filesystem::rename(result + "_" + std::to_string(mainprogram->filecount) + ".file",
                                               result + "_" + std::to_string(mainprogram->filecount) + ".jpeg");
                     open_thumb(result + "_" + std::to_string(mainprogram->filecount) + ".jpeg", layend->jpegtex);
                 }
@@ -10676,13 +10694,13 @@ Layer* Mixer::read_layers(std::istream &rfile, const std::string &result, std::v
                         if (clp->type == ELEM_LAYER && !isvid) {
                             // pass control to CLIPLAYER
                         }
-                        else if (exists(istring)) {
+                        /**else if (exists(istring)) {
                             clp->path = istring;
                             clp->insert(layend, layend->clips.end() - 1);
                         }
                         else {
                             clp->path = "";
-                        }
+                        }*/
 					}
                     if (istring == "RELPATH") {
                         safegetline(rfile, istring);
@@ -10690,8 +10708,8 @@ Layer* Mixer::read_layers(std::istream &rfile, const std::string &result, std::v
                             // pass control to CLIPLAYER
                         }
                         else if (clp->path == "" && istring != "") {
-                            boost::filesystem::current_path(mainprogram->contentpath);
-                            clp->path = pathtoplatform(boost::filesystem::absolute(istring).generic_string());
+                            std::filesystem::current_path(mainprogram->contentpath);
+                            clp->path = pathtoplatform(std::filesystem::absolute(istring).generic_string());
                             if (!exists(clp->path)) {
                                 if (isvid) {
                                     mainmix->retargeting = true;
@@ -10734,7 +10752,7 @@ Layer* Mixer::read_layers(std::istream &rfile, const std::string &result, std::v
                         glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_BORDER);
                         glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_BORDER);
 						if (concat) {
-							boost::filesystem::rename(result + "_" + std::to_string(mainprogram->filecount) + ".file", result + "_" + std::to_string(mainprogram->filecount) + ".jpeg");
+							std::filesystem::rename(result + "_" + std::to_string(mainprogram->filecount) + ".file", result + "_" + std::to_string(mainprogram->filecount) + ".jpeg");
 							open_thumb(result + "_" + std::to_string(mainprogram->filecount) + ".jpeg", clp->tex);
                             clp->jpegpath = result + "_" + std::to_string(mainprogram->filecount) + ".jpeg";
                             mainprogram->filecount++;
@@ -11045,7 +11063,7 @@ std::vector<std::string> Mixer::write_layer(Layer* lay, std::ostream& wfile, boo
 	if (lay->type != ELEM_LIVE) {
 		wfile << "RELPATH\n";
 		if (lay->filename != "") {
-			wfile << boost::filesystem::relative(lay->filename, mainprogram->contentpath).generic_string();
+			wfile << std::filesystem::relative(lay->filename, mainprogram->contentpath).generic_string();
 		}
 		else {
 			wfile << lay->filename;
@@ -11053,7 +11071,7 @@ std::vector<std::string> Mixer::write_layer(Layer* lay, std::ostream& wfile, boo
 		wfile << "\n";
 		if (lay->filename != "") {
 			wfile << "FILESIZE\n";
-			wfile << std::to_string(boost::filesystem::file_size(lay->filename));
+			wfile << std::to_string(std::filesystem::file_size(lay->filename));
 			wfile << "\n";
 		}
 	}
@@ -11249,7 +11267,7 @@ std::vector<std::string> Mixer::write_layer(Layer* lay, std::ostream& wfile, boo
 			wfile << "\n";
             wfile << "RELPATH\n";
             if (clip->path != "") {
-                wfile << boost::filesystem::relative(clip->path, mainprogram->contentpath).generic_string();
+                wfile << std::filesystem::relative(clip->path, mainprogram->contentpath).generic_string();
             }
             else {
                 wfile << clip->path;
@@ -11257,7 +11275,7 @@ std::vector<std::string> Mixer::write_layer(Layer* lay, std::ostream& wfile, boo
             wfile << "\n";
             if (clip->path != "") {
                 wfile << "FILESIZE\n";
-                wfile << std::to_string(boost::filesystem::file_size(clip->path));
+                wfile << std::to_string(std::filesystem::file_size(clip->path));
                 wfile << "\n";
             }
 			if (clip->type == ELEM_LAYER && !isvideo(clip->path)) {
@@ -12805,7 +12823,7 @@ Clip::~Clip() {
 	if (this->tex != -1) glDeleteTextures(1, &this->tex);
 	if (this->path.rfind(".layer") != std::string::npos) {
 		if (this->path.find("cliptemp_") != std::string::npos) {
-			boost::filesystem::remove(this->path);
+			std::filesystem::remove(this->path);
 		}
 	}
 }

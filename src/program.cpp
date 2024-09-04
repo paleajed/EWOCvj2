@@ -5,7 +5,6 @@
 #endif
 
 #include <boost/algorithm/string.hpp>
-#include <boost/filesystem.hpp>
 
 #include <ostream>
 #include <istream>
@@ -15,6 +14,7 @@
 #include <string>
 #include <codecvt>
 #include <algorithm>
+#include <filesystem>
 
 #include "GL/glew.h"
 #include "GL/gl.h"
@@ -280,29 +280,29 @@ Program::Program() {
 #ifdef WINDOWS
     wchar_t *wcharPath1 = 0;
 	HRESULT hr = SHGetKnownFolderPath(FOLDERID_Documents, 0, nullptr, &wcharPath1);
-    boost::filesystem::path p1(wcharPath1);
+    std::filesystem::path p1(wcharPath1);
     //this->docpath = "D:/EWOCvj2/";
     this->docpath = p1.generic_string() + "/EWOCvj2/";
     CoTaskMemFree(wcharPath1);
-    if (!exists(this->docpath)) boost::filesystem::create_directory(this->docpath);
+    if (!exists(this->docpath)) std::filesystem::create_directory(this->docpath);
     wchar_t *wcharPath2 = 0;
     HRESULT hr2 = SHGetKnownFolderPath(FOLDERID_Fonts, 0, nullptr, &wcharPath2);
-    boost::filesystem::path p2(wcharPath2);
+    std::filesystem::path p2(wcharPath2);
     //this->fontpath = "D:/Fonts/";
     this->fontpath = p2.generic_string();
     CoTaskMemFree(wcharPath2);
     wchar_t *wcharPath3 = 0;
     HRESULT hr3 = SHGetKnownFolderPath(FOLDERID_Videos, 0, nullptr, &wcharPath3);
-    boost::filesystem::path p3(wcharPath3);
+    std::filesystem::path p3(wcharPath3);
     //this->contentpath = "D:/";
     this->contentpath = p3.generic_string() + "/";
     CoTaskMemFree(wcharPath3);
 	std::wstring wstr4;
 	wchar_t wcharPath[MAX_PATH];
 	if (GetTempPathW(MAX_PATH, wcharPath)) wstr4 = wcharPath;
-    boost::filesystem::path p4(wstr4);
+    std::filesystem::path p4(wstr4);
 	this->temppath = p4.generic_string() + "EWOCvj2/";
-    if (!exists(this->temppath)) boost::filesystem::create_directory(boost::filesystem::path(this->temppath));
+    if (!exists(this->temppath)) std::filesystem::create_directory(std::filesystem::path(this->temppath));
     printf("1\n");
     printf("11\n");
     fflush(stdout);
@@ -915,9 +915,9 @@ LPCSTR Program::mime_to_wildcard(std::string filters) {
 void Program::win_dialog(const char* title, LPCSTR filters, std::string defaultdir, bool open, bool multi) {
 	//SetThreadPriority(GetCurrentThread(), THREAD_MODE_BACKGROUND_BEGIN);
 	boost::replace_all(defaultdir, "/", "\\");
-	boost::filesystem::path p(defaultdir);
+	std::filesystem::path p(defaultdir);
 	std::string name;
-	if (!boost::filesystem::is_directory(p)) {
+	if (!std::filesystem::is_directory(p)) {
 		name = basename(defaultdir);
 		defaultdir = defaultdir.substr(0, defaultdir.length() - name.length() - 1);
 	}
@@ -3026,8 +3026,8 @@ void get_cameras()
     mainprogram->devvideomap.clear();
     mainprogram->livedevices.clear();
 	std::unordered_map<std::string, std::wstring> map;
-	boost::filesystem::path dir("/sys/class/video4linux");
-	for (boost::filesystem::directory_iterator iter(dir), end; iter != end; ++iter) {
+	std::filesystem::path dir("/sys/class/video4linux");
+	for (std::filesystem::directory_iterator iter(dir), end; iter != end; ++iter) {
 		std::ifstream name;
 		name.open(iter->path().generic_string() + "/name");
 		std::string istring;
@@ -4007,25 +4007,25 @@ void Program::handle_laymenu1() {
                 //mainprogram->clickednextto = mainmix->mouselayer->deck;
             }
             mainmix->addlay = false;
-            std::thread filereq(&Program::get_multinname, mainprogram, "Open video/image/layer file", "", boost::filesystem::canonical(mainprogram->currfilesdir).generic_string());
+            std::thread filereq(&Program::get_multinname, mainprogram, "Open video/image/layer file", "", std::filesystem::canonical(mainprogram->currfilesdir).generic_string());
             filereq.detach();
         }
         if (k == 2) {
             mainprogram->pathto = "OPENFILESQUEUE";
             mainprogram->loadlay = mainmix->mouselayer;
-            std::thread filereq(&Program::get_multinname, mainprogram, "Open video/image/layer file", "", boost::filesystem::canonical(mainprogram->currfilesdir).generic_string());
+            std::thread filereq(&Program::get_multinname, mainprogram, "Open video/image/layer file", "", std::filesystem::canonical(mainprogram->currfilesdir).generic_string());
             filereq.detach();
         }
 		if (k == 3 && !cond) {
 			mainprogram->pathto = "OPENFILESSTACK";
 			mainprogram->loadlay = mainmix->mouselayer;
             mainmix->addlay = false;
-			std::thread filereq(&Program::get_multinname, mainprogram, "Open video/image/layer file", "", boost::filesystem::canonical(mainprogram->currelemsdir).generic_string());
+			std::thread filereq(&Program::get_multinname, mainprogram, "Open video/image/layer file", "", std::filesystem::canonical(mainprogram->currelemsdir).generic_string());
 			filereq.detach();
 		}
 		else if (k == 4 - cond) {
 			mainprogram->pathto = "SAVELAYFILE";
-			std::thread filereq(&Program::get_outname, mainprogram, "Save layer file", "application/ewocvj2-layer", boost::filesystem::canonical(mainprogram->currelemsdir).generic_string());
+			std::thread filereq(&Program::get_outname, mainprogram, "Save layer file", "application/ewocvj2-layer", std::filesystem::canonical(mainprogram->currelemsdir).generic_string());
 			filereq.detach();
 		}
 		else if (k == 5 - cond) {
@@ -4033,12 +4033,12 @@ void Program::handle_laymenu1() {
 		}
 		else if (k == 6 - cond) {
 			mainprogram->pathto = "OPENDECK";
-			std::thread filereq(&Program::get_inname, mainprogram, "Open deck file", "application/ewocvj2-deck", boost::filesystem::canonical(mainprogram->currelemsdir).generic_string());
+			std::thread filereq(&Program::get_inname, mainprogram, "Open deck file", "application/ewocvj2-deck", std::filesystem::canonical(mainprogram->currelemsdir).generic_string());
 			filereq.detach();
 		}
 		else if (k == 7 - cond) {
 			mainprogram->pathto = "SAVEDECK";
-			std::thread filereq(&Program::get_outname, mainprogram, "Save deck file", "application/ewocvj2-deck", boost::filesystem::canonical(mainprogram->currelemsdir).generic_string());
+			std::thread filereq(&Program::get_outname, mainprogram, "Save deck file", "application/ewocvj2-deck", std::filesystem::canonical(mainprogram->currelemsdir).generic_string());
 			filereq.detach();
 		}
 		else if (k == 8 - cond) {
@@ -4046,13 +4046,13 @@ void Program::handle_laymenu1() {
 		}
 		else if (k == 9 - cond) {
 			mainprogram->pathto = "OPENMIX";
-			std::thread filereq(&Program::get_inname, mainprogram, "Open mix file", "application/ewocvj2-mix", boost::filesystem::canonical(mainprogram->currelemsdir).generic_string());
+			std::thread filereq(&Program::get_inname, mainprogram, "Open mix file", "application/ewocvj2-mix", std::filesystem::canonical(mainprogram->currelemsdir).generic_string());
 			filereq.detach();
 		}
 		else if (k == 10 - cond) {
 			mainprogram->pathto = "SAVEMIX";
 			std::thread filereq(&Program::get_outname, mainprogram, "Save mix file", "application/ewocvj2-mix",
-                       boost::filesystem::canonical(mainprogram->currelemsdir).generic_string());
+                       std::filesystem::canonical(mainprogram->currelemsdir).generic_string());
 			filereq.detach();
 		}
 		else if (k == 11 - cond) {
@@ -4213,7 +4213,7 @@ void Program::handle_laymenu1() {
             binel->bin = nullptr;
             binel->type = ELEM_FILE;
             binel->path = mainmix->mouselayer->filename;
-            binel->relpath = boost::filesystem::relative(mainmix->mouselayer->filename, mainprogram->project->binsdir).generic_string();
+            binel->relpath = std::filesystem::relative(mainmix->mouselayer->filename, mainprogram->project->binsdir).generic_string();
             if (mainmix->mouselayer->isclone) {
                 mainmix->mouselayer = mainmix->firstlayers[mainmix->mouselayer->clonesetnr];
             }
@@ -4255,7 +4255,7 @@ void Program::handle_newlaymenu() {
 			mainprogram->pathto = "OPENFILESSTACK";
 			mainmix->addlay = true;
 			mainmix->mouselayer = nullptr;
-			std::thread filereq(&Program::get_multinname, mainprogram, "Open video/image/layer file", "", boost::filesystem::canonical(mainprogram->currfilesdir).generic_string());
+			std::thread filereq(&Program::get_multinname, mainprogram, "Open video/image/layer file", "", std::filesystem::canonical(mainprogram->currfilesdir).generic_string());
 			filereq.detach();
 		}
 		else if (k == 2) {
@@ -4263,12 +4263,12 @@ void Program::handle_newlaymenu() {
 		}
 		else if (k == 3) {
 			mainprogram->pathto = "OPENDECK";
-			std::thread filereq(&Program::get_inname, mainprogram, "Open deck file", "application/ewocvj2-deck", boost::filesystem::canonical(mainprogram->currelemsdir).generic_string());
+			std::thread filereq(&Program::get_inname, mainprogram, "Open deck file", "application/ewocvj2-deck", std::filesystem::canonical(mainprogram->currelemsdir).generic_string());
 			filereq.detach();
 		}
 		else if (k == 4) {
 			mainprogram->pathto = "SAVEDECK";
-			std::thread filereq(&Program::get_outname, mainprogram, "Save deck file", "application/ewocvj2-deck", boost::filesystem::canonical(mainprogram->currelemsdir).generic_string());
+			std::thread filereq(&Program::get_outname, mainprogram, "Save deck file", "application/ewocvj2-deck", std::filesystem::canonical(mainprogram->currelemsdir).generic_string());
 			filereq.detach();
 		}
 		else if (k == 5) {
@@ -4276,12 +4276,12 @@ void Program::handle_newlaymenu() {
 		}
 		else if (k == 6) {
 			mainprogram->pathto = "OPENMIX";
-			std::thread filereq(&Program::get_inname, mainprogram, "Open mix file", "application/ewocvj2-mix", boost::filesystem::canonical(mainprogram->currelemsdir).generic_string());
+			std::thread filereq(&Program::get_inname, mainprogram, "Open mix file", "application/ewocvj2-mix", std::filesystem::canonical(mainprogram->currelemsdir).generic_string());
 			filereq.detach();
 		}
 		else if (k == 7) {
 			mainprogram->pathto = "SAVEMIX";
-			std::thread filereq(&Program::get_outname, mainprogram, "Save mix file", "application/ewocvj2-mix", boost::filesystem::canonical(mainprogram->currelemsdir).generic_string());
+			std::thread filereq(&Program::get_outname, mainprogram, "Save mix file", "application/ewocvj2-mix", std::filesystem::canonical(mainprogram->currelemsdir).generic_string());
 			filereq.detach();
 		}
 	}
@@ -4325,7 +4325,7 @@ void Program::handle_clipmenu() {
 		}
 		if (k == 1) {
 			mainprogram->pathto = "OPENFILESCLIP";
-			std::thread filereq(&Program::get_multinname, mainprogram, "Open clip video file", "", boost::filesystem::canonical(mainprogram->currfilesdir).generic_string());
+			std::thread filereq(&Program::get_multinname, mainprogram, "Open clip video file", "", std::filesystem::canonical(mainprogram->currfilesdir).generic_string());
 			filereq.detach();
 		}
 		if (k == 2) {
@@ -4359,12 +4359,12 @@ void Program::handle_mainmenu() {
             count++;
             name = remove_version(name) + "_" + std::to_string(count);
         }
-		std::thread filereq(&Program::get_outname, this, "New project", "application/ewocvj2-project", boost::filesystem::absolute(reqdir + name).generic_string());
+		std::thread filereq(&Program::get_outname, this, "New project", "application/ewocvj2-project", std::filesystem::absolute(reqdir + name).generic_string());
 		filereq.detach();
 	}
 	else if (k == 1) {
 		this->pathto = "OPENPROJECT";
-        std::thread filereq(&Program::get_inname, this, "Open project", "application/ewocvj2-project", boost::filesystem::canonical(this->currprojdir).generic_string());
+        std::thread filereq(&Program::get_inname, this, "Open project", "application/ewocvj2-project", std::filesystem::canonical(this->currprojdir).generic_string());
         filereq.detach();
 	}
 	else if (k == 2) {
@@ -4379,7 +4379,7 @@ void Program::handle_mainmenu() {
     else if (k == 4) {
         // load autosave
         this->pathto = "OPENAUTOSAVE";
-        std::thread filereq(&Program::get_inname, this, "Open autosaved project", "application/ewocvj2-project", boost::filesystem::canonical(this->project->autosavedir).generic_string());
+        std::thread filereq(&Program::get_inname, this, "Open autosaved project", "application/ewocvj2-project", std::filesystem::canonical(this->project->autosavedir).generic_string());
         filereq.detach();
     }
 	else if (k == 5) {
@@ -4452,7 +4452,7 @@ void Program::handle_shelfmenu() {
 	if (k == 0) {
 	    // open file(s) into shelf
         mainprogram->pathto = "OPENFILESSHELF";
-        std::thread filereq(&Program::get_multinname, mainprogram, "Load file(s) in shelf", "", boost::filesystem::canonical(mainprogram->currfilesdir).generic_string());
+        std::thread filereq(&Program::get_multinname, mainprogram, "Load file(s) in shelf", "", std::filesystem::canonical(mainprogram->currfilesdir).generic_string());
         filereq.detach();
     }
     else if (k == 1) {
@@ -4461,12 +4461,12 @@ void Program::handle_shelfmenu() {
         }
 	else if (k == 2) {
 		mainprogram->pathto = "OPENSHELF";
-		std::thread filereq(&Program::get_inname, mainprogram, "Open shelf file", "application/ewocvj2-shelf", boost::filesystem::canonical(mainprogram->currshelfdir).generic_string());
+		std::thread filereq(&Program::get_inname, mainprogram, "Open shelf file", "application/ewocvj2-shelf", std::filesystem::canonical(mainprogram->currshelfdir).generic_string());
 		filereq.detach();
 	}
 	else if (k == 3) {
 		mainprogram->pathto = "SAVESHELF";
-		std::thread filereq(&Program::get_outname, mainprogram, "Save shelf file", "application/ewocvj2-shelf", boost::filesystem::canonical(mainprogram->currshelfdir).generic_string());
+		std::thread filereq(&Program::get_outname, mainprogram, "Save shelf file", "application/ewocvj2-shelf", std::filesystem::canonical(mainprogram->currshelfdir).generic_string());
 		filereq.detach();
 	}
 	else if (k == 4 || k == 5) {
@@ -4551,7 +4551,7 @@ void Program::handle_filemenu() {
                     name = remove_version(name) + "_" + std::to_string(count);
                 }
                 std::thread filereq(&Program::get_outname, mainprogram, "New project", "application/ewocvj2-project",
-                                    boost::filesystem::absolute(reqdir + name).generic_string());
+                                    std::filesystem::absolute(reqdir + name).generic_string());
                 filereq.detach();
             } else if (mainprogram->menuresults[0] == 1) {
                 // new state
@@ -4581,32 +4581,32 @@ void Program::handle_filemenu() {
             if (mainprogram->menuresults[0] == 0) {
                 mainprogram->pathto = "OPENPROJECT";
                 std::thread filereq(&Program::get_inname, mainprogram, "Open project", "application/ewocvj2-project",
-                                    boost::filesystem::canonical(mainprogram->currprojdir).generic_string());
+                                    std::filesystem::canonical(mainprogram->currprojdir).generic_string());
                 filereq.detach();
             } else if (mainprogram->menuresults[0] == 1) {
                 mainprogram->pathto = "OPENSTATE";
                 std::thread filereq(&Program::get_inname, mainprogram, "Open state file", "application/ewocvj2-state",
-                                    boost::filesystem::canonical(mainprogram->currelemsdir).generic_string());
+                                    std::filesystem::canonical(mainprogram->currelemsdir).generic_string());
                 filereq.detach();
             } else if (mainprogram->menuresults[0] == 2) {
                 // open mix file
                 mainprogram->pathto = "OPENMIX";
                 std::thread filereq(&Program::get_inname, mainprogram, "Open mix file", "application/ewocvj2-mix",
-                                    boost::filesystem::canonical(mainprogram->currelemsdir).generic_string());
+                                    std::filesystem::canonical(mainprogram->currelemsdir).generic_string());
                 filereq.detach();
             } else if (mainprogram->menuresults[0] == 3) {
                 // open deck file in deck A
                 mainmix->mousedeck = 0;
                 mainprogram->pathto = "OPENDECK";
                 std::thread filereq(&Program::get_inname, mainprogram, "Open deck file", "application/ewocvj2-deck",
-                                    boost::filesystem::canonical(mainprogram->currelemsdir).generic_string());
+                                    std::filesystem::canonical(mainprogram->currelemsdir).generic_string());
                 filereq.detach();
             } else if (mainprogram->menuresults[0] == 4) {
                 // open deck file in deck B
                 mainmix->mousedeck = 1;
                 mainprogram->pathto = "OPENDECK";
                 std::thread filereq(&Program::get_inname, mainprogram, "Open deck file", "application/ewocvj2-deck",
-                                    boost::filesystem::canonical(mainprogram->currelemsdir).generic_string());
+                                    std::filesystem::canonical(mainprogram->currelemsdir).generic_string());
                 filereq.detach();
             } else if (mainprogram->menuresults[0] == 5) {
                 // open files in in deck A
@@ -4619,7 +4619,7 @@ void Program::handle_filemenu() {
                     mainprogram->loadlay = lvec[mainprogram->menuresults[1]];
                 }
                 std::thread filereq(&Program::get_multinname, mainprogram, "Open video/image/layer file", "",
-                                    boost::filesystem::canonical(mainprogram->currfilesdir).generic_string());
+                                    std::filesystem::canonical(mainprogram->currfilesdir).generic_string());
                 filereq.detach();
             } else if (mainprogram->menuresults[0] == 6) {
                 // open files in layer in deck B
@@ -4632,7 +4632,7 @@ void Program::handle_filemenu() {
                     mainprogram->loadlay = lvec[mainprogram->menuresults[1]];
                 }
                 std::thread filereq(&Program::get_multinname, mainprogram, "Open video/image/layer file", "",
-                                    boost::filesystem::canonical(mainprogram->currfilesdir).generic_string());
+                                    std::filesystem::canonical(mainprogram->currfilesdir).generic_string());
                 filereq.detach();
             } else if (mainprogram->menuresults[0] == 7) {
                 // open files in in deck A
@@ -4640,7 +4640,7 @@ void Program::handle_filemenu() {
                 mainmix->mousedeck = 0;
                 mainprogram->pathto = "OPENFILESQUEUE";
                 std::thread filereq(&Program::get_multinname, mainprogram, "Open video/image/layer file", "",
-                                    boost::filesystem::canonical(mainprogram->currfilesdir).generic_string());
+                                    std::filesystem::canonical(mainprogram->currfilesdir).generic_string());
                 filereq.detach();
                 if (mainprogram->menuresults[1] == lvec.size()) {
                     mainmix->addlay = true;
@@ -4653,7 +4653,7 @@ void Program::handle_filemenu() {
                 mainmix->mousedeck = 1;
                 mainprogram->pathto = "OPENFILESQUEUE";
                 std::thread filereq(&Program::get_multinname, mainprogram, "Open video/image/layer file", "",
-                                    boost::filesystem::canonical(mainprogram->currfilesdir).generic_string());
+                                    std::filesystem::canonical(mainprogram->currfilesdir).generic_string());
                 filereq.detach();
                 if (mainprogram->menuresults[1] == lvec.size()) {
                     mainmix->addlay = true;
@@ -4675,24 +4675,24 @@ void Program::handle_filemenu() {
             } else if (mainprogram->menuresults[0] == 1) {
                 mainprogram->pathto = "SAVESTATE";
                 std::thread filereq(&Program::get_outname, mainprogram, "Save state file", "application/ewocvj2-state",
-                                    boost::filesystem::canonical(mainprogram->currelemsdir).generic_string());
+                                    std::filesystem::canonical(mainprogram->currelemsdir).generic_string());
                 filereq.detach();
             } else if (mainprogram->menuresults[0] == 2) {
                 mainprogram->pathto = "SAVEMIX";
                 std::thread filereq(&Program::get_outname, mainprogram, "Open mix file", "application/ewocvj2-mix",
-                                    boost::filesystem::canonical(mainprogram->currelemsdir).generic_string());
+                                    std::filesystem::canonical(mainprogram->currelemsdir).generic_string());
                 filereq.detach();
             } else if (mainprogram->menuresults[0] == 3) {
                 mainmix->mousedeck = 0;
                 mainprogram->pathto = "SAVEDECK";
                 std::thread filereq(&Program::get_outname, mainprogram, "Save deck file", "application/ewocvj2-deck",
-                                    boost::filesystem::canonical(mainprogram->currelemsdir).generic_string());
+                                    std::filesystem::canonical(mainprogram->currelemsdir).generic_string());
                 filereq.detach();
             } else if (mainprogram->menuresults[0] == 4) {
                 mainmix->mousedeck = 1;
                 mainprogram->pathto = "SAVEDECK";
                 std::thread filereq(&Program::get_outname, mainprogram, "Save deck file", "application/ewocvj2-deck",
-                                    boost::filesystem::canonical(mainprogram->currelemsdir).generic_string());
+                                    std::filesystem::canonical(mainprogram->currelemsdir).generic_string());
                 filereq.detach();
             } else if (mainprogram->menuresults[0] == 5) {
                 // save layer from deck A
@@ -4700,7 +4700,7 @@ void Program::handle_filemenu() {
                 mainmix->mouselayer = lvec[mainprogram->menuresults[1]];
                 mainprogram->pathto = "SAVELAYFILE";
                 std::thread filereq(&Program::get_outname, mainprogram, "Save layer file", "application/ewocvj2-layer",
-                                    boost::filesystem::canonical(mainprogram->currelemsdir).generic_string());
+                                    std::filesystem::canonical(mainprogram->currelemsdir).generic_string());
                 filereq.detach();
             } else if (mainprogram->menuresults[0] == 6) {
                 // save layer from deck B
@@ -4708,7 +4708,7 @@ void Program::handle_filemenu() {
                 mainmix->mouselayer = lvec[mainprogram->menuresults[1]];
                 mainprogram->pathto = "SAVELAYFILE";
                 std::thread filereq(&Program::get_outname, mainprogram, "Save layer file", "application/ewocvj2-layer",
-                                    boost::filesystem::canonical(mainprogram->currelemsdir).generic_string());
+                                    std::filesystem::canonical(mainprogram->currelemsdir).generic_string());
                 filereq.detach();
             }
         }
@@ -5315,7 +5315,7 @@ bool Program::preferences_handle() {
                             this->pathto = "CHOOSEDIR";
                             std::string title = "Open " + mci->items[i]->name + " directory";
                             std::thread filereq(&Program::get_dir, this, title.c_str(),
-                                                boost::filesystem::canonical(mci->items[i]->path).generic_string());
+                                                std::filesystem::canonical(mci->items[i]->path).generic_string());
                             filereq.detach();
                         }
                     }
@@ -5347,7 +5347,7 @@ bool Program::preferences_handle() {
             if (box->in(mx, my) && this->leftmouse) {
                 this->pathto = "ADDSEARCHDIR";
                 std::thread filereq(&Program::get_dir, this, "Add a search location",
-                                    boost::filesystem::canonical(this->currfilesdir).generic_string());
+                                    std::filesystem::canonical(this->currfilesdir).generic_string());
                 filereq.detach();
             }
         }
@@ -5460,7 +5460,7 @@ bool Program::preferences_handle() {
                     // rename project file
                     std::string pathdir = dirname(this->project->path);
                     std::string newdir = dirname(pathdir.substr(0, pathdir.size() - 2)) + this->project->name + "/";
-                    boost::filesystem::rename(pathdir, newdir);
+                    std::filesystem::rename(pathdir, newdir);
                     // rename project directory
                     int pos = std::find(this->recentprojectpaths.begin(), this->recentprojectpaths.end(), this->project->path) - this->recentprojectpaths.begin();
                     this->project->path = newdir +
@@ -5485,7 +5485,7 @@ bool Program::preferences_handle() {
                             if (str.find(bubd) != std::string::npos) {
                                 str = str.replace(str.find(bubd), bubd.size(), this->project->binsdir);
                                 binsmain->bins[i]->elements[j]->path = str;
-                                binsmain->bins[i]->elements[j]->relpath = boost::filesystem::relative(str, mainprogram->project->binsdir).generic_string();
+                                binsmain->bins[i]->elements[j]->relpath = std::filesystem::relative(str, mainprogram->project->binsdir).generic_string();
                             }
                         }
                     }
@@ -6381,8 +6381,8 @@ GLuint Program::set_shader() {
 
 void Project::delete_dirs(const std::string &path) {
 	std::string dir = remove_extension(path) + "/";
-	boost::filesystem::path d{ dir };
-	boost::filesystem::remove_all(d);
+	std::filesystem::path d{ dir };
+	std::filesystem::remove_all(d);
 	for (int i = 0; i < binsmain->bins.size(); i++) {
 		binsmain->bins[i]->path = dir + "bins/" + binsmain->bins[i]->name + ".bin";
 	}
@@ -6393,7 +6393,7 @@ void Project::copy_dirs(const std::string &path) {
     std::string src = pathtoplatform(dirname(this->path));
     std::string dest = pathtoplatform(path);
     copy_dir(src, dest);
-    boost::filesystem::remove(path + "/" + basename(this->path));
+    std::filesystem::remove(path + "/" + basename(this->path));
     this->binsdir = path + "/bins/";
     this->recdir = path + "/recordings/";
     this->shelfdir = path + "/shelves/";
@@ -6408,18 +6408,18 @@ void Project::create_dirs(const std::string &path) {
     this->shelfdir = dir + "shelves/";
     this->autosavedir = dir + "autosaves/";
     this->elementsdir = dir + "elements/";
-    boost::filesystem::path d{ dir };
-    boost::filesystem::create_directory(d);
-    boost::filesystem::path p1{ this->binsdir };
-    boost::filesystem::create_directory(p1);
-    boost::filesystem::path p2{ this->recdir };
-    boost::filesystem::create_directory(p2);
-    boost::filesystem::path p3{ this->shelfdir };
-    boost::filesystem::create_directory(p3);
-    boost::filesystem::path p4{ this->autosavedir };
-    boost::filesystem::create_directory(p4);
-    boost::filesystem::path p5{ this->elementsdir };
-    boost::filesystem::create_directory(p5);
+    std::filesystem::path d{ dir };
+    std::filesystem::create_directory(d);
+    std::filesystem::path p1{ this->binsdir };
+    std::filesystem::create_directory(p1);
+    std::filesystem::path p2{ this->recdir };
+    std::filesystem::create_directory(p2);
+    std::filesystem::path p3{ this->shelfdir };
+    std::filesystem::create_directory(p3);
+    std::filesystem::path p4{ this->autosavedir };
+    std::filesystem::create_directory(p4);
+    std::filesystem::path p5{ this->elementsdir };
+    std::filesystem::create_directory(p5);
 }
 
 void Project::create_dirs_autosave(const std::string &path) {
@@ -6429,18 +6429,18 @@ void Project::create_dirs_autosave(const std::string &path) {
     this->autosavedir = dir + "/autosaves/";
     this->recdir = dir + "recordings/";
     this->elementsdir = dir + "elements/";
-    boost::filesystem::path d{ dir };
-    boost::filesystem::create_directory(d);
-    boost::filesystem::path p1{ dir + "/bins/" };
-    boost::filesystem::create_directory(p1);
-    boost::filesystem::path p2{ dir + "/autosaves/" };
-    boost::filesystem::create_directory(p2);
-    boost::filesystem::path p3{ dir + "/shelves/" };
-    boost::filesystem::create_directory(p3);
-    boost::filesystem::path p4{ dir + "/recordings/" };
-    boost::filesystem::create_directory(p4);
-    boost::filesystem::path p5{ dir + "/elements/" };
-    boost::filesystem::create_directory(p5);
+    std::filesystem::path d{ dir };
+    std::filesystem::create_directory(d);
+    std::filesystem::path p1{ dir + "/bins/" };
+    std::filesystem::create_directory(p1);
+    std::filesystem::path p2{ dir + "/autosaves/" };
+    std::filesystem::create_directory(p2);
+    std::filesystem::path p3{ dir + "/shelves/" };
+    std::filesystem::create_directory(p3);
+    std::filesystem::path p4{ dir + "/recordings/" };
+    std::filesystem::create_directory(p4);
+    std::filesystem::path p5{ dir + "/elements/" };
+    std::filesystem::create_directory(p5);
 }
 
 void Project::newp(const std::string &path) {
@@ -6550,9 +6550,9 @@ void Project::open(const std::string& path, bool autosave) {
 	int cb = binsmain->read_binslist();
 	for (int i = 0; i < binsmain->bins.size(); i++) {
 		std::string binname = this->binsdir + binsmain->bins[i]->name + ".bin";
-		if (exists(binname)) {
+		//if (exists(binname)) {
 			binsmain->open_bin(binname, binsmain->bins[i]);
-		}
+		//}
 	}
 	binsmain->make_currbin(cb);
 
@@ -6726,7 +6726,7 @@ void Project::do_save(const std::string& path, bool autosave) {
 	filestoadd2.push_back(filestoadd);
 	concat_files(outputfile, str, filestoadd2);
 	outputfile.close();
-	boost::filesystem::rename(mainprogram->temppath + "tempconcatproj", str);
+	std::filesystem::rename(mainprogram->temppath + "tempconcatproj", str);
 
 	if (!autosave) {
         if (std::find(mainprogram->recentprojectpaths.begin(), mainprogram->recentprojectpaths.end(), str) ==
@@ -6920,8 +6920,8 @@ void Preferences::load() {
                                         if (pi->dest) *(std::string*)pi->dest = pi->str;
                                     }
                                     else if (pi->type == PREF_PATH) {
-                                        boost::filesystem::path p(istring);
-                                        if (!boost::filesystem::exists(p)) {
+                                        std::filesystem::path p(istring);
+                                        if (!std::filesystem::exists(p)) {
                                             pi->path = *(std::string*)pi->dest;
                                             continue;
                                         }
@@ -6998,23 +6998,23 @@ void Preferences::load() {
         }
         if (istring == "CURRFILESDIR") {
             safegetline(rfile, istring);
-            boost::filesystem::path p(istring);
-            if (boost::filesystem::exists(p)) mainprogram->currfilesdir = istring;
+            std::filesystem::path p(istring);
+            if (std::filesystem::exists(p)) mainprogram->currfilesdir = istring;
         }
         /*else if (istring == "CURRELEMSDIR") {
             safegetline(rfile, istring);
-            boost::filesystem::path p(istring);
-            if (boost::filesystem::exists(p)) mainprogram->currelemsdir = istring;
+            std::filesystem::path p(istring);
+            if (std::filesystem::exists(p)) mainprogram->currelemsdir = istring;
         }
         else if (istring == "CURRELEMSDIR") {
             safegetline(rfile, istring);
-            boost::filesystem::path p(istring);
-            if (boost::filesystem::exists(p)) mainprogram->currelemsdir = istring;
+            std::filesystem::path p(istring);
+            if (std::filesystem::exists(p)) mainprogram->currelemsdir = istring;
         }
         else if (istring == "currelemsdir") {
             safegetline(rfile, istring);
-            boost::filesystem::path p(istring);
-            if (boost::filesystem::exists(p)) mainprogram->currelemsdir = istring;
+            std::filesystem::path p(istring);
+            if (std::filesystem::exists(p)) mainprogram->currelemsdir = istring;
         }*/
     }
 
@@ -8176,9 +8176,9 @@ void Shelf::save(const std::string &path) {
     }
 
     // save shelf in a directory
-    boost::filesystem::path p{ str };
-    if (!boost::filesystem::exists(p)) {
-        boost::filesystem::create_directory(p);
+    std::filesystem::path p{ str };
+    if (!std::filesystem::exists(p)) {
+        std::filesystem::create_directory(p);
     }
     str += '/' + basename(path);
 
@@ -8195,7 +8195,7 @@ void Shelf::save(const std::string &path) {
         wfile << "\n";
         wfile << "RELPATH\n";
         if (elem->path != "") {
-            wfile << boost::filesystem::relative(elem->path, mainprogram->contentpath).generic_string();
+            wfile << std::filesystem::relative(elem->path, mainprogram->contentpath).generic_string();
         }
         else {
             wfile << elem->path;
@@ -8211,7 +8211,7 @@ void Shelf::save(const std::string &path) {
         filestoadd.push_back(elem->jpegpath);
         if (elem->path != "") {
             wfile << "FILESIZE\n";
-            wfile << std::to_string(boost::filesystem::file_size(elem->path));
+            wfile << std::to_string(std::filesystem::file_size(elem->path));
             wfile << "\n";
         }
         wfile << "LAUNCHTYPE\n";
@@ -8244,9 +8244,9 @@ void Shelf::save(const std::string &path) {
     filestoadd2.push_back(filestoadd);
     concat_files(outputfile, str, filestoadd2);
     outputfile.close();
-    if (exists(str)) boost::filesystem::remove(str);
-    if (rem) boost::filesystem::remove(path);
-    boost::filesystem::rename(mainprogram->temppath + "tempconcatshelf", str);
+    std::filesystem::remove(str);
+    if (rem) std::filesystem::remove(path);
+    std::filesystem::rename(mainprogram->temppath + "tempconcatshelf", str);
 }
 
 
@@ -8353,7 +8353,7 @@ bool Shelf::insert_mix(const std::string& path, int pos) {
 
 bool Shelf::open(const std::string &path) {
 
-    if (!exists(path)) return 0;
+    //if (!exists(path)) return 0;
     std::string result = deconcat_files(path);
     bool concat = (result != "");
     std::ifstream rfile;
@@ -8378,15 +8378,15 @@ bool Shelf::open(const std::string &path) {
                     elem = this->elements[count];
                     elem->path = istring;
                     count++;
-                    if (!exists(elem->path)) {
+                    //if (!exists(elem->path)) {
                         elem->path = "";
-                    }
+                    //}
                 }
                 if (istring == "RELPATH") {
                     safegetline(rfile, istring);
                     if (elem->path == "" && istring != "") {
-                        boost::filesystem::current_path(mainprogram->contentpath);
-                        elem->path = pathtoplatform(boost::filesystem::absolute(istring).generic_string());
+                        std::filesystem::current_path(mainprogram->contentpath);
+                        elem->path = pathtoplatform(std::filesystem::absolute(istring).generic_string());
                     }
                     if (elem->path == "") {
                         continue;
@@ -8407,7 +8407,7 @@ bool Shelf::open(const std::string &path) {
                     else if (suf != "") {
                         if (concat) {
                             elem->path = find_unused_filename("shelffile", mainprogram->temppath, suf);
-                            boost::filesystem::rename(result + "_" + std::to_string(filecount) + ".file", elem->path);
+                            std::filesystem::rename(result + "_" + std::to_string(filecount) + ".file", elem->path);
                             filecount++;
                         }
                     }
@@ -8574,7 +8574,7 @@ void Program::handle_shelf(Shelf *shelf) {
                 mainprogram->middlemousedown = false;
                 mainprogram->dragbinel = new BinElement;
                 mainprogram->dragbinel->path = elem->path;
-                mainprogram->dragbinel->relpath = boost::filesystem::relative(elem->path, mainprogram->project->binsdir).generic_string();
+                mainprogram->dragbinel->relpath = std::filesystem::relative(elem->path, mainprogram->project->binsdir).generic_string();
                 mainprogram->dragbinel->type = elem->type;
                 mainprogram->dragbinel->tex = elem->tex;
                 //if (elem->type == ELEM_DECK || elem->type == ELEM_MIX) {
@@ -8624,7 +8624,7 @@ void Program::handle_shelf(Shelf *shelf) {
                             mainprogram->leftmousedown = false;
                             mainprogram->dragbinel = new BinElement;
                             mainprogram->dragbinel->path = elem->path;
-                            mainprogram->dragbinel->relpath = boost::filesystem::relative(elem->path, mainprogram->project->binsdir).generic_string();
+                            mainprogram->dragbinel->relpath = std::filesystem::relative(elem->path, mainprogram->project->binsdir).generic_string();
                             mainprogram->dragbinel->type = elem->type;
                             mainprogram->dragbinel->tex = elem->tex;
                         }
@@ -8651,9 +8651,9 @@ void Program::handle_shelf(Shelf *shelf) {
                                 newpath = find_unused_filename("shelf_" + base,
                                                                mainprogram->project->shelfdir + shelf->basepath + "/",
                                                                extstr);
-                                boost::filesystem::copy_file(mainprogram->dragbinel->path, newpath);
+                                std::filesystem::copy_file(mainprogram->dragbinel->path, newpath);
                                 mainprogram->dragbinel->path = newpath;
-                                mainprogram->dragbinel->relpath = boost::filesystem::relative(newpath, mainprogram->project->binsdir).generic_string();
+                                mainprogram->dragbinel->relpath = std::filesystem::relative(newpath, mainprogram->project->binsdir).generic_string();
                             }
                             if (mainprogram->shelfdragelem) {
                                 std::swap(elem->path, mainprogram->shelfdragelem->path);

@@ -606,7 +606,8 @@ vec4 rotate(vec2 texco)  // selfmade
    	texco  = m * texco;
     if (!rotmode) texco.y *= float(fbowidth) / float(fboheight);
     texco += 0.5f;
-    
+    if (texture2D(Sampler0, texco).a == 0.0f) return vec4(0.0f, 0.0f, 0.0f, 1.0f);
+
     return texture2D(Sampler0, texco);
 }
 

@@ -5,8 +5,6 @@
 #endif
 
 
-#include <boost/filesystem.hpp>
-
 
 #include "GL/glew.h"
 #include "GL/gl.h"
@@ -24,7 +22,9 @@
 #include "SDL2/SDL_syswm.h"
 
 #include <ostream>
+#include <fstream>
 #include <ios>
+#include <filesystem>
 
 extern "C" {
 #include "libavformat/avformat.h"
@@ -204,13 +204,13 @@ void BinElement::remove_elem() {
         if (this->path != "") {
             if (this->type == ELEM_LAYER || this->type == ELEM_DECK ||
                 this->type == ELEM_MIX) {
-                boost::filesystem::remove(this->path);
+                std::filesystem::remove(this->path);
             }
         }
         this->temp = false;
     }
     if (this->jpegpath != "") {
-        boost::filesystem::remove( this->jpegpath);
+        std::filesystem::remove( this->jpegpath);
     }
 }
 
@@ -1122,7 +1122,7 @@ void BinsMain::handle(bool draw) {
 		if (box->in()) {
 		    if (mainprogram->leftmouse && !this->dragbin) {
 		        mainprogram->pathto = "OPENBIN";
-		        std::thread filereq(&Program::get_multinname, mainprogram, "Open file(s)", "application/ewocvj2-bin", boost::filesystem::canonical(mainprogram->currbinsdir).generic_string());
+		        std::thread filereq(&Program::get_multinname, mainprogram, "Open file(s)", "application/ewocvj2-bin", std::filesystem::canonical(mainprogram->currbinsdir).generic_string());
 		        filereq.detach();
 		    }
 		    box->acolor[0] = 0.5f;
@@ -1144,7 +1144,7 @@ void BinsMain::handle(bool draw) {
 		if (box->in()) {
 		    if (mainprogram->leftmouse && !this->dragbin) {
 		        mainprogram->pathto = "SAVEBIN";
-		        std::thread filereq(&Program::get_outname, mainprogram, "Open file(s)", "application/ewocvj2-bin", boost::filesystem::canonical(mainprogram->currbinsdir).generic_string());
+		        std::thread filereq(&Program::get_outname, mainprogram, "Open file(s)", "application/ewocvj2-bin", std::filesystem::canonical(mainprogram->currbinsdir).generic_string());
 		        filereq.detach();
 		    }
 		    box->acolor[0] = 0.5f;
@@ -1262,7 +1262,7 @@ void BinsMain::handle(bool draw) {
 			int k = mainprogram->handle_menu(mainprogram->binmenu);
 			if (k == 0) {
 				// delete bin
-				boost::filesystem::remove(this->menubin->path);
+				std::filesystem::remove(this->menubin->path);
 				if (this->currbin->name == this->menubin->name) {
 					if (this->currbin->pos == 0) make_currbin(1);
 					else make_currbin(this->currbin->pos - 1);
@@ -1286,7 +1286,7 @@ void BinsMain::handle(bool draw) {
 			else if (k == 2) {
 				// import bin
 				mainprogram->pathto = "IMPORTBIN";
-				std::thread filereq(&Program::get_inname, mainprogram, "Import bin(s)", "application/ewocvj2-bin", boost::filesystem::canonical(mainprogram->currfilesdir).generic_string());
+				std::thread filereq(&Program::get_inname, mainprogram, "Import bin(s)", "application/ewocvj2-bin", std::filesystem::canonical(mainprogram->currfilesdir).generic_string());
 				filereq.detach();
 			}
 		}
@@ -1382,7 +1382,7 @@ void BinsMain::handle(bool draw) {
 		else if (binelmenuoptions[k] == BET_OPENFILES) {
 			// open videos/images/layer files into bin
 			mainprogram->pathto = "OPENFILESBIN";
-			std::thread filereq(&Program::get_multinname, mainprogram, "Open file(s)", "", boost::filesystem::canonical(mainprogram->currfilesdir).generic_string());
+			std::thread filereq(&Program::get_multinname, mainprogram, "Open file(s)", "", std::filesystem::canonical(mainprogram->currfilesdir).generic_string());
 			filereq.detach();
 		}
 		else if (binelmenuoptions[k] == BET_INSDECKA) {
@@ -1601,7 +1601,7 @@ void BinsMain::handle(bool draw) {
                 this->currbin->bujpegpaths.push_back(binel->jpegpath);
                 if (binel->encoding && binel->encthreads == 0 && (binel->type == ELEM_DECK || binel->type == ELEM_MIX)) {
 					binel->encoding = false;
-					boost::filesystem::rename(remove_extension(binel->path) + ".temp", binel->path);
+					std::filesystem::rename(remove_extension(binel->path) + ".temp", binel->path);
 				}
 				if ((box->in() || mainprogram->rightmouse || binel == menuactbinel) && !this->openfilesbin && !binel->encoding) {
 					if (draw) {
@@ -2328,7 +2328,7 @@ void BinsMain::handle(bool draw) {
                     binel->jpegsaved = true;
                     binel->absjpath = binel->jpegpath;
                     if (binel->absjpath != "") {
-                        binel->reljpath = boost::filesystem::relative(binel->absjpath,
+                        binel->reljpath = std::filesystem::relative(binel->absjpath,
                                                                       mainprogram->project->binsdir).generic_string();
                     }
                 }
@@ -2370,16 +2370,16 @@ void BinsMain::open_bin(const std::string &path, Bin *bin) {
                 if (istring == "ABSPATH") {
                     safegetline(rfile, istring);
                     bin->elements[pos]->path = istring;
-                    bin->elements[pos]->relpath = boost::filesystem::relative(istring, mainprogram->project->binsdir).generic_string();
+                    bin->elements[pos]->relpath = std::filesystem::relative(istring, mainprogram->project->binsdir).generic_string();
                 }
                 if (istring == "RELPATH") {
                     safegetline(rfile, istring);
                     if (istring == "" && bin->elements[pos]->path == "") continue;
                     if (bin->elements[pos]->path == "") {
-                        boost::filesystem::current_path(mainprogram->project->binsdir);
-                        bin->elements[pos]->path = pathtoplatform(boost::filesystem::absolute(istring).generic_string());
-                        bin->elements[pos]->relpath = boost::filesystem::relative(istring, mainprogram->project->binsdir).generic_string();
-                        boost::filesystem::current_path(mainprogram->contentpath);
+                        std::filesystem::current_path(mainprogram->project->binsdir);
+                        bin->elements[pos]->path = pathtoplatform(std::filesystem::absolute(istring).generic_string());
+                        bin->elements[pos]->relpath = std::filesystem::relative(istring, mainprogram->project->binsdir).generic_string();
+                        std::filesystem::current_path(mainprogram->contentpath);
                     }
                     if (!exists(bin->elements[pos]->path)) {
                         mainmix->retargeting = true;
@@ -2397,7 +2397,7 @@ void BinsMain::open_bin(const std::string &path, Bin *bin) {
 					ELEM_TYPE type = bin->elements[pos]->type;
 					if ((type == ELEM_LAYER || type == ELEM_DECK || type == ELEM_MIX) && bin->elements[pos]->name != "") {
 						if (concat) {
-							boost::filesystem::rename(result + "_" + std::to_string(filecount) + ".file", bin->elements[pos]->path);
+							std::filesystem::rename(result + "_" + std::to_string(filecount) + ".file", bin->elements[pos]->path);
 							filecount++;
 						}
 					}
@@ -2499,7 +2499,7 @@ void BinsMain::do_save_bin(const std::string& path) {
             wfile << "\n";
             if (this->currbin->elements[i * 12 + j]->path != "") {
                 wfile << "FILESIZE\n";
-                wfile << std::to_string(boost::filesystem::file_size(this->currbin->elements[i * 12 + j]->path));
+                wfile << std::to_string(std::filesystem::file_size(this->currbin->elements[i * 12 + j]->path));
                 wfile << "\n";
             }
             else {}
@@ -2521,8 +2521,8 @@ void BinsMain::do_save_bin(const std::string& path) {
 	filestoadd2.push_back(filestoadd);
 	concat_files(outputfile, path, filestoadd2);
 	outputfile.close();
-	boost::filesystem::remove(path);
-	boost::filesystem::rename(tcbpath, path);
+	std::filesystem::remove(path);
+	std::filesystem::rename(tcbpath, path);
 }
 
 Bin *BinsMain::new_bin(const std::string &name) {
@@ -2541,8 +2541,8 @@ Bin *BinsMain::new_bin(const std::string &name) {
 	make_currbin(this->bins.size() - 1);
 	std::string path;
 	bin->path = mainprogram->project->binsdir + name + ".bin";
-	boost::filesystem::path p1{mainprogram->project->binsdir + name};
-	boost::filesystem::create_directory(p1);  // reminder : secure
+	std::filesystem::path p1{mainprogram->project->binsdir + name};
+	std::filesystem::create_directory(p1);  // reminder : secure
 	return bin;
 }
 
@@ -2833,7 +2833,7 @@ std::tuple<std::string, std::string> BinsMain::hap_binel(BinElement *binel, BinE
 		}
 		hap.detach();
 		apath = binel->path;
-		rpath = mainprogram->docpath + boost::filesystem::relative(apath, mainprogram->docpath).generic_string();
+		rpath = mainprogram->docpath + std::filesystem::relative(apath, mainprogram->docpath).generic_string();
 	}
 	else {
 		std::ifstream rfile;
@@ -2853,8 +2853,8 @@ std::tuple<std::string, std::string> BinsMain::hap_binel(BinElement *binel, BinE
 					wfile << apath;
 					wfile << "\n";
 					wfile << "RELPATH\n";
-					wfile << mainprogram->docpath + boost::filesystem::relative(apath, mainprogram->docpath).generic_string();
-					rpath = mainprogram->docpath + boost::filesystem::relative(apath, mainprogram->docpath).generic_string();
+					wfile << mainprogram->docpath + std::filesystem::relative(apath, mainprogram->docpath).generic_string();
+					rpath = mainprogram->docpath + std::filesystem::relative(apath, mainprogram->docpath).generic_string();
 					wfile << "\n";
 				}
 			}
@@ -2863,22 +2863,22 @@ std::tuple<std::string, std::string> BinsMain::hap_binel(BinElement *binel, BinE
 				if (path == "") {
 					rpath = istring;
 					if (exists(istring)) {
-						path = boost::filesystem::canonical(istring).generic_string();
+						path = std::filesystem::canonical(istring).generic_string();
 						rpath = remove_extension(rpath) + "_hap.mov";
 						wfile << "FILENAME\n";
-						wfile << boost::filesystem::canonical(rpath).generic_string();
+						wfile << std::filesystem::canonical(rpath).generic_string();
 						wfile << "\n";
 						wfile << "RELPATH\n";
 						wfile << path;
 						wfile << "\n";
-						apath = boost::filesystem::canonical(rpath).generic_string();
+						apath = std::filesystem::canonical(rpath).generic_string();
 					}
 					else {
 						wfile << "FILENAME\n";
 						wfile << path;
 						wfile << "\n";
 						wfile << "RELPATH\n";
-						wfile << mainprogram->docpath + boost::filesystem::relative(path, mainprogram->docpath).generic_string();
+						wfile << mainprogram->docpath + std::filesystem::relative(path, mainprogram->docpath).generic_string();
 						wfile << "\n";
 					}
 				}
@@ -2898,10 +2898,10 @@ std::tuple<std::string, std::string> BinsMain::hap_binel(BinElement *binel, BinE
 			cpm = video->streams[idx]->codecpar;
 			if (cpm->codec_id == 188 || cpm->codec_id == 187) {
     				apath = path;
-    				rpath = mainprogram->docpath + boost::filesystem::relative(path, mainprogram->docpath).generic_string();
+    				rpath = mainprogram->docpath + std::filesystem::relative(path, mainprogram->docpath).generic_string();
 				wfile.close();
 				rfile.close();
- 				boost::filesystem::remove(remove_extension(binel->path) + ".temp");
+ 				std::filesystem::remove(remove_extension(binel->path) + ".temp");
 				binel->encoding = false;
 				if (bdm) {
 					bdm->encthreads--;
@@ -2924,7 +2924,7 @@ std::tuple<std::string, std::string> BinsMain::hap_binel(BinElement *binel, BinE
 		wfile.close();
 		rfile.close();
 
-		boost::filesystem::rename(remove_extension(binel->path) + ".temp", binel->path);
+		std::filesystem::rename(remove_extension(binel->path) + ".temp", binel->path);
 	}
 
 	return {apath, rpath};
@@ -3150,7 +3150,7 @@ void BinsMain::hap_encode(const std::string srcpath, BinElement *binel, BinEleme
 			}
 			mainprogram->encthreads--;
 			avio_close(dest->pb);
-			boost::filesystem::remove(destpath); // delete the hap file under construction
+			std::filesystem::remove(destpath); // delete the hap file under construction
 			return;
 		}
 		binel->encodeprogress = (float)count / (float)numf;
@@ -3217,15 +3217,15 @@ void BinsMain::hap_encode(const std::string srcpath, BinElement *binel, BinEleme
         if (binel->otflay->videoseek) avformat_close_input(&binel->otflay->videoseek);
     }
     binel->path = remove_extension(binel->path) + "_hap.mov";
-	boost::filesystem::rename(destpath, binel->path);
+	std::filesystem::rename(destpath, binel->path);
     if (!exists(mainprogram->contentpath + "EWOCvj2_CPU_vid_backups")) {
-        boost::filesystem::path d{ mainprogram->contentpath + "EWOCvj2_CPU_vid_backups" };
-        boost::filesystem::create_directory(d);
+        std::filesystem::path d{ mainprogram->contentpath + "EWOCvj2_CPU_vid_backups" };
+        std::filesystem::create_directory(d);
     }
-    boost::filesystem::path d2{ mainprogram->contentpath + "EWOCvj2_CPU_vid_backups/" + basename(dirname(srcpath))};
-    boost::filesystem::create_directory(d2);
-    boost::filesystem::copy_file(srcpath, mainprogram->contentpath + "EWOCvj2_CPU_vid_backups/" + basename(dirname(srcpath)) + "/" + basename(srcpath), boost::filesystem::copy_option::overwrite_if_exists);  // reminder : warn for overwrite
-    boost::filesystem::remove(srcpath);  // reminder : warn for overwrite
+    std::filesystem::path d2{ mainprogram->contentpath + "EWOCvj2_CPU_vid_backups/" + basename(dirname(srcpath))};
+    std::filesystem::create_directory(d2);
+    std::filesystem::copy_file(srcpath, mainprogram->contentpath + "EWOCvj2_CPU_vid_backups/" + basename(dirname(srcpath)) + "/" + basename(srcpath), std::filesystem::copy_options::overwrite_existing);  // reminder : warn for overwrite
+    std::filesystem::remove(srcpath);  // reminder : warn for overwrite
     binel->encoding = false;
     if (binel->otflay) {
         binel->otflay->encodeload = true;
