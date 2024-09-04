@@ -7422,7 +7422,7 @@ void Mixer::new_state() {
 	mainprogram->bnodeend[1]->fbo = -1;
 }
 
-void Mixer::open_state(const std::string &path) {
+void Mixer::open_state(std::string path) {
 	std::string result = deconcat_files(path);
     if (mainprogram->openerr) return;
 	bool concat = (result != "");
@@ -7780,7 +7780,7 @@ void Mixer::open_state(const std::string &path) {
 		if (istring.substr(0, 4) == "DECK") {
 			int scndeck = std::stoi(istring.substr(4, 1));
 			int scnnum = std::stoi(istring.substr(5, 1));
-			//if (exists(result + "_" + std::to_string(deckcnt) + ".file")) {
+			if (result != "") {
 				std::filesystem::rename(result + "_" + std::to_string(deckcnt) + ".file", mainprogram->temppath + "tempdecksc_" + std::to_string(scndeck) + std::to_string(scnnum) + ".deck");
 				deckcnt++;
 				mainmix->scenes[scndeck][scnnum]->scnblayers.clear();
@@ -7796,26 +7796,28 @@ void Mixer::open_state(const std::string &path) {
 						break;
 					}
 				}
-			//}
+            }
 		}
 	}
 
-    //if (exists(result + "_0.file")) {
+    if (result != "") {
+        //if (exists(result + "_0.file")) {
         mainprogram->shelves[0]->open(result + "_0.file");
-    //
-    //if (exists(result + "_1.file")) {
+        //
+        //if (exists(result + "_1.file")) {
         mainprogram->shelves[1]->open(result + "_1.file");
-    //}
+        //}
+    }
 
 	rfile.close();
 }
 
-void Mixer::save_state(const std::string& path, bool autosave) {
+void Mixer::save_state(std::string path, bool autosave) {
 	std::thread statesav(&Mixer::do_save_state, this, path, autosave);
 	statesav.detach();
 }
 
-void Mixer::do_save_state(const std::string& path, bool autosave) {
+void Mixer::do_save_state(std::string path, bool autosave) {
 	std::vector<std::string> filestoadd;
 	std::string ext = path.substr(path.length() - 6, std::string::npos);
 	std::string str;
@@ -8041,19 +8043,17 @@ void Mixer::do_save_state(const std::string& path, bool autosave) {
 	wfile << "ENDOFFILE\n";
 	wfile.close();
 
-	std::ofstream outputfile;
-	outputfile.open(mainprogram->temppath + "tempconcatstate", std::ios::out | std::ios::binary);
 	std::vector<std::vector<std::string>> filestoadd2;
 	filestoadd2.push_back(filestoadd);
-	concat_files(outputfile, str, filestoadd2);
-	outputfile.close();
-	std::filesystem::rename(mainprogram->temppath + "tempconcatstate", str);
+    std::string ofpath = mainprogram->temppath + "tempconcat";
+    std::thread concat(&Program::concat_files, mainprogram,  ofpath, str, filestoadd2);
+    concat.detach();
 }
 
 
 			// MIX
 
-void Mixer::open_mix(const std::string &path, bool alive, bool loadevents) {
+void Mixer::open_mix(const std::string path, bool alive, bool loadevents) {
 	std::string result = deconcat_files(path);
     if (mainprogram->openerr) {
         return;
@@ -8346,13 +8346,13 @@ void Mixer::open_mix(const std::string &path, bool alive, bool loadevents) {
      rfile.close();
 }
 
-void Mixer::save_mix(const std::string& path) {
+void Mixer::save_mix(std::string path) {
 	mainmix->do_save_mix(path, mainprogram->prevmodus, true);
 	//std::thread mixsav(&Mixer::do_save_mix, this, path, mainprogram->prevmodus, true);
 	//mixsav.detach();  reminder
 }
 
-void Mixer::do_save_mix(const std::string & path, bool modus, bool save) {
+void Mixer::do_save_mix(const std::string path, bool modus, bool save) {
     std::string ext = path.substr(path.length() - 4, std::string::npos);
 	std::string str;
 	if (ext != ".mix") str = path + ".mix";
@@ -8525,17 +8525,14 @@ void Mixer::do_save_mix(const std::string & path, bool modus, bool save) {
 	}
 
 	std::string tcpath = find_unused_filename("tempconcat_" + std::to_string(modus), mainprogram->temppath, "");
-	std::ofstream outputfile;
-	outputfile.open(tcpath, std::ios::out | std::ios::binary);
-	concat_files(outputfile, str, jpegpaths);
-	outputfile.close();
-	std::filesystem::rename(tcpath, str);
+    std::thread concat = std::thread(&Program::concat_files, mainprogram, tcpath, str, jpegpaths);
+    concat.detach();
 }
 
 
 			// DECK
 
-void Mixer::open_deck(const std::string & path, bool alive, bool loadevents, bool copycomp) {
+void Mixer::open_deck(const std::string path, bool alive, bool loadevents, bool copycomp) {
 		
 	std::string result = deconcat_files(path);
 	if (mainprogram->openerr) return;
@@ -8745,13 +8742,13 @@ void Mixer::open_deck(const std::string & path, bool alive, bool loadevents, boo
 
 }
 
-void Mixer::save_deck(const std::string& path) {
+void Mixer::save_deck(const std::string path) {
 	mainmix->do_save_deck(path, true, true);
 	//std::thread decksav(&Mixer::do_save_deck, this, path, true, true);
 	//decksav.detach();  // reminder
 }
 
-void Mixer::do_save_deck(const std::string& path, bool save, bool doclips) {
+void Mixer::do_save_deck(const std::string path, bool save, bool doclips) {
 	std::string ext = path.substr(path.length() - 5, std::string::npos);
 	std::string str;
 	if (ext != ".deck") str = path + ".deck";
@@ -8807,17 +8804,14 @@ void Mixer::do_save_deck(const std::string& path, bool save, bool doclips) {
 	wfile << "ENDOFFILE\n";
 	wfile.close();
 
-	std::ofstream outputfile;
-	outputfile.open(mainprogram->temppath + "/tempconcat", std::ios::out | std::ios::binary);
-	concat_files(outputfile, str, jpegpaths);
-	outputfile.close();
-	std::filesystem::rename(mainprogram->temppath + "/tempconcat", str);
+    std::thread concat = std::thread(&Program::concat_files, mainprogram, mainprogram->temppath + "/tempconcat", str, jpegpaths);
+    concat.detach();
 }
 
 
 			// LAYER FILE
 
-Layer* Layer::open_video(float frame, const std::string &filename, int reset, bool dontdeleffs) {
+Layer* Layer::open_video(float frame, const std::string filename, int reset, bool dontdeleffs) {
     // do configuration and thread launch for opening a video into a layer
     this->databufready = false;
     this->vidopen = true;
@@ -9321,7 +9315,7 @@ void execute_param_cont(Param *par, Param *newpar) {
     newpar->value = mainmix->buparval[par];
 }
 
-Layer* Mixer::open_layerfile(const std::string& path, Layer* lay, bool loadevents, bool doclips, bool uselayers) {
+Layer* Mixer::open_layerfile(const std::string path, Layer* lay, bool loadevents, bool doclips, bool uselayers) {
     std::string result = deconcat_files(path);
     if (mainprogram->openerr) {
         return nullptr;
@@ -9431,7 +9425,7 @@ Layer* Mixer::open_layerfile(const std::string& path, Layer* lay, bool loadevent
 	return lay2;
 }
 
-void Mixer::save_layerfile(const std::string& path, Layer* lay, bool doclips, bool dojpeg) {
+void Mixer::save_layerfile(const std::string path, Layer* lay, bool doclips, bool dojpeg) {
 	std::string ext = path.substr(path.length() - 6, std::string::npos);
 	std::string str;
 	if (ext != ".layer") str = path + ".layer";
@@ -9447,11 +9441,8 @@ void Mixer::save_layerfile(const std::string& path, Layer* lay, bool doclips, bo
 	wfile << "ENDOFFILE\n";
 	wfile.close();
 
-	std::ofstream outputfile;
-	outputfile.open(mainprogram->temppath + "tempconcat", std::ios::out | std::ios::binary);
-	concat_files(outputfile, str, jpegpaths);
-	outputfile.close();
-	std::filesystem::rename(mainprogram->temppath + "tempconcat", str);
+    std::thread concat = std::thread(&Program::concat_files, mainprogram, mainprogram->temppath + "tempconcat", str, jpegpaths);
+    concat.detach();
 	lay->layerfilepath = str;
 }
 
@@ -9894,7 +9885,7 @@ void Layer::load_frame() {
 
 // IMAGE
 
-Layer* Layer::open_image(const std::string &path, bool init) {
+Layer* Layer::open_image(const std::string path, bool init) {
     Layer *lay = this;
     if (!this->dummy && !this->transfered) {
         Layer *lay = this->transfer();
@@ -10131,7 +10122,7 @@ void Layer::open_files_queue() {
 
 					// WORKING WITH LAYERS
 
-Layer* Mixer::read_layers(std::istream &rfile, const std::string &result, std::vector<Layer*> &to_layers, bool deck, bool isdeck, int type, bool doclips, bool concat, bool load, bool loadevents, bool save, bool keepeff) {
+Layer* Mixer::read_layers(std::istream &rfile, const std::string result, std::vector<Layer*> &to_layers, bool deck, bool isdeck, int type, bool doclips, bool concat, bool load, bool loadevents, bool save, bool keepeff) {
     Layer *lay = nullptr;
     Layer *layend = nullptr;
     std::string istring;

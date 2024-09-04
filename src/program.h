@@ -130,11 +130,11 @@ public:
 	int newnum = -1;
 	bool ret;
 	void erase();
-	void save(const std::string& path);
-	bool open(const std::string& path);
+	void save(std::string path);
+	bool open(std::string path);
 	void open_files_shelf();
-	bool insert_deck(const std::string& path, bool deck, int pos);
-	bool insert_mix(const std::string& path, int pos);
+	bool insert_deck(std::string path, bool deck, int pos);
+	bool insert_mix(std::string path, int pos);
 	Shelf(bool side);
 };
 
@@ -173,15 +173,15 @@ class Project {
         std::vector<std::string> autosavelist;
         float ow = 1920.0f;
         float oh = 1080.0f;
-		void newp(const std::string &path);
-		void open(const std::string &path, bool autosave);
-        void save(const std::string& path);
+		void newp(std::string path);
+		void open(std::string path, bool autosave);
+        void save(std::string path);
         void autosave();
-		void do_save(const std::string& path, bool autosave = false);
-        void delete_dirs(const std::string &path);
-        void copy_dirs(const std::string &path);
-        void create_dirs(const std::string &path);
-        void create_dirs_autosave(const std::string &path);
+		void do_save(std::string path, bool autosave = false);
+        void delete_dirs(std::string path);
+        void copy_dirs(std::string path);
+        void create_dirs(std::string path);
+        void create_dirs_autosave(std::string path);
 private:
 };
 
@@ -842,7 +842,7 @@ class Program {
 		int handle_menu(Menu* menu);
 		int handle_menu(Menu* menu, float xshift, float yshift);
 		void handle_fullscreen();
-		void make_menu(const std::string &name, Menu *&menu, std::vector<std::string> &entries);
+		void make_menu(std::string name, Menu *&menu, std::vector<std::string> &entries);
 		void get_outname(const char *title, std::string filters, std::string defaultdir);
 		void get_inname(const char *title, std::string filters, std::string defaultdir);
 		void get_multinname(const char* title, std::string filters, std::string defaultdir);
@@ -904,7 +904,8 @@ class Program {
         void longtooltip_prepare(Boxx *box);
         void postponed_to_front(std::string title);
         void postponed_to_front_win(std::string title, SDL_Window *win = nullptr);
-        Program();
+        void concat_files(std::string ofpath, std::string path, std::vector<std::vector<std::string>> filepaths);
+    Program();
 		
 	private:
 #ifdef WINDOWS
@@ -965,13 +966,13 @@ extern float darkgrey[];
 
 extern "C" int kdialogPresent();
 
-extern std::istream& safegetline(std::istream& is, std::string& t);
+extern bool safegetline(std::istream& is, std::string &t);
 extern void mycallback(double deltatime, std::vector< unsigned char >* message, void* userData);
 
-extern bool get_imagetex(Layer *lay, const std::string& path);
-extern bool get_videotex(Layer *lay, const std::string& path);
-extern bool get_layertex(Layer *lay, const std::string& path);
-extern bool get_deckmixtex(Layer *lay, const std::string& path);
+extern bool get_imagetex(Layer *lay, std::string path);
+extern bool get_videotex(Layer *lay, std::string path);
+extern bool get_layertex(Layer *lay, std::string path);
+extern bool get_deckmixtex(Layer *lay, std::string path);
 extern int encode_frame(AVFormatContext *fmtctx, AVFormatContext *srcctx, AVCodecContext *enc_ctx, AVFrame *frame, AVPacket *pkt, FILE *outfile, int framenr);
 
 extern std::vector<Layer*>& choose_layers(bool j);
@@ -1015,13 +1016,12 @@ extern float pdistance(float x, float y, float x1, float y1, float x2, float y2)
 extern void enddrag();
 
 extern void open_files_bin();
-extern void save_bin(const std::string &path);
+extern void save_bin(std::string path);
 extern void save_thumb(std::string path, GLuint tex);
 extern void open_thumb(std::string path, GLuint tex);
 extern void new_state();
-void concat_files(std::ostream &ofile, const std::string &path, std::vector<std::vector<std::string>> &jpegpaths);
-bool check_version(const std::string &path);
-std::string deconcat_files(const std::string &path);
+bool check_version(std::string path);
+std::string deconcat_files(std::string path);
 extern GLuint copy_tex(GLuint tex);
 extern GLuint copy_tex(GLuint tex, bool yflip);
 extern GLuint copy_tex(GLuint tex, int tw, int th);
@@ -1043,19 +1043,19 @@ extern void set_queueing(bool onoff);
 
 extern Effect* new_effect(EFFECT_TYPE type);
 
-extern bool exists(const std::string &name);
+extern bool exists(std::string name);
 extern std::string dirname(std::string pathname);
 extern std::string basename(std::string pathname);
 extern std::string remove_extension(std::string filename);
 extern std::string chop_off(std::string filename);
 extern std::string remove_version(std::string filename);
 extern std::string pathtoplatform(std::string path);
-extern void copy_dir(std::string &src, std::string &dest);
-extern bool isimage(const std::string &path);
-extern bool isvideo(const std::string &path);
-extern bool isdeckfile(std::string &path);
-extern bool ismixfile(std::string &path);
-extern bool islayerfile(std::string &path);
+extern void copy_dir(std::string src, std::string dest);
+extern bool isimage(std::string path);
+extern bool isvideo(std::string path);
+extern bool isdeckfile(std::string path);
+extern bool ismixfile(std::string path);
+extern bool islayerfile(std::string path);
 
 extern void drag_into_layerstack(std::vector<Layer*>& layers, bool deck);
 

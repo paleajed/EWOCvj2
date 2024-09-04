@@ -112,20 +112,20 @@ class BinsMain {
 		int read_binslist();
 		void save_binslist();
 		void make_currbin(int pos);
-		Bin *new_bin(const std::string &name);
-		void open_bin(const std::string &path, Bin *bin);
-		void save_bin(const std::string &path);
+		Bin *new_bin(std::string name);
+		void open_bin(std::string path, Bin *bin);
+		void save_bin(std::string path);
 		void import_bins();
 		void open_files_bin();
-		void open_handlefile(const std::string &path, GLuint tex = -1);
+		void open_handlefile(std::string path, GLuint tex = -1);
 		std::tuple<std::string, std::string> hap_binel(BinElement *binel, BinElement* bdm);
 		void hap_deck(BinElement * bd);
 		void hap_mix(BinElement * bm);
-		void hap_encode(const std::string srcpath, BinElement* binel, BinElement* bdm);
+		void hap_encode(std::string srcpath, BinElement* binel, BinElement* bdm);
 		BinsMain();
 
 	private:
-		void do_save_bin(const std::string& path);
+		void do_save_bin(std::string path);
 };
 		
 class Bin {

@@ -4,7 +4,7 @@
 #define POSIX
 #endif
 
-
+#include <thread>
 
 #include "GL/glew.h"
 #include "GL/gl.h"
@@ -2342,7 +2342,7 @@ void BinsMain::handle(bool draw) {
 	}
 }
 
-void BinsMain::open_bin(const std::string &path, Bin *bin) {
+void BinsMain::open_bin(std::string path, Bin *bin) {
 	// open a bin file
 	std::string result = deconcat_files(path);
 	bool concat = (result != "");
@@ -2441,13 +2441,13 @@ void BinsMain::open_bin(const std::string &path, Bin *bin) {
     rfile.close();
 }
 
-void BinsMain::save_bin(const std::string& path) {
+void BinsMain::save_bin(std::string path) {
 	//std::thread binsav(&BinsMain::do_save_bin, this, path);
 	//binsav.detach();
 	this->do_save_bin(path);
 }
 
-void BinsMain::do_save_bin(const std::string& path) {
+void BinsMain::do_save_bin(std::string path) {
 	// save bin file
 	std::vector<std::string> filestoadd;
 	std::ofstream wfile;
@@ -2514,18 +2514,15 @@ void BinsMain::do_save_bin(const std::string& path) {
 	wfile << "ENDOFFILE\n";
 	wfile.close();
 	
-	std::string tcbpath = find_unused_filename("tempconcatbin", mainprogram->temppath, "");
-	std::ofstream outputfile;
-	outputfile.open(tcbpath, std::ios::out | std::ios::binary);
-	std::vector<std::vector<std::string>> filestoadd2;
+	std::string tpath = find_unused_filename("tempconcatbin", mainprogram->temppath, "");
+	std::string ttpath = tpath;
+    std::vector<std::vector<std::string>> filestoadd2;
 	filestoadd2.push_back(filestoadd);
-	concat_files(outputfile, path, filestoadd2);
-	outputfile.close();
-	std::filesystem::remove(path);
-	std::filesystem::rename(tcbpath, path);
+    std::thread concat(&Program::concat_files, mainprogram, ttpath, path, filestoadd2);
+    concat.detach();
 }
 
-Bin *BinsMain::new_bin(const std::string &name) {
+Bin *BinsMain::new_bin(std::string name) {
 	Bin *bin = new Bin(this->bins.size());
 	bin->name = name;
 	this->bins.push_back(bin);
@@ -2681,7 +2678,7 @@ void BinsMain::open_files_bin() {
 	mainprogram->counting++;
 }
 
-void BinsMain::open_handlefile(const std::string &path, GLuint tex) {
+void BinsMain::open_handlefile(std::string path, GLuint tex) {
     if (path != "") {
         // prepare value lists for inputting videos/images/layer files from disk
         ELEM_TYPE endtype;
@@ -3019,7 +3016,7 @@ void BinsMain::hap_mix(BinElement * bm) {
 	bm->allhaps = bm->encthreads;
 }
 
-void BinsMain::hap_encode(const std::string srcpath, BinElement *binel, BinElement *bdm) {
+void BinsMain::hap_encode(std::string srcpath, BinElement *binel, BinElement *bdm) {
 	// do the actual hap encoding
 	binel->encwaiting = true;
 	// opening the source vid

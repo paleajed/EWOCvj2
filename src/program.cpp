@@ -9,7 +9,9 @@
 #include <ostream>
 #include <istream>
 #include <iostream>
+
 #include <fstream>
+
 #include <ios>
 #include <string>
 #include <codecvt>
@@ -862,7 +864,7 @@ Program::Program() {
 	this->buttons[22] = this->wormgate2;
 }
 
-void Program::make_menu(const std::string &name, Menu *&menu, std::vector<std::string> &entries) {
+void Program::make_menu(std::string name, Menu *&menu, std::vector<std::string> &entries) {
 	bool found = false;
 	for (int i = 0; i < mainprogram->menulist.size(); i++) {
 		if (mainprogram->menulist[i]->name == name) {
@@ -6379,17 +6381,20 @@ GLuint Program::set_shader() {
 
 
 
-void Project::delete_dirs(const std::string &path) {
-	std::string dir = remove_extension(path) + "/";
-	std::filesystem::path d{ dir };
-	std::filesystem::remove_all(d);
+void Project::delete_dirs(std::string path) {
+	std::string dir = remove_extension(path);
+	std::filesystem::directory_entry d{ dir };
+    for (auto &it : std::filesystem::directory_iterator(path)) {
+        std::string pp = it.path().stem().string();
+        std::filesystem::remove_all(it);
+    }
 	for (int i = 0; i < binsmain->bins.size(); i++) {
-		binsmain->bins[i]->path = dir + "bins/" + binsmain->bins[i]->name + ".bin";
+		binsmain->bins[i]->path = dir + "/bins/" + binsmain->bins[i]->name + ".bin";
 	}
 	binsmain->save_binslist();
 }
 
-void Project::copy_dirs(const std::string &path) {
+void Project::copy_dirs(std::string path) {
     std::string src = pathtoplatform(dirname(this->path));
     std::string dest = pathtoplatform(path);
     copy_dir(src, dest);
@@ -6401,7 +6406,7 @@ void Project::copy_dirs(const std::string &path) {
     this->elementsdir = path + "/elements/";
 }
 
-void Project::create_dirs(const std::string &path) {
+void Project::create_dirs(const std::string path) {
     std::string dir = path;
     this->binsdir = dir + "bins/";
     this->recdir = dir + "recordings/";
@@ -6422,7 +6427,7 @@ void Project::create_dirs(const std::string &path) {
     std::filesystem::create_directory(p5);
 }
 
-void Project::create_dirs_autosave(const std::string &path) {
+void Project::create_dirs_autosave(const std::string path) {
     std::string dir = path;
     this->binsdir = dir + "/bins/";
     this->shelfdir = dir + "/shelves/";
@@ -6443,7 +6448,7 @@ void Project::create_dirs_autosave(const std::string &path) {
     std::filesystem::create_directory(p5);
 }
 
-void Project::newp(const std::string &path) {
+void Project::newp(const std::string path) {
 	std::string ext = path.substr(path.length() - 7, std::string::npos);
 	std::string str;
 	std::string path2;
@@ -6511,7 +6516,7 @@ void Project::newp(const std::string &path) {
     mainprogram->project->do_save(this->path);
 }
 	
-void Project::open(const std::string& path, bool autosave) {
+void Project::open(std::string path, bool autosave) {
 	std::string result = deconcat_files(path);
 	bool concat = (result != "");
 	std::ifstream rfile;
@@ -6550,9 +6555,9 @@ void Project::open(const std::string& path, bool autosave) {
 	int cb = binsmain->read_binslist();
 	for (int i = 0; i < binsmain->bins.size(); i++) {
 		std::string binname = this->binsdir + binsmain->bins[i]->name + ".bin";
-		//if (exists(binname)) {
+		if (exists(binname)) {
 			binsmain->open_bin(binname, binsmain->bins[i]);
-		//}
+		}
 	}
 	binsmain->make_currbin(cb);
 
@@ -6655,13 +6660,13 @@ void Project::open(const std::string& path, bool autosave) {
     }
 }
 
-void Project::save(const std::string& path) {
+void Project::save(std::string path) {
 	//std::thread projsav(&Project::do_save, this, path, false);
 	//projsav.detach();
 	this->do_save(path, true);
 }
 
-void Project::do_save(const std::string& path, bool autosave) {
+void Project::do_save(std::string path, bool autosave) {
 	std::string ext = path.substr(path.length() - 7, std::string::npos);
 	std::string str;
 	if (ext != ".ewocvj") str = path + ".ewocvj";
@@ -6720,13 +6725,10 @@ void Project::do_save(const std::string& path, bool autosave) {
     binsmain->make_currbin(cbin);
     binsmain->save_binslist();
 
-    std::ofstream outputfile;
-	outputfile.open(mainprogram->temppath + "tempconcatproj", std::ios::out | std::ios::binary);
 	std::vector<std::vector<std::string>> filestoadd2;
 	filestoadd2.push_back(filestoadd);
-	concat_files(outputfile, str, filestoadd2);
-	outputfile.close();
-	std::filesystem::rename(mainprogram->temppath + "tempconcatproj", str);
+    std::thread concat = std::thread(&Program::concat_files, mainprogram, mainprogram->temppath + "tempconcatproj", str, filestoadd2);
+    concat.detach();
 
 	if (!autosave) {
         if (std::find(mainprogram->recentprojectpaths.begin(), mainprogram->recentprojectpaths.end(), str) ==
@@ -8163,7 +8165,7 @@ char* Program::bl_recv(int sock, char *buf, size_t sz, int flags) {
 //*************
 
 
-void Shelf::save(const std::string &path) {
+void Shelf::save(const std::string path) {
     std::string ext = path.substr(path.length() - 6, std::string::npos);
     std::string str;
     bool rem = false;
@@ -8238,15 +8240,11 @@ void Shelf::save(const std::string &path) {
     wfile << "ENDOFFILE\n";
     wfile.close();
 
-    std::ofstream outputfile;
-    outputfile.open(mainprogram->temppath + "tempconcatshelf", std::ios::out | std::ios::binary);
     std::vector<std::vector<std::string>> filestoadd2;
     filestoadd2.push_back(filestoadd);
-    concat_files(outputfile, str, filestoadd2);
-    outputfile.close();
-    std::filesystem::remove(str);
-    if (rem) std::filesystem::remove(path);
-    std::filesystem::rename(mainprogram->temppath + "tempconcatshelf", str);
+    std::thread concat = std::thread(&Program::concat_files, mainprogram, mainprogram->temppath + "tempconcatshelf", str, filestoadd2);
+    concat.detach();
+    //if (rem) std::filesystem::remove(path);
 }
 
 
@@ -8311,7 +8309,7 @@ void Shelf::open_files_shelf() {
 }
 
 
-bool Shelf::insert_deck(const std::string& path, bool deck, int pos) {
+bool Shelf::insert_deck(std::string path, bool deck, int pos) {
     ShelfElement* elem = this->elements[pos];
     elem->path = path;
     elem->type = ELEM_DECK;
@@ -8331,7 +8329,7 @@ bool Shelf::insert_deck(const std::string& path, bool deck, int pos) {
     return 1;
 }
 
-bool Shelf::insert_mix(const std::string& path, int pos) {
+bool Shelf::insert_mix(const std::string path, int pos) {
     ShelfElement* elem = this->elements[pos];
     elem->path = path;
     elem->type = ELEM_MIX;
@@ -8351,7 +8349,7 @@ bool Shelf::insert_mix(const std::string& path, int pos) {
     return 1;
 }
 
-bool Shelf::open(const std::string &path) {
+bool Shelf::open(const std::string path) {
 
     //if (!exists(path)) return 0;
     std::string result = deconcat_files(path);
@@ -8846,5 +8844,124 @@ void open_thumb(std::string path, GLuint tex) {
     infile.close();
 
 }
+
+
+std::ifstream::pos_type getFileSize(std::string filename)
+{
+    std::ifstream in(filename, std::ifstream::ate | std::ifstream::binary);
+
+    return ((int)in.tellg());
+}
+
+bool check_version(std::string path) {
+    bool concat = true;
+    std::fstream bfile;
+    bfile.open(path, std::ios::in | std::ios::binary);
+    char *buffer = new char[7];
+    bfile.read(buffer, 7);
+    if (buffer[0] == 0x45 && buffer[1] == 0x57 && buffer[2] == 0x4F && buffer[3] == 0x43 && buffer[4] == 0x76 && buffer[5] == 0x6A && buffer[6] == 0x20) {
+        concat = false;
+    }
+    delete[] buffer;
+    bfile.close();
+    return concat;
+}
+
+
+std::string deconcat_files(std::string path) {
+    bool concat = check_version(path);
+    std::string outpath;
+    std::fstream bfile;
+    bfile.open(path, std::ios::in | std::ios::binary);
+    if (concat) {
+        int32_t num;
+        bfile.read((char *)&num, 4);
+        if (num != 20011975) {
+            mainprogram->openerr = true;
+            return "";
+        }
+        bfile.read((char *)&num, 4);
+        std::vector<int> sizes;
+        //num = _byteswap_ulong(num - 1) + 1;
+        for (int i = 0; i < num; i++) {
+            int size;
+            bfile.read((char *)&size, 4);
+            sizes.push_back(size);
+        }
+        std::ofstream ofile;
+        outpath = find_unused_filename(basename(path), mainprogram->temppath, ".mainfile");
+        ofile.open(outpath, std::ios::out | std::ios::binary);
+
+        char *ibuffer = new char[sizes[0]];
+        bfile.read(ibuffer, sizes[0]);
+        ofile.write(ibuffer, sizes[0]);
+        ofile.close();
+        delete[] ibuffer;
+        for (int i = 0; i < num - 1; i++) {
+            std::ofstream ofile;
+            ofile.open(outpath + "_" + std::to_string(i) + ".file", std::ios::out | std::ios::binary);
+            if (sizes[i + 1] == -1) break;
+            char *ibuffer = new char[sizes[i + 1]];
+            bfile.read(ibuffer, sizes[i + 1]);
+            ofile.write(ibuffer, sizes[i + 1]);
+            ofile.close();
+            delete[] ibuffer;
+        }
+    }
+    bfile.close();
+    if (concat) return(outpath);
+    else return "";
+}
+
+void Program::concat_files(std::string ofpath, std::string path, std::vector<std::vector<std::string>> filepaths) {
+
+    std::ofstream ofile;
+    ofile.open(ofpath, std::ios::out | std::ios::binary);
+
+    std::vector<std::string> paths;
+    paths.push_back(path);
+    for (int i = 0; i < filepaths.size(); i++) {
+        for (int j = 0; j < filepaths[i].size(); j++) {
+            paths.push_back(filepaths[i][j]);
+        }
+    }
+
+    if (paths.size() == 1) return;
+
+    int recogcode = 20011975;  // for recognizing EWOCvj content files
+    ofile.write((const char *)&recogcode, 4);
+    int size = paths.size();
+    ofile.write((const char *)&size, 4);
+    for (int i = 0; i < paths.size(); i++) {
+        // save header
+        if (paths[i] == "") continue;
+        std::fstream fileInput;
+        fileInput.open(paths[i], std::ios::in | std::ios::binary);
+        int fileSize = getFileSize(paths[i]);
+        ofile.write((const char *)&fileSize, 4);
+        fileInput.close();
+    }
+    for (int i = 0; i < paths.size(); i++) {
+        // save body
+        if (paths[i] == "") continue;
+        int fileSize = getFileSize(paths[i]);
+        if (fileSize == -1) continue;
+        std::fstream fileInput;
+        fileInput.open(paths[i], std::ios::in | std::ios::binary);
+        printf("path %s\n", paths[i].c_str());
+        char *inputBuffer = new char[fileSize];
+        fileInput.read(inputBuffer, fileSize);
+        ofile.write(inputBuffer, fileSize);
+        delete[] inputBuffer;
+        fileInput.close();
+    }
+    ofile.close();
+    if (exists(ofpath)) {
+        std::filesystem::remove(path);
+        std::filesystem::rename(ofpath, path);
+    }
+}
+
+
 
 

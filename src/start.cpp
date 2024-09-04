@@ -166,7 +166,7 @@ using namespace boost::asio;
 using namespace std;
 
 
-bool exists(const std::string &name) {
+bool exists(std::string name) {
 
     if (std::filesystem::exists(name)) {
         return true;
@@ -257,7 +257,7 @@ std::string pathtoplatform(std::string path) {
     return path;
 }
 
-void copy_dir(std::string &src, std::string &dest) {
+void copy_dir(std::string src, std::string dest) {
     namespace fs = std::filesystem;
 
     if (!fs::exists(src) || !fs::is_directory(src)) {
@@ -282,7 +282,7 @@ void copy_dir(std::string &src, std::string &dest) {
 }
 
 
-bool isimage(const std::string &path) {
+bool isimage(std::string path) {
     ILuint boundimage;
     ilGenImages(1, &boundimage);
     ilBindImage(boundimage);
@@ -292,7 +292,7 @@ bool isimage(const std::string &path) {
 }
 
 
-bool isvideo(const std::string &path) {
+bool isvideo(std::string path) {
     AVFormatContext *test = avformat_alloc_context();
     int r = avformat_open_input(&test, path.c_str(), nullptr, nullptr);
     if (r < 0) return false;
@@ -304,7 +304,7 @@ bool isvideo(const std::string &path) {
     return true;
 }
 
-bool islayerfile(std::string &path) {
+bool islayerfile(std::string path) {
     std::string istring;
     std::string result = deconcat_files(path);
     if (!mainprogram->openerr) {
@@ -320,7 +320,7 @@ bool islayerfile(std::string &path) {
     return false;
 }
 
-bool isdeckfile(std::string &path) {
+bool isdeckfile(std::string path) {
     std::string istring;
     std::string result = deconcat_files(path);
     if (!mainprogram->openerr) {
@@ -336,7 +336,7 @@ bool isdeckfile(std::string &path) {
     return false;
 }
 
-bool ismixfile(std::string &path) {
+bool ismixfile(std::string path) {
     std::string istring;
     std::string result = deconcat_files(path);
     if (!mainprogram->openerr) {
@@ -353,7 +353,7 @@ bool ismixfile(std::string &path) {
 }
 
 
-std::istream& safegetline(std::istream& is, std::string& t)
+bool safegetline(std::istream& is, std::string &t)
 {
     t.clear();
 
@@ -363,27 +363,10 @@ std::istream& safegetline(std::istream& is, std::string& t)
     // The sentry object performs various tasks,
     // such as thread synchronization and updating the stream state.
 
-    std::istream::sentry se(is, true);
-    std::streambuf* sb = is.rdbuf();
+    std::getline(is, t);
+    if(is.eof()) return false;
 
-    for(;;) {
-        int c = sb->sbumpc();
-        switch (c) {
-            case '\n':
-                return is;
-            case '\r':
-                if(sb->sgetc() == '\n')
-                    sb->sbumpc();
-                return is;
-            case std::streambuf::traits_type::eof():
-                // Also handle the case when the last line has no line ending
-                if(t.empty())
-                    is.setstate(std::ios::eofbit);
-                return is;
-            default:
-                t += (char)c;
-        }
-    }
+    return true;
 }
 
 
@@ -677,7 +660,7 @@ private:
 
 
 
-void handle_midi(LayMidi *laymidi, int deck, int midi0, int midi1, int midi2, std::string &midiport) {
+void handle_midi(LayMidi *laymidi, int deck, int midi0, int midi1, int midi2, std::string midiport) {
 	std::vector<Layer*> &lvec = choose_layers(deck);
 	int genmidideck = mainmix->genmidi[deck]->value;
 	for (int j = 0; j < lvec.size(); j++) {
@@ -3622,7 +3605,7 @@ int osc_param(const char *path, const char *types, lo_arg **argv, int argc, lo_m
 }
 
 
-bool get_imagetex(Layer *lay, const std::string& path) {
+bool get_imagetex(Layer *lay, std::string path) {
 	lay->dummy = 1;
 	lay->open_image(path);
 	if (lay->filename == "") {
@@ -3634,7 +3617,7 @@ bool get_imagetex(Layer *lay, const std::string& path) {
 }
 
 
-bool get_videotex(Layer *lay, const std::string& path) {
+bool get_videotex(Layer *lay, std::string path) {
 
     // get the middle frame of this video and put it in a GL texture, as representation for the video
 
@@ -3671,7 +3654,7 @@ bool get_videotex(Layer *lay, const std::string& path) {
     return true;
 }
 
-bool get_layertex(Layer *lay, const std::string& path) {
+bool get_layertex(Layer *lay, std::string path) {
     // get the middle frame of this layer files' video and put it in a GL texture, as representation for the video
     lay->dummy = true;
     lay->pos = 0;
@@ -3718,7 +3701,7 @@ bool get_layertex(Layer *lay, const std::string& path) {
     return true;
 }
 
-bool get_deckmixtex(Layer *lay, const std::string& path) {
+bool get_deckmixtex(Layer *lay, std::string path) {
     // get the representational jpeg of this deck/mix that was saved with/in the deck/mix file and put it in a GL
     // texture
 
@@ -3731,7 +3714,7 @@ bool get_deckmixtex(Layer *lay, const std::string& path) {
 
 	int32_t num;
 	if (concat) {
-		ifstream bfile;
+		std::fstream bfile;
 		bfile.open(path, ios::in | ios::binary);
         bfile.read((char*)& num, 4); // 20011975
 		bfile.read((char*)& num, 4);
@@ -5877,111 +5860,6 @@ void the_loop() {
 }
 
 
-std::ifstream::pos_type getFileSize(std::string filename)
-{
-	std::ifstream in(filename, std::ifstream::ate | std::ifstream::binary);
-
-	return ((int)in.tellg());
-}
-
-void concat_files(std::ostream &ofile, const std::string &path, std::vector<std::vector<std::string>> &filepaths) {
-	std::vector<std::string> paths;
-    paths.push_back(path);
-	for (int i = 0; i < filepaths.size(); i++) {
-		for (int j = 0; j < filepaths[i].size(); j++) {
-			paths.push_back(filepaths[i][j]);
-		}
-	}
-
-	int recogcode = 20011975;  // for recognizing EWOCvj content files
-    ofile.write((const char *)&recogcode, 4);
-	int size = paths.size();
-    ofile.write((const char *)&size, 4);
-	for (int i = 0; i < paths.size(); i++) {
-		// save header
-		if (paths[i] == "") continue;
-		ifstream fileInput;
-		fileInput.open(paths[i], ios::in | ios::binary);
-		int fileSize = getFileSize(paths[i]);
-		ofile.write((const char *)&fileSize, 4);
-		fileInput.close();
-	}
-	for (int i = 0; i < paths.size(); i++) {
-		// save body
-		if (paths[i] == "") continue;
-		int fileSize = getFileSize(paths[i]);
-		if (fileSize == -1) continue;
-		ifstream fileInput;
-		fileInput.open(paths[i], ios::in | ios::binary);
-		printf("path %s\n", paths[i].c_str());
-		char *inputBuffer = new char[fileSize];
-		fileInput.read(inputBuffer, fileSize);
-		ofile.write(inputBuffer, fileSize);
-		delete[] inputBuffer;
-		fileInput.close();
-	}
-}
-
-bool check_version(const std::string &path) {
-	bool concat = true;
-	ifstream bfile;
-	bfile.open(path, ios::in | ios::binary);
-	char *buffer = new char[7];
-	bfile.read(buffer, 7);
-	if (buffer[0] == 0x45 && buffer[1] == 0x57 && buffer[2] == 0x4F && buffer[3] == 0x43 && buffer[4] == 0x76 && buffer[5] == 0x6A && buffer[6] == 0x20) {
-		concat = false;
-	} 
-	delete[] buffer;
-	bfile.close();
-	return concat;
-}
-
-
-std::string deconcat_files(const std::string &path) {
-    bool concat = check_version(path);
-    std::string outpath;
-    ifstream bfile;
-    bfile.open(path, ios::in | ios::binary);
-    if (concat) {
-        int32_t num;
-        bfile.read((char *)&num, 4);
-        if (num != 20011975) {
-            mainprogram->openerr = true;
-            return "";
-        }
-        bfile.read((char *)&num, 4);
-        std::vector<int> sizes;
-        //num = _byteswap_ulong(num - 1) + 1;
-        for (int i = 0; i < num; i++) {
-            int size;
-            bfile.read((char *)&size, 4);
-            sizes.push_back(size);
-        }
-        ofstream ofile;
-        outpath = find_unused_filename(basename(path), mainprogram->temppath, ".mainfile");
-        ofile.open(outpath, ios::out | ios::binary);
-
-        char *ibuffer = new char[sizes[0]];
-        bfile.read(ibuffer, sizes[0]);
-        ofile.write(ibuffer, sizes[0]);
-        ofile.close();
-        delete[] ibuffer;
-        for (int i = 0; i < num - 1; i++) {
-            ofstream ofile;
-            ofile.open(outpath + "_" + std::to_string(i) + ".file", ios::out | ios::binary);
-            if (sizes[i + 1] == -1) break;
-            char *ibuffer = new char[sizes[i + 1]];
-            bfile.read(ibuffer, sizes[i + 1]);
-            ofile.write(ibuffer, sizes[i + 1]);
-            ofile.close();
-            delete[] ibuffer;
-        }
-    }
-    bfile.close();
-    if (concat) return(outpath);
-    else return "";
-}
-
 
 void blacken(GLuint tex) {
     GLuint fbo;
@@ -6237,7 +6115,7 @@ void save_genmidis(std::string path) {
 }
 
 void open_genmidis(std::string path) {
-	ifstream rfile;
+	std::fstream rfile;
 	rfile.open(path);
 	std::string istring;
 
