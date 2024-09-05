@@ -2761,7 +2761,7 @@ Layer::~Layer() {
         // dont delete when pbos are copied over
         glDeleteTextures(1, &this->texture);
         if (!this->dummy) {
-            WaitBuffer(this->syncobj);
+            WaitBuffer(this->syncobj[this->pbofri]);
             glDeleteBuffers(3, this->pbo);
         }
         delete this->remfr[0];
@@ -7255,7 +7255,9 @@ void Mixer::copy_pbos(Layer *clay, Layer *lay) {
     clay->rgbframe[0] = lay->rgbframe[0];
     clay->rgbframe[1] = lay->rgbframe[1];
     clay->rgbframe[2] = lay->rgbframe[2];
-    clay->syncobj = lay->syncobj;
+    clay->syncobj[0] = lay->syncobj[0];
+    clay->syncobj[1] = lay->syncobj[1];
+    clay->syncobj[2] = lay->syncobj[2];
     clay->pbodi = lay->pbodi;
     clay->pboui = lay->pboui;
     clay->pbofri = lay->pbofri;
@@ -8045,7 +8047,7 @@ void Mixer::do_save_state(std::string path, bool autosave) {
 
 	std::vector<std::vector<std::string>> filestoadd2;
 	filestoadd2.push_back(filestoadd);
-    std::string ofpath = mainprogram->temppath + "tempconcat";
+    std::string ofpath = mainprogram->temppath + "tempconcatstate";
     std::thread concat(&Program::concat_files, mainprogram,  ofpath, str, filestoadd2);
     concat.detach();
 }
@@ -8804,7 +8806,7 @@ void Mixer::do_save_deck(const std::string path, bool save, bool doclips) {
 	wfile << "ENDOFFILE\n";
 	wfile.close();
 
-    std::thread concat = std::thread(&Program::concat_files, mainprogram, mainprogram->temppath + "/tempconcat", str, jpegpaths);
+    std::thread concat = std::thread(&Program::concat_files, mainprogram, mainprogram->temppath + "tempconcatdeck", str, jpegpaths);
     concat.detach();
 }
 
@@ -9441,7 +9443,7 @@ void Mixer::save_layerfile(const std::string path, Layer* lay, bool doclips, boo
 	wfile << "ENDOFFILE\n";
 	wfile.close();
 
-    std::thread concat = std::thread(&Program::concat_files, mainprogram, mainprogram->temppath + "tempconcat", str, jpegpaths);
+    std::thread concat = std::thread(&Program::concat_files, mainprogram, mainprogram->temppath + "tempconcatlayerfile", str, jpegpaths);
     concat.detach();
 	lay->layerfilepath = str;
 }
@@ -9729,7 +9731,7 @@ void Layer::load_frame() {
     glBindTexture(GL_TEXTURE_2D, srclay->texture);
 
     if (mainprogram->encthreads == 0) {
-        WaitBuffer(srclay->syncobj);
+        WaitBuffer(srclay->syncobj[srclay->pbofri]);
     }
 
     if (srclay->started2 || srclay->type == ELEM_IMAGE || srclay->type == ELEM_LIVE) {
@@ -9841,7 +9843,7 @@ void Layer::load_frame() {
                 // update data directly on the mapped buffer
                 memcpy(srclay->mapptr[srclay->pbodi], srclay->remfr[srclay->pbodi]->data, srclay->remfr[srclay->pbodi]->size);
                 //srclay->currclip->tex = copy_tex(srclay->node->vidbox->tex);
-                if (mainprogram->encthreads == 0) LockBuffer(srclay->syncobj);
+                if (mainprogram->encthreads == 0) LockBuffer(srclay->syncobj[srclay->pbodi]);
             }
             if (srclay->started) {
                 srclay->started2 = true;

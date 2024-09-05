@@ -2184,6 +2184,7 @@ int Program::quit_requester() {
 		draw_box(white, lightblue, box, -1);
 		if (mainprogram->leftmouse || mainprogram->orderleftmouse) {
 			mainprogram->project->do_save(mainprogram->project->path);
+            Sleep(4000);
 			ret = 1;
 		}
 	}
@@ -4370,7 +4371,13 @@ void Program::handle_mainmenu() {
         filereq.detach();
 	}
 	else if (k == 2) {
-		this->project->do_save(this->project->path);
+        if (this->project->path.find("autosave") != std::string::npos) {
+            this->path = this->project->bupp;
+            this->pathto = "SAVEPROJECT";
+        }
+        else {
+            this->project->do_save(this->project->path);
+        }
 	}
 	else if (k == 3) {
 		this->pathto = "SAVEPROJECT";
@@ -6382,14 +6389,20 @@ GLuint Program::set_shader() {
 
 
 void Project::delete_dirs(std::string path) {
-	std::string dir = remove_extension(path);
-	std::filesystem::directory_entry d{ dir };
+	//std::string dir = remove_extension(path);
+	std::filesystem::directory_entry d{ path };
     for (auto &it : std::filesystem::directory_iterator(path)) {
-        std::string pp = it.path().stem().string();
-        std::filesystem::remove_all(it);
+        //std::string pp = it.path().stem().string();
+        if (dirname(mainprogram->project->bupp) == dirname(mainprogram->project->bupp)) {
+            std::string clearpath = it.path().string();
+            if (clearpath.find("autosave") != std::string::npos) {
+                continue;
+            }
+        }
+        std::filesystem::remove_all(it.path());
     }
 	for (int i = 0; i < binsmain->bins.size(); i++) {
-		binsmain->bins[i]->path = dir + "/bins/" + binsmain->bins[i]->name + ".bin";
+		binsmain->bins[i]->path = path + "/bins/" + binsmain->bins[i]->name + ".bin";
 	}
 	binsmain->save_binslist();
 }
@@ -6539,7 +6552,7 @@ void Project::open(std::string path, bool autosave) {
             }
         }
     }
-    if (!autosave) {
+    //if (!autosave) {
         mainprogram->project->path = path;
         mainprogram->project->name = remove_extension(basename(path));
         *namedest = &mainprogram->project->name;
@@ -6551,7 +6564,7 @@ void Project::open(std::string path, bool autosave) {
         this->elementsdir = dir + "elements/";
         if (!exists(mainprogram->currfilesdir)) mainprogram->currfilesdir = this->elementsdir;
         mainprogram->currelemsdir = this->elementsdir;
-    }
+    //}
 	int cb = binsmain->read_binslist();
 	for (int i = 0; i < binsmain->bins.size(); i++) {
 		std::string binname = this->binsdir + binsmain->bins[i]->name + ".bin";
@@ -6658,6 +6671,12 @@ void Project::open(std::string path, bool autosave) {
             this->autosavelist.push_back(istring);
         }
     }
+
+    // for initial speedup
+    //mainprogram->rightmouse = true;
+    binsmain->handle(1);
+    //mainprogram->rightmouse = false;
+
 }
 
 void Project::save(std::string path) {
@@ -6714,6 +6733,10 @@ void Project::do_save(std::string path, bool autosave) {
 
 	wfile.close();
 
+    while(!autosave && mainprogram->autosaving) {
+        Sleep(10);
+    }
+
 	mainmix->do_save_state(mainprogram->temppath + "current.state", false);
 	filestoadd.push_back(mainprogram->temppath + "current.state");
 
@@ -6758,7 +6781,7 @@ void Project::do_save(std::string path, bool autosave) {
 }
 
 void Project::autosave() {
-    if (binsmain->openfilesbin || binsmain->importbins || mainprogram->openfilesshelf || mainprogram->openfileslayers || mainprogram->openfilesqueue) {
+    if (binsmain->openfilesbin || binsmain->importbins || mainprogram->openfilesshelf || mainprogram->openfileslayers || mainprogram->openfilesqueue || mainprogram->concatting) {
         return;
     }
     bool found = false;
@@ -8377,7 +8400,7 @@ bool Shelf::open(const std::string path) {
                     elem->path = istring;
                     count++;
                     //if (!exists(elem->path)) {
-                        elem->path = "";
+                       // elem->path = "";
                     //}
                 }
                 if (istring == "RELPATH") {
@@ -8915,6 +8938,23 @@ std::string deconcat_files(std::string path) {
 
 void Program::concat_files(std::string ofpath, std::string path, std::vector<std::vector<std::string>> filepaths) {
 
+    int count = mainprogram->concatting;
+    mainprogram->concatting++;
+
+    if (count == 0) {
+        if (mainprogram->saveas) {
+            Sleep(2000);  // maximium startup time for al concats
+        } else {
+            Sleep(500);  // maximium startup time for al concats
+        }
+    }
+
+    while (count != mainprogram->numconcatted) {
+        Sleep(5);
+    }
+
+    //Sleep(100);
+
     std::ofstream ofile;
     ofile.open(ofpath, std::ios::out | std::ios::binary);
 
@@ -8926,7 +8966,14 @@ void Program::concat_files(std::string ofpath, std::string path, std::vector<std
         }
     }
 
-    if (paths.size() == 1) return;
+    /*if (paths.size() == 1) {
+        mainprogram->concatting--;
+        mainprogram->numconcatted++;
+        if (mainprogram->concatting == 0) {
+            mainprogram->numconcatted = 0;
+        }
+        return;
+    }*/
 
     int recogcode = 20011975;  // for recognizing EWOCvj content files
     ofile.write((const char *)&recogcode, 4);
@@ -8957,8 +9004,16 @@ void Program::concat_files(std::string ofpath, std::string path, std::vector<std
     }
     ofile.close();
     if (exists(ofpath)) {
-        std::filesystem::remove(path);
+        while (exists(path)) {
+            std::filesystem::remove(path);
+        }
         std::filesystem::rename(ofpath, path);
+    }
+
+    mainprogram->concatting--;
+    mainprogram->numconcatted++;
+    if (mainprogram->concatting == 0) {
+        mainprogram->numconcatted = 0;
     }
 }
 

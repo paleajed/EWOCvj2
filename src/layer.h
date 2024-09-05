@@ -245,7 +245,7 @@ class Layer {
         GLuint frb;
         GLuint pbo[3];
 		GLubyte* mapptr[3] = {0, 0, 0};
-		GLsync syncobj = nullptr;
+		GLsync syncobj[3] = {nullptr, nullptr, nullptr};
 		char pbodi = 2;
         char pboui = 1;
         char pbofri = 0;

@@ -170,6 +170,13 @@ class Project {
         std::string shelfdir;
         std::string elementsdir;
         std::string autosavedir;
+        std::string bupp;
+        std::string bupn;
+        std::string bubd;
+        std::string busd;
+        std::string burd;
+        std::string buad;
+        std::string bued;
         std::vector<std::string> autosavelist;
         float ow = 1920.0f;
         float oh = 1080.0f;
@@ -666,6 +673,9 @@ class Program {
         bool keepeffpref = false;
         bool swappingscene = false;
         bool autosaving = false;
+        int concatting = 0;
+        int numconcatted = 0;
+        bool saveas = false;
 
 		std::unordered_map <std::string, GUIString*> guitextmap;
 		std::unordered_map <std::string, GUIString*> prguitextmap;

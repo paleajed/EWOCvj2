@@ -484,7 +484,7 @@ void BinsMain::handle(bool draw) {
 			}
 			// draw big grey areas next to each element column to cut off element titles
 			Boxx* box2 = this->elemboxes[j];
-			draw_box(nullptr, darkgrey, box2->vtxcoords->x1 + box2->vtxcoords->w, -1.0f, 0.12f, 2.0f, -1);
+			draw_box(nullptr, darkgrey, box2->vtxcoords->x1 + box2->vtxcoords->w, -1.0f, 1.0f, 2.0f, -1);
 		}
 
 		bool cond1 = false;
@@ -686,7 +686,7 @@ void BinsMain::handle(bool draw) {
 		}
 	}
 
-
+/*
 	// manage SEND button
     auto put_in_buffer = [](const char* str, char* walk) {
 	    // buffer utility
@@ -934,7 +934,7 @@ void BinsMain::handle(bool draw) {
     binsmain->rawmessages.clear();
     binsmain->messagelengths.clear();
     binsmain->messagesocknames.clear();
-
+*/
 
 
 	// set threadmode for hap encoding
@@ -1313,7 +1313,7 @@ void BinsMain::handle(bool draw) {
 
 
 	// handle binelmenu thats been populated above, menuset controls which options sets are used
-	k = mainprogram->handle_menu(mainprogram->binelmenu);
+	int k = mainprogram->handle_menu(mainprogram->binelmenu);
 	//if (k > -1) this->currbinel = nullptr;
 	if (binelmenuoptions.size() && k > -1) {
 		if (binelmenuoptions[k] != BET_OPENFILES) this->menuactbinel = nullptr;
@@ -2314,7 +2314,7 @@ void BinsMain::handle(bool draw) {
         }
 	}
 
-    int count = 0;
+    /*int count = 0;
     for (int j = 0; j < 12; j++) {
         for (int i = 0; i < 12; i++) {
             BinElement *binel = this->currbin->elements[i * 12 + j];
@@ -2334,7 +2334,7 @@ void BinsMain::handle(bool draw) {
                 }
             }
         }
-    }
+    }*/
 
 	// load one file into bin each loop, at end to allow drawing ordering dialog on top
 	if (this->openfilesbin) {
