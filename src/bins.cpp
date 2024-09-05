@@ -204,13 +204,13 @@ void BinElement::remove_elem() {
         if (this->path != "") {
             if (this->type == ELEM_LAYER || this->type == ELEM_DECK ||
                 this->type == ELEM_MIX) {
-                std::filesystem::remove(this->path);
-            }
+                binsmain->removevec.push_back(this->path);
+           }
         }
         this->temp = false;
     }
     if (this->jpegpath != "") {
-        std::filesystem::remove( this->jpegpath);
+        binsmain->removevec.push_back(this->jpegpath);
     }
 }
 
@@ -1391,10 +1391,10 @@ void BinsMain::handle(bool draw) {
 			mainmix->mousedeck = 0;
 			std::string path = find_unused_filename("deckA", mainprogram->project->binsdir + this->currbin->name + "/", ".deck");
             if (mainprogram->prevmodus) {
-                this->menubinel->tex = copy_tex(mainprogram->nodesmain->mixnodes[0][mainmix->mousedeck]->mixtex);
+                this->menubinel->tex = copy_tex(mainprogram->nodesmain->mixnodes[0][mainmix->mousedeck]->mixtex, 192, 108);
             }
             else {
-                this->menubinel->tex = copy_tex(mainprogram->nodesmain->mixnodes[1][mainmix->mousedeck]->mixtex);
+                this->menubinel->tex = copy_tex(mainprogram->nodesmain->mixnodes[1][mainmix->mousedeck]->mixtex, 192, 108);
             }
 			mainmix->do_save_deck(path, true, true);
 			this->menubinel->type = ELEM_DECK;
@@ -1442,10 +1442,10 @@ void BinsMain::handle(bool draw) {
 
             std::string path = find_unused_filename("mix", mainprogram->project->binsdir + this->currbin->name + "/", ".mix");
             if (mainprogram->prevmodus) {
-                this->menubinel->tex = copy_tex(mainprogram->nodesmain->mixnodes[0][2]->mixtex);
+                this->menubinel->tex = copy_tex(mainprogram->nodesmain->mixnodes[0][2]->mixtex, 192, 108);
             }
             else {
-                this->menubinel->tex = copy_tex(mainprogram->nodesmain->mixnodes[1][2]->mixtex);
+                this->menubinel->tex = copy_tex(mainprogram->nodesmain->mixnodes[1][2]->mixtex, 192, 108);
             }
             mainmix->do_save_mix(path, mainprogram->prevmodus, true);
             this->menubinel->type = ELEM_MIX;
@@ -1471,7 +1471,7 @@ void BinsMain::handle(bool draw) {
 				elem->jpegpath = binel->jpegpath;
 				elem->type = binel->type;
                 GLuint butex = elem->tex;
-                elem->tex = copy_tex(binel->tex);
+                elem->tex = copy_tex(binel->tex, 192, 108);
                 if (butex != -1) glDeleteTextures(1, &butex);
 			}
 		}
@@ -1485,7 +1485,7 @@ void BinsMain::handle(bool draw) {
 				elem->jpegpath = binel->jpegpath;
 				elem->type = binel->type;
 				GLuint butex = elem->tex;
-				elem->tex = copy_tex(binel->tex);
+				elem->tex = copy_tex(binel->tex, 192, 108);
                 if (butex != -1) glDeleteTextures(1, &butex);
 			}
 		}
@@ -2145,6 +2145,11 @@ void BinsMain::handle(bool draw) {
                                 dirbinel->name = remove_extension(basename(dirbinel->path));
                                 dirbinel->oldjpegpath = dirbinel->jpegpath;
                                 dirbinel->jpegpath = this->inputjpegpaths[k];
+                                dirbinel->absjpath = dirbinel->jpegpath;
+                                if (dirbinel->absjpath != "") {
+                                    dirbinel->reljpath = std::filesystem::relative(dirbinel->absjpath,
+                                                                                mainprogram->project->binsdir).generic_string();
+                                }
                             }
 						}
 						// clean up
@@ -2674,7 +2679,7 @@ void BinsMain::open_files_bin() {
 		return;
 	}
 	std::string str = mainprogram->paths[mainprogram->counting];
-	open_handlefile(str, -1);
+	open_handlefile(str, mainprogram->pathtexes[mainprogram->counting]);
 	mainprogram->counting++;
 }
 
@@ -2720,13 +2725,13 @@ void BinsMain::open_handlefile(std::string path, GLuint tex) {
                     lay->processed = false;
                     lock2.unlock();
                     GLuint butex = lay->fbotex;
-                    lay->fbotex = copy_tex(lay->texture);
+                    lay->fbotex = copy_tex(lay->texture, 192, 108);
                     glDeleteTextures(1, &butex);
                     onestepfrom(0, lay->node, nullptr, -1, -1);
                     if (lay->effects[0].size()) {
-                        endtex = copy_tex(lay->effects[0][lay->effects[0].size() - 1]->fbotex, binsmain->elemboxes[0]->scrcoords->w, binsmain->elemboxes[0]->scrcoords->h);
+                        endtex = copy_tex(lay->effects[0][lay->effects[0].size() - 1]->fbotex, 192, 108);
                     } else {
-                        endtex = copy_tex(lay->fbotex, binsmain->elemboxes[0]->scrcoords->w, binsmain->elemboxes[0]->scrcoords->h);
+                        endtex = copy_tex(lay->fbotex, 192, 108);
                     }
                     lay->closethread = 1;
                 }
@@ -2797,10 +2802,11 @@ void BinsMain::open_handlefile(std::string path, GLuint tex) {
         }
 
         if (endtex == -1) return;
+        endtex = copy_tex(endtex, 192, 108);
         this->inputtexes.push_back(endtex);
         this->inputtypes.push_back(endtype);
         std::string jpath = find_unused_filename(basename(path), mainprogram->project->binsdir + this->currbin->name + "/", ".jpg");
-        save_thumb(jpath, copy_tex(endtex, this->elemboxes[0]->scrcoords->w, this->elemboxes[0]->scrcoords->h));
+        save_thumb(jpath, endtex);
         this->inputjpegpaths.push_back(jpath);
     }
     else {

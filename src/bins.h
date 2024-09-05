@@ -62,6 +62,7 @@ class BinsMain {
 		BinElement *backupbinel = nullptr;
 		BinElement* menubinel = nullptr;
 		BinElement* menuactbinel = nullptr;
+        std::vector<std::string> removevec;
 		std::vector<BinElement*> delbinels;
 		std::vector<BinElement*> movebinels;
 		Bin* dragbin = nullptr;
@@ -177,7 +178,6 @@ class BinElement {
 		float encodeprogress = 0.0f;
 		int allhaps = 0;
 		Layer *otflay = nullptr;
-		BinElement* next();
 		void erase();
         void remove_elem();
         BinElement();

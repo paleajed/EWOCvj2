@@ -5410,7 +5410,7 @@ void the_loop() {
     }
 
 
-    for (Bin *bin : binsmain->bins) {
+    /*for (Bin *bin : binsmain->bins) {
         // every loop iteration, save one bin element jpeg if there are any unsaved ones
         bool brk = false;
         for (int i = 0; i < 12; i++) {
@@ -5430,7 +5430,7 @@ void the_loop() {
             if (brk) break;
         }
         if (brk) break;
-    }
+    }*/
 
     // every loop iteration, load one bin element jpeg if there are any unloaded ones
     for (Bin *bin : binsmain->bins) {
@@ -5449,7 +5449,7 @@ void the_loop() {
             }
             bin->open_positions.erase(bin->open_positions.begin());
         }
-        else {
+        /*else {
             // each loop iteration, save one bin element jpeg if there are any unsaved ones
             for (Bin *bin : binsmain->bins) {
                 for (BinElement *binel : bin->elements) {
@@ -5466,7 +5466,7 @@ void the_loop() {
                     }
                 }
             }
-        }
+        }*/
     }
 
 
@@ -5541,7 +5541,11 @@ void the_loop() {
 		int ret = mainprogram->quit_requester();
 		if (ret == 1 || ret == 2) {
             mainprogram->shutdown = true;
-            ;
+
+            while (mainprogram->concatting) {
+                Sleep (5);
+            }
+
 			//save midi map
 			//save_genmidis(mainprogram->docpath + "midiset.gm");
 			//empty temp dir
@@ -7233,27 +7237,6 @@ int main(int argc, char* argv[]) {
                         for (it = smap.begin(); it != smap.end(); it++) {
                             std::filesystem::rename(it->first, it->second);
                         }
-
-                        for (int i = 0; i < mainprogram->project->autosavelist.size(); i++) {
-                            int start_pos = 0;
-                            while (1) {
-                                start_pos = mainprogram->project->autosavelist[i].find(oldprdir, start_pos);
-                                if (start_pos == std::string::npos) break;
-                                std::string newstr = mainprogram->project->autosavelist[i];
-                                newstr.replace(start_pos, oldprdir.length(), basename(path2));
-                                start_pos++;
-                                mainprogram->project->autosavelist[i] = newstr;
-                            }
-                        }
-                        std::ofstream wfile;
-                        wfile.open(mainprogram->project->autosavedir + "autosavelist");
-                        wfile << "EWOCvj AUTOSAVELIST V0.1\n";
-                        for (int i = 0; i < mainprogram->project->autosavelist.size(); i++) {
-                            wfile << mainprogram->project->autosavelist[i];
-                            wfile << "\n";
-                        }
-                        wfile << "ENDOFFILE\n";
-                        wfile.close();
                     }
                     /*std::string src = pathtoplatform(mainprogram->project->binsdir + binsmain->currbin->name + "/");
                     std::string dest = pathtoplatform(dirname(mainprogram->path) + remove_extension(basename(mainprogram->path)) + "/");

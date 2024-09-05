@@ -1347,6 +1347,17 @@ bool Program::order_paths(bool dodeckmix) {
 
             get_deckmixtex(lay, str);
 
+            std::string istring = "";
+            std::string result = deconcat_files(str);
+            if (!this->openerr) {
+                bool concat = (result != "");
+                std::ifstream rfile;
+                if (concat) rfile.open(result);
+                else rfile.open(str);
+                safegetline(rfile, istring);
+                rfile.close();
+            } else this->openerr = false;
+
             open_thumb(this->result + "_" + std::to_string(this->resnum - 2) + ".file", tex);
         }
         else {
@@ -1399,6 +1410,7 @@ bool Program::order_paths(bool dodeckmix) {
         mainprogram->getvideotexlayers.erase(mainprogram->getvideotexlayers.begin());
         mainprogram->getvideotexpaths.erase(mainprogram->getvideotexpaths.begin());
 
+        tex = copy_tex(tex, 192, 108);
         this->pathtexes.push_back(tex);
         render_text(str, white, 2.0f, 2.0f, 0.00045f, 0.00075f); // init text string, to avoid slowdown later
         this->pathtstrs.push_back(str);
@@ -2183,8 +2195,17 @@ int Program::quit_requester() {
 	if (box->in(mx, my)) {
 		draw_box(white, lightblue, box, -1);
 		if (mainprogram->leftmouse || mainprogram->orderleftmouse) {
-			mainprogram->project->do_save(mainprogram->project->path);
+            if (this->project->path.find("autosave") != std::string::npos) {
+                this->path = this->project->bupp;
+                this->pathto = "SAVEPROJECT";
+            }
+            else {
+                this->project->do_save(this->project->path);
+            }
             Sleep(4000);
+            while (mainprogram->concatting) {
+                Sleep (5);
+            }
 			ret = 1;
 		}
 	}
@@ -4723,7 +4744,13 @@ void Program::handle_filemenu() {
         }
 	}
     else if (k == 3) {
-        mainprogram->project->do_save(mainprogram->project->path);
+        if (this->project->path.find("autosave") != std::string::npos) {
+            this->path = this->project->bupp;
+            this->pathto = "SAVEPROJECT";
+        }
+        else {
+            this->project->do_save(this->project->path);
+        }
     }
     else if (k == 4) {
         mainprogram->quitting = "quitted";
@@ -5512,13 +5539,6 @@ bool Program::preferences_handle() {
                             }
                         }
                     }
-                    for (int i = 0; i < this->project->autosavelist.size(); i++) {
-                        std::string str = this->project->autosavelist[i];
-                        if (str.find(buad) != std::string::npos) {
-                            str = str.replace(str.find(buad), buad.size(), this->project->autosavedir);
-                            this->project->autosavelist[i] = str;
-                        }
-                    }
                 }
             }
 
@@ -5532,7 +5552,14 @@ bool Program::preferences_handle() {
 			this->prefon = false;
 			this->drawnonce = false;
 
-			if (this->saveproject) this->project->do_save(this->project->path);
+			if (this->saveproject) {
+                if (this->project->path.find("autosave") != std::string::npos) {
+                    this->path = this->project->bupp;
+                    this->pathto = "SAVEPROJECT";
+                } else {
+                    this->project->do_save(this->project->path);
+                }
+            }
             this->ow = this->project->ow;
             this->oh = this->project->oh;
             this->set_ow3oh3();
@@ -6660,32 +6687,15 @@ void Project::open(std::string path, bool autosave) {
         mainprogram->write_recentprojectlist();
     }
 
-    if (exists(this->autosavedir + "autosavelist")) {
-        this->autosavelist.clear();
-        std::ifstream rfile;
-        rfile.open(this->autosavedir + "autosavelist");
-        std::string istring;
-        safegetline(rfile, istring);
-        while (safegetline(rfile, istring)) {
-            if (istring == "ENDOFFILE") break;
-            this->autosavelist.push_back(istring);
-        }
-    }
-
-    // for initial speedup
+    // for initial bin screen entry speedup
     //mainprogram->rightmouse = true;
     binsmain->handle(1);
     //mainprogram->rightmouse = false;
 
 }
 
-void Project::save(std::string path) {
-	//std::thread projsav(&Project::do_save, this, path, false);
-	//projsav.detach();
-	this->do_save(path, true);
-}
-
 void Project::do_save(std::string path, bool autosave) {
+    // save project file: if autosave is true
 	std::string ext = path.substr(path.length() - 7, std::string::npos);
 	std::string str;
 	if (ext != ".ewocvj") str = path + ".ewocvj";
@@ -6712,15 +6722,6 @@ void Project::do_save(std::string path, bool autosave) {
 	wfile << "OUTPUTHEIGHT\n";
 	wfile << std::to_string((int)this->oh);
 	wfile << "\n";
-	/*mainprogram->shelves[0]->save(this->shelfdir + mainprogram->shelves[0]->basepath);
-	wfile << "CURRSHELFA\n";
-	wfile << mainprogram->shelves[0]->basepath;
-	wfile << "\n";
-	mainprogram->shelves[1]->save(this->shelfdir + mainprogram->shelves[1]->basepath);
-	wfile << "CURRSHELFB\n";
-	wfile << mainprogram->shelves[1]->basepath;
-	wfile << "\n";*/
-	
 	wfile << "CURRBINSDIR\n";
 	wfile << mainprogram->currbinsdir;
 	wfile << "\n";
@@ -6734,12 +6735,15 @@ void Project::do_save(std::string path, bool autosave) {
 	wfile.close();
 
     while(!autosave && mainprogram->autosaving) {
+        // wait for possible current autosaving to end
         Sleep(10);
     }
 
+    // save main state file: is concatted in project file
 	mainmix->do_save_state(mainprogram->temppath + "current.state", false);
 	filestoadd.push_back(mainprogram->temppath + "current.state");
 
+    //save bins
     int cbin = binsmain->currbin->pos;
     for (int i = 0; i < binsmain->bins.size(); i++) {
         binsmain->make_currbin(i);
@@ -6748,12 +6752,14 @@ void Project::do_save(std::string path, bool autosave) {
     binsmain->make_currbin(cbin);
     binsmain->save_binslist();
 
+    // concat everyting in project file except for bins, they are saved separately
 	std::vector<std::vector<std::string>> filestoadd2;
 	filestoadd2.push_back(filestoadd);
     std::thread concat = std::thread(&Program::concat_files, mainprogram, mainprogram->temppath + "tempconcatproj", str, filestoadd2);
     concat.detach();
 
 	if (!autosave) {
+        // remember recent project files
         if (std::find(mainprogram->recentprojectpaths.begin(), mainprogram->recentprojectpaths.end(), str) ==
             mainprogram->recentprojectpaths.end()) {
             mainprogram->recentprojectpaths.insert(mainprogram->recentprojectpaths.begin(), str);
@@ -6778,10 +6784,19 @@ void Project::do_save(std::string path, bool autosave) {
             wfile.close();
         }
     }
+
+    //remove redundant bin files
+    for (std::string remstr : binsmain->removevec) {
+        std::filesystem::remove(remstr);
+    }
 }
 
 void Project::autosave() {
     if (binsmain->openfilesbin || binsmain->importbins || mainprogram->openfilesshelf || mainprogram->openfileslayers || mainprogram->openfilesqueue || mainprogram->concatting) {
+        return;
+    }
+    if (mainprogram->project->path.find("autosave") != std::string::npos) {
+        mainmix->time = 0.0f;
         return;
     }
     bool found = false;
@@ -6795,16 +6810,8 @@ void Project::autosave() {
 
     mainprogram->astimestamp = (int) mainmix->time;
 
-    std::string name;
-    if (this->autosavelist.size()) {
-        name = this->autosavelist.back();
-    } else {
-        name = this->autosavedir + "autosave_" +
-               remove_extension(basename(this->path)) + "_0";
-    }
-    int num = std::stoi(name.substr(name.rfind('_') + 1, name.length() - name.rfind('_') - 1));
-    name = this->autosavedir + basename(remove_version(name)) + "_" + std::to_string(num + 1);
-    std::string path = name;
+    std::string name = remove_extension(basename(this->path)) + "_0";
+    std::string path = find_unused_filename("autosave_" + name, this->autosavedir, "");
 
     std::string bupp = this->path;
     std::string bupn = this->name;
@@ -6824,19 +6831,6 @@ void Project::autosave() {
     this->elementsdir = bued;
     this->path = bupp;
     this->name = bupn;
-
-    this->autosavelist.push_back(path);
-    if (this->autosavelist.size() > 20)
-        this->autosavelist.erase(this->autosavelist.begin());
-    std::ofstream wfile;
-    wfile.open(this->autosavedir + "autosavelist");
-    wfile << "EWOCvj AUTOSAVELIST V0.1\n";
-    for (int i = 0; i < this->autosavelist.size(); i++) {
-        wfile << this->autosavelist[i];
-        wfile << "\n";
-    }
-    wfile << "ENDOFFILE\n";
-    wfile.close();
 }
 
 
@@ -8781,11 +8775,11 @@ GLuint copy_tex(GLuint tex, int tw, int th, bool yflip) {
 }
 
 void save_thumb(std::string path, GLuint tex) {
-    int wi = mainprogram->ow3;
-    int he = mainprogram->oh3;
+    int wi = 192;
+    int he = 108;
     unsigned char *buf = (unsigned char*)malloc(wi * he * 3);
 
-    GLuint tex2 = copy_tex(tex);
+    GLuint tex2 = copy_tex(tex, 192, 108);
     GLuint texfrbuf, endfrbuf;
     glGenFramebuffers(1, &texfrbuf);
     glBindFramebuffer(GL_FRAMEBUFFER, texfrbuf);
@@ -8945,7 +8939,7 @@ void Program::concat_files(std::string ofpath, std::string path, std::vector<std
         if (mainprogram->saveas) {
             Sleep(2000);  // maximium startup time for al concats
         } else {
-            Sleep(500);  // maximium startup time for al concats
+            Sleep(2000);  // maximium startup time for al concats
         }
     }
 

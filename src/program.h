@@ -177,12 +177,10 @@ class Project {
         std::string burd;
         std::string buad;
         std::string bued;
-        std::vector<std::string> autosavelist;
         float ow = 1920.0f;
         float oh = 1080.0f;
 		void newp(std::string path);
 		void open(std::string path, bool autosave);
-        void save(std::string path);
         void autosave();
 		void do_save(std::string path, bool autosave = false);
         void delete_dirs(std::string path);
