@@ -6458,6 +6458,7 @@ void Project::create_dirs(const std::string path) {
 void Project::create_dirs_autosave(const std::string path) {
     std::string dir = path;
     std::filesystem::rename(mainprogram->project->autosavedir + "temp", path);
+    std::string buad = mainprogram->project->autosavedir;
     this->binsdir = dir + "/bins/";
     this->shelfdir = dir + "/shelves/";
     this->autosavedir = dir + "/autosaves/";
@@ -6476,8 +6477,8 @@ void Project::create_dirs_autosave(const std::string path) {
     std::filesystem::path p5{ dir + "/elements/" };
     std::filesystem::create_directory(p5);
 
-    std::filesystem::create_directory(this->autosavedir + "temp/");
-    std::filesystem::create_directory(this->autosavedir + "temp/bins");
+    std::filesystem::create_directory(buad + "temp/");
+    std::filesystem::create_directory(buad + "temp/bins");
 }
 
 void Project::newp(const std::string path) {
@@ -6810,7 +6811,7 @@ void Project::do_save(std::string path, bool autosave) {
     // concat everyting in project file except for bins, they are saved separately
 	std::vector<std::vector<std::string>> filestoadd2;
 	filestoadd2.push_back(filestoadd);
-    std::thread concat = std::thread(&Program::concat_files, mainprogram, mainprogram->temppath + "tempconcatproj", str, filestoadd2);
+    std::thread concat = std::thread(&Program::concat_files, mainprogram, mainprogram->temppath + "tempconcatproj", str, filestoadd2, false);
     concat.detach();
 
 	if (!autosave) {
@@ -8353,7 +8354,7 @@ void Shelf::save(const std::string path) {
 
     std::vector<std::vector<std::string>> filestoadd2;
     filestoadd2.push_back(filestoadd);
-    std::thread concat = std::thread(&Program::concat_files, mainprogram, mainprogram->temppath + "tempconcatshelf", str, filestoadd2);
+    std::thread concat = std::thread(&Program::concat_files, mainprogram, mainprogram->temppath + "tempconcatshelf", str, filestoadd2, false);
     concat.detach();
     //if (rem) std::filesystem::remove(path);
 }
@@ -9025,12 +9026,12 @@ std::string deconcat_files(std::string path) {
     else return "";
 }
 
-void Program::concat_files(std::string ofpath, std::string path, std::vector<std::vector<std::string>> filepaths) {
+void Program::concat_files(std::string ofpath, std::string path, std::vector<std::vector<std::string>> filepaths, bool nothread) {
 
     int count = mainprogram->concatting;
     mainprogram->concatting++;
 
-    if (count == 0) {
+    if (count == 0 && !nothread) {
         if (mainprogram->saveas) {
             Sleep(2000);  // maximium startup time for al concats
         } else {

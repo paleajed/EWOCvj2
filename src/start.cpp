@@ -4538,7 +4538,7 @@ void the_loop() {
     }
     if (!filled) mainprogram->swappingscene = false;
 
-    if (mainmix->bulayers.size() && !mainprogram->newproject2) { //
+    if (mainmix->bulayers.size() && !mainprogram->newproject2 && 0) { //
         // done switching to new layers -> delete old ones
         std::vector<Layer *> &lvec = mainmix->bulayers;
         for (int i = 0; i < lvec.size(); i++) {
@@ -5197,12 +5197,14 @@ void the_loop() {
 
         // draw and handle loopstation
         if (mainprogram->prevmodus) {
+            loopstation = lp;
             lp->handle();
             for (int i = 0; i < lpc->elems.size(); i++) {
                 if (lpc->elems[i]->loopbut->value || lpc->elems[i]->playbut->value) lpc->elems[i]->set_values();
             }
         }
         else {
+            loopstation = lpc;
             lpc->handle();
         }
 
@@ -5879,6 +5881,15 @@ void the_loop() {
     mainprogram->middlemousedown = false;
 	mainprogram->rightmouse = 0;
 	mainprogram->openerr = false;
+
+    for (int i = 0; i < 4; i++) {
+        for (Layer *lay : mainmix->layers[i]) {
+            if (lay->blendnode) {
+                lay->blendnode->wipex->layer = lay;
+                lay->blendnode->wipey->layer = lay;
+            }
+        }
+    }
 
     bool found = false;
     for (Layer* lay : mainmix->loadinglays) {

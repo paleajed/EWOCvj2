@@ -920,7 +920,7 @@ class Program {
         void longtooltip_prepare(Boxx *box);
         void postponed_to_front(std::string title);
         void postponed_to_front_win(std::string title, SDL_Window *win = nullptr);
-        void concat_files(std::string ofpath, std::string path, std::vector<std::vector<std::string>> filepaths);
+        void concat_files(std::string ofpath, std::string path, std::vector<std::vector<std::string>> filepaths, bool nothread = false);
     Program();
 		
 	private:

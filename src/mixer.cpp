@@ -512,7 +512,8 @@ void Param::deautomate() {
         if (!elem) return;
         elem->params.erase(this);
         if (this->effect) elem->layers.erase(this->effect->layer);
-        for (int i = elem->eventlist.size() - 1; i >= 0; i--) {
+        std::vector<std::tuple<long long, Param *, Button *, float>> evlist = elem->eventlist;
+        for (int i = evlist.size() - 1; i >= 0; i--) {
             if (std::get<1>(elem->eventlist[i]) == this)
                 elem->eventlist.erase(elem->eventlist.begin() + i);
         }
@@ -1917,49 +1918,49 @@ void StrobeEffect::set_phase(int phase) { this->phase = phase; }
 
 // EFFECTS BELONGING TO A LAYER
 
-Effect *do_add_effect(Layer *lay, EFFECT_TYPE type, int pos, bool comp) {
+Effect* Layer::do_add_effect(EFFECT_TYPE type, int pos, bool comp) {
 	// adds an effect of a certain type to a layer at a certain position in its effect list
 	// comp is set when the layer belongs to the output layer stacks
 	Effect *effect = new_effect(type);
 
 	effect->type = type;
 	effect->pos = pos;
-	effect->layer = lay;
+	effect->layer = this;
 	
-	std::vector<Effect*> &evec = lay->choose_effects();
+	std::vector<Effect*> &evec = this->choose_effects();
 	evec.insert(evec.begin() + pos, effect);
-	bool cat = mainprogram->effcat[lay->deck]->value;
+	bool cat = mainprogram->effcat[this->deck]->value;
 	
 	// does scrolling when effect stack reaches bottom of GUI space
-	lay->numefflines[cat] += effect->numrows;
-	if (lay->numefflines[cat] > 11) {
-		int further = (lay->numefflines[cat] - lay->effscroll[cat]) - 11;
-		lay->effscroll[cat] = lay->effscroll[cat] + further * (further > 0);
+	this->numefflines[cat] += effect->numrows;
+	if (this->numefflines[cat] > 11) {
+		int further = (this->numefflines[cat] - this->effscroll[cat]) - 11;
+		this->effscroll[cat] = this->effscroll[cat] + further * (further > 0);
 		int linepos = 0;
 		for (int i = 0; i < effect->pos; i++) {
 			linepos += evec[i]->numrows;
 		}
-		if (lay->effscroll[cat] > linepos) lay->effscroll[cat] = linepos;
+		if (this->effscroll[cat] > linepos) this->effscroll[cat] = linepos;
 	}
 	
-	EffectNode *effnode1 = mainprogram->nodesmain->currpage->add_effectnode(effect, lay->node, pos, comp);
-	effnode1->align = lay->node;
+	EffectNode *effnode1 = mainprogram->nodesmain->currpage->add_effectnode(effect, this->node, pos, comp);
+	effnode1->align = this->node;
 	effnode1->alignpos = pos;
-	lay->node->aligned += 1;
+	this->node->aligned += 1;
 	
 	if (pos == evec.size() - 1) {
-		if (lay->pos > 0 && lay->blendnode && !cat) {
-			lay->blendnode->in2 = nullptr;
-			mainprogram->nodesmain->currpage->connect_in2(effnode1, lay->blendnode);
+		if (this->pos > 0 && this->blendnode && !cat) {
+			this->blendnode->in2 = nullptr;
+			mainprogram->nodesmain->currpage->connect_in2(effnode1, this->blendnode);
 		}
-		else if (lay->lasteffnode[cat]->out.size()) {
-			lay->lasteffnode[cat]->out[0]->in = nullptr;
-			mainprogram->nodesmain->currpage->connect_nodes(effnode1, lay->lasteffnode[cat]->out[0]);
+		else if (this->lasteffnode[cat]->out.size()) {
+			this->lasteffnode[cat]->out[0]->in = nullptr;
+			mainprogram->nodesmain->currpage->connect_nodes(effnode1, this->lasteffnode[cat]->out[0]);
 		}
-		lay->lasteffnode[cat]->out.clear();
-		lay->lasteffnode[cat] = effnode1;
-		if (lay->pos == 0 && !cat && lay->effects[1].size() == 0) {
-			lay->lasteffnode[1] = lay->lasteffnode[0];
+		this->lasteffnode[cat]->out.clear();
+		this->lasteffnode[cat] = effnode1;
+		if (this->pos == 0 && !cat && this->effects[1].size() == 0) {
+			this->lasteffnode[1] = this->lasteffnode[0];
 		}
 	}
 
@@ -1969,15 +1970,15 @@ Effect *do_add_effect(Layer *lay, EFFECT_TYPE type, int pos, bool comp) {
 			mainprogram->nodesmain->currpage->connect_nodes(effnode1, effnode2);
 		}
 		if (!cat) {
-			lay->node->out.clear();
-			mainprogram->nodesmain->currpage->connect_nodes(lay->node, effnode1);
+			this->node->out.clear();
+			mainprogram->nodesmain->currpage->connect_nodes(this->node, effnode1);
 		}
 		else {
-			if (lay->pos == 0) {
-				mainprogram->nodesmain->currpage->connect_nodes(lay->lasteffnode[0], effnode1);
+			if (this->pos == 0) {
+				mainprogram->nodesmain->currpage->connect_nodes(this->lasteffnode[0], effnode1);
 			}
 			else {
-				mainprogram->nodesmain->currpage->connect_nodes(lay->blendnode, effnode1);
+				mainprogram->nodesmain->currpage->connect_nodes(this->blendnode, effnode1);
 			}
 		}
 	}
@@ -1995,16 +1996,16 @@ Effect *do_add_effect(Layer *lay, EFFECT_TYPE type, int pos, bool comp) {
 	}
 	/* reminder
 	// add parameters to OSC system
-	if (lay->numoftypemap.find(effect->type) != lay->numoftypemap.end()) lay->numoftypemap[effect->type]++;
-	else lay->numoftypemap[effect->type] = 1;
+	if (this->numoftypemap.find(effect->type) != this->numoftypemap.end()) this->numoftypemap[effect->type]++;
+	else this->numoftypemap[effect->type] = 1;
 	for (int i = 0; i < effect->params.size(); i++) {
 		std::string deckstr;
-		if (lay->deck == 0) deckstr = "/deckA";
+		if (this->deck == 0) deckstr = "/deckA";
 		else deckstr = "/deckB";
 		std::string compstr;
 		if (mainprogram->prevmodus) compstr = "preview";
 		else compstr = "output";
-		std::string path = "/mix/" + compstr + deckstr + "/layer/" + std::to_string(lay->pos + 1) + "/effect/" + mainprogram->effectsmap[effect->type] + "/" + std::to_string(lay->numoftypemap[effect->type]) + "/" + effect->params[i]->name;
+		std::string path = "/mix/" + compstr + deckstr + "/layer/" + std::to_string(this->pos + 1) + "/effect/" + mainprogram->effectsmap[effect->type] + "/" + std::to_string(this->numoftypemap[effect->type]) + "/" + effect->params[i]->name;
 		effect->params[i]->oscpaths.push_back(path);
 		printf("osc %s\n", path.c_str());
 		fflush(stdout);
@@ -2017,10 +2018,10 @@ Effect* Layer::add_effect(EFFECT_TYPE type, int pos) {
 	Effect *eff;
 
 	if (mainprogram->prevmodus) {
-		eff = do_add_effect(this, type, pos, false);
+		eff = this->do_add_effect(type, pos, false);
 	}
 	else {
-		eff = do_add_effect(this, type, pos, true);
+		eff = this->do_add_effect(type, pos, true);
 	}
 	eff->onoffbutton->layer = this;
 	for (int i = 0; i < eff->params.size(); i++) {
@@ -2502,6 +2503,7 @@ Layer::Layer(bool comp) {
     this->shiftx->value = 0.0f;
     this->shiftx->range[0] = -mainprogram->monh / 1.5f;
     this->shiftx->range[1] = mainprogram->monh / 1.5f;
+    this->shiftx->layer = this;
     this->shiftx->box->acolor[0] = 1.0f;
     this->shiftx->box->acolor[1] = 1.0f;
     this->shiftx->box->acolor[2] = 1.0f;
@@ -2512,10 +2514,12 @@ Layer::Layer(bool comp) {
     this->shifty->value = 0.0f;
     this->shifty->range[0] = mainprogram->monh / 1.5f;
     this->shifty->range[1] = -mainprogram->monh / 1.5f;
+    this->shifty->layer = this;
     this->scale = new Param;
     this->scale->value = 1.0f;
     this->scale->range[0] = 0.001f;
     this->scale->range[1] = 1000.0f;
+    this->scale->layer = this;
     this->scritch = new Param;
     this->scritch->value = 0.0f;
     this->startframe = new Param;
@@ -2533,6 +2537,7 @@ Layer::Layer(bool comp) {
 	this->chtol->deflt = 0.8f;
 	this->chtol->range[0] = -0.1f;
     this->chtol->range[1] = 3.3f;
+    this->chtol->layer = this;
     this->chtol->shadervar = "colortol";
     this->chtol->box->tooltiptitle = "Set key tolerance ";
     this->chtol->box->tooltip = "Leftdrag to set tolerance (\"spread\") around key color/hue/grayscale.  Doubleclicking allows numeric entry. ";
@@ -2542,7 +2547,8 @@ Layer::Layer(bool comp) {
 	this->speed->deflt = 1.0f;
 	this->speed->range[0] = 0.0f;
 	this->speed->range[1] = 3.33f;
-	this->speed->sliding = true;
+    this->speed->layer = this;
+    this->speed->sliding = true;
 	this->speed->powertwo = true;
 	this->speed->box->acolor[0] = 0.1;
 	this->speed->box->acolor[1] = 0.3;
@@ -2556,7 +2562,8 @@ Layer::Layer(bool comp) {
 	this->opacity->deflt = 1.0f;
 	this->opacity->range[0] = 0.0f;
 	this->opacity->range[1] = 1.0f;
-	this->opacity->sliding = true;
+    this->opacity->layer = this;
+    this->opacity->sliding = true;
 	this->opacity->box->acolor[0] = 0.1;
 	this->opacity->box->acolor[1] = 0.3;
 	this->opacity->box->acolor[2] = 0.2;
@@ -2569,7 +2576,8 @@ Layer::Layer(bool comp) {
 	this->volume->deflt = 0.0f;
 	this->volume->range[0] = 0.0f;
 	this->volume->range[1] = 1.0f;
-	this->volume->sliding = true;
+    this->volume->layer = this;
+    this->volume->sliding = true;
 	this->volume->box->acolor[0] = 0.5;
 	this->volume->box->acolor[1] = 0.2;
 	this->volume->box->acolor[2] = 0.5;
@@ -7320,6 +7328,7 @@ void Mixer::set_values(Layer *clay, Layer *lay, bool open) {
 
 
 void Mixer::copy_to_comp(bool deckA, bool deckB, bool comp) {
+    int copycomp = 1;
     if (this->loadinglays.size()) return;
     if (deckA && deckB) {
         mainmix->wipe[comp] = mainmix->wipe[!comp];
@@ -7331,33 +7340,51 @@ void Mixer::copy_to_comp(bool deckA, bool deckB, bool comp) {
         } else {
             mainmix->crossfade->value = mainmix->crossfadecomp->value;
         }
+        copycomp = 2;
     }
 
     bool bupm = mainprogram->prevmodus;
     mainprogram->prevmodus = comp;
-    if (comp) loopstation = lp;
+    if (mainprogram->prevmodus) loopstation = lp;
     else loopstation = lpc;
     if (deckA) {
         mainmix->mousedeck = 0;
-        mainmix->do_save_deck(mainprogram->temppath + "copytocompdeckA.deck", false, true);
+        mainmix->do_save_deck(mainprogram->temppath + "copytocompdeckA.deck", false, true, true);
     }
     if (deckB) {
         mainmix->mousedeck = 1;
-        mainmix->do_save_deck(mainprogram->temppath + "copytocompdeckB.deck", false, true);
+        mainmix->do_save_deck(mainprogram->temppath + "copytocompdeckB.deck", false, true, true);
     }
     mainprogram->prevmodus = !comp;
-    if (comp) loopstation = lpc;
-    else loopstation = lp;
+    if (mainprogram->prevmodus) loopstation = lp;
+    else loopstation = lpc;
     if (deckA) {
         mainmix->mousedeck = 0;
-        mainmix->open_deck(mainprogram->temppath + "copytocompdeckA.deck", true, true, true);
+        mainmix->open_deck(mainprogram->temppath + "copytocompdeckA.deck", true, true, copycomp);
     }
     if (deckB) {
         mainmix->mousedeck = 1;
-        mainmix->open_deck(mainprogram->temppath + "copytocompdeckB.deck", true, true, true);
+        mainmix->open_deck(mainprogram->temppath + "copytocompdeckB.deck", true, true, copycomp);
     }
+    // correct loopstation current times for deck saving/opening lag
+    loopstation = lp;
+    LoopStation *bunowlpst = lpc;
+    if (!comp) {
+        loopstation = lpc;
+        bunowlpst = lp;
+    }
+    std::chrono::high_resolution_clock::time_point now = std::chrono::high_resolution_clock::now();
+    std::chrono::duration<double> elapsed;
+    elapsed = std::chrono::duration_cast<std::chrono::duration<double>>(now - bunowlpst->bunow);
+    long long millicount = std::chrono::duration_cast<std::chrono::milliseconds>(elapsed).count();
+    for (LoopStationElement* elem : loopstation->elems) {
+        //elem->interimtime += millicount;
+        //elem->speedadaptedtime += millicount * elem->speed->value;
+        elem->starttime = now - std::chrono::milliseconds((long long)(elem->interimtime));
+    }
+
     mainprogram->prevmodus = bupm;
-    if (bupm) loopstation = lp;
+    if (mainprogram->prevmodus) loopstation = lp;
     else loopstation = lpc;
 
     std::vector<std::vector<Layer*>> *tempmap;
@@ -8048,7 +8075,7 @@ void Mixer::do_save_state(std::string path, bool autosave) {
 	std::vector<std::vector<std::string>> filestoadd2;
 	filestoadd2.push_back(filestoadd);
     std::string ofpath = mainprogram->temppath + "tempconcatstate";
-    std::thread concat(&Program::concat_files, mainprogram,  ofpath, str, filestoadd2);
+    std::thread concat(&Program::concat_files, mainprogram,  ofpath, str, filestoadd2, false);
     concat.detach();
 }
 
@@ -8076,6 +8103,8 @@ void Mixer::open_mix(const std::string path, bool alive, bool loadevents) {
 	bool ret = this->set_prevshelfdragelem(lvec0[0]);
 	if (!ret) alive = false;
 
+    loopstation = lpc;
+    if (mainprogram->prevmodus) loopstation = lp;
     for (int i = 0; i < loopstation->elems.size(); i++) {
 		loopstation->elems[i]->init();
 		loopstation->elems[i]->eventlist.clear();
@@ -8493,11 +8522,16 @@ void Mixer::do_save_mix(const std::string path, bool modus, bool save) {
 	std::vector<Layer*> lvec;
 	if (modus) {
         lvec = mainmix->layers[0];
+        loopstation = lp;
     }
 	else {
         lvec = mainmix->layers[2];
+        loopstation = lpc;
     }
-	for (int i = 0; i < lvec.size(); i++) {
+
+    this->get_butimes();
+
+    for (int i = 0; i < lvec.size(); i++) {
 		Layer* lay = lvec[i];
 		jpegpaths.push_back(mainmix->write_layer(lay, wfile, true, save));
 	}
@@ -8527,14 +8561,14 @@ void Mixer::do_save_mix(const std::string path, bool modus, bool save) {
 	}
 
 	std::string tcpath = find_unused_filename("tempconcat_" + std::to_string(modus), mainprogram->temppath, "");
-    std::thread concat = std::thread(&Program::concat_files, mainprogram, tcpath, str, jpegpaths);
+    std::thread concat = std::thread(&Program::concat_files, mainprogram, tcpath, str, jpegpaths, false);
     concat.detach();
 }
 
 
 			// DECK
 
-void Mixer::open_deck(const std::string path, bool alive, bool loadevents, bool copycomp) {
+void Mixer::open_deck(const std::string path, bool alive, bool loadevents, int copycomp) {
 		
 	std::string result = deconcat_files(path);
 	if (mainprogram->openerr) return;
@@ -8556,42 +8590,33 @@ void Mixer::open_deck(const std::string path, bool alive, bool loadevents, bool 
 	}
 	this->new_file(mainmix->mousedeck, alive, false, false);
 
-	for (int i = 0; i < loopstation->elems.size(); i++) {
-		bool alsootherdeck = false;
-		std::unordered_set<Layer*>::iterator it;
-		for (it = loopstation->elems[i]->layers.begin(); it != loopstation->elems[i]->layers.end(); it++) {
-			Layer* lay = *it;
-			if (lay->deck == !mainmix->mousedeck) {
-				alsootherdeck = true;
-				break;
-			}
-		}
-        std::unordered_set<Param*>::const_iterator got = loopstation->elems[i]->params.find(mainmix->crossfade);
-        if (got != loopstation->elems[i]->params.end()) alsootherdeck = true;
-        got = loopstation->elems[i]->params.find(mainmix->crossfadecomp);
-        if (got != loopstation->elems[i]->params.end()) alsootherdeck = true;
-        got = loopstation->elems[i]->params.find(mainmix->wipex[0]);
-        if (got != loopstation->elems[i]->params.end()) alsootherdeck = true;
-        got = loopstation->elems[i]->params.find(mainmix->wipey[0]);
-        if (got != loopstation->elems[i]->params.end()) alsootherdeck = true;
-        got = loopstation->elems[i]->params.find(mainmix->wipex[1]);
-        if (got != loopstation->elems[i]->params.end()) alsootherdeck = true;
-        got = loopstation->elems[i]->params.find(mainmix->wipey[1]);
-        if (got != loopstation->elems[i]->params.end()) alsootherdeck = true;
-		if (!alsootherdeck && loadevents) {
-			std::unordered_set<Param*>::iterator it1;
-			for (it1 = loopstation->elems[i]->params.begin(); it1 != loopstation->elems[i]->params.end(); it1++) {
-				loopstation->parelemmap.erase(*it1);
-				loopstation->parmap.erase(*it1);
-			}
-			std::unordered_set<Button*>::iterator it2;
-			for (it2 = loopstation->elems[i]->buttons.begin(); it2 != loopstation->elems[i]->buttons.end(); it2++) {
-				loopstation->butelemmap.erase(*it2);
-				loopstation->butmap.erase(*it2);
-			}
-			loopstation->elems[i]->erase_elem();
-		}
-	}
+    loopstation = lpc;
+    if (mainprogram->prevmodus) {
+        loopstation = lp;
+    }
+    for (LoopStationElement *elem: loopstation->elems) {
+        std::vector<std::tuple<long long, Param *, Button *, float>> evlist = elem->eventlist;
+        for (int i = evlist.size() - 1; i >= 0; i--) {
+            std::tuple<long long, Param *, Button *, float> event = elem->eventlist[i];
+            if (std::get<1>(event)) {
+                if (std::get<1>(event)->name == "Crossfade" || std::get<1>(event)->name == "wipex" || std::get<1>(event)->name == "wipey") {
+                }
+                else if (std::get<1>(event)->effect) {
+                    if (std::get<1>(event)->effect->layer->deck == mainmix->mousedeck) {
+                        elem->eventlist.erase(elem->eventlist.begin() + i);
+                    }
+                } else {
+                    if (std::get<1>(event)->layer->deck == mainmix->mousedeck) {
+                        elem->eventlist.erase(elem->eventlist.begin() + i);
+                    }
+                }
+            } else if (std::get<2>(event)) {
+                if (std::get<2>(event)->layer->deck == mainmix->mousedeck) {
+                    elem->eventlist.erase(elem->eventlist.begin() + i);
+                }
+            }
+        }
+    }
 
     std::vector<Layer*> &layers = choose_layers(mainmix->mousedeck);
     while (safegetline(rfile, istring)) {
@@ -8604,31 +8629,66 @@ void Mixer::open_deck(const std::string path, bool alive, bool loadevents, bool 
             mainmix->scenes[mainmix->mousedeck][2]->scrollpos = std::stoi(istring);
             safegetline(rfile, istring);
             mainmix->scenes[mainmix->mousedeck][3]->scrollpos = std::stoi(istring);
-        }
-        else if (istring == "DECKSPEED") {
+        } else if (istring == "DECKSPEED") {
             safegetline(rfile, istring);
             mainmix->deckspeed[!mainprogram->prevmodus][mainmix->mousedeck]->value = std::stof(istring);
-        }
-        else if (istring == "DECKSPEEDEVENT") {
-            Param* par = mainmix->deckspeed[!mainprogram->prevmodus][mainmix->mousedeck];
+        } else if (istring == "DECKSPEEDEVENT") {
+            Param *par = mainmix->deckspeed[!mainprogram->prevmodus][mainmix->mousedeck];
             safegetline(rfile, istring);
             if (istring == "EVENTELEM") {
                 mainmix->event_read(rfile, par, nullptr, nullptr);
             }
-        }
-        else if (istring == "DECKSPEEDMIDI0") {
+        } else if (istring == "DECKSPEEDMIDI0") {
             safegetline(rfile, istring);
             mainmix->deckspeed[!mainprogram->prevmodus][mainmix->mousedeck]->midi[0] = std::stoi(istring);
-        }
-        else if (istring == "DECKSPEEDMIDI1") {
+        } else if (istring == "DECKSPEEDMIDI1") {
             safegetline(rfile, istring);
             mainmix->deckspeed[!mainprogram->prevmodus][mainmix->mousedeck]->midi[1] = std::stoi(istring);
-        }
-        else if (istring == "DECKSPEEDMIDIPORT") {
+        } else if (istring == "DECKSPEEDMIDIPORT") {
             safegetline(rfile, istring);
             mainmix->deckspeed[!mainprogram->prevmodus][mainmix->mousedeck]->midiport = istring;
         }
-        else if (istring == "LAYERS") {
+
+        else if (copycomp == 2) {
+            if (istring == "CROSSFADEEVENT") {
+                Param *par = mainmix->crossfade;
+                safegetline(rfile, istring);
+                if (istring == "EVENTELEM") {
+                    mainmix->event_read(rfile, par, nullptr, nullptr);
+                }
+            } else if (istring == "CROSSFADECOMPEVENT") {
+                Param *par = mainmix->crossfadecomp;
+                safegetline(rfile, istring);
+                if (istring == "EVENTELEM") {
+                    mainmix->event_read(rfile, par, nullptr, nullptr);
+                }
+            } else if (istring == "WIPEXEVENT") {
+                Param *par = mainmix->wipex[1];
+                safegetline(rfile, istring);
+                if (istring == "EVENTELEM") {
+                    mainmix->event_read(rfile, par, nullptr, nullptr);
+                }
+            } else if (istring == "WIPEYEVENT") {
+                Param *par = mainmix->wipey[1];
+                safegetline(rfile, istring);
+                if (istring == "EVENTELEM") {
+                    mainmix->event_read(rfile, par, nullptr, nullptr);
+                }
+            } else if (istring == "WIPEXCOMPEVENT") {
+                Param *par = mainmix->wipex[0];
+                safegetline(rfile, istring);
+                if (istring == "EVENTELEM") {
+                    mainmix->event_read(rfile, par, nullptr, nullptr);
+                }
+            } else if (istring == "WIPEYCOMPEVENT") {
+                Param *par = mainmix->wipey[0];
+                safegetline(rfile, istring);
+                if (istring == "EVENTELEM") {
+                    mainmix->event_read(rfile, par, nullptr, nullptr);
+                }
+            }
+        }
+        if (istring == "LAYERS") {
             loopstation->readelems.clear();
             loopstation->readelemnrs.clear();
 
@@ -8664,7 +8724,7 @@ void Mixer::open_deck(const std::string path, bool alive, bool loadevents, bool 
 
     mainprogram->filecount = 0;
 
-    if (!copycomp) {
+    if (copycomp == 0) {
         for (int i = 0; i < 4; i++) {
             tempmap = mainmix->swapmap[i];
             for (std::vector<Layer *> lv: tempmap) {
@@ -8693,7 +8753,7 @@ void Mixer::open_deck(const std::string path, bool alive, bool loadevents, bool 
             }
         }
     }
-    else {
+    else if (copycomp > 0) {
         for (int i = 0; i < 4; i++) {
             tempmap = mainmix->swapmap[i];
             for (std::vector<Layer *> lv: tempmap) {
@@ -8750,7 +8810,7 @@ void Mixer::save_deck(const std::string path) {
 	//decksav.detach();  // reminder
 }
 
-void Mixer::do_save_deck(const std::string path, bool save, bool doclips) {
+void Mixer::do_save_deck(const std::string path, bool save, bool doclips, bool copycomp) {
 	std::string ext = path.substr(path.length() - 5, std::string::npos);
 	std::string str;
 	if (ext != ".deck") str = path + ".deck";
@@ -8774,6 +8834,7 @@ void Mixer::do_save_deck(const std::string path, bool save, bool doclips) {
 	wfile << "DECKSPEEDEVENT\n";
 	Param* par = mainmix->deckspeed[!mainprogram->prevmodus][mainmix->mousedeck];
 	mainmix->event_write(wfile, par, nullptr);
+    wfile << "\n";
 	wfile << "DECKSPEEDMIDI0\n";
 	wfile << std::to_string(mainmix->deckspeed[!mainprogram->prevmodus][mainmix->mousedeck]->midi[0]);
 	wfile << "\n";
@@ -8783,9 +8844,35 @@ void Mixer::do_save_deck(const std::string path, bool save, bool doclips) {
 	wfile << "DECKSPEEDMIDIPORT\n";
 	wfile << mainmix->deckspeed[!mainprogram->prevmodus][mainmix->mousedeck]->midiport;
 	wfile << "\n";
+    wfile << "CROSSFADEEVENT\n";
+    par = mainmix->crossfade;
+    mainmix->event_write(wfile, par, nullptr);
+    wfile << "\n";
+    wfile << "CROSSFADECOMPEVENT\n";
+    par = mainmix->crossfadecomp;
+    mainmix->event_write(wfile, par, nullptr);
+    wfile << "\n";
+    wfile << "WIPEXEVENT\n";
+    mainmix->event_write(wfile, mainmix->wipex[0], nullptr);
+    wfile << "\n";
+    wfile << "WIPEYEVENT\n";
+    mainmix->event_write(wfile, mainmix->wipey[0], nullptr);
+    wfile << "\n";
+    wfile << "WIPEXCOMPEVENT\n";
+    mainmix->event_write(wfile, mainmix->wipex[1], nullptr);
+    wfile << "\n";
+    wfile << "WIPEYCOMPEVENT\n";
+    mainmix->event_write(wfile, mainmix->wipey[1], nullptr);
+    wfile << "\n";
 
     wfile << "LAYERS\n";
-	std::vector<std::vector<std::string>> jpegpaths;
+
+    loopstation = lpc;
+    if (mainprogram->prevmodus) loopstation = lp;
+
+    this->get_butimes();
+
+    std::vector<std::vector<std::string>> jpegpaths;
 	std::vector<Layer*>& lvec = choose_layers(mainmix->mousedeck);
 	for (int i = 0; i < lvec.size(); i++) {
 		Layer* lay = lvec[i];
@@ -8806,8 +8893,15 @@ void Mixer::do_save_deck(const std::string path, bool save, bool doclips) {
 	wfile << "ENDOFFILE\n";
 	wfile.close();
 
-    std::thread concat = std::thread(&Program::concat_files, mainprogram, mainprogram->temppath + "tempconcatdeck", str, jpegpaths);
-    concat.detach();
+    if (copycomp) {
+        // protects speedy SENDing in copy_to_comp
+        mainprogram->concat_files(mainprogram->temppath + "tempconcatdeck", str, jpegpaths, true);
+    }
+    else {
+        std::thread concat = std::thread(&Program::concat_files, mainprogram, mainprogram->temppath + "tempconcatdeck",
+                                         str, jpegpaths, false);
+        concat.detach();
+    }
 }
 
 
@@ -9210,6 +9304,15 @@ void Layer::playaudio() {
 }
 
 
+void Mixer::get_butimes() {
+    loopstation->bunow = std::chrono::high_resolution_clock::now();
+    for (LoopStationElement* elem : loopstation->elems) {
+        elem->buinterimtime = elem->interimtime;
+        elem->buspeedadaptedtime = elem->speedadaptedtime;
+    }
+}
+
+
 void Layer::set_inlayer(Layer* lay, bool pbos) {
     if (pbos) {
         int sw1, sh1;
@@ -9382,6 +9485,7 @@ Layer* Mixer::open_layerfile(const std::string path, Layer* lay, bool loadevents
         std::vector<Layer *> layers;
         lay2 = mainmix->read_layers(rfile, result, layers, lay->deck, false, 0, doclips, concat, 1, loadevents, 0, lay->keepeffbut->value);
     }
+
     if (switching) {
         mainprogram->prevmodus = !mainprogram->prevmodus;
         //lay2->comp = !lay2->comp;
@@ -9436,14 +9540,16 @@ void Mixer::save_layerfile(const std::string path, Layer* lay, bool doclips, boo
 	wfile.open(str);
 	wfile << "EWOCvj LAYERFILE\n";
 
-	std::vector<std::vector<std::string>> jpegpaths;
+    this->get_butimes();
+
+    std::vector<std::vector<std::string>> jpegpaths;
     std::vector<std::string> jp = mainmix->write_layer(lay, wfile, doclips, dojpeg);
 	jpegpaths.push_back(jp);
 
 	wfile << "ENDOFFILE\n";
 	wfile.close();
 
-    std::thread concat = std::thread(&Program::concat_files, mainprogram, mainprogram->temppath + "tempconcatlayerfile", str, jpegpaths);
+    std::thread concat = std::thread(&Program::concat_files, mainprogram, mainprogram->temppath + "tempconcatlayerfile", str, jpegpaths, false);
     concat.detach();
 	lay->layerfilepath = str;
 }
@@ -11480,18 +11586,18 @@ void Mixer::event_write(std::ostream &wfile, Param* par, Button* but) {
                 wfile << "TOTALTIME\n";
                 wfile << std::to_string(elem->totaltime);
                 wfile << "\n";
-                std::chrono::high_resolution_clock::time_point now = std::chrono::high_resolution_clock::now();
+                /*std::chrono::high_resolution_clock::time_point now = std::chrono::high_resolution_clock::now();
                 std::chrono::duration<double> elapsed;
                 elapsed = std::chrono::duration_cast<std::chrono::duration<double>>(now - elem->starttime);
                 long long millicount = std::chrono::duration_cast<std::chrono::milliseconds>(elapsed).count();
                 int passed = millicount - elem->interimtime;
                 elem->interimtime = millicount;
-                elem->speedadaptedtime = elem->speedadaptedtime + passed * elem->speed->value;
+                elem->speedadaptedtime = elem->speedadaptedtime + passed * elem->speed->value;*/
                 wfile << "INTERIMTIME\n";
-                wfile << std::to_string(elem->interimtime);
+                wfile << std::to_string(elem->buinterimtime);
                 wfile << "\n";
                 wfile << "SPEEDADAPTEDTIME\n";
-                wfile << std::to_string(elem->speedadaptedtime);
+                wfile << std::to_string(elem->buspeedadaptedtime);
                 wfile << "\n";
             }
 		}
@@ -11542,18 +11648,16 @@ void Mixer::event_read(std::istream &rfile, Param *par, Button* but, Layer *lay)
 	LoopStationElement *loop = nullptr;
 	safegetline(rfile, istring);
 	int elemnr = std::stoi(istring);
-	LoopStation *ls;
-	if (mainprogram->prevmodus) ls = lp;
-	else ls = lpc;
-	if (std::find(ls->readelemnrs.begin(), ls->readelemnrs.end(), elemnr) == ls->readelemnrs.end()) {
+
+	if (std::find(loopstation->readelemnrs.begin(), loopstation->readelemnrs.end(), elemnr) == loopstation->readelemnrs.end()) {
 		// new loopstation line taken in use at location elemnr
-		loop = ls->elems[elemnr];
-		ls->readelemnrs.push_back(elemnr);
-		ls->readelems.push_back(loop);
+		loop = loopstation->elems[elemnr];
+		loopstation->readelemnrs.push_back(elemnr);
+		loopstation->readelems.push_back(loop);
 	}
 	else {
 		// other parameter(s) of this rfile using this loopstation line already exist
-		loop = ls->free_element();
+		loop = loopstation->free_element();
 	}
     if (loop) {
         if (par){
@@ -11606,7 +11710,7 @@ void Mixer::event_read(std::istream &rfile, Param *par, Button* but, Layer *lay)
 			}
 			if (par) {
 				loop->params.emplace(par);
-				ls->parelemmap[par] = loop;
+				loopstation->parelemmap[par] = loop;
 				if (par->effect) {
 					loop->layers.emplace(par->effect->layer);
 				}
@@ -11617,7 +11721,7 @@ void Mixer::event_read(std::istream &rfile, Param *par, Button* but, Layer *lay)
 			}
 			else if (but) {
 				loop->buttons.emplace(but);
-				ls->butelemmap[but] = loop;
+				loopstation->butelemmap[but] = loop;
 				if (but->layer) {
 					loop->layers.emplace(but->layer);
 				}

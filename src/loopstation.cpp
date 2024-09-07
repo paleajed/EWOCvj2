@@ -405,12 +405,15 @@ void LoopStationElement::set_values() {
 	this->interimtime = millicount;
 	this->speedadaptedtime = this->speedadaptedtime + passed * this->speed->value;
 	std::tuple<long long, Param*, Button*, float> event;
+    /*if (this->eventpos > this->eventlist.size()) {
+        this->eventpos = 1;
+        return;
+    }*/
 	event = this->eventlist[std::clamp(this->eventpos, 0, (int)this->eventlist.size() - 1)];
 	while (this->speedadaptedtime > std::get<0>(event) && !this->atend) {
 	    // play all recorded events upto now
 		Param *par = std::get<1>(event);
 		Button *but = std::get<2>(event);
-		lpc = lpc;
 		if (par) {
             elapsed = std::chrono::duration_cast<std::chrono::duration<double>>(now2 - par->midistarttime);
             long long mc = std::chrono::duration_cast<std::chrono::milliseconds>(elapsed).count();
@@ -493,9 +496,14 @@ void LoopStationElement::add_param_automationentry(Param* par, long long mc) {
 	this->eventlist.push_back(event);
 	this->params.emplace(par);
 	loopstation->parelemmap[par] = this;
-	if (par->effect) {
+    if (par->name == "crossfade" || par->name == "crossfadecomp" || par->name == "wipex" || par->name == "wipey") {
+    }
+	else if (par->effect) {
 		this->layers.emplace(par->effect->layer);
 	}
+    else {
+        this->layers.emplace(par->layer);
+    }
 	bool frame = false;
 	for (int i = 0; i < 2; i++) {
 		std::vector<Layer*>& lvec = choose_layers(i);

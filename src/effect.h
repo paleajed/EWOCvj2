@@ -77,8 +77,9 @@ class Param {
 		bool powertwo = false;
 		std::string shadervar;
 		Effect *effect = nullptr;
-		Boxx *box = NULL;
-		MidiNode *node = NULL;
+		Boxx *box = nullptr;
+		MidiNode *node = nullptr;
+        Layer *layer = nullptr;
 		bool nextrow = false;
 		std::vector<std::string> oscpaths;
         std::chrono::system_clock::time_point midistarttime;

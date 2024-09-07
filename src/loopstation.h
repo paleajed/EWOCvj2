@@ -41,6 +41,7 @@ class LoopStation {
         int scrpos = 0;
         int confscrpos = 0;
 		LoopStationElement* currelem;
+        std::chrono::high_resolution_clock::time_point bunow;
 		LoopStationElement* add_elem();
 		LoopStationElement* free_element();
 		void init();
@@ -72,9 +73,11 @@ class LoopStationElement {
 		Boxx *colbox;
 		Boxx *box;
 		std::chrono::high_resolution_clock::time_point starttime;
-        float interimtime = 0;
         float totaltime = 0;
-		float speedadaptedtime = 0;
+        float interimtime = 0;
+        float speedadaptedtime = 0;
+        float buinterimtime = 0;
+        float buspeedadaptedtime = 0;
 		Param *speed;
 		std::vector<std::tuple<long long, Param*, Button*, float>> eventlist;
 		int eventpos = 0;

@@ -330,7 +330,8 @@ class Layer {
 
         void display();
 		Effect* add_effect(EFFECT_TYPE type, int pos);
-		Effect* replace_effect(EFFECT_TYPE type, int pos);
+        Effect* do_add_effect(EFFECT_TYPE type, int pos, bool comp);
+        Effect* replace_effect(EFFECT_TYPE type, int pos);
 		void delete_effect(int pos);
 		void inhibit();
 		std::vector<Effect*>& choose_effects();
@@ -452,10 +453,10 @@ class Mixer {
 		void save_mix(std::string path);
 		void do_save_mix(std::string path, bool modus, bool save);
 		void save_deck(std::string path);
-		void do_save_deck(std::string path, bool save, bool doclips);
+		void do_save_deck(std::string path, bool save, bool doclips, bool copycomp = false);
 		Layer* open_layerfile(std::string path, Layer *lay, bool loadevents, bool doclips, bool uselayers = true);
 		void open_mix(std::string path, bool alive, bool loadevents = true);
-		void open_deck(std::string path, bool alive, bool loadevents = true, bool copycomp = false);
+		void open_deck(std::string path, bool alive, bool loadevents = true, int copycomp = 0);
 		void new_state();
 		void open_state(std::string path);
 		void save_state(std::string path, bool autosave);
@@ -475,6 +476,7 @@ class Mixer {
         void reconnect_all(std::vector<Layer*> &layers);
         void change_currlay(Layer *oldcurr, Layer *newcurr);
         void copy_lpst(Layer *destlay, Layer *srclay, bool global, bool back);
+        void get_butimes();
         Mixer();
 		
 		std::mutex recordlock[2];
