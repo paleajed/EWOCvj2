@@ -9504,7 +9504,6 @@ bool Layer::progress(bool comp, bool alive) {
     if (this->type != ELEM_LIVE) {
         if (!this->vidopen) {
             this->frame = this->frame + this->scratch;
-            this->scratch = 0;
             // calculate new frame numbers
             float fac = 0.0f;
             if (1) fac = mainmix->deckspeed[comp][this->deck]->value;
@@ -9527,15 +9526,19 @@ bool Layer::progress(bool comp, bool alive) {
                 this->millif = ilGetInteger(IL_IMAGE_DURATION);
             }
             if ((this->speed->value > 0 && (this->playbut->value || this->bouncebut->value == 1)) || (this->speed->value < 0 && (this->revbut->value || this->bouncebut->value == 2))) {
-                this->frame += !this->scratchtouch * this->speed->value * fac * fac * this->speed->value * thismilli / this->millif;
+                if (this->scratch) {
+                    bool dummy = false;
+                }
+                this->frame += !(this->scratch != 0 || this->scratchtouch) * this->speed->value * fac * fac * this->speed->value * thismilli / this->millif;
             }
             else if ((this->speed->value > 0 && (this->revbut->value || this->bouncebut->value == 2)) || (this->speed->value < 0 && (this->playbut->value || this->bouncebut->value == 1))) {
-                this->frame -= !this->scratchtouch * this->speed->value * fac * fac * this->speed->value * thismilli / this->millif;
+                this->frame -= !(this->scratch != 0 || this->scratchtouch) * this->speed->value * fac * fac * this->speed->value * thismilli / this->millif;
             }
             if ((int)(this->frame) != this->prevframe && this->type == ELEM_IMAGE && this->numf > 0) {
                 // set animated gif to update now
                 this->remfr[this->pbofri]->newdata = true;
             }
+            this->scratch = 0;
             bool found = false;
             for (int i = 0; i < loopstation->elems.size(); i++) {
                 if (std::find(loopstation->elems[i]->params.begin(), loopstation->elems[i]->params.end(), this->scritch) != loopstation->elems[i]->params.end()) {

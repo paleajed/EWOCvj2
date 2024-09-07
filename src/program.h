@@ -180,7 +180,7 @@ class Project {
         float ow = 1920.0f;
         float oh = 1080.0f;
 		void newp(std::string path);
-		void open(std::string path, bool autosave);
+		bool open(std::string path, bool autosave, bool newp = false);
         void autosave();
 		void do_save(std::string path, bool autosave = false);
         void delete_dirs(std::string path);
@@ -393,23 +393,27 @@ class Program {
         GLuint binvao;
         GLuint quboxvao;
         GLuint prboxvao;
+        GLuint splboxvao;
 		GLuint tmboxvao;
 		GLuint bvbuf;
         GLuint boxvbuf;
         GLuint binvbuf;
         GLuint quboxvbuf;
         GLuint prboxvbuf;
+        GLuint splboxvbuf;
 		GLuint tmboxvbuf;
 		GLuint btbuf;
         GLuint boxtbuf;
         GLuint bintbuf;
         GLuint quboxtbuf;
         GLuint prboxtbuf;
+        GLuint splboxtbuf;
 		GLuint tmboxtbuf;
 		GLuint texvao;
 		GLuint rtvbo;
 		GLuint rttbo;
         GLuint bgtex;
+        GLuint splashtex;
         GLuint loktex;
 		std::vector<OutputEntry*> outputentries;
         std::unordered_map<int, Button*> buttons;
@@ -419,7 +423,8 @@ class Program {
 		Layer *prelay = nullptr;
         std::vector<Layer*> dellays;
         std::vector<Effect*> deleffects;
-		SDL_Window *mainwindow;
+        SDL_Window *splashwindow;
+        SDL_Window *mainwindow;
 		std::vector<EWindow*> mixwindows;
 		std::vector<Menu*> menulist;
 		std::vector<Menu*> actmenulist;
@@ -674,6 +679,8 @@ class Program {
         int concatting = 0;
         int numconcatted = 0;
         bool saveas = false;
+        bool inautosave = false;
+        std::vector<std::string> oldbins;
 
 		std::unordered_map <std::string, GUIString*> guitextmap;
 		std::unordered_map <std::string, GUIString*> prguitextmap;
@@ -739,7 +746,8 @@ class Program {
 
         std::string projdir;
 		std::string binsdir;
-		std::string currprojdir;
+        std::string autosavebinsdir;
+        std::string currprojdir;
 		std::string currbinsdir;
 		std::string currshelfdir;
 		std::string currrecdir;

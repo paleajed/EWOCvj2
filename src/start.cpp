@@ -122,6 +122,7 @@ Retarget *retarget = nullptr;
 float smw, smh;
 SDL_GLContext glc;
 SDL_GLContext orderglc;
+SDL_GLContext splashglc;
 float white[] = { 1.0f, 1.0f, 1.0f, 1.0f };
 float halfwhite[] = { 1.0f, 1.0f, 1.0f, 0.5f };
 float black[] = { 0.0f, 0.0f, 0.0f, 1.0f };
@@ -682,10 +683,13 @@ void handle_midi(LayMidi *laymidi, int deck, int midi0, int midi1, int midi2, st
                 lvec[j]->revbut->value = false;
                 lvec[j]->bouncebut->value = false;
 			}
-			if (midi0 == laymidi->bounce->midi0 && midi1 == laymidi->bounce->midi1 && midi2 != 0 && midiport == laymidi->bounce->midiport) {
-				lvec[j]->bouncebut->value = !lvec[j]->bouncebut->value;
+            if (midi0 == laymidi->bounce->midi0 && midi1 == laymidi->bounce->midi1 && midi2 != 0 && midiport == laymidi->bounce->midiport) {
+                lvec[j]->bouncebut->value = !lvec[j]->bouncebut->value;
                 lvec[j]->playbut->value = false;
                 lvec[j]->revbut->value = false;
+            }
+            if (midi0 == laymidi->loop->midi0 && midi1 == laymidi->loop->midi1 && midi2 != 0 && midiport == laymidi->loop->midiport) {
+                lvec[j]->lpbut->value = !lvec[j]->lpbut->value;
             }
             if (midi0 == laymidi->scratch1->midi0 && midi1 == laymidi->scratch1->midi1 && midiport == laymidi->scratch1->midiport) {
                 lvec[j]->scratch = ((float)midi2 - 64.0f) * (laymidi->scrinvert * 2 - 1) / 4.0f;
@@ -860,7 +864,7 @@ void mycallback( double deltatime, std::vector< unsigned char > *message, void *
                     mainprogram->tmlearn = TM_NONE;
                     break;
                 case TM_STOP:
-                    if (midi0 == 144) return;
+                    //if (midi0 == 144) return;
                     lm->stop->midi0 = midi0;
                     lm->stop->midi1 = midi1;
                     lm->stop->midiport = midiport;
@@ -871,7 +875,7 @@ void mycallback( double deltatime, std::vector< unsigned char > *message, void *
                     mainprogram->tmlearn = TM_NONE;
                     break;
                 case TM_LOOP:
-                    if (midi0 == 144) return;
+                    //if (midi0 == 144) return;
                     lm->loop->midi0 = midi0;
                     lm->loop->midi1 = midi1;
                     lm->loop->midiport = midiport;
@@ -927,7 +931,7 @@ void mycallback( double deltatime, std::vector< unsigned char > *message, void *
                     mainprogram->tmlearn = TM_NONE;
                     break;
                 case TM_FREEZE:
-                    if (midi0 == 176) return;
+                    //if (midi0 == 176) return;
                     lm->scratchtouch->midi0 = midi0;
                     lm->scratchtouch->midi1 = midi1;
                     lm->scratchtouch->midiport = midiport;
@@ -1449,6 +1453,19 @@ void set_glstructures() {
     glEnableVertexAttribArray(0);
     glVertexAttribPointer(0, 3, GL_FLOAT, GL_FALSE, 12, nullptr);
     glBindBuffer(GL_ARRAY_BUFFER, mainprogram->prboxtbuf);
+    glBufferData(GL_ARRAY_BUFFER, 32, tcoords2, GL_DYNAMIC_DRAW);
+    glEnableVertexAttribArray(1);
+    glVertexAttribPointer(1, 2, GL_FLOAT, GL_FALSE, 8, nullptr);
+    SDL_GL_MakeCurrent(mainprogram->splashwindow, glc);
+    glGenBuffers(1, &mainprogram->splboxvbuf);
+    glGenBuffers(1, &mainprogram->splboxtbuf);
+    glGenVertexArrays(1, &mainprogram->splboxvao);
+    glBindVertexArray(mainprogram->splboxvao);
+    glBindBuffer(GL_ARRAY_BUFFER, mainprogram->splboxvbuf);
+    glBufferData(GL_ARRAY_BUFFER, 48, vcoords, GL_DYNAMIC_DRAW);
+    glEnableVertexAttribArray(0);
+    glVertexAttribPointer(0, 3, GL_FLOAT, GL_FALSE, 12, nullptr);
+    glBindBuffer(GL_ARRAY_BUFFER, mainprogram->splboxtbuf);
     glBufferData(GL_ARRAY_BUFFER, 32, tcoords2, GL_DYNAMIC_DRAW);
     glEnableVertexAttribArray(1);
     glVertexAttribPointer(1, 2, GL_FLOAT, GL_FALSE, 8, nullptr);
@@ -5449,24 +5466,25 @@ void the_loop() {
             }
             bin->open_positions.erase(bin->open_positions.begin());
         }
-        /*else {
-            // each loop iteration, save one bin element jpeg if there are any unsaved ones
+        else {
+            // each loop iteration, save one bin element jpeg to prepare for autosave
             for (Bin *bin : binsmain->bins) {
                 for (BinElement *binel : bin->elements) {
-                    if (binel->name != "" && !binel->jpegsaved) {
-                        binel->jpegpath = find_unused_filename(bin->name, mainprogram->project->binsdir, ".jpg");
-                        bin->bujpegpaths.push_back(binel->jpegpath);
-                        binel->jpegsaved = true;
-                        binel->absjpath = binel->jpegpath;
-                        if (binel->absjpath != "") {
-                            binel->reljpath = std::filesystem::relative(binel->absjpath,
-                                                                        mainprogram->project->binsdir).generic_string();
+                    if (binel->jpegpath != "") {
+                        if (binel->name != "" && !binel->autosavejpegsaved) {
+                            std::string str = mainprogram->project->autosavedir + "temp/bins/" + bin->name;
+                            if (!exists(str)) {
+                                std::filesystem::create_directories(std::filesystem::path(str));
+                            }
+                            std::string jpgpath = str + "/" + basename(binel->jpegpath);
+                            binel->autosavejpegsaved = true;
+                            save_thumb(jpgpath, binel->tex);
+                            break;
                         }
-                        save_thumb(binel->jpegpath, binel->tex);
                     }
                 }
             }
-        }*/
+        }
     }
 
 
@@ -5546,7 +5564,28 @@ void the_loop() {
                 Sleep (5);
             }
 
-			//save midi map
+            // remove unsaved bins
+            std::vector<Bin *> bins = binsmain->bins;
+            int correct = 0;
+            for (int i = 0; i < bins.size(); i++) {
+                if (!bins[i]->saved) {
+                    binsmain->bins.erase(binsmain->bins.begin() + i - correct);
+                    std::filesystem::remove(bins[i]->path);
+                    std::filesystem::remove_all(mainprogram->project->bubd + bins[i]->name);
+                    correct++;
+                }
+            }
+            binsmain->save_binslist();
+            if (binsmain->bins.size() == 0) {
+                std::filesystem::remove(mainprogram->project->bubd + "bins.list");
+            }
+
+            //remove redundant bin files
+            for (std::string remstr : binsmain->removevec) {
+                std::filesystem::remove(remstr);
+            }
+
+            //save midi map
 			//save_genmidis(mainprogram->docpath + "midiset.gm");
 			//empty temp dir
 			for (int j = 0; j < 12; j++) {
@@ -5605,6 +5644,7 @@ void the_loop() {
 
 			printf("%s: %s\n", mainprogram->quitting.c_str(), SDL_GetError());
 			printf("stopped\n");
+            fflush(stdout);
 
 			exit(0);
 		}
@@ -5825,7 +5865,7 @@ void the_loop() {
     mainmix->reconnect_all(mainmix->layers[3]);
     make_layboxes();
 
-    //glFlush();   //reminder : test under Windows
+    //glFlush();
     //glFinish();
     SDL_GL_SwapWindow(mainprogram->mainwindow);
 
@@ -6427,8 +6467,6 @@ void open_genmidis(std::string path) {
 
 #ifdef WINDOWS
 int CALLBACK WinMain(HINSTANCE hInstance, HINSTANCE hPrevInstance, LPSTR pCmdLine, int nCmdShow) {
-    printf("YES\n");
-    fflush(stdout);
 #endif
 #ifdef POSIX
 int main(int argc, char* argv[]) {
@@ -6497,20 +6535,14 @@ int main(int argc, char* argv[]) {
     SDL_GetCurrentDisplayMode(0, &DM);
 
     mainprogram = new Program;
-    printf("12\n");
     mainprogram->mainwindow = win;
     lp = new LoopStation;
     lpc = new LoopStation;
-    printf("13\n");
     loopstation = lp;
     mainmix = new Mixer;
-    printf("14\n");
     binsmain = new BinsMain;
-    printf("15\n");
     retarget = new Retarget;
-    printf("16\n");
 
-    printf("1\n");
 
 #ifdef WINDOWS
     std::filesystem::path p5{mainprogram->docpath + "projects"};
@@ -6560,21 +6592,24 @@ int main(int argc, char* argv[]) {
 
     printf("5\n");
     mainprogram->quitwindow = SDL_CreateWindow("Quit EWOCvj2", glob->w / 4, glob->h / 4, glob->w / 2,
-                                                             glob->h / 2, SDL_WINDOW_OPENGL | SDL_WINDOW_HIDDEN |
+                                               glob->h / 2, SDL_WINDOW_OPENGL | SDL_WINDOW_HIDDEN |
                                                                           SDL_WINDOW_ALLOW_HIGHDPI);
     mainprogram->config_midipresetswindow = SDL_CreateWindow("Tune MIDI", glob->w / 4, glob->h / 4, glob->w / 2,
                                                              glob->h / 2, SDL_WINDOW_OPENGL | SDL_WINDOW_HIDDEN |
                                                                           SDL_WINDOW_ALLOW_HIGHDPI);
     mainprogram->prefwindow = SDL_CreateWindow("Preferences", glob->w / 4, glob->h / 4, glob->w / 2, glob->h / 2,
                                                SDL_WINDOW_OPENGL | SDL_WINDOW_HIDDEN | SDL_WINDOW_ALLOW_HIGHDPI);
+
+    mainprogram->splashwindow = SDL_CreateWindow("", (glob->w - (glob->h / 2)) / 2, glob->h / 4, glob->h / 2, glob->h / 2,
+                                                 SDL_WINDOW_OPENGL | SDL_WINDOW_BORDERLESS | SDL_WINDOW_SHOWN |
+                                                 SDL_WINDOW_ALLOW_HIGHDPI);
+
     SDL_GL_GetDrawableSize(mainprogram->prefwindow, &wi, &he);
     smw = (float) wi;
     smh = (float) he;
 
-    SDL_GL_MakeCurrent(mainprogram->mainwindow, glc);
-    printf("6\n");
+    SDL_GL_MakeCurrent(mainprogram->splashwindow, glc);
     mainprogram->ShaderProgram = mainprogram->set_shader();
-    fflush(stdout);
     glUseProgram(mainprogram->ShaderProgram);
 
     mainprogram->shelves[0] = new Shelf(0);
@@ -6610,8 +6645,6 @@ int main(int argc, char* argv[]) {
         return 1;
     }
     FT_Set_Pixel_Sizes(face, 0, 48);
-    glEnable(GL_BLEND);
-    glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
 
     mainprogram->define_menus();
 
@@ -6704,8 +6737,15 @@ int main(int argc, char* argv[]) {
     GLint preff = glGetUniformLocation(mainprogram->ShaderProgram, "preff");
     glUniform1i(preff, 1);
 
+
+    SDL_GL_MakeCurrent(mainprogram->mainwindow, glc);
+    set_glstructures();
+    SDL_GL_MakeCurrent(mainprogram->splashwindow, glc);
+    glUseProgram(mainprogram->ShaderProgram);
+
+
     // load background graphic
-    ilEnable(IL_CONV_PAL);
+    //ilEnable(IL_CONV_PAL);
     ILuint bg_ol;
     ilGenImages(1, &bg_ol);
     ilBindImage(bg_ol);
@@ -6730,11 +6770,41 @@ int main(int argc, char* argv[]) {
     glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA8, w, h, 0, GL_BGRA, GL_UNSIGNED_BYTE, (char *) ilGetData());
 
     // load background graphic
-    ilEnable(IL_CONV_PAL);
-    ILuint lok_ol;
-    ilGenImages(1, &lok_ol);
-    ilBindImage(lok_ol);
+    //ilEnable(IL_CONV_PAL);
+    ILuint splash;
+    ilGenImages(1, &splash);
+    ilBindImage(splash);
     ilActiveImage(0);
+#ifdef WINDOWS
+    ret = ilLoadImage((const ILstring)"./splash.jpeg");
+#endif
+#ifdef POSIX
+    ILboolean ret = ilLoadImage("/usr/share/ewocvj2/splash.jpeg");
+#endif
+    if (ret == IL_FALSE) {
+        printf("can't load splash image\n");
+        fflush(stdout);
+    }
+    w = ilGetInteger(IL_IMAGE_WIDTH);
+    h = ilGetInteger(IL_IMAGE_HEIGHT);
+    glGenTextures(1, &mainprogram->splashtex);
+    glBindTexture(GL_TEXTURE_2D, mainprogram->splashtex);
+    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR);
+    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
+    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_BORDER);
+    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_BORDER);
+    glTexImage2D(GL_TEXTURE_2D, 0, GL_RGB8, w, h, 0, GL_RGB, GL_UNSIGNED_BYTE, (char *) ilGetData());
+    glBindFramebuffer(GL_FRAMEBUFFER, 0);
+    glDrawBuffer(GL_FRONT);
+    glViewport(0, 0, glob->h / 2.0f, glob->h / 2.0f);
+    mainprogram->bvao = mainprogram->splboxvao;
+    mainprogram->bvbuf = mainprogram->splboxvbuf;
+    mainprogram->btbuf = mainprogram->splboxtbuf;
+    draw_direct(nullptr, black, -1.0f, -1.0f, 2.0f, 2.0f, 0.0f, 0.0f, 1.0f, 1.0f, 0, mainprogram->splashtex, glob->w, glob->h, false, false);
+    glEnable(GL_BLEND);
+    glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
+    draw_direct(nullptr, black, -2.0f, -1.0f, 4.0f, 2.0f, 0.0f, 0.0f, 1.0f, 1.0f, 0, mainprogram->bgtex, glob->w, glob->h, false, false);
+
 #ifdef WINDOWS
     std::filesystem::path full_path(std::filesystem::current_path());
     printf("PATH %s", full_path.string().c_str());
@@ -6895,8 +6965,6 @@ int main(int argc, char* argv[]) {
     thr2.detach();
 
 
-    set_glstructures();
-
     std::chrono::high_resolution_clock::time_point begintime = std::chrono::high_resolution_clock::now();
     std::chrono::duration<double> elapsed;
 
@@ -6918,21 +6986,60 @@ int main(int argc, char* argv[]) {
         rfile.close();
     }
 
-    glBindFramebuffer(GL_FRAMEBUFFER, 0);
-    glDrawBuffer(GL_BACK_LEFT);
 
+    mainprogram->directmode = true;
+    int num = 0;
+    for (PrefCat *cat : mainprogram->prefs->items) {
+        for (PrefItem *item : cat->items) {
+            num++;
+        }
+    }
+    draw_box(white, black, -0.25f, -0.9f, 0.5f, 0.1f, 0.0f, 0.0f, 1.0f, 1.0f, 0, -1, glob->w, glob->h, false);
+    int totalstrings = allboxes.size() + num;
+    int count = 0;
     for (Boxx *box : allboxes) {
         // predraw all tooltips so no slowdowns will happen when stringtextures are initialized
         mainprogram->longtooltip_prepare(box);
+        count++;
+        if (count % 8 == 1) {
+            SDL_GL_MakeCurrent(mainprogram->splashwindow, glc);
+            glBindFramebuffer(GL_FRAMEBUFFER, 0);
+            glDrawBuffer(GL_FRONT);
+            glViewport(0, 0, glob->h / 2.0f, glob->h / 2.0f);
+            mainprogram->bvao = mainprogram->splboxvao;
+            mainprogram->bvbuf = mainprogram->splboxvbuf;
+            mainprogram->btbuf = mainprogram->splboxtbuf;
+            draw_box(white, white, -0.25f, -0.9f, 0.5f * (float) count / (float) totalstrings, 0.1f, 0.0f, 0.0f, 1.0f,
+                     1.0f, 0, -1, glob->w, glob->h, false);
+            glFlush();
+        }
     }
     collectingboxes = false;
     // predraw all pref names so no slowdowns will happen when prefs window is first opened
     for (PrefCat *cat : mainprogram->prefs->items) {
-        render_text(cat->name, white, 99.0f, 99.0f, 0.00045f * 4.0, 0.00075f * 4.0, 1, 0);
         for (PrefItem *item : cat->items) {
             render_text(item->name, white, 99.0f, 99.0f, 0.0024f, 0.004f, 1, 0);
+            count++;
+            if (count % 8 == 1) {
+                SDL_GL_MakeCurrent(mainprogram->splashwindow, glc);
+                glBindFramebuffer(GL_FRAMEBUFFER, 0);
+                glDrawBuffer(GL_FRONT);
+                glViewport(0, 0, glob->h / 2.0f, glob->h / 2.0f);
+                mainprogram->bvao = mainprogram->splboxvao;
+                mainprogram->bvbuf = mainprogram->splboxvbuf;
+                mainprogram->btbuf = mainprogram->splboxtbuf;
+                draw_box(white, white, -0.25f, -0.9f, 0.5f * (float) count / (float) totalstrings, 0.1f, 0.0f, 0.0f,
+                         1.0f, 1.0f, 0, -1, glob->w, glob->h, false);
+                glFlush();
+            }
         }
     }
+    mainprogram->directmode = false;
+
+    glViewport(0, 0, glob->w, glob->h);
+    SDL_GL_MakeCurrent(mainprogram->mainwindow, glc);
+    glBindFramebuffer(GL_FRAMEBUFFER, 0);
+    glDrawBuffer(GL_BACK_LEFT);
 
 
     std::filesystem::current_path(pathtoplatform(mainprogram->docpath));
@@ -6940,7 +7047,7 @@ int main(int argc, char* argv[]) {
     SDL_EventState(SDL_DROPFILE, SDL_ENABLE);
     SDL_EventState(SDL_DROPBEGIN, SDL_ENABLE);
 
-
+    SDL_DestroyWindow(mainprogram->splashwindow);
 
     while (!quit) {
 
@@ -7147,7 +7254,22 @@ int main(int argc, char* argv[]) {
                     mainprogram->project->burd = mainprogram->project->recdir;
                     mainprogram->project->buad = mainprogram->project->autosavedir;
                     mainprogram->project->bued = mainprogram->project->elementsdir;
+                    std::string ext = mainprogram->path.substr(mainprogram->path.length() - 7, std::string::npos);
+                    if (ext != ".ewocvj") {
+                        mainprogram->autosavebinsdir = mainprogram->path + "/bins/";
+                    } else {
+                        mainprogram->autosavebinsdir = dirname(mainprogram->path.substr(0, mainprogram->path.size() - 7)) + "bins/";
+                    }
+
                     mainprogram->project->open(mainprogram->path, true);
+
+                    mainprogram->project->path = mainprogram->project->bupp;
+                    mainprogram->project->name = mainprogram->project->bupn;
+                    mainprogram->project->binsdir = mainprogram->project->bubd;
+                    mainprogram->project->shelfdir = mainprogram->project->busd;
+                    mainprogram->project->recdir = mainprogram->project->burd;
+                    mainprogram->project->autosavedir = mainprogram->project->buad;
+                    mainprogram->project->elementsdir = mainprogram->project->bued;
                 }
             } else if (mainprogram->pathto == "NEWPROJECT") {
                 mainprogram->currprojdir = dirname(mainprogram->path);
@@ -7168,7 +7290,6 @@ int main(int argc, char* argv[]) {
                 std::string path2;
                 std::string str;
                 std::vector<std::vector<std::string>> bupaths;
-                std::vector<std::vector<std::string>> bupathsshelf;
                 if (dirname(mainprogram->path) != "") {
                     std::string oldprdir = mainprogram->project->name;
                     mainprogram->currprojdir = dirname(mainprogram->path);
@@ -7247,8 +7368,7 @@ int main(int argc, char* argv[]) {
                             for (int i = 0; i < 12; i++) {
                                 BinElement *binel = binsmain->bins[k]->elements[i * 12 + j];
                                 std::string s =
-                                        mainprogram->path + remove_extension(basename(mainprogram->path)) +
-                                        "/";
+                                        mainprogram->path + "/bins/" + binsmain->bins[k]->name + "/";
                                 bup.push_back(binel->absjpath);
                                 if (binel->absjpath != "") {
                                     binel->absjpath = s + basename(binel->absjpath);
@@ -7488,12 +7608,6 @@ int main(int argc, char* argv[]) {
                 }
                 if (mainprogram->renaming == EDIT_BINNAME) {
                     binsmain->menubin->name = mainprogram->inputtext;
-                    std::string oldpath = mainprogram->project->binsdir + mainprogram->backupname;
-                    std::string newpath = mainprogram->project->binsdir + mainprogram->inputtext;
-                    if (exists(oldpath)) std::filesystem::rename(oldpath, newpath);
-                    oldpath += ".bin";
-                    newpath += ".bin";
-                    if (exists(oldpath)) std::filesystem::rename(oldpath, newpath);
                 } else if (mainprogram->renaming == EDIT_BINELEMNAME) {
                     binsmain->renamingelem->name = mainprogram->inputtext;
                 } else if (mainprogram->renaming == EDIT_PARAM) {
@@ -7864,7 +7978,7 @@ int main(int argc, char* argv[]) {
                     mainprogram->get_inname("Open project", "application/ewocvj2-project", std::filesystem::canonical(mainprogram->currprojdir).generic_string());
                     if (mainprogram->path != "") {
                         SDL_GL_MakeCurrent(mainprogram->mainwindow, glc);
-                        mainprogram->project->open(mainprogram->path, false);
+                        mainprogram->project->open(mainprogram->path, false, true);
                         std::string p = dirname(mainprogram->path);
                         mainprogram->currprojdir = dirname(p.substr(0, p.length() - 1));
                         mainprogram->path = "";
@@ -7895,13 +8009,15 @@ int main(int argc, char* argv[]) {
                     draw_box(white, lightblue, &box, -1);
                     if (mainprogram->leftmouse) {
                         //SDL_GL_MakeCurrent(mainprogram->mainwindow, glc);
-                        mainprogram->project->open(mainprogram->recentprojectpaths[i], false);
-                        std::string p = dirname(mainprogram->recentprojectpaths[i]);
-                        mainprogram->currprojdir = dirname(p.substr(0, p.length() - 1));
-                        mainprogram->startloop = true;
-                        brk = true;
-                        mainprogram->leftmouse = false;
-                        break;
+                        bool ret = mainprogram->project->open(mainprogram->recentprojectpaths[i], false, true);
+                        if (ret) {
+                            std::string p = dirname(mainprogram->recentprojectpaths[i]);
+                            mainprogram->currprojdir = dirname(p.substr(0, p.length() - 1));
+                            mainprogram->startloop = true;
+                            brk = true;
+                            mainprogram->leftmouse = false;
+                            break;
+                        }
                     }
                 }
                 render_text(remove_extension(basename(mainprogram->recentprojectpaths[i])), white,
@@ -7944,7 +8060,7 @@ int main(int argc, char* argv[]) {
 
             if (mainprogram->newproject) {
                 mainprogram->newproject = false;
-                mainprogram->project->open(mainprogram->project->path, false);
+                mainprogram->project->open(mainprogram->project->path, false, true);
            }
 
 

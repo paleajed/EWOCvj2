@@ -222,7 +222,7 @@ void BinsMain::handle(bool draw) {
         // solve bin name clashes
         for (int j = i + 1; j < this->bins.size(); j++) {
             if (this->bins[j]->name == this->bins[i]->name) {
-                this->bins[j]->path = mainprogram->project->binsdir + this->bins[j]->name + "_x" + ".bin";
+                this->bins[j]->path = find_unused_filename(this->bins[j]->name, mainprogram->project->binsdir, ".bin");
                 this->bins[j]->name = basename(remove_extension(this->bins[j]->path));
                 break;
             }
@@ -1101,6 +1101,7 @@ void BinsMain::handle(bool draw) {
 			if (mainprogram->leftmouse && !this->dragbin) {
 			    new_bin(remove_extension(basename(find_unused_filename("new bin", mainprogram->project->binsdir, ".bin"))));
                 this->save_bin(this->bins.back()->path);
+                this->bins.back()->saved = false;
 				if (this->bins.size() >= 20) this->binsscroll++;
 			}
 			box->acolor[0] = 0.5f;
@@ -2347,7 +2348,7 @@ void BinsMain::handle(bool draw) {
 	}
 }
 
-void BinsMain::open_bin(std::string path, Bin *bin) {
+void BinsMain::open_bin(std::string path, Bin *bin, bool newbin) {
 	// open a bin file
 	std::string result = deconcat_files(path);
 	bool concat = (result != "");
@@ -2409,26 +2410,36 @@ void BinsMain::open_bin(std::string path, Bin *bin) {
 				}
 				if (istring == "ABSJPEGPATH") {
 					safegetline(rfile, istring);
+                    if (exists(istring)) {
                     bin->elements[pos]->jpegsaved = true;
                     bin->elements[pos]->absjpath = istring;
                     bin->elements[pos]->jpegpath = istring;
                     if (bin->elements[pos]->name != "") {
 						if (bin->elements[pos]->absjpath != "") {
-							/*if (concat) {
-                                bin->elements[pos]->absjpath = result + "_" + std::to_string(filecount) + ".file";
-								bin->open_positions.push_back(pos);
-                       		    filecount++;
-							}
-							else*/ bin->open_positions.push_back(pos);
+							bin->open_positions.push_back(pos);
                         }
                         else {
                             bool dummy = false;
                         }
 					}
+                    }
 				}
                 if (istring == "RELJPEGPATH") {
                     safegetline(rfile, istring);
-                    bin->elements[pos]->reljpath = istring;
+                    if (bin->elements[pos]->absjpath == "" && istring != "") {
+                        bin->elements[pos]->jpegsaved = true;
+                        std::filesystem::current_path(mainprogram->project->binsdir);
+                        bin->elements[pos]->absjpath = std::filesystem::absolute(istring).generic_string();
+                        bin->elements[pos]->reljpath = istring;
+                        bin->elements[pos]->jpegpath = bin->elements[pos]->absjpath;
+                        if (bin->elements[pos]->name != "") {
+                            if (bin->elements[pos]->absjpath != "") {
+                                bin->open_positions.push_back(pos);
+                            } else {
+                                bool dummy = false;
+                            }
+                        }
+                    }
                 }
                 if (istring == "FILESIZE") {
                     safegetline(rfile, istring);
@@ -2444,15 +2455,14 @@ void BinsMain::open_bin(std::string path, Bin *bin) {
 	}
 
     rfile.close();
+
+    if (!newbin) {
+        bin->saved = true;
+    }
 }
+
 
 void BinsMain::save_bin(std::string path) {
-	//std::thread binsav(&BinsMain::do_save_bin, this, path);
-	//binsav.detach();
-	this->do_save_bin(path);
-}
-
-void BinsMain::do_save_bin(std::string path) {
 	// save bin file
 	std::vector<std::string> filestoadd;
 	std::ofstream wfile;
@@ -2525,15 +2535,17 @@ void BinsMain::do_save_bin(std::string path) {
 	filestoadd2.push_back(filestoadd);
     std::thread concat(&Program::concat_files, mainprogram, ttpath, path, filestoadd2);
     concat.detach();
+
+    if (dirname(path) == mainprogram->project->binsdir) {
+        binsmain->currbin->saved = true;
+    }
 }
 
 Bin *BinsMain::new_bin(std::string name) {
 	Bin *bin = new Bin(this->bins.size());
-	bin->name = name;
 	this->bins.push_back(bin);
 	bin->pos = this->bins.size() - 1;
-	//this->currbin->elements.clear();
-	
+
 	for (int i = 0; i < 12; i++) {
 		for (int j = 0; j < 12; j++) {
 			BinElement *binel = new BinElement;
@@ -2543,6 +2555,7 @@ Bin *BinsMain::new_bin(std::string name) {
 	make_currbin(this->bins.size() - 1);
 	std::string path;
 	bin->path = mainprogram->project->binsdir + name + ".bin";
+    bin->name = name;
 	std::filesystem::path p1{mainprogram->project->binsdir + name};
 	std::filesystem::create_directory(p1);  // reminder : secure
 	return bin;
@@ -2556,6 +2569,7 @@ void BinsMain::make_currbin(int pos) {
 	this->currbin->elements = this->bins[pos]->elements;
 	this->prevbinel = nullptr;
 }
+
 
 int BinsMain::read_binslist() {
 	// load the list of bins in this project
@@ -2640,7 +2654,7 @@ void BinsMain::import_bins() {
     }
 
 	Bin* bin = binsmain->new_bin(remove_extension(basename(mainprogram->paths[binsmain->binscount])));
-	binsmain->open_bin(mainprogram->paths[binsmain->binscount], bin);
+	binsmain->open_bin(mainprogram->paths[binsmain->binscount], bin, true);
 	std::string path = mainprogram->project->binsdir + bin->name + ".bin";
 	if (binsmain->bins.size() >= 20) binsmain->binsscroll++;
     next_bin();
@@ -2656,7 +2670,7 @@ void BinsMain::open_files_bin() {
             mainprogram->multistage = 0;
             return;
         }
-        bool cont = mainprogram->order_paths(false);
+        bool cont = mainprogram->order_paths(true);
         if (!cont) return;
 
 

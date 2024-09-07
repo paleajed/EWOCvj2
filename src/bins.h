@@ -114,7 +114,7 @@ class BinsMain {
 		void save_binslist();
 		void make_currbin(int pos);
 		Bin *new_bin(std::string name);
-		void open_bin(std::string path, Bin *bin);
+		void open_bin(std::string path, Bin *bin, bool newbin = false);
 		void save_bin(std::string path);
 		void import_bins();
 		void open_files_bin();
@@ -139,6 +139,7 @@ class Bin {
 		int encthreads = 0;
 		int pos;
 		bool shared = false;
+        bool saved = false;
 		std::vector<std::string> sendtonames;
 		Bin(int pos);
 		~Bin();
@@ -161,6 +162,7 @@ class BinElement {
 		std::string jpegpath = "";
 		std::string oldjpegpath = "";
         bool jpegsaved = false;
+        bool autosavejpegsaved = false;
         long long filesize = 0;
 		int vidw;
 		int vidh;

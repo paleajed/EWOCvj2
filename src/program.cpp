@@ -1247,12 +1247,17 @@ GLuint Program::get_tex(Layer *lay) {
 }
 
 bool Program::order_paths(bool dodeckmix) {
+    // get thumbnail textures for files to be loaded, then display filenames
+    // and textures and allow reordering them before inserting the files
+    // the process goes in multiple stages to allow spreading the workload
     if (this->multistage == 0) {
+        // initial setup
         this->filescount = 0;
         this->pathtexes.clear();
         this->multistage = 1;
     }
     if (this->multistage == 1) {
+        // obtain the filetype and initiate worker threads to get at the textures
         this->orderondisplay = true;
         // first get one file texture per loop
         std::string str = this->paths[this->filescount];
@@ -1336,7 +1341,7 @@ bool Program::order_paths(bool dodeckmix) {
             return false;
         }
         GLuint tex;
-        if (lay->type == ELEM_DECK or lay->type == ELEM_MIX) {
+        if (lay->type == ELEM_DECK || lay->type == ELEM_MIX) {
             glGenTextures(1, &tex);
             //glActiveTexture(GL_TEXTURE0);
             glBindTexture(GL_TEXTURE_2D, tex);
@@ -1347,18 +1352,7 @@ bool Program::order_paths(bool dodeckmix) {
 
             get_deckmixtex(lay, str);
 
-            std::string istring = "";
-            std::string result = deconcat_files(str);
-            if (!this->openerr) {
-                bool concat = (result != "");
-                std::ifstream rfile;
-                if (concat) rfile.open(result);
-                else rfile.open(str);
-                safegetline(rfile, istring);
-                rfile.close();
-            } else this->openerr = false;
-
-            open_thumb(this->result + "_" + std::to_string(this->resnum - 2) + ".file", tex);
+            open_thumb(result + "_" + std::to_string(this->resnum - 2) + ".file", tex);
         }
         else {
             if (!lay->processed) return false;
@@ -1446,17 +1440,6 @@ bool Program::order_paths(bool dodeckmix) {
         this->multistage = 4;
     }
     if (this->multistage == 4) {
-        if (this->openfilesshelf) {
-            // special case: reuse pathtexes as shelfelement texes
-            int size = this->shelffileselem + this->paths.size();
-            if (size > 16) size = 16;
-            for (int i = this->shelffileselem; i < size; i++) {
-                ShelfElement* elem = mainmix->mouseshelf->elements[i];
-                elem->path = this->paths[i - this->shelffileselem];
-                elem->tex = this->pathtexes[i- this->shelffileselem];
-            }
-            this->pathtexes.clear();
-        }
         // then cleanup
         for (int j = 0; j < this->pathboxes.size(); j++) {
             delete this->pathboxes[j];
@@ -4220,16 +4203,17 @@ void Program::handle_laymenu1() {
             }
         }
         else if ((!cond && k == 17) || k == 17 - cond * 2) {
-            if (!mainmix->recording[0]) {
-                // start recording
-                mainmix->reclay = mainmix->mouselayer;
-                mainmix->reccodec = "hap";
-                mainmix->reckind = 0;
-                mainmix->recrep = true;
-                mainmix->start_recording();
-            }
-            else {
-                mainmix->recording[0] = false;
+            if (mainmix->mouselayer->clips.size() == 1) {
+                if (!mainmix->recording[0]) {
+                    // start recording layer with all effects, settings,... and replace with recorded video
+                    mainmix->reclay = mainmix->mouselayer;
+                    mainmix->reccodec = "hap";
+                    mainmix->reckind = 0;
+                    mainmix->recrep = true;
+                    mainmix->start_recording();
+                } else {
+                    mainmix->recording[0] = false;
+                }
             }
         }
         else if (!cond && k == 18) {
@@ -5735,8 +5719,9 @@ int Program::config_midipresets_handle() {
         render_text("Learn MIDI Crossfade", white, -0.3f, 0.0f, 0.0024f, 0.004f, 2);
         break;
 	}
+    if (mainprogram->tmlearn != TM_NONE) render_text("Rightmouse button cancels ", white, -0.3f, -0.2f, 0.0024f, 0.004f, 2);
 
-	if (mainprogram->tmlearn == TM_NONE) {
+    if (mainprogram->tmlearn == TM_NONE) {
         //draw config_midipresets_handle screen
         for (int i = 0; i < 3; i++) {
             if (mainprogram->configcatmidi == i) draw_box(white, darkgreen1, mainprogram->tmcat[i], -1);
@@ -6465,10 +6450,14 @@ void Project::create_dirs(const std::string path) {
     std::filesystem::create_directory(p4);
     std::filesystem::path p5{ this->elementsdir };
     std::filesystem::create_directory(p5);
+
+    std::filesystem::create_directory(this->autosavedir + "temp/");
+    std::filesystem::create_directory(this->autosavedir + "temp/bins");
 }
 
 void Project::create_dirs_autosave(const std::string path) {
     std::string dir = path;
+    std::filesystem::rename(mainprogram->project->autosavedir + "temp", path);
     this->binsdir = dir + "/bins/";
     this->shelfdir = dir + "/shelves/";
     this->autosavedir = dir + "/autosaves/";
@@ -6486,6 +6475,9 @@ void Project::create_dirs_autosave(const std::string path) {
     std::filesystem::create_directory(p4);
     std::filesystem::path p5{ dir + "/elements/" };
     std::filesystem::create_directory(p5);
+
+    std::filesystem::create_directory(this->autosavedir + "temp/");
+    std::filesystem::create_directory(this->autosavedir + "temp/bins");
 }
 
 void Project::newp(const std::string path) {
@@ -6556,14 +6548,19 @@ void Project::newp(const std::string path) {
     mainprogram->project->do_save(this->path);
 }
 	
-void Project::open(std::string path, bool autosave) {
+bool Project::open(std::string path, bool autosave, bool newp) {
 	std::string result = deconcat_files(path);
 	bool concat = (result != "");
 	std::ifstream rfile;
 	if (concat) rfile.open(result);
 	else rfile.open(path);
 
-    //mainprogram->newproject2 = true;
+    if (autosave) {
+        for (Bin *bin : binsmain->bins) {
+            mainprogram->oldbins.push_back(bin->path);
+        }
+        mainprogram->inautosave = true;
+    }
 
 	void **namedest;
 	void **owdest;
@@ -6580,8 +6577,32 @@ void Project::open(std::string path, bool autosave) {
         }
     }
     //if (!autosave) {
-        mainprogram->project->path = path;
-        mainprogram->project->name = remove_extension(basename(path));
+    mainprogram->project->path = path;
+    if (!exists(path)) {  // reminder requester
+        std::string err = "Project at " + path + " doesn't exist" + "\n";
+        printf(err.c_str());
+        return false;
+    }
+
+    if (!newp) {
+        // remove unsaved bins
+        std::vector<Bin *> bins = binsmain->bins;
+        int correct = 0;
+        for (int i = 0; i < bins.size(); i++) {
+            if (!bins[i]->saved) {
+                //binsmain->bins.erase(binsmain->bins.begin() + i - correct);
+                std::filesystem::remove(bins[i]->path);
+                std::filesystem::remove_all(mainprogram->project->binsdir + bins[i]->name);
+                correct++;
+            }
+        }
+        binsmain->save_binslist();
+        if (binsmain->bins.size() == 0) {
+            std::filesystem::remove(mainprogram->project->binsdir + "bins.list");
+        }
+    }
+
+    mainprogram->project->name = remove_extension(basename(path));
         *namedest = &mainprogram->project->name;
         std::string dir = dirname(path);
         this->binsdir = dir + "bins/";
@@ -6592,6 +6613,10 @@ void Project::open(std::string path, bool autosave) {
         if (!exists(mainprogram->currfilesdir)) mainprogram->currfilesdir = this->elementsdir;
         mainprogram->currelemsdir = this->elementsdir;
     //}
+    std::string bubinsdir = mainprogram->project->binsdir;
+    if (autosave) {
+        mainprogram->project->binsdir = mainprogram->autosavebinsdir;
+    }
 	int cb = binsmain->read_binslist();
 	for (int i = 0; i < binsmain->bins.size(); i++) {
 		std::string binname = this->binsdir + binsmain->bins[i]->name + ".bin";
@@ -6599,7 +6624,10 @@ void Project::open(std::string path, bool autosave) {
 			binsmain->open_bin(binname, binsmain->bins[i]);
 		}
 	}
-	binsmain->make_currbin(cb);
+    mainprogram->project->binsdir = bubinsdir;
+	if (binsmain->bins.size()) {
+        binsmain->make_currbin(cb);
+    }
 
     mainprogram->set_ow3oh3();
     //mainmix->new_state();
@@ -6703,7 +6731,34 @@ void Project::do_save(std::string path, bool autosave) {
 	std::ofstream wfile;
 	wfile.open(str);
 	std::vector<std::string> filestoadd;
-	
+
+    if (mainprogram->inautosave) {
+        for (std::string binpath : mainprogram->oldbins) {
+            std::filesystem::remove(binpath);
+            std::filesystem::remove_all(binpath.substr(0, binpath.length() - 4));
+        }
+        for (Bin *bin : binsmain->bins) {
+            std::filesystem::copy(mainprogram->autosavebinsdir, mainprogram->project->binsdir, std::filesystem::copy_options::skip_existing | std::filesystem::copy_options::recursive);
+
+            for (int k = 0; k < binsmain->bins.size(); k++) {
+                std::vector<std::string> bup;
+                for (int j = 0; j < 12; j++) {
+                    for (int i = 0; i < 12; i++) {
+                        BinElement *binel = binsmain->bins[k]->elements[i * 12 + j];
+                        std::string s =
+                                mainprogram->project->binsdir + "/bins/" + binsmain->bins[k]->name + "/";
+                        if (binel->absjpath != "") {
+                            binel->absjpath = s + basename(binel->absjpath);
+                            binel->jpegpath = binel->absjpath;
+                            binel->reljpath = std::filesystem::relative(binel->absjpath, s).generic_string();
+                        }
+                    }
+                }
+            }
+        }
+        mainprogram->inautosave = false;
+    }
+
 	wfile << "EWOCvj PROJECT V0.1\n";
     wfile << "PREVMODUS\n";
     wfile << std::to_string(mainprogram->prevmodus);
@@ -6807,30 +6862,69 @@ void Project::autosave() {
         }
     }
     if (found) return;
+    for (Bin *bin : binsmain->bins) {
+        for (BinElement *binel: bin->elements) {
+            if (!binel->autosavejpegsaved && binel->path != "") {
+                return;
+            }
+        }
+    }
 
     mainprogram->astimestamp = (int) mainmix->time;
 
     std::string name = remove_extension(basename(this->path)) + "_0";
-    std::string path = find_unused_filename("autosave_" + name, this->autosavedir, "");
+    std::string p1 = find_unused_filename("autosave_" + name, this->autosavedir, "");
 
-    std::string bupp = this->path;
-    std::string bupn = this->name;
-    std::string bubd = this->binsdir;
-    std::string busd = this->shelfdir;
-    std::string burd = this->recdir;
-    std::string buad = this->autosavedir;
-    std::string bued = this->elementsdir;
-    mainprogram->project->create_dirs_autosave(path);
+    mainprogram->project->bupp = this->path;
+    mainprogram->project->bupn = this->name;
+    mainprogram->project->bubd = this->binsdir;
+    mainprogram->project->busd = this->shelfdir;
+    mainprogram->project->burd = this->recdir;
+    mainprogram->project->buad = this->autosavedir;
+    mainprogram->project->bued = this->elementsdir;
+    mainprogram->project->create_dirs_autosave(p1);
     mainprogram->autosaving = true;
-    mainprogram->project->do_save(path + "/" + basename(path) + ".ewocvj", true);
+    std::vector<std::vector<std::string>> bupaths;
+    for (int k = 0; k < binsmain->bins.size(); k++) {
+        std::vector<std::string> bup;
+        for (int j = 0; j < 12; j++) {
+            for (int i = 0; i < 12; i++) {
+                BinElement *binel = binsmain->bins[k]->elements[i * 12 + j];
+                std::string s =
+                        p1 + "/bins/" + binsmain->bins[k]->name + "/";
+                bup.push_back(binel->absjpath);
+                if (binel->absjpath != "") {
+                    binel->absjpath = s + basename(binel->absjpath);
+                    binel->jpegpath = binel->absjpath;
+                    binel->reljpath = std::filesystem::relative(binel->absjpath, s).generic_string();
+                }
+            }
+        }
+        bupaths.push_back(bup);
+    }
+
+    mainprogram->project->do_save(p1 + "/" + basename(p1) + ".ewocvj", true);
+
+    for (int k = 0; k < binsmain->bins.size(); k++) {
+        for (int j = 0; j < 12; j++) {
+            for (int i = 0; i < 12; i++) {
+                BinElement *binel = binsmain->bins[k]->elements[i * 12 + j];
+                //bupaths[k][i * 12 + j] = binel->absjpath;
+                binel->absjpath = bupaths[k][i * 12 + j];
+                binel->jpegpath = binel->absjpath;
+                binel->reljpath = std::filesystem::relative(binel->absjpath,
+                                                            mainprogram->project->binsdir).generic_string();
+            }
+        }
+    }
     mainprogram->autosaving = false;
-    this->binsdir = bubd;
-    this->shelfdir = busd;
-    this->recdir = burd;
-    this->autosavedir = buad;
-    this->elementsdir = bued;
-    this->path = bupp;
-    this->name = bupn;
+    this->binsdir = mainprogram->project->bubd;
+    this->shelfdir = mainprogram->project->busd;
+    this->recdir = mainprogram->project->burd;
+    this->autosavedir = mainprogram->project->buad;
+    this->elementsdir = mainprogram->project->bued;
+    this->path = mainprogram->project->bupp;
+    this->name = mainprogram->project->bupn;
 }
 
 
@@ -8302,10 +8396,10 @@ void Shelf::open_files_shelf() {
     if (istring == "EWOCvj LAYERFILE") {
         elem->type = ELEM_LAYER;
     } else if (istring == "EWOCvj DECKFILE") {
-        elem->jpegpath = "";
+        //elem->jpegpath = "";
         elem->type = ELEM_DECK;
     } else if (istring == "EWOCvj MIXFILE") {
-        elem->jpegpath = "";
+        //elem->jpegpath = "";
         elem->type = ELEM_MIX;
     } else if (isimage(str)) {
         elem->type = ELEM_IMAGE;
@@ -8318,7 +8412,8 @@ void Shelf::open_files_shelf() {
 
     elem->jpegpath = find_unused_filename("shelftex", mainprogram->temppath, ".jpg");
     // texes are inserted after phase 2 of order_paths
-    save_thumb(elem->jpegpath, elem->tex);
+    save_thumb(elem->jpegpath, mainprogram->pathtexes[mainprogram->shelffilescount]);
+    elem->tex = mainprogram->pathtexes[mainprogram->shelffilescount];
 
     // next element, clean up when at end
     next_elem();
