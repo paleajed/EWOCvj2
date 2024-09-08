@@ -1448,7 +1448,7 @@ void BinsMain::handle(bool draw) {
             else {
                 this->menubinel->tex = copy_tex(mainprogram->nodesmain->mixnodes[1][2]->mixtex, 192, 108);
             }
-            mainmix->do_save_mix(path, mainprogram->prevmodus, true);
+            mainmix->save_mix(path, mainprogram->prevmodus, true);
             this->menubinel->type = ELEM_MIX;
             this->menubinel->remove_elem();
             this->menubinel->path = path;

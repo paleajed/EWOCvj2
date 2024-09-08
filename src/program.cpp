@@ -2512,7 +2512,10 @@ bool Button::toggled() {
 
 void Button::deautomate() {
     if (this) {
-        LoopStationElement *elem = loopstation->butelemmap[this];
+        LoopStationElement *elem = nullptr;
+        if (loopstation->butelemmap.count(this)) {
+            elem = loopstation->butelemmap[this];
+        }
         if (!elem) return;
         elem->buttons.erase(this);
         if (this->layer) elem->layers.erase(this->layer);
@@ -4494,7 +4497,7 @@ void Program::handle_shelfmenu() {
 	else if (k == 6) {
 		// insert current mix into shelf element
         std::string path = find_unused_filename(basename(mainprogram->project->path), mainprogram->temppath, ".mix");
-		mainmix->do_save_mix(path, mainprogram->prevmodus, false);
+		mainmix->save_mix(path, mainprogram->prevmodus, false);
 		mainmix->mouseshelf->insert_mix(path, mainmix->mouseshelfelem);
 	}
 	else if (k == 7) {
@@ -6900,6 +6903,8 @@ void Project::autosave() {
         }
         bupaths.push_back(bup);
     }
+
+    printf("autosaving\n");
 
     mainprogram->project->do_save(p1 + "/" + basename(p1) + ".ewocvj", true);
 

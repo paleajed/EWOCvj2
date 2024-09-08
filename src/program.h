@@ -606,8 +606,9 @@ class Program {
 		Boxx* addbox;
         bool repeatdefault = true;
         bool autoplay = true;
+        std::chrono::high_resolution_clock::time_point now;
 
-		GLuint boxcoltbo;
+    GLuint boxcoltbo;
 		GLuint boxtextbo;
 		GLuint boxbrdtbo;
 		GLuint bdcoltex;

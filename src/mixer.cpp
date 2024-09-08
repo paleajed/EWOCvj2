@@ -2361,7 +2361,7 @@ void Mixer::delete_layer(std::vector<Layer*> &layers, Layer *testlay, bool add) 
 		}
 		else if (!ret && elem->type == ELEM_MIX) {
 			if (elem->launchtype == 2) {
-				this->do_save_mix(mainprogram->temppath + "tempdeck_lnch.deck", mainprogram->prevmodus, false);
+				this->save_mix(mainprogram->temppath + "tempdeck_lnch.deck", mainprogram->prevmodus, false);
 				this->open_mix(mainprogram->temppath + "tempdeck_lnch.deck", false);
 			}
 		}
@@ -6043,6 +6043,7 @@ void Mixer::outputmonitors_handle() {
                         loopstation->elems[i]->add_param_automationentry(this->currlay[!mainprogram->prevmodus]->blendnode->wipex);
                     }
                 }
+                mainprogram->leftmousedown = false;
             }
             else {
                 mainprogram->wiping = false;
@@ -6062,16 +6063,21 @@ void Mixer::outputmonitors_handle() {
                     if (mainprogram->mainmonitor->in()) in = true;
                 }
             }
-            if (!in) continue;
-			if (mainprogram->leftmousedown) {
+			if (mainprogram->leftmousedown && in) {
+                mainprogram->wiping = true;
+            }
+            if (mainprogram->wiping) {
 				this->wipex[i]->value = -(((1.0f - ((mainprogram->xscrtovtx(mainprogram->mx) - 0.7f) / 0.6f)) - 0.5f) * 2.0f - 0.5f);
 				this->wipey[i]->value = -((((2.0f - mainprogram->yscrtovtx(mainprogram->my)) / 0.6f) - 0.5f) * 2.0f - 0.5f);
-				for (int i = 0; i < loopstation->elems.size(); i++) {
-					if (loopstation->elems[i]->recbut->value) {
-						loopstation->elems[i]->add_param_automationentry(this->wipex[!i]);
+				for (int j = 0; j < loopstation->elems.size(); j++) {
+					if (loopstation->elems[j]->recbut->value) {
+						loopstation->elems[j]->add_param_automationentry(this->wipex[i]);
 					}
 				}
 			}
+            if (mainprogram->lmover) {
+                mainprogram->wiping = false;
+            }
 			if (mainprogram->middlemouse) {
 				GLint wipe = glGetUniformLocation(mainprogram->ShaderProgram, "wipe");
 				glUniform1i(wipe, 0);
@@ -7187,7 +7193,7 @@ bool Layer::exchange(std::vector<Layer*>& slayers, std::vector<Layer*>& dlayers,
                 }
             } else if (!ret && elem->type == ELEM_MIX) {
                 if (elem->launchtype == 2) {
-                    mainmix->do_save_mix(mainprogram->temppath + "tempdeck_lnch.deck", mainprogram->prevmodus,
+                    mainmix->save_mix(mainprogram->temppath + "tempdeck_lnch.deck", mainprogram->prevmodus,
                                          false);
                     mainmix->open_mix(mainprogram->temppath + "tempdeck_lnch.deck", false);
                 }
@@ -7205,7 +7211,7 @@ bool Layer::exchange(std::vector<Layer*>& slayers, std::vector<Layer*>& dlayers,
 			}
 			else if (!ret && elem->type == ELEM_MIX) {
 				if (elem->launchtype == 2) {
-					mainmix->do_save_mix(mainprogram->temppath + "tempdeck_lnch.deck", mainprogram->prevmodus, false);
+					mainmix->save_mix(mainprogram->temppath + "tempdeck_lnch.deck", mainprogram->prevmodus, false);
 					mainmix->open_mix(mainprogram->temppath + "tempdeck_lnch.deck", false);
 				}
 			}
@@ -8053,9 +8059,9 @@ void Mixer::do_save_state(std::string path, bool autosave) {
     mainprogram->shelves[1]->save(mainprogram->temppath + "tempB.shelf");
     filestoadd.push_back(mainprogram->temppath + "tempB.shelf");
     std::string as = (autosave) ? "_autosave" : "";
-    mainmix->do_save_mix(mainprogram->temppath + "temp.state1" + as, true, true);
+    mainmix->save_mix(mainprogram->temppath + "temp.state1" + as, true, true);
     filestoadd.push_back(mainprogram->temppath + "temp.state1" + as + ".mix");
-    mainmix->do_save_mix(mainprogram->temppath + "temp.state2" + as, false, true);
+    mainmix->save_mix(mainprogram->temppath + "temp.state2" + as, false, true);
     filestoadd.push_back(mainprogram->temppath + "temp.state2" + as + ".mix");
 
     for (int j = 0; j < 2; j++) {
@@ -8112,7 +8118,7 @@ void Mixer::open_mix(const std::string path, bool alive, bool loadevents) {
     loopstation = lpc;
     if (mainprogram->prevmodus) loopstation = lp;
     for (int i = 0; i < loopstation->elems.size(); i++) {
-		loopstation->elems[i]->init();
+		loopstation->elems[i]->erase_elem();
 		loopstation->elems[i]->eventlist.clear();
 		loopstation->elems[i]->params.clear();
 		loopstation->elems[i]->layers.clear();
@@ -8381,18 +8387,31 @@ void Mixer::open_mix(const std::string path, bool alive, bool loadevents) {
         elem->playbut->toggled();
     }
 
-     rfile.close();
+    rfile.close();
+
+    /*loopstation = lp;
+    LoopStation *bunowlpst = lp;
+    if (!mainprogram->prevmodus) {
+        loopstation = lpc;
+        bunowlpst = lpc;
+    }
+    std::chrono::high_resolution_clock::time_point now = std::chrono::high_resolution_clock::now();
+    std::chrono::duration<double> elapsed;
+    elapsed = std::chrono::duration_cast<std::chrono::duration<double>>(now - bunowlpst->bunow);
+    long long millicount = std::chrono::duration_cast<std::chrono::milliseconds>(elapsed).count();
+    for (LoopStationElement* elem : loopstation->elems) {
+        //elem->interimtime += millicount;
+        //elem->speedadaptedtime += millicount * elem->speed->value;
+        elem->starttime = now - std::chrono::milliseconds((long long)(elem->interimtime));
+    }*/
+
 }
 
-void Mixer::save_mix(std::string path) {
-	mainmix->do_save_mix(path, mainprogram->prevmodus, true);
-	//std::thread mixsav(&Mixer::do_save_mix, this, path, mainprogram->prevmodus, true);
-	//mixsav.detach();  reminder
-}
-
-void Mixer::do_save_mix(const std::string path, bool modus, bool save) {
+void Mixer::save_mix(const std::string path, bool modus, bool save) {
     loopstation = lpc;
     if (modus) loopstation = lp;
+
+    this->get_butimes();
 
     std::string ext = path.substr(path.length() - 4, std::string::npos);
 	std::string str;
@@ -8464,6 +8483,7 @@ void Mixer::do_save_mix(const std::string path, bool modus, bool save) {
 	wfile << "DECKSPEEDAEVENT\n";
 	par = mainmix->deckspeed[!modus][0];
 	mainmix->event_write(wfile, par, nullptr);
+    wfile << "\n";
 	wfile << "DECKSPEEDAMIDI0\n";
 	wfile << std::to_string(mainmix->deckspeed[!modus][0]->midi[0]);
 	wfile << "\n";
@@ -8479,6 +8499,7 @@ void Mixer::do_save_mix(const std::string path, bool modus, bool save) {
 	wfile << "DECKSPEEDBEVENT\n";
 	par = mainmix->deckspeed[!modus][1];
 	mainmix->event_write(wfile, par, nullptr);
+    wfile << "\n";
 	wfile << "DECKSPEEDBMIDI0\n";
 	wfile << std::to_string(mainmix->deckspeed[!modus][1]->midi[0]);
 	wfile << "\n";
@@ -8542,8 +8563,6 @@ void Mixer::do_save_mix(const std::string path, bool modus, bool save) {
 	else {
         lvec = mainmix->layers[2];
     }
-
-    this->get_butimes();
 
     for (int i = 0; i < lvec.size(); i++) {
 		Layer* lay = lvec[i];
@@ -8850,7 +8869,12 @@ void Mixer::save_deck(const std::string path) {
 }
 
 void Mixer::do_save_deck(const std::string path, bool save, bool doclips, bool copycomp, bool dojpeg) {
-	std::string ext = path.substr(path.length() - 5, std::string::npos);
+    loopstation = lpc;
+    if (mainprogram->prevmodus) loopstation = lp;
+
+    this->get_butimes();
+
+    std::string ext = path.substr(path.length() - 5, std::string::npos);
 	std::string str;
 	if (ext != ".deck") str = path + ".deck";
 	else str = path;
@@ -8884,11 +8908,11 @@ void Mixer::do_save_deck(const std::string path, bool save, bool doclips, bool c
 	wfile << mainmix->deckspeed[!mainprogram->prevmodus][mainmix->mousedeck]->midiport;
 	wfile << "\n";
     wfile << "CROSSFADEEVENT\n";
-    par = mainmix->crossfade;
+    par = mainmix->crossfadecomp;
     mainmix->event_write(wfile, par, nullptr);
     wfile << "\n";
     wfile << "CROSSFADECOMPEVENT\n";
-    par = mainmix->crossfadecomp;
+    par = mainmix->crossfade;
     mainmix->event_write(wfile, par, nullptr);
     wfile << "\n";
     wfile << "WIPEXEVENT\n";
@@ -11763,18 +11787,18 @@ void Mixer::event_write(std::ostream &wfile, Param* par, Button* but) {
                 wfile << "TOTALTIME\n";
                 wfile << std::to_string(elem->totaltime);
                 wfile << "\n";
-                std::chrono::high_resolution_clock::time_point now = std::chrono::high_resolution_clock::now();
+                /*std::chrono::high_resolution_clock::time_point now = std::chrono::high_resolution_clock::now();
                 std::chrono::duration<double> elapsed;
                 elapsed = std::chrono::duration_cast<std::chrono::duration<double>>(now - elem->starttime);
                 long long millicount = std::chrono::duration_cast<std::chrono::milliseconds>(elapsed).count();
                 int passed = millicount - elem->interimtime;
                 elem->interimtime = millicount;
-                elem->speedadaptedtime = elem->speedadaptedtime + passed * elem->speed->value;
+                elem->speedadaptedtime = elem->speedadaptedtime + passed * elem->speed->value;*/
                 wfile << "INTERIMTIME\n";
-                wfile << std::to_string(elem->interimtime);
+                wfile << std::to_string(elem->buinterimtime);
                 wfile << "\n";
                 wfile << "SPEEDADAPTEDTIME\n";
-                wfile << std::to_string(elem->speedadaptedtime);
+                wfile << std::to_string(elem->buspeedadaptedtime);
                 wfile << "\n";
 			}
 		}

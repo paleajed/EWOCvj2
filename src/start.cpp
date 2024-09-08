@@ -4277,7 +4277,7 @@ void the_loop() {
     if (mainprogram->leftmouse &&
         (mainprogram->cwon || mainprogram->menuondisplay || mainprogram->wiping || mainmix->adaptparam ||
          mainmix->scrollon || binsmain->dragbin || mainmix->moving || mainprogram->dragbinel || mainprogram->drageff ||
-         mainprogram->shelfdragelem)) {
+         mainprogram->shelfdragelem || mainprogram->wiping)) {
         // special cases when mouse can be released over element that should not be triggered
         mainprogram->lmover = true;
         mainprogram->leftmouse = false;
@@ -5037,11 +5037,6 @@ void the_loop() {
 		}
 
 
-		// Handle parameter adaptation
-		if (mainmix->adaptparam) {
-			mainmix->handle_adaptparam();
-		}
-
 
 		// Draw and handle crossfade->box
 		Param* par;
@@ -5196,6 +5191,7 @@ void the_loop() {
 
 
         // draw and handle loopstation
+        mainprogram->now = std::chrono::high_resolution_clock::now();
         if (mainprogram->prevmodus) {
             loopstation = lp;
             lp->handle();
@@ -5259,7 +5255,13 @@ void the_loop() {
 		mainmix->layerdrag_handle();
 
         mainmix->deckmixdrag_handle();
-	}
+
+        // Handle parameter adaptation
+        if (mainmix->adaptparam) {
+            mainmix->handle_adaptparam();
+        }
+
+    }
 
 
 
@@ -7179,7 +7181,7 @@ int main(int argc, char* argv[]) {
                 mainmix->do_save_state(mainprogram->path, false);
             } else if (mainprogram->pathto == "SAVEMIX") {
                 mainprogram->currelemsdir = dirname(mainprogram->path);
-                mainmix->save_mix(mainprogram->path);
+                mainmix->save_mix(mainprogram->path, mainprogram->prevmodus, true);
             } else if (mainprogram->pathto == "SAVEDECK") {
                 mainprogram->currelemsdir = dirname(mainprogram->path);
                 mainmix->save_deck(mainprogram->path);
@@ -7854,7 +7856,7 @@ int main(int argc, char* argv[]) {
                     mainprogram->tooltipmilli = 0.0f;
                     mainprogram->tooltipbox = nullptr;
                 }
-                if (mainmix->prepadaptparam) {
+                if (mainmix->prepadaptparam && !mainprogram->wiping) {
                     mainmix->adaptparam = mainmix->prepadaptparam;
                     mainmix->prepadaptparam = nullptr;
                 }
