@@ -4538,7 +4538,7 @@ void the_loop() {
     }
     if (!filled) mainprogram->swappingscene = false;
 
-    if (mainmix->bulayers.size() && !mainprogram->newproject2 && 0) { //
+    if (mainmix->bulayers.size() && !mainprogram->newproject2) { //
         // done switching to new layers -> delete old ones
         std::vector<Layer *> &lvec = mainmix->bulayers;
         for (int i = 0; i < lvec.size(); i++) {
@@ -5206,6 +5206,9 @@ void the_loop() {
         else {
             loopstation = lpc;
             lpc->handle();
+            for (int i = 0; i < lp->elems.size(); i++) {
+                if (lp->elems[i]->loopbut->value || lp->elems[i]->playbut->value) lp->elems[i]->set_values();
+            }
         }
 
 
@@ -6595,13 +6598,11 @@ int main(int argc, char* argv[]) {
     orderglc = SDL_GL_CreateContext(mainprogram->dummywindow);
     SDL_GL_MakeCurrent(mainprogram->mainwindow, glc);
     SDL_GL_SetAttribute(SDL_GL_SHARE_WITH_CURRENT_CONTEXT, 0);
-    printf("4\n");
 
 
     //glewExperimental = GL_TRUE;
     glewInit();
 
-    printf("5\n");
     mainprogram->quitwindow = SDL_CreateWindow("Quit EWOCvj2", glob->w / 4, glob->h / 4, glob->w / 2,
                                                glob->h / 2, SDL_WINDOW_OPENGL | SDL_WINDOW_HIDDEN |
                                                                           SDL_WINDOW_ALLOW_HIGHDPI);
@@ -6819,6 +6820,7 @@ int main(int argc, char* argv[]) {
 #ifdef WINDOWS
     std::filesystem::path full_path(std::filesystem::current_path());
     printf("PATH %s", full_path.string().c_str());
+    printf("\n");
     std::string pp(full_path.string() + "/lock.png");
     ILboolean ret2 = ilLoadImage((const ILstring)pp.c_str());
 #endif

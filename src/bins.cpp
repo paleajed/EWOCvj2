@@ -2533,7 +2533,7 @@ void BinsMain::save_bin(std::string path) {
 	std::string ttpath = tpath;
     std::vector<std::vector<std::string>> filestoadd2;
 	filestoadd2.push_back(filestoadd);
-    std::thread concat(&Program::concat_files, mainprogram, ttpath, path, filestoadd2, false);
+    std::thread concat(&Program::concat_files, mainprogram, ttpath, path, filestoadd2);
     concat.detach();
 
     if (dirname(path) == mainprogram->project->binsdir) {

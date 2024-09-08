@@ -305,9 +305,6 @@ Program::Program() {
     std::filesystem::path p4(wstr4);
 	this->temppath = p4.generic_string() + "EWOCvj2/";
     if (!exists(this->temppath)) std::filesystem::create_directory(std::filesystem::path(this->temppath));
-    printf("1\n");
-    printf("11\n");
-    fflush(stdout);
 #endif
 #ifdef POSIX
 	std::string homedir(getenv("HOME"));
@@ -2400,10 +2397,14 @@ Button::Button(bool state) {
         }
         mainprogram->buttons[freepos] = this;
         if (mainprogram->prevmodus) {
-            if (lp) lp->allbuttons.push_back(this);
+            if (lp) {
+                lp->allbuttons.push_back(this);
+            }
         }
         else {
-            if (lpc) lpc->allbuttons.push_back(this);
+            if (lpc) {
+                lpc->allbuttons.push_back(this);
+            }
         }
     }
 }
@@ -6340,7 +6341,6 @@ GLuint Program::set_shader() {
  	#endif
  	#endif
  	load_shader(vshader, &VShaderSource, vlen);
-    printf("7\n");
 	char *FShaderSource;
  	char *fshader = (char*)malloc(100);
  	#ifdef WINDOWS
@@ -6354,13 +6354,10 @@ GLuint Program::set_shader() {
  	#endif
  	#endif
 	load_shader(fshader, &FShaderSource, flen);
-    printf("8\n");
 	glShaderSource(vertexShaderObject, 1, &VShaderSource, nullptr);
 	glShaderSource(fragmentShaderObject, 1, &FShaderSource, nullptr);
 	glCompileShader(vertexShaderObject);
-    printf("9\n");
 	glCompileShader(fragmentShaderObject);
-    printf("10\n");
 
 	GLint maxLength = 0;
 	glGetShaderiv(fragmentShaderObject, GL_INFO_LOG_LENGTH, &maxLength);
@@ -6811,7 +6808,7 @@ void Project::do_save(std::string path, bool autosave) {
     // concat everyting in project file except for bins, they are saved separately
 	std::vector<std::vector<std::string>> filestoadd2;
 	filestoadd2.push_back(filestoadd);
-    std::thread concat = std::thread(&Program::concat_files, mainprogram, mainprogram->temppath + "tempconcatproj", str, filestoadd2, false);
+    std::thread concat = std::thread(&Program::concat_files, mainprogram, mainprogram->temppath + "tempconcatproj", str, filestoadd2);
     concat.detach();
 
 	if (!autosave) {
@@ -8354,7 +8351,7 @@ void Shelf::save(const std::string path) {
 
     std::vector<std::vector<std::string>> filestoadd2;
     filestoadd2.push_back(filestoadd);
-    std::thread concat = std::thread(&Program::concat_files, mainprogram, mainprogram->temppath + "tempconcatshelf", str, filestoadd2, false);
+    std::thread concat = std::thread(&Program::concat_files, mainprogram, mainprogram->temppath + "tempconcatshelf", str, filestoadd2);
     concat.detach();
     //if (rem) std::filesystem::remove(path);
 }
@@ -9026,16 +9023,20 @@ std::string deconcat_files(std::string path) {
     else return "";
 }
 
-void Program::concat_files(std::string ofpath, std::string path, std::vector<std::vector<std::string>> filepaths, bool nothread) {
+void Program::concat_files(std::string ofpath, std::string path, std::vector<std::vector<std::string>> filepaths) {
 
     int count = mainprogram->concatting;
     mainprogram->concatting++;
 
-    if (count == 0 && !nothread) {
+    int time = 2000;
+    if (mainprogram->copytocomp) {
+        time = 0;
+    }
+    if (count == 0) {
         if (mainprogram->saveas) {
-            Sleep(2000);  // maximium startup time for al concats
+            Sleep(time);  // maximium startup time for al concats
         } else {
-            Sleep(2000);  // maximium startup time for al concats
+            Sleep(time);  // maximium startup time for al concats
         }
     }
 
@@ -9085,7 +9086,6 @@ void Program::concat_files(std::string ofpath, std::string path, std::vector<std
         if (fileSize == -1) continue;
         std::fstream fileInput;
         fileInput.open(paths[i], std::ios::in | std::ios::binary);
-        printf("path %s\n", paths[i].c_str());
         char *inputBuffer = new char[fileSize];
         fileInput.read(inputBuffer, fileSize);
         ofile.write(inputBuffer, fileSize);

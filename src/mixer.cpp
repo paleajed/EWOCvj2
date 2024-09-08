@@ -1926,6 +1926,7 @@ Effect* Layer::do_add_effect(EFFECT_TYPE type, int pos, bool comp) {
 	effect->type = type;
 	effect->pos = pos;
 	effect->layer = this;
+    effect->onoffbutton->layer = this;
 	
 	std::vector<Effect*> &evec = this->choose_effects();
 	evec.insert(evec.begin() + pos, effect);
@@ -7330,6 +7331,10 @@ void Mixer::set_values(Layer *clay, Layer *lay, bool open) {
 void Mixer::copy_to_comp(bool deckA, bool deckB, bool comp) {
     int copycomp = 1;
     if (this->loadinglays.size()) return;
+    if (mainprogram->concatting) return;
+
+    mainprogram->copytocomp = true;
+
     if (deckA && deckB) {
         mainmix->wipe[comp] = mainmix->wipe[!comp];
         mainmix->wipedir[comp] = mainmix->wipedir[!comp];
@@ -7349,11 +7354,11 @@ void Mixer::copy_to_comp(bool deckA, bool deckB, bool comp) {
     else loopstation = lpc;
     if (deckA) {
         mainmix->mousedeck = 0;
-        mainmix->do_save_deck(mainprogram->temppath + "copytocompdeckA.deck", false, true, true);
+        mainmix->do_save_deck(mainprogram->temppath + "copytocompdeckA.deck", false, true, true, false);
     }
     if (deckB) {
         mainmix->mousedeck = 1;
-        mainmix->do_save_deck(mainprogram->temppath + "copytocompdeckB.deck", false, true, true);
+        mainmix->do_save_deck(mainprogram->temppath + "copytocompdeckB.deck", false, true, true, false);
     }
     mainprogram->prevmodus = !comp;
     if (mainprogram->prevmodus) loopstation = lp;
@@ -7364,7 +7369,7 @@ void Mixer::copy_to_comp(bool deckA, bool deckB, bool comp) {
     }
     if (deckB) {
         mainmix->mousedeck = 1;
-        mainmix->open_deck(mainprogram->temppath + "copytocompdeckB.deck", true, true, copycomp);
+        mainmix->open_deck(mainprogram->temppath + "copytocompdeckB.deck", true, true, copycomp + (copycomp == 2));
     }
     // correct loopstation current times for deck saving/opening lag
     loopstation = lp;
@@ -7413,6 +7418,7 @@ void Mixer::copy_to_comp(bool deckA, bool deckB, bool comp) {
             }
         }
     }
+    mainprogram->copytocomp = false;
 }
 
 
@@ -8075,7 +8081,7 @@ void Mixer::do_save_state(std::string path, bool autosave) {
 	std::vector<std::vector<std::string>> filestoadd2;
 	filestoadd2.push_back(filestoadd);
     std::string ofpath = mainprogram->temppath + "tempconcatstate";
-    std::thread concat(&Program::concat_files, mainprogram,  ofpath, str, filestoadd2, false);
+    std::thread concat(&Program::concat_files, mainprogram,  ofpath, str, filestoadd2);
     concat.detach();
 }
 
@@ -8116,7 +8122,8 @@ void Mixer::open_mix(const std::string path, bool alive, bool loadevents) {
 	loopstation->butmap.clear();
 	loopstation->butelemmap.clear();
 	loopstation->readelems.clear();
-	loopstation->readelemnrs.clear();
+    loopstation->readelemnrs.clear();
+    loopstation->readmap.clear();
 
 	int clpos, cldeck;
     std::vector<int> cls1;
@@ -8384,6 +8391,9 @@ void Mixer::save_mix(std::string path) {
 }
 
 void Mixer::do_save_mix(const std::string path, bool modus, bool save) {
+    loopstation = lpc;
+    if (modus) loopstation = lp;
+
     std::string ext = path.substr(path.length() - 4, std::string::npos);
 	std::string str;
 	if (ext != ".mix") str = path + ".mix";
@@ -8422,12 +8432,14 @@ void Mixer::do_save_mix(const std::string path, bool modus, bool save) {
 	wfile << "CROSSFADEEVENT\n";
 	Param *par = mainmix->crossfade;
 	mainmix->event_write(wfile, par, nullptr);
+    wfile << "\n";
 	wfile << "CROSSFADECOMP\n";
 	wfile << std::to_string(mainmix->crossfadecomp->value);
 	wfile << "\n";
 	wfile << "CROSSFADECOMPEVENT\n";
 	par = mainmix->crossfadecomp;
     mainmix->event_write(wfile, par, nullptr);
+    wfile << "\n";
     wfile << "SCROLLPOSA\n";
     wfile << std::to_string( mainmix->scenes[0][0]->scrollpos);
     wfile << "\n";
@@ -8487,11 +8499,13 @@ void Mixer::do_save_mix(const std::string path, bool modus, bool save) {
 	wfile << "\n";
     wfile << "WIPEXEVENT\n";
     mainmix->event_write(wfile, mainmix->wipex[0], nullptr);
+    wfile << "\n";
 	wfile << "WIPEY\n";
 	wfile << std::to_string(mainmix->wipey[0]->value);
 	wfile << "\n";
     wfile << "WIPEYEVENT\n";
     mainmix->event_write(wfile, mainmix->wipey[0], nullptr);
+    wfile << "\n";
 	wfile << "WIPECOMP\n";
 	wfile << std::to_string(mainmix->wipe[1]);
 	wfile << "\n";
@@ -8503,11 +8517,13 @@ void Mixer::do_save_mix(const std::string path, bool modus, bool save) {
 	wfile << "\n";
     wfile << "WIPEXCOMPEVENT\n";
     mainmix->event_write(wfile, mainmix->wipex[1], nullptr);
+    wfile << "\n";
 	wfile << "WIPEYCOMP\n";
 	wfile << std::to_string(mainmix->wipey[1]->value);
 	wfile << "\n";
     wfile << "WIPEYCOMPEVENT\n";
     mainmix->event_write(wfile, mainmix->wipey[1], nullptr);
+    wfile << "\n";
     wfile << "LPSTCURRELEM\n";
     if (modus) {
         wfile << std::to_string(lp->currelem->pos);
@@ -8522,11 +8538,9 @@ void Mixer::do_save_mix(const std::string path, bool modus, bool save) {
 	std::vector<Layer*> lvec;
 	if (modus) {
         lvec = mainmix->layers[0];
-        loopstation = lp;
     }
 	else {
         lvec = mainmix->layers[2];
-        loopstation = lpc;
     }
 
     this->get_butimes();
@@ -8561,7 +8575,7 @@ void Mixer::do_save_mix(const std::string path, bool modus, bool save) {
 	}
 
 	std::string tcpath = find_unused_filename("tempconcat_" + std::to_string(modus), mainprogram->temppath, "");
-    std::thread concat = std::thread(&Program::concat_files, mainprogram, tcpath, str, jpegpaths, false);
+    std::thread concat = std::thread(&Program::concat_files, mainprogram, tcpath, str, jpegpaths);
     concat.detach();
 }
 
@@ -8594,26 +8608,50 @@ void Mixer::open_deck(const std::string path, bool alive, bool loadevents, int c
     if (mainprogram->prevmodus) {
         loopstation = lp;
     }
-    for (LoopStationElement *elem: loopstation->elems) {
-        std::vector<std::tuple<long long, Param *, Button *, float>> evlist = elem->eventlist;
-        for (int i = evlist.size() - 1; i >= 0; i--) {
-            std::tuple<long long, Param *, Button *, float> event = elem->eventlist[i];
-            if (std::get<1>(event)) {
-                if (std::get<1>(event)->name == "Crossfade" || std::get<1>(event)->name == "wipex" || std::get<1>(event)->name == "wipey") {
-                }
-                else if (std::get<1>(event)->effect) {
-                    if (std::get<1>(event)->effect->layer->deck == mainmix->mousedeck) {
-                        elem->eventlist.erase(elem->eventlist.begin() + i);
+    if (copycomp == 2) {
+        for (int i = 0; i < loopstation->elems.size(); i++) {
+            loopstation->elems[i]->init();
+            loopstation->elems[i]->eventlist.clear();
+            loopstation->elems[i]->params.clear();
+            loopstation->elems[i]->layers.clear();
+        }
+        loopstation->parmap.clear();
+        loopstation->parelemmap.clear();
+        loopstation->butmap.clear();
+        loopstation->butelemmap.clear();
+    }
+    else if (copycomp != 3) {
+        for (LoopStationElement *elem: loopstation->elems) {
+            std::vector<std::tuple<long long, Param *, Button *, float>> evlist = elem->eventlist;
+            for (int i = evlist.size() - 1; i >= 0; i--) {
+                std::tuple<long long, Param *, Button *, float> event = elem->eventlist[i];
+                if (std::get<1>(event)) {
+                    if (std::get<1>(event)->name == "Crossfade" || std::get<1>(event)->name == "wipex" ||
+                        std::get<1>(event)->name == "wipey") {
+                        if (copycomp == 2) {
+                            elem->eventlist.erase(elem->eventlist.begin() + i);
+                            elem->params.erase(std::get<1>(event));
+                        }
+                    } else if (std::get<1>(event)->effect) {
+                        if (std::get<1>(event)->effect->layer->deck == mainmix->mousedeck) {
+                            elem->eventlist.erase(elem->eventlist.begin() + i);
+                            elem->params.erase(std::get<1>(event));
+                        }
+                    } else {
+                        if (std::get<1>(event)->layer->deck == mainmix->mousedeck) {
+                            elem->eventlist.erase(elem->eventlist.begin() + i);
+                            elem->params.erase(std::get<1>(event));
+                        }
                     }
-                } else {
-                    if (std::get<1>(event)->layer->deck == mainmix->mousedeck) {
+                } else if (std::get<2>(event)) {
+                    if (std::get<2>(event)->layer->deck == mainmix->mousedeck) {
                         elem->eventlist.erase(elem->eventlist.begin() + i);
+                        elem->buttons.erase(std::get<2>(event));
                     }
                 }
-            } else if (std::get<2>(event)) {
-                if (std::get<2>(event)->layer->deck == mainmix->mousedeck) {
-                    elem->eventlist.erase(elem->eventlist.begin() + i);
-                }
+            }
+            if (elem->eventlist.size() == 0) {
+                elem->erase_elem();
             }
         }
     }
@@ -8649,7 +8687,7 @@ void Mixer::open_deck(const std::string path, bool alive, bool loadevents, int c
             mainmix->deckspeed[!mainprogram->prevmodus][mainmix->mousedeck]->midiport = istring;
         }
 
-        else if (copycomp == 2) {
+        else if (copycomp >= 2) {
             if (istring == "CROSSFADEEVENT") {
                 Param *par = mainmix->crossfade;
                 safegetline(rfile, istring);
@@ -8663,25 +8701,25 @@ void Mixer::open_deck(const std::string path, bool alive, bool loadevents, int c
                     mainmix->event_read(rfile, par, nullptr, nullptr);
                 }
             } else if (istring == "WIPEXEVENT") {
-                Param *par = mainmix->wipex[1];
-                safegetline(rfile, istring);
-                if (istring == "EVENTELEM") {
-                    mainmix->event_read(rfile, par, nullptr, nullptr);
-                }
-            } else if (istring == "WIPEYEVENT") {
-                Param *par = mainmix->wipey[1];
-                safegetline(rfile, istring);
-                if (istring == "EVENTELEM") {
-                    mainmix->event_read(rfile, par, nullptr, nullptr);
-                }
-            } else if (istring == "WIPEXCOMPEVENT") {
                 Param *par = mainmix->wipex[0];
                 safegetline(rfile, istring);
                 if (istring == "EVENTELEM") {
                     mainmix->event_read(rfile, par, nullptr, nullptr);
                 }
-            } else if (istring == "WIPEYCOMPEVENT") {
+            } else if (istring == "WIPEYEVENT") {
                 Param *par = mainmix->wipey[0];
+                safegetline(rfile, istring);
+                if (istring == "EVENTELEM") {
+                    mainmix->event_read(rfile, par, nullptr, nullptr);
+                }
+            } else if (istring == "WIPEXCOMPEVENT") {
+                Param *par = mainmix->wipex[1];
+                safegetline(rfile, istring);
+                if (istring == "EVENTELEM") {
+                    mainmix->event_read(rfile, par, nullptr, nullptr);
+                }
+            } else if (istring == "WIPEYCOMPEVENT") {
+                Param *par = mainmix->wipey[1];
                 safegetline(rfile, istring);
                 if (istring == "EVENTELEM") {
                     mainmix->event_read(rfile, par, nullptr, nullptr);
@@ -8691,6 +8729,7 @@ void Mixer::open_deck(const std::string path, bool alive, bool loadevents, int c
         if (istring == "LAYERS") {
             loopstation->readelems.clear();
             loopstation->readelemnrs.clear();
+            loopstation->readmap.clear();
 
             mainprogram->filecount = 0;
             mainmix->copycomp_busy = true;
@@ -8810,7 +8849,7 @@ void Mixer::save_deck(const std::string path) {
 	//decksav.detach();  // reminder
 }
 
-void Mixer::do_save_deck(const std::string path, bool save, bool doclips, bool copycomp) {
+void Mixer::do_save_deck(const std::string path, bool save, bool doclips, bool copycomp, bool dojpeg) {
 	std::string ext = path.substr(path.length() - 5, std::string::npos);
 	std::string str;
 	if (ext != ".deck") str = path + ".deck";
@@ -8853,16 +8892,16 @@ void Mixer::do_save_deck(const std::string path, bool save, bool doclips, bool c
     mainmix->event_write(wfile, par, nullptr);
     wfile << "\n";
     wfile << "WIPEXEVENT\n";
-    mainmix->event_write(wfile, mainmix->wipex[0], nullptr);
-    wfile << "\n";
-    wfile << "WIPEYEVENT\n";
-    mainmix->event_write(wfile, mainmix->wipey[0], nullptr);
-    wfile << "\n";
-    wfile << "WIPEXCOMPEVENT\n";
     mainmix->event_write(wfile, mainmix->wipex[1], nullptr);
     wfile << "\n";
-    wfile << "WIPEYCOMPEVENT\n";
+    wfile << "WIPEYEVENT\n";
     mainmix->event_write(wfile, mainmix->wipey[1], nullptr);
+    wfile << "\n";
+    wfile << "WIPEXCOMPEVENT\n";
+    mainmix->event_write(wfile, mainmix->wipex[0], nullptr);
+    wfile << "\n";
+    wfile << "WIPEYCOMPEVENT\n";
+    mainmix->event_write(wfile, mainmix->wipey[0], nullptr);
     wfile << "\n";
 
     wfile << "LAYERS\n";
@@ -8876,7 +8915,7 @@ void Mixer::do_save_deck(const std::string path, bool save, bool doclips, bool c
 	std::vector<Layer*>& lvec = choose_layers(mainmix->mousedeck);
 	for (int i = 0; i < lvec.size(); i++) {
 		Layer* lay = lvec[i];
-		jpegpaths.push_back(mainmix->write_layer(lay, wfile, doclips, true));
+		jpegpaths.push_back(mainmix->write_layer(lay, wfile, doclips, dojpeg));
 	}
 	if (save) {
 		std::vector<MixNode*>& mns = mainprogram->nodesmain->mixnodes[1];
@@ -8894,12 +8933,15 @@ void Mixer::do_save_deck(const std::string path, bool save, bool doclips, bool c
 	wfile.close();
 
     if (copycomp) {
-        // protects speedy SENDing in copy_to_comp
-        mainprogram->concat_files(mainprogram->temppath + "tempconcatdeck", str, jpegpaths, true);
+        // speedy concatting in copy_to_comp
+        mainprogram->concat_files(mainprogram->temppath + "tempconcatdeck", str, jpegpaths);
+        //std::thread concat = std::thread(&Program::concat_files, mainprogram, mainprogram->temppath + "tempconcatdeck",
+        //                                 str, jpegpaths, true);
+        //concat.detach();
     }
     else {
         std::thread concat = std::thread(&Program::concat_files, mainprogram, mainprogram->temppath + "tempconcatdeck",
-                                         str, jpegpaths, false);
+                                         str, jpegpaths);
         concat.detach();
     }
 }
@@ -9461,6 +9503,7 @@ Layer* Mixer::open_layerfile(const std::string path, Layer* lay, bool loadevents
     //loopstation->parelemmap.erase(lay->speed);
     loopstation->readelems.clear();
     loopstation->readelemnrs.clear();
+    loopstation->readmap.clear();
     bool switching = false;
     if (lay->comp == mainprogram->prevmodus) {
         switching = true;
@@ -9549,7 +9592,7 @@ void Mixer::save_layerfile(const std::string path, Layer* lay, bool doclips, boo
 	wfile << "ENDOFFILE\n";
 	wfile.close();
 
-    std::thread concat = std::thread(&Program::concat_files, mainprogram, mainprogram->temppath + "tempconcatlayerfile", str, jpegpaths, false);
+    std::thread concat = std::thread(&Program::concat_files, mainprogram, mainprogram->temppath + "tempconcatlayerfile", str, jpegpaths);
     concat.detach();
 	lay->layerfilepath = str;
 }
@@ -10650,7 +10693,7 @@ Layer* Mixer::read_layers(std::istream &rfile, const std::string result, std::ve
 			layend->scale->value = std::stof(istring);
 		}
         if (istring == "SCALEEVENT") {
-            Param *par = lay->scale;
+            Param *par = layend->scale;
             safegetline(rfile, istring);
             if (istring == "EVENTELEM") {
                 mainmix->event_read(rfile, par, nullptr, layend);
@@ -10936,6 +10979,13 @@ Layer* Mixer::read_layers(std::istream &rfile, const std::string result, std::ve
 					eff->drywet->midiport = istring;
                     eff->drywet->register_midi();
 				}
+                if (istring == "DRYWETEVENT") {
+                    Param *par = eff->drywet;
+                    safegetline(rfile, istring);
+                    if (istring == "EVENTELEM") {
+                        mainmix->event_read(rfile, par, nullptr, layend);
+                    }
+                }
 				if (eff) {
 					if (eff->type == RIPPLE) {
 						if (istring == "RIPPLESPEED") {
@@ -11008,10 +11058,50 @@ Layer* Mixer::read_layers(std::istream &rfile, const std::string result, std::ve
 					safegetline(rfile, istring);
 					eff->onoffbutton->value = std::stoi(istring);
 				}
+                if (istring == "ONOFFMIDI0") {
+                    safegetline(rfile, istring);
+                    eff->onoffbutton->midi[0] = std::stoi(istring);
+                }
+                if (istring == "ONOFFMIDI1") {
+                    safegetline(rfile, istring);
+                    eff->onoffbutton->midi[1] = std::stoi(istring);
+                }
+                if (istring == "ONOFFMIDIPORT") {
+                    safegetline(rfile, istring);
+                    eff->onoffbutton->midiport = istring;
+                    eff->onoffbutton->register_midi();
+                }
+                if (istring == "ONOFFEVENT") {
+                    Button* but = eff->onoffbutton;
+                    safegetline(rfile, istring);
+                    if (istring == "EVENTELEM") {
+                        mainmix->event_read(rfile, nullptr, but, layend);
+                    }
+                }
 				if (istring == "DRYWETVAL") {
 					safegetline(rfile, istring);
 					eff->drywet->value = std::stof(istring);
 				}
+                if (istring == "DRYWETMIDI0") {
+                    safegetline(rfile, istring);
+                    eff->drywet->midi[0] = std::stoi(istring);
+                }
+                if (istring == "DRYWETMIDI1") {
+                    safegetline(rfile, istring);
+                    eff->drywet->midi[1] = std::stoi(istring);
+                }
+                if (istring == "DRYWETMIDIPORT") {
+                    safegetline(rfile, istring);
+                    eff->drywet->midiport = istring;
+                    eff->drywet->register_midi();
+                }
+                if (istring == "DRYWETEVENT") {
+                    Param *par = eff->drywet;
+                    safegetline(rfile, istring);
+                    if (istring == "EVENTELEM") {
+                        mainmix->event_read(rfile, par, nullptr, layend);
+                    }
+                }
 				if (eff) {
 					if (eff->type == RIPPLE) {
 						if (istring == "RIPPLESPEED") {
@@ -11214,42 +11304,50 @@ std::vector<std::string> Mixer::write_layer(Layer* lay, std::ostream& wfile, boo
     wfile << "\n";
 	wfile << "MUTEEVENT\n";
 	mainmix->event_write(wfile, nullptr, lay->mutebut);
+    wfile << "\n";
     wfile << "SOLO\n";
     wfile << std::to_string(lay->solobut->value);
     wfile << "\n";
     wfile << "SOLOEVENT\n";
     mainmix->event_write(wfile, nullptr, lay->solobut);
+    wfile << "\n";
     wfile << "KEEPEFF\n";
     wfile << std::to_string(lay->keepeffbut->value);
     wfile << "\n";
     wfile << "KEEPEFFEVENT\n";
     mainmix->event_write(wfile, nullptr, lay->keepeffbut);
+    wfile << "\n";
 	if (lay->type != ELEM_LIVE) {
 		wfile << "SPEEDVAL\n";
 		wfile << std::to_string(lay->speed->value);
 		wfile << "\n";
 		wfile << "SPEEDEVENT\n";
 		mainmix->event_write(wfile, lay->speed, nullptr);
+        wfile << "\n";
 		wfile << "PLAYBUTVAL\n";
 		wfile << std::to_string(lay->playbut->value);;
 		wfile << "\n";
 		wfile << "PLAYBUTEVENT\n";
 		mainmix->event_write(wfile, nullptr, lay->playbut);
+        wfile << "\n";
 		wfile << "REVBUTVAL\n";
 		wfile << std::to_string(lay->revbut->value);;
 		wfile << "\n";
 		wfile << "REVBUTEVENT\n";
 		mainmix->event_write(wfile, nullptr, lay->revbut);
+        wfile << "\n";
         wfile << "BOUNCEBUTVAL\n";
         wfile << std::to_string(lay->bouncebut->value);;
         wfile << "\n";
         wfile << "BOUNCEBUTEVENT\n";
         mainmix->event_write(wfile, nullptr, lay->bouncebut);
+        wfile << "\n";
         wfile << "LPBUTVAL\n";
         wfile << std::to_string(lay->lpbut->value);;
         wfile << "\n";
         wfile << "LPBUTEVENT\n";
         mainmix->event_write(wfile, nullptr, lay->lpbut);
+        wfile << "\n";
 		wfile << "PLAYKIND\n";
 		wfile << std::to_string(lay->playkind);;
 		wfile << "\n";
@@ -11258,10 +11356,13 @@ std::vector<std::string> Mixer::write_layer(Layer* lay, std::ostream& wfile, boo
 		wfile << "\n";
 		wfile << "GENMIDIBUTEVENT\n";
 		mainmix->event_write(wfile, nullptr, lay->genmidibut);
+        wfile << "\n";
 		wfile << "FRAMEFORWARDEVENT\n";
 		mainmix->event_write(wfile, nullptr, lay->frameforward);
+        wfile << "\n";
 		wfile << "FRAMEBACKWARDEVENT\n";
 		mainmix->event_write(wfile, nullptr, lay->framebackward);
+        wfile << "\n";
 	}
     wfile << "LOCKSPEED\n";
     wfile << std::to_string(lay->lockspeed);
@@ -11274,30 +11375,37 @@ std::vector<std::string> Mixer::write_layer(Layer* lay, std::ostream& wfile, boo
     wfile << "\n";
 	wfile << "SHIFTXEVENT\n";
 	mainmix->event_write(wfile, lay->shiftx, nullptr);
+    wfile << "\n";
 	wfile << "SHIFTY\n";
 	wfile << std::to_string(lay->shifty->value);
 	wfile << "\n";
 	wfile << "SHIFTYEVENT\n";
 	mainmix->event_write(wfile, lay->shifty, nullptr);
+    wfile << "\n";
 	wfile << "SCALE\n";
 	wfile << std::to_string(lay->scale->value);
 	wfile << "\n";
     wfile << "SCALEEVENT\n";
     mainmix->event_write(wfile, lay->scale, nullptr);
+    wfile << "\n";
     wfile << "SCRITCHEVENT\n";
     mainmix->event_write(wfile, lay->scritch, nullptr);
+    wfile << "\n";
 	wfile << "OPACITYVAL\n";
 	wfile << std::to_string(lay->opacity->value);
 	wfile << "\n";
 	wfile << "OPACITYEVENT\n";
 	mainmix->event_write(wfile, lay->opacity, nullptr);
+    wfile << "\n";
 	wfile << "VOLUMEVAL\n";
 	wfile << std::to_string(lay->volume->value);
 	wfile << "\n";
     wfile << "VOLUMEEVENT\n";
     mainmix->event_write(wfile, lay->volume, nullptr);
+    wfile << "\n";
     wfile << "MIXFACEVENT\n";
     mainmix->event_write(wfile, lay->blendnode->mixfac, nullptr);
+    wfile << "\n";
 	wfile << "CHTOLVAL\n";
 	wfile << std::to_string(lay->chtol->value);
 	wfile << "\n";
@@ -11441,6 +11549,7 @@ std::vector<std::string> Mixer::write_layer(Layer* lay, std::ostream& wfile, boo
 		wfile << "\n";
 		wfile << "ONOFFEVENT\n";
 		mainmix->event_write(wfile, nullptr, eff->onoffbutton);
+        wfile << "\n";
 		wfile << "DRYWETVAL\n";
 		wfile << std::to_string(eff->drywet->value);
 		wfile << "\n";
@@ -11453,6 +11562,9 @@ std::vector<std::string> Mixer::write_layer(Layer* lay, std::ostream& wfile, boo
 		wfile << "DRYWETMIDIPORT\n";
 		wfile << eff->drywet->midiport;
 		wfile << "\n";
+        wfile << "DRYWETEVENT\n";
+        mainmix->event_write(wfile, eff->drywet, nullptr);
+        wfile << "\n";
 		if (eff->type == RIPPLE) {
 			wfile << "RIPPLESPEED\n";
 			wfile << std::to_string(((RippleEffect*)eff)->speed);
@@ -11480,6 +11592,7 @@ std::vector<std::string> Mixer::write_layer(Layer* lay, std::ostream& wfile, boo
 			wfile << par->midiport;
 			wfile << "\n";
 			mainmix->event_write(wfile, par, nullptr);
+            wfile << "\n";
 		}
 		wfile << "ENDOFPARAMS\n";
 	}
@@ -11497,9 +11610,33 @@ std::vector<std::string> Mixer::write_layer(Layer* lay, std::ostream& wfile, boo
 		wfile << "ONOFFVAL\n";
 		wfile << std::to_string(eff->onoffbutton->value);
 		wfile << "\n";
+        wfile << "ONOFFMIDI0\n";
+        wfile << std::to_string(eff->onoffbutton->midi[0]);
+        wfile << "\n";
+        wfile << "ONOFFMIDI1\n";
+        wfile << std::to_string(eff->onoffbutton->midi[1]);
+        wfile << "\n";
+        wfile << "ONOFFMIDIPORT\n";
+        wfile << eff->onoffbutton->midiport;
+        wfile << "\n";
+        wfile << "ONOFFEVENT\n";
+        mainmix->event_write(wfile, nullptr, eff->onoffbutton);
+        wfile << "\n";
 		wfile << "DRYWETVAL\n";
 		wfile << std::to_string(eff->drywet->value);
 		wfile << "\n";
+        wfile << "DRYWETMIDI0\n";
+        wfile << std::to_string(eff->drywet->midi[0]);
+        wfile << "\n";
+        wfile << "DRYWETMIDI1\n";
+        wfile << std::to_string(eff->drywet->midi[1]);
+        wfile << "\n";
+        wfile << "DRYWETMIDIPORT\n";
+        wfile << eff->drywet->midiport;
+        wfile << "\n";
+        wfile << "DRYWETEVENT\n";
+        mainmix->event_write(wfile, eff->drywet, nullptr);
+        wfile << "\n";
 		if (eff->type == RIPPLE) {
 			wfile << "RIPPLESPEED\n";
 			wfile << std::to_string(((RippleEffect*)eff)->speed);
@@ -11527,6 +11664,7 @@ std::vector<std::string> Mixer::write_layer(Layer* lay, std::ostream& wfile, boo
 			wfile << par->midiport;
 			wfile << "\n";
 			mainmix->event_write(wfile, par, nullptr);
+            wfile << "\n";
 		}
 		wfile << "ENDOFPARAMS\n";
 	}
@@ -11565,6 +11703,7 @@ void Mixer::event_write(std::ostream &wfile, Param* par, Button* but) {
 		LoopStationElement *elem = loopstation->elems[i];
 		if (par) {
 			if (std::find(elem->params.begin(), elem->params.end(), par) != elem->params.end()) {
+
 				wfile << "EVENTELEM\n";
 				wfile << std::to_string(i);
 				wfile << "\n";
@@ -11649,16 +11788,23 @@ void Mixer::event_read(std::istream &rfile, Param *par, Button* but, Layer *lay)
 	safegetline(rfile, istring);
 	int elemnr = std::stoi(istring);
 
-	if (std::find(loopstation->readelemnrs.begin(), loopstation->readelemnrs.end(), elemnr) == loopstation->readelemnrs.end()) {
-		// new loopstation line taken in use at location elemnr
-		loop = loopstation->elems[elemnr];
-		loopstation->readelemnrs.push_back(elemnr);
-		loopstation->readelems.push_back(loop);
-	}
-	else {
-		// other parameter(s) of this rfile using this loopstation line already exist
-		loop = loopstation->free_element();
-	}
+    // loopstation line taken in use at location elemnr
+    // if line is taken take new free element
+    if (loopstation->elems[elemnr]->eventlist.size() > 0 && std::find(loopstation->readelemnrs.begin(), loopstation->readelemnrs.end(), elemnr) == loopstation->readelemnrs.end()) {
+        if (loopstation->readmap.count(elemnr)) {
+            loop = loopstation->elems[loopstation->readmap[elemnr]];
+        }
+        else {
+            loop = loopstation->free_element();
+            loopstation->readmap[elemnr] = loop->pos;
+        }
+    }
+    else {
+        loop = loopstation->elems[elemnr];
+        loopstation->readelemnrs.push_back(elemnr);
+        loopstation->readelems.push_back(loop);
+    }
+
     if (loop) {
         if (par){
             loop->params.emplace(par);

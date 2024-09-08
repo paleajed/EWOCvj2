@@ -11,6 +11,7 @@ class LoopStation {
 		int numelems = 256;
 		std::vector<LoopStationElement*> readelems;
 		std::vector<int> readelemnrs;
+        std::unordered_map<int, int> readmap;
 		std::vector<Param*> allparams;
 		std::vector<Button*> allbuttons;
 		std::unordered_map<Param*, Param*> parmap;

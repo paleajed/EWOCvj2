@@ -453,7 +453,7 @@ class Mixer {
 		void save_mix(std::string path);
 		void do_save_mix(std::string path, bool modus, bool save);
 		void save_deck(std::string path);
-		void do_save_deck(std::string path, bool save, bool doclips, bool copycomp = false);
+		void do_save_deck(std::string path, bool save, bool doclips, bool copycomp = false, bool dojpeg = true);
 		Layer* open_layerfile(std::string path, Layer *lay, bool loadevents, bool doclips, bool uselayers = true);
 		void open_mix(std::string path, bool alive, bool loadevents = true);
 		void open_deck(std::string path, bool alive, bool loadevents = true, int copycomp = 0);
