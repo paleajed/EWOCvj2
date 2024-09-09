@@ -24,11 +24,13 @@ Users that want to compile themselves can currently only do this on Windows syst
 * All code is in the src directory.
 * Edit the CMakeLists.txt file so everything points to the right directories.  You'll need the packages mentioned below.
 * install dependencies:
-  OpenAL32
+
+  OpenAL32 (although audio support is at the moment been disabled in the source)
   
   freeglut
 
   freetype2
+  
   sdl2
 
   opengl32
@@ -38,6 +40,7 @@ Users that want to compile themselves can currently only do this on Windows syst
   libjpeg
 
   snappy
+  
   ole32
 
   oleaut32
@@ -68,14 +71,22 @@ https://www.boost.org/
 
 * Use CMake to build the program.  You can find the executable in the cmake-build-debug or cmake-build-release directories.
 
-On Linux, copy src/vshader.vs and src/vshader.fs to /usr/share/ewocvj2 (create dir first time).  Also install the expressway.ttf font to your system.
+On Linux, if CMake doesn't do this automatically copy the following files to /usr/share/ewocvj2 (create dir first time):
+* src/background.png
+* src/lock.png
+* src/shader.fs
+* src/shader.vs
+* src/splash.jpeg
 
-For Windows you will need to have these dll's in your build directory to run the program. (you'll need the "d" version of some dll's) folder must contain
+Also install the expressway.ttf font to your system.
+
+For Windows you will need to have these files in your build directory to run the program:
 * avcodec-58.dll
 * avdevice-58.dll
 * avfilter-7.dll
 * avformat-58.dll
 * avutil-56.dll
+* background.png
 * bz2.dll
 * DevIL.dll
 * expressway.ttf (the main font file)
@@ -86,6 +97,7 @@ For Windows you will need to have these dll's in your build directory to run the
 * lcms2.dll
 * libpng16.dll
 * lo.dll
+* lock.png
 * lzma.dll
 * OpenAL32.dll
 * postproc-55.dll
@@ -93,6 +105,7 @@ For Windows you will need to have these dll's in your build directory to run the
 * shader.fs (the GLSL fragment shader)
 * shader.vs (the GLSL vertex shader)
 * snappy.dll
+* splash.jpeg
 * swresample-3.dll
 * swscale-5.dll
 * tiff.dll
