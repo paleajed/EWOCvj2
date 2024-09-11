@@ -305,8 +305,7 @@ class Layer {
 		BinElement *hapbinel = nullptr;
 		bool encodeload = false;
 		bool nopbodel = false;
-		bool tobedeleted = true;
-		
+
 		std::unordered_map<EFFECT_TYPE, int> numoftypemap;
         // reminder : here was clonesetnr
 
@@ -340,7 +339,7 @@ class Layer {
 		void mute_handle();
 		void set_aspectratio(int lw, int lh);
         void cnt_lpst();
-		bool progress(bool comp, bool alive);
+		bool progress(bool comp, bool alive, bool doclips = true);
 		void load_frame();
 		bool exchange(std::vector<Layer*>& slayers, std::vector<Layer*>& dlayers, bool deck);
 		void open_files_layers();
@@ -375,14 +374,20 @@ class Layer {
 class Scene {
 	public:
 		bool deck;
+        int pos;
 		Boxx* box;
 		Button* button;
+        LoopStation *lpst = nullptr;
+        Layer *currlay = nullptr;
 		bool loaded;
 		std::vector<Layer*> scnblayers;
 		std::vector<float> nbframes;
 		std::vector<Layer*> tempscnblayers;
 		std::vector<float> tempnbframes;
 		int scrollpos = 0;
+
+        void switch_to(bool dotempmap);
+        Scene();
 };
 
 class Mixer {
@@ -511,6 +516,7 @@ class Mixer {
 
 		int currscene[2] = {0, 0};
         int setscene = -1;
+        int scenenum = -1;
 		bool deck = 0;
 		int scrollon = 0;
 		int scrollmx;

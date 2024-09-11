@@ -419,10 +419,10 @@ void LoopStationElement::set_values() {
             if (mc > 500 || mc < 0) {
                 par->midistarted = false;
                 if (par != mainmix->adaptparam) {
-                    if (std::find(this->lpst->allparams.begin(), this->lpst->allparams.end(), par) !=
-                        this->lpst->allparams.end()) {
+//                    if (std::find(this->lpst->allparams.begin(), this->lpst->allparams.end(), par) !=
+//                        this->lpst->allparams.end()) {
                         par->value = std::get<3>(event);
-                    }
+//                   }
                 }
             }
 		}

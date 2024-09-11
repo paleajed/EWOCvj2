@@ -18,6 +18,7 @@ class LoopStation {
 		std::unordered_map<Button*, Button*> butmap;
 		std::unordered_map<Param*, LoopStationElement*> parelemmap;
 		std::unordered_map<Button*, LoopStationElement*> butelemmap;
+        std::unordered_set<LoopStationElement*> odelems;
 		std::vector<float> colvals = {0.8f, 0.3f, 0.3f
 									, 0.3f, 0.4f, 0.3f
 									, 0.3f, 0.3f, 0.7f

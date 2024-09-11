@@ -87,6 +87,7 @@ Mixer::Mixer() {
     for (int j = 0; j < 2; j++) {
         for (int i = 0; i < 4; i++) {
             Scene* scene = new Scene;
+            scene->pos = i;
             scene->deck = j;
             this->scenes[j].push_back(scene);
             Boxx* box = new Boxx;
@@ -4202,7 +4203,7 @@ void Layer::get_frame(){
             }
             if (this->vidformat != 188 && this->vidformat != 187) {
                 if (this->video) {
-                    if ((int)(this->frame) != this->prevframe || this->type == ELEM_LIVE) {
+                    if ((int)(this->frame) != this->prevframe || this->type == ELEM_LIVE || this->changeinit < 4) {
                         get_cpu_frame((int)this->frame, this->prevframe, 0);
                     }
                     else {
@@ -4212,7 +4213,7 @@ void Layer::get_frame(){
                 this->processed = true;
                 continue;
             }
-            if ((int)(this->frame) != this->prevframe) {
+            if ((int)(this->frame) != this->prevframe || this->changeinit < 4) {
                 bool ret = this->get_hap_frame();
                 if (!ret) {
                     this->get_hap_frame();
@@ -7388,7 +7389,7 @@ void Mixer::copy_to_comp(bool deckA, bool deckB, bool comp) {
     std::chrono::duration<double> elapsed;
     elapsed = std::chrono::duration_cast<std::chrono::duration<double>>(now - bunowlpst->bunow);
     long long millicount = std::chrono::duration_cast<std::chrono::milliseconds>(elapsed).count();
-    for (LoopStationElement* elem : loopstation->elems) {
+    for (LoopStationElement* elem : loopstation->odelems) {
         //elem->interimtime += millicount;
         //elem->speedadaptedtime += millicount * elem->speed->value;
         elem->starttime = now - std::chrono::milliseconds((long long)(elem->interimtime));
@@ -7418,6 +7419,7 @@ void Mixer::copy_to_comp(bool deckA, bool deckB, bool comp) {
             }
             if (tempmap->size()) {
                 for (std::vector<Layer *> lv: *tempmap) {
+                    if (lv[1] == nullptr) continue;
                     lv[1]->timeinit = mainmix->layers[prevl][lv[1]->pos]->timeinit;
                     lv[1]->prevtime = mainmix->layers[prevl][lv[1]->pos]->prevtime;
                 }
@@ -7540,7 +7542,6 @@ void Mixer::open_state(std::string path) {
 	}
 	//open_genmidis(remove_extension(path) + ".midi");
 
-	int deckcnt = 4;
     int cs0, cs1;
 	while (safegetline(rfile, istring)) {
 		if (istring == "ENDOFFILE") break;
@@ -7557,7 +7558,43 @@ void Mixer::open_state(std::string path) {
             mainmix->currscene[1] = std::stoi(istring);
             safegetline(rfile, istring);
             mainmix->currscene[1] = std::stoi(istring);
+
             bool bumodus = mainprogram->prevmodus;
+            LoopStation *bulpst = loopstation;
+            std::vector<Layer*> bul[2];
+            bul[0] = this->layers[2];
+            bul[1] = this->layers[3];
+
+            int deckcnt = 4;
+            for (int m = 0; m < 2; m++) {
+                int bucurr = this->currscene[m];
+                for (int k = 0; k < 4; k++) {
+                    if (bucurr == k) {
+                        continue;
+                    }
+                    this->layers[2].clear();
+                    mainmix->add_layer(this->layers[2], 0);
+                    this->layers[3].clear();
+                    mainmix->add_layer(this->layers[3], 0);
+                    this->newlrs[m + 2].clear();
+                    if (result != "") {
+                        loopstation = this->scenes[m][k]->lpst;
+                        this->mousedeck = m;
+                        this->scenenum = k;
+                        this->open_deck(result + "_" + std::to_string(deckcnt) + ".file", true);
+                        deckcnt++;
+                        this->scenenum = -1;
+                        this->scenes[m][k]->scnblayers = this->newlrs[m + 2];
+                        if (this->scenes[m][k]->scnblayers.empty()) {
+                            mainmix->add_layer(this->scenes[m][k]->scnblayers, 0);
+                        }
+                    }
+                }
+            }
+            this->layers[2] = bul[0];
+            this->layers[3] = bul[1];
+            loopstation = bulpst;
+
             mainprogram->prevmodus = true;
             //if (exists(result + "_2.file")) {
                 mainmix->open_mix(result + "_2.file", true);
@@ -7817,28 +7854,6 @@ void Mixer::open_state(std::string path) {
             mainprogram->modusbut->midiport = istring;
             mainprogram->modusbut->register_midi();
         }
-
-		if (istring.substr(0, 4) == "DECK") {
-			int scndeck = std::stoi(istring.substr(4, 1));
-			int scnnum = std::stoi(istring.substr(5, 1));
-			if (result != "") {
-				std::filesystem::rename(result + "_" + std::to_string(deckcnt) + ".file", mainprogram->temppath + "tempdecksc_" + std::to_string(scndeck) + std::to_string(scnnum) + ".deck");
-				deckcnt++;
-				mainmix->scenes[scndeck][scnnum]->scnblayers.clear();
-				while (safegetline(rfile, istring)) {
-					if (istring == "FRAMES") {
-						while (safegetline(rfile, istring)) {
-							if (istring == "ENDFRAMES") {
-								mainmix->scenes[scndeck][scnnum]->loaded = true;
-								break;
-							}
-							mainmix->scenes[scndeck][scnnum]->nbframes.push_back(std::stof(istring));
-						}
-						break;
-					}
-				}
-            }
-		}
 	}
 
     if (result != "") {
@@ -8064,25 +8079,38 @@ void Mixer::do_save_state(std::string path, bool autosave) {
     mainmix->save_mix(mainprogram->temppath + "temp.state2" + as, false, true);
     filestoadd.push_back(mainprogram->temppath + "temp.state2" + as + ".mix");
 
-    for (int j = 0; j < 2; j++) {
-        for (int i = 0; i < 4; i++) {
-            if (mainmix->scenes[j][mainmix->currscene[j]] == mainmix->scenes[j][i]) {
-                continue;
-            }
-            wfile << "DECK" + std::to_string(j) + std::to_string(i) + "\n";
-            wfile << "FRAMES\n";
-            for (int k = 0; k < mainmix->scenes[j][i]->scnblayers.size(); k++) {
-                wfile << std::to_string(mainmix->scenes[j][i]->scnblayers[k]->frame);
-                wfile << "\n";
-            }
-            wfile << "ENDFRAMES\n";
-            filestoadd.push_back(mainprogram->temppath + "tempdecksc_" + std::to_string(j) + std::to_string(i) + ".deck");
-        }
-    }
-	//save_genmidis(remove_extension(path) + ".midi");
+	//save_genmidis(remove_extension(path) + ".midi");  reminder
 
 	wfile << "ENDOFFILE\n";
 	wfile.close();
+
+
+    mainprogram->prevmodus = false;
+    LoopStation *bulpst = loopstation;
+    std::vector<Layer*> bul[2];
+    bul[0] = this->layers[2];
+    bul[1] = this->layers[3];
+    for (int m = 0; m < 2; m++) {
+        int bucurr = this->currscene[m];
+        for (int k = 0; k < 4; k++) {
+            if (bucurr == k) {
+                continue;
+            }
+            this->scenes[m][k]->switch_to(false);
+            this->currscene[m] = k;
+            loopstation = this->scenes[m][k]->lpst;
+            this->mousedeck = m;
+            this->scenenum = k;
+            this->do_save_deck(mainprogram->temppath + "tempdeck_xch" + "_" + std::to_string(m) + std::to_string(k) + ".deck", false, true, false, false);
+            this->scenenum = -1;
+            filestoadd.push_back(mainprogram->temppath + "tempdeck_xch" + "_" + std::to_string(m) + std::to_string(k) + ".deck");
+        }
+        this->scenes[m][bucurr]->switch_to(false);
+        this->currscene[m] = bucurr;
+    }
+    this->layers[2] = bul[0];
+    this->layers[3] = bul[1];
+    loopstation = bulpst;
 
 	std::vector<std::vector<std::string>> filestoadd2;
 	filestoadd2.push_back(filestoadd);
@@ -8604,7 +8632,9 @@ void Mixer::save_mix(const std::string path, bool modus, bool save) {
 void Mixer::open_deck(const std::string path, bool alive, bool loadevents, int copycomp) {
 		
 	std::string result = deconcat_files(path);
-	if (mainprogram->openerr) return;
+	if (mainprogram->openerr) {
+        return;
+    }
 	bool concat = (result != "");
 	std::ifstream rfile;
 	if (concat) rfile.open(result);
@@ -8621,15 +8651,18 @@ void Mixer::open_deck(const std::string path, bool alive, bool loadevents, int c
 		bool ret = this->set_prevshelfdragelem(lvec[0]);
 		if (!ret) alive = false;
 	}
-	this->new_file(mainmix->mousedeck, alive, false, false);
+	this->new_file(mainmix->mousedeck, alive, true, false);
 
     loopstation = lpc;
     if (mainprogram->prevmodus) {
         loopstation = lp;
     }
+    if (mainmix->scenenum > -1) {
+        loopstation = mainmix->scenes[mainmix->mousedeck][mainmix->scenenum]->lpst;
+    }
     if (copycomp == 2) {
         for (int i = 0; i < loopstation->elems.size(); i++) {
-            loopstation->elems[i]->init();
+            loopstation->elems[i]->erase_elem();
             loopstation->elems[i]->eventlist.clear();
             loopstation->elems[i]->params.clear();
             loopstation->elems[i]->layers.clear();
@@ -8706,7 +8739,7 @@ void Mixer::open_deck(const std::string path, bool alive, bool loadevents, int c
             mainmix->deckspeed[!mainprogram->prevmodus][mainmix->mousedeck]->midiport = istring;
         }
 
-        else if (copycomp >= 2) {
+        else if (copycomp >= 2 && mainmix->mousedeck == 0) {
             if (istring == "CROSSFADEEVENT") {
                 Param *par = mainmix->crossfade;
                 safegetline(rfile, istring);
@@ -8754,7 +8787,7 @@ void Mixer::open_deck(const std::string path, bool alive, bool loadevents, int c
             mainmix->copycomp_busy = true;
             mainmix->tempmapislayer = false;
             mainmix->currclonesize = mainmix->clonesets.size();
-            mainmix->read_layers(rfile, result, layers, mainmix->mousedeck, true, 0, 1, concat, 1, loadevents, 0);
+            mainmix->read_layers(rfile, result, layers, mainmix->mousedeck, true, 0, 1, concat, 1, loadevents, 0, 0);
             mainmix->currclonesize = -1;
             mainmix->copycomp_busy = false;
 
@@ -8815,6 +8848,7 @@ void Mixer::open_deck(const std::string path, bool alive, bool loadevents, int c
         for (int i = 0; i < 4; i++) {
             tempmap = mainmix->swapmap[i];
             for (std::vector<Layer *> lv: tempmap) {
+                if (lv[1] == nullptr) continue;
                 bool clear = true;
                 int sz = mainmix->currlays[!lv[1]->comp].size();
                 for (int j = sz - 1; j >= 0; j--) {
@@ -8870,7 +8904,12 @@ void Mixer::save_deck(const std::string path) {
 
 void Mixer::do_save_deck(const std::string path, bool save, bool doclips, bool copycomp, bool dojpeg) {
     loopstation = lpc;
-    if (mainprogram->prevmodus) loopstation = lp;
+    if (mainprogram->prevmodus) {
+        loopstation = lp;
+    }
+    if (mainmix->scenenum > -1) {
+        loopstation = mainmix->scenes[mainmix->mousedeck][mainmix->scenenum]->lpst;
+    }
 
     this->get_butimes();
 
@@ -8907,33 +8946,36 @@ void Mixer::do_save_deck(const std::string path, bool save, bool doclips, bool c
 	wfile << "DECKSPEEDMIDIPORT\n";
 	wfile << mainmix->deckspeed[!mainprogram->prevmodus][mainmix->mousedeck]->midiport;
 	wfile << "\n";
-    wfile << "CROSSFADEEVENT\n";
-    par = mainmix->crossfadecomp;
-    mainmix->event_write(wfile, par, nullptr);
-    wfile << "\n";
-    wfile << "CROSSFADECOMPEVENT\n";
-    par = mainmix->crossfade;
-    mainmix->event_write(wfile, par, nullptr);
-    wfile << "\n";
-    wfile << "WIPEXEVENT\n";
-    mainmix->event_write(wfile, mainmix->wipex[1], nullptr);
-    wfile << "\n";
-    wfile << "WIPEYEVENT\n";
-    mainmix->event_write(wfile, mainmix->wipey[1], nullptr);
-    wfile << "\n";
-    wfile << "WIPEXCOMPEVENT\n";
-    mainmix->event_write(wfile, mainmix->wipex[0], nullptr);
-    wfile << "\n";
-    wfile << "WIPEYCOMPEVENT\n";
-    mainmix->event_write(wfile, mainmix->wipey[0], nullptr);
-    wfile << "\n";
+    if (!mainprogram->prevmodus) {
+        wfile << "CROSSFADEEVENT\n";
+        par = mainmix->crossfadecomp;
+        mainmix->event_write(wfile, par, nullptr);
+        wfile << "\n";
+    }
+    else {
+        wfile << "CROSSFADECOMPEVENT\n";
+        par = mainmix->crossfade;
+        mainmix->event_write(wfile, par, nullptr);
+        wfile << "\n";
+    }
+    if (!mainprogram->prevmodus) {
+        wfile << "WIPEXEVENT\n";
+        mainmix->event_write(wfile, mainmix->wipex[1], nullptr);
+        wfile << "\n";
+        wfile << "WIPEYEVENT\n";
+        mainmix->event_write(wfile, mainmix->wipey[1], nullptr);
+        wfile << "\n";
+    }
+    else {
+        wfile << "WIPEXCOMPEVENT\n";
+        mainmix->event_write(wfile, mainmix->wipex[0], nullptr);
+        wfile << "\n";
+        wfile << "WIPEYCOMPEVENT\n";
+        mainmix->event_write(wfile, mainmix->wipey[0], nullptr);
+        wfile << "\n";
+    }
 
     wfile << "LAYERS\n";
-
-    loopstation = lpc;
-    if (mainprogram->prevmodus) loopstation = lp;
-
-    this->get_butimes();
 
     std::vector<std::vector<std::string>> jpegpaths;
 	std::vector<Layer*>& lvec = choose_layers(mainmix->mousedeck);
@@ -8964,7 +9006,8 @@ void Mixer::do_save_deck(const std::string path, bool save, bool doclips, bool c
         //concat.detach();
     }
     else {
-        std::thread concat = std::thread(&Program::concat_files, mainprogram, mainprogram->temppath + "tempconcatdeck",
+        std::string tcdpath = find_unused_filename("tempconcatdeck", mainprogram->temppath, "");
+        std::thread concat = std::thread(&Program::concat_files, mainprogram, tcdpath,
                                          str, jpegpaths);
         concat.detach();
     }
@@ -9371,10 +9414,21 @@ void Layer::playaudio() {
 
 
 void Mixer::get_butimes() {
-    loopstation->bunow = std::chrono::high_resolution_clock::now();
-    for (LoopStationElement* elem : loopstation->elems) {
-        elem->buinterimtime = elem->interimtime;
-        elem->buspeedadaptedtime = elem->speedadaptedtime;
+    std::vector<LoopStation*> lpsts;
+    lpsts.push_back(lp);
+    lpsts.push_back(lpc);
+    for (int m = 0; m < 2; m++) {
+        for (int k = 0; k < 4; k++) {
+            lpsts.push_back(this->scenes[m][k]->lpst);
+        }
+    }
+    for (LoopStation *lpst : lpsts) {
+        lpst->odelems.clear();
+        lpst->bunow = std::chrono::high_resolution_clock::now();
+        for (LoopStationElement *elem: lpst->elems) {
+            elem->buinterimtime = elem->interimtime;
+            elem->buspeedadaptedtime = elem->speedadaptedtime;
+        }
     }
 }
 
@@ -9651,7 +9705,7 @@ void Layer::cnt_lpst() {
     }
 }
 
-bool Layer::progress(bool comp, bool alive) {
+bool Layer::progress(bool comp, bool alive, bool doclips) {
     // calculates new frame numbers for a video layer
     //measure time since last loop
     std::chrono::high_resolution_clock::time_point now = std::chrono::high_resolution_clock::now();
@@ -9724,7 +9778,7 @@ bool Layer::progress(bool comp, bool alive) {
             }
 
             // on video end (or video beginning if reverse playing) switch to the next clip in the queue
-            if (1) { //this->oldalive || !alive
+            if (doclips) { //this->oldalive || !alive
                 if (this->scritching == 0) {
                     if (this->bouncebut->value || this->playbut->value || this->revbut->value) {
                         if (this->frame > (this->endframe->value) && this->startframe->value != this->endframe->value) {
@@ -9777,7 +9831,7 @@ bool Layer::progress(bool comp, bool alive) {
                 }
                 if (this->scritching == 4) this->scritching = 0;
             }
-            else {
+            /*else {
                 if (this->type == ELEM_FILE) {
                     this->open_video(this->frame, this->filename, 0);
                 }
@@ -9792,7 +9846,7 @@ bool Layer::progress(bool comp, bool alive) {
                     this->set_live_base(this->filename);
                 }
                 this->oldalive = true;
-            }
+            }*/
         }
     }
 
@@ -9831,7 +9885,7 @@ void Layer::load_frame() {
             if (!this->remfr[this->pbofri]->newdata) {
                 // promote first layer found in layer stack with this clonesetnr to element of firstlayers
                 this->ready = true;
-                if ((int) (this->frame) != this->prevframe) {
+                if ((int) (this->frame) != this->prevframe || this->changeinit < 4) {
                     this->startdecode.notify_all();
                 }
                 /*if (this->clonesetnr != -1) {
@@ -10148,13 +10202,13 @@ void Layer::open_files_layers() {
 	// load one element of ordered list each loop
     //std::vector<Layer*>& lvec = (mainprogram->clickednextto != -1) ? choose_layers(mainprogram->clickednextto) : choose_layers(mainprogram->fileslay->deck);
     std::vector<Layer*>& lvec = choose_layers(mainprogram->fileslay->deck);
-    std::string str = mainprogram->paths[mainprogram->filescount];
+    std::string str = mainprogram->paths[mainprogram->pathscount];
 	Layer* lay = mainprogram->fileslay;
     /*if (mainprogram->clickednextto != -1) {
         lay = mainmix->add_layer(lvec, lvec.size());
     }
-    else*/ if (mainprogram->filescount > 0) {
-        lay = mainmix->add_layer(lvec, mainprogram->fileslay->pos + mainprogram->filescount);
+    else*/ if (mainprogram->pathscount > 0) {
+        lay = mainmix->add_layer(lvec, mainprogram->fileslay->pos + mainprogram->pathscount);
     }
 
     // get file type
@@ -10191,8 +10245,8 @@ void Layer::open_files_layers() {
         mainprogram->openerr = false;
     }
 
-	mainprogram->filescount++;
-	if (mainprogram->filescount == mainprogram->paths.size()) {
+	mainprogram->pathscount++;
+	if (mainprogram->pathscount == mainprogram->paths.size()) {
 		mainprogram->openfileslayers = false;
 		mainprogram->paths.clear();
 		mainprogram->multistage = 0;
@@ -10206,8 +10260,8 @@ void Layer::open_files_queue() {
     if (!cont) return;
 
     // load one element of ordered list each loop
-    std::string str = mainprogram->paths[mainprogram->filescount];
-    if (mainprogram->filescount == 0) {
+    std::string str = mainprogram->paths[mainprogram->pathscount];
+    if (mainprogram->pathscount == 0) {
         mainprogram->clipfilesclip = mainprogram->fileslay->clips[0];
     }
     int pos = std::find(mainprogram->fileslay->clips.begin(), mainprogram->fileslay->clips.end(),
@@ -10283,8 +10337,8 @@ void Layer::open_files_queue() {
     }
     mainprogram->clipfilesclip = mainprogram->fileslay->clips[pos + 1];
 
-	mainprogram->filescount++;
-	if (mainprogram->filescount == mainprogram->paths.size()) {
+	mainprogram->pathscount++;
+	if (mainprogram->pathscount == mainprogram->paths.size()) {
 		mainprogram->fileslay->cliploading = false;
 		mainprogram->openfilesqueue = false;
         mainprogram->fileslay->queueing = true;
@@ -10537,7 +10591,7 @@ Layer* Mixer::read_layers(std::istream &rfile, const std::string result, std::ve
                 }
                 mainmix->retargeting = true;
                 this->newpathlayers.push_back(layend);
-                //mainprogram->filescount++;
+                //mainprogram->pathscount++;
             }
 		}
 		if (istring == "JPEGPATH") {
@@ -11214,11 +11268,13 @@ Layer* Mixer::read_layers(std::istream &rfile, const std::string result, std::ve
         std::vector<std::vector<Layer*>> *tempmap;
         if (mainprogram->prevmodus) {
             if (to_layers[0] == bulrs[1][0][0]) {
+                mainmix->swapmap[0].clear();
                 lrs = bulrs[1][0];
                 mainmix->newlrs[0] = layers;
                 this->layers[0] = lrs;
                 tempmap = &mainmix->swapmap[0];
             } else if (to_layers[0] == bulrs[1][1][0]) {
+                mainmix->swapmap[1].clear();
                 lrs = bulrs[1][1];
                 mainmix->newlrs[1] = layers;
                 this->layers[1] = lrs;
@@ -11227,11 +11283,13 @@ Layer* Mixer::read_layers(std::istream &rfile, const std::string result, std::ve
         }
         else {
             if (to_layers[0] == bulrs[0][0][0]) {
+                mainmix->swapmap[2].clear();
                 lrs = bulrs[0][0];
                 mainmix->newlrs[2] = layers;
                 this->layers[2] = lrs;
                 tempmap = &mainmix->swapmap[2];
             } else if (to_layers[0] == bulrs[0][1][0]) {
+                mainmix->swapmap[3].clear();
                 lrs = bulrs[0][1];
                 mainmix->newlrs[3] = layers;
                 this->layers[3] = lrs;
@@ -11837,7 +11895,28 @@ void Mixer::event_read(std::istream &rfile, Param *par, Button* but, Layer *lay)
             loop->buttons.emplace(but);
         }
     }
-	safegetline(rfile, istring);
+
+    for (int i = loop->eventlist.size() - 1; i >= 0; i--) {
+        std::tuple<long long, Param *, Button *, float> event = loop->eventlist[i];
+        if (par) {
+            if (par->name == "Crossfade" || std::get<1>(event)->name == "wipex" || std::get<1>(event)->name == "wipey") {
+                loopstation->odelems.emplace(loop);
+            } else if (par->effect) {
+                if (par->effect->layer->deck == mainmix->mousedeck) {
+                    loopstation->odelems.emplace(loop);
+                }
+            else if (par->layer->deck == mainmix->mousedeck) {
+                    loopstation->odelems.emplace(loop);
+                }
+            }
+        } else if (but) {
+            if (but->layer->deck == mainmix->mousedeck) {
+                loopstation->odelems.emplace(loop);
+            }
+        }
+    }
+    
+    safegetline(rfile, istring);
 	if (loop) {
 		loop->loopbut->value = std::stoi(istring);
 		loop->loopbut->oldvalue = std::stoi(istring);
@@ -11999,6 +12078,7 @@ void Mixer::new_file(int decks, bool alive, bool add, bool empty) {
 			if (alive) mainmix->bulrs[mainprogram->prevmodus][0] = lvec;
 			else {
                 mainmix->bulrs[mainprogram->prevmodus][0].clear();
+                mainmix->add_layer(mainmix->bulrs[mainprogram->prevmodus][0], 0);
             }
             if (empty) {
                 lvec.clear();
@@ -13269,4 +13349,51 @@ void Clip::open_clipfiles() {
 
 
 
+///////    SCENES
 
+Scene::Scene() {
+    this->lpst = new LoopStation;
+    this->lpst->init();
+}
+
+void Scene::switch_to(bool dotempmap) {
+    mainmix->scenes[this->deck][mainmix->currscene[this->deck]]->scnblayers.clear();
+    std::vector<Layer *> &lvec = choose_layers(this->deck);
+    if (lvec.empty()) {
+        mainmix->add_layer(lvec, 0);
+    }
+    for (int j = 0; j < lvec.size(); j++) {
+        // store layers and frames of current this into scnblayers for running in the background (to keep sync)
+        // if (lvec[j]->filename == "") continue;
+        mainmix->scenes[this->deck][mainmix->currscene[this->deck]]->scnblayers.push_back(lvec[j]);
+    }
+
+    //this->currlay = mainmix->currlay[!mainprogram->prevmodus];
+    std::vector<Layer *> lrs = mainmix->layers[this->deck + 2];
+    if (dotempmap) {
+        if (this->scnblayers.empty()) {
+            mainmix->add_layer(this->scnblayers, 0);
+        }
+        std::vector<std::vector<Layer *>> *tempmap = &mainmix->swapmap[this->deck + 2];
+        mainmix->newlrs[this->deck + 2] = this->scnblayers;
+        if (lrs.size()) {
+            for (int i = 0; i < std::max(mainmix->newlrs[this->deck + 2].size(), lrs.size()); i++) {
+                Layer *first = nullptr;
+                Layer *second = nullptr;
+                if (i < lrs.size()) {
+                    first = lrs[i];
+                }
+                for (Layer *l1: mainmix->newlrs[this->deck + 2]) {
+                    if (l1->pos == i) {
+                        second = l1;
+                        break;
+                    }
+                }
+                (*tempmap).push_back({first, second});
+                if (second && second->filename != "") second->initdeck = true;
+            }
+        }
+    } else {
+        mainmix->layers[this->deck + 2] = this->scnblayers;
+    }
+}

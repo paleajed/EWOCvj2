@@ -1249,7 +1249,7 @@ bool Program::order_paths(bool dodeckmix) {
     // the process goes in multiple stages to allow spreading the workload
     if (this->multistage == 0) {
         // initial setup
-        this->filescount = 0;
+        this->pathscount = 0;
         this->pathtexes.clear();
         this->multistage = 1;
     }
@@ -1257,8 +1257,15 @@ bool Program::order_paths(bool dodeckmix) {
         // obtain the filetype and initiate worker threads to get at the textures
         this->orderondisplay = true;
         // first get one file texture per loop
-        std::string str = this->paths[this->filescount];
-        this->filescount++;
+        if (this->pathscount == this->paths.size()) {
+            this->multistage = 2;
+            return false;
+        }
+        else {
+            mainprogram->err = false;
+        }
+        std::string str = this->paths[this->pathscount];
+        this->pathscount++;
 
         GLuint temptex;
         // determine file type
@@ -1295,22 +1302,42 @@ bool Program::order_paths(bool dodeckmix) {
             this->getvideotexlayers.push_back(lay);
             this->getvideotexpaths.push_back(str);
             this->multistage = 2;
-        } else if (dodeckmix && istring == "EWOCvj DECKFILE") {
+        } else if (istring == "EWOCvj DECKFILE") {
             Layer *lay = new Layer(true);
             lay->type = ELEM_DECK;
             //std::thread tex(&get_deckmixtex, lay, str);
             //tex.detach();
-            this->getvideotexlayers.push_back(lay);
-            this->getvideotexpaths.push_back(str);
-            this->multistage = 2;
-        } else if (dodeckmix && istring == "EWOCvj MIXFILE") {
+            if (dodeckmix) {
+                this->getvideotexlayers.push_back(lay);
+                this->getvideotexpaths.push_back(str);
+                this->multistage = 2;
+            }
+            else {
+                mainprogram->err = true;
+                this->paths.erase(this->paths.begin() + this->pathscount - 1);
+                this->pathscount -= 1;
+                if (this->pathscount < 0) this->pathscount = 0;
+                this->multistage = 1;
+                return false;
+            }
+        } else if (istring == "EWOCvj MIXFILE") {
             Layer *lay = new Layer(true);
             lay->type = ELEM_MIX;
             //std::thread tex(&get_deckmixtex, lay, str);
             //tex.detach();
-            this->getvideotexlayers.push_back(lay);
-            this->getvideotexpaths.push_back(str);
-            this->multistage = 2;
+            if (dodeckmix) {
+                this->getvideotexlayers.push_back(lay);
+                this->getvideotexpaths.push_back(str);
+                this->multistage = 2;
+            }
+            else {
+                mainprogram->err = true;
+                this->paths.erase(this->paths.begin() + this->pathscount - 1);
+                this->pathscount -= 1;
+                if (this->pathscount < 0) this->pathscount = 0;
+                this->multistage = 1;
+                return false;
+            }
         }
         else if (isvideo(str)) {
             Layer *lay = new Layer(true);
@@ -1320,95 +1347,111 @@ bool Program::order_paths(bool dodeckmix) {
             this->getvideotexpaths.push_back(str);
             this->multistage = 2;
         } else {
-            this->orderondisplay = false;
-            this->paths.erase(this->paths.begin() + this->filescount - 1);
-            this->filescount -= 1;
-            if (this->filescount < 0) this->filescount = 0;
+            mainprogram->err = true;
+            this->paths.erase(this->paths.begin() + this->pathscount - 1);
+            this->pathscount -= 1;
+            if (this->pathscount < 0) this->pathscount = 0;
+            this->multistage = 1;
             return false;
+            //this->orderondisplay = false;
+            //this->paths.erase(this->paths.begin() + this->pathscount - 1);
+            //this->pathscount -= 1;
+            //if (this->pathscount < 0) this->pathscount = 0;
+            //return false;
         }
     }
 
     if (this->multistage == 2) {
-        if (mainprogram->getvideotexlayers.empty()) return false;
-        std::string str = mainprogram->getvideotexpaths[0];
-        Layer *lay = mainprogram->getvideotexlayers[0];
-        if (std::find(mainprogram->errlays.begin(), mainprogram->errlays.end(), lay) != mainprogram->errlays.end()) {
+        if (!mainprogram->err || this->pathscount != this->paths.size()) {
+            mainprogram->err = false;
+            if (mainprogram->getvideotexlayers.empty()) return false;
+            std::string str = mainprogram->getvideotexpaths[0];
+            Layer *lay = mainprogram->getvideotexlayers[0];
+            if (std::find(mainprogram->errlays.begin(), mainprogram->errlays.end(), lay) !=
+                mainprogram->errlays.end()) {
+                mainprogram->getvideotexlayers.erase(mainprogram->getvideotexlayers.begin());
+                mainprogram->getvideotexpaths.erase(mainprogram->getvideotexpaths.begin());
+                return false;
+            }
+            GLuint tex;
+            if (lay->type == ELEM_DECK || lay->type == ELEM_MIX) {
+                glGenTextures(1, &tex);
+                //glActiveTexture(GL_TEXTURE0);
+                glBindTexture(GL_TEXTURE_2D, tex);
+                glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR);
+                glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
+                glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_BORDER);
+                glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_BORDER);
+
+                get_deckmixtex(lay, str);
+
+                open_thumb(result + "_" + std::to_string(this->resnum - 2) + ".file", tex);
+            } else {
+                if (!lay->processed) return false;
+                lay->processed = false;
+
+                if (lay->type == ELEM_LAYER) {
+                    //lay->initialize(lay->video_dec_ctx->width, lay->video_dec_ctx->height);
+                    glBindTexture(GL_TEXTURE_2D, lay->texture);
+                    if (lay->vidformat == 188 || lay->vidformat == 187) {
+                        if (lay->decresult->compression == 187) {
+                            glCompressedTexImage2D(GL_TEXTURE_2D, 0, GL_COMPRESSED_RGBA_S3TC_DXT1_EXT,
+                                                   lay->decresult->width,
+                                                   lay->decresult->height, 0, lay->decresult->size,
+                                                   lay->remfr[lay->pbofri]->data);
+                        } else if (lay->decresult->compression == 190) {
+                            glCompressedTexImage2D(GL_TEXTURE_2D, 0, GL_COMPRESSED_RGBA_S3TC_DXT5_EXT,
+                                                   lay->decresult->width,
+                                                   lay->decresult->height, 0, lay->decresult->size,
+                                                   lay->remfr[lay->pbofri]->data);
+                        }
+                    } else {
+                        glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA8, lay->decresult->width, lay->decresult->height, 0,
+                                     GL_BGRA,
+                                     GL_UNSIGNED_BYTE, lay->remfr[lay->pbofri]->data);
+                    }
+                    GLuint butex = lay->fbotex;
+                    lay->fbotex = copy_tex(lay->texture);
+                    glDeleteTextures(1, &butex);
+                    for (int k = 0; k < lay->effects[0].size(); k++) {
+                        lay->effects[0][k]->node->calc = true;
+                        lay->effects[0][k]->node->walked = false;
+                    }
+                    lay->vidopen = false;
+                    mainprogram->directmode = true;
+                    onestepfrom(0, lay->node, nullptr, -1, -1);
+                    mainprogram->directmode = false;
+                    if (lay->effects[0].size()) {
+                        tex = copy_tex(lay->effects[0][lay->effects[0].size() - 1]->fbotex,
+                                       binsmain->elemboxes[0]->scrcoords->w, binsmain->elemboxes[0]->scrcoords->h);
+                    } else {
+                        tex = copy_tex(lay->fbotex, binsmain->elemboxes[0]->scrcoords->w,
+                                       binsmain->elemboxes[0]->scrcoords->h);
+                    }
+                    this->gettinglayertexlay->closethread = 1;
+                    this->gettinglayertex = false;
+                } else {
+                    tex = this->get_tex(lay);
+                }
+            }
+
+
+            glBindTexture(GL_TEXTURE_2D, tex);
+
+            lay->closethread = 1;
             mainprogram->getvideotexlayers.erase(mainprogram->getvideotexlayers.begin());
             mainprogram->getvideotexpaths.erase(mainprogram->getvideotexpaths.begin());
-            return false;
-        }
-        GLuint tex;
-        if (lay->type == ELEM_DECK || lay->type == ELEM_MIX) {
-            glGenTextures(1, &tex);
-            //glActiveTexture(GL_TEXTURE0);
-            glBindTexture(GL_TEXTURE_2D, tex);
-            glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR);
-            glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
-            glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_BORDER);
-            glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_BORDER);
 
-            get_deckmixtex(lay, str);
-
-            open_thumb(result + "_" + std::to_string(this->resnum - 2) + ".file", tex);
-        }
-        else {
-            if (!lay->processed) return false;
-            lay->processed = false;
-
-            if (lay->type == ELEM_LAYER) {
-                //lay->initialize(lay->video_dec_ctx->width, lay->video_dec_ctx->height);
-                glBindTexture(GL_TEXTURE_2D, lay->texture);
-                if (lay->vidformat == 188 || lay->vidformat == 187) {
-                    if (lay->decresult->compression == 187) {
-                        glCompressedTexImage2D(GL_TEXTURE_2D, 0, GL_COMPRESSED_RGBA_S3TC_DXT1_EXT, lay->decresult->width,
-                                               lay->decresult->height, 0, lay->decresult->size, lay->remfr[lay->pbofri]->data);
-                    } else if (lay->decresult->compression == 190) {
-                        glCompressedTexImage2D(GL_TEXTURE_2D, 0, GL_COMPRESSED_RGBA_S3TC_DXT5_EXT, lay->decresult->width,
-                                               lay->decresult->height, 0, lay->decresult->size, lay->remfr[lay->pbofri]->data);
-                    }
-                } else {
-                    glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA8, lay->decresult->width, lay->decresult->height, 0, GL_BGRA,
-                                 GL_UNSIGNED_BYTE, lay->remfr[lay->pbofri]->data);
-                }
-                GLuint butex = lay->fbotex;
-                lay->fbotex = copy_tex(lay->texture);
-                glDeleteTextures(1, &butex);
-                for (int k = 0; k < lay->effects[0].size(); k++) {
-                    lay->effects[0][k]->node->calc = true;
-                    lay->effects[0][k]->node->walked = false;
-                }
-                lay->vidopen = false;
-                mainprogram->directmode = true;
-                onestepfrom(0, lay->node, nullptr, -1, -1);
-                mainprogram->directmode = false;
-                if (lay->effects[0].size()) {
-                    tex = copy_tex(lay->effects[0][lay->effects[0].size() - 1]->fbotex,
-                                   binsmain->elemboxes[0]->scrcoords->w, binsmain->elemboxes[0]->scrcoords->h);
-                } else {
-                    tex = copy_tex(lay->fbotex, binsmain->elemboxes[0]->scrcoords->w,
-                                   binsmain->elemboxes[0]->scrcoords->h);
-                }
-                this->gettinglayertexlay->closethread = 1;
-                this->gettinglayertex = false;
-            } else {
-                tex = this->get_tex(lay);
+            tex = copy_tex(tex, 192, 108);
+            this->pathtexes.push_back(tex);
+            render_text(str, white, 2.0f, 2.0f, 0.00045f, 0.00075f); // init text string, to avoid slowdown later
+            this->pathtstrs.push_back(str);
+            if (this->pathscount < this->paths.size()) {
+                this->multistage = 1;
+                return false;
             }
         }
-
-        glBindTexture(GL_TEXTURE_2D, tex);
-
-        lay->closethread = 1;
-        mainprogram->getvideotexlayers.erase(mainprogram->getvideotexlayers.begin());
-        mainprogram->getvideotexpaths.erase(mainprogram->getvideotexpaths.begin());
-
-        tex = copy_tex(tex, 192, 108);
-        this->pathtexes.push_back(tex);
-        render_text(str, white, 2.0f, 2.0f, 0.00045f, 0.00075f); // init text string, to avoid slowdown later
-        this->pathtstrs.push_back(str);
-        if (this->filescount < this->paths.size()) {
-            this->multistage = 1;
-            return false;
-        }
+        mainprogram->err = false;
         for (int j = 0; j < this->paths.size(); j++) {
             this->pathboxes.push_back(new Boxx);
             this->pathboxes[j]->vtxcoords->x1 = -0.4f;
@@ -1451,7 +1494,7 @@ bool Program::order_paths(bool dodeckmix) {
                 }
             }
         }
-        this->filescount = 0;
+        this->pathscount = 0;
         this->orderondisplay = false;
         this->multistage = 5;
     }
@@ -4850,16 +4893,18 @@ void Program::handle_lpstmenu() {
 void Program::preview_modus_buttons() {
 	// Draw and handle buttons
     for (Layer *lay : mainmix->layers[0]) {
-        if (lay->initdeck) return;
+        if (lay->changeinit < 4 && lay->filename != "") return;
     }
     for (Layer *lay : mainmix->layers[1]) {
-        if (lay->initdeck) return;
+        if (lay->changeinit < 4 && lay->filename != "") return;
     }
     for (Layer *lay : mainmix->layers[2]) {
-        if (lay->initdeck) return;
+        if (lay->changeinit < 4 && lay->filename != "") {
+            return;
+        }
     }
     for (Layer *lay : mainmix->layers[3]) {
-        if (lay->initdeck) return;
+        if (lay->changeinit < 4 && lay->filename != "") return;
     }
 	if (mainprogram->prevmodus) {
         mainprogram->handle_button(mainprogram->toscreenA);
@@ -4903,7 +4948,9 @@ void Program::preview_modus_buttons() {
 
         for (int m = 0; m < 2; m++) {
             std::vector<int> scns;
+            int bucurr = mainmix->currscene[m];
             for (int j = 0; j < 4; j++) {
+                mainmix->scenes[m][j]->pos = j;
                 if (j != mainmix->currscene[m]) {
                     scns.push_back(j + 1);
                 }
@@ -4915,21 +4962,42 @@ void Program::preview_modus_buttons() {
                     mainprogram->toscene[m][0][i]->oldvalue = 0;
                     // SEND UP button copies deck preview set to scene
                     Scene *scene = mainmix->scenes[m][scns[i] - 1];
-                    std::vector<Layer *> &lvec = choose_layers(m);
-                    for (Layer *nbl: scene->scnblayers) {
-                        nbl->tobedeleted = true;
-                    }
-                    scene->scnblayers.clear();
-                    scene->nbframes.clear();
-                    for (int j = 0; j < lvec.size(); j++) {
-                        // store layers and frames of current scene into nblayers for running their framecounters in the background (to keep sync)
-                        if (lvec[j]->filename == "") continue;
-                        lvec[j]->tobedeleted = false;
-                        scene->scnblayers.push_back(lvec[j]);
-                        scene->nbframes.push_back(lvec[j]->frame);
-                    }
+                    mainprogram->prevmodus = true;
                     mainmix->mousedeck = m;
-                    mainmix->do_save_deck(mainprogram->temppath + "tempdecksc_" + std::to_string(m) + std::to_string(scns[i] - 1) + ".deck", false, true);
+                    mainmix->scenenum = -1;
+                    mainmix->do_save_deck(
+                            mainprogram->temppath + "tempdecksc_" + std::to_string(m) + std::to_string(scns[i] - 1) +
+                            ".deck", false, true);
+
+                    mainprogram->prevmodus = false;
+                    loopstation = scene->lpst;
+                    std::vector<Layer*> bul[2];
+                    bul[0] = mainmix->layers[2];
+                    bul[1] = mainmix->layers[3];
+                    mainmix->scenenum = scene->pos;
+                    mainmix->open_deck(mainprogram->temppath + "tempdecksc_" + std::to_string(m) + std::to_string(scns[i] - 1) +".deck", true);
+                    scene->scnblayers = mainmix->newlrs[m + 2];
+                    mainmix->layers[2] = bul[0];
+                    mainmix->layers[3] = bul[1];
+                    for (Layer *lv : mainmix->newlrs[m + 2]) {
+                        if (lv) {
+                            lv->initdeck = false;
+                        }
+                    }
+                    mainmix->swapmap[m + 2].clear();
+                    mainmix->scenenum = -1;
+
+                    // correct loopstation current times for deck saving/opening lag
+                    LoopStation *bunowlpst = lp;
+                    std::chrono::high_resolution_clock::time_point now = std::chrono::high_resolution_clock::now();
+                    std::chrono::duration<double> elapsed;
+                    elapsed = std::chrono::duration_cast<std::chrono::duration<double>>(now - bunowlpst->bunow);
+                    long long millicount = std::chrono::duration_cast<std::chrono::milliseconds>(elapsed).count();
+                    for (LoopStationElement *elem: loopstation->odelems) {
+                          elem->starttime = now - std::chrono::milliseconds((long long) (elem->interimtime));
+                    }
+                    
+                    mainprogram->prevmodus = true;
                 }
                 box = mainprogram->toscene[m][0][i]->box;
                 register_triangle_draw(white, white, box->vtxcoords->x1 + box->vtxcoords->w / 2.0f + 0.0117f,
@@ -4939,12 +5007,50 @@ void Program::preview_modus_buttons() {
 
                 mainprogram->handle_button(mainprogram->toscene[m][1][i]);
                 if (mainprogram->toscene[m][1][i]->toggled()) {
+                    mainprogram->swappingscene = true;
                     mainprogram->toscene[m][1][i]->value = 0;
                     mainprogram->toscene[m][1][i]->oldvalue = 0;
-                    // SEND UP button copies deck preview set to scene
+
+                    // SEND DOWN button copies back scene to deck preview set
+                    Scene *scene = mainmix->scenes[m][scns[i] - 1];
+                    mainprogram->prevmodus = false;
+                    scene->switch_to(false);
+                    mainmix->currscene[m] = scns[i] - 1;
                     mainmix->mousedeck = m;
-                    mainmix->open_deck(mainprogram->temppath + "tempdecksc_" + std::to_string(m) + std::to_string(scns[i] - 1) + ".deck", true);
+                    loopstation = scene->lpst;
+                    mainmix->do_save_deck(
+                            mainprogram->temppath + "tempdecksc_" + std::to_string(m) +
+                            std::to_string(scns[i] - 1) +
+                            ".deck", false, true);
+                    mainmix->scenes[m][bucurr]->switch_to(false);
+                    mainmix->currscene[m] = bucurr;
+
+                    mainprogram->prevmodus = true;
+                    std::vector<Layer*> bul[2];
+                    bul[0] = mainmix->layers[2];
+                    bul[1] = mainmix->layers[3];
+                    loopstation = lp;
+                    mainmix->scenenum = -1;
+                    mainmix->open_deck(mainprogram->temppath + "tempdecksc_" + std::to_string(m) + std::to_string(scns[i] - 1) +".deck", true);
+                    mainmix->layers[2] = bul[0];
+                    mainmix->layers[3] = bul[1];
+                    LoopStation *bulp = lp;
+                    lp = scene->lpst;
+
+                    // correct loopstation current times for deck saving/opening lag
+                    loopstation = lp;
+                    LoopStation *bunowlpst = scene->lpst;
+                    std::chrono::high_resolution_clock::time_point now = std::chrono::high_resolution_clock::now();
+                    std::chrono::duration<double> elapsed;
+                    elapsed = std::chrono::duration_cast<std::chrono::duration<double>>(now - bunowlpst->bunow);
+                    long long millicount = std::chrono::duration_cast<std::chrono::milliseconds>(elapsed).count();
+                    for (LoopStationElement *elem: loopstation->odelems) {
+                        //elem->interimtime += millicount;
+                        //elem->speedadaptedtime += millicount * elem->speed->value;
+                        elem->starttime = now - std::chrono::milliseconds((long long) (elem->interimtime));
+                    }
                 }
+                
                 box = mainprogram->toscene[m][1][i]->box;
                 register_triangle_draw(white, white, box->vtxcoords->x1 + box->vtxcoords->w / 2.0f + 0.0117f,
                                        box->vtxcoords->y1 + 0.0225f, 0.0165f, 0.0312f, UP, CLOSED);
@@ -6721,6 +6827,25 @@ bool Project::open(std::string path, bool autosave, bool newp) {
     binsmain->handle(1);
     //mainprogram->rightmouse = false;
 
+    std::vector<LoopStation*> lpsts;
+    lpsts.push_back(lp);
+    lpsts.push_back(lpc);
+    for (int m = 0; m < 2; m++) {
+        for (int k = 0; k < 4; k++) {
+            lpsts.push_back(mainmix->scenes[m][k]->lpst);
+        }
+    }
+    for (LoopStation *lpst : lpsts) {
+        // correct loopstation current times for deck saving/opening lag
+        LoopStation *bunowlpst = lpst;
+        std::chrono::high_resolution_clock::time_point now = std::chrono::high_resolution_clock::now();
+        std::chrono::duration<double> elapsed;
+        elapsed = std::chrono::duration_cast<std::chrono::duration<double>>(now - bunowlpst->bunow);
+        long long millicount = std::chrono::duration_cast<std::chrono::milliseconds>(elapsed).count();
+        for (LoopStationElement *elem: lpst->odelems) {
+            elem->starttime = now - std::chrono::milliseconds((long long) (elem->interimtime));
+        }
+    }
 }
 
 void Project::do_save(std::string path, bool autosave) {
@@ -6871,6 +6996,8 @@ void Project::autosave() {
         }
     }
 
+    bool bupm = mainprogram->prevmodus;
+
     mainprogram->astimestamp = (int) mainmix->time;
 
     std::string name = remove_extension(basename(this->path)) + "_0";
@@ -6928,6 +7055,8 @@ void Project::autosave() {
     this->elementsdir = mainprogram->project->bued;
     this->path = mainprogram->project->bupp;
     this->name = mainprogram->project->bupn;
+
+    mainprogram->prevmodus = bupm;
 }
 
 

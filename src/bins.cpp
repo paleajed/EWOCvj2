@@ -2661,7 +2661,7 @@ void BinsMain::import_bins() {
 }
 
 void BinsMain::open_files_bin() {
-    // open videos/images/layer files into bin
+    // open videos/images/layer/deck/mix files into bin
 
     if (!currbin->shared && mainprogram->multistage < 5) {
         // order elements
