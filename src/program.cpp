@@ -1237,7 +1237,7 @@ GLuint Program::get_tex(Layer *lay) {
         }
     }
 
-    GLuint tex = copy_tex(ctex, binsmain->elemboxes[0]->scrcoords->w, binsmain->elemboxes[0]->scrcoords->h);
+    GLuint tex = copy_tex(ctex, 192, 108);
     glDeleteTextures(1, &ctex);
 
     return tex;
@@ -1353,11 +1353,6 @@ bool Program::order_paths(bool dodeckmix) {
             if (this->pathscount < 0) this->pathscount = 0;
             this->multistage = 1;
             return false;
-            //this->orderondisplay = false;
-            //this->paths.erase(this->paths.begin() + this->pathscount - 1);
-            //this->pathscount -= 1;
-            //if (this->pathscount < 0) this->pathscount = 0;
-            //return false;
         }
     }
 
@@ -1442,7 +1437,9 @@ bool Program::order_paths(bool dodeckmix) {
             mainprogram->getvideotexlayers.erase(mainprogram->getvideotexlayers.begin());
             mainprogram->getvideotexpaths.erase(mainprogram->getvideotexpaths.begin());
 
+            GLuint butex = tex;
             tex = copy_tex(tex, 192, 108);
+            glDeleteTextures(1, &butex);
             this->pathtexes.push_back(tex);
             render_text(str, white, 2.0f, 2.0f, 0.00045f, 0.00075f); // init text string, to avoid slowdown later
             this->pathtstrs.push_back(str);
@@ -1486,14 +1483,9 @@ bool Program::order_paths(bool dodeckmix) {
         }
         this->pathboxes.clear();
         for (std::string tstr : this->pathtstrs) {
-            GUIString *gs = this->guitextmap[tstr];
-            if (gs) {
-                if (gs->texturevec.size() == 1) {
-                    mainprogram->guitextmap.erase(tstr);
-                    delete gs;
-                }
-            }
+            this->delete_text(tstr);
         }
+
         this->pathscount = 0;
         this->orderondisplay = false;
         this->multistage = 5;
@@ -9242,5 +9234,15 @@ void Program::concat_files(std::string ofpath, std::string path, std::vector<std
 }
 
 
+void Program::delete_text(std::string str) {
+    GUIString *gs = this->guitextmap[str];
+    if (gs) {
+        if (gs->texturevec.size() == 1) {
+            glDeleteTextures(1, &gs->texturevec[0]);
+            mainprogram->guitextmap.erase(str);
+            delete gs;
+        }
+    }
+}
 
 

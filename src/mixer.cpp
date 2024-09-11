@@ -13093,10 +13093,6 @@ Layer* Layer::transfer() {
                         std::get<2>(lpe->eventlist[i]) = cbut;
                     }
                 }
-//cbut->box->acolor[0] = lpe->colbox->acolor[0];
-//cbut->box->acolor[1] = lpe->colbox->acolor[1];
-//cbut->box->afcolor[2] = lpe->colbox->acolor[2];
-//cbut->box->acolor[3] = lpe->colbox->acolor[3];
                 l->butelemmap[cbut] = lpe;
                 l->butelemmap.erase(but);
                 lpe->buttons.erase(but);
@@ -13114,7 +13110,6 @@ Layer* Layer::transfer() {
             cbut->register_midi();
         }
     }
-    this->inhibit(); // lay is passed over into only framecounting
     mainmix->set_values(lay, this, false);
     if (this == mainmix->currlay[!mainprogram->prevmodus]) mainmix->currlay[!mainprogram->prevmodus] = lay;
     if (std::find(mainmix->currlays[!mainprogram->prevmodus].begin(), mainmix->currlays[!mainprogram->prevmodus].end(),
@@ -13124,6 +13119,8 @@ Layer* Layer::transfer() {
                                                                    this));
         mainmix->currlays[!mainprogram->prevmodus].push_back(lay);
     }
+
+    this->closethread = 1;
 
     mainmix->reconnect_all(*lay->layers);
 

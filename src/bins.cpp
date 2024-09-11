@@ -212,6 +212,7 @@ void BinElement::remove_elem() {
     if (this->jpegpath != "") {
         binsmain->removevec.push_back(this->jpegpath);
     }
+    mainprogram->delete_text(this->name);
 }
 
 
@@ -2138,7 +2139,10 @@ void BinsMain::handle(bool draw) {
                             }
                             if (epos >= 0 and epos < 144) {
                                 BinElement *dirbinel = this->currbin->elements[epos];
-                                //if (this->addpaths[k] == dirbinel->path) continue;
+                                if (dirbinel->tex != -1) {
+                                    glDeleteTextures(1, &dirbinel->tex);
+                                }
+                                mainprogram->delete_text(dirbinel->name.substr(0, 20));
                                 dirbinel->tex = this->inputtexes[k];
                                 dirbinel->type = this->inputtypes[k];
                                 dirbinel->remove_elem();

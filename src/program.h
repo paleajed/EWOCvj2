@@ -924,6 +924,7 @@ class Program {
         void postponed_to_front(std::string title);
         void postponed_to_front_win(std::string title, SDL_Window *win = nullptr);
         void concat_files(std::string ofpath, std::string path, std::vector<std::vector<std::string>> filepaths);
+        void delete_text(std::string str);
         Program();
 		
 	private:
