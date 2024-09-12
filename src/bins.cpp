@@ -14,7 +14,7 @@
 #include "GL/freeglut.h"
 
 #ifdef POSIX
-#include <X11/Xos.h>
+#include <Xos_fixindexmacro.h>
 #include <arpa/inet.h>
 #endif
 

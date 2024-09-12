@@ -986,6 +986,10 @@ extern float darkgrey[];
 
 extern "C" int kdialogPresent();
 
+#ifdef POSIX
+extern void Sleep(int milliseconds);
+#endif
+
 extern bool safegetline(std::istream& is, std::string &t);
 extern void mycallback(double deltatime, std::vector< unsigned char >* message, void* userData);
 

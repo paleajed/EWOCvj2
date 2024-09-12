@@ -26,7 +26,7 @@
 #include "GL/freeglut.h"
 #ifdef POSIX
 #include <X11/Xlib.h>
-#include <X11/Xos.h>
+#include <Xos_fixindexmacro.h>
 #include <rtmidi/RtMidi.h>
 #include <linux/videodev2.h>
 #include <alsa/asoundlib.h>
@@ -6831,13 +6831,12 @@ bool Project::open(std::string path, bool autosave, bool newp) {
         // correct loopstation current times for deck saving/opening lag
         LoopStation *bunowlpst = lpst;
         std::chrono::high_resolution_clock::time_point now = std::chrono::high_resolution_clock::now();
-        std::chrono::duration<double> elapsed;
-        elapsed = std::chrono::duration_cast<std::chrono::duration<double>>(now - bunowlpst->bunow);
-        long long millicount = std::chrono::duration_cast<std::chrono::milliseconds>(elapsed).count();
         for (LoopStationElement *elem: lpst->odelems) {
-            elem->starttime = now - std::chrono::milliseconds((long long) (elem->interimtime));
+        	std::chrono::system_clock::time_point::duration back = std::chrono::milliseconds((long long) (elem->interimtime));
+            elem->starttime = now - back;
         }
     }
+	return true;
 }
 
 void Project::do_save(std::string path, bool autosave) {

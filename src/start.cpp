@@ -167,6 +167,12 @@ using namespace boost::asio;
 using namespace std;
 
 
+#ifdef POSIX
+void Sleep(int milliseconds) {
+	sleep((float)milliseconds / 1000.0f);
+}
+#endif
+
 bool exists(std::string name) {
 
     if (std::filesystem::exists(name)) {
@@ -6706,7 +6712,7 @@ int main(int argc, char* argv[]) {
     ret = ilLoadImage((const ILstring)"./splash.jpeg");
 #endif
 #ifdef POSIX
-    ILboolean ret = ilLoadImage("/usr/share/ewocvj2/splash.jpeg");
+    ret = ilLoadImage("/usr/share/ewocvj2/splash.jpeg");
 #endif
     if (ret == IL_FALSE) {
         printf("can't load splash image\n");
