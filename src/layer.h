@@ -50,7 +50,6 @@ class MidiElement;
 class LoopStation;
 
 struct frame_result {
-    char *data = nullptr;
     bool newdata = false;
     int height = 0;
     int width = 0;
@@ -291,7 +290,6 @@ class Layer {
         int videoseek_stream_idx = -1;
 		int audio_stream_idx = -1;
 		struct SwsContext *sws_ctx = nullptr;
-		uint8_t *avbuffer = nullptr;
 		char *databuf[3] = {nullptr, nullptr, nullptr};
 		bool databufready = false;
 		int vidformat = -1;

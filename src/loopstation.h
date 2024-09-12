@@ -49,6 +49,7 @@ class LoopStation {
 		void init();
 		void handle();
 		LoopStation();
+        ~LoopStation();
 		
 	private:
 		void setbut(Button *but, float r, float g, float b);

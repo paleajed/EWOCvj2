@@ -55,6 +55,16 @@ LoopStation::LoopStation() {
 	this->init();
 }
 
+LoopStation::~LoopStation() {
+    for (LoopStationElement *elem : this->elems) {
+        delete elem;
+    }
+    delete this->upscrbox;
+    delete this->downscrbox;
+    delete this->confupscrbox;
+    delete this->confdownscrbox;
+}
+
 void LoopStation::init() {
 	for (int i = 0; i < this->elems.size(); i++) {
 		this->elems[i]->init();
@@ -134,6 +144,8 @@ LoopStationElement::~LoopStationElement() {
 	delete this->recbut;
 	delete this->loopbut;
 	delete this->playbut;
+    delete this->box;
+    delete this->colbox;
 	// reminder : complete
 }
 

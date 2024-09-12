@@ -92,7 +92,8 @@ void BinElement::erase() {
 	this->type = ELEM_FILE;
 	this->oldtype = ELEM_FILE;
 	GLuint tex = this->tex;
-	this->tex = copy_tex(tex, binsmain->elemboxes[0]->scrcoords->w, binsmain->elemboxes[0]->scrcoords->h);
+	this->tex = copy_tex(tex, 192, 108);
+    glDeleteTextures(1, &tex);
 	blacken(this->tex);
 	blacken(this->oldtex);
 }
@@ -195,7 +196,7 @@ BinsMain::BinsMain() {
     this->floatbox->upvtxtoscr();
     this->floatbox->tooltiptitle = "Float/dock bins screen ";
     this->floatbox->tooltip = "Leftclick toggles between a docked bins screen (swapped with mix screen) or a floating bins screen (shown on a separate screen). ";
-
+    // leaks  reminder
 }
 
 
@@ -473,10 +474,6 @@ void BinsMain::handle(bool draw) {
 				if (binel->select) {
 					glUniform1i(inverteff, 1);
 				}
-                if (i * 12 + j == 137) {
-                    i++;
-                    i--;
-                }
 				draw_box(box, binel->tex);
 				glUniform1i(inverteff, 0);
 				if (binel->name != "") {
@@ -1988,6 +1985,10 @@ void BinsMain::handle(bool draw) {
 							mainprogram->frontbatch = false;
 						}
 
+                        if (mainprogram->prelay) {
+                            delete mainprogram->prelay;
+                        }
+
 						if (binel->name != "") {
                             if (binel->select && mainprogram->leftmousedown && this->movebinels.empty()) {
                                 // start dragging selection around (move)
@@ -2298,11 +2299,6 @@ void BinsMain::handle(bool draw) {
                     if (pos < this->movebinels.size()) {
                         this->movebinels.erase(this->movebinels.begin() + pos);
                     }
-                    /*if (this->movebinels.size()) {
-                        GLuint butex = dirbinel->tex;
-                        dirbinel->tex = copy_tex(dirbinel->tex, this->elemboxes[0]->scrcoords->w, this->elemboxes[0]->scrcoords->h);
-                        if (butex != -1) glDeleteTextures(1, &butex);
-                    }*/
                 }
             }
 
@@ -2323,28 +2319,6 @@ void BinsMain::handle(bool draw) {
             mainprogram->leftmouse = false;
         }
 	}
-
-    /*int count = 0;
-    for (int j = 0; j < 12; j++) {
-        for (int i = 0; i < 12; i++) {
-            BinElement *binel = this->currbin->elements[i * 12 + j];
-            if (binel->jpegpath == "") {
-                binel->jpegsaved = false;
-            }
-            if (binel->jpegsaved) continue;
-            if (std::find(currbin->open_positions.begin(), currbin->open_positions.end(), i * 12 + j) ==
-                currbin->open_positions.end()) {
-                if (binel->jpegpath != this->currbin->bujpegpaths[i * 12 + j]) {
-                    binel->jpegsaved = true;
-                    binel->absjpath = binel->jpegpath;
-                    if (binel->absjpath != "") {
-                        binel->reljpath = std::filesystem::relative(binel->absjpath,
-                                                                      mainprogram->project->binsdir).generic_string();
-                    }
-                }
-            }
-        }
-    }*/
 
 	// load one file into bin each loop, at end to allow drawing ordering dialog on top
 	if (this->openfilesbin) {
@@ -2732,7 +2706,7 @@ void BinsMain::open_handlefile(std::string path, GLuint tex) {
             return;
         }
 
-        if (1) {
+        if (tex != -1) {
             if (istring == "EWOCvj LAYERFILE") {
                 // prepare layer file for bin entry
                 if (tex == -1) {
@@ -2757,8 +2731,7 @@ void BinsMain::open_handlefile(std::string path, GLuint tex) {
             } else if (istring == "EWOCvj DECKFILE") {
                 // prepare deck file for bin entry
                 if (tex == -1) {
-                    Layer *lay = new Layer(true);
-                    get_deckmixtex(lay, path);
+                    get_deckmixtex(path);
                     glGenTextures(1, &endtex);
                     //glActiveTexture(GL_TEXTURE0);
                     glBindTexture(GL_TEXTURE_2D, endtex);
@@ -2772,8 +2745,7 @@ void BinsMain::open_handlefile(std::string path, GLuint tex) {
             } else if (istring == "EWOCvj MIXFILE") {
                 // prepare layer file for bin entry
                 if (tex == -1) {
-                    Layer *lay = new Layer(true);
-                    get_deckmixtex(lay, path);
+                    get_deckmixtex(path);
                     glGenTextures(1, &endtex);
                     //glActiveTexture(GL_TEXTURE0);
                     glBindTexture(GL_TEXTURE_2D, endtex);
@@ -2968,11 +2940,11 @@ void BinsMain::hap_deck(BinElement* bd) {
 	while (safegetline(rfile, istring)) {
 		if (istring == "FILENAME") {
 			safegetline(rfile, istring);
-			BinElement *binel = new BinElement;
-			binel->path = istring;
-			binel->type = ELEM_FILE;
+			BinElement binel;
+			binel.path = istring;
+			binel.type = ELEM_FILE;
 			bd->encthreads++;
-			std::tuple<std::string, std::string> output = this->hap_binel(binel, bd);
+			std::tuple<std::string, std::string> output = this->hap_binel(&binel, bd);
 			apath = std::get<0>(output);
 			rpath = std::get<1>(output);
 			wfile << "FILENAME\n";
@@ -3012,11 +2984,11 @@ void BinsMain::hap_mix(BinElement * bm) {
 		while (safegetline(rfile, istring)) {
 			if (istring == "FILENAME") {
 				safegetline(rfile, istring);
-				BinElement *binel = new BinElement;
-				binel->path = istring;
-				binel->type = ELEM_FILE;
+				BinElement binel;
+				binel.path = istring;
+				binel.type = ELEM_FILE;
 				bm->encthreads++;
-				std::tuple<std::string, std::string> output = this->hap_binel(binel, bm);
+				std::tuple<std::string, std::string> output = this->hap_binel(&binel, bm);
 				apath = std::get<0>(output);
 				rpath = std::get<1>(output);
 				wfile << "FILENAME\n";
@@ -3108,9 +3080,7 @@ void BinsMain::hap_encode(std::string srcpath, BinElement *binel, BinElement *bd
     codec = avcodec_find_encoder_by_name("hap");
     // reminder : catch when ffmpeg does not contain the hap encoder
     c = avcodec_alloc_context3(codec);
-	av_init_packet(&pkt);
-	pkt.data = nullptr;
-	pkt.size = 0;
+	pkt = *av_packet_alloc();
 	/* open it */
     c->time_base = source_dec_ctx->time_base;
     //c->framerate = (AVRational){source_stream->r_frame_rate.num, source_stream->r_frame_rate.den};
@@ -3178,7 +3148,7 @@ void BinsMain::hap_encode(std::string srcpath, BinElement *binel, BinElement *bd
 		if (bdm) bdm->encodeprogress += binel->encodeprogress - oldprogress;
 		oldprogress = binel->encodeprogress;
 		// decode a frame
-		av_init_packet(&pkt);
+		pkt = *av_packet_alloc();;
 		pkt.data = nullptr;
 		pkt.size = 0;
 		av_read_frame(source, &pkt);

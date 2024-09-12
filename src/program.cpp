@@ -862,7 +862,8 @@ Program::Program() {
 }
 
 void Program::make_menu(std::string name, Menu *&menu, std::vector<std::string> &entries) {
-	bool found = false;
+    if (menu) delete menu;
+    bool found = false;
 	for (int i = 0; i < mainprogram->menulist.size(); i++) {
 		if (mainprogram->menulist[i]->name == name) {
 			found = true;
@@ -1305,7 +1306,7 @@ bool Program::order_paths(bool dodeckmix) {
         } else if (istring == "EWOCvj DECKFILE") {
             Layer *lay = new Layer(true);
             lay->type = ELEM_DECK;
-            //std::thread tex(&get_deckmixtex, lay, str);
+            //std::thread tex(&get_deckmixtex, str);
             //tex.detach();
             if (dodeckmix) {
                 this->getvideotexlayers.push_back(lay);
@@ -1323,7 +1324,7 @@ bool Program::order_paths(bool dodeckmix) {
         } else if (istring == "EWOCvj MIXFILE") {
             Layer *lay = new Layer(true);
             lay->type = ELEM_MIX;
-            //std::thread tex(&get_deckmixtex, lay, str);
+            //std::thread tex(&get_deckmixtex, str);
             //tex.detach();
             if (dodeckmix) {
                 this->getvideotexlayers.push_back(lay);
@@ -1378,7 +1379,7 @@ bool Program::order_paths(bool dodeckmix) {
                 glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_BORDER);
                 glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_BORDER);
 
-                get_deckmixtex(lay, str);
+                get_deckmixtex(str);
 
                 open_thumb(result + "_" + std::to_string(this->resnum - 2) + ".file", tex);
             } else {
@@ -1540,6 +1541,7 @@ bool Program::do_order_paths() {
             render_text(this->paths[j], white, -0.4f + 0.015f, box->vtxcoords->y1 + 0.075f - 0.045f, 0.00045f,
                         0.00075f);
         }
+        this->pathtstrs.push_back(this->paths[j]);
         // prepare element dragging
 		if (box->in()) {
 			std::string path = this->paths[j];
@@ -1571,14 +1573,21 @@ bool Program::do_order_paths() {
 	applybox->vtxcoords->h = this->pathboxes.back()->vtxcoords->h;
 	applybox->upvtxtoscr();
 	draw_box(white, black, applybox, -1);
-	render_text("APPLY ORDER", white, -0.4f + 0.015f, 0.8f - limit * 0.1f + 0.075f - 0.045f, 0.00045f, 0.00075f);
+	render_text("APPLY ORDER  (rightmouse cancels)", white, -0.4f + 0.015f, 0.8f - limit * 0.1f + 0.075f - 0.045f, 0.00045f, 0.00075f);
 	if (applybox->in() && this->dragstr == "") {
-		if (mainprogram->orderleftmouse) {
-		    this->pathscroll = 0;
+        if (mainprogram->orderleftmouse) {
+            this->pathscroll = 0;
             mainprogram->frontbatch = false;
-		    return true;
-		}
+            return true;
+        }
 	}
+    if (mainprogram->orderrightmouse) {
+        //delete &applybox;
+        this->pathscroll = 0;
+        this->paths.clear();
+        mainprogram->frontbatch = false;
+        return true;
+    }
 
 	// do drag
 	if (this->dragstr != "") {
@@ -1624,7 +1633,7 @@ bool Program::do_order_paths() {
 			this->dragstr = "";
 			mainprogram->orderleftmouse = false;
 		}
-		if (mainprogram->rightmouse) {
+		/*if (mainprogram->rightmouse) {
 			// cancel element drag
 			this->dragstr = "";
 			mainprogram->rightmouse = false;
@@ -1632,7 +1641,7 @@ bool Program::do_order_paths() {
 			for (int i = 0; i < mainprogram->menulist.size(); i++) {
 				mainprogram->menulist[i]->state = 0;
 			}
-		}
+		}*/
 	}
 
 	mainprogram->frontbatch = false;
@@ -9237,11 +9246,15 @@ void Program::delete_text(std::string str) {
     GUIString *gs = this->guitextmap[str];
     if (gs) {
         if (gs->texturevec.size() == 1) {
-            glDeleteTextures(1, &gs->texturevec[0]);
             mainprogram->guitextmap.erase(str);
             delete gs;
         }
     }
+}
+
+
+Menu::~Menu() {
+    delete this->box;
 }
 
 

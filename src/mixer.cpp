@@ -2737,11 +2737,15 @@ Layer::~Layer() {
     delete this->cliploopbox;
     delete this->chdir;
     delete this->chinv;
+    //delete this->vidbox;
     //delete this->currclip;
     for (Clip *clip : this->clips) {
         //delete clip;  reminder
     }
+    delete this->currclip;
     delete this->decresult;
+
+    delete this->lpst;
 
     glDeleteTextures(1, &this->jpegtex);
     glDeleteTextures(1, &this->fbotex);
@@ -2772,6 +2776,13 @@ Layer::~Layer() {
         glDeleteTextures(1, &this->texture);
         if (!this->dummy) {
             WaitBuffer(this->syncobj[this->pbofri]);
+            glDeleteSync(this->syncobj[this->pbofri]);
+            //glUnmapBuffer(this->pbo[0]);
+            //glUnmapBuffer(this->pbo[1]);
+            //glUnmapBuffer(this->pbo[2]);
+            free(this->mapptr[0]);
+            free(this->mapptr[1]);
+            free(this->mapptr[2]);
             glDeleteBuffers(3, this->pbo);
         }
         delete this->remfr[0];
@@ -2780,7 +2791,10 @@ Layer::~Layer() {
         av_frame_free(&this->rgbframe[0]);
         av_frame_free(&this->rgbframe[1]);
         av_frame_free(&this->rgbframe[2]);
+        av_frame_free(&this->decframe);
     }  // reminder
+
+    sws_freeContext(this->sws_ctx);
 
     if (this->video_dec_ctx) {
         avcodec_free_context(&this->video_dec_ctx);
@@ -3697,7 +3711,7 @@ int encode_frame(AVFormatContext *fmtctx, AVFormatContext *srcctx, AVCodecContex
 	AVPacket enc_pkt;
 	enc_pkt.data = nullptr;
 	enc_pkt.size = 0;
-	av_init_packet(&enc_pkt);
+	enc_pkt = *av_packet_alloc();;
 	int got_frame = 0;
 	if (outfile) {
 		avcodec_send_frame(enc_ctx, frame);
@@ -3942,13 +3956,9 @@ void Layer::get_cpu_frame(int framenr, int prevframe, int errcount)
 {
     int ret = 0, got_frame;
     /* initialize packet, set data to nullptr, let the demuxer fill it */
-    av_init_packet(&this->decpkt);
-    av_init_packet(&this->decpktseek);
+    this->decpkt = *av_packet_alloc();;
+    this->decpktseek = *av_packet_alloc();;
     /* flush cached frames */
-    this->decpkt.data = nullptr;
-    this->decpkt.size = 0;
-    this->decpktseek.data = nullptr;
-    this->decpktseek.size = 0;
     //do {
     //	decode_packet(&got_frame, 1);
     //} while (got_frame);
@@ -4033,6 +4043,7 @@ void Layer::get_cpu_frame(int framenr, int prevframe, int errcount)
                 return;
             }
             av_packet_unref(&this->decpkt);
+            av_packet_unref(&this->decpktseek);
             get_cpu_frame(framenr, this->prevframe, errcount);
             this->frame = framenr;
         }
@@ -4087,10 +4098,7 @@ bool Layer::get_hap_frame() {
     long long seekTarget = av_rescale(this->video_stream->duration, this->frame, this->numf) + this->video_stream->first_dts;
     int r = av_seek_frame(this->video, this->video_stream->index, seekTarget, 0);
     //av_new_packet(&this->decpkt, this->video_dec_ctx->width * this->video_dec_ctx->height * 4);
-    av_init_packet(&this->decpkt);
-    this->decpkt.data = NULL;
-    this->decpkt.size = 0;
-    AVPacket* pktpnt = &this->decpkt;
+    this->decpkt = *av_packet_alloc();
     av_frame_unref(this->decframe);
     r = av_read_frame(this->video, &this->decpkt);
     if (!this->dummy && ! (this->playbut->value == 0 && this->revbut->value == 0 && this->bouncebut->value == 0)) {

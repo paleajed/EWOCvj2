@@ -45,4 +45,6 @@ class Menu {
 		float width = 0.156f;
 		int value;
 		int currsub = -1;
+
+        ~Menu();
 };

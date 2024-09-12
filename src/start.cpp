@@ -3651,7 +3651,7 @@ bool get_videotex(Layer *lay, std::string path) {
     // get the middle frame of this video and put it in a GL texture, as representation for the video
 
     GLenum err;
-    lay->dummy = 1;
+    //lay->dummy = 1;
 
     lay = lay->open_video(0, path, true, true);
     if (mainprogram->openerr) {
@@ -3730,7 +3730,7 @@ bool get_layertex(Layer *lay, std::string path) {
     return true;
 }
 
-bool get_deckmixtex(Layer *lay, std::string path) {
+bool get_deckmixtex(std::string path) {
     // get the representational jpeg of this deck/mix that was saved with/in the deck/mix file and put it in a GL
     // texture
 
@@ -4096,6 +4096,7 @@ void enddrag() {
 		mainprogram->dragout[1] = true;
 		//glDeleteTextures(1, mainprogram->dragbinel->tex);  maybe needs implementing in one case, check history
 	}
+    delete mainprogram->dragbinel;
 
 	if (0) {
 		bool temp = binsmain->currbinel->full;
@@ -4218,8 +4219,10 @@ void the_loop() {
     if (mainprogram->orderondisplay || mainmix->retargeting) {
         mainprogram->orderleftmouse = mainprogram->leftmouse;
         mainprogram->orderleftmousedown = mainprogram->leftmousedown;
+        mainprogram->orderrightmouse = mainprogram->rightmouse;
         mainprogram->leftmousedown = false;
         mainprogram->leftmouse = false;
+        mainprogram->rightmouse = false;
         mainprogram->menuactivation = false;
     }
 

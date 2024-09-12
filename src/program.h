@@ -509,7 +509,8 @@ class Program {
 		bool rightmousedown = false;
 		bool leftmouse = false;
 		bool orderleftmouse = false;
-		bool orderleftmousedown = false;
+        bool orderleftmousedown = false;
+        bool orderrightmouse = false;
         bool lmover = false;
         bool binlmover = false;
         bool doubleleftmouse = false;
@@ -996,7 +997,7 @@ extern void mycallback(double deltatime, std::vector< unsigned char >* message, 
 extern bool get_imagetex(Layer *lay, std::string path);
 extern bool get_videotex(Layer *lay, std::string path);
 extern bool get_layertex(Layer *lay, std::string path);
-extern bool get_deckmixtex(Layer *lay, std::string path);
+extern bool get_deckmixtex(std::string path);
 extern int encode_frame(AVFormatContext *fmtctx, AVFormatContext *srcctx, AVCodecContext *enc_ctx, AVFrame *frame, AVPacket *pkt, FILE *outfile, int framenr);
 
 extern std::vector<Layer*>& choose_layers(bool j);
