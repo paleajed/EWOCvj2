@@ -58,11 +58,11 @@ Users that want to compile themselves can currently only do this on Windows syst
   boost system
 *
 * 3 exceptions:
-* the need for ffmpeg 4 with snappy support compiled in
-  For Windows, best is to download the ffmpeg distributions from the ffmpeg page:
-  https://ffmpeg.zeranoe.com/builds/
-  You need the "Shared"(for running the program) and "Dev"(for compiling the program) distributions.
-  On Linux, you can compile ffmpeg 4 yourself, with snappy support.
+* the need for ffmpeg with snappy support compiled in
+  For Windows, best is to download the ffmpeg full distributions from:
+  https://www.gyan.dev/ffmpeg/builds/
+  You need the ffmpeg-release-full-shared.7z file.  In the bin directory you find the dll files(for running the program: put them in your build directory), the .lib files (for compiling the program: set the directory in CMakeLists.txt) and the .h files (for compiling the program: set the directory in CMakeLists.txt).
+  On Linux, you can compile ffmpeg yourself, with snappy support.
 * the need for rtmidi latest version
 Get the source from https://www.music.mcgill.ca/~gary/rtmidi/index.html#download
 Compile the rtmidi libraries
