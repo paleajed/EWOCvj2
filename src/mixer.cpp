@@ -9042,7 +9042,7 @@ void Mixer::save_deck(const std::string path, bool save, bool doclips, bool copy
         // speedy concatting in copy_to_comp
         mainprogram->concat_files(mainprogram->temppath + "tempconcatdeck", str, jpegpaths);
         //std::thread concat = std::thread(&Program::concat_files, mainprogram, mainprogram->temppath + "tempconcatdeck",
-        //                                 str, jpegpaths, true);
+        //                                str, jpegpaths, true);
         //concat.detach();
     }
     else {
