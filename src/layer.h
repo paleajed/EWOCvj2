@@ -248,6 +248,7 @@ class Layer {
 		char pbodi = 2;
         char pboui = 1;
         char pbofri = 0;
+        char memcpypboi = 0;
 		int bpp;
 		bool nonewpbos = false;
 		
@@ -271,13 +272,14 @@ class Layer {
 		std::string layerfilepath = "";
 		AVFormatContext* video = nullptr;
 		AVFormatContext* videoseek = nullptr;
-		AVInputFormat *ifmt;
+		const AVInputFormat *ifmt;
 		bool skip = false;
 		AVFrame *rgbframe[3] = {nullptr, nullptr, nullptr};
 		AVFrame *decframe = nullptr;
 		AVFrame *audioframe = nullptr;
-		AVPacket decpkt;
-		AVPacket decpktseek;
+		AVPacket *decpkt;
+		AVPacket *decpktseek;
+        int64_t first_dts;
 		int reset = 0;
 		AVPacket audiopkt;
         AVCodecContext *video_dec_ctx = nullptr;
@@ -320,6 +322,7 @@ class Layer {
         bool checkre = false;
         bool recended = false;
         bool recstarted = false;
+        bool invidbox = false;
 
         LoopStation *lpst;
         bool isnblayer = false;
@@ -438,6 +441,7 @@ class Mixer {
         bool tempmapislayer = false;
 
         int currclonesize = -1;
+        std::unordered_map<int, int> csnrmap;
 
 
         Layer *add_layer(std::vector<Layer*> &layers, int pos);
@@ -454,16 +458,14 @@ class Mixer {
 		void new_file(int decks, bool alive, bool add, bool empty = true);
 		void save_layerfile(std::string path, Layer* lay, bool doclips, bool dojpeg);
 		void save_mix(std::string path);
-		void save_mix(std::string path, bool modus, bool save);
-		void save_deck(std::string path);
-		void do_save_deck(std::string path, bool save, bool doclips, bool copycomp = false, bool dojpeg = true);
+		void save_mix(std::string path, bool modus, bool save, bool undo = false);
+		void save_deck(std::string path, bool save, bool doclips, bool copycomp = false, bool dojpeg = true, bool undo = false);
 		Layer* open_layerfile(std::string path, Layer *lay, bool loadevents, bool doclips, bool uselayers = true);
 		void open_mix(std::string path, bool alive, bool loadevents = true);
 		void open_deck(std::string path, bool alive, bool loadevents = true, int copycomp = 0);
 		void new_state();
-		void open_state(std::string path);
-		void save_state(std::string path, bool autosave);
-		void do_save_state(std::string path, bool autosave);
+		void open_state(std::string path, bool undo = false);
+		void save_state(std::string path, bool autosave, bool undo = false);
 		std::vector<std::string> write_layer(Layer *lay, std::ostream& wfile, bool doclips, bool dojpeg);
 		Layer* read_layers(std::istream &rfile, std::string result, std::vector<Layer*> &layers, bool deck, bool isdeck, int type, bool doclips, bool concat, bool load, bool loadevents, bool save, bool keepeff = false);
 		void start_recording();

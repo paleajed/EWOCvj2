@@ -26,7 +26,9 @@ class BinElement;
 class BinsMain {
 	public:
 		std::vector<Bin*> bins;
-		Bin *currbin;
+        Bin *currbin;
+        std::vector<std::tuple<Bin*, std::string>> undobins;
+        int undopos = 0;
 		std::vector<Boxx*> elemboxes;
 		BinElement *currbinel = nullptr;
 		BinElement *prevbinel = nullptr;
@@ -62,7 +64,7 @@ class BinsMain {
 		BinElement *backupbinel = nullptr;
 		BinElement* menubinel = nullptr;
 		BinElement* menuactbinel = nullptr;
-        std::vector<std::string> removevec;
+        std::unordered_set<std::string> removeset[2];
 		std::vector<BinElement*> delbinels;
 		std::vector<BinElement*> movebinels;
 		Bin* dragbin = nullptr;
@@ -123,7 +125,8 @@ class BinsMain {
 		void hap_deck(BinElement * bd);
 		void hap_mix(BinElement * bm);
 		void hap_encode(std::string srcpath, BinElement* binel, BinElement* bdm);
-		BinsMain();
+        void undo_redo(char offset);
+        BinsMain();
 
 	private:
 		void do_save_bin(std::string path);
@@ -164,8 +167,6 @@ class BinElement {
         bool jpegsaved = false;
         bool autosavejpegsaved = false;
         long long filesize = 0;
-		int vidw;
-		int vidh;
 		GLuint tex;
 		GLuint oldtex;
 		bool full = false;
@@ -180,8 +181,8 @@ class BinElement {
 		float encodeprogress = 0.0f;
 		int allhaps = 0;
 		Layer *otflay = nullptr;
-		void erase();
-        void remove_elem();
+		void erase(bool deletetex = true);
+        void remove_elem(bool quit);
         BinElement();
 		~BinElement();
 };

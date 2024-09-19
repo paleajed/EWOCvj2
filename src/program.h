@@ -128,13 +128,16 @@ public:
 	std::vector<Button*> buttons;
 	int prevnum = -1;
 	int newnum = -1;
+    int elemcount = 0;
 	bool ret;
+    void handle();
 	void erase();
-	void save(std::string path);
-	bool open(std::string path);
+	void save(std::string path, bool undo = false);
+	bool open(std::string path, bool undo = false);
 	void open_files_shelf();
 	bool insert_deck(std::string path, bool deck, int pos);
 	bool insert_mix(std::string path, int pos);
+    void open_jpegpaths_shelf();
 	Shelf(bool side);
 };
 
@@ -180,9 +183,9 @@ class Project {
         float ow = 1920.0f;
         float oh = 1080.0f;
 		void newp(std::string path);
-		bool open(std::string path, bool autosave, bool newp = false);
+		bool open(std::string path, bool autosave, bool newp = false, bool undo = false);
         void autosave();
-		void do_save(std::string path, bool autosave = false);
+		void do_save(std::string path, bool autosave = false, bool undo = false);
         void delete_dirs(std::string path);
         void copy_dirs(std::string path);
         void create_dirs(std::string path);
@@ -418,7 +421,6 @@ class Program {
 		std::vector<OutputEntry*> outputentries;
         std::unordered_map<int, Button*> buttons;
 		Boxx *scrollboxes[2];
-		Boxx *prevbox;
 		Layer *loadlay;
 		Layer *prelay = nullptr;
         std::vector<Layer*> dellays;
@@ -794,6 +796,7 @@ class Program {
 		bool dragpathsense = false;
 		std::vector<Boxx*> pathboxes;
         std::vector<GLuint> pathtexes;
+        std::vector<GLuint> vidtexes;
         std::vector<std::string> pathtstrs;
 		int pathscroll = 0;
 		bool indragbox = false;
@@ -852,6 +855,22 @@ class Program {
 
         std::vector<std::string> *prefsearchdirs;
 
+        // UNDO
+        bool recundo = false;
+        bool undoing = false;
+        int undopos = 0;
+        int undopbpos = 0;
+        bool inbox = false;
+        void *currundoelem = nullptr;
+        bool undowaiting = false;
+        std::unordered_set<Param*> undoparams;
+        std::unordered_set<Button*> undobuttons;
+        std::vector<std::vector<std::tuple<std::tuple<Param*, Button*, int, int, int, int, int, std::string>, float>>> undomapvec;
+        std::vector<std::string> undopaths;
+        std::unordered_map<Shelf*, bool> shelfjpegpaths;
+        bool openjpegpathsshelf = false;
+        bool adaptparaming = false;
+
 		int quit_requester();
 		GLuint set_shader();
 		int load_shader(char* filename, char** ShaderSource, unsigned long len);
@@ -881,7 +900,6 @@ class Program {
         int handle_scrollboxes(Boxx &upperbox, Boxx &lowerbox, int numlines, int scrollpos, int scrlines);
         int handle_scrollboxes(Boxx &upperbox, Boxx &lowerbox, int numlines, int scrollpos, int scrlines, int mx, int
             my);
-        void handle_shelf(Shelf *shelf);
         void shelf_triggering(ShelfElement *elem);
 		int config_midipresets_handle();
 		bool config_midipresets_init();
@@ -926,6 +944,11 @@ class Program {
         void postponed_to_front_win(std::string title, SDL_Window *win = nullptr);
         void concat_files(std::string ofpath, std::string path, std::vector<std::vector<std::string>> filepaths);
         void delete_text(std::string str);
+        void register_undo(Param*, Button*);
+        void undo_redo_parbut(char offset, bool again = false, bool swap = false);
+        void undo_redo_save();
+        std::tuple<Param*, int, int, int, int, int> newparam(int offset, bool swap);
+        std::tuple<Button*, int, int, int, int> newbutton(int offset, bool swap);
         Program();
 		
 	private:
@@ -997,7 +1020,7 @@ extern void mycallback(double deltatime, std::vector< unsigned char >* message, 
 extern bool get_imagetex(Layer *lay, std::string path);
 extern bool get_videotex(Layer *lay, std::string path);
 extern bool get_layertex(Layer *lay, std::string path);
-extern bool get_deckmixtex(std::string path);
+extern bool get_deckmixtex(Layer *lay, std::string path);
 extern int encode_frame(AVFormatContext *fmtctx, AVFormatContext *srcctx, AVCodecContext *enc_ctx, AVFrame *frame, AVPacket *pkt, FILE *outfile, int framenr);
 
 extern std::vector<Layer*>& choose_layers(bool j);

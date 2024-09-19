@@ -68,7 +68,8 @@ class MidiNode;
 class Param {
 	public:
 		std::string name;
-		float value;
+        float value;
+        float oldvalue;
 		float deflt;
 		float range[2];
 		int midi[2] = {-1, -1};
