@@ -1687,7 +1687,7 @@ void Program::handle_wormgate(bool gate) {
 			if (!mainprogram->menuondisplay) {
 				if (mainprogram->leftmouse) {
 					mainprogram->binsscreen = !mainprogram->binsscreen;
-                    mainprogram->recundo = false;
+                    mainprogram->recundo = true;
                     if (mainprogram->binsscreen) {
                         for (int i = 0; i < 4; i++ ) {
                             for (Layer *lay : mainmix->layers[i]) {
@@ -9501,38 +9501,42 @@ std::tuple<Param*, int, int, int, int, int> Program::newparam(int offset, bool s
             layers = mainmix->layers[laydeck];
         }
         laypos = std::get<3>(tup1);
-        if (
-                std::get<4>(tup1)
-                != -1) {
+        Layer * lay = layers[laypos];
+        if (swap) {
+            if (lay == nullptr) {
+                lay = mainmix->layers[laydeck][laypos];
+            }
+        }
+        if (std::get<4>(tup1) != -1) {
             effcat = std::get<4>(tup1);
             effpos = std::get<5>(tup1);
             parpos = std::get<6>(tup1);
             if (parpos == -1) {
                 if (name == "drywet") {
-                    newpar = layers[laypos]->effects[effcat][effpos]->drywet;
+                    newpar = lay->effects[effcat][effpos]->drywet;
                 }
             } else {
-                newpar = layers[laypos]->effects[effcat][effpos]->params[parpos];
+                newpar = lay->effects[effcat][effpos]->params[parpos];
             }
         } else {
             if (name == "shiftx") {
-                newpar = layers[laypos]->shiftx;
+                newpar = lay->shiftx;
             } else if (name == "shifty") {
-                newpar = layers[laypos]->shifty;
+                newpar = lay->shifty;
             } else if (name == "scale") {
-                newpar = layers[laypos]->scale;
+                newpar = lay->scale;
             } else if (name == "startframe") {
-                newpar = layers[laypos]->startframe;
+                newpar = lay->startframe;
             } else if (name == "endframe") {
-                newpar = layers[laypos]->endframe;
+                newpar = lay->endframe;
             } else if (name == "Tolerance") {
-                newpar = layers[laypos]->chtol;
+                newpar = lay->chtol;
             } else if (name == "Speed") {
-                newpar = layers[laypos]->speed;
+                newpar = lay->speed;
             } else if (name == "Opacity") {
-                newpar = layers[laypos]->opacity;
+                newpar = lay->opacity;
             } else if (name == "Volume") {
-                newpar = layers[laypos]->volume;
+                newpar = lay->volume;
             }
         }
     }
@@ -9560,41 +9564,47 @@ std::tuple<Button*, int, int, int, int> Program::newbutton(int offset, bool swap
             layers = mainmix->layers[laydeck];
         }
         laypos = std::get<3>(tup1);
+        Layer * lay = layers[laypos];
+        if (swap) {
+            if (lay == nullptr) {
+                lay = mainmix->layers[laydeck][laypos];
+            }
+        }
         effcat = std::get<4>(tup1);
         effpos = std::get<5>(tup1);
         if (effcat != -1) {
             if (name == "onoffbutton") {
-                newbut = layers[laypos]->effects[effcat][effpos]->onoffbutton;
+                newbut = lay->effects[effcat][effpos]->onoffbutton;
             }
         }
         if (name == "mutebut") {
-            newbut = layers[laypos]->mutebut;
+            newbut = lay->mutebut;
         } else if (name == "solobut") {
-            newbut = layers[laypos]->solobut;
+            newbut = lay->solobut;
         } else if (name == "keepeffbut") {
-            newbut = layers[laypos]->keepeffbut;
+            newbut = lay->keepeffbut;
         } else if (name == "queuebut") {
-            newbut = layers[laypos]->queuebut;
+            newbut = lay->queuebut;
         } else if (name == "playbut") {
-            newbut = layers[laypos]->playbut;
+            newbut = lay->playbut;
         } else if (name == "frameforward") {
-            newbut = layers[laypos]->frameforward;
+            newbut = lay->frameforward;
         } else if (name == "framebackward") {
-            newbut = layers[laypos]->framebackward;
+            newbut = lay->framebackward;
         } else if (name == "revbut") {
-            newbut = layers[laypos]->revbut;
+            newbut = lay->revbut;
         } else if (name == "bouncebut") {
-            newbut = layers[laypos]->bouncebut;
+            newbut = lay->bouncebut;
         } else if (name == "stopbut") {
-            newbut = layers[laypos]->stopbut;
+            newbut = lay->stopbut;
         } else if (name == "lpbut") {
-            newbut = layers[laypos]->lpbut;
+            newbut = lay->lpbut;
         } else if (name == "genmidibut") {
-            newbut = layers[laypos]->genmidibut;
+            newbut = lay->genmidibut;
         } else if (name == "chdir") {
-            newbut = layers[laypos]->chdir;
+            newbut = lay->chdir;
         } else if (name == "chinv") {
-            newbut = layers[laypos]->chinv;
+            newbut = lay->chinv;
         }
     }
     auto rettuple = std::make_tuple(newbut, laydeck, laypos, effcat, effpos);

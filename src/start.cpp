@@ -8017,6 +8017,7 @@ int main(int argc, char* argv[]) {
 #ifdef POSIX
                         mainprogram->project->newp(mainprogram->path + "/" + basename(mainprogram->path));
 #endif
+                        mainprogram->undo_redo_save();
                         mainprogram->currprojdir = dirname(mainprogram->path);
                         mainprogram->path = "";
                         mainprogram->startloop = true;
@@ -8041,6 +8042,7 @@ int main(int argc, char* argv[]) {
                     mainprogram->get_inname("Open project", "application/ewocvj2-project", std::filesystem::canonical(mainprogram->currprojdir).generic_string());
                     if (mainprogram->path != "") {
                         SDL_GL_MakeCurrent(mainprogram->mainwindow, glc);
+                        mainprogram->undo_redo_save();
                         mainprogram->project->open(mainprogram->path, false, true);
                         std::string p = dirname(mainprogram->path);
                         mainprogram->currprojdir = dirname(p.substr(0, p.length() - 1));
@@ -8072,6 +8074,7 @@ int main(int argc, char* argv[]) {
                     draw_box(white, lightblue, &box, -1);
                     if (mainprogram->leftmouse) {
                         //SDL_GL_MakeCurrent(mainprogram->mainwindow, glc);
+                        mainprogram->undo_redo_save();
                         bool ret = mainprogram->project->open(mainprogram->recentprojectpaths[i], false, true);
                         if (ret) {
                             std::string p = dirname(mainprogram->recentprojectpaths[i]);
@@ -8123,6 +8126,7 @@ int main(int argc, char* argv[]) {
 
             if (mainprogram->newproject) {
                 mainprogram->newproject = false;
+                mainprogram->undo_redo_save();
                 mainprogram->project->open(mainprogram->project->path, false, true);
            }
 
