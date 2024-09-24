@@ -3577,7 +3577,7 @@ bool get_videotex(Layer *lay, std::string path) {
     lay = lay->open_video(0, path, true, true);
     if (mainprogram->openerr) {
         mainprogram->errlays.push_back(lay);
-        lay->closethread = 1;
+        lay->close();
         return false;
     }
     std::unique_lock<std::mutex> olock(lay->endopenlock);
@@ -3588,7 +3588,7 @@ bool get_videotex(Layer *lay, std::string path) {
         printf("error loading video texture!\n");
         mainprogram->errlays.push_back(lay);
         mainprogram->openerr = false;
-        lay->closethread = 1;
+        lay->close();
         return false;
     }
     lay->frame = lay->numf / 2.0f;
@@ -3615,7 +3615,7 @@ bool get_layertex(Layer *lay, std::string path) {
     Layer *l = mainmix->open_layerfile(path, lay, true, false, false);
     //lay->set_inlayer(l, true);
     mainprogram->getvideotexlayers[std::find(mainprogram->getvideotexlayers.begin(), mainprogram->getvideotexlayers.end(), lay) - mainprogram->getvideotexlayers.begin()] = l;
-    lay->closethread = 1;
+    lay->close();
     lay = l;
     std::unique_lock<std::mutex> olock(lay->endopenlock);
     lay->endopenvar.wait(olock, [&] { return lay->opened; });
@@ -4055,7 +4055,7 @@ void the_loop() {
     float darkgrey[] = {0.2f, 0.2f, 0.2f, 1.0f};
     float lightblue[] = {0.5f, 0.5f, 1.0f, 1.0f};
 
-    SDL_GL_MakeCurrent(mainprogram->mainwindow, glc);
+    //SDL_GL_MakeCurrent(mainprogram->mainwindow, glc);
     glBindFramebuffer(GL_FRAMEBUFFER, 0);
     glDrawBuffer(GL_BACK_LEFT);
     glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT | GL_STENCIL_BUFFER_BIT);
@@ -4403,7 +4403,7 @@ void the_loop() {
                     mainmix->cloneset_destroy(clnr);
                 }
             }
-            lvec[i]->closethread = 1;
+            lvec[i]->close();
         }
         mainmix->bulayers.clear();
     }  //reminder
@@ -6552,7 +6552,6 @@ int main(int argc, char* argv[]) {
     mainprogram->nodesmain->currpage->connect_nodes(mixnodeAcomp, mixnodeBcomp, mainprogram->bnodeend[1]);
     mainprogram->nodesmain->currpage->connect_nodes(mainprogram->bnodeend[1], mixnodeABcomp);
 
-    mainprogram->loadlay = new Layer(true);
     bool comp = !mainprogram->prevmodus;
     for (int m = 0; m < 2; m++) {
         std::vector<Layer *> &lvec = choose_layers(m);
@@ -6566,14 +6565,6 @@ int main(int argc, char* argv[]) {
         lay->filename = "";
     }
     mainprogram->prevmodus = !mainprogram->prevmodus;
-    for (int m = 0; m < 2; m++) {
-        for (int i = 1; i < 4; i++) {
-            mainmix->mousedeck = m;
-            mainmix->save_deck(
-                    mainprogram->temppath + "tempdecksc_" + std::to_string(m) + std::to_string(i) + ".deck", false,
-                    false);
-        }
-    }
 
     GLint endSampler0 = glGetUniformLocation(mainprogram->ShaderProgram, "endSampler0");
     glUniform1i(endSampler0, 1);

@@ -2364,7 +2364,8 @@ void Mixer::do_deletelay(Layer *testlay, std::vector<Layer*> &layers, bool add) 
         testlay->texture = -1;
     }
 
-	testlay->closethread = 1;
+	testlay->close();
+    testlay->startdecode.notify_all();
 }
 
 void Mixer::delete_layer(std::vector<Layer*> &layers, Layer *testlay, bool add) {
@@ -2731,8 +2732,6 @@ Layer::Layer(bool comp) {
 
     this->decresult = new frame_result;
     this->remfr = new remaining_frames;
-    this->remfr = new remaining_frames;
-    this->remfr = new remaining_frames;
 
     this->currcliptexpath = find_unused_filename("currcliptex", mainprogram->temppath, ".jpg");
 
@@ -2824,8 +2823,6 @@ Layer::~Layer() {
             glDeleteSync(this->syncobj);
             glDeleteBuffers(3, &this->pbo);
         }
-        delete this->remfr;
-        delete this->remfr;
         delete this->remfr;
         av_frame_free(&this->rgbframe);
         av_frame_free(&this->decframe);
@@ -4069,12 +4066,14 @@ void Layer::get_cpu_frame(int framenr, int prevframe, int errcount)
         }
         //decode_audio(this);
         av_packet_unref(this->decpkt);
+        av_packet_unref(this->decpktseek);
     }
     else {
         int r = av_read_frame(this->video, this->decpkt);
         if (r < 0) printf("problem reading frame\n");
         else decode_packet(this, &got_frame);
         av_packet_unref(this->decpkt);
+        av_packet_unref(this->decpktseek);
     }
 
 
@@ -4168,6 +4167,12 @@ bool Layer::get_hap_frame() {
     return true;
 }
 
+void Layer::close() {
+    this->closethread = 1;
+    this->ready = true;
+    this->startdecode.notify_all();
+}
+
 void Layer::get_frame(){
 
     float speed = 1.0;
@@ -4247,13 +4252,14 @@ void Layer::get_frame(){
     }
 }
 
-void Layer::trigger() {
+/*void Layer::trigger() {
     // trigger variable checks in mutexes
 
     while(this->closethread == 0) {
         if (mainprogram->shutdown) {
             // delete all layers on program quit
-            this->closethread = 1;
+            this->close();
+            this->startdecode.notify_all();
             break;
         }
         if (mainprogram->openerr) {
@@ -4273,7 +4279,7 @@ void Layer::trigger() {
         this->ready = true;
         this->startdecode.notify_all();
     }
-}
+}*/
 
 void Mixer::add_del_bar() {
 	//add/delete layer bar when right side of layer monitor hovered
@@ -7570,17 +7576,18 @@ void Mixer::open_state(std::string path, bool undo) {
                     if (bucurr == k) {
                         continue;
                     }
-                    this->layers[2].clear();
-                    mainmix->add_layer(this->layers[2], 0);
-                    this->layers[3].clear();
-                    mainmix->add_layer(this->layers[3], 0);
-                    this->newlrs[m + 2].clear();
                     if (result != "") {
+                        this->layers[m + 2].clear();
+                        this->newlrs[m + 2].clear();
                         loopstation = this->scenes[m][k]->lpst;
                         this->mousedeck = m;
                         this->scenenum = k;
                         this->open_deck(result + "_" + std::to_string(deckcnt) + ".file", true);
                         deckcnt++;
+                        for (Layer *lay : this->layers[m + 2]) {
+                            lay->close();
+                            lay->startdecode.notify_all();
+                        }
                         this->scenenum = -1;
                         this->scenes[m][k]->scnblayers = this->newlrs[m + 2];
                         if (this->scenes[m][k]->scnblayers.empty()) {
@@ -8100,7 +8107,7 @@ void Mixer::save_state(std::string path, bool autosave, bool undo) {
             this->scenenum = -1;
             /*std::vector<Layer *> &lvec = choose_layers(this->deck);
             for (int j = 0; j < lvec.size(); j++) {
-                lvec[j]->closethread = 1;
+                lvec[j]->close();
             }*/
             filestoadd.push_back(mainprogram->temppath + "tempdeck_xch" + "_" + std::to_string(m) + std::to_string(k) + ".deck");
         }
@@ -8899,12 +8906,7 @@ void Mixer::open_deck(const std::string path, bool alive, bool loadevents, int c
         elem->playbut->toggled();
     }
 
-    if (layers.empty()) {
-        mainmix->add_layer(layers, 0);
-    }
-
     rfile.close();
-
 }
 
 void Mixer::save_deck(const std::string path, bool save, bool doclips, bool copycomp, bool dojpeg, bool undo) {
@@ -9469,7 +9471,6 @@ void Layer::set_inlayer(Layer* lay, bool pbos) {
     if (!lay->queueing) {
         bool dummy = false;
     }
-    //this->closethread = 1;
     if (pos <= lrs->size()) lrs->insert(lrs->begin() + pos, lay);
     lay->pos = pos;
     lay->layers = lrs;
@@ -10294,7 +10295,7 @@ void Layer::open_files_queue() {
             lay->processed = false;
             lock2.unlock();
             mainprogram->clipfilesclip->tex = mainprogram->get_tex(lay);
-            lay->closethread = 1;
+            lay->close();
 
             mainprogram->clipfilesclip->type = ELEM_IMAGE;
             mainprogram->clipfilesclip->get_imageframes();
@@ -10319,7 +10320,7 @@ void Layer::open_files_queue() {
                 mainprogram->clipfilesclip->tex = copy_tex(lay->fbotex, binsmain->elemboxes[0]->scrcoords->w,
                                                            binsmain->elemboxes[0]->scrcoords->h);
             }
-            lay->closethread = 1;
+            lay->close();
 
             mainprogram->clipfilesclip->type = ELEM_LAYER;
             mainprogram->clipfilesclip->get_layerframes();
@@ -10335,7 +10336,7 @@ void Layer::open_files_queue() {
             lock2.unlock();
 
             mainprogram->clipfilesclip->tex = mainprogram->get_tex(lay);
-            lay->closethread = 1;
+            lay->close();
             mainprogram->clipfilesclip->get_videoframes();
         }
         mainprogram->clipfilesclip = mainprogram->fileslay->clips[pos + 1];
@@ -11315,6 +11316,11 @@ Layer* Mixer::read_layers(std::istream &rfile, const std::string result, std::ve
                 (*tempmap).push_back({first, second});
                 if (second) second->initdeck = true;
             }
+        }
+    }
+    else {
+        for (Layer *lay : layers) {
+            lay->close();
         }
     }
     //}
@@ -13128,7 +13134,7 @@ Layer* Layer::transfer() {
         mainmix->currlays[!mainprogram->prevmodus].push_back(lay);
     }
 
-    this->closethread = 1;
+    this->close();
 
     mainmix->reconnect_all(*lay->layers);
 
@@ -13300,7 +13306,7 @@ void Clip::open_clipfiles() {
             lay->processed = false;
             lock2.unlock();
             mainprogram->clipfilesclip->tex = mainprogram->get_tex(lay);
-            lay->closethread = 1;
+            lay->close();
 
             mainprogram->clipfilesclip->type = ELEM_IMAGE;
             mainprogram->clipfilesclip->get_imageframes();
@@ -13323,7 +13329,7 @@ void Clip::open_clipfiles() {
                 mainprogram->clipfilesclip->tex = copy_tex(lay->fbotex, binsmain->elemboxes[0]->scrcoords->w,
                                                            binsmain->elemboxes[0]->scrcoords->h);
             }
-            lay->closethread = 1;
+            lay->close();
 
             mainprogram->clipfilesclip->type = ELEM_LAYER;
             mainprogram->clipfilesclip->get_layerframes();
@@ -13336,7 +13342,7 @@ void Clip::open_clipfiles() {
             lock2.unlock();
 
             mainprogram->clipfilesclip->tex = mainprogram->get_tex(lay);
-            lay->closethread = 1;
+            lay->close();
             mainprogram->clipfilesclip->type = ELEM_FILE;
             mainprogram->clipfilesclip->get_videoframes();
         }
@@ -13369,9 +13375,6 @@ Scene::Scene() {
 void Scene::switch_to(bool dotempmap) {
     mainmix->scenes[this->deck][mainmix->currscene[this->deck]]->scnblayers.clear();
     std::vector<Layer *> &lvec = choose_layers(this->deck);
-    if (lvec.empty()) {
-        mainmix->add_layer(lvec, 0);
-    }
     for (int j = 0; j < lvec.size(); j++) {
         // store layers and frames of current this into scnblayers for running in the background (to keep sync)
         // if (lvec[j]->filename == "") continue;
@@ -13381,9 +13384,6 @@ void Scene::switch_to(bool dotempmap) {
     //this->currlay = mainmix->currlay[!mainprogram->prevmodus];
     std::vector<Layer *> lrs = mainmix->layers[this->deck + 2];
     if (dotempmap) {
-        if (this->scnblayers.empty()) {
-            mainmix->add_layer(this->scnblayers, 0);
-        }
         std::vector<std::vector<Layer *>> *tempmap = &mainmix->swapmap[this->deck + 2];
         mainmix->newlrs[this->deck + 2] = this->scnblayers;
         if (lrs.size()) {

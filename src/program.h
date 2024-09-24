@@ -870,6 +870,11 @@ class Program {
         bool openjpegpathsshelf = false;
         bool adaptparaming = false;
 
+        Boxx *boxbig;
+        Boxx *boxbefore;
+        Boxx *boxafter;
+        Boxx *boxlayer;
+
 		int quit_requester();
 		GLuint set_shader();
 		int load_shader(char* filename, char** ShaderSource, unsigned long len);

@@ -352,7 +352,8 @@ class Layer {
 		void set_live_base(std::string livename);
 		void deautomate();
         void set_inlayer(Layer* lay, bool pbos);
-        void trigger();
+        //void trigger();
+        void close();
         Layer* next();
 		Layer* prev();
         Layer();

@@ -1652,7 +1652,7 @@ void BinsMain::handle(bool draw) {
 								// do first entry preview preperation/visualisation when image hovered
 								this->binpreview = true;  // just entering preview, or already done preparation (different if clauses)
 								if (mainprogram->prelay) {
-                                    mainprogram->prelay->closethread = 1;
+                                    mainprogram->prelay->close();
 									// close old preview layer
 								}
 								draw_box(red, black, 0.52f, 0.5f, 0.4f, 0.4f, -1);
@@ -1724,7 +1724,7 @@ void BinsMain::handle(bool draw) {
 								// do first entry preview preperation/visualisation when layer file hovered
 								if (binel->name != "") {
                                     if (mainprogram->prelay) {
-                                        mainprogram->prelay->closethread = 1;
+                                        mainprogram->prelay->close();
                                         // close old preview layer
                                     }
 									this->binpreview = true;
@@ -1735,7 +1735,7 @@ void BinsMain::handle(bool draw) {
                                     prelay->pos = 0;
                                     prelay->keepeffbut->value = 0;
                                     mainprogram->prelay = mainmix->open_layerfile(binel->path, prelay, false, false);
-                                    prelay->closethread = 1;
+                                    prelay->close();
                                     //prelay->set_inlayer(mainprogram->prelay, false);
                                     mainprogram->prelay->dummy = true;
                                     mainprogram->prelay->pos = 0;
@@ -1893,7 +1893,7 @@ void BinsMain::handle(bool draw) {
 								// do first entry preview preparation/visualisation when video hovered
 								if (remove_extension(basename(binel->path)) != "") {
                                     if (mainprogram->prelay) {
-                                        mainprogram->prelay->closethread = 1;
+                                        mainprogram->prelay->close();
                                         // close old preview layer
                                     }
 									this->binpreview = true;
@@ -2013,7 +2013,7 @@ void BinsMain::handle(bool draw) {
 						}
 
                         /*if (mainprogram->prelay) {
-                            mainprogram->prelay->closethread = 1;
+                            mainprogram->prelay->close();
                         }*/
 
 						if (binel->name != "") {
@@ -2778,7 +2778,7 @@ void BinsMain::open_handlefile(std::string path, GLuint tex) {
                     } else {
                         endtex = copy_tex(lay->fbotex, 192, 108);
                     }
-                    lay->closethread = 1;
+                    lay->close();
                 }
                 else endtex = tex;
             } else if (istring == "EWOCvj DECKFILE") {
@@ -2819,7 +2819,7 @@ void BinsMain::open_handlefile(std::string path, GLuint tex) {
                     lay->processed = false;
                     lock2.unlock();
                     endtex = mainprogram->get_tex(lay);
-                    lay->closethread = 1;
+                    lay->close();
                 }
                 else endtex = tex;
             } else if (isvideo(path)) {
@@ -2832,7 +2832,7 @@ void BinsMain::open_handlefile(std::string path, GLuint tex) {
                     lay->processed = false;
                     lock2.unlock();
                     endtex = mainprogram->get_tex(lay);
-                    lay->closethread = 1;
+                    lay->close();
                 }
                 else endtex = tex;
 
