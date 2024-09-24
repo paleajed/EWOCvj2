@@ -15,14 +15,14 @@ Read the CONTRIBUTING.md and CODE_OF_CONDUCT.md files.
 
 # Installation
 
-The binary installer is not currently available any more.  It followed development with all the problems, bugs and crashes associated with this.  It was decided to take it off the internet until the release of the first stable version.
-Users that want to compile themselves can currently only do this on Windows systems.  The Visual Studio code is replaced by a CMake scheme.  Linux compilation is working now too.
+The binary installer is not currently available any more.  It followed development with all the problems, bugs and crashes associated with it.  It was decided to take it off the internet until the release of the first stable version.
+It IS possible to compile yourself.  The Visual Studio code has been replaced by a CMake scheme that covers both Windows and Linux.  Linux compilation is working now too.
 
 ## Compilation
 
 ### WINDOWS and LINUX now both use the CMake system:
 * All code is in the src directory.
-* Edit the CMakeLists.txt file so everything points to the right directories.  You'll need the packages mentioned below.
+* Edit the CMakeLists.txt file so everything points to the right directories.  The Linux install searches for libraries in the default libs locations.  For Windows, either get your libs from the msys2 package or put them in C:\source\lib.  You can edit directories that are searched in the CMakeLists.txt file.  RTMidi lib is looked for in the C:\source\rtmidi-5.0.0\lib directory.   i'm switching to6.0.0 soon.  You'll need the packages mentioned below.
 * install dependencies:
 
   OpenAL32 (although audio support is at the moment been disabled in the source)
@@ -63,7 +63,7 @@ Users that want to compile themselves can currently only do this on Windows syst
   https://www.gyan.dev/ffmpeg/builds/
   You need the ffmpeg-release-full-shared.7z file.  In the bin directory you find the dll files(for running the program: put them in your build directory), the .lib files (for compiling the program: set the directory in CMakeLists.txt) and the .h files (for compiling the program: set the directory in CMakeLists.txt).
   On Linux, you can compile ffmpeg yourself, with snappy support.
-* the need for rtmidi latest version
+* the need for rtmidi 5.0.0
 Get the source from https://www.music.mcgill.ca/~gary/rtmidi/index.html#download
 Compile the rtmidi libraries
 * best to use the latest Boost library from:
@@ -76,7 +76,6 @@ On Linux, if CMake doesn't do this automatically copy the following files to /us
 * src/lock.png
 * src/shader.fs
 * src/shader.vs
-* src/splash.jpeg
 
 Also install the expressway.ttf font to your system.
 
@@ -105,7 +104,6 @@ For Windows you will need to have these files in your build directory to run the
 * shader.fs (the GLSL fragment shader)
 * shader.vs (the GLSL vertex shader)
 * snappy.dll
-* splash.jpeg
 * swresample-3.dll
 * swscale-5.dll
 * tiff.dll
