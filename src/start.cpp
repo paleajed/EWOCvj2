@@ -126,7 +126,6 @@ Retarget *retarget = nullptr;
 float smw, smh;
 SDL_GLContext glc;
 SDL_GLContext orderglc;
-SDL_GLContext splashglc;
 float white[] = { 1.0f, 1.0f, 1.0f, 1.0f };
 float halfwhite[] = { 1.0f, 1.0f, 1.0f, 0.5f };
 float black[] = { 0.0f, 0.0f, 0.0f, 1.0f };
@@ -1475,19 +1474,6 @@ void set_glstructures() {
     glBufferData(GL_ARRAY_BUFFER, 32, tcoords2, GL_DYNAMIC_DRAW);
     glEnableVertexAttribArray(1);
     glVertexAttribPointer(1, 2, GL_FLOAT, GL_FALSE, 8, nullptr);
-    SDL_GL_MakeCurrent(mainprogram->splashwindow, glc);
-    glGenBuffers(1, &mainprogram->splboxvbuf);
-    glGenBuffers(1, &mainprogram->splboxtbuf);
-    glGenVertexArrays(1, &mainprogram->splboxvao);
-    glBindVertexArray(mainprogram->splboxvao);
-    glBindBuffer(GL_ARRAY_BUFFER, mainprogram->splboxvbuf);
-    glBufferData(GL_ARRAY_BUFFER, 48, vcoords, GL_DYNAMIC_DRAW);
-    glEnableVertexAttribArray(0);
-    glVertexAttribPointer(0, 3, GL_FLOAT, GL_FALSE, 12, nullptr);
-    glBindBuffer(GL_ARRAY_BUFFER, mainprogram->splboxtbuf);
-    glBufferData(GL_ARRAY_BUFFER, 32, tcoords2, GL_DYNAMIC_DRAW);
-    glEnableVertexAttribArray(1);
-    glVertexAttribPointer(1, 2, GL_FLOAT, GL_FALSE, 8, nullptr);
  	SDL_GL_MakeCurrent(mainprogram->config_midipresetswindow, glc);
 	glGenBuffers(1, &mainprogram->tmboxvbuf);
 	glGenBuffers(1, &mainprogram->tmboxtbuf);
@@ -2090,34 +2076,7 @@ std::vector<float> render_text(std::string text, float *textc, float x, float y,
         if (smflag == 1) SDL_GL_MakeCurrent(mainprogram->prefwindow, glc);
         else if (smflag == 2) SDL_GL_MakeCurrent(mainprogram->config_midipresetswindow, glc);
 
-		/*GLfloat texvcoords1[8] = {
-			-1.0f,     -1.0f,
-			1.0f , -1.0f,
-			-1.0f,     1.0f,
-			1.0f, 1.0f};
-
-		GLfloat textcoords[] = {0.0f, 0.0f,
-							1.0f, 0.0f,
-							0.0f, 1.0f,
-							1.0f, 1.0f};*/
-		/*GLuint texfrbuf;
-		glGenFramebuffers(1, &texfrbuf);
-		glBindFramebuffer(GL_FRAMEBUFFER, texfrbuf);
-		glFramebufferTexture2D(GL_FRAMEBUFFER, GL_COLOR_ATTACHMENT0, GL_TEXTURE_2D, texture, 0);
-		glDrawBuffer(GL_COLOR_ATTACHMENT0);
-        glClearColor(0, 0, 0, 0);
-        glClear(GL_COLOR_BUFFER_BIT);
-
-		GLuint ftex;
-		glGenTextures(1, &ftex);
-		glBindTexture(GL_TEXTURE_2D, ftex);
-		glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_EDGE);
-		glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_EDGE);
-		glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_NEAREST);
-		glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_NEAREST);
-		glPixelStorei(GL_UNPACK_ALIGNMENT, 1);*/
-
-		std::vector<float> textws;
+        std::vector<float> textws;
 		float pixelw = 2.0f / w2;
 		float pixelh = 2.0f / h2;
 		float th;
@@ -2162,64 +2121,6 @@ std::vector<float> render_text(std::string text, float *textc, float x, float y,
             x += (g->advance.x/64.0f);
         }
 
-
-        /*if (g->bitmap.width) glBlitNamedFramebuffer(glyphfrbuf, texfrbuf, 0, 0, g->bitmap.width, g->bitmap.rows, pxprogress, g->bitmap_top + 12, pxprogress + g->bitmap.width, g->bitmap_top - g->bitmap.rows + 12, GL_COLOR_BUFFER_BIT, GL_NEAREST);
-        GLenum err;
-            glActiveTexture(GL_TEXTURE0);
-            glBindTexture(GL_TEXTURE_2D, ftex);
-            glPixelStorei(GL_UNPACK_ALIGNMENT, 1);
-            glTexImage2D(
-                    GL_TEXTURE_2D,
-                    0,
-                    GL_RED,
-                    g->bitmap.width,
-                    g->bitmap.rows,
-                    0,
-                    GL_RED,
-                    GL_UNSIGNED_BYTE,
-                    g->bitmap.buffer
-            );
-
- 			GLuint glyphfrbuf;
-			glGenFramebuffers(1, &glyphfrbuf);
- 			glBindFramebuffer(GL_FRAMEBUFFER, glyphfrbuf);
-			glFramebufferTexture2D(GL_FRAMEBUFFER, GL_COLOR_ATTACHMENT0, GL_TEXTURE_2D, ftex, 0);
-            glDrawBuffer(GL_COLOR_ATTACHMENT0);
-            glClearColor(0, 0, 0, 0);
-            glClear(GL_COLOR_BUFFER_BIT);
-
-            pxprogress += g->advance.x / 64.0f;
-
-            x += (g->advance.x/64.0f) * pixelw;
-
-            glDeleteFramebuffers(1, &glyphfrbuf);
-		}
-
-		//cropping texture
-		int w = textw / pixelw; //2.2 *
-		GLuint endtex;
-		glGenTextures(1, &endtex);
-		glBindTexture(GL_TEXTURE_2D, endtex);
-        glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_NEAREST);
-        glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_NEAREST);
-        glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_EDGE);
-        glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_EDGE);
-		glTexStorage2D(
-			GL_TEXTURE_2D,
-			1,
-			GL_R8,
-			w,
-			psize * 3
-			);
-		GLuint endfrbuf;
-		glGenFramebuffers(1, &endfrbuf);
-		glBindFramebuffer(GL_FRAMEBUFFER, endfrbuf);
-		glFramebufferTexture2D(GL_FRAMEBUFFER, GL_COLOR_ATTACHMENT0, GL_TEXTURE_2D, endtex, 0);
-        glDrawBuffer(GL_COLOR_ATTACHMENT0);
-        glClearColor(0, 0, 0, 0);
-        glClear(GL_COLOR_BUFFER_BIT);
- 		glBlitNamedFramebuffer(texfrbuf, endfrbuf, 0, 0, w, 64 , 0, 0, w, 64, GL_COLOR_BUFFER_BIT, GL_NEAREST);
-*/
 		if (pos == 0) {
 			gs = new GUIString;
 			gs->text = text;
@@ -2232,11 +2133,6 @@ std::vector<float> render_text(std::string text, float *textc, float x, float y,
 		gs->texthvec.push_back(psize * 3);
 		gs->textwvecvec.push_back(textws);
 		gs->sxvec.push_back(sx);
-
-		//glDeleteFramebuffers(1, &texfrbuf);
-        //glDeleteFramebuffers(1, &endfrbuf);
-		//glDeleteTextures(1, &ftex);
-		//glDeleteTextures(1, &texture);
 
         if (smflag > 0) SDL_GL_MakeCurrent(mainprogram->mainwindow, glc);
 
@@ -6576,15 +6472,10 @@ int main(int argc, char* argv[]) {
     mainprogram->prefwindow = SDL_CreateWindow("Preferences", glob->w / 4, glob->h / 4, glob->w / 2, glob->h / 2,
                                                SDL_WINDOW_OPENGL | SDL_WINDOW_HIDDEN | SDL_WINDOW_ALLOW_HIGHDPI);
 
-    mainprogram->splashwindow = SDL_CreateWindow("", (glob->w - (glob->h / 2)) / 2, glob->h / 4, glob->h / 2, glob->h / 2,
-                                                 SDL_WINDOW_OPENGL | SDL_WINDOW_BORDERLESS | SDL_WINDOW_SHOWN |
-                                                 SDL_WINDOW_ALLOW_HIGHDPI);
-
     SDL_GL_GetDrawableSize(mainprogram->prefwindow, &wi, &he);
     smw = (float) wi;
     smh = (float) he;
 
-    SDL_GL_MakeCurrent(mainprogram->splashwindow, glc);
     mainprogram->ShaderProgram = mainprogram->set_shader();
     glUseProgram(mainprogram->ShaderProgram);
 
@@ -6716,8 +6607,6 @@ int main(int argc, char* argv[]) {
 
     SDL_GL_MakeCurrent(mainprogram->mainwindow, glc);
     set_glstructures();
-    SDL_GL_MakeCurrent(mainprogram->splashwindow, glc);
-    glUseProgram(mainprogram->ShaderProgram);
 
 
     // load background graphic
@@ -6747,39 +6636,6 @@ int main(int argc, char* argv[]) {
 
     // load background graphic
     //ilEnable(IL_CONV_PAL);
-    ILuint splash;
-    ilGenImages(1, &splash);
-    ilBindImage(splash);
-    ilActiveImage(0);
-#ifdef WINDOWS
-    ret = ilLoadImage((const ILstring)"./splash.jpeg");
-#endif
-#ifdef POSIX
-    ret = ilLoadImage("/usr/share/ewocvj2/splash.jpeg");
-#endif
-    if (ret == IL_FALSE) {
-        printf("can't load splash image\n");
-        fflush(stdout);
-    }
-    w = ilGetInteger(IL_IMAGE_WIDTH);
-    h = ilGetInteger(IL_IMAGE_HEIGHT);
-    glGenTextures(1, &mainprogram->splashtex);
-    glBindTexture(GL_TEXTURE_2D, mainprogram->splashtex);
-    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR);
-    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
-    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_BORDER);
-    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_BORDER);
-    glTexImage2D(GL_TEXTURE_2D, 0, GL_RGB8, w, h, 0, GL_RGB, GL_UNSIGNED_BYTE, (char *) ilGetData());
-    glBindFramebuffer(GL_FRAMEBUFFER, 0);
-    glDrawBuffer(GL_FRONT);
-    glViewport(0, 0, glob->h / 2.0f, glob->h / 2.0f);
-    mainprogram->bvao = mainprogram->splboxvao;
-    mainprogram->bvbuf = mainprogram->splboxvbuf;
-    mainprogram->btbuf = mainprogram->splboxtbuf;
-    draw_direct(nullptr, black, -1.0f, -1.0f, 2.0f, 2.0f, 0.0f, 0.0f, 1.0f, 1.0f, 0, mainprogram->splashtex, glob->w, glob->h, false, false);
-    glEnable(GL_BLEND);
-    glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
-    draw_direct(nullptr, black, -2.0f, -1.0f, 4.0f, 2.0f, 0.0f, 0.0f, 1.0f, 1.0f, 0, mainprogram->bgtex, glob->w, glob->h, false, false);
 
 #ifdef WINDOWS
     std::filesystem::path full_path(std::filesystem::current_path());
@@ -6963,59 +6819,6 @@ int main(int argc, char* argv[]) {
         rfile.close();
     }
 
-
-    mainprogram->directmode = true;
-    mainprogram->stringcomputing = true;
-    int num = 0;
-    for (PrefCat *cat : mainprogram->prefs->items) {
-        for (PrefItem *item : cat->items) {
-            num++;
-        }
-    }
-    draw_box(white, black, -0.25f, -0.9f, 0.5f, 0.1f, 0.0f, 0.0f, 1.0f, 1.0f, 0, -1, glob->w, glob->h, false);
-    int totalstrings = num;
-    int count = 0;
-    /*for (Boxx *box : allboxes) {
-        // predraw all tooltips so no slowdowns will happen when stringtextures are initialized
-        if (box->tooltip != "") mainprogram->longtooltip_prepare(box);
-
-        count++;
-        if (count % 100 == 1) {
-            SDL_GL_MakeCurrent(mainprogram->splashwindow, glc);
-            glBindFramebuffer(GL_FRAMEBUFFER, 0);
-            glDrawBuffer(GL_FRONT);
-            glViewport(0, 0, glob->h / 2.0f, glob->h / 2.0f);
-            mainprogram->bvao = mainprogram->splboxvao;
-            mainprogram->bvbuf = mainprogram->splboxvbuf;
-            mainprogram->btbuf = mainprogram->splboxtbuf;
-            draw_box(white, white, -0.25f, -0.9f, 0.5f * (float) count / (float) totalstrings, 0.1f, 0.0f, 0.0f, 1.0f,
-                     1.0f, 0, -1, glob->w, glob->h, false);
-            glFlush();
-        }
-    }*/
-    collectingboxes = false;
-    // predraw all pref names so no slowdowns will happen when prefs window is first opened
-    for (PrefCat *cat : mainprogram->prefs->items) {
-        for (PrefItem *item : cat->items) {
-            render_text(item->name, white, 99.0f, 99.0f, 0.0024f, 0.004f, 1, 0);
-            count++;
-            if (count % 8 == 1) {
-                SDL_GL_MakeCurrent(mainprogram->splashwindow, glc);
-                glBindFramebuffer(GL_FRAMEBUFFER, 0);
-                glDrawBuffer(GL_FRONT);
-                glViewport(0, 0, glob->h / 2.0f, glob->h / 2.0f);
-                mainprogram->bvao = mainprogram->splboxvao;
-                mainprogram->bvbuf = mainprogram->splboxvbuf;
-                mainprogram->btbuf = mainprogram->splboxtbuf;
-                draw_box(white, white, -0.25f, -0.9f, 0.5f * (float) count / (float) totalstrings, 0.1f, 0.0f, 0.0f,
-                         1.0f, 1.0f, 0, -1, glob->w, glob->h, false);
-                glFlush();
-            }
-        }
-    }
-    mainprogram->stringcomputing = false;
-    mainprogram->directmode = false;
-
     glViewport(0, 0, glob->w, glob->h);
     SDL_GL_MakeCurrent(mainprogram->mainwindow, glc);
     glBindFramebuffer(GL_FRAMEBUFFER, 0);
@@ -7026,8 +6829,6 @@ int main(int argc, char* argv[]) {
 
     SDL_EventState(SDL_DROPFILE, SDL_ENABLE);
     SDL_EventState(SDL_DROPBEGIN, SDL_ENABLE);
-
-    SDL_DestroyWindow(mainprogram->splashwindow);
 
     while (!quit) {
 
