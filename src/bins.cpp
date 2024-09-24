@@ -1779,14 +1779,14 @@ void BinsMain::handle(bool draw) {
 									glBindTexture(GL_TEXTURE_2D, mainprogram->prelay->texture);
 									if (mainprogram->prelay->vidformat == 188 || mainprogram->prelay->vidformat == 187) {
 										if (mainprogram->prelay->decresult->compression == 187) {
-											glCompressedTexImage2D(GL_TEXTURE_2D, 0, GL_COMPRESSED_RGBA_S3TC_DXT1_EXT, mainprogram->prelay->decresult->width, mainprogram->prelay->decresult->height, 0, mainprogram->prelay->decresult->size, mainprogram->prelay->remfr[mainprogram->prelay->pbofri]->data);
+											glCompressedTexImage2D(GL_TEXTURE_2D, 0, GL_COMPRESSED_RGBA_S3TC_DXT1_EXT, mainprogram->prelay->decresult->width, mainprogram->prelay->decresult->height, 0, mainprogram->prelay->decresult->size, mainprogram->prelay->remfr->data);
 										}
 										else if (mainprogram->prelay->decresult->compression == 190) {
-											glCompressedTexImage2D(GL_TEXTURE_2D, 0, GL_COMPRESSED_RGBA_S3TC_DXT5_EXT, mainprogram->prelay->decresult->width, mainprogram->prelay->decresult->height, 0, mainprogram->prelay->decresult->size, mainprogram->prelay->remfr[mainprogram->prelay->pbofri]->data);
+											glCompressedTexImage2D(GL_TEXTURE_2D, 0, GL_COMPRESSED_RGBA_S3TC_DXT5_EXT, mainprogram->prelay->decresult->width, mainprogram->prelay->decresult->height, 0, mainprogram->prelay->decresult->size, mainprogram->prelay->remfr->data);
 										}
 									}
 									else {
-										glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA8, mainprogram->prelay->decresult->width, mainprogram->prelay->decresult->height, 0, GL_BGRA, GL_UNSIGNED_BYTE, mainprogram->prelay->remfr[mainprogram->prelay->pbofri]->data);
+										glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA8, mainprogram->prelay->decresult->width, mainprogram->prelay->decresult->height, 0, GL_BGRA, GL_UNSIGNED_BYTE, mainprogram->prelay->remfr->data);
 									}
 									mainprogram->prelay->initialized = true;
 									// calculate effects
@@ -1846,14 +1846,14 @@ void BinsMain::handle(bool draw) {
 									glBindTexture(GL_TEXTURE_2D, mainprogram->prelay->texture);
  									if (mainprogram->prelay->vidformat == 188 || mainprogram->prelay->vidformat == 187) {
 										if (mainprogram->prelay->decresult->compression == 187) {
-											glCompressedTexImage2D(GL_TEXTURE_2D, 0, GL_COMPRESSED_RGBA_S3TC_DXT1_EXT, mainprogram->prelay->decresult->width, mainprogram->prelay->decresult->height, 0, mainprogram->prelay->decresult->size, mainprogram->prelay->remfr[mainprogram->prelay->pbofri]->data);
+											glCompressedTexImage2D(GL_TEXTURE_2D, 0, GL_COMPRESSED_RGBA_S3TC_DXT1_EXT, mainprogram->prelay->decresult->width, mainprogram->prelay->decresult->height, 0, mainprogram->prelay->decresult->size, mainprogram->prelay->remfr->data);
 										}
 										else if (mainprogram->prelay->decresult->compression == 190) {
-											glCompressedTexImage2D(GL_TEXTURE_2D, 0, GL_COMPRESSED_RGBA_S3TC_DXT5_EXT, mainprogram->prelay->decresult->width, mainprogram->prelay->decresult->height, 0, mainprogram->prelay->decresult->size, mainprogram->prelay->remfr[mainprogram->prelay->pbofri]->data);
+											glCompressedTexImage2D(GL_TEXTURE_2D, 0, GL_COMPRESSED_RGBA_S3TC_DXT5_EXT, mainprogram->prelay->decresult->width, mainprogram->prelay->decresult->height, 0, mainprogram->prelay->decresult->size, mainprogram->prelay->remfr->data);
 										}
  									}
 									else {
-										glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA8, mainprogram->prelay->decresult->width, mainprogram->prelay->decresult->height, 0, GL_BGRA, GL_UNSIGNED_BYTE, mainprogram->prelay->remfr[mainprogram->prelay->pbofri]->data);
+										glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA8, mainprogram->prelay->decresult->width, mainprogram->prelay->decresult->height, 0, GL_BGRA, GL_UNSIGNED_BYTE, mainprogram->prelay->remfr->data);
 									}
 
 									// calculate effects
@@ -1922,14 +1922,14 @@ void BinsMain::handle(bool draw) {
 									glBindTexture(GL_TEXTURE_2D, this->binelpreviewtex);
 									if (mainprogram->prelay->vidformat == 188 || mainprogram->prelay->vidformat == 187) {
  										if (mainprogram->prelay->decresult->compression == 187) {
-											glCompressedTexImage2D(GL_TEXTURE_2D, 0, GL_COMPRESSED_RGBA_S3TC_DXT1_EXT, mainprogram->prelay->decresult->width, mainprogram->prelay->decresult->height, 0, mainprogram->prelay->decresult->size, mainprogram->prelay->remfr[mainprogram->prelay->pbofri]->data);
+											glCompressedTexImage2D(GL_TEXTURE_2D, 0, GL_COMPRESSED_RGBA_S3TC_DXT1_EXT, mainprogram->prelay->decresult->width, mainprogram->prelay->decresult->height, 0, mainprogram->prelay->decresult->size, mainprogram->prelay->remfr->data);
 										}
 										else if (mainprogram->prelay->decresult->compression == 190) {
-											glCompressedTexImage2D(GL_TEXTURE_2D, 0, GL_COMPRESSED_RGBA_S3TC_DXT5_EXT, mainprogram->prelay->decresult->width, mainprogram->prelay->decresult->height, 0, mainprogram->prelay->decresult->size, mainprogram->prelay->remfr[mainprogram->prelay->pbofri]->data);
+											glCompressedTexImage2D(GL_TEXTURE_2D, 0, GL_COMPRESSED_RGBA_S3TC_DXT5_EXT, mainprogram->prelay->decresult->width, mainprogram->prelay->decresult->height, 0, mainprogram->prelay->decresult->size, mainprogram->prelay->remfr->data);
 										}
  									}
 									else {
-										glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA8, mainprogram->prelay->decresult->width, mainprogram->prelay->decresult->height, 0, GL_BGRA, GL_UNSIGNED_BYTE, mainprogram->prelay->remfr[mainprogram->prelay->pbofri]->data);
+										glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA8, mainprogram->prelay->decresult->width, mainprogram->prelay->decresult->height, 0, GL_BGRA, GL_UNSIGNED_BYTE, mainprogram->prelay->remfr->data);
 									}
 									draw_box(red, black, 0.52f, 0.5f, 0.4f, 0.4f, this->binelpreviewtex);
 									if (!binel->encoding) {
@@ -1976,14 +1976,14 @@ void BinsMain::handle(bool draw) {
 										glBindTexture(GL_TEXTURE_2D, this->binelpreviewtex);
 										if (mainprogram->prelay->vidformat == 188 || mainprogram->prelay->vidformat == 187) {
 											if (mainprogram->prelay->decresult->compression == 187) {
-												glCompressedTexImage2D(GL_TEXTURE_2D, 0, GL_COMPRESSED_RGBA_S3TC_DXT1_EXT, mainprogram->prelay->decresult->width, mainprogram->prelay->decresult->height, 0, mainprogram->prelay->decresult->size, mainprogram->prelay->remfr[mainprogram->prelay->pbofri]->data);
+												glCompressedTexImage2D(GL_TEXTURE_2D, 0, GL_COMPRESSED_RGBA_S3TC_DXT1_EXT, mainprogram->prelay->decresult->width, mainprogram->prelay->decresult->height, 0, mainprogram->prelay->decresult->size, mainprogram->prelay->remfr->data);
 											}
 											else if (mainprogram->prelay->decresult->compression == 190) {
-												glCompressedTexImage2D(GL_TEXTURE_2D, 0, GL_COMPRESSED_RGBA_S3TC_DXT5_EXT, mainprogram->prelay->decresult->width, mainprogram->prelay->decresult->height, 0, mainprogram->prelay->decresult->size, mainprogram->prelay->remfr[mainprogram->prelay->pbofri]->data);
+												glCompressedTexImage2D(GL_TEXTURE_2D, 0, GL_COMPRESSED_RGBA_S3TC_DXT5_EXT, mainprogram->prelay->decresult->width, mainprogram->prelay->decresult->height, 0, mainprogram->prelay->decresult->size, mainprogram->prelay->remfr->data);
 											}
 										}
 										else {
-											glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA8, mainprogram->prelay->decresult->width, mainprogram->prelay->decresult->height, 0, GL_BGRA, GL_UNSIGNED_BYTE, mainprogram->prelay->remfr[mainprogram->prelay->pbofri]->data);
+											glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA8, mainprogram->prelay->decresult->width, mainprogram->prelay->decresult->height, 0, GL_BGRA, GL_UNSIGNED_BYTE, mainprogram->prelay->remfr->data);
 										}
 										draw_box(red, black, 0.52f, 0.5f, 0.4f, 0.4f, this->binelpreviewtex);
 									}
@@ -2960,7 +2960,8 @@ std::tuple<std::string, std::string> BinsMain::hap_binel(BinElement *binel, BinE
 				SetThreadPriority((void*)hap.native_handle(), THREAD_PRIORITY_LOWEST);
 				#else
 				struct sched_param params;
-				params.sched_priority = sched_get_priority_min(SCHED_FIFO);		pthread_setschedparam(hap.native_handle(), SCHED_FIFO, &params);
+				params.sched_priority = sched_get_priority_min(SCHED_FIFO);
+                pthread_setschedparam(hap.native_handle(), SCHED_FIFO, &params);
 				#endif
 			}
 			hap.detach();

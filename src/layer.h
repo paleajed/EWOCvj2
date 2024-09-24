@@ -48,6 +48,7 @@ class LoopStationElement;
 class BinElement;
 class MidiElement;
 class LoopStation;
+class Thread;
 
 struct frame_result {
     bool newdata = false;
@@ -221,9 +222,8 @@ class Layer {
 		bool newframe = false;
 		bool newtexdata = false;
 		frame_result *decresult;
-		remaining_frames *remfr[3] = {nullptr, nullptr, nullptr};
+		remaining_frames *remfr = nullptr;
 		int changeinit = -1;
-        std::thread decoding;
         std::thread triggering;
 		void get_frame();
 		std::thread audiot;
@@ -242,13 +242,9 @@ class Layer {
 		GLuint vao = -1;
 		GLuint endtex;
         GLuint frb;
-        GLuint pbo[3];
-		GLubyte* mapptr[3] = {0, 0, 0};
-		GLsync syncobj[3] = {nullptr, nullptr, nullptr};
-		char pbodi = 2;
-        char pboui = 1;
-        char pbofri = 0;
-        char memcpypboi = 0;
+        GLuint pbo;
+		GLubyte* mapptr = 00;
+		GLsync syncobj = nullptr;
 		int bpp;
 		bool nonewpbos = false;
 		
@@ -274,7 +270,7 @@ class Layer {
 		AVFormatContext* videoseek = nullptr;
 		const AVInputFormat *ifmt;
 		bool skip = false;
-		AVFrame *rgbframe[3] = {nullptr, nullptr, nullptr};
+		AVFrame *rgbframe = nullptr;
 		AVFrame *decframe = nullptr;
 		AVFrame *audioframe = nullptr;
 		AVPacket *decpkt;
@@ -292,7 +288,7 @@ class Layer {
         int videoseek_stream_idx = -1;
 		int audio_stream_idx = -1;
 		struct SwsContext *sws_ctx = nullptr;
-		char *databuf[3] = {nullptr, nullptr, nullptr};
+		char *databuf = nullptr;
 		bool databufready = false;
 		int vidformat = -1;
         int oldvidformat = -1;

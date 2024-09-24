@@ -371,7 +371,6 @@ Program::Program() {
     // per deck
     this->toscreenA = new Button(false);
     this->toscreenA->toggle = 0;
-    this->buttons[0] = this->toscreenA;
     this->toscreenA->name[0] = "SEND";
     this->toscreenA->name[1] = "SEND";
     this->toscreenA->box->vtxcoords->x1 = -0.3;
@@ -384,7 +383,6 @@ Program::Program() {
 
     this->toscreenB = new Button(false);
     this->toscreenB->toggle = 0;
-    this->buttons[1] = this->toscreenB;
     this->toscreenB->name[0] = "SEND";
     this->toscreenB->name[1] = "SEND";
     this->toscreenB->box->vtxcoords->x1 = 0.15;
@@ -398,7 +396,6 @@ Program::Program() {
     // the mix
     this->toscreenM = new Button(false);
     this->toscreenM->toggle = 0;
-    this->buttons[2] = this->toscreenM;
     this->toscreenM->name[0] = "SEND";
     this->toscreenM->name[1] = "SEND";
     this->toscreenM->box->vtxcoords->x1 = 0.15;
@@ -417,7 +414,6 @@ Program::Program() {
             // for copying to/from scenes
             this->toscene[m][0][i] = new Button(false);
             this->toscene[m][0][i]->toggle = 0;
-            this->buttons[i + 3 + m * 3] = this->toscene[m][0][i];
             this->toscene[m][0][i]->name[0] = "";
             this->toscene[m][0][i]->name[1] = "";
             this->toscene[m][0][i]->box->vtxcoords->x1 = -0.225f + m * (0.3f + 0.075f);
@@ -429,7 +425,6 @@ Program::Program() {
             this->toscene[m][0][i]->box->tooltip = "Leftclick sends/copies the deck" + ab + " stream being previewed to the scene number " + std::to_string(i) + ". ";
             this->toscene[m][1][i] = new Button(false);
             this->toscene[m][1][i]->toggle = 0;
-            this->buttons[i + 6 + m * 3] = this->toscene[m][1][i];
             this->toscene[m][1][i]->name[0] = "";
             this->toscene[m][1][i]->name[1] = "";
             this->toscene[m][1][i]->box->vtxcoords->x1 = -0.3f + m * (0.3f + 0.225f);
@@ -446,7 +441,6 @@ Program::Program() {
     // per deck
     this->backtopreA = new Button(false);
     this->backtopreA->toggle = 0;
-    this->buttons[15] = this->backtopreA;
     this->backtopreA->name[0] = "SEND";
     this->backtopreA->name[1] = "SEND";
     this->backtopreA->box->vtxcoords->x1 = -0.3;
@@ -459,7 +453,6 @@ Program::Program() {
 
     this->backtopreB = new Button(false);
     this->backtopreB->toggle = 0;
-    this->buttons[16] = this->backtopreB;
     this->backtopreB->name[0] = "SEND";
     this->backtopreB->name[1] = "SEND";
     this->backtopreB->box->vtxcoords->x1 = 0.15;
@@ -473,7 +466,6 @@ Program::Program() {
     // the mix
     this->backtopreM = new Button(false);
     this->backtopreM->toggle = 0;
-    this->buttons[17] = this->backtopreM;
     this->backtopreM->name[0] = "SEND";
     this->backtopreM->name[1] = "SEND";
     this->backtopreM->box->vtxcoords->x1 = -0.3;
@@ -487,7 +479,6 @@ Program::Program() {
     // switching between preview and preformance streams
     this->modusbut = new Button(false);
 	this->modusbut->toggle = 1;
-	this->buttons[18] = this->modusbut;
 	this->modusbut->name[0] = "LIVE MODUS";
 	this->modusbut->name[1] = "PREVIEW MODUS";
     this->modusbut->box->lcolor[0] = 0.7f;
@@ -551,7 +542,6 @@ Program::Program() {
 	this->effcat[0] = new Button(false);
     this->effcat[0]->name[0] = "effcat";
 	this->effcat[0]->toggle = 1;
-	this->buttons[19] = this->effcat[0];
 	this->effcat[0]->name[0] = "Layer effects";
 	this->effcat[0]->name[1] = "Stream effects";
     this->effcat[0]->box->lcolor[0] = 0.7;
@@ -570,7 +560,6 @@ Program::Program() {
 	this->effcat[1] = new Button(false);
     this->effcat[1]->name[0] = "effcat";
 	this->effcat[1]->toggle = 1;
-	this->buttons[20] = this->effcat[1];
 	this->effcat[1]->name[0] = "Layer effects";
 	this->effcat[1]->name[1] = "Stream effects";
 	float xoffset = 1.0f + this->layw - 0.019f;
@@ -892,7 +881,6 @@ Program::Program() {
 	this->wormgate1->box->upvtxtoscr();
 	this->wormgate1->box->tooltiptitle = "Screen switching wormgate ";
 	this->wormgate1->box->tooltip = "Connects mixing screen and media bins screen.  Leftclick to switch screen.  Drag content inside white rectangle up to the very edge of the screen to travel to the other screen. ";
-	this->buttons[21] = this->wormgate1;
     // wormgate rectangle to the right
 	this->wormgate2 = new Button(false);
 	this->wormgate2->toggle = 1;
@@ -903,7 +891,6 @@ Program::Program() {
 	this->wormgate2->box->upvtxtoscr();
 	this->wormgate2->box->tooltiptitle = "Screen switching wormgate ";
 	this->wormgate2->box->tooltip = "Connects mixing screen and media bins screen.  Leftclick to switch screen.  Leftclick to switch screen.  Drag content inside white rectangle up to the very edge of the screen to travel to the other screen. ";
-	this->buttons[22] = this->wormgate2;
 }
 
 void Program::make_menu(std::string name, Menu *&menu, std::vector<std::string> &entries) {
@@ -1247,15 +1234,15 @@ GLuint Program::get_tex(Layer *lay) {
             // HAP video in layer
             if (lay->decresult->compression == 187) {
                 glCompressedTexImage2D(GL_TEXTURE_2D, 0, GL_COMPRESSED_RGBA_S3TC_DXT1_EXT, lay->decresult->width,
-                                       lay->decresult->height, 0, lay->decresult->size, lay->remfr[lay->pbofri]->data);
+                                       lay->decresult->height, 0, lay->decresult->size, lay->remfr->data);
             } else if (lay->decresult->compression == 190) {
                 glCompressedTexImage2D(GL_TEXTURE_2D, 0, GL_COMPRESSED_RGBA_S3TC_DXT5_EXT, lay->decresult->width,
-                                       lay->decresult->height, 0, lay->decresult->size, lay->remfr[lay->pbofri]->data);
+                                       lay->decresult->height, 0, lay->decresult->size, lay->remfr->data);
             }
          } else {
             // CPU video in layer
             glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA8, lay->decresult->width, lay->decresult->height, 0, GL_BGRA,
-                         GL_UNSIGNED_BYTE, lay->remfr[lay->pbofri]->data);
+                         GL_UNSIGNED_BYTE, lay->remfr->data);
         }
     }
 
@@ -1397,17 +1384,17 @@ bool Program::order_paths(bool dodeckmix) {
                         glCompressedTexImage2D(GL_TEXTURE_2D, 0, GL_COMPRESSED_RGBA_S3TC_DXT1_EXT,
                                                lay->decresult->width,
                                                lay->decresult->height, 0, lay->decresult->size,
-                                               lay->remfr[lay->pbofri]->data);
+                                               lay->remfr->data);
                     } else if (lay->decresult->compression == 190) {
                         glCompressedTexImage2D(GL_TEXTURE_2D, 0, GL_COMPRESSED_RGBA_S3TC_DXT5_EXT,
                                                lay->decresult->width,
                                                lay->decresult->height, 0, lay->decresult->size,
-                                               lay->remfr[lay->pbofri]->data);
+                                               lay->remfr->data);
                     }
                 } else {
                     glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA8, lay->decresult->width, lay->decresult->height, 0,
                                  GL_BGRA,
-                                 GL_UNSIGNED_BYTE, lay->remfr[lay->pbofri]->data);
+                                 GL_UNSIGNED_BYTE, lay->remfr->data);
                 }
                 GLuint butex = lay->fbotex;
                 lay->fbotex = copy_tex(lay->texture);
@@ -2432,21 +2419,6 @@ Button::Button(bool state) {
     this->value = state;
     this->ccol[3] = 1.0f;
     if (mainprogram) {
-        int max = 0;
-        for (int i = 0; i < mainprogram->buttons.size(); i++) {
-            if (mainprogram->buttons.count(i)) {
-                if (i > max) {
-                    max = i;
-                }
-            }
-        }
-        int freepos = 0;
-        for (int n = 0; n < max + 1; n++) {
-            if (mainprogram->buttons.count(n)) continue;
-            freepos = n;
-            break;
-        }
-        mainprogram->buttons[freepos] = this;
         if (mainprogram->prevmodus) {
             if (lp) {
                 lp->allbuttons.push_back(this);
@@ -2464,11 +2436,6 @@ Button::~Button() {
     delete this->box;
     this->deautomate();
     if (mainprogram) {
-        std::unordered_map<int, Button*> cpmap = mainprogram->buttons;
-        for (auto it = cpmap.begin(); it != cpmap.end(); ++it) {
-            if (it->second == this)
-                mainprogram->buttons.erase(it->first);
-        }
         if (mainprogram->prevmodus) {
             int pos = std::find(lp->allbuttons.begin(), lp->allbuttons.end(), this) - lp->allbuttons.begin();
             if (pos != lp->allbuttons.size()) {
@@ -4185,7 +4152,7 @@ void Program::handle_laymenu1() {
 				ilBindImage(mainmix->mouselayer->boundimage);
 				ilActiveImage((int)mainmix->mouselayer->frame);
 				mainmix->mouselayer->set_aspectratio(ilGetInteger(IL_IMAGE_WIDTH), ilGetInteger(IL_IMAGE_HEIGHT));
-				mainmix->mouselayer->remfr[mainmix->mouselayer->pbodi]->newdata = true;
+				mainmix->mouselayer->remfr->newdata = true;
 			}
 			else {
 				mainmix->mouselayer->set_aspectratio(mainmix->mouselayer->video_dec_ctx->width, mainmix->mouselayer->video_dec_ctx->height);
@@ -4936,18 +4903,18 @@ void Program::handle_lpstmenu() {
 void Program::preview_modus_buttons() {
 	// Draw and handle buttons
     for (Layer *lay : mainmix->layers[0]) {
-        if (lay->changeinit < 4 && lay->filename != "" && !lay->isclone) return;
+        if (lay->changeinit == -1 && lay->filename != "" && !lay->isclone) return;
     }
     for (Layer *lay : mainmix->layers[1]) {
-        if (lay->changeinit < 4 && lay->filename != "" && !lay->isclone) return;
+        if (lay->changeinit == -1 && lay->filename != "" && !lay->isclone) return;
     }
     for (Layer *lay : mainmix->layers[2]) {
-        if (lay->changeinit < 4 && lay->filename != "" && !lay->isclone) {
+        if (lay->changeinit == -1 && lay->filename != "" && !lay->isclone) {
             return;
         }
     }
     for (Layer *lay : mainmix->layers[3]) {
-        if (lay->changeinit < 4 && lay->filename != "" && !lay->isclone) return;
+        if (lay->changeinit == -1 && lay->filename != "" && !lay->isclone) return;
     }
 	if (mainprogram->prevmodus) {
         mainprogram->handle_button(mainprogram->toscreenA);
@@ -5745,7 +5712,7 @@ void Program::longtooltip_prepare(Boxx *box) {
     for (int i = 0; i < texts.size(); i++) {
         render_text(texts[i], white, x, y, 0.00045f * fac, 0.00075f * fac, box->smflag, 0);
     }
-
+    return;
 }
 
 void Program::tooltips_handle(int win) {
@@ -5769,7 +5736,7 @@ void Program::tooltips_handle(int win) {
 			}
 			float x = mainprogram->tooltipbox->vtxcoords->x1 + mainprogram->tooltipbox->vtxcoords->w + 0.015f;
 			float y = mainprogram->tooltipbox->vtxcoords->y1 - 0.015f * glob->w / glob->h - 0.015f;
-			float textw = 0.5f * sqrt(fac);
+			float textw = 0.375f * sqrt(fac);
 			float texth = 0.092754f * sqrt(fac);
 			if ((x + textw) > 1.0f) x = x - textw - 0.03f - mainprogram->tooltipbox->vtxcoords->w;
 			if ((y - texth * (texts.size() + 1) - 0.015f) < -1.0f) y = -1.0f + texth * (texts.size() + 1) - 0.015f;
@@ -5785,7 +5752,7 @@ void Program::tooltips_handle(int win) {
 		else {
 			float x = mainprogram->tooltipbox->vtxcoords->x1 + mainprogram->tooltipbox->vtxcoords->w + 0.015f;  //first print offscreen
 			float y = mainprogram->tooltipbox->vtxcoords->y1 - 0.015f * glob->w / glob->h - 0.015f;
-			float textw = 0.25f * sqrt(fac);
+			float textw = 0.15f * sqrt(fac);
 			draw_box(black, black, x, y - 0.092754f, textw, 0.092754f + 0.015f, -1);
 			render_text(mainprogram->tooltipbox->tooltiptitle, orange, x + 0.0225f * sqrt(fac), y - 0.092754f + 0.045f * sqrt(fac), 0.00045f * fac, 0.00075f * fac, win, 0);
 		}
@@ -9212,7 +9179,7 @@ void Program::concat_files(std::string ofpath, std::string path, std::vector<std
     mainprogram->concatting++;
 
     int time = 2000;
-    if (mainprogram->copytocomp || mainprogram->undoing) {
+    if (mainprogram->copytocomp || mainprogram->undoing || mainprogram->clipsaving) {
         time = 0;
     }
     if (count == 0) {
@@ -9291,7 +9258,6 @@ void Program::concat_files(std::string ofpath, std::string path, std::vector<std
     if (mainprogram->concatting == 0) {
         mainprogram->numconcatted = 0;
     }
-
 }
 
 

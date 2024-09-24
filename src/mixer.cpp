@@ -92,7 +92,6 @@ Mixer::Mixer() {
             this->scenes[j].push_back(scene);
             Boxx* box = new Boxx;
             Button* button = new Button(false);
-            mainprogram->buttons[23 + i + j * 4] = button;
             button->toggle = 0;
             scene->box = box;
             scene->button = button;
@@ -2028,7 +2027,7 @@ Effect* Layer::do_add_effect(EFFECT_TYPE type, int pos, bool comp) {
 		fflush(stdout);
 		//mainprogram->st->add_method(path, "f", osc_param, effect->params[i]);
 	}*/
-	
+
 	return effect;
 }
 Effect* Layer::add_effect(EFFECT_TYPE type, int pos) {
@@ -2055,29 +2054,29 @@ Effect* Layer::add_effect(EFFECT_TYPE type, int pos) {
     }*/
 
     return eff;
-}		
+}
 
 Effect* Layer::replace_effect(EFFECT_TYPE type, int pos) {
 	Effect *effect;
 
 	this->delete_effect(pos);
 	effect = this->add_effect(type, pos);
-	
+
 	return effect;
 }
 
 void do_delete_effect(Layer *lay, int pos) {
-	
+
 	std::vector<Effect*> &evec = lay->choose_effects();
 	bool cat = mainprogram->effcat[lay->deck]->value;
 	Effect *effect = evec[pos];
-	
+
 	for(int i = pos; i < evec.size(); i++) {
 		Effect *eff = evec[i];
 		eff->node->alignpos -= 1;
 	}
 	lay->node->aligned -= 1;
-	
+
 	for (int i = 0; i < mainprogram->nodesmain->currpage->nodes.size(); i++) {
 		if (evec[pos]->node == mainprogram->nodesmain->currpage->nodes[i]) {
 			mainprogram->nodesmain->currpage->nodes.erase(mainprogram->nodesmain->currpage->nodes.begin() + i);
@@ -2097,7 +2096,7 @@ void do_delete_effect(Layer *lay, int pos) {
 					mainprogram->nodesmain->currpage->connect_nodes(lay->lasteffnode[0], lay->lasteffnode[1]->out[0]);
 					lay->lasteffnode[1] = lay->lasteffnode[0];
 				}
-				else {	
+				else {
 					lay->blendnode->out.clear();
 					mainprogram->nodesmain->currpage->connect_nodes(lay->blendnode, lay->lasteffnode[1]->out[0]);
 					lay->lasteffnode[1] = lay->blendnode;
@@ -2137,8 +2136,8 @@ void do_delete_effect(Layer *lay, int pos) {
 				}
 			}
 		}
-	}	
-	
+	}
+
 	lay->node->page->delete_node(evec[pos]->node);
 	lay->node->upeffboxes();
 
@@ -2150,14 +2149,14 @@ void do_delete_effect(Layer *lay, int pos) {
 
 	evec.erase(evec.begin() + pos);
 	delete effect;
-	
+
 	make_layboxes();
 }
 
 void Layer::delete_effect(int pos) {
 	do_delete_effect(this, pos);
 	if (this->type == ELEM_FILE) this->type = ELEM_LAYER;
-}		
+}
 
 
 
@@ -2183,9 +2182,9 @@ Layer* Mixer::add_layer(std::vector<Layer*> &layers, int pos) {
 	else {
 		layer->genmidibut->value = this->genmidi[1]->value;
 	}
-	
+
 	Layer *testlay = nullptr;
-	
+
 	layer->pos = pos;
 
 	layers.insert(layers.begin() + pos, layer);
@@ -2235,7 +2234,7 @@ Layer* Mixer::add_layer(std::vector<Layer*> &layers, int pos) {
 			mainprogram->nodesmain->currpage->connect_nodes(layer->node, nextlay->lasteffnode[0], bnode);
 		}
 	}
-	
+
 	if (layer->blendnode->in) {
 		if (layer->blendnode->in->type == BLEND) {
 			layer->blendnode->box->scrcoords->x1 = layer->blendnode->in->box->scrcoords->x1 + 192;
@@ -2247,10 +2246,10 @@ Layer* Mixer::add_layer(std::vector<Layer*> &layers, int pos) {
 		}
 	}
 	layer->blendnode->box->upscrtovtx();
-	
+
 	if (pos == 0) layer->lasteffnode[1] = layer->lasteffnode[0];
 	else layer->lasteffnode[1] = layer->blendnode;
-	
+
 	make_layboxes();
 
 	return layer;
@@ -2522,7 +2521,7 @@ Layer::Layer(bool comp) {
     this->colorbox->acolor[3] = 1.0f;
     this->colorbox->tooltiptitle = "Set colorkey color ";
     this->colorbox->tooltip = "Leftclick to set colorkey color.  Either use colorwheel or leftclick anywhere on screen.  Hovering mouse shows color that will be selected. ";
-    
+
     this->shiftx = new Param;
     this->shiftx->name = "shiftx";
     this->shiftx->sliding = true;
@@ -2572,7 +2571,7 @@ Layer::Layer(bool comp) {
     this->chtol->box->tooltiptitle = "Set key tolerance ";
     this->chtol->box->tooltip = "Leftdrag to set tolerance (\"spread\") around key color/hue/grayscale.  Doubleclicking allows numeric entry. ";
 	this->speed = new Param;
-	this->speed->name = "Speed"; 
+	this->speed->name = "Speed";
 	this->speed->value = 1.0f;
 	this->speed->deflt = 1.0f;
 	this->speed->range[0] = 0.0f;
@@ -2587,7 +2586,7 @@ Layer::Layer(bool comp) {
     this->speed->box->tooltiptitle = "Set layer speed ";
 	this->speed->box->tooltip = "Leftdrag sets current layer video playing speed factor. Doubleclicking allows numeric entry. ";
 	this->opacity = new Param;
-	this->opacity->name = "Opacity"; 
+	this->opacity->name = "Opacity";
 	this->opacity->value = 1.0f;
 	this->opacity->deflt = 1.0f;
 	this->opacity->range[0] = 0.0f;
@@ -2601,7 +2600,7 @@ Layer::Layer(bool comp) {
     this->opacity->box->tooltiptitle = "Set layer opacity ";
 	this->opacity->box->tooltip = "Leftdrag sets current layer opacity. Doubleclicking allows numeric entry. ";
 	this->volume = new Param;
-	this->volume->name = "Volume"; 
+	this->volume->name = "Volume";
 	this->volume->value = 0.0f;
 	this->volume->deflt = 0.0f;
 	this->volume->range[0] = 0.0f;
@@ -2731,16 +2730,25 @@ Layer::Layer(bool comp) {
     glDeleteBuffers(1, &tbuf);
 
     this->decresult = new frame_result;
-    this->remfr[0] = new remaining_frames;
-    this->remfr[1] = new remaining_frames;
-    this->remfr[2] = new remaining_frames;
+    this->remfr = new remaining_frames;
+    this->remfr = new remaining_frames;
+    this->remfr = new remaining_frames;
 
     this->currcliptexpath = find_unused_filename("currcliptex", mainprogram->temppath, ".jpg");
 
-    this->triggering = std::thread{ &Layer::trigger, this };
-    this->triggering.detach();
-    this->decoding = std::thread{ &Layer::get_frame, this };
-    this->decoding.detach();
+    //this->triggering = std::thread(&Layer::trigger, this);
+    //this->triggering.detach();
+#ifdef POSIX
+    std::thread decoding{ &Layer::get_frame, this };
+    decoding.detach();
+    /*Thread decoding(40, SCHED_FIFO);
+    decoding.Start(this);
+    decoding.Detach();*/
+#endif
+#ifdef WINDOWS
+    std::thread decoding{ &Layer::get_frame, this };
+    decoding.detach();
+#endif
 
     this->lpst = new LoopStation;
 }
@@ -2793,22 +2801,18 @@ Layer::~Layer() {
 	if (this->fbo != -1) glDeleteFramebuffers(1, &(this->fbo));
 	if (this->vao != -1) glDeleteVertexArrays(1, &(this->vao));
     if (this->filename != "") {
-        if ((this->type == ELEM_FILE || this->type == ELEM_LAYER)&& this->remfr[0]->data) {
+        if ((this->type == ELEM_FILE || this->type == ELEM_LAYER)&& this->remfr->data) {
             if ((this->vidformat == 188 || this->vidformat == 187)) {
                 // free HAP databuf
                 //databufmutex.lock();
-                delete this->databuf[0];
-                delete this->databuf[1];
-                delete this->databuf[2];
-                this->databuf[0] = nullptr;
-                this->databuf[1] = nullptr;
-                this->databuf[2] = nullptr;
+                delete this->databuf;
+                this->databuf = nullptr;
                 //databufmutex.unlock();
             } else {
                 //free this->rgbframe
-                av_freep(&this->remfr[0]->data);
-                av_freep(&this->remfr[1]->data);
-                av_freep(&this->remfr[2]->data);
+                av_freep(&this->remfr->data);
+                av_freep(&this->remfr->data);
+                av_freep(&this->remfr->data);
             }
         }
     }
@@ -2816,22 +2820,14 @@ Layer::~Layer() {
         // dont delete when pbos are copied over
         glDeleteTextures(1, &this->texture);
         if (!this->dummy) {
-            WaitBuffer(this->syncobj[this->pbofri]);
-            glDeleteSync(this->syncobj[this->pbofri]);
-            //glUnmapBuffer(this->pbo[0]);
-            //glUnmapBuffer(this->pbo[1]);
-            //glUnmapBuffer(this->pbo[2]);
-            //free(this->mapptr[0]);
-            //free(this->mapptr[1]);
-            //free(this->mapptr[2]);
-            glDeleteBuffers(3, this->pbo);
+            WaitBuffer(this->syncobj);
+            glDeleteSync(this->syncobj);
+            glDeleteBuffers(3, &this->pbo);
         }
-        delete this->remfr[0];
-        delete this->remfr[1];
-        delete this->remfr[2];
-        av_frame_free(&this->rgbframe[0]);
-        av_frame_free(&this->rgbframe[1]);
-        av_frame_free(&this->rgbframe[2]);
+        delete this->remfr;
+        delete this->remfr;
+        delete this->remfr;
+        av_frame_free(&this->rgbframe);
         av_frame_free(&this->decframe);
     }  // reminder
 
@@ -2866,7 +2862,7 @@ Layer* Layer::next() {
 		 if (this->pos < mainmix->layers[3].size() - 1) return mainmix->layers[3][this->pos + 1];
 	}
 	return this;
-}	
+}
 
 Layer* Layer::prev() {
 	if (this->pos > 0) {
@@ -2916,27 +2912,21 @@ void Layer::initialize(int w, int h, int compression) {
 	if (!this->nonewpbos) {
         // map three buffers persistently for pixel transfer from cpu to gpu
         // using double PBOs for DMA pixel transfer
-        if (this->initialized) glDeleteBuffers(3, this->pbo);
-        glGenBuffers(3, this->pbo);
+        if (this->initialized) glDeleteBuffers(3, &this->pbo);
+        glGenBuffers(1, &this->pbo);
         int bsize = w * h * this->bpp;
         int flags = GL_MAP_WRITE_BIT | GL_MAP_PERSISTENT_BIT | GL_MAP_COHERENT_BIT;
-        glBindBuffer(GL_ARRAY_BUFFER, this->pbo[0]);
+        glBindBuffer(GL_ARRAY_BUFFER, this->pbo);
         if (this->initialized) glUnmapBuffer(GL_ARRAY_BUFFER);
         glBufferStorage(GL_ARRAY_BUFFER, bsize, 0, flags);
-        this->mapptr[0] = (GLubyte *) glMapBufferRange(GL_ARRAY_BUFFER, 0, bsize, flags);
-        glBindBuffer(GL_ARRAY_BUFFER, this->pbo[1]);
-        if (this->initialized) glUnmapBuffer(GL_ARRAY_BUFFER);
-        glBufferStorage(GL_ARRAY_BUFFER, bsize, 0, flags);
-        this->mapptr[1] = (GLubyte *) glMapBufferRange(GL_ARRAY_BUFFER, 0, bsize, flags);
-        glBindBuffer(GL_ARRAY_BUFFER, this->pbo[2]);
-        if (this->initialized) glUnmapBuffer(GL_ARRAY_BUFFER);
-        glBufferStorage(GL_ARRAY_BUFFER, bsize, 0, flags);
-        this->mapptr[2] = (GLubyte *) glMapBufferRange(GL_ARRAY_BUFFER, 0, bsize, flags);
+        this->mapptr = (GLubyte *) glMapBufferRange(GL_ARRAY_BUFFER, 0, bsize, flags);
         glBindBuffer(GL_ARRAY_BUFFER, 0);
     }
     else this->nonewpbos = false;
 
-    if (!this->initdeck) this->changeinit = -1;
+    if (!this->initdeck) {
+        this->changeinit = -1;
+    }
     this->oldvidformat = this->vidformat;
 	this->oldcompression = compression;
 	this->oldtype = this->type;
@@ -2988,7 +2978,7 @@ void Layer::set_aspectratio(int lw, int lh) {
 	}*/
 
 	if (this->type == ELEM_IMAGE || this->type == ELEM_LIVE) {
-		if (this->numf == 0) this->remfr[this->pbodi]->newdata = true;
+		if (this->numf == 0) this->remfr->newdata = true;
 	}
 }
 
@@ -3821,8 +3811,8 @@ static int decode_packet(Layer *lay, bool show)
 					lay->decframe->linesize,
 					0,
 					lay->video_dec_ctx->height,
-					lay->rgbframe[lay->pbofri]->data,
-					lay->rgbframe[lay->pbofri]->linesize
+					lay->rgbframe->data,
+					lay->rgbframe->linesize
 				);
 				if (h < 1) {
 				    return 0;
@@ -3830,17 +3820,17 @@ static int decode_packet(Layer *lay, bool show)
 				std::mutex datalock;
 				datalock.lock();
 				lay->decresult->hap = false;
-                lay->remfr[lay->pbofri]->data = (char*)*(lay->rgbframe[lay->pbofri]->extended_data);
+                lay->remfr->data = (char*)*(lay->rgbframe->extended_data);
  				lay->decresult->height = lay->video_dec_ctx->height;
 				lay->decresult->width = lay->video_dec_ctx->width;
 				lay->decresult->size = lay->decresult->width * lay->decresult->height * 4;
-				lay->remfr[lay->pbofri]->newdata = true;
+				lay->remfr->newdata = true;
 				if (lay->clonesetnr != -1) {
 					std::unordered_set<Layer*>::iterator it;
 					for (it = mainmix->clonesets[lay->clonesetnr]->begin(); it != mainmix->clonesets[lay->clonesetnr]->end(); it++) {
 						Layer* clay = *it;
 						if (clay == lay) continue;
-						clay->remfr[lay->pbofri]->newdata = true;
+						clay->remfr->newdata = true;
 					}
 				}
 				datalock.unlock();
@@ -4113,16 +4103,14 @@ bool Layer::get_hap_frame() {
 
 
     databufmutex.lock();
-    if (!this->databuf[0]) {
+    if (!this->databuf) {
         //	this->decresult->width = 0;
-        for (int k = 0; k < 3; k++) {
-            this->databuf[k] = new char[this->video_dec_ctx->width * this->video_dec_ctx->height * 4];
-            if (this->databuf[k] == nullptr) {
-                return false;
-            }
+        this->databuf = new char[this->video_dec_ctx->width * this->video_dec_ctx->height * 4];
+        if (this->databuf == nullptr) {
+            return false;
         }
-        this->databufready = true;
     }
+    this->databufready = true;
     databufmutex.unlock();
 
     long long seekTarget = av_rescale(this->video_stream->duration, this->frame, this->numf) + this->first_dts;
@@ -4150,7 +4138,7 @@ bool Layer::get_hap_frame() {
     int st = -1;
     databufmutex.lock();
     if (this->databufready) {
-        st = snappy_uncompress(bptrData + headerl, size - headerl, this->databuf[this->pbofri], &uncomp);
+        st = snappy_uncompress(bptrData + headerl, size - headerl, this->databuf, &uncomp);
     }
     databufmutex.unlock();
     av_packet_unref(this->decpkt);
@@ -4165,15 +4153,15 @@ bool Layer::get_hap_frame() {
         this->decresult->size = uncomp;
         this->decresult->hap = true;
         databufmutex.lock();
-        this->remfr[this->pbofri]->data = this->databuf[this->pbofri];
+        this->remfr->data = this->databuf;
         databufmutex.unlock();
-        this->remfr[this->pbofri]->newdata = true;
+        this->remfr->newdata = true;
         if (this->clonesetnr != -1) {
             std::unordered_set<Layer*>::iterator it;
             for (it = mainmix->clonesets[this->clonesetnr]->begin(); it != mainmix->clonesets[this->clonesetnr]->end(); it++) {
                 Layer* clay = *it;
                 if (clay == this) continue;
-                clay->remfr[clay->pbofri]->newdata = true;
+                clay->remfr->newdata = true;
             }
         }
     }
@@ -4227,6 +4215,7 @@ void Layer::get_frame(){
             else {
                 this->opened = true;
             }
+            this->endopenvar.notify_all();
             continue;
         }
         if (!this->liveinput) {
@@ -4235,7 +4224,7 @@ void Layer::get_frame(){
             }
             if (this->vidformat != 188 && this->vidformat != 187) {
                 if (this->video) {
-                    if ((int)(this->frame) != this->prevframe || this->type == ELEM_LIVE || this->changeinit < 4) {
+                    if ((int)(this->frame) != this->prevframe || this->type == ELEM_LIVE || this->changeinit == -1) {
                         get_cpu_frame((int)this->frame, this->prevframe, 0);
                     }
                     else {
@@ -4245,13 +4234,14 @@ void Layer::get_frame(){
                 this->processed = true;
                 continue;
             }
-            if ((int)(this->frame) != this->prevframe || this->changeinit < 4) {
+            if ((int)(this->frame) != this->prevframe || this->changeinit == -1) {
                 bool ret = this->get_hap_frame();
                 if (!ret) {
                     //this->get_hap_frame();
                 }
             }
         }
+        this->enddecodevar.notify_all();
         this->processed = true;
         continue;
     }
@@ -4495,7 +4485,7 @@ void Mixer::vidbox_handle() {
                         }
                     }
                     if (lay->type == ELEM_IMAGE || lay->type == ELEM_LIVE) {
-                        lay->remfr[lay->pbodi]->newdata = true;
+                        lay->remfr->newdata = true;
                     }
                 }
             }
@@ -4539,7 +4529,7 @@ void Mixer::vidbox_handle() {
                     mainprogram->transforming = false;
                 }
                 if (lay->type == ELEM_IMAGE || lay->type == ELEM_LIVE) {
-                    lay->remfr[lay->pbodi]->newdata = true;
+                    lay->remfr->newdata = true;
                 }
             }
         }
@@ -5715,8 +5705,8 @@ void Layer::display() {
             draw_box(white, white, this->stopbut->box->vtxcoords->x1 + 0.0117f,
                                    this->stopbut->box->vtxcoords->y1 + 0.0624f - 0.045f, 0.0165f,
                                    0.0312f, -1);
-            
-            
+
+
             if (this->lpbut->box->in()) {
                 this->lpbut->box->acolor[0] = 0.5;
                 this->lpbut->box->acolor[1] = 0.5;
@@ -6408,7 +6398,6 @@ void ShelfElement::set_nbclayers(Layer *lay) {
         layelem->parposns.clear();
         layelem->buteffcatposns.clear();
         layelem->buteffposns.clear();
-        layelem->butposns.clear();
         layelem->compareelems.clear();
         for (int n = 0; n < 2; n++) {
             for (int i = 0; i < lay->effects[n].size(); i++) {
@@ -6436,29 +6425,23 @@ void ShelfElement::set_nbclayers(Layer *lay) {
                 }
             }
         }
-        layelem->butposns.clear();
-        for (auto it = mainprogram->buttons.begin(); it != mainprogram->buttons.end(); ++it) {
-            Button *but = it->second;
-            if (std::find(elem->buttons.begin(), elem->buttons.end(), but) != elem->buttons.end()) {
-                layelem->starttime = elem->starttime;
-                layelem->interimtime = elem->interimtime;
-                layelem->totaltime = elem->totaltime;
-                layelem->speedadaptedtime = elem->speedadaptedtime;
-                layelem->eventlist = elem->eventlist;
-                layelem->eventpos = elem->eventpos;
-                layelem->atend = elem->atend;
-                layelem->buteffcatposns.push_back(-1);
-                layelem->buteffposns.push_back(-1);
-                for (int n = 0; n < 2; n++) {
-                    for (int k = 0; k < lay->effects[n].size(); k++) {
-                        if (but == lay->effects[n][k]->onoffbutton) {
-                            layelem->buteffcatposns.push_back(n);
-                            layelem->buteffposns.push_back(k);
-                        }
+        for (Button *but : lpst->allbuttons) {
+            layelem->starttime = elem->starttime;
+            layelem->interimtime = elem->interimtime;
+            layelem->totaltime = elem->totaltime;
+            layelem->speedadaptedtime = elem->speedadaptedtime;
+            layelem->eventlist = elem->eventlist;
+            layelem->eventpos = elem->eventpos;
+            layelem->atend = elem->atend;
+            layelem->buteffcatposns.push_back(-1);
+            layelem->buteffposns.push_back(-1);
+            for (int n = 0; n < 2; n++) {
+                for (int k = 0; k < lay->effects[n].size(); k++) {
+                    if (but == lay->effects[n][k]->onoffbutton) {
+                        layelem->buteffcatposns.push_back(n);
+                        layelem->buteffposns.push_back(k);
                     }
                 }
-                layelem->butposns.push_back(but->butid);
-                //layelem->compareelems.push_back(layelem->pos);
             }
         }
     }
@@ -6671,7 +6654,7 @@ void Mixer::copy_lpst(Layer *destlay, Layer *srclay, bool global, bool back) {
     else {
         lpst = destlay->lpst;
     }
-    
+
     if (back) {
         if (mainprogram->prevmodus) {
             lpst2 = lp;
@@ -6682,7 +6665,7 @@ void Mixer::copy_lpst(Layer *destlay, Layer *srclay, bool global, bool back) {
     else {
         lpst2 = srclay->lpst;
     }
-    
+
     //int count = 0;
     for (int i = 0; i < lpst2->elems.size(); i++) {
         LoopStationElement *layelem = lpst2->elems[i];
@@ -7266,15 +7249,9 @@ void Mixer::copy_pbos(Layer *clay, Layer *lay) {
     if (clay == lay) return;
     if (lay->filename == "") return;
     clay->nonewpbos = true;
-    clay->pbo[0] = lay->pbo[0];
-    clay->pbo[1] = lay->pbo[1];
-    clay->pbo[2] = lay->pbo[2];
-    clay->mapptr[0] = lay->mapptr[0];
-    clay->mapptr[1] = lay->mapptr[1];
-    clay->mapptr[2] = lay->mapptr[2];
-    clay->remfr[0] = lay->remfr[0];
-    clay->remfr[1] = lay->remfr[1];
-    clay->remfr[2] = lay->remfr[2];
+    clay->pbo = lay->pbo;
+    clay->mapptr = lay->mapptr;
+    clay->remfr = lay->remfr;
     // reminder : other endopenvars remove if lay->opened
     if (clay->vidopen) {
         std::unique_lock<std::mutex> olock(clay->endopenlock);
@@ -7284,10 +7261,10 @@ void Mixer::copy_pbos(Layer *clay, Layer *lay) {
     }
 
     if (clay->type != ELEM_IMAGE) {
-        if (clay->remfr[lay->pbofri]->width != clay->video_dec_ctx->width ||
-            clay->remfr[lay->pbofri]->height != clay->video_dec_ctx->height ||
-            clay->remfr[lay->pbofri]->bpp != clay->bpp) {
-            clay->changeinit = 3;
+        if (clay->remfr->width != clay->video_dec_ctx->width ||
+            clay->remfr->height != clay->video_dec_ctx->height ||
+            clay->remfr->bpp != clay->bpp) {
+            clay->changeinit = 0;
             clay->initialized = true;
         } else clay->initialized = true;
     }
@@ -7296,22 +7273,11 @@ void Mixer::copy_pbos(Layer *clay, Layer *lay) {
     }
     clay->started = lay->started;
     clay->started2 = lay->started2;
-    /*clay->databuf[0] = nullptr;
-    clay->databuf[1] = nullptr;
-    clay->databuf[2] = nullptr;*/
     clay->databufready = lay->databufready;
-    clay->rgbframe[0] = lay->rgbframe[0];
-    clay->rgbframe[1] = lay->rgbframe[1];
-    clay->rgbframe[2] = lay->rgbframe[2];
-    clay->syncobj[0] = lay->syncobj[0];
-    clay->syncobj[1] = lay->syncobj[1];
-    clay->syncobj[2] = lay->syncobj[2];
-    clay->pbodi = lay->pbodi;
-    clay->pboui = lay->pboui;
-    clay->pbofri = lay->pbofri;
+    clay->rgbframe = lay->rgbframe;
+    clay->syncobj = lay->syncobj;
 
     clay->texture = lay->texture;    // for open_layerfile
-    //clay->changeinit = 3;  // toggle start of 3 frame prerun in old resolution with already loaded mapptrs
 
     lay->nopbodel = true;  // so they dont get deleted
 }
@@ -8132,6 +8098,10 @@ void Mixer::save_state(std::string path, bool autosave, bool undo) {
             this->scenenum = k;
             this->save_deck(mainprogram->temppath + "tempdeck_xch" + "_" + std::to_string(m) + std::to_string(k) + ".deck", false, true, false, false, false);
             this->scenenum = -1;
+            /*std::vector<Layer *> &lvec = choose_layers(this->deck);
+            for (int j = 0; j < lvec.size(); j++) {
+                lvec[j]->closethread = 1;
+            }*/
             filestoadd.push_back(mainprogram->temppath + "tempdeck_xch" + "_" + std::to_string(m) + std::to_string(k) + ".deck");
         }
         this->scenes[m][bucurr]->switch_to(false);
@@ -8643,7 +8613,7 @@ void Mixer::save_mix(const std::string path, bool modus, bool save, bool undo) {
 
 	wfile << "ENDOFFILE\n";
 	wfile.close();
-	
+
 	std::vector<MixNode*> mns = mainprogram->nodesmain->mixnodes[1];
 	if (modus) mns = mainprogram->nodesmain->mixnodes[0];
 	if (save && ((MixNode*)(mns[2]))->mixtex != -1) {
@@ -8671,7 +8641,7 @@ void Mixer::save_mix(const std::string path, bool modus, bool save, bool undo) {
 			// DECK
 
 void Mixer::open_deck(const std::string path, bool alive, bool loadevents, int copycomp) {
-		
+
 	std::string result = deconcat_files(path);
 	if (mainprogram->openerr) {
         return;
@@ -9110,9 +9080,9 @@ Layer* Layer::open_video(float frame, const std::string filename, int reset, boo
     this->reset = reset;
     this->skip = false;
     this->ifmt = nullptr;
-    this->remfr[0]->newdata = false;
-    this->remfr[1]->newdata = false;
-    this->remfr[2]->newdata = false;
+    this->remfr->newdata = false;
+    this->remfr->newdata = false;
+    this->remfr->newdata = false;
     this->decresult->width = 0;
     this->decresult->compression = 0;
     if (mainprogram->autoplay && this->revbut->value == 0 && this->bouncebut->value == 0) {
@@ -9156,7 +9126,7 @@ bool Layer::thread_vidopen() {
     if (this->ifmt) {
         this->type = ELEM_LIVE;
     }
-    int r = avformat_open_input(&(this->video), this->filename.c_str(), this->ifmt, nullptr);
+    int r = avformat_open_input(&(this->video), this->filename.c_str(), (AVInputFormat*)this->ifmt, nullptr);
     printf("loading... %s\n", this->filename.c_str());
     if (r < 0) {
         this->filename = "";
@@ -9231,14 +9201,10 @@ bool Layer::thread_vidopen() {
 
             std::mutex flock;
             flock.lock();
-            if (this->databuf[0]) {
-                delete this->databuf[0];
-                delete this->databuf[1];
-                delete this->databuf[2];
+            if (this->databuf) {
+                delete this->databuf;
             }
-            this->databuf[0] = nullptr;
-            this->databuf[1] = nullptr;
-            this->databuf[2] = nullptr;
+            this->databuf = nullptr;
             flock.unlock();
 
             return true;
@@ -9246,7 +9212,7 @@ bool Layer::thread_vidopen() {
         else if (this->type != ELEM_LIVE) {
             this->videoseek = avformat_alloc_context();
             this->videoseek->flags |= AVFMT_FLAG_NONBLOCK;
-            avformat_open_input(&(this->videoseek), this->filename.c_str(), this->ifmt, nullptr);
+            avformat_open_input(&(this->videoseek), this->filename.c_str(), (AVInputFormat*)this->ifmt, nullptr);
             avformat_find_stream_info(this->videoseek, nullptr);
             if (find_stream_index(&(this->videoseek_stream_idx), this->videoseek, AVMEDIA_TYPE_VIDEO) >= 0) {
                 this->videoseek_stream = this->videoseek->streams[this->videoseek_stream_idx];
@@ -9267,13 +9233,11 @@ bool Layer::thread_vidopen() {
         return 0;
     }
 
-    for (int k = 0; k < 3; k++) {
-        if (this->rgbframe[k]) {
-            //avcodec_close(this->video_dec_ctx);
-            //avcodec_close(this->audio_dec_ctx);
-            av_freep(&this->rgbframe[k]->data[0]);
-            av_frame_free(&this->rgbframe[k]);
-        }
+    if (this->rgbframe) {
+        //avcodec_close(this->video_dec_ctx);
+        //avcodec_close(this->audio_dec_ctx);
+        av_freep(&this->rgbframe->data[0]);
+        av_frame_free(&this->rgbframe);
     }
     if (this->decframe) {
         //avcodec_close(this->video_dec_ctx);
@@ -9345,18 +9309,16 @@ bool Layer::thread_vidopen() {
         this->audiot.detach();
     }*/
 
-    for (int k = 0; k < 3; k++) {
-        this->rgbframe[k] = av_frame_alloc();
-        this->rgbframe[k]->format = AV_PIX_FMT_BGRA;
-        this->rgbframe[k]->width = this->video_dec_ctx->width;
-        this->rgbframe[k]->height = this->video_dec_ctx->height;
-        int storage = av_image_alloc(this->rgbframe[k]->data, this->rgbframe[k]->linesize, this->rgbframe[k]->width,
-                                     this->rgbframe[k]->height, AV_PIX_FMT_BGRA, 32);
-        if (storage < 0) {
-            // reminder
-            mainprogram->openerr = true;
-            return 0;
-        }
+    this->rgbframe = av_frame_alloc();
+    this->rgbframe->format = AV_PIX_FMT_BGRA;
+    this->rgbframe->width = this->video_dec_ctx->width;
+    this->rgbframe->height = this->video_dec_ctx->height;
+    int storage = av_image_alloc(this->rgbframe->data, this->rgbframe->linesize, this->rgbframe->width,
+                                 this->rgbframe->height, AV_PIX_FMT_BGRA, 32);
+    if (storage < 0) {
+        // reminder
+        mainprogram->openerr = true;
+        return 0;
     }
 
     this->sws_ctx = sws_getContext
@@ -9808,7 +9770,7 @@ bool Layer::progress(bool comp, bool alive, bool doclips) {
             }
             if ((int)(this->frame) != this->prevframe && this->type == ELEM_IMAGE && this->numf > 0) {
                 // set animated gif to update now
-                this->remfr[this->pbofri]->newdata = true;
+                this->remfr->newdata = true;
             }
             this->scratch = 0;
             bool found = false;
@@ -9927,10 +9889,10 @@ void Layer::load_frame() {
             }
         }
         if (found || mainmix->firstlayers.count(this->clonesetnr) == 0) {
-            if (!this->remfr[this->pbofri]->newdata) {
+            if (!this->remfr->newdata) {
                 // promote first layer found in layer stack with this clonesetnr to element of firstlayers
                 this->ready = true;
-                if ((int) (this->frame) != this->prevframe || this->changeinit < 4) {
+                if ((int) (this->frame) != this->prevframe || this->changeinit == -1) {
                     this->startdecode.notify_all();
                 }
                 if (this->clonesetnr != -1) {
@@ -9958,10 +9920,26 @@ void Layer::load_frame() {
         bool dummy = false;
     }
 
+    int w, h;
+    if (srclay->type == ELEM_IMAGE) {
+        w = ilGetInteger(IL_IMAGE_WIDTH);
+        h = ilGetInteger(IL_IMAGE_HEIGHT);
+    } else if (srclay->video_dec_ctx) {
+        w = srclay->video_dec_ctx->width;
+        h = srclay->video_dec_ctx->height;
+    }
+    else return;
+    if (srclay->remfr->width != w || srclay->remfr->height != h || srclay->remfr->bpp != srclay->bpp) {
+        // video (size) changed
+        if (srclay->initialized) {
+            srclay->initialized = false;
+        }
+    }
+
     // initialize layer?
     if (this->isduplay) return;
     if (!this->liveinput && !srclay->video_dec_ctx && srclay->type != ELEM_IMAGE) return;
-    if ((!srclay->initialized && srclay->initdeck) || (!srclay->mapptr[srclay->pbodi] && srclay->type != ELEM_IMAGE) || (!srclay->initialized && srclay->changeinit < 0) || srclay->changeinit == 4) {
+    if (!srclay->initialized || (!srclay->mapptr && srclay->type != ELEM_IMAGE) || (!srclay->initialized && srclay->changeinit < 0)) {
         // reminder : test with different bpp
         if (!this->liveinput) {
             if (srclay->video_dec_ctx) {
@@ -10006,37 +9984,37 @@ void Layer::load_frame() {
     glBindTexture(GL_TEXTURE_2D, srclay->texture);
 
     if (mainprogram->encthreads == 0) {
-        WaitBuffer(srclay->syncobj[srclay->memcpypboi]);
+        WaitBuffer(srclay->syncobj);
     }
 
     if (srclay->started2 || srclay->type == ELEM_IMAGE || srclay->type == ELEM_LIVE) {
 
-        glBindBuffer(GL_PIXEL_UNPACK_BUFFER, srclay->pbo[srclay->pboui]);
+        glBindBuffer(GL_PIXEL_UNPACK_BUFFER, srclay->pbo);
 
 
-        if ((!srclay->remfr[srclay->pboui]->liveinput && srclay->remfr[srclay->pboui]->initialized) || srclay->numf == 0) {
-            if ((!srclay->remfr[srclay->pboui]->isclone)) {  // decresult contains new frame width, height, number of bitmaps && data
+        if ((!srclay->remfr->liveinput && srclay->remfr->initialized) || srclay->numf == 0) {
+            if ((!srclay->remfr->isclone)) {  // decresult contains new frame width, height, number of bitmaps && data
                 //if (!srclay->decresult->width) {
                 //    glBindBuffer(GL_PIXEL_UNPACK_BUFFER, 0);
                 //	return;
                 //}
-                if ((srclay->remfr[srclay->pboui]->vidformat == 188 || srclay->remfr[srclay->pboui]->vidformat == 187)) {
+                if ((srclay->remfr->vidformat == 188 || srclay->remfr->vidformat == 187)) {
                     //if (!srclay->databufready) {
                     //    glBindBuffer(GL_PIXEL_UNPACK_BUFFER, 0);
                     //	return;
                     //}
                     // HAP video layers
 
-                    if (srclay->remfr[srclay->pboui]->compression == 187 ||
-                        srclay->remfr[srclay->pboui]->compression == 171) {
+                    if (srclay->remfr->compression == 187 ||
+                        srclay->remfr->compression == 171) {
 
-                        glCompressedTexSubImage2D(GL_TEXTURE_2D, 0, 0, 0, srclay->remfr[srclay->pboui]->width,
-                                                  srclay->remfr[srclay->pboui]->height,
-                                                  GL_COMPRESSED_RGBA_S3TC_DXT1_EXT, srclay->remfr[srclay->pboui]->size, 0);
-                    } else if (srclay->remfr[srclay->pboui]->compression == 190) {
-                        glCompressedTexSubImage2D(GL_TEXTURE_2D, 0, 0, 0, srclay->remfr[srclay->pboui]->width,
-                                                  srclay->remfr[srclay->pboui]->height, GL_COMPRESSED_RGBA_S3TC_DXT5_EXT,
-                                                  srclay->remfr[srclay->pboui]->size, 0);
+                        glCompressedTexSubImage2D(GL_TEXTURE_2D, 0, 0, 0, srclay->remfr->width,
+                                                  srclay->remfr->height,
+                                                  GL_COMPRESSED_RGBA_S3TC_DXT1_EXT, srclay->remfr->size, 0);
+                    } else if (srclay->remfr->compression == 190) {
+                        glCompressedTexSubImage2D(GL_TEXTURE_2D, 0, 0, 0, srclay->remfr->width,
+                                                  srclay->remfr->height, GL_COMPRESSED_RGBA_S3TC_DXT5_EXT,
+                                                  srclay->remfr->size, 0);
                     }
                 } else {
                     if (srclay->type == ELEM_IMAGE) {
@@ -10053,13 +10031,13 @@ void Layer::load_frame() {
                             glBindBuffer(GL_PIXEL_UNPACK_BUFFER, 0);
                             glBindTexture(GL_TEXTURE_2D, srclay->texture);
                             glTexSubImage2D(GL_TEXTURE_2D, 0, 0, 0, w, h, mode, GL_UNSIGNED_BYTE,
-                                            srclay->remfr[srclay->pboui]->data);
+                                            srclay->remfr->data);
                         } else {
                             glTexSubImage2D(GL_TEXTURE_2D, 0, 0, 0, w, h, mode, GL_UNSIGNED_BYTE,  0);
                         }
                     } else if (1) {
-                        glTexSubImage2D(GL_TEXTURE_2D, 0, 0, 0, srclay->remfr[srclay->pboui]->width,
-                                        srclay->remfr[srclay->pboui]->height, GL_BGRA, GL_UNSIGNED_BYTE, 0);
+                        glTexSubImage2D(GL_TEXTURE_2D, 0, 0, 0, srclay->remfr->width,
+                                        srclay->remfr->height, GL_BGRA, GL_UNSIGNED_BYTE, 0);
                     }
                 }
             }
@@ -10070,65 +10048,42 @@ void Layer::load_frame() {
     if (srclay->type == ELEM_IMAGE) {
         ilBindImage(srclay->boundimage);
         ilActiveImage((int) srclay->frame);
-        srclay->remfr[srclay->pbofri]->data = (char *) ilGetData();
-        srclay->remfr[srclay->pbofri]->newdata = true;
+        srclay->remfr->data = (char *) ilGetData();
+        srclay->remfr->newdata = true;
         if (srclay->numf == 0) {
-            srclay->changeinit = 4;
+            srclay->changeinit = 0;
             return;
         }
         bool dummy = false;
     }
-    if (!srclay->remfr[srclay->pbofri]->newdata) {
+    if (!srclay->remfr->newdata) {
         return;
     }
 
-    int w, h;
-
-    if (srclay->type == ELEM_IMAGE) {
-        w = ilGetInteger(IL_IMAGE_WIDTH);
-        h = ilGetInteger(IL_IMAGE_HEIGHT);
-    } else if (srclay->video_dec_ctx) {
-        w = srclay->video_dec_ctx->width;
-        h = srclay->video_dec_ctx->height;
-    }
-    else return;
-    if (srclay->remfr[srclay->pbofri]->width != w || srclay->remfr[srclay->pbofri]->height != h || srclay->remfr[srclay->pbofri]->bpp != srclay->bpp) {
+    if (srclay->initialized && srclay->changeinit == -1) {
         // video (size) changed
-        if (srclay->initialized) {
-            srclay->initialized = false;
-        }
-    }
-    if (srclay->initialized && ((srclay->changeinit == -1) || srclay->changeinit == 3 || (!srclay->newload && srclay->started2 && (srclay->remfr[srclay->pbofri]->width != w || srclay->remfr[srclay->pbofri]->height != h || srclay->remfr[srclay->pbofri]->bpp != srclay->bpp)))) {
-        // video (size) changed
-        srclay->changeinit = srclay->pbodi;
+        srclay->changeinit = 0;
     }
     if (!srclay->isclone && !srclay->liveinput) {
         // start transferring to pbou
         // bind PBO to update pixel values
-        //glBindBuffer(GL_PIXEL_UNPACK_BUFFER, srclay->pbo[srclay->pboui]);
-        if (srclay->mapptr[srclay->pbodi]) {
-            if (srclay->changeinit > -1 && !srclay->initdeck && srclay->changeinit != 5) {
-                // make new pbos one by one when switching layer
-                printf("changepbo %d\n", srclay->pboui);
-                glDeleteBuffers(1, &srclay->pbo[srclay->pboui]);
-                glGenBuffers(1, &srclay->pbo[srclay->pboui]);
+        if (srclay->mapptr) {
+            if (srclay->changeinit > -1 && !srclay->initdeck && srclay->changeinit == -1) {
+                // make new pbo when switching layer
+                glDeleteBuffers(1, &srclay->pbo);
+                glGenBuffers(1, &srclay->pbo);
                 int bsize = w * h * srclay->bpp;
                 int flags = GL_MAP_WRITE_BIT | GL_MAP_PERSISTENT_BIT | GL_MAP_COHERENT_BIT;
-                glBindBuffer(GL_ARRAY_BUFFER, srclay->pbo[srclay->pboui]);
+                glBindBuffer(GL_ARRAY_BUFFER, srclay->pbo);
                 glBufferStorage(GL_ARRAY_BUFFER, bsize, 0, flags);
-                srclay->mapptr[srclay->pboui] = (GLubyte *) glMapBufferRange(GL_ARRAY_BUFFER, 0, bsize, flags);
+                srclay->mapptr = (GLubyte *) glMapBufferRange(GL_ARRAY_BUFFER, 0, bsize, flags);
                 glBindBuffer(GL_ARRAY_BUFFER, 0);
             }
 
-            if (srclay->started && srclay->remfr[srclay->pbodi]->newdata) {
+            if (srclay->started && srclay->remfr->newdata) {
                 // update data directly on the mapped buffer
-                memcpy(srclay->mapptr[srclay->pbodi], srclay->remfr[srclay->pbodi]->data, srclay->remfr[srclay->pbodi]->size);
-                this->memcpypboi = srclay->pbodi + 2;
-                if (this->memcpypboi > 2) {
-                    this->memcpypboi -= 3;
-                }
-                //srclay->currclip->tex = copy_tex(srclay->node->vidbox->tex);
-                if (mainprogram->encthreads == 0) LockBuffer(srclay->syncobj[srclay->pbodi]);
+                memcpy(srclay->mapptr, srclay->remfr->data, srclay->remfr->size);
+                if (mainprogram->encthreads == 0) LockBuffer(srclay->syncobj);
             }
             if (srclay->started) {
                 srclay->started2 = true;
@@ -10140,34 +10095,22 @@ void Layer::load_frame() {
     } else srclay->initialized = true;  //reminder: trick, is set false somewhere
 
     // round robin triple pbos: currently activated
-    srclay->remfr[srclay->pbofri]->compression = srclay->decresult->compression;
-    srclay->remfr[srclay->pbofri]->vidformat = srclay->vidformat;
-    srclay->remfr[srclay->pbofri]->initialized = srclay->initialized;
-    srclay->remfr[srclay->pbofri]->liveinput = srclay->liveinput;
-    srclay->remfr[srclay->pbofri]->isclone = srclay->isclone;
+    srclay->remfr->compression = srclay->decresult->compression;
+    srclay->remfr->vidformat = srclay->vidformat;
+    srclay->remfr->initialized = srclay->initialized;
+    srclay->remfr->liveinput = srclay->liveinput;
+    srclay->remfr->isclone = srclay->isclone;
     if (srclay->type == ELEM_IMAGE) {
-        srclay->remfr[srclay->pbofri]->width = ilGetInteger(IL_IMAGE_WIDTH);
-        srclay->remfr[srclay->pbofri]->height = ilGetInteger(IL_IMAGE_HEIGHT);
+        srclay->remfr->width = ilGetInteger(IL_IMAGE_WIDTH);
+        srclay->remfr->height = ilGetInteger(IL_IMAGE_HEIGHT);
     } else {
-        srclay->remfr[srclay->pbofri]->width = srclay->video_dec_ctx->width;
-        srclay->remfr[srclay->pbofri]->height = srclay->video_dec_ctx->height;
+        srclay->remfr->width = srclay->video_dec_ctx->width;
+        srclay->remfr->height = srclay->video_dec_ctx->height;
     };
-    srclay->remfr[srclay->pbofri]->bpp = srclay->bpp;
-    srclay->remfr[srclay->pbofri]->size = srclay->decresult->size;
-    srclay->remfr[srclay->pbodi]->newdata = false;
+    srclay->remfr->bpp = srclay->bpp;
+    srclay->remfr->size = srclay->decresult->size;
+    srclay->remfr->newdata = false;
     //srclay->pboimutex.lock();
-    srclay->pbodi++;
-    srclay->pboui++;
-    srclay->pbofri++;
-    if (srclay->pbodi == 3) srclay->pbodi = 0;
-    if (srclay->pboui == 3) srclay->pboui = 0;
-    if (srclay->pbofri == 3) srclay->pbofri = 0;
-    if (srclay->changeinit == srclay->pbodi) {
-        srclay->changeinit = 5;
-        srclay->initdeck = false;
-    }
-    //srclay->pboimutex.unlock();
-
 
     srclay->newtexdata = true;
 }
@@ -10211,20 +10154,20 @@ Layer* Layer::open_image(const std::string path, bool init) {
 	this->vidformat = -1;
 	if (init) {
         this->initialize(w, h);
-        this->remfr[this->pboui]->initialized = true;
+        this->remfr->initialized = true;
     }
 	this->type = ELEM_IMAGE;
 	this->decresult->size = w * h * this->bpp;
 	this->decresult->width = -1;
 	this->decresult->hap = false;
     if (this->numf == 0) {
-        this->remfr[this->pboui]->data = (char *) ilGetData();
-        this->remfr[this->pboui]->newdata = true;
-        this->remfr[this->pboui]->vidformat = -1;
+        this->remfr->data = (char *) ilGetData();
+        this->remfr->newdata = true;
+        this->remfr->vidformat = -1;
     }
     else {
-        this->remfr[this->pbofri]->data = (char *) ilGetData();
-        this->remfr[this->pbofri]->newdata = true;
+        this->remfr->data = (char *) ilGetData();
+        this->remfr->newdata = true;
     }
 
     if (mainprogram->autoplay && this->revbut->value == 0 && this->bouncebut->value == 0) {
@@ -10242,7 +10185,7 @@ void Layer::open_files_layers() {
 	// order elements
 
     if (mainprogram->prevlayer) {
-        if (mainprogram->prevlayer->changeinit != 5) {
+        if (mainprogram->prevlayer->changeinit == -1) {
             return;
         }
     }
@@ -10959,7 +10902,7 @@ Layer* Mixer::read_layers(std::istream &rfile, const std::string result, std::ve
                 }
 			}
 		}
-		
+
 		if (istring == "CLIPS") {
 			Clip *clp = nullptr;
             bool isvid = false;
@@ -11136,7 +11079,7 @@ Layer* Mixer::read_layers(std::istream &rfile, const std::string result, std::ve
 						}
 					}
 				}
-				
+
 				if (istring == "PARAMS") {
 					int pos = 0;
 					Param *par = nullptr;
@@ -11252,7 +11195,7 @@ Layer* Mixer::read_layers(std::istream &rfile, const std::string result, std::ve
 						}
 					}
 				}
-				
+
 				if (istring == "PARAMS") {
 					int pos = 0;
 					Param *par = nullptr;
@@ -11378,7 +11321,7 @@ Layer* Mixer::read_layers(std::istream &rfile, const std::string result, std::ve
 
     return layend;  // for when open_video or open_layerfile swaps for a new layer
 }
-	
+
 std::vector<std::string> Mixer::write_layer(Layer* lay, std::ostream& wfile, bool doclips, bool dojpeg) {
 	std::vector<std::string> jpegpaths;
 
@@ -11979,7 +11922,7 @@ void Mixer::event_read(std::istream &rfile, Param *par, Button* but, Layer *lay)
             }
         }
     }
-    
+
     safegetline(rfile, istring);
 	if (loop) {
 		loop->loopbut->value = std::stoi(istring);
@@ -12073,7 +12016,7 @@ void Mixer::new_file(int decks, bool alive, bool add, bool empty) {
 	// kill mixnodes[0]
 	//mainprogram->nodesmain->mixnodes[0].clear();
 	//mainprogram->nodesmain->mixnodes[1].clear();
-	
+
 	// reset layers if bool empty
     bool currdeck = 0;
 	if (mainmix->currlay[!mainprogram->prevmodus]) currdeck = mainmix->currlay[!mainprogram->prevmodus]->deck;
@@ -12324,7 +12267,7 @@ void Mixer::record_video(std::string reccod) {
         nullptr,
         nullptr,
         nullptr);
-    
+
 	/* record */
 	int count = 0;
     this->reclay->checkre = true;
@@ -12342,14 +12285,14 @@ void Mixer::record_video(std::string reccod) {
                 started = true;
             }
         }
-		
+
 		AVFrame *rgbaframe;
 		rgbaframe = av_frame_alloc();
 		rgbaframe->data[0] = (uint8_t *)mainmix->rgbdata;
 		rgbaframe->format = c->pix_fmt;
 		rgbaframe->width  = c->width;
 		rgbaframe->height = c->height;
-	 
+
 		//av_image_fill_arrays(picture->data, picture->linesize,
                                // ptr, pix_fmt, width, height, 1);		avpicture_fill(&rgbaframe, (uint8_t *)mainmix->rgbdata, AV_PIX_FMT_BGRA, c->width, c->height);
         if (cbool) rgbaframe->linesize[0] = mainprogram->ow * 4;
@@ -12369,7 +12312,7 @@ void Mixer::record_video(std::string reccod) {
 
         /* encode the image */
         encode_frame(dest, nullptr, c, yuvframe, pkt, nullptr, count);
-		
+
 		av_freep(rgbaframe->data);
 		av_freep(yuvframe->data);
 		av_packet_unref(pkt);
@@ -12786,7 +12729,7 @@ void Mixer::handle_clips() {
 void Layer::clip_display_next(bool startend, bool alive) {
 	// cycle clips and load the first in queue
     if (this == nullptr) return;
-    if (this->changeinit != 5 && this->changeinit != -1) return;
+    if (this->changeinit == -1) return;
 	if (this->clips.size() > 1) {
         Clip *oldclip = new Clip;
         oldclip->type = this->type;
@@ -12841,6 +12784,7 @@ void Layer::clip_display_next(bool startend, bool alive) {
             //else oldclip->tex = this->currclip->tex;
             //oldclip->path = this->currclippath;
             mainprogram->effcat[this->deck]->value = 0;
+            mainprogram->clipsaving = true;
             mainmix->save_layerfile(oldclip->path, this, 0, 0);
         } else if (this->type == ELEM_LIVE) {
             oldclip->tex = copy_tex(node->vidbox->tex);
@@ -12887,8 +12831,7 @@ void Layer::clip_display_next(bool startend, bool alive) {
             if (currl1 != -1) mainmix->currlays[!mainprogram->prevmodus][currl1] = lay;  // reminder
             if (currl2) mainmix->currlay[!mainprogram->prevmodus] = lay;
             this->set_inlayer(lay, true);
-            //this->closethread = 1;
-            //lay->clips = savcl;
+            //lay->initialized = false;
             lay->currclip->type = ELEM_LAYER;
         }
         else if (lay->currclip->type == ELEM_LIVE) {
@@ -12915,6 +12858,7 @@ void Layer::clip_display_next(bool startend, bool alive) {
         lay->effects[1] = bueff1;
         mainmix->reconnect_all(*lay->layers);
 
+        mainprogram->clipsaving = false;
 	}
 }
 

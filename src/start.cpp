@@ -32,6 +32,9 @@
 #include <time.h>
 #include <thread>
 #include <mutex>
+#include <stdexcept>
+#include <sys/mman.h>
+
 #ifndef UINT64_C
 #define UINT64_C(c) (c ## ULL)
 #endif
@@ -64,6 +67,7 @@
 #define FREEGLUT_LIB_PRAGMAS 0
 #include "GL/freeglut.h"
 #ifdef POSIX
+#include <pthread.h>
 #include <alsa/asoundlib.h>
 #endif
 #include "SDL2/SDL.h"
@@ -166,6 +170,13 @@ bool collectingboxes = true;  // during startup
 using namespace boost::asio;
 using namespace std;
 
+
+void LockMemory() {
+    int ret = mlockall(MCL_CURRENT | MCL_FUTURE);
+    if (ret) {
+            throw std::runtime_error{std::strerror(errno)};
+        }
+    }
 
 #ifdef POSIX
 void Sleep(int milliseconds) {
@@ -1147,30 +1158,28 @@ reminder: IMPLEMENT */
   	
   	if (midi0 == 176 || midi0 == 144) {
         // learnMIDI controls for loopstation buttons
-        for (auto it = mainprogram->buttons.begin(); it != mainprogram->buttons.end(); ++it) {
-			Button *but = it->second;
-			if (midi0 == but->midi[0] && midi1 == but->midi[1] && midi2 != 0 && midiport == but->midiport) {
-                if (mainprogram->sameeight) {
-                    for (int i = 0; i < 8; i++) {
-                        if (but == loopstation->elems[i]->recbut) {
-                            but = loopstation->elems[i + loopstation->scrpos]->recbut;
-                            break;
-                        }
-                        if (but == loopstation->elems[i]->loopbut) {
-                            but = loopstation->elems[i + loopstation->scrpos]->loopbut;
-                            break;
-                        }
-                        if (but == loopstation->elems[i]->playbut) {
-                            but = loopstation->elems[i + loopstation->scrpos]->playbut;
-                            break;
-                        }
+        Button *but = mainmix->midi_registrations[!mainprogram->prevmodus][midi0][midi1][midiport].but;
+        if (midi2 != 0) {
+            if (mainprogram->sameeight) {
+                for (int i = 0; i < 8; i++) {
+                    if (but == loopstation->elems[i]->recbut) {
+                        but = loopstation->elems[i + loopstation->scrpos]->recbut;
+                        break;
+                    }
+                    if (but == loopstation->elems[i]->loopbut) {
+                        but = loopstation->elems[i + loopstation->scrpos]->loopbut;
+                        break;
+                    }
+                    if (but == loopstation->elems[i]->playbut) {
+                        but = loopstation->elems[i + loopstation->scrpos]->playbut;
+                        break;
                     }
                 }
-				mainmix->midi2 = midi2;
-				mainmix->midibutton = but;
-                but->midistarttime = std::chrono::system_clock::now();
-			}
-		}
+            }
+            mainmix->midi2 = midi2;
+            mainmix->midibutton = but;
+            but->midistarttime = std::chrono::system_clock::now();
+        }
         // learn MIDI controls for sending shelf elements to the mix
 		for (int m = 0; m < 2; m++) {
 			for (int i = 0; i < 16; i++) {
@@ -2081,22 +2090,7 @@ std::vector<float> render_text(std::string text, float *textc, float x, float y,
         if (smflag == 1) SDL_GL_MakeCurrent(mainprogram->prefwindow, glc);
         else if (smflag == 2) SDL_GL_MakeCurrent(mainprogram->config_midipresetswindow, glc);
 
-        glGenTextures(1, &texture);
-		glActiveTexture(GL_TEXTURE0);
-		glBindTexture(GL_TEXTURE_2D, texture);
-		glTexStorage2D(
-			GL_TEXTURE_2D,
-			1,
-			GL_R8,
-			2048,
-			psize * 3
-			);
-		glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_NEAREST);
-		glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_NEAREST);
-		glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_EDGE);
-		glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_EDGE);
-
-		GLfloat texvcoords1[8] = {
+		/*GLfloat texvcoords1[8] = {
 			-1.0f,     -1.0f,
 			1.0f , -1.0f,
 			-1.0f,     1.0f,
@@ -2105,8 +2099,8 @@ std::vector<float> render_text(std::string text, float *textc, float x, float y,
 		GLfloat textcoords[] = {0.0f, 0.0f,
 							1.0f, 0.0f,
 							0.0f, 1.0f,
-							1.0f, 1.0f};
-		GLuint texfrbuf;
+							1.0f, 1.0f};*/
+		/*GLuint texfrbuf;
 		glGenFramebuffers(1, &texfrbuf);
 		glBindFramebuffer(GL_FRAMEBUFFER, texfrbuf);
 		glFramebufferTexture2D(GL_FRAMEBUFFER, GL_COLOR_ATTACHMENT0, GL_TEXTURE_2D, texture, 0);
@@ -2121,44 +2115,75 @@ std::vector<float> render_text(std::string text, float *textc, float x, float y,
 		glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_EDGE);
 		glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_NEAREST);
 		glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_NEAREST);
-		glPixelStorei(GL_UNPACK_ALIGNMENT, 1);
+		glPixelStorei(GL_UNPACK_ALIGNMENT, 1);*/
 
 		std::vector<float> textws;
 		float pixelw = 2.0f / w2;
 		float pixelh = 2.0f / h2;
 		float th;
-		int pxprogress = 0;
+		//int pxprogress = 0;
 		FT_Set_Pixel_Sizes(face, (int)(psize * 0.75f), psize); //0
-		x = -1.0f;
-		y = 1.0f;
-		FT_GlyphSlot g = face->glyph;
-		for(p = t; *p; p++) {
-			int glyph_index = FT_Get_Char_Index(face, *p);
-			if(FT_Load_Glyph(face, glyph_index, FT_LOAD_DEFAULT))
-				 continue;
-			FT_Render_Glyph(face->glyph, FT_RENDER_MODE_NORMAL);
+		x = 0.0f;
+		y = 0.0f;
+        FT_GlyphSlot g = face->glyph;
+        for (int i = 0; i < text.length(); i++) {
+            int glyph_index = FT_Get_Char_Index(face, t[i]);
+            if (FT_Load_Glyph(face, glyph_index, FT_LOAD_DEFAULT))
+                continue;
+            //FT_Render_Glyph(face->glyph, FT_RENDER_MODE_NORMAL);
+            textw += (g->advance.x/64.0f) * pixelw;
+            textws.push_back((g->advance.x / 64.0f) * pixelw * (((smflag == 0) && (binsmain->inbin == 0))+ 1) * 0.5f); //1.1 *
+            texth = 64.0f * pixelh;
+            th = (std::max)(th, (g->metrics.height / 64.0f) * pixelh);
+        }
+        glGenTextures(1, &texture);
+        glActiveTexture(GL_TEXTURE0);
+        glBindTexture(GL_TEXTURE_2D, texture);
+        glTexStorage2D(
+                GL_TEXTURE_2D,
+                1,
+                GL_R8,
+                textw / pixelw,
+                psize * 3
+        );
+        glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_NEAREST);
+        glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_NEAREST);
+        glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_EDGE);
+        glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_EDGE);
+        glPixelStorei(GL_UNPACK_ALIGNMENT, 1);
+        glClearTexImage(texture, 0, GL_RED, GL_UNSIGNED_BYTE, black);
 
-            GLenum err;
-			glActiveTexture(GL_TEXTURE0);
- 			glBindTexture(GL_TEXTURE_2D, ftex);
- 			glPixelStorei(GL_UNPACK_ALIGNMENT, 1);
-			glTexImage2D(
-				GL_TEXTURE_2D,
-				0,
-				GL_RED,
-				g->bitmap.width,
-				g->bitmap.rows,
-				0,
-				GL_RED,
-				GL_UNSIGNED_BYTE,
-				g->bitmap.buffer
-				);
+        for (int i = 0; i < text.length(); i++) {
+            int glyph_index = FT_Get_Char_Index(face, t[i]);
+            if (FT_Load_Glyph(face, glyph_index, FT_LOAD_DEFAULT))
+                continue;
+            FT_Render_Glyph(face->glyph, FT_RENDER_MODE_NORMAL);
+            glTexSubImage2D(GL_TEXTURE_2D, 0, x, -g->bitmap_top + 60, g->bitmap.width, g->bitmap.rows, GL_RED, GL_UNSIGNED_BYTE, g->bitmap.buffer);
+            x += (g->advance.x/64.0f);
+        }
+
+
+        /*if (g->bitmap.width) glBlitNamedFramebuffer(glyphfrbuf, texfrbuf, 0, 0, g->bitmap.width, g->bitmap.rows, pxprogress, g->bitmap_top + 12, pxprogress + g->bitmap.width, g->bitmap_top - g->bitmap.rows + 12, GL_COLOR_BUFFER_BIT, GL_NEAREST);
+        GLenum err;
+            glActiveTexture(GL_TEXTURE0);
+            glBindTexture(GL_TEXTURE_2D, ftex);
+            glPixelStorei(GL_UNPACK_ALIGNMENT, 1);
+            glTexImage2D(
+                    GL_TEXTURE_2D,
+                    0,
+                    GL_RED,
+                    g->bitmap.width,
+                    g->bitmap.rows,
+                    0,
+                    GL_RED,
+                    GL_UNSIGNED_BYTE,
+                    g->bitmap.buffer
+            );
 
  			GLuint glyphfrbuf;
 			glGenFramebuffers(1, &glyphfrbuf);
  			glBindFramebuffer(GL_FRAMEBUFFER, glyphfrbuf);
 			glFramebufferTexture2D(GL_FRAMEBUFFER, GL_COLOR_ATTACHMENT0, GL_TEXTURE_2D, ftex, 0);
- 			if (g->bitmap.width) glBlitNamedFramebuffer(glyphfrbuf, texfrbuf, 0, 0, g->bitmap.width, g->bitmap.rows, pxprogress, g->bitmap_top + 12, pxprogress + g->bitmap.width, g->bitmap_top - g->bitmap.rows + 12, GL_COLOR_BUFFER_BIT, GL_NEAREST);
             glDrawBuffer(GL_COLOR_ATTACHMENT0);
             glClearColor(0, 0, 0, 0);
             glClear(GL_COLOR_BUFFER_BIT);
@@ -2166,10 +2191,6 @@ std::vector<float> render_text(std::string text, float *textc, float x, float y,
             pxprogress += g->advance.x / 64.0f;
 
             x += (g->advance.x/64.0f) * pixelw;
-			textw += (g->advance.x/64.0f) * pixelw;
-			textws.push_back((g->advance.x / 64.0f) * pixelw * (((smflag == 0) && (binsmain->inbin == 0))+ 1) * 0.5f); //1.1 *
-			texth = 64.0f * pixelh;
-			th = (std::max)(th, (g->metrics.height / 64.0f) * pixelh);
 
             glDeleteFramebuffers(1, &glyphfrbuf);
 		}
@@ -2198,7 +2219,7 @@ std::vector<float> render_text(std::string text, float *textc, float x, float y,
         glClearColor(0, 0, 0, 0);
         glClear(GL_COLOR_BUFFER_BIT);
  		glBlitNamedFramebuffer(texfrbuf, endfrbuf, 0, 0, w, 64 , 0, 0, w, 64, GL_COLOR_BUFFER_BIT, GL_NEAREST);
-
+*/
 		if (pos == 0) {
 			gs = new GUIString;
 			gs->text = text;
@@ -2206,16 +2227,16 @@ std::vector<float> render_text(std::string text, float *textc, float x, float y,
 			else if (smflag == 1) mainprogram->prguitextmap[text] = gs;
 			else if (smflag == 2) mainprogram->tmguitextmap[text] = gs;
 		}
-		gs->texturevec.push_back(endtex);
+		gs->texturevec.push_back(texture);
 		gs->textwvec.push_back(textw);
 		gs->texthvec.push_back(psize * 3);
 		gs->textwvecvec.push_back(textws);
 		gs->sxvec.push_back(sx);
-		
-		glDeleteFramebuffers(1, &texfrbuf);
-        glDeleteFramebuffers(1, &endfrbuf);
-		glDeleteTextures(1, &ftex);
-		glDeleteTextures(1, &texture);
+
+		//glDeleteFramebuffers(1, &texfrbuf);
+        //glDeleteFramebuffers(1, &endfrbuf);
+		//glDeleteTextures(1, &ftex);
+		//glDeleteTextures(1, &texture);
 
         if (smflag > 0) SDL_GL_MakeCurrent(mainprogram->mainwindow, glc);
 
@@ -2223,8 +2244,8 @@ std::vector<float> render_text(std::string text, float *textc, float x, float y,
         glBindFramebuffer(GL_FRAMEBUFFER, 0);
         glDrawBuffer(GL_BACK_LEFT);
         //display
-		textws = render_text(text, textc, bux, buy, sx, sy, smflag, display, vertical);
-		return textws;
+        if (!mainprogram->stringcomputing) textws = render_text(text, textc, bux, buy, sx, sy, smflag, display, vertical);
+        return textws;
   	}
 
 	else if (display) {
@@ -2252,24 +2273,24 @@ std::vector<float> render_text(std::string text, float *textc, float x, float y,
 		float he = 0.0f;
 		if (vertical) {
 			he = texth2;
-			wi = textw2;	
+			wi = -textw2;
 		}
 		else {
 			wi = textw2;
-			he = -texth2;
+			he = texth2;
 		}
 		wi /= (smflag > 0) + 1;
         he /= (smflag > 0) + 1;
         //he /= (binsmain->inbin) + 1;
 		y -= he;
-		if (textw != 0) draw_box(nullptr, black, x + 0.001f, y - 0.00185f, wi, he, texture, true, vertical, false);
+		if (textw != 0) draw_box(nullptr, black, x + 0.001f, y - 0.00185f + 72 * pixelh - he * 3 * vertical, wi, he, texture, true, vertical, false);
 		//draw text shadow
-		if (textw != 0) draw_box(nullptr, textc, x, y, wi, he, texture, true, vertical, false);	//draw text
+		if (textw != 0) draw_box(nullptr, textc, x, y + 72 * pixelh - he * 3 * vertical, wi, he, texture, true, vertical, false);	//draw text
 
 		mainprogram->texth = texth2;
 	}
 
-	
+
 	return textwsplay;
 }
 
@@ -3014,8 +3035,8 @@ void onestepfrom(bool stage, Node *node, Node *prevnode, GLuint prevfbotex, GLui
 				frac = (float)ilGetInteger(IL_IMAGE_WIDTH) / (float)ilGetInteger(IL_IMAGE_HEIGHT);
 			}
 			else {
-			    if (lay->remfr[lay->pboui]->height == 0) return;
-			    frac = (float)(lay->remfr[lay->pboui]->width) / (float)(lay->remfr[lay->pboui]->height);
+			    if (lay->remfr->height == 0) return;
+			    frac = (float)(lay->remfr->width) / (float)(lay->remfr->height);
 			}
 			if (lay->dummy) frac = (float)(lay->video_dec_ctx->width) / (float)(lay->video_dec_ctx->height);
 			if (fraco > frachd) {
@@ -4370,7 +4391,7 @@ void the_loop() {
                     Layer *testlay = lv[1];
                     testlay->nonewpbos = false;  // get new pbos
                     if (testlay->filename != "") testlay->progress(1, 1);
-                    if (!testlay->liveinput && !testlay->isclone && (testlay->changeinit < 4 && testlay->filename != "")) {
+                    if (!testlay->liveinput && !testlay->isclone && (testlay->changeinit < 0 && testlay->filename != "")) {
                         testlay->load_frame();
                         if (testlay->deck == 0) mainmix->keep0 = choose_layers(0);
                         else mainmix->keep1 = choose_layers(1);
@@ -6944,6 +6965,7 @@ int main(int argc, char* argv[]) {
 
 
     mainprogram->directmode = true;
+    mainprogram->stringcomputing = true;
     int num = 0;
     for (PrefCat *cat : mainprogram->prefs->items) {
         for (PrefItem *item : cat->items) {
@@ -6951,13 +6973,14 @@ int main(int argc, char* argv[]) {
         }
     }
     draw_box(white, black, -0.25f, -0.9f, 0.5f, 0.1f, 0.0f, 0.0f, 1.0f, 1.0f, 0, -1, glob->w, glob->h, false);
-    int totalstrings = allboxes.size() + num;
+    int totalstrings = num;
     int count = 0;
-    for (Boxx *box : allboxes) {
+    /*for (Boxx *box : allboxes) {
         // predraw all tooltips so no slowdowns will happen when stringtextures are initialized
-        mainprogram->longtooltip_prepare(box);
+        if (box->tooltip != "") mainprogram->longtooltip_prepare(box);
+
         count++;
-        if (count % 8 == 1) {
+        if (count % 100 == 1) {
             SDL_GL_MakeCurrent(mainprogram->splashwindow, glc);
             glBindFramebuffer(GL_FRAMEBUFFER, 0);
             glDrawBuffer(GL_FRONT);
@@ -6969,7 +6992,7 @@ int main(int argc, char* argv[]) {
                      1.0f, 0, -1, glob->w, glob->h, false);
             glFlush();
         }
-    }
+    }*/
     collectingboxes = false;
     // predraw all pref names so no slowdowns will happen when prefs window is first opened
     for (PrefCat *cat : mainprogram->prefs->items) {
@@ -6990,6 +7013,7 @@ int main(int argc, char* argv[]) {
             }
         }
     }
+    mainprogram->stringcomputing = false;
     mainprogram->directmode = false;
 
     glViewport(0, 0, glob->w, glob->h);
@@ -8007,8 +8031,8 @@ int main(int argc, char* argv[]) {
                         count++;
                         name = remove_version(name) + "_" + std::to_string(count);
                     }
-                    mainprogram->get_outname("Type name of new project (directory)", "",
-                                             std::filesystem::canonical(mainprogram->currprojdir).generic_string());
+                    std::string filepath = std::filesystem::canonical(mainprogram->currprojdir).generic_string() + "/" + name;
+                    mainprogram->get_outname("Type name of new project (directory)", "", filepath);
                     if (mainprogram->path != "") {
                         SDL_GL_MakeCurrent(mainprogram->mainwindow, glc);
 #ifdef WINDOWS

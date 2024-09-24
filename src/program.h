@@ -4,6 +4,7 @@
 #define POSIX
 #endif
 
+#include <condition_variable>
 #include <string>
 #include "GL/gl.h"
 #ifdef WINDOWS
@@ -16,6 +17,7 @@
 #include <lo/lo_cpp.h>
 #ifdef POSIX
 #include "dirent.h"
+#include <cstring>
 #endif
 
 
@@ -110,6 +112,7 @@ struct gui_box {
     bool vertical = false;
     bool inverted = false;
 };
+
 
 class GUI_Element {
 public:
@@ -419,7 +422,6 @@ class Program {
         GLuint splashtex;
         GLuint loktex;
 		std::vector<OutputEntry*> outputentries;
-        std::unordered_map<int, Button*> buttons;
 		Boxx *scrollboxes[2];
 		Layer *loadlay;
 		Layer *prelay = nullptr;
@@ -777,6 +779,7 @@ class Program {
 		Shelf *shelves[2];
 		int inshelf = -1;
 		int inclips = -1;
+        bool clipsaving = false;
 		bool openclipfiles = false;
 		int clipfilescount = 0;
 		Clip* clipfilesclip = nullptr;
@@ -817,6 +820,7 @@ class Program {
         //int clickednextto = -1;
         bool lpstmenuon = false;
         std::vector<char*> dropfiles;
+        bool stringcomputing = false;
 
         ShelfElement *lpstelem = nullptr;
 
