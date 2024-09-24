@@ -33,7 +33,6 @@
 #include <thread>
 #include <mutex>
 #include <stdexcept>
-#include <sys/mman.h>
 
 #ifndef UINT64_C
 #define UINT64_C(c) (c ## ULL)
@@ -169,13 +168,6 @@ bool collectingboxes = true;  // during startup
 using namespace boost::asio;
 using namespace std;
 
-
-void LockMemory() {
-    int ret = mlockall(MCL_CURRENT | MCL_FUTURE);
-    if (ret) {
-            throw std::runtime_error{std::strerror(errno)};
-        }
-    }
 
 #ifdef POSIX
 void Sleep(int milliseconds) {
