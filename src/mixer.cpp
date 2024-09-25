@@ -4210,7 +4210,7 @@ void Layer::get_frame(){
             }
             if (r == 0) {
                 printf("load error\n");
-                mainprogram->openerr = true;
+                mainprogram->openerr = false;
                 this->opened = true;
                 if (!this->isclone) this->initialized = false;
                 this->startframe->value = 0;
@@ -4231,6 +4231,10 @@ void Layer::get_frame(){
                 if (this->video) {
                     if ((int)(this->frame) != this->prevframe || this->type == ELEM_LIVE || this->changeinit == -1) {
                         get_cpu_frame((int)this->frame, this->prevframe, 0);
+                        if (mainprogram->openerr) {
+                            mainprogram->openerr = false;
+                            printf("CPU video decoding error\n");
+                        }
                     }
                     else {
                         printf("");
@@ -7430,6 +7434,7 @@ void Mixer::copy_to_comp(bool deckA, bool deckB, bool comp) {
             }
         }
     }
+    mainprogram->recundo = true;
     mainprogram->copytocomp = false;
 }
 
@@ -7570,6 +7575,8 @@ void Mixer::open_state(std::string path, bool undo) {
             bul[1] = this->layers[3];
 
             int deckcnt = 4;
+            bool bupm = mainprogram->prevmodus;
+            mainprogram->prevmodus = false;
             for (int m = 0; m < 2; m++) {
                 int bucurr = this->currscene[m];
                 for (int k = 0; k < 4; k++) {
@@ -7578,6 +7585,7 @@ void Mixer::open_state(std::string path, bool undo) {
                     }
                     if (result != "") {
                         this->layers[m + 2].clear();
+                        this->add_layer(this->layers[m + 2], 0);
                         this->newlrs[m + 2].clear();
                         loopstation = this->scenes[m][k]->lpst;
                         this->mousedeck = m;
@@ -7586,7 +7594,6 @@ void Mixer::open_state(std::string path, bool undo) {
                         deckcnt++;
                         for (Layer *lay : this->layers[m + 2]) {
                             lay->close();
-                            lay->startdecode.notify_all();
                         }
                         this->scenenum = -1;
                         this->scenes[m][k]->scnblayers = this->newlrs[m + 2];
@@ -7599,6 +7606,7 @@ void Mixer::open_state(std::string path, bool undo) {
             this->layers[2] = bul[0];
             this->layers[3] = bul[1];
             loopstation = bulpst;
+            mainprogram->prevmodus = bupm;
 
             mainprogram->prevmodus = true;
             //if (exists(result + "_2.file")) {
@@ -8122,14 +8130,10 @@ void Mixer::save_state(std::string path, bool autosave, bool undo) {
 
 	std::vector<std::vector<std::string>> filestoadd2;
 	filestoadd2.push_back(filestoadd);
-    std::string ofpath = mainprogram->temppath + "tempconcatstate";
-    if (undo) {
-        mainprogram->concat_files(ofpath, str, filestoadd2);
-    }
-    else {
-        std::thread concat(&Program::concat_files, mainprogram, ofpath, str, filestoadd2);
-        concat.detach();
-    }
+    std::string ofpath = find_unused_filename("tempconcatstate", mainprogram->temppath, "");
+
+    std::thread concat(&Program::concat_files, mainprogram, ofpath, str, filestoadd2);
+    concat.detach();
 }
 
 
@@ -8635,13 +8639,9 @@ void Mixer::save_mix(const std::string path, bool modus, bool save, bool undo) {
 	}
 
 	std::string tcpath = find_unused_filename("tempconcat_" + std::to_string(modus), mainprogram->temppath, "");
-    if (undo) {
-        mainprogram->concat_files(tcpath, str, jpegpaths);
-    }
-    else {
-        std::thread concat = std::thread(&Program::concat_files, mainprogram, tcpath, str, jpegpaths);
-        concat.detach();
-    }
+
+    std::thread concat = std::thread(&Program::concat_files, mainprogram, tcpath, str, jpegpaths);
+    concat.detach();
 }
 
 
@@ -9010,19 +9010,10 @@ void Mixer::save_deck(const std::string path, bool save, bool doclips, bool copy
 	wfile << "ENDOFFILE\n";
 	wfile.close();
 
-    if (copycomp || undo) {
-        // speedy concatting in copy_to_comp
-        mainprogram->concat_files(mainprogram->temppath + "tempconcatdeck", str, jpegpaths);
-        //std::thread concat = std::thread(&Program::concat_files, mainprogram, mainprogram->temppath + "tempconcatdeck",
-        //                                str, jpegpaths, true);
-        //concat.detach();
-    }
-    else {
-        std::string tcdpath = find_unused_filename("tempconcatdeck", mainprogram->temppath, "");
-        std::thread concat = std::thread(&Program::concat_files, mainprogram, tcdpath,
-                                         str, jpegpaths);
-        concat.detach();
-    }
+    std::string tcdpath = find_unused_filename("tempconcatdeck", mainprogram->temppath, "");
+    std::thread concat = std::thread(&Program::concat_files, mainprogram, tcdpath,
+                                     str, jpegpaths);
+    concat.detach();
 }
 
 
@@ -9986,6 +9977,9 @@ void Layer::load_frame() {
 
     if (mainprogram->encthreads == 0) {
         WaitBuffer(srclay->syncobj);
+        if (srclay->changeinit == 0) {
+            srclay->changeinit = 1;
+        }
     }
 
     if (srclay->started2 || srclay->type == ELEM_IMAGE || srclay->type == ELEM_LIVE) {
@@ -10061,16 +10055,12 @@ void Layer::load_frame() {
         return;
     }
 
-    if (srclay->initialized && srclay->changeinit == -1) {
-        // video (size) changed
-        srclay->changeinit = 0;
-    }
     if (!srclay->isclone && !srclay->liveinput) {
         // start transferring to pbou
         // bind PBO to update pixel values
         if (srclay->mapptr) {
             if (srclay->changeinit > -1 && !srclay->initdeck && srclay->changeinit == -1) {
-                // make new pbo when switching layer
+                // make new pbo when switching layer  :   reminder when?
                 glDeleteBuffers(1, &srclay->pbo);
                 glGenBuffers(1, &srclay->pbo);
                 int bsize = w * h * srclay->bpp;
@@ -10083,8 +10073,13 @@ void Layer::load_frame() {
 
             if (srclay->started && srclay->remfr->newdata) {
                 // update data directly on the mapped buffer
-                memcpy(srclay->mapptr, srclay->remfr->data, srclay->remfr->size);
-                if (mainprogram->encthreads == 0) LockBuffer(srclay->syncobj);
+                if (srclay->initialized && srclay->changeinit == -1) {
+                    srclay->changeinit = 0;
+                }
+                if (srclay->changeinit > -1) {
+                    memcpy(srclay->mapptr, srclay->remfr->data, srclay->remfr->size);
+                    if (mainprogram->encthreads == 0) LockBuffer(srclay->syncobj);
+                }
             }
             if (srclay->started) {
                 srclay->started2 = true;
@@ -10186,7 +10181,7 @@ void Layer::open_files_layers() {
 	// order elements
 
     if (mainprogram->prevlayer) {
-        if (mainprogram->prevlayer->changeinit == -1) {
+        if (mainprogram->prevlayer->changeinit < 1) {
             return;
         }
     }
@@ -10213,20 +10208,9 @@ void Layer::open_files_layers() {
         }
 
         // get file type
-        std::string istring = "";
-        std::string result = deconcat_files(str);
-        if (!mainprogram->openerr) {
-            bool concat = (result != "");
-            std::ifstream rfile;
-            if (concat) rfile.open(result);
-            else rfile.open(str);
-            safegetline(rfile, istring);
-            rfile.close();
-        } else mainprogram->openerr = false;
-
         if (isimage(str)) {
             lay->open_image(str);
-        } else if (istring == "EWOCvj LAYERFILE") {  //reminder
+        } else if (islayerfile(str)) {  //reminder
             Layer *l = mainmix->open_layerfile(str, lay, true, true);
             mainprogram->prevlayer = l;
             mainmix->change_currlay(lay, l);
@@ -10274,17 +10258,6 @@ void Layer::open_files_queue() {
         }
 
         // get file type
-        std::string istring = "";
-        std::string result = deconcat_files(str);
-        if (!mainprogram->openerr) {
-            bool concat = (result != "");
-            std::ifstream rfile;
-            if (concat) rfile.open(result);
-            else rfile.open(str);
-            safegetline(rfile, istring);
-            rfile.close();
-        } else mainprogram->openerr = false;
-
         if (isimage(str)) {
             mainprogram->clipfilesclip->path = str;
 
@@ -10299,7 +10272,7 @@ void Layer::open_files_queue() {
 
             mainprogram->clipfilesclip->type = ELEM_IMAGE;
             mainprogram->clipfilesclip->get_imageframes();
-        } else if (istring == "EWOCvj LAYERFILE") {
+        } else if (islayerfile("EWOCvj LAYERFILE")) {
             mainprogram->clipfilesclip->path = str;
 
             Layer *lay = new Layer(true);
@@ -12735,7 +12708,7 @@ void Mixer::handle_clips() {
 void Layer::clip_display_next(bool startend, bool alive) {
 	// cycle clips and load the first in queue
     if (this == nullptr) return;
-    if (this->changeinit == -1) return;
+    if (this->changeinit < 1) return;
 	if (this->clips.size() > 1) {
         Clip *oldclip = new Clip;
         oldclip->type = this->type;

@@ -1220,7 +1220,7 @@ GLuint Program::get_tex(Layer *lay) {
     glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
     glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_BORDER);
     glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_BORDER);
-    glPixelStorei(GL_UNPACK_ALIGNMENT, 1);
+    //glPixelStorei(GL_UNPACK_ALIGNMENT, 1);
     if (lay->type == ELEM_IMAGE) {
         // image in layer
         ilBindImage(lay->boundimage);
@@ -2178,7 +2178,7 @@ int Program::quit_requester() {
     // requester: choose between exiting / saving and exiting/ cancelling exit
 	int mx = -1;
 	int my = -1;
-	if (SDL_GetMouseFocus() == mainprogram->quitwindow) {
+	if (SDL_GetMouseFocus() == mainprogram->requesterwindow) {
 		//SDL_PumpEvents();
 		SDL_GetMouseState(&mx, &my);
 		mx *= 2.0f;
@@ -2218,12 +2218,11 @@ int Program::quit_requester() {
 		if (mainprogram->leftmouse || mainprogram->orderleftmouse) {
             if (this->project->path.find("autosave") != std::string::npos) {
                 this->path = this->project->bupp;
-                this->pathto = "SAVEPROJECT";
+                this->project->save_as();
             }
             else {
-                this->project->do_save(this->project->path);
+                this->project->save(this->project->path);
             }
-            Sleep(4000);
             while (mainprogram->concatting) {
                 Sleep (5);
             }
@@ -2451,7 +2450,7 @@ bool Program::handle_button(Button *but, bool circlein) {
     return ret;
 }
 
-bool Program::handle_button(Button *but, bool circlein, bool automation) {
+bool Program::handle_button(Button *but, bool circlein, bool automation, bool copycomp) {
     bool changed = false;
     if (but->box->in()) {
         if (mainprogram->leftmouse || mainprogram->orderleftmouse) {
@@ -2466,7 +2465,7 @@ bool Program::handle_button(Button *but, bool circlein, bool automation) {
                     }
                 }
             }
-            mainprogram->register_undo(nullptr, but);
+            if (!copycomp) mainprogram->register_undo(nullptr, but);
             mainprogram->leftmouse = false;
             mainprogram->orderleftmouse = false;
             changed = true;
@@ -2524,7 +2523,7 @@ bool Button::toggled() {
         }
         else {
             // UNDO registration
-            mainprogram->register_undo(nullptr, this);
+            //mainprogram->register_undo(nullptr, this);
         }
         return true;
     }
@@ -4428,7 +4427,7 @@ void Program::handle_mainmenu() {
             this->pathto = "SAVEPROJECT";
         }
         else {
-            this->project->do_save(this->project->path);
+            this->project->save(this->project->path);
         }
 	}
 	else if (k == 3) {
@@ -4782,7 +4781,7 @@ void Program::handle_filemenu() {
             this->pathto = "SAVEPROJECT";
         }
         else {
-            this->project->do_save(this->project->path);
+            this->project->save(this->project->path);
         }
     }
     else if (k == 4) {
@@ -4898,21 +4897,21 @@ void Program::handle_lpstmenu() {
 void Program::preview_modus_buttons() {
 	// Draw and handle buttons
     for (Layer *lay : mainmix->layers[0]) {
-        if (lay->changeinit == -1 && lay->filename != "" && !lay->isclone) return;
+        if (lay->changeinit < 1 && lay->filename != "" && !lay->isclone) return;
     }
     for (Layer *lay : mainmix->layers[1]) {
-        if (lay->changeinit == -1 && lay->filename != "" && !lay->isclone) return;
+        if (lay->changeinit < 1 && lay->filename != "" && !lay->isclone) return;
     }
     for (Layer *lay : mainmix->layers[2]) {
-        if (lay->changeinit == -1 && lay->filename != "" && !lay->isclone) {
+        if (lay->changeinit < 1 && lay->filename != "" && !lay->isclone) {
             return;
         }
     }
     for (Layer *lay : mainmix->layers[3]) {
-        if (lay->changeinit == -1 && lay->filename != "" && !lay->isclone) return;
+        if (lay->changeinit < 1 && lay->filename != "" && !lay->isclone) return;
     }
 	if (mainprogram->prevmodus) {
-        mainprogram->handle_button(mainprogram->toscreenA);
+        mainprogram->handle_button(mainprogram->toscreenA, false, false, true);
         if (mainprogram->toscreenA->toggled()) {
             mainprogram->toscreenA->value = 0;
             mainprogram->toscreenA->oldvalue = 0;
@@ -4925,7 +4924,7 @@ void Program::preview_modus_buttons() {
         render_text(mainprogram->toscreenA->name[0], white, box->vtxcoords->x1 + 0.0117f, box->vtxcoords->y1 + 0.0225f,
                     0.0006f, 0.001f);
 
-        mainprogram->handle_button(mainprogram->toscreenB);
+        mainprogram->handle_button(mainprogram->toscreenB, false, false, true);
         if (mainprogram->toscreenB->toggled()) {
             mainprogram->toscreenB->value = 0;
             mainprogram->toscreenB->oldvalue = 0;
@@ -4938,7 +4937,7 @@ void Program::preview_modus_buttons() {
         render_text(mainprogram->toscreenB->name[0], white, box->vtxcoords->x1 + 0.0117f, box->vtxcoords->y1 + 0.0225f,
                     0.0006f, 0.001f);
 
-        mainprogram->handle_button(mainprogram->toscreenM);
+        mainprogram->handle_button(mainprogram->toscreenM, false, false, true);
         if (mainprogram->toscreenM->toggled()) {
             mainprogram->toscreenM->value = 0;
             mainprogram->toscreenM->oldvalue = 0;
@@ -4961,7 +4960,7 @@ void Program::preview_modus_buttons() {
                 }
             }
             for (int i = 0; i < 3; i++) {
-                mainprogram->handle_button(mainprogram->toscene[m][0][i]);
+                mainprogram->handle_button(mainprogram->toscene[m][0][i], false, false, true);
                 if (mainprogram->toscene[m][0][i]->toggled()) {
                     mainprogram->toscene[m][0][i]->value = 0;
                     mainprogram->toscene[m][0][i]->oldvalue = 0;
@@ -5001,7 +5000,8 @@ void Program::preview_modus_buttons() {
                     for (LoopStationElement *elem: loopstation->odelems) {
                           elem->starttime = now - std::chrono::milliseconds((long long) (elem->interimtime));
                     }
-                    
+
+                    mainprogram->recundo = true;
                     mainprogram->prevmodus = true;
                 }
                 box = mainprogram->toscene[m][0][i]->box;
@@ -5010,7 +5010,7 @@ void Program::preview_modus_buttons() {
                 render_text(std::to_string(scns[i]), white, box->vtxcoords->x1 + 0.0117f,
                             box->vtxcoords->y1 + 0.0225f, 0.0006f, 0.001f);
 
-                mainprogram->handle_button(mainprogram->toscene[m][1][i]);
+                mainprogram->handle_button(mainprogram->toscene[m][1][i], false, false, true);
                 if (mainprogram->toscene[m][1][i]->toggled()) {
                     mainprogram->swappingscene = true;
                     mainprogram->toscene[m][1][i]->value = 0;
@@ -5054,6 +5054,7 @@ void Program::preview_modus_buttons() {
                         //elem->speedadaptedtime += millicount * elem->speed->value;
                         elem->starttime = now - std::chrono::milliseconds((long long) (elem->interimtime));
                     }
+                    mainprogram->recundo = true;
                 }
                 
                 box = mainprogram->toscene[m][1][i]->box;
@@ -5065,7 +5066,7 @@ void Program::preview_modus_buttons() {
         }
     }
 	if (mainprogram->prevmodus) {
-        mainprogram->handle_button(mainprogram->backtopreA);
+        mainprogram->handle_button(mainprogram->backtopreA, false, false, true);
         if (mainprogram->backtopreA->toggled()) {
             mainprogram->backtopreA->value = 0;
             mainprogram->backtopreA->oldvalue = 0;
@@ -5076,7 +5077,7 @@ void Program::preview_modus_buttons() {
         register_triangle_draw(white, white, box->vtxcoords->x1 + box->vtxcoords->w / 2.0f + 0.0117f, box->vtxcoords->y1 + 0.0225f, 0.0165f, 0.0312f, UP, CLOSED);
         render_text(mainprogram->backtopreA->name[0], white, mainprogram->backtopreA->box->vtxcoords->x1 + 0.0117f, mainprogram->backtopreA->box->vtxcoords->y1 + 0.0225f, 0.0006, 0.001);
 
-        mainprogram->handle_button(mainprogram->backtopreB);
+        mainprogram->handle_button(mainprogram->backtopreB, false, false, true);
         if (mainprogram->backtopreB->toggled()) {
             mainprogram->backtopreB->value = 0;
             mainprogram->backtopreB->oldvalue = 0;
@@ -5087,7 +5088,7 @@ void Program::preview_modus_buttons() {
         register_triangle_draw(white, white, box->vtxcoords->x1 + box->vtxcoords->w / 2.0f + 0.0117f, box->vtxcoords->y1 + 0.0225f, 0.0165f, 0.0312f, UP, CLOSED);
         render_text(mainprogram->backtopreB->name[0], white, mainprogram->backtopreB->box->vtxcoords->x1 + 0.0117f, mainprogram->backtopreB->box->vtxcoords->y1 + 0.0225f, 0.0006, 0.001);
 
-        mainprogram->handle_button(mainprogram->backtopreM);
+        mainprogram->handle_button(mainprogram->backtopreM, false, false, true);
         if (mainprogram->backtopreM->toggled()) {
             mainprogram->backtopreM->value = 0;
             mainprogram->backtopreM->oldvalue = 0;
@@ -5100,7 +5101,7 @@ void Program::preview_modus_buttons() {
 
     }
 
-    mainprogram->handle_button(mainprogram->modusbut);
+    mainprogram->handle_button(mainprogram->modusbut, false, false, true);
 	if (mainprogram->modusbut->toggled()) {
 	    //mainmix->currlays[!mainprogram->prevmodus].clear();
 		mainprogram->prevmodus = !mainprogram->prevmodus;
@@ -5656,7 +5657,7 @@ bool Program::preferences_handle() {
                     this->path = this->project->bupp;
                     this->pathto = "SAVEPROJECT";
                 } else {
-                    this->project->do_save(this->project->path);
+                    this->project->save(this->project->path);
                 }
             }
             this->ow = this->project->ow;
@@ -6657,7 +6658,7 @@ void Project::newp(const std::string path) {
     mainmix->currlays[!mainprogram->prevmodus].push_back(lvec[0]);
     mainmix->currlay[!mainprogram->prevmodus] = lvec[0];
     mainprogram->prevmodus = !mainprogram->prevmodus;
-    mainprogram->project->do_save(this->path);
+    mainprogram->project->save(this->path);
 }
 	
 bool Project::open(std::string path, bool autosave, bool newp, bool undo) {
@@ -6859,10 +6860,18 @@ bool Project::open(std::string path, bool autosave, bool newp, bool undo) {
 	return true;
 }
 
-void Project::do_save(std::string path, bool autosave, bool undo) {
+void Project::save(std::string path, bool autosave, bool undo) {
     if (undo) {
         mainprogram->undoing = true;
     }
+
+    if (undo) {
+        mainprogram->concatlimit = 10;
+    }
+    else {
+        mainprogram->concatlimit = 12;
+    }
+    mainprogram->goconcat = false;
 
     // save project file: if autosave is true
 	std::string ext = path.substr(path.length() - 7, std::string::npos);
@@ -6951,17 +6960,11 @@ void Project::do_save(std::string path, bool autosave, bool undo) {
     }
 
     // concat everyting in project file except for bins, they are saved separately
-	std::vector<std::vector<std::string>> filestoadd2;
+    std::vector<std::vector<std::string>> filestoadd2;
 	filestoadd2.push_back(filestoadd);
-    if (undo) {
-        mainprogram->concat_files(mainprogram->temppath + "tempconcatproj", str, filestoadd2);
-        mainprogram->undoing = false;
-    }
-    else {
-        std::thread concat = std::thread(&Program::concat_files, mainprogram, mainprogram->temppath + "tempconcatproj",
-                                         str, filestoadd2);
-        concat.detach();
-    }
+    std::thread concat = std::thread(&Program::concat_files, mainprogram, mainprogram->temppath + "tempconcatproj",
+                                     str, filestoadd2);
+    concat.detach();
 
 	if (!autosave && !undo) {
         // remember recent project files
@@ -7004,6 +7007,151 @@ void Project::do_save(std::string path, bool autosave, bool undo) {
             std::filesystem::remove(it);
         }
     }
+}
+
+void Project::save_as() {
+    std::string path2;
+    std::string str;
+    std::vector<std::vector<std::string>> bupaths;
+    if (dirname(mainprogram->path) != "") {
+        std::string oldprdir = mainprogram->project->name;
+        mainprogram->currprojdir = dirname(mainprogram->path);
+        std::string ext = mainprogram->path.substr(mainprogram->path.length() - 7, std::string::npos);
+        if (ext != ".ewocvj") {
+            str = mainprogram->path + "/" + basename(mainprogram->path) + ".ewocvj";
+            path2 = mainprogram->path;
+        } else {
+            path2 = dirname(mainprogram->path.substr(0, mainprogram->path.size() - 7));
+            path2 = path2.substr(0, path2.size() - 1);
+            str = mainprogram->path;
+            mainprogram->path = path2;
+        }
+
+        if (!exists(path2)) {
+            mainprogram->project->copy_dirs(path2);
+        } else {
+            mainprogram->project->delete_dirs(path2);
+            mainprogram->project->copy_dirs(path2);
+        }
+
+        if (mainprogram->project->bupp != "") {
+            mainprogram->project->binsdir = mainprogram->project->bubd;
+            mainprogram->project->shelfdir = mainprogram->project->busd;
+            mainprogram->project->recdir = mainprogram->project->burd;
+            mainprogram->project->autosavedir = mainprogram->project->buad;
+            mainprogram->project->elementsdir = mainprogram->project->bued;
+            mainprogram->project->path = mainprogram->project->bupp;
+            mainprogram->project->name = mainprogram->project->bupn;
+        }
+
+        if (!std::filesystem::is_empty(mainprogram->path + "/autosaves/")) {
+            // adapt autosave entries
+            std::unordered_map<std::string, std::string> smap;
+            // change autosave directory names
+            for (const auto &dirEnt: std::filesystem::directory_iterator{
+                    mainprogram->path + "/autosaves/"}) {
+                const auto &path = dirEnt.path();
+                auto pathstr = path.generic_string();
+                if (basename(pathstr) == "autosavelist") continue;
+                size_t start_pos = pathstr.rfind(oldprdir);
+                if (start_pos == std::string::npos) continue;
+                std::string newstr = pathstr;
+                newstr.replace(start_pos, oldprdir.length(), basename(path2));
+                smap[pathstr] = newstr;
+            }
+            std::unordered_map<std::string, std::string>::iterator it;
+            for (it = smap.begin(); it != smap.end(); it++) {
+                std::filesystem::rename(it->first, it->second);
+            }
+            // change autosave project file names
+            smap.clear();
+            for (const auto &dirEnt: std::filesystem::recursive_directory_iterator{
+                    mainprogram->project->autosavedir}) {
+                const auto &path = dirEnt.path();
+                //if (std::filesystem::is_directory(path)) continue;
+                auto pathstr = path.generic_string();
+                std::string ext2 = pathstr.substr(pathstr.length() - 7, std::string::npos);
+                if (ext2 != ".ewocvj") continue;
+                size_t start_pos = pathstr.rfind(oldprdir);
+                if (start_pos == std::string::npos) continue;
+                std::string newstr = pathstr;
+                newstr.replace(start_pos, oldprdir.length(), basename(path2));
+                smap[pathstr] = newstr;
+            }
+            for (it = smap.begin(); it != smap.end(); it++) {
+                std::filesystem::rename(it->first, it->second);
+            }
+        }
+        /*std::string src = pathtoplatform(mainprogram->project->binsdir + binsmain->currbin->name + "/");
+        std::string dest = pathtoplatform(dirname(mainprogram->path) + remove_extension(basename(mainprogram->path)) + "/");
+        copy_dir(src, dest);*/
+        for (int k = 0; k < binsmain->bins.size(); k++) {
+            std::vector<std::string> bup;
+            for (int j = 0; j < 12; j++) {
+                for (int i = 0; i < 12; i++) {
+                    BinElement *binel = binsmain->bins[k]->elements[i * 12 + j];
+                    std::string s =
+                            mainprogram->path + "/bins/" + binsmain->bins[k]->name + "/";
+                    bup.push_back(binel->absjpath);
+                    if (binel->absjpath != "") {
+                        binel->absjpath = s + basename(binel->absjpath);
+                        binel->jpegpath = binel->absjpath;
+                        binel->reljpath = std::filesystem::relative(binel->absjpath, s).generic_string();
+                    }
+                }
+            }
+            bupaths.push_back(bup);
+        }
+        /*for (int k = 0; k < 2; k++) {
+            Shelf *shelf = mainprogram->shelves[k];
+            std::vector<std::string> bus;
+            for (int j = 0; j < 16; j++) {
+                ShelfElement *elem = shelf->elements[j];
+                std::string s =
+                        mainprogram->path + remove_extension(basename(mainprogram->path)) +
+                        "/";
+                bus.push_back(elem->jpegpath);
+                elem->jpegpath = s + basename(elem->jpegpath);
+            }
+            bupathsshelf.push_back(bus);
+        }*/
+    }
+    if (exists(str)) {
+        std::filesystem::remove(str);
+    }
+    // save project
+    mainprogram->saveas = true;
+    mainprogram->project->save(str, false);
+    mainprogram->saveas = false;
+
+    for (int k = 0; k < binsmain->bins.size(); k++) {
+        for (int j = 0; j < 12; j++) {
+            for (int i = 0; i < 12; i++) {
+                BinElement *binel = binsmain->bins[k]->elements[i * 12 + j];
+                //bupaths[k][i * 12 + j] = binel->absjpath;
+                binel->absjpath = bupaths[k][i * 12 + j];
+                binel->jpegpath = binel->absjpath;
+                binel->reljpath = std::filesystem::relative(binel->absjpath,
+                                                            mainprogram->project->binsdir).generic_string();
+            }
+        }
+    }
+    /*for (int k = 0; k < 2; k++) {
+        Shelf *shelf = mainprogram->shelves[k];
+        for (int j = 0; j < 16; j++) {
+            ShelfElement *elem = shelf->elements[j];
+            //bupaths[k][i * 12 + j] = binel->absjpath;
+            elem->jpegpath = bupathsshelf[k][j];
+        }
+    }*/
+
+    mainprogram->project->bupp = "";
+    mainprogram->project->bupn = "";
+    mainprogram->project->bubd = "";
+    mainprogram->project->busd = "";
+    mainprogram->project->burd = "";
+    mainprogram->project->buad = "";
+    mainprogram->project->bued = "";
 }
 
 void Project::autosave() {
@@ -7067,7 +7215,7 @@ void Project::autosave() {
 
     printf("autosaving\n");
 
-    mainprogram->project->do_save(p1 + "/" + basename(p1) + ".ewocvj", true);
+    mainprogram->project->save(p1 + "/" + basename(p1) + ".ewocvj", true);
 
     for (int k = 0; k < binsmain->bins.size(); k++) {
         for (int j = 0; j < 12; j++) {
@@ -8492,7 +8640,8 @@ void Shelf::save(const std::string path, bool undo) {
     if (!undo) {
         std::vector<std::vector<std::string>> filestoadd2;
         filestoadd2.push_back(filestoadd);
-        std::thread concat = std::thread(&Program::concat_files, mainprogram, mainprogram->temppath + "tempconcatshelf",
+        std::string tpath = find_unused_filename("tempconcatshelf", mainprogram->temppath, "");
+        std::thread concat = std::thread(&Program::concat_files, mainprogram, tpath,
                                          path, filestoadd2);
         concat.detach();
     }
@@ -8538,7 +8687,7 @@ void Shelf::open_files_shelf() {
             elem->type = ELEM_IMAGE;
         } else if (isvideo(str)) {
             elem->type = ELEM_FILE;
-        } else if (mainprogram->openerr) {
+        } else {
             next_elem();
             return;
         }
@@ -8547,6 +8696,7 @@ void Shelf::open_files_shelf() {
         elem->jpegpath = find_unused_filename("shelftex", mainprogram->temppath, ".jpg");
         // texes are inserted after phase 2 of order_paths
         save_thumb(elem->jpegpath, mainprogram->pathtexes[mainprogram->shelffilescount]);
+        glDeleteTextures(1, &elem->tex);
         elem->tex = mainprogram->pathtexes[mainprogram->shelffilescount];
     }
 
@@ -8557,7 +8707,7 @@ void Shelf::open_files_shelf() {
 
 void Shelf::open_jpegpaths_shelf() {
     if (mainprogram->shelfjpegpaths[this]) {
-        if (this->elements[this->elemcount]->jpegpath != "") {
+        if (this->elements[this->elemcount]->path != "") {
             open_thumb(this->elements[this->elemcount]->jpegpath, this->elements[this->elemcount]->tex);
         }
         this->elemcount++;
@@ -8674,25 +8824,30 @@ bool Shelf::open(const std::string path, bool undo) {
                         }
                     }
                     safegetline(rfile, istring);
+                    elem->jpegpath = result + "_" + std::to_string(filecount) + ".file";
                     if (!undo) {
-                        elem->jpegpath = result + "_" + std::to_string(filecount) + ".file";
-                        if (elem->jpegpath != "") {
-                            glDeleteTextures(1, &elem->tex);
-                            glGenTextures(1, &elem->tex);
-                            glBindTexture(GL_TEXTURE_2D, elem->tex);
-                            glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR);
-                            glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
-                            glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_BORDER);
-                            glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_BORDER);
-                            open_thumb(result + "_" + std::to_string(filecount) + ".file", elem->tex);
-                        }
-                        filecount++;
+                        glDeleteTextures(1, &elem->tex);
+                        glGenTextures(1, &elem->tex);
+                        glBindTexture(GL_TEXTURE_2D, elem->tex);
+                        glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR);
+                        glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
+                        glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_BORDER);
+                        glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_BORDER);
+                        open_thumb(result + "_" + std::to_string(filecount) + ".file", elem->tex);
                     }
+                    filecount++;
                 }
                 if (undo) {
                     if (istring == "JPEGPATH") {
                         safegetline(rfile, istring);
                         elem->jpegpath = istring;
+                        glDeleteTextures(1, &elem->tex);
+                        glGenTextures(1, &elem->tex);
+                        glBindTexture(GL_TEXTURE_2D, elem->tex);
+                        glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR);
+                        glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
+                        glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_BORDER);
+                        glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_BORDER);
                         mainprogram->shelfjpegpaths[this] = true;
                         mainprogram->openjpegpathsshelf = true;
                         this->elemcount = 0;
@@ -9133,7 +9288,6 @@ std::string deconcat_files(std::string path) {
         int32_t num;
         bfile.read((char *)&num, 4);
         if (num != 20011975) {
-            mainprogram->openerr = true;
             return "";
         }
         bfile.read((char *)&num, 4);
@@ -9174,23 +9328,22 @@ void Program::concat_files(std::string ofpath, std::string path, std::vector<std
     int count = mainprogram->concatting;
     mainprogram->concatting++;
 
-    int time = 2000;
-    if (mainprogram->copytocomp || mainprogram->undoing || mainprogram->clipsaving) {
-        time = 0;
+    if (mainprogram->concatting == mainprogram->concatlimit) {
+        this->goconcat = true;
+        this->concatvar.notify_all();
+        mainprogram->concatlimit = 0;
     }
-    if (count == 0) {
-        if (mainprogram->saveas) {
-            Sleep(time);  // maximium startup time for al concats
-        } else {
-            Sleep(time);  // maximium startup time for al concats
-        }
+    if (mainprogram->concatlimit) {
+        std::unique_lock<std::mutex> lock(this->concatlock);
+        this->concatvar.wait(lock, [&] {return this->goconcat; });
+        lock.unlock();
     }
 
-    if (!undoing) {
-        while (count != mainprogram->numconcatted) {
-            Sleep(5);
+    //if (mainprogram->concatting == mainprogram->concatlimit) {
+        while (count > mainprogram->numconcatted) {
+            Sleep(10);
         }
-    }
+    //}
 
     //Sleep(100);
 
@@ -9242,10 +9395,10 @@ void Program::concat_files(std::string ofpath, std::string path, std::vector<std
     }
     ofile.close();
     if (exists(ofpath)) {
-        //while (exists(path)) {
-        std::error_code ec;
-        std::filesystem::remove(path, ec);
-        //}
+        while (exists(path)) {
+            std::error_code ec;
+            std::filesystem::remove(path, ec);
+        }
         std::filesystem::rename(ofpath, path);
     }
 
@@ -9608,7 +9761,7 @@ void Program::undo_redo_save() {
                 this->undopaths.pop_back();
             }
             this->undopaths.push_back(undopath);
-            this->project->do_save(undopath, false, true);
+            this->project->save(undopath, false, true);
 
             std::vector<std::tuple<std::tuple<Param*, Button*, int, int, int, int, int, std::string>, float>> uvec;
             this->undomapvec.push_back(uvec);

@@ -1230,7 +1230,7 @@ Shelf::Shelf(bool side) {
     // make a new shelf with 16 elements and respective overlayed button control elements
 	this->side = side;
 	for (int i = 0; i < 16; i++) {
-		this->buttons.push_back(new Button(false));
+ 		this->buttons.push_back(new Button(false));
 		this->elements.push_back(new ShelfElement(side, i, this->buttons.back()));
 	}
     std::vector<std::string> vec;
@@ -1440,7 +1440,7 @@ void set_glstructures() {
     glEnableVertexAttribArray(1);
     glVertexAttribPointer(1, 2, GL_FLOAT, GL_FALSE, 8, nullptr);
 
-    SDL_GL_MakeCurrent(mainprogram->quitwindow, glc);
+    SDL_GL_MakeCurrent(mainprogram->requesterwindow, glc);
     glGenBuffers(1, &mainprogram->quboxvbuf);
     glGenBuffers(1, &mainprogram->quboxtbuf);
     glGenVertexArrays(1, &mainprogram->quboxvao);
@@ -3568,6 +3568,7 @@ bool get_videotex(Layer *lay, std::string path) {
 
     lay = lay->open_video(0, path, true, true);
     if (mainprogram->openerr) {
+        mainprogram->openerr = false;
         mainprogram->errlays.push_back(lay);
         lay->close();
         return false;
@@ -4272,79 +4273,94 @@ void the_loop() {
             tempmap = &mainmix->swapmap[3];
         }
         if (tempmap->size()) {
-            done = false;
-            bool ready = true;
+            bool brk = false;
+            for (std::vector<Layer *> lv: *tempmap) {
+                if (lv[1]) {
+                    Layer *testlay = lv[1];
+                    if (!testlay->liveinput && !testlay->isclone &&
+                        (testlay->changeinit < 1 && testlay->filename != "")) {
+                        testlay->load_frame();
+                        if (testlay->deck == 0) mainmix->keep0 = choose_layers(0);
+                        else mainmix->keep1 = choose_layers(1);
+                        done = false;
+                        brk = true;
+                        break;
+                    }
+                }
+            }
+            if (brk) break;
+        }
+    }
+    if (done || mainprogram->swappingscene) {
+        for (int i = 0; i < 4; i++) {
+            if (i == 0) {
+                tempmap = &mainmix->swapmap[0];
+            } else if (i == 1) {
+                tempmap = &mainmix->swapmap[1];
+            } else if (i == 2) {
+                tempmap = &mainmix->swapmap[2];
+            } else if (i == 3) {
+                tempmap = &mainmix->swapmap[3];
+            }
             for (std::vector<Layer *> lv: *tempmap) {
                 if (lv[1]) {
                     Layer *testlay = lv[1];
                     testlay->nonewpbos = false;  // get new pbos
                     if (testlay->filename != "") testlay->progress(1, 1);
-                    if (!testlay->liveinput && !testlay->isclone && (testlay->changeinit < 0 && testlay->filename != "")) {
-                        testlay->load_frame();
-                        if (testlay->deck == 0) mainmix->keep0 = choose_layers(0);
-                        else mainmix->keep1 = choose_layers(1);
-                        ready = false;
-                    } else {
-                        testlay->changeinit = 5;
-                        testlay->initdeck = false;
-                    }
-                    if (testlay->filename == "") {
-                        testlay->changeinit = 5;
-                        testlay->initdeck = false;
-                    }
+                    testlay->changeinit = 5;
+                    testlay->initdeck = false;
                 }
             }
-            if (ready) {
-                std::vector<Layer *> oldlayers;
-                if (mainmix->setscene != -1) {
-                    //mainmix->currscene[1] = mainmix->setscene;
+            std::vector<Layer *> oldlayers;
+            if (mainmix->setscene != -1) {
+                //mainmix->currscene[1] = mainmix->setscene;
+            }
+            if (tempmap->size()) {
+                int maxpos = -1;
+                for (int j = 0; j < tempmap->size(); j++) {
+                    std::vector<Layer *> lv = (*tempmap)[j];
+                    if (lv[0] && !lv[1]) {
+                        maxpos = lv[0]->pos;
+                        break;
+                    }
                 }
-                if (tempmap->size()) {
-                    int maxpos = -1;
-                   for (int j = 0; j < tempmap->size(); j++) {
-                       std::vector<Layer *> lv = (*tempmap)[j];
-                       if (lv[0] && !lv[1]) {
-                           maxpos = lv[0]->pos;
-                           break;
-                       }
-                   }
-                    for (int j = 0; j < tempmap->size(); j++) {
-                        std::vector<Layer *> lv = (*tempmap)[j];
-                        bool nothing = false;
+                for (int j = 0; j < tempmap->size(); j++) {
+                    std::vector<Layer *> lv = (*tempmap)[j];
+                    bool nothing = false;
 
-                        if (!mainmix->tempmapislayer) {
-                            if (!lv[1]) {
-                                if (lv[0]->pos >= maxpos) {
-                                    // don't add anything
-                                    nothing = true;
-                                }
+                    if (!mainmix->tempmapislayer) {
+                        if (!lv[1]) {
+                            if (lv[0]->pos >= maxpos) {
+                                // don't add anything
+                                nothing = true;
                             }
                         }
-                        if (lv[1]) {
-                            oldlayers.push_back(lv[1]);
-                            lv[1]->pos = j;
-                            //lv[1]->set_aspectratio(lv[1]->iw, lv[1]->ih);
-                        } else if (lv[0] && !nothing) {
-                            oldlayers.push_back(lv[0]);
-                            lv[0]->pos = j;
+                    }
+                    if (lv[1]) {
+                        oldlayers.push_back(lv[1]);
+                        lv[1]->pos = j;
+                        //lv[1]->set_aspectratio(lv[1]->iw, lv[1]->ih);
+                    } else if (lv[0] && !nothing) {
+                        oldlayers.push_back(lv[0]);
+                        lv[0]->pos = j;
+                    }
+                    if (lv[0] && lv[1]) {
+                        if (!mainprogram->swappingscene) {
+                            mainmix->bulayers.push_back(lv[0]);
                         }
-                        if (lv[0] && lv[1]) {
-                            if (!mainprogram->swappingscene) {
-                                mainmix->bulayers.push_back(lv[0]);
-                            }
-                            lv[1]->currclipjpegpath = lv[0]->currclipjpegpath;
-                            lv[1]->currcliptexpath = lv[0]->currcliptexpath;
-                            lv[1]->compswitched = lv[0]->compswitched;
-                            // if layer is active webcam connection: look to activate a mimiclayer
-                            int pos = std::find(mainprogram->busylayers.begin(), mainprogram->busylayers.end(), lv[1]) -
-                                      mainprogram->busylayers.begin();
-                            if (pos != mainprogram->busylayers.size()) {
-                                bool found = lv[1]->find_new_live_base(pos);
-                                if (!found) {
-                                    mainprogram->busylayers.erase(mainprogram->busylayers.begin() + pos);
-                                    mainprogram->busylist.erase(
-                                            std::find(mainprogram->busylist.begin(), mainprogram->busylist.end(), lv[1]->filename));
-                                }
+                        lv[1]->currclipjpegpath = lv[0]->currclipjpegpath;
+                        lv[1]->currcliptexpath = lv[0]->currcliptexpath;
+                        lv[1]->compswitched = lv[0]->compswitched;
+                        // if layer is active webcam connection: look to activate a mimiclayer
+                        int pos = std::find(mainprogram->busylayers.begin(), mainprogram->busylayers.end(), lv[1]) -
+                                  mainprogram->busylayers.begin();
+                        if (pos != mainprogram->busylayers.size()) {
+                            bool found = lv[1]->find_new_live_base(pos);
+                            if (!found) {
+                                mainprogram->busylayers.erase(mainprogram->busylayers.begin() + pos);
+                                mainprogram->busylist.erase(
+                                        std::find(mainprogram->busylist.begin(), mainprogram->busylist.end(),
+                                                  lv[1]->filename));
                             }
                         }
                     }
@@ -4352,28 +4368,29 @@ void the_loop() {
                 if (i == 0) {
                     mainmix->keep0 = mainmix->layers[0];
                     mainmix->layers[0] = oldlayers;
-                    skip = mainmix->layers[0];
+                    //skip = mainmix->layers[0];
                     mainmix->reconnect_all(mainmix->layers[0]);
                 } else if (i == 1) {
                     mainmix->keep0 = mainmix->layers[1];
                     mainmix->layers[1] = oldlayers;
-                    skip = mainmix->layers[1];
+                    //skip = mainmix->layers[1];
                     mainmix->reconnect_all(mainmix->layers[1]);
                 } else if (i == 2) {
                     mainmix->keep0 = mainmix->layers[2];
                     mainmix->layers[2] = oldlayers;
-                    skip = mainmix->layers[2];
+                    //skip = mainmix->layers[2];
                     mainmix->reconnect_all(mainmix->layers[2]);
                 } else if (i == 3) {
                     mainmix->keep0 = mainmix->layers[3];
                     mainmix->layers[3] = oldlayers;
-                    skip = mainmix->layers[3];
+                    //skip = mainmix->layers[3];
                     mainmix->reconnect_all(mainmix->layers[3]);
                 }
-                tempmap->clear();
             }
+            tempmap->clear();
         }
     }
+
     if (mainprogram->swappingscene) {
         mainmix->bulayers.clear();
     }
@@ -5388,9 +5405,9 @@ void the_loop() {
 	if (mainprogram->quitting != "") {
         // exiting the program
 		mainprogram->directmode = true;
-        SDL_ShowWindow(mainprogram->quitwindow);
-        SDL_RaiseWindow(mainprogram->quitwindow);
-		SDL_GL_MakeCurrent(mainprogram->quitwindow, glc);
+        SDL_ShowWindow(mainprogram->requesterwindow);
+        SDL_RaiseWindow(mainprogram->requesterwindow);
+		SDL_GL_MakeCurrent(mainprogram->requesterwindow, glc);
         glBindFramebuffer(GL_FRAMEBUFFER, 0);
         glDrawBuffer(GL_BACK_LEFT);
 		glViewport(0, 0, glob->w / 2.0f, glob->h / 2.0f);
@@ -5491,11 +5508,11 @@ void the_loop() {
 		}
 		if (ret == 3) {
 			mainprogram->quitting = "";
-			SDL_HideWindow(mainprogram->quitwindow);
+			SDL_HideWindow(mainprogram->requesterwindow);
 			SDL_RaiseWindow(mainprogram->mainwindow);
 		}
 		if (ret == 0) {
-			SDL_GL_SwapWindow(mainprogram->quitwindow);
+			SDL_GL_SwapWindow(mainprogram->requesterwindow);
 		}
 		SDL_GL_MakeCurrent(mainprogram->mainwindow, glc);
         glBindFramebuffer(GL_FRAMEBUFFER, 0);
@@ -6455,7 +6472,7 @@ int main(int argc, char* argv[]) {
     //glewExperimental = GL_TRUE;
     glewInit();
 
-    mainprogram->quitwindow = SDL_CreateWindow("Quit EWOCvj2", glob->w / 4, glob->h / 4, glob->w / 2,
+    mainprogram->requesterwindow = SDL_CreateWindow("Quit EWOCvj2", glob->w / 4, glob->h / 4, glob->w / 2,
                                                glob->h / 2, SDL_WINDOW_OPENGL | SDL_WINDOW_HIDDEN |
                                                                           SDL_WINDOW_ALLOW_HIGHDPI);
     mainprogram->config_midipresetswindow = SDL_CreateWindow("Tune MIDI", glob->w / 4, glob->h / 4, glob->w / 2,
@@ -7061,148 +7078,7 @@ int main(int argc, char* argv[]) {
                     mainprogram->currprojdir = dirname(p.substr(0, p.length() - 1));
                 }
             } else if (mainprogram->pathto == "SAVEPROJECT") {
-                std::string path2;
-                std::string str;
-                std::vector<std::vector<std::string>> bupaths;
-                if (dirname(mainprogram->path) != "") {
-                    std::string oldprdir = mainprogram->project->name;
-                    mainprogram->currprojdir = dirname(mainprogram->path);
-                    std::string ext = mainprogram->path.substr(mainprogram->path.length() - 7, std::string::npos);
-                    if (ext != ".ewocvj") {
-                        str = mainprogram->path + "/" + basename(mainprogram->path) + ".ewocvj";
-                        path2 = mainprogram->path;
-                    } else {
-                        path2 = dirname(mainprogram->path.substr(0, mainprogram->path.size() - 7));
-                        path2 = path2.substr(0, path2.size() - 1);
-                        str = mainprogram->path;
-                        mainprogram->path = path2;
-                    }
-
-                    if (!exists(path2)) {
-                        mainprogram->project->copy_dirs(path2);
-                    } else {
-                        mainprogram->project->delete_dirs(path2);
-                        mainprogram->project->copy_dirs(path2);
-                    }
-
-                    if (mainprogram->project->bupp != "") {
-                        mainprogram->project->binsdir = mainprogram->project->bubd;
-                        mainprogram->project->shelfdir = mainprogram->project->busd;
-                        mainprogram->project->recdir = mainprogram->project->burd;
-                        mainprogram->project->autosavedir = mainprogram->project->buad;
-                        mainprogram->project->elementsdir = mainprogram->project->bued;
-                        mainprogram->project->path = mainprogram->project->bupp;
-                        mainprogram->project->name = mainprogram->project->bupn;
-                    }
-
-                    if (!std::filesystem::is_empty(mainprogram->path + "/autosaves/")) {
-                        // adapt autosave entries
-                        std::unordered_map<std::string, std::string> smap;
-                        // change autosave directory names
-                        for (const auto &dirEnt: std::filesystem::directory_iterator{
-                                mainprogram->path + "/autosaves/"}) {
-                            const auto &path = dirEnt.path();
-                            auto pathstr = path.generic_string();
-                            if (basename(pathstr) == "autosavelist") continue;
-                            size_t start_pos = pathstr.rfind(oldprdir);
-                            if (start_pos == std::string::npos) continue;
-                            std::string newstr = pathstr;
-                            newstr.replace(start_pos, oldprdir.length(), basename(path2));
-                            smap[pathstr] = newstr;
-                        }
-                        std::unordered_map<std::string, std::string>::iterator it;
-                        for (it = smap.begin(); it != smap.end(); it++) {
-                            std::filesystem::rename(it->first, it->second);
-                        }
-                        // change autosave project file names
-                        smap.clear();
-                        for (const auto &dirEnt: std::filesystem::recursive_directory_iterator{
-                                mainprogram->project->autosavedir}) {
-                            const auto &path = dirEnt.path();
-                            //if (std::filesystem::is_directory(path)) continue;
-                            auto pathstr = path.generic_string();
-                            std::string ext2 = pathstr.substr(pathstr.length() - 7, std::string::npos);
-                            if (ext2 != ".ewocvj") continue;
-                            size_t start_pos = pathstr.rfind(oldprdir);
-                            if (start_pos == std::string::npos) continue;
-                            std::string newstr = pathstr;
-                            newstr.replace(start_pos, oldprdir.length(), basename(path2));
-                            smap[pathstr] = newstr;
-                        }
-                        for (it = smap.begin(); it != smap.end(); it++) {
-                            std::filesystem::rename(it->first, it->second);
-                        }
-                    }
-                    /*std::string src = pathtoplatform(mainprogram->project->binsdir + binsmain->currbin->name + "/");
-                    std::string dest = pathtoplatform(dirname(mainprogram->path) + remove_extension(basename(mainprogram->path)) + "/");
-                    copy_dir(src, dest);*/
-                    for (int k = 0; k < binsmain->bins.size(); k++) {
-                        std::vector<std::string> bup;
-                        for (int j = 0; j < 12; j++) {
-                            for (int i = 0; i < 12; i++) {
-                                BinElement *binel = binsmain->bins[k]->elements[i * 12 + j];
-                                std::string s =
-                                        mainprogram->path + "/bins/" + binsmain->bins[k]->name + "/";
-                                bup.push_back(binel->absjpath);
-                                if (binel->absjpath != "") {
-                                    binel->absjpath = s + basename(binel->absjpath);
-                                    binel->jpegpath = binel->absjpath;
-                                    binel->reljpath = std::filesystem::relative(binel->absjpath, s).generic_string();
-                                }
-                            }
-                        }
-                        bupaths.push_back(bup);
-                    }
-                    /*for (int k = 0; k < 2; k++) {
-                        Shelf *shelf = mainprogram->shelves[k];
-                        std::vector<std::string> bus;
-                        for (int j = 0; j < 16; j++) {
-                            ShelfElement *elem = shelf->elements[j];
-                            std::string s =
-                                    mainprogram->path + remove_extension(basename(mainprogram->path)) +
-                                    "/";
-                            bus.push_back(elem->jpegpath);
-                            elem->jpegpath = s + basename(elem->jpegpath);
-                        }
-                        bupathsshelf.push_back(bus);
-                    }*/
-                }
-                if (exists(str)) {
-                    std::filesystem::remove(str);
-                }
-                // save project
-                mainprogram->saveas = true;
-                mainprogram->project->do_save(str, false);
-                mainprogram->saveas = false;
-
-                for (int k = 0; k < binsmain->bins.size(); k++) {
-                    for (int j = 0; j < 12; j++) {
-                        for (int i = 0; i < 12; i++) {
-                            BinElement *binel = binsmain->bins[k]->elements[i * 12 + j];
-                            //bupaths[k][i * 12 + j] = binel->absjpath;
-                            binel->absjpath = bupaths[k][i * 12 + j];
-                            binel->jpegpath = binel->absjpath;
-                            binel->reljpath = std::filesystem::relative(binel->absjpath,
-                                                                        mainprogram->project->binsdir).generic_string();
-                        }
-                    }
-                }
-                /*for (int k = 0; k < 2; k++) {
-                    Shelf *shelf = mainprogram->shelves[k];
-                    for (int j = 0; j < 16; j++) {
-                        ShelfElement *elem = shelf->elements[j];
-                        //bupaths[k][i * 12 + j] = binel->absjpath;
-                        elem->jpegpath = bupathsshelf[k][j];
-                    }
-                }*/
-
-                mainprogram->project->bupp = "";
-                mainprogram->project->bupn = "";
-                mainprogram->project->bubd = "";
-                mainprogram->project->busd = "";
-                mainprogram->project->burd = "";
-                mainprogram->project->buad = "";
-                mainprogram->project->bued = "";
+                mainprogram->project->save_as();
             }
 
             mainprogram->path = "";
@@ -7850,8 +7726,8 @@ int main(int argc, char* argv[]) {
                     mainprogram->get_inname("Open project", "application/ewocvj2-project", std::filesystem::canonical(mainprogram->currprojdir).generic_string());
                     if (mainprogram->path != "") {
                         SDL_GL_MakeCurrent(mainprogram->mainwindow, glc);
-                        mainprogram->undo_redo_save();
                         mainprogram->project->open(mainprogram->path, false, true);
+                        mainprogram->undo_redo_save();
                         std::string p = dirname(mainprogram->path);
                         mainprogram->currprojdir = dirname(p.substr(0, p.length() - 1));
                         mainprogram->path = "";
@@ -7882,8 +7758,8 @@ int main(int argc, char* argv[]) {
                     draw_box(white, lightblue, &box, -1);
                     if (mainprogram->leftmouse) {
                         //SDL_GL_MakeCurrent(mainprogram->mainwindow, glc);
-                        mainprogram->undo_redo_save();
                         bool ret = mainprogram->project->open(mainprogram->recentprojectpaths[i], false, true);
+                        mainprogram->undo_redo_save();
                         if (ret) {
                             std::string p = dirname(mainprogram->recentprojectpaths[i]);
                             mainprogram->currprojdir = dirname(p.substr(0, p.length() - 1));
@@ -7934,7 +7810,6 @@ int main(int argc, char* argv[]) {
 
             if (mainprogram->newproject) {
                 mainprogram->newproject = false;
-                mainprogram->undo_redo_save();
                 mainprogram->project->open(mainprogram->project->path, false, true);
            }
 

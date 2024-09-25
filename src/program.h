@@ -188,7 +188,8 @@ class Project {
 		void newp(std::string path);
 		bool open(std::string path, bool autosave, bool newp = false, bool undo = false);
         void autosave();
-		void do_save(std::string path, bool autosave = false, bool undo = false);
+		void save(std::string path, bool autosave = false, bool undo = false);
+        void save_as();
         void delete_dirs(std::string path);
         void copy_dirs(std::string path);
         void create_dirs(std::string path);
@@ -620,7 +621,7 @@ class Program {
 		std::unordered_map<EFFECT_TYPE, std::string> effectsmap;
 		std::vector<EFFECT_TYPE> abeffects;
 
-        SDL_Window* quitwindow = nullptr;
+        SDL_Window* requesterwindow = nullptr;
         SDL_Window* dummywindow = nullptr;
 
         SDL_Window* config_midipresetswindow = nullptr;
@@ -678,7 +679,11 @@ class Program {
         bool swappingscene = false;
         bool autosaving = false;
         int concatting = 0;
+        std::mutex concatlock;
+        std::condition_variable concatvar;
+        bool goconcat = false;
         int numconcatted = 0;
+        int concatlimit = 0;
         bool saveas = false;
         bool inautosave = false;
         std::vector<std::string> oldbins;
@@ -881,7 +886,7 @@ class Program {
 		void set_ow3oh3();
 		void handle_changed_owoh();
         bool handle_button(Button *but, bool circlein = false);
-        bool handle_button(Button *but, bool circlein, bool automation);
+        bool handle_button(Button *but, bool circlein, bool automation, bool copycomp = false);
 		int handle_menu(Menu* menu);
 		int handle_menu(Menu* menu, float xshift, float yshift);
 		void handle_fullscreen();

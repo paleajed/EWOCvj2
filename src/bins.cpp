@@ -1564,7 +1564,7 @@ void BinsMain::handle(bool draw) {
         }
         else if (binelmenuoptions[k] == BET_SAVPROJ) {
             // save project
-            mainprogram->project->do_save(mainprogram->project->path);
+            mainprogram->project->save(mainprogram->project->path);
         }
 	}
 
@@ -2736,26 +2736,21 @@ void BinsMain::open_handlefile(std::string path, GLuint tex) {
 
         // determine file type
         std::string istring = "";
-        std::string result = deconcat_files(path);
-        if (!mainprogram->openerr) {
-            bool concat = (result != "");
-            std::ifstream rfile;
-            if (concat) rfile.open(result);
-            else rfile.open(path);
-            safegetline(rfile, istring);
-        } else mainprogram->openerr = false;
+        std::ifstream rfile;
+        rfile.open(path);
+        safegetline(rfile, istring);
 
-        if (istring == "EWOCvj LAYERFILE") {
+        if (istring.find("EWOCvj LAYERFILE")) {
             endtype = ELEM_LAYER;
-        } else if (istring == "EWOCvj DECKFILE") {
+        } else if (istring.find("EWOCvj DECKFILE")) {
             endtype = ELEM_DECK;
-         } else if (istring == "EWOCvj MIXFILE") {
+         } else if (istring.find("EWOCvj MIXFILE")) {
             endtype = ELEM_MIX;
         } else if (isimage(path)) {
            endtype = ELEM_IMAGE;
         } else if (isvideo(path)) {
             endtype = ELEM_FILE;
-        } else if (mainprogram->openerr) {
+        } else {
             return;
         }
 
@@ -2836,7 +2831,7 @@ void BinsMain::open_handlefile(std::string path, GLuint tex) {
                 }
                 else endtex = tex;
 
-            } else if (mainprogram->openerr) {
+            } else {
                 return;
             }
         }
