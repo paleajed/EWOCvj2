@@ -262,7 +262,7 @@ void LoopStationElement::visualize() {
                                       this->colbox->vtxcoords->y1 + 0.0375f, 0.0225f, 0.03f, -1);
 	if (this == loopstation->currelem) draw_box(grey, white, this->box, -1);
 	else draw_box(grey, nullptr, this->box, -1);
-    render_text(std::to_string(this->pos + 1), white, this->recbut->box->vtxcoords->x1 - 0.05f, this->recbut->box->vtxcoords->y1 + 0.03f, 0.0012f, 0.002f, 2);
+    render_text(std::to_string(this->pos + 1), white, this->recbut->box->vtxcoords->x1 - 0.05f, this->recbut->box->vtxcoords->y1 - 0.03f, 0.0012f, 0.002f, 2);
 	if (this->colbox->in()) {
         if (!mainprogram->menuondisplay || mainprogram->lpstmenuon) {
             if (mainprogram->menuactivation) {
@@ -407,6 +407,7 @@ void LoopStationElement::mouse_handle() {
 }
 
 void LoopStationElement::set_values() {
+    if (this->eventlist.size() == 0) return;
 	// if current elapsed time in loop > eventtime of events starting from eventpos then set their params to stored values
     std::chrono::system_clock::time_point now2 = std::chrono::system_clock::now();
 	std::chrono::duration<double> elapsed;
@@ -442,8 +443,7 @@ void LoopStationElement::set_values() {
             elapsed = std::chrono::duration_cast<std::chrono::duration<double>>(now2 - but->midistarttime);
             long long mc = std::chrono::duration_cast<std::chrono::milliseconds>(elapsed).count();
             if (mc > 500 || mc < 0) {
-                if (std::find(this->lpst->allbuttons.begin(), this->lpst->allbuttons.end(), but) !=
-                    this->lpst->allbuttons.end()) {
+                if (this->lpst->allbuttons.count(but)) {
                     but->value = (int) (std::get<3>(event) + 0.5f);
                 }
             }
@@ -617,4 +617,42 @@ LoopStationElement* LoopStation::free_element() {
 		}
 	}
 	return loop;
+}
+
+
+void LoopStation::remove_entries(int copycomp) {
+    for (LoopStationElement *elem: this->elems) {
+        std::vector<std::tuple<long long, Param *, Button *, float>> evlist = elem->eventlist;
+        for (int i = evlist.size() - 1; i >= 0; i--) {
+            std::tuple<long long, Param *, Button *, float> event = elem->eventlist[i];
+            if (std::get<1>(event)) {
+                if (std::get<1>(event)->name == "Crossfade" || std::get<1>(event)->name == "wipex" ||
+                    std::get<1>(event)->name == "wipey") {
+                    if (copycomp == 2) {
+                        elem->eventlist.erase(elem->eventlist.begin() + i);
+                        elem->params.erase(std::get<1>(event));
+                    }
+                } else if (std::get<1>(event)->effect) {
+                    if (std::get<1>(event)->effect->layer->deck == mainmix->mousedeck) {
+                        elem->eventlist.erase(elem->eventlist.begin() + i);
+                        elem->params.erase(std::get<1>(event));
+                    }
+                } else {
+                    if (std::get<1>(event)->layer->deck == mainmix->mousedeck) {
+                        elem->eventlist.erase(elem->eventlist.begin() + i);
+                        elem->params.erase(std::get<1>(event));
+                    }
+                }
+            } else if (std::get<2>(event)) {
+                if (std::get<2>(event)->layer->deck == mainmix->mousedeck) {
+                    elem->eventlist.erase(elem->eventlist.begin() + i);
+                    elem->buttons.erase(std::get<2>(event));
+                }
+            }
+        }
+        if (elem->eventlist.size() == 0) {
+            elem->erase_elem();
+        }
+    }
+
 }

@@ -392,7 +392,6 @@ class Mixer {
 	private:
 		void do_deletelay(Layer *testlay, std::vector<Layer*> &layers, bool add);
 		void event_write(std::ostream &wfile, Param *par, Button *but);
-		void event_read(std::istream &rfile, Param *par, Button *but, Layer *lay);
 		void add_del_bar();
 		void clip_dragging();
 		bool clip_drag_per_layervec(std::vector<Layer*>& layers, bool deck);
@@ -479,6 +478,7 @@ class Mixer {
         void change_currlay(Layer *oldcurr, Layer *newcurr);
         void copy_lpst(Layer *destlay, Layer *srclay, bool global, bool back);
         void get_butimes();
+        void event_read(std::istream &rfile, Param *par, Button *but, Layer *lay, int elem = 0);
         Mixer();
 		
 		std::mutex recordlock[2];

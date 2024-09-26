@@ -3718,14 +3718,19 @@ void handle_scenes(Scene* scene) {
                 if (((mainprogram->leftmouse) && !mainprogram->menuondisplay)) {
                     // switch scenes
                     Scene *si = mainmix->scenes[scene->deck][i];
-                    if (i == mainmix->currscene[scene->deck]) continue;
+                    //if (i == mainmix->currscene[scene->deck]) continue;
 
                     mainprogram->swappingscene = true;
 
+                    if (mainprogram->shift) {
+                        bool dck = 0;
+                        if (si == mainmix->scenes[0][i]) {
+                            dck = 1;
+                        }
+                        mainmix->scenes[dck][i]->switch_to(true);
+                        mainmix->currscene[dck] = i;
+                    }
                     si->switch_to(true);
-                    LoopStation *bulpc = lpc;
-                    lpc = si->lpst;
-                    scene->lpst = bulpc;
 
                     mainmix->currscene[scene->deck] = i;
                     mainmix->setscene = -1;

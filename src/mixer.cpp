@@ -123,8 +123,8 @@ Mixer::Mixer() {
     this->wipey[0]->range[0] = 1.0f;
     this->wipey[0]->range[1] = 0.0f;
 	this->wipey[0]->shadervar = "ypos";
-	lp->allparams.push_back(this->wipex[0]);
-	lp->allparams.push_back(this->wipey[0]);
+	lp->allparams.emplace(this->wipex[0]);
+	lp->allparams.emplace(this->wipey[0]);
 	this->wipex[1] = new Param;
     this->wipex[1]->name = "wipex";
     this->wipex[1]->sliding = true;
@@ -139,8 +139,8 @@ Mixer::Mixer() {
     this->wipey[1]->range[0] = 1.0f;
     this->wipey[1]->range[1] = 0.0f;
 	this->wipey[1]->shadervar = "ypos";
-	lpc->allparams.push_back(this->wipex[1]);
-	lpc->allparams.push_back(this->wipey[1]);
+	lpc->allparams.emplace(this->wipex[1]);
+	lpc->allparams.emplace(this->wipey[1]);
 
 	this->modebox = new Boxx;
 	this->modebox->vtxcoords->x1 = 0.85f;
@@ -196,7 +196,7 @@ Mixer::Mixer() {
 	this->crossfade->box->tooltiptitle = "Crossfade ";
 	this->crossfade->box->tooltip = "Leftdrag crossfades between deck A and deck B streams. Doubleclick allows numeric entry. ";
 	this->crossfade->box->acolor[3] = 1.0f;
-	lp->allparams.push_back(this->crossfade);
+	lp->allparams.emplace(this->crossfade);
 	this->crossfadecomp = new Param;
 	this->crossfadecomp->name = "Crossfade"; 
 	this->crossfadecomp->value = 0.5f;
@@ -213,7 +213,7 @@ Mixer::Mixer() {
 	this->crossfadecomp->box->tooltiptitle = "Crossfade ";
 	this->crossfadecomp->box->tooltip = "Leftdrag crossfades between deck A and deck B streams. Doubleclick allows numeric entry. ";
 	this->crossfadecomp->box->acolor[3] = 1.0f;
-	lpc->allparams.push_back(this->crossfadecomp);
+	lpc->allparams.emplace(this->crossfadecomp);
 
     /*this->recbutS = new Button(false);
     this->recbutS->name[0] = "S";
@@ -252,7 +252,7 @@ Mixer::Mixer() {
 	this->deckspeed[0][0]->box->upvtxtoscr();
 	this->deckspeed[0][0]->box->tooltiptitle = "Global preview deck A speed setting ";
 	this->deckspeed[0][0]->box->tooltip = "Change global deck A speed factor for preview streams. Leftdrag changes value. Doubleclick allows numeric entry. ";
-    lp->allparams.push_back(this->deckspeed[0][0]);
+    lp->allparams.emplace(this->deckspeed[0][0]);
 
 	this->deckspeed[0][1] = new Param;
 	this->deckspeed[0][1]->name = "Speed B";
@@ -269,7 +269,7 @@ Mixer::Mixer() {
 	this->deckspeed[0][1]->box->upvtxtoscr();
 	this->deckspeed[0][1]->box->tooltiptitle = "Global preview deck B speed setting ";
 	this->deckspeed[0][1]->box->tooltip = "Change global deck B speed factor for preview streams. Leftdrag changes value. Doubleclick allows numeric entry. ";
-    lp->allparams.push_back(this->deckspeed[0][1]);
+    lp->allparams.emplace(this->deckspeed[0][1]);
 
 	this->deckspeed[1][0] = new Param;
 	this->deckspeed[1][0]->name = "Speed A";
@@ -286,7 +286,7 @@ Mixer::Mixer() {
 	this->deckspeed[1][0]->box->upvtxtoscr();
 	this->deckspeed[1][0]->box->tooltiptitle = "Global preview deck A speed setting ";
 	this->deckspeed[1][0]->box->tooltip = "Change global deck A speed factor for preview streams. Leftdrag changes value. Doubleclick allows numeric entry. ";
-    lpc->allparams.push_back(this->deckspeed[1][0]);
+    lpc->allparams.emplace(this->deckspeed[1][0]);
 
 	this->deckspeed[1][1] = new Param;
 	this->deckspeed[1][1]->name = "Speed B";
@@ -303,7 +303,7 @@ Mixer::Mixer() {
 	this->deckspeed[1][1]->box->upvtxtoscr();
 	this->deckspeed[1][1]->box->tooltiptitle = "Global preview deck B speed setting ";
 	this->deckspeed[1][1]->box->tooltip = "Change global deck B speed factor for preview streams. Leftdrag changes value. Doubleclick allows numeric entry. ";
-    lpc->allparams.push_back(this->deckspeed[1][1]);
+    lpc->allparams.emplace(this->deckspeed[1][1]);
 
     this->layers.push_back({}); // the old layersA
     this->layers.push_back({}); // the old layersB
@@ -368,10 +368,10 @@ Param::Param() {
     this->box->acolor[3] = 1.0;
 	if (mainprogram) {
 		if (mainprogram->prevmodus) {
-			if (lp) lp->allparams.push_back(this);
+			if (lp) lp->allparams.emplace(this);
 		}
 		else {
-			if (lpc) lpc->allparams.push_back(this);
+			if (lpc) lpc->allparams.emplace(this);
 		}
 	}
 }
@@ -384,15 +384,13 @@ Param::~Param() {
 	lock.unlock();
     if (mainprogram) {
         if (mainprogram->prevmodus) {
-            int pos = std::find(lp->allparams.begin(), lp->allparams.end(), this) - lp->allparams.begin();
-            if (pos != lp->allparams.size()) {
-                lp->allparams.erase(lp->allparams.begin() + pos);
+            if (lp->allparams.count(this)) {
+                lp->allparams.erase(this);
             }
         }
         else {
-            int pos = std::find(lpc->allparams.begin(), lpc->allparams.end(), this) - lpc->allparams.begin();
-            if (pos != lpc->allparams.size()) {
-                lpc->allparams.erase(lpc->allparams.begin() + pos);
+            if (lpc->allparams.count(this)) {
+                lpc->allparams.erase(this);
             }
         }
     }
@@ -838,7 +836,7 @@ void Mixer::copy_effects(Layer* slay, Layer* dlay, bool comp) {
 				cpar->midi[1] = par->midi[1];
 				cpar->register_midi();
 				cpar->effect = ceff;
-				lp2->allparams.push_back(cpar);
+				lp2->allparams.emplace(cpar);
 			}
 		}
 	}
@@ -3015,8 +3013,8 @@ void Layer::deautomate() {
     this->blendnode->wipex->deautomate();
     this->blendnode->wipey->deautomate();
 
-    for (int i = 0; i < loopstation->allbuttons.size(); i++) {
-        if (this == loopstation->allbuttons[i]->layer) loopstation->allbuttons[i]->deautomate();
+    for (Button *but : loopstation->allbuttons) {
+        if (this == but->layer) but->deautomate();
     }
 }
 
@@ -5773,7 +5771,7 @@ void Layer::display() {
                               this->loopbox->scrcoords->y1, this->loopbox->scrcoords->x1 + this->startframe->value *
                                                                                            (this->loopbox->scrcoords->w /
                                                                                             (this->numf - 1)),
-                              this->loopbox->scrcoords->y1 - mainprogram->yvtxtoscr(0.045f)) < 6) {
+                              this->loopbox->scrcoords->y1 - mainprogram->yvtxtoscr(0.045f)) < 6 * glob->w / 1920) {
                     ends = true;
                     if (mainprogram->ctrl && mainprogram->leftmousedown) {
                         this->scritching = 2;
@@ -5801,7 +5799,7 @@ void Layer::display() {
                                                                                                    (this->numf - 1)) +
                                                                    (this->endframe->value - this->startframe->value) *
                                                                    (this->loopbox->scrcoords->w / (this->numf - 1)),
-                                     this->loopbox->scrcoords->y1 - mainprogram->yvtxtoscr(0.045f)) < 6) {
+                                     this->loopbox->scrcoords->y1 - mainprogram->yvtxtoscr(0.045f)) < 6 * glob->w / 1920) {
                     ends = true;
                     if (mainprogram->ctrl && mainprogram->leftmousedown) {
                         this->scritching = 3;
@@ -6739,7 +6737,7 @@ void Mixer::copy_lpst(Layer *destlay, Layer *srclay, bool global, bool back) {
             if (par) {
                 elem->params.emplace(par);
                 lpst->parelemmap[par] = elem;
-                lpst->allparams.push_back(par);
+                lpst->allparams.emplace(par);
                 par->box->acolor[0] = elem->colbox->acolor[0];
                 par->box->acolor[1] = elem->colbox->acolor[1];
                 par->box->acolor[2] = elem->colbox->acolor[2];
@@ -6748,7 +6746,7 @@ void Mixer::copy_lpst(Layer *destlay, Layer *srclay, bool global, bool back) {
             if (but) {
                 elem->buttons.emplace(but);
                 lpst->butelemmap[but] = elem;
-                lpst->allbuttons.push_back(but);
+                lpst->allbuttons.emplace(but);
                 but->box->acolor[0] = elem->colbox->acolor[0];
                 but->box->acolor[1] = elem->colbox->acolor[1];
                 but->box->acolor[2] = elem->colbox->acolor[2];
@@ -8691,39 +8689,7 @@ void Mixer::open_deck(const std::string path, bool alive, bool loadevents, int c
         loopstation->butelemmap.clear();
     }
     else if (copycomp != 3) {
-        for (LoopStationElement *elem: loopstation->elems) {
-            std::vector<std::tuple<long long, Param *, Button *, float>> evlist = elem->eventlist;
-            for (int i = evlist.size() - 1; i >= 0; i--) {
-                std::tuple<long long, Param *, Button *, float> event = elem->eventlist[i];
-                if (std::get<1>(event)) {
-                    if (std::get<1>(event)->name == "Crossfade" || std::get<1>(event)->name == "wipex" ||
-                        std::get<1>(event)->name == "wipey") {
-                        if (copycomp == 2) {
-                            elem->eventlist.erase(elem->eventlist.begin() + i);
-                            elem->params.erase(std::get<1>(event));
-                        }
-                    } else if (std::get<1>(event)->effect) {
-                        if (std::get<1>(event)->effect->layer->deck == mainmix->mousedeck) {
-                            elem->eventlist.erase(elem->eventlist.begin() + i);
-                            elem->params.erase(std::get<1>(event));
-                        }
-                    } else {
-                        if (std::get<1>(event)->layer->deck == mainmix->mousedeck) {
-                            elem->eventlist.erase(elem->eventlist.begin() + i);
-                            elem->params.erase(std::get<1>(event));
-                        }
-                    }
-                } else if (std::get<2>(event)) {
-                    if (std::get<2>(event)->layer->deck == mainmix->mousedeck) {
-                        elem->eventlist.erase(elem->eventlist.begin() + i);
-                        elem->buttons.erase(std::get<2>(event));
-                    }
-                }
-            }
-            if (elem->eventlist.size() == 0) {
-                elem->erase_elem();
-            }
-        }
+        loopstation->remove_entries(copycomp);
     }
 
     std::vector<Layer*> &layers = choose_layers(mainmix->mousedeck);
@@ -11849,12 +11815,13 @@ void Mixer::event_write(std::ostream &wfile, Param* par, Button* but) {
 	}
 }
 
-void Mixer::event_read(std::istream &rfile, Param *par, Button* but, Layer *lay) {
+void Mixer::event_read(std::istream &rfile, Param *par, Button* but, Layer *lay, int elem) {
 	// load loopstation events for this parameter
 	std::string istring;
 	LoopStationElement *loop = nullptr;
-	safegetline(rfile, istring);
-	int elemnr = std::stoi(istring);
+    int elemnr;
+    safegetline(rfile, istring);
+    elemnr = std::stoi(istring);
 
     // loopstation line taken in use at location elemnr
     // if line is taken take new free element
@@ -13061,8 +13028,8 @@ Layer* Layer::transfer() {
                     lpe->layers.emplace(lay);
                     lpe->layers.erase(this);
                     l->parmap[par] = l->parmap[cpar];
-                    l->allparams.erase(std::find(l->allparams.begin(), l->allparams.end(), par));
-                    l->allparams.push_back(cpar);
+                    l->allparams.erase(par);
+                    l->allparams.emplace(cpar);
                 }
                 cpar->value = par->value;
                 cpar->midi[0] = par->midi[0];
@@ -13088,8 +13055,8 @@ Layer* Layer::transfer() {
                 lpe->layers.emplace(lay);
                 lpe->layers.erase(this);
                 l->butmap[but] = l->butmap[cbut];
-                l->allbuttons.erase(std::find(l->allbuttons.begin(), l->allbuttons.end(), but));
-                l->allbuttons.push_back(cbut);
+                l->allbuttons.erase(but);
+                l->allbuttons.emplace(cbut);
             }
             cbut->value = but->value;
             cbut->midi[0] = but->midi[0];
@@ -13378,5 +13345,97 @@ void Scene::switch_to(bool dotempmap) {
         }
     } else {
         mainmix->layers[this->deck + 2] = this->scnblayers;
+    }
+
+    if (dotempmap) {
+        LoopStation *prevlpst = mainmix->scenes[this->deck][mainmix->currscene[this->deck]]->lpst;
+        LoopStation *bulpst = loopstation;
+        loopstation = this->lpst;
+        mainmix->mousedeck = this->deck;
+        int count = 0;
+        for (LoopStationElement *elem: prevlpst->elems) {
+            elem->erase_elem();
+        }
+        for (LoopStationElement *elem: lpc->elems) {
+            for (auto event: elem->eventlist) {
+                Layer *lay = nullptr;
+                Param *par = std::get<1>(event);
+                Button *but = std::get<2>(event);
+                if (par) {
+                    if (par->name == "Crossfade" || par->name == "wipex" ||
+                        par->name == "wipey") {
+                        prevlpst->elems[count]->eventlist.push_back(event);
+                        elem->params.emplace(std::get<1>(event));
+                        prevlpst->allparams.emplace(par);
+                    } else if (par->effect) {
+                        lay = par->effect->layer;
+                    } else {
+                        lay = par->layer;
+                    }
+                } else if (std::get<2>(event)) {
+                    lay = but->layer;
+                }
+                if (lay) {
+                    if (lay->deck == this->deck) {
+                        prevlpst->elems[count]->eventlist.push_back(event);
+                        elem->layers.emplace(lay);
+                        if (par) {
+                            elem->params.emplace(par);
+                            prevlpst->allparams.emplace(par);
+                        } else if (std::get<2>(event)) {
+                            elem->buttons.emplace(std::get<2>(event));
+                            prevlpst->allbuttons.emplace(std::get<2>(event));
+                        }
+                    }
+                }
+            }
+            prevlpst->elems[count]->loopbut->value = elem->loopbut->value;
+            prevlpst->elems[count]->playbut->value = elem->playbut->value;
+            count++;
+        }
+
+        lpc->remove_entries(0);
+        count = 0;
+        for (LoopStationElement *elem: loopstation->elems) {
+            for (auto event: elem->eventlist) {
+                Layer *lay = nullptr;
+                Param *par = std::get<1>(event);
+                Button *but = std::get<2>(event);
+                if (par) {
+                    if (par->name == "Crossfade" || par->name == "wipex" ||
+                        par->name == "wipey") {
+                        lpc->elems[count]->eventlist.push_back(event);
+                        elem->params.emplace(std::get<1>(event));
+                        lpc->allparams.emplace(par);
+                    } else if (par->effect) {
+                        lay = par->effect->layer;
+                    } else {
+                        lay = par->layer;
+                    }
+                } else if (std::get<2>(event)) {
+                    lay = but->layer;
+                }
+                if (lay) {
+                    if (lay->deck == this->deck) {
+                        lpc->elems[count]->eventlist.push_back(event);
+                        elem->layers.emplace(lay);
+                        if (par) {
+                            elem->params.emplace(par);
+                            lpc->allparams.emplace(par);
+                        } else if (std::get<2>(event)) {
+                            elem->buttons.emplace(std::get<2>(event));
+                            lpc->allbuttons.emplace(std::get<2>(event));
+                        }
+                    }
+                }
+            }
+            if (elem->eventlist.size()) {
+                lpc->elems[count]->loopbut->value = elem->loopbut->value;
+                lpc->elems[count]->playbut->value = elem->playbut->value;
+            }
+            count++;
+        }
+
+        loopstation = bulpst;
     }
 }

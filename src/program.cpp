@@ -2415,12 +2415,12 @@ Button::Button(bool state) {
     if (mainprogram) {
         if (mainprogram->prevmodus) {
             if (lp) {
-                lp->allbuttons.push_back(this);
+                lp->allbuttons.emplace(this);
             }
         }
         else {
             if (lpc) {
-                lpc->allbuttons.push_back(this);
+                lpc->allbuttons.emplace(this);
             }
         }
     }
@@ -2431,15 +2431,13 @@ Button::~Button() {
     this->deautomate();
     if (mainprogram) {
         if (mainprogram->prevmodus) {
-            int pos = std::find(lp->allbuttons.begin(), lp->allbuttons.end(), this) - lp->allbuttons.begin();
-            if (pos != lp->allbuttons.size()) {
-                lp->allbuttons.erase(lp->allbuttons.begin() + pos);
+            if (lp->allbuttons.count(this)) {
+                lp->allbuttons.erase(this);
             }
         }
         else {
-            int pos = std::find(lpc->allbuttons.begin(), lpc->allbuttons.end(), this) - lpc->allbuttons.begin();
-            if (pos != lpc->allbuttons.size()) {
-                lpc->allbuttons.erase(lpc->allbuttons.begin() + pos);
+            if (lpc->allbuttons.count(this)) {
+                lpc->allbuttons.erase(this);
             }
         }
     }
@@ -8810,8 +8808,11 @@ bool Shelf::open(const std::string path, bool undo) {
                     std::string suf = "";
                     if (elem->type == ELEM_LAYER) suf = ".layer";
                     if (elem->type == ELEM_DECK) suf = ".deck";
-                    if (elem->type == ELEM_MIX) suf = ".mix";
-                    if (elem->path != "" && !exists(elem->path)) {
+                    if (elem->type == ELEM_MIX) {
+                        suf = ".mix";
+                    }
+                    if (elem->path != "" && !exists(elem->path) && (elem->type == ELEM_FILE || elem->type == ELEM_IMAGE)) {
+                        mainmix->retargeting = true;
                         mainmix->newshelfpaths.push_back(elem->path);
                         mainmix->newpathshelfelems.push_back(elem);
                         elem->path = "";
@@ -8871,8 +8872,7 @@ bool Shelf::open(const std::string path, bool undo) {
 }
 
 void Shelf::erase() {
-    for (int i = 0; i < 16; i++) {
-        ShelfElement* elem = this->elements[i];
+    for (ShelfElement* elem : this->elements) {
         elem->path = "";
         elem->type = ELEM_FILE;
         blacken(elem->tex);

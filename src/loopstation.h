@@ -12,8 +12,8 @@ class LoopStation {
 		std::vector<LoopStationElement*> readelems;
 		std::vector<int> readelemnrs;
         std::unordered_map<int, int> readmap;
-		std::vector<Param*> allparams;
-		std::vector<Button*> allbuttons;
+		std::unordered_set<Param*> allparams;
+		std::unordered_set<Button*> allbuttons;
 		std::unordered_map<Param*, Param*> parmap;
 		std::unordered_map<Button*, Button*> butmap;
 		std::unordered_map<Param*, LoopStationElement*> parelemmap;
@@ -48,6 +48,7 @@ class LoopStation {
 		LoopStationElement* free_element();
 		void init();
 		void handle();
+        void remove_entries(int copycomp);
 		LoopStation();
         ~LoopStation();
 		
