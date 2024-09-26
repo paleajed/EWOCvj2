@@ -483,7 +483,10 @@ void BinsMain::handle(bool draw) {
 				draw_box(box, binel->tex);
 				glUniform1i(inverteff, 0);
 				if (binel->name != "") {
-					if (binel->name != "") render_text(binel->name.substr(0, 20), white, box->vtxcoords->x1, box->vtxcoords->y1 - 0.02f, 0.00045f, 0.00075f);
+                    char subbuff[21];
+                    memcpy(subbuff, binel->name.c_str(), 20);
+                    subbuff[21] = '\0';
+                    if (binel->name != "") render_text(subbuff, white, box->vtxcoords->x1, box->vtxcoords->y1 - 0.02f, 0.00045f, 0.00075f);
 				}
 			}
 			// draw big grey areas next to each element column to cut off element titles
@@ -2364,7 +2367,7 @@ void BinsMain::handle(bool draw) {
 
 void BinsMain::open_bin(std::string path, Bin *bin, bool newbin) {
 	// open a bin file
-	std::string result = deconcat_files(path);
+	std::string result = mainprogram->deconcat_files(path);
 	bool concat = (result != "");
 	std::ifstream rfile;
 	if (concat) rfile.open(result);
@@ -2588,7 +2591,7 @@ Bin *BinsMain::new_bin(std::string name) {
 	bin->path = mainprogram->project->binsdir + name + ".bin";
     bin->name = name;
 	std::filesystem::path p1{mainprogram->project->binsdir + name};
-	std::filesystem::create_directory(p1);  // reminder : secure
+	std::filesystem::create_directory(p1);
 	return bin;
 }
 
@@ -2672,7 +2675,7 @@ void BinsMain::import_bins() {
         }
     };
 
-    std::string result = deconcat_files(mainprogram->paths[binsmain->binscount]);
+    std::string result = mainprogram->deconcat_files(mainprogram->paths[binsmain->binscount]);
     bool concat = (result != "");
     std::ifstream rfile;
     if (concat) rfile.open(result);
@@ -3126,7 +3129,12 @@ void BinsMain::hap_encode(std::string srcpath, BinElement *binel, BinElement *bd
     AVPacket pkt;
     //uint8_t endcode[] = { 0, 0, 1, 0xb7 };
     codec = avcodec_find_encoder_by_name("hap");
-    // reminder : catch when ffmpeg does not contain the hap encoder
+    if (codec == nullptr) {
+        printf("Your ffmpeg library is compiled without snappy support\n"); // reminder : requester
+        return;
+    }
+
+
     c = avcodec_alloc_context3(codec);
 	pkt = *av_packet_alloc();
 	/* open it */
@@ -3257,14 +3265,19 @@ void BinsMain::hap_encode(std::string srcpath, BinElement *binel, BinElement *bd
     }
     binel->path = remove_extension(binel->path) + "_hap.mov";
 	std::filesystem::rename(destpath, binel->path);
-    if (!exists(mainprogram->contentpath + "EWOCvj2_CPU_vid_backups")) {
-        std::filesystem::path d{ mainprogram->contentpath + "EWOCvj2_CPU_vid_backups" };
-        std::filesystem::create_directory(d);
+    if (mainprogram->stashvideos) {
+        if (!exists(mainprogram->contentpath + "EWOCvj2_CPU_vid_backups")) {
+            std::filesystem::path d{mainprogram->contentpath + "EWOCvj2_CPU_vid_backups"};
+            std::filesystem::create_directory(d);
+        }
+        std::filesystem::path d2{mainprogram->contentpath + "EWOCvj2_CPU_vid_backups/" + basename(dirname(srcpath))};
+        std::filesystem::create_directory(d2);
+        std::filesystem::copy_file(srcpath,
+                                   mainprogram->contentpath + "EWOCvj2_CPU_vid_backups/" + basename(dirname(srcpath)) +
+                                   "/" + basename(srcpath),
+                                   std::filesystem::copy_options::overwrite_existing);  // reminder : warn for overwrite
+        std::filesystem::remove(srcpath);
     }
-    std::filesystem::path d2{ mainprogram->contentpath + "EWOCvj2_CPU_vid_backups/" + basename(dirname(srcpath))};
-    std::filesystem::create_directory(d2);
-    std::filesystem::copy_file(srcpath, mainprogram->contentpath + "EWOCvj2_CPU_vid_backups/" + basename(dirname(srcpath)) + "/" + basename(srcpath), std::filesystem::copy_options::overwrite_existing);  // reminder : warn for overwrite
-    std::filesystem::remove(srcpath);  // reminder : warn for overwrite
     binel->encoding = false;
     if (binel->otflay) {
         binel->otflay->encodeload = true;

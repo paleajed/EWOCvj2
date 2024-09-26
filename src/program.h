@@ -671,7 +671,9 @@ class Program {
 		float tooltipmilli = 0.0f;
         bool ttreserved = false;
         bool boxhit = false;
-		bool autosave;
+        bool autosave = true;
+        bool undoon = true;
+        bool stashvideos = false;
 		float asminutes = 1;
 		int astimestamp = 0;
 		float qualfr = 3;
@@ -948,10 +950,10 @@ class Program {
         void socket_client(struct sockaddr_in serv_addr, int opt);
         void socket_server_recieve(SOCKET sock);
         void stream_to_v4l2loopbacks();
-        void longtooltip_prepare(Boxx *box);
         void postponed_to_front(std::string title);
         void postponed_to_front_win(std::string title, SDL_Window *win = nullptr);
         void concat_files(std::string ofpath, std::string path, std::vector<std::vector<std::string>> filepaths);
+        std::string deconcat_files(std::string path);
         void delete_text(std::string str);
         void register_undo(Param*, Button*);
         void undo_redo_parbut(char offset, bool again = false, bool swap = false);
@@ -1060,10 +1062,14 @@ extern void register_line_draw(float* linec, float x1, float y1, float x2, float
 extern void register_line_draw(float* linec, float x1, float y1, float x2, float y2, bool directdraw);
 extern void draw_line(gui_line* line);
 
-extern std::vector<float> render_text(std::string text, float *textc, float x, float y, float sx, float sy);
-extern std::vector<float> render_text(std::string text, float* textc, float x, float y, float sx, float sy, int smflag);
-extern std::vector<float> render_text(std::string text, float* textc, float x, float y, float sx, float sy, int smflag, bool vertical);
-extern std::vector<float> render_text(std::string text, float* textc, float x, float y, float sx, float sy, int smflag, bool display, bool vertical);
+extern std::vector<float> render_text(const char* text, float* textc, float x, float y, float sx, float sy, const char* save = "true");
+extern std::vector<float> render_text(const char* text, float* textc, float x, float y, float sx, float sy, int smflag);
+extern std::vector<float> render_text(const char* text, float* textc, float x, float y, float sx, float sy, int smflag, bool vertical);
+extern std::vector<float> render_text(const char* text, float *textc, float x, float y, float sx, float sy, int smflag, bool display, bool vertical);
+extern std::vector<float> render_text(const std::string& text, float* textc, float x, float y, float sx, float sy);
+extern std::vector<float> render_text(const std::string& text, float* textc, float x, float y, float sx, float sy, int smflag);
+extern std::vector<float> render_text(const std::string& text, float* textc, float x, float y, float sx, float sy, int smflag, bool vertical);
+extern std::vector<float> render_text(const std::string& text, const char* ctext, float *textc, float x, float y, float sx, float sy, int smflag, bool display, bool vertical, const char* save = "true");
 extern float textwvec_total(std::vector<float> textwvec);
 
 extern float xscrtovtx(float scrcoord);
@@ -1078,7 +1084,6 @@ extern void save_thumb(std::string path, GLuint tex);
 extern void open_thumb(std::string path, GLuint tex);
 extern void new_state();
 bool check_version(std::string path);
-std::string deconcat_files(std::string path);
 extern GLuint copy_tex(GLuint tex);
 extern GLuint copy_tex(GLuint tex, bool yflip);
 extern GLuint copy_tex(GLuint tex, int tw, int th);

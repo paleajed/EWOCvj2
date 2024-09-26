@@ -146,7 +146,7 @@ LoopStationElement::~LoopStationElement() {
 	delete this->playbut;
     delete this->box;
     delete this->colbox;
-	// reminder : complete
+    delete this->speed;
 }
 
 void LoopStation::setbut(Button *but, float r, float g, float b) {
@@ -310,6 +310,11 @@ void LoopStationElement::mouse_handle() {
         loopstation->currelem = this;
     }
 
+    if (this->eventlist.size() == 0) {
+        this->playbut->value = false;
+        this->loopbut->value = false;
+    }
+
     mainprogram->handle_button(this->recbut, 1, 0);
 	if (this->recbut->toggled()) {
         if (mainprogram->adaptivelprow) {
@@ -468,8 +473,6 @@ void LoopStationElement::set_values() {
                 this->eventpos = 0;
                 this->speedadaptedtime = 0;
                 this->interimtime = 0;
-                //reminder: this->speedadaptedtime -= this->totaltime;
-                //this->interimtime = this->speedadaptedtime * this->speed->value;
                 this->starttime = mainprogram->now - std::chrono::milliseconds((long long)this->interimtime);
             }
             else if (this->playbut->value) {

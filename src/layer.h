@@ -259,7 +259,7 @@ class Layer {
         std::vector<ShelfElement*> prevshelfdragelems;
         int psde_size = 0;
 
-		int clonesetnr = -1;  // reminder : was below -> overwrite
+		int clonesetnr = -1;
 		bool isclone = false;
 		Layer *isduplay = nullptr;
 
@@ -303,7 +303,6 @@ class Layer {
 		bool nopbodel = false;
 
 		std::unordered_map<EFFECT_TYPE, int> numoftypemap;
-        // reminder : here was clonesetnr
 
         bool keyframe = false;
 
@@ -425,7 +424,6 @@ class Mixer {
         std::string mixjpegpath;
         std::string deckjpegpath;
 
-        std::unordered_map<Layer*, Layer*> nlaymap;
         Layer *templay;
         std::vector<float> deckframes;
         std::vector<Layer *> keep0;

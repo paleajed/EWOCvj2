@@ -1379,11 +1379,11 @@ void set_glstructures() {
 	GLuint vbuf;	
     glGenBuffers(1, &vbuf);
 	glBindBuffer(GL_ARRAY_BUFFER, vbuf);
-    glBufferData(GL_ARRAY_BUFFER, 32, vcoords, GL_STATIC_DRAW);
+    glBufferData(GL_ARRAY_BUFFER, 32, vcoords, GL_DYNAMIC_DRAW);
 	GLuint tbuf;
     glGenBuffers(1, &tbuf);
 	glBindBuffer(GL_ARRAY_BUFFER, tbuf);
-    glBufferData(GL_ARRAY_BUFFER, 32, tcoords, GL_STATIC_DRAW);
+    glBufferData(GL_ARRAY_BUFFER, 32, tcoords, GL_DYNAMIC_DRAW);
 	glGenVertexArrays(1, &mainprogram->fbovao);
 	glBindVertexArray(mainprogram->fbovao);
 	glBindBuffer(GL_ARRAY_BUFFER, vbuf);
@@ -1404,28 +1404,12 @@ void set_glstructures() {
     glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_BORDER);
     glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_BORDER);
 
-	//dragvao
 	GLfloat tcoords2[8];
 	p = tcoords2;
 	*p++ = 0.0f; *p++ = 1.0f;
 	*p++ = 1.0f; *p++ = 1.0f;
 	*p++ = 0.0f; *p++ = 0.0f;
 	*p++ = 1.0f; *p++ = 0.0f;
-	GLuint tmbuf;
-	glGenBuffers(1, &thmvbuf);
-	glBindBuffer(GL_ARRAY_BUFFER, thmvbuf);
-	glBufferData(GL_ARRAY_BUFFER, 32, vcoords, GL_STREAM_DRAW);
-	glGenBuffers(1, &tmbuf);
-	glBindBuffer(GL_ARRAY_BUFFER, tmbuf);
-	glBufferData(GL_ARRAY_BUFFER, 32, tcoords2, GL_STATIC_DRAW);
-	glGenVertexArrays(1, &thmvao);
-	glBindVertexArray(thmvao);
-	glBindBuffer(GL_ARRAY_BUFFER, thmvbuf);
-	glEnableVertexAttribArray(0);
-	glVertexAttribPointer(0, 2, GL_FLOAT, GL_FALSE, 8, nullptr);
-	glBindBuffer(GL_ARRAY_BUFFER, tmbuf);
-	glEnableVertexAttribArray(1);
-	glVertexAttribPointer(1, 2, GL_FLOAT, GL_FALSE, 8, nullptr);
 
     glGenBuffers(1, &mainprogram->boxvbuf);
     glGenBuffers(1, &mainprogram->boxtbuf);
@@ -1513,7 +1497,7 @@ void set_glstructures() {
 
 	glGenBuffers(1, &mainprogram->bdibo);
 	glBindBuffer(GL_ELEMENT_ARRAY_BUFFER, mainprogram->bdibo);
-	glBufferData(GL_ELEMENT_ARRAY_BUFFER, 12288, nullptr, GL_STATIC_DRAW);
+	glBufferData(GL_ELEMENT_ARRAY_BUFFER, 12288, nullptr, GL_DYNAMIC_DRAW);
 
     glGenTextures(1, &mainmix->minitex);
     glBindTexture(GL_TEXTURE_2D, mainmix->minitex);
@@ -1560,7 +1544,7 @@ void draw_line(gui_line *line) {
  	GLuint fvbuf, fvao;
     glGenBuffers(1, &fvbuf);
 	glBindBuffer(GL_ARRAY_BUFFER, fvbuf);
-    glBufferData(GL_ARRAY_BUFFER, 24, fvcoords, GL_STATIC_DRAW);
+    glBufferData(GL_ARRAY_BUFFER, 24, fvcoords, GL_DYNAMIC_DRAW);
 	glGenVertexArrays(1, &fvao);
 	glBindVertexArray(fvao);
 	glBindBuffer(GL_ARRAY_BUFFER, fvbuf);
@@ -1954,7 +1938,7 @@ void draw_triangle(gui_triangle *triangle) {
  	GLuint fvbuf, fvao;
     glGenBuffers(1, &fvbuf);
 	glBindBuffer(GL_ARRAY_BUFFER, fvbuf);
-    glBufferData(GL_ARRAY_BUFFER, 36, fvcoords, GL_STATIC_DRAW);
+    glBufferData(GL_ARRAY_BUFFER, 36, fvcoords, GL_DYNAMIC_DRAW);
 	glGenVertexArrays(1, &fvao);
 	glBindVertexArray(fvao);
 	//glBindBuffer(GL_ARRAY_BUFFER, fvbuf);
@@ -1972,22 +1956,55 @@ void draw_triangle(gui_triangle *triangle) {
 }
 
 
-std::vector<float> render_text(std::string text, float* textc, float x, float y, float sx, float sy) {
-	std::vector<float> ret = render_text(text, textc, x, y, sx, sy, 0, 1, 0);
-	return ret;
+std::vector<float> render_text(const char* text, float* textc, float x, float y, float sx, float sy, const char* save) {
+    const std::string dummy;
+    std::vector<float> ret = render_text(dummy, text, textc, x, y, sx, sy, 0, 1, 0, save);
+    return ret;
 }
 
-std::vector<float> render_text(std::string text, float* textc, float x, float y, float sx, float sy, int smflag) {
-	std::vector<float> ret = render_text(text, textc, x, y, sx, sy, smflag, 1, 0);
-	return ret;
+std::vector<float> render_text(const char* text, float* textc, float x, float y, float sx, float sy, int smflag) {
+    const std::string dummy;
+    std::vector<float> ret = render_text(dummy, text, textc, x, y, sx, sy, smflag, 1, 0);
+    return ret;
 }
 
-std::vector<float> render_text(std::string text, float* textc, float x, float y, float sx, float sy, int smflag, bool vertical) {
-	std::vector<float> ret = render_text(text, textc, x, y, sx, sy, smflag, 1, vertical);
-	return ret;
+std::vector<float> render_text(const char* text, float* textc, float x, float y, float sx, float sy, int smflag, bool vertical) {
+    const std::string dummy;
+    std::vector<float> ret = render_text(dummy, text, textc, x, y, sx, sy, smflag, 1, vertical);
+    return ret;
 }
 
-std::vector<float> render_text(std::string text, float *textc, float x, float y, float sx, float sy, int smflag, bool display, bool vertical) {
+std::vector<float> render_text(const char* text, float *textc, float x, float y, float sx, float sy, int smflag, bool display, bool vertical) {
+    const std::string dummy;
+    std::vector<float> ret = render_text(dummy, text, textc, x, y, sx, sy, smflag, display, vertical);
+    return ret;
+}
+
+std::vector<float> render_text(const std::string& text, float* textc, float x, float y, float sx, float sy) {
+    std::vector<float> ret = render_text(text, nullptr, textc, x, y, sx, sy, 0, 1, 0);
+    return ret;
+}
+
+std::vector<float> render_text(const std::string& text, float* textc, float x, float y, float sx, float sy, int smflag) {
+    std::vector<float> ret = render_text(text, nullptr, textc, x, y, sx, sy, smflag, 1, 0);
+    return ret;
+}
+
+std::vector<float> render_text(const std::string& text, float* textc, float x, float y, float sx, float sy, int smflag, bool vertical) {
+    std::vector<float> ret = render_text(text, nullptr, textc, x, y, sx, sy, smflag, 1, vertical);
+    return ret;
+}
+
+std::vector<float> render_text(const std::string& stext, const char* ctext, float *textc, float x, float y, float sx, float sy, int smflag, bool display, bool vertical, const char* save) {
+    //text.reserve(60);
+    char* text;
+    if (stext == "") {
+        text = (char*)ctext;
+    }
+    else if (ctext == nullptr) {
+        text = (char*)stext.c_str();
+    }
+    if (smflag > 0) y -= 0.055f;
     float bux = x;
 	float buy = y;
 	std::vector<float> textwsplay;
@@ -2000,53 +2017,53 @@ std::vector<float> render_text(std::string text, float *textc, float x, float y,
 	float textw = 0.0f;
 	float texth = 0.0f;
 	bool prepare = true;
-	GUIString* gs = nullptr;
-	int pos = 0;
-	if (smflag == 0) {
-		gs = mainprogram->guitextmap[text];
-		if (gs) {
-			pos = std::find(gs->sxvec.begin(), gs->sxvec.end(), sx) - gs->sxvec.begin();
-			if (pos != gs->sxvec.size()) {
-				prepare = false;
-				texture = gs->texturevec[pos];
-				textw = gs->textwvec[pos];
-				texth = gs->texthvec[pos];
-				textwsplay = gs->textwvecvec[pos];
-			}
-		}
-	}
-	else if (smflag == 1) {
-		gs = mainprogram->prguitextmap[text];
-		if (gs) {
-			pos = std::find(gs->sxvec.begin(), gs->sxvec.end(), sx) - gs->sxvec.begin();
-			if (pos != gs->sxvec.size()) {
-				prepare = false;
-				texture = gs->texturevec[pos];
-				textw = gs->textwvec[pos];
-				texth = gs->texthvec[pos];
-				textwsplay = gs->textwvecvec[pos];
-			}
-		}
-	}
-	else if (smflag == 2) {
-		gs = mainprogram->tmguitextmap[text];
-		if (gs) {
-			pos = std::find(gs->sxvec.begin(), gs->sxvec.end(), sx) - gs->sxvec.begin();
-			if (pos != gs->sxvec.size()) {
-				prepare = false;
-				texture = gs->texturevec[pos];
-				textw = gs->textwvec[pos];
-				texth = gs->texthvec[pos];
-				textwsplay = gs->textwvecvec[pos];
-			}
-		}
-	}
+    GUIString *gs = nullptr;
+    int pos = 0;
+    if (strcmp(save, "true") == 0) {
+        if (smflag == 0) {
+            gs = mainprogram->guitextmap[text];
+            if (gs) {
+                pos = std::find(gs->sxvec.begin(), gs->sxvec.end(), sx) - gs->sxvec.begin();
+                if (pos != gs->sxvec.size()) {
+                    prepare = false;
+                    texture = gs->texturevec[pos];
+                    textw = gs->textwvec[pos];
+                    texth = gs->texthvec[pos];
+                    textwsplay = gs->textwvecvec[pos];
+                }
+            }
+        } else if (smflag == 1) {
+            gs = mainprogram->prguitextmap[text];
+            if (gs) {
+                pos = std::find(gs->sxvec.begin(), gs->sxvec.end(), sx) - gs->sxvec.begin();
+                if (pos != gs->sxvec.size()) {
+                    prepare = false;
+                    texture = gs->texturevec[pos];
+                    textw = gs->textwvec[pos];
+                    texth = gs->texthvec[pos];
+                    textwsplay = gs->textwvecvec[pos];
+                }
+            }
+        } else if (smflag == 2) {
+            gs = mainprogram->tmguitextmap[text];
+            if (gs) {
+                pos = std::find(gs->sxvec.begin(), gs->sxvec.end(), sx) - gs->sxvec.begin();
+                if (pos != gs->sxvec.size()) {
+                    prepare = false;
+                    texture = gs->texturevec[pos];
+                    textw = gs->textwvec[pos];
+                    texth = gs->texthvec[pos];
+                    textwsplay = gs->textwvecvec[pos];
+                }
+            }
+        }
+    }
 
  	if (prepare) {
 	    bool bufb = mainprogram->frontbatch;
         mainprogram->frontbatch = false;
 		// compose string texture for display all next times
-		const char *t = text.c_str();
+		const char *t = text;
 		const char *p;
 
 		int w2 = 0;
@@ -2077,7 +2094,7 @@ std::vector<float> render_text(std::string text, float *textc, float x, float y,
 		x = 0.0f;
 		y = 0.0f;
         FT_GlyphSlot g = face->glyph;
-        for (int i = 0; i < text.length(); i++) {
+        for (int i = 0; i < strlen(text); i++) {
             int glyph_index = FT_Get_Char_Index(face, t[i]);
             if (FT_Load_Glyph(face, glyph_index, FT_LOAD_DEFAULT))
                 continue;
@@ -2094,7 +2111,7 @@ std::vector<float> render_text(std::string text, float *textc, float x, float y,
                 GL_TEXTURE_2D,
                 1,
                 GL_R8,
-                textw / pixelw,
+                textw / pixelw + 1,
                 psize * 3
         );
         glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_NEAREST);
@@ -2104,7 +2121,7 @@ std::vector<float> render_text(std::string text, float *textc, float x, float y,
         glPixelStorei(GL_UNPACK_ALIGNMENT, 1);
         glClearTexImage(texture, 0, GL_RED, GL_UNSIGNED_BYTE, black);
 
-        for (int i = 0; i < text.length(); i++) {
+        for (int i = 0; i < strlen(text); i++) {
             int glyph_index = FT_Get_Char_Index(face, t[i]);
             if (FT_Load_Glyph(face, glyph_index, FT_LOAD_DEFAULT))
                 continue;
@@ -2113,18 +2130,20 @@ std::vector<float> render_text(std::string text, float *textc, float x, float y,
             x += (g->advance.x/64.0f);
         }
 
-		if (pos == 0) {
-			gs = new GUIString;
-			gs->text = text;
-			if (smflag == 0) mainprogram->guitextmap[text] = gs;
-			else if (smflag == 1) mainprogram->prguitextmap[text] = gs;
-			else if (smflag == 2) mainprogram->tmguitextmap[text] = gs;
-		}
-		gs->texturevec.push_back(texture);
-		gs->textwvec.push_back(textw);
-		gs->texthvec.push_back(psize * 3);
-		gs->textwvecvec.push_back(textws);
-		gs->sxvec.push_back(sx);
+        if (strcmp(save, "true") == 0) {
+            if (pos == 0) {
+                gs = new GUIString;
+                gs->text = text;
+                if (smflag == 0) mainprogram->guitextmap[text] = gs;
+                else if (smflag == 1) mainprogram->prguitextmap[text] = gs;
+                else if (smflag == 2) mainprogram->tmguitextmap[text] = gs;
+            }
+            gs->texturevec.push_back(texture);
+            gs->textwvec.push_back(textw);
+            gs->texthvec.push_back(psize * 3);
+            gs->textwvecvec.push_back(textws);
+            gs->sxvec.push_back(sx);
+        }
 
         if (smflag > 0) SDL_GL_MakeCurrent(mainprogram->mainwindow, glc);
 
@@ -2132,7 +2151,10 @@ std::vector<float> render_text(std::string text, float *textc, float x, float y,
         glBindFramebuffer(GL_FRAMEBUFFER, 0);
         glDrawBuffer(GL_BACK_LEFT);
         //display
-        if (!mainprogram->stringcomputing) textws = render_text(text, textc, bux, buy, sx, sy, smflag, display, vertical);
+        if (strcmp(save, "true") == 0) {
+            if (!mainprogram->stringcomputing)
+                textws = render_text(text, textc, bux, buy, sx, sy, smflag, display, vertical);
+        }
         return textws;
   	}
 
@@ -2872,124 +2894,97 @@ void onestepfrom(bool stage, Node *node, Node *prevnode, GLuint prevfbotex, GLui
 	        mainmix->domix = false;  // freezes output frames during vidopen
             return;
         }
- 		/*if (!lay->newtexdata && mainmix->bulrs[lay->deck].size()) {
-            //mainmix->domix = false;  // freezes output frames during vidopen
-			return;
-		}*/
-		else {
-			/*for (int m = 0; m < 2; m++) {
-				if (mainmix->bulrs[m].size()) {
-					bool notyet = false;
-					std::vector<Layer*>& lvec = choose_layers(m);
-					for (int i = 0; i < lvec.size(); i++) {
-						if (lvec[i]->filename == "" || lvec[i]->type == ELEM_LIVE) continue;
-						if (lvec[i]->newtexdata) {
-							lvec[i]->startup = true;
-						}
-						if (!lvec[i]->startup) notyet = true;
-					}
-					if (!notyet) {
-						mainmix->bulrscopy[m] = mainmix->bulrs[m];
-						mainmix->bulrscopy[m].erase(mainmix->bulrscopy[m].begin());
-						mainmix->delete_layers(mainmix->bulrscopy[m], mainmix->bualive);  //reminder: change to threaded variant?
-						mainmix->bulrs[m].clear();
-						for (int i = 0; i < mainmix->butexes[m].size(); i++) {
-							glDeleteTextures(1, &mainmix->butexes[m][i]);
-						}
-					}
-				}
-			}*/
-			if (lay->blendnode) {
-				if (lay->blendnode->blendtype == 19 || lay->blendnode->blendtype == 20 || lay->blendnode->blendtype
-				== 21) {
-					GLfloat colortol = glGetUniformLocation(mainprogram->ShaderProgram, "colortol");
-					glUniform1f(colortol, lay->chtol->value);
-					GLfloat chdir = glGetUniformLocation(mainprogram->ShaderProgram, "chdir");
-					glUniform1f(chdir, lay->chdir->value);
-					GLfloat chinv = glGetUniformLocation(mainprogram->ShaderProgram, "chinv");
-					glUniform1f(chinv, lay->chinv->value);
-				}
-			}
-			float xs = 0.0f;
-			float ys = 0.0f;
-			float scix = 0.0f;
-			float sciy = 0.0f;
-			float frachd = 1920.0f / 1080.0f;
-			float fraco = mainprogram->ow / mainprogram->oh;
-			float frac;
-			if (lay->type == ELEM_IMAGE) {
-				ilBindImage(lay->boundimage);
-				ilActiveImage((int)lay->frame);
-				frac = (float)ilGetInteger(IL_IMAGE_WIDTH) / (float)ilGetInteger(IL_IMAGE_HEIGHT);
-			}
-			else {
-			    if (lay->remfr->height == 0) return;
-			    frac = (float)(lay->remfr->width) / (float)(lay->remfr->height);
-			}
-			if (lay->dummy) frac = (float)(lay->video_dec_ctx->width) / (float)(lay->video_dec_ctx->height);
-			if (fraco > frachd) {
-				ys = 0.0f;
-				sciy = ys;
-			}
-			else {
-				xs = 0.0f;
-				scix = xs;
-			}
-			if (lay->aspectratio == RATIO_ORIGINAL_INSIDE) {
-				if (frac > fraco) {
-					ys = 1.0f - (((1.0f - xs) * frachd) / frac);
-				}
-				else {
-					xs = 1.0f - (((1.0f - ys) / frachd) * frac);
-				}
-			}
-			else if (lay->aspectratio == RATIO_ORIGINAL_OUTSIDE) {
-				if (frac < fraco) {
-					ys = 1.0f - (((1.0f - xs) * frachd) / frac);
-				}
-				else {
-					xs = 1.0f - (((1.0f - ys) / frachd) * frac);
-				}
-			}
-
-			glActiveTexture(GL_TEXTURE0);
-			int sw, sh;
-            glBindTexture(GL_TEXTURE_2D, lay->fbotex);
-			glGetTexLevelParameteriv(GL_TEXTURE_2D, 0, GL_TEXTURE_WIDTH, &sw);
-			glGetTexLevelParameteriv(GL_TEXTURE_2D, 0, GL_TEXTURE_HEIGHT, &sh);
-			float scw = sw;
-			float sch = sh;
-			int sxs = xs * scw / 2.0f;
-			int sys = ys * sch / 2.0f;
-			scix = scix * scw / 2.0f;
-			sciy = sciy * sch / 2.0f;
-			glViewport(sxs, sys, scw - sxs * 2.0f, sch - sys * 2.0f);
-			float sx, sy, sc, op;
-            sx = lay->shiftx->value;
-            sy = lay->shifty->value;
-            sc = lay->scale->value;
-            if (lay->node == lay->lasteffnode[0]) {
-                op = lay->opacity->value;
+        if (lay->blendnode) {
+            if (lay->blendnode->blendtype == 19 || lay->blendnode->blendtype == 20 || lay->blendnode->blendtype
+            == 21) {
+                GLfloat colortol = glGetUniformLocation(mainprogram->ShaderProgram, "colortol");
+                glUniform1f(colortol, lay->chtol->value);
+                GLfloat chdir = glGetUniformLocation(mainprogram->ShaderProgram, "chdir");
+                glUniform1f(chdir, lay->chdir->value);
+                GLfloat chinv = glGetUniformLocation(mainprogram->ShaderProgram, "chinv");
+                glUniform1f(chinv, lay->chinv->value);
+            }
+        }
+        float xs = 0.0f;
+        float ys = 0.0f;
+        float scix = 0.0f;
+        float sciy = 0.0f;
+        float frachd = 1920.0f / 1080.0f;
+        float fraco = mainprogram->ow / mainprogram->oh;
+        float frac;
+        if (lay->type == ELEM_IMAGE) {
+            ilBindImage(lay->boundimage);
+            ilActiveImage((int)lay->frame);
+            frac = (float)ilGetInteger(IL_IMAGE_WIDTH) / (float)ilGetInteger(IL_IMAGE_HEIGHT);
+        }
+        else {
+            if (lay->remfr->height == 0) return;
+            frac = (float)(lay->remfr->width) / (float)(lay->remfr->height);
+        }
+        if (lay->dummy) frac = (float)(lay->video_dec_ctx->width) / (float)(lay->video_dec_ctx->height);
+        if (fraco > frachd) {
+            ys = 0.0f;
+            sciy = ys;
+        }
+        else {
+            xs = 0.0f;
+            scix = xs;
+        }
+        if (lay->aspectratio == RATIO_ORIGINAL_INSIDE) {
+            if (frac > fraco) {
+                ys = 1.0f - (((1.0f - xs) * frachd) / frac);
             }
             else {
-                op = 1.0f;
+                xs = 1.0f - (((1.0f - ys) / frachd) * frac);
             }
-            glBindFramebuffer(GL_FRAMEBUFFER, lay->fbo);
-            glDrawBuffer(GL_COLOR_ATTACHMENT0);
-            glClearColor(0.0f, 0.0f, 0.0f, 0.0f);
-            glClear(GL_COLOR_BUFFER_BIT);
-            if (mainmix->waitmixtex == 0 && !lay->onhold) draw_box(nullptr, black, -1.0f, 1.0f, 2.0f, -2.0f, sx, sy, sc, op, 0, lay->texture, 0, 0, false);
-            prevfbotex = lay->fbotex;
-            prevfbo = lay->fbo;
-
-            //GLenum err;
-            while ((err = glGetError()) != GL_NO_ERROR) {
-                std::cerr << "OpenGL error2: " << err << std::endl;
+        }
+        else if (lay->aspectratio == RATIO_ORIGINAL_OUTSIDE) {
+            if (frac < fraco) {
+                ys = 1.0f - (((1.0f - xs) * frachd) / frac);
             }
-            glViewport(0, 0, glob->w, glob->h);
+            else {
+                xs = 1.0f - (((1.0f - ys) / frachd) * frac);
+            }
+        }
 
-            lay->newtexdata = false;
-		}
+        glActiveTexture(GL_TEXTURE0);
+        int sw, sh;
+        glBindTexture(GL_TEXTURE_2D, lay->fbotex);
+        glGetTexLevelParameteriv(GL_TEXTURE_2D, 0, GL_TEXTURE_WIDTH, &sw);
+        glGetTexLevelParameteriv(GL_TEXTURE_2D, 0, GL_TEXTURE_HEIGHT, &sh);
+        float scw = sw;
+        float sch = sh;
+        int sxs = xs * scw / 2.0f;
+        int sys = ys * sch / 2.0f;
+        scix = scix * scw / 2.0f;
+        sciy = sciy * sch / 2.0f;
+        glViewport(sxs, sys, scw - sxs * 2.0f, sch - sys * 2.0f);
+        float sx, sy, sc, op;
+        sx = lay->shiftx->value;
+        sy = lay->shifty->value;
+        sc = lay->scale->value;
+        if (lay->node == lay->lasteffnode[0]) {
+            op = lay->opacity->value;
+        }
+        else {
+            op = 1.0f;
+        }
+        glBindFramebuffer(GL_FRAMEBUFFER, lay->fbo);
+        glDrawBuffer(GL_COLOR_ATTACHMENT0);
+        glClearColor(0.0f, 0.0f, 0.0f, 0.0f);
+        glClear(GL_COLOR_BUFFER_BIT);
+        if (mainmix->waitmixtex == 0 && !lay->onhold) draw_box(nullptr, black, -1.0f, 1.0f, 2.0f, -2.0f, sx, sy, sc, op, 0, lay->texture, 0, 0, false);
+        prevfbotex = lay->fbotex;
+        prevfbo = lay->fbo;
+
+        //GLenum err;
+        while ((err = glGetError()) != GL_NO_ERROR) {
+            std::cerr << "OpenGL error2: " << err << std::endl;
+        }
+        glViewport(0, 0, glob->w, glob->h);
+
+        lay->newtexdata = false;
+
 		if (!lay->dummy && lay->pos == 0) {
             lay->blendnode->fbotex = lay->fbotex;
         }
@@ -3171,19 +3166,15 @@ void walk_forward(Node* node) {
 	} while (1);
 }
 
-void walk_nodes(bool stage, std::vector<Layer*> &skip) {
+void walk_nodes(bool stage) {
 	std::vector<Node*> fromnodes;
 	if (stage == 0) {
 		for (int i = 0; i < mainprogram->nodesmain->mixnodes[0].size(); i++) {
-            if (&skip == &mainmix->layers[0] && i == 0) continue;
-            if (&skip == &mainmix->layers[1] && i == 0) continue;
 			fromnodes.push_back(mainprogram->nodesmain->mixnodes[0][i]);
 		}
 	}
 	else {
 		for (int i = 0; i < mainprogram->nodesmain->mixnodes[1].size(); i++) {
-            if (&skip == &mainmix->layers[2] && i == 1) continue;
-            if (&skip == &mainmix->layers[3] && i == 1) continue;
 			fromnodes.push_back(mainprogram->nodesmain->mixnodes[1][i]);
 		}
 	}
@@ -3648,7 +3639,7 @@ bool get_deckmixtex(Layer *lay, std::string path) {
     // get the representational jpeg of this deck/mix that was saved with/in the deck/mix file and put it in a GL
     // texture
 
-	std::string result = deconcat_files(path);
+	std::string result = mainprogram->deconcat_files(path);
 	bool concat = (result != "");
 	std::ifstream rfile;
 	if (concat) rfile.open(result);
@@ -3693,7 +3684,6 @@ void handle_scenes(Scene* scene) {
 		draw_box(box, -1);
 	}
 	// Handle sceneboxes
-    //if (mainmix->swapmap[0].size()) return;   // reminder
     bool found = false;
 	for (int i = 0; i < 4; i++) {
 		Boxx* box = mainmix->scenes[scene->deck][i]->box;
@@ -3767,7 +3757,7 @@ void do_text_input(float x, float y, float sx, float sy, int mx, int my, float w
 	mainprogram->tooltipmilli = 0.0f;
 	float textw;
 	std::vector<float> textwvec;
-	std::vector<float> totvec = render_text(mainprogram->inputtext, white, x, y, sx, sy, smflag, 0, 0);
+	std::vector<float> totvec = render_text(mainprogram->inputtext, nullptr, white, x, y, sx, sy, smflag, 0, 0);
 	float cps = textwvec_total(totvec);
 	if (mainprogram->cursorpixels == -1) {
 		// initialize: cursor at end, shift string if bigger than space
@@ -3780,7 +3770,7 @@ void do_text_input(float x, float y, float sx, float sy, int mx, int my, float w
 			if (total2 + width > mainprogram->cursorpixels) {
 				mainprogram->startcursor = j + 1;
 				std::string part = mainprogram->inputtext.substr(mainprogram->startcursor, mainprogram->inputtext.length() - mainprogram->startcursor);
-				std::vector<float> parttextvec = render_text(part, white, x, y, sx, sy, smflag, 0, 0);
+				std::vector<float> parttextvec = render_text(part, nullptr, white, x, y, sx, sy, smflag, 0, 0);
 				float parttextw = textwvec_total(parttextvec);
 				mainprogram->startpos = mainprogram->xvtxtoscr(cps - parttextw);
 				break;
@@ -3862,7 +3852,7 @@ void do_text_input(float x, float y, float sx, float sy, int mx, int my, float w
 	}
 	if (mainprogram->renaming != EDIT_NONE) {
 		std::string part = mainprogram->inputtext.substr(0, mainprogram->cursorpos0);
-		textwvec = render_text(part, white, x, y, sx, sy, smflag, 0, 0);
+		textwvec = render_text(part, nullptr, white, x, y, sx, sy, smflag, 0, 0);
 		textw = textwvec_total(textwvec);
 		mainprogram->cursorpixels = mainprogram->xvtxtoscr(textw);
 		if (mainprogram->cursorpixels < mainprogram->startpos) {
@@ -3898,7 +3888,7 @@ void do_text_input(float x, float y, float sx, float sy, int mx, int my, float w
 						if (total2 + width > mainprogram->cursorpixels) {
 							mainprogram->startcursor = j + 1;
 							part = mainprogram->inputtext.substr(mainprogram->startcursor, mainprogram->inputtext.length() - mainprogram->startcursor);
-							std::vector<float> parttextvec = render_text(part, white, x, y, sx, sy, smflag, 0, 0);
+							std::vector<float> parttextvec = render_text(part, nullptr, white, x, y, sx, sy, smflag, 0, 0);
 							float parttextw = textwvec_total(parttextvec);
 							mainprogram->startpos = mainprogram->xvtxtoscr(cps - parttextw);
 							break;
@@ -3951,10 +3941,10 @@ void do_text_input(float x, float y, float sx, float sy, int mx, int my, float w
 				std::swap(c1, c2);
 			}
 			std::string part = mainprogram->inputtext.substr(mainprogram->startcursor, c1 - mainprogram->startcursor);
-			textwvec = render_text(part, white, x, y, sx, sy, smflag, 0, 0);
+			textwvec = render_text(part, nullptr, white, x, y, sx, sy, smflag, 0, 0);
 			float textw1 = textwvec_total(textwvec);
 			part = mainprogram->inputtext.substr(c1, c2 - c1);
-			textwvec = render_text(part, white, x + textw1, y, sx, sy, smflag, 0, 0);
+			textwvec = render_text(part, nullptr, white, x + textw1, y, sx, sy, smflag, 0, 0);
 			float textw2 = textwvec_total(textwvec);
 			draw_box(white, white, x + textw1, y - 0.010f, textw2, 0.010f + mainprogram->texth / (2070.0f / glob->h),
             -1, false, false, true); // last parameter: graphic inversion
@@ -4140,7 +4130,7 @@ void the_loop() {
     }
     mainprogram->iemy = mainprogram->my;  // allow Insert effect click on border of parameter box
 
-    // set mouse button values to enable blocking when item ordering overlay is on (reminder|maybe not the best solution)
+    // set mouse button values to enable blocking when item ordering overlay is on
     if (mainprogram->orderondisplay || mainmix->retargeting) {
         mainprogram->orderleftmouse = mainprogram->leftmouse;
         mainprogram->orderleftmousedown = mainprogram->leftmousedown;
@@ -4221,50 +4211,7 @@ void the_loop() {
     }
 
 
-    // swap bulrs with layer stacks when all layers have a decoded frame
-    std::vector<Layer *> skip;
-    // new layers from shelf     reminder : what is this
-    if (mainmix->nlaymap.size()) {
-        bool ready = true;
-        std::unordered_map<Layer *, Layer *>::iterator it;
-        Layer *nlay;
-        Layer *tlay;
-        for (it = mainmix->nlaymap.begin(); it != mainmix->nlaymap.end(); it++) {
-            nlay = it->first;
-            tlay = it->second;
-        }
-        nlay->nonewpbos = false;  // get new pbos
-        if (nlay->filename != "") nlay->progress(nlay->comp, false);
-        if (nlay->changeinit < 4 && nlay->filename != "") {
-            nlay->load_frame();
-            ready = false;
-        } else {
-            nlay->changeinit = 5;
-        }
-        if (nlay->filename == "") {
-            nlay->changeinit = 5;
-        }
-        nlay->initdeck = false;
-        std::vector<Layer *> &lvec = choose_layers(nlay->deck);
-        int pos = std::find(lvec.begin(), lvec.end(), nlay) - lvec.begin();
-        nlay->layers = &lvec;
-        if (nlay->bufbotex == -1) {
-            nlay->bufbotex = copy_tex(tlay->fbotex, glob->w, glob->h);
-        } else nlay->node->vidbox->tex = nlay->bufbotex;
-        nlay->initdeck = true;
-        if (ready) {
-            nlay->bufbotex = -1;
-            mainmix->nlaymap.erase(nlay);
-            for (Layer *testlay: lvec) {
-                testlay->initdeck = false;
-            }
-            tlay->initdeck = false;
-        } else {
-            mainmix->reconnect_all(lvec);
-        }
-        skip = lvec;
-    }
-
+    // swap layers with newlrs when all newlrs have a decoded frame
     bool done = true;
     std::vector<std::vector<Layer*>> *tempmap;
     for (int i = 0; i < 4; i++) {
@@ -4317,9 +4264,6 @@ void the_loop() {
                 }
             }
             std::vector<Layer *> oldlayers;
-            if (mainmix->setscene != -1) {
-                //mainmix->currscene[1] = mainmix->setscene;
-            }
             if (tempmap->size()) {
                 int maxpos = -1;
                 for (int j = 0; j < tempmap->size(); j++) {
@@ -4373,22 +4317,18 @@ void the_loop() {
                 if (i == 0) {
                     mainmix->keep0 = mainmix->layers[0];
                     mainmix->layers[0] = oldlayers;
-                    //skip = mainmix->layers[0];
                     mainmix->reconnect_all(mainmix->layers[0]);
                 } else if (i == 1) {
                     mainmix->keep0 = mainmix->layers[1];
                     mainmix->layers[1] = oldlayers;
-                    //skip = mainmix->layers[1];
                     mainmix->reconnect_all(mainmix->layers[1]);
                 } else if (i == 2) {
                     mainmix->keep0 = mainmix->layers[2];
                     mainmix->layers[2] = oldlayers;
-                    //skip = mainmix->layers[2];
                     mainmix->reconnect_all(mainmix->layers[2]);
                 } else if (i == 3) {
                     mainmix->keep0 = mainmix->layers[3];
                     mainmix->layers[3] = oldlayers;
-                    //skip = mainmix->layers[3];
                     mainmix->reconnect_all(mainmix->layers[3]);
                 }
             }
@@ -4420,7 +4360,7 @@ void the_loop() {
             lvec[i]->close();
         }
         mainmix->bulayers.clear();
-    }  //reminder
+    }
     else if (mainprogram->newproject2) {
         mainmix->bulayers.clear();
         mainmix->currlays[0].clear();
@@ -4485,89 +4425,68 @@ void the_loop() {
 		//when in performance mode: keep advancing frame counters for preview layer stacks (alive = 0)
         mainprogram->bupm = mainprogram->prevmodus;
         mainprogram->prevmodus = true;
-        if (skip != mainmix->layers[0]) {
-            for (int i = 0; i < mainmix->layers[0].size(); i++) {
-                Layer *testlay = mainmix->layers[0][i];
-                testlay->layers = &mainmix->layers[0];
-                testlay->progress(0, 0);
-                testlay->load_frame();
-            }
+        for (int i = 0; i < mainmix->layers[0].size(); i++) {
+            Layer *testlay = mainmix->layers[0][i];
+            testlay->layers = &mainmix->layers[0];
+            testlay->progress(0, 0);
+            testlay->load_frame();
         }
-        if (skip != mainmix->layers[1]) {
-            for (int i = 0; i < mainmix->layers[1].size(); i++) {
-                Layer *testlay = mainmix->layers[1][i];
-                testlay->layers = &mainmix->layers[1];
-                testlay->progress(0, 0);
-                testlay->load_frame();
-            }
+        for (int i = 0; i < mainmix->layers[1].size(); i++) {
+            Layer *testlay = mainmix->layers[1][i];
+            testlay->layers = &mainmix->layers[1];
+            testlay->progress(0, 0);
+            testlay->load_frame();
         }
         mainprogram->prevmodus = false;
         // performance mode frame calc and load
-        if (skip != mainmix->layers[2]) {
-            for (int i = 0; i < mainmix->layers[2].size(); i++) {
-                Layer *testlay = mainmix->layers[2][i];
-                testlay->layers = &mainmix->layers[2];
-                testlay->progress(1, 1);
-                testlay->load_frame();
-            }
+        for (int i = 0; i < mainmix->layers[2].size(); i++) {
+            Layer *testlay = mainmix->layers[2][i];
+            testlay->layers = &mainmix->layers[2];
+            testlay->progress(1, 1);
+            testlay->load_frame();
         }
-        if (skip != mainmix->layers[3]) {
-            for (int i = 0; i < mainmix->layers[3].size(); i++) {
-                Layer *testlay = mainmix->layers[3][i];
-                testlay->layers = &mainmix->layers[3];
-                testlay->progress(1, 1);
-                testlay->load_frame();
-            }
+        for (int i = 0; i < mainmix->layers[3].size(); i++) {
+            Layer *testlay = mainmix->layers[3][i];
+            testlay->layers = &mainmix->layers[3];
+            testlay->progress(1, 1);
+            testlay->load_frame();
         }
-		//for(int i = 0; i < mainprogram->busylayers.size(); i++) {
-		//	Layer *testlay = mainprogram->busylayers[i];  // needs to be revised, reminder: dont remember why, something with doubling...?
-        //    if (testlay->filename != "") testlay->progress(1, 1);
-		//	testlay->load_frame();
-		//}
 	}
     // when in preview modus, do frame texture load for both mixes (preview and output)
 	if (mainprogram->prevmodus) {
-        if (skip != mainmix->layers[0]) {
-            for (int i = 0; i < mainmix->layers[0].size(); i++) {
-                Layer *testlay = mainmix->layers[0][i];
-                testlay->layers = &mainmix->layers[0];
-                testlay->progress(0, 1);
-                testlay->load_frame();
-            }
+        for (int i = 0; i < mainmix->layers[0].size(); i++) {
+            Layer *testlay = mainmix->layers[0][i];
+            testlay->layers = &mainmix->layers[0];
+            testlay->progress(0, 1);
+            testlay->load_frame();
         }
-        if (skip != mainmix->layers[1]) {
-            for (int i = 0; i < mainmix->layers[1].size(); i++) {
-                Layer *testlay = mainmix->layers[1][i];
-                testlay->layers = &mainmix->layers[1];
-                testlay->progress(0, 1);
-                testlay->load_frame();
-            }
+        for (int i = 0; i < mainmix->layers[1].size(); i++) {
+            Layer *testlay = mainmix->layers[1][i];
+            testlay->layers = &mainmix->layers[1];
+            testlay->progress(0, 1);
+            testlay->load_frame();
         }
 	}
 	if (mainprogram->prevmodus) {
         mainprogram->prevmodus = false;
-        if (skip != mainmix->layers[2]) {
-            for (int i = 0; i < mainmix->layers[2].size(); i++) {
-                Layer *testlay = mainmix->layers[2][i];
-                testlay->layers = &mainmix->layers[2];
-                testlay->progress(1, 1);
-                testlay->load_frame();
-            }
+        for (int i = 0; i < mainmix->layers[2].size(); i++) {
+            Layer *testlay = mainmix->layers[2][i];
+            testlay->layers = &mainmix->layers[2];
+            testlay->progress(1, 1);
+            testlay->load_frame();
         }
-        if (skip != mainmix->layers[3]) {
-            for (int i = 0; i < mainmix->layers[3].size(); i++) {
-                Layer *testlay = mainmix->layers[3][i];
-                testlay->layers = &mainmix->layers[3];
-                testlay->progress(1, 1);
-                testlay->load_frame();
-            }
+        for (int i = 0; i < mainmix->layers[3].size(); i++) {
+            Layer *testlay = mainmix->layers[3][i];
+            testlay->layers = &mainmix->layers[3];
+            testlay->progress(1, 1);
+            testlay->load_frame();
         }
         mainprogram->prevmodus = true;
 	}
 
     // Crawl web
-	if (mainprogram->prevmodus) walk_nodes(0, skip);
-	walk_nodes(1, skip);
+	if (mainprogram->prevmodus) walk_nodes(0);
+	walk_nodes(1);
     make_layboxes();
 
 
@@ -7342,99 +7261,105 @@ int main(int argc, char* argv[]) {
                             mainmix->new_file(2, 1, true);
                         }
                         if (e.key.keysym.sym == SDLK_z) {  // UNDO
-                            if (!mainprogram->binsscreen) {
-                                if (mainprogram->undomapvec[mainprogram->undopos - 1].size() && mainprogram->undopbpos > 1) {
-                                    mainprogram->undo_redo_parbut(-2);
-                                    mainprogram->undopbpos--;
-                                }
-                                else if (mainprogram->undopaths.size() && mainprogram->undopos > 1) {
-                                    mainprogram->project->bupp = mainprogram->project->path;
-                                    mainprogram->project->bupn = mainprogram->project->name;
-                                    mainprogram->project->bubd = mainprogram->project->binsdir;
-                                    mainprogram->project->busd = mainprogram->project->shelfdir;
-                                    mainprogram->project->burd = mainprogram->project->recdir;
-                                    mainprogram->project->buad = mainprogram->project->autosavedir;
-                                    mainprogram->project->bued = mainprogram->project->elementsdir;
+                            if (mainprogram->undoon) {
+                                if (!mainprogram->binsscreen) {
+                                    if (mainprogram->undomapvec[mainprogram->undopos - 1].size() &&
+                                        mainprogram->undopbpos > 1) {
+                                        mainprogram->undo_redo_parbut(-2);
+                                        mainprogram->undopbpos--;
+                                    } else if (mainprogram->undopaths.size() && mainprogram->undopos > 1) {
+                                        mainprogram->project->bupp = mainprogram->project->path;
+                                        mainprogram->project->bupn = mainprogram->project->name;
+                                        mainprogram->project->bubd = mainprogram->project->binsdir;
+                                        mainprogram->project->busd = mainprogram->project->shelfdir;
+                                        mainprogram->project->burd = mainprogram->project->recdir;
+                                        mainprogram->project->buad = mainprogram->project->autosavedir;
+                                        mainprogram->project->bued = mainprogram->project->elementsdir;
 
-                                    mainprogram->project->open(mainprogram->undopaths[mainprogram->undopos - 2], false,
-                                                               false, true);
-                                    mainprogram->project->binsdir = mainprogram->project->bubd;
-                                    mainprogram->project->shelfdir = mainprogram->project->busd;
-                                    mainprogram->project->recdir = mainprogram->project->burd;
-                                    mainprogram->project->autosavedir = mainprogram->project->buad;
-                                    mainprogram->project->elementsdir = mainprogram->project->bued;
-                                    mainprogram->project->path = mainprogram->project->bupp;
-                                    mainprogram->project->name = mainprogram->project->bupn;
+                                        mainprogram->project->open(mainprogram->undopaths[mainprogram->undopos - 2],
+                                                                   false,
+                                                                   false, true);
+                                        mainprogram->project->binsdir = mainprogram->project->bubd;
+                                        mainprogram->project->shelfdir = mainprogram->project->busd;
+                                        mainprogram->project->recdir = mainprogram->project->burd;
+                                        mainprogram->project->autosavedir = mainprogram->project->buad;
+                                        mainprogram->project->elementsdir = mainprogram->project->bued;
+                                        mainprogram->project->path = mainprogram->project->bupp;
+                                        mainprogram->project->name = mainprogram->project->bupn;
 
-                                    mainprogram->undopos--;
-                                    if (mainprogram->undopos > 0) {
-                                        mainprogram->undopbpos =
-                                                mainprogram->undomapvec[mainprogram->undopos - 1].size();
-                                    }
-                                    if (mainprogram->undopbpos != 0) {
-                                        std::unordered_set<Param*> params;
-                                        std::unordered_set<Button*> buttons;
-                                        for (int i = mainprogram->undomapvec[mainprogram->undopos - 1].size() - 1; i >= 0 ; i--) {
-                                            auto tup1 = mainprogram->undomapvec[mainprogram->undopos - 1][i];
-                                            auto tup2 = std::get<0>(tup1);
-                                            Param* par = std::get<0>(tup2);
-                                            Button* but = std::get<1>(tup2);
-                                            if (par && !params.count(par)) {
-                                                auto tup = mainprogram->newparam(i - mainprogram->undomapvec[mainprogram->undopos - 1].size(), true);
-                                                Param* newpar = std::get<0>(tup);
-                                                newpar->value = std::get<1>(tup1);
-                                                params.emplace(par);
-                                            }
-                                            if (but && !buttons.count(but)) {
-                                                auto tup = mainprogram->newbutton(i - mainprogram->undomapvec[mainprogram->undopos - 1].size(), true);
-                                                Button *newbut = std::get<0>(tup);
-                                                newbut->value = std::get<1>(tup1);
-                                                buttons.emplace(but);
+                                        mainprogram->undopos--;
+                                        if (mainprogram->undopos > 0) {
+                                            mainprogram->undopbpos =
+                                                    mainprogram->undomapvec[mainprogram->undopos - 1].size();
+                                        }
+                                        if (mainprogram->undopbpos != 0) {
+                                            std::unordered_set<Param *> params;
+                                            std::unordered_set<Button *> buttons;
+                                            for (int i = mainprogram->undomapvec[mainprogram->undopos - 1].size() - 1;
+                                                 i >= 0; i--) {
+                                                auto tup1 = mainprogram->undomapvec[mainprogram->undopos - 1][i];
+                                                auto tup2 = std::get<0>(tup1);
+                                                Param *par = std::get<0>(tup2);
+                                                Button *but = std::get<1>(tup2);
+                                                if (par && !params.count(par)) {
+                                                    auto tup = mainprogram->newparam(i - mainprogram->undomapvec[
+                                                            mainprogram->undopos - 1].size(), true);
+                                                    Param *newpar = std::get<0>(tup);
+                                                    newpar->value = std::get<1>(tup1);
+                                                    params.emplace(par);
+                                                }
+                                                if (but && !buttons.count(but)) {
+                                                    auto tup = mainprogram->newbutton(i - mainprogram->undomapvec[
+                                                            mainprogram->undopos - 1].size(), true);
+                                                    Button *newbut = std::get<0>(tup);
+                                                    newbut->value = std::get<1>(tup1);
+                                                    buttons.emplace(but);
+                                                }
                                             }
                                         }
                                     }
-                                }
-                            }
-                            else {
-                                if (binsmain->undobins.size() && binsmain->undopos > 1) {
-                                    binsmain->undo_redo(-2);
-                                    binsmain->undopos--;
+                                } else {
+                                    if (binsmain->undobins.size() && binsmain->undopos > 1) {
+                                        binsmain->undo_redo(-2);
+                                        binsmain->undopos--;
+                                    }
                                 }
                             }
                         }
                         if (e.key.keysym.sym == SDLK_y) {  // UNDO
-                            if (!mainprogram->binsscreen) {
-                                if (mainprogram->undomapvec[mainprogram->undopos - 1].size() > mainprogram->undopbpos) {
-                                    mainprogram->undo_redo_parbut(0);
-                                    mainprogram->undopbpos++;
-                                }
-                                else if (mainprogram->undopaths.size() > mainprogram->undopos) {
-                                    mainprogram->project->bupp = mainprogram->project->path;
-                                    mainprogram->project->bupn = mainprogram->project->name;
-                                    mainprogram->project->bubd = mainprogram->project->binsdir;
-                                    mainprogram->project->busd = mainprogram->project->shelfdir;
-                                    mainprogram->project->burd = mainprogram->project->recdir;
-                                    mainprogram->project->buad = mainprogram->project->autosavedir;
-                                    mainprogram->project->bued = mainprogram->project->elementsdir;
+                            if (mainprogram->undoon) {
+                                if (!mainprogram->binsscreen) {
+                                    if (mainprogram->undomapvec[mainprogram->undopos - 1].size() >
+                                        mainprogram->undopbpos) {
+                                        mainprogram->undo_redo_parbut(0);
+                                        mainprogram->undopbpos++;
+                                    } else if (mainprogram->undopaths.size() > mainprogram->undopos) {
+                                        mainprogram->project->bupp = mainprogram->project->path;
+                                        mainprogram->project->bupn = mainprogram->project->name;
+                                        mainprogram->project->bubd = mainprogram->project->binsdir;
+                                        mainprogram->project->busd = mainprogram->project->shelfdir;
+                                        mainprogram->project->burd = mainprogram->project->recdir;
+                                        mainprogram->project->buad = mainprogram->project->autosavedir;
+                                        mainprogram->project->bued = mainprogram->project->elementsdir;
 
-                                    mainprogram->project->open(mainprogram->undopaths[mainprogram->undopos], false,
-                                                               false, true);
-                                    mainprogram->project->binsdir = mainprogram->project->bubd;
-                                    mainprogram->project->shelfdir = mainprogram->project->busd;
-                                    mainprogram->project->recdir = mainprogram->project->burd;
-                                    mainprogram->project->autosavedir = mainprogram->project->buad;
-                                    mainprogram->project->elementsdir = mainprogram->project->bued;
-                                    mainprogram->project->path = mainprogram->project->bupp;
-                                    mainprogram->project->name = mainprogram->project->bupn;
+                                        mainprogram->project->open(mainprogram->undopaths[mainprogram->undopos], false,
+                                                                   false, true);
+                                        mainprogram->project->binsdir = mainprogram->project->bubd;
+                                        mainprogram->project->shelfdir = mainprogram->project->busd;
+                                        mainprogram->project->recdir = mainprogram->project->burd;
+                                        mainprogram->project->autosavedir = mainprogram->project->buad;
+                                        mainprogram->project->elementsdir = mainprogram->project->bued;
+                                        mainprogram->project->path = mainprogram->project->bupp;
+                                        mainprogram->project->name = mainprogram->project->bupn;
 
-                                    mainprogram->undopos++;
-                                    mainprogram->undopbpos = 0;
-                                }
-                            }
-                            else {
-                                if (binsmain->undobins.size() > binsmain->undopos) {
-                                    binsmain->undo_redo(0);
-                                    binsmain->undopos++;
+                                        mainprogram->undopos++;
+                                        mainprogram->undopbpos = 0;
+                                    }
+                                } else {
+                                    if (binsmain->undobins.size() > binsmain->undopos) {
+                                        binsmain->undo_redo(0);
+                                        binsmain->undopos++;
+                                    }
                                 }
                             }
                         }

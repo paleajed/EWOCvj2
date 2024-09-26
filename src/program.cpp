@@ -1856,10 +1856,10 @@ void Program::handle_fullscreen() {
 
 	glGenBuffers(1, &vbuf);
 	glBindBuffer(GL_ARRAY_BUFFER, vbuf);
-	glBufferData(GL_ARRAY_BUFFER, 32, vcoords1, GL_STATIC_DRAW);
+	glBufferData(GL_ARRAY_BUFFER, 32, vcoords1, GL_DYNAMIC_DRAW);
 	glGenBuffers(1, &tbuf);
 	glBindBuffer(GL_ARRAY_BUFFER, tbuf);
-	glBufferData(GL_ARRAY_BUFFER, 32, tcoords, GL_STATIC_DRAW);
+	glBufferData(GL_ARRAY_BUFFER, 32, tcoords, GL_DYNAMIC_DRAW);
 	glGenVertexArrays(1, &vao);
 	glBindVertexArray(vao);
 	glBindBuffer(GL_ARRAY_BUFFER, vbuf);
@@ -2116,7 +2116,8 @@ void Program::layerstack_scrollbar_handle() {
             if (j == 0) {
                 if (slidex < 0.0f) this->boxbig->vtxcoords->x1 += slidex;
             }
-            render_text(std::to_string(j + 1), white, this->boxbig->vtxcoords->x1 + 0.0078f - slidex,
+            char *charstr = (char*)std::to_string(j + 1).c_str();
+            render_text(charstr, white, this->boxbig->vtxcoords->x1 + 0.0078f - slidex,
                         this->boxbig->vtxcoords->y1 + 0.0078f, 0.0006, 0.001);
             const int s = lvec.size() - mainmix->scenes[i][mainmix->currscene[i]]->scrollpos;
             if (mainprogram->dragbinel) {
@@ -2277,7 +2278,7 @@ void Program::shelf_triggering(ShelfElement* elem) {
         Layer *laydeck1 = nullptr;
         for (int k = 0; k < clays.size(); k++) {
             Layer *lay = clays[k];
-            //clays[k]->deautomate();    reminder : sometimes necessary?
+            clays[k]->deautomate();
             if (elem->type == ELEM_FILE) {
                 clays[k] = clays[k]->open_video(0, elem->path, true);
                 mainmix->currlay[!mainprogram->prevmodus] = clays[k];
@@ -2506,7 +2507,11 @@ bool Program::handle_button(Button *but, bool circlein, bool automation, bool co
             draw_box(but->ccol, but->box->vtxcoords->x1 + radx, but->box->vtxcoords->y1 + rady, 0.0225f, cs);
         }
         else draw_box(but->ccol, but->box->vtxcoords->x1 + radx, but->box->vtxcoords->y1 + rady, 0.0225f, 2);
-        float x = render_text(but->name[0], white, 0.0f, 0.0f, radx / 50.0f, rady / 50.0f, 0, 0, 0)[0] / 2.0f;
+        std::vector<float> tws = render_text(but->name[0], nullptr, white, 0.0f, 0.0f, radx / 50.0f, rady / 50.0f, 0, 0, 0);
+        float x = 0.0f;
+        if (tws.size()) {
+            float x = tws[0] / 2.0f;
+        }
         render_text(but->name[0], white, but->box->vtxcoords->x1 - x + radx / 4.0f, but->box->vtxcoords->y1 - x * rady / radx + rady / 4.0f, radx / 50.0f, rady / 50.0f);
     }
 
@@ -2547,6 +2552,7 @@ void Button::deautomate() {
             elem->loopbut->oldvalue = 0;
             elem->playbut->oldvalue = 0;
         }
+        loopstation->allbuttons.erase(this);
         loopstation->butelemmap.erase(this);
         this->box->acolor[0] = 0.2f;
         this->box->acolor[1] = 0.2f;
@@ -3605,7 +3611,7 @@ void Program::handle_loopmenu() {
 }
 
 void Program::make_mixtargetmenu() {
-    // reminder : make the output display menu (SDL_GetNumVideoDisplays() doesn't allow hotplugging screens... :( )
+    // the output display menu (SDL_GetNumVideoDisplays() doesn't allow hotplugging screens...
     int numd = SDL_GetNumVideoDisplays();
     std::vector<std::string> mixtargets;
     if (numd == 1) mixtargets.push_back("No external displays");
@@ -3644,7 +3650,7 @@ void Program::handle_monitormenu() {
     int v4lstart = 0;
     int numd = SDL_GetNumVideoDisplays();
     if (mainprogram->monitormenu->state > 1) {
-        // reminder : make the output display menu (SDL_GetNumVideoDisplays() doesn't allow hotplugging screens... :( )
+        // the output display menu (SDL_GetNumVideoDisplays() doesn't allow hotplugging screens...
         std::vector<std::string> monitors;
         monitors.push_back("View full screen");
         monitors.push_back("submenu wipemenu");
@@ -3803,10 +3809,10 @@ void Program::handle_monitormenu() {
                                              1.0f, 1.0f};
                         glGenBuffers(1, &mwin->vbuf);
                         glBindBuffer(GL_ARRAY_BUFFER, mwin->vbuf);
-                        glBufferData(GL_ARRAY_BUFFER, 32, vcoords1, GL_STATIC_DRAW);
+                        glBufferData(GL_ARRAY_BUFFER, 32, vcoords1, GL_DYNAMIC_DRAW);
                         glGenBuffers(1, &mwin->tbuf);
                         glBindBuffer(GL_ARRAY_BUFFER, mwin->tbuf);
-                        glBufferData(GL_ARRAY_BUFFER, 32, tcoords, GL_STATIC_DRAW);
+                        glBufferData(GL_ARRAY_BUFFER, 32, tcoords, GL_DYNAMIC_DRAW);
                         glGenVertexArrays(1, &mwin->vao);
                         glBindVertexArray(mwin->vao);
                         glBindBuffer(GL_ARRAY_BUFFER, mwin->vbuf);
@@ -4220,10 +4226,10 @@ void Program::handle_laymenu1() {
                                          1.0f, 1.0f};
                     glGenBuffers(1, &mwin->vbuf);
                     glBindBuffer(GL_ARRAY_BUFFER, mwin->vbuf);
-                    glBufferData(GL_ARRAY_BUFFER, 32, vcoords1, GL_STATIC_DRAW);
+                    glBufferData(GL_ARRAY_BUFFER, 32, vcoords1, GL_DYNAMIC_DRAW);
                     glGenBuffers(1, &mwin->tbuf);
                     glBindBuffer(GL_ARRAY_BUFFER, mwin->tbuf);
-                    glBufferData(GL_ARRAY_BUFFER, 32, tcoords, GL_STATIC_DRAW);
+                    glBufferData(GL_ARRAY_BUFFER, 32, tcoords, GL_DYNAMIC_DRAW);
                     glGenVertexArrays(1, &mwin->vao);
                     glBindVertexArray(mwin->vao);
                     glBindBuffer(GL_ARRAY_BUFFER, mwin->vbuf);
@@ -5005,7 +5011,8 @@ void Program::preview_modus_buttons() {
                 box = mainprogram->toscene[m][0][i]->box;
                 register_triangle_draw(white, white, box->vtxcoords->x1 + box->vtxcoords->w / 2.0f + 0.0117f,
                                        box->vtxcoords->y1 + 0.0225f, 0.0165f, 0.0312f, DOWN, CLOSED);
-                render_text(std::to_string(scns[i]), white, box->vtxcoords->x1 + 0.0117f,
+                const char *charstr = std::to_string(scns[i]).c_str();
+                render_text(charstr, white, box->vtxcoords->x1 + 0.0117f,
                             box->vtxcoords->y1 + 0.0225f, 0.0006f, 0.001f);
 
                 mainprogram->handle_button(mainprogram->toscene[m][1][i], false, false, true);
@@ -5021,6 +5028,7 @@ void Program::preview_modus_buttons() {
                     mainmix->currscene[m] = scns[i] - 1;
                     mainmix->mousedeck = m;
                     loopstation = scene->lpst;
+                    mainmix->scenenum = scene->pos;
                     mainmix->save_deck(
                             mainprogram->temppath + "tempdecksc_" + std::to_string(m) +
                             std::to_string(scns[i] - 1) +
@@ -5029,16 +5037,10 @@ void Program::preview_modus_buttons() {
                     mainmix->currscene[m] = bucurr;
 
                     mainprogram->prevmodus = true;
-                    std::vector<Layer*> bul[2];
-                    bul[0] = mainmix->layers[2];
-                    bul[1] = mainmix->layers[3];
                     loopstation = lp;
                     mainmix->scenenum = -1;
                     mainmix->open_deck(mainprogram->temppath + "tempdecksc_" + std::to_string(m) + std::to_string(scns[i] - 1) +".deck", true);
-                    mainmix->layers[2] = bul[0];
-                    mainmix->layers[3] = bul[1];
                     LoopStation *bulp = lp;
-                    lp = scene->lpst;
 
                     // correct loopstation current times for deck saving/opening lag
                     loopstation = lp;
@@ -5058,7 +5060,8 @@ void Program::preview_modus_buttons() {
                 box = mainprogram->toscene[m][1][i]->box;
                 register_triangle_draw(white, white, box->vtxcoords->x1 + box->vtxcoords->w / 2.0f + 0.0117f,
                                        box->vtxcoords->y1 + 0.0225f, 0.0165f, 0.0312f, UP, CLOSED);
-                render_text(std::to_string(scns[i]), white, box->vtxcoords->x1 + 0.0117f,
+                charstr = std::to_string(scns[i]).c_str();
+                render_text(charstr, white, box->vtxcoords->x1 + 0.0117f,
                             box->vtxcoords->y1 + 0.0225f, 0.0006f, 0.001f);
             }
         }
@@ -5291,7 +5294,8 @@ bool Program::preferences_handle() {
 				}
 			}
 			else {
-				render_text(std::to_string(mci->items[i]->value), white, mci->items[i]->valuebox->vtxcoords->x1 + 0.1f, mci->items[i]->valuebox->vtxcoords->y1 + 0.06f, 0.0024f, 0.004f, 1, 0);
+                char* charstr = (char*)std::to_string(mci->items[i]->value).c_str();
+				render_text(charstr, white, mci->items[i]->valuebox->vtxcoords->x1 + 0.1f, mci->items[i]->valuebox->vtxcoords->y1 + 0.06f, 0.0024f, 0.004f, 1, 0);
 			}
 			if (mci->items[i]->valuebox->in(mx, my)) {
 				if (this->leftmouse && this->renaming == EDIT_NONE) {
@@ -5786,7 +5790,10 @@ int Program::config_midipresets_handle() {
 	else if (mainprogram->midipresetsset == 2) lmstr = "C";
 	else if (mainprogram->midipresetsset == 3) lmstr = "D";
     if (mainprogram->tmlearn == TM_CROSS) render_text("Creating settings for every midideck", white, -0.3f, 0.2f, 0.0024f, 0.004f, 2);
-    else if (mainprogram->tmlearn != TM_NONE) render_text("Creating settings for midideck " + lmstr, white, -0.3f, 0.2f, 0.0024f, 0.004f, 2);
+    else if (mainprogram->tmlearn != TM_NONE) {
+        std::string tempstr = "Creating settings for midideck " + lmstr;
+        render_text(tempstr, white, -0.3f, 0.2f, 0.0024f, 0.004f, 2);
+    }
 	switch (mainprogram->tmlearn) {
 	case TM_NONE:
 		break;
@@ -6660,7 +6667,7 @@ void Project::newp(const std::string path) {
 }
 	
 bool Project::open(std::string path, bool autosave, bool newp, bool undo) {
-	std::string result = deconcat_files(path);
+	std::string result = mainprogram->deconcat_files(path);
 	bool concat = (result != "");
 	std::ifstream rfile;
 	if (concat) rfile.open(result);
@@ -6687,7 +6694,7 @@ bool Project::open(std::string path, bool autosave, bool newp, bool undo) {
             }
         }
     }
-    //if (!autosave) {
+
     mainprogram->project->path = path;
     if (!exists(path)) {  // reminder requester
         std::string err = "Project at " + path + " doesn't exist" + "\n";
@@ -6700,7 +6707,6 @@ bool Project::open(std::string path, bool autosave, bool newp, bool undo) {
         std::vector<Bin *> bins = binsmain->bins;
         int correct = 0;
         for (int i = 0; i < bins.size(); i++) {
-            //binsmain->bins.erase(binsmain->bins.begin() + i - correct);
             std::filesystem::remove(bins[i]->path);
             std::filesystem::remove_all(mainprogram->project->binsdir + bins[i]->name);
             correct++;
@@ -7741,7 +7747,7 @@ void PIMidi::populate() {
         while (itemslefttemp.size()) {
             if (itemslefttemp.back()->name == pmi->name) {
                 // items already in list
-                // erase from itemsleft to allow for multiple same names  reminder: test!
+                // erase from itemsleft to allow for multiple same names
                 itemsleft.erase(itemsleft.begin() + itemslefttemp.size() - 1);
             }
             itemslefttemp.pop_back();
@@ -7799,7 +7805,7 @@ PIInt::PIInt() {
     pii->namebox->tooltip = "Sets autostarting video playback at video load as default. ";
     pii->valuebox->tooltiptitle = "Autostart playback default toggle ";
     pii->valuebox->tooltip = "Leftclick to set autostart video playback default to on(green) or off(black). ";
-    mainprogram->autosave = pii->onoff;
+    mainprogram->autoplay = pii->onoff;
     this->items.push_back(pii);
     pos++;
 
@@ -7809,7 +7815,7 @@ PIInt::PIInt() {
     pii->namebox->tooltip = "Sets looped video playback default. ";
     pii->valuebox->tooltiptitle = "Looped playback default toggle ";
     pii->valuebox->tooltip = "Leftclick to set looped video playback default to on(green) or off(black). ";
-    mainprogram->autosave = pii->onoff;
+    mainprogram->repeatdefault = pii->onoff;
     this->items.push_back(pii);
     pos++;
 
@@ -7819,7 +7825,7 @@ PIInt::PIInt() {
     pii->namebox->tooltip = "Keep effects on video change ";
     pii->valuebox->tooltiptitle = "Keep effects on video change. toggle ";
     pii->valuebox->tooltip = "Leftclick to change if effects of a layer are kept on video change. ";
-    mainprogram->autosave = pii->onoff;
+    mainprogram->keepeffpref = pii->onoff;
     this->items.push_back(pii);
     pos++;
 
@@ -7880,6 +7886,16 @@ PIVid::PIVid() {
     mainprogram->qualfr = pvi->value;
     this->items.push_back(pvi);
     pos++;
+
+    pvi = new PrefItem(this, pos, "Stash HAP encoded videos", PREF_ONOFF, (void*)&mainprogram->stashvideos);
+    pvi->onoff = 0;
+    pvi->namebox->tooltiptitle = "Stash HAP encoded videos ";
+    pvi->namebox->tooltip = "The original videos are stashed in the EWOCvj2_CPU_vid_backups directory inside your Videos folder. ";
+    pvi->valuebox->tooltiptitle = "Toggle encoded video stash ";
+    pvi->valuebox->tooltip = "Leftclick toggles if, when HAP encoded in the program, the original videos are stashed in the EWOCvj2_CPU_vid_backups directory inside your Videos folder. ";
+    mainprogram->stashvideos = pvi->onoff;
+    this->items.push_back(pvi);
+    pos++;
 }
 
 PIInvisible::PIInvisible() {
@@ -7917,6 +7933,16 @@ PIProg::PIProg() {
     this->name = "Program";
     PrefItem *pdi;
     int pos = 0;
+
+    pdi = new PrefItem(this, pos, "Undo", PREF_ONOFF, (void*)&mainprogram->undoon);
+    pdi->onoff = 1;
+    pdi->namebox->tooltiptitle = "Undo system ";
+    pdi->namebox->tooltip = "Turns the undo system on or off. ";
+    pdi->valuebox->tooltiptitle = "Undo system toggle ";
+    pdi->valuebox->tooltip = "Leftclick to turn on/off the undo system.  The undo system can cause slight delays in the video output: good idea to turn it off when performing. ";
+    mainprogram->undoon = pdi->onoff;
+    this->items.push_back(pdi);
+    pos++;
 
     pdi = new PrefItem(this, pos, "Autosave", PREF_ONOFF, (void*)&mainprogram->autosave);
     pdi->onoff = 1;
@@ -8335,7 +8361,7 @@ void Program::define_menus() {
     //make menu item names bitmaps
     for (int i = 0; i < mainprogram->menulist.size(); i++) {
         for (int j = 0; j < mainprogram->menulist[i]->entries.size(); j++) {
-            render_text(mainprogram->menulist[i]->entries[j], white, 2.0f, 2.0f, 0.00045f, 0.00075f, 0, 0, 0);
+            render_text(mainprogram->menulist[i]->entries[j], nullptr, white, 2.0f, 2.0f, 0.00045f, 0.00075f, 0, 0, 0);
         }
     }
 }
@@ -8761,7 +8787,7 @@ bool Shelf::open(const std::string path, bool undo) {
     std::ifstream rfile;
     bool concat = false;
     if (!undo) {
-        result = deconcat_files(path);
+        result = mainprogram->deconcat_files(path);
         concat = (result != "");
         if (concat) rfile.open(result);
         else rfile.open(path);
@@ -8880,7 +8906,6 @@ void Shelf::erase() {
     }
 }
 
-// check all STATIC/DYNAMIC draws reminder
 void Shelf::handle() {
     // draw shelves and handle shelves
     int inelem = -1;
@@ -9279,7 +9304,7 @@ bool check_version(std::string path) {
 }
 
 
-std::string deconcat_files(std::string path) {
+std::string Program::deconcat_files(std::string path) {
     bool concat = check_version(path);
     std::string outpath;
     std::fstream bfile;
@@ -9428,6 +9453,7 @@ Menu::~Menu() {
 
 
 void Program::register_undo(Param *par, Button *but) {
+    if (!mainprogram->undoon) return;
     int sz = this->undomapvec[this->undopos - 1].size();
     for (int i = 0; i < sz - this->undopbpos; i++) {
         this->undomapvec[this->undopos - 1].pop_back();
@@ -9509,6 +9535,7 @@ void Program::register_undo(Param *par, Button *but) {
 }
 
 void Program::undo_redo_parbut(char offset, bool again, bool swap) {
+    if (!mainprogram->undoon) return;
     if (this->undomapvec.size()) {
         auto tup2 = this->undomapvec[this->undopos - 1][this->undopbpos + offset];
         int laydeck = -1;
@@ -9727,6 +9754,7 @@ std::tuple<Button*, int, int, int, int> Program::newbutton(int offset, bool swap
 }
 
 void Program::undo_redo_save() {
+    if (!mainprogram->undoon) return;
     bool found = false;
     for (int i = 0; i < 4; i++) {
         if (mainmix->swapmap[i].size()) {
