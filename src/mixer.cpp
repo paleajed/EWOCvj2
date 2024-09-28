@@ -95,8 +95,14 @@ Mixer::Mixer() {
             button->toggle = 0;
             scene->box = box;
             scene->button = button;
-            box->tooltiptitle = "Scene toggle deck A";
-            box->tooltip = "Leftclick activates one of the four scenes (separate layer stacks) for deck A. ";
+            if (j == 0) {
+                box->tooltiptitle = "Scene toggle deck A";
+                box->tooltip = "Leftclick activates one of the four scenes (separate layer stacks) for deck A.  Shift-leftclick changes the scene of both decks. ";
+            }
+            else {
+                box->tooltiptitle = "Scene toggle deck B";
+                box->tooltip = "Leftclick activates one of the four scenes (separate layer stacks) for deck B.  Shift-leftclick changes the scene of both decks. ";
+            }
             box->lcolor[0] = 0.4f;
             box->lcolor[1] = 0.4f;
             box->lcolor[2] = 0.4f;
@@ -123,8 +129,6 @@ Mixer::Mixer() {
     this->wipey[0]->range[0] = 1.0f;
     this->wipey[0]->range[1] = 0.0f;
 	this->wipey[0]->shadervar = "ypos";
-	lp->allparams.emplace(this->wipex[0]);
-	lp->allparams.emplace(this->wipey[0]);
 	this->wipex[1] = new Param;
     this->wipex[1]->name = "wipex";
     this->wipex[1]->sliding = true;
@@ -139,8 +143,6 @@ Mixer::Mixer() {
     this->wipey[1]->range[0] = 1.0f;
     this->wipey[1]->range[1] = 0.0f;
 	this->wipey[1]->shadervar = "ypos";
-	lpc->allparams.emplace(this->wipex[1]);
-	lpc->allparams.emplace(this->wipey[1]);
 
 	this->modebox = new Boxx;
 	this->modebox->vtxcoords->x1 = 0.85f;
@@ -196,7 +198,6 @@ Mixer::Mixer() {
 	this->crossfade->box->tooltiptitle = "Crossfade ";
 	this->crossfade->box->tooltip = "Leftdrag crossfades between deck A and deck B streams. Doubleclick allows numeric entry. ";
 	this->crossfade->box->acolor[3] = 1.0f;
-	lp->allparams.emplace(this->crossfade);
 	this->crossfadecomp = new Param;
 	this->crossfadecomp->name = "Crossfade"; 
 	this->crossfadecomp->value = 0.5f;
@@ -213,7 +214,6 @@ Mixer::Mixer() {
 	this->crossfadecomp->box->tooltiptitle = "Crossfade ";
 	this->crossfadecomp->box->tooltip = "Leftdrag crossfades between deck A and deck B streams. Doubleclick allows numeric entry. ";
 	this->crossfadecomp->box->acolor[3] = 1.0f;
-	lpc->allparams.emplace(this->crossfadecomp);
 
     /*this->recbutS = new Button(false);
     this->recbutS->name[0] = "S";
@@ -252,7 +252,6 @@ Mixer::Mixer() {
 	this->deckspeed[0][0]->box->upvtxtoscr();
 	this->deckspeed[0][0]->box->tooltiptitle = "Global preview deck A speed setting ";
 	this->deckspeed[0][0]->box->tooltip = "Change global deck A speed factor for preview streams. Leftdrag changes value. Doubleclick allows numeric entry. ";
-    lp->allparams.emplace(this->deckspeed[0][0]);
 
 	this->deckspeed[0][1] = new Param;
 	this->deckspeed[0][1]->name = "Speed B";
@@ -269,7 +268,6 @@ Mixer::Mixer() {
 	this->deckspeed[0][1]->box->upvtxtoscr();
 	this->deckspeed[0][1]->box->tooltiptitle = "Global preview deck B speed setting ";
 	this->deckspeed[0][1]->box->tooltip = "Change global deck B speed factor for preview streams. Leftdrag changes value. Doubleclick allows numeric entry. ";
-    lp->allparams.emplace(this->deckspeed[0][1]);
 
 	this->deckspeed[1][0] = new Param;
 	this->deckspeed[1][0]->name = "Speed A";
@@ -286,7 +284,6 @@ Mixer::Mixer() {
 	this->deckspeed[1][0]->box->upvtxtoscr();
 	this->deckspeed[1][0]->box->tooltiptitle = "Global preview deck A speed setting ";
 	this->deckspeed[1][0]->box->tooltip = "Change global deck A speed factor for preview streams. Leftdrag changes value. Doubleclick allows numeric entry. ";
-    lpc->allparams.emplace(this->deckspeed[1][0]);
 
 	this->deckspeed[1][1] = new Param;
 	this->deckspeed[1][1]->name = "Speed B";
@@ -303,7 +300,6 @@ Mixer::Mixer() {
 	this->deckspeed[1][1]->box->upvtxtoscr();
 	this->deckspeed[1][1]->box->tooltiptitle = "Global preview deck B speed setting ";
 	this->deckspeed[1][1]->box->tooltip = "Change global deck B speed factor for preview streams. Leftdrag changes value. Doubleclick allows numeric entry. ";
-    lpc->allparams.emplace(this->deckspeed[1][1]);
 
     this->layers.push_back({}); // the old layersA
     this->layers.push_back({}); // the old layersB
@@ -366,14 +362,6 @@ Param::Param() {
     this->box->acolor[1] = 0.3;
     this->box->acolor[2] = 0.15;
     this->box->acolor[3] = 1.0;
-	if (mainprogram) {
-		if (mainprogram->prevmodus) {
-			if (lp) lp->allparams.emplace(this);
-		}
-		else {
-			if (lpc) lpc->allparams.emplace(this);
-		}
-	}
 }
 
 Param::~Param() {
@@ -511,23 +499,31 @@ void reset_par(Param *par, float val) {
 
 
 void Param::deautomate() {
-    if (this) {
-        LoopStationElement *elem = loopstation->parelemmap[this];
-        if (!elem) return;
-        elem->params.erase(this);
-        loopstation->allparams.erase(this);
-        if (this->effect) elem->layers.erase(this->effect->layer);
-        std::vector<std::tuple<long long, Param *, Button *, float>> evlist = elem->eventlist;
-        for (int i = evlist.size() - 1; i >= 0; i--) {
-            if (std::get<1>(elem->eventlist[i]) == this)
-                elem->eventlist.erase(elem->eventlist.begin() + i);
+    LoopStationElement *elem = loopstation->parelemmap[this];
+    if (!elem) return;
+    elem->params.erase(this);
+    loopstation->allparams.erase(this);
+    loopstation->parelemmap.erase(this);
+    if (this->effect) {
+        bool found = false;
+        for (Param *par : loopstation->allparams) {
+            if (par->layer == this->effect->layer) {
+                found = true;
+            }
         }
-        loopstation->parelemmap.erase(this);
-        this->box->acolor[0] = 0.2f;
-        this->box->acolor[1] = 0.2f;
-        this->box->acolor[2] = 0.2f;
-        this->box->acolor[3] = 1.0f;
+        if (!found) {
+            elem->layers.erase(this->effect->layer);
+        }
     }
+    std::vector<std::tuple<long long, Param *, Button *, float>> evlist = elem->eventlist;
+    for (int i = evlist.size() - 1; i >= 0; i--) {
+        if (std::get<1>(elem->eventlist[i]) == this)
+            elem->eventlist.erase(elem->eventlist.begin() + i);
+    }
+    this->box->acolor[0] = 0.2f;
+    this->box->acolor[1] = 0.2f;
+    this->box->acolor[2] = 0.2f;
+    this->box->acolor[3] = 1.0f;
 }
 
 void Param::register_midi() {
@@ -602,9 +598,9 @@ void Mixer::handle_adaptparam() {
 		this->midiparam = nullptr;
 	}
 
-	for (int i = 0; i < loopstation->elems.size(); i++) {
-		if (loopstation->elems[i]->recbut->value) {
-			loopstation->elems[i]->add_param_automationentry(mainmix->adaptparam);
+	for (int i = 0; i < loopstation->elements.size(); i++) {
+		if (loopstation->elements[i]->recbut->value) {
+			loopstation->elements[i]->add_param_automationentry(mainmix->adaptparam);
 		}
 	}
 
@@ -837,7 +833,6 @@ void Mixer::copy_effects(Layer* slay, Layer* dlay, bool comp) {
 				cpar->midi[1] = par->midi[1];
 				cpar->register_midi();
 				cpar->effect = ceff;
-				lp2->allparams.emplace(cpar);
 			}
 		}
 	}
@@ -1942,6 +1937,7 @@ Effect* Layer::do_add_effect(EFFECT_TYPE type, int pos, bool comp) {
 	effect->layer = this;
     effect->onoffbutton->layer = this;
     effect->drywet->layer = this;
+    effect->drywet->effect = effect;
 
 	std::vector<Effect*> &evec = this->choose_effects();
 	evec.insert(evec.begin() + pos, effect);
@@ -2733,23 +2729,12 @@ Layer::Layer(bool comp) {
     this->decresult = new frame_result;
     this->remfr = new remaining_frames;
     this->decpkt = av_packet_alloc();;
-    this->decpktseek = av_packet_alloc();;
+    this->decpktseek = av_packet_alloc();
 
     this->currcliptexpath = find_unused_filename("currcliptex", mainprogram->temppath, ".jpg");
 
-    //this->triggering = std::thread(&Layer::trigger, this);
-    //this->triggering.detach();
-#ifdef POSIX
     std::thread decoding{ &Layer::get_frame, this };
     decoding.detach();
-    /*Thread decoding(40, SCHED_FIFO);
-    decoding.Start(this);
-    decoding.Detach();*/
-#endif
-#ifdef WINDOWS
-    std::thread decoding{ &Layer::get_frame, this };
-    decoding.detach();
-#endif
 
     this->lpst = new LoopStation;
 }
@@ -3605,10 +3590,10 @@ void make_layboxes() {
                 testlay->loopbox->lcolor[2] = 0.7;
                 testlay->loopbox->lcolor[3] = 1.0;
                 bool found = false;
-                for (int i = 0; i < loopstation->elems.size(); i++) {
-                    if (loopstation->elems[i]->params.size()) {
-                        if (std::find(loopstation->elems[i]->params.begin(), loopstation->elems[i]->params.end(),
-                                      testlay->scritch) != loopstation->elems[i]->params.end()) {
+                for (int i = 0; i < loopstation->elements.size(); i++) {
+                    if (loopstation->elements[i]->params.size()) {
+                        if (std::find(loopstation->elements[i]->params.begin(), loopstation->elements[i]->params.end(),
+                                      testlay->scritch) != loopstation->elements[i]->params.end()) {
                             found = true;
                             break;
                         }
@@ -4263,6 +4248,7 @@ void Mixer::add_del_bar() {
                     lay->pos > this->scenes[j][this->currscene[j]]->scrollpos + 2)
                     continue;
                 Boxx *box = lay->node->vidbox;
+                box->upvtxtoscr();
                 float thick = mainprogram->xvtxtoscr(0.009f);
                 if (box->scrcoords->y1 - box->scrcoords->h < mainprogram->my && mainprogram->my < box->scrcoords->y1) {
                     if (box->scrcoords->x1 + box->scrcoords->w - thick -
@@ -4454,9 +4440,9 @@ void Mixer::vidbox_handle() {
                 if (mainprogram->mousewheel) {
                     // scaling layer view
                     lay->scale->value -= mainprogram->mousewheel * lay->scale->value / 10.0f;
-                    for (int i = 0; i < loopstation->elems.size(); i++) {
-                        if (loopstation->elems[i]->recbut->value) {
-                            loopstation->elems[i]->add_param_automationentry(lay->scale);
+                    for (int i = 0; i < loopstation->elements.size(); i++) {
+                        if (loopstation->elements[i]->recbut->value) {
+                            loopstation->elements[i]->add_param_automationentry(lay->scale);
                         }
                     }
                     if (lay->type == ELEM_IMAGE || lay->type == ELEM_LIVE) {
@@ -4492,9 +4478,9 @@ void Mixer::vidbox_handle() {
                     lay->shifty->value = (float) (mainprogram->my - lay->transmy) / ((float) glob->w / 2.0f);
                 }
 
-                for (int i = 0; i < loopstation->elems.size(); i++) {
-                    if (loopstation->elems[i]->recbut->value) {
-                        loopstation->elems[i]->add_param_automationentry(lay->shiftx);
+                for (int i = 0; i < loopstation->elements.size(); i++) {
+                    if (loopstation->elements[i]->recbut->value) {
+                        loopstation->elements[i]->add_param_automationentry(lay->shiftx);
                     }
                 }
                 if (mainprogram->leftmouse) {
@@ -4648,9 +4634,9 @@ void Layer::display() {
 						this->mutebut->oldvalue = !this->mutebut->oldvalue;
 						this->mute_handle();
                         mainprogram->register_undo(nullptr, this->mutebut);
-                        for (int i = 0; i < loopstation->elems.size(); i++) {
-							if (loopstation->elems[i]->recbut->value) {
-								loopstation->elems[i]->add_button_automationentry(this->mutebut);
+                        for (int i = 0; i < loopstation->elements.size(); i++) {
+							if (loopstation->elements[i]->recbut->value) {
+								loopstation->elements[i]->add_button_automationentry(this->mutebut);
 							}
 						}
 					}
@@ -4713,9 +4699,9 @@ void Layer::display() {
 								}
 							}
 						}
-						for (int i = 0; i < loopstation->elems.size(); i++) {
-							if (loopstation->elems[i]->recbut->value) {
-								loopstation->elems[i]->add_button_automationentry(this->solobut);
+						for (int i = 0; i < loopstation->elements.size(); i++) {
+							if (loopstation->elements[i]->recbut->value) {
+								loopstation->elements[i]->add_button_automationentry(this->solobut);
 							}
 						}
 					}
@@ -4744,9 +4730,9 @@ void Layer::display() {
                         this->keepeffbut->value = !this->keepeffbut->value;
                         mainprogram->register_undo(nullptr, this->keepeffbut);
                         mainprogram->leftmouse = false;
-                        for (int i = 0; i < loopstation->elems.size(); i++) {
-                            if (loopstation->elems[i]->recbut->value) {
-                                loopstation->elems[i]->add_button_automationentry(this->keepeffbut);
+                        for (int i = 0; i < loopstation->elements.size(); i++) {
+                            if (loopstation->elements[i]->recbut->value) {
+                                loopstation->elements[i]->add_button_automationentry(this->keepeffbut);
                             }
                         }
                     }
@@ -5163,6 +5149,7 @@ void Layer::display() {
                     eff->box->acolor[1] = 0.0f;
                     eff->box->acolor[2] = 0.0f;
                     eff->box->acolor[3] = 1.0f;
+                    eff->box->upvtxtoscr();
                     if (!mainprogram->menuondisplay) {
                         if (box->scrcoords->x1 < mainprogram->mx &&
                             mainprogram->mx < box->scrcoords->x1 + box->scrcoords->w) {
@@ -5208,6 +5195,7 @@ void Layer::display() {
                             }
                         }
                         box = eff->onoffbutton->box;
+                        eff->onoffbutton->box->upvtxtoscr();
                         if (box->scrcoords->x1 < mainprogram->mx &&
                             mainprogram->mx < box->scrcoords->x1 + mainprogram->layw * 1.5f * glob->w / 2.0) {
                             if (box->scrcoords->y1 - box->scrcoords->h - 7.5 < mainprogram->iemy &&
@@ -5432,9 +5420,9 @@ void Layer::display() {
                             mainmix->currlays[!mainprogram->prevmodus][i]->revbut->value = false;
                             mainmix->currlays[!mainprogram->prevmodus][i]->bouncebut->value = false;
                         }
-                        for (int i = 0; i < loopstation->elems.size(); i++) {
-                            if (loopstation->elems[i]->recbut->value) {
-                                loopstation->elems[i]->add_button_automationentry(mainmix->currlays[!mainprogram->prevmodus][i]->playbut);
+                        for (int i = 0; i < loopstation->elements.size(); i++) {
+                            if (loopstation->elements[i]->recbut->value) {
+                                loopstation->elements[i]->add_button_automationentry(mainmix->currlays[!mainprogram->prevmodus][i]->playbut);
                             }
                         }
                     }
@@ -5478,9 +5466,9 @@ void Layer::display() {
                             mainmix->currlays[!mainprogram->prevmodus][i]->playbut->value = false;
                             mainmix->currlays[!mainprogram->prevmodus][i]->bouncebut->value = false;
                         }
-                        for (int i = 0; i < loopstation->elems.size(); i++) {
-                            if (loopstation->elems[i]->recbut->value) {
-                                loopstation->elems[i]->add_button_automationentry(mainmix->currlays[!mainprogram->prevmodus][i]->revbut);
+                        for (int i = 0; i < loopstation->elements.size(); i++) {
+                            if (loopstation->elements[i]->recbut->value) {
+                                loopstation->elements[i]->add_button_automationentry(mainmix->currlays[!mainprogram->prevmodus][i]->revbut);
                             }
                         }
                     }
@@ -5526,9 +5514,9 @@ void Layer::display() {
                                 mainmix->currlays[!mainprogram->prevmodus][i]->revbut->value = 0;
                             } else mainmix->currlays[!mainprogram->prevmodus][i]->playbut->value = 0;
                         }
-                        for (int i = 0; i < loopstation->elems.size(); i++) {
-                            if (loopstation->elems[i]->recbut->value) {
-                                loopstation->elems[i]->add_button_automationentry(mainmix->currlays[!mainprogram->prevmodus][i]->bouncebut);
+                        for (int i = 0; i < loopstation->elements.size(); i++) {
+                            if (loopstation->elements[i]->recbut->value) {
+                                loopstation->elements[i]->add_button_automationentry(mainmix->currlays[!mainprogram->prevmodus][i]->bouncebut);
                             }
                         }
                     }
@@ -5578,9 +5566,9 @@ void Layer::display() {
                     this->frameforward->box->acolor[3] = 1.0;
                     this->prevffw = true;
                     this->prevfbw = false;
-                    for (int i = 0; i < loopstation->elems.size(); i++) {
-                        if (loopstation->elems[i]->recbut->value) {
-                            loopstation->elems[i]->add_button_automationentry(this->frameforward);
+                    for (int i = 0; i < loopstation->elements.size(); i++) {
+                        if (loopstation->elements[i]->recbut->value) {
+                            loopstation->elements[i]->add_button_automationentry(this->frameforward);
                         }
                     }
                 }
@@ -5618,9 +5606,9 @@ void Layer::display() {
                     this->framebackward->box->acolor[3] = 1.0;
                     this->prevfbw = true;
                     this->prevffw = false;
-                    for (int i = 0; i < loopstation->elems.size(); i++) {
-                        if (loopstation->elems[i]->recbut->value) {
-                            loopstation->elems[i]->add_button_automationentry(this->framebackward);
+                    for (int i = 0; i < loopstation->elements.size(); i++) {
+                        if (loopstation->elements[i]->recbut->value) {
+                            loopstation->elements[i]->add_button_automationentry(this->framebackward);
                         }
                     }
                 }
@@ -5656,9 +5644,9 @@ void Layer::display() {
                         mainmix->currlays[!mainprogram->prevmodus][i]->revbut->value = false;
                         mainmix->currlays[!mainprogram->prevmodus][i]->bouncebut->value = false;
                         this->frame = 0.0f;
-                        for (int i = 0; i < loopstation->elems.size(); i++) {
-                            if (loopstation->elems[i]->recbut->value) {
-                                loopstation->elems[i]->add_button_automationentry(mainmix->currlays[!mainprogram->prevmodus][i]->stopbut);
+                        for (int i = 0; i < loopstation->elements.size(); i++) {
+                            if (loopstation->elements[i]->recbut->value) {
+                                loopstation->elements[i]->add_button_automationentry(mainmix->currlays[!mainprogram->prevmodus][i]->stopbut);
                             }
                         }
                     }
@@ -5880,9 +5868,9 @@ void Layer::display() {
             if (this->frame != this->oldframe && this->scritching == 1) {
                 // standard scritching is loopstationed
                 this->scritch->value = this->frame;  // set scritching parameter for loopstation
-                for (int i = 0; i < loopstation->elems.size(); i++) {
-                    if (loopstation->elems[i]->recbut->value) {
-                        loopstation->elems[i]->add_param_automationentry(this->scritch);
+                for (int i = 0; i < loopstation->elements.size(); i++) {
+                    if (loopstation->elements[i]->recbut->value) {
+                        loopstation->elements[i]->add_param_automationentry(this->scritch);
                     }
                 }
                 this->loopbox->acolor[0] = this->scritch->box->acolor[0];
@@ -5892,17 +5880,17 @@ void Layer::display() {
             }
             if (this->startframe->value != this->oldstartframe) {
                 // startframe is loopstationed
-                for (int i = 0; i < loopstation->elems.size(); i++) {
-                    if (loopstation->elems[i]->recbut->value) {
-                        loopstation->elems[i]->add_param_automationentry(this->startframe);
+                for (int i = 0; i < loopstation->elements.size(); i++) {
+                    if (loopstation->elements[i]->recbut->value) {
+                        loopstation->elements[i]->add_param_automationentry(this->startframe);
                     }
                 }
             }
             if (this->endframe->value != this->oldendframe) {
                 // endframe is loopstationed
-                for (int i = 0; i < loopstation->elems.size(); i++) {
-                    if (loopstation->elems[i]->recbut->value) {
-                        loopstation->elems[i]->add_param_automationentry(this->endframe);
+                for (int i = 0; i < loopstation->elements.size(); i++) {
+                    if (loopstation->elements[i]->recbut->value) {
+                        loopstation->elements[i]->add_param_automationentry(this->endframe);
                     }
                 }
             }
@@ -6051,9 +6039,9 @@ void Mixer::outputmonitors_handle() {
                 mainprogram->wiping = true;
                 this->currlay[!mainprogram->prevmodus]->blendnode->wipex->value = -(((1.0f - ((mainprogram->xscrtovtx(mainprogram->mx) - 0.55f - deck * 0.9f) / 0.3f)) - 0.5f) * 2.0f - 1.5f);
                 this->currlay[!mainprogram->prevmodus]->blendnode->wipey->value = -((((2.0f - mainprogram->yscrtovtx(mainprogram->my)) / 0.3f) - 0.5f) * 2.0f - 0.50f);
-                for (int i = 0; i < loopstation->elems.size(); i++) {
-                    if (loopstation->elems[i]->recbut->value) {
-                        loopstation->elems[i]->add_param_automationentry(this->currlay[!mainprogram->prevmodus]->blendnode->wipex);
+                for (int i = 0; i < loopstation->elements.size(); i++) {
+                    if (loopstation->elements[i]->recbut->value) {
+                        loopstation->elements[i]->add_param_automationentry(this->currlay[!mainprogram->prevmodus]->blendnode->wipex);
                     }
                 }
                 mainprogram->leftmousedown = false;
@@ -6082,9 +6070,9 @@ void Mixer::outputmonitors_handle() {
             if (mainprogram->wiping) {
 				this->wipex[i]->value = -(((1.0f - ((mainprogram->xscrtovtx(mainprogram->mx) - 0.7f) / 0.6f)) - 0.5f) * 2.0f - 0.5f);
 				this->wipey[i]->value = -((((2.0f - mainprogram->yscrtovtx(mainprogram->my)) / 0.6f) - 0.5f) * 2.0f - 0.5f);
-				for (int j = 0; j < loopstation->elems.size(); j++) {
-					if (loopstation->elems[j]->recbut->value) {
-						loopstation->elems[j]->add_param_automationentry(this->wipex[i]);
+				for (int j = 0; j < loopstation->elements.size(); j++) {
+					if (loopstation->elements[j]->recbut->value) {
+						loopstation->elements[j]->add_param_automationentry(this->wipex[i]);
 					}
 				}
 			}
@@ -6381,8 +6369,8 @@ void ShelfElement::set_nbclayers(Layer *lay) {
     }
     lay->lpst->init();
     int count = 0;
-    for (LoopStationElement *elem: lpst->elems) {
-        LoopStationElement *layelem = lay->lpst->elems[count++];
+    for (LoopStationElement *elem: lpst->elements) {
+        LoopStationElement *layelem = lay->lpst->elements[count++];
         layelem->effcatposns.clear();
         layelem->effposns.clear();
         layelem->parposns.clear();
@@ -6656,20 +6644,20 @@ void Mixer::copy_lpst(Layer *destlay, Layer *srclay, bool global, bool back) {
     }
 
     //int count = 0;
-    for (int i = 0; i < lpst2->elems.size(); i++) {
-        LoopStationElement *layelem = lpst2->elems[i];
+    for (int i = 0; i < lpst2->elements.size(); i++) {
+        LoopStationElement *layelem = lpst2->elements[i];
         if (layelem->eventlist.size() == 0) continue;
 
         LoopStationElement *elem = nullptr;
 
-        /*for (LoopStationElement *selem: lpst->elems) {
+        /*for (LoopStationElement *selem: lpst->elements) {
             if (selem->comparepos == layelem->compareelems[count]) {
                 elem = selem;
             }
         }
         count++;
         if (!elem) {*/
-        for (LoopStationElement *selem: lpst->elems) {
+        for (LoopStationElement *selem: lpst->elements) {
             if (selem->eventlist.size() == 0) {
                 elem = selem;
                 break;
@@ -6849,6 +6837,7 @@ bool Layer::exchange(std::vector<Layer*>& slayers, std::vector<Layer*>& dlayers,
 		bool comp = !mainprogram->prevmodus;
 		if (inlay->pos < mainmix->scenes[deck][mainmix->currscene[deck]]->scrollpos || inlay->pos > mainmix->scenes[deck][mainmix->currscene[deck]]->scrollpos + 2) continue;
 		Boxx* box = inlay->node->vidbox;
+        box->upvtxtoscr();
 		int endx = false;
 		if ((i == dlayers.size() - 1 || i == mainmix->scenes[deck][mainmix->currscene[deck]]->scrollpos + 2) && (box->scrcoords->x1 + box->scrcoords->w - mainprogram->xvtxtoscr(0.1125f) < mainprogram->mx && mainprogram->mx < box->scrcoords->x1 + box->scrcoords->w + mainprogram->xvtxtoscr(0.075f))) {
 		    endx = true;
@@ -8138,11 +8127,11 @@ void Mixer::open_mix(const std::string path, bool alive, bool loadevents) {
 
     loopstation = lpc;
     if (mainprogram->prevmodus) loopstation = lp;
-    for (int i = 0; i < loopstation->elems.size(); i++) {
-		loopstation->elems[i]->erase_elem();
-		loopstation->elems[i]->eventlist.clear();
-		loopstation->elems[i]->params.clear();
-		loopstation->elems[i]->layers.clear();
+    for (int i = 0; i < loopstation->elements.size(); i++) {
+		loopstation->elements[i]->erase_elem();
+		loopstation->elements[i]->eventlist.clear();
+		loopstation->elements[i]->params.clear();
+		loopstation->elements[i]->layers.clear();
 	}
 	loopstation->parmap.clear();
 	loopstation->parelemmap.clear();
@@ -8336,9 +8325,9 @@ void Mixer::open_mix(const std::string path, bool alive, bool loadevents) {
         if (istring == "LPSTCURRELEM") {
             safegetline(rfile, istring);
             if (mainprogram->prevmodus) {
-                lp->currelem = lp->elems[std::stoi(istring)];
+                lp->currelem = lp->elements[std::stoi(istring)];
             } else {
-                lpc->currelem = lpc->elems[std::stoi(istring)];
+                lpc->currelem = lpc->elements[std::stoi(istring)];
             }
         }
         int deck;
@@ -8402,7 +8391,7 @@ void Mixer::open_mix(const std::string path, bool alive, bool loadevents) {
 
     LoopStation *templpst = lpc;
     if (mainprogram->prevmodus) templpst = lp;
-    for (LoopStationElement *elem : templpst->elems) {
+    for (LoopStationElement *elem : templpst->elements) {
         // make sure currelem isnt reset because of button toggling
         elem->loopbut->toggled();
         elem->playbut->toggled();
@@ -8420,7 +8409,7 @@ void Mixer::open_mix(const std::string path, bool alive, bool loadevents) {
     std::chrono::duration<double> elapsed;
     elapsed = std::chrono::duration_cast<std::chrono::duration<double>>(now - bunowlpst->bunow);
     long long millicount = std::chrono::duration_cast<std::chrono::milliseconds>(elapsed).count();
-    for (LoopStationElement* elem : loopstation->elems) {
+    for (LoopStationElement* elem : loopstation->elements) {
         //elem->interimtime += millicount;
         //elem->speedadaptedtime += millicount * elem->speed->value;
         elem->starttime = now - std::chrono::milliseconds((long long)(elem->interimtime));
@@ -8655,11 +8644,11 @@ void Mixer::open_deck(const std::string path, bool alive, bool loadevents, int c
         loopstation = mainmix->scenes[mainmix->mousedeck][mainmix->scenenum]->lpst;
     }
     if (copycomp == 2) {
-        for (int i = 0; i < loopstation->elems.size(); i++) {
-            loopstation->elems[i]->erase_elem();
-            loopstation->elems[i]->eventlist.clear();
-            loopstation->elems[i]->params.clear();
-            loopstation->elems[i]->layers.clear();
+        for (int i = 0; i < loopstation->elements.size(); i++) {
+            loopstation->elements[i]->erase_elem();
+            loopstation->elements[i]->eventlist.clear();
+            loopstation->elements[i]->params.clear();
+            loopstation->elements[i]->layers.clear();
         }
         loopstation->parmap.clear();
         loopstation->parelemmap.clear();
@@ -8844,7 +8833,7 @@ void Mixer::open_deck(const std::string path, bool alive, bool loadevents, int c
 
     LoopStation *templpst = lpc;
     if (mainprogram->prevmodus) templpst = lp;
-    for (LoopStationElement *elem : templpst->elems) {
+    for (LoopStationElement *elem : templpst->elements) {
         // make sure interimtime isnt reset because of button toggling
         elem->loopbut->toggled();
         elem->playbut->toggled();
@@ -9367,7 +9356,7 @@ void Mixer::get_butimes() {
     for (LoopStation *lpst : lpsts) {
         lpst->odelems.clear();
         lpst->bunow = std::chrono::high_resolution_clock::now();
-        for (LoopStationElement *elem: lpst->elems) {
+        for (LoopStationElement *elem: lpst->elements) {
             elem->buinterimtime = elem->interimtime;
             elem->buspeedadaptedtime = elem->speedadaptedtime;
         }
@@ -9421,7 +9410,7 @@ void prepare_param_cont(Param *par) {
         mainmix->buelembool[par] = true;
         mainmix->bulpstelem[par] = loopstation->parelemmap[par]->eventlist;
     }
-    for (LoopStationElement *elem: loopstation->elems) {
+    for (LoopStationElement *elem: loopstation->elements) {
         if (!elem->eventlist.empty()) {
             for (int i = elem->eventlist.size() - 1; i >= 0; i--) {
                 std::tuple<long long, Param *, Button *, float> event = elem->eventlist[i];
@@ -9455,7 +9444,7 @@ void execute_param_cont(Param *par, Param *newpar) {
         loopstation->parelemmap.erase(newpar);
     }
     if (mainmix->buelembool[par]) {
-        for (LoopStationElement *elem: loopstation->elems) {
+        for (LoopStationElement *elem: loopstation->elements) {
             if (elem->eventlist.empty()) {
                 for (std::tuple<long long, Param *, Button *, float> event: mainmix->bulpstelem[par]) {
                     if (std::get<1>(event) == mainmix->bupar[par]) {
@@ -9622,7 +9611,7 @@ void Mixer::save_layerfile(const std::string path, Layer* lay, bool doclips, boo
 
 void Layer::cnt_lpst() {
     std::chrono::high_resolution_clock::time_point now = std::chrono::high_resolution_clock::now();
-    for (LoopStationElement *elem : this->lpst->elems) {
+    for (LoopStationElement *elem : this->lpst->elements) {
         std::chrono::duration<double> elapsed;
         elapsed = std::chrono::duration_cast<std::chrono::duration<double>>(now - elem->starttime);
         long long millicount = std::chrono::duration_cast<std::chrono::milliseconds>(elapsed).count();
@@ -9708,8 +9697,8 @@ bool Layer::progress(bool comp, bool alive, bool doclips) {
             }
             this->scratch = 0;
             bool found = false;
-            for (int i = 0; i < loopstation->elems.size(); i++) {
-                if (std::find(loopstation->elems[i]->params.begin(), loopstation->elems[i]->params.end(), this->scritch) != loopstation->elems[i]->params.end()) {
+            for (int i = 0; i < loopstation->elements.size(); i++) {
+                if (std::find(loopstation->elements[i]->params.begin(), loopstation->elements[i]->params.end(), this->scritch) != loopstation->elements[i]->params.end()) {
                     found = true;
                     break;
                 }
@@ -11708,8 +11697,8 @@ void Mixer::delete_layers(std::vector<Layer*>& layers, bool alive) {
 					// WORKING WITH EVENTS
 
 void Mixer::event_write(std::ostream &wfile, Param* par, Button* but) {
-	for (int i = 0; i < loopstation->elems.size(); i++) {
-		LoopStationElement *elem = loopstation->elems[i];
+	for (int i = 0; i < loopstation->elements.size(); i++) {
+		LoopStationElement *elem = loopstation->elements[i];
 		if (par) {
 			if (elem->params.count(par)) {
                 wfile << "EVENTELEM\n";
@@ -11799,9 +11788,9 @@ void Mixer::event_read(std::istream &rfile, Param *par, Button* but, Layer *lay,
 
     // loopstation line taken in use at location elemnr
     // if line is taken take new free element
-    if (loopstation->elems[elemnr]->eventlist.size() > 0 && std::find(loopstation->readelemnrs.begin(), loopstation->readelemnrs.end(), elemnr) == loopstation->readelemnrs.end()) {
+    if (loopstation->elements[elemnr]->eventlist.size() > 0 && std::find(loopstation->readelemnrs.begin(), loopstation->readelemnrs.end(), elemnr) == loopstation->readelemnrs.end()) {
         if (loopstation->readmap.count(elemnr)) {
-            loop = loopstation->elems[loopstation->readmap[elemnr]];
+            loop = loopstation->elements[loopstation->readmap[elemnr]];
         }
         else {
             loop = loopstation->free_element();
@@ -11809,7 +11798,7 @@ void Mixer::event_read(std::istream &rfile, Param *par, Button* but, Layer *lay,
         }
     }
     else {
-        loop = loopstation->elems[elemnr];
+        loop = loopstation->elements[elemnr];
         loopstation->readelemnrs.push_back(elemnr);
         loopstation->readelems.push_back(loop);
     }
@@ -12351,6 +12340,7 @@ void Mixer::clip_inside_test(std::vector<Layer*>& layers, bool deck) {
 		lay = layers[i];
 		if (lay->pos < mainmix->scenes[deck][mainmix->currscene[deck]]->scrollpos || lay->pos > mainmix->scenes[deck][mainmix->currscene[deck]]->scrollpos + 2) continue;
 		Boxx* box = lay->node->vidbox;
+        box->upvtxtoscr();
 		if (lay->queueing) {
 			if (box->scrcoords->x1 < mainprogram->mx && mainprogram->mx < box->scrcoords->x1 + box->scrcoords->w) {
 				int limit = lay->clips.size() - lay->queuescroll;
@@ -13331,10 +13321,10 @@ void Scene::switch_to(bool dotempmap) {
         loopstation = this->lpst;
         mainmix->mousedeck = this->deck;
         int count = 0;
-        for (LoopStationElement *elem: prevlpst->elems) {
+        for (LoopStationElement *elem: prevlpst->elements) {
             elem->erase_elem();
         }
-        for (LoopStationElement *elem: lpc->elems) {
+        for (LoopStationElement *elem: lpc->elements) {
             for (auto event: elem->eventlist) {
                 Layer *lay = nullptr;
                 Param *par = std::get<1>(event);
@@ -13342,9 +13332,9 @@ void Scene::switch_to(bool dotempmap) {
                 if (par) {
                     if (par->name == "Crossfade" || par->name == "wipex" ||
                         par->name == "wipey") {
-                        prevlpst->elems[count]->eventlist.push_back(event);
-                        prevlpst->elems[count]->params.emplace(par);
-                        prevlpst->parelemmap[par] = prevlpst->elems[count];
+                        prevlpst->elements[count]->eventlist.push_back(event);
+                        prevlpst->elements[count]->params.emplace(par);
+                        prevlpst->parelemmap[par] = prevlpst->elements[count];
                         prevlpst->allparams.emplace(par);
                     } else if (par->effect) {
                         lay = par->effect->layer;
@@ -13356,28 +13346,28 @@ void Scene::switch_to(bool dotempmap) {
                 }
                 if (lay) {
                     if (lay->deck == this->deck) {
-                        prevlpst->elems[count]->eventlist.push_back(event);
-                        prevlpst->elems[count]->layers.emplace(lay);
+                        prevlpst->elements[count]->eventlist.push_back(event);
+                        prevlpst->elements[count]->layers.emplace(lay);
                         if (par) {
-                            prevlpst->elems[count]->params.emplace(par);
+                            prevlpst->elements[count]->params.emplace(par);
                             prevlpst->allparams.emplace(par);
-                            prevlpst->parelemmap[par] = prevlpst->elems[count];
+                            prevlpst->parelemmap[par] = prevlpst->elements[count];
                         } else if (but) {
-                            prevlpst->elems[count]->buttons.emplace(but);
+                            prevlpst->elements[count]->buttons.emplace(but);
                             prevlpst->allbuttons.emplace(but);
-                            prevlpst->butelemmap[but] = prevlpst->elems[count];
+                            prevlpst->butelemmap[but] = prevlpst->elements[count];
                         }
                     }
                 }
             }
-            prevlpst->elems[count]->loopbut->value = elem->loopbut->value;
-            prevlpst->elems[count]->playbut->value = elem->playbut->value;
+            prevlpst->elements[count]->loopbut->value = elem->loopbut->value;
+            prevlpst->elements[count]->playbut->value = elem->playbut->value;
             count++;
         }
 
         lpc->remove_entries(0);
         count = 0;
-        for (LoopStationElement *elem: loopstation->elems) {
+        for (LoopStationElement *elem: loopstation->elements) {
             for (auto event: elem->eventlist) {
                 Layer *lay = nullptr;
                 Param *par = std::get<1>(event);
@@ -13385,10 +13375,10 @@ void Scene::switch_to(bool dotempmap) {
                 if (par) {
                     if (par->name == "Crossfade" || par->name == "wipex" ||
                         par->name == "wipey") {
-                        lpc->elems[count]->eventlist.push_back(event);
-                        lpc->elems[count]->params.emplace(std::get<1>(event));
+                        lpc->elements[count]->eventlist.push_back(event);
+                        lpc->elements[count]->params.emplace(std::get<1>(event));
                         lpc->allparams.emplace(par);
-                        lpc->parelemmap[par] = lpc->elems[count];
+                        lpc->parelemmap[par] = lpc->elements[count];
                     } else if (par->effect) {
                         lay = par->effect->layer;
                     } else {
@@ -13399,23 +13389,23 @@ void Scene::switch_to(bool dotempmap) {
                 }
                 if (lay) {
                     if (lay->deck == this->deck) {
-                        lpc->elems[count]->eventlist.push_back(event);
-                        lpc->elems[count]->layers.emplace(lay);
+                        lpc->elements[count]->eventlist.push_back(event);
+                        lpc->elements[count]->layers.emplace(lay);
                         if (par) {
-                            lpc->elems[count]->params.emplace(par);
+                            lpc->elements[count]->params.emplace(par);
                             lpc->allparams.emplace(par);
-                            lpc->parelemmap[par] = lpc->elems[count];
+                            lpc->parelemmap[par] = lpc->elements[count];
                         } else if (std::get<2>(event)) {
-                            lpc->elems[count]->buttons.emplace(std::get<2>(event));
+                            lpc->elements[count]->buttons.emplace(std::get<2>(event));
                             lpc->allbuttons.emplace(std::get<2>(event));
-                            lpc->butelemmap[but] = lpc->elems[count];
+                            lpc->butelemmap[but] = lpc->elements[count];
                         }
                     }
                 }
             }
             if (elem->eventlist.size()) {
-                lpc->elems[count]->loopbut->value = elem->loopbut->value;
-                lpc->elems[count]->playbut->value = elem->playbut->value;
+                lpc->elements[count]->loopbut->value = elem->loopbut->value;
+                lpc->elements[count]->playbut->value = elem->playbut->value;
             }
             count++;
         }

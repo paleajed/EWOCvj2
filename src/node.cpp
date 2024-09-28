@@ -398,6 +398,7 @@ void NodesMain::add_nodepages(int num) {
 void NodePage::handle_nodes() {
 	for (int j = 0; j < mainprogram->nodesmain->currpage->nodes.size(); j++) {
 		Node *node = mainprogram->nodesmain->currpage->nodes[j];
+        node->box->upvtxtoscr();
 		Effect *eff;
 		float red[] = {1.0, 0.0, 0.0, 1.0};
 		float blue[] = {0.5, 0.5, 1.0, 1.0};
@@ -672,6 +673,7 @@ void NodePage::handle_nodes() {
 				bool found = false;
 				for (int i = 0; i < mainprogram->nodesmain->currpage->nodes.size(); i++) {
 					Node *conn = mainprogram->nodesmain->currpage->nodes[i];
+                    conn->box->upvtxtoscr();
 					if (conn->box->scrcoords->x1 - 10 < mainprogram->mx && mainprogram->mx < conn->box->scrcoords->x1 + 10) {
 						if (conn->box->scrcoords->y1 - conn->box->scrcoords->h / 2 - 10 < mainprogram->my && mainprogram->my < conn->box->scrcoords->y1 - conn->box->scrcoords->h / 2 + 10) {
 							node->out.push_back(conn);
@@ -684,6 +686,7 @@ void NodePage::handle_nodes() {
 					}
 					if (conn->type == BLEND) {
 						BlendNode *bconn = (BlendNode*)conn;
+                        bconn->box->upvtxtoscr();
 						if (bconn->box->scrcoords->x1 + bconn->box->scrcoords->w / 2 - 10 < mainprogram->mx && mainprogram->mx < bconn->box->scrcoords->x1 + bconn->box->scrcoords->w / 2 + 10) {
 							if (bconn->box->scrcoords->y1 - 10 < mainprogram->my && mainprogram->my < bconn->box->scrcoords->y1 + 10) {
 								if (bconn->in2) {
@@ -705,6 +708,7 @@ void NodePage::handle_nodes() {
 			else if (node->dragging == C_IN) {
 				for (int i = 0; i < mainprogram->nodesmain->currpage->nodes.size(); i++) {
 					Node *conn = mainprogram->nodesmain->currpage->nodes[i];
+                    conn->box->upvtxtoscr();
 					if (conn->box->scrcoords->x1 + conn->box->scrcoords->w - 10 < mainprogram->mx && mainprogram->mx < conn->box->scrcoords->x1 + conn->box->scrcoords->w + 10) {
 						if (conn->box->scrcoords->y1 - conn->box->scrcoords->h / 2 - 10 < mainprogram->my && mainprogram->my < conn->box->scrcoords->y1 - conn->box->scrcoords->h / 2 + 10) {
 							conn->out.push_back(node);
@@ -716,6 +720,7 @@ void NodePage::handle_nodes() {
 			else if (node->dragging == C_IN2) {
 				for (int i = 0; i < mainprogram->nodesmain->currpage->nodes.size(); i++) {
 					Node *conn = mainprogram->nodesmain->currpage->nodes[i];
+                    conn->box->upvtxtoscr();
 					if (conn->box->scrcoords->x1 + conn->box->scrcoords->w - 10 < mainprogram->mx && mainprogram->mx < conn->box->scrcoords->x1 + conn->box->scrcoords->w + 10) {
 						if (conn->box->scrcoords->y1 - conn->box->scrcoords->h / 2 - 10 < mainprogram->my && mainprogram->my < conn->box->scrcoords->y1 - conn->box->scrcoords->h / 2 + 10) {
 							mainprogram->nodesmain->currpage->connect_in2(conn, (BlendNode*)node);
@@ -771,6 +776,7 @@ void NodePage::handle_nodes() {
 				if (node->dragging == C_IN) {
 					for (int i = 0; i < mainprogram->nodesmain->currpage->nodes.size(); i++) {
 						Node *conn = mainprogram->nodesmain->currpage->nodes[i];
+                        conn->box->upvtxtoscr();
 						if (conn->box->scrcoords->x1 + conn->box->scrcoords->w - 10 < mainprogram->mx && mainprogram->mx < conn->box->scrcoords->x1 + conn->box->scrcoords->w + 10) {
 							if (conn->box->scrcoords->y1 - 45 < mainprogram->my && mainprogram->my < conn->box->scrcoords->y1 - 25) {
 								conn->out.push_back(node);

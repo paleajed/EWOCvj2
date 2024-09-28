@@ -301,6 +301,8 @@ class LayMidi {
         MidiElement *opacity;
         MidiElement *setcue;
         MidiElement *tocue;
+        MidiElement *crossfade;
+        MidiElement *crossfadecomp;
         bool scrinvert = false;
 
         LayMidi();
@@ -474,7 +476,8 @@ class Program {
         bool binmenuactivation = false;
 		bool menuchosen = false;
 		std::vector<int> menuresults;
-		bool intopmenu = false;
+        bool intopmenu = false;
+        bool exitedtop = false;
 		int fullscreen = -1;
 		bool test = false;
 		float z = 0.0f;

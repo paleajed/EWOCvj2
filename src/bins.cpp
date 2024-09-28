@@ -483,10 +483,7 @@ void BinsMain::handle(bool draw) {
 				draw_box(box, binel->tex);
 				glUniform1i(inverteff, 0);
 				if (binel->name != "") {
-                    char subbuff[21];
-                    memcpy(subbuff, binel->name.c_str(), 20);
-                    subbuff[21] = '\0';
-                    if (binel->name != "") render_text(subbuff, white, box->vtxcoords->x1, box->vtxcoords->y1 - 0.02f, 0.00045f, 0.00075f);
+					if (binel->name != "") render_text(binel->name.substr(0, 20), white, box->vtxcoords->x1, box->vtxcoords->y1 - 0.02f, 0.00045f, 0.00075f);
 				}
 			}
 			// draw big grey areas next to each element column to cut off element titles
@@ -1237,7 +1234,7 @@ void BinsMain::handle(bool draw) {
             mainprogram->frontbatch = false;
 		}
 
-		// render hap encoding text on elems
+		// render hap encoding text on elements
 		for (int j = 0; j < 12; j++) {
 			for (int i = 0; i < 12; i++) {
 				// handle elements, row per row
@@ -2150,7 +2147,7 @@ void BinsMain::handle(bool draw) {
 
 					if (this->inputtexes.size() && binel == this->menuactbinel && !this->openfilesbin) {
 						bool cont = false;
-						// set values of elems of opened files
+						// set values of elements of opened files
 						for (int k = 0; k < this->inputtexes.size(); k++) {
                             int cnt = 0;
                             int epos = -1;

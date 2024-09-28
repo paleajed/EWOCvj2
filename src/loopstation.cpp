@@ -1,12 +1,10 @@
 #include "GL/glew.h"
 #include "GL/gl.h"
 #define FREEGLUT_STATIC
-#define _LIB
 #define FREEGLUT_LIB_PRAGMAS 0
-#include "GL/freeglut.h"
 
-#include <chrono>
 #include <algorithm>
+#include <set>
 
 #include "node.h"
 #include "box.h"
@@ -50,13 +48,14 @@ LoopStation::LoopStation() {
     this->confdownscrbox->tooltip = "Leftclicking this box scrolls the loopstation element list downwards. ";
 
 	for (int i = 0; i < this->numelems; i++) {
-		LoopStationElement *elem = this->add_elem();
+		this->add_elem();
 	}
+    this->currelem = this->elements[0];
 	this->init();
 }
 
 LoopStation::~LoopStation() {
-    for (LoopStationElement *elem : this->elems) {
+    for (LoopStationElement *elem : this->elements) {
         delete elem;
     }
     delete this->upscrbox;
@@ -66,12 +65,12 @@ LoopStation::~LoopStation() {
 }
 
 void LoopStation::init() {
-	for (int i = 0; i < this->elems.size(); i++) {
-		this->elems[i]->init();
+	for (auto & element : this->elements) {
+		element->init();
 	}
 	this->parelemmap.clear();
 	this->butelemmap.clear();
-	this->currelem = this->elems[0];
+	this->currelem = this->elements[0];
 }
 
 LoopStationElement::LoopStationElement() {
@@ -159,14 +158,14 @@ void LoopStation::setbut(Button *but, float r, float g, float b) {
 }
 
 LoopStationElement* LoopStation::add_elem() {
-	LoopStationElement *elem = new LoopStationElement;
-	this->elems.push_back(elem);
-	elem->pos = this->elems.size() - 1;
+	auto *elem = new LoopStationElement;
+	this->elements.push_back(elem);
+	elem->pos = this->elements.size() - 1;
 	elem->lpst = this;
 	// float values are colors for circles in boxes
-	this->setbut(elem->recbut, 0.8f, 0.0f, 0.0f);
-	this->setbut(elem->loopbut, 0.0f, 0.8f, 0.0f);
-	this->setbut(elem->playbut, 0.0f, 0.0f, 0.8f);
+	LoopStation::setbut(elem->recbut, 0.8f, 0.0f, 0.0f);
+	LoopStation::setbut(elem->loopbut, 0.0f, 0.8f, 0.0f);
+	LoopStation::setbut(elem->playbut, 0.0f, 0.0f, 0.8f);
     elem->colbox->acolor[0] = this->colvals[(elem->pos % 8) * 3];
     elem->colbox->acolor[1] = this->colvals[(elem->pos % 8) * 3 + 1];
     elem->colbox->acolor[2] = this->colvals[(elem->pos % 8) * 3 + 2];
@@ -175,52 +174,44 @@ LoopStationElement* LoopStation::add_elem() {
 }
 
 void LoopStation::handle() {
-    this->scrpos = mainprogram->handle_scrollboxes(*this->upscrbox, *this->downscrbox, this->elems.size(), this->scrpos, 8);
+    this->scrpos = mainprogram->handle_scrollboxes(*this->upscrbox, *this->downscrbox, this->elements.size(), this->scrpos, 8);
     int ce = std::clamp(this->currelem->pos, this->scrpos, this->scrpos + 7);
-    this->currelem = this->elems[ce];
-    for (int i = 0; i < this->elems.size(); i++) {
-		this->elems[i]->handle();
+    this->currelem = this->elements[ce];
+    this->foundrec = false;
+    for (int i = 0; i < this->elements.size(); i++) {
+		this->elements[i]->handle();
 	}
-    this->upscrbox->vtxcoords->x1 = this->elems[0]->colbox->vtxcoords->x1 + 0.0465f;
-    this->downscrbox->vtxcoords->x1 = this->elems[0]->colbox->vtxcoords->x1 + 0.0465f;
+    this->upscrbox->vtxcoords->x1 = this->elements[0]->colbox->vtxcoords->x1 + 0.0465f;
+    this->downscrbox->vtxcoords->x1 = this->elements[0]->colbox->vtxcoords->x1 + 0.0465f;
     this->upscrbox->upvtxtoscr();
     this->downscrbox->upvtxtoscr();
-    render_text("Loopstation", white, elems[0]->recbut->box->vtxcoords->x1 + 0.015f,
-             elems[0]->recbut->box->vtxcoords->y1 + elems[0]->recbut->box->vtxcoords->h * 2.0f - 0.045f, 0.0005f, 0.0008f);
+    render_text("Loopstation", white, elements[0]->recbut->box->vtxcoords->x1 + 0.015f,
+             elements[0]->recbut->box->vtxcoords->y1 + elements[0]->recbut->box->vtxcoords->h * 2.0f - 0.045f, 0.0005f, 0.0008f);
 }
 
 void LoopStationElement::handle() {
     if (this->pos >= this->lpst->scrpos && this->pos < this->lpst->scrpos + 8){
         this->mouse_handle();
         this->visualize();
-        if (this->colbox->in()) {
-            if (mainprogram->leftmouse) {
-                mainprogram->leftmouse = false;
-                for (int i = 0; i < 2; i++) {
-                    std::vector<Layer *> &lvec = choose_layers(i);
-                    for (int j = 0; j < lvec.size(); j++) {
-                        if (std::find(this->layers.begin(), this->layers.end(), lvec[j]) != this->layers.end()) {
-                            std::vector<float> colvec;
-                            colvec.push_back(this->colbox->acolor[0]);
-                            colvec.push_back(this->colbox->acolor[1]);
-                            colvec.push_back(this->colbox->acolor[2]);
-                            colvec.push_back(this->colbox->acolor[3]);
-                            int pos = std::find(lvec[j]->lpstcolors.begin(), lvec[j]->lpstcolors.end(), colvec) - lvec[j]->lpstcolors.begin();
-                            if (pos == lvec[j]->lpstcolors.size()) {
-
-                                lvec[j]->lpstcolors.push_back(colvec);
-                            }
-                            else {
-                                lvec[j]->lpstcolors.erase(lvec[j]->lpstcolors.begin() + pos);
-                            }
-                        }
-                    }
+        for (int i = 0; i < 2; i++) {
+            std::vector<Layer *> &lvec = choose_layers(i);
+            for (int j = 0; j < lvec.size(); j++) {
+                std::vector<float> colvec;
+                colvec.push_back(this->colbox->acolor[0]);
+                colvec.push_back(this->colbox->acolor[1]);
+                colvec.push_back(this->colbox->acolor[2]);
+                colvec.push_back(this->colbox->acolor[3]);
+                if (std::find(this->layers.begin(), this->layers.end(), lvec[j]) != this->layers.end()) {
+                    lvec[j]->lpstcolors.emplace(colvec);
+                }
+                else {
+                    lvec[j]->lpstcolors.erase(colvec);
                 }
             }
         }
     }
 	
-	if ((this->loopbut->value || this->playbut->value) && this->eventlist.size()) this->set_values();
+	if ((this->loopbut->value || this->playbut->value) && !this->eventlist.empty()) this->set_values();
 }
 
 void LoopStationElement::init() {
@@ -244,12 +235,12 @@ void LoopStationElement::visualize() {
 	this->playbut->box->vtxcoords->x1 = -0.8f + 1.2f * offdeck + this->playbut->box->vtxcoords->w * 2.0f;
 	this->speed->box->vtxcoords->x1 = -0.8f + 1.2f * offdeck + this->recbut->box->vtxcoords->w * 3.0f;
 	this->colbox->vtxcoords->x1 = -0.8f + 1.2f * offdeck + this->recbut->box->vtxcoords->w * 3.0f + this->speed->box->vtxcoords->w;
-	this->recbut->box->vtxcoords->y1 = 0.4f - 0.075f * (this->pos - this->lpst->scrpos);
-	this->loopbut->box->vtxcoords->y1 = 0.4f - 0.075f * (this->pos - this->lpst->scrpos);
-	this->playbut->box->vtxcoords->y1 = 0.4f - 0.075f * (this->pos - this->lpst->scrpos);
-	this->speed->box->vtxcoords->y1 = 0.4f - 0.075f * (this->pos - this->lpst->scrpos);
-	this->colbox->vtxcoords->y1 = 0.4f - 0.075f * (this->pos - this->lpst->scrpos);
-	this->box->vtxcoords->y1 = 0.4f - 0.075f * (this->pos - this->lpst->scrpos);
+	this->recbut->box->vtxcoords->y1 = 0.4f - 0.075f * (float)(this->pos - this->lpst->scrpos);
+	this->loopbut->box->vtxcoords->y1 = 0.4f - 0.075f * (float)(this->pos - this->lpst->scrpos);
+	this->playbut->box->vtxcoords->y1 = 0.4f - 0.075f * (float)(this->pos - this->lpst->scrpos);
+	this->speed->box->vtxcoords->y1 = 0.4f - 0.075f * (float)(this->pos - this->lpst->scrpos);
+	this->colbox->vtxcoords->y1 = 0.4f - 0.075f * (float)(this->pos - this->lpst->scrpos);
+	this->box->vtxcoords->y1 = 0.4f - 0.075f * (float)(this->pos - this->lpst->scrpos);
 	this->recbut->box->upvtxtoscr();
 	this->loopbut->box->upvtxtoscr();
 	this->playbut->box->upvtxtoscr();
@@ -258,11 +249,11 @@ void LoopStationElement::visualize() {
 	this->box->upvtxtoscr();
     this->speed->handle();
     draw_box(grey, this->colbox->acolor, this->colbox, -1);
-	if (this->eventlist.size()) draw_box(this->colbox->lcolor, this->colbox->lcolor, this->colbox->vtxcoords->x1 + 0.02325f ,
+	if (!this->eventlist.empty()) draw_box(black, black, this->colbox->vtxcoords->x1 + 0.02325f ,
                                       this->colbox->vtxcoords->y1 + 0.0375f, 0.0225f, 0.03f, -1);
 	if (this == loopstation->currelem) draw_box(grey, white, this->box, -1);
 	else draw_box(grey, nullptr, this->box, -1);
-    render_text(std::to_string(this->pos + 1), white, this->recbut->box->vtxcoords->x1 - 0.05f, this->recbut->box->vtxcoords->y1 - 0.03f, 0.0012f, 0.002f, 2);
+    render_text(std::to_string(this->pos + 1), white, this->recbut->box->vtxcoords->x1 - 0.05f, this->recbut->box->vtxcoords->y1 + 0.03f, 0.0006f, 0.001f);
 	if (this->colbox->in()) {
         if (!mainprogram->menuondisplay || mainprogram->lpstmenuon) {
             if (mainprogram->menuactivation) {
@@ -280,7 +271,7 @@ void LoopStationElement::erase_elem() {
 	std::unordered_set<Param*>::iterator it1;
 	for (it1 = this->params.begin(); it1 != this->params.end(); it1++) {
 		Param* par = *it1;
-		if (par->name.length()) {
+		if (!par->name.empty()) {
 			par->box->acolor[0] = 0.2f;
 			par->box->acolor[01] = 0.2f;
 			par->box->acolor[2] = 0.2f;
@@ -310,12 +301,16 @@ void LoopStationElement::mouse_handle() {
         loopstation->currelem = this;
     }
 
-    if (this->eventlist.size() == 0) {
+    if (this->eventlist.empty()) {
         this->playbut->value = false;
         this->loopbut->value = false;
     }
 
-    mainprogram->handle_button(this->recbut, 1, 0);
+    if (this->recbut->value) {
+        this->lpst->foundrec = true;
+    }
+
+    mainprogram->handle_button(this->recbut, true, false, true);
 	if (this->recbut->toggled()) {
         if (mainprogram->adaptivelprow) {
             loopstation->currelem = this;
@@ -331,6 +326,7 @@ void LoopStationElement::mouse_handle() {
                 but->midistarttime = std::chrono::system_clock::from_time_t(0.0f);
             }
 			this->starttime = std::chrono::high_resolution_clock::now();
+            mainprogram->recundo = false;
 		}
 		else {
             if (mainprogram->steplprow) {
@@ -339,7 +335,7 @@ void LoopStationElement::mouse_handle() {
                 if (rowpos > 7) {
                     rowpos = 0;
                 }
-                loopstation->currelem = loopstation->elems[rowpos];
+                loopstation->currelem = loopstation->elements[rowpos];
                 mainprogram->waitonetime = true;
             }
 			if (this->eventlist.size()) {
@@ -457,12 +453,14 @@ void LoopStationElement::set_values() {
 		if (this->eventpos >= this->eventlist.size()) {
             this->atend = true;
 		}
- 		else event = this->eventlist[this->eventpos];
+ 		else {
+            event = this->eventlist[this->eventpos];
+        }
 	}
     if (this->speedadaptedtime >= this->totaltime  && this->atend) {
         // reached end of loopstation element recording
         this->atend = false;
-        if (this->eventlist.size() == 0) {
+        if (this->eventlist.empty()) {
             // end loop when one-shot playing or no of the params exist anymore
             this->playbut->value = false;
             this->loopbut->value = false;
@@ -501,19 +499,20 @@ void LoopStationElement::add_param_automationentry(Param* par, long long mc) {
     // be automated only once to avoid chaos
     if (par->name == "LPST speed") return;
 	std::chrono::high_resolution_clock::time_point now = std::chrono::high_resolution_clock::now();
-	std::chrono::duration<double> elapsed;
-	elapsed = std::chrono::duration_cast<std::chrono::duration<double>>(now - this->starttime);
+	auto elapsed = std::chrono::duration_cast<std::chrono::duration<double>>(now - this->starttime);
     long long millicount = mc;
     if (mc == -1) millicount = std::chrono::duration_cast<std::chrono::milliseconds>(elapsed).count();
     std::tuple<long long, Param*, Button*, float> event;
 	event = std::make_tuple(millicount, par, nullptr, par->value);
 	this->eventlist.push_back(event);
-	this->params.emplace(par);
+    this->params.emplace(par);
+    this->lpst->allparams.emplace(par);
 	loopstation->parelemmap[par] = this;
     if (par->name == "crossfade" || par->name == "crossfadecomp" || par->name == "wipex" || par->name == "wipey") {
     }
 	else if (par->effect) {
 		this->layers.emplace(par->effect->layer);
+        par->layer = par->effect->layer;
 	}
     else {
         this->layers.emplace(par->layer);
@@ -521,50 +520,56 @@ void LoopStationElement::add_param_automationentry(Param* par, long long mc) {
 	bool frame = false;
 	for (int i = 0; i < 2; i++) {
 		std::vector<Layer*>& lvec = choose_layers(i);
-		for (int j = 0; j < lvec.size(); j++) {
-			if (par == lvec[j]->speed) this->layers.emplace(lvec[j]);
-			if (par == lvec[j]->opacity) this->layers.emplace(lvec[j]);
-            if (par == lvec[j]->volume) this->layers.emplace(lvec[j]);
-            if (par == lvec[j]->scritch) {
-                this->layers.emplace(lvec[j]);
+		for (auto & j : lvec) {
+			if (par == j->speed) this->layers.emplace(j);
+			if (par == j->opacity) this->layers.emplace(j);
+            if (par == j->volume) this->layers.emplace(j);
+            if (par == j->scritch) {
+                this->layers.emplace(j);
+                par->layer = j;
                 frame = true;
             }
-            if (par == lvec[j]->startframe) {
-                this->layers.emplace(lvec[j]);
+            if (par == j->startframe) {
+                this->layers.emplace(j);
+                par->layer = j;
                 frame = true;
             }
-            if (par == lvec[j]->endframe) {
-                this->layers.emplace(lvec[j]);
+            if (par == j->endframe) {
+                this->layers.emplace(j);
+                par->layer = j;
                 frame = true;
             }
-            if (par == lvec[j]->blendnode->mixfac) this->layers.emplace(lvec[j]);
-			if (par == lvec[j]->shiftx) {
-				this->layers.emplace(lvec[j]);
+            if (par == j->blendnode->mixfac) this->layers.emplace(j);
+			if (par == j->shiftx) {
+				this->layers.emplace(j);
+                par->layer = j;
 
 				par->box->acolor[0] = this->colbox->acolor[0];
 				par->box->acolor[1] = this->colbox->acolor[1];
 				par->box->acolor[2] = this->colbox->acolor[2];
 
-				par = lvec[j]->shifty;
+				par = j->shifty;
 				this->add_param_automationentry(par);
 				par = nullptr;
 				return;
 			}
-			if (par == lvec[j]->blendnode->wipex) {
-				this->layers.emplace(lvec[j]);
-				par = lvec[j]->blendnode->wipey;
+			if (par == j->blendnode->wipex) {
+				this->layers.emplace(j);
+				par = j->blendnode->wipey;
+                par->layer = j;
 				this->add_param_automationentry(par);
 				par = nullptr;
 				return;
 			}
-			if (par == lvec[j]->scale) {
-				this->layers.emplace(lvec[j]);
+			if (par == j->scale) {
+				this->layers.emplace(j);
+                par->layer = j;
 				par = nullptr;
 				return;
 			}
 		}
 	}
-	if (par == mainmix->wipex[0]) {
+ 	if (par == mainmix->wipex[0]) {
 		par = mainmix->wipey[0];
 		this->add_param_automationentry(par);
 		par = nullptr;
@@ -592,17 +597,14 @@ void LoopStationElement::add_button_automationentry(Button* but) {
     if (loopstation->butelemmap[but] != this && loopstation->butelemmap[but] != nullptr) return;  // each button can be
     // automated only once to avoid chaos
 	std::chrono::high_resolution_clock::time_point now = std::chrono::high_resolution_clock::now();
-	std::chrono::duration<double> elapsed;
-	elapsed = std::chrono::duration_cast<std::chrono::duration<double>>(now - this->starttime);
+	auto elapsed = std::chrono::duration_cast<std::chrono::duration<double>>(now - this->starttime);
 	long long millicount = std::chrono::duration_cast<std::chrono::milliseconds>(elapsed).count();
 	std::tuple<long long, Param*, Button*, float> event;
 	event = std::make_tuple(millicount, nullptr, but, (float)but->value);
 	this->eventlist.push_back(event);
 	this->buttons.emplace(but);
+    this->lpst->allbuttons.emplace(but);
 	loopstation->butelemmap[but] = this;
-	if (but->layer) {
-		this->layers.emplace(but->layer);
-	}
 	but->box->acolor[0] = this->colbox->acolor[0];
 	but->box->acolor[1] = this->colbox->acolor[1];
 	but->box->acolor[2] = this->colbox->acolor[2];
@@ -612,9 +614,8 @@ void LoopStationElement::add_button_automationentry(Button* but) {
 
 LoopStationElement* LoopStation::free_element() {
 	LoopStationElement *loop = nullptr;
-	for (int i = 0; i < this->elems.size(); i++) {
-		LoopStationElement *elem = this->elems[i];
-		if (!elem->recbut->value && elem->eventlist.size() == 0) {
+	for (auto elem : this->elements) {
+        if (!elem->recbut->value && elem->eventlist.empty()) {
 			loop = elem;
 			break;
 		}
@@ -624,7 +625,7 @@ LoopStationElement* LoopStation::free_element() {
 
 
 void LoopStation::remove_entries(int copycomp) {
-    for (LoopStationElement *elem: this->elems) {
+    for (LoopStationElement *elem: this->elements) {
         std::vector<std::tuple<long long, Param *, Button *, float>> evlist = elem->eventlist;
         for (int i = evlist.size() - 1; i >= 0; i--) {
             std::tuple<long long, Param *, Button *, float> event = elem->eventlist[i];
@@ -653,7 +654,7 @@ void LoopStation::remove_entries(int copycomp) {
                 }
             }
         }
-        if (elem->eventlist.size() == 0) {
+        if (elem->eventlist.empty()) {
             elem->erase_elem();
         }
     }

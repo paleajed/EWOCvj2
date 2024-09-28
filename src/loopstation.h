@@ -1,13 +1,13 @@
 #include <iostream>
 #include <chrono>
 #include <ctime>
-
+#include <set>
 
 class LoopStationElement;
 
 class LoopStation {
 	public:
-		std::vector<LoopStationElement*> elems;
+		std::vector<LoopStationElement*> elements;
 		int numelems = 256;
 		std::vector<LoopStationElement*> readelems;
 		std::vector<int> readelemnrs;
@@ -20,7 +20,7 @@ class LoopStation {
 		std::unordered_map<Button*, LoopStationElement*> butelemmap;
         std::unordered_set<LoopStationElement*> odelems;
 		std::vector<float> colvals = {0.8f, 0.3f, 0.3f
-									, 0.3f, 0.4f, 0.3f
+									, 0.4f, 0.6f, 0.4f
 									, 0.3f, 0.3f, 0.7f
 									, 0.7f, 0.7f, 0.3f
 									, 0.7f, 0.3f, 0.7f
@@ -42,6 +42,7 @@ class LoopStation {
         Boxx *confdownscrbox;
         int scrpos = 0;
         int confscrpos = 0;
+        bool foundrec = false;
 		LoopStationElement* currelem;
         std::chrono::high_resolution_clock::time_point bunow;
 		LoopStationElement* add_elem();
@@ -53,7 +54,7 @@ class LoopStation {
         ~LoopStation();
 		
 	private:
-		void setbut(Button *but, float r, float g, float b);
+		static void setbut(Button *but, float r, float g, float b);
 };
 
 class LoopStationElement {
@@ -62,7 +63,7 @@ class LoopStationElement {
         int comparepos = -1;
 		std::unordered_set<Param*> params;
 		std::unordered_set<Button*> buttons;
-        std::unordered_set<Layer*> layers;
+        std::set<Layer*> layers;
         std::vector<int> effcatposns;  // for shelf triggering nblayers
         std::vector<int> effposns;  // for shelf triggering nblayers
         std::vector<int> parposns;  // for shelf triggering nblayers

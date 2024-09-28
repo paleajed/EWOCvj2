@@ -7,6 +7,7 @@
 #include <unordered_set>
 #include <unordered_map>
 #include <map>
+#include <set>
 
 #include "SDL2/SDL.h"
 #include <AL/al.h>
@@ -321,7 +322,7 @@ class Layer {
 
         LoopStation *lpst;
         bool isnblayer = false;
-        std::vector<std::vector<float>> lpstcolors;
+        std::set<std::vector<float>> lpstcolors;
 
         void display();
 		Effect* add_effect(EFFECT_TYPE type, int pos);

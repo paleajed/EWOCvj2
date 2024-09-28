@@ -222,6 +222,8 @@ LayMidi::LayMidi() {
     this->opacity = new MidiElement;
     this->setcue = new MidiElement;
     this->tocue = new MidiElement;
+    this->crossfade = new MidiElement;
+    this->crossfadecomp = new MidiElement;
 }
 
 LayMidi::~LayMidi() {
@@ -242,6 +244,8 @@ LayMidi::~LayMidi() {
     delete(this->opacity);
     delete(this->setcue);
     delete(this->tocue);
+    delete(this->crossfade);
+    delete(this->crossfadecomp);
 }
 
 void MidiElement::register_midi() {
@@ -353,15 +357,15 @@ Program::Program() {
 	this->scrollboxes[0]->vtxcoords->h = 0.05f;
 	this->scrollboxes[0]->upvtxtoscr();
 	this->scrollboxes[0]->tooltiptitle = "Deck A Layer stack scroll bar ";
-	this->scrollboxes[0]->tooltip = "Scroll bar for layer stack.  Divided in total number of layers parts for deck A. Lightgrey part is the visible layer monitors part.  Leftdragging the lightgrey part allows scrolling.  So does leftclicking the darkgrey parts. ";
+	this->scrollboxes[0]->tooltip = "Scroll bar for layer stack.  Divided in total number of layer parts for deck A. Lightgrey part is the visible layer monitors part.  Leftdragging the lightgrey part allows scrolling.  So does leftclicking the black parts. ";
 	this->scrollboxes[1] = new Boxx;
 	this->scrollboxes[1]->vtxcoords->x1 = this->numw;
 	this->scrollboxes[1]->vtxcoords->y1 = 1.0f - this->layh - 0.05f;
 	this->scrollboxes[1]->vtxcoords->w = this->layw * 3.0f;
 	this->scrollboxes[1]->vtxcoords->h = 0.05f;
 	this->scrollboxes[1]->upvtxtoscr();
-	this->scrollboxes[1]->tooltiptitle = "Deck b Layer stack scroll bar ";
-	this->scrollboxes[1]->tooltip = "Scroll bar for layer stack.  Divided in total number of layers parts for deck B. Lightgrey part is the visible layer monitors part.  Leftdragging the lightgrey part allows scrolling.  So does leftclicking the darkgrey parts. ";
+	this->scrollboxes[1]->tooltiptitle = "Deck B Layer stack scroll bar ";
+	this->scrollboxes[1]->tooltip = "Scroll bar for layer stack.  Divided in total number of layer parts for deck B. Lightgrey part is the visible layer monitors part.  Leftdragging the lightgrey part allows scrolling.  So does leftclicking the black parts. ";
 
     // color wheel box
 	this->cwbox = new Boxx;
@@ -2105,8 +2109,8 @@ void Program::layerstack_scrollbar_handle() {
                     j < mainmix->scenes[i][mainmix->currscene[i]]->scrollpos + 3) {
                     const int lpstcsz = lvec[j]->lpstcolors.size();
                     int sz = std::min(lpstcsz, 6);
-                    for(int k = 0; k < sz; k++) {
-                        float ac[4] = {lvec[j]->lpstcolors[k][0],lvec[j]->lpstcolors[k][1],lvec[j]->lpstcolors[k][2],lvec[j]->lpstcolors[k][3]};
+                    for(auto col : lvec[j]->lpstcolors) {
+                        float ac[4] = {col[0], col[1], col[2], col[3]};
                         draw_box(nullptr, ac, this->boxlayer, -1);
                         this->boxlayer->vtxcoords->x1 += this->boxlayer->vtxcoords->w;
                     }
@@ -2116,8 +2120,7 @@ void Program::layerstack_scrollbar_handle() {
             if (j == 0) {
                 if (slidex < 0.0f) this->boxbig->vtxcoords->x1 += slidex;
             }
-            char *charstr = (char*)std::to_string(j + 1).c_str();
-            render_text(charstr, white, this->boxbig->vtxcoords->x1 + 0.0078f - slidex,
+            render_text(std::to_string(j + 1), white, this->boxbig->vtxcoords->x1 + 0.0078f - slidex,
                         this->boxbig->vtxcoords->y1 + 0.0078f, 0.0006, 0.001);
             const int s = lvec.size() - mainmix->scenes[i][mainmix->currscene[i]]->scrollpos;
             if (mainprogram->dragbinel) {
@@ -2413,18 +2416,6 @@ Button::Button(bool state) {
     this->box = new Boxx;
     this->value = state;
     this->ccol[3] = 1.0f;
-    if (mainprogram) {
-        if (mainprogram->prevmodus) {
-            if (lp) {
-                lp->allbuttons.emplace(this);
-            }
-        }
-        else {
-            if (lpc) {
-                lpc->allbuttons.emplace(this);
-            }
-        }
-    }
 }
 
 Button::~Button() {
@@ -2458,9 +2449,9 @@ bool Program::handle_button(Button *but, bool circlein, bool automation, bool co
             if (but->value > but->toggle) but->value = 0;
             if (but->toggle == 0) but->value = 1;
             if (automation) {
-                for (int i = 0; i < loopstation->elems.size(); i++) {
-                    if (loopstation->elems[i]->recbut->value) {
-                        loopstation->elems[i]->add_button_automationentry(but);
+                for (int i = 0; i < loopstation->elements.size(); i++) {
+                    if (loopstation->elements[i]->recbut->value) {
+                        loopstation->elements[i]->add_button_automationentry(but);
                     }
                 }
             }
@@ -2540,8 +2531,18 @@ void Button::deautomate() {
             elem = loopstation->butelemmap[this];
         }
         if (!elem) return;
+
         elem->buttons.erase(this);
-        if (this->layer) elem->layers.erase(this->layer);
+        loopstation->allbuttons.erase(this);
+        loopstation->butelemmap.erase(this);
+        bool found = false;
+        for (Button *but : loopstation->allbuttons) {
+            if (but->layer == this->layer) {
+                found = true;
+            }
+        }
+        if (!found) elem->layers.erase(this->layer);
+
         for (int i = elem->eventlist.size() - 1; i >= 0; i--) {
             if (std::get<2>(elem->eventlist[i]) == this)
                 elem->eventlist.erase(elem->eventlist.begin() + i);
@@ -3096,6 +3097,7 @@ int Program::handle_menu(Menu* menu) {
 int Program::handle_menu(Menu* menu, float xshift, float yshift) {
 	if (menu->state > 1) {
 	    mainprogram->frontbatch = true;
+        menu->box->upvtxtoscr();
 		if (std::find(mainprogram->actmenulist.begin(), mainprogram->actmenulist.end(), menu) == mainprogram->actmenulist.end()) {
 			mainprogram->actmenulist.clear();
 		}
@@ -5060,8 +5062,7 @@ void Program::preview_modus_buttons() {
                 box = mainprogram->toscene[m][1][i]->box;
                 register_triangle_draw(white, white, box->vtxcoords->x1 + box->vtxcoords->w / 2.0f + 0.0117f,
                                        box->vtxcoords->y1 + 0.0225f, 0.0165f, 0.0312f, UP, CLOSED);
-                charstr = std::to_string(scns[i]).c_str();
-                render_text(charstr, white, box->vtxcoords->x1 + 0.0117f,
+                render_text(std::to_string(scns[i]), white, box->vtxcoords->x1 + 0.0117f,
                             box->vtxcoords->y1 + 0.0225f, 0.0006f, 0.001f);
             }
         }
@@ -5789,8 +5790,7 @@ int Program::config_midipresets_handle() {
 	else if (mainprogram->midipresetsset == 1) lmstr = "B";
 	else if (mainprogram->midipresetsset == 2) lmstr = "C";
 	else if (mainprogram->midipresetsset == 3) lmstr = "D";
-    if (mainprogram->tmlearn == TM_CROSS) render_text("Creating settings for every midideck", white, -0.3f, 0.2f, 0.0024f, 0.004f, 2);
-    else if (mainprogram->tmlearn != TM_NONE) {
+    if (mainprogram->tmlearn != TM_NONE) {
         std::string tempstr = "Creating settings for midideck " + lmstr;
         render_text(tempstr, white, -0.3f, 0.2f, 0.0024f, 0.004f, 2);
     }
@@ -5974,14 +5974,14 @@ int Program::config_midipresets_handle() {
             render_text("SPEED", white, -0.765f, -0.48f, 0.0024f, 0.004f, 2);
 
             draw_box(white, black, mainprogram->tmcross, -1);
-            if (mainmix->crossfade->midi[0] != -1) draw_box(white, darkgreen2, mainprogram->tmcross, -1);
+            if (lm->crossfade->midi0 != -1) draw_box(white, darkgreen2, mainprogram->tmcross, -1);
             if (mainprogram->tmcross->in(mx, my)) {
                 draw_box(white, lightblue, mainprogram->tmcross, -1);
                 if (mainprogram->leftmouse) {
                     mainprogram->tmlearn = TM_CROSS;
                 }
             }
-            render_text("CROSSFADE(Set independent)", white, -0.195f, -0.48f, 0.0024f, 0.004f, 2);
+            render_text("CROSSFADE", white, -0.195f, -0.48f, 0.0024f, 0.004f, 2);
 
             draw_box(white, black, mainprogram->tmopacity, -1);
             if (lm->opacity->midi0 != -1) draw_box(white, darkgreen2, mainprogram->tmopacity, -1);
@@ -6134,8 +6134,8 @@ int Program::config_midipresets_handle() {
 
     if (mainprogram->configcatmidi == 2) {
         for (int i = 0; i < 8; i++) {
-            LoopStationElement *elem = loopstation->elems[i + loopstation->confscrpos];
-            loopstation->confscrpos = mainprogram->handle_scrollboxes(*loopstation->confupscrbox, *loopstation->confdownscrbox, loopstation->elems.size(), loopstation->confscrpos, 8, mx, my);
+            LoopStationElement *elem = loopstation->elements[i + loopstation->confscrpos];
+            loopstation->confscrpos = mainprogram->handle_scrollboxes(*loopstation->confupscrbox, *loopstation->confdownscrbox, loopstation->elements.size(), loopstation->confscrpos, 8, mx, my);
 
             Boxx box;
             box.vtxcoords->x1 = -0.33f;
@@ -8972,7 +8972,7 @@ void Shelf::handle() {
             }
         }
 
-        // calculate background frame numbers and loopstation posns for elems with launchtype 2
+        // calculate background frame numbers and loopstation posns for elements with launchtype 2
         for (int j = 0; j < elem->nblayers.size(); j++) {
             elem->nblayers[j]->vidopen = false;
             elem->nblayers[j]->progress(!mainprogram->prevmodus, 0);
@@ -9453,7 +9453,7 @@ Menu::~Menu() {
 
 
 void Program::register_undo(Param *par, Button *but) {
-    if (!mainprogram->undoon) return;
+    if (!mainprogram->undoon || loopstation->foundrec) return;
     int sz = this->undomapvec[this->undopos - 1].size();
     for (int i = 0; i < sz - this->undopbpos; i++) {
         this->undomapvec[this->undopos - 1].pop_back();
@@ -9535,7 +9535,7 @@ void Program::register_undo(Param *par, Button *but) {
 }
 
 void Program::undo_redo_parbut(char offset, bool again, bool swap) {
-    if (!mainprogram->undoon) return;
+    if (!mainprogram->undoon || loopstation->foundrec) return;
     if (this->undomapvec.size()) {
         auto tup2 = this->undomapvec[this->undopos - 1][this->undopbpos + offset];
         int laydeck = -1;
@@ -9624,7 +9624,6 @@ void Program::undo_redo_parbut(char offset, bool again, bool swap) {
 }
 
 std::tuple<Param*, int, int, int, int, int> Program::newparam(int offset, bool swap) {
-    Param *newpar;
     auto tup2 = this->undomapvec[this->undopos - 1][this->undopbpos + offset];
     int laydeck = -1;
     int laypos = -1;
@@ -9632,6 +9631,7 @@ std::tuple<Param*, int, int, int, int, int> Program::newparam(int offset, bool s
     int effpos = -1;
     int parpos = -1;
     auto tup1 = std::get<0>(tup2);
+    Param *newpar = std::get<0>(tup1);
     std::string name = std::get<7>(tup1);
 // search corresponding parameter in possibly changed layers
     if (std::get<2>(tup1) != -1) {
@@ -9687,9 +9687,9 @@ std::tuple<Param*, int, int, int, int, int> Program::newparam(int offset, bool s
 }
 
 std::tuple<Button*, int, int, int, int> Program::newbutton(int offset, bool swap) {
-    Button *newbut;
     auto tup2 = this->undomapvec[this->undopos - 1][this->undopbpos + offset];
     auto tup1 = std::get<0>(tup2);
+    Button *newbut = std::get<1>(tup1);
     int laydeck = -1;
     int laypos = -1;
     int effcat = -1;
@@ -9754,7 +9754,7 @@ std::tuple<Button*, int, int, int, int> Program::newbutton(int offset, bool swap
 }
 
 void Program::undo_redo_save() {
-    if (!mainprogram->undoon) return;
+    if (!mainprogram->undoon || loopstation->foundrec) return;
     bool found = false;
     for (int i = 0; i < 4; i++) {
         if (mainmix->swapmap[i].size()) {

@@ -33,8 +33,8 @@ class Boxx {
 		BOX_COORDS *vtxcoords;
 		GLuint tex = -1;
 
-		std::string tooltiptitle = "";
-		std::string tooltip = "";
+		std::string tooltiptitle;
+		std::string tooltip;
 		bool reserved = false;
 		int smflag = 0;
 
@@ -68,7 +68,7 @@ class Button {
 		void deautomate();
         void register_midi();
         void unregister_midi();
-		Button(bool state);
+		explicit Button(bool state);
 		~Button();
 };
 

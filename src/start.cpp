@@ -731,9 +731,15 @@ void handle_midi(LayMidi *laymidi, int deck, int midi0, int midi1, int midi2, st
 			if (midi0 == laymidi->speedzero->midi0 && midi1 == laymidi->speedzero->midi1 && midiport == laymidi->speedzero->midiport) {
 				lvec[j]->speed->value = 1.0f;
 			}
-			if (midi0 == laymidi->opacity->midi0 && midi1 == laymidi->opacity->midi1 && midiport == laymidi->opacity->midiport) {
-				lvec[j]->opacity->value = (float)midi2 / 127.0f;
-			}
+            if (midi0 == laymidi->opacity->midi0 && midi1 == laymidi->opacity->midi1 && midiport == laymidi->opacity->midiport) {
+                lvec[j]->opacity->value = (float)midi2 / 127.0f;
+            }
+            if (midi0 == laymidi->crossfade->midi0 && midi1 == laymidi->crossfade->midi1 && midiport == laymidi->crossfade->midiport) {
+                mainmix->crossfade->value = (float)midi2 / 127.0f;
+            }
+            if (midi0 == laymidi->crossfadecomp->midi0 && midi1 == laymidi->crossfadecomp->midi1 && midiport == laymidi->crossfadecomp->midiport) {
+                mainmix->crossfadecomp->value = (float)midi2 / 127.0f;
+            }
 		}
 	}
 }
@@ -820,8 +826,11 @@ void mycallback( double deltatime, std::vector< unsigned char > *message, void *
                     else if (lm->scratch2->midi0 == midi0 && lm->scratch2->midi1 == midi1 &&
                              lm->scratch2->midiport == midiport)
                         mainprogram->tmchoice = TM_SCRATCH2;
-                    else if (mainmix->crossfade->midi[0] == midi0 && mainmix->crossfade->midi[1] == midi1 &&
-                            mainmix->crossfade->midiport == midiport)
+                    else if (lm->crossfade->midi0 == midi0 && lm->crossfade->midi1 == midi1 &&
+                             lm->crossfade->midiport == midiport)
+                        mainprogram->tmchoice = TM_CROSS;
+                    else if (lm->crossfadecomp->midi0 == midi0 && lm->crossfadecomp->midi1 == midi1 &&
+                             lm->crossfadecomp->midiport == midiport)
                         mainprogram->tmchoice = TM_CROSS;
                     else mainprogram->tmchoice = TM_NONE;
                     return;
@@ -933,18 +942,20 @@ void mycallback( double deltatime, std::vector< unsigned char > *message, void *
                     mainprogram->tmlearn = TM_NONE;
                     break;
                 case TM_CROSS:
+                {bool bupm = mainprogram->prevmodus;
                     mainprogram->prevmodus = true;
-                    mainmix->crossfade->midi[0] = midi0;
-                    mainmix->crossfade->midi[1] = midi1;
-                    mainmix->crossfade->midiport = midiport;
-                    mainmix->crossfade->register_midi();
+                    lm->crossfade->midi0 = midi0;
+                    lm->crossfade->midi1 = midi1;
+                    lm->crossfade->midiport = midiport;
+                    lm->crossfade->register_midi();
                     mainprogram->prevmodus = false;
-                    mainmix->crossfadecomp->midi[0] = midi0;
-                    mainmix->crossfadecomp->midi[1] = midi1;
-                    mainmix->crossfadecomp->midiport = midiport;
-                    mainmix->crossfadecomp->register_midi();
+                    lm->crossfadecomp->midi0 = midi0;
+                    lm->crossfadecomp->midi1 = midi1;
+                    lm->crossfadecomp->midiport = midiport;
+                    lm->crossfadecomp->register_midi();
                     mainprogram->tmlearn = TM_NONE;
-                    break;
+                    mainprogram->prevmodus = bupm;
+                    break;}
                 case TM_FREEZE:
                     //if (midi0 == 176) return;
                     lm->scratchtouch->midi0 = midi0;
@@ -1153,16 +1164,16 @@ reminder: IMPLEMENT */
         if (midi2 != 0) {
             if (mainprogram->sameeight) {
                 for (int i = 0; i < 8; i++) {
-                    if (but == loopstation->elems[i]->recbut) {
-                        but = loopstation->elems[i + loopstation->scrpos]->recbut;
+                    if (but == loopstation->elements[i]->recbut) {
+                        but = loopstation->elements[i + loopstation->scrpos]->recbut;
                         break;
                     }
-                    if (but == loopstation->elems[i]->loopbut) {
-                        but = loopstation->elems[i + loopstation->scrpos]->loopbut;
+                    if (but == loopstation->elements[i]->loopbut) {
+                        but = loopstation->elements[i + loopstation->scrpos]->loopbut;
                         break;
                     }
-                    if (but == loopstation->elems[i]->playbut) {
-                        but = loopstation->elems[i + loopstation->scrpos]->playbut;
+                    if (but == loopstation->elements[i]->playbut) {
+                        but = loopstation->elements[i + loopstation->scrpos]->playbut;
                         break;
                     }
                 }
@@ -1192,8 +1203,8 @@ reminder: IMPLEMENT */
                 // learn loopstation speed parameter
                 if (mainprogram->sameeight) {
                     for (int i = 0; i < 8; i++) {
-                        if (par == loopstation->elems[i]->speed) {
-                            par = loopstation->elems[i + loopstation->scrpos]->speed;
+                        if (par == loopstation->elements[i]->speed) {
+                            par = loopstation->elements[i + loopstation->scrpos]->speed;
                             break;
                         }
                     }
@@ -2004,14 +2015,18 @@ std::vector<float> render_text(const std::string& stext, const char* ctext, floa
     else if (ctext == nullptr) {
         text = (char*)stext.c_str();
     }
+    std::vector<float> textwsplay;
+    if (text == nullptr) {
+        //textwsplay.push_back(0.0f);
+        return textwsplay;
+    }
     if (smflag > 0) y -= 0.055f;
     float bux = x;
 	float buy = y;
-	std::vector<float> textwsplay;
 	if (text == "") return textwsplay;
-    if (binsmain->inbin) y -= 0.012f * (2070.0f / mainprogram->globh);
-	else if (smflag == 0) y -= 0.012f * (2070.0f / glob->h);
-	else if (smflag > 0) y -= 0.02f * (2070.0f / glob->h);
+    if (binsmain->inbin) y -= 0.012f * (2070.0f * glob->h / 2400.0f / mainprogram->globh);
+	else if (smflag == 0) y -= 0.012f * (2070.0f * glob->h / 2400.0f / glob->h);
+	else if (smflag > 0) y -= 0.02f * (2070.0f * glob->h / 2400.0f / glob->h);
 	GLuint texture;
 	float wfac;
 	float textw = 0.0f;
@@ -2080,7 +2095,7 @@ std::vector<float> render_text(const std::string& stext, const char* ctext, floa
 			w2 = smw;
 			h2 = smh;
 		}
-		int psize = (int)((sy * 24000.0f * h2 / 1346.0f) * (0.5625f / ((float)h2 / (float)w2)));
+		int psize = h2 * 13.5f * sy;
 
         if (smflag == 1) SDL_GL_MakeCurrent(mainprogram->prefwindow, glc);
         else if (smflag == 2) SDL_GL_MakeCurrent(mainprogram->config_midipresetswindow, glc);
@@ -2088,9 +2103,7 @@ std::vector<float> render_text(const std::string& stext, const char* ctext, floa
         std::vector<float> textws;
 		float pixelw = 2.0f / w2;
 		float pixelh = 2.0f / h2;
-		float th;
-		//int pxprogress = 0;
-		FT_Set_Pixel_Sizes(face, (int)(psize * 0.75f), psize); //0
+		FT_Set_Pixel_Sizes(face, (int)(psize), psize * 1.33f);
 		x = 0.0f;
 		y = 0.0f;
         FT_GlyphSlot g = face->glyph;
@@ -2102,7 +2115,6 @@ std::vector<float> render_text(const std::string& stext, const char* ctext, floa
             textw += (g->advance.x/64.0f) * pixelw;
             textws.push_back((g->advance.x / 64.0f) * pixelw * (((smflag == 0) && (binsmain->inbin == 0))+ 1) * 0.5f); //1.1 *
             texth = 64.0f * pixelh;
-            th = (std::max)(th, (g->metrics.height / 64.0f) * pixelh);
         }
         glGenTextures(1, &texture);
         glActiveTexture(GL_TEXTURE0);
@@ -2114,8 +2126,8 @@ std::vector<float> render_text(const std::string& stext, const char* ctext, floa
                 textw / pixelw + 1,
                 psize * 3
         );
-        glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_NEAREST);
-        glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_NEAREST);
+        glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR);
+        glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
         glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_EDGE);
         glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_EDGE);
         glPixelStorei(GL_UNPACK_ALIGNMENT, 1);
@@ -2126,7 +2138,7 @@ std::vector<float> render_text(const std::string& stext, const char* ctext, floa
             if (FT_Load_Glyph(face, glyph_index, FT_LOAD_DEFAULT))
                 continue;
             FT_Render_Glyph(face->glyph, FT_RENDER_MODE_NORMAL);
-            glTexSubImage2D(GL_TEXTURE_2D, 0, x, -g->bitmap_top + 60, g->bitmap.width, g->bitmap.rows, GL_RED, GL_UNSIGNED_BYTE, g->bitmap.buffer);
+            glTexSubImage2D(GL_TEXTURE_2D, 0, x, -g->bitmap_top + 57 * glob->h / 2400.0f + (5 * (smflag > 0)), g->bitmap.width, g->bitmap.rows, GL_RED, GL_UNSIGNED_BYTE, g->bitmap.buffer);
             x += (g->advance.x/64.0f);
         }
 
@@ -2191,11 +2203,11 @@ std::vector<float> render_text(const std::string& stext, const char* ctext, floa
 		}
 		wi /= (smflag > 0) + 1;
         he /= (smflag > 0) + 1;
-        //he /= (binsmain->inbin) + 1;
+
 		y -= he;
-		if (textw != 0) draw_box(nullptr, black, x + 0.001f, y - 0.00185f + 72 * pixelh - he * 3 * vertical, wi, he, texture, true, vertical, false);
+		if (textw != 0) draw_box(nullptr, black, x + 0.001f, y - 0.00185f + 72 * pixelh * glob->h / 2400.0f - he * 3 * vertical, wi + pixelw, he, texture, true, vertical, false);
 		//draw text shadow
-		if (textw != 0) draw_box(nullptr, textc, x, y + 72 * pixelh - he * 3 * vertical, wi, he, texture, true, vertical, false);	//draw text
+		if (textw != 0) draw_box(nullptr, textc, x, y + 72 * pixelh * glob->h / 2400.0f - he * 3 * vertical, wi, he, texture, true, vertical, false);	//draw text
 
 		mainprogram->texth = texth2;
 	}
@@ -2295,9 +2307,9 @@ void midi_set() {
         // the next elem is used in code somewhere at end of the_loop
         mainprogram->midishelfelem = mainprogram->shelves[shelf]->elements[pos];
 
-        for (int i = 0; i < loopstation->elems.size(); i++) {
-            if (loopstation->elems[i]->recbut->value) {
-                loopstation->elems[i]->add_button_automationentry(mainmix->midishelfbutton);
+        for (int i = 0; i < loopstation->elements.size(); i++) {
+            if (loopstation->elements[i]->recbut->value) {
+                loopstation->elements[i]->add_button_automationentry(mainmix->midishelfbutton);
             }
         }
 
@@ -2312,9 +2324,9 @@ void midi_set() {
 		if (but->toggle == 0) but->value = 1;
 		if (but == mainprogram->wormgate1 || but == mainprogram->wormgate2) mainprogram->binsscreen = but->value;
 		
-		for (int i = 0; i < loopstation->elems.size(); i++) {
-			if (loopstation->elems[i]->recbut->value) {
-				loopstation->elems[i]->add_button_automationentry(mainmix->midibutton);
+		for (int i = 0; i < loopstation->elements.size(); i++) {
+			if (loopstation->elements[i]->recbut->value) {
+				loopstation->elements[i]->add_button_automationentry(mainmix->midibutton);
 			}
 		}
 
@@ -2346,9 +2358,9 @@ void midi_set() {
 			glUniform1f(var, par->value);
 		}
 			
-		for (int i = 0; i < loopstation->elems.size(); i++) {
-			if (loopstation->elems[i]->recbut->value) {
-				loopstation->elems[i]->add_param_automationentry(mainmix->midiparam);
+		for (int i = 0; i < loopstation->elements.size(); i++) {
+			if (loopstation->elements[i]->recbut->value) {
+				loopstation->elements[i]->add_param_automationentry(mainmix->midiparam);
 			}
 		}
 		
@@ -3428,6 +3440,7 @@ void drag_into_layerstack(std::vector<Layer*>& layers, bool deck) {
 		}
 		else if (lay->pos < mainmix->scenes[deck][mainmix->currscene[deck]]->scrollpos || lay->pos > mainmix->scenes[deck][mainmix->currscene[deck]]->scrollpos + 2) continue;
 		Boxx* box = lay->node->vidbox;
+        box->upvtxtoscr();
 		int endx = false;
 		if ((i == layers.size() - 1 || i == mainmix->scenes[deck][mainmix->currscene[deck]]->scrollpos + 2)) {
 			endx = true;
@@ -4048,6 +4061,39 @@ void the_loop() {
     glDrawBuffer(GL_BACK_LEFT);
     glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT | GL_STENCIL_BUFFER_BIT);
 
+    // check if user changed the screen resolution
+    SDL_Rect rc;
+    SDL_GetDisplayUsableBounds(0, &rc);
+    float oldw = glob->w;
+    float oldh = glob->h;
+    glob->w = (float)rc.w;
+    glob->h = (float)rc.h - 1.0f;
+    mainprogram->set_ow3oh3();
+    if (glob->w != oldw || glob->h != oldh) {
+        SDL_SetWindowSize(mainprogram->mainwindow, glob->w, glob->h);
+        SDL_DestroyWindow(mainprogram->prefwindow);
+        SDL_DestroyWindow(mainprogram->config_midipresetswindow);
+        SDL_DestroyWindow(mainprogram->requesterwindow);
+        mainprogram->requesterwindow = SDL_CreateWindow("Quit EWOCvj2", glob->w / 4, glob->h / 4, glob->w / 2,
+                                                        glob->h / 2, SDL_WINDOW_OPENGL | SDL_WINDOW_HIDDEN |
+                                                                     SDL_WINDOW_ALLOW_HIGHDPI);
+        mainprogram->config_midipresetswindow = SDL_CreateWindow("Tune MIDI", glob->w / 4, glob->h / 4, glob->w / 2,
+                                                                 glob->h / 2, SDL_WINDOW_OPENGL | SDL_WINDOW_HIDDEN |
+                                                                              SDL_WINDOW_ALLOW_HIGHDPI);
+        mainprogram->prefwindow = SDL_CreateWindow("Preferences", glob->w / 4, glob->h / 4, glob->w / 2, glob->h / 2,
+                                                   SDL_WINDOW_OPENGL | SDL_WINDOW_HIDDEN | SDL_WINDOW_ALLOW_HIGHDPI);
+
+        int wi, he;
+        SDL_GL_GetDrawableSize(mainprogram->prefwindow, &wi, &he);
+        smw = (float) wi;
+        smh = (float) he;
+
+        for (auto gs : mainprogram->guitextmap) {
+            delete gs.second;
+        }
+        mainprogram->guitextmap.clear();
+    }
+
     for (int i = 0; i < mainprogram->menulist.size(); i++) {
         // set menuondisplay: is there a menu active (state > 1)?
         if (mainprogram->menulist[i]->state > 1) {
@@ -4180,8 +4226,8 @@ void the_loop() {
 
                     mainprogram->now = std::chrono::high_resolution_clock::now();
                     LoopStation *l = mainmix->scenes[j][i]->lpst;
-                    for (int k = 0; k < l->elems.size(); k++) {
-                        if (l->elems[k]->loopbut->value || l->elems[k]->playbut->value) l->elems[k]->set_values();
+                    for (int k = 0; k < l->elements.size(); k++) {
+                        if (l->elements[k]->loopbut->value || l->elements[k]->playbut->value) l->elements[k]->set_values();
                     }
                 }
             }
@@ -4955,15 +5001,15 @@ void the_loop() {
         if (mainprogram->prevmodus) {
             loopstation = lp;
             lp->handle();
-            for (int i = 0; i < lpc->elems.size(); i++) {
-                if (lpc->elems[i]->loopbut->value || lpc->elems[i]->playbut->value) lpc->elems[i]->set_values();
+            for (int i = 0; i < lpc->elements.size(); i++) {
+                if (lpc->elements[i]->loopbut->value || lpc->elements[i]->playbut->value) lpc->elements[i]->set_values();
             }
         }
         else {
             loopstation = lpc;
             lpc->handle();
-            for (int i = 0; i < lp->elems.size(); i++) {
-                if (lp->elems[i]->loopbut->value || lp->elems[i]->playbut->value) lp->elems[i]->set_values();
+            for (int i = 0; i < lp->elements.size(); i++) {
+                if (lp->elements[i]->loopbut->value || lp->elements[i]->playbut->value) lp->elements[i]->set_values();
             }
         }
 
@@ -4982,6 +5028,7 @@ void the_loop() {
 					bool comp = !mainprogram->prevmodus;
 					if (lay->pos < mainmix->scenes[j][mainmix->currscene[j]]->scrollpos || lay->pos > mainmix->scenes[j][mainmix->currscene[j]]->scrollpos + 2) continue;
 					Boxx* box = lay->node->vidbox;
+                    box->upvtxtoscr();
 					float thick = mainprogram->xvtxtoscr(0.075f);
 					if (box->scrcoords->y1 - box->scrcoords->h < mainprogram->my && mainprogram->my < box->scrcoords->y1) {
 						if (box->scrcoords->x1 - thick + (i - mainmix->scenes[j][mainmix->currscene[j]]->scrollpos == 0) * thick < mainprogram->mx && mainprogram->mx < box->scrcoords->x1 + thick) {
@@ -5070,7 +5117,7 @@ void the_loop() {
 	}
 
 	// implementation of a basic top menu when the mouse is at the top of the screen
-	if (mainprogram->my <= 0 && !mainprogram->transforming) {
+	if ((mainprogram->my <= 0 || mainprogram->exitedtop) && !mainprogram->transforming) {
 	    if (!mainprogram->prefon && !mainprogram->midipresets && mainprogram->quitting == "") {
             mainprogram->intopmenu = true;
         }
@@ -5864,27 +5911,7 @@ void save_genmidis(std::string path) {
 	wfile << "LAYMIDID\n";
 	write_genmidi(wfile, laymidiD);
 
-
-    wfile << "CROSSFADEMIDI0\n";
-    wfile << std::to_string(mainmix->crossfade->midi[0]);
-    wfile << "\n";
-    wfile << "CROSSFADEMIDI1\n";
-    wfile << std::to_string(mainmix->crossfade->midi[1]);
-    wfile << "\n";
-    wfile << "CROSSFADEMIDIPORT\n";
-    wfile << mainmix->crossfade->midiport;
-    wfile << "\n";
-    wfile << "CROSSFADECOMPMIDI0\n";
-    wfile << std::to_string(mainmix->crossfadecomp->midi[0]);
-    wfile << "\n";
-    wfile << "CROSSFADECOMPMIDI1\n";
-    wfile << std::to_string(mainmix->crossfadecomp->midi[1]);
-    wfile << "\n";
-    wfile << "CROSSFADECOMPMIDIPORT\n";
-    wfile << mainmix->crossfadecomp->midiport;
-    wfile << "\n";
-
-	wfile << "WORMGATEMIDI0\n";
+    wfile << "WORMGATEMIDI0\n";
 	wfile << std::to_string(mainprogram->wormgate1->midi[0]);
 	wfile << "\n";
 	wfile << "WORMGATEMIDI1\n";
@@ -5939,20 +5966,20 @@ void save_genmidis(std::string path) {
         else ls = lpc;
         for (int j = 0; j < ls->numelems; j++) {
             wfile << "LOOPSTATIONMIDI0:" + std::to_string(i) + ":" + std::to_string(j) + "\n";
-            wfile << std::to_string(ls->elems[j]->recbut->midi[0]) + "\n";
-            wfile << std::to_string(ls->elems[j]->loopbut->midi[0]) + "\n";
-            wfile << std::to_string(ls->elems[j]->playbut->midi[0]) + "\n";
-            wfile << std::to_string(ls->elems[j]->speed->midi[0]) + "\n";
+            wfile << std::to_string(ls->elements[j]->recbut->midi[0]) + "\n";
+            wfile << std::to_string(ls->elements[j]->loopbut->midi[0]) + "\n";
+            wfile << std::to_string(ls->elements[j]->playbut->midi[0]) + "\n";
+            wfile << std::to_string(ls->elements[j]->speed->midi[0]) + "\n";
             wfile << "LOOPSTATIONMIDI1:" + std::to_string(i) + ":" + std::to_string(j) + "\n";
-            wfile << std::to_string(ls->elems[j]->recbut->midi[1]) + "\n";
-            wfile << std::to_string(ls->elems[j]->loopbut->midi[1]) + "\n";
-            wfile << std::to_string(ls->elems[j]->playbut->midi[1]) + "\n";
-            wfile << std::to_string(ls->elems[j]->speed->midi[1]) + "\n";
+            wfile << std::to_string(ls->elements[j]->recbut->midi[1]) + "\n";
+            wfile << std::to_string(ls->elements[j]->loopbut->midi[1]) + "\n";
+            wfile << std::to_string(ls->elements[j]->playbut->midi[1]) + "\n";
+            wfile << std::to_string(ls->elements[j]->speed->midi[1]) + "\n";
             wfile << "LOOPSTATIONMIDIPORT:" + std::to_string(i) + ":" + std::to_string(j) + "\n";
-            wfile << ls->elems[j]->recbut->midiport + "\n";
-            wfile << ls->elems[j]->loopbut->midiport + "\n";
-            wfile << ls->elems[j]->playbut->midiport + "\n";
-            wfile << ls->elems[j]->speed->midiport + "\n";
+            wfile << ls->elements[j]->recbut->midiport + "\n";
+            wfile << ls->elements[j]->loopbut->midiport + "\n";
+            wfile << ls->elements[j]->playbut->midiport + "\n";
+            wfile << ls->elements[j]->speed->midiport + "\n";
         }
     }
     wfile << "LOOPSTATIONMIDIEND\n";
@@ -5988,34 +6015,7 @@ void open_genmidis(std::string path) {
 		if (istring == "LAYMIDIC") lm = laymidiC;
 		if (istring == "LAYMIDID") lm = laymidiD;
 
-        if (istring == "CROSSFADEMIDI0") {
-            safegetline(rfile, istring);
-            mainmix->crossfade->midi[0] = std::stoi(istring);
-        }
-        if (istring == "CROSSFADEMIDI1") {
-            safegetline(rfile, istring);
-            mainmix->crossfade->midi[1] = std::stoi(istring);
-        }
-        if (istring == "CROSSFADEMIDIPORT") {
-            safegetline(rfile, istring);
-            mainmix->crossfade->midiport = istring;
-            mainmix->crossfade->register_midi();
-        }
-        if (istring == "CROSSFADECOMPMIDI0") {
-            safegetline(rfile, istring);
-            mainmix->crossfadecomp->midi[0] = std::stoi(istring);
-        }
-        if (istring == "CROSSFADECOMPMIDI1") {
-            safegetline(rfile, istring);
-            mainmix->crossfadecomp->midi[1] = std::stoi(istring);
-        }
-        if (istring == "CROSSFADECOMPMIDIPORT") {
-            safegetline(rfile, istring);
-            mainmix->crossfadecomp->midiport = istring;
-            mainmix->crossfadecomp->register_midi();
-        }
-
-		if (istring == "PLAY") {
+ 		if (istring == "PLAY") {
 			safegetline(rfile, istring);
 			lm->play->midi0 = std::stoi(istring);
 			safegetline(rfile, istring);
@@ -6214,37 +6214,37 @@ void open_genmidis(std::string path) {
 					safegetline(rfile, istring);
 					if (istring == "LOOPSTATIONMIDI0:" + std::to_string(i) + ":" + std::to_string(j)) {
 						safegetline(rfile, istring);
-						ls->elems[j]->recbut->midi[0] = std::stoi(istring);
+						ls->elements[j]->recbut->midi[0] = std::stoi(istring);
 						safegetline(rfile, istring);
-						ls->elems[j]->loopbut->midi[0] = std::stoi(istring);
+						ls->elements[j]->loopbut->midi[0] = std::stoi(istring);
 						safegetline(rfile, istring);
-						ls->elems[j]->playbut->midi[0] = std::stoi(istring);
+						ls->elements[j]->playbut->midi[0] = std::stoi(istring);
 						safegetline(rfile, istring);
-						ls->elems[j]->speed->midi[0] = std::stoi(istring);
+						ls->elements[j]->speed->midi[0] = std::stoi(istring);
 					}
 					if (istring == "LOOPSTATIONMIDI1:" + std::to_string(i) + ":" + std::to_string(j)) {
 						safegetline(rfile, istring);
-						ls->elems[j]->recbut->midi[1] = std::stoi(istring);
+						ls->elements[j]->recbut->midi[1] = std::stoi(istring);
 						safegetline(rfile, istring);
-						ls->elems[j]->loopbut->midi[1] = std::stoi(istring);
+						ls->elements[j]->loopbut->midi[1] = std::stoi(istring);
 						safegetline(rfile, istring);
-						ls->elems[j]->playbut->midi[1] = std::stoi(istring);
+						ls->elements[j]->playbut->midi[1] = std::stoi(istring);
 						safegetline(rfile, istring);
-						ls->elems[j]->speed->midi[1] = std::stoi(istring);
+						ls->elements[j]->speed->midi[1] = std::stoi(istring);
 					}
 					if (istring == "LOOPSTATIONMIDIPORT:" + std::to_string(i) + ":" + std::to_string(j)) {
 						safegetline(rfile, istring);
-						ls->elems[j]->recbut->midiport = istring;
-                        ls->elems[j]->recbut->register_midi();
+						ls->elements[j]->recbut->midiport = istring;
+                        ls->elements[j]->recbut->register_midi();
 						safegetline(rfile, istring);
-						ls->elems[j]->loopbut->midiport = istring;
-                        ls->elems[j]->loopbut->register_midi();
+						ls->elements[j]->loopbut->midiport = istring;
+                        ls->elements[j]->loopbut->register_midi();
 						safegetline(rfile, istring);
-						ls->elems[j]->playbut->midiport = istring;
-                        ls->elems[j]->playbut->register_midi();
+						ls->elements[j]->playbut->midiport = istring;
+                        ls->elements[j]->playbut->register_midi();
 						safegetline(rfile, istring);
-						ls->elems[j]->speed->midiport = istring;
-                        ls->elems[j]->speed->register_midi();
+						ls->elements[j]->speed->midiport = istring;
+                        ls->elements[j]->speed->register_midi();
 					}
 				}
 			}
@@ -7020,7 +7020,9 @@ int main(int argc, char* argv[]) {
                     if (!mainprogram->prefon && !mainprogram->midipresets) {
                         // activate focus on window when its entered (for dragndrop between windows)
                         if (e.window.windowID == SDL_GetWindowID(mainprogram->mainwindow)) {
-                            mainprogram->intopmenu = true;
+                            if (mainprogram->intopmenu) {
+                                mainprogram->exitedtop = true;
+                            }
                             if (binsmain->floating) SDL_SetWindowInputFocus(binsmain->win);
                         }
                         if (binsmain->floating) {
@@ -7029,13 +7031,18 @@ int main(int argc, char* argv[]) {
                             }
                         }
                     }
+                } else if (we.event == SDL_WINDOWEVENT_ENTER) {
+                    if (e.window.windowID == SDL_GetWindowID(mainprogram->mainwindow)) {
+                        mainprogram->exitedtop = false;
+                    }
                 }
             }
-            if (mainprogram->renaming != EDIT_NONE) {
-                std::string old = mainprogram->inputtext;
-                int c1 = mainprogram->cursorpos1;
-                int c2 = mainprogram->cursorpos2;
-                if (c2 < c1) {
+
+                if (mainprogram->renaming != EDIT_NONE) {
+                    std::string old = mainprogram->inputtext;
+                    int c1 = mainprogram->cursorpos1;
+                    int c2 = mainprogram->cursorpos2;
+                    if (c2 < c1) {
                     std::swap(c1, c2);
                 }
                 if (e.type == SDL_TEXTINPUT) {
@@ -7261,7 +7268,7 @@ int main(int argc, char* argv[]) {
                             mainmix->new_file(2, 1, true);
                         }
                         if (e.key.keysym.sym == SDLK_z) {  // UNDO
-                            if (mainprogram->undoon) {
+                            if (mainprogram->undoon && !loopstation->foundrec) {
                                 if (!mainprogram->binsscreen) {
                                     if (mainprogram->undomapvec[mainprogram->undopos - 1].size() &&
                                         mainprogram->undopbpos > 1) {
@@ -7327,7 +7334,7 @@ int main(int argc, char* argv[]) {
                             }
                         }
                         if (e.key.keysym.sym == SDLK_y) {  // UNDO
-                            if (mainprogram->undoon) {
+                            if (mainprogram->undoon && !loopstation->foundrec) {
                                 if (!mainprogram->binsscreen) {
                                     if (mainprogram->undomapvec[mainprogram->undopos - 1].size() >
                                         mainprogram->undopbpos) {
@@ -7385,7 +7392,7 @@ int main(int argc, char* argv[]) {
                             if (rowpos > 7) {
                                 rowpos = 0;
                             }
-                            loopstation->currelem = loopstation->elems[rowpos];
+                            loopstation->currelem = loopstation->elements[rowpos];
                         }
                         if (e.key.keysym.sym == SDLK_UP) {
                             int rowpos = loopstation->currelem->pos;
@@ -7393,7 +7400,7 @@ int main(int argc, char* argv[]) {
                             if (rowpos < 0) {
                                 rowpos = 7;
                             }
-                            loopstation->currelem = loopstation->elems[rowpos];
+                            loopstation->currelem = loopstation->elements[rowpos];
                         }
 
                         // video loop keyboard shortcuts
