@@ -448,6 +448,7 @@ class Program {
 		Menu* clipmenu = nullptr;
 		Menu *aspectmenu = nullptr;
         Menu *monitormenu = nullptr;
+        Menu *loopbackmenu = nullptr;
         Menu *mixtargetmenu = nullptr;
         Menu *bintargetmenu = nullptr;
 		Menu *fullscreenmenu = nullptr;
@@ -466,16 +467,22 @@ class Program {
 		Menu *mainmenu = nullptr;
 		Menu* shelfmenu = nullptr;
 		Menu* filemenu = nullptr;
-		Menu* filedomenu = nullptr;
-		Menu* laylistmenu1 = nullptr;
-		Menu* laylistmenu2 = nullptr;
+        Menu* filenewmenu = nullptr;
+        Menu* fileopenmenu = nullptr;
+        Menu* filesavemenu = nullptr;
+        Menu* laylistmenu1 = nullptr;
+        Menu* laylistmenu2 = nullptr;
+        Menu* laylistmenu3 = nullptr;
+        Menu* laylistmenu4 = nullptr;
         Menu* editmenu = nullptr;
         Menu* lpstmenu = nullptr;
         Menu* sendmenu = nullptr;
         bool menuactivation = false;
         bool binmenuactivation = false;
 		bool menuchosen = false;
+        std::vector<int> prevmenuchoices;
 		std::vector<int> menuresults;
+        bool intoparea = false;
         bool intopmenu = false;
         bool exitedtop = false;
 		int fullscreen = -1;
@@ -860,7 +867,11 @@ class Program {
         std::mutex clientmutex;
         std::condition_variable startclient;
 
-        std::vector<std::string> v4l2lbdevices;
+#ifdef POSIX
+        std::unordered_map<std::string, GLuint> v4l2lbtexmap;
+        std::unordered_map<std::string, size_t> v4l2lbnewmap;
+        std::unordered_map<std::string, int> v4l2lboutputmap;
+#endif
 
         std::vector<std::string> *prefsearchdirs;
 
@@ -900,6 +911,9 @@ class Program {
 		void get_inname(const char *title, std::string filters, std::string defaultdir);
 		void get_multinname(const char* title, std::string filters, std::string defaultdir);
 		void get_dir(const char *title , std::string defaultdir);
+        void register_v4l2lbdevices(std::vector<std::string>& entries, GLuint tex);
+        void v4l2_start_device(std::string device, GLuint tex);
+        size_t set_v4l2format(int output, GLuint tex);
 #ifdef WINDOWS
 		void win_dialog(const char* title, LPCSTR filters, std::string defaultdir, bool open, bool multi);
 #endif
@@ -1026,6 +1040,7 @@ extern "C" int kdialogPresent();
 
 #ifdef POSIX
 extern void Sleep(int milliseconds);
+extern void strcat_s(char* dest, const char* input);
 #endif
 
 extern bool safegetline(std::istream& is, std::string &t);

@@ -173,6 +173,10 @@ using namespace std;
 void Sleep(int milliseconds) {
 	sleep((float)milliseconds / 1000.0f);
 }
+
+void strcat_s(char* dest, const char* input) {
+    strcat(dest, input);
+}
 #endif
 
 bool exists(std::string name) {
@@ -360,6 +364,7 @@ bool safegetline(std::istream& is, std::string &t)
     t.clear();
 
     std::getline(is, t);
+    t.erase(std::remove(t.begin(), t.end(), '\r' ), t.end());
     if(is.eof()) return false;
 
     return true;
@@ -2924,6 +2929,9 @@ void onestepfrom(bool stage, Node *node, Node *prevnode, GLuint prevfbotex, GLui
         float frachd = 1920.0f / 1080.0f;
         float fraco = mainprogram->ow / mainprogram->oh;
         float frac;
+        if (lay->pos == 2) {
+            bool dummy = false;
+        }
         if (lay->type == ELEM_IMAGE) {
             ilBindImage(lay->boundimage);
             ilActiveImage((int)lay->frame);
@@ -2933,7 +2941,9 @@ void onestepfrom(bool stage, Node *node, Node *prevnode, GLuint prevfbotex, GLui
             if (lay->remfr->height == 0) return;
             frac = (float)(lay->remfr->width) / (float)(lay->remfr->height);
         }
-        if (lay->dummy) frac = (float)(lay->video_dec_ctx->width) / (float)(lay->video_dec_ctx->height);
+        if (lay->dummy) {
+            frac = (float)(lay->video_dec_ctx->width) / (float)(lay->video_dec_ctx->height);
+        }
         if (fraco > frachd) {
             ys = 0.0f;
             sciy = ys;
@@ -5117,7 +5127,14 @@ void the_loop() {
 	}
 
 	// implementation of a basic top menu when the mouse is at the top of the screen
-	if ((mainprogram->my <= 0 || mainprogram->exitedtop) && !mainprogram->transforming) {
+    // exitedtop and intoparea cater for linux graphical environments with a top bar
+    if (mainprogram->my <= glob->h / 2.0f)  {
+        mainprogram->intoparea = true;
+    }
+    else {
+        mainprogram->intoparea = false;
+    }
+    if ((mainprogram->my <= 0 || mainprogram->exitedtop) && !mainprogram->transforming) {
 	    if (!mainprogram->prefon && !mainprogram->midipresets && mainprogram->quitting == "") {
             mainprogram->intopmenu = true;
         }
@@ -5137,15 +5154,21 @@ void the_loop() {
 		render_text("FILE", white, -1.0f + 0.0117f, 1.0f - 0.075f + 0.0225f, 0.00045f, 0.00075f);
 		render_text("CONFIGURE", white, -1.0f + 0.156f + 0.0117f, 1.0f - 0.075f + 0.0225f, 0.00045f, 0.00075f);
         mainprogram->frontbatch = false;
-		if (mainprogram->my > mainprogram->yvtxtoscr(0.075f)) {
-			mainprogram->intopmenu = false;
-		}
+        if (mainprogram->my > mainprogram->yvtxtoscr(0.075f)) {
+            if (!mainprogram->exitedtop) {
+                mainprogram->intopmenu = false;
+            }
+        }
 		else if (mainprogram->mx < mainprogram->xvtxtoscr(0.156f)) {
 			if (mainprogram->leftmouse) {
 				mainprogram->filemenu->menux = 0;
 				mainprogram->filemenu->menuy = mainprogram->yvtxtoscr(0.075f);
-				mainprogram->filedomenu->menux = 0;
-				mainprogram->filedomenu->menuy = mainprogram->yvtxtoscr(0.075f);
+                mainprogram->filenewmenu->menux = 0;
+                mainprogram->filenewmenu->menuy = mainprogram->yvtxtoscr(0.075f);
+                mainprogram->fileopenmenu->menux = 0;
+                mainprogram->fileopenmenu->menuy = mainprogram->yvtxtoscr(0.075f);
+                mainprogram->filesavemenu->menux = 0;
+                mainprogram->filesavemenu->menuy = mainprogram->yvtxtoscr(0.075f);
 				mainprogram->laylistmenu1->menux = 0;
 				mainprogram->laylistmenu1->menuy = mainprogram->yvtxtoscr(0.075f);
 				mainprogram->laylistmenu2->menux = 0;
@@ -7020,7 +7043,9 @@ int main(int argc, char* argv[]) {
                     if (!mainprogram->prefon && !mainprogram->midipresets) {
                         // activate focus on window when its entered (for dragndrop between windows)
                         if (e.window.windowID == SDL_GetWindowID(mainprogram->mainwindow)) {
-                            if (mainprogram->intopmenu) {
+                            if (mainprogram->intoparea) {
+                                // for when a linux grahical environment has a top bar
+                                mainprogram->intopmenu = true;
                                 mainprogram->exitedtop = true;
                             }
                             if (binsmain->floating) SDL_SetWindowInputFocus(binsmain->win);

@@ -1795,9 +1795,9 @@ void Program::handle_changed_owoh() {
 		this->fbotex[3] = tex;
 
 #ifdef POSIX
-		for (std::string device : v4l2lbdevices) {
+        for (auto entry : v4l2lbtexmap) {
 		    // set v4l2 loopback devices parameters
-            int output = open(device.c_str(), O_RDWR);
+            int output = open(entry.first.c_str(), O_RDWR);
             if (output < 0) {
                 std::cerr << "ERROR: could not open output device!\n" <<
                           strerror(errno);
@@ -1816,10 +1816,18 @@ void Program::handle_changed_owoh() {
             }
 
             // configure desired video format on device
-            size_t framesize = mainprogram->ow * mainprogram->oh * 4;
-            vid_format.fmt.pix.width = mainprogram->ow;
-            vid_format.fmt.pix.height = mainprogram->oh;
-            vid_format.fmt.pix.pixelformat = V4L2_PIX_FMT_RGB32;
+            size_t framesize;
+            if (mainprogram->prevmodus) {
+                framesize = mainprogram->ow3 * mainprogram->oh3 * 4;
+                vid_format.fmt.pix.width = mainprogram->ow3;
+                vid_format.fmt.pix.height = mainprogram->oh3;
+            }
+            else {
+                framesize = mainprogram->ow * mainprogram->oh * 4;
+                vid_format.fmt.pix.width = mainprogram->ow;
+                vid_format.fmt.pix.height = mainprogram->oh;
+            }
+            vid_format.fmt.pix.pixelformat = V4L2_PIX_FMT_BGR32;
             vid_format.fmt.pix.sizeimage = framesize;
             vid_format.fmt.pix.field = V4L2_FIELD_NONE;
 
@@ -2899,24 +2907,21 @@ void handle_binwin() {
 #ifdef POSIX
 void Program::stream_to_v4l2loopbacks() {
 
-    for (std::string device : v4l2lbdevices) {
+    for (auto entry : v4l2lbtexmap) {
 
-        int output = open(device.c_str(), O_RDWR);
-        if (output < 0) {
-            std::cerr << "ERROR: could not open output device!\n" <<
-                      strerror(errno);
-            break;
+        int output = this->v4l2lboutputmap[entry.first];
+
+        size_t framesize;
+        if (this->v4l2lbnewmap[entry.first] == 0) {
+            framesize = this->set_v4l2format(output, entry.second);
+            if (framesize == 0) return;
+            this->v4l2lbnewmap[entry.first] = framesize;
         }
+        framesize = this->v4l2lbnewmap[entry.first];
 
-        int framesize = mainprogram->ow * mainprogram->oh * 4;
         char *data = (char *) calloc(framesize, 1);
-        if (mainprogram->prevmodus) {
-            glBindTexture(GL_TEXTURE_2D, mainprogram->nodesmain->mixnodes[0][2]->mixtex);
-        }
-        else {
-            glBindTexture(GL_TEXTURE_2D, mainprogram->nodesmain->mixnodes[1][2]->mixtex);
-        }
-        glGetTexImage(GL_TEXTURE_2D, 0, GL_RGBA, GL_UNSIGNED_BYTE, data);
+        glBindTexture(GL_TEXTURE_2D, entry.second);
+        glGetTexImage(GL_TEXTURE_2D, 0, GL_BGRA, GL_UNSIGNED_BYTE, data);
         size_t written = write(output, data, framesize);
         free(data);
         if (written < 0) {
@@ -2924,7 +2929,6 @@ void Program::stream_to_v4l2loopbacks() {
             close(output);
             break;
         }
-        close(output);
     }
 }
 #endif
@@ -3096,27 +3100,31 @@ int Program::handle_menu(Menu* menu) {
 }
 int Program::handle_menu(Menu* menu, float xshift, float yshift) {
 	if (menu->state > 1) {
-	    mainprogram->frontbatch = true;
+        mainprogram->frontbatch = true;
         menu->box->upvtxtoscr();
-		if (std::find(mainprogram->actmenulist.begin(), mainprogram->actmenulist.end(), menu) == mainprogram->actmenulist.end()) {
-			mainprogram->actmenulist.clear();
-		}
-		int size = 0;
-		for (int k = 0; k < menu->entries.size(); k++) {
-			std::size_t sub = menu->entries[k].find("submenu");
-			if (sub != 0) size++;
-		}
-		if (menu->menuy + mainprogram->yvtxtoscr(yshift) > glob->h - size * mainprogram->yvtxtoscr(0.075f)) menu->menuy = glob->h - size * mainprogram->yvtxtoscr(0.075f) + mainprogram->yvtxtoscr(yshift);
-		if (size > 24) menu->menuy = mainprogram->yvtxtoscr(mainprogram->layh / 2.0f) - mainprogram->yvtxtoscr(yshift);
-		float vmx = (float)menu->menux * 2.0 / glob->w;
-		float vmy = (float)menu->menuy * 2.0 / glob->h;
-		float lc[] = { 0.0, 0.0, 0.0, 1.0 };
-		float ac1[] = { 0.3, 0.3, 0.3, 1.0 };
-		float ac2[] = { 0.5, 0.5, 1.0, 1.0 };
-		int numsubs = 0;
-		float limit = 1.0f;
-		int notsubk = 0;
-		for (int k = 0; k < menu->entries.size(); k++) {
+        if (std::find(mainprogram->actmenulist.begin(), mainprogram->actmenulist.end(), menu) ==
+            mainprogram->actmenulist.end()) {
+            mainprogram->actmenulist.clear();
+        }
+        int size = 0;
+        for (int k = 0; k < menu->entries.size(); k++) {
+            std::size_t sub = menu->entries[k].find("submenu");
+            if (sub != 0) size++;
+        }
+        if (menu->menuy + mainprogram->yvtxtoscr(yshift) > glob->h - size * mainprogram->yvtxtoscr(0.075f))
+            menu->menuy = glob->h - size * mainprogram->yvtxtoscr(0.075f) + mainprogram->yvtxtoscr(yshift);
+        if (size > 24) menu->menuy = mainprogram->yvtxtoscr(mainprogram->layh / 2.0f) - mainprogram->yvtxtoscr(yshift);
+        float vmx = (float) menu->menux * 2.0 / glob->w;
+        float vmy = (float) menu->menuy * 2.0 / glob->h;
+        float lc[] = {0.0, 0.0, 0.0, 1.0};
+        float ac1[] = {0.3, 0.3, 0.3, 1.0};
+        float ac2[] = {0.5, 0.5, 1.0, 1.0};
+        int numsubs = 0;
+        float limit = 1.0f;
+        int notsubk = 0;
+        std::vector<std::string> entries = menu->entries;
+
+        for (int k = 0; k < entries.size(); k++) {
 			float xoff = 0.0f;
 			int koff;
 			if (notsubk > 23) {
@@ -3164,7 +3172,7 @@ int Program::handle_menu(Menu* menu, float xshift, float yshift) {
 					if (menu->currsub == k || mainprogram->lmover) {
 						if (menu->currsub != k) mainprogram->lmover = false;
 						std::string name = menu->entries[k].substr(8, std::string::npos);
-						for (int i = 0; i < mainprogram->menulist.size(); i++) {
+                        for (int i = 0; i < mainprogram->menulist.size(); i++) {
 							if (mainprogram->menulist[i]->name == name) {
 								menu->currsub = k;
 								mainprogram->menulist[i]->state = 2;
@@ -3177,16 +3185,13 @@ int Program::handle_menu(Menu* menu, float xshift, float yshift) {
 								else {
 								    xs = xshift + menu->width * 1.5f;
 								}
-								if (menu == mainprogram->filemenu && k - numsubs == 2) {
-									// special rule: one layer choice less when saving layer
-									mainprogram->laylistmenu1->entries.pop_back();
-									mainprogram->laylistmenu2->entries.pop_back();
-								}
+
 								// start submenu
                                 mainprogram->menulist[i]->menux = menu->menux;
                                 mainprogram->menulist[i]->menuy = menu->box->scrcoords->y1 - menu->box->scrcoords->h + menu->menuy + (k - koff - numsubs + 1) * mainprogram->yvtxtoscr(0.075f) - mainprogram->yvtxtoscr(yshift);
 								int ret = mainprogram->handle_menu(mainprogram->menulist[i], xs, yshift);
-								if (mainprogram->menuchosen) {
+                                this->prevmenuchoices.push_back(k - numsubs + 1);
+                                if (mainprogram->menuchosen) {
 									menu->state = 0;
 									mainprogram->menuresults.insert(mainprogram->menuresults.begin(), ret);
 									menu->currsub = -1;
@@ -3649,7 +3654,7 @@ void Program::handle_monitormenu() {
     // draw and handle monitormenu
     std::vector<OutputEntry*> currentries;
     std::vector<OutputEntry*> takenentries;
-    int v4lstart = 0;
+    GLuint tex;
     int numd = SDL_GetNumVideoDisplays();
     if (mainprogram->monitormenu->state > 1) {
         // the output display menu (SDL_GetNumVideoDisplays() doesn't allow hotplugging screens...
@@ -3680,31 +3685,14 @@ void Program::handle_monitormenu() {
         }
 #ifdef POSIX
         // handle selection of active v4l2loopback devices used to stream video at
-        v4lstart = monitors.size();
-        monitors.push_back("Send to v4l2 loopback device:");
-        std::string res = exec("v4l2-ctl --list-devices");
-        int pos = res.find("platform:v4l2loopback",0);
-        if (pos == std::string::npos) monitors.back() = "No v4l2 loopback devices found";
-        while (pos != std::string::npos) {
-            int pos2 = res.find("/dev/video", pos);
-            int n = std::stoi(res.substr(pos2 + 10, 1));
-            int tot = n;
-            pos2++;
-            while (res.substr(pos2 + 11, 1) != "\n") {
-                int n = std::stoi(res.substr(pos2, 1));
-                tot *= 10;
-                tot += n;
-                pos2++;
-            }
-            std::string device = "/dev/video" + std::to_string(tot);
-            if (std::find(v4l2lbdevices.begin(), v4l2lbdevices.end(), device) != v4l2lbdevices.end()) {
-                monitors.push_back("V " + device);
-            }
-            else {
-                monitors.push_back("  " + device);
-            }
-            pos = res.find("platform:v4l2loopback", pos + 1);
+        if (mainprogram->monitormenu->value == 3) {
+            tex = mainprogram->nodesmain->mixnodes[0][0]->mixtex;
         }
+        else {
+            tex = mainprogram->nodesmain->mixnodes[!mainprogram->prevmodus][mainprogram->monitormenu->value]->mixtex;
+        }
+        this->register_v4l2lbdevices(monitors, tex);
+
         mainprogram->make_menu("monitormenu", mainprogram->monitormenu, monitors);
 #endif
     }
@@ -3836,54 +3824,11 @@ void Program::handle_monitormenu() {
             }
         }
 #ifdef POSIX
-        else if (k > v4lstart - 1) {
-            // send output to v4l2 loopback device
-
-            do {
-                // open output device
-                std::string device = mainprogram->monitormenu->entries[k + 1];
-                device = device.substr(2, device.size() - 2);
-
-                if (std::find(v4l2lbdevices.begin(), v4l2lbdevices.end(), device) != v4l2lbdevices.end()) {
-                    v4l2lbdevices.erase(std::find(v4l2lbdevices.begin(), v4l2lbdevices.end(), device));
-                }
-                else {
-                    v4l2lbdevices.push_back(device);
-
-                    int output = open(device.c_str(), O_RDWR);
-                    if (output < 0) {
-                        std::cerr << "ERROR: could not open output device!\n" <<
-                                  strerror(errno);
-                        break;
-                    }
-
-                    // acquire video format from device
-                    struct v4l2_format vid_format;
-                    memset(&vid_format, 0, sizeof(vid_format));
-                    vid_format.type = V4L2_BUF_TYPE_VIDEO_OUTPUT;
-
-                    if (ioctl(output, VIDIOC_G_FMT, &vid_format) < 0) {
-                        std::cerr << "ERROR: unable to get video format!\n" <<
-                                  strerror(errno);
-                        break;
-                    }
-
-                    // configure desired video format on device
-                    size_t framesize = mainprogram->ow * mainprogram->oh * 4;
-                    vid_format.fmt.pix.width = mainprogram->ow;
-                    vid_format.fmt.pix.height = mainprogram->oh;
-                    vid_format.fmt.pix.pixelformat = V4L2_PIX_FMT_RGB32;
-                    vid_format.fmt.pix.sizeimage = framesize;
-                    vid_format.fmt.pix.field = V4L2_FIELD_NONE;
-
-                    if (ioctl(output, VIDIOC_S_FMT, &vid_format) < 0) {
-                        std::cerr << "ERROR: unable to set video format!\n" <<
-                                  strerror(errno);
-                        break;
-                    }
-                }
-            }
-            while(0);
+        else if (k == 4) {
+            // start up v4l2 loopback device
+            std::string device = mainprogram->loopbackmenu->entries[mainprogram->menuresults[0]];
+            device = device.substr(2, device.size() - 2);
+            this->v4l2_start_device(device, tex);
         }
 #endif
     }
@@ -3973,6 +3918,7 @@ void Program::handle_wipemenu() {
 }
 
 void Program::handle_laymenu1() {
+    GLuint tex;
 	int k = -1;
 	// Draw and Program::handle mainprogram->laymenu1 (with clone layer) and laymenu2 (without)
     bool cond = (mainprogram->laymenu2->state == 2);
@@ -3994,6 +3940,12 @@ void Program::handle_laymenu1() {
 	}
 	else mainprogram->gotcameras = false;
 
+    if (mainprogram->laymenu1->entries.back() == "Send to v4l2 loopback device") {
+        mainprogram->laymenu1->entries.pop_back();
+        mainprogram->laymenu1->entries.pop_back();
+    }
+
+    bool encode = false;
 	if (mainprogram->laymenu1->state > 1) {
         if ((mainmix->mouselayer->vidformat == 188 || mainmix->mouselayer->vidformat == 187) ||
         mainmix->mouselayer->filename == "" || mainmix->mouselayer->type == ELEM_IMAGE || mainmix->mouselayer->type
@@ -4001,15 +3953,20 @@ void Program::handle_laymenu1() {
             if (mainprogram->laymenu1->entries.back() == "HAP encode on-the-fly") {
                 mainprogram->laymenu1->entries.pop_back();
             }
+            encode = false;
         }
         else {
             if (mainprogram->laymenu1->entries.back() != "HAP encode on-the-fly") {
                 mainprogram->laymenu1->entries.push_back("HAP encode on-the-fly");
             }
+            encode = true;
         }
 
         mainprogram->monitormenu->value = 4;
         mainprogram->make_mixtargetmenu();
+
+        tex = mainmix->mouselayer->fbotex;
+        this->register_v4l2lbdevices(mainprogram->laymenu1->entries, tex);
 
         k = mainprogram->handle_menu(mainprogram->laymenu1);
 	}
@@ -4265,7 +4222,7 @@ void Program::handle_laymenu1() {
                 }
             }
         }
-        else if (!cond && k == 18) {
+        else if (!cond && k == 18 && encode) {
             BinElement *binel = new BinElement;
             binel->bin = nullptr;
             binel->type = ELEM_FILE;
@@ -4278,6 +4235,14 @@ void Program::handle_laymenu1() {
             mainmix->mouselayer->hapbinel = binel;
             binsmain->hap_binel(binel, nullptr);
         }
+#ifdef POSIX
+        else if (!cond && k == (18 + encode)) {
+            // start up v4l2 loopback device
+            std::string device = mainprogram->loopbackmenu->entries[mainprogram->menuresults[0]];
+            device = device.substr(2, device.size() - 2);
+            this->v4l2_start_device(device, tex);
+        }
+#endif
 	}
 
 	if (mainprogram->menuchosen) {
@@ -4588,15 +4553,19 @@ void Program::handle_filemenu() {
 		std::vector<Layer*>& lvec = choose_layers(0);
 		std::vector<std::string> laylist1;
 		for (int i = 0; i < lvec.size() + 1; i++) {
-			laylist1.push_back("Layer " + std::to_string(i + 1));
+			laylist1.push_back("Layer slot " + std::to_string(i + 1));
 		}
 		mainprogram->make_menu("laylistmenu1", mainprogram->laylistmenu1, laylist1);
 		std::vector<Layer*>& lvec2 = choose_layers(1);
 		std::vector<std::string> laylist2;
 		for (int i = 0; i < lvec2.size() + 1; i++) {
-			laylist2.push_back("Layer " + std::to_string(i + 1));
+			laylist2.push_back("Layer slot " + std::to_string(i + 1));
 		}
-		mainprogram->make_menu("laylistmenu2", mainprogram->laylistmenu2, laylist2);
+        mainprogram->make_menu("laylistmenu2", mainprogram->laylistmenu2, laylist2);
+        laylist1.pop_back();
+        mainprogram->make_menu("laylistmenu3", mainprogram->laylistmenu3, laylist1);
+        laylist2.pop_back();
+        mainprogram->make_menu("laylistmenu4", mainprogram->laylistmenu4, laylist2);
 	}
 
 	k = mainprogram->handle_menu(mainprogram->filemenu);
@@ -4622,22 +4591,19 @@ void Program::handle_filemenu() {
                                     std::filesystem::absolute(reqdir + name).generic_string());
                 filereq.detach();
             } else if (mainprogram->menuresults[0] == 1) {
-                // new state
-                mainmix->new_state();
-            } else if (mainprogram->menuresults[0] == 2) {
                 // new mix
                 mainmix->new_file(2, 1, true);
-            } else if (mainprogram->menuresults[0] == 3) {
+            } else if (mainprogram->menuresults[0] == 2) {
                 // new deck in deck A
                 mainmix->new_file(0, 1, true);
-            } else if (mainprogram->menuresults[0] == 4) {
+            } else if (mainprogram->menuresults[0] == 3) {
                 // open deck in deck B
                 mainmix->new_file(1, 1, true);
-            } else if (mainprogram->menuresults[0] == 5) {
+            } else if (mainprogram->menuresults[0] == 4) {
                 // open new layer in deck A
                 std::vector<Layer *> &lvec = choose_layers(0);
                 mainmix->add_layer(lvec, mainprogram->menuresults[1]);
-            } else if (mainprogram->menuresults[0] == 6) {
+            } else if (mainprogram->menuresults[0] == 5) {
                 // open new layer in deck B
                 std::vector<Layer *> &lvec = choose_layers(1);
                 mainmix->add_layer(lvec, mainprogram->menuresults[1]);
@@ -4652,35 +4618,43 @@ void Program::handle_filemenu() {
                                     std::filesystem::canonical(mainprogram->currprojdir).generic_string());
                 filereq.detach();
             } else if (mainprogram->menuresults[0] == 1) {
-                mainprogram->pathto = "OPENSTATE";
-                std::thread filereq(&Program::get_inname, mainprogram, "Open state file", "application/ewocvj2-state",
-                                    std::filesystem::canonical(mainprogram->currelemsdir).generic_string());
-                filereq.detach();
-            } else if (mainprogram->menuresults[0] == 2) {
                 // open mix file
                 mainprogram->pathto = "OPENMIX";
                 std::thread filereq(&Program::get_inname, mainprogram, "Open mix file", "application/ewocvj2-mix",
                                     std::filesystem::canonical(mainprogram->currelemsdir).generic_string());
                 filereq.detach();
-            } else if (mainprogram->menuresults[0] == 3) {
+            } else if (mainprogram->menuresults[0] == 2) {
                 // open deck file in deck A
                 mainmix->mousedeck = 0;
                 mainprogram->pathto = "OPENDECK";
                 std::thread filereq(&Program::get_inname, mainprogram, "Open deck file", "application/ewocvj2-deck",
                                     std::filesystem::canonical(mainprogram->currelemsdir).generic_string());
                 filereq.detach();
-            } else if (mainprogram->menuresults[0] == 4) {
+            } else if (mainprogram->menuresults[0] == 3) {
                 // open deck file in deck B
                 mainmix->mousedeck = 1;
                 mainprogram->pathto = "OPENDECK";
                 std::thread filereq(&Program::get_inname, mainprogram, "Open deck file", "application/ewocvj2-deck",
                                     std::filesystem::canonical(mainprogram->currelemsdir).generic_string());
                 filereq.detach();
-            } else if (mainprogram->menuresults[0] == 5) {
-                // open files in in deck A
+            } else if (mainprogram->menuresults[0] == 4) {
+                // open files in deck A
                 std::vector<Layer *> &lvec = choose_layers(0);
                 mainmix->mousedeck = 0;
-                mainprogram->pathto = "OPENFILESSTACK";
+                mainprogram->pathto = "OPENFILESLAYER";
+                if (mainprogram->menuresults[1] == lvec.size()) {
+                    mainmix->addlay = true;
+                } else {
+                    mainprogram->loadlay = lvec[mainprogram->menuresults[1]];
+                }
+                std::thread filereq(&Program::get_multinname, mainprogram, "Open video/image/layer file", "",
+                                    std::filesystem::canonical(mainprogram->currfilesdir).generic_string());
+                filereq.detach();
+            } else if (mainprogram->menuresults[0] == 5) {
+                // open files in layer in deck B
+                std::vector<Layer *> &lvec = choose_layers(1);
+                mainmix->mousedeck = 1;
+                mainprogram->pathto = "OPENFILESLAYER";
                 if (mainprogram->menuresults[1] == lvec.size()) {
                     mainmix->addlay = true;
                 } else {
@@ -4690,19 +4664,6 @@ void Program::handle_filemenu() {
                                     std::filesystem::canonical(mainprogram->currfilesdir).generic_string());
                 filereq.detach();
             } else if (mainprogram->menuresults[0] == 6) {
-                // open files in layer in deck B
-                std::vector<Layer *> &lvec = choose_layers(1);
-                mainmix->mousedeck = 1;
-                mainprogram->pathto = "OPENFILESSTACK";
-                if (mainprogram->menuresults[1] == lvec.size()) {
-                    mainmix->addlay = true;
-                } else {
-                    mainprogram->loadlay = lvec[mainprogram->menuresults[1]];
-                }
-                std::thread filereq(&Program::get_multinname, mainprogram, "Open video/image/layer file", "",
-                                    std::filesystem::canonical(mainprogram->currfilesdir).generic_string());
-                filereq.detach();
-            } else if (mainprogram->menuresults[0] == 7) {
                 // open files in in deck A
                 std::vector<Layer *> &lvec = choose_layers(0);
                 mainmix->mousedeck = 0;
@@ -4715,7 +4676,7 @@ void Program::handle_filemenu() {
                 } else {
                     mainprogram->loadlay = lvec[mainprogram->menuresults[1]];
                 }
-            } else if (mainprogram->menuresults[0] == 8) {
+            } else if (mainprogram->menuresults[0] == 7) {
                 // open files in layer in deck B
                 std::vector<Layer *> &lvec = choose_layers(1);
                 mainmix->mousedeck = 1;
@@ -4741,28 +4702,23 @@ void Program::handle_filemenu() {
                                     "application/ewocvj2-project", path);
                 filereq.detach();
             } else if (mainprogram->menuresults[0] == 1) {
-                mainprogram->pathto = "SAVESTATE";
-                std::thread filereq(&Program::get_outname, mainprogram, "Save state file", "application/ewocvj2-state",
-                                    std::filesystem::canonical(mainprogram->currelemsdir).generic_string());
-                filereq.detach();
-            } else if (mainprogram->menuresults[0] == 2) {
                 mainprogram->pathto = "SAVEMIX";
                 std::thread filereq(&Program::get_outname, mainprogram, "Open mix file", "application/ewocvj2-mix",
                                     std::filesystem::canonical(mainprogram->currelemsdir).generic_string());
                 filereq.detach();
-            } else if (mainprogram->menuresults[0] == 3) {
+            } else if (mainprogram->menuresults[0] == 2) {
                 mainmix->mousedeck = 0;
                 mainprogram->pathto = "SAVEDECK";
                 std::thread filereq(&Program::get_outname, mainprogram, "Save deck file", "application/ewocvj2-deck",
                                     std::filesystem::canonical(mainprogram->currelemsdir).generic_string());
                 filereq.detach();
-            } else if (mainprogram->menuresults[0] == 4) {
+            } else if (mainprogram->menuresults[0] == 3) {
                 mainmix->mousedeck = 1;
                 mainprogram->pathto = "SAVEDECK";
                 std::thread filereq(&Program::get_outname, mainprogram, "Save deck file", "application/ewocvj2-deck",
                                     std::filesystem::canonical(mainprogram->currelemsdir).generic_string());
                 filereq.detach();
-            } else if (mainprogram->menuresults[0] == 5) {
+            } else if (mainprogram->menuresults[0] == 4) {
                 // save layer from deck A
                 std::vector<Layer *> &lvec = choose_layers(0);
                 mainmix->mouselayer = lvec[mainprogram->menuresults[1]];
@@ -4770,7 +4726,7 @@ void Program::handle_filemenu() {
                 std::thread filereq(&Program::get_outname, mainprogram, "Save layer file", "application/ewocvj2-layer",
                                     std::filesystem::canonical(mainprogram->currelemsdir).generic_string());
                 filereq.detach();
-            } else if (mainprogram->menuresults[0] == 6) {
+            } else if (mainprogram->menuresults[0] == 5) {
                 // save layer from deck B
                 std::vector<Layer *> &lvec = choose_layers(1);
                 mainmix->mouselayer = lvec[mainprogram->menuresults[1]];
@@ -6215,7 +6171,9 @@ int Program::config_midipresets_handle() {
 	if (box->in(mx, my)) {
 		draw_box(white, lightblue, box, -1);
 		if (mainprogram->leftmouse) {
-			open_genmidis(mainprogram->docpath + "midiset.gm");
+            if (exists(mainprogram->docpath + "midiset.gm")) {
+                open_genmidis(mainprogram->docpath + "midiset.gm");
+            }
 			mainprogram->tmlearn = TM_NONE;
 			mainprogram->midipresets = false;
 			SDL_HideWindow(mainprogram->config_midipresetswindow);
@@ -8314,11 +8272,11 @@ void Program::define_menus() {
     mainprogram->make_menu("shelfmenu", mainprogram->shelfmenu, shelf1);
 
     std::vector<std::string> file;
-    file.push_back("submenu filedomenu");
+    file.push_back("submenu filenewmenu");
     file.push_back("New");
-    file.push_back("submenu filedomenu");
+    file.push_back("submenu fileopenmenu");
     file.push_back("Open");
-    file.push_back("submenu filedomenu");
+    file.push_back("submenu filesavemenu");
     file.push_back("Save as");
     file.push_back("Save project");
     file.push_back("Quit");
@@ -8330,21 +8288,42 @@ void Program::define_menus() {
     std::vector<std::string> laylist2;
     mainprogram->make_menu("laylistmenu2", mainprogram->laylistmenu2, laylist2);
 
-    std::vector<std::string> filedo;
-    filedo.push_back("Project");
-    filedo.push_back("State");
-    filedo.push_back("Mix");
-    filedo.push_back("Deck A");
-    filedo.push_back("Deck B");
-    filedo.push_back("submenu laylistmenu1");
-    filedo.push_back("Files into layers in deck A before");
-    filedo.push_back("submenu laylistmenu2");
-    filedo.push_back("Files into layers in deck B before");
-    filedo.push_back("submenu laylistmenu1");
-    filedo.push_back("Files into queue in deck A on");
-    filedo.push_back("submenu laylistmenu2");
-    filedo.push_back("Files into queue in deck B on");
-    mainprogram->make_menu("filedomenu", mainprogram->filedomenu, filedo);
+    std::vector<std::string> filenew;
+    filenew.push_back("Project");
+    filenew.push_back("Mix");
+    filenew.push_back("Deck A");
+    filenew.push_back("Deck B");
+    filenew.push_back("submenu laylistmenu1");
+    filenew.push_back("Layer in deck A before");
+    filenew.push_back("submenu laylistmenu2");
+    filenew.push_back("Layer in deck B before");
+    mainprogram->make_menu("filenewmenu", mainprogram->filenewmenu, filenew);
+
+    std::vector<std::string> fileopen;
+    fileopen.push_back("Project");
+    fileopen.push_back("Mix");
+    fileopen.push_back("Deck A");
+    fileopen.push_back("Deck B");
+    fileopen.push_back("submenu laylistmenu1");
+    fileopen.push_back("Files into layers in deck A");
+    fileopen.push_back("submenu laylistmenu2");
+    fileopen.push_back("Files into layers in deck B");
+    fileopen.push_back("submenu laylistmenu1");
+    fileopen.push_back("Files into queue in deck A");
+    fileopen.push_back("submenu laylistmenu2");
+    fileopen.push_back("Files into queue in deck B");
+    mainprogram->make_menu("fileopenmenu", mainprogram->fileopenmenu, fileopen);
+
+    std::vector<std::string> filesave;
+    filesave.push_back("Project");
+    filesave.push_back("Mix");
+    filesave.push_back("Deck A");
+    filesave.push_back("Deck B");
+    filesave.push_back("submenu laylistmenu3");
+    filesave.push_back("Layer in deck A");
+    filesave.push_back("submenu laylistmenu4");
+    filesave.push_back("Layer in deck B");
+    mainprogram->make_menu("filesavemenu", mainprogram->filesavemenu, filesave);
 
     std::vector<std::string> edit;
     edit.push_back("Preferences");
@@ -9858,3 +9837,103 @@ void Program::undo_redo_save() {
         this->undowaiting = true;
     }
 }
+
+
+#ifdef POSIX
+void Program::register_v4l2lbdevices(std::vector<std::string>& entries, GLuint tex) {
+    // handle selection of active v4l2loopback devices used to stream video at
+    std::string res = exec("v4l2-ctl --list-devices");
+    int pos = res.find("platform:v4l2loopback",0);
+    if (pos == std::string::npos) return;
+    int v4lstart = entries.size();
+    entries.push_back("submenu loopbackmenu");
+    entries.push_back("Send to v4l2 loopback device");
+    std::vector<std::string> lbentries;
+    while (pos != std::string::npos) {
+        int pos2 = res.find("/dev/video", pos);
+        int n = std::stoi(res.substr(pos2 + 10, 1));
+        int tot = n;
+        pos2++;
+        while (res.substr(pos2 + 11, 1) != "\n") {
+            int n = std::stoi(res.substr(pos2, 1));
+            tot *= 10;
+            tot += n;
+            pos2++;
+        }
+        std::string device = "/dev/video" + std::to_string(tot);
+
+        bool set = false;
+        if (this->v4l2lbtexmap.count(device)) {
+            if (this->v4l2lbtexmap[device] == tex) {
+                lbentries.push_back("V " + device);
+                set = true;
+            }
+        }
+        if (!set) {
+            lbentries.push_back("  " + device);
+        }
+        pos = res.find("platform:v4l2loopback", pos + 1);
+    }
+    this->make_menu("loopbackmenu", this->loopbackmenu, lbentries);
+
+    return;
+}
+
+void Program::v4l2_start_device(std::string device, GLuint tex) {
+    // open output device
+    if (v4l2lbtexmap[device] == tex) {
+        v4l2lbtexmap.erase(device);
+        close(this->v4l2lboutputmap[device]);
+        return;
+    } else {
+        if (v4l2lbtexmap.count(device)) {
+            close(this->v4l2lboutputmap[device]);
+        }
+        v4l2lbtexmap[device] = tex;
+        v4l2lbnewmap[device] = 0;
+
+        int output = open(device.c_str(), O_RDWR);
+        if (output < 0) {
+            std::cerr << "ERROR: could not open output device!\n" <<
+                      strerror(errno);
+            return;
+        }
+        this->v4l2lboutputmap[device] = output;
+        this->set_v4l2format(output, tex);
+    }
+}
+
+size_t Program::set_v4l2format(int output, GLuint tex) {
+    // acquire video format struct from device
+    struct v4l2_format vid_format;
+    memset(&vid_format, 0, sizeof(vid_format));
+    vid_format.type = V4L2_BUF_TYPE_VIDEO_OUTPUT;
+
+    if (ioctl(output, VIDIOC_G_FMT, &vid_format) < 0) {
+        std::cerr << "ERROR: unable to get video format!\n" <<
+                  strerror(errno);
+        return 0;
+    }
+
+    int sw1, sh1;
+    glBindTexture(GL_TEXTURE_2D, tex);
+    glGetTexLevelParameteriv(GL_TEXTURE_2D, 0, GL_TEXTURE_WIDTH, &sw1);
+    glGetTexLevelParameteriv(GL_TEXTURE_2D, 0, GL_TEXTURE_HEIGHT, &sh1);
+    size_t framesize;
+    // configure desired video format on device
+    framesize = sw1 * sh1 * 4;
+    vid_format.fmt.pix.width = sw1;
+    vid_format.fmt.pix.height = sh1;
+    vid_format.fmt.pix.pixelformat = V4L2_PIX_FMT_BGR32;
+    vid_format.fmt.pix.sizeimage = framesize;
+    vid_format.fmt.pix.field = V4L2_FIELD_NONE;
+
+    if (ioctl(output, VIDIOC_S_FMT, &vid_format) < 0) {
+        std::cerr << "ERROR: unable to set video format!\n" <<
+                  strerror(errno);
+        return 0;
+    }
+
+    return framesize;
+}
+#endif

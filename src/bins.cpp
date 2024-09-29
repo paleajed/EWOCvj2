@@ -3252,6 +3252,7 @@ void BinsMain::hap_encode(std::string srcpath, BinElement *binel, BinElement *bd
     avio_close(dest->pb);
     avcodec_free_context(&c);
     av_frame_free(&nv12frame);
+    av_frame_free(&decframe);
     av_packet_unref(&pkt);
     avcodec_free_context(&source_dec_ctx);
     avformat_close_input(&source);

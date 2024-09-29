@@ -2730,6 +2730,8 @@ Layer::Layer(bool comp) {
     this->remfr = new remaining_frames;
     this->decpkt = av_packet_alloc();;
     this->decpktseek = av_packet_alloc();
+    this->decframe = av_frame_alloc();
+    this->rgbframe = av_frame_alloc();
 
     this->currcliptexpath = find_unused_filename("currcliptex", mainprogram->temppath, ".jpg");
 
@@ -2811,8 +2813,8 @@ Layer::~Layer() {
             glDeleteBuffers(3, &this->pbo);
         }
         delete this->remfr;
-        av_frame_free(&this->rgbframe);
-        av_frame_free(&this->decframe);
+        av_frame_unref(this->rgbframe);
+        av_frame_unref(this->decframe);
     }
 
     sws_freeContext(this->sws_ctx);
@@ -4094,7 +4096,7 @@ bool Layer::get_hap_frame() {
 
     long long seekTarget = av_rescale(this->video_stream->duration, this->frame, this->numf) + this->first_dts;
     int r = av_seek_frame(this->video, this->video_stream->index, seekTarget, 0);
-    av_frame_free(&this->decframe);
+    av_frame_unref(this->decframe);
     r = av_read_frame(this->video, this->decpkt);
     if (!this->dummy && ! (this->playbut->value == 0 && this->revbut->value == 0 && this->bouncebut->value == 0)) {
         this->prevframe = (int)this->frame;
@@ -4229,6 +4231,7 @@ void Layer::get_frame(){
                 }
             }
         }
+
         this->enddecodevar.notify_all();
         this->processed = true;
         continue;
@@ -6158,7 +6161,25 @@ bool Layer::find_new_live_base(int pos) {
 }
 
 void Layer::set_live_base(std::string livename) {
-	this->decresult->width = 0;
+    if (this->video) {
+        this->ready = true;
+        while (this->ready) {
+            this->startdecode.notify_all();
+        }
+        std::unique_lock<std::mutex> lock(this->enddecodelock);
+        this->enddecodevar.wait(lock, [&] {return this->processed; });
+        this->remfr->width = this->video_dec_ctx->width;
+        this->remfr->height = this->video_dec_ctx->height;
+        avcodec_free_context(&this->video_dec_ctx);
+        avformat_close_input(&this->video);
+        lock.unlock();
+        this->processed = false;
+    }
+
+    this->type = ELEM_LIVE;
+
+    this->decresult->width = 0;
+    this->decresult->height = 0;
 	this->vidformat = 0;
 	this->initialized = false;
 	this->audioplaying = false;
@@ -6175,19 +6196,6 @@ void Layer::set_live_base(std::string livename) {
 	}
 
 	this->filename = livename;
-	if (this->video) {
-		this->ready = true;
-		while (this->ready) {
-			this->startdecode.notify_all();
-		}
-		std::unique_lock<std::mutex> lock(this->enddecodelock);
-		this->enddecodevar.wait(lock, [&] {return this->processed; });
-		this->vidopen = true;
-		lock.unlock();
-		this->processed = false;
-		avformat_close_input(&this->video);
-	}
-	else this->type = ELEM_LIVE;
 	avdevice_register_all();
 	ptrdiff_t pos = std::find(mainprogram->busylist.begin(), mainprogram->busylist.end(), livename) - mainprogram->busylist.begin();
 	if (pos >= mainprogram->busylist.size()) {
@@ -9111,17 +9119,9 @@ bool Layer::thread_vidopen() {
             if (0) { // this->reset?
                 this->frame = 0.0f;
             }
-            if (this->decframe) {
-                //av_frame_free(&this->rgbframe);
-                //av_frame_free(&this->decframe);
-                if (this->decframe->data[0] != nullptr) {
-                    av_freep(&this->decframe->data[0]);
-                }
-                sws_freeContext(this->sws_ctx);
-                //avcodec_free_context(&this->video_dec_ctx);
-                av_free(this->decframe);
-            }
-            this->decframe = av_frame_alloc();
+            sws_freeContext(this->sws_ctx);
+            //avcodec_free_context(&this->video_dec_ctx);
+            av_frame_unref(this->decframe);
 
             std::mutex flock;
             flock.lock();
@@ -9157,16 +9157,10 @@ bool Layer::thread_vidopen() {
         return 0;
     }
 
-    if (this->rgbframe) {
-        //avcodec_close(this->video_dec_ctx);
-        //avcodec_close(this->audio_dec_ctx);
-        av_freep(&this->rgbframe->data[0]);
-        av_frame_free(&this->rgbframe);
-    }
     if (this->decframe) {
         //avcodec_close(this->video_dec_ctx);
         //avcodec_close(this->audio_dec_ctx);
-        av_frame_free(&this->decframe);
+        av_frame_unref(this->decframe);
     }
 
     if (this->type != ELEM_LIVE) {
@@ -9233,7 +9227,6 @@ bool Layer::thread_vidopen() {
         this->audiot.detach();
     }*/
 
-    this->rgbframe = av_frame_alloc();
     this->rgbframe->format = AV_PIX_FMT_BGRA;
     this->rgbframe->width = this->video_dec_ctx->width;
     this->rgbframe->height = this->video_dec_ctx->height;
@@ -9801,7 +9794,7 @@ void Layer::load_frame() {
     bool ret = false;
     //if (this->vidopen) return;
     if (this->liveinput) {     // || this-type == ELEM_IMAGE
-
+        bool dummy = false;
     }
     else if (this->startframe->value != this->endframe->value || this->type == ELEM_LIVE) {
         bool found = false;
@@ -9839,10 +9832,6 @@ void Layer::load_frame() {
         return;
     }*/
 
-    if (srclay->pos == 1 && srclay->deck == 1) {
-        bool dummy = false;
-    }
-
     int w, h;
     if (srclay->type == ELEM_IMAGE) {
         w = ilGetInteger(IL_IMAGE_WIDTH);
@@ -9851,7 +9840,7 @@ void Layer::load_frame() {
         w = srclay->video_dec_ctx->width;
         h = srclay->video_dec_ctx->height;
     }
-    else return;
+    else if (!srclay->liveinput) return;
     if (srclay->remfr->width != w || srclay->remfr->height != h || srclay->remfr->bpp != srclay->bpp) {
         // video (size) changed
         if (srclay->initialized) {
@@ -9878,11 +9867,11 @@ void Layer::load_frame() {
                 }
             } else return;
         } else {
-            if (this->liveinput->video_dec_ctx) {
+            /*if (this->liveinput->video_dec_ctx) {
                 float w = this->liveinput->video_dec_ctx->width;
                 float h = this->liveinput->video_dec_ctx->height;
                 this->initialize(w, h);
-            }
+            }*/
         }
     }
     if (ret) return;
@@ -9890,6 +9879,7 @@ void Layer::load_frame() {
     // set frame data to texture
     if (this->liveinput) {  // mimiclayers trick/// :(
         this->texture = this->liveinput->texture;
+        this->initialized = true;
         return;
     }
 
@@ -12226,7 +12216,6 @@ void Mixer::record_video(std::string reccod) {
         /* encode the image */
         encode_frame(dest, nullptr, c, yuvframe, pkt, nullptr, count);
 
-		av_freep(rgbaframe->data);
 		av_freep(yuvframe->data);
 		av_packet_unref(pkt);
     	av_frame_free(&rgbaframe);
