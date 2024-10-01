@@ -896,6 +896,12 @@ class Program {
         Boxx *boxafter;
         Boxx *boxlayer;
 
+        std::multimap<std::tuple<int, int, GLint>, GLuint> texpool;
+        std::multimap<int, std::pair<GLuint, GLubyte*>> pbopool;
+        std::unordered_set<GLuint> vbufpool;
+        std::unordered_map<GLuint, GLint> texintfmap;
+
+
 		int quit_requester();
 		GLuint set_shader();
 		int load_shader(char* filename, char** ShaderSource, unsigned long len);
@@ -975,6 +981,10 @@ class Program {
         void register_undo(Param*, Button*);
         void undo_redo_parbut(char offset, bool again = false, bool swap = false);
         void undo_redo_save();
+        void add_to_texpool(GLuint tex);
+        //void add_to_pbopool(GLuint pbo, GLubyte* mapptr);
+        GLuint grab_from_texpool(int w, int h, GLint compressed);
+        //std::pair<GLuint, GLubyte*> grab_from_pbopool(int bsize);
         std::tuple<Param*, int, int, int, int, int> newparam(int offset, bool swap);
         std::tuple<Button*, int, int, int, int> newbutton(int offset, bool swap);
         Program();

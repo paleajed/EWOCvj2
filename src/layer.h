@@ -55,24 +55,11 @@ struct frame_result {
     bool newdata = false;
     int height = 0;
     int width = 0;
-    int size = 0;
+    void *data = nullptr;
+    int size[2] = {0, 0};
     unsigned char compression = 0;
+    int bpp;
     bool hap = false;
-};
-
-struct remaining_frames {
-    int compression = -1;
-    int vidformat = -1;
-    bool initialized = false;
-    bool liveinput = false;
-    bool isclone = false;
-    int width = 1;
-    int height = 1;
-    int bpp = 0;
-    int size;
-    char *data = nullptr;
-    bool newdata = false;
-    bool changeinit = false;
 };
 
 struct registered_midi {
@@ -223,7 +210,6 @@ class Layer {
 		bool newframe = false;
 		bool newtexdata = false;
 		frame_result *decresult;
-		remaining_frames *remfr = nullptr;
 		int changeinit = -1;
         std::thread triggering;
 		void get_frame();
@@ -243,8 +229,8 @@ class Layer {
 		GLuint vao = -1;
 		GLuint endtex;
         GLuint frb;
-        GLuint pbo;
-		GLubyte* mapptr = 00;
+        GLuint pbo[2];
+		GLubyte* mapptr[2] = {nullptr, nullptr};
 		GLsync syncobj = nullptr;
 		int bpp;
 		bool nonewpbos = false;
@@ -289,8 +275,9 @@ class Layer {
         int videoseek_stream_idx = -1;
 		int audio_stream_idx = -1;
 		struct SwsContext *sws_ctx = nullptr;
-		char *databuf = nullptr;
+		char *databuf[2] = {nullptr, nullptr};
 		bool databufready = false;
+        bool databufnum = false;
 		int vidformat = -1;
         int oldvidformat = -1;
         int oldcompression = -1;

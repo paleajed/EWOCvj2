@@ -1037,7 +1037,7 @@ void Program::postponed_to_front_win(std::string title, SDL_Window *win) {
 
 #ifdef POSIX
     // trick to get window to front in Linux with a slight delay
-    std::string command = "sleep 1.5 && wmctrl -F -a \"" + title + "\" -b add,above &";
+    std::string command = "sleep 0.5 && wmctrl -F -a \"" + title + "\" -b add,above &";
     system(command.c_str());
 #endif
 
@@ -1119,6 +1119,11 @@ void Program::get_multinname(const char* title, std::string filters, std::string
 	bool as = this->autosave;
 	this->autosave = false;
     const char *outpaths;
+    if (exists(defaultdir)) {
+        if (std::filesystem::is_directory(defaultdir)) {
+            defaultdir += "/*";
+        }
+    }
     char const* const dd = (defaultdir == "") ? "" : defaultdir.c_str();
     mainprogram->blocking = true;
 
@@ -1245,20 +1250,20 @@ GLuint Program::get_tex(Layer *lay) {
             // HAP video in layer
             if (lay->decresult->compression == 187) {
                 glCompressedTexImage2D(GL_TEXTURE_2D, 0, GL_COMPRESSED_RGBA_S3TC_DXT1_EXT, lay->decresult->width,
-                                       lay->decresult->height, 0, lay->decresult->size, lay->remfr->data);
+                                       lay->decresult->height, 0, lay->decresult->size[lay->databufnum], lay->decresult->data);
             } else if (lay->decresult->compression == 190) {
                 glCompressedTexImage2D(GL_TEXTURE_2D, 0, GL_COMPRESSED_RGBA_S3TC_DXT5_EXT, lay->decresult->width,
-                                       lay->decresult->height, 0, lay->decresult->size, lay->remfr->data);
+                                       lay->decresult->height, 0, lay->decresult->size[lay->databufnum], lay->decresult->data);
             }
          } else {
             // CPU video in layer
             glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA8, lay->decresult->width, lay->decresult->height, 0, GL_BGRA,
-                         GL_UNSIGNED_BYTE, lay->remfr->data);
+                         GL_UNSIGNED_BYTE, lay->decresult->data);
         }
     }
 
     GLuint tex = copy_tex(ctex, 192, 108);
-    glDeleteTextures(1, &ctex);
+    mainprogram->add_to_texpool(ctex);
 
     return tex;
 }
@@ -1394,18 +1399,18 @@ bool Program::order_paths(bool dodeckmix) {
                     if (lay->decresult->compression == 187) {
                         glCompressedTexImage2D(GL_TEXTURE_2D, 0, GL_COMPRESSED_RGBA_S3TC_DXT1_EXT,
                                                lay->decresult->width,
-                                               lay->decresult->height, 0, lay->decresult->size,
-                                               lay->remfr->data);
+                                               lay->decresult->height, 0, lay->decresult->size[!lay->databufnum],
+                                               lay->decresult->data);
                     } else if (lay->decresult->compression == 190) {
                         glCompressedTexImage2D(GL_TEXTURE_2D, 0, GL_COMPRESSED_RGBA_S3TC_DXT5_EXT,
                                                lay->decresult->width,
-                                               lay->decresult->height, 0, lay->decresult->size,
-                                               lay->remfr->data);
+                                               lay->decresult->height, 0, lay->decresult->size[!lay->databufnum],
+                                               lay->decresult->data);
                     }
                 } else {
                     glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA8, lay->decresult->width, lay->decresult->height, 0,
                                  GL_BGRA,
-                                 GL_UNSIGNED_BYTE, lay->remfr->data);
+                                 GL_UNSIGNED_BYTE, lay->decresult->data);
                 }
                 GLuint butex = lay->fbotex;
                 lay->fbotex = copy_tex(lay->texture);
@@ -2635,10 +2640,16 @@ bool Boxx::in(int mx, int my) {
         if (this->scrcoords->y1 - this->scrcoords->h <= my && my <= this->scrcoords->y1) {
             mainprogram->boxhit = true;
             if (mainprogram->showtooltips && !mainprogram->ttreserved) {
+                if (mainprogram->tooltipbox) {
+                    delete mainprogram->tooltipbox;
+                }
                 mainprogram->tooltipbox = this->copy();
                 mainprogram->ttreserved = this->reserved;
             }
-            else mainprogram->tooltipbox = nullptr;
+            else {
+                delete mainprogram->tooltipbox;
+                mainprogram->tooltipbox = nullptr;
+            }
             mainprogram->inbox = true;
             return true;
         }
@@ -4109,7 +4120,7 @@ void Program::handle_laymenu1() {
 				ilBindImage(mainmix->mouselayer->boundimage);
 				ilActiveImage((int)mainmix->mouselayer->frame);
 				mainmix->mouselayer->set_aspectratio(ilGetInteger(IL_IMAGE_WIDTH), ilGetInteger(IL_IMAGE_HEIGHT));
-				mainmix->mouselayer->remfr->newdata = true;
+				mainmix->mouselayer->decresult->newdata = true;
 			}
 			else {
 				mainmix->mouselayer->set_aspectratio(mainmix->mouselayer->video_dec_ctx->width, mainmix->mouselayer->video_dec_ctx->height);
@@ -6944,14 +6955,21 @@ void Project::save(std::string path, bool autosave, bool undo) {
             std::string dir = homedir + "/.ewocvj2/";
 #endif
 #endif
-            wfile.open(dir + "recentprojectslist");
-            wfile << "EWOCvj RECENTPROJECTS V0.1\n";
-            for (int i = 0; i < mainprogram->recentprojectpaths.size(); i++) {
-                wfile << mainprogram->recentprojectpaths[i];
-                wfile << "\n";
+            do {
+                wfile.open(dir + "recentprojectslist");
+            } while (!wfile.is_open());
+            if (!wfile.fail()) {
+                wfile << "EWOCvj RECENTPROJECTS V0.1\n";
+                for (int i = 0; i < mainprogram->recentprojectpaths.size(); i++) {
+                    wfile << mainprogram->recentprojectpaths[i];
+                    wfile << "\n";
+                }
+                wfile << "ENDOFFILE\n";
+                wfile.close();
             }
-            wfile << "ENDOFFILE\n";
-            wfile.close();
+            else {
+                printf("Failed opening recentprojectlist\n");
+;            }
         }
     }
 
@@ -7390,21 +7408,11 @@ void Preferences::load() {
             std::filesystem::path p(istring);
             if (std::filesystem::exists(p)) mainprogram->currfilesdir = istring;
         }
-        /*else if (istring == "CURRELEMSDIR") {
-            safegetline(rfile, istring);
-            std::filesystem::path p(istring);
-            if (std::filesystem::exists(p)) mainprogram->currelemsdir = istring;
-        }
         else if (istring == "CURRELEMSDIR") {
             safegetline(rfile, istring);
             std::filesystem::path p(istring);
             if (std::filesystem::exists(p)) mainprogram->currelemsdir = istring;
         }
-        else if (istring == "currelemsdir") {
-            safegetline(rfile, istring);
-            std::filesystem::path p(istring);
-            if (std::filesystem::exists(p)) mainprogram->currelemsdir = istring;
-        }*/
     }
 
     mainprogram->set_ow3oh3();
@@ -7482,15 +7490,12 @@ void Preferences::save() {
         wfile << "ENDOFPREFCAT\n";
     }
 
-    /*wfile << "CURRFILESDIR\n";
+    wfile << "CURRFILESDIR\n";
     wfile << mainprogram->currfilesdir;
     wfile << "\n";
     wfile << "CURRELEMSDIR\n";
     wfile << mainprogram->currelemsdir;
     wfile << "\n";
-    wfile << "currelemsdir\n";
-    wfile << mainprogram->currelemsdir;
-    wfile << "\n";*/
 
     wfile << "ENDOFFILE\n";
     wfile.close();
@@ -7913,7 +7918,7 @@ PIProg::PIProg() {
     pos++;
 
     pdi = new PrefItem(this, pos, "Autosave interval (minutes)", PREF_NUMBER, (void*)&mainprogram->asminutes);
-    pdi->value = 1;
+    pdi->value = 3;
     pdi->namebox->tooltiptitle = "Autosave interval ";
     pdi->namebox->tooltip = "Sets the time interval between successive autosaves. ";
     pdi->valuebox->tooltiptitle = "Set autosave interval ";
@@ -8357,16 +8362,18 @@ void Program::write_recentprojectlist() {
 #endif
 #endif
     wfile.open(dir2 + "recentprojectslist");
-    wfile << "EWOCvj RECENTPROJECTS V0.1\n";
-    while (mainprogram->recentprojectpaths.size() > 10) {
-        mainprogram->recentprojectpaths.pop_back();
+    if (!wfile.fail()) {
+        wfile << "EWOCvj RECENTPROJECTS V0.1\n";
+        while (mainprogram->recentprojectpaths.size() > 10) {
+            mainprogram->recentprojectpaths.pop_back();
+        }
+        for (int i = 0; i < mainprogram->recentprojectpaths.size(); i++) {
+            wfile << mainprogram->recentprojectpaths[i];
+            wfile << "\n";
+        }
+        wfile << "ENDOFFILE\n";
+        wfile.close();
     }
-    for (int i = 0; i < mainprogram->recentprojectpaths.size(); i++) {
-        wfile << mainprogram->recentprojectpaths[i];
-        wfile << "\n";
-    }
-    wfile << "ENDOFFILE\n";
-    wfile.close();
 }
 
 
@@ -9140,13 +9147,20 @@ GLuint copy_tex(GLuint tex, int tw, int th) {
 
 GLuint copy_tex(GLuint tex, int tw, int th, bool yflip) {
     GLuint smalltex = 0;
-    glGenTextures(1, &smalltex);
-    glBindTexture(GL_TEXTURE_2D, smalltex);
-    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_BORDER);
-    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_BORDER);
-    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR);
-    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
-    glTexStorage2D(GL_TEXTURE_2D, 1, GL_RGBA8, tw, th);
+    GLuint rettex = mainprogram->grab_from_texpool(tw, th, GL_RGBA8);
+    if (rettex != -1) {
+        smalltex = rettex;
+    }
+    else {
+        glGenTextures(1, &smalltex);
+        glBindTexture(GL_TEXTURE_2D, smalltex);
+        glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_BORDER);
+        glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_BORDER);
+        glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR);
+        glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
+        glTexStorage2D(GL_TEXTURE_2D, 1, GL_RGBA8, tw, th);
+        mainprogram->texintfmap[smalltex] = GL_RGBA8;
+    }
     GLuint dfbo;
     glGenFramebuffers(1, &dfbo);
     glBindFramebuffer(GL_FRAMEBUFFER, dfbo);
@@ -9937,3 +9951,43 @@ size_t Program::set_v4l2format(int output, GLuint tex) {
     return framesize;
 }
 #endif
+
+
+
+void Program::add_to_texpool(GLuint tex) {
+    int sw, sh;
+    glBindTexture(GL_TEXTURE_2D, tex);
+    glGetTexLevelParameteriv(GL_TEXTURE_2D, 0, GL_TEXTURE_WIDTH, &sw);
+    glGetTexLevelParameteriv(GL_TEXTURE_2D, 0, GL_TEXTURE_HEIGHT, &sh);
+    GLint compressedGL = this->texintfmap[tex];
+    if (sw == 0) {
+        glDeleteTextures(1, &tex);
+        return;
+    }
+    this->texpool.insert(std::pair<std::tuple<int, int, GLint>, GLuint>(std::tuple<int, int, GLint>(sw, sh, compressedGL), tex));
+}
+
+GLuint Program::grab_from_texpool(int w, int h, GLint compressed) {
+    auto elem = this->texpool.find(std::tuple<int, int, GLint>(w, h, compressed));
+    if (elem == this->texpool.end()) {
+        return -1;
+    }
+    this->texpool.erase(elem);
+    return elem->second;
+}
+
+/*void Program::add_to_pbopool(GLuint pbo, GLubyte *mapptr) {
+    GLint bufferSize = 0;
+    glBindBuffer(GL_ARRAY_BUFFER, pbo);
+    glGetBufferParameteriv(GL_ARRAY_BUFFER, GL_BUFFER_SIZE, &bufferSize);
+    this->pbopool.insert(std::pair<int, std::pair<GLuint, GLubyte*>>(bufferSize, std::pair<GLuint, GLubyte*>(pbo, mapptr)));
+}
+
+std::pair<GLuint, GLubyte*> Program::grab_from_pbopool(int bsize) {
+    auto elem = this->pbopool.find(bsize);
+    if (elem == this->pbopool.end()) {
+        return std::pair<GLuint, GLubyte*>(-1, nullptr);
+    }
+    this->pbopool.erase(elem);
+    return elem->second;
+}*/

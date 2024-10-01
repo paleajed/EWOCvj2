@@ -5842,7 +5842,8 @@ char const * tinyfd_saveFileDialog(
                         strcpy( lDialogString , "zenity" ) ;
                         if ( (zenity3Present() >= 4) && !getenv("SSH_TTY") )
                         {
-                                strcat( lDialogString, " --attach=$(sleep .01;xprop -root 32x '\t$0' _NET_ACTIVE_WINDOW | cut -f 2)"); /* contribution: Paul Rouget */
+                            strcat( lDialogString, " --attach=$(sleep .01;xprop -root 32x '\t$0' _NET_ACTIVE_WINDOW | cut -f 2)"); /* contribution: Paul Rouget */
+                            strcat( lDialogString, " --save"); /* contribution: Paul Rouget */
                         }
                 }
                 else if ( matedialogPresent() )
@@ -6280,7 +6281,8 @@ char const * tinyfd_openFileDialog(
                         strcpy( lDialogString , "zenity" ) ;
                         if ( (zenity3Present() >= 4) && !getenv("SSH_TTY") )
                         {
-                                strcat( lDialogString, " --attach=$(sleep .01;xprop -root 32x '\t$0' _NET_ACTIVE_WINDOW | cut -f 2)"); /* contribution: Paul Rouget */
+                            strcat( lDialogString, " --attach=$(sleep .01;xprop -root 32x '\t$0' _NET_ACTIVE_WINDOW | cut -f 2)"); /* contribution: Paul Rouget */
+                            strcat( lDialogString, " --open"); /* contribution: Paul Rouget */
                         }
                 }
                 else if ( matedialogPresent() )

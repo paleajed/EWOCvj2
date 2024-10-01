@@ -116,7 +116,8 @@ class VideoNode: public Node {
 		Layer *layer = nullptr;
 		Boxx *vidbox;
 		void upeffboxes();
-		VideoNode();
+        VideoNode();
+        ~VideoNode();
 };
 
 class MixNode: public Node {

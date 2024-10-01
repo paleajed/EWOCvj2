@@ -1517,7 +1517,7 @@ void set_glstructures() {
 
     glGenTextures(1, &mainmix->minitex);
     glBindTexture(GL_TEXTURE_2D, mainmix->minitex);
-    glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA8, mainprogram->ow3, mainprogram->oh3, 0, GL_BGRA, GL_UNSIGNED_BYTE, nullptr);
+    glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA8, 192, 108, 0, GL_BGRA, GL_UNSIGNED_BYTE, nullptr);
     //glTexStorage2D(GL_TEXTURE_2D, 1, GL_RGBA8, mainprogram->ow3, mainprogram->oh3);
     glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR);
     glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
@@ -2143,7 +2143,7 @@ std::vector<float> render_text(const std::string& stext, const char* ctext, floa
             if (FT_Load_Glyph(face, glyph_index, FT_LOAD_DEFAULT))
                 continue;
             FT_Render_Glyph(face->glyph, FT_RENDER_MODE_NORMAL);
-            glTexSubImage2D(GL_TEXTURE_2D, 0, x, -g->bitmap_top + 57 * glob->h / 2400.0f + (5 * (smflag > 0)), g->bitmap.width, g->bitmap.rows, GL_RED, GL_UNSIGNED_BYTE, g->bitmap.buffer);
+            glTexSubImage2D(GL_TEXTURE_2D, 0, x, -g->bitmap_top + 57 * glob->h / 2400.0f + (6 * (smflag > 0)), g->bitmap.width, g->bitmap.rows, GL_RED, GL_UNSIGNED_BYTE, g->bitmap.buffer);
             x += (g->advance.x/64.0f);
         }
 
@@ -2239,8 +2239,8 @@ void LockBuffer(GLsync& syncObj)
 void WaitBuffer(GLsync& syncObj)
 {
 	if (syncObj) {
-        GLbitfield waitFlags = 0;
-        GLuint64 waitDuration = 0;
+        GLbitfield waitFlags = GL_SYNC_FLUSH_COMMANDS_BIT;
+        GLuint64 waitDuration = GL_TIMEOUT_IGNORED;
         GLenum waitReturn = GL_UNSIGNALED;
         while (waitReturn != GL_ALREADY_SIGNALED && waitReturn != GL_CONDITION_SATISFIED)
         {
@@ -2827,20 +2827,31 @@ void onestepfrom(bool stage, Node *node, Node *prevnode, GLuint prevfbotex, GLui
 
 			glActiveTexture(GL_TEXTURE0);
 			if (effect->fbo == -1) {
-                glGenTextures(1, &(effect->fbotex));
-                glBindTexture(GL_TEXTURE_2D, effect->fbotex);
+                GLuint rettex;
                 if (stage == 0) {
-
-                    glTexStorage2D(GL_TEXTURE_2D, 1, GL_RGBA8, mainprogram->ow3, mainprogram->oh3);
+                    rettex = mainprogram->grab_from_texpool(mainprogram->ow3, mainprogram->oh3, GL_RGBA8);
                 }
                 else {
-                    glTexStorage2D(GL_TEXTURE_2D, 1, GL_RGBA8, mainprogram->ow, mainprogram->oh);
+                    rettex = mainprogram->grab_from_texpool(mainprogram->ow, mainprogram->oh, GL_RGBA8);
                 }
-                glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR);
-                glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
-                glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_BORDER);
-                glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_BORDER);
+                if (rettex != -1) {
+                    effect->fbotex = rettex;
+                }
+                else {
+                    glGenTextures(1, &(effect->fbotex));
+                    glBindTexture(GL_TEXTURE_2D, effect->fbotex);
+                    if (stage == 0) {
 
+                        glTexStorage2D(GL_TEXTURE_2D, 1, GL_RGBA8, mainprogram->ow3, mainprogram->oh3);
+                    } else {
+                        glTexStorage2D(GL_TEXTURE_2D, 1, GL_RGBA8, mainprogram->ow, mainprogram->oh);
+                    }
+                    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR);
+                    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
+                    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_BORDER);
+                    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_BORDER);
+                    mainprogram->texintfmap[effect->fbotex] = GL_RGBA8;
+                }
                 glGenFramebuffers(1, &(effect->fbo));
                 glBindFramebuffer(GL_FRAMEBUFFER, effect->fbo);
                 glFramebufferTexture2D(GL_FRAMEBUFFER, GL_COLOR_ATTACHMENT0, GL_TEXTURE_2D, effect->fbotex, 0);
@@ -2938,8 +2949,8 @@ void onestepfrom(bool stage, Node *node, Node *prevnode, GLuint prevfbotex, GLui
             frac = (float)ilGetInteger(IL_IMAGE_WIDTH) / (float)ilGetInteger(IL_IMAGE_HEIGHT);
         }
         else {
-            if (lay->remfr->height == 0) return;
-            frac = (float)(lay->remfr->width) / (float)(lay->remfr->height);
+            if (lay->decresult->height == 0) return;
+            frac = (float)(lay->decresult->width) / (float)(lay->decresult->height);
         }
         if (lay->dummy) {
             frac = (float)(lay->video_dec_ctx->width) / (float)(lay->video_dec_ctx->height);
@@ -3022,19 +3033,30 @@ void onestepfrom(bool stage, Node *node, Node *prevnode, GLuint prevfbotex, GLui
 		}
 		if (bnode->in && bnode->in2) {
             if (bnode->fbo == -1) {
-                glGenTextures(1, &(bnode->fbotex));
-                glBindTexture(GL_TEXTURE_2D, bnode->fbotex);
+                GLuint rettex;
                 if (stage == 0) {
-                    glTexStorage2D(GL_TEXTURE_2D, 1, GL_RGBA8, mainprogram->ow3, mainprogram->oh3);
+                    rettex = mainprogram->grab_from_texpool(mainprogram->ow3, mainprogram->oh3, GL_RGBA8);
                 }
                 else {
-                    glTexStorage2D(GL_TEXTURE_2D, 1, GL_RGBA8, mainprogram->ow, mainprogram->oh);
+                    rettex = mainprogram->grab_from_texpool(mainprogram->ow, mainprogram->oh, GL_RGBA8);
                 }
-                glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR);
-                glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
-                glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_BORDER);
-                glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_BORDER);
-
+                if (rettex != -1) {
+                    bnode->fbotex = rettex;
+                }
+                else {
+                    glGenTextures(1, &(bnode->fbotex));
+                    glBindTexture(GL_TEXTURE_2D, bnode->fbotex);
+                    if (stage == 0) {
+                        glTexStorage2D(GL_TEXTURE_2D, 1, GL_RGBA8, mainprogram->ow3, mainprogram->oh3);
+                    } else {
+                        glTexStorage2D(GL_TEXTURE_2D, 1, GL_RGBA8, mainprogram->ow, mainprogram->oh);
+                    }
+                    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR);
+                    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
+                    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_BORDER);
+                    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_BORDER);
+                    mainprogram->texintfmap[bnode->fbotex] = GL_RGBA8;
+                }
                 glGenFramebuffers(1, &(bnode->fbo));
                 glBindFramebuffer(GL_FRAMEBUFFER, bnode->fbo);
                 glFramebufferTexture2D(GL_FRAMEBUFFER, GL_COLOR_ATTACHMENT0, GL_TEXTURE_2D, bnode->fbotex, 0);
@@ -4315,7 +4337,7 @@ void the_loop() {
                     Layer *testlay = lv[1];
                     testlay->nonewpbos = false;  // get new pbos
                     if (testlay->filename != "") testlay->progress(1, 1);
-                    testlay->changeinit = 5;
+                    //testlay->changeinit = 5;
                     testlay->initdeck = false;
                 }
             }
@@ -4406,7 +4428,7 @@ void the_loop() {
             if (lvec[i]->clonesetnr != -1) {
                 int clnr = lvec[i]->clonesetnr;
                 lvec[i]->clonesetnr = -1;
-                lvec[i]->texture = -1;
+                //lvec[i]->texture = -1;
                 mainmix->clonesets[clnr]->erase(lvec[i]);
 
                 if (mainmix->clonesets[clnr]->size() == 1) {
@@ -4485,13 +4507,15 @@ void the_loop() {
             Layer *testlay = mainmix->layers[0][i];
             testlay->layers = &mainmix->layers[0];
             testlay->progress(0, 0);
-            testlay->load_frame();
+            if (!testlay->initialized) testlay->load_frame();
+            //testlay->load_frame();
         }
         for (int i = 0; i < mainmix->layers[1].size(); i++) {
             Layer *testlay = mainmix->layers[1][i];
             testlay->layers = &mainmix->layers[1];
             testlay->progress(0, 0);
-            testlay->load_frame();
+            if (!testlay->initialized) testlay->load_frame();
+            //testlay->load_frame();
         }
         mainprogram->prevmodus = false;
         // performance mode frame calc and load
@@ -5709,12 +5733,6 @@ void the_loop() {
     	}
     }
 
-    mainmix->reconnect_all(mainmix->layers[0]);
-    mainmix->reconnect_all(mainmix->layers[1]);
-    mainmix->reconnect_all(mainmix->layers[2]);
-    mainmix->reconnect_all(mainmix->layers[3]);
-    make_layboxes();
-
     //glFlush();
     //glFinish();
     SDL_GL_SwapWindow(mainprogram->mainwindow);
@@ -5787,6 +5805,12 @@ void the_loop() {
     if (mainprogram->recundo || mainprogram->undowaiting) {
         mainprogram->undo_redo_save();
     }
+
+    mainmix->reconnect_all(mainmix->layers[0]);
+    mainmix->reconnect_all(mainmix->layers[1]);
+    mainmix->reconnect_all(mainmix->layers[2]);
+    mainmix->reconnect_all(mainmix->layers[3]);
+    make_layboxes();
 }
 
 
@@ -7548,6 +7572,7 @@ int main(int argc, char* argv[]) {
                 mainprogram->binmy = mainprogram->my;
                 if (mainprogram->tooltipbox) {
                     mainprogram->tooltipmilli = 0.0f;
+                    delete mainprogram->tooltipbox;
                     mainprogram->tooltipbox = nullptr;
                 }
                 if (mainmix->prepadaptparam && !mainprogram->wiping) {

@@ -513,6 +513,7 @@ void BinsMain::handle(bool draw) {
                         if (insertbox) {
                             draw_box(red, nullptr, insertbox, -1);
                             //delete insertbox;
+                            delete mainprogram->tooltipbox;
                             mainprogram->tooltipbox = nullptr;
                         }
 						mainprogram->leftmousedown = false;
@@ -577,6 +578,7 @@ void BinsMain::handle(bool draw) {
 						this->oldmouseshelfnum = this->mouseshelfnum;
 					}
 					else {
+                        delete mainprogram->tooltipbox;
 						mainprogram->tooltipbox = nullptr;
 					}
 					if ((!this->menubinel || cond1) && mainprogram->menuactivation) {
@@ -1779,14 +1781,14 @@ void BinsMain::handle(bool draw) {
 									glBindTexture(GL_TEXTURE_2D, mainprogram->prelay->texture);
 									if (mainprogram->prelay->vidformat == 188 || mainprogram->prelay->vidformat == 187) {
 										if (mainprogram->prelay->decresult->compression == 187) {
-											glCompressedTexImage2D(GL_TEXTURE_2D, 0, GL_COMPRESSED_RGBA_S3TC_DXT1_EXT, mainprogram->prelay->decresult->width, mainprogram->prelay->decresult->height, 0, mainprogram->prelay->decresult->size, mainprogram->prelay->remfr->data);
+											glCompressedTexImage2D(GL_TEXTURE_2D, 0, GL_COMPRESSED_RGBA_S3TC_DXT1_EXT, mainprogram->prelay->decresult->width, mainprogram->prelay->decresult->height, 0, mainprogram->prelay->decresult->size[!mainprogram->prelay->databufnum], mainprogram->prelay->decresult->data);
 										}
 										else if (mainprogram->prelay->decresult->compression == 190) {
-											glCompressedTexImage2D(GL_TEXTURE_2D, 0, GL_COMPRESSED_RGBA_S3TC_DXT5_EXT, mainprogram->prelay->decresult->width, mainprogram->prelay->decresult->height, 0, mainprogram->prelay->decresult->size, mainprogram->prelay->remfr->data);
+											glCompressedTexImage2D(GL_TEXTURE_2D, 0, GL_COMPRESSED_RGBA_S3TC_DXT5_EXT, mainprogram->prelay->decresult->width, mainprogram->prelay->decresult->height, 0, mainprogram->prelay->decresult->size[!mainprogram->prelay->databufnum], mainprogram->prelay->decresult->data);
 										}
 									}
 									else {
-										glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA8, mainprogram->prelay->decresult->width, mainprogram->prelay->decresult->height, 0, GL_BGRA, GL_UNSIGNED_BYTE, mainprogram->prelay->remfr->data);
+										glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA8, mainprogram->prelay->decresult->width, mainprogram->prelay->decresult->height, 0, GL_BGRA, GL_UNSIGNED_BYTE, mainprogram->prelay->decresult->data);
 									}
 									mainprogram->prelay->initialized = true;
 									// calculate effects
@@ -1846,14 +1848,14 @@ void BinsMain::handle(bool draw) {
 									glBindTexture(GL_TEXTURE_2D, mainprogram->prelay->texture);
  									if (mainprogram->prelay->vidformat == 188 || mainprogram->prelay->vidformat == 187) {
 										if (mainprogram->prelay->decresult->compression == 187) {
-											glCompressedTexImage2D(GL_TEXTURE_2D, 0, GL_COMPRESSED_RGBA_S3TC_DXT1_EXT, mainprogram->prelay->decresult->width, mainprogram->prelay->decresult->height, 0, mainprogram->prelay->decresult->size, mainprogram->prelay->remfr->data);
+											glCompressedTexImage2D(GL_TEXTURE_2D, 0, GL_COMPRESSED_RGBA_S3TC_DXT1_EXT, mainprogram->prelay->decresult->width, mainprogram->prelay->decresult->height, 0, mainprogram->prelay->decresult->size[!mainprogram->prelay->databufnum], mainprogram->prelay->decresult->data);
 										}
 										else if (mainprogram->prelay->decresult->compression == 190) {
-											glCompressedTexImage2D(GL_TEXTURE_2D, 0, GL_COMPRESSED_RGBA_S3TC_DXT5_EXT, mainprogram->prelay->decresult->width, mainprogram->prelay->decresult->height, 0, mainprogram->prelay->decresult->size, mainprogram->prelay->remfr->data);
+											glCompressedTexImage2D(GL_TEXTURE_2D, 0, GL_COMPRESSED_RGBA_S3TC_DXT5_EXT, mainprogram->prelay->decresult->width, mainprogram->prelay->decresult->height, 0, mainprogram->prelay->decresult->size[!mainprogram->prelay->databufnum], mainprogram->prelay->decresult->data);
 										}
  									}
 									else {
-										glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA8, mainprogram->prelay->decresult->width, mainprogram->prelay->decresult->height, 0, GL_BGRA, GL_UNSIGNED_BYTE, mainprogram->prelay->remfr->data);
+										glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA8, mainprogram->prelay->decresult->width, mainprogram->prelay->decresult->height, 0, GL_BGRA, GL_UNSIGNED_BYTE, mainprogram->prelay->decresult->data);
 									}
 
 									// calculate effects
@@ -1922,14 +1924,14 @@ void BinsMain::handle(bool draw) {
 									glBindTexture(GL_TEXTURE_2D, this->binelpreviewtex);
 									if (mainprogram->prelay->vidformat == 188 || mainprogram->prelay->vidformat == 187) {
  										if (mainprogram->prelay->decresult->compression == 187) {
-											glCompressedTexImage2D(GL_TEXTURE_2D, 0, GL_COMPRESSED_RGBA_S3TC_DXT1_EXT, mainprogram->prelay->decresult->width, mainprogram->prelay->decresult->height, 0, mainprogram->prelay->decresult->size, mainprogram->prelay->remfr->data);
+											glCompressedTexImage2D(GL_TEXTURE_2D, 0, GL_COMPRESSED_RGBA_S3TC_DXT1_EXT, mainprogram->prelay->decresult->width, mainprogram->prelay->decresult->height, 0, mainprogram->prelay->decresult->size[!mainprogram->prelay->databufnum], mainprogram->prelay->decresult->data);
 										}
 										else if (mainprogram->prelay->decresult->compression == 190) {
-											glCompressedTexImage2D(GL_TEXTURE_2D, 0, GL_COMPRESSED_RGBA_S3TC_DXT5_EXT, mainprogram->prelay->decresult->width, mainprogram->prelay->decresult->height, 0, mainprogram->prelay->decresult->size, mainprogram->prelay->remfr->data);
+											glCompressedTexImage2D(GL_TEXTURE_2D, 0, GL_COMPRESSED_RGBA_S3TC_DXT5_EXT, mainprogram->prelay->decresult->width, mainprogram->prelay->decresult->height, 0, mainprogram->prelay->decresult->size[!mainprogram->prelay->databufnum], mainprogram->prelay->decresult->data);
 										}
  									}
 									else {
-										glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA8, mainprogram->prelay->decresult->width, mainprogram->prelay->decresult->height, 0, GL_BGRA, GL_UNSIGNED_BYTE, mainprogram->prelay->remfr->data);
+										glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA8, mainprogram->prelay->decresult->width, mainprogram->prelay->decresult->height, 0, GL_BGRA, GL_UNSIGNED_BYTE, mainprogram->prelay->decresult->data);
 									}
 									draw_box(red, black, 0.52f, 0.5f, 0.4f, 0.4f, this->binelpreviewtex);
 									if (!binel->encoding) {
@@ -1976,14 +1978,14 @@ void BinsMain::handle(bool draw) {
 										glBindTexture(GL_TEXTURE_2D, this->binelpreviewtex);
 										if (mainprogram->prelay->vidformat == 188 || mainprogram->prelay->vidformat == 187) {
 											if (mainprogram->prelay->decresult->compression == 187) {
-												glCompressedTexImage2D(GL_TEXTURE_2D, 0, GL_COMPRESSED_RGBA_S3TC_DXT1_EXT, mainprogram->prelay->decresult->width, mainprogram->prelay->decresult->height, 0, mainprogram->prelay->decresult->size, mainprogram->prelay->remfr->data);
+												glCompressedTexImage2D(GL_TEXTURE_2D, 0, GL_COMPRESSED_RGBA_S3TC_DXT1_EXT, mainprogram->prelay->decresult->width, mainprogram->prelay->decresult->height, 0, mainprogram->prelay->decresult->size[!mainprogram->prelay->databufnum], mainprogram->prelay->decresult->data);
 											}
 											else if (mainprogram->prelay->decresult->compression == 190) {
-												glCompressedTexImage2D(GL_TEXTURE_2D, 0, GL_COMPRESSED_RGBA_S3TC_DXT5_EXT, mainprogram->prelay->decresult->width, mainprogram->prelay->decresult->height, 0, mainprogram->prelay->decresult->size, mainprogram->prelay->remfr->data);
+												glCompressedTexImage2D(GL_TEXTURE_2D, 0, GL_COMPRESSED_RGBA_S3TC_DXT5_EXT, mainprogram->prelay->decresult->width, mainprogram->prelay->decresult->height, 0, mainprogram->prelay->decresult->size[!mainprogram->prelay->databufnum], mainprogram->prelay->decresult->data);
 											}
 										}
 										else {
-											glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA8, mainprogram->prelay->decresult->width, mainprogram->prelay->decresult->height, 0, GL_BGRA, GL_UNSIGNED_BYTE, mainprogram->prelay->remfr->data);
+											glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA8, mainprogram->prelay->decresult->width, mainprogram->prelay->decresult->height, 0, GL_BGRA, GL_UNSIGNED_BYTE, mainprogram->prelay->decresult->data);
 										}
 										draw_box(red, black, 0.52f, 0.5f, 0.4f, 0.4f, this->binelpreviewtex);
 									}
@@ -3224,7 +3226,7 @@ void BinsMain::hap_encode(std::string srcpath, BinElement *binel, BinElement *bd
 		sws_scale
 		(
 			sws_ctx,
-			decframe->data,
+            decframe->data,
 			decframe->linesize,
 			0,
 			nv12frame->height,
@@ -3235,7 +3237,7 @@ void BinsMain::hap_encode(std::string srcpath, BinElement *binel, BinElement *bd
 
 		encode_frame(dest, source, c, nv12frame, &pkt, nullptr, frame);
 		
-        av_freep(nv12frame->data);
+        av_freep(&nv12frame->data[0]);
 		av_packet_unref(&pkt);
 		//av_frame_unref(decframe);
 		//av_frame_unref(nv12frame);

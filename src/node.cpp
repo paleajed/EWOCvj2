@@ -118,15 +118,17 @@ BlendNode::BlendNode() {
 }
 
 Node::~Node() {
-	//delete this->box;
-    //delete this->vidbox;
+    delete this->box;
+    delete this->monbox;
+}
+
+VideoNode::~VideoNode() {
+    delete this->vidbox;
 }
 
 BlendNode::~BlendNode() {
-	glDeleteTextures(1, &this->fbotex);
-	glDeleteFramebuffers(1, &this->fbo);
-	if (this->intex != -1) glDeleteTextures(1, &this->intex);
-	if (this->in2tex != -1) glDeleteTextures(1, &this->in2tex);
+	if (this->fbotex != -1) mainprogram->add_to_texpool(this->fbotex);
+    if (this->fbo != -1) glDeleteFramebuffers(1, &this->fbo);
 }
 	
 MixNode::~MixNode() {
@@ -151,16 +153,29 @@ void Node::draw_connection(Node *node, CONN_TYPE ct) {
 
 GLuint set_texes(GLuint tex, GLuint *fbo, float ow, float oh) {
     if (*fbo != -1) glBindFramebuffer(GL_FRAMEBUFFER, *fbo);
-	glDeleteTextures(1, &tex);
+
 	GLuint newtex;
-	glGenTextures(1, &newtex);
-	glActiveTexture(GL_TEXTURE0);
-	glBindTexture(GL_TEXTURE_2D, newtex);
-	glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR);
-	glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
-	glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_BORDER);
-	glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_BORDER);
-	glTexStorage2D(GL_TEXTURE_2D, 1, GL_RGBA8, ow, oh);
+
+    int sw, sh;
+    glBindTexture(GL_TEXTURE_2D, tex);
+    glGetTexLevelParameteriv(GL_TEXTURE_2D, 0, GL_TEXTURE_WIDTH, &sw);
+    glGetTexLevelParameteriv(GL_TEXTURE_2D, 0, GL_TEXTURE_HEIGHT, &sh);
+
+    GLuint rettex = mainprogram->grab_from_texpool(ow, oh, GL_RGBA8);
+    if (rettex != -1) {
+        newtex = rettex;
+    } else {
+        glGenTextures(1, &newtex);
+        glActiveTexture(GL_TEXTURE0);
+        glBindTexture(GL_TEXTURE_2D, newtex);
+        glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR);
+        glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
+        glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_BORDER);
+        glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_BORDER);
+        glTexStorage2D(GL_TEXTURE_2D, 1, GL_RGBA8, ow, oh);
+        mainprogram->texintfmap[newtex] = GL_RGBA8;
+    }
+
     if (*fbo != -1) glFramebufferTexture2D(GL_FRAMEBUFFER, GL_COLOR_ATTACHMENT0, GL_TEXTURE_2D, newtex, 0);
 	return newtex;
 }
