@@ -663,7 +663,7 @@ Effect::~Effect() {
 	delete this->onoffbutton;
     if (this->layer != mainmix->reclay) {
         mainprogram->add_to_texpool(this->fbotex);
-        glDeleteFramebuffers(1, &this->fbo);
+        if (this->fbo != -1) mainprogram->add_to_fbopool(this->fbo);
     }
 }
 
@@ -2194,7 +2194,7 @@ Layer* Mixer::add_layer(std::vector<Layer*> &layers, int pos) {
 		BlendNode *bnode = mainprogram->nodesmain->currpage->add_blendnode(MIXING, comp);
 		layer->blendnode = bnode;
 		Node *node;
-		if (prevlay->effects[1].size()) {
+		/*if (prevlay->effects[1].size()) {
 			node = prevlay->lasteffnode[1];
 		}
 		else if (prevlay->pos > 0) {
@@ -2215,11 +2215,11 @@ Layer* Mixer::add_layer(std::vector<Layer*> &layers, int pos) {
 		}
 		else if (pos < layers.size() - 1) {
 			mainprogram->nodesmain->currpage->connect_nodes(layer->blendnode, layers[pos + 1]->blendnode);
-		}
+		}*/
 	}
 	else {
 		layer->blendnode = new BlendNode;
-        BlendNode *bnode = mainprogram->nodesmain->currpage->add_blendnode(MIXING, comp);
+        /*BlendNode *bnode = mainprogram->nodesmain->currpage->add_blendnode(MIXING, comp);
 		Layer *nextlay = nullptr;
 		if (layers.size() > 1) nextlay = layers[1];
 		if (nextlay) {
@@ -2228,10 +2228,10 @@ Layer* Mixer::add_layer(std::vector<Layer*> &layers, int pos) {
 			nextlay->blendnode = bnode;
 			if (!nextlay->effects[1].size()) nextlay->lasteffnode[1] = bnode;
 			mainprogram->nodesmain->currpage->connect_nodes(layer->node, nextlay->lasteffnode[0], bnode);
-		}
+		}*/
 	}
 
-	if (layer->blendnode->in) {
+	/*if (layer->blendnode->in) {
 		if (layer->blendnode->in->type == BLEND) {
 			layer->blendnode->box->scrcoords->x1 = layer->blendnode->in->box->scrcoords->x1 + 192;
 			layer->blendnode->box->scrcoords->y1 = 500;
@@ -2241,10 +2241,12 @@ Layer* Mixer::add_layer(std::vector<Layer*> &layers, int pos) {
 			layer->blendnode->box->scrcoords->y1 = 500;
 		}
 	}
-	layer->blendnode->box->upscrtovtx();
+	layer->blendnode->box->upscrtovtx();*/
 
-	if (pos == 0) layer->lasteffnode[1] = layer->lasteffnode[0];
-	else layer->lasteffnode[1] = layer->blendnode;
+	//if (pos == 0) layer->lasteffnode[1] = layer->lasteffnode[0];
+	//else layer->lasteffnode[1] = layer->blendnode;
+
+    mainmix->reconnect_all(layers);
 
 	return layer;
 }
@@ -2436,35 +2438,40 @@ Layer::Layer(bool comp) {
         this->fbotex = rettex;
     } else {
         glGenTextures(1, &this->fbotex);
-        glActiveTexture(GL_TEXTURE0);
+        //glActiveTexture(GL_TEXTURE0);
         glBindTexture(GL_TEXTURE_2D, this->fbotex);
-        if (comp) {
-            glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA8, mainprogram->ow, mainprogram->oh, 0, GL_BGRA, GL_UNSIGNED_BYTE,
-                         nullptr);
-            //glTexStorage2D(GL_TEXTURE_2D, 1, GL_RGBA8, mainprogram->ow, mainprogram->oh);
-        } else {
-            glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA8, mainprogram->ow3, mainprogram->oh3, 0, GL_BGRA, GL_UNSIGNED_BYTE,
-                         nullptr);
-            //glTexStorage2D(GL_TEXTURE_2D, 1, GL_RGBA8, mainprogram->ow3, mainprogram->oh3);
-        }
         glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR);
         glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
         glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_BORDER);
         glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_BORDER);
+        if (comp) {
+            //glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA8, mainprogram->ow, mainprogram->oh, 0, GL_BGRA, GL_UNSIGNED_BYTE,
+            //             nullptr);
+            glTexStorage2D(GL_TEXTURE_2D, 1, GL_RGBA8, mainprogram->ow, mainprogram->oh);
+        } else {
+            //glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA8, mainprogram->ow3, mainprogram->oh3, 0, GL_BGRA, GL_UNSIGNED_BYTE,
+            //             nullptr);
+            glTexStorage2D(GL_TEXTURE_2D, 1, GL_RGBA8, mainprogram->ow3, mainprogram->oh3);
+        }
         mainprogram->texintfmap[this->fbotex] = GL_RGBA8;
     }
-	glGenFramebuffers(1, &this->fbo);
+    GLuint retfbo;
+    retfbo = mainprogram->grab_from_fbopool();
+    if (retfbo != -1) {
+        this->fbo = retfbo;
+    } else {
+        glGenFramebuffers(1, &this->fbo);
+    }
 	glBindFramebuffer(GL_FRAMEBUFFER, this->fbo);
-	glFramebufferTexture2D(GL_FRAMEBUFFER, GL_COLOR_ATTACHMENT0, GL_TEXTURE_2D, this->fbotex, 0);
-    glDrawBuffer(GL_COLOR_ATTACHMENT0);
+    glFramebufferTexture2D(GL_FRAMEBUFFER, GL_COLOR_ATTACHMENT0, GL_TEXTURE_2D, this->fbotex, 0);
 
     glGenTextures(1, &this->minitex);
     glBindTexture(GL_TEXTURE_2D, this->minitex);
-    glTexStorage2D(GL_TEXTURE_2D, 1, GL_RGBA8, 192, 108);
     glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR);
     glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
     glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_BORDER);
     glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_BORDER);
+    glTexStorage2D(GL_TEXTURE_2D, 1, GL_RGBA8, 192, 108);
 
 	this->panbox = new Boxx;
 	this->panbox->reserved = true;
@@ -2764,22 +2771,22 @@ Layer::~Layer() {
 
     delete this->lpst;
 
-    /*while (this->effects[0].size()) {
+    while (this->effects[0].size()) {
         this->delete_effect(this->effects[0].back()->pos);
     }
     while (this->effects[1].size()) {
         this->delete_effect(this->effects[1].back()->pos);
-    }*/
+    }
 
-    /*if (this->blendnode) {
-        if (this->blendnode->fbotex != -1) mainprogram->add_to_texpool(this->blendnode->fbotex);
-        if (this->blendnode->fbo != -1) glDeleteFramebuffers(1, &this->blendnode->fbo);
-    }*/
+    if (this->blendnode) {
+        mainprogram->nodesmain->currpage->delete_node(this->blendnode);
+    }
+
 
     glDeleteTextures(1, &this->jpegtex);
     mainprogram->add_to_texpool(this->fbotex);
     glDeleteTextures(1, &this->minitex);
-	if (this->fbo != -1) glDeleteFramebuffers(1, &(this->fbo));
+	if (this->fbo != -1) mainprogram->add_to_fbopool(this->fbo);
     if (this->filename != "") {
         if ((this->type == ELEM_FILE || this->type == ELEM_LAYER)&& this->decresult->data) {
             if ((this->vidformat == 188 || this->vidformat == 187)) {
@@ -2792,7 +2799,9 @@ Layer::~Layer() {
                 //databufmutex.unlock();
             } else {
                 //free this->rgbframe
-                av_freep(&this->decresult->data);
+                if (this->decresult->data != NULL) {
+                    av_freep(&this->decresult->data);
+                }
             }
         }
     }
@@ -2802,17 +2811,18 @@ Layer::~Layer() {
         if (!this->dummy) {
             WaitBuffer(this->syncobj);
             glDeleteSync(this->syncobj);
-            /*if (this->mapptr) {
-                mainprogram->add_to_pbopool(this->pbo, this->mapptr);
-            }*/
-            glBindBuffer(GL_PIXEL_UNPACK_BUFFER, this->pbo[0]);
+            //if (this->mapptr) {
+
+            mainprogram->add_to_pbopool(this->pbo[0], this->mapptr[0]);
+
+            /*glBindBuffer(GL_PIXEL_UNPACK_BUFFER, this->pbo[0]);
             glUnmapBuffer(GL_PIXEL_UNPACK_BUFFER);
             glDeleteBuffers(1, &pbo[0]);
             glBindBuffer(GL_PIXEL_UNPACK_BUFFER, 0);
             glBindBuffer(GL_PIXEL_UNPACK_BUFFER, this->pbo[1]);
             glUnmapBuffer(GL_PIXEL_UNPACK_BUFFER);
             glDeleteBuffers(1, &pbo[1]);
-            glBindBuffer(GL_PIXEL_UNPACK_BUFFER, 0);
+            glBindBuffer(GL_PIXEL_UNPACK_BUFFER, 0);*/
         }
         av_frame_free(&this->rgbframe);
         av_frame_free(&this->decframe);
@@ -2868,16 +2878,42 @@ Layer* Layer::prev() {
 
 // LAYER PROPERTIES
 
-void Layer::initialize(int w, int h) {
-    this->initialize(w, h, this->decresult->compression);
+bool Layer::initialize(int w, int h) {
+    bool succes = this->initialize(w, h, this->decresult->compression);
+    return succes;
 }
 
-void Layer::initialize(int w, int h, int compression) {
-    if (this->vidopen) return;
-    if (this->decresult->size[this->databufnum] == 0) return;
-    if (this->decresult->size[!this->databufnum] == this->decresult->width * this->decresult->height * 4) {
-        return;
+bool Layer::initialize(int w, int h, int compression) {
+    if (this->vidopen) return false;
+    if (this->decresult->size == 0) {
+        return false;
     }
+
+    if (!this->nonewpbos) {
+        // map three buffers persistently for pixel transfer from cpu to gpu
+        // using double PBOs for DMA pixel transfer
+        int bsize = this->decresult->size;
+        if (bsize < 0) {
+            return false;
+        }
+        auto retpbo = mainprogram->grab_from_pbopool(bsize);
+        if (retpbo.first != -1) {
+            this->pbo[0] = retpbo.first;
+            this->mapptr[0] = retpbo.second;
+        } else {
+            for (int m = 0; m < 1; m++) {
+                glGenBuffers(1, &this->pbo[m]);
+                int flags = GL_MAP_WRITE_BIT | GL_MAP_PERSISTENT_BIT | GL_MAP_COHERENT_BIT;
+                glBindBuffer(GL_PIXEL_UNPACK_BUFFER, this->pbo[m]);
+                glBufferStorage(GL_PIXEL_UNPACK_BUFFER, bsize, nullptr, flags);
+                this->mapptr[m] = (GLubyte *) glMapBufferRange(GL_PIXEL_UNPACK_BUFFER, 0, bsize,
+                                                               flags | GL_MAP_UNSYNCHRONIZED_BIT);
+                glBindBuffer(GL_PIXEL_UNPACK_BUFFER, 0);
+            }
+        }
+    }
+    else this->nonewpbos = false;
+
 	this->iw = w;
 	this->ih = h;
     int sw, sh;
@@ -2927,21 +2963,6 @@ void Layer::initialize(int w, int h, int compression) {
     }
 
 
-	if (!this->nonewpbos) {
-        // map three buffers persistently for pixel transfer from cpu to gpu
-        // using double PBOs for DMA pixel transfer
-        int bsize = this->decresult->size[this->databufnum];
-        for (int m = 0; m < 2; m++) {
-            glGenBuffers(1, &this->pbo[m]);
-            int flags = GL_MAP_WRITE_BIT | GL_MAP_PERSISTENT_BIT | GL_MAP_COHERENT_BIT;
-            glBindBuffer(GL_PIXEL_UNPACK_BUFFER, this->pbo[m]);
-            glBufferStorage(GL_PIXEL_UNPACK_BUFFER, bsize, 0, flags | GL_DYNAMIC_STORAGE_BIT);
-            this->mapptr[m] = (GLubyte*)glMapBufferRange(GL_PIXEL_UNPACK_BUFFER, 0, bsize, flags | GL_MAP_FLUSH_EXPLICIT_BIT);
-            glBindBuffer(GL_PIXEL_UNPACK_BUFFER, 0);
-        }
-    }
-    else this->nonewpbos = false;
-
     if (!this->initdeck) {
         this->changeinit = -1;
     }
@@ -2949,6 +2970,8 @@ void Layer::initialize(int w, int h, int compression) {
 	this->oldcompression = compression;
 	this->oldtype = this->type;
 	this->initialized = true;
+
+    return true;
 }
 
 void Layer::set_aspectratio(int lw, int lh) {
@@ -3843,7 +3866,7 @@ static int decode_packet(Layer *lay, bool show)
                 lay->decresult->data = (char*)*(lay->rgbframe->extended_data);
  				lay->decresult->height = lay->video_dec_ctx->height;
 				lay->decresult->width = lay->video_dec_ctx->width;
-				lay->decresult->size[lay->databufnum] = lay->decresult->width * lay->decresult->height * 4;
+				lay->decresult->size = lay->decresult->width * lay->decresult->height * 4;
 				lay->decresult->newdata = true;
 				if (lay->clonesetnr != -1) {
 					std::unordered_set<Layer*>::iterator it;
@@ -4124,26 +4147,13 @@ bool Layer::get_hap_frame() {
         return true;
     }
 
-    databufmutex.lock();
-    if (!this->databuf[0]) {
-        this->databuf[0] = (char*)calloc(this->video_dec_ctx->width * this->video_dec_ctx->height * 4, 1);
-        if (this->databuf[0] == nullptr) {
-            printf("Can't allocate frame data buffes\n");
-            return false;
-        }
-        this->databuf[1] = (char*)calloc(this->video_dec_ctx->width * this->video_dec_ctx->height * 4, 1);
-        if (this->databuf[0] == nullptr) {
-            printf("Can't allocate frame data buffes\n");
-            return false;
-        }
-    }
-    this->databufready = true;
-    databufmutex.unlock();
-
     long long seekTarget = av_rescale(this->video_stream->duration, (int)this->frame - 1, this->numf) + this->first_dts;
     int r = av_seek_frame(this->video, this->video_stream->index, seekTarget, 0);
-    av_frame_unref(this->decframe);
+    //av_frame_unref(this->decframe);
     r = av_read_frame(this->video, this->decpkt);
+    if (r < 0) {
+        bool dummy = false;
+    }
     if (!this->dummy && ! (this->playbut->value == 0 && this->revbut->value == 0 && this->bouncebut->value == 0)) {
         this->prevframe = (int)this->frame;
     }
@@ -4151,6 +4161,7 @@ bool Layer::get_hap_frame() {
     char *bptrData = (char*)(this->decpkt)->data;
     size_t size = (this->decpkt)->size;
     if (size == 0) {
+        av_packet_unref(this->decpkt);
         return false;
     }
     int headerl = 4;
@@ -4161,13 +4172,33 @@ bool Layer::get_hap_frame() {
     size_t uncompressed_size = 0;
     snappy_uncompressed_length(bptrData + headerl, size - headerl, &uncompressed_size);
 
-    //this->pboimutex.lock();
+    if (uncompressed_size == 0) {
+        av_packet_unref(this->decpkt);
+        return false;
+    }
+
+
+    if (uncompressed_size != this->databufsize) {
+        for ( int m = 0; m < 2; m++) {
+            if (this->databuf[m]) {
+                free(this->databuf[m]);
+            }
+            this->databuf[m] = (char *) calloc(uncompressed_size, 1);
+            if (this->databuf[m] == nullptr) {
+                printf("Can't allocate frame data buffes\n");
+                return false;
+            }
+        }
+        this->databufsize = uncompressed_size;
+        this->databufready = true;
+    }
+
     int st = -1;
     databufmutex.lock();
     if (this->databufready) {
         st = snappy_uncompress(bptrData + headerl, size - headerl, (char*)this->databuf[this->databufnum], &uncompressed_size);
         this->decresult->data = this->databuf[this->databufnum];
-        this->decresult->size[this->databufnum] = uncompressed_size;
+        this->decresult->size = uncompressed_size;
     }
     databufmutex.unlock();
     av_packet_unref(this->decpkt);
@@ -4179,7 +4210,7 @@ bool Layer::get_hap_frame() {
         }
         this->decresult->height = this->video_dec_ctx->height;
         this->decresult->width = this->video_dec_ctx->width;
-        this->decresult->size[this->databufnum] = uncompressed_size;
+        this->decresult->size = uncompressed_size;
         this->decresult->hap = true;
         this->decresult->newdata = true;
         if (this->clonesetnr != -1) {
@@ -7307,7 +7338,6 @@ void Mixer::copy_pbos(Layer *clay, Layer *lay) {
         clay->initialized = true;
     }
     clay->started = lay->started;
-    clay->started2 = lay->started2;
     clay->databufready = lay->databufready;
     clay->rgbframe = lay->rgbframe;
     clay->syncobj = lay->syncobj;
@@ -9899,7 +9929,7 @@ void Layer::load_frame() {
         h = srclay->video_dec_ctx->height;
     }
     else if (!srclay->liveinput) return;
-    if (srclay->decresult->width != w || srclay->decresult->height != h || srclay->decresult->bpp != srclay->bpp) {
+    if (this->iw != w || this->ih != h || (srclay->decresult->bpp != srclay->bpp && srclay->type == ELEM_IMAGE)) {
         // video (size) changed
         if (srclay->initialized) {
             srclay->initialized = false;
@@ -9918,12 +9948,14 @@ void Layer::load_frame() {
                     if (srclay->decresult->compression) {
                         float w = srclay->video_dec_ctx->width;
                         float h = srclay->video_dec_ctx->height;
-                        this->initialize(w, h, srclay->decresult->compression);
+                        bool succes = this->initialize(w, h, srclay->decresult->compression);
+                        if (!succes) return;
                     }
                 } else {
                     float w = srclay->video_dec_ctx->width;
                     float h = srclay->video_dec_ctx->height;
-                    this->initialize(w, h);
+                    bool succes = this->initialize(w, h);
+                    if (!succes) return;
                 }
             } else return;
         } else {
@@ -9996,83 +10028,58 @@ void Layer::load_frame() {
                 glBindBuffer(GL_ARRAY_BUFFER, 0);
             }*/
 
-            if (srclay->started && srclay->decresult->newdata) {
+            if (srclay->decresult->newdata) {
                 // update data directly on the mapped buffer
                 if (srclay->initialized && srclay->changeinit == -1) {
                     srclay->changeinit = 0;
                 }
                 if (srclay->changeinit > -1) {
-                    //WaitBuffer(srclay->syncobj);
+                    WaitBuffer(srclay->syncobj);
+                    LockBuffer(srclay->syncobj);
                     if ((srclay->vidformat == 188 || srclay->vidformat == 187)) {
-                        if (srclay->decresult->size[this->databufnum] ==
-                            srclay->decresult->width * srclay->decresult->height * 4) {
+                        if (srclay->decresult->size != this->databufsize) {
+                            srclay->changeinit = -1;
                             return;
                         }
                         if (srclay->databuf[this->databufnum] == nullptr) {
+                            srclay->changeinit = -1;
                             return;
                         }
-                        glBindBuffer(GL_PIXEL_UNPACK_BUFFER, pbo[this->databufnum]);
-                        glBufferSubData(GL_PIXEL_UNPACK_BUFFER, 0, srclay->decresult->size[this->databufnum],
-                                        srclay->decresult->data);
-                        memcpy(srclay->mapptr[this->databufnum], srclay->databuf[this->databufnum],
-                               srclay->decresult->size[this->databufnum]);
+                        memcpy(srclay->mapptr[0], srclay->databuf[this->databufnum],
+                               srclay->decresult->size);
                         //glUnmapBuffer(GL_PIXEL_UNPACK_BUFFER);;
-                        glBindBuffer(GL_PIXEL_UNPACK_BUFFER, 0);
                         srclay->databufnum = !srclay->databufnum;
                     } else {
-                        return;
-                        memcpy(srclay->mapptr[this->databufnum], srclay->decresult->data,
-                               srclay->decresult->size[this->databufnum]);
+                        memcpy(srclay->mapptr[0], srclay->decresult->data,
+                               srclay->decresult->size);
                     }
-                    //if (mainprogram->encthreads == 0) LockBuffer(srclay->syncobj);
                 }
-            }
-            if (srclay->started) {
-                srclay->started2 = true;
             }
             if (srclay->started == false) {
                 srclay->started = true;
             }
         }
     }
-
-    if (srclay->started2 || srclay->type == ELEM_IMAGE || srclay->type == ELEM_LIVE) {
-
-        glBindBuffer(GL_PIXEL_UNPACK_BUFFER, this->pbo[!this->databufnum]);
+    if (srclay->changeinit == 1 || srclay->type == ELEM_IMAGE || srclay->type == ELEM_LIVE) {
+        //WaitBuffer(srclay->syncobj);
+        glBindBuffer(GL_PIXEL_UNPACK_BUFFER, this->pbo[0]);
 
         if ((!srclay->liveinput && srclay->initialized) || srclay->numf == 0) {
             if ((!srclay->isclone)) {  // decresult contains new frame width, height, number of bitmaps && data
-                //if (!srclay->decresult->width) {
-                //    glBindBuffer(GL_PIXEL_UNPACK_BUFFER, 0);
-                //	return;
-                //}
                 if ((srclay->vidformat == 188 || srclay->vidformat == 187)) {
-                    //if (!srclay->databufready) {
-                    //    glBindBuffer(GL_PIXEL_UNPACK_BUFFER, 0);
-                    //	return;
-                    //}
                     // HAP video layers
-                    if (srclay->decresult->size[!this->databufnum] == srclay->decresult->width * srclay->decresult->height * 4) {
-                        glBindBuffer(GL_PIXEL_UNPACK_BUFFER, 0);
-                        return;
-                    }
-                    if (srclay->mapptr[!this->databufnum] == (GLubyte*)"\\001") {
-                        glBindBuffer(GL_PIXEL_UNPACK_BUFFER, 0);
-                        return;
-                    }
-                    glFlushMappedBufferRange(GL_PIXEL_UNPACK_BUFFER, 0, srclay->decresult->size[!this->databufnum]);
 
                     if (srclay->decresult->compression == 187 ||
                         srclay->decresult->compression == 171) {
                         glCompressedTexSubImage2D(GL_TEXTURE_2D, 0, 0, 0, srclay->decresult->width,
                                                   srclay->decresult->height,
                                                   GL_COMPRESSED_RGBA_S3TC_DXT1_EXT,
-                                                  srclay->decresult->size[!this->databufnum], nullptr);
+                                                  srclay->decresult->size, nullptr);
 
                     } else if (srclay->decresult->compression == 190) {
                         glCompressedTexSubImage2D(GL_TEXTURE_2D, 0, 0, 0, srclay->decresult->width,
                                                   srclay->decresult->height, GL_COMPRESSED_RGBA_S3TC_DXT5_EXT,
-                                                  srclay->decresult->size[!this->databufnum], nullptr);
+                                                  srclay->decresult->size, nullptr);
                     }
                 } else {
                     if (srclay->type == ELEM_IMAGE) {
@@ -10113,9 +10120,7 @@ void Layer::load_frame() {
         srclay->decresult->height = srclay->video_dec_ctx->height;
     };
     srclay->decresult->bpp = srclay->bpp;
-   // srclay->decresult->size = srclay->decresult->size;
     srclay->decresult->newdata = false;
-    //srclay->pboimutex.lock();
 
     srclay->newtexdata = true;
 }
@@ -10161,7 +10166,7 @@ Layer* Layer::open_image(const std::string path, bool init) {
         this->initialize(w, h);
     }
 	this->type = ELEM_IMAGE;
-	this->decresult->size[this->databufnum] = w * h * this->bpp;
+	this->decresult->size = w * h * this->bpp;
 	this->decresult->width = -1;
 	this->decresult->hap = false;
     if (this->numf == 0) {

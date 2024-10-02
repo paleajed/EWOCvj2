@@ -618,6 +618,7 @@ class Program {
         bool repeatdefault = true;
         bool autoplay = true;
         std::chrono::high_resolution_clock::time_point now;
+        GLsync syncobj = nullptr;
 
     GLuint boxcoltbo;
 		GLuint boxtextbo;
@@ -898,7 +899,7 @@ class Program {
 
         std::multimap<std::tuple<int, int, GLint>, GLuint> texpool;
         std::multimap<int, std::pair<GLuint, GLubyte*>> pbopool;
-        std::unordered_set<GLuint> vbufpool;
+        std::unordered_set<GLuint> fbopool;
         std::unordered_map<GLuint, GLint> texintfmap;
 
 
@@ -982,9 +983,11 @@ class Program {
         void undo_redo_parbut(char offset, bool again = false, bool swap = false);
         void undo_redo_save();
         void add_to_texpool(GLuint tex);
-        //void add_to_pbopool(GLuint pbo, GLubyte* mapptr);
+        void add_to_pbopool(GLuint pbo, GLubyte* mapptr);
+        void add_to_fbopool(GLuint fbo);
         GLuint grab_from_texpool(int w, int h, GLint compressed);
-        //std::pair<GLuint, GLubyte*> grab_from_pbopool(int bsize);
+        std::pair<GLuint, GLubyte*> grab_from_pbopool(int bsize);
+        GLuint grab_from_fbopool();
         std::tuple<Param*, int, int, int, int, int> newparam(int offset, bool swap);
         std::tuple<Button*, int, int, int, int> newbutton(int offset, bool swap);
         Program();

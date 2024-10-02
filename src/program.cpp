@@ -1250,10 +1250,10 @@ GLuint Program::get_tex(Layer *lay) {
             // HAP video in layer
             if (lay->decresult->compression == 187) {
                 glCompressedTexImage2D(GL_TEXTURE_2D, 0, GL_COMPRESSED_RGBA_S3TC_DXT1_EXT, lay->decresult->width,
-                                       lay->decresult->height, 0, lay->decresult->size[lay->databufnum], lay->decresult->data);
+                                       lay->decresult->height, 0, lay->decresult->size, lay->decresult->data);
             } else if (lay->decresult->compression == 190) {
                 glCompressedTexImage2D(GL_TEXTURE_2D, 0, GL_COMPRESSED_RGBA_S3TC_DXT5_EXT, lay->decresult->width,
-                                       lay->decresult->height, 0, lay->decresult->size[lay->databufnum], lay->decresult->data);
+                                       lay->decresult->height, 0, lay->decresult->size, lay->decresult->data);
             }
          } else {
             // CPU video in layer
@@ -1399,12 +1399,12 @@ bool Program::order_paths(bool dodeckmix) {
                     if (lay->decresult->compression == 187) {
                         glCompressedTexImage2D(GL_TEXTURE_2D, 0, GL_COMPRESSED_RGBA_S3TC_DXT1_EXT,
                                                lay->decresult->width,
-                                               lay->decresult->height, 0, lay->decresult->size[!lay->databufnum],
+                                               lay->decresult->height, 0, lay->decresult->size,
                                                lay->decresult->data);
                     } else if (lay->decresult->compression == 190) {
                         glCompressedTexImage2D(GL_TEXTURE_2D, 0, GL_COMPRESSED_RGBA_S3TC_DXT5_EXT,
                                                lay->decresult->width,
-                                               lay->decresult->height, 0, lay->decresult->size[!lay->databufnum],
+                                               lay->decresult->height, 0, lay->decresult->size,
                                                lay->decresult->data);
                     }
                 } else {
@@ -9964,6 +9964,7 @@ void Program::add_to_texpool(GLuint tex) {
         glDeleteTextures(1, &tex);
         return;
     }
+    glClearTexImage(tex, 0, GL_BGRA, GL_UNSIGNED_BYTE, black);
     this->texpool.insert(std::pair<std::tuple<int, int, GLint>, GLuint>(std::tuple<int, int, GLint>(sw, sh, compressedGL), tex));
 }
 
@@ -9972,22 +9973,38 @@ GLuint Program::grab_from_texpool(int w, int h, GLint compressed) {
     if (elem == this->texpool.end()) {
         return -1;
     }
+    GLuint tex = elem->second;
     this->texpool.erase(elem);
-    return elem->second;
+    return tex;
 }
 
-/*void Program::add_to_pbopool(GLuint pbo, GLubyte *mapptr) {
+void Program::add_to_pbopool(GLuint pbo, GLubyte *mapptr) {
     GLint bufferSize = 0;
     glBindBuffer(GL_ARRAY_BUFFER, pbo);
     glGetBufferParameteriv(GL_ARRAY_BUFFER, GL_BUFFER_SIZE, &bufferSize);
+    mapptr = nullptr;
     this->pbopool.insert(std::pair<int, std::pair<GLuint, GLubyte*>>(bufferSize, std::pair<GLuint, GLubyte*>(pbo, mapptr)));
 }
 
 std::pair<GLuint, GLubyte*> Program::grab_from_pbopool(int bsize) {
     auto elem = this->pbopool.find(bsize);
     if (elem == this->pbopool.end()) {
-        return std::pair<GLuint, GLubyte*>(-1, nullptr);
+        return std::pair<GLuint, GLubyte *>(-1, nullptr);
     }
+    auto retelem = elem->second;
     this->pbopool.erase(elem);
-    return elem->second;
-}*/
+    return retelem;
+}
+
+void Program::add_to_fbopool(GLuint fbo) {
+    this->fbopool.insert(fbo);
+}
+
+GLuint Program::grab_from_fbopool() {
+    if (this->fbopool.empty()) {
+        return -1;
+    }
+    GLuint fbo = *this->fbopool.begin();
+    this->fbopool.erase(fbo);
+    return fbo;
+}

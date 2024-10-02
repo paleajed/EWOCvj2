@@ -56,7 +56,7 @@ struct frame_result {
     int height = 0;
     int width = 0;
     void *data = nullptr;
-    int size[2] = {0, 0};
+    int size = 0;
     unsigned char compression = 0;
     int bpp;
     bool hap = false;
@@ -278,6 +278,7 @@ class Layer {
 		char *databuf[2] = {nullptr, nullptr};
 		bool databufready = false;
         bool databufnum = false;
+        size_t databufsize = 0;
 		int vidformat = -1;
         int oldvidformat = -1;
         int oldcompression = -1;
@@ -297,7 +298,6 @@ class Layer {
         bool lockzoompan = false;
         bool lockspeed = false;
         bool started = false;
-        bool started2 = false;
         bool newload = true;
 		bool framesloaded = false;
         bool changes = false;
@@ -332,8 +332,8 @@ class Layer {
         Layer* open_video(float frame, std::string filename, int reset, bool dontdeleffs = false);
         Layer* open_video(float frame, std::string filename, int reset, bool copy, bool noeffects);
 		Layer* open_image(std::string path, bool init = true);
-		void initialize(int w, int h);
-		void initialize(int w, int h, int compression);
+		bool initialize(int w, int h);
+		bool initialize(int w, int h, int compression);
 		void clip_display_next(bool startend, bool alive);
 		bool find_new_live_base(int pos);
 		void set_live_base(std::string livename);
@@ -546,7 +546,6 @@ class Mixer {
 		float cbduration = 0.0f;
 
 		bool domix;
-		int waitmixtex = 0;
 
         std::vector<std::vector<Layer*>> swapmap[4];
 

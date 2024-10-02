@@ -128,7 +128,7 @@ VideoNode::~VideoNode() {
 
 BlendNode::~BlendNode() {
 	if (this->fbotex != -1) mainprogram->add_to_texpool(this->fbotex);
-    if (this->fbo != -1) glDeleteFramebuffers(1, &this->fbo);
+    if (this->fbo != -1) mainprogram->add_to_fbopool(this->fbo);
 }
 	
 MixNode::~MixNode() {
