@@ -1263,6 +1263,7 @@ GLuint Program::get_tex(Layer *lay) {
     }
 
     GLuint tex = copy_tex(ctex, 192, 108);
+    mainprogram->texintfmap[ctex] = GL_RGBA8;
     mainprogram->add_to_texpool(ctex);
 
     return tex;
@@ -1445,6 +1446,7 @@ bool Program::order_paths(bool dodeckmix) {
             render_text(str, white, 2.0f, 2.0f, 0.00045f, 0.00075f); // init text string, to avoid slowdown later
             this->pathtstrs.push_back(str);
 
+            lay->filename = "";   // to avoid adding the lay->texture to the texpool
             lay->close();
 
             this->getvideotexlayers.erase(this->getvideotexlayers.begin());
@@ -3977,8 +3979,9 @@ void Program::handle_laymenu1() {
         mainprogram->make_mixtargetmenu();
 
         tex = mainmix->mouselayer->fbotex;
+#ifdef POSIX
         this->register_v4l2lbdevices(mainprogram->laymenu1->entries, tex);
-
+#endif
         k = mainprogram->handle_menu(mainprogram->laymenu1);
 	}
 	else if (mainprogram->laymenu2->state > 1) {
@@ -4102,7 +4105,7 @@ void Program::handle_laymenu1() {
             Layer* clonelay = mainmix->mouselayer->clone();
             if (mainmix->mouselayer->clonesetnr == -1) {
                 mainmix->mouselayer->clonesetnr = mainmix->clonesets.size();
-                mainmix->firstlayers[mainmix->mouselayer->clonesetnr] = mainmix->mouselayer;
+                //mainmix->firstlayers[mainmix->mouselayer->clonesetnr] = mainmix->mouselayer;      set in Layer::load_frame()
                 std::unordered_set<Layer*> *uset = new std::unordered_set<Layer*>;
                 mainmix->clonesets[mainmix->mouselayer->clonesetnr] = uset;
                 uset->emplace(mainmix->mouselayer);

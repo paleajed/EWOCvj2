@@ -315,7 +315,7 @@ class Layer {
 		Effect* add_effect(EFFECT_TYPE type, int pos);
         Effect* do_add_effect(EFFECT_TYPE type, int pos, bool comp);
         Effect* replace_effect(EFFECT_TYPE type, int pos);
-		void delete_effect(int pos);
+		void delete_effect(int pos, bool connect = true);
 		void inhibit();
 		std::vector<Effect*>& choose_effects();
 		Layer* clone();

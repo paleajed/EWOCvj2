@@ -2396,7 +2396,7 @@ void onestepfrom(bool stage, Node *node, Node *prevnode, GLuint prevfbotex, GLui
 	GLfloat fcdiv = glGetUniformLocation(mainprogram->ShaderProgram, "fcdiv");
 	glUniform1f(fcdiv, div);
 
-	node->walked = true;
+    node->walked = true;
 	
 	if (node->type == EFFECT) {
 		Effect *effect = ((EffectNode*)node)->effect;
@@ -2918,11 +2918,6 @@ void onestepfrom(bool stage, Node *node, Node *prevnode, GLuint prevfbotex, GLui
 		}
 	}
 	else if (node->type == VIDEO) {
-        GLenum err;
-        while ((err = glGetError()) != GL_NO_ERROR) {
-            std::cerr << "OpenGL error1: " << err << std::endl;
-        }
-
         Layer *lay = ((VideoNode*)node)->layer;
 	    if (lay->vidopen) {
 	        mainmix->domix = false;  // freezes output frames during vidopen
@@ -2946,7 +2941,7 @@ void onestepfrom(bool stage, Node *node, Node *prevnode, GLuint prevfbotex, GLui
         float frachd = 1920.0f / 1080.0f;
         float fraco = mainprogram->ow / mainprogram->oh;
         float frac;
-        if (lay->pos == 2) {
+        if (lay->pos == 4) {
             bool dummy = false;
         }
         if (lay->type == ELEM_IMAGE) {
@@ -3016,7 +3011,7 @@ void onestepfrom(bool stage, Node *node, Node *prevnode, GLuint prevfbotex, GLui
         prevfbotex = lay->fbotex;
         prevfbo = lay->fbo;
 
-        //GLenum err;
+        GLenum err;
         while ((err = glGetError()) != GL_NO_ERROR) {
             std::cerr << "OpenGL error2: " << err << std::endl;
         }
@@ -3125,6 +3120,7 @@ void onestepfrom(bool stage, Node *node, Node *prevnode, GLuint prevfbotex, GLui
 				glDisable(GL_BLEND);
 				glDrawArrays(GL_TRIANGLE_STRIP, 0, 4);
 				glEnable(GL_BLEND);
+
 				prevfbotex = bnode->fbotex;
 				prevfbo = bnode->fbo;
 				
@@ -3163,7 +3159,12 @@ void onestepfrom(bool stage, Node *node, Node *prevnode, GLuint prevfbotex, GLui
 	    if (!mainmix->domix) {
 	        return;
 	    }
-		MixNode *mnode = (MixNode*)node;
+        GLenum err;
+        while ((err = glGetError()) != GL_NO_ERROR) {
+            std::cerr << "OpenGL error1: " << err << std::endl;
+        }
+
+        MixNode *mnode = (MixNode*)node;
 		if (mnode->mixfbo == -1) {
 		    mnode->newmixfbo = false;
 			glGenTextures(1, &(mnode->mixtex));
@@ -3190,10 +3191,16 @@ void onestepfrom(bool stage, Node *node, Node *prevnode, GLuint prevfbotex, GLui
         glClearColor(0, 0, 0, 0);
         glClear(GL_COLOR_BUFFER_BIT);
         draw_box(nullptr, black, -1.0f, 1.0f, 2.0f, -2.0f, prevfbotex);
+        while ((err = glGetError()) != GL_NO_ERROR) {
+            std::cerr << "OpenGL error found: " << err << std::endl;
+        }
 		prevfbotex = mnode->mixtex;
 		prevfbo = mnode->mixfbo;
 		glViewport(0, 0, glob->w, glob->h);
-	}
+
+        //GLenum err;
+
+    }
 	for (int i = 0; i < node->out.size(); i++) {
 		if (node->out[i]->calc && !node->out[i]->walked) onestepfrom(stage, node->out[i], node, prevfbotex, prevfbo);
 	}
@@ -4435,7 +4442,7 @@ void the_loop() {
             if (lvec[i]->clonesetnr != -1) {
                 int clnr = lvec[i]->clonesetnr;
                 lvec[i]->clonesetnr = -1;
-                //lvec[i]->texture = -1;
+                lvec[i]->texture = -1;
                 mainmix->clonesets[clnr]->erase(lvec[i]);
 
                 if (mainmix->clonesets[clnr]->size() == 1) {

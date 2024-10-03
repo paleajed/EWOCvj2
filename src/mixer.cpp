@@ -2061,7 +2061,7 @@ Effect* Layer::replace_effect(EFFECT_TYPE type, int pos) {
 	return effect;
 }
 
-void do_delete_effect(Layer *lay, int pos) {
+void do_delete_effect(Layer *lay, int pos, bool connect) {
 
 	std::vector<Effect*> &evec = lay->choose_effects();
 	bool cat = mainprogram->effcat[lay->deck]->value;
@@ -2083,56 +2083,54 @@ void do_delete_effect(Layer *lay, int pos) {
 			mainprogram->nodesmain->currpage->nodescomp.erase(mainprogram->nodesmain->currpage->nodescomp.begin() + i);
 		}
 	}
-	if (lay->lasteffnode[cat] == evec[pos]->node) {
-		if (pos == 0) {
-			if (!cat) lay->lasteffnode[cat] = lay->node;
-			else {
-				if (lay->pos == 0) {
-					lay->lasteffnode[0]->out.clear();
-					mainprogram->nodesmain->currpage->connect_nodes(lay->lasteffnode[0], lay->lasteffnode[1]->out[0]);
-					lay->lasteffnode[1] = lay->lasteffnode[0];
-				}
-				else {
-					lay->blendnode->out.clear();
-					mainprogram->nodesmain->currpage->connect_nodes(lay->blendnode, lay->lasteffnode[1]->out[0]);
-					lay->lasteffnode[1] = lay->blendnode;
-				}
-			}
-		}
-		else {
-			lay->lasteffnode[cat] = evec[pos - 1]->node;
-			lay->lasteffnode[cat]->out[0] = evec[pos]->node->out[0];
-			if (cat) evec[pos]->node->out[0]->in = lay->lasteffnode[1];
-		}
-		if (!cat) {
-			if (lay->pos == 0) {
-                lay->lasteffnode[1] = lay->lasteffnode[0];
-				mainprogram->nodesmain->currpage->connect_nodes(lay->lasteffnode[0], evec[pos]->node->out[0]);
-			}
-            else if (lay->pos = lay->layers->size() - 1){
-                lay->lasteffnode[1] = lay->lasteffnode[0];
-                mainprogram->nodesmain->currpage->connect_nodes(lay->lasteffnode[0], evec[pos]->node->out[0]);
+    if (connect) {
+        if (lay->lasteffnode[cat] == evec[pos]->node) {
+            if (pos == 0) {
+                if (!cat) lay->lasteffnode[cat] = lay->node;
+                else {
+                    if (lay->pos == 0) {
+                        lay->lasteffnode[0]->out.clear();
+                        mainprogram->nodesmain->currpage->connect_nodes(lay->lasteffnode[0],
+                                                                        lay->lasteffnode[1]->out[0]);
+                        lay->lasteffnode[1] = lay->lasteffnode[0];
+                    } else {
+                        lay->blendnode->out.clear();
+                        mainprogram->nodesmain->currpage->connect_nodes(lay->blendnode, lay->lasteffnode[1]->out[0]);
+                        lay->lasteffnode[1] = lay->blendnode;
+                    }
+                }
+            } else {
+                lay->lasteffnode[cat] = evec[pos - 1]->node;
+                lay->lasteffnode[cat]->out[0] = evec[pos]->node->out[0];
+                if (cat) evec[pos]->node->out[0]->in = lay->lasteffnode[1];
             }
+            if (!cat) {
+                if (lay->pos == 0) {
+                    lay->lasteffnode[1] = lay->lasteffnode[0];
+                    mainprogram->nodesmain->currpage->connect_nodes(lay->lasteffnode[0], evec[pos]->node->out[0]);
+                } else if (lay->pos = lay->layers->size() - 1) {
+                    lay->lasteffnode[1] = lay->lasteffnode[0];
+                    mainprogram->nodesmain->currpage->connect_nodes(lay->lasteffnode[0], evec[pos]->node->out[0]);
+                } else {
+                    mainprogram->nodesmain->currpage->connect_in2(lay->lasteffnode[0],
+                                                                  ((BlendNode *) (evec[pos]->node->out[0])));
+                }
+            }
+        } else {
+            evec[pos + 1]->node->in = evec[pos]->node->in;
+            if (pos != 0) evec[pos - 1]->node->out[0] = evec[pos + 1]->node;
             else {
-                mainprogram->nodesmain->currpage->connect_in2(lay->lasteffnode[0], ((BlendNode*)(evec[pos]->node->out[0])));
+                if (!cat) lay->node->out.push_back(evec[pos + 1]->node);
+                else {
+                    if (lay->pos == 0) {
+                        lay->lasteffnode[0]->out.push_back(evec[pos + 1]->node);
+                    } else {
+                        lay->blendnode->out.push_back(evec[pos + 1]->node);
+                    }
+                }
             }
-		}
-	}
-	else {
-		evec[pos + 1]->node->in = evec[pos]->node->in;
-		if (pos != 0) evec[pos - 1]->node->out[0] = evec[pos + 1]->node;
-		else {
-			if (!cat) lay->node->out.push_back(evec[pos + 1]->node);
-			else {
-				if (lay->pos == 0) {
-					lay->lasteffnode[0]->out.push_back(evec[pos + 1]->node);
-				}
-				else {
-					lay->blendnode->out.push_back(evec[pos + 1]->node);
-				}
-			}
-		}
-	}
+        }
+    }
 
 	lay->node->page->delete_node(evec[pos]->node);
 	//lay->node->upeffboxes();     reminder : for nodes
@@ -2149,8 +2147,8 @@ void do_delete_effect(Layer *lay, int pos) {
 	make_layboxes();
 }
 
-void Layer::delete_effect(int pos) {
-	do_delete_effect(this, pos);
+void Layer::delete_effect(int pos, bool connect) {
+	do_delete_effect(this, pos, connect);
 	//if (this->type == ELEM_FILE) this->type = ELEM_LAYER;
 }
 
@@ -2772,10 +2770,10 @@ Layer::~Layer() {
     delete this->lpst;
 
     while (this->effects[0].size()) {
-        this->delete_effect(this->effects[0].back()->pos);
+        this->delete_effect(this->effects[0].back()->pos, false);
     }
     while (this->effects[1].size()) {
-        this->delete_effect(this->effects[1].back()->pos);
+        this->delete_effect(this->effects[1].back()->pos, false);
     }
 
     if (this->blendnode) {
@@ -2788,14 +2786,16 @@ Layer::~Layer() {
     glDeleteTextures(1, &this->minitex);
 	if (this->fbo != -1) mainprogram->add_to_fbopool(this->fbo);
     if (this->filename != "") {
-        if ((this->type == ELEM_FILE || this->type == ELEM_LAYER)&& this->decresult->data) {
+        if ((this->type == ELEM_FILE || this->type == ELEM_LAYER)) {
             if ((this->vidformat == 188 || this->vidformat == 187)) {
                 // free HAP databuf
                 //databufmutex.lock();
-                delete this->databuf[0];
-                delete this->databuf[1];
-                this->databuf[0] = nullptr;
-                this->databuf[1] = nullptr;
+                if (this->databuf[0]) {
+                    delete this->databuf[0];
+                    delete this->databuf[1];
+                    this->databuf[0] = nullptr;
+                    this->databuf[1] = nullptr;
+                }
                 //databufmutex.unlock();
             } else {
                 //free this->rgbframe
@@ -2807,7 +2807,9 @@ Layer::~Layer() {
     }
     if (!this->nopbodel) {
         // dont delete when pbos are copied over
-        mainprogram->add_to_texpool(this->texture);
+        if (this->filename != "") {
+            mainprogram->add_to_texpool(this->texture);
+        }
         if (!this->dummy) {
             WaitBuffer(this->syncobj);
             glDeleteSync(this->syncobj);
@@ -3253,7 +3255,8 @@ Layer* Layer::clone() {
         }
     }
 
-	dlay->decresult->width = -1;
+    dlay->decresult->width = this->iw;
+    dlay->decresult->height = this->ih;
 
 	return dlay;
 }
@@ -3860,8 +3863,6 @@ static int decode_packet(Layer *lay, bool show)
 				if (h < 1) {
 				    return 0;
 				}
-				std::mutex datalock;
-				datalock.lock();
 				lay->decresult->hap = false;
                 lay->decresult->data = (char*)*(lay->rgbframe->extended_data);
  				lay->decresult->height = lay->video_dec_ctx->height;
@@ -3876,7 +3877,6 @@ static int decode_packet(Layer *lay, bool show)
 						clay->decresult->newdata = true;
 					}
 				}
-				datalock.unlock();
 			}
 		}
 	}
@@ -6062,6 +6062,8 @@ void Layer::display() {
     this->startframe->range[1] = this->numf - 1.0f;
     //this->endframe->handle();
     this->endframe->range[1] = this->numf - 1.0f;
+
+    return;
 }
 
 
@@ -9879,8 +9881,11 @@ void Layer::load_frame() {
     Layer *srclay = this;
     bool ret = false;
     //if (this->vidopen) return;
-    if (this->liveinput) {     // || this-type == ELEM_IMAGE
+    if (this->liveinput) {
         bool dummy = false;
+    }
+    else if (this->type == ELEM_IMAGE) {
+        srclay = this;
     }
     else if (this->startframe->value != this->endframe->value || this->type == ELEM_LIVE) {
         bool found = false;
@@ -9898,6 +9903,9 @@ void Layer::load_frame() {
                     this->startdecode.notify_all();
                 }
                 if (this->clonesetnr != -1) {
+                    if (mainmix->firstlayers.count(this->clonesetnr) == 0) {
+                        this->set_clones();
+                    }
                     mainmix->firstlayers[this->clonesetnr] = this;
                     this->isclone = false;
                 }
@@ -9909,6 +9917,7 @@ void Layer::load_frame() {
             glGetTexLevelParameteriv(GL_TEXTURE_2D, 0, GL_TEXTURE_WIDTH, &sw);
             glGetTexLevelParameteriv(GL_TEXTURE_2D, 0, GL_TEXTURE_HEIGHT, &sh);
             this->texture = srclay->texture;
+            this->initialized = true;
             this->newtexdata = true;
             ret = true;
         }
@@ -9929,7 +9938,7 @@ void Layer::load_frame() {
         h = srclay->video_dec_ctx->height;
     }
     else if (!srclay->liveinput) return;
-    if (this->iw != w || this->ih != h || (srclay->decresult->bpp != srclay->bpp && srclay->type == ELEM_IMAGE)) {
+    if (!this->isclone && (this->iw != w || this->ih != h || (srclay->decresult->bpp != srclay->bpp && srclay->type == ELEM_IMAGE))) {
         // video (size) changed
         if (srclay->initialized) {
             srclay->initialized = false;
@@ -9948,13 +9957,13 @@ void Layer::load_frame() {
                     if (srclay->decresult->compression) {
                         float w = srclay->video_dec_ctx->width;
                         float h = srclay->video_dec_ctx->height;
-                        bool succes = this->initialize(w, h, srclay->decresult->compression);
+                        bool succes = srclay->initialize(w, h, srclay->decresult->compression);
                         if (!succes) return;
                     }
                 } else {
                     float w = srclay->video_dec_ctx->width;
                     float h = srclay->video_dec_ctx->height;
-                    bool succes = this->initialize(w, h);
+                    bool succes = srclay->initialize(w, h);
                     if (!succes) return;
                 }
             } else return;
@@ -10002,8 +10011,7 @@ void Layer::load_frame() {
         srclay->decresult->data = (char *) ilGetData();
         srclay->decresult->newdata = true;
         if (srclay->numf == 0) {
-            srclay->changeinit = 0;
-            return;
+            srclay->changeinit = -1;
         }
         bool dummy = false;
     }
@@ -10160,14 +10168,15 @@ Layer* Layer::open_image(const std::string path, bool init) {
 	int w = ilGetInteger(IL_IMAGE_WIDTH);
 	int h = ilGetInteger(IL_IMAGE_HEIGHT);
 	this->bpp = ilGetInteger(IL_IMAGE_BPP);
+    this->decresult->bpp = this->bpp;
 	this->filename = path;
 	this->vidformat = -1;
-	if (init) {
-        this->initialize(w, h);
-    }
+    this->decresult->size = w * h * this->bpp;
+    this->decresult->width = -1;
+    this->decresult->height = -1;
 	this->type = ELEM_IMAGE;
-	this->decresult->size = w * h * this->bpp;
-	this->decresult->width = -1;
+    this->iw = w;
+    this->ih = h;
 	this->decresult->hap = false;
     if (this->numf == 0) {
         this->decresult->data = (char *) ilGetData();
@@ -10183,6 +10192,10 @@ Layer* Layer::open_image(const std::string path, bool init) {
         this->playbut->value = 1;
     }
 	this->vidopen = false;
+
+    if (init) {
+        this->initialize(w, h);
+    }
 
     return lay;
 }
@@ -10449,6 +10462,8 @@ Layer* Mixer::read_layers(std::istream &rfile, const std::string result, std::ve
                         std::unordered_set<Layer *> *uset = new std::unordered_set<Layer *>;;
                         this->clonesets[layend->clonesetnr] = uset;
                     } else {
+                        layend->decresult->width = this->firstlayers[layend->clonesetnr]->iw;
+                        layend->decresult->height = this->firstlayers[layend->clonesetnr]->ih;
                         layend->isclone = true;
                     }
                     this->clonesets[layend->clonesetnr]->emplace(layend);
