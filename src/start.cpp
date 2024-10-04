@@ -2941,7 +2941,7 @@ void onestepfrom(bool stage, Node *node, Node *prevnode, GLuint prevfbotex, GLui
         float frachd = 1920.0f / 1080.0f;
         float fraco = mainprogram->ow / mainprogram->oh;
         float frac;
-        if (lay->pos == 4) {
+        if (lay->pos == 2 && lay->type == ELEM_IMAGE) {
             bool dummy = false;
         }
         if (lay->type == ELEM_IMAGE) {
@@ -3011,10 +3011,6 @@ void onestepfrom(bool stage, Node *node, Node *prevnode, GLuint prevfbotex, GLui
         prevfbotex = lay->fbotex;
         prevfbo = lay->fbo;
 
-        GLenum err;
-        while ((err = glGetError()) != GL_NO_ERROR) {
-            std::cerr << "OpenGL error2: " << err << std::endl;
-        }
         glViewport(0, 0, glob->w, glob->h);
 
         lay->newtexdata = false;
@@ -3159,11 +3155,6 @@ void onestepfrom(bool stage, Node *node, Node *prevnode, GLuint prevfbotex, GLui
 	    if (!mainmix->domix) {
 	        return;
 	    }
-        GLenum err;
-        while ((err = glGetError()) != GL_NO_ERROR) {
-            std::cerr << "OpenGL error1: " << err << std::endl;
-        }
-
         MixNode *mnode = (MixNode*)node;
 		if (mnode->mixfbo == -1) {
 		    mnode->newmixfbo = false;
@@ -3191,9 +3182,6 @@ void onestepfrom(bool stage, Node *node, Node *prevnode, GLuint prevfbotex, GLui
         glClearColor(0, 0, 0, 0);
         glClear(GL_COLOR_BUFFER_BIT);
         draw_box(nullptr, black, -1.0f, 1.0f, 2.0f, -2.0f, prevfbotex);
-        while ((err = glGetError()) != GL_NO_ERROR) {
-            std::cerr << "OpenGL error found: " << err << std::endl;
-        }
 		prevfbotex = mnode->mixtex;
 		prevfbo = mnode->mixfbo;
 		glViewport(0, 0, glob->w, glob->h);
@@ -4323,7 +4311,7 @@ void the_loop() {
                 if (lv[1]) {
                     Layer *testlay = lv[1];
                     if (!testlay->liveinput && !testlay->isclone &&
-                        (testlay->changeinit < 1 && testlay->filename != "")) {
+                        (testlay->changeinit < 1 && testlay->filename != "" && !(testlay->type == ELEM_IMAGE && testlay->numf == 0))) {
                         testlay->load_frame();
                         //if (testlay->deck == 0) mainmix->keep0 = choose_layers(0);
                         //else mainmix->keep1 = choose_layers(1);
@@ -4387,7 +4375,7 @@ void the_loop() {
                     }
                     if (lv[0] && lv[1]) {
                         if (!mainprogram->swappingscene) {
-                            mainmix->bulayers.push_back(lv[0]);
+                            if (!lv[0]->tagged) mainmix->bulayers.push_back(lv[0]);
                         }
                         lv[1]->currclipjpegpath = lv[0]->currclipjpegpath;
                         lv[1]->currcliptexpath = lv[0]->currcliptexpath;
@@ -5762,6 +5750,9 @@ void the_loop() {
             if (lay->blendnode) {
                 lay->blendnode->wipex->layer = lay;
                 lay->blendnode->wipey->layer = lay;
+            }
+            if (lay->opened) {
+                lay->endopenvar.notify_all();
             }
         }
     }

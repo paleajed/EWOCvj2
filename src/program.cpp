@@ -1688,7 +1688,7 @@ void Program::handle_wormgate(bool gate) {
 	if (mainprogram->fullscreen == -1) {
 		if (box->in()) {
 			draw_box(lightgrey, lightblue, box, -1);
-			mainprogram->tooltipbox = mainprogram->wormgate1->box;
+			//mainprogram->tooltipbox = mainprogram->wormgate1->box;
 			if (!mainprogram->menuondisplay) {
 				if (mainprogram->leftmouse) {
 					mainprogram->binsscreen = !mainprogram->binsscreen;
@@ -2299,21 +2299,20 @@ void Program::shelf_triggering(ShelfElement* elem) {
             clays[k]->deautomate();
             if (elem->type == ELEM_FILE) {
                 clays[k] = clays[k]->open_video(0, elem->path, true);
-                mainmix->currlay[!mainprogram->prevmodus] = clays[k];
-                mainmix->currlays[!mainprogram->prevmodus][k] = clays[k];
-                if (lay->initialized) mainmix->copy_pbos(clays[k], lay);
+                // currlay is handled in lay->transfer()
+                std::thread setfr(&Mixer::set_frame, mainmix, elem, clays[k]);
+                setfr.detach();
                 if (elem->launchtype > 0) clays[k]->prevshelfdragelems.push_back(elem);
             } else if (elem->type == ELEM_IMAGE) {
                 clays[k]->open_image(elem->path);
                 // currlay is handled in lay->transfer()
-                //mainmix->currlay[!mainprogram->prevmodus] = clays[k];
-                //clays[k] = (*(clays[k]->layers))[clays[k]->pos];
-                //mainmix->currlays[!mainprogram->prevmodus][k] = clays[k];
-                if (lay->initialized) mainmix->copy_pbos(clays[k], lay);
+                std::thread setfr(&Mixer::set_frame, mainmix, elem, clays[k]);
+                setfr.detach();
                 if (elem->launchtype > 0) clays[k]->prevshelfdragelems.push_back(elem);
             } else if (elem->type == ELEM_LAYER) {
-                //clays[k]->transfered = true;
                 clays[k] = mainmix->open_layerfile(elem->path, clays[k], true, false);  // reminder : doclips?
+                std::thread setfr(&Mixer::set_frame, mainmix, elem, clays[k]);
+                setfr.detach();
                 if (elem->launchtype == 1) {
                     clays[k]->prevshelfdragelems = lay->prevshelfdragelems;
                     clays[k]->prevshelfdragelems.push_back(elem);
@@ -2321,8 +2320,6 @@ void Program::shelf_triggering(ShelfElement* elem) {
                     clays[k]->prevshelfdragelems = lay->prevshelfdragelems;
                     clays[k]->prevshelfdragelems.push_back(elem);
                 }
-                if (elem->launchtype == 1) mainmix->set_prevshelfdragelem(clays[k]);
-                if (elem->launchtype == 2) mainmix->set_prevshelfdragelem(clays[k]);
                 lay->set_inlayer(clays[k], true);
                 mainmix->currlay[!mainprogram->prevmodus] = clays[k];
                 mainmix->currlays[!mainprogram->prevmodus][k] = clays[k];
@@ -2341,75 +2338,28 @@ void Program::shelf_triggering(ShelfElement* elem) {
                 if (checkeddeck == decklays[k]->deck)
                     continue;
                 checkeddeck = decklays[k]->deck;
-                std::vector<Layer *> lvec2 = choose_layers(mainmix->mousedeck);
-                std::vector<Layer *> lvec1 = mainmix->bulrs[mainprogram->prevmodus][mainmix->mousedeck];
-                for (int i = 0; i < std::min(lvec1.size(), lvec2.size()); i++) {
-                    if (elem->launchtype == 1) {
-                        lvec2[i]->prevshelfdragelems = lvec1[i]->prevshelfdragelems;
-                        lvec2[i]->prevshelfdragelems.push_back(elem);
-                    } else if (elem->launchtype == 2) {
-                        lvec2[i]->prevshelfdragelems = lvec1[i]->prevshelfdragelems;
-                        lvec2[i]->prevshelfdragelems.push_back(elem);
-                    }
-                }
+                 // copy_lpst moved to swapmap
 
-                if (elem->launchtype == 1) {
-                    if (elem->clayers.size()) elem->needframeset = true;
-                    else elem->needframeset = false;
-                    mainmix->set_prevshelfdragelem(decklays[k]);
-                }
-                if (elem->launchtype == 2) {
-                    if (elem->nblayers.size()) elem->needframeset = true;
-                    else elem->needframeset = false;
-                    mainmix->set_prevshelfdragelem(decklays[k]);
-                }
-
-                // copy_lpst moved to swapmap
-
+                mainmix->set_elems(elem, mainmix->mousedeck);
                 mainmix->open_deck(elem->path, true, true);  // dont load loopstation events from shelf ever?
+                std::thread setfr(&Mixer::set_frames, mainmix, elem, (bool)mainmix->mousedeck);
+                setfr.detach();
 
             }
         }
 
         if (elem->type == ELEM_MIX) {
-            std::vector<Layer *> &lvec2 = choose_layers(0);
-            std::vector<Layer *> &lvec3 = choose_layers(1);
-            std::vector<Layer *> lvec0 = mainmix->bulrs[mainprogram->prevmodus][mainmix->mousedeck];
-            std::vector<Layer *> lvec1 = mainmix->bulrs[mainprogram->prevmodus][mainmix->mousedeck];
-            for (int i = 0; i < std::min(lvec0.size(), lvec2.size()); i++) {
-                if (elem->launchtype == 1) {
-                    lvec2[i]->prevshelfdragelems = lvec0[i]->prevshelfdragelems;
-                    lvec2[i]->prevshelfdragelems.push_back(elem);
-                } else if (elem->launchtype == 2) {
-                    lvec2[i]->prevshelfdragelems = lvec0[i]->prevshelfdragelems;
-                    lvec2[i]->prevshelfdragelems.push_back(elem);
-                }
-            }
-            for (int i = 0; i < std::min(lvec1.size(), lvec3.size()); i++) {
-                if (elem->launchtype == 1) {
-                    lvec3[i]->prevshelfdragelems = lvec1[i]->prevshelfdragelems;
-                    lvec3[i]->prevshelfdragelems.push_back(elem);
-                } else if (elem->launchtype == 2) {
-                    lvec3[i]->prevshelfdragelems = lvec1[i]->prevshelfdragelems;
-                    lvec3[i]->prevshelfdragelems.push_back(elem);
-                }
-            }
-            if (elem->launchtype == 1) {
-                if (elem->clayers.size()) elem->needframeset = true;
-                else elem->needframeset = false;
-                mainmix->set_prevshelfdragelem(choose_layers(0)[0]);
-            }
-            if (elem->launchtype == 2) {
-                if (elem->nblayers.size()) elem->needframeset = true;
-                else elem->needframeset = false;
-                mainmix->set_prevshelfdragelem(choose_layers(0)[0]);
-            }
 
+            mainmix->set_elems(elem, 0);
+            mainmix->set_elems(elem, 1);
             mainmix->open_mix(elem->path, true, true);  // dont load loopstation events from shelf ever
+            std::thread setfr1(&Mixer::set_frames, mainmix, elem, false);
+            setfr1.detach();
+            std::thread setfr2(&Mixer::set_frames, mainmix, elem, true);
+            setfr2.detach();
+            mainmix->set_frames(elem, 0);
+            mainmix->set_frames(elem, 1);
         }
-
-        // framesetting moved to after initial swapmap
-
     }
     mainprogram->midishelfelem = nullptr;
 }

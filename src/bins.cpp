@@ -3303,68 +3303,28 @@ void BinsMain::hap_encode(std::string srcpath, BinElement *binel, BinElement *bd
 	mainprogram->hap.notify_all();
 
     // exchange original for hap version everywhere (layerstacks, shelves, bins)
-    for (int i = 0; i < mainmix->layers[0].size(); i++) {
-        Layer *lay = mainmix->layers[0][i];
-        if (lay->isclone) continue;
-        if (lay == binel->otflay) continue;
-        if (lay->filename != srcpath) continue;
-        lay->encodeload = true;
-        bool bukeb = lay->keepeffbut->value;
-        lay->keepeffbut->value = 1;
-        lay->open_video(lay->frame, binel->path, false);
-        lay->keepeffbut->value = bukeb;
-        lay->set_clones();
-        lay->encodeload = false;
+    for (int k = 0; k < 4; k++) {
+        for (Layer *lay : mainmix->layers[k]) {
+            if (lay->isclone) continue;
+            if (lay == binel->otflay) continue;
+            if (lay->filename != srcpath) continue;
+            lay->encodeload = true;
+            bool bukeb = lay->keepeffbut->value;
+            lay->keepeffbut->value = 1;
+            lay->open_video(lay->frame, binel->path, false);
+            lay->keepeffbut->value = bukeb;
+            lay->set_clones();
+            lay->encodeload = false;
+        }
     }
-    for (int i = 0; i < mainmix->layers[1].size(); i++) {
-        Layer *lay = mainmix->layers[1][i];
-        if (lay->isclone) continue;
-        if (lay == binel->otflay) continue;
-        if (lay->filename != srcpath) continue;
-        lay->encodeload = true;
-        bool bukeb = lay->keepeffbut->value;
-        lay->keepeffbut->value = 1;
-        lay->open_video(lay->frame, binel->path, false);
-        lay->keepeffbut->value = bukeb;
-        lay->set_clones();
-        lay->encodeload = false;
+
+    for (int m = 0; m < 2; m++) {
+        for (auto elem : mainprogram->shelves[m]->elements) {
+            if (elem->path != srcpath) continue;
+            elem->path = binel->path;
+        }
     }
-    for (int i = 0; i < mainmix->layers[2].size(); i++) {
-        Layer *lay = mainmix->layers[2][i];
-        if (lay->isclone) continue;
-        if (lay == binel->otflay) continue;
-        if (lay->filename != srcpath) continue;
-        lay->encodeload = true;
-        bool bukeb = lay->keepeffbut->value;
-        lay->keepeffbut->value = 1;
-        lay->open_video(lay->frame, binel->path, false);
-        lay->keepeffbut->value = bukeb;
-        lay->set_clones();
-        lay->encodeload = false;
-    }
-    for (int i = 0; i < mainmix->layers[3].size(); i++) {
-        Layer *lay = mainmix->layers[3][i];
-        if (lay->isclone) continue;
-        if (lay == binel->otflay) continue;
-        if (lay->filename != srcpath) continue;
-        lay->encodeload = true;
-        bool bukeb = lay->keepeffbut->value;
-        lay->keepeffbut->value = 1;
-        lay->open_video(lay->frame, binel->path, false);
-        lay->keepeffbut->value = bukeb;
-        lay->set_clones();
-        lay->encodeload = false;
-    }
-    for (int i = 0; i < mainprogram->shelves[0]->elements.size(); i++) {
-        ShelfElement *elem = mainprogram->shelves[0]->elements[i];
-        if (elem->path != srcpath) continue;
-        elem->path = binel->path;
-    }
-    for (int i = 0; i < mainprogram->shelves[1]->elements.size(); i++) {
-        ShelfElement *elem = mainprogram->shelves[1]->elements[i];
-        if (elem->path != srcpath) continue;
-        elem->path = binel->path;
-    }
+
     for (int i = 0; i < binsmain->bins.size(); i++) {
         for (int j = 0; j < binsmain->bins[i]->elements.size(); j++) {
             BinElement *elem = binsmain->bins[i]->elements[j];

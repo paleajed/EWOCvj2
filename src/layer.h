@@ -245,6 +245,7 @@ class Layer {
 
         std::vector<ShelfElement*> prevshelfdragelems;
         int psde_size = 0;
+        bool tagged = false;
 
 		int clonesetnr = -1;
 		bool isclone = false;
@@ -301,7 +302,6 @@ class Layer {
         bool newload = true;
 		bool framesloaded = false;
         bool changes = false;
-        bool transfered = false;
         bool checkre = false;
         bool recended = false;
         bool recstarted = false;
@@ -465,6 +465,9 @@ class Mixer {
         void copy_lpst(Layer *destlay, Layer *srclay, bool global, bool back);
         void get_butimes();
         void event_read(std::istream &rfile, Param *par, Button *but, Layer *lay, int elem = 0);
+        void set_elems(ShelfElement *elem, bool deck);
+        void set_frames(ShelfElement *elem, bool deck);
+        void set_frame(ShelfElement *elem, Layer *lay);
         Mixer();
 		
 		std::mutex recordlock[2];
