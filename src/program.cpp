@@ -2289,7 +2289,10 @@ int Program::quit_requester() {
 
 void Program::shelf_triggering(ShelfElement* elem) {
 	// do trigger from shelf, set up in callback, executed here at a fixed the_loop position
-	if (elem) {
+    for (int i = 0; i < 4; ++i) {
+        if (!mainmix->swapmap[i].empty()) return;
+    }
+    if (elem) {
         std::vector<Layer *> clays = mainmix->currlays[!mainprogram->prevmodus];
         int checkeddeck = 2;
         Layer *laydeck0 = nullptr;
@@ -2298,28 +2301,25 @@ void Program::shelf_triggering(ShelfElement* elem) {
             Layer *lay = clays[k];
             clays[k]->deautomate();
             if (elem->type == ELEM_FILE) {
+                //clays[k]->tagged = false;
+                mainmix->reload_tagged_elems(elem, clays[k]->deck);
                 clays[k] = clays[k]->open_video(0, elem->path, true);
+                clays[k]->set_clones();
                 // currlay is handled in lay->transfer()
                 std::thread setfr(&Mixer::set_frame, mainmix, elem, clays[k]);
                 setfr.detach();
-                if (elem->launchtype > 0) clays[k]->prevshelfdragelems.push_back(elem);
             } else if (elem->type == ELEM_IMAGE) {
+                mainmix->reload_tagged_elems(elem, clays[k]->deck);
                 clays[k]->open_image(elem->path);
+                clays[k]->set_clones();
                 // currlay is handled in lay->transfer()
                 std::thread setfr(&Mixer::set_frame, mainmix, elem, clays[k]);
                 setfr.detach();
-                if (elem->launchtype > 0) clays[k]->prevshelfdragelems.push_back(elem);
             } else if (elem->type == ELEM_LAYER) {
-                clays[k] = mainmix->open_layerfile(elem->path, clays[k], true, false);  // reminder : doclips?
+                mainmix->reload_tagged_elems(elem, clays[k]->deck);
+                clays[k] = mainmix->open_layerfile(elem->path, clays[k], true, false, false);  // reminder : doclips?
                 std::thread setfr(&Mixer::set_frame, mainmix, elem, clays[k]);
                 setfr.detach();
-                if (elem->launchtype == 1) {
-                    clays[k]->prevshelfdragelems = lay->prevshelfdragelems;
-                    clays[k]->prevshelfdragelems.push_back(elem);
-                } else if (elem->launchtype == 2) {
-                    clays[k]->prevshelfdragelems = lay->prevshelfdragelems;
-                    clays[k]->prevshelfdragelems.push_back(elem);
-                }
                 lay->set_inlayer(clays[k], true);
                 mainmix->currlay[!mainprogram->prevmodus] = clays[k];
                 mainmix->currlays[!mainprogram->prevmodus][k] = clays[k];
@@ -2340,7 +2340,7 @@ void Program::shelf_triggering(ShelfElement* elem) {
                 checkeddeck = decklays[k]->deck;
                  // copy_lpst moved to swapmap
 
-                mainmix->set_elems(elem, mainmix->mousedeck);
+                mainmix->reload_tagged_elems(elem, mainmix->mousedeck);
                 mainmix->open_deck(elem->path, true, true);  // dont load loopstation events from shelf ever?
                 std::thread setfr(&Mixer::set_frames, mainmix, elem, (bool)mainmix->mousedeck);
                 setfr.detach();
@@ -2350,8 +2350,8 @@ void Program::shelf_triggering(ShelfElement* elem) {
 
         if (elem->type == ELEM_MIX) {
 
-            mainmix->set_elems(elem, 0);
-            mainmix->set_elems(elem, 1);
+            mainmix->reload_tagged_elems(elem, 0);
+            mainmix->reload_tagged_elems(elem, 1);
             mainmix->open_mix(elem->path, true, true);  // dont load loopstation events from shelf ever
             std::thread setfr1(&Mixer::set_frames, mainmix, elem, false);
             setfr1.detach();
@@ -4823,13 +4823,13 @@ void Program::handle_lpstmenu() {
 void Program::preview_modus_buttons() {
 	// Draw and handle buttons
     for (Layer *lay : mainmix->layers[0]) {
-        if (lay->changeinit < 1 && lay->filename != "" && !lay->isclone) return;
+        if (lay->changeinit < 1 && lay->filename != "" && !lay->isclone && !(lay->type == ELEM_IMAGE && lay->numf == 0)) return;
     }
     for (Layer *lay : mainmix->layers[1]) {
-        if (lay->changeinit < 1 && lay->filename != "" && !lay->isclone) return;
+        if (lay->changeinit < 1 && lay->filename != "" && !lay->isclone && !(lay->type == ELEM_IMAGE && lay->numf == 0)) return;
     }
     for (Layer *lay : mainmix->layers[2]) {
-        if (lay->changeinit < 1 && lay->filename != "" && !lay->isclone) {
+        if (lay->changeinit < 1 && lay->filename != "" && !lay->isclone && !(lay->type == ELEM_IMAGE && lay->numf == 0)) {
             return;
         }
     }
@@ -8913,6 +8913,9 @@ void Shelf::handle() {
 
         // calculate background frame numbers and loopstation posns for elements with launchtype 2
         for (int j = 0; j < elem->nblayers.size(); j++) {
+            if (i == 1) {
+                bool dummy = false;
+            }
             elem->nblayers[j]->vidopen = false;
             elem->nblayers[j]->progress(!mainprogram->prevmodus, 0);
             elem->nblayers[j]->cnt_lpst();
@@ -9935,7 +9938,6 @@ void Program::add_to_pbopool(GLuint pbo, GLubyte *mapptr) {
     GLint bufferSize = 0;
     glBindBuffer(GL_ARRAY_BUFFER, pbo);
     glGetBufferParameteriv(GL_ARRAY_BUFFER, GL_BUFFER_SIZE, &bufferSize);
-    mapptr = nullptr;
     this->pbopool.insert(std::pair<int, std::pair<GLuint, GLubyte*>>(bufferSize, std::pair<GLuint, GLubyte*>(pbo, mapptr)));
 }
 

@@ -4313,8 +4313,6 @@ void the_loop() {
                     if (!testlay->liveinput && !testlay->isclone &&
                         (testlay->changeinit < 1 && testlay->filename != "" && !(testlay->type == ELEM_IMAGE && testlay->numf == 0))) {
                         testlay->load_frame();
-                        //if (testlay->deck == 0) mainmix->keep0 = choose_layers(0);
-                        //else mainmix->keep1 = choose_layers(1);
                         done = false;
                         brk = true;
                         break;
@@ -4376,6 +4374,28 @@ void the_loop() {
                     if (lv[0] && lv[1]) {
                         if (!mainprogram->swappingscene) {
                             if (!lv[0]->tagged) mainmix->bulayers.push_back(lv[0]);
+                            else {
+                                while (lv[0]->effects[0].size()) {
+                                    lv[0]->delete_effect(lv[0]->effects[0].back()->pos, false);
+                                }
+                                while (lv[0]->effects[1].size()) {
+                                    lv[0]->delete_effect(lv[0]->effects[1].back()->pos, false);
+                                }
+
+                                mainprogram->nodesmain->currpage->delete_node(lv[0]->blendnode);
+                                lv[0]->blendnode = nullptr;
+                                
+                                if (lv[0]->clonesetnr != -1) {
+                                    int clnr = lv[0]->clonesetnr;
+                                    lv[0]->clonesetnr = -1;
+                                    lv[0]->texture = -1;
+                                    mainmix->clonesets[clnr]->erase(lv[0]);
+
+                                    if (mainmix->clonesets[clnr]->size() == 1) {
+                                        mainmix->cloneset_destroy(clnr);
+                                    }
+                                }
+                            }
                         }
                         lv[1]->currclipjpegpath = lv[0]->currclipjpegpath;
                         lv[1]->currcliptexpath = lv[0]->currcliptexpath;
@@ -4395,19 +4415,15 @@ void the_loop() {
                     }
                 }
                 if (i == 0) {
-                    mainmix->keep0 = mainmix->layers[0];
                     mainmix->layers[0] = oldlayers;
                     mainmix->reconnect_all(mainmix->layers[0]);
                 } else if (i == 1) {
-                    mainmix->keep0 = mainmix->layers[1];
                     mainmix->layers[1] = oldlayers;
                     mainmix->reconnect_all(mainmix->layers[1]);
                 } else if (i == 2) {
-                    mainmix->keep0 = mainmix->layers[2];
                     mainmix->layers[2] = oldlayers;
                     mainmix->reconnect_all(mainmix->layers[2]);
                 } else if (i == 3) {
-                    mainmix->keep0 = mainmix->layers[3];
                     mainmix->layers[3] = oldlayers;
                     mainmix->reconnect_all(mainmix->layers[3]);
                 }
@@ -4452,55 +4468,6 @@ void the_loop() {
         mainprogram->newproject2 = false;
     }
 
-// set frames after launchtype 1 or 2
-    /*ShelfElement *elem = mainprogram->lpstelem;
-    for (int deck = 0; deck < 2; deck++) {
-        std::vector<Layer *> &lvec = deck ? mainmix->keep1 : mainmix->keep0;
-        if (1) {
-            for (int i = 0; i < lvec.size(); i++) {
-                if (elem) {
-                    if (elem->needframeset) {
-                        if (elem->launchtype == 1) {
-                            if (elem->prevclayers.size()) {
-                                for (int j = 0; j < elem->prevclayers.size(); j++) {
-                                    if (elem->prevclayers[j]->pos == i &&
-                                        elem->prevclayers[j]->deck == deck) {
-                                        mainmix->copy_lpst(lvec[i],
-                                                           elem->prevclayers[j], true, false);
-                                        lvec[i]->frame = elem->prevclayers[j]->frame;
-                                    }
-                                }
-                            }
-                        } else if (elem->launchtype == 2) {
-                            if (elem->prevnblayers.size()) {
-                                for (int j = 0; j < elem->prevnblayers.size(); j++) {
-                                    if (elem->prevnblayers[j]->pos == i &&
-                                        elem->prevnblayers[j]->deck == deck) {
-                                        mainmix->copy_lpst(lvec[i],
-                                                           elem->prevnblayers[j], true, false);
-                                        lvec[i]->frame = elem->prevnblayers[j]->frame;
-                                    }
-                                }
-                            }
-                        } else {
-                            if (elem->prevclayers.size()) {
-                                lvec[i]->frame = elem->prevclayers[0]->frame;
-                                //} else {
-                                //    elem->cframes.push_back(0.0f);
-                            }
-                        }
-                    }
-                }
-            }
-            if (elem) {
-                //elem->clayers.clear();
-                //elem->nblayers.clear();
-                mainprogram->lpstelem = nullptr;
-            }
-        }
-    }*/
-
-    //mainmix->firstlayers.clear();
     if (!mainprogram->prevmodus) {
 		//when in performance mode: keep advancing frame counters for preview layer stacks (alive = 0)
         mainprogram->bupm = mainprogram->prevmodus;
@@ -5776,6 +5743,12 @@ void the_loop() {
         mainmix->loadinglays.clear();
     }
 
+    mainmix->reconnect_all(mainmix->layers[0]);
+    mainmix->reconnect_all(mainmix->layers[1]);
+    mainmix->reconnect_all(mainmix->layers[2]);
+    mainmix->reconnect_all(mainmix->layers[3]);
+    make_layboxes();
+
     dellayslock.lock();
     for (Layer* lay : mainprogram->dellays) {
         delete lay;
@@ -5805,12 +5778,6 @@ void the_loop() {
     if (mainprogram->recundo || mainprogram->undowaiting) {
         mainprogram->undo_redo_save();
     }
-
-    mainmix->reconnect_all(mainmix->layers[0]);
-    mainmix->reconnect_all(mainmix->layers[1]);
-    mainmix->reconnect_all(mainmix->layers[2]);
-    mainmix->reconnect_all(mainmix->layers[3]);
-    make_layboxes();
 
     //glFinish();
     SDL_GL_SwapWindow(mainprogram->mainwindow);

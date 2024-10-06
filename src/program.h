@@ -159,9 +159,7 @@ public:
 	int launchtype = 0;
     bool needframeset = false;
 	std::vector<Layer*> clayers;
-    std::vector<Layer*> prevclayers;
     std::vector<Layer*> nblayers;
-    std::vector<Layer*> prevnblayers;
     bool done = false;
     void set_nbclayers(Layer *lay);
 	ShelfElement(bool side, int pos, Button *but);

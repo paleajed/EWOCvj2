@@ -243,9 +243,10 @@ class Layer {
 
         GLuint bufbotex = -1;
 
-        std::vector<ShelfElement*> prevshelfdragelems;
+        ShelfElement* prevshelfdragelem = nullptr;
         int psde_size = 0;
         bool tagged = false;
+        bool transfered = false;
 
 		int clonesetnr = -1;
 		bool isclone = false;
@@ -453,7 +454,7 @@ class Mixer {
 		void start_recording();
 		void cloneset_destroy(int clnr);
 		void handle_genmidibuttons();
-		bool set_prevshelfdragelem(Layer *lay);
+		bool set_prevshelfdragelem_layers(Layer *lay);
 		void vidbox_handle();
 		void outputmonitors_handle();
 		void layerdrag_handle();
@@ -465,7 +466,7 @@ class Mixer {
         void copy_lpst(Layer *destlay, Layer *srclay, bool global, bool back);
         void get_butimes();
         void event_read(std::istream &rfile, Param *par, Button *but, Layer *lay, int elem = 0);
-        void set_elems(ShelfElement *elem, bool deck);
+        void reload_tagged_elems(ShelfElement *elem, bool deck);
         void set_frames(ShelfElement *elem, bool deck);
         void set_frame(ShelfElement *elem, Layer *lay);
         Mixer();
