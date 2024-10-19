@@ -137,6 +137,16 @@ LoopStationElement::LoopStationElement() {
     this->box->upvtxtoscr();
     this->box->tooltiptitle = "Loopstation row select current ";
     this->box->tooltip = "Leftclicking this box selects this loopstation row for use of R(record), L(loop play this row) and S(one shot play this row) keyboard shortcuts. ";
+    this->scritch = new Param;
+    this->scritch->box->lcolor[0] = 0.4f;
+    this->scritch->box->lcolor[1] = 0.4f;
+    this->scritch->box->lcolor[2] = 0.4f;
+    this->scritch->box->lcolor[3] = 1.0f;
+    this->scritch->box->vtxcoords->w = 0.15f;
+    this->scritch->box->vtxcoords->h = 0.075f;
+    this->scritch->box->upvtxtoscr();
+    this->scritch->box->tooltiptitle = "Loopstation framecounter ";
+    this->scritch->box->tooltip = "Leftclicking/dragging inside this box sets the position inside the loopstation recording. ";
  }
 
 LoopStationElement::~LoopStationElement() {
@@ -234,25 +244,32 @@ void LoopStationElement::visualize() {
 	this->loopbut->box->vtxcoords->x1 = -0.8f + 1.2f * offdeck + this->loopbut->box->vtxcoords->w;
 	this->playbut->box->vtxcoords->x1 = -0.8f + 1.2f * offdeck + this->playbut->box->vtxcoords->w * 2.0f;
 	this->speed->box->vtxcoords->x1 = -0.8f + 1.2f * offdeck + this->recbut->box->vtxcoords->w * 3.0f;
-	this->colbox->vtxcoords->x1 = -0.8f + 1.2f * offdeck + this->recbut->box->vtxcoords->w * 3.0f + this->speed->box->vtxcoords->w;
+    this->scritch->box->vtxcoords->x1 = -0.8f + 1.2f * offdeck + this->recbut->box->vtxcoords->w * 3.0f + this->speed->box->vtxcoords->w;
+    this->colbox->vtxcoords->x1 = -0.8f + 1.2f * offdeck + this->recbut->box->vtxcoords->w * 3.0f + this->speed->box->vtxcoords->w * 2;
 	this->recbut->box->vtxcoords->y1 = 0.4f - 0.075f * (float)(this->pos - this->lpst->scrpos);
 	this->loopbut->box->vtxcoords->y1 = 0.4f - 0.075f * (float)(this->pos - this->lpst->scrpos);
 	this->playbut->box->vtxcoords->y1 = 0.4f - 0.075f * (float)(this->pos - this->lpst->scrpos);
 	this->speed->box->vtxcoords->y1 = 0.4f - 0.075f * (float)(this->pos - this->lpst->scrpos);
-	this->colbox->vtxcoords->y1 = 0.4f - 0.075f * (float)(this->pos - this->lpst->scrpos);
+    this->scritch->box->vtxcoords->y1 = 0.4f - 0.075f * (float)(this->pos - this->lpst->scrpos);
+    this->colbox->vtxcoords->y1 = 0.4f - 0.075f * (float)(this->pos - this->lpst->scrpos);
 	this->box->vtxcoords->y1 = 0.4f - 0.075f * (float)(this->pos - this->lpst->scrpos);
 	this->recbut->box->upvtxtoscr();
 	this->loopbut->box->upvtxtoscr();
 	this->playbut->box->upvtxtoscr();
 	this->speed->box->upvtxtoscr();
 	this->colbox->upvtxtoscr();
-	this->box->upvtxtoscr();
+    this->box->upvtxtoscr();
+    this->scritch->box->upvtxtoscr();
     this->speed->handle();
     draw_box(grey, this->colbox->acolor, this->colbox, -1);
 	if (!this->eventlist.empty()) draw_box(black, black, this->colbox->vtxcoords->x1 + 0.02325f ,
                                       this->colbox->vtxcoords->y1 + 0.0375f, 0.0225f, 0.03f, -1);
 	if (this == loopstation->currelem) draw_box(grey, white, this->box, -1);
 	else draw_box(grey, nullptr, this->box, -1);
+    draw_box(grey, green, this->scritch->box, -1);
+    draw_box(white, white, this->scritch->box->vtxcoords->x1 + this->speedadaptedtime * (this->scritch->box->vtxcoords->w /
+                                                                                    (this->totaltime)) - 0.002f,
+             this->scritch->box->vtxcoords->y1, 0.004f, 0.075f, -1);
     render_text(std::to_string(this->pos + 1), white, this->recbut->box->vtxcoords->x1 - 0.05f, this->recbut->box->vtxcoords->y1 + 0.03f, 0.0006f, 0.001f);
 	if (this->colbox->in()) {
         if (!mainprogram->menuondisplay || mainprogram->lpstmenuon) {
@@ -311,24 +328,23 @@ void LoopStationElement::mouse_handle() {
     }
 
     mainprogram->handle_button(this->recbut, true, false, true);
-	if (this->recbut->toggled()) {
+    if (this->recbut->toggled()) {
         if (mainprogram->adaptivelprow) {
             loopstation->currelem = this;
         }
-		if (this->recbut->value) {
-			this->loopbut->value = false;
-			this->playbut->value = false;
-			this->erase_elem();
-            for (Param *par : this->lpst->allparams) {
+        if (this->recbut->value) {
+            this->loopbut->value = false;
+            this->playbut->value = false;
+            this->erase_elem();
+            for (Param *par: this->lpst->allparams) {
                 par->midistarttime = std::chrono::system_clock::from_time_t(0.0f);
             }
-            for (Button *but : this->lpst->allbuttons) {
+            for (Button *but: this->lpst->allbuttons) {
                 but->midistarttime = std::chrono::system_clock::from_time_t(0.0f);
             }
-			this->starttime = std::chrono::high_resolution_clock::now();
+            this->starttime = std::chrono::high_resolution_clock::now();
             mainprogram->recundo = false;
-		}
-		else {
+        } else {
             if (mainprogram->steplprow) {
                 int rowpos = loopstation->currelem->pos;
                 rowpos++;
@@ -338,73 +354,149 @@ void LoopStationElement::mouse_handle() {
                 loopstation->currelem = loopstation->elements[rowpos];
                 mainprogram->waitonetime = true;
             }
-			if (this->eventlist.size()) {
-                this->loopbut->value = true;
-                this->loopbut->oldvalue = false;
-			}
-		}
-	}
-    mainprogram->handle_button(this->loopbut, 1, 0);
-	if (this->loopbut->toggled()) {
-		// start/stop loop play of recording
-		if (this->eventlist.size()) {
-            if (mainprogram->adaptivelprow && !mainprogram->waitonetime) {
-                loopstation->currelem = this;
-            }
-            else mainprogram->waitonetime = true;
-			this->recbut->value = false;
-			this->recbut->oldvalue = false;
-			this->playbut->value = false;
-			this->playbut->oldvalue = false;
-            for (Param *par : this->lpst->allparams) {
-                par->midistarttime = std::chrono::system_clock::from_time_t(0.0f);
-            }
-            for (Button *but : this->lpst->allbuttons) {
-                but->midistarttime = std::chrono::system_clock::from_time_t(0.0f);
-            }
-			if (this->loopbut->value) {
+            if (this->eventlist.size()) {
                 std::chrono::high_resolution_clock::time_point now = std::chrono::high_resolution_clock::now();
                 std::chrono::duration<double> elapsed;
                 elapsed = std::chrono::duration_cast<std::chrono::duration<double>>(now - this->starttime);
                 this->totaltime = std::chrono::duration_cast<std::chrono::milliseconds>(elapsed).count();
-				this->eventpos = 0;
-				this->starttime = std::chrono::high_resolution_clock::now();
-				this->interimtime = 0;
-				this->speedadaptedtime = 0;
-			}
-		}
-		else {
-			this->loopbut->value = false;
-			this->loopbut->oldvalue = false;
-		}
-	}
-    mainprogram->handle_button(this->playbut, 1, 0);
-	if (this->playbut->toggled()) {
-		// start/stop one-shot play of recording
-		if (this->eventlist.size()) {
-            if (mainprogram->adaptivelprow) loopstation->currelem = this;
-			this->recbut->value = false;
-			this->recbut->oldvalue = false;
-			this->loopbut->value = false;
-			this->loopbut->oldvalue = false;
-            for (Param *par : this->lpst->allparams) {
+                this->eventpos = 0;
+                this->starttime = std::chrono::high_resolution_clock::now();
+                this->interimtime = 0;
+                this->speedadaptedtime = 0;
+                for (Param *par: this->lpst->allparams) {
+                    par->midistarttime = std::chrono::system_clock::from_time_t(0.0f);
+                }
+                for (Button *but: this->lpst->allbuttons) {
+                    but->midistarttime = std::chrono::system_clock::from_time_t(0.0f);
+                }
+                // this->loopbut->value = true;
+                //this->loopbut->oldvalue = false;
+            }
+        }
+    }
+    mainprogram->handle_button(this->loopbut, 1, 0);
+    if (this->loopbut->toggled()) {
+        // start/stop loop play of recording
+        if (this->eventlist.size()) {
+            if (mainprogram->adaptivelprow && !mainprogram->waitonetime) {
+                loopstation->currelem = this;
+            } else mainprogram->waitonetime = true;
+            this->recbut->value = false;
+            this->recbut->oldvalue = false;
+            this->playbut->value = false;
+            this->playbut->oldvalue = false;
+            for (Param *par: this->lpst->allparams) {
                 par->midistarttime = std::chrono::system_clock::from_time_t(0.0f);
             }
-            for (Button *but : this->lpst->allbuttons) {
+            for (Button *but: this->lpst->allbuttons) {
                 but->midistarttime = std::chrono::system_clock::from_time_t(0.0f);
             }
-			if (this->playbut->value) {
-				this->eventpos = 0;
-				this->starttime = std::chrono::high_resolution_clock::now();
-				this->interimtime = 0;
-				this->speedadaptedtime = 0;
-			}
-		}
-		else {
-			this->playbut->value = false;
-			this->playbut->oldvalue = false;
-		}
-	}
+            if (this->loopbut->value) {
+                std::chrono::high_resolution_clock::time_point now = std::chrono::high_resolution_clock::now();
+                std::chrono::duration<double> elapsed;
+                elapsed = std::chrono::duration_cast<std::chrono::duration<double>>(now - this->starttime);
+                this->totaltime = std::chrono::duration_cast<std::chrono::milliseconds>(elapsed).count();
+                this->eventpos = 0;
+                this->starttime = std::chrono::high_resolution_clock::now();
+                this->interimtime = 0;
+                this->speedadaptedtime = 0;
+            }
+        } else {
+            this->loopbut->value = false;
+            this->loopbut->oldvalue = false;
+        }
+    }
+    mainprogram->handle_button(this->playbut, 1, 0);
+    if (this->playbut->toggled()) {
+        // start/stop one-shot play of recording
+        if (this->eventlist.size()) {
+            if (mainprogram->adaptivelprow) loopstation->currelem = this;
+            this->recbut->value = false;
+            this->recbut->oldvalue = false;
+            this->loopbut->value = false;
+            this->loopbut->oldvalue = false;
+            for (Param *par: this->lpst->allparams) {
+                par->midistarttime = std::chrono::system_clock::from_time_t(0.0f);
+            }
+            for (Button *but: this->lpst->allbuttons) {
+                but->midistarttime = std::chrono::system_clock::from_time_t(0.0f);
+            }
+            if (this->playbut->value) {
+                this->eventpos = 0;
+                this->starttime = std::chrono::high_resolution_clock::now();
+                this->interimtime = 0;
+                this->speedadaptedtime = 0;
+            }
+        } else {
+            this->playbut->value = false;
+            this->playbut->oldvalue = false;
+        }
+    }
+
+    if (this->scritch->box->in()) {
+        if (mainprogram->leftmousedown) {
+            this->scritching = 1;
+        }
+        if (mainprogram->menuactivation) {
+            mainprogram->parammenu3->state = 2;
+            mainmix->learnparam = this->scritch;
+            mainmix->learnbutton = nullptr;
+            this->scritch->range[1] = this->totaltime;
+            mainprogram->menuactivation = false;
+        }
+    }
+    if (this->scritch->value != this->scritch->oldvalue) {
+        this->speedadaptedtime = this->scritch->value;
+        this->scritch->oldvalue = this->scritch->value;
+        this->midiscritch = true;
+    }
+    if (this->scritching) mainprogram->leftmousedown = false;
+    if (this->scritching == 1 || this->midiscritch) {
+        if (!this->midiscritch) {
+            this->speedadaptedtime = (this->totaltime) *
+                                     ((mainprogram->mx - this->scritch->box->scrcoords->x1) /
+                                      this->scritch->box->scrcoords->w);
+        }
+        if (this->speedadaptedtime > this->totaltime) {
+            this->speedadaptedtime = this->totaltime;
+        }
+        if (this->speedadaptedtime < 0.0f) {
+            this->speedadaptedtime = 0.0f;
+        }
+        std::chrono::high_resolution_clock::time_point now = std::chrono::high_resolution_clock::now();
+        this->starttime = now - std::chrono::milliseconds((long long) (this->speedadaptedtime));
+        std::chrono::duration<double> elapsed;
+        elapsed = std::chrono::duration_cast<std::chrono::duration<double>>(mainprogram->now - this->starttime);
+        long long millicount = std::chrono::duration_cast<std::chrono::milliseconds>(elapsed).count();
+        //int passed = millicount - this->interimtime;
+        this->interimtime = millicount;
+        this->eventpos = 0;
+        auto event = this->eventlist[std::clamp(this->eventpos + 1, 0, (int)this->eventlist.size() - 1)];
+        if (this->speedadaptedtime > std::get<0>(event)) {
+            while (this->speedadaptedtime > std::get<0>(event)) {
+                this->eventpos++;
+                event = this->eventlist[std::clamp(this->eventpos + 1, 0, (int) this->eventlist.size() - 1)];
+                if (std::get<1>(event)->name == "shiftx" || std::get<1>(event)->name == "shifty" || std::get<1>(event)->name == "wipex" || std::get<1>(event)->name == "wipey") {
+                    event = this->eventlist[std::clamp(this->eventpos + 2, 0, (int) this->eventlist.size() - 1)];
+                }
+                if (this->eventpos >= this->eventlist.size()) {
+                    this->eventpos = this->eventlist.size() - 1;
+                    this->atend = true;
+                    break;
+                }
+                else {
+                    this->atend = false;
+                }
+            }
+        }
+        this->set_values();
+        if (mainprogram->leftmouse && !mainprogram->menuondisplay) {
+            this->scritching = 0;
+            mainprogram->recundo = false;
+            mainprogram->leftmouse = false;
+        }
+        this->midiscritch = false;
+    }
 }
 
 void LoopStationElement::set_values() {

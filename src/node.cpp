@@ -217,6 +217,9 @@ void VideoNode::upeffboxes() {
 }
 
 void NodePage::connect_nodes(Node *node1, Node *node2) {
+    if (node1->out.size()) {
+        node1->out[0]->in = nullptr;
+    }
 	node1->out.clear();
 	if (node2->in != nullptr) {
 		if (node2->in->out.size()) {

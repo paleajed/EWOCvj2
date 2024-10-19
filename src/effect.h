@@ -68,10 +68,10 @@ class MidiNode;
 class Param {
 	public:
 		std::string name;
-        float value;
-        float oldvalue;
-		float deflt;
-		float range[2];
+        float value = 0.0f;
+        float oldvalue = 0.0f;
+		float deflt = 0.0f;
+		float range[2] = {0.0f, 0.0f};
 		int midi[2] = {-1, -1};
 		std::string midiport;
 		bool sliding = true;

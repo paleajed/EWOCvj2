@@ -187,13 +187,19 @@ class Project {
 		void newp(std::string path);
 		bool open(std::string path, bool autosave, bool newp = false, bool undo = false);
         void autosave();
-		void save(std::string path, bool autosave = false, bool undo = false);
+		void save(std::string path, bool autosave = false, bool undo = false, bool nocheck = false);
         void save_as();
+        void wait_for_copyover();
+private:
+        bool copyingover = false;
+        std::mutex copyovermutex;
+        std::condition_variable copyovervar;
+        bool copiedover = false;
+        void copy_over(std::string path, std::string path2, std::string oldprdir);
         void delete_dirs(std::string path);
         void copy_dirs(std::string path);
         void create_dirs(std::string path);
         void create_dirs_autosave(std::string path);
-private:
 };
 
 class Preferences {
@@ -698,6 +704,7 @@ class Program {
         int concatlimit = 0;
         bool saveas = false;
         bool inautosave = false;
+        bool openautosave = false;
         std::vector<std::string> oldbins;
         bool err = false;
 
@@ -761,6 +768,7 @@ class Program {
         std::vector<Layer*> errlays;
         bool gettinglayertex = false;
         Layer *gettinglayertexlay = nullptr;
+        std::vector<Layer*> gettinglayertexlayers;
         std::string result;
         int32_t resnum = -1;
 
@@ -800,6 +808,7 @@ class Program {
 		bool openfilesqueue = false;
 		int pathscount = 0;
         Layer* fileslay = nullptr;
+        bool addedlay = false;
         Layer* prevlayer = nullptr;
         int laypos = -1;
 		int multistage = 0;
@@ -890,6 +899,8 @@ class Program {
         std::unordered_map<Shelf*, bool> shelfjpegpaths;
         bool openjpegpathsshelf = false;
         bool adaptparaming = false;
+        std::unordered_set<Layer*> openlayers;
+        int transferclonesetnr = -1;
 
         Boxx *boxbig;
         Boxx *boxbefore;
@@ -934,7 +945,7 @@ class Program {
         int handle_scrollboxes(Boxx &upperbox, Boxx &lowerbox, int numlines, int scrollpos, int scrlines);
         int handle_scrollboxes(Boxx &upperbox, Boxx &lowerbox, int numlines, int scrollpos, int scrlines, int mx, int
             my);
-        void shelf_triggering(ShelfElement *elem);
+        void shelf_triggering(ShelfElement *elem, int deck = -1, Layer *lay = nullptr);
 		int config_midipresets_handle();
 		bool config_midipresets_init();
 		void preferences();
@@ -989,6 +1000,7 @@ class Program {
         GLuint grab_from_fbopool();
         std::tuple<Param*, int, int, int, int, int> newparam(int offset, bool swap);
         std::tuple<Button*, int, int, int, int> newbutton(int offset, bool swap);
+        std::string get_typestring(std::string path);
         Program();
 		
 	private:

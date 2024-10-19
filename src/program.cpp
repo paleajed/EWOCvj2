@@ -1282,11 +1282,7 @@ bool Program::order_paths(bool dodeckmix) {
             std::string str = this->paths.front();
 
             // determine file type and set up data fields
-            std::string istring = "";
-            std::ifstream rfile;
-            rfile.open(str);
-            safegetline(rfile, istring);
-            rfile.close();
+            std::string istring = this->get_typestring(str);
 
             if (isimage(str)) {
                 Layer *lay = new Layer(true);
@@ -1347,14 +1343,7 @@ bool Program::order_paths(bool dodeckmix) {
                     break;
                 }
                 case ELEM_LAYER: {
-                    lay->keepeffbut->value = 0;
-                    std::vector<Layer*> layers;
-                    this->gettinglayertexlay = mainmix->add_layer(layers, 0);
-                    this->gettinglayertexlay->keepeffbut->value = 0;
-                    this->gettinglayertexlay->type = ELEM_LAYER;
-                    this->gettinglayertex = true;
-                    std::thread tex2(&get_layertex, lay, str);
-                    tex2.detach();
+                    get_layertex(lay, str);
                     break;
                 }
                 case ELEM_DECK: {
@@ -1398,24 +1387,20 @@ bool Program::order_paths(bool dodeckmix) {
                 glBindTexture(GL_TEXTURE_2D, lay->texture);
                 if (lay->vidformat == 188 || lay->vidformat == 187) {
                     if (lay->decresult->compression == 187) {
-                        glCompressedTexImage2D(GL_TEXTURE_2D, 0, GL_COMPRESSED_RGBA_S3TC_DXT1_EXT,
-                                               lay->decresult->width,
-                                               lay->decresult->height, 0, lay->decresult->size,
-                                               lay->decresult->data);
+                        glCompressedTexSubImage2D(GL_TEXTURE_2D, 0, 0, 0, lay->decresult->width,
+                                                  lay->decresult->height,
+                                                  GL_COMPRESSED_RGBA_S3TC_DXT1_EXT,
+                                                  lay->decresult->size, lay->decresult->data);
                     } else if (lay->decresult->compression == 190) {
-                        glCompressedTexImage2D(GL_TEXTURE_2D, 0, GL_COMPRESSED_RGBA_S3TC_DXT5_EXT,
-                                               lay->decresult->width,
-                                               lay->decresult->height, 0, lay->decresult->size,
-                                               lay->decresult->data);
+                        glCompressedTexSubImage2D(GL_TEXTURE_2D, 0, 0, 0, lay->decresult->width,
+                                                  lay->decresult->height,
+                                                  GL_COMPRESSED_RGBA_S3TC_DXT5_EXT,
+                                                  lay->decresult->size, lay->decresult->data);
                     }
                 } else {
-                    glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA8, lay->decresult->width, lay->decresult->height, 0,
-                                 GL_BGRA,
-                                 GL_UNSIGNED_BYTE, lay->decresult->data);
+                    glTexSubImage2D(GL_TEXTURE_2D, 0, 0, 0, lay->decresult->width, lay->decresult->height, GL_BGRA, GL_UNSIGNED_BYTE,
+                                    lay->decresult->data);
                 }
-                GLuint butex = lay->fbotex;
-                lay->fbotex = copy_tex(lay->texture);
-                glDeleteTextures(1, &butex);
                 for (int k = 0; k < lay->effects[0].size(); k++) {
                     lay->effects[0][k]->node->calc = true;
                     lay->effects[0][k]->node->walked = false;
@@ -1425,14 +1410,10 @@ bool Program::order_paths(bool dodeckmix) {
                 onestepfrom(0, lay->node, nullptr, -1, -1);
                 mainprogram->directmode = false;
                 if (lay->effects[0].size()) {
-                    tex = copy_tex(lay->effects[0][lay->effects[0].size() - 1]->fbotex,
-                                   binsmain->elemboxes[0]->scrcoords->w, binsmain->elemboxes[0]->scrcoords->h);
+                    tex = copy_tex(lay->effects[0][lay->effects[0].size() - 1]->fbotex, 192, 108);
                 } else {
-                    tex = copy_tex(lay->fbotex, binsmain->elemboxes[0]->scrcoords->w,
-                                   binsmain->elemboxes[0]->scrcoords->h);
+                    tex = copy_tex(lay->fbotex, 192, 108);
                 }
-                this->gettinglayertexlay->close();
-                this->gettinglayertex = false;
             } else {
                 tex = this->get_tex(lay);
             }
@@ -1475,7 +1456,7 @@ bool Program::order_paths(bool dodeckmix) {
 
     if (this->multistage == 3) {
         // then do interactive ordering
-        if (this->paths.size() != 1) {
+        if (this->paths.size() > 1) {
             bool cont = this->do_order_paths();
             if (!cont) return false;
         }
@@ -1654,8 +1635,8 @@ void Program::handle_wormgate(bool gate) {
 	if (gate == 0) box = mainprogram->wormgate1->box;
 	else box = mainprogram->wormgate2->box;
 
-    glBindFramebuffer(GL_FRAMEBUFFER, 0);
-    glDrawBuffer(GL_BACK_LEFT);
+    //glBindFramebuffer(GL_FRAMEBUFFER, 0);
+    //glDrawBuffer(GL_BACK_LEFT);
 	if (gate == 0) {
 		register_triangle_draw(lightgrey, lightgrey, -1.0 + box->vtxcoords->w, box->vtxcoords->y1 + box->vtxcoords->h / 4.0f - 0.15f, box->vtxcoords->h / 4.0f, box->vtxcoords->h / 2.0f, LEFT, OPEN, true);
         mainprogram->directmode = true;
@@ -2287,50 +2268,90 @@ int Program::quit_requester() {
 }
 
 
-void Program::shelf_triggering(ShelfElement* elem) {
+void Program::shelf_triggering(ShelfElement* elem, int deck, Layer *layer) {
 	// do trigger from shelf, set up in callback, executed here at a fixed the_loop position
     for (int i = 0; i < 4; ++i) {
         if (!mainmix->swapmap[i].empty()) return;
     }
     if (elem) {
-        std::vector<Layer *> clays = mainmix->currlays[!mainprogram->prevmodus];
+        std::vector<Layer *> clays;
+        if (layer) {
+            clays.push_back(layer);
+        } else {
+            clays = mainmix->currlays[!mainprogram->prevmodus];
+        }
         int checkeddeck = 2;
         Layer *laydeck0 = nullptr;
         Layer *laydeck1 = nullptr;
         for (int k = 0; k < clays.size(); k++) {
             Layer *lay = clays[k];
-            clays[k]->deautomate();
+            //clays[k]->deautomate();
             if (elem->type == ELEM_FILE) {
                 //clays[k]->tagged = false;
+                mainmix->set_prevshelfdragelem_layers(clays[k]);
                 mainmix->reload_tagged_elems(elem, clays[k]->deck);
+                clays[k] = mainmix->layers[!mainprogram->prevmodus + clays[k]->deck][clays[k]->pos];
                 clays[k] = clays[k]->open_video(0, elem->path, true);
                 clays[k]->set_clones();
+                clays[k]->oldclips.clear();
+                clays[k]->prevshelfdragelem = elem;
+                Clip *clip = new Clip;
+                clays[k]->oldclips.push_back(clip);
                 // currlay is handled in lay->transfer()
                 std::thread setfr(&Mixer::set_frame, mainmix, elem, clays[k]);
                 setfr.detach();
             } else if (elem->type == ELEM_IMAGE) {
+                mainmix->set_prevshelfdragelem_layers(clays[k]);
                 mainmix->reload_tagged_elems(elem, clays[k]->deck);
+                clays[k] = mainmix->layers[!mainprogram->prevmodus + clays[k]->deck][clays[k]->pos];
                 clays[k]->open_image(elem->path);
                 clays[k]->set_clones();
+                clays[k]->oldclips.clear();
+                clays[k]->prevshelfdragelem = elem;
+                Clip *clip = new Clip;
+                clays[k]->oldclips.push_back(clip);
                 // currlay is handled in lay->transfer()
                 std::thread setfr(&Mixer::set_frame, mainmix, elem, clays[k]);
                 setfr.detach();
             } else if (elem->type == ELEM_LAYER) {
+                mainmix->set_prevshelfdragelem_layers(clays[k]);
+                bool done = elem->done;
                 mainmix->reload_tagged_elems(elem, clays[k]->deck);
-                clays[k] = mainmix->open_layerfile(elem->path, clays[k], true, false, false);  // reminder : doclips?
-                std::thread setfr(&Mixer::set_frame, mainmix, elem, clays[k]);
-                setfr.detach();
-                lay->set_inlayer(clays[k], true);
-                mainmix->currlay[!mainprogram->prevmodus] = clays[k];
-                mainmix->currlays[!mainprogram->prevmodus][k] = clays[k];
+                if (done && elem->launchtype > 0) {
+                    mainmix->set_layer(elem, clays[k]);
+                }
+                else {
+                    clays[k] = mainmix->open_layerfile(elem->path, clays[k], true, true);
+                    lay->set_inlayer(clays[k]);
+                    mainmix->currlay[!mainprogram->prevmodus] = clays[k];
+                    mainmix->currlays[!mainprogram->prevmodus][k] = clays[k];
+                    clays[k]->oldclips.clear();
+                    for (int i = 0; i < clays[k]->clips.size(); i++) {
+                        clays[k]->oldclips.push_back(clays[k]->clips[i]->copy());
+                    }
+                    if (clays[k]->oldclips.empty()) {
+                        Clip *clip = new Clip;
+                        clays[k]->oldclips.push_back(clip);
+                    }
+                    clays[k]->prevshelfdragelem = elem;
+                }
             }
             if (clays[k]->deck == 0) laydeck0 = choose_layers(0)[0];
             if (clays[k]->deck == 1) laydeck1 = choose_layers(1)[0];
         }
 
         std::vector<Layer *> decklays;
-        decklays.push_back(laydeck0);
-        decklays.push_back(laydeck1);
+        if (deck != -1) {
+            if (deck == 0) {
+                decklays.push_back(choose_layers(0)[0]);
+            }
+            if (deck == 1) {
+                decklays.push_back(choose_layers(1)[0]);
+            }
+        } else {
+            decklays.push_back(laydeck0);
+            decklays.push_back(laydeck1);
+        }
         for (int k = 0; k < decklays.size(); k++) {
             if (decklays[k] == nullptr) continue;
             if (elem->type == ELEM_DECK) {
@@ -2338,28 +2359,70 @@ void Program::shelf_triggering(ShelfElement* elem) {
                 if (checkeddeck == decklays[k]->deck)
                     continue;
                 checkeddeck = decklays[k]->deck;
-                 // copy_lpst moved to swapmap
 
+                auto lvec2 = choose_layers(mainmix->mousedeck);
+                for (Layer *lay : lvec2) {
+                    mainmix->set_prevshelfdragelem_layers(lay);
+                }
+                bool done = elem->done;
                 mainmix->reload_tagged_elems(elem, mainmix->mousedeck);
-                mainmix->open_deck(elem->path, true, true);  // dont load loopstation events from shelf ever?
-                std::thread setfr(&Mixer::set_frames, mainmix, elem, (bool)mainmix->mousedeck);
-                setfr.detach();
+                if (done && elem->launchtype > 0) {
+                    mainmix->set_layers(elem, (bool) mainmix->mousedeck);
+                }
+                else {
+                    mainmix->open_deck(elem->path, true, true);  // dont load loopstation events from shelf ever?
+                    std::vector<Layer *> lvec = mainmix->newlrs[!mainprogram->prevmodus * 2 + mainmix->mousedeck];
+                    for (Layer *lay : lvec) {
+                        lay->oldclips.clear();
+                        for (int i = 0; i < lay->clips.size(); i++) {
+                            lay->oldclips.push_back(lay->clips[i]->copy());
+                        }
+                        if (lay->oldclips.empty()) {
+                            Clip *clip = new Clip;
+                            lay->oldclips.push_back(clip);
+                        }
 
+                        lay->prevshelfdragelem = elem;
+                    }
+                }
             }
         }
 
         if (elem->type == ELEM_MIX) {
-
+            for (int m = 0; m < 2; ++m) {
+                auto lvec = choose_layers(m);
+                for (int i = 0; i < lvec.size(); ++i) {
+                    Layer *lay = lvec[i];
+                    lay->oldclips.clear();
+                    for (int i = 0; i < lay->clips.size(); i++) {
+                        lay->oldclips.push_back(lay->clips[i]->copy());
+                    }
+                    if (lay->oldclips.empty()) {
+                        Clip *clip = new Clip;
+                        lay->oldclips.push_back(clip);
+                    }
+                }
+            }
+            mainmix->set_prevshelfdragelem_layers(mainmix->layers[!mainprogram->prevmodus * 2 + deck][0]);
+            bool done = elem->done;
             mainmix->reload_tagged_elems(elem, 0);
             mainmix->reload_tagged_elems(elem, 1);
-            mainmix->open_mix(elem->path, true, true);  // dont load loopstation events from shelf ever
-            std::thread setfr1(&Mixer::set_frames, mainmix, elem, false);
-            setfr1.detach();
-            std::thread setfr2(&Mixer::set_frames, mainmix, elem, true);
-            setfr2.detach();
-            mainmix->set_frames(elem, 0);
-            mainmix->set_frames(elem, 1);
-        }
+            if (done && elem->launchtype > 0) {
+                mainmix->set_layers(elem, 0);
+                mainmix->set_layers(elem, 1);
+            }
+            else {
+                mainmix->open_mix(elem->path, true, true);  // dont load loopstation events from shelf ever
+                std::vector<Layer *> lvec1 = mainmix->newlrs[!mainprogram->prevmodus * 2];
+                for (Layer *lay : lvec1) {
+                    lay->prevshelfdragelem = elem;
+                }
+                std::vector<Layer *> lvec2 = mainmix->newlrs[!mainprogram->prevmodus * 2 + 1];
+                for (Layer *lay : lvec2) {
+                    lay->prevshelfdragelem = elem;
+                }
+            }
+         }
     }
     mainprogram->midishelfelem = nullptr;
 }
@@ -4823,7 +4886,9 @@ void Program::handle_lpstmenu() {
 void Program::preview_modus_buttons() {
 	// Draw and handle buttons
     for (Layer *lay : mainmix->layers[0]) {
-        if (lay->changeinit < 1 && lay->filename != "" && !lay->isclone && !(lay->type == ELEM_IMAGE && lay->numf == 0)) return;
+        if (lay->changeinit < 1 && lay->filename != "" && !lay->isclone && !(lay->type == ELEM_IMAGE && lay->numf == 0)) {
+            return;
+        }
     }
     for (Layer *lay : mainmix->layers[1]) {
         if (lay->changeinit < 1 && lay->filename != "" && !lay->isclone && !(lay->type == ELEM_IMAGE && lay->numf == 0)) return;
@@ -4933,8 +4998,7 @@ void Program::preview_modus_buttons() {
                 box = mainprogram->toscene[m][0][i]->box;
                 register_triangle_draw(white, white, box->vtxcoords->x1 + box->vtxcoords->w / 2.0f + 0.0117f,
                                        box->vtxcoords->y1 + 0.0225f, 0.0165f, 0.0312f, DOWN, CLOSED);
-                const char *charstr = std::to_string(scns[i]).c_str();
-                render_text(charstr, white, box->vtxcoords->x1 + 0.0117f,
+                render_text(std::to_string(scns[i]), white, box->vtxcoords->x1 + 0.0117f,
                             box->vtxcoords->y1 + 0.0225f, 0.0006f, 0.001f);
 
                 mainprogram->handle_button(mainprogram->toscene[m][1][i], false, false, true);
@@ -6472,11 +6536,11 @@ void Project::copy_dirs(std::string path) {
 
 void Project::create_dirs(const std::string path) {
     std::string dir = path;
-    this->binsdir = dir + "bins/";
-    this->recdir = dir + "recordings/";
-    this->shelfdir = dir + "shelves/";
-    this->autosavedir = dir + "autosaves/";
-    this->elementsdir = dir + "elements/";
+    this->binsdir = dir + "/bins/";
+    this->recdir = dir + "/recordings/";
+    this->shelfdir = dir + "/shelves/";
+    this->autosavedir = dir + "/autosaves/";
+    this->elementsdir = dir + "/elements/";
     std::filesystem::path d{ dir };
     std::filesystem::create_directory(d);
     std::filesystem::path p1{ this->binsdir };
@@ -6496,7 +6560,9 @@ void Project::create_dirs(const std::string path) {
 
 void Project::create_dirs_autosave(const std::string path) {
     std::string dir = path;
-    std::filesystem::rename(mainprogram->project->autosavedir + "temp", path);
+    if (exists(mainprogram->project->autosavedir + "temp")) {
+        std::filesystem::rename(mainprogram->project->autosavedir + "temp", path);
+    }
     std::string buad = mainprogram->project->autosavedir;
     this->binsdir = dir + "/bins/";
     this->shelfdir = dir + "/shelves/";
@@ -6575,20 +6641,50 @@ void Project::newp(const std::string path) {
 	mainprogram->shelves[1]->basepath = "shelfsB";
 	mainprogram->shelves[0]->save(mainprogram->project->shelfdir + "shelfsA");
 	mainprogram->shelves[1]->save(mainprogram->project->shelfdir + "shelfsB");
+
+    // make init layer stacks
+    for (int n = 0; n < 2; n++) {
+        for (int m = 0; m < 2; m++) {
+            for (Layer *lay : mainmix->layers[n * 2 + m]) {
+                lay->close();
+            }
+            mainmix->layers[n * 2 + m].clear();
+            std::vector<Layer *> &lvec = mainmix->layers[n * 2 + m];
+            Layer *lay = mainmix->add_layer(lvec, 0);
+            lay->filename = "";
+        }
+    }
+    // make init scene layers stacks
+    for (int n = 1; n < 4; n++) {
+        for (int m = 0; m < 2; m++) {
+            for (Layer *lay : mainmix->scenes[m][n]->scnblayers) {
+                lay->close();
+            }
+            mainmix->scenes[m][n]->scnblayers.clear();
+            std::vector<Layer *> &lvec = mainmix->scenes[m][n]->scnblayers;
+            Layer *lay = mainmix->add_layer(lvec, 0);
+            lay->filename = "";
+        }
+    }
+    mainmix->reconnect_all(mainmix->layers[!mainprogram->prevmodus * 2]);
+    mainmix->reconnect_all(mainmix->layers[!mainprogram->prevmodus * 2 + 1]);
+
     mainmix->currlays[0].clear();
     mainmix->currlays[1].clear();
-    std::vector<Layer*> &lvec = choose_layers(0);
-    mainmix->currlays[!mainprogram->prevmodus].push_back(lvec[0]);
-    mainmix->currlay[!mainprogram->prevmodus] = lvec[0];
+    std::vector<Layer*> &lvec1 = choose_layers(0);
+    mainmix->currlays[!mainprogram->prevmodus].push_back(lvec1[0]);
+    mainmix->currlay[!mainprogram->prevmodus] = lvec1[0];
     mainprogram->prevmodus = !mainprogram->prevmodus;
-    lvec = choose_layers(0);
-    mainmix->currlays[!mainprogram->prevmodus].push_back(lvec[0]);
-    mainmix->currlay[!mainprogram->prevmodus] = lvec[0];
+    std::vector<Layer*> &lvec2 = choose_layers(0);
+    mainmix->currlays[!mainprogram->prevmodus].push_back(lvec2[0]);
+    mainmix->currlay[!mainprogram->prevmodus] = lvec2[0];
     mainprogram->prevmodus = !mainprogram->prevmodus;
     mainprogram->project->save(this->path);
 }
 	
 bool Project::open(std::string path, bool autosave, bool newp, bool undo) {
+    this->wait_for_copyover();
+
 	std::string result = mainprogram->deconcat_files(path);
 	bool concat = (result != "");
 	std::ifstream rfile;
@@ -6786,7 +6882,9 @@ bool Project::open(std::string path, bool autosave, bool newp, bool undo) {
 	return true;
 }
 
-void Project::save(std::string path, bool autosave, bool undo) {
+void Project::save(std::string path, bool autosave, bool undo, bool nocheck) {
+    if (!nocheck) this->wait_for_copyover();
+
     if (undo) {
         mainprogram->undoing = true;
     }
@@ -6808,6 +6906,7 @@ void Project::save(std::string path, bool autosave, bool undo) {
 	wfile.open(str);
 	std::vector<std::string> filestoadd;
 
+    std::vector<std::vector<std::string>> bupaths;
     if (mainprogram->inautosave) {
         for (std::string binpath : mainprogram->oldbins) {
             std::filesystem::remove(binpath);
@@ -6822,7 +6921,12 @@ void Project::save(std::string path, bool autosave, bool undo) {
                     for (int i = 0; i < 12; i++) {
                         BinElement *binel = binsmain->bins[k]->elements[i * 12 + j];
                         std::string s =
-                                mainprogram->project->binsdir + "/bins/" + binsmain->bins[k]->name + "/";
+                                mainprogram->project->binsdir + binsmain->bins[k]->name + "/";
+                        bup.push_back(binel->absjpath);
+                        if (binel->path != "") {
+                            binel->path = s + basename(binel->path);
+                            binel->relpath = std::filesystem::relative(binel->path, s).generic_string();
+                        }
                         if (binel->absjpath != "") {
                             binel->absjpath = s + basename(binel->absjpath);
                             binel->jpegpath = binel->absjpath;
@@ -6830,9 +6934,9 @@ void Project::save(std::string path, bool autosave, bool undo) {
                         }
                     }
                 }
+                bupaths.push_back(bup);
             }
         }
-        mainprogram->inautosave = false;
     }
 
 	wfile << "EWOCvj PROJECT V0.1\n";
@@ -6871,7 +6975,7 @@ void Project::save(std::string path, bool autosave, bool undo) {
     }
 
     // save main state file: is concatted in project file
-	mainmix->save_state(mainprogram->temppath + "current.state", false, undo);
+	mainmix->save_state(mainprogram->temppath + "current.state", autosave, undo);
 	filestoadd.push_back(mainprogram->temppath + "current.state");
 
     if (!undo) {
@@ -6879,7 +6983,11 @@ void Project::save(std::string path, bool autosave, bool undo) {
         int cbin = binsmain->currbin->pos;
         for (int i = 0; i < binsmain->bins.size(); i++) {
             binsmain->make_currbin(i);
-            binsmain->save_bin(dirname(path) + "bins/" + basename(binsmain->bins[i]->path));
+            std::filesystem::path p1(mainprogram->project->binsdir + remove_extension(basename(binsmain->bins[i]->path)));
+            if (!exists(p1)) {
+                std::filesystem::create_directory(p1);
+            }
+            binsmain->save_bin(dirname(path) + "bins/" + binsmain->bins[i]->name + ".bin");
         }
         binsmain->make_currbin(cbin);
         binsmain->save_binslist();
@@ -6926,13 +7034,20 @@ void Project::save(std::string path, bool autosave, bool undo) {
         }
     }
 
-    if (!undo) {
+    if (!undo && !autosave) {
         //remove redundant bin files
         for (Bin *bin: binsmain->bins) {
             for (BinElement *elem: bin->elements) {
                 if (elem->jpegpath != "") {
+                    // dont remove new ones
+                    binsmain->removeset[0].erase(std::filesystem::weakly_canonical(elem->path).generic_string());
+                    binsmain->removeset[0].erase(std::filesystem::weakly_canonical(elem->jpegpath).generic_string());
+                    binsmain->removeset[1].erase(std::filesystem::weakly_canonical(elem->path).generic_string());
+                    binsmain->removeset[1].erase(std::filesystem::weakly_canonical(elem->jpegpath).generic_string());
                     binsmain->removeset[0].erase(elem->path);
                     binsmain->removeset[0].erase(elem->jpegpath);
+                    binsmain->removeset[1].erase(elem->path);
+                    binsmain->removeset[1].erase(elem->jpegpath);
                 }
             }
         }
@@ -6940,9 +7055,81 @@ void Project::save(std::string path, bool autosave, bool undo) {
             std::filesystem::remove(it);
         }
     }
+    mainprogram->inautosave = false;
+}
+
+void Project::wait_for_copyover() {
+    if (this->copyingover) {
+        std::unique_lock<std::mutex> lock(this->copyovermutex);
+        this->copyovervar.wait(lock, [&] { return this->copiedover; });
+        lock.unlock();
+        this->copiedover = false;
+    }
+}
+
+void Project::copy_over(std::string path, std::string path2, std::string oldprdir) {
+    this->copyingover = true;
+    if (exists(path2)) {
+        this->delete_dirs(path2);
+    }
+    this->create_dirs(path2);
+    mainprogram->project->copy_dirs(path2);
+
+    if (!std::filesystem::is_empty(path + "/autosaves/")) {
+        // adapt autosave entries
+        std::unordered_map<std::string, std::string> smap;
+        // change autosave directory names
+        for (const auto &dirEnt: std::filesystem::directory_iterator{
+                path + "/autosaves/"}) {
+            const auto &path = dirEnt.path();
+            auto pathstr = path.generic_string();
+            if (basename(pathstr) == "temp") continue;
+            size_t start_pos = pathstr.rfind(oldprdir);
+            if (start_pos == std::string::npos) continue;
+            std::string newstr = pathstr;
+            newstr.replace(start_pos, oldprdir.length(), basename(path2));
+            smap[pathstr] = newstr;
+        }
+        std::unordered_map<std::string, std::string>::iterator it;
+        for (it = smap.begin(); it != smap.end(); it++) {
+            if (!exists(it->second)) {
+                std::filesystem::rename(it->first, it->second);
+            }
+            else {
+                std::filesystem::remove_all(it->first);
+            }
+        }
+        // change autosave project file names
+        smap.clear();
+        for (const auto &dirEnt: std::filesystem::recursive_directory_iterator{
+                mainprogram->project->autosavedir}) {
+            const auto &path = dirEnt.path();
+            //if (std::filesystem::is_directory(path)) continue;
+            auto pathstr = path.generic_string();
+            std::string ext2 = pathstr.substr(pathstr.length() - 7, std::string::npos);
+            if (ext2 != ".ewocvj") continue;
+            size_t start_pos = pathstr.rfind(oldprdir);
+            if (start_pos == std::string::npos) continue;
+            std::string newstr = pathstr;
+            newstr.replace(start_pos, oldprdir.length(), basename(path2));
+            smap[pathstr] = newstr;
+        }
+        for (it = smap.begin(); it != smap.end(); it++) {
+            std::filesystem::rename(it->first, it->second);
+        }
+    }
+    {
+        std::unique_lock<std::mutex> lock(this->copyovermutex);
+        this->copiedover = true;
+    }
+    this->copyovervar.notify_all();
+
+    this->copyingover = false;
 }
 
 void Project::save_as() {
+    this->wait_for_copyover();
+
     std::string path2;
     std::string str;
     std::vector<std::vector<std::string>> bupaths;
@@ -6960,12 +7147,8 @@ void Project::save_as() {
             mainprogram->path = path2;
         }
 
-        if (!exists(path2)) {
-            mainprogram->project->copy_dirs(path2);
-        } else {
-            mainprogram->project->delete_dirs(path2);
-            mainprogram->project->copy_dirs(path2);
-        }
+        std::thread copy(&Project::copy_over, this, mainprogram->path, path2, oldprdir);
+        copy.detach();
 
         if (mainprogram->project->bupp != "") {
             mainprogram->project->binsdir = mainprogram->project->bubd;
@@ -6977,44 +7160,6 @@ void Project::save_as() {
             mainprogram->project->name = mainprogram->project->bupn;
         }
 
-        if (!std::filesystem::is_empty(mainprogram->path + "/autosaves/")) {
-            // adapt autosave entries
-            std::unordered_map<std::string, std::string> smap;
-            // change autosave directory names
-            for (const auto &dirEnt: std::filesystem::directory_iterator{
-                    mainprogram->path + "/autosaves/"}) {
-                const auto &path = dirEnt.path();
-                auto pathstr = path.generic_string();
-                if (basename(pathstr) == "autosavelist") continue;
-                size_t start_pos = pathstr.rfind(oldprdir);
-                if (start_pos == std::string::npos) continue;
-                std::string newstr = pathstr;
-                newstr.replace(start_pos, oldprdir.length(), basename(path2));
-                smap[pathstr] = newstr;
-            }
-            std::unordered_map<std::string, std::string>::iterator it;
-            for (it = smap.begin(); it != smap.end(); it++) {
-                std::filesystem::rename(it->first, it->second);
-            }
-            // change autosave project file names
-            smap.clear();
-            for (const auto &dirEnt: std::filesystem::recursive_directory_iterator{
-                    mainprogram->project->autosavedir}) {
-                const auto &path = dirEnt.path();
-                //if (std::filesystem::is_directory(path)) continue;
-                auto pathstr = path.generic_string();
-                std::string ext2 = pathstr.substr(pathstr.length() - 7, std::string::npos);
-                if (ext2 != ".ewocvj") continue;
-                size_t start_pos = pathstr.rfind(oldprdir);
-                if (start_pos == std::string::npos) continue;
-                std::string newstr = pathstr;
-                newstr.replace(start_pos, oldprdir.length(), basename(path2));
-                smap[pathstr] = newstr;
-            }
-            for (it = smap.begin(); it != smap.end(); it++) {
-                std::filesystem::rename(it->first, it->second);
-            }
-        }
         /*std::string src = pathtoplatform(mainprogram->project->binsdir + binsmain->currbin->name + "/");
         std::string dest = pathtoplatform(dirname(mainprogram->path) + remove_extension(basename(mainprogram->path)) + "/");
         copy_dir(src, dest);*/
@@ -7054,7 +7199,7 @@ void Project::save_as() {
     }
     // save project
     mainprogram->saveas = true;
-    mainprogram->project->save(str, false);
+    mainprogram->project->save(str, false, false, true);
     mainprogram->saveas = false;
 
     for (int k = 0; k < binsmain->bins.size(); k++) {
@@ -7128,40 +7273,11 @@ void Project::autosave() {
     mainprogram->project->create_dirs_autosave(p1);
     mainprogram->autosaving = true;
     std::vector<std::vector<std::string>> bupaths;
-    for (int k = 0; k < binsmain->bins.size(); k++) {
-        std::vector<std::string> bup;
-        for (int j = 0; j < 12; j++) {
-            for (int i = 0; i < 12; i++) {
-                BinElement *binel = binsmain->bins[k]->elements[i * 12 + j];
-                std::string s =
-                        p1 + "/bins/" + binsmain->bins[k]->name + "/";
-                bup.push_back(binel->absjpath);
-                if (binel->absjpath != "") {
-                    binel->absjpath = s + basename(binel->absjpath);
-                    binel->jpegpath = binel->absjpath;
-                    binel->reljpath = std::filesystem::relative(binel->absjpath, s).generic_string();
-                }
-            }
-        }
-        bupaths.push_back(bup);
-    }
 
     printf("autosaving\n");
 
     mainprogram->project->save(p1 + "/" + basename(p1) + ".ewocvj", true);
 
-    for (int k = 0; k < binsmain->bins.size(); k++) {
-        for (int j = 0; j < 12; j++) {
-            for (int i = 0; i < 12; i++) {
-                BinElement *binel = binsmain->bins[k]->elements[i * 12 + j];
-                //bupaths[k][i * 12 + j] = binel->absjpath;
-                binel->absjpath = bupaths[k][i * 12 + j];
-                binel->jpegpath = binel->absjpath;
-                binel->reljpath = std::filesystem::relative(binel->absjpath,
-                                                            mainprogram->project->binsdir).generic_string();
-            }
-        }
-    }
     mainprogram->autosaving = false;
     this->binsdir = mainprogram->project->bubd;
     this->shelfdir = mainprogram->project->busd;
@@ -7871,7 +7987,7 @@ PIProg::PIProg() {
     pos++;
 
     pdi = new PrefItem(this, pos, "Autosave interval (minutes)", PREF_NUMBER, (void*)&mainprogram->asminutes);
-    pdi->value = 3;
+    pdi->value = 5;
     pdi->namebox->tooltiptitle = "Autosave interval ";
     pdi->namebox->tooltip = "Sets the time interval between successive autosaves. ";
     pdi->valuebox->tooltiptitle = "Set autosave interval ";
@@ -8633,11 +8749,8 @@ void Shelf::open_files_shelf() {
         ShelfElement *elem = this->elements[mainprogram->shelffileselem];
         str = mainprogram->paths[mainprogram->shelffilescount];
         // determine file type
-        std::string istring = "";
-        std::ifstream rfile;
-        rfile.open(str);
-        safegetline(rfile, istring);
-        rfile.close();
+        std::string istring = mainprogram->get_typestring(str);
+
         if (istring.find("EWOCvj LAYERFILE") != std::string::npos) {
             elem->type = ELEM_LAYER;
         } else if (istring.find("EWOCvj DECKFILE") != std::string::npos) {
@@ -8917,6 +9030,7 @@ void Shelf::handle() {
                 bool dummy = false;
             }
             elem->nblayers[j]->vidopen = false;
+            elem->nblayers[j]->layers = &elem->nblayers;
             elem->nblayers[j]->progress(!mainprogram->prevmodus, 0);
             elem->nblayers[j]->cnt_lpst();
         }
@@ -9038,6 +9152,8 @@ void Shelf::handle() {
                             } else {
                                 elem->path = mainprogram->dragbinel->path;
                                 elem->type = mainprogram->dragbinel->type;
+                                elem->done = false;
+                                mainprogram->draglay->prevshelfdragelem = nullptr;
                             }
                             elem->tex = copy_tex(mainprogram->dragbinel->tex);
                             elem->jpegpath = find_unused_filename(basename(elem->path), mainprogram->temppath, ".jpg");
@@ -9383,6 +9499,26 @@ void Program::concat_files(std::string ofpath, std::string path, std::vector<std
     }
 }
 
+std::string Program::get_typestring(std::string path) {
+    std::string istring = "";
+    std::ifstream bfile;
+    bfile.open(path, std::ios::in | std::ios::binary);
+    int32_t num;
+    bfile.read((char *)&num, 4);
+    if (num != 20011975) {
+        return "";
+    }
+    bfile.read((char *)&num, 4);
+    for (int i = 0; i < num; i++) {
+        int size;
+        bfile.read((char *) &size, 4);
+    }
+    safegetline(bfile, istring);
+    bfile.close();
+
+    return istring;
+}
+
 
 void Program::delete_text(std::string str) {
     // destroy a GUIString element from the map
@@ -9419,8 +9555,11 @@ void Program::register_undo(Param *par, Button *but) {
             laydeck = par->layer->comp * 2 + par->layer->deck;
             laypos = par->layer->pos;
             if (par->effect){
-                if (std::find(par->layer->effects[0].begin(), par->layer->effects[0].end(), par->effect) != par->layer->effects[0].end()) {
-                    effcat = 0;
+                if (!par->layer->effects[0].empty()) {
+                    if (std::find(par->layer->effects[0].begin(), par->layer->effects[0].end(), par->effect) !=
+                        par->layer->effects[0].end()) {
+                        effcat = 0;
+                    }
                 }
                 else if (std::find(par->layer->effects[1].begin(), par->layer->effects[1].end(), par->effect) != par->layer->effects[1].end()) {
                     effcat = 1;
@@ -9916,6 +10055,7 @@ void Program::add_to_texpool(GLuint tex) {
     glGetTexLevelParameteriv(GL_TEXTURE_2D, 0, GL_TEXTURE_WIDTH, &sw);
     glGetTexLevelParameteriv(GL_TEXTURE_2D, 0, GL_TEXTURE_HEIGHT, &sh);
     GLint compressedGL = this->texintfmap[tex];
+    if (compressedGL == 0) return;
     if (sw == 0) {
         glDeleteTextures(1, &tex);
         return;

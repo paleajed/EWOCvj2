@@ -76,7 +76,10 @@ class LoopStationElement {
 		Button *loopbut;
 		Button *playbut;
 		Boxx *colbox;
-		Boxx *box;
+        Boxx *box;
+        Param *scritch;
+        int scritching = 0;
+        bool midiscritch = false;
 		std::chrono::high_resolution_clock::time_point starttime;
         float totaltime = 0;
         float interimtime = 0;
