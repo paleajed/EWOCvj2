@@ -531,8 +531,6 @@ class Mixer {
 		Button *midibutton = nullptr;
 		Button *midishelfbutton = nullptr;
 		Param *midiparam = nullptr;
-        std::vector<Param*> learnedparams;
-        std::vector<Button*> learnedbuttons;
 		Param *adaptparam = nullptr;
 		Param *prepadaptparam = nullptr;
 		Param *adaptnumparam = nullptr;

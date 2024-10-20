@@ -91,6 +91,7 @@ extern "C" {
 }
 
 #include <ft2build.h>
+#include <shellapi.h>
 #include FT_FREETYPE_H
 #include FT_BITMAP_H
 #include FT_MODULE_H
@@ -1048,7 +1049,6 @@ void mycallback( double deltatime, std::vector< unsigned char > *message, void *
 			mainmix->learnparam->midi[0] = midi0;
 			mainmix->learnparam->midi[1] = midi1;
 			mainmix->learnparam->midiport = midiport;
-            mainmix->learnedparams.push_back(mainmix->learnparam);
 			if (mainmix->learndouble) {
                 // learn for both comp modes: preview and performance
 			    bool bupm = mainprogram->prevmodus;
@@ -1126,7 +1126,6 @@ reminder: IMPLEMENT */
             mainmix->learnbutton->midi[0] = midi0;
             mainmix->learnbutton->midi[1] = midi1;
             mainmix->learnbutton->midiport = midiport;
-            mainmix->learnedbuttons.push_back(mainmix->learnbutton);
             if (mainmix->learndouble) {
                 bool bupm = mainprogram->prevmodus;
                 mainprogram->prevmodus = true;
@@ -1195,24 +1194,23 @@ reminder: IMPLEMENT */
 			}
 		}
 
-		for (Param *par : mainmix->learnedparams) {
-            if (midi0 == par->midi[0] && midi1 == par->midi[1] && midiport == par->midiport) {
-                // set loopstation speed parameter
-                if (mainprogram->sameeight) {
-                    for (int i = 0; i < 8; i++) {
-                        if (par == loopstation->elements[i]->speed) {
-                            par = loopstation->elements[i + loopstation->scrpos]->speed;
-                            break;
-                        }
+        Param *par = mainmix->midi_registrations[!mainprogram->prevmodus][midi0][midi1][midiport].par;
+        if (par) {
+            // set loopstation speed parameter
+            if (mainprogram->sameeight) {
+                for (int i = 0; i < 8; i++) {
+                    if (par == loopstation->elements[i]->speed) {
+                        par = loopstation->elements[i + loopstation->scrpos]->speed;
+                        break;
                     }
                 }
-                // set midiparam, handled in midi_set()
-                mainmix->midi2 = midi2;
-                mainmix->midiparam = par;
-                par->midistarttime = std::chrono::system_clock::now();
-                par->midistarted = true;
             }
-		}
+            // set midiparam, handled in midi_set()
+            mainmix->midi2 = midi2;
+            mainmix->midiparam = par;
+            par->midistarttime = std::chrono::system_clock::now();
+            par->midistarted = true;
+        }
 	}
 	LayMidi *lm = nullptr;
     // start handling MIDI (assigning to values)
@@ -6290,7 +6288,11 @@ void open_genmidis(std::string path) {
 
 
 #ifdef WINDOWS
-int CALLBACK WinMain(HINSTANCE hInstance, HINSTANCE hPrevInstance, LPSTR pCmdLine, int nCmdShow) {
+int WINAPI WinMain(HINSTANCE hInstance, HINSTANCE hPrevInstance, LPSTR pCmdLine, int nCmdShow) {
+    char exePath[MAX_PATH];
+    GetModuleFileNameA(NULL, exePath, MAX_PATH);
+    std::string direc = dirname(exePath);  // Removes the filename from the path
+    std::filesystem::current_path(direc);
 #endif
 #ifdef POSIX
 int main(int argc, char* argv[]) {
@@ -6305,7 +6307,8 @@ int main(int argc, char* argv[]) {
         fwprintf(stderr, L"SetProcessDpiAwareness: %s\n", err.ErrorMessage());
     }
 #endif
-
+printf("1\n");
+    fflush(stdout);
 
     // OPENAL
     /*const char *defaultDeviceName = alcGetString(nullptr, ALC_DEFAULT_DEVICE_SPECIFIER);
@@ -6323,15 +6326,21 @@ int main(int argc, char* argv[]) {
     // initializing devIL
     ilInit();
 
+    printf("2\n");
+    fflush(stdout);
     if (SDL_Init(SDL_INIT_VIDEO) < 0) /* Initialize SDL's Video subsystem */
         mainprogram->quitting = "Unable to initialize SDL"; /* Or die on error */
     //atexit(SDL_Quit);
+    printf("3\n");
+    fflush(stdout);
 
     /* Request opengl 4.6 context.
      * SDL doesn't have the ability to choose which profile at this time of writing,
      * but it should default to the core profile */
     SDL_GL_SetAttribute(SDL_GL_CONTEXT_MAJOR_VERSION, 4);
     SDL_GL_SetAttribute(SDL_GL_CONTEXT_MINOR_VERSION, 3);
+    printf("4\n");
+    fflush(stdout);
 
     /* Turn on double buffering */
     SDL_GL_SetAttribute(SDL_GL_DOUBLEBUFFER, 1);
@@ -6350,6 +6359,8 @@ int main(int argc, char* argv[]) {
                                        SDL_WINDOW_OPENGL | SDL_WINDOW_BORDERLESS | SDL_WINDOW_SHOWN |
                                        SDL_WINDOW_ALLOW_HIGHDPI);
 
+    printf("5\n");
+    fflush(stdout);
     glob = new Globals;
     int wi, he;
     SDL_GL_GetDrawableSize(win, &wi, &he);
@@ -6367,6 +6378,8 @@ int main(int argc, char* argv[]) {
     binsmain = new BinsMain;
     retarget = new Retarget;
 
+    printf("6\n");
+    fflush(stdout);
 
 #ifdef WINDOWS
     std::filesystem::path p5{mainprogram->docpath + "projects"};
@@ -6398,6 +6411,8 @@ int main(int argc, char* argv[]) {
     for (std::filesystem::directory_iterator end_dir_it, it(path_to_remove); it != end_dir_it; ++it) {
         std::filesystem::remove_all(it->path());
     }
+    printf("7\n");
+    fflush(stdout);
 
     glc = SDL_GL_CreateContext(mainprogram->mainwindow);
     SDL_GL_MakeCurrent(mainprogram->mainwindow, glc);
@@ -6426,8 +6441,12 @@ int main(int argc, char* argv[]) {
     smw = (float) wi;
     smh = (float) he;
 
+    printf("8\n");
+    fflush(stdout);
     mainprogram->ShaderProgram = mainprogram->set_shader();
     glUseProgram(mainprogram->ShaderProgram);
+    printf("9\n");
+    fflush(stdout);
 
     mainprogram->shelves[0] = new Shelf(0);
     mainprogram->shelves[1] = new Shelf(1);
@@ -6481,6 +6500,7 @@ int main(int argc, char* argv[]) {
     mainprogram->prefs->load();
     mainprogram->oldow = mainprogram->ow;
     mainprogram->oldoh = mainprogram->oh;
+    mainprogram->set_ow3oh3();
 
     GLint Sampler0 = glGetUniformLocation(mainprogram->ShaderProgram, "Sampler0");
     glUniform1i(Sampler0, 0);
@@ -7610,6 +7630,24 @@ int main(int argc, char* argv[]) {
             mainprogram->currbatch = 0;
 
             Boxx box;
+
+#ifdef WINDOWS
+                // user opened a .ewocvj file in Explorer
+            int w_argc = 0;
+            LPWSTR w_argv = CommandLineToArgvW(GetCommandLineW(), &w_argc)[1];
+            if (w_argv) {
+                std::wstring ws = std::wstring(w_argv);
+                std::string path = std::string(ws.begin(), ws.end());
+                if (path != "") {
+                    mainprogram->project->open(path, false, true);
+                    mainprogram->undo_redo_save();
+                    std::string p = dirname(mainprogram->path);
+                    mainprogram->currprojdir = dirname(p.substr(0, p.length() - 1));
+                    mainprogram->path = "";
+                    mainprogram->startloop = true;
+                }
+            }
+#endif
 
             // handle starting with a new project on the drive
             box.acolor[3] = 1.0f;

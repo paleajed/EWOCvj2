@@ -392,11 +392,11 @@ void LoopStationElement::mouse_handle() {
                 but->midistarttime = std::chrono::system_clock::from_time_t(0.0f);
             }
             if (this->loopbut->value) {
-                std::chrono::high_resolution_clock::time_point now = std::chrono::high_resolution_clock::now();
-                std::chrono::duration<double> elapsed;
-                elapsed = std::chrono::duration_cast<std::chrono::duration<double>>(now - this->starttime);
-                this->totaltime = std::chrono::duration_cast<std::chrono::milliseconds>(elapsed).count();
-                this->eventpos = 0;
+                //std::chrono::high_resolution_clock::time_point now = std::chrono::high_resolution_clock::now();
+                //std::chrono::duration<double> elapsed;
+                //elapsed = std::chrono::duration_cast<std::chrono::duration<double>>(now - this->starttime);
+                //this->totaltime = std::chrono::duration_cast<std::chrono::milliseconds>(elapsed).count();
+                //this->eventpos = 0;
                 this->starttime = std::chrono::high_resolution_clock::now();
                 this->interimtime = 0;
                 this->speedadaptedtime = 0;

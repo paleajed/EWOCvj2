@@ -2290,7 +2290,7 @@ void Program::shelf_triggering(ShelfElement* elem, int deck, Layer *layer) {
                 //clays[k]->tagged = false;
                 mainmix->set_prevshelfdragelem_layers(clays[k]);
                 mainmix->reload_tagged_elems(elem, clays[k]->deck);
-                clays[k] = mainmix->layers[!mainprogram->prevmodus + clays[k]->deck][clays[k]->pos];
+                clays[k] = mainmix->layers[!mainprogram->prevmodus * 2 + clays[k]->deck][clays[k]->pos];
                 clays[k] = clays[k]->open_video(0, elem->path, true);
                 clays[k]->set_clones();
                 clays[k]->oldclips.clear();
@@ -2303,7 +2303,7 @@ void Program::shelf_triggering(ShelfElement* elem, int deck, Layer *layer) {
             } else if (elem->type == ELEM_IMAGE) {
                 mainmix->set_prevshelfdragelem_layers(clays[k]);
                 mainmix->reload_tagged_elems(elem, clays[k]->deck);
-                clays[k] = mainmix->layers[!mainprogram->prevmodus + clays[k]->deck][clays[k]->pos];
+                clays[k] = mainmix->layers[!mainprogram->prevmodus * 2 + clays[k]->deck][clays[k]->pos];
                 clays[k]->open_image(elem->path);
                 clays[k]->set_clones();
                 clays[k]->oldclips.clear();
@@ -5279,8 +5279,7 @@ bool Program::preferences_handle() {
 				}
 			}
 			else {
-                char* charstr = (char*)std::to_string(mci->items[i]->value).c_str();
-				render_text(charstr, white, mci->items[i]->valuebox->vtxcoords->x1 + 0.1f, mci->items[i]->valuebox->vtxcoords->y1 + 0.06f, 0.0024f, 0.004f, 1, 0);
+				render_text(std::to_string(mci->items[i]->value), white, mci->items[i]->valuebox->vtxcoords->x1 + 0.1f, mci->items[i]->valuebox->vtxcoords->y1 + 0.06f, 0.0024f, 0.004f, 1, 0);
 			}
 			if (mci->items[i]->valuebox->in(mx, my)) {
 				if (this->leftmouse && this->renaming == EDIT_NONE) {
@@ -7740,6 +7739,7 @@ void PIMidi::populate() {
     std::vector<PrefItem*> ncitems;
     for (int i = 0; i < this->items.size(); i++) {
         if (!this->items[i]->connected) ncitems.push_back(this->items[i]);
+
     }
     RtMidiIn midiin;
     int nPorts = midiin.getPortCount();
@@ -7790,7 +7790,7 @@ void PIMidi::populate() {
         //if (this->items[i]->connected) delete this->items[i];
     }
     this->items = intrmitems;
-    this->items.insert(this->items.end(), ncitems.begin(), ncitems.end());
+    //this->items.insert(this->items.end(), ncitems.begin(), ncitems.end());
 }
 
 PIInt::PIInt() {
