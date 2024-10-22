@@ -6465,7 +6465,12 @@ printf("1\n");
     FT_Property_Set(ft, "truetype", "interpreter-version", &interpreter_version);
 #ifdef WINDOWS
     std::string fstr = mainprogram->fontpath + "/expressway.ttf";
-    if (!exists(fstr)) mainprogram->quitting = "Can't find \"expressway.ttf\" TrueType font in current directory";
+    if (!exists(fstr)) {
+        fstr = "./expressway.ttf";
+        if (!exists(fstr)) {
+            mainprogram->quitting = "Can't find \"expressway.ttf\" TrueType font in current directory";
+        }
+    }
 #else
 #ifdef POSIX
     std::string fdir(mainprogram->fontdir);

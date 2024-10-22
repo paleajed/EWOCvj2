@@ -11809,7 +11809,7 @@ void Mixer::record_video(std::string reccod) {
 	dest_stream->r_frame_rate = c->framerate;
 	dest_stream->avg_frame_rate = c->framerate;
 	//dest_stream->first_dts = 0;
-    ((AVOutputFormat*)(dest->oformat))->flags |= AVFMT_NOFILE;
+    //((AVOutputFormat*)(dest->oformat))->flags |= AVFMT_NOFILE;
 	//avformat_init_output(dest, nullptr);
 	r = avio_open(&dest->pb, path.c_str(), AVIO_FLAG_WRITE);
 	r = avformat_write_header(dest, nullptr);
@@ -11884,8 +11884,8 @@ void Mixer::record_video(std::string reccod) {
         /* encode the image */
         encode_frame(dest, nullptr, c, yuvframe, pkt, nullptr, count);
 
-		av_freep(yuvframe->data[0]);
 		av_packet_unref(pkt);
+        //av_frame_free(&yuvframe);
     	av_frame_free(&rgbaframe);
 
 		count++;
@@ -11920,7 +11920,9 @@ void Mixer::record_video(std::string reccod) {
         this->reclay->bouncebut->value = 0;
         int bukebv = this->reclay->keepeffbut->value;
         this->reclay->keepeffbut->value = 0;
-        this->reclay->open_video(0.0f, path, true, false);
+        //this->reclay->layers = &this->layers[this->reclay->comp * 2 + this->reclay->deck];
+        this->reclay->transfered = true;
+        this->reclay = this->reclay->open_video(0.0f, path, true, false);
         this->reclay->keepeffbut->value = bukebv;
         this->reclay->type = ELEM_FILE;
         this->reclay = nullptr;
