@@ -73,6 +73,7 @@ BinElement::BinElement() {
 	glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
     glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_BORDER);
     glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_BORDER);
+    glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA8, 192, 108, 0, GL_BGRA, GL_UNSIGNED_BYTE, 0);
 }
 
 BinElement::~BinElement() {
@@ -245,7 +246,7 @@ void BinsMain::handle(bool draw) {
     if (numd > 1) {
         draw_box(this->floatbox, -1);
         if (this->floating) render_text("DOCK", white, this->floatbox->vtxcoords->x1 + 0.02f, this->floatbox->vtxcoords->y1 + 0.01f, 0.00045f, 0.00075f);
-        else render_text("FLOAT", white, this->floatbox->vtxcoords->x1 + 0.02f, this->floatbox->vtxcoords->y1 + 0.01f, 0.00045f, 0.00075f);
+        else render_text("CHOOSE MONITOR", white, this->floatbox->vtxcoords->x1 + 0.02f, this->floatbox->vtxcoords->y1 + 0.01f, 0.00045f, 0.00075f);
         if (this->floatbox->in()) {
             if (mainprogram->leftmouse || mainprogram->rightmouse) {
                 if (!this->floating) {
@@ -259,7 +260,6 @@ void BinsMain::handle(bool draw) {
                     mainprogram->bintargetmenu->menuy = mainprogram->my;
                 }
                 else {
-                    SDL_DestroyWindow(binsmain->win);
                     this->floating = false;
                 }
             }
@@ -482,10 +482,14 @@ void BinsMain::handle(bool draw) {
 				}
 				draw_box(box, binel->tex);
 				glUniform1i(inverteff, 0);
-                mainprogram->frontbatch = true;
+                if (!this->inbin) {
+                    mainprogram->frontbatch = true;
+                }
                 // grey areas next to each element column to cut off element titles
                 draw_box(nullptr, color, box->vtxcoords->x1 - 0.01f, box->vtxcoords->y1 - 0.035f, box->vtxcoords->w + 0.02f, 0.028f, -1);
-                mainprogram->frontbatch = false;
+                if (!this->inbin) {
+                    mainprogram->frontbatch = false;
+                }
                 if (binel->name != "") {
                     if (binel->name != "") render_text(binel->name.substr(0, 20), white, box->vtxcoords->x1, box->vtxcoords->y1 - 0.03f, 0.00045f, 0.00075f);
 				}
@@ -2017,7 +2021,7 @@ void BinsMain::handle(bool draw) {
 									else {
 										if (mainprogram->prelay->type == ELEM_FILE) {
 											render_text("CPU", white, box->vtxcoords->x1 + 0.0075f, box->vtxcoords->y1 + box->vtxcoords->h - 0.0225f, 0.0005f, 0.0008f);
-											render_text(std::to_string(mainprogram->prelay->video_dec_ctx->width) + "x" + std::to_string(mainprogram->prelay->video_dec_ctx->height), white, box->vtxcoords->x1 + 0.0075f, box->vtxcoords->y1 + box->vtxcoords->h - 0.0675f, 0.0005f, 0.0008f);
+											render_text(std::to_string(mainprogram->prelay->video_dec_ctx->width) + "x" + std::to_string(mainprogram->prelay->video_dec_ctx->height), white, box->vtxcoords->x1 + 0.0075f, box->vtxcoords->y1 + box->vtxcoords->h - 0.0675f, 0.0005f, 0.0008);
 										}
 									}
 								}
@@ -2335,13 +2339,13 @@ void BinsMain::handle(bool draw) {
 
                 if (this->inputtexes[k] != -1) {
                     dirbinel->type = this->inputtypes[k];
-                    dirbinel->remove_elem(false);
+                    //dirbinel->remove_elem(false);
                     dirbinel->path = this->addpaths[k];
                     dirbinel->tex = this->inputtexes[k];
                     dirbinel->name = remove_extension(basename(dirbinel->path));
                     dirbinel->oldjpegpath = dirbinel->jpegpath;
                     dirbinel->jpegpath = this->inputjpegpaths[k];
-                    dirbinel->remove_elem(true);
+                    //dirbinel->remove_elem(true);
                     int pos =
                             std::find(this->movebinels.begin(), this->movebinels.end(), dirbinel) -
                             this->movebinels.begin();

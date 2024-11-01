@@ -1484,8 +1484,14 @@ bool Program::order_paths(bool dodeckmix) {
 bool Program::do_order_paths() {
     mainprogram->directmode = false;
     mainprogram->frontbatch = false;
-    SDL_GL_MakeCurrent(mainprogram->mainwindow, glc);
-    glViewport(0, 0, glob->w, glob->h);
+    if (!binsmain->inbin) {
+        SDL_GL_MakeCurrent(mainprogram->mainwindow, glc);
+        glViewport(0, 0, glob->w, glob->h);
+    }
+    else {
+        //SDL_GL_MakeCurrent(mainprogram->mainwindow, glc);
+        glViewport(0, 0, binsmain->globw, binsmain->globh);
+    }
 	if (this->paths.size() == 1) return true;
 	// show interactive list with draggable elements to allow element ordering of mainprogram->paths, result of get_multinname
 	int limit = this->paths.size();
@@ -1929,22 +1935,50 @@ void Program::handle_fullscreen() {
 
 float Program::xscrtovtx(float scrcoord) {
     // convert X screen coordinate to X vertex coordinate
-	return (scrcoord * 2.0 / (float)glob->w);
+    if (binsmain->inbinwin) {
+        return (scrcoord * 2.0 / (float)binsmain->globw);
+    }
+    else {
+        return (scrcoord * 2.0 / (float)glob->w);
+    }
 }
 
 float Program::yscrtovtx(float scrcoord) {
     // convert Y screen coordinate to Y vertex coordinate
-	return (scrcoord * 2.0 / (float)glob->h);
+    if (binsmain->inbinwin) {
+        return (scrcoord * 2.0 / (float)binsmain->globh);
+    }
+    else {
+        return (scrcoord * 2.0 / (float)glob->h);
+    }
 }
 
 float Program::xvtxtoscr(float vtxcoord) {
     // convert X vertex coordinate to X screen coordinate
-	return (vtxcoord * (float)glob->w / 2.0);
+    bool inbin = false;
+    if (binsmain) {
+        if (binsmain->inbinwin) {
+            inbin = true;
+            return (vtxcoord * (float)binsmain->globw / 2.0);
+        }
+    }
+    if (!inbin) {
+        return (vtxcoord * (float)glob->w / 2.0);
+    }
 }
 
 float Program::yvtxtoscr(float vtxcoord) {
     // convert Y vertex coordinate to Y screen coordinate
-	return (vtxcoord * (float)glob->h / 2.0);
+    bool inbin = false;
+    if (binsmain) {
+        if (binsmain->inbinwin) {
+            inbin = true;
+            return (vtxcoord * (float)binsmain->globh / 2.0);
+        }
+    }
+    if (!inbin) {
+        return (vtxcoord * (float)glob->h / 2.0);
+    }
 }
 
 
@@ -2630,8 +2664,19 @@ void Boxx::upscrtovtx() {
 }
 
 void Boxx::upvtxtoscr() {
-    int hw = glob->w / 2;
-    int hh = glob->h / 2;
+    int hw, hh;
+    bool inbin = false;
+    if (binsmain) {
+        if (binsmain->inbinwin) {
+            inbin = true;
+            hw = binsmain->globw / 2;
+            hh = binsmain->globh / 2;
+        }
+    }
+    if (!inbin) {
+        hw = glob->w / 2;
+        hh = glob->h / 2;
+    }
     this->scrcoords->x1 = ((this->vtxcoords->x1 * hw) + hw);
     this->scrcoords->h = this->vtxcoords->h * hh;
     this->scrcoords->y1 = ((this->vtxcoords->y1 * -hh) + hh);
@@ -2812,6 +2857,7 @@ void output_video(EWindow* mwin) {
 
 
 void handle_binwin() {
+    binsmain->floatingsync = true;
     while (binsmain->floating) {
         std::unique_lock<std::mutex> lock(binsmain->syncmutex);
         binsmain->sync.wait(lock, [&] { return binsmain->syncnow; });
@@ -2852,13 +2898,13 @@ void handle_binwin() {
         }
         mainprogram->globw = glob->w;
         mainprogram->globh = glob->h;
-        glob->w = binsmain->globw;
-        glob->h = binsmain->globh;
+        //glob->w = binsmain->globw;
+        //glob->h = binsmain->globh;
         mainprogram->bvao = mainprogram->binvao;
         mainprogram->bvbuf = mainprogram->binvbuf;
         mainprogram->btbuf = mainprogram->bintbuf;
 
-        glViewport(0, 0, glob->w, glob->h);
+        glViewport(0, 0, binsmain->globw, binsmain->globh);
         glClearColor(0.2f, 0.2f, 0.2f, 1.0f);
         glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
 
@@ -2915,18 +2961,23 @@ void handle_binwin() {
             mainprogram->menuactivation = buma;
         }
         mainprogram->lmover = bulmo;
-        glob->w = mainprogram->globw;
-        glob->h = mainprogram->globh;
+        //glob->w = mainprogram->globw;
+        //glob->h = mainprogram->globh;
 
         binsmain->inbin = false;
 
-        binsmain->syncendnow = true;
-        while (binsmain->syncendnow) {
-            binsmain->syncend.notify_all();
+        {
+            std::unique_lock<std::mutex> lock(binsmain->syncendmutex);
+            binsmain->syncendnow = true;
         }
+        binsmain->syncend.notify_all();
 
         SDL_GL_SwapWindow(binsmain->win);
     }
+    binsmain->floatingsync = false;
+    SDL_HideWindow(binsmain->win);
+
+    binsmain->inbinwin = false;
 }
 
 
@@ -3137,11 +3188,27 @@ int Program::handle_menu(Menu* menu, float xshift, float yshift) {
             std::size_t sub = menu->entries[k].find("submenu");
             if (sub != 0) size++;
         }
-        if (menu->menuy + mainprogram->yvtxtoscr(yshift) > glob->h - size * mainprogram->yvtxtoscr(0.075f))
-            menu->menuy = glob->h - size * mainprogram->yvtxtoscr(0.075f) + mainprogram->yvtxtoscr(yshift);
-        if (size > 24) menu->menuy = mainprogram->yvtxtoscr(mainprogram->layh / 2.0f) - mainprogram->yvtxtoscr(yshift);
-        float vmx = (float) menu->menux * 2.0 / glob->w;
-        float vmy = (float) menu->menuy * 2.0 / glob->h;
+        if (size > 24) {
+            menu->menuy = mainprogram->yvtxtoscr(mainprogram->layh / 2.0f) - mainprogram->yvtxtoscr(yshift);
+        }
+        float vmx, vmy;
+        if (binsmain->inbinwin) {
+            if (menu->menuy + mainprogram->yvtxtoscr(yshift) > binsmain->globh - size * mainprogram->yvtxtoscr(0.075f))
+                menu->menuy = binsmain->globh - size * mainprogram->yvtxtoscr(0.075f) + mainprogram->yvtxtoscr(yshift);
+                if (size > 24) {
+                    menu->menuy = mainprogram->yvtxtoscr(mainprogram->layh / 2.0f) - mainprogram->yvtxtoscr(yshift);
+                }
+                vmx = (float) menu->menux * 2.0 / binsmain->globw;
+                vmy = (float) menu->menuy * 2.0 / binsmain->globh;
+        } else {
+            if (menu->menuy + mainprogram->yvtxtoscr(yshift) > glob->h - size * mainprogram->yvtxtoscr(0.075f))
+                menu->menuy = glob->h - size * mainprogram->yvtxtoscr(0.075f) + mainprogram->yvtxtoscr(yshift);
+                if (size > 24) {
+                    menu->menuy = mainprogram->yvtxtoscr(mainprogram->layh / 2.0f) - mainprogram->yvtxtoscr(yshift);
+                }
+                vmx = (float) menu->menux * 2.0 / glob->w;
+                vmy = (float) menu->menuy * 2.0 / glob->h;
+        }
         float lc[] = {0.0, 0.0, 0.0, 1.0};
         float ac1[] = {0.3, 0.3, 0.3, 1.0};
         float ac2[] = {0.5, 0.5, 1.0, 1.0};
@@ -3169,7 +3236,17 @@ int Program::handle_menu(Menu* menu, float xshift, float yshift) {
 			std::size_t sub = menu->entries[k].find("submenu");
 			if (sub != 0) {
 				notsubk++;
-				if (menu->box->scrcoords->x1 + menu->menux + mainprogram->xvtxtoscr(xoff) < mainprogram->mx && mainprogram->mx < menu->box->scrcoords->x1 + menu->box->scrcoords->w + menu->menux + mainprogram->xvtxtoscr(xoff) && menu->box->scrcoords->y1 - menu->box->scrcoords->h + menu->menuy + (k - koff - numsubs) * mainprogram->yvtxtoscr(0.075f) - mainprogram->yvtxtoscr(yshift) < mainprogram->my && mainprogram->my < menu->box->scrcoords->y1 + menu->menuy + (k - koff - numsubs) * mainprogram->yvtxtoscr(0.075f) - mainprogram->yvtxtoscr(yshift)) {
+                int boxw, boxh;
+                if (binsmain->inbinwin) {
+                    // trick
+                    boxw = menu->box->scrcoords->w * glob->w / binsmain->globw;
+                    boxh = menu->box->scrcoords->h * glob->h / binsmain->globh;
+                }
+                else {
+                    boxw = menu->box->scrcoords->w;
+                    boxh = menu->box->scrcoords->h;
+                }
+				if (menu->box->scrcoords->x1 + menu->menux + mainprogram->xvtxtoscr(xoff) < mainprogram->mx && mainprogram->mx < menu->box->scrcoords->x1 + boxw + menu->menux + mainprogram->xvtxtoscr(xoff) && menu->box->scrcoords->y1 - boxh + menu->menuy + (k - koff - numsubs) * mainprogram->yvtxtoscr(0.075f) - mainprogram->yvtxtoscr(yshift) < mainprogram->my && mainprogram->my < menu->box->scrcoords->y1 + menu->menuy + (k - koff - numsubs) * mainprogram->yvtxtoscr(0.075f) - mainprogram->yvtxtoscr(yshift)) {
 					draw_box(lc, ac2, menu->box->vtxcoords->x1 + vmx + xoff, menu->box->vtxcoords->y1 - (k - koff -
                                                                                                          numsubs) * 0.075f - vmy + yshift, menu->width * 1.5f, 0.075f, -1);
 					if (mainprogram->leftmousedown) mainprogram->leftmousedown = false;
@@ -3873,39 +3950,46 @@ void Program::handle_bintargetmenu() {
     if (k > -1) {
         binsmain->floating = true;
         mainprogram->binsscreen = false;
-        k++;
-        binsmain->screen = k;
-        SDL_Rect rc1;
-        SDL_GetDisplayBounds(k, &rc1);
-        SDL_Rect rc2;
-        SDL_GetDisplayUsableBounds(k, &rc2);
-        int w = rc2.w;
-        int h = rc2.h;
-        SDL_GL_MakeCurrent(mainprogram->mainwindow, glc);
-        SDL_GL_SetAttribute(SDL_GL_SHARE_WITH_CURRENT_CONTEXT, 1);
-        binsmain->win = SDL_CreateWindow(PROGRAM_NAME, rc1.x, rc1.y, w, h, SDL_WINDOW_OPENGL | SDL_WINDOW_MAXIMIZED | SDL_WINDOW_RESIZABLE |
-                                                                                   SDL_WINDOW_FULLSCREEN_DESKTOP | SDL_WINDOW_ALLOW_HIGHDPI);
-        binsmain->glc = SDL_GL_CreateContext(binsmain->win);
-        SDL_GL_MakeCurrent(binsmain->win, binsmain->glc);
-        int wi, he;
-        SDL_GL_GetDrawableSize(binsmain->win, &wi, &he);
-        binsmain->globw = (float) wi;
-        binsmain->globh = (float) he;
+        if (!binsmain->floatset) {
+            k++;
+            binsmain->screen = k;
+            SDL_Rect rc1;
+            SDL_GetDisplayBounds(k, &rc1);
+            SDL_Rect rc2;
+            SDL_GetDisplayUsableBounds(k, &rc2);
+            int w = rc2.w;
+            int h = rc2.h;
+            SDL_GL_MakeCurrent(mainprogram->mainwindow, glc);
+            SDL_GL_SetAttribute(SDL_GL_SHARE_WITH_CURRENT_CONTEXT, 1);
+            binsmain->win = SDL_CreateWindow(PROGRAM_NAME, rc1.x, rc1.y, w, h,
+                                             SDL_WINDOW_OPENGL | SDL_WINDOW_MAXIMIZED | SDL_WINDOW_RESIZABLE |
+                                             SDL_WINDOW_FULLSCREEN_DESKTOP | SDL_WINDOW_ALLOW_HIGHDPI);
+            binsmain->glc = SDL_GL_CreateContext(binsmain->win);
+            SDL_GL_MakeCurrent(binsmain->win, binsmain->glc);
+            int wi, he;
+            SDL_GL_GetDrawableSize(binsmain->win, &wi, &he);
+            binsmain->globw = (float) wi;
+            binsmain->globh = (float) he;
 
-        glUseProgram(mainprogram->ShaderProgram);
+            glUseProgram(mainprogram->ShaderProgram);
 
-        glGenBuffers(1, &mainprogram->binvbuf);
-        glGenBuffers(1, &mainprogram->bintbuf);
-        glGenVertexArrays(1, &mainprogram->binvao);
-        glBindVertexArray(mainprogram->binvao);
-        glBindBuffer(GL_ARRAY_BUFFER, mainprogram->binvbuf);
-        glBufferData(GL_ARRAY_BUFFER, 48, nullptr, GL_DYNAMIC_DRAW);
-        glEnableVertexAttribArray(0);
-        glVertexAttribPointer(0, 3, GL_FLOAT, GL_FALSE, 12, nullptr);
-        glBindBuffer(GL_ARRAY_BUFFER, mainprogram->bintbuf);
-        glBufferData(GL_ARRAY_BUFFER, 32, nullptr, GL_DYNAMIC_DRAW);
-        glEnableVertexAttribArray(1);
-        glVertexAttribPointer(1, 2, GL_FLOAT, GL_FALSE, 8, nullptr);
+            glGenBuffers(1, &mainprogram->binvbuf);
+            glGenBuffers(1, &mainprogram->bintbuf);
+            glGenVertexArrays(1, &mainprogram->binvao);
+            glBindVertexArray(mainprogram->binvao);
+            glBindBuffer(GL_ARRAY_BUFFER, mainprogram->binvbuf);
+            glBufferData(GL_ARRAY_BUFFER, 48, nullptr, GL_DYNAMIC_DRAW);
+            glEnableVertexAttribArray(0);
+            glVertexAttribPointer(0, 3, GL_FLOAT, GL_FALSE, 12, nullptr);
+            glBindBuffer(GL_ARRAY_BUFFER, mainprogram->bintbuf);
+            glBufferData(GL_ARRAY_BUFFER, 32, nullptr, GL_DYNAMIC_DRAW);
+            glEnableVertexAttribArray(1);
+            glVertexAttribPointer(1, 2, GL_FLOAT, GL_FALSE, 8, nullptr);
+            binsmain->floatset = true;
+        }
+        else {
+            SDL_ShowWindow(binsmain->win);
+        }
 
         std::thread binwin(handle_binwin);
         binwin.detach();

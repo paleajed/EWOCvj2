@@ -2078,11 +2078,7 @@ std::vector<float> render_text(const std::string& stext, const char* ctext, floa
 
 		int w2 = 0;
 		int h2 = 0;
-		if (binsmain->inbin) {
-		    w2 = mainprogram->globw;
-		    h2 = mainprogram->globh;
-		}
-		else if (smflag == 0) {
+        if (smflag == 0) {
 			w2 = glob->w;
 			h2 = glob->h;
 		}
@@ -2108,7 +2104,7 @@ std::vector<float> render_text(const std::string& stext, const char* ctext, floa
                 continue;
             //FT_Render_Glyph(face->glyph, FT_RENDER_MODE_NORMAL);
             textw += (g->advance.x/64.0f) * pixelw;
-            textws.push_back((g->advance.x / 64.0f) * pixelw * (((smflag == 0) && (binsmain->inbin == 0))+ 1) * 0.5f); //1.1 *
+            textws.push_back((g->advance.x / 64.0f) * pixelw * ((smflag == 0) + 1) * 0.5f);
             texth = 64.0f * pixelh;
         }
         glGenTextures(1, &texture);
@@ -2169,11 +2165,7 @@ std::vector<float> render_text(const std::string& stext, const char* ctext, floa
 		// display string texture after first time preparation - fast!
 		int w2 = 0;
 		int h2 = 0;
-        if (binsmain->inbin) {
-            w2 = mainprogram->globw;
-            h2 = mainprogram->globh;
-        }
-        else if (smflag == 0) {
+        if (smflag == 0) {
             w2 = glob->w;
             h2 = glob->h;
         }
@@ -5290,6 +5282,9 @@ void the_loop() {
                     std::filesystem::current_path(mainprogram->project->binsdir);
                     std::string path = pathtoplatform(std::filesystem::absolute(bin->elements[pos]->jpegpath).generic_string());
                     open_thumb(path, bin->elements[pos]->tex);
+                    GLuint butex = bin->elements[pos]->tex;
+                    bin->elements[pos]->tex = copy_tex(bin->elements[pos]->tex, 192, 108);
+                    glDeleteTextures(1, &butex);
                     std::filesystem::current_path(mainprogram->contentpath);
                 }
                 else {
@@ -5346,11 +5341,12 @@ void the_loop() {
     }
 
     // sync with bins window
-    if (binsmain->floating) {
-        binsmain->syncnow = true;
-        while (binsmain->syncnow) {
-            binsmain->sync.notify_all();
+    if (binsmain->floatingsync) {
+        {
+            std::unique_lock<std::mutex> lock2(binsmain->syncmutex);
+            binsmain->syncnow = true;
         }
+        binsmain->sync.notify_all();
         std::unique_lock<std::mutex> lock(binsmain->syncendmutex);
         binsmain->syncend.wait(lock, [&]{return binsmain->syncendnow;});
         binsmain->syncendnow = false;
@@ -5360,7 +5356,7 @@ void the_loop() {
     }
 
 
-    if (mainprogram->lmover) {
+    if (mainprogram->lmover || mainprogram->binlmover) {
         // left mouse outside menu cancels all menus
         mainprogram->menuondisplay = false;
         if (mainprogram->binselmenu->state > 1) {
@@ -7058,12 +7054,18 @@ printf("1\n");
                         if (binsmain->floating) {
                             if (e.window.windowID == SDL_GetWindowID(binsmain->win)) {
                                 SDL_SetWindowInputFocus(mainprogram->mainwindow);
+                                binsmain->inbinwin = false;
                             }
                         }
                     }
                 } else if (we.event == SDL_WINDOWEVENT_ENTER) {
                     if (e.window.windowID == SDL_GetWindowID(mainprogram->mainwindow)) {
                         mainprogram->exitedtop = false;
+                    }
+                    if (binsmain->floating) {
+                        if (e.window.windowID == SDL_GetWindowID(binsmain->win)) {
+                            binsmain->inbinwin = true;
+                        }
                     }
                 }
             }

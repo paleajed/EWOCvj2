@@ -120,7 +120,9 @@ class Layer {
 		int numefflines[2] = {0,0};
 		int effscroll[2] = {0,0};
 		std::vector<Effect*> effects[2];
-		Boxx* panbox;
+        Boxx* panbox;
+        Boxx* closebox;
+        Boxx* addbox;
 
         std::mutex pboimutex;
 		bool initialized = false;
@@ -172,6 +174,8 @@ class Layer {
         float oldshy;
         bool straightx = false;
         bool straighty = false;
+        bool adding = false;
+        bool closing = false;
 		int iw = 1;
 		int ih = 1;
 		Param *shiftx;
@@ -382,7 +386,6 @@ class Mixer {
 	private:
 		void do_deletelay(Layer *testlay, std::vector<Layer*> &layers, bool add);
 		void event_write(std::ostream &wfile, Param *par, Button *but);
-		void add_del_bar();
 		void clip_dragging();
 		bool clip_drag_per_layervec(std::vector<Layer*>& layers, bool deck);
 		void clip_inside_test(std::vector<Layer*>& layers, bool deck);

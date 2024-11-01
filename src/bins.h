@@ -78,7 +78,10 @@ class BinsMain {
 
         Boxx* floatbox;
         bool floating = false;
+        bool floatingsync = false;
+        bool floatset = false;
         bool inbin = false;
+        bool inbinwin = false;
         SDL_Window *win;
         SDL_GLContext glc;
         int screen;

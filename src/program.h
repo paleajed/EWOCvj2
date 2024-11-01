@@ -708,9 +708,10 @@ class Program {
         std::vector<std::string> oldbins;
         bool err = false;
 
-		std::unordered_map <std::string, GUIString*> guitextmap;
-		std::unordered_map <std::string, GUIString*> prguitextmap;
-		std::unordered_map <std::string, GUIString*> tmguitextmap;
+        std::unordered_map <std::string, GUIString*> guitextmap;
+        std::unordered_map <std::string, GUIString*> prguitextmap;
+        std::unordered_map <std::string, GUIString*> tmguitextmap;
+        std::unordered_map <std::string, GUIString*> flguitextmap;
         std::unordered_map <std::string, std::string> devvideomap;
         std::vector<std::wstring> livedevices;
 		std::vector<std::string> devices;
