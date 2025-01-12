@@ -90,7 +90,9 @@ class LoopStationElement {
 		std::vector<std::tuple<long long, Param*, Button*, float>> eventlist;
 		int eventpos = 0;
 		bool atend = false;
-		bool didsomething = false;	
+		bool didsomething = false;
+        char beats = 0;
+        float buspeed = 1.0f;
 		void init();
 		void handle();
 		void erase_elem();

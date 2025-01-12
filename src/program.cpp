@@ -20,6 +20,10 @@
 
 #include "GL/glew.h"
 #include "GL/gl.h"
+#include <BeatDetektor.h>
+#include <sndfile.h>
+#include <fftw3.h>
+
 #define FREEGLUT_STATIC
 #define _LIB
 #define FREEGLUT_LIB_PRAGMAS 0
@@ -65,7 +69,7 @@
 #include "SDL2/SDL.h"
 #include "SDL2/SDL_syswm.h"
 #include <turbojpeg.h>
-
+#include <libavutil/channel_layout.h>
 // my own headers
 #include "box.h"
 #include "effect.h"
@@ -78,7 +82,14 @@
 #include "retarget.h"
 
 #include <tinyfiledialogs.h>
-
+extern "C" {
+#include <libavdevice/avdevice.h>      // For device handling (e.g., avdevice_list_devices)
+#include <libavformat/avformat.h>      // For format handling and AVFormatContext
+#include <libavcodec/avcodec.h>        // For codec functions (if decoding is needed)
+#include <libavutil/avutil.h>          // For utilities and general definitions
+#include <libavutil/samplefmt.h>       // For sample formats, if working with audio
+#include <libavutil/opt.h>             // For setting options on AVCodecContext, AVFormatContext, etc.
+}
 #define PROGRAM_NAME "EWOCvj"
 
 
@@ -320,6 +331,7 @@ Program::Program() {
     this->docpath = homedir + "/Documents/EWOCvj2/";
     this->contentpath = homedir + "/Videos/";
 #endif
+    this->currfilesdir = this->contentpath;
 
     // height of the small boxes top left and next to center holding, among other things, the scene letters
 	this->numh = this->numh * glob->w / glob->h;
@@ -1674,9 +1686,10 @@ void Program::handle_wormgate(bool gate) {
 	//draw and handle BINS wormgate
 	if (mainprogram->fullscreen == -1) {
 		if (box->in()) {
+            mainprogram->directmode = true;
 			draw_box(lightgrey, lightblue, box, -1);
-			//mainprogram->tooltipbox = mainprogram->wormgate1->box;
-			if (!mainprogram->menuondisplay) {
+            mainprogram->directmode = false;
+            if (!mainprogram->menuondisplay) {
 				if (mainprogram->leftmouse) {
 					mainprogram->binsscreen = !mainprogram->binsscreen;
                     mainprogram->recundo = true;
@@ -1723,9 +1736,23 @@ void Program::handle_wormgate(bool gate) {
 			}
 		}
 		else {
+            mainprogram->directmode = true;
 			draw_box(lightgrey, lightgrey, box, -1);
+            mainprogram->directmode = false;
 		}
-	}
+        for (float y = box->vtxcoords->y1 + box->vtxcoords->w / 2.0f; y < box->vtxcoords->y1 + box->vtxcoords->h; y += box->vtxcoords->w * 2.0f) {
+            if (gate == 0) {
+                register_triangle_draw(white, white, box->vtxcoords->x1,
+                                       y, box->vtxcoords->w / 2.0f,
+                                       box->vtxcoords->w, LEFT, CLOSED, true);
+            }
+            else {
+                register_triangle_draw(white, white, box->vtxcoords->x1 + box->vtxcoords->w / 2.0f,
+                                       y, box->vtxcoords->w / 2.0f,
+                                       box->vtxcoords->w, RIGHT, CLOSED, true);
+            }
+        }
+ 	}
 
 	box->vtxcoords->y1 = -0.58f;
 	box->vtxcoords->h = 0.6f;
@@ -2528,7 +2555,7 @@ bool Program::handle_button(Button *but, bool circlein, bool automation, bool co
             mainmix->learnparam = nullptr;
             mainmix->learnbutton = but;
             mainprogram->lpstmenuon = true;
-            mainprogram->menuactivation = false;
+            //mainprogram->menuactivation = false;
         }
         but->box->acolor[0] = 0.5f;
         but->box->acolor[1] = 0.5f;
@@ -2857,28 +2884,16 @@ void output_video(EWindow* mwin) {
 
 
 void handle_binwin() {
+    SDL_GL_MakeCurrent(binsmain->win, binsmain->glc);
+    glBindFramebuffer(GL_FRAMEBUFFER, 0);
+    glDrawBuffer(GL_BACK_LEFT);
+
     binsmain->floatingsync = true;
     while (binsmain->floating) {
         std::unique_lock<std::mutex> lock(binsmain->syncmutex);
         binsmain->sync.wait(lock, [&] { return binsmain->syncnow; });
         binsmain->syncnow = false;
         lock.unlock();
-
-        for (OutputEntry *entry : mainprogram->outputentries) {
-            if (binsmain->screen == entry->screen) {
-                entry->win->lay = nullptr;
-                SDL_DestroyWindow(entry->win->win);
-                mainprogram->outputentries.erase(
-                        std::find(mainprogram->outputentries.begin(), mainprogram->outputentries.end(),
-                                  entry));
-                delete entry->win;
-            }
-        }
-
-        SDL_GL_MakeCurrent(binsmain->win, binsmain->glc);
-
-        glBindFramebuffer(GL_FRAMEBUFFER, 0);
-        glDrawBuffer(GL_BACK_LEFT);
 
         int bumx = mainprogram->mx;
         int bumy = mainprogram->my;
@@ -3853,17 +3868,22 @@ void Program::handle_monitormenu() {
                     // stop output display of chosen mixwindow on chosen screen
                     if (swoff != -1) {
                         currentries[swoff]->win->lay = nullptr;
-                        SDL_DestroyWindow(currentries[swoff]->win->win);
+                        SDL_GL_MakeCurrent(currentries[swoff]->win->win, NULL);
+                        glFinish();
+                        SDL_GL_DeleteContext(currentries[swoff]->win->glc);
+                        SDL_HideWindow(currentries[swoff]->win->win);
+                        SDL_Delay(10);
                         mainprogram->outputentries.erase(
                                 std::find(mainprogram->outputentries.begin(), mainprogram->outputentries.end(),
                                           currentries[swoff]));
+                        mainprogram->add_to_winpool(currentries[swoff]->win->win, currentries[swoff]->win->w, currentries[swoff]->win->h);
                         delete currentries[swoff]->win;
                     } else {
                         // open new window on chosen output screen and start display thread (synced at end of the_loop)
-                        if (binsmain->floating && binsmain->screen == disp) {
+                        /*if (binsmain->floating && binsmain->screen == disp) {
                             SDL_DestroyWindow(binsmain->win);
                             binsmain->floating = false;
-                        }
+                        }*/
                         EWindow *mwin = new EWindow;
                         mwin->mixid = mainprogram->monitormenu->value;
                         OutputEntry *entry = new OutputEntry;
@@ -3874,13 +3894,17 @@ void Program::handle_monitormenu() {
                         SDL_GetDisplayBounds(disp, &rc1);
                         SDL_Rect rc2;
                         SDL_GetDisplayUsableBounds(disp, &rc2);
-                        mwin->w = rc1.w;
-                        mwin->h = rc1.h;
+                        mwin->w = std::min(rc1.w, rc2.w);
+                        mwin->h = std::min(rc1.h, rc2.h);
                         SDL_GL_MakeCurrent(mainprogram->mainwindow, glc);
                         SDL_GL_SetAttribute(SDL_GL_SHARE_WITH_CURRENT_CONTEXT, 1);
-                        mwin->win = SDL_CreateWindow(PROGRAM_NAME, rc1.x, rc1.y, rc2.w, rc2.h,
-                                                     SDL_WINDOW_OPENGL | SDL_WINDOW_MAXIMIZED | SDL_WINDOW_RESIZABLE |
-                                                     SDL_WINDOW_FULLSCREEN_DESKTOP | SDL_WINDOW_ALLOW_HIGHDPI);
+                        mwin->win = this->grab_from_winpool(mwin->w, mwin->h);
+                        if (mwin->win == nullptr) {
+                            mwin->win = SDL_CreateWindow(PROGRAM_NAME, rc1.x, rc1.y, mwin->w, mwin->h,
+                                                         SDL_WINDOW_OPENGL | SDL_WINDOW_MAXIMIZED |
+                                                         SDL_WINDOW_RESIZABLE | SDL_WINDOW_BORDERLESS |
+                                                         SDL_WINDOW_ALLOW_HIGHDPI);
+                        }
                         //SDL_RaiseWindow(mainprogram->mainwindow);
                         mainprogram->mixwindows.push_back(mwin);
                         mwin->glc = SDL_GL_CreateContext(mwin->win);
@@ -3959,11 +3983,13 @@ void Program::handle_bintargetmenu() {
             SDL_GetDisplayUsableBounds(k, &rc2);
             int w = rc2.w;
             int h = rc2.h;
+            w = std::min(rc1.w, rc2.w);
+            h = std::min(rc1.h, rc2.h);
             SDL_GL_MakeCurrent(mainprogram->mainwindow, glc);
             SDL_GL_SetAttribute(SDL_GL_SHARE_WITH_CURRENT_CONTEXT, 1);
             binsmain->win = SDL_CreateWindow(PROGRAM_NAME, rc1.x, rc1.y, w, h,
-                                             SDL_WINDOW_OPENGL | SDL_WINDOW_MAXIMIZED | SDL_WINDOW_RESIZABLE |
-                                             SDL_WINDOW_FULLSCREEN_DESKTOP | SDL_WINDOW_ALLOW_HIGHDPI);
+                                             SDL_WINDOW_OPENGL | SDL_WINDOW_MAXIMIZED | SDL_WINDOW_RESIZABLE | SDL_WINDOW_BORDERLESS |
+                                             SDL_WINDOW_ALLOW_HIGHDPI);
             binsmain->glc = SDL_GL_CreateContext(binsmain->win);
             SDL_GL_MakeCurrent(binsmain->win, binsmain->glc);
             int wi, he;
@@ -4031,93 +4057,93 @@ void Program::handle_laymenu1() {
     GLuint tex;
 	int k = -1;
 	// Draw and Program::handle mainprogram->laymenu1 (with clone layer) and laymenu2 (without)
-    bool cond = (mainprogram->laymenu2->state == 2);
-	if (mainprogram->laymenu1->state > 1 || mainprogram->laymenu2->state > 1 || mainprogram->newlaymenu->state > 1 || mainprogram->clipmenu->state > 1) {
-		if (!mainprogram->gotcameras) {
+    bool cond = (this->laymenu2->state == 2);
+	if (this->laymenu1->state > 1 || this->laymenu2->state > 1 || this->newlaymenu->state > 1 || this->clipmenu->state > 1) {
+		if (!this->gotcameras) {
 			get_cameras();
-			mainprogram->devices.clear();
-			int numd = mainprogram->livedevices.size();
-			if (numd == 0) mainprogram->devices.push_back("No live devices");
-			else mainprogram->devices.push_back("Connect live to:");
+			this->devices.clear();
+			int numd = this->livedevices.size();
+			if (numd == 0) this->devices.push_back("No live devices");
+			else this->devices.push_back("Connect live to:");
 			for (int i = 0; i < numd; i++) {
-				std::string str(mainprogram->livedevices[i].begin(), mainprogram->livedevices[i].end());
-				mainprogram->devices.push_back(str);
+				std::string str(this->livedevices[i].begin(), this->livedevices[i].end());
+				this->devices.push_back(str);
 			}
-			mainprogram->make_menu("livemenu", mainprogram->livemenu, mainprogram->devices);
-			mainprogram->livemenu->box->upscrtovtx();
-			mainprogram->gotcameras = true;
+			this->make_menu("livemenu", this->livemenu, this->devices);
+			this->livemenu->box->upscrtovtx();
+			this->gotcameras = true;
 		}
 	}
-	else mainprogram->gotcameras = false;
+	else this->gotcameras = false;
 
-    if (mainprogram->laymenu1->entries.back() == "Send to v4l2 loopback device") {
-        mainprogram->laymenu1->entries.pop_back();
-        mainprogram->laymenu1->entries.pop_back();
+    if (this->laymenu1->entries.back() == "Send to v4l2 loopback device") {
+        this->laymenu1->entries.pop_back();
+        this->laymenu1->entries.pop_back();
     }
 
     bool encode = false;
-	if (mainprogram->laymenu1->state > 1) {
+	if (this->laymenu1->state > 1) {
         if ((mainmix->mouselayer->vidformat == 188 || mainmix->mouselayer->vidformat == 187) ||
         mainmix->mouselayer->filename == "" || mainmix->mouselayer->type == ELEM_IMAGE || mainmix->mouselayer->type
         == ELEM_LIVE) {
-            if (mainprogram->laymenu1->entries.back() == "HAP encode on-the-fly") {
-                mainprogram->laymenu1->entries.pop_back();
+            if (this->laymenu1->entries.back() == "HAP encode on-the-fly") {
+                this->laymenu1->entries.pop_back();
             }
             encode = false;
         }
         else {
-            if (mainprogram->laymenu1->entries.back() != "HAP encode on-the-fly") {
-                mainprogram->laymenu1->entries.push_back("HAP encode on-the-fly");
+            if (this->laymenu1->entries.back() != "HAP encode on-the-fly") {
+                this->laymenu1->entries.push_back("HAP encode on-the-fly");
             }
             encode = true;
         }
 
-        mainprogram->monitormenu->value = 4;
-        mainprogram->make_mixtargetmenu();
+        this->monitormenu->value = 4;
+        this->make_mixtargetmenu();
 
         tex = mainmix->mouselayer->fbotex;
 #ifdef POSIX
-        this->register_v4l2lbdevices(mainprogram->laymenu1->entries, tex);
+        this->register_v4l2lbdevices(this->laymenu1->entries, tex);
 #endif
-        k = mainprogram->handle_menu(mainprogram->laymenu1);
+        k = this->handle_menu(this->laymenu1);
 	}
-	else if (mainprogram->laymenu2->state > 1) {
-        mainprogram->monitormenu->value = 4;
-        mainprogram->make_mixtargetmenu();
+	else if (this->laymenu2->state > 1) {
+        this->monitormenu->value = 4;
+        this->make_mixtargetmenu();
 
-        k = mainprogram->handle_menu(mainprogram->laymenu2);
+        k = this->handle_menu(this->laymenu2);
 		if (k > 10) k++;
 	}
 
 
     std::vector<OutputEntry*> currentries;
     std::vector<OutputEntry*> takenentries;
-    for (int i = 0; i < mainprogram->outputentries.size(); i++) {
+    for (int i = 0; i < this->outputentries.size(); i++) {
         bool cond;
-        if (mainprogram->outputentries[i]->win->mixid == 4) {
-            cond = (mainprogram->outputentries[i]->win->lay == mainmix->mouselayer);
+        if (this->outputentries[i]->win->mixid == 4) {
+            cond = (this->outputentries[i]->win->lay == mainmix->mouselayer);
         }
         else {
-            cond = (mainprogram->outputentries[i]->win->mixid == mainprogram->monitormenu->value);
+            cond = (this->outputentries[i]->win->mixid == this->monitormenu->value);
         }
         if (cond) {
-            currentries.push_back(mainprogram->outputentries[i]);
+            currentries.push_back(this->outputentries[i]);
         } else {
-            takenentries.push_back(mainprogram->outputentries[i]);
+            takenentries.push_back(this->outputentries[i]);
         }
     }
 
 
 	if (k > -1) {
 		if (k == 0) {
-			if (mainprogram->menuresults.size()) {
-				if (mainprogram->menuresults[0] > 0) {
+			if (this->menuresults.size()) {
+				if (this->menuresults[0] > 0) {
 #ifdef WINDOWS
-					std::string livename = "video=" + mainprogram->devices[mainprogram->menuresults[0]];
+					std::string livename = "video=" + this->devices[this->menuresults[0]];
 #else
 #ifdef POSIX
                     std::string livename;
-                    livename = mainprogram->devvideomap[mainprogram->livemenu->entries[mainprogram->menuresults[0]]];
+                    livename = this->devvideomap[this->livemenu->entries[this->menuresults[0]]];
 #endif
 #endif
 					mainmix->mouselayer->set_live_base(livename);
@@ -4125,58 +4151,60 @@ void Program::handle_laymenu1() {
 			}
 		}
         if (k == 1) {
-            mainprogram->pathto = "OPENFILESLAYER";
-            mainprogram->loadlay = mainmix->mouselayer;
+            this->pathto = "OPENFILESLAYER";
+            this->loadlay = mainmix->mouselayer;
             if (cond) {
-                //mainprogram->clickednextto = mainmix->mouselayer->deck;
+                //this->clickednextto = mainmix->mouselayer->deck;
             }
             mainmix->addlay = false;
-            std::thread filereq(&Program::get_multinname, mainprogram, "Open video/image/layer file", "", std::filesystem::canonical(mainprogram->currfilesdir).generic_string());
+            printf("%s\n", this->currfilesdir.c_str());
+            fflush(stdout);
+            std::thread filereq(&Program::get_multinname, this, "Open video/image/layer file", "", std::filesystem::canonical(this->currfilesdir).generic_string());
             filereq.detach();
         }
         if (k == 2) {
-            mainprogram->pathto = "OPENFILESQUEUE";
-            mainprogram->loadlay = mainmix->mouselayer;
-            std::thread filereq(&Program::get_multinname, mainprogram, "Open video/image/layer file", "", std::filesystem::canonical(mainprogram->currfilesdir).generic_string());
+            this->pathto = "OPENFILESQUEUE";
+            this->loadlay = mainmix->mouselayer;
+            std::thread filereq(&Program::get_multinname, this, "Open video/image/layer file", "", std::filesystem::canonical(this->currfilesdir).generic_string());
             filereq.detach();
         }
 		if (k == 3 && !cond) {
-			mainprogram->pathto = "OPENFILESSTACK";
-			mainprogram->loadlay = mainmix->mouselayer;
+			this->pathto = "OPENFILESSTACK";
+			this->loadlay = mainmix->mouselayer;
             mainmix->addlay = false;
-			std::thread filereq(&Program::get_multinname, mainprogram, "Open video/image/layer file", "", std::filesystem::canonical(mainprogram->currelemsdir).generic_string());
+			std::thread filereq(&Program::get_multinname, this, "Open video/image/layer file", "", std::filesystem::canonical(this->currelemsdir).generic_string());
 			filereq.detach();
 		}
 		else if (k == 4 - cond) {
-			mainprogram->pathto = "SAVELAYFILE";
-			std::thread filereq(&Program::get_outname, mainprogram, "Save layer file", "application/ewocvj2-layer", std::filesystem::canonical(mainprogram->currelemsdir).generic_string());
+			this->pathto = "SAVELAYFILE";
+			std::thread filereq(&Program::get_outname, this, "Save layer file", "application/ewocvj2-layer", std::filesystem::canonical(this->currelemsdir).generic_string());
 			filereq.detach();
 		}
 		else if (k == 5 - cond) {
 			mainmix->new_file(mainmix->mousedeck, 1, true);
 		}
 		else if (k == 6 - cond) {
-			mainprogram->pathto = "OPENDECK";
-			std::thread filereq(&Program::get_inname, mainprogram, "Open deck file", "application/ewocvj2-deck", std::filesystem::canonical(mainprogram->currelemsdir).generic_string());
+			this->pathto = "OPENDECK";
+			std::thread filereq(&Program::get_inname, this, "Open deck file", "application/ewocvj2-deck", std::filesystem::canonical(this->currelemsdir).generic_string());
 			filereq.detach();
 		}
 		else if (k == 7 - cond) {
-			mainprogram->pathto = "SAVEDECK";
-			std::thread filereq(&Program::get_outname, mainprogram, "Save deck file", "application/ewocvj2-deck", std::filesystem::canonical(mainprogram->currelemsdir).generic_string());
+			this->pathto = "SAVEDECK";
+			std::thread filereq(&Program::get_outname, this, "Save deck file", "application/ewocvj2-deck", std::filesystem::canonical(this->currelemsdir).generic_string());
 			filereq.detach();
 		}
 		else if (k == 8 - cond) {
 			mainmix->new_file(2, 1, true);
 		}
 		else if (k == 9 - cond) {
-			mainprogram->pathto = "OPENMIX";
-			std::thread filereq(&Program::get_inname, mainprogram, "Open mix file", "application/ewocvj2-mix", std::filesystem::canonical(mainprogram->currelemsdir).generic_string());
+			this->pathto = "OPENMIX";
+			std::thread filereq(&Program::get_inname, this, "Open mix file", "application/ewocvj2-mix", std::filesystem::canonical(this->currelemsdir).generic_string());
 			filereq.detach();
 		}
 		else if (k == 10 - cond) {
-			mainprogram->pathto = "SAVEMIX";
-			std::thread filereq(&Program::get_outname, mainprogram, "Save mix file", "application/ewocvj2-mix",
-                       std::filesystem::canonical(mainprogram->currelemsdir).generic_string());
+			this->pathto = "SAVEMIX";
+			std::thread filereq(&Program::get_outname, this, "Save mix file", "application/ewocvj2-mix",
+                       std::filesystem::canonical(this->currelemsdir).generic_string());
 			filereq.detach();
 		}
 		else if (k == 11 - cond) {
@@ -4215,7 +4243,7 @@ void Program::handle_laymenu1() {
 			mainmix->mouselayer->shifty->value = 0.0f;
 		}
 		else if (k == 15 - cond * 2) {
-			mainmix->mouselayer->aspectratio = (RATIO_TYPE)mainprogram->menuresults[0];
+			mainmix->mouselayer->aspectratio = (RATIO_TYPE)this->menuresults[0];
 			if (mainmix->mouselayer->type == ELEM_IMAGE) {
 				ilBindImage(mainmix->mouselayer->boundimage);
 				ilActiveImage((int)mainmix->mouselayer->frame);
@@ -4228,8 +4256,8 @@ void Program::handle_laymenu1() {
 		}
         else if (k == 16 - cond * 2) {
             // chosen output screen already used? re-use window
-            int currdisp = SDL_GetWindowDisplayIndex(mainprogram->mainwindow);
-            int disp = mainprogram->menuresults[0] + (mainprogram->menuresults[0] >= currdisp);
+            int currdisp = SDL_GetWindowDisplayIndex(this->mainwindow);
+            int disp = this->menuresults[0] + (this->menuresults[0] >= currdisp);
             bool switched = false;
             for (int i = 0; i < takenentries.size(); i++) {
                 if (takenentries[i]->screen == disp) {
@@ -4250,9 +4278,13 @@ void Program::handle_laymenu1() {
 
                 // stop output display of chosen mixwindow on chosen screen
                 if (swoff != -1) {
-                    SDL_DestroyWindow(currentries[swoff]->win->win);
-                    mainprogram->outputentries.erase(
-                            std::find(mainprogram->outputentries.begin(), mainprogram->outputentries.end(),
+                    SDL_GL_MakeCurrent(currentries[swoff]->win->win, NULL);
+                    glFinish();
+                    SDL_GL_DeleteContext(currentries[swoff]->win->glc);
+                    SDL_HideWindow(currentries[swoff]->win->win);
+                    SDL_Delay(10);
+                    this->outputentries.erase(
+                            std::find(this->outputentries.begin(), this->outputentries.end(),
                                       currentries[swoff]));
                     delete currentries[swoff]->win;
                 } else {
@@ -4263,20 +4295,24 @@ void Program::handle_laymenu1() {
                     entry->screen = disp;
                     entry->win = mwin;
                     mwin->lay = mainmix->mouselayer;
-                    mainprogram->outputentries.push_back(entry);
+                    this->outputentries.push_back(entry);
                     SDL_Rect rc1;
                     SDL_GetDisplayBounds(disp, &rc1);
                     SDL_Rect rc2;
                     SDL_GetDisplayUsableBounds(disp, &rc2);
-                    mwin->w = rc2.w;
-                    mwin->h = rc2.h;
+                    mwin->w = std::min(rc1.w, rc2.w);
+                    mwin->h = std::min(rc1.h, rc2.h);
                     SDL_GL_MakeCurrent(mainprogram->mainwindow, glc);
                     SDL_GL_SetAttribute(SDL_GL_SHARE_WITH_CURRENT_CONTEXT, 1);
-                    mwin->win = SDL_CreateWindow(PROGRAM_NAME, rc1.x, rc1.y, mwin->w, mwin->h,
-                                                 SDL_WINDOW_OPENGL | SDL_WINDOW_MAXIMIZED | SDL_WINDOW_RESIZABLE |
-                                                 SDL_WINDOW_FULLSCREEN_DESKTOP | SDL_WINDOW_ALLOW_HIGHDPI);
-                    //SDL_RaiseWindow(mainprogram->mainwindow);
-                    mainprogram->mixwindows.push_back(mwin);
+                    mwin->win = this->grab_from_winpool(mwin->w, mwin->h);
+                    if (mwin->win == nullptr) {
+                        mwin->win = SDL_CreateWindow(PROGRAM_NAME, rc1.x, rc1.y, mwin->w, mwin->h,
+                                                     SDL_WINDOW_OPENGL | SDL_WINDOW_MAXIMIZED |
+                                                     SDL_WINDOW_RESIZABLE | SDL_WINDOW_BORDERLESS |
+                                                     SDL_WINDOW_ALLOW_HIGHDPI);
+                    }
+                    //SDL_RaiseWindow(this->mainwindow);
+                    this->mixwindows.push_back(mwin);
                     mwin->glc = SDL_GL_CreateContext(mwin->win);
                     SDL_GL_MakeCurrent(mwin->win, mwin->glc);
 
@@ -4310,12 +4346,12 @@ void Program::handle_laymenu1() {
                     glVertexAttribPointer(1, 2, GL_FLOAT, GL_FALSE, 8, nullptr);
                     //SDL_GL_SetAttribute(SDL_GL_SHARE_WITH_CURRENT_CONTEXT, 0);
 
-                    glUseProgram(mainprogram->ShaderProgram);
+                    glUseProgram(this->ShaderProgram);
 
                     std::thread vidoutput(output_video, mwin);
                     vidoutput.detach();
 
-                    SDL_GL_MakeCurrent(mainprogram->mainwindow, glc);
+                    SDL_GL_MakeCurrent(this->mainwindow, glc);
                 }
             }
         }
@@ -4338,7 +4374,7 @@ void Program::handle_laymenu1() {
             binel->bin = nullptr;
             binel->type = ELEM_FILE;
             binel->path = mainmix->mouselayer->filename;
-            binel->relpath = std::filesystem::relative(mainmix->mouselayer->filename, mainprogram->project->binsdir).generic_string();
+            binel->relpath = std::filesystem::relative(mainmix->mouselayer->filename, this->project->binsdir).generic_string();
             if (mainmix->mouselayer->isclone) {
                 mainmix->mouselayer = mainmix->firstlayers[mainmix->mouselayer->clonesetnr];
             }
@@ -4349,18 +4385,18 @@ void Program::handle_laymenu1() {
 #ifdef POSIX
         else if (!cond && k == (18 + encode)) {
             // start up v4l2 loopback device
-            std::string device = mainprogram->loopbackmenu->entries[mainprogram->menuresults[0]];
+            std::string device = this->loopbackmenu->entries[this->menuresults[0]];
             device = device.substr(2, device.size() - 2);
             this->v4l2_start_device(device, tex);
         }
 #endif
 	}
 
-	if (mainprogram->menuchosen) {
-		mainprogram->menuchosen = false;
-		mainprogram->menuactivation = 0;
-		mainprogram->menuresults.clear();
-        mainprogram->recundo = true;
+	if (this->menuchosen) {
+		this->menuchosen = false;
+		this->menuactivation = 0;
+		this->menuresults.clear();
+        this->recundo = true;
 	}
 }
 
@@ -4477,6 +4513,7 @@ void Program::handle_clipmenu() {
 }
 
 void Program::handle_mainmenu() {
+    this->create_auinmenu();
 	int k = -1;
 	// Draw and Program::handle mainmenu
 	k = this->handle_menu(this->mainmenu);
@@ -4576,9 +4613,24 @@ void Program::handle_mainmenu() {
 			SDL_RaiseWindow(this->config_midipresetswindow);
 		}
 	}
-	else if (k == 8) {
-		this->quitting = "quitted";
-	}
+    else if (k == 8) {
+        if (this->menuresults.size()) {
+            this->auinitialized = false;
+            this->audevice = this->auindevices[this->menuresults[0]];
+            this->init_audio(this->audevice.c_str());
+            for (PrefCat *cat : this->prefs->items) {
+                for (PrefItem *item: cat->items) {
+                    if (item->name == "Audio input device") {
+                        item->audevice = this->audevice;
+                    }
+                }
+            }
+            this->prefs->save();
+        }
+    }
+    else if (k == 9) {
+        this->quitting = "quitted";
+    }
 
 	if (this->menuchosen) {
 		this->menuchosen = false;
@@ -4935,7 +4987,31 @@ void Program::handle_editmenu() {
 
 void Program::handle_lpstmenu() {
     if (!mainmix->mouselpstelem) return;
-    if (mainmix->mouselpstelem->eventlist.size() == 0) return;
+    if (mainmix->mouselpstelem->eventlist.size() == 0) {
+        this->lpstmenu->state = 0;
+        this->parammenu3->state = 2;
+        if (mainmix->mouselpstelem->colbox->in()) {
+            mainmix->learnbutton = nullptr;
+            mainmix->learnparam = nullptr;
+        }
+        else if (mainmix->mouselpstelem->recbut->box->in()) {
+            mainmix->learnbutton = mainmix->mouselpstelem->recbut;
+            mainmix->learnparam = nullptr;
+        }
+        else if (mainmix->mouselpstelem->loopbut->box->in()) {
+            mainmix->learnbutton = mainmix->mouselpstelem->loopbut;
+            mainmix->learnparam = nullptr;
+        }
+        else if (mainmix->mouselpstelem->playbut->box->in()) {
+            mainmix->learnbutton = mainmix->mouselpstelem->playbut;
+            mainmix->learnparam = nullptr;
+        }
+        else if (mainmix->mouselpstelem->speed->box->in()) {
+            mainmix->learnbutton = nullptr;
+            mainmix->learnparam = mainmix->mouselpstelem->speed;
+        }
+        mainmix->mouselpstelem = nullptr;
+    }
     int k = -1;
     // Draw and handle lpstmenu
     k = mainprogram->handle_menu(mainprogram->lpstmenu);
@@ -4954,6 +5030,22 @@ void Program::handle_lpstmenu() {
     else if (k == 3) {
         mainmix->mouselpstelem->totaltime = mainmix->cbduration;
     }
+    else if (k == 4) {
+        // beatmatching
+        if (mainprogram->menuresults.size()) {
+            if (mainprogram->menuresults[0] == 0) {
+                mainmix->mouselpstelem->beats = 0;
+                mainmix->mouselpstelem->speed->value = mainmix->mouselpstelem->buspeed;
+            }
+            else {
+                mainmix->mouselpstelem->beats = pow(2, mainprogram->menuresults[0] - 1);
+                mainmix->mouselpstelem->buspeed = mainmix->mouselpstelem->speed->value;
+            }
+        }
+    }
+    else if (k == 5) {
+        mainmix->learn = true;
+    }
 
     if (mainprogram->menuchosen) {
         mainprogram->menuchosen = false;
@@ -4962,6 +5054,7 @@ void Program::handle_lpstmenu() {
         mainprogram->recundo = true;
     }
 }
+
 
 // end of menu code
 
@@ -5275,7 +5368,10 @@ bool Program::preferences_handle() {
     }
 
 	mci = this->prefs->items[this->prefs->curritem];
-	if (mci->name == "MIDI Devices") ((PIMidi*)mci)->populate();
+	if (mci->name == "Input Devices") {
+        //this->create_auinmenu();
+        ((PIDev*)mci)->populate();
+    }
     bool brk = false;
 	for (int i = 0; i < mci->items.size(); i++) {
 	    if (mci->items[i]->name == "Project name") {
@@ -5287,7 +5383,7 @@ bool Program::preferences_handle() {
 	    if (mci->items[i]->name == "Project output video height") {
 	        mci->items[i]->dest = &mainprogram->project->oh;
 	    }
- 		if (mci->items[i]->type == PREF_ONOFF) {
+        if (mci->items[i]->type == PREF_ONOFF) {
 			if (!mci->items[i]->connected) continue;
 			draw_box(white, black, mci->items[i]->namebox, -1);
 			render_text(mci->items[i]->name, white, mci->items[i]->namebox->vtxcoords->x1 + 0.23f, mci->items[i]->namebox->vtxcoords->y1 + 0.06f, 0.0024f, 0.004f, 1, 0);
@@ -5295,8 +5391,8 @@ bool Program::preferences_handle() {
 				draw_box(white, lightblue, mci->items[i]->valuebox, -1);
 				if (this->leftmouse) {
 					mci->items[i]->onoff = !mci->items[i]->onoff;
-                    if (mci->name == "MIDI Devices") {
-						PIMidi* midici = (PIMidi*)mci;
+                    if (mci->name == "Input Devices") {
+						PIDev* midici = (PIDev*)mci;
 						if (!midici->items[i]->onoff) {
 							if (std::find(midici->onnames.begin(), midici->onnames.end(), midici->items[i]->name) != midici->onnames.end()) {
 								midici->onnames.erase(std::find(midici->onnames.begin(), midici->onnames.end(), midici->items[i]->name));
@@ -5376,6 +5472,29 @@ bool Program::preferences_handle() {
 				}
 			}
 		}
+        /*else if (mci->items[i]->type == PREF_MENU) {
+            draw_box(white, black, mci->items[i]->namebox->vtxcoords->x1,
+                     mci->items[i]->namebox->vtxcoords->y1, mci->items[i]->namebox->vtxcoords->w,
+                     mci->items[i]->namebox->vtxcoords->h, -1);
+            render_text(mci->items[i]->name, white, -0.5f + 0.1f,
+                        mci->items[i]->namebox->vtxcoords->y1 + 0.03f, 0.0024f, 0.004f, 1, 0);
+            draw_box(white, black, mci->items[i]->valuebox->vtxcoords->x1,
+                     mci->items[i]->valuebox->vtxcoords->y1, mci->items[i]->valuebox->vtxcoords->w,
+                     mci->items[i]->valuebox->vtxcoords->h, -1);
+            render_text(mci->items[i]->audevice, white,
+                        mci->items[i]->valuebox->vtxcoords->x1 + 0.1f,
+                        mci->items[i]->valuebox->vtxcoords->y1 + 0.03f, 0.0024f, 0.004f, 1, 0);
+            if (mci->items[i]->valuebox->in(mx, my)) {
+                bool cond = false;
+                if (this->leftmouse || this->rightmouse || this->auinmenu->state == 2) {
+                    this->auinmenu->state = 2;
+                    int k = -1;
+                    k = mainprogram->handle_menu(this->auinmenu);
+                    this->audevice = this->auindevices[k];
+                    mci->items[i]->audevice = this->audevice;
+                }
+            }
+        }*/
         else if (mci->items[i]->type == PREF_STRING) {
             draw_box(white, black, mci->items[i]->namebox->vtxcoords->x1,
                      mci->items[i]->namebox->vtxcoords->y1, mci->items[i]->namebox->vtxcoords->w,
@@ -7411,12 +7530,12 @@ Preferences::Preferences() {
     pidirs->box->tooltiptitle = "Directory settings ";
     pidirs->box->tooltip = "Left click to set default directories ";
     this->items.push_back(pidirs);
-    PIMidi *pimidi = new PIMidi;
+    PIDev *pimidi = new PIDev;
     pimidi->populate();
     pimidi->box = new Boxx;
     pimidi->box->smflag = 1;
-    pimidi->box->tooltiptitle = "MIDI device settings ";
-    pimidi->box->tooltip = "Left click to set MIDI device related preferences ";
+    pimidi->box->tooltiptitle = "Input device settings ";
+    pimidi->box->tooltip = "Left click to set MIDI device and audio device related preferences ";
     this->items.push_back(pimidi);
     for (int i = 0; i < this->items.size(); i++) {
         PrefCat *item = this->items[i];
@@ -7453,7 +7572,7 @@ void Preferences::load() {
                 for (int i = 0; i < mainprogram->prefs->items.size(); i++) {
                     if (mainprogram->prefs->items[i]->name == istring) {
                         std::string catname = istring;
-                        if (istring == "MIDI Devices") ((PIMidi*)(mainprogram->prefs->items[i]))->populate();
+                        if (istring == "Input Devices") ((PIDev*)(mainprogram->prefs->items[i]))->populate();
                         while (safegetline(rfile, istring)) {
                             if (istring == "ENDOFPREFCAT") {
                                 brk = true;
@@ -7509,7 +7628,7 @@ void Preferences::load() {
                                     break;
                                 }
                             }
-                            if (catname == "MIDI Devices") {
+                            if (catname == "Input Devices") {
                                 if (foundpos == -1) {
                                     std::string name = istring;
                                     safegetline(rfile, istring);
@@ -7520,7 +7639,7 @@ void Preferences::load() {
                                     pmi->connected = false;
                                 }
                                 else {
-                                    PIMidi *pim = (PIMidi*)mainprogram->prefs->items[i];
+                                    PIDev *pim = (PIDev*)mainprogram->prefs->items[i];
                                     if (!pi->onoff) {
                                         if (std::find(pim->onnames.begin(), pim->onnames.end(), pi->name) != pim->onnames.end()) {
                                             pim->onnames.erase(std::find(pim->onnames.begin(), pim->onnames.end(), pi->name));
@@ -7593,6 +7712,9 @@ void Preferences::save() {
                 else if (item->name == "Seat name") {
                     item->str = mainprogram->seatname;
                 }
+                else if (item->name == "Audio input device") {
+                    item->str = mainprogram->audevice;
+                }
             }
         }
     }
@@ -7605,7 +7727,7 @@ void Preferences::save() {
         wfile << "\n";
         for (int j = 0; j < pc->items.size(); j++) {
             if (!pc->items[j]->onfile) continue;
-            if (pc->name == "MIDI Devices") {
+            if (pc->name == "Input Devices") {
                 if (std::find(mds.begin(), mds.end(), pc->items[j]->name) != mds.end()) {
                     // reminder : hacky fix for repeated MIDI device entries
                     continue;
@@ -7663,7 +7785,7 @@ PrefItem::PrefItem(PrefCat *cat, int pos, std::string name, PREF_TYPE type, void
     this->namebox->vtxcoords->x1 = -0.5f;
     this->namebox->vtxcoords->y1 = 1.0f - (pos + 1) * 0.2f;
     this->namebox->vtxcoords->w = 1.5f;
-    if (type == PREF_STRING || type == PREF_PATH || type == PREF_PATHS) this->namebox->vtxcoords->w = 0.6f;
+    if (type == PREF_STRING || type == PREF_PATH || type == PREF_PATHS || type == PREF_MENU) this->namebox->vtxcoords->w = 0.6f;
     this->namebox->vtxcoords->h = 0.2f;
     this->namebox->upvtxtoscr();
     this->valuebox = new Boxx;
@@ -7680,7 +7802,7 @@ PrefItem::PrefItem(PrefCat *cat, int pos, std::string name, PREF_TYPE type, void
         this->valuebox->vtxcoords->w = 0.3f;
         this->valuebox->vtxcoords->h = 0.2f;
     }
-    else if (type == PREF_STRING) {
+    else if (type == PREF_STRING || type == PREF_MENU) {
         this->valuebox->vtxcoords->x1 = 0.1f;
         this->valuebox->vtxcoords->y1 = 1.0f - (pos + 1) * 0.2f;
         this->valuebox->vtxcoords->w = 0.8f;
@@ -7815,11 +7937,26 @@ PIDirs::PIDirs() {
     pos++;
 }
 
-PIMidi::PIMidi() {
-    this->name = "MIDI Devices";
+PIDev::PIDev() {
+    // Set all preferences items that appear under the Input Devices tab
+    this->name = "Input Devices";
+    /*PrefItem *pidev;
+    int pos = 0;
+
+    pidev = new PrefItem(this, pos, "Audio input device", PREF_MENU, (void *) &mainprogram->audevice);
+    pidev->namebox->tooltiptitle = "Audio input device ";
+    pidev->namebox->tooltip = "Audio input device used for beatmatching. ";
+    pidev->valuebox->tooltiptitle = "Set audio input device used for beatmatching ";
+    pidev->valuebox->tooltip = "Leftclick/rightclick starts a menu in which you choose the audio input device (for beatmatching). ";
+
+    pidev->audevice = "";  // isn't saved on main prefs file but in the project
+    this->items.push_back(pidev);
+    pos++;*/
 }
 
-void PIMidi::populate() {
+void PIDev::populate() {
+    //PrefItem *aud = this->items[0];
+    //this->items.erase(this->items.begin());
     std::vector<PrefItem*> ncitems;
     for (int i = 0; i < this->items.size(); i++) {
         if (!this->items[i]->connected) ncitems.push_back(this->items[i]);
@@ -7833,7 +7970,7 @@ void PIMidi::populate() {
     std::vector<std::string> allports;
     std::unordered_map<std::string, int> allmap;
     for (int i = 0; i < nPorts; i++) {
-        // Set all preferences items that appear under the Midi Devices tab
+        // Set all preferences items that appear under the Input Devices tab
         std::string nm = midiin.getPortName(i);
         int pos = nm.find_last_of(" ");
         nm = nm.substr(0, pos - 1);
@@ -7874,6 +8011,7 @@ void PIMidi::populate() {
         //if (this->items[i]->connected) delete this->items[i];
     }
     this->items = intrmitems;
+    //this->items.insert(this->items.begin(), aud);
     //this->items.insert(this->items.end(), ncitems.begin(), ncitems.end());
 }
 
@@ -8039,6 +8177,11 @@ PIInvisible::PIInvisible() {
     pii->valuebox->tooltip = "Leftclick starts keyboard entry of the server IP address. ";
     pii->str = "0.0.0.0";
     mainprogram->serverip = pii->str;
+    this->items.push_back(pii);
+    pos++;
+
+    pii = new PrefItem(this, pos, "Audio input device", PREF_STRING, (void*)&mainprogram->audevice);
+    pii->str = "";
     this->items.push_back(pii);
     pos++;
 }
@@ -8414,6 +8557,8 @@ void Program::define_menus() {
     generic.push_back("Clean slate");
     generic.push_back("Preferences");
     generic.push_back("Configure general MIDI");
+    generic.push_back("submenu auinmenu");
+    generic.push_back("Beatmatch device");
     generic.push_back("Quit");
     mainprogram->make_menu("mainmenu", mainprogram->mainmenu, generic);
 
@@ -8493,9 +8638,21 @@ void Program::define_menus() {
     lpst.push_back("Copy loop duration");
     lpst.push_back("Paste loop duration by changing speed");
     lpst.push_back("Paste loop duration by changing loop length");
+    lpst.push_back("submenu beatmenu");
+    lpst.push_back("Beatmatch (1 bar = 4 beats)");
+    lpst.push_back("MIDI Learn");
     mainprogram->make_menu("lpstmenu", mainprogram->lpstmenu, lpst);
 
-    //make menu item names bitmaps
+    std::vector<std::string> beat;
+    beat.push_back("off");
+    beat.push_back("every beat");
+    beat.push_back("every half bar");
+    beat.push_back("every bar");
+    beat.push_back("every two bars");
+    beat.push_back("every four bars");
+    mainprogram->make_menu("beatmenu", mainprogram->beatmenu, beat);
+
+    //make menu item names text bitmaps
     for (int i = 0; i < mainprogram->menulist.size(); i++) {
         for (int j = 0; j < mainprogram->menulist[i]->entries.size(); j++) {
             render_text(mainprogram->menulist[i]->entries[j], nullptr, white, 2.0f, 2.0f, 0.00045f, 0.00075f, 0, 0, 0);
@@ -10186,4 +10343,162 @@ GLuint Program::grab_from_fbopool() {
     GLuint fbo = *this->fbopool.begin();
     this->fbopool.erase(fbo);
     return fbo;
+}
+
+void Program::add_to_winpool(SDL_Window* win, int sw, int sh) {
+    this->winpool.insert(std::pair<std::tuple<int, int>, SDL_Window*>(std::tuple<int, int>(sw, sh), win));
+}
+
+SDL_Window* Program::grab_from_winpool(int w, int h) {
+    auto elem = this->winpool.find(std::tuple<int, int>(w, h));
+    if (elem == this->winpool.end()) {
+        return nullptr;
+    }
+    SDL_Window *win = elem->second;
+    this->winpool.erase(elem);
+    return win;
+}
+
+
+
+
+//  ONSET DETECTION
+void Program::init_audio(const char* device) {
+    // Set the desired audio specification
+    SDL_AudioSpec desiredSpec;
+    SDL_zero(desiredSpec);           // Initialize the structure to zero
+    desiredSpec.freq = 44100;         // Sample rate
+    desiredSpec.format = AUDIO_F32SYS; // Float 32-bit format
+    desiredSpec.channels = 1;         // Mono audio
+    desiredSpec.samples = 1024;       // Buffer size
+
+    // Structure to hold the actual obtained audio specification
+    SDL_AudioSpec obtainedSpec;
+
+    // Open the audio capture device
+    this->audeviceid = SDL_OpenAudioDevice(
+            this->audevice.c_str(),            // Use the default device
+            1,               // Set to 1 for recording (capture) mode
+            &desiredSpec,    // Desired audio spec
+            &obtainedSpec,   // Obtain actual spec here
+            0                // Allow changes to spec if needed
+    );
+
+    if (this->audeviceid == 0) {
+        std::cerr << "Failed to open audio device: " << SDL_GetError() << std::endl;
+        SDL_Quit();
+        return;
+    }
+
+    SDL_PauseAudioDevice(this->audeviceid, 0);
+
+    this->ausamplerate = obtainedSpec.freq;
+    this->ausamples = obtainedSpec.samples;
+    this->aubuffersize = obtainedSpec.samples * SDL_AUDIO_BITSIZE(obtainedSpec.format) / 8 * obtainedSpec.channels;
+    int fft_size = 1024; // Set FFT size (adjust as needed)
+    this->auout = (fftw_complex*) fftw_malloc(sizeof(fftw_complex) * (fft_size / 2 + 1));
+    this->auoutsize = sizeof(float) * 2 * (fft_size / 2 + 1);
+    this->aubuffer = (float*) malloc(this->aubuffersize);
+    this->auin = (double*) fftw_malloc(sizeof(double) * obtainedSpec.samples);
+    this->auplan = fftw_plan_dft_r2c_1d(fft_size, this->auin, this->auout, FFTW_ESTIMATE);
+
+    this->auinitialized = true;
+}
+
+void Program::process_audio() {
+    while (!this->auinitialized) {
+        Sleep(10);
+    }
+
+    // init OnsetsDS
+    this->beatdet = new BeatDetektor(90.0, 180.0, nullptr);
+    this->austarttime = std::chrono::high_resolution_clock::now();
+
+    float sumavg;
+    int cnt = 0;
+    while (true) {
+        if (!this->auinitialized) continue;
+        int bytesRead = SDL_DequeueAudio(this->audeviceid, this->aubuffer, this->aubuffersize);
+        if (bytesRead > 0) {
+            // Process the audio data in `buffer`
+            //int num_samples = frame->nb_samples;
+            for (int i = 0; i < this->ausamples; i++) {
+                this->auin[i] = this->aubuffer[i]; // / 32768.0; // Scale samples to [-1, 1]
+            }
+            // Perform FFT
+            fftw_execute(this->auplan);
+
+            this->auoutfloat.clear();
+            for (int i = 0; i < this->auoutsize; i+=2) {
+                this->auoutfloat.push_back((float)(this->auout[i][0])); // / 32768.0; // Scale samples to [-1, 1]
+                this->auoutfloat.push_back((float)(this->auout[i][1])); // / 32768.0; // Scale samples to [-1, 1]
+            }
+
+            auto time = std::chrono::high_resolution_clock::now();
+            std::chrono::duration<double> elapsed;
+            elapsed = std::chrono::duration_cast<std::chrono::duration<double>>(
+                    time - this->austarttime);
+            this->autime = std::chrono::duration_cast<std::chrono::milliseconds>(elapsed).count();
+            this->beatdet->process((float)this->autime / 1000.0f, this->auoutfloat);
+
+            LoopStation *lpst;
+            float sum = 0.0f;
+            for (int i = 0; i < this->ausamples; i++) {
+                sum += this->aubuffer[i]; // / 32768.0; // Scale samples to [-1, 1]
+            }
+            float avg = sum / this->ausamples;
+            sumavg += avg;
+            if (cnt == 20) {
+                printf("%f\n", avg);
+                fflush(stdout);
+                sumavg = 0.0f;
+                cnt = 0;
+            }
+            cnt++;
+            int counter = this->beatdet->beat_counter;
+            for (int m = 0; m < 2; ++m) {
+                if (m == 0) {
+                    lpst = lp;
+                } else {
+                    lpst = lpc;
+                }
+                for (auto elem: lpst->elements) {
+                    if (elem->beats) {
+                        int counter2 = counter / elem->beats;
+                        if (counter2 > this->aubpmcounter / elem->beats) {
+                            elem->speedadaptedtime = this->beatdet->bpm_offset * 1000.0f;
+                            elem->starttime = std::chrono::high_resolution_clock::now() -
+                                              std::chrono::milliseconds((long long) (elem->speedadaptedtime));
+                            elem->interimtime = 0;
+                            elem->eventpos = 0;
+                            elem->atend = false;
+                        }
+                        elem->speed->value = elem->totaltime / (1000.0f * this->beatdet->winning_bpm) / elem->beats;
+                    }
+                }
+            }
+            this->aubpmcounter = counter;
+        } else {
+            SDL_Delay(10);  // Wait a bit if no data is available
+        }
+    }
+}
+
+
+void Program::create_auinmenu() {
+    if (this->mainmenu->state > 1 || this->filemenu->state > 1) {
+        if (!this->gotaudioinputs) {
+            // create menu with audio input devices
+            this->auindevices.clear();
+            const int count = SDL_GetNumAudioDevices(1);
+            for (int i = 0; i < count; i++) {
+                std::string str(SDL_GetAudioDeviceName(i, 1));
+                this->auindevices.push_back(str);
+            }
+            this->make_menu("auinmenu", this->auinmenu, this->auindevices);
+            this->auinmenu->box->upscrtovtx();
+            this->gotaudioinputs = true;
+        }
+    }
+    else this->gotaudioinputs = false;
 }

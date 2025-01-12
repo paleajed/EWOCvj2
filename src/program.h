@@ -7,6 +7,8 @@
 #include <condition_variable>
 #include <string>
 #include "GL/gl.h"
+#include "BeatDetektor.h"
+#include "fftw3.h"
 #ifdef WINDOWS
 #include "direnthwin/dirent.h"
 #include "processthreadsapi.h"
@@ -78,6 +80,7 @@ typedef enum
     PREF_STRING = 2,
     PREF_PATH = 3,
     PREF_PATHS = 4,
+    PREF_MENU = 5,
 } PREF_TYPE;
 
 struct gui_line {
@@ -220,9 +223,11 @@ class PrefItem {
 		int value;
         std::string str;
         std::string path;
+        Menu *menu = nullptr;
 		bool renaming = false;
 		bool choosing = false;
 		bool onfile = true;
+        std::string audevice;
 		Boxx *namebox;
 		Boxx *valuebox;
         Boxx *iconbox;
@@ -241,11 +246,11 @@ class PrefCat {
 		Boxx *box;
 };
 
-class PIMidi: public PrefCat {
+class PIDev: public PrefCat {
 	public:
 		std::vector<std::string> onnames;
 		void populate();
-		PIMidi();
+		PIDev();
 };
 
 class PIInvisible: public PrefCat {
@@ -458,7 +463,8 @@ class Program {
         Menu *bintargetmenu = nullptr;
 		Menu *fullscreenmenu = nullptr;
 		Menu *mixenginemenu = nullptr;
-		Menu *livemenu = nullptr;
+        Menu *livemenu = nullptr;
+        Menu *auinmenu = nullptr;
 		Menu *wipemenu = nullptr;
 		Menu *dirmenu = nullptr;
 		Menu *dir1menu = nullptr;
@@ -481,6 +487,7 @@ class Program {
         Menu* laylistmenu4 = nullptr;
         Menu* editmenu = nullptr;
         Menu* lpstmenu = nullptr;
+        Menu* beatmenu = nullptr;
         Menu* sendmenu = nullptr;
         bool menuactivation = false;
         bool binmenuactivation = false;
@@ -624,8 +631,15 @@ class Program {
         bool autoplay = true;
         std::chrono::high_resolution_clock::time_point now;
         GLsync syncobj = nullptr;
+        AVFormatContext* audio = nullptr;
+        AVCodecContext *audio_dec_ctx = nullptr;
+        BeatDetektor *beatdet = nullptr;
+        std::chrono::high_resolution_clock::time_point austarttime;
+        size_t autime = 0;
+        int aubpmcounter;
 
-    GLuint boxcoltbo;
+
+        GLuint boxcoltbo;
 		GLuint boxtextbo;
 		GLuint boxbrdtbo;
 		GLuint bdcoltex;
@@ -714,8 +728,22 @@ class Program {
         std::unordered_map <std::string, GUIString*> flguitextmap;
         std::unordered_map <std::string, std::string> devvideomap;
         std::vector<std::wstring> livedevices;
-		std::vector<std::string> devices;
-		std::vector<std::string> busylist;
+        std::vector<std::string> devices;
+        std::vector<std::string> auindevices;
+        std::vector<std::string> adevices;
+        std::string audevice;
+        SDL_AudioDeviceID audeviceid;
+        float ausamplerate;
+        float* aubuffer;
+        int aubuffersize;
+        int ausamples;
+        std::vector<float> auoutfloat;
+        int auoutsize;
+        double* auin;
+        fftw_complex* auout;
+        fftw_plan auplan;
+        bool auinitialized = false;
+        std::vector<std::string> busylist;
 		std::vector<Layer*> busylayers;
 		std::vector<Layer*> mimiclayers;
 		
@@ -733,7 +761,8 @@ class Program {
 		Button* wormgate1;
 		Button* wormgate2;
 		DIR *opendir;
-		bool gotcameras = false;
+        bool gotcameras = false;
+        bool gotaudioinputs = false;
 
 		EDIT_TYPE renaming = EDIT_NONE;
         bool renamingseat = false;
@@ -911,6 +940,7 @@ class Program {
         std::multimap<std::tuple<int, int, GLint>, GLuint> texpool;
         std::multimap<int, std::pair<GLuint, GLubyte*>> pbopool;
         std::unordered_set<GLuint> fbopool;
+        std::multimap<std::tuple<int, int>, SDL_Window*> winpool;
         std::unordered_map<GLuint, GLint> texintfmap;
 
 
@@ -996,12 +1026,16 @@ class Program {
         void add_to_texpool(GLuint tex);
         void add_to_pbopool(GLuint pbo, GLubyte* mapptr);
         void add_to_fbopool(GLuint fbo);
+        void add_to_winpool(SDL_Window *win, int sw, int sh);
         GLuint grab_from_texpool(int w, int h, GLint compressed);
         std::pair<GLuint, GLubyte*> grab_from_pbopool(int bsize);
         GLuint grab_from_fbopool();
+        SDL_Window* grab_from_winpool(int w, int h);
         std::tuple<Param*, int, int, int, int, int> newparam(int offset, bool swap);
         std::tuple<Button*, int, int, int, int> newbutton(int offset, bool swap);
         std::string get_typestring(std::string path);
+        void process_audio();
+        void init_audio(const char* device);
         Program();
 		
 	private:
@@ -1013,6 +1047,7 @@ class Program {
 #endif
         bool do_order_paths();
         char* bl_recv(int sock, char *buf, size_t sz, int flags);
+        void create_auinmenu();
 };
 
 extern Globals *glob;

@@ -5702,6 +5702,7 @@ void the_loop() {
     mainprogram->middlemousedown = false;
 	mainprogram->rightmouse = 0;
 	mainprogram->openerr = false;
+    mainprogram->menuactivation = false;
 
     for (int i = 0; i < 4; i++) {
         for (Layer *lay : mainmix->layers[i]) {
@@ -6329,7 +6330,9 @@ printf("1\n");
     //atexit(SDL_Quit);
     printf("3\n");
     fflush(stdout);
-
+    if (SDL_Init(SDL_INIT_AUDIO) < 0) {
+        std::cerr << "SDL could not initialize! SDL_Error: " << SDL_GetError() << std::endl;
+    }
     /* Request opengl 4.6 context.
      * SDL doesn't have the ability to choose which profile at this time of writing,
      * but it should default to the core profile */
@@ -6737,6 +6740,14 @@ printf("1\n");
     //mainprogram->st = new lo::ServerThread(oscport);
     //mainprogram->st->start();
     //mainprogram->add_main_oscmethods();
+
+
+    // start audio input processing in separate thread
+    if (mainprogram->audevice != "") {
+        mainprogram->init_audio(mainprogram->audevice.c_str());
+    }
+    std::thread auin(&Program::process_audio, mainprogram);
+    auin.detach();
 
 
     io_service io;

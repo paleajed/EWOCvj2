@@ -3320,6 +3320,7 @@ void BinsMain::hap_encode(std::string srcpath, BinElement *binel, BinElement *bd
         binel->otflay->encodeload = true;
         bool bukeb = binel->otflay->keepeffbut->value;
         binel->otflay->keepeffbut->value = 1;
+        binel->otflay->transfered = true;
         binel->otflay = binel->otflay->open_video(binel->otflay->frame, binel->path, false);
         binel->otflay->keepeffbut->value = bukeb;
         // wait for video open

@@ -4033,6 +4033,7 @@ void Layer::get_cpu_frame(int framenr, int prevframe, int errcount)
 
 
 bool Layer::get_hap_frame() {
+// Decompresses a video frame using Snappy and manages resource allocation for frame data.
     if (!this->video) return false;
     if (this->decresult->newdata == true) {
         return true;
@@ -8063,10 +8064,20 @@ void Mixer::save_mix(const std::string path, bool modus, bool save, bool undo) {
     wfile << "EWOCvj MIXFILE\n";
 
     wfile << "CURRLAY\n";
-    wfile << std::to_string(mainmix->currlay[!modus]->pos);
+    if (mainmix->currlay[!modus]) {
+        wfile << std::to_string(mainmix->currlay[!modus]->pos);
+    }
+    else  {
+        wfile << std::to_string(0);
+    }
     wfile << "\n";
     wfile << "CURRDECK\n";
-    wfile << std::to_string(mainmix->currlay[!modus]->deck);
+    if (mainmix->currlay[!modus]) {
+        wfile << std::to_string(mainmix->currlay[!modus]->deck);
+    }
+    else  {
+        wfile << std::to_string(0);
+    }
     wfile << "\n";
     wfile << "CURRLAYS0\n";
     for (int i = 0; i < mainmix->currlays[!modus].size(); i++) {
@@ -8074,6 +8085,10 @@ void Mixer::save_mix(const std::string path, bool modus, bool save, bool undo) {
             wfile << std::to_string(mainmix->currlays[!modus][i]->pos);
             wfile << "\n";
         }
+    }
+    if (mainmix->currlays[!modus].empty()) {
+        wfile << std::to_string(0);
+        wfile << "\n";
     }
     wfile << "ENDCLS\n";
     wfile << "CURRLAYS1\n";
@@ -11385,6 +11400,9 @@ void Mixer::event_write(std::ostream &wfile, Param* par, Button* but) {
                 wfile << "SPEEDADAPTEDTIME\n";
                 wfile << std::to_string(elem->buspeedadaptedtime);
                 wfile << "\n";
+                wfile << "BEATS\n";
+                wfile << std::to_string(elem->beats);
+                wfile << "\n";
             }
 		}
 		else if (but) {
@@ -11422,6 +11440,9 @@ void Mixer::event_write(std::ostream &wfile, Param* par, Button* but) {
                 wfile << "\n";
                 wfile << "SPEEDADAPTEDTIME\n";
                 wfile << std::to_string(elem->buspeedadaptedtime);
+                wfile << "\n";
+                wfile << "BEATS\n";
+                wfile << std::to_string(elem->beats);
                 wfile << "\n";
 			}
 		}
@@ -11568,6 +11589,11 @@ void Mixer::event_read(std::istream &rfile, Param *par, Button* but, Layer *lay,
         if (istring == "SPEEDADAPTEDTIME") {
             safegetline(rfile, istring);
             loop->speedadaptedtime = std::stof(istring);
+        }
+        safegetline(rfile, istring);
+        if (istring == "BEATS") {
+            safegetline(rfile, istring);
+            loop->beats = std::stoi(istring);
         }
     }
 }

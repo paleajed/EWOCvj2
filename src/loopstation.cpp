@@ -260,7 +260,14 @@ void LoopStationElement::visualize() {
 	this->colbox->upvtxtoscr();
     this->box->upvtxtoscr();
     this->scritch->box->upvtxtoscr();
-    this->speed->handle();
+    if (this->beats == 0) {
+        this->speed->handle();
+    }
+    else {
+        draw_box(this->speed->box, -1);
+        render_text(mainprogram->beatmenu->entries[log2(this->beats) + 1], white, this->speed->box->vtxcoords->x1 + 0.03f, this->speed->box->vtxcoords->y1 + 0.075f - 0.045f,
+                    0.00045f, 0.00075f);
+    }
     draw_box(grey, this->colbox->acolor, this->colbox, -1);
 	if (!this->eventlist.empty()) draw_box(black, black, this->colbox->vtxcoords->x1 + 0.02325f ,
                                       this->colbox->vtxcoords->y1 + 0.0375f, 0.0225f, 0.03f, -1);
@@ -271,17 +278,6 @@ void LoopStationElement::visualize() {
                                                                                     (this->totaltime)) - 0.002f,
              this->scritch->box->vtxcoords->y1, 0.004f, 0.075f, -1);
     render_text(std::to_string(this->pos + 1), white, this->recbut->box->vtxcoords->x1 - 0.05f, this->recbut->box->vtxcoords->y1 + 0.03f, 0.0006f, 0.001f);
-	if (this->colbox->in()) {
-        if (!mainprogram->menuondisplay || mainprogram->lpstmenuon) {
-            if (mainprogram->menuactivation) {
-                mainprogram->lpstmenu->state = 2;
-                mainprogram->parammenu3->state = 0;
-                mainprogram->parammenu4->state = 0;
-                mainmix->mouselpstelem = this;
-                mainprogram->menuactivation = false;
-                mainprogram->lpstmenuon = true;            }
-        }
-	}
 }
 	
 void LoopStationElement::erase_elem() {
@@ -438,7 +434,7 @@ void LoopStationElement::mouse_handle() {
             this->scritching = 1;
         }
         if (mainprogram->menuactivation) {
-            mainprogram->parammenu3->state = 2;
+            mainprogram->lpstmenu->state = 2;
             mainmix->learnparam = this->scritch;
             mainmix->learnbutton = nullptr;
             this->scritch->range[1] = this->totaltime;
@@ -496,6 +492,38 @@ void LoopStationElement::mouse_handle() {
             mainprogram->leftmouse = false;
         }
         this->midiscritch = false;
+    }
+    if (this->colbox->in() || this->recbut->box->in() || this->loopbut->box->in() || this->playbut->box->in() || this->speed->box->in()) {
+        if (!mainprogram->menuondisplay || mainprogram->lpstmenuon) {
+            if (mainprogram->menuactivation) {
+                mainprogram->lpstmenu->state = 2;
+                mainprogram->parammenu3->state = 0;
+                mainprogram->parammenu4->state = 0;
+                if (this->colbox->in()) {
+                    mainmix->learnbutton = nullptr;
+                    mainmix->learnparam = nullptr;
+                }
+                else if (this->recbut->box->in()) {
+                    mainmix->learnbutton = this->recbut;
+                    mainmix->learnparam = nullptr;
+                }
+                else if (this->loopbut->box->in()) {
+                    mainmix->learnbutton = this->loopbut;
+                    mainmix->learnparam = nullptr;
+                }
+                else if (this->playbut->box->in()) {
+                    mainmix->learnbutton = this->playbut;
+                    mainmix->learnparam = nullptr;
+                }
+                else if (this->speed->box->in()) {
+                    mainmix->learnbutton = nullptr;
+                    mainmix->learnparam = this->speed;
+                }
+                mainmix->mouselpstelem = this;
+                mainprogram->menuactivation = false;
+                mainprogram->lpstmenuon = true;
+            }
+        }
     }
 }
 
@@ -563,7 +591,7 @@ void LoopStationElement::set_values() {
                 this->eventpos = 0;
                 this->speedadaptedtime = 0;
                 this->interimtime = 0;
-                this->starttime = mainprogram->now - std::chrono::milliseconds((long long)this->interimtime);
+                this->starttime = mainprogram->now - std::chrono::milliseconds((long long)this->speedadaptedtime);
             }
             else if (this->playbut->value) {
                 //end of single shot eventlist play
