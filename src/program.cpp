@@ -5062,21 +5062,29 @@ void Program::handle_lpstmenu() {
 
 void Program::preview_modus_buttons() {
 	// Draw and handle buttons
-    for (Layer *lay : mainmix->layers[0]) {
-        if (lay->changeinit < 1 && lay->filename != "" && !lay->isclone && !(lay->type == ELEM_IMAGE && lay->numf == 0)) {
-            return;
+    if (mainprogram->prevmodus) {
+        for (Layer *lay: mainmix->layers[0]) {
+            if (lay->changeinit < 1 && lay->filename != "" && !lay->isclone &&
+                !(lay->type == ELEM_IMAGE && lay->numf == 0)) {
+                return;
+            }
+        }
+        for (Layer *lay: mainmix->layers[1]) {
+            if (lay->changeinit < 1 && lay->filename != "" && !lay->isclone &&
+                !(lay->type == ELEM_IMAGE && lay->numf == 0))
+                return;
         }
     }
-    for (Layer *lay : mainmix->layers[1]) {
-        if (lay->changeinit < 1 && lay->filename != "" && !lay->isclone && !(lay->type == ELEM_IMAGE && lay->numf == 0)) return;
-    }
-    for (Layer *lay : mainmix->layers[2]) {
-        if (lay->changeinit < 1 && lay->filename != "" && !lay->isclone && !(lay->type == ELEM_IMAGE && lay->numf == 0)) {
-            return;
+    else {
+        for (Layer *lay: mainmix->layers[2]) {
+            if (lay->changeinit < 1 && lay->filename != "" && !lay->isclone &&
+                !(lay->type == ELEM_IMAGE && lay->numf == 0)) {
+                return;
+            }
         }
-    }
-    for (Layer *lay : mainmix->layers[3]) {
-        if (lay->changeinit < 1 && lay->filename != "" && !lay->isclone) return;
+        for (Layer *lay: mainmix->layers[3]) {
+            if (lay->changeinit < 1 && lay->filename != "" && !lay->isclone) return;
+        }
     }
 	if (mainprogram->prevmodus) {
         mainprogram->handle_button(mainprogram->toscreenA, false, false, true);
@@ -10439,22 +10447,23 @@ void Program::process_audio() {
             elapsed = std::chrono::duration_cast<std::chrono::duration<double>>(
                     time - this->austarttime);
             this->autime = std::chrono::duration_cast<std::chrono::milliseconds>(elapsed).count();
+
             this->beatdet->process((float)this->autime / 1000.0f, this->auoutfloat);
+            // reset at sudden tempo change
+            /*this->qtime += this->autime;
+            if (this->autime - this->qtime > 3000.0f) {
+                this->topquality = 0.0f;
+            }
+            if (this->beatdet->quality_avg > this->topquality) {
+                this->topquality = this->beatdet->quality_avg;
+                this->qtime = this->autime;
+            }
+            if (this->beatdet->quality_avg < this->topquality - 4.0f) {
+                //this->beatdet->reset();
+                this->topquality = 0.0f;
+            }*/
 
             LoopStation *lpst;
-            float sum = 0.0f;
-            for (int i = 0; i < this->ausamples; i++) {
-                sum += this->aubuffer[i]; // / 32768.0; // Scale samples to [-1, 1]
-            }
-            float avg = sum / this->ausamples;
-            sumavg += avg;
-            if (cnt == 20) {
-                printf("%f\n", avg);
-                fflush(stdout);
-                sumavg = 0.0f;
-                cnt = 0;
-            }
-            cnt++;
             int counter = this->beatdet->beat_counter;
             for (int m = 0; m < 2; ++m) {
                 if (m == 0) {

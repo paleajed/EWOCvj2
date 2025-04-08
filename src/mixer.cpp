@@ -4077,7 +4077,7 @@ bool Layer::get_hap_frame() {
             }
             this->databuf[m] = (char *) calloc(uncompressed_size, 1);
             if (this->databuf[m] == nullptr) {
-                printf("Can't allocate frame data buffes\n");
+                printf("Can't allocate frame data buffer\n");
                 return false;
             }
         }
@@ -4502,7 +4502,10 @@ void Layer::display() {
                         mainprogram->leftmousedown = false;
                     }
                     if (this->adding && mainprogram->leftmouse) {
-                        mainmix->add_layer(*this->layers, this->pos + 1);
+                        Layer *nlay = mainmix->add_layer(*this->layers, this->pos + 1);
+                        if (nlay->pos > mainmix->scenes[this->deck][mainmix->currscene[this->deck]]->scrollpos + 2) {   // layer at end->scroll
+                            mainmix->scenes[this->deck][mainmix->currscene[this->deck]]->scrollpos = nlay->pos - 2;
+                        }
                     }
                 }
                 else {
@@ -4519,7 +4522,7 @@ void Layer::display() {
                             mainprogram->leftmousedown = false;
                         }
                         if (this->adding && mainprogram->leftmouse) {
-                           mainmix->add_layer(*this->layers, 0);
+                            mainmix->add_layer(*this->layers, this->pos + 1);
                         }
                     }
                     else {
@@ -10446,7 +10449,10 @@ Layer* Mixer::read_layers(std::istream &rfile, const std::string result, std::ve
                     open_thumb(result + "_" + std::to_string(mainprogram->filecount) + ".jpeg", layend->currclip->tex);
                     layend->currclip->jpegpath = result + "_" + std::to_string(mainprogram->filecount) + ".jpeg";
                     mainprogram->filecount++;
-                } else open_thumb(jpegpath, layend->currclip->tex);
+                } else {
+                    layend->currclip->jpegpath = jpegpath;
+                    open_thumb(jpegpath, layend->currclip->tex);
+                }
             }
         }
         
@@ -10545,7 +10551,10 @@ Layer* Mixer::read_layers(std::istream &rfile, const std::string result, std::ve
                             clp->jpegpath = result + "_" + std::to_string(mainprogram->filecount) + ".jpeg";
                             mainprogram->filecount++;
                         }
-                        else open_thumb(jpegpath, clp->tex);
+                        else {
+                            open_thumb(jpegpath, clp->tex);
+                            clp->jpegpath = jpegpath;
+                        }
                     }
 					if (istring == "FRAME") {
 						safegetline(rfile, istring);
@@ -12400,6 +12409,7 @@ void Layer::clip_display_next(bool startend, bool alive) {
         }
         else if (isvideo(lay->currclippath)) {
             lay = lay->open_video(0, lay->currclippath, 0);
+            lay->reset = true;  // triggers startframe and endframe initialization
             //if (lay->initialized) mainmix->copy_pbos(lay, lay);
             //lay->currclip->type = ELEM_FILE;
         }

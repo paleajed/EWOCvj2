@@ -637,6 +637,8 @@ class Program {
         std::chrono::high_resolution_clock::time_point austarttime;
         size_t autime = 0;
         int aubpmcounter;
+        float topquality = 0.0f;
+        float qtime = 0.0f;
 
 
         GLuint boxcoltbo;

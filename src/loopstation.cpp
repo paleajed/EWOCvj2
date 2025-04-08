@@ -82,7 +82,7 @@ LoopStationElement::LoopStationElement() {
     this->recbut->box->lcolor[2] = 0.4f;
     this->recbut->box->lcolor[3] = 1.0f;
 	this->recbut->box->tooltiptitle = "Record loopstation row ";
-	this->recbut->box->tooltip = "Start recording non-automated parameter movements on this loopstation row.  ";
+	this->recbut->box->tooltip = "Start recording non-automated parameter movements on this loopstation row.  Rightclick for menu that allows clearing the line, copying and pasting loop length, beatmatch this line or do a MIDI learn. ";
 	this->loopbut = new Button(0);
     this->loopbut->name[0] = "T";
 	this->loopbut->toggle = 1;
@@ -91,7 +91,7 @@ LoopStationElement::LoopStationElement() {
     this->loopbut->box->lcolor[2] = 0.4f;
     this->loopbut->box->lcolor[3] = 1.0f;
 	this->loopbut->box->tooltiptitle = "Loop play loopstation row ";
-	this->loopbut->box->tooltip = "Start loop-playing of recorded parameter movements for this loopstation row. Stops recording if it was still running. ";
+	this->loopbut->box->tooltip = "Start loop-playing of recorded parameter movements for this loopstation row. Stops recording if it was still running.  Rightclick for menu that allows clearing the line, copying and pasting loop length, beatmatch this line or do a MIDI learn. ";
 	this->playbut = new Button(0);
     this->playbut->name[0] = "Y";
 	this->playbut->toggle = 1;
@@ -100,7 +100,7 @@ LoopStationElement::LoopStationElement() {
     this->playbut->box->lcolor[2] = 0.4f;
     this->playbut->box->lcolor[3] = 1.0f;
 	this->playbut->box->tooltiptitle = "One-off play loopstation row ";
-	this->playbut->box->tooltip = "Start one-off-play of recorded parameter movements for this loopstation row. Stops at end of recording. ";
+	this->playbut->box->tooltip = "Start one-off-play of recorded parameter movements for this loopstation row. Stops at end of recording.  Rightclick for menu that allows clearing the line, copying and pasting loop length, beatmatch this line or do a MIDI learn. ";
 	this->speed = new Param;
 	this->speed->name = "LPST speed";
 	this->speed->value = 1.0f;
@@ -116,7 +116,7 @@ LoopStationElement::LoopStationElement() {
 	this->speed->box->vtxcoords->h = 0.075f;
 	this->speed->box->upvtxtoscr();
 	this->speed->box->tooltiptitle = "Loopstation row speed ";
-	this->speed->box->tooltip = "Allows multiplying the recorded event's speed of this loopstation row.  Leftdrag sets value. Doubleclick allows numeric entry. ";
+	this->speed->box->tooltip = "Allows multiplying the recorded event's speed of this loopstation row.  Leftdrag sets value. Doubleclick allows numeric entry.  Rightclick for menu that allows clearing the line, copying and pasting loop length, beatmatch this line or do a MIDI learn. ";
 	this->colbox = new Boxx;
     this->colbox->lcolor[0] = 0.4f;
     this->colbox->lcolor[1] = 0.4f;
@@ -126,7 +126,7 @@ LoopStationElement::LoopStationElement() {
 	this->colbox->vtxcoords->h = 0.075f;
 	this->colbox->upvtxtoscr();
 	this->colbox->tooltiptitle = "Loopstation row color code ";
-	this->colbox->tooltip = "Leftclicking this box shows colored boxes on the layer stack scroll strips for layers that contain parameters automated by this loopstation row. A white circle is drawn here when this loopstation row contains data. ";
+	this->colbox->tooltip = "Leftclicking this box shows colored boxes on the layer stack scroll strips for layers that contain parameters automated by this loopstation row. A small black box is drawn here when this loopstation row contains data.  Rightclick for menu that allows clearing the line, copying and pasting loop length, beatmatch this line or do a MIDI learn. ";
     this->box = new Boxx;
     this->box->lcolor[0] = 0.4f;
     this->box->lcolor[1] = 0.4f;
@@ -146,7 +146,7 @@ LoopStationElement::LoopStationElement() {
     this->scritch->box->vtxcoords->h = 0.075f;
     this->scritch->box->upvtxtoscr();
     this->scritch->box->tooltiptitle = "Loopstation framecounter ";
-    this->scritch->box->tooltip = "Leftclicking/dragging inside this box sets the position inside the loopstation recording. ";
+    this->scritch->box->tooltip = "Leftclicking/dragging inside this box sets the position inside the loopstation recording.  Rightclick for menu that allows clearing the line, copying and pasting loop length, beatmatch this line or do a MIDI learn. ";
  }
 
 LoopStationElement::~LoopStationElement() {
