@@ -397,6 +397,7 @@ class Mixer {
         std::vector<GLuint> butexes[2];
         std::vector<Layer*> newpathlayers;
         std::vector<Clip*> newpathclips;
+        std::vector<Layer*> newpathcliplays;
         std::vector<ShelfElement*> newpathshelfelems;
         std::vector<BinElement*> newpathbinels;
         std::vector<std::string> *newpaths;
@@ -408,6 +409,7 @@ class Mixer {
         int retargetstage = 0;
         bool retargeting = false;
         bool retargetingdone = false;
+        bool cliplaying = false;
         bool renaming = false;
         bool skipall = false;
 		bool bualive;

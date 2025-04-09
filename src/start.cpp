@@ -91,7 +91,6 @@ extern "C" {
 }
 
 #include <ft2build.h>
-#include <shellapi.h>
 #include FT_FREETYPE_H
 #include FT_BITMAP_H
 #include FT_MODULE_H
@@ -110,7 +109,7 @@ extern "C" {
 #define PROGRAM_NAME "EWOCvj"
 
 #ifdef WINDOWS
-
+#include <shellapi.h>
 #endif
 
 
@@ -408,8 +407,10 @@ void check_stage() {
 }
 
 bool retarget_search() {
-    // search for a file in the local and global search directories
-    // a global search directory is kept in the preferences and used at every retarget
+    // search for a file in the local and glob/
+    // earch directories
+    // a global search directory is kept in th/
+    // e preferences and used at every retarget
     // a local search directory is only used once
     // if the file isn't found, the directories are checked for files with the same filesize, which most reasonably represents one certain file, that was probably renamed
     std::function<std::string(std::string)> search_directory = [&search_directory](std::string path) {
@@ -497,27 +498,41 @@ void do_retarget() {
             lay->endframe->value = 0.0f;
             continue;
         }
+
         lay->timeinit = false;
+        // load the retrageted videos/images
         if (lay->type == ELEM_FILE || lay->type == ELEM_LAYER) {
-            lay = lay->open_video(lay->frame, lay->filename, false);
+            lay->transfered = true;
+            lay->open_video(lay->frame, lay->filename, false, true);
         } else if (lay->type == ELEM_IMAGE) {
             float bufr = lay->frame;
-            lay->open_image(lay->filename);
+            lay->transfered = true;
+            lay->open_image(lay->filename, true, true);
             lay->frame = bufr;
         }
     }
+
+    // set up retraget clips
     for (int i = 0; i < mainmix->newpathclips.size(); i++) {
         Clip *clip = mainmix->newpathclips[i];
-        clip->path = mainmix->newclippaths[i];
+        mainmix->newpathcliplays[i]->filename = mainmix->newclippaths[i];
+        if (clip->type == ELEM_LAYER) {
+            mainmix->save_layerfile(clip->path, mainmix->newpathcliplays[i], 0, 0);
+            mainmix->newpathcliplays[i]->close();
+        }
         if (clip->path == "") continue;
         clip->insert(clip->layer, clip->layer->clips.end() - 1);
     }
+
+    // set up retraget shelf elements
     for (int i = 0; i < mainmix->newpathshelfelems.size(); i++) {
         mainmix->newpathshelfelems[i]->path = mainmix->newshelfpaths[i];
         if (mainmix->newpathshelfelems[i]->path == "") {
             blacken(mainmix->newpathshelfelems[i]->tex);
         }
     }
+
+    // set up retraget bin elements
     for (int i = 0; i < mainmix->newpathbinels.size(); i++) {
         mainmix->newpathbinels[i]->path = mainmix->newbinelpaths[i];
         mainmix->newpathbinels[i]->relpath = std::filesystem::relative(mainmix->newbinelpaths[i], mainprogram->project->binsdir).generic_string();
@@ -526,6 +541,7 @@ void do_retarget() {
             blacken(mainmix->newpathbinels[i]->tex);
         }
     }
+
     check_stage();
 }
 
@@ -4300,21 +4316,27 @@ void the_loop() {
         } else if (i == 3) {
             tempmap = &mainmix->swapmap[3];
         }
-        if (tempmap->size()) {
-            bool brk = false;
-            for (std::vector<Layer *> lv: *tempmap) {
-                if (lv[1]) {
-                    Layer *testlay = lv[1];
-                    if (!testlay->liveinput && !testlay->isclone &&
-                        (testlay->changeinit < 1 && testlay->filename != "" && !(testlay->type == ELEM_IMAGE && testlay->numf == 0))) {
-                        testlay->load_frame();
-                        done = false;
-                        brk = true;
-                        break;
+        if (!mainmix->retargeting) {
+            if (tempmap->size()) {
+                bool brk = false;
+                for (std::vector<Layer *> lv: *tempmap) {
+                    if (lv[1]) {
+                        Layer *testlay = lv[1];
+                        if (!testlay->liveinput && !testlay->isclone &&
+                            (testlay->changeinit < 1 && testlay->filename != "" &&
+                             !(testlay->type == ELEM_IMAGE && testlay->numf == 0))) {
+                            testlay->load_frame();
+                            done = false;
+                            brk = true;
+                            break;
+                        }
                     }
                 }
+                if (brk) break;
             }
-            if (brk) break;
+        }
+        else {
+            done = false;
         }
     }
     if (done || mainprogram->swappingscene) {
@@ -4549,6 +4571,7 @@ void the_loop() {
 
             mainmix->newpathlayers.clear();
             mainmix->newpathclips.clear();
+            mainmix->newpathcliplays.clear();
             mainmix->newpathshelfelems.clear();
             mainmix->newpathbinels.clear();
             mainmix->newpathpos = 0;
@@ -4574,9 +4597,8 @@ void the_loop() {
             std::function<void()> load_data = [&load_data]() {
                 if (mainmix->retargetstage == 0) {
                     mainmix->newpaths = &mainmix->newlaypaths;
-                    if ((*(mainmix->newpaths)).size() == 0) {
+                    if (mainmix->newpathpos >= (*(mainmix->newpaths)).size()) {
                         check_stage();
-                        load_data();
                     } else {
                         mainmix->newpaths = &mainmix->newlaypaths;
                         retarget->lay = mainmix->newpathlayers[mainmix->newpathpos];
@@ -4586,9 +4608,8 @@ void the_loop() {
                 }
                 if (mainmix->retargetstage == 1) {
                     mainmix->newpaths = &mainmix->newclippaths;
-                    if ((*(mainmix->newpaths)).size() == 0) {
+                    if (mainmix->newpathpos >= (*(mainmix->newpaths)).size()) {
                         check_stage();
-                        load_data();
                     } else {
                         mainmix->newpaths = &mainmix->newclippaths;
                         retarget->clip = mainmix->newpathclips[mainmix->newpathpos];
@@ -4598,9 +4619,8 @@ void the_loop() {
                 }
                 if (mainmix->retargetstage == 2) {
                     mainmix->newpaths = &mainmix->newshelfpaths;
-                    if ((*(mainmix->newpaths)).size() == 0) {
+                    if (mainmix->newpathpos >= (*(mainmix->newpaths)).size()) {
                         check_stage();
-                        load_data();
                     } else {
                         mainmix->newpaths = &mainmix->newshelfpaths;
                         retarget->shelem = mainmix->newpathshelfelems[mainmix->newpathpos];
@@ -4610,13 +4630,12 @@ void the_loop() {
                 }
                 if (mainmix->retargetstage == 3) {
                     mainmix->newpaths = &mainmix->newbinelpaths;
-                    if ((*(mainmix->newpaths)).size() == 0) {
+                    if (mainmix->newpathpos >= (*(mainmix->newpaths)).size()) {
                         check_stage();
                         if (!mainmix->retargeting) {
                             mainprogram->frontbatch = false;
                             return;
                         }
-                        load_data();
                     } else {
                         retarget->binel = mainmix->newpathbinels[mainmix->newpathpos];
                         retarget->tex = retarget->binel->tex;
@@ -4626,10 +4645,9 @@ void the_loop() {
             };
             load_data();
 
-            if (retarget->searchall) {
+            if (retarget->searchall && !(*(mainmix->newpaths)).empty()) {
                 bool ret = retarget_search();
-                if (ret) check_stage();
-                else {
+                if (!ret) {
                     retarget->notfound = true;
                     retarget->searchall = false;
                 }
@@ -4665,37 +4683,39 @@ void the_loop() {
                                     std::filesystem::canonical(mainprogram->currfilesdir).generic_string());
                 filereq.detach();
             }
-            if (mainmix->renaming == false) {
-                render_text((*(mainmix->newpaths))[mainmix->newpathpos], white, -0.4f + 0.015f, retarget->valuebox->vtxcoords->y1 + 0.075f - 0.045f,
-                            0.00045f,
-                            0.00075f);
-                if (exists((*(mainmix->newpaths))[mainmix->newpathpos])) {
-                    mainprogram->currfilesdir = dirname((*(mainmix->newpaths))[mainmix->newpathpos]);
-                    check_stage();
-                }
-            }
-            else {
-                if (mainprogram->renaming == EDIT_NONE) {
-                    mainmix->renaming = false;
-                    (*(mainmix->newpaths))[mainmix->newpathpos] = mainprogram->inputtext;
+            if (!(*(mainmix->newpaths)).empty()) {
+                if (mainmix->renaming == false) {
+                    render_text((*(mainmix->newpaths))[mainmix->newpathpos], white, -0.4f + 0.015f,
+                                retarget->valuebox->vtxcoords->y1 + 0.075f - 0.045f,
+                                0.00045f,
+                                0.00075f);
                     if (exists((*(mainmix->newpaths))[mainmix->newpathpos])) {
                         mainprogram->currfilesdir = dirname((*(mainmix->newpaths))[mainmix->newpathpos]);
                         check_stage();
                     }
+                } else {
+                    if (mainprogram->renaming == EDIT_NONE) {
+                        mainmix->renaming = false;
+                        (*(mainmix->newpaths))[mainmix->newpathpos] = mainprogram->inputtext;
+                        if (exists((*(mainmix->newpaths))[mainmix->newpathpos])) {
+                            mainprogram->currfilesdir = dirname((*(mainmix->newpaths))[mainmix->newpathpos]);
+                            check_stage();
+                        }
+                    } else if (mainprogram->renaming == EDIT_CANCEL) {
+                        mainmix->renaming = false;
+                    } else {
+                        do_text_input(-0.4f + 0.015f, retarget->valuebox->vtxcoords->y1 + 0.075f - 0.045f, 0.00045f,
+                                      0.00075f, mainprogram->mx, mainprogram->my, mainprogram->xvtxtoscr(0.55f), 0,
+                                      nullptr, false);
+                    }
                 }
-                else if (mainprogram->renaming == EDIT_CANCEL) {
-                    mainmix->renaming = false;
+                if (retarget->valuebox->in() && mainprogram->orderleftmouse) {
+                    mainmix->renaming = true;
+                    mainprogram->renaming = EDIT_STRING;
+                    mainprogram->inputtext = (*(mainmix->newpaths))[mainmix->newpathpos];
+                    mainprogram->cursorpos0 = mainprogram->inputtext.length();
+                    SDL_StartTextInput();
                 }
-                else {
-                    do_text_input(-0.4f + 0.015f, retarget->valuebox->vtxcoords->y1 + 0.075f - 0.045f, 0.00045f, 0.00075f, mainprogram->mx, mainprogram->my, mainprogram->xvtxtoscr(0.55f), 0, nullptr, false);
-                }
-            }
-            if (retarget->valuebox->in() && mainprogram->orderleftmouse) {
-                mainmix->renaming = true;
-                mainprogram->renaming = EDIT_STRING;
-                mainprogram->inputtext = (*(mainmix->newpaths))[mainmix->newpathpos];
-                mainprogram->cursorpos0 = mainprogram->inputtext.length();
-                SDL_StartTextInput();
             }
             draw_box(white, black, retarget->iconbox, -1);
             draw_box(white, black, retarget->iconbox->vtxcoords->x1 + 0.035f, retarget->iconbox->vtxcoords->y1 + 0.035f, 0.03f, 0.035f, -1);
@@ -5773,7 +5793,7 @@ void the_loop() {
     mainprogram->inbox = false;
 
     //UNDO
-    if (mainprogram->recundo || mainprogram->undowaiting) {
+    if ((mainprogram->recundo || mainprogram->undowaiting) && !mainmix->retargeting) {
         mainprogram->undo_redo_save();
     }
 }

@@ -10087,8 +10087,6 @@ Layer* Mixer::read_layers(std::istream &rfile, const std::string result, std::ve
             if (filename != "") {
                 if (!exists(filename)) {
                     notfound = true;
-                    this->newlaypaths.push_back(filename);
-                    filename = "";
                 }
             }
             layend->filename = filename;  // for CLIPLAYER
@@ -10111,13 +10109,16 @@ Layer* Mixer::read_layers(std::istream &rfile, const std::string result, std::ve
                     }
                 }
             }
-            if (notfound) {
+            if (notfound && !mainmix->cliplaying) {
                 if (concat) {
                     std::filesystem::rename(result + "_" + std::to_string(mainprogram->filecount) + ".file",
                                               result + "_" + std::to_string(mainprogram->filecount) + ".jpeg");
                     open_thumb(result + "_" + std::to_string(mainprogram->filecount) + ".jpeg", layend->jpegtex);
                 }
                 mainmix->retargeting = true;
+                this->newlaypaths.push_back(filename);
+                filename = "";
+                layend->filename = filename;  // for CLIPLAYER
                 this->newpathlayers.push_back(layend);
                 //mainprogram->pathscount++;
             }
@@ -10522,19 +10523,22 @@ Layer* Mixer::read_layers(std::istream &rfile, const std::string result, std::ve
                     }
                     if (istring == "CLIPLAYER") {
 						std::vector<Layer*> cliplayers;
+                        mainmix->cliplaying = true;  // for when retargeting
                         Layer *cliplay = mainmix->read_layers(rfile, result, cliplayers, 0, false, 0, 0, 1, 0, 0, 0);
+                        mainmix->cliplaying = false;
 						clp->path = find_unused_filename("cliptemp_" + remove_extension(basename(result)), mainprogram->temppath, ".layer");
                         if (!exists(cliplay->filename)) {
                             mainmix->retargeting = true;
                             this->newclippaths.push_back(cliplay->filename);
                             this->newpathclips.push_back(clp);
+                            this->newpathcliplays.push_back(cliplay);
                             clp->layer = layend;
                         }
                         else {
                             mainmix->save_layerfile(clp->path, cliplay, 0, 0);
                             clp->insert(layend, layend->clips.end() - 1);
+                            cliplay->close();
                         }
-						cliplay->close();
 					}
                     if (istring == "JPEGPATH") {
                         safegetline(rfile, istring);
@@ -10936,15 +10940,17 @@ std::vector<std::string> Mixer::write_layer(Layer* lay, std::ostream& wfile, boo
 		wfile << std::to_string(sh2);
 		wfile << "\n";
 	}
-	if (lay->node->vidbox && dojpeg && lay->filename != "") {
-		std::string jpegpath = find_unused_filename(basename(lay->filename), mainprogram->temppath, ".jpg");
-        lay->minitex = copy_tex(lay->node->vidbox->tex, 192, 108);
-		save_thumb(jpegpath, lay->minitex);
-		jpegpaths.push_back(jpegpath);
-		wfile << "JPEGPATH\n";
-		wfile << jpegpath;
-		wfile << "\n";
-	}
+    if (lay->node) {
+        if (lay->node->vidbox && dojpeg && lay->filename != "") {
+            std::string jpegpath = find_unused_filename(basename(lay->filename), mainprogram->temppath, ".jpg");
+            lay->minitex = copy_tex(lay->node->vidbox->tex, 192, 108);
+            save_thumb(jpegpath, lay->minitex);
+            jpegpaths.push_back(jpegpath);
+            wfile << "JPEGPATH\n";
+            wfile << jpegpath;
+            wfile << "\n";
+        }
+    }
 	wfile << "ASPECTRATIO\n";
 	wfile << std::to_string(lay->aspectratio);
 	wfile << "\n";
