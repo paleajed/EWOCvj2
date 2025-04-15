@@ -1661,7 +1661,7 @@ EdgeDetectEffect::EdgeDetectEffect() {
 	param->name = "Threshold2";
 	param->value = 5.0f;
 	param->range[0] = 0.0f;
-	param->range[1] = 20.0f;
+	param->range[1] = 40.0f;
 	param->sliding = true;
 	param->shadervar = "edge_thres2";
 	param->effect = this;
@@ -1728,7 +1728,7 @@ CartoonEffect::CartoonEffect() {
 	param->name = "Threshold2";
 	param->value = 5.0f;
 	param->range[0] = 0.0f;
-	param->range[1] = 10.0f;
+	param->range[1] = 20.0f;
 	param->sliding = true;
 	param->shadervar = "edge_thres2";
 	param->effect = this;
@@ -12299,6 +12299,7 @@ void Layer::clip_display_next(bool startend, bool alive) {
 	// cycle clips and load the first in queue
     if (this == nullptr) return;
     if (this->changeinit < 1) return;
+    if (!mainmix->swapmap[0].empty() || !mainmix->swapmap[1].empty() || !mainmix->swapmap[2].empty() || !mainmix->swapmap[3].empty()) return;
 	if (this->clips.size() > 1) {
         Clip *oldclip = new Clip;
         oldclip->type = this->type;

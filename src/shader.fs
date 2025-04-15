@@ -880,8 +880,8 @@ vec4 get_pixel(vec2 coords, float dx, float dy)
 // returns pixel color
 float IsEdge(in vec2 coords)
 {
-  float dxtex = 1.0 /float(textureSize(Sampler0,0)) ;
-  float dytex = 1.0 /float(textureSize(Sampler0,0));
+  float dxtex = 1.0 /float(textureSize(fboSampler,0)) ;
+  float dytex = 1.0 /float(textureSize(fboSampler,0));
   float pix[9];
   int k = -1;
   float delta;

@@ -2267,9 +2267,9 @@ void set_queueing(bool onoff) {
 	
 void do_blur(bool stage, GLuint prevfbotex, int iter) {
 	glActiveTexture(GL_TEXTURE5);
-	glBindTexture(GL_TEXTURE_2D, mainprogram->fbotex[2]);
+	glBindTexture(GL_TEXTURE_2D, mainprogram->fbotex[stage * 2]);
 	glActiveTexture(GL_TEXTURE6);
-	glBindTexture(GL_TEXTURE_2D, mainprogram->fbotex[3]);
+	glBindTexture(GL_TEXTURE_2D, mainprogram->fbotex[stage * 2 + 1]);
 	if (iter == 0) return;
 	GLboolean horizontal = true, first_iteration = true;
 	GLuint *tex;
@@ -2279,10 +2279,10 @@ void do_blur(bool stage, GLuint prevfbotex, int iter) {
 	if (stage) glViewport(0, 0, mainprogram->ow, mainprogram->oh);
 	else glViewport(0, 0, mainprogram->ow3, mainprogram->oh3);
 	for (GLuint i = 0; i < iter; i++) {
-		glBindFramebuffer(GL_FRAMEBUFFER, mainprogram->frbuf[horizontal + 2]);
+		glBindFramebuffer(GL_FRAMEBUFFER, mainprogram->frbuf[stage * 2 + horizontal]);
 		glDrawBuffer(GL_COLOR_ATTACHMENT0);
 		if (first_iteration) tex = &prevfbotex;
-		else tex = &mainprogram->fbotex[!horizontal + 2];
+		else tex = &mainprogram->fbotex[stage * 2 + !horizontal];
 		glBindTexture(GL_TEXTURE_2D, *tex);
 		glUniform1i(glGetUniformLocation(mainprogram->ShaderProgram, "horizontal"), horizontal);
 		glBindVertexArray(mainprogram->fbovao);
@@ -2386,13 +2386,26 @@ void onestepfrom(bool stage, Node *node, Node *prevnode, GLuint prevfbotex, GLui
 	else {
 		if (stage == 0) div = mainprogram->oh3 / mainprogram->oh;
 	}
-	
-	GLuint fbowidth = glGetUniformLocation(mainprogram->ShaderProgram, "fbowidth");
-	glUniform1i(fbowidth, mainprogram->ow);
-	GLuint fboheight = glGetUniformLocation(mainprogram->ShaderProgram, "fboheight");
-	glUniform1i(fboheight, mainprogram->oh);
-	GLfloat fcdiv = glGetUniformLocation(mainprogram->ShaderProgram, "fcdiv");
-	glUniform1f(fcdiv, div);
+
+    GLuint fbowidth;
+    GLuint fboheight;
+    GLfloat fcdiv;
+    if (stage == 0) {
+        fbowidth = glGetUniformLocation(mainprogram->ShaderProgram, "fbowidth");
+        glUniform1i(fbowidth, mainprogram->ow3);
+        fboheight = glGetUniformLocation(mainprogram->ShaderProgram, "fboheight");
+        glUniform1i(fboheight, mainprogram->oh3);
+        fcdiv = glGetUniformLocation(mainprogram->ShaderProgram, "fcdiv");
+        glUniform1f(fcdiv, div);
+    }
+    else {
+        fbowidth = glGetUniformLocation(mainprogram->ShaderProgram, "fbowidth");
+        glUniform1i(fbowidth, mainprogram->ow);
+        fboheight = glGetUniformLocation(mainprogram->ShaderProgram, "fboheight");
+        glUniform1i(fboheight, mainprogram->oh);
+        fcdiv = glGetUniformLocation(mainprogram->ShaderProgram, "fcdiv");
+        glUniform1f(fcdiv, div);
+    }
 
     node->walked = true;
 	
@@ -2411,9 +2424,24 @@ void onestepfrom(bool stage, Node *node, Node *prevnode, GLuint prevfbotex, GLui
 					if (effect->type == RIPPLE) {
 						((RippleEffect*)par->effect)->speed = val;
 					}
-					else if (par->shadervar == "edthickness") {
-						((EdgeDetectEffect*)par->effect)->thickness = val;
-					}
+                    else if (par->shadervar == "edthickness") {
+                        if (stage) {
+                            ((EdgeDetectEffect *) par->effect)->thickness = val;
+                        }
+                        else {
+                            ((EdgeDetectEffect *) par->effect)->thickness = val; // * (mainprogram->ow3 / mainprogram->ow);
+                        }
+                    }
+                    else if (par->shadervar == "edge_thres2") {
+                        if (stage) {
+                            GLint var = glGetUniformLocation(mainprogram->ShaderProgram, par->shadervar.c_str());
+                            glUniform1f(var, val);
+                        }
+                        else {
+                            GLint var = glGetUniformLocation(mainprogram->ShaderProgram, par->shadervar.c_str());
+                            glUniform1f(var, val * (mainprogram->ow3 / mainprogram->ow));
+                        }
+                    }
 					else if (effect->type == BLUR) {
 						((BlurEffect*)par->effect)->times = val;
 					}
@@ -2430,7 +2458,7 @@ void onestepfrom(bool stage, Node *node, Node *prevnode, GLuint prevfbotex, GLui
 						glUniform1i(interm, 1);
 						do_blur(stage, prevfbotex, ((BlurEffect*)effect)->times);
 						glActiveTexture(GL_TEXTURE0);
-						prevfbotex = mainprogram->fbotex[3];
+						prevfbotex = mainprogram->fbotex[stage * 2 + 1];
 						break;
 					 }
 
@@ -2441,7 +2469,7 @@ void onestepfrom(bool stage, Node *node, Node *prevnode, GLuint prevfbotex, GLui
 						glUniform1i(interm, 1);
 						do_blur(stage, prevfbotex, 2);
 						glActiveTexture(GL_TEXTURE0);
-						prevfbotex = mainprogram->fbotex[3];
+						prevfbotex = mainprogram->fbotex[stage * 2 + 1];
 						break;
 					}
 
@@ -2464,7 +2492,7 @@ void onestepfrom(bool stage, Node *node, Node *prevnode, GLuint prevfbotex, GLui
 						glUniform1i(interm, 1);
 						do_blur(stage, prevfbotex, 2);
 						glActiveTexture(GL_TEXTURE0);
-						prevfbotex = mainprogram->fbotex[3];
+						prevfbotex = mainprogram->fbotex[stage * 2 + 1];
 						break;
 					 }
 
@@ -2616,7 +2644,7 @@ void onestepfrom(bool stage, Node *node, Node *prevnode, GLuint prevfbotex, GLui
                         GLint interm = glGetUniformLocation(mainprogram->ShaderProgram, "interm");
                         glUniform1i(interm, 1);
                         glActiveTexture(GL_TEXTURE0);
-                        glBindFramebuffer(GL_FRAMEBUFFER, mainprogram->frbuf[swits + 2]);
+                        glBindFramebuffer(GL_FRAMEBUFFER, mainprogram->frbuf[swits + stage * 2]);
                         glDrawBuffer(GL_COLOR_ATTACHMENT0);
                         glClearColor( 0.f, 0.f, 0.f, 0.f );
                         glClear(GL_COLOR_BUFFER_BIT);
@@ -2625,7 +2653,7 @@ void onestepfrom(bool stage, Node *node, Node *prevnode, GLuint prevfbotex, GLui
                         glBindTexture(GL_TEXTURE_2D, prevfbotex);
                         glBindVertexArray(mainprogram->fbovao);
                         glDrawArrays(GL_TRIANGLE_STRIP, 0, 4);
-                        prevfbotex = mainprogram->fbotex[swits + 2];
+                        prevfbotex = mainprogram->fbotex[swits + stage * 2];
                         swits = !swits;
 
                         fxid = glGetUniformLocation(mainprogram->ShaderProgram, "fxid");
@@ -2633,7 +2661,7 @@ void onestepfrom(bool stage, Node *node, Node *prevnode, GLuint prevfbotex, GLui
                         GLuint cut = glGetUniformLocation(mainprogram->ShaderProgram, "cut");
                         glUniform1f(cut, 0.9f);
                         glActiveTexture(GL_TEXTURE0);
-                        glBindFramebuffer(GL_FRAMEBUFFER, mainprogram->frbuf[swits + 2]);
+                        glBindFramebuffer(GL_FRAMEBUFFER, mainprogram->frbuf[swits + stage * 2]);
                         glDrawBuffer(GL_COLOR_ATTACHMENT0);
                         glClearColor( 0.f, 0.f, 0.f, 0.f );
                         glClear(GL_COLOR_BUFFER_BIT);
@@ -2642,7 +2670,7 @@ void onestepfrom(bool stage, Node *node, Node *prevnode, GLuint prevfbotex, GLui
                         glBindTexture(GL_TEXTURE_2D, prevfbotex);
                         glBindVertexArray(mainprogram->fbovao);
                         glDrawArrays(GL_TRIANGLE_STRIP, 0, 4);
-                        prevfbotex = mainprogram->fbotex[swits + 2];
+                        prevfbotex = mainprogram->fbotex[swits + stage * 2];
                         swits = !swits;
 
                         fxid = glGetUniformLocation(mainprogram->ShaderProgram, "fxid");
@@ -2650,7 +2678,7 @@ void onestepfrom(bool stage, Node *node, Node *prevnode, GLuint prevfbotex, GLui
                         if (((EdgeDetectEffect*)effect)->thickness > 1) {
                             do_blur(stage, prevfbotex, int((((EdgeDetectEffect *) effect)->thickness)));
                             swits = !(int(((EdgeDetectEffect*)effect)->thickness) % 2);
-                            prevfbotex = mainprogram->fbotex[swits + 2];
+                            prevfbotex = mainprogram->fbotex[swits + stage * 2];
                             swits = !swits;
                         }
                         glActiveTexture(GL_TEXTURE0);
@@ -2661,14 +2689,14 @@ void onestepfrom(bool stage, Node *node, Node *prevnode, GLuint prevfbotex, GLui
                             GLuint level = glGetUniformLocation(mainprogram->ShaderProgram, "gammaval");
                             glUniform1f(level, 2.5f);
                             glActiveTexture(GL_TEXTURE0);
-                            glBindFramebuffer(GL_FRAMEBUFFER, mainprogram->frbuf[swits + 2]);
+                            glBindFramebuffer(GL_FRAMEBUFFER, mainprogram->frbuf[swits + stage * 2]);
                             glDrawBuffer(GL_COLOR_ATTACHMENT0);
                             if (stage) glViewport(0, 0, mainprogram->ow, mainprogram->oh);
                             else glViewport(0, 0, mainprogram->ow3, mainprogram->oh3);
                             glBindTexture(GL_TEXTURE_2D, prevfbotex);
                             glBindVertexArray(mainprogram->fbovao);
                             glDrawArrays(GL_TRIANGLE_STRIP, 0, 4);
-                            prevfbotex = mainprogram->fbotex[swits + 2];
+                            prevfbotex = mainprogram->fbotex[swits + stage * 2];
                             swits = !swits;
 
                             fxid = glGetUniformLocation(mainprogram->ShaderProgram, "fxid");
@@ -2676,27 +2704,27 @@ void onestepfrom(bool stage, Node *node, Node *prevnode, GLuint prevfbotex, GLui
                             GLuint am = glGetUniformLocation(mainprogram->ShaderProgram, "contrastamount");
                             glUniform1f(am, 8.0f);
                             glActiveTexture(GL_TEXTURE0);
-                            glBindFramebuffer(GL_FRAMEBUFFER, mainprogram->frbuf[swits + 2]);
+                            glBindFramebuffer(GL_FRAMEBUFFER, mainprogram->frbuf[swits + stage * 2]);
                             glDrawBuffer(GL_COLOR_ATTACHMENT0);
                             if (stage) glViewport(0, 0, mainprogram->ow, mainprogram->oh);
                             else glViewport(0, 0, mainprogram->ow3, mainprogram->oh3);
                             glBindTexture(GL_TEXTURE_2D, prevfbotex);
                             glBindVertexArray(mainprogram->fbovao);
                             glDrawArrays(GL_TRIANGLE_STRIP, 0, 4);
-                            prevfbotex = mainprogram->fbotex[swits + 2];
+                            prevfbotex = mainprogram->fbotex[swits + stage * 2];
                             swits = !swits;
 
                             fxid = glGetUniformLocation(mainprogram->ShaderProgram, "fxid");
                             glUniform1i(fxid, INVERT);
                             glActiveTexture(GL_TEXTURE0);
-                            glBindFramebuffer(GL_FRAMEBUFFER, mainprogram->frbuf[swits + 2]);
+                            glBindFramebuffer(GL_FRAMEBUFFER, mainprogram->frbuf[swits + stage * 2]);
                             glDrawBuffer(GL_COLOR_ATTACHMENT0);
                             if (stage) glViewport(0, 0, mainprogram->ow, mainprogram->oh);
                             else glViewport(0, 0, mainprogram->ow3, mainprogram->oh3);
                             glBindTexture(GL_TEXTURE_2D, prevfbotex);
                             glBindVertexArray(mainprogram->fbovao);
                             glDrawArrays(GL_TRIANGLE_STRIP, 0, 4);
-                            prevfbotex = mainprogram->fbotex[swits + 2];
+                            prevfbotex = mainprogram->fbotex[swits + stage * 2];
                             swits = !swits;
 
                             glUniform1i(interm, 0);
@@ -2706,14 +2734,14 @@ void onestepfrom(bool stage, Node *node, Node *prevnode, GLuint prevfbotex, GLui
                             GLuint edgethickmode = glGetUniformLocation(mainprogram->ShaderProgram, "edgethickmode");
                             glUniform1i(edgethickmode, 1);
                             glActiveTexture(GL_TEXTURE0);
-                            glBindFramebuffer(GL_FRAMEBUFFER, mainprogram->frbuf[swits + 2]);
+                            glBindFramebuffer(GL_FRAMEBUFFER, mainprogram->frbuf[swits + stage * 2]);
                             glDrawBuffer(GL_COLOR_ATTACHMENT0);
                             if (stage) glViewport(0, 0, mainprogram->ow, mainprogram->oh);
                             else glViewport(0, 0, mainprogram->ow3, mainprogram->oh3);
                             glBindTexture(GL_TEXTURE_2D, prevfbotex);
                             glBindVertexArray(mainprogram->fbovao);
                             glDrawArrays(GL_TRIANGLE_STRIP, 0, 4);
-                            prevfbotex = mainprogram->fbotex[swits + 2];
+                            prevfbotex = mainprogram->fbotex[swits + stage * 2];
                             swits = !swits;
                             glUniform1i(interm, 1);
                             glUniform1i(edgethickmode, 0);
@@ -2721,14 +2749,14 @@ void onestepfrom(bool stage, Node *node, Node *prevnode, GLuint prevfbotex, GLui
                             fxid = glGetUniformLocation(mainprogram->ShaderProgram, "fxid");
                             glUniform1i(fxid, INVERT);
                             glActiveTexture(GL_TEXTURE0);
-                            glBindFramebuffer(GL_FRAMEBUFFER, mainprogram->frbuf[swits + 2]);
+                            glBindFramebuffer(GL_FRAMEBUFFER, mainprogram->frbuf[swits + stage * 2]);
                             glDrawBuffer(GL_COLOR_ATTACHMENT0);
                             if (stage) glViewport(0, 0, mainprogram->ow, mainprogram->oh);
                             else glViewport(0, 0, mainprogram->ow3, mainprogram->oh3);
                             glBindTexture(GL_TEXTURE_2D, prevfbotex);
                             glBindVertexArray(mainprogram->fbovao);
                             glDrawArrays(GL_TRIANGLE_STRIP, 0, 4);
-                            prevfbotex = mainprogram->fbotex[swits + 2];
+                            prevfbotex = mainprogram->fbotex[swits + stage * 2];
                             glUniform1i(interm, 0);
                         }
 
