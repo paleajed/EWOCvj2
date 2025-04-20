@@ -200,7 +200,7 @@ private:
         bool copiedover = false;
         void copy_over(std::string path, std::string path2, std::string oldprdir);
         void delete_dirs(std::string path);
-        void copy_dirs(std::string path);
+        void copy_dirs(std::string path, bool rem = true);
         void create_dirs(std::string path);
         void create_dirs_autosave(std::string path);
 };
@@ -895,6 +895,8 @@ class Program {
         std::unordered_map<GLuint, GLint> texintfmap;
 
 
+        void remove_ec(std::string filepath, std::error_code& ec);
+        void remove(std::string filepath);
 		int quit_requester();
 		GLuint set_shader();
 		int load_shader(char* filename, char** ShaderSource, unsigned long len);
@@ -1161,7 +1163,7 @@ extern int osc_param(const char *path, const char *types, lo_arg **argv, int arg
 extern void LockBuffer(GLsync& syncObj);
 extern void WaitBuffer(GLsync& syncObj);
 
-extern void make_searchbox();
+extern void make_searchbox(bool val);
 
 extern std::string find_unused_filename(std::string basename, std::string path, std::string extension);
 

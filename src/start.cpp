@@ -542,10 +542,19 @@ void do_retarget() {
         }
     }
 
+    mainmix->newlaypaths.clear();
+    mainmix->newclippaths.clear();
+    mainmix->newshelfpaths.clear();
+    mainmix->newbinelpaths.clear();
+    mainmix->newpathlayers.clear();
+    mainmix->newpathclips.clear();
+    mainmix->newpathshelfelems.clear();
+    mainmix->newpathbinels.clear();
+
     check_stage();
 }
 
-void make_searchbox() {
+void make_searchbox(bool val) {
     // initialize boxes used for searching during retargeting of files
     short j = retarget->searchboxes.size();
     Boxx *box = new Boxx;
@@ -567,6 +576,7 @@ void make_searchbox() {
     globbut->box->tooltiptitle = "Save to default search list? ";
     globbut->box->tooltip = "Leftclick to toggle if this path will be saved to the permanent search directory list. ";
     retarget->searchglobalbuttons.push_back(globbut);
+    retarget->searchglobalbuttons[j]->value = val;
     Boxx *clbox = new Boxx;
     clbox->vtxcoords->x1 = 0.35f;
     clbox->vtxcoords->y1 = -0.175f - j * 0.1f;
@@ -4016,7 +4026,7 @@ void enddrag() {
 	if (mainprogram->dragbinel) {
 		//if (mainprogram->dragbinel->path.rfind, ".layer", nullptr != std::string::npos) {
 		//	if (mainprogram->dragbinel->path.find("cliptemp_") != std::string::npos) {
-		//		std::filesystem::remove(mainprogram->dragbinel->path);
+		//		mainprogram->remove(mainprogram->dragbinel->path);
 		//	}
 		//}
 		if (mainprogram->shelfdragelem) {
@@ -4544,7 +4554,7 @@ void the_loop() {
             do_retarget();
 
             for (int i = 0; i < retarget->localsearchdirs.size(); i++) {
-                if (retarget->searchglobalbuttons[i]->value) {
+                if (retarget->searchglobalbuttons[i + retarget->globalsearchdirs.size()]->value) {
                     if (std::find(retarget->globalsearchdirs.begin(), retarget->globalsearchdirs.end(), retarget->localsearchdirs[i]) == retarget->globalsearchdirs.end()) {
                         retarget->globalsearchdirs.push_back(retarget->localsearchdirs[i]);
                     }
@@ -4554,6 +4564,9 @@ void the_loop() {
             mainprogram->pathscroll = 0;
             mainprogram->prefs->save();  // save default search dirs
 
+            mainmix->retargetingdone = false;
+            mainmix->retargetstage = 0;
+            retarget->searchall = false;
             mainmix->newpathlayers.clear();
             mainmix->newpathclips.clear();
             mainmix->newpathcliplays.clear();
@@ -4664,9 +4677,13 @@ void the_loop() {
             }
             if (retarget->iconbox->in() && mainprogram->orderleftmouse) {
                 mainprogram->pathto = "RETARGETFILE";
-                std::thread filereq(&Program::get_inname, mainprogram, "Find file", "",
+                mainprogram->get_inname("Find file", "",
                                     std::filesystem::canonical(mainprogram->currfilesdir).generic_string());
-                filereq.detach();
+                if (mainprogram->path != "") {
+                    (*(mainmix->newpaths))[mainmix->newpathpos] = mainprogram->path;
+                    check_stage();
+                    mainprogram->currfilesdir = dirname(mainprogram->path);
+                }
             }
             if (!(*(mainmix->newpaths)).empty()) {
                 if (mainmix->renaming == false) {
@@ -4714,10 +4731,19 @@ void the_loop() {
             draw_box(white, black, retarget->searchbox->vtxcoords->x1 + 0.65f, retarget->searchbox->vtxcoords->y1 + 0.060f, 0.0125f, 0.015f, -1);
             if (retarget->searchbox->in() && mainprogram->orderleftmouse) {
                 mainprogram->pathto = "SEARCHDIR";
-                std::thread filereq(&Program::get_dir, mainprogram, "Add a search location",
+                mainprogram->get_dir("Add a search location",
                                     std::filesystem::canonical(mainprogram->currfilesdir).generic_string());
-                filereq.detach();
                 retarget->notfound = false;
+                if (mainprogram->path != "") {
+                    bool cond1 = (std::find(retarget->localsearchdirs.begin(), retarget->localsearchdirs.end(),
+                                            mainprogram->path) == retarget->localsearchdirs.end());
+                    bool cond2 = (std::find(retarget->globalsearchdirs.begin(), retarget->globalsearchdirs.end(),
+                                            mainprogram->path) == retarget->globalsearchdirs.end());
+                    if (cond1 && cond2) {
+                        retarget->localsearchdirs.push_back(mainprogram->path);
+                    }
+                    make_searchbox(0);
+                }
             }
             if (retarget->globalsearchdirs.size() || retarget->localsearchdirs.size()) {
                 // mousewheel scroll
@@ -4739,11 +4765,11 @@ void the_loop() {
                     int size = std::min(6, (int)(*(dirs)).size());
                     for (int j = 0; j < size - (mainprogram->pathscroll * (i == 0)); j++) {
                         draw_box(white, black, retarget->searchboxes[count], -1);
-                        render_text((*(dirs))[count + (mainprogram->pathscroll * (i == 0))], white, -0.4f + 0.015f,
+                        render_text((*(dirs))[count - retarget->globalsearchdirs.size() * (i == 1) + (mainprogram->pathscroll * (i == 0))], white, -0.4f + 0.015f,
                                     retarget->searchboxes[count]->vtxcoords->y1 + 0.075f - 0.045f,
                                     0.00045f,
                                     0.00075f);
-                        mainprogram->handle_button(retarget->searchglobalbuttons[count]);
+                        mainprogram->handle_button(retarget->searchglobalbuttons[count], false, false, true);
                         render_text("X", white, retarget->searchclearboxes[count]->vtxcoords->x1 + 0.003f,
                                     retarget->searchclearboxes[count]->vtxcoords->y1, 0.001125f,
                                     0.001875f);
@@ -5409,19 +5435,19 @@ void the_loop() {
             for (int i = 0; i < bins.size(); i++) {
                 if (!bins[i]->saved) {
                     binsmain->bins.erase(binsmain->bins.begin() + i - correct);
-                    std::filesystem::remove(bins[i]->path);
+                    mainprogram->remove(bins[i]->path);
                     std::filesystem::remove_all(mainprogram->project->bubd + bins[i]->name);
                     correct++;
                 }
             }
             binsmain->save_binslist();
             if (binsmain->bins.size() == 0) {
-                std::filesystem::remove(mainprogram->project->bubd + "bins.list");
+                mainprogram->remove(mainprogram->project->bubd + "bins.list");
             }
 
             //remove redundant bin files
             for (auto &it: binsmain->removeset[1]) {
-                std::filesystem::remove(it);
+                mainprogram->remove(it);
             }
 
             //save midi map
@@ -5478,7 +5504,7 @@ void the_loop() {
 
 			std::filesystem::path path_to_remove(mainprogram->temppath);
 			for (std::filesystem::directory_iterator end_dir_it, it(path_to_remove); it != end_dir_it; ++it) {
-				std::filesystem::remove(it->path());
+				mainprogram->remove(it->path());
 			}
 
 			printf("stopped\n");
@@ -6786,30 +6812,15 @@ int main(int argc, char* argv[]) {
         io.poll();
 
         if (mainprogram->path != "" || mainprogram->paths.size()) {
-            if (mainprogram->pathto == "RETARGETFILE") {
-                // open retargeted file
-                if (mainprogram->path != "") {
-                    (*(mainmix->newpaths))[mainmix->newpathpos] = mainprogram->path;
-                    check_stage();
-                    mainprogram->currfilesdir = dirname(mainprogram->path);
-                }
-            } else if (mainprogram->pathto == "SEARCHDIR") {
-                if (mainprogram->path != "") {
-                    bool cond1 = (std::find(retarget->localsearchdirs.begin(), retarget->localsearchdirs.end(),
-                                            mainprogram->path) == retarget->localsearchdirs.end());
-                    bool cond2 = (std::find(retarget->globalsearchdirs.begin(), retarget->globalsearchdirs.end(),
-                                            mainprogram->path) == retarget->globalsearchdirs.end());
-                    if (cond1 && cond2) retarget->localsearchdirs.push_back(mainprogram->path);
-                    make_searchbox();
-                }
-            } else if (mainprogram->pathto == "ADDSEARCHDIR") {
+            if (mainprogram->pathto == "ADDSEARCHDIR") {
                 if (mainprogram->path != "") {
                     bool cond1 = (std::find(retarget->globalsearchdirs.begin(), retarget->globalsearchdirs.end(),
                                             mainprogram->path) == retarget->globalsearchdirs.end());
                     bool cond2 = exists(mainprogram->path);
                     if (cond1 && cond2) retarget->globalsearchdirs.push_back(mainprogram->path);
                 }
-            } else if (mainprogram->pathto == "OPENFILESLAYER") {
+            }
+            else if (mainprogram->pathto == "OPENFILESLAYER") {
                 if (mainprogram->paths.size() > 0) {
                     std::vector<Layer *> &lvec = choose_layers(mainmix->mousedeck);
                     std::string str(mainprogram->paths[0]);
@@ -6893,7 +6904,7 @@ int main(int argc, char* argv[]) {
                 }
                 std::filesystem::path p3{dest + "/" + mainmix->mouseshelf->basepath + ".shelf"};
                 if (std::filesystem::exists(p3)) {
-                    std::filesystem::remove(mainprogram->path);
+                    mainprogram->remove(mainprogram->path);
                 }
                 mainmix->mouseshelf->save(dest + "/" + remove_extension(basename(mainprogram->path)) + ".shelf");
             } else if (mainprogram->pathto == "OPENFILESSHELF") {
@@ -6941,6 +6952,10 @@ int main(int argc, char* argv[]) {
                 std::string src = pathtoplatform(mainprogram->project->binsdir + binsmain->currbin->name + "/");
                 std::string dest = pathtoplatform(
                         dirname(mainprogram->path) + remove_extension(basename(mainprogram->path)) + "/");
+                if (exists(dest)) {
+                    std::filesystem::remove(dest + remove_extension(basename(mainprogram->path)) + ".bin");
+                    std::filesystem::remove_all(dest);
+                }
                 copy_dir(src, dest);
                 std::string bupaths[144];
                 for (int j = 0; j < 12; j++) {
@@ -6955,9 +6970,6 @@ int main(int argc, char* argv[]) {
                             binel->reljpath = std::filesystem::relative(binel->absjpath, s).generic_string();
                         }
                     }
-                }
-                if (exists(mainprogram->path)) {
-                    std::filesystem::remove(mainprogram->path);
                 }
                 binsmain->save_bin(
                         find_unused_filename(remove_extension(basename(mainprogram->path)), dirname(mainprogram->path),

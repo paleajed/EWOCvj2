@@ -12848,7 +12848,7 @@ Clip::~Clip() {
 	if (this->tex != -1) glDeleteTextures(1, &this->tex);
 	if (this->path.rfind(".layer") != std::string::npos) {
 		if (this->path.find("cliptemp_") != std::string::npos) {
-			//std::filesystem::remove(this->path);
+			//mainprogram->remove(this->path);
 		}
 	}
 }

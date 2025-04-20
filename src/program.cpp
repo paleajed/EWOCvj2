@@ -6752,11 +6752,11 @@ void Project::delete_dirs(std::string path) {
 	binsmain->save_binslist();
 }
 
-void Project::copy_dirs(std::string path) {
+void Project::copy_dirs(std::string path, bool rem) {
     std::string src = pathtoplatform(dirname(this->path));
     std::string dest = pathtoplatform(path);
+    //mainprogram->remove(path + "/" + basename(this->path));
     copy_dir(src, dest);
-    std::filesystem::remove(path + "/" + basename(this->path));
     this->binsdir = path + "/bins/";
     this->recdir = path + "/recordings/";
     this->shelfdir = path + "/shelves/";
@@ -6955,13 +6955,13 @@ bool Project::open(std::string path, bool autosave, bool newp, bool undo) {
         std::vector<Bin *> bins = binsmain->bins;
         int correct = 0;
         for (int i = 0; i < bins.size(); i++) {
-            std::filesystem::remove(bins[i]->path);
+            mainprogram->remove(bins[i]->path);
             std::filesystem::remove_all(mainprogram->project->binsdir + bins[i]->name);
             correct++;
         }
         binsmain->save_binslist();
         if (binsmain->bins.size() == 0) {
-            std::filesystem::remove(mainprogram->project->binsdir + "bins.list");
+            mainprogram->remove(mainprogram->project->binsdir + "bins.list");
         }
     }
 
@@ -7014,7 +7014,7 @@ bool Project::open(std::string path, bool autosave, bool newp, bool undo) {
         }
         if (istring == "BINSSCREEN") {
             safegetline(rfile, istring);
-            mainprogram->binsscreen = std::stoi(istring);
+            //mainprogram->binsscreen = std::stoi(istring);
         }
         if (istring == "SWAPSCROLLPOS") {
             safegetline(rfile, istring);
@@ -7059,15 +7059,15 @@ bool Project::open(std::string path, bool autosave, bool newp, bool undo) {
 
 		if (istring == "CURRBINSDIR") {
 			safegetline(rfile, istring);
-			mainprogram->currbinsdir = istring;
+			if (!mainmix->retargeting) mainprogram->currbinsdir = istring;
 		}
 		if (istring == "CURRSHELFDIR") {
 			safegetline(rfile, istring);
-			mainprogram->currshelfdir = istring;
+            if (!mainmix->retargeting) mainprogram->currshelfdir = istring;
 		}
 		if (istring == "CURRRECDIR") {
 			safegetline(rfile, istring);
-			mainprogram->currrecdir = istring;
+            if (!mainmix->retargeting) mainprogram->currrecdir = istring;
 		}
 	}
     mainprogram->set_ow3oh3();
@@ -7139,7 +7139,7 @@ void Project::save(std::string path, bool autosave, bool undo, bool nocheck) {
     std::vector<std::vector<std::string>> bupaths;
     if (mainprogram->inautosave) {
         for (std::string binpath : mainprogram->oldbins) {
-            std::filesystem::remove(binpath);
+            mainprogram->remove(binpath);
             std::filesystem::remove_all(binpath.substr(0, binpath.length() - 4));
         }
         for (Bin *bin : binsmain->bins) {
@@ -7232,35 +7232,36 @@ void Project::save(std::string path, bool autosave, bool undo, bool nocheck) {
 
 	if (!autosave && !undo) {
         // remember recent project files
-        if (std::find(mainprogram->recentprojectpaths.begin(), mainprogram->recentprojectpaths.end(), str) ==
-            mainprogram->recentprojectpaths.end()) {
-            mainprogram->recentprojectpaths.insert(mainprogram->recentprojectpaths.begin(), str);
-            while (mainprogram->recentprojectpaths.size() > 10) {
-                mainprogram->recentprojectpaths.pop_back();
-            }
+        int pos = std::find(mainprogram->recentprojectpaths.begin(), mainprogram->recentprojectpaths.end(), str) - mainprogram->recentprojectpaths.begin();
+        if (pos < mainprogram->recentprojectpaths.size()) {
+            mainprogram->recentprojectpaths.erase(std::find(mainprogram->recentprojectpaths.begin(), mainprogram->recentprojectpaths.end(), str));
+        }
+        mainprogram->recentprojectpaths.insert(mainprogram->recentprojectpaths.begin(), str);
+        while (mainprogram->recentprojectpaths.size() > 10) {
+            mainprogram->recentprojectpaths.pop_back();
+        }
 #ifdef WINDOWS
-            std::string dir = mainprogram->docpath;
+        std::string dir = mainprogram->docpath;
 #else
 #ifdef POSIX
-            std::string homedir(getenv("HOME"));
-            std::string dir = homedir + "/.ewocvj2/";
+        std::string homedir(getenv("HOME"));
+        std::string dir = homedir + "/.ewocvj2/";
 #endif
 #endif
-            do {
-                wfile.open(dir + "recentprojectslist");
-            } while (!wfile.is_open());
-            if (!wfile.fail()) {
-                wfile << "EWOCvj RECENTPROJECTS V0.1\n";
-                for (int i = 0; i < mainprogram->recentprojectpaths.size(); i++) {
-                    wfile << mainprogram->recentprojectpaths[i];
-                    wfile << "\n";
-                }
-                wfile << "ENDOFFILE\n";
-                wfile.close();
+        do {
+            wfile.open(dir + "recentprojectslist");
+        } while (!wfile.is_open());
+        if (!wfile.fail()) {
+            wfile << "EWOCvj RECENTPROJECTS V0.1\n";
+            for (int i = 0; i < mainprogram->recentprojectpaths.size(); i++) {
+                wfile << mainprogram->recentprojectpaths[i];
+                wfile << "\n";
             }
-            else {
-                printf("Failed opening recentprojectlist\n");
-;            }
+            wfile << "ENDOFFILE\n";
+            wfile.close();
+        }
+        else {
+            printf("Failed opening recentprojectlist\n");
         }
     }
 
@@ -7282,7 +7283,7 @@ void Project::save(std::string path, bool autosave, bool undo, bool nocheck) {
             }
         }
         for (auto &it: binsmain->removeset[0]) {
-            std::filesystem::remove(it);
+            mainprogram->remove(it);
         }
     }
     mainprogram->inautosave = false;
@@ -7303,7 +7304,7 @@ void Project::copy_over(std::string path, std::string path2, std::string oldprdi
         this->delete_dirs(path2);
     }
     this->create_dirs(path2);
-    mainprogram->project->copy_dirs(path2);
+    mainprogram->project->copy_dirs(path2, false);
 
     if (!std::filesystem::is_empty(path + "/autosaves/")) {
         // adapt autosave entries
@@ -7363,9 +7364,9 @@ void Project::save_as() {
     std::string path2;
     std::string str;
     std::vector<std::vector<std::string>> bupaths;
-    if (dirname(mainprogram->path) != "") {
+    if (dirname(mainprogram->project->path) != "") {
         std::string oldprdir = mainprogram->project->name;
-        mainprogram->currprojdir = dirname(mainprogram->path);
+        mainprogram->currprojdir = dirname(mainprogram->project->path);
         std::string ext = mainprogram->path.substr(mainprogram->path.length() - 7, std::string::npos);
         if (ext != ".ewocvj") {
             str = mainprogram->path + "/" + basename(mainprogram->path) + ".ewocvj";
@@ -7377,8 +7378,11 @@ void Project::save_as() {
             mainprogram->path = path2;
         }
 
-        std::thread copy(&Project::copy_over, this, mainprogram->path, path2, oldprdir);
-        copy.detach();
+        std::string path3 = dirname(mainprogram->project->path);
+        path3 = path3.substr(0, path3.size() - 1);
+        if (path3 != path2) {
+            this->copy_over(path3, path2, oldprdir);
+        }
 
         if (mainprogram->project->bupp != "") {
             mainprogram->project->binsdir = mainprogram->project->bubd;
@@ -7425,7 +7429,7 @@ void Project::save_as() {
         }*/
     }
     if (exists(str)) {
-        std::filesystem::remove(str);
+        mainprogram->remove(str);
     }
     // save project
     mainprogram->saveas = true;
@@ -7649,7 +7653,7 @@ void Preferences::load() {
                                             retarget->searchclearboxes.clear();
                                             retarget->searchglobalbuttons.clear();
                                             for (std::string p : retarget->globalsearchdirs) {
-                                                make_searchbox();
+                                                make_searchbox(1);
                                             }
                                         }
                                     }
@@ -9778,9 +9782,10 @@ void Program::concat_files(std::string ofpath, std::string path, std::vector<std
     if (exists(ofpath)) {
         while (exists(path)) {
             std::error_code ec;
-            std::filesystem::remove(path, ec);
+            mainprogram->remove_ec(path, ec);
         }
-        std::filesystem::rename(ofpath, path);
+        std::filesystem::copy_file(ofpath, path);
+        std::filesystem::remove(ofpath);
     }
 
     mainprogram->concatting--;
@@ -9788,6 +9793,14 @@ void Program::concat_files(std::string ofpath, std::string path, std::vector<std
     if (mainprogram->concatting == 0) {
         mainprogram->numconcatted = 0;
     }
+}
+
+void Program::remove_ec(std::string filepath, std::error_code& ec) {
+    std::filesystem::remove(filepath, ec);
+}
+
+void Program::remove(std::string filepath) {
+    std::filesystem::remove(filepath);
 }
 
 std::string Program::get_typestring(std::string path) {

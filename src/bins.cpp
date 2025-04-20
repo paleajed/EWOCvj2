@@ -74,6 +74,7 @@ BinElement::BinElement() {
     glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_BORDER);
     glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_BORDER);
     glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA8, 192, 108, 0, GL_BGRA, GL_UNSIGNED_BYTE, 0);
+    blacken(this->tex);
 }
 
 BinElement::~BinElement() {
@@ -1025,11 +1026,11 @@ void BinsMain::handle(bool draw) {
 			// mousewheel scroll
 			this->binsscroll -= mainprogram->mousewheel;
 			if (this->binsscroll < 0) this->binsscroll = 0;
-			if (this->bins.size() > 19 && this->bins.size() - this->binsscroll < 19) this->binsscroll = this->bins.size() - 18;
+			if (this->bins.size() > 17 && this->bins.size() - this->binsscroll < 17) this->binsscroll = this->bins.size() - 16;
 		}
 
 		// draw and handle binslist scrollboxes
-		this->binsscroll = mainprogram->handle_scrollboxes(*this->binsscrollup, *this->binsscrolldown, this->bins.size(), this->binsscroll, 18);
+		this->binsscroll = mainprogram->handle_scrollboxes(*this->binsscrollup, *this->binsscrolldown, this->bins.size(), this->binsscroll, 16);
 
 		//draw and handle binslist
 		this->indragbox = false;
@@ -1114,9 +1115,16 @@ void BinsMain::handle(bool draw) {
 		Boxx* box = this->newbinbox;
 		if (box->in()) {
 			if (mainprogram->leftmouse && !this->dragbin) {
-			    new_bin(remove_extension(basename(find_unused_filename("new bin", mainprogram->project->binsdir, ".bin"))));
-                this->save_bin(this->bins.back()->path);
-                this->bins.back()->saved = false;
+                std::string name = "new bin";
+                int count = 0;
+                for (Bin* bin : this->bins) {
+                    if (name == bin->name) {
+                        count++;
+                        name = remove_version(name) + "_" + std::to_string(count);
+                    continue;
+                    }
+                }
+			    new_bin(name);
 				if (this->bins.size() >= 20) this->binsscroll++;
 			}
 			box->acolor[0] = 0.5f;
@@ -1284,7 +1292,7 @@ void BinsMain::handle(bool draw) {
 			int k = mainprogram->handle_menu(mainprogram->binmenu);
 			if (k == 0) {
 				// delete bin
-				std::filesystem::remove(this->menubin->path);
+				mainprogram->remove(this->menubin->path);
 				if (this->currbin->name == this->menubin->name) {
 					if (this->currbin->pos == 0) make_currbin(1);
 					else make_currbin(this->currbin->pos - 1);
@@ -2610,7 +2618,11 @@ void BinsMain::save_bin(std::string path) {
 
 	wfile << "ENDOFFILE\n";
 	wfile.close();
-	
+
+    if (!exists(mainprogram->project->binsdir + this->currbin->name)) {
+        std::filesystem::path p1{mainprogram->project->binsdir + this->currbin->name};
+        std::filesystem::create_directory(p1);
+    }
 	std::string tpath = find_unused_filename("tempconcatbin", mainprogram->temppath, "");
 	std::string ttpath = tpath;
     std::vector<std::vector<std::string>> filestoadd2;
@@ -2638,8 +2650,6 @@ Bin *BinsMain::new_bin(std::string name) {
 	std::string path;
 	bin->path = mainprogram->project->binsdir + name + ".bin";
     bin->name = name;
-	std::filesystem::path p1{mainprogram->project->binsdir + name};
-	std::filesystem::create_directory(p1);
 	return bin;
 }
 
@@ -2695,7 +2705,12 @@ void BinsMain::save_binslist() {
 	std::ofstream wfile;
 	wfile.open(mainprogram->project->binsdir + "bins.list");
 	wfile << "EWOC BINSLIST v0.2\n";
-	wfile << std::to_string(this->currbin->pos);
+    if (this->currbin->saved) {
+        wfile << std::to_string(this->currbin->pos);
+    }
+    else {
+        wfile << std::to_string(0);
+    }
 	wfile << "\n";
 	wfile << "BINS\n";
 	for (int i = 0; i < this->bins.size(); i++) {
@@ -2989,7 +3004,7 @@ std::tuple<std::string, std::string> BinsMain::hap_binel(BinElement *binel, BinE
     				rpath = mainprogram->docpath + std::filesystem::relative(path, mainprogram->docpath).generic_string();
 				wfile.close();
 				rfile.close();
- 				std::filesystem::remove(remove_extension(binel->path) + ".temp");
+ 				mainprogram->remove(remove_extension(binel->path) + ".temp");
 				binel->encoding = false;
 				if (bdm) {
 					bdm->encthreads--;
@@ -3242,7 +3257,7 @@ void BinsMain::hap_encode(std::string srcpath, BinElement *binel, BinElement *bd
 			}
 			mainprogram->encthreads--;
 			avio_close(dest->pb);
-			std::filesystem::remove(destpath); // delete the hap file under construction
+			mainprogram->remove(destpath); // delete the hap file under construction
 			return;
 		}
 		binel->encodeprogress = (float)count / (float)numf;
@@ -3322,7 +3337,7 @@ void BinsMain::hap_encode(std::string srcpath, BinElement *binel, BinElement *bd
                                    mainprogram->contentpath + "EWOCvj2_CPU_vid_backups/" + basename(dirname(srcpath)) +
                                    "/" + basename(srcpath),
                                    std::filesystem::copy_options::overwrite_existing);  // reminder : warn for overwrite
-        std::filesystem::remove(srcpath);
+        mainprogram->remove(srcpath);
     }
     binel->encoding = false;
     if (binel->otflay) {
