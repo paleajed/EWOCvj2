@@ -1535,9 +1535,11 @@ vec4 mirror(vec2 texco)  //selfmade
 void main()
 {
 	float cf2 = 1.0f - cf;
-    vec4 intcol, texcol;
-    vec4 tex0, tex1;
-    vec4 fc;
+    vec4 intcol = vec4(0, 0, 0, 0);
+    vec4 texcol = vec4(0, 0, 0, 0);
+    vec4 tex0 = vec4(0, 0, 0, 0);
+    vec4 tex1 = vec4(0, 0, 0, 0);
+    vec4 fc = vec4(0, 0, 0, 0);
     int brk = 0;
 	vec2 texco;
 	texco = TexCoord0.st;
@@ -1657,6 +1659,9 @@ void main()
 				intcol = boxblur(texco); break;
 			case 41:
 				intcol = chromastretch(texcol); break;
+			case 42:
+			    // passthrough
+				intcol = texcol; break;
 		}
     	FragColor = vec4(intcol.rgb * drywet + (1.0f - drywet) * texcol.rgb, intcol.a * opacity);
     	return;
@@ -1988,7 +1993,9 @@ void main()
 			float xypos = ypos;
 			float xc, yc;
 			float offsx, offsy;
-			bool cond, cond1, cond2;
+			bool cond = false;
+			bool cond1 = false;
+			bool cond2 = false;
 			float aminv, minaminv;
 			float offset11, offset12, offset01, offset02;
 			float xam;

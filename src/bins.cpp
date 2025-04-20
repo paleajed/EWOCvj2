@@ -88,7 +88,9 @@ void BinElement::erase(bool deletetex) {
     this->relpath = "";
 	this->name = "";
 	this->oldname = "";
-	this->jpegpath = "";
+    this->jpegpath = "";
+    this->absjpath = "";
+    this->reljpath = "";
 	this->oldjpegpath = "";
 	this->type = ELEM_FILE;
 	this->oldtype = ELEM_FILE;
@@ -1509,7 +1511,7 @@ void BinsMain::handle(bool draw) {
 			// load hovered block into shelf B
 			Shelf* shelf = mainprogram->shelves[1];
 			for (int i = 0; i < 16; i++) {
-				BinElement* binel = this->currbin->elements[this->mouseshelfnum / 3 * 48 + (this->mouseshelfnum % 3) * 4 + i / 4 + (i % 4) * 12];
+				BinElement* binel = this->currbin->elements[this->mouseshelfnum / 3 * 48 + (this->mouseshelfnum % 3) * 4 + (i / 4) * 12 + (i % 4)];
 				ShelfElement* elem = shelf->elements[i];
 				elem->path = binel->path;
 				elem->jpegpath = binel->jpegpath;
@@ -2315,7 +2317,9 @@ void BinsMain::handle(bool draw) {
             		std::swap(this->currbinel->type, this->movingbinel->type);
             		std::swap(this->currbinel->path, this->movingbinel->path);
             		std::swap(this->currbinel->name, this->movingbinel->name);
-            		std::swap(this->currbinel->jpegpath, this->movingbinel->jpegpath);  // one way?
+                    std::swap(this->currbinel->jpegpath, this->movingbinel->jpegpath);  // one way?
+                    std::swap(this->currbinel->absjpath, this->movingbinel->absjpath);  // one way?
+                    std::swap(this->currbinel->reljpath, this->movingbinel->reljpath);  // one way?
             		this->currbinel = nullptr;
             		this->movingbinel = nullptr;
             		this->movingtex = -1;
@@ -2345,6 +2349,8 @@ void BinsMain::handle(bool draw) {
                     dirbinel->name = remove_extension(basename(dirbinel->path));
                     dirbinel->oldjpegpath = dirbinel->jpegpath;
                     dirbinel->jpegpath = this->inputjpegpaths[k];
+                    dirbinel->absjpath = dirbinel->jpegpath;
+                    dirbinel->reljpath = std::filesystem::relative(dirbinel->absjpath, mainprogram->project->binsdir).generic_string();
                     //dirbinel->remove_elem(true);
                     int pos =
                             std::find(this->movebinels.begin(), this->movebinels.end(), dirbinel) -
@@ -2403,7 +2409,7 @@ void BinsMain::open_bin(std::string path, Bin *bin, bool newbin) {
 				if (istring == "POS") {
 					safegetline(rfile, istring);
 					pos = std::stoi(istring);
-				}
+                }
                 if (istring == "ABSPATH") {
                     safegetline(rfile, istring);
                     bin->elements[pos]->path = istring;
@@ -2470,6 +2476,9 @@ void BinsMain::open_bin(std::string path, Bin *bin, bool newbin) {
                                 bool dummy = false;
                             }
                         }
+                    }
+                    else if (bin->elements[pos]->absjpath == "" && istring == "") {
+                        bin->elements[pos]->erase(false);
                     }
                 }
                 if (istring == "FILESIZE") {

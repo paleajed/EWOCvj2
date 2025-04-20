@@ -174,7 +174,7 @@ Mixer::Mixer() {
 	this->genmidi[1]->box->acolor[1] = 0.2;
 	this->genmidi[1]->box->acolor[2] = 0.5;
 	this->genmidi[1]->box->acolor[3] = 1.0;
-	this->genmidi[1]->box->vtxcoords->x1 = 0.0f;
+	this->genmidi[1]->box->vtxcoords->x1 = 1.0f - mainprogram->numw;
 	this->genmidi[1]->box->vtxcoords->y1 =  1 - 6 * mainprogram->numh;
 	this->genmidi[1]->box->vtxcoords->w = mainprogram->numw;
 	this->genmidi[1]->box->vtxcoords->h = mainprogram->numh;
@@ -584,16 +584,33 @@ void Mixer::handle_adaptparam() {
     if (this->adaptparam->shadervar == "ripple") {
 		((RippleEffect*)this->adaptparam->effect)->speed = this->adaptparam->value;
 	}
-	else {
-		GLint var = glGetUniformLocation(mainprogram->ShaderProgram, this->adaptparam->shadervar.c_str());
-		if (this->adaptparam->sliding) {
-			glUniform1f(var, this->adaptparam->value);
-		}
-		else {
-			glUniform1f(var, (int)(this->adaptparam->value + 0.5f));
-		}
-		this->midiparam = nullptr;
-	}
+    else if (this->adaptparam->shadervar == "edthickness") {
+        ((EdgeDetectEffect *) this->adaptparam->effect)->thickness = int(this->adaptparam->value);
+    }
+    else if (this->adaptparam->shadervar == "edge_thres2") {
+        if (!mainprogram->prevmodus) {
+            GLint var = glGetUniformLocation(mainprogram->ShaderProgram, this->adaptparam->shadervar.c_str());
+            glUniform1f(var, this->adaptparam->value);
+        }
+        else {
+            GLint var = glGetUniformLocation(mainprogram->ShaderProgram, this->adaptparam->shadervar.c_str());
+            glUniform1f(var, this->adaptparam->value * (mainprogram->ow3 / mainprogram->ow));
+        }
+    }
+    else if (this->adaptparam->effect != nullptr) {
+        if (this->adaptparam->effect->type == BLUR) {
+            ((BlurEffect *) this->adaptparam->effect)->times = this->adaptparam->value;
+        }
+    }
+
+    GLint var = glGetUniformLocation(mainprogram->ShaderProgram, this->adaptparam->shadervar.c_str());
+    if (this->adaptparam->sliding) {
+        glUniform1f(var, this->adaptparam->value);
+    }
+    else {
+        glUniform1f(var, (int)(this->adaptparam->value + 0.5f));
+    }
+    this->midiparam = nullptr;
 
 	for (int i = 0; i < loopstation->elements.size(); i++) {
 		if (loopstation->elements[i]->recbut->value) {
@@ -963,7 +980,7 @@ DotEffect::DotEffect() {
 	param->name = "Size"; 
 	param->value = 300.0;
 	param->range[0] = 7.5;
-	param->range[1] = 2000;
+	param->range[1] = 1000;
 	param->sliding = true;
 	param->shadervar = "dotsize";
 	param->effect = this;
@@ -1661,7 +1678,7 @@ EdgeDetectEffect::EdgeDetectEffect() {
 	param->name = "Threshold2";
 	param->value = 5.0f;
 	param->range[0] = 0.0f;
-	param->range[1] = 40.0f;
+	param->range[1] = 20.0f;
 	param->sliding = true;
 	param->shadervar = "edge_thres2";
 	param->effect = this;
@@ -1672,7 +1689,7 @@ EdgeDetectEffect::EdgeDetectEffect() {
 	param->name = "Thickness";
 	param->value = 1.0f;
 	param->range[0] = 1.0f;
-	param->range[1] = 20.0f;
+	param->range[1] = 40.0f;
 	param->sliding = true;
 	param->shadervar = "edthickness";  //dummy
 	param->effect = this;
@@ -1935,6 +1952,10 @@ Effect* Layer::do_add_effect(EFFECT_TYPE type, int pos, bool comp) {
     effect->onoffbutton->layer = this;
     effect->drywet->layer = this;
     effect->drywet->effect = effect;
+
+    if (effect->type == BLUR) {
+        ((BlurEffect*)effect)->times = effect->params[0]->value;
+    }
 
 	std::vector<Effect*> &evec = this->choose_effects();
 	evec.insert(evec.begin() + pos, effect);
@@ -4424,6 +4445,7 @@ void Layer::display() {
             mainprogram->frontbatch = false;
 
 			if (box->in()) {
+                mainprogram->inmonitors = true;
                 if (mainprogram->dropfiles.size()) {
                     // SDL drag'n'drop
                     mainprogram->path = mainprogram->dropfiles[0];
@@ -4443,7 +4465,7 @@ void Layer::display() {
                     mainprogram->pathto = "OPENFILESLAYER";
                     mainprogram->loadlay = this;
                 }
-                if (!mainprogram->needsclick || mainprogram->leftmouse) {
+                if ((!mainprogram->needsclick || mainprogram->leftmouse) && !mainprogram->ineffmenu) {
                     if (!this->invidbox) {
                         this->invidbox = true;
                         if (!mainmix->moving && !mainprogram->cwon) {
@@ -4694,6 +4716,12 @@ void Layer::display() {
                 mainprogram->frontbatch = false;
 			}
 			else {
+                if (mainprogram->prevmodus == !this->comp && this->deck == 1 && this->pos == this->layers->size() - 1) {
+                    if (!mainprogram->inmonitors) {
+                        mainprogram->ineffmenu = false;
+                    }
+                    mainprogram->inmonitors = false;
+                }
                 this->invidbox = false;
 				int size = lvec.size();
 				int numonscreen = size - mainmix->scenes[this->deck][mainmix->currscene[this->deck]]->scrollpos;
@@ -4790,7 +4818,7 @@ void Layer::display() {
 
         if (!this->queueing) {
             // Draw controls/effects background box
-            draw_box(grey, darkgreygreen, this->mixbox->vtxcoords->x1, mainmix->crossfade->box->vtxcoords->y1 + mainmix->crossfade->box->vtxcoords->h, 0.6f, this->mixbox->vtxcoords->y1 - mainmix->crossfade->box->vtxcoords->y1, -1);
+            draw_box(grey, darkgreygreen, this->mixbox->vtxcoords->x1, mainmix->crossfade->box->vtxcoords->y1 + mainmix->crossfade->box->vtxcoords->h, 0.57f, this->mixbox->vtxcoords->y1 - mainmix->crossfade->box->vtxcoords->y1, -1);
             // Draw mixbox
             std::string mixstr;
             box = this->mixbox;
@@ -10667,6 +10695,22 @@ Layer* Mixer::read_layers(std::istream &rfile, const std::string result, std::ve
 							safegetline(rfile, istring);
 							par->value = std::stof(istring);
 							par->effect = eff;
+                            if (eff->type == BLUR) {
+                                ((BlurEffect*)par->effect)->times = par->value;
+                            }
+                            else if (par->shadervar == "edthickness") {
+                                ((EdgeDetectEffect *)eff)->thickness = int(par->value);
+                            }
+                            else if (par->shadervar == "edge_thres2") {
+                                if (!mainprogram->prevmodus) {
+                                    GLint var = glGetUniformLocation(mainprogram->ShaderProgram, par->shadervar.c_str());
+                                    glUniform1f(var, par->value);
+                                }
+                                else {
+                                    GLint var = glGetUniformLocation(mainprogram->ShaderProgram, par->shadervar.c_str());
+                                    glUniform1f(var, par->value * (mainprogram->ow3 / mainprogram->ow));
+                                }
+                            }
 						}
 						if (istring == "MIDI0") {
 							safegetline(rfile, istring);
@@ -10784,7 +10828,23 @@ Layer* Mixer::read_layers(std::istream &rfile, const std::string result, std::ve
 							safegetline(rfile, istring);
 							par->value = std::stof(istring);
 							par->effect = eff;
-						}
+                            if (eff->type == BLUR) {
+                                ((BlurEffect*)par->effect)->times = par->value;
+                            }
+                            else if (par->shadervar == "edthickness") {
+                                ((EdgeDetectEffect *)eff)->thickness = int(par->value);
+                            }
+                            else if (par->shadervar == "edge_thres2") {
+                                if (!mainprogram->prevmodus) {
+                                    GLint var = glGetUniformLocation(mainprogram->ShaderProgram, par->shadervar.c_str());
+                                    glUniform1f(var, par->value);
+                                }
+                                else {
+                                    GLint var = glGetUniformLocation(mainprogram->ShaderProgram, par->shadervar.c_str());
+                                    glUniform1f(var, par->value * (mainprogram->ow3 / mainprogram->ow));
+                                }
+                            }
+                        }
 						if (istring == "MIDI0") {
 							safegetline(rfile, istring);
 							par->midi[0] = std::stoi(istring);

@@ -344,59 +344,6 @@ class Globals {
 		float h;
 };
 
-#ifdef WINDOWS
-class RamDisk
-{
-public:
-    std::string MountPoint = "X:";
-
-    void createRamDisk()
-        {
-            STARTUPINFO info={sizeof(info)};
-            PROCESS_INFORMATION processInfo;
-            char *stri = (char*)"imdisk -a -s 1024M -p \"/fs:ntfs /q /y\" -m X: ";
-            LPSTR cmd = stri;
-            CreateProcessA(nullptr, cmd,
-                           nullptr, nullptr, true, 0, nullptr, nullptr,
-                           &info, &processInfo);
-            {
-                WaitForSingleObject(processInfo.hProcess, INFINITE);
-                CloseHandle(processInfo.hProcess);
-                CloseHandle(processInfo.hThread);
-            }
-        }
-
-    /**
-     * since the format option with imdisk doesn't seem to work
-     * use the fomat X: command via cmd
-     *
-     * as I would say in german:
-     * "Von hinten durch die Brust ins Auge"
-     * **/
-/*private void formatRAMDisk(){
-
-        string cmdFormatHDD = "format " + MountPoint + "/Q /FS:NTFS";
-
-        SecureString password = new SecureString();
-        password.AppendChar('0');
-        password.AppendChar('8');
-        password.AppendChar('1');
-        password.AppendChar('5');
-
-        ProcessStartInfo formatRAMDiskProcess   = new ProcessStartInfo();
-        formatRAMDiskProcess.UseShellExecute    = false;
-        formatRAMDiskProcess.CreateNoWindow     = true;
-        formatRAMDiskProcess.RedirectStandardInput     = true;
-        formatRAMDiskProcess.FileName           = "cmd";
-        formatRAMDiskProcess.Verb               = "runas";
-        formatRAMDiskProcess.UserName           = "Administrator";
-        formatRAMDiskProcess.Password           = password;
-        formatRAMDiskProcess.Arguments          = "/C " + cmdFormatHDD;
-        Process process                         = Process.Start(formatRAMDiskProcess);
-
-        sendCMDInput(process);*/
-};
-#endif
 
 class Program {
 	public:
@@ -494,6 +441,8 @@ class Program {
 		bool menuchosen = false;
         std::vector<int> prevmenuchoices;
 		std::vector<int> menuresults;
+        bool ineffmenu = false;
+        bool inmonitors = false;
         bool intoparea = false;
         bool intopmenu = false;
         bool exitedtop = false;

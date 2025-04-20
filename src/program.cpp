@@ -3378,35 +3378,38 @@ void Program::handle_mixenginemenu() {
 
 void Program::handle_effectmenu() {
     if (!mainmix->insert) {
-        mainprogram->effectmenu->entries.insert(mainprogram->effectmenu->entries.begin(), "Delete effect");
+        this->effectmenu->entries.insert(this->effectmenu->entries.begin(), "Delete effect");
     }
 	int k = -1;
 	// Draw and handle mainprogram->effectmenu
-	k = mainprogram->handle_menu(mainprogram->effectmenu);
+    if (this->effectmenu->state == 2) {
+        this->ineffmenu = true;
+    }
+	k = this->handle_menu(this->effectmenu);
 	if (k > -1) {
         std::vector<Effect*>& evec = mainmix->mouselayer->choose_effects();
 		if (k == 0 && mainmix->mouseeffect != evec.size()) {
 			mainmix->mouselayer->delete_effect(mainmix->mouseeffect);
 		}
 		else if (mainmix->insert) {
-		    mainmix->mouselayer->add_effect((EFFECT_TYPE)mainprogram->abeffects[k], mainmix->mouseeffect);
+		    mainmix->mouselayer->add_effect((EFFECT_TYPE)this->abeffects[k], mainmix->mouseeffect);
 		}
 		else {
 			int mon = evec[mainmix->mouseeffect]->node->monitor;
-			mainmix->mouselayer->replace_effect((EFFECT_TYPE)mainprogram->abeffects[k - 1], mainmix->mouseeffect);
+			mainmix->mouselayer->replace_effect((EFFECT_TYPE)this->abeffects[k - 1], mainmix->mouseeffect);
 			evec[mainmix->mouseeffect]->node->monitor = mon;
 		}
 		mainmix->mouselayer = nullptr;
 		mainmix->mouseeffect = -1;
 	}
     if (!mainmix->insert) {
-        mainprogram->effectmenu->entries.erase(mainprogram->effectmenu->entries.begin());
+        this->effectmenu->entries.erase(this->effectmenu->entries.begin());
     }
-	if (mainprogram->menuchosen) {
-		mainprogram->menuchosen = false;
-		mainprogram->menuactivation = 0;
-		mainprogram->menuresults.clear();
-        mainprogram->recundo = true;
+	if (this->menuchosen) {
+        this->menuchosen = false;
+        this->menuactivation = 0;
+        this->menuresults.clear();
+        this->recundo = true;
 	}
  }
 
@@ -5414,7 +5417,18 @@ bool Program::preferences_handle() {
 						else {
                             if (std::find(midici->onnames.begin(), midici->onnames.end(), midici->items[i]->name) == midici->onnames.end()) {
                                 midici->onnames.push_back(midici->items[i]->name);
+
+                                // Redirect stderr to null device before object creation
+                                std::streambuf* original_cerr = std::cerr.rdbuf();
+                                std::ofstream null_stream;
+                                null_stream.open("/dev/null"); // on Unix-like systems
+                                // For Windows: null_stream.open("NUL");
+                                std::cerr.rdbuf(null_stream.rdbuf());
+                                // Create the RtMidiIn instance (warning will be suppressed)
                                 RtMidiIn *midiin = new RtMidiIn();
+                                // Restore stderr for future error messages
+                                std::cerr.rdbuf(original_cerr);
+
                                 if (std::find(this->openports.begin(), this->openports.end(), i) ==
                                     this->openports.end()) {
                                     midiin->openPort(i);
@@ -6677,9 +6691,11 @@ GLuint Program::set_shader() {
 
 	GLint maxLength = 0;
 	glGetShaderiv(fragmentShaderObject, GL_INFO_LOG_LENGTH, &maxLength);
- 	GLchar *infolog = (GLchar*)malloc(maxLength);
+ 	GLchar *infolog = (GLchar*)calloc(maxLength, 1);
 	glGetShaderInfoLog(fragmentShaderObject, maxLength, &maxLength, &(infolog[0]));
-	printf("compile log %s\n", infolog);
+    if (strcmp(infolog, "") != 0) {
+        printf("shader compile log %s\n", infolog);
+    }
 
 	program = glCreateProgram();
 	glBindAttribLocation(program, 0, "Position");
@@ -6689,13 +6705,17 @@ GLuint Program::set_shader() {
 	glLinkProgram(program);
 
 	maxLength = 1024;
- 	infolog = (GLchar*)malloc(maxLength);
+ 	infolog = (GLchar*)calloc(maxLength, 1);
 	glGetProgramInfoLog(program, maxLength, &maxLength, &(infolog[0]));
-	printf("linker log %s\n", infolog);
+    if (strcmp(infolog, "") != 0) {
+        printf("shader linker log %s\n", infolog);
+    }
 
 	GLint isLinked = 0;
 	glGetProgramiv(program, GL_LINK_STATUS, &isLinked);
-	printf("log %d\n", isLinked);
+    if (isLinked) {
+	    printf("The shader has been linked.\n");
+        }
 	fflush(stdout);
 
     free(VShaderSource);
@@ -6930,7 +6950,7 @@ bool Project::open(std::string path, bool autosave, bool newp, bool undo) {
         return false;
     }
 
-    if (!newp) {
+    if (!newp && !undo && mainprogram->pathto != "OPENPROJECT") {
         // remove unsaved bins
         std::vector<Bin *> bins = binsmain->bins;
         int correct = 0;
@@ -7663,7 +7683,18 @@ void Preferences::load() {
                                     else {
                                         if (std::find(pim->onnames.begin(), pim->onnames.end(), pi->name) == pim->onnames.end()) {
                                             pim->onnames.push_back(pi->name);
+
+                                            // Redirect stderr to null device before object creation
+                                            std::streambuf* original_cerr = std::cerr.rdbuf();
+                                            std::ofstream null_stream;
+                                            null_stream.open("/dev/null"); // on Unix-like systems
+                                            // For Windows: null_stream.open("NUL");
+                                            std::cerr.rdbuf(null_stream.rdbuf());
+                                            // Create the RtMidiIn instance (warning will be suppressed)
                                             RtMidiIn *midiin = new RtMidiIn();
+                                            // Restore stderr for future error messages
+                                            std::cerr.rdbuf(original_cerr);
+
                                             if (std::find(mainprogram->openports.begin(), mainprogram->openports.end(),
                                                           foundpos) == mainprogram->openports.end()) {
                                                 midiin->openPort(foundpos);
@@ -7970,7 +8001,18 @@ void PIDev::populate() {
         if (!this->items[i]->connected) ncitems.push_back(this->items[i]);
 
     }
+
+    // Redirect stderr to null device before object creation
+    std::streambuf* original_cerr = std::cerr.rdbuf();
+    std::ofstream null_stream;
+    null_stream.open("/dev/null"); // on Unix-like systems
+    // For Windows: null_stream.open("NUL");
+    std::cerr.rdbuf(null_stream.rdbuf());
+    // Create the RtMidiIn instance (warning will be suppressed)
     RtMidiIn midiin;
+    // Restore stderr for future error messages
+    std::cerr.rdbuf(original_cerr);
+
     int nPorts = midiin.getPortCount();
     std::string portName;
     std::vector<PrefItem*> intrmitems;

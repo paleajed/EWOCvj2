@@ -47,6 +47,7 @@ typedef enum
 	MIRROR = 39,
     BOXBLUR = 40,
     CHROMASTRETCH = 41,
+    PASS = 42,
 } EFFECT_TYPE;
 
 typedef enum
