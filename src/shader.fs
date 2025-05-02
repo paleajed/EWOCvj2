@@ -6,6 +6,7 @@ in flat int Vertex0;
 layout(location = 0) out vec4 FragColor;
 
 uniform sampler2D Sampler0;
+uniform sampler2D Sampler1;
 uniform sampler2D endSampler0, endSampler1;
 uniform sampler2D fboSampler;
 uniform sampler2D boxSampler[24];
@@ -92,6 +93,8 @@ uniform bool rotmode = false;
 uniform float iGlobalTime = 0.0f;
 uniform float asciisize = 50.0f;
 uniform float vardotsize = 0.1f;
+uniform bool ineffect = false;
+uniform bool laststep = false;
 
 uniform float hatchsize = 10.0f;
 uniform float hatch_y_offset = 5.0f;
@@ -1662,6 +1665,16 @@ void main()
 			case 42:
 			    // passthrough
 				intcol = texcol; break;
+		}
+		if (ineffect) {
+		    if (laststep) {
+                FragColor = vec4(intcol.rgb * drywet + (1.0f - drywet) * texture2D(Sampler1, texco).rgb, intcol.a * opacity);
+                return;
+            }
+            else {
+                FragColor = vec4(intcol.rgb, intcol.a);
+                return;
+            }
 		}
     	FragColor = vec4(intcol.rgb * drywet + (1.0f - drywet) * texcol.rgb, intcol.a * opacity);
     	return;

@@ -643,6 +643,7 @@ class Program {
 		SDL_Window *prefwindow = nullptr;
         bool prefon = false;
         bool prefoff = true;
+        bool filereqon = false;
 		Preferences *prefs;
 		bool needsclick = false;
 		bool insmall = false;
@@ -667,6 +668,7 @@ class Program {
         bool goconcat = false;
         int numconcatted = 0;
         int concatlimit = 0;
+        int concatsuffix = 0;
         bool saveas = false;
         bool inautosave = false;
         bool openautosave = false;
@@ -701,6 +703,7 @@ class Program {
 		bool binsscreen = false;
 		BinElement *dragbinel = nullptr;
 		Clip *dragclip = nullptr;
+        bool draggedclip = false;
         Layer *draglay = nullptr;
         int draglaypos = -1;
         int draglaydeck = -1;
@@ -864,6 +867,8 @@ class Program {
 #endif
 
         std::vector<std::string> *prefsearchdirs;
+        int choosing = -1;
+        int pathrenaming = -1;
 
         // UNDO
         bool recundo = false;
@@ -872,7 +877,7 @@ class Program {
         int undopbpos = 0;
         bool inbox = false;
         void *currundoelem = nullptr;
-        bool undowaiting = false;
+        char undowaiting = 0;
         std::unordered_set<Param*> undoparams;
         std::unordered_set<Button*> undobuttons;
         std::vector<std::vector<std::tuple<std::tuple<Param*, Button*, int, int, int, int, int, std::string>, float>>> undomapvec;
@@ -1143,6 +1148,7 @@ extern std::string remove_extension(std::string filename);
 extern std::string chop_off(std::string filename);
 extern std::string remove_version(std::string filename);
 extern std::string pathtoplatform(std::string path);
+extern std::string pathtoposix(std::string path);
 extern void copy_dir(std::string src, std::string dest);
 extern bool isimage(std::string path);
 extern bool isvideo(std::string path);

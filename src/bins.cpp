@@ -530,7 +530,7 @@ void BinsMain::handle(bool draw) {
 							if (this->oldmouseshelfnum != this->mouseshelfnum) {
 								for (int i = 0; i < 16; i++) {
 									// reset elements of previously hovered shelf block
-									BinElement* binel = this->currbin->elements[this->oldmouseshelfnum / 3 * 48 + (this->oldmouseshelfnum % 3) * 4 + i / 4 + (i % 4) * 12];
+									BinElement* binel = this->currbin->elements[this->oldmouseshelfnum / 3 * 48 + (this->oldmouseshelfnum % 3) * 4 + (i / 4) * 12 + (i % 4)];
 									binel->tex = binel->oldtex;
 									binel->type = binel->oldtype;
 									binel->name = binel->oldname;
@@ -540,7 +540,7 @@ void BinsMain::handle(bool draw) {
 						if (this->oldmouseshelfnum != this->mouseshelfnum) {
 							// temporary change when hovering
 							for (int i = 0; i < 16; i++) {
-								BinElement* binel = this->currbin->elements[this->mouseshelfnum / 3 * 48 + (this->mouseshelfnum % 3) * 4 + i / 4 + (i % 4) * 12];
+								BinElement* binel = this->currbin->elements[this->mouseshelfnum / 3 * 48 + (this->mouseshelfnum % 3) * 4 + (i / 4) * 12 + (i % 4)];
 								ShelfElement* elem = this->insertshelf->elements[i];
 								binel->oldtex = binel->tex;
 								binel->oldtype = binel->type;
@@ -553,7 +553,7 @@ void BinsMain::handle(bool draw) {
 						if (mainprogram->leftmouse) {
 							// confirm insert
 							for (int i = 0; i < 16; i++) {
-								BinElement* binel = this->currbin->elements[this->mouseshelfnum / 3 * 48 + (this->mouseshelfnum % 3) * 4 + i / 4 + (i % 4) * 12];
+								BinElement* binel = this->currbin->elements[this->mouseshelfnum / 3 * 48 + (this->mouseshelfnum % 3) * 4 + (i / 4) * 12 + (i % 4)];
 								ShelfElement* elem = this->insertshelf->elements[i];
                                 GLuint butex = elem->tex;
                                 elem->tex = copy_tex(binel->tex);
@@ -573,7 +573,7 @@ void BinsMain::handle(bool draw) {
 							// cancel shelf insert
 							for (int i = 0; i < 16; i++) {
 								// reset elements of previously hovered shelf block
-								BinElement* binel = this->currbin->elements[this->mouseshelfnum / 3 * 48 + (this->mouseshelfnum % 3) * 4 + i / 4 + (i % 4) * 12];
+								BinElement* binel = this->currbin->elements[this->mouseshelfnum / 3 * 48 + (this->mouseshelfnum % 3) * 4 + (i / 4) * 12 + (i % 4)];
 								binel->tex = binel->oldtex;
 								binel->type = binel->oldtype;
 								binel->name = binel->oldname;
@@ -2412,13 +2412,17 @@ void BinsMain::open_bin(std::string path, Bin *bin, bool newbin) {
 		}
 		else if (istring == "ELEMS") {
 			// open bin elements
+            bool reta = false;
 			while (safegetline(rfile, istring)) {
 				if (istring == "ENDOFELEMS") break;
 				if (istring == "POS") {
 					safegetline(rfile, istring);
 					pos = std::stoi(istring);
+                    bin->elements[pos]->pos = pos;
+                    bin->elements[pos]->bin = bin;
                 }
                 if (istring == "ABSPATH") {
+                    reta = false;
                     safegetline(rfile, istring);
                     bin->elements[pos]->path = istring;
                     bin->elements[pos]->relpath = std::filesystem::relative(istring, mainprogram->project->binsdir).generic_string();
@@ -2433,6 +2437,7 @@ void BinsMain::open_bin(std::string path, Bin *bin, bool newbin) {
                         std::filesystem::current_path(mainprogram->contentpath);
                     }
                     if (!exists(bin->elements[pos]->path)) {
+                        reta = true;
                         mainmix->retargeting = true;
                         mainmix->newbinelpaths.push_back(bin->elements[pos]->path);
                         mainmix->newpathbinels.push_back(bin->elements[pos]);
@@ -2461,12 +2466,15 @@ void BinsMain::open_bin(std::string path, Bin *bin, bool newbin) {
                         bin->elements[pos]->jpegpath = istring;
                         if (bin->elements[pos]->name != "") {
                             if (bin->elements[pos]->absjpath != "") {
-                                bin->open_positions.push_back(pos);
+                                bin->open_positions.emplace(pos);
                             }
                             else {
                                 bool dummy = false;
                             }
                         }
+                    }
+                    if (reta) {
+                        mainmix->newbineljpegpaths.push_back(istring);
                     }
 				}
                 if (istring == "RELJPEGPATH") {
@@ -2479,7 +2487,7 @@ void BinsMain::open_bin(std::string path, Bin *bin, bool newbin) {
                         bin->elements[pos]->jpegpath = bin->elements[pos]->absjpath;
                         if (bin->elements[pos]->name != "") {
                             if (bin->elements[pos]->absjpath != "") {
-                                bin->open_positions.push_back(pos);
+                                bin->open_positions.emplace(pos);
                             } else {
                                 bool dummy = false;
                             }
@@ -2623,8 +2631,8 @@ void BinsMain::save_bin(std::string path) {
         std::filesystem::path p1{mainprogram->project->binsdir + this->currbin->name};
         std::filesystem::create_directory(p1);
     }
-	std::string tpath = find_unused_filename("tempconcatbin", mainprogram->temppath, "");
-	std::string ttpath = tpath;
+	std::string tpath = mainprogram->temppath + "tempconcatbin" + "_" + std::to_string(mainprogram->concatsuffix++);
+    std::string ttpath = tpath;
     std::vector<std::vector<std::string>> filestoadd2;
 	filestoadd2.push_back(filestoadd);
     std::thread concat(&Program::concat_files, mainprogram, ttpath, path, filestoadd2);
@@ -2643,6 +2651,8 @@ Bin *BinsMain::new_bin(std::string name) {
 	for (int i = 0; i < 12; i++) {
 		for (int j = 0; j < 12; j++) {
 			BinElement *binel = new BinElement;
+            binel->pos = j * 12 + i;
+            binel->bin = bin;
 			bin->elements.push_back(binel);
 		}
 	}

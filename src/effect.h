@@ -77,6 +77,7 @@ class Param {
 		std::string midiport;
 		bool sliding = true;
 		bool powertwo = false;
+        bool powerfour = false;
 		std::string shadervar;
 		Effect *effect = nullptr;
 		Boxx *box = nullptr;
@@ -100,7 +101,7 @@ class Effect {
 		int pos;
 		Layer *layer;
 		GLuint fbo = -1;
-		GLuint fbotex = -1;
+        GLuint fbotex = -1;
 		EffectNode *node = NULL;
 		std::vector<Param*> params;
 		virtual float get_speed() { return -1; };

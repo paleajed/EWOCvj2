@@ -654,7 +654,7 @@ Program::Program() {
     // scroll the default searchlist in the preferences
     this->defaultsearchscrollup = new Boxx;
     this->defaultsearchscrollup->vtxcoords->x1 = -0.6f;
-    this->defaultsearchscrollup->vtxcoords->y1 = -0.4f;
+    this->defaultsearchscrollup->vtxcoords->y1 = -0.6f;
     this->defaultsearchscrollup->vtxcoords->w = 0.1f;
     this->defaultsearchscrollup->vtxcoords->h = 0.2f;
     this->defaultsearchscrollup->upvtxtoscr();
@@ -663,7 +663,7 @@ Program::Program() {
 
     this->defaultsearchscrolldown = new Boxx;
     this->defaultsearchscrolldown->vtxcoords->x1 = -0.6f;
-    this->defaultsearchscrolldown->vtxcoords->y1 = -0.6f;
+    this->defaultsearchscrolldown->vtxcoords->y1 = -0.8f;
     this->defaultsearchscrolldown->vtxcoords->w = 0.1f;
     this->defaultsearchscrolldown->vtxcoords->h = 0.2f;
     this->defaultsearchscrolldown->upvtxtoscr();
@@ -2464,7 +2464,7 @@ void Program::shelf_triggering(ShelfElement* elem, int deck, Layer *layer) {
                     }
                 }
             }
-            mainmix->set_prevshelfdragelem_layers(mainmix->layers[!mainprogram->prevmodus * 2 + deck][0]);
+            mainmix->set_prevshelfdragelem_layers(mainmix->layers[!mainprogram->prevmodus * 2][0]);
             bool done = elem->done;
             mainmix->reload_tagged_elems(elem, 0);
             mainmix->reload_tagged_elems(elem, 1);
@@ -5299,7 +5299,9 @@ void Program::preferences() {
 	if (this->prefon) {
         this->directmode = true;
         SDL_GL_MakeCurrent(this->prefwindow, glc);
-        SDL_RaiseWindow(this->prefwindow);
+        if (!this->filereqon) {
+            SDL_RaiseWindow(this->prefwindow);
+        }
         glBindFramebuffer(GL_FRAMEBUFFER, 0);
         glDrawBuffer(GL_BACK_LEFT);
 		glViewport(0, 0, glob->w / 2.0f, glob->h / 2.0f);
@@ -5322,7 +5324,8 @@ void Program::preferences() {
 	else {
 	    this->prefoff = true;
 	    this->prefsearchdirs = &retarget->globalsearchdirs;
-	    this->oldseatname = this->seatname;
+
+        this->oldseatname = this->seatname;
 	}
 }
 
@@ -5564,44 +5567,21 @@ bool Program::preferences_handle() {
             }
         }
 
-        bool cond1 = (mci->items[i]->type == PREF_PATH);
-        bool cond2 = (mci->items[i]->type == PREF_PATHS);
-        if (cond1 || cond2) {
-            std::vector<std::string> paths;
-            if (cond1) paths.push_back(mci->items[i]->path);
-            else paths = *this->prefsearchdirs;
-
-            if (cond2) {
-                // mousewheel scroll
-                this->pathscroll -= this->mousewheel;
-                if (this->pathscroll < 0) this->pathscroll = 0;
-                if (paths.size() > 7 && paths.size() - this->pathscroll < 7)
-                    this->pathscroll = paths.size() - 6;
-
-                // GUI arrow scroll
-                this->pathscroll = this->handle_scrollboxes(*this->defaultsearchscrollup,
-                                                                          *this->defaultsearchscrolldown,
-                                                                          paths.size(), this->pathscroll, 6,
-                                                                          mx, my);
-            }
-
-            int size = std::min(6, (int) paths.size());
-
-            for (int j = 0; j < size; j++) {
-                // display and handle directory item(s) (list)
-                std::string path = paths[j];
-                draw_box(white, black, mci->items[i]->namebox->vtxcoords->x1, mci->items[i]->namebox->vtxcoords->y1 - j * 0.2f, mci->items[i]->namebox->vtxcoords->w, mci->items[i]->namebox->vtxcoords->h, -1);
-                render_text(mci->items[i]->name, white, -0.5f + 0.1f, mci->items[i]->namebox->vtxcoords->y1 - j * 0.2f + 0.03f, 0.0024f, 0.004f, 1, 0);
-                draw_box(white, black, mci->items[i]->valuebox->vtxcoords->x1, mci->items[i]->valuebox->vtxcoords->y1 - j * 0.2f, mci->items[i]->valuebox->vtxcoords->w, mci->items[i]->valuebox->vtxcoords->h, -1);
+        if (mci->items[i]->type == PREF_PATH) {
+                // display and handle directory item (list)
+                std::string path = mci->items[i]->path;
+                draw_box(white, black, mci->items[i]->namebox->vtxcoords->x1, mci->items[i]->namebox->vtxcoords->y1, mci->items[i]->namebox->vtxcoords->w, mci->items[i]->namebox->vtxcoords->h, -1);
+                render_text(mci->items[i]->name, white, -0.5f + 0.1f, mci->items[i]->namebox->vtxcoords->y1 + 0.03f, 0.0024f, 0.004f, 1, 0);
+                draw_box(white, black, mci->items[i]->valuebox->vtxcoords->x1, mci->items[i]->valuebox->vtxcoords->y1, mci->items[i]->valuebox->vtxcoords->w, mci->items[i]->valuebox->vtxcoords->h, -1);
                 if (mci->items[i]->renaming == false) {
-                    render_text(paths[j + (this->pathscroll * cond2)], white,
-                                mci->items[i]->valuebox->vtxcoords->x1 + 0.1f, mci->items[i]->valuebox->vtxcoords->y1 - j * 0.2f + 0.03f, 0.0024f, 0.004f, 1, 0);
+                    render_text(path, white,
+                                mci->items[i]->valuebox->vtxcoords->x1 + 0.1f, mci->items[i]->valuebox->vtxcoords->y1 + 0.03f, 0.0024f, 0.004f, 1, 0);
                 }
                 else {
                     if (this->renaming == EDIT_NONE) {
                         mci->items[i]->renaming = false;
-                        paths[j + (this->pathscroll * cond2)] = this->inputtext;
-                        if (size == 1) mci->items[i]->path = this->inputtext;
+                        path = this->inputtext;
+                        mci->items[i]->path = this->inputtext;
                         if (mci->items[i]->dest == &this->project->name) {
                             this->projnamechanged = true;
                             this->saveproject = true;
@@ -5611,7 +5591,7 @@ bool Program::preferences_handle() {
                         mci->items[i]->renaming = false;
                     }
                     else {
-                        do_text_input(mci->items[i]->valuebox->vtxcoords->x1 + 0.1f, mci->items[i]->valuebox->vtxcoords->y1 - j * 0.2f + 0.03f, 0.0024f, 0.004f, mx, my, this->xvtxtoscr(0.7f), 1, mci->items[i], true);
+                        do_text_input(mci->items[i]->valuebox->vtxcoords->x1 + 0.1f, mci->items[i]->valuebox->vtxcoords->y1 + 0.03f, 0.0024f, 0.004f, mx, my, this->xvtxtoscr(0.7f), 1, mci->items[i], true);
                     }
                 }
                 if (mci->items[i]->valuebox->in(mx, my)) {
@@ -5625,37 +5605,23 @@ bool Program::preferences_handle() {
                         }
                         mci->items[i]->renaming = true;
                         this->renaming = EDIT_STRING;
-                        this->inputtext = paths[j];
+                        this->inputtext = path;
                         this->cursorpos0 = this->inputtext.length();
                         SDL_StartTextInput();
                     }
                 }
                 if (mci->items[i]->dest != &this->project->name) {
-                    if (cond2) {
-                        draw_box(white, black, mci->items[i]->rembox->vtxcoords->x1,
-                                 mci->items[i]->rembox->vtxcoords->y1 - j * 0.2f, mci->items[i]->rembox->vtxcoords->w,
-                                 mci->items[i]->rembox->vtxcoords->h, -1);
-                        render_text("X", white,
-                                    mci->items[i]->rembox->vtxcoords->x1 + 0.04f, mci->items[i]->rembox->vtxcoords->y1 - j * 0.2f + 0.07f, 0.0024f, 0.004f, 1, 0);
-                        if (mci->items[i]->rembox->in(mx, my)) {
-                            if (this->leftmouse) {
-                                mci->items.erase(mci->items.begin() + i);
-                                brk = true;
-                                break;
-                            }
-                        }
-                    }
                     draw_box(white, black, mci->items[i]->iconbox->vtxcoords->x1 + 0.02f,
-                             mci->items[i]->iconbox->vtxcoords->y1 - j * 0.2f + 0.05f, 0.06f, 0.07f, -1);
+                             mci->items[i]->iconbox->vtxcoords->y1 + 0.05f, 0.06f, 0.07f, -1);
                     draw_box(white, black, mci->items[i]->iconbox->vtxcoords->x1 + 0.05f,
-                             mci->items[i]->iconbox->vtxcoords->y1 - j * 0.2f + 0.11f, 0.025f, 0.03f, -1);
+                             mci->items[i]->iconbox->vtxcoords->y1 + 0.11f, 0.025f, 0.03f, -1);
                     draw_box(white, black, mci->items[i]->iconbox->vtxcoords->x1,
-                             mci->items[i]->iconbox->vtxcoords->y1 - j * 0.2f, mci->items[i]->iconbox->vtxcoords->w,
+                             mci->items[i]->iconbox->vtxcoords->y1, mci->items[i]->iconbox->vtxcoords->w,
                              mci->items[i]->iconbox->vtxcoords->h, -1);
                     draw_box(white, black, mci->items[i]->iconbox->vtxcoords->x1 + 0.02f,
-                             mci->items[i]->iconbox->vtxcoords->y1 - j * 0.2f + 0.05f, 0.06f, 0.07f, -1);
+                             mci->items[i]->iconbox->vtxcoords->y1 + 0.05f, 0.06f, 0.07f, -1);
                     draw_box(white, black, mci->items[i]->iconbox->vtxcoords->x1 + 0.05f,
-                             mci->items[i]->iconbox->vtxcoords->y1 - j * 0.2f + 0.11f, 0.025f, 0.03f, -1);
+                             mci->items[i]->iconbox->vtxcoords->y1 + 0.11f, 0.025f, 0.03f, -1);
                     if (mci->items[i]->iconbox->in(mx, my)) {
                         if (this->leftmouse) {
                             mci->items[i]->choosing = true;
@@ -5670,19 +5636,115 @@ bool Program::preferences_handle() {
 #ifdef WINDOWS
                         boost::replace_all(this->choosedir, "/", "\\");
 #endif
-                        paths[j] = this->choosedir;
+                        path = this->choosedir;
                         this->choosedir = "";
                         mci->items[i]->choosing = false;
                     }
                 }
-            }
-            if (brk) break;
-
-            //if (cond1) *(std::string*)mci->items[i]->dest = paths[0];
-            //else *(std::vector<std::string>*)mci->items[i]->dest = paths;
         }
 
-        if (cond2) {
+
+        if (mci->items[i]->type == PREF_PATHS) {
+            std::vector<std::string> *paths= this->prefsearchdirs;
+
+            // mousewheel scroll
+            this->pathscroll -= this->mousewheel;
+            if (this->pathscroll < 0) this->pathscroll = 0;
+            if (paths->size() > 7 && paths->size() - this->pathscroll < 7) {
+                this->pathscroll = paths->size() - 6;
+            }
+            if (paths->size() < 7) {
+                this->pathscroll = 0;
+            }
+
+            // GUI arrow scroll
+            this->pathscroll = this->handle_scrollboxes(*this->defaultsearchscrollup,
+                                                        *this->defaultsearchscrolldown,
+                                                        paths->size(), this->pathscroll, 6,
+                                                        mx, my);
+
+            int size = std::min(6, (int) paths->size());
+
+            for (int j = 0; j < size; j++) {
+                // display and handle directory item(s) (list)
+                std::string path = (*(paths))[j];
+                draw_box(white, black, mci->items[i]->namebox->vtxcoords->x1, mci->items[i]->namebox->vtxcoords->y1 - j * 0.2f, mci->items[i]->namebox->vtxcoords->w, mci->items[i]->namebox->vtxcoords->h, -1);
+                render_text(mci->items[i]->name, white, -0.5f + 0.1f, mci->items[i]->namebox->vtxcoords->y1 - j * 0.2f + 0.03f, 0.0024f, 0.004f, 1, 0);
+                draw_box(white, black, mci->items[i]->valuebox->vtxcoords->x1, mci->items[i]->valuebox->vtxcoords->y1 - j * 0.2f, mci->items[i]->valuebox->vtxcoords->w, mci->items[i]->valuebox->vtxcoords->h, -1);
+                if (this->pathrenaming != j) {
+                    render_text((*(paths))[j + (this->pathscroll)], white,
+                                mci->items[i]->valuebox->vtxcoords->x1 + 0.05f, mci->items[i]->valuebox->vtxcoords->y1 - j * 0.2f + 0.03f, 0.0024f, 0.004f, 1, 0);
+                }
+                else if (this->pathrenaming == j) {
+                    if (this->renaming == EDIT_NONE) {
+                        this->pathrenaming = -1;
+                        (*(paths))[j + (this->pathscroll)] = this->inputtext;
+                        if (size == 1) (*(paths))[j + (this->pathscroll)] = this->inputtext;
+                    }
+                    else if (this->renaming == EDIT_CANCEL) {
+                        this->pathrenaming = -1;
+                    }
+                    else {
+                        do_text_input(mci->items[i]->valuebox->vtxcoords->x1 + 0.05f, mci->items[i]->valuebox->vtxcoords->y1 - j * 0.2f + 0.03f, 0.0024f, 0.004f, mx, my, this->xvtxtoscr(0.6f), 1, mci->items[i], true);
+                    }
+                }
+                if (mci->items[i]->valuebox->in(mx, my - yvtxtoscr(j * 0.2f))) {
+                    if (this->leftmouse) {
+                         if (this->pathrenaming == j) {
+                            this->pathrenaming = -1;
+                            end_input();
+                            break;
+                        }
+                        this->pathrenaming = j;
+                        this->renaming = EDIT_STRING;
+                        this->inputtext = (*(paths))[j + (this->pathscroll)];
+                        this->cursorpos0 = this->inputtext.length();
+                        SDL_StartTextInput();
+                    }
+                }
+                draw_box(white, black, mci->items[i]->rembox->vtxcoords->x1,
+                         mci->items[i]->rembox->vtxcoords->y1 - j * 0.2f, mci->items[i]->rembox->vtxcoords->w,
+                         mci->items[i]->rembox->vtxcoords->h, -1);
+                render_text("X", white,
+                            mci->items[i]->rembox->vtxcoords->x1 + 0.04f, mci->items[i]->rembox->vtxcoords->y1 - j * 0.2f + 0.07f, 0.0024f, 0.004f, 1, 0);
+                if (mci->items[i]->rembox->in(mx, my - yvtxtoscr(j * 0.2f))) {
+                    if (this->leftmouse) {
+                        this->prefsearchdirs->erase((*(this->prefsearchdirs)).begin() + j + (this->pathscroll));
+                        break;
+                    }
+                }
+                draw_box(white, black, mci->items[i]->iconbox->vtxcoords->x1 + 0.02f,
+                         mci->items[i]->iconbox->vtxcoords->y1 - j * 0.2f + 0.05f, 0.06f, 0.07f, -1);
+                draw_box(white, black, mci->items[i]->iconbox->vtxcoords->x1 + 0.05f,
+                         mci->items[i]->iconbox->vtxcoords->y1 - j * 0.2f + 0.11f, 0.025f, 0.03f, -1);
+                draw_box(white, black, mci->items[i]->iconbox->vtxcoords->x1,
+                         mci->items[i]->iconbox->vtxcoords->y1 - j * 0.2f, mci->items[i]->iconbox->vtxcoords->w,
+                         mci->items[i]->iconbox->vtxcoords->h, -1);
+                draw_box(white, black, mci->items[i]->iconbox->vtxcoords->x1 + 0.02f,
+                         mci->items[i]->iconbox->vtxcoords->y1 - j * 0.2f + 0.05f, 0.06f, 0.07f, -1);
+                draw_box(white, black, mci->items[i]->iconbox->vtxcoords->x1 + 0.05f,
+                         mci->items[i]->iconbox->vtxcoords->y1 - j * 0.2f + 0.11f, 0.025f, 0.03f, -1);
+                if (mci->items[i]->iconbox->in(mx, my - yvtxtoscr(j * 0.2f))) {
+                    if (this->leftmouse) {
+                        this->filereqon = true;
+                        this->choosing = j;
+                        this->pathto = "CHOOSEDIR";
+                        std::string title = "Open " + mci->items[i]->name + " directory";
+                        std::thread filereq(&Program::get_dir, this, title.c_str(),
+                                            std::filesystem::canonical(path).generic_string());
+                        filereq.detach();
+                    }
+                }
+                if (this->choosing == j && this->choosedir != "") {
+#ifdef WINDOWS
+                    boost::replace_all(this->choosedir, "/", "\\");
+#endif
+                    (*(paths))[j + (this->pathscroll)] = this->choosedir;
+                    this->choosedir = "";
+                    this->choosing = -1;
+                    this->filereqon = false;
+                }
+            }
             std::unique_ptr <Boxx> box = std::make_unique <Boxx> ();
             box->vtxcoords->x1 = -0.3f;
             box->vtxcoords->y1 = -0.8f;
@@ -5690,17 +5752,18 @@ bool Program::preferences_handle() {
             box->vtxcoords->h = 0.2f;
             box->upvtxtoscr();
             draw_box(white, black, box, -1);
-            render_text("+ DEFAULT SEARCH DIR", white, -0.25f, -0.8f + 0.03f, 0.0024f, 0.004f, 1, 0);
+            render_text("+ DEFAULT SEARCH DIR", white, -0.275f, -0.8f + 0.03f, 0.0024f, 0.004f, 1, 0);
             if (box->in(mx, my) && this->leftmouse) {
                 this->pathto = "ADDSEARCHDIR";
+                this->filereqon = true;
                 std::thread filereq(&Program::get_dir, this, "Add a search location",
                                     std::filesystem::canonical(this->currfilesdir).generic_string());
                 filereq.detach();
             }
         }
 
-        if (mci->items[i]->connected) mci->items[i]->namebox->in(mx, my); //trigger tooltip
 
+        if (mci->items[i]->connected) mci->items[i]->namebox->in(mx, my); //trigger tooltip
 	}
 
 	this->qualfr = std::clamp((int)this->qualfr, 1, 10);
@@ -5853,7 +5916,7 @@ bool Program::preferences_handle() {
                 }
             }
 
-			retarget->globalsearchdirs = *this->prefsearchdirs;
+            retarget->globalsearchdirs = *this->prefsearchdirs;
 
 			// set output resolution from project settings
             this->projnamechanged = false;
@@ -6753,8 +6816,9 @@ void Project::delete_dirs(std::string path) {
 }
 
 void Project::copy_dirs(std::string path, bool rem) {
-    std::string src = pathtoplatform(dirname(this->path));
-    std::string dest = pathtoplatform(path);
+    std::string src = pathtoposix(dirname(this->path));
+    src.pop_back();
+    std::string dest = pathtoposix(path);
     //mainprogram->remove(path + "/" + basename(this->path));
     copy_dir(src, dest);
     this->binsdir = path + "/bins/";
@@ -7303,7 +7367,7 @@ void Project::copy_over(std::string path, std::string path2, std::string oldprdi
     if (exists(path2)) {
         this->delete_dirs(path2);
     }
-    this->create_dirs(path2);
+    //this->create_dirs(path2);
     mainprogram->project->copy_dirs(path2, false);
 
     if (!std::filesystem::is_empty(path + "/autosaves/")) {
@@ -7384,16 +7448,6 @@ void Project::save_as() {
             this->copy_over(path3, path2, oldprdir);
         }
 
-        if (mainprogram->project->bupp != "") {
-            mainprogram->project->binsdir = mainprogram->project->bubd;
-            mainprogram->project->shelfdir = mainprogram->project->busd;
-            mainprogram->project->recdir = mainprogram->project->burd;
-            mainprogram->project->autosavedir = mainprogram->project->buad;
-            mainprogram->project->elementsdir = mainprogram->project->bued;
-            mainprogram->project->path = mainprogram->project->bupp;
-            mainprogram->project->name = mainprogram->project->bupn;
-        }
-
         /*std::string src = pathtoplatform(mainprogram->project->binsdir + binsmain->currbin->name + "/");
         std::string dest = pathtoplatform(dirname(mainprogram->path) + remove_extension(basename(mainprogram->path)) + "/");
         copy_dir(src, dest);*/
@@ -7467,6 +7521,21 @@ void Project::save_as() {
 }
 
 void Project::autosave() {
+    std::vector<std::vector<Layer*>> *tempmap;
+    for (int i = 0; i < 4; i++) {
+        if (i == 0) {
+            tempmap = &mainmix->swapmap[0];
+        } else if (i == 1) {
+            tempmap = &mainmix->swapmap[1];
+        } else if (i == 2) {
+            tempmap = &mainmix->swapmap[2];
+        } else if (i == 3) {
+            tempmap = &mainmix->swapmap[3];
+        }
+        if (tempmap->size()) {
+            return;
+        }
+    }
     if (binsmain->openfilesbin || binsmain->importbins || mainprogram->openfilesshelf || mainprogram->openfileslayers || mainprogram->openfilesqueue || mainprogram->concatting) {
         return;
     }
@@ -7641,19 +7710,14 @@ void Preferences::load() {
                                         if (pi->dest) *(std::string*)pi->dest = pi->path;
                                     }
                                     else if (pi->type == PREF_PATHS) {
-                                                if (istring == "PATHS") {
-                                                    retarget->globalsearchdirs.clear();
-                                                    while (safegetline(rfile, istring)) {
-                                                        if (istring == "ENDPATHS") break;
+                                        if (istring == "PATHS") {
+                                            retarget->globalsearchdirs.clear();
+                                            while (safegetline(rfile, istring)) {
+                                                if (istring == "ENDPATHS") break;
                                                 if (exists(istring)) {
                                                     retarget->globalsearchdirs.push_back(istring);
+                                                    make_searchbox(1);
                                                 }
-                                            }
-                                            retarget->searchboxes.clear();
-                                            retarget->searchclearboxes.clear();
-                                            retarget->searchglobalbuttons.clear();
-                                            for (std::string p : retarget->globalsearchdirs) {
-                                                make_searchbox(1);
                                             }
                                         }
                                     }
@@ -9014,7 +9078,7 @@ void Shelf::save(const std::string path, bool undo) {
     if (!undo) {
         std::vector<std::vector<std::string>> filestoadd2;
         filestoadd2.push_back(filestoadd);
-        std::string tpath = find_unused_filename("tempconcatshelf", mainprogram->temppath, "");
+        std::string tpath = mainprogram->temppath + "tempconcatshelf" + "_" + std::to_string(mainprogram->concatsuffix++);
         std::thread concat = std::thread(&Program::concat_files, mainprogram, tpath,
                                          path, filestoadd2);
         concat.detach();
@@ -9792,6 +9856,7 @@ void Program::concat_files(std::string ofpath, std::string path, std::vector<std
     mainprogram->numconcatted++;
     if (mainprogram->concatting == 0) {
         mainprogram->numconcatted = 0;
+        mainprogram->concatsuffix = 0;
     }
 }
 
@@ -10174,6 +10239,9 @@ void Program::undo_redo_save() {
     if (this->openfileslayers || this->openfilesqueue || this->openfilesshelf || binsmain->openfilesbin) {
         found = true;
     }
+    if (mainprogram->swappingscene) {
+        found = true;
+    }
     if (!found) {
         if (!this->binsscreen) {
             std::string undopath = find_unused_filename("UNDO_state", this->temppath, ".ewocvj");
@@ -10188,11 +10256,11 @@ void Program::undo_redo_save() {
             this->undopbpos = 0;
             this->undopos++;
             this->recundo = false;
-            this->undowaiting = false;
+            this->undowaiting = 0;
         }
     }
-    if (found) {
-        this->undowaiting = true;
+    if (found && this->undowaiting == 0) {
+        this->undowaiting = 1;
     }
 
     found = false;
@@ -10243,11 +10311,11 @@ void Program::undo_redo_save() {
             binsmain->undopos++;
 
             this->recundo = false;
-            this->undowaiting = false;
+            this->undowaiting = 0;
         }
     }
-    if (found) {
-        this->undowaiting = true;
+    if (found && this->undowaiting == 0) {
+        this->undowaiting = 1;
     }
 }
 
@@ -10479,6 +10547,8 @@ void Program::process_audio() {
 
     float sumavg;
     int cnt = 0;
+    double max = 0.0f;
+    double top = 0.0f;
     while (true) {
         if (!this->auinitialized) continue;
         int bytesRead = SDL_DequeueAudio(this->audeviceid, this->aubuffer, this->aubuffersize);
@@ -10487,7 +10557,15 @@ void Program::process_audio() {
             //int num_samples = frame->nb_samples;
             for (int i = 0; i < this->ausamples; i++) {
                 this->auin[i] = this->aubuffer[i]; // / 32768.0; // Scale samples to [-1, 1]
+                max = std::max(this->auin[i], max);
             }
+            if (cnt == 40) {
+                top = max;
+                fflush(stdout);
+                max = 0.0f;
+                cnt = 0;
+            }
+            cnt++;
             // Perform FFT
             fftw_execute(this->auplan);
 
@@ -10529,7 +10607,11 @@ void Program::process_audio() {
                 for (auto elem: lpst->elements) {
                     if (elem->beats) {
                         int counter2 = counter / elem->beats;
-                        if (counter2 > this->aubpmcounter / elem->beats) {
+                        elem->speed->value = elem->totaltime / (1000.0f * this->beatdet->winning_bpm) / elem->beats;
+                        if (top < std::pow(loopstation->beatthres->value, 4)) {
+                            elem->speed->value = 0.0f;
+                        }
+                        else if (counter2 > this->aubpmcounter / elem->beats) {
                             elem->speedadaptedtime = this->beatdet->bpm_offset * 1000.0f;
                             elem->starttime = std::chrono::high_resolution_clock::now() -
                                               std::chrono::milliseconds((long long) (elem->speedadaptedtime));
@@ -10537,7 +10619,6 @@ void Program::process_audio() {
                             elem->eventpos = 0;
                             elem->atend = false;
                         }
-                        elem->speed->value = elem->totaltime / (1000.0f * this->beatdet->winning_bpm) / elem->beats;
                     }
                 }
             }

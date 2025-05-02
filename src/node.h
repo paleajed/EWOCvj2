@@ -151,7 +151,7 @@ class BlendNode: public Node {
 		GLuint intex = -1;
 		GLuint in2tex = -1;
 		GLuint fbo = -1;
-		GLuint fbotex = -1;
+        GLuint fbotex = -1;
 		bool lastblend = false;
 		float chred = 0.0f;
 		float chgreen = 0.0f;

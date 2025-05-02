@@ -247,15 +247,18 @@ std::string chop_off(std::string filename) {
 
 std::string remove_version(std::string filename) {
 	const size_t underscore_idx = filename.rfind('_');
-	try {
-		int dummy = std::stoi(filename.substr(filename.rfind('_') + 1));
-	}
-	catch (...) {
-		return filename;
-	}
+	std::string str = filename.substr(filename.rfind('_') + 1);
+    for (int i = 0; i < str.length(); i++) {
+        std::string s = str.substr(i, 1);
+        if (s != "0" && s != "1" && s != "2" && s != "3" && s != "4" && s != "5" && s != "6" && s != "7" && s != "8" && s != "9") {
+            return filename;
+        }
+    }
 	if (std::string::npos != underscore_idx)
 	{
-		filename.erase(underscore_idx);
+        for (int i = underscore_idx; i < filename.length(); i++) {
+            filename.erase(i);
+        }
 	}
 	return filename;
 }
@@ -267,6 +270,11 @@ std::string pathtoplatform(std::string path) {
 #ifdef POSIX
     std::replace(path.begin(), path.end(), '\\', '/');
 #endif
+    return path;
+}
+
+std::string pathtoposix(std::string path) {
+    std::replace(path.begin(), path.end(), '\\', '/');
     return path;
 }
 
@@ -393,12 +401,12 @@ std::string exec(const char* cmd) {
 #endif
 
 
-void check_stage() {
+void check_stage(int step) {
     // hop through retargeting stages when every newpath is processed
-    mainmix->newpathpos++;
+    mainmix->newpathpos += step;
     if (mainmix->newpathpos >= (*(mainmix->newpaths)).size()) {
         mainmix->retargetstage++;
-        if (mainmix->retargetstage == 4) {
+        if (mainmix->retargetstage == 6) {
             mainmix->retargetstage = 0;
             mainmix->retargetingdone = true;
         }
@@ -440,38 +448,26 @@ bool retarget_search() {
         std::string s("");
         return s;
     };
+
     bool ret = false;
-    for (std::string dirpath : retarget->globalsearchdirs) {
+    for (std::string dirpath : retarget->searchdirs) {
         std::string retstr = search_directory(dirpath);
         if (retstr != "") {
-            ret = true;
-            (*(mainmix->newpaths))[mainmix->newpathpos] = retstr;
-            break;
-        }
-    }
-    if (!ret) {
-        for (std::string dirpath : retarget->localsearchdirs) {
-            std::string retstr = search_directory(dirpath);
-            if (retstr != "") {
-                ret = true;
-                (*(mainmix->newpaths))[mainmix->newpathpos] = retstr;
-                break;
-            }
-        }
-    }
-    if (!ret) {
-        for (std::string dirpath: retarget->globalsearchdirs) {
-            std::string retstr = search_directory_for_same_size(dirpath);
-            if (retstr != "") {
+            if (mainmix->retargetstage == 1 || mainmix->retargetstage == 2 || mainmix->retargetstage == 4) {
+                // no filesize check for clips and bin element jpegs
                 (*(mainmix->newpaths))[mainmix->newpathpos] = retstr;
                 ret = true;
                 break;
             }
-            else ret = false;
+            else if (std::filesystem::file_size(retstr) == retarget->filesize) {
+                (*(mainmix->newpaths))[mainmix->newpathpos] = retstr;
+                ret = true;
+                break;
+            }
         }
     }
     if (!ret) {
-        for (std::string dirpath: retarget->localsearchdirs) {
+        for (std::string dirpath: retarget->searchdirs) {
             std::string retstr = search_directory_for_same_size(dirpath);
             if (retstr != "") {
                 (*(mainmix->newpaths))[mainmix->newpathpos] = retstr;
@@ -515,11 +511,17 @@ void do_retarget() {
     // set up retraget clips
     for (int i = 0; i < mainmix->newpathclips.size(); i++) {
         Clip *clip = mainmix->newpathclips[i];
-        mainmix->newpathcliplays[i]->filename = mainmix->newclippaths[i];
-        if (clip->type == ELEM_LAYER) {
-            mainmix->save_layerfile(clip->path, mainmix->newpathcliplays[i], 0, 0);
-            mainmix->newpathcliplays[i]->close();
-        }
+        clip->path = mainmix->newclippaths[i];
+        if (clip->path == "") continue;
+        clip->insert(clip->layer, clip->layer->clips.end() - 1);
+    }
+    for (int i = 0; i < mainmix->newpathlayclips.size(); i++) {
+        Clip *clip = mainmix->newpathlayclips[i];
+        clip->path = mainmix->newcliplaypaths[i];
+        mainmix->newpathcliplays[i]->filename = clip->path;
+        clip->path = find_unused_filename("cliptemp_" + remove_extension(basename(clip->path)), mainprogram->temppath, ".layer");
+        mainmix->save_layerfile(clip->path, mainmix->newpathcliplays[i], 0, 0);
+        mainmix->newpathcliplays[i]->close();
         if (clip->path == "") continue;
         clip->insert(clip->layer, clip->layer->clips.end() - 1);
     }
@@ -535,6 +537,18 @@ void do_retarget() {
     // set up retraget bin elements
     for (int i = 0; i < mainmix->newpathbinels.size(); i++) {
         mainmix->newpathbinels[i]->path = mainmix->newbinelpaths[i];
+        mainmix->newpathbinels[i]->absjpath = mainmix->newbineljpegpaths[i];
+        mainmix->newpathbinels[i]->reljpath = std::filesystem::relative(mainmix->newpathbinels[i]->absjpath,
+                                                                 mainprogram->project->binsdir).generic_string();
+        mainmix->newpathbinels[i]->jpegpath = mainmix->newpathbinels[i]->absjpath;
+        if (mainmix->newpathbinels[i]->name != "") {
+            if (mainmix->newpathbinels[i]->absjpath != "") {
+                mainmix->newpathbinels[i]->bin->open_positions.emplace(mainmix->newpathbinels[i]->pos);
+            }
+            else {
+                bool dummy = false;
+            }
+        }
         mainmix->newpathbinels[i]->relpath = std::filesystem::relative(mainmix->newbinelpaths[i], mainprogram->project->binsdir).generic_string();
         if (mainmix->newpathbinels[i]->path == "") {
             mainmix->newpathbinels[i]->name = "";
@@ -551,7 +565,7 @@ void do_retarget() {
     mainmix->newpathshelfelems.clear();
     mainmix->newpathbinels.clear();
 
-    check_stage();
+    check_stage(1);
 }
 
 void make_searchbox(bool val) {
@@ -1296,7 +1310,7 @@ ShelfElement::ShelfElement(bool side, int pos, Button *but) {
 	box->vtxcoords->w = boxwidth;
 	box->upvtxtoscr();
 	box->tooltiptitle = "Video launch shelf";
-	box->tooltip = "Shelf containing up to 16 videos/layerfiles for quick and easy video launching.  Left drag'n'drop from other areas, both videos and layerfiles.  Doubleclick left loads the shelf element contents into all selected layers. Rightclick launches shelf menu. ";
+	box->tooltip = "Shelf containing up to 16 videos/layerfiles for quick and easy video launching.  Left drag'n'drop to/from other areas, both videos and layerfiles.  Doubleclick left loads the shelf element contents into all selected layers. Rightclick launches shelf menu. ";
 	// boxes that set the behaviour of multiple sends to the same mix element, interleaved with sending other elements to it
     this->sbox = new Boxx;
 	this->sbox->vtxcoords->x1 = box->vtxcoords->x1;
@@ -2155,7 +2169,7 @@ std::vector<float> render_text(const std::string& stext, const char* ctext, floa
             if (FT_Load_Glyph(face, glyph_index, FT_LOAD_DEFAULT))
                 continue;
             FT_Render_Glyph(face->glyph, FT_RENDER_MODE_NORMAL);
-            glTexSubImage2D(GL_TEXTURE_2D, 0, x, -g->bitmap_top + 57 * glob->h / 2400.0f + (6 * (smflag > 0)), g->bitmap.width, g->bitmap.rows, GL_RED, GL_UNSIGNED_BYTE, g->bitmap.buffer);
+            glTexSubImage2D(GL_TEXTURE_2D, 0, x, -g->bitmap_top + 60 * glob->h / 2400.0f + (6 * (smflag > 0)), g->bitmap.width, g->bitmap.rows, GL_RED, GL_UNSIGNED_BYTE, g->bitmap.buffer);
             x += (g->advance.x/64.0f);
         }
 
@@ -2275,7 +2289,8 @@ void set_queueing(bool onoff) {
 }
 	
 	
-void do_blur(bool stage, GLuint prevfbotex, int iter) {
+void do_blur(bool stage, GLuint prevfbotex, int iter, bool notedgedetect) {
+    GLint laststep = glGetUniformLocation(mainprogram->ShaderProgram, "laststep");
 	glActiveTexture(GL_TEXTURE5);
 	glBindTexture(GL_TEXTURE_2D, mainprogram->fbotex[stage * 2]);
 	glActiveTexture(GL_TEXTURE6);
@@ -2294,6 +2309,9 @@ void do_blur(bool stage, GLuint prevfbotex, int iter) {
 		if (first_iteration) tex = &prevfbotex;
 		else tex = &mainprogram->fbotex[stage * 2 + !horizontal];
 		glBindTexture(GL_TEXTURE_2D, *tex);
+        if (notedgedetect && i == iter - 1) {
+            glUniform1i(laststep, 1);
+        }
 		glUniform1i(glGetUniformLocation(mainprogram->ShaderProgram, "horizontal"), horizontal);
 		glBindVertexArray(mainprogram->fbovao);
 		glDrawArrays(GL_TRIANGLE_STRIP, 0, 4);
@@ -2305,6 +2323,7 @@ void do_blur(bool stage, GLuint prevfbotex, int iter) {
 			first_iteration = false;
 	}
     glUniform1i(fboSampler, 0);
+    glUniform1i(laststep, 0);
     glBindFramebuffer(GL_FRAMEBUFFER, 0);
 	glViewport(0, 0, glob->w, glob->h);
 }
@@ -2438,26 +2457,42 @@ void onestepfrom(bool stage, Node *node, Node *prevnode, GLuint prevfbotex, GLui
                 }
 				switch (effect->type) {
 					case BLUR: {
+                        GLint ineff = glGetUniformLocation(mainprogram->ShaderProgram, "ineffect");
+                        glUniform1i(ineff, 1);
+                        GLint Sampler1 = glGetUniformLocation(mainprogram->ShaderProgram, "Sampler1");
+                        glUniform1i(Sampler1, 1);
+                        glActiveTexture(GL_TEXTURE1);
+                        glBindTexture(GL_TEXTURE_2D, prevfbotex);
+                        glActiveTexture(GL_TEXTURE0);
 						fxid = glGetUniformLocation(mainprogram->ShaderProgram, "fxid");
 						glUniform1i(fxid, BLUR);
 						GLint interm = glGetUniformLocation(mainprogram->ShaderProgram, "interm");
 						glUniform1i(interm, 1);
-						do_blur(stage, prevfbotex, ((BlurEffect*)effect)->times);
+						do_blur(stage, prevfbotex, ((BlurEffect*)effect)->times, true);
 						glActiveTexture(GL_TEXTURE0);
                         if (((BlurEffect*)effect)->times > 1) {
                             prevfbotex = mainprogram->fbotex[stage * 2 + 1];
                         }
+                        glUniform1i(ineff, 0);
 						break;
 					 }
 
 					case BOXBLUR: {
+                        GLint ineff = glGetUniformLocation(mainprogram->ShaderProgram, "ineffect");
+                        glUniform1i(ineff, 1);
+                        GLint Sampler1 = glGetUniformLocation(mainprogram->ShaderProgram, "Sampler1");
+                        glUniform1i(Sampler1, 1);
+                        glActiveTexture(GL_TEXTURE1);
+                        glBindTexture(GL_TEXTURE_2D, prevfbotex);
+                        glActiveTexture(GL_TEXTURE0);
 						fxid = glGetUniformLocation(mainprogram->ShaderProgram, "fxid");
 						glUniform1i(fxid, BOXBLUR);
 						GLint interm = glGetUniformLocation(mainprogram->ShaderProgram, "interm");
 						glUniform1i(interm, 1);
-						do_blur(stage, prevfbotex, 2);
+						do_blur(stage, prevfbotex, 2, true);
 						glActiveTexture(GL_TEXTURE0);
                         prevfbotex = mainprogram->fbotex[stage * 2 + 1];
+                        glUniform1i(ineff, 0);
 						break;
 					}
 
@@ -2474,13 +2509,21 @@ void onestepfrom(bool stage, Node *node, Node *prevnode, GLuint prevfbotex, GLui
                     }
 
                     case GLOW: {
+                        GLint ineff = glGetUniformLocation(mainprogram->ShaderProgram, "ineffect");
+                        glUniform1i(ineff, 1);
+                        GLint Sampler1 = glGetUniformLocation(mainprogram->ShaderProgram, "Sampler1");
+                        glUniform1i(Sampler1, 1);
+                        glActiveTexture(GL_TEXTURE1);
+                        glBindTexture(GL_TEXTURE_2D, prevfbotex);
+                        glActiveTexture(GL_TEXTURE0);
 						fxid = glGetUniformLocation(mainprogram->ShaderProgram, "fxid");
 						glUniform1i(fxid, GLOW);
 						GLint interm = glGetUniformLocation(mainprogram->ShaderProgram, "interm");
 						glUniform1i(interm, 1);
-						do_blur(stage, prevfbotex, 2);
+						do_blur(stage, prevfbotex, 2, true);
 						glActiveTexture(GL_TEXTURE0);
 						prevfbotex = mainprogram->fbotex[stage * 2 + 1];
+                        glUniform1i(ineff, 0);
 						break;
 					 }
 
@@ -2555,8 +2598,11 @@ void onestepfrom(bool stage, Node *node, Node *prevnode, GLuint prevfbotex, GLui
 					 }
 
 					case STROBE: {
-						if (((StrobeEffect*)effect)->get_phase() == 0) ((StrobeEffect*)effect)->set_phase(1);
-						else ((StrobeEffect*)effect)->set_phase(0);
+                        if (mainmix->oldstrobetime == 0.0f || mainmix->time - mainmix->oldstrobetime > 0.05f) {
+                            mainmix->oldstrobetime = mainmix->time;
+                            if (((StrobeEffect *) effect)->get_phase() == 0) ((StrobeEffect *) effect)->set_phase(1);
+                            else ((StrobeEffect *) effect)->set_phase(0);
+                        }
 						GLint strobephase = glGetUniformLocation(mainprogram->ShaderProgram, "strobephase");
 						glUniform1f(strobephase, ((StrobeEffect*)effect)->get_phase());
 						fxid = glGetUniformLocation(mainprogram->ShaderProgram, "fxid");
@@ -2627,6 +2673,12 @@ void onestepfrom(bool stage, Node *node, Node *prevnode, GLuint prevfbotex, GLui
 					case EDGEDETECT: {
                         bool swits = 0;
 
+                        GLint Sampler1 = glGetUniformLocation(mainprogram->ShaderProgram, "Sampler1");
+                        glUniform1i(Sampler1, 1);
+                        glActiveTexture(GL_TEXTURE1);
+                        glBindTexture(GL_TEXTURE_2D, prevfbotex);
+                        GLint ineff = glGetUniformLocation(mainprogram->ShaderProgram, "ineffect");
+                        glUniform1i(ineff, 1);
                         fxid = glGetUniformLocation(mainprogram->ShaderProgram, "fxid");
                         glUniform1i(fxid, EDGEDETECT);
                         GLint interm = glGetUniformLocation(mainprogram->ShaderProgram, "interm");
@@ -2664,7 +2716,7 @@ void onestepfrom(bool stage, Node *node, Node *prevnode, GLuint prevfbotex, GLui
                         if (((EdgeDetectEffect*)effect)->thickness > 1) {
                             fxid = glGetUniformLocation(mainprogram->ShaderProgram, "fxid");
                             glUniform1i(fxid, BLUR);
-                            do_blur(stage, prevfbotex, ((EdgeDetectEffect *) effect)->thickness);
+                            do_blur(stage, prevfbotex, ((EdgeDetectEffect *) effect)->thickness, false);
                             prevfbotex = mainprogram->fbotex[stage * 2];
                             swits = true;
                         }
@@ -2734,6 +2786,8 @@ void onestepfrom(bool stage, Node *node, Node *prevnode, GLuint prevfbotex, GLui
 
                         fxid = glGetUniformLocation(mainprogram->ShaderProgram, "fxid");
                         glUniform1i(fxid, INVERT);
+                        GLint laststep = glGetUniformLocation(mainprogram->ShaderProgram, "laststep");
+                        glUniform1i(laststep, 1);
                         glActiveTexture(GL_TEXTURE0);
                         glBindFramebuffer(GL_FRAMEBUFFER, mainprogram->frbuf[swits + stage * 2]);
                         glDrawBuffer(GL_COLOR_ATTACHMENT0);
@@ -2743,8 +2797,10 @@ void onestepfrom(bool stage, Node *node, Node *prevnode, GLuint prevfbotex, GLui
                         glBindVertexArray(mainprogram->fbovao);
                         glDrawArrays(GL_TRIANGLE_STRIP, 0, 4);
                         prevfbotex = mainprogram->fbotex[swits + stage * 2];
+                        glUniform1i(laststep, 0);
 
                         glUniform1i(interm, 0);
+                        glUniform1i(ineff, 0);
                         glViewport(0, 0, glob->w, glob->h);
 						break;
 					}
@@ -2839,10 +2895,10 @@ void onestepfrom(bool stage, Node *node, Node *prevnode, GLuint prevfbotex, GLui
 			if (effect->fbo == -1) {
                 do {
                     if (effect->fbo != -1) {
-                        glDeleteFramebuffers(1, &effect->fbo);
+                        mainprogram->add_to_fbopool(effect->fbo);
                     }
                     if (effect->fbotex != -1) {
-                        glDeleteTextures(1, &effect->fbotex);
+                        mainprogram->add_to_texpool(effect->fbotex);
                     }
                     GLuint rettex;
                     if (stage == 0) {
@@ -3005,7 +3061,14 @@ void onestepfrom(bool stage, Node *node, Node *prevnode, GLuint prevfbotex, GLui
         glDrawBuffer(GL_COLOR_ATTACHMENT0);
         glClearColor(0.0f, 0.0f, 0.0f, 0.0f);
         glClear(GL_COLOR_BUFFER_BIT);
-        if (!lay->onhold) draw_box(nullptr, black, -1.0f, 1.0f, 2.0f, -2.0f, sx, sy, sc, op, 0, lay->texture, 0, 0, false);
+        if (!lay->onhold) {
+            if (lay->changeinit == 2) {
+                draw_box(nullptr, black, -1.0f, 1.0f, 2.0f, -2.0f, sx, sy, sc, op, 0, lay->texture, 0, 0, false);
+            }
+            else {
+                draw_box(nullptr, black, -1.0f, 1.0f, 2.0f, -2.0f, sx, sy, sc, op, 0, lay->oldtexture, 0, 0, false);
+            }
+        }
 
         prevfbotex = lay->fbotex;
         prevfbo = lay->fbo;
@@ -3028,10 +3091,10 @@ void onestepfrom(bool stage, Node *node, Node *prevnode, GLuint prevfbotex, GLui
             if (bnode->fbo == -1) {
                 do {
                     if (bnode->fbo != -1) {
-                        glDeleteFramebuffers(1, &bnode->fbo);
+                        mainprogram->add_to_fbopool(bnode->fbo);
                     }
                     if (bnode->fbotex != -1) {
-                        glDeleteTextures(1, &bnode->fbotex);
+                        mainprogram->add_to_texpool(bnode->fbotex);
                     }
                     GLuint rettex;
                     if (stage == 0) {
@@ -3755,7 +3818,8 @@ void handle_scenes(Scene* scene) {
                     mainprogram->onscenebutton = but;
                     mainprogram->onscenemilli = 0;
                 }*/
-                if (((mainprogram->leftmouse) && !mainprogram->menuondisplay)) {
+                if (((mainprogram->leftmouse) && !mainprogram->menuondisplay && !mainprogram->swappingscene)) {
+                    mainprogram->recundo = false;
                     // switch scenes
                     Scene *si = mainmix->scenes[scene->deck][i];
                     //if (i == mainmix->currscene[scene->deck]) continue;
@@ -4253,7 +4317,6 @@ void the_loop() {
     }
     mainmix->fpscount++;
     if (mainmix->fpscount > 24) mainmix->fpscount = 0;
-    //printf("frrate %s\n", s.c_str());
 
 
     // keep advancing non-displayed scenes but dont load frames
@@ -4264,7 +4327,7 @@ void the_loop() {
                     if (i == mainmix->currscene[j]) break;
                     if (mainmix->scenes[j][i]->scnblayers[k]->filename == "") continue;
 
-                    mainmix->scenes[j][i]->scnblayers[k]->progress(0, 0, false);
+                    mainmix->scenes[j][i]->scnblayers[k]->progress(0, 0, true);
 
                     mainprogram->now = std::chrono::high_resolution_clock::now();
                     LoopStation *l = mainmix->scenes[j][i]->lpst;
@@ -4549,14 +4612,24 @@ void the_loop() {
     /////////////// STUFF THAT BELONGS TO EITHER BINS OR MIX OR FULL SCREEN OR RETARGETING
 
     if (mainmix->retargeting) {
+        if (mainmix->retargetenter) {
+            retarget->searchdirs = retarget->globalsearchdirs;
+        }
+        mainmix->retargetenter = false;
         // handle searching for lost media files when loading a file
         if (mainmix->retargetingdone) {
             do_retarget();
 
-            for (int i = 0; i < retarget->localsearchdirs.size(); i++) {
-                if (retarget->searchglobalbuttons[i + retarget->globalsearchdirs.size()]->value) {
-                    if (std::find(retarget->globalsearchdirs.begin(), retarget->globalsearchdirs.end(), retarget->localsearchdirs[i]) == retarget->globalsearchdirs.end()) {
-                        retarget->globalsearchdirs.push_back(retarget->localsearchdirs[i]);
+            for (int i = 0; i < retarget->searchdirs.size(); i++) {
+                if (retarget->searchglobalbuttons[i]->value == 1) {
+                    if (std::find(retarget->globalsearchdirs.begin(), retarget->globalsearchdirs.end(), retarget->searchdirs[i]) == retarget->globalsearchdirs.end()) {
+                        retarget->globalsearchdirs.push_back(retarget->searchdirs[i]);
+                    }
+                }
+                else {
+                    if (std::find(retarget->localsearchdirs.begin(), retarget->localsearchdirs.end(),
+                                  retarget->searchdirs[i]) == retarget->localsearchdirs.end()) {
+                        retarget->localsearchdirs.push_back(retarget->searchdirs[i]);
                     }
                 }
             }
@@ -4574,6 +4647,7 @@ void the_loop() {
             mainmix->newpathbinels.clear();
             mainmix->newpathpos = 0;
             mainmix->skipall = false;
+            mainmix->retargetenter = true;
             mainmix->retargeting = false;
         }
         else {
@@ -4596,7 +4670,7 @@ void the_loop() {
                 if (mainmix->retargetstage == 0) {
                     mainmix->newpaths = &mainmix->newlaypaths;
                     if (mainmix->newpathpos >= (*(mainmix->newpaths)).size()) {
-                        check_stage();
+                        check_stage(1);
                     } else {
                         mainmix->newpaths = &mainmix->newlaypaths;
                         retarget->lay = mainmix->newpathlayers[mainmix->newpathpos];
@@ -4607,7 +4681,7 @@ void the_loop() {
                 if (mainmix->retargetstage == 1) {
                     mainmix->newpaths = &mainmix->newclippaths;
                     if (mainmix->newpathpos >= (*(mainmix->newpaths)).size()) {
-                        check_stage();
+                        check_stage(1);
                     } else {
                         mainmix->newpaths = &mainmix->newclippaths;
                         retarget->clip = mainmix->newpathclips[mainmix->newpathpos];
@@ -4616,9 +4690,20 @@ void the_loop() {
                     }
                 }
                 if (mainmix->retargetstage == 2) {
+                    mainmix->newpaths = &mainmix->newcliplaypaths;
+                    if (mainmix->newpathpos >= (*(mainmix->newpaths)).size()) {
+                        check_stage(1);
+                    } else {
+                        mainmix->newpaths = &mainmix->newcliplaypaths;
+                        retarget->clip = mainmix->newpathlayclips[mainmix->newpathpos];
+                        retarget->tex = retarget->clip->tex;
+                        retarget->filesize = retarget->clip->filesize;
+                    }
+                }
+                if (mainmix->retargetstage == 3) {
                     mainmix->newpaths = &mainmix->newshelfpaths;
                     if (mainmix->newpathpos >= (*(mainmix->newpaths)).size()) {
-                        check_stage();
+                        check_stage(1);
                     } else {
                         mainmix->newpaths = &mainmix->newshelfpaths;
                         retarget->shelem = mainmix->newpathshelfelems[mainmix->newpathpos];
@@ -4626,10 +4711,24 @@ void the_loop() {
                         retarget->filesize = retarget->shelem->filesize;
                     }
                 }
-                if (mainmix->retargetstage == 3) {
+                if (mainmix->retargetstage == 4) {
                     mainmix->newpaths = &mainmix->newbinelpaths;
                     if (mainmix->newpathpos >= (*(mainmix->newpaths)).size()) {
-                        check_stage();
+                        check_stage(1);
+                        if (!mainmix->retargeting) {
+                            mainprogram->frontbatch = false;
+                            return;
+                        }
+                    } else {
+                        retarget->binel = mainmix->newpathbinels[mainmix->newpathpos];
+                        retarget->tex = retarget->binel->tex;
+                        retarget->filesize = retarget->binel->filesize;
+                    }
+                }
+                if (mainmix->retargetstage == 5) {
+                    mainmix->newpaths = &mainmix->newbineljpegpaths;
+                    if (mainmix->newpathpos >= (*(mainmix->newpaths)).size()) {
+                        check_stage(1);
                         if (!mainmix->retargeting) {
                             mainprogram->frontbatch = false;
                             return;
@@ -4668,12 +4767,12 @@ void the_loop() {
             draw_box(white, nullptr, 0.3f, retarget->valuebox->vtxcoords->y1, 0.2f, 0.2f, -1);
             if (retarget->skipbox->in() && mainprogram->orderleftmouse) {
                 (*(mainmix->newpaths))[mainmix->newpathpos] = "";
-                check_stage();
+                check_stage(1);
             }
             if ((retarget->skipallbox->in() && mainprogram->orderleftmouse) || mainmix->skipall) {
                 mainmix->skipall = true;
                 (*(mainmix->newpaths))[mainmix->newpathpos] = "";
-                check_stage();
+                check_stage(1);
             }
             if (retarget->iconbox->in() && mainprogram->orderleftmouse) {
                 mainprogram->pathto = "RETARGETFILE";
@@ -4681,7 +4780,7 @@ void the_loop() {
                                     std::filesystem::canonical(mainprogram->currfilesdir).generic_string());
                 if (mainprogram->path != "") {
                     (*(mainmix->newpaths))[mainmix->newpathpos] = mainprogram->path;
-                    check_stage();
+                    check_stage(1);
                     mainprogram->currfilesdir = dirname(mainprogram->path);
                 }
             }
@@ -4693,7 +4792,7 @@ void the_loop() {
                                 0.00075f);
                     if (exists((*(mainmix->newpaths))[mainmix->newpathpos])) {
                         mainprogram->currfilesdir = dirname((*(mainmix->newpaths))[mainmix->newpathpos]);
-                        check_stage();
+                        check_stage(1);
                     }
                 } else {
                     if (mainprogram->renaming == EDIT_NONE) {
@@ -4701,7 +4800,7 @@ void the_loop() {
                         (*(mainmix->newpaths))[mainmix->newpathpos] = mainprogram->inputtext;
                         if (exists((*(mainmix->newpaths))[mainmix->newpathpos])) {
                             mainprogram->currfilesdir = dirname((*(mainmix->newpaths))[mainmix->newpathpos]);
-                            check_stage();
+                            check_stage(1);
                         }
                     } else if (mainprogram->renaming == EDIT_CANCEL) {
                         mainmix->renaming = false;
@@ -4735,21 +4834,15 @@ void the_loop() {
                                     std::filesystem::canonical(mainprogram->currfilesdir).generic_string());
                 retarget->notfound = false;
                 if (mainprogram->path != "") {
-                    bool cond1 = (std::find(retarget->localsearchdirs.begin(), retarget->localsearchdirs.end(),
-                                            mainprogram->path) == retarget->localsearchdirs.end());
-                    bool cond2 = (std::find(retarget->globalsearchdirs.begin(), retarget->globalsearchdirs.end(),
-                                            mainprogram->path) == retarget->globalsearchdirs.end());
-                    if (cond1 && cond2) {
-                        retarget->localsearchdirs.push_back(mainprogram->path);
-                    }
+                    retarget->searchdirs.push_back(mainprogram->path);
                     make_searchbox(0);
                 }
             }
-            if (retarget->globalsearchdirs.size() || retarget->localsearchdirs.size()) {
+            if (retarget->searchdirs.size()) {
                 // mousewheel scroll
                 mainprogram->pathscroll -= mainprogram->mousewheel;
                 if (mainprogram->pathscroll < 0) mainprogram->pathscroll = 0;
-                int totalsize = std::min(mainprogram->pathscroll + 7, (int)retarget->globalsearchdirs.size() + (int)retarget->localsearchdirs.size());
+                int totalsize = std::min(mainprogram->pathscroll + 7, (int)retarget->searchdirs.size());
                 if (totalsize > 6 && totalsize - mainprogram->pathscroll < 7) mainprogram->pathscroll = totalsize - 6;
 
                 // GUI arrow scroll
@@ -4757,49 +4850,42 @@ void the_loop() {
 
                 std::vector<Boxx> boxes;
                 short count = 0;
-                bool brk = false;
-                for (int i = 0; i < 2; i++) {
-                    std::vector<std::string> *dirs;
-                    if (i == 0) dirs = &retarget->globalsearchdirs;
-                    else dirs = &retarget->localsearchdirs;
-                    int size = std::min(6, (int)(*(dirs)).size());
-                    for (int j = 0; j < size - (mainprogram->pathscroll * (i == 0)); j++) {
-                        draw_box(white, black, retarget->searchboxes[count], -1);
-                        render_text((*(dirs))[count - retarget->globalsearchdirs.size() * (i == 1) + (mainprogram->pathscroll * (i == 0))], white, -0.4f + 0.015f,
-                                    retarget->searchboxes[count]->vtxcoords->y1 + 0.075f - 0.045f,
-                                    0.00045f,
-                                    0.00075f);
-                        mainprogram->handle_button(retarget->searchglobalbuttons[count], false, false, true);
-                        render_text("X", white, retarget->searchclearboxes[count]->vtxcoords->x1 + 0.003f,
-                                    retarget->searchclearboxes[count]->vtxcoords->y1, 0.001125f,
-                                    0.001875f);
-                        if (!retarget->searchglobalbuttons[count]->box->in()) {
-                            if (retarget->searchclearboxes[count]->in() && mainprogram->orderleftmouse) {
+                int size = std::min(6, int(retarget->searchdirs.size()));
+                for (int j = 0; j < size - (mainprogram->pathscroll); j++) {
+                    draw_box(white, black, retarget->searchboxes[count], -1);
+                    render_text(retarget->searchdirs[count + mainprogram->pathscroll], white, -0.4f + 0.015f,
+                                retarget->searchboxes[count]->vtxcoords->y1 + 0.075f - 0.045f,
+                                0.00045f,
+                                0.00075f);
+                    mainprogram->handle_button(retarget->searchglobalbuttons[count], false, false, true);
+                    render_text("X", white, retarget->searchclearboxes[count]->vtxcoords->x1 + 0.003f,
+                                retarget->searchclearboxes[count]->vtxcoords->y1, 0.001125f,
+                                0.001875f);
+                    if (!retarget->searchglobalbuttons[count]->box->in()) {
+                        if (retarget->searchclearboxes[count]->in() && mainprogram->orderleftmouse) {
 
-                                (*(dirs)).erase((*(dirs)).begin() + j - (mainprogram->pathscroll * (i == 0)));
-                                retarget->searchboxes.erase(retarget->searchboxes.begin() + count);
-                                retarget->searchglobalbuttons.erase(retarget->searchglobalbuttons.begin() + count);
-                                retarget->searchclearboxes.erase(retarget->searchclearboxes.begin() + count);
-                                for (int k = count; k < retarget->searchboxes.size(); k++) {
-                                    retarget->searchboxes[k]->vtxcoords->y1 += 0.1f;
-                                    retarget->searchglobalbuttons[k]->box->vtxcoords->y1 += 0.1f;
-                                    retarget->searchclearboxes[k]->vtxcoords->y1 += 0.1f;
-                                    retarget->searchboxes[k]->upvtxtoscr();
-                                    retarget->searchglobalbuttons[k]->box->upvtxtoscr();
-                                    retarget->searchclearboxes[k]->upvtxtoscr();
-                                }
-                                mainprogram->orderleftmouse = false;
-                                count--;
+                            (retarget->searchdirs).erase((retarget->searchdirs).begin() + j - (mainprogram->pathscroll));
+                            retarget->searchboxes.erase(retarget->searchboxes.begin() + count);
+                            retarget->searchglobalbuttons.erase(retarget->searchglobalbuttons.begin() + count);
+                            retarget->searchclearboxes.erase(retarget->searchclearboxes.begin() + count);
+                            for (int k = count; k < retarget->searchboxes.size(); k++) {
+                                retarget->searchboxes[k]->vtxcoords->y1 += 0.1f;
+                                retarget->searchglobalbuttons[k]->box->vtxcoords->y1 += 0.1f;
+                                retarget->searchclearboxes[k]->vtxcoords->y1 += 0.1f;
+                                retarget->searchboxes[k]->upvtxtoscr();
+                                retarget->searchglobalbuttons[k]->box->upvtxtoscr();
+                                retarget->searchclearboxes[k]->upvtxtoscr();
                             }
-                        }
-                        count++;
-                        if (count == 6) {
-                            brk = true;
-                            break;
+                            mainprogram->orderleftmouse = false;
+                            count--;
                         }
                     }
-                    if (brk) break;
+                    count++;
+                    if (count == 6) {
+                        break;
+                    }
                 }
+
                 float y2 = -0.2f - std::min(6, totalsize) * 0.1f;
                 std::unique_ptr <Boxx> box = std::make_unique <Boxx> ();;
                 box->vtxcoords->x1 = -0.15f;
@@ -4815,7 +4901,7 @@ void the_loop() {
                     if (mainprogram->orderleftmouse) {
                         bool ret = retarget_search();
                         if (ret) {
-                            check_stage();
+                            check_stage(1);
                             retarget->notfound = false;
                         }
                         else retarget->notfound = true;
@@ -5028,6 +5114,28 @@ void the_loop() {
             lpc->handle();
             for (int i = 0; i < lp->elements.size(); i++) {
                 if (lp->elements[i]->loopbut->value || lp->elements[i]->playbut->value) lp->elements[i]->set_values();
+            }
+            for (int i = 0; i < 2; i++) {
+                for (int j = 0; j < 4; j++) {
+                    if (j == mainmix->currscene[i]) continue;
+                    for (auto *elem : mainmix->scenes[i][j]->lpst->elements) {
+                        if ((elem->loopbut->value || elem->playbut->value) && !elem->eventlist.empty()) elem->set_values();
+                        std::vector<Layer *> &lvec = mainmix->scenes[i][j]->scnblayers;
+                        for (int m = 0; m < lvec.size(); m++) {
+                            std::vector<float> colvec;
+                            colvec.push_back(elem->colbox->acolor[0]);
+                            colvec.push_back(elem->colbox->acolor[1]);
+                            colvec.push_back(elem->colbox->acolor[2]);
+                            colvec.push_back(elem->colbox->acolor[3]);
+                            if (std::find(elem->layers.begin(), elem->layers.end(), lvec[m]) != elem->layers.end()) {
+                                lvec[m]->lpstcolors.emplace(colvec);
+                            }
+                            else {
+                                lvec[m]->lpstcolors.erase(colvec);
+                            }
+                        }
+                    }
+                }
             }
         }
 
@@ -5303,45 +5411,46 @@ void the_loop() {
     }*/
 
     // every loop iteration, load one bin element jpeg if there are any unloaded ones
-    for (Bin *bin : binsmain->bins) {
-        if (bin->open_positions.size() != 0) {
-            int pos = bin->open_positions[0];
-            if (bin->elements[pos]->name != "") {
-                bin->elements[pos]->absjpath = bin->elements[pos]->jpegpath;
-                bin->elements[pos]->reljpath = std::filesystem::relative(bin->elements[pos]->absjpath, mainprogram->project->binsdir).generic_string();
-                if (exists(bin->elements[pos]->jpegpath)) {
-                    std::filesystem::current_path(mainprogram->project->binsdir);
-                    std::string path = pathtoplatform(std::filesystem::absolute(bin->elements[pos]->jpegpath).generic_string());
-                    open_thumb(path, bin->elements[pos]->tex);
-                    GLuint butex = bin->elements[pos]->tex;
-                    bin->elements[pos]->tex = copy_tex(bin->elements[pos]->tex, 192, 108);
-                    glDeleteTextures(1, &butex);
-                    std::filesystem::current_path(mainprogram->contentpath);
-                }
-                else {
+    if (!mainmix->retargeting) {
+        for (Bin *bin: binsmain->bins) {
+            if (bin->open_positions.size() != 0) {
+                int pos = *(bin->open_positions.begin());
+                if (bin->elements[pos]->name != "") {
+                    bin->elements[pos]->absjpath = bin->elements[pos]->jpegpath;
+                    bin->elements[pos]->reljpath = std::filesystem::relative(bin->elements[pos]->absjpath,
+                                                                             mainprogram->project->binsdir).generic_string();
+                    if (exists(bin->elements[pos]->jpegpath)) {
+                        std::filesystem::current_path(mainprogram->project->binsdir);
+                        std::string path = pathtoplatform(
+                                std::filesystem::absolute(bin->elements[pos]->jpegpath).generic_string());
+                        open_thumb(path, bin->elements[pos]->tex);
+                        GLuint butex = bin->elements[pos]->tex;
+                        bin->elements[pos]->tex = copy_tex(bin->elements[pos]->tex, 192, 108);
+                        glDeleteTextures(1, &butex);
+                        std::filesystem::current_path(mainprogram->contentpath);
+                    } else {
+                        bool dummy = false;
+                    }
+                    bin->elements[pos]->jpegsaved = true;
+                } else {
                     bool dummy = false;
                 }
-                bin->elements[pos]->jpegsaved = true;
-            }
-            else{
-                bool dummy = false;
-            }
-            bin->open_positions.erase(bin->open_positions.begin());
-        }
-        else {
-            // each loop iteration, save one bin element jpeg to prepare for autosave
-            for (Bin *bin : binsmain->bins) {
-                for (BinElement *binel : bin->elements) {
-                    if (binel->jpegpath != "") {
-                        if (binel->name != "" && !binel->autosavejpegsaved) {
-                            std::string str = mainprogram->project->autosavedir + "temp/bins/" + bin->name;
-                            if (!exists(str)) {
-                                std::filesystem::create_directories(std::filesystem::path(str));
+                bin->open_positions.erase(pos);
+            } else {
+                // each loop iteration, save one bin element jpeg to prepare for autosave
+                for (Bin *bin: binsmain->bins) {
+                    for (BinElement *binel: bin->elements) {
+                        if (binel->jpegpath != "") {
+                            if (binel->name != "" && !binel->autosavejpegsaved) {
+                                std::string str = mainprogram->project->autosavedir + "temp/bins/" + bin->name;
+                                if (!exists(str)) {
+                                    std::filesystem::create_directories(std::filesystem::path(str));
+                                }
+                                std::string jpgpath = str + "/" + basename(binel->jpegpath);
+                                binel->autosavejpegsaved = true;
+                                save_thumb(jpgpath, binel->tex);
+                                break;
                             }
-                            std::string jpgpath = str + "/" + basename(binel->jpegpath);
-                            binel->autosavejpegsaved = true;
-                            save_thumb(jpgpath, binel->tex);
-                            break;
                         }
                     }
                 }
@@ -5504,7 +5613,7 @@ void the_loop() {
 
 			std::filesystem::path path_to_remove(mainprogram->temppath);
 			for (std::filesystem::directory_iterator end_dir_it, it(path_to_remove); it != end_dir_it; ++it) {
-				mainprogram->remove(it->path());
+				mainprogram->remove(it->path().string());
 			}
 
 			printf("stopped\n");
@@ -6814,11 +6923,9 @@ int main(int argc, char* argv[]) {
         if (mainprogram->path != "" || mainprogram->paths.size()) {
             if (mainprogram->pathto == "ADDSEARCHDIR") {
                 if (mainprogram->path != "") {
-                    bool cond1 = (std::find(retarget->globalsearchdirs.begin(), retarget->globalsearchdirs.end(),
-                                            mainprogram->path) == retarget->globalsearchdirs.end());
-                    bool cond2 = exists(mainprogram->path);
-                    if (cond1 && cond2) retarget->globalsearchdirs.push_back(mainprogram->path);
+                    mainprogram->prefsearchdirs->push_back(mainprogram->path);
                 }
+                mainprogram->filereqon = false;
             }
             else if (mainprogram->pathto == "OPENFILESLAYER") {
                 if (mainprogram->paths.size() > 0) {
@@ -7196,6 +7303,8 @@ int main(int argc, char* argv[]) {
                                 mainmix->adaptnumparam->value = std::stof(mainprogram->inputtext);
                                 if (mainmix->adaptnumparam->powertwo)
                                     mainmix->adaptnumparam->value = sqrt(mainmix->adaptnumparam->value);
+                                if (mainmix->adaptnumparam->powerfour)
+                                    mainmix->adaptnumparam->value = sqrt(sqrt(mainmix->adaptnumparam->value / 100.0f));
                                 if (mainmix->adaptnumparam->value < mainmix->adaptnumparam->range[0]) {
                                     mainmix->adaptnumparam->value = mainmix->adaptnumparam->range[0];
                                 }
@@ -7661,6 +7770,7 @@ int main(int argc, char* argv[]) {
                 std::string path = std::string(ws.begin(), ws.end());
                 if (path != "") {
                     mainprogram->project->open(path, false, true);
+                    mainprogram->undowaiting = 2;
                     mainprogram->undo_redo_save();
                     std::string p = dirname(mainprogram->path);
                     mainprogram->currprojdir = dirname(p.substr(0, p.length() - 1));
@@ -7703,6 +7813,7 @@ int main(int argc, char* argv[]) {
 #ifdef POSIX
                         mainprogram->project->newp(mainprogram->path + "/" + basename(mainprogram->path));
 #endif
+                        mainprogram->undowaiting = 2;
                         mainprogram->undo_redo_save();
                         mainprogram->currprojdir = dirname(mainprogram->path);
                         mainprogram->path = "";
@@ -7729,6 +7840,7 @@ int main(int argc, char* argv[]) {
                     if (mainprogram->path != "") {
                         SDL_GL_MakeCurrent(mainprogram->mainwindow, glc);
                         mainprogram->project->open(mainprogram->path, false, true);
+                        mainprogram->undowaiting = 2;
                         mainprogram->undo_redo_save();
                         std::string p = dirname(mainprogram->path);
                         mainprogram->currprojdir = dirname(p.substr(0, p.length() - 1));
@@ -7761,6 +7873,7 @@ int main(int argc, char* argv[]) {
                     if (mainprogram->leftmouse) {
                         //SDL_GL_MakeCurrent(mainprogram->mainwindow, glc);
                         bool ret = mainprogram->project->open(mainprogram->recentprojectpaths[i], false, true);
+                        mainprogram->undowaiting = 2;
                         mainprogram->undo_redo_save();
                         if (ret) {
                             std::string p = dirname(mainprogram->recentprojectpaths[i]);

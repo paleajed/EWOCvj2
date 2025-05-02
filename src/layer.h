@@ -224,8 +224,9 @@ class Layer {
 		std::list<char*> snippets;
 		std::list<int> pslens;
 		GLuint jpegtex;
-		GLuint texture = -1;
-		GLuint fbotex = -1;
+        GLuint texture = -1;
+        GLuint oldtexture = -1;
+        GLuint fbotex = -1;
 		GLuint fbo = -1;
         GLuint minitex;
 		GLuint texpos = 0;
@@ -405,9 +406,13 @@ class Mixer {
         std::vector<std::string> newclippaths;
         std::vector<std::string> newshelfpaths;
         std::vector<std::string> newbinelpaths;
+        std::vector<std::string> newbineljpegpaths;
+        std::vector<std::string> newcliplaypaths;
+        std::vector<Clip*> newpathlayclips;
         int newpathpos = 0;
         int retargetstage = 0;
         bool retargeting = false;
+        bool retargetenter = true;
         bool retargetingdone = false;
         bool cliplaying = false;
         bool renaming = false;
@@ -554,7 +559,8 @@ class Mixer {
 		int rate;
 
 		float time = 0.0f;
-		float oldtime = 0.0f;
+        float oldtime = 0.0f;
+        float oldstrobetime = 0.0f;
 		float cbduration = 0.0f;
 
         std::vector<std::vector<Layer*>> swapmap[4];

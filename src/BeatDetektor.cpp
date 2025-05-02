@@ -193,12 +193,12 @@ void BeatDetektor::process(float timer_seconds, std::vector<float> &fft_data)
 			
 		}
 		
-		if ((!rewarded && timestamp-last_detection[range] > bpm_ceil) || ((det && fabs(ma_bpm_range[range]-current_bpm) > bpm_offset))) 
+		if ((!rewarded && timestamp-last_detection[range] > bpm_ceil) || ((det && fabs(ma_bpm_range[range]-current_bpm) > bpm_offset)))
 			detection_quality[range] -= detection_quality[range]*BD_QUALITY_STEP*quality_decay*last_update;
-		
+
 		// quality bottomed out, set to 0
 		if (detection_quality[range] <= 0) detection_quality[range]=0.001;
-		
+
 		
 		detection[range] = det;		
 		

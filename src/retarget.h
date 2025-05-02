@@ -30,6 +30,7 @@ class Retarget {
         bool notfound = false;
         std::string solution;
 
+        std::vector<std::string> searchdirs;
         std::vector<std::string> localsearchdirs;
         std::vector<std::string> globalsearchdirs;
         std::vector<Boxx*> searchboxes;

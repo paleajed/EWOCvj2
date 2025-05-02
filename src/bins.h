@@ -140,7 +140,7 @@ class Bin {
 		std::string name = "";
 		std::string path = "";
 		std::vector<BinElement*> elements;
-        std::vector<int> open_positions;
+        std::unordered_set<int> open_positions;
         std::vector<std::string> bujpegpaths;
 		int encthreads = 0;
 		int pos;
@@ -156,6 +156,7 @@ class Bin {
 class BinElement {
 	public:
 		Bin *bin;
+        int pos = -1;
 		ELEM_TYPE type = ELEM_FILE;
 		ELEM_TYPE oldtype = ELEM_FILE;
 		std::string name = "";
