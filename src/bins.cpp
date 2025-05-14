@@ -67,14 +67,22 @@ Bin::~Bin() {
 }
 
 BinElement::BinElement() {
-	glGenTextures(1, &this->tex);
-	glBindTexture(GL_TEXTURE_2D, this->tex);
-	glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR);
-	glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
+    glGenTextures(1, &this->tex);
+    glBindTexture(GL_TEXTURE_2D, this->tex);
+    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR);
+    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
     glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_BORDER);
     glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_BORDER);
     glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA8, 192, 108, 0, GL_BGRA, GL_UNSIGNED_BYTE, 0);
     blacken(this->tex);
+    glGenTextures(1, &this->oldtex);
+    glBindTexture(GL_TEXTURE_2D, this->oldtex);
+    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR);
+    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
+    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_BORDER);
+    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_BORDER);
+    glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA8, 192, 108, 0, GL_BGRA, GL_UNSIGNED_BYTE, 0);
+    blacken(this->oldtex);
 }
 
 BinElement::~BinElement() {
@@ -559,9 +567,22 @@ void BinsMain::handle(bool draw) {
                                 elem->tex = copy_tex(binel->tex);
                                 if (butex != -1) glDeleteTextures(1, &butex);
 								binel->tex = copy_tex(elem->tex, this->elemboxes[0]->scrcoords->w, this->elemboxes[0]->scrcoords->h);
+                                binel->type = elem->type;
                                 binel->remove_elem(false);
 								binel->path = elem->path;
-								binel->jpegpath = elem->jpegpath;
+                                binel->name = remove_extension(basename(binel->path));
+                                if (binel->path != "") {
+                                    binel->jpegpath = find_unused_filename(binel->name, mainprogram->project->binsdir +
+                                                                                        this->currbin->name + "/",
+                                                                           ".jpg");
+                                    save_thumb(binel->jpegpath, binel->tex);
+                                    binel->oldjpegpath = binel->jpegpath;
+                                    binel->absjpath = binel->jpegpath;
+                                    if (binel->absjpath != "") {
+                                        binel->reljpath = std::filesystem::relative(binel->absjpath,
+                                                                                    mainprogram->project->binsdir).generic_string();
+                                    }
+                                }
                                 binel->remove_elem(true);
 							}
 							this->insertshelf = nullptr;
@@ -1274,7 +1295,7 @@ void BinsMain::handle(bool draw) {
 						render_text("Encoding...", white, box->vtxcoords->x1 + 0.0075f, box->vtxcoords->y1 + box->vtxcoords->h - 0.0225f, 0.0005f, 0.0008f);
 						draw_box(black, white, box->vtxcoords->x1, box->vtxcoords->y1 + box->vtxcoords->h - 0.0675f, progress * 0.1f, 0.02f, -1);
 					}
-				}
+ 				}
 			}
 		}
 
@@ -1641,10 +1662,9 @@ void BinsMain::handle(bool draw) {
 				Boxx* box = this->elemboxes[i * 12 + j];
 				box->upvtxtoscr();
 				BinElement* binel = this->currbin->elements[i * 12 + j];
-                //THE CULPRIT: this->currbin->bujpegpaths.push_back(binel->jpegpath);
                 if (binel->encoding && binel->encthreads == 0 && (binel->type == ELEM_DECK || binel->type == ELEM_MIX)) {
 					binel->encoding = false;
-					std::filesystem::rename(remove_extension(binel->path) + ".temp", binel->path);
+					rename(remove_extension(binel->path) + ".temp", binel->path);
 				}
 				if ((box->in() || mainprogram->rightmouse || binel == menuactbinel) && !this->openfilesbin && !binel->encoding) {
 					if (draw) {
@@ -2451,12 +2471,6 @@ void BinsMain::open_bin(std::string path, Bin *bin, bool newbin) {
 					safegetline(rfile, istring);
 					bin->elements[pos]->type = (ELEM_TYPE)std::stoi(istring);
 					ELEM_TYPE type = bin->elements[pos]->type;
-					/*if ((type == ELEM_LAYER || type == ELEM_DECK || type == ELEM_MIX) && bin->elements[pos]->name != "") {
-						if (concat) {
-							std::filesystem::rename(result + "_" + std::to_string(filecount) + ".file", bin->elements[pos]->path);
-							filecount++;
-						}
-					}*/
 				}
 				if (istring == "ABSJPEGPATH") {
 					safegetline(rfile, istring);
@@ -2494,7 +2508,7 @@ void BinsMain::open_bin(std::string path, Bin *bin, bool newbin) {
                         }
                     }
                     else if (bin->elements[pos]->absjpath == "" && istring == "") {
-                        bin->elements[pos]->erase(false);
+                        bin->elements[pos]->erase(true);
                     }
                 }
                 if (istring == "FILESIZE") {
@@ -2537,27 +2551,6 @@ void BinsMain::save_bin(std::string path) {
             std::string rp = binel->relpath;
             std::string jpap = binel->absjpath;
             std::string jprp = binel->reljpath;
-            if (binel->type == ELEM_LAYER || binel->type == ELEM_DECK || binel->type == ELEM_MIX) {
-                if (mainprogram->autosaving) {
-                    // we are autosaving, copy media elements
-                    std::string extstr;
-                    if (binel->type == ELEM_LAYER) {
-                        extstr = ".layer";
-                    } else if (binel->type == ELEM_DECK) {
-                        extstr = ".deck";
-                    } else if (binel->type == ELEM_MIX) {
-                        extstr = ".mix";
-                    }
-                    p = find_unused_filename(remove_extension(basename(p)), mainprogram->project->binsdir +
-                            remove_extension(basename(path)) + "/", extstr);
-                    std::filesystem::copy(binel->path, p);
-                    rp = std::filesystem::relative(p, mainprogram->project->binsdir).generic_string();
-                    jpap = find_unused_filename(remove_extension(basename(p)), mainprogram->project->binsdir +
-                            remove_extension(basename(path)) + "/", ".jpg");
-                    std::filesystem::copy(binel->absjpath, jpap);
-                    jprp = std::filesystem::relative(jpap, mainprogram->project->binsdir).generic_string();
-                }
-            }
 			wfile << "ABSPATH\n";
 			wfile << p;
             if (binel->path != "") {
@@ -2930,6 +2923,9 @@ void BinsMain::open_handlefile(std::string path, GLuint tex) {
 
 std::tuple<std::string, std::string> BinsMain::hap_binel(BinElement *binel, BinElement *bdm) {
 	// encode single bin element, possibly contained in a deck or a mix
+    if (!check_permission(dirname(binel->path))) {
+        return {"",""};
+    }
 	this->binpreview = false;
    	std::string apath = "";
 	std::string rpath = "";
@@ -3038,7 +3034,7 @@ std::tuple<std::string, std::string> BinsMain::hap_binel(BinElement *binel, BinE
 		wfile.close();
 		rfile.close();
 
-		std::filesystem::rename(remove_extension(binel->path) + ".temp", binel->path);
+		rename(remove_extension(binel->path) + ".temp", binel->path);
 	}
 
 	return {apath, rpath};
@@ -3066,8 +3062,14 @@ void BinsMain::hap_deck(BinElement* bd) {
 			binel.type = ELEM_FILE;
 			bd->encthreads++;
 			std::tuple<std::string, std::string> output = this->hap_binel(&binel, bd);
-			apath = std::get<0>(output);
+            apath = std::get<0>(output);
 			rpath = std::get<1>(output);
+            if (apath == "" && rpath == "") {
+                rfile.close();
+                wfile.close();
+                std::filesystem::remove(remove_extension(bd->path) + ".temp");
+                return;
+            }
 			wfile << "FILENAME\n";
 			wfile << apath;
 			wfile << "\n";
@@ -3112,6 +3114,12 @@ void BinsMain::hap_mix(BinElement * bm) {
 				std::tuple<std::string, std::string> output = this->hap_binel(&binel, bm);
 				apath = std::get<0>(output);
 				rpath = std::get<1>(output);
+                if (apath == "" && rpath == "") {
+                    rfile.close();
+                    wfile.close();
+                    std::filesystem::remove(remove_extension(bm->path) + ".temp");
+                    return;
+                }
 				wfile << "FILENAME\n";
 				wfile << apath;
 				wfile << "\n";
@@ -3135,7 +3143,7 @@ void BinsMain::hap_mix(BinElement * bm) {
 
 void BinsMain::hap_encode(std::string srcpath, BinElement *binel, BinElement *bdm) {
 	// do the actual hap encoding
-	binel->encwaiting = true;
+  	binel->encwaiting = true;
 	// opening the source vid
 	AVFormatContext *source = nullptr;
 	AVCodecContext *source_dec_ctx;
@@ -3184,6 +3192,7 @@ void BinsMain::hap_encode(std::string srcpath, BinElement *binel, BinElement *bd
 	binel->encoding = true;
 	binel->encodeprogress = 0.0f;
 	float oldprogress = 0.0f;
+    binel->encodingend = srcpath;
 
 	numf = source_stream->nb_frames;
 	if (numf == 0) {
@@ -3335,7 +3344,7 @@ void BinsMain::hap_encode(std::string srcpath, BinElement *binel, BinElement *bd
         if (binel->otflay->videoseek) avformat_close_input(&binel->otflay->videoseek);
     }
     binel->path = remove_extension(binel->path) + "_hap.mov";
-	std::filesystem::rename(destpath, binel->path);
+	rename(destpath, binel->path);
     if (mainprogram->stashvideos) {
         if (!exists(mainprogram->contentpath + "EWOCvj2_CPU_vid_backups")) {
             std::filesystem::path d{mainprogram->contentpath + "EWOCvj2_CPU_vid_backups"};
@@ -3351,7 +3360,6 @@ void BinsMain::hap_encode(std::string srcpath, BinElement *binel, BinElement *bd
     }
     binel->encoding = false;
     if (binel->otflay) {
-        binel->otflay->encodeload = true;
         bool bukeb = binel->otflay->keepeffbut->value;
         binel->otflay->keepeffbut->value = 1;
         binel->otflay->transfered = true;
@@ -3363,7 +3371,6 @@ void BinsMain::hap_encode(std::string srcpath, BinElement *binel, BinElement *bd
         binel->otflay->opened = false;
         olock.unlock();
         binel->otflay->set_clones();
-        binel->otflay->encodeload = false;
         binel->otflay->hapbinel = nullptr;
     }
     if (bdm) {
@@ -3373,37 +3380,6 @@ void BinsMain::hap_encode(std::string srcpath, BinElement *binel, BinElement *bd
 	mainprogram->encthreads--;
 	mainprogram->hapnow = true;
 	mainprogram->hap.notify_all();
-
-    // exchange original for hap version everywhere (layerstacks, shelves, bins)
-    for (int k = 0; k < 4; k++) {
-        for (Layer *lay : mainmix->layers[k]) {
-            if (lay->isclone) continue;
-            if (lay == binel->otflay) continue;
-            if (lay->filename != srcpath) continue;
-            lay->encodeload = true;
-            bool bukeb = lay->keepeffbut->value;
-            lay->keepeffbut->value = 1;
-            lay = lay->open_video(lay->frame, binel->path, false);
-            lay->keepeffbut->value = bukeb;
-            lay->set_clones();
-            lay->encodeload = false;
-        }
-    }
-
-    for (int m = 0; m < 2; m++) {
-        for (auto elem : mainprogram->shelves[m]->elements) {
-            if (elem->path != srcpath) continue;
-            elem->path = binel->path;
-        }
-    }
-
-    for (int i = 0; i < binsmain->bins.size(); i++) {
-        for (int j = 0; j < binsmain->bins[i]->elements.size(); j++) {
-            BinElement *elem = binsmain->bins[i]->elements[j];
-            if (elem->path != srcpath) continue;
-            elem->path = binel->path;
-        }
-    }
 }
 
 

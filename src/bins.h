@@ -141,7 +141,6 @@ class Bin {
 		std::string path = "";
 		std::vector<BinElement*> elements;
         std::unordered_set<int> open_positions;
-        std::vector<std::string> bujpegpaths;
 		int encthreads = 0;
 		int pos;
 		bool shared = false;
@@ -183,6 +182,7 @@ class BinElement {
 		bool encoding = false;
 		int encthreads = 0;
 		float encodeprogress = 0.0f;
+        std::string encodingend;
 		int allhaps = 0;
 		Layer *otflay = nullptr;
 		void erase(bool deletetex = true);

@@ -127,6 +127,7 @@ class Layer {
         std::mutex pboimutex;
 		bool initialized = false;
         bool initdeck = false;
+        bool singleswap = false;
         float frame = 0.0f;
         float oldframe = 0.0f;
 		int prevframe = -1;
@@ -183,8 +184,8 @@ class Layer {
         Param *scale;
         Param *scritch;
 		float oldscale = 1.0f;
-		float scratch = 0.0f;
-		bool scratchtouch = 0;
+        Param *scratch;
+        Param *scratchtouch;
 		float olddeckspeed = 1.0f;
 		bool vidmoving = false;
 		bool live = false;
@@ -296,7 +297,6 @@ class Layer {
 		int channels;
 		ALuint sampleformat;
 		BinElement *hapbinel = nullptr;
-		bool encodeload = false;
 		bool nopbodel = false;
 
 		std::unordered_map<EFFECT_TYPE, int> numoftypemap;
@@ -321,8 +321,8 @@ class Layer {
         std::set<std::vector<float>> lpstcolors;
 
         void display();
-		Effect* add_effect(EFFECT_TYPE type, int pos);
-        Effect* do_add_effect(EFFECT_TYPE type, int pos, bool comp);
+		Effect* add_effect(EFFECT_TYPE type, int pos, bool cat);
+        Effect* do_add_effect(EFFECT_TYPE type, int pos, bool comp, bool cat);
         Effect* replace_effect(EFFECT_TYPE type, int pos);
 		void delete_effect(int pos, bool connect = true);
 		void inhibit();

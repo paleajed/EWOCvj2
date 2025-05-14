@@ -236,13 +236,54 @@ std::string remove_extension(std::string filename) {
 	return filename;
 }
 
-std::string chop_off(std::string filename) {
-	const size_t period_idx = filename.rfind(' ');
-	if (std::string::npos != period_idx)
-	{
-		filename.erase(period_idx);
-	}
-	return filename;
+bool rename(std::string source, std::string destination) {
+    namespace fs = std::filesystem;
+    try {
+        // Check if source exists
+        if (!fs::exists(source)) {
+            printf("ERROR: Source does not exist: %s\n", source.c_str());
+            return false;
+        }
+
+        // Perform rename
+        fs::rename(source, destination);
+        return true;
+
+    } catch (const fs::filesystem_error& e) {
+        printf("ERROR: Rename failed: %s (code: %s)\n", e.what(), e.code().message().c_str());
+        return false;
+    } catch (const std::exception& e) {
+        printf("ERROR: Exception: %s\n", e.what());
+        return false;
+    } catch (...) {
+        printf("ERROR: Unknown error during rename\n");
+        return false;
+    }
+}
+
+bool check_permission(std::string directory) {
+    namespace fs = std::filesystem;
+    try {
+        // Check if directory exists
+        if (!fs::exists(directory)) {
+            return false;
+        }
+
+        // Create a temporary file to test write permission
+        fs::path temp_file = directory + "write_test_temp_file";
+        std::ofstream test_file(temp_file);
+
+        if (!test_file.is_open()) {
+            return false;
+        }
+
+        test_file.close();
+        fs::remove(temp_file);
+        return true;
+
+    } catch (...) {
+        return false;
+    }
 }
 
 std::string remove_version(std::string filename) {
@@ -714,30 +755,53 @@ void handle_midi(LayMidi *laymidi, int deck, int midi0, int midi1, int midi2, st
                 lvec[j]->playbut->value = !lvec[j]->playbut->value;
                 lvec[j]->revbut->value = false;
                 lvec[j]->bouncebut->value = false;
+                mainmix->midi2 = midi2;
+                mainmix->midibutton = lvec[j]->playbut;
+                lvec[j]->playbut->midistarttime = std::chrono::system_clock::now();
             }
             if (midi0 == laymidi->backw->midi0 && midi1 == laymidi->backw->midi1 && midi2 != 0 && midiport == laymidi->backw->midiport) {
                 lvec[j]->revbut->value = !lvec[j]->revbut->value;
                 lvec[j]->playbut->value = false;
                 lvec[j]->bouncebut->value = false;
+                mainmix->midi2 = midi2;
+                mainmix->midibutton = lvec[j]->revbut;
+                lvec[j]->revbut->midistarttime = std::chrono::system_clock::now();
             }
 			if (midi0 == laymidi->pausestop->midi0 && midi1 == laymidi->pausestop->midi1 && midi2 != 0 && midiport == laymidi->pausestop->midiport) {
                 lvec[j]->playbut->value = false;
                 lvec[j]->revbut->value = false;
                 lvec[j]->bouncebut->value = false;
+                mainmix->midi2 = midi2;
+                mainmix->midibutton = lvec[j]->stopbut;
+                lvec[j]->stopbut->midistarttime = std::chrono::system_clock::now();
 			}
             if (midi0 == laymidi->bounce->midi0 && midi1 == laymidi->bounce->midi1 && midi2 != 0 && midiport == laymidi->bounce->midiport) {
                 lvec[j]->bouncebut->value = !lvec[j]->bouncebut->value;
                 lvec[j]->playbut->value = false;
                 lvec[j]->revbut->value = false;
+                mainmix->midi2 = midi2;
+                mainmix->midibutton = lvec[j]->bouncebut;
+                lvec[j]->bouncebut->midistarttime = std::chrono::system_clock::now();
             }
             if (midi0 == laymidi->loop->midi0 && midi1 == laymidi->loop->midi1 && midi2 != 0 && midiport == laymidi->loop->midiport) {
                 lvec[j]->lpbut->value = !lvec[j]->lpbut->value;
+                mainmix->midi2 = midi2;
+                mainmix->midibutton = lvec[j]->lpbut;
+                lvec[j]->lpbut->midistarttime = std::chrono::system_clock::now();
             }
             if (midi0 == laymidi->scratch1->midi0 && midi1 == laymidi->scratch1->midi1 && midiport == laymidi->scratch1->midiport) {
-                lvec[j]->scratch = ((float)midi2 - 64.0f) * (laymidi->scrinvert * 2 - 1) / 4.0f;
+                lvec[j]->scratch->value = ((float)midi2 - 64.0f) * (laymidi->scrinvert * 2 - 1) / 4.0f;
+                mainmix->midi2 = midi2;
+                mainmix->midiparam = lvec[j]->scratch;
+                lvec[j]->scratch->midistarttime = std::chrono::system_clock::now();
+                lvec[j]->scratch->midistarted = true;
             }
             if (midi0 == laymidi->scratch2->midi0 && midi1 == laymidi->scratch2->midi1 && midiport == laymidi->scratch2->midiport) {
-                lvec[j]->scratch = ((float)midi2 - 64.0f) * (laymidi->scrinvert * 2 - 1) / 4.0f;
+                lvec[j]->scratch->value = ((float)midi2 - 64.0f) * (laymidi->scrinvert * 2 - 1) / 4.0f;
+                mainmix->midi2 = midi2;
+                mainmix->midiparam = lvec[j]->scratch;
+                lvec[j]->scratch->midistarttime = std::chrono::system_clock::now();
+                lvec[j]->scratch->midistarted = true;
             }
 			if (midi0 == laymidi->frforw->midi0 && midi1 == laymidi->frforw->midi1 && midi2 != 0 && midiport == laymidi->frforw->midiport) {
 				lvec[j]->frame += 1;
@@ -748,10 +812,18 @@ void handle_midi(LayMidi *laymidi, int deck, int midi0, int midi1, int midi2, st
 				if (lvec[j]->frame < 0) lvec[j]->frame = lvec[j]->numf - 1;
 			}
 			if (midi0 == laymidi->scratchtouch->midi0 && midi1 == laymidi->scratchtouch->midi1 && midi2 != 0 && midiport == laymidi->scratchtouch->midiport) {
-				lvec[j]->scratchtouch = 1;
+				lvec[j]->scratchtouch->value = 1;
+                mainmix->midi2 = midi2;
+                mainmix->midiparam = lvec[j]->scratchtouch;
+                lvec[j]->scratchtouch->midistarttime = std::chrono::system_clock::now();
+                lvec[j]->scratchtouch->midistarted = true;
 			}
 			if (midi0 == laymidi->scratchtouch->midi0 && midi1 == laymidi->scratchtouch->midi1 && midi2 == 0 && midiport == laymidi->scratchtouch->midiport) {
-				lvec[j]->scratchtouch = 0;
+				lvec[j]->scratchtouch->value = 0;
+                mainmix->midi2 = midi2;
+                mainmix->midiparam = lvec[j]->scratchtouch;
+                lvec[j]->scratchtouch->midistarttime = std::chrono::system_clock::now();
+                lvec[j]->scratchtouch->midistarted = true;
 			}
 			if (midi0 == laymidi->speed->midi0 && midi1 == laymidi->speed->midi1 && midiport == laymidi->speed->midiport) {
 				int m2 = -(midi2 - 127);
@@ -761,18 +833,38 @@ void handle_midi(LayMidi *laymidi, int deck, int midi0, int midi1, int midi2, st
 				else {
 					lvec[j]->speed->value = 0.0f + (1.0f / 64.0f) * m2;
 				}
+                mainmix->midi2 = midi2;
+                mainmix->midiparam = lvec[j]->speed;
+                lvec[j]->speed->midistarttime = std::chrono::system_clock::now();
+                lvec[j]->speed->midistarted = true;
 			}
 			if (midi0 == laymidi->speedzero->midi0 && midi1 == laymidi->speedzero->midi1 && midiport == laymidi->speedzero->midiport) {
 				lvec[j]->speed->value = 1.0f;
+                mainmix->midi2 = midi2;
+                mainmix->midiparam = lvec[j]->speed;
+                lvec[j]->speed->midistarttime = std::chrono::system_clock::now();
+                lvec[j]->speed->midistarted = true;
 			}
             if (midi0 == laymidi->opacity->midi0 && midi1 == laymidi->opacity->midi1 && midiport == laymidi->opacity->midiport) {
                 lvec[j]->opacity->value = (float)midi2 / 127.0f;
+                mainmix->midi2 = midi2;
+                mainmix->midiparam = lvec[j]->opacity;
+                lvec[j]->opacity->midistarttime = std::chrono::system_clock::now();
+                lvec[j]->opacity->midistarted = true;
             }
-            if (midi0 == laymidi->crossfade->midi0 && midi1 == laymidi->crossfade->midi1 && midiport == laymidi->crossfade->midiport) {
+            if (mainprogram->prevmodus && midi0 == laymidi->crossfade->midi0 && midi1 == laymidi->crossfade->midi1 && midiport == laymidi->crossfade->midiport) {
                 mainmix->crossfade->value = (float)midi2 / 127.0f;
+                mainmix->midi2 = midi2;
+                mainmix->midiparam = mainmix->crossfade;
+                mainmix->crossfade->midistarttime = std::chrono::system_clock::now();
+                mainmix->crossfade->midistarted = true;
             }
-            if (midi0 == laymidi->crossfadecomp->midi0 && midi1 == laymidi->crossfadecomp->midi1 && midiport == laymidi->crossfadecomp->midiport) {
+            if (!mainprogram->prevmodus && midi0 == laymidi->crossfade->midi0 && midi1 == laymidi->crossfade->midi1 && midiport == laymidi->crossfade->midiport) {
                 mainmix->crossfadecomp->value = (float)midi2 / 127.0f;
+                mainmix->midi2 = midi2;
+                mainmix->midiparam = mainmix->crossfadecomp;
+                mainmix->crossfadecomp->midistarttime = std::chrono::system_clock::now();
+                mainmix->crossfadecomp->midistarted = true;
             }
 		}
 	}
@@ -810,7 +902,7 @@ void mycallback( double deltatime, std::vector< unsigned char > *message, void *
   	
   	if (mainprogram->midipresets) {
   	    if (mainprogram->configcatmidi == 0) {
-            // when learning MIDI setup for assignment to general MIDI layer controlscontrols:
+            // when learning MIDI setup for assignment to general MIDI layer controls:
             LayMidi *lm = nullptr;
             if (mainprogram->midipresetsset == 0) lm = laymidiA;
             else if (mainprogram->midipresetsset == 1) lm = laymidiB;
@@ -862,9 +954,6 @@ void mycallback( double deltatime, std::vector< unsigned char > *message, void *
                         mainprogram->tmchoice = TM_SCRATCH2;
                     else if (lm->crossfade->midi0 == midi0 && lm->crossfade->midi1 == midi1 &&
                              lm->crossfade->midiport == midiport)
-                        mainprogram->tmchoice = TM_CROSS;
-                    else if (lm->crossfadecomp->midi0 == midi0 && lm->crossfadecomp->midi1 == midi1 &&
-                             lm->crossfadecomp->midiport == midiport)
                         mainprogram->tmchoice = TM_CROSS;
                     else mainprogram->tmchoice = TM_NONE;
                     return;
@@ -944,7 +1033,7 @@ void mycallback( double deltatime, std::vector< unsigned char > *message, void *
                     mainprogram->tmlearn = TM_NONE;
                     break;
                 case TM_SPEED:
-                    if (midi0 == 144) return;
+                    if ((midi0 >= 144 && midi0 < 160)) return;
                     lm->speed->midi0 = midi0;
                     lm->speed->midi1 = midi1;
                     lm->speed->midiport = midiport;
@@ -955,7 +1044,7 @@ void mycallback( double deltatime, std::vector< unsigned char > *message, void *
                     mainprogram->tmlearn = TM_NONE;
                     break;
                 case TM_SPEEDZERO:
-                    if (midi0 == 176) return;
+                    if (midi0 >= 176 && midi0 < 192) return;
                     lm->speedzero->midi0 = midi0;
                     lm->speedzero->midi1 = midi1;
                     lm->speedzero->midiport = midiport;
@@ -976,22 +1065,20 @@ void mycallback( double deltatime, std::vector< unsigned char > *message, void *
                     mainprogram->tmlearn = TM_NONE;
                     break;
                 case TM_CROSS:
-                {bool bupm = mainprogram->prevmodus;
-                    mainprogram->prevmodus = true;
                     lm->crossfade->midi0 = midi0;
                     lm->crossfade->midi1 = midi1;
                     lm->crossfade->midiport = midiport;
+                    mainprogram->prevmodus = true;
                     lm->crossfade->register_midi();
+                    lm->crossfade->midi0 = midi0;
+                    lm->crossfade->midi1 = midi1;
+                    lm->crossfade->midiport = midiport;
                     mainprogram->prevmodus = false;
-                    lm->crossfadecomp->midi0 = midi0;
-                    lm->crossfadecomp->midi1 = midi1;
-                    lm->crossfadecomp->midiport = midiport;
-                    lm->crossfadecomp->register_midi();
+                    lm->crossfade->register_midi();
                     mainprogram->tmlearn = TM_NONE;
-                    mainprogram->prevmodus = bupm;
-                    break;}
+                    break;
                 case TM_FREEZE:
-                    //if (midi0 == 176) return;
+                    //if (midi0 >= 176 && midi0 < 192) return;
                     lm->scratchtouch->midi0 = midi0;
                     lm->scratchtouch->midi1 = midi1;
                     lm->scratchtouch->midiport = midiport;
@@ -1002,7 +1089,7 @@ void mycallback( double deltatime, std::vector< unsigned char > *message, void *
                     mainprogram->tmlearn = TM_NONE;
                     break;
                 case TM_SCRATCH1:
-                    if (midi0 == 144) return;
+                    if ((midi0 >= 144 && midi0 < 160)) return;
                     lm->scratch1->midi0 = midi0;
                     lm->scratch1->midi1 = midi1;
                     lm->scratch1->midiport = midiport;
@@ -1013,7 +1100,7 @@ void mycallback( double deltatime, std::vector< unsigned char > *message, void *
                     mainprogram->tmlearn = TM_NONE;
                     break;
                 case TM_SCRATCH2:
-                    if (midi0 == 144) {
+                    if ((midi0 >= 144 && midi0 < 160)) {
                         mainprogram->scratch2phase = 1;
                         return;
                     };
@@ -1038,7 +1125,7 @@ void mycallback( double deltatime, std::vector< unsigned char > *message, void *
 	
   	if (mainmix->learn) {
         // learn MIDI controls for certain parameters
-  		if (midi0 == 176 && mainmix->learnparam && mainmix->learnparam->sliding) {
+  		if ((midi0 >= 176 && midi0 < 192) && mainmix->learnparam && mainmix->learnparam->sliding) {
             if (mainmix->learnparam->name == "shiftx" && (midi2 == 0.0f || midi2 == 127.0f)) return;
             if (mainmix->learnparam->name == "wipex" && (midi2 == 0.0f || midi2 == 127.0f)) return;
             if (mainmix->learnparam->name == "shifty" || mainmix->learnparam->name == "wipey") {
@@ -1138,7 +1225,7 @@ void mycallback( double deltatime, std::vector< unsigned char > *message, void *
                 }
             }
 		}
-  		else if (midi0 == 176 && mainmix->learnbutton) {
+  		else if ((midi0 >= 176 && midi0 < 192) && mainmix->learnbutton) {
             // learn MIDI controls for buttons
             mainmix->learnbutton->midi[0] = midi0;
             mainmix->learnbutton->midi[1] = midi1;
@@ -1162,7 +1249,7 @@ void mycallback( double deltatime, std::vector< unsigned char > *message, void *
 				mainprogram->nodesmain->currpage->connect_in2(mainmix->learnbutton->node, mainmix->learnbutton->effect->node);
 			}
 reminder: IMPLEMENT */
-		else if (midi0 == 144 && midi2 != 0 && mainmix->learnbutton) {
+		else if ((midi0 >= 144 && midi0 < 160) && midi2 != 0 && mainmix->learnbutton) {
             mainmix->learnbutton->midi[0] = midi0;
             mainmix->learnbutton->midi[1] = midi1;
             mainmix->learnbutton->midiport = midiport;
@@ -1192,7 +1279,7 @@ reminder: IMPLEMENT */
   	}
   	
   	
-  	if (midi0 == 176 || midi0 == 144) {
+  	if ((midi0 >= 176 && midi0 < 192) || (midi0 >= 144 && midi0 < 160)) {
         // learnMIDI controls for loopstation buttons
         Button *but = mainmix->midi_registrations[!mainprogram->prevmodus][midi0][midi1][midiport].but;
         if (but) {
@@ -2895,10 +2982,10 @@ void onestepfrom(bool stage, Node *node, Node *prevnode, GLuint prevfbotex, GLui
 			if (effect->fbo == -1) {
                 do {
                     if (effect->fbo != -1) {
-                        mainprogram->add_to_fbopool(effect->fbo);
+                        glDeleteFramebuffers(1, &effect->fbo);
                     }
                     if (effect->fbotex != -1) {
-                        mainprogram->add_to_texpool(effect->fbotex);
+                        glDeleteTextures(1, &effect->fbotex);
                     }
                     GLuint rettex;
                     if (stage == 0) {
@@ -3091,10 +3178,10 @@ void onestepfrom(bool stage, Node *node, Node *prevnode, GLuint prevfbotex, GLui
             if (bnode->fbo == -1) {
                 do {
                     if (bnode->fbo != -1) {
-                        mainprogram->add_to_fbopool(bnode->fbo);
+                        glDeleteFramebuffers(1, &bnode->fbo);
                     }
                     if (bnode->fbotex != -1) {
-                        mainprogram->add_to_texpool(bnode->fbotex);
+                        glDeleteTextures(1, &bnode->fbotex);
                     }
                     GLuint rettex;
                     if (stage == 0) {
@@ -3773,6 +3860,7 @@ bool get_deckmixtex(Layer *lay, std::string path) {
         mainprogram->resnum = -1;
         return false;
     }
+
     return true;
 }
 
@@ -4250,6 +4338,7 @@ void the_loop() {
          mainprogram->shelfdragelem || mainprogram->wiping)) {
         // special cases when mouse can be released over element that should not be triggered
         mainprogram->lmover = true;
+        mainprogram->fsmouse = true;
         mainprogram->leftmouse = false;
     } else {
         mainprogram->lmover = false;
@@ -4413,8 +4502,23 @@ void the_loop() {
                     Layer *testlay = lv[1];
                     testlay->nonewpbos = false;  // get new pbos
                     if (testlay->filename != "") testlay->progress(1, 1);
-                    //testlay->changeinit = 5;
                     testlay->initdeck = false;
+                    if (lv[1]->singleswap) {
+                        mainmix->layers[i][lv[1]->pos] = lv[1];
+                        tempmap->erase(std::find(tempmap->begin(), tempmap->end(), lv));
+                        // transfer current layer settings to new layer
+                        if (lv[0] == mainmix->currlay[!mainprogram->prevmodus]) mainmix->currlay[!mainprogram->prevmodus] = lv[1];
+                        if (std::find(mainmix->currlays[!mainprogram->prevmodus].begin(), mainmix->currlays[!mainprogram->prevmodus].end(),
+                                      lv[0]) != mainmix->currlays[!mainprogram->prevmodus].end()) {
+                            mainmix->currlays[!mainprogram->prevmodus].erase(std::find(mainmix->currlays[!mainprogram->prevmodus].begin(),
+                                                                                         mainmix->currlays[!mainprogram->prevmodus].end(),
+                                                                                         lv[0]));
+                            mainmix->currlays[!mainprogram->prevmodus].push_back(lv[1]);
+                        }
+                        lv[1]->singleswap = false;
+                        mainmix->bulayers.push_back(lv[0]);
+                        break;
+                    }
                 }
             }
             std::vector<Layer *> oldlayers;
@@ -4520,16 +4624,6 @@ void the_loop() {
         }
         mainmix->bulayers.clear();
     }
-    /*else if (mainprogram->newproject2) {
-        mainmix->bulayers.clear();
-        mainmix->currlays[0].clear();
-        mainmix->currlays[1].clear();
-        mainmix->currlay[0] = mainmix->layers[0][0];
-        mainmix->currlays[0].push_back(mainmix->currlay[0]);
-        mainmix->currlay[1] = mainmix->layers[2][0];
-        mainmix->currlays[1].push_back(mainmix->currlay[1]);
-        mainprogram->newproject2 = false;
-    }*/
 
     if (!mainprogram->prevmodus) {
 		//when in performance mode: keep advancing frame counters for preview layer stacks (alive = 0)
@@ -4607,6 +4701,76 @@ void the_loop() {
 #ifdef POSIX
     mainprogram->stream_to_v4l2loopbacks();
 #endif
+
+
+
+    // when encoded, exchange original for hap version everywhere (layerstacks, shelves, bins)
+    for (int j = 0; j < 12; j++) {
+        for (int i = 0; i < 12; i++) {
+            // handle elements, row per row
+            Boxx* box = binsmain->elemboxes[i * 12 + j];
+            box->upvtxtoscr();
+            BinElement* binel = binsmain->currbin->elements[i * 12 + j];
+            // show if element encoding/awaiting encoding
+            if (!binel->encoding && binel->encodingend != "") {    // exchange original for hap version everywhere (layerstacks, shelves, bins)
+                for (int k = 0; k < 4; k++) {
+                    for (int m = 0; m < mainmix->layers[k].size(); m++) {
+                        Layer *lay = mainmix->layers[k][m];
+                        if (lay->isclone) continue;
+                        if (lay == binel->otflay) continue;
+                        if (lay->filename != binel->encodingend) continue;
+                        bool bukeb = lay->keepeffbut->value;
+                        lay->keepeffbut->value = 1;
+                        lay->dontcloseeffs = true;
+                        lay->tagged = true;
+                        std::vector<Layer*> *bulrs = lay->layers;
+                        std::vector<Layer*> templrs = {lay};
+                        lay->layers = &templrs;
+                        Layer *lay2 = lay->open_video(lay->frame, binel->path, false);
+                        lay->layers = bulrs;
+                        lay2->layers = bulrs;
+                        lay2->oldtexture = lay->texture;
+                        mainmix->swapmap[k].push_back({lay, lay2});
+                        lay2->singleswap = true;
+                        lay2->startframe->value = lay->startframe->value;
+                        lay2->endframe->value = lay->endframe->value;
+                        lay2->numf = lay->numf;
+                        lay2->pos = lay->pos;
+                        // transfer current layer settings back to old layer
+                        if (lay2 == mainmix->currlay[!mainprogram->prevmodus]) mainmix->currlay[!mainprogram->prevmodus] = lay;
+                        if (std::find(mainmix->currlays[!mainprogram->prevmodus].begin(), mainmix->currlays[!mainprogram->prevmodus].end(),
+                                      lay2) != mainmix->currlays[!mainprogram->prevmodus].end()) {
+                            mainmix->currlays[!mainprogram->prevmodus].erase(std::find(mainmix->currlays[!mainprogram->prevmodus].begin(),
+                                                                                       mainmix->currlays[!mainprogram->prevmodus].end(),
+                                                                                       lay2));
+                            mainmix->currlays[!mainprogram->prevmodus].push_back(lay);
+                        }
+                        lay2->initdeck = true;
+                        lay2->keepeffbut->value = bukeb;
+                        lay2->set_clones();
+                    }
+                }
+
+                for (int m = 0; m < 2; m++) {
+                    for (auto elem : mainprogram->shelves[m]->elements) {
+                        if (elem->path != binel->encodingend) continue;
+                        elem->path = binel->path;
+                    }
+                }
+
+                for (int i = 0; i < binsmain->bins.size(); i++) {
+                    for (int j = 0; j < binsmain->bins[i]->elements.size(); j++) {
+                        BinElement *elem = binsmain->bins[i]->elements[j];
+                        if (elem->path != binel->encodingend) continue;
+                        elem->path = binel->path;
+                    }
+                }
+
+                binel->encodingend = "";
+            }
+        }
+    }
+
 
 
     /////////////// STUFF THAT BELONGS TO EITHER BINS OR MIX OR FULL SCREEN OR RETARGETING
@@ -4948,10 +5112,15 @@ void the_loop() {
 		binsmain->handle(true);
 	}
 
-	else if (mainprogram->fullscreen > -1) {
-		// part of the mix is showed fullscreen, so no bins or mix specifics self-understandingly
-		mainprogram->handle_fullscreen();
-	}
+    else if (mainprogram->fullscreen > -1) {
+        // part of the mix is showed fullscreen, so no bins or mix specifics self-understandingly
+       // mainprogram->handle_fullscreen();
+        if (mainprogram->menuactivation) {
+            mainprogram->fullscreenmenu->state = 2;
+            mainprogram->menuondisplay = true;
+            mainprogram->menuactivation = false;
+        }
+    }
 
 
 
@@ -5100,46 +5269,6 @@ void the_loop() {
 		}
 
 
-        // draw and handle loopstation
-        mainprogram->now = std::chrono::high_resolution_clock::now();
-        if (mainprogram->prevmodus) {
-            loopstation = lp;
-            lp->handle();
-            for (int i = 0; i < lpc->elements.size(); i++) {
-                if (lpc->elements[i]->loopbut->value || lpc->elements[i]->playbut->value) lpc->elements[i]->set_values();
-            }
-        }
-        else {
-            loopstation = lpc;
-            lpc->handle();
-            for (int i = 0; i < lp->elements.size(); i++) {
-                if (lp->elements[i]->loopbut->value || lp->elements[i]->playbut->value) lp->elements[i]->set_values();
-            }
-            for (int i = 0; i < 2; i++) {
-                for (int j = 0; j < 4; j++) {
-                    if (j == mainmix->currscene[i]) continue;
-                    for (auto *elem : mainmix->scenes[i][j]->lpst->elements) {
-                        if ((elem->loopbut->value || elem->playbut->value) && !elem->eventlist.empty()) elem->set_values();
-                        std::vector<Layer *> &lvec = mainmix->scenes[i][j]->scnblayers;
-                        for (int m = 0; m < lvec.size(); m++) {
-                            std::vector<float> colvec;
-                            colvec.push_back(elem->colbox->acolor[0]);
-                            colvec.push_back(elem->colbox->acolor[1]);
-                            colvec.push_back(elem->colbox->acolor[2]);
-                            colvec.push_back(elem->colbox->acolor[3]);
-                            if (std::find(elem->layers.begin(), elem->layers.end(), lvec[m]) != elem->layers.end()) {
-                                lvec[m]->lpstcolors.emplace(colvec);
-                            }
-                            else {
-                                lvec[m]->lpstcolors.erase(colvec);
-                            }
-                        }
-                    }
-                }
-            }
-        }
-
-
         // handle the layer clips queue
 		mainmix->handle_clips();
 
@@ -5196,6 +5325,46 @@ void the_loop() {
 
     }
 
+
+
+    // draw and handle loopstation
+    mainprogram->now = std::chrono::high_resolution_clock::now();
+    if (mainprogram->prevmodus) {
+        loopstation = lp;
+        lp->handle();
+        for (int i = 0; i < lpc->elements.size(); i++) {
+            if (lpc->elements[i]->loopbut->value || lpc->elements[i]->playbut->value) lpc->elements[i]->set_values();
+        }
+    }
+    else {
+        loopstation = lpc;
+        lpc->handle();
+        for (int i = 0; i < lp->elements.size(); i++) {
+            if (lp->elements[i]->loopbut->value || lp->elements[i]->playbut->value) lp->elements[i]->set_values();
+        }
+        for (int i = 0; i < 2; i++) {
+            for (int j = 0; j < 4; j++) {
+                if (j == mainmix->currscene[i]) continue;
+                for (auto *elem : mainmix->scenes[i][j]->lpst->elements) {
+                    if ((elem->loopbut->value || elem->playbut->value) && !elem->eventlist.empty()) elem->set_values();
+                    std::vector<Layer *> &lvec = mainmix->scenes[i][j]->scnblayers;
+                    for (int m = 0; m < lvec.size(); m++) {
+                        std::vector<float> colvec;
+                        colvec.push_back(elem->colbox->acolor[0]);
+                        colvec.push_back(elem->colbox->acolor[1]);
+                        colvec.push_back(elem->colbox->acolor[2]);
+                        colvec.push_back(elem->colbox->acolor[3]);
+                        if (std::find(elem->layers.begin(), elem->layers.end(), lvec[m]) != elem->layers.end()) {
+                            lvec[m]->lpstcolors.emplace(colvec);
+                        }
+                        else {
+                            lvec[m]->lpstcolors.erase(colvec);
+                        }
+                    }
+                }
+            }
+        }
+    }
 
 
     if (mainprogram->rightmouse) {
@@ -5416,17 +5585,14 @@ void the_loop() {
             if (bin->open_positions.size() != 0) {
                 int pos = *(bin->open_positions.begin());
                 if (bin->elements[pos]->name != "") {
-                    bin->elements[pos]->absjpath = bin->elements[pos]->jpegpath;
-                    bin->elements[pos]->reljpath = std::filesystem::relative(bin->elements[pos]->absjpath,
-                                                                             mainprogram->project->binsdir).generic_string();
+                    //bin->elements[pos]->absjpath = bin->elements[pos]->jpegpath;
+                    //bin->elements[pos]->reljpath = std::filesystem::relative(bin->elements[pos]->absjpath,
+                    //                                                         mainprogram->project->binsdir).generic_string();
                     if (exists(bin->elements[pos]->jpegpath)) {
                         std::filesystem::current_path(mainprogram->project->binsdir);
                         std::string path = pathtoplatform(
                                 std::filesystem::absolute(bin->elements[pos]->jpegpath).generic_string());
                         open_thumb(path, bin->elements[pos]->tex);
-                        GLuint butex = bin->elements[pos]->tex;
-                        bin->elements[pos]->tex = copy_tex(bin->elements[pos]->tex, 192, 108);
-                        glDeleteTextures(1, &butex);
                         std::filesystem::current_path(mainprogram->contentpath);
                     } else {
                         bool dummy = false;
@@ -5437,21 +5603,23 @@ void the_loop() {
                 }
                 bin->open_positions.erase(pos);
             } else {
-                // each loop iteration, save one bin element jpeg to prepare for autosave
+                // each loop iteration, save ten bin element jpegs to prepare for autosave
+                int cnt = 0;
                 for (Bin *bin: binsmain->bins) {
                     for (BinElement *binel: bin->elements) {
-                        if (binel->jpegpath != "") {
-                            if (binel->name != "" && !binel->autosavejpegsaved) {
+                        //if (binel->jpegpath != "") {
+                            if (!binel->autosavejpegsaved) {
                                 std::string str = mainprogram->project->autosavedir + "temp/bins/" + bin->name;
                                 if (!exists(str)) {
                                     std::filesystem::create_directories(std::filesystem::path(str));
                                 }
                                 std::string jpgpath = str + "/" + basename(binel->jpegpath);
                                 binel->autosavejpegsaved = true;
-                                save_thumb(jpgpath, binel->tex);
-                                break;
+                                if (binel->jpegpath != "") save_thumb(jpgpath, binel->tex);
+                                cnt++;
+                                if (cnt == 10) break;
                             }
-                        }
+                        //}
                     }
                 }
             }
@@ -5496,7 +5664,7 @@ void the_loop() {
     }
 
 
-    if (mainprogram->lmover || mainprogram->binlmover) {
+    if ((mainprogram->lmover || mainprogram->binlmover) && mainprogram->fullscreenmenu->state < 2) {
         // left mouse outside menu cancels all menus
         mainprogram->menuondisplay = false;
         if (mainprogram->binselmenu->state > 1) {
@@ -5557,6 +5725,12 @@ void the_loop() {
             //remove redundant bin files
             for (auto &it: binsmain->removeset[1]) {
                 mainprogram->remove(it);
+            }
+
+            // empty autosave temp dir
+            std::filesystem::path path_to_rem(mainprogram->project->autosavedir + "temp");
+            for (std::filesystem::directory_iterator end_dir_it, it(path_to_rem); it != end_dir_it; ++it) {
+                std::filesystem::remove_all(it->path());
             }
 
             //save midi map
@@ -5829,8 +6003,15 @@ void the_loop() {
     	}
     }
 
+    if (mainprogram->fullscreen > -1) {
+        // part of the mix is showed fullscreen, so no bins or mix specifics self-understandingly
+        mainprogram->handle_fullscreen();
+    }
+
+
     //glFinish();
     SDL_GL_SwapWindow(mainprogram->mainwindow);
+
 
     mainprogram->ttreserved = false;
     mainprogram->boxhit = false;
@@ -5935,15 +6116,23 @@ void blacken(GLuint tex) {
 
 
 void write_genmidi(ostream& wfile, LayMidi *lm) {
-	wfile << "PLAY\n";
-	wfile << std::to_string(lm->play->midi0);
-	wfile << "\n";
-	wfile << std::to_string(lm->play->midi1);
-	wfile << "\n";
-	wfile << lm->play->midiport;
-	wfile << "\n";
+    wfile << "CROSSFADE\n";
+    wfile << std::to_string(lm->crossfade->midi0);
+    wfile << "\n";
+    wfile << std::to_string(lm->crossfade->midi1);
+    wfile << "\n";
+    wfile << lm->crossfade->midiport;
+    wfile << "\n";
 
-	wfile << "BACKW\n";
+    wfile << "PLAY\n";
+    wfile << std::to_string(lm->play->midi0);
+    wfile << "\n";
+    wfile << std::to_string(lm->play->midi1);
+    wfile << "\n";
+    wfile << lm->play->midiport;
+    wfile << "\n";
+
+    wfile << "BACKW\n";
 	wfile << std::to_string(lm->backw->midi0);
 	wfile << "\n";
 	wfile << std::to_string(lm->backw->midi1);
@@ -6167,15 +6356,24 @@ void open_genmidis(std::string path) {
 		if (istring == "LAYMIDIC") lm = laymidiC;
 		if (istring == "LAYMIDID") lm = laymidiD;
 
- 		if (istring == "PLAY") {
-			safegetline(rfile, istring);
-			lm->play->midi0 = std::stoi(istring);
-			safegetline(rfile, istring);
-			lm->play->midi1 = std::stoi(istring);
-			safegetline(rfile, istring);
-			lm->play->midiport= istring;
-			lm->play->register_midi();
-		}
+        if (istring == "CROSSFADE") {
+            safegetline(rfile, istring);
+            lm->crossfade->midi0 = std::stoi(istring);
+            safegetline(rfile, istring);
+            lm->crossfade->midi1 = std::stoi(istring);
+            safegetline(rfile, istring);
+            lm->crossfade->midiport= istring;
+            lm->crossfade->register_midi();
+        }
+        if (istring == "PLAY") {
+            safegetline(rfile, istring);
+            lm->play->midi0 = std::stoi(istring);
+            safegetline(rfile, istring);
+            lm->play->midi1 = std::stoi(istring);
+            safegetline(rfile, istring);
+            lm->play->midiport= istring;
+            lm->play->register_midi();
+        }
 		if (istring == "BACKW") {
 			safegetline(rfile, istring);
 			lm->backw->midi0 = std::stoi(istring);
@@ -7045,7 +7243,7 @@ int main(int argc, char* argv[]) {
                 mainmix->open_mix(mainprogram->path, true);
             } else if (mainprogram->pathto == "OPENFILESBIN") {
                 if (mainprogram->paths.size()) {
-                    mainprogram->currfilesdir = dirname(mainprogram->path);
+                    mainprogram->currfilesdir = dirname(mainprogram->paths[0]);
                     binsmain->openfilesbin = true;
                 }
             } else if (mainprogram->pathto == "OPENBIN") {
@@ -7122,13 +7320,13 @@ int main(int argc, char* argv[]) {
 
                     mainprogram->project->open(mainprogram->path, true);
 
-                    mainprogram->project->path = mainprogram->project->bupp;
+                    /*mainprogram->project->path = mainprogram->project->bupp;
                     mainprogram->project->name = mainprogram->project->bupn;
                     mainprogram->project->binsdir = mainprogram->project->bubd;
                     mainprogram->project->shelfdir = mainprogram->project->busd;
                     mainprogram->project->recdir = mainprogram->project->burd;
                     mainprogram->project->autosavedir = mainprogram->project->buad;
-                    mainprogram->project->elementsdir = mainprogram->project->bued;
+                    mainprogram->project->elementsdir = mainprogram->project->bued;*/
                     mainprogram->openautosave = false;
                 }
             } else if (mainprogram->pathto == "NEWPROJECT") {

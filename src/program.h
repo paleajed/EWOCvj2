@@ -312,7 +312,6 @@ class LayMidi {
         MidiElement *setcue;
         MidiElement *tocue;
         MidiElement *crossfade;
-        MidiElement *crossfadecomp;
         bool scrinvert = false;
 
         LayMidi();
@@ -483,6 +482,7 @@ class Program {
         bool orderleftmousedown = false;
         bool orderrightmouse = false;
         bool lmover = false;
+        bool fsmouse = false;
         bool binlmover = false;
         bool doubleleftmouse = false;
         bool doublemiddlemouse = false;
@@ -1089,6 +1089,7 @@ extern void draw_box(float *linec, float *areac, Boxx *box, GLuint tex);
 extern void draw_box(float *linec, float *areac, std::unique_ptr <Boxx> const &box, GLuint tex);
 extern void draw_box(Boxx *box, float opacity, GLuint tex);
 extern void draw_box(Boxx *box, float dx, float dy, float scale, GLuint tex);
+extern void draw_direct(float* linec, float* areac, float x, float y, float wi, float he, float dx, float dy, float scale, float opacity, int circle, GLuint tex, float smw, float smh, bool vertical, bool inverted);
 
 extern void register_triangle_draw(float* linec, float* areac, float x1, float y1, float xsize, float ysize, ORIENTATION orient, TRIANGLE_TYPE type);
 extern void register_triangle_draw(float* linec, float* areac, float x1, float y1, float xsize, float ysize, ORIENTATION orient, TRIANGLE_TYPE type, bool directdraw);
@@ -1145,7 +1146,8 @@ extern bool exists(std::string name);
 extern std::string dirname(std::string pathname);
 extern std::string basename(std::string pathname);
 extern std::string remove_extension(std::string filename);
-extern std::string chop_off(std::string filename);
+extern bool rename(std::string source, std::string destination);
+extern bool check_permission(std::string directory);
 extern std::string remove_version(std::string filename);
 extern std::string pathtoplatform(std::string path);
 extern std::string pathtoposix(std::string path);

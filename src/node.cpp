@@ -563,7 +563,7 @@ void NodePage::handle_nodes() {
 		if (node->type == MIDI) {
 			draw_box(node->box, -1);
 			std::string typestr;
-			if (((MidiNode*)node)->param->midi[0] == 176) typestr = "Ctrl";
+			if (((MidiNode*)node)->param->midi[0] >= 176 && ((MidiNode*)node)->param->midi[0] < 192) typestr = "Ctrl";
 			else typestr = "Note";
 			render_text(typestr, white, node->box->vtxcoords->x1 + 0.01, node->box->vtxcoords->y1 + mainprogram->yscrtovtx(7), 0.0003, 0.0005);
 		}

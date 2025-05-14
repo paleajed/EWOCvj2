@@ -203,7 +203,9 @@ LoopStationElement* LoopStation::add_elem() {
 }
 
 void LoopStation::handle() {
-    this->scrpos = mainprogram->handle_scrollboxes(*this->upscrbox, *this->downscrbox, this->elements.size(), this->scrpos, 8);
+    if (!mainprogram->binsscreen) {
+        this->scrpos = mainprogram->handle_scrollboxes(*this->upscrbox, *this->downscrbox, this->elements.size(), this->scrpos, 8);
+    }
     int ce = std::clamp(this->currelem->pos, this->scrpos, this->scrpos + 7);
     this->currelem = this->elements[ce];
     this->foundrec = false;
@@ -214,14 +216,14 @@ void LoopStation::handle() {
     this->downscrbox->vtxcoords->x1 = this->elements[0]->colbox->vtxcoords->x1 + 0.0465f;
     this->upscrbox->upvtxtoscr();
     this->downscrbox->upvtxtoscr();
-    render_text("Loopstation", white, elements[0]->recbut->box->vtxcoords->x1 + 0.015f,
+    if (!mainprogram->binsscreen) render_text("Loopstation", white, elements[0]->recbut->box->vtxcoords->x1 + 0.015f,
              elements[0]->recbut->box->vtxcoords->y1 + elements[0]->recbut->box->vtxcoords->h * 2.0f - 0.045f, 0.0005f, 0.0008f);
 }
 
 void LoopStationElement::handle() {
-    if (this->pos >= this->lpst->scrpos && this->pos < this->lpst->scrpos + 8){
-        this->mouse_handle();
+    if (!mainprogram->binsscreen && this->pos >= this->lpst->scrpos && this->pos < this->lpst->scrpos + 8){
         this->visualize();
+        this->mouse_handle();
         for (int i = 0; i < 2; i++) {
             std::vector<Layer *> &lvec = choose_layers(i);
             for (int j = 0; j < lvec.size(); j++) {
@@ -401,6 +403,13 @@ void LoopStationElement::mouse_handle() {
             if (mainprogram->adaptivelprow && !mainprogram->waitonetime) {
                 loopstation->currelem = this;
             } else mainprogram->waitonetime = true;
+            if (this->recbut->value) {
+                std::chrono::high_resolution_clock::time_point now = std::chrono::high_resolution_clock::now();
+                std::chrono::duration<double> elapsed;
+                elapsed = std::chrono::duration_cast<std::chrono::duration<double>>(now - this->starttime);
+                this->totaltime = std::chrono::duration_cast<std::chrono::milliseconds>(elapsed).count();
+                this->eventpos = 0;
+            }
             this->recbut->value = false;
             this->recbut->oldvalue = false;
             this->playbut->value = false;
@@ -431,6 +440,13 @@ void LoopStationElement::mouse_handle() {
         // start/stop one-shot play of recording
         if (this->eventlist.size()) {
             if (mainprogram->adaptivelprow) loopstation->currelem = this;
+            if (this->recbut->value) {
+                std::chrono::high_resolution_clock::time_point now = std::chrono::high_resolution_clock::now();
+                std::chrono::duration<double> elapsed;
+                elapsed = std::chrono::duration_cast<std::chrono::duration<double>>(now - this->starttime);
+                this->totaltime = std::chrono::duration_cast<std::chrono::milliseconds>(elapsed).count();
+                this->eventpos = 0;
+            }
             this->recbut->value = false;
             this->recbut->oldvalue = false;
             this->loopbut->value = false;
@@ -576,7 +592,7 @@ void LoopStationElement::set_values() {
             long long mc = std::chrono::duration_cast<std::chrono::milliseconds>(elapsed).count();
             if (mc > 500 || mc < 0) {
                 par->midistarted = false;
-                if (par != mainmix->adaptparam) {
+                if (par != mainmix->prepadaptparam && par != mainmix->adaptparam) {
 //                    if (std::find(this->lpst->allparams.begin(), this->lpst->allparams.end(), par) !=
 //                        this->lpst->allparams.end()) {
                         par->value = std::get<3>(event);

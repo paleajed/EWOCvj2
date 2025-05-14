@@ -1130,10 +1130,12 @@ float rand(vec2 co){
     return fract(sin(dot(co.xy ,vec2(12.9898,78.233))) * 43758.5453) * 0.5 - 0.25;
 }
 
-vec4 noise(vec2 uv)  //ok
+vec4 noise(vec2 uv)  //from oldfilm
 {
-    vec4 color = texture2D(Sampler0, uv);
-	return vec4(max(min(color.rgb + vec3(rand(uv) * noiselevel), vec3(1.0f)), vec3(0.0f)), color.a);
+	vec4 colour = texture2D(Sampler0, uv);
+	float noise = snoise2(uv * vec2(1024.0 + RandomValue * 512.0, 1024.0 + RandomValue * 512.0)) * 0.5;
+	colour += noise * noiselevel;
+	return colour;
 }
 
 
