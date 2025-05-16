@@ -204,7 +204,7 @@ private:
         void delete_dirs(std::string path);
         void copy_dirs(std::string path, bool rem = true);
         void create_dirs(std::string path);
-        void create_dirs_autosave(std::string path);
+        bool create_dirs_autosave(std::string path);
 };
 
 class Preferences {

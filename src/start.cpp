@@ -5603,23 +5603,38 @@ void the_loop() {
                 }
                 bin->open_positions.erase(pos);
             } else {
-                // each loop iteration, save ten bin element jpegs to prepare for autosave
+                // each loop iteration, save ten bin elements / element jpegs to prepare for autosave
+                std::string str = mainprogram->project->autosavedir + "temp/bins/" + bin->name;
+                if (!exists(str)) {
+                    std::filesystem::create_directories(std::filesystem::path(str));
+                }
                 int cnt = 0;
+                bool brk = false;
                 for (Bin *bin: binsmain->bins) {
-                    for (BinElement *binel: bin->elements) {
-                        //if (binel->jpegpath != "") {
-                            if (!binel->autosavejpegsaved) {
-                                std::string str = mainprogram->project->autosavedir + "temp/bins/" + bin->name;
-                                if (!exists(str)) {
-                                    std::filesystem::create_directories(std::filesystem::path(str));
+                    for (BinElement *elem: bin->elements) {
+                        if (elem->path != "") {
+                            std::string elempath = str + "/" + basename(elem->path);
+                            if (!exists(elempath)) {
+                                if (elem->type == ELEM_LAYER || elem->type == ELEM_DECK || elem->type == ELEM_MIX) {
+                                    std::filesystem::copy_file(elem->path, elempath);
+                                    cnt++;
                                 }
-                                std::string jpgpath = str + "/" + basename(binel->jpegpath);
-                                binel->autosavejpegsaved = true;
-                                if (binel->jpegpath != "") save_thumb(jpgpath, binel->tex);
-                                cnt++;
-                                if (cnt == 10) break;
                             }
-                        //}
+                            if (cnt == 10) {
+                                brk = true;
+                                break;
+                            }
+                        }
+                    }
+                    if (brk) break;
+                }
+                for (BinElement *binel: bin->elements) {
+                    if (!binel->autosavejpegsaved) {
+                        std::string jpgpath = str + "/" + basename(binel->jpegpath);
+                        binel->autosavejpegsaved = true;
+                        if (binel->jpegpath != "") save_thumb(jpgpath, binel->tex);
+                        cnt++;
+                        if (cnt == 10) break;
                     }
                 }
             }

@@ -6845,15 +6845,14 @@ void Project::copy_dirs(std::string path, bool rem) {
     namespace fs = std::filesystem;
     path = pathtoposix(path);
     //mainprogram->remove(path + "/" + basename(this->path));
+    if (exists(this->autosavedir + "temp")) {
+        rename(this->autosavedir + "temp", path);
+    }
     if (!exists(path)) fs::create_directory(fs::path(path));
-    fs::copy(pathtoposix(this->binsdir), path + "/bins", fs::copy_options::overwrite_existing | fs::copy_options::recursive);
+    if (!exists(path + "/autosaves/")) fs::create_directory(fs::path(path + "/autosaves/"));
     fs::copy(pathtoposix(this->recdir), path + "/recordings", fs::copy_options::overwrite_existing | fs::copy_options::recursive);
     fs::copy(pathtoposix(this->shelfdir), path + "/shelves", fs::copy_options::overwrite_existing | fs::copy_options::recursive);
     fs::copy(pathtoposix(this->elementsdir), path + "/elements", fs::copy_options::overwrite_existing | fs::copy_options::recursive);
-    if (!mainprogram->inautosave) {
-        fs::copy(pathtoposix(this->autosavedir), path + "/autosaves",
-                 fs::copy_options::overwrite_existing | fs::copy_options::recursive);
-    }
     this->binsdir = path + "/bins/";
     this->recdir = path + "/recordings/";
     this->shelfdir = path + "/shelves/";
@@ -6885,10 +6884,11 @@ void Project::create_dirs(const std::string path) {
     std::filesystem::create_directory(this->autosavedir + "temp/bins");
 }
 
-void Project::create_dirs_autosave(const std::string path) {
+bool Project::create_dirs_autosave(const std::string path) {
     std::string dir = path;
     if (exists(mainprogram->project->autosavedir + "temp")) {
-        rename(mainprogram->project->autosavedir + "temp", path);
+        bool ret = rename(mainprogram->project->autosavedir + "temp", path);
+        if (!ret) return false;
     }
     std::string buad = mainprogram->project->autosavedir;
     this->binsdir = dir + "/bins/";
@@ -6911,6 +6911,8 @@ void Project::create_dirs_autosave(const std::string path) {
 
     std::filesystem::create_directory(buad + "temp/");
     std::filesystem::create_directory(buad + "temp/bins");
+
+    return true;
 }
 
 void Project::newp(const std::string path) {
@@ -7100,15 +7102,17 @@ bool Project::open(std::string path, bool autosave, bool newp, bool undo) {
 
     // make set of paths in bins
     this->pathsinbins.clear();
-    std::unordered_set<std::string> allbincontent;
-    for (std::filesystem::recursive_directory_iterator end_dir_it, it(mainprogram->project->binsdir); it != end_dir_it; ++it) {
-        std::string p = it->path().string();
-        if (p.rfind(".") != std::string::npos) {
-            if (p.substr(p.rfind(".")) == ".list") continue;
-            if (p.substr(p.rfind(".")) == ".bin") continue;
+    for (Bin *bin: binsmain->bins) {
+        for (BinElement *elem: bin->elements) {
+            if (elem->path != "") {
+                if (elem->type == ELEM_LAYER || elem->type == ELEM_DECK || elem->type == ELEM_MIX) {
+                    this->pathsinbins.emplace(pathtoplatform(elem->path));
+                }
+            }
+            if (elem->jpegpath != "") {
+                this->pathsinbins.emplace(pathtoplatform(elem->jpegpath));
+            }
         }
-        if (std::filesystem::is_directory(it->path())) continue;
-        this->pathsinbins.emplace(pathtoplatform(it->path().string()));
     }
 
     mainprogram->set_ow3oh3();
@@ -7475,6 +7479,7 @@ void Project::save_as() {
     std::vector<std::vector<std::string>> bupaths1;
     std::vector<std::vector<std::string>> bupaths2;
     std::string bubinsdir = pathtoplatform(this->binsdir);
+    std::string buaddir = pathtoplatform(this->autosavedir);
     if (dirname(mainprogram->project->path) != "") {
         std::string oldprdir = mainprogram->project->name;
         mainprogram->currprojdir = dirname(mainprogram->project->path);
@@ -7493,6 +7498,8 @@ void Project::save_as() {
         path3 = path3.substr(0, path3.size() - 1);
         if (path3 != path2) {
             this->copy_over(path3, path2, oldprdir);
+            std::filesystem::create_directory(buaddir + "temp/");
+            std::filesystem::create_directory(buaddir + "temp/bins");
         }
 
         // rename bin element jpeg paths and element paths of source project for saving project as with new locations
@@ -7532,6 +7539,12 @@ void Project::save_as() {
     mainprogram->saveas = true;
     mainprogram->project->path = str;
     mainprogram->project->save(str, false, false, true);
+    for (Bin *bin: binsmain->bins) {
+        for (BinElement *binel: bin->elements) {
+            // all bin element jpegs should be saved to new temp folder
+            binel->autosavejpegsaved = false;
+        }
+    }
     mainprogram->saveas = false;
 
     // reset binel paths and jpeg paths for current project (source)
@@ -7612,7 +7625,10 @@ void Project::autosave() {
     mainprogram->project->burd = this->recdir;
     mainprogram->project->buad = this->autosavedir;
     mainprogram->project->bued = this->elementsdir;
-    mainprogram->project->create_dirs_autosave(p1);
+    bool ret = mainprogram->project->create_dirs_autosave(p1);
+    if (!ret) {
+        return;
+    }
     mainprogram->autosaving = true;
     std::vector<std::vector<std::string>> bupaths;
 
@@ -7627,12 +7643,12 @@ void Project::autosave() {
                 BinElement *binel = binsmain->bins[k]->elements[i * 12 + j];
 
                 // copy composite elements
-                if (binel->type == ELEM_LAYER || binel->type == ELEM_DECK || binel->type == ELEM_MIX) {
+                //if (binel->type == ELEM_LAYER || binel->type == ELEM_DECK || binel->type == ELEM_MIX) {
                     // we are autosaving, copy media elements
-                    std::string p = mainprogram->project->binsdir + binsmain->bins[k]->name + "/" + basename(binel->path);
-                    std::filesystem::copy(binel->path, p);
+                //    std::string p = mainprogram->project->binsdir + binsmain->bins[k]->name + "/" + basename(binel->path);
+                //    std::filesystem::copy(binel->path, p);
                     //std::filesystem::copy(binel->absjpath, remove_extension(p) + basename(binel->absjpath));
-                }
+                //}
 
                 std::string s =
                         p1 + "/bins/" + binsmain->bins[k]->name + "/";
