@@ -2292,7 +2292,7 @@ int Program::quit_requester() {
 	}
 
     std::unique_ptr <Boxx> box = std::make_unique <Boxx> ();
-	box->vtxcoords->x1 = 0.15f;
+	box->vtxcoords->x1 = -1.0f;
 	box->vtxcoords->y1 = -1.0f;
 	box->vtxcoords->w = 0.3f;
 	box->vtxcoords->h = 0.2f;
@@ -2614,7 +2614,7 @@ bool Program::handle_button(Button *but, bool circlein, bool automation, bool co
         std::vector<float> tws = render_text(but->name[0], nullptr, white, 0.0f, 0.0f, radx / 50.0f, rady / 50.0f, 0, 0, 0);
         float x = 0.0f;
         if (tws.size()) {
-            float x = tws[0] / 2.0f;
+            x = tws[0] / 2.0f;
         }
         render_text(but->name[0], white, but->box->vtxcoords->x1 - x + radx / 4.0f, but->box->vtxcoords->y1 - x * rady / radx + rady / 4.0f, radx / 50.0f, rady / 50.0f);
     }
@@ -7098,6 +7098,19 @@ bool Project::open(std::string path, bool autosave, bool newp, bool undo) {
         }
     }
 
+    // make set of paths in bins
+    this->pathsinbins.clear();
+    std::unordered_set<std::string> allbincontent;
+    for (std::filesystem::recursive_directory_iterator end_dir_it, it(mainprogram->project->binsdir); it != end_dir_it; ++it) {
+        std::string p = it->path().string();
+        if (p.rfind(".") != std::string::npos) {
+            if (p.substr(p.rfind(".")) == ".list") continue;
+            if (p.substr(p.rfind(".")) == ".bin") continue;
+        }
+        if (std::filesystem::is_directory(it->path())) continue;
+        this->pathsinbins.emplace(pathtoplatform(it->path().string()));
+    }
+
     mainprogram->set_ow3oh3();
     //mainmix->new_state();
     mainmix->open_state(result + "_0.file", undo);
@@ -7346,22 +7359,38 @@ void Project::save(std::string path, bool autosave, bool undo, bool nocheck) {
 
     if (!undo && !autosave) {
         //remove redundant bin files
+        this->pathsinbins.clear();
+        std::unordered_set<std::string> allbincontent;
+        for (std::filesystem::recursive_directory_iterator end_dir_it, it(this->binsdir); it != end_dir_it; ++it) {
+            std::string p = it->path().string();
+            if (p.rfind(".") != std::string::npos) {
+                if (p.substr(p.rfind(".")) == ".list") continue;
+                if (p.substr(p.rfind(".")) == ".bin") continue;
+            }
+            if (std::filesystem::is_directory(it->path())) continue;
+            allbincontent.emplace(pathtoplatform(p));
+        }
+
         for (Bin *bin: binsmain->bins) {
             for (BinElement *elem: bin->elements) {
+                // only keep paths that are not in any bin
+                if (elem->path != "") {
+                    int comp = allbincontent.size();
+                    allbincontent.erase(pathtoplatform(elem->path));
+                    if (comp != allbincontent.size()) {
+                        this->pathsinbins.emplace(pathtoplatform(elem->path));
+                    }
+                }
                 if (elem->jpegpath != "") {
-                    // dont remove new ones
-                    binsmain->removeset[0].erase(std::filesystem::weakly_canonical(elem->path).generic_string());
-                    binsmain->removeset[0].erase(std::filesystem::weakly_canonical(elem->jpegpath).generic_string());
-                    binsmain->removeset[1].erase(std::filesystem::weakly_canonical(elem->path).generic_string());
-                    binsmain->removeset[1].erase(std::filesystem::weakly_canonical(elem->jpegpath).generic_string());
-                    binsmain->removeset[0].erase(elem->path);
-                    binsmain->removeset[0].erase(elem->jpegpath);
-                    binsmain->removeset[1].erase(elem->path);
-                    binsmain->removeset[1].erase(elem->jpegpath);
+                    int comp = allbincontent.size();
+                    allbincontent.erase(pathtoplatform(elem->jpegpath));
+                    if (comp != allbincontent.size()) {
+                        this->pathsinbins.emplace(pathtoplatform(elem->jpegpath));
+                    }
                 }
             }
         }
-        for (auto &it: binsmain->removeset[0]) {
+        for (auto &it: allbincontent) {
             mainprogram->remove(it);
             mainprogram->remove(mainprogram->project->autosavedir + "temp/bins/" + basename(dirname(it).substr(0, dirname(it).size() - 1)) + basename(it));
         }
@@ -9113,6 +9142,9 @@ void Shelf::save(const std::string path, bool undo) {
         wfile << "PATH\n";
         wfile << elem->path;
         wfile << "\n";
+        wfile << "NAME\n";
+        wfile << elem->name;
+        wfile << "\n";
         wfile << "RELPATH\n";
         if (elem->path != "") {
             wfile << std::filesystem::relative(elem->path, mainprogram->contentpath).generic_string();
@@ -9297,9 +9329,10 @@ bool Shelf::open(const std::string path, bool undo) {
                     elem = this->elements[count];
                     elem->path = istring;
                     count++;
-                    //if (!exists(elem->path)) {
-                       // elem->path = "";
-                    //}
+                }
+                if (istring == "NAME") {
+                    safegetline(rfile, istring);
+                    elem->name = istring;
                 }
                 if (istring == "RELPATH") {
                     safegetline(rfile, istring);
@@ -9468,6 +9501,10 @@ void Shelf::handle() {
 
         if (cond) {
             // mouse over this element
+            if (elem->name == "") {
+                elem->name = remove_extension(basename(elem->path));
+            }
+            render_text(elem->name, white, -0.8f * (this->side == 0) + 0.6f * (this->side == 1), -0.6f, 0.00045f, 0.00075f);
             if (mainprogram->dropfiles.size()) {
                 // SDL drag'n'drop
                 mainprogram->path = mainprogram->dropfiles[0];
@@ -9485,7 +9522,6 @@ void Shelf::handle() {
                 mainprogram->shelfdragnum = i;
                 mainprogram->doubleleftmouse = false;
                 mainprogram->doublemiddlemouse = false;
-                //mainprogram->lmover = false;
                 mainprogram->leftmouse = false;
                 mainprogram->leftmousedown = false;
                 mainprogram->middlemouse = false;
@@ -9495,15 +9531,8 @@ void Shelf::handle() {
                 mainprogram->dragbinel->relpath = std::filesystem::relative(elem->path, mainprogram->project->binsdir).generic_string();
                 mainprogram->dragbinel->type = elem->type;
                 mainprogram->dragbinel->tex = elem->tex;
-                //if (elem->type == ELEM_DECK || elem->type == ELEM_MIX) {
                 mainprogram->shelf_triggering(elem);
                 mainprogram->lpstelem = elem;
-                //}
-                //else {
-                //    for (int i = 0; i < mainmix->currlays[!mainprogram->prevmodus].size(); i++) {
-                //        mainmix->open_dragbinel(mainmix->currlays[!mainprogram->prevmodus][i], i);
-                //    }
-                //}
                 enddrag();
             }
             else if (mainprogram->leftmouse) {
@@ -9530,7 +9559,7 @@ void Shelf::handle() {
                     std::swap(mainprogram->shelfdragelem->tex, mainprogram->shelfdragelem->oldtex);
                     mainprogram->shelfdragelem->tex = elem->oldtex;
                 }
-                elem->tex = mainprogram->dragbinel->tex;
+                elem->tex = copy_tex(mainprogram->dragbinel->tex);
                 this->prevnum = i;
             }
             if (mainprogram->leftmousedown) {
@@ -9545,6 +9574,7 @@ void Shelf::handle() {
                             mainprogram->leftmousedown = false;
                             mainprogram->dragbinel = new BinElement;
                             mainprogram->dragbinel->path = elem->path;
+                            mainprogram->dragbinel->name = elem->name;
                             mainprogram->dragbinel->relpath = std::filesystem::relative(elem->path, mainprogram->project->binsdir).generic_string();
                             mainprogram->dragbinel->type = elem->type;
                             mainprogram->dragbinel->tex = elem->tex;
@@ -9556,7 +9586,6 @@ void Shelf::handle() {
                 // user drops file/layer/deck/mix in this element
                 if (mainprogram->mx != mainprogram->shelfmx || mainprogram->my != mainprogram->shelfmy) {
                     if (mainprogram->dragbinel) {
-//                  if (mainprogram->dragbinel && mainprogram->shelfdragelem) {
                         if (elem != mainprogram->shelfdragelem) {
                             std::string newpath;
                             std::string extstr = "";
@@ -9578,10 +9607,12 @@ void Shelf::handle() {
                             }
                             if (mainprogram->shelfdragelem) {
                                 std::swap(elem->path, mainprogram->shelfdragelem->path);
+                                std::swap(elem->name, mainprogram->shelfdragelem->name);
                                 std::swap(elem->jpegpath, mainprogram->shelfdragelem->jpegpath);
                                 std::swap(elem->type, mainprogram->shelfdragelem->type);
                             } else {
                                 elem->path = mainprogram->dragbinel->path;
+                                elem->name = mainprogram->dragbinel->name;
                                 elem->type = mainprogram->dragbinel->type;
                                 elem->done = false;
                                 mainprogram->draglay->prevshelfdragelem = nullptr;

@@ -5723,8 +5723,16 @@ void the_loop() {
             }
 
             //remove redundant bin files
-            for (auto &it: binsmain->removeset[1]) {
-                mainprogram->remove(it);
+            for (std::filesystem::recursive_directory_iterator end_dir_it, it(mainprogram->project->binsdir); it != end_dir_it; ++it) {
+                std::string p = it->path().string();
+                if (p.rfind(".") != std::string::npos) {
+                    if (p.substr(p.rfind(".")) == ".list") continue;
+                    if (p.substr(p.rfind(".")) == ".bin") continue;
+                }
+                if (std::filesystem::is_directory(it->path())) continue;
+                if (!mainprogram->project->pathsinbins.count(pathtoplatform(p))) {
+                    mainprogram->remove(p);
+                }
             }
 
             // empty autosave temp dir

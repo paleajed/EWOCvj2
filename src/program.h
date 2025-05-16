@@ -151,6 +151,7 @@ class ShelfElement {
 public:
 	std::string path;
 	std::string jpegpath;
+    std::string name;
 	ELEM_TYPE type;
 	GLuint tex = -1;
 	GLuint oldtex = -1;
@@ -185,6 +186,7 @@ class Project {
         std::string burd;
         std::string buad;
         std::string bued;
+        std::unordered_set<std::string> pathsinbins;
         float ow = 1920.0f;
         float oh = 1080.0f;
 		void newp(std::string path);

@@ -214,27 +214,6 @@ BinsMain::BinsMain() {
 }
 
 
-void BinElement::remove_elem(bool quit) {
-    if (this->temp) {
-        if (this->path != "") {
-            if (this->type == ELEM_LAYER || this->type == ELEM_DECK ||
-                this->type == ELEM_MIX) {
-                if (binsmain->removeset[!quit].count(this->path) == 0) {
-                    binsmain->removeset[quit].emplace(this->path);
-                }
-           }
-        }
-        this->temp = false;
-    }
-    if (this->jpegpath != "") {
-        if (binsmain->removeset[!quit].count(this->jpegpath) == 0) {
-            binsmain->removeset[quit].emplace(this->jpegpath);
-        }
-    }
-    mainprogram->delete_text(this->name);
-}
-
-
 void BinsMain::handle(bool draw) {
 	GLint inverteff = glGetUniformLocation(mainprogram->ShaderProgram, "inverteff");
 
@@ -568,7 +547,6 @@ void BinsMain::handle(bool draw) {
                                 if (butex != -1) glDeleteTextures(1, &butex);
 								binel->tex = copy_tex(elem->tex, this->elemboxes[0]->scrcoords->w, this->elemboxes[0]->scrcoords->h);
                                 binel->type = elem->type;
-                                binel->remove_elem(false);
 								binel->path = elem->path;
                                 binel->name = remove_extension(basename(binel->path));
                                 if (binel->path != "") {
@@ -583,8 +561,7 @@ void BinsMain::handle(bool draw) {
                                                                                     mainprogram->project->binsdir).generic_string();
                                     }
                                 }
-                                binel->remove_elem(true);
-							}
+ 							}
 							this->insertshelf = nullptr;
                             this->mouseshelfnum = -1;
                             this->oldmouseshelfnum = -1;
@@ -1450,7 +1427,6 @@ void BinsMain::handle(bool draw) {
             }
 			mainmix->save_deck(path, true, true);
 			this->menubinel->type = ELEM_DECK;
-            this->menubinel->remove_elem(false);
 			this->menubinel->path = path;
 			this->menubinel->name = remove_extension(basename(this->menubinel->path));
 			//this->menubinel->oldjpegpath = this->menubinel->jpegpath;
@@ -1461,7 +1437,6 @@ void BinsMain::handle(bool draw) {
             this->menubinel->reljpath = std::filesystem::relative(this->menubinel->absjpath, mainprogram->project->binsdir).generic_string();
             this->menubinel->temp = true;
 			// clean up: maybe too much cleared here, doesn't really matter
-            this->menubinel->remove_elem(true);
 			this->menuactbinel = nullptr;
 			this->prevbinel = nullptr;
 		}
@@ -1479,7 +1454,6 @@ void BinsMain::handle(bool draw) {
             }
             mainmix->save_deck(path, true, true);
             this->menubinel->type = ELEM_DECK;
-            this->menubinel->remove_elem(false);
             this->menubinel->path = path;
             this->menubinel->name = remove_extension(basename(this->menubinel->path));
             //this->menubinel->oldjpegpath = this->menubinel->jpegpath;
@@ -1489,7 +1463,6 @@ void BinsMain::handle(bool draw) {
             this->menubinel->absjpath = this->menubinel->jpegpath;
             this->menubinel->reljpath = std::filesystem::relative(this->menubinel->absjpath, mainprogram->project->binsdir).generic_string();
             this->menubinel->temp = true;
-            this->menubinel->remove_elem(true);
             // clean up: maybe too much cleared here, doesn't really matter
             this->menuactbinel = nullptr;
             this->prevbinel = nullptr;
@@ -1507,7 +1480,6 @@ void BinsMain::handle(bool draw) {
             }
             mainmix->save_mix(path, mainprogram->prevmodus, true);
             this->menubinel->type = ELEM_MIX;
-            this->menubinel->remove_elem(false);
             this->menubinel->path = path;
             this->menubinel->name = remove_extension(basename(this->menubinel->path));
             //this->menubinel->oldjpegpath = this->menubinel->jpegpath;
@@ -1517,7 +1489,6 @@ void BinsMain::handle(bool draw) {
             this->menubinel->absjpath = this->menubinel->jpegpath;
             this->menubinel->reljpath = std::filesystem::relative(this->menubinel->absjpath, mainprogram->project->binsdir).generic_string();
             this->menubinel->temp = true;
-            this->menubinel->remove_elem(true);
             // clean up: maybe too much cleared here, doesn't really matter
             this->menuactbinel = nullptr;
             this->prevbinel = nullptr;
@@ -1528,7 +1499,8 @@ void BinsMain::handle(bool draw) {
 			for (int i = 0; i < 16; i++) {
 				BinElement* binel = this->currbin->elements[this->mouseshelfnum / 3 * 48 + (this->mouseshelfnum % 3) * 4 + (i / 4) * 12 + (i % 4)];
 				ShelfElement* elem = shelf->elements[i];
-				elem->path = binel->path;
+                elem->path = binel->path;
+                elem->name = binel->name;
 				elem->jpegpath = binel->jpegpath;
 				elem->type = binel->type;
                 GLuint butex = elem->tex;
@@ -1543,6 +1515,7 @@ void BinsMain::handle(bool draw) {
 				BinElement* binel = this->currbin->elements[this->mouseshelfnum / 3 * 48 + (this->mouseshelfnum % 3) * 4 + (i / 4) * 12 + (i % 4)];
 				ShelfElement* elem = shelf->elements[i];
 				elem->path = binel->path;
+                elem->name = binel->name;
 				elem->jpegpath = binel->jpegpath;
 				elem->type = binel->type;
 				GLuint butex = elem->tex;
@@ -2128,8 +2101,9 @@ void BinsMain::handle(bool draw) {
 								this->currbinel->tex = this->currbinel->oldtex;
 								// set new layer drag textures in this bin element
 								binel->oldtex = binel->tex;
-								binel->tex = mainprogram->dragbinel->tex;
-							}
+                                binel->tex = mainprogram->dragbinel->tex;
+                                binel->tex = mainprogram->dragbinel->tex;
+                            }
 							else {
 								// set new layer drag textures in this bin element
 								binel->oldtex = binel->tex;
@@ -2221,7 +2195,6 @@ void BinsMain::handle(bool draw) {
                                 mainprogram->delete_text(dirbinel->name.substr(0, 20));
                                 dirbinel->tex = this->inputtexes[k];
                                 dirbinel->type = this->inputtypes[k];
-                                dirbinel->remove_elem(false);
                                 dirbinel->path = this->addpaths[k];
                                 dirbinel->name = remove_extension(basename(dirbinel->path));
                                 dirbinel->oldjpegpath = dirbinel->jpegpath;
@@ -2230,7 +2203,6 @@ void BinsMain::handle(bool draw) {
                                 if (dirbinel->absjpath != "") {
                                     dirbinel->reljpath = std::filesystem::relative(dirbinel->absjpath,mainprogram->project->binsdir).generic_string();
                                 }
-                                dirbinel->remove_elem(true);
                             }
 						}
 						// clean up
@@ -2262,7 +2234,6 @@ void BinsMain::handle(bool draw) {
 					// handle element deleting
 					for (int k = 0; k < this->delbinels.size(); k++) {
 						// deleting single bin element
-                        this->delbinels[k]->remove_elem(false);
 						blacken(this->delbinels[k]->oldtex);
 						blacken(this->delbinels[k]->tex);
 						this->delbinels[k]->path = "";
@@ -2284,6 +2255,18 @@ void BinsMain::handle(bool draw) {
             // confirm layer dragging from main view and set influenced bin element to the right values
             this->currbinel->type = mainprogram->dragbinel->type;
             this->currbinel->path = mainprogram->dragbinel->path;
+            this->currbinel->tex = copy_tex(this->currbinel->tex);
+            if (this->currbinel->type == ELEM_DECK || this->currbinel->type == ELEM_MIX) {
+                if (exists(this->currbinel->path) && mainprogram->draglay == nullptr) {
+                    // a duplicate of the content will be made, if the content file already exists
+                    std::string ext = this->currbinel->path.substr(this->currbinel->path.rfind("."));
+                    std::string newpath = find_unused_filename(remove_extension(basename(this->currbinel->path)),
+                                                               mainprogram->project->binsdir, ext);
+                    std::filesystem::copy_file(this->currbinel->path, newpath);
+                    this->currbinel->path = newpath;
+                }
+            }
+            this->currbinel->name = mainprogram->dragbinel->name;
             if (this->currbinel->type == ELEM_LAYER) {
             	std::string p1;
             	if (lay->vidmoving) p1 = lay->filename;
@@ -2292,11 +2275,15 @@ void BinsMain::handle(bool draw) {
 															 mainprogram->project->binsdir + this->currbin->name +
 															 "/", ""
 																  ".layer");
-            	this->currbinel->name = remove_extension(basename(this->currbinel->path));
+                if (mainprogram->dragbinel->name == "") {
+                    this->currbinel->name = remove_extension(basename(this->currbinel->path));
+                }
             	this->currbinel->temp = true;
                 mainmix->save_layerfile(this->currbinel->path, lay, 1, 0);
             }
-            this->currbinel->name = remove_extension(basename(this->currbinel->path));
+            if (mainprogram->dragbinel->name == "") {
+                this->currbinel->name = remove_extension(basename(this->currbinel->path));
+            }
             this->currbinel->full = true;
             this->currbinel = nullptr;
             enddrag();
@@ -2371,7 +2358,6 @@ void BinsMain::handle(bool draw) {
 
                 if (this->inputtexes[k] != -1) {
                     dirbinel->type = this->inputtypes[k];
-                    //dirbinel->remove_elem(false);
                     dirbinel->path = this->addpaths[k];
                     dirbinel->tex = this->inputtexes[k];
                     dirbinel->name = remove_extension(basename(dirbinel->path));
@@ -2379,7 +2365,6 @@ void BinsMain::handle(bool draw) {
                     dirbinel->jpegpath = this->inputjpegpaths[k];
                     dirbinel->absjpath = dirbinel->jpegpath;
                     dirbinel->reljpath = std::filesystem::relative(dirbinel->absjpath, mainprogram->project->binsdir).generic_string();
-                    //dirbinel->remove_elem(true);
                     int pos =
                             std::find(this->movebinels.begin(), this->movebinels.end(), dirbinel) -
                             this->movebinels.begin();
@@ -2553,11 +2538,6 @@ void BinsMain::save_bin(std::string path) {
             std::string jprp = binel->reljpath;
 			wfile << "ABSPATH\n";
 			wfile << p;
-            if (binel->path != "") {
-                if (binsmain->removeset->count(binel->path)) {
-                    binsmain->removeset->erase(binel->path);
-                }
-            }
             wfile << "\n";
             wfile << "RELPATH\n";
             wfile << rp;
@@ -2587,21 +2567,9 @@ void BinsMain::save_bin(std::string path) {
 			}*/
             wfile << "ABSJPEGPATH\n";
             wfile << jpap;
-            if (binel->absjpath != "") {
-                if (binsmain->removeset->count(binel->absjpath)) {
-                    binsmain->removeset->erase(binel->absjpath);
-                }
-            }
             wfile << "\n";
             wfile << "RELJPEGPATH\n";
             wfile << jprp;
-            if (binel->absjpath == "") {
-                if (binel->reljpath != "") {
-                    if (binsmain->removeset->count(binel->reljpath)) {
-                        binsmain->removeset->erase(binel->reljpath);
-                    }
-                }
-            }
             wfile << "\n";
             if (p != "") {
                 wfile << "FILESIZE\n";
@@ -3389,26 +3357,9 @@ void BinsMain::undo_redo(char offset) {
             std::get<1>(binsmain->undobins[binsmain->undopos + offset])) {
             binsmain->make_currbin(i);
             Bin *bubin = binsmain->bins[i];
-            for (BinElement *elem : bubin->elements) {
-                elem->remove_elem(false);
-            }
             binsmain->bins[i] = std::get<0>(binsmain->undobins[binsmain->undopos + offset]);
             binsmain->bins[i]->pos = i;
             binsmain->make_currbin(i);
-            for (BinElement *elem : binsmain->currbin->elements) {
-                if (elem->path != "") {
-                    if (binsmain->removeset[0].count(elem->path)) {
-                        binsmain->removeset[0].erase(elem->path);
-                    }
-                    elem->remove_elem(true);
-                }
-                if (elem->jpegpath != "") {
-                    if (binsmain->removeset[0].count(elem->jpegpath)) {
-                        binsmain->removeset[0].erase(elem->jpegpath);
-                    }
-                    elem->remove_elem(true);
-                }
-            }
             break;
         }
     }

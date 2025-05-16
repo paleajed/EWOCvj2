@@ -3280,7 +3280,7 @@ void make_layboxes() {
                     }
                     if (mainprogram->effcat[vnode->layer->deck]->value == 1) {
                         if ((vnode)->layer == mainmix->currlay[!mainprogram->prevmodus]) {
-                            if (vnode->layer->effects[0].size() == 0) {
+                            if (vnode->layer->effects[1].size() == 0) {
                                 vnode->vidbox->tex = vnode->layer->blendnode->fbotex;
                             } else {
                                 vnode->vidbox->tex = vnode->layer->effects[1][vnode->layer->effects[1].size() -
@@ -3334,7 +3334,7 @@ void make_layboxes() {
                             }
                         }
                         if (vnode->layer == mainmix->currlay[!mainprogram->prevmodus] && mainprogram->effcat[vnode->layer->deck]->value == 1) {
-                            if (vnode->layer->effects[0].size() == 0) {
+                            if (vnode->layer->effects[1].size() == 0) {
                                  vnode->vidbox->tex = vnode->layer->blendnode->fbotex;
                             } else {
                                  vnode->vidbox->tex = vnode->layer->effects[1][vnode->layer->effects[1].size() -
