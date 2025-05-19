@@ -906,7 +906,27 @@ Program::Program() {
 	this->wormgate2->box->tooltiptitle = "Screen switching wormgate ";
 	this->wormgate2->box->tooltip = "Connects mixing screen and media bins screen."
                                     "  Leftclick to switch screen.  Leftclick to switch screen.  Drag content inside white rectangle up to the very edge of the screen to travel to the other screen. ";
-    
+
+    // volume treshold for beat detection to kick in
+    this->beatthres = new Param;
+    this->beatthres->name = "LPST beat threshold";
+    this->beatthres->value = 0.17f;
+    this->beatthres->deflt = 0.17f;
+    this->beatthres->range[0] = 0.0f;
+    this->beatthres->range[1] = 1.0f;
+    this->beatthres->sliding = true;
+    this->beatthres->powerfour = true;
+    this->beatthres->box->lcolor[0] = 0.4f;
+    this->beatthres->box->lcolor[1] = 0.4f;
+    this->beatthres->box->lcolor[2] = 0.4f;
+    this->beatthres->box->lcolor[3] = 1.0f;
+    this->beatthres->box->vtxcoords->y1 = 0.4f + 0.075f;
+    this->beatthres->box->vtxcoords->w = 0.3f;
+    this->beatthres->box->vtxcoords->h = 0.075f;
+    this->beatthres->box->upvtxtoscr();
+    this->beatthres->box->tooltiptitle = "Loopstation beat detection threshold ";
+    this->beatthres->box->tooltip = "Sets sound level (maximum peak) needed to trigger beat detection. ";
+
     // layer stack scrollbar
     this->boxbig = new Boxx;
     this->boxbefore = new Boxx;
@@ -5082,6 +5102,26 @@ void Program::handle_lpstmenu() {
     }
 }
 
+void Program::handle_beatmenu() {
+    int k = -1;
+    // Draw and handle beatmenu for beat switching the layer queues
+    k = mainprogram->handle_menu(mainprogram->beatmenu);
+    if (k > -1) {
+        if (k == 0) {
+            mainmix->mouselayer->beats = 0;
+        } else {
+            mainmix->mouselayer->beats = pow(2, k - 1);
+        }
+    }
+
+    if (mainprogram->menuchosen) {
+        mainprogram->menuchosen = false;
+        mainprogram->menuactivation = 0;
+        mainprogram->menuresults.clear();
+        mainprogram->recundo = true;
+    }
+}
+
 
 // end of menu code
 
@@ -5592,79 +5632,79 @@ bool Program::preferences_handle() {
         }
 
         if (mci->items[i]->type == PREF_PATH) {
-                // display and handle directory item (list)
-                std::string path = mci->items[i]->path;
-                draw_box(white, black, mci->items[i]->namebox->vtxcoords->x1, mci->items[i]->namebox->vtxcoords->y1, mci->items[i]->namebox->vtxcoords->w, mci->items[i]->namebox->vtxcoords->h, -1);
-                render_text(mci->items[i]->name, white, -0.5f + 0.1f, mci->items[i]->namebox->vtxcoords->y1 + 0.03f, 0.0024f, 0.004f, 1, 0);
-                draw_box(white, black, mci->items[i]->valuebox->vtxcoords->x1, mci->items[i]->valuebox->vtxcoords->y1, mci->items[i]->valuebox->vtxcoords->w, mci->items[i]->valuebox->vtxcoords->h, -1);
-                if (mci->items[i]->renaming == false) {
-                    render_text(path, white,
-                                mci->items[i]->valuebox->vtxcoords->x1 + 0.1f, mci->items[i]->valuebox->vtxcoords->y1 + 0.03f, 0.0024f, 0.004f, 1, 0);
+            // display and handle directory item (list)
+            std::string path = mci->items[i]->path;
+            draw_box(white, black, mci->items[i]->namebox->vtxcoords->x1, mci->items[i]->namebox->vtxcoords->y1, mci->items[i]->namebox->vtxcoords->w, mci->items[i]->namebox->vtxcoords->h, -1);
+            render_text(mci->items[i]->name, white, -0.5f + 0.1f, mci->items[i]->namebox->vtxcoords->y1 + 0.03f, 0.0024f, 0.004f, 1, 0);
+            draw_box(white, black, mci->items[i]->valuebox->vtxcoords->x1, mci->items[i]->valuebox->vtxcoords->y1, mci->items[i]->valuebox->vtxcoords->w, mci->items[i]->valuebox->vtxcoords->h, -1);
+            if (mci->items[i]->renaming == false) {
+                render_text(path, white,
+                            mci->items[i]->valuebox->vtxcoords->x1 + 0.1f, mci->items[i]->valuebox->vtxcoords->y1 + 0.03f, 0.0024f, 0.004f, 1, 0);
+            }
+            else {
+                if (this->renaming == EDIT_NONE) {
+                    mci->items[i]->renaming = false;
+                    path = this->inputtext;
+                    mci->items[i]->path = this->inputtext;
+                    if (mci->items[i]->dest == &this->project->name) {
+                        this->projnamechanged = true;
+                        this->saveproject = true;
+                    }
+                }
+                else if (this->renaming == EDIT_CANCEL) {
+                    mci->items[i]->renaming = false;
                 }
                 else {
-                    if (this->renaming == EDIT_NONE) {
-                        mci->items[i]->renaming = false;
-                        path = this->inputtext;
-                        mci->items[i]->path = this->inputtext;
-                        if (mci->items[i]->dest == &this->project->name) {
-                            this->projnamechanged = true;
-                            this->saveproject = true;
+                    do_text_input(mci->items[i]->valuebox->vtxcoords->x1 + 0.1f, mci->items[i]->valuebox->vtxcoords->y1 + 0.03f, 0.0024f, 0.004f, mx, my, this->xvtxtoscr(0.7f), 1, mci->items[i], true);
+                }
+            }
+            if (mci->items[i]->valuebox->in(mx, my)) {
+                if (this->leftmouse) {
+                    for (int i = 0; i < mci->items.size(); i++) {
+                        if (mci->items[i]->renaming) {
+                            mci->items[i]->renaming = false;
+                            end_input();
+                            break;
                         }
                     }
-                    else if (this->renaming == EDIT_CANCEL) {
-                        mci->items[i]->renaming = false;
-                    }
-                    else {
-                        do_text_input(mci->items[i]->valuebox->vtxcoords->x1 + 0.1f, mci->items[i]->valuebox->vtxcoords->y1 + 0.03f, 0.0024f, 0.004f, mx, my, this->xvtxtoscr(0.7f), 1, mci->items[i], true);
-                    }
+                    mci->items[i]->renaming = true;
+                    this->renaming = EDIT_STRING;
+                    this->inputtext = path;
+                    this->cursorpos0 = this->inputtext.length();
+                    SDL_StartTextInput();
                 }
-                if (mci->items[i]->valuebox->in(mx, my)) {
+            }
+            if (mci->items[i]->dest != &this->project->name) {
+                draw_box(white, black, mci->items[i]->iconbox->vtxcoords->x1 + 0.02f,
+                         mci->items[i]->iconbox->vtxcoords->y1 + 0.05f, 0.06f, 0.07f, -1);
+                draw_box(white, black, mci->items[i]->iconbox->vtxcoords->x1 + 0.05f,
+                         mci->items[i]->iconbox->vtxcoords->y1 + 0.11f, 0.025f, 0.03f, -1);
+                draw_box(white, black, mci->items[i]->iconbox->vtxcoords->x1,
+                         mci->items[i]->iconbox->vtxcoords->y1, mci->items[i]->iconbox->vtxcoords->w,
+                         mci->items[i]->iconbox->vtxcoords->h, -1);
+                draw_box(white, black, mci->items[i]->iconbox->vtxcoords->x1 + 0.02f,
+                         mci->items[i]->iconbox->vtxcoords->y1 + 0.05f, 0.06f, 0.07f, -1);
+                draw_box(white, black, mci->items[i]->iconbox->vtxcoords->x1 + 0.05f,
+                         mci->items[i]->iconbox->vtxcoords->y1 + 0.11f, 0.025f, 0.03f, -1);
+                if (mci->items[i]->iconbox->in(mx, my)) {
                     if (this->leftmouse) {
-                        for (int i = 0; i < mci->items.size(); i++) {
-                            if (mci->items[i]->renaming) {
-                                mci->items[i]->renaming = false;
-                                end_input();
-                                break;
-                            }
-                        }
-                        mci->items[i]->renaming = true;
-                        this->renaming = EDIT_STRING;
-                        this->inputtext = path;
-                        this->cursorpos0 = this->inputtext.length();
-                        SDL_StartTextInput();
+                        mci->items[i]->choosing = true;
+                        this->pathto = "CHOOSEDIR";
+                        std::string title = "Open " + mci->items[i]->name + " directory";
+                        std::thread filereq(&Program::get_dir, this, title.c_str(),
+                                            std::filesystem::canonical(mci->items[i]->path).generic_string());
+                        filereq.detach();
                     }
                 }
-                if (mci->items[i]->dest != &this->project->name) {
-                    draw_box(white, black, mci->items[i]->iconbox->vtxcoords->x1 + 0.02f,
-                             mci->items[i]->iconbox->vtxcoords->y1 + 0.05f, 0.06f, 0.07f, -1);
-                    draw_box(white, black, mci->items[i]->iconbox->vtxcoords->x1 + 0.05f,
-                             mci->items[i]->iconbox->vtxcoords->y1 + 0.11f, 0.025f, 0.03f, -1);
-                    draw_box(white, black, mci->items[i]->iconbox->vtxcoords->x1,
-                             mci->items[i]->iconbox->vtxcoords->y1, mci->items[i]->iconbox->vtxcoords->w,
-                             mci->items[i]->iconbox->vtxcoords->h, -1);
-                    draw_box(white, black, mci->items[i]->iconbox->vtxcoords->x1 + 0.02f,
-                             mci->items[i]->iconbox->vtxcoords->y1 + 0.05f, 0.06f, 0.07f, -1);
-                    draw_box(white, black, mci->items[i]->iconbox->vtxcoords->x1 + 0.05f,
-                             mci->items[i]->iconbox->vtxcoords->y1 + 0.11f, 0.025f, 0.03f, -1);
-                    if (mci->items[i]->iconbox->in(mx, my)) {
-                        if (this->leftmouse) {
-                            mci->items[i]->choosing = true;
-                            this->pathto = "CHOOSEDIR";
-                            std::string title = "Open " + mci->items[i]->name + " directory";
-                            std::thread filereq(&Program::get_dir, this, title.c_str(),
-                                                std::filesystem::canonical(mci->items[i]->path).generic_string());
-                            filereq.detach();
-                        }
-                    }
-                    if (mci->items[i]->choosing && this->choosedir != "") {
+                if (mci->items[i]->choosing && this->choosedir != "") {
 #ifdef WINDOWS
-                        boost::replace_all(this->choosedir, "/", "\\");
+                    boost::replace_all(this->choosedir, "/", "\\");
 #endif
-                        path = this->choosedir;
-                        this->choosedir = "";
-                        mci->items[i]->choosing = false;
-                    }
+                    path = this->choosedir;
+                    this->choosedir = "";
+                    mci->items[i]->choosing = false;
                 }
+            }
         }
 
 
@@ -5950,7 +5990,10 @@ bool Program::preferences_handle() {
 			this->prefon = false;
 			this->drawnonce = false;
 
-			if (this->saveproject) {
+            this->beatdet = new BeatDetektor(this->minbpm, this->minbpm * 2, nullptr);
+            this->austarttime = std::chrono::high_resolution_clock::now();
+
+            if (this->saveproject) {
                 if (this->project->path.find("autosave") != std::string::npos) {
                     this->path = this->project->bupp;
                     this->pathto = "SAVEPROJECT";
@@ -6850,9 +6893,9 @@ void Project::copy_dirs(std::string path, bool rem) {
     }
     if (!exists(path)) fs::create_directory(fs::path(path));
     if (!exists(path + "/autosaves/")) fs::create_directory(fs::path(path + "/autosaves/"));
-    fs::copy(pathtoposix(this->recdir), path + "/recordings", fs::copy_options::overwrite_existing | fs::copy_options::recursive);
-    fs::copy(pathtoposix(this->shelfdir), path + "/shelves", fs::copy_options::overwrite_existing | fs::copy_options::recursive);
-    fs::copy(pathtoposix(this->elementsdir), path + "/elements", fs::copy_options::overwrite_existing | fs::copy_options::recursive);
+    copy_dir(pathtoposix(this->recdir), path + "/recordings", true);
+    copy_dir(pathtoposix(this->shelfdir), path + "/shelves", true);
+    copy_dir(pathtoposix(this->elementsdir), path + "/elements", true);
     this->binsdir = path + "/bins/";
     this->recdir = path + "/recordings/";
     this->shelfdir = path + "/shelves/";
@@ -7239,7 +7282,7 @@ void Project::save(std::string path, bool autosave, bool undo, bool nocheck) {
             std::filesystem::remove_all(binpath.substr(0, binpath.length() - 4));
         }
         for (Bin *bin : binsmain->bins) {
-            std::filesystem::copy(mainprogram->autosavebinsdir, mainprogram->project->binsdir, std::filesystem::copy_options::skip_existing | std::filesystem::copy_options::recursive);
+            copy_dir(mainprogram->autosavebinsdir, mainprogram->project->binsdir, false);
 
             for (int k = 0; k < binsmain->bins.size(); k++) {
                 std::vector<std::string> bup;
@@ -8467,6 +8510,16 @@ PIProg::PIProg() {
     mainprogram->sameeight = pdi->onoff;
     this->items.push_back(pdi);
     pos++;
+
+    pdi = new PrefItem(this, pos, "Beat detection minimum bpm", PREF_NUMBER, (void*)&mainprogram->minbpm);
+    pdi->value = 90;
+    pdi->namebox->tooltiptitle = "Beat detection minimum bpm ";
+    pdi->namebox->tooltip = "This value sets the minimum bpm for beat detection. The maximum bpm will be two times bigger. ";
+    pdi->valuebox->tooltiptitle = "Set minimum beat detection bpm ";
+    pdi->valuebox->tooltip = "Leftclicking the value allows typing the minimum bpm detected by the beatmatching algorithm. ";
+    mainprogram->minbpm = pdi->value;
+    this->items.push_back(pdi);
+    pos++;
 }
 
 
@@ -9617,7 +9670,7 @@ void Shelf::handle() {
                                 newpath = find_unused_filename("shelf_" + base,
                                                                mainprogram->project->shelfdir + this->basepath + "/",
                                                                extstr);
-                                std::filesystem::copy_file(mainprogram->dragbinel->path, newpath);
+                                copy_file(mainprogram->dragbinel->path, newpath);
                                 mainprogram->dragbinel->path = newpath;
                                 mainprogram->dragbinel->relpath = std::filesystem::relative(newpath, mainprogram->project->binsdir).generic_string();
                             }
@@ -9968,7 +10021,7 @@ void Program::concat_files(std::string ofpath, std::string path, std::vector<std
             std::error_code ec;
             mainprogram->remove_ec(path, ec);
         }
-        std::filesystem::copy_file(ofpath, path);
+        copy_file(ofpath, path);
         std::filesystem::remove(ofpath);
     }
 
@@ -10661,7 +10714,7 @@ void Program::process_audio() {
     }
 
     // init OnsetsDS
-    this->beatdet = new BeatDetektor(90.0, 180.0, nullptr);
+    this->beatdet = new BeatDetektor(mainprogram->minbpm, mainprogram->minbpm * 2, nullptr);
     this->austarttime = std::chrono::high_resolution_clock::now();
 
     float sumavg;
@@ -10674,17 +10727,19 @@ void Program::process_audio() {
         if (bytesRead > 0) {
             // Process the audio data in `buffer`
             //int num_samples = frame->nb_samples;
+
+            // get volume peak for testing against beatthreshold
             for (int i = 0; i < this->ausamples; i++) {
                 this->auin[i] = this->aubuffer[i]; // / 32768.0; // Scale samples to [-1, 1]
                 max = std::max(this->auin[i], max);
             }
             if (cnt == 40) {
                 top = max;
-                fflush(stdout);
                 max = 0.0f;
                 cnt = 0;
             }
             cnt++;
+
             // Perform FFT
             fftw_execute(this->auplan);
 
@@ -10701,19 +10756,6 @@ void Program::process_audio() {
             this->autime = std::chrono::duration_cast<std::chrono::milliseconds>(elapsed).count();
 
             this->beatdet->process((float)this->autime / 1000.0f, this->auoutfloat);
-            // reset at sudden tempo change
-            /*this->qtime += this->autime;
-            if (this->autime - this->qtime > 3000.0f) {
-                this->topquality = 0.0f;
-            }
-            if (this->beatdet->quality_avg > this->topquality) {
-                this->topquality = this->beatdet->quality_avg;
-                this->qtime = this->autime;
-            }
-            if (this->beatdet->quality_avg < this->topquality - 4.0f) {
-                //this->beatdet->reset();
-                this->topquality = 0.0f;
-            }*/
 
             LoopStation *lpst;
             int counter = this->beatdet->beat_counter;
@@ -10725,9 +10767,10 @@ void Program::process_audio() {
                 }
                 for (auto elem: lpst->elements) {
                     if (elem->beats) {
+                        // loopstation element uses beat detection
                         int counter2 = counter / elem->beats;
                         elem->speed->value = elem->totaltime / (1000.0f * this->beatdet->winning_bpm) / elem->beats;
-                        if (top < std::pow(loopstation->beatthres->value, 4)) {
+                        if (top < std::pow(mainprogram->beatthres->value, 4)) {
                             elem->speed->value = 0.0f;
                         }
                         else if (counter2 > this->aubpmcounter / elem->beats) {
@@ -10737,6 +10780,20 @@ void Program::process_audio() {
                             elem->interimtime = 0;
                             elem->eventpos = 0;
                             elem->atend = false;
+                        }
+                    }
+                }
+            }
+            for (auto lays : mainmix->layers) {
+                for (auto lay : lays) {
+                    if (lay->beats && lay->beatdetbut->value) {
+                        // layer queue switching is beatmatched
+                        int counter2 = counter / lay->beats;
+                        if (top < std::pow(mainprogram->beatthres->value, 4)) {
+                            // music peak too low: dont switch clip
+                        }
+                        if (counter2 > this->aubpmcounter / lay->beats) {
+                            lay->displaynextclip = true;
                         }
                     }
                 }

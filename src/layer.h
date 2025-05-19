@@ -112,10 +112,14 @@ class Layer {
 		Button *mutebut;
         Button* solobut;
         Button* keepeffbut;
-		Button* queuebut;
+        Button* queuebut;
+        Button* beatdetbut;
 		bool muting = false;
         bool soloing = false;
         bool keepeffing = false;
+        bool beatdetting = false;
+        int beats = 0;
+        bool displaynextclip = false;
 		bool mousequeue = false;
 		int numefflines[2] = {0,0};
 		int effscroll[2] = {0,0};
@@ -298,6 +302,7 @@ class Layer {
 		ALuint sampleformat;
 		BinElement *hapbinel = nullptr;
 		bool nopbodel = false;
+        bool wiping = false;
 
 		std::unordered_map<EFFECT_TYPE, int> numoftypemap;
 

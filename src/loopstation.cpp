@@ -71,25 +71,6 @@ void LoopStation::init() {
 	this->parelemmap.clear();
 	this->butelemmap.clear();
 	this->currelem = this->elements[0];
-    
-    this->beatthres = new Param;
-    this->beatthres->name = "LPST beat threshold";
-    this->beatthres->value = 0.17f;
-    this->beatthres->deflt = 0.17f;
-    this->beatthres->range[0] = 0.0f;
-    this->beatthres->range[1] = 1.0f;
-    this->beatthres->sliding = true;
-    this->beatthres->powerfour = true;
-    this->beatthres->box->lcolor[0] = 0.4f;
-    this->beatthres->box->lcolor[1] = 0.4f;
-    this->beatthres->box->lcolor[2] = 0.4f;
-    this->beatthres->box->lcolor[3] = 1.0f;
-    this->beatthres->box->vtxcoords->y1 = 0.4f + 0.075f;
-    this->beatthres->box->vtxcoords->w = 0.3f;
-    this->beatthres->box->vtxcoords->h = 0.075f;
-    this->beatthres->box->upvtxtoscr();
-    this->beatthres->box->tooltiptitle = "Loopstation beat detection threshold ";
-    this->beatthres->box->tooltip = "Sets sound level (maximum peak) needed to trigger beat detection. ";
 }
 
 LoopStationElement::LoopStationElement() {
@@ -253,6 +234,9 @@ void LoopStationElement::init() {
 	this->speed->value = 1.0f;
 	this->eventlist.clear();
 	this->eventpos = 0;
+    this->totaltime = 0.0f;
+    this->interimtime = 0.0f;
+    this->speedadaptedtime = 0.0f;
 //    this->interimtime = 0.0f;
 //    this->speedadaptedtime = 0.0f;
 //    this->totaltime = 0.0f;
@@ -270,7 +254,7 @@ void LoopStationElement::visualize() {
 	this->speed->box->vtxcoords->x1 = -0.8f + 1.2f * offdeck + this->recbut->box->vtxcoords->w * 3.0f;
     this->scritch->box->vtxcoords->x1 = -0.8f + 1.2f * offdeck + this->recbut->box->vtxcoords->w * 3.0f + this->speed->box->vtxcoords->w;
     this->colbox->vtxcoords->x1 = -0.8f + 1.2f * offdeck + this->recbut->box->vtxcoords->w * 3.0f + this->speed->box->vtxcoords->w * 2;
-    this->lpst->beatthres->box->vtxcoords->x1 = -0.8f + 1.2f * offdeck + this->recbut->box->vtxcoords->w * 3.0f;
+    mainprogram->beatthres->box->vtxcoords->x1 = -0.8f + 1.2f * offdeck + this->recbut->box->vtxcoords->w * 3.0f;
 	this->recbut->box->vtxcoords->y1 = 0.4f - 0.075f * (float)(this->pos - this->lpst->scrpos);
 	this->loopbut->box->vtxcoords->y1 = 0.4f - 0.075f * (float)(this->pos - this->lpst->scrpos);
 	this->playbut->box->vtxcoords->y1 = 0.4f - 0.075f * (float)(this->pos - this->lpst->scrpos);
@@ -292,7 +276,6 @@ void LoopStationElement::visualize() {
         draw_box(this->speed->box, -1);
         render_text(mainprogram->beatmenu->entries[log2(this->beats) + 1], white, this->speed->box->vtxcoords->x1 + 0.03f, this->speed->box->vtxcoords->y1 + 0.075f - 0.045f,
                     0.00045f, 0.00075f);
-        this->lpst->beatthres->handle();
     }
     draw_box(grey, this->colbox->acolor, this->colbox, -1);
 	if (!this->eventlist.empty()) draw_box(black, black, this->colbox->vtxcoords->x1 + 0.02325f ,
@@ -640,14 +623,6 @@ void LoopStationElement::set_values() {
             }
         }
     }
-    /*std::vector<Layer*> &lvec1 = choose_layers(0);
-    for (Layer *lay : lvec1) {
-        mainmix->copy_lpst(lay, lay, false, true);
-    }
-    std::vector<Layer*> &lvec2 = choose_layers(1);
-    for (Layer *lay : lvec2) {
-        mainmix->copy_lpst(lay, lay, false, true);
-    }*/
 }
 
 void LoopStationElement::add_param_automationentry(Param* par) {
@@ -668,7 +643,7 @@ void LoopStationElement::add_param_automationentry(Param* par, long long mc) {
     this->params.emplace(par);
     this->lpst->allparams.emplace(par);
 	loopstation->parelemmap[par] = this;
-    if (par->name == "crossfade" || par->name == "crossfadecomp" || par->name == "wipex" || par->name == "wipey") {
+    if (par->name == "crossfade" || par->name == "crossfadecomp" || par->shadervar == "mixfac" || par->name == "wipex" || par->name == "wipey") {
     }
 	else if (par->effect) {
 		this->layers.emplace(par->effect->layer);
@@ -795,6 +770,18 @@ void LoopStation::remove_entries(int copycomp) {
                     if (copycomp == 2) {
                         elem->eventlist.erase(elem->eventlist.begin() + i);
                         elem->params.erase(std::get<1>(event));
+                    }
+                } else if (std::get<1>(event)->shadervar == "mixfac" || std::get<1>(event)->name == "wipexlay" ||
+                                      std::get<1>(event)->name == "wipeylay") {
+                    int offset = (mainmix->mousedeck == 1) * 2;
+                    for (int j = offset; j < offset + 2; j++) {
+                        for (auto lay : mainmix->layers[j]) {
+                            if (lay->blendnode->mixfac == std::get<1>(event) || lay->blendnode->wipex == std::get<1>(event) || lay->blendnode->wipey == std::get<1>(event)) {
+                                elem->eventlist.erase(elem->eventlist.begin() + i);
+                                elem->params.erase(std::get<1>(event));
+                                break;
+                            }
+                        }
                     }
                 } else if (std::get<1>(event)->effect) {
                     if (std::get<1>(event)->effect->layer->deck == mainmix->mousedeck) {

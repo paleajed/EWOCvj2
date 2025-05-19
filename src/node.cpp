@@ -95,13 +95,13 @@ BlendNode::BlendNode() {
 	this->fbo = -1;
 	this->fbotex = -1;
 	this->wipex = new Param;
-    this->wipex->name = "wipex";
+    this->wipex->name = "wipexlay";
     this->wipex->sliding = true;
     this->wipex->value = 0.5f;
     this->wipex->range[0] = 0.0f;
     this->wipex->range[1] = 1.0f;
 	this->wipey = new Param;
-    this->wipey->name = "wipey";
+    this->wipey->name = "wipeylay";
     this->wipey->sliding = true;
     this->wipey->value = 0.5f;
     this->wipey->range[0] = 1.0f;

@@ -2385,16 +2385,26 @@ Layer::Layer(bool comp) {
     this->keepeffbut->layer = this;
     this->keepeffbut->box->tooltiptitle = "Keep effects ";
     this->keepeffbut->box->tooltip = "Leftclick temporarily keeps the effects of this layer (any new video/layerfile loaded will not change the current effect stack of this layer). ";
-  	this->queuebut = new Button(false);
+    this->queuebut = new Button(false);
     this->queuebut->butid = 4;
     this->queuebut->name[0] = "queuebut";
-	this->queuebut->box->vtxcoords->y1 = 1.0f - mainprogram->layh;
-	this->queuebut->box->vtxcoords->w = 0.03f;
-	this->queuebut->box->vtxcoords->h = 0.05f;
-	this->queuebut->box->reserved = true;
-	this->queuebut->layer = this;
-	this->queuebut->box->tooltiptitle = "Layer clip queue ";
-	this->queuebut->box->tooltip = "Leftclick folds/unfolds the layer clip queue. ";
+    this->queuebut->box->vtxcoords->y1 = 1.0f - mainprogram->layh;
+    this->queuebut->box->vtxcoords->w = 0.03f;
+    this->queuebut->box->vtxcoords->h = 0.05f;
+    this->queuebut->box->reserved = true;
+    this->queuebut->layer = this;
+    this->queuebut->box->tooltiptitle = "Layer clip queue ";
+    this->queuebut->box->tooltip = "Leftclick folds/unfolds the layer clip queue. ";
+    this->beatdetbut = new Button(false);
+    this->beatdetbut->butid = 15;
+    this->beatdetbut->name[0] = "beatdetbut";
+    this->beatdetbut->box->vtxcoords->y1 = 1.0f - mainprogram->layh;
+    this->beatdetbut->box->vtxcoords->w = 0.03f;
+    this->beatdetbut->box->vtxcoords->h = 0.05f;
+    this->beatdetbut->box->reserved = true;
+    this->beatdetbut->layer = this;
+    this->beatdetbut->box->tooltiptitle = "Beat switch queue ";
+    this->beatdetbut->box->tooltip = "Leftclick turns on/off beat switching for the queue of this layer.  Switching on pops up a menu for selecting the interval length. ";
 	this->mixbox = new Boxx;
     this->mixbox->tooltiptitle = "Set layer mix mode ";
     this->mixbox->tooltip = "Left or rightclick for choosing how to mix this layer with the previous ones: blendmode or local wipe.  Also accesses colorkeying. ";
@@ -2711,7 +2721,7 @@ Layer::~Layer() {
 
     if (!this->dontcloseeffs) {
         bool buec = mainprogram->effcat[this->deck]->value;
-        for (int m = 0; m < 2; m++) {
+        for (int m = 0; m < 1; m++) {     // reminder : leak - should be m < 2
             mainprogram->effcat[this->deck]->value = m;
             std::vector<Effect *> effs = this->effects[m];
             for (int i = 0; i < effs.size(); i++) {
@@ -4493,7 +4503,16 @@ void Layer::display() {
 
             mainprogram->frontbatch = false;
 
-			if (box->in()) {
+            if (this->beatdetbut->box->in()) {
+                if (mainprogram->menuactivation && !mainprogram->menuondisplay) {
+                    mainprogram->beatmenu->state = 2;
+                    mainmix->mouselayer = this;
+                    mainmix->mousedeck = this->deck;
+                    mainprogram->menuactivation = false;
+                }
+            }
+
+            if (box->in()) {
                 mainprogram->inmonitors = true;
                 if (mainprogram->dropfiles.size()) {
                     // SDL drag'n'drop
@@ -4764,6 +4783,33 @@ void Layer::display() {
 					register_triangle_draw(black, alphawhite, this->queuebut->box->vtxcoords->x1, this->queuebut->box->vtxcoords->y1, this->queuebut->box->vtxcoords->w, this->queuebut->box->vtxcoords->h, UP, CLOSED);
 					register_triangle_draw(black, black, this->queuebut->box->vtxcoords->x1, this->queuebut->box->vtxcoords->y1, this->queuebut->box->vtxcoords->w, this->queuebut->box->vtxcoords->h, UP, OPEN);
 				}
+
+                // draw and handle beatswitch button
+                this->beatdetbut->box->vtxcoords->x1 = this->mutebut->box->vtxcoords->x1 - 0.21f;
+                this->beatdetbut->box->upvtxtoscr();
+                if (this->beatdetbut->box->in()) {
+                    render_text("B", alphablue, this->beatdetbut->box->vtxcoords->x1 + 0.0078f,
+                                this->beatdetbut->box->vtxcoords->y1 + 0.0078f, 0.0006, 0.001);
+                    if (mainprogram->leftmousedown) {
+                        this->beatdetting = true;
+                        mainprogram->leftmousedown = false;
+                    }
+                    if (this->beatdetting && mainprogram->leftmouse) {
+                        this->beatdetbut->value = !this->beatdetbut->value;
+                        mainprogram->register_undo(nullptr, this->beatdetbut);
+                        this->beatdetting = false;
+                        mainprogram->leftmouse = false;
+                        for (int i = 0; i < loopstation->elements.size(); i++) {
+                            if (loopstation->elements[i]->recbut->value) {
+                                loopstation->elements[i]->add_button_automationentry(this->beatdetbut);
+                            }
+                        }
+                    }
+                }
+                else if (!this->beatdetbut->value) {
+                    render_text("B", alphawhite, this->beatdetbut->box->vtxcoords->x1 + 0.0078f, this->beatdetbut->box->vtxcoords->y1 + 0.0078f, 0.0006, 0.001);
+                }
+
                 mainprogram->frontbatch = false;
 			}
 			else {
@@ -4818,6 +4864,9 @@ void Layer::display() {
             }
             if (this->keepeffbut->value) {
                 render_text("E", alphagreen, this->keepeffbut->box->vtxcoords->x1 + 0.0078f, this->keepeffbut->box->vtxcoords->y1 + 0.0078f, 0.0006, 0.001);
+            }
+            if (this->beatdetbut->value) {
+                render_text("B", alphagreen, this->beatdetbut->box->vtxcoords->x1 + 0.0078f, this->keepeffbut->box->vtxcoords->y1 + 0.0078f, 0.0006, 0.001);
             }
 		}
 		mainprogram->frontbatch = false;
@@ -5974,7 +6023,10 @@ void Mixer::outputmonitors_handle() {
         else if (mainprogram->deckmonitor[1]->in()) deck = 1;
         if (deck > -1) {
             if (mainprogram->leftmousedown) {
-                mainprogram->wiping = true;
+                this->currlay[!mainprogram->prevmodus]->wiping = true;
+                mainprogram->leftmousedown = false;
+            }
+            if (this->currlay[!mainprogram->prevmodus]->wiping) {
                 this->currlay[!mainprogram->prevmodus]->blendnode->wipex->value = -(((1.0f - ((mainprogram->xscrtovtx(mainprogram->mx) - 0.55f - deck * 0.9f) / 0.3f)) - 0.5f) * 2.0f - 1.5f);
                 this->currlay[!mainprogram->prevmodus]->blendnode->wipey->value = -((((2.0f - mainprogram->yscrtovtx(mainprogram->my)) / 0.3f) - 0.5f) * 2.0f - 0.50f);
                 for (int i = 0; i < loopstation->elements.size(); i++) {
@@ -5982,11 +6034,10 @@ void Mixer::outputmonitors_handle() {
                         loopstation->elements[i]->add_param_automationentry(this->currlay[!mainprogram->prevmodus]->blendnode->wipex);
                     }
                 }
-                mainprogram->leftmousedown = false;
             }
-            else {
-                mainprogram->wiping = false;
-            }
+        }
+        if (mainprogram->lmover) {
+            this->currlay[!mainprogram->prevmodus]->wiping = false;
         }
 
         for (int i = 0; i < 2; i++) {
@@ -6643,8 +6694,8 @@ void Mixer::reconnect_all(std::vector<Layer*> &layers) {
         }
         if (layers[j]->effects[1].size() > 1) {
             for (int i = 0; i < layers[j]->effects[1].size() - 1; ++i) {
-                mainprogram->nodesmain->currpage->connect_nodes(layers[j]->effects[0][i]->node,
-                                                                layers[j]->effects[0][i + 1]->node);
+                mainprogram->nodesmain->currpage->connect_nodes(layers[j]->effects[1][i]->node,
+                                                                layers[j]->effects[1][i + 1]->node);
             }
         }
     }
@@ -6990,6 +7041,8 @@ void Mixer::set_values(Layer *clay, Layer *lay, bool open) {
     clay->keepeffbut->value = lay->keepeffbut->value;
     clay->mutebut->value = lay->mutebut->value;
     clay->solobut->value = lay->solobut->value;
+    clay->beatdetbut->value = lay->beatdetbut->value;
+    clay->beats = lay->beats;
     clay->queueing = lay->queueing;
     clay->prevshelfdragelem = lay->prevshelfdragelem;
     //clay->clonesetnr = lay->clonesetnr;
@@ -9295,6 +9348,11 @@ bool Layer::progress(bool comp, bool alive, bool doclips) {
             if (doclips) { //this->oldalive || !alive
                 if (this->scritching == 0) {
                     if (this->bouncebut->value || this->playbut->value || this->revbut->value) {
+                        if (this->displaynextclip) {
+                            // beat switching
+                            this->clip_display_next(0, alive);
+                            this->displaynextclip = false;
+                        }
                         if (this->frame > (this->endframe->value) && this->startframe->value != this->endframe->value) {
                             if (this->pos == 0 && this->deck == 0 && this->comp == true) {
                                 bool dummy = false;
@@ -9314,7 +9372,9 @@ bool Layer::progress(bool comp, bool alive, bool doclips) {
                                             this->recended = true;
                                         }
                                     }
-                                    this->clip_display_next(0, alive);
+                                    if (!this->beatdetbut->value) {
+                                        this->clip_display_next(0, alive);
+                                    }
                                 } else {
                                     this->frame = this->endframe->value - (this->frame - this->endframe->value);
                                     this->bouncebut->value = 2;
@@ -9337,7 +9397,9 @@ bool Layer::progress(bool comp, bool alive, bool doclips) {
                                             this->recended = true;
                                         }
                                     }
-                                    this->clip_display_next(1, alive);
+                                    if (!this->beatdetbut->value) {
+                                        this->clip_display_next(1, alive);
+                                    }
                                 } else {
                                     this->frame = this->startframe->value + (this->startframe->value - this->frame);
                                     this->bouncebut->value = 1;
@@ -10094,10 +10156,12 @@ Layer* Mixer::read_layers(std::istream &rfile, const std::string result, std::ve
             }
             if (notfound && !mainmix->cliplaying) {
                 if (concat) {
-                    rename(result + "_" + std::to_string(mainprogram->filecount) + ".file",
+                    bool ret = rename(result + "_" + std::to_string(mainprogram->filecount) + ".file",
                                               result + "_" + std::to_string(mainprogram->filecount) + ".jpeg");
-                    open_thumb(result + "_" + std::to_string(mainprogram->filecount) + ".jpeg", layend->jpegtex);
-                    std::filesystem::remove(result + "_" + std::to_string(mainprogram->filecount) + ".jpeg");
+                    if(ret) {
+                        open_thumb(result + "_" + std::to_string(mainprogram->filecount) + ".jpeg", layend->jpegtex);
+                        std::filesystem::remove(result + "_" + std::to_string(mainprogram->filecount) + ".jpeg");
+                    }
                 }
                 mainmix->retargeting = true;
                 this->newlaypaths.push_back(filename);
@@ -10169,6 +10233,21 @@ Layer* Mixer::read_layers(std::istream &rfile, const std::string result, std::ve
             if (istring == "EVENTELEM") {
                 mainmix->event_read(rfile, nullptr, but, layend);
             }
+        }
+        if (istring == "BEATDET") {
+            safegetline(rfile, istring);
+            layend->beatdetbut->value = std::stoi(istring);
+        }
+        if (istring == "BEATDETEVENT") {
+            Button* but = layend->beatdetbut;
+            safegetline(rfile, istring);
+            if (istring == "EVENTELEM") {
+                mainmix->event_read(rfile, nullptr, but, layend);
+            }
+        }
+        if (istring == "BEATS") {
+            safegetline(rfile, istring);
+            layend->beats = std::stoi(istring);
         }
 		if (istring == "SPEEDVAL") {
 			safegetline(rfile, istring);
@@ -10980,6 +11059,14 @@ std::vector<std::string> Mixer::write_layer(Layer* lay, std::ostream& wfile, boo
     wfile << "KEEPEFFEVENT\n";
     mainmix->event_write(wfile, nullptr, lay->keepeffbut);
     wfile << "\n";
+    wfile << "BEATDET\n";
+    wfile << std::to_string(lay->beatdetbut->value);
+    wfile << "\n";
+    wfile << "BEATDETEVENT\n";
+    mainmix->event_write(wfile, nullptr, lay->beatdetbut);
+    wfile << "BEATS\n";
+    wfile << lay->beats;
+    wfile << "\n";
 	if (lay->type != ELEM_LIVE) {
 		wfile << "SPEEDVAL\n";
 		wfile << std::to_string(lay->speed->value);
@@ -11512,6 +11599,16 @@ void Mixer::event_read(std::istream &rfile, Param *par, Button* but, Layer *lay,
         if (par) {
             if (par->name == "Crossfade" || std::get<1>(event)->name == "wipex" || std::get<1>(event)->name == "wipey") {
                 loopstation->odelems.emplace(loop);
+            } else if (par->shadervar == "mixfac" || par->name == "wipexlay" || par->name == "wipeylay") {
+                int offset = (mainmix->mousedeck == 1) * 2;
+                for (int j = offset; j < offset + 2; j++) {
+                    for (auto lay : mainmix->layers[j]) {
+                        if (lay->blendnode->mixfac == par || lay->blendnode->wipex == par || lay->blendnode->wipey == par) {
+                            loopstation->odelems.emplace(loop);
+                            break;
+                        }
+                    }
+                }
             } else if (par->effect) {
                 if (par->effect->layer->deck == mainmix->mousedeck) {
                     loopstation->odelems.emplace(loop);
@@ -12220,9 +12317,12 @@ void Mixer::handle_clips() {
                 lay2->cliploopbox->vtxcoords->h = lay2->loopbox->vtxcoords->h;
                 lay2->cliploopbox->upvtxtoscr();
                 draw_box(lay2->cliploopbox, -1);
-                draw_box(white, white, lay2->cliploopbox->vtxcoords->x1 + lay2->frame * (lay2->cliploopbox->vtxcoords->w /
-                        (float)(lay2->numf - 1)),
-                         lay2->cliploopbox->vtxcoords->y1, 0.00117f, 0.075f, -1);
+                if (!lay2->beats) {
+                    draw_box(white, white,
+                             lay2->cliploopbox->vtxcoords->x1 + lay2->frame * (lay2->cliploopbox->vtxcoords->w /
+                                                                               (float) (lay2->numf - 1)),
+                             lay2->cliploopbox->vtxcoords->y1, 0.00117f, 0.075f, -1);
+                }
                 if (lay2->cliploopbox->in()) {
                     if (mainprogram->leftmousedown) {
                         lay2->clipscritching = 1;
@@ -13064,6 +13164,19 @@ void Scene::switch_to(bool dotempmap) {
                         prevlpst->elements[count]->params.emplace(par);
                         prevlpst->parelemmap[par] = prevlpst->elements[count];
                         prevlpst->allparams.emplace(par);
+                    } else if (par->shadervar == "mixfac" || par->name == "wipexlay" || par->name == "wipeylay") {
+                        int offset = (mainmix->mousedeck == 1) * 2;
+                        for (int j = offset; j < offset + 2; j++) {
+                            for (auto lay : mainmix->layers[j]) {
+                                if (lay->blendnode->mixfac == par || lay->blendnode->wipex == par || lay->blendnode->wipey == par) {
+                                    prevlpst->elements[count]->eventlist.push_back(event);
+                                    prevlpst->elements[count]->params.emplace(par);
+                                    prevlpst->parelemmap[par] = prevlpst->elements[count];
+                                    prevlpst->allparams.emplace(par);
+                                    break;
+                                }
+                            }
+                        }
                     } else if (par->effect) {
                         lay = par->effect->layer;
                     } else {
@@ -13115,6 +13228,19 @@ void Scene::switch_to(bool dotempmap) {
                         loopstation->elements[count]->params.emplace(std::get<1>(event));
                         loopstation->allparams.emplace(par);
                         loopstation->parelemmap[par] = loopstation->elements[count];
+                    } else if (par->shadervar == "mixfac" || par->name == "wipexlay" || par->name == "wipeylay") {
+                        int offset = (mainmix->mousedeck == 1) * 2;
+                        for (int j = offset; j < offset + 2; j++) {
+                            for (auto lay : mainmix->layers[j]) {
+                                if (lay->blendnode->mixfac == par || lay->blendnode->wipex == par || lay->blendnode->wipey == par) {
+                                    prevlpst->elements[count]->eventlist.push_back(event);
+                                    prevlpst->elements[count]->params.emplace(par);
+                                    prevlpst->parelemmap[par] = prevlpst->elements[count];
+                                    prevlpst->allparams.emplace(par);
+                                    break;
+                                }
+                            }
+                        }
                     } else if (par->effect) {
                         lay = par->effect->layer;
                     } else {
@@ -13168,6 +13294,7 @@ void Scene::switch_to(bool dotempmap) {
                         //lpc->elements[count]->params.emplace(std::get<1>(event));
                         //lpc->allparams.emplace(par);
                         //lpc->parelemmap[par] = lpc->elements[count];
+                    } else if (par->shadervar == "mixfac" || par->name == "wipexlay" || par->name == "wipeylay") {
                     } else if (par->effect) {
                         lay = par->effect->layer;
                     } else {

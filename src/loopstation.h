@@ -40,7 +40,6 @@ class LoopStation {
         Boxx *downscrbox;
         Boxx *confupscrbox;
         Boxx *confdownscrbox;
-        Param *beatthres;
         int scrpos = 0;
         int confscrpos = 0;
         bool foundrec = false;

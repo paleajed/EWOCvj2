@@ -261,6 +261,109 @@ bool rename(std::string source, std::string destination) {
     }
 }
 
+bool copy_file(const std::string& source_path, const std::string& destination_path) {
+    // Validate input parameters
+    if (source_path.empty()) {
+        printf("Error: Source path cannot be empty\n");
+        return false;
+    }
+    if (destination_path.empty()) {
+        printf("Error: Destination path cannot be empty\n");
+        return false;
+    }
+
+    try {
+        // Check if source file exists
+        if (!std::filesystem::exists(source_path)) {
+            printf("Error: Source file does not exist: %s\n", source_path.c_str());
+            return false;
+        }
+
+        // Create destination directory if it doesn't exist
+        std::filesystem::path dest_dir = std::filesystem::path(destination_path).parent_path();
+        if (!dest_dir.empty()) {
+            std::filesystem::create_directories(dest_dir);
+        }
+
+        // Copy the file
+        copy_file(
+                source_path,
+                destination_path,
+                std::filesystem::copy_options::overwrite_existing
+        );
+
+        return true;
+    }
+    catch (const std::filesystem::filesystem_error& e) {
+        printf("Error: File system error: %s\n", e.what());
+        return false;
+    }
+    catch (const std::exception& e) {
+        printf("Error: %s\n", e.what());
+        return false;
+    }
+}
+
+bool copy_dir(const std::string& source_path, const std::string& destination_path, bool recursive, bool overwrite) {
+    // Validate input parameters
+    if (source_path.empty()) {
+        printf("Error: Source path cannot be empty\n");
+        return false;
+    }
+    if (destination_path.empty()) {
+        printf("Error: Destination path cannot be empty\n");
+        return false;
+    }
+
+    try {
+        // Check if source directory exists
+        if (!std::filesystem::exists(source_path)) {
+            printf("Error: Source directory does not exist: %s\n", source_path.c_str());
+            return false;
+        }
+
+        // Check if source is a directory
+        if (!std::filesystem::is_directory(source_path)) {
+            printf("Error: Source is not a directory: %s\n", source_path.c_str());
+            return false;
+        }
+
+        // Create destination directory if it doesn't exist
+        if (!std::filesystem::exists(destination_path)) {
+            if (!std::filesystem::create_directories(destination_path)) {
+                printf("Error: Failed to create destination directory: %s\n", destination_path.c_str());
+                return false;
+            }
+        }
+
+        // Choose copy options based on recursion parameter
+        std::filesystem::copy_options options = std::filesystem::copy_options::overwrite_existing;
+        if (recursive) {
+            options |= std::filesystem::copy_options::recursive;
+        }
+
+         if (overwrite) {
+            options |= std::filesystem::copy_options::overwrite_existing;
+         }
+         else {
+             options |= std::filesystem::copy_options::skip_existing;
+         }
+
+        // Copy the directory
+        std::filesystem::copy(source_path, destination_path, options);
+
+        return true;
+    }
+    catch (const std::filesystem::filesystem_error& e) {
+        printf("Error: File system error: %s\n", e.what());
+        return false;
+    }
+    catch (const std::exception& e) {
+        printf("Error: %s\n", e.what());
+        return false;
+    }
+}
+
 bool check_permission(std::string directory) {
     namespace fs = std::filesystem;
     try {
@@ -317,21 +420,6 @@ std::string pathtoplatform(std::string path) {
 std::string pathtoposix(std::string path) {
     std::replace(path.begin(), path.end(), '\\', '/');
     return path;
-}
-
-void copy_dir(std::string src, std::string dest) {
-    namespace fs = std::filesystem;
-
-    if (!fs::exists(src) || !fs::is_directory(src)) {
-        throw std::runtime_error("Source directory " + src + " does not exist or is not a directory");
-    }
-    if (!fs::exists(dest)) {
-        if (!fs::create_directory(fs::path(dest))) {
-            throw std::runtime_error("Cannot create destination directory " + dest);
-        }
-    }
-
-    fs::copy(src, dest, fs::copy_options::overwrite_existing | fs::copy_options::recursive);
 }
 
 
@@ -4332,8 +4420,20 @@ void the_loop() {
         mainprogram->recundo = true;
     }
 
+    bool brk = false;
+    bool laywiping = false;
+    for (auto sm : mainmix->layers) {
+        for (auto lay : sm) {
+            if (lay->wiping) {
+                laywiping = true;
+                brk = true;
+                break;
+            }
+        }
+        if (brk) break;
+    }
     if (mainprogram->leftmouse &&
-        (mainprogram->cwon || mainprogram->menuondisplay || mainprogram->wiping || mainmix->adaptparam ||
+        (laywiping || mainprogram->cwon || mainprogram->menuondisplay || mainprogram->wiping || mainmix->adaptparam ||
          mainmix->scrollon || binsmain->dragbin || mainmix->moving || mainprogram->dragbinel || mainprogram->drageff ||
          mainprogram->shelfdragelem || mainprogram->wiping)) {
         // special cases when mouse can be released over element that should not be triggered
@@ -5365,7 +5465,7 @@ void the_loop() {
             }
         }
     }
-
+    mainprogram->beatthres->handle();
 
     if (mainprogram->rightmouse) {
 		if (mainprogram->dragclip) {
@@ -5548,6 +5648,8 @@ void the_loop() {
 
     mainprogram->handle_lpstmenu();
 
+    mainprogram->handle_beatmenu();
+
     mainprogram->frontbatch = false;
 
     if (mainprogram->menuactivation == true) {
@@ -5616,7 +5718,7 @@ void the_loop() {
                             std::string elempath = str + "/" + basename(elem->path);
                             if (!exists(elempath)) {
                                 if (elem->type == ELEM_LAYER || elem->type == ELEM_DECK || elem->type == ELEM_MIX) {
-                                    std::filesystem::copy_file(elem->path, elempath);
+                                    copy_file(elem->path, elempath);
                                     cnt++;
                                 }
                             }

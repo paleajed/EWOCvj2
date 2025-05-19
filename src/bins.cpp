@@ -2262,7 +2262,7 @@ void BinsMain::handle(bool draw) {
                     std::string ext = this->currbinel->path.substr(this->currbinel->path.rfind("."));
                     std::string newpath = find_unused_filename(remove_extension(basename(this->currbinel->path)),
                                                                mainprogram->project->binsdir, ext);
-                    std::filesystem::copy_file(this->currbinel->path, newpath);
+                    copy_file(this->currbinel->path, newpath);
                     this->currbinel->path = newpath;
                 }
             }
@@ -3320,7 +3320,7 @@ void BinsMain::hap_encode(std::string srcpath, BinElement *binel, BinElement *bd
         }
         std::filesystem::path d2{mainprogram->contentpath + "EWOCvj2_CPU_vid_backups/" + basename(dirname(srcpath))};
         std::filesystem::create_directory(d2);
-        std::filesystem::copy_file(srcpath,
+        copy_file(srcpath,
                                    mainprogram->contentpath + "EWOCvj2_CPU_vid_backups/" + basename(dirname(srcpath)) +
                                    "/" + basename(srcpath),
                                    std::filesystem::copy_options::overwrite_existing);  // reminder : warn for overwrite

@@ -889,6 +889,8 @@ class Program {
         bool adaptparaming = false;
         std::unordered_set<Layer*> openlayers;
         int transferclonesetnr = -1;
+        Param *beatthres;
+        int minbpm = 90;
 
         Boxx *boxbig;
         Boxx *boxbefore;
@@ -970,6 +972,7 @@ class Program {
 		void handle_filemenu();
         void handle_editmenu();
         void handle_lpstmenu();
+        void handle_beatmenu();
         void write_recentprojectlist();
         void socket_server(struct sockaddr_in serv_addr, int opt);
         void socket_client(struct sockaddr_in serv_addr, int opt);
@@ -1149,11 +1152,12 @@ extern std::string dirname(std::string pathname);
 extern std::string basename(std::string pathname);
 extern std::string remove_extension(std::string filename);
 extern bool rename(std::string source, std::string destination);
+extern bool copy_file(const std::string& source_path, const std::string& destination_path);
+extern bool copy_dir(const std::string& source_path, const std::string& destination_path, bool recursive = true, bool overwrite = true);
 extern bool check_permission(std::string directory);
 extern std::string remove_version(std::string filename);
 extern std::string pathtoplatform(std::string path);
 extern std::string pathtoposix(std::string path);
-extern void copy_dir(std::string src, std::string dest);
 extern bool isimage(std::string path);
 extern bool isvideo(std::string path);
 extern bool isdeckfile(std::string path);
