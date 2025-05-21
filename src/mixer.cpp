@@ -2243,7 +2243,6 @@ void Mixer::delete_layer(std::vector<Layer*> &layers, Layer *testlay, bool add) 
 
 	if (testlay->mutebut->value) {
 		testlay->mutebut->value = false;
-		testlay->mute_handle();
 	}
 
     if (testlay->clonesetnr != -1) {
@@ -3687,63 +3686,6 @@ void make_layboxes() {
 	}
 }
 
-void Layer::mute_handle() {
-    // change node connections to accommodate for a mute layer
-    if (this->mutebut->value) {
-        if (this->pos > 0) {
-            if (this->blendnode->in) {
-                this->blendnode->in->out.clear();
-                mainprogram->nodesmain->currpage->connect_nodes(this->blendnode->in, this->lasteffnode[1]->out[0]);
-            }
-        }
-        else if (this->next() != this) {
-            this->next()->blendnode->in = nullptr;
-
-        }
-    }
-    else {
-        Layer *templay = this;
-        while (1) {
-            if (templay == templay->prev()) break;
-            if ((templay->prev()->pos == 0) && !templay->prev()->mutebut->value) {
-                this->prev()->lasteffnode[1]->out.clear();
-                mainprogram->nodesmain->currpage->connect_nodes(this->prev()->lasteffnode[1], this->blendnode);
-                break;
-            }
-            if (!templay->prev()->mutebut->value) {
-                this->prev()->lasteffnode[1]->out.clear();
-                mainprogram->nodesmain->currpage->connect_nodes(this->prev()->lasteffnode[1], this->blendnode);
-                break;
-            }
-            templay = templay->prev();
-        }
-        this->lasteffnode[1]->out.clear();
-        templay = this;
-        while (1) {
-            if (templay == templay->next()) {
-                std::vector<Layer*> &lvec = choose_layers(this->deck);
-                if (&lvec == &mainmix->layers[0]) {
-                    mainprogram->nodesmain->currpage->connect_nodes(this->lasteffnode[1], mainprogram->nodesmain->mixnodes[0][0]);
-                }
-                else if (&lvec == &mainmix->layers[1]) {
-                    mainprogram->nodesmain->currpage->connect_nodes(this->lasteffnode[1], mainprogram->nodesmain->mixnodes[0][1]);
-                }
-                else if (&lvec == &mainmix->layers[2]) {
-                    mainprogram->nodesmain->currpage->connect_nodes(this->lasteffnode[1], mainprogram->nodesmain->mixnodes[1][0]);
-                }
-                else if (&lvec == &mainmix->layers[3]) {
-                    mainprogram->nodesmain->currpage->connect_nodes(this->lasteffnode[1], mainprogram->nodesmain->mixnodes[1][1]);
-                }
-                break;
-            }
-            else if (!templay->next()->mutebut->value) {
-                mainprogram->nodesmain->currpage->connect_nodes(this->lasteffnode[1], templay->next()->blendnode);
-                break;
-            }
-            templay = templay->next();
-        }
-    }
-}
 
 int encode_frame(AVFormatContext *fmtctx, AVFormatContext *srcctx, AVCodecContext *enc_ctx, AVFrame *frame, AVPacket *pkt, FILE *outfile, int framenr) {
     int ret;
@@ -4630,7 +4572,6 @@ void Layer::display() {
 						this->muting = false;
 						this->mutebut->value = !this->mutebut->value;
 						this->mutebut->oldvalue = !this->mutebut->oldvalue;
-						this->mute_handle();
                         mainprogram->register_undo(nullptr, this->mutebut);
                         for (int i = 0; i < loopstation->elements.size(); i++) {
 							if (loopstation->elements[i]->recbut->value) {
@@ -4666,22 +4607,18 @@ void Layer::display() {
 							if (this->mutebut->value) {
 								this->mutebut->value = false;
 								this->mutebut->oldvalue = false;
-								this->mute_handle();
 							}
 							for (int k = 0; k < lvec.size(); k++) {
 								if (k != this->pos) {
 									if (lvec[k]->mutebut->value == false) {
 										lvec[k]->mutebut->value = true;
 										lvec[k]->mutebut->oldvalue = true;
-										lvec[k]->mute_handle();
 									}
 									else {
 										lvec[k]->mutebut->value = false;
 										lvec[k]->mutebut->oldvalue = false;
-										lvec[k]->mute_handle();
 										lvec[k]->mutebut->value = true;
 										lvec[k]->mutebut->oldvalue = true;
-										lvec[k]->mute_handle();
 									}
 									lvec[k]->solobut->value = false;
 									lvec[k]->solobut->oldvalue = false;
@@ -4693,7 +4630,6 @@ void Layer::display() {
 								if (k != this->pos) {
 									lvec[k]->mutebut->value = false;
 									lvec[k]->mutebut->oldvalue = false;
-									lvec[k]->mute_handle();
 								}
 							}
 						}
@@ -6641,7 +6577,7 @@ void Mixer::reconnect_all(std::vector<Layer*> &layers) {
         }
     }
     dellayslock.unlock();
-    // connect all nodes correctly if (layers.size() > 0) {
+
     for (int j = 0; j < layers.size(); j++) {
         // set lasteffnodes
         if (layers[j]->effects[0].size()) {
@@ -6709,6 +6645,8 @@ void Mixer::reconnect_all(std::vector<Layer*> &layers) {
             }
         }
     }
+
+    // handle layer mute and solo modes
     for (int j = 0; j < layers.size(); j++) {
         if (layers[j]->mutebut->value) {
             if (layers[j]->pos > 0) {
@@ -11782,7 +11720,6 @@ void Mixer::new_file(int decks, bool alive, bool add, bool empty) {
 					}
 				}
 				lvec[i]->mutebut->value = false;
-				lvec[i]->mute_handle();
 			}
 			if (alive) mainmix->bulrs[mainprogram->prevmodus][0] = lvec;
 			else {
@@ -11818,7 +11755,6 @@ void Mixer::new_file(int decks, bool alive, bool add, bool empty) {
 					}
 				}
 				lvec[i]->mutebut->value = false;
-				lvec[i]->mute_handle();
             }
 			if (alive) mainmix->bulrs[mainprogram->prevmodus][1] = lvec;
 			else {
@@ -13167,7 +13103,7 @@ void Scene::switch_to(bool dotempmap) {
                         // dont touch mix-wide parameters when switching scene
                     } else if (par->shadervar == "mixfac" || par->name == "wipexlay" || par->name == "wipeylay") {
                         // special cases: mix factor, wipe x and y coord for wipes inside the layer stack
-                        int j = (mainprogram->prevmodus == 0) * mainmix->mousedeck; // only current deck
+                        int j = 2 + mainmix->mousedeck; // only current deck
                         for (auto lay : mainmix->layers[j]) {
                             if (lay->blendnode->mixfac == par || lay->blendnode->wipex == par || lay->blendnode->wipey == par) {
                                 prevlpst->elements[count]->eventlist.push_back(event);
@@ -13222,8 +13158,8 @@ void Scene::switch_to(bool dotempmap) {
                 }
                 prevlpst->elements[count]->loopbut->value = elem->loopbut->value;
                 prevlpst->elements[count]->playbut->value = elem->playbut->value;
-                count++;
             }
+            count++;
         }
 
         // remove all loopstation events frm current deck to be replaced by those of the destination scene loopstation

@@ -334,7 +334,6 @@ class Layer {
 		std::vector<Effect*>& choose_effects();
 		Layer* clone();
 		void set_clones(int clsnr = -1);
-		void mute_handle();
 		void set_aspectratio(int lw, int lh);
         void cnt_lpst();
 		bool progress(bool comp, bool alive, bool doclips = true);
