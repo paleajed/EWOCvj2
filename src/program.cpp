@@ -909,7 +909,7 @@ Program::Program() {
 
     // volume treshold for beat detection to kick in
     this->beatthres = new Param;
-    this->beatthres->name = "LPST beat threshold";
+    this->beatthres->name = "Beat threshold";
     this->beatthres->value = 0.17f;
     this->beatthres->deflt = 0.17f;
     this->beatthres->range[0] = 0.0f;
@@ -1393,13 +1393,19 @@ bool Program::order_paths(bool dodeckmix) {
     }
 
     if (this->multistage == 2) {
-        // wait for threads and get the textures
+        // wait for threads to finish and get the textures
         while (this->getvideotexlayers.size()) {
             std::string str = this->getvideotexpaths[0];
             Layer *lay = this->getvideotexlayers[0];
 
             GLuint tex;
 
+            if (std::find(this->errlays.begin(), this->errlays.end(), lay) != this->errlays.end()) {
+                // error opening file
+                this->getvideotexlayers.erase(this->getvideotexlayers.begin());
+                this->paths.erase(std::find(this->paths.begin(), this->paths.end(), str));
+                return false;
+            }
             // wait for all threads to finish, meanwhile return to continue the videostreams
             if (!lay->processed) return false;
             lay->processed = false;
@@ -2778,8 +2784,8 @@ bool Boxx::in(int mx, int my) {
                 mainprogram->ttreserved = this->reserved;
             }
             else {
-                delete mainprogram->tooltipbox;
-                mainprogram->tooltipbox = nullptr;
+//                delete mainprogram->tooltipbox;
+//                mainprogram->tooltipbox = nullptr;
             }
             mainprogram->inbox = true;
             return true;
@@ -8516,7 +8522,7 @@ PIProg::PIProg() {
     pdi->namebox->tooltiptitle = "Beat detection minimum bpm ";
     pdi->namebox->tooltip = "This value sets the minimum bpm for beat detection. The maximum bpm will be two times bigger. ";
     pdi->valuebox->tooltiptitle = "Set minimum beat detection bpm ";
-    pdi->valuebox->tooltip = "Leftclicking the value allows typing the minimum bpm detected by the beatmatching algorithm. ";
+    pdi->valuebox->tooltip = "Leftclicking the value allows typing the minimum bpm detected by the beatmatching algorithm. Rightclicking pops up a menu where the beatswitching interval can be chosen. ";
     mainprogram->minbpm = pdi->value;
     this->items.push_back(pdi);
     pos++;
@@ -10714,7 +10720,7 @@ void Program::process_audio() {
     }
 
     // init OnsetsDS
-    this->beatdet = new BeatDetektor(mainprogram->minbpm, mainprogram->minbpm * 2, nullptr);
+    this->beatdet = new BeatDetektor((float)mainprogram->minbpm, (float)mainprogram->minbpm * 2, nullptr);
     this->austarttime = std::chrono::high_resolution_clock::now();
 
     float sumavg;
@@ -10792,7 +10798,7 @@ void Program::process_audio() {
                         if (top < std::pow(mainprogram->beatthres->value, 4)) {
                             // music peak too low: dont switch clip
                         }
-                        if (counter2 > this->aubpmcounter / lay->beats) {
+                        else if (counter2 > this->aubpmcounter / lay->beats) {
                             lay->displaynextclip = true;
                         }
                     }

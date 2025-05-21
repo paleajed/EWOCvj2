@@ -5465,7 +5465,9 @@ void the_loop() {
             }
         }
     }
-    mainprogram->beatthres->handle();
+    if (!mainprogram->binsscreen) {
+        mainprogram->beatthres->handle();
+    }
 
     if (mainprogram->rightmouse) {
 		if (mainprogram->dragclip) {

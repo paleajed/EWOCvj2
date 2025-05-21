@@ -773,14 +773,12 @@ void LoopStation::remove_entries(int copycomp) {
                     }
                 } else if (std::get<1>(event)->shadervar == "mixfac" || std::get<1>(event)->name == "wipexlay" ||
                                       std::get<1>(event)->name == "wipeylay") {
-                    int offset = (mainmix->mousedeck == 1) * 2;
-                    for (int j = offset; j < offset + 2; j++) {
-                        for (auto lay : mainmix->layers[j]) {
-                            if (lay->blendnode->mixfac == std::get<1>(event) || lay->blendnode->wipex == std::get<1>(event) || lay->blendnode->wipey == std::get<1>(event)) {
-                                elem->eventlist.erase(elem->eventlist.begin() + i);
-                                elem->params.erase(std::get<1>(event));
-                                break;
-                            }
+                    int j = (mainprogram->prevmodus == 0) * 2 + mainmix->mousedeck;
+                    for (auto lay : mainmix->layers[j]) {
+                        if (lay->blendnode->mixfac == std::get<1>(event) || lay->blendnode->wipex == std::get<1>(event) || lay->blendnode->wipey == std::get<1>(event)) {
+                            elem->eventlist.erase(elem->eventlist.begin() + i);
+                            elem->params.erase(std::get<1>(event));
+                            break;
                         }
                     }
                 } else if (std::get<1>(event)->effect) {

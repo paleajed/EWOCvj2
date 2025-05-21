@@ -565,7 +565,7 @@ void Mixer::handle_adaptparam() {
         mainprogram->adaptparaming = true;
     }
 	this->adaptparam->value += (mainprogram->mx - this->prevx) * (this->adaptparam->range[1] - this->adaptparam->range[0]) / mainprogram->xvtxtoscr(this->adaptparam->box->vtxcoords->w);
-    if (this->adaptparam->name == "LPST beat threshold") {
+    if (this->adaptparam->name == "Beat threshold") {
         this->adaptparam->value = this->adaptparam->value * this->adaptparam->value * this->adaptparam->value * this->adaptparam->value;
     }
 	if (this->adaptparam->value < this->adaptparam->range[0]) {
@@ -576,7 +576,7 @@ void Mixer::handle_adaptparam() {
 	}
 	this->prevx = mainprogram->mx;
 
-    if (this->adaptparam->name == "LPST beat threshold") {
+    if (this->adaptparam->name == "Beat threshold") {
         this->adaptparam->value = sqrt(sqrt(this->adaptparam->value));
     }
 
@@ -2350,7 +2350,7 @@ Layer::Layer(bool comp) {
     this->addbox->vtxcoords->h = 0.05f;
     this->addbox->reserved = true;
     this->addbox->tooltiptitle = "Add/insert layer ";
-    this->addbox->tooltip = "Leftclicking here adds /inserts a layer after this one. ";
+    this->addbox->tooltip = "Leftclicking here adds /inserts a layer at this position. ";
 	this->mutebut = new Button(false);
     this->mutebut->name[0] = "mutebut";
     this->mutebut->butid = 1;
@@ -2404,7 +2404,7 @@ Layer::Layer(bool comp) {
     this->beatdetbut->box->reserved = true;
     this->beatdetbut->layer = this;
     this->beatdetbut->box->tooltiptitle = "Beat switch queue ";
-    this->beatdetbut->box->tooltip = "Leftclick turns on/off beat switching for the queue of this layer.  Switching on pops up a menu for selecting the interval length. ";
+    this->beatdetbut->box->tooltip = "Leftclick turns on/off beat switching for the queue of this layer.  Rightclicking pops up a menu for selecting the interval length. ";
 	this->mixbox = new Boxx;
     this->mixbox->tooltiptitle = "Set layer mix mode ";
     this->mixbox->tooltip = "Left or rightclick for choosing how to mix this layer with the previous ones: blendmode or local wipe.  Also accesses colorkeying. ";
@@ -2801,27 +2801,21 @@ Layer::~Layer() {
 }
 
 Layer* Layer::next() {
-	if (std::find(mainmix->layers[0].begin(), mainmix->layers[0].end(), this) != mainmix->layers[0].end()) {
-		if (this->pos < mainmix->layers[0].size() - 1) return mainmix->layers[0][this->pos + 1];
-	}
-	else if (std::find(mainmix->layers[1].begin(), mainmix->layers[1].end(), this) != mainmix->layers[1].end()) {
-		 if (this->pos < mainmix->layers[1].size() - 1) return mainmix->layers[1][this->pos + 1];
-	}
-	else if (std::find(mainmix->layers[2].begin(), mainmix->layers[2].end(), this) != mainmix->layers[2].end()) {
-		 if (this->pos < mainmix->layers[2].size() - 1) return mainmix->layers[2][this->pos + 1];
-	}
-	else if (std::find(mainmix->layers[3].begin(), mainmix->layers[3].end(), this) != mainmix->layers[3].end()) {
-		 if (this->pos < mainmix->layers[3].size() - 1) return mainmix->layers[3][this->pos + 1];
-	}
+    for (int i = 0; i < 4; i++) {
+        if (std::find(mainmix->layers[i].begin(), mainmix->layers[i].end(), this) != mainmix->layers[i].end()) {
+            if (this->pos < mainmix->layers[i].size() - 1) return mainmix->layers[i][this->pos + 1];
+        }
+    }
 	return this;
 }
 
 Layer* Layer::prev() {
 	if (this->pos > 0) {
-		if (std::find(mainmix->layers[0].begin(), mainmix->layers[0].end(), this) != mainmix->layers[0].end()) return mainmix->layers[0][this->pos - 1];
-		else if (std::find(mainmix->layers[1].begin(), mainmix->layers[1].end(), this) != mainmix->layers[1].end()) return mainmix->layers[1][this->pos - 1];
-		else if (std::find(mainmix->layers[2].begin(), mainmix->layers[2].end(), this) != mainmix->layers[2].end()) return mainmix->layers[2][this->pos - 1];
-		else if (std::find(mainmix->layers[3].begin(), mainmix->layers[3].end(), this) != mainmix->layers[3].end()) return mainmix->layers[3][this->pos - 1];
+        for (int i = 0; i < 4; i++) {
+            if (std::find(mainmix->layers[i].begin(), mainmix->layers[i].end(), this) !=
+                mainmix->layers[i].end())
+                return mainmix->layers[i][this->pos - 1];
+        }
 	}
 	return this;
 }
@@ -3702,7 +3696,10 @@ void Layer::mute_handle() {
                 mainprogram->nodesmain->currpage->connect_nodes(this->blendnode->in, this->lasteffnode[1]->out[0]);
             }
         }
-        else if (this->next() != this) this->next()->blendnode->in = nullptr;
+        else if (this->next() != this) {
+            this->next()->blendnode->in = nullptr;
+
+        }
     }
     else {
         Layer *templay = this;
@@ -4602,7 +4599,7 @@ void Layer::display() {
                 else {
                     render_text("+", white, this->addbox->vtxcoords->x1, this->addbox->vtxcoords->y1, 0.00075f, 0.0012f);
                 }
-                if (this->pos == 0) {
+                if (this->pos == mainmix->scenes[this->deck][mainmix->currscene[this->deck]]->scrollpos) {
                     // do extra "+" at left of layer for adding to front
                     this->addbox->vtxcoords->x1 = box->vtxcoords->x1 + 0.008f;
                     this->addbox->upvtxtoscr();
@@ -6720,7 +6717,18 @@ void Mixer::reconnect_all(std::vector<Layer*> &layers) {
                     mainprogram->nodesmain->currpage->connect_nodes(layers[j]->blendnode->in,
                                                                     layers[j]->lasteffnode[1]->out[0]);
                 }
-            } else if (layers[j]->next() != layers[j]) layers[j]->next()->blendnode->in = nullptr;
+                else {
+                    layers[j]->lasteffnode[1]->out[0]->in = nullptr;
+                }
+            } else if (layers[j]->next() != layers[j]) {
+                layers[j]->lasteffnode[0]->out.clear();
+                layers[j]->next()->blendnode->in = nullptr;
+            }
+        }
+        else if (layers[j]->solobut->value) {
+            if (!layers[j]->blendnode->in) {
+                mainprogram->nodesmain->currpage->connect_nodes(layers[j]->lasteffnode[0], layers[j]->blendnode);
+            }
         }
     }
 }
@@ -7756,7 +7764,7 @@ void Mixer::save_state(std::string path, bool autosave, bool undo) {
             }
             this->scenes[m][k]->switch_to(false);
             this->currscene[m] = k;
-            loopstation = this->scenes[m][k]->lpst;
+            //loopstation = this->scenes[m][k]->lpst;
             this->mousedeck = m;
             this->scenenum = k;
             this->save_deck(mainprogram->temppath + "tempdeck_xch" + "_" + std::to_string(m) + std::to_string(k) + ".deck", false, true, false, false, false);
@@ -8504,7 +8512,7 @@ void Mixer::save_deck(const std::string path, bool save, bool doclips, bool copy
         loopstation = lp;
     }
     if (mainmix->scenenum > -1) {
-        loopstation = mainmix->scenes[mainmix->mousedeck][mainmix->scenenum]->lpst;
+        //loopstation = mainmix->scenes[mainmix->mousedeck][mainmix->scenenum]->lpst;
     }
 
     this->get_butimes();
@@ -11600,7 +11608,7 @@ void Mixer::event_read(std::istream &rfile, Param *par, Button* but, Layer *lay,
             if (par->name == "Crossfade" || std::get<1>(event)->name == "wipex" || std::get<1>(event)->name == "wipey") {
                 loopstation->odelems.emplace(loop);
             } else if (par->shadervar == "mixfac" || par->name == "wipexlay" || par->name == "wipeylay") {
-                int offset = (mainmix->mousedeck == 1) * 2;
+                int offset = (mainprogram->prevmodus == 0) * 2;
                 for (int j = offset; j < offset + 2; j++) {
                     for (auto lay : mainmix->layers[j]) {
                         if (lay->blendnode->mixfac == par || lay->blendnode->wipex == par || lay->blendnode->wipey == par) {
@@ -13112,7 +13120,6 @@ void Scene::switch_to(bool dotempmap) {
         lvec[j]->layers = &(mainmix->scenes[this->deck][mainmix->currscene[this->deck]]->scnblayers);
     }
 
-    //this->currlay = mainmix->currlay[!mainprogram->prevmodus];
     std::vector<Layer *> lrs = mainmix->layers[this->deck + 2];
     if (dotempmap) {
         std::vector<std::vector<Layer *>> *tempmap = &mainmix->swapmap[this->deck + 2];
@@ -13140,19 +13147,16 @@ void Scene::switch_to(bool dotempmap) {
 
     if (dotempmap) {
         LoopStation *prevlpst = mainmix->scenes[this->deck][mainmix->currscene[this->deck]]->lpst;
-        LoopStation *bulpst = loopstation;
-        loopstation = this->lpst;
         mainmix->mousedeck = this->deck;
         int count = 0;
         for (LoopStationElement *elem: prevlpst->elements) {
             elem->erase_elem();
         }
         for (LoopStationElement *elem: lpc->elements) {
-            prevlpst->elements[count]->interimtime = elem->interimtime;
-            prevlpst->elements[count]->speedadaptedtime = elem->speedadaptedtime;
-            prevlpst->elements[count]->totaltime = elem->totaltime;
-            prevlpst->elements[count]->starttime = elem->starttime;
-            prevlpst->elements[count]->eventpos = elem->eventpos;
+            // copy all event related info and the events themself
+            // from the current loopstation into the loopstation of the scene we are leaving (prevlpst)
+            // only copy the affected deck (mainmix->mousedeck)
+            bool found = false;
             for (auto event: elem->eventlist) {
                 Layer *lay = nullptr;
                 Param *par = std::get<1>(event);
@@ -13160,30 +13164,37 @@ void Scene::switch_to(bool dotempmap) {
                 if (par) {
                     if (par->name == "Crossfade" || par->name == "wipex" ||
                         par->name == "wipey") {
-                        prevlpst->elements[count]->eventlist.push_back(event);
-                        prevlpst->elements[count]->params.emplace(par);
-                        prevlpst->parelemmap[par] = prevlpst->elements[count];
-                        prevlpst->allparams.emplace(par);
+                        // dont touch mix-wide parameters when switching scene
                     } else if (par->shadervar == "mixfac" || par->name == "wipexlay" || par->name == "wipeylay") {
-                        int offset = (mainmix->mousedeck == 1) * 2;
-                        for (int j = offset; j < offset + 2; j++) {
-                            for (auto lay : mainmix->layers[j]) {
-                                if (lay->blendnode->mixfac == par || lay->blendnode->wipex == par || lay->blendnode->wipey == par) {
-                                    prevlpst->elements[count]->eventlist.push_back(event);
-                                    prevlpst->elements[count]->params.emplace(par);
-                                    prevlpst->parelemmap[par] = prevlpst->elements[count];
-                                    prevlpst->allparams.emplace(par);
-                                    break;
-                                }
+                        // special cases: mix factor, wipe x and y coord for wipes inside the layer stack
+                        int j = (mainprogram->prevmodus == 0) * mainmix->mousedeck; // only current deck
+                        for (auto lay : mainmix->layers[j]) {
+                            if (lay->blendnode->mixfac == par || lay->blendnode->wipex == par || lay->blendnode->wipey == par) {
+                                prevlpst->elements[count]->eventlist.push_back(event);
+                                prevlpst->elements[count]->params.emplace(par);
+                                prevlpst->parelemmap[par] = prevlpst->elements[count];
+                                prevlpst->allparams.emplace(par);
+                                found = true;
+                                break;
                             }
                         }
                     } else if (par->effect) {
-                        lay = par->effect->layer;
+                        if (par->effect->layer->deck == mainmix->mousedeck) {
+                            lay = par->effect->layer;
+                            found = true;
+                        }
                     } else {
-                        lay = par->layer;
+                        if (par->layer->deck == mainmix->mousedeck) {
+                            lay = par->layer;
+                            found = true;
+                        }
                     }
                 } else if (std::get<2>(event)) {
-                    lay = but->layer;
+                    // button events
+                    if (but->layer->deck == mainmix->mousedeck) {
+                        lay = but->layer;
+                        found = true;
+                    }
                 }
                 if (lay) {
                     if (lay->deck == this->deck) {
@@ -13201,88 +13212,36 @@ void Scene::switch_to(bool dotempmap) {
                     }
                 }
             }
-            prevlpst->elements[count]->loopbut->value = elem->loopbut->value;
-            prevlpst->elements[count]->playbut->value = elem->playbut->value;
-            count++;
+            if (found) {
+                if (elem->eventlist.size()) {
+                    prevlpst->elements[count]->interimtime = elem->interimtime;
+                    prevlpst->elements[count]->speedadaptedtime = elem->speedadaptedtime;
+                    prevlpst->elements[count]->totaltime = elem->totaltime;
+                    prevlpst->elements[count]->starttime = elem->starttime;
+                    prevlpst->elements[count]->eventpos = elem->eventpos;
+                }
+                prevlpst->elements[count]->loopbut->value = elem->loopbut->value;
+                prevlpst->elements[count]->playbut->value = elem->playbut->value;
+                count++;
+            }
         }
 
+        // remove all loopstation events frm current deck to be replaced by those of the destination scene loopstation
         lpc->remove_entries(0);
-        count = 0;
-        for (LoopStationElement *elem: lpc->elements) {
-            if (elem->eventlist.size()) {
-                loopstation->elements[count]->interimtime = elem->interimtime;
-                std::chrono::high_resolution_clock::time_point now = std::chrono::high_resolution_clock::now();
-                elem->starttime = now - std::chrono::milliseconds((long long) (elem->interimtime));
-                loopstation->elements[count]->speedadaptedtime = elem->speedadaptedtime;
-                loopstation->elements[count]->totaltime = elem->totaltime;
-                loopstation->elements[count]->eventpos = elem->eventpos;
-            }
-            for (auto event: elem->eventlist) {
-                Layer *lay = nullptr;
-                Param *par = std::get<1>(event);
-                Button *but = std::get<2>(event);
-                if (par) {
-                    if (par->name == "Crossfade" || par->name == "wipex" ||
-                        par->name == "wipey") {
-                        loopstation->elements[count]->eventlist.push_back(event);
-                        loopstation->elements[count]->params.emplace(std::get<1>(event));
-                        loopstation->allparams.emplace(par);
-                        loopstation->parelemmap[par] = loopstation->elements[count];
-                    } else if (par->shadervar == "mixfac" || par->name == "wipexlay" || par->name == "wipeylay") {
-                        int offset = (mainmix->mousedeck == 1) * 2;
-                        for (int j = offset; j < offset + 2; j++) {
-                            for (auto lay : mainmix->layers[j]) {
-                                if (lay->blendnode->mixfac == par || lay->blendnode->wipex == par || lay->blendnode->wipey == par) {
-                                    prevlpst->elements[count]->eventlist.push_back(event);
-                                    prevlpst->elements[count]->params.emplace(par);
-                                    prevlpst->parelemmap[par] = prevlpst->elements[count];
-                                    prevlpst->allparams.emplace(par);
-                                    break;
-                                }
-                            }
-                        }
-                    } else if (par->effect) {
-                        lay = par->effect->layer;
-                    } else {
-                        lay = par->layer;
-                    }
-                } else if (std::get<2>(event)) {
-                    lay = but->layer;
-                }
-                if (lay) {
-                    if (lay->deck == this->deck) {
-                        loopstation->elements[count]->eventlist.push_back(event);
-                        loopstation->elements[count]->layers.emplace(lay);
-                        if (par) {
-                            loopstation->elements[count]->params.emplace(par);
-                            loopstation->allparams.emplace(par);
-                            loopstation->parelemmap[par] = lpc->elements[count];
-                        } else if (std::get<2>(event)) {
-                            loopstation->elements[count]->buttons.emplace(std::get<2>(event));
-                            loopstation->allbuttons.emplace(std::get<2>(event));
-                            loopstation->butelemmap[but] = lpc->elements[count];
-                        }
-                    }
-                }
-            }
-            if (elem->eventlist.size()) {
-                loopstation->elements[count]->loopbut->value = elem->loopbut->value;
-                loopstation->elements[count]->playbut->value = elem->playbut->value;
-                loopstation->elements[count]->loopbut->oldvalue = elem->loopbut->value;
-                loopstation->elements[count]->playbut->oldvalue = elem->playbut->value;
-            }
-            count++;
-        }
 
         count = 0;
-        for (LoopStationElement *elem: loopstation->elements) {
+        for (LoopStationElement *elem: this->lpst->elements) {
+            // copy all event related info and the events themself
+            // from the destination scene loopstation into the current loopstation (lpc)
             LoopStation *bunowlpst = lp;
-            lpc->elements[count]->interimtime = elem->interimtime;
-            std::chrono::high_resolution_clock::time_point now = std::chrono::high_resolution_clock::now();
-            elem->starttime = now - std::chrono::milliseconds((long long) (elem->interimtime));
-            lpc->elements[count]->speedadaptedtime = elem->speedadaptedtime;
-            lpc->elements[count]->totaltime = elem->totaltime;
-            lpc->elements[count]->eventpos = elem->eventpos;
+            if (elem->eventlist.size()) {
+                lpc->elements[count]->interimtime = elem->interimtime;
+                std::chrono::high_resolution_clock::time_point now = std::chrono::high_resolution_clock::now();
+                lpc->elements[count]->starttime = now - std::chrono::milliseconds((long long) (elem->interimtime));
+                lpc->elements[count]->speedadaptedtime = elem->speedadaptedtime;
+                lpc->elements[count]->totaltime = elem->totaltime;
+                lpc->elements[count]->eventpos = elem->eventpos;
+            }
             for (auto event: elem->eventlist) {
                 Layer *lay = nullptr;
                 Param *par = std::get<1>(event);
@@ -13290,17 +13249,20 @@ void Scene::switch_to(bool dotempmap) {
                 if (par) {
                     if (par->name == "Crossfade" || par->name == "wipex" ||
                         par->name == "wipey") {
-                        //lpc->elements[count]->eventlist.push_back(event);
-                        //lpc->elements[count]->params.emplace(std::get<1>(event));
-                        //lpc->allparams.emplace(par);
-                        //lpc->parelemmap[par] = lpc->elements[count];
+                        // dont touch mix-wide parameters when switching scene
                     } else if (par->shadervar == "mixfac" || par->name == "wipexlay" || par->name == "wipeylay") {
+                        // special cases: mix factor, wipe x and y coord for wipes inside the layer stack
+                        lpc->elements[count]->eventlist.push_back(event);
+                        lpc->elements[count]->params.emplace(std::get<1>(event));
+                        lpc->allparams.emplace(par);
+                        lpc->parelemmap[par] = lpc->elements[count];
                     } else if (par->effect) {
                         lay = par->effect->layer;
                     } else {
                         lay = par->layer;
                     }
                 } else if (std::get<2>(event)) {
+                    // button events
                     lay = but->layer;
                 }
                 if (lay) {

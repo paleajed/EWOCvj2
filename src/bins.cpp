@@ -2087,7 +2087,7 @@ void BinsMain::handle(bool draw) {
 						}
 					}
 
-                    if (binel != this->currbinel) {
+                    if (binel != this->currbinel && mainprogram->binsscreen) {
 						if (this->currbinel) this->binpreview = false;
                         bool cond1 = false;
                         bool cond2 = false;
@@ -2109,7 +2109,6 @@ void BinsMain::handle(bool draw) {
 								binel->oldtex = binel->tex;
 								binel->tex = mainprogram->dragbinel->tex;
 							}
-							//this->currbinel = binel;
 						}
 
 						if (this->inputtexes.size() && !this->menuactbinel && !mainprogram->leftmouse) {

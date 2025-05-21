@@ -890,7 +890,7 @@ class Program {
         std::unordered_set<Layer*> openlayers;
         int transferclonesetnr = -1;
         Param *beatthres;
-        int minbpm = 90;
+        float minbpm = 90;
 
         Boxx *boxbig;
         Boxx *boxbefore;
