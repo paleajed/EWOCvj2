@@ -162,10 +162,14 @@ public:
 	Boxx* cbox;
 	int launchtype = 0;
     bool needframeset = false;
-	std::vector<Layer*> clayers;
+    std::vector<Layer*> clayers;
+    std::vector<float> cframes;
     std::vector<Layer*> nblayers;
+    std::vector<Layer*> mixlrs[2];
+    int scrollpos[2] = {0, 0};
     bool done = false;
     void set_nbclayers(Layer *lay);
+    void kill_clayers();
 	ShelfElement(bool side, int pos, Button *but);
 	~ShelfElement();
 };
@@ -712,7 +716,8 @@ class Program {
 		std::string dragpath;
 		int dragpos; 
 		bool drag = false;
-		bool dragmousedown = false;
+        bool dragmousedown = false;
+        bool draggingrec = false;
 		bool inwormgate = false;
 		Button* wormgate1;
 		Button* wormgate2;

@@ -2092,9 +2092,10 @@ void BinsMain::handle(bool draw) {
                         bool cond1 = false;
                         bool cond2 = false;
 						if (mainprogram->dragbinel) {
-						    cond1 = (mainprogram->shelfdragelem);
-						}
-						if (lay->vidmoving || cond1) {
+                            cond1 = (mainprogram->shelfdragelem);
+                            cond2 = (mainprogram->draggingrec);
+                        }
+						if (lay->vidmoving || cond1 || cond2) {
 							// when dragging layer/mix/deck in from mix view
 							if (this->currbinel) {
 								//reset old currbinel
@@ -2249,7 +2250,7 @@ void BinsMain::handle(bool draw) {
 
 		if (!inbinel) this->binpreview = false;
 
-        if (inbinel && !mainprogram->rightmouse && (lay->vidmoving || mainprogram->shelfdragelem) &&
+        if (inbinel && !mainprogram->rightmouse && (lay->vidmoving || mainprogram->shelfdragelem || mainprogram->draggingrec) &&
             mainprogram->lmover) {
             // confirm layer dragging from main view and set influenced bin element to the right values
             this->currbinel->type = mainprogram->dragbinel->type;

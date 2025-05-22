@@ -2126,6 +2126,9 @@ my) {
 }
 
 void Program::layerstack_scrollbar_handle() {
+    if (mainprogram->leftmouse) {
+        bool dummy = false;
+    }
 	//Handle layer scrollbar
 	bool inbox = false;
 	bool comp = !mainprogram->prevmodus;
@@ -2164,7 +2167,7 @@ void Program::layerstack_scrollbar_handle() {
         this->boxafter->vtxcoords->x1 = -1.0f + mainprogram->numw + i + (mainmix->scenes[i][mainmix->currscene[i]]->scrollpos + 3) *
                                                                   (mainprogram->layw * 3.0f / size);
         this->boxafter->vtxcoords->y1 = 1.0f - mainprogram->layh - 0.05f;
-        this->boxafter->vtxcoords->w = (3.0f / size) * mainprogram->layw * (size - 3);
+        this->boxafter->vtxcoords->w = (3.0f / size) * mainprogram->layw * (size - mainmix->scenes[i][mainmix->currscene[i]]->scrollpos - 3);
         this->boxafter->vtxcoords->h = 0.05f;
         this->boxafter->upvtxtoscr();
         bool inbox = false;
@@ -2212,15 +2215,12 @@ void Program::layerstack_scrollbar_handle() {
             // this->boxlayer: small coloured boxes(default grey) signalling there's a loopstation parameter in this layer
             this->boxlayer->vtxcoords->x1 = this->boxbig->vtxcoords->x1 + 0.031f;
             if (j < lvec.size()) {
-                if (j >= mainmix->scenes[i][mainmix->currscene[i]]->scrollpos &&
-                    j < mainmix->scenes[i][mainmix->currscene[i]]->scrollpos + 3) {
-                    const int lpstcsz = lvec[j]->lpstcolors.size();
-                    int sz = std::min(lpstcsz, 6);
-                    for(auto col : lvec[j]->lpstcolors) {
-                        float ac[4] = {col[0], col[1], col[2], col[3]};
-                        draw_box(nullptr, ac, this->boxlayer, -1);
-                        this->boxlayer->vtxcoords->x1 += this->boxlayer->vtxcoords->w;
-                    }
+                const int lpstcsz = lvec[j]->lpstcolors.size();
+                int sz = std::min(lpstcsz, 6);
+                for(auto col : lvec[j]->lpstcolors) {
+                    float ac[4] = {col[0], col[1], col[2], col[3]};
+                    draw_box(nullptr, ac, this->boxlayer, -1);
+                    this->boxlayer->vtxcoords->x1 += this->boxlayer->vtxcoords->w;
                 }
             }
 
@@ -2374,6 +2374,7 @@ int Program::quit_requester() {
 	this->my = -1;
 
 	this->insmall = false;
+    mainprogram->recundo = false;
 
 	return ret;
 }
@@ -2477,13 +2478,17 @@ void Program::shelf_triggering(ShelfElement* elem, int deck, Layer *layer) {
                 }
                 bool done = elem->done;
                 mainmix->reload_tagged_elems(elem, mainmix->mousedeck);
-                if (done && elem->launchtype > 0) {
+                if (done) {
                     mainmix->set_layers(elem, (bool) mainmix->mousedeck);
                 }
                 else {
-                    mainmix->open_deck(elem->path, true, true);  // dont load loopstation events from shelf ever?
+                    mainmix->open_deck(elem->path, true, true);  // reminder : implement pushing layers to back for fast swapping for launchtype 0
+                    elem->scrollpos[deck] = mainmix->scenes[deck][mainmix->currscene[deck]]->scrollpos;
                     std::vector<Layer *> lvec = mainmix->newlrs[!mainprogram->prevmodus * 2 + mainmix->mousedeck];
                     for (Layer *lay : lvec) {
+                        if (elem->launchtype == 0) {
+                            elem->cframes.push_back(lay->frame);
+                        }
                         lay->oldclips.clear();
                         for (int i = 0; i < lay->clips.size(); i++) {
                             lay->oldclips.push_back(lay->clips[i]->copy());
@@ -2518,18 +2523,26 @@ void Program::shelf_triggering(ShelfElement* elem, int deck, Layer *layer) {
             bool done = elem->done;
             mainmix->reload_tagged_elems(elem, 0);
             mainmix->reload_tagged_elems(elem, 1);
-            if (done && elem->launchtype > 0) {
+            if (done) {
                 mainmix->set_layers(elem, 0);
                 mainmix->set_layers(elem, 1);
             }
             else {
                 mainmix->open_mix(elem->path, true, true);  // dont load loopstation events from shelf ever
+                elem->scrollpos[0] = mainmix->scenes[0][mainmix->currscene[0]]->scrollpos;
+                elem->scrollpos[1] = mainmix->scenes[1][mainmix->currscene[1]]->scrollpos;
                 std::vector<Layer *> lvec1 = mainmix->newlrs[!mainprogram->prevmodus * 2];
                 for (Layer *lay : lvec1) {
+                    if (elem->launchtype == 0) {
+                        elem->cframes.push_back(lay->frame);
+                    }
                     lay->prevshelfdragelem = elem;
                 }
                 std::vector<Layer *> lvec2 = mainmix->newlrs[!mainprogram->prevmodus * 2 + 1];
                 for (Layer *lay : lvec2) {
+                    if (elem->launchtype == 0) {
+                        elem->cframes.push_back(lay->frame);
+                    }
                     lay->prevshelfdragelem = elem;
                 }
             }
@@ -4666,7 +4679,7 @@ void Program::handle_mainmenu() {
 			SDL_RaiseWindow(this->config_midipresetswindow);
 		}
 	}
-    else if (k == 8) {
+    else if (k == 8) {  // reminder : move to preferences
         if (this->menuresults.size()) {
             this->auinitialized = false;
             this->audevice = this->auindevices[this->menuresults[0]];
@@ -4706,7 +4719,10 @@ void Program::handle_shelfmenu() {
     else if (k == 1) {
         // new shelf
         mainmix->mouseshelf->erase();
+        for (auto elem: mainmix->mouseshelf->elements) {
+            elem->kill_clayers();
         }
+    }
 	else if (k == 2) {
 		mainprogram->pathto = "OPENSHELF";
 		std::thread filereq(&Program::get_inname, mainprogram, "Open shelf file", "application/ewocvj2-shelf", std::filesystem::canonical(mainprogram->currshelfdir).generic_string());
@@ -4723,12 +4739,14 @@ void Program::handle_shelfmenu() {
 		mainmix->mousedeck = k - 4;
 		mainmix->save_deck(path, false, true);
 		mainmix->mouseshelf->insert_deck(path, k - 4, mainmix->mouseshelfelem);
+        mainmix->mouseshelf->elements[mainmix->mouseshelfelem]->kill_clayers();
 	}
 	else if (k == 6) {
 		// insert current mix into shelf element
         std::string path = find_unused_filename(basename(mainprogram->project->path), mainprogram->temppath, ".mix");
 		mainmix->save_mix(path, mainprogram->prevmodus, false);
 		mainmix->mouseshelf->insert_mix(path, mainmix->mouseshelfelem);
+        mainmix->mouseshelf->elements[mainmix->mouseshelfelem]->kill_clayers();
 	}
 	else if (k == 7) {
 		// insert entire shelf in a bin block
@@ -4745,6 +4763,7 @@ void Program::handle_shelfmenu() {
         elem->button->midi[1] = -1;
         elem->button->midiport = "";
         elem->button->unregister_midi();
+        elem->kill_clayers();
     }
     /*else if (k == 9) {
 		// learn MIDI for element layer load
@@ -5062,6 +5081,10 @@ void Program::handle_lpstmenu() {
         else if (mainmix->mouselpstelem->speed->box->in()) {
             mainmix->learnbutton = nullptr;
             mainmix->learnparam = mainmix->mouselpstelem->speed;
+        }
+        else if (mainmix->mouselpstelem->scritch->box->in()) {
+            mainmix->learnbutton = nullptr;
+            mainmix->learnparam = mainmix->mouselpstelem->scritch;
         }
         mainmix->mouselpstelem = nullptr;
     }
@@ -6878,12 +6901,13 @@ void Project::delete_dirs(std::string path) {
         //std::string pp = it.path().stem().string();
         if (dirname(mainprogram->project->bupp) == dirname(mainprogram->project->bupp)) {
             std::string clearpath = it.path().string();
-            if (clearpath.find("autosave") != std::string::npos) {
-                continue;
-            }
+            //if (clearpath.find("autosave") != std::string::npos) {
+            //    continue;
+            //}
         }
         std::filesystem::remove_all(it.path());
     }
+    std::filesystem::current_path(std::filesystem::current_path().parent_path().parent_path());    std::filesystem::remove_all(path);
 	for (int i = 0; i < binsmain->bins.size(); i++) {
 		binsmain->bins[i]->path = path + "/bins/" + binsmain->bins[i]->name + ".bin";
 	}
@@ -6895,6 +6919,45 @@ void Project::copy_dirs(std::string path, bool rem) {
     path = pathtoposix(path);
     //mainprogram->remove(path + "/" + basename(this->path));
     if (exists(this->autosavedir + "temp")) {
+        if (exists(path)) {
+#include <filesystem>
+#include <iostream>
+
+               try {
+                   auto cwd = std::filesystem::current_path();
+                   std::cout << "Current working directory: " << cwd << std::endl;
+                    if (!std::filesystem::exists(path)) {
+                        std::cout << "Path doesn't exist" << std::endl;
+                        return;
+                    }
+
+                    auto perms = std::filesystem::status(path).permissions();
+                    std::cout << "Current permissions: " << std::oct << static_cast<int>(perms) << std::endl;
+
+                    // Try to iterate through directory
+                    for (const auto& entry : std::filesystem::directory_iterator(path)) {
+                        std::cout << "Found: " << entry.path() << std::endl;
+                        auto entry_perms = std::filesystem::status(entry).permissions();
+                        std::cout << "  Permissions: " << std::oct << static_cast<int>(entry_perms) << std::endl;
+
+                        // Check if file is in use (Windows specific check)
+#ifdef _WIN32
+                        HANDLE handle = CreateFileA(entry.path().string().c_str(),
+                                                    GENERIC_READ | GENERIC_WRITE,
+                                                    0, NULL, OPEN_EXISTING,
+                                                    FILE_ATTRIBUTE_NORMAL, NULL);
+                        if (handle == INVALID_HANDLE_VALUE) {
+                            std::cout << "  File might be in use or protected" << std::endl;
+                        } else {
+                            CloseHandle(handle);
+                        }
+#endif
+                    }
+                } catch (const std::exception& ex) {
+                    std::cout << "Error diagnosing: " << ex.what() << std::endl;
+                }
+            //std::filesystem::remove_all(path);
+        }
         rename(this->autosavedir + "temp", path);
     }
     if (!exists(path)) fs::create_directory(fs::path(path));
@@ -9307,11 +9370,13 @@ void Shelf::open_files_shelf() {
         }
 
         elem->path = str;
-        //elem->jpegpath = find_unused_filename("shelftex", mainprogram->temppath, ".jpg");
+        elem->name = remove_extension(basename(str));
+        elem->kill_clayers();
+        elem->jpegpath = find_unused_filename(elem->name, mainprogram->temppath, ".jpg");
         // texes are inserted after phase 2 of order_paths
-        //save_thumb(elem->jpegpath, mainprogram->pathtexes[mainprogram->shelffilescount]);
-        //glDeleteTextures(1, &elem->tex);
-        //elem->tex = mainprogram->pathtexes[mainprogram->shelffilescount];
+        save_thumb(elem->jpegpath, mainprogram->pathtexes[mainprogram->shelffilescount]);
+        glDeleteTextures(1, &elem->tex);
+        elem->tex = mainprogram->pathtexes[mainprogram->shelffilescount];
     }
 
     // next element, clean up when at end
@@ -9335,6 +9400,7 @@ void Shelf::open_jpegpaths_shelf() {
 bool Shelf::insert_deck(std::string path, bool deck, int pos) {
     ShelfElement* elem = this->elements[pos];
     elem->path = path;
+    elem->name = remove_extension(basename(path));
     elem->type = ELEM_DECK;
     GLuint butex = -1;
     if (mainprogram->prevmodus) {
@@ -9346,15 +9412,16 @@ bool Shelf::insert_deck(std::string path, bool deck, int pos) {
         elem->tex = copy_tex(mainprogram->nodesmain->mixnodes[1][deck]->mixtex);
     }
     if (butex != -1) glDeleteTextures(1, &butex);
-    //std::string jpegpath = path + ".jpeg";
-    //save_thumb(jpegpath, elem->tex);
-    //elem->jpegpath = jpegpath;
+    std::string jpegpath = path + ".jpeg";
+    save_thumb(jpegpath, elem->tex);
+    elem->jpegpath = jpegpath;
     return 1;
 }
 
 bool Shelf::insert_mix(const std::string path, int pos) {
     ShelfElement* elem = this->elements[pos];
     elem->path = path;
+    elem->name = remove_extension(basename(path));
     elem->type = ELEM_MIX;
     GLuint butex = -1;
     if (mainprogram->prevmodus) {
@@ -9366,9 +9433,9 @@ bool Shelf::insert_mix(const std::string path, int pos) {
         elem->tex = copy_tex(mainprogram->nodesmain->mixnodes[1][2]->mixtex);
     }
     if (butex != -1) glDeleteTextures(1, &butex);
-    //std::string jpegpath = path + ".jpeg";
-    //save_thumb(jpegpath, elem->tex);
-    //elem->jpegpath = jpegpath;
+    std::string jpegpath = path + ".jpeg";
+    save_thumb(jpegpath, elem->tex);
+    elem->jpegpath = jpegpath;
     return 1;
 }
 
@@ -9436,7 +9503,7 @@ bool Shelf::open(const std::string path, bool undo) {
                     }
                     else if (suf != "") {
                         if (concat) {
-                            elem->path = find_unused_filename("shelffile", mainprogram->temppath, suf);
+                            elem->path = find_unused_filename(elem->name, mainprogram->temppath, suf);
                             rename(result + "_" + std::to_string(filecount) + ".file", elem->path);
                             filecount++;
                         }
@@ -9494,6 +9561,7 @@ void Shelf::erase() {
         elem->type = ELEM_FILE;
         blacken(elem->tex);
         blacken(elem->oldtex);
+        elem->kill_clayers();
     }
 }
 
@@ -9563,11 +9631,13 @@ void Shelf::handle() {
             }
         }
 
+        // set prevtime to now for elements with launchtype 0
+        for (int j = 0; j < elem->clayers.size(); j++) {
+            std::chrono::high_resolution_clock::time_point now = std::chrono::high_resolution_clock::now();
+            elem->clayers[j]->prevtime = now;
+        }
         // calculate background frame numbers and loopstation posns for elements with launchtype 2
         for (int j = 0; j < elem->nblayers.size(); j++) {
-            if (i == 1) {
-                bool dummy = false;
-            }
             elem->nblayers[j]->vidopen = false;
             elem->nblayers[j]->layers = &elem->nblayers;
             elem->nblayers[j]->progress(!mainprogram->prevmodus, 0);
@@ -9621,7 +9691,6 @@ void Shelf::handle() {
                         mainprogram->shelfdragelem->tex = mainprogram->dragbinel->tex;
                         mainprogram->shelfdragelem = nullptr;
                         enddrag();
-                        //mainprogram->menuactivation = false;
                     }
                 }
             }
@@ -9690,14 +9759,18 @@ void Shelf::handle() {
                                 elem->name = mainprogram->dragbinel->name;
                                 elem->type = mainprogram->dragbinel->type;
                                 elem->done = false;
-                                mainprogram->draglay->prevshelfdragelem = nullptr;
+                                if (mainprogram->draglay) {
+                                    mainprogram->draglay->prevshelfdragelem = nullptr;
+                                }
                             }
                             elem->tex = copy_tex(mainprogram->dragbinel->tex);
-                            //elem->jpegpath = find_unused_filename(basename(elem->path), mainprogram->temppath, ".jpg");
-                            //save_thumb(elem->jpegpath, elem->tex);
+                            elem->jpegpath = find_unused_filename(basename(elem->path), mainprogram->temppath, ".jpg");
+                            save_thumb(elem->jpegpath, elem->tex);
                             if (mainprogram->shelfdragelem) mainprogram->shelfdragelem->tex = copy_tex(mainprogram->shelfdragelem->tex);
                             blacken(elem->oldtex);
                             this->prevnum = -1;
+                            elem->kill_clayers();
+                            if (mainprogram->shelfdragelem) mainprogram->shelfdragelem->kill_clayers();
                             mainprogram->shelfdragelem = nullptr;
                             mainprogram->rightmouse = true;
                             binsmain->handle(0);
@@ -9841,7 +9914,7 @@ void save_thumb(std::string path, GLuint tex) {
 
     tjDestroy(_jpegCompressor);
 
-    std::ofstream outfile(path, std::ios::binary | std::ios::ate);
+    std::ofstream outfile(path, std::ios::binary | std::ios::trunc);
     outfile.write(reinterpret_cast<const char *>(_compressedImage), _jpegSize);
 
     //to free the memory allocated by TurboJPEG (either by tjAlloc(),
@@ -9877,18 +9950,20 @@ void open_thumb(std::string path, GLuint tex) {
     glBindTexture(GL_TEXTURE_2D, tex);
     glTexImage2D(GL_TEXTURE_2D, 0, GL_RGB, width, height, 0, GL_RGB, GL_UNSIGNED_BYTE, uncbuffer);
 
-    delete buf;
-    delete uncbuffer;
+    delete [] buf;
+    delete [] uncbuffer;
     infile.close();
 
 }
 
 
-std::ifstream::pos_type getFileSize(std::string filename)
-{
-    std::ifstream in(filename, std::ifstream::ate | std::ifstream::binary);
-
-    return ((int)in.tellg());
+std::uintmax_t getFileSize(const std::string& filename) {
+    std::error_code ec;
+    auto size = std::filesystem::file_size(filename, ec);
+    if (ec) {
+        return 0; // Return 0 on error instead of undefined behavior
+    }
+    return size;
 }
 
 bool check_version(std::string path) {
@@ -9920,11 +9995,14 @@ std::string Program::deconcat_files(std::string path) {
         bfile.read((char *)&num, 4);
         std::vector<int> sizes;
         //num = _byteswap_ulong(num - 1) + 1;
-        for (int i = 0; i < num; i++) {
-            int size;
-            bfile.read((char *)&size, 4);
+        for (size_t i = 0; i < num; ++i) {
+            uint32_t size;
+            if (!bfile.read(reinterpret_cast<char*>(&size), sizeof(size))) {
+                return "";
+            }
             sizes.push_back(size);
         }
+
         std::ofstream ofile;
         outpath = find_unused_filename(basename(path), mainprogram->temppath, ".mainfile");
         ofile.open(outpath, std::ios::out | std::ios::binary);
@@ -10004,7 +10082,8 @@ void Program::concat_files(std::string ofpath, std::string path, std::vector<std
         if (paths[i] == "") continue;
         std::fstream fileInput;
         fileInput.open(paths[i], std::ios::in | std::ios::binary);
-        int fileSize = getFileSize(paths[i]);
+        auto fileSize = getFileSize(paths[i]);
+        //int fileSize = getFileSize(paths[i]);
         ofile.write((const char *)&fileSize, 4);
         fileInput.close();
     }

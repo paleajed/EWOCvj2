@@ -458,6 +458,7 @@ void LoopStationElement::mouse_handle() {
         }
         if (mainprogram->menuactivation) {
             mainprogram->lpstmenu->state = 2;
+            mainmix->mouselpstelem = this;
             mainmix->learnparam = this->scritch;
             mainmix->learnbutton = nullptr;
             this->scritch->range[1] = this->totaltime;
@@ -516,7 +517,7 @@ void LoopStationElement::mouse_handle() {
         }
         this->midiscritch = false;
     }
-    if (this->colbox->in() || this->recbut->box->in() || this->loopbut->box->in() || this->playbut->box->in() || this->speed->box->in()) {
+    if (this->colbox->in() || this->recbut->box->in() || this->loopbut->box->in() || this->playbut->box->in() || this->speed->box->in() || this->scritch->box->in()) {
         if (!mainprogram->menuondisplay || mainprogram->lpstmenuon) {
             if (mainprogram->menuactivation) {
                 mainprogram->lpstmenu->state = 2;
@@ -542,6 +543,10 @@ void LoopStationElement::mouse_handle() {
                     mainmix->learnbutton = nullptr;
                     mainmix->learnparam = this->speed;
                 }
+                else if (this->scritch->box->in()) {
+                    mainmix->learnbutton = nullptr;
+                    mainmix->learnparam = this->scritch;
+                }
                 mainmix->mouselpstelem = this;
                 mainprogram->menuactivation = false;
                 mainprogram->lpstmenuon = true;
@@ -561,11 +566,14 @@ void LoopStationElement::set_values() {
 	this->interimtime = millicount;
 	this->speedadaptedtime = this->speedadaptedtime + passed * this->speed->value;
 	std::tuple<long long, Param*, Button*, float> event;
-    /*if (this->eventpos > this->eventlist.size()) {
-        this->eventpos = 1;
-        return;
-    }*/
-	event = this->eventlist[std::clamp(this->eventpos, 0, (int)this->eventlist.size() - 1)];
+
+    event = this->eventlist[std::clamp(this->eventpos, 0, (int)this->eventlist.size() - 1)];
+    if (std::get<1>(event)) {
+        std::get<1>(event)->box->acolor[0] = this->colbox->acolor[0];
+        std::get<1>(event)->box->acolor[1] = this->colbox->acolor[1];
+        std::get<1>(event)->box->acolor[2] = this->colbox->acolor[2];
+        std::get<1>(event)->box->acolor[3] = this->colbox->acolor[3];
+    }
 	while (this->speedadaptedtime > std::get<0>(event) && !this->atend) {
 	    // play all recorded events upto now
 		Param *par = std::get<1>(event);
@@ -600,7 +608,7 @@ void LoopStationElement::set_values() {
             event = this->eventlist[this->eventpos];
         }
 	}
-    if (this->speedadaptedtime >= this->totaltime  && this->atend) {
+    if (this->speedadaptedtime >= this->totaltime) {
         // reached end of loopstation element recording
         this->atend = false;
         if (this->eventlist.empty()) {
@@ -643,67 +651,67 @@ void LoopStationElement::add_param_automationentry(Param* par, long long mc) {
     this->params.emplace(par);
     this->lpst->allparams.emplace(par);
 	loopstation->parelemmap[par] = this;
-    if (par->name == "crossfade" || par->name == "crossfadecomp" || par->shadervar == "mixfac" || par->name == "wipex" || par->name == "wipey") {
+    Layer *lay = nullptr;
+    if (par->name == "crossfade" || par->name == "crossfadecomp" || par->shadervar == "mixfac" || par->name == "wipex" || par->name == "wipey" || par->name == "wipexlay" || par->name == "wipeylay") {
     }
 	else if (par->effect) {
-		this->layers.emplace(par->effect->layer);
+        lay = par->effect->layer;
+		this->layers.emplace(lay);
         par->layer = par->effect->layer;
 	}
     else {
-        this->layers.emplace(par->layer);
+        lay = par->layer;
+        this->layers.emplace(lay);
     }
-	bool frame = false;
-	for (int i = 0; i < 2; i++) {
-		std::vector<Layer*>& lvec = choose_layers(i);
-		for (auto & j : lvec) {
-			if (par == j->speed) this->layers.emplace(j);
-			if (par == j->opacity) this->layers.emplace(j);
+
+    for (int i = 0; i < 2; i++) {
+        std::vector<Layer*>& lvec = choose_layers(i);
+        for (auto & j : lvec) {
+            if (par == j->speed) this->layers.emplace(j);
+            if (par == j->opacity) this->layers.emplace(j);
             if (par == j->volume) this->layers.emplace(j);
             if (par == j->scritch) {
                 this->layers.emplace(j);
                 par->layer = j;
-                frame = true;
             }
             if (par == j->startframe) {
                 this->layers.emplace(j);
                 par->layer = j;
-                frame = true;
             }
             if (par == j->endframe) {
                 this->layers.emplace(j);
                 par->layer = j;
-                frame = true;
             }
-            if (par == j->blendnode->mixfac) this->layers.emplace(j);
-			if (par == j->shiftx) {
-				this->layers.emplace(j);
+            if (par == j->blendnode->mixfac || par == j->blendnode->wipex || par == j->blendnode->wipey) {
+                this->layers.emplace(j);
+                par->layer = j;
+            }
+            if (par == j->shiftx) {
+                this->layers.emplace(j);
                 par->layer = j;
 
-				par->box->acolor[0] = this->colbox->acolor[0];
-				par->box->acolor[1] = this->colbox->acolor[1];
-				par->box->acolor[2] = this->colbox->acolor[2];
+                par = j->shifty;
+                this->add_param_automationentry(par);
+                par = nullptr;
+                return;
+            }
+            if (par == j->blendnode->wipex) {
+                this->layers.emplace(j);
+                par = j->blendnode->wipey;
+                par->layer = j;
+                this->add_param_automationentry(par);
+                par = nullptr;
+                return;
+            }
+            if (par == j->scale) {
+                this->layers.emplace(j);
+                par->layer = j;
+                par = nullptr;
+                return;
+            }
+        }
+    }
 
-				par = j->shifty;
-				this->add_param_automationentry(par);
-				par = nullptr;
-				return;
-			}
-			if (par == j->blendnode->wipex) {
-				this->layers.emplace(j);
-				par = j->blendnode->wipey;
-                par->layer = j;
-				this->add_param_automationentry(par);
-				par = nullptr;
-				return;
-			}
-			if (par == j->scale) {
-				this->layers.emplace(j);
-                par->layer = j;
-				par = nullptr;
-				return;
-			}
-		}
-	}
  	if (par == mainmix->wipex[0]) {
 		par = mainmix->wipey[0];
 		this->add_param_automationentry(par);
@@ -716,13 +724,6 @@ void LoopStationElement::add_param_automationentry(Param* par, long long mc) {
 		par = nullptr;
 		return;
 	}
-
-	if (!frame) {
-        par->box->acolor[0] = this->colbox->acolor[0];
-        par->box->acolor[1] = this->colbox->acolor[1];
-        par->box->acolor[2] = this->colbox->acolor[2];
-        par->box->acolor[3] = this->colbox->acolor[3];
-    }
 }
 
 void LoopStationElement::add_button_automationentry(Button* but) {
@@ -770,16 +771,6 @@ void LoopStation::remove_entries(int copycomp) {
                     if (copycomp == 2) {
                         elem->eventlist.erase(elem->eventlist.begin() + i);
                         elem->params.erase(std::get<1>(event));
-                    }
-                } else if (std::get<1>(event)->shadervar == "mixfac" || std::get<1>(event)->name == "wipexlay" ||
-                                      std::get<1>(event)->name == "wipeylay") {
-                    int j = (mainprogram->prevmodus == 0) * 2 + mainmix->mousedeck;
-                    for (auto lay : mainmix->layers[j]) {
-                        if (lay->blendnode->mixfac == std::get<1>(event) || lay->blendnode->wipex == std::get<1>(event) || lay->blendnode->wipey == std::get<1>(event)) {
-                            elem->eventlist.erase(elem->eventlist.begin() + i);
-                            elem->params.erase(std::get<1>(event));
-                            break;
-                        }
                     }
                 } else if (std::get<1>(event)->effect) {
                     if (std::get<1>(event)->effect->layer->deck == mainmix->mousedeck) {

@@ -370,11 +370,30 @@ Param::~Param() {
         if (mainprogram->prevmodus) {
             if (lp->allparams.count(this)) {
                 lp->allparams.erase(this);
+                for (auto elem : lp->elements) {
+                    if (elem->params.count(this)) {
+                        elem->params.erase(this);
+                    }
+                }
             }
         }
         else {
             if (lpc->allparams.count(this)) {
                 lpc->allparams.erase(this);
+                for (auto elem: lpc->elements) {
+                    if (elem->params.count(this)) {
+                        elem->params.erase(this);
+                    }
+                }
+            }
+            for (int m = 0; m < 2; m++) {
+                for (int k = 0; k < 4; k++) {
+                    for (auto elem: mainmix->scenes[m][k]->lpst->elements) {
+                        if (elem->params.count(this)) {
+                            elem->params.erase(this);
+                        }
+                    }
+                }
             }
         }
     }
@@ -2130,7 +2149,7 @@ Layer* Mixer::add_layer(std::vector<Layer*> &layers, int pos) {
     BlendNode *bnode = mainprogram->nodesmain->currpage->add_blendnode(MIXING, comp);
     layer->blendnode = bnode;
 
-    mainmix->reconnect_all(layers);
+    //mainmix->reconnect_all(layers);
 
 	return layer;
 }
@@ -6338,6 +6357,14 @@ void ShelfElement::set_nbclayers(Layer *lay) {
     }
 }
 
+void ShelfElement::kill_clayers() {
+    for (Layer *lay : this->clayers) {
+        lay->close();
+    }
+    this->clayers.clear();
+    this->cframes.clear();
+}
+
 
 void clean(std::vector<Layer*>& vec) {
     for (Layer *lay : vec) {
@@ -6361,15 +6388,24 @@ void Mixer::set_prevshelfdragelem_layers(Layer* lay) {
 		if (elem) {
 			if (elem->type == ELEM_DECK) {
 				cond = false;
-				if (elem->launchtype == 1) {
-					for (int i = 0; i < lvec1.size(); i++) {
+                if (elem->launchtype == 0) {
+                    for (int i = 0; i < lvec1.size(); i++) {
                         lvec1[i]->tagged = true;
                         lvec1[i]->clips = lvec1[i]->oldclips;
-						elem->clayers.push_back(lvec1[i]);
+                        elem->clayers.push_back(lvec1[i]);
                         elem->set_nbclayers(lvec1[i]);
                     }
                     return;
-				}
+                }
+                else if (elem->launchtype == 1) {
+                    for (int i = 0; i < lvec1.size(); i++) {
+                        lvec1[i]->tagged = true;
+                        lvec1[i]->clips = lvec1[i]->oldclips;
+                        elem->clayers.push_back(lvec1[i]);
+                        elem->set_nbclayers(lvec1[i]);
+                    }
+                    return;
+                }
 				else if (elem->launchtype == 2) {
 					for (int i = 0; i < lvec1.size(); i++) {
                         lvec1[i]->tagged = true;
@@ -6383,18 +6419,30 @@ void Mixer::set_prevshelfdragelem_layers(Layer* lay) {
 			}
 			else if (elem->type == ELEM_MIX) {
 				cond = false;
-				if (elem->launchtype == 1) {
-					for (int m = 0; m < 2; m++) {
-						std::vector<Layer*>& lvec2 = choose_layers(m);
-						for (int i = 0; i < lvec2.size(); i++) {
+                if (elem->launchtype == 0) {
+                    for (int m = 0; m < 2; m++) {
+                        std::vector<Layer *> &lvec2 = choose_layers(m);
+                        for (int i = 0; i < lvec2.size(); i++) {
                             lvec2[i]->tagged = true;
                             lvec2[i]->clips = lvec2[i]->oldclips;
-							elem->clayers.push_back(lvec2[i]);
+                            elem->clayers.push_back(lvec2[i]);
                             elem->set_nbclayers(lvec2[i]);
                         }
-					}
+                    }
                     return;
-				}
+                }
+                if (elem->launchtype == 1) {
+                    for (int m = 0; m < 2; m++) {
+                        std::vector<Layer*>& lvec2 = choose_layers(m);
+                        for (int i = 0; i < lvec2.size(); i++) {
+                            lvec2[i]->tagged = true;
+                            lvec2[i]->clips = lvec2[i]->oldclips;
+                            elem->clayers.push_back(lvec2[i]);
+                            elem->set_nbclayers(lvec2[i]);
+                        }
+                    }
+                    return;
+                }
 				else if (elem->launchtype == 2) {
  					for (int m = 0; m < 2; m++) {
 						std::vector<Layer*>& lvec2 = choose_layers(m);
@@ -7190,7 +7238,7 @@ void Mixer::open_state(std::string path, bool undo) {
                             lay->close();
                         }
                         for (Layer *lay : this->scenes[m][k]->scnblayers) {
-                            lay->close();
+                            // lay->close();  reminder : leak?
                         }
                         this->scenenum = -1;
                         this->scenes[m][k]->scnblayers = this->newlrs[m + 2];
@@ -11659,7 +11707,49 @@ void Mixer::event_read(std::istream &rfile, Param *par, Button* but, Layer *lay,
             loop->beats = std::stoi(istring);
         }
     }
-}
+
+    if (lay) {
+        if (par == lay->speed) loop->layers.emplace(lay);
+        if (par == lay->opacity) loop->layers.emplace(lay);
+        if (par == lay->volume) loop->layers.emplace(lay);
+        if (par == lay->scritch) {
+            loop->layers.emplace(lay);
+            par->layer = lay;
+        }
+        if (par == lay->startframe) {
+            loop->layers.emplace(lay);
+            par->layer = lay;
+        }
+        if (par == lay->endframe) {
+            loop->layers.emplace(lay);
+            par->layer = lay;
+        }
+        if (par == lay->blendnode->mixfac || par == lay->blendnode->wipex || par == lay->blendnode->wipey) {
+            loop->layers.emplace(lay);
+            par->layer = lay;
+        }
+        if (par == lay->shiftx) {
+            loop->layers.emplace(lay);
+            par->layer = lay;
+            par = lay->shifty;
+            par->layer = lay;
+            return;
+        }
+        if (par == lay->blendnode->wipex) {
+            loop->layers.emplace(lay);
+            par->layer = lay;
+            par = lay->blendnode->wipey;
+            par->layer = lay;
+            return;
+        }
+        if (par == lay->scale) {
+            loop->layers.emplace(lay);
+            par->layer = lay;
+            par = nullptr;
+            return;
+        }
+    }
+ }
 
 
 					// NEW
@@ -11882,7 +11972,9 @@ void Mixer::record_video(std::string reccod) {
 
 	/* record */
 	int count = 0;
-    this->reclay->checkre = true;
+    if (this->reclay) {
+        this->reclay->checkre = true;
+    }
     bool started = false;
     while (this->recording[this->reckind]) {
         std::unique_lock<std::mutex> lock(this->recordlock[this->reckind]);
@@ -11931,12 +12023,14 @@ void Mixer::record_video(std::string reccod) {
 
 		count++;
 
-        if (this->reclay->recended) {
-            // break when recrepping at end of video
-            this->reclay->recstarted = false;
-            this->reclay->recended = false;
-            this->reclay->checkre = false;
-            break;
+        if (this->reclay) {
+            if (this->reclay->recended) {
+                // break when recrepping at end of video
+                this->reclay->recstarted = false;
+                this->reclay->recended = false;
+                this->reclay->checkre = false;
+                break;
+            }
         }
 	}
     /* flush the encoder */
@@ -12008,7 +12102,7 @@ void Mixer::start_recording() {
     else {
         cbool = 1;
         glBufferData(GL_PIXEL_PACK_BUFFER, (int)(mainprogram->ow * mainprogram->oh) * 4, nullptr, GL_DYNAMIC_READ);
-        glBindFramebuffer(GL_FRAMEBUFFER, ((MixNode *) mainprogram->nodesmain->mixnodes[1][2])->mixfbo);
+        glBindFramebuffer(GL_FRAMEBUFFER, ((MixNode *) mainprogram->nodesmain->mixnodes[!mainprogram->prevmodus][2])->mixfbo);
     }
     glReadBuffer(GL_COLOR_ATTACHMENT0);
     if (cbool) glReadPixels(0, 0, mainprogram->ow, (int)mainprogram->oh, GL_BGRA, GL_UNSIGNED_BYTE, BUFFER_OFFSET(0));
@@ -13045,7 +13139,9 @@ void Scene::switch_to(bool dotempmap) {
         } else if (i == 3) {
             tempmap = &mainmix->swapmap[3];
         }
-        if (tempmap->size()) return;
+        if (tempmap->size()) {
+            return;
+        }
     }
     mainmix->scenes[this->deck][mainmix->currscene[this->deck]]->scnblayers.clear();
     std::vector<Layer *> &lvec = choose_layers(this->deck);
@@ -13081,13 +13177,11 @@ void Scene::switch_to(bool dotempmap) {
         mainmix->layers[this->deck + 2] = this->scnblayers;
     }
 
-    if (dotempmap) {
+    if (1) {
         LoopStation *prevlpst = mainmix->scenes[this->deck][mainmix->currscene[this->deck]]->lpst;
         mainmix->mousedeck = this->deck;
         int count = 0;
-        for (LoopStationElement *elem: prevlpst->elements) {
-            elem->erase_elem();
-        }
+        prevlpst->init();
         for (LoopStationElement *elem: lpc->elements) {
             // copy all event related info and the events themself
             // from the current loopstation into the loopstation of the scene we are leaving (prevlpst)
@@ -13101,19 +13195,6 @@ void Scene::switch_to(bool dotempmap) {
                     if (par->name == "Crossfade" || par->name == "wipex" ||
                         par->name == "wipey") {
                         // dont touch mix-wide parameters when switching scene
-                    } else if (par->shadervar == "mixfac" || par->name == "wipexlay" || par->name == "wipeylay") {
-                        // special cases: mix factor, wipe x and y coord for wipes inside the layer stack
-                        int j = 2 + mainmix->mousedeck; // only current deck
-                        for (auto lay : mainmix->layers[j]) {
-                            if (lay->blendnode->mixfac == par || lay->blendnode->wipex == par || lay->blendnode->wipey == par) {
-                                prevlpst->elements[count]->eventlist.push_back(event);
-                                prevlpst->elements[count]->params.emplace(par);
-                                prevlpst->parelemmap[par] = prevlpst->elements[count];
-                                prevlpst->allparams.emplace(par);
-                                found = true;
-                                break;
-                            }
-                        }
                     } else if (par->effect) {
                         if (par->effect->layer->deck == mainmix->mousedeck) {
                             lay = par->effect->layer;
@@ -13186,12 +13267,6 @@ void Scene::switch_to(bool dotempmap) {
                     if (par->name == "Crossfade" || par->name == "wipex" ||
                         par->name == "wipey") {
                         // dont touch mix-wide parameters when switching scene
-                    } else if (par->shadervar == "mixfac" || par->name == "wipexlay" || par->name == "wipeylay") {
-                        // special cases: mix factor, wipe x and y coord for wipes inside the layer stack
-                        lpc->elements[count]->eventlist.push_back(event);
-                        lpc->elements[count]->params.emplace(std::get<1>(event));
-                        lpc->allparams.emplace(par);
-                        lpc->parelemmap[par] = lpc->elements[count];
                     } else if (par->effect) {
                         lay = par->effect->layer;
                     } else {
@@ -13254,7 +13329,7 @@ void Mixer::reload_tagged_elems(ShelfElement *elem, bool deck) {
 }
 
 void Mixer::set_layers(ShelfElement  *elem, bool deck) {
-    if (elem->launchtype == 1) {
+    if (elem->launchtype < 2) {
         if (elem->clayers.size()) {
             auto &lrs = this->layers[!mainprogram->prevmodus * 2 + deck];
             for (Layer *lay : lrs) {
@@ -13268,9 +13343,18 @@ void Mixer::set_layers(ShelfElement  *elem, bool deck) {
                 }
                 lay->close();
             }
-            lrs.clear();
-            lrs = elem->clayers;
-            for (Layer *lay : lrs) {
+            elem->mixlrs[deck].clear();
+            for (int i = 0; i < elem->clayers.size(); i++) {
+                Layer *lay = elem->clayers[i];
+                if (lay->deck != deck) continue;
+                elem->mixlrs[deck].push_back(lay);
+                if (elem->launchtype == 0) {
+                    lay->frame = elem->cframes[i];
+                }
+            }
+            lrs = elem->mixlrs[deck];
+            mainmix->scenes[deck][mainmix->currscene[deck]]->scrollpos = elem->scrollpos[deck];
+            for (auto lay : lrs) {
                 lay->layers = &lrs;
 
                 lay->oldclips.clear();
@@ -13284,7 +13368,9 @@ void Mixer::set_layers(ShelfElement  *elem, bool deck) {
 
                 lay->prevshelfdragelem = elem;
             }
-            elem->clayers.clear();
+            if (elem->type == ELEM_DECK || (elem->type == ELEM_MIX && deck == 1)) {
+                elem->clayers.clear();
+            }
         }
     } else if (elem->launchtype == 2) {
         if (elem->nblayers.size()) {

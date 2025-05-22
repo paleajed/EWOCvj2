@@ -328,14 +328,6 @@ bool copy_dir(const std::string& source_path, const std::string& destination_pat
             return false;
         }
 
-        // Create destination directory if it doesn't exist
-        if (!std::filesystem::exists(destination_path)) {
-            if (!std::filesystem::create_directories(destination_path)) {
-                printf("Error: Failed to create destination directory: %s\n", destination_path.c_str());
-                return false;
-            }
-        }
-
         // Choose copy options based on recursion parameter
         std::filesystem::copy_options options = std::filesystem::copy_options::overwrite_existing;
         if (recursive) {
@@ -3424,10 +3416,8 @@ void onestepfrom(bool stage, Node *node, Node *prevnode, GLuint prevfbotex, GLui
 		prevfbotex = mnode->mixtex;
 		prevfbo = mnode->mixfbo;
 		glViewport(0, 0, glob->w, glob->h);
-
-        //GLenum err;
-
     }
+
 	for (int i = 0; i < node->out.size(); i++) {
 		if (node->out[i]->calc && !node->out[i]->walked) onestepfrom(stage, node->out[i], node, prevfbotex, prevfbo);
 	}
@@ -3594,6 +3584,7 @@ bool display_mix() {
 			GLfloat ypos = glGetUniformLocation(mainprogram->ShaderProgram, "ypos");
 			glUniform1f(ypos, mainmix->wipey[0]->value);
 		}
+        // bottom monitor in preview modus
 		node = (MixNode*)mainprogram->nodesmain->mixnodes[0][0];
 		glActiveTexture(GL_TEXTURE1);
 		glBindTexture(GL_TEXTURE_2D, node->mixtex);
@@ -3608,11 +3599,21 @@ bool display_mix() {
         box->vtxcoords->w = 0.3f;
         box->vtxcoords->h = mainprogram->monh;
         box->upvtxtoscr();
+        if (mainmix->wipe[0] > -1) {
+            glBindFramebuffer(GL_FRAMEBUFFER, node->mixfbo);
+            glDrawBuffer(GL_COLOR_ATTACHMENT0);
+            glViewport(0, 0, mainprogram->ow3, mainprogram->oh3);
+            glClearColor(0, 0, 0, 0);
+            glClear(GL_COLOR_BUFFER_BIT);
+            draw_box(nullptr, black, -1.0f, 1.0f, 2.0f, -2.0f, -1);
+        }
+        glUniform1i(wipe, 0);
+        glUniform1i(mixmode, 0);
+        glBindFramebuffer(GL_FRAMEBUFFER, 0);
+        glDrawBuffer(GL_BACK_LEFT);
+        glViewport(0, 0, glob->w, glob->h);
 		draw_box(red, black, box->vtxcoords->x1 + xs * 2.0f, box->vtxcoords->y1 + ys * 2.0f, box->vtxcoords->w - xs * 4.0f, box->vtxcoords->h - ys * 4.0f, node->mixtex);
 		mainprogram->mainmonitor->in();
-
-		glUniform1i(wipe, 0);
-		glUniform1i(mixmode, 0);
 
 		if (mainmix->wipe[1] > -1) {
 			GLfloat cf = glGetUniformLocation(mainprogram->ShaderProgram, "cf");
@@ -3635,8 +3636,22 @@ bool display_mix() {
 			glBindTexture(GL_TEXTURE_2D, node->mixtex);
 			glActiveTexture(GL_TEXTURE0);
 		}
+        // top monitor in preview modus
 		node = (MixNode*)mainprogram->nodesmain->mixnodes[1][2];
 		box = mainprogram->outputmonitor;
+        if (mainmix->wipe[1] > -1) {
+            glBindFramebuffer(GL_FRAMEBUFFER, node->mixfbo);
+            glDrawBuffer(GL_COLOR_ATTACHMENT0);
+            glViewport(0, 0, mainprogram->ow, mainprogram->oh);
+            glClearColor(0, 0, 0, 0);
+            glClear(GL_COLOR_BUFFER_BIT);
+            draw_box(nullptr, black, -1.0f, 1.0f, 2.0f, -2.0f, -1);
+        }
+        glUniform1i(wipe, 0);
+        glUniform1i(mixmode, 0);
+        glBindFramebuffer(GL_FRAMEBUFFER, 0);
+        glDrawBuffer(GL_BACK_LEFT);
+        glViewport(0, 0, glob->w, glob->h);
 		draw_box(red, black, box->vtxcoords->x1 + xs, box->vtxcoords->y1 + ys, box->vtxcoords->w - xs * 2.0f, box->vtxcoords->h - ys * 2.0f, node->mixtex);
 		mainprogram->outputmonitor->in();
 	}
@@ -3664,6 +3679,7 @@ bool display_mix() {
 			glBindTexture(GL_TEXTURE_2D, node->mixtex);
 			glActiveTexture(GL_TEXTURE0);
 		}
+        // main monitor in performance modus
 		node = (MixNode*)mainprogram->nodesmain->mixnodes[1][2];
 		box = mainprogram->mainmonitor;
         box->vtxcoords->x1 = -0.3f;
@@ -3671,14 +3687,26 @@ bool display_mix() {
         box->vtxcoords->w = 0.6f;
         box->vtxcoords->h = mainprogram->monh * 2.0f;
         box->upvtxtoscr();
+        if (mainmix->wipe[1] > -1) {
+            glBindFramebuffer(GL_FRAMEBUFFER, node->mixfbo);
+            glDrawBuffer(GL_COLOR_ATTACHMENT0);
+            glViewport(0, 0, mainprogram->ow, mainprogram->oh);
+            glClearColor(0, 0, 0, 0);
+            glClear(GL_COLOR_BUFFER_BIT);
+            draw_box(nullptr, black, -1.0f, 1.0f, 2.0f, -2.0f, -1);
+        }
+        glUniform1i(wipe, 0);
+        glUniform1i(mixmode, 0);
+        glBindFramebuffer(GL_FRAMEBUFFER, 0);
+        glDrawBuffer(GL_BACK_LEFT);
+        glViewport(0, 0, glob->w, glob->h);
 		draw_box(red, black, box->vtxcoords->x1 + xs * 2.0f, box->vtxcoords->y1 + ys * 2.0f, box->vtxcoords->w - xs * 4.0f, box->vtxcoords->h - ys * 4.0f, node->mixtex);
 		mainprogram->mainmonitor->in();
 	}
-	glUniform1i(wipe, 0);
-	glUniform1i(mixmode, 0);
 
+    // draw deck monitors
 	if (mainprogram->prevmodus) {
-		node = (MixNode*)mainprogram->nodesmain->mixnodes[0][0];
+        node = (MixNode*)mainprogram->nodesmain->mixnodes[0][0];
 		box = mainprogram->deckmonitor[0];
 		draw_box(red, box->acolor, box->vtxcoords->x1 + xs, box->vtxcoords->y1 + ys, box->vtxcoords->w - xs * 2.0f, box->vtxcoords->h - ys * 2.0f, node->mixtex);
 		box->in();
@@ -4295,6 +4323,7 @@ void enddrag() {
 		mainmix->moving = false;
 		mainprogram->dragout[0] = true;
 		mainprogram->dragout[1] = true;
+        mainprogram->draggingrec = false;
 		//glDeleteTextures(1, mainprogram->dragbinel->tex);  maybe needs implementing in one case, check history
 	}
     delete mainprogram->dragbinel;
@@ -5338,9 +5367,11 @@ void the_loop() {
             draw_box(&box, mainmix->recQthumbshow);
             if (box.in() && mainprogram->leftmousedown) {
                 mainprogram->leftmousedown = false;
+                mainprogram->draggingrec = true;
                 mainprogram->dragbinel = new BinElement;
                 mainprogram->dragbinel->tex = mainmix->recQthumbshow;
                 mainprogram->dragbinel->path = mainmix->recpath[1];
+                mainprogram->dragbinel->name = remove_extension(basename(mainmix->recpath[1]));
                 mainprogram->dragbinel->relpath = std::filesystem::relative(mainmix->recpath[1], mainprogram->project->binsdir).generic_string();
                 mainprogram->dragbinel->type = ELEM_FILE;
                 mainprogram->shelves[0]->prevnum = -1;
