@@ -463,7 +463,7 @@ Program::Program() {
     this->backtopreA->box->vtxcoords->h = 0.1f;
     this->backtopreA->box->upvtxtoscr();
     this->backtopreA->box->tooltiptitle = "Send output streams to preview ";
-    this->backtopreA->box->tooltip = "Leftclick sends/copies the streams being output back into the preview streams ";
+    this->backtopreA->box->tooltip = "Leftclick sends/copies the streams being output into the preview streams ";
 
     this->backtopreB = new Button(false);
     this->backtopreB->toggle = 0;
@@ -475,7 +475,7 @@ Program::Program() {
     this->backtopreB->box->vtxcoords->h = 0.1f;
     this->backtopreB->box->upvtxtoscr();
     this->backtopreB->box->tooltiptitle = "Send output streams to preview ";
-    this->backtopreB->box->tooltip = "Leftclick sends/copies the streams being output back into the preview streams ";
+    this->backtopreB->box->tooltip = "Leftclick sends/copies the streams being output into the preview streams ";
 
     // the mix
     this->backtopreM = new Button(false);
@@ -488,7 +488,7 @@ Program::Program() {
     this->backtopreM->box->vtxcoords->h = 0.1f;
     this->backtopreM->box->upvtxtoscr();
     this->backtopreM->box->tooltiptitle = "Send entire output stream to preview ";
-    this->backtopreM->box->tooltip = "Leftclick sends/copies the entire stream being output back into the preview streams ";
+    this->backtopreM->box->tooltip = "Leftclick sends/copies the entire stream being output into the preview streams ";
 
     // switching between preview and preformance streams
     this->modusbut = new Button(false);
@@ -915,7 +915,7 @@ Program::Program() {
     this->beatthres->range[0] = 0.0f;
     this->beatthres->range[1] = 1.0f;
     this->beatthres->sliding = true;
-    this->beatthres->powerfour = true;
+    this->beatthres->powerfour100 = true;
     this->beatthres->box->lcolor[0] = 0.4f;
     this->beatthres->box->lcolor[1] = 0.4f;
     this->beatthres->box->lcolor[2] = 0.4f;
@@ -1403,6 +1403,7 @@ bool Program::order_paths(bool dodeckmix) {
             if (std::find(this->errlays.begin(), this->errlays.end(), lay) != this->errlays.end()) {
                 // error opening file
                 this->getvideotexlayers.erase(this->getvideotexlayers.begin());
+                this->getvideotexpaths.erase(std::find(this->getvideotexpaths.begin(), this->getvideotexpaths.end(), str));
                 this->paths.erase(std::find(this->paths.begin(), this->paths.end(), str));
                 return false;
             }
@@ -1467,6 +1468,7 @@ bool Program::order_paths(bool dodeckmix) {
             lay->close();
 
             this->getvideotexlayers.erase(this->getvideotexlayers.begin());
+            this->getvideotexpaths.erase(std::find(this->getvideotexpaths.begin(), this->getvideotexpaths.end(), str));
             return false;
         }
 
@@ -1951,7 +1953,7 @@ void Program::handle_fullscreen() {
             node = (MixNode *) this->nodesmain->mixnodes[1][1];
         }
         else if (this->fullscreen == 2) {
-            //node = (MixNode *) this->nodesmain->mixnodes[0][2];
+            node = (MixNode *) this->nodesmain->mixnodes[1][2];
         }
         else if (this->fullscreen == 3) {
             node = (MixNode *) this->nodesmain->mixnodes[1][2];
@@ -4293,7 +4295,14 @@ void Program::handle_laymenu1() {
             duplay->isduplay = mainmix->mouselayer;
         }
         else if (!cond && k == 13) {
-            Layer* clonelay = mainmix->mouselayer->clone();
+            Layer* lay = mainmix->mouselayer->clone();
+            Layer *clonelay = nullptr;
+            if (lay->type == ELEM_IMAGE) {
+                clonelay = lay->open_image(lay->filename, true, true);
+            }
+            else {
+                clonelay = lay->open_video(lay->frame, lay->filename, false, true);
+            }
             if (mainmix->mouselayer->clonesetnr == -1) {
                 mainmix->mouselayer->clonesetnr = mainmix->clonesets.size();
                 //mainmix->firstlayers[mainmix->mouselayer->clonesetnr] = mainmix->mouselayer;      set in Layer::load_frame()
@@ -5632,6 +5641,7 @@ bool Program::preferences_handle() {
                     mci->items[i]->str = this->inputtext;
                     if (mci->items[i]->dest == &this->project->name) {
                         this->projnamechanged = true;
+                        this->projname = mci->items[i]->str;
                         this->saveproject = true;
                     }
                 } else if (this->renaming == EDIT_CANCEL) {
@@ -5677,6 +5687,7 @@ bool Program::preferences_handle() {
                     mci->items[i]->path = this->inputtext;
                     if (mci->items[i]->dest == &this->project->name) {
                         this->projnamechanged = true;
+                        this->projname = mci->items[i]->str;
                         this->saveproject = true;
                     }
                 }
@@ -5958,13 +5969,27 @@ bool Program::preferences_handle() {
             }
 			if (this->projnamechanged) {  // project name not included in preferences file, only change if
 			    // user clicks SAVE
-                if (this->project->name != remove_extension(basename(this->project->path))) {
+                if (this->projname != remove_extension(basename(this->project->path))) {
                     // project name changed
                     // rename project file
+                    remove(this->project->path);
+
+                    for (std::filesystem::recursive_directory_iterator end_dir_it, it(this->project->autosavedir); it != end_dir_it; ++it) {
+                        // adapt autosave names
+                        std::string p = it->path().string();
+                        if (basename(p).find(this->project->name) != std::string::npos) {
+                            std::string p2 = p;
+                            p.replace(p.rfind(this->project->name), this->project->name.size(), this->projname);
+                            rename(p2, p);
+                        }
+                    }
+
+                    this->project->name = this->projname;
                     std::string pathdir = dirname(this->project->path);
                     std::string newdir = dirname(pathdir.substr(0, pathdir.size() - 2)) + this->project->name + "/";
-                    rename(pathdir, newdir);
                     // rename project directory
+                    rename(pathdir, newdir);
+                    // adapt recent project list
                     int pos = std::find(this->recentprojectpaths.begin(), this->recentprojectpaths.end(), this->project->path) - this->recentprojectpaths.begin();
                     this->project->path = newdir +
                                                  this->project->name + ".ewocvj";
@@ -5986,9 +6011,16 @@ bool Program::preferences_handle() {
                         for (int j = 0; j < binsmain->bins[i]->elements.size(); j++) {
                             std::string str = binsmain->bins[i]->elements[j]->path;
                             if (str.find(bubd) != std::string::npos) {
-                                str = str.replace(str.find(bubd), bubd.size(), this->project->binsdir);
+                                str.replace(str.find(bubd), bubd.size(), this->project->binsdir);
                                 binsmain->bins[i]->elements[j]->path = str;
                                 binsmain->bins[i]->elements[j]->relpath = std::filesystem::relative(str, mainprogram->project->binsdir).generic_string();
+                            }
+                            std::string str2 = binsmain->bins[i]->elements[j]->absjpath;
+                            if (str2.find(bubd) != std::string::npos) {
+                                str2.replace(str.find(bubd), bubd.size(), this->project->binsdir);
+                                binsmain->bins[i]->elements[j]->absjpath = str2;
+                                binsmain->bins[i]->elements[j]->reljpath = std::filesystem::relative(str2, mainprogram->project->binsdir).generic_string();
+                                binsmain->bins[i]->elements[j]->jpegpath = str2;
                             }
                         }
                     }
@@ -6661,10 +6693,30 @@ bool Program::config_midipresets_init() {
 
 void Program::pick_color(Layer* lay, Boxx* cbox) {
 	if (lay->pos > 0) {
+        if (mainprogram->rightmouse && mainprogram->cwon) {
+            // cancel color picking
+            lay->cwon = false;
+            mainprogram->cwon = false;
+            this->colorpicking = false;
+            lay->blendnode->chred = lay->burgb[0];
+            lay->blendnode->chgreen = lay->burgb[1];
+            lay->blendnode->chblue = lay->burgb[2];
+            cbox->acolor[0] = lay->burgb[0];
+            cbox->acolor[1] = lay->burgb[1];
+            cbox->acolor[2] = lay->burgb[2];
+            cbox->acolor[3] = 1.0f;
+            return;
+        }
 		if (cbox->in()) {
 			if (mainprogram->leftmouse) {
 				lay->cwon = true;
 				mainprogram->cwon = true;
+                if (!this->colorpicking) {
+                    this->colorpicking = true;
+                    lay->burgb[0] = lay->blendnode->chred;
+                    lay->burgb[1] = lay->blendnode->chgreen;
+                    lay->burgb[2] = lay->blendnode->chblue;
+                }
 				mainprogram->cwx = mainprogram->mx / glob->w;
 				mainprogram->cwy = (glob->h - mainprogram->my) / glob->h - 0.15f;
 				GLfloat cwx = glGetUniformLocation(mainprogram->ShaderProgram, "cwx");
@@ -6703,6 +6755,7 @@ void Program::pick_color(Layer* lay, Boxx* cbox) {
 						mainprogram->cwmouse = 0;
 						GLint cwmouse = glGetUniformLocation(mainprogram->ShaderProgram, "cwmouse");
 						glUniform1i(cwmouse, 0);
+                        this->colorpicking = false;
 						lay->cwon = false;
 						mainprogram->cwon = false;
 					}
@@ -6719,8 +6772,6 @@ void Program::pick_color(Layer* lay, Boxx* cbox) {
 				glUniform1f(cwy, mainprogram->cwy);
 				GLint cwon = glGetUniformLocation(mainprogram->ShaderProgram, "cwon");
 				glUniform1i(cwon, 1);
-				printf("x %f\n", 8.0f * (3500 - (mainprogram->cwx * mainprogram->ow)) / mainprogram->oh);
-				printf("y %f\n", -8.0f * (400 - (mainprogram->cwy * mainprogram->oh)) / mainprogram->oh);
 				Boxx* box = mainprogram->cwbox;
 				mainprogram->directmode = true;
 				draw_box(nullptr, box->acolor, box->vtxcoords->x1, box->vtxcoords->y1, box->vtxcoords->w, box->vtxcoords->h, -1);
@@ -6899,15 +6950,17 @@ void Project::delete_dirs(std::string path) {
 	std::filesystem::directory_entry d{ path };
     for (auto &it : std::filesystem::directory_iterator(path)) {
         //std::string pp = it.path().stem().string();
-        if (dirname(mainprogram->project->bupp) == dirname(mainprogram->project->bupp)) {
+        if (mainprogram->inautosave) {
+            // dont overwrite autosaves dir when saving after autosave recovery
             std::string clearpath = it.path().string();
-            //if (clearpath.find("autosave") != std::string::npos) {
-            //    continue;
-            //}
+            if (clearpath.find("autosave") != std::string::npos) {
+                continue;
+            }
         }
+
         std::filesystem::remove_all(it.path());
     }
-    std::filesystem::current_path(std::filesystem::current_path().parent_path().parent_path());    std::filesystem::remove_all(path);
+    std::filesystem::current_path(std::filesystem::current_path().parent_path().parent_path());
 	for (int i = 0; i < binsmain->bins.size(); i++) {
 		binsmain->bins[i]->path = path + "/bins/" + binsmain->bins[i]->name + ".bin";
 	}
@@ -6917,47 +6970,7 @@ void Project::delete_dirs(std::string path) {
 void Project::copy_dirs(std::string path, bool rem) {
     namespace fs = std::filesystem;
     path = pathtoposix(path);
-    //mainprogram->remove(path + "/" + basename(this->path));
     if (exists(this->autosavedir + "temp")) {
-        if (exists(path)) {
-#include <filesystem>
-#include <iostream>
-
-               try {
-                   auto cwd = std::filesystem::current_path();
-                   std::cout << "Current working directory: " << cwd << std::endl;
-                    if (!std::filesystem::exists(path)) {
-                        std::cout << "Path doesn't exist" << std::endl;
-                        return;
-                    }
-
-                    auto perms = std::filesystem::status(path).permissions();
-                    std::cout << "Current permissions: " << std::oct << static_cast<int>(perms) << std::endl;
-
-                    // Try to iterate through directory
-                    for (const auto& entry : std::filesystem::directory_iterator(path)) {
-                        std::cout << "Found: " << entry.path() << std::endl;
-                        auto entry_perms = std::filesystem::status(entry).permissions();
-                        std::cout << "  Permissions: " << std::oct << static_cast<int>(entry_perms) << std::endl;
-
-                        // Check if file is in use (Windows specific check)
-#ifdef _WIN32
-                        HANDLE handle = CreateFileA(entry.path().string().c_str(),
-                                                    GENERIC_READ | GENERIC_WRITE,
-                                                    0, NULL, OPEN_EXISTING,
-                                                    FILE_ATTRIBUTE_NORMAL, NULL);
-                        if (handle == INVALID_HANDLE_VALUE) {
-                            std::cout << "  File might be in use or protected" << std::endl;
-                        } else {
-                            CloseHandle(handle);
-                        }
-#endif
-                    }
-                } catch (const std::exception& ex) {
-                    std::cout << "Error diagnosing: " << ex.what() << std::endl;
-                }
-            //std::filesystem::remove_all(path);
-        }
         rename(this->autosavedir + "temp", path);
     }
     if (!exists(path)) fs::create_directory(fs::path(path));
@@ -7182,16 +7195,13 @@ bool Project::open(std::string path, bool autosave, bool newp, bool undo) {
     this->binsdir = dir + "bins/";
     this->recdir = dir + "recordings/";
     this->shelfdir = dir + "shelves/";
-    this->autosavedir = dir + "autosaves/";
+    if (!mainprogram->inautosave) {
+        this->autosavedir = dir + "autosaves/";
+    }
     this->elementsdir = dir + "elements/";
     if (!undo) {
         if (!exists(mainprogram->currfilesdir)) mainprogram->currfilesdir = this->elementsdir;
         mainprogram->currelemsdir = this->elementsdir;
-    }
-
-    std::string bubinsdir = mainprogram->project->binsdir;
-    if (autosave) {
-        mainprogram->project->binsdir = mainprogram->autosavebinsdir;
     }
 
     if (!undo) {
@@ -7202,7 +7212,6 @@ bool Project::open(std::string path, bool autosave, bool newp, bool undo) {
                 binsmain->open_bin(binname, binsmain->bins[i]);
             }
         }
-        mainprogram->project->binsdir = bubinsdir;
         if (binsmain->bins.size()) {
             binsmain->make_currbin(cb);
         }
@@ -7294,9 +7303,7 @@ bool Project::open(std::string path, bool autosave, bool newp, bool undo) {
 
     if (!undo) {
         // for initial bin screen entry speedup
-        //mainprogram->rightmouse = true;
-        binsmain->handle(1);
-        //mainprogram->rightmouse = false;
+        binsmain->handle(0);
     }
 
     std::vector<LoopStation*> lpsts;
@@ -7344,39 +7351,6 @@ void Project::save(std::string path, bool autosave, bool undo, bool nocheck) {
 	wfile.open(str);
 	std::vector<std::string> filestoadd;
 
-    std::vector<std::vector<std::string>> bupaths;
-    if (0) {
-        for (std::string binpath : mainprogram->oldbins) {
-            mainprogram->remove(binpath);
-            std::filesystem::remove_all(binpath.substr(0, binpath.length() - 4));
-        }
-        for (Bin *bin : binsmain->bins) {
-            copy_dir(mainprogram->autosavebinsdir, mainprogram->project->binsdir, false);
-
-            for (int k = 0; k < binsmain->bins.size(); k++) {
-                std::vector<std::string> bup;
-                for (int j = 0; j < 12; j++) {
-                    for (int i = 0; i < 12; i++) {
-                        BinElement *binel = binsmain->bins[k]->elements[i * 12 + j];
-                        std::string s =
-                                mainprogram->project->binsdir + binsmain->bins[k]->name + "/";
-                        bup.push_back(binel->absjpath);
-                        if (binel->path != "") {
-                            binel->path = s + basename(binel->path);
-                            binel->relpath = std::filesystem::relative(binel->path, s).generic_string();
-                        }
-                        if (binel->absjpath != "") {
-                            binel->absjpath = s + basename(binel->absjpath);
-                            binel->jpegpath = binel->absjpath;
-                            binel->reljpath = std::filesystem::relative(binel->absjpath, s).generic_string();
-                        }
-                    }
-                }
-                bupaths.push_back(bup);
-            }
-        }
-    }
-
 	wfile << "EWOCvj PROJECT V0.1\n";
     wfile << "PREVMODUS\n";
     wfile << std::to_string(mainprogram->prevmodus);
@@ -7423,7 +7397,7 @@ void Project::save(std::string path, bool autosave, bool undo, bool nocheck) {
             binsmain->make_currbin(i);
             std::filesystem::path p1(this->binsdir + remove_extension(basename(binsmain->bins[i]->path)));
             if (!exists(p1)) {
-                std::filesystem::create_directory(p1);
+                std::filesystem::create_directories(p1);
             }
             binsmain->save_bin(dirname(path) + "bins/" + binsmain->bins[i]->name + ".bin");
         }
@@ -7587,6 +7561,11 @@ void Project::save_as() {
     this->wait_for_copyover();
 
     std::string path2;
+
+
+
+
+
     std::string str;
     std::vector<std::vector<std::string>> bupaths1;
     std::vector<std::vector<std::string>> bupaths2;
@@ -7650,6 +7629,7 @@ void Project::save_as() {
     // save project as...
     mainprogram->saveas = true;
     mainprogram->project->path = str;
+    mainprogram->project->name = remove_extension(basename(str));
     mainprogram->project->save(str, false, false, true);
     for (Bin *bin: binsmain->bins) {
         for (BinElement *binel: bin->elements) {
@@ -7703,10 +7683,6 @@ void Project::autosave() {
     if (binsmain->openfilesbin || binsmain->importbins || mainprogram->openfilesshelf || mainprogram->openfileslayers || mainprogram->openfilesqueue || mainprogram->concatting) {
         return;
     }
-    if (mainprogram->project->path.find("autosave") != std::string::npos) {
-        mainmix->time = 0.0f;
-        return;
-    }
     bool found = false;
     for (Bin *bin : binsmain->bins) {
         if (bin->open_positions.size()) {
@@ -7727,16 +7703,22 @@ void Project::autosave() {
 
     mainprogram->astimestamp = (int) mainmix->time;
 
-    std::string p1 = find_unused_filename("autosave_" + remove_extension(basename(this->path)), this->autosavedir, "");
+    std::string p1;
+    if (!mainprogram->inautosave) {
+        p1 = find_unused_filename("autosave_" + remove_extension(basename(this->path)) + "_0", this->autosavedir, "");
+    }
+    else {
+        p1 = find_unused_filename("autosave_" + remove_extension(basename(this->bupp)) + "_0", this->autosavedir, "");
+    }
 
     std::string bubinsdir = pathtoplatform(this->binsdir);
-    mainprogram->project->bupp = this->path;
-    mainprogram->project->bupn = this->name;
-    mainprogram->project->bubd = this->binsdir;
-    mainprogram->project->busd = this->shelfdir;
-    mainprogram->project->burd = this->recdir;
-    mainprogram->project->buad = this->autosavedir;
-    mainprogram->project->bued = this->elementsdir;
+    std::string bupp = this->path;
+    std::string bupn = this->name;
+    std::string bubd = this->binsdir;
+    std::string busd = this->shelfdir;
+    std::string burd = this->recdir;
+    std::string buad = this->autosavedir;
+    std::string bued = this->elementsdir;
     bool ret = mainprogram->project->create_dirs_autosave(p1);
     if (!ret) {
         return;
@@ -7804,13 +7786,13 @@ void Project::autosave() {
     }
 
     mainprogram->autosaving = false;
-    this->binsdir = mainprogram->project->bubd;
-    this->shelfdir = mainprogram->project->busd;
-    this->recdir = mainprogram->project->burd;
-    this->autosavedir = mainprogram->project->buad;
-    this->elementsdir = mainprogram->project->bued;
-    this->path = mainprogram->project->bupp;
-    this->name = mainprogram->project->bupn;
+    this->binsdir = bubd;
+    this->shelfdir = busd;
+    this->recdir = burd;
+    this->autosavedir = buad;
+    this->elementsdir = bued;
+    this->path = bupp;
+    this->name = bupn;
 
     mainprogram->prevmodus = bupm;
 

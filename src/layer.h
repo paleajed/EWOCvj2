@@ -146,7 +146,8 @@ class Layer {
 		Button *chdir;
 		Button *chinv;
 		bool cwon = false;
-		float rgb[4] = {0.0f, 0.0f, 0.0f, 0.0f};
+        float rgb[4] = {0.0f, 0.0f, 0.0f, 0.0f};
+        float burgb[4] = {0.0f, 0.0f, 0.0f, 0.0f};
 		Param *speed;
 		Param *opacity;
 		Param *volume;
@@ -449,7 +450,7 @@ class Mixer {
 		void do_delete_layers(std::vector<Layer*> layers, bool alive);
 		void copy_to_comp(bool deckA, bool deckB, bool comp);
         void copy_pbos(Layer *clay, Layer *lay);
-        void set_values(Layer* clay, Layer* lay, bool open);
+        void set_values(Layer* clay, Layer* lay);
 		void copy_effects(Layer* slay, Layer* dlay, bool comp);
         void handle_adaptparam();
 		void handle_clips();

@@ -409,7 +409,7 @@ void Param::handle(bool smallxpad) {
 	int val;
 	if (!this->powertwo) val = round(this->value * 1000.0f);
 	else val = round(this->value * this->value * 1000.0f);
-    if (this->powerfour) {
+    if (this->powerfour100) {
         val = round(this->value * this->value * this->value * this->value * 100000.0f);
     }
 	int val2 = val;
@@ -419,7 +419,7 @@ void Param::handle(bool smallxpad) {
 	if (mainmix->learnparam == this && mainmix->learn) {
 		thisstr = "MIDI";
 	}
-	else if (this != mainmix->adaptparam) thisstr = this->name;
+	else if (this != mainmix->prepadaptparam && this != mainmix->adaptparam) thisstr = this->name;
 	else if (this->sliding) thisstr = std::to_string(val).substr(firstdigit, 4 - firstdigit) + "." + std::to_string(val).substr(std::to_string(val).length() - 3, std::string::npos); 
 	else thisstr = std::to_string((int)(this->value + (float)(0.5f * (this->effect->type == FLIP || this->effect->type == MIRROR))));
 	if (this != mainmix->adaptnumparam) {
@@ -654,6 +654,7 @@ void Mixer::handle_adaptparam() {
          // UNDO registration
         mainprogram->register_undo(this->adaptparam, nullptr);
         mainprogram->recundo = false;
+
         mainprogram->adaptparaming = false;
 		this->adaptparam = nullptr;
 	}
@@ -2498,7 +2499,7 @@ Layer::Layer(bool comp) {
 	this->speed->value = 1.0f;
 	this->speed->deflt = 1.0f;
 	this->speed->range[0] = 0.0f;
-	this->speed->range[1] = 3.33f;
+	this->speed->range[1] = 5.0f;
     this->speed->layer = this;
     this->speed->sliding = true;
 	this->speed->powertwo = true;
@@ -2592,7 +2593,7 @@ Layer::Layer(bool comp) {
     this->genmidibut->toggle = 4;
 	this->genmidibut->layer = this;
 	this->genmidibut->box->tooltiptitle = "Set layer MIDI preset ";
-	this->genmidibut->box->tooltip = "Selects (leftclick advances) for this layer which MIDI preset (A, B, C, D or off) is used to control this layers common controls. ";
+	this->genmidibut->box->tooltip = "Selects (leftclick advances) for this layer which MIDI preset (A, B, C, D or off) is used to control this layers common controls.  Configure by rightclicking in empty area and selecting \"Configure general MIDI\". ";
     this->loopbox = new Boxx;
     this->loopbox->tooltiptitle = "Loop bar ";
     this->loopbox->tooltip = "Loop bar for current layer video.  Green area is looped area, white vertical line is video  .  Leftdrag on bar scrubs video.  When hovering over green area edges, the area turns blue; when this happens ctrl+leftdrag will drag the area edge.  If area is green, ctrl+leftdrag on the area will drag the looparea left/right.  Rightclicking starts a menu allowing to set loop start or end to the current play position. ";
@@ -3083,6 +3084,11 @@ void Layer::set_clones(int clsnr) {
                     olock.unlock();
                 }
             }
+            lay->decresult->width = this->iw;
+            lay->decresult->height = this->ih;
+            lay->shiftx->value = this->shiftx->value;
+            lay->shifty->value = this->shifty->value;
+            lay->scale->value = this->scale->value;
             lay->speed->value = this->speed->value;
             lay->opacity->value = this->opacity->value;
             lay->playbut->value = this->playbut->value;
@@ -3101,8 +3107,9 @@ Layer* Layer::clone() {
 	std::vector<Layer*>& lvec = choose_layers(this->deck);
 	Layer* dlay = mainmix->add_layer(lvec, this->pos + 1);
 	dlay->isclone = true;
-	mainmix->set_values(dlay, this, true);
+	mainmix->set_values(dlay, this);
 	dlay->pos = this->pos + 1;
+    //dlay->changeinit = 2;
 	dlay->blendnode->blendtype = this->blendnode->blendtype;
 	dlay->blendnode->mixfac->value = this->blendnode->mixfac->value;
 	dlay->blendnode->chred = this->blendnode->chred;
@@ -4193,10 +4200,11 @@ void Layer::get_frame(){
                 this->frame = this->isduplay->frame;
                 this->isduplay = nullptr;
             }
-            if (!this->tagged) this->set_clones();
+            //if (!this->tagged) this->set_clones();
             if (r == 0) {
                 printf("load error\n");
                 mainprogram->openerr = false;
+                mainprogram->errlays.push_back(this);
                 this->opened = true;
                 if (!this->isclone) this->initialized = false;
                 this->startframe->value = 0;
@@ -4431,7 +4439,13 @@ void Layer::display() {
                 else if (this->deck == 1) deckstr = "B";
                 render_text("Layer " + deckstr + std::to_string(this->pos + 1), white, box->vtxcoords->x1 + 0.015f,
                             box->vtxcoords->y1 + box->vtxcoords->h - 0.045f, 0.0005f, 0.0008f);
-                std::string name = remove_extension(basename(this->filename));
+                std::string name;
+                if (this->type == ELEM_LIVE) {
+                    name = this->filename;
+                }
+                else {
+                    name = remove_extension(basename(this->filename));
+                }
 				render_text(name, white, box->vtxcoords->x1 + 0.015f,
                 box->vtxcoords->y1 + box->vtxcoords->h - 0.09f, 0.0005f, 0.0008f);
 				if (this->vidformat == -1) {
@@ -5305,7 +5319,7 @@ void Layer::display() {
             }
             mainprogram->frontbatch = true;
             draw_box(lightgrey, nullptr, this->speed->box->vtxcoords->x1, this->speed->box->vtxcoords->y1,
-                     this->speed->box->vtxcoords->w * 0.30f + 0.0085f, 0.075f, -1);
+                     this->speed->box->vtxcoords->w * 0.20f + 0.0124f, 0.075f, -1);
             // display lock?
             if (this->lockspeed) {
                 draw_box(nullptr, nullptr, this->speed->box->vtxcoords->x1 + this->speed->box->vtxcoords->w / 2.1f, this->speed->box->vtxcoords->y1 + 0.015f, this->speed->box->vtxcoords->w / 12.0f, this->speed->box->vtxcoords->h * 0.55f, mainprogram->loktex);
@@ -5957,6 +5971,7 @@ void Mixer::outputmonitors_handle() {
 
                 if (mainprogram->doubleleftmouse) {
                     mainprogram->fullscreen = i;
+                    mainprogram->doubleleftmouse = false;
                 }
                 if (mainprogram->menuactivation) {
                     mainprogram->monitormenu->state = 2;
@@ -5989,7 +6004,9 @@ void Mixer::outputmonitors_handle() {
             }
         }
         if (mainprogram->lmover) {
-            this->currlay[!mainprogram->prevmodus]->wiping = false;
+            if (this->currlay[!mainprogram->prevmodus]) {
+                this->currlay[!mainprogram->prevmodus]->wiping = false;
+            }
         }
 
         for (int i = 0; i < 2; i++) {
@@ -6100,70 +6117,75 @@ bool Layer::find_new_live_base(int pos) {
 }
 
 void Layer::set_live_base(std::string livename) {
-    if (this->video) {
-        this->ready = true;
-        while (this->ready) {
-            this->startdecode.notify_all();
-        }
-        std::unique_lock<std::mutex> lock(this->enddecodelock);
-        this->enddecodevar.wait(lock, [&] {return this->processed; });
-        this->processed = false;
-        this->decresult->width = this->video_dec_ctx->width;
-        this->decresult->height = this->video_dec_ctx->height;
-        avcodec_free_context(&this->video_dec_ctx);
-        avformat_close_input(&this->video);
-        lock.unlock();
-        this->processed = false;
+    this->layers->erase(std::find(this->layers->begin(), this->layers->end(), this));
+    Layer *lay = nullptr;
+    if (this->layers->empty()) {
+        lay = mainmix->add_layer(*this->layers, 0);
+    }
+    else {
+        lay = mainmix->add_layer(*this->layers, this->pos);
+    }
+    // transfer current layer settings to new layer
+    if (this == mainmix->currlay[!mainprogram->prevmodus]) mainmix->currlay[!mainprogram->prevmodus] = lay;
+    if (std::find(mainmix->currlays[!mainprogram->prevmodus].begin(), mainmix->currlays[!mainprogram->prevmodus].end(),
+                  this) != mainmix->currlays[!mainprogram->prevmodus].end()) {
+        mainmix->currlays[!mainprogram->prevmodus].erase(std::find(mainmix->currlays[!mainprogram->prevmodus].begin(),
+                                                                   mainmix->currlays[!mainprogram->prevmodus].end(),
+                                                                   this));
+        mainmix->currlays[!mainprogram->prevmodus].push_back(lay);
     }
 
-    this->type = ELEM_LIVE;
+    this->close();
 
-    this->decresult->width = 0;
-    this->decresult->height = 0;
-	this->vidformat = 0;
-	this->initialized = false;
-	this->audioplaying = false;
-	if (this->clonesetnr != -1) {
-        int clnr = this->clonesetnr;
-        this->clonesetnr = -1;
-        this->texture = -1;
-        mainmix->clonesets[clnr]->erase(this);
+    lay->type = ELEM_LIVE;
+
+    lay->decresult->width = 0;
+    lay->decresult->height = 0;
+	lay->vidformat = 0;
+	lay->initialized = false;
+	lay->audioplaying = false;
+	if (lay->clonesetnr != -1) {
+        int clnr = lay->clonesetnr;
+        lay->clonesetnr = -1;
+        lay->texture = -1;
+        mainmix->clonesets[clnr]->erase(lay);
 
         if (mainmix->clonesets[clnr]->size() == 0) {
             mainmix->cloneset_destroy(clnr);
         }
-		this->clonesetnr = -1;
+		lay->clonesetnr = -1;
 	}
 
-	this->filename = livename;
+	lay->filename = livename;
 	avdevice_register_all();
 	ptrdiff_t pos = std::find(mainprogram->busylist.begin(), mainprogram->busylist.end(), livename) - mainprogram->busylist.begin();
 	if (pos >= mainprogram->busylist.size()) {
-		mainprogram->busylist.push_back(this->filename);
-		mainprogram->busylayers.push_back(this);
+        mainprogram->busylist.push_back(lay->filename);
+		mainprogram->busylayers.push_back(lay);
 #ifdef WINDOWS
-		this->ifmt = av_find_input_format("dshow");
+		lay->ifmt = av_find_input_format("dshow");
 #else
 #ifdef POSIX
-		this->ifmt = (AVInputFormat*)av_find_input_format("v4l2");
+		lay->ifmt = (AVInputFormat*)av_find_input_format("v4l2");
 #endif
 #endif
-		this->reset = false;
-		this->frame = 0.0f;
-		this->prevframe = -1;
-		this->numf = 0;
-		this->startframe->value = 0;
-		this->endframe->value = 0;
-		this->skip = true;
-		this->vidopen = true;
-		this->ready = true;
-		while (this->ready) {
-			this->startdecode.notify_all();
+		lay->reset = false;
+		lay->frame = 0.0f;
+		lay->prevframe = -1;
+		lay->numf = 0;
+		lay->startframe->value = 0;
+		lay->endframe->value = 0;
+		lay->skip = true;
+		lay->vidopen = true;
+		lay->ready = true;
+		while (lay->ready) {
+			lay->startdecode.notify_all();
 		}
 	}
 	else {
-		this->liveinput = mainprogram->busylayers[pos];
-		mainprogram->mimiclayers.push_back(this);
+		lay->liveinput = mainprogram->busylayers[pos];
+		mainprogram->mimiclayers.push_back(lay);
+        lay->changeinit = 2;
 	}
 }
 
@@ -6361,8 +6383,16 @@ void ShelfElement::kill_clayers() {
     for (Layer *lay : this->clayers) {
         lay->close();
     }
+    for (int i = 0; i < 4; i++) {
+        for (auto lay : mainmix->layers[i]) {
+            if (lay->prevshelfdragelem == this) {
+                lay->prevshelfdragelem = nullptr;
+            }
+        }
+    }
     this->clayers.clear();
     this->cframes.clear();
+    this->done = false;
 }
 
 
@@ -6928,46 +6958,7 @@ bool Layer::exchange(std::vector<Layer*>& slayers, std::vector<Layer*>& dlayers,
 
 // COPYING METHODS
 
-void Mixer::copy_pbos(Layer *clay, Layer *lay) {
-    // carry over pbos to new layer
-    // reminder : redundant, we now use a pbopool
-    if (clay == lay) return;
-    if (lay->filename == "") return;
-    clay->nonewpbos = true;
-    clay->pbo[0] = lay->pbo[0];
-    clay->pbo[1] = lay->pbo[1];
-    clay->mapptr[0] = lay->mapptr[0];
-    clay->mapptr[1] = lay->mapptr[1];
-    clay->decresult = lay->decresult;
-    if (clay->vidopen) {
-        std::unique_lock<std::mutex> olock(clay->endopenlock);
-        clay->endopenvar.wait(olock, [&] { return clay->opened; });
-        clay->opened = false;
-        olock.unlock();
-    }
-
-    if (clay->type != ELEM_IMAGE) {
-        if (clay->decresult->width != clay->video_dec_ctx->width ||
-            clay->decresult->height != clay->video_dec_ctx->height ||
-            clay->decresult->bpp != clay->bpp) {
-            clay->changeinit = 0;
-            clay->initialized = true;
-        } else clay->initialized = true;
-    }
-    else {
-        clay->initialized = true;
-    }
-    clay->started = lay->started;
-    clay->databufready = lay->databufready;
-    clay->rgbframe = lay->rgbframe;
-    clay->syncobj = lay->syncobj;
-
-    clay->texture = lay->texture;    // for open_layerfile
-
-    lay->nopbodel = true;  // so they dont get deleted
-}
-
-void Mixer::set_values(Layer *clay, Layer *lay, bool open) {
+void Mixer::set_values(Layer *clay, Layer *lay) {
     clay->playbut->value = lay->playbut->value;
     clay->revbut->value = lay->revbut->value;
     clay->bouncebut->value = lay->bouncebut->value;
@@ -6994,29 +6985,6 @@ void Mixer::set_values(Layer *clay, Layer *lay, bool open) {
     clay->chtol->value = lay->chtol->value;
     clay->chdir->value = lay->chdir->value;
     clay->chinv->value = lay->chinv->value;
-    if (open) {
-        if (lay->type == ELEM_LIVE) {
-            clay->set_live_base(lay->filename);
-        } else if (lay->filename != "") {
-            if (lay->type == ELEM_IMAGE) clay->open_image(lay->filename);
-            else {
-                clay->open_video(lay->frame, lay->filename, false);
-                //std::unique_lock<std::mutex> lock(lay->endopenlock);
-                //lay->endopenvar.wait(lock, [&] {return lay->opened; });
-                //lay->opened = false;
-                //lock.unlock();
-            }
-        }
-    }
-    /*if (!lay->reset) {
-        //clay->millif = lay->millif;
-        //clay->prevtime = lay->prevtime;
-        //clay->frame = lay->frame;
-        //clay->prevframe = lay->frame - 1;
-        clay->startframe->value = lay->startframe->value;
-        clay->endframe->value = lay->endframe->value;
-        //clay->numf = lay->numf;
-    }*/
     clay->reset = lay->reset;
     if (lay->pos == 0 && lay->deck == 0 && lay->comp == true) {
         bool dummy = false;
@@ -9430,7 +9398,6 @@ void Layer::load_frame() {
     if (this->filename == "") return;
     Layer *srclay = this;
     bool ret = false;
-    //if (this->vidopen) return;
     if (this->liveinput) {
         bool dummy = false;
     }
@@ -9442,7 +9409,7 @@ void Layer::load_frame() {
                 break;
             }
         }
-        if (found || mainmix->firstlayers.count(this->clonesetnr) == 0) {
+        if (found || mainmix->firstlayers.count(this->clonesetnr) == 0 || this->type == ELEM_LIVE) {
             if (!this->decresult->newdata) {
                 // promote first layer found in layer stack with this clonesetnr to element of firstlayers
                 this->ready = true;
@@ -9450,14 +9417,16 @@ void Layer::load_frame() {
                 if (this->clonesetnr != -1) {
                     if (mainmix->firstlayers.count(this->clonesetnr) == 0) {
                         this->set_clones();
+                        mainmix->firstlayers[this->clonesetnr] = this;
                     }
-                    mainmix->firstlayers[this->clonesetnr] = this;
+                    srclay->set_clones();
                     this->isclone = false;
                 }
             }
         } else {
             srclay = mainmix->firstlayers[this->clonesetnr];
             this->texture = srclay->texture;
+            this->changeinit = 2;
             this->decresult->width = srclay->decresult->width;
             this->decresult->height = srclay->decresult->height;
             this->initialized = true;
@@ -9466,10 +9435,6 @@ void Layer::load_frame() {
     } else {
         return;
     }
-
-    /*if (this->vidopen) {
-        return;
-    }*/
 
     int w, h;
     if (srclay->type == ELEM_IMAGE) {
@@ -9480,7 +9445,7 @@ void Layer::load_frame() {
         h = srclay->video_dec_ctx->height;
     }
     else if (!srclay->liveinput) return;
-    if (!this->isclone && (this->iw != w || this->ih != h || (srclay->decresult->bpp != srclay->bpp && srclay->type == ELEM_IMAGE))) {
+    if (!this->isclone && (srclay->iw != w || srclay->ih != h || (srclay->decresult->bpp != srclay->bpp && srclay->type == ELEM_IMAGE))) {
         // video (size) changed
         if (srclay->initialized) {
             srclay->initialized = false;
@@ -9515,7 +9480,6 @@ void Layer::load_frame() {
     // set frame data to texture
     if (this->liveinput) {  // mimiclayers trick/// :(
         this->texture = this->liveinput->texture;
-        this->initialized = true;
         return;
     }
 
@@ -9530,7 +9494,6 @@ void Layer::load_frame() {
     }
 
 
-    //glActiveTexture(GL_TEXTURE0);
     glBindTexture(GL_TEXTURE_2D, srclay->texture);
 
     if (srclay->type == ELEM_IMAGE) {
@@ -9571,7 +9534,6 @@ void Layer::load_frame() {
                         }
                         memcpy(srclay->mapptr[0], srclay->databuf[this->databufnum],
                                srclay->decresult->size);
-                        //glUnmapBuffer(GL_PIXEL_UNPACK_BUFFER);;
                         srclay->databufnum = !srclay->databufnum;
                     } else {
                         memcpy(srclay->mapptr[0], srclay->decresult->data,
@@ -9585,17 +9547,13 @@ void Layer::load_frame() {
         }
     }
 
-    //if (mainprogram->encthreads == 0) {
-        if (srclay->changeinit == 0) {
-            srclay->changeinit = 1;
-        }
-    //}
+    if (srclay->changeinit == 0) {
+        srclay->changeinit = 1;
+    }
 
-    //if (mainprogram->encthreads == 0) {
-        if (srclay->changeinit == 1) {
-            srclay->changeinit = 2;
-        }
-    //}
+    if (srclay->changeinit == 1) {
+        srclay->changeinit = 2;
+    }
 
 
     if (srclay->changeinit == 2 || srclay->type == ELEM_IMAGE || srclay->type == ELEM_LIVE) {
@@ -9983,7 +9941,7 @@ Layer* Mixer::read_layers(std::istream &rfile, const std::string result, std::ve
                 }
                 if (to_layers.size() > pos) {
                     // to make lay->transfer() work when shelftriggering
-                    this->set_values(layend, to_layers[pos], false);
+                    this->set_values(layend, to_layers[pos]);
                 }
 				layend->numefflines[0] = 0;
 				if (type == 1) mainmix->currlay[!mainprogram->prevmodus] = lay;
@@ -10027,12 +9985,10 @@ Layer* Mixer::read_layers(std::istream &rfile, const std::string result, std::ve
                     }
                     if (this->clonesets.size() == 0 ||
                         (this->clonesets.size() && this->clonesets[layend->clonesetnr] == nullptr)) {
-                        this->firstlayers[layend->clonesetnr] = layend;
+                        //this->firstlayers[layend->clonesetnr] = layend;
                         std::unordered_set<Layer *> *uset = new std::unordered_set<Layer *>;;
                         this->clonesets[layend->clonesetnr] = uset;
                     } else {
-                        layend->decresult->width = this->firstlayers[layend->clonesetnr]->iw;
-                        layend->decresult->height = this->firstlayers[layend->clonesetnr]->ih;
                         layend->isclone = true;
                     }
                     this->clonesets[layend->clonesetnr]->emplace(layend);
@@ -10066,7 +10022,7 @@ Layer* Mixer::read_layers(std::istream &rfile, const std::string result, std::ve
 							layend->liveinput = nullptr;
 						}
 					}
-                    else if (layend->clonesetnr == -1 || mainmix->firstlayers.count(layend->clonesetnr) == 1) {
+                    else if (1) {
                             if (layend->type == ELEM_IMAGE || isimage(filename)) {
                                 //Layer *kplay = lay;
                                 layend = layend->open_image(filename);
@@ -10980,9 +10936,6 @@ std::vector<std::string> Mixer::write_layer(Layer* lay, std::ostream& wfile, boo
 	wfile << "TYPE\n";
 	wfile << std::to_string(lay->type);
 	wfile << "\n";
-    wfile << "CLONESETNR\n";
-    wfile << std::to_string(lay->clonesetnr);
-    wfile << "\n";
 	wfile << "FILENAME\n";
 	wfile << lay->filename;
 	wfile << "\n";
@@ -11029,6 +10982,9 @@ std::vector<std::string> Mixer::write_layer(Layer* lay, std::ostream& wfile, boo
             wfile << "\n";
         }
     }
+    wfile << "CLONESETNR\n";
+    wfile << std::to_string(lay->clonesetnr);
+    wfile << "\n";
 	wfile << "ASPECTRATIO\n";
 	wfile << std::to_string(lay->aspectratio);
 	wfile << "\n";
@@ -12840,7 +12796,7 @@ Layer* Layer::transfer(bool clones, bool dontdeleffs) {
     }
 
     // copy persistent elements
-    mainmix->set_values(lay, this, false);
+    mainmix->set_values(lay, this);
 
     // transfer current layer settings to new layer
     if (this == mainmix->currlay[!mainprogram->prevmodus]) mainmix->currlay[!mainprogram->prevmodus] = lay;
@@ -12852,7 +12808,7 @@ Layer* Layer::transfer(bool clones, bool dontdeleffs) {
         mainmix->currlays[!mainprogram->prevmodus].push_back(lay);
     }
 
-    // transfer clonesets during a transfer run of different layers: they are all assembled under the new transferconesetnr
+    // transfer clonesets during a transfer run of several layers: they are all assembled under the new transferclonesetnr
     if (clones && this->clonesetnr != -1) {
         if (mainprogram->transferclonesetnr == -1) {
             int count = 0;
@@ -12877,6 +12833,16 @@ Layer* Layer::transfer(bool clones, bool dontdeleffs) {
             mainmix->clonesets[lay->clonesetnr]->emplace(lay);
         }
     }
+    /*else if (this->clonesetnr != -1) {
+        // set new layer in cloneset
+        mainmix->clonesets[lay->clonesetnr]->erase(this);
+        if (mainmix->firstlayers[this->clonesetnr] == this) {
+            mainmix->firstlayers[lay->clonesetnr] = lay;
+        } else {
+            lay->isclone = true;
+        }
+        mainmix->clonesets[lay->clonesetnr]->emplace(lay);
+    }*/
 
     if (this == mainprogram->fileslay) {
         mainprogram->fileslay = lay;

@@ -528,6 +528,7 @@ class Program {
 		Boxx *cwbox;
 		bool cwon = false;
 		int cwmouse = false;
+        bool colorpicking = false;
 		Button *effcat[2];
 		int efflines = 7;
 		Boxx *effscrollupA;
@@ -765,7 +766,6 @@ class Program {
 
         std::string projdir;
 		std::string binsdir;
-        std::string autosavebinsdir;
         std::string currprojdir;
 		std::string currbinsdir;
 		std::string currshelfdir;
@@ -821,7 +821,8 @@ class Program {
 		std::string quitting;
         bool shutdown = false;
 		Layer* draginscrollbarlay = nullptr;
-		bool projnamechanged = false;
+        bool projnamechanged = false;
+        std::string projname;
 		bool saveproject = false;
         bool adaptivelprow = false;
         bool steplprow = false;

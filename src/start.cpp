@@ -3170,7 +3170,7 @@ void onestepfrom(bool stage, Node *node, Node *prevnode, GLuint prevfbotex, GLui
             ilActiveImage((int)lay->frame);
             frac = (float)ilGetInteger(IL_IMAGE_WIDTH) / (float)ilGetInteger(IL_IMAGE_HEIGHT);
         }
-        else {
+        else if (lay->type != ELEM_LIVE){
             if (lay->decresult->height == 0) return;
             frac = (float)(lay->decresult->width) / (float)(lay->decresult->height);
         }
@@ -5407,6 +5407,7 @@ void the_loop() {
 		// draw "layer insert into stack" blue boxes
 		if (!mainprogram->menuondisplay && mainprogram->dragbinel) {
 		    mainprogram->frontbatch = true;
+            mainprogram->dragpos = -1;
 			for (int j = 0; j < 2; j++) {
 				std::vector<Layer*> lvec = choose_layers(j);
 				for (int i = 0; i < lvec.size(); i++) {
@@ -5421,6 +5422,7 @@ void the_loop() {
 							// this block handles the first boxes, just not the last
 							mainprogram->leftmousedown = false;
 							float blue[] = { 0.5, 0.5, 1.0, 1.0 };
+                            mainprogram->dragpos = lay->pos;
 							// draw broad blue boxes when inserting layers
 							draw_box(blue, blue, box->vtxcoords->x1 - mainprogram->xscrtovtx(thick) + (i - mainmix->scenes[j][mainmix->currscene[j]]->scrollpos == 0) * mainprogram->xscrtovtx(thick), box->vtxcoords->y1, mainprogram->xscrtovtx(thick * (2.0f - (i - mainmix->scenes[j][mainmix->currscene[j]]->scrollpos == 0))), mainprogram->layh, -1);
 						}
@@ -5430,6 +5432,7 @@ void the_loop() {
 								// this block handles the last box
 								float blue[] = { 0.5, 0.5 , 1.0, 1.0 };
 								// draw broad blue boxes when inserting layers
+                                mainprogram->dragpos = lvec.size();
 								draw_box(blue, blue, box->vtxcoords->x1 + box->vtxcoords->w - mainprogram->xscrtovtx(thick), box->vtxcoords->y1, mainprogram->xscrtovtx(thick * (1.0f + (i - mainmix->scenes[j][mainmix->currscene[j]]->scrollpos != 2))), mainprogram->layh, -1);
 							}
 						}
@@ -7462,19 +7465,16 @@ int main(int argc, char* argv[]) {
                 //std::string p = dirname(mainprogram->path);
                 if (exists(mainprogram->path)) {
                     mainprogram->openautosave = true;
-                    mainprogram->project->bupp = mainprogram->project->path;
-                    mainprogram->project->bupn = mainprogram->project->name;
-                    mainprogram->project->bubd = mainprogram->project->binsdir;
-                    mainprogram->project->busd = mainprogram->project->shelfdir;
-                    mainprogram->project->burd = mainprogram->project->recdir;
-                    mainprogram->project->buad = mainprogram->project->autosavedir;
-                    mainprogram->project->bued = mainprogram->project->elementsdir;
-                    std::string ext = mainprogram->path.substr(mainprogram->path.length() - 7, std::string::npos);
-                    if (ext != ".ewocvj") {
-                        mainprogram->autosavebinsdir = mainprogram->path + "/bins/";
-                    } else {
-                        mainprogram->autosavebinsdir = dirname(mainprogram->path.substr(0, mainprogram->path.size() - 7)) + "bins/";
+                    if (!mainprogram->inautosave) {
+                        mainprogram->project->bupp = mainprogram->project->path;
+                        mainprogram->project->bupn = mainprogram->project->name;
+                        mainprogram->project->bubd = mainprogram->project->binsdir;
+                        mainprogram->project->busd = mainprogram->project->shelfdir;
+                        mainprogram->project->burd = mainprogram->project->recdir;
+                        //mainprogram->project->buad = mainprogram->project->autosavedir;
+                        mainprogram->project->bued = mainprogram->project->elementsdir;
                     }
+                    std::string ext = mainprogram->path.substr(mainprogram->path.length() - 7, std::string::npos);
 
                     mainprogram->project->open(mainprogram->path, true);
 
@@ -7659,7 +7659,7 @@ int main(int argc, char* argv[]) {
                                 mainmix->adaptnumparam->value = std::stof(mainprogram->inputtext);
                                 if (mainmix->adaptnumparam->powertwo)
                                     mainmix->adaptnumparam->value = sqrt(mainmix->adaptnumparam->value);
-                                if (mainmix->adaptnumparam->powerfour)
+                                if (mainmix->adaptnumparam->powerfour100)
                                     mainmix->adaptnumparam->value = sqrt(sqrt(mainmix->adaptnumparam->value / 100.0f));
                                 if (mainmix->adaptnumparam->value < mainmix->adaptnumparam->range[0]) {
                                     mainmix->adaptnumparam->value = mainmix->adaptnumparam->range[0];
@@ -8061,7 +8061,9 @@ int main(int argc, char* argv[]) {
                         mainprogram->menulist[i]->menux = mainprogram->mx;
                         mainprogram->menulist[i]->menuy = mainprogram->my;
                     }
-                    mainprogram->menuactivation = true;
+                    if (!mainprogram->cwon) {
+                        mainprogram->menuactivation = true;
+                    }
                     mainprogram->menuondisplay = false;
                 }
                 if (e.button.button == SDL_BUTTON_LEFT) {

@@ -77,7 +77,7 @@ class Param {
 		std::string midiport;
 		bool sliding = true;
 		bool powertwo = false;
-        bool powerfour = false;
+        bool powerfour100 = false;
 		std::string shadervar;
 		Effect *effect = nullptr;
 		Boxx *box = nullptr;

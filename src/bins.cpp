@@ -1360,7 +1360,7 @@ void BinsMain::handle(bool draw) {
             mainprogram->del = true;
         }
         else if (binelmenuoptions[k] == BET_MOVSEL) {
-            // move selected bin elements
+            // start move selected bin elements
             for (int i = 0; i < 12; i++) {
                 for (int j = 0; j < 12; j++) {
                     BinElement* binel = this->currbin->elements[i * 12 + j];
@@ -1657,7 +1657,7 @@ void BinsMain::handle(bool draw) {
 						if (this->menubinel) {
 							if (this->menubinel->encthreads) continue;
 						}
-						if (!binel->encwaiting && !binel->encoding && binel->name != "" && !this->inputtexes.size() && !lay->vidmoving && !this->insertshelf) {
+						if (!binel->encwaiting && !binel->encoding && binel->name != "" && !this->inputtexes.size() && !lay->vidmoving && !this->insertshelf && !this->selboxing) {
 							if (this->previewbinel != binel) {
 								// reset when new element hovered
 								this->previewimage = "";
@@ -2149,15 +2149,13 @@ void BinsMain::handle(bool draw) {
                                 else {
                                     continue;
                                 }
-                                if (!dirbinel->select || this->movebinels.empty()) {
-                                    if (this->inputtexes[k] != -1) {
-                                        dirbinel->oldselect = dirbinel->select;
-                                        dirbinel->select = false;
-                                        dirbinel->oldtex = dirbinel->tex;
-                                        dirbinel->tex = this->inputtexes[k];
-                                    }
+                                if (this->inputtexes[k] != -1) {
+                                    dirbinel->oldselect = dirbinel->select;
+                                    dirbinel->select = false;
+                                    dirbinel->oldtex = dirbinel->tex;
+                                    dirbinel->tex = this->inputtexes[k];
                                 }
-							}
+                        	}
 
 							// set values to allow for resetting old texes when inputfiles are moved around
 							this->prevbinel = binel;
@@ -2378,6 +2376,9 @@ void BinsMain::handle(bool draw) {
                 if (this->movebinels[k]->tex != -1) {
                     this->movebinels[k]->erase(false);
                 }
+            }
+            for (auto elem : this->currbin->elements) {
+                elem->select = false;
             }
             this->movebinels.clear();
             // clean up
