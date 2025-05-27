@@ -1657,7 +1657,7 @@ void BinsMain::handle(bool draw) {
 						if (this->menubinel) {
 							if (this->menubinel->encthreads) continue;
 						}
-						if (!binel->encwaiting && !binel->encoding && binel->name != "" && !this->inputtexes.size() && !lay->vidmoving && !this->insertshelf && !this->selboxing) {
+						if (!binel->encwaiting && !binel->encoding && binel->name != "" && !this->inputtexes.size() && !lay->vidmoving && !this->insertshelf && !this->selboxing && !mainprogram->dragbinel) {
 							if (this->previewbinel != binel) {
 								// reset when new element hovered
 								this->previewimage = "";
@@ -2149,13 +2149,15 @@ void BinsMain::handle(bool draw) {
                                 else {
                                     continue;
                                 }
-                                if (this->inputtexes[k] != -1) {
-                                    dirbinel->oldselect = dirbinel->select;
-                                    dirbinel->select = false;
-                                    dirbinel->oldtex = dirbinel->tex;
-                                    dirbinel->tex = this->inputtexes[k];
+                                if (std::find(this->inputtexes.begin(), this->inputtexes.end(), dirbinel->tex) == this->inputtexes.end()) {
+                                    if (this->inputtexes[k] != -1) {
+                                        dirbinel->oldselect = dirbinel->select;
+                                        dirbinel->select = false;
+                                        dirbinel->oldtex = dirbinel->tex;
+                                        dirbinel->tex = this->inputtexes[k];
+                                    }
                                 }
-                        	}
+							}
 
 							// set values to allow for resetting old texes when inputfiles are moved around
 							this->prevbinel = binel;

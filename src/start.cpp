@@ -634,7 +634,7 @@ void do_retarget() {
         Clip *clip = mainmix->newpathclips[i];
         clip->path = mainmix->newclippaths[i];
         if (clip->path == "") continue;
-        clip->insert(clip->layer, clip->layer->clips.end() - 1);
+        clip->insert(clip->layer, clip->layer->clips->end() - 1);
     }
     for (int i = 0; i < mainmix->newpathlayclips.size(); i++) {
         Clip *clip = mainmix->newpathlayclips[i];
@@ -644,7 +644,7 @@ void do_retarget() {
         mainmix->save_layerfile(clip->path, mainmix->newpathcliplays[i], 0, 0);
         mainmix->newpathcliplays[i]->close();
         if (clip->path == "") continue;
-        clip->insert(clip->layer, clip->layer->clips.end() - 1);
+        clip->insert(clip->layer, clip->layer->clips->end() - 1);
     }
 
     // set up retraget shelf elements
@@ -3228,7 +3228,7 @@ void onestepfrom(bool stage, Node *node, Node *prevnode, GLuint prevfbotex, GLui
         glDrawBuffer(GL_COLOR_ATTACHMENT0);
         glClearColor(0.0f, 0.0f, 0.0f, 0.0f);
         glClear(GL_COLOR_BUFFER_BIT);
-        if (!lay->onhold) {
+        if (!lay->onhold && lay->filename!= "") {
             if (lay->changeinit == 2) {
                 draw_box(nullptr, black, -1.0f, 1.0f, 2.0f, -2.0f, sx, sy, sc, op, 0, lay->texture, 0, 0, false);
             }
@@ -3780,8 +3780,8 @@ void drag_into_layerstack(std::vector<Layer*>& layers, bool deck) {
 
                             if (mainprogram->dragclip) {
                                 if (lay == mainprogram->draglay) {
-                                    mainprogram->draglay->clips.erase(std::find(mainprogram->draglay->clips.begin(),
-                                                                                mainprogram->draglay->clips.end(),
+                                    mainprogram->draglay->clips->erase(std::find(mainprogram->draglay->clips->begin(),
+                                                                                mainprogram->draglay->clips->end(),
                                                                                 mainprogram->dragclip));
                                     delete mainprogram->dragclip;
                                     mainprogram->dragclip = nullptr;
@@ -5506,7 +5506,7 @@ void the_loop() {
     if (mainprogram->rightmouse) {
 		if (mainprogram->dragclip) {
 			// cancel clipdragging
-            mainprogram->dragclip->insert(mainprogram->draglay, mainprogram->draglay->clips.begin() + mainprogram->dragpos);
+            mainprogram->dragclip->insert(mainprogram->draglay, mainprogram->draglay->clips->begin() + mainprogram->dragpos);
 			mainprogram->dragclip = nullptr;
 			mainprogram->draglay = nullptr;
 			mainprogram->dragpos = -1;

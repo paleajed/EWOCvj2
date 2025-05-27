@@ -1724,7 +1724,7 @@ void Program::handle_wormgate(bool gate) {
                     if (mainprogram->binsscreen) {
                         for (int i = 0; i < 4; i++ ) {
                             for (Layer *lay : mainmix->layers[i]) {
-                                if (lay->clips.size() > 1) {
+                                if (lay->clips->size() > 1) {
                                     lay->compswitched = true;
                                     GLuint tex = copy_tex(lay->node->vidbox->tex, 192, 108);
                                     save_thumb(lay->currcliptexpath, tex);
@@ -1752,7 +1752,7 @@ void Program::handle_wormgate(bool gate) {
                     if (mainprogram->binsscreen) {
                         for (int i = 0; i < 4; i++ ) {
                             for (Layer *lay : mainmix->layers[i]) {
-                                if (lay->clips.size() > 1) {
+                                if (lay->clips->size() > 1) {
                                     lay->compswitched = true;
                                     GLuint tex = copy_tex(lay->node->vidbox->tex, 192, 108);
                                     save_thumb(lay->currcliptexpath, tex);
@@ -2407,10 +2407,10 @@ void Program::shelf_triggering(ShelfElement* elem, int deck, Layer *layer) {
                 clays[k] = mainmix->layers[!mainprogram->prevmodus * 2 + clays[k]->deck][clays[k]->pos];
                 clays[k] = clays[k]->open_video(0, elem->path, true);
                 clays[k]->set_clones();
-                clays[k]->oldclips.clear();
+                clays[k]->oldclips->clear();
                 clays[k]->prevshelfdragelem = elem;
                 Clip *clip = new Clip;
-                clays[k]->oldclips.push_back(clip);
+                clays[k]->oldclips->push_back(clip);
                 // currlay is handled in lay->transfer()
                 std::thread setfr(&Mixer::set_frame, mainmix, elem, clays[k]);
                 setfr.detach();
@@ -2420,10 +2420,10 @@ void Program::shelf_triggering(ShelfElement* elem, int deck, Layer *layer) {
                 clays[k] = mainmix->layers[!mainprogram->prevmodus * 2 + clays[k]->deck][clays[k]->pos];
                 clays[k]->open_image(elem->path);
                 clays[k]->set_clones();
-                clays[k]->oldclips.clear();
+                clays[k]->oldclips->clear();
                 clays[k]->prevshelfdragelem = elem;
                 Clip *clip = new Clip;
-                clays[k]->oldclips.push_back(clip);
+                clays[k]->oldclips->push_back(clip);
                 // currlay is handled in lay->transfer()
                 std::thread setfr(&Mixer::set_frame, mainmix, elem, clays[k]);
                 setfr.detach();
@@ -2439,13 +2439,13 @@ void Program::shelf_triggering(ShelfElement* elem, int deck, Layer *layer) {
                     lay->set_inlayer(clays[k]);
                     mainmix->currlay[!mainprogram->prevmodus] = clays[k];
                     mainmix->currlays[!mainprogram->prevmodus][k] = clays[k];
-                    clays[k]->oldclips.clear();
-                    for (int i = 0; i < clays[k]->clips.size(); i++) {
-                        clays[k]->oldclips.push_back(clays[k]->clips[i]->copy());
+                    clays[k]->oldclips->clear();
+                    for (int i = 0; i < clays[k]->clips->size(); i++) {
+                        clays[k]->oldclips->push_back((*(clays[k]->clips))[i]->copy());
                     }
-                    if (clays[k]->oldclips.empty()) {
+                    if (clays[k]->oldclips->empty()) {
                         Clip *clip = new Clip;
-                        clays[k]->oldclips.push_back(clip);
+                        clays[k]->oldclips->push_back(clip);
                     }
                     clays[k]->prevshelfdragelem = elem;
                 }
@@ -2491,13 +2491,13 @@ void Program::shelf_triggering(ShelfElement* elem, int deck, Layer *layer) {
                         if (elem->launchtype == 0) {
                             elem->cframes.push_back(lay->frame);
                         }
-                        lay->oldclips.clear();
-                        for (int i = 0; i < lay->clips.size(); i++) {
-                            lay->oldclips.push_back(lay->clips[i]->copy());
+                        lay->oldclips->clear();
+                        for (int i = 0; i < lay->clips->size(); i++) {
+                            lay->oldclips->push_back((*(lay->clips))[i]->copy());
                         }
-                        if (lay->oldclips.empty()) {
+                        if (lay->oldclips->empty()) {
                             Clip *clip = new Clip;
-                            lay->oldclips.push_back(clip);
+                            lay->oldclips->push_back(clip);
                         }
 
                         lay->prevshelfdragelem = elem;
@@ -2511,13 +2511,13 @@ void Program::shelf_triggering(ShelfElement* elem, int deck, Layer *layer) {
                 auto lvec = choose_layers(m);
                 for (int i = 0; i < lvec.size(); ++i) {
                     Layer *lay = lvec[i];
-                    lay->oldclips.clear();
-                    for (int i = 0; i < lay->clips.size(); i++) {
-                        lay->oldclips.push_back(lay->clips[i]->copy());
+                    lay->oldclips->clear();
+                    for (int i = 0; i < lay->clips->size(); i++) {
+                        lay->oldclips->push_back((*(lay->clips))[i]->copy());
                     }
-                    if (lay->oldclips.empty()) {
+                    if (lay->oldclips->empty()) {
                         Clip *clip = new Clip;
-                        lay->oldclips.push_back(clip);
+                        lay->oldclips->push_back(clip);
                     }
                 }
             }
@@ -4290,19 +4290,49 @@ void Program::handle_laymenu1() {
 			}
 		}
         else if (!cond && k == 12) {
-            Layer* duplay = mainmix->mouselayer->clone();
-            duplay->isclone = false;
-            duplay->isduplay = mainmix->mouselayer;
+            // duplicate layer
+            Layer* lay = mainmix->mouselayer->clone();
+            lay->isclone = false;
+            Layer *duplay = nullptr;
+            lay->dontcloseclips = true;
+            if (lay->type == ELEM_IMAGE) {
+                duplay = lay->open_image(lay->filename, true, true);
+            }
+            else {
+                duplay = lay->open_video(lay->frame, lay->filename, false, true);
+            }
+            duplay->decresult->width = mainmix->mouselayer->iw;
+            duplay->decresult->height = mainmix->mouselayer->ih;
+            duplay->shiftx->value = mainmix->mouselayer->shiftx->value;
+            duplay->shifty->value = mainmix->mouselayer->shifty->value;
+            duplay->scale->value = mainmix->mouselayer->scale->value;
+            duplay->speed->value = mainmix->mouselayer->speed->value;
+            duplay->opacity->value = mainmix->mouselayer->opacity->value;
+            duplay->playbut->value = mainmix->mouselayer->playbut->value;
+            duplay->revbut->value = mainmix->mouselayer->revbut->value;
+            duplay->bouncebut->value = mainmix->mouselayer->bouncebut->value;
+            duplay->genmidibut->value = mainmix->mouselayer->genmidibut->value;
+            duplay->frame = mainmix->mouselayer->frame;
+            duplay->startframe->value = mainmix->mouselayer->startframe->value;
+            duplay->endframe->value = mainmix->mouselayer->endframe->value;
+            duplay->vidformat = mainmix->mouselayer->vidformat;
+            //duplay->isduplay = mainmix->mouselayer;
         }
         else if (!cond && k == 13) {
+            // clone layer
             Layer* lay = mainmix->mouselayer->clone();
             Layer *clonelay = nullptr;
+            lay->dontcloseclips = true;
             if (lay->type == ELEM_IMAGE) {
                 clonelay = lay->open_image(lay->filename, true, true);
             }
             else {
                 clonelay = lay->open_video(lay->frame, lay->filename, false, true);
             }
+            clonelay->shiftx->value = mainmix->mouselayer->shiftx->value;
+            clonelay->shifty->value = mainmix->mouselayer->shifty->value;
+            clonelay->scale->value = mainmix->mouselayer->scale->value;
+            clonelay->opacity->value = mainmix->mouselayer->opacity->value;
             if (mainmix->mouselayer->clonesetnr == -1) {
                 mainmix->mouselayer->clonesetnr = mainmix->clonesets.size();
                 //mainmix->firstlayers[mainmix->mouselayer->clonesetnr] = mainmix->mouselayer;      set in Layer::load_frame()
@@ -4431,7 +4461,7 @@ void Program::handle_laymenu1() {
             }
         }
         else if ((!cond && k == 17) || k == 17 - cond * 2) {
-            if (mainmix->mouselayer->clips.size() == 1) {
+            if (mainmix->mouselayer->clips->size() == 1) {
                 if (!mainmix->recording[0]) {
                     // start recording layer with all effects, settings,... and replace with recorded video
                     mainmix->reclay = mainmix->mouselayer;
@@ -4557,12 +4587,12 @@ void Program::handle_clipmenu() {
 					std::string livename = "/dev/video" + std::to_string(mainprogram->menuresults[0] - 1);
 #endif
 #endif
-					int pos = std::find(mainmix->mouselayer->clips.begin(), mainmix->mouselayer->clips.end(), mainmix->mouseclip) - mainmix->mouselayer->clips.begin();
-					if (pos == mainmix->mouselayer->clips.size() - 1) {
+					int pos = std::find(mainmix->mouselayer->clips->begin(), mainmix->mouselayer->clips->end(), mainmix->mouseclip) - mainmix->mouselayer->clips->begin();
+					if (pos == mainmix->mouselayer->clips->size() - 1) {
 						Clip* clip = new Clip;
-						if (mainmix->mouselayer->clips.size() > 4) mainmix->mouselayer->queuescroll++;
+						if (mainmix->mouselayer->clips->size() > 4) mainmix->mouselayer->queuescroll++;
 						mainmix->mouseclip = clip;
-						clip->insert(mainmix->mouselayer, mainmix->mouselayer->clips.end() - 1);
+						clip->insert(mainmix->mouselayer, mainmix->mouselayer->clips->end() - 1);
 					}
 					mainmix->mouseclip->path = livename;
 					mainmix->mouseclip->type = ELEM_LIVE;
@@ -4575,7 +4605,7 @@ void Program::handle_clipmenu() {
 			filereq.detach();
 		}
 		if (k == 2) {
-			mainmix->mouselayer->clips.erase(std::find(mainmix->mouselayer->clips.begin(), mainmix->mouselayer->clips.end(), mainmix->mouseclip));
+			mainmix->mouselayer->clips->erase(std::find(mainmix->mouselayer->clips->begin(), mainmix->mouselayer->clips->end(), mainmix->mouseclip));
 			delete mainmix->mouseclip;
 		}
 		if (mainprogram->menuchosen) {
@@ -5386,7 +5416,7 @@ void Program::preview_modus_buttons() {
 		//modusbut is button that toggles effect preview mode to performance mode and back
         for (int i = 0; i < 4; i++ ) {
             for (Layer *lay : mainmix->layers[i]) {
-                if (lay->clips.size() > 1) {
+                if (lay->clips->size() > 1) {
                     lay->compswitched = true;
                     GLuint tex = copy_tex(lay->node->vidbox->tex, 192, 108);
                     save_thumb(lay->currcliptexpath, tex);
@@ -7561,11 +7591,6 @@ void Project::save_as() {
     this->wait_for_copyover();
 
     std::string path2;
-
-
-
-
-
     std::string str;
     std::vector<std::vector<std::string>> bupaths1;
     std::vector<std::vector<std::string>> bupaths2;

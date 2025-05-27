@@ -97,12 +97,13 @@ class Layer {
 		bool deck = 0;
 		bool comp = true;
 		std::vector<Layer*>* layers;
-        std::vector<Clip*> clips;
-        std::vector<Clip*> oldclips;
+        std::vector<Clip*>* clips;
+        std::vector<Clip*>* oldclips;
 		Clip* currclip = nullptr;
         std::string currclippath;
         std::string currclipjpegpath;
         std::string currcliptexpath;
+        std::string oldclippath;
         bool compswitched = false;
 		ELEM_TYPE type = ELEM_FILE;
         ELEM_TYPE oldtype = ELEM_FILE;
@@ -352,16 +353,17 @@ class Layer {
 		void set_live_base(std::string livename);
 		void deautomate();
         void set_inlayer(Layer* lay, bool doclips = false);
-        //void trigger();
         void close();
         Layer* transfer(bool clones = true, bool dontdeleffs = false);
+        void transfer_cloneset_to(Layer *lay);
+        void exchange_in_cloneset_by(Layer *lay);
+
         Layer* next();
 		Layer* prev();
         Layer();
         ~Layer();
 		Layer(bool comp);
 		Layer(const Layer& lay);
-		//~Layer();
 
 
 	private:
@@ -450,7 +452,7 @@ class Mixer {
 		void do_delete_layers(std::vector<Layer*> layers, bool alive);
 		void copy_to_comp(bool deckA, bool deckB, bool comp);
         void copy_pbos(Layer *clay, Layer *lay);
-        void set_values(Layer* clay, Layer* lay);
+        void set_values(Layer* clay, Layer* lay, bool doclips = true);
 		void copy_effects(Layer* slay, Layer* dlay, bool comp);
         void handle_adaptparam();
 		void handle_clips();
