@@ -210,7 +210,6 @@ BinsMain::BinsMain() {
     this->floatbox->upvtxtoscr();
     this->floatbox->tooltiptitle = "Float/dock bins screen ";
     this->floatbox->tooltip = "Leftclick toggles between a docked bins screen (swapped with mix screen) or a floating bins screen (shown on a separate screen). ";
-    // leaks  reminder
 }
 
 
@@ -1674,6 +1673,7 @@ void BinsMain::handle(bool draw) {
 								draw_box(red, black, 0.52f, 0.5f, 0.4f, 0.4f, -1);
 								mainprogram->prelay = new Layer(false);
 								mainprogram->prelay->dummy = true;
+                                mainprogram->prelay->transfered = true;
 								if (this->previewimage != "") mainprogram->prelay->open_image(this->previewimage);
 								else mainprogram->prelay->open_image(binel->path);
 								ilBindImage(mainprogram->prelay->boundimage);
@@ -1918,8 +1918,9 @@ void BinsMain::handle(bool draw) {
 									this->binpreview = true;
 									draw_box(red, black, 0.52f, 0.5f, 0.4f, 0.4f, -1);
 									mainprogram->prelay = new Layer(true);
-									mainprogram->prelay->dummy = true;
-									mainprogram->prelay->open_video(0, binel->path, true);
+                                    mainprogram->prelay->dummy = true;
+                                    mainprogram->prelay->transfered = true;
+                                    mainprogram->prelay->open_video(0, binel->path, true);
                                     // wait for video open
 									std::unique_lock<std::mutex> olock(mainprogram->prelay->endopenlock);
 									mainprogram->prelay->endopenvar.wait(olock, [&] {return mainprogram->prelay->opened; });
@@ -3180,7 +3181,7 @@ void BinsMain::hap_encode(std::string srcpath, BinElement *binel, BinElement *bd
     //uint8_t endcode[] = { 0, 0, 1, 0xb7 };
     codec = avcodec_find_encoder_by_name("hap");
     if (codec == nullptr) {
-        printf("Your ffmpeg library is compiled without snappy support\n"); // reminder : requester
+        mainprogram->infostr = "Your ffmpeg library is compiled without snappy support";
         return;
     }
 
@@ -3312,7 +3313,6 @@ void BinsMain::hap_encode(std::string srcpath, BinElement *binel, BinElement *bd
     if (binel->otflay) {
         if (binel->otflay->video_dec_ctx) avcodec_free_context(&binel->otflay->video_dec_ctx);
         if (binel->otflay->video) avformat_close_input(&binel->otflay->video);
-        if (binel->otflay->videoseek) avformat_close_input(&binel->otflay->videoseek);
     }
     binel->path = remove_extension(binel->path) + "_hap.mov";
 	rename(destpath, binel->path);

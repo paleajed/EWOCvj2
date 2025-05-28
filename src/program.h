@@ -665,7 +665,7 @@ class Program {
         bool stashvideos = false;
 		float asminutes = 1;
 		int astimestamp = 0;
-		float qualfr = 3;
+		float qualfr = 1;
         bool keepeffpref = false;
         bool swappingscene = false;
         bool autosaving = false;
@@ -818,7 +818,8 @@ class Program {
 		Boxx* dragbox;
 		bool dragmiddle = false;
 		bool dragout[2] = { true, true };
-		std::string quitting;
+        std::string quitting;
+        std::string infostr;
         bool shutdown = false;
 		Layer* draginscrollbarlay = nullptr;
         bool projnamechanged = false;
@@ -893,7 +894,6 @@ class Program {
         std::unordered_map<Shelf*, bool> shelfjpegpaths;
         bool openjpegpathsshelf = false;
         bool adaptparaming = false;
-        std::unordered_set<Layer*> openlayers;
         int transferclonesetnr = -1;
         Param *beatthres;
         float minbpm = 90;
@@ -913,6 +913,7 @@ class Program {
         void remove_ec(std::string filepath, std::error_code& ec);
         void remove(std::string filepath);
 		int quit_requester();
+        void show_info();
 		GLuint set_shader();
 		int load_shader(char* filename, char** ShaderSource, unsigned long len);
 		void set_ow3oh3();
@@ -964,7 +965,6 @@ class Program {
         void handle_parammenu4();
         void handle_parammenu5();
         void handle_parammenu6();
-        void handle_speedmenu();
 		void handle_loopmenu();
         void handle_monitormenu();
         void make_mixtargetmenu();

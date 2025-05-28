@@ -993,7 +993,7 @@ ContrastEffect::ContrastEffect() {
 	this->numrows = 1;
 	Param *param = new Param;
 	param->name = "Amount"; 
-	param->value = 2.0;
+	param->value = 1.0;
 	param->range[0] = 0;
 	param->range[1] = 4;
 	param->sliding = true;
@@ -1098,7 +1098,7 @@ SaturationEffect::SaturationEffect() {
 	this->numrows = 1;
 	Param *param = new Param;
 	param->name = "Factor"; 
-	param->value = 4.0f;
+	param->value = 1.0f;
 	param->range[0] = 0.0f;
 	param->range[1] = 8.0f;
 	param->sliding = true;
@@ -1113,7 +1113,7 @@ ScaleEffect::ScaleEffect() {
 	this->numrows = 1;
 	Param *param = new Param;
 	param->name = "Factor"; 
-	param->value = 1.1f;
+	param->value = 1.0f;
 	param->range[0] = 0.75f;
 	param->range[1] = 1.33f;
 	param->sliding = true;
@@ -1848,7 +1848,7 @@ GammaEffect::GammaEffect() {
 	this->numrows = 1;
 	Param *param = new Param;
 	param->name = "Level";
-	param->value = 2.2f;
+	param->value = 1.0f;
 	param->range[0] = 0.0f;
 	param->range[1] = 4.0f;
 	param->sliding = true;
@@ -1935,7 +1935,7 @@ FlipEffect::FlipEffect() {
 }
 
 MirrorEffect::MirrorEffect() {
-	this->numrows = 1;
+	this->numrows = 2;
 	Param *param = new Param;
 	param->name = "Xdir";
 	param->value = 0.0f;
@@ -1947,17 +1947,40 @@ MirrorEffect::MirrorEffect() {
 	param->box->tooltiptitle = "X Mirror ";
 	param->box->tooltip = "Toggles X image mirroring: 0 = left to right mirroring, 1 = no mirroring, 2 = right to left mirroring. ";
 	this->params.push_back(param);
-	param = new Param;
-	param->name = "Ydir";
-	param->value = 1.0f;
-	param->range[0] = 0.0f;
-	param->range[1] = 2.0f;
-	param->sliding = false;
-	param->shadervar = "ymirror";
-	param->effect = this;
-	param->box->tooltiptitle = "Y Mirror ";
-	param->box->tooltip = "Toggles Y image mirroring: 0 = top to bottom mirroring, 1 = no mirroring, 2 = bottom to top mirroring. ";
-	this->params.push_back(param);
+    param = new Param;
+    param->name = "Ydir";
+    param->value = 1.0f;
+    param->range[0] = 0.0f;
+    param->range[1] = 2.0f;
+    param->sliding = false;
+    param->shadervar = "ymirror";
+    param->effect = this;
+    param->box->tooltiptitle = "Y Mirror ";
+    param->box->tooltip = "Toggles Y image mirroring: 0 = top to bottom mirroring, 1 = no mirroring, 2 = bottom to top mirroring. ";
+    this->params.push_back(param);
+    param = new Param;
+    param->nextrow = true;
+    param->name = "Xcoord";
+    param->value = 0.5f;
+    param->range[0] = 0.0f;
+    param->range[1] = 1.0f;
+    param->sliding = true;
+    param->shadervar = "xcrdmirror";
+    param->effect = this;
+    param->box->tooltiptitle = "X Mirror Coord";
+    param->box->tooltip = "Sets the X position of the mirror axis. ";
+    this->params.push_back(param);
+    param = new Param;
+    param->name = "Ycoord";
+    param->value = 0.5f;
+    param->range[0] = 0.0f;
+    param->range[1] = 1.0f;
+    param->sliding = true;
+    param->shadervar = "ycrdmirror";
+    param->effect = this;
+    param->box->tooltiptitle = "Y Mirror Coord";
+    param->box->tooltip = "Sets the Y position of the mirror axis. ";
+    this->params.push_back(param);
 }
 
 float RippleEffect::get_speed() { return this->speed; }
@@ -2010,7 +2033,7 @@ Effect* Layer::do_add_effect(EFFECT_TYPE type, int pos, bool comp, bool cat) {
 	for (int i = 0; i < effect->params.size(); i++) {
 		effect->params[i]->box->tooltip += " - Leftdrag sets value. Doubleclicking allows numeric entry. ";
 	}
-	/* reminder
+	/* reminder : OSC system
 	// add parameters to OSC system
 	if (this->numoftypemap.find(effect->type) != this->numoftypemap.end()) this->numoftypemap[effect->type]++;
 	else this->numoftypemap[effect->type] = 1;
@@ -2089,7 +2112,7 @@ void do_delete_effect(Layer *lay, int pos, bool connect) {
 	}
 
 	lay->node->page->delete_node(evec[pos]->node);
-	//lay->node->upeffboxes();     reminder : for nodes
+	//lay->node->upeffboxes();     reminder : for node view
 
 	for (int i = 0; i < effect->params.size(); i++) {
 	    Param *par = effect->params[i];
@@ -2355,6 +2378,7 @@ Layer::Layer(bool comp) {
     glTexStorage2D(GL_TEXTURE_2D, 1, GL_RGBA8, 192, 108);
 
     this->clips = new std::vector<Clip*>;
+    this->oldclips = new std::vector<Clip*>;
 
     this->panbox = new Boxx;
     this->panbox->reserved = true;
@@ -2742,17 +2766,15 @@ Layer::~Layer() {
         this->blendnode = nullptr;
     }
 
-    if (!this->dontcloseeffs) {
-        bool buec = mainprogram->effcat[this->deck]->value;
-        for (int m = 0; m < 1; m++) {     // reminder : leak - should be m < 2
-            mainprogram->effcat[this->deck]->value = m;
-            std::vector<Effect *> effs = this->effects[m];
-            for (int i = 0; i < effs.size(); i++) {
-                this->delete_effect(0, false);
-            }
+    bool buec = mainprogram->effcat[this->deck]->value;
+    for (int m = 0; m < 2 - this->dontcloseeffs; m++) {
+        mainprogram->effcat[this->deck]->value = m;
+        std::vector<Effect *> effs = this->effects[m];
+        for (int i = 0; i < effs.size(); i++) {
+            this->delete_effect(0, false);
         }
-        mainprogram->effcat[this->deck]->value = buec;
     }
+    mainprogram->effcat[this->deck]->value = buec;
 
     glDeleteTextures(1, &this->jpegtex);
     mainprogram->add_to_texpool(this->fbotex);
@@ -3103,14 +3125,49 @@ void Layer::set_clones(int clsnr) {
 	}
 }
 
-Layer* Layer::clone() {
+Layer* Layer::clone(bool dup) {
 	std::vector<Layer*>& lvec = choose_layers(this->deck);
 	Layer* dlay = mainmix->add_layer(lvec, this->pos + 1);
 	dlay->isclone = true;
 	mainmix->set_values(dlay, this, false);
 	dlay->pos = this->pos + 1;
 
-    dlay->clips = this->clips;
+    if (dup) {
+        dlay->clips->clear();
+        if (!this->clips->empty()) {
+            for (int i = 0; i < this->clips->size(); ++i) {
+                Clip *clip = (*(this->clips))[i];
+                clip->copy()->insert(dlay, dlay->clips->end());
+                if (clip->type == ELEM_LAYER) {
+                    std::string p = find_unused_filename(remove_extension(basename(clip->path)),
+                                                         mainprogram->temppath,
+                                                         ".layer");
+                    copy_file(clip->path, p);
+                    clip->path = p;
+                    std::string jp = find_unused_filename(remove_extension(basename(clip->jpegpath)),
+                                                          mainprogram->temppath,
+                                                          ".jpg");
+                    copy_file(clip->jpegpath, jp);
+                    clip->jpegpath = jp;
+                }
+                if (clip->type == ELEM_LAYER) {
+                    std::string p = find_unused_filename(remove_extension(basename(this->currclippath)),
+                                                         mainprogram->temppath,
+                                                         ".layer");
+                    copy_file(this->currclippath, p);
+                    dlay->currclippath = p;
+                    std::string jp = find_unused_filename(remove_extension(basename(this->currclipjpegpath)),
+                                                          mainprogram->temppath,
+                                                          ".jpg");
+                    copy_file(this->currclipjpegpath, jp);
+                    dlay->currclipjpegpath = jp;
+                }
+            }
+        }
+    }
+    else {
+        dlay->clips = this->clips;
+    }
     dlay->currclip = this->currclip;
     dlay->currclippath = this->currclippath;
     dlay->currclipjpegpath = this->currclipjpegpath;
@@ -3156,6 +3213,8 @@ Layer* Layer::clone() {
                         elem->totaltime = loop->totaltime;
                         elem->starttime = loop->starttime;
                         elem->eventpos = loop->eventpos;
+                        elem->speed->value = loop->speed->value;
+                        elem->beats = loop->beats;
                         elem->loopbut->value = loop->loopbut->value;
                         elem->playbut->value = loop->playbut->value;
                         if (par == std::get<1>(event1)) {
@@ -3196,6 +3255,8 @@ Layer* Layer::clone() {
                     elem->totaltime = loop->totaltime;
                     elem->starttime = loop->starttime;
                     elem->eventpos = loop->eventpos;
+                    elem->speed->value = loop->speed->value;
+                    elem->beats = loop->beats;
                     elem->loopbut->value = loop->loopbut->value;
                     elem->playbut->value = loop->playbut->value;
                     if (but == std::get<2>(event1)) {
@@ -3234,6 +3295,8 @@ Layer* Layer::clone() {
                 elem->totaltime = loop->totaltime;
                 elem->starttime = loop->starttime;
                 elem->eventpos = loop->eventpos;
+                elem->speed->value = loop->speed->value;
+                elem->beats = loop->beats;
                 elem->loopbut->value = loop->loopbut->value;
                 elem->playbut->value = loop->playbut->value;
                 if (par == std::get<1>(event1)) {
@@ -3276,6 +3339,8 @@ Layer* Layer::clone() {
                     elem->totaltime = loop->totaltime;
                     elem->starttime = loop->starttime;
                     elem->eventpos = loop->eventpos;
+                    elem->speed->value = loop->speed->value;
+                    elem->beats = loop->beats;
                     elem->loopbut->value = loop->loopbut->value;
                     elem->playbut->value = loop->playbut->value;
                     if (par == std::get<1>(event1)) {
@@ -3317,6 +3382,8 @@ Layer* Layer::clone() {
                     elem->totaltime = loop->totaltime;
                     elem->starttime = loop->starttime;
                     elem->eventpos = loop->eventpos;
+                    elem->speed->value = loop->speed->value;
+                    elem->beats = loop->beats;
                     elem->loopbut->value = loop->loopbut->value;
                     elem->playbut->value = loop->playbut->value;
                     if (but == std::get<2>(event1)) {
@@ -3852,29 +3919,32 @@ static int decode_packet(Layer *lay, bool show)
 		int err2 = 0;
 		if (!lay->vidopen) {
 			while (1) {
-				int err1 = avcodec_send_packet(lay->video_dec_ctx, lay->decpkt);
-				err2 = avcodec_receive_frame(lay->video_dec_ctx, lay->decframe);
-				if (err2 == AVERROR(EAGAIN)) {
-					av_packet_unref(lay->decpkt);
-					av_read_frame(lay->video, lay->decpkt);
-				}
-				else break;
+                int err1 = avcodec_send_packet(lay->video_dec_ctx, lay->decpkt);
+                if (ret == AVERROR_INVALIDDATA) {
+                    av_packet_unref(lay->decpkt);
+                    return 0;
+                }
+                else {
+                    err2 = avcodec_receive_frame(lay->video_dec_ctx, lay->decframe);
+                    if (err2 < 0) {
+                        printf("avcodec_receive_frame error: %s (code: %d)\n", av_err2str(err2), err2);
+                    }
+                    if (err2 == AVERROR(EAGAIN) || err2 == AVERROR_INVALIDDATA) {
+                        av_packet_unref(lay->decpkt);
+                        return 0;
+                    }
+                }
+                break;
 			}
-			if (lay->vidformat == 187) {
-				printf("");
-			}
-			//char buffer[1024];
-			//av_strerror(err2, buffer, 1024);
-			//printf(buffer);
-			//if (err == AVERROR_EOF) lay->numf--;
-			if (err2 == AVERROR(EINVAL)) {
-				fprintf(stderr, "Error decoding video frame (%s)\n", 0);
-				return ret;
-			}
-			if (err2 == AVERROR_EOF) {
-				avcodec_flush_buffers(lay->video_dec_ctx);
-			}
-			if (show) {
+            if (err2 == AVERROR(EINVAL)) {
+                fprintf(stderr, "Error decoding video frame (%s)\n", 0);
+                return ret;
+            }
+            if (err2 == AVERROR_EOF) {
+                avcodec_flush_buffers(lay->video_dec_ctx);
+                return 0;
+            }
+            if (show) {
 				/* copy decoded frame to destination buffer:
 				 * this is required since rawvideo expects non aligned data */
 				int h = sws_scale
@@ -3914,13 +3984,21 @@ static int decode_packet(Layer *lay, bool show)
 		int nsam = 0;
 		while (1) {
 			int err1 = avcodec_send_packet(lay->audio_dec_ctx, lay->decpkt);
-			err2 = avcodec_receive_frame(lay->audio_dec_ctx, lay->decframe);
-			nsam += lay->decframe->nb_samples;
-			if (err2 == AVERROR(EAGAIN)) {
-				av_packet_unref(lay->decpkt);
-				av_read_frame(lay->video, lay->decpkt);
-			}
-			else break;
+            if (ret == AVERROR_INVALIDDATA) {
+                av_packet_unref(lay->decpkt);
+                av_read_frame(lay->video, lay->decpkt);
+                continue;
+            }
+            else {
+                err2 = avcodec_receive_frame(lay->audio_dec_ctx, lay->decframe);
+                nsam += lay->decframe->nb_samples;
+                if (err2 == AVERROR(EAGAIN) || err2 == AVERROR_INVALIDDATA) {
+                    av_packet_unref(lay->decpkt);
+                    av_read_frame(lay->video, lay->decpkt);
+                    continue;
+                }
+            }
+			break;
 		}
 		if (err2 == AVERROR(EINVAL)) {
 			fprintf(stderr, "Error decoding audio frame (%s)\n", 0);
@@ -4057,27 +4135,31 @@ void Layer::get_cpu_frame(int framenr, int prevframe, int errcount)
 
         long long seekTarget = av_rescale(this->video_duration, framenr, this->numf) + first_dts;
         if (framenr != (int)this->startframe->value) {
-            if (framenr != prevframe + 1) {
+            if (framenr >= prevframe + 1) {
                 // hop to not-next-frame
-                av_seek_frame(this->videoseek, this->videoseek_stream->index, seekTarget, AVSEEK_FLAG_BACKWARD );
+                avformat_seek_file(this->videoseek, this->videoseek_stream->index, first_dts,
+                                   seekTarget, seekTarget, AVSEEK_FLAG_BACKWARD || AVSEEK_FLAG_FRAME);
                 //avcodec_flush_buffers(this->video_dec_ctx);
                 //int r = av_read_frame(this->videoseek, &this->decpktseek);
             }
             else {
+                //avformat_seek_file(this->video, this->video_stream->index, seekTarget, seekTarget, this->video_duration + this->decpkt->dts, 0);
                 //avformat_seek_file(this->video, this->video_stream->index, 0, seekTarget, seekTarget, AVSEEK_FLAG_ANY);
                 //avformat_seek_file(this->video, this->video_stream->index, this->video_stream->first_dts,
                 //                  seekTarget, seekTarget, 0);
             }
         }
         else {
-            ret = avformat_seek_file(this->video, this->video_stream->index, seekTarget, seekTarget, this->video_duration + this->decpkt->dts, 0);
+            avformat_seek_file(this->video, this->video_stream->index, seekTarget, seekTarget, this->video_duration + this->decpkt->dts, 0);
+            avcodec_flush_buffers(this->video_dec_ctx);
         }
 
         do {
             decode_audio(this);
         } while (this->decpkt->stream_index != this->video_stream_idx);
-        if (framenr != prevframe + 1) {
+        if (framenr >= prevframe + 1) {
             do {
+                // filter out audio packets
                 int r = av_read_frame(this->videoseek, this->decpktseek);
             } while (this->decpktseek->stream_index != this->videoseek_stream_idx);
             int readpos = ((this->decpktseek->dts - first_dts) * this->numf) / this->video_duration;
@@ -4089,7 +4171,12 @@ void Layer::get_cpu_frame(int framenr, int prevframe, int errcount)
                         readpos = prevframe + 1;
                     } else {
                         avformat_seek_file(this->video, this->video_stream->index, first_dts,
-                                           seekTarget, seekTarget, 0 );
+                                           seekTarget, seekTarget, AVSEEK_FLAG_BACKWARD || AVSEEK_FLAG_FRAME);
+                        do {
+                            // filter out audio packets
+                            int r = av_read_frame(this->video, this->decpkt);
+                        } while (this->decpkt->stream_index != this->video_stream_idx);
+                        readpos = ((this->decpkt->dts - first_dts) * this->numf) / this->video_duration;
                     }
                     for (int f = readpos; f < framenr; f = f + mainprogram->qualfr) {
                         // decode sequentially frames starting from keyframe readpos to current framenr
@@ -4106,7 +4193,7 @@ void Layer::get_cpu_frame(int framenr, int prevframe, int errcount)
         }
         ret = decode_packet(this, true);
         if (ret == 0) {
-            return;
+            //return;
         }
         if (this->scritching != 1 && ! (this->playbut->value == 0 && this->revbut->value == 0 && this->bouncebut->value == 0)) this->prevframe = framenr;
         if (this->decframe->width == 0) {
@@ -4135,6 +4222,7 @@ void Layer::get_cpu_frame(int framenr, int prevframe, int errcount)
             get_cpu_frame(framenr, this->prevframe, errcount);
             this->frame = framenr;
         }
+        this->prevframe = this->frame;
         //decode_audio(this);
         av_packet_unref(this->decpkt);
         av_packet_unref(this->decpktseek);
@@ -6438,6 +6526,7 @@ void ShelfElement::set_nbclayers(Layer *lay) {
                         layelem->loopbut->value = elem->loopbut->value;
                         layelem->playbut->value = elem->playbut->value;
                         layelem->speed->value = elem->speed->value;
+                        layelem->beats = elem->beats;
 
                         layelem->params.emplace(par);
                         lay->lpst->parelemmap[par] = elem;
@@ -6451,6 +6540,8 @@ void ShelfElement::set_nbclayers(Layer *lay) {
             layelem->interimtime = elem->interimtime;
             layelem->totaltime = elem->totaltime;
             layelem->speedadaptedtime = elem->speedadaptedtime;
+            layelem->speed->value = elem->speed->value;
+            layelem->beats = elem->beats;
             layelem->eventlist = elem->eventlist;
             layelem->eventpos = elem->eventpos;
             layelem->atend = elem->atend;
@@ -6675,6 +6766,7 @@ void Mixer::copy_lpstelem(LoopStationElement *destelem, LoopStationElement *srce
     destelem->loopbut->value = srcelem->loopbut->value;
     destelem->playbut->value = srcelem->playbut->value;
     destelem->speed->value = srcelem->speed->value;
+    destelem->beats = srcelem->beats;
     destelem->atend = srcelem->atend;
 
     destelem->eventlist = srcelem->eventlist;
@@ -7083,16 +7175,11 @@ void Mixer::set_values(Layer *clay, Layer *lay, bool doclips) {
     }
     if (doclips) {
         clay->clips = lay->clips;
-        /*clay->clips->clear();
-        if (!lay->clips->empty()) {
-            for (int i = 0; i < lay->clips->size(); ++i) {
-                Clip *clip = (*(lay->clips))[i];
-                clip->copy()->insert(clay, clay->clips->end());
-            }
-        }*/
+
         clay->currclip = lay->currclip;
         clay->currclippath = lay->currclippath;
         clay->currclipjpegpath = lay->currclipjpegpath;
+
         lay->dontcloseclips = true;
     }
     clay->layerfilepath = lay->layerfilepath;
@@ -7857,8 +7944,9 @@ void Mixer::open_mix(const std::string path, bool alive, bool loadevents) {
     else rfile.open(path);
     std::string istring;
     safegetline(rfile, istring);
-    if (istring != "EWOCvj MIXFILE") {
+    if (istring != "EWOCvj MIXFILE" && concat) {
         mainprogram->openerr = true;
+        mainprogram->infostr = "The selected file isn't a mix file.";
         return;
     }
 
@@ -8350,7 +8438,8 @@ void Mixer::open_deck(const std::string path, bool alive, bool loadevents, int c
     std::string istring;
     safegetline(rfile, istring);
     if (istring != "EWOCvj DECKFILE") {
-        mainprogram->openerr = true;  // reminder : a requester here
+        mainprogram->openerr = true;
+        mainprogram->infostr = "The selected file isn't a deck file.";
         return;
     }
 
@@ -8793,6 +8882,14 @@ bool Layer::thread_vidopen() {
         const AVCodec* dec = avcodec_find_decoder(this->video_stream->codecpar->codec_id);
         this->vidformat = this->video_stream->codecpar->codec_id;
         this->video_dec_ctx = avcodec_alloc_context3(dec);
+        // Enable error concealment
+        this->video_dec_ctx->error_concealment = FF_EC_GUESS_MVS | FF_EC_DEBLOCK;
+        // Skip frames with errors instead of failing
+        this->video_dec_ctx->skip_frame = AVDISCARD_DEFAULT;
+        this->video_dec_ctx->skip_idct = AVDISCARD_DEFAULT;
+        this->video_dec_ctx->skip_loop_filter = AVDISCARD_DEFAULT;
+        // Set error recognition flags
+        this->video_dec_ctx->err_recognition = AV_EF_IGNORE_ERR;
         if (this->video_stream->codecpar->codec_id == AV_CODEC_ID_MPEG2VIDEO || this->video_stream->codecpar->codec_id == AV_CODEC_ID_H264 || this->video_stream->codecpar->codec_id == AV_CODEC_ID_H264) {
             //this->video_dec_ctx->ticks_per_frame = 2;
         }
@@ -9216,7 +9313,7 @@ Layer* Mixer::open_layerfile(const std::string path, Layer* lay, bool loadevents
 
     if (!lay->tagged) {
         if (keepeff) {
-            lay->dontcloseeffs = true;
+            lay->dontcloseeffs = 2;
         }
         lay->dontcloseclips = true;
         lay->close();
@@ -9400,7 +9497,7 @@ bool Layer::progress(bool comp, bool alive, bool doclips) {
                                 bool dummy = false;
                             }
                             if (this->scritching != 4) {
-                                if (this->bouncebut->value == 0) {
+                                if (this->bouncebut->value == 0 || this->bouncebut->value == 1) {
                                     if (this->lpbut->value == 0) {
                                         this->playbut->value = 0;
                                         this->onhold = true;
@@ -9409,8 +9506,7 @@ bool Layer::progress(bool comp, bool alive, bool doclips) {
                                     if (this->checkre) {
                                         if (!this->recstarted) {
                                             this->recstarted = true;
-                                        }
-                                        else{
+                                        } else {
                                             this->recended = true;
                                         }
                                     }
@@ -9419,14 +9515,15 @@ bool Layer::progress(bool comp, bool alive, bool doclips) {
                                             this->clip_display_next(0, alive);
                                         }
                                     }
-                                } else {
+                                }
+                                if (this->bouncebut->value == 1) {
                                     this->frame = this->endframe->value - (this->frame - this->endframe->value);
                                     this->bouncebut->value = 2;
                                 }
                             }
                         } else if (this->frame < this->startframe->value && this->startframe->value != this->endframe->value) {
                             if (this->scritching != 4) {
-                                if (this->bouncebut->value == 0) {
+                                if (this->bouncebut->value == 0 || this->bouncebut->value == 2) {
                                     if (this->lpbut->value == 0) {
                                         this->revbut->value = 0;
                                         this->onhold = true;
@@ -9436,8 +9533,7 @@ bool Layer::progress(bool comp, bool alive, bool doclips) {
                                     if (this->checkre) {
                                         if (!this->recstarted) {
                                             this->recstarted = true;
-                                        }
-                                        else{
+                                        } else {
                                             this->recended = true;
                                         }
                                     }
@@ -9446,7 +9542,8 @@ bool Layer::progress(bool comp, bool alive, bool doclips) {
                                             this->clip_display_next(1, alive);
                                         }
                                     }
-                                } else {
+                                }
+                                if (this->bouncebut->value == 2) {
                                     this->frame = this->startframe->value + (this->startframe->value - this->frame);
                                     this->bouncebut->value = 1;
                                 }
@@ -9573,7 +9670,7 @@ void Layer::load_frame() {
 
     GLenum err;
     while ((err = glGetError()) != GL_NO_ERROR) {
-        std::cerr << "OpenGL error3: " << err << std::endl;
+        std::cerr << "OpenGL error: " << err << std::endl;
     }
 
 
@@ -9690,9 +9787,6 @@ void Layer::load_frame() {
         glBindBuffer(GL_PIXEL_UNPACK_BUFFER, 0);
     }
 
-    while ((err = glGetError()) != GL_NO_ERROR) {
-        std::cerr << "OpenGL error2: " << err << std::endl;
-    }
     // round robin triple pbos: currently deactivated
     if (srclay->type == ELEM_IMAGE) {
         srclay->decresult->width = ilGetInteger(IL_IMAGE_WIDTH);
@@ -10206,7 +10300,7 @@ Layer* Mixer::read_layers(std::istream &rfile, const std::string result, std::ve
 		}
 		if (istring == "JPEGPATH") {
 			safegetline(rfile, istring);
-            mainprogram->filecount++;  // dojpeg? wherefor? reminder
+            mainprogram->filecount++;
 		}
         if (istring == "FILESIZE") {
             safegetline(rfile, istring);
@@ -11527,13 +11621,6 @@ void Mixer::event_write(std::ostream &wfile, Param* par, Button* but) {
                 wfile << "TOTALTIME\n";
                 wfile << std::to_string(elem->totaltime);
                 wfile << "\n";
-                /*std::chrono::high_resolution_clock::time_point now = std::chrono::high_resolution_clock::now();
-                std::chrono::duration<double> elapsed;
-                elapsed = std::chrono::duration_cast<std::chrono::duration<double>>(now - elem->starttime);
-                long long millicount = std::chrono::duration_cast<std::chrono::milliseconds>(elapsed).count();
-                int passed = millicount - elem->interimtime;
-                elem->interimtime = millicount;
-                elem->speedadaptedtime = elem->speedadaptedtime + passed * elem->speed->value;*/
                 wfile << "INTERIMTIME\n";
                 wfile << std::to_string(elem->buinterimtime);
                 wfile << "\n";
@@ -11568,13 +11655,6 @@ void Mixer::event_write(std::ostream &wfile, Param* par, Button* but) {
                 wfile << "TOTALTIME\n";
                 wfile << std::to_string(elem->totaltime);
                 wfile << "\n";
-                /*std::chrono::high_resolution_clock::time_point now = std::chrono::high_resolution_clock::now();
-                std::chrono::duration<double> elapsed;
-                elapsed = std::chrono::duration_cast<std::chrono::duration<double>>(now - elem->starttime);
-                long long millicount = std::chrono::duration_cast<std::chrono::milliseconds>(elapsed).count();
-                int passed = millicount - elem->interimtime;
-                elem->interimtime = millicount;
-                elem->speedadaptedtime = elem->speedadaptedtime + passed * elem->speed->value;*/
                 wfile << "INTERIMTIME\n";
                 wfile << std::to_string(elem->buinterimtime);
                 wfile << "\n";
@@ -12088,10 +12168,11 @@ void Mixer::record_video(std::string reccod) {
     this->recpath[this->reckind] = path;
 
     if (this->recrep) {
+        // replace recorded layer by recorded video
         this->reclay->speed->value = 1.0f;
-        this->reclay->playbut->value = 1;
-        this->reclay->revbut->value = 0;
-        this->reclay->bouncebut->value = 0;
+        //this->reclay->playbut->value = 1;
+        //this->reclay->revbut->value = 0;
+        //this->reclay->bouncebut->value = 0;
         int bukebv = this->reclay->keepeffbut->value;
         this->reclay->keepeffbut->value = 0;
         //this->reclay->layers = &this->layers[this->reclay->comp * 2 + this->reclay->deck];
@@ -12099,6 +12180,10 @@ void Mixer::record_video(std::string reccod) {
         this->reclay = this->reclay->open_video(0.0f, path, true, false);
         this->reclay->keepeffbut->value = bukebv;
         this->reclay->type = ELEM_FILE;
+        this->reclay->shiftx->value = 0.0f;
+        this->reclay->shifty->value = 0.0f;
+        this->reclay->scale->value = 1.0f;
+        this->reclay->opacity->value = 1.0f;
         this->reclay = nullptr;
         this->recrep = false;
     }
@@ -12415,7 +12500,10 @@ void Mixer::handle_clips() {
                     if (lay2->frame < 0) lay2->frame = 0.0f;
                     else if (lay2->frame >= lay2->numf) lay2->frame = lay2->numf - 1;
                     lay2->set_clones();
-                    if (mainprogram->leftmouse && !mainprogram->menuondisplay) lay2->clipscritching = 4;
+                    if (mainprogram->leftmouse && !mainprogram->menuondisplay) {
+                        lay2->clipscritching = 4;
+                        mainprogram->leftmouse = false;
+                    }
                 }
                 for (int k = 0; k < until; k++) {
                     clipbox.vtxcoords->x1 = vbox->vtxcoords->x1;
@@ -12547,8 +12635,6 @@ void Layer::clip_display_next(bool startend, bool alive) {
                     save_thumb(oldclip->jpegpath, oldclip->tex);
                 }
             }
-            //else oldclip->tex = this->currclip->tex;
-            //oldclip->path = this->currclippath;
             mainprogram->effcat[this->deck]->value = 0;
             mainprogram->clipsaving = true;
             mainmix->save_layerfile(oldclip->path, this, 0, 0);
@@ -12561,7 +12647,7 @@ void Layer::clip_display_next(bool startend, bool alive) {
         }
 
         if (this->currclip) {
-            //delete this->currclip;      reminder : leak
+            delete this->currclip;      //reminder : leak
         }
         this->currclip = (*(this->clips))[0];
         this->currclippath = this->currclip->path;
@@ -12580,6 +12666,7 @@ void Layer::clip_display_next(bool startend, bool alive) {
 
         Layer *lay = this;
         std::vector<Effect *> bueff1 = lay->effects[1];
+        lay->dontcloseeffs = 1;
 
         if (lay->currclip->type == ELEM_LAYER) {
             int currl1 = (std::find(mainmix->currlays[!mainprogram->prevmodus].begin(),
@@ -12588,7 +12675,7 @@ void Layer::clip_display_next(bool startend, bool alive) {
             if (currl1 == mainmix->currlays[!mainprogram->prevmodus].size()) currl1 = -1;
             bool currl2 = (lay == mainmix->currlay[!mainprogram->prevmodus]);
             lay = mainmix->open_layerfile(lay->currclippath, lay, true, false);
-            if (currl1 != -1) mainmix->currlays[!mainprogram->prevmodus][currl1] = lay;  // reminder
+            if (currl1 != -1) mainmix->currlays[!mainprogram->prevmodus][currl1] = lay;
             if (currl2) mainmix->currlay[!mainprogram->prevmodus] = lay;
             this->set_inlayer(lay, true);
             lay->currclip->type = ELEM_LAYER;
@@ -12872,7 +12959,7 @@ Layer* Layer::transfer(bool clones, bool dontdeleffs) {
 
     if (this->keepeffbut->value || dontdeleffs) {
         // if effects are kept, keep loopstationed elements too
-        this->dontcloseeffs = true;
+        this->dontcloseeffs = 2;
         bool bueffcat = mainprogram->effcat[this->deck]->value;
         for (int m = 0; m < 2; m++) {
             mainprogram->effcat[this->deck]->value = m;
@@ -13318,6 +13405,8 @@ void Scene::switch_to(bool dotempmap) {
                 if (elem->eventlist.size()) {
                     prevlpst->elements[count]->interimtime = elem->interimtime;
                     prevlpst->elements[count]->speedadaptedtime = elem->speedadaptedtime;
+                    prevlpst->elements[count]->speed->value = elem->speed->value;
+                    prevlpst->elements[count]->beats = elem->beats;
                     prevlpst->elements[count]->totaltime = elem->totaltime;
                     prevlpst->elements[count]->starttime = elem->starttime;
                     prevlpst->elements[count]->eventpos = elem->eventpos;
@@ -13341,6 +13430,7 @@ void Scene::switch_to(bool dotempmap) {
                 std::chrono::high_resolution_clock::time_point now = std::chrono::high_resolution_clock::now();
                 lpc->elements[count]->starttime = now - std::chrono::milliseconds((long long) (elem->interimtime));
                 lpc->elements[count]->speedadaptedtime = elem->speedadaptedtime;
+                lpc->elements[count]->speed->value = elem->speed->value;
                 lpc->elements[count]->totaltime = elem->totaltime;
                 lpc->elements[count]->eventpos = elem->eventpos;
             }
@@ -13382,6 +13472,7 @@ void Scene::switch_to(bool dotempmap) {
                 lpc->elements[count]->playbut->value = elem->playbut->value;
                 lpc->elements[count]->loopbut->oldvalue = elem->loopbut->value;
                 lpc->elements[count]->playbut->oldvalue = elem->playbut->value;
+                lpc->elements[count]->beats = elem->beats;
             }
             count++;
         }
@@ -13404,7 +13495,7 @@ void Mixer::reload_tagged_elems(ShelfElement *elem, bool deck) {
                 lay2->open_video(lay2->frame, lay2->filename, false, true);
             }
             lay2->dontcloseclips = false;
-            lay2->dontcloseeffs = false;
+            lay2->dontcloseeffs = 0;
             lay2->tagged = false;
             lay2->prevshelfdragelem = nullptr;
         }

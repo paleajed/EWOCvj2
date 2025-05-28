@@ -146,6 +146,8 @@ uniform bool xflip = true;
 uniform bool yflip = false;
 uniform float xmirror = 0;
 uniform float ymirror = 1;
+uniform float xcrdmirror = 0.5f;
+uniform float ycrdmirror = 0.5f;
 
 /// Computes the overlay between the source and destination colours.
 vec3 Overlay (vec3 src, vec3 dst)
@@ -1519,16 +1521,16 @@ vec4 mirror(vec2 texco)  //selfmade
 	int xm = int(xmirror + 0.5f);
 	int ym = int(ymirror + 0.5f);
 	if (xm == 0) {
-		if (texco.x > 0.5f) texco.x = 1.0f - texco.x;
+		if (texco.x > xcrdmirror) texco.x = 2.0f * xcrdmirror - texco.x;
 	}
 	else if (xm == 2) {
-		if (texco.x <= 0.5f) texco.x = 1.0f - texco.x;
+		if (texco.x <= xcrdmirror) texco.x = 2.0f * xcrdmirror - texco.x;
 	}
 	if (ym == 2) {
-		if (texco.y > 0.5f) texco.y = 1.0f - texco.y;
+		if (texco.y > ycrdmirror) texco.y = 2.0f * ycrdmirror - texco.y;
 	}
 	else if (ym == 0) {
-		if (texco.y <= 0.5f) texco.y = 1.0f - texco.y;
+		if (texco.y <= ycrdmirror) texco.y = 2.0f * ycrdmirror - texco.y;
 	}
 	return texture2D(Sampler0, texco);
 }
@@ -2432,15 +2434,13 @@ void main()
 					else cond = sqrt(a * a + b * b) >= dist;
 					if (cond) {
 						FragColor = vec4((data0.rgb * data0.a + data1.rgb * (1.0f - data0.a)), 1.0f);
-						//FragColor = vec4((data1.rgb * data1.a + data0.rgb * (1.0f - data1.a)), max(data0.a, data1.a)) * (1 - dir) + data1 * dir;
 					}
 					else {
 						FragColor = vec4((data1.rgb * data1.a + data0.rgb * (1.0f - data1.a)), 1.0f);
-						//FragColor = vec4((data0.rgb * data0.a + data1.rgb * (1.0f - data0.a)), max(data0.a, data1.a)) * dir + data0 * (1 - dir);
 					}
 					break;
 
-				case 11:  //repel - alpha? reminder
+				case 11:  //repel
 					float rad = xamount / 1.7f;
 					if (dir == 1) rad = (1.0f - xamount) / 1.7f;
 					xxpos = 0.5f + (xxpos - 0.5f) * (1.0f - xamount);

@@ -2287,12 +2287,60 @@ void Program::layerstack_scrollbar_handle() {
 }
 
 
+void Program::show_info() {
+    // info dialog
+    int mx = -1;
+    int my = -1;
+    if (SDL_GetMouseFocus() == mainprogram->requesterwindow) {
+        SDL_GetMouseState(&mx, &my);
+        mx *= 2.0f;
+        my *= 2.0f;
+    }
+
+    mainprogram->insmall = true;
+    mainprogram->bvao = mainprogram->quboxvao;
+    mainprogram->bvbuf = mainprogram->quboxvbuf;
+    mainprogram->btbuf = mainprogram->quboxtbuf;
+    glClear(GL_COLOR_BUFFER_BIT);
+
+    render_text(mainprogram->infostr, white, -0.5f, 0.2f, 0.0024f, 0.004f, 1, 0);
+
+    std::unique_ptr <Boxx> box = std::make_unique <Boxx> ();
+    box->vtxcoords->x1 = 0.75f;
+    box->vtxcoords->y1 = -1.0f;
+    box->vtxcoords->w = 0.3f;
+    box->vtxcoords->h = 0.2f;
+    box->upvtxtoscr();
+    draw_box(white, black, box, -1);
+    if (box->in(mx, my)) {
+        draw_box(white, lightblue, box, -1);
+        if (mainprogram->leftmouse || mainprogram->orderleftmouse) {
+            mainprogram->infostr = "";
+            SDL_HideWindow(mainprogram->requesterwindow);
+            SDL_RaiseWindow(mainprogram->mainwindow);
+        }
+    }
+    render_text("CONTINUE", white, box->vtxcoords->x1 + 0.02f, box->vtxcoords->y1 + 0.03f, 0.0024f, 0.004f, 1, 0);
+
+    this->bvao = this->boxvao;
+    this->bvbuf = this->boxvbuf;
+    this->btbuf = this->boxtbuf;
+    this->middlemouse = 0;
+    this->rightmouse = 0;
+    this->menuactivation = false;
+    this->mx = -1;
+    this->my = -1;
+
+    this->insmall = false;
+    mainprogram->recundo = false;
+}
+
+
 int Program::quit_requester() {
     // requester: choose between exiting / saving and exiting/ cancelling exit
 	int mx = -1;
 	int my = -1;
 	if (SDL_GetMouseFocus() == mainprogram->requesterwindow) {
-		//SDL_PumpEvents();
 		SDL_GetMouseState(&mx, &my);
 		mx *= 2.0f;
 		my *= 2.0f;
@@ -2484,7 +2532,7 @@ void Program::shelf_triggering(ShelfElement* elem, int deck, Layer *layer) {
                     mainmix->set_layers(elem, (bool) mainmix->mousedeck);
                 }
                 else {
-                    mainmix->open_deck(elem->path, true, true);  // reminder : implement pushing layers to back for fast swapping for launchtype 0
+                    mainmix->open_deck(elem->path, true, true);
                     elem->scrollpos[deck] = mainmix->scenes[deck][mainmix->currscene[deck]]->scrollpos;
                     std::vector<Layer *> lvec = mainmix->newlrs[!mainprogram->prevmodus * 2 + mainmix->mousedeck];
                     for (Layer *lay : lvec) {
@@ -4291,7 +4339,7 @@ void Program::handle_laymenu1() {
 		}
         else if (!cond && k == 12) {
             // duplicate layer
-            Layer* lay = mainmix->mouselayer->clone();
+            Layer* lay = mainmix->mouselayer->clone(true);
             lay->isclone = false;
             Layer *duplay = nullptr;
             lay->dontcloseclips = true;
@@ -4320,7 +4368,7 @@ void Program::handle_laymenu1() {
         }
         else if (!cond && k == 13) {
             // clone layer
-            Layer* lay = mainmix->mouselayer->clone();
+            Layer* lay = mainmix->mouselayer->clone(false);
             Layer *clonelay = nullptr;
             lay->dontcloseclips = true;
             if (lay->type == ELEM_IMAGE) {
@@ -4344,10 +4392,12 @@ void Program::handle_laymenu1() {
             mainmix->clonesets[mainmix->mouselayer->clonesetnr]->emplace(clonelay);
         }
 		else if (k == (14 - cond * 2)) {
+            // center image
 			mainmix->mouselayer->shiftx->value = 0.0f;
 			mainmix->mouselayer->shifty->value = 0.0f;
 		}
 		else if (k == 15 - cond * 2) {
+            // set aspect ratio
 			mainmix->mouselayer->aspectratio = (RATIO_TYPE)this->menuresults[0];
 			if (mainmix->mouselayer->type == ELEM_IMAGE) {
 				ilBindImage(mainmix->mouselayer->boundimage);
@@ -4360,6 +4410,7 @@ void Program::handle_laymenu1() {
 			}
 		}
         else if (k == 16 - cond * 2) {
+            // show layer on external display
             // chosen output screen already used? re-use window
             int currdisp = SDL_GetWindowDisplayIndex(this->mainwindow);
             int disp = this->menuresults[0] + (this->menuresults[0] >= currdisp);
@@ -4461,6 +4512,7 @@ void Program::handle_laymenu1() {
             }
         }
         else if ((!cond && k == 17) || k == 17 - cond * 2) {
+            // record and replace layer
             if (mainmix->mouselayer->clips->size() == 1) {
                 if (!mainmix->recording[0]) {
                     // start recording layer with all effects, settings,... and replace with recorded video
@@ -6017,6 +6069,9 @@ bool Program::preferences_handle() {
                     this->project->name = this->projname;
                     std::string pathdir = dirname(this->project->path);
                     std::string newdir = dirname(pathdir.substr(0, pathdir.size() - 2)) + this->project->name + "/";
+                    if (exists(newdir)) {
+                        remove(newdir);  // reminder : display warning
+                    }
                     // rename project directory
                     rename(pathdir, newdir);
                     // adapt recent project list
@@ -6037,7 +6092,6 @@ bool Program::preferences_handle() {
                     this->project->autosavedir = newdir + "autosaves/";
                     this->project->elementsdir = newdir + "elements/";
                     for (int i = 0; i < binsmain->bins.size(); i++) {
-                        binsmain->bins[i]->path = this->project->binsdir + basename(binsmain->bins[i]->path);
                         for (int j = 0; j < binsmain->bins[i]->elements.size(); j++) {
                             std::string str = binsmain->bins[i]->elements[j]->path;
                             if (str.find(bubd) != std::string::npos) {
@@ -6047,7 +6101,7 @@ bool Program::preferences_handle() {
                             }
                             std::string str2 = binsmain->bins[i]->elements[j]->absjpath;
                             if (str2.find(bubd) != std::string::npos) {
-                                str2.replace(str.find(bubd), bubd.size(), this->project->binsdir);
+                                str2.replace(str2.find(bubd), bubd.size(), this->project->binsdir);
                                 binsmain->bins[i]->elements[j]->absjpath = str2;
                                 binsmain->bins[i]->elements[j]->reljpath = std::filesystem::relative(str2, mainprogram->project->binsdir).generic_string();
                                 binsmain->bins[i]->elements[j]->jpegpath = str2;
@@ -7198,9 +7252,8 @@ bool Project::open(std::string path, bool autosave, bool newp, bool undo) {
     }
 
     mainprogram->project->path = path;
-    if (!exists(path)) {  // reminder requester
-        std::string err = "Project at " + path + " doesn't exist" + "\n";
-        printf(err.c_str());
+    if (!exists(path)) {
+        mainprogram->infostr = "Project at " + path + " doesn't exist";
         return false;
     }
 
@@ -8485,15 +8538,15 @@ PIVid::PIVid() {
     this->items.push_back(pvi);
     pos++;
 
-    pvi = new PrefItem(this, pos, "Highly compressed video quality", PREF_NUMBER, (void*)&mainprogram->qualfr);
-    pvi->value = 3;
+    /*pvi = new PrefItem(this, pos, "Highly compressed video quality", PREF_NUMBER, (void*)&mainprogram->qualfr);
+    pvi->value = 1;
     pvi->namebox->tooltiptitle = "Video playback quality of highly compressed streams ";
     pvi->namebox->tooltip = "Sets the quality of the video stream playback for streams that don't have one keyframe per frame encoded. A tradeoff between quality and framerate. ";
     pvi->valuebox->tooltiptitle = "Video playback quality of highly compressed streams ";
     pvi->valuebox->tooltip = "Leftclicking the value allows setting the quality in the range of 1 to 10.  Lower is better quality and worse framerate/chopdier playback. ";
     mainprogram->qualfr = pvi->value;
     this->items.push_back(pvi);
-    pos++;
+    pos++;*/
 
     pvi = new PrefItem(this, pos, "Stash HAP encoded videos", PREF_ONOFF, (void*)&mainprogram->stashvideos);
     pvi->onoff = 0;
@@ -10129,7 +10182,7 @@ void Program::remove_ec(std::string filepath, std::error_code& ec) {
 }
 
 void Program::remove(std::string filepath) {
-    std::filesystem::remove(filepath);
+    std::filesystem::remove_all(filepath);
 }
 
 std::string Program::get_typestring(std::string path) {

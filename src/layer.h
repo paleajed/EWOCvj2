@@ -321,7 +321,7 @@ class Layer {
         bool recstarted = false;
         bool invidbox = false;
         bool dontcloseclips = false;
-        bool dontcloseeffs = false;
+        int dontcloseeffs = 0;
 
         LoopStation *lpst;
         bool isnblayer = false;
@@ -334,7 +334,7 @@ class Layer {
 		void delete_effect(int pos, bool connect = true);
 		void inhibit();
 		std::vector<Effect*>& choose_effects();
-		Layer* clone();
+		Layer* clone(bool dup);
 		void set_clones(int clsnr = -1);
 		void set_aspectratio(int lw, int lh);
         void cnt_lpst();

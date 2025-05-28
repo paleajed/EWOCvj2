@@ -1328,7 +1328,7 @@ void mycallback( double deltatime, std::vector< unsigned char > *message, void *
 			if (mainmix->learnbutton->effect) {
 				mainprogram->nodesmain->currpage->connect_in2(mainmix->learnbutton->node, mainmix->learnbutton->effect->node);
 			}
-reminder: IMPLEMENT */
+reminder: IMPLEMENT someday in node view */
 		else if ((midi0 >= 144 && midi0 < 160) && midi2 != 0 && mainmix->learnbutton) {
             mainmix->learnbutton->midi[0] = midi0;
             mainmix->learnbutton->midi[1] = midi1;
@@ -3126,11 +3126,17 @@ void onestepfrom(bool stage, Node *node, Node *prevnode, GLuint prevfbotex, GLui
 
 			Layer *lay = effect->layer;
 
+            float sx = 0.0f;
+            float sy = 0.0f;
+            float sc = 1.0f;
             float op = 1.0f;
             if (effect->node == lay->lasteffnode[0]) {
+                sx = lay->shiftx->value;
+                sy = lay->shifty->value;
+                sc = lay->scale->value;
                 op = lay->opacity->value;
             }
- 			if (!lay->onhold) draw_box(nullptr, black, -1.0f, 1.0f, 2.0f, -2.0f, 0.0f, 0.0f, 1.0f, op, 0, prevfbotex, 0, 0, false);
+ 			if (!lay->onhold) draw_box(nullptr, black, -1.0f, 1.0f, 2.0f, -2.0f, sx, sy, sc, op, 0, prevfbotex, 0, 0, false);
             prevfbotex = effect->fbotex;
             prevfbo = effect->fbo;
 
@@ -3214,15 +3220,19 @@ void onestepfrom(bool stage, Node *node, Node *prevnode, GLuint prevfbotex, GLui
         scix = scix * scw / 2.0f;
         sciy = sciy * sch / 2.0f;
         glViewport(sxs, sys, scw - sxs * 2.0f, sch - sys * 2.0f);
-        float sx, sy, sc, op;
-        sx = lay->shiftx->value;
-        sy = lay->shifty->value;
-        sc = lay->scale->value;
-        if (lay->node == lay->lasteffnode[0]) {
-            op = lay->opacity->value;
-        }
-        else {
-            op = 1.0f;
+        float sx = 0.0f;
+        float sy = 0.0f;
+        float sc = 1.0f;
+        float op = 1.0f;
+        if (lay->effects[0].empty()) {
+            sx = lay->shiftx->value;
+            sy = lay->shifty->value;
+            sc = lay->scale->value;
+            if (lay->node == lay->lasteffnode[0]) {
+                op = lay->opacity->value;
+            } else {
+                op = 1.0f;
+            }
         }
         glBindFramebuffer(GL_FRAMEBUFFER, lay->fbo);
         glDrawBuffer(GL_COLOR_ATTACHMENT0);
@@ -4850,7 +4860,7 @@ void the_loop() {
                         if (lay->filename != binel->encodingend) continue;
                         bool bukeb = lay->keepeffbut->value;
                         lay->keepeffbut->value = 1;
-                        lay->dontcloseeffs = true;
+                        lay->dontcloseeffs = 2;
                         lay->tagged = true;
                         std::vector<Layer*> *bulrs = lay->layers;
                         std::vector<Layer*> templrs = {lay};
@@ -5835,6 +5845,28 @@ void the_loop() {
         //mainprogram->recundo = false;
     }
 
+    if (mainprogram->infostr != "") {
+        // showing an info dialog
+        mainprogram->directmode = true;
+        SDL_ShowWindow(mainprogram->requesterwindow);
+        SDL_RaiseWindow(mainprogram->requesterwindow);
+        SDL_GL_MakeCurrent(mainprogram->requesterwindow, glc);
+        glBindFramebuffer(GL_FRAMEBUFFER, 0);
+        glDrawBuffer(GL_BACK_LEFT);
+        glViewport(0, 0, glob->w / 2.0f, glob->h / 2.0f);
+        glEnable(GL_BLEND);
+        glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
+        SDL_FlushEvents(SDL_FIRSTEVENT, SDL_LASTEVENT);
+
+        mainprogram->show_info();
+
+        SDL_GL_SwapWindow(mainprogram->requesterwindow);
+        SDL_GL_MakeCurrent(mainprogram->mainwindow, glc);
+        glBindFramebuffer(GL_FRAMEBUFFER, 0);
+        glDrawBuffer(GL_BACK_LEFT);
+        glViewport(0, 0, glob->w, glob->h);
+        mainprogram->directmode = false;
+    }
 
     bool prret = false;
 	GLuint tex, fbo;
@@ -6195,12 +6227,6 @@ void the_loop() {
             if (lay->opened) {
                 lay->endopenvar.notify_all();
             }
-        }
-    }
-    for (auto lay : mainprogram->openlayers){
-        //reminder : redundant
-        if (lay->opened) {
-            lay->endopenvar.notify_all();
         }
     }
 
@@ -6916,7 +6942,7 @@ int main(int argc, char* argv[]) {
     //glewExperimental = GL_TRUE;
     glewInit();
 
-    mainprogram->requesterwindow = SDL_CreateWindow("Quit EWOCvj2", glob->w / 4, glob->h / 4, glob->w / 2,
+    mainprogram->requesterwindow = SDL_CreateWindow("EWOCvj2", glob->w / 4, glob->h / 4, glob->w / 2,
                                                glob->h / 2, SDL_WINDOW_OPENGL | SDL_WINDOW_HIDDEN |
                                                                           SDL_WINDOW_ALLOW_HIGHDPI);
     mainprogram->config_midipresetswindow = SDL_CreateWindow("Tune MIDI", glob->w / 4, glob->h / 4, glob->w / 2,
