@@ -802,8 +802,13 @@ public:
 
 private:
     void wait() {
-        // set the timer at 40 millisecons: 25 frames per second
-        t.expires_from_now(boost::posix_time::milliseconds(40)); //repeat rate here
+        // set the timer at 40000 microseconds: 25 frames per second
+        // change value with deck speed
+        int delay = 40000;
+        /*if (mainmix->reclay) {
+            delay = (int)(40000.0f / mainmix->deckspeed[!mainprogram->prevmodus][mainmix->reclay->deck]->value);
+        }*/
+        t.expires_from_now(boost::posix_time::microseconds(delay)); //repeat rate here
         t.async_wait(boost::bind(&Deadline2::timeout, this));
     }
 
@@ -1477,7 +1482,7 @@ ShelfElement::ShelfElement(bool side, int pos, Button *but) {
 	box->vtxcoords->w = boxwidth;
 	box->upvtxtoscr();
 	box->tooltiptitle = "Video launch shelf";
-	box->tooltip = "Shelf containing up to 16 videos/layerfiles for quick and easy video launching.  Left drag'n'drop to/from other areas, both videos and layerfiles.  Doubleclick left loads the shelf element contents into all selected layers. Rightclick launches shelf menu. ";
+	box->tooltip = "Shelf containing up to 16 videos/layerfiles/decks/mixes for quick and easy video launching.  Left drag'n'drop to/from other areas.  Doubleclick left loads the shelf element contents into all selected layers/decks. Rightclick launches shelf menu. ";
 	// boxes that set the behaviour of multiple sends to the same mix element, interleaved with sending other elements to it
     this->sbox = new Boxx;
 	this->sbox->vtxcoords->x1 = box->vtxcoords->x1;
@@ -4645,15 +4650,10 @@ void the_loop() {
                     if (lv[1]->singleswap) {
                         mainmix->layers[i][lv[1]->pos] = lv[1];
                         tempmap->erase(std::find(tempmap->begin(), tempmap->end(), lv));
+
                         // transfer current layer settings to new layer
-                        if (lv[0] == mainmix->currlay[!mainprogram->prevmodus]) mainmix->currlay[!mainprogram->prevmodus] = lv[1];
-                        if (std::find(mainmix->currlays[!mainprogram->prevmodus].begin(), mainmix->currlays[!mainprogram->prevmodus].end(),
-                                      lv[0]) != mainmix->currlays[!mainprogram->prevmodus].end()) {
-                            mainmix->currlays[!mainprogram->prevmodus].erase(std::find(mainmix->currlays[!mainprogram->prevmodus].begin(),
-                                                                                         mainmix->currlays[!mainprogram->prevmodus].end(),
-                                                                                         lv[0]));
-                            mainmix->currlays[!mainprogram->prevmodus].push_back(lv[1]);
-                        }
+                        mainmix->change_currlay(lv[0], lv[1]);
+
                         lv[1]->singleswap = false;
                         mainmix->bulayers.push_back(lv[0]);
                         break;
@@ -5280,6 +5280,36 @@ void the_loop() {
 		}
 
 
+        // shelf element renaming
+        if (mainprogram->renamingshelfelem) {
+            if (mainprogram->renaming == EDIT_NONE) {
+                mainprogram->renamingshelfelem = nullptr;
+            }
+            if (mainprogram->leftmousedown && !mainprogram->renamingbox->in()) {
+                mainprogram->renaming = EDIT_NONE;
+                mainprogram->renamingshelfelem = nullptr;
+                SDL_StopTextInput();
+                mainprogram->leftmousedown = false;
+            }
+            if (mainprogram->rightmouse) {
+                mainprogram->renaming = EDIT_NONE;
+                SDL_StopTextInput();
+                mainprogram->renamingshelfelem->name = mainprogram->renamingshelfelem->oldname;
+                mainprogram->renamingshelfelem = nullptr;
+                mainprogram->rightmouse = false;
+                mainprogram->menuactivation = false;
+            }
+        }
+        if (mainprogram->renaming != EDIT_NONE && mainprogram->renamingshelfelem) {
+            // bin element renaming with keyboard
+            mainprogram->frontbatch = true;
+            draw_box(white, black, mainprogram->renamingbox, -1);
+            do_text_input(-0.5f + 0.1f, -0.2f + 0.05f, 0.0009f, 0.0015f, mainprogram->mx, mainprogram->my,
+                          mainprogram->xvtxtoscr(0.8f), 0, nullptr);
+            mainprogram->frontbatch = false;
+        }
+        
+        
         // color wheel stuff
 		if (mainprogram->cwon) {
 			if (mainprogram->leftmousedown) {
@@ -5343,6 +5373,28 @@ void the_loop() {
 		draw_box(white, darkgrey, mainmix->deckspeed[!mainprogram->prevmodus][1]->box->vtxcoords->x1, mainmix->deckspeed[!mainprogram->prevmodus][1]->box->vtxcoords->y1, mainmix->deckspeed[!mainprogram->prevmodus][1]->box->vtxcoords->w * 0.30f, 0.1f, -1);
         par->handle();
 
+        // do replace of layer after record
+        if (mainmix->recswitch[0]) {
+            mainmix->recswitch[0] = false;
+            if (mainmix->recrep) {
+                // replace recorded layer by recorded video
+                mainmix->reclay->speed->value = 1.0f;
+                int bukebv = mainmix->reclay->keepeffbut->value;
+                mainmix->reclay->keepeffbut->value = 0;
+                mainmix->reclay = mainmix->reclay->open_video(0.0f, mainmix->reclay->filename, true, false);
+                mainmix->reclay->keepeffbut->value = bukebv;
+                mainmix->reclay->type = ELEM_FILE;
+                mainmix->reclay->shiftx->value = 0.0f;
+                mainmix->reclay->shifty->value = 0.0f;
+                mainmix->reclay->scale->value = 1.0f;
+                mainmix->reclay->opacity->value = 1.0f;
+                //mainmix->reclay->speed->value /= mainmix->deckspeed[!mainprogram->prevmodus][mainmix->reclay->deck]->value;
+                //mainmix->reclay->speed->value /= mainmix->deckspeed[!mainprogram->prevmodus][mainmix->reclay->deck]->value;
+                mainmix->reclay = nullptr;
+                mainmix->recrep = false;
+            }
+        }
+        
 		//draw and handle recbuts
         mainprogram->handle_button(mainmix->recbutQ, 1, 0);
         if (mainmix->recbutQ->toggled()) {
@@ -7348,6 +7400,12 @@ int main(int argc, char* argv[]) {
                     mainprogram->currfilesdir = dirname(str);
                     mainprogram->pathscount = 0;
                     mainprogram->fileslay = mainprogram->loadlay;
+                    for (Clip *clip: *mainprogram->fileslay->clips) {
+                        delete clip;
+                    }
+                    mainprogram->fileslay->clips->clear();
+                    Clip *clip = new Clip;  // empty never-active clip at queue end for adding to queue from the GUI
+                    clip->insert(mainprogram->fileslay, mainprogram->fileslay->clips->end());
                     if (mainmix->addlay) {
                         std::vector<Layer *> &lvec = choose_layers(mainmix->mousedeck);
                         mainprogram->fileslay = mainmix->add_layer(lvec, lvec.size());
@@ -7504,13 +7562,8 @@ int main(int argc, char* argv[]) {
 
                     mainprogram->project->open(mainprogram->path, true);
 
-                    /*mainprogram->project->path = mainprogram->project->bupp;
-                    mainprogram->project->name = mainprogram->project->bupn;
-                    mainprogram->project->binsdir = mainprogram->project->bubd;
-                    mainprogram->project->shelfdir = mainprogram->project->busd;
-                    mainprogram->project->recdir = mainprogram->project->burd;
-                    mainprogram->project->autosavedir = mainprogram->project->buad;
-                    mainprogram->project->elementsdir = mainprogram->project->bued;*/
+                    binsmain->clear_undo();
+
                     mainprogram->openautosave = false;
                 }
             } else if (mainprogram->pathto == "NEWPROJECT") {
@@ -7522,10 +7575,13 @@ int main(int argc, char* argv[]) {
 #ifdef WINDOWS
                 mainprogram->project->newp(mainprogram->path + "\\" + basename(mainprogram->path));
 #endif
+                binsmain->clear_undo();
+                mainprogram->undo_redo_save();
             } else if (mainprogram->pathto == "OPENPROJECT") {
                 std::string p = dirname(mainprogram->path);
                 if (exists(mainprogram->path)) {
                     mainprogram->project->open(mainprogram->path, false);
+                    binsmain->clear_undo();
                     mainprogram->currprojdir = dirname(p.substr(0, p.length() - 1));
                 }
             } else if (mainprogram->pathto == "SAVEPROJECT") {
@@ -7728,6 +7784,8 @@ int main(int argc, char* argv[]) {
                     binsmain->menubin->name = mainprogram->inputtext;
                 } else if (mainprogram->renaming == EDIT_BINELEMNAME) {
                     binsmain->renamingelem->name = mainprogram->inputtext;
+                } else if (mainprogram->renaming == EDIT_SHELFELEMNAME) {
+                    mainprogram->renamingshelfelem->name = mainprogram->inputtext;
                 } else if (mainprogram->renaming == EDIT_PARAM) {
                     int diff = mainprogram->inputtext.find(".") + 4 - mainprogram->inputtext.length();
                     if (diff < 0) {
@@ -7863,7 +7921,7 @@ int main(int argc, char* argv[]) {
                                         }
                                     }
                                 } else {
-                                    if (binsmain->undobins.size() && binsmain->undopos > 1) {
+                                    if (binsmain->undobins.size() && binsmain->undopos > 0) {
                                         binsmain->undo_redo(-2);
                                         binsmain->undopos--;
                                     }
@@ -8155,6 +8213,9 @@ int main(int argc, char* argv[]) {
                 if (path != "") {
                     mainprogram->project->open(path, false, true);
                     mainprogram->undowaiting = 2;
+                    mainprogram->binsscreen = true;
+                    mainprogram->undo_redo_save();
+                    mainprogram->binsscreen = false;
                     mainprogram->undo_redo_save();
                     std::string p = dirname(mainprogram->path);
                     mainprogram->currprojdir = dirname(p.substr(0, p.length() - 1));
@@ -8198,6 +8259,7 @@ int main(int argc, char* argv[]) {
                         mainprogram->project->newp(mainprogram->path + "/" + basename(mainprogram->path));
 #endif
                         mainprogram->undowaiting = 2;
+                        binsmain->clear_undo();
                         mainprogram->undo_redo_save();
                         mainprogram->currprojdir = dirname(mainprogram->path);
                         mainprogram->path = "";
@@ -8225,6 +8287,9 @@ int main(int argc, char* argv[]) {
                         SDL_GL_MakeCurrent(mainprogram->mainwindow, glc);
                         mainprogram->project->open(mainprogram->path, false, true);
                         mainprogram->undowaiting = 2;
+                        mainprogram->binsscreen = true;
+                        mainprogram->undo_redo_save();
+                        mainprogram->binsscreen = false;
                         mainprogram->undo_redo_save();
                         std::string p = dirname(mainprogram->path);
                         mainprogram->currprojdir = dirname(p.substr(0, p.length() - 1));
@@ -8258,6 +8323,9 @@ int main(int argc, char* argv[]) {
                         //SDL_GL_MakeCurrent(mainprogram->mainwindow, glc);
                         bool ret = mainprogram->project->open(mainprogram->recentprojectpaths[i], false, true);
                         mainprogram->undowaiting = 2;
+                        mainprogram->binsscreen = true;
+                        mainprogram->undo_redo_save();
+                        mainprogram->binsscreen = false;
                         mainprogram->undo_redo_save();
                         if (ret) {
                             std::string p = dirname(mainprogram->recentprojectpaths[i]);

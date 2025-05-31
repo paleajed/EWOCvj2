@@ -301,10 +301,10 @@ Mixer::Mixer() {
 	this->deckspeed[1][1]->box->tooltiptitle = "Global preview deck B speed setting ";
 	this->deckspeed[1][1]->box->tooltip = "Change global deck B speed factor for preview streams. Leftdrag changes value. Doubleclick allows numeric entry. ";
 
-    this->layers.push_back({}); // the old layersA
-    this->layers.push_back({}); // the old layersB
-    this->layers.push_back({}); // the old layersAcomp
-    this->layers.push_back({}); // the old layersBcomp
+    this->layers.push_back({});
+    this->layers.push_back({});
+    this->layers.push_back({});
+    this->layers.push_back({});
 }
 
 
@@ -317,6 +317,8 @@ void Mixer::change_currlay(Layer *oldcurr, Layer *newcurr) {
     }
     if (pos != -1) {
         mainmix->currlays[!mainprogram->prevmodus][pos] = newcurr;
+    }
+    if (oldcurr == mainmix->currlay[!mainprogram->prevmodus]) {
         mainmix->currlay[!mainprogram->prevmodus] = newcurr;
     }
 }
@@ -421,7 +423,9 @@ void Param::handle(bool smallxpad) {
 	}
 	else if (this != mainmix->prepadaptparam && this != mainmix->adaptparam) thisstr = this->name;
 	else if (this->sliding) thisstr = std::to_string(val).substr(firstdigit, 4 - firstdigit) + "." + std::to_string(val).substr(std::to_string(val).length() - 3, std::string::npos); 
-	else thisstr = std::to_string((int)(this->value + (float)(0.5f * (this->effect->type == FLIP || this->effect->type == MIRROR))));
+	else {
+        thisstr = std::to_string((int)(this->value + (float)(0.5f * (this->effect->type == FLIP || this->effect->type == MIRROR))));
+    }
 	if (this != mainmix->adaptnumparam) {
         if (this->name != "drywet") {
             render_text(thisstr, white, this->box->vtxcoords->x1 + 0.03f, this->box->vtxcoords->y1 + 0.075f - 0.045f,
@@ -434,6 +438,7 @@ void Param::handle(bool smallxpad) {
 				mainmix->prevx = mainprogram->mx;
 			}
             if (mainprogram->leftmouse) {
+                mainprogram->leftmouse = false;
                 mainprogram->recundo = false;
             }
 			if (mainprogram->doubleleftmouse) {
@@ -495,25 +500,6 @@ void Param::handle(bool smallxpad) {
 	if (this == mainmix->adaptnumparam) {
 		do_text_input(this->box->vtxcoords->x1 + 0.035f, this->box->vtxcoords->y1 + 0.03f, 0.00045f, 0.00075f, mainprogram->mx, mainprogram->my, mainprogram->xvtxtoscr(this->box->vtxcoords->w - 0.03f), 0, nullptr);
 	}
-}
-
-
-void reset_par(Param *par, float val) {
-// reset all speed settings
-    LoopStationElement *elem = loopstation->parelemmap[par];
-    if (elem) {
-        if (!elem->eventlist.empty()) {
-            for (int i = elem->eventlist.size() - 1; i >= 0; i--) {
-                std::tuple<long long, Param *, Button *, float> event = elem->eventlist[i];
-                if (std::get<1>(event) == par) {
-                    elem->eventlist.erase(elem->eventlist.begin() + i);
-                }
-            }
-        }
-        loopstation->parelemmap[par]->params.erase(par);
-        loopstation->parelemmap.erase(par);
-    }
-    par->value = val;
 }
 
 
@@ -2071,11 +2057,6 @@ Effect* Layer::add_effect(EFFECT_TYPE type, int pos, bool cat) {
         this->type = ELEM_LAYER;
 	}
 
-
-    /*if (eff->params.size()) {
-        mainprogram->register_undo(eff->params[0], nullptr);
-    }*/
-
     return eff;
 }
 
@@ -2088,17 +2069,17 @@ Effect* Layer::replace_effect(EFFECT_TYPE type, int pos) {
 	return effect;
 }
 
-void do_delete_effect(Layer *lay, int pos, bool connect) {
-
-	std::vector<Effect*> &evec = lay->choose_effects();
-	bool cat = mainprogram->effcat[lay->deck]->value;
+void Layer::delete_effect(int pos, bool connect) {
+    
+	std::vector<Effect*> &evec = this->choose_effects();
+	bool cat = mainprogram->effcat[this->deck]->value;
 	Effect *effect = evec[pos];
 
 	for(int i = pos; i < evec.size(); i++) {
 		Effect *eff = evec[i];
 		eff->node->alignpos -= 1;
 	}
-	lay->node->aligned -= 1;
+	this->node->aligned -= 1;
 
 	for (int i = 0; i < mainprogram->nodesmain->currpage->nodes.size(); i++) {
 		if (evec[pos]->node == mainprogram->nodesmain->currpage->nodes[i]) {
@@ -2111,8 +2092,8 @@ void do_delete_effect(Layer *lay, int pos, bool connect) {
 		}
 	}
 
-	lay->node->page->delete_node(evec[pos]->node);
-	//lay->node->upeffboxes();     reminder : for node view
+	this->node->page->delete_node(evec[pos]->node);
+	//this->node->upeffboxes();     reminder : for node view
 
 	for (int i = 0; i < effect->params.size(); i++) {
 	    Param *par = effect->params[i];
@@ -2132,12 +2113,6 @@ void do_delete_effect(Layer *lay, int pos, bool connect) {
         eff->pos -= i;
     }
 
-//	make_layboxes();
-}
-
-void Layer::delete_effect(int pos, bool connect) {
-	do_delete_effect(this, pos, connect);
-	//if (this->type == ELEM_FILE) this->type = ELEM_LAYER;
 }
 
 
@@ -2172,8 +2147,6 @@ Layer* Mixer::add_layer(std::vector<Layer*> &layers, int pos) {
 
     BlendNode *bnode = mainprogram->nodesmain->currpage->add_blendnode(MIXING, comp);
     layer->blendnode = bnode;
-
-    //mainmix->reconnect_all(layers);
 
 	return layer;
 }
@@ -2225,11 +2198,6 @@ void Mixer::do_deletelay(Layer *testlay, std::vector<Layer*> &layers, bool add) 
     }
 
     if (mainprogram->nodesmain->linked) {
-        while (!testlay->clips->empty()) {
-            delete testlay->clips->back();
-            testlay->clips->pop_back();
-        }
-
         while (!testlay->effects[0].empty()) {
             for (int j = 0; j < testlay->effects[0].back()->params.size(); j++) {
                 delete testlay->effects[0].back()->params[j];
@@ -2289,6 +2257,7 @@ void Mixer::delete_layer(std::vector<Layer*> &layers, Layer *testlay, bool add) 
 	}
 
     if (testlay->clonesetnr != -1) {
+        testlay->dontcloseclips = true;
         int clnr = testlay->clonesetnr;
         testlay->clonesetnr = -1;
         testlay->texture = -1;
@@ -2340,19 +2309,14 @@ Layer::Layer(bool comp) {
             this->fbotex = rettex;
         } else {
             glGenTextures(1, &this->fbotex);
-            //glActiveTexture(GL_TEXTURE0);
             glBindTexture(GL_TEXTURE_2D, this->fbotex);
             glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR);
             glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
             glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_BORDER);
             glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_BORDER);
             if (comp) {
-                //glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA8, mainprogram->ow, mainprogram->oh, 0, GL_BGRA, GL_UNSIGNED_BYTE,
-                //             nullptr);
                 glTexStorage2D(GL_TEXTURE_2D, 1, GL_RGBA8, mainprogram->ow, mainprogram->oh);
             } else {
-                //glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA8, mainprogram->ow3, mainprogram->oh3, 0, GL_BGRA, GL_UNSIGNED_BYTE,
-                //             nullptr);
                 glTexStorage2D(GL_TEXTURE_2D, 1, GL_RGBA8, mainprogram->ow3, mainprogram->oh3);
             }
             mainprogram->texintfmap[this->fbotex] = GL_RGBA8;
@@ -2657,11 +2621,6 @@ Layer::Layer(bool comp) {
 						0.0f, 0.0f,
 						1.0f, 0.0f};
 
-  //GLenum err;
-    //while ((err = glGetError()) != GL_NO_ERROR) {
-     //   printf("%X\n", err);
-    //}
-
     this->decresult = new frame_result;
     this->decpkt = av_packet_alloc();;
     this->decpktseek = av_packet_alloc();
@@ -2747,13 +2706,12 @@ Layer::~Layer() {
     delete this->chdir;
     delete this->chinv;
     //delete this->vidbox;
-    //delete this->currclip;
     if (!this->dontcloseclips) {
         for (Clip *clip: *this->clips) {
             delete clip;
         }
+        delete this->currclip;
     }
-    //delete this->currclip;
     delete this->decresult;
 
     if (this->lpst) {
@@ -2784,7 +2742,6 @@ Layer::~Layer() {
         if ((this->type == ELEM_FILE || this->type == ELEM_LAYER)) {
             if ((this->vidformat == 188 || this->vidformat == 187)) {
                 // free HAP databuf
-                //databufmutex.lock();
                 if (this->databuf[0]) {
                     delete this->databuf[0];
                     delete this->databuf[1];
@@ -2792,7 +2749,6 @@ Layer::~Layer() {
                     this->databuf[1] = nullptr;
                     this->databufsize = 0;
                 }
-                //databufmutex.unlock();
             } else {
                 //free this->rgbframe
                 if (this->rgbframe[0].data) {
@@ -2812,14 +2768,6 @@ Layer::~Layer() {
             if (this->mapptr[0] && this->filename != "") {
                 mainprogram->add_to_pbopool(this->pbo[0], this->mapptr[0]);
             }
-            /*glBindBuffer(GL_PIXEL_UNPACK_BUFFER, this->pbo[0]);
-            glUnmapBuffer(GL_PIXEL_UNPACK_BUFFER);
-            glDeleteBuffers(1, &pbo[0]);
-            glBindBuffer(GL_PIXEL_UNPACK_BUFFER, 0);
-            glBindBuffer(GL_PIXEL_UNPACK_BUFFER, this->pbo[1]);
-            glUnmapBuffer(GL_PIXEL_UNPACK_BUFFER);
-            glDeleteBuffers(1, &pbo[1]);
-            glBindBuffer(GL_PIXEL_UNPACK_BUFFER, 0);*/
         }
         av_frame_free(&this->rgbframe);
         av_frame_free(&this->decframe);
@@ -3014,15 +2962,6 @@ void Layer::set_aspectratio(int lw, int lh) {
     tex = set_texes(this->fbotex, &this->fbo, w, h);
     this->fbotex = tex;
 
-	/*for (int i = 0; i < this->effects[0].size(); i++) {
-		tex = set_texes(this->effects[0][i]->fbotex, &this->effects[0][i]->fbo, w, h);
-		this->effects[0][i]->fbotex = tex;
-	}
-	for (int i = 0; i < this->effects[1].size(); i++) {
-		tex = set_texes(this->effects[1][i]->fbotex, &this->effects[1][i]->fbo, w, h);
-		this->effects[1][i]->fbotex = tex;
-	}*/
-
 	if (this->type == ELEM_IMAGE || this->type == ELEM_LIVE) {
 		if (this->numf == 0) this->decresult->newdata = true;
 	}
@@ -3094,24 +3033,23 @@ void Layer::set_clones(int clsnr) {
             if (lay->pos == this->pos && lay->deck == this->deck && lay->comp == this->comp) {
                 continue;
             }
-            /*if (lay->filename != this->filename) {
+            if (lay->filename != this->filename) {
                 if (this->type == ELEM_IMAGE) {
                     lay->type = ELEM_IMAGE;
-                    //lay->transfered = true;
                     lay = lay->open_image(this->filename, true, true, clsnr != -1);
                 }
                 else if (this->type == ELEM_FILE) {
                     lay->type = ELEM_FILE;
-                    //lay->transfered = true;
                     lay = lay->open_video(0.0f, this->filename, true, true, clsnr != -1);
                     std::unique_lock<std::mutex> olock(lay->endopenlock);
                     lay->endopenvar.wait(olock, [&] { return lay->opened; });
                     lay->opened = false;
                     olock.unlock();
                 }
-            }*/
-            //lay->decresult->width = this->iw;
-            //lay->decresult->height = this->ih;
+            }
+            lay->shiftx->value = this->shiftx->value;
+            lay->shifty->value = this->shifty->value;
+            lay->scale->value = this->scale->value;
             lay->speed->value = this->speed->value;
             lay->playbut->value = this->playbut->value;
             lay->revbut->value = this->revbut->value;
@@ -3151,16 +3089,20 @@ Layer* Layer::clone(bool dup) {
                     clip->jpegpath = jp;
                 }
                 if (clip->type == ELEM_LAYER) {
-                    std::string p = find_unused_filename(remove_extension(basename(this->currclippath)),
-                                                         mainprogram->temppath,
-                                                         ".layer");
-                    copy_file(this->currclippath, p);
-                    dlay->currclippath = p;
-                    std::string jp = find_unused_filename(remove_extension(basename(this->currclipjpegpath)),
-                                                          mainprogram->temppath,
-                                                          ".jpg");
-                    copy_file(this->currclipjpegpath, jp);
-                    dlay->currclipjpegpath = jp;
+                    if (this->currclippath != "") {
+                        std::string p = find_unused_filename(remove_extension(basename(this->currclippath)),
+                                                             mainprogram->temppath,
+                                                             ".layer");
+                        copy_file(this->currclippath, p);
+                        dlay->currclippath = p;
+                    }
+                    if (this->currclipjpegpath != "") {
+                        std::string jp = find_unused_filename(remove_extension(basename(this->currclipjpegpath)),
+                                                              mainprogram->temppath,
+                                                              ".jpg");
+                        copy_file(this->currclipjpegpath, jp);
+                        dlay->currclipjpegpath = jp;
+                    }
                 }
             }
         }
@@ -3168,9 +3110,6 @@ Layer* Layer::clone(bool dup) {
     else {
         dlay->clips = this->clips;
     }
-    dlay->currclip = this->currclip;
-    dlay->currclippath = this->currclippath;
-    dlay->currclipjpegpath = this->currclipjpegpath;
 
     dlay->blendnode->blendtype = this->blendnode->blendtype;
 	dlay->blendnode->mixfac->value = this->blendnode->mixfac->value;
@@ -3208,15 +3147,7 @@ Layer* Layer::clone(bool dup) {
                     }
                     for (int k = 0; k < loopstation->parelemmap[par]->eventlist.size(); k++) {
                         std::tuple<long long, Param *, Button *, float> event1 = loop->eventlist[k];
-                        elem->interimtime = loop->interimtime;
-                        elem->speedadaptedtime = loop->speedadaptedtime;
-                        elem->totaltime = loop->totaltime;
-                        elem->starttime = loop->starttime;
-                        elem->eventpos = loop->eventpos;
-                        elem->speed->value = loop->speed->value;
-                        elem->beats = loop->beats;
-                        elem->loopbut->value = loop->loopbut->value;
-                        elem->playbut->value = loop->playbut->value;
+                        elem->get_state_from(loop);
                         if (par == std::get<1>(event1)) {
                             std::tuple<long long, Param *, Button *, float> event2;
                             event2 = std::make_tuple(std::get<0>(event1), cpar, nullptr, std::get<3>(event1));
@@ -3250,15 +3181,7 @@ Layer* Layer::clone(bool dup) {
                 }
                 for (int k = 0; k < loopstation->butelemmap[but]->eventlist.size(); k++) {
                     std::tuple<long long, Param *, Button *, float> event1 = loop->eventlist[k];
-                    elem->interimtime = loop->interimtime;
-                    elem->speedadaptedtime = loop->speedadaptedtime;
-                    elem->totaltime = loop->totaltime;
-                    elem->starttime = loop->starttime;
-                    elem->eventpos = loop->eventpos;
-                    elem->speed->value = loop->speed->value;
-                    elem->beats = loop->beats;
-                    elem->loopbut->value = loop->loopbut->value;
-                    elem->playbut->value = loop->playbut->value;
+                    elem->get_state_from(loop);
                     if (but == std::get<2>(event1)) {
                         std::tuple<long long, Param *, Button *, float> event2;
                         event2 = std::make_tuple(std::get<0>(event1), nullptr, cbut, std::get<3>(event1));
@@ -3290,15 +3213,7 @@ Layer* Layer::clone(bool dup) {
             }
             for (int k = 0; k < loopstation->parelemmap[par]->eventlist.size(); k++) {
                 std::tuple<long long, Param *, Button *, float> event1 = loop->eventlist[k];
-                elem->interimtime = loop->interimtime;
-                elem->speedadaptedtime = loop->speedadaptedtime;
-                elem->totaltime = loop->totaltime;
-                elem->starttime = loop->starttime;
-                elem->eventpos = loop->eventpos;
-                elem->speed->value = loop->speed->value;
-                elem->beats = loop->beats;
-                elem->loopbut->value = loop->loopbut->value;
-                elem->playbut->value = loop->playbut->value;
+                elem->get_state_from(loop);
                 if (par == std::get<1>(event1)) {
                     std::tuple<long long, Param*, Button*, float> event2;
                     event2 = std::make_tuple(std::get<0>(event1), cpar, nullptr, std::get<3>(event1));
@@ -3334,15 +3249,7 @@ Layer* Layer::clone(bool dup) {
                 }
                 for (int k = 0; k < loopstation->parelemmap[par]->eventlist.size(); k++) {
                     std::tuple<long long, Param *, Button *, float> event1 = loop->eventlist[k];
-                    elem->interimtime = loop->interimtime;
-                    elem->speedadaptedtime = loop->speedadaptedtime;
-                    elem->totaltime = loop->totaltime;
-                    elem->starttime = loop->starttime;
-                    elem->eventpos = loop->eventpos;
-                    elem->speed->value = loop->speed->value;
-                    elem->beats = loop->beats;
-                    elem->loopbut->value = loop->loopbut->value;
-                    elem->playbut->value = loop->playbut->value;
+                    elem->get_state_from(loop);
                     if (par == std::get<1>(event1)) {
                         std::tuple<long long, Param *, Button *, float> event2;
                         event2 = std::make_tuple(std::get<0>(event1), cpar, nullptr, std::get<3>(event1));
@@ -3377,15 +3284,7 @@ Layer* Layer::clone(bool dup) {
                 }
                 for (int k = 0; k < loopstation->butelemmap[but]->eventlist.size(); k++) {
                     std::tuple<long long, Param *, Button *, float> event1 = loop->eventlist[k];
-                    elem->interimtime = loop->interimtime;
-                    elem->speedadaptedtime = loop->speedadaptedtime;
-                    elem->totaltime = loop->totaltime;
-                    elem->starttime = loop->starttime;
-                    elem->eventpos = loop->eventpos;
-                    elem->speed->value = loop->speed->value;
-                    elem->beats = loop->beats;
-                    elem->loopbut->value = loop->loopbut->value;
-                    elem->playbut->value = loop->playbut->value;
+                    elem->get_state_from(loop);
                     if (but == std::get<2>(event1)) {
                         std::tuple<long long, Param *, Button *, float> event2;
                         event2 = std::make_tuple(std::get<0>(event1), nullptr, cbut, std::get<3>(event1));
@@ -3905,40 +3804,29 @@ static int decode_packet(Layer *lay, bool show)
 {
     int ret = 0;
     int decoded = lay->decpkt->size;
- 	//av_frame_unref(lay->decframe);
-	// lay->decpkt->dts = av_rescale_q_rnd(lay->decpkt->dts,
-			// lay->video->streams[lay->decpkt->stream_index]->time_base,
-			// lay->video->streams[lay->decpkt->stream_index]->codec->time_base,
-			// AV_ROUND_NEAR_INF|AV_ROUND_PASS_MINMAX);
-	// lay->decpkt->pts = av_rescale_q_rnd(lay->decpkt->pts,
-			// lay->video->streams[lay->decpkt->stream_index]->time_base,
-			// lay->video->streams[lay->decpkt->stream_index]->codec->time_base,
-			// AV_ROUND_NEAR_INF|AV_ROUND_PASS_MINMAX);
+    if (lay->closethread) return 0;
 	if (lay->decpkt->stream_index == lay->video_stream_idx) {
 		/* decode video frame */
 		int err2 = 0;
 		if (!lay->vidopen) {
-			while (1) {
-                int err1 = avcodec_send_packet(lay->video_dec_ctx, lay->decpkt);
-                if (ret == AVERROR_INVALIDDATA) {
+            int err1 = avcodec_send_packet(lay->video_dec_ctx, lay->decpkt);
+            if (ret == AVERROR_INVALIDDATA) {
+                av_packet_unref(lay->decpkt);
+                return 0;
+            }
+            else {
+                err2 = avcodec_receive_frame(lay->video_dec_ctx, lay->decframe);
+                if (err2 < 0) {
+                    printf("avcodec_receive_frame error: %s (code: %d)\n", av_err2str(err2), err2);
+                }
+                if (err2 == AVERROR(EAGAIN) || err2 == AVERROR_INVALIDDATA) {
                     av_packet_unref(lay->decpkt);
                     return 0;
                 }
-                else {
-                    err2 = avcodec_receive_frame(lay->video_dec_ctx, lay->decframe);
-                    if (err2 < 0) {
-                        printf("avcodec_receive_frame error: %s (code: %d)\n", av_err2str(err2), err2);
-                    }
-                    if (err2 == AVERROR(EAGAIN) || err2 == AVERROR_INVALIDDATA) {
-                        av_packet_unref(lay->decpkt);
-                        return 0;
-                    }
-                }
-                break;
-			}
+            }
             if (err2 == AVERROR(EINVAL)) {
                 fprintf(stderr, "Error decoding video frame (%s)\n", 0);
-                return ret;
+                return 0;
             }
             if (err2 == AVERROR_EOF) {
                 avcodec_flush_buffers(lay->video_dec_ctx);
@@ -4522,6 +4410,7 @@ void Mixer::vidbox_handle() {
                     if (lay->type == ELEM_IMAGE || lay->type == ELEM_LIVE) {
                         lay->decresult->newdata = true;
                     }
+                    lay->set_clones();
                 }
             }
 
@@ -4559,7 +4448,7 @@ void Mixer::vidbox_handle() {
                         loopstation->elements[i]->add_param_automationentry(lay->shiftx);
                     }
                 }
-                if (mainprogram->leftmouse) {
+                if (mainprogram->leftmouse || mainprogram->rightmouse) {
                     lay->straightx = false;
                     lay->straighty = false;
                     lay->transforming = 0;
@@ -4568,6 +4457,7 @@ void Mixer::vidbox_handle() {
                 if (lay->type == ELEM_IMAGE || lay->type == ELEM_LIVE) {
                     lay->decresult->newdata = true;
                 }
+                lay->set_clones();
             }
         }
 	}
@@ -4579,6 +4469,19 @@ void Layer::display() {
 	if (mainmix->scenes[this->deck][mainmix->currscene[this->deck]]->scrollpos > lvec.size() - 2) mainmix->scenes[this->deck][mainmix->currscene[this->deck]]->scrollpos = lvec.size() - 2;
 	if (mainmix->scenes[this->deck][mainmix->currscene[this->deck]]->scrollpos < 0) mainmix->scenes[this->deck][mainmix->currscene[this->deck]]->scrollpos = 0;
     make_layboxes();
+    if (this->scritching == 1) {
+        if (mainprogram->leftmouse && !mainprogram->menuondisplay) {
+            this->scritching = 4;
+            mainprogram->recundo = false;
+            mainprogram->leftmouse = false;
+        }
+    }
+    else if (this->scritching) {
+        if (mainprogram->leftmouse) {
+            this->scritching = 0;
+            mainprogram->leftmouse = false;
+        }
+    }
     if (this->pos >= mainmix->scenes[this->deck][mainmix->currscene[this->deck]]->scrollpos && this->pos < mainmix->scenes[this->deck][mainmix->currscene[this->deck]]->scrollpos + 3) {
 		Boxx* box = this->node->vidbox;
         mainprogram->frontbatch = true;  // allow alpha
@@ -4875,11 +4778,6 @@ void Layer::display() {
                         this->keepeffbut->value = !this->keepeffbut->value;
                         mainprogram->register_undo(nullptr, this->keepeffbut);
                         mainprogram->leftmouse = false;
-                        for (int i = 0; i < loopstation->elements.size(); i++) {
-                            if (loopstation->elements[i]->recbut->value) {
-                                loopstation->elements[i]->add_button_automationentry(this->keepeffbut);
-                            }
-                        }
                     }
                     if (mainprogram->menuactivation && !mainprogram->menuondisplay) {
                         mainprogram->parammenu3->state = 2;
@@ -4943,11 +4841,6 @@ void Layer::display() {
                         mainprogram->register_undo(nullptr, this->beatdetbut);
                         this->beatdetting = false;
                         mainprogram->leftmouse = false;
-                        for (int i = 0; i < loopstation->elements.size(); i++) {
-                            if (loopstation->elements[i]->recbut->value) {
-                                loopstation->elements[i]->add_button_automationentry(this->beatdetbut);
-                            }
-                        }
                     }
                 }
                 else if (!this->beatdetbut->value) {
@@ -5538,9 +5431,9 @@ void Layer::display() {
                             mainmix->currlays[!mainprogram->prevmodus][i]->revbut->value = false;
                             mainmix->currlays[!mainprogram->prevmodus][i]->bouncebut->value = false;
                         }
-                        for (int i = 0; i < loopstation->elements.size(); i++) {
-                            if (loopstation->elements[i]->recbut->value) {
-                                loopstation->elements[i]->add_button_automationentry(mainmix->currlays[!mainprogram->prevmodus][i]->playbut);
+                        for (int j = 0; j < loopstation->elements.size(); j++) {
+                            if (loopstation->elements[j]->recbut->value) {
+                                loopstation->elements[j]->add_button_automationentry(mainmix->currlays[!mainprogram->prevmodus][i]->playbut);
                             }
                         }
                     }
@@ -5584,9 +5477,9 @@ void Layer::display() {
                             mainmix->currlays[!mainprogram->prevmodus][i]->playbut->value = false;
                             mainmix->currlays[!mainprogram->prevmodus][i]->bouncebut->value = false;
                         }
-                        for (int i = 0; i < loopstation->elements.size(); i++) {
-                            if (loopstation->elements[i]->recbut->value) {
-                                loopstation->elements[i]->add_button_automationentry(mainmix->currlays[!mainprogram->prevmodus][i]->revbut);
+                        for (int j = 0; j < loopstation->elements.size(); j++) {
+                            if (loopstation->elements[j]->recbut->value) {
+                                loopstation->elements[j]->add_button_automationentry(mainmix->currlays[!mainprogram->prevmodus][i]->revbut);
                             }
                         }
                     }
@@ -5626,15 +5519,11 @@ void Layer::display() {
                     for (int i = 0; i < mainmix->currlays[!mainprogram->prevmodus].size(); i++) {
                         mainmix->currlays[!mainprogram->prevmodus][i]->bouncebut->value = this->bouncebut->value;
                         mainmix->currlays[!mainprogram->prevmodus][i]->set_clones();
-                        if (mainmix->currlays[!mainprogram->prevmodus][i]->bouncebut->value) {
-                            if (mainmix->currlays[!mainprogram->prevmodus][i]->revbut->value) {
-                                mainmix->currlays[!mainprogram->prevmodus][i]->bouncebut->value = 2;
-                                mainmix->currlays[!mainprogram->prevmodus][i]->revbut->value = 0;
-                            } else mainmix->currlays[!mainprogram->prevmodus][i]->playbut->value = 0;
-                        }
-                        for (int i = 0; i < loopstation->elements.size(); i++) {
-                            if (loopstation->elements[i]->recbut->value) {
-                                loopstation->elements[i]->add_button_automationentry(mainmix->currlays[!mainprogram->prevmodus][i]->bouncebut);
+                        mainmix->currlays[!mainprogram->prevmodus][i]->revbut->value = 0;
+                        mainmix->currlays[!mainprogram->prevmodus][i]->playbut->value = 0;
+                        for (int j = 0; j < loopstation->elements.size(); j++) {
+                            if (loopstation->elements[j]->recbut->value) {
+                                loopstation->elements[j]->add_button_automationentry(mainmix->currlays[!mainprogram->prevmodus][i]->bouncebut);
                             }
                         }
                     }
@@ -5684,11 +5573,6 @@ void Layer::display() {
                     this->frameforward->box->acolor[3] = 1.0;
                     this->prevffw = true;
                     this->prevfbw = false;
-                    for (int i = 0; i < loopstation->elements.size(); i++) {
-                        if (loopstation->elements[i]->recbut->value) {
-                            loopstation->elements[i]->add_button_automationentry(this->frameforward);
-                        }
-                    }
                 }
             } else {
                 if (this->filename == "" || this->type == ELEM_LIVE) {
@@ -5724,11 +5608,6 @@ void Layer::display() {
                     this->framebackward->box->acolor[3] = 1.0;
                     this->prevfbw = true;
                     this->prevffw = false;
-                    for (int i = 0; i < loopstation->elements.size(); i++) {
-                        if (loopstation->elements[i]->recbut->value) {
-                            loopstation->elements[i]->add_button_automationentry(this->framebackward);
-                        }
-                    }
                 }
             } else {
                 if (this->filename == "" || this->type == ELEM_LIVE) {
@@ -5762,11 +5641,6 @@ void Layer::display() {
                         mainmix->currlays[!mainprogram->prevmodus][i]->revbut->value = false;
                         mainmix->currlays[!mainprogram->prevmodus][i]->bouncebut->value = false;
                         this->frame = 0.0f;
-                        for (int i = 0; i < loopstation->elements.size(); i++) {
-                            if (loopstation->elements[i]->recbut->value) {
-                                loopstation->elements[i]->add_button_automationentry(mainmix->currlays[!mainprogram->prevmodus][i]->stopbut);
-                            }
-                        }
                     }
                 }
             } else {
@@ -5924,11 +5798,6 @@ void Layer::display() {
                 if (this->frame < 0) this->frame = 0.0f;
                 else if (this->frame >= this->numf) this->frame = this->numf - 1;
                 this->set_clones();
-                if (mainprogram->leftmouse && !mainprogram->menuondisplay) {
-                    this->scritching = 4;
-                    mainprogram->recundo = false;
-                    mainprogram->leftmouse = false;
-                }
             } else if (this->scritching == 2) {
                 // ctrl leftmouse dragging loop start
                 this->startframe->value = (this->numf - 1) *
@@ -5941,10 +5810,6 @@ void Layer::display() {
                     this->frame = this->endframe->value;
                 }
                 this->set_clones();
-                if (mainprogram->leftmouse) {
-                    this->scritching = 0;
-                    mainprogram->leftmouse = false;
-                }
             } else if (this->scritching == 3) {
                 // ctrl leftmouse dragging loop end
                 this->endframe->value = (this->numf - 1) *
@@ -5958,10 +5823,6 @@ void Layer::display() {
                 //if (this->endframe->value < this->frame) this->frame = this->endframe->value;
                 //if (this->endframe->value < this->startframe->value) this->endframe->value = this->startframe->value;
                 this->set_clones();
-                if (mainprogram->leftmouse) {
-                    this->scritching = 0;
-                    mainprogram->leftmouse = false;
-                }
             } else if (this->scritching == 5) {
                 // ctrl leftmouse dragging loop
                 //float start = 0.0f;
@@ -5991,10 +5852,6 @@ void Layer::display() {
                 //if (this->endframe->value < this->frame) this->frame = this->endframe->value;
                 //if (this->endframe->value < this->startframe->value) this->endframe->value = this->startframe->value;
                 this->set_clones();
-                if (mainprogram->leftmouse) {
-                    this->scritching = 0;
-                    mainprogram->leftmouse = false;
-                }
             }
             if (this->frame != this->oldframe && this->scritching == 1) {
                 // standard scritching is loopstationed
@@ -6510,23 +6367,15 @@ void ShelfElement::set_nbclayers(Layer *lay) {
                 for (int j = 0; j < eff->params.size(); j++) {
                     Param *par = eff->params[j];
                     if (elem->params.find(par) != elem->params.end()) {
-                        layelem->starttime = elem->starttime;
-                        layelem->interimtime = elem->interimtime;
-                        layelem->totaltime = elem->totaltime;
-                        layelem->speedadaptedtime = elem->speedadaptedtime;
+                        layelem->get_state_from(elem);
+
                         layelem->eventlist = elem->eventlist;
-                        layelem->eventpos = elem->eventpos;
-                        layelem->atend = elem->atend;
                         layelem->effcatposns.push_back(n);
                         layelem->effposns.push_back(i);
                         layelem->parposns.push_back(j);
                         //layelem->compareelems.push_back(layelem->pos);
 
                         layelem->recbut->value = elem->recbut->value;
-                        layelem->loopbut->value = elem->loopbut->value;
-                        layelem->playbut->value = elem->playbut->value;
-                        layelem->speed->value = elem->speed->value;
-                        layelem->beats = elem->beats;
 
                         layelem->params.emplace(par);
                         lay->lpst->parelemmap[par] = elem;
@@ -7335,7 +7184,10 @@ void Mixer::open_state(std::string path, bool undo) {
     bool concat = (result != "");
     std::ifstream rfile;
     if (concat) rfile.open(result);
-    else rfile.open(path);
+    else {
+        result = path;
+        rfile.open(path);
+    }
     std::string istring;
     safegetline(rfile, istring);
     if (istring != "EWOCvj STATEFILE") {
@@ -7389,13 +7241,14 @@ void Mixer::open_state(std::string path, bool undo) {
                             lay->close();
                         }
                         for (Layer *lay : this->scenes[m][k]->scnblayers) {
-                            // lay->close();  reminder : leak?
+                            //lay->close();     reminder : leak?
                         }
                         this->scenenum = -1;
                         this->scenes[m][k]->scnblayers = this->newlrs[m + 2];
                         if (this->scenes[m][k]->scnblayers.empty()) {
                             mainmix->add_layer(this->scenes[m][k]->scnblayers, 0);
                         }
+                        mainmix->swapmap[m + 2].clear();
                     }
                 }
             }
@@ -9181,8 +9034,6 @@ void Layer::set_inlayer(Layer* lay, bool doclips) {
     if (doclips) {
         lay->clips = this->clips;
         lay->currclip = this->currclip;
-        //this->currclip = nullptr;
-        //this->clips->clear();
     }
     this->node->in = nullptr;
     this->node->out.clear();
@@ -9283,12 +9134,6 @@ Layer* Mixer::open_layerfile(const std::string path, Layer* lay, bool loadevents
     bool bumute = lay->mutebut->value;
     bool busolo = lay->solobut->value;
     bool keepeff = lay->keepeffbut->value;
-    if (!keepeff) {
-        for (int i = 0; i < lay->effects[0].size(); i++) {
-            //delete(lay->effects[0][i]);       reminder : leak! but small
-        }
-    }
-    //loopstation->parelemmap.erase(lay->speed);
     loopstation->readelems.clear();
     loopstation->readelemnrs.clear();
     loopstation->readmap.clear();
@@ -9300,8 +9145,6 @@ Layer* Mixer::open_layerfile(const std::string path, Layer* lay, bool loadevents
     Layer *lay2 = nullptr;
     mainprogram->laypos = lay->pos;
     mainmix->currclonesize = -1;
-    //mainmix->tempmapislayer = true;
-    //lay->initialized = false;
     std::vector<Layer *> layers;
     lay2 = mainmix->read_layers(rfile, result, layers, lay->deck, false, 0, doclips, concat, 1, loadevents, 0, keepeff);
 
@@ -9342,6 +9185,10 @@ Layer* Mixer::open_layerfile(const std::string path, Layer* lay, bool loadevents
         execute_param_cont(lay->shifty, lay2->shifty);
         execute_param_cont(lay->scale, lay2->scale);
     }
+
+    // transfer current layer settings to new layer
+    mainmix->change_currlay(lay, lay2);
+
     lay2->keepeffbut->value = keepeff;
     lay2->mutebut->value = bumute;
     lay2->solobut->value = busolo;
@@ -9457,9 +9304,6 @@ bool Layer::progress(bool comp, bool alive, bool doclips) {
                 this->millif = ilGetInteger(IL_IMAGE_DURATION);
             }
             if ((this->speed->value > 0 && (this->playbut->value || this->bouncebut->value == 1)) || (this->speed->value < 0 && (this->revbut->value || this->bouncebut->value == 2))) {
-                if (this->scratch->value) {
-                    bool dummy = false;
-                }
                 this->frame += !(this->scratch->value != 0 || this->scratchtouch->value) * this->speed->value * fac * fac * this->speed->value * thismilli / this->millif;
             }
             else if ((this->speed->value > 0 && (this->revbut->value || this->bouncebut->value == 2)) || (this->speed->value < 0 && (this->playbut->value || this->bouncebut->value == 1))) {
@@ -9517,7 +9361,7 @@ bool Layer::progress(bool comp, bool alive, bool doclips) {
                                     }
                                 }
                                 if (this->bouncebut->value == 1) {
-                                    this->frame = this->endframe->value - (this->frame - this->endframe->value);
+                                    this->frame = this->endframe->value;
                                     this->bouncebut->value = 2;
                                 }
                             }
@@ -9544,7 +9388,7 @@ bool Layer::progress(bool comp, bool alive, bool doclips) {
                                     }
                                 }
                                 if (this->bouncebut->value == 2) {
-                                    this->frame = this->startframe->value + (this->startframe->value - this->frame);
+                                    this->frame = this->startframe->value;
                                     this->bouncebut->value = 1;
                                 }
                             }
@@ -12164,29 +12008,9 @@ void Mixer::record_video(std::string reccod) {
 
     this->donerec[this->reckind] = true;
     this->recordnow[this->reckind] = false;
+    this->reclay->filename = path;
     this->recswitch[this->reckind] = true;
     this->recpath[this->reckind] = path;
-
-    if (this->recrep) {
-        // replace recorded layer by recorded video
-        this->reclay->speed->value = 1.0f;
-        //this->reclay->playbut->value = 1;
-        //this->reclay->revbut->value = 0;
-        //this->reclay->bouncebut->value = 0;
-        int bukebv = this->reclay->keepeffbut->value;
-        this->reclay->keepeffbut->value = 0;
-        //this->reclay->layers = &this->layers[this->reclay->comp * 2 + this->reclay->deck];
-        this->reclay->transfered = true;
-        this->reclay = this->reclay->open_video(0.0f, path, true, false);
-        this->reclay->keepeffbut->value = bukebv;
-        this->reclay->type = ELEM_FILE;
-        this->reclay->shiftx->value = 0.0f;
-        this->reclay->shifty->value = 0.0f;
-        this->reclay->scale->value = 1.0f;
-        this->reclay->opacity->value = 1.0f;
-        this->reclay = nullptr;
-        this->recrep = false;
-    }
 }
 
 void Mixer::start_recording() {
@@ -12481,27 +12305,27 @@ void Mixer::handle_clips() {
                 draw_box(lay2->cliploopbox, -1);
                 if (!lay2->beats) {
                     draw_box(white, white,
-                             lay2->cliploopbox->vtxcoords->x1 + lay2->frame * (lay2->cliploopbox->vtxcoords->w /
-                                                                               (float) (lay2->numf - 1)),
+                             lay2->cliploopbox->vtxcoords->x1 + (lay2->frame - lay2->startframe->value) * (lay2->cliploopbox->vtxcoords->w /
+                                                                               (float) (lay2->endframe->value - lay2->startframe->value - 1)),
                              lay2->cliploopbox->vtxcoords->y1, 0.00117f, 0.075f, -1);
                 }
                 if (lay2->cliploopbox->in()) {
                     if (mainprogram->leftmousedown) {
                         lay2->clipscritching = 1;
-                        lay2->frame = (lay2->numf - 1.0f) *
-                                      ((mainprogram->mx - lay2->cliploopbox->scrcoords->x1) / lay2->cliploopbox->scrcoords->w);
+                        lay2->frame = (lay2->endframe->value - lay2->startframe->value - 1.0f) *
+                                      ((mainprogram->mx - lay2->cliploopbox->scrcoords->x1) / lay2->cliploopbox->scrcoords->w) + lay2->startframe->value;
                         lay2->set_clones();
                     }
                 }
                 if (lay2->clipscritching) mainprogram->leftmousedown = false;
                 if (lay2->clipscritching == 1) {
-                    lay2->frame = (lay2->numf - 1) *
-                                  ((mainprogram->mx - lay2->cliploopbox->scrcoords->x1) / lay2->cliploopbox->scrcoords->w);
-                    if (lay2->frame < 0) lay2->frame = 0.0f;
-                    else if (lay2->frame >= lay2->numf) lay2->frame = lay2->numf - 1;
+                    lay2->frame = (lay2->endframe->value - lay2->startframe->value - 1) *
+                                  ((mainprogram->mx - lay2->cliploopbox->scrcoords->x1) / lay2->cliploopbox->scrcoords->w) + lay2->startframe->value;
+                    if (lay2->frame < lay2->startframe->value) lay2->frame = lay2->startframe->value;
+                    else if (lay2->frame >= lay2->endframe->value) lay2->frame = lay2->endframe->value - 1;
                     lay2->set_clones();
                     if (mainprogram->leftmouse && !mainprogram->menuondisplay) {
-                        lay2->clipscritching = 4;
+                        lay2->clipscritching = 0;
                         mainprogram->leftmouse = false;
                     }
                 }
@@ -12553,7 +12377,7 @@ void Mixer::handle_clips() {
                                 lay2->clips->erase(
                                         std::find(lay2->clips->begin(), lay2->clips->end(),
                                                   mainprogram->dragclip));
-                                //delete mainprogram->dragclip;      reminder : leak
+                                delete mainprogram->dragclip;
                             }
                             mainprogram->dragclip = nullptr;
                             enddrag();
@@ -12597,8 +12421,6 @@ void Layer::clip_display_next(bool startend, bool alive) {
         }
         VideoNode *node = (VideoNode *) this->node;
         bool buec = mainprogram->effcat[this->deck]->value;
-        bool renew = true;
-        GLuint butex = oldclip->tex;
         if (this->currclip->type != ELEM_LIVE) {
             if (oldclip->path == "" || oldclip->type != ELEM_LAYER) {
                 oldclip->path = find_unused_filename(basename(this->filename),
@@ -12619,7 +12441,6 @@ void Layer::clip_display_next(bool startend, bool alive) {
                 save_thumb(oldclip->jpegpath, oldclip->tex);
             }
             else {
-                renew = false;
                 glGenTextures(1, &oldclip->tex);
                 glBindTexture(GL_TEXTURE_2D, oldclip->tex);
                 glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_BORDER);
@@ -12642,12 +12463,9 @@ void Layer::clip_display_next(bool startend, bool alive) {
             oldclip->tex = copy_tex(node->vidbox->tex, 192, 108);
             oldclip->path = this->filename;
         }
-        if (butex != -1 && renew && !mainprogram->draggedclip) {
-            //glDeleteTextures(1, &butex);     reminder : leak?
-        }
 
         if (this->currclip) {
-            delete this->currclip;      //reminder : leak
+            delete this->currclip;
         }
         this->currclip = (*(this->clips))[0];
         this->currclippath = this->currclip->path;
@@ -12968,59 +12786,16 @@ Layer* Layer::transfer(bool clones, bool dontdeleffs) {
                 for (int k = 0; k < this->effects[m][j]->params.size(); k++) {
                     Param *par = this->effects[m][j]->params[k];
                     Param *cpar = lay->effects[m][j]->params[k];
-                    LoopStationElement *lpe = loopstation->parelemmap[par];
-                    if (lpe) {
-                        for (int i = 0; i < lpe->eventlist.size(); i++) {
-                            if (std::get<1>(lpe->eventlist[i]) == par) {
-                                std::get<1>(lpe->eventlist[i]) = cpar;
-                            }
-                        }
-                        cpar->box->acolor[0] = lpe->colbox->acolor[0];
-                        cpar->box->acolor[1] = lpe->colbox->acolor[1];
-                        cpar->box->acolor[2] = lpe->colbox->acolor[2];
-                        cpar->box->acolor[3] = lpe->colbox->acolor[3];
-                        loopstation->parelemmap[cpar] = lpe;
-                        loopstation->parelemmap.erase(par);
-                        lpe->params.erase(par);
-                        lpe->params.emplace(cpar);
-                        lpe->params.erase(par);
-                        lpe->layers.emplace(lay);
-                        lpe->layers.erase(this);
-                        loopstation->parmap[par] = loopstation->parmap[cpar];
-                        loopstation->allparams.erase(par);
-                        loopstation->allparams.emplace(cpar);
-                    }
-                    cpar->value = par->value;
-                    cpar->midi[0] = par->midi[0];
-                    cpar->midi[1] = par->midi[1];
-                    cpar->register_midi();
                     cpar->effect = eff;
+                    par->lpst_replace_with(cpar);
                 }
+
                 eff->drywet->value = this->effects[m][j]->drywet->value;
+                eff->drywet->lpst_replace_with(this->effects[m][j]->drywet);
+
                 Button *but = this->effects[m][j]->onoffbutton;
                 Button *cbut = eff->onoffbutton;
-                LoopStationElement *lpe = loopstation->butelemmap[but];
-                if (lpe) {
-                    for (int i = 0; i < lpe->eventlist.size(); i++) {
-                        if (std::get<2>(lpe->eventlist[i]) == but) {
-                            std::get<2>(lpe->eventlist[i]) = cbut;
-                        }
-                    }
-                    loopstation->butelemmap[cbut] = lpe;
-                    loopstation->butelemmap.erase(but);
-                    lpe->buttons.erase(but);
-                    lpe->buttons.emplace(cbut);
-                    lpe->buttons.erase(but);
-                    lpe->layers.emplace(lay);
-                    lpe->layers.erase(this);
-                    loopstation->butmap[but] = loopstation->butmap[cbut];
-                    loopstation->allbuttons.erase(but);
-                    loopstation->allbuttons.emplace(cbut);
-                }
-                cbut->value = but->value;
-                cbut->midi[0] = but->midi[0];
-                cbut->midi[1] = but->midi[1];
-                cbut->register_midi();
+                but->lpst_replace_with(cbut);
             }
         }
         mainprogram->effcat[this->deck]->value = bueffcat;
@@ -13030,14 +12805,7 @@ Layer* Layer::transfer(bool clones, bool dontdeleffs) {
     mainmix->set_values(lay, this);
 
     // transfer current layer settings to new layer
-    if (this == mainmix->currlay[!mainprogram->prevmodus]) mainmix->currlay[!mainprogram->prevmodus] = lay;
-    if (std::find(mainmix->currlays[!mainprogram->prevmodus].begin(), mainmix->currlays[!mainprogram->prevmodus].end(),
-                  this) != mainmix->currlays[!mainprogram->prevmodus].end()) {
-        mainmix->currlays[!mainprogram->prevmodus].erase(std::find(mainmix->currlays[!mainprogram->prevmodus].begin(),
-                                                                   mainmix->currlays[!mainprogram->prevmodus].end(),
-                                                                   this));
-        mainmix->currlays[!mainprogram->prevmodus].push_back(lay);
-    }
+    mainmix->change_currlay(this, lay);
 
     // transfer clonesets during a transfer run of several layers: they are all assembled under the new transferclonesetnr
     if (clones && this->clonesetnr != -1) {
@@ -13402,17 +13170,7 @@ void Scene::switch_to(bool dotempmap) {
                 }
             }
             if (found) {
-                if (elem->eventlist.size()) {
-                    prevlpst->elements[count]->interimtime = elem->interimtime;
-                    prevlpst->elements[count]->speedadaptedtime = elem->speedadaptedtime;
-                    prevlpst->elements[count]->speed->value = elem->speed->value;
-                    prevlpst->elements[count]->beats = elem->beats;
-                    prevlpst->elements[count]->totaltime = elem->totaltime;
-                    prevlpst->elements[count]->starttime = elem->starttime;
-                    prevlpst->elements[count]->eventpos = elem->eventpos;
-                }
-                prevlpst->elements[count]->loopbut->value = elem->loopbut->value;
-                prevlpst->elements[count]->playbut->value = elem->playbut->value;
+                prevlpst->elements[count]->get_state_from(elem);
             }
             count++;
         }
@@ -13425,14 +13183,18 @@ void Scene::switch_to(bool dotempmap) {
             // copy all event related info and the events themself
             // from the destination scene loopstation into the current loopstation (lpc)
             LoopStation *bunowlpst = lp;
+            auto lpcelem = lpc->elements[count];
+            if (lpcelem->eventlist.size()) {
+                lpcelem = lpc->free_element();
+            }
             if (elem->eventlist.size()) {
-                lpc->elements[count]->interimtime = elem->interimtime;
+                lpcelem->interimtime = elem->interimtime;
                 std::chrono::high_resolution_clock::time_point now = std::chrono::high_resolution_clock::now();
-                lpc->elements[count]->starttime = now - std::chrono::milliseconds((long long) (elem->interimtime));
-                lpc->elements[count]->speedadaptedtime = elem->speedadaptedtime;
-                lpc->elements[count]->speed->value = elem->speed->value;
-                lpc->elements[count]->totaltime = elem->totaltime;
-                lpc->elements[count]->eventpos = elem->eventpos;
+                lpcelem->starttime = now - std::chrono::milliseconds((long long) (elem->interimtime));
+                lpcelem->speedadaptedtime = elem->speedadaptedtime;
+                lpcelem->speed->value = elem->speed->value;
+                lpcelem->totaltime = elem->totaltime;
+                lpcelem->eventpos = elem->eventpos;
             }
             for (auto event: elem->eventlist) {
                 Layer *lay = nullptr;
@@ -13453,26 +13215,26 @@ void Scene::switch_to(bool dotempmap) {
                 }
                 if (lay) {
                     if (lay->deck == this->deck) {
-                        lpc->elements[count]->eventlist.push_back(event);
-                        lpc->elements[count]->layers.emplace(lay);
+                        lpcelem->eventlist.push_back(event);
+                        lpcelem->layers.emplace(lay);
                         if (par) {
-                            lpc->elements[count]->params.emplace(par);
+                            lpcelem->params.emplace(par);
                             lpc->allparams.emplace(par);
-                            lpc->parelemmap[par] = lpc->elements[count];
+                            lpc->parelemmap[par] = lpcelem;
                         } else if (std::get<2>(event)) {
-                            lpc->elements[count]->buttons.emplace(std::get<2>(event));
+                            lpcelem->buttons.emplace(std::get<2>(event));
                             lpc->allbuttons.emplace(std::get<2>(event));
-                            lpc->butelemmap[but] = lpc->elements[count];
+                            lpc->butelemmap[but] = lpcelem;
                         }
                     }
                 }
             }
             if (elem->eventlist.size()) {
-                lpc->elements[count]->loopbut->value = elem->loopbut->value;
-                lpc->elements[count]->playbut->value = elem->playbut->value;
-                lpc->elements[count]->loopbut->oldvalue = elem->loopbut->value;
-                lpc->elements[count]->playbut->oldvalue = elem->playbut->value;
-                lpc->elements[count]->beats = elem->beats;
+                lpcelem->loopbut->value = elem->loopbut->value;
+                lpcelem->playbut->value = elem->playbut->value;
+                lpcelem->loopbut->oldvalue = elem->loopbut->value;
+                lpcelem->playbut->oldvalue = elem->playbut->value;
+                lpcelem->beats = elem->beats;
             }
             count++;
         }
@@ -13481,13 +13243,25 @@ void Scene::switch_to(bool dotempmap) {
     }
 }
 
-void Mixer::reload_tagged_elems(ShelfElement *elem, bool deck) {
+void Mixer::reload_tagged_elems(ShelfElement *elem, bool deck, Layer *singlelay) {
     elem->done = false;
     std::vector<Layer *> lvec = choose_layers(deck);
     //if (elem->type == ELEM_DECK || elem->type == ELEM_MIX) {
     for (Layer *lay : lvec) {
         if (lay->tagged) {
-            Layer *lay2 = lay->transfer();
+            Layer *lay2 = lay->transfer(false, true);
+            lay2->startframe->value = lay->startframe->value;
+            lay2->endframe->value = lay->endframe->value;
+            lay2->speed->value = lay->speed->value;
+            lay->shiftx->lpst_replace_with(lay2->shiftx);
+            lay->shifty->lpst_replace_with(lay2->shifty);
+            lay->scale->lpst_replace_with(lay2->scale);
+            lay->opacity->lpst_replace_with(lay2->opacity);
+            lay->playbut->lpst_replace_with(lay2->playbut);
+            lay->revbut->lpst_replace_with(lay2->revbut);
+            lay->bouncebut->lpst_replace_with(lay2->bouncebut);
+            lay->mutebut->lpst_replace_with(lay2->mutebut);
+            lay->solobut->lpst_replace_with(lay2->solobut);
             lay2->transfered = true;
             if (lay2->type == ELEM_IMAGE) {
                 lay2->open_image(lay2->filename, true, true);
@@ -13498,6 +13272,9 @@ void Mixer::reload_tagged_elems(ShelfElement *elem, bool deck) {
             lay2->dontcloseeffs = 0;
             lay2->tagged = false;
             lay2->prevshelfdragelem = nullptr;
+        }
+        else {
+            lay->tagged = false;
         }
     }
     mainprogram->transferclonesetnr = -1;
@@ -13517,6 +13294,7 @@ void Mixer::set_layers(ShelfElement  *elem, bool deck) {
                         this->currlays[!mainprogram->prevmodus][i] = elem->clayers[std::min(lay->pos, (const int)(elem->clayers.size() - 1))];
                     }
                 }
+                lay->dontcloseclips = true;
                 lay->close();
             }
             elem->mixlrs[deck].clear();
@@ -13560,6 +13338,7 @@ void Mixer::set_layers(ShelfElement  *elem, bool deck) {
                         this->currlays[!mainprogram->prevmodus][i] = elem->nblayers[std::min(lay->pos, (const int)(elem->nblayers.size() - 1))];
                     }
                 }
+                lay->dontcloseclips = true;
                 lay->close();
             }
             lrs.clear();

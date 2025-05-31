@@ -485,7 +485,7 @@ class Mixer {
         void copy_lpstelem(LoopStationElement *destelem, LoopStationElement *srcelem);
         void copy_lpst(Layer *destlay, Layer *srclay, bool global, bool back);        void get_butimes();
         void event_read(std::istream &rfile, Param *par, Button *but, Layer *lay, int elem = 0);
-        void reload_tagged_elems(ShelfElement *elem, bool deck);
+        void reload_tagged_elems(ShelfElement *elem, bool deck, Layer *singlelay = nullptr);
         void set_layers(ShelfElement *elem, bool deck);
         void set_layer(ShelfElement  *elem, Layer *lay);
         void set_frame(ShelfElement *elem, Layer *lay);

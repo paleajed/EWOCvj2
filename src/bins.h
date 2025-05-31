@@ -40,7 +40,6 @@ class BinsMain {
         Boxx* loadbinbox;
         Boxx* savebinbox;
 		Boxx* newbinbox;
-		Boxx* renamingbox;
 		GLuint binelpreviewtex;
 		bool binpreview = false;
 		std::string newpath;
@@ -128,6 +127,7 @@ class BinsMain {
 		void hap_mix(BinElement * bm);
 		void hap_encode(std::string srcpath, BinElement* binel, BinElement* bdm);
         void undo_redo(char offset);
+        void clear_undo();
         BinsMain();
 
 	private:

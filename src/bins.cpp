@@ -106,7 +106,7 @@ void BinElement::erase(bool deletetex) {
     GLuint tex = this->tex;
     this->tex = copy_tex(tex, 192, 108);
     if (deletetex) {
-        glDeleteTextures(1, &tex);
+        //glDeleteTextures(1, &tex);      for undo
     }
 	blacken(this->tex);
 	blacken(this->oldtex);
@@ -161,15 +161,6 @@ BinsMain::BinsMain() {
 	this->newbinbox->upvtxtoscr();
 	this->newbinbox->tooltiptitle = "Add new bin ";
 	this->newbinbox->tooltip = "Leftclick to add a new bin and make it current. ";
-
-	this->renamingbox = new Boxx;
-	this->renamingbox->vtxcoords->x1 = -0.5f;
-	this->renamingbox->vtxcoords->y1 = -0.2f;
-	this->renamingbox->vtxcoords->w = 1.0f;
-	this->renamingbox->vtxcoords->h = 0.2f;
-	this->renamingbox->upvtxtoscr();
-	this->renamingbox->tooltiptitle = "Rename bin element ";
-	this->renamingbox->tooltip = "Use keyboard to edit media element display name. ";
 
 	this->currbin = new Bin(-1);
 
@@ -261,7 +252,7 @@ void BinsMain::handle(bool draw) {
 		if (mainprogram->renaming == EDIT_NONE) {
 			this->renamingelem = nullptr;
 		}
-		if (mainprogram->leftmousedown && !this->renamingbox->in()) {
+		if (mainprogram->leftmousedown && !mainprogram->renamingbox->in()) {
 			mainprogram->renaming = EDIT_NONE;
 			this->renamingelem = nullptr;
 			SDL_StopTextInput();
@@ -1242,7 +1233,7 @@ void BinsMain::handle(bool draw) {
 		if (mainprogram->renaming != EDIT_NONE && this->renamingelem) {
 			// bin element renaming with keyboard
 			mainprogram->frontbatch = true;
-			draw_box(white, black, this->renamingbox, -1);
+			draw_box(white, black, mainprogram->renamingbox, -1);
 			do_text_input(-0.5f + 0.1f, -0.2f + 0.05f, 0.0009f, 0.0015f, mainprogram->mx, mainprogram->my,
                  mainprogram->xvtxtoscr(0.8f), 0, nullptr);
             mainprogram->frontbatch = false;
@@ -2191,9 +2182,9 @@ void BinsMain::handle(bool draw) {
                             if (epos >= 0 and epos < 144) {
                                 BinElement *dirbinel = this->currbin->elements[epos];
                                 if (dirbinel->tex != -1) {
-                                    glDeleteTextures(1, &dirbinel->tex);
+                                    //glDeleteTextures(1, &dirbinel->tex);
                                 }
-                                mainprogram->delete_text(dirbinel->name.substr(0, 20));
+                                //mainprogram->delete_text(dirbinel->name.substr(0, 20));
                                 dirbinel->tex = this->inputtexes[k];
                                 dirbinel->type = this->inputtypes[k];
                                 dirbinel->path = this->addpaths[k];
@@ -2235,13 +2226,7 @@ void BinsMain::handle(bool draw) {
 					// handle element deleting
 					for (int k = 0; k < this->delbinels.size(); k++) {
 						// deleting single bin element
-						blacken(this->delbinels[k]->oldtex);
-						blacken(this->delbinels[k]->tex);
-						this->delbinels[k]->path = "";
-						this->delbinels[k]->name = "";
-						this->delbinels[k]->jpegpath = "";
-						this->delbinels[k]->type = ELEM_FILE;
-						this->delbinels[k]->select = false;
+                        this->delbinels[k]->erase();
 					}
 					this->delbinels.clear();
 					mainprogram->del = false;
@@ -2291,7 +2276,7 @@ void BinsMain::handle(bool draw) {
             lay->vidmoving = false;
             mainmix->moving = false;
         }
-        if (draw) {
+        if (!draw) {
             if (mainprogram->lmover) {
                 mainprogram->recundo = false;
             }
@@ -3326,7 +3311,7 @@ void BinsMain::hap_encode(std::string srcpath, BinElement *binel, BinElement *bd
         copy_file(srcpath,
                                    mainprogram->contentpath + "EWOCvj2_CPU_vid_backups/" + basename(dirname(srcpath)) +
                                    "/" + basename(srcpath),
-                                   std::filesystem::copy_options::overwrite_existing);  // reminder : warn for overwrite
+                                   std::filesystem::copy_options::overwrite_existing);
         mainprogram->remove(srcpath);
     }
     binel->encoding = false;
@@ -3353,6 +3338,21 @@ void BinsMain::hap_encode(std::string srcpath, BinElement *binel, BinElement *bd
 	mainprogram->hap.notify_all();
 }
 
+void BinsMain::clear_undo() {
+    for (int i = 0; i < binsmain->undobins.size(); i++) {
+        auto bin = std::get<0>(binsmain->undobins[i]);
+        for (auto binel : bin->elements) {
+            delete binel;
+        }
+        delete bin;
+    }
+    binsmain->undobins.clear();
+    binsmain->undopos = 0;
+    bool bubs = mainprogram->binsscreen;
+    mainprogram->binsscreen = true;
+    mainprogram->undo_redo_save();
+    mainprogram->binsscreen = bubs;
+}
 
 void BinsMain::undo_redo(char offset) {
     for (int i = 0; i < binsmain->bins.size(); i++) {

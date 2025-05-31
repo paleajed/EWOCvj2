@@ -100,7 +100,8 @@ class LoopStationElement {
         void add_param_automationentry(Param* par, long long mc);
 		void add_button_automationentry(Button* but);
 		void set_values();
-		LoopStationElement();
+        void get_state_from(LoopStationElement* loop);
+        LoopStationElement();
 		~LoopStationElement();
 		
 	private:

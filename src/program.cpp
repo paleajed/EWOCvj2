@@ -377,6 +377,16 @@ Program::Program() {
 	this->scrollboxes[1]->tooltiptitle = "Deck B Layer stack scroll bar ";
 	this->scrollboxes[1]->tooltip = "Scroll bar for layer stack.  Divided in total number of layer parts for deck B. Lightgrey part is the visible layer monitors part.  Leftdragging the lightgrey part allows scrolling.  So does leftclicking the black parts. ";
 
+    // generic rebnaming box
+    this->renamingbox = new Boxx;
+    this->renamingbox->vtxcoords->x1 = -0.5f;
+    this->renamingbox->vtxcoords->y1 = -0.2f;
+    this->renamingbox->vtxcoords->w = 1.0f;
+    this->renamingbox->vtxcoords->h = 0.2f;
+    this->renamingbox->upvtxtoscr();
+    this->renamingbox->tooltiptitle = "Rename bin element ";
+    this->renamingbox->tooltip = "Use keyboard to edit media element display name. ";
+
     // color wheel box
 	this->cwbox = new Boxx;
 
@@ -1720,7 +1730,7 @@ void Program::handle_wormgate(bool gate) {
             if (!mainprogram->menuondisplay) {
 				if (mainprogram->leftmouse) {
 					mainprogram->binsscreen = !mainprogram->binsscreen;
-                    mainprogram->recundo = true;
+                    mainprogram->recundo = false;
                     if (mainprogram->binsscreen) {
                         for (int i = 0; i < 4; i++ ) {
                             for (Layer *lay : mainmix->layers[i]) {
@@ -2316,8 +2326,10 @@ void Program::show_info() {
         draw_box(white, lightblue, box, -1);
         if (mainprogram->leftmouse || mainprogram->orderleftmouse) {
             mainprogram->infostr = "";
+            mainprogram->infoanswer = true;
             SDL_HideWindow(mainprogram->requesterwindow);
             SDL_RaiseWindow(mainprogram->mainwindow);
+            mainprogram->leftmouse = false;
         }
     }
     render_text("CONTINUE", white, box->vtxcoords->x1 + 0.02f, box->vtxcoords->y1 + 0.03f, 0.0024f, 0.004f, 1, 0);
@@ -2447,11 +2459,9 @@ void Program::shelf_triggering(ShelfElement* elem, int deck, Layer *layer) {
         Layer *laydeck1 = nullptr;
         for (int k = 0; k < clays.size(); k++) {
             Layer *lay = clays[k];
-            //clays[k]->deautomate();
             if (elem->type == ELEM_FILE) {
-                //clays[k]->tagged = false;
                 mainmix->set_prevshelfdragelem_layers(clays[k]);
-                mainmix->reload_tagged_elems(elem, clays[k]->deck);
+                mainmix->reload_tagged_elems(elem, clays[k]->deck, clays[k]);
                 clays[k] = mainmix->layers[!mainprogram->prevmodus * 2 + clays[k]->deck][clays[k]->pos];
                 clays[k] = clays[k]->open_video(0, elem->path, true);
                 clays[k]->set_clones();
@@ -2464,7 +2474,7 @@ void Program::shelf_triggering(ShelfElement* elem, int deck, Layer *layer) {
                 setfr.detach();
             } else if (elem->type == ELEM_IMAGE) {
                 mainmix->set_prevshelfdragelem_layers(clays[k]);
-                mainmix->reload_tagged_elems(elem, clays[k]->deck);
+                mainmix->reload_tagged_elems(elem, clays[k]->deck, clays[k]);
                 clays[k] = mainmix->layers[!mainprogram->prevmodus * 2 + clays[k]->deck][clays[k]->pos];
                 clays[k]->open_image(elem->path);
                 clays[k]->set_clones();
@@ -2478,7 +2488,7 @@ void Program::shelf_triggering(ShelfElement* elem, int deck, Layer *layer) {
             } else if (elem->type == ELEM_LAYER) {
                 mainmix->set_prevshelfdragelem_layers(clays[k]);
                 bool done = elem->done;
-                mainmix->reload_tagged_elems(elem, clays[k]->deck);
+                mainmix->reload_tagged_elems(elem, clays[k]->deck, clays[k]);
                 if (done && elem->launchtype > 0) {
                     mainmix->set_layer(elem, clays[k]);
                 }
@@ -4395,6 +4405,7 @@ void Program::handle_laymenu1() {
             // center image
 			mainmix->mouselayer->shiftx->value = 0.0f;
 			mainmix->mouselayer->shifty->value = 0.0f;
+            mainmix->mouselayer->set_clones();
 		}
 		else if (k == 15 - cond * 2) {
             // set aspect ratio
@@ -4845,6 +4856,18 @@ void Program::handle_shelfmenu() {
 		mainprogram->binsscreen = true;
 	}
     else if (k == 8) {
+        // start renaming shelf element
+        ShelfElement *elem = mainmix->mouseshelf->elements[mainmix->mouseshelfelem];
+        mainprogram->renamingshelfelem = elem;
+        mainprogram->renamingshelfelem->oldname = mainprogram->renamingshelfelem->name;
+        std::string name = elem->name;
+        mainprogram->backupname = name;
+        mainprogram->inputtext = name;
+        mainprogram->cursorpos0 = mainprogram->inputtext.length();
+        SDL_StartTextInput();
+        mainprogram->renaming = EDIT_SHELFELEMNAME;
+    }
+    else if (k == 9) {
         ShelfElement *elem = mainmix->mouseshelf->elements[mainmix->mouseshelfelem];
         elem->path = "";
         elem->type = ELEM_FILE;
@@ -4856,12 +4879,6 @@ void Program::handle_shelfmenu() {
         elem->button->unregister_midi();
         elem->kill_clayers();
     }
-    /*else if (k == 9) {
-		// learn MIDI for element layer load
-		mainmix->learn = true;
-		mainmix->learnparam = nullptr;
-		mainmix->learnbutton = mainmix->mouseshelf->buttons[mainmix->mouseshelfelem];
-	}*/
 
 	if (mainprogram->menuchosen) {
 		mainprogram->menuchosen = false;
@@ -5085,6 +5102,7 @@ void Program::handle_filemenu() {
 }
 
 void Program::handle_editmenu() {
+    this->create_auinmenu();
     int k = -1;
     // Draw and Program::handle editmenu
     k = mainprogram->handle_menu(mainprogram->editmenu);
@@ -5137,6 +5155,21 @@ void Program::handle_editmenu() {
         }
         else {
             SDL_RaiseWindow(mainprogram->config_midipresetswindow);
+        }
+    }
+    else if (k == 2) {  // reminder : move to preferences
+        if (this->menuresults.size()) {
+            this->auinitialized = false;
+            this->audevice = this->auindevices[this->menuresults[0]];
+            this->init_audio(this->audevice.c_str());
+            for (PrefCat *cat : this->prefs->items) {
+                for (PrefItem *item: cat->items) {
+                    if (item->name == "Audio input device") {
+                        item->audevice = this->audevice;
+                    }
+                }
+            }
+            this->prefs->save();
         }
     }
 
@@ -5483,7 +5516,7 @@ void Program::preferences() {
 	if (this->prefon) {
         this->directmode = true;
         SDL_GL_MakeCurrent(this->prefwindow, glc);
-        if (!this->filereqon) {
+        if (!this->filereqon && mainprogram->infostr == "") {
             SDL_RaiseWindow(this->prefwindow);
         }
         glBindFramebuffer(GL_FRAMEBUFFER, 0);
@@ -5722,6 +5755,16 @@ bool Program::preferences_handle() {
                     mci->items[i]->renaming = false;
                     mci->items[i]->str = this->inputtext;
                     if (mci->items[i]->dest == &this->project->name) {
+                        std::string pathdir = dirname(this->project->path);
+                        std::string newdir = dirname(pathdir.substr(0, pathdir.size() - 1)) + mci->items[i]->str;
+                        if (exists(newdir)) {
+                            if (!mainprogram->infoanswer) {
+                                std::string newstr = find_unused_filename(mci->items[i]->str, dirname(newdir), "");
+                                this->projname = basename(newstr);
+                                mainprogram->infostr = "Project name already exists, changed to " + this->projname;
+                                return true;
+                            }
+                        }
                         this->projnamechanged = true;
                         this->projname = mci->items[i]->str;
                         this->saveproject = true;
@@ -5732,6 +5775,15 @@ bool Program::preferences_handle() {
                     do_text_input(mci->items[i]->valuebox->vtxcoords->x1 + 0.1f,
                                   mci->items[i]->valuebox->vtxcoords->y1 + 0.03f, 0.0024f, 0.004f, mx, my,
                                   this->xvtxtoscr(0.7f), 1, mci->items[i], true);
+                }
+            }
+            if (mci->items[i]->dest == &this->project->name) {
+                if (mainprogram->infoanswer) {
+                    mainprogram->infoanswer = false;
+                    mci->items[i]->str = this->projname;
+                    this->projnamechanged = true;
+                    this->projname = mci->items[i]->str;
+                    this->saveproject = true;
                 }
             }
             if (mci->items[i]->valuebox->in(mx, my)) {
@@ -5767,11 +5819,6 @@ bool Program::preferences_handle() {
                     mci->items[i]->renaming = false;
                     path = this->inputtext;
                     mci->items[i]->path = this->inputtext;
-                    if (mci->items[i]->dest == &this->project->name) {
-                        this->projnamechanged = true;
-                        this->projname = mci->items[i]->str;
-                        this->saveproject = true;
-                    }
                 }
                 else if (this->renaming == EDIT_CANCEL) {
                     mci->items[i]->renaming = false;
@@ -6068,10 +6115,7 @@ bool Program::preferences_handle() {
 
                     this->project->name = this->projname;
                     std::string pathdir = dirname(this->project->path);
-                    std::string newdir = dirname(pathdir.substr(0, pathdir.size() - 2)) + this->project->name + "/";
-                    if (exists(newdir)) {
-                        remove(newdir);  // reminder : display warning
-                    }
+                    std::string newdir = dirname(pathdir.substr(0, pathdir.size() - 1)) + this->project->name + "/";
                     // rename project directory
                     rename(pathdir, newdir);
                     // adapt recent project list
@@ -8988,6 +9032,7 @@ void Program::define_menus() {
     shelf1.push_back("Insert deck B");
     shelf1.push_back("Insert full mix");
     shelf1.push_back("Insert in bin");
+    shelf1.push_back("Rename element");
     shelf1.push_back("Erase element");
     mainprogram->make_menu("shelfmenu", mainprogram->shelfmenu, shelf1);
 
@@ -9048,6 +9093,8 @@ void Program::define_menus() {
     std::vector<std::string> edit;
     edit.push_back("Preferences");
     edit.push_back("Configure general MIDI");
+    edit.push_back("submenu auinmenu");
+    edit.push_back("Beatmatch device");
     mainprogram->make_menu("editmenu", mainprogram->editmenu, edit);
 
     std::vector<std::string> lpst;
@@ -10026,66 +10073,49 @@ std::uintmax_t getFileSize(const std::string& filename) {
     return size;
 }
 
-bool check_version(std::string path) {
-    bool concat = true;
-    std::fstream bfile;
-    bfile.open(path, std::ios::in | std::ios::binary);
-    char *buffer = new char[7];
-    bfile.read(buffer, 7);
-    if (buffer[0] == 0x45 && buffer[1] == 0x57 && buffer[2] == 0x4F && buffer[3] == 0x43 && buffer[4] == 0x76 && buffer[5] == 0x6A && buffer[6] == 0x20) {
-        concat = false;
-    }
-    delete[] buffer;
-    bfile.close();
-    return concat;
-}
-
 
 std::string Program::deconcat_files(std::string path) {
-    bool concat = check_version(path);
     std::string outpath;
     std::fstream bfile;
     bfile.open(path, std::ios::in | std::ios::binary);
-    if (concat) {
-        int32_t num;
-        bfile.read((char *)&num, 4);
-        if (num != 20011975) {
+    int32_t num;
+    bfile.read((char *)&num, 4);
+    if (num != 20011975) {
+        return "";
+    }
+    bfile.read((char *)&num, 4);
+    std::vector<int> sizes;
+    //num = _byteswap_ulong(num - 1) + 1;
+    for (size_t i = 0; i < num; ++i) {
+        uint32_t size;
+        if (!bfile.read(reinterpret_cast<char*>(&size), sizeof(size))) {
             return "";
         }
-        bfile.read((char *)&num, 4);
-        std::vector<int> sizes;
-        //num = _byteswap_ulong(num - 1) + 1;
-        for (size_t i = 0; i < num; ++i) {
-            uint32_t size;
-            if (!bfile.read(reinterpret_cast<char*>(&size), sizeof(size))) {
-                return "";
-            }
-            sizes.push_back(size);
-        }
+        sizes.push_back(size);
+    }
 
+    std::ofstream ofile;
+    outpath = find_unused_filename(basename(path), mainprogram->temppath, ".mainfile");
+    ofile.open(outpath, std::ios::out | std::ios::binary);
+
+    char *ibuffer = new char[sizes[0]];
+    bfile.read(ibuffer, sizes[0]);
+    ofile.write(ibuffer, sizes[0]);
+    ofile.close();
+    delete[] ibuffer;
+    for (int i = 0; i < num - 1; i++) {
         std::ofstream ofile;
-        outpath = find_unused_filename(basename(path), mainprogram->temppath, ".mainfile");
-        ofile.open(outpath, std::ios::out | std::ios::binary);
-
-        char *ibuffer = new char[sizes[0]];
-        bfile.read(ibuffer, sizes[0]);
-        ofile.write(ibuffer, sizes[0]);
+        ofile.open(outpath + "_" + std::to_string(i) + ".file", std::ios::out | std::ios::binary);
+        if (sizes[i + 1] == -1) break;
+        char *ibuffer = new char[sizes[i + 1]];
+        bfile.read(ibuffer, sizes[i + 1]);
+        ofile.write(ibuffer, sizes[i + 1]);
         ofile.close();
         delete[] ibuffer;
-        for (int i = 0; i < num - 1; i++) {
-            std::ofstream ofile;
-            ofile.open(outpath + "_" + std::to_string(i) + ".file", std::ios::out | std::ios::binary);
-            if (sizes[i + 1] == -1) break;
-            char *ibuffer = new char[sizes[i + 1]];
-            bfile.read(ibuffer, sizes[i + 1]);
-            ofile.write(ibuffer, sizes[i + 1]);
-            ofile.close();
-            delete[] ibuffer;
-        }
     }
+
     bfile.close();
-    if (concat) return(outpath);
-    else return "";
+    return(outpath);
 }
 
 void Program::concat_files(std::string ofpath, std::string path, std::vector<std::vector<std::string>> filepaths) {

@@ -68,6 +68,7 @@ class Button {
 		void deautomate();
         void register_midi();
         void unregister_midi();
+        void lpst_replace_with(Button* cbut);
 		explicit Button(bool state);
 		~Button();
 };

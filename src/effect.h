@@ -91,6 +91,7 @@ class Param {
         void deautomate();
         void register_midi();
         void unregister_midi();
+        void lpst_replace_with(Param* cpar);
 		Param();
 		~Param();
 };

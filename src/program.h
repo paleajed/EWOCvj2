@@ -60,10 +60,11 @@ typedef enum
 	EDIT_NONE = 0,
 	EDIT_CANCEL = 1,
 	EDIT_BINNAME = 2,
-	EDIT_BINELEMNAME = 3,
-	EDIT_STRING = 4,
-	EDIT_NUMBER = 5,
-	EDIT_PARAM = 6,
+    EDIT_BINELEMNAME = 3,
+    EDIT_SHELFELEMNAME = 4,
+	EDIT_STRING = 5,
+	EDIT_NUMBER = 6,
+	EDIT_PARAM = 7,
 } EDIT_TYPE;
 
 typedef enum
@@ -152,6 +153,7 @@ public:
 	std::string path;
 	std::string jpegpath;
     std::string name;
+    std::string oldname;
 	ELEM_TYPE type;
 	GLuint tex = -1;
 	GLuint oldtex = -1;
@@ -729,6 +731,7 @@ class Program {
 		EDIT_TYPE renaming = EDIT_NONE;
         bool renamingseat = false;
         bool renamingip = false;
+        Boxx* renamingbox;
 		std::string choosedir = "";
 		std::string inputtext;
 		std::string backupname;
@@ -820,6 +823,7 @@ class Program {
 		bool dragout[2] = { true, true };
         std::string quitting;
         std::string infostr;
+        bool infoanswer = false;
         bool shutdown = false;
 		Layer* draginscrollbarlay = nullptr;
         bool projnamechanged = false;
@@ -897,6 +901,7 @@ class Program {
         int transferclonesetnr = -1;
         Param *beatthres;
         float minbpm = 90;
+        ShelfElement *renamingshelfelem = nullptr;
 
         Boxx *boxbig;
         Boxx *boxbefore;
@@ -1131,7 +1136,6 @@ extern void save_bin(std::string path);
 extern void save_thumb(std::string path, GLuint tex);
 extern void open_thumb(std::string path, GLuint tex);
 extern void new_state();
-bool check_version(std::string path);
 extern GLuint copy_tex(GLuint tex);
 extern GLuint copy_tex(GLuint tex, bool yflip);
 extern GLuint copy_tex(GLuint tex, int tw, int th);

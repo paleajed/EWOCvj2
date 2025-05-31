@@ -638,8 +638,12 @@ void LoopStationElement::add_param_automationentry(Param* par) {
 }
 
 void LoopStationElement::add_param_automationentry(Param* par, long long mc) {
-    //if (loopstation->parelemmap[par] != this && loopstation->parelemmap[par] != nullptr) return;  // each parameter can
-    // be automated only once to avoid chaos
+    if (loopstation->parelemmap[par] != this && loopstation->parelemmap[par] != nullptr) {
+        this->recbut->value = false;
+        mainprogram->infostr = "The activated parameter has already been automated in the loopstation.";
+        return;  // each parameter can be automated only once to avoid chaos
+    }
+
     if (par->name == "LPST speed") return;
 	std::chrono::high_resolution_clock::time_point now = std::chrono::high_resolution_clock::now();
 	auto elapsed = std::chrono::duration_cast<std::chrono::duration<double>>(now - this->starttime);
@@ -730,8 +734,11 @@ void LoopStationElement::add_button_automationentry(Button* but) {
     if (but->name[0] == "keepeffbut" || but->name[0] == "queuebut" || but->name[0] == "effcat") {
         return;
     }
-    if (loopstation->butelemmap[but] != this && loopstation->butelemmap[but] != nullptr) return;  // each button can be
-    // automated only once to avoid chaos
+    if (loopstation->butelemmap[but] != this && loopstation->butelemmap[but] != nullptr) {
+        this->recbut->value = false;
+        mainprogram->infostr = "The activated parameter has already been automated in the loopstation.";
+        return;  // each button can be automated only once to avoid chaos
+    }
 	std::chrono::high_resolution_clock::time_point now = std::chrono::high_resolution_clock::now();
 	auto elapsed = std::chrono::duration_cast<std::chrono::duration<double>>(now - this->starttime);
 	long long millicount = std::chrono::duration_cast<std::chrono::milliseconds>(elapsed).count();
@@ -794,4 +801,82 @@ void LoopStation::remove_entries(int copycomp) {
             elem->erase_elem();
         }
     }
+}
+
+
+void LoopStationElement::get_state_from(LoopStationElement* loop) {
+    // copy loopstation element state
+    if (this->eventlist.size()) {
+        this->interimtime = loop->interimtime;
+        this->speedadaptedtime = loop->speedadaptedtime;
+        this->totaltime = loop->totaltime;
+        this->starttime = loop->starttime;
+        this->eventpos = loop->eventpos;
+        this->atend = loop->atend;
+        this->speed->value = loop->speed->value;
+        this->beats = loop->beats;
+        this->loopbut->value = loop->loopbut->value;
+        this->playbut->value = loop->playbut->value;
+    }
+}
+
+
+void Param::lpst_replace_with(Param *cpar) {
+    LoopStationElement *lpe = loopstation->parelemmap[this];
+    if (lpe) {
+        for (int i = 0; i < lpe->eventlist.size(); i++) {
+            if (std::get<1>(lpe->eventlist[i]) == this) {
+                std::get<1>(lpe->eventlist[i]) = cpar;
+            }
+        }
+        cpar->box->acolor[0] = lpe->colbox->acolor[0];
+        cpar->box->acolor[1] = lpe->colbox->acolor[1];
+        cpar->box->acolor[2] = lpe->colbox->acolor[2];
+        cpar->box->acolor[3] = lpe->colbox->acolor[3];
+        loopstation->parelemmap[cpar] = lpe;
+        loopstation->parelemmap.erase(this);
+        lpe->params.erase(this);
+        lpe->params.emplace(cpar);
+        lpe->params.erase(this);
+        if (this->effect) {
+            lpe->layers.emplace(cpar->effect->layer);
+            lpe->layers.erase(this->effect->layer);
+        }
+        else {
+            lpe->layers.emplace(cpar->layer);
+            lpe->layers.erase(this->layer);
+        }
+        loopstation->parmap[this] = loopstation->parmap[cpar];
+        loopstation->allparams.erase(this);
+        loopstation->allparams.emplace(cpar);
+    }
+    cpar->value = this->value;
+    cpar->midi[0] = this->midi[0];
+    cpar->midi[1] = this->midi[1];
+    cpar->register_midi();
+}
+
+void Button::lpst_replace_with(Button *cbut) {
+    LoopStationElement *lpe = loopstation->butelemmap[this];
+    if (lpe) {
+        for (int i = 0; i < lpe->eventlist.size(); i++) {
+            if (std::get<2>(lpe->eventlist[i]) == this) {
+                std::get<2>(lpe->eventlist[i]) = cbut;
+            }
+        }
+        loopstation->butelemmap[cbut] = lpe;
+        loopstation->butelemmap.erase(this);
+        lpe->buttons.erase(this);
+        lpe->buttons.emplace(cbut);
+        lpe->buttons.erase(this);
+        lpe->layers.emplace(cbut->layer);
+        lpe->layers.erase(this->layer);
+        loopstation->butmap[this] = loopstation->butmap[cbut];
+        loopstation->allbuttons.erase(this);
+        loopstation->allbuttons.emplace(cbut);
+    }
+    cbut->value = this->value;
+    cbut->midi[0] = this->midi[0];
+    cbut->midi[1] = this->midi[1];
+    cbut->register_midi();
 }
