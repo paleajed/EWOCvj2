@@ -4,6 +4,11 @@
 #define POSIX
 #endif
 
+#include "boost/bind.hpp"
+#include "boost/asio.hpp"
+#include "boost/thread/thread.hpp"
+#include "boost/date_time/posix_time/posix_time.hpp"
+
 #include <condition_variable>
 #include <string>
 #include "GL/gl.h"
@@ -139,7 +144,7 @@ public:
 	bool ret;
     void handle();
 	void erase();
-	void save(std::string path, bool undo = false);
+	void save(std::string path, bool undo = false, bool startsolo = true);
 	bool open(std::string path, bool undo = false);
 	void open_files_shelf();
 	bool insert_deck(std::string path, bool deck, int pos);
@@ -349,6 +354,61 @@ class Globals {
 	public:
 		float w;
 		float h;
+};
+
+
+
+extern void rec_frames();
+
+class PreciseTimerController {
+private:
+    std::shared_ptr<boost::asio::steady_timer> timer_;
+    std::atomic<bool> running_;
+    std::chrono::steady_clock::time_point start_time_;
+    std::chrono::milliseconds interval_;
+    int execution_count_;
+
+public:
+    PreciseTimerController(boost::asio::io_context& io, std::chrono::milliseconds interval)
+            : timer_(std::make_shared<boost::asio::steady_timer>(io)),
+              running_(false),
+              interval_(interval),
+              execution_count_(0) {}
+
+    void start() {
+        if (running_.exchange(true)) {
+            return; // Already running
+        }
+
+        start_time_ = std::chrono::steady_clock::now();
+        execution_count_ = 0;
+        schedule_next();
+    }
+
+    void stop() {
+        running_ = false;
+        timer_->cancel();
+    }
+
+private:
+    void schedule_next() {
+        if (!running_.load()) return;
+
+        // Calculate the absolute time for the next execution
+        auto next_time = start_time_ + (interval_ * (execution_count_ + 1));
+
+        timer_->expires_at(next_time);
+        timer_->async_wait([this](const boost::system::error_code& error) {
+            if (!error && running_.load()) {
+                execution_count_++;
+
+                rec_frames();
+
+                // Schedule next execution at precise interval regardless of how long this took
+                schedule_next();
+            }
+        });
+    }
 };
 
 
@@ -674,10 +734,13 @@ class Program {
         int concatting = 0;
         std::mutex concatlock;
         std::condition_variable concatvar;
+        std::mutex ordermutex;
+        std::condition_variable ordercv;
         bool goconcat = false;
         int numconcatted = 0;
         int concatlimit = 0;
         int concatsuffix = 0;
+        bool startsolo = false;
         bool saveas = false;
         bool inautosave = false;
         bool openautosave = false;
@@ -717,9 +780,8 @@ class Program {
         int draglaypos = -1;
         int draglaydeck = -1;
 		std::string dragpath;
-		int dragpos; 
+		int dragpos = -1;
 		bool drag = false;
-        bool dragmousedown = false;
         bool draggingrec = false;
 		bool inwormgate = false;
 		Button* wormgate1;
@@ -835,7 +897,6 @@ class Program {
         float ordertime = 0.0f;
         bool sameeight = false;
         bool check = false;
-        //int clickednextto = -1;
         bool lpstmenuon = false;
         std::vector<char*> dropfiles;
         bool stringcomputing = false;
@@ -914,6 +975,7 @@ class Program {
         std::multimap<std::tuple<int, int>, SDL_Window*> winpool;
         std::unordered_map<GLuint, GLint> texintfmap;
 
+        boost::asio::io_context *io;
 
         void remove_ec(std::string filepath, std::error_code& ec);
         void remove(std::string filepath);
@@ -991,7 +1053,7 @@ class Program {
         void stream_to_v4l2loopbacks();
         void postponed_to_front(std::string title);
         void postponed_to_front_win(std::string title, SDL_Window *win = nullptr);
-        void concat_files(std::string ofpath, std::string path, std::vector<std::vector<std::string>> filepaths);
+        void concat_files(std::string ofpath, std::string path, std::vector<std::vector<std::string>> filepaths, int count, bool startsolo);
         std::string deconcat_files(std::string path);
         void delete_text(std::string str);
         void register_undo(Param*, Button*);

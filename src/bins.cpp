@@ -2424,7 +2424,7 @@ void BinsMain::open_bin(std::string path, Bin *bin, bool newbin) {
                 if (istring == "RELPATH") {
                     safegetline(rfile, istring);
                     if (istring == "" && bin->elements[pos]->path == "") continue;
-                    if (bin->elements[pos]->path == "") {
+                    if (bin->elements[pos]->path == "" || !exists(bin->elements[pos]->path)) {
                         std::filesystem::current_path(mainprogram->project->binsdir);
                         bin->elements[pos]->path = pathtoplatform(std::filesystem::absolute(istring).generic_string());
                         bin->elements[pos]->relpath = std::filesystem::relative(istring, mainprogram->project->binsdir).generic_string();
@@ -2585,7 +2585,8 @@ void BinsMain::save_bin(std::string path) {
     std::string ttpath = tpath;
     std::vector<std::vector<std::string>> filestoadd2;
 	filestoadd2.push_back(filestoadd);
-    std::thread concat(&Program::concat_files, mainprogram, ttpath, path, filestoadd2);
+
+    std::thread concat(&Program::concat_files, mainprogram, ttpath, path, filestoadd2, 0, true);
     concat.detach();
 
     if (dirname(path) == mainprogram->project->binsdir) {

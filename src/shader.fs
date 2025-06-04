@@ -803,6 +803,7 @@ vec4 edgedetect2(vec2 texco)  //rastergrid seems free
 
 #define PI 3.141592653589793
 uniform float kalslices = 16.0;
+uniform float kalrot = 0.0f;
 
 vec4 kaleidoscope(vec2 texco) {  //selfmade
   int slices = int(kalslices);
@@ -815,6 +816,8 @@ vec4 kaleidoscope(vec2 texco) {  //selfmade
   ang = mod(ang, PI * 2.0f / slices);
   ang = abs(ang - PI / slices);
   
+  ang += kalrot * PI * 2.0f;
+
   pos = len * vec2(cos(ang), sin(ang));
   
   return texture2D(Sampler0, pos + 0.5);

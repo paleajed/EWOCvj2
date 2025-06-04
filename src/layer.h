@@ -49,7 +49,7 @@ class LoopStationElement;
 class BinElement;
 class MidiElement;
 class LoopStation;
-class Thread;
+class PreciseTimerController;
 
 struct frame_result {
     bool newdata = false;
@@ -270,7 +270,7 @@ class Layer {
 		std::string layerfilepath = "";
 		AVFormatContext* video = nullptr;
 		AVFormatContext* videoseek = nullptr;
-		const AVInputFormat *ifmt;
+		const AVInputFormat *ifmt = nullptr;
 		bool skip = false;
 		AVFrame *rgbframe = nullptr;
 		AVFrame *decframe = nullptr;
@@ -322,6 +322,7 @@ class Layer {
         bool invidbox = false;
         bool dontcloseclips = false;
         int dontcloseeffs = 0;
+        bool keeplay = false;
 
         LoopStation *lpst;
         bool isnblayer = false;
@@ -335,7 +336,7 @@ class Layer {
 		void inhibit();
 		std::vector<Effect*>& choose_effects();
 		Layer* clone(bool dup);
-		void set_clones(int clsnr = -1);
+		void set_clones(int clsnr = -1, bool open = true);
 		void set_aspectratio(int lw, int lh);
         void cnt_lpst();
 		bool progress(bool comp, bool alive, bool doclips = true);
@@ -344,8 +345,8 @@ class Layer {
 		void open_files_layers();
 		void open_files_queue();
 		bool thread_vidopen();
-        Layer* open_video(float frame, std::string filename, int reset, bool dontdeleffs = false, bool clones = false);
-		Layer* open_image(std::string path, bool init = true, bool dontdeleffs = false, bool clones = false);
+        Layer* open_video(float frame, std::string filename, int reset, bool dontdeleffs = false, bool clones = false, bool exchange = true);
+		Layer* open_image(std::string path, bool init = true, bool dontdeleffs = false, bool clones = false, bool exchange = true);
 		bool initialize(int w, int h);
 		bool initialize(int w, int h, int compression);
 		void clip_display_next(bool startend, bool alive);
@@ -354,9 +355,9 @@ class Layer {
 		void deautomate();
         void set_inlayer(Layer* lay, bool doclips = false);
         void close();
-        Layer* transfer(bool clones = true, bool dontdeleffs = false);
+        Layer* transfer(bool clones = true, bool dontdeleffs = false, bool exchange = true, bool image = false);
         void transfer_cloneset_to(Layer *lay);
-        void exchange_in_cloneset_by(Layer *lay);
+        void exchange_in_cloneset_by(Layer *lay, bool open = true);
 
         Layer* next();
 		Layer* prev();
@@ -445,6 +446,8 @@ class Mixer {
         int currclonesize = -1;
         std::unordered_map<int, int> csnrmap;
 
+        PreciseTimerController* timer;
+
 
         Layer *add_layer(std::vector<Layer*> &layers, int pos);
 		void delete_layer(std::vector<Layer*> &layers, Layer *lay, bool add);
@@ -460,8 +463,8 @@ class Mixer {
 		void new_file(int decks, bool alive, bool add, bool empty = true);
 		void save_layerfile(std::string path, Layer* lay, bool doclips, bool dojpeg);
 		void save_mix(std::string path);
-		void save_mix(std::string path, bool modus, bool save, bool undo = false);
-		void save_deck(std::string path, bool save, bool doclips, bool copycomp = false, bool dojpeg = true, bool undo = false);
+		void save_mix(std::string path, bool modus, bool save, bool undo = false, bool startsolo = true);
+		void save_deck(std::string path, bool save, bool doclips, bool copycomp = false, bool dojpeg = true, bool undo = false, bool startsolo = true);
 		Layer* open_layerfile(std::string path, Layer *lay, bool loadevents, bool doclips);
 		void open_mix(std::string path, bool alive, bool loadevents = true);
 		void open_deck(std::string path, bool alive, bool loadevents = true, int copycomp = 0);
@@ -471,7 +474,7 @@ class Mixer {
 		std::vector<std::string> write_layer(Layer *lay, std::ostream& wfile, bool doclips, bool dojpeg);
 		Layer* read_layers(std::istream &rfile, std::string result, std::vector<Layer*> &layers, bool deck, bool isdeck, int type, bool doclips, bool concat, bool load, bool loadevents, bool save, bool keepeff = false);
 		void start_recording();
-		void cloneset_destroy(int clnr);
+        void cloneset_destroy(int clnr);
 		void handle_genmidibuttons();
 		void set_prevshelfdragelem_layers(Layer *lay);
 		void vidbox_handle();
@@ -489,6 +492,7 @@ class Mixer {
         void set_layers(ShelfElement *elem, bool deck);
         void set_layer(ShelfElement  *elem, Layer *lay);
         void set_frame(ShelfElement *elem, Layer *lay);
+        void setup_tempmap();
         Mixer();
 		
 		std::mutex recordlock[2];
@@ -560,6 +564,7 @@ class Mixer {
 		Param *wipex[2];
 		Param *wipey[2];
 		bool addlay = false;
+        bool addbefore = false;
 		Param* deckspeed[2][2];
 		int fps[25] = {0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0};
 		int fpscount = 0;
@@ -571,6 +576,10 @@ class Mixer {
 		float cbduration = 0.0f;
 
         std::vector<std::vector<Layer*>> swapmap[4];
+        std::vector<std::vector<Layer*>> openmap;
+        bool busyopen = false;
+        bool directtransfer = false;
+        bool inside = false;
 
         std::vector<Layer*> loadinglays;
 

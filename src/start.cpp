@@ -724,110 +724,66 @@ void make_searchbox(bool val) {
 }
 
 
-class Deadline2
-{
-public:
-    Deadline2(deadline_timer &timer) : t(timer) {
-        // recording timer
-        // wait 40 milliseconds: see below
-        wait();
-    }
+void rec_frames() {
 
-    void timeout() {
-        if (!mainmix->donerec[0]) {
-            // layer recording:
-            // grab frames for in-place recording
+    if (!mainmix->donerec[0]) {
+        // layer recording:
+        // grab frames for in-place recording
 #define BUFFER_OFFSET(i) ((char *)nullptr + (i))
-            glBindBuffer(GL_PIXEL_PACK_BUFFER, mainmix->ioBuf);
-            bool cbool;
-            if (!mainprogram->prevmodus) {
-                glBufferData(GL_PIXEL_PACK_BUFFER, (int)(mainprogram->ow * mainprogram->oh) * 4, nullptr, GL_DYNAMIC_READ);
-                cbool = 1;
-            }
-            else {
-                glBufferData(GL_PIXEL_PACK_BUFFER, (int)(mainprogram->ow3 * mainprogram->oh3) * 4, nullptr, GL_DYNAMIC_READ);
-                cbool = 0;
-            }
-            if (mainmix->reclay->effects[0].size() == 0) {
-                glBindFramebuffer(GL_FRAMEBUFFER, mainmix->reclay->fbo);
-            }
-            else {
-                glBindFramebuffer(GL_FRAMEBUFFER, mainmix->reclay->effects[0][mainmix->reclay->effects[0].size() - 1]->fbo);
-            }
-            glReadBuffer(GL_COLOR_ATTACHMENT0);
-            if (cbool) glReadPixels(0, 0, mainprogram->ow, (int)mainprogram->oh, GL_BGRA, GL_UNSIGNED_BYTE, BUFFER_OFFSET(0));
-            else glReadPixels(0, 0, mainprogram->ow3, (int)mainprogram->oh3, GL_BGRA, GL_UNSIGNED_BYTE, BUFFER_OFFSET(0));
-            mainmix->rgbdata = glMapBuffer(GL_PIXEL_PACK_BUFFER, GL_READ_ONLY);
-            assert(mainmix->rgbdata);
-
-            if (mainmix->recording[0]) {
-                mainmix->recordnow[0] = true;
-                while (mainmix->recordnow[0] && !mainmix->donerec[0]) {
-                    mainmix->startrecord[0].notify_all();
-                }
-            }
-
-            glUnmapBuffer(GL_PIXEL_PACK_BUFFER);
-            glBindBuffer(GL_PIXEL_PACK_BUFFER, 0);
+        glBindBuffer(GL_PIXEL_PACK_BUFFER, mainmix->ioBuf);
+        bool cbool;
+        if (!mainprogram->prevmodus) {
+            glBufferData(GL_PIXEL_PACK_BUFFER, (int)(mainprogram->ow * mainprogram->oh) * 4, nullptr, GL_DYNAMIC_READ);
+            cbool = 1;
         }
-        if (!mainmix->donerec[1]) {
-            // output recording:
-            // grab frames for output recording
-#define BUFFER_OFFSET(i) ((char *)nullptr + (i))
-            glBindBuffer(GL_PIXEL_PACK_BUFFER, mainmix->ioBuf);
-            glBufferData(GL_PIXEL_PACK_BUFFER, (int) (mainprogram->ow * mainprogram->oh) * 4, nullptr,
-                         GL_DYNAMIC_READ);
-            glBindFramebuffer(GL_FRAMEBUFFER, ((MixNode *) mainprogram->nodesmain->mixnodes[1][2])->mixfbo);
-            glReadBuffer(GL_COLOR_ATTACHMENT0);
-            glReadPixels(0, 0, mainprogram->ow, (int)mainprogram->oh, GL_BGRA, GL_UNSIGNED_BYTE, BUFFER_OFFSET(0));
-            mainmix->rgbdata = glMapBuffer(GL_PIXEL_PACK_BUFFER, GL_READ_ONLY);
-            assert(mainmix->rgbdata);
-            if (mainmix->recording[1]) {
-                mainmix->recordnow[1] = true;
-                while (mainmix->recordnow[1] && !mainmix->donerec[1]) {
-                    mainmix->startrecord[1].notify_all();
-                }
+        else {
+            glBufferData(GL_PIXEL_PACK_BUFFER, (int)(mainprogram->ow3 * mainprogram->oh3) * 4, nullptr, GL_DYNAMIC_READ);
+            cbool = 0;
+        }
+        if (mainmix->reclay->effects[0].size() == 0) {
+            glBindFramebuffer(GL_FRAMEBUFFER, mainmix->reclay->fbo);
+        }
+        else {
+            glBindFramebuffer(GL_FRAMEBUFFER, mainmix->reclay->effects[0][mainmix->reclay->effects[0].size() - 1]->fbo);
+        }
+        glReadBuffer(GL_COLOR_ATTACHMENT0);
+        if (cbool) glReadPixels(0, 0, mainprogram->ow, (int)mainprogram->oh, GL_BGRA, GL_UNSIGNED_BYTE, BUFFER_OFFSET(0));
+        else glReadPixels(0, 0, mainprogram->ow3, (int)mainprogram->oh3, GL_BGRA, GL_UNSIGNED_BYTE, BUFFER_OFFSET(0));
+        mainmix->rgbdata = glMapBuffer(GL_PIXEL_PACK_BUFFER, GL_READ_ONLY);
+        assert(mainmix->rgbdata);
+
+        if (mainmix->recording[0]) {
+            mainmix->recordnow[0] = true;
+            while (mainmix->recordnow[0] && !mainmix->donerec[0]) {
+                mainmix->startrecord[0].notify_all();
             }
-            glUnmapBuffer(GL_PIXEL_PACK_BUFFER);
-            glBindBuffer(GL_PIXEL_PACK_BUFFER, 0);
         }
 
-    wait();
+        glUnmapBuffer(GL_PIXEL_PACK_BUFFER);
+        glBindBuffer(GL_PIXEL_PACK_BUFFER, 0);
     }
-
-    void cancel() {
-        t.cancel();
+    if (!mainmix->donerec[1]) {
+        // output recording:
+        // grab frames for output recording
+#define BUFFER_OFFSET(i) ((char *)nullptr + (i))
+        glBindBuffer(GL_PIXEL_PACK_BUFFER, mainmix->ioBuf);
+        glBufferData(GL_PIXEL_PACK_BUFFER, (int) (mainprogram->ow * mainprogram->oh) * 4, nullptr,
+                     GL_DYNAMIC_READ);
+        glBindFramebuffer(GL_FRAMEBUFFER, ((MixNode *) mainprogram->nodesmain->mixnodes[1][2])->mixfbo);
+        glReadBuffer(GL_COLOR_ATTACHMENT0);
+        glReadPixels(0, 0, mainprogram->ow, (int)mainprogram->oh, GL_BGRA, GL_UNSIGNED_BYTE, BUFFER_OFFSET(0));
+        mainmix->rgbdata = glMapBuffer(GL_PIXEL_PACK_BUFFER, GL_READ_ONLY);
+        assert(mainmix->rgbdata);
+        if (mainmix->recording[1]) {
+            mainmix->recordnow[1] = true;
+            while (mainmix->recordnow[1] && !mainmix->donerec[1]) {
+                mainmix->startrecord[1].notify_all();
+            }
+        }
+        glUnmapBuffer(GL_PIXEL_PACK_BUFFER);
+        glBindBuffer(GL_PIXEL_PACK_BUFFER, 0);
     }
-
-
-private:
-    void wait() {
-        // set the timer at 40000 microseconds: 25 frames per second
-        // change value with deck speed
-        int delay = 40000;
-        /*if (mainmix->reclay) {
-            delay = (int)(40000.0f / mainmix->deckspeed[!mainprogram->prevmodus][mainmix->reclay->deck]->value);
-        }*/
-        t.expires_from_now(boost::posix_time::microseconds(delay)); //repeat rate here
-        t.async_wait(boost::bind(&Deadline2::timeout, this));
-    }
-
-    deadline_timer &t;
-};
-
-
-class CancelDeadline2 {
-    // cancel the timer
-public:
-    CancelDeadline2(Deadline2 &d) :dl(d) { }
-    void operator()() {
-        dl.cancel();
-        return;
-    }
-private:
-    Deadline2 &dl;
-};
-
+ }
 
 
 void handle_midi(LayMidi *laymidi, int deck, int midi0, int midi1, int midi2, std::string midiport) {
@@ -3871,6 +3827,7 @@ int osc_param(const char *path, const char *types, lo_arg **argv, int argc, lo_m
 
 bool get_imagetex(Layer *lay, std::string path) {
 	lay->dummy = 1;
+    lay->transfered = true;
 	lay->open_image(path);
 	if (lay->filename == "") {
         return false;
@@ -3888,7 +3845,8 @@ bool get_videotex(Layer *lay, std::string path) {
     GLenum err;
     lay->dummy = 1;
 
-    lay = lay->open_video(0, path, true, true);
+    lay->transfered = true;
+    lay->open_video(0, path, true, true);
     if (mainprogram->openerr) {
         mainprogram->openerr = false;
         mainprogram->errlays.push_back(lay);
@@ -3925,6 +3883,7 @@ bool get_layertex(Layer *lay, std::string path) {
     lay->pos = 0;
     lay->node = mainprogram->nodesmain->currpage->add_videonode(2);
     lay->node->layer = lay;
+    lay->transfered = true;
     Layer *l = mainmix->open_layerfile(path, lay, true, true);
     std::unique_lock<std::mutex> olock(l->endopenlock);
     l->endopenvar.wait(olock, [&] { return l->opened; });
@@ -4353,8 +4312,6 @@ void enddrag() {
 		binsmain->movingbinel = nullptr;
 		binsmain->movingtex = -1;
 	}
-
-	mainprogram->dragmousedown = false;
 }
 
 void end_input() {
@@ -4367,6 +4324,7 @@ void end_input() {
 
 
 void the_loop() {
+    //printf("concatting %d\n", mainprogram->concatting);
     float halfwhite[] = {1.0f, 1.0f, 1.0f, 0.5f};
     float deepred[4] = {1.0, 0.0, 0.0, 1.0};
     float red[] = {1.0f, 0.5f, 0.5f, 1.0f};
@@ -4665,9 +4623,11 @@ void the_loop() {
                 int maxpos = -1;
                 for (int j = 0; j < tempmap->size(); j++) {
                     std::vector<Layer *> lv = (*tempmap)[j];
-                    if (lv[0] && !lv[1]) {
+                    if (lv[0] && !lv[1] && maxpos == -1) {
                         maxpos = lv[0]->pos;
-                        break;
+                    }
+                    else {
+                        maxpos = -1;
                     }
                 }
                 for (int j = 0; j < tempmap->size(); j++) {
@@ -4685,19 +4645,23 @@ void the_loop() {
                     if (lv[1]) {
                         oldlayers.push_back(lv[1]);
                         lv[1]->pos = j;
-                    } else if (lv[0] && !nothing) {
+                    } else if (lv[0] && (!nothing || lv[0]->keeplay)) {
                         oldlayers.push_back(lv[0]);
                         lv[0]->pos = j;
+                        lv[0]->keeplay = false;
                     }
                     if (lv[0] && lv[1]) {
                         if (!mainprogram->swappingscene) {
-                            if (!lv[0]->tagged) mainmix->bulayers.push_back(lv[0]);
-                            if (lv[0]->clonesetnr != -1) {
+                            if (!lv[0]->tagged) {
+                                mainmix->bulayers.push_back(lv[0]);
+                            }
+                            if (lv[0]->clonesetnr != -1 && !lv[0]->tagged) {
                                 int clnr = lv[0]->clonesetnr;
                                 lv[0]->clonesetnr = -1;
                                 lv[0]->texture = -1;
-                                mainmix->clonesets[clnr]->erase(lv[0]);
-
+                                if (mainmix->clonesets[clnr]->count(lv[0])) {
+                                    mainmix->clonesets[clnr]->erase(lv[0]);
+                                }
                                 if (mainmix->clonesets[clnr]->size() == 1) {
                                     mainmix->cloneset_destroy(clnr);
                                 }
@@ -4865,6 +4829,7 @@ void the_loop() {
                         std::vector<Layer*> *bulrs = lay->layers;
                         std::vector<Layer*> templrs = {lay};
                         lay->layers = &templrs;
+                        lay->transfered = true;
                         Layer *lay2 = lay->open_video(lay->frame, binel->path, false);
                         lay->layers = bulrs;
                         lay2->layers = bulrs;
@@ -5388,9 +5353,11 @@ void the_loop() {
                 mainmix->reclay->shifty->value = 0.0f;
                 mainmix->reclay->scale->value = 1.0f;
                 mainmix->reclay->opacity->value = 1.0f;
-                //mainmix->reclay->speed->value /= mainmix->deckspeed[!mainprogram->prevmodus][mainmix->reclay->deck]->value;
-                //mainmix->reclay->speed->value /= mainmix->deckspeed[!mainprogram->prevmodus][mainmix->reclay->deck]->value;
-                mainmix->reclay = nullptr;
+                if (mainmix->reclay->revbut->value) {
+                    mainmix->reclay->playbut->value = true;
+                    mainmix->reclay->revbut->value = false;
+                }
+                mainmix->reclay->speed->value /= mainmix->deckspeed[!mainprogram->prevmodus][mainmix->reclay->deck]->value;
                 mainmix->recrep = false;
             }
         }
@@ -5967,7 +5934,7 @@ void the_loop() {
                     if (p.substr(p.rfind(".")) == ".bin") continue;
                 }
                 if (std::filesystem::is_directory(it->path())) continue;
-                if (!mainprogram->project->pathsinbins.count(pathtoplatform(p))) {
+                if (!mainprogram->project->pathsinbins.contains(pathtoplatform(p))) {
                     mainprogram->remove(p);
                 }
             }
@@ -7313,14 +7280,6 @@ int main(int argc, char* argv[]) {
     auin.detach();
 
 
-    io_service io;
-    deadline_timer t2(io);
-    Deadline2 d2(t2);
-    CancelDeadline2 cd2(d2);
-    std::thread thr2(cd2);
-    thr2.detach();
-
-
     std::chrono::high_resolution_clock::time_point begintime = std::chrono::high_resolution_clock::now();
     std::chrono::duration<double> elapsed;
 
@@ -7353,9 +7312,15 @@ int main(int argc, char* argv[]) {
     SDL_EventState(SDL_DROPFILE, SDL_ENABLE);
     SDL_EventState(SDL_DROPBEGIN, SDL_ENABLE);
 
+
+
+
+
+    mainprogram->io = new boost::asio::io_context();
+
     while (!quit) {
 
-        io.poll();
+        mainprogram->io->poll();
 
         if (mainprogram->path != "" || mainprogram->paths.size()) {
             if (mainprogram->pathto == "ADDSEARCHDIR") {
@@ -7377,21 +7342,8 @@ int main(int argc, char* argv[]) {
                 if (mainprogram->paths.size()) {
                     std::vector<Layer *> &lvec = choose_layers(mainmix->mousedeck);
                     std::string str(mainprogram->paths[0]);
-                    if (!mainmix->addlay) {
-                        mainprogram->loadlay = mainmix->add_layer(lvec, mainprogram->loadlay->pos);
-                        mainprogram->addedlay = true;
-                        mainprogram->loadlay->keepeffbut->value = 0;
-                    } else if (mainmix->mouselayer == nullptr) {
-                        mainprogram->loadlay = mainmix->add_layer(lvec, lvec.size());
-                        mainprogram->addedlay = true;
-                        mainprogram->loadlay->keepeffbut->value = 0;
-                    }
-                    if (mainprogram->loadlay->filename == "") {
-                        mainprogram->loadlay->keepeffbut->value = 0;
-                    }
                     mainprogram->currfilesdir = dirname(str);
                     mainprogram->pathscount = 0;
-                    mainprogram->fileslay = mainprogram->loadlay;
                     mainprogram->openfileslayers = true;
                 }
             } else if (mainprogram->pathto == "OPENFILESQUEUE") {
@@ -7903,14 +7855,14 @@ int main(int argc, char* argv[]) {
                                                 auto tup2 = std::get<0>(tup1);
                                                 Param *par = std::get<0>(tup2);
                                                 Button *but = std::get<1>(tup2);
-                                                if (par && !params.count(par)) {
+                                                if (par && !params.contains(par)) {
                                                     auto tup = mainprogram->newparam(i - mainprogram->undomapvec[
                                                             mainprogram->undopos - 1].size(), true);
                                                     Param *newpar = std::get<0>(tup);
                                                     newpar->value = std::get<1>(tup1);
                                                     params.emplace(par);
                                                 }
-                                                if (but && !buttons.count(but)) {
+                                                if (but && !buttons.contains(but)) {
                                                     auto tup = mainprogram->newbutton(i - mainprogram->undomapvec[
                                                             mainprogram->undopos - 1].size(), true);
                                                     Button *newbut = std::get<0>(tup);

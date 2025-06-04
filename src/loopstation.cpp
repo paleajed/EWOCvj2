@@ -595,7 +595,7 @@ void LoopStationElement::set_values() {
             elapsed = std::chrono::duration_cast<std::chrono::duration<double>>(now2 - but->midistarttime);
             long long mc = std::chrono::duration_cast<std::chrono::milliseconds>(elapsed).count();
             if (mc > 500 || mc < 0) {
-                if (this->lpst->allbuttons.count(but)) {
+                if (this->lpst->allbuttons.contains(but)) {
                     but->value = (int) (std::get<3>(event) + 0.5f);
                 }
             }
@@ -822,7 +822,8 @@ void LoopStationElement::get_state_from(LoopStationElement* loop) {
 
 
 void Param::lpst_replace_with(Param *cpar) {
-    LoopStationElement *lpe = loopstation->parelemmap[this];
+    LoopStationElement *lpe = loopstation->parelemmap.contains(this) ?
+                              loopstation->parelemmap[this] : nullptr;
     if (lpe) {
         for (int i = 0; i < lpe->eventlist.size(); i++) {
             if (std::get<1>(lpe->eventlist[i]) == this) {

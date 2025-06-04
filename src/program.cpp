@@ -338,28 +338,6 @@ Program::Program() {
 	// height of the video output monitors
     this->monh = this->monh * (glob->w / glob->h) / (1920.0f /  1080.0f);
 
-    // blue rectangle appearing to the right of a layer monitor when hovering its edge
-    // allows inserting layers
-	this->addbox = new Boxx;
-	this->addbox->vtxcoords->y1 = 1.0f - this->layh;
-	this->addbox->vtxcoords->w = 0.009f * 2.0f;
-	this->addbox->vtxcoords->h = this->layh - 0.075f;
-	this->addbox->upvtxtoscr();
-	this->addbox->reserved = true;
-	this->addbox->tooltiptitle = "Add layer ";
-	this->addbox->tooltip = "Leftclick this blue box to add a layer at this point. ";
-
-    // red rectangle appearing to the right of a layer monitor when hovering its edge
-    // allows deleting layers
-	this->delbox = new Boxx;
-	this->delbox->vtxcoords->y1 = 0.925f;
-	this->delbox->vtxcoords->w = 0.009f * 2.0f;
-	this->delbox->vtxcoords->h = 0.075f;
-	this->delbox->upvtxtoscr();
-	this->delbox->reserved = true;
-	this->delbox->tooltiptitle = "Delete layer to the left ";
-	this->delbox->tooltip = "Leftclick this red box to delete the layer to the left of it. ";
-
 	this->scrollboxes[0] = new Boxx;
 	this->scrollboxes[0]->vtxcoords->x1 = -1.0f + this->numw;
 	this->scrollboxes[0]->vtxcoords->y1 = 1.0f - this->layh - 0.05f;
@@ -2464,7 +2442,11 @@ void Program::shelf_triggering(ShelfElement* elem, int deck, Layer *layer) {
                 mainmix->reload_tagged_elems(elem, clays[k]->deck, clays[k]);
                 clays[k] = mainmix->layers[!mainprogram->prevmodus * 2 + clays[k]->deck][clays[k]->pos];
                 clays[k] = clays[k]->open_video(0, elem->path, true);
-                clays[k]->set_clones();
+                std::unique_lock<std::mutex> olock(clays[k]->endopenlock);
+                clays[k]->endopenvar.wait(olock, [&] { return clays[k]->opened; });
+                clays[k]->opened = false;
+                olock.unlock();
+                //clays[k]->set_clones();
                 clays[k]->oldclips->clear();
                 clays[k]->prevshelfdragelem = elem;
                 Clip *clip = new Clip;
@@ -2477,7 +2459,7 @@ void Program::shelf_triggering(ShelfElement* elem, int deck, Layer *layer) {
                 mainmix->reload_tagged_elems(elem, clays[k]->deck, clays[k]);
                 clays[k] = mainmix->layers[!mainprogram->prevmodus * 2 + clays[k]->deck][clays[k]->pos];
                 clays[k]->open_image(elem->path);
-                clays[k]->set_clones();
+                //clays[k]->set_clones();
                 clays[k]->oldclips->clear();
                 clays[k]->prevshelfdragelem = elem;
                 Clip *clip = new Clip;
@@ -2489,12 +2471,15 @@ void Program::shelf_triggering(ShelfElement* elem, int deck, Layer *layer) {
                 mainmix->set_prevshelfdragelem_layers(clays[k]);
                 bool done = elem->done;
                 mainmix->reload_tagged_elems(elem, clays[k]->deck, clays[k]);
-                if (done && elem->launchtype > 0) {
+                if (done) {
                     mainmix->set_layer(elem, clays[k]);
                 }
                 else {
                     clays[k] = mainmix->open_layerfile(elem->path, clays[k], true, true);
                     lay->set_inlayer(clays[k]);
+                    if (elem->launchtype == 0) {
+                        elem->cframes.push_back(clays[k]->frame);
+                    }
                     mainmix->currlay[!mainprogram->prevmodus] = clays[k];
                     mainmix->currlays[!mainprogram->prevmodus][k] = clays[k];
                     clays[k]->oldclips->clear();
@@ -2511,6 +2496,7 @@ void Program::shelf_triggering(ShelfElement* elem, int deck, Layer *layer) {
             if (clays[k]->deck == 0) laydeck0 = choose_layers(0)[0];
             if (clays[k]->deck == 1) laydeck1 = choose_layers(1)[0];
         }
+
 
         std::vector<Layer *> decklays;
         if (deck != -1) {
@@ -2606,7 +2592,7 @@ void Program::shelf_triggering(ShelfElement* elem, int deck, Layer *layer) {
                     lay->prevshelfdragelem = elem;
                 }
             }
-         }
+        }
     }
     mainprogram->midishelfelem = nullptr;
 }
@@ -2635,12 +2621,12 @@ Button::~Button() {
     this->deautomate();
     if (mainprogram) {
         if (mainprogram->prevmodus) {
-            if (lp->allbuttons.count(this)) {
+            if (lp->allbuttons.contains(this)) {
                 lp->allbuttons.erase(this);
             }
         }
         else {
-            if (lpc->allbuttons.count(this)) {
+            if (lpc->allbuttons.contains(this)) {
                 lpc->allbuttons.erase(this);
             }
         }
@@ -2739,7 +2725,7 @@ bool Button::toggled() {
 void Button::deautomate() {
     if (this) {
         LoopStationElement *elem = nullptr;
-        if (loopstation->butelemmap.count(this)) {
+        if (loopstation->butelemmap.contains(this)) {
             elem = loopstation->butelemmap[this];
         }
         if (!elem) return;
@@ -4298,6 +4284,7 @@ void Program::handle_laymenu1() {
 			this->pathto = "OPENFILESSTACK";
 			this->loadlay = mainmix->mouselayer;
             mainmix->addlay = false;
+            mainmix->addbefore = true;
 			std::thread filereq(&Program::get_multinname, this, "Open video/image/layer file", "", std::filesystem::canonical(this->currelemsdir).generic_string());
 			filereq.detach();
 		}
@@ -4353,6 +4340,7 @@ void Program::handle_laymenu1() {
             lay->isclone = false;
             Layer *duplay = nullptr;
             lay->dontcloseclips = true;
+            lay->transfered = true;
             if (lay->type == ELEM_IMAGE) {
                 duplay = lay->open_image(lay->filename, true, true);
             }
@@ -4381,6 +4369,7 @@ void Program::handle_laymenu1() {
             Layer* lay = mainmix->mouselayer->clone(false);
             Layer *clonelay = nullptr;
             lay->dontcloseclips = true;
+            lay->transfered = true;
             if (lay->type == ELEM_IMAGE) {
                 clonelay = lay->open_image(lay->filename, true, true);
             }
@@ -4524,16 +4513,18 @@ void Program::handle_laymenu1() {
         }
         else if ((!cond && k == 17) || k == 17 - cond * 2) {
             // record and replace layer
-            if (mainmix->mouselayer->clips->size() == 1) {
-                if (!mainmix->recording[0]) {
-                    // start recording layer with all effects, settings,... and replace with recorded video
-                    mainmix->reclay = mainmix->mouselayer;
-                    mainmix->reccodec = "hap";
-                    mainmix->reckind = 0;
-                    mainmix->recrep = true;
-                    mainmix->start_recording();
-                } else {
-                    mainmix->recording[0] = false;
+            if (!mainmix->reclay) {
+                if (mainmix->mouselayer->clips->size() == 1) {
+                    if (!mainmix->recording[0]) {
+                        // start recording layer with all effects, settings,... and replace with recorded video
+                        mainmix->reclay = mainmix->mouselayer;
+                        mainmix->reccodec = "hap";
+                        mainmix->reckind = 0;
+                        mainmix->recrep = true;
+                        mainmix->start_recording();
+                    } else {
+                        mainmix->recording[0] = false;
+                    }
                 }
             }
         }
@@ -7331,38 +7322,6 @@ bool Project::open(std::string path, bool autosave, bool newp, bool undo) {
         mainprogram->currelemsdir = this->elementsdir;
     }
 
-    if (!undo) {
-        int cb = binsmain->read_binslist();
-        for (int i = 0; i < binsmain->bins.size(); i++) {
-            std::string binname = this->binsdir + binsmain->bins[i]->name + ".bin";
-            if (exists(binname)) {
-                binsmain->open_bin(binname, binsmain->bins[i]);
-            }
-        }
-        if (binsmain->bins.size()) {
-            binsmain->make_currbin(cb);
-        }
-        else {
-            binsmain->new_bin("this is a bin");
-            binsmain->make_currbin(0);
-        }
-    }
-
-    // make set of paths in bins
-    this->pathsinbins.clear();
-    for (Bin *bin: binsmain->bins) {
-        for (BinElement *elem: bin->elements) {
-            if (elem->path != "") {
-                if (elem->type == ELEM_LAYER || elem->type == ELEM_DECK || elem->type == ELEM_MIX) {
-                    this->pathsinbins.emplace(pathtoplatform(elem->path));
-                }
-            }
-            if (elem->jpegpath != "") {
-                this->pathsinbins.emplace(pathtoplatform(elem->jpegpath));
-            }
-        }
-    }
-
     mainprogram->set_ow3oh3();
     //mainmix->new_state();
     mainmix->open_state(result + "_0.file", undo);
@@ -7429,6 +7388,38 @@ bool Project::open(std::string path, bool autosave, bool newp, bool undo) {
     }
 
     if (!undo) {
+        int cb = binsmain->read_binslist();
+        for (int i = 0; i < binsmain->bins.size(); i++) {
+            std::string binname = this->binsdir + binsmain->bins[i]->name + ".bin";
+            if (exists(binname)) {
+                binsmain->open_bin(binname, binsmain->bins[i]);
+            }
+        }
+        if (binsmain->bins.size()) {
+            binsmain->make_currbin(cb);
+        }
+        else {
+            binsmain->new_bin("this is a bin");
+            binsmain->make_currbin(0);
+        }
+    }
+
+    // make set of paths in bins
+    this->pathsinbins.clear();
+    for (Bin *bin: binsmain->bins) {
+        for (BinElement *elem: bin->elements) {
+            if (elem->path != "") {
+                if (elem->type == ELEM_LAYER || elem->type == ELEM_DECK || elem->type == ELEM_MIX) {
+                    this->pathsinbins.emplace(pathtoplatform(elem->path));
+                }
+            }
+            if (elem->jpegpath != "") {
+                this->pathsinbins.emplace(pathtoplatform(elem->jpegpath));
+            }
+        }
+    }
+
+    if (!undo) {
         // for initial bin screen entry speedup
         binsmain->handle(0);
     }
@@ -7459,6 +7450,10 @@ void Project::save(std::string path, bool autosave, bool undo, bool nocheck) {
 
     if (undo) {
         mainprogram->undoing = true;
+    }
+
+    while (mainprogram->concatting || mainprogram->startsolo) {
+        Sleep(100);
     }
 
     if (undo) {
@@ -7535,8 +7530,10 @@ void Project::save(std::string path, bool autosave, bool undo, bool nocheck) {
     // concat everyting in project file except for bins, they are saved separately
     std::vector<std::vector<std::string>> filestoadd2;
 	filestoadd2.push_back(filestoadd);
-    std::thread concat = std::thread(&Program::concat_files, mainprogram, mainprogram->temppath + "tempconcatproj",
-                                     str, filestoadd2);
+    std::string tcppath = mainprogram->temppath + "tempconcatproject_" + "_" + std::to_string(mainprogram->concatsuffix++);
+
+    std::thread concat = std::thread(&Program::concat_files, mainprogram, tcppath,
+                                     str, filestoadd2, mainprogram->concatting++, false);
     concat.detach();
 
 	if (!autosave && !undo) {
@@ -9375,7 +9372,8 @@ char* Program::bl_recv(int sock, char *buf, size_t sz, int flags) {
 //*************
 
 
-void Shelf::save(const std::string path, bool undo) {
+void Shelf::save(const std::string path, bool undo, bool startsolo) {
+    mainprogram->startsolo = startsolo;
     std::vector<std::string> filestoadd;
     std::ofstream wfile;
     wfile.open(path);
@@ -9428,8 +9426,14 @@ void Shelf::save(const std::string path, bool undo) {
         std::vector<std::vector<std::string>> filestoadd2;
         filestoadd2.push_back(filestoadd);
         std::string tpath = mainprogram->temppath + "tempconcatshelf" + "_" + std::to_string(mainprogram->concatsuffix++);
-        std::thread concat = std::thread(&Program::concat_files, mainprogram, tpath,
-                                         path, filestoadd2);
+
+        std::thread concat;
+        if (!startsolo) {
+            concat = std::thread(&Program::concat_files, mainprogram, tpath, path, filestoadd2, mainprogram->concatting++, startsolo);
+        }
+        else {
+            concat = std::thread(&Program::concat_files, mainprogram, tpath, path, filestoadd2, 0, startsolo);
+        }
         concat.detach();
     }
 }
@@ -9585,7 +9589,7 @@ bool Shelf::open(const std::string path, bool undo) {
                 }
                 if (istring == "RELPATH") {
                     safegetline(rfile, istring);
-                    if (elem->path == "" && istring != "") {
+                    if ((elem->path == "" || !exists(elem->path)) && istring != "") {
                         std::filesystem::current_path(mainprogram->contentpath);
                         elem->path = pathtoplatform(std::filesystem::absolute(istring).generic_string());
                     }
@@ -10118,30 +10122,27 @@ std::string Program::deconcat_files(std::string path) {
     return(outpath);
 }
 
-void Program::concat_files(std::string ofpath, std::string path, std::vector<std::vector<std::string>> filepaths) {
+void Program::concat_files(std::string ofpath, std::string path, std::vector<std::vector<std::string>> filepaths, int count, bool startsolo) {
     path = pathtoplatform(path);
 
-    int count = mainprogram->concatting;
-    mainprogram->concatting++;
+    if (!startsolo) {
+        if (mainprogram->concatting >= mainprogram->concatlimit) {
+            if (mainprogram->concatlimit != 0) {
+                this->goconcat = true;
+                this->concatvar.notify_all();
+                mainprogram->concatlimit = 0;
+            }
+        }
+        if (mainprogram->concatlimit) {
+            std::unique_lock<std::mutex> lock(this->concatlock);
+            this->concatvar.wait(lock, [&] { return this->goconcat; });
+            lock.unlock();
+        }
 
-    if (mainprogram->concatting == mainprogram->concatlimit) {
-        this->goconcat = true;
-        this->concatvar.notify_all();
-        mainprogram->concatlimit = 0;
-    }
-    if (mainprogram->concatlimit) {
-        std::unique_lock<std::mutex> lock(this->concatlock);
-        this->concatvar.wait(lock, [&] {return this->goconcat; });
-        lock.unlock();
-    }
-
-    //if (mainprogram->concatting == mainprogram->concatlimit) {
         while (count > mainprogram->numconcatted) {
             Sleep(10);
         }
-    //}
-
-    //Sleep(100);
+    }
 
     std::ofstream ofile;
     ofile.open(ofpath, std::ios::out | std::ios::binary);
@@ -10153,15 +10154,6 @@ void Program::concat_files(std::string ofpath, std::string path, std::vector<std
             paths.push_back(filepaths[i][j]);
         }
     }
-
-    /*if (paths.size() == 1) {
-        mainprogram->concatting--;
-        mainprogram->numconcatted++;
-        if (mainprogram->concatting == 0) {
-            mainprogram->numconcatted = 0;
-        }
-        return;
-    }*/
 
     int recogcode = 20011975;  // for recognizing EWOCvj content files
     ofile.write((const char *)&recogcode, 4);
@@ -10179,9 +10171,13 @@ void Program::concat_files(std::string ofpath, std::string path, std::vector<std
     }
     for (int i = 0; i < paths.size(); i++) {
         // save body
-        if (paths[i] == "") continue;
+        if (paths[i] == "") {
+            continue;
+        }
         int fileSize = getFileSize(paths[i]);
-        if (fileSize == -1) continue;
+        if (fileSize == -1) {
+            continue;
+        }
         std::fstream fileInput;
         fileInput.open(paths[i], std::ios::in | std::ios::binary);
         char *inputBuffer = new char[fileSize];
@@ -10199,11 +10195,19 @@ void Program::concat_files(std::string ofpath, std::string path, std::vector<std
         copy_file(ofpath, path);
         std::filesystem::remove(ofpath);
     }
+    else {
+        bool dummy = false;
+    }
 
-    mainprogram->concatting--;
-    mainprogram->numconcatted++;
-    if (mainprogram->concatting == 0) {
-        mainprogram->numconcatted = 0;
+    if (!startsolo) {
+        mainprogram->concatting--;
+        mainprogram->numconcatted++;
+        if (mainprogram->concatting == 0) {
+            mainprogram->numconcatted = 0;
+        }
+    }
+    else {
+        this->startsolo = false;
     }
 }
 
@@ -10691,7 +10695,7 @@ void Program::register_v4l2lbdevices(std::vector<std::string>& entries, GLuint t
         std::string device = "/dev/video" + std::to_string(tot);
 
         bool set = false;
-        if (this->v4l2lbtexmap.count(device)) {
+        if (this->v4l2lbtexmap.contains(device)) {
             if (this->v4l2lbtexmap[device] == tex) {
                 lbentries.push_back("V " + device);
                 set = true;
@@ -10714,7 +10718,7 @@ void Program::v4l2_start_device(std::string device, GLuint tex) {
         close(this->v4l2lboutputmap[device]);
         return;
     } else {
-        if (v4l2lbtexmap.count(device)) {
+        if (v4l2lbtexmap.contains(device)) {
             close(this->v4l2lboutputmap[device]);
         }
         v4l2lbtexmap[device] = tex;
