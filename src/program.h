@@ -878,7 +878,9 @@ class Program {
         std::vector<GLuint> pathtexes;
         std::vector<GLuint> vidtexes;
         std::vector<std::string> pathtstrs;
-		int pathscroll = 0;
+        int pathscroll = 0;
+        int onoffscroll = 0;
+        bool prefonoff = false;
 		bool indragbox = false;
 		Boxx* dragbox;
 		bool dragmiddle = false;

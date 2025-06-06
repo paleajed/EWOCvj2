@@ -5594,6 +5594,8 @@ bool Program::preferences_handle() {
         //this->create_auinmenu();
         ((PIDev*)mci)->populate();
     }
+    int cnt = 0;
+    this->prefonoff = false;
     bool brk = false;
 	for (int i = 0; i < mci->items.size(); i++) {
 	    if (mci->items[i]->name == "Project name") {
@@ -5606,11 +5608,19 @@ bool Program::preferences_handle() {
 	        mci->items[i]->dest = &mainprogram->project->oh;
 	    }
         if (mci->items[i]->type == PREF_ONOFF) {
-			if (!mci->items[i]->connected) continue;
-			draw_box(white, black, mci->items[i]->namebox, -1);
-			render_text(mci->items[i]->name, white, mci->items[i]->namebox->vtxcoords->x1 + 0.23f, mci->items[i]->namebox->vtxcoords->y1 + 0.06f, 0.0024f, 0.004f, 1, 0);
+            this->prefonoff = true;
+            cnt++;
+            if (cnt < this->onoffscroll + 1) {
+                continue;
+            }
+            if (cnt > this->onoffscroll + 8) {
+                continue;
+            }
+            if (!mci->items[i]->connected) continue;
+            draw_box(white, black, mci->items[i]->valuebox->vtxcoords->x1, mci->items[i]->valuebox->vtxcoords->y1 + this->onoffscroll * 0.2f, mci->items[i]->valuebox->vtxcoords->w, mci->items[i]->valuebox->vtxcoords->h, -1);
+			render_text(mci->items[i]->name, white, mci->items[i]->namebox->vtxcoords->x1 + 0.23f, mci->items[i]->namebox->vtxcoords->y1 + this->onoffscroll * 0.2f + 0.06f, 0.0024f, 0.004f, 1, 0);
 			if (mci->items[i]->valuebox->in(mx, my)) {
-				draw_box(white, lightblue, mci->items[i]->valuebox, -1);
+                draw_box(white, lightblue, mci->items[i]->valuebox->vtxcoords->x1, mci->items[i]->valuebox->vtxcoords->y1 + this->onoffscroll * 0.2f, mci->items[i]->valuebox->vtxcoords->w, mci->items[i]->valuebox->vtxcoords->h, -1);
 				if (this->leftmouse) {
 					mci->items[i]->onoff = !mci->items[i]->onoff;
                     if (mci->name == "Input Devices") {
@@ -5653,10 +5663,10 @@ bool Program::preferences_handle() {
 				}
 			}
 			else if (mci->items[i]->onoff) {
-				draw_box(white, green, mci->items[i]->valuebox, -1);
+                draw_box(white, green, mci->items[i]->valuebox->vtxcoords->x1, mci->items[i]->valuebox->vtxcoords->y1 + this->onoffscroll * 0.2f, mci->items[i]->valuebox->vtxcoords->w, mci->items[i]->valuebox->vtxcoords->h, -1);
 			}
 			else {
-				draw_box(white, black, mci->items[i]->valuebox, -1);
+                draw_box(white, black, mci->items[i]->valuebox->vtxcoords->x1, mci->items[i]->valuebox->vtxcoords->y1 + this->onoffscroll * 0.2f, mci->items[i]->valuebox->vtxcoords->w, mci->items[i]->valuebox->vtxcoords->h, -1);
 			}
             if (mci->items[i]->onoff && mci->items[i]->dest == &this->server) {
                 // set server ip pref to localip
@@ -5990,7 +6000,28 @@ bool Program::preferences_handle() {
         if (mci->items[i]->connected) mci->items[i]->namebox->in(mx, my); //trigger tooltip
 	}
 
-	this->qualfr = std::clamp((int)this->qualfr, 1, 10);
+    if (this->prefonoff) {
+        // prefonoff mousewheel scroll
+        this->onoffscroll -= this->mousewheel;
+        if (this->onoffscroll < 0) this->onoffscroll = 0;
+        if (cnt > 9 && cnt - this->onoffscroll < 9) {
+            this->onoffscroll = cnt - 8;
+        }
+        if (cnt < 9) {
+            this->onoffscroll = 0;
+        }
+
+        // GUI arrow scroll
+        this->onoffscroll = this->handle_scrollboxes(*this->defaultsearchscrollup,
+                                                    *this->defaultsearchscrolldown,
+                                                    cnt, this->onoffscroll, 8,
+                                                    mx, my);
+    }
+    else {
+        this->onoffscroll = 0;
+    }
+
+    this->qualfr = std::clamp((int)this->qualfr, 1, 10);
 
     std::unique_ptr <Boxx> box = std::make_unique <Boxx> ();
 	box->vtxcoords->x1 = 0.75f;
