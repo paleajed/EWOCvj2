@@ -31,8 +31,8 @@ typedef enum
 	ELEM_IMAGE = 2,
 	ELEM_DECK = 3,
 	ELEM_MIX = 4,
-	ELEM_LIVE = 5,
-	ELEM_NONE = 6,
+    ELEM_LIVE = 5,
+    ELEM_SOURCE = 1000,   // sources start here and count upwards
 } ELEM_TYPE;
 
 typedef enum
@@ -50,6 +50,7 @@ class BinElement;
 class MidiElement;
 class LoopStation;
 class PreciseTimerController;
+
 
 struct frame_result {
     bool newdata = false;
@@ -125,6 +126,7 @@ class Layer {
 		int numefflines[2] = {0,0};
 		int effscroll[2] = {0,0};
 		std::vector<Effect*> effects[2];
+        bool effcat = 0;
         Boxx* panbox;
         Boxx* closebox;
         Boxx* addbox;
@@ -328,10 +330,16 @@ class Layer {
         bool isnblayer = false;
         std::set<std::vector<float>> lpstcolors;
 
+        int ffglsourcenr = -1;
+        int instancenr = -1;
+        std::vector<Param*> ffglparams;
+        int numrows = 0;
+        Boxx *sourcebox;
+
         void display();
-		Effect* add_effect(EFFECT_TYPE type, int pos, bool cat);
-        Effect* do_add_effect(EFFECT_TYPE type, int pos, bool comp, bool cat);
-        Effect* replace_effect(EFFECT_TYPE type, int pos);
+		Effect* add_effect(EFFECT_TYPE type, int pos, bool cat, int ffglnr = -1);
+        Effect* do_add_effect(EFFECT_TYPE type, int pos, bool comp, bool cat, int ffglnr = -1);
+        Effect* replace_effect(EFFECT_TYPE type, int pos, int ffglnr = -1);
 		void delete_effect(int pos, bool connect = true);
 		void inhibit();
 		std::vector<Effect*>& choose_effects();
@@ -358,7 +366,7 @@ class Layer {
         Layer* transfer(bool clones = true, bool dontdeleffs = false, bool exchange = true, bool image = false);
         void transfer_cloneset_to(Layer *lay);
         void exchange_in_cloneset_by(Layer *lay, bool open = true);
-
+        void set_source(int sourcenr);
         Layer* next();
 		Layer* prev();
         Layer();
@@ -447,7 +455,6 @@ class Mixer {
         std::unordered_map<int, int> csnrmap;
 
         PreciseTimerController* timer;
-
 
         Layer *add_layer(std::vector<Layer*> &layers, int pos);
 		void delete_layer(std::vector<Layer*> &layers, Layer *lay, bool add);

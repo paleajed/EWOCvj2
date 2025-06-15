@@ -19,14 +19,14 @@ class LoopStation {
 		std::unordered_map<Param*, LoopStationElement*> parelemmap;
 		std::unordered_map<Button*, LoopStationElement*> butelemmap;
         std::unordered_set<LoopStationElement*> odelems;
-		std::vector<float> colvals = {0.8f, 0.3f, 0.3f
+		std::vector<float> colvals = {0.7f, 0.2f, 0.2f
 									, 0.4f, 0.6f, 0.4f
 									, 0.3f, 0.3f, 0.7f
 									, 0.7f, 0.7f, 0.3f
 									, 0.7f, 0.3f, 0.7f
 									, 0.3f, 0.7f, 0.7f
 									, 0.7f, 0.4f, 0.3f
-									, 0.4f, 0.4f, 0.3f
+									, 0.3f, 0.1f, 0.06f
 									, 0.7f, 0.3f, 0.4f
 									, 0.4f, 0.3f, 0.7f
 									, 0.3f, 0.7f, 0.4f
@@ -64,13 +64,6 @@ class LoopStationElement {
 		std::unordered_set<Param*> params;
 		std::unordered_set<Button*> buttons;
         std::set<Layer*> layers;
-        std::vector<int> effcatposns;  // for shelf triggering nblayers
-        std::vector<int> effposns;  // for shelf triggering nblayers
-        std::vector<int> parposns;  // for shelf triggering nblayers
-        std::vector<int> buteffcatposns;  // for shelf triggering nblayers
-        std::vector<int> buteffposns;  // for shelf triggering nblayers
-        std::vector<int> butposns;  // for shelf triggering nblayers
-        std::vector<int> compareelems;  // for shelf triggering nblayers
         LoopStation* lpst;
 		Button *recbut;
 		Button *loopbut;

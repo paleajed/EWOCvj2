@@ -1802,8 +1802,8 @@ void main()
 		}
 		float totdiff = (abs(chred - tex1.r) + abs(chgreen - tex1.g) + abs(chblue - tex1.b)) * tex1.a;
 		if (totdiff > colortol) {
-			if (chinv) fc = vec4(tex0.rgb, 1.0f);
-			else fc = vec4(tex1.rgb, 1.0f);
+			if (chinv) fc = vec4(tex0.rgb, tex0.a);
+			else fc = vec4(tex1.rgb, tex1.a);
 		}
 		else {
 			float ia = (colortol - totdiff) * -(feather - 5.2f);
@@ -1827,8 +1827,8 @@ void main()
 		float huediff = abs(rgb2hsv(vec3(chred, chgreen, chblue)).x - rgb2hsv(vec3(tex1.r, tex1.g, tex1.b)).x);
 		if (huediff > 0.5f) huediff = 1.0f - huediff;
 		if (huediff > huetol) {
-			if (chinv) fc = vec4(tex0.rgb, 1.0f);
-			else fc = vec4(tex1.rgb, 1.0f);
+			if (chinv) fc = vec4(tex0.rgb, tex0.a);
+			else fc = vec4(tex1.rgb, tex1.a);
 		}
 		else {
 			float ia = ((huetol - huediff) * (-(feather - 5.2f) / 4.0f)) * 4.0f;
@@ -1851,8 +1851,8 @@ void main()
 
 		float lumdiff = abs(rgb2hsv(vec3(chred, chgreen, chblue)).z - rgb2hsv(vec3(tex1.r, tex1.g, tex1.b)).z);
 		if (lumdiff > lumtol) {
-			if (chinv) fc = vec4(tex0.rgb, 1.0f);
-			else fc = vec4(tex1.rgb, 1.0f);
+			if (chinv) fc = vec4(tex0.rgb, tex0.a);
+			else fc = vec4(tex1.rgb, tex1.a);
 		}
 		else {
 			float ia = ((lumtol - lumdiff) * (-(feather - 5.2f) / 3.0f)) * 3.0f;

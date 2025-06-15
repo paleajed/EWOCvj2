@@ -2538,22 +2538,6 @@ void BinsMain::save_bin(std::string path) {
 			wfile << std::to_string(binel->type);
 			wfile << "\n";
 			ELEM_TYPE type = binel->type;
-			/*if ((type == ELEM_LAYER || type == ELEM_DECK || type == ELEM_MIX) && binel->name != "") {
-				filestoadd.push_back(binel->path);
-			}*/
-			/*if (binel->name != "") {
-                if (!exists(binel->absjpath)) {
-                    if (!mainprogram->autosaving) {
-                        binel->absjpath = find_unused_filename(this->currbin->name,
-                                                                                             mainprogram->project->binsdir+ this->currbin->name + "/",
-                                                                                             ".jpg");
-                        binel->jpegpath = binel->absjpath;
-                        save_thumb(binel->absjpath,
-                                   binel->tex);
-                        jpap = binel->jpegpath;
-                    }
-                }
-			}*/
             wfile << "ABSJPEGPATH\n";
             wfile << jpap;
             wfile << "\n";

@@ -47,7 +47,7 @@ typedef enum
 	MIRROR = 39,
     BOXBLUR = 40,
     CHROMASTRETCH = 41,
-    PASS = 42,
+    FFGL = 1000,
 } EFFECT_TYPE;
 
 typedef enum
@@ -105,7 +105,9 @@ class Effect {
         GLuint fbotex = -1;
 		EffectNode *node = NULL;
 		std::vector<Param*> params;
-		virtual float get_speed() { return -1; };
+        int ffglnr = -1;
+        int instancenr = -1;
+        virtual float get_speed() { return -1; };
 		virtual float get_ripplecount() { return -1; };
 		virtual void set_ripplecount(float count) { return; };
 		std::string get_namestring();
@@ -336,5 +338,12 @@ public:
 class ChromastretchEffect : public Effect {
 public:
     ChromastretchEffect();
+};
+
+class FFGLEffect : public Effect {
+public:
+    std::string name;
+
+    FFGLEffect(Layer *lay, int ffglnr);
 };
 

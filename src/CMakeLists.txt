@@ -31,7 +31,10 @@ add_executable(EWOCvj2 WIN32
         window.h
         retarget.h
         BeatDetektor.cpp
-        BeatDetektor.h)
+        BeatDetektor.h
+        FFGLHost.h
+        FFGLHost.cpp
+)
 
 set(Boost_USE_STATIC_RUNTIME ON)
 set(Boost_USE_STATIC_LIBS ON)
@@ -60,6 +63,12 @@ if (UNIX)
     include_directories(/usr/include/rtmidi)
     set(LIB_SEARCH_DIRS "/usr/lib;/usr/lib64;/usr/local/lib;/usr/local/lib64")
 endif (UNIX)
+
+# Include FFGL headers
+set(FFGL_ROOT_DIR ${CMAKE_CURRENT_SOURCE_DIR}/../external/ffgl)
+target_include_directories(${PROJECT_NAME} PRIVATE
+        ${FFGL_ROOT_DIR}/source/lib/ffgl
+)
 
 set(CMAKE_RUNTIME_OUTPUT_DIRECTORY_DEBUG ${CMAKE_BINARY_DIR}/debug)
 set(CMAKE_RUNTIME_OUTPUT_DIRECTORY_RELEASE ${CMAKE_BINARY_DIR}/release)

@@ -609,7 +609,7 @@ void Mixer::handle_adaptparam() {
         }
         else {
             GLint var = glGetUniformLocation(mainprogram->ShaderProgram, this->adaptparam->shadervar.c_str());
-            glUniform1f(var, this->adaptparam->value * (mainprogram->ow3 / mainprogram->ow));
+            glUniform1f(var, this->adaptparam->value * (mainprogram->ow[0] / mainprogram->ow[1]));
         }
     }*/
     else if (this->adaptparam->effect != nullptr) {
@@ -694,6 +694,10 @@ Effect::~Effect() {
     if (this->layer != mainmix->reclay) {
         mainprogram->add_to_texpool(this->fbotex);
         if (this->fbo != -1) mainprogram->add_to_fbopool(this->fbo);
+    }
+    if (this->instancenr != -1) {
+        mainprogram->ffglinstances[this->ffglnr][this->instancenr]->deinitialize();
+        mainprogram->ffglinstances[this->ffglnr].erase(mainprogram->ffglinstances[this->ffglnr].begin() + this->instancenr);
     }
 }
 
@@ -826,7 +830,14 @@ std::string Effect::get_namestring() {
         case 41:
             effstr = "CHROMASTRETCH";
             break;
-	}
+    }
+
+    if (type >= 1000) {   // FFGL
+        std::string name = mainprogram->ffgleffectnames[this->ffglnr];
+        std::transform(name.begin(), name.end(), name.begin(), ::toupper);
+        effstr = name;
+    }
+
 	return effstr;
 }
 
@@ -845,7 +856,7 @@ void Mixer::copy_effects(Layer* slay, Layer* dlay, bool comp) {
 		dlay->effects[m].clear();
 		for (int j = 0; j < slay->effects[m].size(); j++) {
 			Effect* eff = slay->effects[m][j];
-			Effect* ceff = new_effect(eff->type);
+			Effect* ceff = new_effect(dlay, eff->type, eff->ffglnr);
 			ceff->type = eff->type;
 			ceff->layer = dlay;
 			ceff->onoffbutton->layer = dlay;
@@ -1980,6 +1991,39 @@ MirrorEffect::MirrorEffect() {
     this->params.push_back(param);
 }
 
+FFGLEffect::FFGLEffect(Layer *lay, int ffglnr) {
+    int w = mainprogram->ow[lay->comp];
+    int h = mainprogram->oh[lay->comp];
+
+    auto plug = mainprogram->ffgleffectplugins[ffglnr];
+    auto instance = plug->createInstance(w, h);
+    mainprogram->ffglinstances[ffglnr].push_back(instance);
+    this->instancenr = mainprogram->ffglinstances[ffglnr].size() - 1;
+
+    // get parameters from FFGLHost::parameters
+    this->numrows = (int)instance->getParameters().size() / 3 + 1;
+    int cnt = 0;
+    for (auto par : instance->parameters) {
+        Param *param = new Param;
+        if (cnt != 0) {
+            if (cnt % 3 == 0) {
+                param->nextrow = true;
+            }
+        }
+        cnt++;
+        param->name = par.name;
+        param->deflt = FFGLUtils::FFMixedToFloat(par.defaultValue);
+        param->value = param->deflt;
+        param->range[0] = par.range.min;
+        param->range[1] = par.range.max;
+        param->sliding = true;
+        param->effect = this;
+        param->box->tooltiptitle = par.name;
+        param->box->tooltip = "Set " + par.name + " parameter of FFGL " + mainprogram->ffgleffectplugins[ffglnr]->pluginInfo.PluginName + " effect - between 0.0 and 1.0 ";
+        this->params.push_back(param);
+    }
+}
+
 float RippleEffect::get_speed() { return this->speed; }
 float RippleEffect::get_ripplecount() { return this->ripplecount; }
 void RippleEffect::set_ripplecount(float count) { this->ripplecount = count; }
@@ -1991,10 +2035,11 @@ void StrobeEffect::set_phase(int phase) { this->phase = phase; }
 
 // EFFECTS BELONGING TO A LAYER
 
-Effect* Layer::do_add_effect(EFFECT_TYPE type, int pos, bool comp, bool cat) {
+Effect* Layer::do_add_effect(EFFECT_TYPE type, int pos, bool comp, bool cat, int ffglnr) {
 	// adds an effect of a certain type to a layer at a certain position in its effect list
 	// comp is set when the layer belongs to the output layer stacks
-	Effect *effect = new_effect(type);
+	Effect *effect = new_effect(this, type, ffglnr);
+    effect->ffglnr = ffglnr;
 
 	effect->type = type;
 	effect->pos = pos;
@@ -2050,14 +2095,14 @@ Effect* Layer::do_add_effect(EFFECT_TYPE type, int pos, bool comp, bool cat) {
 
 	return effect;
 }
-Effect* Layer::add_effect(EFFECT_TYPE type, int pos, bool cat) {
+Effect* Layer::add_effect(EFFECT_TYPE type, int pos, bool cat, int ffglnr) {
 	Effect *eff;
 
 	if (mainprogram->prevmodus) {
-		eff = this->do_add_effect(type, pos, false, cat);
+		eff = this->do_add_effect(type, pos, false, cat, ffglnr);
 	}
 	else {
-		eff = this->do_add_effect(type, pos, true, cat);
+		eff = this->do_add_effect(type, pos, true, cat, ffglnr);
 	}
 	eff->onoffbutton->layer = this;
 	for (int i = 0; i < eff->params.size(); i++) {
@@ -2071,11 +2116,11 @@ Effect* Layer::add_effect(EFFECT_TYPE type, int pos, bool cat) {
     return eff;
 }
 
-Effect* Layer::replace_effect(EFFECT_TYPE type, int pos) {
+Effect* Layer::replace_effect(EFFECT_TYPE type, int pos, int ffglnr) {
 	Effect *effect;
 
 	this->delete_effect(pos);
-	effect = this->add_effect(type, pos, mainprogram->effcat[this->deck]->value);
+	effect = this->add_effect(type, pos, mainprogram->effcat[this->deck]->value, ffglnr);
 
 	return effect;
 }
@@ -2312,9 +2357,9 @@ Layer::Layer(bool comp) {
         }
         GLuint rettex;
         if (comp) {
-            rettex = mainprogram->grab_from_texpool(mainprogram->ow, mainprogram->oh, GL_RGBA8);
+            rettex = mainprogram->grab_from_texpool(mainprogram->ow[1], mainprogram->oh[1], GL_RGBA8);
         } else {
-            rettex = mainprogram->grab_from_texpool(mainprogram->ow3, mainprogram->oh3, GL_RGBA8);
+            rettex = mainprogram->grab_from_texpool(mainprogram->ow[0], mainprogram->oh[0], GL_RGBA8);
         }
         if (rettex != -1) {
             this->fbotex = rettex;
@@ -2326,9 +2371,9 @@ Layer::Layer(bool comp) {
             glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_BORDER);
             glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_BORDER);
             if (comp) {
-                glTexStorage2D(GL_TEXTURE_2D, 1, GL_RGBA8, mainprogram->ow, mainprogram->oh);
+                glTexStorage2D(GL_TEXTURE_2D, 1, GL_RGBA8, mainprogram->ow[1], mainprogram->oh[1]);
             } else {
-                glTexStorage2D(GL_TEXTURE_2D, 1, GL_RGBA8, mainprogram->ow3, mainprogram->oh3);
+                glTexStorage2D(GL_TEXTURE_2D, 1, GL_RGBA8, mainprogram->ow[0], mainprogram->oh[0]);
             }
             mainprogram->texintfmap[this->fbotex] = GL_RGBA8;
         }
@@ -2621,6 +2666,12 @@ Layer::Layer(bool comp) {
 	this->chinv->box->tooltip = "Leftclick toggles key inverse modus: either the selected color/hue/grayscale is exchanged or all colors/hues/grayscales but the selected color/hue/grayscale are exchanged. ";
 	this->chdir->box->acolor[3] = 1.0f;
 	this->chinv->box->acolor[3] = 1.0f;
+    this->sourcebox = new Boxx;
+    this->sourcebox->vtxcoords->w = 0.3f;
+    this->sourcebox->vtxcoords->h = 0.075f;
+    this->sourcebox->tooltiptitle = "Source name ";
+    this->sourcebox->tooltip = "Leftclick or rightclick source plugin name to change it to another source plugin. ";
+    this->sourcebox->upvtxtoscr();
 
 	this->currclip = new Clip;
 	this->currclip->type = ELEM_LAYER;
@@ -2934,12 +2985,12 @@ bool Layer::initialize(int w, int h, int compression) {
 void Layer::set_aspectratio(int lw, int lh) {
 	float ow, oh;
 	if (this->comp) {
-		ow = mainprogram->ow;
-		oh = mainprogram->oh;
+		ow = mainprogram->ow[1];
+		oh = mainprogram->oh[1];
 	}
 	else {
-		ow = mainprogram->ow3;
-		oh = mainprogram->oh3;
+		ow = mainprogram->ow[0];
+		oh = mainprogram->oh[0];
 	}
 	int w = ow;
 	int h = oh;
@@ -3140,7 +3191,7 @@ Layer* Layer::clone(bool dup) {
 	mainprogram->effcat[dlay->deck]->value = 0;
     std::unordered_map<LoopStationElement*, LoopStationElement*> lpmap;
 	for (int i = 0; i < this->effects[0].size(); i++) {
-		Effect* eff = dlay->add_effect(this->effects[0][i]->type, i, mainprogram->effcat[this->deck]->value);
+		Effect* eff = dlay->add_effect(this->effects[0][i]->type, i, mainprogram->effcat[this->deck]->value, this->effects[0][i]->ffglnr);
 		for (int j = 0; j < this->effects[0][i]->params.size(); j++) {
 			Param* par = this->effects[0][i]->params[j];
 			Param* cpar = eff->params[j];
@@ -3516,37 +3567,45 @@ void make_layboxes() {
 				testlay->colorbox->vtxcoords->h = 0.075f;
 				testlay->colorbox->upvtxtoscr();
 
-				// shift effectboxes and parameterboxes according to position in stack and scrollposition of stack
-				std::vector<Effect*> &evec = testlay->choose_effects();
-				Effect *prevmodus = nullptr;
-				for (int j = 0; j < evec.size(); j++) {
-					Effect *eff = evec[j];
-					eff->box->vtxcoords->x1 = testlay->mixbox->vtxcoords->x1 + 0.075f;
-					eff->onoffbutton->box->vtxcoords->x1 = testlay->mixbox->vtxcoords->x1 + 0.0375f;
-					eff->drywet->box->vtxcoords->x1 = testlay->mixbox->vtxcoords->x1;
-					float dy;
-					if (prevmodus) {
-						if (prevmodus->params.size() < 4) {
-							eff->box->vtxcoords->y1 = prevmodus->box->vtxcoords->y1 - 0.075f;
-						}
-						else if (prevmodus->params.size() > 5) {
-							eff->box->vtxcoords->y1 = prevmodus->box->vtxcoords->y1 - 0.225f;
-						}
-						else {
-							eff->box->vtxcoords->y1 = prevmodus->box->vtxcoords->y1 - 0.15f;
-						}
-					}
-					else {
-						eff->box->vtxcoords->y1 = 1.0 - mainprogram->layh - 0.435f + (0.075f *
-						        testlay->effscroll[mainprogram->effcat[testlay->deck]->value]);
-					}
-					eff->box->upvtxtoscr();
-					eff->onoffbutton->box->vtxcoords->y1 = eff->box->vtxcoords->y1;
-					eff->onoffbutton->box->upvtxtoscr();
-					eff->drywet->box->vtxcoords->y1 = eff->box->vtxcoords->y1;
-					eff->drywet->box->upvtxtoscr();
-					prevmodus = eff;
-				}
+                // shift effectboxes and parameterboxes according to position in stack and scrollposition of stack
+                if (testlay->ffglsourcenr != -1) {
+                    testlay->sourcebox->vtxcoords->x1 = testlay->mixbox->vtxcoords->x1 + 0.075f;
+                    testlay->sourcebox->vtxcoords->y1 = 1.0 - mainprogram->layh - 0.435f + (0.075f *
+                                                                                            testlay->effscroll[mainprogram->effcat[testlay->deck]->value]);
+                }
+                std::vector<Effect*> &evec = testlay->choose_effects();
+                Effect *preveff = nullptr;
+                for (int j = 0; j < evec.size(); j++) {
+                    Effect *eff = evec[j];
+                    eff->box->vtxcoords->x1 = testlay->mixbox->vtxcoords->x1 + 0.075f;
+                    eff->onoffbutton->box->vtxcoords->x1 = testlay->mixbox->vtxcoords->x1 + 0.0375f;
+                    eff->drywet->box->vtxcoords->x1 = testlay->mixbox->vtxcoords->x1;
+                    float dy;
+                    if (preveff) {
+                        if (preveff->params.size() < 4) {
+                            eff->box->vtxcoords->y1 = preveff->box->vtxcoords->y1 - 0.075f;
+                        }
+                        else if (preveff->params.size() > 5) {
+                            eff->box->vtxcoords->y1 = preveff->box->vtxcoords->y1 - 0.225f;
+                        }
+                        else {
+                            eff->box->vtxcoords->y1 = preveff->box->vtxcoords->y1 - 0.15f;
+                        }
+                    }
+                    else {
+                        eff->box->vtxcoords->y1 = 1.0 - mainprogram->layh - 0.435f + (0.075f *
+                                                                                      testlay->effscroll[mainprogram->effcat[testlay->deck]->value]);
+                    }
+                    if (eff->pos == 0) {
+                        eff->box->vtxcoords->y1 -= (testlay->numrows - 1) * (testlay->ffglsourcenr != -1) * 0.075f;
+                    }
+                    eff->box->upvtxtoscr();
+                    eff->onoffbutton->box->vtxcoords->y1 = eff->box->vtxcoords->y1;
+                    eff->onoffbutton->box->upvtxtoscr();
+                    eff->drywet->box->vtxcoords->y1 = eff->box->vtxcoords->y1;
+                    eff->drywet->box->upvtxtoscr();
+                    preveff = eff;
+                }
 
 				// Make GUI box of mixing factor slider
                 testlay->blendnode->box->lcolor[0] = 0.7;
@@ -4537,22 +4596,34 @@ void Layer::display() {
                 if (this->type == ELEM_LIVE) {
                     name = this->filename;
                 }
+                else if (this->ffglsourcenr != -1) {
+                    name = mainprogram->ffglsourcenames[this->ffglsourcenr];
+                }
                 else {
                     name = remove_extension(basename(this->filename));
                 }
 				render_text(name, white, box->vtxcoords->x1 + 0.015f,
                 box->vtxcoords->y1 + box->vtxcoords->h - 0.09f, 0.0005f, 0.0008f);
 				if (this->vidformat == -1) {
-					if (this->type == ELEM_IMAGE) {
-						render_text("IMAGE", white, box->vtxcoords->x1 + 0.015f, box->vtxcoords->y1 + box->vtxcoords->h - 0.135f, 0.0005f, 0.0008f);
-					}
-				}
+                    if (this->type == ELEM_IMAGE) {
+                        render_text("IMAGE", white, box->vtxcoords->x1 + 0.015f, box->vtxcoords->y1 + box->vtxcoords->h - 0.135f, 0.0005f, 0.0008f);
+                    }
+                    else if (this->ffglsourcenr != -1) {
+                        render_text("SOURCE", white, box->vtxcoords->x1 + 0.015f, box->vtxcoords->y1 + box->vtxcoords->h - 0.135f, 0.0005f, 0.0008f);
+                    }
+                }
 				else if (this->vidformat == 188 || this->vidformat == 187) {
 					render_text("HAP", white, box->vtxcoords->x1 + 0.015f, box->vtxcoords->y1 + box->vtxcoords->h - 0.135f, 0.0005f, 0.0008f);
 				}
 				else {
-					render_text("CPU", red, box->vtxcoords->x1 + 0.015f, box->vtxcoords->y1 + box->vtxcoords->h - 0.135f, 0.0005f, 0.0008f);
-				}
+                    if (this->type == ELEM_IMAGE) {
+                        render_text("LIVE INPUT", white, box->vtxcoords->x1 + 0.015f,
+                                    box->vtxcoords->y1 + box->vtxcoords->h - 0.135f, 0.0005f, 0.0008f);
+                    } else {
+                        render_text("CPU", red, box->vtxcoords->x1 + 0.015f,
+                                    box->vtxcoords->y1 + box->vtxcoords->h - 0.135f, 0.0005f, 0.0008f);
+                    }
+                }
 			}
             if (this == mainmix->reclay) {
                 render_text("REC", red, box->vtxcoords->x1 + 0.22f,
@@ -4618,8 +4689,7 @@ void Layer::display() {
                                 mainmix->currlays[!mainprogram->prevmodus].clear();
                                 mainmix->currlays[!mainprogram->prevmodus].push_back(this);
                             }
-                            mainprogram->effcat[this->deck]->value = 0;
-                            //mainprogram->recundo = true;
+                            mainprogram->effcat[this->deck]->value = this->effcat;
                         }
                     }
                 }
@@ -5001,7 +5071,7 @@ void Layer::display() {
                     mixstr = "ChrKey";
                     if (this->pos > 0) {
                         draw_box(this->colorbox, -1);
-                        render_text("Chroma", white, this->mixbox->vtxcoords->x1 + 0.12f,
+                        render_text("Hue", white, this->mixbox->vtxcoords->x1 + 0.12f,
                                     1.0f - (mainprogram->layh + 0.135f) + 0.03f, 0.00045f, 0.00075f);
                     }
                     break;
@@ -5009,12 +5079,15 @@ void Layer::display() {
                     mixstr = "LumKey";
                     if (this->pos > 0) {
                         draw_box(this->colorbox, -1);
-                        render_text("Lumi", white, this->mixbox->vtxcoords->x1 + 0.12f,
+                        render_text("Grey", white, this->mixbox->vtxcoords->x1 + 0.12f,
                                     1.0f - (mainprogram->layh + 0.135f) + 0.03f, 0.00045f, 0.00075f);
                     }
                     break;
                 case 22:
                     mixstr = "Disp";
+                    break;
+                case 1000:
+                    mixstr = "FFGL";
                     break;
             }
             if (this->pos > 0) {
@@ -5039,6 +5112,7 @@ void Layer::display() {
             box->vtxcoords->x1 = efx;
             box->upvtxtoscr();
             mainprogram->handle_button(mainprogram->effcat[this->deck]);
+            this->effcat = mainprogram->effcat[this->deck]->value;
             if (this->effects[1].size() && mainprogram->effcat[this->deck]->value == 0) {
                 box->acolor[0] = 0.5f;
                 box->acolor[1] = 0.0f;
@@ -5079,6 +5153,56 @@ void Layer::display() {
             }
             // Draw effectboxes and parameters
             std::string effstr;
+            // first draw source parameters if layer is ELEM_SOURCE
+            float x1, y1, wi;
+            if (this->ffglsourcenr != -1) {
+                x1 = this->sourcebox->vtxcoords->x1 + 0.048f;
+                wi = (0.7f - mainprogram->numw - 0.048f) / 4.0f;
+
+                box = this->sourcebox;
+                if (box->vtxcoords->y1 >=
+                    1.0 - mainprogram->layh - 0.135f - 0.33f - 0.075f * (mainprogram->efflines - 1)) {
+
+                    if (box->vtxcoords->y1 <= 1.0 - mainprogram->layh - 0.135f - 0.27f) {
+                        draw_box(lightgrey, darkblue, box, -1);
+                        std::string namestr = mainprogram->ffglsourcenames[this->ffglsourcenr];
+                        float textw =
+                                (textwvec_total(render_text(namestr, white, this->sourcebox->vtxcoords->x1 + 0.015f,
+                                                            this->sourcebox->vtxcoords->y1 + 0.075f - 0.045f,
+                                                            0.00045f, 0.00075f))) * 1.5f;
+                        this->sourcebox->vtxcoords->w = textw + 0.048f;
+                        x1 = this->sourcebox->vtxcoords->x1 + 0.048f + textw;
+                        wi = (0.7f - mainprogram->numw - 0.048f - textw) / 4.0f;
+                    }
+                    y1 = this->sourcebox->vtxcoords->y1;
+                    // draw parameters
+                    for (int j = 0; j < this->ffglparams.size(); j++) {
+                        Param *par = this->ffglparams[j];
+                        par->box->lcolor[0] = 0.6;
+                        par->box->lcolor[1] = 0.6;
+                        par->box->lcolor[2] = 0.6;
+                        par->box->lcolor[3] = 1.0;
+                        if (par->nextrow) {
+                            x1 = this->sourcebox->vtxcoords->x1 + 0.03f;
+                            y1 -= 0.075f;
+                            wi = (0.7f - mainprogram->numw - 0.03f) / 4.0;
+                        }
+                        par->box->vtxcoords->x1 = x1;
+                        x1 += wi + 0.015f;
+                        par->box->vtxcoords->y1 = y1;
+                        par->box->vtxcoords->w = wi;
+                        par->box->vtxcoords->h = this->sourcebox->vtxcoords->h;
+                        par->box->upvtxtoscr();
+
+                        if (par->box->vtxcoords->y1 >=
+                            1.0 - mainprogram->layh - 0.135f - 0.33f - 0.075f * (mainprogram->efflines - 1)) {
+                            if (par->box->vtxcoords->y1 <= 1.0 - mainprogram->layh - 0.135f - 0.27f) {
+                                par->handle();
+                            }
+                        }
+                    }
+                }
+            }
             for (int i = 0; i < evec.size(); i++) {
                 Effect *eff = evec[i];
                 Boxx *box;
@@ -5163,7 +5287,7 @@ void Layer::display() {
                     sx1 = box->scrcoords->x1 + mainprogram->xvtxtoscr(0.0375f);
                     sy1 = this->opacity->box->scrcoords->y1;
                     vx1 = box->vtxcoords->x1 + 0.0375f;
-                    vy1 = 1 - mainprogram->layh - 0.375f;
+                    vy1 = 1 - mainprogram->layh - 0.375f - (this->numrows - 1) * (this->ffglsourcenr != -1) * 0.075f;
                 }
                 if (!mainprogram->menuondisplay) {
                     if (sy1 - 7.5 <= mainprogram->my && mainprogram->my <= sy1 + 7.5) {
@@ -5243,17 +5367,20 @@ void Layer::display() {
                         }
                         box = eff->onoffbutton->box;
                         eff->onoffbutton->box->upvtxtoscr();
+                        mainprogram->inbetween = false;
                         if (box->scrcoords->x1 < mainprogram->mx &&
                             mainprogram->mx < box->scrcoords->x1 + mainprogram->layw * 1.5f * glob->w / 2.0) {
                             if (box->scrcoords->y1 - box->scrcoords->h - 7.5 < mainprogram->iemy &&
                                 mainprogram->iemy < box->scrcoords->y1 - box->scrcoords->h + 7.5) {
                                 // mouse inbetween effects
+                                mainprogram->inbetween = true;
                                 if ((mainprogram->menuactivation || mainprogram->leftmouse || mainprogram->lmover) &&
                                     !mainprogram->drageff) {
                                     mainprogram->effectmenu->state = 2;
                                     mainmix->insert = true;
                                     mainmix->mouseeffect = j;
                                     mainmix->mouselayer = this;
+                                    mainprogram->lmover = false;
                                     mainprogram->effectmenu->menux = mainprogram->mx;
                                     mainprogram->effectmenu->menuy = mainprogram->iemy;
                                     mainprogram->menuactivation = false;
@@ -5966,12 +6093,13 @@ void Layer::display() {
 							glUniform1i(chinv, this->chinv->value);
 						}
 					}
-					if (this->chinv->value) {
-                        draw_box(white, green, this->chinv->box, -1);
-					}
-					else {
-                        draw_box(white, black, this->chinv->box, -1);
-					}
+                    if (this->chdir->value) {
+                        this->chinv->box->acolor[1] = 0.7f;
+                    }
+                    else {
+                        this->chinv->box->acolor[1] = 0.0f;
+                    }
+                    draw_box(this->chinv->box, -1);
 					render_text("I", white, this->chinv->box->vtxcoords->x1 + 0.0117f, this->chinv->box->vtxcoords->y1 + 0.0624f - 0.045f, 0.00045f, 0.00075f);
 				}
 			}
@@ -6206,7 +6334,10 @@ void Layer::set_live_base(std::string livename) {
 		lay->clonesetnr = -1;
 	}
 
-	lay->filename = livename;
+    lay->numrows = 0;
+    lay->ffglsourcenr = -1;
+
+    lay->filename = livename;
 	avdevice_register_all();
 	ptrdiff_t pos = std::find(mainprogram->busylist.begin(), mainprogram->busylist.end(), livename) - mainprogram->busylist.begin();
 	if (pos >= mainprogram->busylist.size()) {
@@ -6367,59 +6498,45 @@ void ShelfElement::set_nbclayers(Layer *lay) {
     lay->lpst->init();
     int count = 0;
     for (LoopStationElement *elem: lpst->elements) {
-        LoopStationElement *layelem = lay->lpst->elements[count++];
-        layelem->effcatposns.clear();
-        layelem->effposns.clear();
-        layelem->parposns.clear();
-        layelem->buteffcatposns.clear();
-        layelem->buteffposns.clear();
-        layelem->compareelems.clear();
-        for (int n = 0; n < 2; n++) {
-            for (int i = 0; i < lay->effects[n].size(); i++) {
-                Effect *eff = lay->effects[n][i];
-                for (int j = 0; j < eff->params.size(); j++) {
-                    Param *par = eff->params[j];
-                    if (elem->params.find(par) != elem->params.end()) {
-                        layelem->get_state_from(elem);
-
-                        layelem->eventlist = elem->eventlist;
-                        layelem->effcatposns.push_back(n);
-                        layelem->effposns.push_back(i);
-                        layelem->parposns.push_back(j);
-                        //layelem->compareelems.push_back(layelem->pos);
-
-                        layelem->recbut->value = elem->recbut->value;
-
-                        layelem->params.emplace(par);
-                        lay->lpst->parelemmap[par] = elem;
-                        lay->lpst->allparams.emplace(par);
+        LoopStationElement *layelem = lay->lpst->elements[count];
+        if (elem->eventlist.size()) {
+            bool found = false;
+            for (auto event : elem->eventlist) {
+                Layer *lay2 = nullptr;
+                Param *par = std::get<1>(event);
+                if (par) {
+                    if (par->name == "crossfade" || par->name == "crossfadecomp" || par->shadervar == "mixfac" ||
+                        par->name == "wipex" || par->name == "wipey" || par->name == "wipexlay" ||
+                        par->name == "wipeylay") {
+                    } else if (par->effect) {
+                        lay2 = par->effect->layer;
+                    } else {
+                        lay2 = par->layer;
+                    }
+                }
+                if (lay2 == lay) {
+                    found = true;
+                    layelem->eventlist.push_back(event);
+                    layelem->params.emplace(par);
+                    layelem->layers.emplace(lay2);
+                    lay->lpst->parelemmap[par] = layelem;
+                }
+                Button *but = std::get<2>(event);
+                if (but) {
+                    if (but->layer == lay) {
+                        found = true;
+                        layelem->eventlist.push_back(event);
+                        layelem->buttons.emplace(but);
+                        layelem->layers.emplace(but->layer);
+                        lay->lpst->allbuttons.emplace(but);
+                        lay->lpst->butelemmap[but] = layelem;
                     }
                 }
             }
-        }
-        for (Button *but : lpst->allbuttons) {
-            layelem->starttime = elem->starttime;
-            layelem->interimtime = elem->interimtime;
-            layelem->totaltime = elem->totaltime;
-            layelem->speedadaptedtime = elem->speedadaptedtime;
-            layelem->speed->value = elem->speed->value;
-            layelem->beats = elem->beats;
-            layelem->eventlist = elem->eventlist;
-            layelem->eventpos = elem->eventpos;
-            layelem->atend = elem->atend;
-            layelem->buteffcatposns.push_back(-1);
-            layelem->buteffposns.push_back(-1);
-            for (int n = 0; n < 2; n++) {
-                for (int k = 0; k < lay->effects[n].size(); k++) {
-                    if (but == lay->effects[n][k]->onoffbutton) {
-                        layelem->buteffcatposns.push_back(n);
-                        layelem->buteffposns.push_back(k);
-                    }
-                }
+            if (found) {
+                layelem->get_state_from(elem);
+                count++;
             }
-            layelem->buttons.emplace(but);
-            lay->lpst->butelemmap[but] = elem;
-            lay->lpst->allbuttons.emplace(but);
         }
     }
 }
@@ -6624,14 +6741,7 @@ void Mixer::copy_lpstelem(LoopStationElement *destelem, LoopStationElement *srce
     destelem->interimtime = srcelem->interimtime;
     destelem->totaltime = srcelem->totaltime;
     destelem->speedadaptedtime = srcelem->speedadaptedtime;
-    std::tuple<long long, Param *, Button *, float> event;
-    for (int j = 0; destelem->eventlist.size(); j++) {
-        event = destelem->eventlist[std::clamp(j, 0, (int) destelem->eventlist.size() - 1)];
-        if (destelem->speedadaptedtime > std::get<0>(event)) {
-            destelem->eventpos = j;
-            break;
-        }
-    }
+
     destelem->recbut->value = srcelem->recbut->value;
     destelem->loopbut->value = srcelem->loopbut->value;
     destelem->playbut->value = srcelem->playbut->value;
@@ -6643,14 +6753,32 @@ void Mixer::copy_lpstelem(LoopStationElement *destelem, LoopStationElement *srce
     destelem->eventpos = srcelem->eventpos;
     destelem->layers = srcelem->layers;
     destelem->params = srcelem->params;
+    destelem->buttons = srcelem->buttons;
+
+    std::tuple<long long, Param *, Button *, float> event;
+    for (int j = 0; j < destelem->eventlist.size(); j++) {
+        event = destelem->eventlist[std::clamp(j, 0, (int) destelem->eventlist.size() - 1)];
+        if (destelem->speedadaptedtime > std::get<0>(event)) {
+            destelem->eventpos = j;
+            break;
+        }
+    }
     for (Param *par: destelem->params) {
         destelem->lpst->parelemmap[par] = destelem;
         destelem->lpst->allparams.emplace(par);
+        par->box->acolor[0] = destelem->colbox->acolor[0];
+        par->box->acolor[1] = destelem->colbox->acolor[1];
+        par->box->acolor[2] = destelem->colbox->acolor[2];
+        par->box->acolor[3] = destelem->colbox->acolor[3];
     }
     destelem->buttons = srcelem->buttons;
     for (Button *but: destelem->buttons) {
         destelem->lpst->butelemmap[but] = destelem;
         destelem->lpst->allbuttons.emplace(but);
+        but->box->acolor[0] = destelem->colbox->acolor[0];
+        but->box->acolor[1] = destelem->colbox->acolor[1];
+        but->box->acolor[2] = destelem->colbox->acolor[2];
+        but->box->acolor[3] = destelem->colbox->acolor[3];
     }
 }
 
@@ -6727,6 +6855,11 @@ void Mixer::reconnect_all(std::vector<Layer*> &layers) {
     for (int j = 0; j < layers.size(); j++) {
         // reconnect everything in the layer stack
         layers[j]->pos = j;
+        for (int m = 0; m < 2; m++) {
+            for (int k = 0; k < layers[j]->effects[m].size(); k++) {
+                layers[j]->effects[m][k]->pos = k;
+            }
+        }
         layers[j]->lasteffnode[1]->out.clear();
         if (j == 0) {
             if (j != layers.size() - 1)
@@ -7023,6 +7156,7 @@ void Mixer::set_values(Layer *clay, Layer *lay, bool doclips) {
     clay->pos = lay->pos;
     clay->deck = lay->deck;
     clay->type = lay->type;
+    clay->effcat = lay->effcat;
     clay->aspectratio = lay->aspectratio;
     clay->lockzoompan = lay->lockzoompan;
     if (lay->lockzoompan) {
@@ -7880,14 +8014,29 @@ void Mixer::open_mix(const std::string path, bool alive, bool loadevents) {
     while (safegetline(rfile, istring)) {
         if (istring == "CROSSFADE") {
             safegetline(rfile, istring);
-            mainmix->crossfade->value = std::stof(istring);
+            if (mainprogram->prevmodus) {
+                mainmix->crossfade->value = std::stof(istring);
+            }
+            else {
+                mainmix->crossfadecomp->value = std::stof(istring);
+            }
             if (mainprogram->prevmodus) {
                 GLfloat cf = glGetUniformLocation(mainprogram->ShaderProgram, "cf");
                 glUniform1f(cf, mainmix->crossfade->value);
             }
+            else {
+                GLfloat cf = glGetUniformLocation(mainprogram->ShaderProgram, "cf");
+                glUniform1f(cf, mainmix->crossfadecomp->value);
+            }
         }
         if (istring == "CROSSFADEEVENT") {
-            Param *par = mainmix->crossfade;
+            Param *par;
+            if (mainprogram->prevmodus) {
+                par = mainmix->crossfade;
+            }
+            else {
+                par = mainmix->crossfade;
+            }
             safegetline(rfile, istring);
             if (istring == "EVENTELEM") {
                 mainmix->event_read(rfile, par, nullptr, lay);
@@ -7895,14 +8044,29 @@ void Mixer::open_mix(const std::string path, bool alive, bool loadevents) {
         }
         if (istring == "CROSSFADECOMP") {
             safegetline(rfile, istring);
-            mainmix->crossfadecomp->value = std::stof(istring);
-            if (!mainprogram->prevmodus) {
+            if (mainprogram->prevmodus) {
+                mainmix->crossfade->value = std::stof(istring);
+            }
+            else {
+                mainmix->crossfadecomp->value = std::stof(istring);
+            }
+            if (mainprogram->prevmodus) {
+                GLfloat cf = glGetUniformLocation(mainprogram->ShaderProgram, "cf");
+                glUniform1f(cf, mainmix->crossfade->value);
+            }
+            else {
                 GLfloat cf = glGetUniformLocation(mainprogram->ShaderProgram, "cf");
                 glUniform1f(cf, mainmix->crossfadecomp->value);
             }
         }
         if (istring == "CROSSFADECOMPEVENT") {
-            Param *par = mainmix->crossfadecomp;
+            Param *par;
+            if (mainprogram->prevmodus) {
+                par = mainmix->crossfade;
+            }
+            else {
+                par = mainmix->crossfade;
+            }
             safegetline(rfile, istring);
             if (istring == "EVENTELEM") {
                 mainmix->event_read(rfile, par, nullptr, lay);
@@ -7974,18 +8138,18 @@ void Mixer::open_mix(const std::string path, bool alive, bool loadevents) {
         }
         if (istring == "WIPE") {
             safegetline(rfile, istring);
-            mainmix->wipe[0] = std::stoi(istring);
+            mainmix->wipe[!mainprogram->prevmodus] = std::stoi(istring);
         }
         if (istring == "WIPEDIR") {
             safegetline(rfile, istring);
-            mainmix->wipedir[0] = std::stoi(istring);
+            mainmix->wipedir[!mainprogram->prevmodus] = std::stoi(istring);
         }
         if (istring == "WIPEX") {
             safegetline(rfile, istring);
-            mainmix->wipex[0]->value = std::stof(istring);
+            mainmix->wipex[!mainprogram->prevmodus]->value = std::stof(istring);
         }
         if (istring == "WIPEXEVENT") {
-            Param *par = mainmix->wipex[0];
+            Param *par = mainmix->wipex[!mainprogram->prevmodus];
             safegetline(rfile, istring);
             if (istring == "EVENTELEM") {
                 mainmix->event_read(rfile, par, nullptr, lay);
@@ -7993,10 +8157,10 @@ void Mixer::open_mix(const std::string path, bool alive, bool loadevents) {
         }
         if (istring == "WIPEY") {
             safegetline(rfile, istring);
-            mainmix->wipey[0]->value = std::stof(istring);
+            mainmix->wipey[!mainprogram->prevmodus]->value = std::stof(istring);
         }
         if (istring == "WIPEYEVENT") {
-            Param *par = mainmix->wipey[0];
+            Param *par = mainmix->wipey[!mainprogram->prevmodus];
             safegetline(rfile, istring);
             if (istring == "EVENTELEM") {
                 mainmix->event_read(rfile, par, nullptr, lay);
@@ -8004,18 +8168,18 @@ void Mixer::open_mix(const std::string path, bool alive, bool loadevents) {
         }
         if (istring == "WIPECOMP") {
             safegetline(rfile, istring);
-            mainmix->wipe[1] = std::stoi(istring);
+            mainmix->wipe[!mainprogram->prevmodus] = std::stoi(istring);
         }
         if (istring == "WIPEDIRCOMP") {
             safegetline(rfile, istring);
-            mainmix->wipedir[1] = std::stoi(istring);
+            mainmix->wipedir[!mainprogram->prevmodus] = std::stoi(istring);
         }
         if (istring == "WIPEXCOMP") {
             safegetline(rfile, istring);
-            mainmix->wipex[1]->value = std::stof(istring);
+            mainmix->wipex[!mainprogram->prevmodus]->value = std::stof(istring);
         }
         if (istring == "WIPEXCOMPEVENT") {
-            Param *par = mainmix->wipex[1];
+            Param *par = mainmix->wipex[!mainprogram->prevmodus];
             safegetline(rfile, istring);
             if (istring == "EVENTELEM") {
                 mainmix->event_read(rfile, par, nullptr, lay);
@@ -8023,10 +8187,10 @@ void Mixer::open_mix(const std::string path, bool alive, bool loadevents) {
         }
         if (istring == "WIPEYCOMP") {
             safegetline(rfile, istring);
-            mainmix->wipey[1]->value = std::stof(istring);
+            mainmix->wipey[!mainprogram->prevmodus]->value = std::stof(istring);
         }
         if (istring == "WIPEYCOMPEVENT") {
-            Param *par = mainmix->wipey[1];
+            Param *par = mainmix->wipey[!mainprogram->prevmodus];
             safegetline(rfile, istring);
             if (istring == "EVENTELEM") {
                 mainmix->event_read(rfile, par, nullptr, lay);
@@ -8148,17 +8312,21 @@ void Mixer::save_mix(const std::string path, bool modus, bool save, bool undo, b
     wfile << "END\n";
 
     wfile << "CROSSFADE\n";
-    wfile << std::to_string(mainmix->crossfade->value);
+    if (mainprogram->prevmodus) {
+        wfile << std::to_string(mainmix->crossfade->value);
+    }
+    else {
+        wfile << std::to_string(mainmix->crossfadecomp->value);
+    }
     wfile << "\n";
     wfile << "CROSSFADEEVENT\n";
-    Param *par = mainmix->crossfade;
-    mainmix->event_write(wfile, par, nullptr);
-    wfile << "\n";
-    wfile << "CROSSFADECOMP\n";
-    wfile << std::to_string(mainmix->crossfadecomp->value);
-    wfile << "\n";
-    wfile << "CROSSFADECOMPEVENT\n";
-    par = mainmix->crossfadecomp;
+    Param *par;
+    if (mainprogram->prevmodus) {
+        par = mainmix->crossfade;
+    }
+    else {
+        par = mainmix->crossfadecomp;
+    }
     mainmix->event_write(wfile, par, nullptr);
     wfile << "\n";
     wfile << "SCROLLPOSA\n";
@@ -8212,40 +8380,22 @@ void Mixer::save_mix(const std::string path, bool modus, bool save, bool undo, b
     wfile << mainmix->deckspeed[!modus][1]->midiport;
     wfile << "\n";
     wfile << "WIPE\n";
-    wfile << std::to_string(mainmix->wipe[0]);
+    wfile << std::to_string(mainmix->wipe[!modus]);
     wfile << "\n";
     wfile << "WIPEDIR\n";
-    wfile << std::to_string(mainmix->wipedir[0]);
+    wfile << std::to_string(mainmix->wipedir[!modus]);
     wfile << "\n";
     wfile << "WIPEX\n";
-    wfile << std::to_string(mainmix->wipex[0]->value);
+    wfile << std::to_string(mainmix->wipex[!modus]->value);
     wfile << "\n";
     wfile << "WIPEXEVENT\n";
-    mainmix->event_write(wfile, mainmix->wipex[0], nullptr);
+    mainmix->event_write(wfile, mainmix->wipex[!modus], nullptr);
     wfile << "\n";
     wfile << "WIPEY\n";
-    wfile << std::to_string(mainmix->wipey[0]->value);
+    wfile << std::to_string(mainmix->wipey[!modus]->value);
     wfile << "\n";
     wfile << "WIPEYEVENT\n";
-    mainmix->event_write(wfile, mainmix->wipey[0], nullptr);
-    wfile << "\n";
-    wfile << "WIPECOMP\n";
-    wfile << std::to_string(mainmix->wipe[1]);
-    wfile << "\n";
-    wfile << "WIPEDIRCOMP\n";
-    wfile << std::to_string(mainmix->wipedir[1]);
-    wfile << "\n";
-    wfile << "WIPEXCOMP\n";
-    wfile << std::to_string(mainmix->wipex[1]->value);
-    wfile << "\n";
-    wfile << "WIPEXCOMPEVENT\n";
-    mainmix->event_write(wfile, mainmix->wipex[1], nullptr);
-    wfile << "\n";
-    wfile << "WIPEYCOMP\n";
-    wfile << std::to_string(mainmix->wipey[1]->value);
-    wfile << "\n";
-    wfile << "WIPEYCOMPEVENT\n";
-    mainmix->event_write(wfile, mainmix->wipey[1], nullptr);
+    mainmix->event_write(wfile, mainmix->wipey[!modus], nullptr);
     wfile << "\n";
     wfile << "LPSTCURRELEM\n";
     if (modus) {
@@ -8702,7 +8852,7 @@ Layer* Layer::open_video(float frame, const std::string filename, int reset, boo
                             glUniform1f(var, par->value);
                         } else {
                             GLint var = glGetUniformLocation(mainprogram->ShaderProgram, par->shadervar.c_str());
-                            glUniform1f(var, par->value * (mainprogram->ow3 / mainprogram->ow));
+                            glUniform1f(var, par->value * (mainprogram->ow[0] / mainprogram->ow[1]));
                         }
                     }
                 }
@@ -8721,6 +8871,10 @@ Layer* Layer::open_video(float frame, const std::string filename, int reset, boo
     if (mainprogram->autoplay && this->revbut->value == 0 && this->bouncebut->value == 0) {
         this->playbut->value = 1;
     }
+
+    this->numrows = 0;
+    this->ffglsourcenr = -1;
+
     this->changeinit = -1;
     this->ready = true;
     this->startdecode.notify_all();
@@ -9481,6 +9635,7 @@ void Layer::load_frame() {
     }
     // checks if new frame has been decompressed and loads it into layer
     if (this->filename == "") return;
+    if (this->ffglsourcenr != -1) return;  // ffgl sources are handled in onestepfrom
     Layer *srclay = this;
     bool ret = false;
     if (this->liveinput) {
@@ -9792,6 +9947,8 @@ Layer* Layer::open_image(const std::string path, bool init, bool dontdeleffs, bo
         }
     }
 
+    this->numrows = 0;
+    this->ffglsourcenr = -1;
     if (mainprogram->autoplay && this->revbut->value == 0 && this->bouncebut->value == 0) {
         this->playbut->value = 1;
     }
@@ -9820,17 +9977,21 @@ void Layer::open_files_layers() {
             mainprogram->loadlay = mainmix->add_layer(lvec, mainprogram->loadlay->pos);
             mainprogram->addedlay = true;
             mainprogram->loadlay->keepeffbut->value = 0;
-        } else if (mainmix->mouselayer == nullptr) {
-            mainprogram->loadlay = mainmix->add_layer(lvec, lvec.size());
-            mainprogram->addedlay = true;
-            mainprogram->loadlay->keepeffbut->value = 0;
         }
         if (mainprogram->loadlay->filename == "") {
             mainprogram->loadlay->keepeffbut->value = 0;
         }
-        mainprogram->fileslay = mainprogram->loadlay;
         mainmix->addbefore = false;
     }
+    if (mainmix->addlay) {
+        if (mainmix->mouselayer == nullptr) {
+            std::vector<Layer *> &lvec = choose_layers(mainmix->mousedeck);
+            mainprogram->loadlay = mainmix->add_layer(lvec, lvec.size());
+            mainprogram->addedlay = true;
+            mainprogram->loadlay->keepeffbut->value = 0;
+        }
+    }
+    mainprogram->fileslay = mainprogram->loadlay;
 
     std::vector<Layer *> &lvec = choose_layers(mainprogram->fileslay->deck);
     if (mainprogram->paths.size()) {
@@ -10003,6 +10164,7 @@ Layer* Mixer::read_layers(std::istream &rfile, const std::string result, std::ve
 	int overridepos = 0;
 	std::vector<Layer*> waitlayers;
     std::vector<Layer*> layers;
+    int ffglnr = -1;
 
     while (safegetline(rfile, istring)) {
 		if (istring == "LAYERSB" || istring == "ENDOFFILE") {
@@ -10064,10 +10226,26 @@ Layer* Mixer::read_layers(std::istream &rfile, const std::string result, std::ve
 
 			overridepos++;
 		}
-		if (istring == "TYPE") {
-			safegetline(rfile, istring);
-			layend->type = (ELEM_TYPE)std::stoi(istring);
-		}
+        if (istring == "TYPE") {
+            safegetline(rfile, istring);
+            layend->type = (ELEM_TYPE)std::stoi(istring);
+            ffglnr = -1;
+        }
+        if (istring == "FFGLNAME") {
+            safegetline(rfile, istring);
+            if (istring != "") {
+                int position =
+                        std::find(mainprogram->ffglsourcenames.begin(), mainprogram->ffglsourcenames.end(), istring) -
+                        mainprogram->ffglsourcenames.begin();
+                if (position != mainprogram->ffglsourcenames.size()) {
+                    type = 1000 + position;
+                    ffglnr = position;
+                } else {
+                    mainprogram->infostr = "FFGL plugin " + istring + " not installed...";
+                    return nullptr;
+                }
+            }
+        }
         if (istring == "CLONESETNR") {
             safegetline(rfile, istring);
             if (this->currclonesize != -1) {
@@ -10128,27 +10306,28 @@ Layer* Mixer::read_layers(std::istream &rfile, const std::string result, std::ve
 						}
 					}
                     else if (1) {
-                            if (layend->type == ELEM_IMAGE || isimage(filename)) {
-                                //Layer *kplay = lay;
-                                layend->transfered = true;
-                                layend = layend->open_image(filename);
-                                layend->type = ELEM_IMAGE;
-                                mainmix->loadinglays.push_back(layend);
-                                //layend->timeinit = kplay->timeinit;
-                                //mainmix->loadinglays.push_back(layend);
-                                //layend->initialized = kplay->initialized;
-                            }
-                            else if (layend->type == ELEM_FILE || layend->type == ELEM_LAYER) {
-                                Layer *kplay = layend;
-                                layend->transfered = true;
-                                layend = layend->open_video(0, filename, false, keepeff);
-                                mainmix->loadinglays.push_back(layend);
-                                layend->numefflines[0] = 0;
-                                if (type == 1) mainmix->currlay[!mainprogram->prevmodus] = layend;
-                                layend->type = kplay->type;
-                                layend->timeinit = kplay->timeinit;
-                                layend->initialized = kplay->initialized;
-                            }
+                        if (layend->type == ELEM_IMAGE || isimage(filename)) {
+                            //Layer *kplay = lay;
+                            layend->transfered = true;
+                            layend = layend->open_image(filename);
+                            layend->type = ELEM_IMAGE;
+                            mainmix->loadinglays.push_back(layend);
+                            //layend->timeinit = kplay->timeinit;
+                            //mainmix->loadinglays.push_back(layend);
+                            //layend->initialized = kplay->initialized;
+                        } else if (layend->type == ELEM_FILE || layend->type == ELEM_LAYER) {
+                            Layer *kplay = layend;
+                            layend->transfered = true;
+                            layend = layend->open_video(0, filename, false, keepeff);
+                            mainmix->loadinglays.push_back(layend);
+                            layend->numefflines[0] = 0;
+                            if (type == 1) mainmix->currlay[!mainprogram->prevmodus] = layend;
+                            layend->type = kplay->type;
+                            layend->timeinit = kplay->timeinit;
+                            layend->initialized = kplay->initialized;
+                        } else if (layend->ffglsourcenr != -1) {
+                            layend->set_source(ffglnr);
+                        }
                         layend->prevshelfdragelem = nullptr;
                     }
                     else {
@@ -10182,6 +10361,8 @@ Layer* Mixer::read_layers(std::istream &rfile, const std::string result, std::ve
                                 layend->type = kplay->type;
                                 layend->timeinit = kplay->timeinit;
                                 layend->initialized = kplay->initialized;
+                            } else if (layend->ffglsourcenr != -1) {
+                                layend->set_source(ffglnr);
                             }
                             layend->prevshelfdragelem = nullptr;
                         }
@@ -10701,6 +10882,7 @@ Layer* Mixer::read_layers(std::istream &rfile, const std::string result, std::ve
             //layend->effects[0].clear();
 			mainprogram->effcat[layend->deck]->value = 0;
 			int type;
+            int ffglnr;
 			Effect *eff = nullptr;
 			safegetline(rfile, istring);
 			while (istring != "ENDOFEFFECTS") {
@@ -10711,11 +10893,27 @@ Layer* Mixer::read_layers(std::istream &rfile, const std::string result, std::ve
 				if (istring == "TYPE") {
 					safegetline(rfile, istring);
 					type = std::stoi(istring);
+                    ffglnr = -1;
 				}
+                if (istring == "FFGLNAME") {
+                    safegetline(rfile, istring);
+                    if (istring != "") {
+                        int position =
+                                std::find(mainprogram->ffgleffectnames.begin(), mainprogram->ffgleffectnames.end(), istring) -
+                                mainprogram->ffgleffectnames.begin();
+                        if (position != mainprogram->ffgleffectnames.size()) {
+                            type = 1000 + position;
+                            ffglnr = position;
+                        } else {
+                            mainprogram->infostr = "FFGL plugin " + istring + " not installed...";
+                            return nullptr;
+                        }
+                    }
+                }
 				if (istring == "POS") {
 					safegetline(rfile, istring);
 					int pos = std::stoi(istring);
-					eff = layend->add_effect((EFFECT_TYPE)type, pos, mainprogram->effcat[deck]->value);
+					eff = layend->add_effect((EFFECT_TYPE)type, pos, mainprogram->effcat[deck]->value, ffglnr);
 				}
 				if (istring == "ONOFFVAL") {
 					safegetline(rfile, istring);
@@ -10802,7 +11000,7 @@ Layer* Mixer::read_layers(std::istream &rfile, const std::string result, std::ve
                                 }
                                 else {
                                     GLint var = glGetUniformLocation(mainprogram->ShaderProgram, par->shadervar.c_str());
-                                    glUniform1f(var, par->value * (mainprogram->ow3 / mainprogram->ow));
+                                    glUniform1f(var, par->value * (mainprogram->ow[0] / mainprogram->ow[1]));
                                 }
                             }
 						}
@@ -10838,17 +11036,34 @@ Layer* Mixer::read_layers(std::istream &rfile, const std::string result, std::ve
             //layend->effects[1].clear();
 			mainprogram->effcat[layend->deck]->value = 1;
 			int type;
+            int ffglnr;
 			Effect *eff = nullptr;
 			safegetline(rfile, istring);
 			while (istring != "ENDOFSTREAMEFFECTS") {
-				if (istring == "TYPE") {
-					safegetline(rfile, istring);
-					type = std::stoi(istring);
-				}
+                if (istring == "TYPE") {
+                    safegetline(rfile, istring);
+                    type = std::stoi(istring);
+                    ffglnr = -1;
+                }
+                if (istring == "FFGLNAME") {
+                    safegetline(rfile, istring);
+                    if (istring != "") {
+                        int position =
+                                std::find(mainprogram->ffgleffectnames.begin(), mainprogram->ffgleffectnames.end(), istring) -
+                                mainprogram->ffgleffectnames.begin();
+                        if (position != mainprogram->ffgleffectnames.size()) {
+                            type = 1000 + position;
+                            ffglnr = position;
+                        } else {
+                            mainprogram->infostr = "FFGL plugin " + istring + " not installed...";
+                            return nullptr;
+                        }
+                    }
+                }
 				if (istring == "POS") {
 					safegetline(rfile, istring);
 					int pos = std::stoi(istring);
-					eff = layend->add_effect((EFFECT_TYPE)type, pos, mainprogram->effcat[deck]->value);
+					eff = layend->add_effect((EFFECT_TYPE)type, pos, mainprogram->effcat[deck]->value, ffglnr);
 				}
 				if (istring == "ONOFFVAL") {
 					safegetline(rfile, istring);
@@ -10935,7 +11150,7 @@ Layer* Mixer::read_layers(std::istream &rfile, const std::string result, std::ve
                                 }
                                 else {
                                     GLint var = glGetUniformLocation(mainprogram->ShaderProgram, par->shadervar.c_str());
-                                    glUniform1f(var, par->value * (mainprogram->ow3 / mainprogram->ow));
+                                    glUniform1f(var, par->value * (mainprogram->ow[0] / mainprogram->ow[1]));
                                 }
                             }
                         }
@@ -10969,7 +11184,7 @@ Layer* Mixer::read_layers(std::istream &rfile, const std::string result, std::ve
 		}
         if (istring == "EFFCAT") {
             safegetline(rfile, istring);
-            mainprogram->effcat[layend->deck]->value = std::atoi(istring.c_str());
+            layend->effcat = std::atoi(istring.c_str());
         }
 
 		if (newlay && save) {
@@ -11042,13 +11257,20 @@ std::vector<std::string> Mixer::write_layer(Layer* lay, std::ostream& wfile, boo
 	wfile << "POS\n";
 	wfile << std::to_string(lay->pos);
 	wfile << "\n";
-	wfile << "TYPE\n";
-	wfile << std::to_string(lay->type);
-	wfile << "\n";
+    wfile << "TYPE\n";
+    wfile << std::to_string(lay->type);
+    wfile << "\n";
+    wfile << "FFGLNAME\n";
+    std::string name;
+    if (lay->ffglsourcenr != -1) {
+        name = mainprogram->ffgleffectnames[lay->ffglsourcenr];
+    }
+    wfile << name;
+    wfile << "\n";
 	wfile << "FILENAME\n";
 	wfile << lay->filename;
 	wfile << "\n";
-	if (lay->type != ELEM_LIVE) {
+	if (lay->type != ELEM_LIVE && lay->ffglsourcenr == -1) {
 		wfile << "RELPATH\n";
 		if (lay->filename != "") {
 			wfile << std::filesystem::relative(lay->filename, mainprogram->contentpath).generic_string();
@@ -11276,14 +11498,6 @@ std::vector<std::string> Mixer::write_layer(Layer* lay, std::ostream& wfile, boo
     wfile << "\n";
 
 	if (doclips && lay->clips->size()) {
-/*if (lay->currclip->jpegpath != "") {
-            jpegpaths.push_back(lay->currclip->jpegpath);
-        }
-        else {
-            lay->currclip->jpegpath = find_unused_filename(basename(lay->currclip->path), mainprogram->temppath, ".jpg");
-            save_thumb(lay->currclip->jpegpath, lay->currclip->tex);
-            jpegpaths.push_back(lay->currclip->jpegpath);
-        }*/
         wfile << "CURRCLIPJPEGPATH\n";
         wfile << lay->currclip->jpegpath;
         if (lay->currclip->jpegpath != "") {
@@ -11354,8 +11568,15 @@ std::vector<std::string> Mixer::write_layer(Layer* lay, std::ostream& wfile, boo
 	wfile << "EFFECTS\n";
 	for (int j = 0; j < lay->effects[0].size(); j++) {
 		Effect* eff = lay->effects[0][j];
-		wfile << "TYPE\n";
-		wfile << std::to_string(eff->type);
+        wfile << "TYPE\n";
+        wfile << std::to_string(eff->type);
+        wfile << "\n";
+        wfile << "FFGLNAME\n";
+        std::string name;
+        if (eff->ffglnr != -1) {
+            name = mainprogram->ffgleffectnames[eff->ffglnr];
+        }
+        wfile << name;
 		wfile << "\n";
 		wfile << "POS\n";
 		wfile << std::to_string(j);
@@ -11429,6 +11650,13 @@ std::vector<std::string> Mixer::write_layer(Layer* lay, std::ostream& wfile, boo
 		wfile << "TYPE\n";
 		wfile << std::to_string(eff->type);
 		wfile << "\n";
+        wfile << "FFGLNAME\n";
+        std::string name;
+        if (eff->ffglnr != -1) {
+            name = mainprogram->ffgleffectnames[eff->ffglnr];
+        }
+        wfile << name;
+        wfile << "\n";
 		wfile << "POS\n";
 		wfile << std::to_string(j);
 		wfile << "\n";
@@ -11496,7 +11724,7 @@ std::vector<std::string> Mixer::write_layer(Layer* lay, std::ostream& wfile, boo
 	wfile << "ENDOFSTREAMEFFECTS\n";
 
 	wfile << "EFFCAT\n";
-	wfile << std::to_string(mainprogram->effcat[lay->deck]->value);
+	wfile << std::to_string(lay->effcat);
 	wfile << "\n";
 
     // don't register an undo for a save
@@ -11958,12 +12186,12 @@ void Mixer::record_video(std::string reccod) {
     codec = avcodec_find_encoder_by_name(reccodec.c_str());
     c = avcodec_alloc_context3(codec);
     pkt = av_packet_alloc();
-    if (cbool) c->width = mainprogram->ow;
-    else c->width = mainprogram->ow3;
+    if (cbool) c->width = mainprogram->ow[1];
+    else c->width = mainprogram->ow[0];
 	int rem = c->width % 32;
 	c->width = c->width + (32 - rem) * (rem > 0);
-    if (cbool) c->height = mainprogram->oh;
-    else c->height = mainprogram->oh3;
+    if (cbool) c->height = mainprogram->oh[1];
+    else c->height = mainprogram->oh[0];
 	rem = c->height % 4;
 	c->height = c->height + (4 - rem) * (rem > 0);
 	/* frames per second */
@@ -12050,8 +12278,8 @@ void Mixer::record_video(std::string reccod) {
 
 		//av_image_fill_arrays(picture->data, picture->linesize,
                                // ptr, pix_fmt, width, height, 1);		avpicture_fill(&rgbaframe, (uint8_t *)mainmix->rgbdata, AV_PIX_FMT_BGRA, c->width, c->height);
-        if (cbool) rgbaframe->linesize[0] = mainprogram->ow * 4;
-        else rgbaframe->linesize[0] = mainprogram->ow3 * 4;
+        if (cbool) rgbaframe->linesize[0] = mainprogram->ow[1] * 4;
+        else rgbaframe->linesize[0] = mainprogram->ow[0] * 4;
 		int storage = av_image_alloc(yuvframe->data, yuvframe->linesize, yuvframe->width, yuvframe->height, c->pix_fmt, 32);
 		sws_scale
 		(
@@ -12578,134 +12806,138 @@ void Layer::clip_display_next(bool startend, bool alive) {
 
 // UTILITY
 
-Effect* new_effect(EFFECT_TYPE type) {
+Effect* new_effect(Layer *lay, EFFECT_TYPE type, int ffglnr) {
 	switch (type) {
-	case BLUR:
-		return new BlurEffect;
-		break;
-	case BRIGHTNESS:
-		return new BrightnessEffect;
-		break;
-	case CHROMAROTATE:
-		return new ChromarotateEffect;
-		break;
-	case CONTRAST:
-		return new ContrastEffect;
-		break;
-	case DOT:
-		return new DotEffect;
-		break;
-	case GLOW:
-		return new GlowEffect;
-		break;
-	case RADIALBLUR:
-		return new RadialblurEffect;
-		break;
-	case SATURATION:
-		return new SaturationEffect;
-		break;
-	case SCALE:
-		return new ScaleEffect;
-		break;
-	case SWIRL:
-		return new SwirlEffect;
-		break;
-	case OLDFILM:
-		return new OldFilmEffect;
-		break;
-	case RIPPLE:
-		return new RippleEffect;
-		break;
-	case FISHEYE:
-		return new FishEyeEffect;
-		break;
-	case TRESHOLD:
-		return new TresholdEffect;
-		break;
-	case STROBE:
-		return new StrobeEffect;
-		break;
-	case POSTERIZE:
-		return new PosterizeEffect;
-		break;
-	case PIXELATE:
-		return new PixelateEffect;
-		break;
-	case CROSSHATCH:
-		return new CrosshatchEffect;
-		break;
-	case INVERT:
-		return new InvertEffect;
-		break;
-	case ROTATE:
-		return new RotateEffect;
-		break;
-	case EMBOSS:
-		return new EmbossEffect;
-		break;
-	case ASCII:
-		return new AsciiEffect;
-		break;
-	case SOLARIZE:
-		return new SolarizeEffect;
-		break;
-	case VARDOT:
-		return new VarDotEffect;
-		break;
-	case CRT:
-		return new CRTEffect;
-		break;
-	case EDGEDETECT:
-		return new EdgeDetectEffect;
-		break;
-	case KALEIDOSCOPE:
-		return new KaleidoScopeEffect;
-		break;
-	case HTONE:
-		return new HalfToneEffect;
-		break;
-	case CARTOON:
-		return new CartoonEffect;
-		break;
-	case CUTOFF:
-		return new CutoffEffect;
-		break;
-	case GLITCH:
-		return new GlitchEffect;
-		break;
-	case COLORIZE:
-		return new ColorizeEffect;
-		break;
-	case NOISE:
-		return new NoiseEffect;
-		break;
-	case GAMMA:
-		return new GammaEffect;
-		break;
-	case THERMAL:
-		return new ThermalEffect;
-		break;
-	case BOKEH:
-		return new BokehEffect;
-		break;
-	case SHARPEN:
-		return new SharpenEffect;
-		break;
-	case DITHER:
-		return new DitherEffect;
-		break;
-	case FLIP:
-		return new FlipEffect;
-		break;
-	case MIRROR:
-		return new MirrorEffect;
-		break;
-    case BOXBLUR:
-        return new BoxblurEffect;
-        break;
-    case CHROMASTRETCH:
-        return new ChromastretchEffect;
-        break;
+        case BLUR:
+            return new BlurEffect;
+            break;
+        case BRIGHTNESS:
+            return new BrightnessEffect;
+            break;
+        case CHROMAROTATE:
+            return new ChromarotateEffect;
+            break;
+        case CONTRAST:
+            return new ContrastEffect;
+            break;
+        case DOT:
+            return new DotEffect;
+            break;
+        case GLOW:
+            return new GlowEffect;
+            break;
+        case RADIALBLUR:
+            return new RadialblurEffect;
+            break;
+        case SATURATION:
+            return new SaturationEffect;
+            break;
+        case SCALE:
+            return new ScaleEffect;
+            break;
+        case SWIRL:
+            return new SwirlEffect;
+            break;
+        case OLDFILM:
+            return new OldFilmEffect;
+            break;
+        case RIPPLE:
+            return new RippleEffect;
+            break;
+        case FISHEYE:
+            return new FishEyeEffect;
+            break;
+        case TRESHOLD:
+            return new TresholdEffect;
+            break;
+        case STROBE:
+            return new StrobeEffect;
+            break;
+        case POSTERIZE:
+            return new PosterizeEffect;
+            break;
+        case PIXELATE:
+            return new PixelateEffect;
+            break;
+        case CROSSHATCH:
+            return new CrosshatchEffect;
+            break;
+        case INVERT:
+            return new InvertEffect;
+            break;
+        case ROTATE:
+            return new RotateEffect;
+            break;
+        case EMBOSS:
+            return new EmbossEffect;
+            break;
+        case ASCII:
+            return new AsciiEffect;
+            break;
+        case SOLARIZE:
+            return new SolarizeEffect;
+            break;
+        case VARDOT:
+            return new VarDotEffect;
+            break;
+        case CRT:
+            return new CRTEffect;
+            break;
+        case EDGEDETECT:
+            return new EdgeDetectEffect;
+            break;
+        case KALEIDOSCOPE:
+            return new KaleidoScopeEffect;
+            break;
+        case HTONE:
+            return new HalfToneEffect;
+            break;
+        case CARTOON:
+            return new CartoonEffect;
+            break;
+        case CUTOFF:
+            return new CutoffEffect;
+            break;
+        case GLITCH:
+            return new GlitchEffect;
+            break;
+        case COLORIZE:
+            return new ColorizeEffect;
+            break;
+        case NOISE:
+            return new NoiseEffect;
+            break;
+        case GAMMA:
+            return new GammaEffect;
+            break;
+        case THERMAL:
+            return new ThermalEffect;
+            break;
+        case BOKEH:
+            return new BokehEffect;
+            break;
+        case SHARPEN:
+            return new SharpenEffect;
+            break;
+        case DITHER:
+            return new DitherEffect;
+            break;
+        case FLIP:
+            return new FlipEffect;
+            break;
+        case MIRROR:
+            return new MirrorEffect;
+            break;
+        case BOXBLUR:
+            return new BoxblurEffect;
+            break;
+        case CHROMASTRETCH:
+            return new ChromastretchEffect;
+            break;
+    }
+    if (type >= 1000) {
+        // FFGL
+        return new FFGLEffect(lay, ffglnr);
 	}
 	return nullptr;
 }
@@ -12858,7 +13090,7 @@ Layer* Layer::transfer(bool clones, bool dontdeleffs, bool exchange, bool image)
         for (int m = 0; m < 2; m++) {
             mainprogram->effcat[this->deck]->value = m;
             for (int j = 0; j < this->effects[m].size(); j++) {
-                Effect *eff = lay->add_effect(this->effects[m][j]->type, j, mainprogram->effcat[this->deck]->value);
+                Effect *eff = lay->add_effect(this->effects[m][j]->type, j, mainprogram->effcat[this->deck]->value, this->effects[m][j]->ffglnr);
                 for (int k = 0; k < this->effects[m][j]->params.size(); k++) {
                     Param *par = this->effects[m][j]->params[k];
                     Param *cpar = lay->effects[m][j]->params[k];
@@ -12881,7 +13113,12 @@ Layer* Layer::transfer(bool clones, bool dontdeleffs, bool exchange, bool image)
     mainmix->set_values(lay, this);
 
     // transfer current layer settings to new layer
-    mainmix->change_currlay(this, lay);
+    if (mainmix->directtransfer) {  // otherwise set in swapmap application
+        mainmix->change_currlay(this, lay);
+        if (lay == mainmix->currlay[!mainprogram->prevmodus]) {
+            mainprogram->effcat[lay->deck]->value = lay->effcat;
+        }
+    }
 
     if (image) {
         lay->type = ELEM_IMAGE;
@@ -13510,16 +13747,59 @@ void Mixer::set_layer(ShelfElement  *elem, Layer *lay) {
         Clip *clip = new Clip;
         newlay->oldclips->push_back(clip);
     }
+
+    for (LoopStationElement *delelem: loopstation->elements) {
+        if (delelem->layers.contains(lay)) {
+            std::vector<std::tuple<long long, Param*, Button*, float>> elist;
+            for (int i = 0; i < delelem->eventlist.size(); i++) {
+                bool found = false;
+                auto event = delelem->eventlist[i];
+                Layer *lay2 = nullptr;
+                Param *par = std::get<1>(event);
+                if (par) {
+                    if (par->name == "crossfade" || par->name == "crossfadecomp" || par->shadervar == "mixfac" ||
+                        par->name == "wipex" || par->name == "wipey" || par->name == "wipexlay" ||
+                        par->name == "wipeylay") {
+                    } else if (par->effect) {
+                        lay2 = par->effect->layer;
+                    } else {
+                        lay2 = par->layer;
+                    }
+                    if (lay2 != lay) {
+                        elist.push_back(event);
+                    }
+                }
+                Button *but = std::get<2>(event);
+                if (but) {
+                    if (but->layer != lay) {
+                        elist.push_back(event);
+                    }
+                }
+            }
+            delelem->eventlist = elist;
+        }
+    }
+    for (LoopStationElement *elem1: newlay->lpst->elements) {
+        if (!elem1->eventlist.empty()) {
+            for (LoopStationElement *elem2: loopstation->elements) {
+                if (elem2->eventlist.empty()) {
+                    this->copy_lpstelem(elem2, elem1);
+                    break;
+                }
+            }
+        }
+    }
+
     newlay->prevshelfdragelem = elem;
 
     mainmix->reconnect_all(*newlay->layers);
 }
 
 void Mixer::set_frame(ShelfElement *elem, Layer *lay) {
-    std::unique_lock<std::mutex> olock(lay->endopenlock);
+    /*std::unique_lock<std::mutex> olock(lay->endopenlock);
     lay->endopenvar.wait(olock, [&] { return lay->opened; });
     lay->opened = false;
-    olock.unlock();
+    olock.unlock();*/
     if (elem->launchtype == 1) {
         if (elem->clayers.size()) {
             lay->frame = elem->clayers[0]->frame;
@@ -13535,3 +13815,51 @@ void Mixer::set_frame(ShelfElement *elem, Layer *lay) {
     }
     if (elem->launchtype > 0) lay->prevshelfdragelem = elem;
 }
+
+
+void Layer::set_source(int sourcenr) {
+    this->type = ELEM_SOURCE;
+    this->ffglsourcenr = sourcenr;
+    this->vidformat = -1;
+
+    int w = mainprogram->ow[this->comp];
+    int h = mainprogram->oh[this->comp];
+
+    auto plug = mainprogram->ffglsourceplugins[this->ffglsourcenr];
+    auto instance = plug->createInstance(w, h);
+    mainprogram->ffglinstances[this->ffglsourcenr].push_back(instance);
+    this->instancenr = mainprogram->ffglinstances[this->ffglsourcenr].size() - 1;
+
+    // get parameters from FFGLHost::parameters
+    this->numrows = (int)instance->getParameters().size() / 3 + 1;
+    this->numefflines[this->effcat] += this->numrows;
+    int cnt = 0;
+    for (auto par : instance->parameters) {
+        Param *param = new Param;
+        if (cnt != 0) {
+            if (cnt % 3 == 0) {
+                param->nextrow = true;
+            }
+        }
+        cnt++;
+        param->name = par.name;
+        param->deflt = FFGLUtils::FFMixedToFloat(par.defaultValue);
+        param->value = param->deflt;
+        param->range[0] = par.range.min;
+        param->range[1] = par.range.max;
+        param->sliding = true;
+        param->box->tooltiptitle = par.name;
+        param->box->tooltip = "Set " + par.name + " parameter of FFGL " + mainprogram->ffglsourceplugins[this->ffglsourcenr]->pluginInfo.PluginName + " source plugin - between 0.0 and 1.0 ";
+        this->ffglparams.push_back(param);
+    }
+
+    this->filename = "";
+    this->startframe->value = 0;
+    this->endframe->value = 0;
+    this->numf = 0;
+}
+
+
+
+
+

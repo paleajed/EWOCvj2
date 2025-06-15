@@ -47,6 +47,7 @@ typedef enum
     LUMAKEY = 21,
 	DISPLACEMENT = 22,
 	CROSSFADING = 23,
+    FFGL_MIXER = 1000,
 	
 } BLEND_TYPE;
 
@@ -156,6 +157,10 @@ class BlendNode: public Node {
 		float chred = 0.0f;
 		float chgreen = 0.0f;
 		float chblue = 0.0f;
+        int ffglmixernr[2] = {-1, -1};
+        int instancenr[2] = {-1, -1};
+        int numrows[2] = {0, 0};
+        std::vector<Param*> ffglparams[2] = {{}, {}};
 		BlendNode();
 		~BlendNode();
 };

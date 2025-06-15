@@ -14,6 +14,9 @@
 #include "GL/gl.h"
 #include "BeatDetektor.h"
 #include "fftw3.h"
+
+#include "FFGLHost.h"
+
 #ifdef WINDOWS
 #include "direnthwin/dirent.h"
 #include "processthreadsapi.h"
@@ -198,8 +201,8 @@ class Project {
         std::string buad;
         std::string bued;
         std::unordered_set<std::string> pathsinbins;
-        float ow = 1920.0f;
-        float oh = 1080.0f;
+        float ow[2] = {640.0f, 1920.0f};
+        float oh[2] = {360.0f, 1080.0f};
 		void newp(std::string path);
 		bool open(std::string path, bool autosave, bool newp = false, bool undo = false);
         void autosave();
@@ -468,7 +471,8 @@ class Program {
 		Menu *loopmenu = nullptr;
 		Menu *laymenu1 = nullptr;
 		Menu *laymenu2 = nullptr;
-		Menu* newlaymenu = nullptr;
+        Menu* newlaymenu = nullptr;
+        Menu* ffglsourcemenu = nullptr;
 		Menu* clipmenu = nullptr;
 		Menu *aspectmenu = nullptr;
         Menu *monitormenu = nullptr;
@@ -525,11 +529,10 @@ class Program {
         int binmx;
         int binmy;
 		int iemy;
-		float ow = 1920.0f;
-		float oh = 1080.0f;
+        float ow[2] = {640.0f, 1920.0f};
+        float oh[2] = {360.0f, 1080.0f};
 		float sow = 1920.0f;
 		float soh= 1080.0f;
-		float ow3, oh3;
 		float oldow = 1920.0f;
 		float oldoh = 1080.0f;
 		float layw = 0.319f;
@@ -569,7 +572,8 @@ class Program {
 		std::string docpath;
         std::string fontpath;
         std::string contentpath;
-		std::string path ;
+        std::string ffgldir;
+		std::string path;
 		std::vector<std::string> paths;
 		int counting = 0;
 		std::string pathto;
@@ -657,6 +661,7 @@ class Program {
         int aubpmcounter;
         float topquality = 0.0f;
         float qtime = 0.0f;
+        bool inbetween = false;
 
 
         GLuint boxcoltbo;
@@ -668,8 +673,7 @@ class Program {
 
 		lo::ServerThread *st;
 		std::unordered_map<std::string, int> wipesmap;
-		std::unordered_map<EFFECT_TYPE, std::string> effectsmap;
-		std::vector<EFFECT_TYPE> abeffects;
+		std::vector<int> abeffects;
 
         SDL_Window* requesterwindow = nullptr;
         SDL_Window* dummywindow = nullptr;
@@ -979,6 +983,15 @@ class Program {
 
         boost::asio::io_context *io;
 
+        std::vector<std::string> ffgleffectnames;
+        std::vector<std::string> ffglsourcenames;
+        std::vector<std::string> ffglmixernames;
+        std::vector<FFGLPlugin*> ffgleffectplugins;
+        std::vector<FFGLPlugin*> ffglsourceplugins;
+        std::vector<FFGLPlugin*> ffglmixerplugins;
+        std::vector<std::vector<FFGLInstanceHandle>> ffglinstances;
+        FFGLHost *ffglhost = nullptr;
+
         void remove_ec(std::string filepath, std::error_code& ec);
         void remove(std::string filepath);
 		int quit_requester();
@@ -1219,7 +1232,7 @@ void set_live_base(Layer *lay, std::string livename);
 
 extern void set_queueing(bool onoff);
 
-extern Effect* new_effect(EFFECT_TYPE type);
+extern Effect* new_effect(Layer *lay, EFFECT_TYPE type, int ffglnr);
 
 extern bool exists(std::string name);
 extern std::string dirname(std::string pathname);

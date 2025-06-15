@@ -1781,54 +1781,54 @@ void Program::set_ow3oh3() {
     // these smaller width and height values are used for preview modus textures
     // because they are not displayed, preview modus textures can be less highly defined
     // performance and memory gain!
-    mainprogram->ow = mainprogram->project->ow;
-    mainprogram->oh = mainprogram->project->oh;
+    mainprogram->ow[1] = mainprogram->project->ow[1];
+    mainprogram->oh[1] = mainprogram->project->oh[1];
 
 	float wmeas = 640.0f;
-	if (mainprogram->ow < wmeas) wmeas = mainprogram->ow;
+	if (mainprogram->ow[1] < wmeas) wmeas = mainprogram->ow[1];
 	float hmeas = 640.0f;
-	if (mainprogram->oh < hmeas) hmeas = mainprogram->oh;
-	if (mainprogram->ow > mainprogram->oh) {
-		mainprogram->ow3 = wmeas;
-		mainprogram->oh3 = wmeas * mainprogram->oh / mainprogram->ow;
+	if (mainprogram->oh[1] < hmeas) hmeas = mainprogram->oh[1];
+	if (mainprogram->ow[1] > mainprogram->oh[1]) {
+		mainprogram->ow[0] = wmeas;
+		mainprogram->oh[0] = wmeas * mainprogram->oh[1] / mainprogram->ow[1];
 	}
 	else {
-		mainprogram->oh3 = hmeas;
-		mainprogram->ow3 = hmeas * mainprogram->ow / mainprogram->oh;
+		mainprogram->oh[0] = hmeas;
+		mainprogram->ow[0] = hmeas * mainprogram->ow[1] / mainprogram->oh[1];
 	}
 }
 
 void Program::handle_changed_owoh() {
     // when the project width or height is changed in the preferences
     // we need to renew some texture definitions
-	if (this->ow != this->oldow || this->oh != this->oldoh) {
+	if (this->ow[1] != this->oldow || this->oh[1] != this->oldoh) {
 		for (int i = 0; i < this->nodesmain->pages.size(); i++) {
 			for (int j = 0; j < this->nodesmain->pages[i]->nodes.size(); j++) {
 				Node* node = this->nodesmain->pages[i]->nodes[j];
-				node->renew_texes(this->ow3, this->oh3);
+				node->renew_texes(this->ow[0], this->oh[0]);
 			}
 			for (int j = 0; j < this->nodesmain->pages[i]->nodescomp.size(); j++) {
 				Node* node = this->nodesmain->pages[i]->nodescomp[j];
-				node->renew_texes(this->ow, this->oh);
+				node->renew_texes(this->ow[1], this->oh[1]);
 			}
 		}
 		for (int j = 0; j < this->nodesmain->mixnodes[0].size(); j++) {
 			Node* node = this->nodesmain->mixnodes[0][j];
-			node->renew_texes(this->ow3, this->oh3);
+			node->renew_texes(this->ow[0], this->oh[0]);
 		}
 		for (int j = 0; j < this->nodesmain->mixnodes[1].size(); j++) {
 			Node* node = this->nodesmain->mixnodes[1][j];
-			node->renew_texes(this->ow, this->oh);
+			node->renew_texes(this->ow[1], this->oh[1]);
 		}
 
 		GLuint tex;
-		tex = set_texes(this->fbotex[0], &this->frbuf[0], this->ow3, this->oh3);
+		tex = set_texes(this->fbotex[0], &this->frbuf[0], this->ow[0], this->oh[0]);
 		this->fbotex[0] = tex;
-		tex = set_texes(this->fbotex[1], &this->frbuf[1], this->ow3, this->oh3);
+		tex = set_texes(this->fbotex[1], &this->frbuf[1], this->ow[0], this->oh[0]);
 		this->fbotex[1] = tex;
-		tex = set_texes(this->fbotex[2], &this->frbuf[2], this->ow, this->oh);
+		tex = set_texes(this->fbotex[2], &this->frbuf[2], this->ow[1], this->oh[1]);
 		this->fbotex[2] = tex;
-		tex = set_texes(this->fbotex[3], &this->frbuf[3], this->ow, this->oh);
+		tex = set_texes(this->fbotex[3], &this->frbuf[3], this->ow[1], this->oh[1]);
 		this->fbotex[3] = tex;
 
 #ifdef POSIX
@@ -1855,14 +1855,14 @@ void Program::handle_changed_owoh() {
             // configure desired video format on device
             size_t framesize;
             if (mainprogram->prevmodus) {
-                framesize = mainprogram->ow3 * mainprogram->oh3 * 4;
-                vid_format.fmt.pix.width = mainprogram->ow3;
-                vid_format.fmt.pix.height = mainprogram->oh3;
+                framesize = mainprogram->ow[0] * mainprogram->oh[0] * 4;
+                vid_format.fmt.pix.width = mainprogram->ow[0];
+                vid_format.fmt.pix.height = mainprogram->oh[0];
             }
             else {
-                framesize = mainprogram->ow * mainprogram->oh * 4;
-                vid_format.fmt.pix.width = mainprogram->ow;
-                vid_format.fmt.pix.height = mainprogram->oh;
+                framesize = mainprogram->ow[1] * mainprogram->oh[1] * 4;
+                vid_format.fmt.pix.width = mainprogram->ow[1];
+                vid_format.fmt.pix.height = mainprogram->oh[1];
             }
             vid_format.fmt.pix.pixelformat = V4L2_PIX_FMT_BGR32;
             vid_format.fmt.pix.sizeimage = framesize;
@@ -1876,8 +1876,8 @@ void Program::handle_changed_owoh() {
         }
 #endif
 
-		this->oldow = this->ow;
-		this->oldoh = this->oh;
+		this->oldow = this->ow[1];
+		this->oldoh = this->oh[1];
 	}
 }
 
@@ -2452,27 +2452,25 @@ void Program::shelf_triggering(ShelfElement* elem, int deck, Layer *layer) {
                 Clip *clip = new Clip;
                 clays[k]->oldclips->push_back(clip);
                 // currlay is handled in lay->transfer()
-                std::thread setfr(&Mixer::set_frame, mainmix, elem, clays[k]);
-                setfr.detach();
+                mainmix->set_frame(elem, clays[k]);
             } else if (elem->type == ELEM_IMAGE) {
                 mainmix->set_prevshelfdragelem_layers(clays[k]);
                 mainmix->reload_tagged_elems(elem, clays[k]->deck, clays[k]);
                 clays[k] = mainmix->layers[!mainprogram->prevmodus * 2 + clays[k]->deck][clays[k]->pos];
-                clays[k]->open_image(elem->path);
+                clays[k] = clays[k]->open_image(elem->path);
                 //clays[k]->set_clones();
                 clays[k]->oldclips->clear();
                 clays[k]->prevshelfdragelem = elem;
                 Clip *clip = new Clip;
                 clays[k]->oldclips->push_back(clip);
                 // currlay is handled in lay->transfer()
-                std::thread setfr(&Mixer::set_frame, mainmix, elem, clays[k]);
-                setfr.detach();
+                mainmix->set_frame(elem, clays[k]);
             } else if (elem->type == ELEM_LAYER) {
                 mainmix->set_prevshelfdragelem_layers(clays[k]);
                 bool done = elem->done;
                 mainmix->reload_tagged_elems(elem, clays[k]->deck, clays[k]);
                 if (done) {
-                    mainmix->set_layer(elem, clays[k]);
+                    mainmix->set_layer(elem, mainmix->layers[!mainprogram->prevmodus * 2 + clays[k]->deck][clays[k]->pos]);
                 }
                 else {
                     clays[k] = mainmix->open_layerfile(elem->path, clays[k], true, true);
@@ -3451,13 +3449,53 @@ void Program::handle_mixenginemenu() {
 	// Do mainprogram->mixenginemenu
 	k = mainprogram->handle_menu(mainprogram->mixenginemenu);
 	if (k == 0) {
-		if (mainmix->mousenode && mainprogram->menuresults.size()) {
-			if (mainmix->mousenode->type == BLEND) {
-				((BlendNode*)mainmix->mousenode)->blendtype = (BLEND_TYPE)(mainprogram->menuresults[0] + 1);
-			}
-			mainmix->mousenode = nullptr;
-		}
-	}
+        if (mainmix->mousenode && mainprogram->menuresults.size()) {
+            if (mainprogram->menuresults[0] > 12) {
+                BlendNode *bnode = (BlendNode *) mainmix->mousenode;
+                bnode->blendtype = FFGL_MIXER;
+                bnode->ffglmixernr[!mainprogram->prevmodus] = mainprogram->menuresults[0] - 13;
+
+                int w = mainprogram->ow[!mainprogram->prevmodus];
+                int h = mainprogram->oh[!mainprogram->prevmodus];
+
+                auto plug = mainprogram->ffglmixerplugins[bnode->ffglmixernr[!mainprogram->prevmodus]];
+                auto instance = plug->createInstance(w, h);
+                mainprogram->ffglinstances[bnode->ffglmixernr[!mainprogram->prevmodus]].push_back(
+                        instance);
+                bnode->instancenr[!mainprogram->prevmodus] =
+                        mainprogram->ffglinstances[bnode->ffglmixernr[!mainprogram->prevmodus]].size() -
+                        1;
+
+                // get parameters from FFGLHost::parameters
+                bnode->numrows[!mainprogram->prevmodus] =
+                        (int) instance->getParameters().size() / 3 + 1;
+                int cnt = 0;
+                for (auto par: instance->parameters) {
+                    Param *param = new Param;
+                    if (cnt != 0) {
+                        if (cnt % 3 == 0) {
+                            param->nextrow = true;
+                        }
+                    }
+                    cnt++;
+                    param->name = par.name;
+                    param->deflt = FFGLUtils::FFMixedToFloat(par.defaultValue);
+                    param->value = param->deflt;
+                    param->range[0] = par.range.min;
+                    param->range[1] = par.range.max;
+                    param->sliding = true;
+                    param->box->tooltiptitle = par.name;
+                    param->box->tooltip = "Set " + par.name + " parameter of FFGL " +
+                                          mainprogram->ffglmixerplugins[bnode->ffglmixernr[!mainprogram->prevmodus]]->pluginInfo.PluginName +
+                                          " mixer plugin - between 0.0 and 1.0 ";
+                    bnode->ffglparams[!mainprogram->prevmodus].push_back(param);
+                }
+            } else if (mainmix->mousenode->type == BLEND) {
+                ((BlendNode *) mainmix->mousenode)->blendtype = (BLEND_TYPE) (mainprogram->menuresults[0] + 1);
+            }
+        }
+        mainmix->mousenode = nullptr;
+    }
 	else if (k == 1) {
 		if (mainmix->mousenode) {
 			if (mainmix->mousenode->type == BLEND) {
@@ -3467,10 +3505,10 @@ void Program::handle_mixenginemenu() {
 					}
 					else {
 						if (mainprogram->menuresults.size() == 2) {
-							((BlendNode*)mainmix->mousenode)->blendtype = WIPE;
-							((BlendNode*)mainmix->mousenode)->wipetype = mainprogram->menuresults[0] - 1;
-							((BlendNode*)mainmix->mousenode)->wipedir = mainprogram->menuresults[1];
-						}
+                            ((BlendNode *) mainmix->mousenode)->blendtype = WIPE;
+                            ((BlendNode *) mainmix->mousenode)->wipetype = mainprogram->menuresults[0] - 1;
+                            ((BlendNode *) mainmix->mousenode)->wipedir = mainprogram->menuresults[1];
+                        }
 					}
 				}
 			}
@@ -3497,15 +3535,22 @@ void Program::handle_effectmenu() {
 	k = this->handle_menu(this->effectmenu);
 	if (k > -1) {
         std::vector<Effect*>& evec = mainmix->mouselayer->choose_effects();
-		if (k == 0 && mainmix->mouseeffect != evec.size()) {
+		int ffglnr = -1;
+        if (k == 0 && mainmix->mouseeffect != evec.size()) {
 			mainmix->mouselayer->delete_effect(mainmix->mouseeffect);
 		}
 		else if (mainmix->insert) {
-		    mainmix->mouselayer->add_effect((EFFECT_TYPE)this->abeffects[k], mainmix->mouseeffect, mainprogram->effcat[mainmix->mouselayer->deck]->value);
+            if (this->abeffects[k] >= 1000) {
+                ffglnr = this->abeffects[k] - 1000;
+            }
+		    mainmix->mouselayer->add_effect((EFFECT_TYPE)this->abeffects[k], mainmix->mouseeffect, mainprogram->effcat[mainmix->mouselayer->deck]->value, ffglnr);
 		}
 		else {
 			int mon = evec[mainmix->mouseeffect]->node->monitor;
-			mainmix->mouselayer->replace_effect((EFFECT_TYPE)this->abeffects[k - 1], mainmix->mouseeffect);
+            if (this->abeffects[k - 1] >= 1000) {
+                ffglnr = this->abeffects[k - 1] - 1000;
+            }
+			mainmix->mouselayer->replace_effect((EFFECT_TYPE)this->abeffects[k - 1], mainmix->mouseeffect, ffglnr);
 			evec[mainmix->mouseeffect]->node->monitor = mon;
 		}
 		mainmix->mouselayer = nullptr;
@@ -4147,7 +4192,8 @@ void Program::handle_wipemenu() {
 	int k = -1;
 	// Draw and Program::handle wipemenu
 	k = mainprogram->handle_menu(mainprogram->wipemenu);
-	if (k > 0) {
+
+    if (k > 0) {
 		if (mainprogram->menuresults.size()) {
 			mainmix->wipe[!mainprogram->prevmodus] = k - 1;
 			mainmix->wipedir[!mainprogram->prevmodus] = mainprogram->menuresults[0];
@@ -4265,9 +4311,6 @@ void Program::handle_laymenu1() {
         if (k == 1) {
             this->pathto = "OPENFILESLAYER";
             this->loadlay = mainmix->mouselayer;
-            if (cond) {
-                //this->clickednextto = mainmix->mouselayer->deck;
-            }
             mainmix->addlay = false;
             printf("%s\n", this->currfilesdir.c_str());
             fflush(stdout);
@@ -4528,7 +4571,13 @@ void Program::handle_laymenu1() {
                 }
             }
         }
-        else if (!cond && k == 18 && encode) {
+        else if ((!cond && k == 18) || k == 18 - cond * 2) {
+            // switch layer to generator type
+            if (this->menuresults.size()) {
+                mainmix->mouselayer->set_source(this->menuresults[0]);
+            }
+        }
+        else if (!cond && k == 20 && encode) {
             BinElement *binel = new BinElement;
             binel->bin = nullptr;
             binel->type = ELEM_FILE;
@@ -4542,7 +4591,7 @@ void Program::handle_laymenu1() {
             binsmain->hap_binel(binel, nullptr);
         }
 #ifdef POSIX
-        else if (!cond && k == (18 + encode)) {
+        else if (!cond && k == (19 + encode)) {
             // start up v4l2 loopback device
             std::string device = this->loopbackmenu->entries[this->menuresults[0]];
             device = device.substr(2, device.size() - 2);
@@ -4613,6 +4662,14 @@ void Program::handle_newlaymenu() {
 			std::thread filereq(&Program::get_outname, mainprogram, "Save mix file", "application/ewocvj2-mix", std::filesystem::canonical(mainprogram->currelemsdir).generic_string());
 			filereq.detach();
 		}
+         else if (k == 8) {
+             // switch layer to generator type
+             std::vector<Layer *> &lvec = choose_layers(mainmix->mousedeck);
+             Layer *lay = mainmix->add_layer(lvec, lvec.size());
+             if (this->menuresults.size()) {
+                 lay->set_source(this->menuresults[0]);
+             }
+         }
 	}
 
 
@@ -5581,10 +5638,10 @@ bool Program::preferences_handle() {
         if (this->prefoff) {
             if (mci->items[i]->dest == &this->project->name) {
                 mci->items[i]->str = this->project->name;
-            } else if (mci->items[i]->dest == &this->project->ow) {
-                mci->items[i]->value = this->project->ow;
-            } else if (mci->items[i]->dest == &this->project->oh) {
-                mci->items[i]->value = this->project->oh;
+            } else if (mci->items[i]->dest == &this->project->ow[1]) {
+                mci->items[i]->value = this->project->ow[1];
+            } else if (mci->items[i]->dest == &this->project->oh[1]) {
+                mci->items[i]->value = this->project->oh[1];
             }
         }
     }
@@ -5594,6 +5651,9 @@ bool Program::preferences_handle() {
         //this->create_auinmenu();
         ((PIDev*)mci)->populate();
     }
+    else {
+        this->onoffscroll = 0;
+    }
     int cnt = 0;
     this->prefonoff = false;
     bool brk = false;
@@ -5602,10 +5662,10 @@ bool Program::preferences_handle() {
 	        mci->items[i]->dest = &mainprogram->project->name;
 	    }
 	    if (mci->items[i]->name == "Project output video width") {
-	        mci->items[i]->dest = &mainprogram->project->ow;
+	        mci->items[i]->dest = &mainprogram->project->ow[1];
 	    }
 	    if (mci->items[i]->name == "Project output video height") {
-	        mci->items[i]->dest = &mainprogram->project->oh;
+	        mci->items[i]->dest = &mainprogram->project->oh[1];
 	    }
         if (mci->items[i]->type == PREF_ONOFF) {
             this->prefonoff = true;
@@ -5690,7 +5750,7 @@ bool Program::preferences_handle() {
 					catch (...) {
 						mci->items[i]->value = ((PIVid*)(mci->items[i]))->oldvalue;
 					}
-                    if (mci->items[i]->dest == &this->project->ow || mci->items[i]->dest == &this->project->oh) {
+                    if (mci->items[i]->dest == &this->project->ow[1] || mci->items[i]->dest == &this->project->oh[1]) {
                         this->saveproject = true;
                     }
 				}
@@ -6017,9 +6077,6 @@ bool Program::preferences_handle() {
                                                     cnt, this->onoffscroll, 8,
                                                     mx, my);
     }
-    else {
-        this->onoffscroll = 0;
-    }
 
     this->qualfr = std::clamp((int)this->qualfr, 1, 10);
 
@@ -6063,10 +6120,10 @@ bool Program::preferences_handle() {
                 PrefCat *item = this->prefs->items[j];
                 for (int i = 0; i < item->items.size(); i++) {
                     if (item->items[i]->name == "Project output video width") {
-                        mainprogram->project->ow = item->items[i]->value;
+                        mainprogram->project->ow[1] = item->items[i]->value;
                     }
                     if (item->items[i]->name == "Project output video height") {
-                        mainprogram->project->oh = item->items[i]->value;
+                        mainprogram->project->oh[1] = item->items[i]->value;
                     }
                     if (item->items[i]->renaming) {
                         if (item->items[i]->type == PREF_ONOFF) {
@@ -6212,8 +6269,8 @@ bool Program::preferences_handle() {
                     this->project->save(this->project->path);
                 }
             }
-            this->ow = this->project->ow;
-            this->oh = this->project->oh;
+            this->ow[1] = this->project->ow[1];
+            this->oh[1] = this->project->oh[1];
             this->set_ow3oh3();
             this->handle_changed_owoh();
 
@@ -7212,21 +7269,21 @@ void Project::newp(const std::string path) {
         // get the default output width and height
         for (PrefItem *pri : item->items) {
             if (pri->dest == &mainprogram->sow) {
-                this->ow = pri->value;
+                this->ow[1] = pri->value;
             } else if (pri->dest == &mainprogram->soh) {
-                this->oh = pri->value;
+                this->oh[1] = pri->value;
             }
         }
     }
     for (PrefCat *item : mainprogram->prefs->items) {
         // set the preferences destinations for project output width and height
         for (PrefItem *pri : item->items) {
-            if (pri->dest == &mainprogram->project->ow) {
-                pri->dest = &this->ow;
-                pri->value = this->ow;
-            } else if (pri->dest == &mainprogram->project->oh) {
-                pri->dest = &this->oh;
-                pri->value = this->oh;
+            if (pri->dest == &mainprogram->project->ow[1]) {
+                pri->dest = &this->ow[1];
+                pri->value = this->ow[1];
+            } else if (pri->dest == &mainprogram->project->oh[1]) {
+                pri->dest = &this->oh[1];
+                pri->value = this->oh[1];
             }
         }
     }
@@ -7309,9 +7366,9 @@ bool Project::open(std::string path, bool autosave, bool newp, bool undo) {
         for (PrefItem *mci : item->items) {
             if (mci->dest == &mainprogram->project->name) {
                 namedest = &mci->dest;
-            } else if (mci->dest == &mainprogram->project->ow) {
+            } else if (mci->dest == &mainprogram->project->ow[1]) {
                 owdest = &mci->dest;
-            } else if (mci->dest == &mainprogram->project->oh) {
+            } else if (mci->dest == &mainprogram->project->oh[1]) {
                 ohdest = &mci->dest;
             }
         }
@@ -7378,17 +7435,17 @@ bool Project::open(std::string path, bool autosave, bool newp, bool undo) {
         }
         if (istring == "OUTPUTWIDTH") {
             safegetline(rfile, istring);
-            this->ow = std::stoi(istring);
-            *owdest = &this->ow;
-            ((PrefItem*)(*owdest))->value = this->ow;
-            mainprogram->ow = this->ow;
+            this->ow[1] = std::stoi(istring);
+            *owdest = &this->ow[1];
+            ((PrefItem*)(*owdest))->value = this->ow[1];
+            mainprogram->ow[1] = this->ow[1];
         }
 		else if (istring == "OUTPUTHEIGHT") {
 			safegetline(rfile, istring);
-			this->oh = std::stoi(istring);
-            *ohdest = &this->oh;
-            ((PrefItem*)(*ohdest))->value = this->oh;
-            mainprogram->oh = this->oh;
+			this->oh[1] = std::stoi(istring);
+            *ohdest = &this->oh[1];
+            ((PrefItem*)(*ohdest))->value = this->oh[1];
+            mainprogram->oh[1] = this->oh[1];
 		}
 		if (istring == "CURRBINSDIR") {
 			safegetline(rfile, istring);
@@ -7517,10 +7574,10 @@ void Project::save(std::string path, bool autosave, bool undo, bool nocheck) {
     wfile << std::to_string(mainmix->swapscrollpos[1]);
     wfile << "\n";
     wfile << "OUTPUTWIDTH\n";
-    wfile << std::to_string((int)this->ow);
+    wfile << std::to_string((int)this->ow[1]);
     wfile << "\n";
 	wfile << "OUTPUTHEIGHT\n";
-	wfile << std::to_string((int)this->oh);
+	wfile << std::to_string((int)this->oh[1]);
 	wfile << "\n";
 	wfile << "CURRBINSDIR\n";
 	wfile << mainprogram->currbinsdir;
@@ -7717,8 +7774,6 @@ void Project::save_as() {
 
     std::string path2;
     std::string str;
-    std::vector<std::vector<std::string>> bupaths1;
-    std::vector<std::vector<std::string>> bupaths2;
     std::string bubinsdir = pathtoplatform(this->binsdir);
     std::string buaddir = pathtoplatform(this->autosavedir);
     if (dirname(mainprogram->project->path) != "") {
@@ -7752,14 +7807,12 @@ void Project::save_as() {
                     BinElement *binel = binsmain->bins[k]->elements[i * 12 + j];
                     std::string s =
                             mainprogram->path + "/bins/" + binsmain->bins[k]->name + "/";
-                    bup1.push_back(binel->absjpath);
                     if (binel->absjpath != "") {
                         // rename jpeg
                         binel->absjpath = s + basename(binel->absjpath);
                         binel->jpegpath = binel->absjpath;
                         binel->reljpath = std::filesystem::relative(binel->absjpath, s).generic_string();
                     }
-                    bup2.push_back(binel->path);
                     std::string s1 = pathtoplatform(dirname(dirname(binel->path).substr(0, dirname(binel->path).size() - 1)));
                     if (s1 == bubinsdir) {
                         // rename path
@@ -7767,10 +7820,6 @@ void Project::save_as() {
                     }
                 }
             }
-            // backup source project jpeg paths
-            bupaths1.push_back(bup1);
-            // backup source project binel paths
-            bupaths2.push_back(bup2);
         }
     }
     if (exists(str)) {
@@ -7788,20 +7837,6 @@ void Project::save_as() {
         }
     }
     mainprogram->saveas = false;
-
-    // reset binel paths and jpeg paths for current project (source)
-    for (int k = 0; k < binsmain->bins.size(); k++) {
-        for (int j = 0; j < 12; j++) {
-            for (int i = 0; i < 12; i++) {
-                BinElement *binel = binsmain->bins[k]->elements[i * 12 + j];
-                binel->path = bupaths2[k][j * 12 + i];
-                binel->absjpath = bupaths1[k][j * 12 + i];
-                binel->jpegpath = binel->absjpath;
-                binel->reljpath = std::filesystem::relative(binel->absjpath,
-                                                            mainprogram->project->binsdir).generic_string();
-            }
-        }
-    }
 
     mainprogram->project->bupp = "";
     mainprogram->project->bupn = "";
@@ -8330,7 +8365,7 @@ PIProj::PIProj() {
     this->items.push_back(pip);
     pos++;
 
-    pip = new PrefItem(this, pos, "Project output video width", PREF_NUMBER, (void*)&mainprogram->project->ow);
+    pip = new PrefItem(this, pos, "Project output video width", PREF_NUMBER, (void*)&mainprogram->project->ow[1]);
     pip->namebox->tooltiptitle = "Project output video width ";
     pip->namebox->tooltip = "Sets the width in pixels of the video stream sent to the output for this project. ";
     pip->valuebox->tooltiptitle = "Project output video width ";
@@ -8339,7 +8374,7 @@ PIProj::PIProj() {
     this->items.push_back(pip);
     pos++;
 
-    pip = new PrefItem(this, pos, "Project output video height", PREF_NUMBER, (void*)&mainprogram->project->oh);
+    pip = new PrefItem(this, pos, "Project output video height", PREF_NUMBER, (void*)&mainprogram->project->oh[1]);
     pip->namebox->tooltiptitle = "Project output video height ";
     pip->namebox->tooltip = "Sets the height in pixels of the video stream sent to the output for this project. ";
     pip->valuebox->tooltiptitle = "Project output video height ";
@@ -8596,7 +8631,7 @@ PIVid::PIVid() {
     pvi->namebox->tooltip = "Sets the width in pixels of the video stream sent to the output for new projects. ";
     pvi->valuebox->tooltiptitle = "Default output video width ";
     pvi->valuebox->tooltip = "Leftclicking the value allows setting the width in pixels of the video stream sent to the output for new projects. ";
-    mainprogram->ow = pvi->value;
+    mainprogram->ow[1] = pvi->value;
     this->items.push_back(pvi);
     pos++;
 
@@ -8606,7 +8641,7 @@ PIVid::PIVid() {
     pvi->namebox->tooltip = "Sets the height in pixels of the video stream sent to the output for new projects. ";
     pvi->valuebox->tooltiptitle = "Default output video height ";
     pvi->valuebox->tooltip = "Leftclicking the value allows setting the height in pixels of the video stream sent to the output for new projects. ";
-    mainprogram->oh = pvi->value;
+    mainprogram->oh[1] = pvi->value;
     this->items.push_back(pvi);
     pos++;
 
@@ -8769,6 +8804,9 @@ void Program::define_menus() {
     effects.push_back("BOXBLUR");
     effects.push_back("CHROMASTRETCH");
     std::vector<std::string> meffects = effects;
+    for (auto name : mainprogram->ffgleffectnames) {
+        meffects.push_back(name);
+    }
     std::sort(meffects.begin(), meffects.end());
     for (int i = 0; i < meffects.size(); i++) {
         for (int j = 0; j < effects.size(); j++) {
@@ -8777,11 +8815,14 @@ void Program::define_menus() {
                 break;
             }
         }
+        for (int j = 0; j < mainprogram->ffgleffectnames.size(); j++) {
+            if (meffects[i] == mainprogram->ffgleffectnames[j]) {
+                mainprogram->abeffects.push_back(1000 + j);
+                break;
+            }
+        }
     }
     mainprogram->make_menu("effectmenu", mainprogram->effectmenu, meffects);
-    for (int i = 0; i < effects.size(); i++) {
-        mainprogram->effectsmap[(EFFECT_TYPE) i] = effects[i];
-    }
 
     std::vector<std::string> mixengines;
     mixengines.push_back("submenu mixmodemenu");
@@ -8813,6 +8854,9 @@ void Program::define_menus() {
     mixmodes.push_back("CHROMAKEY");
     mixmodes.push_back("LUMAKEY");
     mixmodes.push_back("DISPLACEMENT");
+    for (auto name : mainprogram->ffglmixernames) {
+        mixmodes.push_back(name);
+    }
     mainprogram->make_menu("mixmodemenu", mainprogram->mixmodemenu, mixmodes);
 
     std::vector<std::string> parammodes1;
@@ -8910,6 +8954,8 @@ void Program::define_menus() {
     layops1.push_back("submenu mixtargetmenu");
     layops1.push_back("Show on display");
     layops1.push_back("Record and replace");
+    layops1.push_back("submenu ffglsourcemenu");
+    layops1.push_back("Use FFGL source plugin");
     layops1.push_back("HAP encode on-the-fly");
     mainprogram->make_menu("laymenu1", mainprogram->laymenu1, layops1);
 
@@ -8932,6 +8978,8 @@ void Program::define_menus() {
     layops2.push_back("submenu mixtargetmenu");
     layops2.push_back("Show on display");
     layops2.push_back("Record and replace");
+    layops2.push_back("submenu ffglsourcemenu");
+    layops2.push_back("Use FFGL source plugin");
     mainprogram->make_menu("laymenu2", mainprogram->laymenu2, layops2);
 
     std::vector<std::string> loadops;
@@ -8944,7 +8992,18 @@ void Program::define_menus() {
     loadops.push_back("New mix");
     loadops.push_back("Open mix");
     loadops.push_back("Save mix");
+    loadops.push_back("submenu ffglsourcemenu");
+    loadops.push_back("Use FFGL source plugin");
     mainprogram->make_menu("newlaymenu", mainprogram->newlaymenu, loadops);
+
+    std::vector<std::string> sourceops;
+    for (auto name : mainprogram->ffglsourcenames) {
+        sourceops.push_back(name);
+    }
+    if (mainprogram->ffglsourcenames.empty()) {
+        sourceops.push_back("No plugins installed");
+    }
+    mainprogram->make_menu("ffglsourcemenu", mainprogram->ffglsourcemenu, sourceops);
 
     std::vector<std::string> clipops;
     clipops.push_back("submenu livemenu");
@@ -9958,11 +10017,11 @@ void Shelf::handle() {
 
 
 GLuint copy_tex(GLuint tex) {
-    return copy_tex(tex, mainprogram->ow3, mainprogram->oh3, 0);
+    return copy_tex(tex, mainprogram->ow[0], mainprogram->oh[0], 0);
 }
 
 GLuint copy_tex(GLuint tex, bool yflip) {
-    return copy_tex(tex, mainprogram->ow3, mainprogram->oh3, yflip);
+    return copy_tex(tex, mainprogram->ow[0], mainprogram->oh[0], yflip);
 }
 
 GLuint copy_tex(GLuint tex, int tw, int th) {
