@@ -545,6 +545,7 @@ class Mixer {
 		int mousedeck = -1;
 		Shelf *mouseshelf;
 		int mouseshelfelem;
+        Param *mouseparam = nullptr;
 		bool insert;
 		Node *mousenode = nullptr;
 		Clip* mouseclip;
@@ -561,7 +562,8 @@ class Mixer {
 		Param *midiparam = nullptr;
 		Param *adaptparam = nullptr;
 		Param *prepadaptparam = nullptr;
-		Param *adaptnumparam = nullptr;
+        Param *adaptnumparam = nullptr;
+        Param *adapttextparam = nullptr;
 		bool midiisspeed = false;
 		int prevx;
 		GLuint mixbackuptex;

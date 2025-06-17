@@ -115,6 +115,12 @@ BlendNode::BlendNode() {
     this->mixfac->sliding = true;
     this->mixfac->box->tooltiptitle = "Mix factor ";
     this->mixfac->box->tooltip = "Leftdrag sets relative mixamount of current layer and its previous layers. ";
+    this->mixerbox = new Boxx;
+    this->mixerbox->vtxcoords->w = 0.3f;
+    this->mixerbox->vtxcoords->h = 0.075f;
+    this->mixerbox->tooltiptitle = "Source name ";
+    this->mixerbox->tooltip = "Leftclick or rightclick source plugin name to change it to another source plugin. ";
+    this->mixerbox->upvtxtoscr();
 }
 
 Node::~Node() {

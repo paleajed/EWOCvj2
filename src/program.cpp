@@ -2307,6 +2307,7 @@ void Program::show_info() {
             mainprogram->infoanswer = true;
             SDL_HideWindow(mainprogram->requesterwindow);
             SDL_RaiseWindow(mainprogram->mainwindow);
+            mainprogram->missingplugs.clear();
             mainprogram->leftmouse = false;
         }
     }
@@ -3453,22 +3454,23 @@ void Program::handle_mixenginemenu() {
             if (mainprogram->menuresults[0] > 12) {
                 BlendNode *bnode = (BlendNode *) mainmix->mousenode;
                 bnode->blendtype = FFGL_MIXER;
-                bnode->ffglmixernr[!mainprogram->prevmodus] = mainprogram->menuresults[0] - 13;
+                bnode->ffglmixernr = mainprogram->menuresults[0] - 13;
 
                 int w = mainprogram->ow[!mainprogram->prevmodus];
                 int h = mainprogram->oh[!mainprogram->prevmodus];
 
-                auto plug = mainprogram->ffglmixerplugins[bnode->ffglmixernr[!mainprogram->prevmodus]];
+                auto plug = mainprogram->ffglmixerplugins[bnode->ffglmixernr];
                 auto instance = plug->createInstance(w, h);
-                mainprogram->ffglinstances[bnode->ffglmixernr[!mainprogram->prevmodus]].push_back(
+                mainprogram->ffglinstances[bnode->ffglmixernr].push_back(
                         instance);
-                bnode->instancenr[!mainprogram->prevmodus] =
-                        mainprogram->ffglinstances[bnode->ffglmixernr[!mainprogram->prevmodus]].size() -
+                bnode->instancenr =
+                        mainprogram->ffglinstances[bnode->ffglmixernr].size() -
                         1;
 
                 // get parameters from FFGLHost::parameters
-                bnode->numrows[!mainprogram->prevmodus] =
+                bnode->numrows =
                         (int) instance->getParameters().size() / 3 + 1;
+                bnode->layer->numefflines[bnode->layer->effcat] += bnode->numrows;
                 int cnt = 0;
                 for (auto par: instance->parameters) {
                     Param *param = new Param;
@@ -3478,17 +3480,14 @@ void Program::handle_mixenginemenu() {
                         }
                     }
                     cnt++;
-                    param->name = par.name;
-                    param->deflt = FFGLUtils::FFMixedToFloat(par.defaultValue);
-                    param->value = param->deflt;
-                    param->range[0] = par.range.min;
-                    param->range[1] = par.range.max;
-                    param->sliding = true;
+
+                    param->set_parameter_to(par);
+
                     param->box->tooltiptitle = par.name;
                     param->box->tooltip = "Set " + par.name + " parameter of FFGL " +
-                                          mainprogram->ffglmixerplugins[bnode->ffglmixernr[!mainprogram->prevmodus]]->pluginInfo.PluginName +
+                                          mainprogram->ffglmixerplugins[bnode->ffglmixernr]->pluginInfo.PluginName +
                                           " mixer plugin - between 0.0 and 1.0 ";
-                    bnode->ffglparams[!mainprogram->prevmodus].push_back(param);
+                    bnode->ffglparams.push_back(param);
                 }
             } else if (mainmix->mousenode->type == BLEND) {
                 ((BlendNode *) mainmix->mousenode)->blendtype = (BLEND_TYPE) (mainprogram->menuresults[0] + 1);
@@ -5313,6 +5312,22 @@ void Program::handle_beatmenu() {
         } else {
             mainmix->mouselayer->beats = pow(2, k - 1);
         }
+    }
+
+    if (mainprogram->menuchosen) {
+        mainprogram->menuchosen = false;
+        mainprogram->menuactivation = 0;
+        mainprogram->menuresults.clear();
+        mainprogram->recundo = true;
+    }
+}
+
+void Program::handle_optionmenu() {
+    int k = -1;
+    // Draw and handle ffglparameter optionmenu
+    k = mainprogram->handle_menu(mainprogram->optionmenu);
+    if (k > -1) {
+        mainmix->mouseparam->value = k;
     }
 
     if (mainprogram->menuchosen) {
@@ -7552,6 +7567,8 @@ void Project::save(std::string path, bool autosave, bool undo, bool nocheck) {
     }
     mainprogram->goconcat = false;
 
+    path = pathtoplatform(path);  // avoid duplicate names in recentprojectslist
+
     // save project file: if autosave is true
 	std::string ext = path.substr(path.length() - 7, std::string::npos);
 	std::string str;
@@ -8833,6 +8850,7 @@ void Program::define_menus() {
 
     std::vector<std::string> mixmodes;
     mixmodes.push_back("MIX");
+    mixmodes.push_back("ALPHA OVER");
     mixmodes.push_back("MULTIPLY");
     mixmodes.push_back("SCREEN");
     mixmodes.push_back("OVERLAY");
@@ -8849,7 +8867,6 @@ void Program::define_menus() {
     mixmodes.push_back("LINEAR LIGHT");
     mixmodes.push_back("DARKEN ONLY");
     mixmodes.push_back("LIGHTEN ONLY");
-    mixmodes.push_back("WIPE");
     mixmodes.push_back("COLORKEY");
     mixmodes.push_back("CHROMAKEY");
     mixmodes.push_back("LUMAKEY");

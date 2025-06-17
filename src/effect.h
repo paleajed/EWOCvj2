@@ -2,6 +2,11 @@
 #include <vector>
 #include <mutex>
 
+#define WIN32_LEAN_AND_MEAN
+#define NOMINMAX
+#include <windows.h>
+#include "FFGLHost.h"
+
 
 typedef enum
 {
@@ -69,9 +74,13 @@ class MidiNode;
 class Param {
 	public:
 		std::string name;
+        FFUInt32 type = FF_TYPE_STANDARD;
+        std::vector<std::string> options;
         float value = 0.0f;
+        char *valuechar;
         float oldvalue = 0.0f;
 		float deflt = 0.0f;
+        char *defltchar;
 		float range[2] = {0.0f, 0.0f};
 		int midi[2] = {-1, -1};
 		std::string midiport;
@@ -92,6 +101,7 @@ class Param {
         void register_midi();
         void unregister_midi();
         void lpst_replace_with(Param* cpar);
+        void set_parameter_to(FFGLParameter &par);
 		Param();
 		~Param();
 };

@@ -72,7 +72,8 @@ typedef enum
     EDIT_SHELFELEMNAME = 4,
 	EDIT_STRING = 5,
 	EDIT_NUMBER = 6,
-	EDIT_PARAM = 7,
+    EDIT_FLOATPARAM = 7,
+    EDIT_TEXTPARAM = 8,
 } EDIT_TYPE;
 
 typedef enum
@@ -507,6 +508,7 @@ class Program {
         Menu* lpstmenu = nullptr;
         Menu* beatmenu = nullptr;
         Menu* sendmenu = nullptr;
+        Menu* optionmenu = nullptr;
         bool menuactivation = false;
         bool binmenuactivation = false;
 		bool menuchosen = false;
@@ -842,6 +844,7 @@ class Program {
 		std::string currshelfdirdir;
         std::string currfilesdir;
         std::string currelemsdir;
+        std::string ffglfiledir;
 		std::string homedir;
 		std::string datadir;
 		std::string fontdir = "/usr/share/fonts";
@@ -991,8 +994,23 @@ class Program {
         std::vector<FFGLPlugin*> ffglmixerplugins;
         std::vector<std::vector<FFGLInstanceHandle>> ffglinstances;
         FFGLHost *ffglhost = nullptr;
+        std::unordered_set<std::string> missingplugs;
+        GLuint redgradienttex;
+        GLuint redgradientfbo;
+        GLuint greengradienttex;
+        GLuint greengradientfbo;
+        GLuint bluegradienttex;
+        GLuint bluegradientfbo;
+        GLuint huegradienttex;
+        GLuint huegradientfbo;
+        GLuint satgradienttex;
+        GLuint satgradientfbo;
+        GLuint brightgradienttex;
+        GLuint brightgradientfbo;
+        GLuint alphagradienttex;
+        GLuint alphagradientfbo;
 
-        void remove_ec(std::string filepath, std::error_code& ec);
+    void remove_ec(std::string filepath, std::error_code& ec);
         void remove(std::string filepath);
 		int quit_requester();
         void show_info();
@@ -1061,6 +1079,7 @@ class Program {
         void handle_editmenu();
         void handle_lpstmenu();
         void handle_beatmenu();
+        void handle_optionmenu();
         void write_recentprojectlist();
         void socket_server(struct sockaddr_in serv_addr, int opt);
         void socket_client(struct sockaddr_in serv_addr, int opt);

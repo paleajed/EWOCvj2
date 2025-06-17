@@ -149,6 +149,16 @@ uniform float ymirror = 1;
 uniform float xcrdmirror = 0.5f;
 uniform float ycrdmirror = 0.5f;
 
+uniform bool redoption = false;
+uniform bool greenoption = false;
+uniform bool blueoption = false;
+uniform bool hueoption = false;
+uniform bool satoption = false;
+uniform bool brightoption = false;
+uniform bool alphaoption = false;
+
+
+
 /// Computes the overlay between the source and destination colours.
 vec3 Overlay (vec3 src, vec3 dst)
 {
@@ -1710,75 +1720,79 @@ void main()
 		fc = vec4((tex0.rgb * (term0 + (1.0f - tex1.a) * (1.0f - term0)) + tex1.rgb * (term1 + (1.0f - tex0.a) * (1.0f - term1))), max(tex0.a, tex1.a));
 	}
 	else if (mixmode == 2) {
+		//ALPHA OVERLAY
+		fc = vec4(tex0.rgb * (1.0f - tex1.a) + tex1.rgb * (tex1.a), max(tex0.a, tex1.a));
+	}
+	else if (mixmode == 3) {
 		//MULTIPLY alpha
 		fc = vec4(tex0.rgb * vec3(1.0f, 1.0f, 1.0f) + ((tex1.rgb - vec3(1.0f, 1.0f, 1.0f)) * tex1.a), max(tex0.a, tex1.a));
 	}
-	else if (mixmode == 3) {
+	else if (mixmode == 4) {
 		//SCREEN alpha
 		fc = 1.0 - (1.0 - tex0) * (1.0 - tex1);
 	}
-	else if (mixmode == 4) {
+	else if (mixmode == 5) {
 		//OVERLAY  alpha
 		if ((tex0.r + tex0.g + tex0.b) / 3.0 < 0.5) {
 			fc = vec4(2.0f * tex0.rgb * vec3(0.5f, 0.5f, 0.5f) + ((tex1.rgb - vec3(0.5f, 0.5f, 0.5f)) * tex1.a), max(tex0.a, tex1.a));
 		}
 		else fc = 1.0 - 2 * ((tex1.a / 2.0f) + 0.5f) * (1.0 - tex0) * (1.0 - tex1);
 	}
-	else if (mixmode == 5) {
+	else if (mixmode == 6) {
 		//HARD LIGHT alpha
 		if ((tex0.r + tex0.g + tex0.b) / 3.0 >= 0.5) {
 			fc = vec4(2.0f * tex0.rgb * vec3(0.5f, 0.5f, 0.5f) + ((tex1.rgb - vec3(0.5f, 0.5f, 0.5f)) * tex1.a), max(tex0.a, tex1.a));
 		}
 		else fc = 1.0 - 2 * ((tex1.a / 2.0f) + 0.5f) * (1.0 - tex0) * (1.0 - tex1);
 	}
-	else if (mixmode == 6) {
+	else if (mixmode == 7) {
 		//SOFT LIGHT
 		fc = (1.0 - 2.0 * tex1) * tex0 * tex0 + 2 * tex1 * tex0;
 	}
-	else if (mixmode == 7) {
+	else if (mixmode == 8) {
 		//DIVIDE alpha
 		fc = vec4(tex0.rgb / (vec3(1.0f, 1.0f, 1.0f) + ((tex1.rgb - vec3(1.0f, 1.0f, 1.0f)) * tex1.a)), max(tex0.a, tex1.a));
 	}
-	else if (mixmode == 8) {
+	else if (mixmode == 9) {
 		//ADD alpha
 		fc = vec4(tex0.rgb + tex1.rgb, tex0.a);
 	}
-	else if (mixmode == 9) {
+	else if (mixmode == 10) {
 		//SUBTRACT alpha
 		fc = vec4(tex0.rgb - tex1.rgb, tex0.a);
 	}
-	else if (mixmode == 10) {
+	else if (mixmode == 11) {
 		//DIFF alpha
 		fc = vec4(abs(tex0.rgb - tex1.rgb), max(tex0.a, tex1.a));
 	}
-	else if (mixmode == 11) {
+	else if (mixmode == 12) {
 		//DODGE alpha
 		fc = vec4(tex0.rgb / (vec3(1.0f, 1.0f, 1.0f) - ((vec3(1.0f, 1.0f, 1.0f) - tex1.rgb) * tex1.a)), max(tex0.a, tex1.a));
 		//fc = tex0 / (1.0 - tex1);
 	}
-	else if (mixmode == 12) {
+	else if (mixmode == 13) {
 		//COLOR_BURN
 		fc = 1.0 - ((1.0 - tex0) / tex1);
 	}
-	else if (mixmode == 13) {
+	else if (mixmode == 14) {
 		//LINEAR_BURN
 		fc = (tex0 + tex1) - 1.0;
 	}
-	else if (mixmode == 14) {
+	else if (mixmode == 15) {
 		//VIVID LIGHT
 		if ((tex0.r + tex0.g + tex0.b) / 3.0 >= 0.5) fc = vec4(tex0.rgb / (1.0 - tex1.rgb), 1.0);
 		else fc = 1.0 - ((1.0 - tex0) / tex1);
 	}
-	else if (mixmode == 15) {
+	else if (mixmode == 16) {
 		// LINEAR_LIGHT
 		if ((tex0.r + tex0.g + tex0.b) / 3.0 >= 0.5) fc = tex0 + tex1;
 		else fc = (tex0 + tex1) - 1.0;
 	}
-	else if (mixmode == 16) {
+	else if (mixmode == 17) {
 		//DARKEN_ONLY alpha
 		fc = vec4(min(tex0.r, tex1.r + (1.0f - tex1.a)), min(tex0.g, tex1.g + (1.0f - tex1.a)), min(tex0.b, tex1.b + (1.0f - tex1.a)), max(tex0.a, tex1.a));
 	}
-	else if (mixmode == 17) {
+	else if (mixmode == 18) {
 		//LIGHTEN_ONLY alpha
 		fc = vec4(max(tex0.r, tex1.r), max(tex0.g, tex1.g), max(tex0.b, tex1.b), max(tex0.a, tex1.a));
 	}
@@ -1994,7 +2008,51 @@ void main()
 			}
 		}
 		else {
-			if (box == 1) FragColor = color;
+			if (box == 1) {
+                if (redoption) {
+                    FragColor = vec4(TexCoord0.x, 0.0f, 0.0f, 1.0f);
+                }
+                else if (greenoption) {
+                    FragColor = vec4(0.0f, TexCoord0.x, 0.0f, 1.0f);
+                }
+                else if (blueoption) {
+                    FragColor = vec4(0.0f, 0.0f, TexCoord0.x, 1.0f);
+                }
+                else if (hueoption) {
+                    vec3 hsvvec = rgb2hsv(vec3(1.0f, 0.0f, 0.0f));
+                    hsvvec.x = TexCoord0.x;
+                    vec3 rgbvec = hsv2rgb(hsvvec);
+                    FragColor = vec4(rgbvec, 1.0f);
+                }
+                else if (satoption) {
+                    vec3 hsvvec = rgb2hsv(vec3(1.0f, 0.0f, 1.0f));
+                    hsvvec.y = TexCoord0.x;
+                    vec3 rgbvec = hsv2rgb(hsvvec);
+                    FragColor = vec4(rgbvec, 1.0f);
+                }
+                else if (brightoption) {
+                    vec3 hsvvec = rgb2hsv(vec3(1.0f, 1.0f, 1.0f));
+                    hsvvec.z = TexCoord0.x;
+                    vec3 rgbvec = hsv2rgb(hsvvec);
+                    FragColor = vec4(rgbvec, 1.0f);
+                }
+                else if (alphaoption) {
+                    int blockx = int(TexCoord0.x * 16.0f) % 2;
+                    int blocky = int(TexCoord0.y * 4.0f) % 2;
+                    float gridcol;
+                    if (blockx == blocky) {
+                        gridcol = 0.6f;
+                    }
+                    else {
+                        gridcol = 0.3f;
+                    }
+                    float blockgrey = gridcol * (1.0f - TexCoord0.x) + 1.0f * TexCoord0.x;
+                    FragColor = vec4(blockgrey, blockgrey, blockgrey, 1.0f);
+                }
+                else {
+                    FragColor = color;
+                }
+            }
             else {
                 vec4 ic = texture2D(Sampler0, TexCoord0.st).rgba;
                 if (!inverteff) FragColor = vec4(ic.r, ic.g, ic.b, ic.a * opacity);

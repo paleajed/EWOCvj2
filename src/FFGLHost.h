@@ -170,6 +170,8 @@ public:
 };
 
 // Easy way to swap between protectors using typedefs
+#define USE_ULTRA_MINIMAL_PROTECTION
+
 #ifdef USE_MINIMAL_PROTECTION
 typedef MinimalGUIStateProtector ActiveGUIStateProtector;
 #elif defined(USE_ULTRA_MINIMAL_PROTECTION)

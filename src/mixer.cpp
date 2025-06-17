@@ -406,49 +406,133 @@ void Param::handle(bool smallxpad) {
     float pad = 0.02f;
     if (smallxpad) pad = 0.005f;
 	std::string thisstr;
+
 	draw_box(this->box, -1);
-    draw_box(grey, black, this->box->vtxcoords->x1 + pad, this->box->vtxcoords->y1 + this->box->vtxcoords->h / 8.0f, this->box->vtxcoords->w - pad * 2.0f, this->box->vtxcoords->h * 0.75f, -1);
-	int val;
+
+    GLuint tex = -1;
+    if (this->type == FF_TYPE_RED) {
+        tex = mainprogram->redgradienttex;
+    }
+    else if (this->type == FF_TYPE_GREEN) {
+        tex = mainprogram->greengradienttex;
+    }
+    else if (this->type == FF_TYPE_BLUE) {
+        tex = mainprogram->bluegradienttex;
+    }
+    else if (this->type == FF_TYPE_HUE) {
+        tex = mainprogram->huegradienttex;
+    }
+    else if (this->type == FF_TYPE_SATURATION) {
+        tex = mainprogram->satgradienttex;
+    }
+    else if (this->type == FF_TYPE_BRIGHTNESS) {
+        tex = mainprogram->brightgradienttex;
+    }
+    else if (this->type == FF_TYPE_ALPHA) {
+        tex = mainprogram->alphagradienttex;
+    }
+    if (this->type != FF_TYPE_OPTION && this->type != FF_TYPE_TEXT && this->type != FF_TYPE_FILE) {
+        draw_box(grey, black, this->box->vtxcoords->x1 + pad, this->box->vtxcoords->y1 + this->box->vtxcoords->h / 8.0f,
+                 this->box->vtxcoords->w - pad * 2.0f, this->box->vtxcoords->h * 0.75f, tex);
+    }
+
+    int val;
 	if (!this->powertwo) val = round(this->value * 1000.0f);
 	else val = round(this->value * this->value * 1000.0f);
     if (this->powerfour100) {
         val = round(this->value * this->value * this->value * this->value * 100000.0f);
     }
-	int val2 = val;
-	val += 1000000;
+	int val2 = abs(val);
+    bool negative = (val < 0);
+    val = abs(val);
+    val += 1000000;
 	int firstdigit = 7 - std::to_string(val2).length();
 	if (firstdigit > 3) firstdigit = 3;
 	if (mainmix->learnparam == this && mainmix->learn) {
 		thisstr = "MIDI";
 	}
 	else if (this != mainmix->prepadaptparam && this != mainmix->adaptparam) thisstr = this->name;
-	else if (this->sliding) thisstr = std::to_string(val).substr(firstdigit, 4 - firstdigit) + "." + std::to_string(val).substr(std::to_string(val).length() - 3, std::string::npos); 
+	else if (this->sliding) {
+        thisstr = std::to_string(val).substr(firstdigit, 4 - firstdigit) + "." + std::to_string(val).substr(std::to_string(val).length() - 3, std::string::npos);
+        if (negative) {
+            thisstr = "-" + thisstr;
+        }
+    }
 	else {
         thisstr = std::to_string((int)(this->value + (float)(0.5f * (this->effect->type == FLIP || this->effect->type == MIRROR))));
     }
-	if (this != mainmix->adaptnumparam) {
+    if (this->type == FF_TYPE_OPTION) {
+        if (this->name != "") {
+            thisstr = this->name + ": " + this->options[this->value];
+        }
+        else {
+            thisstr = this->options[this->value];
+        }
+    }
+    if (this->type == FF_TYPE_TEXT || this->type == FF_TYPE_FILE) {
+        if (this->name != "") {
+            thisstr = this->name + ": " + this->valuechar;
+        }
+        else {
+            thisstr = this->valuechar;
+        }
+    }
+	if (this != mainmix->adaptnumparam && this != mainmix->adapttextparam) {
         if (this->name != "drywet") {
-            render_text(thisstr, white, this->box->vtxcoords->x1 + 0.03f, this->box->vtxcoords->y1 + 0.075f - 0.045f,
+            render_text(thisstr, white, this->box->vtxcoords->x1 + 0.03f - 0.02f * (this->type == FF_TYPE_OPTION) - 0.02f * (this->type == FF_TYPE_TEXT) - 0.02f * (this->type == FF_TYPE_FILE), this->box->vtxcoords->y1 + 0.075f - 0.045f,
                         0.00045f, 0.00075f);
         }
         if (this->box->in()) {
-			if (mainprogram->leftmousedown && !mainprogram->inserteffectbox->in()) {
-				mainprogram->leftmousedown = false;
-				mainmix->prepadaptparam = this;
-				mainmix->prevx = mainprogram->mx;
-			}
-            if (mainprogram->leftmouse) {
-                mainprogram->leftmouse = false;
-                mainprogram->recundo = false;
+            if (this->type == FF_TYPE_OPTION) {
+                if (mainprogram->leftmouse && !mainprogram->menuondisplay) {
+                    mainprogram->make_menu("optionmenu", mainprogram->optionmenu, this->options);
+                    mainprogram->optionmenu->state = 2;
+                    mainprogram->optionmenu->menux = mainprogram->mx;
+                    mainprogram->optionmenu->menuy = mainprogram->my;
+                    mainmix->mouseparam = this;
+                    mainprogram->leftmouse = false;
+                    mainprogram->recundo = false;
+                }
             }
-			if (mainprogram->doubleleftmouse) {
-				mainprogram->renaming = EDIT_PARAM;
-				mainmix->adaptnumparam = this;
-				mainprogram->inputtext = "";
-				mainprogram->cursorpos0 = mainprogram->inputtext.length();
-				SDL_StartTextInput();
-				mainprogram->doubleleftmouse = false;
-			}
+            else if (this->type == FF_TYPE_TEXT) {
+                if (mainprogram->leftmouse) {
+                    mainprogram->renaming = EDIT_TEXTPARAM;
+                    mainmix->adapttextparam = this;
+                    mainprogram->inputtext = "";
+                    mainprogram->cursorpos0 = mainprogram->inputtext.length();
+                    SDL_StartTextInput();
+                    mainprogram->leftmouse = false;
+                }
+            }
+            else if (this->type == FF_TYPE_FILE) {
+                if (mainprogram->leftmouse) {
+                    // start file requester
+                    mainprogram->pathto = "FFGLFILE";
+                    mainmix->mouseparam = this;
+                    std::thread filereq(&Program::get_inname, mainprogram, "Import bin(s)", "", std::filesystem::canonical(mainprogram->ffglfilesdir).generic_string());
+                    filereq.detach();
+                    mainprogram->leftmouse = false;
+                }
+            }
+            else {
+                if (mainprogram->leftmousedown && !mainprogram->inserteffectbox->in()) {
+                    mainprogram->leftmousedown = false;
+                    mainmix->prepadaptparam = this;
+                    mainmix->prevx = mainprogram->mx;
+                }
+                if (mainprogram->leftmouse) {
+                    mainprogram->leftmouse = false;
+                    mainprogram->recundo = false;
+                }
+                if (mainprogram->doubleleftmouse) {
+                    mainprogram->renaming = EDIT_FLOATPARAM;
+                    mainmix->adaptnumparam = this;
+                    mainprogram->inputtext = "";
+                    mainprogram->cursorpos0 = mainprogram->inputtext.length();
+                    SDL_StartTextInput();
+                    mainprogram->doubleleftmouse = false;
+                }
+            }
 			if (mainprogram->menuactivation && !mainprogram->menuondisplay) {
                 if (this->name == "Speed") {
                     if (loopstation->parelemmap.find(this) != loopstation->parelemmap.end()) mainprogram->parammenu2b->state = 2;
@@ -490,16 +574,21 @@ void Param::handle(bool smallxpad) {
 				mainprogram->menuactivation = false;
 			}
 		}
-		if (this->sliding) {
-			draw_box(green, green, this->box->vtxcoords->x1 + pad + (this->box->vtxcoords->w - pad * 2.0f) * ((this->value - this->range[0]) / (this->range[1] - this->range[0])) - 0.002f, this->box->vtxcoords->y1 + this->box->vtxcoords->h / 8.0f, 0.004f, this->box->vtxcoords->h * 0.75f, -1);
-		}
-		else {
-			draw_box(green, green, this->box->vtxcoords->x1 + pad + (this->box->vtxcoords->w - pad * 2.0f) * (((int)(this->value + 0.5f) - this->range[0]) / (this->range[1] - this->range[0])) - 0.002f, this->box->vtxcoords->y1 + this->box->vtxcoords->h / 8.0f, 0.004f, this->box->vtxcoords->h * 0.75f, -1);
-		}
+        if (this->type != FF_TYPE_OPTION) {
+            if (this->sliding) {
+                draw_box(green, green, this->box->vtxcoords->x1 + pad + (this->box->vtxcoords->w - pad * 2.0f) * ((this->value - this->range[0]) / (this->range[1] - this->range[0])) - 0.002f, this->box->vtxcoords->y1 + this->box->vtxcoords->h / 8.0f, 0.004f, this->box->vtxcoords->h * 0.75f, -1);
+            }
+            else {
+                draw_box(green, green, this->box->vtxcoords->x1 + pad + (this->box->vtxcoords->w - pad * 2.0f) * (((int)(this->value + 0.5f) - this->range[0]) / (this->range[1] - this->range[0])) - 0.002f, this->box->vtxcoords->y1 + this->box->vtxcoords->h / 8.0f, 0.004f, this->box->vtxcoords->h * 0.75f, -1);
+            }
+        }
 	}
-	if (this == mainmix->adaptnumparam) {
-		do_text_input(this->box->vtxcoords->x1 + 0.035f, this->box->vtxcoords->y1 + 0.03f, 0.00045f, 0.00075f, mainprogram->mx, mainprogram->my, mainprogram->xvtxtoscr(this->box->vtxcoords->w - 0.03f), 0, nullptr);
-	}
+    if (this == mainmix->adaptnumparam) {
+        do_text_input(this->box->vtxcoords->x1 + 0.035f, this->box->vtxcoords->y1 + 0.03f, 0.00045f, 0.00075f, mainprogram->mx, mainprogram->my, mainprogram->xvtxtoscr(this->box->vtxcoords->w - 0.03f), 0, nullptr);
+    }
+    if (this == mainmix->adapttextparam) {
+        do_text_input(this->box->vtxcoords->x1 + 0.01f, this->box->vtxcoords->y1 + 0.03f, 0.00045f, 0.00075f, mainprogram->mx, mainprogram->my, mainprogram->xvtxtoscr(this->box->vtxcoords->w - 0.02f), 0, nullptr);
+    }
 }
 
 
@@ -558,6 +647,45 @@ void Param::register_midi() {
 
 void Param::unregister_midi() {
     mainmix->midi_registrations[!mainprogram->prevmodus][this->midi[0]][this->midi[1]][this->midiport].par = nullptr;
+}
+
+void Param::set_parameter_to(FFGLParameter &src) {
+    this->name = src.name;
+    this->type = src.type;
+    if (this->type == FF_TYPE_OPTION) {
+        for (auto elem: src.elements) {
+            this->options.push_back(elem.name);
+        }
+        for (size_t i = 0; i < src.elements.size(); i++) {
+            if (src.elements[i].value.UIntValue == src.defaultValue.UIntValue) {
+                this->deflt = i;
+            }
+        }
+        this->value = this->deflt;
+        this->box->acolor[0] = 0.5f;
+        this->box->acolor[1] = 0.5f;
+        this->box->acolor[2] = 0.5f;
+    } else if (this->type == FF_TYPE_TEXT || this->type == FF_TYPE_FILE) {
+        this->defltchar = static_cast<char*>(src.defaultValue.PointerValue);
+        this->valuechar = this->defltchar;
+        this->box->acolor[0] = 0.3f * (this->type == FF_TYPE_FILE);
+        this->box->acolor[1] = 0.0f;
+        this->box->acolor[2] = 0.6f * (this->type == FF_TYPE_TEXT);
+        cnt = 3;    // one text/file thiseter per line
+        this->nextrow = true;
+    } else if (this->type == FF_TYPE_INTEGER) {
+        this->deflt = FFGLUtils::FFMixedToUInt(src.defaultValue);
+        this->value = this->deflt;
+        this->range[0] = src.range.min;
+        this->range[1] = src.range.max;
+        this->sliding = (this->type != FF_TYPE_BOOLEAN && this->type != FF_TYPE_INTEGER);
+    } else {
+        this->deflt = FFGLUtils::FFMixedToFloat(src.defaultValue);
+        this->value = this->deflt;
+        this->range[0] = src.range.min;
+        this->range[1] = src.range.max;
+        this->sliding = (this->type != FF_TYPE_BOOLEAN && this->type != FF_TYPE_INTEGER);
+    }
 }
 
 
@@ -2011,18 +2139,18 @@ FFGLEffect::FFGLEffect(Layer *lay, int ffglnr) {
             }
         }
         cnt++;
-        param->name = par.name;
-        param->deflt = FFGLUtils::FFMixedToFloat(par.defaultValue);
-        param->value = param->deflt;
-        param->range[0] = par.range.min;
-        param->range[1] = par.range.max;
-        param->sliding = true;
+        
+        param->set_parameter_to(par);
+        
         param->effect = this;
         param->box->tooltiptitle = par.name;
-        param->box->tooltip = "Set " + par.name + " parameter of FFGL " + mainprogram->ffgleffectplugins[ffglnr]->pluginInfo.PluginName + " effect - between 0.0 and 1.0 ";
+        param->box->tooltip = "Set " + par.name + " parameter of FFGL " +
+                              mainprogram->ffgleffectplugins[ffglnr]->pluginInfo.PluginName +
+                              " effect ";
         this->params.push_back(param);
     }
 }
+
 
 float RippleEffect::get_speed() { return this->speed; }
 float RippleEffect::get_ripplecount() { return this->ripplecount; }
@@ -2202,6 +2330,7 @@ Layer* Mixer::add_layer(std::vector<Layer*> &layers, int pos) {
     layers.insert(layers.begin() + pos, layer);
 
     BlendNode *bnode = mainprogram->nodesmain->currpage->add_blendnode(MIXING, comp);
+    bnode->layer = layer;
     layer->blendnode = bnode;
 
 	return layer;
@@ -3573,6 +3702,11 @@ void make_layboxes() {
                     testlay->sourcebox->vtxcoords->y1 = 1.0 - mainprogram->layh - 0.435f + (0.075f *
                                                                                             testlay->effscroll[mainprogram->effcat[testlay->deck]->value]);
                 }
+                if (testlay->blendnode->ffglmixernr != -1) {
+                    testlay->blendnode->mixerbox->vtxcoords->x1 = testlay->mixbox->vtxcoords->x1 + 0.075f;
+                    testlay->blendnode->mixerbox->vtxcoords->y1 = 1.0 - mainprogram->layh - 0.435f + (0.075f *
+                                                                                            testlay->effscroll[mainprogram->effcat[testlay->deck]->value]);
+                }
                 std::vector<Effect*> &evec = testlay->choose_effects();
                 Effect *preveff = nullptr;
                 for (int j = 0; j < evec.size(); j++) {
@@ -3597,7 +3731,7 @@ void make_layboxes() {
                                                                                       testlay->effscroll[mainprogram->effcat[testlay->deck]->value]);
                     }
                     if (eff->pos == 0) {
-                        eff->box->vtxcoords->y1 -= (testlay->numrows - 1) * (testlay->ffglsourcenr != -1) * 0.075f;
+                        eff->box->vtxcoords->y1 -= (testlay->numrows - 1) * (testlay->ffglsourcenr != -1) * 0.075f + (testlay->blendnode->numrows - 1) * (testlay->blendnode->ffglmixernr != -1) * 0.075f;
                     }
                     eff->box->upvtxtoscr();
                     eff->onoffbutton->box->vtxcoords->y1 = eff->box->vtxcoords->y1;
@@ -4599,8 +4733,8 @@ void Layer::display() {
                 else if (this->ffglsourcenr != -1) {
                     name = mainprogram->ffglsourcenames[this->ffglsourcenr];
                 }
-                else {
-                    name = remove_extension(basename(this->filename));
+                else if (this->blendnode->ffglmixernr != -1) {
+                    name = mainprogram->ffglmixernames[this->blendnode->ffglmixernr];
                 }
 				render_text(name, white, box->vtxcoords->x1 + 0.015f,
                 box->vtxcoords->y1 + box->vtxcoords->h - 0.09f, 0.0005f, 0.0008f);
@@ -5009,55 +5143,55 @@ void Layer::display() {
                     mixstr = "Mix";
                     break;
                 case 2:
-                    mixstr = "Mult";
+                    mixstr = "Alph";
                     break;
                 case 3:
-                    mixstr = "Scrn";
+                    mixstr = "Mult";
                     break;
                 case 4:
-                    mixstr = "Ovrl";
+                    mixstr = "Scrn";
                     break;
                 case 5:
-                    mixstr = "HaLi";
+                    mixstr = "Ovrl";
                     break;
                 case 6:
-                    mixstr = "SoLi";
+                    mixstr = "HaLi";
                     break;
                 case 7:
-                    mixstr = "Divi";
+                    mixstr = "SoLi";
                     break;
                 case 8:
-                    mixstr = "Add";
+                    mixstr = "Divi";
                     break;
                 case 9:
-                    mixstr = "Sub";
+                    mixstr = "Add";
                     break;
                 case 10:
-                    mixstr = "Diff";
+                    mixstr = "Sub";
                     break;
                 case 11:
-                    mixstr = "Dodg";
+                    mixstr = "Diff";
                     break;
                 case 12:
-                    mixstr = "CoBu";
+                    mixstr = "Dodg";
                     break;
                 case 13:
-                    mixstr = "LiBu";
+                    mixstr = "CoBu";
                     break;
                 case 14:
-                    mixstr = "ViLi";
+                    mixstr = "LiBu";
                     break;
                 case 15:
-                    mixstr = "LiLi";
+                    mixstr = "ViLi";
                     break;
                 case 16:
-                    mixstr = "DaOn";
+                    mixstr = "LiLi";
                     break;
                 case 17:
-                    mixstr = "LiOn";
+                    mixstr = "DaOn";
                     break;
                 case 18:
-                    mixstr = "Wipe";
+                    mixstr = "LiOn";
                     break;
                 case 19:
                     mixstr = "CKey";
@@ -5085,6 +5219,9 @@ void Layer::display() {
                     break;
                 case 22:
                     mixstr = "Disp";
+                    break;
+                case 24:
+                    mixstr = "Wipe";
                     break;
                 case 1000:
                     mixstr = "FFGL";
@@ -5191,7 +5328,61 @@ void Layer::display() {
                         x1 += wi + 0.015f;
                         par->box->vtxcoords->y1 = y1;
                         par->box->vtxcoords->w = wi;
+                        if (par->type == FF_TYPE_TEXT || par->type == FF_TYPE_FILE) {
+                            par->box->vtxcoords->w *= 3;
+                        }
                         par->box->vtxcoords->h = this->sourcebox->vtxcoords->h;
+                        par->box->upvtxtoscr();
+
+                        if (par->box->vtxcoords->y1 >=
+                            1.0 - mainprogram->layh - 0.135f - 0.33f - 0.075f * (mainprogram->efflines - 1)) {
+                            if (par->box->vtxcoords->y1 <= 1.0 - mainprogram->layh - 0.135f - 0.27f) {
+                                par->handle();
+                            }
+                        }
+                    }
+                }
+            }
+            if (this->blendnode->ffglmixernr != -1) {
+                x1 = this->blendnode->mixerbox->vtxcoords->x1 + 0.048f;
+                wi = (0.7f - mainprogram->numw - 0.048f) / 4.0f;
+
+                box = this->blendnode->mixerbox;
+                if (box->vtxcoords->y1 >=
+                    1.0 - mainprogram->layh - 0.135f - 0.33f - 0.075f * (mainprogram->efflines - 1)) {
+
+                    if (box->vtxcoords->y1 <= 1.0 - mainprogram->layh - 0.135f - 0.27f) {
+                        draw_box(lightgrey, purple, box, -1);
+                        std::string namestr = mainprogram->ffglmixernames[this->blendnode->ffglmixernr];
+                        float textw =
+                                (textwvec_total(render_text(namestr, white, this->blendnode->mixerbox->vtxcoords->x1 + 0.015f,
+                                                            this->blendnode->mixerbox->vtxcoords->y1 + 0.075f - 0.045f,
+                                                            0.00045f, 0.00075f))) * 1.5f;
+                        this->blendnode->mixerbox->vtxcoords->w = textw + 0.048f;
+                        x1 = this->blendnode->mixerbox->vtxcoords->x1 + 0.048f + textw;
+                        wi = (0.7f - mainprogram->numw - 0.048f - textw) / 4.0f;
+                    }
+                    y1 = this->blendnode->mixerbox->vtxcoords->y1;
+                    // draw parameters
+                    for (int j = 0; j < this->blendnode->ffglparams.size(); j++) {
+                        Param *par = this->blendnode->ffglparams[j];
+                        par->box->lcolor[0] = 0.6;
+                        par->box->lcolor[1] = 0.6;
+                        par->box->lcolor[2] = 0.6;
+                        par->box->lcolor[3] = 1.0;
+                        if (par->nextrow) {
+                            x1 = this->blendnode->mixerbox->vtxcoords->x1 + 0.03f;
+                            y1 -= 0.075f;
+                            wi = (0.7f - mainprogram->numw - 0.03f) / 4.0;
+                        }
+                        par->box->vtxcoords->x1 = x1;
+                        x1 += wi + 0.015f;
+                        par->box->vtxcoords->y1 = y1;
+                        par->box->vtxcoords->w = wi;
+                        if (par->type == FF_TYPE_TEXT || par->type == FF_TYPE_FILE) {
+                            par->box->vtxcoords->w *= 3;
+                        }
+                        par->box->vtxcoords->h = this->blendnode->mixerbox->vtxcoords->h;
                         par->box->upvtxtoscr();
 
                         if (par->box->vtxcoords->y1 >=
@@ -5250,6 +5441,9 @@ void Layer::display() {
                     x1 += wi + 0.015f;
                     par->box->vtxcoords->y1 = y1;
                     par->box->vtxcoords->w = wi;
+                    if (par->type == FF_TYPE_TEXT || par->type == FF_TYPE_FILE) {
+                        par->box->vtxcoords->w *= 3;
+                    }
                     par->box->vtxcoords->h = eff->box->vtxcoords->h;
                     par->box->upvtxtoscr();
 
@@ -5287,7 +5481,7 @@ void Layer::display() {
                     sx1 = box->scrcoords->x1 + mainprogram->xvtxtoscr(0.0375f);
                     sy1 = this->opacity->box->scrcoords->y1;
                     vx1 = box->vtxcoords->x1 + 0.0375f;
-                    vy1 = 1 - mainprogram->layh - 0.375f - (this->numrows - 1) * (this->ffglsourcenr != -1) * 0.075f;
+                    vy1 = 1 - mainprogram->layh - 0.375f - (this->numrows - 1) * (this->ffglsourcenr != -1) * 0.075f - (this->blendnode->numrows - 1) * (this->blendnode->ffglmixernr != -1) * 0.075f;
                 }
                 if (!mainprogram->menuondisplay) {
                     if (sy1 - 7.5 <= mainprogram->my && mainprogram->my <= sy1 + 7.5) {
@@ -7095,6 +7289,7 @@ bool Layer::exchange(std::vector<Layer*>& slayers, std::vector<Layer*>& dlayers,
                 if (dlayers[pos + endx]->pos > 0) {
                     Layer* prevlay = dlayers[dlayers[pos + endx]->pos - 1];
                     BlendNode* bnode = mainprogram->nodesmain->currpage->add_blendnode(MIXING, comp);
+                    bnode->layer = dlayers[pos + endx];
                     bnode->blendtype = btype;
                     dlayers[pos + endx]->blendnode = bnode;
                     dlayers[pos + endx]->blendnode->mixfac->value = mfval;
@@ -7105,14 +7300,17 @@ bool Layer::exchange(std::vector<Layer*>& slayers, std::vector<Layer*>& dlayers,
                 }
                 else {
                     dlayers[pos + endx]->blendnode = mainprogram->nodesmain->currpage->add_blendnode(MIXING, comp);
+                    dlayers[pos + endx]->blendnode->layer = dlayers[pos + endx];
                     Layer* nxlay = nullptr;
                     if (dlayers.size() > 2) nxlay = dlayers[1];
                     if (nxlay) {
                         BlendNode* bnode = mainprogram->nodesmain->currpage->add_blendnode(MIXING, comp);
+                        bnode->layer = nxlay;
                         nxlay->blendnode = bnode;
                     }
                     else {
                         BlendNode* bnode = mainprogram->nodesmain->currpage->add_blendnode(MIXING, comp);
+                        bnode->layer = dlayers[1];
                         dlayers[1]->blendnode = bnode;
                         dlayers[1]->blendnode->blendtype = MIXING;
                     }
@@ -10165,6 +10363,7 @@ Layer* Mixer::read_layers(std::istream &rfile, const std::string result, std::ve
 	std::vector<Layer*> waitlayers;
     std::vector<Layer*> layers;
     int ffglnr = -1;
+    int ffglmixernr = -1;
 
     while (safegetline(rfile, istring)) {
 		if (istring == "LAYERSB" || istring == "ENDOFFILE") {
@@ -10230,19 +10429,32 @@ Layer* Mixer::read_layers(std::istream &rfile, const std::string result, std::ve
             safegetline(rfile, istring);
             layend->type = (ELEM_TYPE)std::stoi(istring);
             ffglnr = -1;
+            ffglmixernr = -1;
         }
-        if (istring == "FFGLNAME") {
+        if (istring == "FFGLSOURCENAME") {
             safegetline(rfile, istring);
             if (istring != "") {
                 int position =
                         std::find(mainprogram->ffglsourcenames.begin(), mainprogram->ffglsourcenames.end(), istring) -
                         mainprogram->ffglsourcenames.begin();
                 if (position != mainprogram->ffglsourcenames.size()) {
-                    type = 1000 + position;
+                    layend->type = (ELEM_TYPE)(1000 + position);
                     ffglnr = position;
                 } else {
-                    mainprogram->infostr = "FFGL plugin " + istring + " not installed...";
-                    return nullptr;
+                    mainprogram->missingplugs.emplace(istring);
+                }
+            }
+        }
+        if (istring == "FFGLMIXERNAME") {
+            safegetline(rfile, istring);
+            if (istring != "") {
+                int position =
+                        std::find(mainprogram->ffglmixernames.begin(), mainprogram->ffglmixernames.end(), istring) -
+                        mainprogram->ffglmixernames.begin();
+                if (position != mainprogram->ffglmixernames.size()) {
+                    ffglmixernr = position;
+                } else {
+                    mainprogram->missingplugs.emplace(istring);
                 }
             }
         }
@@ -10325,18 +10537,17 @@ Layer* Mixer::read_layers(std::istream &rfile, const std::string result, std::ve
                             layend->type = kplay->type;
                             layend->timeinit = kplay->timeinit;
                             layend->initialized = kplay->initialized;
-                        } else if (layend->ffglsourcenr != -1) {
-                            layend->set_source(ffglnr);
-                        }
-                        layend->prevshelfdragelem = nullptr;
+                        }                       layend->prevshelfdragelem = nullptr;
                     }
                     else {
                         filename = "";
                     }
-				}
-				if (type > 0) layend->prevframe = -1;
+				} else if (ffglnr != -1) {
+                    layend->set_source(ffglnr);
+                }
+                if (type > 0) layend->prevframe = -1;
 			}
-		}
+        }
 		if (istring == "RELPATH") {
 			safegetline(rfile, istring);
 			if (filename == "" || !exists(filename)) {
@@ -10361,13 +10572,12 @@ Layer* Mixer::read_layers(std::istream &rfile, const std::string result, std::ve
                                 layend->type = kplay->type;
                                 layend->timeinit = kplay->timeinit;
                                 layend->initialized = kplay->initialized;
-                            } else if (layend->ffglsourcenr != -1) {
-                                layend->set_source(ffglnr);
-                            }
-                            layend->prevshelfdragelem = nullptr;
+                            }                            layend->prevshelfdragelem = nullptr;
                         }
                     }
                 }
+            } else if (ffglnr != -1) {
+                layend->set_source(ffglnr);
             }
             if (filename != "") {
                 if (!exists(filename)) {
@@ -10377,23 +10587,6 @@ Layer* Mixer::read_layers(std::istream &rfile, const std::string result, std::ve
             layend->filename = filename;  // for CLIPLAYER
 			newlay = true;
 
-			if (!isdeck && filename != "") {
-                if (to_layers.size()) {
-                    if (to_layers[0] == bulrs[mainprogram->prevmodus][0][0] ||
-                        to_layers[0] == bulrs[mainprogram->prevmodus][1][0]) {
-                        // copy old pbos to maintain constant stream of frames
-                        if (!mainmix->copycomp_busy &&
-                            bulrs[mainprogram->prevmodus][layend->deck].size() > layend->pos &&
-                            layend->type != ELEM_IMAGE) {
-                            //mainmix->copy_pbos(layend, bulrs[mainprogram->prevmodus][layend->deck][layend->pos]);
-                            //layend->fbo = bulrs[lay1->deck][lay1->pos]->fbo;
-                            //layend->fbotex = bulrs[lay1->deck][lay1->pos]->fbotex;
-                        }
-                    } else {
-                        // opening layerfile : keep effects?
-                    }
-                }
-            }
             if (notfound && !mainmix->cliplaying) {
                 if (concat) {
                     bool ret = rename(result + "_" + std::to_string(mainprogram->filecount) + ".file",
@@ -10684,6 +10877,9 @@ Layer* Mixer::read_layers(std::istream &rfile, const std::string result, std::ve
 				if (istring == "MIXMODE") {
 					safegetline(rfile, istring);
 					layend->blendnode->blendtype = (BLEND_TYPE)std::stoi(istring);
+                    if (ffglmixernr != -1) {
+                        layend->blendnode->ffglmixernr = ffglmixernr;
+                    }
 				}
 				if (istring == "MIXFACVAL") {
 					safegetline(rfile, istring);
@@ -10886,6 +11082,10 @@ Layer* Mixer::read_layers(std::istream &rfile, const std::string result, std::ve
 			Effect *eff = nullptr;
 			safegetline(rfile, istring);
 			while (istring != "ENDOFEFFECTS") {
+                if (type == 2000) {
+                    safegetline(rfile, istring);
+                    continue;
+                }
 			    if (keepeff) {
 			        safegetline(rfile, istring);
 			        continue;
@@ -10905,8 +11105,8 @@ Layer* Mixer::read_layers(std::istream &rfile, const std::string result, std::ve
                             type = 1000 + position;
                             ffglnr = position;
                         } else {
-                            mainprogram->infostr = "FFGL plugin " + istring + " not installed...";
-                            return nullptr;
+                            mainprogram->missingplugs.emplace(istring);
+                            type = 2000;
                         }
                     }
                 }
@@ -11040,6 +11240,10 @@ Layer* Mixer::read_layers(std::istream &rfile, const std::string result, std::ve
 			Effect *eff = nullptr;
 			safegetline(rfile, istring);
 			while (istring != "ENDOFSTREAMEFFECTS") {
+                if (type == 2000) {
+                    safegetline(rfile, istring);
+                    continue;
+                }
                 if (istring == "TYPE") {
                     safegetline(rfile, istring);
                     type = std::stoi(istring);
@@ -11055,8 +11259,8 @@ Layer* Mixer::read_layers(std::istream &rfile, const std::string result, std::ve
                             type = 1000 + position;
                             ffglnr = position;
                         } else {
-                            mainprogram->infostr = "FFGL plugin " + istring + " not installed...";
-                            return nullptr;
+                            mainprogram->missingplugs.emplace(istring);
+                            type = 2000;
                         }
                     }
                 }
@@ -11194,6 +11398,13 @@ Layer* Mixer::read_layers(std::istream &rfile, const std::string result, std::ve
 		}
 	}
 
+    if (mainprogram->missingplugs.size()) {
+        mainprogram->infostr = "Missing FFGL plugins: ";
+    }
+    for (auto name : mainprogram->missingplugs) {
+        mainprogram->infostr += name + " ";
+    }
+
     if (to_layers.size()) {
         std::vector<Layer*> lrs;
         std::vector<std::vector<Layer*>> *tempmap;
@@ -11260,10 +11471,17 @@ std::vector<std::string> Mixer::write_layer(Layer* lay, std::ostream& wfile, boo
     wfile << "TYPE\n";
     wfile << std::to_string(lay->type);
     wfile << "\n";
-    wfile << "FFGLNAME\n";
+    wfile << "FFGLSOURCENAME\n";
     std::string name;
     if (lay->ffglsourcenr != -1) {
-        name = mainprogram->ffgleffectnames[lay->ffglsourcenr];
+        name = mainprogram->ffglsourcenames[lay->ffglsourcenr];
+    }
+    wfile << name;
+    wfile << "\n";
+    name = "";
+    wfile << "FFGLMIXERNAME\n";
+    if (lay->blendnode->ffglmixernr != -1) {
+        name = mainprogram->ffglmixernames[lay->blendnode->ffglmixernr];
     }
     wfile << name;
     wfile << "\n";
@@ -13842,14 +14060,11 @@ void Layer::set_source(int sourcenr) {
             }
         }
         cnt++;
-        param->name = par.name;
-        param->deflt = FFGLUtils::FFMixedToFloat(par.defaultValue);
-        param->value = param->deflt;
-        param->range[0] = par.range.min;
-        param->range[1] = par.range.max;
-        param->sliding = true;
+
+        param->set_parameter_to(par);
+
         param->box->tooltiptitle = par.name;
-        param->box->tooltip = "Set " + par.name + " parameter of FFGL " + mainprogram->ffglsourceplugins[this->ffglsourcenr]->pluginInfo.PluginName + " source plugin - between 0.0 and 1.0 ";
+        param->box->tooltip = "Set " + par.name + " parameter of FFGL " + mainprogram->ffglsourceplugins[this->ffglsourcenr]->pluginInfo.PluginName + " source plugin. ";
         this->ffglparams.push_back(param);
     }
 

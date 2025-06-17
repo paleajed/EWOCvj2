@@ -25,28 +25,29 @@ typedef enum
 typedef enum
 {
 	MIXING = 1,
-	MULTIPLY = 2, 
-	SCREEN = 3, 
-	OVERLAY = 4, 
-	HARD_LIGHT = 5, 
-	SOFT_LIGHT = 6, 
-	DIVIDE = 7, 
-	ADD = 8, 
-	SUBTRACT = 9, 
-	DIFF = 10, 
-	DODGE = 11, 
-	COLOR_BURN = 12, 
-	LINEAR_BURN = 13, 
-	VIVID_LIGHT = 14, 
-	LINEAR_LIGHT = 15, 
-	DARKEN_ONLY = 16, 
-	LIGHTEN_ONLY = 17,
-	WIPE = 18,
+    ALPHAOVER = 2,
+	MULTIPLY = 3,
+	SCREEN = 4,
+	OVERLAY = 5,
+	HARD_LIGHT = 6,
+	SOFT_LIGHT = 7,
+	DIVIDE = 8,
+	ADD = 9,
+	SUBTRACT = 10,
+	DIFF = 11,
+	DODGE = 12,
+	COLOR_BURN = 13,
+	LINEAR_BURN = 14,
+	VIVID_LIGHT = 15,
+	LINEAR_LIGHT = 16,
+	DARKEN_ONLY = 17,
+	LIGHTEN_ONLY = 18,
     COLOURKEY = 19,
     CHROMAKEY = 20,
     LUMAKEY = 21,
 	DISPLACEMENT = 22,
 	CROSSFADING = 23,
+    WIPE = 24,
     FFGL_MIXER = 1000,
 	
 } BLEND_TYPE;
@@ -144,6 +145,7 @@ class BlendNode: public Node {
 	public:
 		BLEND_TYPE blendtype = MIXING;
 		Param *mixfac;
+        Layer *layer = nullptr;
 		int wipetype;
 		int wipedir;
 		Param *wipex;
@@ -157,10 +159,11 @@ class BlendNode: public Node {
 		float chred = 0.0f;
 		float chgreen = 0.0f;
 		float chblue = 0.0f;
-        int ffglmixernr[2] = {-1, -1};
-        int instancenr[2] = {-1, -1};
-        int numrows[2] = {0, 0};
-        std::vector<Param*> ffglparams[2] = {{}, {}};
+        int ffglmixernr = -1;
+        int instancenr = -1;
+        int numrows = 0;
+        std::vector<Param*> ffglparams;
+        Boxx* mixerbox;
 		BlendNode();
 		~BlendNode();
 };

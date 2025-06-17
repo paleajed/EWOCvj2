@@ -793,7 +793,7 @@ bool FFGLPluginInstance::initialize(const FFGLViewportStruct& viewport) {
     GLint maxTexUnits;
     glGetIntegerv(GL_MAX_TEXTURE_IMAGE_UNITS, &maxTexUnits);
 
-    GUIStateProtector stateProtector(maxTexUnits);
+    ActiveGUIStateProtector stateProtector(maxTexUnits);
     stateProtector.saveGUIState();
     std::cout << "Saved GUI state before plugin initialization" << std::endl;
 
@@ -883,7 +883,7 @@ bool FFGLPluginInstance::processFrame(const std::vector<FFGLFramebuffer> &inputF
     GLint maxTexUnits;
     glGetIntegerv(GL_MAX_TEXTURE_IMAGE_UNITS, &maxTexUnits);
 
-    GUIStateProtector stateProtector(maxTexUnits);
+    ActiveGUIStateProtector stateProtector(maxTexUnits);
     stateProtector.saveGUIState();
 
     glBindFramebuffer(GL_FRAMEBUFFER, outputFBO.fbo);
@@ -940,7 +940,18 @@ void FFGLPluginInstance::setParameter(FFUInt32 paramIndex, FFMixed value) {
         return;
     }
 
-    if (parameters[paramIndex].type == FF_TYPE_EVENT) {
+    const auto& param = parameters[paramIndex];
+
+    // Add range clamping for numeric parameters
+    if (param.type != FF_TYPE_TEXT && param.type != FF_TYPE_FILE &&
+        param.type != FF_TYPE_EVENT && param.type != FF_TYPE_OPTION) {
+
+        float floatValue = FFGLUtils::FFMixedToFloat(value);
+        floatValue = std::max(param.range.min, std::min(param.range.max, floatValue));
+        value = FFGLUtils::FloatToFFMixed(floatValue);
+    }
+
+    if (param.type == FF_TYPE_EVENT) {
         triggerEvent(paramIndex);
         return;
     }

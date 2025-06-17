@@ -18,6 +18,10 @@
 #include <arpa/inet.h>
 #endif
 
+#define WIN32_LEAN_AND_MEAN
+#define NOMINMAX
+#include <windows.h>
+
 #include "SDL2/SDL.h"
 #include "SDL2/SDL_syswm.h"
 

@@ -1681,6 +1681,122 @@ void set_glstructures() {
     glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
     glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_BORDER);
     glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_BORDER);
+    
+    
+    // gradient textures for ffgl parameter types red green blue visualisation
+    glViewport(0, 0, 256, 32);
+    GLint ored = glGetUniformLocation(mainprogram->ShaderProgram, "redoption");
+    glUniform1i(ored, 1);
+    glGenTextures(1, &mainprogram->redgradienttex);
+    glBindTexture(GL_TEXTURE_2D, mainprogram->redgradienttex);
+    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR);
+    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
+    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_BORDER);
+    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_BORDER);
+    glTexStorage2D(GL_TEXTURE_2D, 1, GL_RGBA8, 256, 32);
+    glGenFramebuffers(1, &mainprogram->redgradientfbo);
+    glBindFramebuffer(GL_FRAMEBUFFER, mainprogram->redgradientfbo);
+    glFramebufferTexture2D(GL_FRAMEBUFFER, GL_COLOR_ATTACHMENT0, GL_TEXTURE_2D, mainprogram->redgradienttex, 0);
+    glDrawBuffer(GL_COLOR_ATTACHMENT0);
+    draw_direct(nullptr, red, -1.0f, -1.0f, 2.0f, 2.0f, 0.0f, 0.0f, 1.0f, 1.0f, 0, mainprogram->fbotex[0], glob->w, glob->h, false, false);  // initializes mainpogram->btbuf
+    draw_direct(nullptr, red, -1.0f, -1.0f, 2.0f, 2.0f, 0.0f, 0.0f, 1.0f, 1.0f, 0, -1, glob->w, glob->h, false, false);
+    glUniform1i(ored, 0);
+
+    GLint ogreen = glGetUniformLocation(mainprogram->ShaderProgram, "greenoption");
+    glUniform1i(ogreen, 1);
+    glGenTextures(1, &mainprogram->greengradienttex);
+    glBindTexture(GL_TEXTURE_2D, mainprogram->greengradienttex);
+    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR);
+    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
+    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_BORDER);
+    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_BORDER);
+    glTexStorage2D(GL_TEXTURE_2D, 1, GL_RGBA8, 256, 32);
+    glGenFramebuffers(1, &mainprogram->greengradientfbo);
+    glBindFramebuffer(GL_FRAMEBUFFER, mainprogram->greengradientfbo);
+    glFramebufferTexture2D(GL_FRAMEBUFFER, GL_COLOR_ATTACHMENT0, GL_TEXTURE_2D, mainprogram->greengradienttex, 0);
+    glDrawBuffer(GL_COLOR_ATTACHMENT0);
+    draw_direct(nullptr, black, -1.0f, -1.0f, 2.0f, 2.0f, 0.0f, 0.0f, 1.0f, 1.0f, 0, -1, glob->w, glob->h, false, false);
+    glUniform1i(ogreen, 0);
+
+    GLint oblue = glGetUniformLocation(mainprogram->ShaderProgram, "blueoption");
+    glUniform1i(oblue, 1);
+    glGenTextures(1, &mainprogram->bluegradienttex);
+    glBindTexture(GL_TEXTURE_2D, mainprogram->bluegradienttex);
+    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR);
+    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
+    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_BORDER);
+    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_BORDER);
+    glTexStorage2D(GL_TEXTURE_2D, 1, GL_RGBA8, 256, 32);
+    glGenFramebuffers(1, &mainprogram->bluegradientfbo);
+    glBindFramebuffer(GL_FRAMEBUFFER, mainprogram->bluegradientfbo);
+    glFramebufferTexture2D(GL_FRAMEBUFFER, GL_COLOR_ATTACHMENT0, GL_TEXTURE_2D, mainprogram->bluegradienttex, 0);
+    glDrawBuffer(GL_COLOR_ATTACHMENT0);
+    draw_direct(nullptr, black, -1.0f, -1.0f, 2.0f, 2.0f, 0.0f, 0.0f, 1.0f, 1.0f, 0, -1, glob->w, glob->h, false, false);
+    glUniform1i(oblue, 0);
+
+    GLint ohue = glGetUniformLocation(mainprogram->ShaderProgram, "hueoption");
+    glUniform1i(ohue, 1);
+    glGenTextures(1, &mainprogram->huegradienttex);
+    glBindTexture(GL_TEXTURE_2D, mainprogram->huegradienttex);
+    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR);
+    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
+    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_BORDER);
+    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_BORDER);
+    glTexStorage2D(GL_TEXTURE_2D, 1, GL_RGBA8, 256, 32);
+    glGenFramebuffers(1, &mainprogram->huegradientfbo);
+    glBindFramebuffer(GL_FRAMEBUFFER, mainprogram->huegradientfbo);
+    glFramebufferTexture2D(GL_FRAMEBUFFER, GL_COLOR_ATTACHMENT0, GL_TEXTURE_2D, mainprogram->huegradienttex, 0);
+    glDrawBuffer(GL_COLOR_ATTACHMENT0);
+    draw_direct(nullptr, black, -1.0f, -1.0f, 2.0f, 2.0f, 0.0f, 0.0f, 1.0f, 1.0f, 0, -1, glob->w, glob->h, false, false);
+    glUniform1i(ohue, 0);
+
+    GLint osat = glGetUniformLocation(mainprogram->ShaderProgram, "satoption");
+    glUniform1i(osat, 1);
+    glGenTextures(1, &mainprogram->satgradienttex);
+    glBindTexture(GL_TEXTURE_2D, mainprogram->satgradienttex);
+    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR);
+    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
+    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_BORDER);
+    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_BORDER);
+    glTexStorage2D(GL_TEXTURE_2D, 1, GL_RGBA8, 256, 32);
+    glGenFramebuffers(1, &mainprogram->satgradientfbo);
+    glBindFramebuffer(GL_FRAMEBUFFER, mainprogram->satgradientfbo);
+    glFramebufferTexture2D(GL_FRAMEBUFFER, GL_COLOR_ATTACHMENT0, GL_TEXTURE_2D, mainprogram->satgradienttex, 0);
+    glDrawBuffer(GL_COLOR_ATTACHMENT0);
+    draw_direct(nullptr, black, -1.0f, -1.0f, 2.0f, 2.0f, 0.0f, 0.0f, 1.0f, 1.0f, 0, -1, glob->w, glob->h, false, false);
+    glUniform1i(osat, 0);
+
+    GLint obright = glGetUniformLocation(mainprogram->ShaderProgram, "brightoption");
+    glUniform1i(obright, 1);
+    glGenTextures(1, &mainprogram->brightgradienttex);
+    glBindTexture(GL_TEXTURE_2D, mainprogram->brightgradienttex);
+    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR);
+    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
+    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_BORDER);
+    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_BORDER);
+    glTexStorage2D(GL_TEXTURE_2D, 1, GL_RGBA8, 256, 32);
+    glGenFramebuffers(1, &mainprogram->brightgradientfbo);
+    glBindFramebuffer(GL_FRAMEBUFFER, mainprogram->brightgradientfbo);
+    glFramebufferTexture2D(GL_FRAMEBUFFER, GL_COLOR_ATTACHMENT0, GL_TEXTURE_2D, mainprogram->brightgradienttex, 0);
+    glDrawBuffer(GL_COLOR_ATTACHMENT0);
+    draw_direct(nullptr, black, -1.0f, -1.0f, 2.0f, 2.0f, 0.0f, 0.0f, 1.0f, 1.0f, 0, -1, glob->w, glob->h, false, false);
+    glUniform1i(obright, 0);
+
+    GLint oalpha = glGetUniformLocation(mainprogram->ShaderProgram, "alphaoption");
+    glUniform1i(oalpha, 1);
+    glGenTextures(1, &mainprogram->alphagradienttex);
+    glBindTexture(GL_TEXTURE_2D, mainprogram->alphagradienttex);
+    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR);
+    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
+    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_BORDER);
+    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_BORDER);
+    glTexStorage2D(GL_TEXTURE_2D, 1, GL_RGBA8, 256, 32);
+    glGenFramebuffers(1, &mainprogram->alphagradientfbo);
+    glBindFramebuffer(GL_FRAMEBUFFER, mainprogram->alphagradientfbo);
+    glFramebufferTexture2D(GL_FRAMEBUFFER, GL_COLOR_ATTACHMENT0, GL_TEXTURE_2D, mainprogram->alphagradienttex, 0);
+    glDrawBuffer(GL_COLOR_ATTACHMENT0);
+    draw_direct(nullptr, black, -1.0f, -1.0f, 2.0f, 2.0f, 0.0f, 0.0f, 1.0f, 1.0f, 0, -1, glob->w, glob->h, false, false);
+    glUniform1i(oalpha, 0);
 }
 
 
@@ -3114,21 +3230,54 @@ void onestepfrom(bool stage, Node *node, Node *prevnode, GLuint prevfbotex, GLui
                 outfbo.height = mainprogram->oh[stage];
 
                 for (int i = 0; i < instance->parameters.size(); i++) {
-                    instance->setParameter(i, effect->params[i]->value);
+                    if (effect->params[i]->type == FF_TYPE_OPTION) {
+                        instance->setParameter(i, instance->parameters[i].elements[effect->params[i]->value].value);
+                    }
+                    else if (effect->params[i]->type == FF_TYPE_TEXT || effect->params[i]->type == FF_TYPE_FILE) {
+                        instance->setParameter(i, FFGLUtils::PointerToFFMixed(effect->params[i]->valuechar));
+                    }
+                    else {
+                        instance->setParameter(i, effect->params[i]->value);
+                    }
                 }
 
                 static float effectTime = 0.0f;
                 static auto lastFrame = std::chrono::high_resolution_clock::now();
 
                 float currentTime = EffectTimer::getTime(); // Starts from 0.0
-                instance->setTime(effectTime);
+                //instance->setTime(effectTime);
 
-                instance->processFrame({infbo}, outfbo);
+                bool ret = instance->processFrame({infbo}, outfbo);
+
+                if (!ret) {
+                    glBindFramebuffer(GL_FRAMEBUFFER, effect->fbo);
+                    glDrawBuffer(GL_COLOR_ATTACHMENT0);
+                    if (stage) glViewport(0, 0, mainprogram->ow[1], mainprogram->oh[1]);
+                    else glViewport(0, 0, mainprogram->ow[0], mainprogram->oh[0]);
+                    glClearColor( 0.f, 0.f, 0.f, 0.f );
+                    glClear(GL_COLOR_BUFFER_BIT);
+
+                    float sx = 0.0f;
+                    float sy = 0.0f;
+                    float sc = 1.0f;
+                    float op = 1.0f;
+                    if (effect->node == lay->lasteffnode[0]) {
+                        sx = lay->shiftx->value;
+                        sy = lay->shifty->value;
+                        sc = lay->scale->value;
+                        op = lay->opacity->value;
+                    }
+
+                    glUniform1i(interm, 0);
+                    glUniform1i(down, 0);
+                    draw_box(nullptr, black, -1.0f, 1.0f, 2.0f, -2.0f, sx, sy, sc, op, 0, prevfbotex, 0, 0, false);
+                }
             }
             else {
                 if (!lay->onhold)
                     draw_box(nullptr, black, -1.0f, 1.0f, 2.0f, -2.0f, sx, sy, sc, op, 0, prevfbotex, 0, 0, false);
             }
+
             prevfbotex = effect->fbotex;
             prevfbo = effect->fbo;
 
@@ -3327,8 +3476,8 @@ void onestepfrom(bool stage, Node *node, Node *prevnode, GLuint prevfbotex, GLui
             }
 
             if (bnode->intex != -1 && bnode->in2tex != -1) {
-                if (bnode->ffglmixernr[stage] != -1) {
-                    auto instance = mainprogram->ffglinstances[bnode->ffglmixernr[stage]][bnode->instancenr[!mainprogram->prevmodus]];
+                if (bnode->ffglmixernr != -1) {
+                    auto instance = mainprogram->ffglinstances[bnode->ffglmixernr][bnode->instancenr];
 
                     FFGLFramebuffer infbo1;
                     infbo1.fbo = 0;
@@ -3352,7 +3501,7 @@ void onestepfrom(bool stage, Node *node, Node *prevnode, GLuint prevfbotex, GLui
                     glBindTexture(GL_TEXTURE_2D, infbo2.colorTexture);
 
                     for (int i = 0; i < instance->parameters.size(); i++) {
-                        instance->setParameter(i, bnode->ffglparams[stage][i]->value);
+                        instance->setParameter(i, bnode->ffglparams[i]->value);
                     }
 
                     static float effectTime = 0.0f;
@@ -4170,7 +4319,8 @@ void do_text_input(float x, float y, float sx, float sy, int mx, int my, float w
 	}
 	float distin = 0.0f;
 	if (mainprogram->leftmousedown || mainprogram->leftmouse || mainprogram->orderleftmousedown || mainprogram->orderleftmouse) {
-		bool found = false;
+		// clicking inside the edited string
+        bool found = false;
 		if (totvec.size()) {
 		    for (int j = 0; j < totvec.size() + 1; j++) {
 		        if (my < mainprogram->yvtxtoscr(1.0f - (y - 0.005f)) && my > mainprogram->yvtxtoscr(1.0f - (y + (mainprogram->texth / 2.6f)
@@ -4183,7 +4333,7 @@ void do_text_input(float x, float y, float sx, float sy, int mx, int my, float w
                         maxx = mainprogram->xvtxtoscr(x + 1.0f + distin
                                                       + (j > 0) * totvec[j - 1 + (j == 0)] / 2.0f + totvec[j] / 2.0f);
                     }
-		            if (mx >= mainprogram->xvtxtoscr(x + 1.0f + distin) * (j != 0) && mx <= maxx) {
+		            if (mx >= mainprogram->xvtxtoscr(x + 1.0f + distin) * (j != 0) - mainprogram->startpos && mx <= maxx - mainprogram->startpos) {
 		                // click or drag inside path moves edit cursor
 		                found = true;
 		                if (mainprogram->leftmousedown || mainprogram->orderleftmousedown) {
@@ -4232,7 +4382,8 @@ void do_text_input(float x, float y, float sx, float sy, int mx, int my, float w
 		}
 		if (found == false) {
 			//when clicked outside path, cancel edit
-			mainmix->adaptnumparam = nullptr;
+            mainmix->adaptnumparam = nullptr;
+            mainmix->adapttextparam = nullptr;
 			if (item) item->renaming = false;
 			if (mainmix->retargeting) {
                 mainmix->renaming = false;
@@ -4337,8 +4488,10 @@ void do_text_input(float x, float y, float sx, float sy, int mx, int my, float w
 			part = mainprogram->inputtext.substr(c1, c2 - c1);
 			textwvec = render_text(part, nullptr, white, x + textw1, y, sx, sy, smflag, 0, 0);
 			float textw2 = textwvec_total(textwvec);
-			draw_box(white, white, x + textw1, y - 0.010f, textw2, 0.010f + mainprogram->texth / (2070.0f / glob->h),
-            -1, false, false, true); // last parameter: graphic inversion
+
+            float box_y = y - 0.005f - (smflag > 0) * 0.005f;
+            float box_height = 0.005f + (mainprogram->texth / 2.6f) / (2070.0f / glob->h) - (smflag > 0) * (mainprogram->texth / 4.2f) + 0.005f + (smflag > 0) * 0.005f;
+            draw_box(white, white, x + textw1, box_y, textw2, box_height, -1, false, false, true); // last parameter: graphic inversion
 		}
 	}
 }
@@ -5811,6 +5964,10 @@ void the_loop() {
 
     mainprogram->handle_beatmenu();
 
+    if (mainprogram->optionmenu) {
+        mainprogram->handle_optionmenu();
+    }
+
     mainprogram->frontbatch = false;
 
     if (mainprogram->menuactivation == true) {
@@ -6967,7 +7124,7 @@ int main(int argc, char* argv[]) {
      * but it should default to the core profile */
     SDL_GL_SetAttribute(SDL_GL_CONTEXT_MAJOR_VERSION, 4);
     SDL_GL_SetAttribute(SDL_GL_CONTEXT_MINOR_VERSION, 6);
-    SDL_GL_SetAttribute(SDL_GL_CONTEXT_PROFILE_MASK, SDL_GL_CONTEXT_PROFILE_COMPATIBILITY);  // KEY CHANGE!
+    //SDL_GL_SetAttribute(SDL_GL_CONTEXT_PROFILE_MASK, SDL_GL_CONTEXT_PROFILE_COMPATIBILITY);  // KEY CHANGE!
 
     /* Turn on double buffering */
     SDL_GL_SetAttribute(SDL_GL_DOUBLEBUFFER, 1);
@@ -7378,6 +7535,7 @@ int main(int argc, char* argv[]) {
         auto plugin = mainprogram->ffglhost->getPlugin(iter->path().string());
 
         std::string name = plugin->getDisplayName();
+        name.erase(std::find(name.begin(), name.end(), '\0'), name.end());
         std::transform(name.begin(), name.end(), name.begin(), ::toupper);
         if (plugin->pluginInfo.PluginType == FF_EFFECT) {
             mainprogram->ffgleffectplugins.push_back(plugin);
@@ -7660,6 +7818,9 @@ int main(int argc, char* argv[]) {
                 }
             } else if (mainprogram->pathto == "SAVEPROJECT") {
                 mainprogram->project->save_as();
+            } else if (mainprogram->pathto == "FFGLFILE") {
+                mainprogram->ffglfiledir = dirname(mainprogram->path);
+                mainmix->mouseparam->valuechar = (char*)mainprogram->path.c_str();
             }
 
             mainprogram->path = "";
@@ -7810,7 +7971,7 @@ int main(int argc, char* argv[]) {
                     }
                         //Handle return
                     else if (e.key.keysym.sym == SDLK_RETURN || e.key.keysym.sym == SDLK_KP_ENTER) {
-                        if (mainprogram->renaming == EDIT_PARAM) {
+                        if (mainprogram->renaming == EDIT_FLOATPARAM) {
                             try {
                                 mainmix->adaptnumparam->value = std::stof(mainprogram->inputtext);
                                 if (mainmix->adaptnumparam->powertwo)
@@ -7825,9 +7986,11 @@ int main(int argc, char* argv[]) {
                                 }
                             }
                             catch (...) {
+                                bool dummy = false;
                             }
                             mainmix->adaptnumparam = nullptr;
                         }
+                        mainmix->adapttextparam = nullptr;
                         mainprogram->renaming = EDIT_NONE;
                         end_input();
                         continue;
@@ -7860,7 +8023,9 @@ int main(int argc, char* argv[]) {
                     binsmain->renamingelem->name = mainprogram->inputtext;
                 } else if (mainprogram->renaming == EDIT_SHELFELEMNAME) {
                     mainprogram->renamingshelfelem->name = mainprogram->inputtext;
-                } else if (mainprogram->renaming == EDIT_PARAM) {
+                } else if (mainprogram->renaming == EDIT_TEXTPARAM) {
+                    mainmix->adapttextparam->valuechar = (char*)mainprogram->inputtext.c_str();
+                } else if (mainprogram->renaming == EDIT_FLOATPARAM) {
                     int diff = mainprogram->inputtext.find(".") + 4 - mainprogram->inputtext.length();
                     if (diff < 0) {
                         mainprogram->inputtext = mainprogram->inputtext.substr(0, mainprogram->inputtext.find(".") + 4);
