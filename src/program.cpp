@@ -23,6 +23,7 @@
 #include <BeatDetektor.h>
 #include <sndfile.h>
 #include <fftw3.h>
+#include <FFGLHost.h>
 
 #define FREEGLUT_STATIC
 #define _LIB
@@ -65,6 +66,7 @@
 #include <KnownFolders.h>
 #include <ShlObj.h>
 #endif
+
 
 #include "SDL2/SDL.h"
 #include "SDL2/SDL_syswm.h"
@@ -11020,6 +11022,7 @@ void Program::process_audio() {
     // init OnsetsDS
     this->beatdet = new BeatDetektor((float)mainprogram->minbpm, (float)mainprogram->minbpm * 2, nullptr);
     this->austarttime = std::chrono::high_resolution_clock::now();
+    
 
     float sumavg;
     int cnt = 0;
@@ -11060,6 +11063,33 @@ void Program::process_audio() {
             this->autime = std::chrono::duration_cast<std::chrono::milliseconds>(elapsed).count();
 
             this->beatdet->process((float)this->autime / 1000.0f, this->auoutfloat);
+
+            // Send audio and FFT data to all FFGL plugin instances with buffer parameters
+            for (size_t i = 0; i < this->ffglinstances.size(); ++i) {
+                for (size_t j = 0; j < this->ffglinstances[i].size(); ++j) {
+                    auto& instance = this->ffglinstances[i][j];
+                    if (instance && instance->isInitialized()) {
+                        const auto& parameters = instance->getParameters();
+                        
+                        // Iterate through all parameters to find buffer types
+                        for (const auto& param : parameters) {
+                            if (param.isBufferParameter()) {
+                                if (param.usage == FF_USAGE_STANDARD) {
+                                    // Send raw audio buffer
+                                    instance->setAudioBuffer(param.index, 
+                                                           reinterpret_cast<const float*>(this->aubuffer), 
+                                                           this->ausamples);
+                                } else if (param.usage == FF_USAGE_FFT) {
+                                    // Send FFT buffer
+                                    instance->setFFTBuffer(param.index, 
+                                                         this->auoutfloat.data(), 
+                                                         this->auoutfloat.size() / 2);  // Divide by 2 for complex pairs
+                                }
+                            }
+                        }
+                    }
+                }
+            }
 
             LoopStation *lpst;
             int counter = this->beatdet->beat_counter;

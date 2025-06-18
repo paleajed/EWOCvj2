@@ -3583,9 +3583,9 @@ void make_layboxes() {
                     }
                     if (mainprogram->effcat[vnode->layer->deck]->value == 1) {
                         if ((vnode)->layer == mainmix->currlay[!mainprogram->prevmodus]) {
-                            if (vnode->layer->effects[1].size() == 0) {
+                            if (vnode->layer->effects[1].size() == 0 && vnode->layer->pos != 0) {
                                 vnode->vidbox->tex = vnode->layer->blendnode->fbotex;
-                            } else {
+                            } else if (vnode->layer->effects[1].size() != 0) {
                                 vnode->vidbox->tex = vnode->layer->effects[1][vnode->layer->effects[1].size() -
                                                                               1]->fbotex;
                             }
@@ -3636,12 +3636,14 @@ void make_layboxes() {
                                                                               1]->fbotex;
                             }
                         }
-                        if (vnode->layer == mainmix->currlay[!mainprogram->prevmodus] && mainprogram->effcat[vnode->layer->deck]->value == 1) {
-                            if (vnode->layer->effects[1].size() == 0) {
-                                 vnode->vidbox->tex = vnode->layer->blendnode->fbotex;
-                            } else {
-                                 vnode->vidbox->tex = vnode->layer->effects[1][vnode->layer->effects[1].size() -
-                                                                               1]->fbotex;
+                        if (mainprogram->effcat[vnode->layer->deck]->value == 1) {
+                            if ((vnode)->layer == mainmix->currlay[!mainprogram->prevmodus]) {
+                                if (vnode->layer->effects[1].size() == 0 && vnode->layer->pos != 0) {
+                                    vnode->vidbox->tex = vnode->layer->blendnode->fbotex;
+                                } else if (vnode->layer->effects[1].size() != 0) {
+                                    vnode->vidbox->tex = vnode->layer->effects[1][vnode->layer->effects[1].size() -
+                                                                                  1]->fbotex;
+                                }
                             }
                         }
 					}
@@ -11374,8 +11376,11 @@ Layer* Mixer::read_layers(std::istream &rfile, const std::string result, std::ve
 			int type;
             int ffglnr;
 			Effect *eff = nullptr;
-			safegetline(rfile, istring);
-			while (istring != "ENDOFSTREAMEFFECTS") {
+			while (safegetline(rfile, istring)) {
+                if (istring == "ENDOFSTREAMEFFECTS") {
+                    mainprogram->effcat[layend->deck]->value = 0;
+                    break;
+                }
                 if (type == 2000) {
                     safegetline(rfile, istring);
                     continue;
@@ -11528,12 +11533,11 @@ Layer* Mixer::read_layers(std::istream &rfile, const std::string result, std::ve
 						}
 					}
 				}
-				safegetline(rfile, istring);
 			}
 		}
         if (istring == "EFFCAT") {
             safegetline(rfile, istring);
-            layend->effcat = std::atoi(istring.c_str());
+            layend->effcat = std::stoi(istring);
         }
 
 		if (newlay && save) {

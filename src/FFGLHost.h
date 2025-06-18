@@ -71,6 +71,11 @@ public:
 
     // For text/file parameters
     std::string textValue;
+    
+    // For FF_TYPE_BUFFER parameters
+    size_t bufferSize;             // Size of buffer in bytes/elements
+    void* bufferData;              // Pointer to buffer data
+    bool bufferNeedsUpdate;        // Flag to track if buffer needs updating
 
     FFGLParameter(FFUInt32 idx, const std::string& n, FFUInt32 t);
 
@@ -90,6 +95,12 @@ public:
     bool isOptionParameter() const;
     bool isBufferParameter() const;
     bool isIntegerParameter() const;
+    
+    // Buffer-specific methods
+    void setBufferData(const void* data, size_t size);
+    void* getBufferData() const;
+    size_t getBufferSize() const;
+    void cleanupBuffer();
 };
 
 // Add this helper class for GUI state protection
@@ -314,6 +325,11 @@ public:
     bool connect(FFUInt32 inputIndex);
     bool disconnect(FFUInt32 inputIndex);
     FFUInt32 getInputStatus(FFUInt32 inputIndex) const;
+    
+    // Buffer management
+    void setAudioBuffer(FFUInt32 paramIndex, const float* audioData, size_t sampleCount);
+    void setFFTBuffer(FFUInt32 paramIndex, const float* fftData, size_t binCount);
+    void updateBufferParameters();
 
     // CHANGE: Update getter method name
     FFInstanceID getInstanceID() const { return pluginInstanceID; }

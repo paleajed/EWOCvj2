@@ -20,7 +20,9 @@
 
 #define WIN32_LEAN_AND_MEAN
 #define NOMINMAX
+#ifdef WINDOWS
 #include <windows.h>
+#endif
 
 #include "SDL2/SDL.h"
 #include "SDL2/SDL_syswm.h"

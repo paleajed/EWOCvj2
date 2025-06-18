@@ -7185,9 +7185,9 @@ int main(int argc, char* argv[]) {
 #endif
 #endif
 
-    std::filesystem::path p6{mainprogram->docpath + "bins"};
-    mainprogram->currbinsdir = p6.generic_string();
-    if (!exists(mainprogram->docpath + "bins")) std::filesystem::create_directory(p5);
+    std::filesystem::path p7{mainprogram->docpath + "bins"};
+    mainprogram->currbinsdir = p7.generic_string();
+    if (!exists(mainprogram->docpath + "bins")) std::filesystem::create_directory(p7);
 
     //empty temp dir if program crashed last time
     std::filesystem::path path_to_remove(mainprogram->temppath);

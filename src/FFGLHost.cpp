@@ -239,7 +239,8 @@ void UltraMinimalGUIStateProtector::restoreGUIState() {
 
 // FFGLParameter Implementation
 FFGLParameter::FFGLParameter(FFUInt32 idx, const std::string& n, FFUInt32 t)
-        : index(idx), name(n), type(t), visible(true), usage(FF_USAGE_STANDARD) {
+        : index(idx), name(n), type(t), visible(true), usage(FF_USAGE_STANDARD),
+          bufferSize(0), bufferData(nullptr), bufferNeedsUpdate(false) {
     range = FFGLUtils::getParameterDefaultRange(type);
     defaultValue.UIntValue = 0;
     currentValue.UIntValue = 0;
@@ -320,6 +321,31 @@ bool FFGLParameter::isBufferParameter() const {
 
 bool FFGLParameter::isIntegerParameter() const {
     return FFGLUtils::isIntegerParameter(type);
+}
+
+void FFGLParameter::setBufferData(const void* data, size_t size) {
+    if (type != FF_TYPE_BUFFER) {
+        std::cerr << "Attempting to set buffer data on non-buffer parameter" << std::endl;
+        return;
+    }
+    
+    bufferData = const_cast<void*>(data);
+    bufferSize = size;
+    bufferNeedsUpdate = true;
+}
+
+void* FFGLParameter::getBufferData() const {
+    return bufferData;
+}
+
+size_t FFGLParameter::getBufferSize() const {
+    return bufferSize;
+}
+
+void FFGLParameter::cleanupBuffer() {
+    bufferData = nullptr;
+    bufferSize = 0;
+    bufferNeedsUpdate = false;
 }
 
 // FFGLPlugin Implementation
@@ -1202,6 +1228,79 @@ FFMixed FFGLPluginInstance::callPluginInstance(FFUInt32 functionCode, FFMixed in
     } catch (...) {
         std::cerr << "Exception caught in plugin function call!" << std::endl;
         return failResult;
+    }
+}
+
+void FFGLPluginInstance::setAudioBuffer(FFUInt32 paramIndex, const float* audioData, size_t sampleCount) {
+    if (!parentPlugin || !parentPlugin->mainFunc || !initialized || paramIndex >= parameters.size()) {
+        return;
+    }
+    
+    if (!parameters[paramIndex].isBufferParameter()) {
+        std::cerr << "Parameter " << paramIndex << " is not a buffer parameter" << std::endl;
+        return;
+    }
+    
+    // Check if this is an audio buffer parameter
+    if (parameters[paramIndex].usage != FF_USAGE_STANDARD) {
+        std::cerr << "Parameter " << paramIndex << " is not an audio buffer (usage: " 
+                  << parameters[paramIndex].usage << ")" << std::endl;
+        return;
+    }
+    
+    // Set buffer data
+    parameters[paramIndex].setBufferData(audioData, sampleCount * sizeof(float));
+    
+    // Send buffer to plugin
+    SetParameterStruct paramData;
+    paramData.ParameterNumber = paramIndex;
+    paramData.NewParameterValue = FFGLUtils::PointerToFFMixed(const_cast<float*>(audioData));
+    
+    callPluginInstance(FF_SET_PARAMETER, FFGLUtils::PointerToFFMixed(&paramData));
+}
+
+void FFGLPluginInstance::setFFTBuffer(FFUInt32 paramIndex, const float* fftData, size_t binCount) {
+    if (!parentPlugin || !parentPlugin->mainFunc || !initialized || paramIndex >= parameters.size()) {
+        return;
+    }
+    
+    if (!parameters[paramIndex].isBufferParameter()) {
+        std::cerr << "Parameter " << paramIndex << " is not a buffer parameter" << std::endl;
+        return;
+    }
+    
+    // Check if this is an FFT buffer parameter
+    if (parameters[paramIndex].usage != FF_USAGE_FFT) {
+        std::cerr << "Parameter " << paramIndex << " is not an FFT buffer (usage: " 
+                  << parameters[paramIndex].usage << ")" << std::endl;
+        return;
+    }
+    
+    // Set buffer data
+    parameters[paramIndex].setBufferData(fftData, binCount * sizeof(float));
+    
+    // Send buffer to plugin
+    SetParameterStruct paramData;
+    paramData.ParameterNumber = paramIndex;
+    paramData.NewParameterValue = FFGLUtils::PointerToFFMixed(const_cast<float*>(fftData));
+    
+    callPluginInstance(FF_SET_PARAMETER, FFGLUtils::PointerToFFMixed(&paramData));
+}
+
+void FFGLPluginInstance::updateBufferParameters() {
+    if (!parentPlugin || !parentPlugin->mainFunc || !initialized) {
+        return;
+    }
+    
+    for (auto& param : parameters) {
+        if (param.isBufferParameter() && param.bufferNeedsUpdate && param.bufferData) {
+            SetParameterStruct paramData;
+            paramData.ParameterNumber = param.index;
+            paramData.NewParameterValue = FFGLUtils::PointerToFFMixed(param.bufferData);
+            
+            callPluginInstance(FF_SET_PARAMETER, FFGLUtils::PointerToFFMixed(&paramData));
+            param.bufferNeedsUpdate = false;
+        }
     }
 }
 
