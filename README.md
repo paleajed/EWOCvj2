@@ -21,6 +21,8 @@ It is also possible to compile yourself.  The Visual Studio code has been replac
 ## Compilation
 
 ### WINDOWS and LINUX now both use the CMake system:
+* After cloning the repository do (to install the ffgl submodule):
+       git submodule update --init --recursive
 * All code is in the src directory.
 * Edit the CMakeLists.txt file so everything points to the right directories.  The Linux install searches for libraries in the default libs locations.  For Windows, either get your libs from the msys2 package(using the pacman system) or put them in C:\source\lib.  You can edit directories that are searched in the CMakeLists.txt file.  You'll need the packages mentioned below.
 * install dependencies:
