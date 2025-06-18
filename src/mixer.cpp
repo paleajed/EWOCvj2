@@ -431,7 +431,7 @@ void Param::handle(bool smallxpad) {
     else if (this->type == FF_TYPE_ALPHA) {
         tex = mainprogram->alphagradienttex;
     }
-    if (this->type != FF_TYPE_OPTION && this->type != FF_TYPE_TEXT && this->type != FF_TYPE_FILE) {
+    if (this->type != FF_TYPE_OPTION && this->type != FF_TYPE_TEXT && this->type != FF_TYPE_FILE && this->type != FF_TYPE_EVENT) {
         draw_box(grey, black, this->box->vtxcoords->x1 + pad, this->box->vtxcoords->y1 + this->box->vtxcoords->h / 8.0f,
                  this->box->vtxcoords->w - pad * 2.0f, this->box->vtxcoords->h * 0.75f, tex);
     }
@@ -471,19 +471,39 @@ void Param::handle(bool smallxpad) {
     }
     if (this->type == FF_TYPE_TEXT || this->type == FF_TYPE_FILE) {
         if (this->name != "") {
-            thisstr = this->name + ": " + this->valuechar;
+            thisstr = this->name + ": " + this->valuestr;
         }
         else {
-            thisstr = this->valuechar;
+            thisstr = this->valuestr;
         }
     }
 	if (this != mainmix->adaptnumparam && this != mainmix->adapttextparam) {
         if (this->name != "drywet") {
-            render_text(thisstr, white, this->box->vtxcoords->x1 + 0.03f - 0.02f * (this->type == FF_TYPE_OPTION) - 0.02f * (this->type == FF_TYPE_TEXT) - 0.02f * (this->type == FF_TYPE_FILE), this->box->vtxcoords->y1 + 0.075f - 0.045f,
+            render_text(thisstr, white, this->box->vtxcoords->x1 + 0.03f - 0.02f * (this->type == FF_TYPE_OPTION) - 0.02f * (this->type == FF_TYPE_TEXT) - 0.02f * (this->type == FF_TYPE_FILE) + 0.02f * (this->type == FF_TYPE_EVENT), this->box->vtxcoords->y1 + 0.075f - 0.045f,
                         0.00045f, 0.00075f);
         }
         if (this->box->in()) {
-            if (this->type == FF_TYPE_OPTION) {
+            if (this->type == FF_TYPE_EVENT) {
+                this->box->acolor[0] = 0.5f;
+                this->box->acolor[1] = 0.5f;
+                this->box->acolor[2] = 1.0f;
+                draw_box(this->box, -1);
+                this->box->acolor[0] = 0.3f;
+                this->box->acolor[1] = 0.8f;
+                this->box->acolor[2] = 0.4f;
+                if (mainprogram->leftmouse) {
+                    // trigger event
+                    this->value = 1.0f;
+                    this->box->acolor[0] = 1.0f;
+                    this->box->acolor[1] = 0.0f;
+                    this->box->acolor[2] = 0.0f;
+                    draw_box(this->box, -1);
+                    this->box->acolor[0] = 0.3f;
+                    this->box->acolor[1] = 0.8f;
+                    this->box->acolor[2] = 0.4f;
+                }
+            }
+            else if (this->type == FF_TYPE_OPTION) {
                 if (mainprogram->leftmouse && !mainprogram->menuondisplay) {
                     mainprogram->make_menu("optionmenu", mainprogram->optionmenu, this->options);
                     mainprogram->optionmenu->state = 2;
@@ -509,7 +529,7 @@ void Param::handle(bool smallxpad) {
                     // start file requester
                     mainprogram->pathto = "FFGLFILE";
                     mainmix->mouseparam = this;
-                    std::thread filereq(&Program::get_inname, mainprogram, "Import bin(s)", "", std::filesystem::canonical(mainprogram->ffglfilesdir).generic_string());
+                    std::thread filereq(&Program::get_inname, mainprogram, "Import bin(s)", "", std::filesystem::canonical(mainprogram->ffglfiledir).generic_string());
                     filereq.detach();
                     mainprogram->leftmouse = false;
                 }
@@ -574,7 +594,7 @@ void Param::handle(bool smallxpad) {
 				mainprogram->menuactivation = false;
 			}
 		}
-        if (this->type != FF_TYPE_OPTION) {
+        if (this->type != FF_TYPE_OPTION || this->type != FF_TYPE_TEXT || this->type != FF_TYPE_FILE || this->type != FF_TYPE_EVENT) {
             if (this->sliding) {
                 draw_box(green, green, this->box->vtxcoords->x1 + pad + (this->box->vtxcoords->w - pad * 2.0f) * ((this->value - this->range[0]) / (this->range[1] - this->range[0])) - 0.002f, this->box->vtxcoords->y1 + this->box->vtxcoords->h / 8.0f, 0.004f, this->box->vtxcoords->h * 0.75f, -1);
             }
@@ -649,10 +669,15 @@ void Param::unregister_midi() {
     mainmix->midi_registrations[!mainprogram->prevmodus][this->midi[0]][this->midi[1]][this->midiport].par = nullptr;
 }
 
-void Param::set_parameter_to(FFGLParameter &src) {
+int Param::set_parameter_to(FFGLParameter &src, int cnt) {
     this->name = src.name;
     this->type = src.type;
-    if (this->type == FF_TYPE_OPTION) {
+    if (this->type == FF_TYPE_EVENT) {
+        this->box->acolor[0] = 0.3f;
+        this->box->acolor[1] = 0.8f;
+        this->box->acolor[2] = 0.4f;
+        // no value
+    } else if (this->type == FF_TYPE_OPTION) {
         for (auto elem: src.elements) {
             this->options.push_back(elem.name);
         }
@@ -668,6 +693,7 @@ void Param::set_parameter_to(FFGLParameter &src) {
     } else if (this->type == FF_TYPE_TEXT || this->type == FF_TYPE_FILE) {
         this->defltchar = static_cast<char*>(src.defaultValue.PointerValue);
         this->valuechar = this->defltchar;
+        this->valuestr = this->valuechar;
         this->box->acolor[0] = 0.3f * (this->type == FF_TYPE_FILE);
         this->box->acolor[1] = 0.0f;
         this->box->acolor[2] = 0.6f * (this->type == FF_TYPE_TEXT);
@@ -678,14 +704,15 @@ void Param::set_parameter_to(FFGLParameter &src) {
         this->value = this->deflt;
         this->range[0] = src.range.min;
         this->range[1] = src.range.max;
-        this->sliding = (this->type != FF_TYPE_BOOLEAN && this->type != FF_TYPE_INTEGER);
+        this->sliding = false;
     } else {
         this->deflt = FFGLUtils::FFMixedToFloat(src.defaultValue);
         this->value = this->deflt;
         this->range[0] = src.range.min;
         this->range[1] = src.range.max;
-        this->sliding = (this->type != FF_TYPE_BOOLEAN && this->type != FF_TYPE_INTEGER);
+        this->sliding = (this->type != FF_TYPE_BOOLEAN);
     }
+    return cnt;
 }
 
 
@@ -2129,18 +2156,19 @@ FFGLEffect::FFGLEffect(Layer *lay, int ffglnr) {
     this->instancenr = mainprogram->ffglinstances[ffglnr].size() - 1;
 
     // get parameters from FFGLHost::parameters
-    this->numrows = (int)instance->getParameters().size() / 3 + 1;
+    this->numrows = 1;
     int cnt = 0;
     for (auto par : instance->parameters) {
         Param *param = new Param;
         if (cnt != 0) {
-            if (cnt % 3 == 0) {
+            if (cnt % 3 == 0 || (par.type == FF_TYPE_TEXT || par.type == FF_TYPE_FILE)) {
                 param->nextrow = true;
+                this->numrows++;
             }
         }
         cnt++;
         
-        param->set_parameter_to(par);
+        cnt = param->set_parameter_to(par, cnt);
         
         param->effect = this;
         param->box->tooltiptitle = par.name;
@@ -5331,6 +5359,9 @@ void Layer::display() {
                         if (par->type == FF_TYPE_TEXT || par->type == FF_TYPE_FILE) {
                             par->box->vtxcoords->w *= 3;
                         }
+                        else if (par->type == FF_TYPE_EVENT) {
+                            par->box->vtxcoords->w = 0.04f;
+                        }
                         par->box->vtxcoords->h = this->sourcebox->vtxcoords->h;
                         par->box->upvtxtoscr();
 
@@ -5381,6 +5412,9 @@ void Layer::display() {
                         par->box->vtxcoords->w = wi;
                         if (par->type == FF_TYPE_TEXT || par->type == FF_TYPE_FILE) {
                             par->box->vtxcoords->w *= 3;
+                        }
+                        else if (par->type == FF_TYPE_EVENT) {
+                            par->box->vtxcoords->w = 0.04f;
                         }
                         par->box->vtxcoords->h = this->blendnode->mixerbox->vtxcoords->h;
                         par->box->upvtxtoscr();
@@ -5443,6 +5477,9 @@ void Layer::display() {
                     par->box->vtxcoords->w = wi;
                     if (par->type == FF_TYPE_TEXT || par->type == FF_TYPE_FILE) {
                         par->box->vtxcoords->w *= 3;
+                    }
+                    else if (par->type == FF_TYPE_EVENT) {
+                        par->box->vtxcoords->w = 0.04f;
                     }
                     par->box->vtxcoords->h = eff->box->vtxcoords->h;
                     par->box->upvtxtoscr();
@@ -10933,6 +10970,96 @@ Layer* Mixer::read_layers(std::istream &rfile, const std::string result, std::ve
 			}
 		}
 
+        if (istring == "FFGLPARAMS") {
+            int pos = 0;
+            Param *par = nullptr;
+            while (istring != "ENDOFFFGLPARAMS") {
+                safegetline(rfile, istring);
+                if (istring == "VAL") {
+                    par = layend->ffglparams[pos];
+                    pos++;
+                    safegetline(rfile, istring);
+                    if (par->type == FF_TYPE_EVENT) {
+
+                    }
+                    else if (par->type == FF_TYPE_TEXT || par->type == FF_TYPE_FILE) {
+                        par->valuestr = istring;
+                        par->valuechar = (char*)par->valuestr.c_str();
+                    } else {
+                        par->value = std::stof(istring);
+                    }
+                }
+                if (istring == "MIDI0") {
+                    safegetline(rfile, istring);
+                    par->midi[0] = std::stoi(istring);
+                }
+                if (istring == "MIDI1") {
+                    safegetline(rfile, istring);
+                    par->midi[1] = std::stoi(istring);
+                }
+                if (istring == "MIDIPORT") {
+                    safegetline(rfile, istring);
+                    par->midiport = istring;
+                    par->register_midi();
+                }
+                if (istring == "EVENTELEM") {
+                    if (loadevents) {
+                        mainmix->event_read(rfile, par, nullptr, layend);
+                    }
+                    else {
+                        while (safegetline(rfile, istring)) {
+                            if (istring == "ENDOFEVENT") break;
+                        }
+                    }
+                }
+            }
+        }
+
+        if (istring == "BNODEFFGLPARAMS") {
+            int pos = 0;
+            Param *par = nullptr;
+            while (istring != "ENDOFBNODEFFGLPARAMS") {
+                safegetline(rfile, istring);
+                if (istring == "VAL") {
+                    par = layend->blendnode->ffglparams[pos];
+                    pos++;
+                    safegetline(rfile, istring);
+                    if (par->type == FF_TYPE_EVENT) {
+
+                    }
+                    else if (par->type == FF_TYPE_TEXT || par->type == FF_TYPE_FILE) {
+                        par->valuestr = istring;
+                        par->valuechar = (char*)par->valuestr.c_str();
+                    } else {
+                        par->value = std::stof(istring);
+                    }
+                }
+                if (istring == "MIDI0") {
+                    safegetline(rfile, istring);
+                    par->midi[0] = std::stoi(istring);
+                }
+                if (istring == "MIDI1") {
+                    safegetline(rfile, istring);
+                    par->midi[1] = std::stoi(istring);
+                }
+                if (istring == "MIDIPORT") {
+                    safegetline(rfile, istring);
+                    par->midiport = istring;
+                    par->register_midi();
+                }
+                if (istring == "EVENTELEM") {
+                    if (loadevents) {
+                        mainmix->event_read(rfile, par, nullptr, layend);
+                    }
+                    else {
+                        while (safegetline(rfile, istring)) {
+                            if (istring == "ENDOFEVENT") break;
+                        }
+                    }
+                }
+            }
+        }
+
         if (istring == "CURRCLIPJPEGPATH") {
             safegetline(rfile, istring);
             std::string jpegpath = istring;
@@ -11185,7 +11312,16 @@ Layer* Mixer::read_layers(std::istream &rfile, const std::string result, std::ve
 							par = eff->params[pos];
 							pos++;
 							safegetline(rfile, istring);
-							par->value = std::stof(istring);
+                            if (par->type == FF_TYPE_EVENT) {
+
+                            }
+                            else if (par->type == FF_TYPE_TEXT || par->type == FF_TYPE_FILE) {
+                                par->valuestr = istring;
+                                par->valuechar = (char*)par->valuestr.c_str();
+                            }
+                            else {
+                                par->value = std::stof(istring);
+                            }
 							par->effect = eff;
                             if (eff->type == BLUR) {
                                 ((BlurEffect*)par->effect)->times = par->value;
@@ -11339,7 +11475,16 @@ Layer* Mixer::read_layers(std::istream &rfile, const std::string result, std::ve
 							par = eff->params[pos];
 							pos++;
 							safegetline(rfile, istring);
-							par->value = std::stof(istring);
+                            if (par->type == FF_TYPE_EVENT) {
+
+                            }
+                            else if (par->type == FF_TYPE_TEXT || par->type == FF_TYPE_FILE) {
+                                par->valuestr = istring;
+                                par->valuechar = (char*)par->valuestr.c_str();
+                            }
+                            else {
+                                par->value = std::stof(istring);
+                            }
 							par->effect = eff;
                             if (eff->type == BLUR) {
                                 ((BlurEffect*)par->effect)->times = par->value;
@@ -11715,7 +11860,61 @@ std::vector<std::string> Mixer::write_layer(Layer* lay, std::ostream& wfile, boo
     mainmix->event_write(wfile, lay->blendnode->wipey, nullptr);
     wfile << "\n";
 
-	if (doclips && lay->clips->size()) {
+    wfile << "BNODEFFGLPARAMS\n";
+    for (int k = 0; k < lay->blendnode->ffglparams.size(); k++) {
+        Param* par = lay->blendnode->ffglparams[k];
+        if (par->type == FF_TYPE_TEXT || par->type == FF_TYPE_FILE) {
+            wfile << "VAL\n";
+            wfile << par->valuestr;
+            wfile << "\n";
+        }
+        else {
+            wfile << "VAL\n";
+            wfile << std::to_string(par->value);
+            wfile << "\n";
+        }
+        wfile << "MIDI0\n";
+        wfile << std::to_string(par->midi[0]);
+        wfile << "\n";
+        wfile << "MIDI1\n";
+        wfile << std::to_string(par->midi[1]);
+        wfile << "\n";
+        wfile << "MIDIPORT\n";
+        wfile << par->midiport;
+        wfile << "\n";
+        mainmix->event_write(wfile, par, nullptr);
+        wfile << "\n";
+    }
+    wfile << "ENDOFBNODEFFGLPARAMS\n";
+
+    wfile << "FFGLPARAMS\n";
+    for (int k = 0; k < lay->ffglparams.size(); k++) {
+        Param* par = lay->ffglparams[k];
+        if (par->type == FF_TYPE_TEXT || par->type == FF_TYPE_FILE) {
+            wfile << "VAL\n";
+            wfile << par->valuestr;
+            wfile << "\n";
+        }
+        else {
+            wfile << "VAL\n";
+            wfile << std::to_string(par->value);
+            wfile << "\n";
+        }
+        wfile << "MIDI0\n";
+        wfile << std::to_string(par->midi[0]);
+        wfile << "\n";
+        wfile << "MIDI1\n";
+        wfile << std::to_string(par->midi[1]);
+        wfile << "\n";
+        wfile << "MIDIPORT\n";
+        wfile << par->midiport;
+        wfile << "\n";
+        mainmix->event_write(wfile, par, nullptr);
+        wfile << "\n";
+    }
+    wfile << "ENDOFFFGLPARAMS\n";
+
+    if (doclips && lay->clips->size()) {
         wfile << "CURRCLIPJPEGPATH\n";
         wfile << lay->currclip->jpegpath;
         if (lay->currclip->jpegpath != "") {
@@ -11843,9 +12042,16 @@ std::vector<std::string> Mixer::write_layer(Layer* lay, std::ostream& wfile, boo
 		wfile << "PARAMS\n";
 		for (int k = 0; k < eff->params.size(); k++) {
 			Param* par = eff->params[k];
-			wfile << "VAL\n";
-			wfile << std::to_string(par->value);
-			wfile << "\n";
+            if (par->type == FF_TYPE_TEXT || par->type == FF_TYPE_FILE) {
+                wfile << "VAL\n";
+                wfile << par->valuestr;
+                wfile << "\n";
+            }
+            else {
+                wfile << "VAL\n";
+                wfile << std::to_string(par->value);
+                wfile << "\n";
+            }
 			wfile << "MIDI0\n";
 			wfile << std::to_string(par->midi[0]);
 			wfile << "\n";
@@ -11922,9 +12128,16 @@ std::vector<std::string> Mixer::write_layer(Layer* lay, std::ostream& wfile, boo
 		wfile << "PARAMS\n";
 		for (int k = 0; k < eff->params.size(); k++) {
 			Param* par = eff->params[k];
-			wfile << "VAL\n";
-			wfile << std::to_string(par->value);
-			wfile << "\n";
+            if (par->type == FF_TYPE_TEXT || par->type == FF_TYPE_FILE) {
+                wfile << "VAL\n";
+                wfile << par->valuestr;
+                wfile << "\n";
+            }
+            else {
+                wfile << "VAL\n";
+                wfile << std::to_string(par->value);
+                wfile << "\n";
+            }
 			wfile << "MIDI0\n";
 			wfile << std::to_string(par->midi[0]);
 			wfile << "\n";
@@ -14049,24 +14262,26 @@ void Layer::set_source(int sourcenr) {
     this->instancenr = mainprogram->ffglinstances[this->ffglsourcenr].size() - 1;
 
     // get parameters from FFGLHost::parameters
-    this->numrows = (int)instance->getParameters().size() / 3 + 1;
-    this->numefflines[this->effcat] += this->numrows;
+    this->numrows = 1;
     int cnt = 0;
     for (auto par : instance->parameters) {
         Param *param = new Param;
         if (cnt != 0) {
-            if (cnt % 3 == 0) {
+            if (cnt % 3 == 0 || (par.type == FF_TYPE_TEXT || par.type == FF_TYPE_FILE)) {
                 param->nextrow = true;
+                this->numrows++;
             }
         }
         cnt++;
 
-        param->set_parameter_to(par);
+
+        cnt = param->set_parameter_to(par, cnt);
 
         param->box->tooltiptitle = par.name;
         param->box->tooltip = "Set " + par.name + " parameter of FFGL " + mainprogram->ffglsourceplugins[this->ffglsourcenr]->pluginInfo.PluginName + " source plugin. ";
         this->ffglparams.push_back(param);
     }
+    this->numefflines[this->effcat] += this->numrows;
 
     this->filename = "";
     this->startframe->value = 0;

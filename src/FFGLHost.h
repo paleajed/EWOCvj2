@@ -251,6 +251,8 @@ private:
     void queryParameterElements(FFUInt32 paramIndex, FFGLParameter& param);
     void queryFileParameterExtensions(FFUInt32 paramIndex, FFGLParameter& param);
     FFMixed callPlugin(FFUInt32 functionCode, FFMixed inputValue, FFInstanceID instanceID = nullptr) const;
+    void fixParameterInfo(FFGLParameter& param);
+    bool validateParameterInfo(const FFGLParameter& param);
 
     friend class FFGLPluginInstance;
 };

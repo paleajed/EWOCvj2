@@ -78,6 +78,7 @@ class Param {
         std::vector<std::string> options;
         float value = 0.0f;
         char *valuechar;
+        std::string valuestr;
         float oldvalue = 0.0f;
 		float deflt = 0.0f;
         char *defltchar;
@@ -101,7 +102,7 @@ class Param {
         void register_midi();
         void unregister_midi();
         void lpst_replace_with(Param* cpar);
-        void set_parameter_to(FFGLParameter &par);
+        int set_parameter_to(FFGLParameter &par, int cnt);
 		Param();
 		~Param();
 };

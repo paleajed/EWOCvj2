@@ -3468,20 +3468,19 @@ void Program::handle_mixenginemenu() {
                         1;
 
                 // get parameters from FFGLHost::parameters
-                bnode->numrows =
-                        (int) instance->getParameters().size() / 3 + 1;
-                bnode->layer->numefflines[bnode->layer->effcat] += bnode->numrows;
+                bnode->numrows = 1;
                 int cnt = 0;
-                for (auto par: instance->parameters) {
+                for (auto par : instance->parameters) {
                     Param *param = new Param;
                     if (cnt != 0) {
-                        if (cnt % 3 == 0) {
+                        if (cnt % 3 == 0 || (par.type == FF_TYPE_TEXT || par.type == FF_TYPE_FILE)) {
                             param->nextrow = true;
+                            bnode->numrows++;
                         }
                     }
                     cnt++;
 
-                    param->set_parameter_to(par);
+                    cnt = param->set_parameter_to(par, cnt);
 
                     param->box->tooltiptitle = par.name;
                     param->box->tooltip = "Set " + par.name + " parameter of FFGL " +
@@ -3489,6 +3488,7 @@ void Program::handle_mixenginemenu() {
                                           " mixer plugin - between 0.0 and 1.0 ";
                     bnode->ffglparams.push_back(param);
                 }
+                bnode->layer->numefflines[bnode->layer->effcat] += bnode->numrows;
             } else if (mainmix->mousenode->type == BLEND) {
                 ((BlendNode *) mainmix->mousenode)->blendtype = (BLEND_TYPE) (mainprogram->menuresults[0] + 1);
             }
@@ -3623,7 +3623,13 @@ void Program::handle_parammenu2() {
             }
         }
         else if (k == 2) {
-            mainmix->learnparam->value = mainmix->learnparam->deflt;
+            if (mainmix->learnparam->type == FF_TYPE_TEXT || mainmix->learnparam->type == FF_TYPE_FILE) {
+                mainmix->learnparam->valuechar = mainmix->learnparam->defltchar;
+                mainmix->learnparam->valuestr = mainmix->learnparam->valuechar;
+            }
+            else {
+                mainmix->learnparam->value = mainmix->learnparam->deflt;
+            }
         }
     }
     if (mainprogram->menuchosen) {
@@ -3643,7 +3649,13 @@ void Program::handle_parammenu1b() {
             mainmix->learn = true;
         }
         else if (k == 1) {
-            mainmix->learnparam->value = mainmix->learnparam->deflt;
+            if (mainmix->learnparam->type == FF_TYPE_TEXT || mainmix->learnparam->type == FF_TYPE_FILE) {
+                mainmix->learnparam->valuechar = mainmix->learnparam->defltchar;
+                mainmix->learnparam->valuestr = mainmix->learnparam->valuechar;
+            }
+            else {
+                mainmix->learnparam->value = mainmix->learnparam->deflt;
+            }
         }
         else if (k == 2) {
             mainmix->menulayer->lockspeed = !mainmix->menulayer->lockspeed;
@@ -3694,7 +3706,13 @@ void Program::handle_parammenu2b() {
             }
         }
         else if (k == 2) {
-            mainmix->learnparam->value = mainmix->learnparam->deflt;
+            if (mainmix->learnparam->type == FF_TYPE_TEXT || mainmix->learnparam->type == FF_TYPE_FILE) {
+                mainmix->learnparam->valuechar = mainmix->learnparam->defltchar;
+                mainmix->learnparam->valuestr = mainmix->learnparam->valuechar;
+            }
+            else {
+                mainmix->learnparam->value = mainmix->learnparam->deflt;
+            }
         }
         else if (k == 3) {
             mainmix->menulayer->lockspeed = !mainmix->menulayer->lockspeed;

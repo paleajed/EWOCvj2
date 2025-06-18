@@ -490,6 +490,10 @@ bool FFGLPlugin::queryParameterInfo(FFUInt32 paramIndex, FFGLParameter& param) {
         }
     }
 
+    if (!validateParameterInfo(param)) {
+        fixParameterInfo(param);
+    }
+
     return true;
 }
 
@@ -925,7 +929,6 @@ bool FFGLPluginInstance::processFrame(const std::vector<FFGLFramebuffer> &inputF
     FFMixed result = callPluginInstance(FF_PROCESS_OPENGL, FFGLUtils::PointerToFFMixed(&processStruct));
 
     if (result.UIntValue != FF_SUCCESS) {
-        std::cout << "Plugin failed with HostFBO=" << outputFBO.fbo << ", trying HostFBO=0..." << std::endl;
         processStruct.HostFBO = 0;
         result = callPluginInstance(FF_PROCESS_OPENGL, FFGLUtils::PointerToFFMixed(&processStruct));
     }
@@ -949,11 +952,6 @@ void FFGLPluginInstance::setParameter(FFUInt32 paramIndex, FFMixed value) {
         float floatValue = FFGLUtils::FFMixedToFloat(value);
         floatValue = std::max(param.range.min, std::min(param.range.max, floatValue));
         value = FFGLUtils::FloatToFFMixed(floatValue);
-    }
-
-    if (param.type == FF_TYPE_EVENT) {
-        triggerEvent(paramIndex);
-        return;
     }
 
     SetParameterStruct paramData;
@@ -1007,19 +1005,6 @@ void FFGLPluginInstance::setParameterElementValue(FFUInt32 paramIndex, FFUInt32 
     elementData.NewParameterValue = value;
 
     callPluginInstance(FF_SET_PARAMETER_ELEMENT_VALUE, FFGLUtils::PointerToFFMixed(&elementData));
-}
-
-void FFGLPluginInstance::triggerEvent(FFUInt32 paramIndex) {
-    if (!parentPlugin || !parentPlugin->mainFunc || !initialized || paramIndex >= parameters.size()) {
-        return;
-    }
-
-    if (parameters[paramIndex].type != FF_TYPE_EVENT) {
-        std::cerr << "Parameter " << paramIndex << " is not an event parameter" << std::endl;
-        return;
-    }
-
-    setParameter(paramIndex, FFGLUtils::FloatToFFMixed(1.0f));
 }
 
 FFMixed FFGLPluginInstance::getParameter(FFUInt32 paramIndex) const {
@@ -1656,4 +1641,46 @@ float EffectTimer::getTime() {
 }
 
 
+bool FFGLPlugin::validateParameterInfo(const FFGLParameter& param) {
+    // Skip validation for non-numeric parameters
+    if (param.type == FF_TYPE_TEXT || param.type == FF_TYPE_FILE ||
+        param.type == FF_TYPE_EVENT || param.type == FF_TYPE_OPTION) {
+        return true;
+    }
 
+    float defaultValue = FFGLUtils::FFMixedToFloat(param.defaultValue);
+
+    // Check if default is within range
+    if (defaultValue < param.range.min || defaultValue > param.range.max) {
+        std::cout << "Warning: Parameter '" << param.name
+                  << "' default value " << defaultValue
+                  << " is outside range [" << param.range.min
+                  << ", " << param.range.max << "]" << std::endl;
+        return false;
+    }
+
+    return true;
+}
+
+void FFGLPlugin::fixParameterInfo(FFGLParameter& param) {
+    // Skip non-numeric parameters
+    if (param.type == FF_TYPE_TEXT || param.type == FF_TYPE_FILE ||
+        param.type == FF_TYPE_EVENT || param.type == FF_TYPE_OPTION) {
+        return;
+    }
+
+    float defaultValue = FFGLUtils::FFMixedToFloat(param.defaultValue);
+
+    // Option 1: Clamp the default value to range
+    if (defaultValue < param.range.min) {
+        std::cout << "  Fixing: Clamping default from " << defaultValue
+                  << " to " << param.range.min << std::endl;
+        param.defaultValue = FFGLUtils::FloatToFFMixed(param.range.min);
+        param.currentValue = param.defaultValue;
+    } else if (defaultValue > param.range.max) {
+        std::cout << "  Fixing: Clamping default from " << defaultValue
+                  << " to " << param.range.max << std::endl;
+        param.defaultValue = FFGLUtils::FloatToFFMixed(param.range.max);
+        param.currentValue = param.defaultValue;
+    }
+}

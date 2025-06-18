@@ -7820,7 +7820,8 @@ int main(int argc, char* argv[]) {
                 mainprogram->project->save_as();
             } else if (mainprogram->pathto == "FFGLFILE") {
                 mainprogram->ffglfiledir = dirname(mainprogram->path);
-                mainmix->mouseparam->valuechar = (char*)mainprogram->path.c_str();
+                mainmix->mouseparam->valuestr = mainprogram->path;
+                mainmix->mouseparam->valuechar = (char*)mainmix->mouseparam->valuestr.c_str();
             }
 
             mainprogram->path = "";
@@ -8024,7 +8025,8 @@ int main(int argc, char* argv[]) {
                 } else if (mainprogram->renaming == EDIT_SHELFELEMNAME) {
                     mainprogram->renamingshelfelem->name = mainprogram->inputtext;
                 } else if (mainprogram->renaming == EDIT_TEXTPARAM) {
-                    mainmix->adapttextparam->valuechar = (char*)mainprogram->inputtext.c_str();
+                    mainmix->adapttextparam->valuestr = mainprogram->inputtext;
+                    mainmix->adapttextparam->valuechar = (char*)mainmix->adapttextparam->valuestr.c_str();
                 } else if (mainprogram->renaming == EDIT_FLOATPARAM) {
                     int diff = mainprogram->inputtext.find(".") + 4 - mainprogram->inputtext.length();
                     if (diff < 0) {
