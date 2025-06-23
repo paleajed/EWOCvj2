@@ -7,9 +7,6 @@
 #include <functional>
 #include <chrono>
 
-// Include official FFGL SDK header
-#include <FFGL.h>
-
 #ifdef _WIN32
 #include <windows.h>
 typedef HMODULE LibHandle;
@@ -17,6 +14,9 @@ typedef HMODULE LibHandle;
 #include <dlfcn.h>
     typedef void* LibHandle;
 #endif
+
+// Include official FFGL SDK header
+#include <FFGL.h>
 
 // VJ Application FBO Structure
 struct FFGLFramebuffer {
@@ -38,6 +38,10 @@ struct FFGLFramebuffer {
 
 // Parameter element for FF_TYPE_OPTION parameters
 struct FFGLParameterElement {
+    FFGLParameterElement() {
+
+    }
+
     std::string name;
     FFMixed value;
 

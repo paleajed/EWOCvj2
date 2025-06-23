@@ -3239,6 +3239,9 @@ void onestepfrom(bool stage, Node *node, Node *prevnode, GLuint prevfbotex, GLui
                     else {
                         instance->setParameter(i, effect->params[i]->value);
                     }
+                    if (effect->params[i]->type == FF_TYPE_EVENT) {
+                        effect->params[i]->value = 0.0f;
+                    }
                 }
 
                 static float effectTime = 0.0f;
@@ -3394,9 +3397,22 @@ void onestepfrom(bool stage, Node *node, Node *prevnode, GLuint prevfbotex, GLui
             outfbo.height = mainprogram->oh[stage];
 
             for (int i = 0; i < instance->parameters.size(); i++) {
-                instance->setParameter(i, lay->ffglparams[i]->value);
+                if (lay->ffglparams[i]->type == FF_TYPE_BUFFER) {
+                }
+                else if (lay->ffglparams[i]->type == FF_TYPE_OPTION) {
+                    instance->setParameter(i, instance->parameters[i].elements[lay->ffglparams[i]->value].value);
+                }
+                else if (lay->ffglparams[i]->type == FF_TYPE_TEXT || lay->ffglparams[i]->type == FF_TYPE_FILE) {
+                    instance->setParameter(i, FFGLUtils::PointerToFFMixed(lay->ffglparams[i]->valuechar));
+                }
+                else {
+                    instance->setParameter(i, lay->ffglparams[i]->value);
+                }
+                if (lay->ffglparams[i]->type == FF_TYPE_EVENT) {
+                    lay->ffglparams[i]->value = 0.0f;
+                }
             }
-
+            
             static float effectTime = 0.0f;
             static auto lastFrame = std::chrono::high_resolution_clock::now();
 
@@ -4940,12 +4956,12 @@ void the_loop() {
                 mainmix->layers[i] = oldlayers;
                 mainmix->reconnect_all(mainmix->layers[i]);
                 // transfer current layer settings to new layer
-                Layer *cl = mainmix->currlay[!mainprogram->prevmodus];
-                Layer *newcl = mainmix->layers[i][cl->pos];
-                mainmix->change_currlay(cl, newcl);
-                if (newcl == cl) {
-                    mainprogram->effcat[newcl->deck]->value = newcl->effcat;
-                }
+                //Layer *cl = mainmix->currlay[!mainprogram->prevmodus];
+                //Layer *newcl = mainmix->layers[i][cl->pos];
+                //mainmix->change_currlay(cl, newcl);
+                //if (newcl == cl) {
+                //    mainprogram->effcat[newcl->deck]->value = newcl->effcat;
+                //}
             }
             tempmap->clear();
         }

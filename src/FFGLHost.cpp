@@ -16,7 +16,6 @@
     #define FreeLib(lib) dlclose(lib)
 #endif
 
-
 #define USE_ULTRA_MINIMAL_PROTECTION
 
 // GUIStateProtector Implementation
@@ -1263,28 +1262,78 @@ void FFGLPluginInstance::setFFTBuffer(FFUInt32 paramIndex, const float* fftData,
     if (!parentPlugin || !parentPlugin->mainFunc || !initialized || paramIndex >= parameters.size()) {
         return;
     }
-    
+
     if (!parameters[paramIndex].isBufferParameter()) {
         std::cerr << "Parameter " << paramIndex << " is not a buffer parameter" << std::endl;
         return;
     }
-    
-    // Check if this is an FFT buffer parameter
+
     if (parameters[paramIndex].usage != FF_USAGE_FFT) {
-        std::cerr << "Parameter " << paramIndex << " is not an FFT buffer (usage: " 
+        std::cerr << "Parameter " << paramIndex << " is not an FFT buffer (usage: "
                   << parameters[paramIndex].usage << ")" << std::endl;
         return;
     }
-    
+
+    printf("setFFTBuffer: paramIndex=%d, binCount=%zu, first values: %.6f %.6f %.6f\n",
+           paramIndex, binCount, fftData[0], fftData[1], fftData[2]);
+
     // Set buffer data
     parameters[paramIndex].setBufferData(fftData, binCount * sizeof(float));
-    
+
+    // Populate your internal elements
+    parameters[paramIndex].elements.clear();
+    parameters[paramIndex].elements.reserve(binCount);
+
+    for (size_t i = 0; i < binCount; i++) {
+        FFGLParameterElement element;
+        element.name = "bin" + std::to_string(i);
+        element.value.UIntValue = *reinterpret_cast<const FFUInt32*>(&fftData[i]);
+        parameters[paramIndex].elements.push_back(element);
+    }
+
+    // Create/update SDK ParamInfo in global storage
+    ParamInfo* sdkParamInfo = nullptr;
+    for (auto& info : g_sdkParamInfos) {
+        if (info.ID == paramIndex) {
+            sdkParamInfo = &info;
+            break;
+        }
+    }
+
+    if (!sdkParamInfo) {
+        printf("Creating new SDK ParamInfo for param %d\n", paramIndex);
+        ParamInfo newInfo;
+        newInfo.ID = paramIndex;
+        strncpy(newInfo.Name, parameters[paramIndex].name.c_str(), 15);
+        newInfo.Name[15] = '\0';
+        newInfo.dwType = FF_TYPE_BUFFER;
+        newInfo.usage = FF_USAGE_FFT;
+        newInfo.elements.resize(binCount);
+        g_sdkParamInfos.push_back(newInfo);
+        sdkParamInfo = &g_sdkParamInfos.back();
+        printf("Created SDK ParamInfo, total params now: %zu\n", g_sdkParamInfos.size());
+    }
+
+    // Update the elements with current FFT data
+    printf("Updating %zu elements in SDK ParamInfo\n", binCount);
+    for (size_t i = 0; i < binCount; i++) {
+        sdkParamInfo->elements[i].name = "bin" + std::to_string(i);
+        sdkParamInfo->elements[i].value = fftData[i];  // Direct float value
+    }
+
+    printf("SDK ParamInfo updated: first few values: %.6f %.6f %.6f\n",
+           sdkParamInfo->elements[0].value,
+           sdkParamInfo->elements[1].value,
+           sdkParamInfo->elements[2].value);
+
     // Send buffer to plugin
     SetParameterStruct paramData;
     paramData.ParameterNumber = paramIndex;
     paramData.NewParameterValue = FFGLUtils::PointerToFFMixed(const_cast<float*>(fftData));
-    
+
     callPluginInstance(FF_SET_PARAMETER, FFGLUtils::PointerToFFMixed(&paramData));
+
+    parameters[paramIndex].bufferNeedsUpdate = true;
 }
 
 void FFGLPluginInstance::updateBufferParameters() {
@@ -1783,3 +1832,4 @@ void FFGLPlugin::fixParameterInfo(FFGLParameter& param) {
         param.currentValue = param.defaultValue;
     }
 }
+

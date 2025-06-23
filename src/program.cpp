@@ -23,7 +23,6 @@
 #include <BeatDetektor.h>
 #include <sndfile.h>
 #include <fftw3.h>
-#include <FFGLHost.h>
 
 #define FREEGLUT_STATIC
 #define _LIB
@@ -66,7 +65,6 @@
 #include <KnownFolders.h>
 #include <ShlObj.h>
 #endif
-
 
 #include "SDL2/SDL.h"
 #include "SDL2/SDL_syswm.h"
@@ -3453,10 +3451,10 @@ void Program::handle_mixenginemenu() {
 	k = mainprogram->handle_menu(mainprogram->mixenginemenu);
 	if (k == 0) {
         if (mainmix->mousenode && mainprogram->menuresults.size()) {
-            if (mainprogram->menuresults[0] > 12) {
+            if (mainprogram->menuresults[0] > 23) {
                 BlendNode *bnode = (BlendNode *) mainmix->mousenode;
                 bnode->blendtype = FFGL_MIXER;
-                bnode->ffglmixernr = mainprogram->menuresults[0] - 13;
+                bnode->ffglmixernr = mainprogram->menuresults[0] - 24;
 
                 int w = mainprogram->ow[!mainprogram->prevmodus];
                 int h = mainprogram->oh[!mainprogram->prevmodus];
@@ -11004,11 +11002,19 @@ void Program::init_audio(const char* device) {
     this->ausamplerate = obtainedSpec.freq;
     this->ausamples = obtainedSpec.samples;
     this->aubuffersize = obtainedSpec.samples * SDL_AUDIO_BITSIZE(obtainedSpec.format) / 8 * obtainedSpec.channels;
-    int fft_size = 1024; // Set FFT size (adjust as needed)
-    this->auout = (fftw_complex*) fftw_malloc(sizeof(fftw_complex) * (fft_size / 2 + 1));
-    this->auoutsize = sizeof(float) * 2 * (fft_size / 2 + 1);
+
+    // Use the actual sample count for FFT size instead of fixed 512
+    int fft_size = this->ausamples; // Use actual audio buffer size (1024)
+
+    // Allocate FFT output: for real-to-complex FFT, output size is (N/2 + 1)
+    this->auoutsize = fft_size / 2 + 1;  // Number of complex elements, not bytes
+    this->auout = (fftw_complex*) fftw_malloc(sizeof(fftw_complex) * this->auoutsize);
+
+    // Allocate buffers with correct sizes
     this->aubuffer = (float*) malloc(this->aubuffersize);
-    this->auin = (double*) fftw_malloc(sizeof(double) * obtainedSpec.samples);
+    this->auin = (double*) fftw_malloc(sizeof(double) * fft_size);
+
+    // Create FFT plan with matching size
     this->auplan = fftw_plan_dft_r2c_1d(fft_size, this->auin, this->auout, FFTW_ESTIMATE);
 
     this->auinitialized = true;
@@ -11022,7 +11028,7 @@ void Program::process_audio() {
     // init OnsetsDS
     this->beatdet = new BeatDetektor((float)mainprogram->minbpm, (float)mainprogram->minbpm * 2, nullptr);
     this->austarttime = std::chrono::high_resolution_clock::now();
-    
+
 
     float sumavg;
     int cnt = 0;
@@ -11037,9 +11043,17 @@ void Program::process_audio() {
 
             // get volume peak for testing against beatthreshold
             for (int i = 0; i < this->ausamples; i++) {
-                this->auin[i] = this->aubuffer[i]; // / 32768.0; // Scale samples to [-1, 1]
-                max = std::max(this->auin[i], max);
+                this->auin[i] = this->aubuffer[i] / 32768.0; // Normalize to [-1, 1]
+                max = std::max(std::abs(this->auin[i]), max);
             }
+
+            // Debug: Check input audio
+            float maxAudio = 0.0f;
+            for (int i = 0; i < this->ausamples; i++) {
+                maxAudio = std::max(maxAudio, std::abs((float)this->auin[i]));
+            }
+            printf("Max audio input value: %.8f\n", maxAudio);
+
             if (cnt == 40) {
                 top = max;
                 max = 0.0f;
@@ -11050,10 +11064,16 @@ void Program::process_audio() {
             // Perform FFT
             fftw_execute(this->auplan);
 
+            // Debug: Check raw FFT output
+            printf("Raw FFT output: out[0]=[%.6f,%.6f], out[1]=[%.6f,%.6f], out[10]=[%.6f,%.6f]\n",
+                   this->auout[0][0], this->auout[0][1],
+                   this->auout[1][0], this->auout[1][1],
+                   this->auout[10][0], this->auout[10][1]);
+
             this->auoutfloat.clear();
             for (int i = 0; i < this->auoutsize; i+=2) {
-                this->auoutfloat.push_back((float)(this->auout[i][0])); // / 32768.0; // Scale samples to [-1, 1]
-                this->auoutfloat.push_back((float)(this->auout[i][1])); // / 32768.0; // Scale samples to [-1, 1]
+                this->auoutfloat.push_back((float)(this->auout[i][0])); // Real part
+                this->auoutfloat.push_back((float)(this->auout[i][1])); // Imaginary part
             }
 
             auto time = std::chrono::high_resolution_clock::now();
@@ -11064,26 +11084,88 @@ void Program::process_audio() {
 
             this->beatdet->process((float)this->autime / 1000.0f, this->auoutfloat);
 
+            // Debug: Check beat detection FFT data
+            if (!this->auoutfloat.empty()) {
+                float maxBeatFFT = 0.0f;
+                for (size_t i = 0; i < std::min(this->auoutfloat.size(), (size_t)20); i++) {
+                    maxBeatFFT = std::max(maxBeatFFT, std::abs(this->auoutfloat[i]));
+                }
+                printf("Beat detection FFT data max: %.6f, first few: %.6f %.6f %.6f\n",
+                       maxBeatFFT, this->auoutfloat[0],
+                       this->auoutfloat.size() > 1 ? this->auoutfloat[1] : 0.0f,
+                       this->auoutfloat.size() > 2 ? this->auoutfloat[2] : 0.0f);
+            }
+
             // Send audio and FFT data to all FFGL plugin instances with buffer parameters
             for (size_t i = 0; i < this->ffglinstances.size(); ++i) {
                 for (size_t j = 0; j < this->ffglinstances[i].size(); ++j) {
                     auto& instance = this->ffglinstances[i][j];
                     if (instance && instance->isInitialized()) {
                         const auto& parameters = instance->getParameters();
-                        
+
+                        // Convert beat interval to BPM
+                        float bpm = 60.0f / this->beatdet->winning_bpm;
+
+                        // Calculate bar phase (0.0 to 1.0 within each bar)
+                        float beatsPerBar = 4.0f;
+                        float barPhase = fmod(this->beatdet->beat_counter / beatsPerBar, 1.0f);
+
+                        // Send beat info
+                        instance->setBeatInfo(bpm, barPhase);
+
                         // Iterate through all parameters to find buffer types
                         for (const auto& param : parameters) {
                             if (param.isBufferParameter()) {
                                 if (param.usage == FF_USAGE_STANDARD) {
                                     // Send raw audio buffer
-                                    instance->setAudioBuffer(param.index, 
-                                                           reinterpret_cast<const float*>(this->aubuffer), 
-                                                           this->ausamples);
+                                    instance->setAudioBuffer(param.index,
+                                                             reinterpret_cast<const float*>(this->auin),
+                                                             this->ausamples);
                                 } else if (param.usage == FF_USAGE_FFT) {
-                                    // Send FFT buffer
-                                    instance->setFFTBuffer(param.index, 
-                                                         this->auoutfloat.data(), 
-                                                         this->auoutfloat.size() / 2);  // Divide by 2 for complex pairs
+// Replace the FFT magnitude calculation section with this:
+// Create magnitude spectrum for FFGL plugin
+                                    std::vector<float> fftMagnitudes;
+                                    fftMagnitudes.reserve(512);
+
+// Convert complex pairs to magnitudes WITH BOOST
+                                    for (size_t k = 0; k < this->auoutfloat.size(); k += 2) {
+                                        float real = this->auoutfloat[k];
+                                        float imag = this->auoutfloat[k + 1];
+
+                                        // Calculate magnitude WITHOUT normalizing by sample count (that makes it too small)
+                                        float magnitude = sqrt(real * real + imag * imag);
+
+                                        // Apply significant boost for visualization
+                                        magnitude = magnitude * 1000.0f; // Much larger boost
+
+                                        // Clamp to reasonable range
+                                        if (magnitude > 1.0f) magnitude = 1.0f;
+
+                                        fftMagnitudes.push_back(magnitude);
+
+                                        // Stop at 512 values
+                                        if (fftMagnitudes.size() >= 512) break;
+                                    }
+
+// Debug: Check calculated magnitudes with better precision
+                                    if (fftMagnitudes.size() >= 10) {
+                                        printf("Calculated magnitudes: [0]=%.8f [1]=%.8f [2]=%.8f [10]=%.8f\n",
+                                               fftMagnitudes[0], fftMagnitudes[1], fftMagnitudes[2],
+                                               fftMagnitudes.size() > 10 ? fftMagnitudes[10] : 0.0f);
+                                    }
+
+                                    float maxMag = fftMagnitudes.empty() ? 0.0f : *std::max_element(fftMagnitudes.begin(), fftMagnitudes.end());
+                                    printf("Max magnitude in buffer: %.8f\n", maxMag);
+
+                                    // Pad to exactly 512 if needed
+                                    while (fftMagnitudes.size() < 512) {
+                                        fftMagnitudes.push_back(0.0f);
+                                    }
+
+                                    // Send FFT buffer - this will populate the elements array
+                                    instance->setFFTBuffer(param.index,
+                                                           fftMagnitudes.data(),
+                                                           512);
                                 }
                             }
                         }
@@ -11138,7 +11220,6 @@ void Program::process_audio() {
         }
     }
 }
-
 
 void Program::create_auinmenu() {
     if (this->mainmenu->state > 1 || this->filemenu->state > 1) {

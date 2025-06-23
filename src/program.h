@@ -15,6 +15,9 @@
 #include "BeatDetektor.h"
 #include "fftw3.h"
 
+#ifdef WINDOWS
+#include <windows.h>
+#endif
 #include "FFGLHost.h"
 
 #ifdef WINDOWS

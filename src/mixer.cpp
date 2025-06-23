@@ -407,207 +407,222 @@ void Param::handle(bool smallxpad) {
     if (smallxpad) pad = 0.005f;
 	std::string thisstr;
 
-	draw_box(this->box, -1);
+    if (this->type != FF_TYPE_BUFFER) {
 
-    GLuint tex = -1;
-    if (this->type == FF_TYPE_RED) {
-        tex = mainprogram->redgradienttex;
-    }
-    else if (this->type == FF_TYPE_GREEN) {
-        tex = mainprogram->greengradienttex;
-    }
-    else if (this->type == FF_TYPE_BLUE) {
-        tex = mainprogram->bluegradienttex;
-    }
-    else if (this->type == FF_TYPE_HUE) {
-        tex = mainprogram->huegradienttex;
-    }
-    else if (this->type == FF_TYPE_SATURATION) {
-        tex = mainprogram->satgradienttex;
-    }
-    else if (this->type == FF_TYPE_BRIGHTNESS) {
-        tex = mainprogram->brightgradienttex;
-    }
-    else if (this->type == FF_TYPE_ALPHA) {
-        tex = mainprogram->alphagradienttex;
-    }
-    if (this->type != FF_TYPE_OPTION && this->type != FF_TYPE_TEXT && this->type != FF_TYPE_FILE && this->type != FF_TYPE_EVENT) {
-        draw_box(grey, black, this->box->vtxcoords->x1 + pad, this->box->vtxcoords->y1 + this->box->vtxcoords->h / 8.0f,
-                 this->box->vtxcoords->w - pad * 2.0f, this->box->vtxcoords->h * 0.75f, tex);
-    }
+        draw_box(this->box, -1);
 
-    int val;
-	if (!this->powertwo) val = round(this->value * 1000.0f);
-	else val = round(this->value * this->value * 1000.0f);
-    if (this->powerfour100) {
-        val = round(this->value * this->value * this->value * this->value * 100000.0f);
-    }
-	int val2 = abs(val);
-    bool negative = (val < 0);
-    val = abs(val);
-    val += 1000000;
-	int firstdigit = 7 - std::to_string(val2).length();
-	if (firstdigit > 3) firstdigit = 3;
-	if (mainmix->learnparam == this && mainmix->learn) {
-		thisstr = "MIDI";
-	}
-	else if (this != mainmix->prepadaptparam && this != mainmix->adaptparam) thisstr = this->name;
-	else if (this->sliding) {
-        thisstr = std::to_string(val).substr(firstdigit, 4 - firstdigit) + "." + std::to_string(val).substr(std::to_string(val).length() - 3, std::string::npos);
-        if (negative) {
-            thisstr = "-" + thisstr;
+        GLuint tex = -1;
+        if (this->type == FF_TYPE_RED) {
+            tex = mainprogram->redgradienttex;
+        } else if (this->type == FF_TYPE_GREEN) {
+            tex = mainprogram->greengradienttex;
+        } else if (this->type == FF_TYPE_BLUE) {
+            tex = mainprogram->bluegradienttex;
+        } else if (this->type == FF_TYPE_HUE) {
+            tex = mainprogram->huegradienttex;
+        } else if (this->type == FF_TYPE_SATURATION) {
+            tex = mainprogram->satgradienttex;
+        } else if (this->type == FF_TYPE_BRIGHTNESS) {
+            tex = mainprogram->brightgradienttex;
+        } else if (this->type == FF_TYPE_ALPHA) {
+            tex = mainprogram->alphagradienttex;
         }
-    }
-	else {
-        thisstr = std::to_string((int)(this->value + (float)(0.5f * (this->effect->type == FLIP || this->effect->type == MIRROR))));
-    }
-    if (this->type == FF_TYPE_OPTION) {
-        if (this->name != "") {
-            thisstr = this->name + ": " + this->options[this->value];
+        if (this->type != FF_TYPE_OPTION && this->type != FF_TYPE_TEXT && this->type != FF_TYPE_FILE &&
+            this->type != FF_TYPE_EVENT) {
+            draw_box(grey, black, this->box->vtxcoords->x1 + pad,
+                     this->box->vtxcoords->y1 + this->box->vtxcoords->h / 8.0f,
+                     this->box->vtxcoords->w - pad * 2.0f, this->box->vtxcoords->h * 0.75f, tex);
         }
-        else {
-            thisstr = this->options[this->value];
+
+        int val;
+        if (!this->powertwo) val = round(this->value * 1000.0f);
+        else val = round(this->value * this->value * 1000.0f);
+        if (this->powerfour100) {
+            val = round(this->value * this->value * this->value * this->value * 100000.0f);
         }
-    }
-    if (this->type == FF_TYPE_TEXT || this->type == FF_TYPE_FILE) {
-        if (this->name != "") {
-            thisstr = this->name + ": " + this->valuestr;
+        int val2 = abs(val);
+        bool negative = (val < 0);
+        val = abs(val);
+        val += 1000000;
+        int firstdigit = 7 - std::to_string(val2).length();
+        if (firstdigit > 3) firstdigit = 3;
+        if (mainmix->learnparam == this && mainmix->learn) {
+            thisstr = "MIDI";
+        } else if (this != mainmix->prepadaptparam && this != mainmix->adaptparam) thisstr = this->name;
+        else if (this->sliding) {
+            thisstr = std::to_string(val).substr(firstdigit, 4 - firstdigit) + "." +
+                      std::to_string(val).substr(std::to_string(val).length() - 3, std::string::npos);
+            if (negative) {
+                thisstr = "-" + thisstr;
+            }
+        } else {
+            if (effect) {
+                thisstr = std::to_string((int) (this->value + (float) (0.5f * (this->effect->type == FLIP ||
+                                                                               this->effect->type == MIRROR))));
+            } else {
+                thisstr = std::to_string((int) this->value);
+            }
         }
-        else {
-            thisstr = this->valuestr;
+        if (this->type == FF_TYPE_OPTION) {
+            if (this->name != "") {
+                thisstr = this->name + ": " + this->options[this->value];
+            } else {
+                thisstr = this->options[this->value];
+            }
         }
-    }
-	if (this != mainmix->adaptnumparam && this != mainmix->adapttextparam) {
-        if (this->name != "drywet") {
-            render_text(thisstr, white, this->box->vtxcoords->x1 + 0.03f - 0.02f * (this->type == FF_TYPE_OPTION) - 0.02f * (this->type == FF_TYPE_TEXT) - 0.02f * (this->type == FF_TYPE_FILE) + 0.02f * (this->type == FF_TYPE_EVENT), this->box->vtxcoords->y1 + 0.075f - 0.045f,
-                        0.00045f, 0.00075f);
+        if (this->type == FF_TYPE_TEXT || this->type == FF_TYPE_FILE) {
+            if (this->name != "") {
+                thisstr = this->name + ": " + this->valuestr;
+            } else {
+                thisstr = this->valuestr;
+            }
         }
-        if (this->box->in()) {
-            if (this->type == FF_TYPE_EVENT) {
-                this->box->acolor[0] = 0.5f;
-                this->box->acolor[1] = 0.5f;
-                this->box->acolor[2] = 1.0f;
-                draw_box(this->box, -1);
-                this->box->acolor[0] = 0.3f;
-                this->box->acolor[1] = 0.8f;
-                this->box->acolor[2] = 0.4f;
-                if (mainprogram->leftmouse) {
-                    // trigger event
-                    this->value = 1.0f;
-                    this->box->acolor[0] = 1.0f;
-                    this->box->acolor[1] = 0.0f;
-                    this->box->acolor[2] = 0.0f;
+        if (this != mainmix->adaptnumparam && this != mainmix->adapttextparam) {
+            if (this->name != "drywet") {
+                render_text(thisstr, white, this->box->vtxcoords->x1 + 0.03f - 0.02f * (this->type == FF_TYPE_OPTION) -
+                                            0.02f * (this->type == FF_TYPE_TEXT) -
+                                            0.02f * (this->type == FF_TYPE_FILE) +
+                                            0.02f * (this->type == FF_TYPE_EVENT),
+                            this->box->vtxcoords->y1 + 0.075f - 0.045f,
+                            0.00045f, 0.00075f);
+            }
+            if (this->box->in()) {
+                if (this->type == FF_TYPE_EVENT) {
+                    this->box->acolor[0] = 0.5f;
+                    this->box->acolor[1] = 0.5f;
+                    this->box->acolor[2] = 1.0f;
                     draw_box(this->box, -1);
                     this->box->acolor[0] = 0.3f;
                     this->box->acolor[1] = 0.8f;
                     this->box->acolor[2] = 0.4f;
-                }
-            }
-            else if (this->type == FF_TYPE_OPTION) {
-                if (mainprogram->leftmouse && !mainprogram->menuondisplay) {
-                    mainprogram->make_menu("optionmenu", mainprogram->optionmenu, this->options);
-                    mainprogram->optionmenu->state = 2;
-                    mainprogram->optionmenu->menux = mainprogram->mx;
-                    mainprogram->optionmenu->menuy = mainprogram->my;
-                    mainmix->mouseparam = this;
-                    mainprogram->leftmouse = false;
-                    mainprogram->recundo = false;
-                }
-            }
-            else if (this->type == FF_TYPE_TEXT) {
-                if (mainprogram->leftmouse) {
-                    mainprogram->renaming = EDIT_TEXTPARAM;
-                    mainmix->adapttextparam = this;
-                    mainprogram->inputtext = "";
-                    mainprogram->cursorpos0 = mainprogram->inputtext.length();
-                    SDL_StartTextInput();
-                    mainprogram->leftmouse = false;
-                }
-            }
-            else if (this->type == FF_TYPE_FILE) {
-                if (mainprogram->leftmouse) {
-                    // start file requester
-                    mainprogram->pathto = "FFGLFILE";
-                    mainmix->mouseparam = this;
-                    std::thread filereq(&Program::get_inname, mainprogram, "Import bin(s)", "", std::filesystem::canonical(mainprogram->ffglfiledir).generic_string());
-                    filereq.detach();
-                    mainprogram->leftmouse = false;
-                }
-            }
-            else {
-                if (mainprogram->leftmousedown && !mainprogram->inserteffectbox->in()) {
-                    mainprogram->leftmousedown = false;
-                    mainmix->prepadaptparam = this;
-                    mainmix->prevx = mainprogram->mx;
-                }
-                if (mainprogram->leftmouse) {
-                    mainprogram->leftmouse = false;
-                    mainprogram->recundo = false;
-                }
-                if (mainprogram->doubleleftmouse) {
-                    mainprogram->renaming = EDIT_FLOATPARAM;
-                    mainmix->adaptnumparam = this;
-                    mainprogram->inputtext = "";
-                    mainprogram->cursorpos0 = mainprogram->inputtext.length();
-                    SDL_StartTextInput();
-                    mainprogram->doubleleftmouse = false;
-                }
-            }
-			if (mainprogram->menuactivation && !mainprogram->menuondisplay) {
-                if (this->name == "Speed") {
-                    if (loopstation->parelemmap.find(this) != loopstation->parelemmap.end()) mainprogram->parammenu2b->state = 2;
-                    else {
-                        mainprogram->parammenu1b->state = 2;
+                    if (mainprogram->leftmouse) {
+                        // trigger event
+                        this->value = 1.0f;
+                        this->box->acolor[0] = 1.0f;
+                        this->box->acolor[1] = 0.0f;
+                        this->box->acolor[2] = 0.0f;
+                        draw_box(this->box, -1);
+                        this->box->acolor[0] = 0.3f;
+                        this->box->acolor[1] = 0.8f;
+                        this->box->acolor[2] = 0.4f;
                     }
-                    for (Layer *l : mainmix->layers[0]) {
-                        if (l->speed == this) {
-                            mainmix->menulayer = l;
-                            break;
+                } else if (this->type == FF_TYPE_OPTION) {
+                    if (mainprogram->leftmouse && !mainprogram->menuondisplay) {
+                        mainprogram->make_menu("optionmenu", mainprogram->optionmenu, this->options);
+                        mainprogram->optionmenu->state = 2;
+                        mainprogram->optionmenu->menux = mainprogram->mx;
+                        mainprogram->optionmenu->menuy = mainprogram->my;
+                        mainmix->mouseparam = this;
+                        mainprogram->leftmouse = false;
+                        mainprogram->recundo = false;
+                    }
+                } else if (this->type == FF_TYPE_TEXT) {
+                    if (mainprogram->leftmouse) {
+                        mainprogram->renaming = EDIT_TEXTPARAM;
+                        mainmix->adapttextparam = this;
+                        mainprogram->inputtext = "";
+                        mainprogram->cursorpos0 = mainprogram->inputtext.length();
+                        SDL_StartTextInput();
+                        mainprogram->leftmouse = false;
+                    }
+                } else if (this->type == FF_TYPE_FILE) {
+                    if (mainprogram->leftmouse) {
+                        // start file requester
+                        mainprogram->pathto = "FFGLFILE";
+                        mainmix->mouseparam = this;
+                        std::thread filereq(&Program::get_inname, mainprogram, "Import bin(s)", "",
+                                            std::filesystem::canonical(mainprogram->ffglfiledir).generic_string());
+                        filereq.detach();
+                        mainprogram->leftmouse = false;
+                    }
+                } else {
+                    if (mainprogram->leftmousedown && !mainprogram->inserteffectbox->in()) {
+                        mainprogram->leftmousedown = false;
+                        mainmix->prepadaptparam = this;
+                        mainmix->prevx = mainprogram->mx;
+                    }
+                    if (mainprogram->leftmouse) {
+                        mainprogram->leftmouse = false;
+                        mainprogram->recundo = false;
+                    }
+                    if (mainprogram->doubleleftmouse) {
+                        mainprogram->renaming = EDIT_FLOATPARAM;
+                        mainmix->adaptnumparam = this;
+                        mainprogram->inputtext = "";
+                        mainprogram->cursorpos0 = mainprogram->inputtext.length();
+                        SDL_StartTextInput();
+                        mainprogram->doubleleftmouse = false;
+                    }
+                }
+                if (mainprogram->menuactivation && !mainprogram->menuondisplay) {
+                    if (this->name == "Speed") {
+                        if (loopstation->parelemmap.find(this) != loopstation->parelemmap.end())
+                            mainprogram->parammenu2b->state = 2;
+                        else {
+                            mainprogram->parammenu1b->state = 2;
                         }
-                    }
-                    for (Layer *l : mainmix->layers[2]) {
-                        if (l->speed == this) {
-                            mainmix->menulayer = l;
-                            break;
+                        for (Layer *l: mainmix->layers[0]) {
+                            if (l->speed == this) {
+                                mainmix->menulayer = l;
+                                break;
+                            }
                         }
-                    }
-                    for (Layer *l : mainmix->layers[1]) {
-                        if (l->speed == this) {
-                            mainmix->menulayer = l;
-                            break;
+                        for (Layer *l: mainmix->layers[2]) {
+                            if (l->speed == this) {
+                                mainmix->menulayer = l;
+                                break;
+                            }
                         }
-                    }
-                    for (Layer *l : mainmix->layers[3]) {
-                        if (l->speed == this) {
-                            mainmix->menulayer = l;
-                            break;
+                        for (Layer *l: mainmix->layers[1]) {
+                            if (l->speed == this) {
+                                mainmix->menulayer = l;
+                                break;
+                            }
                         }
+                        for (Layer *l: mainmix->layers[3]) {
+                            if (l->speed == this) {
+                                mainmix->menulayer = l;
+                                break;
+                            }
+                        }
+                    } else {
+                        if (loopstation->parelemmap.find(this) != loopstation->parelemmap.end())
+                            mainprogram->parammenu2->state = 2;
+                        else mainprogram->parammenu1->state = 2;
                     }
+                    mainmix->learnbutton = nullptr;
+                    mainmix->learnparam = this;
+                    mainprogram->menuactivation = false;
                 }
-                else {
-                    if (loopstation->parelemmap.find(this) != loopstation->parelemmap.end())
-                        mainprogram->parammenu2->state = 2;
-                    else mainprogram->parammenu1->state = 2;
-                }
-				mainmix->learnbutton = nullptr;
-				mainmix->learnparam = this;
-				mainprogram->menuactivation = false;
-			}
-		}
-        if (this->type != FF_TYPE_OPTION || this->type != FF_TYPE_TEXT || this->type != FF_TYPE_FILE || this->type != FF_TYPE_EVENT) {
-            if (this->sliding) {
-                draw_box(green, green, this->box->vtxcoords->x1 + pad + (this->box->vtxcoords->w - pad * 2.0f) * ((this->value - this->range[0]) / (this->range[1] - this->range[0])) - 0.002f, this->box->vtxcoords->y1 + this->box->vtxcoords->h / 8.0f, 0.004f, this->box->vtxcoords->h * 0.75f, -1);
             }
-            else {
-                draw_box(green, green, this->box->vtxcoords->x1 + pad + (this->box->vtxcoords->w - pad * 2.0f) * (((int)(this->value + 0.5f) - this->range[0]) / (this->range[1] - this->range[0])) - 0.002f, this->box->vtxcoords->y1 + this->box->vtxcoords->h / 8.0f, 0.004f, this->box->vtxcoords->h * 0.75f, -1);
+            if (this->type != FF_TYPE_OPTION || this->type != FF_TYPE_TEXT || this->type != FF_TYPE_FILE ||
+                this->type != FF_TYPE_EVENT) {
+                if (this->sliding) {
+                    draw_box(green, green, this->box->vtxcoords->x1 + pad + (this->box->vtxcoords->w - pad * 2.0f) *
+                                                                            ((this->value - this->range[0]) /
+                                                                             (this->range[1] - this->range[0])) -
+                                           0.002f, this->box->vtxcoords->y1 + this->box->vtxcoords->h / 8.0f, 0.004f,
+                             this->box->vtxcoords->h * 0.75f, -1);
+                } else {
+                    draw_box(green, green, this->box->vtxcoords->x1 + pad + (this->box->vtxcoords->w - pad * 2.0f) *
+                                                                            (((int) (this->value + 0.5f) -
+                                                                              this->range[0]) /
+                                                                             (this->range[1] - this->range[0])) -
+                                           0.002f, this->box->vtxcoords->y1 + this->box->vtxcoords->h / 8.0f, 0.004f,
+                             this->box->vtxcoords->h * 0.75f, -1);
+                }
             }
         }
-	}
-    if (this == mainmix->adaptnumparam) {
-        do_text_input(this->box->vtxcoords->x1 + 0.035f, this->box->vtxcoords->y1 + 0.03f, 0.00045f, 0.00075f, mainprogram->mx, mainprogram->my, mainprogram->xvtxtoscr(this->box->vtxcoords->w - 0.03f), 0, nullptr);
-    }
-    if (this == mainmix->adapttextparam) {
-        do_text_input(this->box->vtxcoords->x1 + 0.01f, this->box->vtxcoords->y1 + 0.03f, 0.00045f, 0.00075f, mainprogram->mx, mainprogram->my, mainprogram->xvtxtoscr(this->box->vtxcoords->w - 0.02f), 0, nullptr);
+        if (this == mainmix->adaptnumparam) {
+            do_text_input(this->box->vtxcoords->x1 + 0.035f, this->box->vtxcoords->y1 + 0.03f, 0.00045f, 0.00075f,
+                          mainprogram->mx, mainprogram->my, mainprogram->xvtxtoscr(this->box->vtxcoords->w - 0.03f), 0,
+                          nullptr);
+        }
+        if (this == mainmix->adapttextparam) {
+            do_text_input(this->box->vtxcoords->x1 + 0.01f, this->box->vtxcoords->y1 + 0.03f, 0.00045f, 0.00075f,
+                          mainprogram->mx, mainprogram->my, mainprogram->xvtxtoscr(this->box->vtxcoords->w - 0.02f), 0,
+                          nullptr);
+        }
     }
 }
 
