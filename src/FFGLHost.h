@@ -332,8 +332,10 @@ public:
     
     // Buffer management
     void setAudioBuffer(FFUInt32 paramIndex, const float* audioData, size_t sampleCount);
-    void setFFTBuffer(FFUInt32 paramIndex, const float* fftData, size_t binCount);
     void updateBufferParameters();
+    
+    // Audio data for plugins using FFGL SDK audio system
+    void sendAudioData(const float* fftData, size_t binCount);
 
     // CHANGE: Update getter method name
     FFInstanceID getInstanceID() const { return pluginInstanceID; }

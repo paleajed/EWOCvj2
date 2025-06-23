@@ -11113,62 +11113,37 @@ void Program::process_audio() {
                         // Send beat info
                         instance->setBeatInfo(bpm, barPhase);
 
-                        // Iterate through all parameters to find buffer types
-                        for (const auto& param : parameters) {
-                            if (param.isBufferParameter()) {
-                                if (param.usage == FF_USAGE_STANDARD) {
-                                    // Send raw audio buffer
-                                    instance->setAudioBuffer(param.index,
-                                                             reinterpret_cast<const float*>(this->auin),
-                                                             this->ausamples);
-                                } else if (param.usage == FF_USAGE_FFT) {
-// Replace the FFT magnitude calculation section with this:
-// Create magnitude spectrum for FFGL plugin
-                                    std::vector<float> fftMagnitudes;
-                                    fftMagnitudes.reserve(512);
+                        // Create magnitude spectrum for FFGL plugins
+                        std::vector<float> fftMagnitudes;
+                        fftMagnitudes.reserve(512);
 
-// Convert complex pairs to magnitudes WITH BOOST
-                                    for (size_t k = 0; k < this->auoutfloat.size(); k += 2) {
-                                        float real = this->auoutfloat[k];
-                                        float imag = this->auoutfloat[k + 1];
+                        // Convert complex pairs to magnitudes
+                        for (size_t k = 0; k < this->auoutfloat.size(); k += 2) {
+                            float real = this->auoutfloat[k];
+                            float imag = this->auoutfloat[k + 1];
 
-                                        // Calculate magnitude WITHOUT normalizing by sample count (that makes it too small)
-                                        float magnitude = sqrt(real * real + imag * imag);
+                            // Calculate magnitude
+                            float magnitude = sqrt(real * real + imag * imag);
 
-                                        // Apply significant boost for visualization
-                                        magnitude = magnitude * 1000.0f; // Much larger boost
+                            // Apply boost for visualization
+                            magnitude = magnitude * 1000.0f;
 
-                                        // Clamp to reasonable range
-                                        if (magnitude > 1.0f) magnitude = 1.0f;
+                            // Clamp to reasonable range
+                            if (magnitude > 1.0f) magnitude = 1.0f;
 
-                                        fftMagnitudes.push_back(magnitude);
+                            fftMagnitudes.push_back(magnitude);
 
-                                        // Stop at 512 values
-                                        if (fftMagnitudes.size() >= 512) break;
-                                    }
-
-// Debug: Check calculated magnitudes with better precision
-                                    if (fftMagnitudes.size() >= 10) {
-                                        printf("Calculated magnitudes: [0]=%.8f [1]=%.8f [2]=%.8f [10]=%.8f\n",
-                                               fftMagnitudes[0], fftMagnitudes[1], fftMagnitudes[2],
-                                               fftMagnitudes.size() > 10 ? fftMagnitudes[10] : 0.0f);
-                                    }
-
-                                    float maxMag = fftMagnitudes.empty() ? 0.0f : *std::max_element(fftMagnitudes.begin(), fftMagnitudes.end());
-                                    printf("Max magnitude in buffer: %.8f\n", maxMag);
-
-                                    // Pad to exactly 512 if needed
-                                    while (fftMagnitudes.size() < 512) {
-                                        fftMagnitudes.push_back(0.0f);
-                                    }
-
-                                    // Send FFT buffer - this will populate the elements array
-                                    instance->setFFTBuffer(param.index,
-                                                           fftMagnitudes.data(),
-                                                           512);
-                                }
-                            }
+                            // Stop at 512 values
+                            if (fftMagnitudes.size() >= 512) break;
                         }
+
+                        // Pad to exactly 512 if needed
+                        while (fftMagnitudes.size() < 512) {
+                            fftMagnitudes.push_back(0.0f);
+                        }
+
+                        // Send audio data to plugin (handles both buffer parameters and SDK audio system)
+                        instance->sendAudioData(fftMagnitudes.data(), 512);
                     }
                 }
             }
