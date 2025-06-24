@@ -5,6 +5,7 @@
 #include <cstring>
 #include <atomic>
 #include <chrono>
+#include <numeric>
 
 #ifdef _WIN32
 #define LoadLib(path) LoadLibraryA(path)
@@ -465,6 +466,7 @@ bool FFGLPlugin::validatePlugin() {
 bool FFGLPlugin::queryParameterInfo(FFUInt32 paramIndex, FFGLParameter& param) {
     if (!mainFunc) return false;
 
+    // Get parameter name
     FFMixed result = callPlugin(FF_GET_PARAMETER_NAME, FFGLUtils::UIntToFFMixed(paramIndex));
     if (result.PointerValue != nullptr && isValidStringPointer(result.PointerValue)) {
         param.name = static_cast<char*>(result.PointerValue);
@@ -472,6 +474,7 @@ bool FFGLPlugin::queryParameterInfo(FFUInt32 paramIndex, FFGLParameter& param) {
         param.name = "Param" + std::to_string(paramIndex);
     }
 
+    // Get parameter type
     result = callPlugin(FF_GET_PARAMETER_TYPE, FFGLUtils::UIntToFFMixed(paramIndex));
     if (result.UIntValue != FF_FAIL) {
         param.type = result.UIntValue;
@@ -479,12 +482,14 @@ bool FFGLPlugin::queryParameterInfo(FFUInt32 paramIndex, FFGLParameter& param) {
         param.type = FF_TYPE_STANDARD;
     }
 
+    // Get default value
     result = callPlugin(FF_GET_PARAMETER_DEFAULT, FFGLUtils::UIntToFFMixed(paramIndex));
     if (result.UIntValue != FF_FAIL) {
         param.defaultValue = result;
         param.currentValue = result;
     }
 
+    // Get parameter range
     GetRangeStruct rangeStruct;
     rangeStruct.parameterNumber = paramIndex;
     result = callPlugin(FF_GET_RANGE, FFGLUtils::PointerToFFMixed(&rangeStruct));
@@ -493,7 +498,28 @@ bool FFGLPlugin::queryParameterInfo(FFUInt32 paramIndex, FFGLParameter& param) {
     } else {
         param.range = FFGLUtils::getParameterDefaultRange(param.type);
     }
+    if (param.type == FF_TYPE_OPTION) {
+        // Query number of elements
+        FFMixed numElements = callPlugin(FF_GET_NUM_PARAMETER_ELEMENTS, FFGLUtils::UIntToFFMixed(paramIndex));
+        if (numElements.UIntValue != FF_FAIL) {
+            param.range.min = 0.0f;
+            param.range.max = (float)(numElements.UIntValue - 1); // 0 to 3 for 4 options
+        }
+    }
 
+    // *** ENHANCED: Get parameter usage for buffer parameters ***
+    if (param.type == FF_TYPE_BUFFER) {
+        result = callPlugin(FF_GET_PARAMETER_USAGE, FFGLUtils::UIntToFFMixed(paramIndex));
+        if (result.UIntValue != FF_FAIL) {
+            param.usage = result.UIntValue;
+        } else {
+            param.usage = FF_USAGE_STANDARD;
+        }
+
+        printf("Buffer parameter '%s': type=%d, usage=%d\n", param.name.c_str(), param.type, param.usage);
+    }
+
+    // Get parameter group (FFGL 2.2)
     if (supportsFFGL22Features()) {
         result = callPlugin(FF_GET_PARAM_GROUP, FFGLUtils::UIntToFFMixed(paramIndex));
         if (result.UIntValue != FF_FAIL && isValidStringPointer(result.PointerValue)) {
@@ -501,18 +527,12 @@ bool FFGLPlugin::queryParameterInfo(FFUInt32 paramIndex, FFGLParameter& param) {
         }
     }
 
+    // Get parameter visibility
     result = callPlugin(FF_GET_PRAMETER_VISIBILITY, FFGLUtils::UIntToFFMixed(paramIndex));
     if (result.UIntValue != FF_FAIL) {
         param.visible = (result.UIntValue != FF_FALSE);
     } else {
         param.visible = true;
-    }
-
-    if (param.type == FF_TYPE_BUFFER) {
-        result = callPlugin(FF_GET_PARAMETER_USAGE, FFGLUtils::UIntToFFMixed(paramIndex));
-        if (result.UIntValue != FF_FAIL) {
-            param.usage = result.UIntValue;
-        }
     }
 
     if (!validateParameterInfo(param)) {
@@ -617,6 +637,12 @@ void FFGLPlugin::loadParameterTemplates() {
         if (queryParameterInfo(i, param)) {
             queryParameterElements(i, param);
             queryFileParameterExtensions(i, param);
+
+            if (param.isBufferParameter()) {
+                printf("Found buffer parameter: '%s' (index %d, type: %d, usage: %d)\n",
+                       param.name.c_str(), i, param.type, param.usage);
+            }
+
             parameterTemplates.push_back(std::move(param));
         } else {
             param.name = "Param" + std::to_string(i);
@@ -801,12 +827,29 @@ FFGLInstanceHandle FFGLPlugin::createInstance(const FFGLViewportStruct& viewport
 
 // FFGLPluginInstance Implementation
 FFGLPluginInstance::FFGLPluginInstance(FFGLPlugin* parent, const FFGLViewportStruct& viewport)
-        : parentPlugin(parent), pluginInstanceID(nullptr), initialized(false), currentViewport(viewport) {
+        : parentPlugin(parent), pluginInstanceID(nullptr), initialized(false),
+          currentViewport(viewport), timeInitialized(false) {
     copyParametersFromTemplate();
 }
 
 FFGLPluginInstance::~FFGLPluginInstance() {
     deinitialize();
+}
+
+// Thread-safe audio data storage (called from audio thread)
+void FFGLPluginInstance::storeAudioData(const float* fftData, size_t binCount) {
+    std::lock_guard<std::mutex> lock(audioDataMutex);
+    latestFFTData.assign(fftData, fftData + binCount);
+    hasNewAudioData = true;
+}
+
+// Apply stored audio data (called from video thread during processFrame)
+void FFGLPluginInstance::applyStoredAudioData() {
+    std::lock_guard<std::mutex> lock(audioDataMutex);
+    if (hasNewAudioData && !latestFFTData.empty()) {
+        sendAudioData(latestFFTData.data(), latestFFTData.size());
+        hasNewAudioData = false;
+    }
 }
 
 bool FFGLPluginInstance::initialize(const FFGLViewportStruct& viewport) {
@@ -861,6 +904,8 @@ bool FFGLPluginInstance::initialize(const FFGLViewportStruct& viewport) {
 
     if (result.UIntValue == FF_SUCCESS) {
         initialized = true;
+        //resetTime(); // Reset internal timer
+        //setTime(0.0f); // First call: Explicitly set time to zero
         std::cout << "FFGL 2.x initialization succeeded" << std::endl;
         stateProtector.restoreGUIState();
         std::cout << "Restored GUI state after successful initialization" << std::endl;
@@ -873,26 +918,25 @@ bool FFGLPluginInstance::initialize(const FFGLViewportStruct& viewport) {
 
     if (result.UIntValue == FF_SUCCESS) {
         initialized = true;
-        if (result.UIntValue == FF_SUCCESS) {
-            initialized = true;
-            std::cout << "Legacy initialization succeeded" << std::endl;
-            stateProtector.restoreGUIState();
-            std::cout << "Restored GUI state after successful legacy initialization" << std::endl;
-            return true;
-        }
-
-        std::cerr << "All initialization methods failed" << std::endl;
-
-        if (pluginInstanceID) {
-            parentPlugin->callPlugin(FF_DEINSTANTIATE_GL, FFGLUtils::UIntToFFMixed(0), pluginInstanceID);
-            pluginInstanceID = nullptr;
-        }
-
+        //resetTime(); // Reset internal timer
+        //setTime(0.0f); // First call: Explicitly set time to zero
+        std::cout << "Legacy initialization succeeded" << std::endl;
         stateProtector.restoreGUIState();
-        std::cout << "Restored GUI state after failed initialization" << std::endl;
-
-        return false;
+        std::cout << "Restored GUI state after successful legacy initialization" << std::endl;
+        return true;
     }
+
+    std::cerr << "All initialization methods failed" << std::endl;
+
+    if (pluginInstanceID) {
+        parentPlugin->callPlugin(FF_DEINSTANTIATE_GL, FFGLUtils::UIntToFFMixed(0), pluginInstanceID);
+        pluginInstanceID = nullptr;
+    }
+
+    stateProtector.restoreGUIState();
+    std::cout << "Restored GUI state after failed initialization" << std::endl;
+
+    return false;
 }
 
 void FFGLPluginInstance::deinitialize() {
@@ -1048,7 +1092,27 @@ FFMixed FFGLPluginInstance::getParameter(FFUInt32 paramIndex) const {
 }
 
 float FFGLPluginInstance::getParameterFloat(FFUInt32 paramIndex) const {
-    return FFGLUtils::FFMixedToFloat(getParameter(paramIndex));
+    if (paramIndex >= parameters.size()) return 0.0f;
+
+    FFMixed result = getParameter(paramIndex);
+
+    if (parameters[paramIndex].type == FF_TYPE_OPTION) {
+        // Option parameters are stored as floats but represent integer choices
+// After setting the select parameter to 2, test what the plugin internally reports:
+        FFMixed result = callPluginInstance(FF_GET_PARAMETER, FFGLUtils::UIntToFFMixed(9)); // select parameter
+        if (result.UIntValue != FF_FAIL) {
+            float pluginInternalValue = FFGLUtils::FFMixedToFloat(result);
+            printf("Plugin's internal select value: %.0f\n", pluginInternalValue);
+        }
+
+// Also try getting it as UInt:
+        printf("Plugin's internal select as UInt: %d\n", result.UIntValue);
+
+        float floatValue = FFGLUtils::FFMixedToFloat(result);
+        return floatValue;  // This should be 2.0, not 1065353216
+    } else {
+        return FFGLUtils::FFMixedToFloat(result);
+    }
 }
 
 FFUInt32 FFGLPluginInstance::getParameterInt(FFUInt32 paramIndex) const {
@@ -1145,10 +1209,7 @@ void FFGLPluginInstance::setTime(float time) {
         return;
     }
 
-    double timeDouble = (double)time;
-    FFMixed timeValue;
-    timeValue.PointerValue = *reinterpret_cast<void**>(&timeDouble);
-    callPluginInstance(FF_SET_TIME, timeValue);
+    callPluginInstance(FF_SET_TIME, FFGLUtils::FloatToFFMixed(time));
 }
 
 void FFGLPluginInstance::setBeatInfo(float bpm, float barPhase) {
@@ -1266,40 +1327,42 @@ void FFGLPluginInstance::sendAudioData(const float* fftData, size_t binCount) {
         return;
     }
 
-    printf("sendAudioData: binCount=%zu, first values: %.6f %.6f %.6f\n",
-           binCount, fftData[0], fftData[1], fftData[2]);
+    printf("sendAudioData: binCount=%zu, max=%.6f\n", binCount,
+           *std::max_element(fftData, fftData + binCount));
 
-    // For plugins using FFGL SDK's audio system, we need to provide FFT data
-    // through buffer parameters that the plugin automatically creates.
-    // The plugin's UpdateAudioAndTime() method will read this data.
-    
-    // Find FFT buffer parameters and send data to them
+    bool foundFFTParam = false;
+    bool foundAudioParam = false;
+
+    // Look for both FFT and general audio buffer parameters
     for (auto& param : parameters) {
-        if (param.isBufferParameter() && param.usage == FF_USAGE_FFT) {
-            printf("Found FFT buffer parameter at index %d\n", param.index);
-            
-            // Store the FFT data in the parameter
-            param.setBufferData(fftData, binCount * sizeof(float));
-            
-            // Update elements for plugin access
-            param.elements.clear();
-            param.elements.reserve(binCount);
-            
-            for (size_t i = 0; i < binCount; i++) {
-                FFGLParameterElement element("bin" + std::to_string(i), fftData[i]);
-                param.elements.push_back(element);
+        if (param.isBufferParameter()) {
+            std::string lowerName = param.name;
+            std::transform(lowerName.begin(), lowerName.end(), lowerName.begin(), ::tolower);
+
+            if (param.usage == FF_USAGE_FFT ||
+                lowerName.find("fft") != std::string::npos ||
+                lowerName.find("spectrum") != std::string::npos) {
+
+                // Send FFT data
+                if (sendFFTDataToParameter(param.index, fftData, binCount)) {
+                    foundFFTParam = true;
+                }
+
+            } else if (param.usage == FF_USAGE_STANDARD ||
+                       lowerName.find("audio") != std::string::npos ||
+                       lowerName.find("waveform") != std::string::npos ||
+                       lowerName.find("sample") != std::string::npos) {
+
+                // Send raw audio data
+                if (sendAudioDataToParameter(param.index)) {
+                    foundAudioParam = true;
+                }
             }
-            
-            // Send buffer to plugin using standard parameter mechanism
-            SetParameterStruct paramData;
-            paramData.ParameterNumber = param.index;
-            paramData.NewParameterValue = FFGLUtils::PointerToFFMixed(const_cast<float*>(fftData));
-            
-            callPluginInstance(FF_SET_PARAMETER, FFGLUtils::PointerToFFMixed(&paramData));
-            param.bufferNeedsUpdate = true;
-            
-            printf("Successfully sent FFT data to parameter %d\n", param.index);
         }
+    }
+
+    if (!foundFFTParam && !foundAudioParam) {
+        printf("WARNING: No audio/FFT buffer parameters found\n");
     }
 }
 
@@ -1799,4 +1862,238 @@ void FFGLPlugin::fixParameterInfo(FFGLParameter& param) {
         param.currentValue = param.defaultValue;
     }
 }
+
+
+
+
+
+// Method 1: Set FFT elements directly (this is what the SDK expects)
+bool FFGLPluginInstance::setFFTElements(FFUInt32 paramIndex, const float* fftData, size_t binCount) {
+    // First check if this parameter has elements
+    FFMixed result = callPluginInstance(FF_GET_NUM_PARAMETER_ELEMENTS, FFGLUtils::UIntToFFMixed(paramIndex));
+
+    if (result.UIntValue == FF_FAIL || result.UIntValue == 0) {
+        printf("Parameter %d has no elements (result: %d)\n", paramIndex, result.UIntValue);
+        return false;
+    }
+
+    FFUInt32 numElements = result.UIntValue;
+
+    // Set individual elements for each FFT bin
+    size_t elementsToSet = std::min(binCount, std::min(size_t(numElements), size_t(512)));
+
+    for (size_t i = 0; i < elementsToSet; ++i) {
+        SetParameterElementValueStruct elementStruct;
+        elementStruct.ParameterNumber = paramIndex;
+        elementStruct.ElementNumber = static_cast<FFUInt32>(i);
+        elementStruct.NewParameterValue = FFGLUtils::FloatToFFMixed(fftData[i]);
+
+        FFMixed elementResult = callPluginInstance(FF_SET_PARAMETER_ELEMENT_VALUE,
+                                                   FFGLUtils::PointerToFFMixed(&elementStruct));
+
+        if (elementResult.UIntValue == FF_FAIL) {
+            if (i == 0) {
+                printf("Failed to set first element, stopping\n");
+                return false;
+            } else {
+                printf("Failed to set element %zu, continuing\n", i);
+            }
+        }
+    }
+
+    return true;
+}
+
+// Method 2: Set FFT buffer with proper structure
+bool FFGLPluginInstance::setFFTBuffer(FFUInt32 paramIndex, const float* fftData, size_t binCount) {
+    // Create a proper FFT data structure
+    struct FFTBufferStruct {
+        FFUInt32 numElements;
+        const float* data;
+        FFUInt32 sampleRate;
+    };
+
+    FFTBufferStruct fftBuffer;
+    fftBuffer.numElements = static_cast<FFUInt32>(binCount);
+    fftBuffer.data = fftData;
+    fftBuffer.sampleRate = 44100; // Default sample rate
+
+    SetParameterStruct paramData;
+    paramData.ParameterNumber = paramIndex;
+    paramData.NewParameterValue = FFGLUtils::PointerToFFMixed(&fftBuffer);
+
+    FFMixed result = callPluginInstance(FF_SET_PARAMETER, FFGLUtils::PointerToFFMixed(&paramData));
+
+    if (result.UIntValue == FF_SUCCESS) {
+        printf("FFT buffer set successfully using structured approach\n");
+        return true;
+    }
+
+    return false;
+}
+
+// Method 3: Legacy buffer approach
+bool FFGLPluginInstance::setFFTLegacy(FFUInt32 paramIndex, const float* fftData, size_t binCount) {
+    SetParameterStruct paramData;
+    paramData.ParameterNumber = paramIndex;
+    paramData.NewParameterValue = FFGLUtils::PointerToFFMixed(const_cast<float*>(fftData));
+
+    FFMixed result = callPluginInstance(FF_SET_PARAMETER, FFGLUtils::PointerToFFMixed(&paramData));
+
+    if (result.UIntValue == FF_SUCCESS) {
+        printf("FFT buffer set successfully using legacy approach\n");
+        return true;
+    }
+
+    return false;
+}
+
+
+// Simplified method to send FFT data to a parameter
+bool FFGLPluginInstance::sendFFTDataToParameter(FFUInt32 paramIndex, const float* fftData, size_t binCount) {
+    if (paramIndex >= parameters.size()) {
+        return false;
+    }
+
+    // Method 1: Try setting individual elements (for FFGL SDK plugins with element arrays)
+    FFMixed numElementsResult = callPluginInstance(FF_GET_NUM_PARAMETER_ELEMENTS,
+                                                   FFGLUtils::UIntToFFMixed(paramIndex));
+
+    if (numElementsResult.UIntValue != FF_FAIL && numElementsResult.UIntValue > 0) {
+        FFUInt32 numElements = numElementsResult.UIntValue;
+        size_t elementsToSet = numElements;
+
+        bool success = true;
+        for (size_t i = 0; i < elementsToSet; ++i) {
+            SetParameterElementValueStruct elementStruct;
+            elementStruct.ParameterNumber = paramIndex;
+            elementStruct.ElementNumber = static_cast<FFUInt32>(i);
+            elementStruct.NewParameterValue = FFGLUtils::FloatToFFMixed(fftData[i]);
+
+            FFMixed result = callPluginInstance(FF_SET_PARAMETER_ELEMENT_VALUE,
+                                                FFGLUtils::PointerToFFMixed(&elementStruct));
+
+            if (result.UIntValue == FF_FAIL) {
+                if (i == 0) {
+                    printf("Failed to set first element, aborting element method\n");
+                    success = false;
+                    break;
+                }
+                printf("Warning: Failed to set element %zu\n", i);
+            }
+        }
+
+        if (success) {
+            return true;
+        }
+    }
+
+    // Method 2: Try setting as buffer data directly
+    printf("Trying direct buffer approach\n");
+
+    SetParameterStruct paramData;
+    paramData.ParameterNumber = paramIndex;
+    paramData.NewParameterValue = FFGLUtils::PointerToFFMixed(const_cast<float*>(fftData));
+
+    FFMixed result = callPluginInstance(FF_SET_PARAMETER, FFGLUtils::PointerToFFMixed(&paramData));
+
+    if (result.UIntValue == FF_SUCCESS) {
+        printf("Successfully set FFT data using direct buffer method\n");
+        return true;
+    }
+
+    // Method 3: Try with buffer size information
+    printf("Trying buffer with size information\n");
+
+    struct FFTBuffer {
+        const float* data;
+        size_t size;
+    };
+
+    FFTBuffer buffer;
+    buffer.data = fftData;
+    buffer.size = binCount;
+
+    paramData.NewParameterValue = FFGLUtils::PointerToFFMixed(&buffer);
+    result = callPluginInstance(FF_SET_PARAMETER, FFGLUtils::PointerToFFMixed(&paramData));
+
+    if (result.UIntValue == FF_SUCCESS) {
+        printf("Successfully set FFT data using structured buffer method\n");
+        return true;
+    }
+
+    printf("All FFT methods failed for parameter %d\n", paramIndex);
+    return false;
+}
+
+
+
+// Store raw audio samples (called from audio thread)
+void FFGLPluginInstance::storeAudioSamples(const float* audioSamples, size_t sampleCount) {
+    std::lock_guard<std::mutex> lock(audioSamplesMutex);
+    latestAudioSamples.assign(audioSamples, audioSamples + sampleCount);
+    hasNewAudioSamples = true;
+}
+
+// Send raw audio samples to general buffer parameters
+bool FFGLPluginInstance::sendAudioDataToParameter(FFUInt32 paramIndex) {
+    std::lock_guard<std::mutex> lock(audioSamplesMutex);
+
+    if (!hasNewAudioSamples || latestAudioSamples.empty()) {
+        return false;
+    }
+
+    if (paramIndex >= parameters.size()) {
+        return false;
+    }
+
+    // Check how many elements this parameter expects
+    FFMixed numElementsResult = callPluginInstance(FF_GET_NUM_PARAMETER_ELEMENTS,
+                                                   FFGLUtils::UIntToFFMixed(paramIndex));
+
+    if (numElementsResult.UIntValue == FF_FAIL || numElementsResult.UIntValue == 0) {
+        return false;
+    }
+
+    FFUInt32 numElements = numElementsResult.UIntValue;
+    printf("Audio buffer parameter has %d elements, we have %zu samples\n",
+           numElements, latestAudioSamples.size());
+
+    // Prepare audio data for the buffer
+    std::vector<float> audioBuffer;
+    if (numElements > latestAudioSamples.size()) {
+        // Interpolate/repeat audio samples to fill buffer
+        audioBuffer.resize(numElements);
+        for (FFUInt32 i = 0; i < numElements; i++) {
+            float ratio = (float)i / (float)(numElements - 1);
+            size_t sourceIndex = (size_t)(ratio * (latestAudioSamples.size() - 1));
+            sourceIndex = std::min(sourceIndex, latestAudioSamples.size() - 1);
+            audioBuffer[i] = latestAudioSamples[sourceIndex];
+        }
+    } else {
+        // Use a subset of audio samples
+        audioBuffer.assign(latestAudioSamples.begin(),
+                           latestAudioSamples.begin() + std::min((size_t)numElements, latestAudioSamples.size()));
+    }
+
+    // Set all elements
+    for (FFUInt32 i = 0; i < numElements && i < audioBuffer.size(); i++) {
+        SetParameterElementValueStruct elementStruct;
+        elementStruct.ParameterNumber = paramIndex;
+        elementStruct.ElementNumber = i;
+        elementStruct.NewParameterValue = FFGLUtils::FloatToFFMixed(audioBuffer[i]);
+
+        FFMixed result = callPluginInstance(FF_SET_PARAMETER_ELEMENT_VALUE,
+                                            FFGLUtils::PointerToFFMixed(&elementStruct));
+
+        if (result.UIntValue == FF_FAIL && i == 0) {
+            return false;
+        }
+    }
+
+    return true;
+}
+
+
+
 

@@ -3400,24 +3400,46 @@ void onestepfrom(bool stage, Node *node, Node *prevnode, GLuint prevfbotex, GLui
                 if (lay->ffglparams[i]->type == FF_TYPE_BUFFER) {
                 }
                 else if (lay->ffglparams[i]->type == FF_TYPE_OPTION) {
-                    instance->setParameter(i, instance->parameters[i].elements[lay->ffglparams[i]->value].value);
+                    float optionValue = lay->ffglparams[i]->value;
+                    instance->setParameter(i, optionValue);
+
+                    // Debug: Check what the plugin reports back
+                    float pluginValue = instance->getParameterFloat(i);
+                    printf("Set option parameter %d to %.0f, plugin reports: %.0f\n",
+                           i, optionValue, pluginValue);
+                    //instance->setParameter(i, lay->ffglparams[i]->value);
                 }
                 else if (lay->ffglparams[i]->type == FF_TYPE_TEXT || lay->ffglparams[i]->type == FF_TYPE_FILE) {
                     instance->setParameter(i, FFGLUtils::PointerToFFMixed(lay->ffglparams[i]->valuechar));
                 }
+                else if (lay->ffglparams[i]->type == FF_TYPE_EVENT) {
+                    if (lay->ffglparams[i]->value == 1.0f) {
+                        instance->setParameter(i, lay->ffglparams[i]->value);
+                    }
+                    lay->ffglparams[i]->value = 0.0f;
+                }
                 else {
                     instance->setParameter(i, lay->ffglparams[i]->value);
                 }
-                if (lay->ffglparams[i]->type == FF_TYPE_EVENT) {
-                    lay->ffglparams[i]->value = 0.0f;
+            }
+
+            bool hasBufferParams = false;
+            for (const auto &param: instance->getParameters()) {
+                if (param.isBufferParameter()) {
+                    hasBufferParams = true;
+                    break;
                 }
             }
-            
-            static float effectTime = 0.0f;
-            static auto lastFrame = std::chrono::high_resolution_clock::now();
 
-            float currentTime = EffectTimer::getTime(); // Starts from 0.0
-            instance->setTime(effectTime);
+            if (!hasBufferParams) {
+                static float effectTime = 0.0f;
+                static auto lastFrame = std::chrono::high_resolution_clock::now();
+
+                float currentTime = EffectTimer::getTime(); // Starts from 0.0
+                instance->setTime(effectTime);
+            }
+
+            instance->applyStoredAudioData();
 
             instance->processFrame({infbo}, outfbo);
         }
@@ -4956,12 +4978,12 @@ void the_loop() {
                 mainmix->layers[i] = oldlayers;
                 mainmix->reconnect_all(mainmix->layers[i]);
                 // transfer current layer settings to new layer
-                //Layer *cl = mainmix->currlay[!mainprogram->prevmodus];
-                //Layer *newcl = mainmix->layers[i][cl->pos];
-                //mainmix->change_currlay(cl, newcl);
-                //if (newcl == cl) {
-                //    mainprogram->effcat[newcl->deck]->value = newcl->effcat;
-                //}
+                Layer *cl = mainmix->currlay[!mainprogram->prevmodus];
+                Layer *newcl = mainmix->layers[i][cl->pos];
+                mainmix->change_currlay(cl, newcl);
+                if (newcl == cl) {
+                    mainprogram->effcat[newcl->deck]->value = newcl->effcat;
+                }
             }
             tempmap->clear();
         }

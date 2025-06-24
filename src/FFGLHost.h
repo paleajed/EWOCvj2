@@ -282,6 +282,15 @@ private:
     bool initialized;
     FFGLViewportStruct currentViewport;
 
+    std::chrono::high_resolution_clock::time_point pluginStartTime;
+    bool timeInitialized;
+    std::mutex audioDataMutex;
+    std::vector<float> latestFFTData;
+    bool hasNewAudioData;
+    std::vector<float> latestAudioSamples;
+    std::mutex audioSamplesMutex;
+    bool hasNewAudioSamples = false;
+
 public:
     std::vector<FFGLParameter> parameters;
 
@@ -342,10 +351,21 @@ public:
     const FFGLPlugin* getParentPlugin() const { return parentPlugin; }
     const FFGLViewportStruct& getViewport() const { return currentViewport; }
 
-private:
-    void copyParametersFromTemplate();
-    void updateParameterFromEvents();
-    FFMixed callPluginInstance(FFUInt32 functionCode, FFMixed inputValue) const;
+    void storeAudioData(const float* fftData, size_t binCount);
+    void applyStoredAudioData();
+    bool sendFFTToSDKParameter(FFUInt32 paramIndex, const float* fftData, size_t binCount);
+    bool setFFTElements(FFUInt32 paramIndex, const float* fftData, size_t binCount);
+    bool setFFTBuffer(FFUInt32 paramIndex, const float* fftData, size_t binCount);
+    bool setFFTLegacy(FFUInt32 paramIndex, const float* fftData, size_t binCount);
+    bool sendFFTDataToParameter(FFUInt32 paramIndex, const float* fftData, size_t binCount);
+    void storeAudioSamples(const float* audioSamples, size_t sampleCount);
+    bool sendAudioDataToParameter(FFUInt32 paramIndex);
+
+    private:
+        void copyParametersFromTemplate();
+        void updateParameterFromEvents();
+        FFMixed callPluginInstance(FFUInt32 functionCode, FFMixed inputValue) const;
+
 };
 
 class FFGLHost {

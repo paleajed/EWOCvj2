@@ -10968,27 +10968,25 @@ SDL_Window* Program::grab_from_winpool(int w, int h) {
 
 
 
+/////////    AUDIO REACTIVITY
 
-//  ONSET DETECTION
 void Program::init_audio(const char* device) {
     // Set the desired audio specification
     SDL_AudioSpec desiredSpec;
-    SDL_zero(desiredSpec);           // Initialize the structure to zero
-    desiredSpec.freq = 44100;         // Sample rate
-    desiredSpec.format = AUDIO_F32SYS; // Float 32-bit format
-    desiredSpec.channels = 1;         // Mono audio
-    desiredSpec.samples = 1024;       // Buffer size
+    SDL_zero(desiredSpec);
+    desiredSpec.freq = 44100;
+    desiredSpec.format = AUDIO_F32SYS;
+    desiredSpec.channels = 1;
+    desiredSpec.samples = 1024;  // Input buffer size
 
-    // Structure to hold the actual obtained audio specification
     SDL_AudioSpec obtainedSpec;
 
-    // Open the audio capture device
     this->audeviceid = SDL_OpenAudioDevice(
-            this->audevice.c_str(),            // Use the default device
-            1,               // Set to 1 for recording (capture) mode
-            &desiredSpec,    // Desired audio spec
-            &obtainedSpec,   // Obtain actual spec here
-            0                // Allow changes to spec if needed
+            this->audevice.c_str(),
+            1,
+            &desiredSpec,
+            &obtainedSpec,
+            0
     );
 
     if (this->audeviceid == 0) {
@@ -11003,18 +11001,12 @@ void Program::init_audio(const char* device) {
     this->ausamples = obtainedSpec.samples;
     this->aubuffersize = obtainedSpec.samples * SDL_AUDIO_BITSIZE(obtainedSpec.format) / 8 * obtainedSpec.channels;
 
-    // Use the actual sample count for FFT size instead of fixed 512
-    int fft_size = this->ausamples; // Use actual audio buffer size (1024)
-
-    // Allocate FFT output: for real-to-complex FFT, output size is (N/2 + 1)
-    this->auoutsize = fft_size / 2 + 1;  // Number of complex elements, not bytes
-    this->auout = (fftw_complex*) fftw_malloc(sizeof(fftw_complex) * this->auoutsize);
-
-    // Allocate buffers with correct sizes
+    // NEW: Use 4096 FFT size to get 2048 output bins + 1 = 2049 complex elements
+    int fft_size = 4096;
+    this->auout = (fftw_complex*) fftw_malloc(sizeof(fftw_complex) * (fft_size / 2 + 1));
+    this->auoutsize = sizeof(float) * 2 * (fft_size / 2 + 1);  // Keep for beat detection compatibility
     this->aubuffer = (float*) malloc(this->aubuffersize);
-    this->auin = (double*) fftw_malloc(sizeof(double) * fft_size);
-
-    // Create FFT plan with matching size
+    this->auin = (double*) fftw_malloc(sizeof(double) * fft_size);  // 4096 samples
     this->auplan = fftw_plan_dft_r2c_1d(fft_size, this->auin, this->auout, FFTW_ESTIMATE);
 
     this->auinitialized = true;
@@ -11029,30 +11021,33 @@ void Program::process_audio() {
     this->beatdet = new BeatDetektor((float)mainprogram->minbpm, (float)mainprogram->minbpm * 2, nullptr);
     this->austarttime = std::chrono::high_resolution_clock::now();
 
-
     float sumavg;
     int cnt = 0;
     double max = 0.0f;
     double top = 0.0f;
+
     while (true) {
         if (!this->auinitialized) continue;
         int bytesRead = SDL_DequeueAudio(this->audeviceid, this->aubuffer, this->aubuffersize);
         if (bytesRead > 0) {
-            // Process the audio data in `buffer`
-            //int num_samples = frame->nb_samples;
+            // Store normalized audio samples for FFGL audio buffers
+            std::vector<float> audioSamples;
+            audioSamples.reserve(this->ausamples);
 
-            // get volume peak for testing against beatthreshold
+            // Process audio input - separate processing for beat detection vs FFGL
             for (int i = 0; i < this->ausamples; i++) {
-                this->auin[i] = this->aubuffer[i] / 32768.0; // Normalize to [-1, 1]
+                // Store normalized version for FFGL plugins
+                audioSamples.push_back(this->aubuffer[i] / 32768.0f);
+
+                // For beat detection: use RAW values (original approach)
+                this->auin[i] = this->aubuffer[i]; // NO normalization for beat detection
                 max = std::max(std::abs(this->auin[i]), max);
             }
 
-            // Debug: Check input audio
-            float maxAudio = 0.0f;
-            for (int i = 0; i < this->ausamples; i++) {
-                maxAudio = std::max(maxAudio, std::abs((float)this->auin[i]));
+            // Zero-pad to 4096 samples for FFT
+            for (int i = this->ausamples; i < 4096; i++) {
+                this->auin[i] = 0.0;
             }
-            printf("Max audio input value: %.8f\n", maxAudio);
 
             if (cnt == 40) {
                 top = max;
@@ -11061,93 +11056,129 @@ void Program::process_audio() {
             }
             cnt++;
 
-            // Perform FFT
+            // Perform single 4096-sample FFT for both beat detection and FFGL
             fftw_execute(this->auplan);
 
-            // Debug: Check raw FFT output
-            printf("Raw FFT output: out[0]=[%.6f,%.6f], out[1]=[%.6f,%.6f], out[10]=[%.6f,%.6f]\n",
-                   this->auout[0][0], this->auout[0][1],
-                   this->auout[1][0], this->auout[1][1],
-                   this->auout[10][0], this->auout[10][1]);
-
+            // Beat detection processing (original approach)
             this->auoutfloat.clear();
-            for (int i = 0; i < this->auoutsize; i+=2) {
-                this->auoutfloat.push_back((float)(this->auout[i][0])); // Real part
-                this->auoutfloat.push_back((float)(this->auout[i][1])); // Imaginary part
+            for (int i = 0; i < this->auoutsize; i += 2) {
+                this->auoutfloat.push_back((float)(this->auout[i][0]));
+                this->auoutfloat.push_back((float)(this->auout[i][1]));
             }
 
+            // Time calculation
             auto time = std::chrono::high_resolution_clock::now();
             std::chrono::duration<double> elapsed;
             elapsed = std::chrono::duration_cast<std::chrono::duration<double>>(
                     time - this->austarttime);
             this->autime = std::chrono::duration_cast<std::chrono::milliseconds>(elapsed).count();
 
+            // Beat detection
             this->beatdet->process((float)this->autime / 1000.0f, this->auoutfloat);
 
-            // Debug: Check beat detection FFT data
-            if (!this->auoutfloat.empty()) {
-                float maxBeatFFT = 0.0f;
-                for (size_t i = 0; i < std::min(this->auoutfloat.size(), (size_t)20); i++) {
-                    maxBeatFFT = std::max(maxBeatFFT, std::abs(this->auoutfloat[i]));
-                }
-                printf("Beat detection FFT data max: %.6f, first few: %.6f %.6f %.6f\n",
-                       maxBeatFFT, this->auoutfloat[0],
-                       this->auoutfloat.size() > 1 ? this->auoutfloat[1] : 0.0f,
-                       this->auoutfloat.size() > 2 ? this->auoutfloat[2] : 0.0f);
+            // Create 2048 FFT magnitudes with logarithmic frequency mapping
+            // But normalize the FFT input for FFGL (not for beat detection)
+            std::vector<float> fftMagnitudes(2048, 0.0f);
+
+            // Create normalized FFT for FFGL (separate from beat detection FFT)
+            fftw_complex* ffglFFTOut = (fftw_complex*) fftw_malloc(sizeof(fftw_complex) * (4096 / 2 + 1));
+            double* normalizedAudioFFT = (double*) fftw_malloc(sizeof(double) * 4096);
+
+            // Fill with normalized audio for FFGL FFT
+            for (int i = 0; i < this->ausamples; i++) {
+                normalizedAudioFFT[i] = this->aubuffer[i] / 32768.0; // Normalized
+            }
+            for (int i = this->ausamples; i < 4096; i++) {
+                normalizedAudioFFT[i] = 0.0;
             }
 
-            // Send audio and FFT data to all FFGL plugin instances with buffer parameters
+            fftw_plan ffglPlan = fftw_plan_dft_r2c_1d(4096, normalizedAudioFFT, ffglFFTOut, FFTW_ESTIMATE);
+            fftw_execute(ffglPlan);
+
+            // Calculate linear FFT from normalized data
+            std::vector<float> linearFFT;
+            for (int i = 0; i < 2048; i++) {
+                float real = (float)ffglFFTOut[i][0];
+                float imag = (float)ffglFFTOut[i][1];
+                float magnitude = sqrt(real * real + imag * imag);
+                magnitude *= 100.0f;  // Scale for FFGL plugins
+                linearFFT.push_back(magnitude);
+            }
+
+            // Clean up FFGL FFT
+            fftw_destroy_plan(ffglPlan);
+            fftw_free(ffglFFTOut);
+            fftw_free(normalizedAudioFFT);
+
+            // Map linear frequency bins to logarithmic distribution
+            for (int i = 0; i < 2048; i++) {
+                // Logarithmic frequency mapping
+                float logRatio = (float)i / 2047.0f; // 0.0 to 1.0
+
+                // Map to logarithmic frequency range (20Hz to 22kHz)
+                float minFreq = 20.0f;    // 20 Hz
+                float maxFreq = 22000.0f; // 22 kHz
+                float targetFreq = minFreq * pow(maxFreq / minFreq, logRatio);
+
+                // Convert target frequency back to linear bin index
+                int sourceBin = (int)(targetFreq * 2048.0f / 22050.0f); // 22050 = sample_rate/2
+                sourceBin = std::min(sourceBin, 2047);
+
+                fftMagnitudes[i] = linearFFT[sourceBin];
+            }
+
+            // Now the frequency ranges are much more realistic:
+            // Bass (0-682): ~20Hz-200Hz (actual bass)
+            // Mid (683-1364): ~200Hz-2kHz (vocals, mids)
+            // High (1365-2047): ~2kHz-22kHz (actual highs)
+
+            // Debug frequency distribution with 2048 bins
+            float bassSum = 0, midSum = 0, highSum = 0;
+            int bassCount = 0, midCount = 0, highCount = 0;
+            int bassSep = 2048 / 3;   // 682
+            int highSep = bassSep * 2; // 1365
+
+            for (int i = 0; i < 2048; i++) {
+                if (i < bassSep) {
+                    bassSum += fftMagnitudes[i];
+                    bassCount++;
+                } else if (i >= bassSep && i < highSep) {
+                    midSum += fftMagnitudes[i];
+                    midCount++;
+                } else {
+                    highSum += fftMagnitudes[i];
+                    highCount++;
+                }
+            }
+
+            float bassAvg = bassCount > 0 ? bassSum / bassCount : 0;
+            float midAvg = midCount > 0 ? midSum / midCount : 0;
+            float highAvg = highCount > 0 ? highSum / highCount : 0;
+
+            printf("Mapped FFT (2048 bins) - Bass(0-%d): %.6f, Mid(%d-%d): %.6f, High(%d-2047): %.6f\n",
+                   bassSep-1, bassAvg, bassSep, highSep-1, midAvg, highSep, highAvg);
+
+            // Send both FFT and raw audio data to FFGL plugins
             for (size_t i = 0; i < this->ffglinstances.size(); ++i) {
                 for (size_t j = 0; j < this->ffglinstances[i].size(); ++j) {
                     auto& instance = this->ffglinstances[i][j];
                     if (instance && instance->isInitialized()) {
-                        const auto& parameters = instance->getParameters();
-
-                        // Convert beat interval to BPM
                         float bpm = 60.0f / this->beatdet->winning_bpm;
-
-                        // Calculate bar phase (0.0 to 1.0 within each bar)
                         float beatsPerBar = 4.0f;
                         float barPhase = fmod(this->beatdet->beat_counter / beatsPerBar, 1.0f);
 
-                        // Send beat info
                         instance->setBeatInfo(bpm, barPhase);
 
-                        // Create magnitude spectrum for FFGL plugins
-                        std::vector<float> fftMagnitudes;
-                        fftMagnitudes.reserve(512);
+                        // Store FFT data for frequency-based plugins
+                        instance->storeAudioData(fftMagnitudes.data(), fftMagnitudes.size());
 
-                        // Convert complex pairs to magnitudes
-                        for (size_t k = 0; k < this->auoutfloat.size(); k += 2) {
-                            float real = this->auoutfloat[k];
-                            float imag = this->auoutfloat[k + 1];
-
-                            // Calculate magnitude
-                            float magnitude = sqrt(real * real + imag * imag);
-
-                            // Apply boost for visualization
-                            magnitude = magnitude * 1000.0f;
-
-                            // Clamp to reasonable range
-                            if (magnitude > 1.0f) magnitude = 1.0f;
-
-                            fftMagnitudes.push_back(magnitude);
-
-                            // Stop at 512 values
-                            if (fftMagnitudes.size() >= 512) break;
-                        }
-
-                        // Pad to exactly 512 if needed
-                        while (fftMagnitudes.size() < 512) {
-                            fftMagnitudes.push_back(0.0f);
-                        }
-
-                        // Send audio data to plugin (handles both buffer parameters and SDK audio system)
-                        instance->sendAudioData(fftMagnitudes.data(), 512);
+                        // Store raw audio samples for waveform-based plugins
+                        instance->storeAudioSamples(audioSamples.data(), audioSamples.size());
                     }
                 }
             }
 
+            // ORIGINAL LOOP STATION AND LAYER LOGIC
             LoopStation *lpst;
             int counter = this->beatdet->beat_counter;
             for (int m = 0; m < 2; ++m) {
@@ -11158,7 +11189,6 @@ void Program::process_audio() {
                 }
                 for (auto elem: lpst->elements) {
                     if (elem->beats) {
-                        // loopstation element uses beat detection
                         int counter2 = counter / elem->beats;
                         elem->speed->value = elem->totaltime / (1000.0f * this->beatdet->winning_bpm) / elem->beats;
                         if (top < std::pow(mainprogram->beatthres->value, 4)) {
@@ -11178,7 +11208,6 @@ void Program::process_audio() {
             for (auto lays : mainmix->layers) {
                 for (auto lay : lays) {
                     if (lay->beats && lay->beatdetbut->value) {
-                        // layer queue switching is beatmatched
                         int counter2 = counter / lay->beats;
                         if (top < std::pow(mainprogram->beatthres->value, 4)) {
                             // music peak too low: dont switch clip
@@ -11191,7 +11220,7 @@ void Program::process_audio() {
             }
             this->aubpmcounter = counter;
         } else {
-            SDL_Delay(10);  // Wait a bit if no data is available
+            SDL_Delay(10);
         }
     }
 }

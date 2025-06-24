@@ -505,6 +505,7 @@ void Param::handle(bool smallxpad) {
                         this->box->acolor[0] = 0.3f;
                         this->box->acolor[1] = 0.8f;
                         this->box->acolor[2] = 0.4f;
+                        mainprogram->leftmouse = false;
                     }
                 } else if (this->type == FF_TYPE_OPTION) {
                     if (mainprogram->leftmouse && !mainprogram->menuondisplay) {
@@ -5535,7 +5536,15 @@ void Layer::display() {
                     sx1 = box->scrcoords->x1 + mainprogram->xvtxtoscr(0.0375f);
                     sy1 = this->opacity->box->scrcoords->y1;
                     vx1 = box->vtxcoords->x1 + 0.0375f;
-                    vy1 = 1 - mainprogram->layh - 0.375f - (this->numrows - 1) * (this->ffglsourcenr != -1) * 0.075f - (this->blendnode->numrows - 1) * (this->blendnode->ffglmixernr != -1) * 0.075f;
+                    if (this->ffglsourcenr != -1) {
+                        vy1 = this->sourcebox->vtxcoords->y1 -
+                              (this->numrows - 1) * (this->ffglsourcenr != -1) * 0.075f;
+                    } else if (this->ffglsourcenr != -1) {
+                        vy1 = this->blendnode->mixerbox->vtxcoords->y1 -
+                              (this->blendnode->numrows - 1) * (this->blendnode->ffglmixernr != -1) * 0.075f;
+                    } else {
+                        vy1 = 1 - mainprogram->layh - 0.375f;
+                    }
                 }
                 if (!mainprogram->menuondisplay) {
                     if (sy1 - 7.5 <= mainprogram->my && mainprogram->my <= sy1 + 7.5) {
