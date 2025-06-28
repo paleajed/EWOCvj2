@@ -19,6 +19,7 @@
 #include <windows.h>
 #endif
 #include "FFGLHost.h"
+#include "ISFLoader.h"
 
 #ifdef WINDOWS
 #include "direnthwin/dirent.h"
@@ -212,7 +213,7 @@ class Project {
         void autosave();
 		void save(std::string path, bool autosave = false, bool undo = false, bool nocheck = false);
         void save_as();
-        void wait_for_copyover();
+        void wait_for_copyover(bool undo);
 private:
         bool copyingover = false;
         std::mutex copyovermutex;
@@ -476,7 +477,7 @@ class Program {
 		Menu *laymenu1 = nullptr;
 		Menu *laymenu2 = nullptr;
         Menu* newlaymenu = nullptr;
-        Menu* ffglsourcemenu = nullptr;
+        Menu* sourcemenu = nullptr;
 		Menu* clipmenu = nullptr;
 		Menu *aspectmenu = nullptr;
         Menu *monitormenu = nullptr;
@@ -578,6 +579,7 @@ class Program {
         std::string fontpath;
         std::string contentpath;
         std::string ffgldir;
+        std::string isfdir;
 		std::string path;
 		std::vector<std::string> paths;
 		int counting = 0;
@@ -1013,6 +1015,12 @@ class Program {
         GLuint alphagradienttex;
         GLuint alphagradientfbo;
 
+        ISFLoader isfloader;
+        std::vector<std::string> isfeffectnames;
+        std::vector<std::string> isfsourcenames;
+        std::vector<std::string> isfmixernames;
+        std::vector<std::vector<ISFShaderInstance*>> isfinstances;
+
     void remove_ec(std::string filepath, std::error_code& ec);
         void remove(std::string filepath);
 		int quit_requester();
@@ -1254,7 +1262,7 @@ void set_live_base(Layer *lay, std::string livename);
 
 extern void set_queueing(bool onoff);
 
-extern Effect* new_effect(Layer *lay, EFFECT_TYPE type, int ffglnr);
+extern Effect* new_effect(Layer *lay, EFFECT_TYPE type, int ffglnr, int isfnr);
 
 extern bool exists(std::string name);
 extern std::string dirname(std::string pathname);

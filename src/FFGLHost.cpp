@@ -1102,11 +1102,7 @@ float FFGLPluginInstance::getParameterFloat(FFUInt32 paramIndex) const {
         FFMixed result = callPluginInstance(FF_GET_PARAMETER, FFGLUtils::UIntToFFMixed(9)); // select parameter
         if (result.UIntValue != FF_FAIL) {
             float pluginInternalValue = FFGLUtils::FFMixedToFloat(result);
-            printf("Plugin's internal select value: %.0f\n", pluginInternalValue);
         }
-
-// Also try getting it as UInt:
-        printf("Plugin's internal select as UInt: %d\n", result.UIntValue);
 
         float floatValue = FFGLUtils::FFMixedToFloat(result);
         return floatValue;  // This should be 2.0, not 1065353216
@@ -1327,31 +1323,20 @@ void FFGLPluginInstance::sendAudioData(const float* fftData, size_t binCount) {
         return;
     }
 
-    printf("sendAudioData: binCount=%zu, max=%.6f\n", binCount,
-           *std::max_element(fftData, fftData + binCount));
-
     bool foundFFTParam = false;
     bool foundAudioParam = false;
 
     // Look for both FFT and general audio buffer parameters
     for (auto& param : parameters) {
         if (param.isBufferParameter()) {
-            std::string lowerName = param.name;
-            std::transform(lowerName.begin(), lowerName.end(), lowerName.begin(), ::tolower);
-
-            if (param.usage == FF_USAGE_FFT ||
-                lowerName.find("fft") != std::string::npos ||
-                lowerName.find("spectrum") != std::string::npos) {
+            if (param.usage == FF_USAGE_FFT) {
 
                 // Send FFT data
                 if (sendFFTDataToParameter(param.index, fftData, binCount)) {
                     foundFFTParam = true;
                 }
 
-            } else if (param.usage == FF_USAGE_STANDARD ||
-                       lowerName.find("audio") != std::string::npos ||
-                       lowerName.find("waveform") != std::string::npos ||
-                       lowerName.find("sample") != std::string::npos) {
+            } else if (param.usage == FF_USAGE_STANDARD) {
 
                 // Send raw audio data
                 if (sendAudioDataToParameter(param.index)) {
@@ -1359,10 +1344,6 @@ void FFGLPluginInstance::sendAudioData(const float* fftData, size_t binCount) {
                 }
             }
         }
-    }
-
-    if (!foundFFTParam && !foundAudioParam) {
-        printf("WARNING: No audio/FFT buffer parameters found\n");
     }
 }
 

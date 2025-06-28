@@ -34,6 +34,8 @@ add_executable(EWOCvj2 WIN32
         BeatDetektor.h
         FFGLHost.h
         FFGLHost.cpp
+        ISFLoader.h
+        ISFLoader.cpp
 )
 
 set(Boost_USE_STATIC_RUNTIME ON)

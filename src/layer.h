@@ -120,7 +120,7 @@ class Layer {
         bool soloing = false;
         bool keepeffing = false;
         bool beatdetting = false;
-        int beats = 0;
+        int beats = 1;
         bool displaynextclip = false;
 		bool mousequeue = false;
 		int numefflines[2] = {0,0};
@@ -236,7 +236,9 @@ class Layer {
         GLuint texture = -1;
         GLuint oldtexture = -1;
         GLuint fbotex = -1;
-		GLuint fbo = -1;
+        GLuint fbo = -1;
+        GLuint tempfbotex = -1;
+        GLuint tempfbo = -1;
         GLuint minitex;
 		GLuint texpos = 0;
 		GLuint vbuf;
@@ -331,15 +333,19 @@ class Layer {
         std::set<std::vector<float>> lpstcolors;
 
         int ffglsourcenr = -1;
-        int instancenr = -1;
+        int ffglinstancenr = -1;
         std::vector<Param*> ffglparams;
+        int isfsourcenr = -1;
+        int isfpluginnr = -1;
+        int isfinstancenr = -1;
+        std::vector<Param*> isfparams;
         int numrows = 0;
         Boxx *sourcebox;
 
         void display();
-		Effect* add_effect(EFFECT_TYPE type, int pos, bool cat, int ffglnr = -1);
-        Effect* do_add_effect(EFFECT_TYPE type, int pos, bool comp, bool cat, int ffglnr = -1);
-        Effect* replace_effect(EFFECT_TYPE type, int pos, int ffglnr = -1);
+		Effect* add_effect(EFFECT_TYPE type, int pos, bool cat, int ffglnr = -1, int isfnr = -1);
+        Effect* do_add_effect(EFFECT_TYPE type, int pos, bool comp, bool cat, int ffglnr = -1, int isfnr = -1);
+        Effect* replace_effect(EFFECT_TYPE type, int pos, int ffglnr = -1, int isfnr = -1);
 		void delete_effect(int pos, bool connect = true);
 		void inhibit();
 		std::vector<Effect*>& choose_effects();
@@ -366,7 +372,8 @@ class Layer {
         Layer* transfer(bool clones = true, bool dontdeleffs = false, bool exchange = true, bool image = false);
         void transfer_cloneset_to(Layer *lay);
         void exchange_in_cloneset_by(Layer *lay, bool open = true);
-        void set_source(int sourcenr);
+        void set_ffglsource(int sourcenr);
+        void set_isfsource(std::string sourcename);
         Layer* next();
 		Layer* prev();
         Layer();

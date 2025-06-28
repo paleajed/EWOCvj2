@@ -3138,7 +3138,7 @@ void onestepfrom(bool stage, Node *node, Node *prevnode, GLuint prevfbotex, GLui
 			}
 
            glActiveTexture(GL_TEXTURE0);
-			if (effect->fbo == -1) {
+            if (effect->fbo == -1) {
                 do {
                     if (effect->fbo != -1) {
                         glDeleteFramebuffers(1, &effect->fbo);
@@ -3179,31 +3179,73 @@ void onestepfrom(bool stage, Node *node, Node *prevnode, GLuint prevfbotex, GLui
                     glBindFramebuffer(GL_FRAMEBUFFER, effect->fbo);
                     glFramebufferTexture2D(GL_FRAMEBUFFER, GL_COLOR_ATTACHMENT0, GL_TEXTURE_2D, effect->fbotex, 0);
                 } while (glCheckFramebufferStatus(GL_FRAMEBUFFER) != GL_FRAMEBUFFER_COMPLETE);
-			}
-			GLuint down = glGetUniformLocation(mainprogram->ShaderProgram, "down");
+            }
+
+            if (effect->tempfbo == -1) {
+                do {
+                    if (effect->tempfbo != -1) {
+                        glDeleteFramebuffers(1, &effect->tempfbo);
+                    }
+                    if (effect->tempfbotex != -1) {
+                        glDeleteTextures(1, &effect->tempfbotex);
+                    }
+                    GLuint rettex;
+                    if (stage == 0) {
+                        rettex = mainprogram->grab_from_texpool(mainprogram->ow[0], mainprogram->oh[0], GL_RGBA8);
+                    } else {
+                        rettex = mainprogram->grab_from_texpool(mainprogram->ow[1], mainprogram->oh[1], GL_RGBA8);
+                    }
+                    if (rettex != -1) {
+                        effect->tempfbotex = rettex;
+                    } else {
+                        glGenTextures(1, &(effect->tempfbotex));
+                        glBindTexture(GL_TEXTURE_2D, effect->tempfbotex);
+                        glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR);
+                        glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
+                        glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_BORDER);
+                        glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_BORDER);
+                        if (stage == 0) {
+
+                            glTexStorage2D(GL_TEXTURE_2D, 1, GL_RGBA8, mainprogram->ow[0], mainprogram->oh[0]);
+                        } else {
+                            glTexStorage2D(GL_TEXTURE_2D, 1, GL_RGBA8, mainprogram->ow[1], mainprogram->oh[1]);
+                        }
+                        mainprogram->texintfmap[effect->tempfbotex] = GL_RGBA8;
+                    }
+                    GLuint retfbo;
+                    retfbo = mainprogram->grab_from_fbopool();
+                    if (retfbo != -1) {
+                        effect->tempfbo = retfbo;
+                    } else {
+                        glGenFramebuffers(1, &(effect->tempfbo));
+                    }
+                    glBindFramebuffer(GL_FRAMEBUFFER, effect->tempfbo);
+                    glFramebufferTexture2D(GL_FRAMEBUFFER, GL_COLOR_ATTACHMENT0, GL_TEXTURE_2D, effect->tempfbotex, 0);
+                } while (glCheckFramebufferStatus(GL_FRAMEBUFFER) != GL_FRAMEBUFFER_COMPLETE);
+            }
+
+            GLuint down = glGetUniformLocation(mainprogram->ShaderProgram, "down");
             if (effect->type == EDGEDETECT) {
                 glUniform1i(down, 1);
-            }
-            else if (effect->onoffbutton->value){
+            } else if (effect->onoffbutton->value) {
                 glUniform1i(interm, 1);
-            }
-            else {
+            } else {
                 glUniform1i(down, 1);
             }
-			GLfloat opacity = glGetUniformLocation(mainprogram->ShaderProgram, "opacity");
-			if (effect->node == (EffectNode*)(effect->layer->lasteffnode[0])) {
-				glUniform1f(opacity, effect->layer->opacity->value);
-			}
-			else glUniform1f(opacity, 1.0f);
+            GLfloat opacity = glGetUniformLocation(mainprogram->ShaderProgram, "opacity");
+            if (effect->node == (EffectNode *) (effect->layer->lasteffnode[0])) {
+                glUniform1f(opacity, effect->layer->opacity->value);
+            } else
+                glUniform1f(opacity, 1.0f);
 
-			glBindFramebuffer(GL_FRAMEBUFFER, effect->fbo);
-			glDrawBuffer(GL_COLOR_ATTACHMENT0);
-			if (stage) glViewport(0, 0, mainprogram->ow[1], mainprogram->oh[1]);
-			else glViewport(0, 0, mainprogram->ow[0], mainprogram->oh[0]);
-			glClearColor( 0.f, 0.f, 0.f, 0.f );
-			glClear(GL_COLOR_BUFFER_BIT);
+            glBindFramebuffer(GL_FRAMEBUFFER, effect->fbo);
+            glDrawBuffer(GL_COLOR_ATTACHMENT0);
+            if (stage) glViewport(0, 0, mainprogram->ow[1], mainprogram->oh[1]);
+            else glViewport(0, 0, mainprogram->ow[0], mainprogram->oh[0]);
+            glClearColor(0.f, 0.f, 0.f, 0.f);
+            glClear(GL_COLOR_BUFFER_BIT);
 
-			Layer *lay = effect->layer;
+            Layer *lay = effect->layer;
 
             float sx = 0.0f;
             float sy = 0.0f;
@@ -3215,8 +3257,8 @@ void onestepfrom(bool stage, Node *node, Node *prevnode, GLuint prevfbotex, GLui
                 sc = lay->scale->value;
                 op = lay->opacity->value;
             }
-            if (effect->ffglnr != -1) {
-                auto instance = mainprogram->ffglinstances[effect->ffglnr][effect->instancenr];
+            if (effect->ffglnr != -1 && effect->onoffbutton->value) {
+                auto instance = mainprogram->ffglinstances[effect->ffglnr][effect->ffglinstancenr];
 
                 FFGLFramebuffer infbo;
                 infbo.fbo = prevfbo;
@@ -3224,19 +3266,17 @@ void onestepfrom(bool stage, Node *node, Node *prevnode, GLuint prevfbotex, GLui
                 infbo.width = mainprogram->ow[stage];
                 infbo.height = mainprogram->oh[stage];
                 FFGLFramebuffer outfbo;
-                outfbo.fbo = effect->fbo;
-                outfbo.colorTexture = effect->fbotex;
+                outfbo.fbo = effect->tempfbo;
+                outfbo.colorTexture = effect->tempfbotex;
                 outfbo.width = mainprogram->ow[stage];
                 outfbo.height = mainprogram->oh[stage];
 
                 for (int i = 0; i < instance->parameters.size(); i++) {
                     if (effect->params[i]->type == FF_TYPE_OPTION) {
                         instance->setParameter(i, instance->parameters[i].elements[effect->params[i]->value].value);
-                    }
-                    else if (effect->params[i]->type == FF_TYPE_TEXT || effect->params[i]->type == FF_TYPE_FILE) {
+                    } else if (effect->params[i]->type == FF_TYPE_TEXT || effect->params[i]->type == FF_TYPE_FILE) {
                         instance->setParameter(i, FFGLUtils::PointerToFFMixed(effect->params[i]->valuechar));
-                    }
-                    else {
+                    } else {
                         instance->setParameter(i, effect->params[i]->value);
                     }
                     if (effect->params[i]->type == FF_TYPE_EVENT) {
@@ -3257,7 +3297,7 @@ void onestepfrom(bool stage, Node *node, Node *prevnode, GLuint prevfbotex, GLui
                     glDrawBuffer(GL_COLOR_ATTACHMENT0);
                     if (stage) glViewport(0, 0, mainprogram->ow[1], mainprogram->oh[1]);
                     else glViewport(0, 0, mainprogram->ow[0], mainprogram->oh[0]);
-                    glClearColor( 0.f, 0.f, 0.f, 0.f );
+                    glClearColor(0.f, 0.f, 0.f, 0.f);
                     glClear(GL_COLOR_BUFFER_BIT);
 
                     float sx = 0.0f;
@@ -3274,9 +3314,103 @@ void onestepfrom(bool stage, Node *node, Node *prevnode, GLuint prevfbotex, GLui
                     glUniform1i(interm, 0);
                     glUniform1i(down, 0);
                     draw_box(nullptr, black, -1.0f, 1.0f, 2.0f, -2.0f, sx, sy, sc, op, 0, prevfbotex, 0, 0, false);
+                } else {
+                    glBindFramebuffer(GL_FRAMEBUFFER, effect->fbo);
+                    glDrawBuffer(GL_COLOR_ATTACHMENT0);
+                    if (stage) glViewport(0, 0, mainprogram->ow[1], mainprogram->oh[1]);
+                    else glViewport(0, 0, mainprogram->ow[0], mainprogram->oh[0]);
+                    glClearColor(0.f, 0.f, 0.f, 0.f);
+                    glClear(GL_COLOR_BUFFER_BIT);
+
+                    float sx = 0.0f;
+                    float sy = 0.0f;
+                    float sc = 1.0f;
+                    float op = 1.0f;
+                    if (effect->node == lay->lasteffnode[0]) {
+                        sx = lay->shiftx->value;
+                        sy = lay->shifty->value;
+                        sc = lay->scale->value;
+                        op = lay->opacity->value;
+                    }
+
+                    glUniform1i(interm, 2);
+                    GLint Sampler1 = glGetUniformLocation(mainprogram->ShaderProgram, "Sampler1");
+                    glUniform1i(Sampler1, 1);
+                    glActiveTexture(GL_TEXTURE1);
+                    glBindTexture(GL_TEXTURE_2D, prevfbotex);
+                    glActiveTexture(GL_TEXTURE0);
+                    glBindTexture(GL_TEXTURE_2D, effect->tempfbotex);
+                    draw_box(nullptr, black, -1.0f, 1.0f, 2.0f, -2.0f, sx, sy, sc, op, 0, effect->tempfbotex, 0, 0,
+                             false);
                 }
-            }
-            else {
+            } else if (effect->isfnr != -1 && effect->onoffbutton->value) {
+                auto instance = mainprogram->isfinstances[effect->isfpluginnr][effect->isfinstancenr];
+
+                glBindFramebuffer(GL_FRAMEBUFFER, effect->tempfbo);
+                glDrawBuffer(GL_COLOR_ATTACHMENT0);
+                if (stage) glViewport(0, 0, mainprogram->ow[1], mainprogram->oh[1]);
+                else glViewport(0, 0, mainprogram->ow[0], mainprogram->oh[0]);
+                glClearColor(0.f, 0.f, 0.f, 0.f);
+                glClear(GL_COLOR_BUFFER_BIT);
+
+                int pos = 0;
+                for (int i = 0; i < instance->getParameterInfo().size(); i++) {
+                    auto par = instance->getParameterInfo()[i];
+                    if (par.type == ISFLoader::PARAM_COLOR) {
+                        instance->setParameter(par.name, effect->params[pos]->value, effect->params[pos + 1]->value,
+                                               effect->params[pos + 2]->value, effect->params[pos + 3]->value);
+                        pos += 4;
+                    } else if (par.type == ISFLoader::PARAM_POINT2D) {
+                        instance->setParameter(par.name, effect->params[pos]->value,
+                                               effect->params[pos + 1]->value);
+                        pos += 2;
+                    } else if (effect->params[i]->type == ISFLoader::PARAM_BOOL ||
+                               effect->params[i]->type == ISFLoader::PARAM_LONG ||
+                               effect->params[i]->type == ISFLoader::PARAM_EVENT) {
+                        instance->setParameter(par.name, (int) effect->params[pos++]->value);
+                    } else {
+                        instance->setParameter(par.name, effect->params[pos++]->value);
+                    }
+                    if (effect->params[i]->type == ISFLoader::PARAM_EVENT) {
+                        effect->params[i]->value = 0.0f;
+                    }
+                }
+
+                instance->bindInputTexture(prevfbotex, 0);
+
+                instance->render(mainmix->time, mainprogram->ow[stage], mainprogram->oh[stage], (int) lay->frame);
+
+                glUseProgram(mainprogram->ShaderProgram);
+
+                glBindFramebuffer(GL_FRAMEBUFFER, effect->fbo);
+                glDrawBuffer(GL_COLOR_ATTACHMENT0);
+                if (stage) glViewport(0, 0, mainprogram->ow[1], mainprogram->oh[1]);
+                else glViewport(0, 0, mainprogram->ow[0], mainprogram->oh[0]);
+                glClearColor(0.f, 0.f, 0.f, 0.f);
+                glClear(GL_COLOR_BUFFER_BIT);
+
+                float sx = 0.0f;
+                float sy = 0.0f;
+                float sc = 1.0f;
+                float op = 1.0f;
+                if (effect->node == lay->lasteffnode[0]) {
+                    sx = lay->shiftx->value;
+                    sy = lay->shifty->value;
+                    sc = lay->scale->value;
+                    op = lay->opacity->value;
+                }
+
+                glUniform1i(interm, 2);
+                GLint Sampler1 = glGetUniformLocation(mainprogram->ShaderProgram, "Sampler1");
+                glUniform1i(Sampler1, 1);
+                glActiveTexture(GL_TEXTURE1);
+                glBindTexture(GL_TEXTURE_2D, prevfbotex);
+                glActiveTexture(GL_TEXTURE0);
+                glBindTexture(GL_TEXTURE_2D, effect->tempfbotex);
+                draw_box(nullptr, black, -1.0f, 1.0f, 2.0f, -2.0f, sx, sy, sc, op, 0, effect->tempfbotex, 0, 0,
+                         false);
+
+            } else {
                 if (!lay->onhold)
                     draw_box(nullptr, black, -1.0f, 1.0f, 2.0f, -2.0f, sx, sy, sc, op, 0, prevfbotex, 0, 0, false);
             }
@@ -3284,9 +3418,9 @@ void onestepfrom(bool stage, Node *node, Node *prevnode, GLuint prevfbotex, GLui
             prevfbotex = effect->fbotex;
             prevfbo = effect->fbo;
 
-            glUniform1i(interm, 0);
             glUniform1i(down, 0);
-			glViewport(0, 0, glob->w, glob->h);
+            glUniform1i(interm, 0);
+            glViewport(0, 0, glob->w, glob->h);
 		}
 	}
 
@@ -3378,12 +3512,8 @@ void onestepfrom(bool stage, Node *node, Node *prevnode, GLuint prevfbotex, GLui
                 op = 1.0f;
             }
         }
-        glBindFramebuffer(GL_FRAMEBUFFER, lay->fbo);
-        glDrawBuffer(GL_COLOR_ATTACHMENT0);
-        glClearColor(0.0f, 0.0f, 0.0f, 0.0f);
-        glClear(GL_COLOR_BUFFER_BIT);
         if (lay->ffglsourcenr != -1) {
-            auto instance = mainprogram->ffglinstances[lay->ffglsourcenr][lay->instancenr];
+            auto instance = mainprogram->ffglinstances[lay->ffglsourcenr][lay->ffglinstancenr];
 
             FFGLFramebuffer infbo;
             infbo.fbo = prevfbo;
@@ -3391,8 +3521,8 @@ void onestepfrom(bool stage, Node *node, Node *prevnode, GLuint prevfbotex, GLui
             infbo.width = mainprogram->ow[stage];
             infbo.height = mainprogram->oh[stage];
             FFGLFramebuffer outfbo;
-            outfbo.fbo = lay->fbo;
-            outfbo.colorTexture = lay->fbotex;
+            outfbo.fbo = lay->tempfbo;
+            outfbo.colorTexture = lay->tempfbotex;
             outfbo.width = mainprogram->ow[stage];
             outfbo.height = mainprogram->oh[stage];
 
@@ -3402,12 +3532,6 @@ void onestepfrom(bool stage, Node *node, Node *prevnode, GLuint prevfbotex, GLui
                 else if (lay->ffglparams[i]->type == FF_TYPE_OPTION) {
                     float optionValue = lay->ffglparams[i]->value;
                     instance->setParameter(i, optionValue);
-
-                    // Debug: Check what the plugin reports back
-                    float pluginValue = instance->getParameterFloat(i);
-                    printf("Set option parameter %d to %.0f, plugin reports: %.0f\n",
-                           i, optionValue, pluginValue);
-                    //instance->setParameter(i, lay->ffglparams[i]->value);
                 }
                 else if (lay->ffglparams[i]->type == FF_TYPE_TEXT || lay->ffglparams[i]->type == FF_TYPE_FILE) {
                     instance->setParameter(i, FFGLUtils::PointerToFFMixed(lay->ffglparams[i]->valuechar));
@@ -3442,8 +3566,97 @@ void onestepfrom(bool stage, Node *node, Node *prevnode, GLuint prevfbotex, GLui
             instance->applyStoredAudioData();
 
             instance->processFrame({infbo}, outfbo);
+
+            // opacity shift scale
+            float sx = 0.0f;
+            float sy = 0.0f;
+            float sc = 1.0f;
+            float op = 1.0f;
+            if (lay->effects[0].empty()) {
+                sx = lay->shiftx->value;
+                sy = lay->shifty->value;
+                sc = lay->scale->value;
+                if (lay->node == lay->lasteffnode[0]) {
+                    op = lay->opacity->value;
+                } else {
+                    op = 1.0f;
+                }
+            }
+
+            glBindFramebuffer(GL_FRAMEBUFFER, lay->fbo);
+            glDrawBuffer(GL_COLOR_ATTACHMENT0);
+            if (stage) glViewport(0, 0, mainprogram->ow[1], mainprogram->oh[1]);
+            else glViewport(0, 0, mainprogram->ow[0], mainprogram->oh[0]);
+            glClearColor( 0.f, 0.f, 0.f, 0.f );
+            glClear(GL_COLOR_BUFFER_BIT);
+            draw_box(nullptr, black, -1.0f, 1.0f, 2.0f, -2.0f, sx, sy, sc, op, 0, lay->tempfbotex, 0, 0, false);
+        }
+        else if (lay->isfsourcenr != -1) {
+            auto instance = mainprogram->isfinstances[lay->isfpluginnr][lay->isfinstancenr];
+
+            glBindFramebuffer(GL_FRAMEBUFFER, lay->tempfbo);
+            glDrawBuffer(GL_COLOR_ATTACHMENT0);
+            if (stage) glViewport(0, 0, mainprogram->ow[1], mainprogram->oh[1]);
+            else glViewport(0, 0, mainprogram->ow[0], mainprogram->oh[0]);
+            glClearColor( 0.f, 0.f, 0.f, 0.f );
+            glClear(GL_COLOR_BUFFER_BIT);
+
+            int pos = 0;
+            for (int i = 0; i < instance->getParameterInfo().size(); i++) {
+                auto par = instance->getParameterInfo()[i];
+                if (par.type == ISFLoader::PARAM_COLOR) {
+                    instance->setParameter(par.name, lay->isfparams[pos]->value, lay->isfparams[pos + 1]->value, lay->isfparams[pos + 2]->value, lay->isfparams[pos + 3]->value);
+                    pos += 4;
+                }
+                else if (lay->isfparams[i]->type == ISFLoader::PARAM_POINT2D) {
+                    instance->setParameter(par.name, lay->isfparams[pos]->value, lay->isfparams[pos + 1]->value);
+                    pos += 2;
+                }
+                else if (lay->isfparams[i]->type == ISFLoader::PARAM_BOOL || lay->isfparams[i]->type == ISFLoader::PARAM_LONG || lay->isfparams[i]->type == ISFLoader::PARAM_EVENT) {
+                    instance->setParameter(par.name, (int)lay->isfparams[pos++]->value);
+                }
+                else {
+                    instance->setParameter(par.name, lay->isfparams[pos++]->value);
+                }
+                if (lay->isfparams[i]->type == ISFLoader::PARAM_EVENT) {
+                    lay->isfparams[i]->value = 0.0f;
+                }
+            }
+
+            instance->render(mainmix->time, mainprogram->ow[stage], mainprogram->oh[stage], (int)lay->frame);
+
+            glUseProgram(mainprogram->ShaderProgram);
+
+            glBindFramebuffer(GL_FRAMEBUFFER, lay->fbo);
+            glDrawBuffer(GL_COLOR_ATTACHMENT0);
+            if (stage) glViewport(0, 0, mainprogram->ow[1], mainprogram->oh[1]);
+            else glViewport(0, 0, mainprogram->ow[0], mainprogram->oh[0]);
+            glClearColor( 0.f, 0.f, 0.f, 0.f );
+            glClear(GL_COLOR_BUFFER_BIT);
+
+            // opacity shift scale
+            float sx = 0.0f;
+            float sy = 0.0f;
+            float sc = 1.0f;
+            float op = 1.0f;
+            if (lay->effects[0].empty()) {
+                sx = lay->shiftx->value;
+                sy = lay->shifty->value;
+                sc = lay->scale->value;
+                if (lay->node == lay->lasteffnode[0]) {
+                    op = lay->opacity->value;
+                } else {
+                    op = 1.0f;
+                }
+            }
+
+            draw_box(nullptr, black, -1.0f, 1.0f, 2.0f, -2.0f, sx, sy, sc, op, 0, lay->tempfbotex, 0, 0, false);
         }
         else {
+            glBindFramebuffer(GL_FRAMEBUFFER, lay->fbo);
+            glDrawBuffer(GL_COLOR_ATTACHMENT0);
+            glClearColor(0.0f, 0.0f, 0.0f, 0.0f);
+            glClear(GL_COLOR_BUFFER_BIT);
             if (!lay->onhold && lay->filename != "") {
                 if (lay->changeinit == 2) {
                     draw_box(nullptr, black, -1.0f, 1.0f, 2.0f, -2.0f, sx, sy, sc, op, 0, lay->texture, 0, 0, false);
@@ -3515,7 +3728,7 @@ void onestepfrom(bool stage, Node *node, Node *prevnode, GLuint prevfbotex, GLui
 
             if (bnode->intex != -1 && bnode->in2tex != -1) {
                 if (bnode->ffglmixernr != -1) {
-                    auto instance = mainprogram->ffglinstances[bnode->ffglmixernr][bnode->instancenr];
+                    auto instance = mainprogram->ffglinstances[bnode->ffglmixernr][bnode->ffglinstancenr];
 
                     FFGLFramebuffer infbo1;
                     infbo1.fbo = 0;
@@ -3549,6 +3762,47 @@ void onestepfrom(bool stage, Node *node, Node *prevnode, GLuint prevfbotex, GLui
                     instance->setTime(effectTime);
 
                     instance->processFrame({infbo1, infbo2}, outfbo);
+                }
+                else if (bnode->isfmixernr != -1) {
+                    auto instance = mainprogram->isfinstances[bnode->isfpluginnr][bnode->isfinstancenr];
+
+                    glBindFramebuffer(GL_FRAMEBUFFER, bnode->fbo);
+                    glDrawBuffer(GL_COLOR_ATTACHMENT0);
+                    if (stage) glViewport(0, 0, mainprogram->ow[1], mainprogram->oh[1]);
+                    else glViewport(0, 0, mainprogram->ow[0], mainprogram->oh[0]);
+                    glClearColor( 0.f, 0.f, 0.f, 0.f );
+                    glClear(GL_COLOR_BUFFER_BIT);
+
+                    int pos = 0;
+                    for (int i = 0; i < instance->getParameterInfo().size(); i++) {
+                        auto par = instance->getParameterInfo()[i];
+                        if (par.type == ISFLoader::PARAM_COLOR) {
+                            instance->setParameter(par.name, bnode->isfparams[pos]->value, bnode->isfparams[pos + 1]->value, bnode->isfparams[pos + 2]->value, bnode->isfparams[pos + 3]->value);
+                            pos += 4;
+                        }
+                        else if (bnode->isfparams[i]->type == ISFLoader::PARAM_POINT2D) {
+                            instance->setParameter(par.name, bnode->isfparams[pos]->value, bnode->isfparams[pos + 1]->value);
+                            pos += 2;
+                        }
+                        else if (bnode->isfparams[i]->type == ISFLoader::PARAM_BOOL || bnode->isfparams[i]->type == ISFLoader::PARAM_LONG || bnode->isfparams[i]->type == ISFLoader::PARAM_EVENT) {
+                            instance->setParameter(par.name, (int)bnode->isfparams[pos++]->value);
+                        }
+                        else {
+                            instance->setParameter(par.name, bnode->isfparams[pos++]->value);
+                        }
+                        if (bnode->isfparams[i]->type == ISFLoader::PARAM_EVENT) {
+                            bnode->isfparams[i]->value = 0.0f;
+                        }
+                    }
+
+                    auto inputs = instance->getInputInfo();
+                    instance->bindInputTexture(bnode->intex, 0);
+                    instance->bindInputTexture(bnode->in2tex, 1);
+                    instance->render(mainmix->time, mainprogram->ow[stage], mainprogram->oh[stage]);
+
+                    //draw_box(nullptr, black, -1.0f, 1.0f, 2.0f, -2.0f, sx, sy, sc, op, 0, -1, 0, 0, false);
+
+                    glUseProgram(mainprogram->ShaderProgram);
                 }
                 else {
                     glBindFramebuffer(GL_FRAMEBUFFER, bnode->fbo);
@@ -4979,10 +5233,12 @@ void the_loop() {
                 mainmix->reconnect_all(mainmix->layers[i]);
                 // transfer current layer settings to new layer
                 Layer *cl = mainmix->currlay[!mainprogram->prevmodus];
-                Layer *newcl = mainmix->layers[i][cl->pos];
-                mainmix->change_currlay(cl, newcl);
-                if (newcl == cl) {
-                    mainprogram->effcat[newcl->deck]->value = newcl->effcat;
+                if (!mainprogram->prevmodus == (i / 2) && cl->deck == i % 2) {
+                    Layer *newcl = mainmix->layers[i][cl->pos];
+                    mainmix->change_currlay(cl, newcl);
+                    if (newcl == cl) {
+                        mainprogram->effcat[newcl->deck]->value = newcl->effcat;
+                    }
                 }
             }
             tempmap->clear();
@@ -6037,68 +6293,9 @@ void the_loop() {
         if (brk) break;
     }*/
 
-    // every loop iteration, load one bin element jpeg if there are any unloaded ones
-    if (!mainmix->retargeting) {
-        for (Bin *bin: binsmain->bins) {
-            if (bin->open_positions.size() != 0) {
-                int pos = *(bin->open_positions.begin());
-                if (bin->elements[pos]->name != "") {
-                    //bin->elements[pos]->absjpath = bin->elements[pos]->jpegpath;
-                    //bin->elements[pos]->reljpath = std::filesystem::relative(bin->elements[pos]->absjpath,
-                    //                                                         mainprogram->project->binsdir).generic_string();
-                    if (exists(bin->elements[pos]->jpegpath)) {
-                        std::filesystem::current_path(mainprogram->project->binsdir);
-                        std::string path = pathtoplatform(
-                                std::filesystem::absolute(bin->elements[pos]->jpegpath).generic_string());
-                        open_thumb(path, bin->elements[pos]->tex);
-                        std::filesystem::current_path(mainprogram->contentpath);
-                    } else {
-                        bool dummy = false;
-                    }
-                    bin->elements[pos]->jpegsaved = true;
-                } else {
-                    bool dummy = false;
-                }
-                bin->open_positions.erase(pos);
-            } else {
-                // each loop iteration, save ten bin elements / element jpegs to prepare for autosave
-                std::string str = mainprogram->project->autosavedir + "temp/bins/" + bin->name;
-                if (!exists(str)) {
-                    std::filesystem::create_directories(std::filesystem::path(str));
-                }
-                int cnt = 0;
-                bool brk = false;
-                for (Bin *bin: binsmain->bins) {
-                    for (BinElement *elem: bin->elements) {
-                        if (elem->path != "") {
-                            std::string elempath = str + "/" + basename(elem->path);
-                            if (!exists(elempath)) {
-                                if (elem->type == ELEM_LAYER || elem->type == ELEM_DECK || elem->type == ELEM_MIX) {
-                                    copy_file(elem->path, elempath);
-                                    cnt++;
-                                }
-                            }
-                            if (cnt == 10) {
-                                brk = true;
-                                break;
-                            }
-                        }
-                    }
-                    if (brk) break;
-                }
-                for (BinElement *binel: bin->elements) {
-                    if (!binel->autosavejpegsaved) {
-                        std::string jpgpath = str + "/" + basename(binel->jpegpath);
-                        binel->autosavejpegsaved = true;
-                        if (binel->jpegpath != "") save_thumb(jpgpath, binel->tex);
-                        cnt++;
-                        if (cnt == 10) break;
-                    }
-                }
-            }
-        }
-    }
 
+    // saving bin jpegs in background
+    binsmain->save_binjpegs();
 
 
     //autosave
@@ -6196,7 +6393,7 @@ void the_loop() {
 		if (ret == 1 || ret == 2) {
             mainprogram->shutdown = true;
 
-            mainprogram->project->wait_for_copyover();
+            mainprogram->project->wait_for_copyover(false);
             while (mainprogram->concatting) {
                 Sleep (5);
             }
@@ -7217,6 +7414,9 @@ int main(int argc, char* argv[]) {
     std::filesystem::path p5{homedir + "/.ewocvj2/ffglplugins"};
     if (!exists(homedir + "/.ewocvj2/ffglplugins")) std::filesystem::create_directory(p5);
     mainprogram->ffgldir = homedir + "/.ewocvj2/ffglplugins";
+    std::filesystem::path p8{homedir + "/.ewocvj2/isfplugins"};
+    if (!exists(homedir + "/.ewocvj2/isfplugins")) std::filesystem::create_directory(p8);
+    mainprogram->isfdir = homedir + "/.ewocvj2/isfplugins";
     std::filesystem::path p6{docdir + "/projects"};
     mainprogram->currprojdir = p6.generic_string();
     if (!exists(docdir + "/projects")) std::filesystem::create_directory(p6);
@@ -7362,6 +7562,10 @@ int main(int argc, char* argv[]) {
             lay->filename = "";
         }
     }
+    mainmix->currlay[0] = mainmix->layers[0][0];
+    mainmix->currlay[1] = mainmix->layers[2][0];
+    mainmix->currlays[0] = {mainmix->currlay[0]};
+    mainmix->currlays[1] = {mainmix->currlay[1]};
     // make init scene layers stacks
     for (int n = 1; n < 4; n++) {
         for (int m = 0; m < 2; m++) {
@@ -7412,6 +7616,10 @@ int main(int argc, char* argv[]) {
     mainprogram->ffgldir = full_path.string() + "/ffglplugins";
     if (!exists(mainprogram->ffgldir)) {
         std::filesystem::create_directories(mainprogram->ffgldir);
+    }
+    mainprogram->isfdir = full_path.string() + "/isfplugins";
+    if (!exists(mainprogram->isfdir)) {
+        std::filesystem::create_directories(mainprogram->isfdir);
     }
 #endif
 #ifdef POSIX
@@ -7590,6 +7798,33 @@ int main(int argc, char* argv[]) {
 
         mainprogram->ffglinstances.push_back({});
     }
+
+    // load installed isf plugins
+    mainprogram->isfloader.loadISFDirectory(mainprogram->isfdir);
+    std::vector<std::string> myShaderNames;
+    mainprogram->isfloader.getShaderNames(myShaderNames);
+    for (auto name : myShaderNames) {
+        auto shader = mainprogram->isfloader.findShader(name);
+        if (shader->getType() == ISFLoader::EFFECT) {
+            auto inputs = shader->getInputInfo();
+            if (shader->getInputCount() == 1) {
+                mainprogram->isfeffectnames.push_back(name);
+            }
+            else if (shader->getInputCount() == 2) {
+                if (inputs[1].type != ISFLoader::INPUT_EXTERNAL_IMAGE) {
+                    mainprogram->isfmixernames.push_back(name);
+                }
+                else {
+                    mainprogram->isfeffectnames.push_back(name);
+                }
+            }
+        }
+        else if (shader->getType() == ISFLoader::GENERATOR) {
+            mainprogram->isfsourcenames.push_back(name);
+        }
+        mainprogram->isfinstances.push_back({});
+    }
+
 
     // define all menus
     mainprogram->define_menus();

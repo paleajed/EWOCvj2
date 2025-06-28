@@ -2261,7 +2261,7 @@ void MidiOutAlsa :: sendMessage( const unsigned char *message, size_t size )
 
   snd_seq_event_t ev;
   snd_seq_ev_clear(&ev);
-  snd_seq_ev_set_source(&ev, data->vport);
+  snd_seq_ev_set_ffglsource(&ev, data->vport);
   snd_seq_ev_set_subs(&ev);
   snd_seq_ev_set_direct(&ev);
   for ( unsigned int i=0; i<nBytes; ++i ) data->buffer[i] = message[i];

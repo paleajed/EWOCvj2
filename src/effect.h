@@ -8,6 +8,7 @@
 #include <windows.h>
 #endif
 #include "FFGLHost.h"
+#include "ISFLoader.h"
 
 
 typedef enum
@@ -54,6 +55,7 @@ typedef enum
 	MIRROR = 39,
     BOXBLUR = 40,
     CHROMASTRETCH = 41,
+    PASS = 42,
     FFGL = 1000,
 } EFFECT_TYPE;
 
@@ -84,7 +86,7 @@ class Param {
         float oldvalue = 0.0f;
 		float deflt = 0.0f;
         char *defltchar;
-		float range[2] = {0.0f, 0.0f};
+		float range[2] = {0.0f, 1.0f};
 		int midi[2] = {-1, -1};
 		std::string midiport;
 		bool sliding = true;
@@ -104,7 +106,8 @@ class Param {
         void register_midi();
         void unregister_midi();
         void lpst_replace_with(Param* cpar);
-        int set_parameter_to(FFGLParameter &par, int cnt);
+        int ffglset_parameter_to(FFGLParameter &par, int cnt);
+        std::vector<Param*> isfset_parameter_to(ISFLoader::ParamInfo &par, int pos, bool calling = false);
 		Param();
 		~Param();
 };
@@ -114,12 +117,17 @@ class Effect {
 		EFFECT_TYPE type;
 		int pos;
 		Layer *layer;
-		GLuint fbo = -1;
+        GLuint fbo = -1;
         GLuint fbotex = -1;
+        GLuint tempfbo = -1;
+        GLuint tempfbotex = -1;
 		EffectNode *node = NULL;
 		std::vector<Param*> params;
         int ffglnr = -1;
-        int instancenr = -1;
+        int ffglinstancenr = -1;
+        int isfnr = -1;
+        int isfpluginnr = -1;
+        int isfinstancenr = -1;
         virtual float get_speed() { return -1; };
 		virtual float get_ripplecount() { return -1; };
 		virtual void set_ripplecount(float count) { return; };
@@ -358,5 +366,12 @@ public:
     std::string name;
 
     FFGLEffect(Layer *lay, int ffglnr);
+};
+
+class ISFEffect : public Effect {
+public:
+    std::string name;
+
+    ISFEffect(Layer *lay, int isfnr);
 };
 

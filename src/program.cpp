@@ -3294,12 +3294,14 @@ void get_cameras()
 }    //utility function
 
 
+
 int Program::handle_menu(Menu* menu) {
 	int ret = mainprogram->handle_menu(menu, 0.0f, 0.0f);
 	return ret;
 }
+
 int Program::handle_menu(Menu* menu, float xshift, float yshift) {
-	if (menu->state > 1) {
+    if (menu->state > 1) {
         mainprogram->frontbatch = true;
         menu->box->upvtxtoscr();
         if (std::find(mainprogram->actmenulist.begin(), mainprogram->actmenulist.end(), menu) ==
@@ -3318,19 +3320,19 @@ int Program::handle_menu(Menu* menu, float xshift, float yshift) {
         if (binsmain->inbinwin) {
             if (menu->menuy + mainprogram->yvtxtoscr(yshift) > binsmain->globh - size * mainprogram->yvtxtoscr(0.075f))
                 menu->menuy = binsmain->globh - size * mainprogram->yvtxtoscr(0.075f) + mainprogram->yvtxtoscr(yshift);
-                if (size > 24) {
-                    menu->menuy = mainprogram->yvtxtoscr(mainprogram->layh / 2.0f) - mainprogram->yvtxtoscr(yshift);
-                }
-                vmx = (float) menu->menux * 2.0 / binsmain->globw;
-                vmy = (float) menu->menuy * 2.0 / binsmain->globh;
+            if (size > 24) {
+                menu->menuy = mainprogram->yvtxtoscr(mainprogram->layh / 2.0f) - mainprogram->yvtxtoscr(yshift);
+            }
+            vmx = (float) menu->menux * 2.0 / binsmain->globw;
+            vmy = (float) menu->menuy * 2.0 / binsmain->globh;
         } else {
             if (menu->menuy + mainprogram->yvtxtoscr(yshift) > glob->h - size * mainprogram->yvtxtoscr(0.075f))
                 menu->menuy = glob->h - size * mainprogram->yvtxtoscr(0.075f) + mainprogram->yvtxtoscr(yshift);
-                if (size > 24) {
-                    menu->menuy = mainprogram->yvtxtoscr(mainprogram->layh / 2.0f) - mainprogram->yvtxtoscr(yshift);
-                }
-                vmx = (float) menu->menux * 2.0 / glob->w;
-                vmy = (float) menu->menuy * 2.0 / glob->h;
+            if (size > 24) {
+                menu->menuy = mainprogram->yvtxtoscr(mainprogram->layh / 2.0f) - mainprogram->yvtxtoscr(yshift);
+            }
+            vmx = (float) menu->menux * 2.0 / glob->w;
+            vmy = (float) menu->menuy * 2.0 / glob->h;
         }
         float lc[] = {0.0, 0.0, 0.0, 1.0};
         float ac1[] = {0.3, 0.3, 0.3, 1.0};
@@ -3340,25 +3342,65 @@ int Program::handle_menu(Menu* menu, float xshift, float yshift) {
         int notsubk = 0;
         std::vector<std::string> entries = menu->entries;
 
+        // Calculate column scrolling for wide menus
+        int itemsPerColumn = 24;
+        int totalColumns = (size + itemsPerColumn - 1) / itemsPerColumn;
+        float columnWidth = menu->width * 1.5f;
+        float screenWidth = binsmain->inbinwin ? binsmain->globw : glob->w;
+        int maxVisibleColumns = (int)(screenWidth / mainprogram->xvtxtoscr(columnWidth));
+
+        // Adjust menu position when there are many columns
+        if (totalColumns > maxVisibleColumns) {
+            menu->menux = 0; // Shift menu all the way to the left
+        }
+
+        // Static scroll offset to persist between frames
+        static int columnScrollOffset = 0;
+        static Menu* lastScrolledMenu = nullptr;
+
+        // Reset scroll when menu changes
+        if (lastScrolledMenu != menu) {
+            columnScrollOffset = 0;
+            lastScrolledMenu = menu;
+        }
+
+        // Handle mousewheel scrolling by columns
+        if (totalColumns > maxVisibleColumns && mainprogram->mousewheel != 0) {
+            if (mainprogram->mousewheel > 0) {
+                columnScrollOffset = std::max(0, columnScrollOffset - 1);
+            } else {
+                columnScrollOffset = std::min(totalColumns - maxVisibleColumns, columnScrollOffset + 1);
+            }
+            mainprogram->mousewheel = 0;
+        }
+
         for (int k = 0; k < entries.size(); k++) {
-			float xoff = 0.0f;
-			int koff;
-			if (notsubk > 23) {
-				if (mainprogram->xscrtovtx(menu->menux) > limit) xoff = xshift;
-				else xoff = menu->width * 1.5f + xshift;
-				koff = menu->entries.size() - 24;
-			}
-			else {
-                if (mainprogram->xscrtovtx(menu->menux) > limit) {
-                    xoff = -menu->width * 1.5f + xshift;
+            float xoff = 0.0f;
+
+            // Fixed column logic with scroll offset
+            int column = notsubk / itemsPerColumn;
+            int row = notsubk % itemsPerColumn;
+
+            // Apply scroll offset to column
+            int displayColumn = column - columnScrollOffset;
+
+            // Skip items that are scrolled out of view
+            if (displayColumn < 0 || displayColumn >= maxVisibleColumns) {
+                std::size_t sub = menu->entries[k].find("submenu");
+                if (sub != 0) {
+                    notsubk++;
+                } else {
+                    numsubs++;
                 }
-                else xoff = 0.0f + xshift;
-                //if (menu->entries.size() < 25) xoff = 0.0f + xshift;
-				koff = 0;
-			}
-			std::size_t sub = menu->entries[k].find("submenu");
-			if (sub != 0) {
-				notsubk++;
+                continue;
+            }
+
+            // Always position columns from left edge when scrolling
+            xoff = menu->width * displayColumn * 1.5f + xshift;
+
+            std::size_t sub = menu->entries[k].find("submenu");
+            if (sub != 0) {
+                notsubk++;
                 int boxw, boxh;
                 if (binsmain->inbinwin) {
                     // trick
@@ -3369,80 +3411,78 @@ int Program::handle_menu(Menu* menu, float xshift, float yshift) {
                     boxw = menu->box->scrcoords->w;
                     boxh = menu->box->scrcoords->h;
                 }
-				if (menu->box->scrcoords->x1 + menu->menux + mainprogram->xvtxtoscr(xoff) < mainprogram->mx && mainprogram->mx < menu->box->scrcoords->x1 + boxw + menu->menux + mainprogram->xvtxtoscr(xoff) && menu->box->scrcoords->y1 - boxh + menu->menuy + (k - koff - numsubs) * mainprogram->yvtxtoscr(0.075f) - mainprogram->yvtxtoscr(yshift) < mainprogram->my && mainprogram->my < menu->box->scrcoords->y1 + menu->menuy + (k - koff - numsubs) * mainprogram->yvtxtoscr(0.075f) - mainprogram->yvtxtoscr(yshift)) {
-					draw_box(lc, ac2, menu->box->vtxcoords->x1 + vmx + xoff, menu->box->vtxcoords->y1 - (k - koff -
-                                                                                                         numsubs) * 0.075f - vmy + yshift, menu->width * 1.5f, 0.075f, -1);
-					if (mainprogram->leftmousedown) mainprogram->leftmousedown = false;
-					if (mainprogram->lmover) {
-						for (int i = 0; i < mainprogram->menulist.size(); i++) {
-							mainprogram->menulist[i]->state = 0;
-						}
-						mainprogram->menuchosen = true;
-						menu->currsub = -1;
+                if (menu->box->scrcoords->x1 + menu->menux + mainprogram->xvtxtoscr(xoff) < mainprogram->mx && mainprogram->mx < menu->box->scrcoords->x1 + boxw + menu->menux + mainprogram->xvtxtoscr(xoff) && menu->box->scrcoords->y1 - boxh + menu->menuy + row * mainprogram->yvtxtoscr(0.075f) - mainprogram->yvtxtoscr(yshift) < mainprogram->my && mainprogram->my < menu->box->scrcoords->y1 + menu->menuy + row * mainprogram->yvtxtoscr(0.075f) - mainprogram->yvtxtoscr(yshift)) {
+                    draw_box(lc, ac2, menu->box->vtxcoords->x1 + vmx + xoff, menu->box->vtxcoords->y1 - row * 0.075f - vmy + yshift, menu->width * 1.5f, 0.075f, -1);
+                    if (mainprogram->leftmousedown) mainprogram->leftmousedown = false;
+                    if (mainprogram->lmover) {
+                        for (int i = 0; i < mainprogram->menulist.size(); i++) {
+                            mainprogram->menulist[i]->state = 0;
+                        }
+                        mainprogram->menuchosen = true;
+                        menu->currsub = -1;
                         mainprogram->frontbatch = false;
                         mainprogram->lmover = false;
                         mainprogram->recundo = false;
                         mainprogram->inbox = true;
-						return k - numsubs;
-					}
-				}
-				else {
-					draw_box(lc, ac1, menu->box->vtxcoords->x1 + vmx + xoff, menu->box->vtxcoords->y1 - (k - koff -
-                                                                                                         numsubs) * 0.075f - vmy + yshift, menu->width * 1.5f, 0.075f, -1);
-				}
-				render_text(menu->entries[k], white, menu->box->vtxcoords->x1 + vmx + 0.0117f + xoff, menu->box->vtxcoords->y1 - (k - koff - numsubs) * 0.075f - vmy + yshift + 0.0225f, 0.00045f, 0.00075f);
-			}
-			else {
-				numsubs++;
-				if (menu->currsub == k || (menu->box->scrcoords->x1 + menu->menux + mainprogram->xvtxtoscr(xoff) < mainprogram->mx && mainprogram->mx < menu->box->scrcoords->x1 + menu->box->scrcoords->w + menu->menux + mainprogram->xvtxtoscr(xoff) && menu->box->scrcoords->y1 - menu->box->scrcoords->h + menu->menuy + (k - koff - numsubs + 1) * mainprogram->yvtxtoscr(0.075f) - mainprogram->yvtxtoscr(yshift) < mainprogram->my && mainprogram->my < menu->box->scrcoords->y1 + menu->menuy + (k - koff - numsubs + 1) * mainprogram->yvtxtoscr(0.075f) - mainprogram->yvtxtoscr(yshift))) {
-					if (menu->currsub == k || mainprogram->lmover) {
-						if (menu->currsub != k) mainprogram->lmover = false;
-						std::string name = menu->entries[k].substr(8, std::string::npos);
+                        return notsubk - 1;
+                    }
+                }
+                else {
+                    draw_box(lc, ac1, menu->box->vtxcoords->x1 + vmx + xoff, menu->box->vtxcoords->y1 - row * 0.075f - vmy + yshift, menu->width * 1.5f, 0.075f, -1);
+                }
+                render_text(menu->entries[k], white, menu->box->vtxcoords->x1 + vmx + 0.0117f + xoff, menu->box->vtxcoords->y1 - row * 0.075f - vmy + yshift + 0.0225f, 0.00045f, 0.00075f);
+            }
+            else {
+                numsubs++;
+                if (menu->currsub == k || (menu->box->scrcoords->x1 + menu->menux + mainprogram->xvtxtoscr(xoff) < mainprogram->mx && mainprogram->mx < menu->box->scrcoords->x1 + menu->box->scrcoords->w + menu->menux + mainprogram->xvtxtoscr(xoff) && menu->box->scrcoords->y1 - menu->box->scrcoords->h + menu->menuy + row * mainprogram->yvtxtoscr(0.075f) - mainprogram->yvtxtoscr(yshift) < mainprogram->my && mainprogram->my < menu->box->scrcoords->y1 + menu->menuy + row * mainprogram->yvtxtoscr(0.075f) - mainprogram->yvtxtoscr(yshift))) {
+                    if (menu->currsub == k || mainprogram->lmover) {
+                        if (menu->currsub != k) mainprogram->lmover = false;
+                        std::string name = menu->entries[k].substr(8, std::string::npos);
                         for (int i = 0; i < mainprogram->menulist.size(); i++) {
-							if (mainprogram->menulist[i]->name == name) {
-								menu->currsub = k;
-								mainprogram->menulist[i]->state = 2;
-								mainprogram->actmenulist.push_back(menu);
-								mainprogram->actmenulist.push_back(mainprogram->menulist[i]);
-								float xs;
-								if (mainprogram->xscrtovtx(menu->menux) > limit) {
-								    xs = xshift - menu->width * 1.5f;
-								}
-								else {
-								    xs = xshift + menu->width * 1.5f;
-								}
+                            if (mainprogram->menulist[i]->name == name) {
+                                menu->currsub = k;
+                                mainprogram->menulist[i]->state = 2;
+                                mainprogram->actmenulist.push_back(menu);
+                                mainprogram->actmenulist.push_back(mainprogram->menulist[i]);
+                                float xs;
+                                if (mainprogram->xscrtovtx(menu->menux) > limit) {
+                                    xs = xshift - menu->width * 1.5f;
+                                }
+                                else {
+                                    xs = xshift + menu->width * 1.5f;
+                                }
 
-								// start submenu
+                                // start submenu
                                 mainprogram->menulist[i]->menux = menu->menux;
-                                mainprogram->menulist[i]->menuy = menu->box->scrcoords->y1 - menu->box->scrcoords->h + menu->menuy + (k - koff - numsubs + 1) * mainprogram->yvtxtoscr(0.075f) - mainprogram->yvtxtoscr(yshift);
-								int ret = mainprogram->handle_menu(mainprogram->menulist[i], xs, yshift);
-                                this->prevmenuchoices.push_back(k - numsubs + 1);
+                                mainprogram->menulist[i]->menuy = menu->box->scrcoords->y1 - menu->box->scrcoords->h + menu->menuy + row * mainprogram->yvtxtoscr(0.075f) - mainprogram->yvtxtoscr(yshift);
+                                int ret = mainprogram->handle_menu(mainprogram->menulist[i], xs, yshift);
+                                this->prevmenuchoices.push_back(notsubk);
                                 if (mainprogram->menuchosen) {
-									menu->state = 0;
-									mainprogram->menuresults.insert(mainprogram->menuresults.begin(), ret);
-									menu->currsub = -1;
+                                    menu->state = 0;
+                                    mainprogram->menuresults.insert(mainprogram->menuresults.begin(), ret);
+                                    menu->currsub = -1;
                                     mainprogram->frontbatch = false;
                                     mainprogram->recundo = false;
                                     mainprogram->inbox = true;
-									return k - numsubs + 1;
-								}
-								else mainprogram->frontbatch = true;
-								mainprogram->menulist[i]->state = 0;
-								break;
-							}
-						}
-					}
-				}
-			}
-		}
-		for (int i = 0; i < mainprogram->menulist.size(); i++) {
-			if (std::find(mainprogram->actmenulist.begin(), mainprogram->actmenulist.end(), menu) == mainprogram->actmenulist.end()) {
-				if (mainprogram->menulist[i] != menu) mainprogram->menulist[i]->state = 0;
-			}
-		}
+                                    return notsubk;
+                                }
+                                else mainprogram->frontbatch = true;
+                                mainprogram->menulist[i]->state = 0;
+                                break;
+                            }
+                        }
+                    }
+                }
+            }
+        }
+        for (int i = 0; i < mainprogram->menulist.size(); i++) {
+            if (std::find(mainprogram->actmenulist.begin(), mainprogram->actmenulist.end(), menu) == mainprogram->actmenulist.end()) {
+                if (mainprogram->menulist[i] != menu) mainprogram->menulist[i]->state = 0;
+            }
+        }
         mainprogram->frontbatch = false;
-	}
-	return -1;
+    }
+    return -1;
 }
 
 void Program::handle_mixenginemenu() {
@@ -3451,44 +3491,99 @@ void Program::handle_mixenginemenu() {
 	k = mainprogram->handle_menu(mainprogram->mixenginemenu);
 	if (k == 0) {
         if (mainmix->mousenode && mainprogram->menuresults.size()) {
-            if (mainprogram->menuresults[0] > 23) {
+            if (mainprogram->menuresults[0] > 21) {
                 BlendNode *bnode = (BlendNode *) mainmix->mousenode;
-                bnode->blendtype = FFGL_MIXER;
-                bnode->ffglmixernr = mainprogram->menuresults[0] - 24;
+                if (mainprogram->menuresults[0] < mainprogram->ffglmixernames.size() + 22) {
+                    bnode->blendtype = FFGL_MIXER;
 
-                int w = mainprogram->ow[!mainprogram->prevmodus];
-                int h = mainprogram->oh[!mainprogram->prevmodus];
+                    bnode->ffglmixernr = mainprogram->menuresults[0] - 22;
 
-                auto plug = mainprogram->ffglmixerplugins[bnode->ffglmixernr];
-                auto instance = plug->createInstance(w, h);
-                mainprogram->ffglinstances[bnode->ffglmixernr].push_back(
-                        instance);
-                bnode->instancenr =
-                        mainprogram->ffglinstances[bnode->ffglmixernr].size() -
-                        1;
+                    int w = mainprogram->ow[!mainprogram->prevmodus];
+                    int h = mainprogram->oh[!mainprogram->prevmodus];
 
-                // get parameters from FFGLHost::parameters
-                bnode->numrows = 1;
-                int cnt = 0;
-                for (auto par : instance->parameters) {
-                    Param *param = new Param;
-                    if (cnt != 0) {
-                        if (cnt % 3 == 0 || (par.type == FF_TYPE_TEXT || par.type == FF_TYPE_FILE)) {
-                            param->nextrow = true;
-                            bnode->numrows++;
+                    auto plug = mainprogram->ffglmixerplugins[bnode->ffglmixernr];
+                    auto instance = plug->createInstance(w, h);
+                    mainprogram->ffglinstances[bnode->ffglmixernr].push_back(
+                            instance);
+                    bnode->ffglinstancenr =
+                            mainprogram->ffglinstances[bnode->ffglmixernr].size() -
+                            1;
+
+                    // get parameters from FFGLHost::parameters
+                    bnode->ffglparams.clear();
+                    bnode->numrows = 1;
+                    int cnt = 0;
+                    for (auto par: instance->parameters) {
+                        Param *param = new Param;
+                        if (cnt != 0) {
+                            if (cnt % 3 == 0 || (par.type == FF_TYPE_TEXT || par.type == FF_TYPE_FILE)) {
+                                param->nextrow = true;
+                                bnode->numrows++;
+                            }
+                        }
+                        cnt++;
+
+                        cnt = param->ffglset_parameter_to(par, cnt);
+
+                        param->box->tooltiptitle = par.name;
+                        param->box->tooltip = "Set " + par.name + " parameter of FFGL " +
+                                              mainprogram->ffglmixernames[bnode->ffglmixernr] +
+                                              " mixer plugin ";
+                        bnode->ffglparams.push_back(param);
+                    }
+                } else if (mainprogram->menuresults[0] >= mainprogram->ffglmixernames.size() + 22) {
+                    bnode->blendtype = ISF_MIXER;
+                    bnode->isfmixernr = mainprogram->menuresults[0] - mainprogram->ffglmixernames.size() - 22;
+                    std::string sourcename = mainprogram->isfmixernames[bnode->isfmixernr];
+                    for (int i = 0; i < mainprogram->isfeffectnames.size() + mainprogram->isfsourcenames.size() + mainprogram->isfmixernames.size(); i++) {
+                        if (mainprogram->isfloader.findShader(sourcename) == mainprogram->isfloader.getShader(i)) {
+                            bnode->isfpluginnr = i;
+                            break;
                         }
                     }
-                    cnt++;
 
-                    cnt = param->set_parameter_to(par, cnt);
+                    auto *shader = mainprogram->isfloader.getShader(bnode->isfpluginnr);
+                    auto instance = shader->createInstance();
+                    mainprogram->isfinstances[bnode->isfpluginnr].push_back(instance);
+                    bnode->isfinstancenr = mainprogram->isfinstances[bnode->isfpluginnr].size() - 1;
 
-                    param->box->tooltiptitle = par.name;
-                    param->box->tooltip = "Set " + par.name + " parameter of FFGL " +
-                                          mainprogram->ffglmixerplugins[bnode->ffglmixernr]->pluginInfo.PluginName +
-                                          " mixer plugin - between 0.0 and 1.0 ";
-                    bnode->ffglparams.push_back(param);
+                    // get parameters
+                    bnode->isfparams.clear();
+                    bnode->numrows = 1;
+                    int cnt = 0;
+                    for (auto par: instance->getParameterInfo()) {
+                        Param *param = new Param;
+                        if (cnt != 0) {
+                            if (cnt % 3 == 0 || (par.type == ISFLoader::PARAM_POINT2D)) {
+                                param->nextrow = true;
+                                bnode->numrows++;
+                            }
+                        }
+                        cnt++;
+
+                        auto parvec = param->isfset_parameter_to(par, -1);
+
+                        for (int i = 0; i < parvec.size(); i++) {
+                            Param *resultpar = parvec[i];
+                            resultpar->box->tooltiptitle = par.name;
+                            std::string addstr = "";
+                            if (resultpar->type == ISFLoader::PARAM_POINT2D) {
+                                if (i == 0) addstr = " X";
+                                else addstr = " Y";
+                            } else if (resultpar->type == ISFLoader::PARAM_COLOR) {
+                                if (i == 0) addstr = " RED";
+                                else if (i == 1) addstr = " GREEN";
+                                else if (i == 2) addstr = " BLUE";
+                                else addstr = " ALPHA";
+                            }
+                            resultpar->box->tooltip = "Set " + par.name + addstr + " parameter of ISF " +
+                                                      mainprogram->isfeffectnames[bnode->isfmixernr] + " mixer plugin ";
+                            bnode->isfparams.push_back(resultpar);
+
+                        }
+                    }
+                    bnode->layer->numefflines[bnode->layer->effcat] += bnode->numrows;
                 }
-                bnode->layer->numefflines[bnode->layer->effcat] += bnode->numrows;
             } else if (mainmix->mousenode->type == BLEND) {
                 ((BlendNode *) mainmix->mousenode)->blendtype = (BLEND_TYPE) (mainprogram->menuresults[0] + 1);
             }
@@ -3534,22 +3629,29 @@ void Program::handle_effectmenu() {
 	k = this->handle_menu(this->effectmenu);
 	if (k > -1) {
         std::vector<Effect*>& evec = mainmix->mouselayer->choose_effects();
-		int ffglnr = -1;
+        int ffglnr = -1;
+        int isfnr = -1;
         if (k == 0 && mainmix->mouseeffect != evec.size()) {
 			mainmix->mouselayer->delete_effect(mainmix->mouseeffect);
 		}
 		else if (mainmix->insert) {
-            if (this->abeffects[k] >= 1000) {
+            if (this->abeffects[k] >= 1000 && this->abeffects[k] < 2000) {
                 ffglnr = this->abeffects[k] - 1000;
             }
-		    mainmix->mouselayer->add_effect((EFFECT_TYPE)this->abeffects[k], mainmix->mouseeffect, mainprogram->effcat[mainmix->mouselayer->deck]->value, ffglnr);
+            if (this->abeffects[k] >= 2000 && this->abeffects[k] < 3000) {
+                isfnr = this->abeffects[k] - 2000;
+            }
+		    mainmix->mouselayer->add_effect((EFFECT_TYPE)this->abeffects[k], mainmix->mouseeffect, mainprogram->effcat[mainmix->mouselayer->deck]->value, ffglnr, isfnr);
 		}
 		else {
 			int mon = evec[mainmix->mouseeffect]->node->monitor;
-            if (this->abeffects[k - 1] >= 1000) {
+            if (this->abeffects[k - 1] >= 1000 && this->abeffects[k - 1] < 2000) {
                 ffglnr = this->abeffects[k - 1] - 1000;
             }
-			mainmix->mouselayer->replace_effect((EFFECT_TYPE)this->abeffects[k - 1], mainmix->mouseeffect, ffglnr);
+            if (this->abeffects[k - 1] >= 2000 && this->abeffects[k - 1] < 3000) {
+                isfnr = this->abeffects[k - 1] - 2000;
+            }
+			mainmix->mouselayer->replace_effect((EFFECT_TYPE)this->abeffects[k - 1], mainmix->mouseeffect, ffglnr, isfnr);
 			evec[mainmix->mouseeffect]->node->monitor = mon;
 		}
 		mainmix->mouselayer = nullptr;
@@ -4591,7 +4693,12 @@ void Program::handle_laymenu1() {
         else if ((!cond && k == 18) || k == 18 - cond * 2) {
             // switch layer to generator type
             if (this->menuresults.size()) {
-                mainmix->mouselayer->set_source(this->menuresults[0]);
+                if (this->menuresults[0] < mainprogram->ffglsourcenames.size()) {
+                    mainmix->mouselayer->set_ffglsource(this->menuresults[0]);
+                }
+                else {
+                    mainmix->mouselayer->set_isfsource(mainprogram->isfsourcenames[this->menuresults[0] - mainprogram->ffglsourcenames.size()]);
+                }
             }
         }
         else if (!cond && k == 20 && encode) {
@@ -4684,7 +4791,12 @@ void Program::handle_newlaymenu() {
              std::vector<Layer *> &lvec = choose_layers(mainmix->mousedeck);
              Layer *lay = mainmix->add_layer(lvec, lvec.size());
              if (this->menuresults.size()) {
-                 lay->set_source(this->menuresults[0]);
+                 if (this->menuresults[0] < mainprogram->ffglsourcenames.size()) {
+                     lay->set_ffglsource(this->menuresults[0]);
+                 }
+                 else {
+                     lay->set_isfsource(mainprogram->isfsourcenames[this->menuresults[0] - mainprogram->ffglsourcenames.size()]);
+                 }
              }
          }
 	}
@@ -7377,7 +7489,7 @@ void Project::newp(const std::string path) {
 }
 	
 bool Project::open(std::string path, bool autosave, bool newp, bool undo) {
-    this->wait_for_copyover();
+    this->wait_for_copyover(undo);
 
 	std::string result = mainprogram->deconcat_files(path);
 	bool concat = (result != "");
@@ -7567,7 +7679,7 @@ bool Project::open(std::string path, bool autosave, bool newp, bool undo) {
 }
 
 void Project::save(std::string path, bool autosave, bool undo, bool nocheck) {
-    if (!nocheck) this->wait_for_copyover();
+    if (!nocheck) this->wait_for_copyover(undo);
 
     if (undo) {
         mainprogram->undoing = true;
@@ -7734,12 +7846,23 @@ void Project::save(std::string path, bool autosave, bool undo, bool nocheck) {
     }
 }
 
-void Project::wait_for_copyover() {
+void Project::wait_for_copyover(bool undo) {
     if (this->copyingover) {
         std::unique_lock<std::mutex> lock(this->copyovermutex);
         this->copyovervar.wait(lock, [&] { return this->copiedover; });
         lock.unlock();
         this->copiedover = false;
+    }
+    if (!undo) {
+        for (auto bin: binsmain->bins) {
+            for (BinElement *binel: bin->elements) {
+                if (binel->path != "") {
+                    while (!binel->autosavejpegsaved) {
+                        binsmain->save_binjpegs();
+                    }
+                }
+            }
+        }
     }
 }
 
@@ -7747,6 +7870,7 @@ void Project::copy_over(std::string path, std::string path2, std::string oldprdi
     this->copyingover = true;
     if (exists(path2)) {
         this->delete_dirs(path2);
+        std::filesystem::remove(path2);
     }
     //this->create_dirs(path2);
     mainprogram->project->copy_dirs(path2, false);
@@ -7805,7 +7929,7 @@ void Project::copy_over(std::string path, std::string path2, std::string oldprdi
 }
 
 void Project::save_as() {
-    this->wait_for_copyover();
+    this->wait_for_copyover(false);
 
     std::string path2;
     std::string str;
@@ -7880,6 +8004,13 @@ void Project::save_as() {
     mainprogram->project->burd = "";
     mainprogram->project->buad = "";
     mainprogram->project->bued = "";
+
+    for (Bin *bin: binsmain->bins) {
+        for (BinElement *binel: bin->elements) {
+            // all bin element jpegs should be saved to new temp folder
+            binel->autosavejpegsaved = false;
+        }
+    }
 
     mainprogram->inautosave = false;
 }
@@ -8842,6 +8973,9 @@ void Program::define_menus() {
     for (auto name : mainprogram->ffgleffectnames) {
         meffects.push_back(name);
     }
+    for (auto name : mainprogram->isfeffectnames) {
+        meffects.push_back(name);
+    }
     std::sort(meffects.begin(), meffects.end());
     for (int i = 0; i < meffects.size(); i++) {
         for (int j = 0; j < effects.size(); j++) {
@@ -8853,6 +8987,12 @@ void Program::define_menus() {
         for (int j = 0; j < mainprogram->ffgleffectnames.size(); j++) {
             if (meffects[i] == mainprogram->ffgleffectnames[j]) {
                 mainprogram->abeffects.push_back(1000 + j);
+                break;
+            }
+        }
+        for (int j = 0; j < mainprogram->isfeffectnames.size(); j++) {
+            if (meffects[i] == mainprogram->isfeffectnames[j]) {
+                mainprogram->abeffects.push_back(2000 + j);
                 break;
             }
         }
@@ -8890,6 +9030,9 @@ void Program::define_menus() {
     mixmodes.push_back("LUMAKEY");
     mixmodes.push_back("DISPLACEMENT");
     for (auto name : mainprogram->ffglmixernames) {
+        mixmodes.push_back(name);
+    }
+    for (auto name : mainprogram->isfmixernames) {
         mixmodes.push_back(name);
     }
     mainprogram->make_menu("mixmodemenu", mainprogram->mixmodemenu, mixmodes);
@@ -8989,8 +9132,8 @@ void Program::define_menus() {
     layops1.push_back("submenu mixtargetmenu");
     layops1.push_back("Show on display");
     layops1.push_back("Record and replace");
-    layops1.push_back("submenu ffglsourcemenu");
-    layops1.push_back("Use FFGL source plugin");
+    layops1.push_back("submenu sourcemenu");
+    layops1.push_back("Use source plugin");
     layops1.push_back("HAP encode on-the-fly");
     mainprogram->make_menu("laymenu1", mainprogram->laymenu1, layops1);
 
@@ -9013,8 +9156,8 @@ void Program::define_menus() {
     layops2.push_back("submenu mixtargetmenu");
     layops2.push_back("Show on display");
     layops2.push_back("Record and replace");
-    layops2.push_back("submenu ffglsourcemenu");
-    layops2.push_back("Use FFGL source plugin");
+    layops2.push_back("submenu sourcemenu");
+    layops2.push_back("Use source plugin");
     mainprogram->make_menu("laymenu2", mainprogram->laymenu2, layops2);
 
     std::vector<std::string> loadops;
@@ -9027,18 +9170,22 @@ void Program::define_menus() {
     loadops.push_back("New mix");
     loadops.push_back("Open mix");
     loadops.push_back("Save mix");
-    loadops.push_back("submenu ffglsourcemenu");
-    loadops.push_back("Use FFGL source plugin");
+    loadops.push_back("submenu sourcemenu");
+    loadops.push_back("Use source plugin");
     mainprogram->make_menu("newlaymenu", mainprogram->newlaymenu, loadops);
 
     std::vector<std::string> sourceops;
     for (auto name : mainprogram->ffglsourcenames) {
         sourceops.push_back(name);
     }
-    if (mainprogram->ffglsourcenames.empty()) {
+    for (auto name : mainprogram->isfsourcenames) {
+        std::transform(name.begin(), name.end(), name.begin(), ::toupper);
+        sourceops.push_back(name);
+    }
+    if (mainprogram->ffglsourcenames.empty() && mainprogram->isfsourcenames.empty()) {
         sourceops.push_back("No plugins installed");
     }
-    mainprogram->make_menu("ffglsourcemenu", mainprogram->ffglsourcemenu, sourceops);
+    mainprogram->make_menu("sourcemenu", mainprogram->sourcemenu, sourceops);
 
     std::vector<std::string> clipops;
     clipops.push_back("submenu livemenu");
@@ -11034,10 +11181,10 @@ void Program::process_audio() {
             std::vector<float> audioSamples;
             audioSamples.reserve(this->ausamples);
 
-            // Process audio input - separate processing for beat detection vs FFGL
+            // Process audio input - separate processing for beat detection vs ISF
             for (int i = 0; i < this->ausamples; i++) {
-                // Store normalized version for FFGL plugins
-                audioSamples.push_back(this->aubuffer[i] / 32768.0f);
+                // Store normalized version for FFGL plugins (keep original)
+                audioSamples.push_back(this->aubuffer[i]);
 
                 // For beat detection: use RAW values (original approach)
                 this->auin[i] = this->aubuffer[i]; // NO normalization for beat detection
@@ -11101,7 +11248,7 @@ void Program::process_audio() {
                 float real = (float)ffglFFTOut[i][0];
                 float imag = (float)ffglFFTOut[i][1];
                 float magnitude = sqrt(real * real + imag * imag);
-                magnitude *= 100.0f;  // Scale for FFGL plugins
+                magnitude *= 1024.0f;  // Scale for FFGL plugins
                 linearFFT.push_back(magnitude);
             }
 
@@ -11127,36 +11274,16 @@ void Program::process_audio() {
                 fftMagnitudes[i] = linearFFT[sourceBin];
             }
 
-            // Now the frequency ranges are much more realistic:
-            // Bass (0-682): ~20Hz-200Hz (actual bass)
-            // Mid (683-1364): ~200Hz-2kHz (vocals, mids)
-            // High (1365-2047): ~2kHz-22kHz (actual highs)
+            // Create stereo audio data for ISF plugins from mono source
+            std::vector<float> stereoAudioForISF;
+            stereoAudioForISF.reserve(this->ausamples * 2); // Double size for stereo
 
-            // Debug frequency distribution with 2048 bins
-            float bassSum = 0, midSum = 0, highSum = 0;
-            int bassCount = 0, midCount = 0, highCount = 0;
-            int bassSep = 2048 / 3;   // 682
-            int highSep = bassSep * 2; // 1365
-
-            for (int i = 0; i < 2048; i++) {
-                if (i < bassSep) {
-                    bassSum += fftMagnitudes[i];
-                    bassCount++;
-                } else if (i >= bassSep && i < highSep) {
-                    midSum += fftMagnitudes[i];
-                    midCount++;
-                } else {
-                    highSum += fftMagnitudes[i];
-                    highCount++;
-                }
+            for (int i = 0; i < this->ausamples; i++) {
+                float auSample = this->aubuffer[i] + 0.5f;  // Much less normalization than /32768
+                // Create stereo from mono by duplicating channels
+                stereoAudioForISF.push_back(auSample);  // Left channel
+                stereoAudioForISF.push_back(auSample);  // Right channel (same as left)
             }
-
-            float bassAvg = bassCount > 0 ? bassSum / bassCount : 0;
-            float midAvg = midCount > 0 ? midSum / midCount : 0;
-            float highAvg = highCount > 0 ? highSum / highCount : 0;
-
-            printf("Mapped FFT (2048 bins) - Bass(0-%d): %.6f, Mid(%d-%d): %.6f, High(%d-2047): %.6f\n",
-                   bassSep-1, bassAvg, bassSep, highSep-1, midAvg, highSep, highAvg);
 
             // Send both FFT and raw audio data to FFGL plugins
             for (size_t i = 0; i < this->ffglinstances.size(); ++i) {
@@ -11173,7 +11300,60 @@ void Program::process_audio() {
                         instance->storeAudioData(fftMagnitudes.data(), fftMagnitudes.size());
 
                         // Store raw audio samples for waveform-based plugins
+                        // Use audioSamples for FFGL (keep original behavior)
                         instance->storeAudioSamples(audioSamples.data(), audioSamples.size());
+                    }
+                }
+            }
+
+            // FFT and audio to ISF plugins
+            for (int i = 0; i < mainprogram->isfeffectnames.size() + mainprogram->isfsourcenames.size() + mainprogram->isfmixernames.size(); i++) {
+                auto instancevec = mainprogram->isfinstances[i];
+                for (auto& instance : instancevec) {
+                    auto inputs = instance->getInputInfo();
+
+                    // Check for FFT inputs
+                    bool foundFFT = false;
+                    for (auto input : inputs) {
+                        if (input.type == ISFLoader::INPUT_AUDIO_FFT) {
+                            foundFFT = true;
+                            break;
+                        }
+                    }
+                    if (foundFFT) {
+                        // Store FFT data for audioFFT inputs (thread-safe)
+                        instance->storeAudioFFTData(fftMagnitudes.data(), fftMagnitudes.size());
+
+                        static int debugCounter = 0;
+                        if (++debugCounter % 100 == 0) {
+                            // Check FFT data range
+                            float fftMin = *std::min_element(fftMagnitudes.begin(), fftMagnitudes.end());
+                            float fftMax = *std::max_element(fftMagnitudes.begin(), fftMagnitudes.end());
+                            std::cout << "FFT range: " << fftMin << " to " << fftMax << std::endl;
+
+                            // Check some specific values
+                            std::cout << "First 5 FFT: ";
+                            for (int i = 0; i < 5; i++) std::cout << fftMagnitudes[i] << " ";
+                            std::cout << std::endl;
+                        }
+                    }
+
+                    // Check for audio inputs
+                    bool foundAudio = false;
+                    for (auto input : inputs) {
+                        if (input.type == ISFLoader::INPUT_AUDIO) {
+                            foundAudio = true;
+                            break;
+                        }
+                    }
+                    if (foundAudio) {
+                        // Store stereo audio samples for ISF audio inputs (thread-safe)
+                        instance->storeAudioSamples(stereoAudioForISF.data(), stereoAudioForISF.size());
+
+                        static int debugCounter = 0;
+                        if (++debugCounter % 100 == 0) { // Every 100 frames
+                            std::cout << "Stored ISF audio samples: " << stereoAudioForISF.size() << " samples" << std::endl;
+                        }
                     }
                 }
             }

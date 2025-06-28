@@ -49,7 +49,8 @@ typedef enum
 	CROSSFADING = 23,
     WIPE = 24,
     FFGL_MIXER = 1000,
-	
+    ISF_MIXER = 2000,
+
 } BLEND_TYPE;
 
 class NodePage;
@@ -160,9 +161,13 @@ class BlendNode: public Node {
 		float chgreen = 0.0f;
 		float chblue = 0.0f;
         int ffglmixernr = -1;
-        int instancenr = -1;
+        int ffglinstancenr = -1;
+        int isfmixernr = -1;
+        int isfpluginnr = -1;
+        int isfinstancenr = -1;
         int numrows = 0;
         std::vector<Param*> ffglparams;
+        std::vector<Param*> isfparams;
         Boxx* mixerbox;
 		BlendNode();
 		~BlendNode();

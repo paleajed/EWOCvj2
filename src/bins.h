@@ -128,6 +128,7 @@ class BinsMain {
 		void hap_encode(std::string srcpath, BinElement* binel, BinElement* bdm);
         void undo_redo(char offset);
         void clear_undo();
+        void save_binjpegs();
         BinsMain();
 
 	private:

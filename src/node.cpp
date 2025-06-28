@@ -190,8 +190,10 @@ void Node::renew_texes(float ow, float oh) {
 	GLuint tex;
 	if (this->type == VIDEO) {
 		VideoNode* vnode = (VideoNode*)this;
-		tex = set_texes(vnode->layer->fbotex, &vnode->layer->fbo, ow, oh);
-		vnode->layer->fbotex = tex;
+        tex = set_texes(vnode->layer->tempfbotex, &vnode->layer->tempfbo, ow, oh);
+        vnode->layer->tempfbotex = tex;
+        tex = set_texes(vnode->layer->fbotex, &vnode->layer->fbo, ow, oh);
+        vnode->layer->fbotex = tex;
 	}
 	else if (this->type == EFFECT) {
 		EffectNode* enode = (EffectNode*)this;

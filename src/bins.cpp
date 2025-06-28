@@ -2420,6 +2420,7 @@ void BinsMain::open_bin(std::string path, Bin *bin, bool newbin) {
 					pos = std::stoi(istring);
                     bin->elements[pos]->pos = pos;
                     bin->elements[pos]->bin = bin;
+                    bin->elements[pos]->autosavejpegsaved = false;
                 }
                 if (istring == "ABSPATH") {
                     reta = false;
@@ -2868,6 +2869,68 @@ void BinsMain::open_handlefile(std::string path, GLuint tex) {
     this->addpaths.push_back(path);
 }
 
+void BinsMain::save_binjpegs() {
+    // every loop iteration, load one bin element jpeg if there are any unloaded ones
+    if (!mainmix->retargeting) {
+        for (Bin *bin: this->bins) {
+            if (bin->open_positions.size() != 0) {
+                int pos = *(bin->open_positions.begin());
+                if (bin->elements[pos]->name != "") {
+                    if (exists(bin->elements[pos]->jpegpath)) {
+                        std::filesystem::current_path(mainprogram->project->binsdir);
+                        std::string path = pathtoplatform(
+                                std::filesystem::absolute(bin->elements[pos]->jpegpath).generic_string());
+                        open_thumb(path, bin->elements[pos]->tex);
+                        std::filesystem::current_path(mainprogram->contentpath);
+                    } else {
+                        bool dummy = false;
+                    }
+                    bin->elements[pos]->jpegsaved = true;
+                } else {
+                    bool dummy = false;
+                }
+                bin->open_positions.erase(pos);
+            } else {
+                // each loop iteration, save ten bin elements / element jpegs to prepare for autosave
+                std::string str = mainprogram->project->autosavedir + "temp/bins/" + bin->name;
+                if (!exists(str)) {
+                    std::filesystem::create_directories(std::filesystem::path(str));
+                }
+                int cnt = 0;
+                bool brk = false;
+                for (Bin *bin: this->bins) {
+                    for (BinElement *elem: bin->elements) {
+                        if (elem->path != "") {
+                            std::string elempath = str + "/" + basename(elem->path);
+                            if (!exists(elempath)) {
+                                if (elem->type == ELEM_LAYER || elem->type == ELEM_DECK || elem->type == ELEM_MIX) {
+                                    copy_file(elem->path, elempath);
+                                    cnt++;
+                                }
+                            }
+                            if (cnt == 10) {
+                                brk = true;
+                                break;
+                            }
+                        }
+                    }
+                    if (brk) break;
+                }
+                for (BinElement *binel: bin->elements) {
+                    if (binel->path != "") {
+                        if (!binel->autosavejpegsaved) {
+                            std::string jpgpath = str + "/" + basename(binel->jpegpath);
+                            binel->autosavejpegsaved = true;
+                            if (binel->jpegpath != "") save_thumb(jpgpath, binel->tex);
+                            cnt++;
+                            if (cnt == 10) break;
+                        }
+                    }
+                }
+            }
+        }
+    }
+}
 
 std::tuple<std::string, std::string> BinsMain::hap_binel(BinElement *binel, BinElement *bdm) {
 	// encode single bin element, possibly contained in a deck or a mix

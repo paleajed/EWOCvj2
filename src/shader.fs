@@ -1587,6 +1587,12 @@ void main()
 		return;
 	}
 
+    if (interm == 2) {
+		vec4 texcol1 = texture2D(Sampler0, texco);
+		vec4 texcol2 = texture2D(Sampler1, texco);
+    	FragColor = vec4(texcol1.rgb * drywet + (1.0f - drywet) * texcol2.rgb, texcol1.a * opacity);
+    	return;
+    }
     if (interm == 1) {
 		texcol = texture2D(Sampler0, texco);
 		switch (fxid) {
