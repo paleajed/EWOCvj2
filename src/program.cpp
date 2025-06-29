@@ -70,16 +70,9 @@
 #include "SDL2/SDL_syswm.h"
 #include <turbojpeg.h>
 #include <libavutil/channel_layout.h>
-// my own headers
-#include "box.h"
-#include "effect.h"
-#include "node.h"
-#include "layer.h"
-#include "window.h"
+
+// my own header
 #include "program.h"
-#include "loopstation.h"
-#include "bins.h"
-#include "retarget.h"
 
 #include <tinyfiledialogs.h>
 extern "C" {
@@ -581,7 +574,7 @@ Program::Program() {
     // deck A up
 	this->effscrollupA = new Boxx;
 	this->effscrollupA->vtxcoords->x1 = -1.0;
-	this->effscrollupA->vtxcoords->y1 = 1.0 - this->layh * 1.5f;
+	this->effscrollupA->vtxcoords->y1 = 1.0 - this->layh * 1.5f - 0.375f;
 	this->effscrollupA->vtxcoords->w = 0.0375f;
 	this->effscrollupA->vtxcoords->h = 0.075f;
 	this->effscrollupA->upvtxtoscr();
@@ -591,7 +584,7 @@ Program::Program() {
     // deck B up
 	this->effscrollupB = new Boxx;
 	this->effscrollupB->vtxcoords->x1 = 1.0 - 0.075f;
-	this->effscrollupB->vtxcoords->y1 = 1.0 - this->layh * 1.5f;
+	this->effscrollupB->vtxcoords->y1 = 1.0 - this->layh * 1.5f - 0.375f;
 	this->effscrollupB->vtxcoords->w = 0.0375f;
 	this->effscrollupB->vtxcoords->h = 0.075f;
 	this->effscrollupB->upvtxtoscr();
@@ -3395,7 +3388,7 @@ int Program::handle_menu(Menu* menu, float xshift, float yshift) {
                 continue;
             }
 
-            // Always position columns from left edge when scrolling
+            // Always position columns from left to right, maintaining entry order
             xoff = menu->width * displayColumn * 1.5f + xshift;
 
             std::size_t sub = menu->entries[k].find("submenu");
@@ -3494,95 +3487,9 @@ void Program::handle_mixenginemenu() {
             if (mainprogram->menuresults[0] > 21) {
                 BlendNode *bnode = (BlendNode *) mainmix->mousenode;
                 if (mainprogram->menuresults[0] < mainprogram->ffglmixernames.size() + 22) {
-                    bnode->blendtype = FFGL_MIXER;
-
-                    bnode->ffglmixernr = mainprogram->menuresults[0] - 22;
-
-                    int w = mainprogram->ow[!mainprogram->prevmodus];
-                    int h = mainprogram->oh[!mainprogram->prevmodus];
-
-                    auto plug = mainprogram->ffglmixerplugins[bnode->ffglmixernr];
-                    auto instance = plug->createInstance(w, h);
-                    mainprogram->ffglinstances[bnode->ffglmixernr].push_back(
-                            instance);
-                    bnode->ffglinstancenr =
-                            mainprogram->ffglinstances[bnode->ffglmixernr].size() -
-                            1;
-
-                    // get parameters from FFGLHost::parameters
-                    bnode->ffglparams.clear();
-                    bnode->numrows = 1;
-                    int cnt = 0;
-                    for (auto par: instance->parameters) {
-                        Param *param = new Param;
-                        if (cnt != 0) {
-                            if (cnt % 3 == 0 || (par.type == FF_TYPE_TEXT || par.type == FF_TYPE_FILE)) {
-                                param->nextrow = true;
-                                bnode->numrows++;
-                            }
-                        }
-                        cnt++;
-
-                        cnt = param->ffglset_parameter_to(par, cnt);
-
-                        param->box->tooltiptitle = par.name;
-                        param->box->tooltip = "Set " + par.name + " parameter of FFGL " +
-                                              mainprogram->ffglmixernames[bnode->ffglmixernr] +
-                                              " mixer plugin ";
-                        bnode->ffglparams.push_back(param);
-                    }
+                    bnode->set_ffglmixer(mainprogram->menuresults[0] - 22);
                 } else if (mainprogram->menuresults[0] >= mainprogram->ffglmixernames.size() + 22) {
-                    bnode->blendtype = ISF_MIXER;
-                    bnode->isfmixernr = mainprogram->menuresults[0] - mainprogram->ffglmixernames.size() - 22;
-                    std::string sourcename = mainprogram->isfmixernames[bnode->isfmixernr];
-                    for (int i = 0; i < mainprogram->isfeffectnames.size() + mainprogram->isfsourcenames.size() + mainprogram->isfmixernames.size(); i++) {
-                        if (mainprogram->isfloader.findShader(sourcename) == mainprogram->isfloader.getShader(i)) {
-                            bnode->isfpluginnr = i;
-                            break;
-                        }
-                    }
-
-                    auto *shader = mainprogram->isfloader.getShader(bnode->isfpluginnr);
-                    auto instance = shader->createInstance();
-                    mainprogram->isfinstances[bnode->isfpluginnr].push_back(instance);
-                    bnode->isfinstancenr = mainprogram->isfinstances[bnode->isfpluginnr].size() - 1;
-
-                    // get parameters
-                    bnode->isfparams.clear();
-                    bnode->numrows = 1;
-                    int cnt = 0;
-                    for (auto par: instance->getParameterInfo()) {
-                        Param *param = new Param;
-                        if (cnt != 0) {
-                            if (cnt % 3 == 0 || (par.type == ISFLoader::PARAM_POINT2D)) {
-                                param->nextrow = true;
-                                bnode->numrows++;
-                            }
-                        }
-                        cnt++;
-
-                        auto parvec = param->isfset_parameter_to(par, -1);
-
-                        for (int i = 0; i < parvec.size(); i++) {
-                            Param *resultpar = parvec[i];
-                            resultpar->box->tooltiptitle = par.name;
-                            std::string addstr = "";
-                            if (resultpar->type == ISFLoader::PARAM_POINT2D) {
-                                if (i == 0) addstr = " X";
-                                else addstr = " Y";
-                            } else if (resultpar->type == ISFLoader::PARAM_COLOR) {
-                                if (i == 0) addstr = " RED";
-                                else if (i == 1) addstr = " GREEN";
-                                else if (i == 2) addstr = " BLUE";
-                                else addstr = " ALPHA";
-                            }
-                            resultpar->box->tooltip = "Set " + par.name + addstr + " parameter of ISF " +
-                                                      mainprogram->isfeffectnames[bnode->isfmixernr] + " mixer plugin ";
-                            bnode->isfparams.push_back(resultpar);
-
-                        }
-                    }
-                    bnode->layer->numefflines[bnode->layer->effcat] += bnode->numrows;
+                    bnode->set_isfmixer(mainprogram->menuresults[0] - mainprogram->ffglmixernames.size() - 22);
                 }
             } else if (mainmix->mousenode->type == BLEND) {
                 ((BlendNode *) mainmix->mousenode)->blendtype = (BLEND_TYPE) (mainprogram->menuresults[0] + 1);
@@ -4693,11 +4600,13 @@ void Program::handle_laymenu1() {
         else if ((!cond && k == 18) || k == 18 - cond * 2) {
             // switch layer to generator type
             if (this->menuresults.size()) {
-                if (this->menuresults[0] < mainprogram->ffglsourcenames.size()) {
-                    mainmix->mouselayer->set_ffglsource(this->menuresults[0]);
+                if (this->absources[this->menuresults[0]] >= 1000 && this->absources[this->menuresults[0]] < 2000) {
+                    int ffglnr = this->absources[this->menuresults[0]] - 1000;
+                    mainmix->mouselayer->set_ffglsource(ffglnr);
                 }
-                else {
-                    mainmix->mouselayer->set_isfsource(mainprogram->isfsourcenames[this->menuresults[0] - mainprogram->ffglsourcenames.size()]);
+                if (this->absources[this->menuresults[0]] >= 2000 && this->absources[this->menuresults[0]] < 3000) {
+                    int isfnr = this->absources[this->menuresults[0]] - 2000;
+                    mainmix->mouselayer->set_isfsource(mainprogram->isfsourcenames[isfnr]);
                 }
             }
         }
@@ -4791,11 +4700,13 @@ void Program::handle_newlaymenu() {
              std::vector<Layer *> &lvec = choose_layers(mainmix->mousedeck);
              Layer *lay = mainmix->add_layer(lvec, lvec.size());
              if (this->menuresults.size()) {
-                 if (this->menuresults[0] < mainprogram->ffglsourcenames.size()) {
-                     lay->set_ffglsource(this->menuresults[0]);
+                 if (this->absources[this->menuresults[0]] >= 1000 && this->absources[this->menuresults[0]] < 2000) {
+                     int ffglnr = this->absources[this->menuresults[0]] - 1000;
+                     lay->set_ffglsource(ffglnr);
                  }
-                 else {
-                     lay->set_isfsource(mainprogram->isfsourcenames[this->menuresults[0] - mainprogram->ffglsourcenames.size()]);
+                 if (this->absources[this->menuresults[0]] >= 2000 && this->absources[this->menuresults[0]] < 3000) {
+                     int isfnr = this->absources[this->menuresults[0]] - 2000;
+                     lay->set_isfsource(mainprogram->isfsourcenames[isfnr]);
                  }
              }
          }
@@ -8978,22 +8889,34 @@ void Program::define_menus() {
     }
     std::sort(meffects.begin(), meffects.end());
     for (int i = 0; i < meffects.size(); i++) {
+        bool brk = false;
         for (int j = 0; j < effects.size(); j++) {
             if (meffects[i] == effects[j]) {
+                if (std::find(mainprogram->abeffects.begin(), mainprogram->abeffects.end(), j) != mainprogram->abeffects.end()) {
+                    continue;
+                }
                 mainprogram->abeffects.push_back((EFFECT_TYPE) j);
+                brk = true;
                 break;
             }
         }
+        if (brk) continue;
+        brk = false;
         for (int j = 0; j < mainprogram->ffgleffectnames.size(); j++) {
             if (meffects[i] == mainprogram->ffgleffectnames[j]) {
+                if (std::find(mainprogram->abeffects.begin(), mainprogram->abeffects.end(), 1000 + j) != mainprogram->abeffects.end()) {
+                    continue;
+                }
                 mainprogram->abeffects.push_back(1000 + j);
+                brk = true;
                 break;
             }
         }
+        if (brk) continue;
         for (int j = 0; j < mainprogram->isfeffectnames.size(); j++) {
             if (meffects[i] == mainprogram->isfeffectnames[j]) {
                 mainprogram->abeffects.push_back(2000 + j);
-                break;
+                continue;
             }
         }
     }
@@ -9184,6 +9107,32 @@ void Program::define_menus() {
     }
     if (mainprogram->ffglsourcenames.empty() && mainprogram->isfsourcenames.empty()) {
         sourceops.push_back("No plugins installed");
+    }
+    std::sort(sourceops.begin(), sourceops.end());
+    for (int i = 0; i < sourceops.size(); i++) {
+        bool brk = false;
+        for (int j = 0; j < mainprogram->ffglsourcenames.size(); j++) {
+            if (sourceops[i] == mainprogram->ffglsourcenames[j]) {
+                if (std::find(mainprogram->absources.begin(), mainprogram->absources.end(), 1000 + j) != mainprogram->absources.end()) {
+                    continue;
+                }
+                mainprogram->absources.push_back(1000 + j);
+                brk = true;
+                break;
+            }
+        }
+        if (brk) continue;
+        brk = false;
+        for (int j = 0; j < mainprogram->isfsourcenames.size(); j++) {
+            if (sourceops[i] == mainprogram->isfsourcenames[j]) {
+                if (std::find(mainprogram->absources.begin(), mainprogram->absources.end(), 2000 + j) != mainprogram->absources.end()) {
+                    continue;
+                }
+                mainprogram->absources.push_back(2000 + j);
+                brk = true;
+                break;
+            }
+        }
     }
     mainprogram->make_menu("sourcemenu", mainprogram->sourcemenu, sourceops);
 
@@ -11045,45 +10994,45 @@ size_t Program::set_v4l2format(int output, GLuint tex) {
 
 
 void Program::add_to_texpool(GLuint tex) {
-    int sw, sh;
-    glBindTexture(GL_TEXTURE_2D, tex);
-    glGetTexLevelParameteriv(GL_TEXTURE_2D, 0, GL_TEXTURE_WIDTH, &sw);
-    glGetTexLevelParameteriv(GL_TEXTURE_2D, 0, GL_TEXTURE_HEIGHT, &sh);
-    GLint compressedGL = this->texintfmap[tex];
-    if (compressedGL == 0) return;
-    if (sw == 0) {
-        glDeleteTextures(1, &tex);
-        return;
+        int sw, sh;
+        glBindTexture(GL_TEXTURE_2D, tex);
+        glGetTexLevelParameteriv(GL_TEXTURE_2D, 0, GL_TEXTURE_WIDTH, &sw);
+        glGetTexLevelParameteriv(GL_TEXTURE_2D, 0, GL_TEXTURE_HEIGHT, &sh);
+        GLint compressedGL = this->texintfmap[tex];
+        if (compressedGL == 0) return;
+        if (sw == 0) {
+            glDeleteTextures(1, &tex);
+            return;
+        }
+        glClearTexImage(tex, 0, GL_BGRA, GL_UNSIGNED_BYTE, black);
+        this->texpool.insert(std::pair<std::tuple<int, int, GLint>, GLuint>(std::tuple<int, int, GLint>(sw, sh, compressedGL), tex));
     }
-    glClearTexImage(tex, 0, GL_BGRA, GL_UNSIGNED_BYTE, black);
-    this->texpool.insert(std::pair<std::tuple<int, int, GLint>, GLuint>(std::tuple<int, int, GLint>(sw, sh, compressedGL), tex));
-}
 
-GLuint Program::grab_from_texpool(int w, int h, GLint compressed) {
-    auto elem = this->texpool.find(std::tuple<int, int, GLint>(w, h, compressed));
-    if (elem == this->texpool.end()) {
-        return -1;
+    GLuint Program::grab_from_texpool(int w, int h, GLint compressed) {
+        auto elem = this->texpool.find(std::tuple<int, int, GLint>(w, h, compressed));
+        if (elem == this->texpool.end()) {
+            return -1;
+        }
+        GLuint tex = elem->second;
+        this->texpool.erase(elem);
+        return tex;
     }
-    GLuint tex = elem->second;
-    this->texpool.erase(elem);
-    return tex;
-}
 
-void Program::add_to_pbopool(GLuint pbo, GLubyte *mapptr) {
-    GLint bufferSize = 0;
-    glBindBuffer(GL_ARRAY_BUFFER, pbo);
-    glGetBufferParameteriv(GL_ARRAY_BUFFER, GL_BUFFER_SIZE, &bufferSize);
-    this->pbopool.insert(std::pair<int, std::pair<GLuint, GLubyte*>>(bufferSize, std::pair<GLuint, GLubyte*>(pbo, mapptr)));
-}
-
-std::pair<GLuint, GLubyte*> Program::grab_from_pbopool(int bsize) {
-    auto elem = this->pbopool.find(bsize);
-    if (elem == this->pbopool.end()) {
-        return std::pair<GLuint, GLubyte *>(-1, nullptr);
+    void Program::add_to_pbopool(GLuint pbo, GLubyte *mapptr) {
+        GLint bufferSize = 0;
+        glBindBuffer(GL_ARRAY_BUFFER, pbo);
+        glGetBufferParameteriv(GL_ARRAY_BUFFER, GL_BUFFER_SIZE, &bufferSize);
+        this->pbopool.insert(std::pair<int, std::pair<GLuint, GLubyte*>>(bufferSize, std::pair<GLuint, GLubyte*>(pbo, mapptr)));
     }
-    auto retelem = elem->second;
-    this->pbopool.erase(elem);
-    return retelem;
+
+    std::pair<GLuint, GLubyte*> Program::grab_from_pbopool(int bsize) {
+        auto elem = this->pbopool.find(bsize);
+        if (elem == this->pbopool.end()) {
+            return std::pair<GLuint, GLubyte *>(-1, nullptr);
+        }
+        auto retelem = elem->second;
+        this->pbopool.erase(elem);
+        return retelem;
 }
 
 void Program::add_to_fbopool(GLuint fbo) {
@@ -11358,7 +11307,6 @@ void Program::process_audio() {
                 }
             }
 
-            // ORIGINAL LOOP STATION AND LAYER LOGIC
             LoopStation *lpst;
             int counter = this->beatdet->beat_counter;
             for (int m = 0; m < 2; ++m) {

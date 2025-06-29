@@ -67,6 +67,37 @@ public:
         int defaultInt = 0;
         int minInt = 0;
         int maxInt = 100;
+
+        // NEW: For discrete VALUES and LABELS (enum-style parameters)
+        std::vector<int> values;              // Discrete values (e.g., [0, 1, 2, 3])
+        std::vector<std::string> labels;      // Corresponding labels (e.g., ["Left", "Right", "Up", "Down"])
+        bool hasDiscreteValues = false;       // Whether this parameter uses VALUES/LABELS
+
+        // Helper method to get label for a value
+        std::string getLabelForValue(int value) const {
+            for (size_t i = 0; i < values.size() && i < labels.size(); ++i) {
+                if (values[i] == value) {
+                    return labels[i];
+                }
+            }
+            return std::to_string(value); // Fallback to numeric value
+        }
+
+        // Helper method to get value for a label
+        int getValueForLabel(const std::string& label) const {
+            for (size_t i = 0; i < labels.size() && i < values.size(); ++i) {
+                if (labels[i] == label) {
+                    return values[i];
+                }
+            }
+            return defaultInt; // Fallback to default
+        }
+
+        // Check if a value is valid for this parameter
+        bool isValidValue(int value) const {
+            if (!hasDiscreteValues) return true; // No restriction
+            return std::find(values.begin(), values.end(), value) != values.end();
+        }
     };
 
     struct InputInfo {
@@ -84,13 +115,23 @@ public:
         std::string widthExpr;        // Width expression (e.g., "$WIDTH/16.0")
         std::string heightExpr;       // Height expression (e.g., "$HEIGHT/16.0")
 
-        // Runtime calculated values
+        // Runtime calculated values (but NO OpenGL resources here)
         int width = 0;
         int height = 0;
 
-        // OpenGL resources
+        // REMOVED: These are now per-instance
+        // GLuint framebuffer = 0;
+        // GLuint texture = 0;
+    };
+
+// ADD new struct for instance-specific pass data:
+    struct InstancePassInfo {
+        int width = 0;
+        int height = 0;
         GLuint framebuffer = 0;
         GLuint texture = 0;
+
+        ~InstancePassInfo();
     };
 
     // Union to store parameter values efficiently
@@ -236,7 +277,7 @@ private:
     ISFShaderInstance(ISFShader* parent);
 
 public:
-    ~ISFShaderInstance() = default;
+    ~ISFShaderInstance();
 
     // Access template info through instance
     const std::string& getName() const { return parentShader_->getName(); }
@@ -283,6 +324,12 @@ public:
     void storeAudioFFTData(const float* fftData, size_t binCount);
     void storeAudioSamples(const float* audioSamples, size_t sampleCount);
 
+    bool setParameterByLabel(const std::string& name, const std::string& label);
+    bool getParameterLabel(const std::string& name, std::string& label) const;
+    bool getParameterLabels(const std::string& name, std::vector<std::string>& labels) const;
+    bool getParameterValues(const std::string& name, std::vector<int>& values) const;
+    bool isDiscreteParameter(const std::string& name) const;
+
 private:
     int findParameterIndex(const std::string& name) const;
     void setupPassFramebuffers(float renderWidth, float renderHeight);
@@ -305,6 +352,12 @@ private:
     std::vector<float> latestAudioSamples_;
     bool hasNewFFTData_ = false;
     bool hasNewAudioSamples_ = false;
+
+    float lastFrameTime_ = 0.0f;  // Track previous frame time for TIMEDELTA calculation
+
+    std::vector<ISFLoader::InstancePassInfo> instancePasses_;
+
+    int instanceFrameIndex_ = 0;  // Auto-incrementing frame counter for generators
 
     // Audio texture management
     std::vector<GLuint> audioTextures_;

@@ -7,15 +7,8 @@
 
 #include <string>
 
-// my own headers
-#include "box.h"
-#include "effect.h"
-#include "node.h"
-#include "layer.h"
-#include "window.h"
+// my own header
 #include "program.h"
-#include "loopstation.h"
-#include "bins.h"
 
 
 void preview_wipetype(lo_arg **argv, int argc) {

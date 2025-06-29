@@ -169,6 +169,8 @@ class BlendNode: public Node {
         std::vector<Param*> ffglparams;
         std::vector<Param*> isfparams;
         Boxx* mixerbox;
+        void set_ffglmixer(int mixernr);
+        void set_isfmixer(int mixernr);
 		BlendNode();
 		~BlendNode();
 };

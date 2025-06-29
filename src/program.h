@@ -19,7 +19,6 @@
 #include <windows.h>
 #endif
 #include "FFGLHost.h"
-#include "ISFLoader.h"
 
 #ifdef WINDOWS
 #include "direnthwin/dirent.h"
@@ -34,6 +33,15 @@
 #include <cstring>
 #endif
 
+// my own headers
+#include "box.h"
+#include "effect.h"
+#include "node.h"
+#include "layer.h"
+#include "window.h"
+#include "loopstation.h"
+#include "bins.h"
+#include "retarget.h"
 
 class PrefCat;
 class Menu;
@@ -43,6 +51,8 @@ class BinsMain;
 class Bin;
 class BinElement;
 class ShelfElement;
+class ISFLoader;
+class ISFShaderInstance;
 
 #ifdef POSIX
 typedef int SOCKET;
@@ -435,22 +445,26 @@ class Program {
         GLuint quboxvao;
         GLuint prboxvao;
 		GLuint tmboxvao;
+        GLuint splboxvao;
 		GLuint bvbuf;
         GLuint boxvbuf;
         GLuint binvbuf;
         GLuint quboxvbuf;
         GLuint prboxvbuf;
 		GLuint tmboxvbuf;
+        GLuint splboxvbuf;
 		GLuint btbuf;
         GLuint boxtbuf;
         GLuint bintbuf;
         GLuint quboxtbuf;
         GLuint prboxtbuf;
 		GLuint tmboxtbuf;
+        GLuint splboxtbuf;
 		GLuint texvao;
 		GLuint rtvbo;
 		GLuint rttbo;
         GLuint bgtex;
+        GLuint splashtex;
         GLuint loktex;
 		std::vector<OutputEntry*> outputentries;
 		Boxx *scrollboxes[2];
@@ -458,6 +472,7 @@ class Program {
 		Layer *prelay = nullptr;
         std::vector<Layer*> dellays;
         std::vector<Effect*> deleffects;
+        SDL_Window *splashwindow;
         SDL_Window *mainwindow;
 		std::vector<EWindow*> mixwindows;
 		std::vector<Menu*> menulist;
@@ -680,7 +695,8 @@ class Program {
 
 		lo::ServerThread *st;
 		std::unordered_map<std::string, int> wipesmap;
-		std::vector<int> abeffects;
+        std::vector<int> abeffects;
+        std::vector<int> absources;
 
         SDL_Window* requesterwindow = nullptr;
         SDL_Window* dummywindow = nullptr;
@@ -1130,6 +1146,8 @@ class Program {
         char* bl_recv(int sock, char *buf, size_t sz, int flags);
         void create_auinmenu();
 };
+
+
 
 extern Globals *glob;
 extern Program *mainprogram;

@@ -6,14 +6,8 @@
 #include <algorithm>
 #include <set>
 
-#include "node.h"
-#include "box.h"
-#include "effect.h"
-#include "layer.h"
-#include "window.h"
+// my own header
 #include "program.h"
-#include "loopstation.h"
-#include "bins.h"
 
 LoopStation::LoopStation() {
     this->upscrbox = new Boxx;

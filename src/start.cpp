@@ -95,16 +95,8 @@ extern "C" {
 #include FT_BITMAP_H
 #include FT_MODULE_H
 
-// my own headers
-#include "box.h"
-#include "effect.h"
-#include "node.h"
-#include "layer.h"
-#include "window.h"
+// my own header
 #include "program.h"
-#include "loopstation.h"
-#include "bins.h"
-#include "retarget.h"
 
 #define PROGRAM_NAME "EWOCvj"
 
@@ -125,6 +117,7 @@ Retarget *retarget = nullptr;
 float smw, smh;
 SDL_GLContext glc;
 SDL_GLContext orderglc;
+SDL_GLContext splashglc;
 float white[] = { 1.0f, 1.0f, 1.0f, 1.0f };
 float halfwhite[] = { 1.0f, 1.0f, 1.0f, 0.5f };
 float black[] = { 0.0f, 0.0f, 0.0f, 1.0f };
@@ -1637,7 +1630,22 @@ void set_glstructures() {
 	glBufferData(GL_ARRAY_BUFFER, 32, tcoords2, GL_DYNAMIC_DRAW);
 	glEnableVertexAttribArray(1);
 	glVertexAttribPointer(1, 2, GL_FLOAT, GL_FALSE, 8, nullptr);
-	SDL_GL_MakeCurrent(mainprogram->mainwindow, glc);
+
+    SDL_GL_MakeCurrent(mainprogram->splashwindow, glc);
+    glGenBuffers(1, &mainprogram->splboxvbuf);
+    glGenBuffers(1, &mainprogram->splboxtbuf);
+    glGenVertexArrays(1, &mainprogram->splboxvao);
+    glBindVertexArray(mainprogram->splboxvao);
+    glBindBuffer(GL_ARRAY_BUFFER, mainprogram->splboxvbuf);
+    glBufferData(GL_ARRAY_BUFFER, 48, vcoords, GL_DYNAMIC_DRAW);
+    glEnableVertexAttribArray(0);
+    glVertexAttribPointer(0, 3, GL_FLOAT, GL_FALSE, 12, nullptr);
+    glBindBuffer(GL_ARRAY_BUFFER, mainprogram->splboxtbuf);
+    glBufferData(GL_ARRAY_BUFFER, 32, tcoords2, GL_DYNAMIC_DRAW);
+    glEnableVertexAttribArray(1);
+    glVertexAttribPointer(1, 2, GL_FLOAT, GL_FALSE, 8, nullptr);
+
+    SDL_GL_MakeCurrent(mainprogram->mainwindow, glc);
 	mainprogram->bvao = mainprogram->boxvao;
 	mainprogram->bvbuf = mainprogram->boxvbuf;
 	mainprogram->btbuf = mainprogram->boxtbuf;
@@ -3356,29 +3364,32 @@ void onestepfrom(bool stage, Node *node, Node *prevnode, GLuint prevfbotex, GLui
                 int pos = 0;
                 for (int i = 0; i < instance->getParameterInfo().size(); i++) {
                     auto par = instance->getParameterInfo()[i];
+                    int oldpos = pos;
                     if (par.type == ISFLoader::PARAM_COLOR) {
-                        instance->setParameter(par.name, effect->params[pos]->value, effect->params[pos + 1]->value,
-                                               effect->params[pos + 2]->value, effect->params[pos + 3]->value);
+                        instance->setParameter(par.name, effect->params[pos]->value, effect->params[pos + 1]->value, effect->params[pos + 2]->value, effect->params[pos + 3]->value);
                         pos += 4;
-                    } else if (par.type == ISFLoader::PARAM_POINT2D) {
-                        instance->setParameter(par.name, effect->params[pos]->value,
-                                               effect->params[pos + 1]->value);
+                    }
+                    else if (effect->params[pos]->type == ISFLoader::PARAM_POINT2D) {
+                        instance->setParameter(par.name, effect->params[pos]->value, effect->params[pos + 1]->value);
                         pos += 2;
-                    } else if (effect->params[i]->type == ISFLoader::PARAM_BOOL ||
-                               effect->params[i]->type == ISFLoader::PARAM_LONG ||
-                               effect->params[i]->type == ISFLoader::PARAM_EVENT) {
-                        instance->setParameter(par.name, (int) effect->params[pos++]->value);
-                    } else {
+                    }
+                    else if (effect->params[pos]->type == ISFLoader::PARAM_BOOL || effect->params[i]->type == ISFLoader::PARAM_EVENT) {
+                        instance->setParameter(par.name, (int)effect->params[pos++]->value);
+                    }
+                    else if (effect->params[pos]->type == ISFLoader::PARAM_LONG) {
+                        instance->setParameter(par.name, (int) par.values[effect->params[pos++]->value]);
+                    }
+                    else {
                         instance->setParameter(par.name, effect->params[pos++]->value);
                     }
-                    if (effect->params[i]->type == ISFLoader::PARAM_EVENT) {
-                        effect->params[i]->value = 0.0f;
+                    if (effect->params[oldpos]->type == ISFLoader::PARAM_EVENT) {
+                        effect->params[oldpos]->value = 0.0f;
                     }
                 }
 
                 instance->bindInputTexture(prevfbotex, 0);
 
-                instance->render(mainmix->time, mainprogram->ow[stage], mainprogram->oh[stage], (int) lay->frame);
+                instance->render(mainmix->time, mainprogram->ow[stage], mainprogram->oh[stage]);
 
                 glUseProgram(mainprogram->ShaderProgram);
 
@@ -3604,26 +3615,30 @@ void onestepfrom(bool stage, Node *node, Node *prevnode, GLuint prevfbotex, GLui
             int pos = 0;
             for (int i = 0; i < instance->getParameterInfo().size(); i++) {
                 auto par = instance->getParameterInfo()[i];
+                int oldpos = pos;
                 if (par.type == ISFLoader::PARAM_COLOR) {
                     instance->setParameter(par.name, lay->isfparams[pos]->value, lay->isfparams[pos + 1]->value, lay->isfparams[pos + 2]->value, lay->isfparams[pos + 3]->value);
                     pos += 4;
                 }
-                else if (lay->isfparams[i]->type == ISFLoader::PARAM_POINT2D) {
+                else if (lay->isfparams[pos]->type == ISFLoader::PARAM_POINT2D) {
                     instance->setParameter(par.name, lay->isfparams[pos]->value, lay->isfparams[pos + 1]->value);
                     pos += 2;
                 }
-                else if (lay->isfparams[i]->type == ISFLoader::PARAM_BOOL || lay->isfparams[i]->type == ISFLoader::PARAM_LONG || lay->isfparams[i]->type == ISFLoader::PARAM_EVENT) {
+                else if (lay->isfparams[pos]->type == ISFLoader::PARAM_BOOL || lay->isfparams[i]->type == ISFLoader::PARAM_EVENT) {
                     instance->setParameter(par.name, (int)lay->isfparams[pos++]->value);
+                }
+                else if (lay->isfparams[pos]->type == ISFLoader::PARAM_LONG) {
+                    instance->setParameter(par.name, (int) par.values[lay->isfparams[pos++]->value]);
                 }
                 else {
                     instance->setParameter(par.name, lay->isfparams[pos++]->value);
                 }
-                if (lay->isfparams[i]->type == ISFLoader::PARAM_EVENT) {
-                    lay->isfparams[i]->value = 0.0f;
+                if (lay->isfparams[oldpos]->type == ISFLoader::PARAM_EVENT) {
+                    lay->isfparams[oldpos]->value = 0.0f;
                 }
             }
 
-            instance->render(mainmix->time, mainprogram->ow[stage], mainprogram->oh[stage], (int)lay->frame);
+            instance->render(mainmix->time, mainprogram->ow[stage], mainprogram->oh[stage]);
 
             glUseProgram(mainprogram->ShaderProgram);
 
@@ -3776,22 +3791,26 @@ void onestepfrom(bool stage, Node *node, Node *prevnode, GLuint prevfbotex, GLui
                     int pos = 0;
                     for (int i = 0; i < instance->getParameterInfo().size(); i++) {
                         auto par = instance->getParameterInfo()[i];
+                        int oldpos = pos;
                         if (par.type == ISFLoader::PARAM_COLOR) {
                             instance->setParameter(par.name, bnode->isfparams[pos]->value, bnode->isfparams[pos + 1]->value, bnode->isfparams[pos + 2]->value, bnode->isfparams[pos + 3]->value);
                             pos += 4;
                         }
-                        else if (bnode->isfparams[i]->type == ISFLoader::PARAM_POINT2D) {
+                        else if (bnode->isfparams[pos]->type == ISFLoader::PARAM_POINT2D) {
                             instance->setParameter(par.name, bnode->isfparams[pos]->value, bnode->isfparams[pos + 1]->value);
                             pos += 2;
                         }
-                        else if (bnode->isfparams[i]->type == ISFLoader::PARAM_BOOL || bnode->isfparams[i]->type == ISFLoader::PARAM_LONG || bnode->isfparams[i]->type == ISFLoader::PARAM_EVENT) {
+                        else if (bnode->isfparams[pos]->type == ISFLoader::PARAM_BOOL || bnode->isfparams[i]->type == ISFLoader::PARAM_EVENT) {
                             instance->setParameter(par.name, (int)bnode->isfparams[pos++]->value);
+                        }
+                        else if (bnode->isfparams[pos]->type == ISFLoader::PARAM_LONG) {
+                            instance->setParameter(par.name, (int) par.values[bnode->isfparams[pos++]->value]);
                         }
                         else {
                             instance->setParameter(par.name, bnode->isfparams[pos++]->value);
                         }
-                        if (bnode->isfparams[i]->type == ISFLoader::PARAM_EVENT) {
-                            bnode->isfparams[i]->value = 0.0f;
+                        if (bnode->isfparams[oldpos]->type == ISFLoader::PARAM_EVENT) {
+                            bnode->isfparams[oldpos]->value = 0.0f;
                         }
                     }
 
@@ -7447,6 +7466,9 @@ int main(int argc, char* argv[]) {
     //glewExperimental = GL_TRUE;
     glewInit();
 
+    mainprogram->splashwindow = SDL_CreateWindow("", (glob->w - (glob->h / 2)) / 2, glob->h / 4, glob->h / 2, glob->h / 2,
+                                                 SDL_WINDOW_OPENGL | SDL_WINDOW_BORDERLESS | SDL_WINDOW_SHOWN |
+                                                 SDL_WINDOW_ALLOW_HIGHDPI);
     mainprogram->requesterwindow = SDL_CreateWindow("EWOCvj2", glob->w / 4, glob->h / 4, glob->w / 2,
                                                glob->h / 2, SDL_WINDOW_OPENGL | SDL_WINDOW_HIDDEN |
                                                                           SDL_WINDOW_ALLOW_HIGHDPI);
@@ -7606,6 +7628,43 @@ int main(int argc, char* argv[]) {
 
     // load background graphic
     //ilEnable(IL_CONV_PAL);
+    SDL_GL_MakeCurrent(mainprogram->splashwindow, glc);
+    ILuint splash;
+    ilGenImages(1, &splash);
+    ilBindImage(splash);
+    ilActiveImage(0);
+#ifdef WINDOWS
+    ret = ilLoadImage((const ILstring)"./splash.jpeg");
+#endif
+#ifdef POSIX
+    ret = ilLoadImage("/usr/share/ewocvj2/splash.jpeg");
+#endif
+    if (ret == IL_FALSE) {
+        printf("can't load splash image\n");
+        fflush(stdout);
+    }
+    w = ilGetInteger(IL_IMAGE_WIDTH);
+    h = ilGetInteger(IL_IMAGE_HEIGHT);
+    glGenTextures(1, &mainprogram->splashtex);
+    glBindTexture(GL_TEXTURE_2D, mainprogram->splashtex);
+    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR);
+    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
+    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_BORDER);
+    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_BORDER);
+    glTexImage2D(GL_TEXTURE_2D, 0, GL_RGB8, w, h, 0, GL_RGB, GL_UNSIGNED_BYTE, (char *) ilGetData());
+    glBindFramebuffer(GL_FRAMEBUFFER, 0);
+    glDrawBuffer(GL_FRONT);
+    glViewport(0, 0, glob->h / 2.0f, glob->h / 2.0f);
+    mainprogram->bvao = mainprogram->splboxvao;
+    mainprogram->bvbuf = mainprogram->splboxvbuf;
+    mainprogram->btbuf = mainprogram->splboxtbuf;
+    draw_direct(nullptr, black, -1.0f, -1.0f, 2.0f, 2.0f, 0.0f, 0.0f, 1.0f, 1.0f, 0, mainprogram->splashtex, glob->w, glob->h, false, false);
+
+    SDL_GL_MakeCurrent(mainprogram->mainwindow, glc);
+    /*glEnable(GL_BLEND);
+    glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
+    draw_direct(nullptr, black, -2.0f, -1.0f, 4.0f, 2.0f, 0.0f, 0.0f, 1.0f, 1.0f, 0, mainprogram->bgtex, glob->w, glob->h, false, false);
+*/
 
 #ifdef WINDOWS
     std::filesystem::path full_path(std::filesystem::current_path());
@@ -7800,9 +7859,15 @@ int main(int argc, char* argv[]) {
     }
 
     // load installed isf plugins
+    SDL_GL_MakeCurrent(mainprogram->splashwindow, glc);
     mainprogram->isfloader.loadISFDirectory(mainprogram->isfdir);
+    SDL_GL_MakeCurrent(mainprogram->mainwindow, glc);
     std::vector<std::string> myShaderNames;
     mainprogram->isfloader.getShaderNames(myShaderNames);
+    for (auto &name : myShaderNames) {
+        std::transform(name.begin(), name.end(), name.begin(), ::toupper);
+    }
+    std::sort(myShaderNames.begin(), myShaderNames.end());
     for (auto name : myShaderNames) {
         auto shader = mainprogram->isfloader.findShader(name);
         if (shader->getType() == ISFLoader::EFFECT) {
@@ -7874,6 +7939,9 @@ int main(int argc, char* argv[]) {
 
 
     mainprogram->io = new boost::asio::io_context();
+
+    SDL_DestroyWindow(mainprogram->splashwindow);
+
 
     while (!quit) {
 

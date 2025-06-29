@@ -7,14 +7,8 @@
 
 #include <algorithm>
 
-#include "node.h"
-#include "box.h"
-#include "effect.h"
-#include "layer.h"
-#include "window.h"
+// my own header
 #include "program.h"
-#include "loopstation.h"
-#include "bins.h"
 
 
 float pdistance(float x, float y, float x1, float y1, float x2, float y2) {

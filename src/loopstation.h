@@ -84,7 +84,7 @@ class LoopStationElement {
 		int eventpos = 0;
 		bool atend = false;
 		bool didsomething = false;
-        char beats = 0;
+        int beats = 0;
         float buspeed = 1.0f;
 		void init();
 		void handle();

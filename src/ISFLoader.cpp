@@ -7,6 +7,8 @@
 #include <ctime>
 #include <cmath>
 
+#include "program.h""
+
 // Static member definition
 const char* ISFLoader::vertexShaderSource_ = R"(
 #version 330 core
@@ -119,8 +121,28 @@ bool ISFLoader::loadISFDirectory(const std::string& directory) {
     }
 
     try {
+        int total = 0;
+        for (const auto& entry : std::filesystem::recursive_directory_iterator(directory)) {
+            total++;
+        }
+        int count = 0;
         for (const auto& entry : std::filesystem::recursive_directory_iterator(directory)) {
             if (entry.is_regular_file() && entry.path().extension() == ".fs") {
+                count++;
+                if (count % 8 == 1) {
+                    SDL_GL_MakeCurrent(mainprogram->splashwindow, glc);
+                    glBindFramebuffer(GL_FRAMEBUFFER, 0);
+                    glDrawBuffer(GL_FRONT);
+                    glViewport(0, 0, glob->h / 2.0f, glob->h / 2.0f);
+                    mainprogram->bvao = mainprogram->splboxvao;
+                    mainprogram->bvbuf = mainprogram->splboxvbuf;
+                    mainprogram->btbuf = mainprogram->splboxtbuf;
+                    draw_box(white, black, -0.25f, -0.9f, 0.5f, 0.1f, 0.0f, 0.0f,
+                             1.0f, 1.0f, 0, -1, glob->w, glob->h, false);
+                    draw_box(white, white, -0.25f, -0.9f, 0.5f * (float)count / (float)total, 0.1f, 0.0f, 0.0f,
+                             1.0f, 1.0f, 0, -1, glob->w, glob->h, false);
+                    glFlush();
+                }
                 loadISFFile(entry.path().string());
             }
         }
@@ -380,9 +402,63 @@ bool ISFLoader::parseParameters(const json& inputs, ISFShader& shader) {
                 break;
 
             case PARAM_LONG:
+                // Handle standard MIN/MAX for continuous ranges
                 param.minInt = input.contains("MIN") ? input["MIN"].get<int>() : 0;
                 param.maxInt = input.contains("MAX") ? input["MAX"].get<int>() : 100;
                 param.defaultInt = input.contains("DEFAULT") ? input["DEFAULT"].get<int>() : 0;
+
+                // NEW: Handle VALUES and LABELS for discrete enum-style parameters
+                if (input.contains("VALUES") && input["VALUES"].is_array()) {
+                    param.hasDiscreteValues = true;
+
+                    // Parse VALUES array
+                    for (const auto& value : input["VALUES"]) {
+                        if (value.is_number_integer()) {
+                            param.values.push_back(value.get<int>());
+                        }
+                    }
+
+                    // Parse LABELS array (optional)
+                    if (input.contains("LABELS") && input["LABELS"].is_array()) {
+                        for (const auto& label : input["LABELS"]) {
+                            if (label.is_string()) {
+                                param.labels.push_back(label.get<std::string>());
+                            }
+                        }
+                    }
+
+                    // Validate that we have matching VALUES and LABELS (if labels exist)
+                    if (!param.labels.empty() && param.labels.size() != param.values.size()) {
+                        std::cerr << "Warning: VALUES and LABELS arrays have different sizes for parameter "
+                                  << param.name << std::endl;
+                        // Truncate to shorter size
+                        size_t minSize = std::min(param.values.size(), param.labels.size());
+                        param.values.resize(minSize);
+                        param.labels.resize(minSize);
+                    }
+
+                    // If no labels provided, generate default ones
+                    if (param.labels.empty()) {
+                        for (int value : param.values) {
+                            param.labels.push_back(std::to_string(value));
+                        }
+                    }
+
+                    // Validate that default value is in the VALUES array
+                    if (!param.isValidValue(param.defaultInt)) {
+                        std::cerr << "Warning: Default value " << param.defaultInt
+                                  << " is not in VALUES array for parameter " << param.name << std::endl;
+                        if (!param.values.empty()) {
+                            param.defaultInt = param.values[0]; // Use first valid value
+                        }
+                    }
+
+                    std::cout << "Parsed discrete parameter " << param.name << " with "
+                              << param.values.size() << " values:" << std::endl;
+                    for (size_t i = 0; i < param.values.size(); ++i) {
+                        std::cout << "  " << param.values[i] << " -> \"" << param.labels[i] << "\"" << std::endl;
+                    }
+                }
                 break;
 
             case PARAM_BOOL:
@@ -555,12 +631,25 @@ bool ISFLoader::loadExternalImage(const std::string& imagePath, InputInfo& input
     // Convert to RGBA if needed
     ilConvertImage(IL_RGBA, IL_UNSIGNED_BYTE);
 
-    // Create OpenGL texture
-    glGenTextures(1, &inputInfo.textureId);
-    glBindTexture(GL_TEXTURE_2D, inputInfo.textureId);
+    // Try to get texture from pool first
+    GLint format = GL_RGBA8; // Standard RGBA format
+    inputInfo.textureId = mainprogram->grab_from_texpool(inputInfo.width, inputInfo.height, format);
 
-    glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA, inputInfo.width, inputInfo.height, 0,
-                 GL_RGBA, GL_UNSIGNED_BYTE, ilGetData());
+    if (inputInfo.textureId == -1) {
+        // Pool miss - create new texture
+        glGenTextures(1, &inputInfo.textureId);
+        glBindTexture(GL_TEXTURE_2D, inputInfo.textureId);
+        glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA, inputInfo.width, inputInfo.height, 0,
+                     GL_RGBA, GL_UNSIGNED_BYTE, ilGetData());
+
+        // Register the texture format for pooling
+        mainprogram->texintfmap[inputInfo.textureId] = format;
+    } else {
+        // Pool hit - just upload data to existing texture
+        glBindTexture(GL_TEXTURE_2D, inputInfo.textureId);
+        glTexSubImage2D(GL_TEXTURE_2D, 0, 0, 0, inputInfo.width, inputInfo.height,
+                        GL_RGBA, GL_UNSIGNED_BYTE, ilGetData());
+    }
 
     glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR);
     glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
@@ -877,7 +966,9 @@ std::string ISFLoader::paramTypeToString(ParamType type) {
 
 ISFShader* ISFLoader::findShader(const std::string& name) const {
     for (const auto& shader : shaders_) {
-        if (shader->name_ == name) {
+        std::string uppername = shader->name_;
+        std::transform(uppername.begin(), uppername.end(), uppername.begin(), ::toupper);
+        if (uppername == name) {
             return shader.get();
         }
     }
@@ -935,28 +1026,22 @@ ISFShader::~ISFShader() {
     if (program_ != 0) {
         glDeleteProgram(program_);
     }
-    // Clean up loaded textures
+    // Clean up loaded textures using pooling
     for (const auto& input : inputs_) {
         if (input.textureId != 0) {
-            glDeleteTextures(1, &input.textureId);
-        }
-    }
-    // Clean up pass framebuffers
-    for (const auto& pass : passes_) {
-        if (pass.framebuffer != 0) {
-            glDeleteFramebuffers(1, &pass.framebuffer);
-        }
-        if (pass.texture != 0) {
-            glDeleteTextures(1, &pass.texture);
+            mainprogram->add_to_texpool(input.textureId);
         }
     }
 }
+
+
+
+
+// ===== ISFShaderInstance Implementation =====
 
 ISFShaderInstance* ISFShader::createInstance() {
     return new ISFShaderInstance(this);
 }
-
-// ===== ISFShaderInstance Implementation =====
 
 ISFShaderInstance::ISFShaderInstance(ISFShader* parent)
         : parentShader_(parent), fullscreenQuadVAO_(0) {
@@ -972,6 +1057,21 @@ ISFShaderInstance::ISFShaderInstance(ISFShader* parent)
     // Initialize audio textures
     audioTextures_.resize(std::max(1, (int)parentShader_->inputs_.size()));
     std::fill(audioTextures_.begin(), audioTextures_.end(), 0);
+
+    // NEW: Initialize instance-specific pass storage
+    instancePasses_.resize(parentShader_->passes_.size());
+}
+
+ISFShaderInstance::~ISFShaderInstance() {
+    // Clean up audio textures using pooling
+    for (GLuint texture : audioTextures_) {
+        if (texture != 0) {
+            mainprogram->add_to_texpool(texture);
+        }
+    }
+    audioTextures_.clear();
+
+    // Instance passes will be cleaned up by their destructors which now use pooling
 }
 
 bool ISFShaderInstance::setParameter(const std::string& name, float value) {
@@ -994,6 +1094,22 @@ bool ISFShaderInstance::setParameter(const std::string& name, int value) {
     if (paramInfo.type == ISFLoader::PARAM_LONG ||
         paramInfo.type == ISFLoader::PARAM_BOOL ||
         paramInfo.type == ISFLoader::PARAM_EVENT) {
+
+        // For discrete parameters, validate that the value is in the VALUES array
+        if (paramInfo.hasDiscreteValues && !paramInfo.isValidValue(value)) {
+            std::cerr << "Warning: Invalid value " << value << " for discrete parameter "
+                      << name << ". Valid values are: ";
+            for (size_t i = 0; i < paramInfo.values.size(); ++i) {
+                std::cerr << paramInfo.values[i];
+                if (i < paramInfo.labels.size()) {
+                    std::cerr << " (\"" << paramInfo.labels[i] << "\")";
+                }
+                if (i < paramInfo.values.size() - 1) std::cerr << ", ";
+            }
+            std::cerr << std::endl;
+            return false;
+        }
+
         paramValues_[index].intVal = value;
         return true;
     }
@@ -1125,6 +1241,10 @@ void ISFShaderInstance::resetParametersToDefaults() {
 }
 
 void ISFShaderInstance::render(float time, float renderWidth, float renderHeight, int frameIndex) {
+    // For generators and autonomous shaders, use auto-incrementing frame counter
+    // For effects, could use the provided frameIndex from input video
+    int actualFrameIndex = instanceFrameIndex_;
+
     // Apply any new audio data before rendering
     applyStoredAudioData();
 
@@ -1143,14 +1263,40 @@ void ISFShaderInstance::render(float time, float renderWidth, float renderHeight
         setupPassFramebuffers(renderWidth, renderHeight);
         glUseProgram(parentShader_->program_);
 
+        // Render all passes to their instance buffers
         for (int passIndex = 0; passIndex < parentShader_->passes_.size(); ++passIndex) {
-            renderPass(passIndex, time, renderWidth, renderHeight, frameIndex,
+            renderPass(passIndex, time, renderWidth, renderHeight, actualFrameIndex,
                        originalFramebuffer, originalDrawBuffer, originalViewport);
         }
+
+        // Display final buffer to screen
+        const auto& lastPassTemplate = parentShader_->passes_.back();
+        const auto& lastInstancePass = instancePasses_.back();
+
+        if (!lastPassTemplate.target.empty()) {
+            glBindFramebuffer(GL_FRAMEBUFFER, originalFramebuffer);
+            glDrawBuffer(originalDrawBuffer);
+            glViewport(originalViewport[0], originalViewport[1], originalViewport[2], originalViewport[3]);
+
+            glBindFramebuffer(GL_READ_FRAMEBUFFER, lastInstancePass.framebuffer);
+            glBindFramebuffer(GL_DRAW_FRAMEBUFFER, originalFramebuffer);
+
+            glBlitFramebuffer(
+                    0, 0, lastInstancePass.width, lastInstancePass.height,
+                    0, 0, originalViewport[2], originalViewport[3],
+                    GL_COLOR_BUFFER_BIT, GL_LINEAR
+            );
+
+            glBindFramebuffer(GL_FRAMEBUFFER, originalFramebuffer);
+        }
+
     } else {
         // Single-pass rendering
-        renderSinglePass(time, renderWidth, renderHeight, frameIndex);
+        renderSinglePass(time, renderWidth, renderHeight, actualFrameIndex);
     }
+
+    // Auto-increment frame counter for next render
+    instanceFrameIndex_++;
 }
 
 void ISFShaderInstance::bindInputTexture(GLuint textureId, int inputIndex) {
@@ -1204,17 +1350,34 @@ void ISFShaderInstance::applyStoredAudioData() {
 void ISFShaderInstance::createAudioTexture(int inputIndex, int width, int height) {
     if (inputIndex >= audioTextures_.size()) return;
 
-    glGenTextures(1, &audioTextures_[inputIndex]);
-    glBindTexture(GL_TEXTURE_2D, audioTextures_[inputIndex]);
-
-    // For FFT data, use RGB format to match shader expectations
     const auto& input = parentShader_->inputs_[inputIndex];
+    GLint format;
+
     if (input.type == ISFLoader::INPUT_AUDIO_FFT) {
-        // Create RGB texture for FFT data (shader expects fft.r + fft.g + fft.b)
-        glTexImage2D(GL_TEXTURE_2D, 0, GL_RGB32F, width, height, 0, GL_RGB, GL_FLOAT, nullptr);
+        format = GL_RGB32F; // RGB format for FFT data
     } else {
-        // Audio waveform can stay single channel
-        glTexImage2D(GL_TEXTURE_2D, 0, GL_R32F, width, height, 0, GL_RED, GL_FLOAT, nullptr);
+        format = GL_R32F; // Single channel for audio waveform
+    }
+
+    // Try to get texture from pool first
+    audioTextures_[inputIndex] = mainprogram->grab_from_texpool(width, height, format);
+
+    if (audioTextures_[inputIndex] == -1) {
+        // Pool miss - create new texture
+        glGenTextures(1, &audioTextures_[inputIndex]);
+        glBindTexture(GL_TEXTURE_2D, audioTextures_[inputIndex]);
+
+        if (input.type == ISFLoader::INPUT_AUDIO_FFT) {
+            glTexImage2D(GL_TEXTURE_2D, 0, GL_RGB32F, width, height, 0, GL_RGB, GL_FLOAT, nullptr);
+        } else {
+            glTexImage2D(GL_TEXTURE_2D, 0, GL_R32F, width, height, 0, GL_RED, GL_FLOAT, nullptr);
+        }
+
+        // Register the texture format for pooling
+        mainprogram->texintfmap[audioTextures_[inputIndex]] = format;
+    } else {
+        // Pool hit - texture already has correct format and size
+        glBindTexture(GL_TEXTURE_2D, audioTextures_[inputIndex]);
     }
 
     // Set texture parameters for audio data
@@ -1336,40 +1499,44 @@ void ISFShaderInstance::renderSinglePass(float time, float renderWidth, float re
 
 void ISFShaderInstance::renderPass(int passIndex, float time, float renderWidth, float renderHeight, int frameIndex,
                                    GLint originalFramebuffer, GLint originalDrawBuffer, GLint originalViewport[4]) {
-    const auto& pass = parentShader_->passes_[passIndex];
+    const auto& passTemplate = parentShader_->passes_[passIndex];  // Template
+    const auto& instancePass = instancePasses_[passIndex];         // Instance data
 
-    std::cout << "Rendering pass " << passIndex << " (target: '" << pass.target << "')" << std::endl;
+    // Use instance-specific buffers instead of template buffers
+    if (!passTemplate.target.empty()) {
+        // This pass has a target - render to its instance framebuffer
+        glBindFramebuffer(GL_FRAMEBUFFER, instancePass.framebuffer);  // ← Instance buffer
+        glDrawBuffer(GL_COLOR_ATTACHMENT0);
+        glViewport(0, 0, instancePass.width, instancePass.height);   // ← Instance dimensions
 
-    // Bind appropriate framebuffer BEFORE any drawing
-    if (passIndex == parentShader_->passes_.size() - 1) {
-        // Final pass - restore original framebuffer FIRST
-        std::cout << "Final pass - rendering to screen" << std::endl;
+        // Check framebuffer status
+        GLenum status = glCheckFramebufferStatus(GL_FRAMEBUFFER);
+        if (status != GL_FRAMEBUFFER_COMPLETE) {
+            std::cout << "ERROR: Instance framebuffer not complete! Status: " << status << std::endl;
+        }
+
+        // Only clear non-persistent buffers
+        if (!passTemplate.persistent) {
+            glClearColor(0.0f, 0.0f, 0.0f, 0.0f);
+            glClear(GL_COLOR_BUFFER_BIT);
+        }
+
+        // Set built-in uniforms with instance pass size
+        setBuiltinUniforms(time, instancePass.width, instancePass.height, frameIndex, passIndex);
+    } else {
+        // No target - render to screen
         glBindFramebuffer(GL_FRAMEBUFFER, originalFramebuffer);
         glDrawBuffer(originalDrawBuffer);
         glViewport(originalViewport[0], originalViewport[1], originalViewport[2], originalViewport[3]);
 
         // Set built-in uniforms with original viewport size
         setBuiltinUniforms(time, originalViewport[2], originalViewport[3], frameIndex, passIndex);
-    } else {
-        // Intermediate pass - render to pass framebuffer
-        std::cout << "Intermediate pass - rendering to framebuffer " << pass.framebuffer
-                  << " (" << pass.width << "x" << pass.height << ")" << std::endl;
-        glBindFramebuffer(GL_FRAMEBUFFER, pass.framebuffer);
-        glDrawBuffer(GL_COLOR_ATTACHMENT0);
-        glViewport(0, 0, pass.width, pass.height);
-
-        // Clear the framebuffer
-        glClearColor(0.0f, 0.0f, 0.0f, 0.0f);
-        glClear(GL_COLOR_BUFFER_BIT);
-
-        // Set built-in uniforms with pass size
-        setBuiltinUniforms(time, pass.width, pass.height, frameIndex, passIndex);
     }
 
     // Set parameter uniforms
     setParameterUniforms();
 
-    // Bind input textures and pass buffers
+    // Bind input textures and pass buffers (using instance buffers)
     bindTextures(passIndex);
 
     // Draw fullscreen quad
@@ -1383,14 +1550,22 @@ void ISFShaderInstance::renderPass(int passIndex, float time, float renderWidth,
 }
 
 void ISFShaderInstance::setBuiltinUniforms(float time, float renderWidth, float renderHeight, int frameIndex, int passIndex) {
-    // Calculate TIMEDELTA (time since last frame)
-    static float lastTime = 0.0f;
-    float timeDelta = time - lastTime;
-    lastTime = time;
-
-    // For first frame, use a reasonable default (assuming 60fps)
-    if (frameIndex <= 1) {
+    // Calculate proper TIMEDELTA (time since last frame)
+    float timeDelta;
+    if (frameIndex <= 1 || lastFrameTime_ == 0.0f) {
+        // First frame or initialization - use default 60fps as fallback
         timeDelta = 1.0f / 60.0f;
+    } else {
+        // Calculate actual time delta between frames
+        timeDelta = time - lastFrameTime_;
+
+        // Clamp to reasonable values to prevent issues with paused/resumed apps
+        timeDelta = std::max(0.001f, std::min(timeDelta, 2.0f));  // Between 1ms and 100ms
+    }
+
+    // Update last frame time (only on first pass to avoid updating multiple times per frame)
+    if (passIndex == 0) {
+        lastFrameTime_ = time;
     }
 
     // Clear any existing OpenGL errors first
@@ -1403,7 +1578,7 @@ void ISFShaderInstance::setBuiltinUniforms(float time, float renderWidth, float 
         glUniform1f(parentShader_->timeLocation_, time);
     }
 
-    // Set TIMEDELTA
+    // Set TIMEDELTA (now properly calculated)
     if (parentShader_->timeDeltaLocation_ != -1) {
         glUniform1f(parentShader_->timeDeltaLocation_, timeDelta);
     }
@@ -1479,16 +1654,23 @@ void ISFShaderInstance::setParameterUniforms() {
 void ISFShaderInstance::bindTextures(int passIndex) {
     int textureUnit = 0;
 
-    // Bind pass buffer textures (from previous passes)
-    for (int i = 0; i < passIndex; ++i) {
-        const auto& prevPass = parentShader_->passes_[i];
-        if (!prevPass.target.empty()) {
-            auto it = parentShader_->bufferLocations_.find(prevPass.target);
-            if (it != parentShader_->bufferLocations_.end() && it->second != -1) {
-                glActiveTexture(GL_TEXTURE0 + textureUnit);
-                glBindTexture(GL_TEXTURE_2D, prevPass.texture);
-                glUniform1i(it->second, textureUnit);
-                textureUnit++;
+    // CRITICAL: Bind pass buffer textures (from ALL instance passes, including current pass for feedback)
+    for (size_t i = 0; i < parentShader_->passes_.size(); ++i) {
+        const auto& passTemplate = parentShader_->passes_[i];
+        const auto& instancePass = instancePasses_[i];
+
+        if (!passTemplate.target.empty()) {
+            auto it = parentShader_->bufferLocations_.find(passTemplate.target);
+            if (it != parentShader_->bufferLocations_.end()) {
+                if (it->second != -1) {
+                    // Use instance-specific texture instead of template texture
+                    GLuint textureToUse = instancePass.texture;  // ← Instance texture
+
+                    glActiveTexture(GL_TEXTURE0 + textureUnit);
+                    glBindTexture(GL_TEXTURE_2D, textureToUse);
+                    glUniform1i(it->second, textureUnit);
+                    textureUnit++;
+                }
             }
         }
     }
@@ -1536,10 +1718,9 @@ void ISFShaderInstance::bindTextures(int passIndex) {
                         texWidth = input.width;
                         texHeight = input.height;
                     } else {
-                        // For regular input images, we'll assume they match render size
-                        // You might want to track actual input texture dimensions
-                        texWidth = (int)parentShader_->passes_.back().width;
-                        texHeight = (int)parentShader_->passes_.back().height;
+                        // For regular input images, get dimensions from last instance pass
+                        texWidth = instancePasses_.back().width;
+                        texHeight = instancePasses_.back().height;
                         if (texWidth == 0 || texHeight == 0) {
                             // Fallback to getting texture size via OpenGL
                             glBindTexture(GL_TEXTURE_2D, textureId);
@@ -1570,52 +1751,74 @@ void ISFShaderInstance::drawFullscreenQuad() {
 }
 
 void ISFShaderInstance::setupPassFramebuffers(float renderWidth, float renderHeight) {
-    for (auto& pass : parentShader_->passes_) {
-        if (pass.target.empty()) {
+    for (size_t i = 0; i < parentShader_->passes_.size(); ++i) {
+        const auto& passTemplate = parentShader_->passes_[i];  // Template from shader
+        auto& instancePass = instancePasses_[i];               // Instance-specific data
+
+        if (passTemplate.target.empty()) {
             // Final pass - use render dimensions, no framebuffer needed
-            pass.width = (int)renderWidth;
-            pass.height = (int)renderHeight;
-            std::cout << "Final pass: " << pass.width << "x" << pass.height << std::endl;
+            instancePass.width = (int)renderWidth;
+            instancePass.height = (int)renderHeight;
             continue;
         }
 
-        // Calculate pass dimensions
-        int newWidth = evaluateExpression(pass.widthExpr, renderWidth, renderHeight);
-        int newHeight = evaluateExpression(pass.heightExpr, renderWidth, renderHeight);
-
-        std::cout << "Pass '" << pass.target << "': " << pass.widthExpr << " -> " << newWidth
-                  << ", " << pass.heightExpr << " -> " << newHeight << std::endl;
+        // Calculate pass dimensions from template
+        int newWidth = evaluateExpression(passTemplate.widthExpr, renderWidth, renderHeight);
+        int newHeight = evaluateExpression(passTemplate.heightExpr, renderWidth, renderHeight);
 
         // Only recreate if dimensions changed or framebuffer doesn't exist
-        if (pass.width != newWidth || pass.height != newHeight || pass.framebuffer == 0) {
-            // Clean up old resources
-            if (pass.framebuffer != 0) {
-                glDeleteFramebuffers(1, &pass.framebuffer);
-                glDeleteTextures(1, &pass.texture);
+        if (instancePass.width != newWidth || instancePass.height != newHeight || instancePass.framebuffer == 0) {
+            // Clean up old resources using pooling
+            if (instancePass.framebuffer != 0) {
+                mainprogram->add_to_fbopool(instancePass.framebuffer);
+                mainprogram->add_to_texpool(instancePass.texture);
             }
 
-            pass.width = newWidth;
-            pass.height = newHeight;
+            instancePass.width = newWidth;
+            instancePass.height = newHeight;
 
-            // Create texture
-            glGenTextures(1, &pass.texture);
-            glBindTexture(GL_TEXTURE_2D, pass.texture);
-            glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA, pass.width, pass.height, 0, GL_RGBA, GL_UNSIGNED_BYTE, nullptr);
-            glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR);
-            glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
+            // Try to get texture from pool first
+            GLint format = GL_RGBA32F; // Float format for pass buffers
+            instancePass.texture = mainprogram->grab_from_texpool(instancePass.width, instancePass.height, format);
+
+            if (instancePass.texture == -1) {
+                // Pool miss - create new texture
+                glGenTextures(1, &instancePass.texture);
+                glBindTexture(GL_TEXTURE_2D, instancePass.texture);
+                glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA32F, instancePass.width, instancePass.height, 0, GL_RGBA, GL_FLOAT, nullptr);
+
+                // Register the texture format for pooling
+                mainprogram->texintfmap[instancePass.texture] = format;
+            } else {
+                // Pool hit - texture already has correct format and size
+                glBindTexture(GL_TEXTURE_2D, instancePass.texture);
+            }
+
+            // Use NEAREST filtering for small buffers (like 1x1 writePos)
+            if (instancePass.width <= 4 && instancePass.height <= 4) {
+                glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_NEAREST);
+                glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_NEAREST);
+            } else {
+                glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR);
+                glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
+            }
+
             glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_EDGE);
             glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_EDGE);
 
-            // Create framebuffer
-            glGenFramebuffers(1, &pass.framebuffer);
-            glBindFramebuffer(GL_FRAMEBUFFER, pass.framebuffer);
-            glFramebufferTexture2D(GL_FRAMEBUFFER, GL_COLOR_ATTACHMENT0, GL_TEXTURE_2D, pass.texture, 0);
+            // Try to get framebuffer from pool
+            instancePass.framebuffer = mainprogram->grab_from_fbopool();
+
+            if (instancePass.framebuffer == -1) {
+                // Pool miss - create new framebuffer
+                glGenFramebuffers(1, &instancePass.framebuffer);
+            }
+
+            glBindFramebuffer(GL_FRAMEBUFFER, instancePass.framebuffer);
+            glFramebufferTexture2D(GL_FRAMEBUFFER, GL_COLOR_ATTACHMENT0, GL_TEXTURE_2D, instancePass.texture, 0);
 
             if (glCheckFramebufferStatus(GL_FRAMEBUFFER) != GL_FRAMEBUFFER_COMPLETE) {
-                std::cerr << "Error creating framebuffer for pass: " << pass.target << std::endl;
-            } else {
-                std::cout << "Created framebuffer for pass '" << pass.target << "': "
-                          << pass.width << "x" << pass.height << " (texture ID: " << pass.texture << ")" << std::endl;
+                std::cerr << "Error creating instance framebuffer for pass: " << passTemplate.target << std::endl;
             }
 
             glBindFramebuffer(GL_FRAMEBUFFER, 0);
@@ -1766,4 +1969,82 @@ int ISFShaderInstance::findParameterIndex(const std::string& name) const {
         }
     }
     return -1;
+}
+
+// Set parameter by label (for discrete parameters with VALUES/LABELS)
+bool ISFShaderInstance::setParameterByLabel(const std::string& name, const std::string& label) {
+    int index = findParameterIndex(name);
+    if (index == -1) return false;
+
+    const auto& paramInfo = parentShader_->parameterTemplates_[index];
+    if (paramInfo.type == ISFLoader::PARAM_LONG && paramInfo.hasDiscreteValues) {
+        int value = paramInfo.getValueForLabel(label);
+        if (paramInfo.isValidValue(value)) {
+            paramValues_[index].intVal = value;
+            return true;
+        }
+    }
+    return false;
+}
+
+// Get parameter label (for discrete parameters)
+bool ISFShaderInstance::getParameterLabel(const std::string& name, std::string& label) const {
+    int index = findParameterIndex(name);
+    if (index == -1) return false;
+
+    const auto& paramInfo = parentShader_->parameterTemplates_[index];
+    if (paramInfo.type == ISFLoader::PARAM_LONG && paramInfo.hasDiscreteValues) {
+        label = paramInfo.getLabelForValue(paramValues_[index].intVal);
+        return true;
+    }
+    return false;
+}
+
+// Get all available labels for a discrete parameter
+bool ISFShaderInstance::getParameterLabels(const std::string& name, std::vector<std::string>& labels) const {
+    int index = findParameterIndex(name);
+    if (index == -1) return false;
+
+    const auto& paramInfo = parentShader_->parameterTemplates_[index];
+    if (paramInfo.type == ISFLoader::PARAM_LONG && paramInfo.hasDiscreteValues) {
+        labels = paramInfo.labels;
+        return true;
+    }
+    return false;
+}
+
+// Get all available values for a discrete parameter
+bool ISFShaderInstance::getParameterValues(const std::string& name, std::vector<int>& values) const {
+    int index = findParameterIndex(name);
+    if (index == -1) return false;
+
+    const auto& paramInfo = parentShader_->parameterTemplates_[index];
+    if (paramInfo.type == ISFLoader::PARAM_LONG && paramInfo.hasDiscreteValues) {
+        values = paramInfo.values;
+        return true;
+    }
+    return false;
+}
+
+// Check if parameter uses discrete values
+bool ISFShaderInstance::isDiscreteParameter(const std::string& name) const {
+    int index = findParameterIndex(name);
+    if (index == -1) return false;
+
+    const auto& paramInfo = parentShader_->parameterTemplates_[index];
+    return paramInfo.hasDiscreteValues;
+}
+
+
+ISFLoader::InstancePassInfo::~InstancePassInfo()  {
+    if (framebuffer != 0) {
+        // Use pooling instead of direct deletion
+        mainprogram->add_to_fbopool(framebuffer);
+        framebuffer = 0;
+    }
+    if (texture != 0) {
+        // Use pooling instead of direct deletion
+        mainprogram->add_to_texpool(texture);
+        texture = 0;
+    }
 }
