@@ -490,8 +490,11 @@ void LoopStationElement::mouse_handle() {
             while (this->speedadaptedtime > std::get<0>(event)) {
                 this->eventpos++;
                 event = this->eventlist[std::clamp(this->eventpos + 1, 0, (int) this->eventlist.size() - 1)];
-                if (std::get<1>(event)->name == "shiftx" || std::get<1>(event)->name == "shifty" || std::get<1>(event)->name == "wipex" || std::get<1>(event)->name == "wipey") {
-                    event = this->eventlist[std::clamp(this->eventpos + 2, 0, (int) this->eventlist.size() - 1)];
+                if (std::get<1>(event)) {
+                    if (std::get<1>(event)->name == "shiftx" || std::get<1>(event)->name == "shifty" ||
+                        std::get<1>(event)->name == "wipex" || std::get<1>(event)->name == "wipey") {
+                        event = this->eventlist[std::clamp(this->eventpos + 2, 0, (int) this->eventlist.size() - 1)];
+                    }
                 }
                 if (this->eventpos >= this->eventlist.size()) {
                     this->eventpos = this->eventlist.size() - 1;

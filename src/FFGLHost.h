@@ -204,7 +204,7 @@ class FFGLPluginInstance;
 // Plugin instance handle for managing multiple instances
 typedef std::shared_ptr<FFGLPluginInstance> FFGLInstanceHandle;
 
-class FFGLPlugin {
+class FFGLPlugin : public std::enable_shared_from_this<FFGLPlugin> {
 private:
     LibHandle library;
     FF_Main_FuncPtr mainFunc;
@@ -214,8 +214,11 @@ private:
     bool loaded;
     FFUInt32 numParameters;
 
-    // CHANGE: Use plugin's internal instance ID as key
-    std::map<FFInstanceID, std::weak_ptr<FFGLPluginInstance>> instances;
+    // Instance pooling
+    std::vector<std::shared_ptr<FFGLPluginInstance>> instancePool_;
+    std::mutex poolMutex_;  // Thread-safe pool access
+    size_t activeInstances_ = 0;  // Track active instances
+    static const size_t MAX_POOL_SIZE = 16;  // Maximum instances to keep in pool
 
 public:
     std::string pluginPath;
@@ -237,6 +240,9 @@ public:
     std::string getDisplayName() const;
     std::string getShortName() const;
 
+    // CHANGE: Use plugin's internal instance ID as key
+    std::map<FFInstanceID, std::weak_ptr<FFGLPluginInstance>> instances;
+
     // Capabilities
     bool supportsCapability(FFUInt32 capability) const;
     FFUInt32 getMinimumInputFrames() const;
@@ -257,6 +263,12 @@ public:
     FFGLInstanceHandle createInstance(FFUInt32 width, FFUInt32 height);
     FFGLInstanceHandle createInstance(const FFGLViewportStruct& viewport);
 
+    // Pool management
+    void releaseInstance(std::shared_ptr<FFGLPluginInstance> instance);
+    void clearInstancePool();
+    size_t getPoolSize() const { return instancePool_.size(); }
+    size_t getActiveInstanceCount() const { return activeInstances_; }
+
 private:
     void loadParameterTemplates();
     bool validatePlugin();
@@ -274,7 +286,7 @@ private:
 
 class FFGLPluginInstance {
 private:
-    FFGLPlugin* parentPlugin;
+    std::shared_ptr<FFGLPlugin> parentPlugin_;
 
     // CHANGE: Rename instanceID to pluginInstanceID to be clearer
     FFInstanceID pluginInstanceID;  // This is the plugin's internal instance pointer
@@ -291,10 +303,12 @@ private:
     std::mutex audioSamplesMutex;
     bool hasNewAudioSamples = false;
 
+    bool isInPool_ = false;  // Track if instance is currently pooled
+
 public:
     std::vector<FFGLParameter> parameters;
 
-    FFGLPluginInstance(FFGLPlugin* parent, const FFGLViewportStruct& viewport);
+    FFGLPluginInstance(std::shared_ptr<FFGLPlugin> parent, const FFGLViewportStruct& viewport);
     ~FFGLPluginInstance();
 
     // Instance lifecycle
@@ -348,7 +362,7 @@ public:
 
     // CHANGE: Update getter method name
     FFInstanceID getInstanceID() const { return pluginInstanceID; }
-    const FFGLPlugin* getParentPlugin() const { return parentPlugin; }
+    std::shared_ptr<FFGLPlugin> getParentPlugin() const { return parentPlugin_; }
     const FFGLViewportStruct& getViewport() const { return currentViewport; }
 
     void storeAudioData(const float* fftData, size_t binCount);
@@ -361,16 +375,25 @@ public:
     void storeAudioSamples(const float* audioSamples, size_t sampleCount);
     bool sendAudioDataToParameter(FFUInt32 paramIndex);
 
+    // Check if instance is currently in use (not pooled)
+    bool isActive() const { return !isInPool_; }
+    // Reset instance to clean state for reuse
+    void resetForReuse();
+
     private:
         void copyParametersFromTemplate();
         void updateParameterFromEvents();
         FFMixed callPluginInstance(FFUInt32 functionCode, FFMixed inputValue) const;
 
+        // Mark instance as pooled/not pooled (called by plugin)
+        void setPooled(bool pooled) { isInPool_ = pooled; }
+
+        friend class FFGLPlugin;  // Allow plugin to call setPooled()
 };
 
 class FFGLHost {
 private:
-    std::map<std::string, std::unique_ptr<FFGLPlugin>> loadedPlugins;
+    std::map<std::string, std::shared_ptr<FFGLPlugin>> loadedPlugins;
     std::string hostName;
     std::string hostVersion;
     float sampleRate;
@@ -390,8 +413,8 @@ public:
 
     // Plugin queries
     std::vector<std::string> getLoadedPluginPaths() const;
-    FFGLPlugin* getPlugin(const std::string& pluginPath);
-    const FFGLPlugin* getPlugin(const std::string& pluginPath) const;
+    std::shared_ptr<FFGLPlugin> getPlugin(const std::string& pluginPath);
+    std::shared_ptr<const FFGLPlugin> getPlugin(const std::string& pluginPath) const;
 
     // Utility functions
     void listLoadedPlugins() const;
@@ -402,6 +425,13 @@ public:
 
     // Logging support (FFGL 2.2)
     static void setLogCallback(PFNLog logCallback);
+
+    // Pool management for all loaded plugins
+    void clearAllInstancePools();    // Get pool statistics
+    void getPoolStatistics(size_t& totalPooled, size_t& totalActive) const;
+    void printPoolStatistics() const;
+    // Helper method to release an instance back to its plugin's pool
+    void releaseInstance(FFGLInstanceHandle instance);
 };
 
 // Utility functions

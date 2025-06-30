@@ -1010,10 +1010,10 @@ class Program {
         std::vector<std::string> ffgleffectnames;
         std::vector<std::string> ffglsourcenames;
         std::vector<std::string> ffglmixernames;
-        std::vector<FFGLPlugin*> ffgleffectplugins;
-        std::vector<FFGLPlugin*> ffglsourceplugins;
-        std::vector<FFGLPlugin*> ffglmixerplugins;
-        std::vector<std::vector<FFGLInstanceHandle>> ffglinstances;
+        std::vector<std::shared_ptr<FFGLPlugin>> ffglplugins;
+        std::vector<std::shared_ptr<FFGLPlugin>> ffgleffectplugins;
+        std::vector<std::shared_ptr<FFGLPlugin>> ffglsourceplugins;
+        std::vector<std::shared_ptr<FFGLPlugin>> ffglmixerplugins;
         FFGLHost *ffglhost = nullptr;
         std::unordered_set<std::string> missingplugs;
         GLuint redgradienttex;

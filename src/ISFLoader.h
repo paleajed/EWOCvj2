@@ -205,6 +205,12 @@ public:
 
     // Utility functions
     std::string paramTypeToString(ParamType type);
+
+    // Pool management for all loaded shaders
+    void clearAllInstancePools();
+    // Get pool statistics
+    void getPoolStatistics(size_t& totalPooled, size_t& totalActive) const;
+    void printPoolStatistics() const;
 };
 
 // ISF Shader Template (immutable after loading)
@@ -217,6 +223,14 @@ public:
 
     // Factory method
     ISFShaderInstance* createInstance();
+
+    // Return instance to pool for reuse
+    void releaseInstance(ISFShaderInstance* instance);
+
+    // Pool management
+    void clearInstancePool();
+    size_t getPoolSize() const { return instancePool_.size(); }
+    size_t getActiveInstanceCount() const { return activeInstances_; }
 
     // Template information access
     const std::string& getName() const { return name_; }
@@ -264,6 +278,12 @@ private:
 
     // Cached uniform locations for input image rectangles
     std::unordered_map<std::string, GLint> imgRectLocations_;
+
+    // Instance pooling
+    std::vector<std::unique_ptr<ISFShaderInstance>> instancePool_;
+    std::mutex poolMutex_;  // Thread-safe pool access
+    size_t activeInstances_ = 0;  // Track active instances
+    static const size_t MAX_POOL_SIZE = 16;  // Maximum instances to keep in pool
 };
 
 // ISF Shader Instance (parameter state + rendering)
@@ -273,6 +293,7 @@ class ISFShaderInstance {
 private:
     ISFShader* parentShader_;
     std::vector<ISFLoader::ParamValue> paramValues_;
+    bool isInPool_ = false;  // Track if instance is currently pooled
 
     ISFShaderInstance(ISFShader* parent);
 
@@ -329,6 +350,11 @@ public:
     bool getParameterLabels(const std::string& name, std::vector<std::string>& labels) const;
     bool getParameterValues(const std::string& name, std::vector<int>& values) const;
     bool isDiscreteParameter(const std::string& name) const;
+
+    // Check if instance is currently in use (not pooled)
+    bool isActive() const { return !isInPool_; }
+    // Reset instance to clean state for reuse
+    void resetForReuse();
 
 private:
     int findParameterIndex(const std::string& name) const;

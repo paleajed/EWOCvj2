@@ -355,8 +355,10 @@ FFGLPlugin::FFGLPlugin()
     memset(&pluginInfo, 0, sizeof(pluginInfo));
 }
 
+// FFGLPlugin destructor - clean up pool
 FFGLPlugin::~FFGLPlugin() {
-    unload();
+    clearInstancePool();  // Clean up any pooled instances
+    unload();  // Call existing unload logic
 }
 
 bool FFGLPlugin::load(const std::string& path) {
@@ -759,12 +761,30 @@ void FFGLPlugin::setSampleRate(float sampleRate) {
 }
 
 void FFGLPlugin::destroyInstance(FFInstanceID instanceID) {
+    std::lock_guard<std::mutex> lock(poolMutex_);
+
     auto it = instances.find(instanceID);
     if (it != instances.end()) {
         if (auto instance = it->second.lock()) {
+            // Remove from active tracking but don't actually destroy - use pooling
+            instances.erase(it);
+            activeInstances_--;
+
+            // Deinitialize and add to pool
             instance->deinitialize();
+
+            if (instancePool_.size() < MAX_POOL_SIZE) {
+                instance->setPooled(true);
+                instancePool_.push_back(instance);
+
+                std::cout << "Moved instance to pool instead of destroying (Pool size: "
+                          << instancePool_.size() << ")" << std::endl;
+            } else {
+                std::cout << "Pool full - instance will be destroyed" << std::endl;
+            }
+        } else {
+            instances.erase(it);
         }
-        instances.erase(it);
     }
 }
 
@@ -809,31 +829,147 @@ FFGLInstanceHandle FFGLPlugin::createInstance(const FFGLViewportStruct& viewport
         return nullptr;
     }
 
-    std::cout << "Creating new plugin instance..." << std::endl;
+    std::lock_guard<std::mutex> lock(poolMutex_);
 
-    auto instance = std::make_shared<FFGLPluginInstance>(this, viewport);
+    std::shared_ptr<FFGLPluginInstance> instance = nullptr;
 
+    // Try to get an instance from the pool
+    if (!instancePool_.empty()) {
+        instance = instancePool_.back();
+        instancePool_.pop_back();
+
+        instance->setPooled(false);
+        instance->resetForReuse();  // Clean state for reuse
+
+        std::cout << "Reused FFGL instance from pool (Pool size: " << instancePool_.size() << ")" << std::endl;
+    } else {
+        // Pool is empty - create new instance with shared_ptr to this plugin
+        // We need to create a default viewport struct first
+        FFGLViewportStruct defaultViewport = viewport;
+        instance = std::make_shared<FFGLPluginInstance>(shared_from_this(), defaultViewport);
+        instance->setPooled(false);
+
+        std::cout << "Created new FFGL instance (Active: " << activeInstances_ + 1 << ")" << std::endl;
+    }
+
+    // Initialize the instance with the requested viewport
     if (!instance->initialize(viewport)) {
         std::cerr << "Failed to initialize plugin instance" << std::endl;
         return nullptr;
     }
 
+    // Update instance tracking - store as weak_ptr
     FFInstanceID pluginInstanceID = instance->getPluginInstanceID();
-    instances[pluginInstanceID] = instance;
+    instances[pluginInstanceID] = std::weak_ptr<FFGLPluginInstance>(instance);
+    activeInstances_++;
 
     std::cout << "Created instance with plugin ID: " << pluginInstanceID << std::endl;
     return instance;
 }
 
+void FFGLPlugin::releaseInstance(std::shared_ptr<FFGLPluginInstance> instance) {
+    if (!instance || instance->getParentPlugin().get() != this) {
+        std::cerr << "Invalid instance passed to releaseInstance!" << std::endl;
+        return;
+    }
+
+    std::lock_guard<std::mutex> lock(poolMutex_);
+
+    // Remove from active instance tracking
+    FFInstanceID pluginInstanceID = instance->getPluginInstanceID();
+    auto it = instances.find(pluginInstanceID);
+    if (it != instances.end()) {
+        instances.erase(it);
+    }
+    activeInstances_--;
+
+    // Deinitialize the instance (but don't destroy it)
+    instance->deinitialize();
+
+    // Add to pool if we haven't exceeded maximum pool size
+    if (instancePool_.size() < MAX_POOL_SIZE) {
+        instance->setPooled(true);
+        instancePool_.push_back(instance);
+    }
+}
+
+void FFGLPlugin::clearInstancePool() {
+    std::lock_guard<std::mutex> lock(poolMutex_);
+
+    size_t poolSize = instancePool_.size();
+
+    // Properly deinitialize all pooled instances before clearing
+    for (auto& instance : instancePool_) {
+        if (instance && instance->isInitialized()) {
+            instance->deinitialize();
+        }
+    }
+
+    instancePool_.clear();
+}
+
+// Reset instance to clean state for reuse
+void FFGLPluginInstance::resetForReuse() {
+    if (initialized) {
+        std::cerr << "Warning: resetForReuse called on initialized instance - should be deinitialized first" << std::endl;
+        return;
+    }
+
+    // Reset all parameters to their default values
+    for (auto& param : parameters) {
+        param.currentValue = param.defaultValue;
+        param.textValue.clear();
+
+        // Clean up any buffer data
+        if (param.isBufferParameter()) {
+            param.cleanupBuffer();
+        }
+    }
+
+    // Clear audio data
+    {
+        std::lock_guard<std::mutex> lock(audioDataMutex);
+        latestFFTData.clear();
+        hasNewAudioData = false;
+    }
+
+    {
+        std::lock_guard<std::mutex> lock(audioSamplesMutex);
+        latestAudioSamples.clear();
+        hasNewAudioSamples = false;
+    }
+
+    // Reset timing
+    timeInitialized = false;
+
+    // Reset viewport to default
+    currentViewport.x = 0;
+    currentViewport.y = 0;
+    currentViewport.width = 1920;
+    currentViewport.height = 1080;
+}
+
+
 // FFGLPluginInstance Implementation
-FFGLPluginInstance::FFGLPluginInstance(FFGLPlugin* parent, const FFGLViewportStruct& viewport)
-        : parentPlugin(parent), pluginInstanceID(nullptr), initialized(false),
+FFGLPluginInstance::FFGLPluginInstance(std::shared_ptr<FFGLPlugin> parent, const FFGLViewportStruct& viewport)
+        : parentPlugin_(parent), pluginInstanceID(nullptr), initialized(false),
           currentViewport(viewport), timeInitialized(false) {
     copyParametersFromTemplate();
 }
 
+// Modified FFGLPluginInstance destructor to work with pooling
 FFGLPluginInstance::~FFGLPluginInstance() {
-    deinitialize();
+    // Only clean up if we're not being pooled
+    if (!isInPool_) {
+        deinitialize();
+
+        // Clean up any remaining buffer data
+        for (auto& param : parameters) {
+            if (param.isBufferParameter()) {
+                param.cleanupBuffer();
+            }
+        }
+    }
 }
 
 // Thread-safe audio data storage (called from audio thread)
@@ -853,9 +989,7 @@ void FFGLPluginInstance::applyStoredAudioData() {
 }
 
 bool FFGLPluginInstance::initialize(const FFGLViewportStruct& viewport) {
-    std::cout << "=== DEBUG initialize WITH STATE PROTECTION ===" << std::endl;
-
-    if (!parentPlugin || !parentPlugin->mainFunc || initialized) {
+    if (!parentPlugin_ || !parentPlugin_->mainFunc || initialized) {
         std::cerr << "Initialize failed: invalid state" << std::endl;
         return false;
     }
@@ -867,15 +1001,10 @@ bool FFGLPluginInstance::initialize(const FFGLViewportStruct& viewport) {
 
     ActiveGUIStateProtector stateProtector(maxTexUnits);
     stateProtector.saveGUIState();
-    std::cout << "Saved GUI state before plugin initialization" << std::endl;
-
-    std::cout << "Calling FF_INSTANTIATE_GL..." << std::endl;
-    FFMixed result = parentPlugin->callPlugin(FF_INSTANTIATE_GL,
+    FFMixed result = parentPlugin_->callPlugin(FF_INSTANTIATE_GL,
                                               FFGLUtils::PointerToFFMixed(const_cast<FFGLViewportStruct *>(&viewport)),
                                               nullptr);
 
-    std::cout << "FF_INSTANTIATE_GL result.UIntValue: " << result.UIntValue << std::endl;
-    std::cout << "FF_INSTANTIATE_GL result.PointerValue: " << result.PointerValue << std::endl;
 
     if (result.UIntValue == FF_FAIL) {
         std::cerr << "FF_INSTANTIATE_GL failed" << std::endl;
@@ -885,34 +1014,25 @@ bool FFGLPluginInstance::initialize(const FFGLViewportStruct& viewport) {
 
     if (result.PointerValue != nullptr) {
         pluginInstanceID = reinterpret_cast<FFInstanceID>(result.PointerValue);
-        std::cout << "Got instance ID from PointerValue: " << pluginInstanceID << std::endl;
     } else if (result.UIntValue != FF_SUCCESS && result.UIntValue != FF_FAIL) {
         pluginInstanceID = reinterpret_cast<FFInstanceID>(static_cast<uintptr_t>(result.UIntValue));
-        std::cout << "Got instance ID from UIntValue: " << pluginInstanceID << std::endl;
     } else {
         static uintptr_t instanceCounter = 1;
         uintptr_t uniqueID = instanceCounter++;
         pluginInstanceID = reinterpret_cast<FFInstanceID>(uniqueID + 0x1000000);
-        std::cout << "Generated fallback instance ID: " << pluginInstanceID << std::endl;
     }
 
-    std::cout << "Calling FF_INITIALISE_V2 with plugin instance ID..." << std::endl;
     result = callPluginInstance(FF_INITIALISE_V2,
                                 FFGLUtils::PointerToFFMixed(const_cast<FFGLViewportStruct *>(&viewport)));
-
-    std::cout << "FF_INITIALISE_V2 result: " << result.UIntValue << std::endl;
 
     if (result.UIntValue == FF_SUCCESS) {
         initialized = true;
         //resetTime(); // Reset internal timer
         //setTime(0.0f); // First call: Explicitly set time to zero
-        std::cout << "FFGL 2.x initialization succeeded" << std::endl;
         stateProtector.restoreGUIState();
-        std::cout << "Restored GUI state after successful initialization" << std::endl;
         return true;
     }
 
-    std::cout << "Trying legacy initialization..." << std::endl;
     result = callPluginInstance(1,
                                 FFGLUtils::PointerToFFMixed(const_cast<FFGLViewportStruct *>(&viewport)));
 
@@ -920,16 +1040,14 @@ bool FFGLPluginInstance::initialize(const FFGLViewportStruct& viewport) {
         initialized = true;
         //resetTime(); // Reset internal timer
         //setTime(0.0f); // First call: Explicitly set time to zero
-        std::cout << "Legacy initialization succeeded" << std::endl;
         stateProtector.restoreGUIState();
-        std::cout << "Restored GUI state after successful legacy initialization" << std::endl;
         return true;
     }
 
     std::cerr << "All initialization methods failed" << std::endl;
 
     if (pluginInstanceID) {
-        parentPlugin->callPlugin(FF_DEINSTANTIATE_GL, FFGLUtils::UIntToFFMixed(0), pluginInstanceID);
+        parentPlugin_->callPlugin(FF_DEINSTANTIATE_GL, FFGLUtils::UIntToFFMixed(0), pluginInstanceID);
         pluginInstanceID = nullptr;
     }
 
@@ -940,9 +1058,9 @@ bool FFGLPluginInstance::initialize(const FFGLViewportStruct& viewport) {
 }
 
 void FFGLPluginInstance::deinitialize() {
-    if (parentPlugin && parentPlugin->mainFunc && initialized && pluginInstanceID) {
+    if (parentPlugin_ && parentPlugin_->mainFunc && initialized && pluginInstanceID) {
         callPluginInstance(FF_DEINITIALISE, FFGLUtils::UIntToFFMixed(0));
-        parentPlugin->callPlugin(FF_DEINSTANTIATE_GL, FFGLUtils::UIntToFFMixed(0), pluginInstanceID);
+        parentPlugin_->callPlugin(FF_DEINSTANTIATE_GL, FFGLUtils::UIntToFFMixed(0), pluginInstanceID);
         initialized = false;
         pluginInstanceID = nullptr;
     }
@@ -950,7 +1068,7 @@ void FFGLPluginInstance::deinitialize() {
 
 bool FFGLPluginInstance::processFrame(const std::vector<FFGLFramebuffer> &inputFBOs,
                                       const FFGLFramebuffer &outputFBO) {
-    if (!parentPlugin || !parentPlugin->mainFunc || !initialized) return false;
+    if (!parentPlugin_ || !parentPlugin_->mainFunc || !initialized) return false;
     if (!outputFBO.isValid()) return false;
 
     GLint maxTexUnits;
@@ -1008,7 +1126,7 @@ bool FFGLPluginInstance::processFrame(const std::vector<FFGLFramebuffer> &inputF
 }
 
 void FFGLPluginInstance::setParameter(FFUInt32 paramIndex, FFMixed value) {
-    if (!parentPlugin || !parentPlugin->mainFunc || !initialized || paramIndex >= parameters.size()) {
+    if (!parentPlugin_ || !parentPlugin_->mainFunc || !initialized || paramIndex >= parameters.size()) {
         return;
     }
 
@@ -1045,7 +1163,7 @@ void FFGLPluginInstance::setParameter(FFUInt32 paramIndex, FFUInt32 value) {
 }
 
 void FFGLPluginInstance::setParameterText(FFUInt32 paramIndex, const std::string &text) {
-    if (!parentPlugin || !parentPlugin->mainFunc || !initialized || paramIndex >= parameters.size()) {
+    if (!parentPlugin_ || !parentPlugin_->mainFunc || !initialized || paramIndex >= parameters.size()) {
         return;
     }
 
@@ -1059,7 +1177,7 @@ void FFGLPluginInstance::setParameterText(FFUInt32 paramIndex, const std::string
 }
 
 void FFGLPluginInstance::setParameterElementValue(FFUInt32 paramIndex, FFUInt32 elementIndex, FFMixed value) {
-    if (!parentPlugin || !parentPlugin->mainFunc || !initialized || paramIndex >= parameters.size()) {
+    if (!parentPlugin_ || !parentPlugin_->mainFunc || !initialized || paramIndex >= parameters.size()) {
         return;
     }
 
@@ -1077,7 +1195,7 @@ void FFGLPluginInstance::setParameterElementValue(FFUInt32 paramIndex, FFUInt32 
 }
 
 FFMixed FFGLPluginInstance::getParameter(FFUInt32 paramIndex) const {
-    if (!parentPlugin || !parentPlugin->mainFunc || !initialized || paramIndex >= parameters.size()) {
+    if (!parentPlugin_ || !parentPlugin_->mainFunc || !initialized || paramIndex >= parameters.size()) {
         FFMixed result;
         result.UIntValue = 0;
         return result;
@@ -1128,7 +1246,7 @@ std::string FFGLPluginInstance::getParameterText(FFUInt32 paramIndex) const {
 }
 
 std::string FFGLPluginInstance::getParameterDisplay(FFUInt32 paramIndex) const {
-    if (!parentPlugin || !parentPlugin->mainFunc || !initialized || paramIndex >= parameters.size()) {
+    if (!parentPlugin_ || !parentPlugin_->mainFunc || !initialized || paramIndex >= parameters.size()) {
         return "";
     }
 
@@ -1142,7 +1260,7 @@ std::string FFGLPluginInstance::getParameterDisplay(FFUInt32 paramIndex) const {
 }
 
 std::string FFGLPluginInstance::getParameterDisplayName(FFUInt32 paramIndex) const {
-    if (!parentPlugin || !parentPlugin->mainFunc || !initialized || paramIndex >= parameters.size()) {
+    if (!parentPlugin_ || !parentPlugin_->mainFunc || !initialized || paramIndex >= parameters.size()) {
         return "";
     }
 
@@ -1165,7 +1283,7 @@ RangeStruct FFGLPluginInstance::getParameterRange(FFUInt32 paramIndex) const {
 }
 
 bool FFGLPluginInstance::getParameterVisibility(FFUInt32 paramIndex) const {
-    if (!parentPlugin || !parentPlugin->mainFunc || !initialized || paramIndex >= parameters.size()) {
+    if (!parentPlugin_ || !parentPlugin_->mainFunc || !initialized || paramIndex >= parameters.size()) {
         return true;
     }
 
@@ -1176,7 +1294,7 @@ bool FFGLPluginInstance::getParameterVisibility(FFUInt32 paramIndex) const {
 std::vector<ParamEventStruct> FFGLPluginInstance::getParameterEvents() {
     std::vector<ParamEventStruct> events;
 
-    if (!parentPlugin || !parentPlugin->mainFunc || !initialized) {
+    if (!parentPlugin_ || !parentPlugin_->mainFunc || !initialized) {
         return events;
     }
 
@@ -1201,7 +1319,7 @@ std::vector<ParamEventStruct> FFGLPluginInstance::getParameterEvents() {
 }
 
 void FFGLPluginInstance::setTime(float time) {
-    if (!parentPlugin || !parentPlugin->mainFunc || !initialized) {
+    if (!parentPlugin_ || !parentPlugin_->mainFunc || !initialized) {
         return;
     }
 
@@ -1209,7 +1327,7 @@ void FFGLPluginInstance::setTime(float time) {
 }
 
 void FFGLPluginInstance::setBeatInfo(float bpm, float barPhase) {
-    if (!parentPlugin || !parentPlugin->mainFunc || !initialized) {
+    if (!parentPlugin_ || !parentPlugin_->mainFunc || !initialized) {
         return;
     }
 
@@ -1221,7 +1339,7 @@ void FFGLPluginInstance::setBeatInfo(float bpm, float barPhase) {
 }
 
 bool FFGLPluginInstance::resize(const FFGLViewportStruct &viewport) {
-    if (!parentPlugin || !parentPlugin->mainFunc || !initialized) {
+    if (!parentPlugin_ || !parentPlugin_->mainFunc || !initialized) {
         return false;
     }
 
@@ -1242,7 +1360,7 @@ bool FFGLPluginInstance::resize(const FFGLViewportStruct &viewport) {
 }
 
 bool FFGLPluginInstance::connect(FFUInt32 inputIndex) {
-    if (!parentPlugin || !parentPlugin->mainFunc || !initialized) {
+    if (!parentPlugin_ || !parentPlugin_->mainFunc || !initialized) {
         return false;
     }
 
@@ -1251,7 +1369,7 @@ bool FFGLPluginInstance::connect(FFUInt32 inputIndex) {
 }
 
 bool FFGLPluginInstance::disconnect(FFUInt32 inputIndex) {
-    if (!parentPlugin || !parentPlugin->mainFunc || !initialized) {
+    if (!parentPlugin_ || !parentPlugin_->mainFunc || !initialized) {
         return false;
     }
 
@@ -1260,7 +1378,7 @@ bool FFGLPluginInstance::disconnect(FFUInt32 inputIndex) {
 }
 
 FFUInt32 FFGLPluginInstance::getInputStatus(FFUInt32 inputIndex) const {
-    if (!parentPlugin || !parentPlugin->mainFunc || !initialized) {
+    if (!parentPlugin_ || !parentPlugin_->mainFunc || !initialized) {
         return FF_INPUT_NOTINUSE;
     }
 
@@ -1269,20 +1387,20 @@ FFUInt32 FFGLPluginInstance::getInputStatus(FFUInt32 inputIndex) const {
 }
 
 void FFGLPluginInstance::copyParametersFromTemplate() {
-    parameters = parentPlugin->parameterTemplates;
+    parameters = parentPlugin_->parameterTemplates;
 }
 
 FFMixed FFGLPluginInstance::callPluginInstance(FFUInt32 functionCode, FFMixed inputValue) const {
     FFMixed failResult;
     failResult.UIntValue = FF_FAIL;
 
-    if (!parentPlugin || !parentPlugin->mainFunc || !pluginInstanceID) {
+    if (!parentPlugin_ || !parentPlugin_->mainFunc || !pluginInstanceID) {
         std::cerr << "Invalid state for plugin call" << std::endl;
         return failResult;
     }
 
     try {
-        FFMixed result = parentPlugin->mainFunc(functionCode, inputValue, pluginInstanceID);
+        FFMixed result = parentPlugin_->mainFunc(functionCode, inputValue, pluginInstanceID);
         return result;
     } catch (...) {
         std::cerr << "Exception caught in plugin function call!" << std::endl;
@@ -1291,7 +1409,7 @@ FFMixed FFGLPluginInstance::callPluginInstance(FFUInt32 functionCode, FFMixed in
 }
 
 void FFGLPluginInstance::setAudioBuffer(FFUInt32 paramIndex, const float* audioData, size_t sampleCount) {
-    if (!parentPlugin || !parentPlugin->mainFunc || !initialized || paramIndex >= parameters.size()) {
+    if (!parentPlugin_ || !parentPlugin_->mainFunc || !initialized || paramIndex >= parameters.size()) {
         return;
     }
     
@@ -1319,7 +1437,7 @@ void FFGLPluginInstance::setAudioBuffer(FFUInt32 paramIndex, const float* audioD
 }
 
 void FFGLPluginInstance::sendAudioData(const float* fftData, size_t binCount) {
-    if (!parentPlugin || !parentPlugin->mainFunc || !initialized) {
+    if (!parentPlugin_ || !parentPlugin_->mainFunc || !initialized) {
         return;
     }
 
@@ -1348,7 +1466,7 @@ void FFGLPluginInstance::sendAudioData(const float* fftData, size_t binCount) {
 }
 
 void FFGLPluginInstance::updateBufferParameters() {
-    if (!parentPlugin || !parentPlugin->mainFunc || !initialized) {
+    if (!parentPlugin_ || !parentPlugin_->mainFunc || !initialized) {
         return;
     }
     
@@ -1394,27 +1512,35 @@ void FFGLHost::setSampleRate(float rate) {
     }
 }
 
-bool FFGLHost::loadPlugin(const std::string &pluginPath) {
+bool FFGLHost::loadPlugin(const std::string& pluginPath) {
     if (loadedPlugins.find(pluginPath) != loadedPlugins.end()) {
         std::cout << "Plugin already loaded: " << pluginPath << std::endl;
         return true;
     }
 
-    auto plugin = std::make_unique<FFGLPlugin>();
+    auto plugin = std::make_shared<FFGLPlugin>();
     if (!plugin->load(pluginPath)) {
+        std::cerr << "Failed to load plugin: " << pluginPath << std::endl;
         return false;
     }
 
     plugin->setHostInfo(hostName, hostVersion);
     plugin->setSampleRate(sampleRate);
 
-    loadedPlugins[pluginPath] = std::move(plugin);
+    // Store the plugin in the map - this keeps it alive
+    loadedPlugins[pluginPath] = plugin;
+
+    std::cout << "Successfully loaded and stored plugin: " << plugin->getDisplayName() << std::endl;
     return true;
 }
 
-void FFGLHost::unloadPlugin(const std::string &pluginPath) {
+void FFGLHost::unloadPlugin(const std::string& pluginPath) {
     auto it = loadedPlugins.find(pluginPath);
     if (it != loadedPlugins.end()) {
+        // Clear the instance pool before removing the plugin
+        it->second->clearInstancePool();
+
+        // Remove from map - this will destroy the plugin when no more references exist
         loadedPlugins.erase(it);
         std::cout << "Unloaded plugin: " << pluginPath << std::endl;
     }
@@ -1433,14 +1559,14 @@ std::vector<std::string> FFGLHost::getLoadedPluginPaths() const {
     return paths;
 }
 
-FFGLPlugin *FFGLHost::getPlugin(const std::string &pluginPath) {
+std::shared_ptr<FFGLPlugin> FFGLHost::getPlugin(const std::string &pluginPath) {
     auto it = loadedPlugins.find(pluginPath);
-    return (it != loadedPlugins.end()) ? it->second.get() : nullptr;
+    return (it != loadedPlugins.end()) ? it->second : nullptr;
 }
 
-const FFGLPlugin *FFGLHost::getPlugin(const std::string &pluginPath) const {
+std::shared_ptr<const FFGLPlugin> FFGLHost::getPlugin(const std::string &pluginPath) const {
     auto it = loadedPlugins.find(pluginPath);
-    return (it != loadedPlugins.end()) ? it->second.get() : nullptr;
+    return (it != loadedPlugins.end()) ? it->second : nullptr;
 }
 
 void FFGLHost::listLoadedPlugins() const {
@@ -1555,6 +1681,35 @@ std::vector<std::string> FFGLHost::findPluginsInDirectory(const std::string &dir
 
 void FFGLHost::setLogCallback(PFNLog logCallback) {
     // This would be called on all loaded plugins if we wanted to set logging for existing plugins
+}
+
+// Pool management for all loaded plugins
+void FFGLHost::clearAllInstancePools() {
+    for (auto& pair : loadedPlugins) {
+        pair.second->clearInstancePool();
+    }
+    std::cout << "Cleared all FFGL instance pools" << std::endl;
+}
+
+// Get pool statistics
+void FFGLHost::getPoolStatistics(size_t& totalPooled, size_t& totalActive) const {
+    totalPooled = 0;
+    totalActive = 0;
+    for (const auto& pair : loadedPlugins) {
+        totalPooled += pair.second->getPoolSize();
+        totalActive += pair.second->getActiveInstanceCount();
+    }
+}
+
+// Helper method to release an instance back to its plugin's pool
+void FFGLHost::releaseInstance(FFGLInstanceHandle instance) {
+    if (!instance) return;
+
+    std::shared_ptr<FFGLPlugin> plugin = instance->getParentPlugin();
+    if (plugin) {
+        // Cast away const since we need to call releaseInstance
+        plugin->releaseInstance(instance);
+    }
 }
 
 // FFGLUtils Implementation

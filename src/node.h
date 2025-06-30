@@ -1,4 +1,5 @@
 #include <vector>
+#include "FFGLHost.h"
 
 class Boxx;
 class Layer;
@@ -161,7 +162,8 @@ class BlendNode: public Node {
 		float chgreen = 0.0f;
 		float chblue = 0.0f;
         int ffglmixernr = -1;
-        int ffglinstancenr = -1;
+        FFGLInstanceHandle instance;
+        FFInstanceID ffglinstancenr;
         int isfmixernr = -1;
         int isfpluginnr = -1;
         int isfinstancenr = -1;

@@ -937,14 +937,6 @@ Effect::~Effect() {
         mainprogram->add_to_texpool(this->fbotex);
         if (this->fbo != -1) mainprogram->add_to_fbopool(this->fbo);
     }
-    if (this->ffglinstancenr != -1) {
-        mainprogram->ffglinstances[this->ffglnr][this->ffglinstancenr]->deinitialize();
-        mainprogram->ffglinstances[this->ffglnr].erase(mainprogram->ffglinstances[this->ffglnr].begin() + this->ffglinstancenr);
-    }
-    if (this->isfinstancenr != -1) {
-        delete mainprogram->isfinstances[this->isfpluginnr][this->isfinstancenr];
-        mainprogram->isfinstances[this->isfpluginnr].erase(mainprogram->isfinstances[this->isfpluginnr].begin() + this->isfinstancenr);
-    }
 }
 
 std::string Effect::get_namestring() {
@@ -2248,14 +2240,13 @@ FFGLEffect::FFGLEffect(Layer *lay, int ffglnr) {
     int h = mainprogram->oh[lay->comp];
 
     auto plug = mainprogram->ffgleffectplugins[ffglnr];
-    auto instance = plug->createInstance(w, h);
-    mainprogram->ffglinstances[ffglnr].push_back(instance);
-    this->ffglinstancenr = mainprogram->ffglinstances[ffglnr].size() - 1;
+    this->instance = plug->createInstance(w, h);
+    this->ffglinstancenr = this->instance->getInstanceID();
 
     // get parameters from FFGLHost::parameters
     this->numrows = 1;
     int cnt = 0;
-    for (auto par : instance->parameters) {
+    for (auto par : this->instance->parameters) {
         Param *param = new Param;
         if (cnt != 0) {
             if (cnt % 3 == 0 || (par.type == FF_TYPE_TEXT || par.type == FF_TYPE_FILE)) {
@@ -2472,6 +2463,15 @@ void Layer::delete_effect(int pos, bool connect) {
 	    delete par;
 	}
 
+    if (effect->ffglnr != -1) {
+        auto shader = mainprogram->ffgleffectplugins[effect->ffglnr];
+        shader->releaseInstance(
+                reinterpret_cast<const std::shared_ptr<FFGLPluginInstance> &>(shader->instances[effect->ffglinstancenr]));
+    }
+    if (effect->isfnr != -1) {
+        auto shader = mainprogram->isfloader.getShader(effect->isfpluginnr);
+        shader->releaseInstance(mainprogram->isfinstances[effect->isfpluginnr][effect->isfinstancenr]);
+    }
 
 	evec.erase(evec.begin() + pos);
 	delete effect;
@@ -3135,6 +3135,15 @@ Layer::~Layer() {
     }
 
     if (this->blendnode) {
+        if (this->blendnode->ffglmixernr != -1) {
+            auto shader = mainprogram->ffglmixerplugins[this->blendnode->ffglmixernr];
+            shader->releaseInstance(
+                    reinterpret_cast<const std::shared_ptr<FFGLPluginInstance> &>(shader->instances[this->blendnode->ffglinstancenr]));
+        }
+        if (this->blendnode->isfmixernr != -1) {
+            auto shader = mainprogram->isfloader.getShader(this->blendnode->isfpluginnr);
+            shader->releaseInstance(mainprogram->isfinstances[this->blendnode->isfpluginnr][this->blendnode->isfinstancenr]);
+        }
         this->blendnode->in = nullptr;
         mainprogram->nodesmain->currpage->delete_node(this->blendnode);
         this->blendnode = nullptr;
@@ -3149,6 +3158,17 @@ Layer::~Layer() {
         }
     }
     mainprogram->effcat[this->deck]->value = buec;
+
+    // release instance if ffgl/isf generator
+    if (this->ffglsourcenr != -1) {
+        auto shader = mainprogram->ffglsourceplugins[this->ffglsourcenr];
+        shader->releaseInstance(
+                reinterpret_cast<const std::shared_ptr<FFGLPluginInstance> &>(shader->instances[this->ffglinstancenr]));
+    }
+    if (this->isfsourcenr != -1) {
+        auto shader = mainprogram->isfloader.getShader(this->isfpluginnr);
+        shader->releaseInstance(mainprogram->isfinstances[this->isfpluginnr][this->isfinstancenr]);
+    }
 
     glDeleteTextures(1, &this->jpegtex);
     mainprogram->add_to_texpool(this->fbotex);
@@ -10651,6 +10671,10 @@ Layer* Mixer::read_layers(std::istream &rfile, const std::string result, std::ve
     int ffglmixernr = -1;
     int isfnr = -1;
     int isfmixernr = -1;
+    bool ffglsourcedenied = false;
+    bool ffglmixerdenied = false;
+    bool isfsourcedenied = false;
+    bool isfmixerdenied = false;
 
     while (safegetline(rfile, istring)) {
 		if (istring == "LAYERSB" || istring == "ENDOFFILE") {
@@ -10719,6 +10743,10 @@ Layer* Mixer::read_layers(std::istream &rfile, const std::string result, std::ve
             ffglmixernr = -1;
             isfnr = -1;
             isfmixernr = -1;
+            ffglsourcedenied = false;
+            ffglmixerdenied = false;
+            isfsourcedenied = false;
+            isfmixerdenied = false;
         }
         if (istring == "FFGLSOURCENAME") {
             safegetline(rfile, istring);
@@ -10730,6 +10758,7 @@ Layer* Mixer::read_layers(std::istream &rfile, const std::string result, std::ve
                     layend->type = (ELEM_TYPE)(1000 + position);
                     ffglnr = position;
                 } else {
+                    ffglsourcedenied = true;
                     mainprogram->missingplugs.emplace(istring);
                 }
             }
@@ -10743,6 +10772,7 @@ Layer* Mixer::read_layers(std::istream &rfile, const std::string result, std::ve
                 if (position != mainprogram->ffglmixernames.size()) {
                     ffglmixernr = position;
                 } else {
+                    ffglmixerdenied = true;
                     mainprogram->missingplugs.emplace(istring);
                 }
             }
@@ -10757,6 +10787,7 @@ Layer* Mixer::read_layers(std::istream &rfile, const std::string result, std::ve
                     layend->type = (ELEM_TYPE)(2000 + position);
                     isfnr = position;
                 } else {
+                    isfsourcedenied = true;
                     mainprogram->missingplugs.emplace(istring);
                 }
             }
@@ -10770,6 +10801,7 @@ Layer* Mixer::read_layers(std::istream &rfile, const std::string result, std::ve
                 if (position != mainprogram->isfmixernames.size()) {
                     isfmixernr = position;
                 } else {
+                    isfmixerdenied = true;
                     mainprogram->missingplugs.emplace(istring);
                 }
             }
@@ -11257,180 +11289,180 @@ Layer* Mixer::read_layers(std::istream &rfile, const std::string result, std::ve
 			}
 		}
 
-        if (istring == "FFGLPARAMS") {
-            int pos = 0;
-            Param *par = nullptr;
-            while (istring != "ENDOFFFGLPARAMS") {
-                safegetline(rfile, istring);
-                if (istring == "VAL") {
-                    par = layend->ffglparams[pos];
-                    pos++;
+        if (!ffglsourcedenied) {
+            if (istring == "FFGLPARAMS") {
+                int pos = 0;
+                Param *par = nullptr;
+                while (istring != "ENDOFFFGLPARAMS") {
                     safegetline(rfile, istring);
-                    if (par->type == FF_TYPE_EVENT) {
+                    if (istring == "VAL") {
+                        par = layend->ffglparams[pos];
+                        pos++;
+                        safegetline(rfile, istring);
+                        if (par->type == FF_TYPE_EVENT) {
 
+                        } else if (par->type == FF_TYPE_TEXT || par->type == FF_TYPE_FILE) {
+                            par->valuestr = istring;
+                            par->valuechar = (char *) par->valuestr.c_str();
+                        } else {
+                            par->value = std::stof(istring);
+                        }
                     }
-                    else if (par->type == FF_TYPE_TEXT || par->type == FF_TYPE_FILE) {
-                        par->valuestr = istring;
-                        par->valuechar = (char*)par->valuestr.c_str();
-                    } else {
-                        par->value = std::stof(istring);
+                    if (istring == "MIDI0") {
+                        safegetline(rfile, istring);
+                        par->midi[0] = std::stoi(istring);
                     }
-                }
-                if (istring == "MIDI0") {
-                    safegetline(rfile, istring);
-                    par->midi[0] = std::stoi(istring);
-                }
-                if (istring == "MIDI1") {
-                    safegetline(rfile, istring);
-                    par->midi[1] = std::stoi(istring);
-                }
-                if (istring == "MIDIPORT") {
-                    safegetline(rfile, istring);
-                    par->midiport = istring;
-                    par->register_midi();
-                }
-                if (istring == "EVENTELEM") {
-                    if (loadevents) {
-                        mainmix->event_read(rfile, par, nullptr, layend);
+                    if (istring == "MIDI1") {
+                        safegetline(rfile, istring);
+                        par->midi[1] = std::stoi(istring);
                     }
-                    else {
-                        while (safegetline(rfile, istring)) {
-                            if (istring == "ENDOFEVENT") break;
+                    if (istring == "MIDIPORT") {
+                        safegetline(rfile, istring);
+                        par->midiport = istring;
+                        par->register_midi();
+                    }
+                    if (istring == "EVENTELEM") {
+                        if (loadevents) {
+                            mainmix->event_read(rfile, par, nullptr, layend);
+                        } else {
+                            while (safegetline(rfile, istring)) {
+                                if (istring == "ENDOFEVENT") break;
+                            }
                         }
                     }
                 }
             }
         }
 
-        if (istring == "BNODEFFGLPARAMS") {
-            int pos = 0;
-            Param *par = nullptr;
-            while (istring != "ENDOFBNODEFFGLPARAMS") {
-                safegetline(rfile, istring);
-                if (istring == "VAL") {
-                    par = layend->blendnode->ffglparams[pos];
-                    pos++;
+        if (!ffglmixerdenied) {
+            if (istring == "BNODEFFGLPARAMS") {
+                int pos = 0;
+                Param *par = nullptr;
+                while (istring != "ENDOFBNODEFFGLPARAMS") {
                     safegetline(rfile, istring);
-                    if (par->type == FF_TYPE_EVENT) {
+                    if (istring == "VAL") {
+                        par = layend->blendnode->ffglparams[pos];
+                        pos++;
+                        safegetline(rfile, istring);
+                        if (par->type == FF_TYPE_EVENT) {
 
+                        } else if (par->type == FF_TYPE_TEXT || par->type == FF_TYPE_FILE) {
+                            par->valuestr = istring;
+                            par->valuechar = (char *) par->valuestr.c_str();
+                        } else {
+                            par->value = std::stof(istring);
+                        }
                     }
-                    else if (par->type == FF_TYPE_TEXT || par->type == FF_TYPE_FILE) {
-                        par->valuestr = istring;
-                        par->valuechar = (char*)par->valuestr.c_str();
-                    } else {
-                        par->value = std::stof(istring);
+                    if (istring == "MIDI0") {
+                        safegetline(rfile, istring);
+                        par->midi[0] = std::stoi(istring);
                     }
-                }
-                if (istring == "MIDI0") {
-                    safegetline(rfile, istring);
-                    par->midi[0] = std::stoi(istring);
-                }
-                if (istring == "MIDI1") {
-                    safegetline(rfile, istring);
-                    par->midi[1] = std::stoi(istring);
-                }
-                if (istring == "MIDIPORT") {
-                    safegetline(rfile, istring);
-                    par->midiport = istring;
-                    par->register_midi();
-                }
-                if (istring == "EVENTELEM") {
-                    if (loadevents) {
-                        mainmix->event_read(rfile, par, nullptr, layend);
+                    if (istring == "MIDI1") {
+                        safegetline(rfile, istring);
+                        par->midi[1] = std::stoi(istring);
                     }
-                    else {
-                        while (safegetline(rfile, istring)) {
-                            if (istring == "ENDOFEVENT") break;
+                    if (istring == "MIDIPORT") {
+                        safegetline(rfile, istring);
+                        par->midiport = istring;
+                        par->register_midi();
+                    }
+                    if (istring == "EVENTELEM") {
+                        if (loadevents) {
+                            mainmix->event_read(rfile, par, nullptr, layend);
+                        } else {
+                            while (safegetline(rfile, istring)) {
+                                if (istring == "ENDOFEVENT") break;
+                            }
                         }
                     }
                 }
             }
         }
 
-        if (istring == "ISFPARAMS") {
-            int pos = 0;
-            Param *par = nullptr;
-            while (istring != "ENDOFISFPARAMS") {
-                safegetline(rfile, istring);
-                if (istring == "VAL") {
-                    par = layend->isfparams[pos];
-                    pos++;
+        if (!isfsourcedenied) {
+            if (istring == "ISFPARAMS") {
+                int pos = 0;
+                Param *par = nullptr;
+                while (istring != "ENDOFISFPARAMS") {
                     safegetline(rfile, istring);
-                    if (par->type == FF_TYPE_EVENT) {
+                    if (istring == "VAL") {
+                        par = layend->isfparams[pos];
+                        pos++;
+                        safegetline(rfile, istring);
+                        if (par->type == FF_TYPE_EVENT) {
 
+                        } else if (par->type == FF_TYPE_TEXT || par->type == FF_TYPE_FILE) {
+                            par->valuestr = istring;
+                            par->valuechar = (char *) par->valuestr.c_str();
+                        } else {
+                            par->value = std::stof(istring);
+                        }
                     }
-                    else if (par->type == FF_TYPE_TEXT || par->type == FF_TYPE_FILE) {
-                        par->valuestr = istring;
-                        par->valuechar = (char*)par->valuestr.c_str();
-                    } else {
-                        par->value = std::stof(istring);
+                    if (istring == "MIDI0") {
+                        safegetline(rfile, istring);
+                        par->midi[0] = std::stoi(istring);
                     }
-                }
-                if (istring == "MIDI0") {
-                    safegetline(rfile, istring);
-                    par->midi[0] = std::stoi(istring);
-                }
-                if (istring == "MIDI1") {
-                    safegetline(rfile, istring);
-                    par->midi[1] = std::stoi(istring);
-                }
-                if (istring == "MIDIPORT") {
-                    safegetline(rfile, istring);
-                    par->midiport = istring;
-                    par->register_midi();
-                }
-                if (istring == "EVENTELEM") {
-                    if (loadevents) {
-                        mainmix->event_read(rfile, par, nullptr, layend);
+                    if (istring == "MIDI1") {
+                        safegetline(rfile, istring);
+                        par->midi[1] = std::stoi(istring);
                     }
-                    else {
-                        while (safegetline(rfile, istring)) {
-                            if (istring == "ENDOFEVENT") break;
+                    if (istring == "MIDIPORT") {
+                        safegetline(rfile, istring);
+                        par->midiport = istring;
+                        par->register_midi();
+                    }
+                    if (istring == "EVENTELEM") {
+                        if (loadevents) {
+                            mainmix->event_read(rfile, par, nullptr, layend);
+                        } else {
+                            while (safegetline(rfile, istring)) {
+                                if (istring == "ENDOFEVENT") break;
+                            }
                         }
                     }
                 }
             }
         }
 
-        if (istring == "BNODEISFPARAMS") {
-            int pos = 0;
-            Param *par = nullptr;
-            while (istring != "ENDOFBNODEISFPARAMS") {
-                safegetline(rfile, istring);
-                if (istring == "VAL") {
-                    par = layend->blendnode->isfparams[pos];
-                    pos++;
+        if (!isfmixerdenied) {
+            if (istring == "BNODEISFPARAMS") {
+                int pos = 0;
+                Param *par = nullptr;
+                while (istring != "ENDOFBNODEISFPARAMS") {
                     safegetline(rfile, istring);
-                    if (par->type == FF_TYPE_EVENT) {
+                    if (istring == "VAL") {
+                        par = layend->blendnode->isfparams[pos];
+                        pos++;
+                        safegetline(rfile, istring);
+                        if (par->type == FF_TYPE_EVENT) {
 
+                        } else if (par->type == FF_TYPE_TEXT || par->type == FF_TYPE_FILE) {
+                            par->valuestr = istring;
+                            par->valuechar = (char *) par->valuestr.c_str();
+                        } else {
+                            par->value = std::stof(istring);
+                        }
                     }
-                    else if (par->type == FF_TYPE_TEXT || par->type == FF_TYPE_FILE) {
-                        par->valuestr = istring;
-                        par->valuechar = (char*)par->valuestr.c_str();
-                    } else {
-                        par->value = std::stof(istring);
+                    if (istring == "MIDI0") {
+                        safegetline(rfile, istring);
+                        par->midi[0] = std::stoi(istring);
                     }
-                }
-                if (istring == "MIDI0") {
-                    safegetline(rfile, istring);
-                    par->midi[0] = std::stoi(istring);
-                }
-                if (istring == "MIDI1") {
-                    safegetline(rfile, istring);
-                    par->midi[1] = std::stoi(istring);
-                }
-                if (istring == "MIDIPORT") {
-                    safegetline(rfile, istring);
-                    par->midiport = istring;
-                    par->register_midi();
-                }
-                if (istring == "EVENTELEM") {
-                    if (loadevents) {
-                        mainmix->event_read(rfile, par, nullptr, layend);
+                    if (istring == "MIDI1") {
+                        safegetline(rfile, istring);
+                        par->midi[1] = std::stoi(istring);
                     }
-                    else {
-                        while (safegetline(rfile, istring)) {
-                            if (istring == "ENDOFEVENT") break;
+                    if (istring == "MIDIPORT") {
+                        safegetline(rfile, istring);
+                        par->midiport = istring;
+                        par->register_midi();
+                    }
+                    if (istring == "EVENTELEM") {
+                        if (loadevents) {
+                            mainmix->event_read(rfile, par, nullptr, layend);
+                        } else {
+                            while (safegetline(rfile, istring)) {
+                                if (istring == "ENDOFEVENT") break;
+                            }
                         }
                     }
                 }
@@ -14742,15 +14774,14 @@ void Layer::set_ffglsource(int sourcenr) {
     int h = mainprogram->oh[this->comp];
 
     auto plug = mainprogram->ffglsourceplugins[this->ffglsourcenr];
-    auto instance = plug->createInstance(w, h);
-    mainprogram->ffglinstances[this->ffglsourcenr].push_back(instance);
-    this->ffglinstancenr = mainprogram->ffglinstances[this->ffglsourcenr].size() - 1;
+    this->instance = plug->createInstance(w, h);
+    this->ffglinstancenr = this->instance->getInstanceID();
 
     // get parameters from FFGLHost::parameters
     this->ffglparams.clear();
     this->numrows = 1;
     int cnt = 0;
-    for (auto par : instance->parameters) {
+    for (auto par : this->instance->parameters) {
         Param *param = new Param;
         if (cnt != 0) {
             if (cnt % 3 == 0 || (par.type == FF_TYPE_TEXT || par.type == FF_TYPE_FILE)) {
@@ -14784,18 +14815,14 @@ void BlendNode::set_ffglmixer(int mixernr) {
     int h = mainprogram->oh[!mainprogram->prevmodus];
 
     auto plug = mainprogram->ffglmixerplugins[this->ffglmixernr];
-    auto instance = plug->createInstance(w, h);
-    mainprogram->ffglinstances[this->ffglmixernr].push_back(
-            instance);
-    this->ffglinstancenr =
-            mainprogram->ffglinstances[this->ffglmixernr].size() -
-            1;
+    this->instance = plug->createInstance(w, h);
+    this->ffglinstancenr = this->instance->getInstanceID();;
 
     // get parameters from FFGLHost::parameters
     this->ffglparams.clear();
     this->numrows = 1;
     int cnt = 0;
-    for (auto par: instance->parameters) {
+    for (auto par: this->instance->parameters) {
         Param *param = new Param;
         if (cnt != 0) {
             if (cnt % 3 == 0 || (par.type == FF_TYPE_TEXT || par.type == FF_TYPE_FILE)) {

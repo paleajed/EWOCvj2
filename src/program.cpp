@@ -11235,9 +11235,10 @@ void Program::process_audio() {
             }
 
             // Send both FFT and raw audio data to FFGL plugins
-            for (size_t i = 0; i < this->ffglinstances.size(); ++i) {
-                for (size_t j = 0; j < this->ffglinstances[i].size(); ++j) {
-                    auto& instance = this->ffglinstances[i][j];
+            for (size_t i = 0; i < this->ffglplugins.size(); ++i) {
+                auto plug = this->ffglplugins[i];
+                for (auto elem : plug->instances) {
+                    auto& instance = reinterpret_cast<const std::shared_ptr<FFGLPluginInstance> &>(elem.second);
                     if (instance && instance->isInitialized()) {
                         float bpm = 60.0f / this->beatdet->winning_bpm;
                         float beatsPerBar = 4.0f;

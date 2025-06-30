@@ -996,6 +996,46 @@ void ISFLoader::clear() {
     shaders_.clear();
 }
 
+// Pool management for all loaded shaders
+void ISFLoader::clearAllInstancePools() {
+    for (auto& shader : shaders_) {
+        shader->clearInstancePool();
+    }
+    std::cout << "Cleared all ISF instance pools" << std::endl;
+}
+
+// Get pool statistics
+void ISFLoader::getPoolStatistics(size_t& totalPooled, size_t& totalActive) const {
+    totalPooled = 0;
+    totalActive = 0;
+    for (const auto& shader : shaders_) {
+        totalPooled += shader->getPoolSize();
+        totalActive += shader->getActiveInstanceCount();
+    }
+}
+
+void ISFLoader::printPoolStatistics() const {
+    size_t totalPooled, totalActive;
+    getPoolStatistics(totalPooled, totalActive);
+
+    std::cout << "=== ISF Instance Pool Statistics ===" << std::endl;
+    std::cout << "Total pooled instances: " << totalPooled << std::endl;
+    std::cout << "Total active instances: " << totalActive << std::endl;
+    std::cout << "Shader breakdown:" << std::endl;
+
+    for (const auto& shader : shaders_) {
+        if (shader->getPoolSize() > 0 || shader->getActiveInstanceCount() > 0) {
+            std::cout << "  " << shader->getName()
+                      << " - Pooled: " << shader->getPoolSize()
+                      << ", Active: " << shader->getActiveInstanceCount() << std::endl;
+        }
+    }
+    std::cout << "====================================" << std::endl;
+}
+
+
+
+
 // ===== ISFShader Implementation =====
 
 const std::vector<ISFLoader::ParamInfo>& ISFShader::getParameterInfo() const {
@@ -1023,6 +1063,8 @@ size_t ISFShader::getPassCount() const {
 }
 
 ISFShader::~ISFShader() {
+    clearInstancePool();  // Clean up any pooled instances
+
     if (program_ != 0) {
         glDeleteProgram(program_);
     }
@@ -1040,7 +1082,68 @@ ISFShader::~ISFShader() {
 // ===== ISFShaderInstance Implementation =====
 
 ISFShaderInstance* ISFShader::createInstance() {
-    return new ISFShaderInstance(this);
+    std::lock_guard<std::mutex> lock(poolMutex_);
+
+    ISFShaderInstance* instance = nullptr;
+
+    // Try to get an instance from the pool
+    if (!instancePool_.empty()) {
+        auto pooledInstance = std::move(instancePool_.back());
+        instancePool_.pop_back();
+
+        instance = pooledInstance.release();  // Transfer ownership
+        instance->isInPool_ = false;
+        instance->resetForReuse();  // Clean state for reuse
+
+        std::cout << "Reused ISF instance from pool for shader: " << name_
+                  << " (Pool size: " << instancePool_.size() << ")" << std::endl;
+    } else {
+        // Pool is empty - create new instance
+        instance = new ISFShaderInstance(this);
+        instance->isInPool_ = false;
+
+        std::cout << "Created new ISF instance for shader: " << name_
+                  << " (Active: " << activeInstances_ + 1 << ")" << std::endl;
+    }
+
+    activeInstances_++;
+    return instance;
+}
+
+void ISFShader::clearInstancePool() {
+    std::lock_guard<std::mutex> lock(poolMutex_);
+
+    size_t poolSize = instancePool_.size();
+    instancePool_.clear();
+
+    std::cout << "Cleared ISF instance pool for shader: " << name_
+              << " (Released " << poolSize << " instances)" << std::endl;
+}
+
+void ISFShader::releaseInstance(ISFShaderInstance* instance) {
+    if (!instance || instance->parentShader_ != this) {
+        std::cerr << "Invalid instance passed to releaseInstance!" << std::endl;
+        return;
+    }
+
+    std::lock_guard<std::mutex> lock(poolMutex_);
+
+    activeInstances_--;
+
+    // Add to pool if we haven't exceeded maximum pool size
+    if (instancePool_.size() < MAX_POOL_SIZE) {
+        instance->isInPool_ = true;
+        instancePool_.push_back(std::unique_ptr<ISFShaderInstance>(instance));
+
+        std::cout << "Returned ISF instance to pool for shader: " << name_
+                  << " (Pool size: " << instancePool_.size() << ")" << std::endl;
+    } else {
+        // Pool is full - just delete the instance
+        delete instance;
+
+        std::cout << "Pool full - deleted ISF instance for shader: " << name_
+                  << " (Pool size: " << instancePool_.size() << ")" << std::endl;
+    }
 }
 
 ISFShaderInstance::ISFShaderInstance(ISFShader* parent)
@@ -1063,15 +1166,18 @@ ISFShaderInstance::ISFShaderInstance(ISFShader* parent)
 }
 
 ISFShaderInstance::~ISFShaderInstance() {
-    // Clean up audio textures using pooling
-    for (GLuint texture : audioTextures_) {
-        if (texture != 0) {
-            mainprogram->add_to_texpool(texture);
+    // Only clean up if we're not being pooled
+    if (!isInPool_) {
+        // Clean up audio textures using pooling
+        for (GLuint texture : audioTextures_) {
+            if (texture != 0) {
+                mainprogram->add_to_texpool(texture);
+            }
         }
-    }
-    audioTextures_.clear();
+        audioTextures_.clear();
 
-    // Instance passes will be cleaned up by their destructors which now use pooling
+        // Instance passes will be cleaned up by their destructors which now use pooling
+    }
 }
 
 bool ISFShaderInstance::setParameter(const std::string& name, float value) {
@@ -2035,6 +2141,32 @@ bool ISFShaderInstance::isDiscreteParameter(const std::string& name) const {
     return paramInfo.hasDiscreteValues;
 }
 
+// Reset instance to clean state for reuse
+void ISFShaderInstance::resetForReuse() {
+    // Reset parameters to defaults
+    //resetParametersToDefaults();
+
+    // Clear bound input textures
+    std::fill(boundInputTextures_.begin(), boundInputTextures_.end(), 0);
+
+    // Reset frame counter for generators
+    instanceFrameIndex_ = 0;
+    lastFrameTime_ = 0.0f;
+
+    // Clear audio data
+    {
+        std::lock_guard<std::mutex> lock(audioDataMutex_);
+        latestFFTData_.clear();
+        latestAudioSamples_.clear();
+        hasNewFFTData_ = false;
+        hasNewAudioSamples_ = false;
+    }
+
+    // Note: We don't reset instancePasses_ or audio textures as they will be
+    // automatically managed by the pooling system when needed
+
+    std::cout << "Reset ISF instance for reuse: " << getName() << std::endl;
+}
 
 ISFLoader::InstancePassInfo::~InstancePassInfo()  {
     if (framebuffer != 0) {

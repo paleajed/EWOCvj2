@@ -124,7 +124,7 @@ class Effect {
 		EffectNode *node = NULL;
 		std::vector<Param*> params;
         int ffglnr = -1;
-        int ffglinstancenr = -1;
+        FFInstanceID ffglinstancenr;
         int isfnr = -1;
         int isfpluginnr = -1;
         int isfinstancenr = -1;
@@ -364,6 +364,7 @@ public:
 class FFGLEffect : public Effect {
 public:
     std::string name;
+    FFGLInstanceHandle instance;
 
     FFGLEffect(Layer *lay, int ffglnr);
 };

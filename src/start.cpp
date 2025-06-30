@@ -3266,8 +3266,7 @@ void onestepfrom(bool stage, Node *node, Node *prevnode, GLuint prevfbotex, GLui
                 op = lay->opacity->value;
             }
             if (effect->ffglnr != -1 && effect->onoffbutton->value) {
-                auto instance = mainprogram->ffglinstances[effect->ffglnr][effect->ffglinstancenr];
-
+                FFGLEffect *eff = (FFGLEffect*)effect;
                 FFGLFramebuffer infbo;
                 infbo.fbo = prevfbo;
                 infbo.colorTexture = prevfbotex;
@@ -3279,13 +3278,13 @@ void onestepfrom(bool stage, Node *node, Node *prevnode, GLuint prevfbotex, GLui
                 outfbo.width = mainprogram->ow[stage];
                 outfbo.height = mainprogram->oh[stage];
 
-                for (int i = 0; i < instance->parameters.size(); i++) {
+                for (int i = 0; i < eff->instance->parameters.size(); i++) {
                     if (effect->params[i]->type == FF_TYPE_OPTION) {
-                        instance->setParameter(i, instance->parameters[i].elements[effect->params[i]->value].value);
+                        eff->instance->setParameter(i, eff->instance->parameters[i].elements[effect->params[i]->value].value);
                     } else if (effect->params[i]->type == FF_TYPE_TEXT || effect->params[i]->type == FF_TYPE_FILE) {
-                        instance->setParameter(i, FFGLUtils::PointerToFFMixed(effect->params[i]->valuechar));
+                        eff->instance->setParameter(i, FFGLUtils::PointerToFFMixed(effect->params[i]->valuechar));
                     } else {
-                        instance->setParameter(i, effect->params[i]->value);
+                        eff->instance->setParameter(i, effect->params[i]->value);
                     }
                     if (effect->params[i]->type == FF_TYPE_EVENT) {
                         effect->params[i]->value = 0.0f;
@@ -3298,7 +3297,7 @@ void onestepfrom(bool stage, Node *node, Node *prevnode, GLuint prevfbotex, GLui
                 float currentTime = EffectTimer::getTime(); // Starts from 0.0
                 //instance->setTime(effectTime);
 
-                bool ret = instance->processFrame({infbo}, outfbo);
+                bool ret = eff->instance->processFrame({infbo}, outfbo);
 
                 if (!ret) {
                     glBindFramebuffer(GL_FRAMEBUFFER, effect->fbo);
@@ -3524,8 +3523,6 @@ void onestepfrom(bool stage, Node *node, Node *prevnode, GLuint prevfbotex, GLui
             }
         }
         if (lay->ffglsourcenr != -1) {
-            auto instance = mainprogram->ffglinstances[lay->ffglsourcenr][lay->ffglinstancenr];
-
             FFGLFramebuffer infbo;
             infbo.fbo = prevfbo;
             infbo.colorTexture = prevfbotex;
@@ -3537,29 +3534,29 @@ void onestepfrom(bool stage, Node *node, Node *prevnode, GLuint prevfbotex, GLui
             outfbo.width = mainprogram->ow[stage];
             outfbo.height = mainprogram->oh[stage];
 
-            for (int i = 0; i < instance->parameters.size(); i++) {
+            for (int i = 0; i < lay->instance->parameters.size(); i++) {
                 if (lay->ffglparams[i]->type == FF_TYPE_BUFFER) {
                 }
                 else if (lay->ffglparams[i]->type == FF_TYPE_OPTION) {
                     float optionValue = lay->ffglparams[i]->value;
-                    instance->setParameter(i, optionValue);
+                    lay->instance->setParameter(i, optionValue);
                 }
                 else if (lay->ffglparams[i]->type == FF_TYPE_TEXT || lay->ffglparams[i]->type == FF_TYPE_FILE) {
-                    instance->setParameter(i, FFGLUtils::PointerToFFMixed(lay->ffglparams[i]->valuechar));
+                    lay->instance->setParameter(i, FFGLUtils::PointerToFFMixed(lay->ffglparams[i]->valuechar));
                 }
                 else if (lay->ffglparams[i]->type == FF_TYPE_EVENT) {
                     if (lay->ffglparams[i]->value == 1.0f) {
-                        instance->setParameter(i, lay->ffglparams[i]->value);
+                        lay->instance->setParameter(i, lay->ffglparams[i]->value);
                     }
                     lay->ffglparams[i]->value = 0.0f;
                 }
                 else {
-                    instance->setParameter(i, lay->ffglparams[i]->value);
+                    lay->instance->setParameter(i, lay->ffglparams[i]->value);
                 }
             }
 
             bool hasBufferParams = false;
-            for (const auto &param: instance->getParameters()) {
+            for (const auto &param: lay->instance->getParameters()) {
                 if (param.isBufferParameter()) {
                     hasBufferParams = true;
                     break;
@@ -3571,12 +3568,12 @@ void onestepfrom(bool stage, Node *node, Node *prevnode, GLuint prevfbotex, GLui
                 static auto lastFrame = std::chrono::high_resolution_clock::now();
 
                 float currentTime = EffectTimer::getTime(); // Starts from 0.0
-                instance->setTime(effectTime);
+                lay->instance->setTime(effectTime);
             }
 
-            instance->applyStoredAudioData();
+            lay->instance->applyStoredAudioData();
 
-            instance->processFrame({infbo}, outfbo);
+            lay->instance->processFrame({infbo}, outfbo);
 
             // opacity shift scale
             float sx = 0.0f;
@@ -3743,8 +3740,6 @@ void onestepfrom(bool stage, Node *node, Node *prevnode, GLuint prevfbotex, GLui
 
             if (bnode->intex != -1 && bnode->in2tex != -1) {
                 if (bnode->ffglmixernr != -1) {
-                    auto instance = mainprogram->ffglinstances[bnode->ffglmixernr][bnode->ffglinstancenr];
-
                     FFGLFramebuffer infbo1;
                     infbo1.fbo = 0;
                     infbo1.colorTexture = bnode->intex;
@@ -3766,17 +3761,17 @@ void onestepfrom(bool stage, Node *node, Node *prevnode, GLuint prevfbotex, GLui
                     glActiveTexture(GL_TEXTURE1);
                     glBindTexture(GL_TEXTURE_2D, infbo2.colorTexture);
 
-                    for (int i = 0; i < instance->parameters.size(); i++) {
-                        instance->setParameter(i, bnode->ffglparams[i]->value);
+                    for (int i = 0; i < bnode->instance->parameters.size(); i++) {
+                        bnode->instance->setParameter(i, bnode->ffglparams[i]->value);
                     }
 
                     static float effectTime = 0.0f;
                     static auto lastFrame = std::chrono::high_resolution_clock::now();
 
                     float currentTime = EffectTimer::getTime(); // Starts from 0.0
-                    instance->setTime(effectTime);
+                    bnode->instance->setTime(effectTime);
 
-                    instance->processFrame({infbo1, infbo2}, outfbo);
+                    bnode->instance->processFrame({infbo1, infbo2}, outfbo);
                 }
                 else if (bnode->isfmixernr != -1) {
                     auto instance = mainprogram->isfinstances[bnode->isfpluginnr][bnode->isfinstancenr];
@@ -7672,11 +7667,11 @@ int main(int argc, char* argv[]) {
     printf("\n");
     std::string pp(full_path.string() + "/lock.png");
     ILboolean ret2 = ilLoadImage((const ILstring)pp.c_str());
-    mainprogram->ffgldir = full_path.string() + "/ffglplugins";
+    mainprogram->ffgldir = mainprogram->docpath + "/ffglplugins";
     if (!exists(mainprogram->ffgldir)) {
         std::filesystem::create_directories(mainprogram->ffgldir);
     }
-    mainprogram->isfdir = full_path.string() + "/isfplugins";
+    mainprogram->isfdir = "C:/ProgramData/ISF";
     if (!exists(mainprogram->isfdir)) {
         std::filesystem::create_directories(mainprogram->isfdir);
     }
@@ -7842,6 +7837,7 @@ int main(int argc, char* argv[]) {
         std::string name = plugin->getDisplayName();
         name.erase(std::find(name.begin(), name.end(), '\0'), name.end());
         std::transform(name.begin(), name.end(), name.begin(), ::toupper);
+        mainprogram->ffglplugins.push_back(plugin);
         if (plugin->pluginInfo.PluginType == FF_EFFECT) {
             mainprogram->ffgleffectplugins.push_back(plugin);
             mainprogram->ffgleffectnames.push_back(name);
@@ -7854,8 +7850,6 @@ int main(int argc, char* argv[]) {
             mainprogram->ffglmixerplugins.push_back(plugin);
             mainprogram->ffglmixernames.push_back(name);
         }
-
-        mainprogram->ffglinstances.push_back({});
     }
 
     // load installed isf plugins
