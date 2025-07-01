@@ -130,6 +130,7 @@ public:
         int height = 0;
         GLuint framebuffer = 0;
         GLuint texture = 0;
+        
 
         ~InstancePassInfo();
     };

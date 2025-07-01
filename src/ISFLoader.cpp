@@ -713,24 +713,27 @@ bool ISFLoader::compileShader(const std::string& fragmentSource, ISFShader& shad
         vertexSource = "#version 330 core\n" +
                        std::string(isfVertexBuiltins_) +
                        "\n" + shader.customVertexShader_;
-        std::cout << "=== USING CUSTOM VERTEX SHADER FOR: " << shader.name_ << " ===" << std::endl;
-        std::cout << "Custom vertex shader content:" << std::endl;
-        std::cout << shader.customVertexShader_.substr(0, 200) << "..." << std::endl;
-        std::cout << "=== END CUSTOM VERTEX SHADER ===" << std::endl;
     } else {
         // Use default ISF vertex shader
         vertexSource = vertexShaderSource_;
-        std::cout << "Using DEFAULT vertex shader for: " << shader.name_ << std::endl;
     }
 
     // Convert ISF shader from GLSL 120 to 330 core and fix compatibility issues
     std::string modernFragmentSource = fragmentSource;
 
-    // Replace gl_FragColor with fragColor
+    // Replace gl_FragColor with fragColor AND add automatic clamping
     size_t pos = 0;
     while ((pos = modernFragmentSource.find("gl_FragColor", pos)) != std::string::npos) {
         modernFragmentSource.replace(pos, 12, "fragColor");
         pos += 9; // length of "fragColor"
+    }
+    
+    // Add controlled feedback stabilization that gave us working trails
+    size_t mainEndPos = modernFragmentSource.rfind("}");
+    if (mainEndPos != std::string::npos) {
+        // Insert feedback control just before the final closing brace of main()
+        std::string feedbackControlCode = "\n\t// Simple clamp to prevent NaN while allowing feedback\n\tfragColor = clamp(fragColor, 0.0, 1.95);\n";
+        modernFragmentSource.insert(mainEndPos, feedbackControlCode);
     }
 
     // Fix bool/int comparisons for event parameters
@@ -828,6 +831,7 @@ void ISFLoader::cacheUniformLocations(ISFShader& shader) {
     shader.frameIndexLocation_ = glGetUniformLocation(shader.program_, "FRAMEINDEX");
     shader.dateLocation_ = glGetUniformLocation(shader.program_, "DATE");
     shader.passIndexLocation_ = glGetUniformLocation(shader.program_, "PASSINDEX");
+    
 
     // Cache parameter uniform locations
     for (const auto& param : shader.parameterTemplates_) {
@@ -846,8 +850,6 @@ void ISFLoader::cacheUniformLocations(ISFShader& shader) {
             GLint imgRectLocation = glGetUniformLocation(shader.program_, imgRectName.c_str());
             shader.imgRectLocations_[input.name] = imgRectLocation;
 
-            // Debug output
-            std::cout << "Cached imgRect uniform: " << imgRectName << " -> location " << imgRectLocation << std::endl;
         }
     }
 
@@ -1367,6 +1369,9 @@ void ISFShaderInstance::render(float time, float renderWidth, float renderHeight
     if (parentShader_->passes_.size() > 1) {
         // Multi-pass rendering
         setupPassFramebuffers(renderWidth, renderHeight);
+        
+        // Double buffer initialization removed since we disabled double buffering
+        
         glUseProgram(parentShader_->program_);
 
         // Render all passes to their instance buffers
@@ -1380,6 +1385,7 @@ void ISFShaderInstance::render(float time, float renderWidth, float renderHeight
         const auto& lastInstancePass = instancePasses_.back();
 
         if (!lastPassTemplate.target.empty()) {
+
             glBindFramebuffer(GL_FRAMEBUFFER, originalFramebuffer);
             glDrawBuffer(originalDrawBuffer);
             glViewport(originalViewport[0], originalViewport[1], originalViewport[2], originalViewport[3]);
@@ -1387,6 +1393,12 @@ void ISFShaderInstance::render(float time, float renderWidth, float renderHeight
             glBindFramebuffer(GL_READ_FRAMEBUFFER, lastInstancePass.framebuffer);
             glBindFramebuffer(GL_DRAW_FRAMEBUFFER, originalFramebuffer);
 
+            // For GL_RGBA32F textures, we need tone mapping to prevent feedback explosion
+            // Enable GL_CLAMP_TO_EDGE to prevent undefined behavior at texture edges
+            glBindTexture(GL_TEXTURE_2D, lastInstancePass.texture);
+            glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_EDGE);
+            glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_EDGE);
+            
             glBlitFramebuffer(
                     0, 0, lastInstancePass.width, lastInstancePass.height,
                     0, 0, originalViewport[2], originalViewport[3],
@@ -1394,12 +1406,16 @@ void ISFShaderInstance::render(float time, float renderWidth, float renderHeight
             );
 
             glBindFramebuffer(GL_FRAMEBUFFER, originalFramebuffer);
+            
         }
 
     } else {
         // Single-pass rendering
         renderSinglePass(time, renderWidth, renderHeight, actualFrameIndex);
     }
+
+    // Remove buffer swapping since we disabled double buffering
+    // The odd/even flickering might be caused by buffer swap timing issues
 
     // Auto-increment frame counter for next render
     instanceFrameIndex_++;
@@ -1498,14 +1514,6 @@ void ISFShaderInstance::createAudioTexture(int inputIndex, int width, int height
 void ISFShaderInstance::updateAudioTexture(int inputIndex, const float* audioData, size_t dataSize, int channels) {
     if (inputIndex >= audioTextures_.size() || !audioData || dataSize == 0) return;
 
-    // Debug output
-    float minVal = audioData[0], maxVal = audioData[0];
-    for (size_t i = 0; i < dataSize; i++) {
-        minVal = std::min(minVal, audioData[i]);
-        maxVal = std::max(maxVal, audioData[i]);
-    }
-    std::cout << "Updating audio texture " << inputIndex << ": " << dataSize
-              << " samples, " << channels << " channels, range: " << minVal << " to " << maxVal << std::endl;
 
     const auto& input = parentShader_->inputs_[inputIndex];
 
@@ -1621,9 +1629,13 @@ void ISFShaderInstance::renderPass(int passIndex, float time, float renderWidth,
             std::cout << "ERROR: Instance framebuffer not complete! Status: " << status << std::endl;
         }
 
-        // Only clear non-persistent buffers
+        // Clear non-persistent buffers always, persistent buffers on first few frames
         if (!passTemplate.persistent) {
             glClearColor(0.0f, 0.0f, 0.0f, 0.0f);
+            glClear(GL_COLOR_BUFFER_BIT);
+        } else if (frameIndex <= 3) {
+            // Initialize persistent buffers for first few frames to ensure stability
+            glClearColor(0.0f, 0.0f, 0.0f, 1.0f);  // Solid black with alpha=1
             glClear(GL_COLOR_BUFFER_BIT);
         }
 
@@ -1647,6 +1659,7 @@ void ISFShaderInstance::renderPass(int passIndex, float time, float renderWidth,
 
     // Draw fullscreen quad
     drawFullscreenQuad();
+
 
     // Check for OpenGL errors
     GLenum error = glGetError();
@@ -1684,9 +1697,10 @@ void ISFShaderInstance::setBuiltinUniforms(float time, float renderWidth, float 
         glUniform1f(parentShader_->timeLocation_, time);
     }
 
-    // Set TIMEDELTA (now properly calculated)
+    // Set TIMEDELTA (ensure it's never zero or negative to prevent division issues)
     if (parentShader_->timeDeltaLocation_ != -1) {
-        glUniform1f(parentShader_->timeDeltaLocation_, timeDelta);
+        float safeDelta = std::max(0.001f, timeDelta); // Ensure minimum positive value
+        glUniform1f(parentShader_->timeDeltaLocation_, safeDelta);
     }
 
     // Set RENDERSIZE
@@ -1769,12 +1783,13 @@ void ISFShaderInstance::bindTextures(int passIndex) {
             auto it = parentShader_->bufferLocations_.find(passTemplate.target);
             if (it != parentShader_->bufferLocations_.end()) {
                 if (it->second != -1) {
-                    // Use instance-specific texture instead of template texture
-                    GLuint textureToUse = instancePass.texture;  // ← Instance texture
+                    // Use current texture for feedback effects (no double buffering)
+                    GLuint textureToUse = instancePass.texture;  // Current frame for feedback
 
                     glActiveTexture(GL_TEXTURE0 + textureUnit);
                     glBindTexture(GL_TEXTURE_2D, textureToUse);
                     glUniform1i(it->second, textureUnit);
+                    
                     textureUnit++;
                 }
             }
@@ -1805,11 +1820,17 @@ void ISFShaderInstance::bindTextures(int passIndex) {
             if (it != parentShader_->inputLocations_.end() && it->second != -1) {
                 glUniform1i(it->second, textureUnit);
             } else {
-                // Try common input names for first texture
+                // Try common input names for first texture - CRITICAL for effects like FastMosh
                 if (textureUnit == 0) {
                     auto commonIt = parentShader_->inputLocations_.find("inputImage");
                     if (commonIt != parentShader_->inputLocations_.end() && commonIt->second != -1) {
                         glUniform1i(commonIt->second, textureUnit);
+                    }
+                    
+                    // Also try INPUT for compatibility
+                    auto inputIt = parentShader_->inputLocations_.find("INPUT");
+                    if (inputIt != parentShader_->inputLocations_.end() && inputIt->second != -1) {
+                        glUniform1i(inputIt->second, textureUnit);
                     }
                 }
             }
@@ -1853,7 +1874,8 @@ void ISFShaderInstance::drawFullscreenQuad() {
 
     glBindVertexArray(fullscreenQuadVAO_);
     glDrawArrays(GL_TRIANGLE_STRIP, 0, 4);
-    glBindVertexArray(0);
+    // Don't unbind VAO to avoid interfering with blit operations
+    // glBindVertexArray(0);
 }
 
 void ISFShaderInstance::setupPassFramebuffers(float renderWidth, float renderHeight) {
@@ -1872,6 +1894,9 @@ void ISFShaderInstance::setupPassFramebuffers(float renderWidth, float renderHei
         int newWidth = evaluateExpression(passTemplate.widthExpr, renderWidth, renderHeight);
         int newHeight = evaluateExpression(passTemplate.heightExpr, renderWidth, renderHeight);
 
+        // Temporarily disable double buffering to test if it interferes with feedback effects
+        instancePass.needsDoubleBuffer = false; // passTemplate.persistent && !passTemplate.target.empty();
+
         // Only recreate if dimensions changed or framebuffer doesn't exist
         if (instancePass.width != newWidth || instancePass.height != newHeight || instancePass.framebuffer == 0) {
             // Clean up old resources using pooling
@@ -1879,22 +1904,35 @@ void ISFShaderInstance::setupPassFramebuffers(float renderWidth, float renderHei
                 mainprogram->add_to_fbopool(instancePass.framebuffer);
                 mainprogram->add_to_texpool(instancePass.texture);
             }
+            if (instancePass.prevFramebuffer != 0) {
+                mainprogram->add_to_fbopool(instancePass.prevFramebuffer);
+                mainprogram->add_to_texpool(instancePass.prevTexture);
+            }
 
             instancePass.width = newWidth;
             instancePass.height = newHeight;
 
-            // Try to get texture from pool first
-            GLint format = GL_RGBA32F; // Float format for pass buffers
+            // Standard ISF pass buffer format
+            GLint format = GL_RGBA32F; // Full float format as expected by ISF shaders
             instancePass.texture = mainprogram->grab_from_texpool(instancePass.width, instancePass.height, format);
 
             if (instancePass.texture == -1) {
                 // Pool miss - create new texture
                 glGenTextures(1, &instancePass.texture);
                 glBindTexture(GL_TEXTURE_2D, instancePass.texture);
-                glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA32F, instancePass.width, instancePass.height, 0, GL_RGBA, GL_FLOAT, nullptr);
+                
+                // Initialize texture with black pixels using standard ISF format
+                std::vector<float> blackPixels(instancePass.width * instancePass.height * 4, 0.0f);
+                // Set alpha to 1.0 for proper initialization
+                for (size_t i = 3; i < blackPixels.size(); i += 4) {
+                    blackPixels[i] = 1.0f;
+                }
+                
+                glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA32F, instancePass.width, instancePass.height, 0, GL_RGBA, GL_FLOAT, blackPixels.data());
 
                 // Register the texture format for pooling
                 mainprogram->texintfmap[instancePass.texture] = format;
+                
             } else {
                 // Pool hit - texture already has correct format and size
                 glBindTexture(GL_TEXTURE_2D, instancePass.texture);
@@ -1909,6 +1947,7 @@ void ISFShaderInstance::setupPassFramebuffers(float renderWidth, float renderHei
                 glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
             }
 
+            // CRITICAL: Use GL_CLAMP_TO_EDGE to prevent texture edge artifacts that can cause feedback instability
             glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_EDGE);
             glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_EDGE);
 
@@ -1926,6 +1965,8 @@ void ISFShaderInstance::setupPassFramebuffers(float renderWidth, float renderHei
             if (glCheckFramebufferStatus(GL_FRAMEBUFFER) != GL_FRAMEBUFFER_COMPLETE) {
                 std::cerr << "Error creating instance framebuffer for pass: " << passTemplate.target << std::endl;
             }
+
+            // Double buffer creation removed since we disabled double buffering
 
             glBindFramebuffer(GL_FRAMEBUFFER, 0);
             glBindTexture(GL_TEXTURE_2D, 0);
@@ -2178,5 +2219,14 @@ ISFLoader::InstancePassInfo::~InstancePassInfo()  {
         // Use pooling instead of direct deletion
         mainprogram->add_to_texpool(texture);
         texture = 0;
+    }
+    if (prevFramebuffer != 0) {
+        // Clean up double buffer resources
+        mainprogram->add_to_fbopool(prevFramebuffer);
+        prevFramebuffer = 0;
+    }
+    if (prevTexture != 0) {
+        mainprogram->add_to_texpool(prevTexture);
+        prevTexture = 0;
     }
 }
