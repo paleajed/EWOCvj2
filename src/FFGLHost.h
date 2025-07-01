@@ -32,6 +32,7 @@ struct FFGLFramebuffer {
             : fbo(f), colorTexture(tex), depthBuffer(depth), width(w), height(h) {}
 
     bool isValid() const {
+
         return colorTexture != 0 && width > 0 && height > 0;
     }
 };

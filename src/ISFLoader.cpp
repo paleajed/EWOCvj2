@@ -1894,19 +1894,12 @@ void ISFShaderInstance::setupPassFramebuffers(float renderWidth, float renderHei
         int newWidth = evaluateExpression(passTemplate.widthExpr, renderWidth, renderHeight);
         int newHeight = evaluateExpression(passTemplate.heightExpr, renderWidth, renderHeight);
 
-        // Temporarily disable double buffering to test if it interferes with feedback effects
-        instancePass.needsDoubleBuffer = false; // passTemplate.persistent && !passTemplate.target.empty();
-
         // Only recreate if dimensions changed or framebuffer doesn't exist
         if (instancePass.width != newWidth || instancePass.height != newHeight || instancePass.framebuffer == 0) {
             // Clean up old resources using pooling
             if (instancePass.framebuffer != 0) {
                 mainprogram->add_to_fbopool(instancePass.framebuffer);
                 mainprogram->add_to_texpool(instancePass.texture);
-            }
-            if (instancePass.prevFramebuffer != 0) {
-                mainprogram->add_to_fbopool(instancePass.prevFramebuffer);
-                mainprogram->add_to_texpool(instancePass.prevTexture);
             }
 
             instancePass.width = newWidth;
@@ -2219,14 +2212,5 @@ ISFLoader::InstancePassInfo::~InstancePassInfo()  {
         // Use pooling instead of direct deletion
         mainprogram->add_to_texpool(texture);
         texture = 0;
-    }
-    if (prevFramebuffer != 0) {
-        // Clean up double buffer resources
-        mainprogram->add_to_fbopool(prevFramebuffer);
-        prevFramebuffer = 0;
-    }
-    if (prevTexture != 0) {
-        mainprogram->add_to_texpool(prevTexture);
-        prevTexture = 0;
     }
 }
