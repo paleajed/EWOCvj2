@@ -791,12 +791,16 @@ std::vector<Param*> Param::isfset_parameter_to(ISFLoader::ParamInfo &src, int po
         this->box->acolor[0] = 0.5f;
         this->box->acolor[1] = 0.5f;
         this->box->acolor[2] = 0.5f;
+    } else if (this->type == ISFLoader::PARAM_BOOL) {
+        this->deflt = src.defaultInt;
+        this->value = this->deflt;
+        this->sliding = false;
     } else {
         this->deflt = src.defaultVal;
         this->value = this->deflt;
         this->range[0] = src.minVal;
         this->range[1] = src.maxVal;
-        this->sliding = (this->type != ISFLoader::PARAM_BOOL);
+        this->sliding = true;
     }
 
     return {this};
@@ -4973,7 +4977,7 @@ void Layer::display() {
                 else if (this->deck == 1) deckstr = "B";
                 render_text("Layer " + deckstr + std::to_string(this->pos + 1), white, box->vtxcoords->x1 + 0.015f,
                             box->vtxcoords->y1 + box->vtxcoords->h - 0.045f, 0.0005f, 0.0008f);
-                std::string name;
+                std::string name = remove_extension(basename(this->filename));
                 if (this->type == ELEM_LIVE) {
                     name = this->filename;
                 }
