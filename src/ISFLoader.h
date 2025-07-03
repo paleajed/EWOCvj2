@@ -13,6 +13,9 @@ using json = nlohmann::json;
 #include <unordered_map>
 #include <memory>
 #include <mutex>
+#include <filesystem>
+#include <fstream>
+#include <chrono>
 
 // Forward declarations
 class ISFShader;
@@ -130,7 +133,7 @@ public:
         int height = 0;
         GLuint framebuffer = 0;
         GLuint texture = 0;
-        
+
 
         ~InstancePassInfo();
     };
@@ -146,6 +149,20 @@ public:
     };
 
 private:
+    // Shader cache implementation
+    struct CacheEntry {
+        std::string vertexSource;
+        std::string fragmentSource;
+        std::vector<char> binaryData;
+        GLenum binaryFormat;
+        std::string sourceHash;
+        uint64_t timestamp;
+        bool isValid = false;
+    };
+
+    std::unordered_map<std::string, CacheEntry> shaderCache_;
+    std::string cacheDirectory_;
+
     std::vector<std::unique_ptr<ISFShader>> shaders_;
     bool devilInitialized_ = false;
 
@@ -175,12 +192,30 @@ private:
     void logProgramError(GLuint program);
     ParamType stringToParamType(const std::string& typeStr);
 
+    // Shader cache methods
+    std::string getUserDataDirectory();
+    void initializeShaderCache();
+    std::string generateHash(const std::string& vertexSource, const std::string& fragmentSource);
+    bool isCacheValid(const CacheEntry& entry, const std::string& currentHash);
+    GLuint loadCachedProgram(const std::string& shaderName,
+                             const std::string& vertexSource,
+                             const std::string& fragmentSource);
+    void cacheProgram(const std::string& shaderName,
+                      const std::string& vertexSource,
+                      const std::string& fragmentSource,
+                      GLuint program);
+    bool validateCacheEnvironment();
+    void loadCacheFromDisk();
+    void saveCacheToDisk();
+    void showFirstRunMessage();
+
 public:
     ISFLoader();
     ~ISFLoader();
 
     // Main loading function
     bool loadISFDirectory(const std::string& directory);
+    bool isFirstRun_ = false;  // Add this line
 
     // Access loaded shaders (templates)
     const std::vector<std::unique_ptr<ISFShader>>& getShaders() const { return shaders_; }
@@ -212,6 +247,11 @@ public:
     // Get pool statistics
     void getPoolStatistics(size_t& totalPooled, size_t& totalActive) const;
     void printPoolStatistics() const;
+
+    // Cache management
+    void clearShaderCache();
+    void printCacheStats() const;
+    size_t getCacheSize() const { return shaderCache_.size(); }
 };
 
 // ISF Shader Template (immutable after loading)
@@ -247,6 +287,8 @@ public:
     size_t getParameterCount() const;
     size_t getInputCount() const;
     size_t getPassCount() const;
+
+    bool usesFloatBuffers() const { return usesFloatBuffers_; }
 
 private:
     GLuint program_ = 0;
@@ -285,6 +327,8 @@ private:
     std::mutex poolMutex_;  // Thread-safe pool access
     size_t activeInstances_ = 0;  // Track active instances
     static const size_t MAX_POOL_SIZE = 16;  // Maximum instances to keep in pool
+
+    bool usesFloatBuffers_ = false;  // True if FLOAT: true in JSON
 };
 
 // ISF Shader Instance (parameter state + rendering)

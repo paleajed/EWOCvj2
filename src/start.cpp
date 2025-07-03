@@ -1884,13 +1884,11 @@ void draw_direct(float* linec, float* areac, float x, float y, float wi, float h
 	if (linec) {
 		GLfloat lcolor = glGetUniformLocation(mainprogram->ShaderProgram, "lcolor");
 		glUniform4fv(lcolor, 1, linec);
-		if (1) {
-			GLint m_viewport[4];
-			glGetIntegerv(GL_VIEWPORT, m_viewport);
-			glUniform1f(pixelw, 2.0f / (wi * ((float)(m_viewport[2] - m_viewport[0]) / 2.0f)));
-			pixelh = glGetUniformLocation(mainprogram->ShaderProgram, "pixelh");
-			glUniform1f(pixelh, 2.0f / (he * ((float)(m_viewport[3] - m_viewport[1]) / 2.0f)));
-		}
+        GLint m_viewport[4];
+        glGetIntegerv(GL_VIEWPORT, m_viewport);
+        glUniform1f(pixelw, 2.0f / (wi * ((float)(m_viewport[2] - m_viewport[0]) / 2.0f)));
+        pixelh = glGetUniformLocation(mainprogram->ShaderProgram, "pixelh");
+        glUniform1f(pixelh, 2.0f / (he * ((float)(m_viewport[3] - m_viewport[1]) / 2.0f)));
 	}
 	else {
 		glUniform1f(pixelw, 0.0f);
@@ -1926,27 +1924,27 @@ void draw_direct(float* linec, float* areac, float x, float y, float wi, float h
 		}
 		GLfloat color = glGetUniformLocation(mainprogram->ShaderProgram, "color");
 		glUniform4fv(color, 1, areac);
+        GLfloat tcoords[8];
+        GLfloat* p = tcoords;
+        if (scale != 1.0f || dx != 0.0f || dy != 0.0f) {
+            *p++ = ((0.0f) - 0.5f) * scale + 0.5f + shx; *p++ = ((0.0f) - 0.5f) * scale + 0.5f + shy;
+            *p++ = ((0.0f) - 0.5f) * scale + 0.5f + shx; *p++ = ((1.0f) - 0.5f) * scale + 0.5f + shy;
+            *p++ = ((1.0f) - 0.5f) * scale + 0.5f + shx; *p++ = ((0.0f) - 0.5f) * scale + 0.5f + shy;
+            *p++ = ((1.0f) - 0.5f) * scale + 0.5f + shx; *p++ = ((1.0f) - 0.5f) * scale + 0.5f + shy;
+        }
+        else {
+            *p++ = 0.0f;
+            *p++ = 0.0f;
+            *p++ = 0.0f;
+            *p++ = 1.0f;
+            *p++ = 1.0f;
+            *p++ = 0.0f;
+            *p++ = 1.0f;
+            *p++ = 1.0f;
+        }
+        glBindBuffer(GL_ARRAY_BUFFER, mainprogram->btbuf);
+        glBufferSubData(GL_ARRAY_BUFFER, 0, 32, tcoords);
 		if (tex != -1) {
-			GLfloat tcoords[8];
-			GLfloat* p = tcoords;
-			if (scale != 1.0f || dx != 0.0f || dy != 0.0f) {
-				*p++ = ((0.0f) - 0.5f) * scale + 0.5f + shx; *p++ = ((0.0f) - 0.5f) * scale + 0.5f + shy;
-				*p++ = ((0.0f) - 0.5f) * scale + 0.5f + shx; *p++ = ((1.0f) - 0.5f) * scale + 0.5f + shy;
-				*p++ = ((1.0f) - 0.5f) * scale + 0.5f + shx; *p++ = ((0.0f) - 0.5f) * scale + 0.5f + shy;
-				*p++ = ((1.0f) - 0.5f) * scale + 0.5f + shx; *p++ = ((1.0f) - 0.5f) * scale + 0.5f + shy;
-			}
-			else {
-				*p++ = 0.0f; 
-				*p++ = 0.0f;
-				*p++ = 0.0f;
-				*p++ = 1.0f;
-				*p++ = 1.0f;
-				*p++ = 0.0f;
-				*p++ = 1.0f;
-				*p++ = 1.0f;
-			}
-			glBindBuffer(GL_ARRAY_BUFFER, mainprogram->btbuf);
-			glBufferSubData(GL_ARRAY_BUFFER, 0, 32, tcoords);
 			glActiveTexture(GL_TEXTURE0);
 			glBindTexture(GL_TEXTURE_2D, tex);
 			glUniform1i(box, 0);
@@ -2346,7 +2344,7 @@ std::vector<float> render_text(const std::string& stext, const char* ctext, floa
                     textwsplay = gs->textwvecvec[pos];
                 }
             }
-        } else if (smflag == 2) {
+        } else if (smflag == 2 || smflag == 3) {
             gs = mainprogram->tmguitextmap[text];
             if (gs) {
                 pos = std::find(gs->sxvec.begin(), gs->sxvec.end(), sx) - gs->sxvec.begin();
@@ -2374,14 +2372,19 @@ std::vector<float> render_text(const std::string& stext, const char* ctext, floa
 			w2 = glob->w;
 			h2 = glob->h;
 		}
-		else {
-			w2 = smw;
-			h2 = smh;
-		}
+        else if (smflag != 3) {
+            w2 = smw;
+            h2 = smh;
+        }
+        else if (smflag == 3) {
+            w2 = glob->h / 2.0f;
+            h2 = glob->h / 2.0f;
+        }
 		int psize = h2 * 13.5f * sy;
 
         if (smflag == 1) SDL_GL_MakeCurrent(mainprogram->prefwindow, glc);
         else if (smflag == 2) SDL_GL_MakeCurrent(mainprogram->config_midipresetswindow, glc);
+        else if (smflag == 3) SDL_GL_MakeCurrent(mainprogram->splashwindow, glc);
 
         std::vector<float> textws;
 		float pixelw = 2.0f / w2;
@@ -2431,7 +2434,7 @@ std::vector<float> render_text(const std::string& stext, const char* ctext, floa
                 gs->text = text;
                 if (smflag == 0) mainprogram->guitextmap[text] = gs;
                 else if (smflag == 1) mainprogram->prguitextmap[text] = gs;
-                else if (smflag == 2) mainprogram->tmguitextmap[text] = gs;
+                else if (smflag == 2 || smflag == 3) mainprogram->tmguitextmap[text] = gs;
             }
             gs->texturevec.push_back(texture);
             gs->textwvec.push_back(textw);
@@ -2461,9 +2464,13 @@ std::vector<float> render_text(const std::string& stext, const char* ctext, floa
             w2 = glob->w;
             h2 = glob->h;
         }
-        else {
+        else if (smflag != 3) {
             w2 = smw;
             h2 = smh;
+        }
+        else if (smflag == 3) {
+            w2 = glob->h / 2.0f;
+            h2 = glob->h / 2.0f;
         }
 		float pixelw = 2.0f / w2;
 		float pixelh = 2.0f / h2;
@@ -7477,24 +7484,13 @@ int main(int argc, char* argv[]) {
     smw = (float) wi;
     smh = (float) he;
 
-    mainprogram->ShaderProgram = mainprogram->set_shader();
-    glUseProgram(mainprogram->ShaderProgram);
-
-    mainprogram->shelves[0] = new Shelf(0);
-    mainprogram->shelves[1] = new Shelf(1);
-    mainprogram->shelves[0]->erase();
-    mainprogram->shelves[1]->erase();
-    mainprogram->cwbox->vtxcoords->w = glob->w / 5.0f;
-    mainprogram->cwbox->vtxcoords->h = glob->h / 5.0f;
-    mainprogram->cwbox->upvtxtoscr();
-
-
     if (FT_Init_FreeType(&ft)) {
         fprintf(stderr, "Could not init freetype library\n");
         return 1;
     }
     FT_UInt interpreter_version = 40;
     FT_Property_Set(ft, "truetype", "interpreter-version", &interpreter_version);
+
 #ifdef WINDOWS
     std::string fstr = mainprogram->fontpath + "/expressway.ttf";
     if (!exists(fstr)) {
@@ -7504,7 +7500,7 @@ int main(int argc, char* argv[]) {
         }
     }
 #else
-#ifdef POSIX
+    #ifdef POSIX
     std::string fdir(mainprogram->fontdir);
     std::string fstr = fdir + "/expressway.ttf";
     printf("%s /n", fstr.c_str());
@@ -7518,6 +7514,63 @@ int main(int argc, char* argv[]) {
         return 1;
     }
     FT_Set_Pixel_Sizes(face, 0, 48);
+
+    SDL_GL_MakeCurrent(mainprogram->splashwindow, glc);
+    SDL_RaiseWindow(mainprogram->splashwindow);
+    ILuint splash;
+    ilGenImages(1, &splash);
+    ilBindImage(splash);
+    ilActiveImage(0);
+#ifdef WINDOWS
+    bool ret = ilLoadImage((const ILstring)"./splash.jpeg");
+#endif
+#ifdef POSIX
+    ret = ilLoadImage("/usr/share/ewocvj2/splash.jpeg");
+#endif
+    if (ret == IL_FALSE) {
+        printf("can't load splash image\n");
+        fflush(stdout);
+    }
+    int w = ilGetInteger(IL_IMAGE_WIDTH);
+    int h = ilGetInteger(IL_IMAGE_HEIGHT);
+    glGenTextures(1, &mainprogram->splashtex);
+    glBindTexture(GL_TEXTURE_2D, mainprogram->splashtex);
+    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR);
+    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
+    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_BORDER);
+    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_BORDER);
+    glTexImage2D(GL_TEXTURE_2D, 0, GL_RGB8, w, h, 0, GL_RGB, GL_UNSIGNED_BYTE, (char *) ilGetData());
+    glGenFramebuffers(1, &mainprogram->splashfbo);
+    glBindFramebuffer(GL_FRAMEBUFFER, mainprogram->splashfbo);
+    glFramebufferTexture2D(GL_FRAMEBUFFER, GL_COLOR_ATTACHMENT0, GL_TEXTURE_2D, mainprogram->splashtex, 0);
+    glBindFramebuffer(GL_FRAMEBUFFER, 0);
+    glDrawBuffer(GL_FRONT);
+    glViewport(0, 0, glob->h / 2.0f, glob->h / 2.0f);
+    glBindFramebuffer(GL_READ_FRAMEBUFFER, mainprogram->splashfbo);
+    glBindFramebuffer(GL_DRAW_FRAMEBUFFER, 0); // Default framebuffer
+    int size = glob->h / 2.0f;
+    glBlitFramebuffer(
+            0, 0, 1024, 1024,
+            0, 0, size, size,
+            GL_COLOR_BUFFER_BIT,
+            GL_LINEAR
+    );
+    glFlush();
+    glBindFramebuffer(GL_READ_FRAMEBUFFER, 0);
+    glBindFramebuffer(GL_FRAMEBUFFER, 0);
+    glDrawBuffer(GL_FRONT);
+
+    mainprogram->ShaderProgram = mainprogram->set_shader();
+    glUseProgram(mainprogram->ShaderProgram);
+
+    mainprogram->shelves[0] = new Shelf(0);
+    mainprogram->shelves[1] = new Shelf(1);
+    mainprogram->shelves[0]->erase();
+    mainprogram->shelves[1]->erase();
+    mainprogram->cwbox->vtxcoords->w = glob->w / 5.0f;
+    mainprogram->cwbox->vtxcoords->h = glob->h / 5.0f;
+    mainprogram->cwbox->upvtxtoscr();
+
 
     mainprogram->nodesmain = new NodesMain;
     mainprogram->nodesmain->add_nodepages(1);
@@ -7593,7 +7646,6 @@ int main(int argc, char* argv[]) {
     }
 
     SDL_GL_MakeCurrent(mainprogram->mainwindow, glc);
-    set_glstructures();
 
 
     // load background graphic
@@ -7603,7 +7655,7 @@ int main(int argc, char* argv[]) {
     ilBindImage(bg_ol);
     ilActiveImage(0);
 #ifdef WINDOWS
-    ILboolean ret = ilLoadImage((const ILstring)"./background.png");
+    ret = ilLoadImage((const ILstring)"./background.png");
 #endif
 #ifdef POSIX
     ILboolean ret = ilLoadImage("/usr/share/ewocvj2/background.png");
@@ -7611,8 +7663,8 @@ int main(int argc, char* argv[]) {
     if (ret == IL_FALSE) {
         printf("can't load background image\n");
     }
-    int w = ilGetInteger(IL_IMAGE_WIDTH);
-    int h = ilGetInteger(IL_IMAGE_HEIGHT);
+    w = ilGetInteger(IL_IMAGE_WIDTH);
+    h = ilGetInteger(IL_IMAGE_HEIGHT);
     glGenTextures(1, &mainprogram->bgtex);
     glBindTexture(GL_TEXTURE_2D, mainprogram->bgtex);
     glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR);
@@ -7623,39 +7675,11 @@ int main(int argc, char* argv[]) {
 
     // load background graphic
     //ilEnable(IL_CONV_PAL);
-    SDL_GL_MakeCurrent(mainprogram->splashwindow, glc);
-    ILuint splash;
-    ilGenImages(1, &splash);
-    ilBindImage(splash);
-    ilActiveImage(0);
-#ifdef WINDOWS
-    ret = ilLoadImage((const ILstring)"./splash.jpeg");
-#endif
-#ifdef POSIX
-    ret = ilLoadImage("/usr/share/ewocvj2/splash.jpeg");
-#endif
-    if (ret == IL_FALSE) {
-        printf("can't load splash image\n");
-        fflush(stdout);
-    }
-    w = ilGetInteger(IL_IMAGE_WIDTH);
-    h = ilGetInteger(IL_IMAGE_HEIGHT);
-    glGenTextures(1, &mainprogram->splashtex);
-    glBindTexture(GL_TEXTURE_2D, mainprogram->splashtex);
-    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR);
-    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
-    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_BORDER);
-    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_BORDER);
-    glTexImage2D(GL_TEXTURE_2D, 0, GL_RGB8, w, h, 0, GL_RGB, GL_UNSIGNED_BYTE, (char *) ilGetData());
-    glBindFramebuffer(GL_FRAMEBUFFER, 0);
-    glDrawBuffer(GL_FRONT);
-    glViewport(0, 0, glob->h / 2.0f, glob->h / 2.0f);
-    mainprogram->bvao = mainprogram->splboxvao;
-    mainprogram->bvbuf = mainprogram->splboxvbuf;
-    mainprogram->btbuf = mainprogram->splboxtbuf;
-    draw_direct(nullptr, black, -1.0f, -1.0f, 2.0f, 2.0f, 0.0f, 0.0f, 1.0f, 1.0f, 0, mainprogram->splashtex, glob->w, glob->h, false, false);
 
     SDL_GL_MakeCurrent(mainprogram->mainwindow, glc);
+
+    set_glstructures();
+
     /*glEnable(GL_BLEND);
     glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
     draw_direct(nullptr, black, -2.0f, -1.0f, 4.0f, 2.0f, 0.0f, 0.0f, 1.0f, 1.0f, 0, mainprogram->bgtex, glob->w, glob->h, false, false);

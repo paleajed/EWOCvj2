@@ -6,6 +6,21 @@
 #include <sstream>
 #include <ctime>
 #include <cmath>
+#include <algorithm>
+#include <iomanip>
+
+#ifdef _WIN32
+#define WIN32_LEAN_AND_MEAN
+#define NOMINMAX
+#include <windows.h>
+#include <shlobj.h>
+#elif __APPLE__
+#include <pwd.h>
+#include <unistd.h>
+#elif __linux__
+#include <pwd.h>
+#include <unistd.h>
+#endif
 
 #include "program.h""
 
@@ -106,12 +121,13 @@ vec2 IMG_SIZE(sampler2D sampler) {
 // ===== ISFLoader Implementation =====
 
 ISFLoader::ISFLoader() {
-    // DevIL already initialized in main program
     devilInitialized_ = false;
+    initializeShaderCache();  // Add this line
 }
 
 ISFLoader::~ISFLoader() {
     clear();
+    saveCacheToDisk();  // Add this line
 }
 
 bool ISFLoader::loadISFDirectory(const std::string& directory) {
@@ -119,6 +135,8 @@ bool ISFLoader::loadISFDirectory(const std::string& directory) {
         std::cerr << "ISF directory does not exist: " << directory << std::endl;
         return false;
     }
+
+    auto startTime = std::chrono::high_resolution_clock::now();
 
     try {
         int total = 0;
@@ -137,6 +155,10 @@ bool ISFLoader::loadISFDirectory(const std::string& directory) {
                     mainprogram->bvao = mainprogram->splboxvao;
                     mainprogram->bvbuf = mainprogram->splboxvbuf;
                     mainprogram->btbuf = mainprogram->splboxtbuf;
+                    if (isFirstRun_) {
+                        render_text("FIRST RUN: Compiling shaders... (can take several minutes)", white, -0.75f, 0.8f,
+                                    0.0024f, 0.004f, 3, 0);
+                    }
                     draw_box(white, black, -0.25f, -0.9f, 0.5f, 0.1f, 0.0f, 0.0f,
                              1.0f, 1.0f, 0, -1, glob->w, glob->h, false);
                     draw_box(white, white, -0.25f, -0.9f, 0.5f * (float)count / (float)total, 0.1f, 0.0f, 0.0f,
@@ -152,7 +174,14 @@ bool ISFLoader::loadISFDirectory(const std::string& directory) {
     }
 
     std::cout << "Loaded " << shaders_.size() << " ISF shaders from " << directory << std::endl;
-    return true;
+
+    auto endTime = std::chrono::high_resolution_clock::now();
+    auto duration = std::chrono::duration_cast<std::chrono::milliseconds>(endTime - startTime);
+
+    std::cout << "Loaded " << shaders_.size() << " ISF shaders from " << directory
+              << " in " << duration.count() << "ms" << std::endl;
+
+    printCacheStats();    return true;
 }
 
 bool ISFLoader::loadISFFile(const std::string& filepath) {
@@ -172,12 +201,8 @@ bool ISFLoader::loadISFFile(const std::string& filepath) {
         shader->filepath_ = filepath;
         shader->name_ = std::filesystem::path(filepath).stem().string();
 
-        if (!parseISFJson(fileContent, *shader)) {
-            std::cerr << "Failed to parse ISF file: " << filepath << std::endl;
-            return false;
-        }
-
-        // Check for custom vertex shader (.vs file with same name)
+        // MOVED: Check for custom vertex shader BEFORE parsing JSON
+        // (since parseISFJson calls compileShader which needs the custom vertex shader)
         std::string basePath = std::filesystem::path(filepath).replace_extension().string();
         std::string vertexShaderPath = basePath + ".vs";
 
@@ -194,7 +219,14 @@ bool ISFLoader::loadISFFile(const std::string& filepath) {
             }
         }
 
+        // Set the custom vertex shader BEFORE parsing
         shader->customVertexShader_ = customVertexSource;
+
+        // Now parse the ISF JSON (which will call compileShader)
+        if (!parseISFJson(fileContent, *shader)) {
+            std::cerr << "Failed to parse ISF file: " << filepath << std::endl;
+            return false;
+        }
 
         shaders_.push_back(std::move(shader));
         return true;
@@ -203,6 +235,309 @@ bool ISFLoader::loadISFFile(const std::string& filepath) {
         std::cerr << "Exception loading ISF file " << filepath << ": " << e.what() << std::endl;
         return false;
     }
+}
+
+std::string ISFLoader::getUserDataDirectory() {
+#ifdef _WIN32
+    char path[MAX_PATH];
+    if (SUCCEEDED(SHGetFolderPathA(NULL, CSIDL_APPDATA, NULL, 0, path))) {
+        return std::string(path) + "/EWOCvj2";
+    }
+    return "shader_cache";
+#elif __APPLE__
+    const char* homeDir = getenv("HOME");
+    if (!homeDir) {
+        struct passwd* pw = getpwuid(getuid());
+        homeDir = pw->pw_dir;
+    }
+    return std::string(homeDir) + "/Library/Application Support/EWOCvj2";
+#elif __linux__
+    const char* xdgDataHome = getenv("XDG_DATA_HOME");
+    if (xdgDataHome && strlen(xdgDataHome) > 0) {
+        return std::string(xdgDataHome) + "/EWOCvj2";
+    }
+    const char* homeDir = getenv("HOME");
+    if (!homeDir) {
+        struct passwd* pw = getpwuid(getuid());
+        homeDir = pw->pw_dir;
+    }
+    return std::string(homeDir) + "/.local/share/EWOCvj2";
+#else
+    return "shader_cache";
+#endif
+}
+
+void ISFLoader::initializeShaderCache() {
+    cacheDirectory_ = getUserDataDirectory() + "/shader_cache";
+    std::filesystem::create_directories(cacheDirectory_);
+
+    std::string markerFile = cacheDirectory_ + "/cache_info.txt";
+    isFirstRun_ = !std::filesystem::exists(markerFile);
+
+    if (isFirstRun_) {
+        showFirstRunMessage();
+        std::ofstream marker(markerFile);
+        if (marker.is_open()) {
+            marker << "VJ Program Shader Cache\n";
+            marker << "Created: " << std::chrono::duration_cast<std::chrono::seconds>(
+                    std::chrono::system_clock::now().time_since_epoch()).count() << "\n";
+            const char* vendor = (const char*)glGetString(GL_VENDOR);
+            const char* renderer = (const char*)glGetString(GL_RENDERER);
+            const char* version = (const char*)glGetString(GL_VERSION);
+            if (vendor) marker << "GPU Vendor: " << vendor << "\n";
+            if (renderer) marker << "GPU Renderer: " << renderer << "\n";
+            if (version) marker << "OpenGL Version: " << version << "\n";
+            marker.close();
+        }
+    } else {
+        loadCacheFromDisk();
+        std::cout << "Shader cache initialized: " << shaderCache_.size() << " entries loaded" << std::endl;
+    }
+}
+
+void ISFLoader::showFirstRunMessage() {
+    std::cout << "===============================================" << std::endl;
+    std::cout << "FIRST RUN: Building shader cache..." << std::endl;
+    std::cout << "This will take a few minutes but only happens once." << std::endl;
+    std::cout << "Subsequent launches will be much faster!" << std::endl;
+    std::cout << "Cache location: " << cacheDirectory_ << std::endl;
+    std::cout << "===============================================" << std::endl;
+}
+
+std::string ISFLoader::generateHash(const std::string& vertexSource, const std::string& fragmentSource) {
+    std::hash<std::string> hasher;
+    std::string combined = vertexSource + "|" + fragmentSource;
+    size_t hash1 = hasher(combined);
+    size_t hash2 = hasher(std::to_string(hash1));
+    std::stringstream ss;
+    ss << std::hex << hash1 << hash2;
+    return ss.str();
+}
+
+bool ISFLoader::isCacheValid(const CacheEntry& entry, const std::string& currentHash) {
+    if (!entry.isValid || entry.sourceHash != currentHash) {
+        return false;
+    }
+    GLint numFormats = 0;
+    glGetIntegerv(GL_NUM_PROGRAM_BINARY_FORMATS, &numFormats);
+    return numFormats > 0;
+}
+
+GLuint ISFLoader::loadCachedProgram(const std::string& shaderName,
+                                    const std::string& vertexSource,
+                                    const std::string& fragmentSource) {
+    std::string hash = generateHash(vertexSource, fragmentSource);
+    auto it = shaderCache_.find(shaderName);
+    if (it == shaderCache_.end() || !isCacheValid(it->second, hash)) {
+        return 0;
+    }
+
+    const CacheEntry& entry = it->second;
+    GLuint program = glCreateProgram();
+    if (program == 0) return 0;
+
+    glProgramBinary(program, entry.binaryFormat,
+                    entry.binaryData.data(), entry.binaryData.size());
+
+    GLint linkStatus;
+    glGetProgramiv(program, GL_LINK_STATUS, &linkStatus);
+
+    if (linkStatus == GL_TRUE) {
+        return program;
+    } else {
+        glDeleteProgram(program);
+        shaderCache_.erase(it);
+        return 0;
+    }
+}
+
+void ISFLoader::cacheProgram(const std::string& shaderName,
+                             const std::string& vertexSource,
+                             const std::string& fragmentSource,
+                             GLuint program) {
+    GLint numFormats = 0;
+    glGetIntegerv(GL_NUM_PROGRAM_BINARY_FORMATS, &numFormats);
+    if (numFormats == 0) return;
+
+    GLint binaryLength = 0;
+    glGetProgramiv(program, GL_PROGRAM_BINARY_LENGTH, &binaryLength);
+    if (binaryLength == 0) return;
+
+    CacheEntry entry;
+    entry.binaryData.resize(binaryLength);
+    GLsizei actualLength = 0;
+
+    glGetProgramBinary(program, binaryLength, &actualLength,
+                       &entry.binaryFormat, entry.binaryData.data());
+
+    if (actualLength != binaryLength) return;
+
+    entry.vertexSource = vertexSource;
+    entry.fragmentSource = fragmentSource;
+    entry.sourceHash = generateHash(vertexSource, fragmentSource);
+    entry.timestamp = std::chrono::duration_cast<std::chrono::seconds>(
+            std::chrono::system_clock::now().time_since_epoch()).count();
+    entry.isValid = true;
+
+    shaderCache_[shaderName] = std::move(entry);
+
+    if (shaderCache_.size() % 10 == 0 || isFirstRun_) {
+        std::cout << "DEBUG: Saving cache to disk (" << shaderCache_.size() << " shaders)" << std::endl;
+        saveCacheToDisk();
+    }
+}
+
+bool ISFLoader::validateCacheEnvironment() {
+    std::string markerFile = cacheDirectory_ + "/cache_info.txt";
+    if (!std::filesystem::exists(markerFile)) return false;
+
+    std::ifstream marker(markerFile);
+    if (!marker.is_open()) return false;
+
+    std::string line, cachedVendor, cachedRenderer;
+    while (std::getline(marker, line)) {
+        if (line.find("GPU Vendor: ") == 0) {
+            cachedVendor = line.substr(12);
+        } else if (line.find("GPU Renderer: ") == 0) {
+            cachedRenderer = line.substr(14);
+        }
+    }
+    marker.close();
+
+    const char* currentVendor = (const char*)glGetString(GL_VENDOR);
+    const char* currentRenderer = (const char*)glGetString(GL_RENDERER);
+
+    if (currentVendor && cachedVendor != std::string(currentVendor)) {
+        std::cout << "GPU vendor changed - invalidating cache" << std::endl;
+        return false;
+    }
+    if (currentRenderer && cachedRenderer != std::string(currentRenderer)) {
+        std::cout << "GPU renderer changed - invalidating cache" << std::endl;
+        return false;
+    }
+    return true;
+}
+
+void ISFLoader::loadCacheFromDisk() {
+    if (!validateCacheEnvironment()) {
+        std::cout << "Cache environment changed - starting fresh" << std::endl;
+        clearShaderCache();
+        return;
+    }
+
+    std::string indexFile = cacheDirectory_ + "/cache_index.dat";
+    if (!std::filesystem::exists(indexFile)) return;
+
+    std::ifstream file(indexFile, std::ios::binary);
+    if (!file.is_open()) return;
+
+    try {
+        uint32_t numEntries;
+        file.read(reinterpret_cast<char*>(&numEntries), sizeof(numEntries));
+
+        if (numEntries > 10000) {
+            std::cout << "Cache file appears corrupted - starting fresh" << std::endl;
+            clearShaderCache();
+            return;
+        }
+
+        for (uint32_t i = 0; i < numEntries; ++i) {
+            uint32_t nameLength;
+            file.read(reinterpret_cast<char*>(&nameLength), sizeof(nameLength));
+            if (nameLength > 1000) {
+                std::cout << "Cache corruption detected - starting fresh" << std::endl;
+                clearShaderCache();
+                return;
+            }
+
+            std::string shaderName(nameLength, '\0');
+            file.read(shaderName.data(), nameLength);
+
+            CacheEntry entry;
+            uint32_t hashLength;
+            file.read(reinterpret_cast<char*>(&hashLength), sizeof(hashLength));
+            entry.sourceHash.resize(hashLength);
+            file.read(entry.sourceHash.data(), hashLength);
+
+            file.read(reinterpret_cast<char*>(&entry.timestamp), sizeof(entry.timestamp));
+            file.read(reinterpret_cast<char*>(&entry.binaryFormat), sizeof(entry.binaryFormat));
+
+            uint32_t binaryLength;
+            file.read(reinterpret_cast<char*>(&binaryLength), sizeof(binaryLength));
+            if (binaryLength > 1024 * 1024) {
+                std::cout << "Shader binary too large - cache corruption?" << std::endl;
+                clearShaderCache();
+                return;
+            }
+
+            entry.binaryData.resize(binaryLength);
+            file.read(entry.binaryData.data(), binaryLength);
+            entry.isValid = true;
+            shaderCache_[shaderName] = std::move(entry);
+        }
+
+        std::cout << "Successfully loaded " << shaderCache_.size() << " shaders from cache" << std::endl;
+    } catch (const std::exception& e) {
+        std::cerr << "Error loading shader cache: " << e.what() << std::endl;
+        clearShaderCache();
+    }
+}
+
+void ISFLoader::saveCacheToDisk() {
+    std::string indexFile = cacheDirectory_ + "/cache_index.dat";
+    std::ofstream file(indexFile, std::ios::binary);
+    if (!file.is_open()) {
+        std::cerr << "Failed to save shader cache" << std::endl;
+        return;
+    }
+
+    try {
+        uint32_t numEntries = static_cast<uint32_t>(shaderCache_.size());
+        file.write(reinterpret_cast<const char*>(&numEntries), sizeof(numEntries));
+
+        for (const auto& [shaderName, entry] : shaderCache_) {
+            if (!entry.isValid) continue;
+
+            uint32_t nameLength = static_cast<uint32_t>(shaderName.length());
+            file.write(reinterpret_cast<const char*>(&nameLength), sizeof(nameLength));
+            file.write(shaderName.data(), nameLength);
+
+            uint32_t hashLength = static_cast<uint32_t>(entry.sourceHash.length());
+            file.write(reinterpret_cast<const char*>(&hashLength), sizeof(hashLength));
+            file.write(entry.sourceHash.data(), hashLength);
+
+            file.write(reinterpret_cast<const char*>(&entry.timestamp), sizeof(entry.timestamp));
+            file.write(reinterpret_cast<const char*>(&entry.binaryFormat), sizeof(entry.binaryFormat));
+
+            uint32_t binaryLength = static_cast<uint32_t>(entry.binaryData.size());
+            file.write(reinterpret_cast<const char*>(&binaryLength), sizeof(binaryLength));
+            file.write(entry.binaryData.data(), binaryLength);
+        }
+    } catch (const std::exception& e) {
+        std::cerr << "Error saving shader cache: " << e.what() << std::endl;
+    }
+}
+
+void ISFLoader::clearShaderCache() {
+    shaderCache_.clear();
+    try {
+        std::filesystem::remove_all(cacheDirectory_);
+        std::filesystem::create_directories(cacheDirectory_);
+    } catch (const std::exception& e) {
+        std::cerr << "Error clearing cache directory: " << e.what() << std::endl;
+    }
+}
+
+void ISFLoader::printCacheStats() const {
+    std::cout << "=== Shader Cache Statistics ===" << std::endl;
+    std::cout << "Total cached shaders: " << shaderCache_.size() << std::endl;
+    size_t totalSize = 0;
+    for (const auto& [name, entry] : shaderCache_) {
+        totalSize += entry.binaryData.size();
+    }
+    std::cout << "Total cache size: " << (totalSize / 1024) << " KB" << std::endl;
+    std::cout << "Cache directory: " << cacheDirectory_ << std::endl;
+    std::cout << "===============================" << std::endl;
 }
 
 bool ISFLoader::parseISFJson(const std::string& fileContent, ISFShader& shader) {
@@ -231,6 +566,16 @@ bool ISFLoader::parseISFJson(const std::string& fileContent, ISFShader& shader) 
     // Parse basic info
     if (root.contains("DESCRIPTION")) {
         shader.description_ = root["DESCRIPTION"].get<std::string>();
+    }
+
+    // NEW: Parse FLOAT flag (defaults to false if not specified)
+    if (root.contains("FLOAT")) {
+        shader.usesFloatBuffers_ = root["FLOAT"].get<bool>();
+        std::cout << "Shader " << shader.name_ << " requests float buffers: "
+                  << (shader.usesFloatBuffers_ ? "YES" : "NO") << std::endl;
+    } else {
+        shader.usesFloatBuffers_ = false;
+        std::cout << "Shader " << shader.name_ << " uses standard RGBA8 buffers (default)" << std::endl;
     }
 
     // Determine shader type
@@ -709,32 +1054,59 @@ bool ISFLoader::compileShader(const std::string& fragmentSource, ISFShader& shad
     // Choose vertex shader source
     std::string vertexSource;
     if (!shader.customVertexShader_.empty()) {
-        // Use custom vertex shader with built-ins
-        vertexSource = "#version 330 core\n" +
-                       std::string(isfVertexBuiltins_) +
-                       "\n" + shader.customVertexShader_;
+        // For custom vertex shaders, provide ONLY the built-in uniforms and functions
+        // The custom shader should include its own main()
+        vertexSource = "#version 330 core\n"
+                       "// ISF built-in uniforms\n"
+                       "uniform float TIME;\n"
+                       "uniform float TIMEDELTA;\n"
+                       "uniform vec2 RENDERSIZE;\n"
+                       "uniform int FRAMEINDEX;\n"
+                       "uniform vec4 DATE;\n"
+                       "uniform int PASSINDEX;\n"
+                       "\n"
+                       "// Input attributes\n"
+                       "layout (location = 0) in vec2 aPos;\n"
+                       "layout (location = 1) in vec2 aTexCoord;\n"
+                       "\n"
+                       "// Output varying to fragment shader\n"
+                       "out vec2 isf_FragNormCoord;\n"
+                       "out vec2 vv_FragNormCoord;\n"
+                       "\n"
+                       "// ISF vertex shader initialization function\n"
+                       "void isf_vertShaderInit() {\n"
+                       "    gl_Position = vec4(aPos, 0.0, 1.0);\n"
+                       "    \n"
+                       "    // ISF expects inverted Y coordinate (0,0 = top-left, 1,1 = bottom-right)\n"
+                       "    vec2 isfCoord = vec2(aTexCoord.x, aTexCoord.y);\n"
+                       "    \n"
+                       "    isf_FragNormCoord = isfCoord;        // Inverted Y for ISF compatibility\n"
+                       "    vv_FragNormCoord = isfCoord;         // Keep them the same for compatibility\n"
+                       "}\n"
+                       "\n" +
+                       shader.customVertexShader_;
+
+        std::cout << "DEBUG: Using custom vertex shader for " << shader.name_ << std::endl;
     } else {
         // Use default ISF vertex shader
         vertexSource = vertexShaderSource_;
+        std::cout << "DEBUG: Using default vertex shader for " << shader.name_ << std::endl;
     }
 
     // Convert ISF shader from GLSL 120 to 330 core and fix compatibility issues
     std::string modernFragmentSource = fragmentSource;
 
-    // Replace gl_FragColor with fragColor AND add automatic clamping
+    // Replace gl_FragColor with fragColor
     size_t pos = 0;
     while ((pos = modernFragmentSource.find("gl_FragColor", pos)) != std::string::npos) {
         modernFragmentSource.replace(pos, 12, "fragColor");
         pos += 9; // length of "fragColor"
     }
-    
-    // Add controlled feedback stabilization that gave us working trails
-    size_t mainEndPos = modernFragmentSource.rfind("}");
-    if (mainEndPos != std::string::npos) {
-        // Insert feedback control just before the final closing brace of main()
-        std::string feedbackControlCode = "\n\t// Simple clamp to prevent NaN while allowing feedback\n\tfragColor = clamp(fragColor, 0.0, 1.95);\n";
-        modernFragmentSource.insert(mainEndPos, feedbackControlCode);
-    }
+
+    // REMOVED: Feedback control code injection
+    // For RGBA8 buffers (default), hardware naturally clamps to [0,1]
+    // For RGBA32F buffers (when FLOAT: true), the shader author is responsible for range control
+    // No more artificial clamping that could interfere with intended shader behavior
 
     // Fix bool/int comparisons for event parameters
     pos = 0;
@@ -806,6 +1178,28 @@ bool ISFLoader::compileShader(const std::string& fragmentSource, ISFShader& shad
                                          bufferUniforms +
                                          "\n" + modernFragmentSource;
 
+    // DEBUG: Add debug output to see the generated shader source
+    if (shader.name_ == "Edges") {
+        std::cout << "=== EDGES VERTEX SHADER SOURCE ===" << std::endl;
+        std::cout << vertexSource << std::endl;
+        std::cout << "=== END EDGES VERTEX SHADER ===" << std::endl;
+
+        std::cout << "=== EDGES FRAGMENT SHADER SOURCE ===" << std::endl;
+        std::cout << completeFragmentSource << std::endl;
+        std::cout << "=== END EDGES FRAGMENT SHADER ===" << std::endl;
+    }
+
+    // **NEW: Try to load from cache first**
+    shader.program_ = loadCachedProgram(shader.name_, vertexSource, completeFragmentSource);
+
+    if (shader.program_ != 0) {
+        std::cout << "Cache HIT for shader: " << shader.name_ << std::endl;
+        cacheUniformLocations(shader);
+        return true;
+    }
+
+    std::cout << "Cache MISS for shader: " << shader.name_ << " - compiling..." << std::endl;
+
     shader.program_ = createShaderProgram(vertexSource.c_str(), completeFragmentSource.c_str());
 
     if (shader.program_ == 0) {
@@ -819,6 +1213,11 @@ bool ISFLoader::compileShader(const std::string& fragmentSource, ISFShader& shad
         return false;
     }
 
+    // **NEW: Cache the successfully compiled program**
+    cacheProgram(shader.name_, vertexSource, completeFragmentSource, shader.program_);
+
+    std::cout << "DEBUG: Returned from cacheProgram() for: " << shader.name_ << std::endl;
+
     cacheUniformLocations(shader);
     return true;
 }
@@ -831,7 +1230,7 @@ void ISFLoader::cacheUniformLocations(ISFShader& shader) {
     shader.frameIndexLocation_ = glGetUniformLocation(shader.program_, "FRAMEINDEX");
     shader.dateLocation_ = glGetUniformLocation(shader.program_, "DATE");
     shader.passIndexLocation_ = glGetUniformLocation(shader.program_, "PASSINDEX");
-    
+
 
     // Cache parameter uniform locations
     for (const auto& param : shader.parameterTemplates_) {
@@ -1369,9 +1768,9 @@ void ISFShaderInstance::render(float time, float renderWidth, float renderHeight
     if (parentShader_->passes_.size() > 1) {
         // Multi-pass rendering
         setupPassFramebuffers(renderWidth, renderHeight);
-        
+
         // Double buffer initialization removed since we disabled double buffering
-        
+
         glUseProgram(parentShader_->program_);
 
         // Render all passes to their instance buffers
@@ -1398,7 +1797,7 @@ void ISFShaderInstance::render(float time, float renderWidth, float renderHeight
             glBindTexture(GL_TEXTURE_2D, lastInstancePass.texture);
             glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_EDGE);
             glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_EDGE);
-            
+
             glBlitFramebuffer(
                     0, 0, lastInstancePass.width, lastInstancePass.height,
                     0, 0, originalViewport[2], originalViewport[3],
@@ -1406,7 +1805,7 @@ void ISFShaderInstance::render(float time, float renderWidth, float renderHeight
             );
 
             glBindFramebuffer(GL_FRAMEBUFFER, originalFramebuffer);
-            
+
         }
 
     } else {
@@ -1789,7 +2188,7 @@ void ISFShaderInstance::bindTextures(int passIndex) {
                     glActiveTexture(GL_TEXTURE0 + textureUnit);
                     glBindTexture(GL_TEXTURE_2D, textureToUse);
                     glUniform1i(it->second, textureUnit);
-                    
+
                     textureUnit++;
                 }
             }
@@ -1826,7 +2225,7 @@ void ISFShaderInstance::bindTextures(int passIndex) {
                     if (commonIt != parentShader_->inputLocations_.end() && commonIt->second != -1) {
                         glUniform1i(commonIt->second, textureUnit);
                     }
-                    
+
                     // Also try INPUT for compatibility
                     auto inputIt = parentShader_->inputLocations_.find("INPUT");
                     if (inputIt != parentShader_->inputLocations_.end() && inputIt->second != -1) {
@@ -1905,27 +2304,54 @@ void ISFShaderInstance::setupPassFramebuffers(float renderWidth, float renderHei
             instancePass.width = newWidth;
             instancePass.height = newHeight;
 
-            // Standard ISF pass buffer format
-            GLint format = GL_RGBA32F; // Full float format as expected by ISF shaders
+            // NEW: Choose buffer format based on shader's FLOAT preference
+            GLint format;
+            GLenum dataType;
+            GLenum channels;
+
+            if (parentShader_->usesFloatBuffers()) {
+                // Shader explicitly requests float buffers
+                format = GL_RGBA32F;
+                dataType = GL_FLOAT;
+                channels = GL_RGBA;
+                std::cout << "Using RGBA32F buffers for shader: " << parentShader_->getName() << std::endl;
+            } else {
+                // Standard 8-bit RGBA buffers (ISF default)
+                format = GL_RGBA8;
+                dataType = GL_UNSIGNED_BYTE;
+                channels = GL_RGBA;
+                std::cout << "Using RGBA8 buffers for shader: " << parentShader_->getName() << std::endl;
+            }
+
             instancePass.texture = mainprogram->grab_from_texpool(instancePass.width, instancePass.height, format);
 
             if (instancePass.texture == -1) {
                 // Pool miss - create new texture
                 glGenTextures(1, &instancePass.texture);
                 glBindTexture(GL_TEXTURE_2D, instancePass.texture);
-                
-                // Initialize texture with black pixels using standard ISF format
-                std::vector<float> blackPixels(instancePass.width * instancePass.height * 4, 0.0f);
-                // Set alpha to 1.0 for proper initialization
-                for (size_t i = 3; i < blackPixels.size(); i += 4) {
-                    blackPixels[i] = 1.0f;
+
+                // Initialize texture with appropriate format
+                if (parentShader_->usesFloatBuffers()) {
+                    // Float buffer - initialize with black (0.0, 0.0, 0.0, 1.0)
+                    std::vector<float> blackPixels(instancePass.width * instancePass.height * 4, 0.0f);
+                    for (size_t i = 3; i < blackPixels.size(); i += 4) {
+                        blackPixels[i] = 1.0f;  // Set alpha to 1.0
+                    }
+                    glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA32F, instancePass.width, instancePass.height, 0,
+                                 GL_RGBA, GL_FLOAT, blackPixels.data());
+                } else {
+                    // Standard 8-bit buffer - initialize with black (0, 0, 0, 255)
+                    std::vector<unsigned char> blackPixels(instancePass.width * instancePass.height * 4, 0);
+                    for (size_t i = 3; i < blackPixels.size(); i += 4) {
+                        blackPixels[i] = 255;  // Set alpha to 255
+                    }
+                    glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA8, instancePass.width, instancePass.height, 0,
+                                 GL_RGBA, GL_UNSIGNED_BYTE, blackPixels.data());
                 }
-                
-                glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA32F, instancePass.width, instancePass.height, 0, GL_RGBA, GL_FLOAT, blackPixels.data());
 
                 // Register the texture format for pooling
                 mainprogram->texintfmap[instancePass.texture] = format;
-                
+
             } else {
                 // Pool hit - texture already has correct format and size
                 glBindTexture(GL_TEXTURE_2D, instancePass.texture);
@@ -1940,7 +2366,7 @@ void ISFShaderInstance::setupPassFramebuffers(float renderWidth, float renderHei
                 glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
             }
 
-            // CRITICAL: Use GL_CLAMP_TO_EDGE to prevent texture edge artifacts that can cause feedback instability
+            // Use GL_CLAMP_TO_EDGE to prevent texture edge artifacts
             glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_EDGE);
             glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_EDGE);
 
@@ -1958,8 +2384,6 @@ void ISFShaderInstance::setupPassFramebuffers(float renderWidth, float renderHei
             if (glCheckFramebufferStatus(GL_FRAMEBUFFER) != GL_FRAMEBUFFER_COMPLETE) {
                 std::cerr << "Error creating instance framebuffer for pass: " << passTemplate.target << std::endl;
             }
-
-            // Double buffer creation removed since we disabled double buffering
 
             glBindFramebuffer(GL_FRAMEBUFFER, 0);
             glBindTexture(GL_TEXTURE_2D, 0);

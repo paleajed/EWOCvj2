@@ -464,6 +464,7 @@ class Program {
 		GLuint rtvbo;
 		GLuint rttbo;
         GLuint bgtex;
+        GLuint splashfbo;
         GLuint splashtex;
         GLuint loktex;
 		std::vector<OutputEntry*> outputentries;
