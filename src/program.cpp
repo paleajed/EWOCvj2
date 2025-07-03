@@ -1940,23 +1940,16 @@ void Program::handle_fullscreen() {
             node = (MixNode *) this->nodesmain->mixnodes[1][2];
         }
     }
-	GLfloat cf = glGetUniformLocation(this->ShaderProgram, "cf");
-	GLint wipe = glGetUniformLocation(this->ShaderProgram, "wipe");
-	GLint mixmode = glGetUniformLocation(this->ShaderProgram, "mixmode");
 	if (mainmix->wipe[this->fullscreen == 3] > -1) {
-        if (this->fullscreen == 3) glUniform1f(cf, mainmix->crossfadecomp->value);
+        if (this->fullscreen == 3) this->uniformCache->setFloat("cf", mainmix->crossfadecomp->value);
         else
-            glUniform1f(cf, mainmix->crossfade->value);
-        glUniform1i(wipe, 1);
-        glUniform1i(mixmode, 18);
-        GLint wkind = glGetUniformLocation(mainprogram->ShaderProgram, "wkind");
-        glUniform1i(wkind, mainmix->wipe[this->fullscreen == 3]);
-        GLint dir = glGetUniformLocation(mainprogram->ShaderProgram, "dir");
-        glUniform1i(dir, mainmix->wipedir[this->fullscreen == 3]);
-        GLfloat xpos = glGetUniformLocation(mainprogram->ShaderProgram, "xpos");
-        glUniform1f(xpos, mainmix->wipex[this->fullscreen == 3]->value);
-        GLfloat ypos = glGetUniformLocation(mainprogram->ShaderProgram, "ypos");
-        glUniform1f(ypos, mainmix->wipey[this->fullscreen == 3]->value);
+            this->uniformCache->setFloat("cf", mainmix->crossfade->value);
+        this->uniformCache->setInt("wipe", 1);
+        this->uniformCache->setInt("mixmode", 18);
+        this->uniformCache->setInt("wkind", mainmix->wipe[this->fullscreen == 3]);
+        this->uniformCache->setInt("dir", mainmix->wipedir[this->fullscreen == 3]);
+        this->uniformCache->setFloat("xpos", mainmix->wipex[this->fullscreen == 3]->value);
+        this->uniformCache->setFloat("ypos", mainmix->wipey[this->fullscreen == 3]->value);
         MixNode* node1 = (MixNode *) mainprogram->nodesmain->mixnodes[this->fullscreen == 3][0];
         glActiveTexture(GL_TEXTURE1);
         glBindTexture(GL_TEXTURE_2D, node1->mixtex);
@@ -1966,8 +1959,8 @@ void Program::handle_fullscreen() {
         glActiveTexture(GL_TEXTURE0);
     }
     draw_box(nullptr, black, -1.0f, -1.0f, 2.0f, 2.0f, node->mixtex);
-	glUniform1i(wipe, 0);
-	glUniform1i(mixmode, 0);
+	this->uniformCache->setInt("wipe", 0);
+	this->uniformCache->setInt("mixmode", 0);
 	if (this->doubleleftmouse) {
         this->fullscreen = -1;
     }
@@ -2908,13 +2901,10 @@ void output_video(EWindow* mwin) {
             }
 		}
 
-		GLfloat cf = glGetUniformLocation(mainprogram->ShaderProgram, "cf");
-		GLint wipe = glGetUniformLocation(mainprogram->ShaderProgram, "wipe");
-		GLint mixmode = glGetUniformLocation(mainprogram->ShaderProgram, "mixmode");
 		if (mwin->mixid == 2 || mwin->mixid == 3) {
             if (mainmix->wipe[mwin->mixid == 3] > -1) {
                 if (mwin->mixid == 3) {
-                    glUniform1f(cf, mainmix->crossfadecomp->value);
+                    mainprogram->uniformCache->setFloat("cf", mainmix->crossfadecomp->value);
                     MixNode *node = (MixNode*)mainprogram->nodesmain->mixnodes[1][0];
                     glActiveTexture(GL_TEXTURE1);
                     glBindTexture(GL_TEXTURE_2D, node->mixtex);
@@ -2924,7 +2914,7 @@ void output_video(EWindow* mwin) {
                     glActiveTexture(GL_TEXTURE0);
                 }
                 else {
-                    glUniform1f(cf, mainmix->crossfade->value);
+                    mainprogram->uniformCache->setFloat("cf", mainmix->crossfade->value);
                     MixNode *node = (MixNode *) mainprogram->nodesmain->mixnodes[0][0];
                     glActiveTexture(GL_TEXTURE1);
                     glBindTexture(GL_TEXTURE_2D, node->mixtex);
@@ -2933,20 +2923,15 @@ void output_video(EWindow* mwin) {
                     glBindTexture(GL_TEXTURE_2D, node->mixtex);
                     glActiveTexture(GL_TEXTURE0);
                 }
-                glUniform1i(wipe, 1);
-                glUniform1i(mixmode, 18);
-                GLint wkind = glGetUniformLocation(mainprogram->ShaderProgram, "wkind");
-                glUniform1i(wkind, mainmix->wipe[1]);
-                GLint dir = glGetUniformLocation(mainprogram->ShaderProgram, "dir");
-                glUniform1i(dir, mainmix->wipedir[1]);
-                GLfloat xpos = glGetUniformLocation(mainprogram->ShaderProgram, "xpos");
-                glUniform1f(xpos, mainmix->wipex[1]->value);
-                GLfloat ypos = glGetUniformLocation(mainprogram->ShaderProgram, "ypos");
-                glUniform1f(ypos, mainmix->wipey[1]->value);
+                mainprogram->uniformCache->setInt("wipe", 1);
+                mainprogram->uniformCache->setInt("mixmode", 18);
+                mainprogram->uniformCache->setInt("wkind", mainmix->wipe[1]);
+                mainprogram->uniformCache->setInt("dir", mainmix->wipedir[1]);
+                mainprogram->uniformCache->setFloat("xpos", mainmix->wipex[1]->value);
+                mainprogram->uniformCache->setFloat("ypos", mainmix->wipey[1]->value);
             }
         }
-		GLint down = glGetUniformLocation(mainprogram->ShaderProgram, "down");
-		glUniform1i(down, 1);
+		mainprogram->uniformCache->setInt("down", 1);
 
 		glViewport(0.0f, 0.0f, mwin->w, mwin->h);
 		glClearColor(0, 0, 0, 1);
@@ -2969,9 +2954,9 @@ void output_video(EWindow* mwin) {
 		}
 		glBindVertexArray(mwin->vao);
 		glDrawArrays(GL_TRIANGLE_STRIP, 0, 4);
-		glUniform1i(down, 0);
-		glUniform1i(wipe, 0);
-		glUniform1i(mixmode, 0);
+		mainprogram->uniformCache->setInt("down", 0);
+		mainprogram->uniformCache->setInt("wipe", 0);
+		mainprogram->uniformCache->setInt("mixmode", 0);
 		mwin->syncendnow = true;
 		while (mwin->syncendnow) {
 			mwin->syncend.notify_all();
@@ -3039,7 +3024,6 @@ void handle_binwin() {
         glEnable(GL_BLEND);
         glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
         // draw frontbatch one by one: lines, triangles, menus, drag tex
-        GLuint textmode = glGetUniformLocation(mainprogram->ShaderProgram, "textmode");
         for (int i = 0; i < mainprogram->binguielems.size(); i++) {
             GUI_Element *elem = mainprogram->binguielems[i];
             if (elem->type == GUI_LINE) {
@@ -3051,12 +3035,12 @@ void handle_binwin() {
                 delete elem->triangle;
             } else {
                 if (!elem->box->circle && elem->box->text) {
-                    glUniform1i(textmode, 1);
+                    mainprogram->uniformCache->setInt("textmode", 1);
                 }
                 draw_box(elem->box->linec, elem->box->areac, elem->box->x, elem->box->y, elem->box->wi,
                          elem->box->he, 0.0f, 0.0f, 1.0f, 1.0f, elem->box->circle, elem->box->tex, glob->w, glob->h,
                          elem->box->text, elem->box->vertical, elem->box->inverted);
-                if (!elem->box->circle && elem->box->text) glUniform1i(textmode, 0);
+                if (!elem->box->circle && elem->box->text) mainprogram->uniformCache->setInt("textmode", 0);
                 delete elem->box;
             }
             delete elem;
@@ -6982,10 +6966,8 @@ void Program::pick_color(Layer* lay, Boxx* cbox) {
                 }
 				mainprogram->cwx = mainprogram->mx / glob->w;
 				mainprogram->cwy = (glob->h - mainprogram->my) / glob->h - 0.15f;
-				GLfloat cwx = glGetUniformLocation(mainprogram->ShaderProgram, "cwx");
-				glUniform1f(cwx, mainprogram->cwx);
-				GLfloat cwy = glGetUniformLocation(mainprogram->ShaderProgram, "cwy");
-				glUniform1f(cwy, mainprogram->cwy);
+				mainprogram->uniformCache->setFloat("cwx", mainprogram->cwx);
+				mainprogram->uniformCache->setFloat("cwy", mainprogram->cwy);
 				Boxx* box = mainprogram->cwbox;
 				box->scrcoords->x1 = mainprogram->mx - (glob->w / 10.0f);
 				box->scrcoords->y1 = mainprogram->my + (glob->w / 5.0f);
@@ -7006,18 +6988,14 @@ void Program::pick_color(Layer* lay, Boxx* cbox) {
 				}
 				else {
 					if (length > 0.75f && length < 1.0f) {
-						GLint cwmouse = glGetUniformLocation(mainprogram->ShaderProgram, "cwmouse");
-						glUniform1i(cwmouse, 1);
+						mainprogram->uniformCache->setBool("cwmouse", true);
 						mainprogram->cwmouse = 2;
-						GLfloat mx = glGetUniformLocation(mainprogram->ShaderProgram, "mx");
-						glUniform1f(mx, mainprogram->mx);
-						GLfloat my = glGetUniformLocation(mainprogram->ShaderProgram, "my");
-						glUniform1f(my, mainprogram->my);
+						mainprogram->uniformCache->setFloat("mx", mainprogram->mx);
+						mainprogram->uniformCache->setFloat("my", mainprogram->my);
 					}
 					else if (mainprogram->cwmouse == 3) {
 						mainprogram->cwmouse = 0;
-						GLint cwmouse = glGetUniformLocation(mainprogram->ShaderProgram, "cwmouse");
-						glUniform1i(cwmouse, 0);
+						mainprogram->uniformCache->setBool("cwmouse", false);
                         this->colorpicking = false;
 						lay->cwon = false;
 						mainprogram->cwon = false;
@@ -7025,21 +7003,16 @@ void Program::pick_color(Layer* lay, Boxx* cbox) {
 				}
 			}
 			if (lay->cwon) {
-				GLfloat globw = glGetUniformLocation(mainprogram->ShaderProgram, "globw");
-				glUniform1f(globw, glob->w);
-				GLfloat globh = glGetUniformLocation(mainprogram->ShaderProgram, "globh");
-				glUniform1f(globh, glob->h);
-				GLfloat cwx = glGetUniformLocation(mainprogram->ShaderProgram, "cwx");
-				glUniform1f(cwx, mainprogram->cwx);
-				GLfloat cwy = glGetUniformLocation(mainprogram->ShaderProgram, "cwy");
-				glUniform1f(cwy, mainprogram->cwy);
-				GLint cwon = glGetUniformLocation(mainprogram->ShaderProgram, "cwon");
-				glUniform1i(cwon, 1);
+				mainprogram->uniformCache->setFloat("globw", glob->w);
+				mainprogram->uniformCache->setFloat("globh", glob->h);
+				mainprogram->uniformCache->setFloat("cwx", mainprogram->cwx);
+				mainprogram->uniformCache->setFloat("cwy", mainprogram->cwy);
+				mainprogram->uniformCache->setBool("cwon", true);
 				Boxx* box = mainprogram->cwbox;
 				mainprogram->directmode = true;
 				draw_box(nullptr, box->acolor, box->vtxcoords->x1, box->vtxcoords->y1, box->vtxcoords->w, box->vtxcoords->h, -1);
 				mainprogram->directmode = false;
-				glUniform1i(cwon, 0);
+				mainprogram->uniformCache->setBool("cwon", false);
 				if (length <= 0.75f || length >= 1.0f) {
 				    glReadBuffer(GL_COLOR_ATTACHMENT0);
 					glReadPixels(mainprogram->mx, glob->h - mainprogram->my, 1, 1, GL_RGBA, GL_FLOAT, &lay->rgb);

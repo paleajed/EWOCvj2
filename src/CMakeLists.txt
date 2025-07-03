@@ -36,6 +36,8 @@ add_executable(EWOCvj2 WIN32
         FFGLHost.cpp
         ISFLoader.h
         ISFLoader.cpp
+        UniformCache.cpp
+        UniformCache.h
 )
 
 set(Boost_USE_STATIC_RUNTIME ON)

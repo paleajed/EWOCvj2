@@ -864,12 +864,11 @@ void Mixer::handle_adaptparam() {
         }
     }
 
-    GLint var = glGetUniformLocation(mainprogram->ShaderProgram, this->adaptparam->shadervar.c_str());
     if (this->adaptparam->sliding) {
-        glUniform1f(var, this->adaptparam->value);
+        mainprogram->uniformCache->setFloat(this->adaptparam->shadervar, this->adaptparam->value);
     }
     else {
-        glUniform1f(var, (int)(this->adaptparam->value + 0.5f));
+        mainprogram->uniformCache->setFloat(this->adaptparam->shadervar, (int)(this->adaptparam->value + 0.5f));
     }
     this->midiparam = nullptr;
 
@@ -6574,8 +6573,7 @@ void Layer::display() {
 					if (this->chdir->box->in()) {
 						if (mainprogram->leftmouse) {
 							this->chdir->value = !this->chdir->value;
-							GLint chdir = glGetUniformLocation(mainprogram->ShaderProgram, "chdir");
-							glUniform1i(chdir, this->chdir->value);
+							mainprogram->uniformCache->setBool("chdir", this->chdir->value);
 						}
 					}
 					if (this->chdir->value) {
@@ -6589,8 +6587,7 @@ void Layer::display() {
 					if (this->chinv->box->in()) {
 						if (mainprogram->leftmouse) {
 							this->chinv->value = !this->chinv->value;
-							GLint chinv = glGetUniformLocation(mainprogram->ShaderProgram, "chinv");
-							glUniform1i(chinv, this->chinv->value);
+							mainprogram->uniformCache->setBool("chinv", this->chinv->value);
 						}
 					}
                     if (this->chdir->value) {
@@ -6716,8 +6713,7 @@ void Mixer::outputmonitors_handle() {
                 mainprogram->wiping = false;
             }
 			if (mainprogram->middlemouse) {
-				GLint wipe = glGetUniformLocation(mainprogram->ShaderProgram, "wipe");
-				glUniform1i(wipe, 0);
+				mainprogram->uniformCache->setInt("wipe", 0);
 			}
 		}
 
@@ -8526,12 +8522,10 @@ void Mixer::open_mix(const std::string path, bool alive, bool loadevents) {
                 mainmix->crossfadecomp->value = std::stof(istring);
             }
             if (mainprogram->prevmodus) {
-                GLfloat cf = glGetUniformLocation(mainprogram->ShaderProgram, "cf");
-                glUniform1f(cf, mainmix->crossfade->value);
+                mainprogram->uniformCache->setFloat("cf", mainmix->crossfade->value);
             }
             else {
-                GLfloat cf = glGetUniformLocation(mainprogram->ShaderProgram, "cf");
-                glUniform1f(cf, mainmix->crossfadecomp->value);
+                mainprogram->uniformCache->setFloat("cf", mainmix->crossfadecomp->value);
             }
         }
         if (istring == "CROSSFADEEVENT") {
@@ -8556,12 +8550,10 @@ void Mixer::open_mix(const std::string path, bool alive, bool loadevents) {
                 mainmix->crossfadecomp->value = std::stof(istring);
             }
             if (mainprogram->prevmodus) {
-                GLfloat cf = glGetUniformLocation(mainprogram->ShaderProgram, "cf");
-                glUniform1f(cf, mainmix->crossfade->value);
+                mainprogram->uniformCache->setFloat("cf", mainmix->crossfade->value);
             }
             else {
-                GLfloat cf = glGetUniformLocation(mainprogram->ShaderProgram, "cf");
-                glUniform1f(cf, mainmix->crossfadecomp->value);
+                mainprogram->uniformCache->setFloat("cf", mainmix->crossfadecomp->value);
             }
         }
         if (istring == "CROSSFADECOMPEVENT") {
@@ -9355,11 +9347,9 @@ Layer* Layer::open_video(float frame, const std::string filename, int reset, boo
                         ((EdgeDetectEffect *) eff)->thickness = int(par->value);
                     } else if (par->shadervar == "edge_thres2") {
                         if (!mainprogram->prevmodus) {
-                            GLint var = glGetUniformLocation(mainprogram->ShaderProgram, par->shadervar.c_str());
-                            glUniform1f(var, par->value);
+                            mainprogram->uniformCache->setFloat(par->shadervar, par->value);
                         } else {
-                            GLint var = glGetUniformLocation(mainprogram->ShaderProgram, par->shadervar.c_str());
-                            glUniform1f(var, par->value * (mainprogram->ow[0] / mainprogram->ow[1]));
+                            mainprogram->uniformCache->setFloat(par->shadervar, par->value * (mainprogram->ow[0] / mainprogram->ow[1]));
                         }
                     }
                 }
@@ -11761,12 +11751,10 @@ Layer* Mixer::read_layers(std::istream &rfile, const std::string result, std::ve
                             }
                             else if (par->shadervar == "edge_thres2") {
                                 if (!mainprogram->prevmodus) {
-                                    GLint var = glGetUniformLocation(mainprogram->ShaderProgram, par->shadervar.c_str());
-                                    glUniform1f(var, par->value);
+                                    mainprogram->uniformCache->setFloat(par->shadervar, par->value);
                                 }
                                 else {
-                                    GLint var = glGetUniformLocation(mainprogram->ShaderProgram, par->shadervar.c_str());
-                                    glUniform1f(var, par->value * (mainprogram->ow[0] / mainprogram->ow[1]));
+                                    mainprogram->uniformCache->setFloat(par->shadervar, par->value * (mainprogram->ow[0] / mainprogram->ow[1]));
                                 }
                             }
 						}
@@ -11944,12 +11932,10 @@ Layer* Mixer::read_layers(std::istream &rfile, const std::string result, std::ve
                             }
                             else if (par->shadervar == "edge_thres2") {
                                 if (!mainprogram->prevmodus) {
-                                    GLint var = glGetUniformLocation(mainprogram->ShaderProgram, par->shadervar.c_str());
-                                    glUniform1f(var, par->value);
+                                    mainprogram->uniformCache->setFloat(par->shadervar, par->value);
                                 }
                                 else {
-                                    GLint var = glGetUniformLocation(mainprogram->ShaderProgram, par->shadervar.c_str());
-                                    glUniform1f(var, par->value * (mainprogram->ow[0] / mainprogram->ow[1]));
+                                    mainprogram->uniformCache->setFloat(par->shadervar, par->value * (mainprogram->ow[0] / mainprogram->ow[1]));
                                 }
                             }
                         }

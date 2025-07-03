@@ -42,6 +42,7 @@
 #include "loopstation.h"
 #include "bins.h"
 #include "retarget.h"
+#include "UniformCache.h"
 
 class PrefCat;
 class Menu;
@@ -436,6 +437,7 @@ class Program {
 		Project *project;
 		NodesMain *nodesmain;
 		GLuint ShaderProgram;
+		UniformCache* uniformCache;
 		GLuint fbovao;
 		GLuint fbotex[4];
 		GLuint frbuf[4];

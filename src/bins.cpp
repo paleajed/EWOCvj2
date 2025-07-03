@@ -204,7 +204,6 @@ BinsMain::BinsMain() {
 
 
 void BinsMain::handle(bool draw) {
-	GLint inverteff = glGetUniformLocation(mainprogram->ShaderProgram, "inverteff");
 
     for (int i = 0; i < this->bins.size(); i++) {
         // solve bin name clashes
@@ -457,10 +456,10 @@ void BinsMain::handle(bool draw) {
 				draw_box(nullptr, color, box->vtxcoords->x1 - 0.01f, box->vtxcoords->y1 - 0.01f, box->vtxcoords->w + 0.02f, box->vtxcoords->h + 0.02f, -1);
 				draw_box(box, -1);  //in case of alpha thumbnail
 				if (binel->select) {
-					glUniform1i(inverteff, 1);
+					mainprogram->uniformCache->setBool("inverteff", true);
 				}
 				draw_box(box, binel->tex);
-				glUniform1i(inverteff, 0);
+				mainprogram->uniformCache->setBool("inverteff", false);
                 if (!this->inbin) {
                     mainprogram->frontbatch = true;
                 }
