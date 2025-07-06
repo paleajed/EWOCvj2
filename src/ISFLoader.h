@@ -127,13 +127,39 @@ public:
         // GLuint texture = 0;
     };
 
-// ADD new struct for instance-specific pass data:
     struct InstancePassInfo {
         int width = 0;
         int height = 0;
         GLuint framebuffer = 0;
         GLuint texture = 0;
 
+        // NEW: Double buffering members
+        GLuint framebufferPing = 0;
+        GLuint texturePing = 0;
+        bool useDoubleBuffer = false;
+        bool currentPingPong = false;
+
+        // NEW: Helper methods (add these to the struct)
+        GLuint getCurrentReadTexture() const {
+            if (!useDoubleBuffer) return texture;
+            return currentPingPong ? texture : texturePing;
+        }
+
+        GLuint getCurrentWriteTexture() const {
+            if (!useDoubleBuffer) return texture;
+            return currentPingPong ? texturePing : texture;
+        }
+
+        GLuint getCurrentWriteFramebuffer() const {
+            if (!useDoubleBuffer) return framebuffer;
+            return currentPingPong ? framebufferPing : framebuffer;
+        }
+
+        void swapBuffers() {
+            if (useDoubleBuffer) {
+                currentPingPong = !currentPingPong;
+            }
+        }
 
         ~InstancePassInfo();
     };

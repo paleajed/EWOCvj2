@@ -571,11 +571,8 @@ bool ISFLoader::parseISFJson(const std::string& fileContent, ISFShader& shader) 
     // NEW: Parse FLOAT flag (defaults to false if not specified)
     if (root.contains("FLOAT")) {
         shader.usesFloatBuffers_ = root["FLOAT"].get<bool>();
-        std::cout << "Shader " << shader.name_ << " requests float buffers: "
-                  << (shader.usesFloatBuffers_ ? "YES" : "NO") << std::endl;
     } else {
         shader.usesFloatBuffers_ = false;
-        std::cout << "Shader " << shader.name_ << " uses standard RGBA8 buffers (default)" << std::endl;
     }
 
     // Determine shader type
@@ -1053,9 +1050,177 @@ bool ISFLoader::compileShader(const std::string& fragmentSource, ISFShader& shad
 
     // Choose vertex shader source
     std::string vertexSource;
+    std::string customVaryingInputs;
+
     if (!shader.customVertexShader_.empty()) {
-        // For custom vertex shaders, provide ONLY the built-in uniforms and functions
-        // The custom shader should include its own main()
+        // FIRST: Process the custom vertex shader to remove conditional blocks and extract only modern declarations
+        std::stringstream vertexStream(shader.customVertexShader_);
+        std::stringstream processedVertexStream;
+        std::string line;
+        bool skipLegacyBlock = false;
+        bool inVersionConditional = false;
+        std::set<std::string> uniqueVaryings;  // Track unique varying names to avoid duplicates
+
+        // Process vertex shader line by line
+        while (std::getline(vertexStream, line)) {
+            // Trim whitespace for easier matching
+            std::string trimmedLine = line;
+            size_t start = trimmedLine.find_first_not_of(" \t");
+            if (start != std::string::npos) {
+                trimmedLine = trimmedLine.substr(start);
+            }
+
+            // Check for version conditional start
+            if (trimmedLine.find("#if __VERSION__ <= 120") == 0) {
+                skipLegacyBlock = true;
+                inVersionConditional = true;
+                continue; // Skip the #if line
+            }
+                // Check for else block
+            else if (trimmedLine.find("#else") == 0 && inVersionConditional) {
+                skipLegacyBlock = false;
+                continue; // Skip the #else line, but start including content after it
+            }
+                // Check for endif
+            else if (trimmedLine.find("#endif") == 0 && inVersionConditional) {
+                skipLegacyBlock = false;
+                inVersionConditional = false;
+                continue; // Skip the #endif line
+            }
+
+            // Include line if we're not skipping the legacy block
+            if (!skipLegacyBlock) {
+                processedVertexStream << line << "\n";
+
+                // Extract varying declarations for fragment shader
+                std::string varyingName;
+                std::string varyingDeclaration;
+
+                if (line.find("out ") != std::string::npos && line.find("vec") != std::string::npos) {
+                    // Extract out variable name for duplicate check
+                    size_t nameStart = line.find_last_of(' ');
+                    size_t nameEnd = line.find(';');
+                    if (nameStart != std::string::npos && nameEnd != std::string::npos) {
+                        varyingName = line.substr(nameStart + 1, nameEnd - nameStart - 1);
+                    }
+
+                    // Convert "out vec2 left_coord;" to "in vec2 left_coord;"
+                    varyingDeclaration = line;
+                    size_t outPos = varyingDeclaration.find("out ");
+                    if (outPos != std::string::npos) {
+                        varyingDeclaration.replace(outPos, 4, "in ");
+                    }
+
+                    // Add to unique set if we found a valid varying and it's not already added
+                    if (!varyingName.empty() && !varyingDeclaration.empty() &&
+                        uniqueVaryings.find(varyingName) == uniqueVaryings.end()) {
+                        uniqueVaryings.insert(varyingName);
+                        customVaryingInputs += varyingDeclaration + "\n";
+                    }
+                }
+            }
+        }
+
+        // Update the custom vertex shader to the processed version (without conditionals)
+        shader.customVertexShader_ = processedVertexStream.str();
+
+        if (!customVaryingInputs.empty()) {
+            customVaryingInputs = "// Custom varying inputs from vertex shader\n" + customVaryingInputs + "\n";
+            std::cout << "DEBUG: Added varying inputs for " << shader.name_ << ": " << uniqueVaryings.size() << " variables" << std::endl;
+        }
+
+        // Check what the custom vertex shader already declares to avoid conflicts
+        bool hasCornerVars = (shader.customVertexShader_.find("topleft") != std::string::npos ||
+                              shader.customVertexShader_.find("topright") != std::string::npos ||
+                              shader.customVertexShader_.find("bottomleft") != std::string::npos ||
+                              shader.customVertexShader_.find("bottomright") != std::string::npos);
+
+        // Check for specific uniform declarations to avoid conflicts
+        bool hasAngleUniform = shader.customVertexShader_.find("uniform float angle") != std::string::npos;
+        bool hasIntensityUniform = shader.customVertexShader_.find("uniform float intensity") != std::string::npos;
+        bool hasAmountUniform = shader.customVertexShader_.find("uniform float amount") != std::string::npos;
+        bool hasLengthUniform = shader.customVertexShader_.find("uniform float length") != std::string::npos;
+
+        // Also check if these are declared as parameters in the fragment shader
+        std::set<std::string> paramNames;
+        for (const auto& param : shader.parameterTemplates_) {
+            paramNames.insert(param.name);
+        }
+
+        // Build parameter uniforms for vertex shader
+        std::string customVertexUniforms;
+        for (const auto& param : shader.parameterTemplates_) {
+            switch (param.type) {
+                case PARAM_FLOAT:
+                    customVertexUniforms += "uniform float " + param.name + ";\n";
+                    break;
+                case PARAM_LONG:
+                    customVertexUniforms += "uniform int " + param.name + ";\n";
+                    break;
+                case PARAM_BOOL:
+                case PARAM_EVENT:
+                    customVertexUniforms += "uniform bool " + param.name + ";\n";
+                    break;
+                case PARAM_COLOR:
+                    customVertexUniforms += "uniform vec4 " + param.name + ";\n";
+                    break;
+                case PARAM_POINT2D:
+                    customVertexUniforms += "uniform vec2 " + param.name + ";\n";
+                    break;
+            }
+        }
+
+        // Add common uniforms that vertex shaders might expect (only if not already declared)
+        std::string commonUniforms;
+        bool needsCommonHeader = false;
+
+        if (!hasAngleUniform && paramNames.find("angle") == paramNames.end()) {
+            if (!needsCommonHeader) {
+                commonUniforms += "// Common uniforms for vertex shader compatibility\n";
+                needsCommonHeader = true;
+            }
+            commonUniforms += "uniform float angle = 0.0;\n";
+        }
+
+        if (!hasIntensityUniform && paramNames.find("intensity") == paramNames.end()) {
+            if (!needsCommonHeader) {
+                commonUniforms += "// Common uniforms for vertex shader compatibility\n";
+                needsCommonHeader = true;
+            }
+            commonUniforms += "uniform float intensity = 1.0;\n";
+        }
+
+        if (!hasAmountUniform && paramNames.find("amount") == paramNames.end()) {
+            if (!needsCommonHeader) {
+                commonUniforms += "// Common uniforms for vertex shader compatibility\n";
+                needsCommonHeader = true;
+            }
+            commonUniforms += "uniform float amount = 1.0;\n";
+        }
+
+        if (!hasLengthUniform && paramNames.find("length") == paramNames.end()) {
+            if (!needsCommonHeader) {
+                commonUniforms += "// Common uniforms for vertex shader compatibility\n";
+                needsCommonHeader = true;
+            }
+            commonUniforms += "uniform float length = 1.0;\n";
+        }
+
+        if (needsCommonHeader) {
+            commonUniforms += "\n";
+        }
+
+        // Add corner variables only if not already declared
+        std::string cornerVars;
+        if (!hasCornerVars) {
+            cornerVars = "// Corner position variables (for v002 compatibility)\n"
+                         "vec2 topleft = vec2(-1.0, 1.0);\n"
+                         "vec2 topright = vec2(1.0, 1.0);\n"
+                         "vec2 bottomleft = vec2(-1.0, -1.0);\n"
+                         "vec2 bottomright = vec2(1.0, -1.0);\n"
+                         "\n";
+        }
+
         vertexSource = "#version 330 core\n"
                        "// ISF built-in uniforms\n"
                        "uniform float TIME;\n"
@@ -1073,6 +1238,9 @@ bool ISFLoader::compileShader(const std::string& fragmentSource, ISFShader& shad
                        "out vec2 isf_FragNormCoord;\n"
                        "out vec2 vv_FragNormCoord;\n"
                        "\n"
+                       + commonUniforms +
+                       customVertexUniforms +
+                       cornerVars +
                        "// ISF vertex shader initialization function\n"
                        "void isf_vertShaderInit() {\n"
                        "    gl_Position = vec4(aPos, 0.0, 1.0);\n"
@@ -1086,7 +1254,8 @@ bool ISFLoader::compileShader(const std::string& fragmentSource, ISFShader& shad
                        "\n" +
                        shader.customVertexShader_;
 
-        std::cout << "DEBUG: Using custom vertex shader for " << shader.name_ << std::endl;
+        std::cout << "DEBUG: Using custom vertex shader for " << shader.name_ << " with varying variables" << std::endl;
+
     } else {
         // Use default ISF vertex shader
         vertexSource = vertexShaderSource_;
@@ -1096,17 +1265,106 @@ bool ISFLoader::compileShader(const std::string& fragmentSource, ISFShader& shad
     // Convert ISF shader from GLSL 120 to 330 core and fix compatibility issues
     std::string modernFragmentSource = fragmentSource;
 
+    // FIRST: Remove legacy GLSL version conditional blocks from fragment shader
+    // This prevents conflicts between old "varying" and new "in" declarations
+    std::stringstream fragStream(modernFragmentSource);
+    std::stringstream processedFragmentStream;
+    std::string line;
+    bool skipLegacyBlock = false;
+    bool inVersionConditional = false;
+    std::set<std::string> fragmentVaryingNames; // Track what the fragment shader already declares
+
+    while (std::getline(fragStream, line)) {
+        // Trim whitespace for easier matching
+        std::string trimmedLine = line;
+        size_t start = trimmedLine.find_first_not_of(" \t");
+        if (start != std::string::npos) {
+            trimmedLine = trimmedLine.substr(start);
+        }
+
+        // Check for version conditional start
+        if (trimmedLine.find("#if __VERSION__ <= 120") == 0) {
+            skipLegacyBlock = true;
+            inVersionConditional = true;
+            continue; // Skip the #if line
+        }
+            // Check for else block
+        else if (trimmedLine.find("#else") == 0 && inVersionConditional) {
+            skipLegacyBlock = false;
+            continue; // Skip the #else line, but start including content after it
+        }
+            // Check for endif
+        else if (trimmedLine.find("#endif") == 0 && inVersionConditional) {
+            skipLegacyBlock = false;
+            inVersionConditional = false;
+            continue; // Skip the #endif line
+        }
+
+        // Include line if we're not skipping the legacy block
+        if (!skipLegacyBlock) {
+            processedFragmentStream << line << "\n";
+
+            // Track varying variable names that the fragment shader declares
+            if (line.find("in vec") != std::string::npos && line.find(";") != std::string::npos) {
+                size_t nameStart = line.find_last_of(' ');
+                size_t nameEnd = line.find(';');
+                if (nameStart != std::string::npos && nameEnd != std::string::npos) {
+                    std::string varyingName = line.substr(nameStart + 1, nameEnd - nameStart - 1);
+                    fragmentVaryingNames.insert(varyingName);
+                }
+            }
+        }
+    }
+
+    modernFragmentSource = processedFragmentStream.str();
+
+    // Remove any varying inputs that the fragment shader already declares
+    if (!fragmentVaryingNames.empty() && !customVaryingInputs.empty()) {
+        std::stringstream customVaryingStream(customVaryingInputs);
+        std::stringstream filteredVaryingStream;
+        std::string varyingLine;
+        bool hasHeader = false;
+
+        while (std::getline(customVaryingStream, varyingLine)) {
+            if (varyingLine.find("// Custom varying") != std::string::npos) {
+                // Skip header for now, add it back if we have any varying inputs
+                continue;
+            }
+
+            // Check if this varying is already declared in fragment shader
+            bool isDuplicate = false;
+            for (const auto& fragVaryingName : fragmentVaryingNames) {
+                if (varyingLine.find(fragVaryingName) != std::string::npos) {
+                    isDuplicate = true;
+                    break;
+                }
+            }
+
+            if (!isDuplicate && !varyingLine.empty()) {
+                if (!hasHeader) {
+                    filteredVaryingStream << "// Custom varying inputs from vertex shader\n";
+                    hasHeader = true;
+                }
+                filteredVaryingStream << varyingLine << "\n";
+            }
+        }
+
+        if (hasHeader) {
+            filteredVaryingStream << "\n";
+        }
+        customVaryingInputs = filteredVaryingStream.str();
+
+        std::cout << "DEBUG: Filtered varying inputs for " << shader.name_ << " to avoid conflicts" << std::endl;
+    }
+
+    std::cout << "DEBUG: Processed fragment shader for " << shader.name_ << ", conditional blocks removed" << std::endl;
+
     // Replace gl_FragColor with fragColor
     size_t pos = 0;
     while ((pos = modernFragmentSource.find("gl_FragColor", pos)) != std::string::npos) {
         modernFragmentSource.replace(pos, 12, "fragColor");
         pos += 9; // length of "fragColor"
     }
-
-    // REMOVED: Feedback control code injection
-    // For RGBA8 buffers (default), hardware naturally clamps to [0,1]
-    // For RGBA32F buffers (when FLOAT: true), the shader author is responsible for range control
-    // No more artificial clamping that could interfere with intended shader behavior
 
     // Fix bool/int comparisons for event parameters
     pos = 0;
@@ -1170,23 +1428,24 @@ bool ISFLoader::compileShader(const std::string& fragmentSource, ISFShader& shad
         }
     }
 
-    // Combine everything: version + built-ins + parameters + inputs + buffers + shader code
+    // Combine everything: version + built-ins + custom varying inputs + parameters + inputs + buffers + shader code
     std::string completeFragmentSource = "#version 330 core\n" +
                                          std::string(isfBuiltinFunctions_) +
+                                         customVaryingInputs +  // Custom varying inputs from vertex shader
                                          parameterUniforms +
                                          inputUniforms +
                                          bufferUniforms +
                                          "\n" + modernFragmentSource;
 
-    // DEBUG: Add debug output to see the generated shader source
-    if (shader.name_ == "Edges") {
-        std::cout << "=== EDGES VERTEX SHADER SOURCE ===" << std::endl;
+    // DEBUG: Add debug output for Sorting Smear to troubleshoot the effect
+    if (shader.name_.find("Sorting Smear") != std::string::npos) {
+        std::cout << "=== SORTING SMEAR VERTEX SHADER ===" << std::endl;
         std::cout << vertexSource << std::endl;
-        std::cout << "=== END EDGES VERTEX SHADER ===" << std::endl;
+        std::cout << "=== END SORTING SMEAR VERTEX SHADER ===" << std::endl;
 
-        std::cout << "=== EDGES FRAGMENT SHADER SOURCE ===" << std::endl;
+        std::cout << "=== SORTING SMEAR FRAGMENT SHADER ===" << std::endl;
         std::cout << completeFragmentSource << std::endl;
-        std::cout << "=== END EDGES FRAGMENT SHADER ===" << std::endl;
+        std::cout << "=== END SORTING SMEAR FRAGMENT SHADER ===" << std::endl;
     }
 
     // **NEW: Try to load from cache first**
@@ -1765,7 +2024,7 @@ void ISFShaderInstance::render(float time, float renderWidth, float renderHeight
     GLint originalViewport[4];
     glGetIntegerv(GL_VIEWPORT, originalViewport);
 
-    if (parentShader_->passes_.size() > 1) {
+    if (parentShader_->passes_.size() >= 1) {
         // Multi-pass rendering
         setupPassFramebuffers(renderWidth, renderHeight);
 
@@ -2012,58 +2271,48 @@ void ISFShaderInstance::renderSinglePass(float time, float renderWidth, float re
 
 void ISFShaderInstance::renderPass(int passIndex, float time, float renderWidth, float renderHeight, int frameIndex,
                                    GLint originalFramebuffer, GLint originalDrawBuffer, GLint originalViewport[4]) {
-    const auto& passTemplate = parentShader_->passes_[passIndex];  // Template
-    const auto& instancePass = instancePasses_[passIndex];         // Instance data
+    const auto& passTemplate = parentShader_->passes_[passIndex];
+    auto& instancePass = instancePasses_[passIndex];
 
-    // Use instance-specific buffers instead of template buffers
     if (!passTemplate.target.empty()) {
-        // This pass has a target - render to its instance framebuffer
-        glBindFramebuffer(GL_FRAMEBUFFER, instancePass.framebuffer);  // ← Instance buffer
-        glDrawBuffer(GL_COLOR_ATTACHMENT0);
-        glViewport(0, 0, instancePass.width, instancePass.height);   // ← Instance dimensions
+        // CHANGE THIS LINE:
+        // glBindFramebuffer(GL_FRAMEBUFFER, instancePass.framebuffer);
+        // TO:
+        glBindFramebuffer(GL_FRAMEBUFFER, instancePass.getCurrentWriteFramebuffer());
 
-        // Check framebuffer status
+        glDrawBuffer(GL_COLOR_ATTACHMENT0);
+        glViewport(0, 0, instancePass.width, instancePass.height);
+
         GLenum status = glCheckFramebufferStatus(GL_FRAMEBUFFER);
         if (status != GL_FRAMEBUFFER_COMPLETE) {
-            std::cout << "ERROR: Instance framebuffer not complete! Status: " << status << std::endl;
+            std::cout << "ERROR: Framebuffer not complete! Status: " << status << std::endl;
         }
 
-        // Clear non-persistent buffers always, persistent buffers on first few frames
+        // Clear logic - only clear persistent buffers on first frame
         if (!passTemplate.persistent) {
             glClearColor(0.0f, 0.0f, 0.0f, 0.0f);
             glClear(GL_COLOR_BUFFER_BIT);
-        } else if (frameIndex <= 3) {
-            // Initialize persistent buffers for first few frames to ensure stability
-            glClearColor(0.0f, 0.0f, 0.0f, 1.0f);  // Solid black with alpha=1
+        } else if (frameIndex == 0) {
+            glClearColor(0.0f, 0.0f, 0.0f, 1.0f);
             glClear(GL_COLOR_BUFFER_BIT);
         }
 
-        // Set built-in uniforms with instance pass size
         setBuiltinUniforms(time, instancePass.width, instancePass.height, frameIndex, passIndex);
     } else {
-        // No target - render to screen
         glBindFramebuffer(GL_FRAMEBUFFER, originalFramebuffer);
         glDrawBuffer(originalDrawBuffer);
         glViewport(originalViewport[0], originalViewport[1], originalViewport[2], originalViewport[3]);
-
-        // Set built-in uniforms with original viewport size
         setBuiltinUniforms(time, originalViewport[2], originalViewport[3], frameIndex, passIndex);
     }
 
-    // Set parameter uniforms
     setParameterUniforms();
-
-    // Bind input textures and pass buffers (using instance buffers)
     bindTextures(passIndex);
-
-    // Draw fullscreen quad
     drawFullscreenQuad();
 
-
-    // Check for OpenGL errors
-    GLenum error = glGetError();
-    if (error != GL_NO_ERROR) {
-        std::cout << "OpenGL error after pass " << passIndex << ": " << error << std::endl;
+    if (!passTemplate.target.empty() && passTemplate.persistent) {
+        instancePass.swapBuffers();
+        std::cout << "Swapped buffers for persistent pass: " << passTemplate.target
+                  << " (now using " << (instancePass.currentPingPong ? "ping" : "main") << ")" << std::endl;
     }
 }
 
@@ -2183,7 +2432,9 @@ void ISFShaderInstance::bindTextures(int passIndex) {
             if (it != parentShader_->bufferLocations_.end()) {
                 if (it->second != -1) {
                     // Use current texture for feedback effects (no double buffering)
-                    GLuint textureToUse = instancePass.texture;  // Current frame for feedback
+                    GLuint textureToUse = instancePass.getCurrentReadTexture();
+                    std::cout << "Binding texture " << textureToUse << " for pass " << passTemplate.target
+                              << " (read from " << (instancePass.currentPingPong ? "main" : "ping") << ")" << std::endl;
 
                     glActiveTexture(GL_TEXTURE0 + textureUnit);
                     glBindTexture(GL_TEXTURE_2D, textureToUse);
@@ -2279,114 +2530,130 @@ void ISFShaderInstance::drawFullscreenQuad() {
 
 void ISFShaderInstance::setupPassFramebuffers(float renderWidth, float renderHeight) {
     for (size_t i = 0; i < parentShader_->passes_.size(); ++i) {
-        const auto& passTemplate = parentShader_->passes_[i];  // Template from shader
-        auto& instancePass = instancePasses_[i];               // Instance-specific data
+        const auto& passTemplate = parentShader_->passes_[i];
+        auto& instancePass = instancePasses_[i];
 
         if (passTemplate.target.empty()) {
-            // Final pass - use render dimensions, no framebuffer needed
             instancePass.width = (int)renderWidth;
             instancePass.height = (int)renderHeight;
             continue;
         }
 
-        // Calculate pass dimensions from template
         int newWidth = evaluateExpression(passTemplate.widthExpr, renderWidth, renderHeight);
         int newHeight = evaluateExpression(passTemplate.heightExpr, renderWidth, renderHeight);
+        bool needsDoubleBuffer = passTemplate.persistent;
 
-        // Only recreate if dimensions changed or framebuffer doesn't exist
-        if (instancePass.width != newWidth || instancePass.height != newHeight || instancePass.framebuffer == 0) {
-            // Clean up old resources using pooling
+        if (instancePass.width != newWidth || instancePass.height != newHeight ||
+            instancePass.framebuffer == 0 || (needsDoubleBuffer && !instancePass.useDoubleBuffer)) {
+
+            // Clean up old resources
             if (instancePass.framebuffer != 0) {
                 mainprogram->add_to_fbopool(instancePass.framebuffer);
                 mainprogram->add_to_texpool(instancePass.texture);
             }
+            if (instancePass.framebufferPing != 0) {
+                mainprogram->add_to_fbopool(instancePass.framebufferPing);
+                mainprogram->add_to_texpool(instancePass.texturePing);
+                instancePass.framebufferPing = 0;
+                instancePass.texturePing = 0;
+            }
 
             instancePass.width = newWidth;
             instancePass.height = newHeight;
+            instancePass.useDoubleBuffer = needsDoubleBuffer;
+            instancePass.currentPingPong = false; // Reset ping pong state
 
-            // NEW: Choose buffer format based on shader's FLOAT preference
-            GLint format;
-            GLenum dataType;
-            GLenum channels;
+            GLint format = parentShader_->usesFloatBuffers() ? GL_RGBA32F : GL_RGBA8;
+            GLenum dataType = parentShader_->usesFloatBuffers() ? GL_FLOAT : GL_UNSIGNED_BYTE;
 
-            if (parentShader_->usesFloatBuffers()) {
-                // Shader explicitly requests float buffers
-                format = GL_RGBA32F;
-                dataType = GL_FLOAT;
-                channels = GL_RGBA;
-                std::cout << "Using RGBA32F buffers for shader: " << parentShader_->getName() << std::endl;
-            } else {
-                // Standard 8-bit RGBA buffers (ISF default)
-                format = GL_RGBA8;
-                dataType = GL_UNSIGNED_BYTE;
-                channels = GL_RGBA;
-                std::cout << "Using RGBA8 buffers for shader: " << parentShader_->getName() << std::endl;
-            }
-
+            // Create main texture
             instancePass.texture = mainprogram->grab_from_texpool(instancePass.width, instancePass.height, format);
-
             if (instancePass.texture == -1) {
-                // Pool miss - create new texture
                 glGenTextures(1, &instancePass.texture);
                 glBindTexture(GL_TEXTURE_2D, instancePass.texture);
 
-                // Initialize texture with appropriate format
                 if (parentShader_->usesFloatBuffers()) {
-                    // Float buffer - initialize with black (0.0, 0.0, 0.0, 1.0)
                     std::vector<float> blackPixels(instancePass.width * instancePass.height * 4, 0.0f);
-                    for (size_t i = 3; i < blackPixels.size(); i += 4) {
-                        blackPixels[i] = 1.0f;  // Set alpha to 1.0
-                    }
+                    for (size_t j = 3; j < blackPixels.size(); j += 4) blackPixels[j] = 1.0f;
                     glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA32F, instancePass.width, instancePass.height, 0,
                                  GL_RGBA, GL_FLOAT, blackPixels.data());
                 } else {
-                    // Standard 8-bit buffer - initialize with black (0, 0, 0, 255)
                     std::vector<unsigned char> blackPixels(instancePass.width * instancePass.height * 4, 0);
-                    for (size_t i = 3; i < blackPixels.size(); i += 4) {
-                        blackPixels[i] = 255;  // Set alpha to 255
-                    }
+                    for (size_t j = 3; j < blackPixels.size(); j += 4) blackPixels[j] = 255;
                     glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA8, instancePass.width, instancePass.height, 0,
                                  GL_RGBA, GL_UNSIGNED_BYTE, blackPixels.data());
                 }
-
-                // Register the texture format for pooling
                 mainprogram->texintfmap[instancePass.texture] = format;
-
-            } else {
-                // Pool hit - texture already has correct format and size
-                glBindTexture(GL_TEXTURE_2D, instancePass.texture);
             }
 
-            // Use NEAREST filtering for small buffers (like 1x1 writePos)
-            if (instancePass.width <= 4 && instancePass.height <= 4) {
-                glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_NEAREST);
-                glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_NEAREST);
-            } else {
-                glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR);
-                glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
+            // Create ping texture for double buffering (persistent passes only)
+            if (needsDoubleBuffer) {
+                instancePass.texturePing = mainprogram->grab_from_texpool(instancePass.width, instancePass.height, format);
+                if (instancePass.texturePing == -1) {
+                    glGenTextures(1, &instancePass.texturePing);
+                    glBindTexture(GL_TEXTURE_2D, instancePass.texturePing);
+
+                    if (parentShader_->usesFloatBuffers()) {
+                        std::vector<float> blackPixels(instancePass.width * instancePass.height * 4, 0.0f);
+                        for (size_t j = 3; j < blackPixels.size(); j += 4) blackPixels[j] = 1.0f;
+                        glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA32F, instancePass.width, instancePass.height, 0,
+                                     GL_RGBA, GL_FLOAT, blackPixels.data());
+                    } else {
+                        std::vector<unsigned char> blackPixels(instancePass.width * instancePass.height * 4, 0);
+                        for (size_t j = 3; j < blackPixels.size(); j += 4) blackPixels[j] = 255;
+                        glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA8, instancePass.width, instancePass.height, 0,
+                                     GL_RGBA, GL_UNSIGNED_BYTE, blackPixels.data());
+                    }
+                    mainprogram->texintfmap[instancePass.texturePing] = format;
+                }
+
+                // Create ping framebuffer
+                instancePass.framebufferPing = mainprogram->grab_from_fbopool();
+                if (instancePass.framebufferPing == -1) {
+                    glGenFramebuffers(1, &instancePass.framebufferPing);
+                }
+                glBindFramebuffer(GL_FRAMEBUFFER, instancePass.framebufferPing);
+                glFramebufferTexture2D(GL_FRAMEBUFFER, GL_COLOR_ATTACHMENT0, GL_TEXTURE_2D, instancePass.texturePing, 0);
+
+                if (glCheckFramebufferStatus(GL_FRAMEBUFFER) != GL_FRAMEBUFFER_COMPLETE) {
+                    std::cerr << "Error creating ping framebuffer for pass: " << passTemplate.target << std::endl;
+                }
             }
 
-            // Use GL_CLAMP_TO_EDGE to prevent texture edge artifacts
-            glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_EDGE);
-            glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_EDGE);
+            // Set texture parameters for both textures
+            for (GLuint tex : {instancePass.texture, instancePass.texturePing}) {
+                if (tex != 0) {
+                    glBindTexture(GL_TEXTURE_2D, tex);
+                    if (instancePass.width <= 4 && instancePass.height <= 4) {
+                        glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_NEAREST);
+                        glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_NEAREST);
+                    } else {
+                        glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR);
+                        glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
+                    }
+                    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_EDGE);
+                    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_EDGE);
+                }
+            }
 
-            // Try to get framebuffer from pool
+            // Create main framebuffer
             instancePass.framebuffer = mainprogram->grab_from_fbopool();
-
             if (instancePass.framebuffer == -1) {
-                // Pool miss - create new framebuffer
                 glGenFramebuffers(1, &instancePass.framebuffer);
             }
-
             glBindFramebuffer(GL_FRAMEBUFFER, instancePass.framebuffer);
             glFramebufferTexture2D(GL_FRAMEBUFFER, GL_COLOR_ATTACHMENT0, GL_TEXTURE_2D, instancePass.texture, 0);
 
             if (glCheckFramebufferStatus(GL_FRAMEBUFFER) != GL_FRAMEBUFFER_COMPLETE) {
-                std::cerr << "Error creating instance framebuffer for pass: " << passTemplate.target << std::endl;
+                std::cerr << "Error creating main framebuffer for pass: " << passTemplate.target << std::endl;
             }
 
             glBindFramebuffer(GL_FRAMEBUFFER, 0);
             glBindTexture(GL_TEXTURE_2D, 0);
+
+            std::cout << "Created " << (needsDoubleBuffer ? "double-buffered" : "single")
+                      << " pass: " << passTemplate.target << " (" << instancePass.width
+                      << "x" << instancePass.height << ")" << std::endl;
         }
     }
 }
@@ -2626,15 +2893,22 @@ void ISFShaderInstance::resetForReuse() {
     std::cout << "Reset ISF instance for reuse: " << getName() << std::endl;
 }
 
-ISFLoader::InstancePassInfo::~InstancePassInfo()  {
+ISFLoader::InstancePassInfo::~InstancePassInfo() {
     if (framebuffer != 0) {
-        // Use pooling instead of direct deletion
         mainprogram->add_to_fbopool(framebuffer);
         framebuffer = 0;
     }
     if (texture != 0) {
-        // Use pooling instead of direct deletion
         mainprogram->add_to_texpool(texture);
         texture = 0;
+    }
+    // NEW: Clean up ping buffers
+    if (framebufferPing != 0) {
+        mainprogram->add_to_fbopool(framebufferPing);
+        framebufferPing = 0;
+    }
+    if (texturePing != 0) {
+        mainprogram->add_to_texpool(texturePing);
+        texturePing = 0;
     }
 }

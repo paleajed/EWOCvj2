@@ -1925,7 +1925,7 @@ void draw_direct(float* linec, float* areac, float x, float y, float wi, float h
 		}
 		if (circle) {
 			mainprogram->uniformCache->setBool("box", false);
-			mainprogram->uniformCache->setBool("circle", true);
+			mainprogram->uniformCache->setInt("circle", circle);
 			if (mainprogram->insmall) {
 				mainprogram->uniformCache->setFloat("circleradius", (wi / 4.0f) * smh);
 				mainprogram->uniformCache->setFloat("cirx", ((x + (wi / 2.0f)) / 2.0f + 0.5f) * smw);
@@ -1944,7 +1944,7 @@ void draw_direct(float* linec, float* areac, float x, float y, float wi, float h
         if (inverted) glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
 		// border is drawn in shader
 		if (tex != -1) mainprogram->uniformCache->setBool("down", false);
-		if (circle) mainprogram->uniformCache->setBool("circle", false);
+		if (circle) mainprogram->uniformCache->setInt("circle", 0);
 	}
 
 	if (areac) mainprogram->uniformCache->setBool("box", false);
@@ -3332,8 +3332,8 @@ void onestepfrom(bool stage, Node *node, Node *prevnode, GLuint prevfbotex, GLui
             if (lay->blendnode->blendtype == 19 || lay->blendnode->blendtype == 20 || lay->blendnode->blendtype
             == 21) {
                 mainprogram->uniformCache->setFloat("colortol", lay->chtol->value);
-                mainprogram->uniformCache->setFloat("chdir", lay->chdir->value);
-                mainprogram->uniformCache->setFloat("chinv", lay->chinv->value);
+                mainprogram->uniformCache->setBool("chdir", lay->chdir->value);
+                mainprogram->uniformCache->setBool("chinv", lay->chinv->value);
             }
         }
         float xs = 0.0f;
@@ -3708,6 +3708,8 @@ void onestepfrom(bool stage, Node *node, Node *prevnode, GLuint prevfbotex, GLui
                 else {
                     glBindFramebuffer(GL_FRAMEBUFFER, bnode->fbo);
                     glDrawBuffer(GL_COLOR_ATTACHMENT0);
+                    glClearColor( 0.f, 0.f, 0.f, 0.f );
+                    glClear(GL_COLOR_BUFFER_BIT);
                     if (stage) {
                         glViewport(0, 0, mainprogram->ow[1], mainprogram->oh[1]);
                     } else {
@@ -3727,7 +3729,7 @@ void onestepfrom(bool stage, Node *node, Node *prevnode, GLuint prevfbotex, GLui
                         mainprogram->uniformCache->setFloat("chblue", bnode->chblue);
                     }
                     if (bnode->blendtype == 18) {
-                        mainprogram->uniformCache->setFloat("inlayer", 1);
+                        mainprogram->uniformCache->setBool("inlayer", true);
                         if (bnode->wipetype > -1) mainprogram->uniformCache->setBool("wipe", true);
                         mainprogram->uniformCache->setInt("wkind", bnode->wipetype);
                         mainprogram->uniformCache->setInt("dir", bnode->wipedir);
@@ -3743,7 +3745,7 @@ void onestepfrom(bool stage, Node *node, Node *prevnode, GLuint prevfbotex, GLui
                     glDrawArrays(GL_TRIANGLE_STRIP, 0, 4);
                     glEnable(GL_BLEND);
 
-                    mainprogram->uniformCache->setFloat("inlayer", 0);
+                    mainprogram->uniformCache->setBool("inlayer", false);
                     mainprogram->uniformCache->setBool("wipe", false);
                     mainprogram->uniformCache->setInt("mixmode", 0);
                     if (mainprogram->prevmodus) {

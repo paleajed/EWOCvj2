@@ -8854,13 +8854,16 @@ void Program::define_menus() {
     effects.push_back("BOXBLUR");
     effects.push_back("CHROMASTRETCH");
     std::vector<std::string> meffects = effects;
+    std::sort(meffects.begin(), meffects.end());
+    std::vector<std::string> plugins;
     for (auto name : mainprogram->ffgleffectnames) {
-        meffects.push_back(name);
+        plugins.push_back(name);
     }
     for (auto name : mainprogram->isfeffectnames) {
-        meffects.push_back(name);
+        plugins.push_back(name);
     }
-    std::sort(meffects.begin(), meffects.end());
+    std::sort(plugins.begin(), plugins.end());
+    meffects.insert(meffects.end(), plugins.begin(), plugins.end());
     for (int i = 0; i < meffects.size(); i++) {
         bool brk = false;
         for (int j = 0; j < effects.size(); j++) {

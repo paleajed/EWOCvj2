@@ -6590,7 +6590,7 @@ void Layer::display() {
 							mainprogram->uniformCache->setBool("chinv", this->chinv->value);
 						}
 					}
-                    if (this->chdir->value) {
+                    if (this->chinv->value) {
                         this->chinv->box->acolor[1] = 0.7f;
                     }
                     else {

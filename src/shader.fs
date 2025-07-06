@@ -1717,176 +1717,211 @@ void main()
 		return;
 	}
 	else if (mixmode == 1) {
-		//MIX alpha
-		float mf = mixfac;
-		float fac1 = clamp((1.0f - mf) * 2.0f, 0.0f, 1.0f);
-		float fac2 = clamp(mf * 2.0f, 0.0f, 1.0f);
-		float term0 = (1.0f - fac2 * tex1.a / 2.0f) * fac1;
-		float term1 = (1.0f - fac1 * tex0.a / 2.0f) * fac2;
-		fc = vec4((tex0.rgb * (term0 + (1.0f - tex1.a) * (1.0f - term0)) + tex1.rgb * (term1 + (1.0f - tex0.a) * (1.0f - term1))), max(tex0.a, tex1.a));
-	}
-	else if (mixmode == 2) {
-		//ALPHA OVERLAY
-		fc = vec4(tex0.rgb * (1.0f - tex1.a) + tex1.rgb * (tex1.a), max(tex0.a, tex1.a));
-	}
-	else if (mixmode == 3) {
-		//MULTIPLY alpha
-		fc = vec4(tex0.rgb * vec3(1.0f, 1.0f, 1.0f) + ((tex1.rgb - vec3(1.0f, 1.0f, 1.0f)) * tex1.a), max(tex0.a, tex1.a));
-	}
-	else if (mixmode == 4) {
-		//SCREEN alpha
-		fc = 1.0 - (1.0 - tex0) * (1.0 - tex1);
-	}
-	else if (mixmode == 5) {
-		//OVERLAY  alpha
-		if ((tex0.r + tex0.g + tex0.b) / 3.0 < 0.5) {
-			fc = vec4(2.0f * tex0.rgb * vec3(0.5f, 0.5f, 0.5f) + ((tex1.rgb - vec3(0.5f, 0.5f, 0.5f)) * tex1.a), max(tex0.a, tex1.a));
-		}
-		else fc = 1.0 - 2 * ((tex1.a / 2.0f) + 0.5f) * (1.0 - tex0) * (1.0 - tex1);
-	}
-	else if (mixmode == 6) {
-		//HARD LIGHT alpha
-		if ((tex0.r + tex0.g + tex0.b) / 3.0 >= 0.5) {
-			fc = vec4(2.0f * tex0.rgb * vec3(0.5f, 0.5f, 0.5f) + ((tex1.rgb - vec3(0.5f, 0.5f, 0.5f)) * tex1.a), max(tex0.a, tex1.a));
-		}
-		else fc = 1.0 - 2 * ((tex1.a / 2.0f) + 0.5f) * (1.0 - tex0) * (1.0 - tex1);
-	}
-	else if (mixmode == 7) {
-		//SOFT LIGHT
-		fc = (1.0 - 2.0 * tex1) * tex0 * tex0 + 2 * tex1 * tex0;
-	}
-	else if (mixmode == 8) {
-		//DIVIDE alpha
-		fc = vec4(tex0.rgb / (vec3(1.0f, 1.0f, 1.0f) + ((tex1.rgb - vec3(1.0f, 1.0f, 1.0f)) * tex1.a)), max(tex0.a, tex1.a));
-	}
-	else if (mixmode == 9) {
-		//ADD alpha
-		fc = vec4(tex0.rgb + tex1.rgb, tex0.a);
-	}
-	else if (mixmode == 10) {
-		//SUBTRACT alpha
-		fc = vec4(tex0.rgb - tex1.rgb, tex0.a);
-	}
-	else if (mixmode == 11) {
-		//DIFF alpha
-		fc = vec4(abs(tex0.rgb - tex1.rgb), max(tex0.a, tex1.a));
-	}
-	else if (mixmode == 12) {
-		//DODGE alpha
-		fc = vec4(tex0.rgb / (vec3(1.0f, 1.0f, 1.0f) - ((vec3(1.0f, 1.0f, 1.0f) - tex1.rgb) * tex1.a)), max(tex0.a, tex1.a));
-		//fc = tex0 / (1.0 - tex1);
-	}
-	else if (mixmode == 13) {
-		//COLOR_BURN
-		fc = 1.0 - ((1.0 - tex0) / tex1);
-	}
-	else if (mixmode == 14) {
-		//LINEAR_BURN
-		fc = (tex0 + tex1) - 1.0;
-	}
-	else if (mixmode == 15) {
-		//VIVID LIGHT
-		if ((tex0.r + tex0.g + tex0.b) / 3.0 >= 0.5) fc = vec4(tex0.rgb / (1.0 - tex1.rgb), 1.0);
-		else fc = 1.0 - ((1.0 - tex0) / tex1);
-	}
-	else if (mixmode == 16) {
-		// LINEAR_LIGHT
-		if ((tex0.r + tex0.g + tex0.b) / 3.0 >= 0.5) fc = tex0 + tex1;
-		else fc = (tex0 + tex1) - 1.0;
-	}
-	else if (mixmode == 17) {
-		//DARKEN_ONLY alpha
-		fc = vec4(min(tex0.r, tex1.r + (1.0f - tex1.a)), min(tex0.g, tex1.g + (1.0f - tex1.a)), min(tex0.b, tex1.b + (1.0f - tex1.a)), max(tex0.a, tex1.a));
-	}
-	else if (mixmode == 18) {
-		//LIGHTEN_ONLY alpha
-		fc = vec4(max(tex0.r, tex1.r), max(tex0.g, tex1.g), max(tex0.b, tex1.b), max(tex0.a, tex1.a));
-	}
-	else if (mixmode == 22) {
-		//DISPLACEMENT alpha
-		fc = texture2D(endSampler0, (TexCoord0.st+(texture2D(endSampler1, TexCoord0.st).rb)*.1*tex1.a) * 0.91f);
-	}
-	else if (mixmode == 23) {
-		//CROSSFADING alpha
-		float fac1 = clamp(cf2 * 2.0f, 0.0f, 1.0f);
-		float fac2 = clamp(cf * 2.0f, 0.0f, 1.0f);
-		fc = vec4((tex0.rgb * (1.0f - fac2 * tex1.a / 2.0f) * fac1 + tex1.rgb * (1.0f - fac1 * tex0.a / 2.0f) * fac2), max(fac1 * tex0.a, fac2 * tex1.a));
-	}
-	else if (mixmode == 19) {
-		//COLORKEY alpha
-		if (chdir) {
-			vec4 bu;
-			bu = tex0;
-			tex0 = tex1;
-			tex1 = bu;
-		}
-		float totdiff = (abs(chred - tex1.r) + abs(chgreen - tex1.g) + abs(chblue - tex1.b)) * tex1.a;
-		if (totdiff > colortol) {
-			if (chinv) fc = vec4(tex0.rgb, tex0.a);
-			else fc = vec4(tex1.rgb, tex1.a);
-		}
-		else {
-			float ia = (colortol - totdiff) * -(feather - 5.2f);
-			if (ia > 1.0f) ia = 1.0f;
-			float a = 1.0f - ia;
-			if (chinv) fc = vec4(tex1.rgb * ia + tex0.rgb * a, max(tex0.a, tex1.a));
-			else fc = vec4(tex0.rgb * ia + tex1.rgb * a, max(tex0.a, tex1.a));
-		}
-	}
-	else if (mixmode == 20) {
-		//CHROMAKEY alpha
-		if (chdir) {
-			vec4 bu;
-			bu = tex0;
-			tex0 = tex1;
-			tex1 = bu;
-		}
+         //MIX alpha
+         float mf = mixfac;
+         float fac1 = clamp((1.0f - mf) * 2.0f, 0.0f, 1.0f);
+         float fac2 = clamp(mf * 2.0f, 0.0f, 1.0f);
+         float term0 = (1.0f - fac2 * tex1.a / 2.0f) * fac1;
+         float term1 = (1.0f - fac1 * tex0.a / 2.0f) * fac2;
+         fc = vec4((tex0.rgb * (term0 + (1.0f - tex1.a) * (1.0f - term0)) + tex1.rgb * (term1 + (1.0f - tex0.a) * (1.0f - term1))),
+                   tex0.a + tex1.a - tex0.a * tex1.a); // Proper alpha compositing
+     }
+     else if (mixmode == 2) {
+         //ALPHA OVERLAY
+         fc = vec4(tex0.rgb * (1.0f - tex1.a) + tex1.rgb * tex1.a,
+                   tex0.a + tex1.a - tex0.a * tex1.a); // Standard over operation
+     }
+     else if (mixmode == 3) {
+         //MULTIPLY alpha
+         fc = vec4(tex0.rgb * (vec3(1.0f) + (tex1.rgb - vec3(1.0f)) * tex1.a),
+                   tex0.a + tex1.a - tex0.a * tex1.a); // Fixed multiply with proper alpha
+     }
+     else if (mixmode == 4) {
+         //SCREEN alpha
+         vec3 screen_rgb = vec3(1.0) - (vec3(1.0) - tex0.rgb) * (vec3(1.0) - tex1.rgb * tex1.a);
+         fc = vec4(screen_rgb, tex0.a + tex1.a - tex0.a * tex1.a);
+     }
+     else if (mixmode == 5) {
+         //OVERLAY alpha
+         vec3 overlay_rgb;
+         if ((tex0.r + tex0.g + tex0.b) / 3.0 < 0.5) {
+             overlay_rgb = 2.0f * tex0.rgb * (vec3(0.5f) + (tex1.rgb - vec3(0.5f)) * tex1.a);
+         } else {
+             overlay_rgb = vec3(1.0) - 2.0 * (vec3(1.0) - tex0.rgb) * (vec3(1.0) - tex1.rgb * tex1.a);
+         }
+         fc = vec4(overlay_rgb, tex0.a + tex1.a - tex0.a * tex1.a);
+     }
+     else if (mixmode == 6) {
+         //HARD LIGHT alpha
+         vec3 hardlight_rgb;
+         if ((tex1.r + tex1.g + tex1.b) / 3.0 >= 0.5) {
+             hardlight_rgb = vec3(1.0) - 2.0 * (vec3(1.0) - tex0.rgb) * (vec3(1.0) - tex1.rgb * tex1.a);
+         } else {
+             hardlight_rgb = 2.0f * tex0.rgb * tex1.rgb * tex1.a;
+         }
+         fc = vec4(hardlight_rgb, tex0.a + tex1.a - tex0.a * tex1.a);
+     }
+     else if (mixmode == 7) {
+         //SOFT LIGHT
+         vec3 softlight_rgb = (vec3(1.0) - 2.0 * tex1.rgb * tex1.a) * tex0.rgb * tex0.rgb + 2.0 * tex1.rgb * tex1.a * tex0.rgb;
+         fc = vec4(softlight_rgb, tex0.a + tex1.a - tex0.a * tex1.a);
+     }
+     else if (mixmode == 8) {
+         //DIVIDE alpha
+         vec3 divide_rgb = tex0.rgb / (vec3(1.0f) + (tex1.rgb - vec3(1.0f)) * tex1.a);
+         fc = vec4(divide_rgb, tex0.a + tex1.a - tex0.a * tex1.a);
+     }
+     else if (mixmode == 9) {
+         //ADD alpha
+         fc = vec4(tex0.rgb + tex1.rgb * tex1.a, tex0.a + tex1.a - tex0.a * tex1.a);
+     }
+     else if (mixmode == 10) {
+         //SUBTRACT alpha
+         fc = vec4(tex0.rgb - tex1.rgb * tex1.a, tex0.a + tex1.a - tex0.a * tex1.a);
+     }
+     else if (mixmode == 11) {
+         //DIFF alpha
+         fc = vec4(abs(tex0.rgb - tex1.rgb * tex1.a), tex0.a + tex1.a - tex0.a * tex1.a);
+     }
+     else if (mixmode == 12) {
+         //DODGE alpha
+         vec3 dodge_rgb = tex0.rgb / (vec3(1.0f) - (vec3(1.0f) - tex1.rgb) * tex1.a);
+         fc = vec4(dodge_rgb, tex0.a + tex1.a - tex0.a * tex1.a);
+     }
+     else if (mixmode == 13) {
+         //COLOR_BURN
+         vec3 burn_rgb = vec3(1.0) - (vec3(1.0) - tex0.rgb) / (tex1.rgb * tex1.a + (1.0 - tex1.a));
+         fc = vec4(burn_rgb, tex0.a + tex1.a - tex0.a * tex1.a);
+     }
+     else if (mixmode == 14) {
+         //LINEAR_BURN
+         vec3 linear_burn_rgb = tex0.rgb + tex1.rgb * tex1.a - vec3(1.0);
+         fc = vec4(linear_burn_rgb, tex0.a + tex1.a - tex0.a * tex1.a);
+     }
+     else if (mixmode == 15) {
+         //VIVID LIGHT
+         vec3 vivid_rgb;
+         if ((tex1.r + tex1.g + tex1.b) / 3.0 >= 0.5) {
+             vivid_rgb = tex0.rgb / (vec3(1.0) - tex1.rgb * tex1.a);
+         } else {
+             vivid_rgb = vec3(1.0) - (vec3(1.0) - tex0.rgb) / (tex1.rgb * tex1.a + (1.0 - tex1.a));
+         }
+         fc = vec4(vivid_rgb, tex0.a + tex1.a - tex0.a * tex1.a);
+     }
+     else if (mixmode == 16) {
+         // LINEAR_LIGHT
+         vec3 linear_light_rgb;
+         if ((tex1.r + tex1.g + tex1.b) / 3.0 >= 0.5) {
+             linear_light_rgb = tex0.rgb + tex1.rgb * tex1.a;
+         } else {
+             linear_light_rgb = tex0.rgb + tex1.rgb * tex1.a - vec3(1.0);
+         }
+         fc = vec4(linear_light_rgb, tex0.a + tex1.a - tex0.a * tex1.a);
+     }
+     else if (mixmode == 17) {
+         //DARKEN_ONLY alpha
+         vec3 darken_rgb = min(tex0.rgb, tex1.rgb * tex1.a + tex0.rgb * (1.0 - tex1.a));
+         fc = vec4(darken_rgb, tex0.a + tex1.a - tex0.a * tex1.a);
+     }
+     else if (mixmode == 18) {
+         //LIGHTEN_ONLY alpha
+         vec3 lighten_rgb = max(tex0.rgb, tex1.rgb * tex1.a + tex0.rgb * (1.0 - tex1.a));
+         fc = vec4(lighten_rgb, tex0.a + tex1.a - tex0.a * tex1.a);
+     }
+     else if (mixmode == 22) {
+         //DISPLACEMENT alpha
+         vec2 displacement = texture2D(endSampler1, TexCoord0.st).rb * 0.1 * tex1.a;
+         fc = texture2D(endSampler0, (TexCoord0.st + displacement) * 0.91f);
+         // Keep original alpha for displacement
+     }
+     else if (mixmode == 23) {
+         //CROSSFADING alpha
+         float fac1 = clamp(cf2 * 2.0f, 0.0f, 1.0f);
+         float fac2 = clamp(cf * 2.0f, 0.0f, 1.0f);
+         fc = vec4((tex0.rgb * (1.0f - fac2 * tex1.a / 2.0f) * fac1 + tex1.rgb * (1.0f - fac1 * tex0.a / 2.0f) * fac2),
+                   max(fac1 * tex0.a, fac2 * tex1.a));
+     }
+     else if (mixmode == 19) {
+         //COLORKEY alpha
+         if (chdir) {
+             vec4 bu = tex0;
+             tex0 = tex1;
+             tex1 = bu;
+         }
+         float totdiff = (abs(chred - tex1.r) + abs(chgreen - tex1.g) + abs(chblue - tex1.b)) * tex1.a;
+         if (totdiff > colortol) {
+             if (chinv) fc = vec4(tex0.rgb, tex0.a);
+             else fc = vec4(tex1.rgb, tex1.a);
+         }
+         else {
+             float blend_factor = clamp((colortol - totdiff) / colortol * (-(feather - 5.2f)), 0.0f, 1.0f);
+             if (chinv) {
+                 fc = vec4(mix(tex0.rgb, tex1.rgb, blend_factor),
+                           mix(tex0.a, tex1.a, blend_factor));
+             } else {
+                 fc = vec4(mix(tex1.rgb, tex0.rgb, blend_factor),
+                           mix(tex1.a, tex0.a, blend_factor));
+             }
+         }
+     }
+     else if (mixmode == 20) {
+         //CHROMAKEY alpha
+         if (chdir) {
+             vec4 bu = tex0;
+             tex0 = tex1;
+             tex1 = bu;
+         }
 
-		float huetol = colortol / 4.0f;
+         float huetol = colortol / 4.0f;
+         float huediff = abs(rgb2hsv(vec3(chred, chgreen, chblue)).x - rgb2hsv(vec3(tex1.r, tex1.g, tex1.b)).x);
+         if (huediff > 0.5f) huediff = 1.0f - huediff;
 
-		float huediff = abs(rgb2hsv(vec3(chred, chgreen, chblue)).x - rgb2hsv(vec3(tex1.r, tex1.g, tex1.b)).x);
-		if (huediff > 0.5f) huediff = 1.0f - huediff;
-		if (huediff > huetol) {
-			if (chinv) fc = vec4(tex0.rgb, tex0.a);
-			else fc = vec4(tex1.rgb, tex1.a);
-		}
-		else {
-			float ia = ((huetol - huediff) * (-(feather - 5.2f) / 4.0f)) * 4.0f;
-			if (ia > 1.0f) ia = 1.0f;
-			float a = 1.0f - ia;
-		    if (chinv) fc = vec4(tex1.rgb * ia + tex0.rgb * a, max(tex0.a, tex1.a));
-			else fc = vec4(tex0.rgb * ia + tex1.rgb * a, max(tex0.a, tex1.a));
-		}
-	}
-	else if (mixmode == 21) {
-		//LUMAKEY alpha
-		if (chdir) {
-			vec4 bu;
-			bu = tex0;
-			tex0 = tex1;
-			tex1 = bu;
-		}
+         if (huediff > huetol) {
+             if (chinv) fc = vec4(tex0.rgb, tex0.a);
+             else fc = vec4(tex1.rgb, tex1.a);
+         }
+         else {
+             float blend_factor = clamp((huetol - huediff) / huetol * (-(feather - 5.2f)), 0.0f, 1.0f);
+             if (chinv) {
+                 fc = vec4(mix(tex0.rgb, tex1.rgb, blend_factor),
+                           mix(tex0.a, tex1.a, blend_factor));
+             } else {
+                 fc = vec4(mix(tex1.rgb, tex0.rgb, blend_factor),
+                           mix(tex1.a, tex0.a, blend_factor));
+             }
+         }
+     }
+     else if (mixmode == 21) {
+         //LUMAKEY alpha
+         if (chdir) {
+             vec4 bu = tex0;
+             tex0 = tex1;
+             tex1 = bu;
+         }
 
-		float lumtol = colortol / 3.0f;
+         float lumtol = colortol / 3.0f;
+         float lumdiff = abs(rgb2hsv(vec3(chred, chgreen, chblue)).z - rgb2hsv(vec3(tex1.r, tex1.g, tex1.b)).z);
 
-		float lumdiff = abs(rgb2hsv(vec3(chred, chgreen, chblue)).z - rgb2hsv(vec3(tex1.r, tex1.g, tex1.b)).z);
-		if (lumdiff > lumtol) {
-			if (chinv) fc = vec4(tex0.rgb, tex0.a);
-			else fc = vec4(tex1.rgb, tex1.a);
-		}
-		else {
-			float ia = ((lumtol - lumdiff) * (-(feather - 5.2f) / 3.0f)) * 3.0f;
-			if (ia > 1.0f) ia = 1.0f;
-			float a = 1.0f - ia;
-			if (chinv) fc = vec4(tex1.rgb * ia + tex0.rgb * a, max(tex0.a, tex1.a));
-			else fc = vec4(tex0.rgb * ia + tex1.rgb * a, max(tex0.a, tex1.a));
-		}
-	}
+         if (lumdiff > lumtol) {
+             if (chinv) fc = vec4(tex0.rgb, tex0.a);
+             else fc = vec4(tex1.rgb, tex1.a);
+         }
+         else {
+             float blend_factor = clamp((lumtol - lumdiff) / lumtol * (-(feather - 5.2f)), 0.0f, 1.0f);
+             if (chinv) {
+                 fc = vec4(mix(tex0.rgb, tex1.rgb, blend_factor),
+                           mix(tex0.a, tex1.a, blend_factor));
+             } else {
+                 fc = vec4(mix(tex1.rgb, tex0.rgb, blend_factor),
+                           mix(tex1.a, tex0.a, blend_factor));
+             }
+         }
+     }
 
-	if (mixmode > 0) {
-		//alpha demultiplying
-		FragColor = vec4(fc.rgb, fc.a);
-	}
+     if (mixmode > 0) {
+         //alpha demultiplying
+         FragColor = vec4(fc.rgb, fc.a * opacity);
+     }
 	else if (textmode == 1) {
 		float c = texture2D(Sampler0, vec2(TexCoord0.s, TexCoord0.t)).r;
 		FragColor = vec4(color.rgb, c);
@@ -1934,7 +1969,7 @@ void main()
           float pattern = smoothstep(-aastep, aastep, D);
 
           // Final fragment color
-          FragColor = vec4(pattern, pattern, pattern, texture2D(fboSampler, TexCoord0).a);
+          FragColor = vec4(pattern, pattern, pattern, texture2D(fboSampler, TexCoord0).a * opacity);
 		return;
 	}
 	else if (thumb == 1) {
