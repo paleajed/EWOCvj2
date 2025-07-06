@@ -7448,43 +7448,87 @@ bool Project::open(std::string path, bool autosave, bool newp, bool undo) {
 	
 	while (safegetline(rfile, istring)) {
 		if (istring == "ENDOFFILE") break;
-        if (istring == "PREVMODUS") {
+        else if (istring == "PREVMODUS") {
             safegetline(rfile, istring);
             mainprogram->prevmodus = std::stoi(istring);
         }
-        if (istring == "BINSSCREEN") {
+        else if (istring == "BINSSCREEN") {
             safegetline(rfile, istring);
             //mainprogram->binsscreen = std::stoi(istring);
         }
-        if (istring == "SWAPSCROLLPOS") {
+        else if (istring == "SWAPSCROLLPOS") {
             safegetline(rfile, istring);
             mainmix->swapscrollpos[0] = std::stoi(istring);
             safegetline(rfile, istring);
             mainmix->swapscrollpos[1] = std::stoi(istring);
         }
-        if (istring == "OUTPUTWIDTH") {
+        else if (istring == "OUTPUTWIDTH") {
             safegetline(rfile, istring);
-            this->ow[1] = std::stoi(istring);
-            *owdest = &this->ow[1];
-            ((PrefItem*)(*owdest))->value = this->ow[1];
-            mainprogram->ow[1] = this->ow[1];
+            int width_value = std::stoi(istring);
+            this->ow[1] = width_value;
+
+            if (owdest) {
+                // Update the destination pointer to point to new project
+                *owdest = &this->ow[1];
+
+                // Find the PrefItem that owns this dest pointer
+                PrefItem* owPrefItem = nullptr;
+                for (PrefCat *item : mainprogram->prefs->items) {
+                    for (PrefItem *mci : item->items) {
+                        if (&mci->dest == owdest) {  // Found the PrefItem that owns this dest
+                            owPrefItem = mci;
+                            break;
+                        }
+                    }
+                    if (owPrefItem) break;
+                }
+
+                // Update the PrefItem's value (not casting the dest address!)
+                if (owPrefItem) {
+                    owPrefItem->value = width_value;
+                }
+            }
+
+            mainprogram->ow[1] = width_value;
         }
 		else if (istring == "OUTPUTHEIGHT") {
 			safegetline(rfile, istring);
-			this->oh[1] = std::stoi(istring);
-            *ohdest = &this->oh[1];
-            ((PrefItem*)(*ohdest))->value = this->oh[1];
-            mainprogram->oh[1] = this->oh[1];
+            int height_value = std::stoi(istring);
+            this->oh[1] = height_value;
+
+            if (ohdest) {
+                // Update the destination pointer to point to new project
+                *ohdest = &this->oh[1];
+
+                // Find the PrefItem that owns this dest pointer
+                PrefItem* ohPrefItem = nullptr;
+                for (PrefCat *item : mainprogram->prefs->items) {
+                    for (PrefItem *mci : item->items) {
+                        if (&mci->dest == ohdest) {  // Found the PrefItem that owns this dest
+                            ohPrefItem = mci;
+                            break;
+                        }
+                    }
+                    if (ohPrefItem) break;
+                }
+
+                // Update the PrefItem's value (not casting the dest address!)
+                if (ohPrefItem) {
+                    ohPrefItem->value = height_value;
+                }
+            }
+
+            mainprogram->oh[1] = height_value;
 		}
-		if (istring == "CURRBINSDIR") {
+        else if (istring == "CURRBINSDIR") {
 			safegetline(rfile, istring);
 			if (!mainmix->retargeting) mainprogram->currbinsdir = istring;
 		}
-		if (istring == "CURRSHELFDIR") {
+        else if (istring == "CURRSHELFDIR") {
 			safegetline(rfile, istring);
             if (!mainmix->retargeting) mainprogram->currshelfdir = istring;
 		}
-		if (istring == "CURRRECDIR") {
+        else if (istring == "CURRRECDIR") {
 			safegetline(rfile, istring);
             if (!mainmix->retargeting) mainprogram->currrecdir = istring;
 		}

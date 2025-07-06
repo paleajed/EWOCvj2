@@ -173,7 +173,6 @@ void strcat_s(char* dest, const char* input) {
 #endif
 
 bool exists(std::string name) {
-
     if (std::filesystem::exists(name)) {
         return true;
     } else {
@@ -470,12 +469,22 @@ bool ismixfile(std::string path) {
 
 bool safegetline(std::istream& is, std::string &t)
 {
-    // get a line from the input file into string t
     t.clear();
 
-    std::getline(is, t, '\n');
-    t.erase(std::remove(t.begin(), t.end(), '\r' ), t.end());
-    if(is.eof()) return false;
+    if (!std::getline(is, t, '\n')) {
+        return false;  // Failed to read
+    }
+
+    // Remove carriage returns
+    t.erase(std::remove(t.begin(), t.end(), '\r'), t.end());
+
+    // Add bounds checking
+    if (t.length() > 10000) {  // Reasonable config line limit
+        printf("ERROR: Config line too long (%zu chars): '%.50s...'\n",
+               t.length(), t.c_str());
+        t.clear();
+        return false;
+    }
 
     return true;
 }

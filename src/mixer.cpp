@@ -8190,9 +8190,9 @@ void Mixer::open_state(std::string path, bool undo) {
     }
 
     rfile.close();
-    std::filesystem::remove(result);
-    std::filesystem::remove(result + "_0.file");
-    std::filesystem::remove(result + "_1.file");
+    mainprogram->remove(result);
+    mainprogram->remove(result + "_0.file");
+    mainprogram->remove(result + "_1.file");
 }
 
 void Mixer::save_state(std::string path, bool autosave, bool undo) {
@@ -8751,7 +8751,7 @@ void Mixer::open_mix(const std::string path, bool alive, bool loadevents) {
     }
 
     rfile.close();
-    std::filesystem::remove(result);
+    mainprogram->remove(result);
 
 }
 
@@ -9176,7 +9176,7 @@ void Mixer::open_deck(const std::string path, bool alive, bool loadevents, int c
     }
 
     rfile.close();
-    std::filesystem::remove(result);
+    mainprogram->remove(result);
 }
 
 void Mixer::save_deck(const std::string path, bool save, bool doclips, bool copycomp, bool dojpeg, bool undo, bool startsolo) {
@@ -9900,7 +9900,7 @@ Layer* Mixer::open_layerfile(const std::string path, Layer* lay, bool loadevents
     lay2->solobut->value = busolo;
 
 	rfile.close();
-    std::filesystem::remove(result);
+    mainprogram->remove(result);
 
     if (lay2->type != ELEM_IMAGE) lay2->type = ELEM_LAYER;
 	return lay2;
@@ -10938,7 +10938,7 @@ Layer* Mixer::read_layers(std::istream &rfile, const std::string result, std::ve
                                               result + "_" + std::to_string(mainprogram->filecount) + ".jpeg");
                     if(ret) {
                         open_thumb(result + "_" + std::to_string(mainprogram->filecount) + ".jpeg", layend->jpegtex);
-                        std::filesystem::remove(result + "_" + std::to_string(mainprogram->filecount) + ".jpeg");
+                        mainprogram->remove(result + "_" + std::to_string(mainprogram->filecount) + ".jpeg");
                     }
                 }
                 mainmix->retargeting = true;
@@ -13620,7 +13620,7 @@ void Layer::clip_display_next(bool startend, bool alive) {
     if (mainprogram->swappingscene) return;
     if (!mainmix->swapmap[0].empty() || !mainmix->swapmap[1].empty() || !mainmix->swapmap[2].empty() || !mainmix->swapmap[3].empty()) return;
 	if (this->clips->size() > 1) {
-        std::filesystem::remove(this->oldclippath);
+        mainprogram->remove(this->oldclippath);
         Clip *oldclip = new Clip;
         oldclip->type = this->type;
         if (oldclip->type == ELEM_LAYER) oldclip->frame = this->frame;
@@ -14203,7 +14203,7 @@ bool Clip::get_layerframes() {
 	}
 
 	rfile.close();
-    std::filesystem::remove(result);
+    mainprogram->remove(result);
 
 	return 1;
 }
