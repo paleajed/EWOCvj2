@@ -343,6 +343,11 @@ class Layer {
         int numrows = 0;
         Boxx *sourcebox;
 
+        std::shared_ptr<NDISource> ndisource = nullptr;
+        std::shared_ptr<NDIOutput> ndioutput = nullptr;
+        NDITexture ndiintex;
+        NDITexture ndiouttex;
+
         void display();
 		Effect* add_effect(EFFECT_TYPE type, int pos, bool cat, int ffglnr = -1, int isfnr = -1);
         Effect* do_add_effect(EFFECT_TYPE type, int pos, bool comp, bool cat, int ffglnr = -1, int isfnr = -1);

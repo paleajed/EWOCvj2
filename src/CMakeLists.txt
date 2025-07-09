@@ -38,6 +38,8 @@ add_executable(EWOCvj2 WIN32
         ISFLoader.cpp
         UniformCache.cpp
         UniformCache.h
+        NDIManager.h
+        NDIManager.cpp
 )
 
 set(Boost_USE_STATIC_RUNTIME ON)
@@ -78,6 +80,47 @@ set(CMAKE_RUNTIME_OUTPUT_DIRECTORY_DEBUG ${CMAKE_BINARY_DIR}/debug)
 set(CMAKE_RUNTIME_OUTPUT_DIRECTORY_RELEASE ${CMAKE_BINARY_DIR}/release)
 
 #set(CMAKE_EXE_LINKER_FLAGS "${CMAKE_EXE_LINKER_FLAGS} /NODEFAULTLIB")
+# NDI SDK Configuration
+if (WIN32)
+    # NDI 6 SDK path - adjust if installed elsewhere
+    set(NDI_SDK_ROOT "C:/Program Files/NDI/NDI 6 SDK" CACHE PATH "NDI SDK root directory")
+    if(NOT EXISTS ${NDI_SDK_ROOT})
+        set(NDI_SDK_ROOT "C:/Program Files/NewTek/NDI 6 SDK" CACHE PATH "NDI SDK root directory")
+    endif()
+
+    if(EXISTS ${NDI_SDK_ROOT})
+        message(STATUS "Found NDI SDK at: ${NDI_SDK_ROOT}")
+        include_directories(${NDI_SDK_ROOT}/Include)
+        if(CMAKE_SIZEOF_VOID_P EQUAL 8)
+            link_directories(${NDI_SDK_ROOT}/Lib/x64)
+            set(NDI_RUNTIME_DIR ${NDI_SDK_ROOT}/Bin/x64)
+        else()
+            link_directories(${NDI_SDK_ROOT}/Lib/x86)
+            set(NDI_RUNTIME_DIR ${NDI_SDK_ROOT}/Bin/x86)
+        endif()
+        set(NDI_FOUND TRUE)
+    else()
+        message(WARNING "NDI SDK not found at: ${NDI_SDK_ROOT}")
+        set(NDI_FOUND FALSE)
+    endif()
+endif (WIN32)
+
+if (UNIX)
+    # NDI SDK for Linux
+    set(NDI_SDK_ROOT "/usr/local/include/ndi" CACHE PATH "NDI SDK root directory")
+    if(NOT EXISTS ${NDI_SDK_ROOT})
+        set(NDI_SDK_ROOT "/opt/ndi/include" CACHE PATH "NDI SDK root directory")
+    endif()
+
+    if(EXISTS ${NDI_SDK_ROOT})
+        message(STATUS "Found NDI SDK at: ${NDI_SDK_ROOT}")
+        include_directories(${NDI_SDK_ROOT})
+        set(NDI_FOUND TRUE)
+    else()
+        message(WARNING "NDI SDK not found at: ${NDI_SDK_ROOT}")
+        set(NDI_FOUND FALSE)
+    endif()
+endif (UNIX)
 
 find_package( OpenGL )
 target_link_libraries(EWOCvj2 PUBLIC ${OPENGL_LIBRARIES})
@@ -137,6 +180,35 @@ if (WIN32)
         target_link_libraries(EWOCvj2 PUBLIC ${TJPEG_LIBRARY})
         find_library(RTMIDI_LIBRARY rtmidi PATHS ${LIB1_SEARCH_DIR} ${LIB2_SEARCH_DIR})
         target_link_libraries(EWOCvj2 PUBLIC debug ${RTMIDI_LIBRARY})
+        if(NDI_FOUND)
+            if(CMAKE_SIZEOF_VOID_P EQUAL 8)
+                set(NDI_LIBRARY_PATH "${NDI_SDK_ROOT}/Lib/x64/Processing.NDI.Lib.x64.lib")
+            else()
+                set(NDI_LIBRARY_PATH "${NDI_SDK_ROOT}/Lib/x86/Processing.NDI.Lib.x86.lib")
+            endif()
+
+            # Check if the library file exists
+            if(EXISTS ${NDI_LIBRARY_PATH})
+                message(STATUS "Found NDI library: ${NDI_LIBRARY_PATH}")
+                # Link directly to the .lib file - MinGW can handle MSVC .lib files
+                target_link_libraries(EWOCvj2 PUBLIC ${NDI_LIBRARY_PATH})
+
+                # Copy NDI DLLs to output directory
+                file(GLOB NDI_DLLS "${NDI_RUNTIME_DIR}/*.dll")
+                if(NDI_DLLS)
+                    foreach(NDI_DLL ${NDI_DLLS})
+                        get_filename_component(DLL_NAME ${NDI_DLL} NAME)
+                        configure_file(${NDI_DLL} ${CMAKE_RUNTIME_OUTPUT_DIRECTORY_DEBUG}/${DLL_NAME} COPYONLY)
+                        configure_file(${NDI_DLL} ${CMAKE_RUNTIME_OUTPUT_DIRECTORY_RELEASE}/${DLL_NAME} COPYONLY)
+                    endforeach()
+                    message(STATUS "NDI DLLs will be copied to output directory")
+                else()
+                    message(WARNING "No NDI DLLs found in ${NDI_RUNTIME_DIR}")
+                endif()
+            else()
+                message(FATAL_ERROR "NDI library file not found at: ${NDI_LIBRARY_PATH}")
+            endif()
+        endif(NDI_FOUND)
     endif (MINGW)
 endif (WIN32)
 
@@ -183,6 +255,10 @@ if (UNIX)
     target_link_libraries(EWOCvj2 PUBLIC ${RTMIDI_LIBRARY})
     find_library(ALSA_LIBRARY asound PATHS ${LIB_SEARCH_DIRS})
     target_link_libraries(EWOCvj2 PUBLIC ${ALSA_LIBRARY})
+    if(NDI_FOUND)
+        find_library(NDI_LIBRARY ndi PATHS ${LIB_SEARCH_DIRS})
+        target_link_libraries(EWOCvj2 PUBLIC ${NDI_LIBRARY})
+    endif(NDI_FOUND)
     find_library(PTHREAD_LIBRARY pthread HINTS)
     target_link_libraries(EWOCvj2 PUBLIC ${PTHREAD_LIBRARY})
     find_library(X11_LIBRARY X11 HINTS)

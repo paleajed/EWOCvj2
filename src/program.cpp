@@ -283,7 +283,9 @@ void MidiElement::unregister_midi() {
 }
 
 
-Program::Program() {
+Program::Program() : ndimanager(NDIManager::getInstance()) {
+    ndimanager.initialize();
+
     // setup the main pervasive mainprogram structure
     // it holds all pervasive lements that don't directly belong to the mix (mainmix) or the bins screen (binsmain)
 	this->project = new Project;
@@ -3950,6 +3952,7 @@ void Program::handle_monitormenu() {
         monitors.push_back("MIDI learn wipe position");
         monitors.push_back("submenu mixtargetmenu");
         monitors.push_back("Show on display");
+        monitors.push_back("Toggle NDI output");
         mainprogram->make_menu("monitormenu", mainprogram->monitormenu, monitors);
 
         mainprogram->make_mixtargetmenu();
@@ -4117,8 +4120,56 @@ void Program::handle_monitormenu() {
                 }
             }
         }
-#ifdef POSIX
         else if (k == 4) {
+            MixNode *mnode;
+            if (mainprogram->monitormenu->value == 3) {
+                mnode = mainprogram->nodesmain->mixnodes[1][2];
+            }
+            else {
+                mnode = mainprogram->nodesmain->mixnodes[!mainprogram->prevmodus][mainprogram->monitormenu->value];
+            }
+            if (mnode->ndioutput == nullptr) {
+                // create NDI output
+                mainprogram->ndilaycount++;
+                std::string name;
+                if (mainprogram->monitormenu->value == 3) {
+                    name = "EWOCvj2 - Main Output (Preview)";
+                }
+                else if (mainprogram->monitormenu->value == 2) {
+                    if (!mainprogram->prevmodus) {
+                        name = "EWOCvj2 - Main Output";
+                    }
+                    else {
+                        name = "EWOCvj2 - Preview Output";
+                    }
+                }
+                else {
+                    std::string deckstr;
+                    if (mainprogram->monitormenu->value == 0) {
+                        deckstr = "A";
+                    }
+                    else {
+                        deckstr = "B";
+                    }
+                    if (!mainprogram->prevmodus) {
+                        name = "EWOCvj2 - Main Monitor " + deckstr;
+                    }
+                    else {
+                        name = "EWOCvj2 - Preview Monitor " + deckstr;
+                    }
+                }
+                mnode->ndioutput = mainprogram->ndimanager.createOutput(name, mainprogram->ow[!mainprogram->prevmodus],
+                                                                                      mainprogram->oh[!mainprogram->prevmodus],
+                                                                                      30.0f);
+                mnode->ndioutput->startStream();
+            }
+            else {
+                mainmix->mouselayer->ndioutput->stopStream();
+                mainmix->mouselayer->ndioutput = nullptr;
+            }
+        }
+#ifdef POSIX
+        else if (k == 5) {
             // start up v4l2 loopback device
             std::string device = mainprogram->loopbackmenu->entries[mainprogram->menuresults[0]];
             device = device.substr(2, device.size() - 2);
@@ -4227,7 +4278,7 @@ void Program::handle_laymenu1() {
 	// Draw and Program::handle mainprogram->laymenu1 (with clone layer) and laymenu2 (without)
     bool cond = (this->laymenu2->state == 2);
 	if (this->laymenu1->state > 1 || this->laymenu2->state > 1 || this->newlaymenu->state > 1 || this->clipmenu->state > 1) {
-		if (!this->gotcameras) {
+		if (!this->submenuscreated) {
 			get_cameras();
 			this->devices.clear();
 			int numd = this->livedevices.size();
@@ -4239,10 +4290,18 @@ void Program::handle_laymenu1() {
 			}
 			this->make_menu("livemenu", this->livemenu, this->devices);
 			this->livemenu->box->upscrtovtx();
-			this->gotcameras = true;
+			this->submenuscreated = true;
+
+            // first the NDI source submenu
+            auto sources = mainprogram->ndimanager.discoverSources();
+            this->ndisourcenames.clear();
+            for (auto elem : sources) {
+                this->ndisourcenames.push_back(elem.name);
+            }
+            mainprogram->make_menu("ndisourcemenu", mainprogram->ndisourcemenu, this->ndisourcenames);
 		}
-	}
-	else this->gotcameras = false;
+    }
+	else this->submenuscreated = false;
 
     if (this->laymenu1->entries.back() == "Send to v4l2 loopback device") {
         this->laymenu1->entries.pop_back();
@@ -4592,9 +4651,33 @@ void Program::handle_laymenu1() {
                     int isfnr = this->absources[this->menuresults[0]] - 2000;
                     mainmix->mouselayer->set_isfsource(mainprogram->isfsourcenames[isfnr]);
                 }
+                mainmix->mouselayer->ndisource = nullptr;
             }
         }
-        else if (!cond && k == 20 && encode) {
+        else if ((!cond && k == 19) || k == 19 - cond * 2) {
+            // select NDI source
+            if (this->menuresults.size()) {
+                mainmix->mouselayer->ndisource = mainprogram->ndimanager.createSource(this->ndisourcenames[this->menuresults[0]]);
+                mainmix->mouselayer->ndisource->connect();
+            }
+        }
+        else if ((!cond && k == 20) || k == 20 - cond * 2) {
+            if (mainmix->mouselayer->ndioutput == nullptr) {
+                // create NDI output
+                mainprogram->ndilaycount++;
+                std::string name = "EWOCvj2 - Layer " + std::to_string(mainprogram->ndilaycount);
+                mainmix->mouselayer->ndioutput = mainprogram->ndimanager.createOutput(name,
+                                                                                      mainprogram->ow[!mainprogram->prevmodus],
+                                                                                      mainprogram->oh[!mainprogram->prevmodus],
+                                                                                      30.0f);
+                mainmix->mouselayer->ndioutput->startStream();
+            }
+            else {
+                mainmix->mouselayer->ndioutput->stopStream();
+                mainmix->mouselayer->ndioutput = nullptr;
+            }
+        }
+        else if (!cond && k == 21 && encode) {
             BinElement *binel = new BinElement;
             binel->bin = nullptr;
             binel->type = ELEM_FILE;
@@ -4608,7 +4691,7 @@ void Program::handle_laymenu1() {
             binsmain->hap_binel(binel, nullptr);
         }
 #ifdef POSIX
-        else if (!cond && k == (19 + encode)) {
+        else if (!cond && k == (21 + encode)) {
             // start up v4l2 loopback device
             std::string device = this->loopbackmenu->entries[this->menuresults[0]];
             device = device.substr(2, device.size() - 2);
@@ -4692,6 +4775,17 @@ void Program::handle_newlaymenu() {
                      int isfnr = this->absources[this->menuresults[0]] - 2000;
                      lay->set_isfsource(mainprogram->isfsourcenames[isfnr]);
                  }
+                 mainmix->mouselayer->ndisource = nullptr;
+             }
+         }
+         else if (k == 9) {
+             // select NDI source
+             std::vector<Layer *> &lvec = choose_layers(mainmix->mousedeck);
+             Layer *lay = mainmix->add_layer(lvec, lvec.size());
+             if (this->menuresults.size()) {
+                 lay->ndisource = mainprogram->ndimanager.createSource(this->ndisourcenames[this->menuresults[0]]);
+                 lay->ndisource->connect();
+                 bool dummy = false;
              }
          }
 	}
@@ -9077,6 +9171,9 @@ void Program::define_menus() {
     layops1.push_back("Record and replace");
     layops1.push_back("submenu sourcemenu");
     layops1.push_back("Use source plugin");
+    layops1.push_back("submenu ndisourcemenu");
+    layops1.push_back("Select NDI source");
+    layops1.push_back("Toggle output to NDI");
     layops1.push_back("HAP encode on-the-fly");
     mainprogram->make_menu("laymenu1", mainprogram->laymenu1, layops1);
 
@@ -9115,6 +9212,8 @@ void Program::define_menus() {
     loadops.push_back("Save mix");
     loadops.push_back("submenu sourcemenu");
     loadops.push_back("Use source plugin");
+    loadops.push_back("submenu ndisourcemenu");
+    loadops.push_back("Select NDI source");
     mainprogram->make_menu("newlaymenu", mainprogram->newlaymenu, loadops);
 
     std::vector<std::string> sourceops;

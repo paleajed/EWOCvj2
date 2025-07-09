@@ -19,6 +19,7 @@
 #include <windows.h>
 #endif
 #include "FFGLHost.h"
+#include "NDIManager.h"
 
 #ifdef WINDOWS
 #include "direnthwin/dirent.h"
@@ -496,6 +497,7 @@ class Program {
 		Menu *laymenu2 = nullptr;
         Menu* newlaymenu = nullptr;
         Menu* sourcemenu = nullptr;
+        Menu* ndisourcemenu = nullptr;
 		Menu* clipmenu = nullptr;
 		Menu *aspectmenu = nullptr;
         Menu *monitormenu = nullptr;
@@ -817,7 +819,7 @@ class Program {
 		Button* wormgate1;
 		Button* wormgate2;
 		DIR *opendir;
-        bool gotcameras = false;
+        bool submenuscreated = false;
         bool gotaudioinputs = false;
 
 		EDIT_TYPE renaming = EDIT_NONE;
@@ -1039,6 +1041,11 @@ class Program {
         std::vector<std::string> isfsourcenames;
         std::vector<std::string> isfmixernames;
         std::vector<std::vector<ISFShaderInstance*>> isfinstances;
+
+        NDIManager& ndimanager;
+        std::vector<std::string> ndisourcenames;
+        int ndilaycount = 0;
+
 
     void remove_ec(std::string filepath, std::error_code& ec);
         void remove(std::string filepath);

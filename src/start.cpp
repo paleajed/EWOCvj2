@@ -3324,6 +3324,13 @@ void onestepfrom(bool stage, Node *node, Node *prevnode, GLuint prevfbotex, GLui
                     draw_box(nullptr, black, -1.0f, 1.0f, 2.0f, -2.0f, sx, sy, sc, op, 0, prevfbotex, 0, 0, false);
             }
 
+            if (effect->node == lay->lasteffnode[0]) {
+                if (lay->ndioutput != nullptr) {
+                    lay->ndiouttex.setFromExistingTexture(effect->fbotex, mainprogram->ow[stage], mainprogram->oh[stage]);
+                    lay->ndioutput->sendFrame(lay->ndiouttex);
+                }
+            }
+
             prevfbotex = effect->fbotex;
             prevfbo = effect->fbo;
 
@@ -3418,7 +3425,22 @@ void onestepfrom(bool stage, Node *node, Node *prevnode, GLuint prevfbotex, GLui
                 op = 1.0f;
             }
         }
-        if (lay->ffglsourcenr != -1) {
+        if (lay->ndisource != nullptr) {
+            if (lay->ndisource->hasNewFrame()) {
+                if (!lay->ndisource->getLatestFrame(lay->ndiintex)) {
+                    std::cout << "Failed to get frame!" << std::endl;
+                }
+            }
+            lay->filename = "";
+
+            glBindFramebuffer(GL_FRAMEBUFFER, lay->fbo);
+            glDrawBuffer(GL_COLOR_ATTACHMENT0);
+            //glViewport(0, 0, lay->ndiintex.getWidth(), lay->ndiintex.getHeight());
+            glClearColor(0.0f, 0.0f, 0.0f, 0.0f);
+            glClear(GL_COLOR_BUFFER_BIT);
+            draw_box(nullptr, black, -1.0f, 1.0f, 2.0f, -2.0f, sx, sy, sc, op, 0, lay->ndiintex.getTextureID(), 0, 0, false);
+        }
+        else if (lay->ffglsourcenr != -1) {
             FFGLFramebuffer infbo;
             infbo.fbo = prevfbo;
             infbo.colorTexture = prevfbotex;
@@ -3571,6 +3593,13 @@ void onestepfrom(bool stage, Node *node, Node *prevnode, GLuint prevfbotex, GLui
                 } else {
                     draw_box(nullptr, black, -1.0f, 1.0f, 2.0f, -2.0f, sx, sy, sc, op, 0, lay->oldtexture, 0, 0, false);
                 }
+            }
+        }
+
+        if (lay->effects[0].empty()) {
+            if (lay->ndioutput != nullptr) {
+                lay->ndiouttex.setFromExistingTexture(lay->fbotex, mainprogram->ow[stage], mainprogram->oh[stage]);
+                lay->ndioutput->sendFrame(lay->ndiouttex);
             }
         }
 
@@ -3819,7 +3848,13 @@ void onestepfrom(bool stage, Node *node, Node *prevnode, GLuint prevfbotex, GLui
         glClearColor(0, 0, 0, 0);
         glClear(GL_COLOR_BUFFER_BIT);
         draw_box(nullptr, black, -1.0f, 1.0f, 2.0f, -2.0f, prevfbotex);
-		prevfbotex = mnode->mixtex;
+
+        if (mnode->ndioutput != nullptr) {
+            mnode->ndiouttex.setFromExistingTexture(mnode->mixtex, mainprogram->ow[stage], mainprogram->oh[stage]);
+            mnode->ndioutput->sendFrame(mnode->ndiouttex);
+        }
+
+        prevfbotex = mnode->mixtex;
 		prevfbo = mnode->mixfbo;
 		glViewport(0, 0, glob->w, glob->h);
     }
@@ -7762,7 +7797,6 @@ int main(int argc, char* argv[]) {
         }
         mainprogram->isfinstances.push_back({});
     }
-
 
     // define all menus
     mainprogram->define_menus();

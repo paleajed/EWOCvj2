@@ -3172,6 +3172,12 @@ Layer::~Layer() {
         auto shader = mainprogram->isfloader.getShader(this->isfpluginnr);
         shader->releaseInstance(mainprogram->isfinstances[this->isfpluginnr][this->isfinstancenr]);
     }
+    if (this->ndioutput != nullptr) {
+        this->ndioutput->stopStream();
+    }
+    if (this->ndisource != nullptr) {
+        this->ndisource->releaseReference();
+    }
 
     glDeleteTextures(1, &this->jpegtex);
     mainprogram->add_to_texpool(this->fbotex);
@@ -4992,9 +4998,15 @@ void Layer::display() {
                 else if (this->blendnode->isfmixernr != -1) {
                     name = mainprogram->isfmixernames[this->blendnode->isfmixernr];
                 }
+                else if (this->ndisource != nullptr) {
+                    name = this->ndisource->getSourceInfo().name;
+                }
                 render_text(name, white, box->vtxcoords->x1 + 0.015f,
                 box->vtxcoords->y1 + box->vtxcoords->h - 0.09f, 0.0005f, 0.0008f);
-				if (this->vidformat == -1) {
+                if (this->ndisource != nullptr) {
+                    render_text("NDI", white, box->vtxcoords->x1 + 0.015f, box->vtxcoords->y1 + box->vtxcoords->h - 0.135f, 0.0005f, 0.0008f);
+                }
+                else if (this->vidformat == -1) {
                     if (this->type == ELEM_IMAGE) {
                         render_text("IMAGE", white, box->vtxcoords->x1 + 0.015f, box->vtxcoords->y1 + box->vtxcoords->h - 0.135f, 0.0005f, 0.0008f);
                     }
@@ -5015,6 +5027,10 @@ void Layer::display() {
                     }
                 }
 			}
+            if (this->ndioutput != nullptr && ((int)(mainmix->time * 2.0f)) % 2) {
+                render_text("NDI", green, box->vtxcoords->x1 + 0.18f,
+                            box->vtxcoords->y1 + box->vtxcoords->h - 0.045f, 0.0005f, 0.0008f);
+            }
             if (this == mainmix->reclay) {
                 render_text("REC", red, box->vtxcoords->x1 + 0.22f,
                             box->vtxcoords->y1 + box->vtxcoords->h - 0.045f, 0.0005f, 0.0008f);
@@ -6833,6 +6849,7 @@ void Layer::set_live_base(std::string livename) {
     lay->numrows = 0;
     lay->ffglsourcenr = -1;
     lay->isfsourcenr = -1;
+    lay->ndisource = nullptr;
 
     lay->filename = livename;
 	avdevice_register_all();
@@ -9371,6 +9388,8 @@ Layer* Layer::open_video(float frame, const std::string filename, int reset, boo
 
     this->numrows = 0;
     this->ffglsourcenr = -1;
+    this->isfsourcenr = -1;
+    this->ndisource = nullptr;
 
     this->changeinit = -1;
     this->ready = true;
@@ -10446,6 +10465,9 @@ Layer* Layer::open_image(const std::string path, bool init, bool dontdeleffs, bo
 
     this->numrows = 0;
     this->ffglsourcenr = -1;
+    this->isfsourcenr = -1;
+    this->ndisource = nullptr;
+
     if (mainprogram->autoplay && this->revbut->value == 0 && this->bouncebut->value == 0) {
         this->playbut->value = 1;
     }
