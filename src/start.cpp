@@ -7394,7 +7394,7 @@ int main(int argc, char* argv[]) {
     }
 #else
     #ifdef POSIX
-    std::string fdir(mainprogram->fontdir);
+    std::string fdir(mainprogram->appimagedir + mainprogram->fontdir);
     std::string fstr = fdir + "/expressway.ttf";
     printf("%s /n", fstr.c_str());
     fflush(stdout);
@@ -7418,7 +7418,12 @@ int main(int argc, char* argv[]) {
     bool ret = ilLoadImage((const ILstring)"./splash.jpeg");
 #endif
 #ifdef POSIX
-    bool ret = ilLoadImage("/usr/share/ewocvj2/splash.jpeg");
+    mainprogram->appimagedir = "";
+    if (std::getenv("APPDIR")) {
+        mainprogram->appimagedir = std::getenv("APPDIR");
+    }
+    std::string spljpeg = mainprogram->appimagedir + "/usr/share/ewocvj2/splash.jpeg";
+    bool ret = ilLoadImage(spljpeg.c_str());
 #endif
     if (ret == IL_FALSE) {
         printf("can't load splash image\n");
@@ -7548,7 +7553,8 @@ int main(int argc, char* argv[]) {
     ret = ilLoadImage((const ILstring)"./background.png");
 #endif
 #ifdef POSIX
-    ret = ilLoadImage("/usr/share/ewocvj2/background.png");
+    std::string bstr = mainprogram->appimagedir + "/usr/share/ewocvj2/background.png";
+    ret = ilLoadImage(bstr.c_str());
 #endif
     if (ret == IL_FALSE) {
         printf("can't load background image\n");
@@ -7591,7 +7597,8 @@ int main(int argc, char* argv[]) {
     }
 #endif
 #ifdef POSIX
-    ILboolean ret2 = ilLoadImage("/usr/share/ewocvj2/lock.png");
+    std::string lstr = mainprogram->appimagedir + "/usr/share/ewocvj2/lock.png";
+    ILboolean ret2 = ilLoadImage(lstr.c_str());
 #endif
     if (ret2 == IL_FALSE) {
         printf("can't load lock image\n");

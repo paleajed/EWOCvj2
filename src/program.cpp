@@ -7205,10 +7205,11 @@ GLuint Program::set_shader() {
  	#else
     #ifdef POSIX
     std::string ddir (this->docpath);
+    std::string vstr = mainprogram->appimagedir + "/usr/share/ewocvj2/shader.vs";
     if (exists("./shader.vs")) {
 	    strcpy (vshader, "./shader.vs");
     }
-    else if (exists("/usr/share/ewocvj2/shader.vs")) strcpy (vshader, "/usr/share/ewocvj2/shader.vs");
+    else if (exists(vstr)) strcpy (vshader, vstr.c_str());
  	else mainprogram->quitting = "Unable to find vertex shader \"shader.vs\" in " + ddir;
  	#endif
  	#endif
@@ -7220,8 +7221,9 @@ GLuint Program::set_shader() {
  	else mainprogram->quitting = "Unable to find fragment shader \"shader.fs\" in current directory";
  	#else
  	#ifdef POSIX
+    std::string fstr = mainprogram->appimagedir + "/usr/share/ewocvj2/shader.fs";
     if (exists("./shader.fs")) strcpy (fshader, "./shader.fs");
- 	else if (exists("/usr/share/ewocvj2/shader.fs")) strcpy (fshader, "/usr/share/ewocvj2/shader.fs");
+ 	else if (exists(fstr)) strcpy (fshader, fstr.c_str());
  	else mainprogram->quitting = "Unable to find fragment shader \"shader.fs\" in " + ddir;
  	#endif
  	#endif

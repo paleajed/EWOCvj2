@@ -594,6 +594,7 @@ class Program {
 		std::vector<GLuint> ordertexes;
 		bool blocking = false;
 		bool eXit = false;
+        std::string appimagedir;
 		std::string temppath;
 		std::string docpath;
         std::string fontpath;
