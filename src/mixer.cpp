@@ -500,6 +500,7 @@ void Param::handle(bool smallxpad) {
                         this->box->acolor[1] = 0.8f;
                         this->box->acolor[2] = 0.4f;
                         mainprogram->leftmouse = false;
+                        mainprogram->recundo = false;
                     }
                 } else if (this->type == FF_TYPE_OPTION || this->type == ISFLoader::PARAM_LONG) {
                     if (mainprogram->leftmouse && !mainprogram->menuondisplay) {
@@ -514,11 +515,13 @@ void Param::handle(bool smallxpad) {
                 } else if (this->type == FF_TYPE_TEXT) {
                     if (mainprogram->leftmouse) {
                         mainprogram->renaming = EDIT_TEXTPARAM;
+                        this->oldvaluestr = this->valuestr;
                         mainmix->adapttextparam = this;
                         mainprogram->inputtext = "";
                         mainprogram->cursorpos0 = mainprogram->inputtext.length();
                         SDL_StartTextInput();
                         mainprogram->leftmouse = false;
+                        mainprogram->recundo = false;
                     }
                 } else if (this->type == FF_TYPE_FILE) {
                     if (mainprogram->leftmouse) {
@@ -703,8 +706,7 @@ int Param::ffglset_parameter_to(FFGLParameter &src, int cnt) {
         this->box->acolor[2] = 0.5f;
     } else if (this->type == FF_TYPE_TEXT || this->type == FF_TYPE_FILE) {
         this->defltchar = static_cast<char*>(src.defaultValue.PointerValue);
-        this->valuechar = this->defltchar;
-        this->valuestr = this->valuechar;
+        this->valuestr = this->defltchar;
         this->box->acolor[0] = 0.3f * (this->type == FF_TYPE_FILE);
         this->box->acolor[1] = 0.0f;
         this->box->acolor[2] = 0.6f * (this->type == FF_TYPE_TEXT);
@@ -6643,6 +6645,13 @@ void Mixer::outputmonitors_handle() {
             Boxx *outputbox = boxes[i];
             if (outputbox->in()) {
 
+                MixNode *mnode;
+                if (i == 3) {
+                    mnode = mainprogram->nodesmain->mixnodes[1][2];
+                }
+                else {
+                    mnode = mainprogram->nodesmain->mixnodes[!mainprogram->prevmodus][i];
+                }
                 if (i == 0) {
                     render_text("Deck A Monitor", white, outputbox->vtxcoords->x1 + 0.015f,
                                 outputbox->vtxcoords->y1 + outputbox->vtxcoords->h - 0.045f, 0.0005f, 0.0008f);
@@ -6657,6 +6666,10 @@ void Mixer::outputmonitors_handle() {
                                 outputbox->vtxcoords->y1 + outputbox->vtxcoords->h - 0.045f, 0.0005f, 0.0008f);
                 } else if (!mainprogram->prevmodus && i == 2) {
                     render_text("Output Mix Monitor", white, outputbox->vtxcoords->x1 + 0.015f,
+                                outputbox->vtxcoords->y1 + outputbox->vtxcoords->h - 0.045f, 0.0005f, 0.0008f);
+                }
+                if (mnode->ndioutput != nullptr && ((int)(mainmix->time * 2.0f)) % 2) {
+                    render_text("NDI", green, outputbox->vtxcoords->x1 + 0.18f,
                                 outputbox->vtxcoords->y1 + outputbox->vtxcoords->h - 0.045f, 0.0005f, 0.0008f);
                 }
 
@@ -6849,7 +6862,10 @@ void Layer::set_live_base(std::string livename) {
     lay->numrows = 0;
     lay->ffglsourcenr = -1;
     lay->isfsourcenr = -1;
-    lay->ndisource = nullptr;
+    if (lay->ndisource != nullptr) {
+        lay->ndisource->releaseReference();
+        lay->ndisource = nullptr;
+    }
 
     lay->filename = livename;
 	avdevice_register_all();
@@ -9389,7 +9405,10 @@ Layer* Layer::open_video(float frame, const std::string filename, int reset, boo
     this->numrows = 0;
     this->ffglsourcenr = -1;
     this->isfsourcenr = -1;
-    this->ndisource = nullptr;
+    if (this->ndisource != nullptr) {
+        this->ndisource->releaseReference();
+        this->ndisource = nullptr;
+    }
 
     this->changeinit = -1;
     this->ready = true;
@@ -10466,7 +10485,10 @@ Layer* Layer::open_image(const std::string path, bool init, bool dontdeleffs, bo
     this->numrows = 0;
     this->ffglsourcenr = -1;
     this->isfsourcenr = -1;
-    this->ndisource = nullptr;
+    if (this->ndisource != nullptr) {
+        this->ndisource->releaseReference();
+        this->ndisource = nullptr;
+    }
 
     if (mainprogram->autoplay && this->revbut->value == 0 && this->bouncebut->value == 0) {
         this->playbut->value = 1;
@@ -10511,8 +10533,11 @@ void Layer::open_files_layers() {
         }
     }
     mainprogram->fileslay = mainprogram->loadlay;
-
-    std::vector<Layer *> &lvec = choose_layers(mainprogram->fileslay->deck);
+    int deck = 0;
+    if (mainprogram->fileslay) {
+        deck = mainprogram->fileslay->deck;
+    }
+    std::vector<Layer *> &lvec = choose_layers(deck);
     if (mainprogram->paths.size()) {
         // load one element of ordered list each loop
         std::string str = mainprogram->paths[mainprogram->pathscount];
@@ -11319,7 +11344,6 @@ Layer* Mixer::read_layers(std::istream &rfile, const std::string result, std::ve
 
                         } else if (par->type == FF_TYPE_TEXT || par->type == FF_TYPE_FILE) {
                             par->valuestr = istring;
-                            par->valuechar = (char *) par->valuestr.c_str();
                         } else {
                             par->value = std::stof(istring);
                         }
@@ -11364,7 +11388,6 @@ Layer* Mixer::read_layers(std::istream &rfile, const std::string result, std::ve
 
                         } else if (par->type == FF_TYPE_TEXT || par->type == FF_TYPE_FILE) {
                             par->valuestr = istring;
-                            par->valuechar = (char *) par->valuestr.c_str();
                         } else {
                             par->value = std::stof(istring);
                         }
@@ -11409,7 +11432,6 @@ Layer* Mixer::read_layers(std::istream &rfile, const std::string result, std::ve
 
                         } else if (par->type == FF_TYPE_TEXT || par->type == FF_TYPE_FILE) {
                             par->valuestr = istring;
-                            par->valuechar = (char *) par->valuestr.c_str();
                         } else {
                             par->value = std::stof(istring);
                         }
@@ -11454,7 +11476,6 @@ Layer* Mixer::read_layers(std::istream &rfile, const std::string result, std::ve
 
                         } else if (par->type == FF_TYPE_TEXT || par->type == FF_TYPE_FILE) {
                             par->valuestr = istring;
-                            par->valuechar = (char *) par->valuestr.c_str();
                         } else {
                             par->value = std::stof(istring);
                         }
@@ -11759,7 +11780,6 @@ Layer* Mixer::read_layers(std::istream &rfile, const std::string result, std::ve
                             }
                             else if (par->type == FF_TYPE_TEXT || par->type == FF_TYPE_FILE) {
                                 par->valuestr = istring;
-                                par->valuechar = (char*)par->valuestr.c_str();
                             }
                             else {
                                 par->value = std::stof(istring);
@@ -11940,7 +11960,6 @@ Layer* Mixer::read_layers(std::istream &rfile, const std::string result, std::ve
                             }
                             else if (par->type == FF_TYPE_TEXT || par->type == FF_TYPE_FILE) {
                                 par->valuestr = istring;
-                                par->valuechar = (char*)par->valuestr.c_str();
                             }
                             else {
                                 par->value = std::stof(istring);

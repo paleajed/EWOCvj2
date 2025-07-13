@@ -990,7 +990,7 @@ class Program {
         char undowaiting = 0;
         std::unordered_set<Param*> undoparams;
         std::unordered_set<Button*> undobuttons;
-        std::vector<std::vector<std::tuple<std::tuple<Param*, Button*, int, int, int, int, int, std::string>, float>>> undomapvec;
+        std::vector<std::vector<std::tuple<std::tuple<Param*, Button*, int, int, int, int, int, std::string>, std::variant<float, std::string>>>> undomapvec;
         std::vector<std::string> undopaths;
         std::unordered_map<Shelf*, bool> shelfjpegpaths;
         bool openjpegpathsshelf = false;
@@ -1214,7 +1214,7 @@ extern void strcat_s(char* dest, const char* input);
 #endif
 
 extern bool safegetline(std::istream& is, std::string &t);
-extern void mycallback(double deltatime, std::vector< unsigned char >* message, void* userData);
+extern void midi_callback(double deltatime, std::vector< unsigned char >* message, void* userData);
 
 extern bool get_imagetex(Layer *lay, std::string path);
 extern bool get_videotex(Layer *lay, std::string path);

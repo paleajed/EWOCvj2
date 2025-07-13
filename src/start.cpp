@@ -788,18 +788,24 @@ void rec_frames() {
  }
 
 
-void handle_midi(LayMidi *laymidi, int deck, int midi0, int midi1, int midi2, std::string midiport) {
+void handle_midi(int deck, int midi0, int midi1, int midi2, std::string midiport) {
 	// handle general MIDI layer controls: set values
+    LayMidi *laymidi;
     std::vector<Layer*> &lvec = choose_layers(deck);
-	int genmidideck = mainmix->genmidi[deck]->value;
 	for (int j = 0; j < lvec.size(); j++) {
-		if (lvec[j]->genmidibut->value == genmidideck) {
+        Param *par = nullptr;
+        Button *but = nullptr;
+        if (lvec[j]->genmidibut->value == 1) laymidi = laymidiA;
+        else if (lvec[j]->genmidibut->value == 2) laymidi = laymidiB;
+        else if (lvec[j]->genmidibut->value == 3) laymidi = laymidiC;
+        else if (lvec[j]->genmidibut->value == 4) laymidi = laymidiD;
+		if (1) {
             if (midi0 == laymidi->play->midi0 && midi1 == laymidi->play->midi1 && midi2 != 0 && midiport == laymidi->play->midiport) {
                 lvec[j]->playbut->value = !lvec[j]->playbut->value;
                 lvec[j]->revbut->value = false;
                 lvec[j]->bouncebut->value = false;
                 mainmix->midi2 = midi2;
-                mainmix->midibutton = lvec[j]->playbut;
+                but = lvec[j]->playbut;
                 lvec[j]->playbut->midistarttime = std::chrono::system_clock::now();
             }
             if (midi0 == laymidi->backw->midi0 && midi1 == laymidi->backw->midi1 && midi2 != 0 && midiport == laymidi->backw->midiport) {
@@ -807,7 +813,7 @@ void handle_midi(LayMidi *laymidi, int deck, int midi0, int midi1, int midi2, st
                 lvec[j]->playbut->value = false;
                 lvec[j]->bouncebut->value = false;
                 mainmix->midi2 = midi2;
-                mainmix->midibutton = lvec[j]->revbut;
+                but = lvec[j]->revbut;
                 lvec[j]->revbut->midistarttime = std::chrono::system_clock::now();
             }
 			if (midi0 == laymidi->pausestop->midi0 && midi1 == laymidi->pausestop->midi1 && midi2 != 0 && midiport == laymidi->pausestop->midiport) {
@@ -815,7 +821,7 @@ void handle_midi(LayMidi *laymidi, int deck, int midi0, int midi1, int midi2, st
                 lvec[j]->revbut->value = false;
                 lvec[j]->bouncebut->value = false;
                 mainmix->midi2 = midi2;
-                mainmix->midibutton = lvec[j]->stopbut;
+                but = lvec[j]->stopbut;
                 lvec[j]->stopbut->midistarttime = std::chrono::system_clock::now();
 			}
             if (midi0 == laymidi->bounce->midi0 && midi1 == laymidi->bounce->midi1 && midi2 != 0 && midiport == laymidi->bounce->midiport) {
@@ -823,26 +829,26 @@ void handle_midi(LayMidi *laymidi, int deck, int midi0, int midi1, int midi2, st
                 lvec[j]->playbut->value = false;
                 lvec[j]->revbut->value = false;
                 mainmix->midi2 = midi2;
-                mainmix->midibutton = lvec[j]->bouncebut;
+                but = lvec[j]->bouncebut;
                 lvec[j]->bouncebut->midistarttime = std::chrono::system_clock::now();
             }
             if (midi0 == laymidi->loop->midi0 && midi1 == laymidi->loop->midi1 && midi2 != 0 && midiport == laymidi->loop->midiport) {
                 lvec[j]->lpbut->value = !lvec[j]->lpbut->value;
                 mainmix->midi2 = midi2;
-                mainmix->midibutton = lvec[j]->lpbut;
+                but = lvec[j]->lpbut;
                 lvec[j]->lpbut->midistarttime = std::chrono::system_clock::now();
             }
             if (midi0 == laymidi->scratch1->midi0 && midi1 == laymidi->scratch1->midi1 && midiport == laymidi->scratch1->midiport) {
                 lvec[j]->scratch->value = ((float)midi2 - 64.0f) * (laymidi->scrinvert * 2 - 1) / 4.0f;
                 mainmix->midi2 = midi2;
-                mainmix->midiparam = lvec[j]->scratch;
+                par = lvec[j]->scratch;
                 lvec[j]->scratch->midistarttime = std::chrono::system_clock::now();
                 lvec[j]->scratch->midistarted = true;
             }
             if (midi0 == laymidi->scratch2->midi0 && midi1 == laymidi->scratch2->midi1 && midiport == laymidi->scratch2->midiport) {
                 lvec[j]->scratch->value = ((float)midi2 - 64.0f) * (laymidi->scrinvert * 2 - 1) / 4.0f;
                 mainmix->midi2 = midi2;
-                mainmix->midiparam = lvec[j]->scratch;
+                par = lvec[j]->scratch;
                 lvec[j]->scratch->midistarttime = std::chrono::system_clock::now();
                 lvec[j]->scratch->midistarted = true;
             }
@@ -857,63 +863,78 @@ void handle_midi(LayMidi *laymidi, int deck, int midi0, int midi1, int midi2, st
 			if (midi0 == laymidi->scratchtouch->midi0 && midi1 == laymidi->scratchtouch->midi1 && midi2 != 0 && midiport == laymidi->scratchtouch->midiport) {
 				lvec[j]->scratchtouch->value = 1;
                 mainmix->midi2 = midi2;
-                mainmix->midiparam = lvec[j]->scratchtouch;
+                par = lvec[j]->scratchtouch;
                 lvec[j]->scratchtouch->midistarttime = std::chrono::system_clock::now();
                 lvec[j]->scratchtouch->midistarted = true;
 			}
 			if (midi0 == laymidi->scratchtouch->midi0 && midi1 == laymidi->scratchtouch->midi1 && midi2 == 0 && midiport == laymidi->scratchtouch->midiport) {
 				lvec[j]->scratchtouch->value = 0;
                 mainmix->midi2 = midi2;
-                mainmix->midiparam = lvec[j]->scratchtouch;
+                par = lvec[j]->scratchtouch;
                 lvec[j]->scratchtouch->midistarttime = std::chrono::system_clock::now();
                 lvec[j]->scratchtouch->midistarted = true;
 			}
 			if (midi0 == laymidi->speed->midi0 && midi1 == laymidi->speed->midi1 && midiport == laymidi->speed->midiport) {
 				int m2 = -(midi2 - 127);
-				if (m2 >= 64.0f) {
-					lvec[j]->speed->value = 1.0f + (2.33f / 64.0f) * (m2 - 64.0f);
+				if (m2 < 64.0f) {
+					lvec[j]->speed->value = 1.0f + (5.0f / 64.0f) * (m2 - 64.0f);
 				}
 				else {
 					lvec[j]->speed->value = 0.0f + (1.0f / 64.0f) * m2;
 				}
                 mainmix->midi2 = midi2;
-                mainmix->midiparam = lvec[j]->speed;
+                par = lvec[j]->speed;
                 lvec[j]->speed->midistarttime = std::chrono::system_clock::now();
                 lvec[j]->speed->midistarted = true;
 			}
 			if (midi0 == laymidi->speedzero->midi0 && midi1 == laymidi->speedzero->midi1 && midiport == laymidi->speedzero->midiport) {
 				lvec[j]->speed->value = 1.0f;
                 mainmix->midi2 = midi2;
-                mainmix->midiparam = lvec[j]->speed;
+                par = lvec[j]->speed;
                 lvec[j]->speed->midistarttime = std::chrono::system_clock::now();
                 lvec[j]->speed->midistarted = true;
 			}
             if (midi0 == laymidi->opacity->midi0 && midi1 == laymidi->opacity->midi1 && midiport == laymidi->opacity->midiport) {
                 lvec[j]->opacity->value = (float)midi2 / 127.0f;
                 mainmix->midi2 = midi2;
-                mainmix->midiparam = lvec[j]->opacity;
+                par = lvec[j]->opacity;
                 lvec[j]->opacity->midistarttime = std::chrono::system_clock::now();
                 lvec[j]->opacity->midistarted = true;
             }
             if (mainprogram->prevmodus && midi0 == laymidi->crossfade->midi0 && midi1 == laymidi->crossfade->midi1 && midiport == laymidi->crossfade->midiport) {
                 mainmix->crossfade->value = (float)midi2 / 127.0f;
                 mainmix->midi2 = midi2;
-                mainmix->midiparam = mainmix->crossfade;
+                par = mainmix->crossfade;
                 mainmix->crossfade->midistarttime = std::chrono::system_clock::now();
                 mainmix->crossfade->midistarted = true;
             }
             if (!mainprogram->prevmodus && midi0 == laymidi->crossfade->midi0 && midi1 == laymidi->crossfade->midi1 && midiport == laymidi->crossfade->midiport) {
-                mainmix->crossfadecomp->value = (float)midi2 / 127.0f;
+                mainmix->crossfadecomp->value = (float) midi2 / 127.0f;
                 mainmix->midi2 = midi2;
-                mainmix->midiparam = mainmix->crossfadecomp;
+                par = mainmix->crossfadecomp;
                 mainmix->crossfadecomp->midistarttime = std::chrono::system_clock::now();
                 mainmix->crossfadecomp->midistarted = true;
+            }
+            if (but) {
+                for (int i = 0; i < loopstation->elements.size(); i++) {
+                    if (loopstation->elements[i]->recbut->value) {
+                        loopstation->elements[i]->add_button_automationentry(mainmix->midibutton);
+                    }
+                }
+            }
+            if (par) {
+                for (int i = 0; i < loopstation->elements.size(); i++) {
+                    if (loopstation->elements[i]->recbut->value) {
+                        loopstation->elements[i]->add_param_automationentry(mainmix->midiparam);
+                    }
+                }
+                mainprogram->uniformCache->setFloat(par->shadervar.c_str(), par->value);
             }
 		}
 	}
 }
 
-void mycallback( double deltatime, std::vector< unsigned char > *message, void *userData )
+void midi_callback( double deltatime, std::vector< unsigned char > *message, void *userData )
 {
     // MIDI sensing callback
   	unsigned int nBytes = message->size();
@@ -1382,19 +1403,14 @@ reminder: IMPLEMENT someday in node view */
             par->midistarted = true;
         }
 	}
+
+
+
+
 	LayMidi *lm = nullptr;
-    // start handling MIDI (assigning to values)
-	if (mainmix->genmidi[0]->value == 1) lm = laymidiA;
-	else if (mainmix->genmidi[0]->value == 2) lm = laymidiB;
-	else if (mainmix->genmidi[0]->value == 3) lm = laymidiC;
-	else if (mainmix->genmidi[0]->value == 4) lm = laymidiD;
-	if (lm) handle_midi(lm, 0, midi0, midi1, midi2, midiport);
-	lm = nullptr;
-	if (mainmix->genmidi[1]->value == 1) lm = laymidiA;
-	else if (mainmix->genmidi[1]->value == 2) lm = laymidiB;
-	else if (mainmix->genmidi[1]->value == 3) lm = laymidiC;
-	else if (mainmix->genmidi[1]->value == 4) lm = laymidiD;
-	if (lm) handle_midi(lm, 1, midi0, midi1, midi2, midiport);
+    // handling general MIDI
+	handle_midi(0, midi0, midi1, midi2, midiport);
+    handle_midi(1, midi0, midi1, midi2, midiport);
 }
 
 
@@ -2590,8 +2606,10 @@ void midi_set() {
 
 	else if (mainmix->midibutton) {
 		Button *but = mainmix->midibutton;
-		but->value++;
-		if (but->value > but->toggle) but->value = 0;
+        if (but->toggle > 1) {
+            but->value++;
+            if (but->value > but->toggle) but->value = 0;
+        }
 		if (but->toggle == 0) but->value = 1;
 		if (but == mainprogram->wormgate1 || but == mainprogram->wormgate2) mainprogram->binsscreen = but->value;
 		
@@ -2618,7 +2636,7 @@ void midi_set() {
 		}
 		else if (mainmix->midiisspeed) {
 			if (mainmix->midi2 >= 64.0f) {
-				par->value = 1.0f + (2.33f / 64.0f) * (mainmix->midi2 - 64.0f);
+				par->value = 1.0f + (5.0f / 64.0f) * (mainmix->midi2 - 64.0f);
 			}
 			else {
 				par->value = 0.0f + (1.0f / 64.0f) * mainmix->midi2;
@@ -3183,7 +3201,7 @@ void onestepfrom(bool stage, Node *node, Node *prevnode, GLuint prevfbotex, GLui
                     if (effect->params[i]->type == FF_TYPE_OPTION) {
                         eff->instance->setParameter(i, eff->instance->parameters[i].elements[effect->params[i]->value].value);
                     } else if (effect->params[i]->type == FF_TYPE_TEXT || effect->params[i]->type == FF_TYPE_FILE) {
-                        eff->instance->setParameter(i, FFGLUtils::PointerToFFMixed(effect->params[i]->valuechar));
+                        eff->instance->setParameter(i, FFGLUtils::PointerToFFMixed((char*)(effect->params[i]->valuestr.c_str())));
                     } else {
                         eff->instance->setParameter(i, effect->params[i]->value);
                     }
@@ -3460,7 +3478,7 @@ void onestepfrom(bool stage, Node *node, Node *prevnode, GLuint prevfbotex, GLui
                     lay->instance->setParameter(i, optionValue);
                 }
                 else if (lay->ffglparams[i]->type == FF_TYPE_TEXT || lay->ffglparams[i]->type == FF_TYPE_FILE) {
-                    lay->instance->setParameter(i, FFGLUtils::PointerToFFMixed(lay->ffglparams[i]->valuechar));
+                    lay->instance->setParameter(i, FFGLUtils::PointerToFFMixed((char*)(lay->ffglparams[i]->valuestr.c_str())));
                 }
                 else if (lay->ffglparams[i]->type == FF_TYPE_EVENT) {
                     if (lay->ffglparams[i]->value == 1.0f) {
@@ -4599,6 +4617,7 @@ void do_text_input(float x, float y, float sx, float sy, int mx, int my, float w
 			mainprogram->renaming = EDIT_NONE;
 			end_input();
 		}
+        mainprogram->recundo = false;
 	}
 	if (mainprogram->renaming != EDIT_NONE) {
 		std::string part = mainprogram->inputtext.substr(0, mainprogram->cursorpos0);
@@ -8075,8 +8094,10 @@ int main(int argc, char* argv[]) {
                 mainprogram->project->save_as();
             } else if (mainprogram->pathto == "FFGLFILE") {
                 mainprogram->ffglfiledir = dirname(mainprogram->path);
+                mainmix->mouseparam->oldvaluestr = mainmix->mouseparam->valuestr;
                 mainmix->mouseparam->valuestr = mainprogram->path;
-                mainmix->mouseparam->valuechar = (char*)mainmix->mouseparam->valuestr.c_str();
+                // UNDO registration
+                mainprogram->register_undo(mainmix->mouseparam, nullptr);
             }
 
             mainprogram->path = "";
@@ -8248,6 +8269,9 @@ int main(int argc, char* argv[]) {
                         }
                         mainmix->adapttextparam = nullptr;
                         mainprogram->renaming = EDIT_NONE;
+                        // UNDO registration
+                        mainprogram->register_undo(mainmix->adapttextparam, nullptr);
+                        mainprogram->recundo = true;
                         end_input();
                         continue;
                     }
@@ -8281,7 +8305,6 @@ int main(int argc, char* argv[]) {
                     mainprogram->renamingshelfelem->name = mainprogram->inputtext;
                 } else if (mainprogram->renaming == EDIT_TEXTPARAM) {
                     mainmix->adapttextparam->valuestr = mainprogram->inputtext;
-                    mainmix->adapttextparam->valuechar = (char*)mainmix->adapttextparam->valuestr.c_str();
                 } else if (mainprogram->renaming == EDIT_FLOATPARAM) {
                     int diff = mainprogram->inputtext.find(".") + 4 - mainprogram->inputtext.length();
                     if (diff < 0) {
@@ -8403,14 +8426,19 @@ int main(int argc, char* argv[]) {
                                                     auto tup = mainprogram->newparam(i - mainprogram->undomapvec[
                                                             mainprogram->undopos - 1].size(), true);
                                                     Param *newpar = std::get<0>(tup);
-                                                    newpar->value = std::get<1>(tup1);
+                                                    if (par->type == FF_TYPE_TEXT || par->type == FF_TYPE_FILE) {
+                                                        newpar->valuestr = std::get<std::string>(std::get<1>(tup1));
+                                                    }
+                                                    else {
+                                                        newpar->value = std::get<float>(std::get<1>(tup1));
+                                                    }
                                                     params.emplace(par);
                                                 }
                                                 if (but && !buttons.contains(but)) {
                                                     auto tup = mainprogram->newbutton(i - mainprogram->undomapvec[
                                                             mainprogram->undopos - 1].size(), true);
                                                     Button *newbut = std::get<0>(tup);
-                                                    newbut->value = std::get<1>(tup1);
+                                                    newbut->value = std::get<float>(std::get<1>(tup1));
                                                     buttons.emplace(but);
                                                 }
                                             }
@@ -8649,6 +8677,7 @@ int main(int argc, char* argv[]) {
                 if (e.button.button == SDL_BUTTON_LEFT) {
                     if (e.button.clicks == 2) {
                         mainprogram->doubleleftmouse = true;
+                        mainprogram->recundo = false;
                     }
                     else mainprogram->leftmouse = true;
                     mainprogram->leftmousedown = false;
