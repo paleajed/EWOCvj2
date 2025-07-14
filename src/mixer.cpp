@@ -429,9 +429,6 @@ void Param::handle(bool smallxpad) {
         int val;
         if (!this->powertwo) val = round(this->value * 1000.0f);
         else val = round(this->value * this->value * 1000.0f);
-        if (this->powerfour100) {
-            val = round(this->value * this->value * this->value * this->value * 100000.0f);
-        }
         int val2 = abs(val);
         bool negative = (val < 0);
         val = abs(val);
@@ -2308,6 +2305,7 @@ ISFEffect::ISFEffect(Layer *lay, int isfnr) {
 
         for (int i = 0; i < parvec.size(); i++) {
             Param *resultpar = parvec[i];
+            resultpar->effect = this;
             resultpar->box->tooltiptitle = par.name;
             std::string addstr = "";
             if (resultpar->type == ISFLoader::PARAM_POINT2D) {
@@ -14814,6 +14812,7 @@ void Layer::set_ffglsource(int sourcenr) {
     int cnt = 0;
     for (auto par : this->instance->parameters) {
         Param *param = new Param;
+        param->layer = this;
         if (cnt != 0) {
             if (cnt % 3 == 0 || (par.type == FF_TYPE_TEXT || par.type == FF_TYPE_FILE)) {
                 param->nextrow = true;
@@ -14855,6 +14854,7 @@ void BlendNode::set_ffglmixer(int mixernr) {
     int cnt = 0;
     for (auto par: this->instance->parameters) {
         Param *param = new Param;
+        param->layer = this->layer;
         if (cnt != 0) {
             if (cnt % 3 == 0 || (par.type == FF_TYPE_TEXT || par.type == FF_TYPE_FILE)) {
                 param->nextrow = true;
@@ -14911,6 +14911,7 @@ void Layer::set_isfsource(std::string sourcename) {
 
         for (int i = 0; i < parvec.size(); i++) {
             Param *resultpar = parvec[i];
+            resultpar->layer = this;
             resultpar->box->tooltiptitle = par.name;
             std::string addstr = "";
             if (resultpar->type == ISFLoader::PARAM_POINT2D) {
@@ -14973,6 +14974,7 @@ void BlendNode::set_isfmixer(int mixernr) {
 
         for (int i = 0; i < parvec.size(); i++) {
             Param *resultpar = parvec[i];
+            resultpar->layer = this->layer;
             resultpar->box->tooltiptitle = par.name;
             std::string addstr = "";
             if (resultpar->type == ISFLoader::PARAM_POINT2D) {

@@ -8259,8 +8259,6 @@ int main(int argc, char* argv[]) {
                                 mainmix->adaptnumparam->value = std::stof(mainprogram->inputtext);
                                 if (mainmix->adaptnumparam->powertwo)
                                     mainmix->adaptnumparam->value = sqrt(mainmix->adaptnumparam->value);
-                                if (mainmix->adaptnumparam->powerfour100)
-                                    mainmix->adaptnumparam->value = sqrt(sqrt(mainmix->adaptnumparam->value / 100.0f));
                                 if (mainmix->adaptnumparam->value < mainmix->adaptnumparam->range[0]) {
                                     mainmix->adaptnumparam->value = mainmix->adaptnumparam->range[0];
                                 }

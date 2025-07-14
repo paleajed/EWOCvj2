@@ -223,7 +223,7 @@ vec3 sepia = vec3(112.0 / 255.0, 66.0 / 255.0, 20.0 / 255.0);
 
 vec4 oldfilm(vec2 texco) { //devmaster.net seems free
 	// Step 1: Convert to grayscale
-	vec3 colour = texture2D(Sampler0, texco).xyz;
+	vec3 colour = texture(Sampler0, texco).xyz;
 	float gray = (colour.x + colour.y + colour.z) / 3.0;
 	vec3 grayscale = vec3(gray);
 	 
@@ -340,27 +340,27 @@ vec4 blur(vec2 texc) //tutorial on rastergrid seems free
   	vec3 tc = vec3(1.0, 0.0, 0.0);
     vec2 uv = texc.xy;
     vec2 size = textureSize(fboSampler, 0) / 4.0f;
-    tc = texture2D(fboSampler, uv).rgb * weight[0];
+    tc = texture(fboSampler, uv).rgb * weight[0];
     if (!horizontal) {
 		for (int i=1; i<3; i++) 
 		{
-		  tc += texture2D(fboSampler, uv + vec2(0.0, offset[i] * fcdiv / size.y)).rgb * weight[i];
-		  tc += texture2D(fboSampler, uv - vec2(0.0, offset[i] * fcdiv / size.y)).rgb * weight[i];
+		  tc += texture(fboSampler, uv + vec2(0.0, offset[i] * fcdiv / size.y)).rgb * weight[i];
+		  tc += texture(fboSampler, uv - vec2(0.0, offset[i] * fcdiv / size.y)).rgb * weight[i];
 		}
 	}
 	else {
 		for (int i=1; i<3; i++) 
 		{
-		  tc += texture2D(fboSampler, uv + vec2(offset[i]) * fcdiv / size.x, 0.0).rgb * weight[i];
-		  tc += texture2D(fboSampler, uv - vec2(offset[i]) * fcdiv / size.x, 0.0).rgb * weight[i];
+		  tc += texture(fboSampler, uv + vec2(offset[i]) * fcdiv / size.x, 0.0).rgb * weight[i];
+		  tc += texture(fboSampler, uv - vec2(offset[i]) * fcdiv / size.x, 0.0).rgb * weight[i];
 		}
 	}
-  	return vec4(tc, texture2D(fboSampler, uv).a);
+  	return vec4(tc, texture(fboSampler, uv).a);
 }
 
 vec4 boxblur(vec2 texc)  //blog.trsquarelab.com free
 {
-	float alpha = texture2D(fboSampler, texc).a;
+	float alpha = texture(fboSampler, texc).a;
 	vec2 size = textureSize(fboSampler, 0);
 	vec2 point;
 	vec4 finalcol = vec4(0.0, 0.0, 0.0, 0.0);
@@ -373,7 +373,7 @@ vec4 boxblur(vec2 texc)  //blog.trsquarelab.com free
       		point.x = texc.x;
             point.y = texc.y  + i * pxdistY;
             ++count;
-            finalcol += texture2D(fboSampler, point.xy);
+            finalcol += texture(fboSampler, point.xy);
 		}
 		finalcol /= float(count);
 	}
@@ -383,7 +383,7 @@ vec4 boxblur(vec2 texc)  //blog.trsquarelab.com free
      		point.x = texc.x  + i * pxdistX;
             point.y = texc.y;
             ++count;
-           finalcol += texture2D(fboSampler, point.xy);
+           finalcol += texture(fboSampler, point.xy);
 		}
 		finalcol /= float(count);
 	}
@@ -436,7 +436,7 @@ vec4 radialblur(vec2 texco) {  //pixi-filters mit
         strength *= delta;
         if (countLimit < 1.0)
         {
-            return texture2D(Sampler0, texco);
+            return texture(Sampler0, texco);
         }
     }
 
@@ -452,7 +452,7 @@ vec4 radialblur(vec2 texco) {  //pixi-filters mit
         float percent = (t + offset) / MAX_KERNEL_SIZE;
         float weight = 4.0 * (percent - percent * percent);
         vec2 p = texco + dir * percent;
-        vec4 smple = texture2D(Sampler0, p);
+        vec4 smple = texture(Sampler0, p);
 
         // switch to pre-multiplied alpha to correctly blur transparent images
         // smple.rgb *= smple.a;
@@ -483,7 +483,7 @@ vec4 dotf(vec2 texco) {  //selfmade
 	if (yint > 0) yint += dot; 
 	float circley = int(yint / dot) * dot;
 	if (distance(normco.xy, vec2(circlex, circley)) > dot * 0.4) return vec4(0.0, 0.0 ,0.0, 1.0);
-	else return texture2D(Sampler0, texco);
+	else return texture(Sampler0, texco);
 }
 
 vec4 brightness(vec4 pxcol) {  //selfmade
@@ -526,7 +526,7 @@ vec4 swirl(vec2 texco)  //geeks3D seems free
 	}
 	normtc += center;
 	normtc.y = normtc.y * fbowidth / fboheight;
-	return texture2D(Sampler0, (normtc + 0.5f));
+	return texture(Sampler0, (normtc + 0.5f));
 }
 
 vec4 ripple() {  //geeks3d seems free
@@ -534,7 +534,7 @@ vec4 ripple() {  //geeks3d seems free
   	vec2 p = -1.0 + 2.0 * tc;
   	float len = length(p);
   	vec2 uv = tc + (p / len) * cos(len * 12.0 - riptime * 4.0) * 0.03;
-  	vec3 col = texture2D(Sampler0, uv).xyz;
+  	vec3 col = texture(Sampler0, uv).xyz;
   	return vec4(col,1.0);
 }
 
@@ -550,7 +550,7 @@ vec4 fisheye(vec2 texco)  //selfmade
   
   c = dist * vec2(cos(ang)*0.5f, sin(ang)*0.5f);
   
-  return texture2D(Sampler0, c + 0.5f);
+  return texture(Sampler0, c + 0.5f);
 }
 
 vec4 treshold(vec4 pxcol) {  //selfmade
@@ -577,7 +577,7 @@ vec4 pixelate(vec2 uv)  //selfmade
     float dx = 1.0f / pw;
     float dy = 1.0f / ph;
     vec2 coord = vec2(dx * (floor(uv.x / dx) + 0.5f), dy * (floor(uv.y / dy) + 0.5f));
-    return texture2D(Sampler0, coord);
+    return texture(Sampler0, coord);
 }
 
 vec4 crosshatch(vec4 col, vec2 uv)  //geeks3D
@@ -621,9 +621,9 @@ vec4 rotate(vec2 texco)  // selfmade
    	texco  = m * texco;
     if (!rotmode) texco.y *= float(fbowidth) / float(fboheight);
     texco += 0.5f;
-    if (texture2D(Sampler0, texco).a == 0.0f) return vec4(0.0f, 0.0f, 0.0f, 1.0f);
+    if (texture(Sampler0, texco).a == 0.0f) return vec4(0.0f, 0.0f, 0.0f, 1.0f);
 
-    return texture2D(Sampler0, texco);
+    return texture(Sampler0, texco);
 }
 
 
@@ -637,12 +637,12 @@ vec4 emboss(vec2 texco)  //pixi-filters mit
 
 	color.rgb = vec3(0.5);
 
-	color -= texture2D(Sampler0, texco - onePixel) * embstrength;
-	color += texture2D(Sampler0, texco + onePixel) * embstrength;
+	color -= texture(Sampler0, texco - onePixel) * embstrength;
+	color += texture(Sampler0, texco + onePixel) * embstrength;
 
 	color.rgb = vec3((color.r + color.g + color.b) / 3.0);
 
-	float alpha = texture2D(Sampler0, texco).a;
+	float alpha = texture(Sampler0, texco).a;
 
 	return vec4(color.rgb * alpha, alpha);
 }
@@ -661,7 +661,7 @@ float character(float n, vec2 p)
 vec4 ascii(vec2 texco)  //pixi-filters mit
 {
 	float detail = 8.0 / fbowidth;
-	vec3 col = texture2D(Sampler0, floor(texco / detail) * detail).rgb;
+	vec3 col = texture(Sampler0, floor(texco / detail) * detail).rgb;
 	
 	float gray = 0.3 * col.r + 0.59 * col.g + 0.11 * col.b;
 	float n = 65536.0;              // .
@@ -676,19 +676,19 @@ vec4 ascii(vec2 texco)  //pixi-filters mit
 	vec2 p = mod(vec2(texco.x * fbowidth, texco.y * fboheight) / asciisize, 2.0) - vec2(1.0);
 	col = col * character(n, p);
 	
-	return vec4(col, texture2D(Sampler0, texco).a);
+	return vec4(col, texture(Sampler0, texco).a);
 }
 
 #define THRESHOLD vec3(1.,.92,.1)
 
 vec4 solarize(vec2 texco)  //unknown problem 3?
 {
-    vec3 rgb = texture2D(Sampler0, texco).xyz;
+    vec3 rgb = texture(Sampler0, texco).xyz;
     if (rgb.r < 1.0f) rgb.r = 1.0f - rgb.r;
     if (rgb.g < 0.92f) rgb.g = 1.0f - rgb.g;
     if (rgb.b < 0.1f) rgb.b = 1.0f - rgb.b;
     
-    return vec4(rgb, texture2D(Sampler0, texco).a);
+    return vec4(rgb, texture(Sampler0, texco).a);
 }
 
 
@@ -707,7 +707,7 @@ float pattern(vec2 texco)
 
 vec4 vardot(vec2 texco)
 {
-   vec4 color = texture2D(Sampler0, texco);
+   vec4 color = texture(Sampler0, texco);
    float p = pattern(texco);
    return vec4(color.r + p, color.g + p, color.b + p, color.a);
 }
@@ -742,7 +742,7 @@ vec4 crt(vec2 texco)
     float k = crtcurvature > 0. ?(length(dir * dir) * 0.25 * _c * _c + 0.935 * _c) : 1.;
     vec2 uv = dir * k;
 
-    vec4 rgba = texture2D(Sampler0, texco);
+    vec4 rgba = texture(Sampler0, texco);
     vec3 rgb = rgba.rgb;
 
     if (crtnoise > 0.0 && crtnoiseSize > 0.0)
@@ -793,7 +793,7 @@ vec4 edgedetect2(vec2 texco)  //rastergrid seems free
 	/* fetch the 3x3 neighbourhood and use the RGB vector's length as intensity value */
 	for (int i=0; i<3; i++)
 	for (int j=0; j<3; j++) {
-		smple = texture2D(Sampler0, texco + vec2(float(i-1) / float(fbowidth), float(j-1) / float(fboheight))).rgb;
+		smple = texture(Sampler0, texco + vec2(float(i-1) / float(fbowidth), float(j-1) / float(fboheight))).rgb;
 		I[i][j] = length(smple) * 20.0f; 
 	}
 	
@@ -807,7 +807,7 @@ vec4 edgedetect2(vec2 texco)  //rastergrid seems free
 	float S = (cnv[4] + cnv[5]) + (cnv[6] + cnv[7]) + (cnv[8] + M); 
 	
 	vec4 col = vec4(sqrt(M/S));
-	return vec4(col.rgb * 2.0f, texture2D(Sampler0, texco).a);
+	return vec4(col.rgb * 2.0f, texture(Sampler0, texco).a);
 }
 
 
@@ -830,7 +830,7 @@ vec4 kaleidoscope(vec2 texco) {  //selfmade
 
   pos = len * vec2(cos(ang), sin(ang));
   
-  return texture2D(Sampler0, pos + 0.5);
+  return texture(Sampler0, pos + 0.5);
 }
 
 
@@ -892,7 +892,7 @@ float avg_intensity(vec4 pix)
 
 vec4 get_pixel(vec2 coords, float dx, float dy) 
 {
- return texture2D(Sampler0,coords + vec2(dx, dy));
+ return texture(Sampler0,coords + vec2(dx, dy));
 }
 
 // returns pixel color
@@ -930,13 +930,13 @@ vec4 edgedetect(vec2 texco)
   float gray = IsEdge(texco.xy);
   vec3 vRGB = (gray >= edge_thres)? vec3(0.0,0.0,0.0):vec3(gray ,gray ,gray);
     
-  return vec4(vRGB.x,vRGB.y,vRGB.z, texture2D(fboSampler, texco).a);  
+  return vec4(vRGB.x,vRGB.y,vRGB.z, texture(fboSampler, texco).a);  
 }
 
 vec4 cartoon(vec2 texco)  //geeks3d free
 {
 	//vec4 tc = vec4(1.0, 0.0, 0.0, 1.0);
-    vec4 colorOrg = texture2D(Sampler0, texco).rgba;
+    vec4 colorOrg = texture(Sampler0, texco).rgba;
     vec3 vHSV =  rgb2hsv(colorOrg.rgb);
     vHSV.x = floor(vHSV.x * 25.0f) / 25.0f;
     vHSV.y = floor(vHSV.y * 7.0f + 1) / 7.0f;
@@ -944,12 +944,12 @@ vec4 cartoon(vec2 texco)  //geeks3d free
     float edg = IsEdge(texco);
     vec3 vRGB = (edg >= edge_thres)? vec3(0.0,0.0,0.0):hsv2rgb(vec3(vHSV.x,vHSV.y,vHSV.z));
     
-  	return vec4(vRGB.x,vRGB.y,vRGB.z, texture2D(Sampler0, texco).a);  
+  	return vec4(vRGB.x,vRGB.y,vRGB.z, texture(Sampler0, texco).a);  
 }
 
 vec4 cutoff(vec2 texco)  //selfmade
 {
-    vec4 color = texture2D(Sampler0, texco);
+    vec4 color = texture(Sampler0, texco);
     
 	float luma = dot(vec3(0.30, 0.59, 0.11), color.rgb);
 
@@ -1077,9 +1077,9 @@ vec4 glitch(vec2 texco) {
 	  ) / fbowidth;
 	float rgbDiff = (6.0 + sin(time * 500.0 + texco.y * 40.0) * (20.0 * strength + 1.0)) / fbowidth;
 	float rgbUvX = texco.x + rgbWave;
-	float r = texture2D(Sampler0, vec2(rgbUvX + rgbDiff, texco.y) + shake).r;
-	float g = texture2D(Sampler0, vec2(rgbUvX, texco.y) + shake).g;
-	float b = texture2D(Sampler0, vec2(rgbUvX - rgbDiff, texco.y) + shake).b;
+	float r = texture(Sampler0, vec2(rgbUvX + rgbDiff, texco.y) + shake).r;
+	float g = texture(Sampler0, vec2(rgbUvX, texco.y) + shake).g;
+	float b = texture(Sampler0, vec2(rgbUvX - rgbDiff, texco.y) + shake).b;
 	
 	float whiteNoise = (random2(texco + mod(time, 10.0)) * 2.0 - 1.0) * (0.15 + strength * 0.15);
 	
@@ -1088,18 +1088,18 @@ vec4 glitch(vec2 texco) {
 	float noiseY = step((snoise3(vec3(0.0, texco.y * 3.0, bnTime)) + 1.0) / 2.0, 0.12 + strength * 0.3);
 	float bnMask = noiseX * noiseY;
 	float bnUvX = texco.x + sin(bnTime) * 0.2 + rgbWave;
-	float bnR = texture2D(Sampler0, vec2(bnUvX + rgbDiff, texco.y)).r * bnMask;
-	float bnG = texture2D(Sampler0, vec2(bnUvX, texco.y)).g * bnMask;
-	float bnB = texture2D(Sampler0, vec2(bnUvX - rgbDiff, texco.y)).b * bnMask;
+	float bnR = texture(Sampler0, vec2(bnUvX + rgbDiff, texco.y)).r * bnMask;
+	float bnG = texture(Sampler0, vec2(bnUvX, texco.y)).g * bnMask;
+	float bnB = texture(Sampler0, vec2(bnUvX - rgbDiff, texco.y)).b * bnMask;
 	vec4 blockNoise = vec4(bnR, bnG, bnB, 1.0);
 	
 	float bnTime2 = floor(time * 25.0) * 300.0;
 	float noiseX2 = step((snoise3(vec3(0.0, texco.x * 2.0, bnTime2)) + 1.0) / 2.0, 0.12 + strength * 0.5);
 	float noiseY2 = step((snoise3(vec3(0.0, texco.y * 8.0, bnTime2)) + 1.0) / 2.0, 0.12 + strength * 0.3);
 	float bnMask2 = noiseX2 * noiseY2;
-	float bnR2 = texture2D(Sampler0, vec2(bnUvX + rgbDiff, texco.y)).r * bnMask2;
-	float bnG2 = texture2D(Sampler0, vec2(bnUvX, texco.y)).g * bnMask2;
-	float bnB2 = texture2D(Sampler0, vec2(bnUvX - rgbDiff, texco.y)).b * bnMask2;
+	float bnR2 = texture(Sampler0, vec2(bnUvX + rgbDiff, texco.y)).r * bnMask2;
+	float bnG2 = texture(Sampler0, vec2(bnUvX, texco.y)).g * bnMask2;
+	float bnB2 = texture(Sampler0, vec2(bnUvX - rgbDiff, texco.y)).b * bnMask2;
 	vec4 blockNoise2 = vec4(bnR2, bnG2, bnB2, 1.0);
 	
 	float waveNoise = (sin(texco.y * 1200.0) + 1.0) / 2.0 * (0.15 + strength * 0.2);
@@ -1120,7 +1120,7 @@ vec4 binary_glitch(vec2 uv)  //binary glitch shadertoy  waiting for permission -
     float px = floor(x * psq + 0.5) * psize;
     float py = floor(y * psq + 0.5) * psize;
     
-	vec4 colSnap = texture2D(Sampler0, vec2( px,py) );
+	vec4 colSnap = texture(Sampler0, vec2( px,py) );
     
 	float lum = pow( 1.0 - (colSnap.r + colSnap.g + colSnap.b) / 3.0, glitchstr); // remove the minus one if you want to invert luma
     
@@ -1135,7 +1135,7 @@ vec4 binary_glitch(vec2 uv)  //binary glitch shadertoy  waiting for permission -
     float rx = (px - qx) * lum + x;
     float ry = (py - qy) * lum + y;
     
-	vec4 colMove = texture2D(Sampler0, vec2( rx,ry));
+	vec4 colMove = texture(Sampler0, vec2( rx,ry));
     
     // final color
     return colMove;
@@ -1147,7 +1147,7 @@ float rand(vec2 co){
 
 vec4 noise(vec2 uv)  //from oldfilm
 {
-	vec4 colour = texture2D(Sampler0, uv);
+	vec4 colour = texture(Sampler0, uv);
 	float noise = snoise2(uv * vec2(1024.0 + RandomValue * 512.0, 1024.0 + RandomValue * 512.0)) * 0.5;
 	colour += noise * noiselevel;
 	return colour;
@@ -1162,7 +1162,7 @@ vec3 gammafunc(vec3 col, float g)
 
 vec3 texfilter(vec2 texco)
 {
-    vec3 val = texture2D(Sampler0, texco).xyz;    
+    vec3 val = texture(Sampler0, texco).xyz;    
 	return gammafunc(val, gammaval);
 }
 
@@ -1177,7 +1177,7 @@ vec4 gammamain(vec2 texco)  //shadertoy WTFPL
 vec4 thermal(vec2 texco)  //geeks3d free
 { 
     vec3 tc = vec3(1.0, 0.0, 0.0);
-    vec4 pixcol = texture2D(Sampler0, texco);
+    vec4 pixcol = texture(Sampler0, texco);
     vec3 colors[3];
     colors[0] = vec3(0.,0.,1.);
     colors[1] = vec3(1.,1.,0.);
@@ -1207,7 +1207,7 @@ vec3 Bokeh(sampler2D tex, vec2 uv, float radius)  // kindly shared by Dave H.
 	    vangle = rot * vangle;
 	    vec2 angle = (r-1.) * vangle;
 	    angle.y *= float(fbowidth) / float(fboheight);
-        vec3 col = texture2D(tex, uv + angle).xyz; /// ... Sample the image
+        vec3 col = texture(tex, uv + angle).xyz; /// ... Sample the image
         col = col * col *1.8; // ... Contrast it for better highlights - leave this out elsewhere.
 		vec3 bokeh = pow(col, vec3(4));
 		acc += col * bokeh;
@@ -1339,31 +1339,31 @@ vec4 sharpen(vec2 texco)    //https://github.com/libretro/glsl-shaders - the fol
 // [      c20, c6,  c7,  c8, c17      ]
 // [           c15, c12, c14          ]
 // [                c13               ]
-	vec3	 c19	=	clamp( texture2D(Sampler0, texco + vec2(-3.*px,   0.)).rgb, 0.0, 1.0);
-	vec3	 c21	=	clamp( texture2D(Sampler0, texco + vec2(-2.*px,  -py)).rgb, 0.0, 1.0);
-	vec3	 c10	=	clamp( texture2D(Sampler0, texco + vec2(-2.*px,   0.)).rgb, 0.0, 1.0);
-	vec3	 c20	=	clamp( texture2D(Sampler0, texco + vec2(-2.*px,   py)).rgb, 0.0, 1.0);
-	vec3	 c24	=	clamp( texture2D(Sampler0, texco + vec2(  -px,-2.*py)).rgb, 0.0, 1.0);
-	vec3	 c1 	=	clamp( texture2D(Sampler0, texco + vec2(  -px,  -py)).rgb, 0.0, 1.0);
-	vec3	 c4 	=	clamp( texture2D(Sampler0, texco + vec2(  -px,   0.)).rgb, 0.0, 1.0);
-	vec3	 c6 	=	clamp( texture2D(Sampler0, texco + vec2(  -px,   py)).rgb, 0.0, 1.0);
-	vec3	 c15	=	clamp( texture2D(Sampler0, texco + vec2(  -px, 2.*py)).rgb, 0.0, 1.0);
-	vec3	 c22	=	clamp( texture2D(Sampler0, texco + vec2(   0., -3.*py)).rgb, 0.0, 1.0);
-	vec3	 c9 	=	clamp( texture2D(Sampler0, texco + vec2(   0., -2.*py)).rgb, 0.0, 1.0);
-	vec3	 c2 	=	clamp( texture2D(Sampler0, texco + vec2(   0.,   -py)).rgb, 0.0, 1.0);
-	vec3	 c0 	=	clamp( texture2D(Sampler0, texco).rgb, 0.0, 1.0);
-	vec3	 c7 	=	clamp( texture2D(Sampler0, texco + vec2(   0.,    py)).rgb, 0.0, 1.0);
-	vec3	 c12	=	clamp( texture2D(Sampler0, texco + vec2(   0.,  2.*py)).rgb, 0.0, 1.0);
-	vec3	 c13	=	clamp( texture2D(Sampler0, texco + vec2(   0.,  3.*py)).rgb, 0.0, 1.0);
-	vec3	 c23	=	clamp( texture2D(Sampler0, texco + vec2(   px,-2.*py)).rgb, 0.0, 1.0);
-	vec3	 c3 	=	clamp( texture2D(Sampler0, texco + vec2(   px,  -py)).rgb, 0.0, 1.0);
-	vec3	 c5 	=	clamp( texture2D(Sampler0, texco + vec2(   px,   0.)).rgb, 0.0, 1.0);
-	vec3	 c8 	=	clamp( texture2D(Sampler0, texco + vec2(   px,   py)).rgb, 0.0, 1.0);
-	vec3	 c14	=	clamp( texture2D(Sampler0, texco + vec2(   px, 2.*py)).rgb, 0.0, 1.0);
-	vec3	 c18	=	clamp( texture2D(Sampler0, texco + vec2( 2.*px,  -py)).rgb, 0.0, 1.0);
-	vec3	 c11	=	clamp( texture2D(Sampler0, texco + vec2( 2.*px,   0.)).rgb, 0.0, 1.0);
-	vec3	 c17	=	clamp( texture2D(Sampler0, texco + vec2( 2.*px,   py)).rgb, 0.0, 1.0);
-	vec3	 c16	=	clamp( texture2D(Sampler0, texco + vec2( 3.*px,   0.)).rgb, 0.0, 1.0 );
+	vec3	 c19	=	clamp( texture(Sampler0, texco + vec2(-3.*px,   0.)).rgb, 0.0, 1.0);
+	vec3	 c21	=	clamp( texture(Sampler0, texco + vec2(-2.*px,  -py)).rgb, 0.0, 1.0);
+	vec3	 c10	=	clamp( texture(Sampler0, texco + vec2(-2.*px,   0.)).rgb, 0.0, 1.0);
+	vec3	 c20	=	clamp( texture(Sampler0, texco + vec2(-2.*px,   py)).rgb, 0.0, 1.0);
+	vec3	 c24	=	clamp( texture(Sampler0, texco + vec2(  -px,-2.*py)).rgb, 0.0, 1.0);
+	vec3	 c1 	=	clamp( texture(Sampler0, texco + vec2(  -px,  -py)).rgb, 0.0, 1.0);
+	vec3	 c4 	=	clamp( texture(Sampler0, texco + vec2(  -px,   0.)).rgb, 0.0, 1.0);
+	vec3	 c6 	=	clamp( texture(Sampler0, texco + vec2(  -px,   py)).rgb, 0.0, 1.0);
+	vec3	 c15	=	clamp( texture(Sampler0, texco + vec2(  -px, 2.*py)).rgb, 0.0, 1.0);
+	vec3	 c22	=	clamp( texture(Sampler0, texco + vec2(   0., -3.*py)).rgb, 0.0, 1.0);
+	vec3	 c9 	=	clamp( texture(Sampler0, texco + vec2(   0., -2.*py)).rgb, 0.0, 1.0);
+	vec3	 c2 	=	clamp( texture(Sampler0, texco + vec2(   0.,   -py)).rgb, 0.0, 1.0);
+	vec3	 c0 	=	clamp( texture(Sampler0, texco).rgb, 0.0, 1.0);
+	vec3	 c7 	=	clamp( texture(Sampler0, texco + vec2(   0.,    py)).rgb, 0.0, 1.0);
+	vec3	 c12	=	clamp( texture(Sampler0, texco + vec2(   0.,  2.*py)).rgb, 0.0, 1.0);
+	vec3	 c13	=	clamp( texture(Sampler0, texco + vec2(   0.,  3.*py)).rgb, 0.0, 1.0);
+	vec3	 c23	=	clamp( texture(Sampler0, texco + vec2(   px,-2.*py)).rgb, 0.0, 1.0);
+	vec3	 c3 	=	clamp( texture(Sampler0, texco + vec2(   px,  -py)).rgb, 0.0, 1.0);
+	vec3	 c5 	=	clamp( texture(Sampler0, texco + vec2(   px,   0.)).rgb, 0.0, 1.0);
+	vec3	 c8 	=	clamp( texture(Sampler0, texco + vec2(   px,   py)).rgb, 0.0, 1.0);
+	vec3	 c14	=	clamp( texture(Sampler0, texco + vec2(   px, 2.*py)).rgb, 0.0, 1.0);
+	vec3	 c18	=	clamp( texture(Sampler0, texco + vec2( 2.*px,  -py)).rgb, 0.0, 1.0);
+	vec3	 c11	=	clamp( texture(Sampler0, texco + vec2( 2.*px,   0.)).rgb, 0.0, 1.0);
+	vec3	 c17	=	clamp( texture(Sampler0, texco + vec2( 2.*px,   py)).rgb, 0.0, 1.0);
+	vec3	 c16	=	clamp( texture(Sampler0, texco + vec2( 3.*px,   0.)).rgb, 0.0, 1.0 );
 	
 // Blur, gauss 3x3
 	vec3	blur	=	(2.*(c2 + c4 + c5 + c7) + (c1 + c3 + c6 +c8) + 4.*c0)/16.;
@@ -1464,7 +1464,7 @@ vec4 sharpen(vec2 texco)    //https://github.com/libretro/glsl-shaders - the fol
 	sharpdiff			=	mix( (tanh((max(sharpdiff, 0.0))*nmax_scale)/nmax_scale), (max(sharpdiff, 0.0)), L_comp_ratio )
 						+	mix( (tanh((min(sharpdiff, 0.0))*nmin_scale)/nmin_scale), (min(sharpdiff, 0.0)), D_comp_ratio );
 
-   return vec4(c0.rgb, texture2D(Sampler0, texco).a) + sharpdiff;
+   return vec4(c0.rgb, texture(Sampler0, texco).a) + sharpdiff;
 }
 
 
@@ -1503,8 +1503,8 @@ vec4 dither(vec2 texco)  //https://github.com/libretro/glsl-shaders/blob/master/
 {
 	float Scale = 3.0 + mod(2.0 * iGlobalTime, 32.0) * animate + dither_size;
 	vec4 lum = vec4(0.299, 0.587, 0.114, 0);
-	float grayscale = dot(texture2D(Sampler0, texco), lum);
-	vec3 rgb = texture2D(Sampler0, texco).rgb;
+	float grayscale = dot(texture(Sampler0, texco), lum);
+	vec3 rgb = texture(Sampler0, texco).rgb;
 	
 	vec2 xy = (texco * outsize.xy) * Scale;
 	int x = int(mod(xy.x, 8));
@@ -1525,7 +1525,7 @@ vec4 flip(vec2 texco)  //selfmade
 {
 	if (xflip) texco.x = 1.0f - texco.x;
 	if (yflip) texco.y = 1.0f - texco.y;
-	return texture2D(Sampler0, texco);
+	return texture(Sampler0, texco);
 }
 
 
@@ -1545,7 +1545,7 @@ vec4 mirror(vec2 texco)  //selfmade
 	else if (ym == 0) {
 		if (texco.y <= ycrdmirror) texco.y = 2.0f * ycrdmirror - texco.y;
 	}
-	return texture2D(Sampler0, texco);
+	return texture(Sampler0, texco);
 }
 
 
@@ -1571,14 +1571,14 @@ void main()
 		uint Tex0 = texelFetch(boxtexSampler, quadnr).r;
 		if (Tex0 > 23) {
 			// text
-			float c = texture2D(boxSampler[Tex0 - 24], vec2(TexCoord0.s, TexCoord0.t)).r;
+			float c = texture(boxSampler[Tex0 - 24], vec2(TexCoord0.s, TexCoord0.t)).r;
 			//if (c == 0.0) discard;
 			vec4 sam = texelFetch(boxcolSampler, quadnr).rgba;
 			FragColor = vec4(sam.rgb, 1.0);
 		}
 		else if (Tex0 != 23) {
 			// image
-			FragColor = vec4(texture2D(boxSampler[Tex0], vec2(TexCoord0.s, TexCoord0.t)).rgb, 1.0f);
+			FragColor = vec4(texture(boxSampler[Tex0], vec2(TexCoord0.s, TexCoord0.t)).rgb, 1.0f);
 		}
 		else {
 			// flat
@@ -1588,13 +1588,13 @@ void main()
 	}
 
     if (interm == 2) {
-		vec4 texcol1 = texture2D(Sampler0, texco);
-		vec4 texcol2 = texture2D(Sampler1, texco);
+		vec4 texcol1 = texture(Sampler0, texco);
+		vec4 texcol2 = texture(Sampler1, texco);
     	FragColor = vec4(texcol1.rgb * drywet + (1.0f - drywet) * texcol2.rgb, texcol1.a * opacity);
     	return;
     }
     if (interm == 1) {
-		texcol = texture2D(Sampler0, texco);
+		texcol = texture(Sampler0, texco);
 		switch (fxid) {
 			case 0:
 				intcol = blur(texco);
@@ -1616,7 +1616,7 @@ void main()
 			case 7:
 				intcol = saturation(texcol); break;
 			case 8:
-				intcol = texture2D(Sampler0, scale(texco)); break;
+				intcol = texture(Sampler0, scale(texco)); break;
 			case 9:
 				intcol = swirl(texco); break;
 			case 10:
@@ -1691,7 +1691,7 @@ void main()
 		}
 		if (ineffect) {
 		    if (laststep) {
-                FragColor = vec4(intcol.rgb * drywet + (1.0f - drywet) * texture2D(Sampler1, texco).rgb, intcol.a * opacity);
+                FragColor = vec4(intcol.rgb * drywet + (1.0f - drywet) * texture(Sampler1, texco).rgb, intcol.a * opacity);
                 return;
             }
             else {
@@ -1705,10 +1705,10 @@ void main()
 	else if (mixmode > 0) {
 		//vec2 size0 = textureSize(endSampler0, 0);
 		//vec2 size1 = textureSize(endSampler1, 0);
-		//tex0 = texture2D(endSampler0, vec2((texco.x - 0.5f) * fbowidth * fcdiv / size0.x + 0.5f, (texco.y - 0.5f) * fboheight * fcdiv / size0.y + 0.5f));
-		//tex1 = texture2D(endSampler1, vec2((texco.x - 0.5f) * fbowidth * fcdiv / size1.x + 0.5f, (texco.y - 0.5f) * fboheight * fcdiv / size1.y + 0.5f));
-		tex0 = texture2D(endSampler0, texco);
-		tex1 = texture2D(endSampler1, texco);
+		//tex0 = texture(endSampler0, vec2((texco.x - 0.5f) * fbowidth * fcdiv / size0.x + 0.5f, (texco.y - 0.5f) * fboheight * fcdiv / size0.y + 0.5f));
+		//tex1 = texture(endSampler1, vec2((texco.x - 0.5f) * fbowidth * fcdiv / size1.x + 0.5f, (texco.y - 0.5f) * fboheight * fcdiv / size1.y + 0.5f));
+		tex0 = texture(endSampler0, texco);
+		tex1 = texture(endSampler1, texco);
 		//tex0 = vec4(tex0.rgb * tex0.a, tex0.a);
 		//tex1 = vec4(tex1.rgb * tex1.a, tex1.a);
 	}
@@ -1830,8 +1830,8 @@ void main()
      }
      else if (mixmode == 22) {
          //DISPLACEMENT alpha
-         vec2 displacement = texture2D(endSampler1, TexCoord0.st).rb * 0.1 * tex1.a;
-         fc = texture2D(endSampler0, (TexCoord0.st + displacement) * 0.91f);
+         vec2 displacement = texture(endSampler1, TexCoord0.st).rb * 0.1 * tex1.a;
+         fc = texture(endSampler0, (TexCoord0.st + displacement) * 0.91f);
          // Keep original alpha for displacement
      }
      else if (mixmode == 23) {
@@ -1944,7 +1944,7 @@ void main()
          FragColor = vec4(fc.rgb, fc.a * opacity);
      }
 	else if (textmode == 1) {
-		float c = texture2D(Sampler0, vec2(TexCoord0.s, TexCoord0.t)).r;
+		float c = texture(Sampler0, vec2(TexCoord0.s, TexCoord0.t)).r;
 		FragColor = vec4(color.rgb, c);
 		return;
 	}
@@ -1967,10 +1967,10 @@ void main()
           vec2 st00 = (uv00  + vec2(0.5)) * vec2(thx, thy);
 
           // Compute g_u, g_v, D coefficients from four closest 8-bit RGBA texels
-          vec4 rawtex00 = texture2D(fboSampler, st00);
-          vec4 rawtex10 = texture2D(fboSampler, st00 + vec2(0.5*thx, 0.0));
-          vec4 rawtex01 = texture2D(fboSampler, st00 + vec2(0.0, 0.5*thy));
-          vec4 rawtex11 = texture2D(fboSampler, st00 + vec2(0.5*thx, 0.5*thy));
+          vec4 rawtex00 = texture(fboSampler, st00);
+          vec4 rawtex10 = texture(fboSampler, st00 + vec2(0.5*thx, 0.0));
+          vec4 rawtex01 = texture(fboSampler, st00 + vec2(0.0, 0.5*thy));
+          vec4 rawtex11 = texture(fboSampler, st00 + vec2(0.5*thx, 0.5*thy));
 
           // Restore the value for D from its 8-bit encoding
           vec2 D00_10 = 16.0*(vec2(rawtex00.r, rawtex10.r)-0.80196);
@@ -1990,16 +1990,16 @@ void main()
           float pattern = smoothstep(-aastep, aastep, D);
 
           // Final fragment color
-          FragColor = vec4(pattern, pattern, pattern, texture2D(fboSampler, TexCoord0).a * opacity);
+          FragColor = vec4(pattern, pattern, pattern, texture(fboSampler, TexCoord0).a * opacity);
 		return;
 	}
 	else if (thumb == 1) {
-		FragColor = vec4(texture2D(Sampler0, TexCoord0.st).rgb, 0.7f);
+		FragColor = vec4(texture(Sampler0, TexCoord0.st).rgb, 0.7f);
 	}
 	else if (singlelayer == 1) {
 		//vec2 size0 = textureSize(Sampler0, 0);
-		//vec4 ic = texture2D(Sampler0, vec2((texco.x - 0.5f) * fbowidth * fcdiv / size0.x + 0.5f, (texco.y - 0.5f) * fboheight * fcdiv / size0.y + 0.5f));
-		vec4 ic = texture2D(Sampler0, texco);
+		//vec4 ic = texture(Sampler0, vec2((texco.x - 0.5f) * fbowidth * fcdiv / size0.x + 0.5f, (texco.y - 0.5f) * fboheight * fcdiv / size0.y + 0.5f));
+		vec4 ic = texture(Sampler0, texco);
 		FragColor = vec4(ic.r, ic.g, ic.b, ic.a * opacity);
 	}
 	else if (circle == 1) {
@@ -2060,7 +2060,7 @@ void main()
 					FragColor = color;
 				}
 				else {
-				    vec4 ic = texture2D(Sampler0, TexCoord0.st).rgba;
+				    vec4 ic = texture(Sampler0, TexCoord0.st).rgba;
                     if (!inverteff) FragColor = vec4(ic.r, ic.g, ic.b, ic.a * opacity);
                     else FragColor = vec4(1.0f - ic.r, 1.0f - ic.g, 1.0f - ic.b, ic.a * opacity);
                 }
@@ -2116,7 +2116,7 @@ void main()
                 }
             }
             else {
-                vec4 ic = texture2D(Sampler0, TexCoord0.st).rgba;
+                vec4 ic = texture(Sampler0, TexCoord0.st).rgba;
                 if (!inverteff) FragColor = vec4(ic.r, ic.g, ic.b, ic.a * opacity);
                 else FragColor = vec4(1.0f - ic.r, 1.0f - ic.g, 1.0f - ic.b, ic.a * opacity);
             }
@@ -2147,8 +2147,8 @@ void main()
 			float a, b;
 			float fardist, dist;
 			
-			vec4 data0 = texture2D(endSampler0, TexCoord0.st);	
-			vec4 data1 = texture2D(endSampler1, TexCoord0.st);
+			vec4 data0 = texture(endSampler0, TexCoord0.st);	
+			vec4 data1 = texture(endSampler1, TexCoord0.st);
 			vec4 data;
 			
 			switch (wkind) {
@@ -2185,40 +2185,40 @@ void main()
 						tc.x -= xpix / (fbowidth * fcdiv);
 						if (xc < xpix) {
 							tc.x = 1.0f + tc.x;
-							FragColor = vec4(texture2D(endSampler1, tc).rgb, 1.0f);
+							FragColor = vec4(texture(endSampler1, tc).rgb, 1.0f);
 						}
 						else {
-							FragColor = vec4(texture2D(endSampler0, tc).rgb, 1.0f);
+							FragColor = vec4(texture(endSampler0, tc).rgb, 1.0f);
 						}
 					}
 					else if (dir == 2) {
 						tc.y -= ypix / (fboheight * fcdiv);
 						if (yc < ypix) {
 							tc.y = 1.0f + tc.y;
-							FragColor = vec4(texture2D(endSampler1, tc).rgb, 1.0f);
+							FragColor = vec4(texture(endSampler1, tc).rgb, 1.0f);
 						}
 						else {
-							FragColor = vec4(texture2D(endSampler0, tc).rgb, 1.0f);
+							FragColor = vec4(texture(endSampler0, tc).rgb, 1.0f);
 						}
 					}
 					if (dir == 1) {
 						tc.x -= (fbowidth * fcdiv - xpix) / (fbowidth * fcdiv);
 						if (xc > fbowidth * fcdiv - xpix) {
-							FragColor = vec4(texture2D(endSampler1, tc).rgb, 1.0f);
+							FragColor = vec4(texture(endSampler1, tc).rgb, 1.0f);
 						}
 						else {
 							tc.x = 1.0f + tc.x;
-							FragColor = vec4(texture2D(endSampler0, tc).rgb, 1.0f);
+							FragColor = vec4(texture(endSampler0, tc).rgb, 1.0f);
 						}
 					}
 					else if (dir == 3) {
 						tc.y -= (fboheight * fcdiv - ypix) / (fboheight * fcdiv);
 						if (yc > fboheight * fcdiv - ypix) {
-							FragColor = vec4(texture2D(endSampler1, tc).rgb, 1.0f);
+							FragColor = vec4(texture(endSampler1, tc).rgb, 1.0f);
 						}
 						else {
 							tc.y = 1.0f + tc.y;
-							FragColor = vec4(texture2D(endSampler0, tc).rgb, 1.0f);
+							FragColor = vec4(texture(endSampler0, tc).rgb, 1.0f);
 						}
 					}
 					break;
@@ -2236,41 +2236,41 @@ void main()
 					if (dir == 0) {
 						if (xc < xpix) {
 							tc.x = xc / xpix;
-							FragColor = vec4(texture2D(endSampler1, tc).rgb, 1.0f);
+							FragColor = vec4(texture(endSampler1, tc).rgb, 1.0f);
 						}
 						else {
 							tc.x = (fbowidth * fcdiv - xc) / (fbowidth * fcdiv - xpix);
-							FragColor = vec4(texture2D(endSampler0, tc).rgb, 1.0f);
+							FragColor = vec4(texture(endSampler0, tc).rgb, 1.0f);
 						}
 					}
 					else if (dir == 1) {
 						if (xc < xpix) {
 							tc.x = xc / xpix;
-							FragColor = vec4(texture2D(endSampler0, tc).rgb, 1.0f);
+							FragColor = vec4(texture(endSampler0, tc).rgb, 1.0f);
 						}
 						else {
 							tc.x = (fbowidth * fcdiv - xc) / (fbowidth * fcdiv - xpix);
-							FragColor = vec4(texture2D(endSampler1, tc).rgb, 1.0f);
+							FragColor = vec4(texture(endSampler1, tc).rgb, 1.0f);
 						}
 					}
 					else if (dir == 2) {
 						if (yc < ypix) {
 							tc.y = yc / ypix;
-							FragColor = vec4(texture2D(endSampler1, tc).rgb, 1.0f);
+							FragColor = vec4(texture(endSampler1, tc).rgb, 1.0f);
 						}
 						else {
 							tc.y = (fboheight * fcdiv - yc) / (fboheight * fcdiv - ypix);
-							FragColor = vec4(texture2D(endSampler0, tc).rgb, 1.0f);
+							FragColor = vec4(texture(endSampler0, tc).rgb, 1.0f);
 						}
 					}
 					else if (dir == 3) {
 						if (yc < ypix) {
 							tc.y = yc / ypix;
-							FragColor = vec4(texture2D(endSampler0, tc).rgb, 1.0f);
+							FragColor = vec4(texture(endSampler0, tc).rgb, 1.0f);
 						}
 						else {
 							tc.y = (fboheight * fcdiv - yc) / (fboheight * fcdiv - ypix);
-							FragColor = vec4(texture2D(endSampler1, tc).rgb, 1.0f);
+							FragColor = vec4(texture(endSampler1, tc).rgb, 1.0f);
 						}
 					}
 					break;
@@ -2344,11 +2344,11 @@ void main()
 						tc.x = ((tc.x - xl) / (xh - xl));
 						tc.y = ((tc.y - yl) / (yh - yl));
 						if (dir == 0) {
-							data1 = vec4(texture2D(endSampler1, tc).rgba);
+							data1 = vec4(texture(endSampler1, tc).rgba);
 						}
 						else {
 							data0 = data1;
-							data1 = vec4(texture2D(endSampler0, tc).rgba);
+							data1 = vec4(texture(endSampler0, tc).rgba);
 						}
 						FragColor = vec4((data1.rgb * data1.a + data0.rgb * (1.0f - data1.a)), max(data0.a, data1.a));
 					}
@@ -2591,8 +2591,8 @@ void main()
 							distvec *= (dist - 2.0f * rad) / rad;
 							//distvec.y *= fbowidth / fboheight;
 							vec2 newtexco = TexCoord0.st - distvec;
-							if (dir == 0) FragColor = texture2D(endSampler0, newtexco);
-							else FragColor = texture2D(endSampler1, newtexco);
+							if (dir == 0) FragColor = texture(endSampler0, newtexco);
+							else FragColor = texture(endSampler1, newtexco);
 						}
 					}
 					break;

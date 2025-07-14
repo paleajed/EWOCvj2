@@ -897,7 +897,6 @@ Program::Program() : ndimanager(NDIManager::getInstance()) {
     this->beatthres->range[0] = 0.0f;
     this->beatthres->range[1] = 1.0f;
     this->beatthres->sliding = true;
-    this->beatthres->powerfour100 = true;
     this->beatthres->box->lcolor[0] = 0.4f;
     this->beatthres->box->lcolor[1] = 0.4f;
     this->beatthres->box->lcolor[2] = 0.4f;
@@ -11307,6 +11306,8 @@ void Program::process_audio() {
                 top = max;
                 max = 0.0f;
                 cnt = 0;
+                printf("top amplitude: %f\n", top);
+                fflush(stdout);
             }
             cnt++;
 
@@ -11478,7 +11479,7 @@ void Program::process_audio() {
                     if (elem->beats) {
                         int counter2 = counter / elem->beats;
                         elem->speed->value = elem->totaltime / (1000.0f * this->beatdet->winning_bpm) / elem->beats;
-                        if (top < std::pow(mainprogram->beatthres->value, 4)) {
+                        if (top < mainprogram->beatthres->value) {
                             elem->speed->value = 0.0f;
                         }
                         else if (counter2 > this->aubpmcounter / elem->beats) {
