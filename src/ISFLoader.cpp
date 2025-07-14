@@ -127,7 +127,6 @@ ISFLoader::ISFLoader() {
 
 ISFLoader::~ISFLoader() {
     clear();
-    saveCacheToDisk();  // Add this line
 }
 
 bool ISFLoader::loadISFDirectory(const std::string& directory) {
@@ -181,6 +180,8 @@ bool ISFLoader::loadISFDirectory(const std::string& directory) {
     std::cout << "Loaded " << shaders_.size() << " ISF shaders from " << directory
               << " in " << duration.count() << "ms" << std::endl;
 
+
+    saveCacheToDisk();
     printCacheStats();    return true;
 }
 
@@ -380,11 +381,6 @@ void ISFLoader::cacheProgram(const std::string& shaderName,
     entry.isValid = true;
 
     shaderCache_[shaderName] = std::move(entry);
-
-    if (shaderCache_.size() % 10 == 0 || isFirstRun_) {
-        std::cout << "DEBUG: Saving cache to disk (" << shaderCache_.size() << " shaders)" << std::endl;
-        saveCacheToDisk();
-    }
 }
 
 bool ISFLoader::validateCacheEnvironment() {

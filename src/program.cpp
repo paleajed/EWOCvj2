@@ -877,7 +877,7 @@ Program::Program() : ndimanager(NDIManager::getInstance()) {
 	this->wormgate1->box->vtxcoords->h = 0.6f;
 	this->wormgate1->box->upvtxtoscr();
 	this->wormgate1->box->tooltiptitle = "Screen switching wormgate ";
-	this->wormgate1->box->tooltip = "Connects mixing screen and media bins screen.  Leftclick to switch screen.  Drag content inside white rectangle up to the very edge of the screen to travel to the other screen. ";
+	this->wormgate1->box->tooltip = "Connects mixing screen and media bins screen.  Leftclick to switch screen.  Drag content inside this box up to the very edge of the screen to travel to the other screen. ";
     // wormgate rectangle to the right
 	this->wormgate2 = new Button(false);
 	this->wormgate2->toggle = 1;
@@ -887,8 +887,7 @@ Program::Program() : ndimanager(NDIManager::getInstance()) {
 	this->wormgate2->box->vtxcoords->h = 0.6f;
 	this->wormgate2->box->upvtxtoscr();
 	this->wormgate2->box->tooltiptitle = "Screen switching wormgate ";
-	this->wormgate2->box->tooltip = "Connects mixing screen and media bins screen."
-                                    "  Leftclick to switch screen.  Leftclick to switch screen.  Drag content inside white rectangle up to the very edge of the screen to travel to the other screen. ";
+    this->wormgate2->box->tooltip = "Connects mixing screen and media bins screen.  Leftclick to switch screen.  Drag content inside this box up to the very edge of the screen to travel to the other screen. ";
 
     // volume treshold for beat detection to kick in
     this->beatthres = new Param;
@@ -3619,8 +3618,7 @@ void Program::handle_parammenu2() {
         }
         else if (k == 2) {
             if (mainmix->learnparam->type == FF_TYPE_TEXT || mainmix->learnparam->type == FF_TYPE_FILE) {
-                mainmix->learnparam->valuechar = mainmix->learnparam->defltchar;
-                mainmix->learnparam->valuestr = mainmix->learnparam->valuechar;
+                mainmix->learnparam->valuestr = mainmix->learnparam->defltchar;
             }
             else {
                 mainmix->learnparam->value = mainmix->learnparam->deflt;
@@ -3645,8 +3643,7 @@ void Program::handle_parammenu1b() {
         }
         else if (k == 1) {
             if (mainmix->learnparam->type == FF_TYPE_TEXT || mainmix->learnparam->type == FF_TYPE_FILE) {
-                mainmix->learnparam->valuechar = mainmix->learnparam->defltchar;
-                mainmix->learnparam->valuestr = mainmix->learnparam->valuechar;
+                mainmix->learnparam->valuestr = mainmix->learnparam->defltchar;
             }
             else {
                 mainmix->learnparam->value = mainmix->learnparam->deflt;
@@ -3702,8 +3699,7 @@ void Program::handle_parammenu2b() {
         }
         else if (k == 2) {
             if (mainmix->learnparam->type == FF_TYPE_TEXT || mainmix->learnparam->type == FF_TYPE_FILE) {
-                mainmix->learnparam->valuechar = mainmix->learnparam->defltchar;
-                mainmix->learnparam->valuestr = mainmix->learnparam->valuechar;
+                mainmix->learnparam->valuestr = mainmix->learnparam->defltchar;
             }
             else {
                 mainmix->learnparam->value = mainmix->learnparam->deflt;
@@ -3942,8 +3938,15 @@ void Program::handle_monitormenu() {
     std::vector<OutputEntry*> currentries;
     std::vector<OutputEntry*> takenentries;
     GLuint tex;
+    MixNode *mnode;
     int numd = SDL_GetNumVideoDisplays();
     if (mainprogram->monitormenu->state > 1) {
+        if (mainprogram->monitormenu->value == 3) {
+            mnode = mainprogram->nodesmain->mixnodes[1][2];
+        }
+        else {
+            mnode = mainprogram->nodesmain->mixnodes[!mainprogram->prevmodus][mainprogram->monitormenu->value];
+        }
         // the output display menu (SDL_GetNumVideoDisplays() doesn't allow hotplugging screens...
         std::vector<std::string> monitors;
         monitors.push_back("View full screen");
@@ -3952,7 +3955,12 @@ void Program::handle_monitormenu() {
         monitors.push_back("MIDI learn wipe position");
         monitors.push_back("submenu mixtargetmenu");
         monitors.push_back("Show on display");
-        monitors.push_back("Toggle NDI output");
+        if (mnode->ndioutput != nullptr) {
+            monitors.push_back("Toggle NDI output off");
+        }
+        else {
+            monitors.push_back("Toggle NDI output on");
+        }
         mainprogram->make_menu("monitormenu", mainprogram->monitormenu, monitors);
 
         mainprogram->make_mixtargetmenu();
@@ -4121,13 +4129,6 @@ void Program::handle_monitormenu() {
             }
         }
         else if (k == 4) {
-            MixNode *mnode;
-            if (mainprogram->monitormenu->value == 3) {
-                mnode = mainprogram->nodesmain->mixnodes[1][2];
-            }
-            else {
-                mnode = mainprogram->nodesmain->mixnodes[!mainprogram->prevmodus][mainprogram->monitormenu->value];
-            }
             if (mnode->ndioutput == nullptr) {
                 // create NDI output
                 mainprogram->ndilaycount++;
@@ -4158,9 +4159,18 @@ void Program::handle_monitormenu() {
                         name = "EWOCvj2 - Preview Monitor " + deckstr;
                     }
                 }
-                mnode->ndioutput = mainprogram->ndimanager.createOutput(name, mainprogram->ow[!mainprogram->prevmodus],
-                                                                                      mainprogram->oh[!mainprogram->prevmodus],
-                                                                                      30.0f);
+                if (mainprogram->monitormenu->value == 3) {
+                    mnode->ndioutput = mainprogram->ndimanager.createOutput(name,
+                                                                            mainprogram->ow[1],
+                                                                            mainprogram->oh[1],
+                                                                            30.0f);
+                }
+                else {
+                    mnode->ndioutput = mainprogram->ndimanager.createOutput(name,
+                                                                            mainprogram->ow[!mainprogram->prevmodus],
+                                                                            mainprogram->oh[!mainprogram->prevmodus],
+                                                                            30.0f);
+                }
                 mnode->ndioutput->startStream();
             }
             else {
@@ -4651,7 +4661,10 @@ void Program::handle_laymenu1() {
                     int isfnr = this->absources[this->menuresults[0]] - 2000;
                     mainmix->mouselayer->set_isfsource(mainprogram->isfsourcenames[isfnr]);
                 }
-                mainmix->mouselayer->ndisource = nullptr;
+                if (mainmix->mouselayer->ndisource != nullptr) {
+                    mainmix->mouselayer->ndisource->releaseReference();
+                    mainmix->mouselayer->ndisource = nullptr;
+                }
             }
         }
         else if ((!cond && k == 19) || k == 19 - cond * 2) {
@@ -4775,7 +4788,10 @@ void Program::handle_newlaymenu() {
                      int isfnr = this->absources[this->menuresults[0]] - 2000;
                      lay->set_isfsource(mainprogram->isfsourcenames[isfnr]);
                  }
-                 mainmix->mouselayer->ndisource = nullptr;
+                 if (lay->ndisource != nullptr) {
+                     lay->ndisource->releaseReference();
+                     lay->ndisource = nullptr;
+                 }
              }
          }
          else if (k == 9) {
@@ -5446,14 +5462,17 @@ void Program::handle_optionmenu() {
     // Draw and handle ffglparameter optionmenu
     k = mainprogram->handle_menu(mainprogram->optionmenu);
     if (k > -1) {
+        mainmix->mouseparam->oldvalue = mainmix->mouseparam->value;
         mainmix->mouseparam->value = k;
+        // UNDO registration
+        mainprogram->register_undo(mainmix->mouseparam, nullptr);
     }
 
     if (mainprogram->menuchosen) {
         mainprogram->menuchosen = false;
         mainprogram->menuactivation = 0;
         mainprogram->menuresults.clear();
-        mainprogram->recundo = true;
+        mainprogram->recundo = false;
     }
 }
 
@@ -5847,7 +5866,7 @@ bool Program::preferences_handle() {
                                 if (std::find(this->openports.begin(), this->openports.end(), i) ==
                                     this->openports.end()) {
                                     midiin->openPort(i);
-                                    midiin->setCallback(&mycallback, (void *) midici->items[i]);
+                                    midiin->setCallback(&midi_callback, (void *) midici->items[i]);
                                     this->openports.push_back(i);
                                 }
                                 mci->items[i]->midiin = midiin;
@@ -7007,7 +7026,7 @@ bool Program::config_midipresets_init() {
 			double time_taken = ((double)t) / CLOCKS_PER_SEC; // in seconds
 			if (time_taken > 0.1f) {
 				mainprogram->waitmidi = 2;
-				mycallback(0.0f, &mainprogram->savedmessage, mainprogram->savedmidiitem);
+				midi_callback(0.0f, &mainprogram->savedmessage, mainprogram->savedmidiitem);
 				mainprogram->waitmidi = 0;
 			}
 		}
@@ -8353,7 +8372,7 @@ void Preferences::load() {
                                             if (std::find(mainprogram->openports.begin(), mainprogram->openports.end(),
                                                           foundpos) == mainprogram->openports.end()) {
                                                 midiin->openPort(foundpos);
-                                                midiin->setCallback(&mycallback, (void *) pim->items[foundpos]);
+                                                midiin->setCallback(&midi_callback, (void *) pim->items[foundpos]);
                                                 mainprogram->openports.push_back(foundpos);
                                             }
                                             pi->midiin = midiin;
@@ -10637,14 +10656,26 @@ void Program::register_undo(Param *par, Button *but) {
 
         if (par != (Param*)this->currundoelem) {
             std::tuple tup1 = std::make_tuple(par, nullptr, laydeck, laypos, effcat, effpos, parpos, name);
-            std::tuple tup2 = std::make_tuple(tup1, par->oldvalue);
-            this->undomapvec[this->undopos - 1].push_back(tup2);
+            if (par->type == FF_TYPE_TEXT || par->type == FF_TYPE_FILE) {
+                std::tuple tup2 = std::make_tuple(tup1, par->oldvaluestr);
+                this->undomapvec[this->undopos - 1].push_back(tup2);
+            }
+            else {
+                std::tuple tup2 = std::make_tuple(tup1, par->oldvalue);
+                this->undomapvec[this->undopos - 1].push_back(tup2);
+            }
             this->currundoelem = (void*)par;
             this->undopbpos++;
         }
         std::tuple tup1 = std::make_tuple(par, nullptr, laydeck, laypos, effcat, effpos, parpos, name);
-        std::tuple tup2 = std::make_tuple(tup1, par->value);
-        this->undomapvec[this->undopos - 1].push_back(tup2);
+        if (par->type == FF_TYPE_TEXT || par->type == FF_TYPE_FILE) {
+            std::tuple tup2 = std::make_tuple(tup1, par->valuestr);
+            this->undomapvec[this->undopos - 1].push_back(tup2);
+        }
+        else {
+            std::tuple tup2 = std::make_tuple(tup1, par->value);
+            this->undomapvec[this->undopos - 1].push_back(tup2);
+        }
     }
     else if (but) {
         std::string name2 = but->name[0];
@@ -10672,13 +10703,13 @@ void Program::register_undo(Param *par, Button *but) {
         }
         if (but != (Button*)this->currundoelem) {
             std::tuple tup1 = std::make_tuple(nullptr, but, laydeck, laypos, effcat, effpos, parpos, name2);
-            std::tuple tup2 = std::make_tuple(tup1, !but->value);
+            std::tuple tup2 = std::make_tuple(tup1, (float)!but->value);
             this->undomapvec[this->undopos - 1].push_back(tup2);;
             this->currundoelem = (void*)but;
             this->undopbpos++;
         }
         std::tuple tup1 = std::make_tuple(nullptr, but, laydeck, laypos, effcat, effpos, parpos, name2);
-        std::tuple tup2 = std::make_tuple(tup1, but->value);
+        std::tuple tup2 = std::make_tuple(tup1, (float)but->value);
         this->undomapvec[this->undopos - 1].push_back(tup2);
     }
     this->undopbpos++;
@@ -10748,12 +10779,17 @@ void Program::undo_redo_parbut(char offset, bool again, bool swap) {
 
     auto tup5 = this->undomapvec[this->undopos - 1][this->undopbpos + offset];
     auto tup = std::get<0>(tup5);
-    float val = std::get<1>(tup5);
+    auto val = std::get<1>(tup5);
     if (std::get<0>(tup)) {
-        std::get<0>(tup)->value = val;
+        if (std::get<0>(tup)->type == FF_TYPE_TEXT || std::get<0>(tup)->type == FF_TYPE_FILE) {
+            std::get<0>(tup)->valuestr = std::get<std::string>(val);
+        }
+        else {
+            std::get<0>(tup)->value = std::get<float>(val);
+        }
     }
     else {
-        std::get<1>(tup)->value = val;
+        std::get<1>(tup)->value = static_cast<int>(std::get<float>(val));
         std::get<1>(tup)->skiponetoggled = true;
     }
     if (!again) {
@@ -10945,7 +10981,7 @@ void Program::undo_redo_save() {
             this->undopaths.push_back(undopath);
             this->project->save(undopath, false, true);
 
-            std::vector<std::tuple<std::tuple<Param*, Button*, int, int, int, int, int, std::string>, float>> uvec;
+            std::vector<std::tuple<std::tuple<Param*, Button*, int, int, int, int, int, std::string>, std::variant<float, std::string>>> uvec;
             this->undomapvec.push_back(uvec);
             this->undopbpos = 0;
             this->undopos++;

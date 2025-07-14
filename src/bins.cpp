@@ -129,7 +129,7 @@ BinsMain::BinsMain() {
 			box->acolor[3] = 1.0f;
 			box->tooltiptitle = "Media bin element ";
 			box->tooltip = "Shows thumbnail of media bin element, either being a video file ("
-                           "grey border) or an image (white border) or a layer file (orange border) or a deck file (purple border) or mix file (green border).  Hovering over this element shows video resolution and video compression method (CPU or HAP).  Mousewheel skips through the element contents (previewed in larger monitor topmiddle).  Leftdrag allows dragging to mix screen via wormgate.  Leftclick allows moving inside the media bin. Rightclickmenu allows among other things, HAP encoding and also loading of a yellowbordered grid-block of mediabin elements into one of the shelves. ";
+                           "grey border) or an image (white border) or a layer file (orange border) or a deck file (purple border) or mix file (green border).  Hovering over this element shows video resolution and video compression method (CPU or HAP).  Mousewheel skips through the element contents (previewed in larger monitor topright).  Leftdrag allows dragging to mix screen via wormgate, going past the right screen border.  Leftclickdrag allows moving elements inside the media bin. You can also box select elements.  Rightclickmenu allows among other things, HAP encoding and also loading of a yellowbordered grid-block of mediabin elements into one of the shelves. ";
 		}
 	}
 

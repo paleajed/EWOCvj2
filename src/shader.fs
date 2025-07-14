@@ -1836,88 +1836,109 @@ void main()
      }
      else if (mixmode == 23) {
          //CROSSFADING alpha
-         float fac1 = clamp(cf2 * 2.0f, 0.0f, 1.0f);
-         float fac2 = clamp(cf * 2.0f, 0.0f, 1.0f);
-         fc = vec4((tex0.rgb * (1.0f - fac2 * tex1.a / 2.0f) * fac1 + tex1.rgb * (1.0f - fac1 * tex0.a / 2.0f) * fac2),
-                   max(fac1 * tex0.a, fac2 * tex1.a));
+        fc = vec4(mix(tex0.rgb, tex1.rgb, cf), mix(tex0.a, tex1.a, cf));
      }
-     else if (mixmode == 19) {
-         //COLORKEY alpha
-         if (chdir) {
-             vec4 bu = tex0;
-             tex0 = tex1;
-             tex1 = bu;
-         }
-         float totdiff = (abs(chred - tex1.r) + abs(chgreen - tex1.g) + abs(chblue - tex1.b)) * tex1.a;
-         if (totdiff > colortol) {
-             if (chinv) fc = vec4(tex0.rgb, tex0.a);
-             else fc = vec4(tex1.rgb, tex1.a);
-         }
-         else {
-             float blend_factor = clamp((colortol - totdiff) / colortol * (-(feather - 5.2f)), 0.0f, 1.0f);
-             if (chinv) {
-                 fc = vec4(mix(tex0.rgb, tex1.rgb, blend_factor),
-                           mix(tex0.a, tex1.a, blend_factor));
-             } else {
-                 fc = vec4(mix(tex1.rgb, tex0.rgb, blend_factor),
-                           mix(tex1.a, tex0.a, blend_factor));
-             }
-         }
-     }
-     else if (mixmode == 20) {
-         //CHROMAKEY alpha
-         if (chdir) {
-             vec4 bu = tex0;
-             tex0 = tex1;
-             tex1 = bu;
-         }
+    else if (mixmode == 19) {
+        //COLORKEY alpha
+        if (chdir) {
+            vec4 bu = tex0;
+            tex0 = tex1;
+            tex1 = bu;
+        }
+        float totdiff = (abs(chred - tex1.r) + abs(chgreen - tex1.g) + abs(chblue - tex1.b)) * tex1.a;
 
-         float huetol = colortol / 4.0f;
-         float huediff = abs(rgb2hsv(vec3(chred, chgreen, chblue)).x - rgb2hsv(vec3(tex1.r, tex1.g, tex1.b)).x);
-         if (huediff > 0.5f) huediff = 1.0f - huediff;
+        // Calculate how much to key out (0.0 = no keying, 1.0 = fully keyed)
+        float key_amount;
+        if (totdiff > colortol) {
+            key_amount = 0.0; // No keying - show keyed texture
+        } else {
+            key_amount = clamp((colortol - totdiff) / colortol * (-(feather - 5.2f)), 0.0f, 1.0f);
+        }
 
-         if (huediff > huetol) {
-             if (chinv) fc = vec4(tex0.rgb, tex0.a);
-             else fc = vec4(tex1.rgb, tex1.a);
-         }
-         else {
-             float blend_factor = clamp((huetol - huediff) / huetol * (-(feather - 5.2f)), 0.0f, 1.0f);
-             if (chinv) {
-                 fc = vec4(mix(tex0.rgb, tex1.rgb, blend_factor),
-                           mix(tex0.a, tex1.a, blend_factor));
-             } else {
-                 fc = vec4(mix(tex1.rgb, tex0.rgb, blend_factor),
-                           mix(tex1.a, tex0.a, blend_factor));
-             }
-         }
-     }
-     else if (mixmode == 21) {
-         //LUMAKEY alpha
-         if (chdir) {
-             vec4 bu = tex0;
-             tex0 = tex1;
-             tex1 = bu;
-         }
+        // Also incorporate alpha transparency
+        float alpha_transparency = 1.0 - tex1.a;
 
-         float lumtol = colortol / 3.0f;
-         float lumdiff = abs(rgb2hsv(vec3(chred, chgreen, chblue)).z - rgb2hsv(vec3(tex1.r, tex1.g, tex1.b)).z);
+        // Combine both keying effects
+        float total_transparency = clamp(key_amount + alpha_transparency, 0.0f, 1.0f);
 
-         if (lumdiff > lumtol) {
-             if (chinv) fc = vec4(tex0.rgb, tex0.a);
-             else fc = vec4(tex1.rgb, tex1.a);
-         }
-         else {
-             float blend_factor = clamp((lumtol - lumdiff) / lumtol * (-(feather - 5.2f)), 0.0f, 1.0f);
-             if (chinv) {
-                 fc = vec4(mix(tex0.rgb, tex1.rgb, blend_factor),
-                           mix(tex0.a, tex1.a, blend_factor));
-             } else {
-                 fc = vec4(mix(tex1.rgb, tex0.rgb, blend_factor),
-                           mix(tex1.a, tex0.a, blend_factor));
-             }
-         }
-     }
+        // Apply the combined transparency
+        if (chinv) {
+            fc = vec4(mix(tex1.rgb, tex0.rgb, total_transparency),
+                      mix(tex1.a, tex0.a, total_transparency));
+        } else {
+            fc = vec4(mix(tex0.rgb, tex1.rgb, 1.0 - total_transparency),
+                      mix(tex0.a, tex1.a, 1.0 - total_transparency));
+        }
+    }
+    else if (mixmode == 20) {
+        //CHROMAKEY alpha
+        if (chdir) {
+            vec4 bu = tex0;
+            tex0 = tex1;
+            tex1 = bu;
+        }
 
+        float huetol = colortol / 4.0f;
+        float huediff = abs(rgb2hsv(vec3(chred, chgreen, chblue)).x - rgb2hsv(vec3(tex1.r, tex1.g, tex1.b)).x);
+        if (huediff > 0.5f) huediff = 1.0f - huediff;
+
+        // Calculate how much to key out (0.0 = no keying, 1.0 = fully keyed)
+        float key_amount;
+        if (huediff > huetol) {
+            key_amount = 0.0; // No keying - show keyed texture
+        } else {
+            key_amount = clamp((huetol - huediff) / huetol * (-(feather - 5.2f)), 0.0f, 1.0f);
+        }
+
+        // Also incorporate alpha transparency
+        float alpha_transparency = 1.0 - tex1.a;
+
+        // Combine both keying effects
+        float total_transparency = clamp(key_amount + alpha_transparency, 0.0f, 1.0f);
+
+        // Apply the combined transparency
+        if (chinv) {
+            fc = vec4(mix(tex1.rgb, tex0.rgb, total_transparency),
+                      mix(tex1.a, tex0.a, total_transparency));
+        } else {
+            fc = vec4(mix(tex0.rgb, tex1.rgb, 1.0 - total_transparency),
+                      mix(tex0.a, tex1.a, 1.0 - total_transparency));
+        }
+    }
+    else if (mixmode == 21) {
+        //LUMAKEY alpha
+        if (chdir) {
+            vec4 bu = tex0;
+            tex0 = tex1;
+            tex1 = bu;
+        }
+
+        float lumtol = colortol / 3.0f;
+        float lumdiff = abs(rgb2hsv(vec3(chred, chgreen, chblue)).z - rgb2hsv(vec3(tex1.r, tex1.g, tex1.b)).z);
+
+        // Calculate how much to key out (0.0 = no keying, 1.0 = fully keyed)
+        float key_amount;
+        if (lumdiff > lumtol) {
+            key_amount = 0.0; // No keying - show keyed texture
+        } else {
+            key_amount = clamp((lumtol - lumdiff) / lumtol * (-(feather - 5.2f)), 0.0f, 1.0f);
+        }
+
+        // Also incorporate alpha transparency
+        float alpha_transparency = 1.0 - tex1.a;
+
+        // Combine both keying effects
+        float total_transparency = clamp(key_amount + alpha_transparency, 0.0f, 1.0f);
+
+        // Apply the combined transparency
+        if (chinv) {
+            fc = vec4(mix(tex1.rgb, tex0.rgb, total_transparency),
+                      mix(tex1.a, tex0.a, total_transparency));
+        } else {
+            fc = vec4(mix(tex0.rgb, tex1.rgb, 1.0 - total_transparency),
+                      mix(tex0.a, tex1.a, 1.0 - total_transparency));
+        }
+    }
      if (mixmode > 0) {
          //alpha demultiplying
          FragColor = vec4(fc.rgb, fc.a * opacity);
