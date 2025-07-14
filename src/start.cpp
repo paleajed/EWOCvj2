@@ -7394,12 +7394,22 @@ int main(int argc, char* argv[]) {
     }
 #else
     #ifdef POSIX
+    mainprogram->appimagedir = "";
+    if (std::getenv("APPDIR")) {
+        mainprogram->appimagedir = std::getenv("APPDIR");
+    }
     std::string fdir(mainprogram->appimagedir + mainprogram->fontdir);
-    std::string fstr = fdir + "/expressway.ttf";
+    std::string fstr;
+    if (mainprogram->appimagedir == "") {
+        fstr = fdir + "/expressway.ttf";
+    }
+    else {
+        fstr = fdir + "/truetype/expressway.ttf";
+    }
     printf("%s /n", fstr.c_str());
     fflush(stdout);
-    if (!exists(fdir + "/expressway.ttf"))
-        mainprogram->quitting = "Can't find \"expressway.ttf\" TrueType font in " + fdir;
+    if (!exists(fstr))
+        mainprogram->quitting = "Can't find \"expressway.ttf\" TrueType font";
 #endif
 #endif
     if (FT_New_Face(ft, fstr.c_str(), 0, &face)) {
@@ -7418,10 +7428,6 @@ int main(int argc, char* argv[]) {
     bool ret = ilLoadImage((const ILstring)"./splash.jpeg");
 #endif
 #ifdef POSIX
-    mainprogram->appimagedir = "";
-    if (std::getenv("APPDIR")) {
-        mainprogram->appimagedir = std::getenv("APPDIR");
-    }
     std::string spljpeg = mainprogram->appimagedir + "/usr/share/ewocvj2/splash.jpeg";
     bool ret = ilLoadImage(spljpeg.c_str());
 #endif

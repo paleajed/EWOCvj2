@@ -7225,7 +7225,8 @@ GLuint Program::set_shader() {
     if (exists("./shader.fs")) strcpy (fshader, "./shader.fs");
  	else if (exists(fstr)) strcpy (fshader, fstr.c_str());
  	else mainprogram->quitting = "Unable to find fragment shader \"shader.fs\" in " + ddir;
- 	#endif
+    printf("fragment shader %s\n", fstr.c_str());
+    #endif
  	#endif
 	load_shader(fshader, &FShaderSource, flen);
 	glShaderSource(vertexShaderObject, 1, &VShaderSource, nullptr);
