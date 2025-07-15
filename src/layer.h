@@ -333,8 +333,8 @@ class Layer {
         std::set<std::vector<float>> lpstcolors;
 
         int ffglsourcenr = -1;
-        FFInstanceID ffglinstancenr;
-        FFGLInstanceHandle instance;
+        FFInstanceID ffglinstancenr = nullptr;
+        FFGLInstanceHandle instance = nullptr;
         std::vector<Param*> ffglparams;
         int isfsourcenr = -1;
         int isfpluginnr = -1;

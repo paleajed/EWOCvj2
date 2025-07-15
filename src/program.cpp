@@ -11302,7 +11302,6 @@ void Program::process_audio() {
                 top = max;
                 max = 0.0f;
                 cnt = 0;
-                printf("top amplitude: %f\n", top);
                 fflush(stdout);
             }
             cnt++;
