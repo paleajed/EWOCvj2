@@ -3341,10 +3341,6 @@ void BinsMain::hap_encode(std::string srcpath, BinElement *binel, BinElement *bd
     av_packet_unref(&pkt);
     avcodec_free_context(&source_dec_ctx);
     avformat_close_input(&source);
-    if (binel->otflay) {
-        if (binel->otflay->video_dec_ctx) avcodec_free_context(&binel->otflay->video_dec_ctx);
-        if (binel->otflay->video) avformat_close_input(&binel->otflay->video);
-    }
     binel->path = remove_extension(binel->path) + "_hap.mov";
 	rename(destpath, binel->path);
     if (mainprogram->stashvideos) {

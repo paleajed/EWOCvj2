@@ -406,6 +406,41 @@ std::string pathtoposix(std::string path) {
     return path;
 }
 
+std::string getdocumentspath() {
+    const char* home = std::getenv("HOME");
+    if (!home) return "";
+
+    std::string configPath = std::string(home) + "/.config/user-dirs.dirs";
+    std::ifstream file(configPath);
+
+    if (file.is_open()) {
+        std::string line;
+        while (std::getline(file, line)) {
+            // Look for XDG_DOCUMENTS_DIR="$HOME/Documents"
+            if (line.find("XDG_DOCUMENTS_DIR=") == 0) {
+                size_t start = line.find('"');
+                size_t end = line.rfind('"');
+
+                if (start != std::string::npos && end != std::string::npos && start < end) {
+                    start++; // Skip opening quote
+                    std::string path = line.substr(start, end - start);
+
+                    // Replace $HOME with actual home directory
+                    if (path.find("$HOME/") == 0) {
+                        path = std::string(home) + path.substr(5);
+                    } else if (path.find("$HOME") == 0) {
+                        path = std::string(home) + path.substr(5);
+                    }
+
+                    return path;
+                }
+            }
+        }
+    }
+
+    // Fallback to default
+    return std::string(home) + "/Documents";
+}
 
 bool isimage(std::string path) {
     // is this file an image?
@@ -7337,15 +7372,14 @@ int main(int argc, char* argv[]) {
     #ifdef POSIX
     std::string homedir(getenv("HOME"));
     mainprogram->homedir = homedir;
-    std::filesystem::path p1{homedir + "/Documents/EWOCvj2"};
+    std::string xdg_docs = getdocumentspath();
+    std::filesystem::path p1{xdg_docs + "/EWOCvj2"};
     std::string docdir = p1.generic_string();
-    if (!exists(homedir + "/Documents/EWOCvj2")) std::filesystem::create_directory(p1);
+    if (!exists(xdg_docs + "/EWOCvj2")) std::filesystem::create_directory(p1);
     std::filesystem::path e{homedir + "/.ewocvj2"};
     if (!exists(homedir + "/.ewocvj2")) std::filesystem::create_directory(e);
     std::filesystem::path p4{homedir + "/.ewocvj2/temp"};
     if (!exists(homedir + "/.ewocvj2/temp")) std::filesystem::create_directory(p4);
-    mainprogram->ffgldir = "/usr/share/FFGL";
-    mainprogram->isfdir = "/usr/share/ISF";
     std::filesystem::path p6{docdir + "/projects"};
     mainprogram->currprojdir = p6.generic_string();
     if (!exists(docdir + "/projects")) std::filesystem::create_directory(p6);
@@ -7413,6 +7447,8 @@ int main(int argc, char* argv[]) {
     if (std::getenv("APPDIR")) {
         mainprogram->appimagedir = std::getenv("APPDIR");
     }
+    mainprogram->ffgldir = mainprogram->appimagedir + "/usr/share/FFGL";
+    mainprogram->isfdir = mainprogram->appimagedir + "/usr/share/ISF";
     std::string fdir(mainprogram->appimagedir + mainprogram->fontdir);
     std::string fstr;
     if (mainprogram->appimagedir == "") {
