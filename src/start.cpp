@@ -7344,12 +7344,8 @@ int main(int argc, char* argv[]) {
     if (!exists(homedir + "/.ewocvj2")) std::filesystem::create_directory(e);
     std::filesystem::path p4{homedir + "/.ewocvj2/temp"};
     if (!exists(homedir + "/.ewocvj2/temp")) std::filesystem::create_directory(p4);
-    std::filesystem::path p5{homedir + "/.ewocvj2/ffglplugins"};
-    if (!exists(homedir + "/.ewocvj2/ffglplugins")) std::filesystem::create_directory(p5);
-    mainprogram->ffgldir = homedir + "/.ewocvj2/ffglplugins";
-    std::filesystem::path p8{homedir + "/.ewocvj2/isfplugins"};
-    if (!exists(homedir + "/.ewocvj2/isfplugins")) std::filesystem::create_directory(p8);
-    mainprogram->isfdir = homedir + "/.ewocvj2/isfplugins";
+    mainprogram->ffgldir = "/usr/share/FFGL";
+    mainprogram->isfdir = "/usr/share/ISF";
     std::filesystem::path p6{docdir + "/projects"};
     mainprogram->currprojdir = p6.generic_string();
     if (!exists(docdir + "/projects")) std::filesystem::create_directory(p6);
