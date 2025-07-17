@@ -1922,8 +1922,11 @@ void draw_direct(float* linec, float* areac, float x, float y, float wi, float h
 		mainprogram->uniformCache->setFloat4v("lcolor", linec);
         GLint m_viewport[4];
         glGetIntegerv(GL_VIEWPORT, m_viewport);
-        mainprogram->uniformCache->setFloat("pixelw", 2.0f / (wi * ((float)(m_viewport[2] - m_viewport[0]) / 2.0f)));
-        mainprogram->uniformCache->setFloat("pixelh", 2.0f / (he * ((float)(m_viewport[3] - m_viewport[1]) / 2.0f)));
+        // Cache viewport calculations
+        float viewport_w = (float)(m_viewport[2] - m_viewport[0]);
+        float viewport_h = (float)(m_viewport[3] - m_viewport[1]);
+        mainprogram->uniformCache->setFloat("pixelw", 4.0f / (wi * viewport_w));
+        mainprogram->uniformCache->setFloat("pixelh", 4.0f / (he * viewport_h));
 	}
 	else {
 		mainprogram->uniformCache->setFloat("pixelw", 0.0f);
@@ -1934,49 +1937,51 @@ void draw_direct(float* linec, float* areac, float x, float y, float wi, float h
 	if (areac) {
 		float shx = -dx * 6.0f;
 		float shy = -dy * 6.0f;
+		GLfloat fvcoords2[12];
 		if (!vertical) {
-			GLfloat fvcoords2[12] = {
-				x,     y + he, 1.0,
-				x,     y, 1.0,
-				x + wi, y + he, 1.0,
-				x + wi, y, 1.0,
-			};
-			glBindBuffer(GL_ARRAY_BUFFER, mainprogram->bvbuf);
-			glBufferSubData(GL_ARRAY_BUFFER, 0, 48, fvcoords2);
+			fvcoords2[0] = x; fvcoords2[1] = y + he; fvcoords2[2] = 1.0;
+			fvcoords2[3] = x; fvcoords2[4] = y; fvcoords2[5] = 1.0;
+			fvcoords2[6] = x + wi; fvcoords2[7] = y + he; fvcoords2[8] = 1.0;
+			fvcoords2[9] = x + wi; fvcoords2[10] = y; fvcoords2[11] = 1.0;
 		}
 		else {
 			he /= 2.0f;
 			wi *= 2.0f;
-			GLfloat fvcoords2[12] = {
-				x + he,     y - wi, 1.0,
-				x,     y - wi, 1.0,
-				x + he, y, 1.0,
-				x , y, 1.0,
-			};
-			glBindBuffer(GL_ARRAY_BUFFER, mainprogram->bvbuf);
-			glBufferSubData(GL_ARRAY_BUFFER, 0, 48, fvcoords2);
+			fvcoords2[0] = x + he; fvcoords2[1] = y - wi; fvcoords2[2] = 1.0;
+			fvcoords2[3] = x; fvcoords2[4] = y - wi; fvcoords2[5] = 1.0;
+			fvcoords2[6] = x + he; fvcoords2[7] = y; fvcoords2[8] = 1.0;
+			fvcoords2[9] = x; fvcoords2[10] = y; fvcoords2[11] = 1.0;
 		}
-		mainprogram->uniformCache->setFloat4v("color", areac);
-        GLfloat tcoords[8];
-        GLfloat* p = tcoords;
+		
+		GLfloat tcoords[8];
         if (scale != 1.0f || dx != 0.0f || dy != 0.0f) {
-            *p++ = ((0.0f) - 0.5f) * scale + 0.5f + shx; *p++ = ((0.0f) - 0.5f) * scale + 0.5f + shy;
-            *p++ = ((0.0f) - 0.5f) * scale + 0.5f + shx; *p++ = ((1.0f) - 0.5f) * scale + 0.5f + shy;
-            *p++ = ((1.0f) - 0.5f) * scale + 0.5f + shx; *p++ = ((0.0f) - 0.5f) * scale + 0.5f + shy;
-            *p++ = ((1.0f) - 0.5f) * scale + 0.5f + shx; *p++ = ((1.0f) - 0.5f) * scale + 0.5f + shy;
+            // Pre-calculate common values to avoid redundant math
+            float half_scale = scale * 0.5f;
+            float base_offset = 0.5f - half_scale;
+            float left = base_offset + shx;
+            float right = base_offset + scale + shx;
+            float top = base_offset + shy;
+            float bottom = base_offset + scale + shy;
+            
+            tcoords[0] = left;  tcoords[1] = top;     // bottom-left
+            tcoords[2] = left;  tcoords[3] = bottom;  // top-left
+            tcoords[4] = right; tcoords[5] = top;     // bottom-right
+            tcoords[6] = right; tcoords[7] = bottom;  // top-right
         }
         else {
-            *p++ = 0.0f;
-            *p++ = 0.0f;
-            *p++ = 0.0f;
-            *p++ = 1.0f;
-            *p++ = 1.0f;
-            *p++ = 0.0f;
-            *p++ = 1.0f;
-            *p++ = 1.0f;
+            tcoords[0] = 0.0f; tcoords[1] = 0.0f;
+            tcoords[2] = 0.0f; tcoords[3] = 1.0f;
+            tcoords[4] = 1.0f; tcoords[5] = 0.0f;
+            tcoords[6] = 1.0f; tcoords[7] = 1.0f;
         }
+        
+        // Upload both buffers with reduced bind calls
+        glBindBuffer(GL_ARRAY_BUFFER, mainprogram->bvbuf);
+        glBufferSubData(GL_ARRAY_BUFFER, 0, 48, fvcoords2);
         glBindBuffer(GL_ARRAY_BUFFER, mainprogram->btbuf);
         glBufferSubData(GL_ARRAY_BUFFER, 0, 32, tcoords);
+        
+        mainprogram->uniformCache->setFloat4v("color", areac);
 		if (tex != -1) {
 			glActiveTexture(GL_TEXTURE0);
 			glBindTexture(GL_TEXTURE_2D, tex);
@@ -1986,22 +1991,33 @@ void draw_direct(float* linec, float* areac, float x, float y, float wi, float h
 		if (circle) {
 			mainprogram->uniformCache->setBool("box", false);
 			mainprogram->uniformCache->setInt("circle", circle);
+			
+			// Pre-calculate common circle values
+			float half_wi = wi * 0.5f;
+			float circle_center_x = x + half_wi;
+			float circle_center_y = y + half_wi;
+			float circle_radius = wi * 0.25f;
+			
 			if (mainprogram->insmall) {
-				mainprogram->uniformCache->setFloat("circleradius", (wi / 4.0f) * smh);
-				mainprogram->uniformCache->setFloat("cirx", ((x + (wi / 2.0f)) / 2.0f + 0.5f) * smw);
-				mainprogram->uniformCache->setFloat("ciry", ((y + (wi / 2.0f)) / 2.0f + 0.5f) * smh);
+				mainprogram->uniformCache->setFloat("circleradius", circle_radius * smh);
+				mainprogram->uniformCache->setFloat("cirx", (circle_center_x * 0.5f + 0.5f) * smw);
+				mainprogram->uniformCache->setFloat("ciry", (circle_center_y * 0.5f + 0.5f) * smh);
 			}
 			else {
-				mainprogram->uniformCache->setFloat("circleradius", (wi / 4.0f) * glob->h);
-				mainprogram->uniformCache->setFloat("cirx", ((x + (wi / 2.0f)) / 2.0f + 0.5f) * glob->w);
-				mainprogram->uniformCache->setFloat("ciry", ((y + (wi / 2.0f)) / 2.0f + 0.5f) * glob->h);
+				mainprogram->uniformCache->setFloat("circleradius", circle_radius * glob->h);
+				mainprogram->uniformCache->setFloat("cirx", (circle_center_x * 0.5f + 0.5f) * glob->w);
+				mainprogram->uniformCache->setFloat("ciry", (circle_center_y * 0.5f + 0.5f) * glob->h);
 			}
 		}
 		glBindVertexArray(mainprogram->bvao);
 		glEnable(GL_BLEND);
-        if (inverted) glBlendFunc(GL_ONE_MINUS_DST_COLOR, GL_ZERO);
-		glDrawArrays(GL_TRIANGLE_STRIP, 0, 4);
-        if (inverted) glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
+        if (inverted) {
+            glBlendFunc(GL_ONE_MINUS_DST_COLOR, GL_ZERO);
+            glDrawArrays(GL_TRIANGLE_STRIP, 0, 4);
+            glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
+        } else {
+            glDrawArrays(GL_TRIANGLE_STRIP, 0, 4);
+        }
 		// border is drawn in shader
 		if (tex != -1) mainprogram->uniformCache->setBool("down", false);
 		if (circle) mainprogram->uniformCache->setInt("circle", 0);
@@ -6548,8 +6564,12 @@ void the_loop() {
     glClear(GL_DEPTH_BUFFER_BIT);
     glDepthFunc(GL_LESS);
 
-    int bs[2048];
-    std::iota(bs, bs + mainprogram->maxtexes - 2, 0);
+    static int bs[2048];
+    static bool bs_initialized = false;
+    if (!bs_initialized) {
+        std::iota(bs, bs + mainprogram->maxtexes - 2, 0);
+        bs_initialized = true;
+    }
     mainprogram->uniformCache->setSamplerArray("boxSampler", bs, mainprogram->maxtexes - 2);
     // glbox uniform location cached for texture unit binding
     glActiveTexture(GL_TEXTURE0 + mainprogram->maxtexes - 2);

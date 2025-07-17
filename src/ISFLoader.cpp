@@ -941,6 +941,8 @@ bool ISFLoader::parseImported(const json& imported, ISFShader& shader) {
 }
 
 bool ISFLoader::loadExternalImage(const std::string& imagePath, InputInfo& inputInfo, const std::string& baseDir) {
+    SDL_GL_MakeCurrent(mainprogram->mainwindow, glc);
+
     std::string fullPath = imagePath;
 
     // If relative path, make it relative to ISF file directory
