@@ -6571,7 +6571,6 @@ void the_loop() {
         bs_initialized = true;
     }
     mainprogram->uniformCache->setSamplerArray("boxSampler", bs, mainprogram->maxtexes - 2);
-    // glbox uniform location cached for texture unit binding
     glActiveTexture(GL_TEXTURE0 + mainprogram->maxtexes - 2);
     glBindTexture(GL_TEXTURE_BUFFER, mainprogram->bdcoltex);
     glActiveTexture(GL_TEXTURE0 + mainprogram->maxtexes - 1);
@@ -6580,44 +6579,9 @@ void the_loop() {
     glBindVertexArray(mainprogram->bdvao);
     glDisable(GL_BLEND);
 
-    for (int i = mainprogram->currbatch + ((intptr_t) mainprogram->bdtptr[mainprogram->currbatch] -
-                                           (intptr_t) mainprogram->bdtexes[mainprogram->currbatch] > 0) - 1;
-         i >= 0; i--) {
-        int numquads = (intptr_t) mainprogram->bdtptr[i] - (intptr_t) mainprogram->bdtexes[i];
-        int pos = 0;
-        for (int j = 0; j < numquads; j++) {
-            if (mainprogram->boxtexes[i][j] != -1) {
-                glActiveTexture(GL_TEXTURE0 + pos++);
-                glBindTexture(GL_TEXTURE_2D, mainprogram->boxtexes[i][j]);
-            }
-        }
-
-        glBindBuffer(GL_TEXTURE_BUFFER, mainprogram->boxcoltbo);
-        glBufferSubData(GL_TEXTURE_BUFFER, 0, numquads * 4, mainprogram->bdcolors[i]);
-        glBindBuffer(GL_TEXTURE_BUFFER, mainprogram->boxtextbo);
-        glBufferSubData(GL_TEXTURE_BUFFER, 0, numquads, mainprogram->bdtexes[i]);
-
-        glBindBuffer(GL_ARRAY_BUFFER, mainprogram->bdvbo);
-        glBufferSubData(GL_ARRAY_BUFFER, 0, numquads * 4 * 3 * sizeof(float), mainprogram->bdcoords[i]);
-        glBindBuffer(GL_ARRAY_BUFFER, mainprogram->bdtcbo);
-        glBufferSubData(GL_ARRAY_BUFFER, 0, numquads * 4 * 2 * sizeof(float), mainprogram->bdtexcoords[i]);
-
-        pos = numquads * 6 - 1;
-        for (int j = 0; j < numquads * 4; j += 4) {
-            mainprogram->indices[pos--] = j;
-            mainprogram->indices[pos--] = j + 1;
-            mainprogram->indices[pos--] = j + 2;
-            mainprogram->indices[pos--] = j + 2;
-            mainprogram->indices[pos--] = j + 1;
-            mainprogram->indices[pos--] = j + 3;
-        }
-        glBufferSubData(GL_ELEMENT_ARRAY_BUFFER, 0, numquads * 6 * sizeof(unsigned short),
-                        mainprogram->indices);
-
-        mainprogram->uniformCache->setBool("glbox", true);
-        glDrawElements(GL_TRIANGLES, numquads * 6, GL_UNSIGNED_SHORT, (GLvoid *) 0);
-        mainprogram->uniformCache->setBool("glbox", false);
-    }
+    mainprogram->uniformCache->setBool("glbox", true);
+    mainprogram->renderer->render();
+    mainprogram->uniformCache->setBool("glbox", false);
     glEnable(GL_BLEND);
     glDisable(GL_DEPTH_TEST);
 

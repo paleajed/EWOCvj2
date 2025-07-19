@@ -12350,95 +12350,103 @@ std::vector<std::string> Mixer::write_layer(Layer* lay, std::ostream& wfile, boo
     wfile << "\n";
 
     wfile << "BNODEFFGLPARAMS\n";
-    for (int k = 0; k < lay->blendnode->ffglparams.size(); k++) {
-        Param* par = lay->blendnode->ffglparams[k];
-        if (par->type == FF_TYPE_TEXT || par->type == FF_TYPE_FILE) {
-            wfile << "VAL\n";
-            wfile << par->valuestr;
+    if (lay->blendnode->ffglmixernr != -1) {
+        for (int k = 0; k < lay->blendnode->ffglparams.size(); k++) {
+            Param *par = lay->blendnode->ffglparams[k];
+            if (par->type == FF_TYPE_TEXT || par->type == FF_TYPE_FILE) {
+                wfile << "VAL\n";
+                wfile << par->valuestr;
+                wfile << "\n";
+            } else {
+                wfile << "VAL\n";
+                wfile << std::to_string(par->value);
+                wfile << "\n";
+            }
+            wfile << "MIDI0\n";
+            wfile << std::to_string(par->midi[0]);
+            wfile << "\n";
+            wfile << "MIDI1\n";
+            wfile << std::to_string(par->midi[1]);
+            wfile << "\n";
+            wfile << "MIDIPORT\n";
+            wfile << par->midiport;
+            wfile << "\n";
+            mainmix->event_write(wfile, par, nullptr);
             wfile << "\n";
         }
-        else {
-            wfile << "VAL\n";
-            wfile << std::to_string(par->value);
-            wfile << "\n";
-        }
-        wfile << "MIDI0\n";
-        wfile << std::to_string(par->midi[0]);
-        wfile << "\n";
-        wfile << "MIDI1\n";
-        wfile << std::to_string(par->midi[1]);
-        wfile << "\n";
-        wfile << "MIDIPORT\n";
-        wfile << par->midiport;
-        wfile << "\n";
-        mainmix->event_write(wfile, par, nullptr);
-        wfile << "\n";
     }
     wfile << "ENDOFBNODEFFGLPARAMS\n";
 
     wfile << "FFGLPARAMS\n";
-    for (int k = 0; k < lay->ffglparams.size(); k++) {
-        Param* par = lay->ffglparams[k];
-        if (par->type == FF_TYPE_TEXT || par->type == FF_TYPE_FILE) {
-            wfile << "VAL\n";
-            wfile << par->valuestr;
+    if (lay->ffglsourcenr != -1) {
+        for (int k = 0; k < lay->ffglparams.size(); k++) {
+            Param *par = lay->ffglparams[k];
+            if (par->type == FF_TYPE_TEXT || par->type == FF_TYPE_FILE) {
+                wfile << "VAL\n";
+                wfile << par->valuestr;
+                wfile << "\n";
+            } else {
+                wfile << "VAL\n";
+                wfile << std::to_string(par->value);
+                wfile << "\n";
+            }
+            wfile << "MIDI0\n";
+            wfile << std::to_string(par->midi[0]);
+            wfile << "\n";
+            wfile << "MIDI1\n";
+            wfile << std::to_string(par->midi[1]);
+            wfile << "\n";
+            wfile << "MIDIPORT\n";
+            wfile << par->midiport;
+            wfile << "\n";
+            mainmix->event_write(wfile, par, nullptr);
             wfile << "\n";
         }
-        else {
-            wfile << "VAL\n";
-            wfile << std::to_string(par->value);
-            wfile << "\n";
-        }
-        wfile << "MIDI0\n";
-        wfile << std::to_string(par->midi[0]);
-        wfile << "\n";
-        wfile << "MIDI1\n";
-        wfile << std::to_string(par->midi[1]);
-        wfile << "\n";
-        wfile << "MIDIPORT\n";
-        wfile << par->midiport;
-        wfile << "\n";
-        mainmix->event_write(wfile, par, nullptr);
-        wfile << "\n";
     }
     wfile << "ENDOFFFGLPARAMS\n";
 
     wfile << "BNODEISFPARAMS\n";
-    for (int k = 0; k < lay->blendnode->isfparams.size(); k++) {
-        Param* par = lay->blendnode->isfparams[k];
-        wfile << "VAL\n";
-        wfile << std::to_string(par->value);
-        wfile << "\n";
+    if (lay->blendnode->isfmixernr != -1) {
+        for (int k = 0; k < lay->blendnode->isfparams.size(); k++) {
+            Param *par = lay->blendnode->isfparams[k];
+            wfile << "VAL\n";
+            wfile << std::to_string(par->value);
+            wfile << "\n";
 
-        wfile << "MIDI0\n";
-        wfile << std::to_string(par->midi[0]);
-        wfile << "\n";
-        wfile << "MIDI1\n";
-        wfile << std::to_string(par->midi[1]);
-        wfile << "\n";
-        wfile << "MIDIPORT\n";
-        wfile << par->midiport;
-        wfile << "\n";
-        mainmix->event_write(wfile, par, nullptr);
-        wfile << "\n";
+            wfile << "MIDI0\n";
+            wfile << std::to_string(par->midi[0]);
+            wfile << "\n";
+            wfile << "MIDI1\n";
+            wfile << std::to_string(par->midi[1]);
+            wfile << "\n";
+            wfile << "MIDIPORT\n";
+            wfile << par->midiport;
+            wfile << "\n";
+            mainmix->event_write(wfile, par, nullptr);
+            wfile << "\n";
+        }
     }
     wfile << "ENDOFBNODEISFPARAMS\n";
 
     wfile << "ISFPARAMS\n";
-    for (int k = 0; k < lay->isfparams.size(); k++) {
-        Param* par = lay->isfparams[k];
-        wfile << "VAL\n";wfile << std::to_string(par->value);wfile << "\n";
-        wfile << "MIDI0\n";
-        wfile << std::to_string(par->midi[0]);
-        wfile << "\n";
-        wfile << "MIDI1\n";
-        wfile << std::to_string(par->midi[1]);
-        wfile << "\n";
-        wfile << "MIDIPORT\n";
-        wfile << par->midiport;
-        wfile << "\n";
-        mainmix->event_write(wfile, par, nullptr);
-        wfile << "\n";
+    if (lay->isfsourcenr != -1) {
+        for (int k = 0; k < lay->isfparams.size(); k++) {
+            Param *par = lay->isfparams[k];
+            wfile << "VAL\n";
+            wfile << std::to_string(par->value);
+            wfile << "\n";
+            wfile << "MIDI0\n";
+            wfile << std::to_string(par->midi[0]);
+            wfile << "\n";
+            wfile << "MIDI1\n";
+            wfile << std::to_string(par->midi[1]);
+            wfile << "\n";
+            wfile << "MIDIPORT\n";
+            wfile << par->midiport;
+            wfile << "\n";
+            mainmix->event_write(wfile, par, nullptr);
+            wfile << "\n";
+        }
     }
     wfile << "ENDOFISFPARAMS\n";
 
@@ -14802,6 +14810,11 @@ void Layer::set_ffglsource(int sourcenr) {
     int w = mainprogram->ow[this->comp];
     int h = mainprogram->oh[this->comp];
 
+    if (this->isfsourcenr != -1) {
+        auto shader = mainprogram->isfloader.getShader(this->isfpluginnr);
+        shader->releaseInstance(mainprogram->isfinstances[this->isfpluginnr][this->isfinstancenr]);
+        this->isfsourcenr = -1;
+    }
     auto plug = mainprogram->ffglsourceplugins[this->ffglsourcenr];
     this->instance = plug->createInstance(w, h);
     this->ffglinstancenr = this->instance->getInstanceID();
@@ -14844,6 +14857,11 @@ void BlendNode::set_ffglmixer(int mixernr) {
     int w = mainprogram->ow[!mainprogram->prevmodus];
     int h = mainprogram->oh[!mainprogram->prevmodus];
 
+    if (this->isfmixernr != -1) {
+        auto shader = mainprogram->isfloader.getShader(this->isfpluginnr);
+        shader->releaseInstance(mainprogram->isfinstances[this->isfpluginnr][this->isfinstancenr]);
+        this->isfmixernr = -1;
+    }
     auto plug = mainprogram->ffglmixerplugins[this->ffglmixernr];
     this->instance = plug->createInstance(w, h);
     this->ffglinstancenr = this->instance->getInstanceID();;
@@ -14884,6 +14902,12 @@ void Layer::set_isfsource(std::string sourcename) {
     }
     this->vidformat = -1;
 
+    if (this->ffglsourcenr != -1) {
+        auto shader = mainprogram->ffglsourceplugins[this->ffglsourcenr];
+        shader->releaseInstance(
+                reinterpret_cast<const std::shared_ptr<FFGLPluginInstance> &>(shader->instances[this->ffglinstancenr]));
+        this->ffglsourcenr = -1;
+    }
     this->isfsourcenr = std::find(mainprogram->isfsourcenames.begin(), mainprogram->isfsourcenames.end(), sourcename) - mainprogram->isfsourcenames.begin();
     auto* shader = mainprogram->isfloader.findShader(sourcename);
     auto instance = shader->createInstance();
@@ -14951,6 +14975,12 @@ void BlendNode::set_isfmixer(int mixernr) {
         }
     }
 
+    if (this->ffglmixernr != -1) {
+        auto shader = mainprogram->ffglmixerplugins[this->ffglmixernr];
+        shader->releaseInstance(
+                reinterpret_cast<const std::shared_ptr<FFGLPluginInstance> &>(shader->instances[this->ffglinstancenr]));
+        this->ffglmixernr = -1;
+    }
     auto *shader = mainprogram->isfloader.getShader(this->isfpluginnr);
     auto instance = shader->createInstance();
     mainprogram->isfinstances[this->isfpluginnr].push_back(instance);
