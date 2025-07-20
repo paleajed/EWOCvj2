@@ -11548,6 +11548,9 @@ void Program::create_auinmenu() {
 
 
 void OptimizedRenderer::render() {
+    glDepthMask(GL_TRUE);
+    glDisable(GL_BLEND);
+
     int startBatch = mainprogram->currbatch + ((intptr_t) mainprogram->bdtptr[mainprogram->currbatch] -
                                                (intptr_t) mainprogram->bdtexes[mainprogram->currbatch] > 0) - 1;
 
@@ -11684,4 +11687,151 @@ void OptimizedRenderer::render() {
 
         drawIndexOffset += batch.numquads * 6;
     }
+}
+
+void OptimizedRenderer::text_render() {
+    glDepthMask(GL_FALSE);
+    glEnable(GL_BLEND);
+    glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
+    glDepthFunc(GL_LEQUAL);
+    mainprogram->uniformCache->setBool("textmode", true);
+
+    int startBatch = mainprogram->textcurrbatch + ((intptr_t) mainprogram->textbdtptr[mainprogram->textcurrbatch] -
+                                               (intptr_t) mainprogram->textbdtexes[mainprogram->textcurrbatch] > 0) - 1;
+
+    // Collect batch information and calculate totals (Change 1)
+    int validBatchCount = 0;
+    int totalQuads = 0;
+    int totalCoordsSize = 0;
+    int totalTexCoordsSize = 0;
+    int totalColorsSize = 0;
+    int totalTexIndicesSize = 0;
+
+    // First pass: collect all batch data and precompute offsets (Change 5)
+    for (int i = startBatch; i >= 0; i--) {
+        int numquads = (intptr_t) mainprogram->textbdtptr[i] - (intptr_t) mainprogram->textbdtexes[i];
+        if (numquads <= 0) continue;
+
+        BatchInfo& batch = batches[validBatchCount];
+        batch.numquads = numquads;
+        batch.indexOffset = (1024 - numquads) * 6;
+        batch.indexOffsetBytes = batch.indexOffset * sizeof(unsigned short);
+        batch.vertexOffset = totalQuads * 4;  // 4 vertices per quad
+        batch.coordsSize = numquads * 4 * 3 * sizeof(float);
+        batch.texCoordsSize = numquads * 4 * 2 * sizeof(float);
+        batch.colorsSize = numquads * 4;
+        batch.texIndicesSize = numquads;
+        batch.batchArrayIndex = i;  // Store original array index
+
+        totalQuads += numquads;
+        totalCoordsSize += batch.coordsSize;
+        totalTexCoordsSize += batch.texCoordsSize;
+        totalColorsSize += batch.colorsSize;
+        totalTexIndicesSize += batch.texIndicesSize;
+
+        validBatchCount++;
+    }
+
+    if (validBatchCount == 0) return;
+
+    // Combine all batch data into single buffers
+    int coordOffset = 0, texCoordOffset = 0, colorOffset = 0, texIndexOffset = 0;
+
+    for (int b = 0; b < validBatchCount; b++) {
+        BatchInfo& batch = batches[b];
+        int i = batch.batchArrayIndex;
+
+        // Copy vertex coordinates
+        memcpy(combinedCoords + coordOffset,
+               mainprogram->textbdcoords[i],
+               batch.coordsSize);
+        coordOffset += batch.numquads * 4 * 3;
+
+        // Copy texture coordinates
+        memcpy(combinedTexCoords + texCoordOffset,
+               mainprogram->textbdtexcoords[i],
+               batch.texCoordsSize);
+        texCoordOffset += batch.numquads * 4 * 2;
+
+        // Copy colors
+        memcpy(combinedColors + colorOffset,
+               mainprogram->textbdcolors[i],
+               batch.colorsSize);
+        colorOffset += batch.numquads * 4;
+
+        // Copy texture indices
+        memcpy(combinedTexIndices + texIndexOffset,
+               mainprogram->textbdtexes[i],
+               batch.texIndicesSize);
+        texIndexOffset += batch.numquads;
+    }
+
+    // Single large buffer updates (Change 1)
+    glBindBuffer(GL_ARRAY_BUFFER, mainprogram->bdvbo);
+    glBufferSubData(GL_ARRAY_BUFFER, 0, totalCoordsSize, combinedCoords);
+
+    glBindBuffer(GL_ARRAY_BUFFER, mainprogram->bdtcbo);
+    glBufferSubData(GL_ARRAY_BUFFER, 0, totalTexCoordsSize, combinedTexCoords);
+
+    glBindBuffer(GL_TEXTURE_BUFFER, mainprogram->boxcoltbo);
+    glBufferSubData(GL_TEXTURE_BUFFER, 0, totalColorsSize, combinedColors);
+
+    glBindBuffer(GL_TEXTURE_BUFFER, mainprogram->boxtextbo);
+    glBufferSubData(GL_TEXTURE_BUFFER, 0, totalTexIndicesSize, combinedTexIndices);
+
+    // The element array buffer should already be bound from your setup
+    // If you need to bind it explicitly, find the correct buffer name from your Program class
+    // For now, assuming it's already bound like in your original code
+
+    // Generate sequential indices for the combined vertex buffer
+    int indexPos = 0;
+    int vertexBase = 0;
+
+    for (int b = 0; b < validBatchCount; b++) {
+        BatchInfo& batch = batches[b];
+
+        // Generate indices for this batch's vertices in the combined buffer
+        for (int q = 0; q < batch.numquads; q++) {
+            int v = vertexBase + q * 4;  // Base vertex for this quad
+
+            // Two triangles per quad: (v, v+1, v+2) and (v+2, v+1, v+3)
+            sequentialIndices[indexPos++] = v;
+            sequentialIndices[indexPos++] = v + 1;
+            sequentialIndices[indexPos++] = v + 2;
+            sequentialIndices[indexPos++] = v + 2;
+            sequentialIndices[indexPos++] = v + 1;
+            sequentialIndices[indexPos++] = v + 3;
+        }
+        vertexBase += batch.numquads * 4;
+    }
+
+    // Draw each batch individually (since textures differ)
+    int drawIndexOffset = 0;
+    for (int b = 0; b < validBatchCount; b++) {
+        BatchInfo& batch = batches[b];
+        int i = batch.batchArrayIndex;
+
+        // Bind textures for this batch
+        int pos = 0;
+        for (int j = 0; j < batch.numquads; j++) {
+            if (mainprogram->textboxtexes[i][j] != -1) {
+                glActiveTexture(GL_TEXTURE0 + pos++);
+                glBindTexture(GL_TEXTURE_2D, mainprogram->textboxtexes[i][j]);
+            }
+        }
+
+        // Update element buffer for this batch with sequential indices
+        glBufferSubData(GL_ELEMENT_ARRAY_BUFFER, 0, batch.numquads * 6 * sizeof(unsigned short),
+                        &sequentialIndices[drawIndexOffset]);
+
+        // Draw this batch
+        glDrawElements(GL_TRIANGLES,
+                       batch.numquads * 6,
+                       GL_UNSIGNED_SHORT,
+                       (GLvoid*)0);
+
+        drawIndexOffset += batch.numquads * 6;
+    }
+
+    mainprogram->uniformCache->setBool("textmode", false);
 }

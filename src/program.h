@@ -210,6 +210,7 @@ public:
     }
 
     void render();
+    void text_render();
 };
 
 
@@ -707,27 +708,39 @@ class Program {
 		bool wiping = false;
 		float texth;
 		float buth;
-		float bdcoords[32][65536];
-		float bdtexcoords[32][65536];
-		unsigned char bdcolors[32][8192];
-		unsigned char bdtexes[32][2048];
+        float bdcoords[32][65536];
+        float bdtexcoords[32][65536];
+        unsigned char bdcolors[32][8192];
+        unsigned char bdtexes[32][2048];
+        float textbdcoords[32][65536];
+        float textbdtexcoords[32][65536];
+        unsigned char textbdcolors[32][8192];
+        unsigned char textbdtexes[32][2048];
 		std::vector<float> bdwi;
 		std::vector<float> bdhe;
-		float* bdvptr[32];
-		float* bdtcptr[32];
-		unsigned char* bdcptr[32];
+        float* bdvptr[32];
+        float* bdtcptr[32];
+        unsigned char* bdcptr[32];
         unsigned char* bdtptr[32];
-		GLuint* bdtnptr[32];
+        GLuint* bdtnptr[32];
+        float* textbdvptr[32];
+        float* textbdtcptr[32];
+        unsigned char* textbdcptr[32];
+        unsigned char* textbdtptr[32];
+        GLuint* textbdtnptr[32];
 		GLuint bdvao;
 		GLuint bdvbo;
 		GLuint bdtcbo;
 		GLuint bdibo;
 		int boxcount;
 		GLint maxtexes = 16;
-		int countingtexes[32];
-		GLuint boxtexes[32][1024];
+        int countingtexes[32];
+        GLuint boxtexes[32][1024];
+        int textcountingtexes[32];
+        GLuint textboxtexes[32][1024];
 		int boxoffset[32];
-		int currbatch = 0;
+        int currbatch = 0;
+        int textcurrbatch = 0;
 		short indices[6144];
 		float boxz = 0.0f;
 		bool directmode = false;

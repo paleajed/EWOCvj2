@@ -1569,16 +1569,16 @@ void main()
 		if (orquad != 0) quadnr = orquad;
 		else quadnr = Vertex0 / 4;
 		uint Tex0 = texelFetch(boxtexSampler, quadnr).r;
-		if (Tex0 > 23) {
+		if (textmode == 1) {
 			// text
-			float c = texture(boxSampler[Tex0 - 24], vec2(TexCoord0.s, TexCoord0.t)).r;
+			float c = texture(boxSampler[Tex0], vec2(TexCoord0.s, TexCoord0.t)).r;
 			//if (c == 0.0) discard;
 			vec4 sam = texelFetch(boxcolSampler, quadnr).rgba;
-			FragColor = vec4(sam.rgb, 1.0);
+			FragColor = vec4(sam.rgb, c);
 		}
 		else if (Tex0 != 23) {
 			// image
-			FragColor = vec4(texture(boxSampler[Tex0], vec2(TexCoord0.s, TexCoord0.t)).rgb, 1.0f);
+			FragColor = texture(boxSampler[Tex0], vec2(TexCoord0.s, TexCoord0.t));
 		}
 		else {
 			// flat

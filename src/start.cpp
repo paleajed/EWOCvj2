@@ -2083,7 +2083,7 @@ void draw_box(float* linec, float* areac, float x, float y, float wi, float he, 
 		return;
 	}
 
-    if (circle || mainprogram->frontbatch || text) {
+    if (circle || mainprogram->frontbatch) {
 		gui_box *box = new gui_box;
 		if (linec) {
 			box->linec[0] = linec[0];
@@ -2124,91 +2124,134 @@ void draw_box(float* linec, float* areac, float x, float y, float wi, float he, 
 	}
 
 	// gather data for boxes drawn -> draw in batches
-	if (tex != -1) mainprogram->countingtexes[mainprogram->currbatch]++;
-	*mainprogram->bdtnptr[mainprogram->currbatch]++ = tex;
-	
-	if (text) *mainprogram->bdtptr[mainprogram->currbatch]++ = 24 + mainprogram->countingtexes[mainprogram->currbatch] - 1;
-	else if (tex != -1) *mainprogram->bdtptr[mainprogram->currbatch]++ = mainprogram->countingtexes[mainprogram->currbatch] - 1;
-	else *mainprogram->bdtptr[mainprogram->currbatch]++ = 23;
+    if (text) {
+        if (tex != -1) mainprogram->textcountingtexes[mainprogram->textcurrbatch]++;
+        *mainprogram->textbdtnptr[mainprogram->textcurrbatch]++ = tex;
+        
+        *mainprogram->textbdtptr[mainprogram->textcurrbatch]++ =
+                    mainprogram->textcountingtexes[mainprogram->textcurrbatch] - 1;
 
-	mainprogram->boxz += 0.001f;
-	if (!vertical) {
-		*mainprogram->bdvptr[mainprogram->currbatch]++ = x;
-		*mainprogram->bdvptr[mainprogram->currbatch]++ = y + he;
-		*mainprogram->bdvptr[mainprogram->currbatch]++ = 1.0f - mainprogram->boxz;
-		*mainprogram->bdvptr[mainprogram->currbatch]++ = x;
-		*mainprogram->bdvptr[mainprogram->currbatch]++ = y;
-		*mainprogram->bdvptr[mainprogram->currbatch]++ = 1.0f - mainprogram->boxz;
-		*mainprogram->bdvptr[mainprogram->currbatch]++ = x + wi;
-		*mainprogram->bdvptr[mainprogram->currbatch]++ = y + he;
-		*mainprogram->bdvptr[mainprogram->currbatch]++ = 1.0f - mainprogram->boxz;
-		*mainprogram->bdvptr[mainprogram->currbatch]++ = x + wi;
-		*mainprogram->bdvptr[mainprogram->currbatch]++ = y;
-		*mainprogram->bdvptr[mainprogram->currbatch]++ = 1.0f - mainprogram->boxz;
-	}
-	else {
-		*mainprogram->bdvptr[mainprogram->currbatch]++ = x + wi;
-		*mainprogram->bdvptr[mainprogram->currbatch]++ = y;
-		*mainprogram->bdvptr[mainprogram->currbatch]++ = 1.0f - mainprogram->boxz;
-		*mainprogram->bdvptr[mainprogram->currbatch]++ = x;
-		*mainprogram->bdvptr[mainprogram->currbatch]++ = y;
-		*mainprogram->bdvptr[mainprogram->currbatch]++ = 1.0f - mainprogram->boxz;
-		*mainprogram->bdvptr[mainprogram->currbatch]++ = x + wi;
-		*mainprogram->bdvptr[mainprogram->currbatch]++ = y + he;
-		*mainprogram->bdvptr[mainprogram->currbatch]++ = 1.0f - mainprogram->boxz;
-		*mainprogram->bdvptr[mainprogram->currbatch]++ = x;
-		*mainprogram->bdvptr[mainprogram->currbatch]++ = y + he;
-		*mainprogram->bdvptr[mainprogram->currbatch]++ = 1.0f - mainprogram->boxz;
-	}
+        mainprogram->boxz += 0.001f;
+        if (!vertical) {
+            *mainprogram->textbdvptr[mainprogram->textcurrbatch]++ = x;
+            *mainprogram->textbdvptr[mainprogram->textcurrbatch]++ = y + he;
+            *mainprogram->textbdvptr[mainprogram->textcurrbatch]++ = 1.0f - mainprogram->boxz;
+            *mainprogram->textbdvptr[mainprogram->textcurrbatch]++ = x;
+            *mainprogram->textbdvptr[mainprogram->textcurrbatch]++ = y;
+            *mainprogram->textbdvptr[mainprogram->textcurrbatch]++ = 1.0f - mainprogram->boxz;
+            *mainprogram->textbdvptr[mainprogram->textcurrbatch]++ = x + wi;
+            *mainprogram->textbdvptr[mainprogram->textcurrbatch]++ = y + he;
+            *mainprogram->textbdvptr[mainprogram->textcurrbatch]++ = 1.0f - mainprogram->boxz;
+            *mainprogram->textbdvptr[mainprogram->textcurrbatch]++ = x + wi;
+            *mainprogram->textbdvptr[mainprogram->textcurrbatch]++ = y;
+            *mainprogram->textbdvptr[mainprogram->textcurrbatch]++ = 1.0f - mainprogram->boxz;
+        } else {
+            *mainprogram->textbdvptr[mainprogram->textcurrbatch]++ = x + wi;
+            *mainprogram->textbdvptr[mainprogram->textcurrbatch]++ = y;
+            *mainprogram->textbdvptr[mainprogram->textcurrbatch]++ = 1.0f - mainprogram->boxz;
+            *mainprogram->textbdvptr[mainprogram->textcurrbatch]++ = x;
+            *mainprogram->textbdvptr[mainprogram->textcurrbatch]++ = y;
+            *mainprogram->textbdvptr[mainprogram->textcurrbatch]++ = 1.0f - mainprogram->boxz;
+            *mainprogram->textbdvptr[mainprogram->textcurrbatch]++ = x + wi;
+            *mainprogram->textbdvptr[mainprogram->textcurrbatch]++ = y + he;
+            *mainprogram->textbdvptr[mainprogram->textcurrbatch]++ = 1.0f - mainprogram->boxz;
+            *mainprogram->textbdvptr[mainprogram->textcurrbatch]++ = x;
+            *mainprogram->textbdvptr[mainprogram->textcurrbatch]++ = y + he;
+            *mainprogram->textbdvptr[mainprogram->textcurrbatch]++ = 1.0f - mainprogram->boxz;
+        }
 
-	if (tex != -1 && (scale != 1.0f || dx != 0.0f || dy != 0.0f)) {
-		float shx = -dx * 6.0f;
-		float shy = -dy * 6.0f;
-		*mainprogram->bdtcptr[mainprogram->currbatch]++ = ((0.0f) - 0.5f) * scale + 0.5f + shx;
-		*mainprogram->bdtcptr[mainprogram->currbatch]++ = ((0.0f) - 0.5f) * scale + 0.5f + shy;
-		*mainprogram->bdtcptr[mainprogram->currbatch]++ = ((0.0f) - 0.5f) * scale + 0.5f + shx;
-		*mainprogram->bdtcptr[mainprogram->currbatch]++ = ((1.0f) - 0.5f) * scale + 0.5f + shy;
-		*mainprogram->bdtcptr[mainprogram->currbatch]++ = ((1.0f) - 0.5f) * scale + 0.5f + shx;
-		*mainprogram->bdtcptr[mainprogram->currbatch]++ = ((0.0f) - 0.5f) * scale + 0.5f + shy;
-		*mainprogram->bdtcptr[mainprogram->currbatch]++ = ((1.0f) - 0.5f) * scale + 0.5f + shx;
-		*mainprogram->bdtcptr[mainprogram->currbatch]++ = ((1.0f) - 0.5f) * scale + 0.5f + shy;
-	}
-	else {
-		*mainprogram->bdtcptr[mainprogram->currbatch]++ = 0.0f;
-		*mainprogram->bdtcptr[mainprogram->currbatch]++ = 0.0f;
-		*mainprogram->bdtcptr[mainprogram->currbatch]++ = 0.0f;
-		*mainprogram->bdtcptr[mainprogram->currbatch]++ = 1.0f;
-		*mainprogram->bdtcptr[mainprogram->currbatch]++ = 1.0f;
-		*mainprogram->bdtcptr[mainprogram->currbatch]++ = 0.0f;
-		*mainprogram->bdtcptr[mainprogram->currbatch]++ = 1.0f;
-		*mainprogram->bdtcptr[mainprogram->currbatch]++ = 1.0f;
-	}
+        *mainprogram->textbdtcptr[mainprogram->textcurrbatch]++ = 0.0f;
+        *mainprogram->textbdtcptr[mainprogram->textcurrbatch]++ = 0.0f;
+        *mainprogram->textbdtcptr[mainprogram->textcurrbatch]++ = 0.0f;
+        *mainprogram->textbdtcptr[mainprogram->textcurrbatch]++ = 1.0f;
+        *mainprogram->textbdtcptr[mainprogram->textcurrbatch]++ = 1.0f;
+        *mainprogram->textbdtcptr[mainprogram->textcurrbatch]++ = 0.0f;
+        *mainprogram->textbdtcptr[mainprogram->textcurrbatch]++ = 1.0f;
+        *mainprogram->textbdtcptr[mainprogram->textcurrbatch]++ = 1.0f;
+        
+        *mainprogram->textbdcptr[mainprogram->textcurrbatch]++ = (char) (areac[0] * 255.0f);
+        *mainprogram->textbdcptr[mainprogram->textcurrbatch]++ = (char) (areac[1] * 255.0f);
+        *mainprogram->textbdcptr[mainprogram->textcurrbatch]++ = (char) (areac[2] * 255.0f);
+        *mainprogram->textbdcptr[mainprogram->textcurrbatch]++ = (char) (areac[3] * 255.0f);
 
-	if (areac) {
-		*mainprogram->bdcptr[mainprogram->currbatch]++ = (char)(areac[0] * 255.0f);
-		if (mainprogram->bdcolors[mainprogram->currbatch][0] < 0) {
-		    printf("");
-		}
-		*mainprogram->bdcptr[mainprogram->currbatch]++ = (char)(areac[1] * 255.0f);
-		*mainprogram->bdcptr[mainprogram->currbatch]++ = (char)(areac[2] * 255.0f);
-		*mainprogram->bdcptr[mainprogram->currbatch]++ = (char)(areac[3] * 255.0f);
-	}
-	else {
-		*mainprogram->bdcptr[mainprogram->currbatch]++ = 0;
-		*mainprogram->bdcptr[mainprogram->currbatch]++ = 0;
-		*mainprogram->bdcptr[mainprogram->currbatch]++ = 0;
-		*mainprogram->bdcptr[mainprogram->currbatch]++ = 0;
-	}
+        if (mainprogram->textcountingtexes[mainprogram->textcurrbatch] == 23) {
+            mainprogram->textcurrbatch++;
+            mainprogram->textbdvptr[mainprogram->textcurrbatch] = mainprogram->textbdcoords[mainprogram->textcurrbatch];
+            mainprogram->textbdtcptr[mainprogram->textcurrbatch] = mainprogram->textbdtexcoords[mainprogram->textcurrbatch];
+            mainprogram->textbdcptr[mainprogram->textcurrbatch] = mainprogram->textbdcolors[mainprogram->textcurrbatch];
+            mainprogram->textbdtptr[mainprogram->textcurrbatch] = mainprogram->textbdtexes[mainprogram->textcurrbatch];
+            mainprogram->textbdtnptr[mainprogram->textcurrbatch] = mainprogram->textboxtexes[mainprogram->textcurrbatch];
+            mainprogram->textcountingtexes[mainprogram->textcurrbatch] = 0;
+        }        
+    }
+    else {
+        if (tex != -1) mainprogram->countingtexes[mainprogram->currbatch]++;
+        *mainprogram->bdtnptr[mainprogram->currbatch]++ = tex;
 
-	if (mainprogram->countingtexes[mainprogram->currbatch] == 23) {
-		mainprogram->currbatch++;
-		mainprogram->bdvptr[mainprogram->currbatch] = mainprogram->bdcoords[mainprogram->currbatch];
-		mainprogram->bdtcptr[mainprogram->currbatch] = mainprogram->bdtexcoords[mainprogram->currbatch];
-		mainprogram->bdcptr[mainprogram->currbatch] = mainprogram->bdcolors[mainprogram->currbatch];
-		mainprogram->bdtptr[mainprogram->currbatch] = mainprogram->bdtexes[mainprogram->currbatch];
-		mainprogram->bdtnptr[mainprogram->currbatch] = mainprogram->boxtexes[mainprogram->currbatch];
-		mainprogram->countingtexes[mainprogram->currbatch] = 0;
-	}
+        if (tex != -1) {
+            *mainprogram->bdtptr[mainprogram->currbatch]++ = mainprogram->countingtexes[mainprogram->currbatch] - 1;
+        } else {
+            *mainprogram->bdtptr[mainprogram->currbatch]++ = 23;
+        }
+
+        mainprogram->boxz += 0.001f;
+        *mainprogram->bdvptr[mainprogram->currbatch]++ = x;
+        *mainprogram->bdvptr[mainprogram->currbatch]++ = y + he;
+        *mainprogram->bdvptr[mainprogram->currbatch]++ = 1.0f - mainprogram->boxz;
+        *mainprogram->bdvptr[mainprogram->currbatch]++ = x;
+        *mainprogram->bdvptr[mainprogram->currbatch]++ = y;
+        *mainprogram->bdvptr[mainprogram->currbatch]++ = 1.0f - mainprogram->boxz;
+        *mainprogram->bdvptr[mainprogram->currbatch]++ = x + wi;
+        *mainprogram->bdvptr[mainprogram->currbatch]++ = y + he;
+        *mainprogram->bdvptr[mainprogram->currbatch]++ = 1.0f - mainprogram->boxz;
+        *mainprogram->bdvptr[mainprogram->currbatch]++ = x + wi;
+        *mainprogram->bdvptr[mainprogram->currbatch]++ = y;
+        *mainprogram->bdvptr[mainprogram->currbatch]++ = 1.0f - mainprogram->boxz;
+
+        if (tex != -1 && (scale != 1.0f || dx != 0.0f || dy != 0.0f)) {
+            float shx = -dx * 6.0f;
+            float shy = -dy * 6.0f;
+            *mainprogram->bdtcptr[mainprogram->currbatch]++ = ((0.0f) - 0.5f) * scale + 0.5f + shx;
+            *mainprogram->bdtcptr[mainprogram->currbatch]++ = ((0.0f) - 0.5f) * scale + 0.5f + shy;
+            *mainprogram->bdtcptr[mainprogram->currbatch]++ = ((0.0f) - 0.5f) * scale + 0.5f + shx;
+            *mainprogram->bdtcptr[mainprogram->currbatch]++ = ((1.0f) - 0.5f) * scale + 0.5f + shy;
+            *mainprogram->bdtcptr[mainprogram->currbatch]++ = ((1.0f) - 0.5f) * scale + 0.5f + shx;
+            *mainprogram->bdtcptr[mainprogram->currbatch]++ = ((0.0f) - 0.5f) * scale + 0.5f + shy;
+            *mainprogram->bdtcptr[mainprogram->currbatch]++ = ((1.0f) - 0.5f) * scale + 0.5f + shx;
+            *mainprogram->bdtcptr[mainprogram->currbatch]++ = ((1.0f) - 0.5f) * scale + 0.5f + shy;
+        } else {
+            *mainprogram->bdtcptr[mainprogram->currbatch]++ = 0.0f;
+            *mainprogram->bdtcptr[mainprogram->currbatch]++ = 0.0f;
+            *mainprogram->bdtcptr[mainprogram->currbatch]++ = 0.0f;
+            *mainprogram->bdtcptr[mainprogram->currbatch]++ = 1.0f;
+            *mainprogram->bdtcptr[mainprogram->currbatch]++ = 1.0f;
+            *mainprogram->bdtcptr[mainprogram->currbatch]++ = 0.0f;
+            *mainprogram->bdtcptr[mainprogram->currbatch]++ = 1.0f;
+            *mainprogram->bdtcptr[mainprogram->currbatch]++ = 1.0f;
+        }
+
+        if (areac) {
+            *mainprogram->bdcptr[mainprogram->currbatch]++ = (char) (areac[0] * 255.0f);
+            *mainprogram->bdcptr[mainprogram->currbatch]++ = (char) (areac[1] * 255.0f);
+            *mainprogram->bdcptr[mainprogram->currbatch]++ = (char) (areac[2] * 255.0f);
+            *mainprogram->bdcptr[mainprogram->currbatch]++ = (char) (areac[3] * 255.0f);
+        } else {
+            *mainprogram->bdcptr[mainprogram->currbatch]++ = 0;
+            *mainprogram->bdcptr[mainprogram->currbatch]++ = 0;
+            *mainprogram->bdcptr[mainprogram->currbatch]++ = 0;
+            *mainprogram->bdcptr[mainprogram->currbatch]++ = 0;
+        }
+
+        if (mainprogram->countingtexes[mainprogram->currbatch] == 23) {
+            mainprogram->currbatch++;
+            mainprogram->bdvptr[mainprogram->currbatch] = mainprogram->bdcoords[mainprogram->currbatch];
+            mainprogram->bdtcptr[mainprogram->currbatch] = mainprogram->bdtexcoords[mainprogram->currbatch];
+            mainprogram->bdcptr[mainprogram->currbatch] = mainprogram->bdcolors[mainprogram->currbatch];
+            mainprogram->bdtptr[mainprogram->currbatch] = mainprogram->bdtexes[mainprogram->currbatch];
+            mainprogram->bdtnptr[mainprogram->currbatch] = mainprogram->boxtexes[mainprogram->currbatch];
+            mainprogram->countingtexes[mainprogram->currbatch] = 0;
+        }
+    }
 }
 
 void register_triangle_draw(float* linec, float* areac, float x1, float y1, float xsize, float ysize, ORIENTATION orient, TRIANGLE_TYPE type) {
@@ -4873,6 +4916,13 @@ void the_loop() {
     mainprogram->bdtnptr[0] = mainprogram->boxtexes[0];
     mainprogram->countingtexes[0] = 0;
     mainprogram->currbatch = 0;
+    mainprogram->textbdvptr[0] = mainprogram->textbdcoords[0];
+    mainprogram->textbdtcptr[0] = mainprogram->textbdtexcoords[0];
+    mainprogram->textbdcptr[0] = mainprogram->textbdcolors[0];
+    mainprogram->textbdtptr[0] = mainprogram->textbdtexes[0];
+    mainprogram->textbdtnptr[0] = mainprogram->textboxtexes[0];
+    mainprogram->textcountingtexes[0] = 0;
+    mainprogram->textcurrbatch = 0;
     mainprogram->boxz = 0.0f;
     mainprogram->guielems.clear();
 
@@ -6581,6 +6631,8 @@ void the_loop() {
 
     mainprogram->uniformCache->setBool("glbox", true);
     mainprogram->renderer->render();
+    glClear(GL_DEPTH_BUFFER_BIT);
+    mainprogram->renderer->text_render();
     mainprogram->uniformCache->setBool("glbox", false);
     glEnable(GL_BLEND);
     glDisable(GL_DEPTH_TEST);
@@ -8745,6 +8797,13 @@ int main(int argc, char* argv[]) {
             mainprogram->countingtexes[0] = 0;
             mainprogram->boxoffset[0] = 0;
             mainprogram->currbatch = 0;
+            mainprogram->textbdvptr[0] = mainprogram->textbdcoords[0];
+            mainprogram->textbdtcptr[0] = mainprogram->textbdtexcoords[0];
+            mainprogram->textbdcptr[0] = mainprogram->textbdcolors[0];
+            mainprogram->textbdtptr[0] = mainprogram->textbdtexes[0];
+            mainprogram->textbdtnptr[0] = mainprogram->textboxtexes[0];
+            mainprogram->textcountingtexes[0] = 0;
+            mainprogram->textcurrbatch = 0;
 
             Boxx box;
 
