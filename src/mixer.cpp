@@ -1938,9 +1938,9 @@ EdgeDetectEffect::EdgeDetectEffect() {
 	this->numrows = 1;
 	Param *param = new Param;
 	param->name = "Threshold1";
-	param->value = 1.1f;
-	param->range[0] = 0.0f;
-	param->range[1] = 1.1f;
+	param->value = 1.0f;
+	param->range[0] = 0.8f;
+	param->range[1] = 1.0f;
 	param->sliding = true;
 	param->shadervar = "edge_thres";
 	param->effect = this;
@@ -2016,7 +2016,7 @@ CartoonEffect::CartoonEffect() {
 	this->numrows = 1;
 	Param *param = new Param;
 	param->name = "Threshold1";
-	param->value = 0.2f;
+	param->value = 1.0f;
 	param->range[0] = 0.0f;
 	param->range[1] = 1.0f;
 	param->sliding = true;
@@ -2027,7 +2027,7 @@ CartoonEffect::CartoonEffect() {
 	this->params.push_back(param);
 	param = new Param;
 	param->name = "Threshold2";
-	param->value = 5.0f;
+	param->value = 20.0f;
 	param->range[0] = 0.0f;
 	param->range[1] = 20.0f;
 	param->sliding = true;
@@ -5056,6 +5056,7 @@ void Layer::display() {
             }
 
             if (box->in()) {
+                mainprogram->frontbatch = true;
                 mainprogram->inmonitors = true;
                 if (mainprogram->dropfiles.size()) {
                     // SDL drag'n'drop
@@ -5101,7 +5102,7 @@ void Layer::display() {
                 }
                 if (mainprogram->menuactivation && !this->panbox->in()) {
                     // Trigger mainprogram->laymenu#
-                    if (this->type == ELEM_IMAGE || this->type == ELEM_LIVE)
+                    if (this->type == ELEM_LIVE)
                         mainprogram->laymenu2->state = 2;
                     else mainprogram->laymenu1->state = 2;
                     mainmix->mouselayer = this;
@@ -5145,7 +5146,7 @@ void Layer::display() {
                     render_text("+", white, this->addbox->vtxcoords->x1, this->addbox->vtxcoords->y1, 0.00075f, 0.0012f);
                 }
                 if (this->pos == mainmix->scenes[this->deck][mainmix->currscene[this->deck]]->scrollpos) {
-                    // do extra "+" at left of layer for adding to front
+                    // do extra "+" at left of leftmost layer for adding to front
                     this->addbox->vtxcoords->x1 = box->vtxcoords->x1 + 0.008f;
                     this->addbox->upvtxtoscr();
                     if (this->addbox->in()) {
@@ -5280,7 +5281,6 @@ void Layer::display() {
                 }
 
 				// queue fold/unfold button
-                mainprogram->frontbatch = true;
 				this->queuebut->box->vtxcoords->x1 = box->vtxcoords->x1 + 0.015f;
 				this->queuebut->box->upvtxtoscr();
 				if (this->queuebut->box->in()) {
@@ -6818,6 +6818,7 @@ bool Layer::find_new_live_base(int pos) {
 }
 
 void Layer::set_live_base(std::string livename) {
+    if (this->filename == livename) return;
     this->layers->erase(std::find(this->layers->begin(), this->layers->end(), this));
     Layer *lay = nullptr;
     if (this->layers->empty()) {
@@ -7367,6 +7368,8 @@ void Mixer::reconnect_all(std::vector<Layer*> &layers) {
     dellayslock.unlock();
 
     for (int j = 0; j < layers.size(); j++) {
+        layers[j]->pos = j;
+        layers[j]->node->out.clear();
         // set lasteffnodes
         if (layers[j]->effects[0].size()) {
             layers[j]->lasteffnode[0] = layers[j]->effects[0].back()->node;
@@ -7382,7 +7385,6 @@ void Mixer::reconnect_all(std::vector<Layer*> &layers) {
     }
     for (int j = 0; j < layers.size(); j++) {
         // reconnect everything in the layer stack
-        layers[j]->pos = j;
         for (int m = 0; m < 2; m++) {
             for (int k = 0; k < layers[j]->effects[m].size(); k++) {
                 layers[j]->effects[m][k]->pos = k;
@@ -11870,7 +11872,7 @@ Layer* Mixer::read_layers(std::istream &rfile, const std::string result, std::ve
                                 std::find(mainprogram->isfeffectnames.begin(), mainprogram->isfeffectnames.end(), istring) -
                                 mainprogram->isfeffectnames.begin();
                         if (position != mainprogram->isfeffectnames.size()) {
-                            type = 1000 + position;
+                            type = 2000 + position;
                             isfnr = position;
                         } else {
                             mainprogram->missingplugs.emplace(istring);

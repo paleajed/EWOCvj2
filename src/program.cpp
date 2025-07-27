@@ -3434,12 +3434,12 @@ int Program::handle_menu(Menu* menu, float xshift, float yshift) {
 
                                 // Fixed submenu positioning logic
                                 float xs;
-                                float menuRightEdge = menu->menux + mainprogram->xvtxtoscr(menu->width * 1.5f);
+                                float menuRightEdge = menu->menux + ((entries.size() / itemsPerColumn) + 2) * mainprogram->xvtxtoscr(menu->width * 1.5f);
                                 float submenuWidth = mainprogram->xvtxtoscr(menu->width * 1.5f);
 
                                 // Check if submenu would go off the right edge of the screen
                                 if (menuRightEdge + submenuWidth > screenWidth) {
-                                    xs = xshift - menu->width * 1.5f;  // Place submenu to the left
+                                    xs = xshift - menu->width * 3.0f;  // Place submenu to the left
                                     // Position submenu to the left of the main menu
                                     mainprogram->menulist[i]->menux = menu->menux - mainprogram->xvtxtoscr(menu->width * 1.5f);
                                 }
@@ -4192,8 +4192,8 @@ void Program::handle_monitormenu() {
                 mnode->ndioutput->startStream();
             }
             else {
-                mainmix->mouselayer->ndioutput->stopStream();
-                mainmix->mouselayer->ndioutput = nullptr;
+                mnode->ndioutput->stopStream();
+                mnode->ndioutput = nullptr;
             }
         }
 #ifdef POSIX
@@ -11549,6 +11549,7 @@ void Program::create_auinmenu() {
 
 void OptimizedRenderer::render() {
     glDepthMask(GL_TRUE);
+    glDepthFunc(GL_LESS);
     glDisable(GL_BLEND);
 
     int startBatch = mainprogram->currbatch + ((intptr_t) mainprogram->bdtptr[mainprogram->currbatch] -

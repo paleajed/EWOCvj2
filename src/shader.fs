@@ -1863,11 +1863,11 @@ void main()
 
         // Apply the combined transparency
         if (chinv) {
+            fc = vec4(mix(tex0.rgb, tex1.rgb, total_transparency),
+                      mix(tex0.a, tex1.a, total_transparency));
+        } else {
             fc = vec4(mix(tex1.rgb, tex0.rgb, total_transparency),
                       mix(tex1.a, tex0.a, total_transparency));
-        } else {
-            fc = vec4(mix(tex0.rgb, tex1.rgb, 1.0 - total_transparency),
-                      mix(tex0.a, tex1.a, 1.0 - total_transparency));
         }
     }
     else if (mixmode == 20) {
@@ -1898,11 +1898,11 @@ void main()
 
         // Apply the combined transparency
         if (chinv) {
+            fc = vec4(mix(tex0.rgb, tex1.rgb, total_transparency),
+                      mix(tex0.a, tex1.a, total_transparency));
+        } else {
             fc = vec4(mix(tex1.rgb, tex0.rgb, total_transparency),
                       mix(tex1.a, tex0.a, total_transparency));
-        } else {
-            fc = vec4(mix(tex0.rgb, tex1.rgb, 1.0 - total_transparency),
-                      mix(tex0.a, tex1.a, 1.0 - total_transparency));
         }
     }
     else if (mixmode == 21) {
@@ -1932,11 +1932,11 @@ void main()
 
         // Apply the combined transparency
         if (chinv) {
+            fc = vec4(mix(tex0.rgb, tex1.rgb, total_transparency),
+                      mix(tex0.a, tex1.a, total_transparency));
+        } else {
             fc = vec4(mix(tex1.rgb, tex0.rgb, total_transparency),
                       mix(tex1.a, tex0.a, total_transparency));
-        } else {
-            fc = vec4(mix(tex0.rgb, tex1.rgb, 1.0 - total_transparency),
-                      mix(tex0.a, tex1.a, 1.0 - total_transparency));
         }
     }
      if (mixmode > 0) {

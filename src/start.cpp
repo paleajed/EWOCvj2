@@ -611,17 +611,9 @@ bool retarget_search() {
     for (std::string dirpath : retarget->searchdirs) {
         std::string retstr = search_directory(dirpath);
         if (retstr != "") {
-            if (mainmix->retargetstage == 1 || mainmix->retargetstage == 2 || mainmix->retargetstage == 4) {
-                // no filesize check for clips and bin element jpegs
-                (*(mainmix->newpaths))[mainmix->newpathpos] = retstr;
-                ret = true;
-                break;
-            }
-            else if (std::filesystem::file_size(retstr) == retarget->filesize) {
-                (*(mainmix->newpaths))[mainmix->newpathpos] = retstr;
-                ret = true;
-                break;
-            }
+            (*(mainmix->newpaths))[mainmix->newpathpos] = retstr;
+            ret = true;
+            break;
         }
     }
     if (!ret) {
@@ -2135,29 +2127,29 @@ void draw_box(float* linec, float* areac, float x, float y, float wi, float he, 
         if (!vertical) {
             *mainprogram->textbdvptr[mainprogram->textcurrbatch]++ = x;
             *mainprogram->textbdvptr[mainprogram->textcurrbatch]++ = y + he;
-            *mainprogram->textbdvptr[mainprogram->textcurrbatch]++ = 1.0f - mainprogram->boxz;
+            *mainprogram->textbdvptr[mainprogram->textcurrbatch]++ = 0.5f - mainprogram->boxz;
             *mainprogram->textbdvptr[mainprogram->textcurrbatch]++ = x;
             *mainprogram->textbdvptr[mainprogram->textcurrbatch]++ = y;
-            *mainprogram->textbdvptr[mainprogram->textcurrbatch]++ = 1.0f - mainprogram->boxz;
+            *mainprogram->textbdvptr[mainprogram->textcurrbatch]++ = 0.5f - mainprogram->boxz;
             *mainprogram->textbdvptr[mainprogram->textcurrbatch]++ = x + wi;
             *mainprogram->textbdvptr[mainprogram->textcurrbatch]++ = y + he;
-            *mainprogram->textbdvptr[mainprogram->textcurrbatch]++ = 1.0f - mainprogram->boxz;
+            *mainprogram->textbdvptr[mainprogram->textcurrbatch]++ = 0.5f - mainprogram->boxz;
             *mainprogram->textbdvptr[mainprogram->textcurrbatch]++ = x + wi;
             *mainprogram->textbdvptr[mainprogram->textcurrbatch]++ = y;
-            *mainprogram->textbdvptr[mainprogram->textcurrbatch]++ = 1.0f - mainprogram->boxz;
+            *mainprogram->textbdvptr[mainprogram->textcurrbatch]++ = 0.5f - mainprogram->boxz;
         } else {
             *mainprogram->textbdvptr[mainprogram->textcurrbatch]++ = x + wi;
             *mainprogram->textbdvptr[mainprogram->textcurrbatch]++ = y;
-            *mainprogram->textbdvptr[mainprogram->textcurrbatch]++ = 1.0f - mainprogram->boxz;
+            *mainprogram->textbdvptr[mainprogram->textcurrbatch]++ = 0.5f - mainprogram->boxz;
             *mainprogram->textbdvptr[mainprogram->textcurrbatch]++ = x;
             *mainprogram->textbdvptr[mainprogram->textcurrbatch]++ = y;
-            *mainprogram->textbdvptr[mainprogram->textcurrbatch]++ = 1.0f - mainprogram->boxz;
+            *mainprogram->textbdvptr[mainprogram->textcurrbatch]++ = 0.5f - mainprogram->boxz;
             *mainprogram->textbdvptr[mainprogram->textcurrbatch]++ = x + wi;
             *mainprogram->textbdvptr[mainprogram->textcurrbatch]++ = y + he;
-            *mainprogram->textbdvptr[mainprogram->textcurrbatch]++ = 1.0f - mainprogram->boxz;
+            *mainprogram->textbdvptr[mainprogram->textcurrbatch]++ = 0.5f - mainprogram->boxz;
             *mainprogram->textbdvptr[mainprogram->textcurrbatch]++ = x;
             *mainprogram->textbdvptr[mainprogram->textcurrbatch]++ = y + he;
-            *mainprogram->textbdvptr[mainprogram->textcurrbatch]++ = 1.0f - mainprogram->boxz;
+            *mainprogram->textbdvptr[mainprogram->textcurrbatch]++ = 0.5f - mainprogram->boxz;
         }
 
         *mainprogram->textbdtcptr[mainprogram->textcurrbatch]++ = 0.0f;
@@ -2242,7 +2234,7 @@ void draw_box(float* linec, float* areac, float x, float y, float wi, float he, 
             *mainprogram->bdcptr[mainprogram->currbatch]++ = 0;
         }
 
-        if (mainprogram->countingtexes[mainprogram->currbatch] == 23) {
+        if (mainprogram->countingtexes[mainprogram->currbatch] == mainprogram->maxtexes - 1) {
             mainprogram->currbatch++;
             mainprogram->bdvptr[mainprogram->currbatch] = mainprogram->bdcoords[mainprogram->currbatch];
             mainprogram->bdtcptr[mainprogram->currbatch] = mainprogram->bdtexcoords[mainprogram->currbatch];
@@ -2580,9 +2572,10 @@ std::vector<float> render_text(const std::string& stext, const char* ctext, floa
         he /= (smflag > 0) + 1;
 
 		y -= he;
+        //draw text shadow
 		if (textw != 0) draw_box(nullptr, black, x + 0.001f, y - 0.00185f + 72 * pixelh * glob->h / 2400.0f - he * 3 * vertical, wi + pixelw, he, texture, true, vertical, false);
-		//draw text shadow
-		if (textw != 0) draw_box(nullptr, textc, x, y + 72 * pixelh * glob->h / 2400.0f - he * 3 * vertical, wi, he, texture, true, vertical, false);	//draw text
+		// draw text
+        if (textw != 0) draw_box(nullptr, textc, x, y + 72 * pixelh * glob->h / 2400.0f - he * 3 * vertical, wi, he, texture, true, vertical, false);	//draw text
 
 		mainprogram->texth = texth2;
 	}
@@ -4045,10 +4038,6 @@ void walk_nodes(bool stage) {
             bool muted = false;
             for (int j = 0; j < mainmix->layers[i].size(); j++) {
                 Layer *lay = mainmix->layers[i][j];
-                //if (!lay->liveinput && !lay->decresult->width && lay->filename != "") {
-                //    mainprogram->directmode = false;
-                //    return;
-                //}
                 if (lay->mutebut->value) mutes++;
                 walk_forward(lay->node);
                 onestepfrom(i / 2, lay->node, nullptr, -1, -1);
@@ -4063,10 +4052,6 @@ void walk_nodes(bool stage) {
             mutes = 0;
             for (int j = 0; j < mainmix->layers[i + 1].size(); j++) {
                 Layer *lay = mainmix->layers[i + 1][j];
-                //if (!lay->liveinput && !lay->decresult->width && lay->filename != "") {
-                //    mainprogram->directmode = false;
-                //    return;
-                //}
                 if (lay->mutebut->value) mutes++;
                 walk_forward(lay->node);
                 onestepfrom(i / 2, lay->node, nullptr, -1, -1);

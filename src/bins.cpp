@@ -72,7 +72,6 @@ BinElement::BinElement() {
     glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
     glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_BORDER);
     glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_BORDER);
-    glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA8, 192, 108, 0, GL_BGRA, GL_UNSIGNED_BYTE, 0);
     blacken(this->tex);
     glGenTextures(1, &this->oldtex);
     glBindTexture(GL_TEXTURE_2D, this->oldtex);
@@ -80,7 +79,6 @@ BinElement::BinElement() {
     glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
     glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_BORDER);
     glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_BORDER);
-    glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA8, 192, 108, 0, GL_BGRA, GL_UNSIGNED_BYTE, 0);
     blacken(this->oldtex);
 }
 
@@ -461,12 +459,12 @@ void BinsMain::handle(bool draw) {
 				draw_box(box, binel->tex);
 				mainprogram->uniformCache->setBool("inverteff", false);
                 if (!this->inbin) {
-                    mainprogram->frontbatch = true;
+                    //mainprogram->frontbatch = true;
                 }
                 // grey areas next to each element column to cut off element titles
                 draw_box(nullptr, color, box->vtxcoords->x1 - 0.01f, box->vtxcoords->y1 - 0.035f, box->vtxcoords->w + 0.02f, 0.028f, -1);
                 if (!this->inbin) {
-                    mainprogram->frontbatch = false;
+                    //mainprogram->frontbatch = false;
                 }
                 if (binel->name != "") {
                     if (binel->name != "") render_text(binel->name.substr(0, 20), white, box->vtxcoords->x1, box->vtxcoords->y1 - 0.03f, 0.00045f, 0.00075f);
