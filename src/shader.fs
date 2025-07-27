@@ -9,7 +9,7 @@ uniform sampler2D Sampler0;
 uniform sampler2D Sampler1;
 uniform sampler2D endSampler0, endSampler1;
 uniform sampler2D fboSampler;
-uniform sampler2D boxSampler[24];
+uniform sampler2D boxSampler[64];
 uniform samplerBuffer boxcolSampler;
 uniform usamplerBuffer boxtexSampler;
 uniform samplerBuffer boxbrdSampler;
@@ -1576,7 +1576,7 @@ void main()
 			vec4 sam = texelFetch(boxcolSampler, quadnr).rgba;
 			FragColor = vec4(sam.rgb, c);
 		}
-		else if (Tex0 != 23) {
+		else if (Tex0 != 255) {
 			// image
 			FragColor = texture(boxSampler[Tex0], vec2(TexCoord0.s, TexCoord0.t));
 		}

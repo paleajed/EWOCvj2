@@ -451,8 +451,8 @@ void BinsMain::handle(bool draw) {
 					color[3] = 1.0f;
 				}
 				// visualize elements
-				draw_box(nullptr, color, box->vtxcoords->x1 - 0.01f, box->vtxcoords->y1 - 0.01f, box->vtxcoords->w + 0.02f, box->vtxcoords->h + 0.02f, -1);
-				draw_box(box, -1);  //in case of alpha thumbnail
+				//draw_box(nullptr, color, box->vtxcoords->x1 - 0.01f, box->vtxcoords->y1 - 0.01f, box->vtxcoords->w + 0.02f, box->vtxcoords->h + 0.02f, -1);
+				//draw_box(box, -1);  //in case of alpha thumbnail
 				if (binel->select) {
 					mainprogram->uniformCache->setBool("inverteff", true);
 				}
@@ -2873,7 +2873,7 @@ void BinsMain::save_binjpegs() {
                         open_thumb(path, bin->elements[pos]->tex);
                         std::filesystem::current_path(mainprogram->contentpath);
                     } else {
-                        bool dummy = false;
+                        blacken(bin->elements[pos]->tex);
                     }
                     bin->elements[pos]->jpegsaved = true;
                 } else {

@@ -2166,7 +2166,7 @@ void draw_box(float* linec, float* areac, float x, float y, float wi, float he, 
         *mainprogram->textbdcptr[mainprogram->textcurrbatch]++ = (char) (areac[2] * 255.0f);
         *mainprogram->textbdcptr[mainprogram->textcurrbatch]++ = (char) (areac[3] * 255.0f);
 
-        if (mainprogram->textcountingtexes[mainprogram->textcurrbatch] == 23) {
+        if (mainprogram->textcountingtexes[mainprogram->textcurrbatch] == mainprogram->maxtexes - 3) {
             mainprogram->textcurrbatch++;
             mainprogram->textbdvptr[mainprogram->textcurrbatch] = mainprogram->textbdcoords[mainprogram->textcurrbatch];
             mainprogram->textbdtcptr[mainprogram->textcurrbatch] = mainprogram->textbdtexcoords[mainprogram->textcurrbatch];
@@ -2183,7 +2183,7 @@ void draw_box(float* linec, float* areac, float x, float y, float wi, float he, 
         if (tex != -1) {
             *mainprogram->bdtptr[mainprogram->currbatch]++ = mainprogram->countingtexes[mainprogram->currbatch] - 1;
         } else {
-            *mainprogram->bdtptr[mainprogram->currbatch]++ = 23;
+            *mainprogram->bdtptr[mainprogram->currbatch]++ = 255;
         }
 
         mainprogram->boxz += 0.001f;
@@ -2234,7 +2234,7 @@ void draw_box(float* linec, float* areac, float x, float y, float wi, float he, 
             *mainprogram->bdcptr[mainprogram->currbatch]++ = 0;
         }
 
-        if (mainprogram->countingtexes[mainprogram->currbatch] == mainprogram->maxtexes - 1) {
+        if (mainprogram->countingtexes[mainprogram->currbatch] == mainprogram->maxtexes - 3) {
             mainprogram->currbatch++;
             mainprogram->bdvptr[mainprogram->currbatch] = mainprogram->bdcoords[mainprogram->currbatch];
             mainprogram->bdtcptr[mainprogram->currbatch] = mainprogram->bdtexcoords[mainprogram->currbatch];

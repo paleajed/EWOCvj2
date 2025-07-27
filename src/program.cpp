@@ -10415,27 +10415,62 @@ void open_thumb(std::string path, GLuint tex) {
     const int COLOR_COMPONENTS = 3;
 
     std::ifstream infile(path, std::ios::binary | std::ios::ate);
+    if (!infile.good()) {
+        blacken(tex);
+        return;
+    }
+    
     std::streamsize sz = infile.tellg();
+    if (sz <= 0) {
+        infile.close();
+        blacken(tex);
+        return;
+    }
+    
     unsigned char *buf = new unsigned char[sz];
     infile.seekg(0, std::ios::beg);
     infile.read((char*)buf, sz);
+    
+    if (!infile.good()) {
+        delete [] buf;
+        infile.close();
+        blacken(tex);
+        return;
+    }
 
     long unsigned int _jpegSize = sz; //!< _jpegSize from above
 
     int jpegSubsamp, width, height, dummy;
 
     tjhandle _jpegDecompressor = tjInitDecompress();
+    if (_jpegDecompressor == nullptr) {
+        delete [] buf;
+        infile.close();
+        blacken(tex);
+        return;
+    }
 
-    tjDecompressHeader3(_jpegDecompressor, buf, _jpegSize, &width, &height, &jpegSubsamp, &dummy);
+    int result = tjDecompressHeader3(_jpegDecompressor, buf, _jpegSize, &width, &height, &jpegSubsamp, &dummy);
+    if (result != 0 || width <= 0 || height <= 0) {
+        tjDestroy(_jpegDecompressor);
+        delete [] buf;
+        infile.close();
+        blacken(tex);
+        return;
+    }
 
     unsigned char *uncbuffer = new unsigned char[width*height*COLOR_COMPONENTS]; //!< will contain the decompressed image
 
-    tjDecompress2(_jpegDecompressor, buf, _jpegSize, uncbuffer, width, 0/*pitch*/, height, TJPF_RGB, TJFLAG_FASTDCT);
+    result = tjDecompress2(_jpegDecompressor, buf, _jpegSize, uncbuffer, width, 0/*pitch*/, height, TJPF_RGB, TJFLAG_FASTDCT);
 
     tjDestroy(_jpegDecompressor);
 
-    glBindTexture(GL_TEXTURE_2D, tex);
-    glTexImage2D(GL_TEXTURE_2D, 0, GL_RGB, width, height, 0, GL_RGB, GL_UNSIGNED_BYTE, uncbuffer);
+    if (result == 0) {
+        glBindTexture(GL_TEXTURE_2D, tex);
+        glTexImage2D(GL_TEXTURE_2D, 0, GL_RGB, width, height, 0, GL_RGB, GL_UNSIGNED_BYTE, uncbuffer);
+    } else {
+        blacken(tex);
+    }
 
     delete [] buf;
     delete [] uncbuffer;
@@ -11564,7 +11599,7 @@ void OptimizedRenderer::render() {
     int totalTexIndicesSize = 0;
 
     // First pass: collect all batch data and precompute offsets (Change 5)
-    for (int i = startBatch; i >= 0; i--) {
+    for (int i = 0; i <= startBatch; i++) {
         int numquads = (intptr_t) mainprogram->bdtptr[i] - (intptr_t) mainprogram->bdtexes[i];
         if (numquads <= 0) continue;
 
@@ -11667,12 +11702,14 @@ void OptimizedRenderer::render() {
         BatchInfo& batch = batches[b];
         int i = batch.batchArrayIndex;
 
-        // Bind textures for this batch
-        int pos = 0;
+        // Bind textures for this batch - match stored indices exactly
         for (int j = 0; j < batch.numquads; j++) {
             if (mainprogram->boxtexes[i][j] != -1) {
-                glActiveTexture(GL_TEXTURE0 + pos++);
-                glBindTexture(GL_TEXTURE_2D, mainprogram->boxtexes[i][j]);
+                int texIndex = mainprogram->bdtexes[i][j];
+                if (texIndex < mainprogram->maxtexes - 2) {
+                    glActiveTexture(GL_TEXTURE0 + texIndex);
+                    glBindTexture(GL_TEXTURE_2D, mainprogram->boxtexes[i][j]);
+                }
             }
         }
 
@@ -11709,7 +11746,7 @@ void OptimizedRenderer::text_render() {
     int totalTexIndicesSize = 0;
 
     // First pass: collect all batch data and precompute offsets (Change 5)
-    for (int i = startBatch; i >= 0; i--) {
+    for (int i = 0; i <= startBatch; i++) {
         int numquads = (intptr_t) mainprogram->textbdtptr[i] - (intptr_t) mainprogram->textbdtexes[i];
         if (numquads <= 0) continue;
 
@@ -11812,12 +11849,14 @@ void OptimizedRenderer::text_render() {
         BatchInfo& batch = batches[b];
         int i = batch.batchArrayIndex;
 
-        // Bind textures for this batch
-        int pos = 0;
+        // Bind textures for this batch - match stored indices exactly
         for (int j = 0; j < batch.numquads; j++) {
             if (mainprogram->textboxtexes[i][j] != -1) {
-                glActiveTexture(GL_TEXTURE0 + pos++);
-                glBindTexture(GL_TEXTURE_2D, mainprogram->textboxtexes[i][j]);
+                int texIndex = mainprogram->textbdtexes[i][j];
+                if (texIndex < mainprogram->maxtexes - 2) {
+                    glActiveTexture(GL_TEXTURE0 + texIndex);
+                    glBindTexture(GL_TEXTURE_2D, mainprogram->textboxtexes[i][j]);
+                }
             }
         }
 
