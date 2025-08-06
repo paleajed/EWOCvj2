@@ -2138,17 +2138,17 @@ void draw_box(float* linec, float* areac, float x, float y, float wi, float he, 
             *mainprogram->textbdvptr[mainprogram->textcurrbatch]++ = y;
             *mainprogram->textbdvptr[mainprogram->textcurrbatch]++ = 0.5f - mainprogram->boxz;
         } else {
-            *mainprogram->textbdvptr[mainprogram->textcurrbatch]++ = x + wi;
-            *mainprogram->textbdvptr[mainprogram->textcurrbatch]++ = y;
-            *mainprogram->textbdvptr[mainprogram->textcurrbatch]++ = 0.5f - mainprogram->boxz;
             *mainprogram->textbdvptr[mainprogram->textcurrbatch]++ = x;
             *mainprogram->textbdvptr[mainprogram->textcurrbatch]++ = y;
             *mainprogram->textbdvptr[mainprogram->textcurrbatch]++ = 0.5f - mainprogram->boxz;
-            *mainprogram->textbdvptr[mainprogram->textcurrbatch]++ = x + wi;
-            *mainprogram->textbdvptr[mainprogram->textcurrbatch]++ = y + he;
+            *mainprogram->textbdvptr[mainprogram->textcurrbatch]++ = x - wi / 2.0f;
+            *mainprogram->textbdvptr[mainprogram->textcurrbatch]++ = y;
             *mainprogram->textbdvptr[mainprogram->textcurrbatch]++ = 0.5f - mainprogram->boxz;
             *mainprogram->textbdvptr[mainprogram->textcurrbatch]++ = x;
-            *mainprogram->textbdvptr[mainprogram->textcurrbatch]++ = y + he;
+            *mainprogram->textbdvptr[mainprogram->textcurrbatch]++ = y + he * 2.0f;
+            *mainprogram->textbdvptr[mainprogram->textcurrbatch]++ = 0.5f - mainprogram->boxz;
+            *mainprogram->textbdvptr[mainprogram->textcurrbatch]++ = x - wi / 2.0f;
+            *mainprogram->textbdvptr[mainprogram->textcurrbatch]++ = y + he * 2.0f;
             *mainprogram->textbdvptr[mainprogram->textcurrbatch]++ = 0.5f - mainprogram->boxz;
         }
 
@@ -5058,22 +5058,22 @@ void the_loop() {
     if (!mainprogram->server && !mainprogram->connfailed) mainprogram->startclient.notify_all();
 
     // calculate and visualize fps
-    mainmix->fps[mainmix->fpscount] = (int) (1.0f / (mainmix->time - mainmix->oldtime));
-    if (mainmix->fps[24] != 0) {
-        int total = 0;
-        for (int i = 0; i < 25; i++) total += mainmix->fps[i];
-        mainmix->rate = total / 25;
-        std::string s = std::to_string(mainmix->rate);
-        if (!mainprogram->binsscreen) {
-            render_text(s, white, 0.01f, 0.47f, 0.0006f, 0.001f);
+    if (!mainmix->retargeting) {
+        mainmix->fps[mainmix->fpscount] = (int) (1.0f / (mainmix->time - mainmix->oldtime));
+        if (mainmix->fps[24] != 0) {
+            int total = 0;
+            for (int i = 0; i < 25; i++) total += mainmix->fps[i];
+            mainmix->rate = total / 25;
+            std::string s = std::to_string(mainmix->rate);
+            if (!mainprogram->binsscreen) {
+                render_text(s, white, 0.01f, 0.47f, 0.0006f, 0.001f);
+            } else {
+                render_text(s, white, 0.7f, 0.47f, 0.0006f, 0.001f);
+            }
         }
-        else{
-            render_text(s, white, 0.7f, 0.47f, 0.0006f, 0.001f);
-        }
+        mainmix->fpscount++;
+        if (mainmix->fpscount > 24) mainmix->fpscount = 0;
     }
-    mainmix->fpscount++;
-    if (mainmix->fpscount > 24) mainmix->fpscount = 0;
-
 
     // keep advancing non-displayed scenes but dont load frames
     if (1) {
@@ -5103,7 +5103,7 @@ void the_loop() {
     mainprogram->lpstelem = mainprogram->midishelfelem;
 
 
-    if (!mainprogram->binsscreen) {
+    if (!mainprogram->binsscreen && !mainmix->retargeting) {
         //handle shelves
         mainprogram->inshelf = -1;
         mainprogram->shelves[0]->handle();
@@ -5111,7 +5111,7 @@ void the_loop() {
     }
 
 
-    if (!mainprogram->binsscreen) {
+    if (!mainprogram->binsscreen && !mainmix->retargeting) {
         mainprogram->preview_modus_buttons();
         make_layboxes();
     }
@@ -6055,45 +6055,47 @@ void the_loop() {
 
 
     // draw and handle loopstation
-    mainprogram->now = std::chrono::high_resolution_clock::now();
-    if (mainprogram->prevmodus) {
-        loopstation = lp;
-        lp->handle();
-        for (int i = 0; i < lpc->elements.size(); i++) {
-            if (lpc->elements[i]->loopbut->value || lpc->elements[i]->playbut->value) lpc->elements[i]->set_values();
-        }
-    }
-    else {
-        loopstation = lpc;
-        lpc->handle();
-        for (int i = 0; i < lp->elements.size(); i++) {
-            if (lp->elements[i]->loopbut->value || lp->elements[i]->playbut->value) lp->elements[i]->set_values();
-        }
-        for (int i = 0; i < 2; i++) {
-            for (int j = 0; j < 4; j++) {
-                if (j == mainmix->currscene[i]) continue;
-                for (auto *elem : mainmix->scenes[i][j]->lpst->elements) {
-                    if ((elem->loopbut->value || elem->playbut->value) && !elem->eventlist.empty()) elem->set_values();
-                    std::vector<Layer *> &lvec = mainmix->scenes[i][j]->scnblayers;
-                    for (int m = 0; m < lvec.size(); m++) {
-                        std::vector<float> colvec;
-                        colvec.push_back(elem->colbox->acolor[0]);
-                        colvec.push_back(elem->colbox->acolor[1]);
-                        colvec.push_back(elem->colbox->acolor[2]);
-                        colvec.push_back(elem->colbox->acolor[3]);
-                        if (std::find(elem->layers.begin(), elem->layers.end(), lvec[m]) != elem->layers.end()) {
-                            lvec[m]->lpstcolors.emplace(colvec);
-                        }
-                        else {
-                            lvec[m]->lpstcolors.erase(colvec);
+    if (!mainmix->retargeting) {
+        mainprogram->now = std::chrono::high_resolution_clock::now();
+        if (mainprogram->prevmodus) {
+            loopstation = lp;
+            lp->handle();
+            for (int i = 0; i < lpc->elements.size(); i++) {
+                if (lpc->elements[i]->loopbut->value || lpc->elements[i]->playbut->value)
+                    lpc->elements[i]->set_values();
+            }
+        } else {
+            loopstation = lpc;
+            lpc->handle();
+            for (int i = 0; i < lp->elements.size(); i++) {
+                if (lp->elements[i]->loopbut->value || lp->elements[i]->playbut->value) lp->elements[i]->set_values();
+            }
+            for (int i = 0; i < 2; i++) {
+                for (int j = 0; j < 4; j++) {
+                    if (j == mainmix->currscene[i]) continue;
+                    for (auto *elem: mainmix->scenes[i][j]->lpst->elements) {
+                        if ((elem->loopbut->value || elem->playbut->value) && !elem->eventlist.empty())
+                            elem->set_values();
+                        std::vector<Layer *> &lvec = mainmix->scenes[i][j]->scnblayers;
+                        for (int m = 0; m < lvec.size(); m++) {
+                            std::vector<float> colvec;
+                            colvec.push_back(elem->colbox->acolor[0]);
+                            colvec.push_back(elem->colbox->acolor[1]);
+                            colvec.push_back(elem->colbox->acolor[2]);
+                            colvec.push_back(elem->colbox->acolor[3]);
+                            if (std::find(elem->layers.begin(), elem->layers.end(), lvec[m]) != elem->layers.end()) {
+                                lvec[m]->lpstcolors.emplace(colvec);
+                            } else {
+                                lvec[m]->lpstcolors.erase(colvec);
+                            }
                         }
                     }
                 }
             }
         }
-    }
-    if (!mainprogram->binsscreen) {
-        mainprogram->beatthres->handle();
+        if (!mainprogram->binsscreen) {
+            mainprogram->beatthres->handle();
+        }
     }
 
     if (mainprogram->rightmouse) {

@@ -1,5 +1,6 @@
 #version 430 core
- 
+#pragma optionNV(inline 10)
+
 in vec2 TexCoord0;
 in flat int Vertex0;
 
@@ -1849,10 +1850,10 @@ void main()
 
         // Calculate how much to key out (0.0 = no keying, 1.0 = fully keyed)
         float key_amount;
-        if (totdiff > colortol) {
+        if (totdiff >= colortol * 3.0f) {
             key_amount = 0.0; // No keying - show keyed texture
         } else {
-            key_amount = clamp((colortol - totdiff) / colortol * (-(feather - 5.2f)), 0.0f, 1.0f);
+            key_amount = clamp((colortol * 3.0f - totdiff) / colortol * (-(feather - 5.2f)), 0.0f, 1.0f);
         }
 
         // Also incorporate alpha transparency
@@ -1878,7 +1879,7 @@ void main()
             tex1 = bu;
         }
 
-        float huetol = colortol / 4.0f;
+        float huetol = colortol / 1.9f;
         float huediff = abs(rgb2hsv(vec3(chred, chgreen, chblue)).x - rgb2hsv(vec3(tex1.r, tex1.g, tex1.b)).x);
         if (huediff > 0.5f) huediff = 1.0f - huediff;
 
@@ -1887,7 +1888,7 @@ void main()
         if (huediff > huetol) {
             key_amount = 0.0; // No keying - show keyed texture
         } else {
-            key_amount = clamp((huetol - huediff) / huetol * (-(feather - 5.2f)), 0.0f, 1.0f);
+            key_amount = clamp((huetol * 5.7f - huediff * 5.7f) / colortol * (-(feather - 5.2f)), 0.0f, 1.0f);
         }
 
         // Also incorporate alpha transparency
@@ -1913,7 +1914,7 @@ void main()
             tex1 = bu;
         }
 
-        float lumtol = colortol / 3.0f;
+        float lumtol = colortol * 1.2f;
         float lumdiff = abs(rgb2hsv(vec3(chred, chgreen, chblue)).z - rgb2hsv(vec3(tex1.r, tex1.g, tex1.b)).z);
 
         // Calculate how much to key out (0.0 = no keying, 1.0 = fully keyed)
@@ -1921,7 +1922,7 @@ void main()
         if (lumdiff > lumtol) {
             key_amount = 0.0; // No keying - show keyed texture
         } else {
-            key_amount = clamp((lumtol - lumdiff) / lumtol * (-(feather - 5.2f)), 0.0f, 1.0f);
+            key_amount = clamp((lumtol * 2.5f - lumdiff * 2.5f) / colortol * (-(feather - 5.2f)), 0.0f, 1.0f);
         }
 
         // Also incorporate alpha transparency

@@ -902,18 +902,25 @@ Effect::Effect() {
 	box->tooltiptitle = "Effect type name ";
 	box->tooltip = "Leftclick or rightclick effect name to change it in another effect class.  Leftdrag to move effect in the stack. ";
 	box->upvtxtoscr();
-	this->onoffbutton = new Button(true);
+    this->onoffbutton = new Button(true);
     this->onoffbutton->name[0] = "onoffbutton";
     this->onoffbutton->butid = 1;
-	this->onoffbutton->toggle = 1;
-	box = this->onoffbutton->box;
-	box->vtxcoords->x1 = -1.0f + mainprogram->numw;
-	box->vtxcoords->w = 0.0375f;
-	box->vtxcoords->h = 0.075f;
-	box->upvtxtoscr();
-	box->tooltiptitle = "Effect on/off ";
-	box->tooltip = "Leftclick toggles effect on/off ";
-	
+    this->onoffbutton->toggle = 1;
+    box = this->onoffbutton->box;
+    box->vtxcoords->x1 = -1.0f + mainprogram->numw;
+    box->vtxcoords->w = 0.0375f;
+    box->vtxcoords->h = 0.075f;
+    box->upvtxtoscr();
+    box->tooltiptitle = "Effect on/off ";
+    box->tooltip = "Leftclick toggles effect on/off ";
+    this->delbox = new Boxx;
+    this->delbox->vtxcoords->w = 0.015f;
+    this->delbox->vtxcoords->h = 0.03f;
+    this->delbox->tooltiptitle = "Delete effect ";
+    this->delbox->tooltip = "Leftclick to delete this effect from the effect stack. ";
+    this->delbox->upvtxtoscr();
+
+
 	// sets the dry/wet (mix of no-effect with effect) amount of the effect as a parameter
 	// read comment at BlurEffect::BlurEffect()
 	this->drywet = new Param;
@@ -2893,8 +2900,8 @@ Layer::Layer(bool comp) {
     this->chtol->name = "Tolerance";
 	this->chtol->value = 0.8f;
 	this->chtol->deflt = 0.8f;
-	this->chtol->range[0] = -0.1f;
-    this->chtol->range[1] = 3.3f;
+	this->chtol->range[0] = 0.0f;
+    this->chtol->range[1] = 1.0f;
     this->chtol->layer = this;
     this->chtol->shadervar = "colortol";
     this->chtol->box->tooltiptitle = "Set key tolerance ";
@@ -5044,8 +5051,6 @@ void Layer::display() {
                 draw_box(white, white, box->vtxcoords->x1 + 0.0225f, box->vtxcoords->y1 + 0.045f, progress * (box->vtxcoords->w - 0.045f), 0.04f, -1);
             }
 
-            mainprogram->frontbatch = false;
-
             if (this->beatdetbut->box->in()) {
                 if (mainprogram->menuactivation && !mainprogram->menuondisplay) {
                     mainprogram->beatmenu->state = 2;
@@ -5335,8 +5340,6 @@ void Layer::display() {
                 else if (!this->beatdetbut->value) {
                     render_text("B", alphawhite, this->beatdetbut->box->vtxcoords->x1 + 0.0078f, this->beatdetbut->box->vtxcoords->y1 + 0.0078f, 0.0006, 0.001);
                 }
-
-                mainprogram->frontbatch = false;
 			}
 			else {
                 if (mainprogram->prevmodus == !this->comp && this->deck == 1 && this->pos == this->layers->size() - 1) {
@@ -5719,6 +5722,7 @@ void Layer::display() {
                         if (eff->onoffbutton->value) draw_box(lightgrey, darkgreen1, box, -1);
                         else draw_box(lightgrey, darkgreen2, box, -1);
                     }
+
                     effstr = eff->get_namestring();
                     float textw = (textwvec_total(render_text(effstr, white, eff->box->vtxcoords->x1 + 0.015f,
                                                                 eff->box->vtxcoords->y1 + 0.075f - 0.045f,
@@ -5758,6 +5762,21 @@ void Layer::display() {
                         break;
                     if (par->box->vtxcoords->y1 <= 1.0 - mainprogram->layh - 0.135f - 0.27f) {
                         par->handle();
+                    }
+                }
+                // delete effect?
+                eff->delbox->vtxcoords->x1 = box->vtxcoords->x1 + box->vtxcoords->w - eff->delbox->vtxcoords->w;
+                eff->delbox->vtxcoords->y1 = box->vtxcoords->y1 + box->vtxcoords->h - eff->delbox->vtxcoords->h;
+                eff->delbox->upvtxtoscr();
+                draw_box(lightgrey, black, eff->delbox, -1);
+                render_text("x", white, eff->delbox->vtxcoords->x1 + 0.004f, eff->delbox->vtxcoords->y1 + 0.008f, 0.00045f, 0.00075f);
+                if (eff->delbox->in()) {
+                    if (mainprogram->leftmouse) {
+                        this->delete_effect(eff->pos);
+                        mainmix->insert = false;
+                        mainprogram->dragbox = nullptr;
+                        mainprogram->drageffsense = false;
+                        mainprogram->leftmouse = false;
                     }
                 }
             }
@@ -6666,9 +6685,11 @@ void Mixer::outputmonitors_handle() {
                     render_text("Output Mix Monitor", white, outputbox->vtxcoords->x1 + 0.015f,
                                 outputbox->vtxcoords->y1 + outputbox->vtxcoords->h - 0.045f, 0.0005f, 0.0008f);
                 }
-                if (mnode->ndioutput != nullptr && ((int)(mainmix->time * 2.0f)) % 2) {
-                    render_text("NDI", green, outputbox->vtxcoords->x1 + 0.18f,
-                                outputbox->vtxcoords->y1 + outputbox->vtxcoords->h - 0.045f, 0.0005f, 0.0008f);
+                if (!(outputbox == mainprogram->outputmonitor && !mainprogram->prevmodus)) {
+                    if (mnode->ndioutput != nullptr && ((int) (mainmix->time * 2.0f)) % 2) {
+                        render_text("NDI", green, outputbox->vtxcoords->x1 + 0.18f,
+                                    outputbox->vtxcoords->y1 + outputbox->vtxcoords->h - 0.045f, 0.0005f, 0.0008f);
+                    }
                 }
 
                 if (mainprogram->doubleleftmouse) {
@@ -7560,6 +7581,11 @@ bool Layer::exchange(std::vector<Layer*>& slayers, std::vector<Layer*>& dlayers,
                 if (slayers.size() > this->pos + 1) {
                     nextlay = slayers[this->pos + 1];
                     nextbtype = nextlay->blendnode->blendtype;
+                    nextmfval = nextlay->blendnode->mixfac->value;
+                    nextwipetype = nextlay->blendnode->wipetype;
+                    nextwipedir = nextlay->blendnode->wipedir;
+                    nextwipex = nextlay->blendnode->wipex->value;
+                    nextwipey = nextlay->blendnode->wipey->value;
                     if (slayers.size() > nextlay->pos + 1) {
                         nextnextlay = slayers[nextlay->pos + 1];
                         //nextbtype = nextlay->blendnode->blendtype;

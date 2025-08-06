@@ -133,8 +133,9 @@ class Effect {
 		std::string get_namestring();
 		Effect();
 		~Effect();
-		
-		Boxx *box;
+
+        Boxx *box;
+        Boxx *delbox;
 		Param *drywet;
 		Button *onoffbutton;
 		int numrows;

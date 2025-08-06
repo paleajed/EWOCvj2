@@ -3528,9 +3528,6 @@ void Program::handle_mixenginemenu() {
 }
 
 void Program::handle_effectmenu() {
-    if (!mainmix->insert) {
-        this->effectmenu->entries.insert(this->effectmenu->entries.begin(), "Delete effect");
-    }
 	int k = -1;
 	// Draw and handle mainprogram->effectmenu
     if (this->effectmenu->state == 2) {
@@ -3541,10 +3538,7 @@ void Program::handle_effectmenu() {
         std::vector<Effect*>& evec = mainmix->mouselayer->choose_effects();
         int ffglnr = -1;
         int isfnr = -1;
-        if (k == 0 && mainmix->mouseeffect != evec.size()) {
-			mainmix->mouselayer->delete_effect(mainmix->mouseeffect);
-		}
-		else if (mainmix->insert) {
+        if (mainmix->insert) {
             if (this->abeffects[k] >= 1000 && this->abeffects[k] < 2000) {
                 ffglnr = this->abeffects[k] - 1000;
             }
@@ -3554,22 +3548,17 @@ void Program::handle_effectmenu() {
 		    mainmix->mouselayer->add_effect((EFFECT_TYPE)this->abeffects[k], mainmix->mouseeffect, mainprogram->effcat[mainmix->mouselayer->deck]->value, ffglnr, isfnr);
 		}
 		else {
-			int mon = evec[mainmix->mouseeffect]->node->monitor;
-            if (this->abeffects[k - 1] >= 1000 && this->abeffects[k - 1] < 2000) {
-                ffglnr = this->abeffects[k - 1] - 1000;
+            if (this->abeffects[k] >= 1000 && this->abeffects[k] < 2000) {
+                ffglnr = this->abeffects[k] - 1000;
             }
-            if (this->abeffects[k - 1] >= 2000 && this->abeffects[k - 1] < 3000) {
-                isfnr = this->abeffects[k - 1] - 2000;
+            if (this->abeffects[k] >= 2000 && this->abeffects[k] < 3000) {
+                isfnr = this->abeffects[k] - 2000;
             }
-			mainmix->mouselayer->replace_effect((EFFECT_TYPE)this->abeffects[k - 1], mainmix->mouseeffect, ffglnr, isfnr);
-			evec[mainmix->mouseeffect]->node->monitor = mon;
+			mainmix->mouselayer->replace_effect((EFFECT_TYPE)this->abeffects[k], mainmix->mouseeffect, ffglnr, isfnr);
 		}
 		mainmix->mouselayer = nullptr;
 		mainmix->mouseeffect = -1;
 	}
-    if (!mainmix->insert) {
-        this->effectmenu->entries.erase(this->effectmenu->entries.begin());
-    }
 	if (this->menuchosen) {
         this->menuchosen = false;
         this->menuactivation = 0;
