@@ -7323,10 +7323,10 @@ int main(int argc, char* argv[]) {
 #endif
 
     // OPENAL
-    /*const char *defaultDeviceName = alcGetString(nullptr, ALC_DEFAULT_DEVICE_SPECIFIER);
+    const char *defaultDeviceName = alcGetString(nullptr, ALC_DEFAULT_DEVICE_SPECIFIER);
     ALCdevice *device = alcOpenDevice(defaultDeviceName);
     ALCcontext *context = alcCreateContext(device, nullptr);
-    bool succes = alcMakeContextCurrent(context);*/
+    bool succes = alcMakeContextCurrent(context);
 
     // ALSA
     //snd_seq_t *seq_handle;

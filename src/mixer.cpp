@@ -4335,7 +4335,6 @@ static int decode_packet(Layer *lay, bool show)
 		}
 	}
     else if (lay->decpkt->stream_index == lay->audio_stream_idx) {
-        return 0;
         /* decode audio frame */
 		int err2 = 0;
 		int nsam = 0;
@@ -4376,22 +4375,27 @@ static int decode_packet(Layer *lay, bool show)
 }
 
 void decode_audio(Layer *lay) {
+    printf("decode_audio called\n");
     int ret = 0, got_frame;
     char *snippet = nullptr;
     size_t unpadded_linesize;
     av_packet_unref(lay->decpkt);
     av_frame_unref(lay->decframe);
     av_read_frame(lay->video, lay->decpkt);
+    printf("Packet stream_index: %d, audio_stream_idx: %d\n", lay->decpkt->stream_index, lay->audio_stream_idx);
     while (lay->decpkt->stream_index == lay->audio_stream_idx) {
-        /*if (!lay->dummy && lay->volume->value > 0.0f) {
-            ret = decode_packet(lay, &got_frame);
+        if (!lay->dummy) {
+            ret = decode_packet(lay, false);
+            printf("decode_packet returned: %d, nb_samples: %d\n", ret, lay->decframe->nb_samples);
             // flush
             //lay->decpkt->data = nullptr;
             //lay->decpkt->size = 0;
             //decode_packet(lay, &got_frame);
-            if (ret >= 0) {
+            if (ret >= 0 && lay->decframe->nb_samples > 0) {
                 int ps;
                 unpadded_linesize = lay->decframe->linesize[0];
+                printf("Audio frame: linesize=%zu, samples=%d, sample_fmt=%d\n", 
+                       unpadded_linesize, lay->decframe->nb_samples, lay->audio_dec_ctx->sample_fmt);
                 if (av_sample_fmt_is_planar(lay->audio_dec_ctx->sample_fmt)) {
                     snippet = new char[unpadded_linesize / 2];
                     ps = unpadded_linesize / 2;
@@ -4400,6 +4404,7 @@ void decode_audio(Layer *lay) {
                     snippet = new char[unpadded_linesize / 2];
                     ps = unpadded_linesize / 2;
                 }
+                printf("Calculated ps (packet size): %d\n", ps);
                 for (int pos = 0; pos < unpadded_linesize / 2; pos++) {
                     if (av_sample_fmt_is_planar(lay->audio_dec_ctx->sample_fmt)) {
                         snippet[pos] = lay->decframe->extended_data[0][pos];
@@ -4417,23 +4422,21 @@ void decode_audio(Layer *lay) {
                 //}
                 lay->pslens.push_back(ps);
                 lay->snippets.push_back(snippet);
+                printf("Audio snippet added, queue size: %zu\n", lay->snippets.size());
                 //	if (ret < 0) break;
                 //	lay->decpkt->data += ret;
                 //	lay->decpkt->size -= ret;
                 //} while (lay->decpkt->size > 0);
                 //av_free_packet(&orig_pkt);
             }
-        }*/
+        }
 
         av_packet_unref(lay->decpkt);
         av_read_frame(lay->video, lay->decpkt);
     }
-    return;
     if (snippet) {
         lay->chready = true;
-        while (lay->chready) {
-            lay->newchunk.notify_all();
-        }
+        lay->newchunk.notify_all();
     }
 }
 
@@ -6083,10 +6086,10 @@ void Layer::display() {
             }
 
             // Draw volume->box   reminder implement audio
-            //if (this->audioplaying) {
-            //    par = this->volume;
-            //    par->handle();
-            //}
+            if (this->audioplaying) {
+                par = this->volume;
+                par->handle();
+            }
 
             // Draw and handle playbutton revbutton bouncebutton
             if (this->playbut->box->in()) {
@@ -9609,7 +9612,8 @@ bool Layer::thread_vidopen() {
         this->millif = tbperframe * (((float)this->video_stream->time_base.num * 1000.0) / (float)this->video_stream->time_base.den);
     }
 
-    /*if (find_stream_index(&(this->audio_stream_idx), this->video, AVMEDIA_TYPE_AUDIO) >= 0 && !this->dummy) {
+    if (find_stream_index(&(this->audio_stream_idx), this->video, AVMEDIA_TYPE_AUDIO) >= 0 && !this->dummy) {
+        printf("Audio stream found at index %d\n", this->audio_stream_idx);
         this->audio_stream = this->video->streams[this->audio_stream_idx];
         const AVCodec *dec = avcodec_find_decoder(this->audio_stream->codecpar->codec_id);
         this->audio_dec_ctx = avcodec_alloc_context3(dec);
@@ -9654,9 +9658,10 @@ bool Layer::thread_vidopen() {
         }
 
         this->audioplaying = true;
+        printf("Starting audio thread for layer\n");
         this->audiot = std::thread{&Layer::playaudio, this};
         this->audiot.detach();
-    }*/
+    }
 
     this->rgbframe->format = AV_PIX_FMT_BGRA;
     this->rgbframe->width = this->video_dec_ctx->width;
@@ -9690,6 +9695,7 @@ bool Layer::thread_vidopen() {
 
 
 void Layer::playaudio() {
+    printf("Audio thread started\n");
 
     ALint availBuffers = 0; // Buffers to be recovered
     ALint buffqueued = 0;
@@ -9716,6 +9722,8 @@ void Layer::playaudio() {
         lock.unlock();
         this->chready = false;
 
+        printf("Checking play conditions: playbut=%f, revbut=%f, snippets=%zu\n", 
+               this->playbut->value, this->revbut->value, this->snippets.size());
         while ((this->playbut->value || this->revbut->value) && this->snippets.size()) {
             // Poll for recoverable buffers
             alSourcef(source[0], AL_GAIN, this->volume->value);
@@ -9738,6 +9746,8 @@ void Layer::playaudio() {
                     alBufferData(myBuff, this->sampleformat, input, pslen, this->sample_rate);
                     // Queue the buffer
                     alSourceQueueBuffers(source[0], 1, &myBuff);
+                    printf("Queued audio buffer: format=%u, size=%d, rate=%u\n", 
+                           this->sampleformat, pslen, this->sample_rate);
                 }
                 if (pslen) delete[] input;
             }
@@ -9748,6 +9758,7 @@ void Layer::playaudio() {
             ALint sState = 0;
             alGetSourcei(source[0], AL_SOURCE_STATE, &sState);
             if (sState != AL_PLAYING) {
+                printf("Starting OpenAL source playback, state was: %d\n", sState);
                 alSourcePlay(source[0]);
                 alSourcei(source[0], AL_LOOPING, AL_FALSE);
             }
