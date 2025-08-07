@@ -4335,6 +4335,24 @@ static int decode_packet(Layer *lay, bool show)
 		}
 	}
     else if (lay->decpkt->stream_index == lay->audio_stream_idx) {
+        // Check if audio decoder context is properly initialized
+        if (!lay->audio_dec_ctx) {
+            printf("ERROR: audio_dec_ctx is null for stream %d, skipping audio packet\n", lay->decpkt->stream_index);
+            return decoded;
+        }
+        
+        static int audio_packet_count = 0;
+        static int64_t last_audio_pts = -1;
+        audio_packet_count++;
+        printf("Processing audio packet #%d in decode_packet, stream %d, pts=%lld\n", 
+               audio_packet_count, lay->decpkt->stream_index, lay->decpkt->pts);
+        
+        // Skip duplicate packets with same PTS
+        if (lay->decpkt->pts == last_audio_pts) {
+            printf("SKIPPING duplicate audio packet with same PTS %lld\n", lay->decpkt->pts);
+            return decoded;
+        }
+        last_audio_pts = lay->decpkt->pts;
         /* decode audio frame */
 		int err2 = 0;
 		int nsam = 0;
@@ -4347,7 +4365,14 @@ static int decode_packet(Layer *lay, bool show)
             }
             else {
                 err2 = avcodec_receive_frame(lay->audio_dec_ctx, lay->decframe);
-                nsam += lay->decframe->nb_samples;
+                if (err2 == AVERROR_EOF) {
+                    printf("Audio decoder EOF - flushing and continuing\n");
+                    avcodec_flush_buffers(lay->audio_dec_ctx);
+                    break; // Exit the loop and try with next packet
+                }
+                if (err2 >= 0) {
+                    nsam += lay->decframe->nb_samples;
+                }
                 if (err2 == AVERROR(EAGAIN) || err2 == AVERROR_INVALIDDATA) {
                     av_packet_unref(lay->decpkt);
                     av_read_frame(lay->video, lay->decpkt);
@@ -4366,6 +4391,80 @@ static int decode_packet(Layer *lay, bool show)
          * Sample: fate-suite/lossless-audio/luckynight-partial.shn
          * Also, some decoders might over-read the packet. */
         //decoded = FFMIN(ret, lay->decpkt->size);
+        
+        // Process the decoded audio data and add to snippets queue
+        if (err2 >= 0 && lay->decframe->nb_samples > 0) {
+            char *snippet = nullptr;
+            int ps;
+            
+            int bytes_per_sample = av_get_bytes_per_sample(lay->audio_dec_ctx->sample_fmt);
+            bool is_planar = av_sample_fmt_is_planar(lay->audio_dec_ctx->sample_fmt);
+            bool convert_to_16bit = (lay->audio_dec_ctx->sample_fmt == AV_SAMPLE_FMT_FLT || 
+                                   lay->audio_dec_ctx->sample_fmt == AV_SAMPLE_FMT_FLTP ||
+                                   lay->audio_dec_ctx->sample_fmt == AV_SAMPLE_FMT_S32 ||
+                                   lay->audio_dec_ctx->sample_fmt == AV_SAMPLE_FMT_S32P);
+            
+            printf("Processing audio in decode_packet: samples=%d, format=%d, planar=%d, channels=%d, bytes_per_sample=%d\n", 
+                   lay->decframe->nb_samples, lay->audio_dec_ctx->sample_fmt, is_planar, lay->channels, bytes_per_sample);
+            
+            // Always output as 16-bit for compatibility
+            ps = lay->decframe->nb_samples * lay->channels * 2; // 2 bytes per 16-bit sample
+            snippet = new char[ps];
+            int16_t* out16 = (int16_t*)snippet;
+            
+            if (convert_to_16bit && is_planar && lay->channels > 1) {
+                // Convert 32-bit float planar to 16-bit interleaved
+                for (int sample = 0; sample < lay->decframe->nb_samples; sample++) {
+                    for (int channel = 0; channel < lay->channels; channel++) {
+                        float* float_data = (float*)lay->decframe->extended_data[channel];
+                        float sample_val = float_data[sample];
+                        // Clamp and convert float [-1.0, 1.0] to int16 [-32768, 32767]
+                        sample_val = fmaxf(-1.0f, fminf(1.0f, sample_val));
+                        out16[sample * lay->channels + channel] = (int16_t)(sample_val * 32767.0f);
+                    }
+                }
+            } else if (convert_to_16bit && !is_planar) {
+                // Convert 32-bit float packed to 16-bit
+                float* float_data = (float*)lay->decframe->extended_data[0];
+                for (int i = 0; i < lay->decframe->nb_samples * lay->channels; i++) {
+                    float sample_val = float_data[i];
+                    sample_val = fmaxf(-1.0f, fminf(1.0f, sample_val));
+                    out16[i] = (int16_t)(sample_val * 32767.0f);
+                }
+            } else if (is_planar && lay->channels > 1) {
+                // For other planar formats, interleave channels
+                for (int sample = 0; sample < lay->decframe->nb_samples; sample++) {
+                    for (int channel = 0; channel < lay->channels; channel++) {
+                        memcpy(snippet + (sample * lay->channels + channel) * 2,
+                               lay->decframe->extended_data[channel] + sample * 2,
+                               2);
+                    }
+                }
+            } else {
+                // For packed formats, copy directly
+                memcpy(snippet, lay->decframe->extended_data[0], ps);
+            }
+            
+            // Debug: show first few bytes of audio data to see if it's changing
+            printf("Audio data sample: %02x %02x %02x %02x %02x %02x %02x %02x\n",
+                   (unsigned char)snippet[0], (unsigned char)snippet[1], 
+                   (unsigned char)snippet[2], (unsigned char)snippet[3],
+                   (unsigned char)snippet[4], (unsigned char)snippet[5],
+                   (unsigned char)snippet[6], (unsigned char)snippet[7]);
+            
+            // Thread-safely add to audio queue
+            {
+                std::lock_guard<std::mutex> audioLock(lay->chunklock);
+                lay->pslens.push_back(ps);
+                lay->snippets.push_back(snippet);
+                printf("Audio snippet added in decode_packet, queue size: %zu, ps: %d\n", lay->snippets.size(), ps);
+            }
+            
+            // Signal the audio thread
+            lay->chready = true;
+            lay->newchunk.notify_all();
+        }
+        
 		return nsam;
     }
 
@@ -4376,68 +4475,20 @@ static int decode_packet(Layer *lay, bool show)
 
 void decode_audio(Layer *lay) {
     printf("decode_audio called\n");
-    int ret = 0, got_frame;
-    char *snippet = nullptr;
-    size_t unpadded_linesize;
     av_packet_unref(lay->decpkt);
     av_frame_unref(lay->decframe);
     av_read_frame(lay->video, lay->decpkt);
     printf("Packet stream_index: %d, audio_stream_idx: %d\n", lay->decpkt->stream_index, lay->audio_stream_idx);
     while (lay->decpkt->stream_index == lay->audio_stream_idx) {
         if (!lay->dummy) {
-            ret = decode_packet(lay, false);
-            printf("decode_packet returned: %d, nb_samples: %d\n", ret, lay->decframe->nb_samples);
-            // flush
-            //lay->decpkt->data = nullptr;
-            //lay->decpkt->size = 0;
-            //decode_packet(lay, &got_frame);
-            if (ret >= 0 && lay->decframe->nb_samples > 0) {
-                int ps;
-                unpadded_linesize = lay->decframe->linesize[0];
-                printf("Audio frame: linesize=%zu, samples=%d, sample_fmt=%d\n", 
-                       unpadded_linesize, lay->decframe->nb_samples, lay->audio_dec_ctx->sample_fmt);
-                if (av_sample_fmt_is_planar(lay->audio_dec_ctx->sample_fmt)) {
-                    snippet = new char[unpadded_linesize / 2];
-                    ps = unpadded_linesize / 2;
-                }
-                else {
-                    snippet = new char[unpadded_linesize / 2];
-                    ps = unpadded_linesize / 2;
-                }
-                printf("Calculated ps (packet size): %d\n", ps);
-                for (int pos = 0; pos < unpadded_linesize / 2; pos++) {
-                    if (av_sample_fmt_is_planar(lay->audio_dec_ctx->sample_fmt)) {
-                        snippet[pos] = lay->decframe->extended_data[0][pos];
-                    }
-                    else {
-                        snippet[pos] = lay->decframe->extended_data[0][pos * 2 + 1];
-                    }
-                }
-                //if ((lay->playbut->value && lay->speed->value < 0) || (lay->revbut->value && lay->speed->value > 0)) {
-                //	snippet = (int*)malloc(unpadded_linesize);
-                //	for (int add = 0; add < unpadded_linesize / av_get_bytes_per_sample((AVSampleFormat)lay->decframe->format); add++) {
-                //		snippet[add] = snip[add];
-                //	}
-                //	free(snip);
-                //}
-                lay->pslens.push_back(ps);
-                lay->snippets.push_back(snippet);
-                printf("Audio snippet added, queue size: %zu\n", lay->snippets.size());
-                //	if (ret < 0) break;
-                //	lay->decpkt->data += ret;
-                //	lay->decpkt->size -= ret;
-                //} while (lay->decpkt->size > 0);
-                //av_free_packet(&orig_pkt);
-            }
+            // decode_packet now handles all audio processing and queuing
+            decode_packet(lay, false);
         }
 
         av_packet_unref(lay->decpkt);
         av_read_frame(lay->video, lay->decpkt);
     }
-    if (snippet) {
-        lay->chready = true;
-        lay->newchunk.notify_all();
-    }
+    // Audio processing and notification is now handled in decode_packet
 }
 
 int find_stream_index(int *stream_idx,
@@ -4514,9 +4565,7 @@ void Layer::get_cpu_frame(int framenr, int prevframe, int errcount)
             avcodec_flush_buffers(this->video_dec_ctx);
         }
 
-        do {
-            decode_audio(this);
-        } while (this->decpkt->stream_index != this->video_stream_idx);
+        // Audio processing now happens in main packet reading loops
         if (framenr >= prevframe + 1) {
             do {
                 // filter out audio packets
@@ -4533,8 +4582,12 @@ void Layer::get_cpu_frame(int framenr, int prevframe, int errcount)
                         avformat_seek_file(this->video, this->video_stream->index, first_dts,
                                            seekTarget, seekTarget, AVSEEK_FLAG_BACKWARD || AVSEEK_FLAG_FRAME);
                         do {
-                            // filter out audio packets
+                            // Read packets and process audio when found
                             int r = av_read_frame(this->video, this->decpkt);
+                            if (this->decpkt->stream_index == this->audio_stream_idx) {
+                                printf("Processing audio packet in main seek loop, stream %d\n", this->decpkt->stream_index);
+                                decode_packet(this, false);
+                            }
                         } while (this->decpkt->stream_index != this->video_stream_idx);
                         readpos = ((this->decpkt->dts - first_dts) * this->numf) / this->video_duration;
                     }
@@ -4543,10 +4596,13 @@ void Layer::get_cpu_frame(int framenr, int prevframe, int errcount)
                         ret = decode_packet (this, false);
                         for (int q = 0; q <mainprogram->qualfr - 1; q++) {
                             int r = av_read_frame(this->video, this->decpkt);
+                            // Also process audio packets encountered during quality frame skipping
+                            if (this->decpkt->stream_index == this->audio_stream_idx) {
+                                printf("Processing audio during quality skip, stream %d\n", this->decpkt->stream_index);
+                                decode_packet(this, false);
+                            }
                         }
-                        do {
-                            decode_audio(this);
-                        } while (this->decpkt->stream_index != this->video_stream_idx);
+                        // Let main video loop handle audio packets more naturally
                     }
                 }
             }
@@ -4583,14 +4639,17 @@ void Layer::get_cpu_frame(int framenr, int prevframe, int errcount)
             this->frame = framenr;
         }
         this->prevframe = this->frame;
-        //decode_audio(this);
         av_packet_unref(this->decpkt);
         av_packet_unref(this->decpktseek);
     }
     else {
         int r = av_read_frame(this->video, this->decpkt);
         if (r < 0) printf("problem reading frame\n");
-        else decode_packet(this, &got_frame);
+        else {
+            printf("Main loop: packet stream %d (video=%d, audio=%d)\n", 
+                   this->decpkt->stream_index, this->video_stream_idx, this->audio_stream_idx);
+            decode_packet(this, &got_frame);
+        }
         av_packet_unref(this->decpkt);
         av_packet_unref(this->decpktseek);
     }
@@ -9612,16 +9671,72 @@ bool Layer::thread_vidopen() {
         this->millif = tbperframe * (((float)this->video_stream->time_base.num * 1000.0) / (float)this->video_stream->time_base.den);
     }
 
-    if (find_stream_index(&(this->audio_stream_idx), this->video, AVMEDIA_TYPE_AUDIO) >= 0 && !this->dummy) {
-        printf("Audio stream found at index %d\n", this->audio_stream_idx);
+    // Check all audio streams and prefer stereo/multichannel streams
+    int best_audio_idx = -1;
+    int max_channels = 0;
+    int highest_bitrate = 0;
+
+    for (int i = 0; i < this->video->nb_streams; i++) {
+        if (this->video->streams[i]->codecpar->codec_type == AVMEDIA_TYPE_AUDIO) {
+            int channels = this->video->streams[i]->codecpar->channels;
+            int bitrate = this->video->streams[i]->codecpar->bit_rate;
+            printf("Found audio stream %d: channels=%d, sample_rate=%d, bitrate=%d, codec_id=%d\n",
+                                       i, channels,
+                                       this->video->streams[i]->codecpar->sample_rate,
+                                       bitrate,
+                                       this->video->streams[i]->codecpar->codec_id);
+
+            // Prefer streams with more channels first, then higher bitrate
+            if (channels > max_channels || (channels == max_channels && bitrate > highest_bitrate)) {
+                max_channels = channels;
+                highest_bitrate = bitrate;
+                best_audio_idx = i;
+                printf("  -> Selected as best audio stream so far\n");
+            }
+        }
+    }
+
+    if (best_audio_idx >= 0) {
+        this->audio_stream_idx = best_audio_idx;
+        printf("Using custom-selected audio stream %d (channels=%d)\n", best_audio_idx, max_channels);
+    } else {
+        // Only fall back to av_find_best_stream if we didn't find any audio streams
+        printf("No audio streams found with manual selection, trying av_find_best_stream\n");
+        find_stream_index(&(this->audio_stream_idx), this->video, AVMEDIA_TYPE_AUDIO);
+    }
+
+
+    if (this->audio_stream_idx >= 0 && !this->dummy) {
+        printf("Using audio stream at index %d\n", this->audio_stream_idx);
         this->audio_stream = this->video->streams[this->audio_stream_idx];
         const AVCodec *dec = avcodec_find_decoder(this->audio_stream->codecpar->codec_id);
-        this->audio_dec_ctx = avcodec_alloc_context3(dec);
-        avcodec_parameters_to_context(this->audio_dec_ctx, this->audio_stream->codecpar);
-        avcodec_open2(this->audio_dec_ctx, dec, nullptr);
-        this->sample_rate = this->audio_dec_ctx->sample_rate;
-        this->channels = this->audio_dec_ctx->channels;
-        this->channels = 1;
+        if (!dec) {
+            printf("ERROR: Could not find audio decoder for codec_id %d\n", this->audio_stream->codecpar->codec_id);
+            this->audio_stream_idx = -1;
+            this->audio_dec_ctx = nullptr;
+        } else {
+            this->audio_dec_ctx = avcodec_alloc_context3(dec);
+            if (!this->audio_dec_ctx) {
+                printf("ERROR: Could not allocate audio decoder context\n");
+                this->audio_stream_idx = -1;
+            } else {
+                avcodec_parameters_to_context(this->audio_dec_ctx, this->audio_stream->codecpar);
+                int ret = avcodec_open2(this->audio_dec_ctx, dec, nullptr);
+                if (ret < 0) {
+                    printf("ERROR: Could not open audio codec: %s\n", av_err2str(ret));
+                    avcodec_free_context(&this->audio_dec_ctx);
+                    this->audio_dec_ctx = nullptr;
+                    this->audio_stream_idx = -1;
+                } else {
+                    this->sample_rate = this->audio_dec_ctx->sample_rate;
+                    this->channels = this->audio_dec_ctx->channels;
+                    printf("Audio setup: channels=%d, sample_rate=%d\n", this->channels, this->sample_rate);
+                }
+            }
+        }
+        
+        if (this->audio_dec_ctx) {
+            printf("Audio codec sample format: %d (%s)\n", this->audio_dec_ctx->sample_fmt, av_get_sample_fmt_name(this->audio_dec_ctx->sample_fmt));
         switch (this->audio_dec_ctx->sample_fmt) {
             case AV_SAMPLE_FMT_U8:
                 if (this->channels == 1) this->sampleformat = AL_FORMAT_MONO8;
@@ -9632,12 +9747,12 @@ bool Layer::thread_vidopen() {
                 else this->sampleformat = AL_FORMAT_STEREO16;
                 break;
             case AV_SAMPLE_FMT_S32:
-                if (this->channels == 1) this->sampleformat = AL_FORMAT_MONO_FLOAT32;
-                else this->sampleformat = AL_FORMAT_STEREO_FLOAT32;
-                break;
             case AV_SAMPLE_FMT_FLT:
-                if (this->channels == 1) this->sampleformat = AL_FORMAT_MONO_FLOAT32;
-                else this->sampleformat = AL_FORMAT_STEREO_FLOAT32;
+            case AV_SAMPLE_FMT_S32P:
+            case AV_SAMPLE_FMT_FLTP:
+                // Convert 32-bit/float formats to 16-bit for better OpenAL compatibility
+                if (this->channels == 1) this->sampleformat = AL_FORMAT_MONO16;
+                else this->sampleformat = AL_FORMAT_STEREO16;
                 break;
             case AV_SAMPLE_FMT_U8P:
                 if (this->channels == 1) this->sampleformat = AL_FORMAT_MONO8;
@@ -9647,13 +9762,10 @@ bool Layer::thread_vidopen() {
                 if (this->channels == 1) this->sampleformat = AL_FORMAT_MONO16;
                 else this->sampleformat = AL_FORMAT_STEREO16;
                 break;
-            case AV_SAMPLE_FMT_S32P:
-                if (this->channels == 1) this->sampleformat = AL_FORMAT_MONO_FLOAT32;
-                else this->sampleformat = AL_FORMAT_STEREO_FLOAT32;
-                break;
-            case AV_SAMPLE_FMT_FLTP:
-                if (this->channels == 1) this->sampleformat = AL_FORMAT_MONO_FLOAT32;
-                else this->sampleformat = AL_FORMAT_STEREO_FLOAT32;
+            default:
+                printf("Unsupported audio format %d, defaulting to stereo 16-bit\n", this->audio_dec_ctx->sample_fmt);
+                if (this->channels == 1) this->sampleformat = AL_FORMAT_MONO16;
+                else this->sampleformat = AL_FORMAT_STEREO16;
                 break;
         }
 
@@ -9661,6 +9773,7 @@ bool Layer::thread_vidopen() {
         printf("Starting audio thread for layer\n");
         this->audiot = std::thread{&Layer::playaudio, this};
         this->audiot.detach();
+        }
     }
 
     this->rgbframe->format = AV_PIX_FMT_BGRA;
@@ -9718,14 +9831,30 @@ void Layer::playaudio() {
     alSource3f(source[0], AL_POSITION, 0, 0, 0);
     while (this->audioplaying) {
         std::unique_lock<std::mutex> lock(this->chunklock);
-        this->newchunk.wait(lock, [&]{return this->chready;});
+        // Wait for chunks with a timeout to prevent indefinite blocking
+        this->newchunk.wait_for(lock, std::chrono::milliseconds(100), [&]{return this->chready;});
         lock.unlock();
         this->chready = false;
 
+        // Check audio buffer size safely
+        size_t queueSize = 0;
+        {
+            std::lock_guard<std::mutex> audioLock(this->chunklock);
+            queueSize = this->snippets.size();
+        }
+        
+        // Check current OpenAL buffer status
+        ALint buffqueued = 0;
+        alGetSourcei(source[0], AL_BUFFERS_QUEUED, &buffqueued);
+        
         printf("Checking play conditions: playbut=%f, revbut=%f, snippets=%zu\n", 
-               this->playbut->value, this->revbut->value, this->snippets.size());
-        while ((this->playbut->value || this->revbut->value) && this->snippets.size()) {
-            // Poll for recoverable buffers
+               this->playbut->value, this->revbut->value, queueSize);
+        
+        // Play audio whenever we have audio data available
+        // Require a minimum buffer size to prevent underruns
+        if (queueSize > 2 || (queueSize > 0 && buffqueued < 2)) {
+            
+            // Poll for recoverable buffers first
             alSourcef(source[0], AL_GAIN, this->volume->value);
             alGetSourcei(source[0], AL_BUFFERS_PROCESSED, &availBuffers);
             if (availBuffers > 0) {
@@ -9735,33 +9864,73 @@ void Layer::playaudio() {
                     bufferQueue.push_back(buffHolder[ii]);
                 }
             }
-            alGetSourcei(source[0], AL_BUFFERS_QUEUED, &buffqueued);
-            // Stuff the data in a buffer-object
-            int count = 0;
-            if (this->snippets.size()) {
-                char *input = this->snippets.front(); this->snippets.pop_front();
-                int pslen = this->pslens.front(); this->pslens.pop_front();
-                if (!bufferQueue.empty()) { // We just drop the data if no buffers are available
-                    myBuff = bufferQueue.front(); bufferQueue.pop_front();
+            
+            // Process multiple audio chunks at once to build up buffer
+            int chunksProcessed = 0;
+            while (chunksProcessed < 3 && !bufferQueue.empty()) { // Process up to 3 chunks per cycle
+                char *input = nullptr;
+                int pslen = 0;
+                bool hasData = false;
+                
+                // Safely get one audio chunk
+                {
+                    std::lock_guard<std::mutex> audioLock(this->chunklock);
+                    if (this->snippets.size() > 0 && this->pslens.size() > 0) {
+                        input = this->snippets.front(); 
+                        this->snippets.pop_front();
+                        pslen = this->pslens.front(); 
+                        this->pslens.pop_front();
+                        hasData = true;
+                    }
+                }
+                
+                if (hasData) {
+                    // Stuff the data in a buffer-object
+                    myBuff = bufferQueue.front(); 
+                    bufferQueue.pop_front();
                     alBufferData(myBuff, this->sampleformat, input, pslen, this->sample_rate);
+                    ALenum alError = alGetError();
+                    if (alError != AL_NO_ERROR) {
+                        printf("OpenAL buffer error: %d\n", alError);
+                    }
                     // Queue the buffer
                     alSourceQueueBuffers(source[0], 1, &myBuff);
-                    printf("Queued audio buffer: format=%u, size=%d, rate=%u\n", 
-                           this->sampleformat, pslen, this->sample_rate);
+                    alError = alGetError();
+                    if (alError != AL_NO_ERROR) {
+                        printf("OpenAL queue error: %d\n", alError);
+                    }
+                    
+                    if (pslen) delete[] input;
+                    chunksProcessed++;
+                } else {
+                    break; // No more data available
                 }
-                if (pslen) delete[] input;
+            }
+            
+            if (chunksProcessed > 0) {
+                printf("Queued %d audio buffers: format=%u, rate=%u\n", 
+                       chunksProcessed, this->sampleformat, this->sample_rate);
             }
 
-            // Restart the source if needed
-            // (if we take too long and the queue dries up,
-            //  the source stops playing).
+            // Check if source is playing and start if needed
+            alGetSourcei(source[0], AL_BUFFERS_QUEUED, &buffqueued);
             ALint sState = 0;
             alGetSourcei(source[0], AL_SOURCE_STATE, &sState);
-            if (sState != AL_PLAYING) {
-                printf("Starting OpenAL source playback, state was: %d\n", sState);
-                alSourcePlay(source[0]);
-                alSourcei(source[0], AL_LOOPING, AL_FALSE);
+            
+            // Monitor buffer levels and warn about potential underruns
+            static int logCounter = 0;
+            if (++logCounter % 50 == 0) { // Log every 50th cycle to avoid spam
+                printf("Audio status: queued=%d, available=%d, queueSize=%zu, state=%d\n", 
+                       buffqueued, (int)bufferQueue.size(), queueSize, sState);
             }
+            
+            // Restart the source if needed
+            if (sState != AL_PLAYING && buffqueued > 0) {
+                printf("Restarting OpenAL source (was stopped), buffers queued: %d, state was: %d\n", buffqueued, sState);
+                alSourcePlay(source[0]);
+            }
+            
+            // Update playback speed
             float fac = mainmix->deckspeed[!mainprogram->prevmodus][this->deck]->value;
             if (this->clonesetnr != -1) {
                 std::unordered_set<Layer*>::iterator it;
