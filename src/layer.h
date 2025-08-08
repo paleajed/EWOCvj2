@@ -172,6 +172,7 @@ class Layer {
         Param *endframe = nullptr;
         float oldstartframe = 0.0f;
         float oldendframe = 0.0f;
+        int scritched = 0;
         int scritching = 0;
         int clipscritching = 0;
 		int transforming = 0;
@@ -275,6 +276,7 @@ class Layer {
 		std::string layerfilepath = "";
 		AVFormatContext* video = nullptr;
 		AVFormatContext* videoseek = nullptr;
+		AVFormatContext* audio = nullptr;
 		const AVInputFormat *ifmt = nullptr;
 		bool skip = false;
 		AVFrame *rgbframe = nullptr;
@@ -282,6 +284,7 @@ class Layer {
 		AVFrame *audioframe = nullptr;
 		AVPacket *decpkt;
 		AVPacket *decpktseek;
+		AVPacket *audiopkt_dedicated;
         int64_t first_dts;
 		int reset = 0;
 		AVPacket audiopkt;
@@ -291,9 +294,11 @@ class Layer {
         AVStream *video_stream = nullptr;
         AVStream *videoseek_stream = nullptr;
 		AVStream *audio_stream = nullptr;
+		AVStream *audio_dedicated_stream = nullptr;
         int video_stream_idx = -1;
         int videoseek_stream_idx = -1;
 		int audio_stream_idx = -1;
+		int audio_dedicated_stream_idx = -1;
 		struct SwsContext *sws_ctx = nullptr;
 		char *databuf[2] = {nullptr, nullptr};
 		bool databufready = false;
@@ -309,6 +314,7 @@ class Layer {
 		ALuint sampleformat;
 		int audio_packet_count = 0;
 		int64_t last_audio_pts = -1;
+		int64_t last_processed_audio_pts = -1;
 		BinElement *hapbinel = nullptr;
 		bool nopbodel = false;
         bool wiping = false;
