@@ -230,6 +230,7 @@ class Layer {
 		std::thread audiot;
 		void playaudio();
 		bool audioplaying = false;
+		bool audiorestart = false;
 		std::list<char*> snippets;
 		std::list<int> pslens;
 		GLuint jpegtex;
@@ -306,6 +307,8 @@ class Layer {
 		ALuint sample_rate;
 		int channels;
 		ALuint sampleformat;
+		int audio_packet_count = 0;
+		int64_t last_audio_pts = -1;
 		BinElement *hapbinel = nullptr;
 		bool nopbodel = false;
         bool wiping = false;

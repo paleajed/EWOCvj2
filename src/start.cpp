@@ -5139,6 +5139,9 @@ void the_loop() {
                         if (!testlay->liveinput && !testlay->isclone &&
                             (testlay->changeinit < 1 && testlay->filename != "" &&
                              !(testlay->type == ELEM_IMAGE && testlay->numf == 0))) {
+                            if (testlay->type != ELEM_IMAGE && testlay->vidformat != 188 && testlay->vidformat != 187) {
+                                break;
+                            }
                             testlay->load_frame();
                             done = false;
                             brk = true;
@@ -5325,6 +5328,7 @@ void the_loop() {
             testlay->load_frame();
         }
 	}
+
     // when in preview modus, do frame texture load for both mixes (preview and output)
 	if (mainprogram->prevmodus) {
         for (int i = 0; i < mainmix->layers[0].size(); i++) {

@@ -4322,7 +4322,8 @@ static int decode_packet(Layer *lay, bool show)
                 lay->decresult->data = (char*)lay->rgbframe->data[0];
                 lay->decresult->height = lay->video_dec_ctx->height;
                 lay->decresult->width = lay->video_dec_ctx->width;
-                lay->decresult->size = lay->rgbframe->linesize[0] * lay->decresult->height;				lay->decresult->newdata = true;
+                lay->decresult->size = lay->rgbframe->linesize[0] * lay->decresult->height;
+                lay->decresult->newdata = true;
 				if (lay->clonesetnr != -1) {
 					std::unordered_set<Layer*>::iterator it;
 					for (it = mainmix->clonesets[lay->clonesetnr]->begin(); it != mainmix->clonesets[lay->clonesetnr]->end(); it++) {
@@ -4341,18 +4342,16 @@ static int decode_packet(Layer *lay, bool show)
             return decoded;
         }
         
-        static int audio_packet_count = 0;
-        static int64_t last_audio_pts = -1;
-        audio_packet_count++;
-        printf("Processing audio packet #%d in decode_packet, stream %d, pts=%lld\n", 
-               audio_packet_count, lay->decpkt->stream_index, lay->decpkt->pts);
-        
+        lay->audio_packet_count++;
+        printf("Processing audio packet #%d in decode_packet, stream %d, pts=%lld\n",
+               lay->audio_packet_count, lay->decpkt->stream_index, lay->decpkt->pts);
+
         // Skip duplicate packets with same PTS
-        if (lay->decpkt->pts == last_audio_pts) {
+        if (lay->decpkt->pts == lay->last_audio_pts) {
             printf("SKIPPING duplicate audio packet with same PTS %lld\n", lay->decpkt->pts);
             return decoded;
         }
-        last_audio_pts = lay->decpkt->pts;
+        lay->last_audio_pts = lay->decpkt->pts;
         /* decode audio frame */
 		int err2 = 0;
 		int nsam = 0;
@@ -4403,10 +4402,10 @@ static int decode_packet(Layer *lay, bool show)
                                    lay->audio_dec_ctx->sample_fmt == AV_SAMPLE_FMT_FLTP ||
                                    lay->audio_dec_ctx->sample_fmt == AV_SAMPLE_FMT_S32 ||
                                    lay->audio_dec_ctx->sample_fmt == AV_SAMPLE_FMT_S32P);
-            
-            printf("Processing audio in decode_packet: samples=%d, format=%d, planar=%d, channels=%d, bytes_per_sample=%d\n", 
+
+            printf("Processing audio in decode_packet: samples=%d, format=%d, planar=%d, channels=%d, bytes_per_sample=%d\n",
                    lay->decframe->nb_samples, lay->audio_dec_ctx->sample_fmt, is_planar, lay->channels, bytes_per_sample);
-            
+
             // Always output as 16-bit for compatibility
             ps = lay->decframe->nb_samples * lay->channels * 2; // 2 bytes per 16-bit sample
             snippet = new char[ps];
@@ -4444,14 +4443,14 @@ static int decode_packet(Layer *lay, bool show)
                 // For packed formats, copy directly
                 memcpy(snippet, lay->decframe->extended_data[0], ps);
             }
-            
+
             // Debug: show first few bytes of audio data to see if it's changing
             printf("Audio data sample: %02x %02x %02x %02x %02x %02x %02x %02x\n",
-                   (unsigned char)snippet[0], (unsigned char)snippet[1], 
+                   (unsigned char)snippet[0], (unsigned char)snippet[1],
                    (unsigned char)snippet[2], (unsigned char)snippet[3],
                    (unsigned char)snippet[4], (unsigned char)snippet[5],
                    (unsigned char)snippet[6], (unsigned char)snippet[7]);
-            
+
             // Thread-safely add to audio queue
             {
                 std::lock_guard<std::mutex> audioLock(lay->chunklock);
@@ -4471,24 +4470,6 @@ static int decode_packet(Layer *lay, bool show)
  	//av_frame_unref(lay->decframe);
 
 	return decoded;
-}
-
-void decode_audio(Layer *lay) {
-    printf("decode_audio called\n");
-    av_packet_unref(lay->decpkt);
-    av_frame_unref(lay->decframe);
-    av_read_frame(lay->video, lay->decpkt);
-    printf("Packet stream_index: %d, audio_stream_idx: %d\n", lay->decpkt->stream_index, lay->audio_stream_idx);
-    while (lay->decpkt->stream_index == lay->audio_stream_idx) {
-        if (!lay->dummy) {
-            // decode_packet now handles all audio processing and queuing
-            decode_packet(lay, false);
-        }
-
-        av_packet_unref(lay->decpkt);
-        av_read_frame(lay->video, lay->decpkt);
-    }
-    // Audio processing and notification is now handled in decode_packet
 }
 
 int find_stream_index(int *stream_idx,
@@ -4534,43 +4515,61 @@ static int get_format_from_sample_fmt(const char **fmt,
 void Layer::get_cpu_frame(int framenr, int prevframe, int errcount)
 {
     int ret = 0, got_frame;
-    /* initialize packet, set data to nullptr, let the demuxer fill it */
-    /* flush cached frames */
-    //do {
-    //	decode_packet(&got_frame, 1);
-    //} while (got_frame);
-
 
     if (this->type != ELEM_LIVE) {
         if (this->numf == 0) return;
 
-        long long seekTarget = av_rescale(this->video_duration, framenr, this->numf) + first_dts;
-        if (framenr != (int)this->startframe->value) {
-            if (framenr >= prevframe + 1) {
+        long long seekTarget;
+        if (framenr == 0) {
+            // For first frame or startframe, seek to beginning
+            seekTarget = first_dts;
+        } else {
+            // For other frames, calculate position
+            seekTarget = av_rescale(this->video_duration, framenr, this->numf) + first_dts;
+        }
+        if (framenr != (int) this->startframe->value) {
+            if (framenr > prevframe + 1) {
                 // hop to not-next-frame
                 avformat_seek_file(this->videoseek, this->videoseek_stream->index, first_dts,
                                    seekTarget, seekTarget, AVSEEK_FLAG_BACKWARD || AVSEEK_FLAG_FRAME);
                 //avcodec_flush_buffers(this->video_dec_ctx);
                 //int r = av_read_frame(this->videoseek, &this->decpktseek);
-            }
-            else {
+            } else {
+                av_read_frame(this->video, this->decpkt);
                 //avformat_seek_file(this->video, this->video_stream->index, seekTarget, seekTarget, this->video_duration + this->decpkt->dts, 0);
                 //avformat_seek_file(this->video, this->video_stream->index, 0, seekTarget, seekTarget, AVSEEK_FLAG_ANY);
                 //avformat_seek_file(this->video, this->video_stream->index, this->video_stream->first_dts,
                 //                  seekTarget, seekTarget, 0);
             }
-        }
-        else {
-            avformat_seek_file(this->video, this->video_stream->index, seekTarget, seekTarget, this->video_duration + this->decpkt->dts, 0);
+        } else {
+            // Seeking to startframe (beginning of stream) - clear audio queue to sync with video loop
+            {
+                std::lock_guard<std::mutex> audioLock(this->chunklock);
+                this->snippets.clear();
+                this->pslens.clear();
+                this->audiorestart = true;
+                this->chready = true;
+                this->newchunk.notify_all();
+            }
+            int seek_ret = avformat_seek_file(this->video, this->video_stream->index, seekTarget, seekTarget,
+                                              this->video_duration, 0);
+            if (seek_ret < 0) {
+                printf("Warning: seek to startframe failed: %s\n", av_err2str(seek_ret));
+            }
             avcodec_flush_buffers(this->video_dec_ctx);
+            if (this->audio_dec_ctx) {
+                int seek_ret2 = avformat_seek_file(this->video, this->audio_stream->index, seekTarget, seekTarget,
+                                                   this->video_duration, 0);
+                if (seek_ret2 < 0) {
+                    printf("Warning: seek to startframe failed: %s\n", av_err2str(seek_ret));
+                }
+                avcodec_flush_buffers(this->audio_dec_ctx);
+            }
         }
 
         // Audio processing now happens in main packet reading loops
-        if (framenr >= prevframe + 1) {
-            do {
-                // filter out audio packets
-                int r = av_read_frame(this->videoseek, this->decpktseek);
-            } while (this->decpktseek->stream_index != this->videoseek_stream_idx);
+        if (framenr > prevframe + 1) {
+            av_read_frame(this->videoseek, this->decpktseek);
             int readpos = ((this->decpktseek->dts - first_dts) * this->numf) / this->video_duration;
             if (!this->keyframe) {
                 if (readpos <= framenr) {
@@ -4581,63 +4580,44 @@ void Layer::get_cpu_frame(int framenr, int prevframe, int errcount)
                     } else {
                         avformat_seek_file(this->video, this->video_stream->index, first_dts,
                                            seekTarget, seekTarget, AVSEEK_FLAG_BACKWARD || AVSEEK_FLAG_FRAME);
-                        do {
-                            // Read packets and process audio when found
-                            int r = av_read_frame(this->video, this->decpkt);
-                            if (this->decpkt->stream_index == this->audio_stream_idx) {
-                                printf("Processing audio packet in main seek loop, stream %d\n", this->decpkt->stream_index);
-                                decode_packet(this, false);
-                            }
-                        } while (this->decpkt->stream_index != this->video_stream_idx);
+                        av_read_frame(this->video, this->decpkt);
                         readpos = ((this->decpkt->dts - first_dts) * this->numf) / this->video_duration;
                     }
-                    for (int f = readpos; f < framenr; f = f + mainprogram->qualfr) {
+                    for (int f = readpos; f < framenr; f++) {
                         // decode sequentially frames starting from keyframe readpos to current framenr
-                        ret = decode_packet (this, false);
-                        for (int q = 0; q <mainprogram->qualfr - 1; q++) {
-                            int r = av_read_frame(this->video, this->decpkt);
-                            // Also process audio packets encountered during quality frame skipping
-                            if (this->decpkt->stream_index == this->audio_stream_idx) {
-                                printf("Processing audio during quality skip, stream %d\n", this->decpkt->stream_index);
+                        // Process audio packets only if they fall in the unprocessed range
+                        if (this->decpkt->stream_index == this->audio_stream_idx) {
+                            // Only process audio between prevframe and current target frame
+                            if (f >= prevframe) {
+                                printf("Processing new audio during frame seek, frame %d, stream %d\n", f,
+                                       this->decpkt->stream_index);
                                 decode_packet(this, false);
+                            } else {
+                                printf("Skipping already processed audio during frame seek, frame %d, stream %d\n", f,
+                                       this->decpkt->stream_index);
                             }
+                            // Decrement q since we read an audio packet, not a video frame
+                            f--;
+                        } else {
+                            decode_packet(this, true);
                         }
+                        int r = av_read_frame(this->video, this->decpkt);
                         // Let main video loop handle audio packets more naturally
                     }
                 }
             }
         }
-        ret = decode_packet(this, true);
-        if (ret == 0) {
-            //return;
+        int count = 0;
+        while (true) {
+            count++;
+            decode_packet(this, true);
+            if (this->decpkt->stream_index == this->video_stream_idx) {
+                break;
+            }
+            av_read_frame(this->video, this->decpkt);
         }
-        if (this->scritching != 1 && ! (this->playbut->value == 0 && this->revbut->value == 0 && this->bouncebut->value == 0)) this->prevframe = framenr;
-        if (this->decframe->width == 0) {
-            if (!(this->playbut->value == 0 && this->revbut->value == 0 && this->bouncebut->value == 0)) this->prevframe = framenr;
-            if ((this->speed->value > 0 && (this->playbut->value || this->bouncebut->value == 1)) || (this->speed->value < 0 && (this->revbut->value || this->bouncebut->value == 2))) {
-                framenr++;
-            }
-            else if ((this->speed->value > 0 && (this->revbut->value || this->bouncebut->value == 2)) || (this->speed->value < 0 && (this->playbut->value || this->bouncebut->value == 1))) {
-                framenr--;
-            }
-            else if (this->prevfbw) {
-                //this->prevfbw = false;
-                framenr--;
-            }
-            else framenr++;
-            if (framenr > this->endframe->value) framenr = this->startframe->value;
-            else if (framenr < this->startframe->value) framenr = this->endframe->value;
-            //avcodec_flush_buffers(this->video_dec_ctx);
-            errcount++;
-            if (errcount == 1000) {
-                mainprogram->openerr = true;
-                return;
-            }
-            av_packet_unref(this->decpkt);
-            av_packet_unref(this->decpktseek);
-            get_cpu_frame(framenr, this->prevframe, errcount);
-            this->frame = framenr;
-        }
+        printf("count: %d\n", count);
+
         this->prevframe = this->frame;
         av_packet_unref(this->decpkt);
         av_packet_unref(this->decpktseek);
@@ -4646,32 +4626,11 @@ void Layer::get_cpu_frame(int framenr, int prevframe, int errcount)
         int r = av_read_frame(this->video, this->decpkt);
         if (r < 0) printf("problem reading frame\n");
         else {
-            printf("Main loop: packet stream %d (video=%d, audio=%d)\n", 
-                   this->decpkt->stream_index, this->video_stream_idx, this->audio_stream_idx);
             decode_packet(this, &got_frame);
         }
         av_packet_unref(this->decpkt);
         av_packet_unref(this->decpktseek);
     }
-
-
-    /*if (this->audio_stream && 0) {
-        enum AVSampleFormat sfmt = this->audio_dec_ctx->sample_fmt;
-        int n_channels = this->audio_dec_ctx->channels;
-        const char *fmt;
-        if (av_sample_fmt_is_planar(this->audio_dec_ctx->sample_fmt)) {
-            const char *packed = av_get_sample_fmt_name(sfmt);
-            printf("Warning: the sample format the decoder produced is planar "
-                   "(%s). This example will output the first channel only.\n",
-                   packed ? packed : "?");
-            sfmt = av_get_packed_sample_fmt(sfmt);
-            n_channels = 1;
-        }
-        ret = get_format_from_sample_fmt(&fmt, sfmt);
-    }*/
-
-    //av_free_packet(&this->decpkt);
-    //av_free_packet(&this->decpktseek);
 }
 
 
@@ -4814,7 +4773,7 @@ void Layer::get_frame(){
                 continue;
             }
             if (this->vidformat != 188 && this->vidformat != 187) {
-                if (this->video) {
+                if (this->video && (int)this->frame != (int)this->prevframe) {
                     get_cpu_frame((int) this->frame, this->prevframe, 0);
                     if (mainprogram->openerr) {
                         mainprogram->openerr = false;
@@ -9577,6 +9536,8 @@ bool Layer::thread_vidopen() {
         av_read_frame(this->video, this->decpkt);
         this->first_dts = this->decpkt->dts;
         av_packet_unref(this->decpkt);
+        // Seek back to beginning after getting first_dts
+        avformat_seek_file(this->video, this->video_stream->index, 0, this->first_dts, this->first_dts, AVSEEK_FLAG_BACKWARD);
         this->bpp = 4;
         if (this->vidformat == 188 || this->vidformat == 187) {
             if (oldvidformat != -1) {
@@ -9649,6 +9610,10 @@ bool Layer::thread_vidopen() {
         mainprogram->openerr = true;
         return 0;
     }
+
+
+
+    this->changeinit = 2;
 
     if (this->decframe) {
         //avcodec_close(this->video_dec_ctx);
@@ -9813,13 +9778,13 @@ void Layer::playaudio() {
     ALint availBuffers = 0; // Buffers to be recovered
     ALint buffqueued = 0;
     ALuint myBuff; // The buffer we're using
-    ALuint buffHolder[128]; // An array to hold catch the unqueued buffers
+    ALuint buffHolder[48]; // An array to hold catch the unqueued buffers
     bool done = false;
     std::list<ALuint> bufferQueue; // A quick and dirty queue of buffer objects
-    ALuint temp[128];
-    alGenBuffers(128, &temp[0]);
+    ALuint temp[48];
+    alGenBuffers(48, &temp[0]);
     // Queue our buffers onto an STL list
-    for (int ii = 0; ii < 128; ++ii) {
+    for (int ii = 0; ii < 48; ++ii) {
         bufferQueue.push_back(temp[ii]);
     }
     // Request a source name
@@ -9832,7 +9797,7 @@ void Layer::playaudio() {
     while (this->audioplaying) {
         std::unique_lock<std::mutex> lock(this->chunklock);
         // Wait for chunks with a timeout to prevent indefinite blocking
-        this->newchunk.wait_for(lock, std::chrono::milliseconds(100), [&]{return this->chready;});
+        this->newchunk.wait(lock, [&]{return this->chready;});
         lock.unlock();
         this->chready = false;
 
@@ -9847,12 +9812,22 @@ void Layer::playaudio() {
         ALint buffqueued = 0;
         alGetSourcei(source[0], AL_BUFFERS_QUEUED, &buffqueued);
         
-        printf("Checking play conditions: playbut=%f, revbut=%f, snippets=%zu\n", 
-               this->playbut->value, this->revbut->value, queueSize);
+        // Check for audio restart flag to clear OpenAL buffers on video loop
+        if (this->audiorestart) {
+            alSourceStop(source[0]);
+            if (buffqueued > 0) {
+                std::vector<ALuint> tempBuffers(buffqueued);
+                alSourceUnqueueBuffers(source[0], buffqueued, tempBuffers.data());
+                for (int i = 0; i < buffqueued; i++) {
+                    bufferQueue.push_back(tempBuffers[i]);
+                }
+            }
+            this->audiorestart = false;
+        }
         
         // Play audio whenever we have audio data available
         // Require a minimum buffer size to prevent underruns
-        if (queueSize > 2 || (queueSize > 0 && buffqueued < 2)) {
+        if (queueSize > 0) {
             
             // Poll for recoverable buffers first
             alSourcef(source[0], AL_GAIN, this->volume->value);
@@ -9945,7 +9920,7 @@ void Layer::playaudio() {
             alSourcef(source[0], AL_PITCH, this->speed->value * fac * fac);
         }
     }
-    alDeleteBuffers(128, &temp[0]);
+    alDeleteBuffers(48, &temp[0]);
 }
 
 
