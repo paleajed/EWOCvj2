@@ -3187,6 +3187,33 @@ Layer::~Layer() {
         this->ndisource->releaseReference();
     }
 
+    // Clean up audio thread and synchronization objects for HAP audio
+    if (this->hap_has_audio || this->audioplaying) {
+        // Signal audio thread to stop
+        this->audioplaying = false;
+        
+        // Wake up the audio thread if it's waiting
+        {
+            std::lock_guard<std::mutex> lock(this->chunklock);
+            this->chready = true;
+        }
+        this->newchunk.notify_all();
+        
+        // Give the audio thread a moment to exit cleanly
+        std::this_thread::sleep_for(std::chrono::milliseconds(100));
+        
+        // Clean up audio data
+        {
+            std::lock_guard<std::mutex> lock(this->chunklock);
+            while (!this->snippets.empty()) {
+                char* snippet = this->snippets.front();
+                this->snippets.pop_front();
+                if (snippet) delete[] snippet;
+            }
+            this->pslens.clear();
+        }
+    }
+
     glDeleteTextures(1, &this->jpegtex);
     mainprogram->add_to_texpool(this->fbotex);
     glDeleteTextures(1, &this->minitex);
@@ -4999,6 +5026,19 @@ bool Layer::get_hap_frame() {
         this->decresult->size = uncompressed_size;
         this->decresult->hap = true;
         this->decresult->newdata = true;
+        
+        // Process audio for HAP videos with WAV files
+        if (this->hap_has_audio && this->audio_dec_ctx) {
+            process_audio(this, (int)this->frame, this->scritched);
+            // Set audiorestart flag when user scrubs/seeks
+            if (this->scritched) {
+                this->audiorestart = true;
+                this->chready = true;
+                this->newchunk.notify_all();
+            }
+            this->scritched = 0; // Reset scritched flag after processing
+        }
+        
         if (this->clonesetnr != -1) {
             std::unordered_set<Layer*>::iterator it;
             for (it = mainmix->clonesets[this->clonesetnr]->begin(); it != mainmix->clonesets[this->clonesetnr]->end(); it++) {
@@ -9907,6 +9947,91 @@ bool Layer::thread_vidopen() {
             this->databuf[1] = nullptr;
             this->databufsize = 0;
             flock.unlock();
+
+            // Check for corresponding WAV file for HAP videos
+            std::string wav_path = remove_extension(this->filename) + ".wav";
+            if (exists(wav_path)) {
+                printf("Found corresponding WAV file for HAP video: %s\n", wav_path.c_str());
+                
+                // Open WAV file for audio playback
+                this->audio = avformat_alloc_context();
+                int wav_result = avformat_open_input(&(this->audio), wav_path.c_str(), nullptr, nullptr);
+                if (wav_result >= 0) {
+                    avformat_find_stream_info(this->audio, nullptr);
+
+                    // Find audio stream in WAV file
+                    find_stream_index(&(this->audio_dedicated_stream_idx), this->audio, AVMEDIA_TYPE_AUDIO);
+                    if (this->audio_dedicated_stream_idx >= 0) {
+                        this->audio_dedicated_stream = this->audio->streams[this->audio_dedicated_stream_idx];
+                        const AVCodec *dec = avcodec_find_decoder(this->audio_dedicated_stream->codecpar->codec_id);
+                        if (dec) {
+                            this->audio_dec_ctx = avcodec_alloc_context3(dec);
+                            if (avcodec_parameters_to_context(this->audio_dec_ctx, this->audio_dedicated_stream->codecpar) >= 0) {
+                                if (avcodec_open2(this->audio_dec_ctx, dec, nullptr) >= 0) {
+                                    printf("Successfully opened WAV audio for HAP video\n");
+                                    this->hap_has_audio = true;
+                                    this->channels = this->audio_dedicated_stream->codecpar->ch_layout.nb_channels;
+                                    
+                                    // Setup audio thread for HAP video with WAV file
+                                    printf("Audio codec sample format: %d (%s)\n", this->audio_dec_ctx->sample_fmt, av_get_sample_fmt_name(this->audio_dec_ctx->sample_fmt));
+                                    switch (this->audio_dec_ctx->sample_fmt) {
+                                        case AV_SAMPLE_FMT_U8:
+                                            if (this->channels == 1) this->sampleformat = AL_FORMAT_MONO8;
+                                            else this->sampleformat = AL_FORMAT_STEREO8;
+                                            break;
+                                        case AV_SAMPLE_FMT_S16:
+                                            if (this->channels == 1) this->sampleformat = AL_FORMAT_MONO16;
+                                            else this->sampleformat = AL_FORMAT_STEREO16;
+                                            break;
+                                        case AV_SAMPLE_FMT_S32:
+                                        case AV_SAMPLE_FMT_FLT:
+                                        case AV_SAMPLE_FMT_S32P:
+                                        case AV_SAMPLE_FMT_FLTP:
+                                            // Convert 32-bit/float formats to 16-bit for better OpenAL compatibility
+                                            if (this->channels == 1) this->sampleformat = AL_FORMAT_MONO16;
+                                            else this->sampleformat = AL_FORMAT_STEREO16;
+                                            break;
+                                        case AV_SAMPLE_FMT_U8P:
+                                            if (this->channels == 1) this->sampleformat = AL_FORMAT_MONO8;
+                                            else this->sampleformat = AL_FORMAT_STEREO8;
+                                            break;
+                                        case AV_SAMPLE_FMT_S16P:
+                                            if (this->channels == 1) this->sampleformat = AL_FORMAT_MONO16;
+                                            else this->sampleformat = AL_FORMAT_STEREO16;
+                                            break;
+                                        default:
+                                            printf("Unsupported audio format %d, defaulting to stereo 16-bit\n", this->audio_dec_ctx->sample_fmt);
+                                            if (this->channels == 1) this->sampleformat = AL_FORMAT_MONO16;
+                                            else this->sampleformat = AL_FORMAT_STEREO16;
+                                            break;
+                                    }
+
+                                    this->audioplaying = true;
+                                    printf("Starting audio thread for HAP layer\n");
+                                    this->audiot = std::thread{&Layer::playaudio, this};
+                                    this->audiot.detach();
+                                } else {
+                                    printf("Failed to open audio decoder for WAV file\n");
+                                    avcodec_free_context(&this->audio_dec_ctx);
+                                    this->audio_dec_ctx = nullptr;
+                                }
+                            } else {
+                                printf("Failed to copy audio parameters for WAV file\n");
+                                avcodec_free_context(&this->audio_dec_ctx);
+                                this->audio_dec_ctx = nullptr;
+                            }
+                        } else {
+                            printf("Could not find audio decoder for WAV file\n");
+                        }
+                    } else {
+                        printf("No audio stream found in WAV file\n");
+                    }
+                } else {
+                    printf("Failed to open WAV file: %s\n", wav_path.c_str());
+                }
+            } else {
+                printf("No corresponding WAV file found for HAP video\n");
+            }
 
             return true;
         }

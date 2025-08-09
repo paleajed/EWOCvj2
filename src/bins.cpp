@@ -3179,6 +3179,49 @@ void BinsMain::hap_encode(std::string srcpath, BinElement *binel, BinElement *bd
 		return;
 	}
 
+	// Audio stream setup for WAV extraction
+	int audio_stream_idx = -1;
+	AVStream *audio_stream = nullptr;
+	AVCodecContext *audio_dec_ctx = nullptr;
+	AVCodecParameters *audio_dec_cpm = nullptr;
+	FILE *wav_file = nullptr;
+	std::string wav_temp_path;
+	int64_t audio_samples_written = 0;
+	
+	// Find and setup audio stream if available
+	if (find_stream_index(&audio_stream_idx, source, AVMEDIA_TYPE_AUDIO) >= 0) {
+		audio_stream = source->streams[audio_stream_idx];
+		audio_dec_cpm = audio_stream->codecpar;
+		const AVCodec *audio_codec = avcodec_find_decoder(audio_stream->codecpar->codec_id);
+		if (audio_codec) {
+			audio_dec_ctx = avcodec_alloc_context3(audio_codec);
+			if (avcodec_parameters_to_context(audio_dec_ctx, audio_dec_cpm) >= 0) {
+				audio_dec_ctx->time_base = audio_stream->time_base;
+				if (avcodec_open2(audio_dec_ctx, audio_codec, nullptr) >= 0) {
+					// Setup WAV file output
+					wav_temp_path = remove_extension(srcpath) + "_temp.wav";
+					wav_file = fopen(wav_temp_path.c_str(), "wb");
+					if (wav_file) {
+						// Write temporary WAV header (will be updated at the end)
+						uint8_t wav_header[44] = {0};
+						memcpy(wav_header, "RIFF", 4);
+						memcpy(wav_header + 8, "WAVE", 4);
+						memcpy(wav_header + 12, "fmt ", 4);
+						*(uint32_t*)(wav_header + 16) = 16; // PCM format chunk size
+						*(uint16_t*)(wav_header + 20) = 1;  // PCM format
+						*(uint16_t*)(wav_header + 22) = audio_dec_cpm->ch_layout.nb_channels;
+						*(uint32_t*)(wav_header + 24) = audio_dec_cpm->sample_rate;
+						*(uint32_t*)(wav_header + 28) = audio_dec_cpm->sample_rate * audio_dec_cpm->ch_layout.nb_channels * 2; // byte rate (assuming 16-bit)
+						*(uint16_t*)(wav_header + 32) = audio_dec_cpm->ch_layout.nb_channels * 2; // block align
+						*(uint16_t*)(wav_header + 34) = 16; // bits per sample
+						memcpy(wav_header + 36, "data", 4);
+						fwrite(wav_header, 1, 44, wav_file);
+					}
+				}
+			}
+		}
+	}
+
 	if (binel->bin) {
         while (mainprogram->encthreads >= mainprogram->maxthreads) {
             mainprogram->hapnow = false;
@@ -3271,6 +3314,15 @@ void BinsMain::hap_encode(std::string srcpath, BinElement *binel, BinElement *bd
 		bool cond = false;
 		if (bdm) cond = (bdm->encoding == false);
 		if (binel->encoding == false || cond) {
+			// Clean up audio resources if encoding is cancelled
+			if (wav_file) {
+				fclose(wav_file);
+				mainprogram->remove(wav_temp_path); // delete the wav file under construction
+			}
+			if (audio_dec_ctx) {
+				avcodec_free_context(&audio_dec_ctx);
+			}
+			
 			if (bdm) {
 				bdm->encthreads--;
 				delete binel;  // temp bin elements populate bdm binelements
@@ -3288,7 +3340,67 @@ void BinsMain::hap_encode(std::string srcpath, BinElement *binel, BinElement *bd
 		pkt.data = nullptr;
 		pkt.size = 0;
 		av_read_frame(source, &pkt);
-		if (pkt.stream_index != source_stream_idx) continue;
+		
+		// Handle audio packets
+		if (audio_dec_ctx && pkt.stream_index == audio_stream_idx) {
+			AVFrame *audio_frame = av_frame_alloc();
+			if (avcodec_send_packet(audio_dec_ctx, &pkt) >= 0) {
+				while (avcodec_receive_frame(audio_dec_ctx, audio_frame) >= 0) {
+					if (wav_file && audio_frame->nb_samples > 0) {
+						// Convert audio to 16-bit PCM and write to WAV file
+						int samples_per_channel = audio_frame->nb_samples;
+						int num_channels = audio_frame->ch_layout.nb_channels;
+						
+						// Convert audio samples to 16-bit PCM
+						for (int i = 0; i < samples_per_channel; i++) {
+							for (int ch = 0; ch < num_channels; ch++) {
+								int16_t sample = 0;
+								
+								// Handle different audio formats
+								switch (audio_frame->format) {
+									case AV_SAMPLE_FMT_S16:
+									case AV_SAMPLE_FMT_S16P:
+									{
+										int16_t *data = (int16_t*)audio_frame->data[audio_frame->format == AV_SAMPLE_FMT_S16P ? ch : 0];
+										sample = data[audio_frame->format == AV_SAMPLE_FMT_S16P ? i : i * num_channels + ch];
+										break;
+									}
+									case AV_SAMPLE_FMT_FLT:
+									case AV_SAMPLE_FMT_FLTP:
+									{
+										float *data = (float*)audio_frame->data[audio_frame->format == AV_SAMPLE_FMT_FLTP ? ch : 0];
+										float fval = data[audio_frame->format == AV_SAMPLE_FMT_FLTP ? i : i * num_channels + ch];
+										sample = (int16_t)(fval * 32767.0f);
+										break;
+									}
+									case AV_SAMPLE_FMT_S32:
+									case AV_SAMPLE_FMT_S32P:
+									{
+										int32_t *data = (int32_t*)audio_frame->data[audio_frame->format == AV_SAMPLE_FMT_S32P ? ch : 0];
+										int32_t ival = data[audio_frame->format == AV_SAMPLE_FMT_S32P ? i : i * num_channels + ch];
+										sample = (int16_t)(ival >> 16);
+										break;
+									}
+									default:
+										sample = 0; // Unsupported format, write silence
+								}
+								
+								fwrite(&sample, sizeof(int16_t), 1, wav_file);
+								audio_samples_written++;
+							}
+						}
+					}
+				}
+			}
+			av_frame_free(&audio_frame);
+			av_packet_unref(&pkt);
+			continue;
+		}
+		
+		if (pkt.stream_index != source_stream_idx) {
+			av_packet_unref(&pkt);
+			continue;
+		}
 		count++;
 		int got_frame;
     		while (1) {
@@ -3333,6 +3445,31 @@ void BinsMain::hap_encode(std::string srcpath, BinElement *binel, BinElement *bd
     dest_stream->duration = (count + 1) * av_rescale_q(1, c->time_base, dest_stream->time_base);
     av_write_trailer(dest);
     avio_close(dest->pb);
+    
+    // Finalize WAV file if audio was processed
+    if (wav_file) {
+    	// Update WAV header with correct file size
+    	fseek(wav_file, 0, SEEK_SET);
+    	uint32_t file_size = (uint32_t)(44 + audio_samples_written * 2 - 8); // Total file size minus 8
+    	uint32_t data_size = (uint32_t)(audio_samples_written * 2); // Data chunk size
+    	
+    	fseek(wav_file, 4, SEEK_SET);
+    	fwrite(&file_size, sizeof(uint32_t), 1, wav_file);
+    	fseek(wav_file, 40, SEEK_SET);
+    	fwrite(&data_size, sizeof(uint32_t), 1, wav_file);
+    	
+    	fclose(wav_file);
+    	
+    	// Rename WAV file to final name
+    	std::string final_wav_path = remove_extension(binel->path) + "_hap.wav";
+    	rename(wav_temp_path.c_str(), final_wav_path.c_str());
+    }
+    
+    // Clean up audio resources
+    if (audio_dec_ctx) {
+    	avcodec_free_context(&audio_dec_ctx);
+    }
+    
     avcodec_free_context(&c);
     av_frame_free(&nv12frame);
     av_frame_free(&decframe);

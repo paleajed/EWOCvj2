@@ -232,6 +232,7 @@ class Layer {
 		void playaudio();
 		bool audioplaying = false;
 		bool audiorestart = false;
+		bool hap_has_audio = false;
 		std::list<char*> snippets;
 		std::list<int> pslens;
 		GLuint jpegtex;
