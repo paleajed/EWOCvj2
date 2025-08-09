@@ -357,6 +357,9 @@ class Layer {
         NDITexture ndiintex;
         NDITexture ndiouttex;
 
+        int packets_beyond_current = 0;
+        std::vector<int> latestptsvec;
+
         void display();
 		Effect* add_effect(EFFECT_TYPE type, int pos, bool cat, int ffglnr = -1, int isfnr = -1);
         Effect* do_add_effect(EFFECT_TYPE type, int pos, bool comp, bool cat, int ffglnr = -1, int isfnr = -1);

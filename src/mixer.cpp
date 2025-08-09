@@ -4559,8 +4559,7 @@ static int decode_audio_packet(Layer *lay, AVPacket* pkt) {
         return decoded;
     }
     lay->last_audio_pts = pkt->pts;
-    lay->last_processed_audio_pts = pkt->pts;
-    
+
     /* decode audio frame */
     int err2 = 0;
     int nsam = 0;
@@ -4704,9 +4703,100 @@ static int get_format_from_sample_fmt(const char **fmt,
     return -1;
 }
 
+// Function to calculate audio PTS for a given video frame number
+int64_t calculateAudioPTSForVideoFrame(AVFormatContext* format_ctx,
+                                       int video_stream_index,
+                                       int audio_stream_index,
+                                       int64_t video_frame_number) {
+
+    AVStream* video_stream = format_ctx->streams[video_stream_index];
+    AVStream* audio_stream = format_ctx->streams[audio_stream_index];
+
+    // Calculate video timestamp for the given frame number
+    AVRational video_time_base = video_stream->time_base;
+    AVRational video_frame_rate = av_guess_frame_rate(format_ctx, video_stream, nullptr);
+
+    // Video PTS for this frame number
+    int64_t video_pts = av_rescale_q(video_frame_number,
+                                     av_inv_q(video_frame_rate),
+                                     video_time_base);
+
+    // Convert video PTS to audio time base
+    int64_t audio_pts = av_rescale_q(video_pts,
+                                     video_time_base,
+                                     audio_stream->time_base);
+
+    return audio_pts;
+}
+
+static void process_audio(Layer *lay, int framenr, int scritched) {
+    // Process audio packets for current video frame timing
+    if (lay->audio && lay->audio_dedicated_stream_idx >= 0) {
+        // Calculate audio timestamp matching current video frame
+        // Video PTS for this frame number
+        //int64_t audio_pts = calculateAudioPTSForVideoFrame(lay->video, lay->video_stream_idx, lay->audio_stream_idx, framenr);
+        int64_t audio_pts = av_rescale(framenr, lay->audio_dedicated_stream->time_base.den,
+                                       lay->audio_dedicated_stream->time_base.num * lay->video_stream->r_frame_rate.num);
+
+        // Only seek if user jumped to non-sequential frame (scrubbing/seeking)
+        if (scritched) {
+            int64_t seek_target = audio_pts + lay->audio_dedicated_stream->start_time;
+            avformat_seek_file(lay->audio, lay->audio_dedicated_stream_idx, seek_target,
+                               seek_target, seek_target + AV_TIME_BASE, 0);
+            lay->packets_beyond_current = 0;
+            lay->audiorestart = true;
+            lay->last_processed_audio_pts = -1; // Reset audio processing tracking for loop
+            lay->chready = true;
+            lay->newchunk.notify_all();
+        }
+
+        // Only process audio if we haven't already processed up to lay timing
+        lay->packets_beyond_current = 0;
+        if (lay->last_processed_audio_pts < audio_pts) {
+            // Read and process all audio packets up to current audio_pts + buffer
+            while (true) {
+                if (lay->audiopkt_dedicated->stream_index == lay->audio_dedicated_stream_idx) {
+                    if (lay->audiopkt_dedicated->pts <= audio_pts) {
+                        // Process packets up to current timing
+                        decode_audio_packet(lay, lay->audiopkt_dedicated);
+                        lay->latestptsvec.push_back(lay->audiopkt_dedicated->pts);
+                        if (lay->latestptsvec.size() == 33) {
+                            lay->latestptsvec.erase(lay->latestptsvec.begin());
+                        }
+                    } else if (lay->packets_beyond_current < 32) {
+                        // Process a few packets beyond current timing for smooth playback
+                        decode_audio_packet(lay, lay->audiopkt_dedicated);
+                        lay->latestptsvec.push_back(lay->audiopkt_dedicated->pts);
+                        if (lay->latestptsvec.size() == 33) {
+                            lay->latestptsvec.erase(lay->latestptsvec.begin());
+                        }
+                        lay->packets_beyond_current++;
+                    } else {
+                        // We're too far ahead - put lay packet back and stop
+                        // (In practice we can't put it back, so we'll just stop here)
+                        lay->last_processed_audio_pts = lay->latestptsvec[0];
+                        av_read_frame(lay->audio, lay->audiopkt_dedicated);
+                        printf("Audio ahead of video timing - stopping processing\n");
+                        break;
+                    }
+                } else {
+                    // Skip non-audio packets
+                }
+                int ret = av_read_frame(lay->audio, lay->audiopkt_dedicated);
+                if (ret < 0) {
+                    // EOF or error - no more audio packets available
+                    printf("Audio stream EOF or error: %s\n", av_err2str(ret));
+                    break;
+                }
+            }
+        }
+    }
+}
+
 void Layer::get_cpu_frame(int framenr, int prevframe, int errcount)
 {
     int ret = 0, got_frame;
+    int scr = this->scritched;
 
     if (this->type != ELEM_LIVE) {
         if (this->numf == 0) return;
@@ -4720,7 +4810,7 @@ void Layer::get_cpu_frame(int framenr, int prevframe, int errcount)
             seekTarget = av_rescale(this->video_duration, framenr, this->numf) + first_dts;
         }
         if (framenr != (int) this->startframe->value) {
-            if (framenr > prevframe + 1) {
+            if (framenr != prevframe + 1 || scr) {
                 // hop to not-next-frame
                 avformat_seek_file(this->videoseek, this->videoseek_stream->index, first_dts,
                                    seekTarget, seekTarget, AVSEEK_FLAG_BACKWARD || AVSEEK_FLAG_FRAME);
@@ -4739,22 +4829,27 @@ void Layer::get_cpu_frame(int framenr, int prevframe, int errcount)
                 std::lock_guard<std::mutex> audioLock(this->chunklock);
                 this->snippets.clear();
                 this->pslens.clear();
+                this->packets_beyond_current = 0;
                 this->audiorestart = true;
                 this->last_processed_audio_pts = -1; // Reset audio processing tracking for loop
                 this->chready = true;
                 this->newchunk.notify_all();
             }
+
             int seek_ret = avformat_seek_file(this->video, this->video_stream->index, seekTarget, seekTarget,
                                               this->video_duration, 0);
             if (seek_ret < 0) {
                 printf("Warning: seek to startframe failed: %s\n", av_err2str(seek_ret));
             }
+
             int seek_ret3 = avformat_seek_file(this->audio, this->audio_dedicated_stream_idx, seekTarget, seekTarget,
                                               this->video_duration, 0);
             if (seek_ret3 < 0) {
                 printf("Warning: seek to startframe failed: %s\n", av_err2str(seek_ret));
             }
             avcodec_flush_buffers(this->video_dec_ctx);
+            av_read_frame(this->audio, this->audiopkt_dedicated);
+
             if (this->audio_dec_ctx) {
                 int seek_ret2 = avformat_seek_file(this->video, this->audio_stream->index, seekTarget, seekTarget,
                                                    this->video_duration, 0);
@@ -4765,10 +4860,15 @@ void Layer::get_cpu_frame(int framenr, int prevframe, int errcount)
             }
         }
 
-        // Audio processing now happens in main packet reading loops
-        if (framenr != prevframe + 1 || this->scritched) {
-            this->scritched = false;
-            av_read_frame(this->videoseek, this->decpktseek);
+        process_audio(this, this->frame, scr);
+
+        if (framenr != prevframe + 1 || scr) {
+            this->scritched = 0;
+            scr = 0;
+            do {
+                av_read_frame(this->videoseek, this->decpktseek);
+            }
+            while (this->decpktseek->stream_index != this->videoseek_stream_idx);
             int readpos = ((this->decpktseek->dts - first_dts) * this->numf) / this->video_duration;
             if (!this->keyframe) {
                 if (readpos <= framenr) {
@@ -4778,18 +4878,23 @@ void Layer::get_cpu_frame(int framenr, int prevframe, int errcount)
                         readpos = prevframe + 1;
                     } else {
                         avformat_seek_file(this->video, this->video_stream->index, first_dts,
-                                           seekTarget, seekTarget, AVSEEK_FLAG_BACKWARD || AVSEEK_FLAG_FRAME);
-                        av_read_frame(this->video, this->decpkt);
+                    \p.o\llllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllll.lp.ol                       seekTarget, seekTarget, AVSEEK_FLAG_BACKWARD || AVSEEK_FLAG_FRAME);
+                        do {\
+                            av_read_frame(this->video, this->decpkt);
+                        }
+                        while (this->decpkt->stream_index != this->video_stream_idx);
                         readpos = ((this->decpkt->dts - first_dts) * this->numf) / this->video_duration;
                     }
-                    for (int f = readpos; f < framenr; f++) {
+                    while (true) {
                         // decode sequentially frames starting from keyframe readpos to current framenr
                         // Process audio packets only if they fall in the unprocessed range
-                        if (this->decpkt->stream_index == this->audio_stream_idx) {
-                            // Decrement q since we read an audio packet, not a video frame
-                            f--;
-                        } else {
-                            decode_video_packet(this, true);
+                        if (this->decpkt->stream_index == this->video_stream_idx) {
+                            decode_video_packet(this, false);
+                            process_audio(this, (int)(this->frame), scr);
+                            if ((int)(this->frame - 1) <= ((this->decpkt->dts - first_dts) * this->numf) / this->video_duration) {
+                                av_read_frame(this->video, this->decpkt);
+                                break;
+                            }
                         }
                         int r = av_read_frame(this->video, this->decpkt);
                         // Let main video loop handle audio packets more naturally
@@ -4797,66 +4902,12 @@ void Layer::get_cpu_frame(int framenr, int prevframe, int errcount)
                 }
             }
         }
-        int count = 0;
         while (true) {
-            count++;
             decode_video_packet(this, true);
             if (this->decpkt->stream_index == this->video_stream_idx) {
                 break;
             }
             av_read_frame(this->video, this->decpkt);
-        }
-        //printf("count: %d\n", count);
-
-        // Process audio packets for current video frame timing
-        if (this->audio && this->audio_dedicated_stream_idx >= 0) {
-            // Calculate audio timestamp matching current video frame
-            int64_t audio_pts = av_rescale(framenr, this->audio_dedicated_stream->time_base.den, 
-                                         this->audio_dedicated_stream->time_base.num * this->video_stream->r_frame_rate.num);
-            
-            // Only seek if user jumped to non-sequential frame (scrubbing/seeking)
-            if (framenr != prevframe + 1) {
-                int64_t seek_target = audio_pts + this->audio_dedicated_stream->start_time;
-                avformat_seek_file(this->audio, this->audio_dedicated_stream_idx, seek_target, 
-                                 seek_target, seek_target + AV_TIME_BASE, 0);
-                this->audiopkt_dedicated->pts = -1;
-                printf("Audio seeking due to frame jump from %d to %d\n", prevframe, framenr);
-            }
-            
-            // Only process audio if we haven't already processed up to this timing
-            if (this->last_processed_audio_pts < audio_pts) {
-                // Read and process all audio packets up to current audio_pts + buffer
-                int packets_beyond_current = 0;
-                while (true) {
-                    // Peek at next packet to check timing before processing
-                    int ret = av_read_frame(this->audio, this->audiopkt_dedicated);
-                    if (ret < 0) {
-                        // EOF or error - no more audio packets available
-                        printf("Audio stream EOF or error: %s\n", av_err2str(ret));
-                        break;
-                    }
-
-                    if (this->audiopkt_dedicated->stream_index == this->audio_dedicated_stream_idx) {
-                        if (this->audiopkt_dedicated->pts <= audio_pts) {
-                            // Process packets up to current timing
-                            decode_audio_packet(this, this->audiopkt_dedicated);
-                        } else if (packets_beyond_current < 16) {
-                            // Process a few packets beyond current timing for smooth playback
-                            decode_audio_packet(this, this->audiopkt_dedicated);
-                            packets_beyond_current++;
-                        } else {
-                            // We're too far ahead - put this packet back and stop
-                            // (In practice we can't put it back, so we'll just stop here)
-                            av_packet_unref(this->audiopkt_dedicated);
-                            printf("Audio ahead of video timing - stopping processing\n");
-                            break;
-                        }
-                    } else {
-                        // Skip non-audio packets
-                    }
-                    av_packet_unref(this->audiopkt_dedicated);
-                }
-            }
         }
 
         this->prevframe = this->frame;
@@ -6726,7 +6777,6 @@ void Layer::display() {
                 }
             }
             if (this->scritching) {
-                this->scritched = true;
                 mainprogram->leftmousedown = false;
             }
             if (this->scritching == 1) {
@@ -6818,6 +6868,9 @@ void Layer::display() {
                         loopstation->elements[i]->add_param_automationentry(this->endframe);
                     }
                 }
+            }
+            if (this->scritching) {
+                this->scritched = true;
             }
             draw_box(this->loopbox, -1);
 			if (ends) {
@@ -9706,6 +9759,32 @@ Layer* Layer::open_video(float frame, const std::string filename, int reset, boo
     return this;
 }
 
+int64_t get_last_frame_dts(AVFormatContext *fmt_ctx, int stream_index) {
+    AVPacket *pkt = av_packet_alloc();
+    int64_t last_dts = AV_NOPTS_VALUE;
+
+    // Save current position
+    int64_t original_pos = avio_tell(fmt_ctx->pb);
+
+    // Seek to the last frame of the stream
+    if (av_seek_frame(fmt_ctx, stream_index, INT64_MAX, AVSEEK_FLAG_BACKWARD) >= 0) {
+        // Read the packet - this should be at or near the last frame
+        do {
+            av_read_frame(fmt_ctx, pkt);
+        }
+        while (pkt->stream_index != stream_index);
+        last_dts = pkt->dts;
+        av_packet_unref(pkt);
+    }
+
+    // Restore original position
+    avio_seek(fmt_ctx->pb, original_pos, SEEK_SET);
+    avformat_seek_file(fmt_ctx, -1, INT64_MIN, original_pos, INT64_MAX, AVSEEK_FLAG_BYTE);
+
+    av_packet_free(&pkt);
+    return last_dts;
+}
+
 bool Layer::thread_vidopen() {
     if (this->video_dec_ctx) avcodec_free_context(&this->video_dec_ctx);
     if (this->video) avformat_close_input(&this->video);
@@ -9806,7 +9885,9 @@ bool Layer::thread_vidopen() {
                     mainmix->reclay = nullptr;
                 }
             }
-            else this->video_duration = this->video_stream->duration;
+            else {
+                this->video_duration = this->video_stream->duration;
+            }
             float tbperframe = (float)this->video_stream->duration / (float)this->numf;
             this->millif = tbperframe * (((float)this->video_stream->time_base.num * 1000.0) / (float)this->video_stream->time_base.den);
 
@@ -9879,7 +9960,9 @@ bool Layer::thread_vidopen() {
             this->numf = (double)this->video->duration * (double)this->video_stream->avg_frame_rate.num / (double)this->video_stream->avg_frame_rate.den / (double)1000000.0f;
             this->video_duration = this->video->duration / (1000000.0f * this->video_stream->time_base.num / this->video_stream->time_base.den);
         }
-        else this->video_duration = this->video_stream->duration;
+        else {
+            this->video_duration = get_last_frame_dts(this->video, this->video_stream_idx);
+        }
         if (this->reset) {
             this->startframe->value = 0;
             this->endframe->value = this->numf - 1;
@@ -9895,7 +9978,7 @@ bool Layer::thread_vidopen() {
 
     for (int i = 0; i < this->video->nb_streams; i++) {
         if (this->video->streams[i]->codecpar->codec_type == AVMEDIA_TYPE_AUDIO) {
-            int channels = this->video->streams[i]->codecpar->channels;
+            int channels = this->video->streams[i]->codecpar->ch_layout.nb_channels;
             int bitrate = this->video->streams[i]->codecpar->bit_rate;
             printf("Found audio stream %d: channels=%d, sample_rate=%d, bitrate=%d, codec_id=%d\n",
                                        i, channels,
@@ -9946,7 +10029,7 @@ bool Layer::thread_vidopen() {
                     this->audio_stream_idx = -1;
                 } else {
                     this->sample_rate = this->audio_dec_ctx->sample_rate;
-                    this->channels = this->audio_dec_ctx->channels;
+                    this->channels = this->audio_dec_ctx->ch_layout.nb_channels;
                     printf("Audio setup: channels=%d, sample_rate=%d\n", this->channels, this->sample_rate);
                 }
             }
