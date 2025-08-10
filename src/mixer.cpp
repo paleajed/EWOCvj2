@@ -4593,6 +4593,7 @@ static int decode_audio_packet(Layer *lay, AVPacket* pkt) {
     while (1) {
         int err1 = avcodec_send_packet(lay->audio_dec_ctx, pkt);
         if (err1 == AVERROR_INVALIDDATA) {
+            printf("Invalid audio packet data - skipping\n");
             break;
         }
         else {
@@ -4604,8 +4605,16 @@ static int decode_audio_packet(Layer *lay, AVPacket* pkt) {
             }
             if (err2 >= 0) {
                 nsam += lay->decframe->nb_samples;
+                // Validate decoded audio data - skip if samples are corrupted
+                if (lay->decframe->nb_samples <= 0 || lay->decframe->nb_samples > 8192) {
+                    printf("Skipping corrupted audio frame with %d samples\n", lay->decframe->nb_samples);
+                    break;
+                }
             }
             if (err2 == AVERROR(EAGAIN) || err2 == AVERROR_INVALIDDATA) {
+                if (err2 == AVERROR_INVALIDDATA) {
+                    printf("Invalid decoded audio data - skipping frame\n");
+                }
                 break;
             }
         }
@@ -4628,17 +4637,36 @@ static int decode_audio_packet(Layer *lay, AVPacket* pkt) {
                                lay->audio_dec_ctx->sample_fmt == AV_SAMPLE_FMT_FLTP ||
                                lay->audio_dec_ctx->sample_fmt == AV_SAMPLE_FMT_S32 ||
                                lay->audio_dec_ctx->sample_fmt == AV_SAMPLE_FMT_S32P);
+        bool is_already_16bit = (lay->audio_dec_ctx->sample_fmt == AV_SAMPLE_FMT_S16 ||
+                                lay->audio_dec_ctx->sample_fmt == AV_SAMPLE_FMT_S16P);
 
-        printf("Processing audio in decode_audio_packet: samples=%d, format=%d, planar=%d, channels=%d, bytes_per_sample=%d\n",
-               lay->decframe->nb_samples, lay->audio_dec_ctx->sample_fmt, is_planar, lay->channels, bytes_per_sample);
+        printf("Processing audio in decode_audio_packet: samples=%d, format=%d (%s), planar=%d, channels=%d, bytes_per_sample=%d\n",
+               lay->decframe->nb_samples, lay->audio_dec_ctx->sample_fmt, 
+               av_get_sample_fmt_name(lay->audio_dec_ctx->sample_fmt), is_planar, lay->channels, bytes_per_sample);
+        printf("Conversion flags: convert_to_16bit=%d, is_already_16bit=%d\n", convert_to_16bit, is_already_16bit);
 
         // Always output as 16-bit for compatibility
         ps = lay->decframe->nb_samples * lay->channels * 2; // 2 bytes per 16-bit sample
         snippet = new char[ps];
         int16_t* out16 = (int16_t*)snippet;
         
-        if (convert_to_16bit && is_planar && lay->channels > 1) {
-            // Convert 32-bit float planar to 16-bit interleaved
+        if (is_already_16bit && is_planar && lay->channels > 1) {
+            // 16-bit planar to interleaved
+            printf("Using 16-bit planar to interleaved conversion\n");
+            int16_t* out = (int16_t*)snippet;
+            for (int sample = 0; sample < lay->decframe->nb_samples; sample++) {
+                for (int channel = 0; channel < lay->channels; channel++) {
+                    int16_t* channel_data = (int16_t*)lay->decframe->extended_data[channel];
+                    out[sample * lay->channels + channel] = channel_data[sample];
+                }
+            }
+        } else if (is_already_16bit && !is_planar) {
+            // 16-bit packed - direct copy
+            printf("Using 16-bit packed direct copy, copying %d bytes\n", ps);
+            memcpy(snippet, lay->decframe->extended_data[0], ps);
+        } else if (convert_to_16bit && is_planar && lay->channels > 1) {
+            // Convert 32-bit float planar to 16-bit interleaved  
+            printf("Using 32-bit float planar to 16-bit conversion\n");
             for (int sample = 0; sample < lay->decframe->nb_samples; sample++) {
                 for (int channel = 0; channel < lay->channels; channel++) {
                     float* float_data = (float*)lay->decframe->extended_data[channel];
@@ -4649,22 +4677,16 @@ static int decode_audio_packet(Layer *lay, AVPacket* pkt) {
             }
         } else if (convert_to_16bit && !is_planar) {
             // Convert 32-bit float packed to 16-bit
+            printf("Using 32-bit float packed to 16-bit conversion\n");
             float* float_data = (float*)lay->decframe->extended_data[0];
             for (int i = 0; i < lay->decframe->nb_samples * lay->channels; i++) {
                 float sample_val = float_data[i];
                 sample_val = fmaxf(-1.0f, fminf(1.0f, sample_val));
                 out16[i] = (int16_t)(sample_val * 32767.0f);
             }
-        } else if (is_planar && lay->channels > 1) {
-            // For other planar formats, interleave channels
-            for (int sample = 0; sample < lay->decframe->nb_samples; sample++) {
-                for (int channel = 0; channel < lay->channels; channel++) {
-                    memcpy(snippet + (sample * lay->channels + channel) * 2,
-                           lay->decframe->extended_data[channel] + sample * 2, 2);
-                }
-            }
         } else {
-            // For packed formats, copy directly
+            // For other packed formats, copy directly
+            printf("Using fallback direct copy for format %d\n", lay->audio_dec_ctx->sample_fmt);
             memcpy(snippet, lay->decframe->extended_data[0], ps);
         }
 
@@ -4758,6 +4780,9 @@ int64_t calculateAudioPTSForVideoFrame(AVFormatContext* format_ctx,
 
 static void process_audio(Layer *lay, float framenr, int scritched) {
     // Process audio packets for current video frame timing
+    if (scritched == 2) {
+        return;
+    }
     if (lay->audio && lay->audio_dedicated_stream_idx >= 0) {
         // Calculate audio timestamp matching current video frame
         // Video PTS for this frame number
@@ -4772,22 +4797,23 @@ static void process_audio(Layer *lay, float framenr, int scritched) {
         double audio_start_sec = (audio_start_time != AV_NOPTS_VALUE) ?
                                  audio_start_time * av_q2d(lay->audio_dedicated_stream->time_base) : 0.0;
 
-        // Calculate target presentation time
-        double target_presentation_time = (framenr / video_fps) + video_start_sec;
+        // Calculate target presentation time with higher precision
+        double precise_frame_time = framenr / video_fps;
+        double target_presentation_time = precise_frame_time + video_start_sec;
 
         // Adjust for audio start time difference
         double audio_seek_time = target_presentation_time - audio_start_sec;
 
-        // Convert to audio timebase
+        // Convert to audio timebase with rounding for better precision
         int64_t audio_pts = av_rescale_q(
-                (int64_t)(audio_seek_time * AV_TIME_BASE),
+                (int64_t)round(audio_seek_time * AV_TIME_BASE),
                 AV_TIME_BASE_Q,
                lay-> audio_dedicated_stream->time_base
         );
 
 
         // Only seek if user jumped to non-sequential frame (scrubbing/seeking)
-        if ((int)framenr == lay->startframe->value || scritched) {
+        if ((int)framenr == lay->startframe->value || scritched == 1) {
             lay->scritched = 0;
             int64_t seek_target = audio_pts + lay->audio_dedicated_stream->start_time;
             avformat_seek_file(lay->audio, lay->audio_dedicated_stream_idx, INT64_MIN,
@@ -4873,7 +4899,7 @@ void Layer::get_cpu_frame(int framenr, int prevframe, int errcount)
             seekTarget = av_rescale(this->video_duration, framenr, this->numf) + first_dts;
         }
         if (framenr != (int) this->startframe->value) {
-            if (framenr != prevframe + 1 || scr) {
+            if (framenr != prevframe + 1 || scr == 1) {
                 // hop to not-next-frame
                 avformat_seek_file(this->videoseek, this->videoseek_stream->index, first_dts,
                                    seekTarget, seekTarget, AVSEEK_FLAG_BACKWARD || AVSEEK_FLAG_FRAME);
@@ -4925,7 +4951,7 @@ void Layer::get_cpu_frame(int framenr, int prevframe, int errcount)
 
         process_audio(this, this->frame, scr);
 
-        if (framenr != prevframe + 1 || scr) {
+        if (framenr != prevframe + 1 || scr == 1) {
             this->scritched = 0;
             scr = 0;
             do {
@@ -4996,6 +5022,11 @@ bool Layer::get_hap_frame() {
         return true;
     }
 
+    // Process audio for HAP videos with WAV files
+    if (this->hap_has_audio && this->audio_dec_ctx) {
+        process_audio(this, this->frame, this->scritched);
+    }
+
     long long seekTarget = av_rescale(this->video_stream->duration, (int)this->frame, this->numf) + this->first_dts;
     int r = av_seek_frame(this->video, this->video_stream->index, seekTarget, 0);
     //av_frame_unref(this->decframe);
@@ -5062,11 +5093,6 @@ bool Layer::get_hap_frame() {
         this->decresult->size = uncompressed_size;
         this->decresult->hap = true;
         this->decresult->newdata = true;
-        
-        // Process audio for HAP videos with WAV files
-        if (this->hap_has_audio && this->audio_dec_ctx) {
-            process_audio(this, this->frame, this->scritched);
-        }
         
         if (this->clonesetnr != -1) {
             std::unordered_set<Layer*>::iterator it;
@@ -6468,6 +6494,9 @@ void Layer::display() {
             if (this->audioplaying) {
                 par = this->volume;
                 par->handle();
+                if (this->alsource != -1) {
+                    alSourcef(this->alsource, AL_GAIN, this->volume->value);
+                }
             }
 
             // Draw and handle playbutton revbutton bouncebutton
@@ -6848,6 +6877,7 @@ void Layer::display() {
             if (this->scritching) {
                 mainprogram->leftmousedown = false;
             }
+            float testframe = this->frame;
             if (this->scritching == 1) {
                 this->frame = (this->numf - 1) *
                               ((mainprogram->mx - this->loopbox->scrcoords->x1) / this->loopbox->scrcoords->w);
@@ -6939,7 +6969,10 @@ void Layer::display() {
                 }
             }
             if (this->scritching) {
-                this->scritched = true;
+                this->scritched = 1;
+            }
+            if (this->scritching && (int)testframe == (int)this->frame) {
+                this->scritched = 2;
             }
             draw_box(this->loopbox, -1);
 			if (ends) {
@@ -9957,8 +9990,8 @@ bool Layer::thread_vidopen() {
             else {
                 this->video_duration = this->video_stream->duration;
             }
-            float tbperframe = (float)this->video_stream->duration / (float)this->numf;
-            this->millif = tbperframe * (((float)this->video_stream->time_base.num * 1000.0) / (float)this->video_stream->time_base.den);
+            double tbperframe = (double)this->video_stream->duration / (double)this->numf;
+            this->millif = tbperframe * (((double)this->video_stream->time_base.num * 1000.0) / (double)this->video_stream->time_base.den);
 
             sws_freeContext(this->sws_ctx);
             //avcodec_free_context(&this->video_dec_ctx);
@@ -9998,6 +10031,8 @@ bool Layer::thread_vidopen() {
                             if (avcodec_parameters_to_context(this->audio_dec_ctx, this->audio_dedicated_stream->codecpar) >= 0) {
                                 if (avcodec_open2(this->audio_dec_ctx, dec, nullptr) >= 0) {
                                     printf("Successfully opened WAV audio for HAP video\n");
+                                    // Flush decoder buffers to ensure clean start
+                                    avcodec_flush_buffers(this->audio_dec_ctx);
                                     this->hap_has_audio = true;
                                     this->sample_rate = this->audio_dec_ctx->sample_rate;
                                     this->channels = this->audio_dedicated_stream->codecpar->ch_layout.nb_channels;
@@ -10122,8 +10157,8 @@ bool Layer::thread_vidopen() {
             this->startframe->value = 0;
             this->endframe->value = this->numf - 1;
         }
-        float tbperframe = (float)this->video_duration / (float)this->numf;
-        this->millif = tbperframe * (((float)this->video_stream->time_base.num * 1000.0) / (float)this->video_stream->time_base.den);
+        double tbperframe = (double)this->video_duration / (double)this->numf;
+        this->millif = tbperframe * (((double)this->video_stream->time_base.num * 1000.0) / (double)this->video_stream->time_base.den);
     }
 
     // Check all audio streams and prefer stereo/multichannel streams
@@ -10281,6 +10316,7 @@ void Layer::playaudio() {
     ALuint source[1];
     alGenSources((ALuint)1, &source[0]);
     // Set the default volume
+    this->alsource = source[0];
     alSourcef(source[0], AL_GAIN, this->volume->value);
     // Set the default position of the sound
     alSource3f(source[0], AL_POSITION, 0, 0, 0);
@@ -11933,7 +11969,7 @@ Layer* Mixer::read_layers(std::istream &rfile, const std::string result, std::ve
         }
         if (istring == "MILLIF") {
             safegetline(rfile, istring);
-            layend->millif = std::stof(istring);
+            layend->millif = std::stod(istring);
         }
 		if (layend) {
 			if (!layend->dummy) {

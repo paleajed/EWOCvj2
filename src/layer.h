@@ -140,7 +140,7 @@ class Layer {
 		int prevframe = -1;
 		int numf = 0;
 		int video_duration;
-		float millif = 0.0f;
+		double millif = 0.0;
 		std::chrono::high_resolution_clock::time_point prevtime;
 		bool timeinit = false;
 		Boxx *mixbox;
@@ -313,6 +313,7 @@ class Layer {
 		ALuint sample_rate;
 		int channels;
 		ALuint sampleformat;
+        ALuint alsource = -1;
 		int audio_packet_count = 0;
 		int64_t last_audio_pts = -1;
 		int64_t last_processed_audio_pts = -1;
