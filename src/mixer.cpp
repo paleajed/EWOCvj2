@@ -4756,20 +4756,47 @@ int64_t calculateAudioPTSForVideoFrame(AVFormatContext* format_ctx,
     return audio_pts;
 }
 
-static void process_audio(Layer *lay, int framenr, int scritched) {
+static void process_audio(Layer *lay, float framenr, int scritched) {
     // Process audio packets for current video frame timing
     if (lay->audio && lay->audio_dedicated_stream_idx >= 0) {
         // Calculate audio timestamp matching current video frame
         // Video PTS for this frame number
-        //int64_t audio_pts = calculateAudioPTSForVideoFrame(lay->video, lay->video_stream_idx, lay->audio_stream_idx, framenr);
-        int64_t audio_pts = av_rescale(framenr, lay->audio_dedicated_stream->time_base.den,
-                                       lay->audio_dedicated_stream->time_base.num * lay->video_stream->r_frame_rate.num);
+        double video_fps = av_q2d(lay->video_stream->r_frame_rate);  // or r_frame_rate
+        // Get start times (in stream timebase units)
+        int64_t video_start_time = lay->video_stream->start_time;
+        int64_t audio_start_time = lay->audio_dedicated_stream->start_time;
+        // Convert start times to seconds
+        double video_start_sec = (video_start_time != AV_NOPTS_VALUE) ?
+                                 video_start_time * av_q2d(lay->video_stream->time_base) : 0.0;
+
+        double audio_start_sec = (audio_start_time != AV_NOPTS_VALUE) ?
+                                 audio_start_time * av_q2d(lay->audio_dedicated_stream->time_base) : 0.0;
+
+        // Calculate target presentation time
+        double target_presentation_time = (framenr / video_fps) + video_start_sec;
+
+        // Adjust for audio start time difference
+        double audio_seek_time = target_presentation_time - audio_start_sec;
+
+        // Convert to audio timebase
+        int64_t audio_pts = av_rescale_q(
+                (int64_t)(audio_seek_time * AV_TIME_BASE),
+                AV_TIME_BASE_Q,
+               lay-> audio_dedicated_stream->time_base
+        );
+
 
         // Only seek if user jumped to non-sequential frame (scrubbing/seeking)
-        if (scritched) {
+        if ((int)framenr == lay->startframe->value || scritched) {
+            lay->scritched = 0;
             int64_t seek_target = audio_pts + lay->audio_dedicated_stream->start_time;
-            avformat_seek_file(lay->audio, lay->audio_dedicated_stream_idx, seek_target,
-                               seek_target, seek_target + AV_TIME_BASE, 0);
+            avformat_seek_file(lay->audio, lay->audio_dedicated_stream_idx, INT64_MIN,
+                               seek_target, seek_target, 0);
+            av_read_frame(lay->audio, lay->audiopkt_dedicated);
+            lay->packets_beyond_current = 0;
+            std::lock_guard<std::mutex> audioLock(lay->chunklock);
+            lay->snippets.clear();
+            lay->pslens.clear();
             lay->packets_beyond_current = 0;
             lay->audiorestart = true;
             lay->last_processed_audio_pts = -1; // Reset audio processing tracking for loop
@@ -4812,6 +4839,15 @@ static void process_audio(Layer *lay, int framenr, int scritched) {
                 int ret = av_read_frame(lay->audio, lay->audiopkt_dedicated);
                 if (ret < 0) {
                     // EOF or error - no more audio packets available
+                    /*int64_t audio_pts = av_rescale(lay->startframe->value, lay->audio_dedicated_stream->time_base.den,
+                                                   lay->audio_dedicated_stream->time_base.num * lay->video_stream->r_frame_rate.num);
+
+                    // Only seek if user jumped to non-sequential frame (scrubbing/seeking)
+                    int64_t seek_target = audio_pts + lay->audio_dedicated_stream->start_time;
+                    avformat_seek_file(lay->audio, lay->audio_dedicated_stream_idx, seek_target,
+                                           seek_target, seek_target + AV_TIME_BASE, 0);
+                    lay->last_processed_audio_pts = -1; // Reset audio processing tracking for loop
+                    */
                     printf("Audio stream EOF or error: %s\n", av_err2str(ret));
                     break;
                 }
@@ -5029,14 +5065,7 @@ bool Layer::get_hap_frame() {
         
         // Process audio for HAP videos with WAV files
         if (this->hap_has_audio && this->audio_dec_ctx) {
-            process_audio(this, (int)this->frame, this->scritched);
-            // Set audiorestart flag when user scrubs/seeks
-            if (this->scritched) {
-                this->audiorestart = true;
-                this->chready = true;
-                this->newchunk.notify_all();
-            }
-            this->scritched = 0; // Reset scritched flag after processing
+            process_audio(this, this->frame, this->scritched);
         }
         
         if (this->clonesetnr != -1) {
@@ -9950,7 +9979,7 @@ bool Layer::thread_vidopen() {
 
             // Check for corresponding WAV file for HAP videos
             std::string wav_path = remove_extension(this->filename) + ".wav";
-            if (exists(wav_path)) {
+            if (!this->dummy && exists(wav_path)) {
                 printf("Found corresponding WAV file for HAP video: %s\n", wav_path.c_str());
                 
                 // Open WAV file for audio playback
@@ -9970,6 +9999,7 @@ bool Layer::thread_vidopen() {
                                 if (avcodec_open2(this->audio_dec_ctx, dec, nullptr) >= 0) {
                                     printf("Successfully opened WAV audio for HAP video\n");
                                     this->hap_has_audio = true;
+                                    this->sample_rate = this->audio_dec_ctx->sample_rate;
                                     this->channels = this->audio_dedicated_stream->codecpar->ch_layout.nb_channels;
                                     
                                     // Setup audio thread for HAP video with WAV file
