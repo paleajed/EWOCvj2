@@ -863,6 +863,15 @@ void Mixer::handle_adaptparam() {
         }
     }
 
+    if (this->adaptparam->name == "Volume") {
+        if (this->adaptparam->value == 0.0f) {
+            this->adaptparam->layer->audioon = false;
+        }
+        else{
+            this->adaptparam->layer->audioon = true;
+        }
+    }
+
     if (this->adaptparam->sliding) {
         mainprogram->uniformCache->setFloat(this->adaptparam->shadervar, this->adaptparam->value);
     }
@@ -3191,7 +3200,10 @@ Layer::~Layer() {
     if (this->hap_has_audio || this->audioplaying) {
         // Signal audio thread to stop
         this->audioplaying = false;
-        
+
+        this->stopaudiothread = true;
+        this->audiothreadalive = false;
+
         // Wake up the audio thread if it's waiting
         {
             std::lock_guard<std::mutex> lock(this->chunklock);
@@ -4778,15 +4790,26 @@ int64_t calculateAudioPTSForVideoFrame(AVFormatContext* format_ctx,
     return audio_pts;
 }
 
-static void process_audio(Layer *lay, float framenr, int scritched) {
+static void process_audio(Layer *lay, float framenr, bool scritched) {
     // Process audio packets for current video frame timing
-    if (scritched == 2) {
+    if (lay->scritchpause) {
+        std::lock_guard<std::mutex> audioLock(lay->chunklock);
+        lay->snippets.clear();
+        lay->pslens.clear();
+        lay->packets_beyond_current = 0;
+        lay->audiorestart = true;
+        lay->last_processed_audio_pts = -1; // Reset audio processing tracking for loop
+        lay->chready = true;
+        lay->newchunk.notify_all();
+        //lay->scritched = false;
         return;
     }
+
+    float fac = mainmix->deckspeed[!mainprogram->prevmodus][lay->deck]->value;
     if (lay->audio && lay->audio_dedicated_stream_idx >= 0) {
         // Calculate audio timestamp matching current video frame
         // Video PTS for this frame number
-        double video_fps = av_q2d(lay->video_stream->r_frame_rate);  // or r_frame_rate
+        double video_fps = av_q2d(lay->video_stream->avg_frame_rate);  // or r_frame_rate
         // Get start times (in stream timebase units)
         int64_t video_start_time = lay->video_stream->start_time;
         int64_t audio_start_time = lay->audio_dedicated_stream->start_time;
@@ -4797,8 +4820,11 @@ static void process_audio(Layer *lay, float framenr, int scritched) {
         double audio_start_sec = (audio_start_time != AV_NOPTS_VALUE) ?
                                  audio_start_time * av_q2d(lay->audio_dedicated_stream->time_base) : 0.0;
 
+        if (audio_start_time == AV_NOPTS_VALUE) {
+            audio_start_time = 0.0f;
+        }
         // Calculate target presentation time with higher precision
-        double precise_frame_time = framenr / video_fps;
+        double precise_frame_time = lay->frame / video_fps;
         double target_presentation_time = precise_frame_time + video_start_sec;
 
         // Adjust for audio start time difference
@@ -4813,9 +4839,10 @@ static void process_audio(Layer *lay, float framenr, int scritched) {
 
 
         // Only seek if user jumped to non-sequential frame (scrubbing/seeking)
-        if ((int)framenr == lay->startframe->value || scritched == 1) {
-            lay->scritched = 0;
-            int64_t seek_target = audio_pts + lay->audio_dedicated_stream->start_time;
+        float fac = mainmix->deckspeed[!mainprogram->prevmodus][lay->deck]->value;
+        if ((int)framenr == lay->startframe->value || scritched == true || fac != lay->oldfac || lay->speed->value != lay->oldspeed) {
+            lay->scritched = false;
+            int64_t seek_target = audio_pts + audio_start_time;
             avformat_seek_file(lay->audio, lay->audio_dedicated_stream_idx, INT64_MIN,
                                seek_target, seek_target, 0);
             av_read_frame(lay->audio, lay->audiopkt_dedicated);
@@ -4829,6 +4856,8 @@ static void process_audio(Layer *lay, float framenr, int scritched) {
             lay->chready = true;
             lay->newchunk.notify_all();
         }
+        lay->oldfac = fac;
+        lay->oldspeed = lay->speed->value;
 
         // Only process audio if we haven't already processed up to lay timing
         lay->packets_beyond_current = 0;
@@ -4840,14 +4869,14 @@ static void process_audio(Layer *lay, float framenr, int scritched) {
                         // Process packets up to current timing
                         decode_audio_packet(lay, lay->audiopkt_dedicated);
                         lay->latestptsvec.push_back(lay->audiopkt_dedicated->pts);
-                        if (lay->latestptsvec.size() == 33) {
+                        if (lay->latestptsvec.size() == 17) {
                             lay->latestptsvec.erase(lay->latestptsvec.begin());
                         }
-                    } else if (lay->packets_beyond_current < 32) {
+                    } else if (lay->packets_beyond_current < 16) {
                         // Process a few packets beyond current timing for smooth playback
                         decode_audio_packet(lay, lay->audiopkt_dedicated);
                         lay->latestptsvec.push_back(lay->audiopkt_dedicated->pts);
-                        if (lay->latestptsvec.size() == 33) {
+                        if (lay->latestptsvec.size() == 17) {
                             lay->latestptsvec.erase(lay->latestptsvec.begin());
                         }
                         lay->packets_beyond_current++;
@@ -4855,7 +4884,7 @@ static void process_audio(Layer *lay, float framenr, int scritched) {
                         // We're too far ahead - put lay packet back and stop
                         // (In practice we can't put it back, so we'll just stop here)
                         lay->last_processed_audio_pts = lay->latestptsvec[0];
-                        av_read_frame(lay->audio, lay->audiopkt_dedicated);
+                        //av_read_frame(lay->audio, lay->audiopkt_dedicated);
                         printf("Audio ahead of video timing - stopping processing\n");
                         break;
                     }
@@ -4885,7 +4914,7 @@ static void process_audio(Layer *lay, float framenr, int scritched) {
 void Layer::get_cpu_frame(int framenr, int prevframe, int errcount)
 {
     int ret = 0, got_frame;
-    int scr = this->scritched;
+    bool scr = this->scritched;
 
     if (this->type != ELEM_LIVE) {
         if (this->numf == 0) return;
@@ -4952,7 +4981,7 @@ void Layer::get_cpu_frame(int framenr, int prevframe, int errcount)
         process_audio(this, this->frame, scr);
 
         if (framenr != prevframe + 1 || scr == 1) {
-            this->scritched = 0;
+            this->scritched = false;
             scr = 0;
             do {
                 av_read_frame(this->videoseek, this->decpktseek);
@@ -6865,7 +6894,6 @@ void Layer::display() {
                 }
 
             }
-            this->oldframe = this->frame;
             this->oldstartframe = this->startframe->value;
             this->oldendframe = this->endframe->value;
             if (this->loopbox->in()) {
@@ -6877,7 +6905,6 @@ void Layer::display() {
             if (this->scritching) {
                 mainprogram->leftmousedown = false;
             }
-            float testframe = this->frame;
             if (this->scritching == 1) {
                 this->frame = (this->numf - 1) *
                               ((mainprogram->mx - this->loopbox->scrcoords->x1) / this->loopbox->scrcoords->w);
@@ -6968,12 +6995,20 @@ void Layer::display() {
                     }
                 }
             }
-            if (this->scritching) {
-                this->scritched = 1;
+
+            if (this->scritching && this->frame != this->oldframe) {
+                this->scritched = true;
+                this->scritchpause = false;
             }
-            if (this->scritching && (int)testframe == (int)this->frame) {
-                this->scritched = 2;
+            else if (this->scritching && !this->scritched && this->frame == this->oldframe) {
+                this->scritchpause = true;
             }
+            else if (this->scritchpause && this->scritching == 0) {
+                this->scritched = true;
+                this->scritchpause = false;
+            }
+            this->oldframe = this->frame;
+
             draw_box(this->loopbox, -1);
 			if (ends) {
 			    // mouse over looparea start or end
@@ -7258,6 +7293,11 @@ bool Layer::find_new_live_base(int pos) {
 
 void Layer::set_live_base(std::string livename) {
     if (this->filename == livename) return;
+    if (this->audiothreadalive) {
+        this->stopaudiothread = true;
+        this->chready = true;
+        this->newchunk.notify_all();
+    }
     this->layers->erase(std::find(this->layers->begin(), this->layers->end(), this));
     Layer *lay = nullptr;
     if (this->layers->empty()) {
@@ -10073,8 +10113,17 @@ bool Layer::thread_vidopen() {
 
                                     this->audioplaying = true;
                                     printf("Starting audio thread for HAP layer\n");
+                                    if (this->audiothreadalive) {
+                                        this->stopaudiothread = true;
+                                        this->chready = true;
+                                        this->newchunk.notify_all();
+                                        while (this->stopaudiothread) {
+                                            Sleep(5);
+                                        }
+                                    }
                                     this->audiot = std::thread{&Layer::playaudio, this};
                                     this->audiot.detach();
+                                    this->audiothreadalive = true;
                                 } else {
                                     printf("Failed to open audio decoder for WAV file\n");
                                     avcodec_free_context(&this->audio_dec_ctx);
@@ -10137,6 +10186,7 @@ bool Layer::thread_vidopen() {
 
 
     this->changeinit = 2;
+    this->scritched = true;
 
     if (this->decframe) {
         //avcodec_close(this->video_dec_ctx);
@@ -10327,6 +10377,19 @@ void Layer::playaudio() {
         lock.unlock();
         this->chready = false;
 
+        if (this->stopaudiothread) {
+            alSourceStop(source[0]);
+            if (buffqueued > 0) {
+                std::vector<ALuint> tempBuffers(buffqueued);
+                alSourceUnqueueBuffers(source[0], buffqueued, tempBuffers.data());
+                for (int i = 0; i < buffqueued; i++) {
+                    bufferQueue.push_back(tempBuffers[i]);
+                }
+            }
+            this->stopaudiothread = false;
+            return;
+        }
+
         // Check audio buffer size safely
         size_t queueSize = 0;
         {
@@ -10349,8 +10412,9 @@ void Layer::playaudio() {
                 }
             }
             this->audiorestart = false;
+            continue;
         }
-        
+
         // Play audio whenever we have audio data available
         // Require a minimum buffer size to prevent underruns
         if (queueSize > 0) {
@@ -10389,6 +10453,7 @@ void Layer::playaudio() {
                     // Stuff the data in a buffer-object
                     myBuff = bufferQueue.front(); 
                     bufferQueue.pop_front();
+                    float fac = mainmix->deckspeed[!mainprogram->prevmodus][this->deck]->value;
                     alBufferData(myBuff, this->sampleformat, input, pslen, this->sample_rate);
                     ALenum alError = alGetError();
                     if (alError != AL_NO_ERROR) {
@@ -10408,11 +10473,6 @@ void Layer::playaudio() {
                 }
             }
             
-            if (chunksProcessed > 0) {
-                printf("Queued %d audio buffers: format=%u, rate=%u\n", 
-                       chunksProcessed, this->sampleformat, this->sample_rate);
-            }
-
             // Check if source is playing and start if needed
             alGetSourcei(source[0], AL_BUFFERS_QUEUED, &buffqueued);
             ALint sState = 0;
@@ -10432,7 +10492,6 @@ void Layer::playaudio() {
             }
             
             // Update playback speed
-            float fac = mainmix->deckspeed[!mainprogram->prevmodus][this->deck]->value;
             if (this->clonesetnr != -1) {
                 std::unordered_set<Layer*>::iterator it;
                 for (it = mainmix->clonesets[this->clonesetnr]->begin(); it != mainmix->clonesets[this->clonesetnr]->end(); it++) {
@@ -11110,6 +11169,11 @@ void Layer::load_frame() {
 // IMAGE
 
 Layer* Layer::open_image(const std::string path, bool init, bool dontdeleffs, bool clones, bool exchange) {
+    if (this->audiothreadalive) {
+        this->stopaudiothread = true;
+        this->chready = true;
+        this->newchunk.notify_all();
+    }
     if (exchange) {
         if (this->clonesetnr != -1) {
             mainmix->busyopen = true;
@@ -12780,12 +12844,8 @@ Layer* Mixer::read_layers(std::istream &rfile, const std::string result, std::ve
             }
         }
     }
-    else {
-        //for (Layer *lay : layers) {
-        //    lay->close();
-        //}
-    }
-    //}
+
+    layend->scritched = true;
 
     return layend;
 }

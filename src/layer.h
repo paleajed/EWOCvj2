@@ -152,6 +152,8 @@ class Layer {
         float rgb[4] = {0.0f, 0.0f, 0.0f, 0.0f};
         float burgb[4] = {0.0f, 0.0f, 0.0f, 0.0f};
 		Param *speed;
+        float oldspeed;
+        float oldfac;
 		Param *opacity;
 		Param *volume;
 		Button *playbut;
@@ -172,7 +174,8 @@ class Layer {
         Param *endframe = nullptr;
         float oldstartframe = 0.0f;
         float oldendframe = 0.0f;
-        int scritched = 0;
+        bool scritched = false;
+		bool scritchpause = false;
         int scritching = 0;
         int clipscritching = 0;
 		int transforming = 0;
@@ -229,7 +232,10 @@ class Layer {
         std::thread triggering;
 		void get_frame();
 		std::thread audiot;
+		bool audioon = false;
 		void playaudio();
+		bool stopaudiothread = false;
+		bool audiothreadalive = false;
 		bool audioplaying = false;
 		bool audiorestart = false;
 		bool hap_has_audio = false;

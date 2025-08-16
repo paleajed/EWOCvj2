@@ -3504,6 +3504,7 @@ void BinsMain::hap_encode(std::string srcpath, BinElement *binel, BinElement *bd
         binel->otflay->opened = false;
         olock.unlock();
         binel->otflay->set_clones();
+        binel->otflay->scritched = true;
         binel->otflay->hapbinel = nullptr;
     }
     if (bdm) {
