@@ -12,6 +12,7 @@ extern "C" {
 #include "libavcodec/avcodec.h"
 #include "libavdevice/avdevice.h"
 #include "libswscale/swscale.h"
+#include "libswresample/swresample.h"
 #include "libavutil/avutil.h"
 #include "libavutil/pixfmt.h"
 #include "libavutil/opt.h"
@@ -863,12 +864,15 @@ void Mixer::handle_adaptparam() {
         }
     }
 
-    if (this->adaptparam->name == "Volume") {
-        if (this->adaptparam->value == 0.0f) {
-            this->adaptparam->layer->audioon = false;
+    if (this->adaptparam->layer->volume->value == 0.0f || this->adaptparam->layer->speed->value == 0.0f) {
+        if (this->adaptparam->layer->audiooff == 0) {
+            this->adaptparam->layer->audiooff = 1;
         }
-        else{
-            this->adaptparam->layer->audioon = true;
+    } else {
+        if (this->adaptparam->layer->audiooff == 2) {
+            this->adaptparam->layer->audiooff = 3;
+        } else {
+            this->adaptparam->layer->audiooff = 0;
         }
     }
 
@@ -3225,6 +3229,16 @@ Layer::~Layer() {
             this->pslens.clear();
         }
     }
+    
+    // Clean up resampling resources
+    if (this->swr_ctx) {
+        swr_free(&this->swr_ctx);
+        this->swr_ctx = nullptr;
+    }
+    if (this->resampled_audioframe) {
+        av_frame_free(&this->resampled_audioframe);
+        this->resampled_audioframe = nullptr;
+    }
 
     glDeleteTextures(1, &this->jpegtex);
     mainprogram->add_to_texpool(this->fbotex);
@@ -4643,22 +4657,119 @@ static int decode_audio_packet(Layer *lay, AVPacket* pkt) {
         char *snippet = nullptr;
         int ps;
         
-        int bytes_per_sample = av_get_bytes_per_sample(lay->audio_dec_ctx->sample_fmt);
-        bool is_planar = av_sample_fmt_is_planar(lay->audio_dec_ctx->sample_fmt);
-        bool convert_to_16bit = (lay->audio_dec_ctx->sample_fmt == AV_SAMPLE_FMT_FLT || 
-                               lay->audio_dec_ctx->sample_fmt == AV_SAMPLE_FMT_FLTP ||
-                               lay->audio_dec_ctx->sample_fmt == AV_SAMPLE_FMT_S32 ||
-                               lay->audio_dec_ctx->sample_fmt == AV_SAMPLE_FMT_S32P);
-        bool is_already_16bit = (lay->audio_dec_ctx->sample_fmt == AV_SAMPLE_FMT_S16 ||
-                                lay->audio_dec_ctx->sample_fmt == AV_SAMPLE_FMT_S16P);
+        // Calculate current playback speed (same calculation as in playaudio())
+        float fac = mainmix->deckspeed[!mainprogram->prevmodus][lay->deck]->value;
+        if (lay->clonesetnr != -1) {
+            std::unordered_set<Layer*>::iterator it;
+            for (it = mainmix->clonesets[lay->clonesetnr]->begin(); it != mainmix->clonesets[lay->clonesetnr]->end(); it++) {
+                Layer *clone_lay = *it;
+                if (clone_lay->deck == !lay->deck) {
+                    fac *= mainmix->deckspeed[!mainprogram->prevmodus][!lay->deck]->value;
+                    break;
+                }
+            }
+        }
+        float total_speed = lay->speed->value * lay->speed->value * fac * fac;
+        
+        AVFrame *frame_to_process = lay->decframe;
+        
+        // Only use resampling if speed differs significantly from 1.0
+        if (fabs(total_speed - 1.0f) > 0.001f) {
+            // Check if resampler needs to be recreated due to speed change
+            bool speed_changed = fabs(total_speed - lay->last_resample_speed) > 0.001f;
+            lay->last_resample_speed = total_speed;
+            
+            // Setup resampler if not initialized or parameters changed
+            if (!lay->swr_ctx || !lay->resampled_audioframe || speed_changed) {
+                if (lay->swr_ctx) {
+                    swr_free(&lay->swr_ctx);
+                }
+                if (lay->resampled_audioframe) {
+                    av_frame_free(&lay->resampled_audioframe);
+                }
+                
+                // Create resampler context
+                lay->swr_ctx = swr_alloc();
+                if (!lay->swr_ctx) {
+                    printf("ERROR: Could not allocate SwrContext\n");
+                    return nsam;
+                }
+                
+                // Set options for resampling
+                av_opt_set_chlayout(lay->swr_ctx, "in_chlayout", &lay->audio_dec_ctx->ch_layout, 0);
+                av_opt_set_chlayout(lay->swr_ctx, "out_chlayout", &lay->audio_dec_ctx->ch_layout, 0);
+                av_opt_set_int(lay->swr_ctx, "in_sample_rate", lay->audio_dec_ctx->sample_rate, 0);
+                av_opt_set_int(lay->swr_ctx, "out_sample_rate", (int)(lay->audio_dec_ctx->sample_rate / total_speed), 0);
+                av_opt_set_sample_fmt(lay->swr_ctx, "in_sample_fmt", lay->audio_dec_ctx->sample_fmt, 0);
+                av_opt_set_sample_fmt(lay->swr_ctx, "out_sample_fmt", lay->audio_dec_ctx->sample_fmt, 0);
+                
+                // Initialize the resampling context
+                if (swr_init(lay->swr_ctx) < 0) {
+                    printf("ERROR: Could not initialize SwrContext\n");
+                    swr_free(&lay->swr_ctx);
+                    return nsam;
+                }
+                
+                // Allocate resampled frame
+                lay->resampled_audioframe = av_frame_alloc();
+                if (!lay->resampled_audioframe) {
+                    printf("ERROR: Could not allocate resampled audio frame\n");
+                    swr_free(&lay->swr_ctx);
+                    return nsam;
+                }
+            }
+            
+            // Calculate output sample count for resampling
+            int out_samples = av_rescale_rnd(swr_get_delay(lay->swr_ctx, lay->audio_dec_ctx->sample_rate) + lay->decframe->nb_samples,
+                                           (int)(lay->audio_dec_ctx->sample_rate / total_speed),
+                                           lay->audio_dec_ctx->sample_rate,
+                                           AV_ROUND_UP);
+            
+            // Setup output frame
+            lay->resampled_audioframe->nb_samples = out_samples;
+            lay->resampled_audioframe->format = lay->audio_dec_ctx->sample_fmt;
+            av_channel_layout_copy(&lay->resampled_audioframe->ch_layout, &lay->audio_dec_ctx->ch_layout);
+            lay->resampled_audioframe->sample_rate = (int)(lay->audio_dec_ctx->sample_rate / total_speed);
+            
+            if (av_frame_get_buffer(lay->resampled_audioframe, 0) < 0) {
+                printf("ERROR: Could not allocate resampled audio frame buffer\n");
+                return nsam;
+            }
+            
+            // Perform resampling
+            int converted_samples = swr_convert(lay->swr_ctx,
+                                              lay->resampled_audioframe->data, out_samples,
+                                              (const uint8_t**)lay->decframe->data, lay->decframe->nb_samples);
+            
+            if (converted_samples < 0) {
+                printf("ERROR: Error during audio resampling\n");
+                av_frame_unref(lay->resampled_audioframe);
+                return nsam;
+            }
+            
+            lay->resampled_audioframe->nb_samples = converted_samples;
+            frame_to_process = lay->resampled_audioframe;
+            
+            printf("Resampled audio: %d samples -> %d samples (speed: %.3f)\n", 
+                   lay->decframe->nb_samples, converted_samples, total_speed);
+        }
+        
+        int bytes_per_sample = av_get_bytes_per_sample((AVSampleFormat)frame_to_process->format);
+        bool is_planar = av_sample_fmt_is_planar((AVSampleFormat)frame_to_process->format);
+        bool convert_to_16bit = (frame_to_process->format == AV_SAMPLE_FMT_FLT || 
+                               frame_to_process->format == AV_SAMPLE_FMT_FLTP ||
+                               frame_to_process->format == AV_SAMPLE_FMT_S32 ||
+                               frame_to_process->format == AV_SAMPLE_FMT_S32P);
+        bool is_already_16bit = (frame_to_process->format == AV_SAMPLE_FMT_S16 ||
+                                frame_to_process->format == AV_SAMPLE_FMT_S16P);
 
         printf("Processing audio in decode_audio_packet: samples=%d, format=%d (%s), planar=%d, channels=%d, bytes_per_sample=%d\n",
-               lay->decframe->nb_samples, lay->audio_dec_ctx->sample_fmt, 
-               av_get_sample_fmt_name(lay->audio_dec_ctx->sample_fmt), is_planar, lay->channels, bytes_per_sample);
+               frame_to_process->nb_samples, frame_to_process->format, 
+               av_get_sample_fmt_name((AVSampleFormat)frame_to_process->format), is_planar, lay->channels, bytes_per_sample);
         printf("Conversion flags: convert_to_16bit=%d, is_already_16bit=%d\n", convert_to_16bit, is_already_16bit);
 
         // Always output as 16-bit for compatibility
-        ps = lay->decframe->nb_samples * lay->channels * 2; // 2 bytes per 16-bit sample
+        ps = frame_to_process->nb_samples * lay->channels * 2; // 2 bytes per 16-bit sample
         snippet = new char[ps];
         int16_t* out16 = (int16_t*)snippet;
         
@@ -4666,22 +4777,22 @@ static int decode_audio_packet(Layer *lay, AVPacket* pkt) {
             // 16-bit planar to interleaved
             printf("Using 16-bit planar to interleaved conversion\n");
             int16_t* out = (int16_t*)snippet;
-            for (int sample = 0; sample < lay->decframe->nb_samples; sample++) {
+            for (int sample = 0; sample < frame_to_process->nb_samples; sample++) {
                 for (int channel = 0; channel < lay->channels; channel++) {
-                    int16_t* channel_data = (int16_t*)lay->decframe->extended_data[channel];
+                    int16_t* channel_data = (int16_t*)frame_to_process->extended_data[channel];
                     out[sample * lay->channels + channel] = channel_data[sample];
                 }
             }
         } else if (is_already_16bit && !is_planar) {
             // 16-bit packed - direct copy
             printf("Using 16-bit packed direct copy, copying %d bytes\n", ps);
-            memcpy(snippet, lay->decframe->extended_data[0], ps);
+            memcpy(snippet, frame_to_process->extended_data[0], ps);
         } else if (convert_to_16bit && is_planar && lay->channels > 1) {
             // Convert 32-bit float planar to 16-bit interleaved  
             printf("Using 32-bit float planar to 16-bit conversion\n");
-            for (int sample = 0; sample < lay->decframe->nb_samples; sample++) {
+            for (int sample = 0; sample < frame_to_process->nb_samples; sample++) {
                 for (int channel = 0; channel < lay->channels; channel++) {
-                    float* float_data = (float*)lay->decframe->extended_data[channel];
+                    float* float_data = (float*)frame_to_process->extended_data[channel];
                     float sample_val = float_data[sample];
                     sample_val = fmaxf(-1.0f, fminf(1.0f, sample_val));
                     out16[sample * lay->channels + channel] = (int16_t)(sample_val * 32767.0f);
@@ -4690,16 +4801,16 @@ static int decode_audio_packet(Layer *lay, AVPacket* pkt) {
         } else if (convert_to_16bit && !is_planar) {
             // Convert 32-bit float packed to 16-bit
             printf("Using 32-bit float packed to 16-bit conversion\n");
-            float* float_data = (float*)lay->decframe->extended_data[0];
-            for (int i = 0; i < lay->decframe->nb_samples * lay->channels; i++) {
+            float* float_data = (float*)frame_to_process->extended_data[0];
+            for (int i = 0; i < frame_to_process->nb_samples * lay->channels; i++) {
                 float sample_val = float_data[i];
                 sample_val = fmaxf(-1.0f, fminf(1.0f, sample_val));
                 out16[i] = (int16_t)(sample_val * 32767.0f);
             }
         } else {
             // For other packed formats, copy directly
-            printf("Using fallback direct copy for format %d\n", lay->audio_dec_ctx->sample_fmt);
-            memcpy(snippet, lay->decframe->extended_data[0], ps);
+            printf("Using fallback direct copy for format %d\n", frame_to_process->format);
+            memcpy(snippet, frame_to_process->extended_data[0], ps);
         }
 
         printf("Audio data sample: %02x %02x %02x %02x %02x %02x %02x %02x\n",
@@ -4714,6 +4825,11 @@ static int decode_audio_packet(Layer *lay, AVPacket* pkt) {
             lay->pslens.push_back(ps);
             lay->snippets.push_back(snippet);
             printf("Audio snippet added in decode_audio_packet, queue size: %zu, ps: %d\n", lay->snippets.size(), ps);
+        }
+        
+        // Clean up resampled frame if it was used
+        if (frame_to_process == lay->resampled_audioframe) {
+            av_frame_unref(lay->resampled_audioframe);
         }
         
         // Signal the audio thread
@@ -4792,7 +4908,12 @@ int64_t calculateAudioPTSForVideoFrame(AVFormatContext* format_ctx,
 
 static void process_audio(Layer *lay, float framenr, bool scritched) {
     // Process audio packets for current video frame timing
-    if (lay->scritchpause) {
+    if (lay->audiooff == 2) return;
+    if (lay->audiooff == 1 || lay->audiooff == 3 || lay->scritchpause) {
+        lay->audiooff = 2;
+        if (lay->audiooff == 3) {
+            lay->audiooff = 0;
+        }
         std::lock_guard<std::mutex> audioLock(lay->chunklock);
         lay->snippets.clear();
         lay->pslens.clear();
@@ -10453,7 +10574,6 @@ void Layer::playaudio() {
                     // Stuff the data in a buffer-object
                     myBuff = bufferQueue.front(); 
                     bufferQueue.pop_front();
-                    float fac = mainmix->deckspeed[!mainprogram->prevmodus][this->deck]->value;
                     alBufferData(myBuff, this->sampleformat, input, pslen, this->sample_rate);
                     ALenum alError = alGetError();
                     if (alError != AL_NO_ERROR) {
@@ -10491,18 +10611,9 @@ void Layer::playaudio() {
                 alSourcePlay(source[0]);
             }
             
-            // Update playback speed
-            if (this->clonesetnr != -1) {
-                std::unordered_set<Layer*>::iterator it;
-                for (it = mainmix->clonesets[this->clonesetnr]->begin(); it != mainmix->clonesets[this->clonesetnr]->end(); it++) {
-                    Layer *lay = *it;
-                    if (lay->deck == !this->deck) {
-                        fac *= mainmix->deckspeed[!mainprogram->prevmodus][!this->deck]->value;
-                        break;
-                    }
-                }
-            }
-            alSourcef(source[0], AL_PITCH, this->speed->value * fac * fac);
+            // Speed changes are now handled through resampling in decode_audio_packet()
+            // No need to adjust AL_PITCH - keep normal pitch
+            alSourcef(source[0], AL_PITCH, 1.0f);
         }
     }
     alDeleteBuffers(48, &temp[0]);

@@ -232,7 +232,7 @@ class Layer {
         std::thread triggering;
 		void get_frame();
 		std::thread audiot;
-		bool audioon = false;
+		int audiooff = 2;
 		void playaudio();
 		bool stopaudiothread = false;
 		bool audiothreadalive = false;
@@ -306,6 +306,9 @@ class Layer {
         int videoseek_stream_idx = -1;
 		int audio_stream_idx = -1;
 		int audio_dedicated_stream_idx = -1;
+		struct SwrContext *swr_ctx = nullptr;
+		AVFrame *resampled_audioframe = nullptr;
+		float last_resample_speed = 1.0f;
 		struct SwsContext *sws_ctx = nullptr;
 		char *databuf[2] = {nullptr, nullptr};
 		bool databufready = false;
