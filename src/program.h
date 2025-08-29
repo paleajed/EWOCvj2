@@ -10,6 +10,7 @@
 #include "boost/date_time/posix_time/posix_time.hpp"
 
 #include <condition_variable>
+#include <chrono>
 #include <string>
 #include "GL/gl.h"
 #include "BeatDetektor.h"
@@ -1036,6 +1037,16 @@ class Program {
         std::string localip;
         struct sockaddr_in serv_addr_server;
         struct sockaddr_in serv_addr_client;
+        
+        struct DiscoveredSeat {
+            std::string ip;
+            std::string name;
+            std::chrono::steady_clock::time_point lastSeen;
+        };
+        std::vector<DiscoveredSeat> discoveredSeats;
+        std::mutex discoveryMutex;
+        bool discoveryRunning = false;
+        int discoverySocket = -1;
         std::thread *clientthread;
 #ifdef WINDOWS
         std::unordered_map<std::string, SOCKET> connmap;
@@ -1198,6 +1209,10 @@ class Program {
         void socket_server(struct sockaddr_in serv_addr, int opt);
         void socket_client(struct sockaddr_in serv_addr, int opt);
         void socket_server_recieve(SOCKET sock);
+        void start_discovery();
+        void stop_discovery();
+        void discovery_broadcast();
+        void discovery_listen();
         void stream_to_v4l2loopbacks();
         void postponed_to_front(std::string title);
         void postponed_to_front_win(std::string title, SDL_Window *win = nullptr);

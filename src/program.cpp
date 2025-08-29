@@ -8680,7 +8680,17 @@ PIProj::PIProj() {
     pip->onfile = false;  // isn't saved on main prefs file but in the project
     this->items.push_back(pip);
     pos++;
-    
+
+    pip = new PrefItem(this, pos, "Seat name", PREF_STRING, (void *) &mainprogram->seatname);
+    pip->namebox->tooltiptitle = "Name of this program seat ";
+    pip->namebox->tooltip = "This is the name other seats can send bin information to. ";
+    pip->valuebox->tooltiptitle = "Set program seat name ";
+    pip->valuebox->tooltip = "Leftclick starts keyboard entry of program seat name. ";
+    pip->str = "SEAT";
+    mainprogram->seatname = pip->str;
+    this->items.push_back(pip);
+    pos++;
+
 }
 
 
@@ -8970,16 +8980,6 @@ PIInvisible::PIInvisible() {
     this->name = "Invisible";
     PrefItem *pii;
     int pos = 0;
-
-    pii = new PrefItem(this, pos, "Seat name", PREF_STRING, (void *) &mainprogram->seatname);
-    pii->namebox->tooltiptitle = "Name of this program seat ";
-    pii->namebox->tooltip = "This is the name other seats can send bin information to. ";
-    pii->valuebox->tooltiptitle = "Set program seat name ";
-    pii->valuebox->tooltip = "Leftclick starts keyboard entry of program seat name. ";
-    pii->str = "SEAT";
-    mainprogram->seatname = pii->str;
-    this->items.push_back(pii);
-    pos++;
 
     pii = new PrefItem(this, pos, "Server IP", PREF_STRING, (void*)&mainprogram->serverip);
     pii->namebox->tooltiptitle = "IP address of the server ";
@@ -9600,6 +9600,12 @@ void Program::write_recentprojectlist() {
 
 void Program::socket_server(struct sockaddr_in serv_addr, int opt) {
     this->serverip = this->localip;
+    
+    // Start broadcasting our presence as a server
+    if (!this->discoveryRunning) {
+        this->start_discovery();
+    }
+    
     int new_socket;
 
     if (inet_pton(AF_INET, this->serverip.c_str(), &serv_addr.sin_addr) <= 0) {
@@ -9792,6 +9798,173 @@ void Program::socket_server_recieve(SOCKET sock) {
         }
     }
     free(buf);
+}
+
+void Program::start_discovery() {
+    if (this->discoveryRunning) return;
+    
+    this->discoveryRunning = true;
+    
+    std::thread discoveryThread(&Program::discovery_listen, this);
+    discoveryThread.detach();
+    
+    if (this->server) {
+        std::thread broadcastThread(&Program::discovery_broadcast, this);
+        broadcastThread.detach();
+    }
+}
+
+void Program::stop_discovery() {
+    this->discoveryRunning = false;
+    
+    if (this->discoverySocket >= 0) {
+#ifdef POSIX
+        close(this->discoverySocket);
+#endif
+#ifdef WINDOWS
+        closesocket(this->discoverySocket);
+#endif
+        this->discoverySocket = -1;
+    }
+}
+
+void Program::discovery_broadcast() {
+    int broadcastSocket;
+    struct sockaddr_in broadcastAddr;
+    const int broadcastEnable = 1;
+    const int discoveryPort = 9001;
+    
+    broadcastSocket = socket(AF_INET, SOCK_DGRAM, 0);
+    if (broadcastSocket < 0) {
+        return;
+    }
+    
+    if (setsockopt(broadcastSocket, SOL_SOCKET, SO_BROADCAST, &broadcastEnable, sizeof(broadcastEnable)) < 0) {
+        close(broadcastSocket);
+        return;
+    }
+    
+    memset(&broadcastAddr, 0, sizeof(broadcastAddr));
+    broadcastAddr.sin_family = AF_INET;
+    broadcastAddr.sin_addr.s_addr = inet_addr("255.255.255.255");
+    broadcastAddr.sin_port = htons(discoveryPort);
+    
+    while (this->discoveryRunning && this->server) {
+        std::string announcement = "EWOCVJ_SEAT:" + this->seatname + ":" + this->localip + ":8000";
+        
+        sendto(broadcastSocket, announcement.c_str(), announcement.length(), 0, 
+               (struct sockaddr*)&broadcastAddr, sizeof(broadcastAddr));
+        
+#ifdef POSIX
+        sleep(3);
+#endif
+#ifdef WINDOWS
+        Sleep(3000);
+#endif
+    }
+    
+#ifdef POSIX
+    close(broadcastSocket);
+#endif
+#ifdef WINDOWS
+    closesocket(broadcastSocket);
+#endif
+}
+
+void Program::discovery_listen() {
+    struct sockaddr_in listenAddr, clientAddr;
+    socklen_t clientLen = sizeof(clientAddr);
+    char buffer[1024];
+    const int discoveryPort = 9001;
+    
+    this->discoverySocket = socket(AF_INET, SOCK_DGRAM, 0);
+    if (this->discoverySocket < 0) {
+        return;
+    }
+    
+    memset(&listenAddr, 0, sizeof(listenAddr));
+    listenAddr.sin_family = AF_INET;
+    listenAddr.sin_addr.s_addr = INADDR_ANY;
+    listenAddr.sin_port = htons(discoveryPort);
+    
+    if (bind(this->discoverySocket, (struct sockaddr*)&listenAddr, sizeof(listenAddr)) < 0) {
+#ifdef POSIX
+        close(this->discoverySocket);
+#endif
+#ifdef WINDOWS
+        closesocket(this->discoverySocket);
+#endif
+        this->discoverySocket = -1;
+        return;
+    }
+    
+#ifdef POSIX
+    int flags = fcntl(this->discoverySocket, F_GETFL);
+    fcntl(this->discoverySocket, F_SETFL, flags | O_NONBLOCK);
+#endif
+#ifdef WINDOWS
+    u_long flags = 1;
+    ioctlsocket(this->discoverySocket, FIONBIO, &flags);
+#endif
+    
+    while (this->discoveryRunning) {
+        int bytesReceived = recvfrom(this->discoverySocket, buffer, sizeof(buffer)-1, 0, 
+                                   (struct sockaddr*)&clientAddr, &clientLen);
+        
+        if (bytesReceived > 0) {
+            buffer[bytesReceived] = '\0';
+            std::string message(buffer);
+            
+            if (message.substr(0, 12) == "EWOCVJ_SEAT:") {
+                size_t firstColon = message.find(':', 12);
+                size_t secondColon = message.find(':', firstColon + 1);
+                
+                if (firstColon != std::string::npos && secondColon != std::string::npos) {
+                    std::string seatName = message.substr(12, firstColon - 12);
+                    std::string seatIP = message.substr(firstColon + 1, secondColon - firstColon - 1);
+                    
+                    if (seatIP != this->localip) {
+                        std::lock_guard<std::mutex> lock(this->discoveryMutex);
+                        
+                        bool found = false;
+                        for (auto& seat : this->discoveredSeats) {
+                            if (seat.ip == seatIP) {
+                                seat.name = seatName;
+                                seat.lastSeen = std::chrono::steady_clock::now();
+                                found = true;
+                                break;
+                            }
+                        }
+                        
+                        if (!found) {
+                            DiscoveredSeat newSeat;
+                            newSeat.ip = seatIP;
+                            newSeat.name = seatName;
+                            newSeat.lastSeen = std::chrono::steady_clock::now();
+                            this->discoveredSeats.push_back(newSeat);
+                        }
+                    }
+                }
+            }
+        }
+        
+        std::lock_guard<std::mutex> lock(this->discoveryMutex);
+        auto now = std::chrono::steady_clock::now();
+        this->discoveredSeats.erase(
+            std::remove_if(this->discoveredSeats.begin(), this->discoveredSeats.end(),
+                [now](const DiscoveredSeat& seat) {
+                    return std::chrono::duration_cast<std::chrono::seconds>(now - seat.lastSeen).count() > 10;
+                }),
+            this->discoveredSeats.end()
+        );
+        
+#ifdef POSIX
+        usleep(100000); // 100ms
+#endif
+#ifdef WINDOWS
+        Sleep(100);
+#endif
+    }
 }
 
 char* Program::bl_recv(int sock, char *buf, size_t sz, int flags) {

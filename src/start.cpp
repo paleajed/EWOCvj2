@@ -7835,6 +7835,9 @@ int main(int argc, char* argv[]) {
         mainprogram->serv_addr_client.sin_family = AF_INET;
         mainprogram->serv_addr_client.sin_addr.s_addr = INADDR_ANY;
         mainprogram->serv_addr_client.sin_port = htons(8000);
+        
+        // Start network discovery for local seats
+        mainprogram->start_discovery();
 
     }
 

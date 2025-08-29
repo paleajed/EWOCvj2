@@ -761,13 +761,7 @@ void BinsMain::handle(bool draw) {
                 }
                 else {
                     draw_box(&connbox, -1);
-                    render_text("TRY CONNECT", white, -0.450f, -0.95f, 0.00075f, 0.0012f);
-                    if (connbox.in() && mainprogram->leftmouse) {
-                        int opt = 1;
-                        std::thread sockclient(&Program::socket_client, mainprogram, mainprogram->serv_addr_client,
-                                               opt);
-                        sockclient.detach();
-                    }
+                    render_text("CLICK SEAT", white, -0.450f, -0.95f, 0.00075f, 0.0012f);
                 }
             }
         }
@@ -775,28 +769,50 @@ void BinsMain::handle(bool draw) {
             draw_box(white, darkgreen1, &box, -1);
             render_text("CONNECTED", white, -0.805f, -0.95f, 0.00075f, 0.0012f);
         }
-        draw_box(&ipbox, -1);
-        if (ipbox.in()) {
-            if (mainprogram->leftmouse) {
-                mainprogram->renamingip = true;
-                mainprogram->renaming = EDIT_STRING;
-                mainprogram->inputtext = mainprogram->serverip;
-                mainprogram->cursorpos0 = mainprogram->inputtext.length();
-                SDL_StartTextInput();
+        // Display discovered seats
+        std::vector<Program::DiscoveredSeat> seatsCopy;
+        {
+            std::unique_lock<std::mutex> lock(mainprogram->discoveryMutex, std::try_to_lock);
+            if (lock.owns_lock()) {
+                seatsCopy = mainprogram->discoveredSeats;
             }
         }
-        if (mainprogram->renamingip == false) {
-            render_text(mainprogram->serverip, white, -0.65f, -0.95f, 0.00075f, 0.0012f);
+        
+        if (seatsCopy.empty()) {
+            draw_box(&ipbox, -1);
+            render_text("SEARCHING...", white, -0.65f, -0.95f, 0.00075f, 0.0012f);
         } else {
-            if (mainprogram->renaming == EDIT_NONE) {
-                mainprogram->renamingip = false;
-                mainprogram->serverip = mainprogram->inputtext;
-            } else if (mainprogram->renaming == EDIT_CANCEL) {
-                mainprogram->renamingip = false;
-            } else {
-                do_text_input(ipbox.vtxcoords->x1 + 0.02f,
-                              ipbox.vtxcoords->y1 + 0.03f, 0.00075f, 0.0012f, mainprogram->mx, mainprogram->my,
-                              mainprogram->xvtxtoscr(0.15f), 0, nullptr, false);
+            // Show list of discovered seats
+            float yPos = -0.95f;
+            float boxHeight = 0.06f;
+            int maxSeats = std::min(3, (int)seatsCopy.size()); // Show max 3 seats
+            
+            for (int i = 0; i < maxSeats; i++) {
+                Boxx seatSelectBox;
+                seatSelectBox.vtxcoords->x1 = ipbox.vtxcoords->x1;
+                seatSelectBox.vtxcoords->y1 = yPos - (i * (boxHeight + 0.01f));
+                seatSelectBox.vtxcoords->w = ipbox.vtxcoords->w;
+                seatSelectBox.vtxcoords->h = boxHeight;
+                seatSelectBox.upvtxtoscr();
+                
+                if (seatSelectBox.in() && mainprogram->leftmouse) {
+                    mainprogram->serverip = seatsCopy[i].ip;
+                    if (inet_pton(AF_INET, mainprogram->serverip.c_str(), &mainprogram->serv_addr_client.sin_addr) <= 0) {
+                        printf("\nInvalid server address/ Address not supported \n");
+                    } else {
+                        int opt = 1;
+                        std::thread sockclient(&Program::socket_client, mainprogram, mainprogram->serv_addr_client, opt);
+                        sockclient.detach();
+                    }
+                }
+                
+                draw_box(&seatSelectBox, -1);
+                std::string displayText = seatsCopy[i].name + " (" + seatsCopy[i].ip + ")";
+                if (displayText.length() > 20) {
+                    displayText = displayText.substr(0, 17) + "...";
+                }
+                render_text(displayText, white, seatSelectBox.vtxcoords->x1 + 0.01f, 
+                           seatSelectBox.vtxcoords->y1 + 0.02f, 0.0006f, 0.001f);
             }
         }
     }
@@ -855,10 +871,10 @@ void BinsMain::handle(bool draw) {
                 walk = put_in_buffer(this->currbin->name.c_str(), walk);
             }
             else  {
-                binsmain->do_save_bin(mainprogram->temppath + "bin_to_copy");
+                binsmain->save_bin(mainprogram->temppath + "bin_to_copy");
                 binsmain->new_bin(this->currbin->name + " (SHARED)");
                 binsmain->open_bin(mainprogram->temppath + "bin_to_copy", binsmain->currbin);
-                binsmain->do_save_bin(mainprogram->project->binsdir + this->currbin->name + " (SHARED)");
+                binsmain->save_bin(mainprogram->project->binsdir + this->currbin->name + " (SHARED)");
                 walk = put_in_buffer((this->currbin->name + " (SHARED)").c_str(), walk);
             }
             for (int i = 0; i < 12; i++) {
@@ -1327,7 +1343,7 @@ void BinsMain::handle(bool draw) {
 
 
 	// handle binelmenu thats been populated above, menuset controls which options sets are used
-	int k = mainprogram->handle_menu(mainprogram->binelmenu);
+	k = mainprogram->handle_menu(mainprogram->binelmenu);
 	//if (k > -1) this->currbinel = nullptr;
 	if (binelmenuoptions.size() && k > -1) {
 		if (binelmenuoptions[k] != BET_OPENFILES) this->menuactbinel = nullptr;
