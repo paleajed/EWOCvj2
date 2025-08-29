@@ -33,6 +33,7 @@
 #include <thread>
 #include <mutex>
 #include <stdexcept>
+#include <iphlpapi.h>
 
 #ifndef UINT64_C
 #define UINT64_C(c) (c ## ULL)
