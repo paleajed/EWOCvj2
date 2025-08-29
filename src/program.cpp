@@ -9839,7 +9839,7 @@ void Program::discovery_broadcast() {
         return;
     }
     
-    if (setsockopt(broadcastSocket, SOL_SOCKET, SO_BROADCAST, &broadcastEnable, sizeof(broadcastEnable)) < 0) {
+    if (setsockopt(broadcastSocket, SOL_SOCKET, SO_BROADCAST, (const char*)&broadcastEnable, sizeof(broadcastEnable)) < 0) {
         close(broadcastSocket);
         return;
     }
