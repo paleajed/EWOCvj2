@@ -68,6 +68,10 @@
 #ifdef POSIX
 #include <pthread.h>
 #include <alsa/asoundlib.h>
+#include <ifaddrs.h>
+#include <netinet/in.h>
+#include <arpa/inet.h>
+#include <netdb.h>
 #endif
 #include "SDL2/SDL.h"
 #include "SDL2/SDL_syswm.h"
@@ -7777,49 +7781,37 @@ int main(int argc, char* argv[]) {
 
     // Multi-user code using sockets
     if (1) {
-        //get local ip by connecting to Google DNS
-        const char *google_dns_server = "8.8.8.8";
-        int dns_port = 53;
-
-        struct sockaddr_in serv;
-        mainprogram->sock = socket(AF_INET, SOCK_DGRAM, 0);
+        // Get local IP from network interfaces
 #ifdef POSIX
-        int flags = fcntl(mainprogram->sock, F_GETFL);
-        fcntl(mainprogram->sock, F_SETFL, flags | O_NONBLOCK);
+        struct ifaddrs *ifaddrs_ptr;
+        if (getifaddrs(&ifaddrs_ptr) == 0) {
+            for (struct ifaddrs *ifa = ifaddrs_ptr; ifa != NULL; ifa = ifa->ifa_next) {
+                if (ifa->ifa_addr && ifa->ifa_addr->sa_family == AF_INET) {
+                    struct sockaddr_in* addr_in = (struct sockaddr_in*)ifa->ifa_addr;
+                    char* ip_str = inet_ntoa(addr_in->sin_addr);
+                    // Skip loopback and look for local network addresses
+                    if (strncmp(ip_str, "127.", 4) != 0 && strncmp(ip_str, "169.254.", 8) != 0) {
+                        mainprogram->localip = ip_str;
+                        break;
+                    }
+                }
+            }
+            freeifaddrs(ifaddrs_ptr);
+        }
 #endif
 #ifdef WINDOWS
-        u_long flags = 1;
-        ioctlsocket(mainprogram->sock, FIONBIO, &flags);
+        char hostbuffer[256];
+        if (gethostname(hostbuffer, sizeof(hostbuffer)) == 0) {
+            struct hostent* host_entry = gethostbyname(hostbuffer);
+            if (host_entry) {
+                mainprogram->localip = inet_ntoa(*((struct in_addr*)host_entry->h_addr_list[0]));
+            }
+        }
 #endif
-        //Socket could not be created
-        if (mainprogram->sock < 0) {
-            std::cout << "Socket error" << std::endl;
+        if (mainprogram->localip.empty()) {
+            mainprogram->localip = "127.0.0.1"; // fallback
         }
-
-        memset(&serv, 0, sizeof(serv));
-        serv.sin_family = AF_INET;
-        serv.sin_addr.s_addr = inet_addr(google_dns_server);
-        serv.sin_port = htons(dns_port);
-
-        int err = connect(mainprogram->sock, (const struct sockaddr *) &serv, sizeof(serv));
-        if (err < 0) {
-            std::cout << "Error number: " << errno
-                      << ". Error message: " << strerror(errno) << std::endl;
-        }
-
-        struct sockaddr_in name;
-        socklen_t namelen = sizeof(name);
-        err = getsockname(mainprogram->sock, (struct sockaddr *) &name, &namelen);
-
-        char li[80];
-        const char *p = inet_ntop(AF_INET, &name.sin_addr, li, 80);
-        mainprogram->localip = li;
-        if (p != NULL) {
-            std::cout << "Local IP address is: " << mainprogram->localip << std::endl;
-        } else {
-            std::cout << "Error number: " << errno
-                      << ". Error message: " << strerror(errno) << std::endl;
-        }
+        std::cout << "Local IP address is: " << mainprogram->localip << std::endl;
 
         // socket communication for sharing bins one-way
         int opt = 1;

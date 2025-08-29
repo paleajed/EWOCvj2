@@ -9683,8 +9683,8 @@ void Program::socket_server(struct sockaddr_in serv_addr, int opt) {
         }
 
         free(name);
-        // start thread for recieving BIN_SENT messages from every client
-        std::thread sockservrecv(&Program::socket_server_recieve, mainprogram, new_socket);
+        // start thread for receiving BIN_SENT messages from every client
+        std::thread sockservrecv(&Program::socket_server_receive, mainprogram, new_socket);
         sockservrecv.detach();
     }
 }
@@ -9775,7 +9775,7 @@ void Program::socket_client(struct sockaddr_in serv_addr, int opt) {
     }
 }
 
-void Program::socket_server_recieve(SOCKET sock) {
+void Program::socket_server_receive(SOCKET sock) {
     // wait for messages
     char *buf = (char *) malloc(148489);
     while (1) {
@@ -9804,6 +9804,7 @@ void Program::start_discovery() {
     if (this->discoveryRunning) return;
     
     this->discoveryRunning = true;
+    this->discoveryStartTime = std::chrono::steady_clock::now();
     
     std::thread discoveryThread(&Program::discovery_listen, this);
     discoveryThread.detach();

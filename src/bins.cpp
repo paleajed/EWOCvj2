@@ -747,94 +747,66 @@ void BinsMain::handle(bool draw) {
         }
     }
     if (!mainprogram->server) {
-         draw_box(&box, -1);
-         if (mainprogram->connected == 0) {
-            render_text("START SERVER", white, -0.805f, -0.95f, 0.00075f, 0.0012f);
-            if (inet_pton(AF_INET, mainprogram->serverip.c_str(), &mainprogram->serv_addr_server.sin_addr) <= 0) {
-                printf("\nInvalid server address/ Address not supported \n");
+        if (mainprogram->connected == 0) {
+            // Auto-connect to first seat or become server
+            std::vector<Program::DiscoveredSeat> seatsCopy;
+            {
+                std::unique_lock<std::mutex> lock(mainprogram->discoveryMutex, std::try_to_lock);
+                if (lock.owns_lock()) {
+                    seatsCopy = mainprogram->discoveredSeats;
+                }
             }
-            else {
-                if (mainprogram->connfailed) {
-                    if (mainprogram->connfailedmilli > 1000) mainprogram->connfailed = false;
-                    draw_box(white, darkred1, &connbox, -1);
-                    render_text("FAILED", white, -0.445f, -0.95f, 0.00075f, 0.0012f);
+            
+            // Check if we should auto-connect to the first discovered seat
+            if (!seatsCopy.empty() && !mainprogram->autoConnectAttempted) {
+                mainprogram->autoConnectAttempted = true;
+                mainprogram->serverip = seatsCopy[0].ip;
+                if (inet_pton(AF_INET, mainprogram->serverip.c_str(), &mainprogram->serv_addr_client.sin_addr) > 0) {
+                    std::cout << "Auto-connecting to first seat: " << seatsCopy[0].name << " (" << seatsCopy[0].ip << ")" << std::endl;
+                    int opt = 1;
+                    std::thread sockclient(&Program::socket_client, mainprogram, mainprogram->serv_addr_client, opt);
+                    sockclient.detach();
                 }
-                else {
-                    draw_box(&connbox, -1);
-                    render_text("CLICK SEAT", white, -0.450f, -0.95f, 0.00075f, 0.0012f);
+            }
+            // Check if we should become server (no seats found after timeout)
+            else if (seatsCopy.empty() && !mainprogram->autoServerAttempted) {
+                auto now = std::chrono::steady_clock::now();
+                if (std::chrono::duration_cast<std::chrono::seconds>(now - mainprogram->discoveryStartTime).count() >= 5) {
+                    mainprogram->autoServerAttempted = true;
+                    std::cout << "No seats found after 5 seconds, becoming server" << std::endl;
+                    mainprogram->serverip = mainprogram->localip;
+                    if (inet_pton(AF_INET, mainprogram->localip.c_str(), &mainprogram->serv_addr_server.sin_addr) > 0) {
+                        int opt = 1;
+                        mainprogram->server = true;
+                        std::thread sockserver(&Program::socket_server, mainprogram, mainprogram->serv_addr_server, opt);
+                        sockserver.detach();
+                    }
                 }
+            }
+            
+            // Display status
+            draw_box(&box, -1);
+            if (seatsCopy.empty()) {
+                render_text("SEARCHING...", white, -0.805f, -0.95f, 0.00075f, 0.0012f);
+            } else {
+                render_text("CONNECTING...", white, -0.805f, -0.95f, 0.00075f, 0.0012f);
+            }
+            
+            if (mainprogram->connfailed) {
+                if (mainprogram->connfailedmilli > 1000) mainprogram->connfailed = false;
+                draw_box(white, darkred1, &connbox, -1);
+                render_text("FAILED", white, -0.445f, -0.95f, 0.00075f, 0.0012f);
             }
         }
         else if (mainprogram->connected == 1) {
             draw_box(white, darkgreen1, &box, -1);
             render_text("CONNECTED", white, -0.805f, -0.95f, 0.00075f, 0.0012f);
         }
-        // Display discovered seats
-        std::vector<Program::DiscoveredSeat> seatsCopy;
-        {
-            std::unique_lock<std::mutex> lock(mainprogram->discoveryMutex, std::try_to_lock);
-            if (lock.owns_lock()) {
-                seatsCopy = mainprogram->discoveredSeats;
-            }
-        }
-        
-        if (seatsCopy.empty()) {
-            draw_box(&ipbox, -1);
-            render_text("SEARCHING...", white, -0.65f, -0.95f, 0.00075f, 0.0012f);
-        } else {
-            // Show list of discovered seats
-            float yPos = -0.95f;
-            float boxHeight = 0.06f;
-            int maxSeats = std::min(3, (int)seatsCopy.size()); // Show max 3 seats
-            
-            for (int i = 0; i < maxSeats; i++) {
-                Boxx seatSelectBox;
-                seatSelectBox.vtxcoords->x1 = ipbox.vtxcoords->x1;
-                seatSelectBox.vtxcoords->y1 = yPos - (i * (boxHeight + 0.01f));
-                seatSelectBox.vtxcoords->w = ipbox.vtxcoords->w;
-                seatSelectBox.vtxcoords->h = boxHeight;
-                seatSelectBox.upvtxtoscr();
-                
-                if (seatSelectBox.in() && mainprogram->leftmouse) {
-                    mainprogram->serverip = seatsCopy[i].ip;
-                    if (inet_pton(AF_INET, mainprogram->serverip.c_str(), &mainprogram->serv_addr_client.sin_addr) <= 0) {
-                        printf("\nInvalid server address/ Address not supported \n");
-                    } else {
-                        int opt = 1;
-                        std::thread sockclient(&Program::socket_client, mainprogram, mainprogram->serv_addr_client, opt);
-                        sockclient.detach();
-                    }
-                }
-                
-                draw_box(&seatSelectBox, -1);
-                std::string displayText = seatsCopy[i].name + " (" + seatsCopy[i].ip + ")";
-                if (displayText.length() > 20) {
-                    displayText = displayText.substr(0, 17) + "...";
-                }
-                render_text(displayText, white, seatSelectBox.vtxcoords->x1 + 0.01f, 
-                           seatSelectBox.vtxcoords->y1 + 0.02f, 0.0006f, 0.001f);
-            }
-        }
     }
     else {
         draw_box(white, darkgreen1, &ipbox, -1);
         render_text("SERVER @", white, -0.645f, -0.95f, 0.00075f, 0.0012f);
         render_text(mainprogram->serverip, white, -0.45f, -0.95f, 0.00075f, 0.0012f);
-    }
-    if (box.in() && mainprogram->connected == 0) {
-        if (mainprogram->leftmouse) {
-            // start server
-            mainprogram->serverip = mainprogram->localip; // local ip is server ip
-            if (inet_pton(AF_INET, mainprogram->localip.c_str(), &mainprogram->serv_addr_server.sin_addr) <= 0) {
-                printf("\nInvalid server address/ Address not supported \n");
-            } else {
-                int opt = 1;
-                mainprogram->server = true;
-                std::thread sockserver(&Program::socket_server, mainprogram, mainprogram->serv_addr_server,
-                                       opt);
-                sockserver.detach();
-            }
-        }
     }
 
     if (mainprogram->connsocknames.size()) {
@@ -907,7 +879,7 @@ void BinsMain::handle(bool draw) {
     // receive sent bins
     for (int i = 0; i < binsmain->messages.size(); i++) {
         if (mainprogram->server) {
-            // send recieved bins through from server to destination clients
+            // send received bins through from server to destination clients
             for (int j = 0; j < mainprogram->connsockets.size(); j++) {
                 if (mainprogram->connsockets[j] != mainprogram->connmap[binsmain->messagesocknames[i]]) {
                     send(mainprogram->connsockets[j], binsmain->rawmessages[i],

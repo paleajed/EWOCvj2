@@ -1047,6 +1047,9 @@ class Program {
         std::mutex discoveryMutex;
         bool discoveryRunning = false;
         int discoverySocket = -1;
+        bool autoConnectAttempted = false;
+        bool autoServerAttempted = false;
+        std::chrono::steady_clock::time_point discoveryStartTime;
         std::thread *clientthread;
 #ifdef WINDOWS
         std::unordered_map<std::string, SOCKET> connmap;
@@ -1208,7 +1211,7 @@ class Program {
         void write_recentprojectlist();
         void socket_server(struct sockaddr_in serv_addr, int opt);
         void socket_client(struct sockaddr_in serv_addr, int opt);
-        void socket_server_recieve(SOCKET sock);
+        void socket_server_receive(SOCKET sock);
         void start_discovery();
         void stop_discovery();
         void discovery_broadcast();
