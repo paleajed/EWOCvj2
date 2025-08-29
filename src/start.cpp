@@ -33,7 +33,6 @@
 #include <thread>
 #include <mutex>
 #include <stdexcept>
-#include <iphlpapi.h>
 
 #ifndef UINT64_C
 #define UINT64_C(c) (c ## ULL)
@@ -58,6 +57,7 @@
 #include <tlhelp32.h>
 #include <ShellScalingApi.h>
 #include <comdef.h>
+#include <iphlpapi.h>
 #endif
 
 #include "GL/glew.h"

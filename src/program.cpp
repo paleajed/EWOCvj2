@@ -9656,15 +9656,55 @@ void Program::socket_server(struct sockaddr_in serv_addr, int opt) {
         mainprogram->connsockets.push_back(new_socket);
 
         // send number of clients for choosing unique osc address
-        send(new_socket, std::to_string(mainprogram->connsockets.size()).c_str(),
-             strlen(std::to_string(mainprogram->connsockets.size()).c_str()), 0);
+        std::string clientCount = std::to_string(mainprogram->connsockets.size());
+        std::cout << "DEBUG: Server sending client count: " << clientCount << std::endl;
+        send(new_socket, clientCount.c_str(), clientCount.length(), 0);
         //get new socket name
         char *name = (char*)malloc(1024);
         char buf[1037];
+        std::cout << "DEBUG: Server waiting for client name..." << std::endl;
         name = bl_recv(new_socket, name, 1024, 0);
+        if (name == nullptr) {
+            std::cout << "DEBUG: Client disconnected during handshake" << std::endl;
+            free(name);
+#ifdef POSIX
+            close(new_socket);
+#endif
+#ifdef WINDOWS
+            closesocket(new_socket);
+#endif
+            continue;
+        }
+        std::cout << "DEBUG: Server received client name: '" << std::string(name) << "'" << std::endl;
+        
+        // Check if this client name already exists
+        std::string clientName(name);
+        auto existingClient = mainprogram->connmap.find(clientName);
+        if (existingClient != mainprogram->connmap.end()) {
+            std::cout << "DEBUG: Client '" << clientName << "' already connected, removing old connection" << std::endl;
+            
+            // Remove the old connection
+            SOCKET oldSocket = existingClient->second;
+            auto oldSocketIt = std::find(mainprogram->connsockets.begin(), mainprogram->connsockets.end(), oldSocket);
+            if (oldSocketIt != mainprogram->connsockets.end()) {
+                int oldPos = oldSocketIt - mainprogram->connsockets.begin();
+                mainprogram->connsockets.erase(oldSocketIt);
+                if (oldPos < mainprogram->connsocknames.size()) {
+                    mainprogram->connsocknames.erase(mainprogram->connsocknames.begin() + oldPos);
+                }
+#ifdef POSIX
+                close(oldSocket);
+#endif
+#ifdef WINDOWS
+                closesocket(oldSocket);
+#endif
+            }
+        }
+        
         mainprogram->connsocknames.push_back(name);
-        mainprogram->connmap[name] = new_socket;
+        mainprogram->connmap[clientName] = new_socket;
         //send server name to client
+        std::cout << "DEBUG: Server sending seat name: " << mainprogram->seatname << std::endl;
         send(new_socket, mainprogram->seatname.c_str(), mainprogram->seatname.size(), 0);
         //send new socket name to all other client sockets
         char *walk2 = buf;
@@ -9698,6 +9738,9 @@ void Program::socket_client(struct sockaddr_in serv_addr, int opt) {
 
         if (inet_pton(AF_INET, this->serverip.c_str(), &serv_addr.sin_addr) <= 0) {
             printf("\nInvalid server address/ Address not supported \n");
+            this->connfailed = true;
+            this->connfailedmilli = 0;
+            return;
         }
 
 #ifdef POSIX
@@ -9708,33 +9751,138 @@ void Program::socket_client(struct sockaddr_in serv_addr, int opt) {
         u_long flags = 1;
         ioctlsocket(this->sock, FIONBIO, &flags);
 #endif
+        
         int ret = connect(this->sock, (struct sockaddr *)&serv_addr, sizeof(serv_addr));
+        
+        // Handle non-blocking connection properly
         if (ret < 0) {
 #ifdef POSIX
-            sleep(1);
+            int error = errno;
+            if (error == EINPROGRESS || error == EWOULDBLOCK) {
+                std::cout << "DEBUG: Connection in progress, waiting with select..." << std::endl;
+                // Connection in progress, use select to wait for completion
+                fd_set writefds;
+                struct timeval timeout;
+                FD_ZERO(&writefds);
+                FD_SET(this->sock, &writefds);
+                timeout.tv_sec = 5;  // 5 second timeout
+                timeout.tv_usec = 0;
+                
+                int select_result = select(this->sock + 1, NULL, &writefds, NULL, &timeout);
+                if (select_result > 0) {
+                    // Check if connection succeeded
+                    int so_error;
+                    socklen_t len = sizeof(so_error);
+                    getsockopt(this->sock, SOL_SOCKET, SO_ERROR, &so_error, &len);
+                    if (so_error == 0) {
+                        std::cout << "DEBUG: Non-blocking connection completed successfully" << std::endl;
+                        ret = 0; // Connection successful
+                    } else {
+                        std::cout << "DEBUG: Connection failed after select, so_error: " << so_error << std::endl;
+                        ret = -1; // Connection failed
+                    }
+                } else if (select_result == 0) {
+                    std::cout << "DEBUG: Connection timed out after 5 seconds" << std::endl;
+                    ret = -1; // Timeout
+                } else {
+                    std::cout << "DEBUG: Select failed: " << strerror(errno) << std::endl;
+                    ret = -1; // Select error
+                }
+            } else {
+                std::cout << "DEBUG: Connection failed immediately: " << strerror(error) << std::endl;
+            }
 #endif
 #ifdef WINDOWS
-        Sleep(1000);
+            int error = WSAGetLastError();
+            if (error == WSAEWOULDBLOCK) {
+                std::cout << "DEBUG: Connection in progress (Windows), waiting with select..." << std::endl;
+                // Connection in progress, use select to wait for completion
+                fd_set writefds;
+                struct timeval timeout;
+                FD_ZERO(&writefds);
+                FD_SET(this->sock, &writefds);
+                timeout.tv_sec = 5;  // 5 second timeout
+                timeout.tv_usec = 0;
+                
+                int select_result = select(0, NULL, &writefds, NULL, &timeout);
+                if (select_result > 0) {
+                    // Check if connection succeeded
+                    int so_error;
+                    int len = sizeof(so_error);
+                    getsockopt(this->sock, SOL_SOCKET, SO_ERROR, (char*)&so_error, &len);
+                    if (so_error == 0) {
+                        std::cout << "DEBUG: Non-blocking connection completed successfully (Windows)" << std::endl;
+                        ret = 0; // Connection successful
+                    } else {
+                        std::cout << "DEBUG: Connection failed after select (Windows), so_error: " << so_error << std::endl;
+                        ret = -1; // Connection failed
+                    }
+                } else {
+                    std::cout << "DEBUG: Select timeout or error (Windows)" << std::endl;
+                    ret = -1; // Timeout or error
+                }
+            } else {
+                std::cout << "DEBUG: Connection failed immediately (Windows): " << error << std::endl;
+            }
 #endif
-            ret = connect(this->sock, (struct sockaddr *)&serv_addr, sizeof(serv_addr));
+        } else {
+            std::cout << "DEBUG: Connection completed immediately" << std::endl;
         }
 
         if (ret >= 0) {
-            // server found and connected succesfully!
+            // server found and connected successfully!
+            std::cout << "DEBUG: Connection established, waiting for server response..." << std::endl;
             buf = bl_recv( this->sock , buf, 1024, 0);
-            if (buf == "LOOP") return;
+            std::cout << "DEBUG: Received from server: '" << std::string(buf) << "'" << std::endl;
+            if (buf == "LOOP") {
+                std::cout << "DEBUG: Loop detected, disconnecting" << std::endl;
+                return;
+            }
+            std::cout << "DEBUG: Sending seatname: " << this->seatname << std::endl;
             send(this->sock, this->seatname.c_str(), this->seatname.size(), 0);
             // receive server name
             buf = bl_recv(this->sock , buf, 1024, 0);
+            std::cout << "DEBUG: Received server name: '" << std::string(buf) << "'" << std::endl;
             this->connsocknames.push_back(buf);
             this->connected = 1;
             this->prefs->save();
+            std::cout << "DEBUG: Connection successful!" << std::endl;
             break;
         }
         else {
+            // Connection failed - retry after delay
+#ifdef POSIX
+            std::cout << "DEBUG: Connection failed, errno: " << errno << " (" << strerror(errno) << ")" << std::endl;
+#endif
+#ifdef WINDOWS
+            std::cout << "DEBUG: Connection failed, WSA error: " << WSAGetLastError() << std::endl;
+#endif
+            std::cout << "DEBUG: Retrying connection to " << this->serverip << ":8000 in 2 seconds..." << std::endl;
+            
             this->connfailed = true;
             this->connfailedmilli = 0;
-            return;
+#ifdef POSIX
+            sleep(2);
+#endif
+#ifdef WINDOWS
+            Sleep(2000);
+#endif
+            // Reset connection state and try again instead of returning
+            this->connfailed = false;
+            
+            // Close and recreate socket for next attempt
+#ifdef POSIX
+            close(this->sock);
+#endif
+#ifdef WINDOWS
+            closesocket(this->sock);
+#endif
+            if ((this->sock = socket(AF_INET, SOCK_STREAM, 0)) < 0) {
+                printf("\n Socket creation error \n");
+                this->connfailed = true;
+                this->connfailedmilli = 0;
+                return;
+            }
         }
     }
     free(buf);
@@ -9780,7 +9928,47 @@ void Program::socket_server_receive(SOCKET sock) {
     char *buf = (char *) malloc(148489);
     while (1) {
         buf = bl_recv(sock, buf, 148489, 0);
-        if (!this->server) return;
+        if (!this->server) {
+            free(buf);
+            return;
+        }
+        
+        // Check for disconnection
+        if (buf == nullptr) {
+            std::cout << "DEBUG: Client disconnected from socket " << sock << std::endl;
+            
+            // Find and remove this socket from connsockets and connsocknames
+            auto it = std::find(this->connsockets.begin(), this->connsockets.end(), sock);
+            if (it != this->connsockets.end()) {
+                int pos = it - this->connsockets.begin();
+                std::cout << "DEBUG: Removing client '" << this->connsocknames[pos] << "' from position " << pos << std::endl;
+                
+                // Remove from both vectors
+                this->connsockets.erase(it);
+                if (pos < this->connsocknames.size()) {
+                    this->connsocknames.erase(this->connsocknames.begin() + pos);
+                }
+                
+                // Remove from connmap
+                for (auto map_it = this->connmap.begin(); map_it != this->connmap.end(); ++map_it) {
+                    if (map_it->second == sock) {
+                        this->connmap.erase(map_it);
+                        break;
+                    }
+                }
+            }
+            
+            // Close the socket
+#ifdef POSIX
+            close(sock);
+#endif
+#ifdef WINDOWS
+            closesocket(sock);
+#endif
+            free(buf);
+            return;
+        }
+        
         std::string str(buf);
         if (str == "BIN_SENT") {
             binsmain->rawmessages.push_back(buf);
@@ -9794,7 +9982,9 @@ void Program::socket_server_receive(SOCKET sock) {
         else if (str == "CHANGE_NAME") {
             buf += strlen(buf) + 1;
             int pos = std::find(this->connsockets.begin(), this->connsockets.end(), sock) - this->connsockets.begin();
-            this->connsocknames[pos] = buf;
+            if (pos < this->connsocknames.size()) {
+                this->connsocknames[pos] = buf;
+            }
         }
     }
     free(buf);
@@ -10017,19 +10207,29 @@ void Program::discovery_listen() {
 }
 
 char* Program::bl_recv(int sock, char *buf, size_t sz, int flags) {
+    int bytesReceived = 0;
 #ifdef POSIX
     int flags2 = fcntl(sock, F_GETFL);
     fcntl(sock, F_SETFL, flags2 & ~O_NONBLOCK);
-    recv(sock, buf, sz, flags);
+    bytesReceived = recv(sock, buf, sz, flags);
     fcntl(sock, F_SETFL, flags2);
 #endif
 #ifdef WINDOWS
     u_long flags2 = 0;
     ioctlsocket(sock, FIONBIO, &flags2);
-    recv(sock, buf, sz, flags);
+    bytesReceived = recv(sock, buf, sz, flags);
     flags2 = 1;
     ioctlsocket(sock, FIONBIO, &flags2);
 #endif
+    
+    // Check for disconnection
+    if (bytesReceived <= 0) {
+        // Connection closed or error
+        return nullptr;
+    }
+    
+    // Null-terminate the received data
+    buf[bytesReceived] = '\0';
     return buf;
 }
 

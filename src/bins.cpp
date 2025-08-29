@@ -680,7 +680,7 @@ void BinsMain::handle(bool draw) {
 			       this->currbin->elements[i]->boxselect = false;
 			    }
 			    this->selboxing = false;
-			    mainprogram->leftmouse = false;
+			    //mainprogram->leftmouse = false;
 			}
 		}
 	}
