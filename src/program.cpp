@@ -2435,11 +2435,17 @@ void Program::shelf_triggering(ShelfElement* elem, int deck, Layer *layer) {
         Layer *laydeck1 = nullptr;
         for (int k = 0; k < clays.size(); k++) {
             Layer *lay = clays[k];
+            if (k == clays.size() - 1) {
+                mainmix->busyopen = false;
+            }
+            else {
+                mainmix->busyopen = true;
+            }
             if (elem->type == ELEM_FILE) {
                 mainmix->set_prevshelfdragelem_layers(clays[k]);
                 mainmix->reload_tagged_elems(elem, clays[k]->deck, clays[k]);
                 clays[k] = mainmix->layers[!mainprogram->prevmodus * 2 + clays[k]->deck][clays[k]->pos];
-                clays[k] = clays[k]->open_video(0, elem->path, true);
+                clays[k] = clays[k]->open_video(0, elem->path, true, clays[k]->keepeffbut->value, clays[k]->clonesetnr != -1, false);
                 std::unique_lock<std::mutex> olock(clays[k]->endopenlock);
                 clays[k]->endopenvar.wait(olock, [&] { return clays[k]->opened; });
                 clays[k]->opened = false;
@@ -5451,8 +5457,16 @@ void Program::handle_beatmenu() {
     if (k > -1) {
         if (k == 0) {
             mainmix->mouselayer->beats = 0;
+            if (mainmix->mouselayer->beatdetbut->value) {
+                mainprogram->register_undo(nullptr, mainmix->mouselayer->beatdetbut);
+            }
+            mainmix->mouselayer->beatdetbut->value = false;
         } else {
             mainmix->mouselayer->beats = pow(2, k - 1);
+            if (!mainmix->mouselayer->beatdetbut->value) {
+                mainprogram->register_undo(nullptr, mainmix->mouselayer->beatdetbut);
+            }
+            mainmix->mouselayer->beatdetbut->value = true;
         }
     }
 
@@ -5848,8 +5862,8 @@ bool Program::preferences_handle() {
 						if (!midici->items[i]->onoff) {
 							if (std::find(midici->onnames.begin(), midici->onnames.end(), midici->items[i]->name) != midici->onnames.end()) {
 								midici->onnames.erase(std::find(midici->onnames.begin(), midici->onnames.end(), midici->items[i]->name));
-								if (std::find(this->openports.begin(), this->openports.end(), i) != this->openports.end()) {
-                                    this->openports.erase(std::find(this->openports.begin(), this->openports.end(), i));
+								if (std::find(this->openports.begin(), this->openports.end(), midici->items[i]->name) != this->openports.end()) {
+                                    this->openports.erase(std::find(this->openports.begin(), this->openports.end(), midici->items[i]->name));
                                 }
 								mci->items[i]->midiin->cancelCallback();
 								delete mci->items[i]->midiin;
@@ -5870,11 +5884,11 @@ bool Program::preferences_handle() {
                                 // Restore stderr for future error messages
                                 std::cerr.rdbuf(original_cerr);
 
-                                if (std::find(this->openports.begin(), this->openports.end(), i) ==
+                                if (std::find(this->openports.begin(), this->openports.end(), midici->items[i]->name) ==
                                     this->openports.end()) {
                                     midiin->openPort(i);
                                     midiin->setCallback(&midi_callback, (void *) midici->items[i]);
-                                    this->openports.push_back(i);
+                                    this->openports.push_back(midici->items[i]->name);
                                 }
                                 mci->items[i]->midiin = midiin;
                             }
@@ -8282,7 +8296,9 @@ void Preferences::load() {
                 for (int i = 0; i < mainprogram->prefs->items.size(); i++) {
                     if (mainprogram->prefs->items[i]->name == istring) {
                         std::string catname = istring;
-                        if (istring == "Input Devices") ((PIDev*)(mainprogram->prefs->items[i]))->populate();
+                        if (istring == "Input Devices") {
+                            ((PIDev*)(mainprogram->prefs->items[i]))->populate();
+                        }
                         while (safegetline(rfile, istring)) {
                             if (istring == "ENDOFPREFCAT") {
                                 brk = true;
@@ -8334,24 +8350,30 @@ void Preferences::load() {
                                 }
                             }
                             if (catname == "Input Devices") {
+                                PIDev *pim = (PIDev*)mainprogram->prefs->items[i];
                                 if (foundpos == -1) {
                                     std::string name = istring;
                                     safegetline(rfile, istring);
                                     bool onoff = std::stoi(istring);
                                     PrefItem *pmi = new PrefItem(mainprogram->prefs->items[i], mainprogram->prefs->items[i]->items.size(), name, PREF_ONOFF, nullptr);
+                                    if (onoff) {
+                                        if (std::find(pim->onnames.begin(), pim->onnames.end(), pi->name) ==
+                                            pim->onnames.end()) {
+                                            pim->onnames.push_back(pmi->name);
+                                        }
+                                    }
                                     mainprogram->prefs->items[i]->items.push_back(pmi);
                                     pmi->onoff = onoff;
                                     pmi->connected = false;
                                 }
                                 else {
-                                    PIDev *pim = (PIDev*)mainprogram->prefs->items[i];
                                     if (!pi->onoff) {
                                         if (std::find(pim->onnames.begin(), pim->onnames.end(), pi->name) != pim->onnames.end()) {
                                             pim->onnames.erase(std::find(pim->onnames.begin(), pim->onnames.end(), pi->name));
-                                            if (std::find(mainprogram->openports.begin(), mainprogram->openports.end(), i) == mainprogram->openports.end()) {
+                                            if (std::find(mainprogram->openports.begin(), mainprogram->openports.end(), pi->name) == mainprogram->openports.end()) {
                                                 mainprogram->openports.erase(std::find(mainprogram->openports.begin(),
                                                                                        mainprogram->openports.end(),
-                                                                                       foundpos));
+                                                                                       pi->name));
                                             }
                                             pi->midiin->cancelCallback();
                                             delete pi->midiin;
@@ -8360,7 +8382,6 @@ void Preferences::load() {
                                     else {
                                         if (std::find(pim->onnames.begin(), pim->onnames.end(), pi->name) == pim->onnames.end()) {
                                             pim->onnames.push_back(pi->name);
-
                                             // Redirect stderr to null device before object creation
                                             std::streambuf* original_cerr = std::cerr.rdbuf();
                                             std::ofstream null_stream;
@@ -8373,10 +8394,10 @@ void Preferences::load() {
                                             std::cerr.rdbuf(original_cerr);
 
                                             if (std::find(mainprogram->openports.begin(), mainprogram->openports.end(),
-                                                          foundpos) == mainprogram->openports.end()) {
+                                                          pim->items[foundpos]->name) == mainprogram->openports.end()) {
                                                 midiin->openPort(foundpos);
                                                 midiin->setCallback(&midi_callback, (void *) pim->items[foundpos]);
-                                                mainprogram->openports.push_back(foundpos);
+                                                mainprogram->openports.push_back(pim->items[foundpos]->name);
                                             }
                                             pi->midiin = midiin;
                                         }
@@ -8489,6 +8510,70 @@ void Preferences::save() {
 
     wfile << "ENDOFFILE\n";
     wfile.close();
+}
+
+void Preferences::init_midi_devices() {
+    auto olditems = mainprogram->prefs->items[6]->items;
+    ((PIDev*)(mainprogram->prefs->items[6]))->populate();
+    PrefItem *pi = nullptr;
+    for (auto name : mainprogram->openports) {
+        bool found = false;
+        for (int j = 0; j < mainprogram->prefs->items[6]->items.size(); j++) {
+            pi = mainprogram->prefs->items[6]->items[j];
+            if (pi->name == name) {
+                found = true;
+                break;
+            }
+        }
+        if (!found) {
+            mainprogram->openports.erase(std::find(mainprogram->openports.begin(),
+                                                   mainprogram->openports.end(),
+                                                   name));
+            for (auto item : olditems) {
+                if (item->name == name) {
+                    item->midiin->cancelCallback();
+                    delete item->midiin;
+                }
+            }
+            //pi->connected = false;
+        }
+    }
+    for (int j = 0; j < mainprogram->prefs->items[6]->items.size(); j++) {
+        pi = mainprogram->prefs->items[6]->items[j];
+        PIDev *pim = (PIDev*)mainprogram->prefs->items[6];
+        if (!pi->onoff) {
+            if (std::find(pim->onnames.begin(), pim->onnames.end(), pi->name) != pim->onnames.end()) {
+                pim->onnames.erase(std::find(pim->onnames.begin(), pim->onnames.end(), pi->name));
+                if (std::find(mainprogram->openports.begin(), mainprogram->openports.end(), pi->name) == mainprogram->openports.end()) {
+                    mainprogram->openports.erase(std::find(mainprogram->openports.begin(),
+                                                           mainprogram->openports.end(),
+                                                           pi->name));
+                }
+                pi->midiin->cancelCallback();
+                delete pi->midiin;
+            }
+        }
+        else {
+            // Redirect stderr to null device before object creation
+            std::streambuf* original_cerr = std::cerr.rdbuf();
+            std::ofstream null_stream;
+            null_stream.open("/dev/null"); // on Unix-like systems
+            // For Windows: null_stream.open("NUL");
+            std::cerr.rdbuf(null_stream.rdbuf());
+            // Create the RtMidiIn instance (warning will be suppressed)
+            RtMidiIn *midiin = new RtMidiIn();
+            // Restore stderr for future error messages
+            std::cerr.rdbuf(original_cerr);
+
+            if (std::find(mainprogram->openports.begin(), mainprogram->openports.end(),
+                          pim->items[j]->name) == mainprogram->openports.end()) {
+                midiin->openPort(j);
+                midiin->setCallback(&midi_callback, (void *) pim->items[j]);
+                mainprogram->openports.push_back(pim->items[j]->name);
+            }
+            pi->midiin = midiin;
+        }
+    }
 }
 
 

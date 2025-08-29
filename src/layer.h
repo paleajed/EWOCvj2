@@ -625,6 +625,7 @@ class Mixer {
         bool busyopen = false;
         bool directtransfer = false;
         bool inside = false;
+        bool shelftriggering = false;
 
         std::vector<Layer*> loadinglays;
 

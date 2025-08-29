@@ -2697,7 +2697,7 @@ void midi_set() {
             but->value++;
             if (but->value > but->toggle) but->value = 0;
         }
-		if (but->toggle == 0) but->value = 1;
+		if (but->toggle == 0) but->value = !but->value;
 		if (but == mainprogram->wormgate1 || but == mainprogram->wormgate2) mainprogram->binsscreen = but->value;
 		
 		for (int i = 0; i < loopstation->elements.size(); i++) {
@@ -4960,6 +4960,21 @@ void the_loop() {
         }
     }
 
+    mainprogram->prefs->init_midi_devices();
+
+    for (int m = 0; m < 2; m++) {
+        for (auto scn : mainmix->scenes[m]) {
+            if (scn->pos == mainmix->currscene[m]) continue;
+            if (scn->button->toggled()) {
+                mainprogram->swappingscene = true;
+                scn->switch_to(true);
+                mainmix->currscene[m] = scn->pos;
+                mainmix->setscene = -1;
+                scn->loaded = false;
+            }
+        }
+    }
+
     if (!mainprogram->binsscreen) {
         // draw background graphic
         draw_direct(nullptr, black, -1.0f, -1.0f, 2.0f, 2.0f, 0.0f, 0.0f, 1.0f, 1.0f, 0, mainprogram->bgtex, glob->w,
@@ -5193,6 +5208,7 @@ void the_loop() {
                     std::vector<Layer *> lv = (*tempmap)[j];
                     if (lv[0] && !lv[1] && maxpos == -1) {
                         maxpos = lv[0]->pos;
+                        break;
                     }
                     else {
                         maxpos = -1;
@@ -5256,14 +5272,17 @@ void the_loop() {
                 mainmix->layers[i] = oldlayers;
                 mainmix->reconnect_all(mainmix->layers[i]);
                 // transfer current layer settings to new layer
-                Layer *cl = mainmix->currlay[!mainprogram->prevmodus];
-                if (!mainprogram->prevmodus == (i / 2) && cl->deck == i % 2) {
-                    Layer *newcl = mainmix->layers[i][cl->pos];
-                    mainmix->change_currlay(cl, newcl);
-                    if (newcl == cl) {
-                        mainprogram->effcat[newcl->deck]->value = newcl->effcat;
+                for (int p = 0; p < mainmix->currlays[!mainprogram->prevmodus].size(); p++) {
+                    auto cl = mainmix->currlays[!mainprogram->prevmodus][p];
+                    if (!mainprogram->prevmodus == (i / 2) && cl->deck == i % 2) {
+                        Layer *newcl = mainmix->layers[i][cl->pos];
+                        mainmix->currlays[!mainprogram->prevmodus][p] = newcl;
+                        if (newcl == cl) {
+                            mainprogram->effcat[newcl->deck]->value = newcl->effcat;
+                        }
                     }
                 }
+                mainmix->currlay[!mainprogram->prevmodus] = mainmix->currlays[!mainprogram->prevmodus][0];
             }
             tempmap->clear();
         }
@@ -6214,9 +6233,9 @@ void the_loop() {
         //displaying "MIDI learn active" message box
         mainprogram->frontbatch = true;
 		draw_box(red, blue, -0.3f, -0.0f, 0.6f, 0.3f, -1);
-        mainprogram->frontbatch = false;
         render_text("Awaiting MIDI input.", white, -0.1f, 0.2f, 0.001f, 0.0016f);
         render_text("Rightclick cancels.", white, -0.1f, 0.06f, 0.001f, 0.0016f);
+        mainprogram->frontbatch = false;
 		// allow exiting with x icon during MIDI learn.
 		draw_box(nullptr, deepred, 1.0f - 0.05f, 1.0f - 0.075f, 0.05f, 0.075f, -1);
 		render_text("x", white, 0.966f, 1.019f - 0.075f, 0.0012f, 0.002f);
@@ -7756,7 +7775,7 @@ int main(int argc, char* argv[]) {
     int oscport = 9000;
 
 
-    /*// Multi-user code using sockets
+    // Multi-user code using sockets
     if (1) {
         //get local ip by connecting to Google DNS
         const char *google_dns_server = "8.8.8.8";
@@ -7817,7 +7836,7 @@ int main(int argc, char* argv[]) {
         mainprogram->serv_addr_client.sin_addr.s_addr = INADDR_ANY;
         mainprogram->serv_addr_client.sin_port = htons(8000);
 
-    }*/
+    }
 
 
 

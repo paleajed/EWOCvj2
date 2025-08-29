@@ -306,6 +306,7 @@ class Preferences {
 		int curritem = 1;
 		void load();
 		void save();
+        void init_midi_devices();
 		Preferences();
 };
 
@@ -808,7 +809,7 @@ class Program {
 		TM_LEARN tmlearn = TM_NONE;
 		TM_LEARN tmchoice = TM_NONE;
 		int waitmidi = 0;
-		std::vector<int> openports;
+		std::vector<std::string> openports;
 		std::vector<PrefItem*> pmon;
 		clock_t stt;
 		std::vector<unsigned char> savedmessage;

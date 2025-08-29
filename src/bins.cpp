@@ -685,7 +685,7 @@ void BinsMain::handle(bool draw) {
 		}
 	}
 
-/*
+
 	// manage SEND button
     auto put_in_buffer = [](const char* str, char* walk) {
 	    // buffer utility
@@ -888,7 +888,7 @@ void BinsMain::handle(bool draw) {
         }
     }
 
-    // recieve sent bins
+    // receive sent bins
     for (int i = 0; i < binsmain->messages.size(); i++) {
         if (mainprogram->server) {
             // send recieved bins through from server to destination clients
@@ -934,7 +934,6 @@ void BinsMain::handle(bool draw) {
     binsmain->rawmessages.clear();
     binsmain->messagelengths.clear();
     binsmain->messagesocknames.clear();
-*/
 
 
 	// set threadmode for hap encoding

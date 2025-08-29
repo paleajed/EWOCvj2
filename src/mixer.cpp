@@ -864,15 +864,17 @@ void Mixer::handle_adaptparam() {
         }
     }
 
-    if (this->adaptparam->layer->volume->value == 0.0f || this->adaptparam->layer->speed->value == 0.0f) {
-        if (this->adaptparam->layer->audiooff == 0) {
-            this->adaptparam->layer->audiooff = 1;
-        }
-    } else {
-        if (this->adaptparam->layer->audiooff == 2) {
-            this->adaptparam->layer->audiooff = 3;
+    if (this->adaptparam->layer) {
+        if (this->adaptparam->layer->volume->value == 0.0f || this->adaptparam->layer->speed->value == 0.0f) {
+            if (this->adaptparam->layer->audiooff == 0) {
+                this->adaptparam->layer->audiooff = 1;
+            }
         } else {
-            this->adaptparam->layer->audiooff = 0;
+            if (this->adaptparam->layer->audiooff == 2) {
+                this->adaptparam->layer->audiooff = 3;
+            } else {
+                this->adaptparam->layer->audiooff = 0;
+            }
         }
     }
 
@@ -3150,7 +3152,7 @@ Layer::~Layer() {
         for (Clip *clip: *this->clips) {
             delete clip;
         }
-        delete this->currclip;
+        //delete this->currclip;   because currclip is reused for new replacement layer
     }
     delete this->decresult;
 
@@ -4880,32 +4882,6 @@ static int get_format_from_sample_fmt(const char **fmt,
     return -1;
 }
 
-// Function to calculate audio PTS for a given video frame number
-int64_t calculateAudioPTSForVideoFrame(AVFormatContext* format_ctx,
-                                       int video_stream_index,
-                                       int audio_stream_index,
-                                       int64_t video_frame_number) {
-
-    AVStream* video_stream = format_ctx->streams[video_stream_index];
-    AVStream* audio_stream = format_ctx->streams[audio_stream_index];
-
-    // Calculate video timestamp for the given frame number
-    AVRational video_time_base = video_stream->time_base;
-    AVRational video_frame_rate = av_guess_frame_rate(format_ctx, video_stream, nullptr);
-
-    // Video PTS for this frame number
-    int64_t video_pts = av_rescale_q(video_frame_number,
-                                     av_inv_q(video_frame_rate),
-                                     video_time_base);
-
-    // Convert video PTS to audio time base
-    int64_t audio_pts = av_rescale_q(video_pts,
-                                     video_time_base,
-                                     audio_stream->time_base);
-
-    return audio_pts;
-}
-
 static void process_audio(Layer *lay, float framenr, bool scritched) {
     // Process audio packets for current video frame timing
     if (lay->audiooff == 2) return;
@@ -4990,14 +4966,14 @@ static void process_audio(Layer *lay, float framenr, bool scritched) {
                         // Process packets up to current timing
                         decode_audio_packet(lay, lay->audiopkt_dedicated);
                         lay->latestptsvec.push_back(lay->audiopkt_dedicated->pts);
-                        if (lay->latestptsvec.size() == 17) {
+                        if (lay->latestptsvec.size() == 33) {
                             lay->latestptsvec.erase(lay->latestptsvec.begin());
                         }
-                    } else if (lay->packets_beyond_current < 16) {
+                    } else if (lay->packets_beyond_current < 32) {
                         // Process a few packets beyond current timing for smooth playback
                         decode_audio_packet(lay, lay->audiopkt_dedicated);
                         lay->latestptsvec.push_back(lay->audiopkt_dedicated->pts);
-                        if (lay->latestptsvec.size() == 17) {
+                        if (lay->latestptsvec.size() == 33) {
                             lay->latestptsvec.erase(lay->latestptsvec.begin());
                         }
                         lay->packets_beyond_current++;
@@ -5345,6 +5321,7 @@ void Layer::get_frame(){
 // HANDLING LAYER MONITOR HUD
 void Mixer::vidbox_handle() {
     if (mainprogram->dragbinel) return;
+    if (mainprogram->shift || mainprogram->ctrl) return;
 
 	// handles layer monitor controls
 	if (mainprogram->nodesmain->linked && mainmix->currlay[!mainprogram->prevmodus]) {
@@ -5609,15 +5586,6 @@ void Layer::display() {
                 draw_box(white, white, box->vtxcoords->x1 + 0.0225f, box->vtxcoords->y1 + 0.045f, progress * (box->vtxcoords->w - 0.045f), 0.04f, -1);
             }
 
-            if (this->beatdetbut->box->in()) {
-                if (mainprogram->menuactivation && !mainprogram->menuondisplay) {
-                    mainprogram->beatmenu->state = 2;
-                    mainmix->mouselayer = this;
-                    mainmix->mousedeck = this->deck;
-                    mainprogram->menuactivation = false;
-                }
-            }
-
             if (box->in()) {
                 mainprogram->frontbatch = true;
                 mainprogram->inmonitors = true;
@@ -5641,11 +5609,17 @@ void Layer::display() {
                     mainprogram->loadlay = this;
                 }
                 if ((!mainprogram->needsclick || mainprogram->leftmouse) && !mainprogram->ineffmenu) {
-                    if (!this->invidbox) {
+                    if (mainprogram->needsclick && (std::find(mainmix->currlays[!mainprogram->prevmodus].begin(), mainmix->currlays[!mainprogram->prevmodus].end(), this) == mainmix->currlays[!mainprogram->prevmodus].end())) {
+                        mainprogram->leftmouse = false;
+                    }
+                    if (!this->invidbox || (mainprogram->needsclick && (mainprogram->shift || mainprogram->ctrl))) {
                         this->invidbox = true;
                         if (!mainmix->moving && !mainprogram->cwon) {
                             mainmix->currlay[!mainprogram->prevmodus] = this;
                             if (mainprogram->shift || mainprogram->ctrl) {
+                                if (mainprogram->needsclick) {
+                                    mainprogram->leftmouse = false;
+                                }
                                 if (std::find(mainmix->currlays[!mainprogram->prevmodus].begin(), mainmix->currlays[!mainprogram->prevmodus].end(), this) ==
                                     mainmix->currlays[!mainprogram->prevmodus].end()) {
                                     mainmix->currlays[!mainprogram->prevmodus].push_back(this);
@@ -5672,231 +5646,249 @@ void Layer::display() {
                     mainmix->mousedeck = this->deck;
                     mainprogram->menuactivation = false;
                 }
-
-                // draw and handle deleting and adding/inserting layers
-                this->closebox->vtxcoords->x1 = box->vtxcoords->x1 + box->vtxcoords->w - 0.018f;
-                this->closebox->upvtxtoscr();
-                this->addbox->vtxcoords->x1 = box->vtxcoords->x1 + box->vtxcoords->w - 0.018f;
-                this->addbox->upvtxtoscr();
-                if (this->closebox->in()) {
-                    render_text("x", red, this->closebox->vtxcoords->x1, this->closebox->vtxcoords->y1, 0.00075f, 0.0012f);
-                    if (mainprogram->leftmousedown) {
-                        this->closing = true;
-                        mainprogram->leftmousedown = false;
-                    }
-                    if (this->closing && mainprogram->leftmouse) {
-                        mainmix->delete_layer(*this->layers, this, true);
-                    }
-                }
-                else {
-                    render_text("x", white, this->closebox->vtxcoords->x1, this->closebox->vtxcoords->y1, 0.00075f, 0.0012f);
-                }
-                if (this->addbox->in()) {
-                    render_text("+", green, this->addbox->vtxcoords->x1, this->addbox->vtxcoords->y1, 0.00075f, 0.0012f);
-                    if (mainprogram->leftmousedown) {
-                        this->adding = true;
-                        mainprogram->leftmousedown = false;
-                    }
-                    if (this->adding && mainprogram->leftmouse) {
-                        Layer *nlay = mainmix->add_layer(*this->layers, this->pos + 1);
-                        if (nlay->pos > mainmix->scenes[this->deck][mainmix->currscene[this->deck]]->scrollpos + 2) {   // layer at end->scroll
-                            mainmix->scenes[this->deck][mainmix->currscene[this->deck]]->scrollpos = nlay->pos - 2;
-                        }
-                        this->adding = false;
-                    }
-                }
-                else {
-                    render_text("+", white, this->addbox->vtxcoords->x1, this->addbox->vtxcoords->y1, 0.00075f, 0.0012f);
-                }
-                if (this->pos == mainmix->scenes[this->deck][mainmix->currscene[this->deck]]->scrollpos) {
-                    // do extra "+" at left of leftmost layer for adding to front
-                    this->addbox->vtxcoords->x1 = box->vtxcoords->x1 + 0.008f;
+                if (std::find(mainmix->currlays[!mainprogram->prevmodus].begin(), mainmix->currlays[!mainprogram->prevmodus].end(), this) != mainmix->currlays[!mainprogram->prevmodus].end()) {
+                    // draw and handle deleting and adding/inserting layers
+                    this->closebox->vtxcoords->x1 = box->vtxcoords->x1 + box->vtxcoords->w - 0.018f;
+                    this->closebox->upvtxtoscr();
+                    this->addbox->vtxcoords->x1 = box->vtxcoords->x1 + box->vtxcoords->w - 0.018f;
                     this->addbox->upvtxtoscr();
+                    if (this->closebox->in()) {
+                        render_text("x", red, this->closebox->vtxcoords->x1, this->closebox->vtxcoords->y1, 0.00075f,
+                                    0.0012f);
+                        if (mainprogram->leftmousedown) {
+                            this->closing = true;
+                            mainprogram->leftmousedown = false;
+                        }
+                        if (this->closing && mainprogram->leftmouse) {
+                            mainmix->delete_layer(*this->layers, this, true);
+                        }
+                    } else {
+                        render_text("x", white, this->closebox->vtxcoords->x1, this->closebox->vtxcoords->y1, 0.00075f,
+                                    0.0012f);
+                    }
                     if (this->addbox->in()) {
-                        render_text("+", green, this->addbox->vtxcoords->x1, this->addbox->vtxcoords->y1, 0.00075f, 0.0012f);
+                        render_text("+", green, this->addbox->vtxcoords->x1, this->addbox->vtxcoords->y1, 0.00075f,
+                                    0.0012f);
                         if (mainprogram->leftmousedown) {
                             this->adding = true;
                             mainprogram->leftmousedown = false;
                         }
                         if (this->adding && mainprogram->leftmouse) {
-                            mainmix->add_layer(*this->layers, this->pos);
+                            Layer *nlay = mainmix->add_layer(*this->layers, this->pos + 1);
+                            if (nlay->pos > mainmix->scenes[this->deck][mainmix->currscene[this->deck]]->scrollpos +
+                                            2) {   // layer at end->scroll
+                                mainmix->scenes[this->deck][mainmix->currscene[this->deck]]->scrollpos = nlay->pos - 2;
+                            }
                             this->adding = false;
                         }
+                    } else {
+                        render_text("+", white, this->addbox->vtxcoords->x1, this->addbox->vtxcoords->y1, 0.00075f,
+                                    0.0012f);
                     }
-                    else {
-                        render_text("+", white, this->addbox->vtxcoords->x1, this->addbox->vtxcoords->y1, 0.00075f, 0.0012f);
+                    if (this->pos == mainmix->scenes[this->deck][mainmix->currscene[this->deck]]->scrollpos) {
+                        // do extra "+" at left of leftmost layer for adding to front
+                        this->addbox->vtxcoords->x1 = box->vtxcoords->x1 + 0.008f;
+                        this->addbox->upvtxtoscr();
+                        if (this->addbox->in()) {
+                            render_text("+", green, this->addbox->vtxcoords->x1, this->addbox->vtxcoords->y1, 0.00075f,
+                                        0.0012f);
+                            if (mainprogram->leftmousedown) {
+                                this->adding = true;
+                                mainprogram->leftmousedown = false;
+                            }
+                            if (this->adding && mainprogram->leftmouse) {
+                                mainmix->add_layer(*this->layers, this->pos);
+                                this->adding = false;
+                            }
+                        } else {
+                            render_text("+", white, this->addbox->vtxcoords->x1, this->addbox->vtxcoords->y1, 0.00075f,
+                                        0.0012f);
+                        }
                     }
-                }
-                this->addbox->upvtxtoscr();
-				//draw and handle layer mute and solo buttons
-				if (this->mutebut->box->in()) {
-					render_text("M", alphablue, this->mutebut->box->vtxcoords->x1 + 0.0078f, this->mutebut->box->vtxcoords->y1 + 0.0078f, 0.0006, 0.001);
-					if (mainprogram->leftmousedown) {
-						this->muting = true;
-						mainprogram->leftmousedown = false;
-					}
-					if (this->muting && mainprogram->leftmouse) {
-						this->muting = false;
-						this->mutebut->value = !this->mutebut->value;
-						this->mutebut->oldvalue = !this->mutebut->oldvalue;
-                        mainprogram->register_undo(nullptr, this->mutebut);
-                        for (int i = 0; i < loopstation->elements.size(); i++) {
-							if (loopstation->elements[i]->recbut->value) {
-								loopstation->elements[i]->add_button_automationentry(this->mutebut);
-							}
-						}
-					}
-					if (mainprogram->menuactivation && !mainprogram->menuondisplay) {
-						mainprogram->parammenu3->state = 2;
-						mainmix->learnparam = nullptr;
-						mainmix->learnbutton = this->mutebut;
-						mainprogram->menuactivation = false;
-					}
-				}
-				else if (!this->mutebut->value) {
-					render_text("M", alphawhite, this->mutebut->box->vtxcoords->x1 + 0.0078f, this->mutebut->box->vtxcoords->y1 + 0.0078f, 0.0006, 0.001);
-				}
-				this->solobut->box->vtxcoords->x1 = this->mutebut->box->vtxcoords->x1 + 0.03f;
-				this->solobut->box->upvtxtoscr();
-				if (this->solobut->box->in()) {
-					render_text("S", alphablue, this->solobut->box->vtxcoords->x1 + 0.0078f, this->solobut->box->vtxcoords->y1 + 0.0078f, 0.0006, 0.001);
-					if (mainprogram->leftmousedown) {
-						this->soloing = true;
-						mainprogram->leftmousedown = false;
-					}
-					if (this->soloing && mainprogram->leftmouse) {
-						mainprogram->leftmouse = false;
-						this->soloing = false;
-						this->solobut->value = !this->solobut->value;
-						this->solobut->oldvalue = !this->solobut->oldvalue;
-                        mainprogram->register_undo(nullptr, this->solobut);
-                        if (this->solobut->value) {
-							if (this->mutebut->value) {
-								this->mutebut->value = false;
-								this->mutebut->oldvalue = false;
-							}
-							for (int k = 0; k < lvec.size(); k++) {
-								if (k != this->pos) {
-									if (lvec[k]->mutebut->value == false) {
-										lvec[k]->mutebut->value = true;
-										lvec[k]->mutebut->oldvalue = true;
-									}
-									else {
-										lvec[k]->mutebut->value = false;
-										lvec[k]->mutebut->oldvalue = false;
-										lvec[k]->mutebut->value = true;
-										lvec[k]->mutebut->oldvalue = true;
-									}
-									lvec[k]->solobut->value = false;
-									lvec[k]->solobut->oldvalue = false;
-								}
-							}
-						}
-						else {
-							for (int k = 0; k < lvec.size(); k++) {
-								if (k != this->pos) {
-									lvec[k]->mutebut->value = false;
-									lvec[k]->mutebut->oldvalue = false;
-								}
-							}
-						}
-						for (int i = 0; i < loopstation->elements.size(); i++) {
-							if (loopstation->elements[i]->recbut->value) {
-								loopstation->elements[i]->add_button_automationentry(this->solobut);
-							}
-						}
-					}
-					if (mainprogram->menuactivation && !mainprogram->menuondisplay) {
-						mainprogram->parammenu3->state = 2;
-						mainmix->learnparam = nullptr;
-						mainmix->learnbutton = this->solobut;
-						mainprogram->menuactivation = false;
-					}
-				}
-				else if (!this->solobut->value) {
-					render_text("S", alphawhite, this->solobut->box->vtxcoords->x1 + 0.0078f, this->solobut->box->vtxcoords->y1 + 0.0078f, 0.0006, 0.001);
-				}
+                    this->addbox->upvtxtoscr();
+                    //draw and handle layer mute and solo buttons
+                    if (this->mutebut->box->in()) {
+                        render_text("M", alphablue, this->mutebut->box->vtxcoords->x1 + 0.0078f,
+                                    this->mutebut->box->vtxcoords->y1 + 0.0078f, 0.0006, 0.001);
+                        if (mainprogram->leftmousedown) {
+                            this->muting = true;
+                            mainprogram->leftmousedown = false;
+                        }
+                        if (this->muting && mainprogram->leftmouse) {
+                            this->muting = false;
+                            this->mutebut->value = !this->mutebut->value;
+                            this->mutebut->oldvalue = !this->mutebut->oldvalue;
+                            mainprogram->register_undo(nullptr, this->mutebut);
+                            for (int i = 0; i < loopstation->elements.size(); i++) {
+                                if (loopstation->elements[i]->recbut->value) {
+                                    loopstation->elements[i]->add_button_automationentry(this->mutebut);
+                                }
+                            }
+                        }
+                        if (mainprogram->menuactivation && !mainprogram->menuondisplay) {
+                            mainprogram->parammenu3->state = 2;
+                            mainmix->learnparam = nullptr;
+                            mainmix->learnbutton = this->mutebut;
+                            mainprogram->menuactivation = false;
+                        }
+                    } else if (!this->mutebut->value) {
+                        render_text("M", alphawhite, this->mutebut->box->vtxcoords->x1 + 0.0078f,
+                                    this->mutebut->box->vtxcoords->y1 + 0.0078f, 0.0006, 0.001);
+                    }
+                    this->solobut->box->vtxcoords->x1 = this->mutebut->box->vtxcoords->x1 + 0.03f;
+                    this->solobut->box->upvtxtoscr();
+                    if (this->solobut->box->in()) {
+                        render_text("S", alphablue, this->solobut->box->vtxcoords->x1 + 0.0078f,
+                                    this->solobut->box->vtxcoords->y1 + 0.0078f, 0.0006, 0.001);
+                        if (mainprogram->leftmousedown) {
+                            this->soloing = true;
+                            mainprogram->leftmousedown = false;
+                        }
+                        if (this->soloing && mainprogram->leftmouse) {
+                            mainprogram->leftmouse = false;
+                            this->soloing = false;
+                            this->solobut->value = !this->solobut->value;
+                            this->solobut->oldvalue = !this->solobut->oldvalue;
+                            mainprogram->register_undo(nullptr, this->solobut);
+                            if (this->solobut->value) {
+                                if (this->mutebut->value) {
+                                    this->mutebut->value = false;
+                                    this->mutebut->oldvalue = false;
+                                }
+                                for (int k = 0; k < lvec.size(); k++) {
+                                    if (k != this->pos) {
+                                        if (lvec[k]->mutebut->value == false) {
+                                            lvec[k]->mutebut->value = true;
+                                            lvec[k]->mutebut->oldvalue = true;
+                                        } else {
+                                            lvec[k]->mutebut->value = false;
+                                            lvec[k]->mutebut->oldvalue = false;
+                                            lvec[k]->mutebut->value = true;
+                                            lvec[k]->mutebut->oldvalue = true;
+                                        }
+                                        lvec[k]->solobut->value = false;
+                                        lvec[k]->solobut->oldvalue = false;
+                                    }
+                                }
+                            } else {
+                                for (int k = 0; k < lvec.size(); k++) {
+                                    if (k != this->pos) {
+                                        lvec[k]->mutebut->value = false;
+                                        lvec[k]->mutebut->oldvalue = false;
+                                    }
+                                }
+                            }
+                            for (int i = 0; i < loopstation->elements.size(); i++) {
+                                if (loopstation->elements[i]->recbut->value) {
+                                    loopstation->elements[i]->add_button_automationentry(this->solobut);
+                                }
+                            }
+                        }
+                        if (mainprogram->menuactivation && !mainprogram->menuondisplay) {
+                            mainprogram->parammenu3->state = 2;
+                            mainmix->learnparam = nullptr;
+                            mainmix->learnbutton = this->solobut;
+                            mainprogram->menuactivation = false;
+                        }
+                    } else if (!this->solobut->value) {
+                        render_text("S", alphawhite, this->solobut->box->vtxcoords->x1 + 0.0078f,
+                                    this->solobut->box->vtxcoords->y1 + 0.0078f, 0.0006, 0.001);
+                    }
 
-				// draw and handle keepeff button
-                this->keepeffbut->box->vtxcoords->x1 = this->mutebut->box->vtxcoords->x1 - 0.03f;
-                this->keepeffbut->box->upvtxtoscr();
-                if (this->keepeffbut->box->in()) {
-                    render_text("E", alphablue, this->keepeffbut->box->vtxcoords->x1 + 0.0078f,
-                                this->keepeffbut->box->vtxcoords->y1 + 0.0078f, 0.0006, 0.001);
-                    if (mainprogram->leftmousedown) {
-                        this->keepeffing = true;
-                        mainprogram->leftmousedown = false;
+                    // draw and handle keepeff button
+                    this->keepeffbut->box->vtxcoords->x1 = this->mutebut->box->vtxcoords->x1 - 0.03f;
+                    this->keepeffbut->box->upvtxtoscr();
+                    if (this->keepeffbut->box->in()) {
+                        render_text("E", alphablue, this->keepeffbut->box->vtxcoords->x1 + 0.0078f,
+                                    this->keepeffbut->box->vtxcoords->y1 + 0.0078f, 0.0006, 0.001);
+                        if (mainprogram->leftmousedown) {
+                            this->keepeffing = true;
+                            mainprogram->leftmousedown = false;
+                        }
+                        if (this->keepeffing && mainprogram->leftmouse) {
+                            this->keepeffbut->value = !this->keepeffbut->value;
+                            mainprogram->register_undo(nullptr, this->keepeffbut);
+                            mainprogram->leftmouse = false;
+                        }
+                        if (mainprogram->menuactivation && !mainprogram->menuondisplay) {
+                            mainprogram->parammenu3->state = 2;
+                            mainmix->learnparam = nullptr;
+                            mainmix->learnbutton = this->mutebut;
+                            mainprogram->menuactivation = false;
+                        }
+                    } else if (!this->keepeffbut->value) {
+                        render_text("E", alphawhite, this->keepeffbut->box->vtxcoords->x1 + 0.0078f,
+                                    this->keepeffbut->box->vtxcoords->y1 + 0.0078f, 0.0006, 0.001);
                     }
-                    if (this->keepeffing && mainprogram->leftmouse) {
-                        this->keepeffbut->value = !this->keepeffbut->value;
-                        mainprogram->register_undo(nullptr, this->keepeffbut);
-                        mainprogram->leftmouse = false;
-                    }
-                    if (mainprogram->menuactivation && !mainprogram->menuondisplay) {
-                        mainprogram->parammenu3->state = 2;
-                        mainmix->learnparam = nullptr;
-                        mainmix->learnbutton = this->mutebut;
-                        mainprogram->menuactivation = false;
-                    }
-                }
-                else if (!this->keepeffbut->value) {
-                    render_text("E", alphawhite, this->keepeffbut->box->vtxcoords->x1 + 0.0078f, this->keepeffbut->box->vtxcoords->y1 + 0.0078f, 0.0006, 0.001);
-                }
 
-				// queue fold/unfold button
-				this->queuebut->box->vtxcoords->x1 = box->vtxcoords->x1 + 0.015f;
-				this->queuebut->box->upvtxtoscr();
-				if (this->queuebut->box->in()) {
-					register_triangle_draw(black, alphablue, this->queuebut->box->vtxcoords->x1, this->queuebut->box->vtxcoords->y1, this->queuebut->box->vtxcoords->w, this->queuebut->box->vtxcoords->h, UP, CLOSED);
-					register_triangle_draw(black, black, this->queuebut->box->vtxcoords->x1, this->queuebut->box->vtxcoords->y1, this->queuebut->box->vtxcoords->w, this->queuebut->box->vtxcoords->h, UP, OPEN);
-					if (mainprogram->leftmousedown) {
-						this->mousequeue = true;
-						mainprogram->leftmousedown = false;
-					}
-					if (this->mousequeue && mainprogram->leftmouse) {
-						this->mousequeue = false;
-						mainprogram->leftmouse = false;
-						this->queueing = !this->queueing;
-						if (this->queueing) mainprogram->queueing = true;
-						else {
-							bool found = false;
-							for (int i = 0; i < 2; i++) {
-								std::vector<Layer*>& lvec = choose_layers(i);
-								for (int j = 0; j < lvec.size(); j++) {
-									if (lvec[j]->queueing) {
-										found = true;
-										break;
-									}
-								}
-							}
-							if (!found)	mainprogram->queueing = false;
-						}
-					}
-				}
-				else {
-					register_triangle_draw(black, alphawhite, this->queuebut->box->vtxcoords->x1, this->queuebut->box->vtxcoords->y1, this->queuebut->box->vtxcoords->w, this->queuebut->box->vtxcoords->h, UP, CLOSED);
-					register_triangle_draw(black, black, this->queuebut->box->vtxcoords->x1, this->queuebut->box->vtxcoords->y1, this->queuebut->box->vtxcoords->w, this->queuebut->box->vtxcoords->h, UP, OPEN);
-				}
+                    // queue fold/unfold button
+                    this->queuebut->box->vtxcoords->x1 = box->vtxcoords->x1 + 0.015f;
+                    this->queuebut->box->upvtxtoscr();
+                    if (this->queuebut->box->in()) {
+                        register_triangle_draw(black, alphablue, this->queuebut->box->vtxcoords->x1,
+                                               this->queuebut->box->vtxcoords->y1, this->queuebut->box->vtxcoords->w,
+                                               this->queuebut->box->vtxcoords->h, UP, CLOSED);
+                        register_triangle_draw(black, black, this->queuebut->box->vtxcoords->x1,
+                                               this->queuebut->box->vtxcoords->y1, this->queuebut->box->vtxcoords->w,
+                                               this->queuebut->box->vtxcoords->h, UP, OPEN);
+                        if (mainprogram->leftmousedown) {
+                            this->mousequeue = true;
+                            mainprogram->leftmousedown = false;
+                        }
+                        if (this->mousequeue && mainprogram->leftmouse) {
+                            this->mousequeue = false;
+                            mainprogram->leftmouse = false;
+                            this->queueing = !this->queueing;
+                            if (this->queueing) mainprogram->queueing = true;
+                            else {
+                                bool found = false;
+                                for (int i = 0; i < 2; i++) {
+                                    std::vector<Layer *> &lvec = choose_layers(i);
+                                    for (int j = 0; j < lvec.size(); j++) {
+                                        if (lvec[j]->queueing) {
+                                            found = true;
+                                            break;
+                                        }
+                                    }
+                                }
+                                if (!found) mainprogram->queueing = false;
+                            }
+                        }
+                    } else {
+                        register_triangle_draw(black, alphawhite, this->queuebut->box->vtxcoords->x1,
+                                               this->queuebut->box->vtxcoords->y1, this->queuebut->box->vtxcoords->w,
+                                               this->queuebut->box->vtxcoords->h, UP, CLOSED);
+                        register_triangle_draw(black, black, this->queuebut->box->vtxcoords->x1,
+                                               this->queuebut->box->vtxcoords->y1, this->queuebut->box->vtxcoords->w,
+                                               this->queuebut->box->vtxcoords->h, UP, OPEN);
+                    }
 
-                // draw and handle beatswitch button
-                this->beatdetbut->box->vtxcoords->x1 = this->mutebut->box->vtxcoords->x1 - 0.21f;
-                this->beatdetbut->box->upvtxtoscr();
-                if (this->beatdetbut->box->in()) {
-                    render_text("B", alphablue, this->beatdetbut->box->vtxcoords->x1 + 0.0078f,
-                                this->beatdetbut->box->vtxcoords->y1 + 0.0078f, 0.0006, 0.001);
-                    if (mainprogram->leftmousedown) {
-                        this->beatdetting = true;
-                        mainprogram->leftmousedown = false;
+                    // draw and handle beatswitch button
+                    this->beatdetbut->box->vtxcoords->x1 = this->mutebut->box->vtxcoords->x1 - 0.21f;
+                    this->beatdetbut->box->upvtxtoscr();
+                    if (this->beatdetbut->box->in()) {
+                        render_text("B", alphablue, this->beatdetbut->box->vtxcoords->x1 + 0.0078f,
+                                    this->beatdetbut->box->vtxcoords->y1 + 0.0078f, 0.0006, 0.001);
+                        if (mainprogram->leftmousedown) {
+                            this->beatdetting = true;
+                            mainprogram->leftmousedown = false;
+                        }
+                        if (this->beatdetting && mainprogram->leftmouse) {
+                            if (!mainprogram->menuondisplay) {
+                                mainprogram->beatmenu->state = 2;
+                                mainprogram->beatmenu->menux = mainprogram->mx;
+                                mainprogram->beatmenu->menuy = mainprogram->my;
+                                mainmix->mouselayer = this;
+                                mainmix->mousedeck = this->deck;
+                                mainprogram->menuactivation = false;
+                            }
+                            this->beatdetting = false;
+                            mainprogram->leftmouse = false;
+                        }
+                    } else if (!this->beatdetbut->value) {
+                        render_text("B", alphawhite, this->beatdetbut->box->vtxcoords->x1 + 0.0078f,
+                                    this->beatdetbut->box->vtxcoords->y1 + 0.0078f, 0.0006, 0.001);
                     }
-                    if (this->beatdetting && mainprogram->leftmouse) {
-                        this->beatdetbut->value = !this->beatdetbut->value;
-                        mainprogram->register_undo(nullptr, this->beatdetbut);
-                        this->beatdetting = false;
-                        mainprogram->leftmouse = false;
-                    }
-                }
-                else if (!this->beatdetbut->value) {
-                    render_text("B", alphawhite, this->beatdetbut->box->vtxcoords->x1 + 0.0078f, this->beatdetbut->box->vtxcoords->y1 + 0.0078f, 0.0006, 0.001);
                 }
 			}
 			else {
@@ -6324,7 +6316,7 @@ void Layer::display() {
                 }
                 // delete effect?
                 eff->delbox->vtxcoords->x1 = box->vtxcoords->x1 + box->vtxcoords->w - eff->delbox->vtxcoords->w;
-                eff->delbox->vtxcoords->y1 = box->vtxcoords->y1 + box->vtxcoords->h - eff->delbox->vtxcoords->h;
+                eff->delbox->vtxcoords->y1 = box->vtxcoords->y1 + box->vtxcoords->h / 2.0f - eff->delbox->vtxcoords->h / 2.0f;
                 eff->delbox->upvtxtoscr();
                 draw_box(lightgrey, black, eff->delbox, -1);
                 render_text("x", white, eff->delbox->vtxcoords->x1 + 0.004f, eff->delbox->vtxcoords->y1 + 0.008f, 0.00045f, 0.00075f);
@@ -6646,6 +6638,11 @@ void Layer::display() {
                 par->handle();
                 if (this->alsource != -1) {
                     alSourcef(this->alsource, AL_GAIN, this->volume->value);
+                }
+                if (par == mainmix->adaptparam) {
+                    for (int i = 0; i < mainmix->currlays[!mainprogram->prevmodus].size(); i++) {
+                        mainmix->currlays[!mainprogram->prevmodus][i]->volume->value = par->value;
+                    }
                 }
             }
 
@@ -7146,32 +7143,41 @@ void Layer::display() {
                 render_text("--:-- / --:--", white, this->loopbox->vtxcoords->x1 + this->loopbox->vtxcoords->w + 0.015f, this->loopbox->vtxcoords->y1 + 0.075f - 0.045f, 0.0006f, 0.001f);
 			}
 			else {
-                char nil1[4] = "0";
-                char nil2[4] = "0";
-                char min1[14];
-                sprintf(min1, "%d", (int) ((this->millif * (this->frame - this->startframe->value) / (this->speed->value * this->speed->value)) / 60000));
-                char sec1[3];
-                sprintf(sec1, "%d", (int) ((this->millif * (this->frame - this->startframe->value) / (this->speed->value * this->speed->value)) / 1000) % 60);
-                if (strlen(sec1) == 1) strcat_s(nil1, (const char*)sec1);
-                char min2[3];
-                sprintf(min2, "%d", (int) ((this->millif * (this->endframe->value - this->startframe->value) / (this->speed->value * this->speed->value)) / 60000));
-                char sec2[3];
-                sprintf(sec2, "%d", (int) ((this->millif * (this->endframe->value - this->startframe->value) / (this->speed->value * this->speed->value)) / 1000) % 60);
-                if (strlen(sec2) == 1) strcat_s(nil2, (const char*)sec2);
-                char div1[2] = ":";
-                char div2[4] = " / ";
-                strcat_s(min1, (const char*)div1);
-                if (strlen(sec1) == 1) strcat_s(min1, (const char*)nil1);
-                else strcat_s(min1, (const char*)sec1);
-                strcat_s(min1, (const char*)div2);
-                strcat_s(min1, (const char*)min2);
-                strcat_s(min1, (const char*)div1);
-                if (strlen(sec2) == 1) strcat_s(min1, (const char*)nil2);
-                else strcat_s(min1, (const char*)sec2);
+                std::string hou1 = std::to_string((int)((this->millif * (this->frame - this->startframe->value) / (this->speed->value * this->speed->value)) / 3600000));
+                std::string min1 = std::to_string((int)((this->millif * (this->frame - this->startframe->value) / (this->speed->value * this->speed->value)) / 60000) % 60);
+                std::string sec1 = std::to_string((int)((this->millif * (this->frame - this->startframe->value) / (this->speed->value * this->speed->value)) / 1000) % 60);
+                std::string hou2 = std::to_string((int)((this->millif * (this->endframe->value - this->startframe->value) / (this->speed->value * this->speed->value)) / 3600000));
+                std::string min2 = std::to_string((int)((this->millif * (this->endframe->value - this->startframe->value) / (this->speed->value * this->speed->value)) / 60000) % 60);
+                std::string sec2 = std::to_string((int)((this->millif * (this->endframe->value - this->startframe->value) / (this->speed->value * this->speed->value)) / 1000) % 60);
+                if (min1.length() == 1) {
+                    min1 = "0" + min1;
+                }
+                if (sec1.length() == 1) {
+                    sec1 = "0" + sec1;
+                }
+                if (min2.length() == 1) {
+                    min2 = "0" + min2;
+                }
+                if (sec2.length() == 1) {
+                    sec2 = "0" + sec2;
+                }
+                std::string timestr1, timestr2;
+                if (hou1 != "0") {
+                    timestr1 = hou1 + ":" + min1 + ":" + sec1;
+                }
+                else {
+                    timestr1 = min1 + ":" + sec1;
+                }
+                if (hou2 != "0") {
+                    timestr2 = hou2 + ":" + min2 + ":" + sec2;
+                }
+                else {
+                    timestr2 = min2 + ":" + sec2;
+                }
 
-                render_text((const char*)min1, white,
+                render_text(timestr1 + " / " + timestr2, white,
                             this->loopbox->vtxcoords->x1 + this->loopbox->vtxcoords->w + 0.015f,
-                            this->loopbox->vtxcoords->y1 + 0.075f - 0.045f, 0.0006f, 0.001f, "true");
+                            this->loopbox->vtxcoords->y1 + 0.075f - 0.045f, 0.0006f, 0.001f);
             }
 
 
@@ -8388,10 +8394,16 @@ void Mixer::copy_to_comp(bool deckA, bool deckB, bool comp) {
     if (mainprogram->prevmodus) loopstation = lp;
     else loopstation = lpc;
     if (deckA) {
+        while (!exists(mainprogram->temppath + "copytocompdeckA.deck")) {
+            Sleep(5);
+        }
         mainmix->mousedeck = 0;
         mainmix->open_deck(mainprogram->temppath + "copytocompdeckA.deck", true, true, copycomp);
     }
     if (deckB) {
+        while (!exists(mainprogram->temppath + "copytocompdeckB.deck")) {
+            Sleep(5);
+        }
         mainmix->mousedeck = 1;
         mainmix->open_deck(mainprogram->temppath + "copytocompdeckB.deck", true, true, copycomp + (copycomp == 2));
     }
@@ -9938,7 +9950,7 @@ Layer* Layer::open_video(float frame, const std::string filename, int reset, boo
     // do configuration and thread launch for opening a video into a layer
 
     if (exchange) {
-        if (this->clonesetnr != -1) {
+        if (this->clonesetnr != -1 || mainmix->shelftriggering) {
             mainmix->busyopen = true;
         }
     }
@@ -10973,6 +10985,7 @@ bool Layer::progress(bool comp, bool alive, bool doclips) {
                                         this->onhold = true;
                                     }
                                     this->frame = this->startframe->value;
+                                    this->scritched = true;
                                     if (this->checkre) {
                                         if (!this->recstarted) {
                                             this->recstarted = true;
@@ -11000,6 +11013,7 @@ bool Layer::progress(bool comp, bool alive, bool doclips) {
                                     }
                                     //if (mainmix->checkre) mainmix->rerun = true;
                                     this->frame = this->endframe->value;
+                                    this->scritched = true;
                                     if (this->checkre) {
                                         if (!this->recstarted) {
                                             this->recstarted = true;
@@ -15254,19 +15268,9 @@ Scene::Scene() {
 
 void Scene::switch_to(bool dotempmap) {
     std::vector<std::vector<Layer*>> *tempmap;
-    for (int i = 0; i < 4; i++) {
-        if (i == 0) {
-            tempmap = &mainmix->swapmap[0];
-        } else if (i == 1) {
-            tempmap = &mainmix->swapmap[1];
-        } else if (i == 2) {
-            tempmap = &mainmix->swapmap[2];
-        } else if (i == 3) {
-            tempmap = &mainmix->swapmap[3];
-        }
-        if (tempmap->size()) {
-            return;
-        }
+    tempmap = &mainmix->swapmap[this->deck + 2];
+    if (tempmap->size()) {
+        return;
     }
     mainmix->scenes[this->deck][mainmix->currscene[this->deck]]->scnblayers.clear();
     std::vector<Layer *> &lvec = choose_layers(this->deck);
@@ -15308,7 +15312,7 @@ void Scene::switch_to(bool dotempmap) {
         int count = 0;
         prevlpst->init();
         for (LoopStationElement *elem: lpc->elements) {
-            // copy all event related info and the events themself
+            // copy all event related info and the events themselves
             // from the current loopstation into the loopstation of the scene we are leaving (prevlpst)
             // only copy the affected deck (mainmix->mousedeck)
             bool found = false;
@@ -15365,7 +15369,7 @@ void Scene::switch_to(bool dotempmap) {
 
         count = 0;
         for (LoopStationElement *elem: this->lpst->elements) {
-            // copy all event related info and the events themself
+            // copy all event related info and the events themselves
             // from the destination scene loopstation into the current loopstation (lpc)
             LoopStation *bunowlpst = lp;
             auto lpcelem = lpc->elements[count];
