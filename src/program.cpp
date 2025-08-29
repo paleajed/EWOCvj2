@@ -9835,22 +9835,27 @@ void Program::discovery_broadcast() {
         std::cout << "ERROR: Failed to create broadcast socket: " << strerror(errno) << std::endl;
         return;
     }
-    std::cout << "DEBUG: Broadcast socket created successfully" << std::endl;
-    
+    // Set socket options for broadcasting
+    int reuseEnable = 1;
     if (setsockopt(broadcastSocket, SOL_SOCKET, SO_BROADCAST, (const char*)&broadcastEnable, sizeof(broadcastEnable)) < 0) {
         std::cout << "ERROR: Failed to set SO_BROADCAST: " << strerror(errno) << std::endl;
+#ifdef POSIX
         close(broadcastSocket);
+#endif
+#ifdef WINDOWS
+        closesocket(broadcastSocket);
+#endif
         return;
     }
-    std::cout << "DEBUG: SO_BROADCAST set successfully" << std::endl;
+    if (setsockopt(broadcastSocket, SOL_SOCKET, SO_REUSEADDR, (const char*)&reuseEnable, sizeof(reuseEnable)) < 0) {
+        std::cout << "ERROR: Failed to set SO_REUSEADDR on broadcast socket: " << strerror(errno) << std::endl;
+    }
     
     memset(&broadcastAddr, 0, sizeof(broadcastAddr));
     broadcastAddr.sin_family = AF_INET;
-    std::string broadcast_target = this->broadcastip.empty() ? "255.255.255.255" : this->broadcastip;
+    std::string broadcast_target = "255.255.255.255"; // Always use global broadcast
     broadcastAddr.sin_addr.s_addr = inet_addr(broadcast_target.c_str());
     broadcastAddr.sin_port = htons(discoveryPort);
-    
-    std::cout << "DEBUG: Broadcasting discovery on port " << discoveryPort << " from IP " << this->localip << " to " << broadcast_target << std::endl;
     
     while (this->discoveryRunning && this->server) {
         std::string announcement = "EWOCVJ_SEAT:" + this->seatname + ":" + this->localip + ":8000";
@@ -9859,8 +9864,6 @@ void Program::discovery_broadcast() {
                (struct sockaddr*)&broadcastAddr, sizeof(broadcastAddr));
         if (bytesSent < 0) {
             std::cout << "ERROR: Failed to send broadcast: " << strerror(errno) << std::endl;
-        } else {
-            std::cout << "DEBUG: Broadcast sent (" << bytesSent << " bytes): " << announcement << std::endl;
         }
         
 #ifdef POSIX
@@ -9890,7 +9893,26 @@ void Program::discovery_listen() {
         std::cout << "ERROR: Failed to create discovery listen socket: " << strerror(errno) << std::endl;
         return;
     }
-    std::cout << "DEBUG: Discovery listen socket created successfully" << std::endl;
+    
+    // Set socket options for proper broadcast reception
+    int broadcastEnable = 1;
+    int reuseEnable = 1;
+#ifdef POSIX
+    if (setsockopt(this->discoverySocket, SOL_SOCKET, SO_BROADCAST, &broadcastEnable, sizeof(broadcastEnable)) < 0) {
+        std::cout << "ERROR: Failed to set SO_BROADCAST on listen socket: " << strerror(errno) << std::endl;
+    }
+    if (setsockopt(this->discoverySocket, SOL_SOCKET, SO_REUSEADDR, &reuseEnable, sizeof(reuseEnable)) < 0) {
+        std::cout << "ERROR: Failed to set SO_REUSEADDR on listen socket: " << strerror(errno) << std::endl;
+    }
+#endif
+#ifdef WINDOWS
+    if (setsockopt(this->discoverySocket, SOL_SOCKET, SO_BROADCAST, (const char*)&broadcastEnable, sizeof(broadcastEnable)) < 0) {
+        std::cout << "ERROR: Failed to set SO_BROADCAST on listen socket" << std::endl;
+    }
+    if (setsockopt(this->discoverySocket, SOL_SOCKET, SO_REUSEADDR, (const char*)&reuseEnable, sizeof(reuseEnable)) < 0) {
+        std::cout << "ERROR: Failed to set SO_REUSEADDR on listen socket" << std::endl;
+    }
+#endif
     
     memset(&listenAddr, 0, sizeof(listenAddr));
     listenAddr.sin_family = AF_INET;
@@ -9908,7 +9930,6 @@ void Program::discovery_listen() {
         this->discoverySocket = -1;
         return;
     }
-    std::cout << "DEBUG: Discovery listen socket bound to port " << discoveryPort << " successfully" << std::endl;
     
 #ifdef POSIX
     int flags = fcntl(this->discoverySocket, F_GETFL);
@@ -9919,14 +9940,14 @@ void Program::discovery_listen() {
     ioctlsocket(this->discoverySocket, FIONBIO, &flags);
 #endif
     
-    std::cout << "DEBUG: Starting discovery listen loop" << std::endl;
-    
+    int loopCounter = 0;
     while (this->discoveryRunning) {
         int bytesReceived = recvfrom(this->discoverySocket, buffer, sizeof(buffer)-1, 0, 
                                    (struct sockaddr*)&clientAddr, &clientLen);
         
+        loopCounter++;
+        
         if (bytesReceived > 0) {
-            std::cout << "DEBUG: Received discovery message (" << bytesReceived << " bytes): " << std::string(buffer, bytesReceived) << std::endl;
             buffer[bytesReceived] = '\0';
             std::string message(buffer);
             
@@ -9939,7 +9960,6 @@ void Program::discovery_listen() {
                     std::string seatIP = message.substr(firstColon + 1, secondColon - firstColon - 1);
                     
                     if (seatIP != this->localip) {
-                        std::cout << "DEBUG: Discovered valid seat - Name: " << seatName << ", IP: " << seatIP << std::endl;
                         std::lock_guard<std::mutex> lock(this->discoveryMutex);
                         
                         bool found = false;
@@ -9958,20 +9978,21 @@ void Program::discovery_listen() {
                             newSeat.name = seatName;
                             newSeat.lastSeen = std::chrono::steady_clock::now();
                             this->discoveredSeats.push_back(newSeat);
-                            std::cout << "DEBUG: Added new seat to discovery list" << std::endl;
                         }
-                    } else {
-                        std::cout << "DEBUG: Ignoring own broadcast from IP " << seatIP << std::endl;
                     }
-                } else {
-                    std::cout << "DEBUG: Malformed discovery message" << std::endl;
                 }
             }
         } else if (bytesReceived < 0) {
             // Non-blocking socket, EAGAIN/EWOULDBLOCK is expected
 #ifdef POSIX
             if (errno != EAGAIN && errno != EWOULDBLOCK) {
-                std::cout << "DEBUG: recvfrom error: " << strerror(errno) << std::endl;
+                std::cout << "ERROR: recvfrom error: " << strerror(errno) << std::endl;
+            }
+#endif
+#ifdef WINDOWS
+            int error = WSAGetLastError();
+            if (error != WSAEWOULDBLOCK) {
+                std::cout << "ERROR: recvfrom error: " << error << std::endl;
             }
 #endif
         }

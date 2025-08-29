@@ -45,7 +45,6 @@
 #include <shobjidl.h>
 #include <Vfw.h>
 #include <winsock2.h>
-#include <iphlpapi.h>
 #include <winbase.h>
 #define STRSAFE_NO_DEPRECATE
 #include <tchar.h>
@@ -7833,21 +7832,16 @@ int main(int argc, char* argv[]) {
         struct ifaddrs *ifaddrs_ptr;
         if (getifaddrs(&ifaddrs_ptr) == 0) {
             for (struct ifaddrs *ifa = ifaddrs_ptr; ifa != NULL; ifa = ifa->ifa_next) {
-                if (ifa->ifa_addr && ifa->ifa_addr->sa_family == AF_INET && ifa->ifa_netmask) {
+                if (ifa->ifa_addr && ifa->ifa_addr->sa_family == AF_INET && ifa->ifa_netmask && 
+                    (ifa->ifa_flags & IFF_UP) && (ifa->ifa_flags & IFF_RUNNING) && !(ifa->ifa_flags & IFF_LOOPBACK)) {
                     struct sockaddr_in* addr_in = (struct sockaddr_in*)ifa->ifa_addr;
-                    struct sockaddr_in* netmask_in = (struct sockaddr_in*)ifa->ifa_netmask;
                     char* ip_str = inet_ntoa(addr_in->sin_addr);
                     // Skip loopback and look for local network addresses
                     if (strncmp(ip_str, "127.", 4) != 0 && strncmp(ip_str, "169.254.", 8) != 0) {
                         mainprogram->localip = ip_str;
-                        // Calculate subnet broadcast address
-                        uint32_t ip = ntohl(addr_in->sin_addr.s_addr);
-                        uint32_t netmask = ntohl(netmask_in->sin_addr.s_addr);
-                        uint32_t broadcast = ip | (~netmask);
-                        struct in_addr broadcast_addr;
-                        broadcast_addr.s_addr = htonl(broadcast);
-                        mainprogram->broadcastip = inet_ntoa(broadcast_addr);
-                        std::cout << "DEBUG: Interface " << ifa->ifa_name << " - IP: " << ip_str << ", Broadcast: " << mainprogram->broadcastip << std::endl;
+                        // Use global broadcast instead of subnet detection
+                        mainprogram->broadcastip = "255.255.255.255";
+                        std::cout << "DEBUG: Interface " << ifa->ifa_name << " - IP: " << ip_str << ", Using global broadcast: " << mainprogram->broadcastip << std::endl;
                         break;
                     }
                 }
@@ -7856,7 +7850,7 @@ int main(int argc, char* argv[]) {
         }
 #endif
 #ifdef WINDOWS
-        // Get IP and subnet info on Windows
+        // Get local IP info on Windows
         ULONG bufferSize = sizeof(IP_ADAPTER_INFO);
         PIP_ADAPTER_INFO adapterInfo = (IP_ADAPTER_INFO*)malloc(bufferSize);
         if (GetAdaptersInfo(adapterInfo, &bufferSize) == ERROR_BUFFER_OVERFLOW) {
@@ -7869,18 +7863,12 @@ int main(int argc, char* argv[]) {
             while (adapter) {
                 if (adapter->Type == MIB_IF_TYPE_ETHERNET || adapter->Type == IF_TYPE_IEEE80211) {
                     std::string ip_str = adapter->IpAddressList.IpAddress.String;
-                    std::string subnet_str = adapter->IpAddressList.IpMask.String;
                     
                     if (ip_str != "0.0.0.0" && ip_str.substr(0, 4) != "127." && ip_str.substr(0, 8) != "169.254.") {
                         mainprogram->localip = ip_str;
-                        // Calculate subnet broadcast
-                        uint32_t ip = inet_addr(ip_str.c_str());
-                        uint32_t netmask = inet_addr(subnet_str.c_str());
-                        uint32_t broadcast = ip | (~netmask);
-                        struct in_addr broadcast_addr;
-                        broadcast_addr.s_addr = broadcast;
-                        mainprogram->broadcastip = inet_ntoa(broadcast_addr);
-                        std::cout << "DEBUG: Windows adapter - IP: " << ip_str << ", Subnet: " << subnet_str << ", Broadcast: " << mainprogram->broadcastip << std::endl;
+                        // Use global broadcast instead of subnet detection
+                        mainprogram->broadcastip = "255.255.255.255";
+                        std::cout << "DEBUG: Windows adapter - IP: " << ip_str << ", Using global broadcast: " << mainprogram->broadcastip << std::endl;
                         break;
                     }
                 }
@@ -7891,10 +7879,9 @@ int main(int argc, char* argv[]) {
 #endif
         if (mainprogram->localip.empty()) {
             mainprogram->localip = "127.0.0.1"; // fallback
-            mainprogram->broadcastip = "255.255.255.255"; // fallback to global broadcast
-        } else if (mainprogram->broadcastip.empty()) {
-            mainprogram->broadcastip = "255.255.255.255"; // fallback if subnet calculation failed
         }
+        // Always use global broadcast
+        mainprogram->broadcastip = "255.255.255.255";
         std::cout << "Local IP address is: " << mainprogram->localip << std::endl;
 
         // socket communication for sharing bins one-way
@@ -9064,8 +9051,11 @@ int main(int argc, char* argv[]) {
 
 
 
-            // Start network discovery for local seats
-            mainprogram->start_discovery();
+            // Start network discovery for local seats (only once)
+            if (!mainprogram->discoveryInitialized) {
+                mainprogram->start_discovery();
+                mainprogram->discoveryInitialized = true;
+            }
 
 
             the_loop();  // main loop

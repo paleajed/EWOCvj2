@@ -1047,6 +1047,7 @@ class Program {
         std::vector<DiscoveredSeat> discoveredSeats;
         std::mutex discoveryMutex;
         bool discoveryRunning = false;
+        bool discoveryInitialized = false;
         int discoverySocket = -1;
         bool autoConnectAttempted = false;
         bool autoServerAttempted = false;
