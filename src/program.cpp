@@ -9808,11 +9808,6 @@ void Program::start_discovery() {
     
     std::thread discoveryThread(&Program::discovery_listen, this);
     discoveryThread.detach();
-    
-    if (this->server) {
-        std::thread broadcastThread(&Program::discovery_broadcast, this);
-        broadcastThread.detach();
-    }
 }
 
 void Program::stop_discovery() {

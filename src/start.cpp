@@ -5071,6 +5071,52 @@ void the_loop() {
         loopstation = lpc;
     }
 
+    if (!mainprogram->server) {
+        if (mainprogram->connected == 0) {
+            // Auto-connect to first seat or become server
+            std::vector<Program::DiscoveredSeat> seatsCopy;
+            while (1) {
+                std::unique_lock<std::mutex> lock(mainprogram->discoveryMutex, std::try_to_lock);
+                if (lock.owns_lock()) {
+                    seatsCopy = mainprogram->discoveredSeats;
+                    break;
+                }
+            }
+
+            // Check if we should auto-connect to the first discovered seat
+            if (!seatsCopy.empty() && !mainprogram->autoConnectAttempted) {
+                mainprogram->autoConnectAttempted = true;
+                mainprogram->serverip = seatsCopy[0].ip;
+                if (inet_pton(AF_INET, mainprogram->serverip.c_str(), &mainprogram->serv_addr_client.sin_addr) > 0) {
+                    std::cout << "Auto-connecting to first seat: " << seatsCopy[0].name << " (" << seatsCopy[0].ip
+                              << ")" << std::endl;
+                    int opt = 1;
+                    std::thread sockclient(&Program::socket_client, mainprogram, mainprogram->serv_addr_client, opt);
+                    sockclient.detach();
+                }
+            }
+                // Check if we should become server (no seats found after timeout)
+            else if (seatsCopy.empty() && !mainprogram->autoServerAttempted) {
+                auto now = std::chrono::steady_clock::now();
+                if (std::chrono::duration_cast<std::chrono::seconds>(now - mainprogram->discoveryStartTime).count() >=
+                    5) {
+                    mainprogram->autoServerAttempted = true;
+                    std::cout << "No seats found after 5 seconds, becoming server" << std::endl;
+                    mainprogram->serverip = mainprogram->localip;
+                    if (inet_pton(AF_INET, mainprogram->localip.c_str(), &mainprogram->serv_addr_server.sin_addr) > 0) {
+                        int opt = 1;
+                        mainprogram->server = true;
+                        std::thread sockserver(&Program::socket_server, mainprogram, mainprogram->serv_addr_server,
+                                               opt);
+                        sockserver.detach();
+                        std::thread broadcastThread(&Program::discovery_broadcast, mainprogram);
+                        broadcastThread.detach();
+                    }
+                }
+            }
+        }
+    }
+
     // check if general video resolution changed, and reinitialize all textures concerned
     mainprogram->handle_changed_owoh();
 
@@ -7865,10 +7911,6 @@ int main(int argc, char* argv[]) {
         mainprogram->serv_addr_client.sin_family = AF_INET;
         mainprogram->serv_addr_client.sin_addr.s_addr = INADDR_ANY;
         mainprogram->serv_addr_client.sin_port = htons(8000);
-        
-        // Start network discovery for local seats
-        mainprogram->start_discovery();
-
     }
 
 
@@ -9021,6 +9063,9 @@ int main(int argc, char* argv[]) {
             mainprogram->uniformCache->setFloat("iGlobalTime", mainmix->time);
 
 
+
+            // Start network discovery for local seats
+            mainprogram->start_discovery();
 
 
             the_loop();  // main loop
