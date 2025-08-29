@@ -9837,24 +9837,36 @@ void Program::discovery_broadcast() {
     
     broadcastSocket = socket(AF_INET, SOCK_DGRAM, 0);
     if (broadcastSocket < 0) {
+        std::cout << "ERROR: Failed to create broadcast socket: " << strerror(errno) << std::endl;
         return;
     }
+    std::cout << "DEBUG: Broadcast socket created successfully" << std::endl;
     
     if (setsockopt(broadcastSocket, SOL_SOCKET, SO_BROADCAST, (const char*)&broadcastEnable, sizeof(broadcastEnable)) < 0) {
+        std::cout << "ERROR: Failed to set SO_BROADCAST: " << strerror(errno) << std::endl;
         close(broadcastSocket);
         return;
     }
+    std::cout << "DEBUG: SO_BROADCAST set successfully" << std::endl;
     
     memset(&broadcastAddr, 0, sizeof(broadcastAddr));
     broadcastAddr.sin_family = AF_INET;
-    broadcastAddr.sin_addr.s_addr = inet_addr("255.255.255.255");
+    std::string broadcast_target = this->broadcastip.empty() ? "255.255.255.255" : this->broadcastip;
+    broadcastAddr.sin_addr.s_addr = inet_addr(broadcast_target.c_str());
     broadcastAddr.sin_port = htons(discoveryPort);
+    
+    std::cout << "DEBUG: Broadcasting discovery on port " << discoveryPort << " from IP " << this->localip << " to " << broadcast_target << std::endl;
     
     while (this->discoveryRunning && this->server) {
         std::string announcement = "EWOCVJ_SEAT:" + this->seatname + ":" + this->localip + ":8000";
         
-        sendto(broadcastSocket, announcement.c_str(), announcement.length(), 0, 
+        int bytesSent = sendto(broadcastSocket, announcement.c_str(), announcement.length(), 0, 
                (struct sockaddr*)&broadcastAddr, sizeof(broadcastAddr));
+        if (bytesSent < 0) {
+            std::cout << "ERROR: Failed to send broadcast: " << strerror(errno) << std::endl;
+        } else {
+            std::cout << "DEBUG: Broadcast sent (" << bytesSent << " bytes): " << announcement << std::endl;
+        }
         
 #ifdef POSIX
         sleep(3);
@@ -9880,8 +9892,10 @@ void Program::discovery_listen() {
     
     this->discoverySocket = socket(AF_INET, SOCK_DGRAM, 0);
     if (this->discoverySocket < 0) {
+        std::cout << "ERROR: Failed to create discovery listen socket: " << strerror(errno) << std::endl;
         return;
     }
+    std::cout << "DEBUG: Discovery listen socket created successfully" << std::endl;
     
     memset(&listenAddr, 0, sizeof(listenAddr));
     listenAddr.sin_family = AF_INET;
@@ -9889,6 +9903,7 @@ void Program::discovery_listen() {
     listenAddr.sin_port = htons(discoveryPort);
     
     if (bind(this->discoverySocket, (struct sockaddr*)&listenAddr, sizeof(listenAddr)) < 0) {
+        std::cout << "ERROR: Failed to bind discovery listen socket to port " << discoveryPort << ": " << strerror(errno) << std::endl;
 #ifdef POSIX
         close(this->discoverySocket);
 #endif
@@ -9898,6 +9913,7 @@ void Program::discovery_listen() {
         this->discoverySocket = -1;
         return;
     }
+    std::cout << "DEBUG: Discovery listen socket bound to port " << discoveryPort << " successfully" << std::endl;
     
 #ifdef POSIX
     int flags = fcntl(this->discoverySocket, F_GETFL);
@@ -9908,11 +9924,14 @@ void Program::discovery_listen() {
     ioctlsocket(this->discoverySocket, FIONBIO, &flags);
 #endif
     
+    std::cout << "DEBUG: Starting discovery listen loop" << std::endl;
+    
     while (this->discoveryRunning) {
         int bytesReceived = recvfrom(this->discoverySocket, buffer, sizeof(buffer)-1, 0, 
                                    (struct sockaddr*)&clientAddr, &clientLen);
         
         if (bytesReceived > 0) {
+            std::cout << "DEBUG: Received discovery message (" << bytesReceived << " bytes): " << std::string(buffer, bytesReceived) << std::endl;
             buffer[bytesReceived] = '\0';
             std::string message(buffer);
             
@@ -9925,6 +9944,7 @@ void Program::discovery_listen() {
                     std::string seatIP = message.substr(firstColon + 1, secondColon - firstColon - 1);
                     
                     if (seatIP != this->localip) {
+                        std::cout << "DEBUG: Discovered valid seat - Name: " << seatName << ", IP: " << seatIP << std::endl;
                         std::lock_guard<std::mutex> lock(this->discoveryMutex);
                         
                         bool found = false;
@@ -9943,10 +9963,22 @@ void Program::discovery_listen() {
                             newSeat.name = seatName;
                             newSeat.lastSeen = std::chrono::steady_clock::now();
                             this->discoveredSeats.push_back(newSeat);
+                            std::cout << "DEBUG: Added new seat to discovery list" << std::endl;
                         }
+                    } else {
+                        std::cout << "DEBUG: Ignoring own broadcast from IP " << seatIP << std::endl;
                     }
+                } else {
+                    std::cout << "DEBUG: Malformed discovery message" << std::endl;
                 }
             }
+        } else if (bytesReceived < 0) {
+            // Non-blocking socket, EAGAIN/EWOULDBLOCK is expected
+#ifdef POSIX
+            if (errno != EAGAIN && errno != EWOULDBLOCK) {
+                std::cout << "DEBUG: recvfrom error: " << strerror(errno) << std::endl;
+            }
+#endif
         }
         
         std::lock_guard<std::mutex> lock(this->discoveryMutex);

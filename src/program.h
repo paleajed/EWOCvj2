@@ -1035,6 +1035,7 @@ class Program {
         std::string serverip = "0.0.0.0";
         bool serveripchanged = false;
         std::string localip;
+        std::string broadcastip;
         struct sockaddr_in serv_addr_server;
         struct sockaddr_in serv_addr_client;
         
