@@ -1303,42 +1303,47 @@ bool Program::order_paths(bool dodeckmix) {
         while (this->paths.size()) {
             std::string str = this->paths.front();
 
-            // determine file type and set up data fields
-            std::string istring = this->get_typestring(str);
+            if (str != "") {
+                // determine file type and set up data fields
+                std::string istring = this->get_typestring(str);
 
-            if (isimage(str)) {
-                Layer *lay = new Layer(true);
-                lay->type = ELEM_IMAGE;
-                this->getvideotexlayers.push_back(lay);
-                this->getvideotexpaths.push_back(str);
-            } else if (istring.find("EWOCvj LAYERFILE") != std::string::npos) {
-                Layer *lay = new Layer(true);
-                lay->type = ELEM_LAYER;
-                this->getvideotexlayers.push_back(lay);
-                this->getvideotexpaths.push_back(str);
-            } else if (istring.find("EWOCvj DECKFILE") != std::string::npos) {
-                Layer *lay = new Layer(true);
-                if (dodeckmix) {
-                    lay->type = ELEM_DECK;
+                if (isimage(str)) {
+                    Layer *lay = new Layer(true);
+                    lay->type = ELEM_IMAGE;
                     this->getvideotexlayers.push_back(lay);
                     this->getvideotexpaths.push_back(str);
-                } else {
-                }
-            } else if (istring.find("EWOCvj MIXFILE") != std::string::npos) {
-                Layer *lay = new Layer(true);
-                lay->type = ELEM_MIX;
-                if (dodeckmix) {
+                } else if (istring.find("EWOCvj LAYERFILE") != std::string::npos) {
+                    Layer *lay = new Layer(true);
+                    lay->type = ELEM_LAYER;
+                    this->getvideotexlayers.push_back(lay);
+                    this->getvideotexpaths.push_back(str);
+                } else if (istring.find("EWOCvj DECKFILE") != std::string::npos) {
+                    Layer *lay = new Layer(true);
+                    if (dodeckmix) {
+                        lay->type = ELEM_DECK;
+                        this->getvideotexlayers.push_back(lay);
+                        this->getvideotexpaths.push_back(str);
+                    } else {
+                    }
+                } else if (istring.find("EWOCvj MIXFILE") != std::string::npos) {
+                    Layer *lay = new Layer(true);
                     lay->type = ELEM_MIX;
+                    if (dodeckmix) {
+                        lay->type = ELEM_MIX;
+                        this->getvideotexlayers.push_back(lay);
+                        this->getvideotexpaths.push_back(str);
+                    } else {
+                    }
+                } else {
+                    Layer *lay = new Layer(true);
+                    lay->type = ELEM_FILE;
                     this->getvideotexlayers.push_back(lay);
                     this->getvideotexpaths.push_back(str);
-                } else {
                 }
             }
             else {
-                Layer *lay = new Layer(true);
-                lay->type = ELEM_FILE;
-                this->getvideotexlayers.push_back(lay);
-                this->getvideotexpaths.push_back(str);
+                this->getvideotexlayers.push_back(nullptr);
+                this->getvideotexpaths.push_back("");
             }
             this->paths.erase(this->paths.begin());
             return false;
@@ -1351,32 +1356,34 @@ bool Program::order_paths(bool dodeckmix) {
     if (this->multistage == 1) {
         for (int i = 0; i < this->getvideotexlayers.size(); i++) {
             // start texture fetch threads
-            Layer * lay = this->getvideotexlayers[i];
+            Layer* lay = this->getvideotexlayers[i];
             std::string str = this->getvideotexpaths[i];
-            switch (lay->type) {
-                case ELEM_FILE: {
-                    std::thread tex0(&get_videotex, lay, str);
-                    tex0.detach();
-                    break;
-                }
-                case ELEM_IMAGE: {
-                    std::thread tex1(&get_imagetex, lay, str);
-                    tex1.detach();
-                    break;
-                }
-                case ELEM_LAYER: {
-                    get_layertex(lay, str);
-                    break;
-                }
-                case ELEM_DECK: {
-                    std::thread tex3(&get_deckmixtex, lay, str);
-                    tex3.detach();
-                    break;
-                }
-                case ELEM_MIX: {
-                    std::thread tex4(&get_deckmixtex, lay, str);
-                    tex4.detach();
-                    break;
+            if (lay) {
+                switch (lay->type) {
+                    case ELEM_FILE: {
+                        std::thread tex0(&get_videotex, lay, str);
+                        tex0.detach();
+                        break;
+                    }
+                    case ELEM_IMAGE: {
+                        std::thread tex1(&get_imagetex, lay, str);
+                        tex1.detach();
+                        break;
+                    }
+                    case ELEM_LAYER: {
+                        get_layertex(lay, str);
+                        break;
+                    }
+                    case ELEM_DECK: {
+                        std::thread tex3(&get_deckmixtex, lay, str);
+                        tex3.detach();
+                        break;
+                    }
+                    case ELEM_MIX: {
+                        std::thread tex4(&get_deckmixtex, lay, str);
+                        tex4.detach();
+                        break;
+                    }
                 }
             }
         }
@@ -1390,74 +1397,80 @@ bool Program::order_paths(bool dodeckmix) {
             std::string str = this->getvideotexpaths[0];
             Layer *lay = this->getvideotexlayers[0];
 
-            GLuint tex;
+            GLuint tex = -1;
 
-            if (std::find(this->errlays.begin(), this->errlays.end(), lay) != this->errlays.end()) {
-                // error opening file
-                this->getvideotexlayers.erase(this->getvideotexlayers.begin());
-                this->getvideotexpaths.erase(std::find(this->getvideotexpaths.begin(), this->getvideotexpaths.end(), str));
-                this->paths.erase(std::find(this->paths.begin(), this->paths.end(), str));
-                return false;
-            }
-            // wait for all threads to finish, meanwhile return to continue the videostreams
-            if (!lay->processed) return false;
-            lay->processed = false;
+            if (lay) {
+                if (std::find(this->errlays.begin(), this->errlays.end(), lay) != this->errlays.end()) {
+                    // error opening file
+                    this->getvideotexlayers.erase(this->getvideotexlayers.begin());
+                    this->getvideotexpaths.erase(
+                            std::find(this->getvideotexpaths.begin(), this->getvideotexpaths.end(), str));
+                    this->paths.erase(std::find(this->paths.begin(), this->paths.end(), str));
+                    return false;
+                }
+                // wait for all threads to finish, meanwhile return to continue the videostreams
+                if (!lay->processed) return false;
+                lay->processed = false;
 
-            if (lay->type == ELEM_DECK || lay->type == ELEM_MIX) {
-                glGenTextures(1, &tex);
-                glBindTexture(GL_TEXTURE_2D, tex);
-                glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR);
-                glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
-                glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_BORDER);
-                glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_BORDER);
+                if (lay->type == ELEM_DECK || lay->type == ELEM_MIX) {
+                    glGenTextures(1, &tex);
+                    glBindTexture(GL_TEXTURE_2D, tex);
+                    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR);
+                    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
+                    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_BORDER);
+                    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_BORDER);
 
-                open_thumb(this->result + "_" + std::to_string(this->resnum - 2) + ".file", tex);
-            } else if (lay->type == ELEM_LAYER) {
-                glBindTexture(GL_TEXTURE_2D, lay->texture);
-                if (lay->vidformat == 188 || lay->vidformat == 187) {
-                    if (lay->decresult->compression == 187) {
-                        glCompressedTexSubImage2D(GL_TEXTURE_2D, 0, 0, 0, lay->decresult->width,
-                                                  lay->decresult->height,
-                                                  GL_COMPRESSED_RGBA_S3TC_DXT1_EXT,
-                                                  lay->decresult->size, lay->decresult->data);
-                    } else if (lay->decresult->compression == 190) {
-                        glCompressedTexSubImage2D(GL_TEXTURE_2D, 0, 0, 0, lay->decresult->width,
-                                                  lay->decresult->height,
-                                                  GL_COMPRESSED_RGBA_S3TC_DXT5_EXT,
-                                                  lay->decresult->size, lay->decresult->data);
+                    open_thumb(this->result + "_" + std::to_string(this->resnum - 2) + ".file", tex);
+                } else if (lay->type == ELEM_LAYER) {
+                    glBindTexture(GL_TEXTURE_2D, lay->texture);
+                    if (lay->vidformat == 188 || lay->vidformat == 187) {
+                        if (lay->decresult->compression == 187) {
+                            glCompressedTexSubImage2D(GL_TEXTURE_2D, 0, 0, 0, lay->decresult->width,
+                                                      lay->decresult->height,
+                                                      GL_COMPRESSED_RGBA_S3TC_DXT1_EXT,
+                                                      lay->decresult->size, lay->decresult->data);
+                        } else if (lay->decresult->compression == 190) {
+                            glCompressedTexSubImage2D(GL_TEXTURE_2D, 0, 0, 0, lay->decresult->width,
+                                                      lay->decresult->height,
+                                                      GL_COMPRESSED_RGBA_S3TC_DXT5_EXT,
+                                                      lay->decresult->size, lay->decresult->data);
+                        }
+                    } else {
+                        glTexSubImage2D(GL_TEXTURE_2D, 0, 0, 0, lay->decresult->width, lay->decresult->height, GL_BGRA,
+                                        GL_UNSIGNED_BYTE,
+                                        lay->decresult->data);
+                    }
+                    for (int k = 0; k < lay->effects[0].size(); k++) {
+                        lay->effects[0][k]->node->calc = true;
+                        lay->effects[0][k]->node->walked = false;
+                    }
+                    lay->vidopen = false;
+                    mainprogram->directmode = true;
+                    onestepfrom(0, lay->node, nullptr, -1, -1);
+                    mainprogram->directmode = false;
+                    if (lay->effects[0].size()) {
+                        tex = copy_tex(lay->effects[0][lay->effects[0].size() - 1]->fbotex, 192, 108);
+                    } else {
+                        tex = copy_tex(lay->fbotex, 192, 108);
                     }
                 } else {
-                    glTexSubImage2D(GL_TEXTURE_2D, 0, 0, 0, lay->decresult->width, lay->decresult->height, GL_BGRA, GL_UNSIGNED_BYTE,
-                                    lay->decresult->data);
+                    tex = this->get_tex(lay);
                 }
-                for (int k = 0; k < lay->effects[0].size(); k++) {
-                    lay->effects[0][k]->node->calc = true;
-                    lay->effects[0][k]->node->walked = false;
-                }
-                lay->vidopen = false;
-                mainprogram->directmode = true;
-                onestepfrom(0, lay->node, nullptr, -1, -1);
-                mainprogram->directmode = false;
-                if (lay->effects[0].size()) {
-                    tex = copy_tex(lay->effects[0][lay->effects[0].size() - 1]->fbotex, 192, 108);
-                } else {
-                    tex = copy_tex(lay->fbotex, 192, 108);
-                }
-            } else {
-                tex = this->get_tex(lay);
+
+                glBindTexture(GL_TEXTURE_2D, tex);
+
+                GLuint butex = tex;
+                tex = copy_tex(tex, 192, 108);
+                glDeleteTextures(1, &butex);
             }
-
-            glBindTexture(GL_TEXTURE_2D, tex);
-
-            GLuint butex = tex;
-            tex = copy_tex(tex, 192, 108);
-            glDeleteTextures(1, &butex);
             this->pathtexes.push_back(tex);
-            render_text(str, white, 2.0f, 2.0f, 0.00045f, 0.00075f); // init text string, to avoid slowdown later
-            this->pathtstrs.push_back(str);
 
-            lay->filename = "";   // to avoid adding the lay->texture to the texpool
-            lay->close();
+            if (lay) {
+                render_text(str, white, 2.0f, 2.0f, 0.00045f, 0.00075f); // init text string, to avoid slowdown later
+                this->pathtstrs.push_back(str);
+                lay->filename = "";   // to avoid adding the lay->texture to the texpool
+                lay->close();
+            }
 
             this->getvideotexlayers.erase(this->getvideotexlayers.begin());
             this->getvideotexpaths.erase(std::find(this->getvideotexpaths.begin(), this->getvideotexpaths.end(), str));
@@ -1469,26 +1482,34 @@ bool Program::order_paths(bool dodeckmix) {
         mainprogram->errlays.clear();
         mainprogram->err = false;
 
-        for (int j = 0; j < this->paths.size(); j++) {
-            this->pathboxes.push_back(new Boxx);
-            this->pathboxes[j]->vtxcoords->x1 = -0.4f;
-            this->pathboxes[j]->vtxcoords->y1 = 0.8f - j * 0.1f;
-            this->pathboxes[j]->vtxcoords->w = 0.8f;
-            this->pathboxes[j]->vtxcoords->h = 0.1f;
-            this->pathboxes[j]->upvtxtoscr();
-            this->pathboxes[j]->tooltiptitle = "Order files to be opened ";
-            this->pathboxes[j]->tooltip = "Leftmouse drag the files in the list to set the order in which they will be loaded.  Use arrows/mousewheel to scroll list when its bigger then the screen.  Click APPLY ORDER to continue. ";
+        if (!binsmain->currbin->shared) {
+            for (int j = 0; j < this->paths.size(); j++) {
+                this->pathboxes.push_back(new Boxx);
+                this->pathboxes[j]->vtxcoords->x1 = -0.4f;
+                this->pathboxes[j]->vtxcoords->y1 = 0.8f - j * 0.1f;
+                this->pathboxes[j]->vtxcoords->w = 0.8f;
+                this->pathboxes[j]->vtxcoords->h = 0.1f;
+                this->pathboxes[j]->upvtxtoscr();
+                this->pathboxes[j]->tooltiptitle = "Order files to be opened ";
+                this->pathboxes[j]->tooltip = "Leftmouse drag the files in the list to set the order in which they will be loaded.  Use arrows/mousewheel to scroll list when its bigger then the screen.  Click APPLY ORDER to continue. ";
+            }
+            this->ordertime = 0.0f;
         }
-        this->ordertime = 0.0f;
 
         this->multistage = 3;
     }
 
     if (this->multistage == 3) {
         // then do interactive ordering
-        if (this->paths.size() > 1) {
-            bool cont = this->do_order_paths();
-            if (!cont) return false;
+        if (!binsmain->currbin->shared) {
+            if (this->paths.size() > 1) {
+                bool cont = this->do_order_paths();
+                if (!cont) return false;
+            }
+        }
+        else {
+            this->pathscount = 0;
+            this->multistage = 5;
         }
         this->multistage = 4;
     }
@@ -8875,22 +8896,22 @@ PIInt::PIInt() {
     this->items.push_back(pii);
     pos++;
 
-    pii = new PrefItem(this, pos, "Autostart playback default", PREF_ONOFF, (void*)&mainprogram->autoplay);
+    pii = new PrefItem(this, pos, "Autostart playback by default", PREF_ONOFF, (void*)&mainprogram->autoplay);
     pii->onoff = 1;
-    pii->namebox->tooltiptitle = "Autostart playback default ";
+    pii->namebox->tooltiptitle = "Autostart playback by default ";
     pii->namebox->tooltip = "Sets autostarting video playback at video load as default. ";
-    pii->valuebox->tooltiptitle = "Autostart playback default toggle ";
-    pii->valuebox->tooltip = "Leftclick to set autostart video playback default to on(green) or off(black). ";
+    pii->valuebox->tooltiptitle = "Autostart playback by default toggle ";
+    pii->valuebox->tooltip = "Leftclick to set autostart video playback by default to on(green) or off(black). ";
     mainprogram->autoplay = pii->onoff;
     this->items.push_back(pii);
     pos++;
 
     pii = new PrefItem(this, pos, "Looped playback default", PREF_ONOFF, (void*)&mainprogram->repeatdefault);
     pii->onoff = 1;
-    pii->namebox->tooltiptitle = "Looped playback default ";
-    pii->namebox->tooltip = "Sets looped video playback default. ";
-    pii->valuebox->tooltiptitle = "Looped playback default toggle ";
-    pii->valuebox->tooltip = "Leftclick to set looped video playback default to on(green) or off(black). ";
+    pii->namebox->tooltiptitle = "Looped playback by default ";
+    pii->namebox->tooltip = "Sets looped video playback by default. ";
+    pii->valuebox->tooltiptitle = "Looped playback by default toggle ";
+    pii->valuebox->tooltip = "Leftclick to set looped video playback by default to on(green) or off(black). ";
     mainprogram->repeatdefault = pii->onoff;
     this->items.push_back(pii);
     pos++;
@@ -8902,16 +8923,6 @@ PIInt::PIInt() {
     pii->valuebox->tooltiptitle = "Keep effects on video change. toggle ";
     pii->valuebox->tooltip = "Leftclick to change if effects of a layer are kept on video change. ";
     mainprogram->keepeffpref = pii->onoff;
-    this->items.push_back(pii);
-    pos++;
-
-    pii = new PrefItem(this, pos, "Loopstation element follow", PREF_ONOFF, (void*)&mainprogram->adaptivelprow);
-    pii->onoff = 0;
-    pii->namebox->tooltiptitle = "Loopstation element follow ";
-    pii->namebox->tooltip = "Sets Loopstation element follow mode. ";
-    pii->valuebox->tooltiptitle = "Loopstation element follow toggle ";
-    pii->valuebox->tooltip = "Leftclick makes the current loopstation element follow elment row button clicks. ";
-    mainprogram->adaptivelprow = pii->onoff;
     this->items.push_back(pii);
     pos++;
 
@@ -9629,7 +9640,7 @@ void Program::socket_server(struct sockaddr_in serv_addr, int opt) {
         ret = listen(this->sock, 3);
         if (!this->server) return;
         if (ret < 0) {
-            printf("listen errno %d\n", errno);
+            //printf("listen errno %d\n", errno);
             continue;
         }
         new_socket = accept(this->sock, (struct sockaddr *) &serv_addr,
@@ -10150,7 +10161,7 @@ void Program::discovery_listen() {
                     std::string seatIP = message.substr(firstColon + 1, secondColon - firstColon - 1);
                     
                     if (seatIP != this->localip) {
-                        std::lock_guard<std::mutex> lock(this->discoveryMutex);
+                        //std::lock_guard<std::mutex> lock(this->discoveryMutex);
                         
                         bool found = false;
                         for (auto& seat : this->discoveredSeats) {
@@ -10187,7 +10198,7 @@ void Program::discovery_listen() {
 #endif
         }
         
-        std::lock_guard<std::mutex> lock(this->discoveryMutex);
+        //std::lock_guard<std::mutex> lock(this->discoveryMutex);
         auto now = std::chrono::steady_clock::now();
         this->discoveredSeats.erase(
             std::remove_if(this->discoveredSeats.begin(), this->discoveredSeats.end(),
@@ -10478,13 +10489,24 @@ bool Shelf::open(const std::string path, bool undo) {
                     if (elem->type == ELEM_MIX) {
                         suf = ".mix";
                     }
+                    bool found = false;
                     if (elem->path != "" && !exists(elem->path) && (elem->type == ELEM_FILE || elem->type == ELEM_IMAGE)) {
-                        mainmix->retargeting = true;
-                        mainmix->newshelfpaths.push_back(elem->path);
-                        mainmix->newpathshelfelems.push_back(elem);
-                        elem->path = "";
+                        auto teststr = test_driveletters(elem->path);
+                        if (teststr == "") {
+                            mainmix->retargeting = true;
+                            mainmix->newshelfpaths.push_back(elem->path);
+                            mainmix->newpathshelfelems.push_back(elem);
+                            elem->path = "";
+                        }
+                        else {
+                            elem->path = teststr;
+                            found = true;
+                        }
                     }
-                    else if (suf != "") {
+                    else {
+                        found = true;
+                    }
+                    if (found && suf != "") {
                         if (concat) {
                             elem->path = find_unused_filename(elem->name, mainprogram->temppath, suf);
                             rename(result + "_" + std::to_string(filecount) + ".file", elem->path);

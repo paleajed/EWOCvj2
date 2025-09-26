@@ -1400,6 +1400,8 @@ extern bool check_permission(std::string directory);
 extern std::string remove_version(std::string filename);
 extern std::string pathtoplatform(std::string path);
 extern std::string pathtoposix(std::string path);
+extern std::vector<std::string> getListOfDrives();
+extern std::string test_driveletters(std::string path);
 extern bool isimage(std::string path);
 extern bool isvideo(std::string path);
 extern bool isdeckfile(std::string path);

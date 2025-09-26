@@ -181,7 +181,7 @@ void LoopStation::handle() {
     if (!mainprogram->binsscreen) {
         this->scrpos = mainprogram->handle_scrollboxes(*this->upscrbox, *this->downscrbox, this->elements.size(), this->scrpos, 8);
     }
-    int ce = std::clamp(this->currelem->pos, this->scrpos, this->scrpos + 7);
+    int ce = this->currelem->pos;
     this->currelem = this->elements[ce];
     this->foundrec = false;
     for (int i = 0; i < this->elements.size(); i++) {
@@ -328,9 +328,7 @@ void LoopStationElement::mouse_handle() {
 
     mainprogram->handle_button(this->recbut, true, false, true);
     if (this->recbut->toggled()) {
-        if (mainprogram->adaptivelprow) {
-            loopstation->currelem = this;
-        }
+        loopstation->currelem = this;
         if (this->recbut->value) {
             this->loopbut->value = false;
             this->playbut->value = false;
@@ -377,7 +375,7 @@ void LoopStationElement::mouse_handle() {
     if (this->loopbut->toggled()) {
         // start/stop loop play of recording
         if (this->eventlist.size()) {
-            if (mainprogram->adaptivelprow && !mainprogram->waitonetime) {
+            if (!mainprogram->waitonetime) {
                 loopstation->currelem = this;
             } else mainprogram->waitonetime = true;
             if (this->recbut->value) {
@@ -416,7 +414,7 @@ void LoopStationElement::mouse_handle() {
     if (this->playbut->toggled()) {
         // start/stop one-shot play of recording
         if (this->eventlist.size()) {
-            if (mainprogram->adaptivelprow) loopstation->currelem = this;
+            loopstation->currelem = this;
             if (this->recbut->value) {
                 std::chrono::high_resolution_clock::time_point now = std::chrono::high_resolution_clock::now();
                 std::chrono::duration<double> elapsed;

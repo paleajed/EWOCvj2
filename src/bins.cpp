@@ -874,8 +874,15 @@ void BinsMain::handle(bool draw) {
                 walk += strlen(walk) + 1;
                 std::string path(walk);
                 walk += strlen(walk) + 1;
+				std::string teststr;
+				if (exists(path)) {
+					teststr = path;
+				}
+				else {
+					teststr = test_driveletters(path);
+				}
                 binel->name = name;
-                mainprogram->paths.push_back(path);
+                mainprogram->paths.push_back(teststr);
             }
         }
 
@@ -2344,6 +2351,7 @@ void BinsMain::open_bin(std::string path, Bin *bin, bool newbin) {
 	
 	int filecount = 0;
 	int pos;
+	std::string abspath;
 	std::string istring;
 	safegetline(rfile, istring);
 	//check if binfile
@@ -2366,23 +2374,32 @@ void BinsMain::open_bin(std::string path, Bin *bin, bool newbin) {
                 if (istring == "ABSPATH") {
                     reta = false;
                     safegetline(rfile, istring);
+					abspath = istring;
                     bin->elements[pos]->path = istring;
                     bin->elements[pos]->relpath = std::filesystem::relative(istring, mainprogram->project->binsdir).generic_string();
                 }
                 if (istring == "RELPATH") {
                     safegetline(rfile, istring);
-                    if (istring == "" && bin->elements[pos]->path == "") continue;
-                    if (bin->elements[pos]->path == "" || !exists(bin->elements[pos]->path)) {
-                        std::filesystem::current_path(mainprogram->project->binsdir);
+                    if (istring == "" && abspath == "") {
+						continue;
+					}
+                    std::filesystem::current_path(mainprogram->project->binsdir);
+                    if (istring != "" && bin->elements[pos]->path == "" && exists(istring)) {
                         bin->elements[pos]->path = pathtoplatform(std::filesystem::absolute(istring).generic_string());
                         bin->elements[pos]->relpath = std::filesystem::relative(istring, mainprogram->project->binsdir).generic_string();
-                        std::filesystem::current_path(mainprogram->contentpath);
                     }
+                    std::filesystem::current_path(mainprogram->contentpath);
                     if (!exists(bin->elements[pos]->path)) {
-                        reta = true;
-                        mainmix->retargeting = true;
-                        mainmix->newbinelpaths.push_back(bin->elements[pos]->path);
-                        mainmix->newpathbinels.push_back(bin->elements[pos]);
+                        auto teststr = test_driveletters(abspath);
+                        if (teststr == "") {
+                            reta = true;
+                            mainmix->retargeting = true;
+                            mainmix->newbinelpaths.push_back(bin->elements[pos]->path);
+                            mainmix->newpathbinels.push_back(bin->elements[pos]);
+                        }
+                        else {
+                            bin->elements[pos]->path = teststr;
+                        }
                     }
                 }
 				if (istring == "NAME") {
@@ -2653,7 +2670,7 @@ void BinsMain::import_bins() {
 void BinsMain::open_files_bin() {
     // open videos/images/layer/deck/mix files into bin
 
-    if (!currbin->shared && mainprogram->multistage < 5) {
+    if (mainprogram->multistage < 5) {
         // order elements
         /*if (mainprogram->paths.size() == 0) {
             binsmain->openfilesbin = false;

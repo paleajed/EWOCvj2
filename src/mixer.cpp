@@ -11599,6 +11599,8 @@ Layer* Mixer::read_layers(std::istream &rfile, const std::string result, std::ve
     Layer *layend = nullptr;
     std::string istring;
     std::string filename;
+    std::string absfilename;
+    std::string relfilename;
 	bool newlay = false;
 	bool notfound = false;
 	int overridepos = 0;
@@ -11776,15 +11778,14 @@ Layer* Mixer::read_layers(std::istream &rfile, const std::string result, std::ve
             }
         }
         if (istring == "FILENAME") {
-			/*if (layend->type != 0) {
-                layend->framesloaded = true;
-            }*/
         	notfound = false;
 			safegetline(rfile, istring);
-			filename = istring;
+			filename = "";
+            absfilename = istring;
 			if (load) {
                 layend->timeinit = false;
-                if (filename != "") {
+                if (istring != "" && exists(istring)) {
+                    filename = istring;
                     if (layend->type == ELEM_LIVE) {
                         layend->initialized = false;
                         bool found = false;
@@ -11835,42 +11836,51 @@ Layer* Mixer::read_layers(std::istream &rfile, const std::string result, std::ve
             }
         }
 		if (istring == "RELPATH") {
-			safegetline(rfile, istring);
-			if (filename == "" || !exists(filename)) {
+            safegetline(rfile, istring);
+            std::filesystem::current_path(mainprogram->contentpath);
+            if (filename == "" && exists(istring)) {
                 if (istring != "") {
-                    std::filesystem::current_path(mainprogram->contentpath);
                     filename = pathtoplatform(std::filesystem::absolute(istring).generic_string());
-                    if (layend->clonesetnr == -1 || mainmix->firstlayers.contains(layend->clonesetnr) == 1) {
-                        if (load && !notfound) {
-                            layend->timeinit = false;
-                            if (layend->type == ELEM_IMAGE || isimage(filename)) {
-                                layend->transfered = true;
-                                layend = layend->open_image(filename);
-                                layend->type = ELEM_IMAGE;
-                                mainmix->loadinglays.push_back(layend);
-                            } else if (layend->type == ELEM_FILE || layend->type == ELEM_LAYER) {
-                                Layer *kplay = layend;
-                                layend->transfered = true;
-                                layend = layend->open_video(-1, filename, false, keepeff);
-                                mainmix->loadinglays.push_back(layend);
-                                layend->numefflines[0] = 0;
-                                if (type == 1) mainmix->currlay[!mainprogram->prevmodus] = layend;
-                                layend->type = kplay->type;
-                                layend->timeinit = kplay->timeinit;
-                                layend->initialized = kplay->initialized;
-                            }                            layend->prevshelfdragelem = nullptr;
+                }
+            }
+            relfilename = istring;
+            if (absfilename != "" || filename != "") {
+                if (!exists(absfilename) && !exists(filename)) {
+                    auto teststr = test_driveletters(absfilename);
+                    if (teststr == "" || mainmix->cliplaying) {  // reminder: can be faster
+                        notfound = true;
+                    } else {
+                        filename = teststr;
+                    }
+                }
+            }
+            if (filename != "") {
+                if (layend->clonesetnr == -1 || mainmix->firstlayers.contains(layend->clonesetnr) == 1) {
+                    if (load && !notfound) {
+                        layend->timeinit = false;
+                        if (layend->type == ELEM_IMAGE || isimage(filename)) {
+                            layend->transfered = true;
+                            layend = layend->open_image(filename);
+                            layend->type = ELEM_IMAGE;
+                            mainmix->loadinglays.push_back(layend);
+                        } else if (layend->type == ELEM_FILE || layend->type == ELEM_LAYER) {
+                            Layer *kplay = layend;
+                            layend->transfered = true;
+                            layend = layend->open_video(-1, filename, false, keepeff);
+                            mainmix->loadinglays.push_back(layend);
+                            layend->numefflines[0] = 0;
+                            if (type == 1) mainmix->currlay[!mainprogram->prevmodus] = layend;
+                            layend->type = kplay->type;
+                            layend->timeinit = kplay->timeinit;
+                            layend->initialized = kplay->initialized;
                         }
+                        layend->prevshelfdragelem = nullptr;
                     }
                 }
             } else if (ffglnr != -1) {
                 layend->set_ffglsource(ffglnr);
             } else if (isfnr != -1) {
                 layend->set_isfsource(mainprogram->isfsourcenames[isfnr]);
-            }
-            if (filename != "") {
-                if (!exists(filename)) {
-                    notfound = true;
-                }
             }
             layend->filename = filename;  // for CLIPLAYER
 			newlay = true;
@@ -11890,6 +11900,9 @@ Layer* Mixer::read_layers(std::istream &rfile, const std::string result, std::ve
                 layend->filename = filename;  // for CLIPLAYER
                 this->newpathlayers.push_back(layend);
                 //mainprogram->pathscount++;
+            }
+            if (mainmix->cliplaying) {
+                layend->filename = absfilename;
             }
 		}
 		if (istring == "JPEGPATH") {
@@ -12434,6 +12447,7 @@ Layer* Mixer::read_layers(std::istream &rfile, const std::string result, std::ve
                 Clip *nclip = new Clip;
                 layend->clips->push_back(nclip);
             }
+            std::string abspath;
             bool isvid = false;
             //int clipfilecount = 0;
 			while (safegetline(rfile, istring)) {
@@ -12446,20 +12460,13 @@ Layer* Mixer::read_layers(std::istream &rfile, const std::string result, std::ve
 					}
 					if (istring == "FILENAME") {
                         safegetline(rfile, istring);
+                        abspath = istring;
                         if (clp->type == ELEM_LAYER && !isvid) {
                             // pass control to CLIPLAYER
                         }
                         else if (exists(istring)) {
                             clp->path = istring;
-                            if (!exists(clp->path)) {
-                                if (isvid) {
-                                    mainmix->retargeting = true;
-                                    this->newclippaths.push_back(clp->path);
-                                    this->newpathclips.push_back(clp);
-                                    clp->layer = layend;
-                                }
-                            }
-                            else clp->insert(layend, layend->clips->end() - 1);
+                            clp->insert(layend, layend->clips->end() - 1);
                         }
                         else {
                             clp->path = "";
@@ -12467,13 +12474,20 @@ Layer* Mixer::read_layers(std::istream &rfile, const std::string result, std::ve
 					}
                     if (istring == "RELPATH") {
                         safegetline(rfile, istring);
+                        std::filesystem::current_path(mainprogram->contentpath);
                         if (clp->type == ELEM_LAYER && !isvid) {
                             // pass control to CLIPLAYER
                         }
-                        else if (clp->path == "" && istring != "") {
-                            std::filesystem::current_path(mainprogram->contentpath);
+                        else if (clp->path == "" && exists(istring)) {
                             clp->path = pathtoplatform(std::filesystem::absolute(istring).generic_string());
-                            if (!exists(clp->path)) {
+                        }
+                        else if (clp->path == "") {
+                            continue;
+                        }
+                        bool found = false;
+                        if (!exists(clp->path)) {
+                            auto teststr = test_driveletters(abspath);
+                            if (teststr == "") {
                                 if (isvid) {
                                     mainmix->retargeting = true;
                                     this->newclippaths.push_back(clp->path);
@@ -12481,7 +12495,16 @@ Layer* Mixer::read_layers(std::istream &rfile, const std::string result, std::ve
                                     clp->layer = layend;
                                 }
                             }
-                            else clp->insert(layend, layend->clips->end() - 1);
+                            else {
+                                clp->path = teststr;
+                                found = true;
+                            }
+                        }
+                        else {
+                            found = true;
+                        }
+                        if (found) {
+                            clp->insert(layend, layend->clips->end() - 1);
                         }
                         isvid = false;
                     }
@@ -12496,16 +12519,19 @@ Layer* Mixer::read_layers(std::istream &rfile, const std::string result, std::ve
                         mainmix->cliplaying = false;
 						clp->path = mainprogram->temppath + "cliptemp_" + remove_extension(basename(result)) + std::to_string(mainprogram->concatsuffix++) + ".layer";
                         if (!exists(cliplay->filename)) {
-                            mainmix->retargeting = true;
-                            this->newcliplaypaths.push_back(cliplay->filename);
-                            this->newpathlayclips.push_back(clp);
-                            this->newpathcliplays.push_back(cliplay);
-                            clp->layer = layend;
-                        }
-                        else {
-                            mainmix->save_layerfile(clp->path, cliplay, 0, 0);
-                            clp->insert(layend, layend->clips->end() - 1);
-                            cliplay->close();
+                            auto teststr = test_driveletters(cliplay->filename);
+                            if (teststr == "") {
+                                mainmix->retargeting = true;
+                                this->newcliplaypaths.push_back(cliplay->filename);
+                                this->newpathlayclips.push_back(clp);
+                                this->newpathcliplays.push_back(cliplay);
+                                clp->layer = layend;
+                            } else {
+                                cliplay->filename = teststr;
+                                mainmix->save_layerfile(clp->path, cliplay, 0, 0);
+                                clp->insert(layend, layend->clips->end() - 1);
+                                cliplay->close();
+                            }
                         }
 					}
                     if (istring == "JPEGPATH") {

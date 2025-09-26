@@ -447,6 +447,29 @@ std::string getdocumentspath() {
     return std::string(home) + "/Documents";
 }
 
+std::vector<std::string> getListOfDrives() {
+    std::vector<std::string> arrayOfDrives;
+    char* szDrives = new char[MAX_PATH]();
+    if (GetLogicalDriveStringsA(MAX_PATH, szDrives));
+    for (int i = 0; i < 100; i += 4)
+        if (szDrives[i] != (char)0)
+            arrayOfDrives.push_back(std::string{szDrives[i],szDrives[i+1],szDrives[i+2]});
+    delete[] szDrives;
+    return arrayOfDrives;
+}
+
+std::string test_driveletters(std::string path) {     // reminder : implement POSIX /run/media
+    if (path.length() < 4) return "";
+    auto driveletters = getListOfDrives();
+    for (auto letter : driveletters) {
+        std::string newpath = letter + path.substr(3, path.length() - 3);
+        if (exists(newpath)) {
+            return pathtoplatform(newpath);
+        }
+    }
+    return "";
+}
+
 bool isimage(std::string path) {
     // is this file an image?
     ILuint boundimage;
@@ -651,7 +674,7 @@ void do_retarget() {
         }
 
         lay->timeinit = false;
-        // load the retrageted videos/images
+        // load the retargeted videos/images
         if (lay->type == ELEM_FILE || lay->type == ELEM_LAYER) {
             lay->transfered = true;
             lay->open_video(lay->frame, lay->filename, false, true);
@@ -663,7 +686,7 @@ void do_retarget() {
         }
     }
 
-    // set up retraget clips
+    // set up retarget clips
     for (int i = 0; i < mainmix->newpathclips.size(); i++) {
         Clip *clip = mainmix->newpathclips[i];
         clip->path = mainmix->newclippaths[i];
@@ -681,7 +704,7 @@ void do_retarget() {
         clip->insert(clip->layer, clip->layer->clips->end() - 1);
     }
 
-    // set up retraget shelf elements
+    // set up retarget shelf elements
     for (int i = 0; i < mainmix->newpathshelfelems.size(); i++) {
         mainmix->newpathshelfelems[i]->path = mainmix->newshelfpaths[i];
         if (mainmix->newpathshelfelems[i]->path == "") {
@@ -689,7 +712,7 @@ void do_retarget() {
         }
     }
 
-    // set up retraget bin elements
+    // set up retarget bin elements
     for (int i = 0; i < mainmix->newpathbinels.size(); i++) {
         mainmix->newpathbinels[i]->path = mainmix->newbinelpaths[i];
         mainmix->newpathbinels[i]->absjpath = mainmix->newbineljpegpaths[i];
@@ -5696,10 +5719,12 @@ void the_loop() {
                                 retarget->valuebox->vtxcoords->y1 + 0.075f - 0.045f,
                                 0.00045f,
                                 0.00075f);
+
                     if (exists((*(mainmix->newpaths))[mainmix->newpathpos])) {
                         mainprogram->currfilesdir = dirname((*(mainmix->newpaths))[mainmix->newpathpos]);
                         check_stage(1);
                     }
+
                 } else {
                     if (mainprogram->renaming == EDIT_NONE) {
                         mainmix->renaming = false;
