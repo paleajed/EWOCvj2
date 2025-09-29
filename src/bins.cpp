@@ -687,16 +687,6 @@ void BinsMain::handle(bool draw) {
 
 
 	// manage SEND button
-    auto put_in_buffer = [](const char* str, char* walk) {
-	    // buffer utility
-        for (int i = 0; i < strlen(str); i++) {
-            *walk++ = str[i];
-        }
-        char nll[2] = "\0";
-        *walk++ = *nll;
-        return walk;
-    };
-
     Boxx box;
     box.vtxcoords->x1 = -0.83f;
     box.vtxcoords->y1 = -0.98f;
@@ -755,7 +745,7 @@ void BinsMain::handle(bool draw) {
             } else {
                 render_text("CONNECTING...", white, -0.805f, -0.95f, 0.00075f, 0.0012f);
             }
-            
+
             if (mainprogram->connfailed) {
                 if (mainprogram->connfailedmilli > 1000) mainprogram->connfailed = false;
                 draw_box(white, darkred1, &connbox, -1);
@@ -792,45 +782,16 @@ void BinsMain::handle(bool draw) {
     }
 
     // handle sendmenu
-    int k;
+    int k = -1;
     if (mainprogram->sendmenu) {
         k = mainprogram->handle_menu(mainprogram->sendmenu);
         if (k > -1) {
-            binsmain->currbin->sendtonames.push_back(mainprogram->connsocknames[k]);
-            int sock;
-            if (mainprogram->server) sock = mainprogram->connsockets[k];
-            else sock = mainprogram->sock;
-            char buf[148480] = {0};
-            char *walk = buf;
-            walk = put_in_buffer(mainprogram->seatname.c_str(), walk);
-            if (this->currbin->shared) {
-                walk = put_in_buffer(this->currbin->name.c_str(), walk);
-            }
-            else  {
-                binsmain->save_bin(mainprogram->temppath + "bin_to_copy");
-                binsmain->new_bin(this->currbin->name + " (SHARED)");
-                binsmain->open_bin(mainprogram->temppath + "bin_to_copy", binsmain->currbin);
-                binsmain->save_bin(mainprogram->project->binsdir + this->currbin->name + " (SHARED)");
-                walk = put_in_buffer((this->currbin->name + " (SHARED)").c_str(), walk);
-            }
-            for (int i = 0; i < 12; i++) {
-                for (int j = 0; j < 12; j++) {
-                    BinElement *binel = this->currbin->elements[j * 12 + i];
-                    walk = put_in_buffer(binel->name.c_str(), walk);
-                    walk = put_in_buffer(binel->path.c_str(), walk);
-                }
-            }
-            char buf2[148495] = {0};
-            char *walk2 = buf2;
-            walk2 = put_in_buffer("BIN_SENT", walk2);
-            walk2 = put_in_buffer(
-                    (std::to_string(walk - &buf[0] + (std::to_string(walk - &buf[0])).size() + 10)).c_str(),
-                    walk2);
-            for (int i = 0; i < walk - &buf[0]; i++) {
-                *walk2 = buf[i];  // append buf to buf2
-                walk2++;
-            }
-            send(sock, buf2, walk2 - &buf2[0], 0);
+            this->currbin->sendtonames.push_back(mainprogram->connsocknames[k]);
+			if (this->currbin->name.substr(this->currbin->name.length() - 8, 8) != "(SHARED)") {
+				this->currbin->name += " (SHARED)";
+			}
+			this->currbin->shared = true;
+			this->send_shared_bins();
         }
         if (mainprogram->menuchosen) {
             mainprogram->menuchosen = false;
@@ -839,61 +800,6 @@ void BinsMain::handle(bool draw) {
             mainprogram->recundo = false;
         }
     }
-
-    // receive sent bins
-    for (int i = 0; i < binsmain->messages.size(); i++) {
-        if (mainprogram->server) {
-            // send received bins through from server to destination clients
-            for (int j = 0; j < mainprogram->connsockets.size(); j++) {
-                if (mainprogram->connsockets[j] != mainprogram->connmap[binsmain->messagesocknames[i]]) {
-                    send(mainprogram->connsockets[j], binsmain->rawmessages[i],
-                         binsmain->messagelengths[i], 0);
-                }
-            }
-        }
-        // process messages
-        char *walk = binsmain->messages[i];
-        std::string str(walk);
-        walk += strlen(walk) + 1;
-
-        Bin *binis = nullptr;
-        for (Bin *bin : binsmain->bins) {
-            if (bin->name == str) {
-                binis = bin;
-                break;
-            }
-        }
-        if (!binis) binis = new_bin(str);
-        make_currbin(binis->pos);
-        binis->shared = true;
-
-        for (int i = 0; i < 12; i++) {
-            for (int j = 0; j < 12; j++) {
-                BinElement *binel = this->currbin->elements[j * 12 + i];
-                std::string name(walk);
-                walk += strlen(walk) + 1;
-                std::string path(walk);
-                walk += strlen(walk) + 1;
-				std::string teststr;
-				if (exists(path)) {
-					teststr = path;
-				}
-				else {
-					teststr = test_driveletters(path);
-				}
-                binel->name = name;
-                mainprogram->paths.push_back(teststr);
-            }
-        }
-
-        this->openfilesbin = true;
-        this->menuactbinel = binsmain->currbin->elements[0];  // loading starts from first bin element
-    }
-    binsmain->messages.clear();
-    binsmain->rawmessages.clear();
-    binsmain->messagelengths.clear();
-    binsmain->messagesocknames.clear();
-
 
 	// set threadmode for hap encoding
     if (!this->binpreview) {
@@ -913,7 +819,7 @@ void BinsMain::handle(bool draw) {
     }
 
 	// set lay to current layer or start layer
-	Layer *lay = nullptr;		
+	Layer *lay = nullptr;
 	if (mainmix->currlay[!mainprogram->prevmodus]) lay = mainmix->currlay[!mainprogram->prevmodus];
 	else {
 		if (mainprogram->prevmodus) lay = mainmix->layers[0][0];
@@ -2116,6 +2022,9 @@ void BinsMain::handle(bool draw) {
 						bool cont = false;
 						// set values of elements of opened files
 						for (int k = 0; k < this->inputtexes.size(); k++) {
+							if (this->addpaths[k] == "SCRAMBLED20011975") {
+								continue;
+							}
                             int cnt = 0;
                             int epos = -1;
                             bool firstdone = false;
@@ -2142,7 +2051,9 @@ void BinsMain::handle(bool draw) {
                                 dirbinel->tex = this->inputtexes[k];
                                 dirbinel->type = this->inputtypes[k];
                                 dirbinel->path = this->addpaths[k];
-                                dirbinel->name = remove_extension(basename(dirbinel->path));
+								if (!this->receivingbin) {
+									dirbinel->name = remove_extension(basename(dirbinel->path));
+								}
                                 dirbinel->oldjpegpath = dirbinel->jpegpath;
                                 dirbinel->jpegpath = this->inputjpegpaths[k];
                                 dirbinel->absjpath = dirbinel->jpegpath;
@@ -2157,6 +2068,7 @@ void BinsMain::handle(bool draw) {
 						this->menuactbinel = nullptr;
 						this->addpaths.clear();
                         this->inputjpegpaths.clear();
+						this->receivingbin = false;
                         mainprogram->recundo = true;
                     }
 
@@ -2174,7 +2086,7 @@ void BinsMain::handle(bool draw) {
 					}
 					else this->currbinel = binel;
 				}
-				
+
 
 				if (mainprogram->del) {
 					// handle element deleting
@@ -2341,6 +2253,160 @@ void BinsMain::handle(bool draw) {
 	}
 }
 
+
+
+
+void BinsMain::send_shared_bins() {
+	auto put_in_buffer = [](const char* str, char* walk) {
+		// buffer utility
+		for (int i = 0; i < strlen(str); i++) {
+			*walk++ = str[i];
+		}
+		char nll[2] = "\0";
+		*walk++ = *nll;
+		return walk;
+	};
+
+	for (auto name : this->currbin->sendtonames) {
+		int sock;
+		bool brk = false;
+		if (mainprogram->server) {
+			for (SOCKET testsock: mainprogram->connsockets) {
+				for (auto &elem: mainprogram->connmap) {
+					if (elem.first == name) {
+						sock = testsock;
+						brk = true;
+						break;
+					}
+				}
+				if (brk) {
+					break;
+				}
+			}
+		}
+		else sock = mainprogram->sock;
+		for (Bin *bin: binsmain->bins) {
+			if (bin->shared) {
+				char buf[148480] = {0};
+				char *walk = buf;
+				walk = put_in_buffer(mainprogram->seatname.c_str(), walk);
+				walk = put_in_buffer((this->currbin->name).c_str(), walk);
+				for (int i = 0; i < 12; i++) {
+					for (int j = 0; j < 12; j++) {
+						BinElement *binel = this->currbin->elements[i * 12 + j];
+						walk = put_in_buffer(binel->name.c_str(), walk);
+						walk = put_in_buffer(binel->path.c_str(), walk);
+					}
+				}
+				char buf2[148495] = {0};
+				char *walk2 = buf2;
+				walk2 = put_in_buffer("BIN_SENT", walk2);
+				walk2 = put_in_buffer(
+						(std::to_string(walk - &buf[0] + (std::to_string(walk - &buf[0])).size() + 10)).c_str(),
+						walk2);
+				for (int i = 0; i < walk - &buf[0]; i++) {
+					*walk2 = buf[i];  // append buf to buf2
+					walk2++;
+				}
+				send(sock, buf2, walk2 - &buf2[0], 0);
+			}
+		}
+		if (!mainprogram->server) {
+			// only send to server
+			break;
+		}
+	}
+}
+
+void BinsMain::receive_shared_bins() {
+	// receive sent bins
+	if (!this->receivingbin) {
+		std::vector<char*> messagescopy = binsmain->messages;
+        std::vector<char *> rawmessagescopy;
+        if (mainprogram->server) {
+            rawmessagescopy = binsmain->rawmessages;
+        }
+		std::vector<std::string> messagesocknamescopy = binsmain->messagesocknames;
+		std::vector<int> messagelengthscopy = binsmain->messagelengths;
+		for (int i = 0; i < messagescopy.size(); i++) {
+			if (mainprogram->server) {
+				// send received bins through from server to destination clients
+				for (int j = 0; j < mainprogram->connsockets.size(); j++) {
+					if (mainprogram->connsockets[j] != mainprogram->connmap[messagesocknamescopy[i]]) {
+						send(mainprogram->connsockets[j], rawmessagescopy[i],
+							 messagelengthscopy[i], 0);
+					}
+				}
+			}
+			// process messages
+			char *walk = messagescopy[i];
+			std::string str(walk);
+			walk += strlen(walk) + 1;
+
+			Bin *binis = nullptr;
+			for (Bin *bin: binsmain->bins) {
+				if (bin->name == str) {
+					binis = bin;
+					break;
+				}
+			}
+			if (!binis) binis = new_bin(str);
+			make_currbin(binis->pos);
+			binis->shared = true;
+
+			std::vector<std::string> temppaths;
+			for (int i2 = 0; i2 < 12; i2++) {
+				for (int j = 0; j < 12; j++) {
+					BinElement *binel = this->currbin->elements[i2 * 12 + j];
+					std::string name(walk);
+					walk += strlen(walk) + 1;
+					std::string path(walk);
+					walk += strlen(walk) + 1;
+					std::string teststr;
+					if (exists(path)) {
+						teststr = path;
+					} else {
+						teststr = test_driveletters(path);
+					}
+					if (teststr != "") {
+						binel->name = name;
+						if (teststr != binel->path) {
+							temppaths.push_back(teststr);
+						} else {
+							temppaths.push_back("SCRAMBLED20011975");
+						}
+					} else {
+						binel->name = "";
+						temppaths.push_back("");
+					}
+				}
+			}
+
+			int epos = -1;
+			for (int o = 0; o < 9; o++) {
+				for (int n = 0; n < 4; n++) {
+					for (int m = 0; m < 4; m++) {
+						epos = (int) (o / 3) * 48 + (int) (o % 3) * 4 + n * 12 + m;
+						mainprogram->paths.push_back(temppaths[epos]);
+					}
+				}
+			}
+
+			this->openfilesbin = true;
+			this->receivingbin = true;
+			this->menuactbinel = this->currbin->elements[0];  // loading starts from first bin element
+
+            this->messages.erase(binsmain->messages.begin());
+            if (mainprogram->server) {
+                this->rawmessages.erase(binsmain->rawmessages.begin());
+            }
+            this->messagelengths.erase(binsmain->messagelengths.begin());
+            this->messagesocknames.erase(binsmain->messagesocknames.begin());
+		}
+	}
+}
+
+
 void BinsMain::open_bin(std::string path, Bin *bin, bool newbin) {
 	// open a bin file
 	std::string result = mainprogram->deconcat_files(path);
@@ -2348,7 +2414,7 @@ void BinsMain::open_bin(std::string path, Bin *bin, bool newbin) {
 	std::ifstream rfile;
 	if (concat) rfile.open(result);
 	else rfile.open(path);
-	
+
 	int filecount = 0;
 	int pos;
 	std::string abspath;
@@ -2477,7 +2543,7 @@ void BinsMain::save_bin(std::string path) {
 	std::ofstream wfile;
 	wfile.open(path.c_str());
 	wfile << "EWOCvj BINFILE\n";
-	
+
 	wfile << "ELEMS\n";
 	// save elements
 	for (int i = 0; i < 12; i++) {
@@ -2682,7 +2748,7 @@ void BinsMain::open_files_bin() {
 
 
         mainprogram->blocking = true;
-        if (SDL_GetMouseFocus() != mainprogram->mainwindow) {
+        if (SDL_GetMouseFocus() != mainprogram->mainwindow) {  // reminder : remove?
             SDL_SetCursor(SDL_CreateSystemCursor(SDL_SYSTEM_CURSOR_ARROW));
         } else {
             SDL_SetCursor(SDL_CreateSystemCursor(SDL_SYSTEM_CURSOR_WAIT));
@@ -2700,7 +2766,16 @@ void BinsMain::open_files_bin() {
 		return;
 	}
 	std::string str = mainprogram->paths[mainprogram->counting];
-	open_handlefile(str, mainprogram->pathtexes[mainprogram->counting]);
+	if (str != "SCRAMBLED20011975") {
+		open_handlefile(str, mainprogram->pathtexes[mainprogram->counting]);
+	}
+	else {
+		// mark this element not to be updated
+		this->inputtexes.push_back(-1);
+		this->inputtypes.push_back(ELEM_FILE);
+		this->inputjpegpaths.push_back("");
+		this->addpaths.push_back("SCRAMBLED20011975");
+	}
 	mainprogram->counting++;
 }
 
@@ -3007,7 +3082,7 @@ std::tuple<std::string, std::string> BinsMain::hap_binel(BinElement *binel, BinE
 	}
 
 	return {apath, rpath};
-}				
+}
 
 void BinsMain::hap_deck(BinElement* bd) {
 	bd->allhaps = 0;
@@ -3155,7 +3230,7 @@ void BinsMain::hap_encode(std::string srcpath, BinElement *binel, BinElement *bd
 	FILE *wav_file = nullptr;
 	std::string wav_temp_path;
 	int64_t audio_samples_written = 0;
-	
+
 	// Find and setup audio stream if available
 	if (find_stream_index(&audio_stream_idx, source, AVMEDIA_TYPE_AUDIO) >= 0) {
 		audio_stream = source->streams[audio_stream_idx];
@@ -3232,14 +3307,14 @@ void BinsMain::hap_encode(std::string srcpath, BinElement *binel, BinElement *bd
     c->time_base = source_dec_ctx->time_base;
     //c->framerate = (AVRational){source_stream->r_frame_rate.num, source_stream->r_frame_rate.den};
 	c->sample_aspect_ratio = source_dec_cpm->sample_aspect_ratio;
-    c->pix_fmt = codec->pix_fmts[0];  
+    c->pix_fmt = codec->pix_fmts[0];
     int rem = source_dec_cpm->width % 32;
     c->width = source_dec_cpm->width + (32 - rem) * (rem > 0);
     rem = source_dec_cpm->height % 4;
     c->height = source_dec_cpm->height + (4 - rem) * (rem > 0);
     //c->global_quality = 0;
    	r = avcodec_open2(c, codec, nullptr);
-       
+
     std::string destpath = remove_extension(srcpath) + "_temp.mov";
     avformat_alloc_output_context2(&dest, av_guess_format("mov", nullptr, "video/mov"), nullptr, destpath.c_str());
     dest_stream = avformat_new_stream(dest, codec);
@@ -3248,18 +3323,18 @@ void BinsMain::hap_encode(std::string srcpath, BinElement *binel, BinElement *bd
     if (r < 0) {
 		av_log(nullptr, AV_LOG_ERROR, "Copying stream context failed\n");
 		av_log(nullptr, AV_LOG_ERROR, "Copying parameters for stream #%u failed\n");
-    }   
+    }
     dest_stream->r_frame_rate = source_stream->r_frame_rate;
     //((AVOutputFormat*)(dest->oformat))->flags |= AVFMT_NOFILE;
     //avformat_init_output(dest, nullptr);
     r = avio_open(&dest->pb, destpath.c_str(), AVIO_FLAG_WRITE);
   	r = avformat_write_header(dest, nullptr);
-  
+
 	nv12frame = av_frame_alloc();
     nv12frame->format = c->pix_fmt;
     nv12frame->width  = c->width;
     nv12frame->height = c->height;
- 
+
 	// Determine required buffer size and allocate buffer
   	struct SwsContext *sws_ctx = sws_getContext
     (
@@ -3290,7 +3365,7 @@ void BinsMain::hap_encode(std::string srcpath, BinElement *binel, BinElement *bd
 			if (audio_dec_ctx) {
 				avcodec_free_context(&audio_dec_ctx);
 			}
-			
+
 			if (bdm) {
 				bdm->encthreads--;
 				delete binel;  // temp bin elements populate bdm binelements
@@ -3308,7 +3383,7 @@ void BinsMain::hap_encode(std::string srcpath, BinElement *binel, BinElement *bd
 		pkt.data = nullptr;
 		pkt.size = 0;
 		av_read_frame(source, &pkt);
-		
+
 		// Handle audio packets
 		if (audio_dec_ctx && pkt.stream_index == audio_stream_idx) {
 			AVFrame *audio_frame = av_frame_alloc();
@@ -3318,12 +3393,12 @@ void BinsMain::hap_encode(std::string srcpath, BinElement *binel, BinElement *bd
 						// Convert audio to 16-bit PCM and write to WAV file
 						int samples_per_channel = audio_frame->nb_samples;
 						int num_channels = audio_frame->ch_layout.nb_channels;
-						
+
 						// Convert audio samples to 16-bit PCM
 						for (int i = 0; i < samples_per_channel; i++) {
 							for (int ch = 0; ch < num_channels; ch++) {
 								int16_t sample = 0;
-								
+
 								// Handle different audio formats
 								switch (audio_frame->format) {
 									case AV_SAMPLE_FMT_S16:
@@ -3352,7 +3427,7 @@ void BinsMain::hap_encode(std::string srcpath, BinElement *binel, BinElement *bd
 									default:
 										sample = 0; // Unsupported format, write silence
 								}
-								
+
 								fwrite(&sample, sizeof(int16_t), 1, wav_file);
 								audio_samples_written++;
 							}
@@ -3364,7 +3439,7 @@ void BinsMain::hap_encode(std::string srcpath, BinElement *binel, BinElement *bd
 			av_packet_unref(&pkt);
 			continue;
 		}
-		
+
 		if (pkt.stream_index != source_stream_idx) {
 			av_packet_unref(&pkt);
 			continue;
@@ -3381,7 +3456,7 @@ void BinsMain::hap_encode(std::string srcpath, BinElement *binel, BinElement *bd
 			else break;
 			if (r == AVERROR(EINVAL)) printf("EINVAL\n");
 		}
-	   	
+
 	   	// do pixel format conversion
 		int storage = av_image_alloc(nv12frame->data, nv12frame->linesize, nv12frame->width, nv12frame->height, c->pix_fmt, 32);
 		sws_scale
@@ -3397,7 +3472,7 @@ void BinsMain::hap_encode(std::string srcpath, BinElement *binel, BinElement *bd
 		nv12frame->pts = decframe->pts;
 
 		encode_frame(dest, source, c, nv12frame, &pkt, nullptr, frame);
-		
+
         av_freep(&nv12frame->data[0]);
 		av_packet_unref(&pkt);
 		//av_frame_unref(decframe);
@@ -3413,31 +3488,31 @@ void BinsMain::hap_encode(std::string srcpath, BinElement *binel, BinElement *bd
     dest_stream->duration = (count + 1) * av_rescale_q(1, c->time_base, dest_stream->time_base);
     av_write_trailer(dest);
     avio_close(dest->pb);
-    
+
     // Finalize WAV file if audio was processed
     if (wav_file) {
     	// Update WAV header with correct file size
     	fseek(wav_file, 0, SEEK_SET);
     	uint32_t file_size = (uint32_t)(44 + audio_samples_written * 2 - 8); // Total file size minus 8
     	uint32_t data_size = (uint32_t)(audio_samples_written * 2); // Data chunk size
-    	
+
     	fseek(wav_file, 4, SEEK_SET);
     	fwrite(&file_size, sizeof(uint32_t), 1, wav_file);
     	fseek(wav_file, 40, SEEK_SET);
     	fwrite(&data_size, sizeof(uint32_t), 1, wav_file);
-    	
+
     	fclose(wav_file);
-    	
+
     	// Rename WAV file to final name
     	std::string final_wav_path = remove_extension(binel->path) + "_hap.wav";
     	rename(wav_temp_path.c_str(), final_wav_path.c_str());
     }
-    
+
     // Clean up audio resources
     if (audio_dec_ctx) {
     	avcodec_free_context(&audio_dec_ctx);
     }
-    
+
     avcodec_free_context(&c);
     av_frame_free(&nv12frame);
     av_frame_free(&decframe);

@@ -5536,6 +5536,11 @@ void the_loop() {
         }
     }
 
+    binsmain->receive_shared_bins();
+
+
+
+
 
 
     /////////////// STUFF THAT BELONGS TO EITHER BINS OR MIX OR FULL SCREEN OR RETARGETING
@@ -5899,7 +5904,6 @@ void the_loop() {
 
 
 	else {  // this is MIX screen specific stuff
-
 
 		if (mainmix->learn && mainprogram->rightmouse) {
 			// MIDI learn cancel

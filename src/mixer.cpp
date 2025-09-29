@@ -12481,7 +12481,7 @@ Layer* Mixer::read_layers(std::istream &rfile, const std::string result, std::ve
                         else if (clp->path == "" && exists(istring)) {
                             clp->path = pathtoplatform(std::filesystem::absolute(istring).generic_string());
                         }
-                        else if (clp->path == "") {
+                        else if (abspath == "") {
                             continue;
                         }
                         bool found = false;

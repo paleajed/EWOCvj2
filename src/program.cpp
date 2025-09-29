@@ -9902,6 +9902,9 @@ void Program::socket_client(struct sockaddr_in serv_addr, int opt) {
     // wait for messages
     while (1) {
         buf2 = bl_recv(this->sock, buf2, 148489, 0);
+        if (buf2 == nullptr) {
+            continue;  // reminder : server has shut down
+        }
         std::string str(buf2);
         if (buf2 != "") {
             if (str == "BIN_SENT") {

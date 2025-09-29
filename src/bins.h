@@ -93,7 +93,8 @@ class BinsMain {
         bool syncendnow = false;
 
         Bin *menubin = nullptr;
-		bool openfilesbin = false;
+        bool openfilesbin = false;
+        bool receivingbin = false;
 		bool importbins = false;
 		int binscount;
 		bool movingstruct = false;
@@ -129,6 +130,8 @@ class BinsMain {
         void undo_redo(char offset);
         void clear_undo();
         void save_binjpegs();
+		void send_shared_bins();
+		void receive_shared_bins();
         BinsMain();
 
 	private:
