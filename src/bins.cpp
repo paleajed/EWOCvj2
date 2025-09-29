@@ -2022,9 +2022,6 @@ void BinsMain::handle(bool draw) {
 						bool cont = false;
 						// set values of elements of opened files
 						for (int k = 0; k < this->inputtexes.size(); k++) {
-							if (this->addpaths[k] == "SCRAMBLED20011975") {
-								continue;
-							}
                             int cnt = 0;
                             int epos = -1;
                             bool firstdone = false;
@@ -2051,9 +2048,7 @@ void BinsMain::handle(bool draw) {
                                 dirbinel->tex = this->inputtexes[k];
                                 dirbinel->type = this->inputtypes[k];
                                 dirbinel->path = this->addpaths[k];
-								if (!this->receivingbin) {
-									dirbinel->name = remove_extension(basename(dirbinel->path));
-								}
+								dirbinel->name = remove_extension(basename(dirbinel->path));
                                 dirbinel->oldjpegpath = dirbinel->jpegpath;
                                 dirbinel->jpegpath = this->inputjpegpaths[k];
                                 dirbinel->absjpath = dirbinel->jpegpath;
@@ -2309,6 +2304,64 @@ void BinsMain::send_shared_bins() {
 					walk2++;
 				}
 				send(sock, buf2, walk2 - &buf2[0], 0);
+
+				// Send texture files for each BinElement
+				for (int i = 0; i < 12; i++) {
+					for (int j = 0; j < 12; j++) {
+						BinElement *binel = this->currbin->elements[i * 12 + j];
+						
+						if (binel->tex == -1 || binel->absjpath.empty()) {
+							// Send placeholder for no texture
+							char texheader[256] = {0};
+							char *texwalk = texheader;
+							texwalk = put_in_buffer("TEX_SENT", texwalk);
+							texwalk = put_in_buffer("0", texwalk);  // message length = 0 for header only
+							texwalk = put_in_buffer(mainprogram->seatname.c_str(), texwalk);
+							texwalk = put_in_buffer((this->currbin->name).c_str(), texwalk);
+							texwalk = put_in_buffer(std::to_string(i * 12 + j).c_str(), texwalk);
+							texwalk = put_in_buffer("0", texwalk);  // file size = 0
+							send(sock, texheader, texwalk - &texheader[0], 0);
+						} else {
+							// Send actual texture file
+							std::ifstream texfile(binel->absjpath, std::ios::binary | std::ios::ate);
+							if (texfile.is_open()) {
+								size_t filesize = texfile.tellg();
+								texfile.seekg(0, std::ios::beg);
+								
+								// Prepare complete message with header and file data
+								size_t totalmsgsize = 256 + filesize;  // header space + file data
+								char *completemsg = (char*)malloc(totalmsgsize);
+								char *texwalk = completemsg;
+								
+								texwalk = put_in_buffer("TEX_SENT", texwalk);
+								texwalk = put_in_buffer(std::to_string(filesize + 256).c_str(), texwalk);  // total message size
+								texwalk = put_in_buffer(mainprogram->seatname.c_str(), texwalk);
+								texwalk = put_in_buffer((this->currbin->name).c_str(), texwalk);
+								texwalk = put_in_buffer(std::to_string(i * 12 + j).c_str(), texwalk);
+								texwalk = put_in_buffer(std::to_string(filesize).c_str(), texwalk);
+								
+								// Read file data directly into message buffer
+								texfile.read(texwalk, filesize);
+								texfile.close();
+								
+								// Send complete message
+								send(sock, completemsg, texwalk - completemsg + filesize, 0);
+								free(completemsg);
+							} else {
+								// File couldn't be opened, send placeholder
+								char texheader[256] = {0};
+								char *texwalk = texheader;
+								texwalk = put_in_buffer("TEX_SENT", texwalk);
+								texwalk = put_in_buffer("0", texwalk);
+								texwalk = put_in_buffer(mainprogram->seatname.c_str(), texwalk);
+								texwalk = put_in_buffer((this->currbin->name).c_str(), texwalk);
+								texwalk = put_in_buffer(std::to_string(i * 12 + j).c_str(), texwalk);
+								texwalk = put_in_buffer("0", texwalk);
+								send(sock, texheader, texwalk - &texheader[0], 0);
+							}
+						}
+					}
+				}
 			}
 		}
 		if (!mainprogram->server) {
@@ -2354,7 +2407,6 @@ void BinsMain::receive_shared_bins() {
 			make_currbin(binis->pos);
 			binis->shared = true;
 
-			std::vector<std::string> temppaths;
 			for (int i2 = 0; i2 < 12; i2++) {
 				for (int j = 0; j < 12; j++) {
 					BinElement *binel = this->currbin->elements[i2 * 12 + j];
@@ -2363,45 +2415,123 @@ void BinsMain::receive_shared_bins() {
 					std::string path(walk);
 					walk += strlen(walk) + 1;
 					std::string teststr;
+					std::string str;
 					if (exists(path)) {
 						teststr = path;
 					} else {
 						teststr = test_driveletters(path);
 					}
-					if (teststr != "") {
-						binel->name = name;
-						if (teststr != binel->path) {
-							temppaths.push_back(teststr);
-						} else {
-							temppaths.push_back("SCRAMBLED20011975");
-						}
-					} else {
-						binel->name = "";
-						temppaths.push_back("");
-					}
+					binel->name = name;
+					binel->path = teststr;
+					binel->type = ELEM_FILE;
 				}
 			}
 
-			int epos = -1;
-			for (int o = 0; o < 9; o++) {
-				for (int n = 0; n < 4; n++) {
-					for (int m = 0; m < 4; m++) {
-						epos = (int) (o / 3) * 48 + (int) (o % 3) * 4 + n * 12 + m;
-						mainprogram->paths.push_back(temppaths[epos]);
-					}
-				}
-			}
-
-			this->openfilesbin = true;
-			this->receivingbin = true;
 			this->menuactbinel = this->currbin->elements[0];  // loading starts from first bin element
 
+			this->receivingbin = true;
             this->messages.erase(binsmain->messages.begin());
             if (mainprogram->server) {
                 this->rawmessages.erase(binsmain->rawmessages.begin());
             }
             this->messagelengths.erase(binsmain->messagelengths.begin());
             this->messagesocknames.erase(binsmain->messagesocknames.begin());
+		}
+	}
+}
+
+void BinsMain::receive_shared_textures() {
+	// receive sent texture files
+	if (this->texmessages.size() > 0) {
+		std::vector<char*> texmessagescopy = this->texmessages;
+        std::vector<char*> rawtexmessagescopy;
+        if (mainprogram->server) {
+            rawtexmessagescopy = this->rawtexmessages;
+        }
+		std::vector<std::string> texmessagesocknamescopy = this->texmessagesocknames;
+		std::vector<int> texmessagelengthscopy = this->texmessagelengths;
+
+		for (int i = 0; i < texmessagescopy.size(); i++) {
+			if (mainprogram->server) {
+				// forward texture messages to other clients
+				for (int j = 0; j < mainprogram->connsockets.size(); j++) {
+					if (mainprogram->connsockets[j] != mainprogram->connmap[texmessagesocknamescopy[i]]) {
+						send(mainprogram->connsockets[j], rawtexmessagescopy[i], texmessagelengthscopy[i], 0);
+					}
+				}
+			}
+
+			// process texture message
+			char *walk = texmessagescopy[i];
+			std::string seatname(walk);
+			walk += strlen(walk) + 1;
+			std::string binname(walk);
+			walk += strlen(walk) + 1;
+			std::string posstr(walk);
+			walk += strlen(walk) + 1;
+			std::string filesizestr(walk);
+			walk += strlen(walk) + 1;
+
+			int pos = std::stoi(posstr);
+			int filesize = std::stoi(filesizestr);
+
+			// Find the target bin
+			Bin *targetbin = nullptr;
+			for (Bin *bin : this->bins) {
+				if (bin->name == binname) {
+					targetbin = bin;
+					break;
+				}
+			}
+
+			if (targetbin && pos >= 0 && pos < 144) {
+				BinElement *binel = targetbin->elements[pos];
+				
+				if (filesize == 0) {
+					// No texture - set to placeholder
+					binel->tex = -1;
+				} else {
+					// Receive texture file data
+					char *texturedata = walk;
+					
+					// Create temporary file for the received texture
+					std::string tempdir = std::filesystem::temp_directory_path().generic_string();
+					std::string tempfilename = "received_tex_" + seatname + "_" + binname + "_" + std::to_string(pos) + ".jpg";
+					std::string temppath = tempdir + "/" + tempfilename;
+					
+					// Write received data to temporary file
+					std::ofstream tempfile(temppath, std::ios::binary);
+					if (tempfile.is_open()) {
+						tempfile.write(texturedata, filesize);
+						tempfile.close();
+						
+						// Set the absolute path for the received texture
+						binel->absjpath = temppath;
+						
+						// Load the texture using open_thumb
+						open_thumb(binel->absjpath, binel->tex);
+					}
+				}
+			}
+
+			// Clean up processed message
+			char* msgbuf = this->texmessages[0];
+			this->texmessages.erase(this->texmessages.begin());
+            if (mainprogram->server) {
+                char* rawmsgbuf = this->rawtexmessages[0];
+                this->rawtexmessages.erase(this->rawtexmessages.begin());
+                if (this->texmessagelengths[0] > 0) {
+                    free(rawmsgbuf);  // Free allocated raw message buffer
+                }
+            }
+            int msglen = this->texmessagelengths[0];
+            this->texmessagelengths.erase(this->texmessagelengths.begin());
+            this->texmessagesocknames.erase(this->texmessagesocknames.begin());
+            
+            // Free the texture message buffer if it was allocated
+            if (msglen > 0 && msgbuf) {
+                free(msgbuf);
+            }
 		}
 	}
 }

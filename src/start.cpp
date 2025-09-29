@@ -447,6 +447,7 @@ std::string getdocumentspath() {
     return std::string(home) + "/Documents";
 }
 
+#ifdef WINDOWS
 std::vector<std::string> getListOfDrives() {
     std::vector<std::string> arrayOfDrives;
     char* szDrives = new char[MAX_PATH]();
@@ -457,8 +458,47 @@ std::vector<std::string> getListOfDrives() {
     delete[] szDrives;
     return arrayOfDrives;
 }
+#endif
 
-std::string test_driveletters(std::string path) {     // reminder : implement POSIX /run/media
+#ifdef POSIX
+std::vector<std::string> getListOfDrives() {
+    std::vector<std::string> arrayOfDrives;
+    
+    // Common mount points for external drives on Linux
+    std::vector<std::string> mountPaths = {
+        "/media/",
+        "/mnt/",
+        "/run/media/" + std::string(getenv("USER") ? getenv("USER") : "") + "/"
+    };
+    
+    // Always include root filesystem
+    arrayOfDrives.push_back("/");
+    
+    // Check each mount path for subdirectories (mounted devices)
+    for (const auto& mountPath : mountPaths) {
+        if (exists(mountPath)) {
+            DIR* dir = opendir(mountPath.c_str());
+            if (dir) {
+                struct dirent* entry;
+                while ((entry = readdir(dir)) != nullptr) {
+                    if (entry->d_type == DT_DIR && 
+                        strcmp(entry->d_name, ".") != 0 && 
+                        strcmp(entry->d_name, "..") != 0) {
+                        std::string fullPath = mountPath + entry->d_name + "/";
+                        arrayOfDrives.push_back(fullPath);
+                    }
+                }
+                closedir(dir);
+            }
+        }
+    }
+    
+    return arrayOfDrives;
+}
+#endif
+
+std::string test_driveletters(std::string path) {
+#ifdef WINDOWS
     if (path.length() < 4) return "";
     auto driveletters = getListOfDrives();
     for (auto letter : driveletters) {
@@ -468,6 +508,51 @@ std::string test_driveletters(std::string path) {     // reminder : implement PO
         }
     }
     return "";
+#endif
+
+#ifdef POSIX
+    if (path.empty()) return "";
+    
+    // Extract the relative part by finding the deepest mount point match
+    std::string relativePart = path;
+    
+    // Common mount point prefixes to strip
+    std::vector<std::string> mountPrefixes = {
+        "/run/media/",
+        "/media/",
+        "/mnt/"
+    };
+    
+    // Find which mount prefix this path uses and extract relative part
+    for (const auto& prefix : mountPrefixes) {
+        if (path.substr(0, prefix.length()) == prefix) {
+            // Find the next slash after the mount point to get device name
+            size_t deviceStart = prefix.length();
+            size_t deviceEnd = path.find('/', deviceStart);
+            if (deviceEnd != std::string::npos) {
+                relativePart = path.substr(deviceEnd + 1);
+                break;
+            }
+        }
+    }
+    
+    // If no mount prefix found, assume it's from root and strip first directory
+    if (relativePart == path && path[0] == '/') {
+        size_t firstSep = path.find('/', 1);
+        if (firstSep != std::string::npos) {
+            relativePart = path.substr(firstSep + 1);
+        }
+    }
+    
+    auto mountPoints = getListOfDrives();
+    for (const auto& mountPoint : mountPoints) {
+        std::string newpath = mountPoint + relativePart;
+        if (exists(newpath)) {
+            return pathtoplatform(newpath);
+        }
+    }
+    return "";
+#endif
 }
 
 bool isimage(std::string path) {
@@ -5537,6 +5622,7 @@ void the_loop() {
     }
 
     binsmain->receive_shared_bins();
+    binsmain->receive_shared_textures();
 
 
 

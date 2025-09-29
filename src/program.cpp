@@ -1501,15 +1501,9 @@ bool Program::order_paths(bool dodeckmix) {
 
     if (this->multistage == 3) {
         // then do interactive ordering
-        if (!binsmain->currbin->shared) {
-            if (this->paths.size() > 1) {
-                bool cont = this->do_order_paths();
-                if (!cont) return false;
-            }
-        }
-        else {
-            this->pathscount = 0;
-            this->multistage = 5;
+        if (this->paths.size() > 1) {
+            bool cont = this->do_order_paths();
+            if (!cont) return false;
         }
         this->multistage = 4;
     }
@@ -9914,6 +9908,51 @@ void Program::socket_client(struct sockaddr_in serv_addr, int opt) {
                 binsmain->messagesocknames.push_back(buf2);
                 buf2 += strlen(buf2) + 1;
                 binsmain->messages.push_back(buf2);
+            } else if (str == "TEX_SENT") {
+                buf2 += strlen(buf2) + 1;
+                int msglen = std::stoi(buf2);
+                buf2 += strlen(buf2) + 1;
+                std::string sockname = buf2;
+                buf2 += strlen(buf2) + 1;
+                
+                if (msglen > 0) {
+                    // Allocate buffer for complete texture message
+                    char* texbuf = (char*)malloc(msglen);
+                    if (texbuf) {
+                        // Copy already received header data
+                        char* headerstart = buf2;
+                        int headerlen = std::min(msglen, (int)(buf + 1024 - buf2));
+                        memcpy(texbuf, headerstart, headerlen);
+                        
+                        // Receive remaining data if needed
+                        int remaining = msglen - headerlen;
+                        if (remaining > 0) {
+                            char* recvpos = texbuf + headerlen;
+                            while (remaining > 0) {
+                                int received = recv(this->sock, recvpos, remaining, 0);
+                                if (received <= 0) {
+                                    free(texbuf);
+                                    texbuf = nullptr;
+                                    break;
+                                }
+                                recvpos += received;
+                                remaining -= received;
+                            }
+                        }
+                        
+                        // Queue complete message
+                        if (texbuf) {
+                            binsmain->texmessagelengths.push_back(msglen);
+                            binsmain->texmessagesocknames.push_back(sockname);
+                            binsmain->texmessages.push_back(texbuf);
+                        }
+                    }
+                } else {
+                    // Empty texture message (placeholder)
+                    binsmain->texmessagelengths.push_back(0);
+                    binsmain->texmessagesocknames.push_back(sockname);
+                    binsmain->texmessages.push_back(buf2);
+                }
             } else if (str == "NEW_SIBLING") {
                 buf2 += 12;
                 mainprogram->connsocknames.push_back(buf2);
@@ -9992,6 +10031,63 @@ void Program::socket_server_receive(SOCKET sock) {
             binsmain->messagesocknames.push_back(buf);
             buf += strlen(buf) + 1;
             binsmain->messages.push_back(buf);
+        }
+        else if (str == "TEX_SENT") {
+            char* rawbuf = buf;  // Save original buffer for forwarding
+            buf += strlen(buf) + 1;
+            int msglen = std::stoi(buf);
+            buf += strlen(buf) + 1;
+            std::string sockname = buf;
+            buf += strlen(buf) + 1;
+            
+            if (msglen > 0) {
+                // Allocate buffer for complete texture message
+                char* texbuf = (char*)malloc(msglen);
+                if (texbuf) {
+                    // Copy already received header data
+                    char* headerstart = buf;
+                    int headerlen = std::min(msglen, (int)(rawbuf + 1024 - buf));
+                    memcpy(texbuf, headerstart, headerlen);
+                    
+                    // Receive remaining data if needed
+                    int remaining = msglen - headerlen;
+                    if (remaining > 0) {
+                        char* recvpos = texbuf + headerlen;
+                        while (remaining > 0) {
+                            int received = recv(sock, recvpos, remaining, 0);
+                            if (received <= 0) {
+                                free(texbuf);
+                                texbuf = nullptr;
+                                break;
+                            }
+                            recvpos += received;
+                            remaining -= received;
+                        }
+                    }
+                    
+                    // Queue complete message
+                    if (texbuf) {
+                        // For server forwarding, we need to reconstruct the raw message
+                        int rawmsgsize = (buf - rawbuf) + msglen;
+                        char* rawmsgbuf = (char*)malloc(rawmsgsize);
+                        if (rawmsgbuf) {
+                            memcpy(rawmsgbuf, rawbuf, buf - rawbuf);
+                            memcpy(rawmsgbuf + (buf - rawbuf), texbuf, msglen);
+                            binsmain->rawtexmessages.push_back(rawmsgbuf);
+                        }
+                        
+                        binsmain->texmessagelengths.push_back(msglen);
+                        binsmain->texmessagesocknames.push_back(sockname);
+                        binsmain->texmessages.push_back(texbuf);
+                    }
+                }
+            } else {
+                // Empty texture message (placeholder)
+                binsmain->rawtexmessages.push_back(rawbuf);
+                binsmain->texmessagelengths.push_back(0);
+                binsmain->texmessagesocknames.push_back(sockname);
+                binsmain->texmessages.push_back(buf);
+            }
         }
         else if (str == "CHANGE_NAME") {
             buf += strlen(buf) + 1;

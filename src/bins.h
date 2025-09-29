@@ -111,6 +111,10 @@ class BinsMain {
         std::vector<char*> rawmessages;
         std::vector<std::string> messagesocknames;
         std::vector<int> messagelengths;
+        std::vector<char*> texmessages;
+        std::vector<char*> rawtexmessages;
+        std::vector<std::string> texmessagesocknames;
+        std::vector<int> texmessagelengths;
 
 
         void handle(bool draw);
@@ -132,6 +136,7 @@ class BinsMain {
         void save_binjpegs();
 		void send_shared_bins();
 		void receive_shared_bins();
+		void receive_shared_textures();
         BinsMain();
 
 	private:
