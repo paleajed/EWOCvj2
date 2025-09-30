@@ -2252,123 +2252,177 @@ void BinsMain::handle(bool draw) {
 
 
 void BinsMain::send_shared_bins() {
-	auto put_in_buffer = [](const char* str, char* walk) {
-		// buffer utility
-		for (int i = 0; i < strlen(str); i++) {
-			*walk++ = str[i];
-		}
-		char nll[2] = "\0";
-		*walk++ = *nll;
-		return walk;
-	};
+    auto put_in_buffer = [](const char* str, char* walk, char* buffer_end) -> char* {
+        // buffer utility with bounds checking
+        size_t len = strlen(str);
+        if (walk + len + 1 > buffer_end) {
+            return nullptr;  // Buffer overflow would occur
+        }
+        for (size_t i = 0; i < len; i++) {
+            *walk++ = str[i];
+        }
+        *walk++ = '\0';
+        return walk;
+    };
 
-	for (auto name : this->currbin->sendtonames) {
-		int sock;
-		bool brk = false;
-		if (mainprogram->server) {
-			for (SOCKET testsock: mainprogram->connsockets) {
-				for (auto &elem: mainprogram->connmap) {
-					if (elem.first == name) {
-						sock = testsock;
-						brk = true;
-						break;
-					}
-				}
-				if (brk) {
-					break;
-				}
-			}
-		}
-		else sock = mainprogram->sock;
-		for (Bin *bin: binsmain->bins) {
-			if (bin->shared) {
-				char buf[148480] = {0};
-				char *walk = buf;
-				walk = put_in_buffer(mainprogram->seatname.c_str(), walk);
-				walk = put_in_buffer((this->currbin->name).c_str(), walk);
-				for (int i = 0; i < 12; i++) {
-					for (int j = 0; j < 12; j++) {
-						BinElement *binel = this->currbin->elements[i * 12 + j];
-						walk = put_in_buffer(binel->name.c_str(), walk);
-						walk = put_in_buffer(binel->path.c_str(), walk);
-					}
-				}
-				char buf2[148495] = {0};
-				char *walk2 = buf2;
-				walk2 = put_in_buffer("BIN_SENT", walk2);
-				walk2 = put_in_buffer(
-						(std::to_string(walk - &buf[0] + (std::to_string(walk - &buf[0])).size() + 10)).c_str(),
-						walk2);
-				for (int i = 0; i < walk - &buf[0]; i++) {
-					*walk2 = buf[i];  // append buf to buf2
-					walk2++;
-				}
-				send(sock, buf2, walk2 - &buf2[0], 0);
+    for (auto name : this->currbin->sendtonames) {
+        int sock = -1;  // Initialize to invalid socket
+        bool brk = false;
 
-				// Send texture files for each BinElement
-				for (int i = 0; i < 12; i++) {
-					for (int j = 0; j < 12; j++) {
-						BinElement *binel = this->currbin->elements[i * 12 + j];
-						
-						if (binel->tex == -1 || binel->absjpath.empty()) {
-							// Send placeholder for no texture
-							char texheader[256] = {0};
-							char *texwalk = texheader;
-							texwalk = put_in_buffer("TEX_SENT", texwalk);
-							texwalk = put_in_buffer("0", texwalk);  // message length = 0 for header only
-							texwalk = put_in_buffer(mainprogram->seatname.c_str(), texwalk);
-							texwalk = put_in_buffer((this->currbin->name).c_str(), texwalk);
-							texwalk = put_in_buffer(std::to_string(i * 12 + j).c_str(), texwalk);
-							texwalk = put_in_buffer("0", texwalk);  // file size = 0
-							send(sock, texheader, texwalk - &texheader[0], 0);
-						} else {
-							// Send actual texture file
-							std::ifstream texfile(binel->absjpath, std::ios::binary | std::ios::ate);
-							if (texfile.is_open()) {
-								size_t filesize = texfile.tellg();
-								texfile.seekg(0, std::ios::beg);
-								
-								// Prepare complete message with header and file data
-								size_t totalmsgsize = 256 + filesize;  // header space + file data
-								char *completemsg = (char*)malloc(totalmsgsize);
-								char *texwalk = completemsg;
-								
-								texwalk = put_in_buffer("TEX_SENT", texwalk);
-								texwalk = put_in_buffer(std::to_string(filesize + 256).c_str(), texwalk);  // total message size
-								texwalk = put_in_buffer(mainprogram->seatname.c_str(), texwalk);
-								texwalk = put_in_buffer((this->currbin->name).c_str(), texwalk);
-								texwalk = put_in_buffer(std::to_string(i * 12 + j).c_str(), texwalk);
-								texwalk = put_in_buffer(std::to_string(filesize).c_str(), texwalk);
-								
-								// Read file data directly into message buffer
-								texfile.read(texwalk, filesize);
-								texfile.close();
-								
-								// Send complete message
-								send(sock, completemsg, texwalk - completemsg + filesize, 0);
-								free(completemsg);
-							} else {
-								// File couldn't be opened, send placeholder
-								char texheader[256] = {0};
-								char *texwalk = texheader;
-								texwalk = put_in_buffer("TEX_SENT", texwalk);
-								texwalk = put_in_buffer("0", texwalk);
-								texwalk = put_in_buffer(mainprogram->seatname.c_str(), texwalk);
-								texwalk = put_in_buffer((this->currbin->name).c_str(), texwalk);
-								texwalk = put_in_buffer(std::to_string(i * 12 + j).c_str(), texwalk);
-								texwalk = put_in_buffer("0", texwalk);
-								send(sock, texheader, texwalk - &texheader[0], 0);
-							}
-						}
-					}
-				}
-			}
-		}
-		if (!mainprogram->server) {
-			// only send to server
-			break;
-		}
-	}
+        if (mainprogram->server) {
+            // Find the socket that corresponds to this name
+            for (auto &elem: mainprogram->connmap) {
+                if (elem.first == name) {
+                    sock = elem.second;  // Get the actual socket for this name
+                    brk = true;
+                    break;
+                }
+            }
+            if (!brk) {
+                // Socket not found for this name, skip
+                continue;
+            }
+        }
+        else {
+            sock = mainprogram->sock;
+        }
+
+        // Only send if currbin is shared
+        if (this->currbin->shared) {
+            char buf[148480] = {0};
+            char *buf_end = buf + sizeof(buf);
+            char *walk = buf;
+
+            walk = put_in_buffer(mainprogram->seatname.c_str(), walk, buf_end);
+            if (!walk) continue;  // Buffer overflow
+
+            walk = put_in_buffer((this->currbin->name).c_str(), walk, buf_end);
+            if (!walk) continue;
+
+            for (int i = 0; i < 12; i++) {
+                for (int j = 0; j < 12; j++) {
+                    BinElement *binel = this->currbin->elements[i * 12 + j];
+                    walk = put_in_buffer(binel->name.c_str(), walk, buf_end);
+                    if (!walk) break;
+                    walk = put_in_buffer(binel->path.c_str(), walk, buf_end);
+                    if (!walk) break;
+                }
+                if (!walk) break;
+            }
+            if (!walk) continue;  // Buffer overflow occurred
+
+            // Calculate actual message size
+            size_t msg_size = walk - buf;
+
+            char buf2[148495] = {0};
+            char *buf2_end = buf2 + sizeof(buf2);
+            char *walk2 = buf2;
+
+            walk2 = put_in_buffer("BIN_SENT", walk2, buf2_end);
+            if (!walk2) continue;
+
+            walk2 = put_in_buffer(std::to_string(msg_size).c_str(), walk2, buf2_end);
+            if (!walk2) continue;
+
+            // Append buf to buf2
+            if (walk2 + msg_size > buf2_end) continue;  // Check bounds
+            memcpy(walk2, buf, msg_size);
+            walk2 += msg_size;
+
+            send(sock, buf2, walk2 - buf2, 0);
+
+            // Send texture files for each BinElement
+            for (int i = 0; i < 12; i++) {
+                for (int j = 0; j < 12; j++) {
+                    BinElement *binel = this->currbin->elements[i * 12 + j];
+
+                    if (binel->tex == -1 || binel->absjpath.empty()) {
+                        // Send placeholder for no texture
+                        char texheader[256] = {0};
+                        char *texheader_end = texheader + sizeof(texheader);
+                        char *texwalk = texheader;
+
+                        texwalk = put_in_buffer("TEX_SENT", texwalk, texheader_end);
+                        if (!texwalk) continue;
+                        texwalk = put_in_buffer("0", texwalk, texheader_end);  // magic number for no texture
+                        if (!texwalk) continue;
+                        texwalk = put_in_buffer(mainprogram->seatname.c_str(), texwalk, texheader_end);
+                        if (!texwalk) continue;
+                        texwalk = put_in_buffer((this->currbin->name).c_str(), texwalk, texheader_end);
+                        if (!texwalk) continue;
+                        texwalk = put_in_buffer(std::to_string(i * 12 + j).c_str(), texwalk, texheader_end);
+                        if (!texwalk) continue;
+                        texwalk = put_in_buffer("0", texwalk, texheader_end);  // file size = 0
+                        if (!texwalk) continue;
+
+                        send(sock, texheader, texwalk - texheader, 0);
+                    } else {
+                        // Send actual texture file
+                        std::ifstream texfile(binel->absjpath, std::ios::binary | std::ios::ate);
+                        if (texfile.is_open()) {
+                            size_t filesize = texfile.tellg();
+                            texfile.seekg(0, std::ios::beg);
+
+                            // Prepare complete message with header and file data
+                            size_t header_size = 256;
+                            size_t totalmsgsize = header_size + filesize;
+
+                            // Use smart pointer for automatic cleanup
+                            std::unique_ptr<char[]> completemsg(new char[totalmsgsize]());
+                            char *completemsg_end = completemsg.get() + totalmsgsize;
+                            char *texwalk = completemsg.get();
+
+                            texwalk = put_in_buffer("TEX_SENT", texwalk, completemsg_end);
+                            if (!texwalk) continue;
+                            texwalk = put_in_buffer(std::to_string(filesize).c_str(), texwalk, completemsg_end);
+                            if (!texwalk) continue;
+                            texwalk = put_in_buffer(mainprogram->seatname.c_str(), texwalk, completemsg_end);
+                            if (!texwalk) continue;
+                            texwalk = put_in_buffer((this->currbin->name).c_str(), texwalk, completemsg_end);
+                            if (!texwalk) continue;
+                            texwalk = put_in_buffer(std::to_string(i * 12 + j).c_str(), texwalk, completemsg_end);
+                            if (!texwalk) continue;
+                            texwalk = put_in_buffer(std::to_string(filesize).c_str(), texwalk, completemsg_end);
+                            if (!texwalk) continue;
+
+                            // Read file data directly into message buffer
+                            texfile.read(texwalk, filesize);
+                            texfile.close();
+
+                            // Send complete message
+                            send(sock, completemsg.get(), texwalk - completemsg.get() + filesize, 0);
+                            // completemsg automatically freed by unique_ptr
+                        } else {
+                            // File couldn't be opened, send placeholder
+                            char texheader[256] = {0};
+                            char *texheader_end = texheader + sizeof(texheader);
+                            char *texwalk = texheader;
+
+                            texwalk = put_in_buffer("TEX_SENT", texwalk, texheader_end);
+                            if (!texwalk) continue;
+                            texwalk = put_in_buffer("0", texwalk, texheader_end);
+                            if (!texwalk) continue;
+                            texwalk = put_in_buffer(mainprogram->seatname.c_str(), texwalk, texheader_end);
+                            if (!texwalk) continue;
+                            texwalk = put_in_buffer((this->currbin->name).c_str(), texwalk, texheader_end);
+                            if (!texwalk) continue;
+                            texwalk = put_in_buffer(std::to_string(i * 12 + j).c_str(), texwalk, texheader_end);
+                            if (!texwalk) continue;
+                            texwalk = put_in_buffer("0", texwalk, texheader_end);
+                            if (!texwalk) continue;
+
+                            send(sock, texheader, texwalk - texheader, 0);
+                        }
+                    }
+                }
+            }
+        }
+
+        if (!mainprogram->server) {
+            // only send to server
+            break;
+        }
+    }
 }
 
 void BinsMain::receive_shared_bins() {

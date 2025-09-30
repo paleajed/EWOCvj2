@@ -9745,6 +9745,7 @@ void Program::socket_client(struct sockaddr_in serv_addr, int opt) {
             printf("\nInvalid server address/ Address not supported \n");
             this->connfailed = true;
             this->connfailedmilli = 0;
+            free(buf);
             return;
         }
 
@@ -9756,9 +9757,9 @@ void Program::socket_client(struct sockaddr_in serv_addr, int opt) {
         u_long flags = 1;
         ioctlsocket(this->sock, FIONBIO, &flags);
 #endif
-        
+
         int ret = connect(this->sock, (struct sockaddr *)&serv_addr, sizeof(serv_addr));
-        
+
         // Handle non-blocking connection properly
         if (ret < 0) {
 #ifdef POSIX
@@ -9772,7 +9773,7 @@ void Program::socket_client(struct sockaddr_in serv_addr, int opt) {
                 FD_SET(this->sock, &writefds);
                 timeout.tv_sec = 5;  // 5 second timeout
                 timeout.tv_usec = 0;
-                
+
                 int select_result = select(this->sock + 1, NULL, &writefds, NULL, &timeout);
                 if (select_result > 0) {
                     // Check if connection succeeded
@@ -9808,7 +9809,7 @@ void Program::socket_client(struct sockaddr_in serv_addr, int opt) {
                 FD_SET(this->sock, &writefds);
                 timeout.tv_sec = 5;  // 5 second timeout
                 timeout.tv_usec = 0;
-                
+
                 int select_result = select(0, NULL, &writefds, NULL, &timeout);
                 if (select_result > 0) {
                     // Check if connection succeeded
@@ -9835,18 +9836,40 @@ void Program::socket_client(struct sockaddr_in serv_addr, int opt) {
         }
 
         if (ret >= 0) {
+            // Set socket back to blocking mode for stable communication
+#ifdef POSIX
+            int flags = fcntl(this->sock, F_GETFL);
+            fcntl(this->sock, F_SETFL, flags & ~O_NONBLOCK);
+#endif
+#ifdef WINDOWS
+            u_long flags = 0;
+            ioctlsocket(this->sock, FIONBIO, &flags);
+#endif
+
             // server found and connected successfully!
             std::cout << "DEBUG: Connection established, waiting for server response..." << std::endl;
-            buf = bl_recv( this->sock , buf, 1024, 0);
+            buf = bl_recv(this->sock, buf, 1024, 0);
+            if (buf == nullptr) {
+                std::cout << "DEBUG: Failed to receive initial response" << std::endl;
+                free(buf);
+                return;
+            }
+
             std::cout << "DEBUG: Received from server: '" << std::string(buf) << "'" << std::endl;
-            if (buf == "LOOP") {
+            if (strcmp(buf, "LOOP") == 0) {
                 std::cout << "DEBUG: Loop detected, disconnecting" << std::endl;
+                free(buf);
                 return;
             }
             std::cout << "DEBUG: Sending seatname: " << this->seatname << std::endl;
             send(this->sock, this->seatname.c_str(), this->seatname.size(), 0);
             // receive server name
-            buf = bl_recv(this->sock , buf, 1024, 0);
+            buf = bl_recv(this->sock, buf, 1024, 0);
+            if (buf == nullptr) {
+                std::cout << "DEBUG: Failed to receive server name" << std::endl;
+                free(buf);
+                return;
+            }
             std::cout << "DEBUG: Received server name: '" << std::string(buf) << "'" << std::endl;
             this->connsocknames.push_back(buf);
             this->connected = 1;
@@ -9863,7 +9886,7 @@ void Program::socket_client(struct sockaddr_in serv_addr, int opt) {
             std::cout << "DEBUG: Connection failed, WSA error: " << WSAGetLastError() << std::endl;
 #endif
             std::cout << "DEBUG: Retrying connection to " << this->serverip << ":8000 in 2 seconds..." << std::endl;
-            
+
             this->connfailed = true;
             this->connfailedmilli = 0;
 #ifdef POSIX
@@ -9874,7 +9897,7 @@ void Program::socket_client(struct sockaddr_in serv_addr, int opt) {
 #endif
             // Reset connection state and try again instead of returning
             this->connfailed = false;
-            
+
             // Close and recreate socket for next attempt
 #ifdef POSIX
             close(this->sock);
@@ -9886,6 +9909,7 @@ void Program::socket_client(struct sockaddr_in serv_addr, int opt) {
                 printf("\n Socket creation error \n");
                 this->connfailed = true;
                 this->connfailedmilli = 0;
+                free(buf);
                 return;
             }
         }
@@ -9893,37 +9917,59 @@ void Program::socket_client(struct sockaddr_in serv_addr, int opt) {
     free(buf);
 
     char *buf2 = (char *) calloc(148489, 1);
+    if (buf2 == nullptr) {
+        printf("\n Memory allocation error \n");
+        return;
+    }
+
     // wait for messages
     while (1) {
         buf2 = bl_recv(this->sock, buf2, 148489, 0);
         if (buf2 == nullptr) {
-            continue;  // reminder : server has shut down
+            std::cout << "DEBUG: Server disconnected or recv error" << std::endl;
+            free(buf2);
+            this->connected = 0;
+            return;
         }
+
         std::string str(buf2);
-        if (buf2 != "") {
+        if (strlen(buf2) > 0) {
             if (str == "BIN_SENT") {
-                buf2 += strlen(buf2) + 1;
-                binsmain->messagelengths.push_back(std::stoi(buf2));
-                buf2 += strlen(buf2) + 1;
-                binsmain->messagesocknames.push_back(buf2);
-                buf2 += strlen(buf2) + 1;
-                binsmain->messages.push_back(buf2);
+                char* ptr = buf2 + strlen(buf2) + 1;
+                // Check bounds
+                if (ptr >= buf2 + 148489) continue;
+
+                binsmain->messagelengths.push_back(std::stoi(ptr));
+                ptr += strlen(ptr) + 1;
+                if (ptr >= buf2 + 148489) continue;
+
+                binsmain->messagesocknames.push_back(ptr);
+                ptr += strlen(ptr) + 1;
+                if (ptr >= buf2 + 148489) continue;
+
+                binsmain->messages.push_back(ptr);
+
             } else if (str == "TEX_SENT") {
-                buf2 += strlen(buf2) + 1;
-                int msglen = std::stoi(buf2);
-                buf2 += strlen(buf2) + 1;
-                std::string sockname = buf2;
-                buf2 += strlen(buf2) + 1;
-                
+                char* ptr = buf2 + strlen(buf2) + 1;
+                if (ptr >= buf2 + 148489) continue;
+
+                int msglen = std::stoi(ptr);
+                ptr += strlen(ptr) + 1;
+                if (ptr >= buf2 + 148489) continue;
+
+                std::string sockname = ptr;
+                ptr += strlen(ptr) + 1;
+                if (ptr >= buf2 + 148489) continue;
+
                 if (msglen > 0) {
                     // Allocate buffer for complete texture message
                     char* texbuf = (char*)malloc(msglen);
                     if (texbuf) {
-                        // Copy already received header data
-                        char* headerstart = buf2;
-                        int headerlen = std::min(msglen, (int)(buf + 1024 - buf2));
-                        memcpy(texbuf, headerstart, headerlen);
-                        
+                        // Calculate how much data we already have
+                        int already_received = buf2 + 148489 - ptr;
+                        int headerlen = std::min(msglen, already_received);
+                        memcpy(texbuf, ptr, headerlen);
+
                         // Receive remaining data if needed
                         int remaining = msglen - headerlen;
                         if (remaining > 0) {
@@ -9939,7 +9985,7 @@ void Program::socket_client(struct sockaddr_in serv_addr, int opt) {
                                 remaining -= received;
                             }
                         }
-                        
+
                         // Queue complete message
                         if (texbuf) {
                             binsmain->texmessagelengths.push_back(msglen);
@@ -9951,27 +9997,30 @@ void Program::socket_client(struct sockaddr_in serv_addr, int opt) {
                     // Empty texture message (placeholder)
                     binsmain->texmessagelengths.push_back(0);
                     binsmain->texmessagesocknames.push_back(sockname);
-                    binsmain->texmessages.push_back(buf2);
+                    binsmain->texmessages.push_back(ptr);
                 }
+
             } else if (str == "NEW_SIBLING") {
-                buf2 += 12;
-                mainprogram->connsocknames.push_back(buf2);
+                char* ptr = buf2 + strlen("NEW_SIBLING") + 1;
+                if (ptr < buf2 + 148489) {
+                    mainprogram->connsocknames.push_back(ptr);
+                }
+
             } else if (str == "SERVER_QUITS") {
                 // disconnect
                 this->connected = 0;
-            } else if (str == "CHANGE_NAME") {
-                buf += strlen(buf) + 1;
-                int pos =
-                        std::find(this->connsockets.begin(), this->connsockets.end(), sock) - this->connsockets.begin();
-                this->connsocknames[pos] = buf;
-            }
-
-            // Convert IPv4 and IPv6 addresses from text to binary form
-            if (inet_pton(AF_INET, buf2, &serv_addr.sin_addr) <= 0) {
-                printf("\nInvalid address/ Address not supported \n");
+                free(buf2);
                 return;
+
+            } else if (str == "CHANGE_NAME") {
+                char* ptr = buf2 + strlen(buf2) + 1;
+                if (ptr >= buf2 + 148489) continue;
+
+                int pos = std::find(this->connsockets.begin(), this->connsockets.end(), this->sock) - this->connsockets.begin();
+                if (pos < this->connsocknames.size()) {
+                    this->connsocknames[pos] = ptr;
+                }
             }
-            connect(mainprogram->sock, (struct sockaddr *) &serv_addr, sizeof(serv_addr));
         }
     }
 }
@@ -9979,29 +10028,36 @@ void Program::socket_client(struct sockaddr_in serv_addr, int opt) {
 void Program::socket_server_receive(SOCKET sock) {
     // wait for messages
     char *buf = (char *) malloc(148489);
+    if (buf == nullptr) {
+        printf("\n Memory allocation error \n");
+        return;
+    }
+
     while (1) {
+        char* original_buf = buf;  // Save original pointer
         buf = bl_recv(sock, buf, 148489, 0);
+
         if (!this->server) {
-            free(buf);
+            free(original_buf);
             return;
         }
-        
+
         // Check for disconnection
         if (buf == nullptr) {
             std::cout << "DEBUG: Client disconnected from socket " << sock << std::endl;
-            
+
             // Find and remove this socket from connsockets and connsocknames
             auto it = std::find(this->connsockets.begin(), this->connsockets.end(), sock);
             if (it != this->connsockets.end()) {
                 int pos = it - this->connsockets.begin();
                 std::cout << "DEBUG: Removing client '" << this->connsocknames[pos] << "' from position " << pos << std::endl;
-                
+
                 // Remove from both vectors
                 this->connsockets.erase(it);
                 if (pos < this->connsocknames.size()) {
                     this->connsocknames.erase(this->connsocknames.begin() + pos);
                 }
-                
+
                 // Remove from connmap
                 for (auto map_it = this->connmap.begin(); map_it != this->connmap.end(); ++map_it) {
                     if (map_it->second == sock) {
@@ -10010,7 +10066,7 @@ void Program::socket_server_receive(SOCKET sock) {
                     }
                 }
             }
-            
+
             // Close the socket
 #ifdef POSIX
             close(sock);
@@ -10018,37 +10074,81 @@ void Program::socket_server_receive(SOCKET sock) {
 #ifdef WINDOWS
             closesocket(sock);
 #endif
-            free(buf);
+            free(original_buf);
             return;
         }
-        
+
+        // Restore buf to original pointer for processing
+        buf = original_buf;
+
         std::string str(buf);
         if (str == "BIN_SENT") {
-            binsmain->rawmessages.push_back(buf);
-            buf += strlen(buf) + 1;
-            binsmain->messagelengths.push_back(std::stoi(buf));
-            buf += strlen(buf) + 1;
-            binsmain->messagesocknames.push_back(buf);
-            buf += strlen(buf) + 1;
-            binsmain->messages.push_back(buf);
+            // Make a copy for rawmessages to avoid pointer issues
+            size_t total_size = strlen(buf) + 1;
+            char* ptr = buf + total_size;
+            if (ptr >= buf + 148489) continue;
+
+            total_size += strlen(ptr) + 1;
+            ptr = buf + total_size;
+            if (ptr >= buf + 148489) continue;
+
+            total_size += strlen(ptr) + 1;
+            ptr = buf + total_size;
+            if (ptr >= buf + 148489) continue;
+
+            // Calculate total message size
+            char* msg_start = ptr;
+            // Assume message continues to end or next null
+            size_t msg_len = strnlen(ptr, buf + 148489 - ptr);
+            total_size += msg_len;
+
+            // Create a copy of the entire message for rawmessages
+            char* raw_copy = (char*)malloc(total_size);
+            if (raw_copy) {
+                memcpy(raw_copy, buf, total_size);
+                binsmain->rawmessages.push_back(raw_copy);
+            }
+
+            // Now parse with a separate pointer
+            ptr = buf + strlen(buf) + 1;
+            binsmain->messagelengths.push_back(std::stoi(ptr));
+            ptr += strlen(ptr) + 1;
+
+            // Store copies of strings to avoid dangling pointers
+            std::string sockname(ptr);
+            binsmain->messagesocknames.push_back(sockname);
+            ptr += strlen(ptr) + 1;
+
+            // Store copy of message data
+            size_t msg_data_len = strnlen(ptr, buf + 148489 - ptr);
+            char* msg_copy = (char*)malloc(msg_data_len + 1);
+            if (msg_copy) {
+                memcpy(msg_copy, ptr, msg_data_len);
+                msg_copy[msg_data_len] = '\0';
+                binsmain->messages.push_back(msg_copy);
+            }
         }
         else if (str == "TEX_SENT") {
-            char* rawbuf = buf;  // Save original buffer for forwarding
-            buf += strlen(buf) + 1;
-            int msglen = std::stoi(buf);
-            buf += strlen(buf) + 1;
-            std::string sockname = buf;
-            buf += strlen(buf) + 1;
-            
+            char* ptr = buf + strlen(buf) + 1;
+            if (ptr >= buf + 148489) continue;
+
+            int msglen = std::stoi(ptr);
+            ptr += strlen(ptr) + 1;
+            if (ptr >= buf + 148489) continue;
+
+            std::string sockname(ptr);
+            ptr += strlen(ptr) + 1;
+            if (ptr >= buf + 148489) continue;
+
             if (msglen > 0) {
                 // Allocate buffer for complete texture message
                 char* texbuf = (char*)malloc(msglen);
                 if (texbuf) {
-                    // Copy already received header data
-                    char* headerstart = buf;
-                    int headerlen = std::min(msglen, (int)(rawbuf + 1024 - buf));
-                    memcpy(texbuf, headerstart, headerlen);
-                    
+                    // Calculate how much data we already have in buffer
+                    int already_received = buf + 148489 - ptr;
+                    int headerlen = std::min(msglen, already_received);
+                    memcpy(texbuf, ptr, headerlen);
+
                     // Receive remaining data if needed
                     int remaining = msglen - headerlen;
                     if (remaining > 0) {
@@ -10064,18 +10164,19 @@ void Program::socket_server_receive(SOCKET sock) {
                             remaining -= received;
                         }
                     }
-                    
+
                     // Queue complete message
                     if (texbuf) {
-                        // For server forwarding, we need to reconstruct the raw message
-                        int rawmsgsize = (buf - rawbuf) + msglen;
+                        // For server forwarding, reconstruct the raw message
+                        int header_size = ptr - buf;
+                        int rawmsgsize = header_size + msglen;
                         char* rawmsgbuf = (char*)malloc(rawmsgsize);
                         if (rawmsgbuf) {
-                            memcpy(rawmsgbuf, rawbuf, buf - rawbuf);
-                            memcpy(rawmsgbuf + (buf - rawbuf), texbuf, msglen);
+                            memcpy(rawmsgbuf, buf, header_size);
+                            memcpy(rawmsgbuf + header_size, texbuf, msglen);
                             binsmain->rawtexmessages.push_back(rawmsgbuf);
                         }
-                        
+
                         binsmain->texmessagelengths.push_back(msglen);
                         binsmain->texmessagesocknames.push_back(sockname);
                         binsmain->texmessages.push_back(texbuf);
@@ -10083,21 +10184,37 @@ void Program::socket_server_receive(SOCKET sock) {
                 }
             } else {
                 // Empty texture message (placeholder)
-                binsmain->rawtexmessages.push_back(rawbuf);
+                // Create a copy for rawtexmessages
+                int header_size = ptr - buf;
+                char* raw_copy = (char*)malloc(header_size);
+                if (raw_copy) {
+                    memcpy(raw_copy, buf, header_size);
+                    binsmain->rawtexmessages.push_back(raw_copy);
+                }
+
                 binsmain->texmessagelengths.push_back(0);
                 binsmain->texmessagesocknames.push_back(sockname);
-                binsmain->texmessages.push_back(buf);
+
+                // Store empty placeholder
+                char* empty_copy = (char*)malloc(1);
+                if (empty_copy) {
+                    empty_copy[0] = '\0';
+                    binsmain->texmessages.push_back(empty_copy);
+                }
             }
         }
         else if (str == "CHANGE_NAME") {
-            buf += strlen(buf) + 1;
+            char* ptr = buf + strlen(buf) + 1;
+            if (ptr >= buf + 148489) continue;
+
             int pos = std::find(this->connsockets.begin(), this->connsockets.end(), sock) - this->connsockets.begin();
             if (pos < this->connsocknames.size()) {
-                this->connsocknames[pos] = buf;
+                this->connsocknames[pos] = std::string(ptr);
             }
         }
+
+        // buf pointer is restored to original_buf at the start of next iteration
     }
-    free(buf);
 }
 
 void Program::start_discovery() {
