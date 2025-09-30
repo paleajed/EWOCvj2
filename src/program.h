@@ -4,6 +4,10 @@
 #define POSIX
 #endif
 
+// Network buffer size constants
+#define NETWORK_BUFFER_SIZE 148489
+#define NETWORK_RECV_SIZE 148488  // Leave space for null terminator
+
 #include "boost/bind.hpp"
 #include "boost/asio.hpp"
 #include "boost/thread/thread.hpp"

@@ -9736,6 +9736,11 @@ void Program::socket_server(struct sockaddr_in serv_addr, int opt) {
 
 void Program::socket_client(struct sockaddr_in serv_addr, int opt) {
     char *buf = (char*)malloc(1024);
+    if (!buf) {
+        printf("\nMemory allocation error \n");
+        return;
+    }
+    
     while (1) {
         std::unique_lock<std::mutex> lock(this->clientmutex);
         this->startclient.wait(lock, [&] {return !this->server; });
@@ -9848,12 +9853,13 @@ void Program::socket_client(struct sockaddr_in serv_addr, int opt) {
 
             // server found and connected successfully!
             std::cout << "DEBUG: Connection established, waiting for server response..." << std::endl;
-            buf = bl_recv(this->sock, buf, 1024, 0);
-            if (buf == nullptr) {
+            char* recv_result = bl_recv(this->sock, buf, 1023, 0);  // Leave space for null terminator
+            if (recv_result == nullptr) {
                 std::cout << "DEBUG: Failed to receive initial response" << std::endl;
                 free(buf);
                 return;
             }
+            buf = recv_result;
 
             std::cout << "DEBUG: Received from server: '" << std::string(buf) << "'" << std::endl;
             if (strcmp(buf, "LOOP") == 0) {
@@ -9864,12 +9870,13 @@ void Program::socket_client(struct sockaddr_in serv_addr, int opt) {
             std::cout << "DEBUG: Sending seatname: " << this->seatname << std::endl;
             send(this->sock, this->seatname.c_str(), this->seatname.size(), 0);
             // receive server name
-            buf = bl_recv(this->sock, buf, 1024, 0);
-            if (buf == nullptr) {
+            recv_result = bl_recv(this->sock, buf, 1023, 0);  // Leave space for null terminator
+            if (recv_result == nullptr) {
                 std::cout << "DEBUG: Failed to receive server name" << std::endl;
                 free(buf);
                 return;
             }
+            buf = recv_result;
             std::cout << "DEBUG: Received server name: '" << std::string(buf) << "'" << std::endl;
             this->connsocknames.push_back(buf);
             this->connected = 1;
@@ -9916,7 +9923,7 @@ void Program::socket_client(struct sockaddr_in serv_addr, int opt) {
     }
     free(buf);
 
-    char *buf2 = (char *) calloc(148489, 1);
+    char *buf2 = (char *) calloc(NETWORK_BUFFER_SIZE, 1);
     if (buf2 == nullptr) {
         printf("\n Memory allocation error \n");
         return;
@@ -9924,51 +9931,75 @@ void Program::socket_client(struct sockaddr_in serv_addr, int opt) {
 
     // wait for messages
     while (1) {
-        buf2 = bl_recv(this->sock, buf2, 148489, 0);
-        if (buf2 == nullptr) {
+        char* recv_result = bl_recv(this->sock, buf2, NETWORK_RECV_SIZE, 0);  // Leave space for null terminator
+        if (recv_result == nullptr) {
             std::cout << "DEBUG: Server disconnected or recv error" << std::endl;
             free(buf2);
             this->connected = 0;
             return;
         }
+        buf2 = recv_result;
 
-        std::string str(buf2);
-        if (strlen(buf2) > 0) {
+        size_t buf_len = strnlen(buf2, NETWORK_RECV_SIZE);  // Safe string length check
+        if (buf_len > 0) {
+            std::string str(buf2, buf_len);  // Use length-limited constructor
             if (str == "BIN_SENT") {
-                char* ptr = buf2 + strlen(buf2) + 1;
-                // Check bounds
-                if (ptr >= buf2 + 148489) continue;
+                char* ptr = buf2 + buf_len + 1;
+                // Check bounds with proper buffer end check
+                if (ptr >= buf2 + NETWORK_BUFFER_SIZE || ptr < buf2) continue;
 
-                binsmain->messagelengths.push_back(std::stoi(ptr));
-                ptr += strlen(ptr) + 1;
-                if (ptr >= buf2 + 148489) continue;
+                try {
+                    binsmain->messagelengths.push_back(std::stoi(ptr));
+                } catch (const std::exception& e) {
+                    std::cout << "DEBUG: Invalid message length in BIN_SENT" << std::endl;
+                    continue;
+                }
+                
+                ptr += strnlen(ptr, buf2 + NETWORK_BUFFER_SIZE - ptr) + 1;
+                if (ptr >= buf2 + NETWORK_BUFFER_SIZE || ptr < buf2) continue;
 
-                binsmain->messagesocknames.push_back(ptr);
-                ptr += strlen(ptr) + 1;
-                if (ptr >= buf2 + 148489) continue;
+                binsmain->messagesocknames.push_back(std::string(ptr, strnlen(ptr, buf2 + NETWORK_BUFFER_SIZE - ptr)));
+                ptr += strnlen(ptr, buf2 + NETWORK_BUFFER_SIZE - ptr) + 1;
+                if (ptr >= buf2 + NETWORK_BUFFER_SIZE || ptr < buf2) continue;
 
-                binsmain->messages.push_back(ptr);
+                // Make a copy of the message data to avoid dangling pointers
+                size_t remaining_len = buf2 + NETWORK_BUFFER_SIZE - ptr;
+                char* msg_copy = (char*)malloc(remaining_len);
+                if (msg_copy) {
+                    memcpy(msg_copy, ptr, remaining_len);
+                    binsmain->messages.push_back(msg_copy);
+                }
 
             } else if (str == "TEX_SENT") {
-                char* ptr = buf2 + strlen(buf2) + 1;
-                if (ptr >= buf2 + 148489) continue;
+                char* ptr = buf2 + buf_len + 1;
+                if (ptr >= buf2 + NETWORK_BUFFER_SIZE || ptr < buf2) continue;
 
-                int msglen = std::stoi(ptr);
-                ptr += strlen(ptr) + 1;
-                if (ptr >= buf2 + 148489) continue;
+                int msglen;
+                try {
+                    msglen = std::stoi(ptr);
+                } catch (const std::exception& e) {
+                    std::cout << "DEBUG: Invalid message length in TEX_SENT" << std::endl;
+                    continue;
+                }
+                
+                ptr += strnlen(ptr, buf2 + NETWORK_BUFFER_SIZE - ptr) + 1;
+                if (ptr >= buf2 + NETWORK_BUFFER_SIZE || ptr < buf2) continue;
 
-                std::string sockname = ptr;
-                ptr += strlen(ptr) + 1;
-                if (ptr >= buf2 + 148489) continue;
+                std::string sockname(ptr, strnlen(ptr, buf2 + NETWORK_BUFFER_SIZE - ptr));
+                ptr += strnlen(ptr, buf2 + NETWORK_BUFFER_SIZE - ptr) + 1;
+                if (ptr >= buf2 + NETWORK_BUFFER_SIZE || ptr < buf2) continue;
 
-                if (msglen > 0) {
+                if (msglen > 0 && msglen < 50*1024*1024) {  // Reasonable size limit (50MB)
                     // Allocate buffer for complete texture message
                     char* texbuf = (char*)malloc(msglen);
                     if (texbuf) {
                         // Calculate how much data we already have
-                        int already_received = buf2 + 148489 - ptr;
-                        int headerlen = std::min(msglen, already_received);
-                        memcpy(texbuf, ptr, headerlen);
+                        ptrdiff_t already_received = buf2 + NETWORK_BUFFER_SIZE - ptr;
+                        if (already_received < 0) already_received = 0;
+                        int headerlen = std::min(msglen, static_cast<int>(already_received));
+                        if (headerlen > 0) {
+                            memcpy(texbuf, ptr, headerlen);
+                        }
 
                         // Receive remaining data if needed
                         int remaining = msglen - headerlen;
@@ -9993,32 +10024,45 @@ void Program::socket_client(struct sockaddr_in serv_addr, int opt) {
                             binsmain->texmessages.push_back(texbuf);
                         }
                     }
-                } else {
-                    // Empty texture message (placeholder)
-                    binsmain->texmessagelengths.push_back(0);
-                    binsmain->texmessagesocknames.push_back(sockname);
-                    binsmain->texmessages.push_back(ptr);
+                } else if (msglen == 0) {
+                    // Empty texture message (placeholder) - make a copy
+                    size_t remaining_len = buf2 + NETWORK_BUFFER_SIZE - ptr;
+                    if (remaining_len > 0) {
+                        char* ptr_copy = (char*)malloc(remaining_len);
+                        if (ptr_copy) {
+                            memcpy(ptr_copy, ptr, remaining_len);
+                            binsmain->texmessagelengths.push_back(0);
+                            binsmain->texmessagesocknames.push_back(sockname);
+                            binsmain->texmessages.push_back(ptr_copy);
+                        }
+                    }
                 }
 
             } else if (str == "NEW_SIBLING") {
-                char* ptr = buf2 + strlen("NEW_SIBLING") + 1;
-                if (ptr < buf2 + 148489) {
-                    mainprogram->connsocknames.push_back(ptr);
+                char* ptr = buf2 + buf_len + 1;
+                if (ptr < buf2 + NETWORK_BUFFER_SIZE && ptr >= buf2) {
+                    std::string sibling_name(ptr, strnlen(ptr, buf2 + NETWORK_BUFFER_SIZE - ptr));
+                    std::lock_guard<std::mutex> lock(this->clientmutex);  // Add synchronization
+                    this->connsocknames.push_back(sibling_name);
                 }
 
             } else if (str == "SERVER_QUITS") {
                 // disconnect
+                std::lock_guard<std::mutex> lock(this->clientmutex);  // Add synchronization
                 this->connected = 0;
                 free(buf2);
                 return;
 
             } else if (str == "CHANGE_NAME") {
-                char* ptr = buf2 + strlen(buf2) + 1;
-                if (ptr >= buf2 + 148489) continue;
-
-                int pos = std::find(this->connsockets.begin(), this->connsockets.end(), this->sock) - this->connsockets.begin();
-                if (pos < this->connsocknames.size()) {
-                    this->connsocknames[pos] = ptr;
+                char* ptr = buf2 + buf_len + 1;
+                if (ptr < buf2 + NETWORK_BUFFER_SIZE && ptr >= buf2) {
+                    std::string new_name(ptr, strnlen(ptr, buf2 + NETWORK_BUFFER_SIZE - ptr));
+                    std::lock_guard<std::mutex> lock(this->clientmutex);  // Add synchronization
+                    
+                    int pos = std::find(this->connsockets.begin(), this->connsockets.end(), this->sock) - this->connsockets.begin();
+                    if (pos >= 0 && pos < static_cast<int>(this->connsocknames.size())) {
+                        this->connsocknames[pos] = new_name;
+                    }
                 }
             }
         }
@@ -10027,34 +10071,38 @@ void Program::socket_client(struct sockaddr_in serv_addr, int opt) {
 
 void Program::socket_server_receive(SOCKET sock) {
     // wait for messages
-    char *buf = (char *) malloc(148489);
+    char *buf = (char *) calloc(NETWORK_BUFFER_SIZE, 1);  // Use calloc for zero-initialization
     if (buf == nullptr) {
         printf("\n Memory allocation error \n");
         return;
     }
 
     while (1) {
-        char* original_buf = buf;  // Save original pointer
-        buf = bl_recv(sock, buf, 148489, 0);
+        char* recv_result = bl_recv(sock, buf, NETWORK_RECV_SIZE, 0);  // Leave space for null terminator
 
         if (!this->server) {
-            free(original_buf);
+            free(buf);
             return;
         }
 
         // Check for disconnection
-        if (buf == nullptr) {
+        if (recv_result == nullptr) {
             std::cout << "DEBUG: Client disconnected from socket " << sock << std::endl;
 
+            // Use proper synchronization for socket management
+            std::lock_guard<std::mutex> lock(this->clientmutex);
+            
             // Find and remove this socket from connsockets and connsocknames
             auto it = std::find(this->connsockets.begin(), this->connsockets.end(), sock);
             if (it != this->connsockets.end()) {
                 int pos = it - this->connsockets.begin();
-                std::cout << "DEBUG: Removing client '" << this->connsocknames[pos] << "' from position " << pos << std::endl;
+                if (pos >= 0 && pos < static_cast<int>(this->connsocknames.size())) {
+                    std::cout << "DEBUG: Removing client '" << this->connsocknames[pos] << "' from position " << pos << std::endl;
+                }
 
                 // Remove from both vectors
                 this->connsockets.erase(it);
-                if (pos < this->connsocknames.size()) {
+                if (pos >= 0 && pos < static_cast<int>(this->connsocknames.size())) {
                     this->connsocknames.erase(this->connsocknames.begin() + pos);
                 }
 
@@ -10074,57 +10122,73 @@ void Program::socket_server_receive(SOCKET sock) {
 #ifdef WINDOWS
             closesocket(sock);
 #endif
-            free(original_buf);
+            free(buf);
             return;
         }
 
-        // Restore buf to original pointer for processing
-        buf = original_buf;
+        size_t buf_len = strnlen(buf, NETWORK_RECV_SIZE);  // Safe string length check
+        if (buf_len > 0) {
+            std::string str(buf, buf_len);  // Length-limited constructor
+            if (str == "BIN_SENT") {
+                // Calculate total message size safely
+                size_t total_size = buf_len + 1;
+                char* ptr = buf + total_size;
+                if (ptr >= buf + NETWORK_BUFFER_SIZE || ptr < buf) continue;
 
-        std::string str(buf);
-        if (str == "BIN_SENT") {
-            // Make a copy for rawmessages to avoid pointer issues
-            size_t total_size = strlen(buf) + 1;
-            char* ptr = buf + total_size;
-            if (ptr >= buf + 148489) continue;
+                size_t field_len = strnlen(ptr, buf + NETWORK_BUFFER_SIZE - ptr);
+                total_size += field_len + 1;
+                ptr = buf + total_size;
+                if (ptr >= buf + NETWORK_BUFFER_SIZE || ptr < buf) continue;
 
-            total_size += strlen(ptr) + 1;
-            ptr = buf + total_size;
-            if (ptr >= buf + 148489) continue;
+                field_len = strnlen(ptr, buf + NETWORK_BUFFER_SIZE - ptr);
+                total_size += field_len + 1;
+                ptr = buf + total_size;
+                if (ptr >= buf + NETWORK_BUFFER_SIZE || ptr < buf) continue;
 
-            total_size += strlen(ptr) + 1;
-            ptr = buf + total_size;
-            if (ptr >= buf + 148489) continue;
+                // Calculate remaining message size
+                size_t msg_len = strnlen(ptr, buf + NETWORK_BUFFER_SIZE - ptr);
+                total_size += msg_len;
 
-            // Calculate total message size
-            char* msg_start = ptr;
-            // Assume message continues to end or next null
-            size_t msg_len = strnlen(ptr, buf + 148489 - ptr);
-            total_size += msg_len;
+                // Create a copy of the entire message for rawmessages
+                char* raw_copy = (char*)malloc(total_size);
+                if (raw_copy) {
+                    memcpy(raw_copy, buf, total_size);
+                    binsmain->rawmessages.push_back(raw_copy);
+                }
 
-            // Create a copy of the entire message for rawmessages
-            char* raw_copy = (char*)malloc(total_size);
-            if (raw_copy) {
-                memcpy(raw_copy, buf, total_size);
-                binsmain->rawmessages.push_back(raw_copy);
-            }
+                // Parse message safely
+                ptr = buf + buf_len + 1;
+                if (ptr >= buf + NETWORK_BUFFER_SIZE || ptr < buf) continue;
+                
+                try {
+                    binsmain->messagelengths.push_back(std::stoi(ptr));
+                } catch (const std::exception& e) {
+                    std::cout << "DEBUG: Invalid message length in server BIN_SENT" << std::endl;
+                    if (raw_copy) free(raw_copy);
+                    continue;
+                }
+                
+                ptr += strnlen(ptr, buf + NETWORK_BUFFER_SIZE - ptr) + 1;
+                if (ptr >= buf + NETWORK_BUFFER_SIZE || ptr < buf) {
+                    if (raw_copy) free(raw_copy);
+                    continue;
+                }
 
-            // Now parse with a separate pointer
-            ptr = buf + strlen(buf) + 1;
-            binsmain->messagelengths.push_back(std::stoi(ptr));
-            ptr += strlen(ptr) + 1;
+                // Store copies of strings to avoid dangling pointers
+                std::string sockname(ptr, strnlen(ptr, buf + NETWORK_BUFFER_SIZE - ptr));
+                binsmain->messagesocknames.push_back(sockname);
+                ptr += strnlen(ptr, buf + NETWORK_BUFFER_SIZE - ptr) + 1;
+                if (ptr >= buf + NETWORK_BUFFER_SIZE || ptr < buf) {
+                    if (raw_copy) free(raw_copy);
+                    continue;
+                }
 
-            // Store copies of strings to avoid dangling pointers
-            std::string sockname(ptr);
-            binsmain->messagesocknames.push_back(sockname);
-            ptr += strlen(ptr) + 1;
-
-            // Store copy of message data
-            size_t msg_data_len = strnlen(ptr, buf + 148489 - ptr);
-            char* msg_copy = (char*)malloc(msg_data_len + 1);
-            if (msg_copy) {
-                memcpy(msg_copy, ptr, msg_data_len);
-                msg_copy[msg_data_len] = '\0';
+                // Store copy of message data
+                size_t msg_data_len = strnlen(ptr, buf + NETWORK_BUFFER_SIZE - ptr);
+                char* msg_copy = (char*)malloc(msg_data_len + 1);
+                if (msg_copy) {
+                    memcpy(msg_copy, ptr, msg_data_len);
+                    msg_copy[msg_data_len] = '\0';
                 binsmain->messages.push_back(msg_copy);
             }
         }
@@ -10434,6 +10498,8 @@ void Program::discovery_listen() {
 }
 
 char* Program::bl_recv(int sock, char *buf, size_t sz, int flags) {
+    if (!buf || sz == 0) return nullptr;
+    
     int bytesReceived = 0;
 #ifdef POSIX
     int flags2 = fcntl(sock, F_GETFL);
@@ -10449,14 +10515,19 @@ char* Program::bl_recv(int sock, char *buf, size_t sz, int flags) {
     ioctlsocket(sock, FIONBIO, &flags2);
 #endif
     
-    // Check for disconnection
+    // Check for disconnection or error
     if (bytesReceived <= 0) {
-        // Connection closed or error
         return nullptr;
     }
     
-    // Null-terminate the received data
-    buf[bytesReceived] = '\0';
+    // Safely null-terminate the received data within buffer bounds
+    if (static_cast<size_t>(bytesReceived) < sz) {
+        buf[bytesReceived] = '\0';
+    } else {
+        // If buffer is full, terminate at the last position
+        buf[sz - 1] = '\0';
+    }
+    
     return buf;
 }
 

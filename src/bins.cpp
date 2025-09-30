@@ -2427,166 +2427,266 @@ void BinsMain::send_shared_bins() {
 
 void BinsMain::receive_shared_bins() {
 	// receive sent bins
-	if (!this->receivingbin) {
-		std::vector<char*> messagescopy = binsmain->messages;
-        std::vector<char *> rawmessagescopy;
-        if (mainprogram->server) {
-            rawmessagescopy = binsmain->rawmessages;
+	if (!this->receivingbin && !this->messages.empty()) {
+        // Use proper synchronization for message access
+        std::lock_guard<std::mutex> lock(this->syncmutex);
+        
+        // Process only one message at a time to avoid iterator invalidation
+        if (this->messages.empty()) return;
+        
+        char* message = this->messages[0];
+        char* rawmessage = nullptr;
+        if (mainprogram->server && !this->rawmessages.empty()) {
+            rawmessage = this->rawmessages[0];
         }
-		std::vector<std::string> messagesocknamescopy = binsmain->messagesocknames;
-		std::vector<int> messagelengthscopy = binsmain->messagelengths;
-		for (int i = 0; i < messagescopy.size(); i++) {
-			if (mainprogram->server) {
-				// send received bins through from server to destination clients
-				for (int j = 0; j < mainprogram->connsockets.size(); j++) {
-					if (mainprogram->connsockets[j] != mainprogram->connmap[messagesocknamescopy[i]]) {
-						send(mainprogram->connsockets[j], rawmessagescopy[i],
-							 messagelengthscopy[i], 0);
-					}
-				}
-			}
-			// process messages
-			char *walk = messagescopy[i];
-			std::string str(walk);
-			walk += strlen(walk) + 1;
-
-			Bin *binis = nullptr;
-			for (Bin *bin: binsmain->bins) {
-				if (bin->name == str) {
-					binis = bin;
-					break;
-				}
-			}
-			if (!binis) binis = new_bin(str);
-			make_currbin(binis->pos);
-			binis->shared = true;
-
-			for (int i2 = 0; i2 < 12; i2++) {
-				for (int j = 0; j < 12; j++) {
-					BinElement *binel = this->currbin->elements[i2 * 12 + j];
-					std::string name(walk);
-					walk += strlen(walk) + 1;
-					std::string path(walk);
-					walk += strlen(walk) + 1;
-					std::string teststr;
-					std::string str;
-					if (exists(path)) {
-						teststr = path;
-					} else {
-						teststr = test_driveletters(path);
-					}
-					binel->name = name;
-					binel->path = teststr;
-					binel->type = ELEM_FILE;
-				}
-			}
-
-			this->menuactbinel = this->currbin->elements[0];  // loading starts from first bin element
-
-			this->receivingbin = true;
-            this->messages.erase(binsmain->messages.begin());
-            if (mainprogram->server) {
-                this->rawmessages.erase(binsmain->rawmessages.begin());
+        std::string messagesockname;
+        if (!this->messagesocknames.empty()) {
+            messagesockname = this->messagesocknames[0];
+        }
+        int messagelength = 0;
+        if (!this->messagelengths.empty()) {
+            messagelength = this->messagelengths[0];
+        }
+        
+        if (mainprogram->server && rawmessage) {
+            // Send received bins through from server to destination clients
+            std::lock_guard<std::mutex> client_lock(mainprogram->clientmutex);
+            for (int j = 0; j < mainprogram->connsockets.size(); j++) {
+                auto connmap_it = mainprogram->connmap.find(messagesockname);
+                if (connmap_it != mainprogram->connmap.end() && 
+                    mainprogram->connsockets[j] != connmap_it->second) {
+                    send(mainprogram->connsockets[j], rawmessage, messagelength, 0);
+                }
             }
-            this->messagelengths.erase(binsmain->messagelengths.begin());
-            this->messagesocknames.erase(binsmain->messagesocknames.begin());
-		}
+        }
+        
+        // Process message safely
+        char *walk = message;
+        if (!walk) {
+            // Clean up and return if null message
+            this->messages.erase(this->messages.begin());
+            if (mainprogram->server && !this->rawmessages.empty()) {
+                this->rawmessages.erase(this->rawmessages.begin());
+            }
+            if (!this->messagelengths.empty()) {
+                this->messagelengths.erase(this->messagelengths.begin());
+            }
+            if (!this->messagesocknames.empty()) {
+                this->messagesocknames.erase(this->messagesocknames.begin());
+            }
+            return;
+        }
+        
+        std::string str(walk);
+        walk += strlen(walk) + 1;
+
+        Bin *binis = nullptr;
+        for (Bin *bin: binsmain->bins) {
+            if (bin->name == str) {
+                binis = bin;
+                break;
+            }
+        }
+        if (!binis) binis = new_bin(str);
+        make_currbin(binis->pos);
+        binis->shared = true;
+
+        // Safely parse bin elements with bounds checking
+        for (int i2 = 0; i2 < 12; i2++) {
+            for (int j = 0; j < 12; j++) {
+                BinElement *binel = this->currbin->elements[i2 * 12 + j];
+                
+                // Check if we have enough data left to read
+                if (walk >= message + messagelength - 2) break;
+                
+                std::string name(walk);
+                walk += strlen(walk) + 1;
+                if (walk >= message + messagelength - 1) break;
+                
+                std::string path(walk);
+                walk += strlen(walk) + 1;
+                if (walk > message + messagelength) break;
+                
+                std::string teststr;
+                if (exists(path)) {
+                    teststr = path;
+                } else {
+                    teststr = test_driveletters(path);
+                }
+                binel->name = name;
+                binel->path = teststr;
+                binel->type = ELEM_FILE;
+            }
+        }
+
+        this->menuactbinel = this->currbin->elements[0];  // loading starts from first bin element
+        this->receivingbin = true;
+        
+        // Clean up processed message and free memory
+        if (rawmessage) free(rawmessage);
+        free(message);  // Free the allocated message memory
+        
+        // Remove from vectors
+        this->messages.erase(this->messages.begin());
+        if (mainprogram->server && !this->rawmessages.empty()) {
+            this->rawmessages.erase(this->rawmessages.begin());
+        }
+        if (!this->messagelengths.empty()) {
+            this->messagelengths.erase(this->messagelengths.begin());
+        }
+        if (!this->messagesocknames.empty()) {
+            this->messagesocknames.erase(this->messagesocknames.begin());
+        }
 	}
 }
 
 void BinsMain::receive_shared_textures() {
 	// receive sent texture files
-	if (this->texmessages.size() > 0) {
-		std::vector<char*> texmessagescopy = this->texmessages;
-        std::vector<char*> rawtexmessagescopy;
-        if (mainprogram->server) {
-            rawtexmessagescopy = this->rawtexmessages;
+	if (!this->texmessages.empty()) {
+        // Use proper synchronization for texture message access
+        std::lock_guard<std::mutex> lock(this->syncmutex);
+        
+        // Process only one texture message at a time to avoid iterator invalidation
+        if (this->texmessages.empty()) return;
+        
+        char* texmessage = this->texmessages[0];
+        char* rawtexmessage = nullptr;
+        if (mainprogram->server && !this->rawtexmessages.empty()) {
+            rawtexmessage = this->rawtexmessages[0];
         }
-		std::vector<std::string> texmessagesocknamescopy = this->texmessagesocknames;
-		std::vector<int> texmessagelengthscopy = this->texmessagelengths;
+        std::string texmessagesockname;
+        if (!this->texmessagesocknames.empty()) {
+            texmessagesockname = this->texmessagesocknames[0];
+        }
+        int texmessagelength = 0;
+        if (!this->texmessagelengths.empty()) {
+            texmessagelength = this->texmessagelengths[0];
+        }
 
-		for (int i = 0; i < texmessagescopy.size(); i++) {
-			if (mainprogram->server) {
-				// forward texture messages to other clients
-				for (int j = 0; j < mainprogram->connsockets.size(); j++) {
-					if (mainprogram->connsockets[j] != mainprogram->connmap[texmessagesocknamescopy[i]]) {
-						send(mainprogram->connsockets[j], rawtexmessagescopy[i], texmessagelengthscopy[i], 0);
-					}
-				}
-			}
-
-			// process texture message
-			char *walk = texmessagescopy[i];
-			std::string seatname(walk);
-			walk += strlen(walk) + 1;
-			std::string binname(walk);
-			walk += strlen(walk) + 1;
-			std::string posstr(walk);
-			walk += strlen(walk) + 1;
-			std::string filesizestr(walk);
-			walk += strlen(walk) + 1;
-
-			int pos = std::stoi(posstr);
-			int filesize = std::stoi(filesizestr);
-
-			// Find the target bin
-			Bin *targetbin = nullptr;
-			for (Bin *bin : this->bins) {
-				if (bin->name == binname) {
-					targetbin = bin;
-					break;
-				}
-			}
-
-			if (targetbin && pos >= 0 && pos < 144) {
-				BinElement *binel = targetbin->elements[pos];
-				
-				if (filesize == 0) {
-					// No texture - set to placeholder
-					binel->tex = -1;
-				} else {
-					// Receive texture file data
-					char *texturedata = walk;
-					
-					// Create temporary file for the received texture
-					std::string tempdir = std::filesystem::temp_directory_path().generic_string();
-					std::string tempfilename = "received_tex_" + seatname + "_" + binname + "_" + std::to_string(pos) + ".jpg";
-					std::string temppath = tempdir + "/" + tempfilename;
-					
-					// Write received data to temporary file
-					std::ofstream tempfile(temppath, std::ios::binary);
-					if (tempfile.is_open()) {
-						tempfile.write(texturedata, filesize);
-						tempfile.close();
-						
-						// Set the absolute path for the received texture
-						binel->absjpath = temppath;
-						
-						// Load the texture using open_thumb
-						open_thumb(binel->absjpath, binel->tex);
-					}
-				}
-			}
-
-			// Clean up processed message
-			char* msgbuf = this->texmessages[0];
-			this->texmessages.erase(this->texmessages.begin());
-            if (mainprogram->server) {
-                char* rawmsgbuf = this->rawtexmessages[0];
-                this->rawtexmessages.erase(this->rawtexmessages.begin());
-                if (this->texmessagelengths[0] > 0) {
-                    free(rawmsgbuf);  // Free allocated raw message buffer
+        if (mainprogram->server && rawtexmessage) {
+            // Forward texture messages to other clients
+            std::lock_guard<std::mutex> client_lock(mainprogram->clientmutex);
+            for (int j = 0; j < mainprogram->connsockets.size(); j++) {
+                auto connmap_it = mainprogram->connmap.find(texmessagesockname);
+                if (connmap_it != mainprogram->connmap.end() && 
+                    mainprogram->connsockets[j] != connmap_it->second) {
+                    send(mainprogram->connsockets[j], rawtexmessage, texmessagelength, 0);
                 }
             }
-            int msglen = this->texmessagelengths[0];
-            this->texmessagelengths.erase(this->texmessagelengths.begin());
-            this->texmessagesocknames.erase(this->texmessagesocknames.begin());
-            
-            // Free the texture message buffer if it was allocated
-            if (msglen > 0 && msgbuf) {
-                free(msgbuf);
+        }
+
+        // Process texture message safely
+        if (!texmessage) {
+            // Clean up and return if null message
+            this->texmessages.erase(this->texmessages.begin());
+            if (mainprogram->server && !this->rawtexmessages.empty()) {
+                this->rawtexmessages.erase(this->rawtexmessages.begin());
             }
-		}
+            if (!this->texmessagelengths.empty()) {
+                this->texmessagelengths.erase(this->texmessagelengths.begin());
+            }
+            if (!this->texmessagesocknames.empty()) {
+                this->texmessagesocknames.erase(this->texmessagesocknames.begin());
+            }
+            return;
+        }
+        
+        char *walk = texmessage;
+        char *message_end = texmessage + texmessagelength;
+        
+        // Safely parse texture message with bounds checking
+        if (walk >= message_end) goto cleanup;
+        std::string seatname(walk, strnlen(walk, message_end - walk));
+        walk += seatname.length() + 1;
+        
+        if (walk >= message_end) goto cleanup;
+        std::string binname(walk, strnlen(walk, message_end - walk));
+        walk += binname.length() + 1;
+        
+        if (walk >= message_end) goto cleanup;
+        std::string posstr(walk, strnlen(walk, message_end - walk));
+        walk += posstr.length() + 1;
+        
+        if (walk >= message_end) goto cleanup;
+        std::string filesizestr(walk, strnlen(walk, message_end - walk));
+        walk += filesizestr.length() + 1;
+
+        int pos, filesize;
+        try {
+            pos = std::stoi(posstr);
+            filesize = std::stoi(filesizestr);
+        } catch (const std::exception& e) {
+            std::cout << "DEBUG: Invalid texture message format" << std::endl;
+            goto cleanup;
+        }
+
+        // Find the target bin
+        Bin *targetbin = nullptr;
+        for (Bin *bin : this->bins) {
+            if (bin->name == binname) {
+                targetbin = bin;
+                break;
+            }
+        }
+
+        if (targetbin && pos >= 0 && pos < 144) {
+            BinElement *binel = targetbin->elements[pos];
+            
+            if (filesize == 0) {
+                // No texture - set to placeholder
+                binel->tex = -1;
+            } else if (filesize > 0 && filesize <= 50*1024*1024 && walk + filesize <= message_end) {  // Size limit and bounds check
+                // Receive texture file data
+                char *texturedata = walk;
+                
+                // Create secure temporary file for the received texture
+                std::string tempdir = std::filesystem::temp_directory_path().generic_string();
+                std::string tempfilename = "received_tex_" + std::to_string(rand()) + "_" + std::to_string(time(nullptr)) + ".jpg";
+                std::string temppath = tempdir + "/" + tempfilename;
+                
+                // Write received data to temporary file
+                std::ofstream tempfile(temppath, std::ios::binary);
+                if (tempfile.is_open()) {
+                    tempfile.write(texturedata, filesize);
+                    tempfile.close();
+                    
+                    // Set the absolute path for the received texture
+                    binel->absjpath = temppath;
+                    
+                    // Load the texture using open_thumb
+                    try {
+                        open_thumb(binel->absjpath, binel->tex);
+                    } catch (...) {
+                        // If texture loading fails, clean up temp file
+                        std::filesystem::remove(temppath);
+                        binel->tex = -1;
+                    }
+                } else {
+                    std::cout << "DEBUG: Failed to create temporary file for texture" << std::endl;
+                }
+            }
+        }
+
+        cleanup:
+        // Clean up processed message and free memory
+        if (rawtexmessage && texmessagelength > 0) {
+            free(rawtexmessage);
+        }
+        if (texmessage && texmessagelength > 0) {
+            free(texmessage);
+        }
+        
+        // Remove from vectors
+        this->texmessages.erase(this->texmessages.begin());
+        if (mainprogram->server && !this->rawtexmessages.empty()) {
+            this->rawtexmessages.erase(this->rawtexmessages.begin());
+        }
+        if (!this->texmessagelengths.empty()) {
+            this->texmessagelengths.erase(this->texmessagelengths.begin());
+        }
+        if (!this->texmessagesocknames.empty()) {
+            this->texmessagesocknames.erase(this->texmessagesocknames.begin());
+        }
 	}
 }
 
