@@ -10159,7 +10159,7 @@ void Program::socket_server_receive(SOCKET sock) {
                 // Parse message safely
                 ptr = buf + buf_len + 1;
                 if (ptr >= buf + NETWORK_BUFFER_SIZE || ptr < buf) continue;
-                
+
                 try {
                     binsmain->messagelengths.push_back(std::stoi(ptr));
                 } catch (const std::exception& e) {
@@ -10167,7 +10167,7 @@ void Program::socket_server_receive(SOCKET sock) {
                     if (raw_copy) free(raw_copy);
                     continue;
                 }
-                
+
                 ptr += strnlen(ptr, buf + NETWORK_BUFFER_SIZE - ptr) + 1;
                 if (ptr >= buf + NETWORK_BUFFER_SIZE || ptr < buf) {
                     if (raw_copy) free(raw_copy);
@@ -10189,8 +10189,8 @@ void Program::socket_server_receive(SOCKET sock) {
                 if (msg_copy) {
                     memcpy(msg_copy, ptr, msg_data_len);
                     msg_copy[msg_data_len] = '\0';
-                binsmain->messages.push_back(msg_copy);
-            }
+                    binsmain->messages.push_back(msg_copy);
+                }
         }
         else if (str == "TEX_SENT") {
             char* ptr = buf + strlen(buf) + 1;
@@ -10276,9 +10276,12 @@ void Program::socket_server_receive(SOCKET sock) {
                 this->connsocknames[pos] = std::string(ptr);
             }
         }
+        }
 
         // buf pointer is restored to original_buf at the start of next iteration
     }
+    
+    free(buf);
 }
 
 void Program::start_discovery() {

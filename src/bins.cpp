@@ -2594,24 +2594,28 @@ void BinsMain::receive_shared_textures() {
         char *walk = texmessage;
         char *message_end = texmessage + texmessagelength;
         
+        // Initialize all variables before any goto statements to avoid crossing initialization
+        int pos = 0, filesize = 0;
+        Bin *targetbin = nullptr;
+        std::string seatname, binname, posstr, filesizestr;
+        
         // Safely parse texture message with bounds checking
         if (walk >= message_end) goto cleanup;
-        std::string seatname(walk, strnlen(walk, message_end - walk));
+        seatname = std::string(walk, strnlen(walk, message_end - walk));
         walk += seatname.length() + 1;
         
         if (walk >= message_end) goto cleanup;
-        std::string binname(walk, strnlen(walk, message_end - walk));
+        binname = std::string(walk, strnlen(walk, message_end - walk));
         walk += binname.length() + 1;
         
         if (walk >= message_end) goto cleanup;
-        std::string posstr(walk, strnlen(walk, message_end - walk));
+        posstr = std::string(walk, strnlen(walk, message_end - walk));
         walk += posstr.length() + 1;
         
         if (walk >= message_end) goto cleanup;
-        std::string filesizestr(walk, strnlen(walk, message_end - walk));
+        filesizestr = std::string(walk, strnlen(walk, message_end - walk));
         walk += filesizestr.length() + 1;
 
-        int pos, filesize;
         try {
             pos = std::stoi(posstr);
             filesize = std::stoi(filesizestr);
@@ -2621,7 +2625,6 @@ void BinsMain::receive_shared_textures() {
         }
 
         // Find the target bin
-        Bin *targetbin = nullptr;
         for (Bin *bin : this->bins) {
             if (bin->name == binname) {
                 targetbin = bin;
