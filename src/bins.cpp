@@ -2706,26 +2706,23 @@ void BinsMain::receive_shared_textures() {
                 // Receive texture file data
                 char *texturedata = walk;
                 
-                // Create secure temporary file for the received texture
-                std::string tempdir = std::filesystem::temp_directory_path().generic_string();
-                std::string tempfilename = "received_tex_" + std::to_string(rand()) + "_" + std::to_string(time(nullptr)) + ".jpg";
-                std::string temppath = tempdir + "/" + tempfilename;
-                
+                std::string jpath = mainprogram->project->binsdir + targetbin->name + "/" + remove_extension(basename(binel->path)) + ".jpeg";
+
                 // Write received data to temporary file
-                std::ofstream tempfile(temppath, std::ios::binary);
+                std::ofstream tempfile(jpath, std::ios::binary);
                 if (tempfile.is_open()) {
                     tempfile.write(texturedata, filesize);
                     tempfile.close();
                     
                     // Set the absolute path for the received texture
-                    binel->absjpath = temppath;
+                    binel->absjpath = jpath;
                     
                     // Load the texture using open_thumb
                     try {
                         open_thumb(binel->absjpath, binel->tex);
                     } catch (...) {
                         // If texture loading fails, clean up temp file
-                        std::filesystem::remove(temppath);
+                        std::filesystem::remove(jpath);
                         binel->tex = -1;
                     }
                 } else {

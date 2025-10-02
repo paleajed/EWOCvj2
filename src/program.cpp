@@ -1482,7 +1482,7 @@ bool Program::order_paths(bool dodeckmix) {
         mainprogram->errlays.clear();
         mainprogram->err = false;
 
-        if (!binsmain->currbin->shared) {
+        if (!binsmain->receivingbin) {
             for (int j = 0; j < this->paths.size(); j++) {
                 this->pathboxes.push_back(new Boxx);
                 this->pathboxes[j]->vtxcoords->x1 = -0.4f;
