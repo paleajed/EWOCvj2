@@ -2341,19 +2341,39 @@ void BinsMain::send_shared_bins() {
                         char texheader[256] = {0};
                         char *texheader_end = texheader + sizeof(texheader);
                         char *texwalk = texheader;
+                        char *msgstart = texheader;
 
                         texwalk = put_in_buffer("TEX_SENT", texwalk, texheader_end);
                         if (!texwalk) continue;
-                        texwalk = put_in_buffer("0", texwalk, texheader_end);  // magic number for no texture
+
+                        // Reserve space for total message length (will fill in later)
+                        char *msglen_pos = texwalk;
+                        texwalk = put_in_buffer("0", texwalk, texheader_end);  // placeholder
                         if (!texwalk) continue;
+
                         texwalk = put_in_buffer(mainprogram->seatname.c_str(), texwalk, texheader_end);
                         if (!texwalk) continue;
+
+                        // Mark where the message payload begins (after seatname)
+                        char *payload_start = texwalk;
+
                         texwalk = put_in_buffer((this->currbin->name).c_str(), texwalk, texheader_end);
                         if (!texwalk) continue;
                         texwalk = put_in_buffer(std::to_string(i * 12 + j).c_str(), texwalk, texheader_end);
                         if (!texwalk) continue;
                         texwalk = put_in_buffer("0", texwalk, texheader_end);  // file size = 0
                         if (!texwalk) continue;
+
+                        // Calculate total message length (payload only, excluding TEX_SENT, msglen, and seatname)
+                        size_t payload_len = texwalk - payload_start;
+
+                        // Fill in the actual message length
+                        std::string msglen_str = std::to_string(payload_len);
+                        size_t max_len = strlen(msglen_pos);
+                        if (msglen_str.length() <= max_len) {
+                            memset(msglen_pos, 0, max_len + 1);
+                            memcpy(msglen_pos, msglen_str.c_str(), msglen_str.length());
+                        }
 
                         send(sock, texheader, texwalk - texheader, 0);
                     } else {
@@ -2374,10 +2394,18 @@ void BinsMain::send_shared_bins() {
 
                             texwalk = put_in_buffer("TEX_SENT", texwalk, completemsg_end);
                             if (!texwalk) continue;
-                            texwalk = put_in_buffer(std::to_string(filesize).c_str(), texwalk, completemsg_end);
+
+                            // Reserve space for total message length (will fill in later)
+                            char *msglen_pos = texwalk;
+                            texwalk = put_in_buffer(std::to_string(filesize).c_str(), texwalk, completemsg_end);  // placeholder
                             if (!texwalk) continue;
+
                             texwalk = put_in_buffer(mainprogram->seatname.c_str(), texwalk, completemsg_end);
                             if (!texwalk) continue;
+
+                            // Mark where the message payload begins (after seatname)
+                            char *payload_start = texwalk;
+
                             texwalk = put_in_buffer((this->currbin->name).c_str(), texwalk, completemsg_end);
                             if (!texwalk) continue;
                             texwalk = put_in_buffer(std::to_string(i * 12 + j).c_str(), texwalk, completemsg_end);
@@ -2388,6 +2416,17 @@ void BinsMain::send_shared_bins() {
                             // Read file data directly into message buffer
                             texfile.read(texwalk, filesize);
                             texfile.close();
+
+                            // Calculate total message length (payload = binname + pos + filesize_str + binary_data)
+                            size_t payload_len = (texwalk - payload_start) + filesize;
+
+                            // Fill in the actual message length
+                            std::string msglen_str = std::to_string(payload_len);
+                            size_t max_len = strlen(msglen_pos);
+                            if (msglen_str.length() <= max_len) {
+                                memset(msglen_pos, 0, max_len + 1);
+                                memcpy(msglen_pos, msglen_str.c_str(), msglen_str.length());
+                            }
 
                             // Send complete message
                             send(sock, completemsg.get(), texwalk - completemsg.get() + filesize, 0);
@@ -2400,16 +2439,35 @@ void BinsMain::send_shared_bins() {
 
                             texwalk = put_in_buffer("TEX_SENT", texwalk, texheader_end);
                             if (!texwalk) continue;
-                            texwalk = put_in_buffer("0", texwalk, texheader_end);
+
+                            // Reserve space for total message length (will fill in later)
+                            char *msglen_pos = texwalk;
+                            texwalk = put_in_buffer("0", texwalk, texheader_end);  // placeholder
                             if (!texwalk) continue;
+
                             texwalk = put_in_buffer(mainprogram->seatname.c_str(), texwalk, texheader_end);
                             if (!texwalk) continue;
+
+                            // Mark where the message payload begins (after seatname)
+                            char *payload_start = texwalk;
+
                             texwalk = put_in_buffer((this->currbin->name).c_str(), texwalk, texheader_end);
                             if (!texwalk) continue;
                             texwalk = put_in_buffer(std::to_string(i * 12 + j).c_str(), texwalk, texheader_end);
                             if (!texwalk) continue;
-                            texwalk = put_in_buffer("0", texwalk, texheader_end);
+                            texwalk = put_in_buffer("0", texwalk, texheader_end);  // file size = 0
                             if (!texwalk) continue;
+
+                            // Calculate total message length (payload only, excluding TEX_SENT, msglen, and seatname)
+                            size_t payload_len = texwalk - payload_start;
+
+                            // Fill in the actual message length
+                            std::string msglen_str = std::to_string(payload_len);
+                            size_t max_len = strlen(msglen_pos);
+                            if (msglen_str.length() <= max_len) {
+                                memset(msglen_pos, 0, max_len + 1);
+                                memcpy(msglen_pos, msglen_str.c_str(), msglen_str.length());
+                            }
 
                             send(sock, texheader, texwalk - texheader, 0);
                         }
@@ -2551,8 +2609,12 @@ void BinsMain::receive_shared_textures() {
         
         char* texmessage = this->texmessages[0];
         char* rawtexmessage = nullptr;
+        int rawtexmessagelength = 0;
         if (mainprogram->server && !this->rawtexmessages.empty()) {
             rawtexmessage = this->rawtexmessages[0];
+        }
+        if (mainprogram->server && !this->rawtexmessagelengths.empty()) {
+            rawtexmessagelength = this->rawtexmessagelengths[0];
         }
         std::string texmessagesockname;
         if (!this->texmessagesocknames.empty()) {
@@ -2563,14 +2625,14 @@ void BinsMain::receive_shared_textures() {
             texmessagelength = this->texmessagelengths[0];
         }
 
-        if (mainprogram->server && rawtexmessage) {
+        if (mainprogram->server && rawtexmessage && rawtexmessagelength > 0) {
             // Forward texture messages to other clients
             std::lock_guard<std::mutex> client_lock(mainprogram->clientmutex);
             for (int j = 0; j < mainprogram->connsockets.size(); j++) {
                 auto connmap_it = mainprogram->connmap.find(texmessagesockname);
-                if (connmap_it != mainprogram->connmap.end() && 
+                if (connmap_it != mainprogram->connmap.end() &&
                     mainprogram->connsockets[j] != connmap_it->second) {
-                    send(mainprogram->connsockets[j], rawtexmessage, texmessagelength, 0);
+                    send(mainprogram->connsockets[j], rawtexmessage, rawtexmessagelength, 0);
                 }
             }
         }
@@ -2581,6 +2643,9 @@ void BinsMain::receive_shared_textures() {
             this->texmessages.erase(this->texmessages.begin());
             if (mainprogram->server && !this->rawtexmessages.empty()) {
                 this->rawtexmessages.erase(this->rawtexmessages.begin());
+            }
+            if (mainprogram->server && !this->rawtexmessagelengths.empty()) {
+                this->rawtexmessagelengths.erase(this->rawtexmessagelengths.begin());
             }
             if (!this->texmessagelengths.empty()) {
                 this->texmessagelengths.erase(this->texmessagelengths.begin());
@@ -2593,25 +2658,24 @@ void BinsMain::receive_shared_textures() {
         
         char *walk = texmessage;
         char *message_end = texmessage + texmessagelength;
-        
+
         // Initialize all variables before any goto statements to avoid crossing initialization
         int pos = 0, filesize = 0;
         Bin *targetbin = nullptr;
-        std::string seatname, binname, posstr, filesizestr;
-        
+        std::string binname, posstr, filesizestr;
+
         // Safely parse texture message with bounds checking
-        if (walk >= message_end) goto cleanup;
-        seatname = std::string(walk, strnlen(walk, message_end - walk));
-        walk += seatname.length() + 1;
-        
+        // Note: seatname was already parsed by socket_client/socket_server_receive
+        // The message here contains only: binname, position, filesize, [binary data]
+
         if (walk >= message_end) goto cleanup;
         binname = std::string(walk, strnlen(walk, message_end - walk));
         walk += binname.length() + 1;
-        
+
         if (walk >= message_end) goto cleanup;
         posstr = std::string(walk, strnlen(walk, message_end - walk));
         walk += posstr.length() + 1;
-        
+
         if (walk >= message_end) goto cleanup;
         filesizestr = std::string(walk, strnlen(walk, message_end - walk));
         walk += filesizestr.length() + 1;
@@ -2672,17 +2736,20 @@ void BinsMain::receive_shared_textures() {
 
         cleanup:
         // Clean up processed message and free memory
-        if (rawtexmessage && texmessagelength > 0) {
+        if (rawtexmessage && rawtexmessagelength > 0) {
             free(rawtexmessage);
         }
         if (texmessage && texmessagelength > 0) {
             free(texmessage);
         }
-        
+
         // Remove from vectors
         this->texmessages.erase(this->texmessages.begin());
         if (mainprogram->server && !this->rawtexmessages.empty()) {
             this->rawtexmessages.erase(this->rawtexmessages.begin());
+        }
+        if (mainprogram->server && !this->rawtexmessagelengths.empty()) {
+            this->rawtexmessagelengths.erase(this->rawtexmessagelengths.begin());
         }
         if (!this->texmessagelengths.empty()) {
             this->texmessagelengths.erase(this->texmessagelengths.begin());

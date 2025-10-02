@@ -115,6 +115,7 @@ class BinsMain {
         std::vector<char*> rawtexmessages;
         std::vector<std::string> texmessagesocknames;
         std::vector<int> texmessagelengths;
+        std::vector<int> rawtexmessagelengths;
 
 
         void handle(bool draw);

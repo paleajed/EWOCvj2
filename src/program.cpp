@@ -10239,6 +10239,7 @@ void Program::socket_server_receive(SOCKET sock) {
                             memcpy(rawmsgbuf, buf, header_size);
                             memcpy(rawmsgbuf + header_size, texbuf, msglen);
                             binsmain->rawtexmessages.push_back(rawmsgbuf);
+                            binsmain->rawtexmessagelengths.push_back(rawmsgsize);
                         }
 
                         binsmain->texmessagelengths.push_back(msglen);
@@ -10254,6 +10255,7 @@ void Program::socket_server_receive(SOCKET sock) {
                 if (raw_copy) {
                     memcpy(raw_copy, buf, header_size);
                     binsmain->rawtexmessages.push_back(raw_copy);
+                    binsmain->rawtexmessagelengths.push_back(header_size);
                 }
 
                 binsmain->texmessagelengths.push_back(0);
