@@ -1030,6 +1030,7 @@ class Program {
     #endif
 		std::string sockname;
 		std::vector<std::string> connsocknames;
+        int last_recv_bytes = 0;  // Track bytes received in last bl_recv call
         bool server = false;
         int connected = 0;
         bool connfailed = false;

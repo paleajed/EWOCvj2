@@ -9940,133 +9940,236 @@ void Program::socket_client(struct sockaddr_in serv_addr, int opt) {
         }
         buf2 = recv_result;
 
-        size_t buf_len = strnlen(buf2, NETWORK_RECV_SIZE);  // Safe string length check
-        if (buf_len > 0) {
-            std::string str(buf2, buf_len);  // Use length-limited constructor
+        // Process ALL messages in the buffer (there may be multiple small messages)
+        char* process_ptr = buf2;
+        char* buf_end = buf2 + this->last_recv_bytes;
+
+        std::cout << "DEBUG: Starting inner loop, received " << this->last_recv_bytes << " bytes" << std::endl;
+
+        while (process_ptr < buf_end) {
+            size_t buf_len = strnlen(process_ptr, buf_end - process_ptr);
+            if (buf_len == 0) {
+                std::cout << "DEBUG: Inner loop exit - no more messages (buf_len=0)" << std::endl;
+                break;  // No more complete messages
+            }
+
+            std::string str(process_ptr, buf_len);
+            std::cout << "DEBUG: Processing message type: " << str << " at offset " << (process_ptr - buf2)
+                      << " (process_ptr=" << (void*)process_ptr << " buf2=" << (void*)buf2 << ")" << std::endl;
             if (str == "BIN_SENT") {
-                char* ptr = buf2 + buf_len + 1;
-                // Check bounds with proper buffer end check
-                if (ptr >= buf2 + NETWORK_BUFFER_SIZE || ptr < buf2) continue;
-
-                try {
-                    binsmain->messagelengths.push_back(std::stoi(ptr));
-                } catch (const std::exception& e) {
-                    std::cout << "DEBUG: Invalid message length in BIN_SENT" << std::endl;
-                    continue;
-                }
-                
-                ptr += strnlen(ptr, buf2 + NETWORK_BUFFER_SIZE - ptr) + 1;
-                if (ptr >= buf2 + NETWORK_BUFFER_SIZE || ptr < buf2) continue;
-
-                binsmain->messagesocknames.push_back(std::string(ptr, strnlen(ptr, buf2 + NETWORK_BUFFER_SIZE - ptr)));
-                ptr += strnlen(ptr, buf2 + NETWORK_BUFFER_SIZE - ptr) + 1;
-                if (ptr >= buf2 + NETWORK_BUFFER_SIZE || ptr < buf2) continue;
-
-                // Make a copy of the message data to avoid dangling pointers
-                size_t remaining_len = buf2 + NETWORK_BUFFER_SIZE - ptr;
-                char* msg_copy = (char*)malloc(remaining_len);
-                if (msg_copy) {
-                    memcpy(msg_copy, ptr, remaining_len);
-                    binsmain->messages.push_back(msg_copy);
-                }
-
-            } else if (str == "TEX_SENT") {
-                char* ptr = buf2 + buf_len + 1;
-                if (ptr >= buf2 + NETWORK_BUFFER_SIZE || ptr < buf2) continue;
+                char* ptr = process_ptr + buf_len + 1;
+                if (ptr >= buf_end) break;  // Incomplete message
 
                 int msglen;
                 try {
                     msglen = std::stoi(ptr);
+                    binsmain->messagelengths.push_back(msglen);
+                } catch (const std::exception& e) {
+                    std::cout << "DEBUG: Invalid message length in BIN_SENT" << std::endl;
+                    break;
+                }
+
+                ptr += strnlen(ptr, buf_end - ptr) + 1;
+                if (ptr >= buf_end) break;
+
+                // Payload starts at ptr and is msglen bytes
+                // First field in payload is seatname
+                size_t sockname_len = strnlen(ptr, std::min((size_t)(buf_end - ptr), (size_t)msglen));
+                binsmain->messagesocknames.push_back(std::string(ptr, sockname_len));
+
+                // Make a copy of the ENTIRE payload (msglen bytes, starting from ptr)
+                // Check if we have the full payload in buffer
+                int available = buf_end - ptr;
+                if (available >= msglen) {
+                    // Full payload in buffer
+                    char* msg_copy = (char*)malloc(msglen);
+                    if (msg_copy) {
+                        memcpy(msg_copy, ptr, msglen);
+                        binsmain->messages.push_back(msg_copy);
+                    }
+                    // Advance to next message
+                    process_ptr = ptr + msglen;
+                    std::cout << "DEBUG: BIN_SENT advanced process_ptr to offset " << (process_ptr - buf2)
+                              << ", buf_end at offset " << (buf_end - buf2)
+                              << ", bytes left: " << (buf_end - process_ptr) << std::endl;
+                } else {
+                    // Incomplete payload - shouldn't happen for BIN_SENT but handle it
+                    std::cout << "DEBUG: BIN_SENT incomplete payload, expected " << msglen << " got " << available << std::endl;
+                    break;
+                }
+
+            } else if (str == "TEX_SENT") {
+                char* ptr = process_ptr + buf_len + 1;
+                if (ptr >= buf_end) {
+                    std::cout << "DEBUG: TEX_SENT break - msglen field incomplete" << std::endl;
+                    break;
+                }
+
+                int msglen;
+                try {
+                    msglen = std::stoi(ptr);
+                    std::cout << "DEBUG: TEX_SENT msglen=" << msglen << std::endl;
                 } catch (const std::exception& e) {
                     std::cout << "DEBUG: Invalid message length in TEX_SENT" << std::endl;
-                    continue;
+                    break;
                 }
-                
-                ptr += strnlen(ptr, buf2 + NETWORK_BUFFER_SIZE - ptr) + 1;
-                if (ptr >= buf2 + NETWORK_BUFFER_SIZE || ptr < buf2) continue;
 
-                std::string sockname(ptr, strnlen(ptr, buf2 + NETWORK_BUFFER_SIZE - ptr));
-                ptr += strnlen(ptr, buf2 + NETWORK_BUFFER_SIZE - ptr) + 1;
-                if (ptr >= buf2 + NETWORK_BUFFER_SIZE || ptr < buf2) continue;
+                ptr += strnlen(ptr, buf_end - ptr) + 1;
+                if (ptr >= buf_end) {
+                    std::cout << "DEBUG: TEX_SENT break - sockname field incomplete" << std::endl;
+                    break;
+                }
 
-                if (msglen > 0 && msglen < 50*1024*1024) {  // Reasonable size limit (50MB)
-                    // Allocate buffer for complete texture message
-                    char* texbuf = (char*)malloc(msglen);
-                    if (texbuf) {
-                        // Calculate how much data we already have
-                        ptrdiff_t already_received = buf2 + NETWORK_BUFFER_SIZE - ptr;
-                        if (already_received < 0) already_received = 0;
-                        int headerlen = std::min(msglen, static_cast<int>(already_received));
-                        if (headerlen > 0) {
-                            memcpy(texbuf, ptr, headerlen);
+                size_t sockname_len = strnlen(ptr, buf_end - ptr);
+                std::string sockname(ptr, sockname_len);
+                std::cout << "DEBUG: TEX_SENT sockname='" << sockname << "'" << std::endl;
+                ptr += sockname_len + 1;
+                if (ptr >= buf_end) {
+                    std::cout << "DEBUG: TEX_SENT break - payload start incomplete" << std::endl;
+                    break;
+                }
+
+                // msglen is the PAYLOAD size (binname + position + filesize [+ optional texture data])
+                // We need to read the payload to determine actual texture size
+
+                if (msglen > 0 && msglen < 50*1024*1024) {
+                    // Read the payload - it should be in the buffer
+                    int already_in_buffer = buf_end - ptr;
+                    char* payload_buf = nullptr;
+
+                    std::cout << "DEBUG: TEX_SENT msglen=" << msglen << " already_in_buffer=" << already_in_buffer << std::endl;
+
+                    if (already_in_buffer >= msglen) {
+                        // Entire payload is in buffer
+                        payload_buf = ptr;
+                        std::cout << "DEBUG: TEX_SENT entire payload in buffer" << std::endl;
+                    } else {
+                        // Need to read more data - allocate and read the full payload
+                        payload_buf = (char*)malloc(msglen);
+                        if (!payload_buf) break;
+
+                        if (already_in_buffer > 0) {
+                            memcpy(payload_buf, ptr, already_in_buffer);
                         }
 
-                        // Receive remaining data if needed
-                        int remaining = msglen - headerlen;
-                        if (remaining > 0) {
-                            char* recvpos = texbuf + headerlen;
-                            while (remaining > 0) {
-                                int received = recv(this->sock, recvpos, remaining, 0);
-                                if (received <= 0) {
-                                    free(texbuf);
-                                    texbuf = nullptr;
-                                    break;
-                                }
-                                recvpos += received;
-                                remaining -= received;
+                        int remaining = msglen - already_in_buffer;
+                        char* recv_ptr = payload_buf + already_in_buffer;
+                        while (remaining > 0) {
+                            int received = recv(this->sock, recv_ptr, remaining, 0);
+                            if (received <= 0) {
+                                free(payload_buf);
+                                payload_buf = nullptr;
+                                break;
                             }
+                            recv_ptr += received;
+                            remaining -= received;
                         }
 
-                        // Queue complete message
-                        if (texbuf) {
-                            binsmain->texmessagelengths.push_back(msglen);
-                            binsmain->texmessagesocknames.push_back(sockname);
-                            binsmain->texmessages.push_back(texbuf);
-                        }
+                        if (!payload_buf) break;
                     }
-                } else if (msglen == 0) {
-                    // Empty texture message (placeholder) - make a copy
-                    size_t remaining_len = buf2 + NETWORK_BUFFER_SIZE - ptr;
-                    if (remaining_len > 0) {
-                        char* ptr_copy = (char*)malloc(remaining_len);
-                        if (ptr_copy) {
-                            memcpy(ptr_copy, ptr, remaining_len);
+
+                    // Parse payload: binname, position, filesize
+                    char* parse_ptr = payload_buf;
+                    char* payload_end = payload_buf + msglen;
+
+                    // Skip binname
+                    parse_ptr += strnlen(parse_ptr, payload_end - parse_ptr) + 1;
+                    if (parse_ptr >= payload_end) {
+                        if (payload_buf != ptr) free(payload_buf);
+                        break;
+                    }
+
+                    // Skip position
+                    parse_ptr += strnlen(parse_ptr, payload_end - parse_ptr) + 1;
+                    if (parse_ptr >= payload_end) {
+                        if (payload_buf != ptr) free(payload_buf);
+                        break;
+                    }
+
+                    // Get filesize
+                    int filesize = 0;
+                    try {
+                        filesize = std::stoi(parse_ptr);
+                    } catch (...) {
+                        if (payload_buf != ptr) free(payload_buf);
+                        break;
+                    }
+
+                    // Now we know the actual texture size
+                    if (filesize == 0) {
+                        // No texture data - just store the payload
+                        char* payload_copy = (char*)malloc(msglen);
+                        if (payload_copy) {
+                            memcpy(payload_copy, payload_buf, msglen);
                             binsmain->texmessagelengths.push_back(0);
                             binsmain->texmessagesocknames.push_back(sockname);
-                            binsmain->texmessages.push_back(ptr_copy);
+                            binsmain->texmessages.push_back(payload_copy);
+                            std::cout << "DEBUG: TEX_SENT stored empty texture message" << std::endl;
                         }
+
+                        // Advance process_ptr
+                        if (payload_buf == ptr) {
+                            // Payload was in buffer
+                            process_ptr = ptr + msglen;
+                            std::cout << "DEBUG: TEX_SENT advanced process_ptr by " << msglen << " bytes, " << (buf_end - process_ptr) << " bytes left" << std::endl;
+                        } else {
+                            // We read beyond buffer
+                            free(payload_buf);
+                            process_ptr = buf_end;
+                            std::cout << "DEBUG: TEX_SENT read beyond buffer, exiting inner loop" << std::endl;
+                        }
+                    } else {
+                        // Has texture data - this shouldn't happen for empty messages
+                        // but handle it anyway
+                        if (payload_buf != ptr) free(payload_buf);
+                        // For now, skip large texture messages
+                        process_ptr = buf_end;
                     }
+                } else {
+                    // Invalid msglen
+                    break;
                 }
 
             } else if (str == "NEW_SIBLING") {
-                char* ptr = buf2 + buf_len + 1;
-                if (ptr < buf2 + NETWORK_BUFFER_SIZE && ptr >= buf2) {
-                    std::string sibling_name(ptr, strnlen(ptr, buf2 + NETWORK_BUFFER_SIZE - ptr));
-                    std::lock_guard<std::mutex> lock(this->clientmutex);  // Add synchronization
+                char* ptr = process_ptr + buf_len + 1;
+                if (ptr < buf_end) {
+                    size_t name_len = strnlen(ptr, buf_end - ptr);
+                    std::string sibling_name(ptr, name_len);
+                    std::lock_guard<std::mutex> lock(this->clientmutex);
                     this->connsocknames.push_back(sibling_name);
+                    process_ptr = ptr + name_len + 1;
+                } else {
+                    break;
                 }
 
             } else if (str == "SERVER_QUITS") {
                 // disconnect
-                std::lock_guard<std::mutex> lock(this->clientmutex);  // Add synchronization
+                std::lock_guard<std::mutex> lock(this->clientmutex);
                 this->connected = 0;
                 free(buf2);
                 return;
 
             } else if (str == "CHANGE_NAME") {
-                char* ptr = buf2 + buf_len + 1;
-                if (ptr < buf2 + NETWORK_BUFFER_SIZE && ptr >= buf2) {
-                    std::string new_name(ptr, strnlen(ptr, buf2 + NETWORK_BUFFER_SIZE - ptr));
-                    std::lock_guard<std::mutex> lock(this->clientmutex);  // Add synchronization
-                    
+                char* ptr = process_ptr + buf_len + 1;
+                if (ptr < buf_end) {
+                    size_t name_len = strnlen(ptr, buf_end - ptr);
+                    std::string new_name(ptr, name_len);
+                    std::lock_guard<std::mutex> lock(this->clientmutex);
+
                     int pos = std::find(this->connsockets.begin(), this->connsockets.end(), this->sock) - this->connsockets.begin();
                     if (pos >= 0 && pos < static_cast<int>(this->connsocknames.size())) {
                         this->connsocknames[pos] = new_name;
                     }
+                    process_ptr = ptr + name_len + 1;
+                } else {
+                    break;
                 }
+            } else {
+                // Unknown message type, skip to end
+                break;
             }
-        }
-    }
+        }  // End inner while loop for processing messages from buffer
+    }  // End outer while loop for receiving
 }
 
 void Program::socket_server_receive(SOCKET sock) {
@@ -10126,163 +10229,184 @@ void Program::socket_server_receive(SOCKET sock) {
             return;
         }
 
-        size_t buf_len = strnlen(buf, NETWORK_RECV_SIZE);  // Safe string length check
-        if (buf_len > 0) {
-            std::string str(buf, buf_len);  // Length-limited constructor
+        // Process ALL messages in the buffer
+        char* process_ptr = buf;
+        char* buf_end = buf + this->last_recv_bytes;
+
+        while (process_ptr < buf_end) {
+            size_t buf_len = strnlen(process_ptr, buf_end - process_ptr);
+            if (buf_len == 0) break;
+
+            std::string str(process_ptr, buf_len);
             if (str == "BIN_SENT") {
-                // Calculate total message size safely
-                size_t total_size = buf_len + 1;
-                char* ptr = buf + total_size;
-                if (ptr >= buf + NETWORK_BUFFER_SIZE || ptr < buf) continue;
+                char* msg_start = process_ptr;
+                char* ptr = process_ptr + buf_len + 1;
+                if (ptr >= buf_end) break;
 
-                size_t field_len = strnlen(ptr, buf + NETWORK_BUFFER_SIZE - ptr);
-                total_size += field_len + 1;
-                ptr = buf + total_size;
-                if (ptr >= buf + NETWORK_BUFFER_SIZE || ptr < buf) continue;
+                // Get message length field
+                size_t msglen_field_len = strnlen(ptr, buf_end - ptr);
+                int msglen;
+                try {
+                    msglen = std::stoi(ptr);
+                    binsmain->messagelengths.push_back(msglen);
+                } catch (const std::exception& e) {
+                    std::cout << "DEBUG: Invalid message length in server BIN_SENT" << std::endl;
+                    break;
+                }
+                ptr += msglen_field_len + 1;
+                if (ptr >= buf_end) break;
 
-                field_len = strnlen(ptr, buf + NETWORK_BUFFER_SIZE - ptr);
-                total_size += field_len + 1;
-                ptr = buf + total_size;
-                if (ptr >= buf + NETWORK_BUFFER_SIZE || ptr < buf) continue;
+                // Get sockname
+                size_t sockname_len = strnlen(ptr, buf_end - ptr);
+                std::string sockname(ptr, sockname_len);
+                binsmain->messagesocknames.push_back(sockname);
+                ptr += sockname_len + 1;
+                if (ptr >= buf_end) break;
 
-                // Calculate remaining message size
-                size_t msg_len = strnlen(ptr, buf + NETWORK_BUFFER_SIZE - ptr);
-                total_size += msg_len;
+                // Store copy of message payload
+                size_t payload_len = buf_end - ptr;
+                char* msg_copy = (char*)malloc(payload_len);
+                if (msg_copy) {
+                    memcpy(msg_copy, ptr, payload_len);
+                    binsmain->messages.push_back(msg_copy);
+                }
 
-                // Create a copy of the entire message for rawmessages
-                char* raw_copy = (char*)malloc(total_size);
+                // Create raw copy for forwarding
+                size_t total_msg_size = ptr - msg_start + payload_len;
+                char* raw_copy = (char*)malloc(total_msg_size);
                 if (raw_copy) {
-                    memcpy(raw_copy, buf, total_size);
+                    memcpy(raw_copy, msg_start, total_msg_size);
                     binsmain->rawmessages.push_back(raw_copy);
                 }
 
-                // Parse message safely
-                ptr = buf + buf_len + 1;
-                if (ptr >= buf + NETWORK_BUFFER_SIZE || ptr < buf) continue;
-
-                try {
-                    binsmain->messagelengths.push_back(std::stoi(ptr));
-                } catch (const std::exception& e) {
-                    std::cout << "DEBUG: Invalid message length in server BIN_SENT" << std::endl;
-                    if (raw_copy) free(raw_copy);
-                    continue;
-                }
-
-                ptr += strnlen(ptr, buf + NETWORK_BUFFER_SIZE - ptr) + 1;
-                if (ptr >= buf + NETWORK_BUFFER_SIZE || ptr < buf) {
-                    if (raw_copy) free(raw_copy);
-                    continue;
-                }
-
-                // Store copies of strings to avoid dangling pointers
-                std::string sockname(ptr, strnlen(ptr, buf + NETWORK_BUFFER_SIZE - ptr));
-                binsmain->messagesocknames.push_back(sockname);
-                ptr += strnlen(ptr, buf + NETWORK_BUFFER_SIZE - ptr) + 1;
-                if (ptr >= buf + NETWORK_BUFFER_SIZE || ptr < buf) {
-                    if (raw_copy) free(raw_copy);
-                    continue;
-                }
-
-                // Store copy of message data
-                size_t msg_data_len = strnlen(ptr, buf + NETWORK_BUFFER_SIZE - ptr);
-                char* msg_copy = (char*)malloc(msg_data_len + 1);
-                if (msg_copy) {
-                    memcpy(msg_copy, ptr, msg_data_len);
-                    msg_copy[msg_data_len] = '\0';
-                    binsmain->messages.push_back(msg_copy);
-                }
+                // Advance to next message (BIN_SENT uses entire buffer)
+                process_ptr = buf_end;
         }
         else if (str == "TEX_SENT") {
-            char* ptr = buf + strlen(buf) + 1;
-            if (ptr >= buf + 148489) continue;
+            char* msg_start = process_ptr;
+            char* ptr = process_ptr + buf_len + 1;
+            if (ptr >= buf_end) break;
 
-            int msglen = std::stoi(ptr);
+            int msglen;
+            try {
+                msglen = std::stoi(ptr);
+            } catch (const std::exception& e) {
+                std::cout << "DEBUG: Invalid msglen in server TEX_SENT" << std::endl;
+                break;
+            }
             ptr += strlen(ptr) + 1;
-            if (ptr >= buf + 148489) continue;
+            if (ptr >= buf_end) break;
 
-            std::string sockname(ptr);
-            ptr += strlen(ptr) + 1;
-            if (ptr >= buf + 148489) continue;
+            size_t sockname_len = strnlen(ptr, buf_end - ptr);
+            std::string sockname(ptr, sockname_len);
+            ptr += sockname_len + 1;
+            if (ptr >= buf_end) break;
 
-            if (msglen > 0) {
-                // Allocate buffer for complete texture message
-                char* texbuf = (char*)malloc(msglen);
-                if (texbuf) {
-                    // Calculate how much data we already have in buffer
-                    int already_received = buf + 148489 - ptr;
-                    int headerlen = std::min(msglen, already_received);
-                    memcpy(texbuf, ptr, headerlen);
+            // msglen is PAYLOAD size - read it and check filesize field
+            if (msglen > 0 && msglen < 50*1024*1024) {
+                int already_in_buffer = buf_end - ptr;
+                char* payload_buf = nullptr;
 
-                    // Receive remaining data if needed
-                    int remaining = msglen - headerlen;
-                    if (remaining > 0) {
-                        char* recvpos = texbuf + headerlen;
-                        while (remaining > 0) {
-                            int received = recv(sock, recvpos, remaining, 0);
-                            if (received <= 0) {
-                                free(texbuf);
-                                texbuf = nullptr;
-                                break;
-                            }
-                            recvpos += received;
-                            remaining -= received;
-                        }
+                if (already_in_buffer >= msglen) {
+                    payload_buf = ptr;
+                } else {
+                    payload_buf = (char*)malloc(msglen);
+                    if (!payload_buf) break;
+
+                    if (already_in_buffer > 0) {
+                        memcpy(payload_buf, ptr, already_in_buffer);
                     }
 
-                    // Queue complete message
-                    if (texbuf) {
-                        // For server forwarding, reconstruct the raw message
-                        int header_size = ptr - buf;
-                        int rawmsgsize = header_size + msglen;
-                        char* rawmsgbuf = (char*)malloc(rawmsgsize);
-                        if (rawmsgbuf) {
-                            memcpy(rawmsgbuf, buf, header_size);
-                            memcpy(rawmsgbuf + header_size, texbuf, msglen);
-                            binsmain->rawtexmessages.push_back(rawmsgbuf);
-                            binsmain->rawtexmessagelengths.push_back(rawmsgsize);
+                    int remaining = msglen - already_in_buffer;
+                    char* recv_ptr = payload_buf + already_in_buffer;
+                    while (remaining > 0) {
+                        int received = recv(sock, recv_ptr, remaining, 0);
+                        if (received <= 0) {
+                            free(payload_buf);
+                            payload_buf = nullptr;
+                            break;
                         }
-
-                        binsmain->texmessagelengths.push_back(msglen);
-                        binsmain->texmessagesocknames.push_back(sockname);
-                        binsmain->texmessages.push_back(texbuf);
+                        recv_ptr += received;
+                        remaining -= received;
                     }
+
+                    if (!payload_buf) break;
+                }
+
+                // Parse payload to get filesize
+                char* parse_ptr = payload_buf;
+                char* payload_end = payload_buf + msglen;
+
+                parse_ptr += strnlen(parse_ptr, payload_end - parse_ptr) + 1; // Skip binname
+                if (parse_ptr >= payload_end) {
+                    if (payload_buf != ptr) free(payload_buf);
+                    break;
+                }
+
+                parse_ptr += strnlen(parse_ptr, payload_end - parse_ptr) + 1; // Skip position
+                if (parse_ptr >= payload_end) {
+                    if (payload_buf != ptr) free(payload_buf);
+                    break;
+                }
+
+                int filesize = 0;
+                try {
+                    filesize = std::stoi(parse_ptr);
+                } catch (...) {
+                    if (payload_buf != ptr) free(payload_buf);
+                    break;
+                }
+
+                // Store the message
+                char* payload_copy = (char*)malloc(msglen);
+                if (payload_copy) {
+                    memcpy(payload_copy, payload_buf, msglen);
+                    binsmain->texmessagelengths.push_back(filesize);
+                    binsmain->texmessagesocknames.push_back(sockname);
+                    binsmain->texmessages.push_back(payload_copy);
+                }
+
+                // Create raw message for forwarding
+                size_t header_size = ptr - msg_start;
+                size_t total_msg_size = header_size + msglen;
+                char* raw_copy = (char*)malloc(total_msg_size);
+                if (raw_copy) {
+                    memcpy(raw_copy, msg_start, header_size);
+                    memcpy(raw_copy + header_size, payload_buf, msglen);
+                    binsmain->rawtexmessages.push_back(raw_copy);
+                    binsmain->rawtexmessagelengths.push_back(total_msg_size);
+                }
+
+                // Advance process_ptr
+                if (payload_buf == ptr) {
+                    process_ptr = ptr + msglen;
+                } else {
+                    free(payload_buf);
+                    process_ptr = buf_end;
                 }
             } else {
-                // Empty texture message (placeholder)
-                // Create a copy for rawtexmessages
-                int header_size = ptr - buf;
-                char* raw_copy = (char*)malloc(header_size);
-                if (raw_copy) {
-                    memcpy(raw_copy, buf, header_size);
-                    binsmain->rawtexmessages.push_back(raw_copy);
-                    binsmain->rawtexmessagelengths.push_back(header_size);
-                }
-
-                binsmain->texmessagelengths.push_back(0);
-                binsmain->texmessagesocknames.push_back(sockname);
-
-                // Store empty placeholder
-                char* empty_copy = (char*)malloc(1);
-                if (empty_copy) {
-                    empty_copy[0] = '\0';
-                    binsmain->texmessages.push_back(empty_copy);
-                }
+                break;
             }
         }
         else if (str == "CHANGE_NAME") {
-            char* ptr = buf + strlen(buf) + 1;
-            if (ptr >= buf + 148489) continue;
+            char* ptr = process_ptr + buf_len + 1;
+            if (ptr >= buf_end) break;
 
             int pos = std::find(this->connsockets.begin(), this->connsockets.end(), sock) - this->connsockets.begin();
             if (pos < this->connsocknames.size()) {
-                this->connsocknames[pos] = std::string(ptr);
+                size_t name_len = strnlen(ptr, buf_end - ptr);
+                this->connsocknames[pos] = std::string(ptr, name_len);
+                process_ptr = ptr + name_len + 1;
+            } else {
+                break;
             }
+        } else {
+            // Unknown message
+            break;
         }
-        }
+        }  // End inner while loop processing messages from buffer
+    }  // End outer while loop
 
-        // buf pointer is restored to original_buf at the start of next iteration
-    }
-    
     free(buf);
 }
 
@@ -10504,7 +10628,7 @@ void Program::discovery_listen() {
 
 char* Program::bl_recv(int sock, char *buf, size_t sz, int flags) {
     if (!buf || sz == 0) return nullptr;
-    
+
     int bytesReceived = 0;
 #ifdef POSIX
     int flags2 = fcntl(sock, F_GETFL);
@@ -10519,12 +10643,15 @@ char* Program::bl_recv(int sock, char *buf, size_t sz, int flags) {
     flags2 = 1;
     ioctlsocket(sock, FIONBIO, &flags2);
 #endif
-    
+
     // Check for disconnection or error
     if (bytesReceived <= 0) {
         return nullptr;
     }
-    
+
+    // Store the bytes received count for the caller (hack: use a member variable)
+    this->last_recv_bytes = bytesReceived;
+
     // Safely null-terminate the received data within buffer bounds
     if (static_cast<size_t>(bytesReceived) < sz) {
         buf[bytesReceived] = '\0';
@@ -10532,7 +10659,7 @@ char* Program::bl_recv(int sock, char *buf, size_t sz, int flags) {
         // If buffer is full, terminate at the last position
         buf[sz - 1] = '\0';
     }
-    
+
     return buf;
 }
 
