@@ -2265,6 +2265,31 @@ void BinsMain::send_shared_bins() {
         return walk;
     };
 
+    // Helper to calculate string length including null terminator
+    auto str_len = [](const std::string& s) -> size_t {
+        return s.length() + 1;
+    };
+
+    // Calculate correct message length including the length field itself
+    // This handles the edge case where msglen goes from 9999->10000 etc.
+    auto calculate_message_length = [&str_len](size_t payload_size) -> size_t {
+        size_t msglen = payload_size;
+        size_t msglen_str_len = str_len(std::to_string(msglen));
+
+        // Check if adding the length field changes the number of digits
+        size_t new_msglen = payload_size + msglen_str_len;
+        size_t new_msglen_str_len = str_len(std::to_string(new_msglen));
+
+        // Iterate until stable (usually 1-2 iterations max)
+        while (new_msglen_str_len != msglen_str_len) {
+            msglen_str_len = new_msglen_str_len;
+            new_msglen = payload_size + msglen_str_len;
+            new_msglen_str_len = str_len(std::to_string(new_msglen));
+        }
+
+        return new_msglen;
+    };
+
     for (auto name : this->currbin->sendtonames) {
         int sock = -1;  // Initialize to invalid socket
         bool brk = false;
@@ -2336,141 +2361,118 @@ void BinsMain::send_shared_bins() {
                 for (int j = 0; j < 12; j++) {
                     BinElement *binel = this->currbin->elements[i * 12 + j];
 
-                    if (binel->tex == -1 || binel->absjpath.empty()) {
-                        // Send placeholder for no texture
+                    // Try to open file if texture exists
+                    std::ifstream texfile;
+                    size_t filesize = 0;
+                    bool has_texture = false;
+
+                    if (binel->tex != -1 && !binel->absjpath.empty()) {
+                        texfile.open(binel->absjpath, std::ios::binary | std::ios::ate);
+                        if (texfile.is_open()) {
+                            filesize = texfile.tellg();
+                            texfile.seekg(0, std::ios::beg);
+                            has_texture = true;
+                        }
+                    }
+
+                    if (has_texture) {
+                        // Send actual texture file
+                        // Calculate payload size FIRST (without building buffer yet)
+                        size_t payload_base =
+                            str_len(this->currbin->name) +
+                            str_len(std::to_string(i * 12 + j)) +
+                            str_len(std::to_string(filesize)) +
+                            filesize;
+
+                        // Calculate total message length including msglen field itself
+                        size_t total_msglen = calculate_message_length(payload_base);
+                        std::string msglen_str = std::to_string(total_msglen);
+
+                        // Now build the actual buffer with correct sizes
+                        size_t header_estimate = 256;
+                        size_t buffer_size = header_estimate + filesize;
+                        std::unique_ptr<char[]> completemsg(new char[buffer_size]());
+                        char *completemsg_end = completemsg.get() + buffer_size;
+                        char *texwalk = completemsg.get();
+
+                        texwalk = put_in_buffer("TEX_SENT", texwalk, completemsg_end);
+                        if (!texwalk) {
+                            texfile.close();
+                            continue;
+                        }
+
+                        texwalk = put_in_buffer(msglen_str.c_str(), texwalk, completemsg_end);
+                        if (!texwalk) {
+                            texfile.close();
+                            continue;
+                        }
+
+                        texwalk = put_in_buffer(mainprogram->seatname.c_str(), texwalk, completemsg_end);
+                        if (!texwalk) {
+                            texfile.close();
+                            continue;
+                        }
+
+                        texwalk = put_in_buffer((this->currbin->name).c_str(), texwalk, completemsg_end);
+                        if (!texwalk) {
+                            texfile.close();
+                            continue;
+                        }
+
+                        texwalk = put_in_buffer(std::to_string(i * 12 + j).c_str(), texwalk, completemsg_end);
+                        if (!texwalk) {
+                            texfile.close();
+                            continue;
+                        }
+
+                        texwalk = put_in_buffer(std::to_string(filesize).c_str(), texwalk, completemsg_end);
+                        if (!texwalk) {
+                            texfile.close();
+                            continue;
+                        }
+
+                        // Read file data directly into message buffer
+                        texfile.read(texwalk, filesize);
+                        texfile.close();
+
+                        // Send complete message
+                        send(sock, completemsg.get(), texwalk - completemsg.get() + filesize, 0);
+                    } else {
+                        // No texture or file couldn't be opened - send placeholder
+                        // Calculate payload size FIRST
+                        size_t payload_base =
+                            str_len(this->currbin->name) +
+                            str_len(std::to_string(i * 12 + j)) +
+                            str_len("0");  // filesize = 0
+
+                        // Calculate total message length including msglen field itself
+                        size_t total_msglen = calculate_message_length(payload_base);
+                        std::string msglen_str = std::to_string(total_msglen);
+
+                        // Now build the buffer
                         char texheader[256] = {0};
                         char *texheader_end = texheader + sizeof(texheader);
                         char *texwalk = texheader;
-                        char *msgstart = texheader;
 
                         texwalk = put_in_buffer("TEX_SENT", texwalk, texheader_end);
                         if (!texwalk) continue;
 
-                        // Reserve space for total message length (will fill in later)
-                        char *msglen_pos = texwalk;
-                        texwalk = put_in_buffer("0", texwalk, texheader_end);  // placeholder
+                        texwalk = put_in_buffer(msglen_str.c_str(), texwalk, texheader_end);
                         if (!texwalk) continue;
 
                         texwalk = put_in_buffer(mainprogram->seatname.c_str(), texwalk, texheader_end);
                         if (!texwalk) continue;
 
-                        // Mark where the message payload begins (after seatname)
-                        char *payload_start = texwalk;
-
                         texwalk = put_in_buffer((this->currbin->name).c_str(), texwalk, texheader_end);
                         if (!texwalk) continue;
+
                         texwalk = put_in_buffer(std::to_string(i * 12 + j).c_str(), texwalk, texheader_end);
                         if (!texwalk) continue;
+
                         texwalk = put_in_buffer("0", texwalk, texheader_end);  // file size = 0
                         if (!texwalk) continue;
 
-                        // Calculate total message length (payload only, excluding TEX_SENT, msglen, and seatname)
-                        size_t payload_len = texwalk - payload_start;
-
-                        // Fill in the actual message length
-                        std::string msglen_str = std::to_string(payload_len);
-                        size_t max_len = strlen(msglen_pos);
-                        if (msglen_str.length() <= max_len) {
-                            memset(msglen_pos, 0, max_len + 1);
-                            memcpy(msglen_pos, msglen_str.c_str(), msglen_str.length());
-                        }
-
                         send(sock, texheader, texwalk - texheader, 0);
-                    } else {
-                        // Send actual texture file
-                        std::ifstream texfile(binel->absjpath, std::ios::binary | std::ios::ate);
-                        if (texfile.is_open()) {
-                            size_t filesize = texfile.tellg();
-                            texfile.seekg(0, std::ios::beg);
-
-                            // Prepare complete message with header and file data
-                            size_t header_size = 256;
-                            size_t totalmsgsize = header_size + filesize;
-
-                            // Use smart pointer for automatic cleanup
-                            std::unique_ptr<char[]> completemsg(new char[totalmsgsize]());
-                            char *completemsg_end = completemsg.get() + totalmsgsize;
-                            char *texwalk = completemsg.get();
-
-                            texwalk = put_in_buffer("TEX_SENT", texwalk, completemsg_end);
-                            if (!texwalk) continue;
-
-                            // Reserve space for total message length (will fill in later)
-                            char *msglen_pos = texwalk;
-                            texwalk = put_in_buffer(std::to_string(filesize).c_str(), texwalk, completemsg_end);  // placeholder
-                            if (!texwalk) continue;
-
-                            texwalk = put_in_buffer(mainprogram->seatname.c_str(), texwalk, completemsg_end);
-                            if (!texwalk) continue;
-
-                            // Mark where the message payload begins (after seatname)
-                            char *payload_start = texwalk;
-
-                            texwalk = put_in_buffer((this->currbin->name).c_str(), texwalk, completemsg_end);
-                            if (!texwalk) continue;
-                            texwalk = put_in_buffer(std::to_string(i * 12 + j).c_str(), texwalk, completemsg_end);
-                            if (!texwalk) continue;
-                            texwalk = put_in_buffer(std::to_string(filesize).c_str(), texwalk, completemsg_end);
-                            if (!texwalk) continue;
-
-                            // Read file data directly into message buffer
-                            texfile.read(texwalk, filesize);
-                            texfile.close();
-
-                            // Calculate total message length (payload = binname + pos + filesize_str + binary_data)
-                            size_t payload_len = (texwalk - payload_start) + filesize;
-
-                            // Fill in the actual message length
-                            std::string msglen_str = std::to_string(payload_len);
-                            size_t max_len = strlen(msglen_pos);
-                            if (msglen_str.length() <= max_len) {
-                                memset(msglen_pos, 0, max_len + 1);
-                                memcpy(msglen_pos, msglen_str.c_str(), msglen_str.length());
-                            }
-
-                            // Send complete message
-                            send(sock, completemsg.get(), texwalk - completemsg.get() + filesize, 0);
-                            // completemsg automatically freed by unique_ptr
-                        } else {
-                            // File couldn't be opened, send placeholder
-                            char texheader[256] = {0};
-                            char *texheader_end = texheader + sizeof(texheader);
-                            char *texwalk = texheader;
-
-                            texwalk = put_in_buffer("TEX_SENT", texwalk, texheader_end);
-                            if (!texwalk) continue;
-
-                            // Reserve space for total message length (will fill in later)
-                            char *msglen_pos = texwalk;
-                            texwalk = put_in_buffer("0", texwalk, texheader_end);  // placeholder
-                            if (!texwalk) continue;
-
-                            texwalk = put_in_buffer(mainprogram->seatname.c_str(), texwalk, texheader_end);
-                            if (!texwalk) continue;
-
-                            // Mark where the message payload begins (after seatname)
-                            char *payload_start = texwalk;
-
-                            texwalk = put_in_buffer((this->currbin->name).c_str(), texwalk, texheader_end);
-                            if (!texwalk) continue;
-                            texwalk = put_in_buffer(std::to_string(i * 12 + j).c_str(), texwalk, texheader_end);
-                            if (!texwalk) continue;
-                            texwalk = put_in_buffer("0", texwalk, texheader_end);  // file size = 0
-                            if (!texwalk) continue;
-
-                            // Calculate total message length (payload only, excluding TEX_SENT, msglen, and seatname)
-                            size_t payload_len = texwalk - payload_start;
-
-                            // Fill in the actual message length
-                            std::string msglen_str = std::to_string(payload_len);
-                            size_t max_len = strlen(msglen_pos);
-                            if (msglen_str.length() <= max_len) {
-                                memset(msglen_pos, 0, max_len + 1);
-                                memcpy(msglen_pos, msglen_str.c_str(), msglen_str.length());
-                            }
-
-                            send(sock, texheader, texwalk - texheader, 0);
-                        }
                     }
                 }
             }
