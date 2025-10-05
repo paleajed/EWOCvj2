@@ -10006,15 +10006,17 @@ void Program::socket_client(struct sockaddr_in serv_addr, int opt) {
                 }
 
                 int msglen;
+                size_t msglen_field_len;
                 try {
+                    msglen_field_len = strnlen(ptr, buf_end - ptr);
                     msglen = std::stoi(ptr);
-                    std::cout << "DEBUG: TEX_SENT msglen=" << msglen << std::endl;
+                    std::cout << "DEBUG: TEX_SENT msglen=" << msglen << " msglen_field_len=" << msglen_field_len << std::endl;
                 } catch (const std::exception& e) {
                     std::cout << "DEBUG: Invalid message length in TEX_SENT" << std::endl;
                     break;
                 }
 
-                ptr += strnlen(ptr, buf_end - ptr) + 1;
+                ptr += msglen_field_len + 1;
                 if (ptr >= buf_end) {
                     std::cout << "DEBUG: TEX_SENT break - sockname field incomplete" << std::endl;
                     break;
@@ -10029,30 +10031,31 @@ void Program::socket_client(struct sockaddr_in serv_addr, int opt) {
                     break;
                 }
 
-                // msglen is the PAYLOAD size (binname + position + filesize [+ optional texture data])
-                // We need to read the payload to determine actual texture size
+                // msglen includes the msglen field itself
+                // Calculate actual payload size (subtract the msglen field length)
+                int actual_payload_size = msglen - (msglen_field_len + 1);
 
-                if (msglen > 0 && msglen < 50*1024*1024) {
+                if (actual_payload_size > 0 && actual_payload_size < 50*1024*1024) {
                     // Read the payload - it should be in the buffer
                     int already_in_buffer = buf_end - ptr;
                     char* payload_buf = nullptr;
 
-                    std::cout << "DEBUG: TEX_SENT msglen=" << msglen << " already_in_buffer=" << already_in_buffer << std::endl;
+                    std::cout << "DEBUG: TEX_SENT msglen=" << msglen << " actual_payload_size=" << actual_payload_size << " already_in_buffer=" << already_in_buffer << std::endl;
 
-                    if (already_in_buffer >= msglen) {
+                    if (already_in_buffer >= actual_payload_size) {
                         // Entire payload is in buffer
                         payload_buf = ptr;
                         std::cout << "DEBUG: TEX_SENT entire payload in buffer" << std::endl;
                     } else {
                         // Need to read more data - allocate and read the full payload
-                        payload_buf = (char*)malloc(msglen);
+                        payload_buf = (char*)malloc(actual_payload_size);
                         if (!payload_buf) break;
 
                         if (already_in_buffer > 0) {
                             memcpy(payload_buf, ptr, already_in_buffer);
                         }
 
-                        int remaining = msglen - already_in_buffer;
+                        int remaining = actual_payload_size - already_in_buffer;
                         char* recv_ptr = payload_buf + already_in_buffer;
                         while (remaining > 0) {
                             int received = recv(this->sock, recv_ptr, remaining, 0);
@@ -10070,7 +10073,7 @@ void Program::socket_client(struct sockaddr_in serv_addr, int opt) {
 
                     // Parse payload: binname, position, filesize
                     char* parse_ptr = payload_buf;
-                    char* payload_end = payload_buf + msglen;
+                    char* payload_end = payload_buf + actual_payload_size;
 
                     // Skip binname
                     parse_ptr += strnlen(parse_ptr, payload_end - parse_ptr) + 1;
@@ -10098,20 +10101,22 @@ void Program::socket_client(struct sockaddr_in serv_addr, int opt) {
                     // Now we know the actual texture size
                     if (filesize == 0) {
                         // No texture data - just store the payload
-                        char* payload_copy = (char*)malloc(msglen);
+                        // Calculate actual payload size (msglen includes msglen field itself)
+                        int actual_payload_size = msglen - (msglen_field_len + 1);
+                        char* payload_copy = (char*)malloc(actual_payload_size);
                         if (payload_copy) {
-                            memcpy(payload_copy, payload_buf, msglen);
-                            binsmain->texmessagelengths.push_back(0);
+                            memcpy(payload_copy, payload_buf, actual_payload_size);
+                            binsmain->texmessagelengths.push_back(actual_payload_size);
                             binsmain->texmessagesocknames.push_back(sockname);
                             binsmain->texmessages.push_back(payload_copy);
-                            std::cout << "DEBUG: TEX_SENT stored empty texture message" << std::endl;
+                            std::cout << "DEBUG: TEX_SENT stored empty texture message (payload_size=" << actual_payload_size << ")" << std::endl;
                         }
 
                         // Advance process_ptr
                         if (payload_buf == ptr) {
                             // Payload was in buffer
-                            process_ptr = ptr + msglen;
-                            std::cout << "DEBUG: TEX_SENT advanced process_ptr by " << msglen << " bytes, " << (buf_end - process_ptr) << " bytes left" << std::endl;
+                            process_ptr = ptr + actual_payload_size;
+                            std::cout << "DEBUG: TEX_SENT advanced process_ptr by " << actual_payload_size << " bytes, " << (buf_end - process_ptr) << " bytes left" << std::endl;
                         } else {
                             // We read beyond buffer
                             free(payload_buf);
@@ -10119,11 +10124,27 @@ void Program::socket_client(struct sockaddr_in serv_addr, int opt) {
                             std::cout << "DEBUG: TEX_SENT read beyond buffer, exiting inner loop" << std::endl;
                         }
                     } else {
-                        // Has texture data - this shouldn't happen for empty messages
-                        // but handle it anyway
-                        if (payload_buf != ptr) free(payload_buf);
-                        // For now, skip large texture messages
-                        process_ptr = buf_end;
+                        // Has texture data - store the complete payload
+                        char* payload_copy = (char*)malloc(actual_payload_size);
+                        if (payload_copy) {
+                            memcpy(payload_copy, payload_buf, actual_payload_size);
+                            binsmain->texmessagelengths.push_back(actual_payload_size);
+                            binsmain->texmessagesocknames.push_back(sockname);
+                            binsmain->texmessages.push_back(payload_copy);
+                            std::cout << "DEBUG: TEX_SENT stored texture message with data (payload_size=" << actual_payload_size << " filesize=" << filesize << ")" << std::endl;
+                        }
+
+                        // Advance process_ptr
+                        if (payload_buf == ptr) {
+                            // Payload was in buffer
+                            process_ptr = ptr + actual_payload_size;
+                            std::cout << "DEBUG: TEX_SENT advanced process_ptr by " << actual_payload_size << " bytes, " << (buf_end - process_ptr) << " bytes left" << std::endl;
+                        } else {
+                            // We read beyond buffer
+                            free(payload_buf);
+                            process_ptr = buf_end;
+                            std::cout << "DEBUG: TEX_SENT read beyond buffer, exiting inner loop" << std::endl;
+                        }
                     }
                 } else {
                     // Invalid msglen
@@ -10288,13 +10309,15 @@ void Program::socket_server_receive(SOCKET sock) {
             if (ptr >= buf_end) break;
 
             int msglen;
+            size_t msglen_field_len;
             try {
+                msglen_field_len = strlen(ptr);
                 msglen = std::stoi(ptr);
             } catch (const std::exception& e) {
                 std::cout << "DEBUG: Invalid msglen in server TEX_SENT" << std::endl;
                 break;
             }
-            ptr += strlen(ptr) + 1;
+            ptr += msglen_field_len + 1;
             if (ptr >= buf_end) break;
 
             size_t sockname_len = strnlen(ptr, buf_end - ptr);
@@ -10302,22 +10325,25 @@ void Program::socket_server_receive(SOCKET sock) {
             ptr += sockname_len + 1;
             if (ptr >= buf_end) break;
 
-            // msglen is PAYLOAD size - read it and check filesize field
-            if (msglen > 0 && msglen < 50*1024*1024) {
+            // msglen includes the msglen field itself
+            // Calculate actual payload size (subtract the msglen field length)
+            int actual_payload_size = msglen - (msglen_field_len + 1);
+
+            if (actual_payload_size > 0 && actual_payload_size < 50*1024*1024) {
                 int already_in_buffer = buf_end - ptr;
                 char* payload_buf = nullptr;
 
-                if (already_in_buffer >= msglen) {
+                if (already_in_buffer >= actual_payload_size) {
                     payload_buf = ptr;
                 } else {
-                    payload_buf = (char*)malloc(msglen);
+                    payload_buf = (char*)malloc(actual_payload_size);
                     if (!payload_buf) break;
 
                     if (already_in_buffer > 0) {
                         memcpy(payload_buf, ptr, already_in_buffer);
                     }
 
-                    int remaining = msglen - already_in_buffer;
+                    int remaining = actual_payload_size - already_in_buffer;
                     char* recv_ptr = payload_buf + already_in_buffer;
                     while (remaining > 0) {
                         int received = recv(sock, recv_ptr, remaining, 0);
@@ -10335,7 +10361,7 @@ void Program::socket_server_receive(SOCKET sock) {
 
                 // Parse payload to get filesize
                 char* parse_ptr = payload_buf;
-                char* payload_end = payload_buf + msglen;
+                char* payload_end = payload_buf + actual_payload_size;
 
                 parse_ptr += strnlen(parse_ptr, payload_end - parse_ptr) + 1; // Skip binname
                 if (parse_ptr >= payload_end) {
@@ -10358,28 +10384,28 @@ void Program::socket_server_receive(SOCKET sock) {
                 }
 
                 // Store the message
-                char* payload_copy = (char*)malloc(msglen);
+                char* payload_copy = (char*)malloc(actual_payload_size);
                 if (payload_copy) {
-                    memcpy(payload_copy, payload_buf, msglen);
-                    binsmain->texmessagelengths.push_back(filesize);
+                    memcpy(payload_copy, payload_buf, actual_payload_size);
+                    binsmain->texmessagelengths.push_back(actual_payload_size);
                     binsmain->texmessagesocknames.push_back(sockname);
                     binsmain->texmessages.push_back(payload_copy);
                 }
 
                 // Create raw message for forwarding
                 size_t header_size = ptr - msg_start;
-                size_t total_msg_size = header_size + msglen;
+                size_t total_msg_size = header_size + actual_payload_size;
                 char* raw_copy = (char*)malloc(total_msg_size);
                 if (raw_copy) {
                     memcpy(raw_copy, msg_start, header_size);
-                    memcpy(raw_copy + header_size, payload_buf, msglen);
+                    memcpy(raw_copy + header_size, payload_buf, actual_payload_size);
                     binsmain->rawtexmessages.push_back(raw_copy);
                     binsmain->rawtexmessagelengths.push_back(total_msg_size);
                 }
 
                 // Advance process_ptr
                 if (payload_buf == ptr) {
-                    process_ptr = ptr + msglen;
+                    process_ptr = ptr + actual_payload_size;
                 } else {
                     free(payload_buf);
                     process_ptr = buf_end;

@@ -2536,7 +2536,8 @@ void BinsMain::receive_shared_bins() {
             }
             return;
         }
-        
+
+        walk += strlen(walk) + 1;
         std::string str(walk);
         walk += strlen(walk) + 1;
 
