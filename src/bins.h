@@ -154,7 +154,8 @@ class Bin {
 		int pos;
 		bool shared = false;
         bool saved = false;
-		std::vector<std::string> sendtonames;
+        std::vector<std::string> sendtonames;
+        std::vector<std::string> prevtexes;
 		Bin(int pos);
 		~Bin();
 		

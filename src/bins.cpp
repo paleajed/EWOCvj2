@@ -801,7 +801,10 @@ void BinsMain::handle(bool draw) {
         }
     }
 
-	// set threadmode for hap encoding
+    // intermediate update sends for shared bins
+    this->send_shared_bins();
+
+    // set threadmode for hap encoding
     if (!this->binpreview) {
         render_text("HAP Encoding Mode", white, 0.62f, 0.8f, 0.00075f, 0.0012f);
         draw_box(white, black, binsmain->hapmodebox, -1);
@@ -2314,6 +2317,14 @@ void BinsMain::send_shared_bins() {
 
         // Only send if currbin is shared
         if (this->currbin->shared) {
+            std::vector<std::string> temptexes;
+            for (auto elem : this->currbin->elements) {
+                temptexes.push_back(elem->absjpath);
+            }
+            if (temptexes == this->currbin->prevtexes) {
+                return;
+            }
+
             char buf[148480] = {0};
             char *buf_end = buf + sizeof(buf);
             char *walk = buf;
@@ -2361,121 +2372,132 @@ void BinsMain::send_shared_bins() {
                 for (int j = 0; j < 12; j++) {
                     BinElement *binel = this->currbin->elements[i * 12 + j];
 
-                    // Try to open file if texture exists
-                    std::ifstream texfile;
-                    size_t filesize = 0;
-                    bool has_texture = false;
+					bool cond = false;
+					if (this->currbin->prevtexes.empty()) {
+						cond = true;
+					}
+					else {
+						cond = (this->currbin->prevtexes[i * 12 + j] != temptexes[i * 12 + j]);
+					}
 
-                    if (binel->tex != -1 && !binel->absjpath.empty()) {
-                        texfile.open(binel->absjpath, std::ios::binary | std::ios::ate);
-                        if (texfile.is_open()) {
-                            filesize = texfile.tellg();
-                            texfile.seekg(0, std::ios::beg);
-                            has_texture = true;
+                    if (cond) {
+                        // Try to open file if texture exists
+                        std::ifstream texfile;
+                        size_t filesize = 0;
+                        bool has_texture = false;
+
+                        if (binel->tex != -1 && !binel->absjpath.empty()) {
+                            texfile.open(binel->absjpath, std::ios::binary | std::ios::ate);
+                            if (texfile.is_open()) {
+                                filesize = texfile.tellg();
+                                texfile.seekg(0, std::ios::beg);
+                                has_texture = true;
+                            }
                         }
-                    }
 
-                    if (has_texture) {
-                        // Send actual texture file
-                        // Calculate payload size FIRST (without building buffer yet)
-                        size_t payload_base =
-                            str_len(this->currbin->name) +
-                            str_len(std::to_string(i * 12 + j)) +
-                            str_len(std::to_string(filesize)) +
-                            filesize;
+                        if (has_texture) {
+                            // Send actual texture file
+                            // Calculate payload size FIRST (without building buffer yet)
+                            size_t payload_base =
+                                    str_len(this->currbin->name) +
+                                    str_len(std::to_string(i * 12 + j)) +
+                                    str_len(std::to_string(filesize)) +
+                                    filesize;
 
-                        // Calculate total message length including msglen field itself
-                        size_t total_msglen = calculate_message_length(payload_base);
-                        std::string msglen_str = std::to_string(total_msglen);
+                            // Calculate total message length including msglen field itself
+                            size_t total_msglen = calculate_message_length(payload_base);
+                            std::string msglen_str = std::to_string(total_msglen);
 
-                        // Now build the actual buffer with correct sizes
-                        size_t header_estimate = 256;
-                        size_t buffer_size = header_estimate + filesize;
-                        std::unique_ptr<char[]> completemsg(new char[buffer_size]());
-                        char *completemsg_end = completemsg.get() + buffer_size;
-                        char *texwalk = completemsg.get();
+                            // Now build the actual buffer with correct sizes
+                            size_t header_estimate = 256;
+                            size_t buffer_size = header_estimate + filesize;
+                            std::unique_ptr<char[]> completemsg(new char[buffer_size]());
+                            char *completemsg_end = completemsg.get() + buffer_size;
+                            char *texwalk = completemsg.get();
 
-                        texwalk = put_in_buffer("TEX_SENT", texwalk, completemsg_end);
-                        if (!texwalk) {
+                            texwalk = put_in_buffer("TEX_SENT", texwalk, completemsg_end);
+                            if (!texwalk) {
+                                texfile.close();
+                                continue;
+                            }
+
+                            texwalk = put_in_buffer(msglen_str.c_str(), texwalk, completemsg_end);
+                            if (!texwalk) {
+                                texfile.close();
+                                continue;
+                            }
+
+                            texwalk = put_in_buffer(mainprogram->seatname.c_str(), texwalk, completemsg_end);
+                            if (!texwalk) {
+                                texfile.close();
+                                continue;
+                            }
+
+                            texwalk = put_in_buffer((this->currbin->name).c_str(), texwalk, completemsg_end);
+                            if (!texwalk) {
+                                texfile.close();
+                                continue;
+                            }
+
+                            texwalk = put_in_buffer(std::to_string(i * 12 + j).c_str(), texwalk, completemsg_end);
+                            if (!texwalk) {
+                                texfile.close();
+                                continue;
+                            }
+
+                            texwalk = put_in_buffer(std::to_string(filesize).c_str(), texwalk, completemsg_end);
+                            if (!texwalk) {
+                                texfile.close();
+                                continue;
+                            }
+
+                            // Read file data directly into message buffer
+                            texfile.read(texwalk, filesize);
                             texfile.close();
-                            continue;
+
+                            // Send complete message
+                            send(sock, completemsg.get(), texwalk - completemsg.get() + filesize, 0);
+                        } else {
+                            // No texture or file couldn't be opened - send placeholder
+                            // Calculate payload size FIRST
+                            size_t payload_base =
+                                    str_len(this->currbin->name) +
+                                    str_len(std::to_string(i * 12 + j)) +
+                                    str_len("0");  // filesize = 0
+
+                            // Calculate total message length including msglen field itself
+                            size_t total_msglen = calculate_message_length(payload_base);
+                            std::string msglen_str = std::to_string(total_msglen);
+
+                            // Now build the buffer
+                            char texheader[256] = {0};
+                            char *texheader_end = texheader + sizeof(texheader);
+                            char *texwalk = texheader;
+
+                            texwalk = put_in_buffer("TEX_SENT", texwalk, texheader_end);
+                            if (!texwalk) continue;
+
+                            texwalk = put_in_buffer(msglen_str.c_str(), texwalk, texheader_end);
+                            if (!texwalk) continue;
+
+                            texwalk = put_in_buffer(mainprogram->seatname.c_str(), texwalk, texheader_end);
+                            if (!texwalk) continue;
+
+                            texwalk = put_in_buffer((this->currbin->name).c_str(), texwalk, texheader_end);
+                            if (!texwalk) continue;
+
+                            texwalk = put_in_buffer(std::to_string(i * 12 + j).c_str(), texwalk, texheader_end);
+                            if (!texwalk) continue;
+
+                            texwalk = put_in_buffer("0", texwalk, texheader_end);  // file size = 0
+                            if (!texwalk) continue;
+
+                            send(sock, texheader, texwalk - texheader, 0);
                         }
-
-                        texwalk = put_in_buffer(msglen_str.c_str(), texwalk, completemsg_end);
-                        if (!texwalk) {
-                            texfile.close();
-                            continue;
-                        }
-
-                        texwalk = put_in_buffer(mainprogram->seatname.c_str(), texwalk, completemsg_end);
-                        if (!texwalk) {
-                            texfile.close();
-                            continue;
-                        }
-
-                        texwalk = put_in_buffer((this->currbin->name).c_str(), texwalk, completemsg_end);
-                        if (!texwalk) {
-                            texfile.close();
-                            continue;
-                        }
-
-                        texwalk = put_in_buffer(std::to_string(i * 12 + j).c_str(), texwalk, completemsg_end);
-                        if (!texwalk) {
-                            texfile.close();
-                            continue;
-                        }
-
-                        texwalk = put_in_buffer(std::to_string(filesize).c_str(), texwalk, completemsg_end);
-                        if (!texwalk) {
-                            texfile.close();
-                            continue;
-                        }
-
-                        // Read file data directly into message buffer
-                        texfile.read(texwalk, filesize);
-                        texfile.close();
-
-                        // Send complete message
-                        send(sock, completemsg.get(), texwalk - completemsg.get() + filesize, 0);
-                    } else {
-                        // No texture or file couldn't be opened - send placeholder
-                        // Calculate payload size FIRST
-                        size_t payload_base =
-                            str_len(this->currbin->name) +
-                            str_len(std::to_string(i * 12 + j)) +
-                            str_len("0");  // filesize = 0
-
-                        // Calculate total message length including msglen field itself
-                        size_t total_msglen = calculate_message_length(payload_base);
-                        std::string msglen_str = std::to_string(total_msglen);
-
-                        // Now build the buffer
-                        char texheader[256] = {0};
-                        char *texheader_end = texheader + sizeof(texheader);
-                        char *texwalk = texheader;
-
-                        texwalk = put_in_buffer("TEX_SENT", texwalk, texheader_end);
-                        if (!texwalk) continue;
-
-                        texwalk = put_in_buffer(msglen_str.c_str(), texwalk, texheader_end);
-                        if (!texwalk) continue;
-
-                        texwalk = put_in_buffer(mainprogram->seatname.c_str(), texwalk, texheader_end);
-                        if (!texwalk) continue;
-
-                        texwalk = put_in_buffer((this->currbin->name).c_str(), texwalk, texheader_end);
-                        if (!texwalk) continue;
-
-                        texwalk = put_in_buffer(std::to_string(i * 12 + j).c_str(), texwalk, texheader_end);
-                        if (!texwalk) continue;
-
-                        texwalk = put_in_buffer("0", texwalk, texheader_end);  // file size = 0
-                        if (!texwalk) continue;
-
-                        send(sock, texheader, texwalk - texheader, 0);
                     }
                 }
             }
+			this->currbin->prevtexes = temptexes;
         }
 
         if (!mainprogram->server) {
@@ -2508,7 +2530,7 @@ void BinsMain::receive_shared_bins() {
             messagelength = this->messagelengths[0];
         }
         
-        if (mainprogram->server && rawmessage) {
+        /*if (mainprogram->server && rawmessage) {
             // Send received bins through from server to destination clients
             std::lock_guard<std::mutex> client_lock(mainprogram->clientmutex);
             for (int j = 0; j < mainprogram->connsockets.size(); j++) {
@@ -2518,7 +2540,7 @@ void BinsMain::receive_shared_bins() {
                     send(mainprogram->connsockets[j], rawmessage, messagelength, 0);
                 }
             }
-        }
+        }*/
         
         // Process message safely
         char *walk = message;
@@ -2628,7 +2650,7 @@ void BinsMain::receive_shared_textures() {
             texmessagelength = this->texmessagelengths[0];
         }
 
-        if (mainprogram->server && rawtexmessage && rawtexmessagelength > 0) {
+        /*if (mainprogram->server && rawtexmessage && rawtexmessagelength > 0) {
             // Forward texture messages to other clients
             std::lock_guard<std::mutex> client_lock(mainprogram->clientmutex);
             for (int j = 0; j < mainprogram->connsockets.size(); j++) {
@@ -2638,7 +2660,7 @@ void BinsMain::receive_shared_textures() {
                     send(mainprogram->connsockets[j], rawtexmessage, rawtexmessagelength, 0);
                 }
             }
-        }
+        }*/
 
         // Process texture message safely
         if (!texmessage) {
@@ -2671,15 +2693,21 @@ void BinsMain::receive_shared_textures() {
         // Note: seatname was already parsed by socket_client/socket_server_receive
         // The message here contains only: binname, position, filesize, [binary data]
 
-        if (walk >= message_end) goto cleanup;
+        if (walk >= message_end) {
+			goto cleanup;
+		}
         binname = std::string(walk, strnlen(walk, message_end - walk));
         walk += binname.length() + 1;
 
-        if (walk >= message_end) goto cleanup;
+        if (walk >= message_end) {
+			goto cleanup;
+		}
         posstr = std::string(walk, strnlen(walk, message_end - walk));
         walk += posstr.length() + 1;
 
-        if (walk >= message_end) goto cleanup;
+        if (walk >= message_end) {
+			goto cleanup;
+		}
         filesizestr = std::string(walk, strnlen(walk, message_end - walk));
         walk += filesizestr.length() + 1;
 
@@ -2718,7 +2746,7 @@ void BinsMain::receive_shared_textures() {
                     tempfile.close();
                     
                     // Set the absolute path for the received texture
-                    binel->absjpath = jpath;
+                    binel->absjpath = pathtoplatform(jpath);
                     
                     // Load the texture using open_thumb
                     try {
@@ -2726,6 +2754,7 @@ void BinsMain::receive_shared_textures() {
                     } catch (...) {
                         // If texture loading fails, clean up temp file
                         std::filesystem::remove(jpath);
+                        printf("Texture loading failed...\n");
                         binel->tex = -1;
                     }
                 } else {
@@ -2876,11 +2905,6 @@ void BinsMain::open_bin(std::string path, Bin *bin, bool newbin) {
                 }
             }
 		}
-        else if (istring == "SHARED") {
-            // shared state
-            safegetline(rfile, istring);
-            bin->shared = std::stoi(istring);
-        }
 	}
 
     rfile.close();
@@ -2893,6 +2917,10 @@ void BinsMain::open_bin(std::string path, Bin *bin, bool newbin) {
 
 void BinsMain::save_bin(std::string path) {
 	// save bin file
+	if (this->currbin->shared) {
+		// dont save shared bins : reminder
+		return;
+	}
 	std::vector<std::string> filestoadd;
 	std::ofstream wfile;
 	wfile.open(path.c_str());
@@ -2938,10 +2966,6 @@ void BinsMain::save_bin(std::string path) {
 		}
 	}
 	wfile << "ENDOFELEMS\n";
-
-    wfile << "SHARED\n";
-    wfile << this->currbin->shared;
-    wfile << "\n";
 
 	wfile << "ENDOFFILE\n";
 	wfile.close();
