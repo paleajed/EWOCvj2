@@ -17,6 +17,7 @@
 #include <codecvt>
 #include <algorithm>
 #include <filesystem>
+#include <cerrno>
 
 #include "GL/glew.h"
 #include "GL/gl.h"
@@ -1482,19 +1483,17 @@ bool Program::order_paths(bool dodeckmix) {
         mainprogram->errlays.clear();
         mainprogram->err = false;
 
-        if (!binsmain->receivingbin) {
-            for (int j = 0; j < this->paths.size(); j++) {
-                this->pathboxes.push_back(new Boxx);
-                this->pathboxes[j]->vtxcoords->x1 = -0.4f;
-                this->pathboxes[j]->vtxcoords->y1 = 0.8f - j * 0.1f;
-                this->pathboxes[j]->vtxcoords->w = 0.8f;
-                this->pathboxes[j]->vtxcoords->h = 0.1f;
-                this->pathboxes[j]->upvtxtoscr();
-                this->pathboxes[j]->tooltiptitle = "Order files to be opened ";
-                this->pathboxes[j]->tooltip = "Leftmouse drag the files in the list to set the order in which they will be loaded.  Use arrows/mousewheel to scroll list when its bigger then the screen.  Click APPLY ORDER to continue. ";
-            }
-            this->ordertime = 0.0f;
+        for (int j = 0; j < this->paths.size(); j++) {
+            this->pathboxes.push_back(new Boxx);
+            this->pathboxes[j]->vtxcoords->x1 = -0.4f;
+            this->pathboxes[j]->vtxcoords->y1 = 0.8f - j * 0.1f;
+            this->pathboxes[j]->vtxcoords->w = 0.8f;
+            this->pathboxes[j]->vtxcoords->h = 0.1f;
+            this->pathboxes[j]->upvtxtoscr();
+            this->pathboxes[j]->tooltiptitle = "Order files to be opened ";
+            this->pathboxes[j]->tooltip = "Leftmouse drag the files in the list to set the order in which they will be loaded.  Use arrows/mousewheel to scroll list when its bigger then the screen.  Click APPLY ORDER to continue. ";
         }
+        this->ordertime = 0.0f;
 
         this->multistage = 3;
     }
@@ -9936,6 +9935,22 @@ void Program::socket_client(struct sockaddr_in serv_addr, int opt) {
             std::cout << "DEBUG: Server disconnected or recv error" << std::endl;
             free(buf2);
             this->connected = 0;
+
+            // Close and recreate socket for potential reconnection
+#ifdef POSIX
+            close(this->sock);
+#endif
+#ifdef WINDOWS
+            closesocket(this->sock);
+#endif
+            if ((this->sock = socket(AF_INET, SOCK_STREAM, 0)) < 0) {
+                printf("\n Socket creation error after disconnect\n");
+                return;
+            }
+
+            // Clear connection names
+            this->connsocknames.clear();
+
             return;
         }
         buf2 = recv_result;
@@ -10277,53 +10292,73 @@ void Program::socket_server_receive(SOCKET sock) {
                 ptr += msglen_field_len + 1;
                 if (ptr >= buf_end) break;
 
-                // Get sockname
-                size_t sockname_len = strnlen(ptr, buf_end - ptr);
-                std::string sockname(ptr, sockname_len);
-                binsmain->messagesocknames.push_back(sockname);
-                ptr += sockname_len + 1;
-                if (ptr >= buf_end) break;
+                // Payload starts at ptr and is msglen bytes
+                // First field in payload is seatname
+                size_t sockname_len = strnlen(ptr, std::min((size_t)(buf_end - ptr), (size_t)msglen));
+                binsmain->messagesocknames.push_back(std::string(ptr, sockname_len));
 
-                // Store copy of message payload
-                size_t payload_len = buf_end - ptr;
-                char* msg_copy = (char*)malloc(payload_len);
-                if (msg_copy) {
-                    memcpy(msg_copy, ptr, payload_len);
-                    binsmain->messages.push_back(msg_copy);
+                // Make a copy of the ENTIRE payload (msglen bytes, starting from ptr)
+                // Check if we have the full payload in buffer
+                int available = buf_end - ptr;
+                if (available >= msglen) {
+                    // Full payload in buffer
+                    char* msg_copy = (char*)malloc(msglen);
+                    if (msg_copy) {
+                        memcpy(msg_copy, ptr, msglen);
+                        binsmain->messages.push_back(msg_copy);
+                    }
+
+                    // Create raw copy for forwarding
+                    size_t total_msg_size = ptr - msg_start + msglen;
+                    char* raw_copy = (char*)malloc(total_msg_size);
+                    if (raw_copy) {
+                        memcpy(raw_copy, msg_start, total_msg_size);
+                        binsmain->rawmessages.push_back(raw_copy);
+                    }
+
+                    // Advance to next message
+                    process_ptr = ptr + msglen;
+                    std::cout << "DEBUG: Server BIN_SENT advanced process_ptr to offset " << (process_ptr - buf)
+                              << ", buf_end at offset " << (buf_end - buf)
+                              << ", bytes left: " << (buf_end - process_ptr) << std::endl;
+                } else {
+                    // Incomplete payload - shouldn't happen for BIN_SENT but handle it
+                    std::cout << "DEBUG: Server BIN_SENT incomplete payload, expected " << msglen << " got " << available << std::endl;
+                    break;
                 }
-
-                // Create raw copy for forwarding
-                size_t total_msg_size = ptr - msg_start + payload_len;
-                char* raw_copy = (char*)malloc(total_msg_size);
-                if (raw_copy) {
-                    memcpy(raw_copy, msg_start, total_msg_size);
-                    binsmain->rawmessages.push_back(raw_copy);
-                }
-
-                // Advance to next message (BIN_SENT uses entire buffer)
-                process_ptr = buf_end;
         }
         else if (str == "TEX_SENT") {
             char* msg_start = process_ptr;
             char* ptr = process_ptr + buf_len + 1;
-            if (ptr >= buf_end) break;
+            if (ptr >= buf_end) {
+                std::cout << "DEBUG: TEX_SENT break - msglen field incomplete" << std::endl;
+                break;
+            }
 
             int msglen;
             size_t msglen_field_len;
             try {
-                msglen_field_len = strlen(ptr);
+                msglen_field_len = strnlen(ptr, buf_end - ptr);
                 msglen = std::stoi(ptr);
+                std::cout << "DEBUG: TEX_SENT msglen=" << msglen << " msglen_field_len=" << msglen_field_len << std::endl;
             } catch (const std::exception& e) {
-                std::cout << "DEBUG: Invalid msglen in server TEX_SENT" << std::endl;
+                std::cout << "DEBUG: Invalid message length in TEX_SENT" << std::endl;
                 break;
             }
             ptr += msglen_field_len + 1;
-            if (ptr >= buf_end) break;
+            if (ptr >= buf_end) {
+                std::cout << "DEBUG: TEX_SENT break - sockname field incomplete" << std::endl;
+                break;
+            }
 
             size_t sockname_len = strnlen(ptr, buf_end - ptr);
             std::string sockname(ptr, sockname_len);
+            std::cout << "DEBUG: TEX_SENT sockname='" << sockname << "'" << std::endl;
             ptr += sockname_len + 1;
-            if (ptr >= buf_end) break;
+            if (ptr >= buf_end) {
+                std::cout << "DEBUG: TEX_SENT break - payload start incomplete" << std::endl;
+                break;
+            }
 
             // msglen includes the msglen field itself
             // Calculate actual payload size (subtract the msglen field length)
@@ -10333,11 +10368,18 @@ void Program::socket_server_receive(SOCKET sock) {
                 int already_in_buffer = buf_end - ptr;
                 char* payload_buf = nullptr;
 
+                std::cout << "DEBUG: TEX_SENT msglen=" << msglen << " actual_payload_size=" << actual_payload_size << " already_in_buffer=" << already_in_buffer << std::endl;
+
                 if (already_in_buffer >= actual_payload_size) {
                     payload_buf = ptr;
+                    std::cout << "DEBUG: TEX_SENT entire payload in buffer" << std::endl;
                 } else {
+                    std::cout << "DEBUG: TEX_SENT need to read " << (actual_payload_size - already_in_buffer) << " more bytes from socket" << std::endl;
                     payload_buf = (char*)malloc(actual_payload_size);
-                    if (!payload_buf) break;
+                    if (!payload_buf) {
+                        std::cout << "DEBUG: TEX_SENT malloc failed for " << actual_payload_size << " bytes" << std::endl;
+                        break;
+                    }
 
                     if (already_in_buffer > 0) {
                         memcpy(payload_buf, ptr, already_in_buffer);
@@ -10347,7 +10389,28 @@ void Program::socket_server_receive(SOCKET sock) {
                     char* recv_ptr = payload_buf + already_in_buffer;
                     while (remaining > 0) {
                         int received = recv(sock, recv_ptr, remaining, 0);
-                        if (received <= 0) {
+                        std::cout << "DEBUG: TEX_SENT recv returned " << received << " (remaining=" << remaining << ")" << std::endl;
+                        if (received < 0) {
+#ifdef WINDOWS
+                            int err = WSAGetLastError();
+                            if (err == WSAEWOULDBLOCK) {
+                                std::cout << "DEBUG: TEX_SENT socket would block, retrying..." << std::endl;
+                                std::this_thread::sleep_for(std::chrono::milliseconds(10));
+                                continue;
+                            }
+#else
+                            if (errno == EAGAIN || errno == EWOULDBLOCK) {
+                                std::cout << "DEBUG: TEX_SENT socket would block, retrying..." << std::endl;
+                                std::this_thread::sleep_for(std::chrono::milliseconds(10));
+                                continue;
+                            }
+#endif
+                            std::cout << "DEBUG: TEX_SENT recv failed (received=" << received << ")" << std::endl;
+                            free(payload_buf);
+                            payload_buf = nullptr;
+                            break;
+                        } else if (received == 0) {
+                            std::cout << "DEBUG: TEX_SENT connection closed (received=0)" << std::endl;
                             free(payload_buf);
                             payload_buf = nullptr;
                             break;
@@ -10356,7 +10419,11 @@ void Program::socket_server_receive(SOCKET sock) {
                         remaining -= received;
                     }
 
-                    if (!payload_buf) break;
+                    if (!payload_buf) {
+                        std::cout << "DEBUG: TEX_SENT breaking due to recv failure" << std::endl;
+                        break;
+                    }
+                    std::cout << "DEBUG: TEX_SENT successfully read complete payload from socket" << std::endl;
                 }
 
                 // Parse payload to get filesize
@@ -10390,6 +10457,7 @@ void Program::socket_server_receive(SOCKET sock) {
                     binsmain->texmessagelengths.push_back(actual_payload_size);
                     binsmain->texmessagesocknames.push_back(sockname);
                     binsmain->texmessages.push_back(payload_copy);
+                    std::cout << "DEBUG: TEX_SENT stored texture message (payload_size=" << actual_payload_size << " filesize=" << filesize << ")" << std::endl;
                 }
 
                 // Create raw message for forwarding
@@ -10406,9 +10474,11 @@ void Program::socket_server_receive(SOCKET sock) {
                 // Advance process_ptr
                 if (payload_buf == ptr) {
                     process_ptr = ptr + actual_payload_size;
+                    std::cout << "DEBUG: TEX_SENT advanced process_ptr by " << actual_payload_size << " bytes, " << (buf_end - process_ptr) << " bytes left" << std::endl;
                 } else {
                     free(payload_buf);
                     process_ptr = buf_end;
+                    std::cout << "DEBUG: TEX_SENT read beyond buffer, exiting inner loop" << std::endl;
                 }
             } else {
                 break;

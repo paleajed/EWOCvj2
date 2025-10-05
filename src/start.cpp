@@ -499,10 +499,59 @@ std::vector<std::string> getListOfDrives() {
 
 std::string test_driveletters(std::string path) {
 #ifdef WINDOWS
-    if (path.length() < 4) return "";
+    if (path.empty()) return "";
+
+    std::string relativePart;
+
+    // Check if path is a Windows path (has drive letter)
+    if (path.length() >= 3 && path[1] == ':' && (path[2] == '\\' || path[2] == '/')) {
+        // Windows path - extract relative part after drive letter
+        relativePart = path.substr(3, path.length() - 3);
+    }
+    // Check if path is a Linux mount point path
+    else if (path[0] == '/') {
+        // Linux path - extract relative part
+        std::vector<std::string> mountPrefixes = {
+            "/run/media/",
+            "/media/",
+            "/mnt/"
+        };
+
+        bool foundPrefix = false;
+        for (const auto& prefix : mountPrefixes) {
+            if (path.substr(0, prefix.length()) == prefix) {
+                size_t deviceStart = prefix.length();
+                size_t deviceEnd = path.find('/', deviceStart);
+                if (deviceEnd != std::string::npos) {
+                    relativePart = path.substr(deviceEnd + 1);
+                    foundPrefix = true;
+                    break;
+                }
+            }
+        }
+
+        // If no mount prefix found, strip first directory
+        if (!foundPrefix) {
+            size_t firstSep = path.find('/', 1);
+            if (firstSep != std::string::npos) {
+                relativePart = path.substr(firstSep + 1);
+            } else {
+                relativePart = path.substr(1);
+            }
+        }
+
+        // Convert forward slashes to backslashes for Windows
+        for (char& c : relativePart) {
+            if (c == '/') c = '\\';
+        }
+    }
+    else {
+        return "";
+    }
+
     auto driveletters = getListOfDrives();
     for (auto letter : driveletters) {
-        std::string newpath = letter + path.substr(3, path.length() - 3);
+        std::string newpath = letter + relativePart;
         if (exists(newpath)) {
             return pathtoplatform(newpath);
         }
@@ -512,38 +561,55 @@ std::string test_driveletters(std::string path) {
 
 #ifdef POSIX
     if (path.empty()) return "";
-    
-    // Extract the relative part by finding the deepest mount point match
-    std::string relativePart = path;
-    
-    // Common mount point prefixes to strip
-    std::vector<std::string> mountPrefixes = {
-        "/run/media/",
-        "/media/",
-        "/mnt/"
-    };
-    
-    // Find which mount prefix this path uses and extract relative part
-    for (const auto& prefix : mountPrefixes) {
-        if (path.substr(0, prefix.length()) == prefix) {
-            // Find the next slash after the mount point to get device name
-            size_t deviceStart = prefix.length();
-            size_t deviceEnd = path.find('/', deviceStart);
-            if (deviceEnd != std::string::npos) {
-                relativePart = path.substr(deviceEnd + 1);
-                break;
+
+    std::string relativePart;
+
+    // Check if path is a Windows path (has drive letter)
+    if (path.length() >= 3 && path[1] == ':' && (path[2] == '\\' || path[2] == '/')) {
+        // Windows path - extract relative part after drive letter
+        relativePart = path.substr(3, path.length() - 3);
+
+        // Convert backslashes to forward slashes for Linux
+        for (char& c : relativePart) {
+            if (c == '\\') c = '/';
+        }
+    }
+    // Check if path is a Linux path
+    else if (path[0] == '/') {
+        // Linux path - extract relative part
+        std::vector<std::string> mountPrefixes = {
+            "/run/media/",
+            "/media/",
+            "/mnt/"
+        };
+
+        bool foundPrefix = false;
+        for (const auto& prefix : mountPrefixes) {
+            if (path.substr(0, prefix.length()) == prefix) {
+                size_t deviceStart = prefix.length();
+                size_t deviceEnd = path.find('/', deviceStart);
+                if (deviceEnd != std::string::npos) {
+                    relativePart = path.substr(deviceEnd + 1);
+                    foundPrefix = true;
+                    break;
+                }
+            }
+        }
+
+        // If no mount prefix found, strip first directory
+        if (!foundPrefix) {
+            size_t firstSep = path.find('/', 1);
+            if (firstSep != std::string::npos) {
+                relativePart = path.substr(firstSep + 1);
+            } else {
+                relativePart = path.substr(1);
             }
         }
     }
-    
-    // If no mount prefix found, assume it's from root and strip first directory
-    if (relativePart == path && path[0] == '/') {
-        size_t firstSep = path.find('/', 1);
-        if (firstSep != std::string::npos) {
-            relativePart = path.substr(firstSep + 1);
-        }
+    else {
+        return "";
     }
-    
+
     auto mountPoints = getListOfDrives();
     for (const auto& mountPoint : mountPoints) {
         std::string newpath = mountPoint + relativePart;

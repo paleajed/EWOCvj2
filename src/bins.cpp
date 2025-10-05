@@ -791,6 +791,7 @@ void BinsMain::handle(bool draw) {
 				this->currbin->name += " (SHARED)";
 			}
 			this->currbin->shared = true;
+			this->currbin->prevtexes.clear();  // Clear to force full texture send
 			this->send_shared_bins();
         }
         if (mainprogram->menuchosen) {
@@ -2066,7 +2067,6 @@ void BinsMain::handle(bool draw) {
 						this->menuactbinel = nullptr;
 						this->addpaths.clear();
                         this->inputjpegpaths.clear();
-						this->receivingbin = false;
                         mainprogram->recundo = true;
                     }
 
@@ -2399,6 +2399,7 @@ void BinsMain::send_shared_bins() {
                             // Send actual texture file
                             // Calculate payload size FIRST (without building buffer yet)
                             size_t payload_base =
+                                    str_len(mainprogram->seatname) +
                                     str_len(this->currbin->name) +
                                     str_len(std::to_string(i * 12 + j)) +
                                     str_len(std::to_string(filesize)) +
@@ -2461,6 +2462,7 @@ void BinsMain::send_shared_bins() {
                             // No texture or file couldn't be opened - send placeholder
                             // Calculate payload size FIRST
                             size_t payload_base =
+                                    str_len(mainprogram->seatname) +
                                     str_len(this->currbin->name) +
                                     str_len(std::to_string(i * 12 + j)) +
                                     str_len("0");  // filesize = 0
@@ -2509,7 +2511,7 @@ void BinsMain::send_shared_bins() {
 
 void BinsMain::receive_shared_bins() {
 	// receive sent bins
-	if (!this->receivingbin && !this->messages.empty()) {
+	if (!this->messages.empty()) {
         // Use proper synchronization for message access
         std::lock_guard<std::mutex> lock(this->syncmutex);
         
@@ -2603,8 +2605,7 @@ void BinsMain::receive_shared_bins() {
         }
 
         this->menuactbinel = this->currbin->elements[0];  // loading starts from first bin element
-        this->receivingbin = true;
-        
+
         // Clean up processed message and free memory
         if (rawmessage) free(rawmessage);
         free(message);  // Free the allocated message memory
@@ -2744,19 +2745,14 @@ void BinsMain::receive_shared_textures() {
                 if (tempfile.is_open()) {
                     tempfile.write(texturedata, filesize);
                     tempfile.close();
-                    
-                    // Set the absolute path for the received texture
+
+                    // Set both jpeg paths for the received texture
+                    binel->jpegpath = jpath;
                     binel->absjpath = pathtoplatform(jpath);
-                    
-                    // Load the texture using open_thumb
-                    try {
-                        open_thumb(binel->absjpath, binel->tex);
-                    } catch (...) {
-                        // If texture loading fails, clean up temp file
-                        std::filesystem::remove(jpath);
-                        printf("Texture loading failed...\n");
-                        binel->tex = -1;
-                    }
+                    binel->jpegsaved = true;
+
+                    // Queue texture for loading on main thread via open_positions
+                    targetbin->open_positions.insert(pos);
                 } else {
                     std::cout << "DEBUG: Failed to create temporary file for texture" << std::endl;
                 }

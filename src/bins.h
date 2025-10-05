@@ -94,8 +94,7 @@ class BinsMain {
 
         Bin *menubin = nullptr;
         bool openfilesbin = false;
-        bool receivingbin = false;
-		bool importbins = false;
+ 		bool importbins = false;
 		int binscount;
 		bool movingstruct = false;
 		std::vector<BinElement*> prevelems;
