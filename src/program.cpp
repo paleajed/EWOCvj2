@@ -9932,26 +9932,289 @@ void Program::socket_client(struct sockaddr_in serv_addr, int opt) {
     while (1) {
         char* recv_result = bl_recv(this->sock, buf2, NETWORK_RECV_SIZE, 0);  // Leave space for null terminator
         if (recv_result == nullptr) {
-            std::cout << "DEBUG: Server disconnected or recv error" << std::endl;
+            std::cout << "DEBUG: Server disconnected or recv error - initiating failover" << std::endl;
             free(buf2);
             this->connected = 0;
 
-            // Close and recreate socket for potential reconnection
+            // Close current socket
 #ifdef POSIX
             close(this->sock);
 #endif
 #ifdef WINDOWS
             closesocket(this->sock);
 #endif
-            if ((this->sock = socket(AF_INET, SOCK_STREAM, 0)) < 0) {
-                printf("\n Socket creation error after disconnect\n");
-                return;
-            }
 
             // Clear connection names
             this->connsocknames.clear();
 
-            return;
+            // FAILOVER LOGIC: Try to reconnect or promote to server
+            bool reconnected = false;
+            const int MAX_RECONNECT_ATTEMPTS = 5;
+
+            for (int attempt = 0; attempt < MAX_RECONNECT_ATTEMPTS && !reconnected; attempt++) {
+                std::cout << "DEBUG: Failover attempt " << (attempt + 1) << "/" << MAX_RECONNECT_ATTEMPTS << std::endl;
+
+                // Try 1: Reconnect to the same server
+                std::cout << "DEBUG: Trying to reconnect to original server " << this->serverip << std::endl;
+                if ((this->sock = socket(AF_INET, SOCK_STREAM, 0)) < 0) {
+                    std::cout << "DEBUG: Socket creation failed" << std::endl;
+                    sleep(2);
+                    continue;
+                }
+
+                struct sockaddr_in reconnect_addr = serv_addr;
+                reconnect_addr.sin_addr.s_addr = inet_addr(this->serverip.c_str());
+
+                // Set non-blocking for connect with timeout
+                #ifdef POSIX
+                fcntl(this->sock, F_SETFL, O_NONBLOCK);
+                #endif
+                #ifdef WINDOWS
+                u_long mode = 1;
+                ioctlsocket(this->sock, FIONBIO, &mode);
+                #endif
+
+                int ret = connect(this->sock, (struct sockaddr *)&reconnect_addr, sizeof(reconnect_addr));
+
+                // Use select to wait for connection with 5 second timeout
+                fd_set write_fds;
+                FD_ZERO(&write_fds);
+                FD_SET(this->sock, &write_fds);
+                struct timeval timeout;
+                timeout.tv_sec = 5;
+                timeout.tv_usec = 0;
+
+                ret = select(this->sock + 1, NULL, &write_fds, NULL, &timeout);
+
+                if (ret > 0) {
+                    // Connection succeeded, set back to blocking
+                    #ifdef POSIX
+                    fcntl(this->sock, F_SETFL, fcntl(this->sock, F_GETFL) & ~O_NONBLOCK);
+                    #endif
+                    #ifdef WINDOWS
+                    mode = 0;
+                    ioctlsocket(this->sock, FIONBIO, &mode);
+                    #endif
+
+                    // Complete handshake
+                    char handshake_buf[1024];
+                    char* handshake_result = bl_recv(this->sock, handshake_buf, 1023, 0);
+                    if (handshake_result) {
+                        send(this->sock, this->seatname.c_str(), this->seatname.length(), 0);
+                        handshake_result = bl_recv(this->sock, handshake_buf, 1023, 0);
+                        if (handshake_result) {
+                            this->connsocknames.push_back(handshake_buf);
+                            this->connected = 1;
+                            reconnected = true;
+                            std::cout << "DEBUG: Successfully reconnected to original server" << std::endl;
+                            break;
+                        }
+                    }
+                }
+
+                #ifdef POSIX
+                close(this->sock);
+                #endif
+                #ifdef WINDOWS
+                closesocket(this->sock);
+                #endif
+
+                // Try 2: Check discoveredSeats for alternative servers
+                {
+                    std::lock_guard<std::mutex> lock(this->discoveryMutex);
+                    auto now = std::chrono::steady_clock::now();
+
+                    for (const auto& seat : this->discoveredSeats) {
+                        // Skip if this is the failed server or if discovery is stale (>15 seconds)
+                        auto age = std::chrono::duration_cast<std::chrono::seconds>(now - seat.lastSeen).count();
+                        if (seat.ip == this->serverip || age > 15) continue;
+
+                        std::cout << "DEBUG: Trying alternative server: " << seat.name << " at " << seat.ip << std::endl;
+
+                        if ((this->sock = socket(AF_INET, SOCK_STREAM, 0)) < 0) continue;
+
+                        reconnect_addr.sin_addr.s_addr = inet_addr(seat.ip.c_str());
+
+                        // Set non-blocking
+                        #ifdef POSIX
+                        fcntl(this->sock, F_SETFL, O_NONBLOCK);
+                        #endif
+                        #ifdef WINDOWS
+                        u_long mode = 1;
+                        ioctlsocket(this->sock, FIONBIO, &mode);
+                        #endif
+
+                        ret = connect(this->sock, (struct sockaddr *)&reconnect_addr, sizeof(reconnect_addr));
+
+                        FD_ZERO(&write_fds);
+                        FD_SET(this->sock, &write_fds);
+                        timeout.tv_sec = 5;
+                        timeout.tv_usec = 0;
+
+                        ret = select(this->sock + 1, NULL, &write_fds, NULL, &timeout);
+
+                        if (ret > 0) {
+                            // Set back to blocking
+                            #ifdef POSIX
+                            fcntl(this->sock, F_SETFL, fcntl(this->sock, F_GETFL) & ~O_NONBLOCK);
+                            #endif
+                            #ifdef WINDOWS
+                            mode = 0;
+                            ioctlsocket(this->sock, FIONBIO, &mode);
+                            #endif
+
+                            // Complete handshake
+                            char handshake_buf[1024];
+                            char* handshake_result = bl_recv(this->sock, handshake_buf, 1023, 0);
+                            if (handshake_result) {
+                                send(this->sock, this->seatname.c_str(), this->seatname.length(), 0);
+                                handshake_result = bl_recv(this->sock, handshake_buf, 1023, 0);
+                                if (handshake_result) {
+                                    this->connsocknames.push_back(handshake_buf);
+                                    this->connected = 1;
+                                    this->serverip = seat.ip;
+                                    reconnected = true;
+                                    std::cout << "DEBUG: Successfully connected to alternative server: " << seat.name << std::endl;
+                                    break;
+                                }
+                            }
+                        }
+
+                        #ifdef POSIX
+                        close(this->sock);
+                        #endif
+                        #ifdef WINDOWS
+                        closesocket(this->sock);
+                        #endif
+                    }
+                }
+
+                if (reconnected) break;
+
+                // Wait before next attempt
+                std::cout << "DEBUG: Waiting 3 seconds before next attempt" << std::endl;
+                sleep(3);
+            }
+
+            if (!reconnected) {
+                // All reconnection attempts failed - initiate server election
+                std::cout << "DEBUG: All reconnection attempts failed - starting server election" << std::endl;
+
+                // SERVER ELECTION PROTOCOL:
+                // 1. Wait based on priority (lower seatname = higher priority = shorter wait)
+                // 2. Check if another server appeared during wait
+                // 3. If no server found, promote to server
+
+                // Calculate election timeout based on seatname (deterministic but with variance)
+                std::hash<std::string> hasher;
+                size_t name_hash = hasher(this->seatname);
+                int base_timeout = 2 + (name_hash % 5);  // 2-6 seconds based on name
+
+                std::cout << "DEBUG: Election timeout = " << base_timeout << " seconds (based on seatname: " << this->seatname << ")" << std::endl;
+
+                // Wait for election timeout
+                for (int i = 0; i < base_timeout; i++) {
+                    sleep(1);
+
+                    // Check if a server appeared during election
+                    {
+                        std::lock_guard<std::mutex> lock(this->discoveryMutex);
+                        auto now = std::chrono::steady_clock::now();
+
+                        for (const auto& seat : this->discoveredSeats) {
+                            auto age = std::chrono::duration_cast<std::chrono::seconds>(now - seat.lastSeen).count();
+                            if (age <= 5) {  // Fresh server discovery
+                                std::cout << "DEBUG: Server appeared during election: " << seat.name << " at " << seat.ip << std::endl;
+
+                                // Try to connect to this new server
+                                if ((this->sock = socket(AF_INET, SOCK_STREAM, 0)) < 0) continue;
+
+                                struct sockaddr_in new_server_addr = serv_addr;
+                                new_server_addr.sin_addr.s_addr = inet_addr(seat.ip.c_str());
+
+                                // Set non-blocking
+                                #ifdef POSIX
+                                fcntl(this->sock, F_SETFL, O_NONBLOCK);
+                                #endif
+                                #ifdef WINDOWS
+                                u_long mode = 1;
+                                ioctlsocket(this->sock, FIONBIO, &mode);
+                                #endif
+
+                                int ret = connect(this->sock, (struct sockaddr *)&new_server_addr, sizeof(new_server_addr));
+
+                                fd_set write_fds;
+                                FD_ZERO(&write_fds);
+                                FD_SET(this->sock, &write_fds);
+                                struct timeval timeout;
+                                timeout.tv_sec = 3;
+                                timeout.tv_usec = 0;
+
+                                ret = select(this->sock + 1, NULL, &write_fds, NULL, &timeout);
+
+                                if (ret > 0) {
+                                    // Set back to blocking
+                                    #ifdef POSIX
+                                    fcntl(this->sock, F_SETFL, fcntl(this->sock, F_GETFL) & ~O_NONBLOCK);
+                                    #endif
+                                    #ifdef WINDOWS
+                                    mode = 0;
+                                    ioctlsocket(this->sock, FIONBIO, &mode);
+                                    #endif
+
+                                    // Complete handshake
+                                    char handshake_buf[1024];
+                                    char* handshake_result = bl_recv(this->sock, handshake_buf, 1023, 0);
+                                    if (handshake_result) {
+                                        send(this->sock, this->seatname.c_str(), this->seatname.length(), 0);
+                                        handshake_result = bl_recv(this->sock, handshake_buf, 1023, 0);
+                                        if (handshake_result) {
+                                            this->connsocknames.push_back(handshake_buf);
+                                            this->connected = 1;
+                                            this->serverip = seat.ip;
+                                            reconnected = true;
+                                            std::cout << "DEBUG: Connected to server elected during wait period" << std::endl;
+                                            buf2 = (char*)calloc(NETWORK_BUFFER_SIZE, 1);
+                                            break;  // Exit election, continue as client
+                                        }
+                                    }
+                                }
+
+                                #ifdef POSIX
+                                close(this->sock);
+                                #endif
+                                #ifdef WINDOWS
+                                closesocket(this->sock);
+                                #endif
+                            }
+                        }
+                    }
+
+                    if (reconnected) break;
+                }
+
+                if (reconnected) {
+                    // Successfully connected during election period
+                    continue;  // Continue as client
+                }
+
+                // Election timeout complete, no server found - promote to server
+                std::cout << "DEBUG: Election timeout complete, promoting to server" << std::endl;
+                this->server = true;
+                this->connected = 0;
+
+                // Create new socket for server
+                if ((this->sock = socket(AF_INET, SOCK_STREAM, 0)) < 0) {
+                    printf("\n Socket creation error\n");
+                    return;
+                }
+
+                return;  // Exit client thread, server will be started in main loop
+            }
+
+            // Successfully reconnected - allocate new buffer and continue
+            buf2 = (char*)calloc(NETWORK_BUFFER_SIZE, 1);
+            continue;
         }
         buf2 = recv_result;
 
@@ -10233,10 +10496,13 @@ void Program::socket_server_receive(SOCKET sock) {
             
             // Find and remove this socket from connsockets and connsocknames
             auto it = std::find(this->connsockets.begin(), this->connsockets.end(), sock);
+            std::string disconnected_client_name;
+
             if (it != this->connsockets.end()) {
                 int pos = it - this->connsockets.begin();
                 if (pos >= 0 && pos < static_cast<int>(this->connsocknames.size())) {
-                    std::cout << "DEBUG: Removing client '" << this->connsocknames[pos] << "' from position " << pos << std::endl;
+                    disconnected_client_name = this->connsocknames[pos];
+                    std::cout << "DEBUG: Removing client '" << disconnected_client_name << "' from position " << pos << std::endl;
                 }
 
                 // Remove from both vectors
@@ -10250,6 +10516,26 @@ void Program::socket_server_receive(SOCKET sock) {
                     if (map_it->second == sock) {
                         this->connmap.erase(map_it);
                         break;
+                    }
+                }
+            }
+
+            // Clean up subscriptions involving this client
+            if (!disconnected_client_name.empty()) {
+                std::lock_guard<std::mutex> sub_lock(this->subscriptionMutex);
+
+                // Remove this client from all subscription lists (as subscriber)
+                for (auto& [key, subscribers] : this->subscriptionMap) {
+                    subscribers.erase(disconnected_client_name);
+                }
+
+                // Remove all subscriptions where this client was the owner
+                for (auto it = this->subscriptionMap.begin(); it != this->subscriptionMap.end(); ) {
+                    if (it->first.first == disconnected_client_name) {
+                        std::cout << "DEBUG: Removing subscriptions for disconnected owner: " << disconnected_client_name << "/" << it->first.second << std::endl;
+                        it = this->subscriptionMap.erase(it);
+                    } else {
+                        ++it;
                     }
                 }
             }
@@ -10496,6 +10782,38 @@ void Program::socket_server_receive(SOCKET sock) {
             } else {
                 break;
             }
+        }
+        else if (str == "SUBSCRIBE") {
+            // Handle subscription request: SUBSCRIBE\0{owner_seatname}\0{bin_name}\0{subscriber_name}\0
+            char* ptr = process_ptr + buf_len + 1;
+            if (ptr >= buf_end) break;
+
+            // Parse owner_seatname
+            size_t owner_len = strnlen(ptr, buf_end - ptr);
+            if (ptr + owner_len + 1 >= buf_end) break;
+            std::string owner_seatname(ptr, owner_len);
+            ptr += owner_len + 1;
+
+            // Parse bin_name
+            size_t bin_len = strnlen(ptr, buf_end - ptr);
+            if (ptr + bin_len + 1 >= buf_end) break;
+            std::string bin_name(ptr, bin_len);
+            ptr += bin_len + 1;
+
+            // Parse subscriber_name
+            size_t sub_len = strnlen(ptr, buf_end - ptr);
+            std::string subscriber_name(ptr, sub_len);
+            ptr += sub_len + 1;
+
+            // Register subscription
+            {
+                std::lock_guard<std::mutex> lock(this->subscriptionMutex);
+                auto key = std::make_pair(owner_seatname, bin_name);
+                this->subscriptionMap[key].insert(subscriber_name);
+                std::cout << "DEBUG: Registered subscription: " << owner_seatname << "/" << bin_name << " -> " << subscriber_name << std::endl;
+            }
+
+            process_ptr = ptr;
         } else {
             // Unknown message
             break;

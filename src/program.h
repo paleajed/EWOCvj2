@@ -1067,6 +1067,11 @@ class Program {
         std::mutex clientmutex;
         std::condition_variable startclient;
 
+        // Subscription management: tracks which clients want updates for which bins
+        // Key: (bin_owner_seatname, bin_name), Value: set of subscriber seatnames
+        std::map<std::pair<std::string, std::string>, std::unordered_set<std::string>> subscriptionMap;
+        std::mutex subscriptionMutex;
+
 #ifdef POSIX
         std::unordered_map<std::string, GLuint> v4l2lbtexmap;
         std::unordered_map<std::string, size_t> v4l2lbnewmap;

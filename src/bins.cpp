@@ -786,12 +786,38 @@ void BinsMain::handle(bool draw) {
     if (mainprogram->sendmenu) {
         k = mainprogram->handle_menu(mainprogram->sendmenu);
         if (k > -1) {
-            this->currbin->sendtonames.push_back(mainprogram->connsocknames[k]);
+            std::string selected_name = mainprogram->connsocknames[k];
+            this->currbin->sendtonames.push_back(selected_name);
 			if (this->currbin->name.substr(this->currbin->name.length() - 8, 8) != "(SHARED)") {
 				this->currbin->name += " (SHARED)";
 			}
 			this->currbin->shared = true;
 			this->currbin->prevtexes.clear();  // Clear to force full texture send
+
+            // If we're a client, send subscription request to server
+            // If we're the server, register it locally
+            if (!mainprogram->server && mainprogram->connected) {
+                // Send SUBSCRIBE message to server
+                char subscribe_msg[1024];
+                char* walk = subscribe_msg;
+                char* end = subscribe_msg + sizeof(subscribe_msg);
+
+                walk = put_in_buffer("SUBSCRIBE", walk, end);
+                if (walk) walk = put_in_buffer(mainprogram->seatname.c_str(), walk, end);
+                if (walk) walk = put_in_buffer(this->currbin->name.c_str(), walk, end);
+                if (walk) walk = put_in_buffer(selected_name.c_str(), walk, end);
+
+                if (walk) {
+                    send(mainprogram->sock, subscribe_msg, walk - subscribe_msg, 0);
+                }
+            }
+            else if (mainprogram->server) {
+                // Register subscription locally on server
+                std::lock_guard<std::mutex> lock(mainprogram->subscriptionMutex);
+                auto key = std::make_pair(mainprogram->seatname, this->currbin->name);
+                mainprogram->subscriptionMap[key].insert(selected_name);
+            }
+
 			this->send_shared_bins();
         }
         if (mainprogram->menuchosen) {
@@ -2594,6 +2620,41 @@ void BinsMain::receive_shared_bins() {
 
         this->menuactbinel = this->currbin->elements[0];  // loading starts from first bin element
 
+        // SERVER: Forward message to all subscribed clients (except sender)
+        if (mainprogram->server && rawmessage && messagelength > 0) {
+            // Parse sender name and bin name from message
+            char* parse_ptr = message;
+            std::string sender_name(parse_ptr);
+            parse_ptr += sender_name.length() + 1;
+            std::string bin_name(parse_ptr);
+
+            // Find subscribers for this bin
+            std::lock_guard<std::mutex> sub_lock(mainprogram->subscriptionMutex);
+            auto key = std::make_pair(sender_name, bin_name);
+            auto it = mainprogram->subscriptionMap.find(key);
+
+            if (it != mainprogram->subscriptionMap.end()) {
+                for (const auto& subscriber_name : it->second) {
+                    // Don't send back to the sender
+                    if (subscriber_name == messagesockname) continue;
+
+                    // Look up subscriber socket
+                    auto sock_it = mainprogram->connmap.find(subscriber_name);
+                    if (sock_it != mainprogram->connmap.end()) {
+                        #ifdef WINDOWS
+                        SOCKET subscriber_socket = sock_it->second;
+                        #endif
+                        #ifdef POSIX
+                        int subscriber_socket = sock_it->second;
+                        #endif
+
+                        // Forward the raw message
+                        send(subscriber_socket, rawmessage, messagelength, 0);
+                    }
+                }
+            }
+        }
+
         // Clean up processed message and free memory
         if (rawmessage) free(rawmessage);
         free(message);  // Free the allocated message memory
@@ -2730,6 +2791,43 @@ void BinsMain::receive_shared_textures() {
                     open_thumb(binel->absjpath, binel->tex);
                 } else {
                     std::cout << "DEBUG: Failed to create temporary file for texture" << std::endl;
+                }
+            }
+        }
+
+        // SERVER: Forward texture message to all subscribed clients (except sender)
+        if (mainprogram->server && rawtexmessage && rawtexmessagelength > 0 && targetbin) {
+            // Parse sender name from the beginning of texmessage
+            // Note: The sender name should have been stored in texmessagesockname
+
+            // Find subscribers for this bin
+            // We need to identify the bin owner - for now assume it's from messagesockname
+            std::lock_guard<std::mutex> sub_lock(mainprogram->subscriptionMutex);
+
+            // Try to find matching subscription - search through all keys
+            for (auto& [key, subscribers] : mainprogram->subscriptionMap) {
+                const auto& [owner, bin_name] = key;
+                if (bin_name == binname) {
+                    // Forward to all subscribers except the sender
+                    for (const auto& subscriber_name : subscribers) {
+                        // Don't send back to the sender
+                        if (subscriber_name == texmessagesockname) continue;
+
+                        // Look up subscriber socket
+                        auto sock_it = mainprogram->connmap.find(subscriber_name);
+                        if (sock_it != mainprogram->connmap.end()) {
+                            #ifdef WINDOWS
+                            SOCKET subscriber_socket = sock_it->second;
+                            #endif
+                            #ifdef POSIX
+                            int subscriber_socket = sock_it->second;
+                            #endif
+
+                            // Forward the raw texture message
+                            send(subscriber_socket, rawtexmessage, rawtexmessagelength, 0);
+                        }
+                    }
+                    break;  // Found the bin, no need to continue
                 }
             }
         }
