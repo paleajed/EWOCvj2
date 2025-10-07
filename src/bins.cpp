@@ -2532,18 +2532,6 @@ void BinsMain::receive_shared_bins() {
             messagelength = this->messagelengths[0];
         }
         
-        /*if (mainprogram->server && rawmessage) {
-            // Send received bins through from server to destination clients
-            std::lock_guard<std::mutex> client_lock(mainprogram->clientmutex);
-            for (int j = 0; j < mainprogram->connsockets.size(); j++) {
-                auto connmap_it = mainprogram->connmap.find(messagesockname);
-                if (connmap_it != mainprogram->connmap.end() && 
-                    mainprogram->connsockets[j] != connmap_it->second) {
-                    send(mainprogram->connsockets[j], rawmessage, messagelength, 0);
-                }
-            }
-        }*/
-        
         // Process message safely
         char *walk = message;
         if (!walk) {
@@ -2651,19 +2639,7 @@ void BinsMain::receive_shared_textures() {
             texmessagelength = this->texmessagelengths[0];
         }
 
-        /*if (mainprogram->server && rawtexmessage && rawtexmessagelength > 0) {
-            // Forward texture messages to other clients
-            std::lock_guard<std::mutex> client_lock(mainprogram->clientmutex);
-            for (int j = 0; j < mainprogram->connsockets.size(); j++) {
-                auto connmap_it = mainprogram->connmap.find(texmessagesockname);
-                if (connmap_it != mainprogram->connmap.end() &&
-                    mainprogram->connsockets[j] != connmap_it->second) {
-                    send(mainprogram->connsockets[j], rawtexmessage, rawtexmessagelength, 0);
-                }
-            }
-        }*/
-
-        // Process texture message safely
+		// Process texture message safely
         if (!texmessage) {
             // Clean up and return if null message
             this->texmessages.erase(this->texmessages.begin());
@@ -2728,7 +2704,7 @@ void BinsMain::receive_shared_textures() {
             }
         }
 
-        if (targetbin && pos >= 0 && pos < 144) {
+		if (targetbin && pos >= 0 && pos < 144) {
             BinElement *binel = targetbin->elements[pos];
             
             if (filesize == 0) {
