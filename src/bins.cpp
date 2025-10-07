@@ -2399,7 +2399,7 @@ void BinsMain::send_shared_bins() {
                             // Send actual texture file
                             // Calculate payload size FIRST (without building buffer yet)
                             size_t payload_base =
-                                    str_len(mainprogram->seatname) +
+                                    //str_len(mainprogram->seatname) +
                                     str_len(this->currbin->name) +
                                     str_len(std::to_string(i * 12 + j)) +
                                     str_len(std::to_string(filesize)) +
@@ -2462,7 +2462,7 @@ void BinsMain::send_shared_bins() {
                             // No texture or file couldn't be opened - send placeholder
                             // Calculate payload size FIRST
                             size_t payload_base =
-                                    str_len(mainprogram->seatname) +
+                                    //str_len(mainprogram->seatname) +
                                     str_len(this->currbin->name) +
                                     str_len(std::to_string(i * 12 + j)) +
                                     str_len("0");  // filesize = 0
@@ -2733,12 +2733,12 @@ void BinsMain::receive_shared_textures() {
             
             if (filesize == 0) {
                 // No texture - set to placeholder
-                binel->tex = -1;
+                blacken(binel->tex);
             } else if (filesize > 0 && filesize <= 50*1024*1024 && walk + filesize <= message_end) {  // Size limit and bounds check
                 // Receive texture file data
                 char *texturedata = walk;
                 
-                std::string jpath = mainprogram->project->binsdir + targetbin->name + "/" + remove_extension(basename(binel->path)) + ".jpeg";
+                std::string jpath = find_unused_filename(remove_extension(basename(binel->path)), mainprogram->project->binsdir + targetbin->name + "/", ".jpeg");
 
                 // Write received data to temporary file
                 std::ofstream tempfile(jpath, std::ios::binary);
@@ -2746,13 +2746,12 @@ void BinsMain::receive_shared_textures() {
                     tempfile.write(texturedata, filesize);
                     tempfile.close();
 
-                    // Set both jpeg paths for the received texture
-                    binel->jpegpath = jpath;
+                    // Set jpeg paths for the received texture
+                    binel->jpegpath = pathtoplatform(jpath);
                     binel->absjpath = pathtoplatform(jpath);
+					binel->reljpath = std::filesystem::relative(binel->absjpath, mainprogram->project->binsdir).generic_string();
                     binel->jpegsaved = true;
-
-                    // Queue texture for loading on main thread via open_positions
-                    targetbin->open_positions.insert(pos);
+                    open_thumb(binel->absjpath, binel->tex);
                 } else {
                     std::cout << "DEBUG: Failed to create temporary file for texture" << std::endl;
                 }
