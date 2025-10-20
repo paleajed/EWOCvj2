@@ -169,7 +169,7 @@ LoopStationElement* LoopStation::add_elem() {
 	// float values are colors for circles in boxes
 	LoopStation::setbut(elem->recbut, 0.8f, 0.0f, 0.0f);
 	LoopStation::setbut(elem->loopbut, 0.0f, 0.8f, 0.0f);
-	LoopStation::setbut(elem->playbut, 0.0f, 0.0f, 0.8f);
+	LoopStation::setbut(elem->playbut, 0.2f, 0.2f, 1.0f);
     elem->colbox->acolor[0] = this->colvals[(elem->pos % 8) * 3];
     elem->colbox->acolor[1] = this->colvals[(elem->pos % 8) * 3 + 1];
     elem->colbox->acolor[2] = this->colvals[(elem->pos % 8) * 3 + 2];

@@ -912,7 +912,6 @@ class Program {
         Boxx* renamingbox;
 		std::string choosedir = "";
 		std::string inputtext;
-		std::string backupname;
 		int cursorpos0;
 		int cursorpos1 = -1;
 		int cursorpos2 = -1;
@@ -1047,6 +1046,7 @@ class Program {
         std::string broadcastip;
         struct sockaddr_in serv_addr_server;
         struct sockaddr_in serv_addr_client;
+        class UPnPPortMapper* upnpMapper;  // UPnP port forwarding manager
         
         struct DiscoveredSeat {
             std::string ip;
@@ -1326,6 +1326,8 @@ extern void strcat_s(char* dest, const char* input);
 
 extern bool safegetline(std::istream& is, std::string &t);
 extern void midi_callback(double deltatime, std::vector< unsigned char >* message, void* userData);
+
+extern bool display_mix();
 
 extern bool get_imagetex(Layer *lay, std::string path);
 extern bool get_videotex(Layer *lay, std::string path);

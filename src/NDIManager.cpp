@@ -1380,10 +1380,11 @@ out vec4 fragColor;
 
 // Optimized RGB to YUV conversion matrix (BT.709)
 // Using mediump precision for better GPU performance
+// GLSL mat3 is column-major, so we need to transpose
 const mediump mat3 rgb_to_yuv = mat3(
-    0.2126,  0.7152,  0.0722,    // Y
-   -0.1146, -0.3854,  0.5,      // U (simplified)
-    0.5,    -0.4542, -0.0458     // V
+    0.2126, -0.1146,  0.5,       // Column 1 (R coefficients)
+    0.7152, -0.3854, -0.4542,    // Column 2 (G coefficients)
+    0.0722,  0.5,    -0.0458     // Column 3 (B coefficients)
 );
 
 void main() {

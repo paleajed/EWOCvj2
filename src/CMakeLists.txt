@@ -40,6 +40,8 @@ add_executable(EWOCvj2 WIN32
         UniformCache.h
         NDIManager.h
         NDIManager.cpp
+        UPnPPortMapper.h
+        UPnPPortMapper.cpp
 )
 
 set(Boost_USE_STATIC_RUNTIME ON)
@@ -183,6 +185,14 @@ if (WIN32)
         target_link_libraries(EWOCvj2 PUBLIC ${TJPEG_LIBRARY})
         find_library(RTMIDI_LIBRARY rtmidi PATHS ${LIB1_SEARCH_DIR} ${LIB2_SEARCH_DIR})
         target_link_libraries(EWOCvj2 PUBLIC debug ${RTMIDI_LIBRARY})
+        # Link miniupnpc DLL import library before iphlpapi (miniupnpc depends on iphlpapi)
+        find_library(MINIUPNPC_LIBRARY miniupnpc.dll PATHS ${LIB1_SEARCH_DIR} ${LIB2_SEARCH_DIR})
+        if(MINIUPNPC_LIBRARY)
+            message(STATUS "Found miniupnpc library: ${MINIUPNPC_LIBRARY}")
+            target_link_libraries(EWOCvj2 PUBLIC ${MINIUPNPC_LIBRARY})
+        else()
+            message(WARNING "miniupnpc library not found - UPnP port mapping will not be available")
+        endif()
         find_library(IPHLPAPI_LIBRARY iphlpapi PATHS ${LIB1_SEARCH_DIR} ${LIB2_SEARCH_DIR})
         target_link_libraries(EWOCvj2 PUBLIC ${IPHLPAPI_LIBRARY})
         if(NDI_FOUND)
@@ -260,6 +270,13 @@ if (UNIX)
     target_link_libraries(EWOCvj2 PUBLIC ${RTMIDI_LIBRARY})
     find_library(ALSA_LIBRARY asound PATHS ${LIB_SEARCH_DIRS})
     target_link_libraries(EWOCvj2 PUBLIC ${ALSA_LIBRARY})
+    find_library(MINIUPNPC_LIBRARY miniupnpc PATHS ${LIB_SEARCH_DIRS})
+    if(MINIUPNPC_LIBRARY)
+        message(STATUS "Found miniupnpc library: ${MINIUPNPC_LIBRARY}")
+        target_link_libraries(EWOCvj2 PUBLIC ${MINIUPNPC_LIBRARY})
+    else()
+        message(WARNING "miniupnpc library not found - UPnP port mapping will not be available")
+    endif()
     if(NDI_FOUND)
         find_library(NDI_LIBRARY ndi PATHS ${LIB_SEARCH_DIRS})
         target_link_libraries(EWOCvj2 PUBLIC ${NDI_LIBRARY})

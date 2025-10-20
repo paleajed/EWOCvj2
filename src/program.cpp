@@ -74,6 +74,7 @@
 
 // my own header
 #include "program.h"
+#include "UPnPPortMapper.h"
 
 #include <tinyfiledialogs.h>
 extern "C" {
@@ -284,7 +285,7 @@ void MidiElement::unregister_midi() {
 }
 
 
-Program::Program() : ndimanager(NDIManager::getInstance()) {
+Program::Program() : ndimanager(NDIManager::getInstance()), upnpMapper(nullptr) {
     ndimanager.initialize();
 
     // setup the main pervasive mainprogram structure
@@ -5072,7 +5073,6 @@ void Program::handle_shelfmenu() {
         mainprogram->renamingshelfelem = elem;
         mainprogram->renamingshelfelem->oldname = mainprogram->renamingshelfelem->name;
         std::string name = elem->name;
-        mainprogram->backupname = name;
         mainprogram->inputtext = name;
         mainprogram->cursorpos0 = mainprogram->inputtext.length();
         SDL_StartTextInput();
@@ -9701,6 +9701,38 @@ void Program::socket_server(struct sockaddr_in serv_addr, int opt) {
     } else {
         std::cout << "DEBUG: Successfully bound socket to port 8000" << std::endl;
     }
+
+    // Try to set up UPnP port forwarding
+    std::cout << "=== Attempting UPnP Port Forwarding ===" << std::endl;
+    this->upnpMapper = new UPnPPortMapper();
+
+    if (this->upnpMapper->discoverGateway()) {
+        // Gateway found, try to add port mapping
+        bool upnp_success = this->upnpMapper->addPortMapping(
+            8000,  // External port
+            8000,  // Internal port
+            "TCP",  // Protocol
+            "EWOCvj2 Media Bin Sharing",  // Description
+            0  // Lease duration (0 = permanent)
+        );
+
+        if (upnp_success) {
+            // Get and display external IP
+            std::string external_ip = this->upnpMapper->getExternalIP();
+            if (!external_ip.empty()) {
+                std::cout << "=== UPnP SUCCESS ===" << std::endl;
+                std::cout << "External clients can connect to: " << external_ip << ":8000" << std::endl;
+                std::cout << "===================" << std::endl;
+            }
+        } else {
+            std::cout << "UPnP: Port mapping failed - " << this->upnpMapper->getLastError() << std::endl;
+            std::cout << "Manual port forwarding may be required for external connections" << std::endl;
+        }
+    } else {
+        std::cout << "UPnP: No gateway found or UPnP disabled on router" << std::endl;
+        std::cout << "Manual port forwarding required for external connections" << std::endl;
+    }
+    std::cout << "========================================" << std::endl;
 
     while (1) {
         ret = listen(this->sock, 3);

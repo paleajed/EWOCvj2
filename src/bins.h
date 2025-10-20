@@ -94,6 +94,7 @@ class BinsMain {
 
         Bin *menubin = nullptr;
         std::unordered_map<std::string, std::string> binrenamemap;
+		std::string backupname;
         bool openfilesbin = false;
  		bool importbins = false;
 		int binscount;

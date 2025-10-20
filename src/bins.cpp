@@ -45,6 +45,7 @@ extern "C" {
 
 // my own header
 #include "program.h"
+#include "UPnPPortMapper.h"
 
 
 
@@ -268,7 +269,7 @@ void BinsMain::handle(bool draw) {
 			mainprogram->renaming = EDIT_NONE;
 			SDL_StopTextInput();
 			binsmain->binrenamemap.erase(this->menubin->name);
-			this->menubin->name = mainprogram->backupname;
+			this->menubin->name = this->backupname;
 			this->menubin = nullptr;
 			mainprogram->rightmouse = false;
 			mainprogram->menuactivation = false;
@@ -815,6 +816,14 @@ void BinsMain::handle(bool draw) {
                         std::cout << "Quitting server role to connect to remote server" << std::endl;
                         mainprogram->server = false;
                         mainprogram->stop_discovery();
+
+                        // Clean up UPnP port mapping
+                        if (mainprogram->upnpMapper) {
+                            std::cout << "Removing UPnP port mapping..." << std::endl;
+                            mainprogram->upnpMapper->removePortMapping(8000, "TCP");
+                            delete mainprogram->upnpMapper;
+                            mainprogram->upnpMapper = nullptr;
+                        }
                     }
 
                     // Mark as disconnected so socket_client will create fresh socket
@@ -1302,7 +1311,7 @@ void BinsMain::handle(bool draw) {
 			}
 			else if (k == 1) {
 				// start renaming bin
-				mainprogram->backupname = this->menubin->name;
+				this->backupname = this->menubin->name;
 				mainprogram->inputtext = this->menubin->name;
 				mainprogram->cursorpos0 = mainprogram->inputtext.length();
 				SDL_StartTextInput();
@@ -1319,7 +1328,7 @@ void BinsMain::handle(bool draw) {
 			int k = mainprogram->handle_menu(mainprogram->bin2menu);  // rightclick on bin when there's only one (can't delete)
 			if (k == 0) {
 				// start renaming bin
-				mainprogram->backupname = this->menubin->name;
+				this->backupname = this->menubin->name;
 				mainprogram->inputtext = this->menubin->name;
 				mainprogram->cursorpos0 = mainprogram->inputtext.length();
 				SDL_StartTextInput();
@@ -1382,7 +1391,7 @@ void BinsMain::handle(bool draw) {
 			this->renamingelem = this->menubinel;
 			this->renamingelem->oldname = this->renamingelem->name;
 			std::string name = this->menubinel->name;
-			mainprogram->backupname = name;
+			this->backupname = name;
 			mainprogram->inputtext = name;
 			mainprogram->cursorpos0 = mainprogram->inputtext.length();
 			SDL_StartTextInput();

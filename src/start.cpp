@@ -102,6 +102,7 @@ extern "C" {
 
 // my own header
 #include "program.h"
+#include "UPnPPortMapper.h"
 
 #define PROGRAM_NAME "EWOCvj"
 
@@ -4161,11 +4162,6 @@ void onestepfrom(bool stage, Node *node, Node *prevnode, GLuint prevfbotex, GLui
         glClear(GL_COLOR_BUFFER_BIT);
         draw_box(nullptr, black, -1.0f, 1.0f, 2.0f, -2.0f, prevfbotex);
 
-        if (mnode->ndioutput != nullptr) {
-            mnode->ndiouttex.setFromExistingTexture(mnode->mixtex, mainprogram->ow[stage], mainprogram->oh[stage]);
-            mnode->ndioutput->sendFrame(mnode->ndiouttex);
-        }
-
         prevfbotex = mnode->mixtex;
 		prevfbo = mnode->mixfbo;
 		glViewport(0, 0, glob->w, glob->h);
@@ -4350,8 +4346,16 @@ bool display_mix() {
         glBindFramebuffer(GL_FRAMEBUFFER, 0);
         glDrawBuffer(GL_BACK_LEFT);
         glViewport(0, 0, glob->w, glob->h);
-		draw_box(red, black, box->vtxcoords->x1 + xs * 2.0f, box->vtxcoords->y1 + ys * 2.0f, box->vtxcoords->w - xs * 4.0f, box->vtxcoords->h - ys * 4.0f, node->mixtex);
-		mainprogram->mainmonitor->in();
+        if (!mainprogram->binsscreen) {
+            draw_box(red, black, box->vtxcoords->x1 + xs * 2.0f, box->vtxcoords->y1 + ys * 2.0f,
+                     box->vtxcoords->w - xs * 4.0f, box->vtxcoords->h - ys * 4.0f, node->mixtex);
+            mainprogram->mainmonitor->in();
+        }
+
+        if (node->ndioutput != nullptr) {
+            node->ndiouttex.setFromExistingTexture(node->mixtex, mainprogram->ow[!mainprogram->prevmodus], mainprogram->oh[!mainprogram->prevmodus]);
+            node->ndioutput->sendFrame(node->ndiouttex);
+        }
 
 		if (mainmix->wipe[1] > -1) {
 			mainprogram->uniformCache->setFloat("cf", mainmix->crossfadecomp->value);
@@ -4385,9 +4389,17 @@ bool display_mix() {
         glBindFramebuffer(GL_FRAMEBUFFER, 0);
         glDrawBuffer(GL_BACK_LEFT);
         glViewport(0, 0, glob->w, glob->h);
-		draw_box(red, black, box->vtxcoords->x1 + xs, box->vtxcoords->y1 + ys, box->vtxcoords->w - xs * 2.0f, box->vtxcoords->h - ys * 2.0f, node->mixtex);
-		mainprogram->outputmonitor->in();
-	}
+        if (!mainprogram->binsscreen) {
+            draw_box(red, black, box->vtxcoords->x1 + xs, box->vtxcoords->y1 + ys, box->vtxcoords->w - xs * 2.0f,
+                     box->vtxcoords->h - ys * 2.0f, node->mixtex);
+            mainprogram->outputmonitor->in();
+        }
+
+        if (node->ndioutput != nullptr) {
+            node->ndiouttex.setFromExistingTexture(node->mixtex, mainprogram->ow[!mainprogram->prevmodus], mainprogram->oh[!mainprogram->prevmodus]);
+            node->ndioutput->sendFrame(node->ndiouttex);
+        }
+    }
 	else {
 		mainprogram->uniformCache->setBool("wipe", false);
 		mainprogram->uniformCache->setInt("mixmode", 0);
@@ -4428,31 +4440,44 @@ bool display_mix() {
         glBindFramebuffer(GL_FRAMEBUFFER, 0);
         glDrawBuffer(GL_BACK_LEFT);
         glViewport(0, 0, glob->w, glob->h);
-		draw_box(red, black, box->vtxcoords->x1 + xs * 2.0f, box->vtxcoords->y1 + ys * 2.0f, box->vtxcoords->w - xs * 4.0f, box->vtxcoords->h - ys * 4.0f, node->mixtex);
-		mainprogram->mainmonitor->in();
+        if (!mainprogram->binsscreen) {
+            draw_box(red, black, box->vtxcoords->x1 + xs * 2.0f, box->vtxcoords->y1 + ys * 2.0f,
+                     box->vtxcoords->w - xs * 4.0f, box->vtxcoords->h - ys * 4.0f, node->mixtex);
+            mainprogram->mainmonitor->in();
+        }
+
+        if (node->ndioutput != nullptr) {
+            node->ndiouttex.setFromExistingTexture(node->mixtex, mainprogram->ow[!mainprogram->prevmodus], mainprogram->oh[!mainprogram->prevmodus]);
+            node->ndioutput->sendFrame(node->ndiouttex);
+        }
 	}
 
-    // draw deck monitors
-	if (mainprogram->prevmodus) {
-        node = (MixNode*)mainprogram->nodesmain->mixnodes[0][0];
-		box = mainprogram->deckmonitor[0];
-		draw_box(red, box->acolor, box->vtxcoords->x1 + xs, box->vtxcoords->y1 + ys, box->vtxcoords->w - xs * 2.0f, box->vtxcoords->h - ys * 2.0f, node->mixtex);
-		box->in();
-		node = (MixNode*)mainprogram->nodesmain->mixnodes[0][1];
-		box = mainprogram->deckmonitor[1];
-		draw_box(red, black, box->vtxcoords->x1 + xs, box->vtxcoords->y1 + ys, box->vtxcoords->w - xs * 2.0f, box->vtxcoords->h - ys * 2.0f, node->mixtex);
-        box->in();
-	}
-	else {
-		node = (MixNode*)mainprogram->nodesmain->mixnodes[1][0];
-		box = mainprogram->deckmonitor[0];
-		draw_box(red, black, box->vtxcoords->x1 + xs, box->vtxcoords->y1 + ys, box->vtxcoords->w - xs * 2.0f, box->vtxcoords->h - ys * 2.0f, node->mixtex);
-        box->in();
-		node = (MixNode*)mainprogram->nodesmain->mixnodes[1][1];
-		box = mainprogram->deckmonitor[1];
-		draw_box(red, black, box->vtxcoords->x1 + xs, box->vtxcoords->y1 + ys, box->vtxcoords->w - xs * 2.0f, box->vtxcoords->h - ys * 2.0f, node->mixtex);
-        box->in();
-	}
+    if (!mainprogram->binsscreen) {
+        // draw deck monitors
+        if (mainprogram->prevmodus) {
+            node = (MixNode *) mainprogram->nodesmain->mixnodes[0][0];
+            box = mainprogram->deckmonitor[0];
+            draw_box(red, box->acolor, box->vtxcoords->x1 + xs, box->vtxcoords->y1 + ys, box->vtxcoords->w - xs * 2.0f,
+                     box->vtxcoords->h - ys * 2.0f, node->mixtex);
+            box->in();
+            node = (MixNode *) mainprogram->nodesmain->mixnodes[0][1];
+            box = mainprogram->deckmonitor[1];
+            draw_box(red, black, box->vtxcoords->x1 + xs, box->vtxcoords->y1 + ys, box->vtxcoords->w - xs * 2.0f,
+                     box->vtxcoords->h - ys * 2.0f, node->mixtex);
+            box->in();
+        } else {
+            node = (MixNode *) mainprogram->nodesmain->mixnodes[1][0];
+            box = mainprogram->deckmonitor[0];
+            draw_box(red, black, box->vtxcoords->x1 + xs, box->vtxcoords->y1 + ys, box->vtxcoords->w - xs * 2.0f,
+                     box->vtxcoords->h - ys * 2.0f, node->mixtex);
+            box->in();
+            node = (MixNode *) mainprogram->nodesmain->mixnodes[1][1];
+            box = mainprogram->deckmonitor[1];
+            draw_box(red, black, box->vtxcoords->x1 + xs, box->vtxcoords->y1 + ys, box->vtxcoords->w - xs * 2.0f,
+                     box->vtxcoords->h - ys * 2.0f, node->mixtex);
+            box->in();
+        }
+    }
 
     mainprogram->directmode = false;
 
@@ -4462,8 +4487,9 @@ bool display_mix() {
 
 void drag_into_layerstack(std::vector<Layer*>& layers, bool deck) {
 	Layer* lay;
-	for (int i = 0; i < layers.size(); i++) {
-		lay = layers[i];
+	auto itlayers = layers;
+    for (int i = 0; i < itlayers.size(); i++) {
+		lay = itlayers[i];
 		if (mainprogram->draginscrollbarlay) {
 			lay = mainprogram->draginscrollbarlay;
 		}
@@ -4473,7 +4499,7 @@ void drag_into_layerstack(std::vector<Layer*>& layers, bool deck) {
 		Boxx* box = lay->node->vidbox;
         box->upvtxtoscr();
 		int endx = false;
-		if ((i == layers.size() - 1 || i == mainmix->scenes[deck][mainmix->currscene[deck]]->scrollpos + 2)) {
+		if ((i == itlayers.size() - 1 || i == mainmix->scenes[deck][mainmix->currscene[deck]]->scrollpos + 2)) {
 			endx = true;
 		}
 
@@ -4484,6 +4510,9 @@ void drag_into_layerstack(std::vector<Layer*>& layers, bool deck) {
 					no = true;
 				}
 			}
+            if ((box->scrcoords->x1 - mainprogram->xvtxtoscr(0.075f) < mainprogram->mx && mainprogram->mx < box->scrcoords->x1 + mainprogram->xvtxtoscr(0.075f))) {
+                endx = 0;
+            }
 			if (!no) {
 				bool cond1 = (box->scrcoords->y1 < mainprogram->my + box->scrcoords->h && mainprogram->my < box->scrcoords->y1);
 				bool cond2 = (box->scrcoords->x1 + box->scrcoords->w * 0.25f < mainprogram->mx && mainprogram->mx < box->scrcoords->x1 + box->scrcoords->w * 0.75f);
@@ -4530,8 +4559,8 @@ void drag_into_layerstack(std::vector<Layer*>& layers, bool deck) {
 						return;
 					}
 				}
-				else if (cond1 && ((endx && mainprogram->mx > deck * (glob->w / 2.0f) && mainprogram->mx < (deck + 1) * (glob->w / 2.0f)) || (box->scrcoords->x1 - mainprogram->xvtxtoscr(0.075f) < mainprogram->mx && mainprogram->mx < box->scrcoords->x1 + mainprogram->xvtxtoscr(0.075f)))) {
-					// handle dragging things to the end of the last visible layer monitor of deck
+				else if (cond1 && ((endx && box->scrcoords->x1 + box->scrcoords->w - mainprogram->xvtxtoscr(0.075f) < mainprogram->mx && mainprogram->mx < box->scrcoords->x1 + box->scrcoords->w) || ((box->scrcoords->x1 - mainprogram->xvtxtoscr(0.075f) < mainprogram->mx && mainprogram->mx < box->scrcoords->x1 + mainprogram->xvtxtoscr(0.075f))))) {
+					// handle dragging things to the end of a layer monitor
 					if (mainprogram->lmover) {
 						Layer* inlay = mainmix->add_layer(layers, lay->pos + endx);
 						if (inlay->pos == mainmix->scenes[deck][mainmix->currscene[deck]]->scrollpos + 3) mainmix->scenes[deck][mainmix->currscene[deck]]->scrollpos++;
@@ -4549,7 +4578,7 @@ void drag_into_layerstack(std::vector<Layer*>& layers, bool deck) {
 					}
 				}
 
-				int numonscreen = layers.size() - mainmix->scenes[deck][mainmix->currscene[deck]]->scrollpos;
+				int numonscreen = itlayers.size() - mainmix->scenes[deck][mainmix->currscene[deck]]->scrollpos;
 				if (0 <= numonscreen && numonscreen <= 2) {
 				    if (mainprogram->xvtxtoscr(mainprogram->numw + deck * 1.0f + numonscreen * mainprogram->layw) < mainprogram->mx && mainprogram->mx > deck * (glob->w / 2.0f) && mainprogram->mx < (deck + 1) * (glob->w / 2.0f)) {
 						if (0 < mainprogram->my && mainprogram->my < mainprogram->yvtxtoscr(mainprogram->layh)) {
@@ -6120,7 +6149,8 @@ void the_loop() {
 		// the 'true' value triggers the full version of this function: it draws the screen also
 		// 'false' does a dummy run, used to rightmouse cancel things initiated in code (not the mouse)
 		binsmain->handle(true);
-	}
+        display_mix();   // for NDI throughput of output monitors
+    }
 
     else if (mainprogram->fullscreen > -1) {
         // part of the mix is showed fullscreen, so no bins or mix specifics self-understandingly
@@ -8719,7 +8749,7 @@ int main(int argc, char* argv[]) {
                 if (mainprogram->renaming == EDIT_BINNAME) {
                     binsmain->binrenamemap.erase(binsmain->menubin->name);
                     binsmain->menubin->name = mainprogram->inputtext;
-                    binsmain->binrenamemap[binsmain->menubin->name] = mainprogram->backupname;
+                    binsmain->binrenamemap[binsmain->menubin->name] = binsmain->backupname;
                 } else if (mainprogram->renaming == EDIT_BINELEMNAME) {
                     binsmain->renamingelem->name = mainprogram->inputtext;
                 } else if (mainprogram->renaming == EDIT_SHELFELEMNAME) {
@@ -9304,6 +9334,14 @@ int main(int argc, char* argv[]) {
                     mainprogram->mx > glob->w - mainprogram->xvtxtoscr(0.05f)) {
                     if (mainprogram->leftmouse) {
                         printf("stopped\n");
+
+                        // Clean up UPnP port mapping before exit
+                        if (mainprogram->upnpMapper) {
+                            std::cout << "Removing UPnP port mapping..." << std::endl;
+                            mainprogram->upnpMapper->removePortMapping(8000, "TCP");
+                            delete mainprogram->upnpMapper;
+                            mainprogram->upnpMapper = nullptr;
+                        }
 
                         SDL_Quit();
                         exit(0);
