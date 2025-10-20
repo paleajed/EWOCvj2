@@ -893,8 +893,8 @@ Program::Program() : ndimanager(NDIManager::getInstance()) {
     // volume treshold for beat detection to kick in
     this->beatthres = new Param;
     this->beatthres->name = "Beat threshold";
-    this->beatthres->value = 0.17f;
-    this->beatthres->deflt = 0.17f;
+    this->beatthres->value = 0.0f;
+    this->beatthres->deflt = 0.0f;
     this->beatthres->range[0] = 0.0f;
     this->beatthres->range[1] = 1.0f;
     this->beatthres->sliding = true;
@@ -1536,7 +1536,9 @@ bool Program::do_order_paths() {
         //SDL_GL_MakeCurrent(mainprogram->mainwindow, glc);
         glViewport(0, 0, binsmain->globw, binsmain->globh);
     }
-	if (this->paths.size() == 1) return true;
+	if (this->paths.size() == 1) {
+        return true;
+    }
 	// show interactive list with draggable elements to allow element ordering of mainprogram->paths, result of get_multinname
 	int limit = this->paths.size();
 	if (limit > 17) limit = 17;
@@ -7823,11 +7825,56 @@ void Project::save(std::string path, bool autosave, bool undo, bool nocheck) {
 	filestoadd.push_back(mainprogram->temppath + "current.state");
 
     if (!undo) {
+        // rename bin element jpeg paths and element paths of renamed bins
+        for (int k = 0; k < binsmain->bins.size(); k++) {
+            if (!binsmain->binrenamemap.count(binsmain->bins[k]->name)) {
+                continue;
+            }
+            std::vector<std::string> bup1;
+            std::vector<std::string> bup2;
+            for (int j = 0; j < 12; j++) {
+                for (int i = 0; i < 12; i++) {
+                    BinElement *binel = binsmain->bins[k]->elements[i * 12 + j];
+                    std::string s =
+                            this->binsdir + binsmain->bins[k]->name + "/";
+                    if (binel->absjpath != "") {
+                        // rename jpeg
+                        binel->absjpath = s + basename(binel->absjpath);
+                        binel->jpegpath = binel->absjpath;
+                        binel->reljpath = std::filesystem::relative(binel->absjpath, s).generic_string();
+                    }
+                    if (binel->type == ELEM_LAYER || binel->type == ELEM_DECK || binel->type == ELEM_MIX) {
+                        // rename path
+                        binel->path = s + basename(binel->path);
+                    }
+                }
+            }
+        }
+
         //save bins
+        std::unordered_map<std::string, std::string> bubinrenamemap;
+        if (autosave) {
+            bubinrenamemap = binsmain->binrenamemap;
+        }
+        std::unordered_map<std::string, std::string> itbinrenamemap = binsmain->binrenamemap;
+        while (itbinrenamemap.size()) {
+            for (auto it: binsmain->binrenamemap) {
+                // rename bin file+dir to new name
+                if (exists(this->binsdir + it.second)) {
+                    rename(this->binsdir + it.second, this->binsdir + it.first);
+                    rename(this->binsdir + it.second + ".bin",
+                           this->binsdir + it.first + ".bin");
+                    itbinrenamemap.erase(it.first);
+                }
+            }
+        }
+        if (autosave) {
+            binsmain->binrenamemap = bubinrenamemap;
+        }
         int cbin = binsmain->currbin->pos;
         for (int i = 0; i < binsmain->bins.size(); i++) {
             binsmain->make_currbin(i);
-            std::filesystem::path p1(this->binsdir + remove_extension(basename(binsmain->bins[i]->path)));
+            std::filesystem::path p1(this->binsdir + binsmain->bins[i]->name);
             if (!exists(p1)) {
                 std::filesystem::create_directories(p1);
             }
@@ -9604,22 +9651,35 @@ void Program::write_recentprojectlist() {
 
 void Program::socket_server(struct sockaddr_in serv_addr, int opt) {
     this->serverip = this->localip;
-    
+
     // Start broadcasting our presence as a server
     if (!this->discoveryRunning) {
         this->start_discovery();
     }
-    
+
     int new_socket;
 
-    if (inet_pton(AF_INET, this->serverip.c_str(), &serv_addr.sin_addr) <= 0) {
-        printf("\nInvalid server address/ Address not supported \n");
+    // Create server socket
+    if ((this->sock = socket(AF_INET, SOCK_STREAM, 0)) < 0) {
+        std::cout << "ERROR: Socket creation failed in socket_server()" << std::endl;
+#ifdef WINDOWS
+        std::cout << "WSA error: " << WSAGetLastError() << std::endl;
+#endif
+        return;
     }
+    std::cout << "DEBUG: Created server socket: " << this->sock << std::endl;
+
+    // serv_addr is already properly initialized by caller with sin_family, sin_port, and sin_addr
+    // No need to call inet_pton() here - it would only partially reinitialize the structure
 
     int addrlen = sizeof(serv_addr);
 
     int ret = setsockopt(this->sock, SOL_SOCKET, SO_REUSEADDR,
                          (const char *) &opt, sizeof(opt));
+#ifdef POSIX
+    // Also set SO_REUSEPORT on POSIX systems to allow quick rebind
+    setsockopt(this->sock, SOL_SOCKET, SO_REUSEPORT, (const char *) &opt, sizeof(opt));
+#endif
 
     // Forcefully attaching socket to the port
     if (bind(this->sock, (struct sockaddr *) &serv_addr,
@@ -9627,6 +9687,19 @@ void Program::socket_server(struct sockaddr_in serv_addr, int opt) {
     {
         //print the error message
         perror("bind failed. Error");
+#ifdef WINDOWS
+        int bind_error = WSAGetLastError();
+        std::cout << "ERROR: Failed to bind socket in socket_server(), WSA error: " << bind_error << std::endl;
+        if (bind_error == WSAEADDRINUSE) {
+            std::cout << "ERROR: Port 8000 is already in use. Another instance may be running." << std::endl;
+        }
+#endif
+#ifdef POSIX
+        std::cout << "ERROR: Failed to bind socket in socket_server(), errno: " << errno << " (" << strerror(errno) << ")" << std::endl;
+#endif
+        return;  // Can't continue without binding
+    } else {
+        std::cout << "DEBUG: Successfully bound socket to port 8000" << std::endl;
     }
 
     while (1) {
@@ -9644,7 +9717,7 @@ void Program::socket_server(struct sockaddr_in serv_addr, int opt) {
 #endif
 #ifdef WINDOWS
         u_long flags = 1;
-        ioctlsocket(this->sock, FIONBIO, &flags);
+        ioctlsocket(new_socket, FIONBIO, &flags);  // Fixed: was this->sock, should be new_socket
 #endif
 
         // check self-connection
@@ -9739,19 +9812,34 @@ void Program::socket_client(struct sockaddr_in serv_addr, int opt) {
         printf("\nMemory allocation error \n");
         return;
     }
-    
+
     while (1) {
         std::unique_lock<std::mutex> lock(this->clientmutex);
         this->startclient.wait(lock, [&] {return !this->server; });
         lock.unlock();
 
-        if (inet_pton(AF_INET, this->serverip.c_str(), &serv_addr.sin_addr) <= 0) {
-            printf("\nInvalid server address/ Address not supported \n");
+        // Create socket for connection
+        if ((this->sock = socket(AF_INET, SOCK_STREAM, 0)) < 0) {
+            printf("\nSocket creation error in socket_client\n");
             this->connfailed = true;
             this->connfailedmilli = 0;
             free(buf);
             return;
         }
+
+        std::cout << "DEBUG: socket_client attempting connection to " << this->serverip << ":8000" << std::endl;
+        std::cout << "DEBUG: Created socket descriptor: " << this->sock << std::endl;
+
+        // Update serv_addr with the current server IP (might have changed via discovery)
+        if (inet_pton(AF_INET, this->serverip.c_str(), &serv_addr.sin_addr) <= 0) {
+            printf("\nInvalid server address/ Address not supported \n");
+            std::cout << "DEBUG: inet_pton failed for IP: " << this->serverip << std::endl;
+            this->connfailed = true;
+            this->connfailedmilli = 0;
+            free(buf);
+            return;
+        }
+        std::cout << "DEBUG: Server address successfully set to " << this->serverip << std::endl;
 
 #ifdef POSIX
         int flags = fcntl(this->sock, F_GETFL);
@@ -9827,9 +9915,13 @@ void Program::socket_client(struct sockaddr_in serv_addr, int opt) {
                         std::cout << "DEBUG: Connection failed after select (Windows), so_error: " << so_error << std::endl;
                         ret = -1; // Connection failed
                     }
+                } else if (select_result == 0) {
+                    std::cout << "DEBUG: Select timed out after 5 seconds (Windows)" << std::endl;
+                    ret = -1; // Timeout
                 } else {
-                    std::cout << "DEBUG: Select timeout or error (Windows)" << std::endl;
-                    ret = -1; // Timeout or error
+                    int select_error = WSAGetLastError();
+                    std::cout << "DEBUG: Select failed (Windows), error: " << select_error << std::endl;
+                    ret = -1; // Select error
                 }
             } else {
                 std::cout << "DEBUG: Connection failed immediately (Windows): " << error << std::endl;
@@ -10429,6 +10521,165 @@ void Program::socket_client(struct sockaddr_in serv_addr, int opt) {
                     break;
                 }
 
+            } else if (str == "FILE_SENT") {
+                char* ptr = process_ptr + buf_len + 1;
+                if (ptr >= buf_end) {
+                    std::cout << "DEBUG: FILE_SENT break - msglen field incomplete" << std::endl;
+                    break;
+                }
+
+                int msglen;
+                size_t msglen_field_len;
+                try {
+                    msglen_field_len = strnlen(ptr, buf_end - ptr);
+                    msglen = std::stoi(ptr);
+                    std::cout << "DEBUG: FILE_SENT msglen=" << msglen << " msglen_field_len=" << msglen_field_len << std::endl;
+                } catch (const std::exception& e) {
+                    std::cout << "DEBUG: Invalid message length in FILE_SENT" << std::endl;
+                    break;
+                }
+
+                ptr += msglen_field_len + 1;
+                if (ptr >= buf_end) {
+                    std::cout << "DEBUG: FILE_SENT break - sockname field incomplete" << std::endl;
+                    break;
+                }
+
+                size_t sockname_len = strnlen(ptr, buf_end - ptr);
+                std::string sockname(ptr, sockname_len);
+                std::cout << "DEBUG: FILE_SENT sockname='" << sockname << "'" << std::endl;
+                ptr += sockname_len + 1;
+                if (ptr >= buf_end) {
+                    std::cout << "DEBUG: FILE_SENT break - payload start incomplete" << std::endl;
+                    break;
+                }
+
+                // msglen includes the msglen field itself
+                // Calculate actual payload size (subtract the msglen field length)
+                int actual_payload_size = msglen - (msglen_field_len + 1);
+
+                if (actual_payload_size > 0 && actual_payload_size < 50*1024*1024) {
+                    // Read the payload - it should be in the buffer
+                    int already_in_buffer = buf_end - ptr;
+                    char* payload_buf = nullptr;
+
+                    std::cout << "DEBUG: FILE_SENT msglen=" << msglen << " actual_payload_size=" << actual_payload_size << " already_in_buffer=" << already_in_buffer << std::endl;
+
+                    if (already_in_buffer >= actual_payload_size) {
+                        // Entire payload is in buffer
+                        payload_buf = ptr;
+                        std::cout << "DEBUG: FILE_SENT entire payload in buffer" << std::endl;
+                    } else {
+                        // Need to read more data - allocate and read the full payload
+                        payload_buf = (char*)malloc(actual_payload_size);
+                        if (!payload_buf) break;
+
+                        if (already_in_buffer > 0) {
+                            memcpy(payload_buf, ptr, already_in_buffer);
+                        }
+
+                        int remaining = actual_payload_size - already_in_buffer;
+                        char* recv_ptr = payload_buf + already_in_buffer;
+                        while (remaining > 0) {
+                            int received = recv(this->sock, recv_ptr, remaining, 0);
+                            if (received <= 0) {
+                                free(payload_buf);
+                                payload_buf = nullptr;
+                                break;
+                            }
+                            recv_ptr += received;
+                            remaining -= received;
+                        }
+
+                        if (!payload_buf) break;
+                    }
+
+                    // Parse payload: binname, position, suffix, filesize
+                    char* parse_ptr = payload_buf;
+                    char* payload_end = payload_buf + actual_payload_size;
+
+                    // Skip binname
+                    parse_ptr += strnlen(parse_ptr, payload_end - parse_ptr) + 1;
+                    if (parse_ptr >= payload_end) {
+                        if (payload_buf != ptr) free(payload_buf);
+                        break;
+                    }
+
+                    // Skip position
+                    parse_ptr += strnlen(parse_ptr, payload_end - parse_ptr) + 1;
+                    if (parse_ptr >= payload_end) {
+                        if (payload_buf != ptr) free(payload_buf);
+                        break;
+                    }
+
+                    // Skip suffix (this is the extra field compared to TEX_SENT!)
+                    parse_ptr += strnlen(parse_ptr, payload_end - parse_ptr) + 1;
+                    if (parse_ptr >= payload_end) {
+                        if (payload_buf != ptr) free(payload_buf);
+                        break;
+                    }
+
+                    // Get filesize
+                    int filesize = 0;
+                    try {
+                        filesize = std::stoi(parse_ptr);
+                    } catch (...) {
+                        if (payload_buf != ptr) free(payload_buf);
+                        break;
+                    }
+
+                    // Now we know the actual file size
+                    if (filesize == 0) {
+                        // No file data - just store the payload
+                        int actual_payload_size = msglen - (msglen_field_len + 1);
+                        char* payload_copy = (char*)malloc(actual_payload_size);
+                        if (payload_copy) {
+                            memcpy(payload_copy, payload_buf, actual_payload_size);
+                            binsmain->filemessagelengths.push_back(actual_payload_size);
+                            binsmain->filemessagesocknames.push_back(sockname);
+                            binsmain->filemessages.push_back(payload_copy);
+                            std::cout << "DEBUG: FILE_SENT stored empty file message (payload_size=" << actual_payload_size << ")" << std::endl;
+                        }
+
+                        // Advance process_ptr
+                        if (payload_buf == ptr) {
+                            // Payload was in buffer
+                            process_ptr = ptr + actual_payload_size;
+                            std::cout << "DEBUG: FILE_SENT advanced process_ptr by " << actual_payload_size << " bytes, " << (buf_end - process_ptr) << " bytes left" << std::endl;
+                        } else {
+                            // We read beyond buffer
+                            free(payload_buf);
+                            process_ptr = buf_end;
+                            std::cout << "DEBUG: FILE_SENT read beyond buffer, exiting inner loop" << std::endl;
+                        }
+                    } else {
+                        // Has file data - store the complete payload
+                        char* payload_copy = (char*)malloc(actual_payload_size);
+                        if (payload_copy) {
+                            memcpy(payload_copy, payload_buf, actual_payload_size);
+                            binsmain->filemessagelengths.push_back(actual_payload_size);
+                            binsmain->filemessagesocknames.push_back(sockname);
+                            binsmain->filemessages.push_back(payload_copy);
+                            std::cout << "DEBUG: FILE_SENT stored file message with data (payload_size=" << actual_payload_size << " filesize=" << filesize << ")" << std::endl;
+                        }
+
+                        // Advance process_ptr
+                        if (payload_buf == ptr) {
+                            // Payload was in buffer
+                            process_ptr = ptr + actual_payload_size;
+                            std::cout << "DEBUG: FILE_SENT advanced process_ptr by " << actual_payload_size << " bytes, " << (buf_end - process_ptr) << " bytes left" << std::endl;
+                        } else {
+                            // We read beyond buffer
+                            free(payload_buf);
+                            process_ptr = buf_end;
+                            std::cout << "DEBUG: FILE_SENT read beyond buffer, exiting inner loop" << std::endl;
+                        }
+                    }
+                } else {
+                    // Invalid msglen
+                    break;
+                }
+
             } else if (str == "NEW_SIBLING") {
                 char* ptr = process_ptr + buf_len + 1;
                 if (ptr < buf_end) {
@@ -10536,6 +10787,29 @@ void Program::socket_server_receive(SOCKET sock) {
                         it = this->subscriptionMap.erase(it);
                     } else {
                         ++it;
+                    }
+                }
+
+                // Remove this client from all bins' sendtonames lists
+                for (auto bin : binsmain->bins) {
+                    auto sendto_it = std::find(bin->sendtonames.begin(), bin->sendtonames.end(), disconnected_client_name);
+                    if (sendto_it != bin->sendtonames.end()) {
+                        std::cout << "DEBUG: Removing '" << disconnected_client_name << "' from bin '" << bin->name << "' sendtonames" << std::endl;
+                        bin->sendtonames.erase(sendto_it);
+
+                        // Count valid recipients (excluding ourselves)
+                        int valid_recipients = 0;
+                        for (const auto& recipient : bin->sendtonames) {
+                            if (recipient != mainprogram->seatname) {
+                                valid_recipients++;
+                            }
+                        }
+
+                        // If no valid recipients left, set shared to false
+                        if (valid_recipients == 0) {
+                            std::cout << "DEBUG: Bin '" << bin->name << "' has no more valid recipients, setting shared=false" << std::endl;
+                            bin->shared = false;
+                        }
                     }
                 }
             }
@@ -10765,6 +11039,169 @@ void Program::socket_server_receive(SOCKET sock) {
                     free(payload_buf);
                     process_ptr = buf_end;
                     std::cout << "DEBUG: TEX_SENT read beyond buffer, exiting inner loop" << std::endl;
+                }
+            } else {
+                break;
+            }
+        }
+        else if (str == "FILE_SENT") {
+            char* msg_start = process_ptr;
+            char* ptr = process_ptr + buf_len + 1;
+            if (ptr >= buf_end) {
+                std::cout << "DEBUG: FILE_SENT break - msglen field incomplete" << std::endl;
+                break;
+            }
+
+            int msglen;
+            size_t msglen_field_len;
+            try {
+                msglen_field_len = strnlen(ptr, buf_end - ptr);
+                msglen = std::stoi(ptr);
+                std::cout << "DEBUG: FILE_SENT msglen=" << msglen << " msglen_field_len=" << msglen_field_len << std::endl;
+            } catch (const std::exception& e) {
+                std::cout << "DEBUG: Invalid message length in FILE_SENT" << std::endl;
+                break;
+            }
+            ptr += msglen_field_len + 1;
+            if (ptr >= buf_end) {
+                std::cout << "DEBUG: FILE_SENT break - sockname field incomplete" << std::endl;
+                break;
+            }
+
+            size_t sockname_len = strnlen(ptr, buf_end - ptr);
+            std::string sockname(ptr, sockname_len);
+            std::cout << "DEBUG: FILE_SENT sockname='" << sockname << "'" << std::endl;
+            ptr += sockname_len + 1;
+            if (ptr >= buf_end) {
+                std::cout << "DEBUG: FILE_SENT break - payload start incomplete" << std::endl;
+                break;
+            }
+
+            // msglen includes the msglen field itself
+            // Calculate actual payload size (subtract the msglen field length)
+            int actual_payload_size = msglen - (msglen_field_len + 1);
+
+            if (actual_payload_size > 0 && actual_payload_size < 50*1024*1024) {
+                int already_in_buffer = buf_end - ptr;
+                char* payload_buf = nullptr;
+
+                std::cout << "DEBUG: FILE_SENT msglen=" << msglen << " actual_payload_size=" << actual_payload_size << " already_in_buffer=" << already_in_buffer << std::endl;
+
+                if (already_in_buffer >= actual_payload_size) {
+                    payload_buf = ptr;
+                    std::cout << "DEBUG: FILE_SENT entire payload in buffer" << std::endl;
+                } else {
+                    std::cout << "DEBUG: FILE_SENT need to read " << (actual_payload_size - already_in_buffer) << " more bytes from socket" << std::endl;
+                    payload_buf = (char*)malloc(actual_payload_size);
+                    if (!payload_buf) {
+                        std::cout << "DEBUG: FILE_SENT malloc failed for " << actual_payload_size << " bytes" << std::endl;
+                        break;
+                    }
+
+                    if (already_in_buffer > 0) {
+                        memcpy(payload_buf, ptr, already_in_buffer);
+                    }
+
+                    int remaining = actual_payload_size - already_in_buffer;
+                    char* recv_ptr = payload_buf + already_in_buffer;
+                    while (remaining > 0) {
+                        int received = recv(sock, recv_ptr, remaining, 0);
+                        std::cout << "DEBUG: FILE_SENT recv returned " << received << " (remaining=" << remaining << ")" << std::endl;
+                        if (received < 0) {
+#ifdef WINDOWS
+                            int err = WSAGetLastError();
+                            if (err == WSAEWOULDBLOCK) {
+                                std::cout << "DEBUG: FILE_SENT socket would block, retrying..." << std::endl;
+                                std::this_thread::sleep_for(std::chrono::milliseconds(10));
+                                continue;
+                            }
+#else
+                            if (errno == EAGAIN || errno == EWOULDBLOCK) {
+                                std::cout << "DEBUG: FILE_SENT socket would block, retrying..." << std::endl;
+                                std::this_thread::sleep_for(std::chrono::milliseconds(10));
+                                continue;
+                            }
+#endif
+                            std::cout << "DEBUG: FILE_SENT recv failed (received=" << received << ")" << std::endl;
+                            free(payload_buf);
+                            payload_buf = nullptr;
+                            break;
+                        } else if (received == 0) {
+                            std::cout << "DEBUG: FILE_SENT connection closed (received=0)" << std::endl;
+                            free(payload_buf);
+                            payload_buf = nullptr;
+                            break;
+                        }
+                        recv_ptr += received;
+                        remaining -= received;
+                    }
+
+                    if (!payload_buf) {
+                        std::cout << "DEBUG: FILE_SENT breaking due to recv failure" << std::endl;
+                        break;
+                    }
+                    std::cout << "DEBUG: FILE_SENT successfully read complete payload from socket" << std::endl;
+                }
+
+                // Parse payload to get filesize
+                char* parse_ptr = payload_buf;
+                char* payload_end = payload_buf + actual_payload_size;
+
+                parse_ptr += strnlen(parse_ptr, payload_end - parse_ptr) + 1; // Skip binname
+                if (parse_ptr >= payload_end) {
+                    if (payload_buf != ptr) free(payload_buf);
+                    break;
+                }
+
+                parse_ptr += strnlen(parse_ptr, payload_end - parse_ptr) + 1; // Skip position
+                if (parse_ptr >= payload_end) {
+                    if (payload_buf != ptr) free(payload_buf);
+                    break;
+                }
+
+                parse_ptr += strnlen(parse_ptr, payload_end - parse_ptr) + 1; // Skip suffix (extra field!)
+                if (parse_ptr >= payload_end) {
+                    if (payload_buf != ptr) free(payload_buf);
+                    break;
+                }
+
+                int filesize = 0;
+                try {
+                    filesize = std::stoi(parse_ptr);
+                } catch (...) {
+                    if (payload_buf != ptr) free(payload_buf);
+                    break;
+                }
+
+                // Store the message
+                char* payload_copy = (char*)malloc(actual_payload_size);
+                if (payload_copy) {
+                    memcpy(payload_copy, payload_buf, actual_payload_size);
+                    binsmain->filemessagelengths.push_back(actual_payload_size);
+                    binsmain->filemessagesocknames.push_back(sockname);
+                    binsmain->filemessages.push_back(payload_copy);
+                    std::cout << "DEBUG: FILE_SENT stored file message (payload_size=" << actual_payload_size << " filesize=" << filesize << ")" << std::endl;
+                }
+
+                // Create raw message for forwarding
+                size_t header_size = ptr - msg_start;
+                size_t total_msg_size = header_size + actual_payload_size;
+                char* raw_copy = (char*)malloc(total_msg_size);
+                if (raw_copy) {
+                    memcpy(raw_copy, msg_start, header_size);
+                    memcpy(raw_copy + header_size, payload_buf, actual_payload_size);
+                    binsmain->rawfilemessages.push_back(raw_copy);
+                    binsmain->rawfilemessagelengths.push_back(total_msg_size);
+                }
+
+                // Advance process_ptr
+                if (payload_buf == ptr) {
+                    process_ptr = ptr + actual_payload_size;
+                    std::cout << "DEBUG: FILE_SENT advanced process_ptr by " << actual_payload_size << " bytes, " << (buf_end - process_ptr) << " bytes left" << std::endl;
+                } else {
+                    free(payload_buf);
+                    process_ptr = buf_end;
+                    std::cout << "DEBUG: FILE_SENT read beyond buffer, exiting inner loop" << std::endl;
                 }
             } else {
                 break;
@@ -11037,6 +11474,89 @@ void Program::discovery_listen() {
 #ifdef WINDOWS
         Sleep(100);
 #endif
+    }
+}
+
+void Program::fetch_public_ip() {
+    // Fetch public IP using api.ipify.org
+    this->publicip = this->localip;  // Default to local IP
+
+    try {
+        SOCKET ipSock = socket(AF_INET, SOCK_STREAM, 0);
+        if (ipSock < 0) {
+            std::cout << "DEBUG: Failed to create socket for public IP fetch" << std::endl;
+            return;
+        }
+
+        struct sockaddr_in server_addr;
+        server_addr.sin_family = AF_INET;
+        server_addr.sin_port = htons(80);
+
+        // Resolve api.ipify.org
+        struct hostent *server = gethostbyname("api.ipify.org");
+        if (server == NULL) {
+            std::cout << "DEBUG: Failed to resolve api.ipify.org" << std::endl;
+#ifdef POSIX
+            close(ipSock);
+#endif
+#ifdef WINDOWS
+            closesocket(ipSock);
+#endif
+            return;
+        }
+
+        memcpy(&server_addr.sin_addr.s_addr, server->h_addr, server->h_length);
+
+        if (connect(ipSock, (struct sockaddr*)&server_addr, sizeof(server_addr)) < 0) {
+            std::cout << "DEBUG: Failed to connect to api.ipify.org" << std::endl;
+#ifdef POSIX
+            close(ipSock);
+#endif
+#ifdef WINDOWS
+            closesocket(ipSock);
+#endif
+            return;
+        }
+
+        // Send HTTP GET request
+        const char* request = "GET / HTTP/1.1\r\nHost: api.ipify.org\r\nConnection: close\r\n\r\n";
+        send(ipSock, request, strlen(request), 0);
+
+        // Read response
+        char buffer[1024] = {0};
+        int total_received = 0;
+        int bytes_received;
+
+        while ((bytes_received = recv(ipSock, buffer + total_received, sizeof(buffer) - total_received - 1, 0)) > 0) {
+            total_received += bytes_received;
+            if (total_received >= sizeof(buffer) - 1) break;
+        }
+
+#ifdef POSIX
+        close(ipSock);
+#endif
+#ifdef WINDOWS
+        closesocket(ipSock);
+#endif
+
+        if (total_received > 0) {
+            buffer[total_received] = '\0';
+            // Find the IP in the response (after the headers)
+            char* body = strstr(buffer, "\r\n\r\n");
+            if (body) {
+                body += 4;  // Skip the "\r\n\r\n"
+                // Trim whitespace
+                while (*body == ' ' || *body == '\n' || *body == '\r') body++;
+                char* end = body;
+                while (*end && *end != '\r' && *end != '\n' && *end != ' ') end++;
+                *end = '\0';
+
+                this->publicip = std::string(body);
+                std::cout << "DEBUG: Fetched public IP: " << this->publicip << std::endl;
+            }
+        }
+    } catch (...) {
+        std::cout << "DEBUG: Exception while fetching public IP" << std::endl;
     }
 }
 
@@ -11767,22 +12287,25 @@ void open_thumb(std::string path, GLuint tex) {
 
     std::ifstream infile(path, std::ios::binary | std::ios::ate);
     if (!infile.good()) {
+        std::cout << "ERROR open_thumb: Failed to open file: " << path << std::endl;
         blacken(tex);
         return;
     }
-    
+
     std::streamsize sz = infile.tellg();
     if (sz <= 0) {
+        std::cout << "ERROR open_thumb: File size <= 0 for: " << path << " (size=" << sz << ")" << std::endl;
         infile.close();
         blacken(tex);
         return;
     }
-    
+
     unsigned char *buf = new unsigned char[sz];
     infile.seekg(0, std::ios::beg);
     infile.read((char*)buf, sz);
-    
+
     if (!infile.good()) {
+        std::cout << "ERROR open_thumb: Failed to read file: " << path << std::endl;
         delete [] buf;
         infile.close();
         blacken(tex);
@@ -11795,6 +12318,7 @@ void open_thumb(std::string path, GLuint tex) {
 
     tjhandle _jpegDecompressor = tjInitDecompress();
     if (_jpegDecompressor == nullptr) {
+        std::cout << "ERROR open_thumb: Failed to init JPEG decompressor for: " << path << std::endl;
         delete [] buf;
         infile.close();
         blacken(tex);
@@ -11803,6 +12327,8 @@ void open_thumb(std::string path, GLuint tex) {
 
     int result = tjDecompressHeader3(_jpegDecompressor, buf, _jpegSize, &width, &height, &jpegSubsamp, &dummy);
     if (result != 0 || width <= 0 || height <= 0) {
+        std::cout << "ERROR open_thumb: Failed to decompress JPEG header for: " << path
+                 << " (result=" << result << ", width=" << width << ", height=" << height << ")" << std::endl;
         tjDestroy(_jpegDecompressor);
         delete [] buf;
         infile.close();
@@ -11819,7 +12345,9 @@ void open_thumb(std::string path, GLuint tex) {
     if (result == 0) {
         glBindTexture(GL_TEXTURE_2D, tex);
         glTexImage2D(GL_TEXTURE_2D, 0, GL_RGB, width, height, 0, GL_RGB, GL_UNSIGNED_BYTE, uncbuffer);
+        std::cout << "SUCCESS open_thumb: Loaded texture " << tex << " from: " << path << " (" << width << "x" << height << ")" << std::endl;
     } else {
+        std::cout << "ERROR open_thumb: Failed to decompress JPEG data for: " << path << " (tjDecompress2 result=" << result << ")" << std::endl;
         blacken(tex);
     }
 
@@ -12420,7 +12948,6 @@ void Program::undo_redo_save() {
                 bin->elements[i]->absjpath = binsmain->currbin->elements[i]->absjpath;
                 bin->elements[i]->reljpath = binsmain->currbin->elements[i]->reljpath;
                 bin->elements[i]->jpegpath = binsmain->currbin->elements[i]->jpegpath;
-                bin->elements[i]->jpegsaved = binsmain->currbin->elements[i]->jpegsaved;
                 bin->elements[i]->autosavejpegsaved = binsmain->currbin->elements[i]->autosavejpegsaved;
                 bin->elements[i]->filesize = binsmain->currbin->elements[i]->filesize;
                 bin->elements[i]->tex = binsmain->currbin->elements[i]->tex;

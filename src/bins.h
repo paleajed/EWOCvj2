@@ -93,6 +93,7 @@ class BinsMain {
         bool syncendnow = false;
 
         Bin *menubin = nullptr;
+        std::unordered_map<std::string, std::string> binrenamemap;
         bool openfilesbin = false;
  		bool importbins = false;
 		int binscount;
@@ -115,6 +116,11 @@ class BinsMain {
         std::vector<std::string> texmessagesocknames;
         std::vector<int> texmessagelengths;
         std::vector<int> rawtexmessagelengths;
+        std::vector<char*> filemessages;
+        std::vector<char*> rawfilemessages;
+        std::vector<std::string> filemessagesocknames;
+        std::vector<int> filemessagelengths;
+        std::vector<int> rawfilemessagelengths;
 
 
         void handle(bool draw);
@@ -136,7 +142,8 @@ class BinsMain {
         void save_binjpegs();
 		void send_shared_bins();
 		void receive_shared_bins();
-		void receive_shared_textures();
+        void receive_shared_textures();
+        void receive_shared_files();
         BinsMain();
 
 	private:
@@ -147,6 +154,8 @@ class Bin {
 	public:
 		std::string name = "";
 		std::string path = "";
+		std::string owner = "";  // Seatname of the client that owns/created this bin
+		std::string last_message_sender = "";  // Seatname of who sent the last BIN_SENT message (to avoid echo)
 		std::vector<BinElement*> elements;
         std::unordered_set<int> open_positions;
 		int encthreads = 0;
@@ -155,6 +164,10 @@ class Bin {
         bool saved = false;
         std::vector<std::string> sendtonames;
         std::vector<std::string> prevtexes;
+        std::vector<std::string> prevfiles;
+        std::vector<std::string> prevnames;  // Track previous element names to detect name changes
+        int pending_textures = 0;  // Number of TEX_SENT messages expected before bin is complete
+        int pending_files = 0;  // Number of FILE_SENT messages expected before bin is complete
 		Bin(int pos);
 		~Bin();
 		
@@ -176,7 +189,6 @@ class BinElement {
         std::string reljpath = "";
 		std::string jpegpath = "";
 		std::string oldjpegpath = "";
-        bool jpegsaved = false;
         bool autosavejpegsaved = false;
         long long filesize = 0;
 		GLuint tex;

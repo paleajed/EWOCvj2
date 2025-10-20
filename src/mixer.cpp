@@ -12448,7 +12448,6 @@ Layer* Mixer::read_layers(std::istream &rfile, const std::string result, std::ve
                 layend->clips->push_back(nclip);
             }
             std::string abspath;
-            bool isvid = false;
             //int clipfilecount = 0;
 			while (safegetline(rfile, istring)) {
 				if (istring == "ENDOFCLIPS") break;
@@ -12461,7 +12460,7 @@ Layer* Mixer::read_layers(std::istream &rfile, const std::string result, std::ve
 					if (istring == "FILENAME") {
                         safegetline(rfile, istring);
                         abspath = istring;
-                        if (clp->type == ELEM_LAYER && !isvid) {
+                        if (clp->type == ELEM_LAYER) {
                             // pass control to CLIPLAYER
                         }
                         else if (exists(istring)) {
@@ -12475,8 +12474,10 @@ Layer* Mixer::read_layers(std::istream &rfile, const std::string result, std::ve
                     if (istring == "RELPATH") {
                         safegetline(rfile, istring);
                         std::filesystem::current_path(mainprogram->contentpath);
-                        if (clp->type == ELEM_LAYER && !isvid) {
+                        bool passby = false;
+                        if (clp->type == ELEM_LAYER) {
                             // pass control to CLIPLAYER
+                            passby = true;
                         }
                         else if (clp->path == "" && exists(istring)) {
                             clp->path = pathtoplatform(std::filesystem::absolute(istring).generic_string());
@@ -12484,29 +12485,26 @@ Layer* Mixer::read_layers(std::istream &rfile, const std::string result, std::ve
                         else if (abspath == "") {
                             continue;
                         }
-                        bool found = false;
-                        if (!exists(clp->path)) {
-                            auto teststr = test_driveletters(abspath);
-                            if (teststr == "") {
-                                if (isvid) {
+                        if (clp->path == "" && !passby) {
+                            bool found = false;
+                            if (!exists(clp->path)) {
+                                auto teststr = test_driveletters(abspath);
+                                if (teststr == "") {
                                     mainmix->retargeting = true;
                                     this->newclippaths.push_back(clp->path);
                                     this->newpathclips.push_back(clp);
                                     clp->layer = layend;
+                                } else {
+                                    clp->path = teststr;
+                                    found = true;
                                 }
-                            }
-                            else {
-                                clp->path = teststr;
+                            } else {
                                 found = true;
                             }
+                            if (found) {
+                                clp->insert(layend, layend->clips->end() - 1);
+                            }
                         }
-                        else {
-                            found = true;
-                        }
-                        if (found) {
-                            clp->insert(layend, layend->clips->end() - 1);
-                        }
-                        isvid = false;
                     }
                     if (istring == "FILESIZE") {
                         safegetline(rfile, istring);
@@ -12532,6 +12530,11 @@ Layer* Mixer::read_layers(std::istream &rfile, const std::string result, std::ve
                                 clp->insert(layend, layend->clips->end() - 1);
                                 cliplay->close();
                             }
+                        }
+                        else {
+                            mainmix->save_layerfile(clp->path, cliplay, 0, 0);
+                            clp->insert(layend, layend->clips->end() - 1);
+                            cliplay->close();
                         }
 					}
                     if (istring == "JPEGPATH") {
@@ -14482,7 +14485,7 @@ void Mixer::handle_clips() {
                 lay2->cliploopbox->vtxcoords->h = lay2->loopbox->vtxcoords->h;
                 lay2->cliploopbox->upvtxtoscr();
                 draw_box(lay2->cliploopbox, -1);
-                if (!lay2->beatdetbut->value && !lay2->beats) {
+                if (!lay2->beatdetbut->value || !lay2->beats) {
                     draw_box(white, white,
                              lay2->cliploopbox->vtxcoords->x1 + (lay2->frame - lay2->startframe->value) * (lay2->cliploopbox->vtxcoords->w /
                                                                                (float) (lay2->endframe->value - lay2->startframe->value - 1)),

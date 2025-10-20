@@ -267,6 +267,7 @@ void BinsMain::handle(bool draw) {
 		if (mainprogram->rightmouse) {
 			mainprogram->renaming = EDIT_NONE;
 			SDL_StopTextInput();
+			binsmain->binrenamemap.erase(this->menubin->name);
 			this->menubin->name = mainprogram->backupname;
 			this->menubin = nullptr;
 			mainprogram->rightmouse = false;
@@ -688,7 +689,7 @@ void BinsMain::handle(bool draw) {
 
 	// manage SEND button
     Boxx box;
-    box.vtxcoords->x1 = -0.83f;
+    box.vtxcoords->x1 = -0.64f;
     box.vtxcoords->y1 = -0.98f;
     box.vtxcoords->w = 0.16f;
     box.vtxcoords->h = 0.085f;
@@ -700,19 +701,19 @@ void BinsMain::handle(bool draw) {
     ipbox.vtxcoords->h = 0.085f;
     ipbox.upvtxtoscr();
     Boxx connbox;
-    connbox.vtxcoords->x1 = -0.47f;
+    connbox.vtxcoords->x1 = -0.64f;
     connbox.vtxcoords->y1 = -0.98f;
     connbox.vtxcoords->w = 0.15f;
     connbox.vtxcoords->h = 0.085f;
     connbox.upvtxtoscr();
     Boxx seatbox;
-    seatbox.vtxcoords->x1 = 0.04f;
+    seatbox.vtxcoords->x1 = 0.18f;
     seatbox.vtxcoords->y1 = -0.98f;
     seatbox.vtxcoords->w = 0.3f;
     seatbox.vtxcoords->h = 0.085f;
     seatbox.upvtxtoscr();
     draw_box(&seatbox, -1);
-    render_text("Seatname:", white, -0.05f, -0.95f, 0.00075f, 0.0012f);
+    render_text("Seatname:", white, 0.08f, -0.95f, 0.00075f, 0.0012f);
     if (seatbox.in()) {
         if (mainprogram->leftmouse) {
             mainprogram->renamingseat = true;
@@ -723,7 +724,7 @@ void BinsMain::handle(bool draw) {
         }
     }
     if (mainprogram->renamingseat == false) {
-        render_text(mainprogram->seatname, white, 0.05f, -0.95f, 0.00075f, 0.0012f);
+        render_text(mainprogram->seatname, white, 0.19f, -0.95f, 0.00075f, 0.0012f);
     } else {
         if (mainprogram->renaming == EDIT_NONE) {
             mainprogram->renamingseat = false;
@@ -741,42 +742,129 @@ void BinsMain::handle(bool draw) {
             // Display status
             draw_box(&box, -1);
             if (mainprogram->discoveredSeats.empty()) {
-                render_text("SEARCHING...", white, -0.805f, -0.95f, 0.00075f, 0.0012f);
+                render_text("SEARCHING...", white, -0.615f, -0.95f, 0.00075f, 0.0012f);
             } else {
-                render_text("CONNECTING...", white, -0.805f, -0.95f, 0.00075f, 0.0012f);
+                render_text("CONNECTING...", white, -0.615f, -0.95f, 0.00075f, 0.0012f);
             }
 
-            if (mainprogram->connfailed) {
+            /*if (mainprogram->connfailed) {
                 if (mainprogram->connfailedmilli > 1000) mainprogram->connfailed = false;
                 draw_box(white, darkred1, &connbox, -1);
                 render_text("FAILED", white, -0.445f, -0.95f, 0.00075f, 0.0012f);
-            }
+            }*/
         }
         else if (mainprogram->connected == 1) {
             draw_box(white, darkgreen1, &box, -1);
-            render_text("CONNECTED", white, -0.805f, -0.95f, 0.00075f, 0.0012f);
+            render_text("CONNECTED", white, -0.615f, -0.95f, 0.00075f, 0.0012f);
         }
     }
     else {
-        draw_box(white, darkgreen1, &ipbox, -1);
-        render_text("SERVER @", white, -0.645f, -0.95f, 0.00075f, 0.0012f);
-        render_text(mainprogram->serverip, white, -0.45f, -0.95f, 0.00075f, 0.0012f);
+        // Server: show public IP (moved right to make room for IP input)
+		Boxx servipbox;
+		servipbox.vtxcoords->x1 = -0.64f;
+		servipbox.vtxcoords->y1 = -0.98f;
+		servipbox.vtxcoords->w = 0.18f;
+		servipbox.vtxcoords->h = 0.085f;
+		servipbox.upvtxtoscr();
+		draw_box(white, darkgreen1, &servipbox, -1);
+		render_text("SERVER @", white, -0.62f, -0.95f, 0.00075f, 0.0012f);
+		render_text(mainprogram->publicip, white, -0.4f, -0.95f, 0.00075f, 0.0012f);
+		render_text(mainprogram->localip, white, -0.25f, -0.95f, 0.00075f, 0.0012f);
+    }
+
+    // Manual server IP input box - ALWAYS AVAILABLE
+    Boxx serveripbox;
+    serveripbox.vtxcoords->x1 = -0.95f;
+    serveripbox.vtxcoords->y1 = -0.98f;
+    serveripbox.vtxcoords->w = 0.28f;
+    serveripbox.vtxcoords->h = 0.085f;
+    serveripbox.upvtxtoscr();
+
+    if (!mainprogram->enteringserverip) {
+        draw_box(white, darkblue, &serveripbox, -1);
+        std::string displayText = mainprogram->manualserverip.empty() ? "LOCAL SERVER" : mainprogram->manualserverip;
+        render_text(displayText, white, -0.93f, -0.95f, 0.00075f, 0.0012f);
+
+        // Click to start entering server IP
+        if (serveripbox.in()) {
+            if (mainprogram->leftmouse) {
+                mainprogram->enteringserverip = true;
+                mainprogram->renaming = EDIT_STRING;
+                mainprogram->inputtext = mainprogram->manualserverip;
+                mainprogram->cursorpos0 = mainprogram->inputtext.length();
+                SDL_StartTextInput();
+            }
+        }
+    } else {
+        // Currently entering server IP
+        draw_box(white, darkblue, &serveripbox, -1);
+        if (mainprogram->renaming == EDIT_NONE) {
+            // User finished entering
+            mainprogram->enteringserverip = false;
+            mainprogram->manualserverip = mainprogram->inputtext;
+
+            // If valid IP entered, attempt to connect
+            if (!mainprogram->manualserverip.empty() && mainprogram->manualserverip != "LOCAL SERVER") {
+                // Validate IP before connecting
+                struct sockaddr_in test_addr;
+                if (inet_pton(AF_INET, mainprogram->manualserverip.c_str(), &test_addr.sin_addr) > 0) {
+                    std::cout << "Connecting to remote server IP: " << mainprogram->manualserverip << std::endl;
+
+                    // If we're currently a server, stop being server
+                    if (mainprogram->server) {
+                        std::cout << "Quitting server role to connect to remote server" << std::endl;
+                        mainprogram->server = false;
+                        mainprogram->stop_discovery();
+                    }
+
+                    // Mark as disconnected so socket_client will create fresh socket
+                    mainprogram->connected = 0;
+                    mainprogram->serverip = mainprogram->manualserverip;
+                    mainprogram->autoConnectAttempted = true;
+
+                    if (inet_pton(AF_INET, mainprogram->serverip.c_str(), &mainprogram->serv_addr_client.sin_addr) > 0) {
+                        int opt = 1;
+                        std::thread sockclient(&Program::socket_client, mainprogram, mainprogram->serv_addr_client, opt);
+                        sockclient.detach();
+                    }
+                } else {
+                    std::cout << "Invalid IP address entered: " << mainprogram->manualserverip << std::endl;
+                }
+            }
+        } else {
+            // Show input text with cursor - validate and color accordingly
+            struct sockaddr_in test_addr;
+            bool validIP = (inet_pton(AF_INET, mainprogram->inputtext.c_str(), &test_addr.sin_addr) > 0);
+            float* textColor = validIP ? white : red;
+            render_text(mainprogram->inputtext, textColor, -0.86f, -0.95f, 0.00075f, 0.0012f);
+        }
     }
 
     if (mainprogram->connsocknames.size()) {
-        box.vtxcoords->x1 = -0.28f;
+        box.vtxcoords->x1 = -0.1f;
         box.vtxcoords->y1 = -0.98f;
         box.vtxcoords->w = 0.15f;
-        box.vtxcoords->h = 0.085f;
-        box.upvtxtoscr();
-        draw_box(&box, -1);
-        render_text("SHARE BIN", white, -0.255f, -0.95f, 0.00075f, 0.0012f);
-        if (box.in()) {
-            if (mainprogram->leftmouse) {
-                mainprogram->make_menu("sendmenu", mainprogram->sendmenu, mainprogram->connsocknames);
-                mainprogram->sendmenu->state = 2;
-                mainprogram->sendmenu->menux = mainprogram->mx;
-                mainprogram->sendmenu->menuy = mainprogram->my;
+        // Build list of clients not already in sendtonames
+        std::vector<std::string> available_clients;
+        for (const auto& client : mainprogram->connsocknames) {
+            if (std::find(this->currbin->sendtonames.begin(), this->currbin->sendtonames.end(), client) == this->currbin->sendtonames.end()) {
+                available_clients.push_back(client);
+            }
+        }
+
+        // Only show SHARE BIN box if there are clients we're not already sharing with
+        if (!available_clients.empty()) {
+            box.vtxcoords->h = 0.085f;
+            box.upvtxtoscr();
+            draw_box(&box, -1);
+            render_text("SHARE BIN", white, -0.075f, -0.95f, 0.00075f, 0.0012f);
+            if (box.in()) {
+                if (mainprogram->leftmouse) {
+                    mainprogram->make_menu("sendmenu", mainprogram->sendmenu, available_clients);
+                    mainprogram->sendmenu->state = 2;
+                    mainprogram->sendmenu->menux = mainprogram->mx;
+                    mainprogram->sendmenu->menuy = mainprogram->my;
+                }
             }
         }
     }
@@ -786,16 +874,37 @@ void BinsMain::handle(bool draw) {
     if (mainprogram->sendmenu) {
         k = mainprogram->handle_menu(mainprogram->sendmenu);
         if (k > -1) {
-            std::string selected_name = mainprogram->connsocknames[k];
-            this->currbin->sendtonames.push_back(selected_name);
-			if (this->currbin->name.substr(this->currbin->name.length() - 8, 8) != "(SHARED)") {
-				this->currbin->name += " (SHARED)";
-			}
+            // Build list of available clients again to get the correct name
+            std::vector<std::string> available_clients;
+            for (const auto& client : mainprogram->connsocknames) {
+                if (std::find(this->currbin->sendtonames.begin(), this->currbin->sendtonames.end(), client) == this->currbin->sendtonames.end()) {
+                    available_clients.push_back(client);
+                }
+            }
+
+            std::string selected_name;
+            if (k < available_clients.size()) {
+                selected_name = available_clients[k];
+                this->currbin->sendtonames.push_back(selected_name);
+            }
 			this->currbin->shared = true;
+			this->currbin->prevnames.clear();  // Clear to force full texture send
 			this->currbin->prevtexes.clear();  // Clear to force full texture send
 
             // If we're a client, send subscription request to server
             // If we're the server, register it locally
+			auto put_in_buffer = [](const char* str, char* walk, char* buffer_end) -> char* {
+				// buffer utility with bounds checking
+				size_t len = strlen(str);
+				if (walk + len + 1 > buffer_end) {
+					return nullptr;  // Buffer overflow would occur
+				}
+				for (size_t i = 0; i < len; i++) {
+					*walk++ = str[i];
+				}
+				*walk++ = '\0';
+				return walk;
+			};
             if (!mainprogram->server && mainprogram->connected) {
                 // Send SUBSCRIBE message to server
                 char subscribe_msg[1024];
@@ -977,11 +1086,15 @@ void BinsMain::handle(bool draw) {
 				bin->box->acolor[3] = 1.0f;
 			}
 			draw_box(bin->box, -1);
+			std::string namedisplay = bin->name;
+			if (bin->shared) {
+				namedisplay += " (SHARED)";
+			}
 			if (mainprogram->renaming != EDIT_NONE && bin == this->menubin) {
 				// bin renaming with keyboard
 				do_text_input(bin->box->vtxcoords->x1 + 0.015f, bin->box->vtxcoords->y1 + 0.018f, 0.00045f, 0.00075f, mainprogram->mx, mainprogram->my, mainprogram->xvtxtoscr(0.3f - 0.03f), 0, nullptr);
 			}
-			else render_text(bin->name, white, bin->box->vtxcoords->x1 + 0.015f, bin->box->vtxcoords->y1 + 0.018f, 0.00045f, 0.00075f);
+			else render_text(namedisplay, white, bin->box->vtxcoords->x1 + 0.015f, bin->box->vtxcoords->y1 + 0.018f, 0.00045f, 0.00075f);
 		}
 		if (!this->indragbox && this->dragbinsense) {
 			// dragging has moved (!this->draginbox) so start doing it
@@ -1087,7 +1200,11 @@ void BinsMain::handle(bool draw) {
 				if (mainprogram->my > under2 && mainprogram->my < upper) {
 					// draw dragged box
 					draw_box(white, black, this->dragbin->box->vtxcoords->x1, 1.0f - mainprogram->yscrtovtx(under1), this->dragbin->box->vtxcoords->w, this->dragbin->box->vtxcoords->h, -1);
-					render_text(this->dragbin->name, white, this->dragbin->box->vtxcoords->x1 + 0.015f, 1.0f - mainprogram->yscrtovtx(under1) + 0.018f, 0.00045f, 0.00075f);
+					std::string namedisplay = this->dragbin->name;
+					if (this->dragbin->shared) {
+						namedisplay += " (SHARED)";
+					}
+					render_text(namedisplay, white, this->dragbin->box->vtxcoords->x1 + 0.015f, 1.0f - mainprogram->yscrtovtx(under1) + 0.018f, 0.00045f, 0.00075f);
 					pos = i;
 					break;
 				}
@@ -2324,7 +2441,14 @@ void BinsMain::send_shared_bins() {
         bool brk = false;
 
         if (mainprogram->server) {
-            // Find the socket that corresponds to this name
+            // Don't send bin back to the server itself
+            if (name == mainprogram->seatname) continue;
+
+            // Don't echo the message back to whoever just sent it
+            if (!this->currbin->last_message_sender.empty() && name == this->currbin->last_message_sender) {
+                std::cout << "DEBUG: Skipping echo to message sender '" << name << "' for bin '" << this->currbin->name << "'" << std::endl;
+                continue;
+            }
             for (auto &elem: mainprogram->connmap) {
                 if (elem.first == name) {
                     sock = elem.second;  // Get the actual socket for this name
@@ -2341,93 +2465,180 @@ void BinsMain::send_shared_bins() {
             sock = mainprogram->sock;
         }
 
-        // Only send if currbin is shared
-        if (this->currbin->shared) {
+        // Only send if currbin is shared AND all textures have been received
+        if (this->currbin->shared && this->currbin->pending_textures == 0 && this->currbin->pending_files == 0) {
+            std::vector<std::string> tempfiles;
             std::vector<std::string> temptexes;
+            std::vector<std::string> tempnames;
             for (auto elem : this->currbin->elements) {
                 temptexes.push_back(elem->absjpath);
-            }
-            if (temptexes == this->currbin->prevtexes) {
-                return;
-            }
-
-            char buf[148480] = {0};
-            char *buf_end = buf + sizeof(buf);
-            char *walk = buf;
-
-            walk = put_in_buffer(mainprogram->seatname.c_str(), walk, buf_end);
-            if (!walk) continue;  // Buffer overflow
-
-            walk = put_in_buffer((this->currbin->name).c_str(), walk, buf_end);
-            if (!walk) continue;
-
-            for (int i = 0; i < 12; i++) {
-                for (int j = 0; j < 12; j++) {
-                    BinElement *binel = this->currbin->elements[i * 12 + j];
-                    walk = put_in_buffer(binel->name.c_str(), walk, buf_end);
-                    if (!walk) break;
-                    walk = put_in_buffer(binel->path.c_str(), walk, buf_end);
-                    if (!walk) break;
+                tempnames.push_back(elem->name);
+                if (elem->type == ELEM_LAYER || elem->type == ELEM_DECK || elem->type == ELEM_MIX) {
+                    tempfiles.push_back(elem->path);
                 }
-                if (!walk) break;
+                else {
+                    tempfiles.push_back("");
+                }
             }
-            if (!walk) continue;  // Buffer overflow occurred
 
-            // Calculate actual message size
-            size_t msg_size = walk - buf;
+            // Check if names or textures changed
+            bool names_changed = (tempnames != this->currbin->prevnames);
+            bool textures_changed = (temptexes != this->currbin->prevtexes);
+            bool files_changed = (tempfiles != this->currbin->prevfiles);
+            bool send_bin_metadata = names_changed || this->currbin->prevnames.empty();
+            bool send_textures = textures_changed || this->currbin->prevtexes.empty();
+            bool send_files = files_changed || this->currbin->prevfiles.empty();
 
-            char buf2[148495] = {0};
-            char *buf2_end = buf2 + sizeof(buf2);
-            char *walk2 = buf2;
+            // Skip if nothing changed
+            if (!send_bin_metadata && !send_textures && !send_files) {
+                continue;
+            }
 
-            walk2 = put_in_buffer("BIN_SENT", walk2, buf2_end);
-            if (!walk2) continue;
+            std::cout << "DEBUG: Sending bin '" << this->currbin->name << "' to '" << name
+                     << "' (names_changed=" << names_changed << ", textures_changed=" << textures_changed << ", files_changed=" << files_changed << ")" << std::endl;
 
-            walk2 = put_in_buffer(std::to_string(msg_size).c_str(), walk2, buf2_end);
-            if (!walk2) continue;
+            // First, count how many textures will be sent (only if textures changed)
+            int texture_count = 0;
+            if (send_textures) {
+                for (int i = 0; i < 12; i++) {
+                    for (int j = 0; j < 12; j++) {
+                        bool cond = false;
+                        if (this->currbin->prevtexes.empty()) {
+                            cond = true;
+                        }
+                        else {
+                            cond = (this->currbin->prevtexes[i * 12 + j] != temptexes[i * 12 + j]);
+                        }
+                        if (cond) {
+                            texture_count++;
+                        }
+                    }
+                }
+            }
 
-            // Append buf to buf2
-            if (walk2 + msg_size > buf2_end) continue;  // Check bounds
-            memcpy(walk2, buf, msg_size);
-            walk2 += msg_size;
-
-            send(sock, buf2, walk2 - buf2, 0);
-
-            // Send texture files for each BinElement
-            for (int i = 0; i < 12; i++) {
-                for (int j = 0; j < 12; j++) {
-                    BinElement *binel = this->currbin->elements[i * 12 + j];
-
-					bool cond = false;
-					if (this->currbin->prevtexes.empty()) {
-						cond = true;
-					}
-					else {
-						cond = (this->currbin->prevtexes[i * 12 + j] != temptexes[i * 12 + j]);
-					}
-
-                    if (cond) {
-                        // Try to open file if texture exists
-                        std::ifstream texfile;
-                        size_t filesize = 0;
-                        bool has_texture = false;
-
-                        if (binel->tex != -1 && !binel->absjpath.empty()) {
-                            texfile.open(binel->absjpath, std::ios::binary | std::ios::ate);
-                            if (texfile.is_open()) {
-                                filesize = texfile.tellg();
-                                texfile.seekg(0, std::ios::beg);
-                                has_texture = true;
+            // Then, count how many LAYER/DECK/MIX files will be sent (only if files changed)
+            int file_count = 0;
+            if (send_files) {
+                for (int i = 0; i < 12; i++) {
+                    for (int j = 0; j < 12; j++) {
+                        BinElement *binel = this->currbin->elements[i * 12 + j];
+                        bool cond = false;
+                        if (this->currbin->prevtexes.empty()) {
+                            cond = true;
+                        }
+                        else {
+                            cond = (this->currbin->prevfiles[i * 12 + j] != tempfiles[i * 12 + j]);
+                        }
+                        if (binel->type == ELEM_LAYER || binel->type == ELEM_DECK || binel->type == ELEM_MIX) {
+                            if (cond) {
+                                file_count++;
                             }
                         }
+                    }
+                }
+            }
 
-                        if (has_texture) {
-                            // Send actual texture file
+            // Only send BIN_SENT if names or paths changed
+            if (send_bin_metadata) {
+                char buf[148480] = {0};
+                char *buf_end = buf + sizeof(buf);
+                char *walk = buf;
+
+                walk = put_in_buffer(mainprogram->seatname.c_str(), walk, buf_end);
+                if (!walk) continue;  // Buffer overflow
+
+                walk = put_in_buffer((this->currbin->name).c_str(), walk, buf_end);
+                if (!walk) continue;
+
+                // Send texture count so receiver knows how many TEX_SENT messages to expect
+                walk = put_in_buffer(std::to_string(texture_count).c_str(), walk, buf_end);
+                if (!walk) continue;
+
+                // Send file count so receiver knows how many FILE_SENT messages to expect
+                walk = put_in_buffer(std::to_string(texture_count).c_str(), walk, buf_end);
+                if (!walk) continue;
+
+                for (int i = 0; i < 12; i++) {
+                    for (int j = 0; j < 12; j++) {
+                        BinElement *binel = this->currbin->elements[i * 12 + j];
+                        walk = put_in_buffer(binel->name.c_str(), walk, buf_end);
+                        if (!walk) break;
+                        walk = put_in_buffer(binel->path.c_str(), walk, buf_end);
+                        if (!walk) break;
+                    }
+                    if (!walk) break;
+                }
+                if (!walk) continue;  // Buffer overflow occurred
+
+                // Calculate actual message size
+                size_t msg_size = walk - buf;
+
+                char buf2[148495] = {0};
+                char *buf2_end = buf2 + sizeof(buf2);
+                char *walk2 = buf2;
+
+                walk2 = put_in_buffer("BIN_SENT", walk2, buf2_end);
+                if (!walk2) continue;
+
+                walk2 = put_in_buffer(std::to_string(msg_size).c_str(), walk2, buf2_end);
+                if (!walk2) continue;
+
+                // Append buf to buf2
+                if (walk2 + msg_size > buf2_end) continue;  // Check bounds
+                memcpy(walk2, buf, msg_size);
+                walk2 += msg_size;
+
+                send(sock, buf2, walk2 - buf2, 0);
+                std::cout << "DEBUG: Sent BIN_SENT for '" << this->currbin->name << "' with " << texture_count << " textures to follow" << std::endl;
+            }
+
+            // Send LAYER/DECK/MIX files for each BinElement
+            if (send_files) {
+                for (int i = 0; i < 12; i++) {
+                    for (int j = 0; j < 12; j++) {
+                        BinElement *binel = this->currbin->elements[i * 12 + j];
+
+                        if (binel->type != ELEM_LAYER && binel->type != ELEM_DECK && binel->type != ELEM_MIX) {
+                            continue;
+                        }
+
+                        bool cond = false;
+                        if (this->currbin->prevfiles.empty()) {
+                            cond = true;
+                        }
+                        else {
+                            cond = (this->currbin->prevfiles[i * 12 + j] != tempfiles[i * 12 + j]);
+                        }
+
+                        if (cond) {
+                            // Try to open file
+                            std::ifstream infile;
+                            size_t filesize = 0;
+
+                            infile.open(binel->path, std::ios::binary | std::ios::ate);
+                            if (infile.is_open()) {
+                                filesize = infile.tellg();
+                                infile.seekg(0, std::ios::beg);
+                            }
+
+                            std::string suffix;
+                            if (binel->type == ELEM_LAYER) {
+                                suffix = ".layer";
+                            }
+                            else if (binel->type == ELEM_DECK) {
+                                suffix = ".deck";
+                            }
+                            else if (binel->type == ELEM_MIX) {
+                                suffix = ".mix";
+                            }
+
+                            // Send actual LAYER/DECK/MIX file
                             // Calculate payload size FIRST (without building buffer yet)
                             size_t payload_base =
                                     //str_len(mainprogram->seatname) +
                                     str_len(this->currbin->name) +
                                     str_len(std::to_string(i * 12 + j)) +
+                                    str_len(suffix) +
                                     str_len(std::to_string(filesize)) +
                                     filesize;
 
@@ -2440,98 +2651,213 @@ void BinsMain::send_shared_bins() {
                             size_t buffer_size = header_estimate + filesize;
                             std::unique_ptr<char[]> completemsg(new char[buffer_size]());
                             char *completemsg_end = completemsg.get() + buffer_size;
-                            char *texwalk = completemsg.get();
+                            char *filewalk = completemsg.get();
 
-                            texwalk = put_in_buffer("TEX_SENT", texwalk, completemsg_end);
-                            if (!texwalk) {
-                                texfile.close();
+                            filewalk = put_in_buffer("FILE_SENT", filewalk, completemsg_end);
+                            if (!filewalk) {
+                                infile.close();
                                 continue;
                             }
 
-                            texwalk = put_in_buffer(msglen_str.c_str(), texwalk, completemsg_end);
-                            if (!texwalk) {
-                                texfile.close();
+                            filewalk = put_in_buffer(msglen_str.c_str(), filewalk, completemsg_end);
+                            if (!filewalk) {
+                                infile.close();
                                 continue;
                             }
 
-                            texwalk = put_in_buffer(mainprogram->seatname.c_str(), texwalk, completemsg_end);
-                            if (!texwalk) {
-                                texfile.close();
+                            filewalk = put_in_buffer(mainprogram->seatname.c_str(), filewalk, completemsg_end);
+                            if (!filewalk) {
+                                infile.close();
                                 continue;
                             }
 
-                            texwalk = put_in_buffer((this->currbin->name).c_str(), texwalk, completemsg_end);
-                            if (!texwalk) {
-                                texfile.close();
+                            filewalk = put_in_buffer((this->currbin->name).c_str(), filewalk, completemsg_end);
+                            if (!filewalk) {
+                                infile.close();
                                 continue;
                             }
 
-                            texwalk = put_in_buffer(std::to_string(i * 12 + j).c_str(), texwalk, completemsg_end);
-                            if (!texwalk) {
-                                texfile.close();
+                            filewalk = put_in_buffer(std::to_string(i * 12 + j).c_str(), filewalk, completemsg_end);
+                            if (!filewalk) {
+                                infile.close();
                                 continue;
                             }
 
-                            texwalk = put_in_buffer(std::to_string(filesize).c_str(), texwalk, completemsg_end);
-                            if (!texwalk) {
-                                texfile.close();
+                            filewalk = put_in_buffer(suffix.c_str(), filewalk, completemsg_end);
+                            if (!filewalk) {
+                                infile.close();
+                                continue;
+                            }
+
+                            filewalk = put_in_buffer(std::to_string(filesize).c_str(), filewalk, completemsg_end);
+                            if (!filewalk) {
+                                infile.close();
                                 continue;
                             }
 
                             // Read file data directly into message buffer
-                            texfile.read(texwalk, filesize);
-                            texfile.close();
+                            infile.read(filewalk, filesize);
+                            infile.close();
 
                             // Send complete message
-                            send(sock, completemsg.get(), texwalk - completemsg.get() + filesize, 0);
-                        } else {
-                            // No texture or file couldn't be opened - send placeholder
-                            // Calculate payload size FIRST
-                            size_t payload_base =
-                                    //str_len(mainprogram->seatname) +
-                                    str_len(this->currbin->name) +
-                                    str_len(std::to_string(i * 12 + j)) +
-                                    str_len("0");  // filesize = 0
-
-                            // Calculate total message length including msglen field itself
-                            size_t total_msglen = calculate_message_length(payload_base);
-                            std::string msglen_str = std::to_string(total_msglen);
-
-                            // Now build the buffer
-                            char texheader[256] = {0};
-                            char *texheader_end = texheader + sizeof(texheader);
-                            char *texwalk = texheader;
-
-                            texwalk = put_in_buffer("TEX_SENT", texwalk, texheader_end);
-                            if (!texwalk) continue;
-
-                            texwalk = put_in_buffer(msglen_str.c_str(), texwalk, texheader_end);
-                            if (!texwalk) continue;
-
-                            texwalk = put_in_buffer(mainprogram->seatname.c_str(), texwalk, texheader_end);
-                            if (!texwalk) continue;
-
-                            texwalk = put_in_buffer((this->currbin->name).c_str(), texwalk, texheader_end);
-                            if (!texwalk) continue;
-
-                            texwalk = put_in_buffer(std::to_string(i * 12 + j).c_str(), texwalk, texheader_end);
-                            if (!texwalk) continue;
-
-                            texwalk = put_in_buffer("0", texwalk, texheader_end);  // file size = 0
-                            if (!texwalk) continue;
-
-                            send(sock, texheader, texwalk - texheader, 0);
+                            send(sock, completemsg.get(), filewalk - completemsg.get() + filesize, 0);
                         }
                     }
                 }
             }
-			this->currbin->prevtexes = temptexes;
+
+            // Send texture files for each BinElement (only if textures need to be sent)
+            if (send_textures) {
+                for (int i = 0; i < 12; i++) {
+                    for (int j = 0; j < 12; j++) {
+                        BinElement *binel = this->currbin->elements[i * 12 + j];
+
+                        bool cond = false;
+                        if (this->currbin->prevtexes.empty()) {
+                            cond = true;
+                        }
+                        else {
+                            cond = (this->currbin->prevtexes[i * 12 + j] != temptexes[i * 12 + j]);
+                        }
+
+                        if (cond) {
+                            // Try to open file if texture exists
+                            std::ifstream infile;
+                            size_t filesize = 0;
+                            bool has_texture = false;
+
+                            if (binel->tex != -1 && !binel->absjpath.empty()) {
+                                infile.open(binel->absjpath, std::ios::binary | std::ios::ate);
+                                if (infile.is_open()) {
+                                    filesize = infile.tellg();
+                                    infile.seekg(0, std::ios::beg);
+                                    has_texture = true;
+                                }
+                            }
+
+                            if (has_texture) {
+                                // Send actual texture file
+                                // Calculate payload size FIRST (without building buffer yet)
+                                size_t payload_base =
+                                        //str_len(mainprogram->seatname) +
+                                        str_len(this->currbin->name) +
+                                        str_len(std::to_string(i * 12 + j)) +
+                                        str_len(std::to_string(filesize)) +
+                                        filesize;
+
+                                // Calculate total message length including msglen field itself
+                                size_t total_msglen = calculate_message_length(payload_base);
+                                std::string msglen_str = std::to_string(total_msglen);
+
+                                // Now build the actual buffer with correct sizes
+                                size_t header_estimate = 256;
+                                size_t buffer_size = header_estimate + filesize;
+                                std::unique_ptr<char[]> completemsg(new char[buffer_size]());
+                                char *completemsg_end = completemsg.get() + buffer_size;
+                                char *texwalk = completemsg.get();
+
+                                texwalk = put_in_buffer("TEX_SENT", texwalk, completemsg_end);
+                                if (!texwalk) {
+                                    infile.close();
+                                    continue;
+                                }
+
+                                texwalk = put_in_buffer(msglen_str.c_str(), texwalk, completemsg_end);
+                                if (!texwalk) {
+                                    infile.close();
+                                    continue;
+                                }
+
+                                texwalk = put_in_buffer(mainprogram->seatname.c_str(), texwalk, completemsg_end);
+                                if (!texwalk) {
+                                    infile.close();
+                                    continue;
+                                }
+
+                                texwalk = put_in_buffer((this->currbin->name).c_str(), texwalk, completemsg_end);
+                                if (!texwalk) {
+                                    infile.close();
+                                    continue;
+                                }
+
+                                texwalk = put_in_buffer(std::to_string(i * 12 + j).c_str(), texwalk, completemsg_end);
+                                if (!texwalk) {
+                                    infile.close();
+                                    continue;
+                                }
+
+                                texwalk = put_in_buffer(std::to_string(filesize).c_str(), texwalk, completemsg_end);
+                                if (!texwalk) {
+                                    infile.close();
+                                    continue;
+                                }
+
+                                // Read file data directly into message buffer
+                                infile.read(texwalk, filesize);
+                                infile.close();
+
+                                // Send complete message
+                                send(sock, completemsg.get(), texwalk - completemsg.get() + filesize, 0);
+                            } else {
+                                // No texture or file couldn't be opened - send placeholder
+                                // Calculate payload size FIRST
+                                size_t payload_base =
+                                        //str_len(mainprogram->seatname) +
+                                        str_len(this->currbin->name) +
+                                        str_len(std::to_string(i * 12 + j)) +
+                                        str_len("0");  // filesize = 0
+
+                                // Calculate total message length including msglen field itself
+                                size_t total_msglen = calculate_message_length(payload_base);
+                                std::string msglen_str = std::to_string(total_msglen);
+
+                                // Now build the buffer
+                                char texheader[256] = {0};
+                                char *texheader_end = texheader + sizeof(texheader);
+                                char *texwalk = texheader;
+
+                                texwalk = put_in_buffer("TEX_SENT", texwalk, texheader_end);
+                                if (!texwalk) continue;
+
+                                texwalk = put_in_buffer(msglen_str.c_str(), texwalk, texheader_end);
+                                if (!texwalk) continue;
+
+                                texwalk = put_in_buffer(mainprogram->seatname.c_str(), texwalk, texheader_end);
+                                if (!texwalk) continue;
+
+                                texwalk = put_in_buffer((this->currbin->name).c_str(), texwalk, texheader_end);
+                                if (!texwalk) continue;
+
+                                texwalk = put_in_buffer(std::to_string(i * 12 + j).c_str(), texwalk, texheader_end);
+                                if (!texwalk) continue;
+
+                                texwalk = put_in_buffer("0", texwalk, texheader_end);  // file size = 0
+                                if (!texwalk) continue;
+
+                                send(sock, texheader, texwalk - texheader, 0);
+                            }
+                        }
+                    }
+                }
+            }
+            
+            // Update tracking variables
+            this->currbin->prevfiles = tempfiles;
+            this->currbin->prevtexes = temptexes;
+            this->currbin->prevnames = tempnames;
         }
 
         if (!mainprogram->server) {
             // only send to server
             break;
         }
+    }
+
+    // Clear last_message_sender after processing this recipient
+    // This happens whether or not we actually sent (could be skipped due to pending_textures)
+    // Must clear so future messages can be processed
+    if (mainprogram->server) {
+        this->currbin->last_message_sender = "";
     }
 }
 
@@ -2579,16 +2905,74 @@ void BinsMain::receive_shared_bins() {
         std::string str(walk);
         walk += strlen(walk) + 1;
 
+        // Read texture count
+        std::string texture_count_str(walk);
+        int expected_textures = 0;
+        try {
+            expected_textures = std::stoi(texture_count_str);
+        } catch (...) {
+            expected_textures = 0;
+        }
+        walk += strlen(walk) + 1;
+
+        // Read LAYER/DECK/MIX file count
+        std::string file_count_str(walk);
+        int expected_files = 0;
+        try {
+            expected_files = std::stoi(file_count_str);
+        } catch (...) {
+            expected_files = 0;
+        }
+        walk += strlen(walk) + 1;
+
         Bin *binis = nullptr;
         for (Bin *bin: binsmain->bins) {
             if (bin->name == str) {
-                binis = bin;
-                break;
+				if (bin->shared) {
+					binis = bin;
+					break;
+				}
             }
         }
         if (!binis) binis = new_bin(str);
+
+        // Check if there's a pending send for this bin (last_message_sender is set)
+        // OR if we're still receiving textures from the previous message
+        // If so, postpone processing this message until the pending operations complete
+        if (!binis->last_message_sender.empty() || binis->pending_textures > 0 || binis->pending_files > 0) {
+            std::cout << "DEBUG: Postponing BIN_SENT for '" << str << "' - pending operations "
+                     << "(last_sender='" << binis->last_message_sender << "', pending_textures="
+                                         << binis->pending_textures << "', pending_files="
+                                         << binis->pending_files << ")" << std::endl;
+            // Don't remove from queue - will be processed next time
+            return;
+        }
+
         make_currbin(binis->pos);
         binis->shared = true;
+        binis->pending_textures = expected_textures;  // Store how many textures to expect
+        binis->pending_files = expected_files;  // Store how many textures to expect
+
+        // Set the owner to the sender if not already set
+        if (binis->owner.empty() && !messagesockname.empty()) {
+            binis->owner = messagesockname;
+            std::cout << "DEBUG: Setting bin '" << str << "' owner to '" << messagesockname << "'" << std::endl;
+        }
+
+        // Track who sent this message to avoid echoing it back
+        binis->last_message_sender = messagesockname;
+
+        std::cout << "DEBUG: Received bin '" << str << "' from '" << messagesockname << "' expecting " << expected_textures << " textures" << std::endl;
+
+        // SERVER: When receiving a bin from a client, add client to sendtonames for bidirectional sync
+        if (mainprogram->server && !messagesockname.empty()) {
+            // Check if this client is already in sendtonames
+            auto it = std::find(binis->sendtonames.begin(), binis->sendtonames.end(), messagesockname);
+            if (it == binis->sendtonames.end()) {
+                std::cout << "DEBUG: Server adding client '" << messagesockname << "' to bin '" << str << "' sendtonames for bidirectional sync" << std::endl;
+                binis->sendtonames.push_back(messagesockname);
+            }
+        }
 
         // Safely parse bin elements with bounds checking
         for (int i2 = 0; i2 < 12; i2++) {
@@ -2637,6 +3021,7 @@ void BinsMain::receive_shared_bins() {
                 for (const auto& subscriber_name : it->second) {
                     // Don't send back to the sender
                     if (subscriber_name == messagesockname) continue;
+                    if (subscriber_name == mainprogram->seatname) continue;
 
                     // Look up subscriber socket
                     auto sock_it = mainprogram->connmap.find(subscriber_name);
@@ -2670,18 +3055,23 @@ void BinsMain::receive_shared_bins() {
         if (!this->messagesocknames.empty()) {
             this->messagesocknames.erase(this->messagesocknames.begin());
         }
+
+		this->currbin->prevnames.clear();
+		for (auto elem : this->currbin->elements) {
+			this->currbin->prevnames.push_back(elem->name);
+		}
 	}
 }
 
 void BinsMain::receive_shared_textures() {
-	// receive sent texture files
-	if (!this->texmessages.empty()) {
+    // receive sent texture files
+    if (!this->texmessages.empty()) {
         // Use proper synchronization for texture message access
         std::lock_guard<std::mutex> lock(this->syncmutex);
-        
+
         // Process only one texture message at a time to avoid iterator invalidation
         if (this->texmessages.empty()) return;
-        
+
         char* texmessage = this->texmessages[0];
         char* rawtexmessage = nullptr;
         int rawtexmessagelength = 0;
@@ -2700,7 +3090,7 @@ void BinsMain::receive_shared_textures() {
             texmessagelength = this->texmessagelengths[0];
         }
 
-		// Process texture message safely
+        // Process texture message safely
         if (!texmessage) {
             // Clean up and return if null message
             this->texmessages.erase(this->texmessages.begin());
@@ -2718,7 +3108,7 @@ void BinsMain::receive_shared_textures() {
             }
             return;
         }
-        
+
         char *walk = texmessage;
         char *message_end = texmessage + texmessagelength;
 
@@ -2732,20 +3122,20 @@ void BinsMain::receive_shared_textures() {
         // The message here contains only: binname, position, filesize, [binary data]
 
         if (walk >= message_end) {
-			goto cleanup;
-		}
+            goto cleanup;
+        }
         binname = std::string(walk, strnlen(walk, message_end - walk));
         walk += binname.length() + 1;
 
         if (walk >= message_end) {
-			goto cleanup;
-		}
+            goto cleanup;
+        }
         posstr = std::string(walk, strnlen(walk, message_end - walk));
         walk += posstr.length() + 1;
 
         if (walk >= message_end) {
-			goto cleanup;
-		}
+            goto cleanup;
+        }
         filesizestr = std::string(walk, strnlen(walk, message_end - walk));
         walk += filesizestr.length() + 1;
 
@@ -2765,16 +3155,16 @@ void BinsMain::receive_shared_textures() {
             }
         }
 
-		if (targetbin && pos >= 0 && pos < 144) {
+        if (targetbin && pos >= 0 && pos < 144) {
             BinElement *binel = targetbin->elements[pos];
-            
+
             if (filesize == 0) {
                 // No texture - set to placeholder
                 blacken(binel->tex);
             } else if (filesize > 0 && filesize <= 50*1024*1024 && walk + filesize <= message_end) {  // Size limit and bounds check
                 // Receive texture file data
                 char *texturedata = walk;
-                
+
                 std::string jpath = find_unused_filename(remove_extension(basename(binel->path)), mainprogram->project->binsdir + targetbin->name + "/", ".jpeg");
 
                 // Write received data to temporary file
@@ -2786,12 +3176,37 @@ void BinsMain::receive_shared_textures() {
                     // Set jpeg paths for the received texture
                     binel->jpegpath = pathtoplatform(jpath);
                     binel->absjpath = pathtoplatform(jpath);
-					binel->reljpath = std::filesystem::relative(binel->absjpath, mainprogram->project->binsdir).generic_string();
-                    binel->jpegsaved = true;
+                    binel->reljpath = std::filesystem::relative(binel->absjpath, mainprogram->project->binsdir).generic_string();
+
+                    std::cout << "DEBUG: Loading texture from: " << binel->absjpath << std::endl;
+                    std::cout << "DEBUG: File exists: " << (exists(binel->absjpath) ? "YES" : "NO") << std::endl;
+                    std::cout << "DEBUG: Old texture ID: " << binel->tex << std::endl;
+
+                    // Delete old texture and create a new one to ensure clean state
+                    if (binel->tex != -1) {
+                        glDeleteTextures(1, &binel->tex);
+                    }
+                    glGenTextures(1, &binel->tex);
+                    glBindTexture(GL_TEXTURE_2D, binel->tex);
+                    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR);
+                    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
+                    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_BORDER);
+                    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_BORDER);
+
+                    std::cout << "DEBUG: New texture ID: " << binel->tex << std::endl;
                     open_thumb(binel->absjpath, binel->tex);
+
+                    std::cout << "DEBUG: Texture loaded for bin '" << binname << "' position " << pos << std::endl;
                 } else {
-                    std::cout << "DEBUG: Failed to create temporary file for texture" << std::endl;
+                    std::cout << "DEBUG: Failed to create temporary file for texture at: " << jpath << std::endl;
                 }
+            }
+
+            // Decrement pending texture count
+            if (targetbin->pending_textures > 0) {
+                targetbin->pending_textures--;
+                std::cout << "DEBUG: Received texture for bin '" << binname << "', "
+                          << targetbin->pending_textures << " textures remaining" << std::endl;
             }
         }
 
@@ -2812,16 +3227,17 @@ void BinsMain::receive_shared_textures() {
                     for (const auto& subscriber_name : subscribers) {
                         // Don't send back to the sender
                         if (subscriber_name == texmessagesockname) continue;
+                        if (subscriber_name == mainprogram->seatname) continue;
 
                         // Look up subscriber socket
                         auto sock_it = mainprogram->connmap.find(subscriber_name);
                         if (sock_it != mainprogram->connmap.end()) {
-                            #ifdef WINDOWS
+#ifdef WINDOWS
                             SOCKET subscriber_socket = sock_it->second;
-                            #endif
-                            #ifdef POSIX
+#endif
+#ifdef POSIX
                             int subscriber_socket = sock_it->second;
-                            #endif
+#endif
 
                             // Forward the raw texture message
                             send(subscriber_socket, rawtexmessage, rawtexmessagelength, 0);
@@ -2855,7 +3271,227 @@ void BinsMain::receive_shared_textures() {
         if (!this->texmessagesocknames.empty()) {
             this->texmessagesocknames.erase(this->texmessagesocknames.begin());
         }
-	}
+
+        this->currbin->prevtexes.clear();
+        for (auto elem : this->currbin->elements) {
+            this->currbin->prevtexes.push_back(elem->absjpath);
+        }
+    }
+}
+
+void BinsMain::receive_shared_files() {
+    // receive sent LAYER/DECK/MIX files
+    if (!this->filemessages.empty()) {
+        // Use proper synchronization for file message access
+        std::lock_guard<std::mutex> lock(this->syncmutex);
+
+        // Process only one file message at a time to avoid iterator invalidation
+        if (this->filemessages.empty()) return;
+
+        char* filemessage = this->filemessages[0];
+        char* rawfilemessage = nullptr;
+        int rawfilemessagelength = 0;
+        if (mainprogram->server && !this->rawfilemessages.empty()) {
+            rawfilemessage = this->rawfilemessages[0];
+        }
+        if (mainprogram->server && !this->rawfilemessagelengths.empty()) {
+            rawfilemessagelength = this->rawfilemessagelengths[0];
+        }
+        std::string filemessagesockname;
+        if (!this->filemessagesocknames.empty()) {
+            filemessagesockname = this->filemessagesocknames[0];
+        }
+        int filemessagelength = 0;
+        if (!this->filemessagelengths.empty()) {
+            filemessagelength = this->filemessagelengths[0];
+        }
+
+        // Process file message safely
+        if (!filemessage) {
+            // Clean up and return if null message
+            this->filemessages.erase(this->filemessages.begin());
+            if (mainprogram->server && !this->rawfilemessages.empty()) {
+                this->rawfilemessages.erase(this->rawfilemessages.begin());
+            }
+            if (mainprogram->server && !this->rawfilemessagelengths.empty()) {
+                this->rawfilemessagelengths.erase(this->rawfilemessagelengths.begin());
+            }
+            if (!this->filemessagelengths.empty()) {
+                this->filemessagelengths.erase(this->filemessagelengths.begin());
+            }
+            if (!this->filemessagesocknames.empty()) {
+                this->filemessagesocknames.erase(this->filemessagesocknames.begin());
+            }
+            return;
+        }
+
+        char *walk = filemessage;
+        char *message_end = filemessage + filemessagelength;
+
+        // Initialize all variables before any goto statements to avoid crossing initialization
+        int pos = 0, filesize = 0;
+        Bin *targetbin = nullptr;
+        std::string binname, posstr, typestr, filesizestr;
+
+        // Safely parse file message with bounds checking
+        // Note: seatname was already parsed by socket_client/socket_server_receive
+        // The message here contains only: binname, position, filetype, filesize, [binary data]
+
+        if (walk >= message_end) {
+            goto cleanup;
+        }
+        binname = std::string(walk, strnlen(walk, message_end - walk));
+        walk += binname.length() + 1;
+
+        if (walk >= message_end) {
+            goto cleanup;
+        }
+        posstr = std::string(walk, strnlen(walk, message_end - walk));
+        walk += posstr.length() + 1;
+
+        if (walk >= message_end) {
+            goto cleanup;
+        }
+        typestr = std::string(walk, strnlen(walk, message_end - walk));
+        walk += typestr.length() + 1;
+
+        if (walk >= message_end) {
+            goto cleanup;
+        }
+        filesizestr = std::string(walk, strnlen(walk, message_end - walk));
+        walk += filesizestr.length() + 1;
+
+        try {
+            pos = std::stoi(posstr);
+            filesize = std::stoi(filesizestr);
+        } catch (const std::exception& e) {
+            std::cout << "DEBUG: Invalid file message format" << std::endl;
+            goto cleanup;
+        }
+
+        // Find the target bin
+        for (Bin *bin : this->bins) {
+            if (bin->name == binname) {
+                targetbin = bin;
+                break;
+            }
+        }
+
+        if (targetbin && pos >= 0 && pos < 144) {
+            BinElement *binel = targetbin->elements[pos];
+
+            if (filesize > 0 && filesize <= 50*1024*1024 && walk + filesize <= message_end) {  // Size limit and bounds check
+                // Receive file data
+                char *filedata = walk;
+
+                std::string jpath = find_unused_filename(remove_extension(basename(binel->path)), mainprogram->project->binsdir + targetbin->name + "/", typestr);
+
+                // Write received data to file
+                std::ofstream outfile(jpath, std::ios::binary);
+                if (outfile.is_open()) {
+                    outfile.write(filedata, filesize);
+                    outfile.close();
+                    
+                    binel->path = jpath;
+
+                    if (typestr == ".layer") {
+                        binel->type = ELEM_LAYER;
+                    }
+                    else if (typestr == ".deck") {
+                        binel->type = ELEM_DECK;
+                    }
+                    else if (typestr == ".mix") {
+                        binel->type = ELEM_MIX;
+                    }
+
+                    std::cout << "DEBUG: Loading " << typestr << " file from: " << binel->path << std::endl;
+                    std::cout << "DEBUG: File exists: " << (exists(binel->absjpath) ? "YES" : "NO") << std::endl;
+                    std::cout << "DEBUG: Old texture ID: " << binel->tex << std::endl;
+                } else {
+                    std::cout << "DEBUG: Failed to create file in bin directory for " + typestr + " file at: " << jpath << std::endl;
+                }
+            }
+
+            // Decrement pending file count
+            if (targetbin->pending_files > 0) {
+                targetbin->pending_files--;
+                std::cout << "DEBUG: Received file for bin '" << binname << "', "
+                          << targetbin->pending_files << " files remaining" << std::endl;
+            }
+        }
+
+        // SERVER: Forward file message to all subscribed clients (except sender)
+        if (mainprogram->server && rawfilemessage && rawfilemessagelength > 0 && targetbin) {
+            // Parse sender name from the beginning of filemessage
+            // Note: The sender name should have been stored in filemessagesockname
+
+            // Find subscribers for this bin
+            // We need to identify the bin owner - for now assume it's from messagesockname
+            std::lock_guard<std::mutex> sub_lock(mainprogram->subscriptionMutex);
+
+            // Try to find matching subscription - search through all keys
+            for (auto& [key, subscribers] : mainprogram->subscriptionMap) {
+                const auto& [owner, bin_name] = key;
+                if (bin_name == binname) {
+                    // Forward to all subscribers except the sender
+                    for (const auto& subscriber_name : subscribers) {
+                        // Don't send back to the sender
+                        if (subscriber_name == filemessagesockname) continue;
+                        if (subscriber_name == mainprogram->seatname) continue;
+
+                        // Look up subscriber socket
+                        auto sock_it = mainprogram->connmap.find(subscriber_name);
+                        if (sock_it != mainprogram->connmap.end()) {
+#ifdef WINDOWS
+                            SOCKET subscriber_socket = sock_it->second;
+#endif
+#ifdef POSIX
+                            int subscriber_socket = sock_it->second;
+#endif
+
+                            // Forward the raw texture message
+                            send(subscriber_socket, rawfilemessage, rawfilemessagelength, 0);
+                        }
+                    }
+                    break;  // Found the bin, no need to continue
+                }
+            }
+        }
+
+        cleanup:
+        // Clean up processed message and free memory
+        if (rawfilemessage && rawfilemessagelength > 0) {
+            free(rawfilemessage);
+        }
+        if (filemessage && filemessagelength > 0) {
+            free(filemessage);
+        }
+
+        // Remove from vectors
+        this->filemessages.erase(this->filemessages.begin());
+        if (mainprogram->server && !this->rawfilemessages.empty()) {
+            this->rawfilemessages.erase(this->rawfilemessages.begin());
+        }
+        if (mainprogram->server && !this->rawfilemessagelengths.empty()) {
+            this->rawfilemessagelengths.erase(this->rawfilemessagelengths.begin());
+        }
+        if (!this->filemessagelengths.empty()) {
+            this->filemessagelengths.erase(this->filemessagelengths.begin());
+        }
+        if (!this->filemessagesocknames.empty()) {
+            this->filemessagesocknames.erase(this->filemessagesocknames.begin());
+        }
+
+        this->currbin->prevfiles.clear();
+        for (auto elem : this->currbin->elements) {
+            if (elem->type == ELEM_LAYER || elem->type == ELEM_DECK || elem->type == ELEM_MIX) {
+                this->currbin->prevfiles.push_back(elem->path);
+            }
+            else {
+                this->currbin->prevfiles.push_back("");
+            }
+        }
+    }
 }
 
 
@@ -2932,7 +3568,6 @@ void BinsMain::open_bin(std::string path, Bin *bin, bool newbin) {
 				if (istring == "ABSJPEGPATH") {
 					safegetline(rfile, istring);
                     if (exists(istring)) {
-                        bin->elements[pos]->jpegsaved = true;
                         bin->elements[pos]->absjpath = istring;
                         bin->elements[pos]->jpegpath = istring;
                         if (bin->elements[pos]->name != "") {
@@ -2952,7 +3587,6 @@ void BinsMain::open_bin(std::string path, Bin *bin, bool newbin) {
                     safegetline(rfile, istring);
                     bin->elements[pos]->reljpath = istring;
                     if (bin->elements[pos]->absjpath == "" && istring != "") {
-                        bin->elements[pos]->jpegsaved = true;
                         std::filesystem::current_path(mainprogram->project->binsdir);
                         bin->elements[pos]->absjpath = std::filesystem::absolute(istring).generic_string();
                         bin->elements[pos]->jpegpath = bin->elements[pos]->absjpath;
@@ -2986,10 +3620,6 @@ void BinsMain::open_bin(std::string path, Bin *bin, bool newbin) {
 
 void BinsMain::save_bin(std::string path) {
 	// save bin file
-	if (this->currbin->shared) {
-		// dont save shared bins : reminder
-		return;
-	}
 	std::vector<std::string> filestoadd;
 	std::ofstream wfile;
 	wfile.open(path.c_str());
@@ -3120,6 +3750,7 @@ int BinsMain::read_binslist() {
 		}
 	}
 	rfile.close();
+
 	return currbin;
 }
 
@@ -3213,16 +3844,7 @@ void BinsMain::open_files_bin() {
 		return;
 	}
 	std::string str = mainprogram->paths[mainprogram->counting];
-	if (str != "SCRAMBLED20011975") {
-		open_handlefile(str, mainprogram->pathtexes[mainprogram->counting]);
-	}
-	else {
-		// mark this element not to be updated
-		this->inputtexes.push_back(-1);
-		this->inputtypes.push_back(ELEM_FILE);
-		this->inputjpegpaths.push_back("");
-		this->addpaths.push_back("SCRAMBLED20011975");
-	}
+	open_handlefile(str, mainprogram->pathtexes[mainprogram->counting]);
 	mainprogram->counting++;
 }
 
@@ -3365,48 +3987,49 @@ void BinsMain::save_binjpegs() {
                     } else {
                         blacken(bin->elements[pos]->tex);
                     }
-                    bin->elements[pos]->jpegsaved = true;
                 } else {
                     bool dummy = false;
                 }
                 bin->open_positions.erase(pos);
             } else {
                 // each loop iteration, save ten bin elements / element jpegs to prepare for autosave
-                std::string str = mainprogram->project->autosavedir + "temp/bins/" + bin->name;
-                if (!exists(str)) {
-                    std::filesystem::create_directories(std::filesystem::path(str));
-                }
-                int cnt = 0;
-                bool brk = false;
-                for (Bin *bin: this->bins) {
-                    for (BinElement *elem: bin->elements) {
-                        if (elem->path != "") {
-                            std::string elempath = str + "/" + basename(elem->path);
-                            if (!exists(elempath)) {
-                                if (elem->type == ELEM_LAYER || elem->type == ELEM_DECK || elem->type == ELEM_MIX) {
-                                    copy_file(elem->path, elempath);
-                                    cnt++;
-                                }
-                            }
-                            if (cnt == 10) {
-                                brk = true;
-                                break;
-                            }
-                        }
-                    }
-                    if (brk) break;
-                }
-                for (BinElement *binel: bin->elements) {
-                    if (binel->path != "") {
-                        if (!binel->autosavejpegsaved) {
-                            std::string jpgpath = str + "/" + basename(binel->jpegpath);
-                            binel->autosavejpegsaved = true;
-                            if (binel->jpegpath != "") save_thumb(jpgpath, binel->tex);
-                            cnt++;
-                            if (cnt == 10) break;
-                        }
-                    }
-                }
+				if (mainprogram->renaming != EDIT_BINNAME) {
+					std::string str = mainprogram->project->autosavedir + "temp/bins/" + bin->name;
+					if (!exists(str)) {
+						std::filesystem::create_directories(std::filesystem::path(str));
+					}
+					int cnt = 0;
+					bool brk = false;
+					for (Bin *bin: this->bins) {
+						for (BinElement *elem: bin->elements) {
+							if (elem->path != "") {
+								std::string elempath = str + "/" + basename(elem->path);
+								if (!exists(elempath)) {
+									if (elem->type == ELEM_LAYER || elem->type == ELEM_DECK || elem->type == ELEM_MIX) {
+										copy_file(elem->path, elempath);
+										cnt++;
+									}
+								}
+								if (cnt == 10) {
+									brk = true;
+									break;
+								}
+							}
+						}
+						if (brk) break;
+					}
+					for (BinElement *binel: bin->elements) {
+						if (binel->path != "") {
+							if (!binel->autosavejpegsaved) {
+								std::string jpgpath = str + "/" + basename(binel->jpegpath);
+								binel->autosavejpegsaved = true;
+								if (binel->jpegpath != "") save_thumb(jpgpath, binel->tex);
+								cnt++;
+								if (cnt == 10) break;
+							}
+						}
+					}
+				}
             }
         }
     }

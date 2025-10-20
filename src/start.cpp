@@ -550,9 +550,23 @@ std::string test_driveletters(std::string path) {
     }
 
     auto driveletters = getListOfDrives();
+
+    // First try the last successful drive letter if we have one
+    if (!mainprogram->lastSuccessfulDrive.empty()) {
+        std::string newpath = mainprogram->lastSuccessfulDrive + relativePart;
+        if (exists(newpath)) {
+            return pathtoplatform(newpath);
+        }
+    }
+
+    // Try all drive letters if the cached one didn't work
     for (auto letter : driveletters) {
+        // Skip if this is the cached drive we already tried
+        if (letter == mainprogram->lastSuccessfulDrive) continue;
+
         std::string newpath = letter + relativePart;
         if (exists(newpath)) {
+            mainprogram->lastSuccessfulDrive = letter;  // Cache successful drive
             return pathtoplatform(newpath);
         }
     }
@@ -611,9 +625,23 @@ std::string test_driveletters(std::string path) {
     }
 
     auto mountPoints = getListOfDrives();
+
+    // First try the last successful mount point if we have one
+    if (!mainprogram->lastSuccessfulDrive.empty()) {
+        std::string newpath = mainprogram->lastSuccessfulDrive + relativePart;
+        if (exists(newpath)) {
+            return pathtoplatform(newpath);
+        }
+    }
+
+    // Try all mount points if the cached one didn't work
     for (const auto& mountPoint : mountPoints) {
+        // Skip if this is the cached mount point we already tried
+        if (mountPoint == mainprogram->lastSuccessfulDrive) continue;
+
         std::string newpath = mountPoint + relativePart;
         if (exists(newpath)) {
+            mainprogram->lastSuccessfulDrive = mountPoint;  // Cache successful mount point
             return pathtoplatform(newpath);
         }
     }
@@ -4866,6 +4894,13 @@ void do_text_input(float x, float y, float sx, float sy, int mx, int my, float w
 		}
 		if (found == false) {
 			//when clicked outside path, cancel edit
+            if (mainprogram->renaming == EDIT_BINNAME) {
+                for (BinElement *elem: binsmain->menubin->elements) {
+                    if (elem->path != "") {
+                        elem->autosavejpegsaved = false;
+                    }
+                }
+            }
             mainmix->adaptnumparam = nullptr;
             mainmix->adapttextparam = nullptr;
 			if (item) item->renaming = false;
@@ -5245,6 +5280,14 @@ void the_loop() {
         loopstation = lpc;
     }
 
+    // do current dir paths exist?  reminder : others?
+    if (!exists(mainprogram->currfilesdir)) {
+        mainprogram->currfilesdir = mainprogram->contentpath;
+    }
+
+    // Track if server thread has been started to prevent duplicate server threads
+    static bool serverThreadStarted = false;
+
     if (!mainprogram->server) {
         if (mainprogram->connected == 0) {
             // Auto-connect to first seat or become server
@@ -5274,17 +5317,43 @@ void the_loop() {
                 auto now = std::chrono::steady_clock::now();
                 if (std::chrono::duration_cast<std::chrono::seconds>(now - mainprogram->discoveryStartTime).count() >=
                     5) {
-                    mainprogram->autoServerAttempted = true;
-                    std::cout << "No seats found after 5 seconds, becoming server" << std::endl;
-                    mainprogram->serverip = mainprogram->localip;
-                    if (inet_pton(AF_INET, mainprogram->localip.c_str(), &mainprogram->serv_addr_server.sin_addr) > 0) {
-                        int opt = 1;
-                        mainprogram->server = true;
-                        std::thread sockserver(&Program::socket_server, mainprogram, mainprogram->serv_addr_server,
-                                               opt);
-                        sockserver.detach();
-                        std::thread broadcastThread(&Program::discovery_broadcast, mainprogram);
-                        broadcastThread.detach();
+                    // Final check: re-acquire lock and verify seats list is STILL empty
+                    // This prevents split-brain if another server appeared during the wait
+                    std::unique_lock<std::mutex> finalLock(mainprogram->discoveryMutex);
+                    if (mainprogram->discoveredSeats.empty()) {
+                        mainprogram->autoServerAttempted = true;
+                        finalLock.unlock();
+
+                        std::cout << "No seats found after 5 seconds, becoming server" << std::endl;
+                        mainprogram->serverip = mainprogram->localip;
+
+                        // Fetch public IP for remote connections
+                        std::thread publicIPThread(&Program::fetch_public_ip, mainprogram);
+                        publicIPThread.detach();
+
+                        if (inet_pton(AF_INET, mainprogram->localip.c_str(), &mainprogram->serv_addr_server.sin_addr) > 0) {
+                            int opt = 1;
+                            mainprogram->server = true;
+                            serverThreadStarted = true;  // Mark that server thread is starting to prevent duplicate thread creation
+                            std::thread sockserver(&Program::socket_server, mainprogram, mainprogram->serv_addr_server,
+                                                   opt);
+                            sockserver.detach();
+                            std::thread broadcastThread(&Program::discovery_broadcast, mainprogram);
+                            broadcastThread.detach();
+                        }
+                    } else {
+                        // Another server appeared! Connect to it instead
+                        std::cout << "DEBUG: Server appeared during promotion wait, connecting instead" << std::endl;
+                        mainprogram->autoServerAttempted = true;
+                        mainprogram->autoConnectAttempted = true;
+                        mainprogram->serverip = mainprogram->discoveredSeats[0].ip;
+                        finalLock.unlock();
+
+                        if (inet_pton(AF_INET, mainprogram->serverip.c_str(), &mainprogram->serv_addr_client.sin_addr) > 0) {
+                            int opt = 1;
+                            std::thread sockclient(&Program::socket_client, mainprogram, mainprogram->serv_addr_client, opt);
+                            sockclient.detach();
+                        }
                     }
                 }
             }
@@ -5293,6 +5362,22 @@ void the_loop() {
 
     // check if general video resolution changed, and reinitialize all textures concerned
     mainprogram->handle_changed_owoh();
+
+    // Check if we were promoted to server during failover and need to start server thread
+    if (mainprogram->server && !serverThreadStarted) {
+        serverThreadStarted = true;
+        std::cout << "DEBUG: Starting server thread after promotion" << std::endl;
+        int opt = 1;
+        std::thread sockserver(&Program::socket_server, mainprogram, mainprogram->serv_addr_server, opt);
+        sockserver.detach();
+        if (!mainprogram->discoveryRunning) {
+            std::thread broadcastThread(&Program::discovery_broadcast, mainprogram);
+            broadcastThread.detach();
+        }
+    } else if (!mainprogram->server && serverThreadStarted) {
+        // Reset flag if we transition back to client
+        serverThreadStarted = false;
+    }
 
     // if not server then try to connect the client
     if (!mainprogram->server && !mainprogram->connfailed) mainprogram->startclient.notify_all();
@@ -5689,6 +5774,7 @@ void the_loop() {
 
     binsmain->receive_shared_bins();
     binsmain->receive_shared_textures();
+    binsmain->receive_shared_files();
 
 
 
@@ -8593,6 +8679,13 @@ int main(int argc, char* argv[]) {
                             }
                             mainmix->adaptnumparam = nullptr;
                         }
+                        else if (mainprogram->renaming == EDIT_BINNAME) {
+                            for (BinElement *elem: binsmain->menubin->elements) {
+                                if (elem->path != "") {
+                                    elem->autosavejpegsaved = false;
+                                }
+                            }
+                        }
                         mainmix->adapttextparam = nullptr;
                         mainprogram->renaming = EDIT_NONE;
                         // UNDO registration
@@ -8624,7 +8717,9 @@ int main(int argc, char* argv[]) {
                     }
                 }
                 if (mainprogram->renaming == EDIT_BINNAME) {
+                    binsmain->binrenamemap.erase(binsmain->menubin->name);
                     binsmain->menubin->name = mainprogram->inputtext;
+                    binsmain->binrenamemap[binsmain->menubin->name] = mainprogram->backupname;
                 } else if (mainprogram->renaming == EDIT_BINELEMNAME) {
                     binsmain->renamingelem->name = mainprogram->inputtext;
                 } else if (mainprogram->renaming == EDIT_SHELFELEMNAME) {

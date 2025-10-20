@@ -674,6 +674,7 @@ class Program {
 		std::vector<std::string> paths;
 		int counting = 0;
 		std::string pathto;
+		std::string lastSuccessfulDrive = "";  // Cache for test_driveletters optimization
         Button *toscreenA;
         Button *toscreenB;
         Button *toscreenM;
@@ -907,6 +908,7 @@ class Program {
 		EDIT_TYPE renaming = EDIT_NONE;
         bool renamingseat = false;
         bool renamingip = false;
+        bool enteringserverip = false;
         Boxx* renamingbox;
 		std::string choosedir = "";
 		std::string inputtext;
@@ -1040,6 +1042,8 @@ class Program {
         std::string serverip = "0.0.0.0";
         bool serveripchanged = false;
         std::string localip;
+        std::string publicip;  // Public/internet IP for remote connections
+        std::string manualserverip;  // Manually entered server IP for clients
         std::string broadcastip;
         struct sockaddr_in serv_addr_server;
         struct sockaddr_in serv_addr_client;
@@ -1228,6 +1232,7 @@ class Program {
         void stop_discovery();
         void discovery_broadcast();
         void discovery_listen();
+        void fetch_public_ip();
         void stream_to_v4l2loopbacks();
         void postponed_to_front(std::string title);
         void postponed_to_front_win(std::string title, SDL_Window *win = nullptr);
