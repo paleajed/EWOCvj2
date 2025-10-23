@@ -2988,16 +2988,6 @@ void onestepfrom(bool stage, Node *node, Node *prevnode, GLuint prevfbotex, GLui
 			mainprogram->uniformCache->setFloat("drywet", effect->drywet->value);
             GLuint effectProgram = 0;
 			if (effect->onoffbutton->value) {
-                // Switch to effect-specific shader program if available
-                if (effect->type >= 0 && effect->type < 43 && mainprogram->EffectShaderPrograms[effect->type] != 0) {
-                    effectProgram = mainprogram->EffectShaderPrograms[effect->type];
-                    glUseProgram(effectProgram);
-                    // Recreate uniform cache for the effect program
-                    delete mainprogram->uniformCache;
-                    mainprogram->uniformCache = new UniformCache(effectProgram);
-                }
-
-                // Set parameters (now on the effect-specific shader if available)
                 mainprogram->uniformCache->setFloat("drywet", effect->drywet->value);
                 for (int i = 0; i < effect->params.size(); i++) {
                     Param *par = effect->params[i];
@@ -3647,13 +3637,6 @@ void onestepfrom(bool stage, Node *node, Node *prevnode, GLuint prevfbotex, GLui
             } else {
                 if (!lay->onhold)
                     draw_box(nullptr, black, -1.0f, 1.0f, 2.0f, -2.0f, sx, sy, sc, op, 0, prevfbotex, 0, 0, false);
-            }
-
-            // Restore main shader program if we switched to an effect program
-            if (effectProgram != 0) {
-                glUseProgram(mainprogram->ShaderProgram);
-                delete mainprogram->uniformCache;
-                mainprogram->uniformCache = new UniformCache(mainprogram->ShaderProgram);
             }
 
             if (effect->node == lay->lasteffnode[0]) {
@@ -7951,14 +7934,8 @@ int main(int argc, char* argv[]) {
         std::cout << "ARB_parallel_shader_compile not supported" << std::endl;
     }
 
-    // Compile effect shaders in parallel (also compiles streamlined core shader)
-    mainprogram->compile_effect_shaders();
-
-    // Only compile the full monolithic shader if the core shader compilation failed
-    if (mainprogram->ShaderProgram == 0) {
-        std::cout << "Core shader compilation failed, falling back to monolithic shader..." << std::endl;
-        mainprogram->ShaderProgram = mainprogram->set_shader();
-    }
+    // Compile the monolithic shader (faster than splitting into 43 effect shaders)
+    mainprogram->ShaderProgram = mainprogram->set_shader();
 
     mainprogram->uniformCache = new UniformCache(mainprogram->ShaderProgram);
     glUseProgram(mainprogram->ShaderProgram);

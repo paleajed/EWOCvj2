@@ -1160,7 +1160,6 @@ class Program {
 		int quit_requester();
         void show_info();
 		GLuint set_shader();
-		void compile_effect_shaders();  // Compile all 43 effect shaders in parallel
 		int load_shader(char* filename, char** ShaderSource, unsigned long len);
 		void set_ow3oh3();
 		void handle_changed_owoh();

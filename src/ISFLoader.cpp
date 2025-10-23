@@ -556,34 +556,6 @@ bool ISFLoader::loadISFDirectory(const std::string& directory) {
                 batch.vertexSource = vertexSource;
                 batch.fragmentSource = fullFragmentSource;
 
-                // DEBUG: Write shader sources to files for inspection (only for shaders with custom vertex shaders)
-                if (!batch.shader->customVertexShader_.empty()) {
-                    // Replace spaces and special chars in filename
-                    std::string safeName = batch.shader->name_;
-                    std::replace(safeName.begin(), safeName.end(), ' ', '_');
-                    std::replace(safeName.begin(), safeName.end(), '/', '_');
-
-                    std::string debugPath = "debug_" + safeName + "_vertex.glsl";
-                    std::ofstream vsDebug(debugPath);
-                    if (vsDebug.is_open()) {
-                        vsDebug << vertexSource;
-                        vsDebug.close();
-                        std::cout << "DEBUG: Wrote vertex shader to " << debugPath << std::endl;
-                    } else {
-                        std::cerr << "DEBUG: Failed to open " << debugPath << std::endl;
-                    }
-
-                    debugPath = "debug_" + safeName + "_fragment.glsl";
-                    std::ofstream fsDebug(debugPath);
-                    if (fsDebug.is_open()) {
-                        fsDebug << fullFragmentSource;
-                        fsDebug.close();
-                        std::cout << "DEBUG: Wrote fragment shader to " << debugPath << std::endl;
-                    } else {
-                        std::cerr << "DEBUG: Failed to open " << debugPath << std::endl;
-                    }
-                }
-
                 batches.push_back(std::move(batch));
 
             } catch (const json::exception& e) {
@@ -646,29 +618,42 @@ bool ISFLoader::loadISFDirectory(const std::string& directory) {
             std::this_thread::sleep_for(std::chrono::milliseconds(1));
         }
 
-        // PHASE 4: Kick off ALL program linking (non-blocking)
-        std::cout << "Phase 4: Starting linking of " << batches.size() << " programs..." << std::endl;
-        for (auto& batch : batches) {
-            if (batch.compileFailed) continue;
+        // PHASE 4: Rolling window linking - link hardware_concurrency() programs at a time
+        std::cout << "Phase 4: Starting rolling window linking..." << std::endl;
+        int maxConcurrentLinks = std::thread::hardware_concurrency();
+        std::cout << "Using rolling window of " << maxConcurrentLinks << " concurrent links" << std::endl;
 
+        // Helper lambda to start linking for a batch
+        auto startLinking = [](ShaderBatch& batch) {
             batch.program = glCreateProgram();
             glAttachShader(batch.program, batch.vertexShader);
             glAttachShader(batch.program, batch.fragmentShader);
             glBindAttribLocation(batch.program, 0, "aPos");
             glBindAttribLocation(batch.program, 1, "aTexCoord");
             glLinkProgram(batch.program);
-        }
+        };
 
-        // PHASE 5: Poll for linking completion
-        std::cout << "Phase 5: Waiting for program linking..." << std::endl;
-        int linkedCount = 0;
+        // Count total to link and initialize first batch
         int totalToLink = 0;
-        int lastProgressUpdate = 0;
+        int nextBatchToStart = 0;
         for (const auto& batch : batches) {
             if (!batch.compileFailed) totalToLink++;
         }
 
-        // Track time for progress updates (update every 2 seconds to avoid blocking)
+        // Start initial batch of links (up to maxConcurrentLinks)
+        int activeLinkCount = 0;
+        for (size_t i = 0; i < batches.size() && activeLinkCount < maxConcurrentLinks; i++) {
+            if (!batches[i].compileFailed) {
+                startLinking(batches[i]);
+                activeLinkCount++;
+                nextBatchToStart = i + 1;
+            }
+        }
+
+        // PHASE 5: Poll for linking completion with rolling window
+        std::cout << "Phase 5: Waiting for program linking (rolling window)..." << std::endl;
+        int linkedCount = 0;
+        int lastProgressUpdate = 0;
         auto lastProgressTime = std::chrono::high_resolution_clock::now();
 
         while (linkedCount < totalToLink) {
@@ -681,6 +666,9 @@ bool ISFLoader::loadISFDirectory(const std::string& directory) {
                 glGetProgramiv(batch.program, GL_COMPLETION_STATUS_ARB, &linkComplete);
 
                 if (linkComplete == GL_TRUE) {
+                    linkedCount++;
+                    activeLinkCount--;
+
                     // Check for linking errors
                     GLint linkSuccess;
                     glGetProgramiv(batch.program, GL_LINK_STATUS, &linkSuccess);
@@ -692,9 +680,8 @@ bool ISFLoader::loadISFDirectory(const std::string& directory) {
                         batch.program = 0;
                         batch.linkFailed = true;
                     } else {
-                        // Success! Store the program and cache uniform locations
+                        // Success! Store the program (uniform caching deferred to Phase 6)
                         batch.shader->program_ = batch.program;
-                        cacheUniformLocations(*batch.shader);
                     }
 
                     // Clean up shaders
@@ -703,9 +690,19 @@ bool ISFLoader::loadISFDirectory(const std::string& directory) {
                     batch.vertexShader = 0;
                     batch.fragmentShader = 0;
 
-                    linkedCount++;
                     progressThisIteration++;
-                } else if (!batch.shader->customVertexShader_.empty() && linkedCount >= totalToLink - 10) {
+
+                    // Start next shader in queue (rolling window)
+                    while (nextBatchToStart < batches.size()) {
+                        if (!batches[nextBatchToStart].compileFailed) {
+                            startLinking(batches[nextBatchToStart]);
+                            activeLinkCount++;
+                            nextBatchToStart++;
+                            break;
+                        }
+                        nextBatchToStart++;
+                    }
+                } else if (!batch.shader->customVertexShader_.empty() && linkedCount >= totalToLink - 10 && 0) {
                     // Shader with custom vertex shader is stuck - force check the link status anyway
                     // (This seems to be a bug with GL_ARB_parallel_shader_compile for custom vertex shaders)
                     GLint linkSuccess;
@@ -716,9 +713,8 @@ bool ISFLoader::loadISFDirectory(const std::string& directory) {
                         batch.program = 0;
                         batch.linkFailed = true;
                     } else {
-                        // Store the program and cache uniform locations
+                        // Store the program (uniform caching deferred to Phase 6)
                         batch.shader->program_ = batch.program;
-                        cacheUniformLocations(*batch.shader);
 
                         // Clean up shaders
                         glDeleteShader(batch.vertexShader);
@@ -726,17 +722,29 @@ bool ISFLoader::loadISFDirectory(const std::string& directory) {
                         batch.vertexShader = 0;
                         batch.fragmentShader = 0;
 
-                        linkedCount++;
                         progressThisIteration++;
+                    }
+                    linkedCount++;
+                    activeLinkCount--;
+
+                    // Start next shader in queue (rolling window)
+                    while (nextBatchToStart < batches.size()) {
+                        if (!batches[nextBatchToStart].compileFailed) {
+                            startLinking(batches[nextBatchToStart]);
+                            activeLinkCount++;
+                            nextBatchToStart++;
+                            break;
+                        }
+                        nextBatchToStart++;
                     }
                 }
             }
 
-            // Update progress only every 2 seconds OR when complete (to minimize GL context switch overhead)
+            // Update progress every 500ms OR when shaders complete OR when done (for smooth visual feedback)
             auto now = std::chrono::high_resolution_clock::now();
             auto elapsed = std::chrono::duration_cast<std::chrono::milliseconds>(now - lastProgressTime).count();
 
-            if ((elapsed >= 2000 && linkedCount > lastProgressUpdate) || linkedCount == totalToLink) {
+            if (elapsed >= 500 || linkedCount > lastProgressUpdate || linkedCount == totalToLink) {
                 SDL_GL_MakeCurrent(mainprogram->splashwindow, glc);
                 glBindFramebuffer(GL_FRAMEBUFFER, 0);
                 glDrawBuffer(GL_FRONT);
@@ -761,10 +769,11 @@ bool ISFLoader::loadISFDirectory(const std::string& directory) {
             std::this_thread::sleep_for(std::chrono::milliseconds(1));
         }
 
-        // PHASE 6: Move successful shaders to the main list
-        std::cout << "Phase 6: Finalizing shaders..." << std::endl;
+        // PHASE 6: Move successful shaders to the main list and cache uniform locations
+        std::cout << "Phase 6: Finalizing shaders and caching uniform locations..." << std::endl;
         for (auto& batch : batches) {
             if (!batch.compileFailed && !batch.linkFailed && batch.program != 0) {
+                cacheUniformLocations(*batch.shader);
                 shaders_.push_back(std::move(batch.shader));
             }
         }
@@ -1413,12 +1422,6 @@ bool ISFLoader::parseParameters(const json& inputs, ISFShader& shader) {
                         if (!param.values.empty()) {
                             param.defaultInt = param.values[0]; // Use first valid value
                         }
-                    }
-
-                    std::cout << "Parsed discrete parameter " << param.name << " with "
-                              << param.values.size() << " values:" << std::endl;
-                    for (size_t i = 0; i < param.values.size(); ++i) {
-                        std::cout << "  " << param.values[i] << " -> \"" << param.labels[i] << "\"" << std::endl;
                     }
                 }
                 break;
