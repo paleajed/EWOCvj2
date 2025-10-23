@@ -53,7 +53,7 @@ extern "C" {
 Bin::Bin(int pos) {
 	// boxes of bins in binslist
 	this->box = new Boxx;
-	this->box->vtxcoords->x1 = 0.50f;
+	this->box->vtxcoords->x1 = 0.51f;
 	this->box->vtxcoords->y1 = (pos + 1) * -0.05f;
 	this->box->vtxcoords->w = 0.3f;
 	this->box->vtxcoords->h = 0.05f;
@@ -132,35 +132,12 @@ BinsMain::BinsMain() {
 		}
 	}
 
-	// box to click to load a bin into the bins list
-	this->loadbinbox = new Boxx;
-	this->loadbinbox->vtxcoords->x1 = 0.50f;
-	this->loadbinbox->vtxcoords->y1 = -0.90f;
-	this->loadbinbox->vtxcoords->w = 0.3f;
-	this->loadbinbox->vtxcoords->h = 0.05f;
-	this->loadbinbox->upvtxtoscr();
-	this->loadbinbox->tooltiptitle = "Load bin ";
-	this->loadbinbox->tooltip = "Leftclick to browse for a bin to be loaded. ";
-	// box to click to save a bin on disk
-	this->savebinbox = new Boxx;
-	this->savebinbox->vtxcoords->x1 = 0.50f;
-	this->savebinbox->vtxcoords->y1 = -0.95f;
-	this->savebinbox->vtxcoords->w = 0.3f;
-	this->savebinbox->vtxcoords->h = 0.05f;
-	this->savebinbox->upvtxtoscr();
-	this->savebinbox->tooltiptitle = "Save bin ";
-	this->savebinbox->tooltip = "Leftclick to browse to save this bin on disk. ";
-	// box to click to add another bin to bins list
-	this->newbinbox = new Boxx;
-	this->newbinbox->vtxcoords->x1 = 0.50f;
-	this->newbinbox->vtxcoords->y1 = -1.0f;
-	this->newbinbox->vtxcoords->w = 0.3f;
-	this->newbinbox->vtxcoords->h = 0.05f;
-	this->newbinbox->upvtxtoscr();
-	this->newbinbox->tooltiptitle = "Add new bin ";
-	this->newbinbox->tooltip = "Leftclick to add a new bin and make it current. ";
-
-	this->currbin = new Bin(-1);
+	this->binsbox = new Boxx;
+	this->binsbox->vtxcoords->x1 = 0.51f;
+	this->binsbox->vtxcoords->y1 = -1.0f;
+	this->binsbox->vtxcoords->w = 0.3f;
+	this->binsbox->vtxcoords->h = 1.0f;
+	this->binsbox->upvtxtoscr();
 
 	this->hapmodebox = new Boxx;
 	this->hapmodebox->vtxcoords->x1 = 0.67f;
@@ -173,7 +150,7 @@ BinsMain::BinsMain() {
 
 	// arrow box to scroll bins list up
 	this->binsscrollup = new Boxx;
-	this->binsscrollup->vtxcoords->x1 = 0.475f;
+	this->binsscrollup->vtxcoords->x1 = 0.485f;
 	this->binsscrollup->vtxcoords->y1 = -0.05f;
 	this->binsscrollup->vtxcoords->w = 0.025f;
 	this->binsscrollup->vtxcoords->h = 0.05f;
@@ -183,7 +160,7 @@ BinsMain::BinsMain() {
 
 	// arrow box to scroll bins list down
     this->binsscrolldown = new Boxx;
-    this->binsscrolldown->vtxcoords->x1 = 0.475f;
+    this->binsscrolldown->vtxcoords->x1 = 0.485f;
     this->binsscrolldown->vtxcoords->y1 = -1.0f;
     this->binsscrolldown->vtxcoords->w = 0.025f;
     this->binsscrolldown->vtxcoords->h = 0.05f;
@@ -268,9 +245,9 @@ void BinsMain::handle(bool draw) {
 		if (mainprogram->rightmouse) {
 			mainprogram->renaming = EDIT_NONE;
 			SDL_StopTextInput();
-			binsmain->binrenamemap.erase(this->menubin->name);
-			this->menubin->name = this->backupname;
-			this->menubin = nullptr;
+			binsmain->binrenamemap.erase(this->currbin->name);
+			this->currbin->name = this->backupname;
+			this->currbin = nullptr;
 			mainprogram->rightmouse = false;
 			mainprogram->menuactivation = false;
 		}
@@ -1011,22 +988,16 @@ void BinsMain::handle(bool draw) {
 
 	if (draw) {
 		//handle binslist scroll
-		Boxx binsbox;
-		binsbox.vtxcoords->x1 = 0.50f;
-		binsbox.vtxcoords->y1 = -1.0f;
-		binsbox.vtxcoords->w = 0.3f;
-		binsbox.vtxcoords->h = 1.0f;
-		binsbox.upvtxtoscr();
-		draw_box(red, black, &binsbox, -1);
-		if (binsbox.in()) {
+		draw_box(red, black, this->binsbox, -1);
+		if (this->binsbox->in()) {
 			// mousewheel scroll
 			this->binsscroll -= mainprogram->mousewheel;
 			if (this->binsscroll < 0) this->binsscroll = 0;
-			if (this->bins.size() > 17 && this->bins.size() - this->binsscroll < 17) this->binsscroll = this->bins.size() - 16;
+			if (this->bins.size() > 21 && this->bins.size() - this->binsscroll < 21) this->binsscroll = this->bins.size() - 20;
 		}
 
 		// draw and handle binslist scrollboxes
-		this->binsscroll = mainprogram->handle_scrollboxes(*this->binsscrollup, *this->binsscrolldown, this->bins.size(), this->binsscroll, 16);
+		this->binsscroll = mainprogram->handle_scrollboxes(*this->binsscrollup, *this->binsscrolldown, this->bins.size(), this->binsscroll, 20);
 
 		//draw and handle binslist
 		this->indragbox = false;
@@ -1071,6 +1042,15 @@ void BinsMain::handle(bool draw) {
 						this->dragbox = nullptr;
 						this->dragbinsense = false;
 					}
+					if (mainprogram->doubleleftmouse) {
+						// start renaming bin
+						this->backupname = this->currbin->name;
+						mainprogram->inputtext = this->currbin->name;
+						mainprogram->cursorpos0 = mainprogram->inputtext.length();
+						SDL_StartTextInput();
+						mainprogram->renaming = EDIT_BINNAME;
+						this->dragbin = nullptr;
+					}
 					if (i + this->binsscroll == this->dragbinpos) {
 						// mouse over box thats being dragged: first stage drag startup, allows user to just choose current bin without starting drag
 						this->indragbox = true;
@@ -1099,91 +1079,17 @@ void BinsMain::handle(bool draw) {
 			if (bin->shared) {
 				namedisplay += " (SHARED)";
 			}
-			if (mainprogram->renaming != EDIT_NONE && bin == this->menubin) {
+			if (mainprogram->renaming != EDIT_NONE && bin == this->currbin) {
 				// bin renaming with keyboard
-				do_text_input(bin->box->vtxcoords->x1 + 0.015f, bin->box->vtxcoords->y1 + 0.018f, 0.00045f, 0.00075f, mainprogram->mx, mainprogram->my, mainprogram->xvtxtoscr(0.3f - 0.03f), 0, nullptr);
+				do_text_input(bin->box->vtxcoords->x1 + 0.025f, bin->box->vtxcoords->y1 + 0.018f, 0.00045f, 0.00075f, mainprogram->mx, mainprogram->my, mainprogram->xvtxtoscr(0.3f - 0.03f), 0, nullptr);
 			}
-			else render_text(namedisplay, white, bin->box->vtxcoords->x1 + 0.015f, bin->box->vtxcoords->y1 + 0.018f, 0.00045f, 0.00075f);
+			else render_text(namedisplay, white, bin->box->vtxcoords->x1 + 0.025f, bin->box->vtxcoords->y1 + 0.018f, 0.00045f, 0.00075f);
 		}
 		if (!this->indragbox && this->dragbinsense) {
 			// dragging has moved (!this->draginbox) so start doing it
 			this->dragbin = this->bins[this->dragbinpos];
 			this->dragbinsense = false;
 		}
-
-		// draw and handle box that allows adding a new bin to the end of the list0
-		Boxx* box = this->newbinbox;
-		if (box->in()) {
-			if (mainprogram->leftmouse && !this->dragbin) {
-                std::string name = "new bin";
-                int count = 0;
-                for (Bin* bin : this->bins) {
-                    if (name == bin->name) {
-                        count++;
-                        name = remove_version(name) + "_" + std::to_string(count);
-                    continue;
-                    }
-                }
-			    new_bin(name);
-				if (this->bins.size() >= 20) this->binsscroll++;
-			}
-			box->acolor[0] = 0.5f;
-			box->acolor[1] = 0.5f;
-			box->acolor[2] = 1.0f;
-			box->acolor[3] = 1.0f;
-		}
-		else {
-			box->acolor[0] = 0.0f;
-			box->acolor[1] = 0.0f;
-			box->acolor[2] = 0.0f;
-			box->acolor[3] = 1.0f;
-		}
-		draw_box(box, -1);
-		render_text("+ NEW BIN", red, 0.62f, -1.0f + 0.018f, 0.00045f, 0.00075f);
-
-		// draw and handle box that allows loading a bin at the end of the list
-		box = this->loadbinbox;
-		if (box->in()) {
-		    if (mainprogram->leftmouse && !this->dragbin) {
-		        mainprogram->pathto = "OPENBIN";
-		        std::thread filereq(&Program::get_multinname, mainprogram, "Open file(s)", "application/ewocvj2-bin", std::filesystem::canonical(mainprogram->currbinsdir).generic_string());
-		        filereq.detach();
-		    }
-		    box->acolor[0] = 0.5f;
-		    box->acolor[1] = 0.5f;
-		    box->acolor[2] = 1.0f;
-		    box->acolor[3] = 1.0f;
-		}
-		else {
-		    box->acolor[0] = 0.0f;
-		    box->acolor[1] = 0.0f;
-		    box->acolor[2] = 0.0f;
-		    box->acolor[3] = 1.0f;
-		}
-		draw_box(box, -1);
-		render_text("+ LOAD BIN(S)", red, 0.62f, -0.90f + 0.018f, 0.00045f, 0.00075f);
-
-		// draw and handle box that allows saving a bin
-		box = this->savebinbox;
-		if (box->in()) {
-		    if (mainprogram->leftmouse && !this->dragbin) {
-		        mainprogram->pathto = "SAVEBIN";
-		        std::thread filereq(&Program::get_outname, mainprogram, "Open file(s)", "application/ewocvj2-bin", std::filesystem::canonical(mainprogram->currbinsdir).generic_string());
-		        filereq.detach();
-		    }
-		    box->acolor[0] = 0.5f;
-		    box->acolor[1] = 0.5f;
-		    box->acolor[2] = 1.0f;
-		    box->acolor[3] = 1.0f;
-		}
-		else {
-		    box->acolor[0] = 0.0f;
-		    box->acolor[1] = 0.0f;
-		    box->acolor[2] = 0.0f;
-		    box->acolor[3] = 1.0f;
-		}
-		draw_box(box, -1);
-		render_text("SAVE CURRENT BIN", red, 0.62f, -0.95f + 0.018f, 0.00045f, 0.00075f);
 
 		// handle bin drag in binslist
 		if (this->dragbin) {
@@ -1213,7 +1119,7 @@ void BinsMain::handle(bool draw) {
 					if (this->dragbin->shared) {
 						namedisplay += " (SHARED)";
 					}
-					render_text(namedisplay, white, this->dragbin->box->vtxcoords->x1 + 0.015f, 1.0f - mainprogram->yscrtovtx(under1) + 0.018f, 0.00045f, 0.00075f);
+					render_text(namedisplay, white, this->dragbin->box->vtxcoords->x1 + 0.025f, 1.0f - mainprogram->yscrtovtx(under1) + 0.018f, 0.00045f, 0.00075f);
 					pos = i;
 					break;
 				}
@@ -1292,44 +1198,101 @@ void BinsMain::handle(bool draw) {
         }
 
         // Draw and handle binmenu and binelmenu
+		bool inbin = false;
+		for (int i = 0; i < this->bins.size(); i++) {
+			if (this->bins[i]->box->in()) {
+				inbin = true;
+				break;
+			}
+		}
 		if (this->bins.size() > 1) {
 			int k = mainprogram->handle_menu(mainprogram->binmenu);
 			if (k == 0) {
-				// delete bin
-				mainprogram->remove(this->menubin->path);
-				if (this->currbin->name == this->menubin->name) {
-					if (this->currbin->pos == 0) make_currbin(1);
-					else make_currbin(this->currbin->pos - 1);
+				if (!this->dragbin) {
+					std::string name = "new bin";
+					int count = 0;
+					for (Bin* bin : this->bins) {
+						if (name == bin->name) {
+							count++;
+							name = remove_version(name) + "_" + std::to_string(count);
+							continue;
+						}
+					}
+					new_bin(name);
+					if (this->bins.size() > 20) this->binsscroll++;
 				}
-				this->bins.erase(std::find(this->bins.begin(), this->bins.end(), this->menubin));
-				delete this->menubin; //delete textures in destructor
+			}
+			else if (k == 1) {
+				if (!this->dragbin) {
+					mainprogram->pathto = "OPENBIN";
+					std::thread filereq(&Program::get_multinname, mainprogram, "Open file(s)", "application/ewocvj2-bin", std::filesystem::canonical(mainprogram->currbinsdir).generic_string());
+					filereq.detach();
+				}
+			}
+			else if (k == 2) {
+				if (!this->dragbin) {
+					mainprogram->pathto = "SAVEBIN";
+					std::thread filereq(&Program::get_outname, mainprogram, "Open file(s)", "application/ewocvj2-bin", std::filesystem::canonical(mainprogram->currbinsdir).generic_string());
+					filereq.detach();
+				}
+			}
+			else if (k == 3) {
+				// delete bin
+				mainprogram->remove(this->currbin->path);
+				this->bins.erase(std::find(this->bins.begin(), this->bins.end(), this->currbin));
+				delete this->currbin; //delete textures in destructor
+				if (this->currbin->pos == 0) make_currbin(1);
+				else make_currbin(this->currbin->pos - 1);
 				for (int i = 0; i < this->bins.size(); i++) {
 					if (this->bins[i] == this->currbin) this->currbin->pos = i;
 					this->bins[i]->box->vtxcoords->y1 = (i + 1) * -0.05f;
 					this->bins[i]->box->upvtxtoscr();
 				}
 			}
-			else if (k == 1) {
+			else if (k == 4) {
 				// start renaming bin
-				this->backupname = this->menubin->name;
-				mainprogram->inputtext = this->menubin->name;
+				this->backupname = this->currbin->name;
+				mainprogram->inputtext = this->currbin->name;
 				mainprogram->cursorpos0 = mainprogram->inputtext.length();
 				SDL_StartTextInput();
 				mainprogram->renaming = EDIT_BINNAME;
-			}
-			else if (k == 2) {
-				// import bin
-				mainprogram->pathto = "IMPORTBIN";
-				std::thread filereq(&Program::get_inname, mainprogram, "Import bin(s)", "application/ewocvj2-bin", std::filesystem::canonical(mainprogram->currfilesdir).generic_string());
-				filereq.detach();
 			}
 		}
 		else {
 			int k = mainprogram->handle_menu(mainprogram->bin2menu);  // rightclick on bin when there's only one (can't delete)
 			if (k == 0) {
+				if (!this->dragbin) {
+					std::string name = "new bin";
+					int count = 0;
+					for (Bin* bin : this->bins) {
+						if (name == bin->name) {
+							count++;
+							name = remove_version(name) + "_" + std::to_string(count);
+							continue;
+						}
+					}
+					new_bin(name);
+					if (this->bins.size() > 20) this->binsscroll++;
+				}
+			}
+			else if (k == 1) {
+				if (!this->dragbin) {
+					mainprogram->pathto = "OPENBIN";
+					std::thread filereq(&Program::get_multinname, mainprogram, "Open file(s)", "application/ewocvj2-bin", std::filesystem::canonical(mainprogram->currbinsdir).generic_string());
+					filereq.detach();
+				}
+			}
+			else if (k == 2) {
+				if (!this->dragbin) {
+					mainprogram->pathto = "SAVEBIN";
+					std::thread filereq(&Program::get_outname, mainprogram, "Open file(s)", "application/ewocvj2-bin", std::filesystem::canonical(mainprogram->currbinsdir).generic_string());
+					filereq.detach();
+				}
+			}
+			else if (k == 3) {
 				// start renaming bin
-				this->backupname = this->menubin->name;
-				mainprogram->inputtext = this->menubin->name;
+				this->backupname = this->currbin->name;
+				mainprogram->inputtext = this->currbin->name;
 				mainprogram->cursorpos0 = mainprogram->inputtext.length();
 				SDL_StartTextInput();
 				mainprogram->renaming = EDIT_BINNAME;
@@ -1605,15 +1568,7 @@ void BinsMain::handle(bool draw) {
 
 	if (mainprogram->menuactivation && !this->inputtexes.size() && !lay->vidmoving && this->movingtex == -1) {
 		// activate binslist or bin menu
-		this->menubin = nullptr;
-		for (int i = 0; i < this->bins.size(); i++) {
-			if (this->bins[i]->box->in()) {
-				this->menubin = this->bins[i];
-				break;
-			}
-		}
-		mainprogram->menuondisplay = true;
-		if (this->menubin) {
+		if (this->binsbox->in()) {
 		    mainprogram->binmenu->state = 2;
 		    mainprogram->binmenu->menux = mainprogram->mx;
 		    mainprogram->binmenu->menuy = mainprogram->my;
@@ -1627,6 +1582,7 @@ void BinsMain::handle(bool draw) {
 			mainprogram->binelmenu->menuy = mainprogram->my;
 			mainprogram->leftmousedown = false;
 		}
+		mainprogram->menuondisplay = true;
 		mainprogram->menuactivation = false;
 		mainprogram->rightmouse = false;
 	}
@@ -3753,10 +3709,10 @@ int BinsMain::read_binslist() {
 				newbin = new_bin(istring);
 			}
 		}
-		if (istring == "BINSSCROLL") {
+		/*if (istring == "BINSSCROLL") {
 			safegetline(rfile, istring);
 			this->binsscroll = std::stoi(istring);
-		}
+		}*/
 	}
 	rfile.close();
 
@@ -3782,9 +3738,9 @@ void BinsMain::save_binslist() {
 		wfile << "\n";
 	}
 	wfile << "ENDOFBINS\n";
-	wfile << "BINSSCROLL\n";
+/*	wfile << "BINSSCROLL\n";
 	wfile << std::to_string(this->binsscroll);
-	wfile << "\n";
+	wfile << "\n";/\*/
 	wfile << "ENDOFFILE\n";
 	wfile.close();
 }
@@ -3816,7 +3772,7 @@ void BinsMain::import_bins() {
 	Bin* bin = binsmain->new_bin(remove_extension(basename(mainprogram->paths[binsmain->binscount])));
 	binsmain->open_bin(mainprogram->paths[binsmain->binscount], bin, true);
 	std::string path = mainprogram->project->binsdir + bin->name + ".bin";
-	if (binsmain->bins.size() >= 20) binsmain->binsscroll++;
+	if (binsmain->bins.size() > 20) binsmain->binsscroll++;
     next_bin();
 }
 

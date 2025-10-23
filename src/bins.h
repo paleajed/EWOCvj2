@@ -37,9 +37,7 @@ class BinsMain {
         int prevj;
         int firsti;
         int firstj;
-        Boxx* loadbinbox;
-        Boxx* savebinbox;
-		Boxx* newbinbox;
+        Boxx* binsbox;
 		GLuint binelpreviewtex;
 		bool binpreview = false;
 		std::string newpath;
@@ -92,7 +90,6 @@ class BinsMain {
         std::condition_variable syncend;
         bool syncendnow = false;
 
-        Bin *menubin = nullptr;
         std::unordered_map<std::string, std::string> binrenamemap;
 		std::string backupname;
         bool openfilesbin = false;

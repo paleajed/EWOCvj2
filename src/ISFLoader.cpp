@@ -8,6 +8,7 @@
 #include <cmath>
 #include <algorithm>
 #include <iomanip>
+#include <set>
 
 #ifdef _WIN32
 #define WIN32_LEAN_AND_MEAN
@@ -137,39 +138,662 @@ bool ISFLoader::loadISFDirectory(const std::string& directory) {
 
     auto startTime = std::chrono::high_resolution_clock::now();
 
+    // Check if ARB_parallel_shader_compile is supported
+    bool supportsAsync = glewIsSupported("GL_ARB_parallel_shader_compile");
+    if (supportsAsync) {
+        std::cout << "Using BATCHED async shader compilation with ARB_parallel_shader_compile" << std::endl;
+    } else {
+        std::cout << "ARB_parallel_shader_compile not supported, using sequential compilation" << std::endl;
+    }
+
+    // Collect all ISF files first
+    std::vector<std::string> isfFiles;
     try {
-        int total = 0;
-        for (const auto& entry : std::filesystem::recursive_directory_iterator(directory)) {
-            total++;
-        }
-        int count = 0;
         for (const auto& entry : std::filesystem::recursive_directory_iterator(directory)) {
             if (entry.is_regular_file() && entry.path().extension() == ".fs") {
-                count++;
-                if (count % 8 == 1) {
-                    SDL_GL_MakeCurrent(mainprogram->splashwindow, glc);
-                    glBindFramebuffer(GL_FRAMEBUFFER, 0);
-                    glDrawBuffer(GL_FRONT);
-                    glViewport(0, 0, glob->h / 2.0f, glob->h / 2.0f);
-                    mainprogram->bvao = mainprogram->splboxvao;
-                    mainprogram->bvbuf = mainprogram->splboxvbuf;
-                    mainprogram->btbuf = mainprogram->splboxtbuf;
-                    if (isFirstRun_) {
-                        render_text("FIRST RUN: Compiling shaders... (can take several minutes)", white, -0.75f, 0.8f,
-                                    0.0024f, 0.004f, 3, 0);
-                    }
-                    draw_box(white, black, -0.25f, -0.9f, 0.5f, 0.1f, 0.0f, 0.0f,
-                             1.0f, 1.0f, 0, -1, glob->w, glob->h, false);
-                    draw_box(white, white, -0.25f, -0.9f, 0.5f * (float)count / (float)total, 0.1f, 0.0f, 0.0f,
-                             1.0f, 1.0f, 0, -1, glob->w, glob->h, false);
-                    glFlush();
-                }
-                loadISFFile(entry.path().string());
+                isfFiles.push_back(entry.path().string());
             }
         }
     } catch (const std::exception& e) {
         std::cerr << "Error scanning ISF directory: " << e.what() << std::endl;
         return false;
+    }
+
+    int total = isfFiles.size();
+    std::cout << "Found " << total << " ISF shaders to compile" << std::endl;
+
+    if (supportsAsync) {
+        // BATCHED ASYNC COMPILATION
+        // Structure to hold shader compilation state
+        struct ShaderBatch {
+            std::string filepath;
+            std::unique_ptr<ISFShader> shader;
+            GLuint vertexShader = 0;
+            GLuint fragmentShader = 0;
+            GLuint program = 0;
+            std::string vertexSource;
+            std::string fragmentSource;
+            bool compileFailed = false;
+            bool linkFailed = false;
+        };
+
+        std::vector<ShaderBatch> batches;
+        batches.reserve(total);
+
+        // PHASE 1: Parse all ISF files and prepare shader sources
+        std::cout << "Phase 1: Parsing ISF files..." << std::endl;
+        for (const auto& filepath : isfFiles) {
+            ShaderBatch batch;
+            batch.filepath = filepath;
+            batch.shader = std::make_unique<ISFShader>();
+            batch.shader->filepath_ = filepath;
+            batch.shader->name_ = std::filesystem::path(filepath).stem().string();
+
+            // Load file content
+            std::ifstream file(filepath);
+            if (!file.is_open()) {
+                std::cerr << "Failed to open ISF file: " << filepath << std::endl;
+                continue;
+            }
+            std::stringstream buffer;
+            buffer << file.rdbuf();
+            std::string fileContent = buffer.str();
+            file.close();
+
+            // Check for custom vertex shader
+            std::string basePath = std::filesystem::path(filepath).replace_extension().string();
+            std::string vertexShaderPath = basePath + ".vs";
+            if (std::filesystem::exists(vertexShaderPath)) {
+                std::ifstream vsFile(vertexShaderPath);
+                if (vsFile.is_open()) {
+                    std::stringstream vsBuffer;
+                    vsBuffer << vsFile.rdbuf();
+                    batch.shader->customVertexShader_ = vsBuffer.str();
+                    vsFile.close();
+                }
+            }
+
+            // Parse ISF JSON to extract shader components (without compiling yet)
+            std::string jsonContent, fragmentSource;
+            if (!extractISFComponents(fileContent, jsonContent, fragmentSource)) {
+                std::cerr << "Failed to extract ISF components: " << filepath << std::endl;
+                continue;
+            }
+
+            try {
+                json root = json::parse(jsonContent);
+                if (!validateISFStructure(root)) {
+                    std::cerr << "Invalid ISF structure: " << filepath << std::endl;
+                    continue;
+                }
+
+                // Parse metadata
+                if (root.contains("DESCRIPTION")) {
+                    batch.shader->description_ = root["DESCRIPTION"].get<std::string>();
+                }
+
+                // Determine shader type
+                batch.shader->type_ = GENERATOR;
+                if (root.contains("INPUTS")) {
+                    for (const auto& input : root["INPUTS"]) {
+                        if (input.contains("TYPE")) {
+                            std::string typeStr = input["TYPE"].get<std::string>();
+                            if (typeStr == "image") {
+                                batch.shader->type_ = EFFECT;
+                                break;
+                            }
+                        }
+                    }
+                }
+
+                // Parse all the metadata
+                if (root.contains("INPUTS")) parseParameters(root["INPUTS"], *batch.shader);
+                if (root.contains("INPUTS")) parseInputs(root["INPUTS"], *batch.shader);
+                if (root.contains("IMPORTED")) parseImported(root["IMPORTED"], *batch.shader);
+                if (root.contains("PASSES")) parsePasses(root["PASSES"], *batch.shader);
+                if (root.contains("FLOAT") && root["FLOAT"].is_boolean()) {
+                    batch.shader->usesFloatBuffers_ = root["FLOAT"].get<bool>();
+                }
+
+                // Build parameter uniform declarations
+                std::string parameterUniforms;
+                for (const auto& param : batch.shader->parameterTemplates_) {
+                    switch (param.type) {
+                        case PARAM_FLOAT:
+                            parameterUniforms += "uniform float " + param.name + ";\n";
+                            break;
+                        case PARAM_LONG:
+                            parameterUniforms += "uniform int " + param.name + ";\n";
+                            break;
+                        case PARAM_BOOL:
+                        case PARAM_EVENT:
+                            parameterUniforms += "uniform bool " + param.name + ";\n";
+                            break;
+                        case PARAM_COLOR:
+                            parameterUniforms += "uniform vec4 " + param.name + ";\n";
+                            break;
+                        case PARAM_POINT2D:
+                            parameterUniforms += "uniform vec2 " + param.name + ";\n";
+                            break;
+                    }
+                }
+
+                // Build input texture uniform declarations
+                std::string inputUniforms;
+                for (const auto& input : batch.shader->inputs_) {
+                    inputUniforms += "uniform sampler2D " + input.name + ";\n";
+
+                    // Add image rectangle uniforms for ALL image inputs
+                    if (input.type == INPUT_IMAGE || input.type == INPUT_EXTERNAL_IMAGE) {
+                        inputUniforms += "uniform vec4 _" + input.name + "_imgRect;\n";
+                    }
+                }
+
+                // Build pass buffer uniform declarations
+                std::string bufferUniforms;
+                for (const auto& pass : batch.shader->passes_) {
+                    if (!pass.target.empty()) {
+                        bufferUniforms += "uniform sampler2D " + pass.target + ";\n";
+                    }
+                }
+
+                // Build shader sources (without compiling)
+                std::string vertexSource;
+                std::string customVaryingInputs = "";  // For fragment shader (initialize to empty)
+                std::string customVaryingOutputs = ""; // For vertex shader (NEW)
+
+                if (!batch.shader->customVertexShader_.empty()) {
+                    // PROCESS custom vertex shader (replicate logic from compileShader)
+                    std::stringstream vertexStream(batch.shader->customVertexShader_);
+                    std::stringstream processedVertexStream;
+                    std::string line;
+                    bool skipLegacyBlock = false;
+                    bool inVersionConditional = false;
+                    std::set<std::string> uniqueVaryings;
+
+                    int totalLines = 0;
+                    int includedLines = 0;
+                    int skippedLines = 0;
+
+                    // Process vertex shader line by line to remove legacy blocks and extract varyings
+                    while (std::getline(vertexStream, line)) {
+                        totalLines++;
+                        // Trim whitespace
+                        std::string trimmedLine = line;
+                        size_t start = trimmedLine.find_first_not_of(" \t");
+                        if (start != std::string::npos) {
+                            trimmedLine = trimmedLine.substr(start);
+                        }
+
+                        // Check for version conditional start
+                        if (trimmedLine.find("#if __VERSION__ <= 120") == 0) {
+                            skipLegacyBlock = true;
+                            inVersionConditional = true;
+                            skippedLines++;
+                            continue;
+                        }
+                        else if (trimmedLine.find("#else") == 0 && inVersionConditional) {
+                            skipLegacyBlock = false;
+                            skippedLines++;
+                            continue;
+                        }
+                        else if (trimmedLine.find("#endif") == 0 && inVersionConditional) {
+                            skipLegacyBlock = false;
+                            inVersionConditional = false;
+                            skippedLines++;
+                            continue;
+                        }
+
+                        // Include line if not skipping legacy block
+                        if (!skipLegacyBlock) {
+                            // Check if this is an "out" declaration (varying output)
+                            bool isOutDeclaration = (line.find("out ") != std::string::npos && line.find("vec") != std::string::npos);
+
+                            if (isOutDeclaration) {
+                                // Extract variable name
+                                size_t nameStart = line.find_last_of(' ');
+                                size_t nameEnd = line.find(';');
+                                std::string varyingName;
+                                if (nameStart != std::string::npos && nameEnd != std::string::npos) {
+                                    varyingName = line.substr(nameStart + 1, nameEnd - nameStart - 1);
+                                }
+
+                                // Add to unique set
+                                if (!varyingName.empty() && uniqueVaryings.find(varyingName) == uniqueVaryings.end()) {
+                                    uniqueVaryings.insert(varyingName);
+
+                                    // Add to vertex shader outputs (keep as "out")
+                                    customVaryingOutputs += line + "\n";
+
+                                    // Convert "out vec2 left_coord;" to "in vec2 left_coord;" for fragment shader
+                                    std::string varyingDeclaration = line;
+                                    size_t outPos = varyingDeclaration.find("out ");
+                                    if (outPos != std::string::npos) {
+                                        varyingDeclaration.replace(outPos, 4, "in ");
+                                    }
+                                    customVaryingInputs += varyingDeclaration + "\n";
+                                }
+
+                                // Don't add this line to the processed vertex stream (we'll add it to the header instead)
+                                skippedLines++;
+                            } else {
+                                // Not an out declaration, keep it in the processed vertex shader
+                                includedLines++;
+                                processedVertexStream << line << "\n";
+                            }
+                        } else {
+                            skippedLines++;
+                        }
+                    }
+                    batch.shader->customVertexShader_ = processedVertexStream.str();
+
+                    if (!customVaryingInputs.empty()) {
+                        customVaryingInputs = "// Custom varying inputs from vertex shader\n" + customVaryingInputs + "\n";
+                    }
+
+                    // Build parameter uniforms for vertex shader
+                    std::string customVertexUniforms;
+                    for (const auto& param : batch.shader->parameterTemplates_) {
+                        switch (param.type) {
+                            case PARAM_FLOAT:
+                                customVertexUniforms += "uniform float " + param.name + ";\n";
+                                break;
+                            case PARAM_LONG:
+                                customVertexUniforms += "uniform int " + param.name + ";\n";
+                                break;
+                            case PARAM_BOOL:
+                            case PARAM_EVENT:
+                                customVertexUniforms += "uniform bool " + param.name + ";\n";
+                                break;
+                            case PARAM_COLOR:
+                                customVertexUniforms += "uniform vec4 " + param.name + ";\n";
+                                break;
+                            case PARAM_POINT2D:
+                                customVertexUniforms += "uniform vec2 " + param.name + ";\n";
+                                break;
+                        }
+                    }
+
+                    vertexSource = "#version 330 core\n"
+                                   "// ISF built-in uniforms\n"
+                                   "uniform float TIME;\n"
+                                   "uniform float TIMEDELTA;\n"
+                                   "uniform vec2 RENDERSIZE;\n"
+                                   "uniform int FRAMEINDEX;\n"
+                                   "uniform vec4 DATE;\n"
+                                   "uniform int PASSINDEX;\n"
+                                   "\n"
+                                   "// Input attributes\n"
+                                   "layout (location = 0) in vec2 aPos;\n"
+                                   "layout (location = 1) in vec2 aTexCoord;\n"
+                                   "\n"
+                                   "// Output varying to fragment shader\n"
+                                   "out vec2 isf_FragNormCoord;\n"
+                                   "out vec2 vv_FragNormCoord;\n"
+                                   "\n";
+
+                    // Add custom varying outputs from the custom vertex shader
+                    if (!customVaryingOutputs.empty()) {
+                        vertexSource += "// Custom varying outputs\n" + customVaryingOutputs + "\n";
+                    }
+
+                    vertexSource += customVertexUniforms +
+                                   "// ISF vertex shader initialization function\n"
+                                   "void isf_vertShaderInit() {\n"
+                                   "    gl_Position = vec4(aPos, 0.0, 1.0);\n"
+                                   "    \n"
+                                   "    // ISF expects inverted Y coordinate (0,0 = top-left, 1,1 = bottom-right)\n"
+                                   "    vec2 isfCoord = vec2(aTexCoord.x, aTexCoord.y);\n"
+                                   "    \n"
+                                   "    isf_FragNormCoord = isfCoord;        // Inverted Y for ISF compatibility\n"
+                                   "    vv_FragNormCoord = isfCoord;         // Keep them the same for compatibility\n"
+                                   "}\n"
+                                   "\n" +
+                                   batch.shader->customVertexShader_;
+                } else {
+                    vertexSource = vertexShaderSource_;
+                }
+
+                // PROCESS fragment shader to remove legacy GLSL 120 blocks
+                std::string modernFragmentSource = fragmentSource;
+                std::stringstream fragStream(modernFragmentSource);
+                std::stringstream processedFragmentStream;
+                std::string fragLine;
+                bool fragSkipLegacy = false;
+                bool fragInVersionConditional = false;
+                std::set<std::string> fragmentVaryingNames;
+
+                while (std::getline(fragStream, fragLine)) {
+                    std::string trimmedFragLine = fragLine;
+                    size_t fragStart = trimmedFragLine.find_first_not_of(" \t");
+                    if (fragStart != std::string::npos) {
+                        trimmedFragLine = trimmedFragLine.substr(fragStart);
+                    }
+
+                    if (trimmedFragLine.find("#if __VERSION__ <= 120") == 0) {
+                        fragSkipLegacy = true;
+                        fragInVersionConditional = true;
+                        continue;
+                    }
+                    else if (trimmedFragLine.find("#else") == 0 && fragInVersionConditional) {
+                        fragSkipLegacy = false;
+                        continue;
+                    }
+                    else if (trimmedFragLine.find("#endif") == 0 && fragInVersionConditional) {
+                        fragSkipLegacy = false;
+                        fragInVersionConditional = false;
+                        continue;
+                    }
+
+                    if (!fragSkipLegacy) {
+                        processedFragmentStream << fragLine << "\n";
+
+                        // Track varying variable names that fragment shader declares
+                        if (fragLine.find("in vec") != std::string::npos && fragLine.find(";") != std::string::npos) {
+                            size_t nameStart = fragLine.find_last_of(' ');
+                            size_t nameEnd = fragLine.find(';');
+                            if (nameStart != std::string::npos && nameEnd != std::string::npos) {
+                                std::string varyingName = fragLine.substr(nameStart + 1, nameEnd - nameStart - 1);
+                                fragmentVaryingNames.insert(varyingName);
+                            }
+                        }
+                    }
+                }
+
+                modernFragmentSource = processedFragmentStream.str();
+
+                // Filter out duplicate varyings from customVaryingInputs
+                if (!fragmentVaryingNames.empty() && !customVaryingInputs.empty()) {
+                    std::stringstream customVaryingStream(customVaryingInputs);
+                    std::stringstream filteredVaryingStream;
+                    std::string varyingLine;
+                    bool hasHeader = false;
+
+                    while (std::getline(customVaryingStream, varyingLine)) {
+                        if (varyingLine.find("// Custom varying") != std::string::npos) {
+                            continue;
+                        }
+
+                        bool isDuplicate = false;
+                        for (const auto& fragVaryingName : fragmentVaryingNames) {
+                            if (varyingLine.find(fragVaryingName) != std::string::npos) {
+                                isDuplicate = true;
+                                break;
+                            }
+                        }
+
+                        if (!isDuplicate && !varyingLine.empty()) {
+                            if (!hasHeader) {
+                                filteredVaryingStream << "// Custom varying inputs from vertex shader\n";
+                                hasHeader = true;
+                            }
+                            filteredVaryingStream << varyingLine << "\n";
+                        }
+                    }
+
+                    if (hasHeader) {
+                        filteredVaryingStream << "\n";
+                    }
+                    customVaryingInputs = filteredVaryingStream.str();
+                }
+
+                // Replace gl_FragColor with fragColor
+                size_t pos = 0;
+                while ((pos = modernFragmentSource.find("gl_FragColor", pos)) != std::string::npos) {
+                    modernFragmentSource.replace(pos, 12, "fragColor");
+                    pos += 9; // Length of "fragColor"
+                }
+
+                // Build complete fragment source with uniforms and filtered custom varyings
+                std::string fullFragmentSource = "#version 330 core\n" +
+                                                  std::string(isfBuiltinFunctions_) +
+                                                  customVaryingInputs +
+                                                  parameterUniforms +
+                                                  inputUniforms +
+                                                  bufferUniforms +
+                                                  modernFragmentSource;
+
+                batch.vertexSource = vertexSource;
+                batch.fragmentSource = fullFragmentSource;
+
+                // DEBUG: Write shader sources to files for inspection (only for shaders with custom vertex shaders)
+                if (!batch.shader->customVertexShader_.empty()) {
+                    // Replace spaces and special chars in filename
+                    std::string safeName = batch.shader->name_;
+                    std::replace(safeName.begin(), safeName.end(), ' ', '_');
+                    std::replace(safeName.begin(), safeName.end(), '/', '_');
+
+                    std::string debugPath = "debug_" + safeName + "_vertex.glsl";
+                    std::ofstream vsDebug(debugPath);
+                    if (vsDebug.is_open()) {
+                        vsDebug << vertexSource;
+                        vsDebug.close();
+                        std::cout << "DEBUG: Wrote vertex shader to " << debugPath << std::endl;
+                    } else {
+                        std::cerr << "DEBUG: Failed to open " << debugPath << std::endl;
+                    }
+
+                    debugPath = "debug_" + safeName + "_fragment.glsl";
+                    std::ofstream fsDebug(debugPath);
+                    if (fsDebug.is_open()) {
+                        fsDebug << fullFragmentSource;
+                        fsDebug.close();
+                        std::cout << "DEBUG: Wrote fragment shader to " << debugPath << std::endl;
+                    } else {
+                        std::cerr << "DEBUG: Failed to open " << debugPath << std::endl;
+                    }
+                }
+
+                batches.push_back(std::move(batch));
+
+            } catch (const json::exception& e) {
+                std::cerr << "JSON parse error in " << filepath << ": " << e.what() << std::endl;
+                continue;
+            }
+        }
+
+        // PHASE 2: Kick off ALL shader compilations (non-blocking)
+        std::cout << "Phase 2: Starting compilation of " << batches.size() << " shaders..." << std::endl;
+        for (auto& batch : batches) {
+            batch.vertexShader = glCreateShader(GL_VERTEX_SHADER);
+            const char* vsSrc = batch.vertexSource.c_str();
+            glShaderSource(batch.vertexShader, 1, &vsSrc, NULL);
+            glCompileShader(batch.vertexShader);
+
+            batch.fragmentShader = glCreateShader(GL_FRAGMENT_SHADER);
+            const char* fsSrc = batch.fragmentSource.c_str();
+            glShaderSource(batch.fragmentShader, 1, &fsSrc, NULL);
+            glCompileShader(batch.fragmentShader);
+        }
+
+        // PHASE 3: Poll for compilation completion
+        std::cout << "Phase 3: Waiting for shader compilation..." << std::endl;
+        int compiledCount = 0;
+        while (compiledCount < batches.size()) {
+            for (auto& batch : batches) {
+                if (batch.compileFailed || (batch.vertexShader == 0 && batch.fragmentShader == 0)) continue;
+                if (batch.vertexShader == 0 || batch.fragmentShader == 0) continue;
+
+                GLint vsComplete = GL_FALSE, fsComplete = GL_FALSE;
+                glGetShaderiv(batch.vertexShader, GL_COMPLETION_STATUS_ARB, &vsComplete);
+                glGetShaderiv(batch.fragmentShader, GL_COMPLETION_STATUS_ARB, &fsComplete);
+
+                if (vsComplete == GL_TRUE && fsComplete == GL_TRUE) {
+                    // Check for compilation errors
+                    GLint vsSuccess, fsSuccess;
+                    glGetShaderiv(batch.vertexShader, GL_COMPILE_STATUS, &vsSuccess);
+                    glGetShaderiv(batch.fragmentShader, GL_COMPILE_STATUS, &fsSuccess);
+
+                    if (!vsSuccess || !fsSuccess) {
+                        if (!vsSuccess) {
+                            std::cerr << "Shader " << batch.shader->name_ << " VERTEX compilation FAILED!\n";
+                            logShaderError(batch.vertexShader, "VERTEX");
+                        }
+                        if (!fsSuccess) {
+                            std::cerr << "Shader " << batch.shader->name_ << " FRAGMENT compilation FAILED!\n";
+                            logShaderError(batch.fragmentShader, "FRAGMENT");
+                        }
+                        glDeleteShader(batch.vertexShader);
+                        glDeleteShader(batch.fragmentShader);
+                        batch.vertexShader = 0;
+                        batch.fragmentShader = 0;
+                        batch.compileFailed = true;
+                    }
+                    compiledCount++;
+                }
+            }
+            // Sleep for 1ms instead of 100us - reduces CPU usage
+            std::this_thread::sleep_for(std::chrono::milliseconds(1));
+        }
+
+        // PHASE 4: Kick off ALL program linking (non-blocking)
+        std::cout << "Phase 4: Starting linking of " << batches.size() << " programs..." << std::endl;
+        for (auto& batch : batches) {
+            if (batch.compileFailed) continue;
+
+            batch.program = glCreateProgram();
+            glAttachShader(batch.program, batch.vertexShader);
+            glAttachShader(batch.program, batch.fragmentShader);
+            glBindAttribLocation(batch.program, 0, "aPos");
+            glBindAttribLocation(batch.program, 1, "aTexCoord");
+            glLinkProgram(batch.program);
+        }
+
+        // PHASE 5: Poll for linking completion
+        std::cout << "Phase 5: Waiting for program linking..." << std::endl;
+        int linkedCount = 0;
+        int totalToLink = 0;
+        int lastProgressUpdate = 0;
+        for (const auto& batch : batches) {
+            if (!batch.compileFailed) totalToLink++;
+        }
+
+        // Track time for progress updates (update every 2 seconds to avoid blocking)
+        auto lastProgressTime = std::chrono::high_resolution_clock::now();
+
+        while (linkedCount < totalToLink) {
+            int progressThisIteration = 0;
+
+            for (auto& batch : batches) {
+                if (batch.compileFailed || batch.linkFailed || batch.program == 0) continue;
+
+                GLint linkComplete = GL_FALSE;
+                glGetProgramiv(batch.program, GL_COMPLETION_STATUS_ARB, &linkComplete);
+
+                if (linkComplete == GL_TRUE) {
+                    // Check for linking errors
+                    GLint linkSuccess;
+                    glGetProgramiv(batch.program, GL_LINK_STATUS, &linkSuccess);
+
+                    if (!linkSuccess) {
+                        std::cerr << "Shader " << batch.shader->name_ << " PROGRAM LINKING FAILED!\n";
+                        logProgramError(batch.program);
+                        glDeleteProgram(batch.program);
+                        batch.program = 0;
+                        batch.linkFailed = true;
+                    } else {
+                        // Success! Store the program and cache uniform locations
+                        batch.shader->program_ = batch.program;
+                        cacheUniformLocations(*batch.shader);
+                    }
+
+                    // Clean up shaders
+                    glDeleteShader(batch.vertexShader);
+                    glDeleteShader(batch.fragmentShader);
+                    batch.vertexShader = 0;
+                    batch.fragmentShader = 0;
+
+                    linkedCount++;
+                    progressThisIteration++;
+                } else if (!batch.shader->customVertexShader_.empty() && linkedCount >= totalToLink - 10) {
+                    // Shader with custom vertex shader is stuck - force check the link status anyway
+                    // (This seems to be a bug with GL_ARB_parallel_shader_compile for custom vertex shaders)
+                    GLint linkSuccess;
+                    glGetProgramiv(batch.program, GL_LINK_STATUS, &linkSuccess);
+
+                    if (!linkSuccess) {
+                        glDeleteProgram(batch.program);
+                        batch.program = 0;
+                        batch.linkFailed = true;
+                    } else {
+                        // Store the program and cache uniform locations
+                        batch.shader->program_ = batch.program;
+                        cacheUniformLocations(*batch.shader);
+
+                        // Clean up shaders
+                        glDeleteShader(batch.vertexShader);
+                        glDeleteShader(batch.fragmentShader);
+                        batch.vertexShader = 0;
+                        batch.fragmentShader = 0;
+
+                        linkedCount++;
+                        progressThisIteration++;
+                    }
+                }
+            }
+
+            // Update progress only every 2 seconds OR when complete (to minimize GL context switch overhead)
+            auto now = std::chrono::high_resolution_clock::now();
+            auto elapsed = std::chrono::duration_cast<std::chrono::milliseconds>(now - lastProgressTime).count();
+
+            if ((elapsed >= 2000 && linkedCount > lastProgressUpdate) || linkedCount == totalToLink) {
+                SDL_GL_MakeCurrent(mainprogram->splashwindow, glc);
+                glBindFramebuffer(GL_FRAMEBUFFER, 0);
+                glDrawBuffer(GL_FRONT);
+                glViewport(0, 0, glob->h / 2.0f, glob->h / 2.0f);
+                mainprogram->bvao = mainprogram->splboxvao;
+                mainprogram->bvbuf = mainprogram->splboxvbuf;
+                mainprogram->btbuf = mainprogram->splboxtbuf;
+                if (isFirstRun_) {
+                    render_text("FIRST RUN: Preparing shaders. This will take several minutes...", white, -0.75f, 0.8f,
+                                0.0024f, 0.004f, 3, 0);
+                }
+                draw_box(white, black, -0.25f, -0.9f, 0.5f, 0.1f, 0.0f, 0.0f,
+                         1.0f, 1.0f, 0, -1, glob->w, glob->h, false);
+                draw_box(white, white, -0.25f, -0.9f, 0.5f * (float)linkedCount / (float)totalToLink, 0.1f, 0.0f, 0.0f,
+                         1.0f, 1.0f, 0, -1, glob->w, glob->h, false);
+                glFlush();
+                lastProgressUpdate = linkedCount;
+                lastProgressTime = now;
+            }
+
+            // Sleep for 1ms - reduces CPU usage
+            std::this_thread::sleep_for(std::chrono::milliseconds(1));
+        }
+
+        // PHASE 6: Move successful shaders to the main list
+        std::cout << "Phase 6: Finalizing shaders..." << std::endl;
+        for (auto& batch : batches) {
+            if (!batch.compileFailed && !batch.linkFailed && batch.program != 0) {
+                shaders_.push_back(std::move(batch.shader));
+            }
+        }
+
+    } else {
+        // SEQUENTIAL FALLBACK (no ARB extension)
+        int count = 0;
+        for (const auto& filepath : isfFiles) {
+            count++;
+            if (count % 8 == 1) {
+                SDL_GL_MakeCurrent(mainprogram->splashwindow, glc);
+                glBindFramebuffer(GL_FRAMEBUFFER, 0);
+                glDrawBuffer(GL_FRONT);
+                glViewport(0, 0, glob->h / 2.0f, glob->h / 2.0f);
+                mainprogram->bvao = mainprogram->splboxvao;
+                mainprogram->bvbuf = mainprogram->splboxvbuf;
+                mainprogram->btbuf = mainprogram->splboxtbuf;
+                if (isFirstRun_) {
+                    render_text("FIRST RUN: Compiling shaders... (can take several minutes)", white, -0.75f, 0.8f,
+                                0.0024f, 0.004f, 3, 0);
+                }
+                draw_box(white, black, -0.25f, -0.9f, 0.5f, 0.1f, 0.0f, 0.0f,
+                         1.0f, 1.0f, 0, -1, glob->w, glob->h, false);
+                draw_box(white, white, -0.25f, -0.9f, 0.5f * (float)count / (float)total, 0.1f, 0.0f, 0.0f,
+                         1.0f, 1.0f, 0, -1, glob->w, glob->h, false);
+                glFlush();
+            }
+            loadISFFile(filepath);
+        }
     }
 
     std::cout << "Loaded " << shaders_.size() << " ISF shaders from " << directory << std::endl;
@@ -180,9 +804,9 @@ bool ISFLoader::loadISFDirectory(const std::string& directory) {
     std::cout << "Loaded " << shaders_.size() << " ISF shaders from " << directory
               << " in " << duration.count() << "ms" << std::endl;
 
-
     saveCacheToDisk();
-    printCacheStats();    return true;
+    printCacheStats();
+    return true;
 }
 
 bool ISFLoader::loadISFFile(const std::string& filepath) {
@@ -1049,6 +1673,7 @@ bool ISFLoader::compileShader(const std::string& fragmentSource, ISFShader& shad
     // Choose vertex shader source
     std::string vertexSource;
     std::string customVaryingInputs;
+    std::string customVaryingOutputs;  // NEW: For vertex shader outputs
 
     if (!shader.customVertexShader_.empty()) {
         // FIRST: Process the custom vertex shader to remove conditional blocks and extract only modern declarations
@@ -1088,33 +1713,38 @@ bool ISFLoader::compileShader(const std::string& fragmentSource, ISFShader& shad
 
             // Include line if we're not skipping the legacy block
             if (!skipLegacyBlock) {
-                processedVertexStream << line << "\n";
+                // Check if this is an "out" declaration (varying output)
+                bool isOutDeclaration = (line.find("out ") != std::string::npos && line.find("vec") != std::string::npos);
 
-                // Extract varying declarations for fragment shader
-                std::string varyingName;
-                std::string varyingDeclaration;
-
-                if (line.find("out ") != std::string::npos && line.find("vec") != std::string::npos) {
+                if (isOutDeclaration) {
                     // Extract out variable name for duplicate check
                     size_t nameStart = line.find_last_of(' ');
                     size_t nameEnd = line.find(';');
+                    std::string varyingName;
                     if (nameStart != std::string::npos && nameEnd != std::string::npos) {
                         varyingName = line.substr(nameStart + 1, nameEnd - nameStart - 1);
                     }
 
-                    // Convert "out vec2 left_coord;" to "in vec2 left_coord;"
-                    varyingDeclaration = line;
-                    size_t outPos = varyingDeclaration.find("out ");
-                    if (outPos != std::string::npos) {
-                        varyingDeclaration.replace(outPos, 4, "in ");
-                    }
-
                     // Add to unique set if we found a valid varying and it's not already added
-                    if (!varyingName.empty() && !varyingDeclaration.empty() &&
-                        uniqueVaryings.find(varyingName) == uniqueVaryings.end()) {
+                    if (!varyingName.empty() && uniqueVaryings.find(varyingName) == uniqueVaryings.end()) {
                         uniqueVaryings.insert(varyingName);
+
+                        // Add to vertex shader outputs (keep as "out")
+                        customVaryingOutputs += line + "\n";
+
+                        // Convert "out vec2 left_coord;" to "in vec2 left_coord;" for fragment shader
+                        std::string varyingDeclaration = line;
+                        size_t outPos = varyingDeclaration.find("out ");
+                        if (outPos != std::string::npos) {
+                            varyingDeclaration.replace(outPos, 4, "in ");
+                        }
                         customVaryingInputs += varyingDeclaration + "\n";
                     }
+
+                    // Don't add this line to the processed vertex stream (we'll add it to the header instead)
+                } else {
+                    // Not an out declaration, keep it in the processed vertex shader
+                    processedVertexStream << line << "\n";
                 }
             }
         }
@@ -1235,8 +1865,14 @@ bool ISFLoader::compileShader(const std::string& fragmentSource, ISFShader& shad
                        "// Output varying to fragment shader\n"
                        "out vec2 isf_FragNormCoord;\n"
                        "out vec2 vv_FragNormCoord;\n"
-                       "\n"
-                       + commonUniforms +
+                       "\n";
+
+        // Add custom varying outputs from the custom vertex shader
+        if (!customVaryingOutputs.empty()) {
+            vertexSource += "// Custom varying outputs\n" + customVaryingOutputs + "\n";
+        }
+
+        vertexSource += commonUniforms +
                        customVertexUniforms +
                        cornerVars +
                        "// ISF vertex shader initialization function\n"
@@ -1527,21 +2163,42 @@ void ISFLoader::cacheUniformLocations(ISFShader& shader) {
 }
 
 GLuint ISFLoader::createShaderProgram(const char* vertexSource, const char* fragmentSource) {
+    // Create and compile shaders
     GLuint vertexShader = glCreateShader(GL_VERTEX_SHADER);
     glShaderSource(vertexShader, 1, &vertexSource, NULL);
     glCompileShader(vertexShader);
 
+    GLuint fragmentShader = glCreateShader(GL_FRAGMENT_SHADER);
+    glShaderSource(fragmentShader, 1, &fragmentSource, NULL);
+    glCompileShader(fragmentShader);
+
+    // If ARB_parallel_shader_compile is supported, poll for completion
+    if (glewIsSupported("GL_ARB_parallel_shader_compile")) {
+        // Poll until both shaders are compiled (non-blocking check)
+        GLint vsComplete = GL_FALSE, fsComplete = GL_FALSE;
+        while (vsComplete == GL_FALSE || fsComplete == GL_FALSE) {
+            if (vsComplete == GL_FALSE) {
+                glGetShaderiv(vertexShader, GL_COMPLETION_STATUS_ARB, &vsComplete);
+            }
+            if (fsComplete == GL_FALSE) {
+                glGetShaderiv(fragmentShader, GL_COMPLETION_STATUS_ARB, &fsComplete);
+            }
+            // Tiny sleep to avoid busy-waiting
+            if (vsComplete == GL_FALSE || fsComplete == GL_FALSE) {
+                std::this_thread::sleep_for(std::chrono::microseconds(100));
+            }
+        }
+    }
+
+    // Now check compile status (shaders are done compiling)
     GLint success;
     glGetShaderiv(vertexShader, GL_COMPILE_STATUS, &success);
     if (!success) {
         logShaderError(vertexShader, "VERTEX");
         glDeleteShader(vertexShader);
+        glDeleteShader(fragmentShader);
         return 0;
     }
-
-    GLuint fragmentShader = glCreateShader(GL_FRAGMENT_SHADER);
-    glShaderSource(fragmentShader, 1, &fragmentSource, NULL);
-    glCompileShader(fragmentShader);
 
     glGetShaderiv(fragmentShader, GL_COMPILE_STATUS, &success);
     if (!success) {
@@ -1561,6 +2218,20 @@ GLuint ISFLoader::createShaderProgram(const char* vertexSource, const char* frag
 
     glLinkProgram(program);
 
+    // If ARB_parallel_shader_compile is supported, poll for linking completion
+    if (glewIsSupported("GL_ARB_parallel_shader_compile")) {
+        // Poll until program linking is complete (non-blocking check)
+        GLint linkComplete = GL_FALSE;
+        while (linkComplete == GL_FALSE) {
+            glGetProgramiv(program, GL_COMPLETION_STATUS_ARB, &linkComplete);
+            if (linkComplete == GL_FALSE) {
+                // Tiny sleep to avoid busy-waiting
+                std::this_thread::sleep_for(std::chrono::microseconds(100));
+            }
+        }
+    }
+
+    // Now check link status (linking is done)
     glGetProgramiv(program, GL_LINK_STATUS, &success);
     if (!success) {
         logProgramError(program);

@@ -2986,7 +2986,19 @@ void onestepfrom(bool stage, Node *node, Node *prevnode, GLuint prevfbotex, GLui
 		if (1) {
 		//if (effect->layer->initialized) {
 			mainprogram->uniformCache->setFloat("drywet", effect->drywet->value);
+            GLuint effectProgram = 0;
 			if (effect->onoffbutton->value) {
+                // Switch to effect-specific shader program if available
+                if (effect->type >= 0 && effect->type < 43 && mainprogram->EffectShaderPrograms[effect->type] != 0) {
+                    effectProgram = mainprogram->EffectShaderPrograms[effect->type];
+                    glUseProgram(effectProgram);
+                    // Recreate uniform cache for the effect program
+                    delete mainprogram->uniformCache;
+                    mainprogram->uniformCache = new UniformCache(effectProgram);
+                }
+
+                // Set parameters (now on the effect-specific shader if available)
+                mainprogram->uniformCache->setFloat("drywet", effect->drywet->value);
                 for (int i = 0; i < effect->params.size(); i++) {
                     Param *par = effect->params[i];
                     float val;
@@ -3635,6 +3647,13 @@ void onestepfrom(bool stage, Node *node, Node *prevnode, GLuint prevfbotex, GLui
             } else {
                 if (!lay->onhold)
                     draw_box(nullptr, black, -1.0f, 1.0f, 2.0f, -2.0f, sx, sy, sc, op, 0, prevfbotex, 0, 0, false);
+            }
+
+            // Restore main shader program if we switched to an effect program
+            if (effectProgram != 0) {
+                glUseProgram(mainprogram->ShaderProgram);
+                delete mainprogram->uniformCache;
+                mainprogram->uniformCache = new UniformCache(mainprogram->ShaderProgram);
             }
 
             if (effect->node == lay->lasteffnode[0]) {
@@ -4924,7 +4943,7 @@ void do_text_input(float x, float y, float sx, float sy, int mx, int my, float w
 		if (found == false) {
 			//when clicked outside path, cancel edit
             if (mainprogram->renaming == EDIT_BINNAME) {
-                for (BinElement *elem: binsmain->menubin->elements) {
+                for (BinElement *elem: binsmain->currbin->elements) {
                     if (elem->path != "") {
                         elem->autosavejpegsaved = false;
                     }
@@ -7689,7 +7708,7 @@ int main(int argc, char* argv[]) {
     HRESULT hr = SetProcessDpiAwareness(PROCESS_PER_MONITOR_DPI_AWARE);
     if (FAILED(hr)) {
         _com_error err(hr);
-        fwprintf(stderr, L"SetProcessDpiAwareness: %s\n", err.ErrorMessage());
+        fwprintf(stdout, L"SetProcessDpiAwareness: %s\n", err.ErrorMessage());
     }
 #endif
 
@@ -7702,7 +7721,7 @@ int main(int argc, char* argv[]) {
     // ALSA
     //snd_seq_t *seq_handle;
     //if (snd_seq_open(&seq_handle, "hw", SND_SEQ_OPEN_INPUT, 0) < 0) {
-    //    fprintf(stderr, "Error opening ALSA sequencer.\n");
+    //    fprintf(stdout, "Error opening ALSA sequencer.\n");
     //   exit(0);
     //}
 
@@ -7821,7 +7840,7 @@ int main(int argc, char* argv[]) {
     smh = (float) he;
 
     if (FT_Init_FreeType(&ft)) {
-        fprintf(stderr, "Could not init freetype library\n");
+        fprintf(stdout, "Could not init freetype library\n");
         return 1;
     }
     FT_UInt interpreter_version = 40;
@@ -7835,8 +7854,22 @@ int main(int argc, char* argv[]) {
             mainprogram->quitting = "Can't find \"expressway.ttf\" TrueType font in current directory";
         }
     }
-#else
-    #ifdef POSIX
+    std::filesystem::path full_path(std::filesystem::current_path());
+    printf("PATH %s", full_path.string().c_str());
+    printf("\n");
+    std::string pp(full_path.string() + "/lock.png");
+    ILboolean ret2 = ilLoadImage((const ILstring)pp.c_str());
+    mainprogram->ffgldir = mainprogram->docpath + "/ffglplugins";
+    if (!exists(mainprogram->ffgldir)) {
+        std::filesystem::create_directories(mainprogram->ffgldir);
+    }
+    mainprogram->isfdir = "C:/ProgramData/ISF";
+    if (!exists(mainprogram->isfdir)) {
+        std::filesystem::create_directories(mainprogram->isfdir);
+    }
+#endif
+
+#ifdef POSIX
     mainprogram->appimagedir = "";
     if (std::getenv("APPDIR")) {
         mainprogram->appimagedir = std::getenv("APPDIR");
@@ -7856,9 +7889,8 @@ int main(int argc, char* argv[]) {
     if (!exists(fstr))
         mainprogram->quitting = "Can't find \"expressway.ttf\" TrueType font";
 #endif
-#endif
     if (FT_New_Face(ft, fstr.c_str(), 0, &face)) {
-        fprintf(stderr, "Could not open font %s\n", fstr.c_str());
+        fprintf(stdout, "Could not open font %s\n", fstr.c_str());
         return 1;
     }
     FT_Set_Pixel_Sizes(face, 0, 48);
@@ -7909,7 +7941,25 @@ int main(int argc, char* argv[]) {
     glBindFramebuffer(GL_FRAMEBUFFER, 0);
     glDrawBuffer(GL_FRONT);
 
-    mainprogram->ShaderProgram = mainprogram->set_shader();
+    // ===== ENABLE ARB PARALLEL SHADER COMPILE =====
+    if (glewIsSupported("GL_ARB_parallel_shader_compile")) {
+        // Use one thread per CPU core (best practice per ARB spec)
+        int numThreads = std::thread::hardware_concurrency();
+        glMaxShaderCompilerThreadsARB(numThreads);
+        std::cout << "ARB_parallel_shader_compile enabled with " << numThreads << " threads (CPU cores)" << std::endl;
+    } else {
+        std::cout << "ARB_parallel_shader_compile not supported" << std::endl;
+    }
+
+    // Compile effect shaders in parallel (also compiles streamlined core shader)
+    mainprogram->compile_effect_shaders();
+
+    // Only compile the full monolithic shader if the core shader compilation failed
+    if (mainprogram->ShaderProgram == 0) {
+        std::cout << "Core shader compilation failed, falling back to monolithic shader..." << std::endl;
+        mainprogram->ShaderProgram = mainprogram->set_shader();
+    }
+
     mainprogram->uniformCache = new UniformCache(mainprogram->ShaderProgram);
     glUseProgram(mainprogram->ShaderProgram);
 
@@ -8032,21 +8082,6 @@ int main(int argc, char* argv[]) {
     draw_direct(nullptr, black, -2.0f, -1.0f, 4.0f, 2.0f, 0.0f, 0.0f, 1.0f, 1.0f, 0, mainprogram->bgtex, glob->w, glob->h, false, false);
 */
 
-#ifdef WINDOWS
-    std::filesystem::path full_path(std::filesystem::current_path());
-    printf("PATH %s", full_path.string().c_str());
-    printf("\n");
-    std::string pp(full_path.string() + "/lock.png");
-    ILboolean ret2 = ilLoadImage((const ILstring)pp.c_str());
-    mainprogram->ffgldir = mainprogram->docpath + "/ffglplugins";
-    if (!exists(mainprogram->ffgldir)) {
-        std::filesystem::create_directories(mainprogram->ffgldir);
-    }
-    mainprogram->isfdir = "C:/ProgramData/ISF";
-    if (!exists(mainprogram->isfdir)) {
-        std::filesystem::create_directories(mainprogram->isfdir);
-    }
-#endif
 #ifdef POSIX
     std::string lstr = mainprogram->appimagedir + "/usr/share/ewocvj2/lock.png";
     ILboolean ret2 = ilLoadImage(lstr.c_str());
@@ -8236,7 +8271,7 @@ int main(int argc, char* argv[]) {
         }
     }
 
-    // load installed isf plugins
+    // Load installed ISF plugins (with ARB parallel compile already enabled)
     SDL_GL_MakeCurrent(mainprogram->splashwindow, glc);
     mainprogram->isfloader.loadISFDirectory(mainprogram->isfdir);
     SDL_GL_MakeCurrent(mainprogram->mainwindow, glc);
@@ -8710,7 +8745,7 @@ int main(int argc, char* argv[]) {
                             mainmix->adaptnumparam = nullptr;
                         }
                         else if (mainprogram->renaming == EDIT_BINNAME) {
-                            for (BinElement *elem: binsmain->menubin->elements) {
+                            for (BinElement *elem: binsmain->currbin->elements) {
                                 if (elem->path != "") {
                                     elem->autosavejpegsaved = false;
                                 }
@@ -8747,9 +8782,9 @@ int main(int argc, char* argv[]) {
                     }
                 }
                 if (mainprogram->renaming == EDIT_BINNAME) {
-                    binsmain->binrenamemap.erase(binsmain->menubin->name);
-                    binsmain->menubin->name = mainprogram->inputtext;
-                    binsmain->binrenamemap[binsmain->menubin->name] = binsmain->backupname;
+                    binsmain->binrenamemap.erase(binsmain->currbin->name);
+                    binsmain->currbin->name = mainprogram->inputtext;
+                    binsmain->binrenamemap[binsmain->currbin->name] = binsmain->backupname;
                 } else if (mainprogram->renaming == EDIT_BINELEMNAME) {
                     binsmain->renamingelem->name = mainprogram->inputtext;
                 } else if (mainprogram->renaming == EDIT_SHELFELEMNAME) {

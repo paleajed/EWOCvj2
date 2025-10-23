@@ -2307,7 +2307,7 @@ ISFEffect::ISFEffect(Layer *lay, int isfnr) {
     mainprogram->isfinstances[this->isfpluginnr].push_back(instance);
     this->isfinstancenr = mainprogram->isfinstances[this->isfpluginnr].size() - 1;
 
-    // get parameters from FFGLHost::parameters
+    // get parameters
     this->numrows = 1;
     int cnt = 0;
     for (auto par : instance->getParameterInfo()) {
@@ -4352,7 +4352,7 @@ static int decode_packet(Layer *lay, bool show)
                 }
             }
             if (err2 == AVERROR(EINVAL)) {
-                fprintf(stderr, "Error decoding video frame (%s)\n", 0);
+                fprintf(stdout, "Error decoding video frame (%s)\n", 0);
                 return 0;
             }
             if (err2 == AVERROR_EOF) {
@@ -4438,7 +4438,7 @@ static int decode_packet(Layer *lay, bool show)
 			break;
 		}
 		if (err2 == AVERROR(EINVAL)) {
-			fprintf(stderr, "Error decoding audio frame (%s)\n", 0);
+			fprintf(stdout, "Error decoding audio frame (%s)\n", 0);
 			printf("codec %d", lay->decpkt);
 			return ret;
 		}
@@ -4557,7 +4557,7 @@ static int decode_video_packet(Layer *lay, bool show) {
             }
         }
         if (err2 == AVERROR(EINVAL)) {
-            fprintf(stderr, "Error decoding video frame (%s)\n", 0);
+            fprintf(stdout, "Error decoding video frame (%s)\n", 0);
             return 0;
         }
         if (err2 == AVERROR_EOF) {
@@ -4650,7 +4650,7 @@ static int decode_audio_packet(Layer *lay, AVPacket* pkt) {
     }
     
     if (err2 == AVERROR(EINVAL)) {
-        fprintf(stderr, "Error decoding audio frame (%s)\n", 0);
+        fprintf(stdout, "Error decoding audio frame (%s)\n", 0);
         return nsam;
     }
     
@@ -4876,7 +4876,7 @@ static int get_format_from_sample_fmt(const char **fmt,
             return 0;
         }
     }
-    fprintf(stderr,
+    fprintf(stdout,
             "sample format %s is not supported as output format\n",
             av_get_sample_fmt_name(sample_fmt));
     return -1;
@@ -7272,10 +7272,6 @@ void Mixer::outputmonitors_handle() {
                     }
                 }
 
-                if (mainprogram->doubleleftmouse) {
-                    mainprogram->fullscreen = i;
-                    mainprogram->doubleleftmouse = false;
-                }
                 if (mainprogram->menuactivation) {
                     mainprogram->monitormenu->state = 2;
                     mainprogram->monitormenu->value = i;
@@ -10103,7 +10099,7 @@ bool Layer::thread_vidopen() {
 
     //av_opt_set_int(this->video, "max_analyze_duration2", 100000000, 0);
     if (avformat_find_stream_info(this->video, nullptr) < 0) {
-        fprintf(stderr, "Could not find stream information\n");
+        fprintf(stdout, "Could not find stream information\n");
         this->filename = "";
         mainmix->addlay = false;
         mainprogram->openerr = true;
@@ -14130,7 +14126,7 @@ void Mixer::record_video(std::string reccod) {
 
 	//ret = av_frame_get_buffer(frame, 32);
     //if (ret < 0) {
-    //    fprintf(stderr, "Could not allocate the video frame data\n");
+    //    fprintf(stdout, "Could not allocate the video frame data\n");
     //    exit(0);
     //}
 
