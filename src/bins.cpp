@@ -596,14 +596,14 @@ void BinsMain::handle(bool draw) {
         std::unique_ptr <Boxx> box = std::make_unique <Boxx> ();
 		bool found = false;
 		bool cond2 = (mainprogram->mx < mainprogram->xvtxtoscr(1.475f));
-		if ((!this->menubinel || cond1) && cond2) {
+		cond2 = true;
+        if ((!this->menubinel || cond1) && cond2) {
 			// not in bin element -> leftmouse draws box select
 			bool full = false;
 			if (this->menubinel) {
 				if (this->menubinel->name != "") full = true;
 			}
 			if (mainprogram->leftmousedown && !full && !this->inputtexes.size() && !mainprogram->intopmenu && !this->renamingelem && mainprogram->quitting == "") {
-				mainprogram->leftmousedown = false;
 				if (!this->selboxing) {
 					this->selboxing = true;
 					this->selboxx = mainprogram->mx;
@@ -654,7 +654,7 @@ void BinsMain::handle(bool draw) {
 					}
 				}
 			}
-			if (mainprogram->leftmouse) {
+			if (mainprogram->lmover) {
 			    for (int i = 0; i < 144; i++) {
 			       this->currbin->elements[i]->boxselect = false;
 			    }
@@ -693,7 +693,9 @@ void BinsMain::handle(bool draw) {
     draw_box(&seatbox, -1);
     render_text("Seatname:", white, 0.08f, -0.95f, 0.00075f, 0.0012f);
     if (seatbox.in()) {
+        this->selboxing = false;
         if (mainprogram->leftmouse) {
+			mainprogram->leftmouse = false;
             mainprogram->renamingseat = true;
             mainprogram->renaming = EDIT_STRING;
             mainprogram->inputtext = mainprogram->seatname;
@@ -765,7 +767,9 @@ void BinsMain::handle(bool draw) {
 
         // Click to start entering server IP
         if (serveripbox.in()) {
+            this->selboxing = false;
             if (mainprogram->leftmouse) {
+				mainprogram->leftmouse = false;
                 mainprogram->enteringserverip = true;
                 mainprogram->renaming = EDIT_STRING;
                 mainprogram->inputtext = mainprogram->manualserverip;
@@ -929,14 +933,15 @@ void BinsMain::handle(bool draw) {
     // set threadmode for hap encoding
     if (!this->binpreview) {
         render_text("HAP Encoding Mode", white, 0.62f, 0.8f, 0.00075f, 0.0012f);
-        draw_box(white, black, binsmain->hapmodebox, -1);
+        draw_box(white, black, this->hapmodebox, -1);
         draw_box(white, lightblue, 0.67f + 0.048f * mainprogram->threadmode, 0.6575f, 0.048f, 0.06f, -1);
         render_text("Live mode", white, 0.59f, 0.6f, 0.00075f, 0.0012f);
         render_text("Max mode", white, 0.75f, 0.6f, 0.00075f, 0.0012f);
         render_text("1 thread", white, 0.59f, 0.55f, 0.00075f, 0.0012f);
         mainprogram->maxthreads = mainprogram->numcores * mainprogram->threadmode + 1;
         render_text(std::to_string(mainprogram->numcores + 1) + " threads", white, 0.75f, 0.55f, 0.00075f, 0.0012f);
-        if (binsmain->hapmodebox->in()) {
+        if (this->hapmodebox->in()) {
+            this->selboxing = false;
             if (mainprogram->leftmouse) {
                 mainprogram->threadmode = !mainprogram->threadmode;
             }
@@ -1009,6 +1014,7 @@ void BinsMain::handle(bool draw) {
 			if (bin->box->in() && !this->dragbin) {
 				if (mainprogram->renaming == EDIT_NONE) {
 					if (mainprogram->leftmousedown && !this->dragbinsense) {
+                        this->selboxing = false;
 						this->dragbinsense = true;
 						this->dragbox = bin->box;
 						this->dragbinpos = i + this->binsscroll;
@@ -1090,6 +1096,9 @@ void BinsMain::handle(bool draw) {
 			this->dragbin = this->bins[this->dragbinpos];
 			this->dragbinsense = false;
 		}
+        if (this->selboxing) {
+            mainprogram->leftmousedown = false;
+        }
 
 		// handle bin drag in binslist
 		if (this->dragbin) {
@@ -2962,6 +2971,9 @@ void BinsMain::receive_shared_bins() {
                     teststr = test_driveletters(path);
                 }
                 binel->name = name;
+				if (teststr == "") {
+					binel->name = "";
+				}
                 binel->path = teststr;
                 binel->type = ELEM_FILE;
             }

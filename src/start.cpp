@@ -5262,7 +5262,7 @@ void the_loop() {
     if (mainprogram->leftmouse &&
         (laywiping || mainprogram->cwon || mainprogram->menuondisplay || mainprogram->wiping || mainmix->adaptparam ||
          mainmix->scrollon || binsmain->dragbin || mainmix->moving || mainprogram->dragbinel || mainprogram->drageff ||
-         mainprogram->shelfdragelem || mainprogram->wiping || mainprogram->inbetween)) {
+         mainprogram->shelfdragelem || mainprogram->wiping || mainprogram->inbetween || binsmain->selboxing)) {
         // special cases when mouse can be released over element that should not be triggered
         mainprogram->lmover = true;
         mainprogram->fsmouse = true;

@@ -630,6 +630,8 @@ bool ISFLoader::loadISFDirectory(const std::string& directory) {
             glAttachShader(batch.program, batch.fragmentShader);
             glBindAttribLocation(batch.program, 0, "aPos");
             glBindAttribLocation(batch.program, 1, "aTexCoord");
+            // Enable binary retrievability BEFORE linking (required for caching)
+            glProgramParameteri(batch.program, GL_PROGRAM_BINARY_RETRIEVABLE_HINT, GL_TRUE);
             glLinkProgram(batch.program);
         };
 
@@ -682,6 +684,8 @@ bool ISFLoader::loadISFDirectory(const std::string& directory) {
                     } else {
                         // Success! Store the program (uniform caching deferred to Phase 6)
                         batch.shader->program_ = batch.program;
+                        // Cache the successfully linked program
+                        cacheProgram(batch.shader->name_, batch.vertexSource, batch.fragmentSource, batch.program);
                     }
 
                     // Clean up shaders
@@ -715,6 +719,8 @@ bool ISFLoader::loadISFDirectory(const std::string& directory) {
                     } else {
                         // Store the program (uniform caching deferred to Phase 6)
                         batch.shader->program_ = batch.program;
+                        // Cache the successfully linked program
+                        cacheProgram(batch.shader->name_, batch.vertexSource, batch.fragmentSource, batch.program);
 
                         // Clean up shaders
                         glDeleteShader(batch.vertexShader);
@@ -752,10 +758,6 @@ bool ISFLoader::loadISFDirectory(const std::string& directory) {
                 mainprogram->bvao = mainprogram->splboxvao;
                 mainprogram->bvbuf = mainprogram->splboxvbuf;
                 mainprogram->btbuf = mainprogram->splboxtbuf;
-                if (isFirstRun_) {
-                    render_text("FIRST RUN: Preparing shaders. This will take several minutes...", white, -0.75f, 0.8f,
-                                0.0024f, 0.004f, 3, 0);
-                }
                 draw_box(white, black, -0.25f, -0.9f, 0.5f, 0.1f, 0.0f, 0.0f,
                          1.0f, 1.0f, 0, -1, glob->w, glob->h, false);
                 draw_box(white, white, -0.25f, -0.9f, 0.5f * (float)linkedCount / (float)totalToLink, 0.1f, 0.0f, 0.0f,
@@ -791,10 +793,6 @@ bool ISFLoader::loadISFDirectory(const std::string& directory) {
                 mainprogram->bvao = mainprogram->splboxvao;
                 mainprogram->bvbuf = mainprogram->splboxvbuf;
                 mainprogram->btbuf = mainprogram->splboxtbuf;
-                if (isFirstRun_) {
-                    render_text("FIRST RUN: Compiling shaders... (can take several minutes)", white, -0.75f, 0.8f,
-                                0.0024f, 0.004f, 3, 0);
-                }
                 draw_box(white, black, -0.25f, -0.9f, 0.5f, 0.1f, 0.0f, 0.0f,
                          1.0f, 1.0f, 0, -1, glob->w, glob->h, false);
                 draw_box(white, white, -0.25f, -0.9f, 0.5f * (float)count / (float)total, 0.1f, 0.0f, 0.0f,
@@ -932,8 +930,6 @@ void ISFLoader::initializeShaderCache() {
 void ISFLoader::showFirstRunMessage() {
     std::cout << "===============================================" << std::endl;
     std::cout << "FIRST RUN: Building shader cache..." << std::endl;
-    std::cout << "This will take a few minutes but only happens once." << std::endl;
-    std::cout << "Subsequent launches will be much faster!" << std::endl;
     std::cout << "Cache location: " << cacheDirectory_ << std::endl;
     std::cout << "===============================================" << std::endl;
 }
@@ -2218,6 +2214,9 @@ GLuint ISFLoader::createShaderProgram(const char* vertexSource, const char* frag
     // Bind attribute locations BEFORE linking for GLSL 120
     glBindAttribLocation(program, 0, "aPos");
     glBindAttribLocation(program, 1, "aTexCoord");
+
+    // Enable binary retrievability BEFORE linking (required for caching)
+    glProgramParameteri(program, GL_PROGRAM_BINARY_RETRIEVABLE_HINT, GL_TRUE);
 
     glLinkProgram(program);
 

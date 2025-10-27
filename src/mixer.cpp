@@ -3035,12 +3035,14 @@ Layer::Layer(bool comp) {
     this->chdir->name[0] = "chdir";
     this->chdir->butid = 13;
 	this->chdir->toggle = 1;
+    this->chdir->layer = this;
 	this->chdir->box->tooltiptitle = "Toggle key direction ";
 	this->chdir->box->tooltip = "Leftclick toggles key direction: does the previous layer stream image fill up the current layer's color/hue/grayscale or does the current layer fill a color/hue/grayscale in the previous layer stream image. ";
 	this->chinv = new Button(false);
     this->chinv->name[0] = "chinv";
     this->chinv->butid = 14;
     this->chinv->toggle = 1;
+    this->chinv->layer = this;
 	this->chinv->box->tooltiptitle = "Toggle key inverse modus ";
 	this->chinv->box->tooltip = "Leftclick toggles key inverse modus: either the selected color/hue/grayscale is exchanged or all colors/hues/grayscales but the selected color/hue/grayscale are exchanged. ";
 	this->chdir->box->acolor[3] = 1.0f;
@@ -7188,9 +7190,16 @@ void Layer::display() {
 					if (this->chdir->box->in()) {
 						if (mainprogram->leftmouse) {
 							this->chdir->value = !this->chdir->value;
-							mainprogram->uniformCache->setBool("chdir", this->chdir->value);
+                            for (int j = 0; j < loopstation->elements.size(); j++) {
+                                if (loopstation->elements[j]->recbut->value) {
+                                    loopstation->elements[j]->add_button_automationentry(this->chdir);
+                                }
+                            }
 						}
 					}
+                    if (this->chdir->toggled()) {
+                        mainprogram->uniformCache->setBool("chdir", this->chdir->value);
+                    }
 					if (this->chdir->value) {
 						this->chdir->box->acolor[1] = 0.7f;
 					}
@@ -7202,9 +7211,16 @@ void Layer::display() {
 					if (this->chinv->box->in()) {
 						if (mainprogram->leftmouse) {
 							this->chinv->value = !this->chinv->value;
-							mainprogram->uniformCache->setBool("chinv", this->chinv->value);
+                            for (int j = 0; j < loopstation->elements.size(); j++) {
+                                if (loopstation->elements[j]->recbut->value) {
+                                    loopstation->elements[j]->add_button_automationentry(this->chinv);
+                                }
+                            }
 						}
 					}
+                    if (this->chinv->toggled()) {
+                        mainprogram->uniformCache->setBool("chinv", this->chinv->value);
+                    }
                     if (this->chinv->value) {
                         this->chinv->box->acolor[1] = 0.7f;
                     }
@@ -11434,7 +11450,7 @@ void Layer::open_files_layers() {
         // load one element of ordered list each loop
         std::string str = mainprogram->paths[mainprogram->pathscount];
         Layer *lay = mainprogram->fileslay;
-        if (mainprogram->pathscount > 0) {
+        if (mainprogram->pathscount > 0 && !mainmix->addlay) {
             lay = mainmix->add_layer(lvec, mainprogram->fileslay->pos + mainprogram->pathscount);
         }
         if (mainprogram->pathscount == mainprogram->paths.size() - 1) {
@@ -12144,14 +12160,35 @@ Layer* Mixer::read_layers(std::istream &rfile, const std::string result, std::ve
 			safegetline(rfile, istring);
 			layend->chtol->value = std::stof(istring);
 		}
+        if (istring == "CHTOLEVENT") {
+            Param *par = layend->chtol;
+            safegetline(rfile, istring);
+            if (istring == "EVENTELEM") {
+                mainmix->event_read(rfile, par, nullptr, layend);
+            }
+        }
 		if (istring == "CHDIRVAL") {
 			safegetline(rfile, istring);
 			layend->chdir->value = std::stoi(istring);
 		}
+        if (istring == "CHDIREVENT") {
+            Button* but = layend->chdir;
+            safegetline(rfile, istring);
+            if (istring == "EVENTELEM") {
+                mainmix->event_read(rfile, nullptr, but, layend);
+            }
+        }
 		if (istring == "CHINVVAL") {
 			safegetline(rfile, istring);
 			layend->chinv->value = std::stoi(istring);
 		}
+        if (istring == "CHINVEVENT") {
+            Button* but = layend->chinv;
+            safegetline(rfile, istring);
+            if (istring == "EVENTELEM") {
+                mainmix->event_read(rfile, nullptr, but, layend);
+            }
+        }
 		if (istring == "FRAME") {
 			safegetline(rfile, istring);
 			layend->frame = std::stof(istring);
@@ -13211,12 +13248,21 @@ std::vector<std::string> Mixer::write_layer(Layer* lay, std::ostream& wfile, boo
 	wfile << "CHTOLVAL\n";
 	wfile << std::to_string(lay->chtol->value);
 	wfile << "\n";
+    wfile << "CHTOLEVENT\n";
+    mainmix->event_write(wfile, lay->chtol, nullptr);
+    wfile << "\n";
 	wfile << "CHDIRVAL\n";
 	wfile << std::to_string(lay->chdir->value);
 	wfile << "\n";
+    wfile << "CHDIREVENT\n";
+    mainmix->event_write(wfile, nullptr, lay->chdir);
+    wfile << "\n";
 	wfile << "CHINVVAL\n";
 	wfile << std::to_string(lay->chinv->value);
 	wfile << "\n";
+    wfile << "CHINVEVENT\n";
+    mainmix->event_write(wfile, nullptr, lay->chinv);
+    wfile << "\n";
 	if (lay->type != ELEM_LIVE) {
 		wfile << "FRAME\n";
 		wfile << std::to_string(lay->frame);

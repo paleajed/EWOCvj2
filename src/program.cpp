@@ -1342,7 +1342,7 @@ bool Program::order_paths(bool dodeckmix) {
                         this->getvideotexpaths.push_back(str);
                     } else {
                     }
-                } else {
+                } else if (str.substr(str.size() - 4, 4) != ".wav") {
                     Layer *lay = new Layer(true);
                     lay->type = ELEM_FILE;
                     this->getvideotexlayers.push_back(lay);
@@ -1729,11 +1729,13 @@ void Program::handle_wormgate(bool gate) {
 	//draw and handle BINS wormgate
 	if (mainprogram->fullscreen == -1) {
 		if (box->in()) {
+            binsmain->selboxing = false;
             mainprogram->directmode = true;
 			draw_box(lightgrey, lightblue, box, -1);
             mainprogram->directmode = false;
             if (!mainprogram->menuondisplay) {
 				if (mainprogram->leftmouse) {
+                    mainprogram->leftmouse = false;
 					mainprogram->binsscreen = !mainprogram->binsscreen;
                     mainprogram->recundo = false;
                     if (mainprogram->binsscreen) {
