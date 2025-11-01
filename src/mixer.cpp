@@ -438,6 +438,8 @@ void Param::handle(bool smallxpad) {
         if (firstdigit > 3) firstdigit = 3;
         if (mainmix->learnparam == this && mainmix->learn) {
             thisstr = "MIDI";
+        } else if (this == mainmix->crossfade || this == mainmix->crossfadecomp){
+            thisstr = mainmix->crossfadename[!mainprogram->prevmodus];
         } else if (this != mainmix->prepadaptparam && this != mainmix->adaptparam) thisstr = this->name;
         else if (this->sliding) {
             thisstr = std::to_string(val).substr(firstdigit, 4 - firstdigit) + "." +
@@ -745,7 +747,6 @@ std::vector<Param*> Param::isfset_parameter_to(ISFLoader::ParamInfo &src, int po
             return {this, par1, par2, par3};
         } else if (this->type == ISFLoader::PARAM_POINT2D) {
             this->isfset_parameter_to(src, 0, true);
-            this->nextrow = true;
             Param *par1 = new Param;
             par1->isfset_parameter_to(src, 1, true);
             return {this, par1};
@@ -2913,14 +2914,24 @@ Layer::Layer(bool comp) {
 
     this->chtol = new Param;
     this->chtol->name = "Tolerance";
-	this->chtol->value = 0.8f;
-	this->chtol->deflt = 0.8f;
-	this->chtol->range[0] = 0.0f;
+    this->chtol->value = 0.8f;
+    this->chtol->deflt = 0.8f;
+    this->chtol->range[0] = 0.0f;
     this->chtol->range[1] = 1.0f;
     this->chtol->layer = this;
     this->chtol->shadervar = "colortol";
     this->chtol->box->tooltiptitle = "Set key tolerance ";
     this->chtol->box->tooltip = "Leftdrag to set tolerance (\"spread\") around key color/hue/grayscale.  Doubleclicking allows numeric entry. ";
+    this->chfeather = new Param;
+    this->chfeather->name = "Feather";
+    this->chfeather->value = 2.0f;
+    this->chfeather->deflt = 2.0f;
+    this->chfeather->range[0] = 0.0f;
+    this->chfeather->range[1] = 5.0f;
+    this->chfeather->layer = this;
+    this->chfeather->shadervar = "feather";
+    this->chfeather->box->tooltiptitle = "Set key feather ";
+    this->chfeather->box->tooltip = "Leftdrag to set feather of key color/hue/grayscale.  Doubleclicking allows numeric entry. ";
 	this->speed = new Param;
 	this->speed->name = "Speed";
 	this->speed->value = 1.0f;
@@ -3119,6 +3130,11 @@ Layer::~Layer() {
     }
     delete this->chtol;
     if (this->chtol == mainmix->adaptparam) {
+        mainmix->adaptparam = nullptr;
+        mainmix->prepadaptparam = nullptr;
+    }
+    delete this->chfeather;
+    if (this->chfeather == mainmix->adaptparam) {
         mainmix->adaptparam = nullptr;
         mainmix->prepadaptparam = nullptr;
     }
@@ -4016,7 +4032,7 @@ void make_layboxes() {
                 testlay->colorbox->lcolor[1] = 0.7;
                 testlay->colorbox->lcolor[2] = 0.7;
                 testlay->colorbox->lcolor[3] = 1.0;
-				testlay->colorbox->vtxcoords->x1 = testlay->mixbox->vtxcoords->x1 + 0.105f;
+				testlay->colorbox->vtxcoords->x1 = testlay->mixbox->vtxcoords->x1 + 0.1f;
 				testlay->colorbox->vtxcoords->y1 = testlay->mixbox->vtxcoords->y1;
 				testlay->colorbox->vtxcoords->w = 0.075f;
 				testlay->colorbox->vtxcoords->h = 0.075f;
@@ -4272,7 +4288,7 @@ void make_layboxes() {
                 testlay->chdir->box->lcolor[1] = 0.7;
                 testlay->chdir->box->lcolor[2] = 0.7;
                 testlay->chdir->box->lcolor[3] = 1.0;
-				testlay->chdir->box->vtxcoords->x1 = testlay->mixbox->vtxcoords->x1 + 0.36f;
+				testlay->chdir->box->vtxcoords->x1 = testlay->mixbox->vtxcoords->x1 + 0.46f;
 				testlay->chdir->box->vtxcoords->y1 = testlay->mixbox->vtxcoords->y1;
 				testlay->chdir->box->vtxcoords->w = 0.0375f;
 				testlay->chdir->box->vtxcoords->h = 0.075f;
@@ -4283,7 +4299,7 @@ void make_layboxes() {
                 testlay->chinv->box->lcolor[1] = 0.7;
                 testlay->chinv->box->lcolor[2] = 0.7;
                 testlay->chinv->box->lcolor[3] = 1.0;
-				testlay->chinv->box->vtxcoords->x1 = testlay->mixbox->vtxcoords->x1 + 0.4275f;
+				testlay->chinv->box->vtxcoords->x1 = testlay->mixbox->vtxcoords->x1 + 0.5075f;
 				testlay->chinv->box->vtxcoords->y1 = testlay->mixbox->vtxcoords->y1;
 				testlay->chinv->box->vtxcoords->w = 0.0375f;
 				testlay->chinv->box->vtxcoords->h = 0.075f;
@@ -5908,7 +5924,6 @@ void Layer::display() {
 						if (0 < mainprogram->my && mainprogram->my < mainprogram->yvtxtoscr(mainprogram->layh)) {
                             if (mainprogram->dropfiles.size()) {
                                 // SDL drag'n'drop
-                                mainprogram->path = mainprogram->dropfiles[0];
                                 for (char *df: mainprogram->dropfiles) {
                                     bool wrong = false;
                                     std::string path = df;
@@ -5926,6 +5941,10 @@ void Layer::display() {
                                     mainmix->mouselayer = nullptr;
                                     mainmix->mousedeck = this->deck;
                                 }
+                                for (char *df : mainprogram->dropfiles) {
+                                    SDL_free(df);
+                                }
+                                mainprogram->dropfiles.clear();
                             }
 							if (mainprogram->menuactivation) {
 								mainprogram->newlaymenu->state = 2;
@@ -6586,7 +6605,20 @@ void Layer::display() {
                     par->box->lcolor[1] = 0.6;
                     par->box->lcolor[2] = 0.6;
                     par->box->lcolor[3] = 0.6;
-                    par->box->vtxcoords->x1 = this->colorbox->vtxcoords->x1 + 0.105f;
+                    par->box->vtxcoords->x1 = this->colorbox->vtxcoords->x1 + 0.1f;
+                    par->box->vtxcoords->y1 = this->colorbox->vtxcoords->y1;
+                    par->box->vtxcoords->w = 0.12f;
+                    par->box->vtxcoords->h = this->colorbox->vtxcoords->h;
+                    par->box->upvtxtoscr();
+
+                    par->handle();
+
+                    par = this->chfeather;
+                    par->box->lcolor[0] = 0.6;
+                    par->box->lcolor[1] = 0.6;
+                    par->box->lcolor[2] = 0.6;
+                    par->box->lcolor[3] = 0.6;
+                    par->box->vtxcoords->x1 = this->colorbox->vtxcoords->x1 + 0.225f;
                     par->box->vtxcoords->y1 = this->colorbox->vtxcoords->y1;
                     par->box->vtxcoords->w = 0.12f;
                     par->box->vtxcoords->h = this->colorbox->vtxcoords->h;
@@ -6608,20 +6640,29 @@ void Layer::display() {
             if (this->filename == "" || this->type == ELEM_LIVE) {
                 draw_box(lightgrey, darkgrey, this->speed->box->vtxcoords->x1, this->speed->box->vtxcoords->y1,
                          this->speed->box->vtxcoords->w * 0.30f, 0.075f, -1);
-            } else par->handle();
+            }
+            else if (this->loopbeats > 0) {
+                draw_box(this->speed->box, -1);
+                render_text(mainprogram->beatmenu->entries[log2(this->loopbeats) + 1], white, this->speed->box->vtxcoords->x1 + 0.03f, this->speed->box->vtxcoords->y1 + 0.075f - 0.045f,
+                            0.00045f, 0.00075f);
+            }
+            else {
+                par->handle();
+                mainprogram->frontbatch = true;
+                draw_box(lightgrey, nullptr, this->speed->box->vtxcoords->x1, this->speed->box->vtxcoords->y1,
+                         this->speed->box->vtxcoords->w * 0.20f + 0.0124f, 0.075f, -1);
+                // display lock?
+                if (this->lockspeed) {
+                    draw_box(nullptr, nullptr, this->speed->box->vtxcoords->x1 + this->speed->box->vtxcoords->w / 2.1f, this->speed->box->vtxcoords->y1 + 0.015f, this->speed->box->vtxcoords->w / 12.0f, this->speed->box->vtxcoords->h * 0.55f, mainprogram->loktex);
+                }
+                mainprogram->frontbatch = false;
+            }
+
             if (par == mainmix->adaptparam) {
                 for (int i = 0; i < mainmix->currlays[!mainprogram->prevmodus].size(); i++) {
                     mainmix->currlays[!mainprogram->prevmodus][i]->speed->value = par->value;
                 }
             }
-            mainprogram->frontbatch = true;
-            draw_box(lightgrey, nullptr, this->speed->box->vtxcoords->x1, this->speed->box->vtxcoords->y1,
-                     this->speed->box->vtxcoords->w * 0.20f + 0.0124f, 0.075f, -1);
-            // display lock?
-            if (this->lockspeed) {
-                draw_box(nullptr, nullptr, this->speed->box->vtxcoords->x1 + this->speed->box->vtxcoords->w / 2.1f, this->speed->box->vtxcoords->y1 + 0.015f, this->speed->box->vtxcoords->w / 12.0f, this->speed->box->vtxcoords->h * 0.55f, mainprogram->loktex);
-             }
-            mainprogram->frontbatch = false;
 
             // Draw opacity->box
             par = this->opacity;
@@ -7130,15 +7171,24 @@ void Layer::display() {
             this->oldframe = this->frame;
 
             draw_box(this->loopbox, -1);
-			if (ends) {
+            float radx = mainprogram->numw / 2.0f;
+            float rady = mainprogram->numh / 2.0f;
+            if (this->numf) {
+                render_text("L", white, this->loopbox->vtxcoords->x1 + radx / 4.0f +
+                                        this->startframe->value * (this->loopbox->vtxcoords->w / (this->numf - 1)),
+                            this->loopbox->vtxcoords->y1 + rady / 4.0f, radx / 50.0f, rady / 50.0f);
+                render_text("P", white, this->loopbox->vtxcoords->x1 - radx / 4.0f +
+                                        this->endframe->value * (this->loopbox->vtxcoords->w / (this->numf - 1)) -
+                                        0.005f, this->loopbox->vtxcoords->y1 + rady / 4.0f, radx / 50.0f, rady / 50.0f);
+            }
+            if (ends) {
 			    // mouse over looparea start or end
 				draw_box(lightgrey, blue, this->loopbox->vtxcoords->x1 + this->startframe->value * (this->loopbox->vtxcoords->w / (this->numf - 1)), this->loopbox->vtxcoords->y1, (this->endframe->value - this->startframe->value) * (this->loopbox->vtxcoords->w / (this->numf - 1)), 0.075f, -1);
 			}
 			else {
 				draw_box(lightgrey, green, this->loopbox->vtxcoords->x1 + this->startframe->value * (this->loopbox->vtxcoords->w / (this->numf - 1)), this->loopbox->vtxcoords->y1, (this->endframe->value - this->startframe->value) * (this->loopbox->vtxcoords->w / (this->numf - 1)), 0.075f, -1);
 			}
-			draw_box(white, white, this->loopbox->vtxcoords->x1 + this->frame * (this->loopbox->vtxcoords->w /
-                                                                                 (this->numf - 1)) - 0.002f,
+			draw_box(white, white, this->loopbox->vtxcoords->x1 + this->frame * (this->loopbox->vtxcoords->w /(this->numf - 1)) - 0.002f,
             this->loopbox->vtxcoords->y1, 0.004f, 0.075f, -1);
 
 			if (this->speed->value == 0.0f || (this->type == ELEM_IMAGE && this->numf == 0) || this->type == ELEM_LIVE) {
@@ -8339,11 +8389,13 @@ void Mixer::set_values(Layer *clay, Layer *lay, bool doclips) {
     clay->blendnode->chblue = lay->blendnode->chblue;
     clay->volume->value = lay->volume->value;
     clay->chtol->value = lay->chtol->value;
+    clay->chfeather->value = lay->chfeather->value;
     clay->chdir->value = lay->chdir->value;
     clay->chinv->value = lay->chinv->value;
     lay->opacity->lpst_replace_with(clay->opacity);
     lay->blendnode->mixfac->lpst_replace_with(clay->blendnode->mixfac);
     lay->chtol->lpst_replace_with(clay->chtol);
+    lay->chfeather->lpst_replace_with(clay->chfeather);
 
     clay->reset = lay->reset;
     if (lay->pos == 0 && lay->deck == 0 && lay->comp == true) {
@@ -9196,7 +9248,7 @@ void Mixer::open_mix(const std::string path, bool alive, bool loadevents) {
                 par = mainmix->crossfade;
             }
             else {
-                par = mainmix->crossfade;
+                par = mainmix->crossfadecomp;
             }
             safegetline(rfile, istring);
             if (istring == "EVENTELEM") {
@@ -11508,6 +11560,7 @@ void Layer::open_files_layers() {
 	if (mainprogram->pathscount == mainprogram->paths.size()) {
 		mainprogram->openfileslayers = false;
 		mainprogram->paths.clear();
+        mainmix->addlay = false;
 		mainprogram->multistage = 0;
 		mainmix->reconnect_all(lvec);
 	}
@@ -11939,7 +11992,9 @@ Layer* Mixer::read_layers(std::istream &rfile, const std::string result, std::ve
 			safegetline(rfile, istring);
 			layend->aspectratio = (RATIO_TYPE)std::stoi(istring);
             if (layend->aspectratio == RATIO_ORIGINAL_INSIDE || layend->aspectratio == RATIO_ORIGINAL_OUTSIDE) {
-                layend->set_aspectratio(layend->iw, layend->ih);
+                if (ffglnr == -1 && isfnr == -1) {
+                    layend->set_aspectratio(layend->iw, layend->ih);
+                }
             }
 		}
         if (istring == "QUEUEING") {
@@ -12156,12 +12211,23 @@ Layer* Mixer::read_layers(std::istream &rfile, const std::string result, std::ve
                 mainmix->event_read(rfile, par, nullptr, layend);
             }
         }
-		if (istring == "CHTOLVAL") {
-			safegetline(rfile, istring);
-			layend->chtol->value = std::stof(istring);
-		}
+        if (istring == "CHTOLVAL") {
+            safegetline(rfile, istring);
+            layend->chtol->value = std::stof(istring);
+        }
         if (istring == "CHTOLEVENT") {
             Param *par = layend->chtol;
+            safegetline(rfile, istring);
+            if (istring == "EVENTELEM") {
+                mainmix->event_read(rfile, par, nullptr, layend);
+            }
+        }
+        if (istring == "CHFEATHERVAL") {
+            safegetline(rfile, istring);
+            layend->chfeather->value = std::stof(istring);
+        }
+        if (istring == "CHFEATHEREVENT") {
+            Param *par = layend->chfeather;
             safegetline(rfile, istring);
             if (istring == "EVENTELEM") {
                 mainmix->event_read(rfile, par, nullptr, layend);
@@ -13245,11 +13311,17 @@ std::vector<std::string> Mixer::write_layer(Layer* lay, std::ostream& wfile, boo
     wfile << "MIXFACEVENT\n";
     mainmix->event_write(wfile, lay->blendnode->mixfac, nullptr);
     wfile << "\n";
-	wfile << "CHTOLVAL\n";
-	wfile << std::to_string(lay->chtol->value);
-	wfile << "\n";
+    wfile << "CHTOLVAL\n";
+    wfile << std::to_string(lay->chtol->value);
+    wfile << "\n";
     wfile << "CHTOLEVENT\n";
     mainmix->event_write(wfile, lay->chtol, nullptr);
+    wfile << "\n";
+    wfile << "CHFEATHERVAL\n";
+    wfile << std::to_string(lay->chfeather->value);
+    wfile << "\n";
+    wfile << "CHFEATHEREVENT\n";
+    mainmix->event_write(wfile, lay->chfeather, nullptr);
     wfile << "\n";
 	wfile << "CHDIRVAL\n";
 	wfile << std::to_string(lay->chdir->value);
@@ -15473,19 +15545,19 @@ void Scene::switch_to(bool dotempmap) {
                     // button events
                     lay = but->layer;
                 }
-                if (lay) {
-                    if (lay->deck == this->deck) {
-                        lpcelem->eventlist.push_back(event);
+                if (lay->deck == this->deck) {
+                    lpcelem->eventlist.push_back(event);
+                    if (lay) {
                         lpcelem->layers.emplace(lay);
-                        if (par) {
-                            lpcelem->params.emplace(par);
-                            lpc->allparams.emplace(par);
-                            lpc->parelemmap[par] = lpcelem;
-                        } else if (std::get<2>(event)) {
-                            lpcelem->buttons.emplace(std::get<2>(event));
-                            lpc->allbuttons.emplace(std::get<2>(event));
-                            lpc->butelemmap[but] = lpcelem;
-                        }
+                    }
+                    if (par) {
+                        lpcelem->params.emplace(par);
+                        lpc->allparams.emplace(par);
+                        lpc->parelemmap[par] = lpcelem;
+                    } else if (std::get<2>(event)) {
+                        lpcelem->buttons.emplace(std::get<2>(event));
+                        lpc->allbuttons.emplace(std::get<2>(event));
+                        lpc->butelemmap[but] = lpcelem;
                     }
                 }
             }
@@ -15520,6 +15592,7 @@ void Mixer::reload_tagged_elems(ShelfElement *elem, bool deck, Layer *singlelay)
             lay->opacity->lpst_replace_with(lay2->opacity);
             lay->blendnode->mixfac->lpst_replace_with(lay2->blendnode->mixfac);
             lay->chtol->lpst_replace_with(lay2->chtol);
+            lay->chfeather->lpst_replace_with(lay2->chfeather);
             lay->playbut->lpst_replace_with(lay2->playbut);
             lay->revbut->lpst_replace_with(lay2->revbut);
             lay->bouncebut->lpst_replace_with(lay2->bouncebut);
@@ -15947,8 +16020,11 @@ void BlendNode::set_isfmixer(int mixernr) {
     int cnt = 0;
     for (auto par: instance->getParameterInfo()) {
         Param *param = new Param;
+        if (par.type == ISFLoader::PARAM_COLOR) {
+            this->numrows++;
+        }
         if (cnt != 0) {
-            if (cnt % 3 == 0 || (par.type == ISFLoader::PARAM_POINT2D)) {
+            if (cnt % 3 == 0 || (par.type == ISFLoader::PARAM_POINT2D) || (par.type == ISFLoader::PARAM_COLOR)) {
                 param->nextrow = true;
                 this->numrows++;
             }

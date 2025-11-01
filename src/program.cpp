@@ -322,7 +322,7 @@ Program::Program() : ndimanager(NDIManager::getInstance()), upnpMapper(nullptr) 
     if (!exists(this->temppath)) std::filesystem::create_directory(std::filesystem::path(this->temppath));
     FILE* fp;
     std::string path = p4.generic_string() + "EWOCvj2.log";
-    //errno_t err = freopen_s(&fp, path.c_str(), "w", stdout);  reminder : switch to log file at release
+    //errno_t err = freopen_s(&fp, path.c_str(), "w", stdout);  // reminder : switch to log file at release
 #endif
 #ifdef POSIX
 	std::string homedir(getenv("HOME"));
@@ -1981,7 +1981,7 @@ void Program::handle_fullscreen() {
         else
             this->uniformCache->setFloat("cf", mainmix->crossfade->value);
         this->uniformCache->setInt("wipe", 1);
-        this->uniformCache->setInt("mixmode", 18);
+        this->uniformCache->setInt("mixmode", 24);
         this->uniformCache->setInt("wkind", mainmix->wipe[this->fullscreen == 3]);
         this->uniformCache->setInt("dir", mainmix->wipedir[this->fullscreen == 3]);
         this->uniformCache->setFloat("xpos", mainmix->wipex[this->fullscreen == 3]->value);
@@ -2195,6 +2195,7 @@ void Program::layerstack_scrollbar_handle() {
         if (mainmix->scrollon == i + 1) {
             if (mainprogram->lmover) {
                 mainmix->scrollon = 0;
+                mainprogram->recundo = false;
             } else {
                 if ((mainprogram->mx - mainmix->scrollmx) > mainprogram->xvtxtoscr(this->boxbig->vtxcoords->w)) {
                     if (mainmix->scenes[i][mainmix->currscene[i]]->scrollpos < size - 3) {
@@ -2242,57 +2243,49 @@ void Program::layerstack_scrollbar_handle() {
             render_text(std::to_string(j + 1), white, this->boxbig->vtxcoords->x1 + 0.0078f - slidex,
                         this->boxbig->vtxcoords->y1 + 0.0078f, 0.0006, 0.001);
             const int s = lvec.size() - mainmix->scenes[i][mainmix->currscene[i]]->scrollpos;
-            if (mainprogram->dragbinel) {
-                if (this->boxbig->in()) {
-                    if (mainprogram->lmover) {
-                        if (j < lvec.size()) {
-                            mainprogram->draginscrollbarlay = lvec[j];
-                        } else {
-                            mainprogram->draginscrollbarlay = mainmix->add_layer(lvec, j);
-                        }
-                    }
-                }
-            }
             this->boxbig->vtxcoords->x1 += this->boxbig->vtxcoords->w;
             this->boxbig->upvtxtoscr();
         }
         if (this->boxbefore->in()) {
             //mouse in empty scrollbar part before the lightgrey visible layers part
             if (mainprogram->dragbinel) {
-                if (mainmix->scrolltime == 0.0f) {
-                    mainmix->scrolltime = mainmix->time;
+                if (mainmix->scrolltime[i] == 0.0f) {
+                    mainmix->scrolltime[i] = mainmix->time;
                 } else {
-                    if (mainmix->time - mainmix->scrolltime > 1.0f) {
+                    if (mainmix->time - mainmix->scrolltime[i] > 1.0f) {
                         mainmix->scenes[i][mainmix->currscene[i]]->scrollpos--;
-                        mainmix->scrolltime = mainmix->time;
+                        mainmix->scrolltime[i] = mainmix->time;
                     }
                 }
             }
             if (mainprogram->leftmouse) {
                 mainmix->scenes[i][mainmix->currscene[i]]->scrollpos--;
+                mainprogram->recundo = false;
                 mainprogram->leftmouse = false;
             }
         } else if (this->boxafter->in()) {
             //mouse in empty scrollbar part after the lightgrey visible layers part
             if (mainprogram->dragbinel) {
-                if (mainmix->scrolltime == 0.0f) {
-                    mainmix->scrolltime = mainmix->time;
+                if (mainmix->scrolltime[i] == 0.0f) {
+                    mainmix->scrolltime[i] = mainmix->time;
                 } else {
-                    if (mainmix->time - mainmix->scrolltime > 1.0f) {
+                    if (mainmix->time - mainmix->scrolltime[i] > 1.0f) {
                         mainmix->scenes[i][mainmix->currscene[i]]->scrollpos++;
-                        mainmix->scrolltime = mainmix->time;
+                        mainmix->scrolltime[i] = mainmix->time;
                     }
                 }
             }
             if (mainprogram->leftmouse) {
                 mainmix->scenes[i][mainmix->currscene[i]]->scrollpos++;
+                mainprogram->recundo = false;
                 mainprogram->leftmouse = false;
             }
         }
+        else {
+            mainmix->scrolltime[i] = 0.0f;
+        }
         //trigger scrollbar tooltips
         mainprogram->scrollboxes[i]->in();
-
-        if (!inbox) mainmix->scrolltime = 0.0f;
     }
 }
 
@@ -2966,7 +2959,7 @@ void output_video(EWindow* mwin) {
                     glActiveTexture(GL_TEXTURE0);
                 }
                 mainprogram->uniformCache->setInt("wipe", 1);
-                mainprogram->uniformCache->setInt("mixmode", 18);
+                mainprogram->uniformCache->setInt("mixmode", 24);
                 mainprogram->uniformCache->setInt("wkind", mainmix->wipe[1]);
                 mainprogram->uniformCache->setInt("dir", mainmix->wipedir[1]);
                 mainprogram->uniformCache->setFloat("xpos", mainmix->wipex[1]->value);
@@ -3392,6 +3385,41 @@ int Program::handle_menu(Menu* menu, float xshift, float yshift) {
             mainprogram->mousewheel = 0;
         }
 
+        // Handle mousewheel scrolling for split submenus
+        if (menu->splitNeedsScrolling && mainprogram->mousewheel != 0) {
+            // Calculate maximum scroll offset for split submenu
+            // Count total submenu entries to get column count
+            int submenuEntryCount = 0;
+            for (const auto& entry : menu->entries) {
+                if (entry.find("submenu") != 0) {
+                    submenuEntryCount++;
+                }
+            }
+            int submenuTotalColumns = (submenuEntryCount + itemsPerColumn - 1) / itemsPerColumn;
+
+            // Calculate visible columns (accounting for gap)
+            float columnWidth = mainprogram->xvtxtoscr(menu->width * 1.5f);
+            float gapWidth = mainprogram->xvtxtoscr(menu->splitGapWidth);
+            int maxVisibleWithGap = (int)((screenWidth - gapWidth) / columnWidth);
+
+            int maxScroll = std::max(0, submenuTotalColumns - maxVisibleWithGap);
+
+            if (mainprogram->mousewheel > 0) {
+                menu->splitScrollOffset = std::max(0, menu->splitScrollOffset - 1);
+            } else {
+                menu->splitScrollOffset = std::min(maxScroll, menu->splitScrollOffset + 1);
+            }
+
+            // Recalculate split point based on scroll offset
+            // The main menu position in screen coordinates
+            float mainMenuScreenPos = menu->menux + mainprogram->xvtxtoscr(xshift);
+            // The submenu starts at menux=0, so columns start from scroll offset
+            // Split point is where main menu starts in the scrolled coordinate system
+            menu->splitColumnsOnLeft = menu->splitScrollOffset + (int)(mainMenuScreenPos / columnWidth);
+
+            mainprogram->mousewheel = 0;
+        }
+
         for (int k = 0; k < entries.size(); k++) {
             float xoff = 0.0f;
 
@@ -3399,11 +3427,34 @@ int Program::handle_menu(Menu* menu, float xshift, float yshift) {
             int column = notsubk / itemsPerColumn;
             int row = notsubk % itemsPerColumn;
 
-            // Apply scroll offset to column
-            int displayColumn = column - columnScrollOffset;
+            int displayColumn;
+            bool skipColumn = false;
 
-            // Skip items that are scrolled out of view
-            if (displayColumn < 0 || displayColumn >= maxVisibleColumns) {
+            // Handle scrolling for split submenus differently
+            if (menu->splitNeedsScrolling) {
+                // Apply split scroll offset
+                displayColumn = column - menu->splitScrollOffset;
+
+                // For split submenus, calculate visibility accounting for gap
+                float columnWidth = mainprogram->xvtxtoscr(menu->width * 1.5f);
+                float gapWidth = mainprogram->xvtxtoscr(menu->splitGapWidth);
+                int maxVisibleWithGap = (int)((screenWidth - gapWidth) / columnWidth);
+
+                // Column is visible if within bounds (accounting for gap in the middle)
+                if (displayColumn < 0 || displayColumn >= maxVisibleWithGap) {
+                    skipColumn = true;
+                }
+            } else {
+                // Regular scrolling for non-split menus
+                displayColumn = column - columnScrollOffset;
+
+                // Skip items that are scrolled out of view
+                if (displayColumn < 0 || displayColumn >= maxVisibleColumns) {
+                    skipColumn = true;
+                }
+            }
+
+            if (skipColumn) {
                 std::size_t sub = menu->entries[k].find("submenu");
                 if (sub != 0) {
                     notsubk++;
@@ -3415,6 +3466,12 @@ int Program::handle_menu(Menu* menu, float xshift, float yshift) {
 
             // Always position columns from left to right, maintaining entry order
             xoff = menu->width * displayColumn * 1.5f + xshift;
+
+            // Handle split positioning for wide submenus
+            if (menu->splitColumnsOnLeft >= 0 && column >= menu->splitColumnsOnLeft) {
+                // This column is past the split point - add gap width to skip over parent menu
+                xoff += menu->splitGapWidth;
+            }
 
             std::size_t sub = menu->entries[k].find("submenu");
             if (sub != 0) {
@@ -3435,8 +3492,13 @@ int Program::handle_menu(Menu* menu, float xshift, float yshift) {
                     if (mainprogram->lmover) {
                         for (int i = 0; i < mainprogram->menulist.size(); i++) {
                             mainprogram->menulist[i]->state = 0;
+                            mainprogram->menulist[i]->currsub = -1;  // Reset all submenu states
+                            mainprogram->menulist[i]->splitColumnsOnLeft = -1;  // Reset split positioning
+                            mainprogram->menulist[i]->splitScrollOffset = 0;  // Reset scroll
+                            mainprogram->menulist[i]->splitNeedsScrolling = false;  // Reset scrolling flag
                         }
                         mainprogram->menuchosen = true;
+                        mainprogram->prevmenuchoices.clear();  // Clear submenu tracking
                         menu->currsub = -1;
                         mainprogram->frontbatch = false;
                         mainprogram->lmover = false;
@@ -3463,20 +3525,82 @@ int Program::handle_menu(Menu* menu, float xshift, float yshift) {
                                 mainprogram->actmenulist.push_back(menu);
                                 mainprogram->actmenulist.push_back(mainprogram->menulist[i]);
 
+                                // Calculate submenu dimensions
+                                // Count non-submenu entries in the submenu
+                                int submenuEntryCount = 0;
+                                for (const auto& entry : mainprogram->menulist[i]->entries) {
+                                    if (entry.find("submenu") != 0) {
+                                        submenuEntryCount++;
+                                    }
+                                }
+
+                                // Calculate number of columns the submenu needs
+                                int submenuColumns = (submenuEntryCount + itemsPerColumn - 1) / itemsPerColumn;
+                                if (submenuColumns == 0) submenuColumns = 1;  // At least 1 column
+
                                 // Fixed submenu positioning logic
                                 float xs;
-                                float menuRightEdge = menu->menux + ((entries.size() / itemsPerColumn) + 2) * mainprogram->xvtxtoscr(menu->width * 1.5f);
-                                float submenuWidth = mainprogram->xvtxtoscr(menu->width * 1.5f);
+                                float columnWidth = mainprogram->xvtxtoscr(menu->width * 1.5f);
+
+                                // Calculate main menu dimensions
+                                int mainMenuColumns = (size + itemsPerColumn - 1) / itemsPerColumn;
+                                float menuRightEdge = menu->menux + mainMenuColumns * columnWidth;
+                                float submenuWidth = submenuColumns * columnWidth;
 
                                 // Check if submenu would go off the right edge of the screen
                                 if (menuRightEdge + submenuWidth > screenWidth) {
-                                    xs = xshift - menu->width * 3.0f;  // Place submenu to the left
-                                    // Position submenu to the left of the main menu
-                                    mainprogram->menulist[i]->menux = menu->menux - mainprogram->xvtxtoscr(menu->width * 1.5f);
+                                    // Try placing submenu to the left
+                                    float submenuLeftEdge = menu->menux + mainprogram->xvtxtoscr(xshift - submenuColumns * menu->width * 1.5f);
+
+                                    // Check if submenu would go off the left edge
+                                    if (submenuLeftEdge < 0) {
+                                        // Submenu too wide - need to split around main menu
+                                        // Calculate available space on left and right
+                                        float availableLeftSpace = menu->menux + mainprogram->xvtxtoscr(xshift);
+                                        float mainMenuWidth = mainMenuColumns * columnWidth;
+                                        float availableRightSpace = screenWidth - (menu->menux + mainprogram->xvtxtoscr(xshift) + mainMenuWidth);
+
+                                        int maxColumnsOnLeft = std::max(0, (int)(availableLeftSpace / columnWidth));
+                                        int maxColumnsOnRight = std::max(0, (int)(availableRightSpace / columnWidth));
+                                        int totalVisibleColumns = maxColumnsOnLeft + maxColumnsOnRight;
+
+                                        // Check if submenu needs scrolling even when split
+                                        if (submenuColumns > totalVisibleColumns) {
+                                            // Enable scrolling mode - position at left edge of screen
+                                            mainprogram->menulist[i]->splitNeedsScrolling = true;
+                                            mainprogram->menulist[i]->splitScrollOffset = 0;  // Start at leftmost
+                                            mainprogram->menulist[i]->splitGapWidth = mainMenuColumns * menu->width * 1.5f;
+
+                                            // Calculate split point from left edge with scroll offset
+                                            float mainMenuLeftEdgeInSubmenu = (menu->menux + mainprogram->xvtxtoscr(xshift)) / columnWidth;
+                                            mainprogram->menulist[i]->splitColumnsOnLeft = (int)mainMenuLeftEdgeInSubmenu;
+
+                                            xs = xshift;  // Start from left edge
+                                            mainprogram->menulist[i]->menux = 0;  // Submenu at screen left edge
+                                        } else {
+                                            // Submenu fits when split - no scrolling needed
+                                            mainprogram->menulist[i]->splitNeedsScrolling = false;
+                                            int columnsOnLeft = std::min(maxColumnsOnLeft, submenuColumns);
+
+                                            mainprogram->menulist[i]->splitColumnsOnLeft = columnsOnLeft;
+                                            mainprogram->menulist[i]->splitGapWidth = mainMenuColumns * menu->width * 1.5f;
+
+                                            xs = xshift - columnsOnLeft * menu->width * 1.5f;
+                                            mainprogram->menulist[i]->menux = menu->menux;
+                                        }
+                                    } else {
+                                        // Submenu fits entirely on the left
+                                        mainprogram->menulist[i]->splitColumnsOnLeft = -1;  // No split
+                                        mainprogram->menulist[i]->splitNeedsScrolling = false;
+                                        xs = xshift - submenuColumns * menu->width * 1.5f;
+                                        mainprogram->menulist[i]->menux = menu->menux;
+                                    }
                                 }
                                 else {
-                                    xs = xshift + menu->width * 1.5f;  // Place submenu to the right
-                                    // Position submenu to the right of the main menu (default behavior)
+                                    // Submenu fits on the right
+                                    mainprogram->menulist[i]->splitColumnsOnLeft = -1;  // No split
+                                    mainprogram->menulist[i]->splitNeedsScrolling = false;
+                                    xs = xshift + menu->width * 1.5f;
                                     mainprogram->menulist[i]->menux = menu->menux;
                                 }
 
@@ -3485,7 +3609,15 @@ int Program::handle_menu(Menu* menu, float xshift, float yshift) {
                                 int ret = mainprogram->handle_menu(mainprogram->menulist[i], xs, yshift);
                                 this->prevmenuchoices.push_back(notsubk);
                                 if (mainprogram->menuchosen) {
-                                    menu->state = 0;
+                                    // Reset all menu states when selection is made
+                                    for (int j = 0; j < mainprogram->menulist.size(); j++) {
+                                        mainprogram->menulist[j]->state = 0;
+                                        mainprogram->menulist[j]->currsub = -1;  // Reset all submenu states
+                                        mainprogram->menulist[j]->splitColumnsOnLeft = -1;  // Reset split positioning
+                                        mainprogram->menulist[j]->splitScrollOffset = 0;  // Reset scroll
+                                        mainprogram->menulist[j]->splitNeedsScrolling = false;  // Reset scrolling flag
+                                    }
+                                    mainprogram->prevmenuchoices.clear();  // Clear submenu tracking
                                     mainprogram->menuresults.insert(mainprogram->menuresults.begin(), ret);
                                     menu->currsub = -1;
                                     mainprogram->frontbatch = false;
@@ -3504,7 +3636,13 @@ int Program::handle_menu(Menu* menu, float xshift, float yshift) {
         }
         for (int i = 0; i < mainprogram->menulist.size(); i++) {
             if (std::find(mainprogram->actmenulist.begin(), mainprogram->actmenulist.end(), menu) == mainprogram->actmenulist.end()) {
-                if (mainprogram->menulist[i] != menu) mainprogram->menulist[i]->state = 0;
+                if (mainprogram->menulist[i] != menu) {
+                    mainprogram->menulist[i]->state = 0;
+                    mainprogram->menulist[i]->currsub = -1;  // Reset submenu state for inactive menus
+                    mainprogram->menulist[i]->splitColumnsOnLeft = -1;  // Reset split positioning
+                    mainprogram->menulist[i]->splitScrollOffset = 0;  // Reset scroll
+                    mainprogram->menulist[i]->splitNeedsScrolling = false;  // Reset scrolling flag
+                }
             }
         }
         mainprogram->frontbatch = false;
@@ -3526,7 +3664,10 @@ void Program::handle_mixenginemenu() {
                     bnode->set_isfmixer(mainprogram->menuresults[0] - mainprogram->ffglmixernames.size() - 22);
                 }
             } else if (mainmix->mousenode->type == BLEND) {
-                ((BlendNode *) mainmix->mousenode)->blendtype = (BLEND_TYPE) (mainprogram->menuresults[0] + 1);
+                BlendNode *bnode = (BlendNode *) mainmix->mousenode;
+                bnode->blendtype = (BLEND_TYPE) (mainprogram->menuresults[0] + 1);
+                bnode->ffglmixernr = -1;
+                bnode->isfmixernr = -1;
             }
         }
         mainmix->mousenode = nullptr;
@@ -3878,55 +4019,76 @@ void Program::handle_loopmenu() {
 		}
 		else if (k == 3) {
 		    // paste playloop duration by changing the speed
-			float fac = mainmix->deckspeed[!mainprogram->prevmodus][mainmix->mouselayer->deck]->value;
-			if (mainmix->mouselayer->clonesetnr != -1) {
-				std::unordered_set<Layer*>::iterator it;
-				for (it = mainmix->clonesets[mainmix->mouselayer->clonesetnr]->begin(); it != mainmix->clonesets[mainmix->mouselayer->clonesetnr]->end(); it++) {
-					Layer* lay = *it;
-					if (lay->deck == !mainmix->mouselayer->deck) {
-						fac *= mainmix->deckspeed[!mainprogram->prevmodus][!mainmix->mouselayer->deck]->value;
-						break;
-					}
-				}
-			}
-			mainmix->mouselayer->speed->value = sqrt(((mainmix->mouselayer->endframe->value - mainmix->mouselayer->startframe->value) * mainmix->mouselayer->millif) / mainmix->cbduration / (fac * fac));
-			mainmix->mouselayer->set_clones();
+            if (mainmix->cbduration > 0.0f) {
+                float fac = mainmix->deckspeed[!mainprogram->prevmodus][mainmix->mouselayer->deck]->value;
+                if (mainmix->mouselayer->clonesetnr != -1) {
+                    std::unordered_set<Layer *>::iterator it;
+                    for (it = mainmix->clonesets[mainmix->mouselayer->clonesetnr]->begin();
+                         it != mainmix->clonesets[mainmix->mouselayer->clonesetnr]->end(); it++) {
+                        Layer *lay = *it;
+                        if (lay->deck == !mainmix->mouselayer->deck) {
+                            fac *= mainmix->deckspeed[!mainprogram->prevmodus][!mainmix->mouselayer->deck]->value;
+                            break;
+                        }
+                    }
+                }
+                mainmix->mouselayer->speed->value = sqrt(
+                        ((mainmix->mouselayer->endframe->value - mainmix->mouselayer->startframe->value) *
+                         mainmix->mouselayer->millif) / mainmix->cbduration / (fac * fac));
+                mainmix->mouselayer->set_clones();
+            }
 		}
 		else if (k == 4) {
 		    // paste playloop duration by changing the duration itself
-			float sf, ef;
-			float loop = mainmix->mouselayer->endframe->value - mainmix->mouselayer->startframe->value;
-			float dsp = mainmix->deckspeed[!mainprogram->prevmodus][mainmix->mouselayer->deck]->value;
-			if (mainmix->mouselayer->clonesetnr != -1) {
-				std::unordered_set<Layer*>::iterator it;
-				for (it = mainmix->clonesets[mainmix->mouselayer->clonesetnr]->begin(); it != mainmix->clonesets[mainmix->mouselayer->clonesetnr]->end(); it++) {
-					Layer* lay = *it;
-					if (lay->deck == !mainmix->mouselayer->deck) {
-						dsp *= mainmix->deckspeed[!mainprogram->prevmodus][!mainmix->mouselayer->deck]->value;
-						break;
-					}
-				}
-			}
-			float fac = ((loop * mainmix->mouselayer->millif) / mainmix->cbduration) / (mainmix->mouselayer->speed->value * mainmix->mouselayer->speed->value * dsp * dsp);
-			float end = mainmix->mouselayer->numf - (mainmix->mouselayer->startframe->value + loop / fac);
-			if (end > 0) {
-				mainmix->mouselayer->endframe->value = mainmix->mouselayer->startframe->value + loop / fac;
-			}
-			else {
-				mainmix->mouselayer->endframe->value = mainmix->mouselayer->numf;
-				float start = mainmix->mouselayer->startframe->value + end;
-				if (start > 0) {
-					mainmix->mouselayer->startframe->value += end;
-				}
-				else {
-					mainmix->mouselayer->startframe->value = 0.0f;
-					mainmix->mouselayer->endframe->value = mainmix->mouselayer->numf;
-					mainmix->mouselayer->speed->value *= sqrt((float)mainmix->mouselayer->numf / ((float)mainmix->mouselayer->numf - start));
-				}
-			}
-			mainmix->mouselayer->set_clones();
+            if (mainmix->cbduration > 0.0f) {
+                float sf, ef;
+                float loop = mainmix->mouselayer->endframe->value - mainmix->mouselayer->startframe->value;
+                float dsp = mainmix->deckspeed[!mainprogram->prevmodus][mainmix->mouselayer->deck]->value;
+                if (mainmix->mouselayer->clonesetnr != -1) {
+                    std::unordered_set<Layer *>::iterator it;
+                    for (it = mainmix->clonesets[mainmix->mouselayer->clonesetnr]->begin();
+                         it != mainmix->clonesets[mainmix->mouselayer->clonesetnr]->end(); it++) {
+                        Layer *lay = *it;
+                        if (lay->deck == !mainmix->mouselayer->deck) {
+                            dsp *= mainmix->deckspeed[!mainprogram->prevmodus][!mainmix->mouselayer->deck]->value;
+                            break;
+                        }
+                    }
+                }
+                float fac = ((loop * mainmix->mouselayer->millif) / mainmix->cbduration) /
+                            (mainmix->mouselayer->speed->value * mainmix->mouselayer->speed->value * dsp * dsp);
+                float end = mainmix->mouselayer->numf - (mainmix->mouselayer->startframe->value + loop / fac);
+                if (end > 0) {
+                    mainmix->mouselayer->endframe->value = mainmix->mouselayer->startframe->value + loop / fac;
+                } else {
+                    mainmix->mouselayer->endframe->value = mainmix->mouselayer->numf;
+                    float start = mainmix->mouselayer->startframe->value + end;
+                    if (start > 0) {
+                        mainmix->mouselayer->startframe->value += end;
+                    } else {
+                        mainmix->mouselayer->startframe->value = 0.0f;
+                        mainmix->mouselayer->endframe->value = mainmix->mouselayer->numf;
+                        mainmix->mouselayer->speed->value *= sqrt(
+                                (float) mainmix->mouselayer->numf / ((float) mainmix->mouselayer->numf - start));
+                    }
+                }
+                mainmix->mouselayer->set_clones();
+            }
 		}
         else if (k == 5) {
+            // beatmatching
+            if (mainprogram->menuresults.size()) {
+                if (mainprogram->menuresults[0] == 0) {
+                    mainmix->mouselayer->loopbeats = 0;
+                    mainmix->mouselayer->speed->value = mainmix->mouselayer->buspeed;
+                }
+                else {
+                    mainmix->mouselayer->loopbeats = pow(2, mainprogram->menuresults[0] - 1);
+                    mainmix->mouselayer->buspeed = mainmix->mouselayer->speed->value;
+                }
+            }
+        }
+        else if (k == 6) {
             mainmix->learn = true;
         }
 	}
@@ -4566,8 +4728,11 @@ void Program::handle_laymenu1() {
 				mainmix->mouselayer->decresult->newdata = true;
 			}
 			else {
-				mainmix->mouselayer->set_aspectratio(mainmix->mouselayer->video_dec_ctx->width, mainmix->mouselayer->video_dec_ctx->height);
-			}
+                if (mainmix->mouselayer->video_dec_ctx) {
+                    mainmix->mouselayer->set_aspectratio(mainmix->mouselayer->video_dec_ctx->width,
+                                                         mainmix->mouselayer->video_dec_ctx->height);
+                }
+            }
 		}
         else if (k == 16 - cond * 2) {
             // show layer on external display
@@ -5441,13 +5606,17 @@ void Program::handle_lpstmenu() {
         mainmix->cbduration = mainmix->mouselpstelem->totaltime;
     }
     else if (k == 2) {
-        float buspeed = mainmix->mouselpstelem->speed->value;
-        mainmix->mouselpstelem->speed->value = mainmix->mouselpstelem->totaltime / mainmix->cbduration;
-        mainmix->mouselpstelem->speedadaptedtime *= buspeed / mainmix->mouselpstelem->speed->value;
-        mainmix->mouselpstelem->interimtime *= buspeed / mainmix->mouselpstelem->speed->value;
+        if (mainmix->cbduration > 0.0f) {
+            float buspeed = mainmix->mouselpstelem->speed->value;
+            mainmix->mouselpstelem->speed->value = mainmix->mouselpstelem->totaltime / mainmix->cbduration;
+            mainmix->mouselpstelem->speedadaptedtime *= buspeed / mainmix->mouselpstelem->speed->value;
+            mainmix->mouselpstelem->interimtime *= buspeed / mainmix->mouselpstelem->speed->value;
+        }
     }
     else if (k == 3) {
-        mainmix->mouselpstelem->totaltime = mainmix->cbduration;
+        if (mainmix->cbduration > 0.0f) {
+            mainmix->mouselpstelem->totaltime = mainmix->cbduration;
+        }
     }
     else if (k == 4) {
         // beatmatching
@@ -7861,7 +8030,7 @@ void Project::save(std::string path, bool autosave, bool undo, bool nocheck) {
 
         //save bins
         std::unordered_map<std::string, std::string> bubinrenamemap;
-        if (autosave) {
+        if (!autosave) {
             bubinrenamemap = binsmain->binrenamemap;
         }
         std::unordered_map<std::string, std::string> itbinrenamemap = binsmain->binrenamemap;
@@ -7872,8 +8041,8 @@ void Project::save(std::string path, bool autosave, bool undo, bool nocheck) {
                     rename(this->binsdir + it.second, this->binsdir + it.first);
                     rename(this->binsdir + it.second + ".bin",
                            this->binsdir + it.first + ".bin");
-                    itbinrenamemap.erase(it.first);
                 }
+                itbinrenamemap.erase(it.first);
             }
         }
         if (autosave) {
@@ -9306,6 +9475,8 @@ void Program::define_menus() {
     loopops.push_back("Copy duration");
     loopops.push_back("Paste duration (speed)");
     loopops.push_back("Paste duration (loop length)");
+    loopops.push_back("submenu beatmenu");
+    loopops.push_back("Beatmatch loop");
     loopops.push_back("MIDI Learn move loop area");
     mainprogram->make_menu("loopmenu", mainprogram->loopmenu, loopops);
     mainprogram->loopmenu->width = 0.2f;
@@ -10498,6 +10669,13 @@ void Program::socket_client(struct sockaddr_in serv_addr, int opt) {
                         break;
                     }
 
+                    // Skip idstr
+                    parse_ptr += strnlen(parse_ptr, payload_end - parse_ptr) + 1;
+                    if (parse_ptr >= payload_end) {
+                        if (payload_buf != ptr) free(payload_buf);
+                        break;
+                    }
+
                     // Skip position
                     parse_ptr += strnlen(parse_ptr, payload_end - parse_ptr) + 1;
                     if (parse_ptr >= payload_end) {
@@ -10645,6 +10823,13 @@ void Program::socket_client(struct sockaddr_in serv_addr, int opt) {
                     char* payload_end = payload_buf + actual_payload_size;
 
                     // Skip binname
+                    parse_ptr += strnlen(parse_ptr, payload_end - parse_ptr) + 1;
+                    if (parse_ptr >= payload_end) {
+                        if (payload_buf != ptr) free(payload_buf);
+                        break;
+                    }
+
+                    // Skip idstr
                     parse_ptr += strnlen(parse_ptr, payload_end - parse_ptr) + 1;
                     if (parse_ptr >= payload_end) {
                         if (payload_buf != ptr) free(payload_buf);
@@ -11042,6 +11227,12 @@ void Program::socket_server_receive(SOCKET sock) {
                     break;
                 }
 
+                parse_ptr += strnlen(parse_ptr, payload_end - parse_ptr) + 1; // Skip idstr
+                if (parse_ptr >= payload_end) {
+                    if (payload_buf != ptr) free(payload_buf);
+                    break;
+                }
+
                 parse_ptr += strnlen(parse_ptr, payload_end - parse_ptr) + 1; // Skip position
                 if (parse_ptr >= payload_end) {
                     if (payload_buf != ptr) free(payload_buf);
@@ -11199,6 +11390,12 @@ void Program::socket_server_receive(SOCKET sock) {
                     break;
                 }
 
+                parse_ptr += strnlen(parse_ptr, payload_end - parse_ptr) + 1; // Skip idstr
+                if (parse_ptr >= payload_end) {
+                    if (payload_buf != ptr) free(payload_buf);
+                    break;
+                }
+
                 parse_ptr += strnlen(parse_ptr, payload_end - parse_ptr) + 1; // Skip position
                 if (parse_ptr >= payload_end) {
                     if (payload_buf != ptr) free(payload_buf);
@@ -11280,7 +11477,7 @@ void Program::socket_server_receive(SOCKET sock) {
             // Parse bin_name
             size_t bin_len = strnlen(ptr, buf_end - ptr);
             if (ptr + bin_len + 1 >= buf_end) break;
-            std::string bin_name(ptr, bin_len);
+            std::string idstr(ptr, bin_len);
             ptr += bin_len + 1;
 
             // Parse subscriber_name
@@ -11291,9 +11488,9 @@ void Program::socket_server_receive(SOCKET sock) {
             // Register subscription
             {
                 std::lock_guard<std::mutex> lock(this->subscriptionMutex);
-                auto key = std::make_pair(owner_seatname, bin_name);
+                auto key = std::make_pair(owner_seatname, idstr);
                 this->subscriptionMap[key].insert(subscriber_name);
-                std::cout << "DEBUG: Registered subscription: " << owner_seatname << "/" << bin_name << " -> " << subscriber_name << std::endl;
+                std::cout << "DEBUG: Registered subscription: " << owner_seatname << "/" << idstr << " -> " << subscriber_name << std::endl;
             }
 
             process_ptr = ptr;
@@ -11617,11 +11814,12 @@ char* Program::bl_recv(int sock, char *buf, size_t sz, int flags) {
     fcntl(sock, F_SETFL, flags2);
 #endif
 #ifdef WINDOWS
-    u_long flags2 = 0;
-    ioctlsocket(sock, FIONBIO, &flags2);
+    // Set to blocking mode for reliable recv
+    u_long blocking_mode = 0;
+    ioctlsocket(sock, FIONBIO, &blocking_mode);
     bytesReceived = recv(sock, buf, sz, flags);
-    flags2 = 1;
-    ioctlsocket(sock, FIONBIO, &flags2);
+    // Keep socket in blocking mode (don't set back to non-blocking)
+    // This is important because socket_client() expects blocking mode
 #endif
 
     // Check for disconnection or error
@@ -11643,7 +11841,56 @@ char* Program::bl_recv(int sock, char *buf, size_t sz, int flags) {
     return buf;
 }
 
+int Program::bl_send(int sock, const char *buf, size_t sz, int flags) {
+    if (!buf || sz == 0) return 0;
 
+    size_t totalSent = 0;
+    const char* ptr = buf;
+
+    while (totalSent < sz) {
+        int bytesSent = 0;
+
+#ifdef POSIX
+        // Set to blocking mode for reliable send
+        int flags2 = fcntl(sock, F_GETFL);
+        fcntl(sock, F_SETFL, flags2 & ~O_NONBLOCK);
+        bytesSent = send(sock, ptr, sz - totalSent, flags | MSG_NOSIGNAL);
+        fcntl(sock, F_SETFL, flags2);
+#endif
+#ifdef WINDOWS
+        // Set to blocking mode for reliable send
+        u_long blocking_mode = 0;
+        ioctlsocket(sock, FIONBIO, &blocking_mode);
+        bytesSent = send(sock, ptr, sz - totalSent, flags);
+        // Keep socket in blocking mode (don't set back to non-blocking)
+#endif
+
+        if (bytesSent <= 0) {
+            // Error or connection closed
+#ifdef POSIX
+            if (errno == EINTR) {
+                // Interrupted by signal, retry
+                continue;
+            }
+#endif
+#ifdef WINDOWS
+            int error = WSAGetLastError();
+            if (error == WSAEINTR) {
+                // Interrupted, retry
+                continue;
+            }
+#endif
+            // Actual error - return bytes sent so far
+            std::cout << "DEBUG: bl_send error after sending " << totalSent << " of " << sz << " bytes" << std::endl;
+            return totalSent;
+        }
+
+        totalSent += bytesSent;
+        ptr += bytesSent;
+    }
+
+    return totalSent;
+}
 
 
 
@@ -12834,6 +13081,8 @@ std::tuple<Param*, int, int, int, int, int> Program::newparam(int offset, bool s
                 newpar = lay->endframe;
             } else if (name == "Tolerance") {
                 newpar = lay->chtol;
+            } else if (name == "Feather") {
+                newpar = lay->chfeather;
             } else if (name == "Speed") {
                 newpar = lay->speed;
             } else if (name == "Opacity") {
@@ -13476,6 +13725,28 @@ void Program::process_audio() {
                         else if (counter2 > this->aubpmcounter / lay->beats) {
                             lay->displaynextclip = true;
                         }
+                    }
+                    if (lay->loopbeats) {
+                        float fac = mainmix->deckspeed[!mainprogram->prevmodus][mainmix->mouselayer->deck]->value;
+                        lay->speed->value = sqrt(((lay->endframe->value - lay->startframe->value) * lay->millif) / (1000.0f * this->beatdet->winning_bpm) / lay->loopbeats / (fac * fac));
+                        int counter2 = counter / lay->loopbeats;
+                        if (top < std::pow(mainprogram->beatthres->value, 4)) {
+                            // music peak too low: dont switch clip
+                            lay->speed->value = 0.0f;
+                        }
+                        else if (counter2 > this->aubpmcounter / lay->loopbeats) {
+                            if (lay->playbut->value) {
+                                lay->frame = lay->startframe->value;
+                            } else if (lay->revbut->value) {
+                                lay->frame = lay->startframe->value;
+                            }
+                            if (lay->bouncebut->value == 1) {
+                                lay->frame = lay->startframe->value;
+                            } else if (lay->bouncebut->value == 2) {
+                                lay->frame = lay->endframe->value;
+                            }
+                        }
+                        lay->set_clones();
                     }
                 }
             }

@@ -267,6 +267,7 @@ public:
     // Pool management
     void releaseInstance(std::shared_ptr<FFGLPluginInstance> instance);
     void clearInstancePool();
+    void prewarmInstancePool(size_t count = 1);
     size_t getPoolSize() const { return instancePool_.size(); }
     size_t getActiveInstanceCount() const { return activeInstances_; }
 

@@ -1006,7 +1006,6 @@ class Program {
         std::string infostr;
         bool infoanswer = false;
         bool shutdown = false;
-		Layer* draginscrollbarlay = nullptr;
         bool projnamechanged = false;
         std::string projname;
 		bool saveproject = false;
@@ -1256,8 +1255,10 @@ class Program {
         std::string get_typestring(std::string path);
         void process_audio();
         void init_audio(const char* device);
+        char* bl_recv(int sock, char *buf, size_t sz, int flags);
+        int bl_send(int sock, const char *buf, size_t sz, int flags);
         Program();
-		
+
 	private:
 #ifdef WINDOWS
         LPCSTR mime_to_wildcard(std::string filters);
@@ -1266,7 +1267,6 @@ class Program {
         char const* mime_to_tinyfds(std::string filters);
 #endif
         bool do_order_paths();
-        char* bl_recv(int sock, char *buf, size_t sz, int flags);
         void create_auinmenu();
 };
 

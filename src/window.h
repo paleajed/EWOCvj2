@@ -46,5 +46,11 @@ class Menu {
 		int value;
 		int currsub = -1;
 
+		// Split positioning for wide submenus
+		int splitColumnsOnLeft = -1;  // -1 means no split, >= 0 means split mode
+		float splitGapWidth = 0.0f;   // Width of gap (main menu) to skip over
+		int splitScrollOffset = 0;    // Column scroll offset for oversized split submenus
+		bool splitNeedsScrolling = false;  // True if submenu is too wide even when split
+
         ~Menu();
 };

@@ -108,7 +108,7 @@ class Layer {
         bool compswitched = false;
 		ELEM_TYPE type = ELEM_FILE;
         ELEM_TYPE oldtype = ELEM_FILE;
-		RATIO_TYPE aspectratio = RATIO_OUTPUT;
+		RATIO_TYPE aspectratio = RATIO_ORIGINAL_INSIDE;
 		bool queueing = false;
 		int queuescroll = 0;
 		Button *mutebut;
@@ -120,7 +120,8 @@ class Layer {
         bool soloing = false;
         bool keepeffing = false;
         bool beatdetting = false;
-        int beats = 1;
+		int beats = 1;
+		int loopbeats = 0;
         bool displaynextclip = false;
 		bool mousequeue = false;
 		int numefflines[2] = {0,0};
@@ -146,12 +147,14 @@ class Layer {
 		Boxx *mixbox;
 		Boxx *colorbox;
 		Param *chtol;
+		Param *chfeather;
 		Button *chdir;
 		Button *chinv;
 		bool cwon = false;
         float rgb[4] = {0.0f, 0.0f, 0.0f, 0.0f};
         float burgb[4] = {0.0f, 0.0f, 0.0f, 0.0f};
 		Param *speed;
+		float buspeed = 1.0f;
         float oldspeed;
         float oldfac;
 		Param *opacity;
@@ -567,6 +570,7 @@ class Mixer {
 		Button *genmidi[2];
 		Param *crossfade;
 		Param *crossfadecomp;
+		std::string crossfadename[2];
 
 		int currscene[2] = {0, 0};
         int setscene = -1;
@@ -574,7 +578,7 @@ class Mixer {
 		bool deck = 0;
 		int scrollon = 0;
 		int scrollmx;
-		float scrolltime = 0.0f;
+		float scrolltime[2] = {0.0f, 0.0f};
 		int mouseeffect = -1;
         Layer *mouselayer = nullptr;
         Layer *menulayer = nullptr;

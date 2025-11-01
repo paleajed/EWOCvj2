@@ -178,19 +178,31 @@ BinsMain::BinsMain() {
     this->floatbox->tooltip = "Leftclick toggles between a docked bins screen (swapped with mix screen) or a floating bins screen (shown on a separate screen). ";
 }
 
+void BinsMain::solve_nameclashes() {
+	for (int i = 0; i < this->bins.size(); i++) {
+		// solve bin name clashes
+		for (int j = i + 1; j < this->bins.size(); j++) {
+			if (this->bins[j]->name == this->bins[i]->name) {
+				std::string oldname = this->bins[i]->name;
+				this->bins[j]->path = find_unused_filename(this->bins[j]->name, mainprogram->project->binsdir, ".bin");
+				this->bins[j]->name = basename(remove_extension(this->bins[j]->path));
+				// this map solves name clashes between normal bins and incoming shared bins
+				if (this->bins[i]->shared) {
+					this->sharedbinnamesmap[this->bins[j]->name] = oldname;
+				}
+				// If bin[j] is a shared bin with an idstr, update the idtonamemap
+				if (this->bins[j]->shared && !this->bins[j]->idstr.empty()) {
+					this->idtonamemap[this->bins[j]->idstr] = this->bins[j]->name;
+				}
+				break;
+			}
+		}
+	}
+}
 
 void BinsMain::handle(bool draw) {
+	this->solve_nameclashes();
 
-    for (int i = 0; i < this->bins.size(); i++) {
-        // solve bin name clashes
-        for (int j = i + 1; j < this->bins.size(); j++) {
-            if (this->bins[j]->name == this->bins[i]->name) {
-                this->bins[j]->path = find_unused_filename(this->bins[j]->name, mainprogram->project->binsdir, ".bin");
-                this->bins[j]->name = basename(remove_extension(this->bins[j]->path));
-                break;
-            }
-        }
-    }
     // correct loaded path when using LOAD BIN
     for (int i = 0; i < this->bins.size(); i++) {
         this->bins[i]->path = mainprogram->project->binsdir + this->bins[i]->name + ".bin";
@@ -849,7 +861,9 @@ void BinsMain::handle(bool draw) {
             draw_box(&box, -1);
             render_text("SHARE BIN", white, -0.075f, -0.95f, 0.00075f, 0.0012f);
             if (box.in()) {
+                this->selboxing = false;
                 if (mainprogram->leftmouse) {
+                    mainprogram->leftmouse = false;
                     mainprogram->make_menu("sendmenu", mainprogram->sendmenu, available_clients);
                     mainprogram->sendmenu->state = 2;
                     mainprogram->sendmenu->menux = mainprogram->mx;
@@ -878,6 +892,8 @@ void BinsMain::handle(bool draw) {
                 this->currbin->sendtonames.push_back(selected_name);
             }
 			this->currbin->shared = true;
+			srand(std::time(0));
+			this->currbin->idstr = std::to_string(rand());
 			this->currbin->prevnames.clear();  // Clear to force full texture send
 			this->currbin->prevtexes.clear();  // Clear to force full texture send
 
@@ -903,19 +919,23 @@ void BinsMain::handle(bool draw) {
 
                 walk = put_in_buffer("SUBSCRIBE", walk, end);
                 if (walk) walk = put_in_buffer(mainprogram->seatname.c_str(), walk, end);
-                if (walk) walk = put_in_buffer(this->currbin->name.c_str(), walk, end);
+                if (walk) walk = put_in_buffer(this->currbin->idstr.c_str(), walk, end);
                 if (walk) walk = put_in_buffer(selected_name.c_str(), walk, end);
 
                 if (walk) {
-                    send(mainprogram->sock, subscribe_msg, walk - subscribe_msg, 0);
+                    int sent = mainprogram->bl_send(mainprogram->sock, subscribe_msg, walk - subscribe_msg, 0);
+                    if (sent != walk - subscribe_msg) {
+                        std::cout << "DEBUG: Failed to send subscription request, sent " << sent << " of " << (walk - subscribe_msg) << " bytes" << std::endl;
+                    }
                 }
             }
             else if (mainprogram->server) {
                 // Register subscription locally on server
                 std::lock_guard<std::mutex> lock(mainprogram->subscriptionMutex);
-                auto key = std::make_pair(mainprogram->seatname, this->currbin->name);
+                auto key = std::make_pair(mainprogram->seatname, this->currbin->idstr);
                 mainprogram->subscriptionMap[key].insert(selected_name);
             }
+
 
 			this->send_shared_bins();
         }
@@ -1247,6 +1267,9 @@ void BinsMain::handle(bool draw) {
 			}
 			else if (k == 3) {
 				// delete bin
+				if (this->currbin->shared) {
+					this->sharedbinnamesmap.erase(this->currbin->name);
+				}
 				mainprogram->remove(this->currbin->path);
 				this->bins.erase(std::find(this->bins.begin(), this->bins.end(), this->currbin));
 				delete this->currbin; //delete textures in destructor
@@ -2512,6 +2535,12 @@ void BinsMain::send_shared_bins() {
                 }
             }
 
+			// get sharename
+			std::string currbinsharename = this->currbin->name;
+			if (this->sharedbinnamesmap.count(this->currbin->name)) {
+				currbinsharename = this->sharedbinnamesmap[this->currbin->name];
+			}
+
             // Only send BIN_SENT if names or paths changed
             if (send_bin_metadata) {
                 char buf[148480] = {0};
@@ -2521,15 +2550,18 @@ void BinsMain::send_shared_bins() {
                 walk = put_in_buffer(mainprogram->seatname.c_str(), walk, buf_end);
                 if (!walk) continue;  // Buffer overflow
 
-                walk = put_in_buffer((this->currbin->name).c_str(), walk, buf_end);
-                if (!walk) continue;
+				walk = put_in_buffer((currbinsharename).c_str(), walk, buf_end);
+				if (!walk) continue;
 
-                // Send texture count so receiver knows how many TEX_SENT messages to expect
+				walk = put_in_buffer(this->currbin->idstr.c_str(), walk, buf_end);
+				if (!walk) continue;
+
+				// Send texture count so receiver knows how many TEX_SENT messages to expect
                 walk = put_in_buffer(std::to_string(texture_count).c_str(), walk, buf_end);
                 if (!walk) continue;
 
                 // Send file count so receiver knows how many FILE_SENT messages to expect
-                walk = put_in_buffer(std::to_string(texture_count).c_str(), walk, buf_end);
+                walk = put_in_buffer(std::to_string(file_count).c_str(), walk, buf_end);
                 if (!walk) continue;
 
                 for (int i = 0; i < 12; i++) {
@@ -2562,7 +2594,10 @@ void BinsMain::send_shared_bins() {
                 memcpy(walk2, buf, msg_size);
                 walk2 += msg_size;
 
-                send(sock, buf2, walk2 - buf2, 0);
+                int sent = mainprogram->bl_send(sock, buf2, walk2 - buf2, 0);
+                if (sent != walk2 - buf2) {
+                    std::cout << "DEBUG: BIN_SENT send failed - sent " << sent << " of " << (walk2 - buf2) << " bytes" << std::endl;
+                }
                 std::cout << "DEBUG: Sent BIN_SENT for '" << this->currbin->name << "' with " << texture_count << " textures to follow" << std::endl;
             }
 
@@ -2610,8 +2645,9 @@ void BinsMain::send_shared_bins() {
                             // Calculate payload size FIRST (without building buffer yet)
                             size_t payload_base =
                                     //str_len(mainprogram->seatname) +
-                                    str_len(this->currbin->name) +
-                                    str_len(std::to_string(i * 12 + j)) +
+                                    str_len(currbinsharename) +
+									str_len(this->currbin->idstr) +
+									str_len(std::to_string(i * 12 + j)) +
                                     str_len(suffix) +
                                     str_len(std::to_string(filesize)) +
                                     filesize;
@@ -2645,19 +2681,25 @@ void BinsMain::send_shared_bins() {
                                 continue;
                             }
 
-                            filewalk = put_in_buffer((this->currbin->name).c_str(), filewalk, completemsg_end);
+                            filewalk = put_in_buffer((currbinsharename).c_str(), filewalk, completemsg_end);
                             if (!filewalk) {
                                 infile.close();
                                 continue;
                             }
 
-                            filewalk = put_in_buffer(std::to_string(i * 12 + j).c_str(), filewalk, completemsg_end);
-                            if (!filewalk) {
-                                infile.close();
-                                continue;
-                            }
+							filewalk = put_in_buffer(this->currbin->idstr.c_str(), filewalk, completemsg_end);
+							if (!filewalk) {
+								infile.close();
+								continue;
+							}
 
-                            filewalk = put_in_buffer(suffix.c_str(), filewalk, completemsg_end);
+							filewalk = put_in_buffer(std::to_string(i * 12 + j).c_str(), filewalk, completemsg_end);
+							if (!filewalk) {
+								infile.close();
+								continue;
+							}
+
+							filewalk = put_in_buffer(suffix.c_str(), filewalk, completemsg_end);
                             if (!filewalk) {
                                 infile.close();
                                 continue;
@@ -2674,7 +2716,11 @@ void BinsMain::send_shared_bins() {
                             infile.close();
 
                             // Send complete message
-                            send(sock, completemsg.get(), filewalk - completemsg.get() + filesize, 0);
+                            size_t total_size = filewalk - completemsg.get() + filesize;
+                            int sent = mainprogram->bl_send(sock, completemsg.get(), total_size, 0);
+                            if (sent != total_size) {
+                                std::cout << "DEBUG: FILE_SENT send failed - sent " << sent << " of " << total_size << " bytes" << std::endl;
+                            }
                         }
                     }
                 }
@@ -2714,7 +2760,8 @@ void BinsMain::send_shared_bins() {
                                 // Calculate payload size FIRST (without building buffer yet)
                                 size_t payload_base =
                                         //str_len(mainprogram->seatname) +
-                                        str_len(this->currbin->name) +
+                                        str_len(currbinsharename) +
+										str_len(this->currbin->idstr) +
                                         str_len(std::to_string(i * 12 + j)) +
                                         str_len(std::to_string(filesize)) +
                                         filesize;
@@ -2748,19 +2795,25 @@ void BinsMain::send_shared_bins() {
                                     continue;
                                 }
 
-                                texwalk = put_in_buffer((this->currbin->name).c_str(), texwalk, completemsg_end);
+                                texwalk = put_in_buffer((currbinsharename).c_str(), texwalk, completemsg_end);
                                 if (!texwalk) {
                                     infile.close();
                                     continue;
                                 }
 
-                                texwalk = put_in_buffer(std::to_string(i * 12 + j).c_str(), texwalk, completemsg_end);
-                                if (!texwalk) {
-                                    infile.close();
-                                    continue;
-                                }
+								texwalk = put_in_buffer(this->currbin->idstr.c_str(), texwalk, completemsg_end);
+								if (!texwalk) {
+									infile.close();
+									continue;
+								}
 
-                                texwalk = put_in_buffer(std::to_string(filesize).c_str(), texwalk, completemsg_end);
+								texwalk = put_in_buffer(std::to_string(i * 12 + j).c_str(), texwalk, completemsg_end);
+								if (!texwalk) {
+									infile.close();
+									continue;
+								}
+
+								texwalk = put_in_buffer(std::to_string(filesize).c_str(), texwalk, completemsg_end);
                                 if (!texwalk) {
                                     infile.close();
                                     continue;
@@ -2771,13 +2824,18 @@ void BinsMain::send_shared_bins() {
                                 infile.close();
 
                                 // Send complete message
-                                send(sock, completemsg.get(), texwalk - completemsg.get() + filesize, 0);
+                                size_t total_size = texwalk - completemsg.get() + filesize;
+                                int sent = mainprogram->bl_send(sock, completemsg.get(), total_size, 0);
+                                if (sent != total_size) {
+                                    std::cout << "DEBUG: TEX_SENT send failed - sent " << sent << " of " << total_size << " bytes" << std::endl;
+                                }
                             } else {
                                 // No texture or file couldn't be opened - send placeholder
                                 // Calculate payload size FIRST
                                 size_t payload_base =
                                         //str_len(mainprogram->seatname) +
-                                        str_len(this->currbin->name) +
+                                        str_len(currbinsharename) +
+										str_len(this->currbin->idstr) +
                                         str_len(std::to_string(i * 12 + j)) +
                                         str_len("0");  // filesize = 0
 
@@ -2799,16 +2857,22 @@ void BinsMain::send_shared_bins() {
                                 texwalk = put_in_buffer(mainprogram->seatname.c_str(), texwalk, texheader_end);
                                 if (!texwalk) continue;
 
-                                texwalk = put_in_buffer((this->currbin->name).c_str(), texwalk, texheader_end);
+                                texwalk = put_in_buffer((currbinsharename).c_str(), texwalk, texheader_end);
                                 if (!texwalk) continue;
 
-                                texwalk = put_in_buffer(std::to_string(i * 12 + j).c_str(), texwalk, texheader_end);
+								texwalk = put_in_buffer(this->currbin->idstr.c_str(), texwalk, texheader_end);
+								if (!texwalk) continue;
+
+								texwalk = put_in_buffer(std::to_string(i * 12 + j).c_str(), texwalk, texheader_end);
+								if (!texwalk) continue;
+
+								texwalk = put_in_buffer("0", texwalk, texheader_end);  // file size = 0
                                 if (!texwalk) continue;
 
-                                texwalk = put_in_buffer("0", texwalk, texheader_end);  // file size = 0
-                                if (!texwalk) continue;
-
-                                send(sock, texheader, texwalk - texheader, 0);
+                                int sent = mainprogram->bl_send(sock, texheader, texwalk - texheader, 0);
+                                if (sent != texwalk - texheader) {
+                                    std::cout << "DEBUG: TEX_SENT (empty) send failed - sent " << sent << " of " << (texwalk - texheader) << " bytes" << std::endl;
+                                }
                             }
                         }
                     }
@@ -2876,8 +2940,11 @@ void BinsMain::receive_shared_bins() {
         }
 
         walk += strlen(walk) + 1;
-        std::string str(walk);
-        walk += strlen(walk) + 1;
+		std::string sharename(walk);
+		walk += strlen(walk) + 1;
+		std::string idstr(walk);
+
+		walk += strlen(walk) + 1;
 
         // Read texture count
         std::string texture_count_str(walk);
@@ -2901,20 +2968,26 @@ void BinsMain::receive_shared_bins() {
 
         Bin *binis = nullptr;
         for (Bin *bin: binsmain->bins) {
-            if (bin->name == str) {
-				if (bin->shared) {
+			if (this->idtonamemap.count(idstr)) {
+				if (bin->name == this->idtonamemap[idstr] && bin->idstr == idstr) {
 					binis = bin;
 					break;
 				}
-            }
+			}
         }
-        if (!binis) binis = new_bin(str);
+        if (!binis) {
+	        binis = new_bin(sharename, true);  // Pass shared=true
+			binis->idstr = idstr;
+			// Now set the maps with the (potentially renamed) bin name
+			this->sharedbinnamesmap[binis->name] = sharename;
+			this->idtonamemap[idstr] = binis->name;
+        }
 
         // Check if there's a pending send for this bin (last_message_sender is set)
         // OR if we're still receiving textures from the previous message
         // If so, postpone processing this message until the pending operations complete
         if (!binis->last_message_sender.empty() || binis->pending_textures > 0 || binis->pending_files > 0) {
-            std::cout << "DEBUG: Postponing BIN_SENT for '" << str << "' - pending operations "
+            std::cout << "DEBUG: Postponing BIN_SENT for '" << sharename << "' - pending operations "
                      << "(last_sender='" << binis->last_message_sender << "', pending_textures="
                                          << binis->pending_textures << "', pending_files="
                                          << binis->pending_files << ")" << std::endl;
@@ -2923,27 +2996,26 @@ void BinsMain::receive_shared_bins() {
         }
 
         make_currbin(binis->pos);
-        binis->shared = true;
         binis->pending_textures = expected_textures;  // Store how many textures to expect
         binis->pending_files = expected_files;  // Store how many textures to expect
 
         // Set the owner to the sender if not already set
         if (binis->owner.empty() && !messagesockname.empty()) {
             binis->owner = messagesockname;
-            std::cout << "DEBUG: Setting bin '" << str << "' owner to '" << messagesockname << "'" << std::endl;
+            std::cout << "DEBUG: Setting bin '" << sharename << "' owner to '" << messagesockname << "'" << std::endl;
         }
 
         // Track who sent this message to avoid echoing it back
         binis->last_message_sender = messagesockname;
 
-        std::cout << "DEBUG: Received bin '" << str << "' from '" << messagesockname << "' expecting " << expected_textures << " textures" << std::endl;
+        std::cout << "DEBUG: Received bin '" << sharename << "' from '" << messagesockname << "' expecting " << expected_textures << " textures" << std::endl;
 
         // SERVER: When receiving a bin from a client, add client to sendtonames for bidirectional sync
         if (mainprogram->server && !messagesockname.empty()) {
             // Check if this client is already in sendtonames
             auto it = std::find(binis->sendtonames.begin(), binis->sendtonames.end(), messagesockname);
             if (it == binis->sendtonames.end()) {
-                std::cout << "DEBUG: Server adding client '" << messagesockname << "' to bin '" << str << "' sendtonames for bidirectional sync" << std::endl;
+                std::cout << "DEBUG: Server adding client '" << messagesockname << "' to bin '" << sharename << "' sendtonames for bidirectional sync" << std::endl;
                 binis->sendtonames.push_back(messagesockname);
             }
         }
@@ -2971,10 +3043,25 @@ void BinsMain::receive_shared_bins() {
                     teststr = test_driveletters(path);
                 }
                 binel->name = name;
-				if (teststr == "") {
-					binel->name = "";
-				}
+                bool islayer = false;
+                bool isdeck = false;
+                bool ismix = false;
+                if (path.size() > 6) {
+                    islayer = (path.substr(path.size() - 6, 6) == ".layer");
+                }
+                if (path.size() > 5) {
+                    isdeck = (path.substr(path.size() - 5, 5) == ".deck");
+                }
+                if (path.size() > 4) {
+                    ismix = (path.substr(path.size() - 4, 4) == ".mix");
+                }
                 binel->path = teststr;
+                if (teststr == "" && !islayer && !isdeck && !ismix) {
+                    binel->name = "";
+				}
+                if (islayer || isdeck || ismix) {
+                    binel->path = path;
+                }
                 binel->type = ELEM_FILE;
             }
         }
@@ -2983,15 +3070,17 @@ void BinsMain::receive_shared_bins() {
 
         // SERVER: Forward message to all subscribed clients (except sender)
         if (mainprogram->server && rawmessage && messagelength > 0) {
-            // Parse sender name and bin name from message
+            // Parse sender name and bin name and bin id from message
             char* parse_ptr = message;
             std::string sender_name(parse_ptr);
-            parse_ptr += sender_name.length() + 1;
-            std::string bin_name(parse_ptr);
+			parse_ptr += sender_name.length() + 1;
+			std::string bin_name(parse_ptr);
+			parse_ptr += bin_name.length() + 1;
+			std::string idstr(parse_ptr);
 
             // Find subscribers for this bin
             std::lock_guard<std::mutex> sub_lock(mainprogram->subscriptionMutex);
-            auto key = std::make_pair(sender_name, bin_name);
+            auto key = std::make_pair(sender_name, idstr);
             auto it = mainprogram->subscriptionMap.find(key);
 
             if (it != mainprogram->subscriptionMap.end()) {
@@ -3011,7 +3100,10 @@ void BinsMain::receive_shared_bins() {
                         #endif
 
                         // Forward the raw message
-                        send(subscriber_socket, rawmessage, messagelength, 0);
+                        int sent = mainprogram->bl_send(subscriber_socket, rawmessage, messagelength, 0);
+                        if (sent != messagelength) {
+                            std::cout << "DEBUG: Failed to forward BIN_SENT to subscriber, sent " << sent << " of " << messagelength << " bytes" << std::endl;
+                        }
                     }
                 }
             }
@@ -3090,9 +3182,9 @@ void BinsMain::receive_shared_textures() {
         char *message_end = texmessage + texmessagelength;
 
         // Initialize all variables before any goto statements to avoid crossing initialization
-        int pos = 0, filesize = 0;
+        int pos = 0, filesize = 0, binid = 0;
         Bin *targetbin = nullptr;
-        std::string binname, posstr, filesizestr;
+        std::string binname, posstr, filesizestr, idstr;
 
         // Safely parse texture message with bounds checking
         // Note: seatname was already parsed by socket_client/socket_server_receive
@@ -3101,8 +3193,10 @@ void BinsMain::receive_shared_textures() {
         if (walk >= message_end) {
             goto cleanup;
         }
-        binname = std::string(walk, strnlen(walk, message_end - walk));
-        walk += binname.length() + 1;
+		binname = std::string(walk, strnlen(walk, message_end - walk));
+		walk += binname.length() + 1;
+		idstr = std::string(walk, strnlen(walk, message_end - walk));
+		walk += idstr.length() + 1;
 
         if (walk >= message_end) {
             goto cleanup;
@@ -3124,15 +3218,23 @@ void BinsMain::receive_shared_textures() {
             goto cleanup;
         }
 
-        // Find the target bin
-        for (Bin *bin : this->bins) {
-            if (bin->name == binname) {
-                targetbin = bin;
-                break;
-            }
-        }
+		for (Bin *bin: binsmain->bins) {
+			if (this->idtonamemap.count(idstr)) {
+				if (bin->name == this->idtonamemap[idstr] && bin->idstr == idstr) {
+					targetbin = bin;
+					break;
+				}
+			}
+		}
+		if (!targetbin) {
+			targetbin = new_bin(binname, true);  // Pass shared=true
+			targetbin->idstr = idstr;
+			// Now set the maps with the (potentially renamed) bin name
+			this->sharedbinnamesmap[targetbin->name] = binname;
+			this->idtonamemap[idstr] = targetbin->name;
+		}
 
-        if (targetbin && pos >= 0 && pos < 144) {
+		if (targetbin && pos >= 0 && pos < 144) {
             BinElement *binel = targetbin->elements[pos];
 
             if (filesize == 0) {
@@ -3198,8 +3300,8 @@ void BinsMain::receive_shared_textures() {
 
             // Try to find matching subscription - search through all keys
             for (auto& [key, subscribers] : mainprogram->subscriptionMap) {
-                const auto& [owner, bin_name] = key;
-                if (bin_name == binname) {
+                const auto& [owner, id_str] = key;
+                if (id_str == idstr) {
                     // Forward to all subscribers except the sender
                     for (const auto& subscriber_name : subscribers) {
                         // Don't send back to the sender
@@ -3217,7 +3319,10 @@ void BinsMain::receive_shared_textures() {
 #endif
 
                             // Forward the raw texture message
-                            send(subscriber_socket, rawtexmessage, rawtexmessagelength, 0);
+                            int sent = mainprogram->bl_send(subscriber_socket, rawtexmessage, rawtexmessagelength, 0);
+                            if (sent != rawtexmessagelength) {
+                                std::cout << "DEBUG: Failed to forward TEX_SENT to subscriber, sent " << sent << " of " << rawtexmessagelength << " bytes" << std::endl;
+                            }
                         }
                     }
                     break;  // Found the bin, no need to continue
@@ -3308,7 +3413,7 @@ void BinsMain::receive_shared_files() {
         // Initialize all variables before any goto statements to avoid crossing initialization
         int pos = 0, filesize = 0;
         Bin *targetbin = nullptr;
-        std::string binname, posstr, typestr, filesizestr;
+        std::string binname, idstr, posstr, typestr, filesizestr;
 
         // Safely parse file message with bounds checking
         // Note: seatname was already parsed by socket_client/socket_server_receive
@@ -3317,8 +3422,10 @@ void BinsMain::receive_shared_files() {
         if (walk >= message_end) {
             goto cleanup;
         }
-        binname = std::string(walk, strnlen(walk, message_end - walk));
-        walk += binname.length() + 1;
+		binname = std::string(walk, strnlen(walk, message_end - walk));
+		walk += binname.length() + 1;
+		idstr = std::string(walk, strnlen(walk, message_end - walk));
+		walk += idstr.length() + 1;
 
         if (walk >= message_end) {
             goto cleanup;
@@ -3346,15 +3453,23 @@ void BinsMain::receive_shared_files() {
             goto cleanup;
         }
 
-        // Find the target bin
-        for (Bin *bin : this->bins) {
-            if (bin->name == binname) {
-                targetbin = bin;
-                break;
-            }
-        }
+		for (Bin *bin: binsmain->bins) {
+			if (this->idtonamemap.count(idstr)) {
+				if (bin->name == this->idtonamemap[idstr] && bin->idstr == idstr) {
+					targetbin = bin;
+					break;
+				}
+			}
+		}
+		if (!targetbin) {
+			targetbin = new_bin(binname, true);  // Pass shared=true
+			targetbin->idstr = idstr;
+			// Now set the maps with the (potentially renamed) bin name
+			this->sharedbinnamesmap[targetbin->name] = binname;
+			this->idtonamemap[idstr] = targetbin->name;
+		}
 
-        if (targetbin && pos >= 0 && pos < 144) {
+		if (targetbin && pos >= 0 && pos < 144) {
             BinElement *binel = targetbin->elements[pos];
 
             if (filesize > 0 && filesize <= 50*1024*1024 && walk + filesize <= message_end) {  // Size limit and bounds check
@@ -3408,8 +3523,8 @@ void BinsMain::receive_shared_files() {
 
             // Try to find matching subscription - search through all keys
             for (auto& [key, subscribers] : mainprogram->subscriptionMap) {
-                const auto& [owner, bin_name] = key;
-                if (bin_name == binname) {
+                const auto& [owner, id_str] = key;
+                if (id_str == idstr) {
                     // Forward to all subscribers except the sender
                     for (const auto& subscriber_name : subscribers) {
                         // Don't send back to the sender
@@ -3426,8 +3541,11 @@ void BinsMain::receive_shared_files() {
                             int subscriber_socket = sock_it->second;
 #endif
 
-                            // Forward the raw texture message
-                            send(subscriber_socket, rawfilemessage, rawfilemessagelength, 0);
+                            // Forward the raw file message
+                            int sent = mainprogram->bl_send(subscriber_socket, rawfilemessage, rawfilemessagelength, 0);
+                            if (sent != rawfilemessagelength) {
+                                std::cout << "DEBUG: Failed to forward FILE_SENT to subscriber, sent " << sent << " of " << rawfilemessagelength << " bytes" << std::endl;
+                            }
                         }
                     }
                     break;  // Found the bin, no need to continue
@@ -3663,7 +3781,7 @@ void BinsMain::save_bin(std::string path) {
     }
 }
 
-Bin *BinsMain::new_bin(std::string name) {
+Bin *BinsMain::new_bin(std::string name, bool shared) {
 	Bin *bin = new Bin(this->bins.size());
 	this->bins.push_back(bin);
 	bin->pos = this->bins.size() - 1;
@@ -3680,6 +3798,11 @@ Bin *BinsMain::new_bin(std::string name) {
 	std::string path;
 	bin->path = mainprogram->project->binsdir + name + ".bin";
     bin->name = name;
+	bin->shared = shared;
+	// no two bins can have the same name
+	this->solve_nameclashes();
+	std::filesystem::path p1{ mainprogram->project->binsdir + bin->name };
+	std::filesystem::create_directory(p1);
 	return bin;
 }
 

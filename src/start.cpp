@@ -3663,6 +3663,7 @@ void onestepfrom(bool stage, Node *node, Node *prevnode, GLuint prevfbotex, GLui
             if (lay->blendnode->blendtype == 19 || lay->blendnode->blendtype == 20 || lay->blendnode->blendtype
             == 21) {
                 mainprogram->uniformCache->setFloat("colortol", lay->chtol->value);
+                mainprogram->uniformCache->setFloat("feather", lay->chfeather->value);
                 mainprogram->uniformCache->setBool("chdir", lay->chdir->value);
                 mainprogram->uniformCache->setBool("chinv", lay->chinv->value);
             }
@@ -4081,9 +4082,11 @@ void onestepfrom(bool stage, Node *node, Node *prevnode, GLuint prevfbotex, GLui
                         mainprogram->uniformCache->setFloat("chgreen", bnode->chgreen);
                         mainprogram->uniformCache->setFloat("chblue", bnode->chblue);
                     }
-                    if (bnode->blendtype == 18) {
+                    if (bnode->blendtype == 24) {
                         mainprogram->uniformCache->setBool("inlayer", true);
-                        if (bnode->wipetype > -1) mainprogram->uniformCache->setBool("wipe", true);
+                        if (bnode->wipetype > -1) {
+                            mainprogram->uniformCache->setBool("wipe", true);
+                        }
                         mainprogram->uniformCache->setInt("wkind", bnode->wipetype);
                         mainprogram->uniformCache->setInt("dir", bnode->wipedir);
                         mainprogram->uniformCache->setFloat("xpos", bnode->wipex->value);
@@ -4313,7 +4316,7 @@ bool display_mix() {
 
     if (mainprogram->prevmodus) {
 		if (mainmix->wipe[0] > -1) {
-			mainprogram->uniformCache->setInt("mixmode", 18);
+			mainprogram->uniformCache->setInt("mixmode", 24);
 			mainprogram->uniformCache->setBool("wipe", true);
 			mainprogram->uniformCache->setInt("wkind", mainmix->wipe[0]);
 			mainprogram->uniformCache->setInt("dir", mainmix->wipedir[0]);
@@ -4361,7 +4364,7 @@ bool display_mix() {
 
 		if (mainmix->wipe[1] > -1) {
 			mainprogram->uniformCache->setFloat("cf", mainmix->crossfadecomp->value);
-			mainprogram->uniformCache->setInt("mixmode", 18);
+			mainprogram->uniformCache->setInt("mixmode", 24);
 			mainprogram->uniformCache->setBool("wipe", true);
 			mainprogram->uniformCache->setInt("wkind", mainmix->wipe[1]);
 			mainprogram->uniformCache->setInt("dir", mainmix->wipedir[1]);
@@ -4407,7 +4410,7 @@ bool display_mix() {
 		mainprogram->uniformCache->setInt("mixmode", 0);
 		if (mainmix->wipe[1] > -1) {
 			mainprogram->uniformCache->setFloat("cf", mainmix->crossfadecomp->value);
-			mainprogram->uniformCache->setInt("mixmode", 18);
+			mainprogram->uniformCache->setInt("mixmode", 24);
 			mainprogram->uniformCache->setBool("wipe", true);
 			mainprogram->uniformCache->setInt("wkind", mainmix->wipe[1]);
 			mainprogram->uniformCache->setInt("dir", mainmix->wipedir[1]);
@@ -4492,10 +4495,7 @@ void drag_into_layerstack(std::vector<Layer*>& layers, bool deck) {
 	auto itlayers = layers;
     for (int i = 0; i < itlayers.size(); i++) {
 		lay = itlayers[i];
-		if (mainprogram->draginscrollbarlay) {
-			lay = mainprogram->draginscrollbarlay;
-		}
-		else if (lay->pos < mainmix->scenes[deck][mainmix->currscene[deck]]->scrollpos || lay->pos > mainmix->scenes[deck][mainmix->currscene[deck]]->scrollpos + 2) {
+		if (lay->pos < mainmix->scenes[deck][mainmix->currscene[deck]]->scrollpos || lay->pos > mainmix->scenes[deck][mainmix->currscene[deck]]->scrollpos + 2) {
             continue;
         }
 		Boxx* box = lay->node->vidbox;
@@ -4518,8 +4518,7 @@ void drag_into_layerstack(std::vector<Layer*>& layers, bool deck) {
 			if (!no) {
 				bool cond1 = (box->scrcoords->y1 < mainprogram->my + box->scrcoords->h && mainprogram->my < box->scrcoords->y1);
 				bool cond2 = (box->scrcoords->x1 + box->scrcoords->w * 0.25f < mainprogram->mx && mainprogram->mx < box->scrcoords->x1 + box->scrcoords->w * 0.75f);
-				if (mainprogram->draginscrollbarlay || (cond1 && cond2)) {
-					mainprogram->draginscrollbarlay = nullptr;
+				if (cond1 && cond2) {
 					// handle dragging things into layer monitors of deck
 					lay->queueing = true;
 					mainprogram->queueing = true;
@@ -6223,10 +6222,59 @@ void the_loop() {
 
 		// Draw and handle crossfade->box
 		Param* par;
-		if (mainprogram->prevmodus) par = mainmix->crossfade;
-		else par = mainmix->crossfadecomp;
+        int type;
+		if (mainprogram->prevmodus) {
+            par = mainmix->crossfade;
+            type = mainmix->wipe[0];
+        }
+		else {
+            par = mainmix->crossfadecomp;
+            type = mainmix->wipe[1];
+        }
+        std::string typestr;
+        switch (type) {
+            case -1:
+                typestr = "Crossfade";
+                break;
+            case 0:
+                typestr = "Classic";
+                break;
+            case 1:
+                typestr = "Push/Pull";
+                break;
+            case 2:
+                typestr = "Squashed";
+                break;
+            case 3:
+                typestr = "Ellipse";
+                break;
+            case 4:
+                typestr = "Rectangle";
+                break;
+            case 5:
+                typestr = "Zoomed Rectangle";
+                break;
+            case 6:
+                typestr = "Clock";
+                break;
+            case 7:
+                typestr = "Double Clock";
+                break;
+            case 8:
+                typestr = "Bars";
+                break;
+            case 9:
+                typestr = "Pattern";
+                break;
+            case 10:
+                typestr = "Dot";
+                break;
+            case 11:
+                typestr = "Repel";
+                break;
+        }
+        mainmix->crossfadename[!mainprogram->prevmodus] = typestr;
         par->handle();
-
 
         // draw and handle layer stacks, effect stacks and params
 		if (mainprogram->prevmodus) {
@@ -6743,7 +6791,12 @@ void the_loop() {
         }
         for (int i = 0; i < mainprogram->menulist.size(); i++) {
             mainprogram->menulist[i]->state = 0;
+            mainprogram->menulist[i]->currsub = -1;  // Reset all submenu states
+            mainprogram->menulist[i]->splitColumnsOnLeft = -1;  // Reset split positioning
+            mainprogram->menulist[i]->splitScrollOffset = 0;  // Reset scroll
+            mainprogram->menulist[i]->splitNeedsScrolling = false;  // Reset scrolling flag
         }
+        mainprogram->prevmenuchoices.clear();  // Clear submenu tracking
         binsmain->menuactbinel = nullptr;
         //mainprogram->recundo = false;
     }
@@ -6883,7 +6936,9 @@ void the_loop() {
 
 			std::filesystem::path path_to_remove(mainprogram->temppath);
 			for (std::filesystem::directory_iterator end_dir_it, it(path_to_remove); it != end_dir_it; ++it) {
-				mainprogram->remove(it->path().string());
+				if (basename(it->path().string()) != "EWOCvj2.log") {
+                    mainprogram->remove(it->path().string());
+                }
 			}
 
 			printf("stopped\n");
@@ -9129,9 +9184,14 @@ int main(int argc, char* argv[]) {
                 if (e.button.button == SDL_BUTTON_RIGHT && !mainmix->learn) {
                     for (int i = 0; i < mainprogram->menulist.size(); i++) {
                         mainprogram->menulist[i]->state = 0;
+                        mainprogram->menulist[i]->currsub = -1;  // Reset all submenu states
+                        mainprogram->menulist[i]->splitColumnsOnLeft = -1;  // Reset split positioning
+                        mainprogram->menulist[i]->splitScrollOffset = 0;  // Reset scroll
+                        mainprogram->menulist[i]->splitNeedsScrolling = false;  // Reset scrolling flag
                         mainprogram->menulist[i]->menux = mainprogram->mx;
                         mainprogram->menulist[i]->menuy = mainprogram->my;
                     }
+                    mainprogram->prevmenuchoices.clear();  // Clear submenu tracking
                     if (!mainprogram->cwon) {
                         mainprogram->menuactivation = true;
                     }

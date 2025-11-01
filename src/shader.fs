@@ -1837,7 +1837,12 @@ void main()
      }
      else if (mixmode == 23) {
          //CROSSFADING alpha
-        fc = vec4(mix(tex0.rgb, tex1.rgb, cf), mix(tex0.a, tex1.a, cf));
+         float fac1 = clamp((1.0f - cf) * 2.0f, 0.0f, 1.0f);
+         float fac2 = clamp(cf * 2.0f, 0.0f, 1.0f);
+         float term0 = (1.0f - fac2 * tex1.a / 2.0f) * fac1;
+         float term1 = (1.0f - fac1 * tex0.a / 2.0f) * fac2;
+         fc = vec4((tex0.rgb * (term0 + (1.0f - tex1.a) * (1.0f - term0)) + tex1.rgb * (term1 + (1.0f - tex0.a) * (1.0f - term1))),
+                   tex0.a + tex1.a - tex0.a * tex1.a); // Proper alpha compositing
      }
     else if (mixmode == 19) {
         //COLORKEY alpha
@@ -2125,7 +2130,7 @@ void main()
 	}
 
 	if (wipe) {
-		if (mixmode == 18) {
+		if (mixmode == 24) {
 			float xamount = cf;
 			if (inlayer) xamount = 1.0f - mixfac;
 			float xpix = int(xamount * fbowidth * fcdiv);

@@ -119,13 +119,15 @@ class BinsMain {
         std::vector<std::string> filemessagesocknames;
         std::vector<int> filemessagelengths;
         std::vector<int> rawfilemessagelengths;
+        std::unordered_map<std::string, std::string> sharedbinnamesmap;
+        std::unordered_map<std::string, std::string> idtonamemap;
 
 
         void handle(bool draw);
 		int read_binslist();
 		void save_binslist();
 		void make_currbin(int pos);
-		Bin *new_bin(std::string name);
+		Bin *new_bin(std::string name, bool shared = false);
 		void open_bin(std::string path, Bin *bin, bool newbin = false);
 		void save_bin(std::string path);
 		void import_bins();
@@ -142,6 +144,7 @@ class BinsMain {
 		void receive_shared_bins();
         void receive_shared_textures();
         void receive_shared_files();
+        void solve_nameclashes();
         BinsMain();
 
 	private:
@@ -159,6 +162,7 @@ class Bin {
 		int encthreads = 0;
 		int pos;
 		bool shared = false;
+        std::string idstr;
         bool saved = false;
         std::vector<std::string> sendtonames;
         std::vector<std::string> prevtexes;

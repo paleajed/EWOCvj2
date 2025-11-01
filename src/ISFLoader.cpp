@@ -2982,8 +2982,6 @@ void ISFShaderInstance::renderPass(int passIndex, float time, float renderWidth,
 
     if (!passTemplate.target.empty() && passTemplate.persistent) {
         instancePass.swapBuffers();
-        std::cout << "Swapped buffers for persistent pass: " << passTemplate.target
-                  << " (now using " << (instancePass.currentPingPong ? "ping" : "main") << ")" << std::endl;
     }
 }
 
@@ -3104,9 +3102,6 @@ void ISFShaderInstance::bindTextures(int passIndex) {
                 if (it->second != -1) {
                     // Use current texture for feedback effects (no double buffering)
                     GLuint textureToUse = instancePass.getCurrentReadTexture();
-                    std::cout << "Binding texture " << textureToUse << " for pass " << passTemplate.target
-                              << " (read from " << (instancePass.currentPingPong ? "main" : "ping") << ")" << std::endl;
-
                     glActiveTexture(GL_TEXTURE0 + textureUnit);
                     glBindTexture(GL_TEXTURE_2D, textureToUse);
                     glUniform1i(it->second, textureUnit);

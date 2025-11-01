@@ -770,16 +770,16 @@ void FFGLPlugin::destroyInstance(FFInstanceID instanceID) {
             instances.erase(it);
             activeInstances_--;
 
-            // Deinitialize and add to pool
-            instance->deinitialize();
-
+            // Keep initialized and add to pool (for instant reuse)
             if (instancePool_.size() < MAX_POOL_SIZE) {
                 instance->setPooled(true);
                 instancePool_.push_back(instance);
 
-                std::cout << "Moved instance to pool instead of destroying (Pool size: "
+                std::cout << "Moved initialized instance to pool instead of destroying (Pool size: "
                           << instancePool_.size() << ")" << std::endl;
             } else {
+                // Pool full - deinitialize and destroy
+                instance->deinitialize();
                 std::cout << "Pool full - instance will be destroyed" << std::endl;
             }
         } else {
@@ -832,6 +832,7 @@ FFGLInstanceHandle FFGLPlugin::createInstance(const FFGLViewportStruct& viewport
     std::lock_guard<std::mutex> lock(poolMutex_);
 
     std::shared_ptr<FFGLPluginInstance> instance = nullptr;
+    bool fromPool = false;
 
     // Try to get an instance from the pool
     if (!instancePool_.empty()) {
@@ -839,12 +840,12 @@ FFGLInstanceHandle FFGLPlugin::createInstance(const FFGLViewportStruct& viewport
         instancePool_.pop_back();
 
         instance->setPooled(false);
-        instance->resetForReuse();  // Clean state for reuse
+        instance->resetForReuse();  // Clean state for reuse (keeps it initialized)
 
+        fromPool = true;
         std::cout << "Reused FFGL instance from pool (Pool size: " << instancePool_.size() << ")" << std::endl;
     } else {
         // Pool is empty - create new instance with shared_ptr to this plugin
-        // We need to create a default viewport struct first
         FFGLViewportStruct defaultViewport = viewport;
         instance = std::make_shared<FFGLPluginInstance>(shared_from_this(), defaultViewport);
         instance->setPooled(false);
@@ -852,10 +853,29 @@ FFGLInstanceHandle FFGLPlugin::createInstance(const FFGLViewportStruct& viewport
         std::cout << "Created new FFGL instance (Active: " << activeInstances_ + 1 << ")" << std::endl;
     }
 
-    // Initialize the instance with the requested viewport
-    if (!instance->initialize(viewport)) {
-        std::cerr << "Failed to initialize plugin instance" << std::endl;
-        return nullptr;
+    // Initialize or resize the instance based on whether it came from the pool
+    if (fromPool && instance->isInitialized()) {
+        // Instance is already initialized, just resize if viewport changed
+        const FFGLViewportStruct& currentViewport = instance->getViewport();
+        if (viewport.width != currentViewport.width || viewport.height != currentViewport.height ||
+            viewport.x != currentViewport.x || viewport.y != currentViewport.y) {
+            if (!instance->resize(viewport)) {
+                std::cerr << "Failed to resize pooled instance" << std::endl;
+                // Try full re-initialization as fallback
+                instance->deinitialize();
+                if (!instance->initialize(viewport)) {
+                    std::cerr << "Failed to re-initialize plugin instance after resize failure" << std::endl;
+                    return nullptr;
+                }
+            }
+        }
+        std::cout << "Reused initialized instance (no re-initialization needed)" << std::endl;
+    } else {
+        // New instance or uninitialized - do full initialization
+        if (!instance->initialize(viewport)) {
+            std::cerr << "Failed to initialize plugin instance" << std::endl;
+            return nullptr;
+        }
     }
 
     // Update instance tracking - store as weak_ptr
@@ -863,7 +883,7 @@ FFGLInstanceHandle FFGLPlugin::createInstance(const FFGLViewportStruct& viewport
     instances[pluginInstanceID] = std::weak_ptr<FFGLPluginInstance>(instance);
     activeInstances_++;
 
-    std::cout << "Created instance with plugin ID: " << pluginInstanceID << std::endl;
+    std::cout << "Instance ready with plugin ID: " << pluginInstanceID << std::endl;
     return instance;
 }
 
@@ -883,13 +903,16 @@ void FFGLPlugin::releaseInstance(std::shared_ptr<FFGLPluginInstance> instance) {
     }
     activeInstances_--;
 
-    // Deinitialize the instance (but don't destroy it)
-    instance->deinitialize();
-
-    // Add to pool if we haven't exceeded maximum pool size
+    // Keep the instance initialized and add to pool (for instant reuse)
+    // NOTE: We do NOT deinitialize here anymore - instances stay "warm" in the pool
     if (instancePool_.size() < MAX_POOL_SIZE) {
         instance->setPooled(true);
         instancePool_.push_back(instance);
+        std::cout << "Released initialized instance to pool (Pool size: " << instancePool_.size() << ")" << std::endl;
+    } else {
+        // Pool is full - deinitialize this instance and let it be destroyed
+        instance->deinitialize();
+        std::cout << "Pool full - instance will be destroyed" << std::endl;
     }
 }
 
@@ -908,15 +931,61 @@ void FFGLPlugin::clearInstancePool() {
     instancePool_.clear();
 }
 
-// Reset instance to clean state for reuse
-void FFGLPluginInstance::resetForReuse() {
-    if (initialized) {
-        std::cerr << "Warning: resetForReuse called on initialized instance - should be deinitialized first" << std::endl;
+void FFGLPlugin::prewarmInstancePool(size_t count) {
+    if (!loaded) {
+        std::cerr << "Cannot prewarm pool: plugin not loaded" << std::endl;
         return;
     }
 
+    std::lock_guard<std::mutex> lock(poolMutex_);
+
+    std::cout << "Pre-warming " << count << " instance(s) for plugin: " << getDisplayName() << std::endl;
+
+    for (size_t i = 0; i < count; i++) {
+        if (instancePool_.size() >= MAX_POOL_SIZE) {
+            std::cout << "Pool size limit reached during pre-warming" << std::endl;
+            break;
+        }
+
+        // Create default viewport (1920x1080)
+        FFGLViewportStruct defaultViewport;
+        defaultViewport.x = 0;
+        defaultViewport.y = 0;
+        defaultViewport.width = 1920;
+        defaultViewport.height = 1080;
+
+        // Create instance
+        auto instance = std::make_shared<FFGLPluginInstance>(shared_from_this(), defaultViewport);
+        instance->setPooled(false);
+
+        // Initialize (this is the expensive part we want to do at startup)
+        if (instance->initialize(defaultViewport)) {
+            // Keep it initialized and add to pool for instant reuse
+            instance->setPooled(true);
+            instancePool_.push_back(instance);
+
+            std::cout << "  Pre-warmed instance " << (i + 1) << "/" << count << " for " << getDisplayName() << std::endl;
+        } else {
+            std::cerr << "  Failed to pre-warm instance " << (i + 1) << " for " << getDisplayName() << std::endl;
+        }
+    }
+
+    std::cout << "Pre-warming complete. Pool size: " << instancePool_.size() << std::endl;
+}
+
+// Reset instance to clean state for reuse (works on initialized instances)
+void FFGLPluginInstance::resetForReuse() {
     // Reset all parameters to their default values
     for (auto& param : parameters) {
+        // Reset parameter value
+        if (initialized && parentPlugin_ && parentPlugin_->mainFunc) {
+            // If initialized, send default value to plugin
+            SetParameterStruct paramData;
+            paramData.ParameterNumber = param.index;
+            paramData.NewParameterValue = param.defaultValue;
+            callPluginInstance(FF_SET_PARAMETER, FFGLUtils::PointerToFFMixed(&paramData));
+        }
+
         param.currentValue = param.defaultValue;
         param.textValue.clear();
 
@@ -942,11 +1011,7 @@ void FFGLPluginInstance::resetForReuse() {
     // Reset timing
     timeInitialized = false;
 
-    // Reset viewport to default
-    currentViewport.x = 0;
-    currentViewport.y = 0;
-    currentViewport.width = 1920;
-    currentViewport.height = 1080;
+    // Note: We don't reset currentViewport here - it will be updated via resize() when reused
 }
 
 
@@ -1531,6 +1596,10 @@ bool FFGLHost::loadPlugin(const std::string& pluginPath) {
     loadedPlugins[pluginPath] = plugin;
 
     std::cout << "Successfully loaded and stored plugin: " << plugin->getDisplayName() << std::endl;
+
+    // Pre-warm instance pool with 1 initialized instance for instant availability
+    plugin->prewarmInstancePool(1);
+
     return true;
 }
 
