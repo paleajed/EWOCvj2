@@ -5080,7 +5080,7 @@ void Layer::get_cpu_frame(int framenr, int prevframe, int errcount)
         if (this->numf == 0) return;
 
         long long seekTarget;
-        if (framenr == (int) this->startframe->value) {
+        if (framenr == 0) {
             // For first frame or startframe, seek to beginning
             seekTarget = first_pts;
         } else {
