@@ -1014,6 +1014,27 @@ void FFGLPluginInstance::resetForReuse() {
     // Note: We don't reset currentViewport here - it will be updated via resize() when reused
 }
 
+void FFGLPluginInstance::copyTimingFrom(const FFGLPluginInstance* other) {
+    if (!other) return;
+
+    // Copy timing state from source instance - use the EXACT same start time
+    // This ensures both instances calculate the same elapsed time going forward
+    timeInitialized = other->timeInitialized;
+    pluginStartTime = other->pluginStartTime;
+
+    // Immediately synchronize the plugin's internal state by setting it to the
+    // exact same elapsed time as the source at this moment
+    if (timeInitialized) {
+        auto now = std::chrono::high_resolution_clock::now();
+        std::chrono::duration<float> elapsed = now - pluginStartTime;
+        float elapsedSeconds = elapsed.count();
+
+        // Tell the plugin to jump to this exact time point
+        // This initializes the plugin's internal timing to match the source
+        setTime(elapsedSeconds);
+    }
+}
+
 
 // FFGLPluginInstance Implementation
 FFGLPluginInstance::FFGLPluginInstance(std::shared_ptr<FFGLPlugin> parent, const FFGLViewportStruct& viewport)

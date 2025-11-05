@@ -3431,12 +3431,15 @@ void ISFShaderInstance::createFullscreenQuad() {
     if (fullscreenQuadVAO_ != 0) return; // Already created
 
     // Fullscreen quad vertices for OpenGL core profile
+    // For ISF GENERATOR (source) shaders, flip texture coordinates vertically
+    bool flipVertically = (parentShader_->getType() == ISFLoader::GENERATOR);
+
     float quadVertices[] = {
             // positions   // texCoords
-            -1.0f,  1.0f,  0.0f, 1.0f,
-            -1.0f, -1.0f,  0.0f, 0.0f,
-            1.0f,  1.0f,  1.0f, 1.0f,
-            1.0f, -1.0f,  1.0f, 0.0f,
+            -1.0f,  1.0f,  0.0f, flipVertically ? 0.0f : 1.0f,
+            -1.0f, -1.0f,  0.0f, flipVertically ? 1.0f : 0.0f,
+             1.0f,  1.0f,  1.0f, flipVertically ? 0.0f : 1.0f,
+             1.0f, -1.0f,  1.0f, flipVertically ? 1.0f : 0.0f,
     };
 
     GLuint quadVBO;
@@ -3557,6 +3560,22 @@ void ISFShaderInstance::resetForReuse() {
     // automatically managed by the pooling system when needed
 
     std::cout << "Reset ISF instance for reuse: " << getName() << std::endl;
+}
+
+void ISFShaderInstance::copyTimingFrom(const ISFShaderInstance* other, float currentTime) {
+    if (!other) return;
+
+    // DON'T copy frame index - let each instance track independently from 0
+    // Most ISF shaders use TIME (not FRAMEINDEX) for animation, so they'll be in sync
+    // via the shared mainmix->time value. FRAMEINDEX is typically used for seeding
+    // random numbers or other stateless operations, not for primary timing.
+    // Copying a high frame index can cause issues with shader state initialization.
+
+    // Keep the duplicate's own frame index (starts at 0)
+    // instanceFrameIndex_ stays as-is
+
+    // Set lastFrameTime_ to current time so first TIMEDELTA is calculated correctly
+    lastFrameTime_ = currentTime;
 }
 
 ISFLoader::InstancePassInfo::~InstancePassInfo() {

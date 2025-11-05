@@ -427,6 +427,11 @@ public:
     // Reset instance to clean state for reuse
     void resetForReuse();
 
+    // Timing state management (for duplicating layers)
+    void copyTimingFrom(const ISFShaderInstance* other, float currentTime);
+    float getLastFrameTime() const { return lastFrameTime_; }
+    int getInstanceFrameIndex() const { return instanceFrameIndex_; }
+
 private:
     int findParameterIndex(const std::string& name) const;
     void setupPassFramebuffers(float renderWidth, float renderHeight);

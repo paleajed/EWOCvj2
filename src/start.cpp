@@ -3797,13 +3797,11 @@ void onestepfrom(bool stage, Node *node, Node *prevnode, GLuint prevfbotex, GLui
                 }
             }
 
-            if (!hasBufferParams) {
-                static float effectTime = 0.0f;
-                static auto lastFrame = std::chrono::high_resolution_clock::now();
-
-                float currentTime = EffectTimer::getTime(); // Starts from 0.0
-                lay->instance->setTime(effectTime);
-            }
+            // Don't call setTime for source plugins - they use internal timing
+            // and may not properly implement FF_SET_TIME, causing crashes
+            // if (!hasBufferParams) {
+            //     lay->instance->setTime(0.0f);
+            // }
 
             lay->instance->applyStoredAudioData();
 
@@ -4006,11 +4004,9 @@ void onestepfrom(bool stage, Node *node, Node *prevnode, GLuint prevfbotex, GLui
                         bnode->instance->setParameter(i, bnode->ffglparams[i]->value);
                     }
 
-                    static float effectTime = 0.0f;
-                    static auto lastFrame = std::chrono::high_resolution_clock::now();
-
-                    float currentTime = EffectTimer::getTime(); // Starts from 0.0
-                    bnode->instance->setTime(effectTime);
+                    // Don't call setTime - blend plugins use internal timing
+                    // and may not properly implement FF_SET_TIME, causing crashes
+                    // bnode->instance->setTime(0.0f);
 
                     bnode->instance->processFrame({infbo1, infbo2}, outfbo);
                 }

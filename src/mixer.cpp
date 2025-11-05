@@ -4355,18 +4355,17 @@ static int decode_packet(Layer *lay, bool show)
 		int err2 = 0;
 		if (!lay->vidopen) {
             int err1 = avcodec_send_packet(lay->video_dec_ctx, lay->decpkt);
-            if (ret == AVERROR_INVALIDDATA) {
+            if (err1 == AVERROR_INVALIDDATA) {
                 av_packet_unref(lay->decpkt);
                 return 0;
             }
             else {
                 err2 = avcodec_receive_frame(lay->video_dec_ctx, lay->decframe);
                 if (err2 < 0) {
-                    printf("avcodec_receive_frame error: %s (code: %d)\n", av_err2str(err2), err2);
                 }
                 if (err2 == AVERROR(EAGAIN) || err2 == AVERROR_INVALIDDATA) {
                     av_packet_unref(lay->decpkt);
-                    return 0;
+                    return -1;  // Need more packets
                 }
             }
             if (err2 == AVERROR(EINVAL)) {
@@ -4432,7 +4431,7 @@ static int decode_packet(Layer *lay, bool show)
 		int nsam = 0;
 		while (1) {
 			int err1 = avcodec_send_packet(lay->audio_dec_ctx, lay->decpkt);
-            if (ret == AVERROR_INVALIDDATA) {
+            if (err1 == AVERROR_INVALIDDATA) {
                 av_packet_unref(lay->decpkt);
                 av_read_frame(lay->video, lay->decpkt);
                 continue;
@@ -4551,36 +4550,71 @@ static int decode_video_packet(Layer *lay, bool show) {
     // Video decoding logic extracted from decode_packet
     int ret = 0;
     int decoded = lay->decpkt->size;
-    if (lay->closethread) return 0;
+    if (lay->closethread) return -1;  // Need more packets
     
     // Only process video packets
-    if (lay->decpkt->stream_index != lay->video_stream_idx) return decoded;
+    if (lay->decpkt->stream_index != lay->video_stream_idx) return 0;
     
     /* decode video frame */
+    // Re-send extradata after flush
+    if (lay->video_stream->codecpar->extradata_size > 0) {
+        AVPacket *extradata_pkt = av_packet_alloc();
+        extradata_pkt->data = lay->video_stream->codecpar->extradata;
+        extradata_pkt->size = lay->video_stream->codecpar->extradata_size;
+        avcodec_send_packet(lay->video_dec_ctx, extradata_pkt);
+        av_packet_free(&extradata_pkt);
+    }
+    
     int err2 = 0;
     if (!lay->vidopen) {
+        // Correct EAGAIN handling for FFmpeg decode API
         int err1 = avcodec_send_packet(lay->video_dec_ctx, lay->decpkt);
-        if (ret == AVERROR_INVALIDDATA) {
-            av_packet_unref(lay->decpkt);
-            return 0;
-        }
-        else {
+
+        // Handle send_packet errors
+        if (err1 == AVERROR(EAGAIN)) {
+            // Decoder is full, need to receive frames first
+            // Don't unref the packet yet, we'll retry after draining
             err2 = avcodec_receive_frame(lay->video_dec_ctx, lay->decframe);
-            if (err2 < 0) {
-                printf("avcodec_receive_frame error: %s (code: %d)\n", av_err2str(err2), err2);
-            }
-            if (err2 == AVERROR(EAGAIN) || err2 == AVERROR_INVALIDDATA) {
+            if (err2 >= 0) {
+                // Successfully received a frame, will process it below
+            } else if (err2 == AVERROR(EAGAIN)) {
+                // This shouldn't happen if send returned EAGAIN, but handle it
                 av_packet_unref(lay->decpkt);
-                return 0;
+                return -1;
+            } else if (err2 == AVERROR_EOF) {
+                avcodec_flush_buffers(lay->video_dec_ctx);
+                return 2;
+            } else {
+                av_packet_unref(lay->decpkt);
+                return -1;
+            }
+        } else if (err1 == AVERROR_INVALIDDATA) {
+            av_packet_unref(lay->decpkt);
+            return -1;
+        } else if (err1 < 0 && err1 != AVERROR_EOF) {
+            av_packet_unref(lay->decpkt);
+            return 2;
+        } else {
+            // Packet sent successfully (or EOF), now receive frame
+            err2 = avcodec_receive_frame(lay->video_dec_ctx, lay->decframe);
+            if (err2 == AVERROR(EAGAIN)) {
+                // Decoder needs more input packets
+                //av_packet_unref(lay->decpkt);
+                lay->infront++;
+                return 0;  // Need to call this function again with more packets
             }
         }
+
         if (err2 == AVERROR(EINVAL)) {
             fprintf(stdout, "Error decoding video frame (%s)\n", 0);
-            return 0;
+            return -1;
         }
         if (err2 == AVERROR_EOF) {
             avcodec_flush_buffers(lay->video_dec_ctx);
-            return 0;
+            return 2;
+        }
+        if (err2 < 0) {
+            return -1;
         }
         if (show) {
             /* copy decoded frame to destination buffer */
@@ -4604,6 +4638,7 @@ static int decode_video_packet(Layer *lay, bool show) {
                 }
             }
         }
+            return 1;  // Successfully decoded and displayed frame
     }
     return decoded;
 }
@@ -4614,7 +4649,7 @@ static int decode_audio_packet(Layer *lay, AVPacket* pkt) {
     if (lay->closethread) return 0;
     
     // Only process audio packets
-    if (pkt->stream_index != lay->audio_dedicated_stream_idx) return decoded;
+    if (pkt->stream_index != lay->audio_dedicated_stream_idx) return 0;
     
     // Check if audio decoder context is properly initialized
     if (!lay->audio_dec_ctx) {
@@ -4891,7 +4926,7 @@ static int get_format_from_sample_fmt(const char **fmt,
         struct sample_fmt_entry *entry = &sample_fmt_entries[i];
         if (sample_fmt == entry->sample_fmt) {
             *fmt = AV_NE(entry->fmt_be, entry->fmt_le);
-            return 0;
+            return -1;  // Need more packets
         }
     }
     fprintf(stdout,
@@ -5028,6 +5063,16 @@ static void process_audio(Layer *lay, float framenr, bool scritched) {
 
 void Layer::get_cpu_frame(int framenr, int prevframe, int errcount)
 {
+    /*if (this->infront >= framenr - prevframe) {
+        this->infront -= framenr - prevframe;
+        if (this->infront < 0) {
+            prevframe -= this->infront;
+        }
+        else {
+            return;
+        }
+    }*/
+
     int ret = 0, got_frame;
     bool scr = this->scritched;
 
@@ -5035,25 +5080,30 @@ void Layer::get_cpu_frame(int framenr, int prevframe, int errcount)
         if (this->numf == 0) return;
 
         long long seekTarget;
-        if (framenr == 0) {
+        if (framenr == (int) this->startframe->value) {
             // For first frame or startframe, seek to beginning
-            seekTarget = first_dts;
+            seekTarget = first_pts;
         } else {
             // For other frames, calculate position
-            seekTarget = av_rescale(this->video_duration, framenr, this->numf) + first_dts;
+            int64_t pts_per_frame = av_rescale_q(
+                    1,
+                    av_inv_q(this->video_stream->avg_frame_rate),
+                    this->video_stream->time_base
+            );
+            seekTarget = (framenr * pts_per_frame) + this->first_pts;
+            seekTarget = av_rescale(this->video_duration, framenr, this->numf) + first_pts;
         }
         if (framenr != (int) this->startframe->value) {
             if (framenr != prevframe + 1 || scr == 1) {
                 // hop to not-next-frame
-                avformat_seek_file(this->videoseek, this->videoseek_stream->index, first_dts,
-                                   seekTarget, seekTarget, AVSEEK_FLAG_BACKWARD || AVSEEK_FLAG_FRAME);
+                av_seek_frame(this->videoseek, this->videoseek_stream->index, seekTarget, AVSEEK_FLAG_BACKWARD);
                 //avcodec_flush_buffers(this->video_dec_ctx);
                 //int r = av_read_frame(this->videoseek, &this->decpktseek);
             } else {
-                av_read_frame(this->video, this->decpkt);
+                //av_read_frame(this->video, this->decpkt);
                 //avformat_seek_file(this->video, this->video_stream->index, seekTarget, seekTarget, this->video_duration + this->decpkt->dts, 0);
                 //avformat_seek_file(this->video, this->video_stream->index, 0, seekTarget, seekTarget, AVSEEK_FLAG_ANY);
-                //avformat_seek_file(this->video, this->video_stream->index, this->video_stream->first_dts,
+                //avformat_seek_file(this->video, this->video_stream->index, this->video_stream->first_pts,
                 //                  seekTarget, seekTarget, 0);
             }
         } else {
@@ -5069,74 +5119,97 @@ void Layer::get_cpu_frame(int framenr, int prevframe, int errcount)
                 this->newchunk.notify_all();
             }
 
-            int seek_ret = avformat_seek_file(this->video, this->video_stream->index, seekTarget, seekTarget,
-                                              this->video_duration, 0);
+            int seek_ret = av_seek_frame(this->video, this->video_stream->index, seekTarget, AVSEEK_FLAG_BACKWARD);
             if (seek_ret < 0) {
                 printf("Warning: seek to startframe failed: %s\n", av_err2str(seek_ret));
             }
+            avcodec_flush_buffers(this->video_dec_ctx);
+            int64_t first_keyframe_after = AV_NOPTS_VALUE;
+            while (av_read_frame(this->video, this->decpkt) >= 0) {
+                if (this->decpkt->stream_index == this->video_stream_idx) {
+                    // Check if this is a keyframe AND after our target
+                    if ((this->decpkt->flags & AV_PKT_FLAG_KEY) && this->decpkt->pts >= seekTarget) {
+                        first_keyframe_after = this->decpkt->pts;
+                        printf("Found first keyframe after target at PTS: %ld\n", first_keyframe_after);
+                        break;
+                    }
+                }
+                av_packet_unref(this->decpkt);
+            }
+            av_seek_frame(this->video, this->video_stream->index, first_keyframe_after, AVSEEK_FLAG_BACKWARD);
+            //av_read_frame(this->video, this->decpkt);
 
-            int seek_ret3 = avformat_seek_file(this->audio, this->audio_dedicated_stream_idx, seekTarget, seekTarget,
-                                              this->video_duration, 0);
+            int seek_ret3 = av_seek_frame(this->audio, this->audio_dedicated_stream_idx, seekTarget, 0);
             if (seek_ret3 < 0) {
                 printf("Warning: seek to startframe failed: %s\n", av_err2str(seek_ret));
             }
-            avcodec_flush_buffers(this->video_dec_ctx);
             av_read_frame(this->audio, this->audiopkt_dedicated);
 
-            if (this->audio_dec_ctx) {
-                int seek_ret2 = avformat_seek_file(this->video, this->audio_stream->index, seekTarget, seekTarget,
-                                                   this->video_duration, 0);
+            /*if (this->audio_dec_ctx) {
+                int seek_ret2 = av_seek_frame(this->video, this->audio_stream->index, seekTarget, 0);
                 if (seek_ret2 < 0) {
                     printf("Warning: seek to startframe failed: %s\n", av_err2str(seek_ret));
                 }
                 avcodec_flush_buffers(this->audio_dec_ctx);
-            }
+            }*/
+            this->scritched = false;
+            scr = 0;
         }
 
         process_audio(this, this->frame, scr);
 
         if (framenr != prevframe + 1 || scr == 1) {
-            this->scritched = false;
-            scr = 0;
             do {
                 av_read_frame(this->videoseek, this->decpktseek);
             }
             while (this->decpktseek->stream_index != this->videoseek_stream_idx);
-            int readpos = ((this->decpktseek->dts - first_dts) * this->numf) / this->video_duration;
+            int readpos = ((this->decpktseek->pts - first_pts) * this->numf) / this->video_duration;
             if (!this->keyframe) {
                 if (readpos <= framenr) {
                     // readpos at keyframe after framenr
-                    if (framenr > prevframe && prevframe > readpos) {
+                    if (framenr > prevframe && prevframe > readpos && scr == 0) {
                         // starting from just past prevframe here is more efficient than decoding from readpos keyframe
                         readpos = prevframe + 1;
                     } else {
-                        avformat_seek_file(this->video, this->video_stream->index, first_dts,
-                                                seekTarget, seekTarget, AVSEEK_FLAG_BACKWARD || AVSEEK_FLAG_FRAME);
-                        do {
-                            av_read_frame(this->video, this->decpkt);
-                        }
-                        while (this->decpkt->stream_index != this->video_stream_idx);
-                        readpos = ((this->decpkt->dts - first_dts) * this->numf) / this->video_duration;
+                        av_seek_frame(this->video, this->video_stream->index, this->decpktseek->pts, AVSEEK_FLAG_BACKWARD);
+                        avcodec_flush_buffers(this->video_dec_ctx);
                     }
+                    av_read_frame(this->video, this->decpkt);
+                    this->scritched = false;
+                    scr = 0;
                     while (true) {
                         // decode sequentially frames starting from keyframe readpos to current framenr
                         // Process audio packets only if they fall in the unprocessed range
                         if (this->decpkt->stream_index == this->video_stream_idx) {
-                            decode_video_packet(this, false);
-                            process_audio(this, (int)(this->frame), scr);
-                            if ((int)(this->frame - 1) <= ((this->decpkt->dts - first_dts) * this->numf) / this->video_duration) {
-                                av_read_frame(this->video, this->decpkt);
+                            int result = decode_video_packet(this, false);
+                            int decframenr = ((this->decpkt->pts - first_pts) * this->numf) / this->video_duration;
+                            if (result == 2 || (int)(this->frame - 1) <= decframenr) {
+                                //av_read_frame(this->video, this->decpkt);
                                 break;
                             }
+                            if (result == 0) {
+                                // EAGAIN - decoder needs more input packets
+                                av_read_frame(this->video, this->decpkt);
+                                continue;
+                            }
+                            process_audio(this, (int)(this->frame), scr);
                         }
                         int r = av_read_frame(this->video, this->decpkt);
                         // Let main video loop handle audio packets more naturally
                     }
                 }
             }
+            this->scritched = false;
+            scr = 0;
         }
+        av_read_frame(this->video, this->decpkt);
         while (true) {
-            decode_video_packet(this, true);
+            int result = decode_video_packet(this, true);
+            if (result == 0) {
+                // EAGAIN - decoder needs more input packets
+                av_read_frame(this->video, this->decpkt);
+                continue;
+            }
             if (this->decpkt->stream_index == this->video_stream_idx) {
                 break;
             }
@@ -5148,10 +5221,21 @@ void Layer::get_cpu_frame(int framenr, int prevframe, int errcount)
         av_packet_unref(this->decpktseek);
     }
     else {
-        int r = av_read_frame(this->video, this->decpkt);
-        if (r < 0) printf("problem reading frame\n");
-        else {
-            decode_video_packet(this, true);
+        // Live playback - keep feeding packets until we get a frame
+        while (true) {
+            int r = av_read_frame(this->video, this->decpkt);
+            if (r < 0) {
+                printf("problem reading frame\n");
+                break;
+            }
+            int result = decode_video_packet(this, true);
+            if (result == 0) {
+                // EAGAIN - decoder needs more input packets
+                av_packet_unref(this->decpkt);
+                continue;
+            }
+            // Successfully decoded a frame or got an error
+            break;
         }
         av_packet_unref(this->decpkt);
         av_packet_unref(this->decpktseek);
@@ -5171,7 +5255,7 @@ bool Layer::get_hap_frame() {
         process_audio(this, this->frame, this->scritched);
     }
 
-    long long seekTarget = av_rescale(this->video_stream->duration, (int)this->frame, this->numf) + this->first_dts;
+    long long seekTarget = av_rescale(this->video_stream->duration, (int)this->frame, this->numf) + this->first_pts;
     int r = av_seek_frame(this->video, this->video_stream->index, seekTarget, 0);
     //av_frame_unref(this->decframe);
     r = av_read_frame(this->video, this->decpkt);
@@ -10098,9 +10182,9 @@ Layer* Layer::open_video(float frame, const std::string filename, int reset, boo
     return this;
 }
 
-int64_t get_last_frame_dts(AVFormatContext *fmt_ctx, int stream_index) {
+int64_t get_last_frame_pts(AVFormatContext *fmt_ctx, int stream_index) {
     AVPacket *pkt = av_packet_alloc();
-    int64_t last_dts = AV_NOPTS_VALUE;
+    int64_t last_pts = AV_NOPTS_VALUE;
 
     // Save current position
     int64_t original_pos = avio_tell(fmt_ctx->pb);
@@ -10112,7 +10196,7 @@ int64_t get_last_frame_dts(AVFormatContext *fmt_ctx, int stream_index) {
             av_read_frame(fmt_ctx, pkt);
         }
         while (pkt->stream_index != stream_index);
-        last_dts = pkt->dts;
+        last_pts = pkt->pts;
         av_packet_unref(pkt);
     }
 
@@ -10121,7 +10205,7 @@ int64_t get_last_frame_dts(AVFormatContext *fmt_ctx, int stream_index) {
     avformat_seek_file(fmt_ctx, -1, INT64_MIN, original_pos, INT64_MAX, AVSEEK_FLAG_BYTE);
 
     av_packet_free(&pkt);
-    return last_dts;
+    return last_pts;
 }
 
 bool Layer::thread_vidopen() {
@@ -10193,11 +10277,12 @@ bool Layer::thread_vidopen() {
         }
         avcodec_parameters_to_context(this->video_dec_ctx, this->video_stream->codecpar);
         avcodec_open2(this->video_dec_ctx, dec, nullptr);
-        av_read_frame(this->video, this->decpkt);
-        this->first_dts = this->decpkt->dts;
-        av_packet_unref(this->decpkt);
-        // Seek back to beginning after getting first_dts
-        avformat_seek_file(this->video, this->video_stream->index, 0, this->first_dts, this->first_dts, AVSEEK_FLAG_BACKWARD);
+        this->first_pts = video_stream->start_time;
+        if (this->first_pts == AV_NOPTS_VALUE) {
+            this->first_pts = 0;
+        }
+        // Seek back to beginning after getting first_pts
+        avformat_seek_file(this->video, this->video_stream->index, 0, this->first_pts, this->first_pts, AVSEEK_FLAG_BACKWARD);
         this->bpp = 4;
         if (this->vidformat == 188 || this->vidformat == 187) {
             if (oldvidformat != -1) {
@@ -10398,7 +10483,8 @@ bool Layer::thread_vidopen() {
             this->video_duration = this->video->duration / (1000000.0f * this->video_stream->time_base.num / this->video_stream->time_base.den);
         }
         else {
-            this->video_duration = get_last_frame_dts(this->video, this->video_stream_idx);
+            this->video_duration = get_last_frame_pts(this->video, this->video_stream_idx) - this->first_pts;
+            this->video_duration = this->video_stream->duration;
         }
         if (this->reset) {
             this->startframe->value = 0;
@@ -10955,6 +11041,7 @@ void Layer::cnt_lpst() {
 bool Layer::progress(bool comp, bool alive, bool doclips) {
     // calculates new frame numbers for a video layer
     //measure time since last loop
+    if (this->millif == 0.0f) return true;
     std::chrono::high_resolution_clock::time_point now = std::chrono::high_resolution_clock::now();
     std::chrono::duration<double> elapsed;
     if (this->timeinit) elapsed = std::chrono::duration_cast<std::chrono::duration<double>>(now - this->prevtime);
@@ -11219,10 +11306,10 @@ void Layer::load_frame() {
     }
 
 
-    GLenum err;
+    /*GLenum err;
     while ((err = glGetError()) != GL_NO_ERROR) {
         std::cerr << "OpenGL error: " << err << std::endl;
-    }
+    }*/
 
 
     glBindTexture(GL_TEXTURE_2D, srclay->texture);
@@ -11895,7 +11982,7 @@ Layer* Mixer::read_layers(std::istream &rfile, const std::string result, std::ve
                 } else if (ffglnr != -1) {
                     layend->set_ffglsource(ffglnr);
                 } else if (isfnr != -1) {
-                    layend->set_isfsource(mainprogram->isfsourcenames[isfnr]);
+                    layend->set_isfsource(isfnr);
                 }
                 if (type > 0) layend->prevframe = -1;
             }
@@ -11945,7 +12032,7 @@ Layer* Mixer::read_layers(std::istream &rfile, const std::string result, std::ve
             } else if (ffglnr != -1) {
                 layend->set_ffglsource(ffglnr);
             } else if (isfnr != -1) {
-                layend->set_isfsource(mainprogram->isfsourcenames[isfnr]);
+                layend->set_isfsource(isfnr);
             }
             layend->filename = filename;  // for CLIPLAYER
 			newlay = true;
@@ -14236,7 +14323,7 @@ void Mixer::record_video(std::string reccod) {
 	}
 	dest_stream->r_frame_rate = c->framerate;
 	dest_stream->avg_frame_rate = c->framerate;
-	//dest_stream->first_dts = 0;
+	//dest_stream->first_pts = 0;
     //((AVOutputFormat*)(dest->oformat))->flags |= AVFMT_NOFILE;
 	//avformat_init_output(dest, nullptr);
 	r = avio_open(&dest->pb, path.c_str(), AVIO_FLAG_WRITE);
@@ -15846,6 +15933,7 @@ void Layer::set_ffglsource(int sourcenr) {
     auto plug = mainprogram->ffglsourceplugins[this->ffglsourcenr];
     this->instance = plug->createInstance(w, h);
     this->ffglinstancenr = this->instance->getInstanceID();
+    this->ffglnr = sourcenr;
 
     // get parameters from FFGLHost::parameters
     this->ffglparams.clear();
@@ -15920,7 +16008,8 @@ void BlendNode::set_ffglmixer(int mixernr) {
     this->layer->numefflines[this->layer->effcat] += this->numrows;
 }
 
-void Layer::set_isfsource(std::string sourcename) {
+void Layer::set_isfsource(int isfnr) {
+    std::string sourcename = mainprogram->isfsourcenames[isfnr];
     this->type = ELEM_SOURCE;
     for (int i = 0; i < mainprogram->isfeffectnames.size() + mainprogram->isfsourcenames.size() + mainprogram->isfmixernames.size(); i++) {
         if (mainprogram->isfloader.findShader(sourcename) == mainprogram->isfloader.getShader(i)) {

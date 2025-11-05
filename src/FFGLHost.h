@@ -382,6 +382,11 @@ public:
     // Reset instance to clean state for reuse
     void resetForReuse();
 
+    // Timing state management (for duplicating layers)
+    void copyTimingFrom(const FFGLPluginInstance* other);
+    bool getTimeInitialized() const { return timeInitialized; }
+    std::chrono::high_resolution_clock::time_point getPluginStartTime() const { return pluginStartTime; }
+
     private:
         void copyParametersFromTemplate();
         void updateParameterFromEvents();

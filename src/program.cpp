@@ -4660,17 +4660,62 @@ void Program::handle_laymenu1() {
             // duplicate layer
             Layer* lay = mainmix->mouselayer->clone(true);
             lay->isclone = false;
-            Layer *duplay = nullptr;
+            Layer *duplay = lay;
             lay->dontcloseclips = true;
             lay->transfered = true;
-            if (lay->type == ELEM_IMAGE) {
+            if (mainmix->mouselayer->ffglsourcenr != -1) {
+                lay->set_ffglsource(mainmix->mouselayer->ffglnr);
+                for (int i = 0; i < lay->ffglparams.size(); i++) {
+                    Param *parsource = mainmix->mouselayer->ffglparams[i];
+                    Param *pardest = lay->ffglparams[i];
+                    if (parsource->type == FF_TYPE_EVENT) {
+                        // no value
+                    }
+                    else if (pardest->type == FF_TYPE_TEXT || pardest->type == FF_TYPE_FILE) {
+                        pardest->valuestr = parsource->valuestr;
+                    }
+                    else {
+                        pardest->value = parsource->value;
+                    }
+                }
+                // Note: FFGL source plugins use internal timing and cannot be synchronized
+                // copyTimingFrom would have no effect since we don't call setTime
+                // if (mainmix->mouselayer->instance && lay->instance) {
+                //     lay->instance->copyTimingFrom(mainmix->mouselayer->instance.get());
+                // }
+            }
+            else if (mainmix->mouselayer->isfsourcenr != -1) {
+                lay->set_isfsource(mainmix->mouselayer->isfnr);
+                for (int i = 0; i < lay->isfparams.size(); i++) {
+                    Param *parsource = mainmix->mouselayer->isfparams[i];
+                    Param *pardest = lay->isfparams[i];
+                    if (parsource->type == ISFLoader::PARAM_EVENT) {
+                        // no value
+                    } else {
+                        pardest->value = parsource->value;
+                    }
+                }
+                // Copy timing state from source instance to duplicate
+                if (mainmix->mouselayer->isfinstancenr != -1 && lay->isfinstancenr != -1) {
+                    auto sourceInstance = mainprogram->isfinstances[mainmix->mouselayer->isfpluginnr][mainmix->mouselayer->isfinstancenr];
+                    auto destInstance = mainprogram->isfinstances[lay->isfpluginnr][lay->isfinstancenr];
+                    if (sourceInstance && destInstance) {
+                        destInstance->copyTimingFrom(sourceInstance, mainmix->time);
+                    }
+                }
+            }
+            else if (lay->type == ELEM_IMAGE) {
                 duplay = lay->open_image(lay->filename, true, true);
+                duplay->decresult->width = mainmix->mouselayer->iw;
+                duplay->decresult->height = mainmix->mouselayer->ih;
+                duplay->vidformat = mainmix->mouselayer->vidformat;
             }
             else {
                 duplay = lay->open_video(lay->frame, lay->filename, false, true);
+                duplay->decresult->width = mainmix->mouselayer->iw;
+                duplay->decresult->height = mainmix->mouselayer->ih;
+                duplay->vidformat = mainmix->mouselayer->vidformat;
             }
-            duplay->decresult->width = mainmix->mouselayer->iw;
-            duplay->decresult->height = mainmix->mouselayer->ih;
             duplay->shiftx->value = mainmix->mouselayer->shiftx->value;
             duplay->shifty->value = mainmix->mouselayer->shifty->value;
             duplay->scale->value = mainmix->mouselayer->scale->value;
@@ -4683,16 +4728,28 @@ void Program::handle_laymenu1() {
             duplay->frame = mainmix->mouselayer->frame;
             duplay->startframe->value = mainmix->mouselayer->startframe->value;
             duplay->endframe->value = mainmix->mouselayer->endframe->value;
-            duplay->vidformat = mainmix->mouselayer->vidformat;
             //duplay->isduplay = mainmix->mouselayer;
         }
         else if (!cond && k == 13) {
             // clone layer
             Layer* lay = mainmix->mouselayer->clone(false);
-            Layer *clonelay = nullptr;
+            Layer *clonelay = lay;
             lay->dontcloseclips = true;
             lay->transfered = true;
-            if (lay->type == ELEM_IMAGE) {
+            if (mainmix->mouselayer->ffglsourcenr != -1) {
+                lay->ffglsourcenr = mainmix->mouselayer->ffglsourcenr;
+                lay->instance = mainmix->mouselayer->instance;
+                lay->ffglinstancenr = mainmix->mouselayer->ffglinstancenr;
+                lay->ffglparams = mainmix->mouselayer->ffglparams;
+            }
+            else if (mainmix->mouselayer->isfsourcenr != -1) {
+                lay->isfsourcenr = mainmix->mouselayer->isfsourcenr;
+                lay->instance = mainmix->mouselayer->instance;
+                lay->isfinstancenr = mainmix->mouselayer->isfinstancenr;
+                lay->isfpluginnr = mainmix->mouselayer->isfpluginnr;
+                lay->isfparams = mainmix->mouselayer->isfparams;
+            }
+            else if (lay->type == ELEM_IMAGE) {
                 clonelay = lay->open_image(lay->filename, true, true);
             }
             else {
@@ -4838,7 +4895,7 @@ void Program::handle_laymenu1() {
         }
         else if ((!cond && k == 17) || k == 17 - cond * 2) {
             // record and replace layer
-            if (!mainmix->reclay) {
+            if (!mainmix->reclay && mainmix->mouselayer->ffglsourcenr == -1 && mainmix->mouselayer->isfsourcenr == -1) {
                 if (mainmix->mouselayer->clips->size() == 1) {
                     if (!mainmix->recording[0]) {
                         // start recording layer with all effects, settings,... and replace with recorded video
@@ -4862,7 +4919,7 @@ void Program::handle_laymenu1() {
                 }
                 if (this->absources[this->menuresults[0]] >= 2000 && this->absources[this->menuresults[0]] < 3000) {
                     int isfnr = this->absources[this->menuresults[0]] - 2000;
-                    mainmix->mouselayer->set_isfsource(mainprogram->isfsourcenames[isfnr]);
+                    mainmix->mouselayer->set_isfsource(isfnr);
                 }
                 if (mainmix->mouselayer->ndisource != nullptr) {
                     mainmix->mouselayer->ndisource->releaseReference();
@@ -4989,7 +5046,7 @@ void Program::handle_newlaymenu() {
                  }
                  if (this->absources[this->menuresults[0]] >= 2000 && this->absources[this->menuresults[0]] < 3000) {
                      int isfnr = this->absources[this->menuresults[0]] - 2000;
-                     lay->set_isfsource(mainprogram->isfsourcenames[isfnr]);
+                     lay->set_isfsource(isfnr);
                  }
                  if (lay->ndisource != nullptr) {
                      lay->ndisource->releaseReference();

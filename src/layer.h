@@ -295,7 +295,8 @@ class Layer {
 		AVPacket *decpkt;
 		AVPacket *decpktseek;
 		AVPacket *audiopkt_dedicated;
-        int64_t first_dts;
+        int64_t first_pts;
+		int infront = 0;
 		int reset = 0;
 		AVPacket audiopkt;
         AVCodecContext *video_dec_ctx = nullptr;
@@ -355,10 +356,12 @@ class Layer {
         bool isnblayer = false;
         std::set<std::vector<float>> lpstcolors;
 
-        int ffglsourcenr = -1;
+		int ffglnr = -1;
+		int ffglsourcenr = -1;
         FFInstanceID ffglinstancenr = nullptr;
         FFGLInstanceHandle instance = nullptr;
         std::vector<Param*> ffglparams;
+		int isfnr = -1;
         int isfsourcenr = -1;
         int isfpluginnr = -1;
         int isfinstancenr = -1;
@@ -405,7 +408,7 @@ class Layer {
         void transfer_cloneset_to(Layer *lay);
         void exchange_in_cloneset_by(Layer *lay, bool open = true);
         void set_ffglsource(int sourcenr);
-        void set_isfsource(std::string sourcename);
+        void set_isfsource(int isfnr);
         Layer* next();
 		Layer* prev();
         Layer();
