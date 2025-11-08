@@ -3498,6 +3498,47 @@ void Layer::set_aspectratio(int lw, int lh) {
 	}
 }
 
+std::vector<float> Layer::get_inside_offsets(int w, int h) {
+    float xs = 0.0f;
+    float ys = 0.0f;
+    float frachd = 1920.0f / 1080.0f;
+    float fraco = mainprogram->xvtxtoscr(0.4f) / mainprogram->yvtxtoscr(0.4f);
+    float frac;
+
+    if (w != 0) {
+        frac = (float)(w) / (float)(h);
+    }
+    else if (this->type == ELEM_IMAGE) {
+        ilBindImage(this->boundimage);
+        ilActiveImage((int)this->frame);
+        frac = (float)ilGetInteger(IL_IMAGE_WIDTH) / (float)ilGetInteger(IL_IMAGE_HEIGHT);
+    }
+    else if (this->type != ELEM_LIVE){
+        frac = (float)(this->decresult->width) / (float)(this->decresult->height);
+    }
+    /*if (this->dummy) {
+        frac = (float)(this->video_dec_ctx->width) / (float)(this->video_dec_ctx->height);
+    }*/
+    if (fraco > frachd) {
+        ys = 0.0f;
+    }
+    else {
+        xs = 0.0f;
+    }
+
+    // set aspect inside
+    if (frac > fraco) {
+        ys = (1.0f - (((1.0f - xs) * frachd) / frac)) / 2.0f;
+    }
+    else {
+        xs = (1.0f - (((1.0f - ys) / frachd) * frac)) / 2.0f;
+    }
+
+    std::vector<float> retvec = {xs, ys};
+
+    return retvec;
+}
+
 void Layer::inhibit() {
     this->deautomate();
     while (!this->effects[0].empty()) {
@@ -5124,20 +5165,23 @@ void Layer::get_cpu_frame(int framenr, int prevframe, int errcount)
                 printf("Warning: seek to startframe failed: %s\n", av_err2str(seek_ret));
             }
             avcodec_flush_buffers(this->video_dec_ctx);
-            int64_t first_keyframe_after = AV_NOPTS_VALUE;
-            while (av_read_frame(this->video, this->decpkt) >= 0) {
-                if (this->decpkt->stream_index == this->video_stream_idx) {
-                    // Check if this is a keyframe AND after our target
-                    if ((this->decpkt->flags & AV_PKT_FLAG_KEY) && this->decpkt->pts >= seekTarget) {
-                        first_keyframe_after = this->decpkt->pts;
-                        printf("Found first keyframe after target at PTS: %ld\n", first_keyframe_after);
-                        break;
+            if (framenr == 0) {
+                int64_t first_keyframe_after = AV_NOPTS_VALUE;
+                while (av_read_frame(this->video, this->decpkt) >= 0) {
+                    if (this->decpkt->stream_index == this->video_stream_idx) {
+                        // Check if this is a keyframe AND after our target
+                        if ((this->decpkt->flags & AV_PKT_FLAG_KEY) && this->decpkt->pts >= seekTarget) {
+                            first_keyframe_after = this->decpkt->pts;
+                            printf("Found first keyframe after target at PTS: %ld\n", first_keyframe_after);
+                            break;
+                        }
                     }
+                    av_packet_unref(this->decpkt);
                 }
-                av_packet_unref(this->decpkt);
+                av_seek_frame(this->video, this->video_stream->index, first_keyframe_after, AVSEEK_FLAG_BACKWARD);
+                avcodec_flush_buffers(this->video_dec_ctx);
+                //av_read_frame(this->video, this->decpkt);
             }
-            av_seek_frame(this->video, this->video_stream->index, first_keyframe_after, AVSEEK_FLAG_BACKWARD);
-            //av_read_frame(this->video, this->decpkt);
 
             int seek_ret3 = av_seek_frame(this->audio, this->audio_dedicated_stream_idx, seekTarget, 0);
             if (seek_ret3 < 0) {
@@ -5152,11 +5196,13 @@ void Layer::get_cpu_frame(int framenr, int prevframe, int errcount)
                 }
                 avcodec_flush_buffers(this->audio_dec_ctx);
             }*/
-            this->scritched = false;
-            scr = 0;
+            if (framenr != prevframe + 1) {
+                this->scritched = false;
+                scr = 0;
+            }
         }
 
-        process_audio(this, this->frame, scr);
+        process_audio(this, framenr, scr);
 
         if (framenr != prevframe + 1 || scr == 1) {
             do {
@@ -5183,7 +5229,7 @@ void Layer::get_cpu_frame(int framenr, int prevframe, int errcount)
                         if (this->decpkt->stream_index == this->video_stream_idx) {
                             int result = decode_video_packet(this, false);
                             int decframenr = ((this->decpkt->pts - first_pts) * this->numf) / this->video_duration;
-                            if (result == 2 || (int)(this->frame - 1) <= decframenr) {
+                            if (result == 2 || (int)(framenr - 1) <= decframenr) {
                                 //av_read_frame(this->video, this->decpkt);
                                 break;
                             }
@@ -5192,7 +5238,7 @@ void Layer::get_cpu_frame(int framenr, int prevframe, int errcount)
                                 av_read_frame(this->video, this->decpkt);
                                 continue;
                             }
-                            process_audio(this, (int)(this->frame), scr);
+                            process_audio(this, framenr, scr);
                         }
                         int r = av_read_frame(this->video, this->decpkt);
                         // Let main video loop handle audio packets more naturally
@@ -10118,7 +10164,7 @@ Layer* Layer::open_video(float frame, const std::string filename, int reset, boo
     this->transfered = false;
     this->reset = reset;
     this->frame = frame;
-    this->prevframe = this->frame - 1;
+    //this->prevframe = this->frame - 1;
     this->databufready = false;
     this->databufsize = 0;
     this->initialized = false;

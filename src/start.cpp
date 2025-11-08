@@ -5417,9 +5417,9 @@ void the_loop() {
             mainmix->rate = total / 25;
             std::string s = std::to_string(mainmix->rate);
             if (!mainprogram->binsscreen) {
-                render_text(s, white, 0.01f, 0.47f, 0.0006f, 0.001f);
+                render_text(s, white, 0.01f, 0.37f, 0.0006f, 0.001f);
             } else {
-                render_text(s, white, 0.7f, 0.47f, 0.0006f, 0.001f);
+                render_text(s, white, 0.7f, 0.37f, 0.0006f, 0.001f);
             }
         }
         mainmix->fpscount++;

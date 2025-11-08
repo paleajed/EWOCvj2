@@ -387,6 +387,7 @@ class Layer {
 		Layer* clone(bool dup);
 		void set_clones(int clsnr = -1, bool open = true);
 		void set_aspectratio(int lw, int lh);
+		std::vector<float> get_inside_offsets(int w = 0, int h = 0);
         void cnt_lpst();
 		bool progress(bool comp, bool alive, bool doclips = true);
 		void load_frame();

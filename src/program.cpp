@@ -1252,14 +1252,13 @@ GUIString::~GUIString() {
 
 GLuint Program::get_tex(Layer *lay) {
     // get a texture from decompressed data from an ELEM_FILE or an ELEM_IMAGE
-    GLuint ctex;
-    glGenTextures(1, &ctex);
-    glBindTexture(GL_TEXTURE_2D, ctex);
+    GLuint temptex, ctex;
+    glGenTextures(1, &temptex);
+    glBindTexture(GL_TEXTURE_2D, temptex);
     glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR);
     glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
     glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_BORDER);
     glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_BORDER);
-    //glPixelStorei(GL_UNPACK_ALIGNMENT, 1);
     if (lay->type == ELEM_IMAGE) {
         // image in layer
         ilBindImage(lay->boundimage);
@@ -1269,11 +1268,13 @@ GLuint Program::get_tex(Layer *lay) {
 
         ilConvertImage(IL_RGBA, IL_UNSIGNED_BYTE);
 
-        glBindTexture(GL_TEXTURE_2D, ctex);
+        glBindTexture(GL_TEXTURE_2D, temptex);
         glTexStorage2D(GL_TEXTURE_2D, 1, GL_RGBA8, w, h);
 
+        auto svec = lay->get_inside_offsets(w, h);
         glTexSubImage2D(GL_TEXTURE_2D, 0, 0, 0, w, h, GL_RGBA, GL_UNSIGNED_BYTE,
                         ilGetData());
+        ctex = copy_tex(temptex, w, h, false, w * svec[0], h * svec[1]);
     }
     else {
         if (lay->vidformat == 188 || lay->vidformat == 187) {
@@ -1290,6 +1291,8 @@ GLuint Program::get_tex(Layer *lay) {
             glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA8, lay->decresult->width, lay->decresult->height, 0, GL_BGRA,
                          GL_UNSIGNED_BYTE, lay->decresult->data);
         }
+        auto svec = lay->get_inside_offsets(lay->decresult->width, lay->decresult->height);
+        ctex = copy_tex(temptex, lay->decresult->width, lay->decresult->height, false, lay->decresult->width * svec[0], lay->decresult->height * svec[1]);
     }
 
     GLuint tex = copy_tex(ctex, 192, 108);
@@ -12524,18 +12527,18 @@ void Shelf::handle() {
 
 
 GLuint copy_tex(GLuint tex) {
-    return copy_tex(tex, mainprogram->ow[0], mainprogram->oh[0], 0);
+    return copy_tex(tex, mainprogram->ow[0], mainprogram->oh[0], 0, 0, 0);
 }
 
 GLuint copy_tex(GLuint tex, bool yflip) {
-    return copy_tex(tex, mainprogram->ow[0], mainprogram->oh[0], yflip);
+    return copy_tex(tex, mainprogram->ow[0], mainprogram->oh[0], yflip, 0, 0);
 }
 
 GLuint copy_tex(GLuint tex, int tw, int th) {
-    return copy_tex(tex, tw, th, 0);
+    return copy_tex(tex, tw, th, 0, 0, 0);
 }
 
-GLuint copy_tex(GLuint tex, int tw, int th, bool yflip) {
+GLuint copy_tex(GLuint tex, int tw, int th, bool yflip, int sx, int sy) {
     GLuint smalltex = 0;
     GLuint rettex = mainprogram->grab_from_texpool(tw, th, GL_RGBA8);
     if (rettex != -1) {
@@ -12556,7 +12559,7 @@ GLuint copy_tex(GLuint tex, int tw, int th, bool yflip) {
     glBindFramebuffer(GL_FRAMEBUFFER, dfbo);
     glFramebufferTexture2D(GL_FRAMEBUFFER, GL_COLOR_ATTACHMENT0, GL_TEXTURE_2D, smalltex, 0);
     glDrawBuffer(GL_COLOR_ATTACHMENT0);
-    glViewport(0, 0, tw, th);
+    glViewport(sx, sy, tw - sx * 2.0f, th - sy * 2.0f);
     int sw, sh;
     glBindTexture(GL_TEXTURE_2D, tex);
     glGetTexLevelParameteriv(GL_TEXTURE_2D, 0, GL_TEXTURE_WIDTH, &sw);

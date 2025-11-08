@@ -656,13 +656,15 @@ void BinsMain::handle(bool draw) {
 					if (binel->name == "") continue;
 					if (binel->boxselect) binel->select = false;
 					if (box->in(ebox->scrcoords->x1, ebox->scrcoords->y1) || box->in(ebox->scrcoords->x1 + ebox->scrcoords->w, ebox->scrcoords->y1) || box->in(ebox->scrcoords->x1, ebox->scrcoords->y1 - ebox->scrcoords->h) || box->in(ebox->scrcoords->x1 + ebox->scrcoords->w, ebox->scrcoords->y1 - ebox->scrcoords->h)) {
-                        binel->select = true;
-                        binel->boxselect = true;
-						if (!found) {
-						    this->firsti = i;
-						    this->firstj = j;
+                        if (!binel->encoding && !binel->encwaiting) {
+							binel->select = true;
+							binel->boxselect = true;
+							if (!found) {
+								this->firsti = i;
+								this->firstj = j;
+							}
+							found = true;
 						}
-						found = true;
 					}
 				}
 			}
@@ -1658,6 +1660,7 @@ void BinsMain::handle(bool draw) {
 								this->previewbinel = nullptr;
 							}
 							mainprogram->frontbatch = true;
+							float yfac = (mainprogram->ow[0] / mainprogram->oh[0]) / (1920.0f / 1080.0f);
 							if ((this->previewimage != "" || binel->type == ELEM_IMAGE) && !this->binpreview) {
 								// do first entry preview preperation/visualisation when image hovered
 								this->binpreview = true;  // just entering preview, or already done preparation (different if clauses)
@@ -1665,7 +1668,6 @@ void BinsMain::handle(bool draw) {
                                     mainprogram->prelay->close();
 									// close old preview layer
 								}
-								draw_box(red, black, 0.52f, 0.5f, 0.4f, 0.4f, -1);
 								mainprogram->prelay = new Layer(false);
 								mainprogram->prelay->dummy = true;
                                 mainprogram->prelay->transfered = true;
@@ -1689,7 +1691,8 @@ void BinsMain::handle(bool draw) {
 								else if (bpp == 4) {
 									glTexSubImage2D(GL_TEXTURE_2D, 0, 0, 0, w, h, mode, GL_UNSIGNED_BYTE, ilGetData());
 								}
-								draw_box(red, black, 0.52f, 0.5f, 0.4f, 0.4f, mainprogram->prelay->texture);
+								auto svec = mainprogram->prelay->get_inside_offsets();
+								draw_box(red, black, 0.52f + 0.4f * svec[0], 0.5f + 0.4f * svec[1] * yfac, 0.4f - 0.8f * svec[0], (0.4f - 0.8f * svec[1]) * yfac, mainprogram->prelay->texture);
                                 render_text("MOUSEWHEEL searches through file", white, 0.62f, 0.45f, 0.0005f, 0.0008f);
 								render_text("IMAGE", white, box->vtxcoords->x1 + 0.0075f, box->vtxcoords->y1 + box->vtxcoords->h - 0.0225f, 0.0005f, 0.0008f);
 								render_text(std::to_string(w) + "x" + std::to_string(h), white, box->vtxcoords->x1 + 0.0075f, box->vtxcoords->y1 + box->vtxcoords->h - 0.0675f, 0.0005f, 0.0008f);
@@ -1726,7 +1729,8 @@ void BinsMain::handle(bool draw) {
 								else if (bpp == 4) {
 									glTexSubImage2D(GL_TEXTURE_2D, 0, 0, 0, w, h, mode, GL_UNSIGNED_BYTE, ilGetData());
 								}
-								draw_box(red, black, 0.52f, 0.5f, 0.4f, 0.4f, mainprogram->prelay->texture);
+								auto svec = mainprogram->prelay->get_inside_offsets();
+								draw_box(red, black, 0.52f + 0.4f * svec[0], 0.5f + 0.4f * svec[1] * yfac, 0.4f - 0.8f * svec[0], (0.4f - 0.8f * svec[1]) * yfac, mainprogram->prelay->texture);
                                 render_text("MOUSEWHEEL searches through file", white, 0.62f, 0.45f, 0.0005f, 0.0008f);
 								render_text("IMAGE", white, box->vtxcoords->x1 + 0.0075f, box->vtxcoords->y1 + box->vtxcoords->h - 0.0225f, 0.0005f, 0.0008f);
 								render_text(std::to_string(w) + "x" + std::to_string(h), white, box->vtxcoords->x1 + 0.0075f, box->vtxcoords->y1 + box->vtxcoords->h - 0.0675f, 0.0005f, 0.0008f);
@@ -1739,7 +1743,6 @@ void BinsMain::handle(bool draw) {
                                         // close old preview layer
                                     }
 									this->binpreview = true;
-									draw_box(red, black, 0.52f, 0.5f, 0.4f, 0.4f, -1);
 									Layer *prelay = new Layer(false);
                                     prelay->dummy = true;
                                     prelay->deck = 0;
@@ -1806,15 +1809,16 @@ void BinsMain::handle(bool draw) {
                                     mainprogram->directmode = true;
 									onestepfrom(0, mainprogram->prelay->node, nullptr, -1, -1);
                                     mainprogram->directmode = false;
+									auto svec = mainprogram->prelay->get_inside_offsets();
 									if (mainprogram->prelay->effects[0].size()) {
-										draw_box(red, black, 0.52f, 0.5f, 0.4f, 0.4f, mainprogram->prelay->effects[0][mainprogram->prelay->effects[0].size() - 1]->fbotex);
+										draw_box(red, black, 0.52f + 0.4f * svec[0], 0.5f + 0.4f * svec[1] * yfac, 0.4f - 0.8f * svec[0], (0.4f - 0.8f * svec[1]) * yfac, mainprogram->prelay->effects[0][mainprogram->prelay->effects[0].size() - 1]->fbotex);
 									}
 									else {
-									    draw_box(red, black, 0.52f, 0.5f, 0.4f, 0.4f, mainprogram->prelay->fbotex);
+									    draw_box(red, black, 0.52f + 0.4f * svec[0], 0.5f + 0.4f * svec[1] * yfac, 0.4f - 0.8f * svec[0], (0.4f - 0.8f * svec[1]) * yfac, mainprogram->prelay->fbotex);
 									}
  									if (!binel->encoding) {
 										// show video format
-                                        render_text("MOUSEWHEEL searches through file", white, 0.62f, 0.45f, 0.0005f, 0.0008f);
+					                   render_text("MOUSEWHEEL searches through file", white, 0.62f, 0.45f, 0.0005f, 0.0008f);
                       					if (mainprogram->prelay->vidformat == 188 || mainprogram->prelay->vidformat == 187) {
 											render_text("HAP", white, box->vtxcoords->x1 + 0.0075f, box->vtxcoords->y1 + box->vtxcoords->h - 0.0225f, 0.0005f, 0.0008f);
 											render_text(std::to_string(mainprogram->prelay->decresult->width) + "x" + std::to_string(mainprogram->prelay->decresult->height), white, box->vtxcoords->x1 + 0.0075f, box->vtxcoords->y1 + box->vtxcoords->h - 0.0675f, 0.0005f, 0.0008f);
@@ -1828,7 +1832,8 @@ void BinsMain::handle(bool draw) {
 							}
 							else if (binel->type == ELEM_LAYER) {
 								// do second entry preview visualisation when layer file hovered
-								draw_box(red, black, 0.52f, 0.5f, 0.4f, 0.4f, -1);
+								auto svec = mainprogram->prelay->get_inside_offsets();
+								draw_box(red, black, 0.52f + 0.4f * svec[0], 0.5f + 0.4f * svec[1] * yfac, 0.4f - 0.8f * svec[0], (0.4f - 0.8f * svec[1]) * yfac, -1);
 								if (mainprogram->mousewheel) {
 									// mousewheel leaps through video
 									mainprogram->prelay->frame += mainprogram->mousewheel * (mainprogram->prelay->numf / 32.0f);
@@ -1874,20 +1879,22 @@ void BinsMain::handle(bool draw) {
                                     mainprogram->directmode = true;
 									onestepfrom(0, mainprogram->prelay->node, nullptr, -1, -1);
                                     mainprogram->directmode = false;
+									auto svec = mainprogram->prelay->get_inside_offsets();
 									if (mainprogram->prelay->effects[0].size()) {
-										draw_box(red, black, 0.52f, 0.5f, 0.4f, 0.4f, mainprogram->prelay->effects[0][mainprogram->prelay->effects[0].size() - 1]->fbotex);
+										draw_box(red, black, 0.52f + 0.4f * svec[0], 0.5f + 0.4f * svec[1] * yfac, 0.4f - 0.8f * svec[0], (0.4f - 0.8f * svec[1]) * yfac, mainprogram->prelay->effects[0][mainprogram->prelay->effects[0].size() - 1]->fbotex);
 									}
 									else {
-										draw_box(red, black, 0.52f, 0.5f, 0.4f, 0.4f, mainprogram->prelay->fbotex);
+										draw_box(red, black, 0.52f + 0.4f * svec[0], 0.5f + 0.4f * svec[1] * yfac, 0.4f - 0.8f * svec[0], (0.4f - 0.8f * svec[1]) * yfac, mainprogram->prelay->fbotex);
 									}
 								}
 								else {
 									// show old image if not mousewheeled through file
+									auto svec = mainprogram->prelay->get_inside_offsets();
 									if (mainprogram->prelay->effects[0].size()) {
-										draw_box(red, black, 0.52f, 0.5f, 0.4f, 0.4f, mainprogram->prelay->effects[0][mainprogram->prelay->effects[0].size() - 1]->fbotex);
+										draw_box(red, black, 0.52f + 0.4f * svec[0], 0.5f + 0.4f * svec[1] * yfac, 0.4f - 0.8f * svec[0], (0.4f - 0.8f * svec[1]) * yfac, mainprogram->prelay->effects[0][mainprogram->prelay->effects[0].size() - 1]->fbotex);
 									}
 									else {
-										draw_box(red, black, 0.52f, 0.5f, 0.4f, 0.4f, mainprogram->prelay->fbotex);
+										draw_box(red, black, 0.52f + 0.4f * svec[0], 0.5f + 0.4f * svec[1] * yfac, 0.4f - 0.8f * svec[0], (0.4f - 0.8f * svec[1]) * yfac, mainprogram->prelay->fbotex);
 									}
 								}
 								if (!binel->encoding && remove_extension(basename(binel->path)) != "") {
@@ -1911,7 +1918,6 @@ void BinsMain::handle(bool draw) {
                                         // close old preview layer
                                     }
 									this->binpreview = true;
-									draw_box(red, black, 0.52f, 0.5f, 0.4f, 0.4f, -1);
 									mainprogram->prelay = new Layer(true);
                                     mainprogram->prelay->dummy = true;
                                     mainprogram->prelay->transfered = true;
@@ -1946,7 +1952,8 @@ void BinsMain::handle(bool draw) {
                                     else {
                                         glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA8, mainprogram->prelay->decresult->width, mainprogram->prelay->decresult->height, 0, GL_BGRA, GL_UNSIGNED_BYTE, mainprogram->prelay->decresult->data);
                                     }
-                                    draw_box(red, black, 0.52f, 0.5f, 0.4f, 0.4f, this->binelpreviewtex);
+									auto svec = mainprogram->prelay->get_inside_offsets();
+									draw_box(red, black, 0.52f + 0.4f * svec[0], 0.5f + 0.4f * svec[1] * yfac, 0.4f - 0.8f * svec[0], (0.4f - 0.8f * svec[1]) * yfac, this->binelpreviewtex);
 									if (!binel->encoding) {
 										// show video format
                                         render_text("MOUSEWHEEL searches through file", white, 0.62f, 0.45f, 0.0005f, 0.0008f);
@@ -1965,7 +1972,8 @@ void BinsMain::handle(bool draw) {
 							}
 							else if (binel->type == ELEM_FILE) {
 								// do second entry preview visualisation when video hovered
-								draw_box(red, black, 0.52f, 0.5f, 0.4f, 0.4f, -1);
+								auto svec = mainprogram->prelay->get_inside_offsets();
+								draw_box(red, black, 0.52f + 0.4f * svec[0], 0.5f + 0.4f * svec[1] * yfac, 0.4f - 0.8f * svec[0], (0.4f - 0.8f * svec[1]) * yfac, -1);
 								if (mainprogram->prelay->type != ELEM_IMAGE) {
 									if (mainprogram->mousewheel) {
 										// mousewheel leaps through video
@@ -2001,14 +2009,17 @@ void BinsMain::handle(bool draw) {
 										else {
 											glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA8, mainprogram->prelay->decresult->width, mainprogram->prelay->decresult->height, 0, GL_BGRA, GL_UNSIGNED_BYTE, mainprogram->prelay->decresult->data);
 										}
-										draw_box(red, black, 0.52f, 0.5f, 0.4f, 0.4f, this->binelpreviewtex);
+										auto svec = mainprogram->prelay->get_inside_offsets();
+										draw_box(red, black, 0.52f + 0.4f * svec[0], 0.5f + 0.4f * svec[1] * yfac, 0.4f - 0.8f * svec[0], (0.4f - 0.8f * svec[1]) * yfac, this->binelpreviewtex);
 									}
 									else {
-										draw_box(red, black, 0.52f, 0.5f, 0.4f, 0.4f, this->binelpreviewtex);
+										auto svec = mainprogram->prelay->get_inside_offsets();
+										draw_box(red, black, 0.52f + 0.4f * svec[0], 0.5f + 0.4f * svec[1] * yfac, 0.4f - 0.8f * svec[0], (0.4f - 0.8f * svec[1]) * yfac, this->binelpreviewtex);
 									}
 								}
 								else {
-									draw_box(red, black, 0.52f, 0.5f, 0.4f, 0.4f, mainprogram->prelay->texture);
+									auto svec = mainprogram->prelay->get_inside_offsets();
+									draw_box(red, black, 0.52f + 0.4f * svec[0], 0.5f + 0.4f * svec[1] * yfac, 0.4f - 0.8f * svec[0], (0.4f - 0.8f * svec[1]) * yfac, mainprogram->prelay->texture);
 								}
 								if (!binel->encoding && remove_extension(basename(binel->path)) != "") {
 									// show video format
@@ -2058,13 +2069,12 @@ void BinsMain::handle(bool draw) {
 							if (!this->inputtexes.size()) {
                                 if (mainprogram->leftmousedown && !mainprogram->dragbinel && !mainprogram->ctrl && !mainprogram->shift) {
                                     // dragging single bin element
-                                    if (binel->name != "") {
+                                    if (binel->name != "" && !binel->encoding && !binel->encwaiting) {
                                         mainprogram->dragbinel = new BinElement;
                                         mainprogram->dragbinel->tex = binel->tex;
                                         mainprogram->dragbinel->path = binel->path;
                                         mainprogram->dragbinel->name = binel->name;
                                         mainprogram->dragbinel->type = binel->type;
-                                        mainprogram->leftmousedown = false;
                                         // start drag
                                         this->movingtex = binel->tex;
                                         this->movingbinel = binel;
@@ -2072,7 +2082,8 @@ void BinsMain::handle(bool draw) {
                                         mainprogram->shelves[0]->prevnum = -1;
                                         mainprogram->shelves[1]->prevnum = -1;
                                     }
-                                }
+									mainprogram->leftmousedown = false;
+								}
                                 else if (mainprogram->leftmouse) {
                                     if (mainprogram->ctrl) {
                                         binel->select = true;
