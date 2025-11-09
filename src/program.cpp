@@ -2595,9 +2595,21 @@ void Program::shelf_triggering(ShelfElement* elem, int deck, Layer *layer) {
             if (done) {
                 mainmix->set_layers(elem, 0);
                 mainmix->set_layers(elem, 1);
+                if (mainprogram->prevmodus) {
+                    mainmix->crossfade->value = elem->crossfade;
+                }
+                else {
+                    mainmix->crossfadecomp->value = elem->crossfade;
+                }
             }
             else {
                 mainmix->open_mix(elem->path, true, true);  // dont load loopstation events from shelf ever
+                if (mainprogram->prevmodus) {
+                    elem->crossfade = mainmix->crossfade->value;
+                }
+                else {
+                    elem->crossfade = mainmix->crossfadecomp->value;
+                }
                 elem->scrollpos[0] = mainmix->scenes[0][mainmix->currscene[0]]->scrollpos;
                 elem->scrollpos[1] = mainmix->scenes[1][mainmix->currscene[1]]->scrollpos;
                 std::vector<Layer *> lvec1 = mainmix->newlrs[!mainprogram->prevmodus * 2];
@@ -3316,7 +3328,7 @@ int Program::handle_menu(Menu* menu) {
 }
 
 int Program::handle_menu(Menu* menu, float xshift, float yshift) {
-    if (menu->state > 1) {
+    if (menu->state == 2) {
         mainprogram->frontbatch = true;
         menu->box->upvtxtoscr();
         if (std::find(mainprogram->actmenulist.begin(), mainprogram->actmenulist.end(), menu) ==
@@ -3640,6 +3652,16 @@ int Program::handle_menu(Menu* menu, float xshift, float yshift) {
         for (int i = 0; i < mainprogram->menulist.size(); i++) {
             if (std::find(mainprogram->actmenulist.begin(), mainprogram->actmenulist.end(), menu) == mainprogram->actmenulist.end()) {
                 if (mainprogram->menulist[i] != menu) {
+                    if (mainprogram->menulist[i] == mainprogram->filemenu) {
+                        if (mainprogram->filemenu->state >= 2 && mainprogram->editmenu->state >= 2) {
+                            continue;
+                        }
+                    }
+                    else if (mainprogram->menulist[i] == mainprogram->editmenu) {
+                        if (mainprogram->editmenu->state >= 2 && mainprogram->filemenu->state >= 2) {
+                            continue;
+                        }
+                    }
                     mainprogram->menulist[i]->state = 0;
                     mainprogram->menulist[i]->currsub = -1;  // Reset submenu state for inactive menus
                     mainprogram->menulist[i]->splitColumnsOnLeft = -1;  // Reset split positioning

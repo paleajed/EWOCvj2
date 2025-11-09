@@ -6587,13 +6587,13 @@ void the_loop() {
 		render_text("FILE", white, -1.0f + 0.0117f, 1.0f - 0.075f + 0.0225f, 0.00045f, 0.00075f);
 		render_text("CONFIGURE", white, -1.0f + 0.156f + 0.0117f, 1.0f - 0.075f + 0.0225f, 0.00045f, 0.00075f);
         mainprogram->frontbatch = false;
-        if (mainprogram->my > mainprogram->yvtxtoscr(0.075f)) {
+        if (mainprogram->my > mainprogram->yvtxtoscr(0.075f) && mainprogram->filemenu->state != 2 && mainprogram->editmenu->state != 2) {
             if (!mainprogram->exitedtop) {
                 mainprogram->intopmenu = false;
             }
         }
 		else if (mainprogram->mx < mainprogram->xvtxtoscr(0.156f)) {
-			if (mainprogram->leftmouse) {
+			if (mainprogram->leftmouse || mainprogram->lmover) {
 				mainprogram->filemenu->menux = 0;
 				mainprogram->filemenu->menuy = mainprogram->yvtxtoscr(0.075f);
                 mainprogram->filenewmenu->menux = 0;
@@ -6606,18 +6606,20 @@ void the_loop() {
 				mainprogram->laylistmenu1->menuy = mainprogram->yvtxtoscr(0.075f);
 				mainprogram->laylistmenu2->menux = 0;
 				mainprogram->laylistmenu2->menuy = mainprogram->yvtxtoscr(0.075f);
-				mainprogram->filemenu->state = 2;
+                mainprogram->editmenu->state = 3;
+                mainprogram->filemenu->state = 2;
 			}
 		}
 		else if (mainprogram->mx < mainprogram->xvtxtoscr(0.312f)) {
-			if (mainprogram->leftmouse) {
+			if (mainprogram->leftmouse || mainprogram->lmover) {
 				mainprogram->editmenu->menux = mainprogram->xvtxtoscr(0.156f);
 				mainprogram->editmenu->menuy = mainprogram->yvtxtoscr(0.075f);
+                mainprogram->filemenu->state = 3;
 				mainprogram->editmenu->state = 2;
 			}
 		}
 		else if (mainprogram->mx > glob->w - mainprogram->xvtxtoscr(0.05f)) {
-			if (mainprogram->leftmouse || mainprogram->orderleftmouse) {
+			if (mainprogram->leftmouse || mainprogram->lmover || mainprogram->orderleftmouse) {
 				mainprogram->quitting = "closed window";
 			}
 		}
@@ -6786,11 +6788,35 @@ void the_loop() {
             }
         }
         for (int i = 0; i < mainprogram->menulist.size(); i++) {
+            if (mainprogram->menulist[i] == mainprogram->filemenu) {
+                if (mainprogram->filemenu->state >= 2 && mainprogram->editmenu->state >= 2) {
+                    continue;
+                }
+            }
+            else if (mainprogram->menulist[i] == mainprogram->editmenu) {
+                if (mainprogram->editmenu->state >= 2 && mainprogram->filemenu->state >= 2) {
+                    continue;
+                }
+            }
             mainprogram->menulist[i]->state = 0;
             mainprogram->menulist[i]->currsub = -1;  // Reset all submenu states
             mainprogram->menulist[i]->splitColumnsOnLeft = -1;  // Reset split positioning
             mainprogram->menulist[i]->splitScrollOffset = 0;  // Reset scroll
             mainprogram->menulist[i]->splitNeedsScrolling = false;  // Reset scrolling flag
+        }
+        if (mainprogram->filemenu->state == 2 && mainprogram->editmenu->state == 3) {
+            mainprogram->editmenu->state = 0;
+            mainprogram->editmenu->currsub = -1;  // Reset all submenu states
+            mainprogram->editmenu->splitColumnsOnLeft = -1;  // Reset split positioning
+            mainprogram->editmenu->splitScrollOffset = 0;  // Reset scroll
+            mainprogram->editmenu->splitNeedsScrolling = false;  // Reset scrolling flag
+        }
+        if (mainprogram->editmenu->state == 2 && mainprogram->filemenu->state == 3) {
+            mainprogram->filemenu->state = 0;
+            mainprogram->filemenu->currsub = -1;  // Reset all submenu states
+            mainprogram->filemenu->splitColumnsOnLeft = -1;  // Reset split positioning
+            mainprogram->filemenu->splitScrollOffset = 0;  // Reset scroll
+            mainprogram->filemenu->splitNeedsScrolling = false;  // Reset scrolling flag
         }
         mainprogram->prevmenuchoices.clear();  // Clear submenu tracking
         binsmain->menuactbinel = nullptr;
@@ -9198,7 +9224,9 @@ int main(int argc, char* argv[]) {
                         mainprogram->doubleleftmouse = true;
                         mainprogram->recundo = false;
                     }
-                    else mainprogram->leftmouse = true;
+                    else {
+                        mainprogram->leftmouse = true;
+                    }
                     mainprogram->leftmousedown = false;
                     mainmix->prepadaptparam = nullptr;
                 }

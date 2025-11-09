@@ -262,6 +262,7 @@ public:
     std::vector<Layer*> mixlrs[2];
     int scrollpos[2] = {0, 0};
     bool done = false;
+	float crossfade = 0.5f;
     void set_nbclayers(Layer *lay);
     void kill_clayers();
 	ShelfElement(bool side, int pos, Button *but);
