@@ -5452,7 +5452,15 @@ void Layer::get_frame(){
             bool ret = this->get_hap_frame();
             this->prevframe = this->frame;
             if (!ret) {
-                //this->get_hap_frame();
+                auto m = mainmix->swapmap[this->comp * 2 + this->deck];
+                for (auto lays : m) {
+                    if (lays[1] == this) {
+                        auto it = std::find(mainmix->swapmap[this->comp * 2 + this->deck].begin(), mainmix->swapmap[this->comp * 2 + this->deck].end(), lays);
+                        if (it != mainmix->swapmap[this->comp * 2 + this->deck].end()) {
+                            mainmix->swapmap[this->comp * 2 + this->deck].erase(it);
+                        }
+                    }
+                }
             }
         }
         {
@@ -10345,6 +10353,13 @@ bool Layer::thread_vidopen() {
                 this->numf = (double)this->video->duration * (double)this->video_stream->avg_frame_rate.num / (double)this->video_stream->avg_frame_rate.den / (double)1000000.0f;
                 this->video_duration = this->video->duration / (1000000.0f * this->video_stream->time_base.num / this->video_stream->time_base.den);
             }
+            if (this->numf == 0) {
+                this->filename = "";
+                mainmix->addlay = false;
+                mainprogram->openerr = true;
+                printf("%s\n", "No frames");
+                return 0;
+            }
             if (this->reset) {
                 this->startframe->value = 0;
                 this->endframe->value = this->numf - 1;
@@ -10531,6 +10546,13 @@ bool Layer::thread_vidopen() {
         else {
             this->video_duration = get_last_frame_pts(this->video, this->video_stream_idx) - this->first_pts;
             this->video_duration = this->video_stream->duration;
+        }
+        if (this->numf == 0) {
+            this->filename = "";
+            mainmix->addlay = false;
+            mainprogram->openerr = true;
+            printf("%s\n", "No frames");
+            return 0;
         }
         if (this->reset) {
             this->startframe->value = 0;

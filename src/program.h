@@ -874,6 +874,7 @@ class Program {
         std::vector<std::string> auindevices;
         std::vector<std::string> adevices;
         std::string audevice;
+        bool audioinit = false;
         SDL_AudioDeviceID audeviceid;
         float ausamplerate;
         float* aubuffer;

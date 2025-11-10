@@ -5252,7 +5252,7 @@ void Program::handle_mainmenu() {
         if (this->menuresults.size()) {
             this->auinitialized = false;
             this->audevice = this->auindevices[this->menuresults[0]];
-            this->init_audio(this->audevice.c_str());
+            this->audioinit = true;
             for (PrefCat *cat : this->prefs->items) {
                 for (PrefItem *item: cat->items) {
                     if (item->name == "Audio input device") {
@@ -5627,7 +5627,7 @@ void Program::handle_editmenu() {
         if (this->menuresults.size()) {
             this->auinitialized = false;
             this->audevice = this->auindevices[this->menuresults[0]];
-            this->init_audio(this->audevice.c_str());
+            this->audioinit = true;
             for (PrefCat *cat : this->prefs->items) {
                 for (PrefItem *item: cat->items) {
                     if (item->name == "Audio input device") {
@@ -7622,6 +7622,9 @@ void Project::copy_dirs(std::string path, bool rem) {
     copy_dir(pathtoposix(this->recdir), path + "/recordings", true);
     copy_dir(pathtoposix(this->shelfdir), path + "/shelves", true);
     copy_dir(pathtoposix(this->elementsdir), path + "/elements", true);
+    if (mainprogram->inautosave) {
+        copy_dir(pathtoposix(this->binsdir), path + "/bins", true);
+    }
     this->binsdir = path + "/bins/";
     this->recdir = path + "/recordings/";
     this->shelfdir = path + "/shelves/";
@@ -8251,12 +8254,14 @@ void Project::copy_over(std::string path, std::string path2, std::string oldprdi
     this->copyingover = true;
     if (exists(path2)) {
         this->delete_dirs(path2);
-        std::filesystem::remove(path2);
+        if (!mainprogram->inautosave) {
+            std::filesystem::remove(path2);
+        }
     }
     //this->create_dirs(path2);
     mainprogram->project->copy_dirs(path2, false);
 
-    if (!mainprogram->inautosave) {
+    if (mainprogram->inautosave) {
         if (!std::filesystem::is_empty(path + "/autosaves/")) {
             // adapt autosave entries
             std::unordered_map<std::string, std::string> smap;
@@ -13573,6 +13578,12 @@ void Program::init_audio(const char* device) {
 void Program::process_audio() {
     while (!this->auinitialized) {
         Sleep(10);
+        if (this->audioinit) break;
+    }
+
+    if (this->audioinit) {
+        this->init_audio(this->audevice.c_str());
+        this->audioinit = false;
     }
 
     // init OnsetsDS
@@ -13845,11 +13856,18 @@ void Program::create_auinmenu() {
             // create menu with audio input devices
             this->auindevices.clear();
             const int count = SDL_GetNumAudioDevices(1);
+            std::vector<std::string> menuitems;
             for (int i = 0; i < count; i++) {
                 std::string str(SDL_GetAudioDeviceName(i, 1));
                 this->auindevices.push_back(str);
+                if (str == this->audevice) {
+                    menuitems.push_back("v  " + str);
+                }
+                else {
+                    menuitems.push_back("   " + str);
+                }
             }
-            this->make_menu("auinmenu", this->auinmenu, this->auindevices);
+            this->make_menu("auinmenu", this->auinmenu, menuitems);
             this->auinmenu->box->upscrtovtx();
             this->gotaudioinputs = true;
         }

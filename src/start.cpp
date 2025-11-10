@@ -6587,8 +6587,8 @@ void the_loop() {
 		render_text("FILE", white, -1.0f + 0.0117f, 1.0f - 0.075f + 0.0225f, 0.00045f, 0.00075f);
 		render_text("CONFIGURE", white, -1.0f + 0.156f + 0.0117f, 1.0f - 0.075f + 0.0225f, 0.00045f, 0.00075f);
         mainprogram->frontbatch = false;
-        if (mainprogram->my > mainprogram->yvtxtoscr(0.075f) && mainprogram->filemenu->state != 2 && mainprogram->editmenu->state != 2) {
-            if (!mainprogram->exitedtop) {
+        if (mainprogram->my > mainprogram->yvtxtoscr(0.075f)) {
+            if (!mainprogram->exitedtop && mainprogram->filemenu->state != 2 && mainprogram->editmenu->state != 2) {
                 mainprogram->intopmenu = false;
             }
         }
