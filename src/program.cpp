@@ -11751,8 +11751,8 @@ void Program::discovery_listen() {
                     std::string seatIP = message.substr(firstColon + 1, secondColon - firstColon - 1);
                     
                     if (seatIP != this->localip) {
-                        //std::lock_guard<std::mutex> lock(this->discoveryMutex);
-                        
+                        std::lock_guard<std::mutex> lock(this->discoveryMutex);
+
                         bool found = false;
                         for (auto& seat : this->discoveredSeats) {
                             if (seat.ip == seatIP) {
@@ -11762,7 +11762,7 @@ void Program::discovery_listen() {
                                 break;
                             }
                         }
-                        
+
                         if (!found) {
                             DiscoveredSeat newSeat;
                             newSeat.ip = seatIP;
@@ -11787,16 +11787,18 @@ void Program::discovery_listen() {
             }
 #endif
         }
-        
-        //std::lock_guard<std::mutex> lock(this->discoveryMutex);
-        auto now = std::chrono::steady_clock::now();
-        this->discoveredSeats.erase(
-            std::remove_if(this->discoveredSeats.begin(), this->discoveredSeats.end(),
-                [now](const DiscoveredSeat& seat) {
-                    return std::chrono::duration_cast<std::chrono::seconds>(now - seat.lastSeen).count() > 10;
-                }),
-            this->discoveredSeats.end()
-        );
+
+        {
+            std::lock_guard<std::mutex> lock(this->discoveryMutex);
+            auto now = std::chrono::steady_clock::now();
+            this->discoveredSeats.erase(
+                std::remove_if(this->discoveredSeats.begin(), this->discoveredSeats.end(),
+                    [now](const DiscoveredSeat& seat) {
+                        return std::chrono::duration_cast<std::chrono::seconds>(now - seat.lastSeen).count() > 10;
+                    }),
+                this->discoveredSeats.end()
+            );
+        }
         
 #ifdef POSIX
         usleep(100000); // 100ms

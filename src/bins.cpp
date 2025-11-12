@@ -735,7 +735,12 @@ void BinsMain::handle(bool draw) {
         if (mainprogram->connected == 0) {
             // Display status
             draw_box(&box, -1);
-            if (mainprogram->discoveredSeats.empty()) {
+            bool hasSeats;
+            {
+                std::lock_guard<std::mutex> lock(mainprogram->discoveryMutex);
+                hasSeats = !mainprogram->discoveredSeats.empty();
+            }
+            if (!hasSeats) {
                 render_text("SEARCHING...", white, -0.615f, -0.95f, 0.00075f, 0.0012f);
             } else {
                 render_text("CONNECTING...", white, -0.615f, -0.95f, 0.00075f, 0.0012f);
