@@ -761,7 +761,8 @@ void FFGLPlugin::setSampleRate(float sampleRate) {
 }
 
 void FFGLPlugin::destroyInstance(FFInstanceID instanceID) {
-    std::lock_guard<std::mutex> lock(poolMutex_);
+    std::lock_guard<std::mutex> poolLock(poolMutex_);
+    std::lock_guard<std::mutex> instanceLock(instancesMutex_);
 
     auto it = instances.find(instanceID);
     if (it != instances.end()) {
@@ -789,6 +790,7 @@ void FFGLPlugin::destroyInstance(FFInstanceID instanceID) {
 }
 
 size_t FFGLPlugin::getInstanceCount() const {
+    std::lock_guard<std::mutex> lock(instancesMutex_);
     size_t count = 0;
     for (const auto& pair : instances) {
         if (!pair.second.expired()) {
@@ -880,7 +882,10 @@ FFGLInstanceHandle FFGLPlugin::createInstance(const FFGLViewportStruct& viewport
 
     // Update instance tracking - store as weak_ptr
     FFInstanceID pluginInstanceID = instance->getPluginInstanceID();
-    instances[pluginInstanceID] = std::weak_ptr<FFGLPluginInstance>(instance);
+    {
+        std::lock_guard<std::mutex> lock(instancesMutex_);
+        instances[pluginInstanceID] = std::weak_ptr<FFGLPluginInstance>(instance);
+    }
     activeInstances_++;
 
     std::cout << "Instance ready with plugin ID: " << pluginInstanceID << std::endl;

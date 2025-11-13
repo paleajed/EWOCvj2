@@ -2,10 +2,48 @@ cmake_minimum_required(VERSION 3.17)
 project(EWOCvj2)
 
 set(CMAKE_CXX_STANDARD 20)
+
+# Set default build type if not specified
+if(NOT CMAKE_BUILD_TYPE)
+    set(CMAKE_BUILD_TYPE "Release" CACHE STRING "Choose the type of build (Debug, Release, RelWithDebInfo, MinSizeRel)" FORCE)
+endif()
+
+message(STATUS "Build type: ${CMAKE_BUILD_TYPE}")
+
+# Configure build type specific flags
+if (MINGW OR UNIX)
+    # Debug: No optimization, debug symbols
+    set(CMAKE_C_FLAGS_DEBUG "-O0 -g")
+    set(CMAKE_CXX_FLAGS_DEBUG "-O0 -g")
+
+    # Release: Full optimization, no debug symbols
+    set(CMAKE_C_FLAGS_RELEASE "-O3 -DNDEBUG")
+    set(CMAKE_CXX_FLAGS_RELEASE "-O3 -DNDEBUG")
+
+    # RelWithDebInfo: Moderate optimization + debug symbols (best for debugging optimized code)
+    set(CMAKE_C_FLAGS_RELWITHDEBINFO "-O2 -g -DNDEBUG")
+    set(CMAKE_CXX_FLAGS_RELWITHDEBINFO "-O2 -g -DNDEBUG")
+
+    # MinSizeRel: Optimize for size + debug symbols
+    set(CMAKE_C_FLAGS_MINSIZEREL "-Os -g -DNDEBUG")
+    set(CMAKE_CXX_FLAGS_MINSIZEREL "-Os -g -DNDEBUG")
+
+    # Display the flags being used for current build type
+    if(CMAKE_BUILD_TYPE STREQUAL "Debug")
+        message(STATUS "Using Debug flags: ${CMAKE_CXX_FLAGS_DEBUG}")
+    elseif(CMAKE_BUILD_TYPE STREQUAL "Release")
+        message(STATUS "Using Release flags: ${CMAKE_CXX_FLAGS_RELEASE}")
+    elseif(CMAKE_BUILD_TYPE STREQUAL "RelWithDebInfo")
+        message(STATUS "Using RelWithDebInfo flags: ${CMAKE_CXX_FLAGS_RELWITHDEBINFO}")
+    elseif(CMAKE_BUILD_TYPE STREQUAL "MinSizeRel")
+        message(STATUS "Using MinSizeRel flags: ${CMAKE_CXX_FLAGS_MINSIZEREL}")
+    endif()
+endif()
+
 if (UNIX)
     set(CMAKE_INSTALL_PREFIX /usr)
-    set(CMAKE_C_FLAGS "${CMAKE_C_FLAGS} -O0")
-    set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -O0 -pthread")
+    # Add pthread for Unix builds
+    set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -pthread")
 endif (UNIX)
 
 ADD_DEFINITIONS(-D_AFXDLL -DNdebug)
@@ -81,6 +119,8 @@ target_include_directories(${PROJECT_NAME} PRIVATE
 
 set(CMAKE_RUNTIME_OUTPUT_DIRECTORY_DEBUG ${CMAKE_BINARY_DIR}/debug)
 set(CMAKE_RUNTIME_OUTPUT_DIRECTORY_RELEASE ${CMAKE_BINARY_DIR}/release)
+set(CMAKE_RUNTIME_OUTPUT_DIRECTORY_RELWITHDEBINFO ${CMAKE_BINARY_DIR}/relwithdebinfo)
+set(CMAKE_RUNTIME_OUTPUT_DIRECTORY_MINSIZEREL ${CMAKE_BINARY_DIR}/minsizerel)
 
 #set(CMAKE_EXE_LINKER_FLAGS "${CMAKE_EXE_LINKER_FLAGS} /NODEFAULTLIB")
 # NDI SDK Configuration
@@ -215,6 +255,8 @@ if (WIN32)
                         get_filename_component(DLL_NAME ${NDI_DLL} NAME)
                         configure_file(${NDI_DLL} ${CMAKE_RUNTIME_OUTPUT_DIRECTORY_DEBUG}/${DLL_NAME} COPYONLY)
                         configure_file(${NDI_DLL} ${CMAKE_RUNTIME_OUTPUT_DIRECTORY_RELEASE}/${DLL_NAME} COPYONLY)
+                        configure_file(${NDI_DLL} ${CMAKE_RUNTIME_OUTPUT_DIRECTORY_RELWITHDEBINFO}/${DLL_NAME} COPYONLY)
+                        configure_file(${NDI_DLL} ${CMAKE_RUNTIME_OUTPUT_DIRECTORY_MINSIZEREL}/${DLL_NAME} COPYONLY)
                     endforeach()
                     message(STATUS "NDI DLLs will be copied to output directory")
                 else()

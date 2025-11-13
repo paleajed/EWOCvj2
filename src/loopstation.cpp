@@ -49,8 +49,11 @@ LoopStation::LoopStation() {
 }
 
 LoopStation::~LoopStation() {
-    for (LoopStationElement *elem : this->elements) {
-        delete elem;
+    {
+        std::lock_guard<std::mutex> lock(this->elements_mutex);
+        for (LoopStationElement *elem : this->elements) {
+            delete elem;
+        }
     }
     delete this->upscrbox;
     delete this->downscrbox;
@@ -163,8 +166,11 @@ void LoopStation::setbut(Button *but, float r, float g, float b) {
 
 LoopStationElement* LoopStation::add_elem() {
 	auto *elem = new LoopStationElement;
-	this->elements.push_back(elem);
-	elem->pos = this->elements.size() - 1;
+	{
+		std::lock_guard<std::mutex> lock(this->elements_mutex);
+		this->elements.push_back(elem);
+		elem->pos = this->elements.size() - 1;
+	}
 	elem->lpst = this;
 	// float values are colors for circles in boxes
 	LoopStation::setbut(elem->recbut, 0.8f, 0.0f, 0.0f);

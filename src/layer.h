@@ -1,6 +1,7 @@
 #include <thread>
 #include <mutex>
 #include <condition_variable>
+#include <atomic>
 #include <list>
 #include <istream>
 #include <ostream>
@@ -94,7 +95,7 @@ class Clip {
 
 class Layer {
 	public:
-		int pos;
+		int pos = 0;
 		bool deck = 0;
 		bool comp = true;
 		std::vector<Layer*>* layers;
@@ -133,14 +134,17 @@ class Layer {
         Boxx* addbox;
 
         std::mutex pboimutex;
+		std::mutex decresult_mutex;    // Protects decresult pointer and contents
+		std::mutex databuf_mutex;      // Per-layer databuf protection
+		std::mutex video_dec_ctx_mutex; // Protects video_dec_ctx only
 		bool initialized = false;
         bool initdeck = false;
         bool singleswap = false;
-        float frame = 0.0f;
+        std::atomic<float> frame{0.0f};
         float oldframe = 0.0f;
-		int prevframe = -1;
+		std::atomic<int> prevframe{-1};
 		int numf = 0;
-		int video_duration;
+		int video_duration = 0;
 		double millif = 0.0;
 		std::chrono::high_resolution_clock::time_point prevtime;
 		bool timeinit = false;
@@ -155,8 +159,8 @@ class Layer {
         float burgb[4] = {0.0f, 0.0f, 0.0f, 0.0f};
 		Param *speed;
 		float buspeed = 1.0f;
-        float oldspeed;
-        float oldfac;
+        float oldspeed = 0.0f;
+        float oldfac = 0.0f;
 		Param *opacity;
 		Param *volume;
 		Button *playbut;
@@ -182,12 +186,12 @@ class Layer {
         int scritching = 0;
         int clipscritching = 0;
 		int transforming = 0;
-        int transmx;
-        int transmy;
-        int oldmx;
-        int oldmy;
-        float oldshx;
-        float oldshy;
+        int transmx = 0;
+        int transmy = 0;
+        int oldmx = 0;
+        int oldmy = 0;
+        float oldshx = 0.0f;
+        float oldshy = 0.0f;
         bool straightx = false;
         bool straighty = false;
         bool adding = false;
@@ -230,9 +234,8 @@ class Layer {
 		bool firsttime = true;
 		bool newframe = false;
 		bool newtexdata = false;
-		frame_result *decresult;
+		frame_result *decresult = nullptr;
 		int changeinit = -1;
-        std::thread triggering;
 		void get_frame();
 		std::thread audiot;
 		int audiooff = 2;
@@ -263,9 +266,9 @@ class Layer {
 		GLsync syncobj = nullptr;
 		int bpp;
 		bool nonewpbos = false;
-		
+
 		Boxx *vidbox;
-		bool changed;
+		bool changed = false;
         BlendNode *blendnode = nullptr;
 		VideoNode *node = nullptr;
 		Node *lasteffnode[2] = {nullptr, nullptr};
@@ -292,10 +295,10 @@ class Layer {
 		AVFrame *rgbframe = nullptr;
 		AVFrame *decframe = nullptr;
 		AVFrame *audioframe = nullptr;
-		AVPacket *decpkt;
-		AVPacket *decpktseek;
-		AVPacket *audiopkt_dedicated;
-        int64_t first_pts;
+		AVPacket *decpkt = nullptr;
+		AVPacket *decpktseek = nullptr;
+		AVPacket *audiopkt_dedicated = nullptr;
+        int64_t first_pts = 0;
 		int infront = 0;
 		int reset = 0;
 		AVPacket audiopkt;
@@ -425,13 +428,13 @@ class Layer {
 
 class Scene {
 	public:
-		bool deck;
-        int pos;
+		bool deck = false;
+        int pos = 0;
 		Boxx* box;
 		Button* button;
         LoopStation *lpst = nullptr;
         Layer *currlay = nullptr;
-		bool loaded;
+		bool loaded = false;
 		std::vector<Layer*> scnblayers;
 		std::vector<float> nbframes;
 		std::vector<Layer*> tempscnblayers;
@@ -451,6 +454,7 @@ class Mixer {
 		void clip_inside_test(std::vector<Layer*>& layers, bool deck);
 	public:
 		std::vector<std::vector<Layer*>> layers;
+		std::mutex layers_mutex;  // Protects layers vector from concurrent access by audio thread
 		std::vector<Scene*> scenes[2];
         int swapscrollpos[2] = {0, 0};
 		std::vector<Layer*> bulrs[2][2];
@@ -476,7 +480,7 @@ class Mixer {
         bool cliplaying = false;
         bool renaming = false;
         bool skipall = false;
-		bool bualive;
+		bool bualive = false;
         bool copycomp_busy = false;
 		Layer *currlay[2] = {nullptr, nullptr};
         std::vector<Layer*> currlays[2];
@@ -484,7 +488,7 @@ class Mixer {
         std::string mixjpegpath;
         std::string deckjpegpath;
 
-        Layer *templay;
+        Layer *templay = nullptr;
         std::vector<float> deckframes;
         std::vector<Layer *> keep0;
         std::vector<Layer *> keep1;
@@ -544,7 +548,16 @@ class Mixer {
         void set_frame(ShelfElement *elem, Layer *lay);
         void setup_tempmap();
         Mixer();
-		
+
+		// Thread-safe recording configuration - copied at recording start
+		struct RecordConfig {
+			int outputWidth = 0;
+			int outputHeight = 0;
+			std::string recdir;
+			std::string layerFilename;
+			bool useCompOutput = false;  // true = comp output (ow[1]/oh[1]), false = deck output (ow[0]/oh[0])
+		} recordConfig[2];
+
 		std::mutex recordlock[2];
 		std::condition_variable startrecord[2];
 		std::thread recording_video[2];
@@ -590,7 +603,7 @@ class Mixer {
 		Shelf *mouseshelf;
 		int mouseshelfelem;
         Param *mouseparam = nullptr;
-		bool insert;
+		bool insert = false;
 		Node *mousenode = nullptr;
 		Clip* mouseclip;
 		LoopStationElement *mouselpstelem = nullptr;

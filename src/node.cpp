@@ -129,6 +129,10 @@ VideoNode::~VideoNode() {
 BlendNode::~BlendNode() {
 	if (this->fbotex != -1) mainprogram->add_to_texpool(this->fbotex);
     if (this->fbo != -1) mainprogram->add_to_fbopool(this->fbo);
+    delete this->wipex;
+    delete this->wipey;
+    delete this->mixfac;
+    delete this->mixerbox;
 }
 	
 MixNode::~MixNode() {

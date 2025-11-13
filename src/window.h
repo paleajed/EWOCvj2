@@ -30,6 +30,19 @@ class EWindow {
 		GLXContext ctx;
         #endif
 
+		// Thread-safe render data - copied during sync, used during render
+		struct RenderData {
+			GLuint tex = 0;           // Main texture to render
+			GLuint tex1 = 0;          // Additional texture for wipe mode
+			GLuint tex2 = 0;          // Additional texture for wipe mode
+			bool useWipe = false;     // Whether to apply wipe effect
+			float cf = 0.0f;          // Crossfade value
+			int wipeKind = 0;         // Wipe kind
+			int wipeDir = 0;          // Wipe direction
+			float wipeX = 0.0f;       // Wipe X position
+			float wipeY = 0.0f;       // Wipe Y position
+		} renderData;
+
 		~EWindow();
 };
 

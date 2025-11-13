@@ -14,6 +14,7 @@
 #include "boost/date_time/posix_time/posix_time.hpp"
 
 #include <condition_variable>
+#include <atomic>
 #include <chrono>
 #include <string>
 #include "GL/gl.h"
@@ -505,11 +506,11 @@ class Program {
 	public:
         int jav = 0;
 		Project *project;
-		NodesMain *nodesmain;
+		NodesMain *nodesmain = nullptr;
 		GLuint ShaderProgram;
 		GLuint EffectShaderPrograms[43];  // One program per effect (fxid 0-42)
-		UniformCache* uniformCache;
-        OptimizedRenderer *renderer;
+		UniformCache* uniformCache = nullptr;
+        OptimizedRenderer *renderer = nullptr;
 		GLuint fbovao;
 		GLuint fbotex[4];
 		GLuint frbuf[4];
@@ -543,12 +544,12 @@ class Program {
         GLuint loktex;
 		std::vector<OutputEntry*> outputentries;
 		Boxx *scrollboxes[2];
-		Layer *loadlay;
+		Layer *loadlay = nullptr;
 		Layer *prelay = nullptr;
         std::vector<Layer*> dellays;
         std::vector<Effect*> deleffects;
-        SDL_Window *splashwindow;
-        SDL_Window *mainwindow;
+        SDL_Window *splashwindow = nullptr;
+        SDL_Window *mainwindow = nullptr;
 		std::vector<EWindow*> mixwindows;
 		std::vector<Menu*> menulist;
 		std::vector<Menu*> actmenulist;
@@ -663,7 +664,7 @@ class Program {
 		bool menuondisplay = false;
 		bool orderondisplay = false;
 		std::vector<GLuint> ordertexes;
-		bool blocking = false;
+		std::atomic<bool> blocking{false};
 		bool eXit = false;
         std::string appimagedir;
 		std::string temppath;
@@ -674,6 +675,7 @@ class Program {
         std::string isfdir;
 		std::string path;
 		std::vector<std::string> paths;
+		std::mutex pathmutex;  // Protects path, paths, pathto, blocking for file dialog threads
 		int counting = 0;
 		std::string pathto;
 		std::string lastSuccessfulDrive = "";  // Cache for test_driveletters optimization
@@ -697,18 +699,18 @@ class Program {
         bool colorpicking = false;
 		Button *effcat[2];
 		int efflines = 7;
-		Boxx *effscrollupA;
-		Boxx *effscrolldownA;
-		Boxx *effscrollupB;
-		Boxx *effscrolldownB;
-		Boxx* addeffectbox;
-		Boxx* inserteffectbox;
-        Boxx* orderscrolldown;
-        Boxx* orderscrollup;
-        Boxx* defaultsearchscrolldown;
-        Boxx* defaultsearchscrollup;
-        Boxx* searchscrolldown;
-        Boxx* searchscrollup;
+		Boxx *effscrollupA = nullptr;
+		Boxx *effscrolldownA = nullptr;
+		Boxx *effscrollupB = nullptr;
+		Boxx *effscrolldownB = nullptr;
+		Boxx* addeffectbox = nullptr;
+		Boxx* inserteffectbox = nullptr;
+        Boxx* orderscrolldown = nullptr;
+        Boxx* orderscrollup = nullptr;
+        Boxx* defaultsearchscrolldown = nullptr;
+        Boxx* defaultsearchscrollup = nullptr;
+        Boxx* searchscrolldown = nullptr;
+        Boxx* searchscrollup = nullptr;
 		bool startloop = false;
         bool firsttime = true;
         bool newproject = false;
@@ -756,11 +758,11 @@ class Program {
 		bool frontbatch = false;
         std::vector<GUI_Element*> guielems;
         std::vector<GUI_Element*> binguielems;
-		Button* onscenebutton;
-		float onscenemilli;
-        bool onscenedeck;
-		Boxx* delbox;
-		Boxx* addbox;
+		Button* onscenebutton = nullptr;
+		float onscenemilli = 0.0f;
+        bool onscenedeck = false;
+		Boxx* delbox = nullptr;
+		Boxx* addbox = nullptr;
         bool repeatdefault = true;
         bool autoplay = true;
         std::chrono::high_resolution_clock::time_point now;
@@ -770,7 +772,7 @@ class Program {
         BeatDetektor *beatdet = nullptr;
         std::chrono::high_resolution_clock::time_point austarttime;
         size_t autime = 0;
-        int aubpmcounter;
+        int aubpmcounter = 0;
         float topquality = 0.0f;
         float qtime = 0.0f;
         bool inbetween = false;
@@ -783,7 +785,7 @@ class Program {
 		GLuint bdtextex;
 		GLuint bdbrdtex;
 
-		lo::ServerThread *st;
+		lo::ServerThread *st = nullptr;
 		std::unordered_map<std::string, int> wipesmap;
         std::vector<int> abeffects;
         std::vector<int> absources;
@@ -799,21 +801,21 @@ class Program {
         bool scratch2phase = 0;
         Boxx* tmcat[3];
         Boxx* tmset[4];
-        Boxx* tmscratch1;
-        Boxx* tmscratch2;
-        Boxx *tmfreeze;
-        Boxx *tmscrinvert;
-		Boxx *tmplay;
-		Boxx *tmbackw;
-		Boxx *tmbounce;
-		Boxx *tmfrforw;
-        Boxx *tmfrbackw;
-        Boxx *tmstop;
-        Boxx *tmloop;
-		Boxx *tmspeed;
-		Boxx *tmspeedzero;
-        Boxx *tmopacity;
-        Boxx *tmcross;
+        Boxx* tmscratch1 = nullptr;
+        Boxx* tmscratch2 = nullptr;
+        Boxx *tmfreeze = nullptr;
+        Boxx *tmscrinvert = nullptr;
+		Boxx *tmplay = nullptr;
+		Boxx *tmbackw = nullptr;
+		Boxx *tmbounce = nullptr;
+		Boxx *tmfrforw = nullptr;
+        Boxx *tmfrbackw = nullptr;
+        Boxx *tmstop = nullptr;
+        Boxx *tmloop = nullptr;
+		Boxx *tmspeed = nullptr;
+		Boxx *tmspeedzero = nullptr;
+        Boxx *tmopacity = nullptr;
+        Boxx *tmcross = nullptr;
 		TM_LEARN tmlearn = TM_NONE;
 		TM_LEARN tmchoice = TM_NONE;
 		int waitmidi = 0;
@@ -874,18 +876,18 @@ class Program {
         std::vector<std::string> auindevices;
         std::vector<std::string> adevices;
         std::string audevice;
-        bool audioinit = false;
-        SDL_AudioDeviceID audeviceid;
-        float ausamplerate;
-        float* aubuffer;
-        int aubuffersize;
-        int ausamples;
+        std::atomic<bool> audioinit{false};
+        SDL_AudioDeviceID audeviceid = 0;
+        float ausamplerate = 0.0f;
+        float* aubuffer = nullptr;
+        int aubuffersize = 0;
+        int ausamples = 0;
         std::vector<float> auoutfloat;
-        int auoutsize;
-        double* auin;
-        fftw_complex* auout;
-        fftw_plan auplan;
-        bool auinitialized = false;
+        int auoutsize = 0;
+        double* auin = nullptr;
+        fftw_complex* auout = nullptr;
+        fftw_plan auplan = nullptr;
+        std::atomic<bool> auinitialized{false};
         std::vector<std::string> busylist;
 		std::vector<Layer*> busylayers;
 		std::vector<Layer*> mimiclayers;
@@ -902,9 +904,9 @@ class Program {
 		bool drag = false;
         bool draggingrec = false;
 		bool inwormgate = false;
-		Button* wormgate1;
-		Button* wormgate2;
-		DIR *opendir;
+		Button* wormgate1 = nullptr;
+		Button* wormgate2 = nullptr;
+		DIR *opendir = nullptr;
         bool submenuscreated = false;
         bool gotaudioinputs = false;
 
@@ -912,10 +914,10 @@ class Program {
         bool renamingseat = false;
         bool renamingip = false;
         bool enteringserverip = false;
-        Boxx* renamingbox;
+        Boxx* renamingbox = nullptr;
 		std::string choosedir = "";
 		std::string inputtext;
-		int cursorpos0;
+		int cursorpos0 = 0;
 		int cursorpos1 = -1;
 		int cursorpos2 = -1;
 		int cursortemp1 = -1;
@@ -929,7 +931,7 @@ class Program {
 
 		int numcores = 0;
 		int maxthreads;
-		int encthreads = 0;
+		std::atomic<int> encthreads{0};
 		bool threadmode = true;
 		std::mutex hapmutex;
 		std::condition_variable hap;
@@ -1001,7 +1003,7 @@ class Program {
         int onoffscroll = 0;
         bool prefonoff = false;
 		bool indragbox = false;
-		Boxx* dragbox;
+		Boxx* dragbox = nullptr;
 		bool dragmiddle = false;
 		bool dragout[2] = { true, true };
         std::string quitting;
@@ -1024,19 +1026,19 @@ class Program {
         ShelfElement *lpstelem = nullptr;
 
     #ifdef WINDOWS
-        SOCKET sock;
+        SOCKET sock = INVALID_SOCKET;
 		std::vector<SOCKET> connsockets;
     #endif
     #ifdef POSIX
-        int sock;
+        int sock = -1;
 		std::vector<int> connsockets;
     #endif
 		std::string sockname;
 		std::vector<std::string> connsocknames;
         int last_recv_bytes = 0;  // Track bytes received in last bl_recv call
-        bool server = false;
-        int connected = 0;
-        bool connfailed = false;
+        std::atomic<bool> server{false};
+        std::atomic<int> connected{0};
+        std::atomic<bool> connfailed{false};
         int connfailedmilli = 0;
         std::string seatname = "SEAT";
         std::string oldseatname = "SEAT";
@@ -1046,10 +1048,11 @@ class Program {
         std::string publicip;  // Public/internet IP for remote connections
         std::string manualserverip;  // Manually entered server IP for clients
         std::string broadcastip;
-        struct sockaddr_in serv_addr_server;
-        struct sockaddr_in serv_addr_client;
-        class UPnPPortMapper* upnpMapper;  // UPnP port forwarding manager
-        
+        struct sockaddr_in serv_addr_server = {};  // Zero-initialized
+        struct sockaddr_in serv_addr_client = {};  // Zero-initialized
+        class UPnPPortMapper* upnpMapper = nullptr;  // UPnP port forwarding manager
+        std::mutex upnpMutex;  // Protects upnpMapper access from multiple threads
+
         struct DiscoveredSeat {
             std::string ip;
             std::string name;
@@ -1057,13 +1060,13 @@ class Program {
         };
         std::vector<DiscoveredSeat> discoveredSeats;
         std::mutex discoveryMutex;
-        bool discoveryRunning = false;
-        bool discoveryInitialized = false;
+        std::atomic<bool> discoveryRunning{false};
+        std::atomic<bool> discoveryInitialized{false};
         int discoverySocket = -1;
-        bool autoConnectAttempted = false;
-        bool autoServerAttempted = false;
+        std::atomic<bool> autoConnectAttempted{false};
+        std::atomic<bool> autoServerAttempted{false};
         std::chrono::steady_clock::time_point discoveryStartTime;
-        std::thread *clientthread;
+        std::thread *clientthread = nullptr;
 #ifdef WINDOWS
         std::unordered_map<std::string, SOCKET> connmap;
 #endif
@@ -1128,6 +1131,7 @@ class Program {
         std::vector<std::shared_ptr<FFGLPlugin>> ffgleffectplugins;
         std::vector<std::shared_ptr<FFGLPlugin>> ffglsourceplugins;
         std::vector<std::shared_ptr<FFGLPlugin>> ffglmixerplugins;
+        std::mutex ffglplugins_mutex;  // Protects ffglplugins and their instances from concurrent access
         FFGLHost *ffglhost = nullptr;
         std::unordered_set<std::string> missingplugs;
         GLuint redgradienttex;
@@ -1150,6 +1154,7 @@ class Program {
         std::vector<std::string> isfsourcenames;
         std::vector<std::string> isfmixernames;
         std::vector<std::vector<ISFShaderInstance*>> isfinstances;
+        std::mutex isfinstances_mutex;  // Protects isfinstances from concurrent access
 
         NDIManager& ndimanager;
         std::vector<std::string> ndisourcenames;

@@ -4085,8 +4085,12 @@ void onestepfrom(bool stage, Node *node, Node *prevnode, GLuint prevfbotex, GLui
                         }
                         mainprogram->uniformCache->setInt("wkind", bnode->wipetype);
                         mainprogram->uniformCache->setInt("dir", bnode->wipedir);
-                        mainprogram->uniformCache->setFloat("xpos", bnode->wipex->value);
-                        mainprogram->uniformCache->setFloat("ypos", bnode->wipey->value);
+                        if (bnode->wipex) {
+                            mainprogram->uniformCache->setFloat("xpos", bnode->wipex->value);
+                        }
+                        if (bnode->wipey) {
+                            mainprogram->uniformCache->setFloat("ypos", bnode->wipey->value);
+                        }
                     }
                     glActiveTexture(GL_TEXTURE2);
                     glBindTexture(GL_TEXTURE_2D, bnode->in2tex);
@@ -5785,11 +5789,14 @@ void the_loop() {
                     }
                 }
 
-                for (int i = 0; i < binsmain->bins.size(); i++) {
-                    for (int j = 0; j < binsmain->bins[i]->elements.size(); j++) {
-                        BinElement *elem = binsmain->bins[i]->elements[j];
-                        if (elem->path != binel->encodingend) continue;
-                        elem->path = binel->path;
+                {
+                    std::lock_guard<std::recursive_mutex> bins_lock(binsmain->binsmutex);
+                    for (int i = 0; i < binsmain->bins.size(); i++) {
+                        for (int j = 0; j < binsmain->bins[i]->elements.size(); j++) {
+                            BinElement *elem = binsmain->bins[i]->elements[j];
+                            if (elem->path != binel->encodingend) continue;
+                            elem->path = binel->path;
+                        }
                     }
                 }
 
@@ -6750,6 +6757,52 @@ void the_loop() {
     // sync with output views
     for (int i = 0; i < mainprogram->outputentries.size(); i++) {
         EWindow *win = mainprogram->outputentries[i]->win;
+
+        // Copy render data for thread-safe access in output_video()
+        if (win->mixid == 4) {
+            win->renderData.tex = win->lay->fbotex;
+            win->renderData.useWipe = false;
+        }
+        else if (win->mixid == 3) {
+            win->renderData.tex = ((MixNode*)(mainprogram->nodesmain->mixnodes[1][2]))->mixtex;
+            if (mainmix->wipe[1] > -1) {
+                win->renderData.useWipe = true;
+                win->renderData.cf = mainmix->crossfadecomp->value;
+                win->renderData.tex1 = ((MixNode*)(mainprogram->nodesmain->mixnodes[1][0]))->mixtex;
+                win->renderData.tex2 = ((MixNode*)(mainprogram->nodesmain->mixnodes[1][1]))->mixtex;
+                win->renderData.wipeKind = mainmix->wipe[1];
+                win->renderData.wipeDir = mainmix->wipedir[1];
+                win->renderData.wipeX = mainmix->wipex[1]->value;
+                win->renderData.wipeY = mainmix->wipey[1]->value;
+            } else {
+                win->renderData.useWipe = false;
+            }
+        }
+        else if (win->mixid == 2) {
+            win->renderData.tex = ((MixNode*)(mainprogram->nodesmain->mixnodes[0][2]))->mixtex;
+            if (mainmix->wipe[0] > -1) {
+                win->renderData.useWipe = true;
+                win->renderData.cf = mainmix->crossfade->value;
+                win->renderData.tex1 = ((MixNode*)(mainprogram->nodesmain->mixnodes[0][0]))->mixtex;
+                win->renderData.tex2 = ((MixNode*)(mainprogram->nodesmain->mixnodes[0][1]))->mixtex;
+                win->renderData.wipeKind = mainmix->wipe[0];
+                win->renderData.wipeDir = mainmix->wipedir[0];
+                win->renderData.wipeX = mainmix->wipex[0]->value;
+                win->renderData.wipeY = mainmix->wipey[0]->value;
+            } else {
+                win->renderData.useWipe = false;
+            }
+        }
+        else {
+            if (mainprogram->prevmodus) {
+                win->renderData.tex = ((MixNode*)(mainprogram->nodesmain->mixnodes[0][win->mixid]))->mixtex;
+            }
+            else {
+                win->renderData.tex = ((MixNode*)(mainprogram->nodesmain->mixnodes[1][win->mixid]))->mixtex;
+            }
+            win->renderData.useWipe = false;
+        }
+
         win->syncnow = true;
         while (win->syncnow) {
             win->sync.notify_all();
@@ -6870,19 +6923,22 @@ void the_loop() {
             }
 
             // remove unsaved bins
-            std::vector<Bin *> bins = binsmain->bins;
-            int correct = 0;
-            for (int i = 0; i < bins.size(); i++) {
-                if (!bins[i]->saved) {
-                    binsmain->bins.erase(binsmain->bins.begin() + i - correct);
-                    mainprogram->remove(bins[i]->path);
-                    std::filesystem::remove_all(mainprogram->project->bubd + bins[i]->name);
-                    correct++;
+            {
+                std::lock_guard<std::recursive_mutex> bins_lock(binsmain->binsmutex);
+                std::vector<Bin *> bins = binsmain->bins;
+                int correct = 0;
+                for (int i = 0; i < bins.size(); i++) {
+                    if (!bins[i]->saved) {
+                        binsmain->bins.erase(binsmain->bins.begin() + i - correct);
+                        mainprogram->remove(bins[i]->path);
+                        std::filesystem::remove_all(mainprogram->project->bubd + bins[i]->name);
+                        correct++;
+                    }
                 }
-            }
-            binsmain->save_binslist();
-            if (binsmain->bins.size() == 0) {
-                mainprogram->remove(mainprogram->project->bubd + "bins.list");
+                binsmain->save_binslist();
+                if (binsmain->bins.size() == 0) {
+                    mainprogram->remove(mainprogram->project->bubd + "bins.list");
+                }
             }
 
             //remove redundant bin files
@@ -6940,9 +6996,14 @@ void the_loop() {
 
 			// close socket communication
 			// if server ask other socket to become server else signal all other sockets that we're quitting
-            if (mainprogram->connsockets.size()) {
+            std::vector<SOCKET> connsocketsCopy;
+            {
+                std::lock_guard<std::mutex> lock(mainprogram->clientmutex);
+                connsocketsCopy = mainprogram->connsockets;
+            }
+            if (!connsocketsCopy.empty()) {
                 if (mainprogram->server) {
-                    for (auto sock : mainprogram->connsockets) {
+                    for (auto sock : connsocketsCopy) {
                         send(sock, "SERVER_QUITS", 12, 0);
                     }
                 }
@@ -8271,20 +8332,18 @@ int main(int argc, char* argv[]) {
         mainprogram->broadcastip = "255.255.255.255";
         std::cout << "Local IP address is: " << mainprogram->localip << std::endl;
 
-        // socket communication for sharing bins one-way
-        int opt = 1;
-        char buf[1024] = {0};
-        if ((mainprogram->sock = socket(AF_INET, SOCK_STREAM, 0)) < 0) {
-            printf("\n Socket creation error \n");
-            return -1;
-        }
-
+        // Initialize socket address structures (actual sockets created by server/client threads)
         mainprogram->serv_addr_server.sin_family = AF_INET;
         mainprogram->serv_addr_server.sin_addr.s_addr = INADDR_ANY;
         mainprogram->serv_addr_server.sin_port = htons(8000);
         mainprogram->serv_addr_client.sin_family = AF_INET;
         mainprogram->serv_addr_client.sin_addr.s_addr = INADDR_ANY;
         mainprogram->serv_addr_client.sin_port = htons(8000);
+
+        // Initialize UPnP port mapper (will be used by server thread if needed)
+        std::cout << "=== Initializing UPnP Port Mapper ===" << std::endl;
+        mainprogram->upnpMapper = new UPnPPortMapper();
+        std::cout << "UPnP Port Mapper initialized (discovery will happen when server starts)" << std::endl;
     }
 
 
@@ -8413,37 +8472,47 @@ int main(int argc, char* argv[]) {
 
         mainprogram->io->poll();
 
-        if (mainprogram->path != "" || mainprogram->paths.size()) {
-            mainprogram->path = pathtoplatform(mainprogram->path);
-            for (int i = 0; i < mainprogram->paths.size(); i++) {
-                mainprogram->paths[i] = pathtoplatform(mainprogram->paths[i]);
+        // Copy file dialog results with mutex protection
+        std::string localPath;
+        std::vector<std::string> localPaths;
+        std::string localPathto;
+        {
+            std::lock_guard<std::mutex> lock(mainprogram->pathmutex);
+            localPath = pathtoplatform(mainprogram->path);
+            localPaths = mainprogram->paths;
+            for (int i = 0; i < localPaths.size(); i++) {
+                localPaths[i] = pathtoplatform(localPaths[i]);
             }
-            if (mainprogram->pathto == "ADDSEARCHDIR") {
-                if (mainprogram->path != "") {
-                    mainprogram->prefsearchdirs->push_back(mainprogram->path);
+            localPathto = mainprogram->pathto;
+        }
+
+        if (localPath != "" || localPaths.size()) {
+            if (localPathto == "ADDSEARCHDIR") {
+                if (localPath != "") {
+                    mainprogram->prefsearchdirs->push_back(localPath);
                 }
                 mainprogram->filereqon = false;
             }
-            else if (mainprogram->pathto == "OPENFILESLAYER") {
-                if (mainprogram->paths.size() > 0) {
+            else if (localPathto == "OPENFILESLAYER") {
+                if (localPaths.size() > 0) {
                     std::vector<Layer *> &lvec = choose_layers(mainmix->mousedeck);
-                    std::string str(mainprogram->paths[0]);
+                    std::string str(localPaths[0]);
                     mainprogram->currfilesdir = dirname(str);
                     mainprogram->pathscount = 0;
                     mainprogram->fileslay = mainprogram->loadlay;
                     mainprogram->openfileslayers = true;
                 }
-            } else if (mainprogram->pathto == "OPENFILESSTACK") {
-                if (mainprogram->paths.size()) {
+            } else if (localPathto == "OPENFILESSTACK") {
+                if (localPaths.size()) {
                     std::vector<Layer *> &lvec = choose_layers(mainmix->mousedeck);
-                    std::string str(mainprogram->paths[0]);
+                    std::string str(localPaths[0]);
                     mainprogram->currfilesdir = dirname(str);
                     mainprogram->pathscount = 0;
                     mainprogram->openfileslayers = true;
                 }
-            } else if (mainprogram->pathto == "OPENFILESQUEUE") {
-                if (mainprogram->paths.size()) {
-                    std::string str(mainprogram->paths[0]);
+            } else if (localPathto == "OPENFILESQUEUE") {
+                if (localPaths.size()) {
+                    std::string str(localPaths[0]);
                     mainprogram->currfilesdir = dirname(str);
                     mainprogram->pathscount = 0;
                     mainprogram->fileslay = mainprogram->loadlay;
@@ -8461,9 +8530,9 @@ int main(int argc, char* argv[]) {
                     mainprogram->fileslay->cliploading = true;
                     mainprogram->openfilesqueue = true;
                 }
-            } else if (mainprogram->pathto == "OPENFILESCLIP") {
-                if (mainprogram->paths.size()) {
-                    std::string str(mainprogram->paths[0]);
+            } else if (localPathto == "OPENFILESCLIP") {
+                if (localPaths.size()) {
+                    std::string str(localPaths[0]);
                     mainprogram->currfilesdir = dirname(str);
                     mainprogram->clipfilescount = 0;
                     mainprogram->clipfilesclip = mainmix->mouseclip;
@@ -8471,78 +8540,78 @@ int main(int argc, char* argv[]) {
                     mainprogram->clipfileslay->cliploading = true;
                     mainprogram->openclipfiles = true;
                 }
-            } else if (mainprogram->pathto == "OPENSHELF") {
-                mainprogram->currshelfdir = dirname(mainprogram->path);
+            } else if (localPathto == "OPENSHELF") {
+                mainprogram->currshelfdir = dirname(localPath);
                 //mainprogram->project->save(mainprogram->project->path);
-                mainmix->mouseshelf->open(mainprogram->path);
-            } else if (mainprogram->pathto == "SAVESHELF") {
-                mainprogram->currshelfdir = dirname(mainprogram->path);
-                std::string ext = mainprogram->path.substr(mainprogram->path.length() - 6, std::string::npos);
+                mainmix->mouseshelf->open(localPath);
+            } else if (localPathto == "SAVESHELF") {
+                mainprogram->currshelfdir = dirname(localPath);
+                std::string ext = localPath.substr(localPath.length() - 6, std::string::npos);
                 std::string src = mainprogram->project->shelfdir + mainmix->mouseshelf->basepath;
                 std::string dest;
                 if (ext != ".shelf") {
-                    dest = mainprogram->path;
+                    dest = localPath;
                     std::filesystem::path p1{dest};
                     if (!std::filesystem::exists(p1)) {
                         std::filesystem::create_directory(p1);
                     }
                     copy_dir(src, dest);
                 } else {
-                    dest = dirname(mainprogram->path);
+                    dest = dirname(localPath);
                     copy_dir(src, dest);
                 }
                 std::filesystem::path p3{dest + "/" + mainmix->mouseshelf->basepath + ".shelf"};
                 if (std::filesystem::exists(p3)) {
-                    mainprogram->remove(mainprogram->path);
+                    mainprogram->remove(localPath);
                 }
-                mainmix->mouseshelf->save(dest + "/" + remove_extension(basename(mainprogram->path)) + ".shelf");
-            } else if (mainprogram->pathto == "OPENFILESSHELF") {
-                if (mainprogram->paths.size()) {
-                    mainprogram->currfilesdir = dirname(mainprogram->paths[0]);
+                mainmix->mouseshelf->save(dest + "/" + remove_extension(basename(localPath)) + ".shelf");
+            } else if (localPathto == "OPENFILESSHELF") {
+                if (localPaths.size()) {
+                    mainprogram->currfilesdir = dirname(localPaths[0]);
                     mainprogram->openfilesshelf = true;
                     mainprogram->shelffilescount = 0;
                     mainprogram->shelffileselem = mainmix->mouseshelfelem;
                 }
-            } else if (mainprogram->pathto == "SAVESTATE") {
-                mainprogram->currelemsdir = dirname(mainprogram->path);
-                mainmix->save_state(mainprogram->path, false);
-            } else if (mainprogram->pathto == "SAVEMIX") {
-                mainprogram->currelemsdir = dirname(mainprogram->path);
-                mainmix->save_mix(mainprogram->path, mainprogram->prevmodus, true);
-            } else if (mainprogram->pathto == "SAVEDECK") {
-                mainprogram->currelemsdir = dirname(mainprogram->path);
-                mainmix->save_deck(mainprogram->path, true, true);
-            } else if (mainprogram->pathto == "OPENDECK") {
-                mainprogram->currelemsdir = dirname(mainprogram->path);
-                mainmix->open_deck(mainprogram->path, 1);
-            } else if (mainprogram->pathto == "SAVELAYFILE") {
-                mainprogram->currelemsdir = dirname(mainprogram->path);
-                mainmix->save_layerfile(mainprogram->path, mainmix->mouselayer, 1, 0);
+            } else if (localPathto == "SAVESTATE") {
+                mainprogram->currelemsdir = dirname(localPath);
+                mainmix->save_state(localPath, false);
+            } else if (localPathto == "SAVEMIX") {
+                mainprogram->currelemsdir = dirname(localPath);
+                mainmix->save_mix(localPath, mainprogram->prevmodus, true);
+            } else if (localPathto == "SAVEDECK") {
+                mainprogram->currelemsdir = dirname(localPath);
+                mainmix->save_deck(localPath, true, true);
+            } else if (localPathto == "OPENDECK") {
+                mainprogram->currelemsdir = dirname(localPath);
+                mainmix->open_deck(localPath, 1);
+            } else if (localPathto == "SAVELAYFILE") {
+                mainprogram->currelemsdir = dirname(localPath);
+                mainmix->save_layerfile(localPath, mainmix->mouselayer, 1, 0);
             }
-            else if (mainprogram->pathto == "OPENSTATE") {
-                mainprogram->currelemsdir = dirname(mainprogram->path);
-                mainmix->open_state(mainprogram->path);
-            } else if (mainprogram->pathto == "OPENMIX") {
-                mainprogram->currelemsdir = dirname(mainprogram->path);
-                mainmix->open_mix(mainprogram->path, true);
-            } else if (mainprogram->pathto == "OPENFILESBIN") {
-                if (mainprogram->paths.size()) {
-                    mainprogram->currfilesdir = dirname(mainprogram->paths[0]);
+            else if (localPathto == "OPENSTATE") {
+                mainprogram->currelemsdir = dirname(localPath);
+                mainmix->open_state(localPath);
+            } else if (localPathto == "OPENMIX") {
+                mainprogram->currelemsdir = dirname(localPath);
+                mainmix->open_mix(localPath, true);
+            } else if (localPathto == "OPENFILESBIN") {
+                if (localPaths.size()) {
+                    mainprogram->currfilesdir = dirname(localPaths[0]);
                     binsmain->openfilesbin = true;
                 }
-            } else if (mainprogram->pathto == "OPENBIN") {
-                if (mainprogram->paths.size() > 0) {
-                    mainprogram->currbinsdir = dirname(mainprogram->paths[0]);
+            } else if (localPathto == "OPENBIN") {
+                if (localPaths.size() > 0) {
+                    mainprogram->currbinsdir = dirname(localPaths[0]);
                     binsmain->importbins = true;
                     binsmain->binscount = 0;
                 }
-            } else if (mainprogram->pathto == "SAVEBIN") {
-                mainprogram->currbinsdir = dirname(mainprogram->path);
+            } else if (localPathto == "SAVEBIN") {
+                mainprogram->currbinsdir = dirname(localPath);
                 std::string src = pathtoplatform(mainprogram->project->binsdir + binsmain->currbin->name + "/");
                 std::string dest = pathtoplatform(
-                        dirname(mainprogram->path) + remove_extension(basename(mainprogram->path)) + "/");
+                        dirname(localPath) + remove_extension(basename(localPath)) + "/");
                 if (exists(dest)) {
-                    std::filesystem::remove(dest + remove_extension(basename(mainprogram->path)) + ".bin");
+                    std::filesystem::remove(dest + remove_extension(basename(localPath)) + ".bin");
                     std::filesystem::remove_all(dest);
                 }
                 copy_dir(src, dest);
@@ -8551,7 +8620,7 @@ int main(int argc, char* argv[]) {
                     for (int i = 0; i < 12; i++) {
                         BinElement *binel = binsmain->currbin->elements[i * 12 + j];
                         std::string s =
-                                dirname(mainprogram->path) + remove_extension(basename(mainprogram->path)) + "/";
+                                dirname(localPath) + remove_extension(basename(localPath)) + "/";
                         bupaths[i * 12 + j] = binel->absjpath;\
                         if (binel->absjpath != "") {
                             binel->absjpath = s + basename(binel->absjpath);
@@ -8561,7 +8630,7 @@ int main(int argc, char* argv[]) {
                     }
                 }
                 binsmain->save_bin(
-                        find_unused_filename(remove_extension(basename(mainprogram->path)), dirname(mainprogram->path),
+                        find_unused_filename(remove_extension(basename(localPath)), dirname(localPath),
                                              ".bin"));
                 for (int j = 0; j < 12; j++) {
                     for (int i = 0; i < 12; i++) {
@@ -8573,8 +8642,8 @@ int main(int argc, char* argv[]) {
                                                                     mainprogram->project->binsdir).generic_string();
                     }
                 }
-            } else if (mainprogram->pathto == "CHOOSEDIR") {
-                mainprogram->choosedir = mainprogram->path + "/";
+            } else if (localPathto == "CHOOSEDIR") {
+                mainprogram->choosedir = localPath + "/";
                 //std::string driveletter1 = str.substr(0, 1);
                 //std::string abspath = std::filesystem::canonical(mainprogram->docpath).generic_string();
                 //std::string driveletter2 = abspath.substr(0, 1);
@@ -8584,9 +8653,9 @@ int main(int argc, char* argv[]) {
                 //else {
                 //	mainprogram->choosedir = str + "/";
                 //}
-            } else if (mainprogram->pathto == "OPENAUTOSAVE") {
-                //std::string p = dirname(mainprogram->path);
-                if (exists(mainprogram->path)) {
+            } else if (localPathto == "OPENAUTOSAVE") {
+                //std::string p = dirname(localPath);
+                if (exists(localPath)) {
                     mainprogram->openautosave = true;
                     if (!mainprogram->inautosave) {
                         mainprogram->project->bupp = mainprogram->project->path;
@@ -8597,44 +8666,47 @@ int main(int argc, char* argv[]) {
                         //mainprogram->project->buad = mainprogram->project->autosavedir;
                         mainprogram->project->bued = mainprogram->project->elementsdir;
                     }
-                    std::string ext = mainprogram->path.substr(mainprogram->path.length() - 7, std::string::npos);
+                    std::string ext = localPath.substr(localPath.length() - 7, std::string::npos);
 
-                    mainprogram->project->open(mainprogram->path, true);
+                    mainprogram->project->open(localPath, true);
 
                     binsmain->clear_undo();
 
                     mainprogram->openautosave = false;
                 }
-            } else if (mainprogram->pathto == "NEWPROJECT") {
-                mainprogram->currprojdir = dirname(mainprogram->path);
+            } else if (localPathto == "NEWPROJECT") {
+                mainprogram->currprojdir = dirname(localPath);
                 mainmix->new_state();
 #ifdef POSIX
-                mainprogram->project->newp(mainprogram->path + "/" + basename(mainprogram->path));
+                mainprogram->project->newp(localPath + "/" + basename(localPath));
 #endif
 #ifdef WINDOWS
-                mainprogram->project->newp(mainprogram->path + "\\" + basename(mainprogram->path));
+                mainprogram->project->newp(localPath + "\\" + basename(localPath));
 #endif
                 binsmain->clear_undo();
                 mainprogram->undo_redo_save();
-            } else if (mainprogram->pathto == "OPENPROJECT") {
-                std::string p = dirname(mainprogram->path);
-                if (exists(mainprogram->path)) {
-                    mainprogram->project->open(mainprogram->path, false);
+            } else if (localPathto == "OPENPROJECT") {
+                std::string p = dirname(localPath);
+                if (exists(localPath)) {
+                    mainprogram->project->open(localPath, false);
                     binsmain->clear_undo();
                     mainprogram->currprojdir = dirname(p.substr(0, p.length() - 1));
                 }
-            } else if (mainprogram->pathto == "SAVEPROJECT") {
+            } else if (localPathto == "SAVEPROJECT") {
                 mainprogram->project->save_as();
-            } else if (mainprogram->pathto == "FFGLFILE") {
-                mainprogram->ffglfiledir = dirname(mainprogram->path);
+            } else if (localPathto == "FFGLFILE") {
+                mainprogram->ffglfiledir = dirname(localPath);
                 mainmix->mouseparam->oldvaluestr = mainmix->mouseparam->valuestr;
-                mainmix->mouseparam->valuestr = mainprogram->path;
+                mainmix->mouseparam->valuestr = localPath;
                 // UNDO registration
                 mainprogram->register_undo(mainmix->mouseparam, nullptr);
             }
 
-            mainprogram->path = "";
-            mainprogram->pathto = "";
+            {
+                std::lock_guard<std::mutex> lock(mainprogram->pathmutex);
+                mainprogram->path = "";
+                mainprogram->pathto = "";
+            }
         }
         // else mainprogram->blocking = false;
 
@@ -9431,12 +9503,15 @@ int main(int argc, char* argv[]) {
                     if (mainprogram->leftmouse) {
                         printf("stopped\n");
 
-                        // Clean up UPnP port mapping before exit
-                        if (mainprogram->upnpMapper) {
-                            std::cout << "Removing UPnP port mapping..." << std::endl;
-                            mainprogram->upnpMapper->removePortMapping(8000, "TCP");
-                            delete mainprogram->upnpMapper;
-                            mainprogram->upnpMapper = nullptr;
+                        // Clean up UPnP port mapping before exit (thread-safe)
+                        {
+                            std::lock_guard<std::mutex> lock(mainprogram->upnpMutex);
+                            if (mainprogram->upnpMapper) {
+                                std::cout << "Removing UPnP port mapping..." << std::endl;
+                                mainprogram->upnpMapper->removePortMapping(8000, "TCP");
+                                delete mainprogram->upnpMapper;
+                                mainprogram->upnpMapper = nullptr;
+                            }
                         }
 
                         SDL_Quit();

@@ -1102,10 +1102,14 @@ void Program::get_inname(const char *title, std::string filters, std::string def
     else {
         p = tinyfd_openFileDialog(title, defaultdir.c_str(), 1, fi, "", 0);
     }
-    if (p) this->path = p;
-    #endif
-    this->autosave = as;
+
+    {
+        std::lock_guard<std::mutex> lock(this->pathmutex);
+        if (p) this->path = p;
+        this->autosave = as;
+    }
     mainprogram->blocking = false;
+    #endif
 }
 
 void Program::get_outname(const char *title, std::string filters, std::string defaultdir) {
@@ -1138,10 +1142,14 @@ void Program::get_outname(const char *title, std::string filters, std::string de
     else {
         p = tinyfd_saveFileDialog(title, defaultdir.c_str(), 1, fi, nullptr);
     }
-    if (p) this->path = p;
-    #endif
-    this->autosave = as;
+
+    {
+        std::lock_guard<std::mutex> lock(this->pathmutex);
+        if (p) this->path = p;
+        this->autosave = as;
+    }
     mainprogram->blocking = false;
+    #endif
 }
 
 void Program::get_multinname(const char* title, std::string filters, std::string defaultdir) {
@@ -1172,21 +1180,25 @@ void Program::get_multinname(const char* title, std::string filters, std::string
     std::string opaths(outpaths);
     std::string currstr = "";
     std::string charstr;
-    for (int i = 0; i < opaths.length(); i++) {
-        charstr = opaths[i];
-        if (charstr == "|") {
-            this->paths.push_back(currstr);
-            currstr = "";
-            continue;
+
+    {
+        std::lock_guard<std::mutex> lock(this->pathmutex);
+        for (int i = 0; i < opaths.length(); i++) {
+            charstr = opaths[i];
+            if (charstr == "|") {
+                this->paths.push_back(currstr);
+                currstr = "";
+                continue;
+            }
+            currstr += charstr;
+            if (i == opaths.length() - 1) this->paths.push_back(currstr);
         }
-        currstr += charstr;
-        if (i == opaths.length() - 1) this->paths.push_back(currstr);
+        if (mainprogram->paths.size()) {
+            this->path = (char*)"ENTER";
+            this->counting = 0;
+        }
+        this->autosave = as;
     }
-	if (mainprogram->paths.size()) {
-		this->path = (char*)"ENTER";
-		this->counting = 0;
-	}
-	this->autosave = as;
 }
 
 void Program::get_dir(const char* title, std::string defaultdir) {
@@ -1217,10 +1229,14 @@ void Program::get_dir(const char* title, std::string defaultdir) {
 		SHGetPathFromIDList(lpItem, szDir);
 		CoTaskMemFree(lpItem);
 	}
-	this->path = (char*)szDir;
-    if (lpItem == NULL)
+
     {
-        this->path = "";
+        std::lock_guard<std::mutex> lock(this->pathmutex);
+        this->path = (char*)szDir;
+        if (lpItem == NULL)
+        {
+            this->path = "";
+        }
     }
 	OleUninitialize();
 #endif
@@ -1235,9 +1251,13 @@ void Program::get_dir(const char* title, std::string defaultdir) {
 
     dir = tinyfd_selectFolderDialog(title, dd);
     mainprogram->blocking = false;
-	if (dir) this->path = dir;
+
+    {
+        std::lock_guard<std::mutex> lock(this->pathmutex);
+        if (dir) this->path = dir;
+        mainprogram->autosave = as;
+    }
 	#endif
-	mainprogram->autosave = as;
 }
 
 
@@ -1277,22 +1297,35 @@ GLuint Program::get_tex(Layer *lay) {
         ctex = copy_tex(temptex, w, h, false, w * svec[0], h * svec[1]);
     }
     else {
+        // Snapshot decresult fields under lock
+        int compression, width, height;
+        size_t size;
+        char* data;
+        {
+            std::lock_guard<std::mutex> lock(lay->decresult_mutex);
+            compression = lay->decresult->compression;
+            width = lay->decresult->width;
+            height = lay->decresult->height;
+            size = lay->decresult->size;
+            data = lay->decresult->data;
+        }
+
         if (lay->vidformat == 188 || lay->vidformat == 187) {
             // HAP video in layer
-            if (lay->decresult->compression == 187) {
-                glCompressedTexImage2D(GL_TEXTURE_2D, 0, GL_COMPRESSED_RGBA_S3TC_DXT1_EXT, lay->decresult->width,
-                                       lay->decresult->height, 0, lay->decresult->size, lay->decresult->data);
-            } else if (lay->decresult->compression == 190) {
-                glCompressedTexImage2D(GL_TEXTURE_2D, 0, GL_COMPRESSED_RGBA_S3TC_DXT5_EXT, lay->decresult->width,
-                                       lay->decresult->height, 0, lay->decresult->size, lay->decresult->data);
+            if (compression == 187) {
+                glCompressedTexImage2D(GL_TEXTURE_2D, 0, GL_COMPRESSED_RGBA_S3TC_DXT1_EXT, width,
+                                       height, 0, size, data);
+            } else if (compression == 190) {
+                glCompressedTexImage2D(GL_TEXTURE_2D, 0, GL_COMPRESSED_RGBA_S3TC_DXT5_EXT, width,
+                                       height, 0, size, data);
             }
          } else {
             // CPU video in layer
-            glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA8, lay->decresult->width, lay->decresult->height, 0, GL_BGRA,
-                         GL_UNSIGNED_BYTE, lay->decresult->data);
+            glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA8, width, height, 0, GL_BGRA,
+                         GL_UNSIGNED_BYTE, data);
         }
-        auto svec = lay->get_inside_offsets(lay->decresult->width, lay->decresult->height);
-        ctex = copy_tex(temptex, lay->decresult->width, lay->decresult->height, false, lay->decresult->width * svec[0], lay->decresult->height * svec[1]);
+        auto svec = lay->get_inside_offsets(width, height);
+        ctex = copy_tex(temptex, width, height, false, width * svec[0], height * svec[1]);
     }
 
     GLuint tex = copy_tex(ctex, 192, 108);
@@ -1433,23 +1466,36 @@ bool Program::order_paths(bool dodeckmix) {
 
                     open_thumb(this->result + "_" + std::to_string(this->resnum - 2) + ".file", tex);
                 } else if (lay->type == ELEM_LAYER) {
+                    // Snapshot decresult fields under lock
+                    int compression, width, height;
+                    size_t size;
+                    char* data;
+                    {
+                        std::lock_guard<std::mutex> lock(lay->decresult_mutex);
+                        compression = lay->decresult->compression;
+                        width = lay->decresult->width;
+                        height = lay->decresult->height;
+                        size = lay->decresult->size;
+                        data = lay->decresult->data;
+                    }
+
                     glBindTexture(GL_TEXTURE_2D, lay->texture);
                     if (lay->vidformat == 188 || lay->vidformat == 187) {
-                        if (lay->decresult->compression == 187) {
-                            glCompressedTexSubImage2D(GL_TEXTURE_2D, 0, 0, 0, lay->decresult->width,
-                                                      lay->decresult->height,
+                        if (compression == 187) {
+                            glCompressedTexSubImage2D(GL_TEXTURE_2D, 0, 0, 0, width,
+                                                      height,
                                                       GL_COMPRESSED_RGBA_S3TC_DXT1_EXT,
-                                                      lay->decresult->size, lay->decresult->data);
-                        } else if (lay->decresult->compression == 190) {
-                            glCompressedTexSubImage2D(GL_TEXTURE_2D, 0, 0, 0, lay->decresult->width,
-                                                      lay->decresult->height,
+                                                      size, data);
+                        } else if (compression == 190) {
+                            glCompressedTexSubImage2D(GL_TEXTURE_2D, 0, 0, 0, width,
+                                                      height,
                                                       GL_COMPRESSED_RGBA_S3TC_DXT5_EXT,
-                                                      lay->decresult->size, lay->decresult->data);
+                                                      size, data);
                         }
                     } else {
-                        glTexSubImage2D(GL_TEXTURE_2D, 0, 0, 0, lay->decresult->width, lay->decresult->height, GL_BGRA,
+                        glTexSubImage2D(GL_TEXTURE_2D, 0, 0, 0, width, height, GL_BGRA,
                                         GL_UNSIGNED_BYTE,
-                                        lay->decresult->data);
+                                        data);
                     }
                     for (int k = 0; k < lay->effects[0].size(); k++) {
                         lay->effects[0][k]->node->calc = true;
@@ -2924,7 +2970,11 @@ EWindow::~EWindow() {
 
 void output_video(EWindow* mwin) {
 
-	GLuint tex;
+	// Create thread-local UniformCache for this output window's GL context
+	// This avoids shared access to mainprogram->uniformCache
+	GLuint shaderProgram;
+	UniformCache* localUniformCache = nullptr;
+
 	while (1) {
         SDL_GL_MakeCurrent(mwin->win, mwin->glc);
 
@@ -2936,52 +2986,38 @@ void output_video(EWindow* mwin) {
 		// receive end of thread signal
 		if (mwin->closethread) {
 			mwin->closethread = false;
+			if (localUniformCache) delete localUniformCache;
 			return;
 		}
 
-        if (mwin->mixid == 4) tex = mwin->lay->fbotex;
-        else if (mwin->mixid == 3) tex = ((MixNode*)(mainprogram->nodesmain->mixnodes[1][2]))->mixtex;
-        else if (mwin->mixid == 2) tex = ((MixNode*)(mainprogram->nodesmain->mixnodes[0][2]))->mixtex;
-		else {
-            if (mainprogram->prevmodus) {
-                tex = ((MixNode*)(mainprogram->nodesmain->mixnodes[0][mwin->mixid]))->mixtex;
-            }
-            else {
-                tex = ((MixNode*)(mainprogram->nodesmain->mixnodes[1][mwin->mixid]))->mixtex;
-            }
+		// Initialize UniformCache on first run with this context
+		if (!localUniformCache) {
+			GLint currentProgram;
+			glGetIntegerv(GL_CURRENT_PROGRAM, &currentProgram);
+			shaderProgram = currentProgram;
+			localUniformCache = new UniformCache(shaderProgram);
 		}
 
-		if (mwin->mixid == 2 || mwin->mixid == 3) {
-            if (mainmix->wipe[mwin->mixid == 3] > -1) {
-                if (mwin->mixid == 3) {
-                    mainprogram->uniformCache->setFloat("cf", mainmix->crossfadecomp->value);
-                    MixNode *node = (MixNode*)mainprogram->nodesmain->mixnodes[1][0];
-                    glActiveTexture(GL_TEXTURE1);
-                    glBindTexture(GL_TEXTURE_2D, node->mixtex);
-                    node = (MixNode*)mainprogram->nodesmain->mixnodes[1][1];
-                    glActiveTexture(GL_TEXTURE2);
-                    glBindTexture(GL_TEXTURE_2D, node->mixtex);
-                    glActiveTexture(GL_TEXTURE0);
-                }
-                else {
-                    mainprogram->uniformCache->setFloat("cf", mainmix->crossfade->value);
-                    MixNode *node = (MixNode *) mainprogram->nodesmain->mixnodes[0][0];
-                    glActiveTexture(GL_TEXTURE1);
-                    glBindTexture(GL_TEXTURE_2D, node->mixtex);
-                    node = (MixNode *) mainprogram->nodesmain->mixnodes[0][1];
-                    glActiveTexture(GL_TEXTURE2);
-                    glBindTexture(GL_TEXTURE_2D, node->mixtex);
-                    glActiveTexture(GL_TEXTURE0);
-                }
-                mainprogram->uniformCache->setInt("wipe", 1);
-                mainprogram->uniformCache->setInt("mixmode", 24);
-                mainprogram->uniformCache->setInt("wkind", mainmix->wipe[1]);
-                mainprogram->uniformCache->setInt("dir", mainmix->wipedir[1]);
-                mainprogram->uniformCache->setFloat("xpos", mainmix->wipex[1]->value);
-                mainprogram->uniformCache->setFloat("ypos", mainmix->wipey[1]->value);
-            }
-        }
-		mainprogram->uniformCache->setInt("down", 1);
+		// Use thread-safe copied data from renderData
+		GLuint tex = mwin->renderData.tex;
+
+		// Apply wipe effect if needed
+		if (mwin->renderData.useWipe) {
+			localUniformCache->setFloat("cf", mwin->renderData.cf);
+			glActiveTexture(GL_TEXTURE1);
+			glBindTexture(GL_TEXTURE_2D, mwin->renderData.tex1);
+			glActiveTexture(GL_TEXTURE2);
+			glBindTexture(GL_TEXTURE_2D, mwin->renderData.tex2);
+			glActiveTexture(GL_TEXTURE0);
+			localUniformCache->setInt("wipe", 1);
+			localUniformCache->setInt("mixmode", 24);
+			localUniformCache->setInt("wkind", mwin->renderData.wipeKind);
+			localUniformCache->setInt("dir", mwin->renderData.wipeDir);
+			localUniformCache->setFloat("xpos", mwin->renderData.wipeX);
+			localUniformCache->setFloat("ypos", mwin->renderData.wipeY);
+		}
+
+		localUniformCache->setInt("down", 1);
 
 		glViewport(0.0f, 0.0f, mwin->w, mwin->h);
 		glClearColor(0, 0, 0, 1);
@@ -3004,9 +3040,9 @@ void output_video(EWindow* mwin) {
 		}
 		glBindVertexArray(mwin->vao);
 		glDrawArrays(GL_TRIANGLE_STRIP, 0, 4);
-		mainprogram->uniformCache->setInt("down", 0);
-		mainprogram->uniformCache->setInt("wipe", 0);
-		mainprogram->uniformCache->setInt("mixmode", 0);
+		localUniformCache->setInt("down", 0);
+		localUniformCache->setInt("wipe", 0);
+		localUniformCache->setInt("mixmode", 0);
 		mwin->syncendnow = true;
 		while (mwin->syncendnow) {
 			mwin->syncend.notify_all();
@@ -3016,6 +3052,7 @@ void output_video(EWindow* mwin) {
     glDeleteBuffers(1, &mwin->vbuf);
     glDeleteBuffers(1, &mwin->tbuf);
     glDeleteVertexArrays(1, &mwin->vao);
+    if (localUniformCache) delete localUniformCache;
 }
 
 
@@ -4731,14 +4768,20 @@ void Program::handle_laymenu1() {
             }
             else if (lay->type == ELEM_IMAGE) {
                 duplay = lay->open_image(lay->filename, true, true);
-                duplay->decresult->width = mainmix->mouselayer->iw;
-                duplay->decresult->height = mainmix->mouselayer->ih;
+                {
+                    std::lock_guard<std::mutex> lock(duplay->decresult_mutex);
+                    duplay->decresult->width = mainmix->mouselayer->iw;
+                    duplay->decresult->height = mainmix->mouselayer->ih;
+                }
                 duplay->vidformat = mainmix->mouselayer->vidformat;
             }
             else {
                 duplay = lay->open_video(lay->frame, lay->filename, false, true);
-                duplay->decresult->width = mainmix->mouselayer->iw;
-                duplay->decresult->height = mainmix->mouselayer->ih;
+                {
+                    std::lock_guard<std::mutex> lock(duplay->decresult_mutex);
+                    duplay->decresult->width = mainmix->mouselayer->iw;
+                    duplay->decresult->height = mainmix->mouselayer->ih;
+                }
                 duplay->vidformat = mainmix->mouselayer->vidformat;
             }
             duplay->shiftx->value = mainmix->mouselayer->shiftx->value;
@@ -4750,7 +4793,7 @@ void Program::handle_laymenu1() {
             duplay->revbut->value = mainmix->mouselayer->revbut->value;
             duplay->bouncebut->value = mainmix->mouselayer->bouncebut->value;
             duplay->genmidibut->value = mainmix->mouselayer->genmidibut->value;
-            duplay->frame = mainmix->mouselayer->frame;
+            duplay->frame = mainmix->mouselayer->frame.load();
             duplay->startframe->value = mainmix->mouselayer->startframe->value;
             duplay->endframe->value = mainmix->mouselayer->endframe->value;
             //duplay->isduplay = mainmix->mouselayer;
@@ -4807,7 +4850,10 @@ void Program::handle_laymenu1() {
 				ilBindImage(mainmix->mouselayer->boundimage);
 				ilActiveImage((int)mainmix->mouselayer->frame);
 				mainmix->mouselayer->set_aspectratio(ilGetInteger(IL_IMAGE_WIDTH), ilGetInteger(IL_IMAGE_HEIGHT));
-				mainmix->mouselayer->decresult->newdata = true;
+				{
+					std::lock_guard<std::mutex> lock(mainmix->mouselayer->decresult_mutex);
+					mainmix->mouselayer->decresult->newdata = true;
+				}
 			}
 			else {
                 if (mainmix->mouselayer->video_dec_ctx) {
@@ -5759,7 +5805,19 @@ void Program::handle_optionmenu() {
     k = mainprogram->handle_menu(mainprogram->optionmenu);
     if (k > -1) {
         mainmix->mouseparam->oldvalue = mainmix->mouseparam->value;
-        mainmix->mouseparam->value = k;
+        if (mainmix->mouseparam->type == FF_TYPE_OPTION) {
+            mainmix->mouseparam->value = k;
+        }
+        else if (mainmix->mouseparam->type == ISFLoader::PARAM_LONG) {
+            int cnt = 0;
+            for (auto it : mainmix->mouseparam->isfoptions) {
+                if (cnt == k) {
+                    mainmix->mouseparam->value = it.first;
+                    break;
+                }
+                cnt++;
+            }
+        }
         // UNDO registration
         mainprogram->register_undo(mainmix->mouseparam, nullptr);
     }
@@ -8151,8 +8209,13 @@ void Project::save(std::string path, bool autosave, bool undo, bool nocheck) {
 	filestoadd2.push_back(filestoadd);
     std::string tcppath = mainprogram->temppath + "tempconcatproject_" + "_" + std::to_string(mainprogram->concatsuffix++);
 
+    int concat_count;
+    {
+        std::lock_guard<std::mutex> lock(mainprogram->concatlock);
+        concat_count = mainprogram->concatting++;
+    }
     std::thread concat = std::thread(&Program::concat_files, mainprogram, tcppath,
-                                     str, filestoadd2, mainprogram->concatting++, false);
+                                     str, filestoadd2, concat_count, false);
     concat.detach();
 
 	if (!autosave && !undo) {
@@ -9974,37 +10037,43 @@ void Program::socket_server(struct sockaddr_in serv_addr, int opt) {
         std::cout << "DEBUG: Successfully bound socket to port 8000" << std::endl;
     }
 
-    // Try to set up UPnP port forwarding
-    std::cout << "=== Attempting UPnP Port Forwarding ===" << std::endl;
-    this->upnpMapper = new UPnPPortMapper();
+    // Try to set up UPnP port forwarding (upnpMapper created during startup)
+    {
+        std::lock_guard<std::mutex> lock(this->upnpMutex);
+        if (this->upnpMapper) {
+            std::cout << "=== Attempting UPnP Port Forwarding ===" << std::endl;
 
-    if (this->upnpMapper->discoverGateway()) {
-        // Gateway found, try to add port mapping
-        bool upnp_success = this->upnpMapper->addPortMapping(
-            8000,  // External port
-            8000,  // Internal port
-            "TCP",  // Protocol
-            "EWOCvj2 Media Bin Sharing",  // Description
-            0  // Lease duration (0 = permanent)
-        );
+            if (this->upnpMapper->discoverGateway()) {
+                // Gateway found, try to add port mapping
+                bool upnp_success = this->upnpMapper->addPortMapping(
+                    8000,  // External port
+                    8000,  // Internal port
+                    "TCP",  // Protocol
+                    "EWOCvj2 Media Bin Sharing",  // Description
+                    0  // Lease duration (0 = permanent)
+                );
 
-        if (upnp_success) {
-            // Get and display external IP
-            std::string external_ip = this->upnpMapper->getExternalIP();
-            if (!external_ip.empty()) {
-                std::cout << "=== UPnP SUCCESS ===" << std::endl;
-                std::cout << "External clients can connect to: " << external_ip << ":8000" << std::endl;
-                std::cout << "===================" << std::endl;
+                if (upnp_success) {
+                    // Get and display external IP
+                    std::string external_ip = this->upnpMapper->getExternalIP();
+                    if (!external_ip.empty()) {
+                        std::cout << "=== UPnP SUCCESS ===" << std::endl;
+                        std::cout << "External clients can connect to: " << external_ip << ":8000" << std::endl;
+                        std::cout << "===================" << std::endl;
+                    }
+                } else {
+                    std::cout << "UPnP: Port mapping failed - " << this->upnpMapper->getLastError() << std::endl;
+                    std::cout << "Manual port forwarding may be required for external connections" << std::endl;
+                }
+            } else {
+                std::cout << "UPnP: No gateway found or UPnP disabled on router" << std::endl;
+                std::cout << "Manual port forwarding required for external connections" << std::endl;
             }
+            std::cout << "========================================" << std::endl;
         } else {
-            std::cout << "UPnP: Port mapping failed - " << this->upnpMapper->getLastError() << std::endl;
-            std::cout << "Manual port forwarding may be required for external connections" << std::endl;
+            std::cout << "UPnP: Port mapper not initialized" << std::endl;
         }
-    } else {
-        std::cout << "UPnP: No gateway found or UPnP disabled on router" << std::endl;
-        std::cout << "Manual port forwarding required for external connections" << std::endl;
     }
-    std::cout << "========================================" << std::endl;
 
     while (1) {
         ret = listen(this->sock, 3);
@@ -10034,10 +10103,17 @@ void Program::socket_server(struct sockaddr_in serv_addr, int opt) {
             continue;
         }
 
-        mainprogram->connsockets.push_back(new_socket);
+        {
+            std::lock_guard<std::mutex> lock(mainprogram->clientmutex);
+            mainprogram->connsockets.push_back(new_socket);
+        }
 
         // send number of clients for choosing unique osc address
-        std::string clientCount = std::to_string(mainprogram->connsockets.size());
+        std::string clientCount;
+        {
+            std::lock_guard<std::mutex> lock(mainprogram->clientmutex);
+            clientCount = std::to_string(mainprogram->connsockets.size());
+        }
         std::cout << "DEBUG: Server sending client count: " << clientCount << std::endl;
         send(new_socket, clientCount.c_str(), clientCount.length(), 0);
         //get new socket name
@@ -10057,33 +10133,41 @@ void Program::socket_server(struct sockaddr_in serv_addr, int opt) {
             continue;
         }
         std::cout << "DEBUG: Server received client name: '" << std::string(name) << "'" << std::endl;
-        
-        // Check if this client name already exists
+
+        // Check if this client name already exists and add new connection (protected by mutex)
         std::string clientName(name);
-        auto existingClient = mainprogram->connmap.find(clientName);
-        if (existingClient != mainprogram->connmap.end()) {
-            std::cout << "DEBUG: Client '" << clientName << "' already connected, removing old connection" << std::endl;
-            
-            // Remove the old connection
-            SOCKET oldSocket = existingClient->second;
-            auto oldSocketIt = std::find(mainprogram->connsockets.begin(), mainprogram->connsockets.end(), oldSocket);
-            if (oldSocketIt != mainprogram->connsockets.end()) {
-                int oldPos = oldSocketIt - mainprogram->connsockets.begin();
-                mainprogram->connsockets.erase(oldSocketIt);
-                if (oldPos < mainprogram->connsocknames.size()) {
-                    mainprogram->connsocknames.erase(mainprogram->connsocknames.begin() + oldPos);
+        SOCKET oldSocket = -1;
+        {
+            std::lock_guard<std::mutex> lock(mainprogram->clientmutex);
+            auto existingClient = mainprogram->connmap.find(clientName);
+            if (existingClient != mainprogram->connmap.end()) {
+                std::cout << "DEBUG: Client '" << clientName << "' already connected, removing old connection" << std::endl;
+
+                // Remove the old connection
+                oldSocket = existingClient->second;
+                auto oldSocketIt = std::find(mainprogram->connsockets.begin(), mainprogram->connsockets.end(), oldSocket);
+                if (oldSocketIt != mainprogram->connsockets.end()) {
+                    int oldPos = oldSocketIt - mainprogram->connsockets.begin();
+                    mainprogram->connsockets.erase(oldSocketIt);
+                    if (oldPos < mainprogram->connsocknames.size()) {
+                        mainprogram->connsocknames.erase(mainprogram->connsocknames.begin() + oldPos);
+                    }
                 }
+            }
+
+            mainprogram->connsocknames.push_back(name);
+            mainprogram->connmap[clientName] = new_socket;
+        }
+
+        // Close old socket outside mutex to avoid blocking
+        if (oldSocket != (SOCKET)-1) {
 #ifdef POSIX
-                close(oldSocket);
+            close(oldSocket);
 #endif
 #ifdef WINDOWS
-                closesocket(oldSocket);
+            closesocket(oldSocket);
 #endif
-            }
         }
-        
-        mainprogram->connsocknames.push_back(name);
-        mainprogram->connmap[clientName] = new_socket;
         //send server name to client
         std::cout << "DEBUG: Server sending seat name: " << mainprogram->seatname << std::endl;
         send(new_socket, mainprogram->seatname.c_str(), mainprogram->seatname.size(), 0);
@@ -10273,7 +10357,10 @@ void Program::socket_client(struct sockaddr_in serv_addr, int opt) {
             }
             buf = recv_result;
             std::cout << "DEBUG: Received server name: '" << std::string(buf) << "'" << std::endl;
-            this->connsocknames.push_back(buf);
+            {
+                std::lock_guard<std::mutex> lock(this->clientmutex);
+                this->connsocknames.push_back(buf);
+            }
             this->connected = 1;
             this->prefs->save();
             std::cout << "DEBUG: Connection successful!" << std::endl;
@@ -10399,7 +10486,10 @@ void Program::socket_client(struct sockaddr_in serv_addr, int opt) {
                         send(this->sock, this->seatname.c_str(), this->seatname.length(), 0);
                         handshake_result = bl_recv(this->sock, handshake_buf, 1023, 0);
                         if (handshake_result) {
-                            this->connsocknames.push_back(handshake_buf);
+                            {
+                                std::lock_guard<std::mutex> lock(this->clientmutex);
+                                this->connsocknames.push_back(handshake_buf);
+                            }
                             this->connected = 1;
                             reconnected = true;
                             std::cout << "DEBUG: Successfully reconnected to original server" << std::endl;
@@ -10466,7 +10556,10 @@ void Program::socket_client(struct sockaddr_in serv_addr, int opt) {
                                 send(this->sock, this->seatname.c_str(), this->seatname.length(), 0);
                                 handshake_result = bl_recv(this->sock, handshake_buf, 1023, 0);
                                 if (handshake_result) {
-                                    this->connsocknames.push_back(handshake_buf);
+                                    {
+                                        std::lock_guard<std::mutex> lock(this->clientmutex);
+                                        this->connsocknames.push_back(handshake_buf);
+                                    }
                                     this->connected = 1;
                                     this->serverip = seat.ip;
                                     reconnected = true;
@@ -10565,7 +10658,10 @@ void Program::socket_client(struct sockaddr_in serv_addr, int opt) {
                                         send(this->sock, this->seatname.c_str(), this->seatname.length(), 0);
                                         handshake_result = bl_recv(this->sock, handshake_buf, 1023, 0);
                                         if (handshake_result) {
-                                            this->connsocknames.push_back(handshake_buf);
+                                            {
+                                                std::lock_guard<std::mutex> lock(this->clientmutex);
+                                                this->connsocknames.push_back(handshake_buf);
+                                            }
                                             this->connected = 1;
                                             this->serverip = seat.ip;
                                             reconnected = true;
@@ -11109,24 +11205,27 @@ void Program::socket_server_receive(SOCKET sock) {
                 }
 
                 // Remove this client from all bins' sendtonames lists
-                for (auto bin : binsmain->bins) {
-                    auto sendto_it = std::find(bin->sendtonames.begin(), bin->sendtonames.end(), disconnected_client_name);
-                    if (sendto_it != bin->sendtonames.end()) {
-                        std::cout << "DEBUG: Removing '" << disconnected_client_name << "' from bin '" << bin->name << "' sendtonames" << std::endl;
-                        bin->sendtonames.erase(sendto_it);
+                {
+                    std::lock_guard<std::recursive_mutex> bins_lock(binsmain->binsmutex);
+                    for (auto bin : binsmain->bins) {
+                        auto sendto_it = std::find(bin->sendtonames.begin(), bin->sendtonames.end(), disconnected_client_name);
+                        if (sendto_it != bin->sendtonames.end()) {
+                            std::cout << "DEBUG: Removing '" << disconnected_client_name << "' from bin '" << bin->name << "' sendtonames" << std::endl;
+                            bin->sendtonames.erase(sendto_it);
 
-                        // Count valid recipients (excluding ourselves)
-                        int valid_recipients = 0;
-                        for (const auto& recipient : bin->sendtonames) {
-                            if (recipient != mainprogram->seatname) {
-                                valid_recipients++;
+                            // Count valid recipients (excluding ourselves)
+                            int valid_recipients = 0;
+                            for (const auto& recipient : bin->sendtonames) {
+                                if (recipient != mainprogram->seatname) {
+                                    valid_recipients++;
+                                }
                             }
-                        }
 
-                        // If no valid recipients left, set shared to false
-                        if (valid_recipients == 0) {
-                            std::cout << "DEBUG: Bin '" << bin->name << "' has no more valid recipients, setting shared=false" << std::endl;
-                            bin->shared = false;
+                            // If no valid recipients left, set shared to false
+                            if (valid_recipients == 0) {
+                                std::cout << "DEBUG: Bin '" << bin->name << "' has no more valid recipients, setting shared=false" << std::endl;
+                                bin->shared = false;
+                            }
                         }
                     }
                 }
@@ -12047,7 +12146,12 @@ void Shelf::save(const std::string path, bool undo, bool startsolo) {
 
         std::thread concat;
         if (!startsolo) {
-            concat = std::thread(&Program::concat_files, mainprogram, tpath, path, filestoadd2, mainprogram->concatting++, startsolo);
+            int concat_count;
+            {
+                std::lock_guard<std::mutex> lock(mainprogram->concatlock);
+                concat_count = mainprogram->concatting++;
+            }
+            concat = std::thread(&Program::concat_files, mainprogram, tpath, path, filestoadd2, concat_count, startsolo);
         }
         else {
             concat = std::thread(&Program::concat_files, mainprogram, tpath, path, filestoadd2, 0, startsolo);
@@ -12727,7 +12831,6 @@ void open_thumb(std::string path, GLuint tex) {
     if (result == 0) {
         glBindTexture(GL_TEXTURE_2D, tex);
         glTexImage2D(GL_TEXTURE_2D, 0, GL_RGB, width, height, 0, GL_RGB, GL_UNSIGNED_BYTE, uncbuffer);
-        std::cout << "SUCCESS open_thumb: Loaded texture " << tex << " from: " << path << " (" << width << "x" << height << ")" << std::endl;
     } else {
         std::cout << "ERROR open_thumb: Failed to decompress JPEG data for: " << path << " (tjDecompress2 result=" << result << ")" << std::endl;
         blacken(tex);
@@ -12798,20 +12901,28 @@ void Program::concat_files(std::string ofpath, std::string path, std::vector<std
     path = pathtoplatform(path);
 
     if (!startsolo) {
-        if (mainprogram->concatting >= mainprogram->concatlimit) {
-            if (mainprogram->concatlimit != 0) {
-                this->goconcat = true;
-                this->concatvar.notify_all();
-                mainprogram->concatlimit = 0;
+        {
+            std::lock_guard<std::mutex> lock(this->concatlock);
+            if (mainprogram->concatting >= mainprogram->concatlimit) {
+                if (mainprogram->concatlimit != 0) {
+                    this->goconcat = true;
+                    this->concatvar.notify_all();
+                    mainprogram->concatlimit = 0;
+                }
             }
         }
-        if (mainprogram->concatlimit) {
+        {
             std::unique_lock<std::mutex> lock(this->concatlock);
-            this->concatvar.wait(lock, [&] { return this->goconcat; });
-            lock.unlock();
+            if (mainprogram->concatlimit) {
+                this->concatvar.wait(lock, [&] { return this->goconcat; });
+            }
         }
 
-        while (count > mainprogram->numconcatted) {
+        while (true) {
+            {
+                std::lock_guard<std::mutex> lock(this->concatlock);
+                if (count <= mainprogram->numconcatted) break;
+            }
             Sleep(10);
         }
     }
@@ -12872,6 +12983,7 @@ void Program::concat_files(std::string ofpath, std::string path, std::vector<std
     }
 
     if (!startsolo) {
+        std::lock_guard<std::mutex> lock(this->concatlock);
         mainprogram->concatting--;
         mainprogram->numconcatted++;
         if (mainprogram->concatting == 0) {
@@ -13588,7 +13700,7 @@ void Program::process_audio() {
         this->audioinit = false;
     }
 
-    // init OnsetsDS
+    // init BeatDetektor
     this->beatdet = new BeatDetektor((float)mainprogram->minbpm, (float)mainprogram->minbpm * 2, nullptr);
     this->austarttime = std::chrono::high_resolution_clock::now();
 
@@ -13598,8 +13710,18 @@ void Program::process_audio() {
     double top = 0.0f;
 
     while (true) {
-        if (!this->auinitialized) continue;
+        if (!this->auinitialized) {
+            SDL_Delay(10);
+            continue;
+        }
+
+        if (!this->aubuffer || !this->beatdet) {
+            SDL_Delay(100);
+            continue;
+        }
+
         int bytesRead = SDL_DequeueAudio(this->audeviceid, this->aubuffer, this->aubuffersize);
+
         if (bytesRead > 0) {
             // Store normalized audio samples for FFGL audio buffers
             std::vector<float> audioSamples;
@@ -13633,7 +13755,12 @@ void Program::process_audio() {
 
             // Beat detection processing (original approach)
             this->auoutfloat.clear();
-            for (int i = 0; i < this->auoutsize; i += 2) {
+
+            // FIXED: Loop over actual element count, not byte size!
+            // auout has (fft_size / 2 + 1) = 2049 complex elements for fft_size=4096
+            // auoutsize is in BYTES (16392), but auout only has 2049 elements
+            int fft_output_elements = 2049;  // fft_size / 2 + 1
+            for (int i = 0; i < fft_output_elements; i++) {
                 this->auoutfloat.push_back((float)(this->auout[i][0]));
                 this->auoutfloat.push_back((float)(this->auout[i][1]));
             }
@@ -13711,141 +13838,178 @@ void Program::process_audio() {
             }
 
             // Send both FFT and raw audio data to FFGL plugins
-            for (size_t i = 0; i < this->ffglplugins.size(); ++i) {
-                auto plug = this->ffglplugins[i];
-                for (auto elem : plug->instances) {
-                    auto& instance = reinterpret_cast<const std::shared_ptr<FFGLPluginInstance> &>(elem.second);
-                    if (instance && instance->isInitialized()) {
-                        float bpm = 60.0f / this->beatdet->winning_bpm;
-                        float beatsPerBar = 4.0f;
-                        float barPhase = fmod(this->beatdet->beat_counter / beatsPerBar, 1.0f);
+            // Hold locks to prevent instances from being deleted
+            {
+                std::lock_guard<std::mutex> lock(this->ffglplugins_mutex);
+                for (size_t i = 0; i < this->ffglplugins.size(); ++i) {
+                    auto plug = this->ffglplugins[i];
+                    if (!plug) continue;
 
-                        instance->setBeatInfo(bpm, barPhase);
+                    // Collect strong references to instances while holding the lock
+                    std::vector<std::shared_ptr<FFGLPluginInstance>> instancesCopy;
+                    {
+                        std::lock_guard<std::mutex> instanceLock(plug->instancesMutex_);
+                        for (auto& elem : plug->instances) {
+                            if (auto instance = elem.second.lock()) {
+                                instancesCopy.push_back(instance);
+                            }
+                        }
+                    }
 
-                        // Store FFT data for frequency-based plugins
-                        instance->storeAudioData(fftMagnitudes.data(), fftMagnitudes.size());
+                    // Now process instances without holding the lock (safe because we have strong references)
+                    for (auto& instance : instancesCopy) {
+                        if (instance && instance->isInitialized()) {
+                            float bpm = 60.0f / this->beatdet->winning_bpm;
+                            float beatsPerBar = 4.0f;
+                            float barPhase = fmod(this->beatdet->beat_counter / beatsPerBar, 1.0f);
 
-                        // Store raw audio samples for waveform-based plugins
-                        // Use audioSamples for FFGL (keep original behavior)
-                        instance->storeAudioSamples(audioSamples.data(), audioSamples.size());
+                            instance->setBeatInfo(bpm, barPhase);
+
+                            // Store FFT data for frequency-based plugins
+                            instance->storeAudioData(fftMagnitudes.data(), fftMagnitudes.size());
+
+                            // Store raw audio samples for waveform-based plugins
+                            instance->storeAudioSamples(audioSamples.data(), audioSamples.size());
+                        }
                     }
                 }
             }
 
             // FFT and audio to ISF plugins
-            for (int i = 0; i < mainprogram->isfeffectnames.size() + mainprogram->isfsourcenames.size() + mainprogram->isfmixernames.size(); i++) {
-                auto instancevec = mainprogram->isfinstances[i];
-                for (auto& instance : instancevec) {
-                    auto inputs = instance->getInputInfo();
+            // Hold the lock for the entire duration to prevent instances from being deleted
+            {
+                std::lock_guard<std::mutex> lock(mainprogram->isfinstances_mutex);
+                for (int i = 0; i < mainprogram->isfeffectnames.size() + mainprogram->isfsourcenames.size() + mainprogram->isfmixernames.size(); i++) {
+                    // Check bounds to prevent access violations
+                    if (i >= mainprogram->isfinstances.size()) break;
 
-                    // Check for FFT inputs
-                    bool foundFFT = false;
-                    for (auto input : inputs) {
-                        if (input.type == ISFLoader::INPUT_AUDIO_FFT) {
-                            foundFFT = true;
-                            break;
-                        }
-                    }
-                    if (foundFFT) {
-                        // Store FFT data for audioFFT inputs (thread-safe)
-                        instance->storeAudioFFTData(fftMagnitudes.data(), fftMagnitudes.size());
+                    for (auto& instance : mainprogram->isfinstances[i]) {
+                        if (!instance) continue;  // Skip null instances
 
-                        static int debugCounter = 0;
-                        if (++debugCounter % 100 == 0) {
-                            // Check FFT data range
-                            float fftMin = *std::min_element(fftMagnitudes.begin(), fftMagnitudes.end());
-                            float fftMax = *std::max_element(fftMagnitudes.begin(), fftMagnitudes.end());
-                            std::cout << "FFT range: " << fftMin << " to " << fftMax << std::endl;
+                        auto inputs = instance->getInputInfo();
 
-                            // Check some specific values
-                            std::cout << "First 5 FFT: ";
-                            for (int i = 0; i < 5; i++) std::cout << fftMagnitudes[i] << " ";
-                            std::cout << std::endl;
-                        }
-                    }
-
-                    // Check for audio inputs
-                    bool foundAudio = false;
-                    for (auto input : inputs) {
-                        if (input.type == ISFLoader::INPUT_AUDIO) {
-                            foundAudio = true;
-                            break;
-                        }
-                    }
-                    if (foundAudio) {
-                        // Store stereo audio samples for ISF audio inputs (thread-safe)
-                        instance->storeAudioSamples(stereoAudioForISF.data(), stereoAudioForISF.size());
-
-                        static int debugCounter = 0;
-                        if (++debugCounter % 100 == 0) { // Every 100 frames
-                            std::cout << "Stored ISF audio samples: " << stereoAudioForISF.size() << " samples" << std::endl;
-                        }
-                    }
-                }
-            }
-
-            LoopStation *lpst;
-            int counter = this->beatdet->beat_counter;
-            for (int m = 0; m < 2; ++m) {
-                if (m == 0) {
-                    lpst = lp;
-                } else {
-                    lpst = lpc;
-                }
-                for (auto elem: lpst->elements) {
-                    if (elem->beats) {
-                        int counter2 = counter / elem->beats;
-                        elem->speed->value = elem->totaltime / (1000.0f * this->beatdet->winning_bpm) / elem->beats;
-                        if (top < mainprogram->beatthres->value) {
-                            elem->speed->value = 0.0f;
-                        }
-                        else if (counter2 > this->aubpmcounter / elem->beats) {
-                            elem->speedadaptedtime = this->beatdet->bpm_offset * 1000.0f;
-                            elem->starttime = std::chrono::high_resolution_clock::now() -
-                                              std::chrono::milliseconds((long long) (elem->speedadaptedtime));
-                            elem->interimtime = 0;
-                            elem->eventpos = 0;
-                            elem->atend = false;
-                        }
-                    }
-                }
-            }
-            for (auto lays : mainmix->layers) {
-                for (auto lay : lays) {
-                    if (lay->beats && lay->beatdetbut->value) {
-                        int counter2 = counter / lay->beats;
-                        if (top < std::pow(mainprogram->beatthres->value, 4)) {
-                            // music peak too low: dont switch clip
-                        }
-                        else if (counter2 > this->aubpmcounter / lay->beats) {
-                            lay->displaynextclip = true;
-                        }
-                    }
-                    if (lay->loopbeats) {
-                        float fac = mainmix->deckspeed[!mainprogram->prevmodus][mainmix->mouselayer->deck]->value;
-                        lay->speed->value = sqrt(((lay->endframe->value - lay->startframe->value) * lay->millif) / (1000.0f * this->beatdet->winning_bpm) / lay->loopbeats / (fac * fac));
-                        int counter2 = counter / lay->loopbeats;
-                        if (top < std::pow(mainprogram->beatthres->value, 4)) {
-                            // music peak too low: dont switch clip
-                            lay->speed->value = 0.0f;
-                        }
-                        else if (counter2 > this->aubpmcounter / lay->loopbeats) {
-                            if (lay->playbut->value) {
-                                lay->frame = lay->startframe->value;
-                            } else if (lay->revbut->value) {
-                                lay->frame = lay->startframe->value;
-                            }
-                            if (lay->bouncebut->value == 1) {
-                                lay->frame = lay->startframe->value;
-                            } else if (lay->bouncebut->value == 2) {
-                                lay->frame = lay->endframe->value;
+                        // Check for FFT inputs
+                        bool foundFFT = false;
+                        for (auto input : inputs) {
+                            if (input.type == ISFLoader::INPUT_AUDIO_FFT) {
+                                foundFFT = true;
+                                break;
                             }
                         }
-                        lay->set_clones();
+                        if (foundFFT) {
+                            // Store FFT data for audioFFT inputs (thread-safe)
+                            instance->storeAudioFFTData(fftMagnitudes.data(), fftMagnitudes.size());
+                        }
+
+                        // Check for audio inputs
+                        bool foundAudio = false;
+                        for (auto input : inputs) {
+                            if (input.type == ISFLoader::INPUT_AUDIO) {
+                                foundAudio = true;
+                                break;
+                            }
+                        }
+                        if (foundAudio) {
+                            // Store stereo audio samples for ISF audio inputs (thread-safe)
+                            instance->storeAudioSamples(stereoAudioForISF.data(), stereoAudioForISF.size());
+                        }
                     }
                 }
             }
-            this->aubpmcounter = counter;
+
+            // Loopstation processing
+            if (this->beatdet) {
+                int counter = this->beatdet->beat_counter;
+
+                for (int m = 0; m < 2; ++m) {
+                    LoopStation *lpst = (m == 0) ? lp : lpc;
+                    if (!lpst) continue;
+
+                    // Copy elements vector while holding lock to prevent iterator invalidation
+                    std::vector<LoopStationElement*> elements_copy;
+                    {
+                        std::lock_guard<std::mutex> lock(lpst->elements_mutex);
+                        elements_copy = lpst->elements;
+                    }
+
+                    for (auto elem: elements_copy) {
+                        if (!elem) continue;  // Skip null elements
+
+                        if (elem->beats && elem->speed) {
+                            int counter2 = counter / elem->beats;
+                            elem->speed->value = elem->totaltime / (1000.0f * this->beatdet->winning_bpm) / elem->beats;
+                            if (top < mainprogram->beatthres->value) {
+                                elem->speed->value = 0.0f;
+                            }
+                            else if (counter2 > this->aubpmcounter / elem->beats) {
+                                elem->speedadaptedtime = this->beatdet->bpm_offset * 1000.0f;
+                                elem->starttime = std::chrono::high_resolution_clock::now() -
+                                                  std::chrono::milliseconds((long long) (elem->speedadaptedtime));
+                                elem->interimtime = 0;
+                                elem->eventpos = 0;
+                                elem->atend = false;
+                            }
+                        }
+                    }
+                }
+
+                this->aubpmcounter = counter;
+            }
+
+            // Layers processing
+            if (mainmix && this->beatdet) {
+                int counter = this->beatdet->beat_counter;
+
+                // Copy layers vector while holding lock to prevent iterator invalidation
+                std::vector<std::vector<Layer*>> layers_copy;
+                {
+                    std::lock_guard<std::mutex> lock(mainmix->layers_mutex);
+                    layers_copy = mainmix->layers;
+                }
+
+                for (auto lays : layers_copy) {
+                    for (auto lay : lays) {
+                        if (!lay) continue;  // Skip null layers
+
+                        if (lay->beats && lay->beatdetbut && lay->beatdetbut->value) {
+                            int counter2 = counter / lay->beats;
+                            if (top < std::pow(mainprogram->beatthres->value, 4)) {
+                                // music peak too low: dont switch clip
+                            }
+                            else if (counter2 > this->aubpmcounter / lay->beats) {
+                                lay->displaynextclip = true;
+                            }
+                        }
+                        if (lay->loopbeats) {
+                            // Check mouselayer is valid before dereferencing
+                            if (!mainmix->mouselayer) continue;
+
+                            float fac = mainmix->deckspeed[!mainprogram->prevmodus][mainmix->mouselayer->deck]->value;
+                            if (lay->speed && lay->startframe && lay->endframe) {
+                                lay->speed->value = sqrt(((lay->endframe->value - lay->startframe->value) * lay->millif) / (1000.0f * this->beatdet->winning_bpm) / lay->loopbeats / (fac * fac));
+                            }
+                            int counter2 = counter / lay->loopbeats;
+                            if (top < std::pow(mainprogram->beatthres->value, 4)) {
+                                // music peak too low: dont switch clip
+                                if (lay->speed) lay->speed->value = 0.0f;
+                            }
+                            else if (counter2 > this->aubpmcounter / lay->loopbeats) {
+                                if (lay->playbut && lay->playbut->value && lay->startframe) {
+                                    lay->frame = lay->startframe->value;
+                                } else if (lay->revbut && lay->revbut->value && lay->startframe) {
+                                    lay->frame = lay->startframe->value;
+                                }
+                                if (lay->bouncebut && lay->bouncebut->value == 1 && lay->startframe) {
+                                    lay->frame = lay->startframe->value;
+                                } else if (lay->bouncebut && lay->bouncebut->value == 2 && lay->endframe) {
+                                    lay->frame = lay->endframe->value;
+                                }
+                            }
+                            lay->set_clones();
+                        }
+                    }
+                }
+            }
         } else {
             SDL_Delay(10);
         }

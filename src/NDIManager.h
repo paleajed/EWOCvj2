@@ -35,7 +35,7 @@ struct NDISourceInfo {
     std::string name;
     std::string url;
     std::string ip_address;
-    bool is_available;
+    bool is_available = false;
     int width;
     int height;
     double fps;
@@ -102,7 +102,7 @@ private:
         GLuint pbo[2];
         int current_index;
         GLsync fence[2];
-        bool ready[2];
+        bool ready[2] = {false};
     } download_pbos_;
 
     bool setupDownloadPBOs();

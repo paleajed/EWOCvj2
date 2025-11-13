@@ -148,12 +148,12 @@ class EffectNode: public Node {
 class BlendNode: public Node {
 	public:
 		BLEND_TYPE blendtype = MIXING;
-		Param *mixfac;
+		Param *mixfac = nullptr;
         Layer *layer = nullptr;
-		int wipetype;
-		int wipedir;
-		Param *wipex;
-		Param *wipey;
+		int wipetype = -1;
+		int wipedir = 0;
+		Param *wipex = nullptr;
+		Param *wipey = nullptr;
 		Node *in2 = nullptr;
 		GLuint intex = -1;
 		GLuint in2tex = -1;
@@ -172,7 +172,7 @@ class BlendNode: public Node {
         int numrows = 0;
         std::vector<Param*> ffglparams;
         std::vector<Param*> isfparams;
-        Boxx* mixerbox;
+        Boxx* mixerbox = nullptr;
         void set_ffglmixer(int mixernr);
         void set_isfmixer(int mixernr);
 		BlendNode();

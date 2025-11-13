@@ -26,6 +26,7 @@ class BinElement;
 class BinsMain {
 	public:
 		std::vector<Bin*> bins;
+		std::recursive_mutex binsmutex;  // Protects bins vector from concurrent access (recursive for nested calls)
         Bin *currbin;
         std::vector<std::tuple<Bin*, std::string>> undobins;
         int undopos = 0;
@@ -159,7 +160,7 @@ class Bin {
 		std::string last_message_sender = "";  // Seatname of who sent the last BIN_SENT message (to avoid echo)
 		std::vector<BinElement*> elements;
         std::unordered_set<int> open_positions;
-		int encthreads = 0;
+		std::atomic<int> encthreads{0};
 		int pos;
 		bool shared = false;
         std::string idstr;
@@ -203,7 +204,7 @@ class BinElement {
         bool temp = false;
 		bool encwaiting = false;
 		bool encoding = false;
-		int encthreads = 0;
+		std::atomic<int> encthreads{0};
 		float encodeprogress = 0.0f;
         std::string encodingend;
 		int allhaps = 0;

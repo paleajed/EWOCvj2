@@ -1,6 +1,7 @@
 #include "UPnPPortMapper.h"
 #include <iostream>
 #include <cstring>
+#include <cstdlib>  // For malloc/free
 
 #ifdef _WIN32
 #include <winsock2.h>
@@ -22,10 +23,14 @@
 UPnPPortMapper::UPnPPortMapper()
     : upnp_urls_(nullptr), upnp_data_(nullptr), gateway_found_(false) {
 
-    upnp_urls_ = new UPNPUrls();
-    upnp_data_ = new IGDdatas();
-    memset(upnp_urls_, 0, sizeof(UPNPUrls));
-    memset(upnp_data_, 0, sizeof(IGDdatas));
+    // Use malloc for C structs instead of C++ new to avoid undefined behavior
+    upnp_urls_ = malloc(sizeof(UPNPUrls));
+    upnp_data_ = malloc(sizeof(IGDdatas));
+
+    if (upnp_urls_ && upnp_data_) {
+        memset(upnp_urls_, 0, sizeof(UPNPUrls));
+        memset(upnp_data_, 0, sizeof(IGDdatas));
+    }
 }
 
 UPnPPortMapper::~UPnPPortMapper() {
@@ -39,12 +44,12 @@ void UPnPPortMapper::cleanup() {
     }
 
     if (upnp_urls_) {
-        delete static_cast<UPNPUrls*>(upnp_urls_);
+        free(upnp_urls_);  // Use free to match malloc
         upnp_urls_ = nullptr;
     }
 
     if (upnp_data_) {
-        delete static_cast<IGDdatas*>(upnp_data_);
+        free(upnp_data_);  // Use free to match malloc
         upnp_data_ = nullptr;
     }
 }
@@ -88,8 +93,12 @@ bool UPnPPortMapper::discoverGateway(int timeout_ms) {
     freeUPNPDevlist(devlist);
 
     if (status == 1) {
-        std::cout << "UPnP: Found valid IGD: " <<
-                     static_cast<UPNPUrls*>(upnp_urls_)->controlURL << std::endl;
+        UPNPUrls* urls = static_cast<UPNPUrls*>(upnp_urls_);
+        if (urls->controlURL) {
+            std::cout << "UPnP: Found valid IGD: " << urls->controlURL << std::endl;
+        } else {
+            std::cout << "UPnP: Found valid IGD (no control URL)" << std::endl;
+        }
         std::cout << "UPnP: Local LAN IP: " << lan_addr << std::endl;
         gateway_found_ = true;
         return true;
@@ -134,9 +143,19 @@ bool UPnPPortMapper::addPortMapping(uint16_t external_port,
     snprintf(int_port_str, sizeof(int_port_str), "%u", internal_port);
     snprintf(lease_str, sizeof(lease_str), "%u", lease_duration);
 
+    UPNPUrls* urls = static_cast<UPNPUrls*>(upnp_urls_);
+    IGDdatas* data = static_cast<IGDdatas*>(upnp_data_);
+
+    // Safety check: ensure pointers are valid
+    if (!urls->controlURL || !data->first.servicetype) {
+        last_error_ = "UPnP: Invalid gateway data (null pointers)";
+        std::cout << last_error_ << std::endl;
+        return false;
+    }
+
     int result = UPNP_AddPortMapping(
-        static_cast<UPNPUrls*>(upnp_urls_)->controlURL,
-        static_cast<IGDdatas*>(upnp_data_)->first.servicetype,
+        urls->controlURL,
+        data->first.servicetype,
         ext_port_str,
         int_port_str,
         local_ip_.c_str(),
@@ -169,9 +188,19 @@ bool UPnPPortMapper::removePortMapping(uint16_t external_port, const std::string
     char ext_port_str[16];
     snprintf(ext_port_str, sizeof(ext_port_str), "%u", external_port);
 
+    UPNPUrls* urls = static_cast<UPNPUrls*>(upnp_urls_);
+    IGDdatas* data = static_cast<IGDdatas*>(upnp_data_);
+
+    // Safety check: ensure pointers are valid
+    if (!urls->controlURL || !data->first.servicetype) {
+        last_error_ = "UPnP: Invalid gateway data (null pointers)";
+        std::cout << last_error_ << std::endl;
+        return false;
+    }
+
     int result = UPNP_DeletePortMapping(
-        static_cast<UPNPUrls*>(upnp_urls_)->controlURL,
-        static_cast<IGDdatas*>(upnp_data_)->first.servicetype,
+        urls->controlURL,
+        data->first.servicetype,
         ext_port_str,
         protocol.c_str(),
         nullptr  // Remote host
@@ -196,9 +225,19 @@ std::string UPnPPortMapper::getExternalIP() {
 
     char external_ip[40] = "";
 
+    UPNPUrls* urls = static_cast<UPNPUrls*>(upnp_urls_);
+    IGDdatas* data = static_cast<IGDdatas*>(upnp_data_);
+
+    // Safety check: ensure pointers are valid
+    if (!urls->controlURL || !data->first.servicetype) {
+        last_error_ = "UPnP: Invalid gateway data (null pointers)";
+        std::cout << last_error_ << std::endl;
+        return "";
+    }
+
     int result = UPNP_GetExternalIPAddress(
-        static_cast<UPNPUrls*>(upnp_urls_)->controlURL,
-        static_cast<IGDdatas*>(upnp_data_)->first.servicetype,
+        urls->controlURL,
+        data->first.servicetype,
         external_ip
     );
 
@@ -214,7 +253,7 @@ std::string UPnPPortMapper::getExternalIP() {
 }
 
 std::string UPnPPortMapper::getLocalIP() {
-    std::string local_ip;
+    std::string local_ip = "";
 
 #ifdef _WIN32
     char hostname[256];

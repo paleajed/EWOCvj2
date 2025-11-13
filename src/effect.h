@@ -80,6 +80,7 @@ class Param {
 		std::string name;
         FFUInt32 type = FF_TYPE_STANDARD;
         std::vector<std::string> options;
+		std::map<int, std::string> isfoptions;
         float value = 0.0f;
         float oldvalue = 0.0f;
         std::string valuestr;
@@ -115,7 +116,7 @@ class Effect {
 	public:
 		EFFECT_TYPE type;
 		int pos;
-		Layer *layer;
+		Layer *layer = nullptr;
         GLuint fbo = -1;
         GLuint fbotex = -1;
         GLuint tempfbo = -1;

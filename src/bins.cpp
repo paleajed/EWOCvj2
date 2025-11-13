@@ -817,12 +817,15 @@ void BinsMain::handle(bool draw) {
                         mainprogram->server = false;
                         mainprogram->stop_discovery();
 
-                        // Clean up UPnP port mapping
-                        if (mainprogram->upnpMapper) {
-                            std::cout << "Removing UPnP port mapping..." << std::endl;
-                            mainprogram->upnpMapper->removePortMapping(8000, "TCP");
-                            delete mainprogram->upnpMapper;
-                            mainprogram->upnpMapper = nullptr;
+                        // Clean up UPnP port mapping (thread-safe)
+                        {
+                            std::lock_guard<std::mutex> lock(mainprogram->upnpMutex);
+                            if (mainprogram->upnpMapper) {
+                                std::cout << "Removing UPnP port mapping..." << std::endl;
+                                mainprogram->upnpMapper->removePortMapping(8000, "TCP");
+                                delete mainprogram->upnpMapper;
+                                mainprogram->upnpMapper = nullptr;
+                            }
                         }
                     }
 
@@ -849,13 +852,18 @@ void BinsMain::handle(bool draw) {
         }
     }
 
-    if (mainprogram->connsocknames.size()) {
+    std::vector<std::string> connsockNamesCopy;
+    {
+        std::lock_guard<std::mutex> lock(mainprogram->clientmutex);
+        connsockNamesCopy = mainprogram->connsocknames;
+    }
+    if (!connsockNamesCopy.empty()) {
         box.vtxcoords->x1 = -0.1f;
         box.vtxcoords->y1 = -0.98f;
         box.vtxcoords->w = 0.15f;
         // Build list of clients not already in sendtonames
         std::vector<std::string> available_clients;
-        for (const auto& client : mainprogram->connsocknames) {
+        for (const auto& client : connsockNamesCopy) {
             if (std::find(this->currbin->sendtonames.begin(), this->currbin->sendtonames.end(), client) == this->currbin->sendtonames.end()) {
                 available_clients.push_back(client);
             }
@@ -1274,18 +1282,21 @@ void BinsMain::handle(bool draw) {
 			}
 			else if (k == 3) {
 				// delete bin
-				if (this->currbin->shared) {
-					this->sharedbinnamesmap.erase(this->currbin->name);
-				}
-				mainprogram->remove(this->currbin->path);
-				this->bins.erase(std::find(this->bins.begin(), this->bins.end(), this->currbin));
-				delete this->currbin; //delete textures in destructor
-				if (this->currbin->pos == 0) make_currbin(1);
-				else make_currbin(this->currbin->pos - 1);
-				for (int i = 0; i < this->bins.size(); i++) {
-					if (this->bins[i] == this->currbin) this->currbin->pos = i;
-					this->bins[i]->box->vtxcoords->y1 = (i + 1) * -0.05f;
-					this->bins[i]->box->upvtxtoscr();
+				{
+					std::lock_guard<std::recursive_mutex> bins_lock(this->binsmutex);
+					if (this->currbin->shared) {
+						this->sharedbinnamesmap.erase(this->currbin->name);
+					}
+					mainprogram->remove(this->currbin->path);
+					this->bins.erase(std::find(this->bins.begin(), this->bins.end(), this->currbin));
+					delete this->currbin; //delete textures in destructor
+					if (this->currbin->pos == 0) make_currbin(1);
+					else make_currbin(this->currbin->pos - 1);
+					for (int i = 0; i < this->bins.size(); i++) {
+						if (this->bins[i] == this->currbin) this->currbin->pos = i;
+						this->bins[i]->box->vtxcoords->y1 = (i + 1) * -0.05f;
+						this->bins[i]->box->upvtxtoscr();
+					}
 				}
 			}
 			else if (k == 4) {
@@ -1424,7 +1435,10 @@ void BinsMain::handle(bool draw) {
  		}
 		else if (binelmenuoptions[k] == BET_INSDECKA) {
 			// insert deck A into bin
-			mainprogram->paths.clear();
+			{
+				std::lock_guard<std::mutex> lock(mainprogram->pathmutex);
+				mainprogram->paths.clear();
+			}
 			mainmix->mousedeck = 0;
 			std::string path = find_unused_filename("deckA", mainprogram->project->binsdir + this->currbin->name + "/", ".deck");
             if (mainprogram->prevmodus) {
@@ -1450,7 +1464,10 @@ void BinsMain::handle(bool draw) {
 		}
 		else if (binelmenuoptions[k] == BET_INSDECKB) {
 			// insert deck B into bin
-			mainprogram->paths.clear();
+			{
+				std::lock_guard<std::mutex> lock(mainprogram->pathmutex);
+				mainprogram->paths.clear();
+			}
 			mainmix->mousedeck = 1;
 
             std::string path = find_unused_filename("deckB", mainprogram->project->binsdir + this->currbin->name + "/", ".deck");
@@ -1477,7 +1494,10 @@ void BinsMain::handle(bool draw) {
         }
 		else if (binelmenuoptions[k] == BET_INSMIX) {
 			// insert current mix into bin
-			mainprogram->paths.clear();
+			{
+				std::lock_guard<std::mutex> lock(mainprogram->pathmutex);
+				mainprogram->paths.clear();
+			}
 
             std::string path = find_unused_filename("mix", mainprogram->project->binsdir + this->currbin->name + "/", ".mix");
             if (mainprogram->prevmodus) {
@@ -1792,19 +1812,36 @@ void BinsMain::handle(bool draw) {
 									mainprogram->prelay->enddecodevar.wait(lock2, [&] {return mainprogram->prelay->processed; });
 									mainprogram->prelay->processed = false;
 									lock2.unlock();
-                                    mainprogram->prelay->initialize(lay->decresult->width, lay->decresult->height);
+                                    // Snapshot decresult fields under lock
+                                    int init_w, init_h, compression, width, height;
+                                    size_t size;
+                                    char* data;
+                                    {
+                                        std::lock_guard<std::mutex> lock1(lay->decresult_mutex);
+                                        init_w = lay->decresult->width;
+                                        init_h = lay->decresult->height;
+                                    }
+                                    {
+                                        std::lock_guard<std::mutex> lock2(mainprogram->prelay->decresult_mutex);
+                                        compression = mainprogram->prelay->decresult->compression;
+                                        width = mainprogram->prelay->decresult->width;
+                                        height = mainprogram->prelay->decresult->height;
+                                        size = mainprogram->prelay->decresult->size;
+                                        data = mainprogram->prelay->decresult->data;
+                                    }
+                                    mainprogram->prelay->initialize(init_w, init_h);
 									glActiveTexture(GL_TEXTURE0);
 									glBindTexture(GL_TEXTURE_2D, mainprogram->prelay->texture);
                                     if (mainprogram->prelay->vidformat == 188 || mainprogram->prelay->vidformat == 187) {
-                                        if (mainprogram->prelay->decresult->compression == 187) {
-                                            glCompressedTexSubImage2D(GL_TEXTURE_2D, 0, 0, 0, mainprogram->prelay->decresult->width, mainprogram->prelay->decresult->height, GL_COMPRESSED_RGBA_S3TC_DXT1_EXT, mainprogram->prelay->decresult->size, mainprogram->prelay->decresult->data);
+                                        if (compression == 187) {
+                                            glCompressedTexSubImage2D(GL_TEXTURE_2D, 0, 0, 0, width, height, GL_COMPRESSED_RGBA_S3TC_DXT1_EXT, size, data);
                                         }
-                                        else if (mainprogram->prelay->decresult->compression == 190) {
-                                            glCompressedTexSubImage2D(GL_TEXTURE_2D, 0, 0, 0, mainprogram->prelay->decresult->width, mainprogram->prelay->decresult->height, GL_COMPRESSED_RGBA_S3TC_DXT5_EXT, mainprogram->prelay->decresult->size, mainprogram->prelay->decresult->data);
+                                        else if (compression == 190) {
+                                            glCompressedTexSubImage2D(GL_TEXTURE_2D, 0, 0, 0, width, height, GL_COMPRESSED_RGBA_S3TC_DXT5_EXT, size, data);
                                         }
                                     }
                                     else {
-                                        glTexSubImage2D(GL_TEXTURE_2D, 0, 0, 0, mainprogram->prelay->decresult->width, mainprogram->prelay->decresult->height, GL_BGRA, GL_UNSIGNED_BYTE, mainprogram->prelay->decresult->data);
+                                        glTexSubImage2D(GL_TEXTURE_2D, 0, 0, 0, width, height, GL_BGRA, GL_UNSIGNED_BYTE, data);
                                     }
                                     std::vector<Layer*> layers;
                                     layers.push_back(mainprogram->prelay);
@@ -1823,14 +1860,20 @@ void BinsMain::handle(bool draw) {
 									}
  									if (!binel->encoding) {
 										// show video format
+										int text_w, text_h;
+										{
+											std::lock_guard<std::mutex> lock(mainprogram->prelay->decresult_mutex);
+											text_w = mainprogram->prelay->decresult->width;
+											text_h = mainprogram->prelay->decresult->height;
+										}
 					                   render_text("MOUSEWHEEL searches through file", white, 0.62f, 0.45f, 0.0005f, 0.0008f);
                       					if (mainprogram->prelay->vidformat == 188 || mainprogram->prelay->vidformat == 187) {
 											render_text("HAP", white, box->vtxcoords->x1 + 0.0075f, box->vtxcoords->y1 + box->vtxcoords->h - 0.0225f, 0.0005f, 0.0008f);
-											render_text(std::to_string(mainprogram->prelay->decresult->width) + "x" + std::to_string(mainprogram->prelay->decresult->height), white, box->vtxcoords->x1 + 0.0075f, box->vtxcoords->y1 + box->vtxcoords->h - 0.0675f, 0.0005f, 0.0008f);
+											render_text(std::to_string(text_w) + "x" + std::to_string(text_h), white, box->vtxcoords->x1 + 0.0075f, box->vtxcoords->y1 + box->vtxcoords->h - 0.0675f, 0.0005f, 0.0008f);
 										}
 										else if (mainprogram->prelay->type != ELEM_IMAGE) {
 											render_text("CPU", white, box->vtxcoords->x1 + 0.0075f, box->vtxcoords->y1 + box->vtxcoords->h - 0.0225f, 0.0005f, 0.0008f);
-											render_text(std::to_string(mainprogram->prelay->decresult->width) + "x" + std::to_string(mainprogram->prelay->decresult->height), white, box->vtxcoords->x1 + 0.0075f, box->vtxcoords->y1 + box->vtxcoords->h - 0.0675f, 0.0005f, 0.0008f);
+											render_text(std::to_string(text_w) + "x" + std::to_string(text_h), white, box->vtxcoords->x1 + 0.0075f, box->vtxcoords->y1 + box->vtxcoords->h - 0.0675f, 0.0005f, 0.0008f);
 										}
 									}
 								}
@@ -1856,7 +1899,10 @@ void BinsMain::handle(bool draw) {
 										mainprogram->prelay->effects[0][k]->node->calc = true;
 										mainprogram->prelay->effects[0][k]->node->walked = false;
 									}
-                                    mainprogram->prelay->decresult->newdata = false;
+                                    {
+                                        std::lock_guard<std::mutex> lock(mainprogram->prelay->decresult_mutex);
+                                        mainprogram->prelay->decresult->newdata = false;
+                                    }
                                     mainprogram->prelay->ready = true;
 									while (mainprogram->prelay->ready) {
 										// start decode frame
@@ -1991,7 +2037,10 @@ void BinsMain::handle(bool draw) {
 											mainprogram->prelay->frame = 0.0f;
 										}
 										mainprogram->prelay->prevframe = mainprogram->prelay->frame - 1.0f;
-                                        mainprogram->prelay->decresult->newdata = false;
+                                        {
+                                            std::lock_guard<std::mutex> lock(mainprogram->prelay->decresult_mutex);
+                                            mainprogram->prelay->decresult->newdata = false;
+                                        }
                                         mainprogram->prelay->ready = true;
 										while (mainprogram->prelay->ready) {
 											// start decode frame
@@ -2983,13 +3032,16 @@ void BinsMain::receive_shared_bins() {
         walk += strlen(walk) + 1;
 
         Bin *binis = nullptr;
-        for (Bin *bin: binsmain->bins) {
-			if (this->idtonamemap.count(idstr)) {
-				if (bin->name == this->idtonamemap[idstr] && bin->idstr == idstr) {
-					binis = bin;
-					break;
-				}
-			}
+        {
+            std::lock_guard<std::recursive_mutex> bins_lock(this->binsmutex);
+            for (Bin *bin: binsmain->bins) {
+                if (this->idtonamemap.count(idstr)) {
+                    if (bin->name == this->idtonamemap[idstr] && bin->idstr == idstr) {
+                        binis = bin;
+                        break;
+                    }
+                }
+            }
         }
         if (!binis) {
 	        binis = new_bin(sharename, true);  // Pass shared=true
@@ -3234,14 +3286,17 @@ void BinsMain::receive_shared_textures() {
             goto cleanup;
         }
 
-		for (Bin *bin: binsmain->bins) {
-			if (this->idtonamemap.count(idstr)) {
-				if (bin->name == this->idtonamemap[idstr] && bin->idstr == idstr) {
-					targetbin = bin;
-					break;
-				}
-			}
-		}
+        {
+            std::lock_guard<std::recursive_mutex> bins_lock(this->binsmutex);
+            for (Bin *bin: binsmain->bins) {
+                if (this->idtonamemap.count(idstr)) {
+                    if (bin->name == this->idtonamemap[idstr] && bin->idstr == idstr) {
+                        targetbin = bin;
+                        break;
+                    }
+                }
+            }
+        }
 		if (!targetbin) {
 			targetbin = new_bin(binname, true);  // Pass shared=true
 			targetbin->idstr = idstr;
@@ -3469,14 +3524,17 @@ void BinsMain::receive_shared_files() {
             goto cleanup;
         }
 
-		for (Bin *bin: binsmain->bins) {
-			if (this->idtonamemap.count(idstr)) {
-				if (bin->name == this->idtonamemap[idstr] && bin->idstr == idstr) {
-					targetbin = bin;
-					break;
-				}
-			}
-		}
+        {
+            std::lock_guard<std::recursive_mutex> bins_lock(this->binsmutex);
+            for (Bin *bin: binsmain->bins) {
+                if (this->idtonamemap.count(idstr)) {
+                    if (bin->name == this->idtonamemap[idstr] && bin->idstr == idstr) {
+                        targetbin = bin;
+                        break;
+                    }
+                }
+            }
+        }
 		if (!targetbin) {
 			targetbin = new_bin(binname, true);  // Pass shared=true
 			targetbin->idstr = idstr;
@@ -3798,6 +3856,8 @@ void BinsMain::save_bin(std::string path) {
 }
 
 Bin *BinsMain::new_bin(std::string name, bool shared) {
+	std::lock_guard<std::recursive_mutex> bins_lock(this->binsmutex);
+
 	Bin *bin = new Bin(this->bins.size());
 	this->bins.push_back(bin);
 	bin->pos = this->bins.size() - 1;
@@ -3847,10 +3907,13 @@ int BinsMain::read_binslist() {
 	//check if is binslistfile
 	safegetline(rfile, istring);
 	int currbin = std::stoi(istring);
-	for (int i = 0; i < this->bins.size(); i++) {
-		delete this->bins[i];
+	{
+		std::lock_guard<std::recursive_mutex> bins_lock(this->binsmutex);
+		for (int i = 0; i < this->bins.size(); i++) {
+			delete this->bins[i];
+		}
+		this->bins.clear();
 	}
-	this->bins.clear();
 	while (safegetline(rfile, istring)) {
 		Bin *newbin;
 		if (istring == "ENDOFFILE") break;
@@ -3902,17 +3965,33 @@ void BinsMain::import_bins() {
         mainprogram->shelffileselem++;
         mainprogram->shelffilescount++;
         binsmain->binscount++;
-        if (binsmain->binscount == mainprogram->paths.size()) {
+        size_t pathsSize;
+        {
+            std::lock_guard<std::mutex> lock(mainprogram->pathmutex);
+            pathsSize = mainprogram->paths.size();
+        }
+        if (binsmain->binscount == pathsSize) {
             binsmain->importbins = false;
-            mainprogram->paths.clear();
+            {
+                std::lock_guard<std::mutex> lock(mainprogram->pathmutex);
+                mainprogram->paths.clear();
+            }
         }
     };
 
-    std::string result = mainprogram->deconcat_files(mainprogram->paths[binsmain->binscount]);
+    std::string currentPath;
+    {
+        std::lock_guard<std::mutex> lock(mainprogram->pathmutex);
+        if (binsmain->binscount < mainprogram->paths.size()) {
+            currentPath = mainprogram->paths[binsmain->binscount];
+        }
+    }
+
+    std::string result = mainprogram->deconcat_files(currentPath);
     bool concat = (result != "");
     std::ifstream rfile;
     if (concat) rfile.open(result);
-    else rfile.open(mainprogram->paths[binsmain->binscount]);
+    else rfile.open(currentPath);
     std::string istring;
     safegetline(rfile, istring);
     if (istring != "EWOCvj BINFILE") {
@@ -3920,8 +3999,8 @@ void BinsMain::import_bins() {
         return;
     }
 
-	Bin* bin = binsmain->new_bin(remove_extension(basename(mainprogram->paths[binsmain->binscount])));
-	binsmain->open_bin(mainprogram->paths[binsmain->binscount], bin, true);
+	Bin* bin = binsmain->new_bin(remove_extension(basename(currentPath)));
+	binsmain->open_bin(currentPath, bin, true);
 	std::string path = mainprogram->project->binsdir + bin->name + ".bin";
 	if (binsmain->bins.size() > 20) binsmain->binsscroll++;
     next_bin();
@@ -3949,17 +4028,29 @@ void BinsMain::open_files_bin() {
         }
     }
 
-	if (mainprogram->counting == mainprogram->paths.size()) {
+    size_t pathsSize;
+    std::string str;
+    {
+        std::lock_guard<std::mutex> lock(mainprogram->pathmutex);
+        pathsSize = mainprogram->paths.size();
+        if (mainprogram->counting < pathsSize) {
+            str = mainprogram->paths[mainprogram->counting];
+        }
+    }
+
+	if (mainprogram->counting == pathsSize) {
 		this->currbin->path = mainprogram->project->binsdir + this->currbin->name + ".bin";
 		this->openfilesbin = false;
         mainprogram->pathtexes.clear();
-        mainprogram->paths.clear();
+        {
+            std::lock_guard<std::mutex> lock(mainprogram->pathmutex);
+            mainprogram->paths.clear();
+        }
 		mainprogram->multistage = 0;
 		mainprogram->blocking = false;
 		SDL_SetCursor(SDL_CreateSystemCursor(SDL_SYSTEM_CURSOR_ARROW));
 		return;
 	}
-	std::string str = mainprogram->paths[mainprogram->counting];
 	open_handlefile(str, mainprogram->pathtexes[mainprogram->counting]);
 	mainprogram->counting++;
 }
@@ -4762,6 +4853,7 @@ void BinsMain::clear_undo() {
 }
 
 void BinsMain::undo_redo(char offset) {
+    std::lock_guard<std::recursive_mutex> bins_lock(binsmain->binsmutex);
     for (int i = 0; i < binsmain->bins.size(); i++) {
         if (binsmain->bins[i]->name ==
             std::get<1>(binsmain->undobins[binsmain->undopos + offset])) {

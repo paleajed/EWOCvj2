@@ -243,6 +243,7 @@ public:
 
     // CHANGE: Use plugin's internal instance ID as key
     std::map<FFInstanceID, std::weak_ptr<FFGLPluginInstance>> instances;
+    mutable std::mutex instancesMutex_;  // Protects instances map from concurrent access (mutable for const methods)
 
     // Capabilities
     bool supportsCapability(FFUInt32 capability) const;

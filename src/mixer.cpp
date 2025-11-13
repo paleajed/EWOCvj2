@@ -50,10 +50,6 @@ extern "C" {
 
 
 
-std::mutex databufmutex;
-
-
-
 // BASIC MIXER METHODS
 
 Mixer::Mixer() {
@@ -455,11 +451,18 @@ void Param::handle(bool smallxpad) {
                 thisstr = std::to_string((int) this->value);
             }
         }
-        if (this->type == FF_TYPE_OPTION || this->type == ISFLoader::PARAM_LONG) {
+        if (this->type == FF_TYPE_OPTION) {
             if (this->name != "") {
-                thisstr = this->name + ": " + this->options[this->value];
+                thisstr = this->name + ": " + this->options[(int)this->value];
             } else {
-                thisstr = this->options[this->value];
+                thisstr = this->options[(int)this->value];
+            }
+        }
+        if (this->type == ISFLoader::PARAM_LONG) {
+            if (this->name != "") {
+                thisstr = this->name + ": " + this->isfoptions[(int)this->value];
+            } else {
+                thisstr = this->isfoptions[(int)this->value];
             }
         }
         if (this->type == FF_TYPE_TEXT || this->type == FF_TYPE_FILE) {
@@ -504,7 +507,16 @@ void Param::handle(bool smallxpad) {
                     }
                 } else if (this->type == FF_TYPE_OPTION || this->type == ISFLoader::PARAM_LONG) {
                     if (mainprogram->leftmouse && !mainprogram->menuondisplay) {
-                        mainprogram->make_menu("optionmenu", mainprogram->optionmenu, this->options);
+                        if (this->type == FF_TYPE_OPTION) {
+                            mainprogram->make_menu("optionmenu", mainprogram->optionmenu, this->options);
+                        }
+                        else if (this->type == ISFLoader::PARAM_LONG) {
+                            std::vector<std::string> opts;
+                            for (auto it : this->isfoptions) {
+                                opts.push_back(it.second);
+                            }
+                            mainprogram->make_menu("optionmenu", mainprogram->optionmenu, opts);
+                        }
                         mainprogram->optionmenu->state = 2;
                         mainprogram->optionmenu->menux = mainprogram->mx;
                         mainprogram->optionmenu->menuy = mainprogram->my;
@@ -783,8 +795,10 @@ std::vector<Param*> Param::isfset_parameter_to(ISFLoader::ParamInfo &src, int po
         this->value = this->deflt;
         this->sliding = true;
     } else if (this->type == ISFLoader::PARAM_LONG) {
-        for (auto name: src.labels) {
-            this->options.push_back(name);
+        for (int i = 0; i < src.labels.size(); i++) {
+            auto name = src.labels[i];
+            auto value = src.values[i];
+            this->isfoptions[value] = name;
         }
         this->deflt = src.defaultInt;
         this->value = this->deflt;
@@ -2305,8 +2319,11 @@ ISFEffect::ISFEffect(Layer *lay, int isfnr) {
     }
     auto* shader = mainprogram->isfloader.getShader(this->isfpluginnr);
     auto instance = shader->createInstance();
-    mainprogram->isfinstances[this->isfpluginnr].push_back(instance);
-    this->isfinstancenr = mainprogram->isfinstances[this->isfpluginnr].size() - 1;
+    {
+        std::lock_guard<std::mutex> lock(mainprogram->isfinstances_mutex);
+        mainprogram->isfinstances[this->isfpluginnr].push_back(instance);
+        this->isfinstancenr = mainprogram->isfinstances[this->isfpluginnr].size() - 1;
+    }
 
     // get parameters
     this->numrows = 1;
@@ -2491,10 +2508,16 @@ void Layer::delete_effect(int pos, bool connect) {
 
     if (effect->ffglnr != -1) {
         auto shader = mainprogram->ffgleffectplugins[effect->ffglnr];
-        shader->releaseInstance(
-                reinterpret_cast<const std::shared_ptr<FFGLPluginInstance> &>(shader->instances[effect->ffglinstancenr]));
+        std::shared_ptr<FFGLPluginInstance> instance;
+        {
+            std::lock_guard<std::mutex> lock(shader->instancesMutex_);
+            instance = reinterpret_cast<const std::shared_ptr<FFGLPluginInstance> &>(shader->instances[effect->ffglinstancenr]);
+        }
+        shader->releaseInstance(instance);
     }
     if (effect->isfnr != -1) {
+        // Lock to prevent audio thread from accessing this instance
+        std::lock_guard<std::mutex> lock(mainprogram->isfinstances_mutex);
         auto shader = mainprogram->isfloader.getShader(effect->isfpluginnr);
         shader->releaseInstance(mainprogram->isfinstances[effect->isfpluginnr][effect->isfinstancenr]);
     }
@@ -2537,7 +2560,10 @@ Layer* Mixer::add_layer(std::vector<Layer*> &layers, int pos) {
 
 	layer->pos = pos;
 
-    layers.insert(layers.begin() + pos, layer);
+    {
+        std::lock_guard<std::mutex> lock(mainmix->layers_mutex);
+        layers.insert(layers.begin() + pos, layer);
+    }
 
     BlendNode *bnode = mainprogram->nodesmain->currpage->add_blendnode(MIXING, comp);
     bnode->layer = layer;
@@ -2585,10 +2611,13 @@ void Mixer::do_deletelay(Layer *testlay, std::vector<Layer*> &layers, bool add) 
     }
 
     int size = layers.size();
-    for (int i = 0; i < size; i++) {
-        if (layers[i] == testlay) {
-            layers.erase(layers.begin() + i);
-            break;
+    {
+        std::lock_guard<std::mutex> lock(mainmix->layers_mutex);
+        for (int i = 0; i < size; i++) {
+            if (layers[i] == testlay) {
+                layers.erase(layers.begin() + i);
+                break;
+            }
         }
     }
 
@@ -3181,10 +3210,15 @@ Layer::~Layer() {
     if (this->blendnode) {
         if (this->blendnode->ffglmixernr != -1) {
             auto shader = mainprogram->ffglmixerplugins[this->blendnode->ffglmixernr];
-            shader->releaseInstance(
-                    reinterpret_cast<const std::shared_ptr<FFGLPluginInstance> &>(shader->instances[this->blendnode->ffglinstancenr]));
+            std::shared_ptr<FFGLPluginInstance> instance;
+            {
+                std::lock_guard<std::mutex> lock(shader->instancesMutex_);
+                instance = reinterpret_cast<const std::shared_ptr<FFGLPluginInstance> &>(shader->instances[this->blendnode->ffglinstancenr]);
+            }
+            shader->releaseInstance(instance);
         }
         if (this->blendnode->isfmixernr != -1) {
+            std::lock_guard<std::mutex> lock(mainprogram->isfinstances_mutex);
             auto shader = mainprogram->isfloader.getShader(this->blendnode->isfpluginnr);
             shader->releaseInstance(mainprogram->isfinstances[this->blendnode->isfpluginnr][this->blendnode->isfinstancenr]);
         }
@@ -3206,10 +3240,15 @@ Layer::~Layer() {
     // release instance if ffgl/isf generator
     if (this->ffglsourcenr != -1) {
         auto shader = mainprogram->ffglsourceplugins[this->ffglsourcenr];
-        shader->releaseInstance(
-                reinterpret_cast<const std::shared_ptr<FFGLPluginInstance> &>(shader->instances[this->ffglinstancenr]));
+        std::shared_ptr<FFGLPluginInstance> instance;
+        {
+            std::lock_guard<std::mutex> lock(shader->instancesMutex_);
+            instance = reinterpret_cast<const std::shared_ptr<FFGLPluginInstance> &>(shader->instances[this->ffglinstancenr]);
+        }
+        shader->releaseInstance(instance);
     }
     if (this->isfsourcenr != -1) {
+        std::lock_guard<std::mutex> lock(mainprogram->isfinstances_mutex);
         auto shader = mainprogram->isfloader.getShader(this->isfpluginnr);
         shader->releaseInstance(mainprogram->isfinstances[this->isfpluginnr][this->isfinstancenr]);
     }
@@ -3268,6 +3307,7 @@ Layer::~Layer() {
         if ((this->type == ELEM_FILE || this->type == ELEM_LAYER)) {
             if ((this->vidformat == 188 || this->vidformat == 187)) {
                 // free HAP databuf
+                std::lock_guard<std::mutex> lock(this->databuf_mutex);
                 if (this->databuf[0]) {
                     delete this->databuf[0];
                     delete this->databuf[1];
@@ -3305,8 +3345,11 @@ Layer::~Layer() {
 
     sws_freeContext(this->sws_ctx);
 
-    if (this->video_dec_ctx) {
-        avcodec_free_context(&this->video_dec_ctx);
+    {
+        std::lock_guard<std::mutex> lock(this->video_dec_ctx_mutex);
+        if (this->video_dec_ctx) {
+            avcodec_free_context(&this->video_dec_ctx);
+        }
     }
     if (this->video) {
         avformat_close_input(&this->video);
@@ -3345,20 +3388,29 @@ Layer* Layer::prev() {
 // LAYER PROPERTIES
 
 bool Layer::initialize(int w, int h) {
-    bool succes = this->initialize(w, h, this->decresult->compression);
+    int compression;
+    {
+        std::lock_guard<std::mutex> lock(this->decresult_mutex);
+        compression = this->decresult->compression;
+    }
+    bool succes = this->initialize(w, h, compression);
     return succes;
 }
 
 bool Layer::initialize(int w, int h, int compression) {
     if (this->vidopen) return false;
-    if (this->decresult->size == 0) {
+    int bsize;
+    {
+        std::lock_guard<std::mutex> lock(this->decresult_mutex);
+        bsize = this->decresult->size;
+    }
+    if (bsize == 0) {
         return false;
     }
 
     if (!this->nonewpbos) {
         // map three buffers persistently for pixel transfer from cpu to gpu
         // using double PBOs for DMA pixel transfer
-        int bsize = this->decresult->size;
         if (bsize < 0) {
             return false;
         }
@@ -3441,7 +3493,10 @@ bool Layer::initialize(int w, int h, int compression) {
     this->oldvidformat = this->vidformat;
 	this->oldcompression = compression;
 	this->oldtype = this->type;
-    this->decresult->newdata = false;
+	{
+		std::lock_guard<std::mutex> lock(this->decresult_mutex);
+		this->decresult->newdata = false;
+	}
 	this->initialized = true;
 
     return true;
@@ -3494,7 +3549,10 @@ void Layer::set_aspectratio(int lw, int lh) {
     this->tempfbotex = tex;
 
     if (this->type == ELEM_IMAGE || this->type == ELEM_LIVE) {
-		if (this->numf == 0) this->decresult->newdata = true;
+		if (this->numf == 0) {
+			std::lock_guard<std::mutex> lock(this->decresult_mutex);
+			this->decresult->newdata = true;
+		}
 	}
 }
 
@@ -3514,7 +3572,13 @@ std::vector<float> Layer::get_inside_offsets(int w, int h) {
         frac = (float)ilGetInteger(IL_IMAGE_WIDTH) / (float)ilGetInteger(IL_IMAGE_HEIGHT);
     }
     else if (this->type != ELEM_LIVE){
-        frac = (float)(this->decresult->width) / (float)(this->decresult->height);
+        int width, height;
+        {
+            std::lock_guard<std::mutex> lock(this->decresult_mutex);
+            width = this->decresult->width;
+            height = this->decresult->height;
+        }
+        frac = (float)(width) / (float)(height);
     }
     /*if (this->dummy) {
         frac = (float)(this->video_dec_ctx->width) / (float)(this->video_dec_ctx->height);
@@ -3630,7 +3694,7 @@ void Layer::set_clones(int clsnr, bool open) {
             lay->revbut->value = this->revbut->value;
             lay->bouncebut->value = this->bouncebut->value;
             lay->genmidibut->value = this->genmidibut->value;
-            lay->frame = this->frame;
+            lay->frame = this->frame.load();
             lay->startframe->value = this->startframe->value;
             lay->endframe->value = this->endframe->value;
             lay->vidformat = this->vidformat;
@@ -4386,207 +4450,6 @@ int encode_frame(AVFormatContext *fmtctx, AVFormatContext *srcctx, AVCodecContex
    	return got_frame;
 }
 
-static int decode_packet(Layer *lay, bool show)
-{
-    int ret = 0;
-    int decoded = lay->decpkt->size;
-    if (lay->closethread) return 0;
-	if (lay->decpkt->stream_index == lay->video_stream_idx) {
-		/* decode video frame */
-		int err2 = 0;
-		if (!lay->vidopen) {
-            int err1 = avcodec_send_packet(lay->video_dec_ctx, lay->decpkt);
-            if (err1 == AVERROR_INVALIDDATA) {
-                av_packet_unref(lay->decpkt);
-                return 0;
-            }
-            else {
-                err2 = avcodec_receive_frame(lay->video_dec_ctx, lay->decframe);
-                if (err2 < 0) {
-                }
-                if (err2 == AVERROR(EAGAIN) || err2 == AVERROR_INVALIDDATA) {
-                    av_packet_unref(lay->decpkt);
-                    return -1;  // Need more packets
-                }
-            }
-            if (err2 == AVERROR(EINVAL)) {
-                fprintf(stdout, "Error decoding video frame (%s)\n", 0);
-                return 0;
-            }
-            if (err2 == AVERROR_EOF) {
-                avcodec_flush_buffers(lay->video_dec_ctx);
-                return 0;
-            }
-            if (show) {
-				/* copy decoded frame to destination buffer:
-				 * this is required since rawvideo expects non aligned data */
-				int h = sws_scale
-				(
-					lay->sws_ctx,
-                    lay->decframe->data,
-					lay->decframe->linesize,
-					0,
-					lay->video_dec_ctx->height,
-					lay->rgbframe->data,
-					lay->rgbframe->linesize
-				);
-				if (h < 1) {
-				    return 0;
-				}
-				lay->decresult->hap = false;
-                lay->decresult->data = (char*)lay->rgbframe->data[0];
-                lay->decresult->height = lay->video_dec_ctx->height;
-                lay->decresult->width = lay->video_dec_ctx->width;
-                lay->decresult->size = lay->rgbframe->linesize[0] * lay->decresult->height;
-                lay->decresult->newdata = true;
-				if (lay->clonesetnr != -1) {
-					std::unordered_set<Layer*>::iterator it;
-					for (it = mainmix->clonesets[lay->clonesetnr]->begin(); it != mainmix->clonesets[lay->clonesetnr]->end(); it++) {
-						Layer* clay = *it;
-						if (clay == lay) continue;
-						clay->decresult->newdata = true;
-					}
-				}
-			}
-		}
-	}
-    else if (lay->decpkt->stream_index == lay->audio_stream_idx) {
-        // Check if audio decoder context is properly initialized
-        if (!lay->audio_dec_ctx) {
-            printf("ERROR: audio_dec_ctx is null for stream %d, skipping audio packet\n", lay->decpkt->stream_index);
-            return decoded;
-        }
-        
-        lay->audio_packet_count++;
-        printf("Processing audio packet #%d in decode_packet, stream %d, pts=%lld\n",
-               lay->audio_packet_count, lay->decpkt->stream_index, lay->decpkt->pts);
-
-        // Skip duplicate packets with same PTS
-        if (lay->decpkt->pts == lay->last_audio_pts) {
-            printf("SKIPPING duplicate audio packet with same PTS %lld\n", lay->decpkt->pts);
-            return decoded;
-        }
-        lay->last_audio_pts = lay->decpkt->pts;
-        /* decode audio frame */
-		int err2 = 0;
-		int nsam = 0;
-		while (1) {
-			int err1 = avcodec_send_packet(lay->audio_dec_ctx, lay->decpkt);
-            if (err1 == AVERROR_INVALIDDATA) {
-                av_packet_unref(lay->decpkt);
-                av_read_frame(lay->video, lay->decpkt);
-                continue;
-            }
-            else {
-                err2 = avcodec_receive_frame(lay->audio_dec_ctx, lay->decframe);
-                if (err2 == AVERROR_EOF) {
-                    printf("Audio decoder EOF - flushing and continuing\n");
-                    avcodec_flush_buffers(lay->audio_dec_ctx);
-                    break; // Exit the loop and try with next packet
-                }
-                if (err2 >= 0) {
-                    nsam += lay->decframe->nb_samples;
-                }
-                if (err2 == AVERROR(EAGAIN) || err2 == AVERROR_INVALIDDATA) {
-                    av_packet_unref(lay->decpkt);
-                    av_read_frame(lay->video, lay->decpkt);
-                    continue;
-                }
-            }
-			break;
-		}
-		if (err2 == AVERROR(EINVAL)) {
-			fprintf(stdout, "Error decoding audio frame (%s)\n", 0);
-			printf("codec %d", lay->decpkt);
-			return ret;
-		}
-		/* Some audio decoders decode only part of the packet, and have to be
-         * called again with the remainder of the packet data.
-         * Sample: fate-suite/lossless-audio/luckynight-partial.shn
-         * Also, some decoders might over-read the packet. */
-        //decoded = FFMIN(ret, lay->decpkt->size);
-        
-        // Process the decoded audio data and add to snippets queue
-        if (err2 >= 0 && lay->decframe->nb_samples > 0) {
-            char *snippet = nullptr;
-            int ps;
-            
-            int bytes_per_sample = av_get_bytes_per_sample(lay->audio_dec_ctx->sample_fmt);
-            bool is_planar = av_sample_fmt_is_planar(lay->audio_dec_ctx->sample_fmt);
-            bool convert_to_16bit = (lay->audio_dec_ctx->sample_fmt == AV_SAMPLE_FMT_FLT || 
-                                   lay->audio_dec_ctx->sample_fmt == AV_SAMPLE_FMT_FLTP ||
-                                   lay->audio_dec_ctx->sample_fmt == AV_SAMPLE_FMT_S32 ||
-                                   lay->audio_dec_ctx->sample_fmt == AV_SAMPLE_FMT_S32P);
-
-            printf("Processing audio in decode_packet: samples=%d, format=%d, planar=%d, channels=%d, bytes_per_sample=%d\n",
-                   lay->decframe->nb_samples, lay->audio_dec_ctx->sample_fmt, is_planar, lay->channels, bytes_per_sample);
-
-            // Always output as 16-bit for compatibility
-            ps = lay->decframe->nb_samples * lay->channels * 2; // 2 bytes per 16-bit sample
-            snippet = new char[ps];
-            int16_t* out16 = (int16_t*)snippet;
-            
-            if (convert_to_16bit && is_planar && lay->channels > 1) {
-                // Convert 32-bit float planar to 16-bit interleaved
-                for (int sample = 0; sample < lay->decframe->nb_samples; sample++) {
-                    for (int channel = 0; channel < lay->channels; channel++) {
-                        float* float_data = (float*)lay->decframe->extended_data[channel];
-                        float sample_val = float_data[sample];
-                        // Clamp and convert float [-1.0, 1.0] to int16 [-32768, 32767]
-                        sample_val = fmaxf(-1.0f, fminf(1.0f, sample_val));
-                        out16[sample * lay->channels + channel] = (int16_t)(sample_val * 32767.0f);
-                    }
-                }
-            } else if (convert_to_16bit && !is_planar) {
-                // Convert 32-bit float packed to 16-bit
-                float* float_data = (float*)lay->decframe->extended_data[0];
-                for (int i = 0; i < lay->decframe->nb_samples * lay->channels; i++) {
-                    float sample_val = float_data[i];
-                    sample_val = fmaxf(-1.0f, fminf(1.0f, sample_val));
-                    out16[i] = (int16_t)(sample_val * 32767.0f);
-                }
-            } else if (is_planar && lay->channels > 1) {
-                // For other planar formats, interleave channels
-                for (int sample = 0; sample < lay->decframe->nb_samples; sample++) {
-                    for (int channel = 0; channel < lay->channels; channel++) {
-                        memcpy(snippet + (sample * lay->channels + channel) * 2,
-                               lay->decframe->extended_data[channel] + sample * 2,
-                               2);
-                    }
-                }
-            } else {
-                // For packed formats, copy directly
-                memcpy(snippet, lay->decframe->extended_data[0], ps);
-            }
-
-            // Debug: show first few bytes of audio data to see if it's changing
-            printf("Audio data sample: %02x %02x %02x %02x %02x %02x %02x %02x\n",
-                   (unsigned char)snippet[0], (unsigned char)snippet[1],
-                   (unsigned char)snippet[2], (unsigned char)snippet[3],
-                   (unsigned char)snippet[4], (unsigned char)snippet[5],
-                   (unsigned char)snippet[6], (unsigned char)snippet[7]);
-
-            // Thread-safely add to audio queue
-            {
-                std::lock_guard<std::mutex> audioLock(lay->chunklock);
-                lay->pslens.push_back(ps);
-                lay->snippets.push_back(snippet);
-                printf("Audio snippet added in decode_packet, queue size: %zu, ps: %d\n", lay->snippets.size(), ps);
-            }
-            
-            // Signal the audio thread
-            lay->chready = true;
-            lay->newchunk.notify_all();
-        }
-        
-		return nsam;
-    }
-
- 	//av_frame_unref(lay->decframe);
-
-	return decoded;
-}
-
 static int decode_video_packet(Layer *lay, bool show) {
     // Video decoding logic extracted from decode_packet
     int ret = 0;
@@ -4595,21 +4458,25 @@ static int decode_video_packet(Layer *lay, bool show) {
     
     // Only process video packets
     if (lay->decpkt->stream_index != lay->video_stream_idx) return 0;
-    
-    /* decode video frame */
-    // Re-send extradata after flush
-    if (lay->video_stream->codecpar->extradata_size > 0) {
-        AVPacket *extradata_pkt = av_packet_alloc();
-        extradata_pkt->data = lay->video_stream->codecpar->extradata;
-        extradata_pkt->size = lay->video_stream->codecpar->extradata_size;
-        avcodec_send_packet(lay->video_dec_ctx, extradata_pkt);
-        av_packet_free(&extradata_pkt);
-    }
-    
-    int err2 = 0;
-    if (!lay->vidopen) {
-        // Correct EAGAIN handling for FFmpeg decode API
-        int err1 = avcodec_send_packet(lay->video_dec_ctx, lay->decpkt);
+
+    {
+        // Protect video_dec_ctx access
+        std::lock_guard<std::mutex> lock(lay->video_dec_ctx_mutex);
+
+        /* decode video frame */
+        // Re-send extradata after flush
+        if (lay->video_stream->codecpar->extradata_size > 0) {
+            AVPacket *extradata_pkt = av_packet_alloc();
+            extradata_pkt->data = lay->video_stream->codecpar->extradata;
+            extradata_pkt->size = lay->video_stream->codecpar->extradata_size;
+            avcodec_send_packet(lay->video_dec_ctx, extradata_pkt);
+            av_packet_free(&extradata_pkt);
+        }
+
+        int err2 = 0;
+        if (!lay->vidopen) {
+            // Correct EAGAIN handling for FFmpeg decode API
+            int err1 = avcodec_send_packet(lay->video_dec_ctx, lay->decpkt);
 
         // Handle send_packet errors
         if (err1 == AVERROR(EAGAIN)) {
@@ -4662,25 +4529,30 @@ static int decode_video_packet(Layer *lay, bool show) {
             int h = sws_scale(lay->sws_ctx, lay->decframe->data, lay->decframe->linesize,
                             0, lay->video_dec_ctx->height, lay->rgbframe->data, lay->rgbframe->linesize);
             if (h < 1) return 0;
-            
-            lay->decresult->hap = false;
-            lay->decresult->data = (char*)lay->rgbframe->data[0];
-            lay->decresult->width = lay->video_dec_ctx->width;
-            lay->decresult->height = lay->video_dec_ctx->height;
-            lay->decresult->newdata = true;
-            lay->decresult->size = lay->decresult->width * lay->decresult->height * 4;
-            
+
+            {
+                std::lock_guard<std::mutex> lock(lay->decresult_mutex);
+                lay->decresult->hap = false;
+                lay->decresult->data = (char*)lay->rgbframe->data[0];
+                lay->decresult->width = lay->video_dec_ctx->width;
+                lay->decresult->height = lay->video_dec_ctx->height;
+                lay->decresult->newdata = true;
+                lay->decresult->size = lay->decresult->width * lay->decresult->height * 4;
+            }
+
             if (lay->clonesetnr != -1) {
                 std::unordered_set<Layer*>::iterator it;
                 for (it = mainmix->clonesets[lay->clonesetnr]->begin(); it != mainmix->clonesets[lay->clonesetnr]->end(); it++) {
                     Layer* clay = *it;
                     if (clay == lay) continue;
+                    std::lock_guard<std::mutex> lock(clay->decresult_mutex);
                     clay->decresult->newdata = true;
                 }
             }
         }
             return 1;  // Successfully decoded and displayed frame
-    }
+        }
+    }  // End video_dec_ctx_mutex lock
     return decoded;
 }
 
@@ -5164,7 +5036,10 @@ void Layer::get_cpu_frame(int framenr, int prevframe, int errcount)
             if (seek_ret < 0) {
                 printf("Warning: seek to startframe failed: %s\n", av_err2str(seek_ret));
             }
-            avcodec_flush_buffers(this->video_dec_ctx);
+            {
+                std::lock_guard<std::mutex> lock(this->video_dec_ctx_mutex);
+                avcodec_flush_buffers(this->video_dec_ctx);
+            }
             if (framenr == 0) {
                 int64_t first_keyframe_after = AV_NOPTS_VALUE;
                 while (av_read_frame(this->video, this->decpkt) >= 0) {
@@ -5179,7 +5054,10 @@ void Layer::get_cpu_frame(int framenr, int prevframe, int errcount)
                     av_packet_unref(this->decpkt);
                 }
                 av_seek_frame(this->video, this->video_stream->index, first_keyframe_after, AVSEEK_FLAG_BACKWARD);
-                avcodec_flush_buffers(this->video_dec_ctx);
+                {
+                    std::lock_guard<std::mutex> lock(this->video_dec_ctx_mutex);
+                    avcodec_flush_buffers(this->video_dec_ctx);
+                }
                 //av_read_frame(this->video, this->decpkt);
             }
 
@@ -5218,7 +5096,10 @@ void Layer::get_cpu_frame(int framenr, int prevframe, int errcount)
                         readpos = prevframe + 1;
                     } else {
                         av_seek_frame(this->video, this->video_stream->index, this->decpktseek->pts, AVSEEK_FLAG_BACKWARD);
-                        avcodec_flush_buffers(this->video_dec_ctx);
+                        {
+                            std::lock_guard<std::mutex> lock(this->video_dec_ctx_mutex);
+                            avcodec_flush_buffers(this->video_dec_ctx);
+                        }
                     }
                     av_read_frame(this->video, this->decpkt);
                     this->scritched = false;
@@ -5292,8 +5173,11 @@ void Layer::get_cpu_frame(int framenr, int prevframe, int errcount)
 bool Layer::get_hap_frame() {
 // Decompresses a video frame using Snappy and manages resource allocation for frame data.
     if (!this->video) return false;
-    if (this->decresult->newdata == true) {
-        return true;
+    {
+        std::lock_guard<std::mutex> lock(this->decresult_mutex);
+        if (this->decresult->newdata == true) {
+            return true;
+        }
     }
 
     // Process audio for HAP videos with WAV files
@@ -5322,7 +5206,10 @@ bool Layer::get_hap_frame() {
     if (*bptrData == 0 && *(bptrData + 1) == 0 && *(bptrData + 2) == 0) {
         headerl = 8;
     }
-    this->decresult->compression = *(bptrData + 3);
+    {
+        std::lock_guard<std::mutex> lock(this->decresult_mutex);
+        this->decresult->compression = *(bptrData + 3);
+    }
     size_t uncompressed_size = 0;
     snappy_uncompressed_length(bptrData + headerl, size - headerl, &uncompressed_size);
 
@@ -5331,30 +5218,36 @@ bool Layer::get_hap_frame() {
         return false;
     }
 
-
-    if (uncompressed_size != this->databufsize) {
-        for ( int m = 0; m < 2; m++) {
-            if (this->databuf[m]) {
-                free(this->databuf[m]);
+    {
+        std::lock_guard<std::mutex> lock(this->databuf_mutex);
+        if (uncompressed_size != this->databufsize) {
+            for ( int m = 0; m < 2; m++) {
+                if (this->databuf[m]) {
+                    free(this->databuf[m]);
+                }
+                this->databuf[m] = (char *) calloc(uncompressed_size, 1);
+                if (this->databuf[m] == nullptr) {
+                    printf("Can't allocate frame data buffer\n");
+                    return false;
+                }
             }
-            this->databuf[m] = (char *) calloc(uncompressed_size, 1);
-            if (this->databuf[m] == nullptr) {
-                printf("Can't allocate frame data buffer\n");
-                return false;
-            }
+            this->databufsize = uncompressed_size;
+            this->databufready = true;
         }
-        this->databufsize = uncompressed_size;
-        this->databufready = true;
     }
 
     int st = -1;
-    databufmutex.lock();
-    if (this->databufready) {
-        st = snappy_uncompress(bptrData + headerl, size - headerl, (char*)this->databuf[this->databufnum], &uncompressed_size);
-        this->decresult->data = this->databuf[this->databufnum];
-        this->decresult->size = uncompressed_size;
+    {
+        std::lock_guard<std::mutex> lock(this->databuf_mutex);
+        if (this->databufready) {
+            st = snappy_uncompress(bptrData + headerl, size - headerl, (char*)this->databuf[this->databufnum], &uncompressed_size);
+            {
+                std::lock_guard<std::mutex> lock2(this->decresult_mutex);
+                this->decresult->data = this->databuf[this->databufnum];
+                this->decresult->size = uncompressed_size;
+            }
+        }
     }
-    databufmutex.unlock();
     av_packet_unref(this->decpkt);
 
     if (!this->vidopen) {
@@ -5362,17 +5255,22 @@ bool Layer::get_hap_frame() {
             //this->decresult->width = 0;
             return false;
         }
-        this->decresult->height = this->video_dec_ctx->height;
-        this->decresult->width = this->video_dec_ctx->width;
-        this->decresult->size = uncompressed_size;
-        this->decresult->hap = true;
-        this->decresult->newdata = true;
-        
+        {
+            std::lock_guard<std::mutex> ctx_lock(this->video_dec_ctx_mutex);
+            std::lock_guard<std::mutex> res_lock(this->decresult_mutex);
+            this->decresult->height = this->video_dec_ctx->height;
+            this->decresult->width = this->video_dec_ctx->width;
+            this->decresult->size = uncompressed_size;
+            this->decresult->hap = true;
+            this->decresult->newdata = true;
+        }
+
         if (this->clonesetnr != -1) {
             std::unordered_set<Layer*>::iterator it;
             for (it = mainmix->clonesets[this->clonesetnr]->begin(); it != mainmix->clonesets[this->clonesetnr]->end(); it++) {
                 Layer* clay = *it;
                 if (clay == this) continue;
+                std::lock_guard<std::mutex> lock(clay->decresult_mutex);
                 clay->decresult->newdata = true;
             }
         }
@@ -5409,8 +5307,11 @@ void Layer::get_frame(){
             bool r = this->thread_vidopen();
             this->vidopen = false;
             if (this->isduplay) {
-                this->decresult->width = 0;
-                this->frame = this->isduplay->frame;
+                {
+                    std::lock_guard<std::mutex> lock(this->decresult_mutex);
+                    this->decresult->width = 0;
+                }
+                this->frame = this->isduplay->frame.load();
                 this->isduplay = nullptr;
             }
             //if (!this->tagged) this->set_clones();
@@ -5434,8 +5335,11 @@ void Layer::get_frame(){
                 continue;
             }
             if (this->vidformat != 188 && this->vidformat != 187) {
-                if (this->video && (int)this->frame != (int)this->prevframe) {
-                    get_cpu_frame((int) this->frame, this->prevframe, 0);
+                // Atomic snapshot for consistent reads
+                int current_frame = this->frame.load();
+                int current_prevframe = this->prevframe.load();
+                if (this->video && current_frame != current_prevframe) {
+                    get_cpu_frame(current_frame, current_prevframe, 0);
                     if (mainprogram->openerr) {
                         mainprogram->openerr = false;
                         printf("CPU video decoding error\n");
@@ -5568,6 +5472,7 @@ void Mixer::vidbox_handle() {
                         }
                     }
                     if (lay->type == ELEM_IMAGE || lay->type == ELEM_LIVE) {
+                        std::lock_guard<std::mutex> lock(lay->decresult_mutex);
                         lay->decresult->newdata = true;
                     }
                     lay->set_clones();
@@ -5615,6 +5520,7 @@ void Mixer::vidbox_handle() {
                     mainprogram->transforming = false;
                 }
                 if (lay->type == ELEM_IMAGE || lay->type == ELEM_LIVE) {
+                    std::lock_guard<std::mutex> lock(lay->decresult_mutex);
                     lay->decresult->newdata = true;
                 }
                 lay->set_clones();
@@ -7647,8 +7553,11 @@ void Layer::set_live_base(std::string livename) {
 
     lay->type = ELEM_LIVE;
 
-    lay->decresult->width = 0;
-    lay->decresult->height = 0;
+    {
+        std::lock_guard<std::mutex> lock(lay->decresult_mutex);
+        lay->decresult->width = 0;
+        lay->decresult->height = 0;
+    }
 	lay->vidformat = 0;
 	lay->initialized = false;
 	lay->audioplaying = false;
@@ -8179,15 +8088,20 @@ void Mixer::reconnect_all(std::vector<Layer*> &layers) {
         // set lasteffnodes
         if (layers[j]->effects[0].size()) {
             layers[j]->lasteffnode[0] = layers[j]->effects[0].back()->node;
-        }
-        else layers[j]->lasteffnode[0] = layers[j]->node;
+        } else layers[j]->lasteffnode[0] = layers[j]->node;
         if (j == 0) layers[j]->lasteffnode[1] = layers[j]->lasteffnode[0];
         if (layers[j]->effects[1].size()) {
             layers[j]->lasteffnode[1] = layers[j]->effects[1].back()->node;
-        }
-        else if (j > 0) {
+        } else if (j > 0) {
             layers[j]->lasteffnode[1] = layers[j]->blendnode;
         }
+        layers[j]->blendnode->in = nullptr;
+        layers[j]->blendnode->in2 = nullptr;
+        layers[j]->lasteffnode[0]->in = nullptr;
+        layers[j]->lasteffnode[1]->in = nullptr;
+        layers[j]->blendnode->out.clear();
+        layers[j]->lasteffnode[0]->out.clear();
+        layers[j]->lasteffnode[1]->out.clear();
     }
     for (int j = 0; j < layers.size(); j++) {
         // reconnect everything in the layer stack
@@ -8196,7 +8110,6 @@ void Mixer::reconnect_all(std::vector<Layer*> &layers) {
                 layers[j]->effects[m][k]->pos = k;
             }
         }
-        layers[j]->lasteffnode[1]->out.clear();
         if (j == 0) {
             if (j != layers.size() - 1)
                 mainprogram->nodesmain->currpage->connect_nodes(layers[j]->lasteffnode[1],
@@ -9291,7 +9204,12 @@ void Mixer::save_state(std::string path, bool autosave, bool undo) {
     filestoadd2.push_back(filestoadd);
     std::string ofpath = mainprogram->temppath + "tempconcatstate" + "_" + std::to_string(mainprogram->concatsuffix++);
 
-    std::thread concat(&Program::concat_files, mainprogram, ofpath, str, filestoadd2, mainprogram->concatting++, false);
+    int concat_count;
+    {
+        std::lock_guard<std::mutex> lock(mainprogram->concatlock);
+        concat_count = mainprogram->concatting++;
+    }
+    std::thread concat(&Program::concat_files, mainprogram, ofpath, str, filestoadd2, concat_count, false);
     concat.detach();
 }
 
@@ -9798,7 +9716,12 @@ void Mixer::save_mix(const std::string path, bool modus, bool save, bool undo, b
 
     std::thread concat;
     if (!startsolo) {
-        concat = std::thread(&Program::concat_files, mainprogram, tcmpath, str, jpegpaths, mainprogram->concatting++, startsolo);
+        int concat_count;
+        {
+            std::lock_guard<std::mutex> lock(mainprogram->concatlock);
+            concat_count = mainprogram->concatting++;
+        }
+        concat = std::thread(&Program::concat_files, mainprogram, tcmpath, str, jpegpaths, concat_count, startsolo);
     }
     else {
         concat = std::thread(&Program::concat_files, mainprogram, tcmpath, str, jpegpaths, 0, startsolo);
@@ -10137,7 +10060,12 @@ void Mixer::save_deck(const std::string path, bool save, bool doclips, bool copy
 
     std::thread concat;
     if (!startsolo) {
-        concat = std::thread(&Program::concat_files, mainprogram, tcdpath, str, jpegpaths, mainprogram->concatting++, startsolo);
+        int concat_count;
+        {
+            std::lock_guard<std::mutex> lock(mainprogram->concatlock);
+            concat_count = mainprogram->concatting++;
+        }
+        concat = std::thread(&Program::concat_files, mainprogram, tcdpath, str, jpegpaths, concat_count, startsolo);
     }
     else {
         concat = std::thread(&Program::concat_files, mainprogram, tcdpath, str, jpegpaths, 0, startsolo);
@@ -10173,8 +10101,11 @@ Layer* Layer::open_video(float frame, const std::string filename, int reset, boo
     this->reset = reset;
     this->frame = frame;
     //this->prevframe = this->frame - 1;
-    this->databufready = false;
-    this->databufsize = 0;
+    {
+        std::lock_guard<std::mutex> lock(this->databuf_mutex);
+        this->databufready = false;
+        this->databufsize = 0;
+    }
     this->initialized = false;
     this->vidopen = true;
 
@@ -10214,7 +10145,10 @@ Layer* Layer::open_video(float frame, const std::string filename, int reset, boo
     else this->newload = false;
     this->skip = false;
     this->ifmt = nullptr;
-    this->decresult->newdata = false;
+    {
+        std::lock_guard<std::mutex> lock(this->decresult_mutex);
+        this->decresult->newdata = false;
+    }
     //this->decresult->width = 0;
     //this->decresult->compression = 0;
     if (mainprogram->autoplay && this->revbut->value == 0 && this->bouncebut->value == 0) {
@@ -10263,11 +10197,14 @@ int64_t get_last_frame_pts(AVFormatContext *fmt_ctx, int stream_index) {
 }
 
 bool Layer::thread_vidopen() {
-    if (this->video_dec_ctx) avcodec_free_context(&this->video_dec_ctx);
+    {
+        std::lock_guard<std::mutex> lock(this->video_dec_ctx_mutex);
+        if (this->video_dec_ctx) avcodec_free_context(&this->video_dec_ctx);
+        this->video_dec_ctx = nullptr;
+    }
     if (this->video) avformat_close_input(&this->video);
     if (this->videoseek) avformat_close_input(&this->videoseek);
     this->video = nullptr;
-    this->video_dec_ctx = nullptr;
     this->liveinput = nullptr;
 
     if (!this->skip) {
@@ -10317,20 +10254,23 @@ bool Layer::thread_vidopen() {
         this->video_stream = this->video->streams[this->video_stream_idx];
         const AVCodec* dec = avcodec_find_decoder(this->video_stream->codecpar->codec_id);
         this->vidformat = this->video_stream->codecpar->codec_id;
-        this->video_dec_ctx = avcodec_alloc_context3(dec);
-        // Enable error concealment
-        this->video_dec_ctx->error_concealment = FF_EC_GUESS_MVS | FF_EC_DEBLOCK;
-        // Skip frames with errors instead of failing
-        this->video_dec_ctx->skip_frame = AVDISCARD_DEFAULT;
-        this->video_dec_ctx->skip_idct = AVDISCARD_DEFAULT;
-        this->video_dec_ctx->skip_loop_filter = AVDISCARD_DEFAULT;
-        // Set error recognition flags
-        this->video_dec_ctx->err_recognition = AV_EF_IGNORE_ERR;
-        if (this->video_stream->codecpar->codec_id == AV_CODEC_ID_MPEG2VIDEO || this->video_stream->codecpar->codec_id == AV_CODEC_ID_H264 || this->video_stream->codecpar->codec_id == AV_CODEC_ID_H264) {
-            //this->video_dec_ctx->ticks_per_frame = 2;
+        {
+            std::lock_guard<std::mutex> lock(this->video_dec_ctx_mutex);
+            this->video_dec_ctx = avcodec_alloc_context3(dec);
+            // Enable error concealment
+            this->video_dec_ctx->error_concealment = FF_EC_GUESS_MVS | FF_EC_DEBLOCK;
+            // Skip frames with errors instead of failing
+            this->video_dec_ctx->skip_frame = AVDISCARD_DEFAULT;
+            this->video_dec_ctx->skip_idct = AVDISCARD_DEFAULT;
+            this->video_dec_ctx->skip_loop_filter = AVDISCARD_DEFAULT;
+            // Set error recognition flags
+            this->video_dec_ctx->err_recognition = AV_EF_IGNORE_ERR;
+            if (this->video_stream->codecpar->codec_id == AV_CODEC_ID_MPEG2VIDEO || this->video_stream->codecpar->codec_id == AV_CODEC_ID_H264 || this->video_stream->codecpar->codec_id == AV_CODEC_ID_H264) {
+                //this->video_dec_ctx->ticks_per_frame = 2;
+            }
+            avcodec_parameters_to_context(this->video_dec_ctx, this->video_stream->codecpar);
+            avcodec_open2(this->video_dec_ctx, dec, nullptr);
         }
-        avcodec_parameters_to_context(this->video_dec_ctx, this->video_stream->codecpar);
-        avcodec_open2(this->video_dec_ctx, dec, nullptr);
         this->first_pts = video_stream->start_time;
         if (this->first_pts == AV_NOPTS_VALUE) {
             this->first_pts = 0;
@@ -10380,18 +10320,18 @@ bool Layer::thread_vidopen() {
             //avcodec_free_context(&this->video_dec_ctx);
             av_frame_unref(this->decframe);
 
-            std::mutex flock;
-            flock.lock();
-            if (this->databuf[0]) {
-                delete this->databuf[0];
+            {
+                std::lock_guard<std::mutex> lock(this->databuf_mutex);
+                if (this->databuf[0]) {
+                    delete this->databuf[0];
+                }
+                this->databuf[0] = nullptr;
+                if (this->databuf[1]) {
+                    delete this->databuf[1];
+                }
+                this->databuf[1] = nullptr;
+                this->databufsize = 0;
             }
-            this->databuf[0] = nullptr;
-            if (this->databuf[1]) {
-                delete this->databuf[1];
-            }
-            this->databuf[1] = nullptr;
-            this->databufsize = 0;
-            flock.unlock();
 
             // Check for corresponding WAV file for HAP videos
             std::string wav_path = remove_extension(this->filename) + ".wav";
@@ -10667,32 +10607,35 @@ bool Layer::thread_vidopen() {
         }
     }
 
-    this->rgbframe->format = AV_PIX_FMT_BGRA;
-    this->rgbframe->width = this->video_dec_ctx->width;
-    this->rgbframe->height = this->video_dec_ctx->height;
-    if (&this->rgbframe->data[0]) {
-        av_freep(&this->rgbframe->data[0]);
-    }
-    int storage = av_image_alloc(this->rgbframe->data, this->rgbframe->linesize, this->rgbframe->width,
-                                 this->rgbframe->height, AV_PIX_FMT_BGRA, 1);
-    if (storage < 0) {
-        printf("Can't allocate image storage\n");
-        mainprogram->openerr = true;
-        return 0;
-    }
+    {
+        std::lock_guard<std::mutex> lock(this->video_dec_ctx_mutex);
+        this->rgbframe->format = AV_PIX_FMT_BGRA;
+        this->rgbframe->width = this->video_dec_ctx->width;
+        this->rgbframe->height = this->video_dec_ctx->height;
+        if (&this->rgbframe->data[0]) {
+            av_freep(&this->rgbframe->data[0]);
+        }
+        int storage = av_image_alloc(this->rgbframe->data, this->rgbframe->linesize, this->rgbframe->width,
+                                     this->rgbframe->height, AV_PIX_FMT_BGRA, 1);
+        if (storage < 0) {
+            printf("Can't allocate image storage\n");
+            mainprogram->openerr = true;
+            return 0;
+        }
 
-    this->sws_ctx = sws_getContext
-            (
-                    this->video_dec_ctx->width,
-                    this->video_dec_ctx->height,
-                    this->video_dec_ctx->pix_fmt,
-                    this->video_dec_ctx->width,
-                    this->video_dec_ctx->height,
-                    AV_PIX_FMT_BGRA,
-                    SWS_BILINEAR,
-                    nullptr,
-                    nullptr,
-                    nullptr);
+        this->sws_ctx = sws_getContext
+                (
+                        this->video_dec_ctx->width,
+                        this->video_dec_ctx->height,
+                        this->video_dec_ctx->pix_fmt,
+                        this->video_dec_ctx->width,
+                        this->video_dec_ctx->height,
+                        AV_PIX_FMT_BGRA,
+                        SWS_BILINEAR,
+                        nullptr,
+                        nullptr,
+                        nullptr);
+    }
 
     return 1;
 }
@@ -11168,6 +11111,7 @@ bool Layer::progress(bool comp, bool alive, bool doclips) {
             }
             if (this->type == ELEM_IMAGE && this->numf > 0) {
                 // set animated gif to update now
+                std::lock_guard<std::mutex> lock(this->decresult_mutex);
                 this->decresult->newdata = true;
             }
             this->scratch->value = 0;
@@ -11275,7 +11219,12 @@ bool Layer::progress(bool comp, bool alive, bool doclips) {
 
 void Layer::load_frame() {
     this->processed = false;
-    if (this->pos == 0 && this->deck == 0 && this->comp == true && this->decresult->newdata) {
+    bool check_newdata;
+    {
+        std::lock_guard<std::mutex> lock(this->decresult_mutex);
+        check_newdata = this->decresult->newdata;
+    }
+    if (this->pos == 0 && this->deck == 0 && this->comp == true && check_newdata) {
         bool dummy = false;
     }
     // checks if new frame has been decompressed and loads it into layer
@@ -11295,7 +11244,12 @@ void Layer::load_frame() {
             }
         }
         if (found || mainmix->firstlayers.contains(this->clonesetnr) == 0 || this->type == ELEM_LIVE) {
-            if (!this->decresult->newdata) {
+            bool has_newdata;
+            {
+                std::lock_guard<std::mutex> lock(this->decresult_mutex);
+                has_newdata = this->decresult->newdata;
+            }
+            if (!has_newdata) {
                 // promote first layer found in layer stack with this clonesetnr to element of firstlayers
                 this->ready = true;
                 this->startdecode.notify_all();
@@ -11313,8 +11267,11 @@ void Layer::load_frame() {
             srclay = mainmix->firstlayers[this->clonesetnr];
             this->texture = srclay->texture;
             this->changeinit = 2;
-            this->decresult->width = srclay->decresult->width;
-            this->decresult->height = srclay->decresult->height;
+            {
+                std::lock_guard<std::mutex> lock(srclay->decresult_mutex);
+                this->decresult->width = srclay->decresult->width;
+                this->decresult->height = srclay->decresult->height;
+            }
             this->initialized = true;
             this->newtexdata = true;
         }
@@ -11327,11 +11284,21 @@ void Layer::load_frame() {
         w = ilGetInteger(IL_IMAGE_WIDTH);
         h = ilGetInteger(IL_IMAGE_HEIGHT);
     } else if (srclay->video_dec_ctx) {
+        std::lock_guard<std::mutex> lock(srclay->video_dec_ctx_mutex);
         w = srclay->video_dec_ctx->width;
         h = srclay->video_dec_ctx->height;
     }
     else if (!srclay->liveinput) return;
-    if (!this->isclone && (srclay->iw != w || srclay->ih != h || (srclay->decresult->bpp != srclay->bpp && srclay->type == ELEM_IMAGE))) {
+    bool size_changed = false;
+    if (!this->isclone) {
+        bool bpp_mismatch = false;
+        if (srclay->type == ELEM_IMAGE) {
+            std::lock_guard<std::mutex> lock(srclay->decresult_mutex);
+            bpp_mismatch = (srclay->decresult->bpp != srclay->bpp);
+        }
+        size_changed = (srclay->iw != w || srclay->ih != h || bpp_mismatch);
+    }
+    if (size_changed) {
         // video (size) changed
         if (srclay->initialized) {
             srclay->initialized = false;
@@ -11347,8 +11314,13 @@ void Layer::load_frame() {
         if (!this->liveinput) {
             if (srclay->video_dec_ctx) {
                 if (srclay->vidformat == 188 || srclay->vidformat == 187) {
-                    if (srclay->decresult->compression) {
-                        bool succes = srclay->initialize(w, h, srclay->decresult->compression);
+                    int compression;
+                    {
+                        std::lock_guard<std::mutex> lock(srclay->decresult_mutex);
+                        compression = srclay->decresult->compression;
+                    }
+                    if (compression) {
+                        bool succes = srclay->initialize(w, h, compression);
                         if (!succes) return;
                     }
                 } else {
@@ -11385,15 +11357,23 @@ void Layer::load_frame() {
     if (srclay->type == ELEM_IMAGE) {
         ilBindImage(srclay->boundimage);
         ilActiveImage((int) srclay->frame);
-        srclay->decresult->data = (char *) ilGetData();
-        srclay->decresult->newdata = true;
+        {
+            std::lock_guard<std::mutex> lock(srclay->decresult_mutex);
+            srclay->decresult->data = (char *) ilGetData();
+            srclay->decresult->newdata = true;
+        }
         if (srclay->numf == 0) {
             srclay->changeinit = -1;
         }
         bool dummy = false;
     }
 
-    if (!srclay->decresult->newdata) {
+    bool has_newdata;
+    {
+        std::lock_guard<std::mutex> lock(srclay->decresult_mutex);
+        has_newdata = srclay->decresult->newdata;
+    }
+    if (!has_newdata) {
         return;
     }
 
@@ -11401,7 +11381,7 @@ void Layer::load_frame() {
         // start transferring data to pbo
         // bind PBO to update pixel values
         if (srclay->mapptr[0]) {
-            if (srclay->decresult->newdata) {
+            if (has_newdata) {
                 // update data directly on the mapped buffer
                 if (srclay->initialized && srclay->changeinit == -1) {
                     srclay->changeinit = 0;
@@ -11410,6 +11390,9 @@ void Layer::load_frame() {
                     WaitBuffer(srclay->syncobj);
                     LockBuffer(srclay->syncobj);
                     if ((srclay->vidformat == 188 || srclay->vidformat == 187)) {
+                        // HAP format - protect databuf and decresult access
+                        std::lock_guard<std::mutex> databuf_lock(srclay->databuf_mutex);
+                        std::lock_guard<std::mutex> decresult_lock(srclay->decresult_mutex);
                         if (srclay->decresult->size != this->databufsize) {
                             srclay->changeinit = -1;
                             return;
@@ -11422,6 +11405,8 @@ void Layer::load_frame() {
                                srclay->decresult->size);
                         srclay->databufnum = !srclay->databufnum;
                     } else {
+                        // CPU format - protect decresult access
+                        std::lock_guard<std::mutex> lock(srclay->decresult_mutex);
                         memcpy(srclay->mapptr[0], srclay->decresult->data,
                                srclay->decresult->size);
                     }
@@ -11449,19 +11434,27 @@ void Layer::load_frame() {
         if ((!srclay->liveinput && srclay->initialized) || srclay->numf == 0) {
             if (1) {  // decresult contains new frame width, height, number of bitmaps && data
                 if ((srclay->vidformat == 188 || srclay->vidformat == 187)) {
-                    // HAP video layers
+                    // HAP video layers - snapshot decresult fields under lock
+                    int compression, width, height;
+                    size_t size;
+                    {
+                        std::lock_guard<std::mutex> lock(srclay->decresult_mutex);
+                        compression = srclay->decresult->compression;
+                        width = srclay->decresult->width;
+                        height = srclay->decresult->height;
+                        size = srclay->decresult->size;
+                    }
 
-                    if (srclay->decresult->compression == 187 ||
-                        srclay->decresult->compression == 171) {
-                        glCompressedTexSubImage2D(GL_TEXTURE_2D, 0, 0, 0, srclay->decresult->width,
-                                                  srclay->decresult->height,
+                    if (compression == 187 || compression == 171) {
+                        glCompressedTexSubImage2D(GL_TEXTURE_2D, 0, 0, 0, width,
+                                                  height,
                                                   GL_COMPRESSED_RGBA_S3TC_DXT1_EXT,
-                                                  srclay->decresult->size, nullptr);
+                                                  size, nullptr);
 
-                    } else if (srclay->decresult->compression == 190) {
-                        glCompressedTexSubImage2D(GL_TEXTURE_2D, 0, 0, 0, srclay->decresult->width,
-                                                  srclay->decresult->height, GL_COMPRESSED_RGBA_S3TC_DXT5_EXT,
-                                                  srclay->decresult->size, nullptr);
+                    } else if (compression == 190) {
+                        glCompressedTexSubImage2D(GL_TEXTURE_2D, 0, 0, 0, width,
+                                                  height, GL_COMPRESSED_RGBA_S3TC_DXT5_EXT,
+                                                  size, nullptr);
                     }
                 } else {
                     if (srclay->type == ELEM_IMAGE) {
@@ -11477,14 +11470,25 @@ void Layer::load_frame() {
                         if (srclay->numf == 0) {
                             glBindBuffer(GL_PIXEL_UNPACK_BUFFER, 0);
                             glBindTexture(GL_TEXTURE_2D, srclay->texture);
+                            char* data_ptr;
+                            {
+                                std::lock_guard<std::mutex> lock(srclay->decresult_mutex);
+                                data_ptr = srclay->decresult->data;
+                            }
                             glTexSubImage2D(GL_TEXTURE_2D, 0, 0, 0, w, h, mode, GL_UNSIGNED_BYTE,
-                                            srclay->decresult->data);
+                                            data_ptr);
                         } else {
                             glTexSubImage2D(GL_TEXTURE_2D, 0, 0, 0, w, h, mode, GL_UNSIGNED_BYTE,  0);
                         }
                     } else if (1) {
-                        glTexSubImage2D(GL_TEXTURE_2D, 0, 0, 0, srclay->decresult->width,
-                                        srclay->decresult->height, GL_BGRA, GL_UNSIGNED_BYTE, 0);
+                        int width, height;
+                        {
+                            std::lock_guard<std::mutex> lock(srclay->decresult_mutex);
+                            width = srclay->decresult->width;
+                            height = srclay->decresult->height;
+                        }
+                        glTexSubImage2D(GL_TEXTURE_2D, 0, 0, 0, width,
+                                        height, GL_BGRA, GL_UNSIGNED_BYTE, 0);
                     }
                 }
             }
@@ -11495,16 +11499,22 @@ void Layer::load_frame() {
 
     // round robin triple pbos: currently deactivated
     if (srclay->type == ELEM_IMAGE) {
+        std::lock_guard<std::mutex> lock(srclay->decresult_mutex);
         srclay->decresult->width = ilGetInteger(IL_IMAGE_WIDTH);
         srclay->decresult->height = ilGetInteger(IL_IMAGE_HEIGHT);
     } else {
         if (srclay->video_dec_ctx) {
+            std::lock_guard<std::mutex> ctx_lock(srclay->video_dec_ctx_mutex);
+            std::lock_guard<std::mutex> res_lock(srclay->decresult_mutex);
             srclay->decresult->width = srclay->video_dec_ctx->width;
             srclay->decresult->height = srclay->video_dec_ctx->height;
         }
     }
-    srclay->decresult->bpp = srclay->bpp;
-    srclay->decresult->newdata = false;
+    {
+        std::lock_guard<std::mutex> lock(srclay->decresult_mutex);
+        srclay->decresult->bpp = srclay->bpp;
+        srclay->decresult->newdata = false;
+    }
 
     srclay->newtexdata = true;
 }
@@ -11830,6 +11840,7 @@ Layer* Mixer::read_layers(std::istream &rfile, const std::string result, std::ve
     int ffglmixernr = -1;
     int isfnr = -1;
     int isfmixernr = -1;
+    bool sourceset = false;
     bool ffglsourcedenied = false;
     bool ffglmixerdenied = false;
     bool isfsourcedenied = false;
@@ -12049,8 +12060,10 @@ Layer* Mixer::read_layers(std::istream &rfile, const std::string result, std::ve
                     }
                 } else if (ffglnr != -1) {
                     layend->set_ffglsource(ffglnr);
+                    sourceset = true;
                 } else if (isfnr != -1) {
                     layend->set_isfsource(isfnr);
+                    sourceset = true;
                 }
                 if (type > 0) layend->prevframe = -1;
             }
@@ -12097,9 +12110,9 @@ Layer* Mixer::read_layers(std::istream &rfile, const std::string result, std::ve
                         layend->prevshelfdragelem = nullptr;
                     }
                 }
-            } else if (ffglnr != -1) {
+            } else if (ffglnr != -1 && !sourceset) {
                 layend->set_ffglsource(ffglnr);
-            } else if (isfnr != -1) {
+            } else if (isfnr != -1 && !sourceset) {
                 layend->set_isfsource(isfnr);
             }
             layend->filename = filename;  // for CLIPLAYER
@@ -12470,24 +12483,32 @@ Layer* Mixer::read_layers(std::istream &rfile, const std::string result, std::ve
 				}
 				if (istring == "WIPEX") {
 					safegetline(rfile, istring);
-					layend->blendnode->wipex->value = std::stof(istring);
+					if (layend->blendnode->wipex) {
+						layend->blendnode->wipex->value = std::stof(istring);
+					}
 				}
                 if (istring == "WIPEXEVENT") {
-                    Param *par = layend->blendnode->wipex;
-                    safegetline(rfile, istring);
-                    if (istring == "EVENTELEM") {
-                        mainmix->event_read(rfile, par, nullptr, layend);
+                    if (layend->blendnode->wipex) {
+                        Param *par = layend->blendnode->wipex;
+                        safegetline(rfile, istring);
+                        if (istring == "EVENTELEM") {
+                            mainmix->event_read(rfile, par, nullptr, layend);
+                        }
                     }
                 }
 				if (istring == "WIPEY") {
 					safegetline(rfile, istring);
-					layend->blendnode->wipey->value = std::stof(istring);
+					if (layend->blendnode->wipey) {
+						layend->blendnode->wipey->value = std::stof(istring);
+					}
 				}
                 if (istring == "WIPEYEVENT") {
-                    Param *par = layend->blendnode->wipey;
-                    safegetline(rfile, istring);
-                    if (istring == "EVENTELEM") {
-                        mainmix->event_read(rfile, par, nullptr, layend);
+                    if (layend->blendnode->wipey) {
+                        Param *par = layend->blendnode->wipey;
+                        safegetline(rfile, istring);
+                        if (istring == "EVENTELEM") {
+                            mainmix->event_read(rfile, par, nullptr, layend);
+                        }
                     }
                 }
 			}
@@ -14336,18 +14357,10 @@ void Mixer::new_file(int decks, bool alive, bool add, bool empty) {
 // OUTPUT RECORDING TO VIDEO
 
 void Mixer::record_video(std::string reccod) {
-    bool cbool;
-    if (this->reckind == 0) {
-        if (!mainprogram->prevmodus) {
-            cbool = 1;
-        }
-        else {
-            cbool = 0;
-        }
-    }
-    else {
-        cbool = 1;
-    }
+	// Use thread-safe configuration copied at recording start
+	const RecordConfig& config = this->recordConfig[this->reckind];
+	bool cbool = config.useCompOutput;
+
 	AVFormatContext* dest = avformat_alloc_context();
 	AVStream* dest_stream;
 	const AVCodec *codec = nullptr;
@@ -14359,12 +14372,10 @@ void Mixer::record_video(std::string reccod) {
     codec = avcodec_find_encoder_by_name(reccodec.c_str());
     c = avcodec_alloc_context3(codec);
     pkt = av_packet_alloc();
-    if (cbool) c->width = mainprogram->ow[1];
-    else c->width = mainprogram->ow[0];
+    c->width = config.outputWidth;
 	int rem = c->width % 32;
 	c->width = c->width + (32 - rem) * (rem > 0);
-    if (cbool) c->height = mainprogram->oh[1];
-    else c->height = mainprogram->oh[0];
+    c->height = config.outputHeight;
 	rem = c->height % 4;
 	c->height = c->height + (4 - rem) * (rem > 0);
 	/* frames per second */
@@ -14376,10 +14387,10 @@ void Mixer::record_video(std::string reccod) {
 
     std::string path;
     if (this->reckind) {
-        path = find_unused_filename("recording_0", mainprogram->project->recdir, "_hap.mov");
+        path = find_unused_filename("recording_0", config.recdir, "_hap.mov");
     }
     else {
-        path = find_unused_filename(basename(this->reclay->filename), mainprogram->project->recdir, "_REC_hap.mov");
+        path = find_unused_filename(basename(config.layerFilename), config.recdir, "_REC_hap.mov");
     }
     avformat_alloc_output_context2(&dest, av_guess_format("mov", nullptr, "video/mov"), nullptr, path.c_str());
     dest_stream = avformat_new_stream(dest, codec);
@@ -14451,8 +14462,7 @@ void Mixer::record_video(std::string reccod) {
 
 		//av_image_fill_arrays(picture->data, picture->linesize,
                                // ptr, pix_fmt, width, height, 1);		avpicture_fill(&rgbaframe, (uint8_t *)mainmix->rgbdata, AV_PIX_FMT_BGRA, c->width, c->height);
-        if (cbool) rgbaframe->linesize[0] = mainprogram->ow[1] * 4;
-        else rgbaframe->linesize[0] = mainprogram->ow[0] * 4;
+        rgbaframe->linesize[0] = config.outputWidth * 4;
 		int storage = av_image_alloc(yuvframe->data, yuvframe->linesize, yuvframe->width, yuvframe->height, c->pix_fmt, 32);
 		sws_scale
 		(
@@ -14509,6 +14519,28 @@ void Mixer::start_recording() {
     this->timer->start();
 
     std::string reccod = this->reccodec;
+
+	// Copy configuration for thread-safe access in record_video()
+	bool useCompOutput;
+	if (this->reckind == 0) {
+		useCompOutput = !mainprogram->prevmodus;
+	} else {
+		useCompOutput = true;
+	}
+
+	this->recordConfig[this->reckind].useCompOutput = useCompOutput;
+	if (useCompOutput) {
+		this->recordConfig[this->reckind].outputWidth = mainprogram->ow[1];
+		this->recordConfig[this->reckind].outputHeight = mainprogram->oh[1];
+	} else {
+		this->recordConfig[this->reckind].outputWidth = mainprogram->ow[0];
+		this->recordConfig[this->reckind].outputHeight = mainprogram->oh[0];
+	}
+	this->recordConfig[this->reckind].recdir = mainprogram->project->recdir;
+	if (this->reclay) {
+		this->recordConfig[this->reckind].layerFilename = this->reclay->filename;
+	}
+
     this->donerec[this->reckind] = false;
     this->recording[this->reckind] = true;
 	// recording is done in separate thread
@@ -14862,7 +14894,7 @@ void Layer::clip_display_next(bool startend, bool alive) {
         mainprogram->remove(this->oldclippath);
         Clip *oldclip = new Clip;
         oldclip->type = this->type;
-        if (oldclip->type == ELEM_LAYER) oldclip->frame = this->frame;
+        if (oldclip->type == ELEM_LAYER) oldclip->frame = this->frame.load();
         else oldclip->frame = 0.0f;
         if (startend) oldclip->frame = this->endframe->value;
         oldclip->startframe->value = this->startframe->value;
@@ -15970,13 +16002,13 @@ void Mixer::set_frame(ShelfElement *elem, Layer *lay) {
     olock.unlock();*/
     if (elem->launchtype == 1) {
         if (elem->clayers.size()) {
-            lay->frame = elem->clayers[0]->frame;
+            lay->frame = elem->clayers[0]->frame.load();
             //this->copy_lpst(lay, elem->clayers[0], true, false);
             lay->bouncebut->value = elem->clayers[0]->bouncebut->value;
         }
     } else if (elem->launchtype == 2) {
         if (elem->nblayers.size()) {
-            lay->frame = elem->nblayers[0]->frame;
+            lay->frame = elem->nblayers[0]->frame.load();
             //this->copy_lpst(lay, elem->nblayers[0], true, false);
             lay->bouncebut->value = elem->nblayers[0]->bouncebut->value;
         }
@@ -15994,6 +16026,7 @@ void Layer::set_ffglsource(int sourcenr) {
     int h = mainprogram->oh[this->comp];
 
     if (this->isfsourcenr != -1) {
+        std::lock_guard<std::mutex> lock(mainprogram->isfinstances_mutex);
         auto shader = mainprogram->isfloader.getShader(this->isfpluginnr);
         shader->releaseInstance(mainprogram->isfinstances[this->isfpluginnr][this->isfinstancenr]);
         this->isfsourcenr = -1;
@@ -16042,6 +16075,7 @@ void BlendNode::set_ffglmixer(int mixernr) {
     int h = mainprogram->oh[!mainprogram->prevmodus];
 
     if (this->isfmixernr != -1) {
+        std::lock_guard<std::mutex> lock(mainprogram->isfinstances_mutex);
         auto shader = mainprogram->isfloader.getShader(this->isfpluginnr);
         shader->releaseInstance(mainprogram->isfinstances[this->isfpluginnr][this->isfinstancenr]);
         this->isfmixernr = -1;
@@ -16089,15 +16123,22 @@ void Layer::set_isfsource(int isfnr) {
 
     if (this->ffglsourcenr != -1) {
         auto shader = mainprogram->ffglsourceplugins[this->ffglsourcenr];
-        shader->releaseInstance(
-                reinterpret_cast<const std::shared_ptr<FFGLPluginInstance> &>(shader->instances[this->ffglinstancenr]));
+        std::shared_ptr<FFGLPluginInstance> instance;
+        {
+            std::lock_guard<std::mutex> lock(shader->instancesMutex_);
+            instance = reinterpret_cast<const std::shared_ptr<FFGLPluginInstance> &>(shader->instances[this->ffglinstancenr]);
+        }
+        shader->releaseInstance(instance);
         this->ffglsourcenr = -1;
     }
     this->isfsourcenr = std::find(mainprogram->isfsourcenames.begin(), mainprogram->isfsourcenames.end(), sourcename) - mainprogram->isfsourcenames.begin();
     auto* shader = mainprogram->isfloader.findShader(sourcename);
     auto instance = shader->createInstance();
-    mainprogram->isfinstances[this->isfpluginnr].push_back(instance);
-    this->isfinstancenr = mainprogram->isfinstances[this->isfpluginnr].size() - 1;
+    {
+        std::lock_guard<std::mutex> lock(mainprogram->isfinstances_mutex);
+        mainprogram->isfinstances[this->isfpluginnr].push_back(instance);
+        this->isfinstancenr = mainprogram->isfinstances[this->isfpluginnr].size() - 1;
+    }
 
     // get parameters
     this->isfparams.clear();
@@ -16162,14 +16203,21 @@ void BlendNode::set_isfmixer(int mixernr) {
 
     if (this->ffglmixernr != -1) {
         auto shader = mainprogram->ffglmixerplugins[this->ffglmixernr];
-        shader->releaseInstance(
-                reinterpret_cast<const std::shared_ptr<FFGLPluginInstance> &>(shader->instances[this->ffglinstancenr]));
+        std::shared_ptr<FFGLPluginInstance> instance;
+        {
+            std::lock_guard<std::mutex> lock(shader->instancesMutex_);
+            instance = reinterpret_cast<const std::shared_ptr<FFGLPluginInstance> &>(shader->instances[this->ffglinstancenr]);
+        }
+        shader->releaseInstance(instance);
         this->ffglmixernr = -1;
     }
     auto *shader = mainprogram->isfloader.getShader(this->isfpluginnr);
     auto instance = shader->createInstance();
-    mainprogram->isfinstances[this->isfpluginnr].push_back(instance);
-    this->isfinstancenr = mainprogram->isfinstances[this->isfpluginnr].size() - 1;
+    {
+        std::lock_guard<std::mutex> lock(mainprogram->isfinstances_mutex);
+        mainprogram->isfinstances[this->isfpluginnr].push_back(instance);
+        this->isfinstancenr = mainprogram->isfinstances[this->isfpluginnr].size() - 1;
+    }
 
     // get parameters
     this->isfparams.clear();

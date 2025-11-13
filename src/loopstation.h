@@ -8,6 +8,7 @@ class LoopStationElement;
 class LoopStation {
 	public:
 		std::vector<LoopStationElement*> elements;
+		std::mutex elements_mutex;  // Protects elements vector from concurrent access by audio thread
 		int numelems = 256;
 		std::vector<LoopStationElement*> readelems;
 		std::vector<int> readelemnrs;
