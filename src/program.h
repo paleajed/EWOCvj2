@@ -664,6 +664,7 @@ class Program {
 		bool menuondisplay = false;
 		bool orderondisplay = false;
 		std::vector<GLuint> ordertexes;
+		int nextat = 0;
 		std::atomic<bool> blocking{false};
 		bool eXit = false;
         std::string appimagedir;
@@ -1337,6 +1338,7 @@ extern void midi_callback(double deltatime, std::vector< unsigned char >* messag
 
 extern bool display_mix();
 
+extern bool get_imagetex(Layer *lay, std::string path);
 extern bool get_imagetex(Layer *lay, std::string path);
 extern bool get_videotex(Layer *lay, std::string path);
 extern bool get_layertex(Layer *lay, std::string path);

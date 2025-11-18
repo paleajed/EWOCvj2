@@ -657,14 +657,14 @@ void LoopStationElement::add_param_automationentry(Param* par, long long mc) {
     this->lpst->allparams.emplace(par);
 	loopstation->parelemmap[par] = this;
     Layer *lay = nullptr;
-    if (par->name == "crossfade" || par->name == "crossfadecomp" || par->shadervar == "mixfac" || par->name == "wipex" || par->name == "wipey" || par->name == "wipexlay" || par->name == "wipeylay") {
+    if (par->name == "Crossfade" || par->shadervar == "mixfac" || par->name == "wipex" || par->name == "wipey" || par->name == "wipexlay" || par->name == "wipeylay") {
     }
 	else if (par->effect) {
         lay = par->effect->layer;
 		this->layers.emplace(lay);
         par->layer = par->effect->layer;
 	}
-    else {
+    else if (par->layer){
         lay = par->layer;
         this->layers.emplace(lay);
     }
@@ -768,7 +768,7 @@ LoopStationElement* LoopStation::free_element() {
 }
 
 
-void LoopStation::remove_entries(int copycomp) {
+void LoopStation::remove_entries(int copycomp, bool deck) {
     for (LoopStationElement *elem: this->elements) {
         std::vector<std::tuple<long long, Param *, Button *, float>> evlist = elem->eventlist;
         for (int i = evlist.size() - 1; i >= 0; i--) {
@@ -777,6 +777,16 @@ void LoopStation::remove_entries(int copycomp) {
                 if (std::get<1>(event)->name == "Crossfade" || std::get<1>(event)->name == "wipex" ||
                     std::get<1>(event)->name == "wipey") {
                     if (copycomp == 2) {
+                        elem->eventlist.erase(elem->eventlist.begin() + i);
+                        elem->params.erase(std::get<1>(event));
+                    }
+                } else if (std::get<1>(event)->name == "Speed A") {
+                    if (deck == 0) {
+                        elem->eventlist.erase(elem->eventlist.begin() + i);
+                        elem->params.erase(std::get<1>(event));
+                    }
+                } else if (std::get<1>(event)->name == "Speed B") {
+                    if (deck == 1) {
                         elem->eventlist.erase(elem->eventlist.begin() + i);
                         elem->params.erase(std::get<1>(event));
                     }

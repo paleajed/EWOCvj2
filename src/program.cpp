@@ -332,6 +332,7 @@ Program::Program() : ndimanager(NDIManager::getInstance()), upnpMapper(nullptr) 
     this->docpath = homedir + "/Documents/EWOCvj2/";
     this->contentpath = homedir + "/Videos/";
 #endif
+    this->currshelfdir = this->docpath + "shelves/";
     this->currfilesdir = this->contentpath;
 
     // height of the small boxes top left and next to center holding, among other things, the scene letters
@@ -1398,7 +1399,7 @@ bool Program::order_paths(bool dodeckmix) {
     }
 
     if (this->multistage == 1) {
-        for (int i = 0; i < this->getvideotexlayers.size(); i++) {
+        for (int i = this->nextat; i < this->getvideotexlayers.size(); i++) {
             // start texture fetch threads
             Layer* lay = this->getvideotexlayers[i];
             std::string str = this->getvideotexpaths[i];
@@ -1410,9 +1411,9 @@ bool Program::order_paths(bool dodeckmix) {
                         break;
                     }
                     case ELEM_IMAGE: {
-                        std::thread tex1(&get_imagetex, lay, str);
-                        tex1.detach();
-                        break;
+                        get_imagetex(lay, str);
+                        this->nextat = i + 1;
+                        return false;
                     }
                     case ELEM_LAYER: {
                         get_layertex(lay, str);
@@ -1431,6 +1432,7 @@ bool Program::order_paths(bool dodeckmix) {
                 }
             }
         }
+        this->nextat = 0;
         multistage = 2;
         return false;
     }
@@ -5381,6 +5383,7 @@ void Program::handle_shelfmenu() {
     }
     else if (k == 9) {
         ShelfElement *elem = mainmix->mouseshelf->elements[mainmix->mouseshelfelem];
+        elem->name = "";
         elem->path = "";
         elem->type = ELEM_FILE;
         blacken(elem->tex);
@@ -5731,7 +5734,7 @@ void Program::handle_lpstmenu() {
         mainmix->mouselpstelem->erase_elem();
     }
     if (k == 1) {
-        mainmix->cbduration = mainmix->mouselpstelem->totaltime;
+        mainmix->cbduration = mainmix->mouselpstelem->totaltime / mainmix->mouselpstelem->speed->value;
     }
     else if (k == 2) {
         if (mainmix->cbduration > 0.0f) {
@@ -5743,7 +5746,7 @@ void Program::handle_lpstmenu() {
     }
     else if (k == 3) {
         if (mainmix->cbduration > 0.0f) {
-            mainmix->mouselpstelem->totaltime = mainmix->cbduration;
+            mainmix->mouselpstelem->totaltime = mainmix->cbduration * mainmix->mouselpstelem->speed->value;
         }
     }
     else if (k == 4) {
@@ -5901,6 +5904,15 @@ void Program::preview_modus_buttons() {
         render_text(mainprogram->toscreenM->name[0], white, box->vtxcoords->x1 + 0.0117f, box->vtxcoords->y1 + 0.0225f,
                     0.0006f, 0.001f);
 
+        bool toggle[2][2][4];
+        for (int n = 0; n < 2; n++) {
+            for (int m = 0; m < 2; m++) {
+                for (int i = 0; i < 3; i++) {
+                    mainprogram->handle_button(mainprogram->toscene[m][n][i], false, false, true);
+                    toggle[n][m][i] = mainprogram->toscene[m][n][i]->toggled();
+                }
+            }
+        }
         for (int m = 0; m < 2; m++) {
             std::vector<int> scns;
             int bucurr = mainmix->currscene[m];
@@ -5911,12 +5923,14 @@ void Program::preview_modus_buttons() {
                 }
             }
             for (int i = 0; i < 3; i++) {
-                mainprogram->handle_button(mainprogram->toscene[m][0][i], false, false, true);
-                if (mainprogram->toscene[m][0][i]->toggled()) {
+                if (toggle[0][m][i] || (toggle[0][!m][i] && mainprogram->shift)) {
                     mainprogram->toscene[m][0][i]->value = 0;
                     mainprogram->toscene[m][0][i]->oldvalue = 0;
                     // SEND UP button copies deck preview set to scene
                     Scene *scene = mainmix->scenes[m][scns[i] - 1];
+                    if (mainprogram->shift) {
+                        mainmix->deckcrossfade = mainmix->crossfade->value;
+                    }
                     mainprogram->prevmodus = true;
                     mainmix->mousedeck = m;
                     mainmix->scenenum = -1;
@@ -5934,6 +5948,9 @@ void Program::preview_modus_buttons() {
                     scene->scnblayers = mainmix->newlrs[m + 2];
                     mainmix->layers[2] = bul[0];
                     mainmix->layers[3] = bul[1];
+                    if (mainprogram->shift) {
+                        scene->crossfade = mainmix->deckcrossfade;
+                    }
                     for (Layer *lv : mainmix->newlrs[m + 2]) {
                         if (lv) {
                             lv->initdeck = false;
@@ -5961,8 +5978,7 @@ void Program::preview_modus_buttons() {
                 render_text(std::to_string(scns[i]), white, box->vtxcoords->x1 + 0.0117f,
                             box->vtxcoords->y1 + 0.0225f, 0.0006f, 0.001f);
 
-                mainprogram->handle_button(mainprogram->toscene[m][1][i], false, false, true);
-                if (mainprogram->toscene[m][1][i]->toggled()) {
+                if (toggle[1][m][i] || (toggle[1][!m][i] && mainprogram->shift)) {
                     mainprogram->swappingscene = true;
                     mainprogram->toscene[m][1][i]->value = 0;
                     mainprogram->toscene[m][1][i]->oldvalue = 0;
@@ -5975,6 +5991,7 @@ void Program::preview_modus_buttons() {
                     mainmix->mousedeck = m;
                     loopstation = scene->lpst;
                     mainmix->scenenum = scene->pos;
+                    mainmix->deckcrossfade = scene->crossfade;
                     mainmix->save_deck(
                             mainprogram->temppath + "tempdecksc_" + std::to_string(m) +
                             std::to_string(scns[i] - 1) +
@@ -5986,6 +6003,8 @@ void Program::preview_modus_buttons() {
                     loopstation = lp;
                     mainmix->scenenum = -1;
                     mainmix->open_deck(mainprogram->temppath + "tempdecksc_" + std::to_string(m) + std::to_string(scns[i] - 1) +".deck", true);
+                    mainmix->crossfade->value = mainmix->deckcrossfade;
+
                     LoopStation *bulp = lp;
 
                     // correct loopstation current times for deck saving/opening lag
@@ -7995,7 +8014,9 @@ bool Project::open(std::string path, bool autosave, bool newp, bool undo) {
 		}
         else if (istring == "CURRSHELFDIR") {
 			safegetline(rfile, istring);
-            if (!mainmix->retargeting) mainprogram->currshelfdir = istring;
+            if (istring != "") {
+                if (!mainmix->retargeting) mainprogram->currshelfdir = istring;
+            }
 		}
         else if (istring == "CURRRECDIR") {
 			safegetline(rfile, istring);
@@ -9294,7 +9315,7 @@ PIInt::PIInt() {
     pos++;
 
     pii = new PrefItem(this, pos, "Loopstation element stepping", PREF_ONOFF, (void*)&mainprogram->steplprow);
-    pii->onoff = 0;
+    pii->onoff = 1;
     pii->namebox->tooltiptitle = "Loopstation element stepping ";
     pii->namebox->tooltip = "Sets Loopstation element stepping mode. ";
     pii->valuebox->tooltiptitle = "Loopstation element stepping toggle ";
@@ -12401,6 +12422,7 @@ bool Shelf::open(const std::string path, bool undo) {
 
 void Shelf::erase() {
     for (ShelfElement* elem : this->elements) {
+        elem->name = "";
         elem->path = "";
         elem->type = ELEM_FILE;
         blacken(elem->tex);
@@ -12428,7 +12450,7 @@ void Shelf::handle() {
             draw_box(nullptr, green, this->buttons[i]->box->vtxcoords->x1 + 0.0075f, this->buttons[i]->box->vtxcoords->y1, this->buttons[i]->box->vtxcoords->w - 0.0075f, this->buttons[i]->box->vtxcoords->h - 0.0075f, elem->tex);
         }
         else if (elem->type == ELEM_IMAGE) {
-            draw_box(white, white, this->buttons[i]->box, -1);
+            draw_box(yellow, yellow, this->buttons[i]->box, -1);
             draw_box(nullptr, white, this->buttons[i]->box->vtxcoords->x1 + 0.0075f, this->buttons[i]->box->vtxcoords->y1, this->buttons[i]->box->vtxcoords->w - 0.0075f, this->buttons[i]->box->vtxcoords->h - 0.0075f, elem->tex);
         }
         else {

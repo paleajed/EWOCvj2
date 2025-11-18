@@ -3670,6 +3670,8 @@ void onestepfrom(bool stage, Node *node, Node *prevnode, GLuint prevfbotex, GLui
         }
         float xs = 0.0f;
         float ys = 0.0f;
+        float scw;
+        float sch;
         float scix = 0.0f;
         float sciy = 0.0f;
         float frachd = 1920.0f / 1080.0f;
@@ -3682,13 +3684,19 @@ void onestepfrom(bool stage, Node *node, Node *prevnode, GLuint prevfbotex, GLui
             ilBindImage(lay->boundimage);
             ilActiveImage((int)lay->frame);
             frac = (float)ilGetInteger(IL_IMAGE_WIDTH) / (float)ilGetInteger(IL_IMAGE_HEIGHT);
+            scw = (float)ilGetInteger(IL_IMAGE_WIDTH);
+            sch = (float)ilGetInteger(IL_IMAGE_HEIGHT);
         }
         else if (lay->type != ELEM_LIVE){
             if (lay->decresult->height == 0) return;
             frac = (float)(lay->decresult->width) / (float)(lay->decresult->height);
+            scw = (float)(lay->decresult->width);
+            sch = (float)(lay->decresult->height);
         }
         if (lay->dummy) {
             frac = (float)(lay->video_dec_ctx->width) / (float)(lay->video_dec_ctx->height);
+            scw = (float)(lay->video_dec_ctx->width);
+            sch = (float)(lay->video_dec_ctx->height);
         }
         if (fraco > frachd) {
             ys = 0.0f;
@@ -3714,19 +3722,18 @@ void onestepfrom(bool stage, Node *node, Node *prevnode, GLuint prevfbotex, GLui
                 xs = 1.0f - (((1.0f - ys) / frachd) * frac);
             }
         }
+        xs = 1.0f - xs;
+        ys = 1.0f - ys;
 
         glActiveTexture(GL_TEXTURE0);
         int sw, sh;
         glBindTexture(GL_TEXTURE_2D, lay->fbotex);
         glGetTexLevelParameteriv(GL_TEXTURE_2D, 0, GL_TEXTURE_WIDTH, &sw);
         glGetTexLevelParameteriv(GL_TEXTURE_2D, 0, GL_TEXTURE_HEIGHT, &sh);
-        float scw = sw;
-        float sch = sh;
-        int sxs = xs * scw / 2.0f;
-        int sys = ys * sch / 2.0f;
-        scix = scix * scw / 2.0f;
-        sciy = sciy * sch / 2.0f;
-        glViewport(sxs, sys, scw - sxs * 2.0f, sch - sys * 2.0f);
+        scw = sw * xs;
+        sch = sh * ys;
+        int sxs = sw / 2.0f;
+        int sys = sh / 2.0f;
         float sx = 0.0f;
         float sy = 0.0f;
         float sc = 1.0f;
@@ -3741,6 +3748,13 @@ void onestepfrom(bool stage, Node *node, Node *prevnode, GLuint prevfbotex, GLui
                 op = 1.0f;
             }
         }
+        sxs = sw / 2.0f - (sw / 2.0f) * sc * xs;
+        sys = sh / 2.0f - (sh / 2.0f) * sc * ys;
+        float xss = sxs + sw * 12.0f * sx;
+        float yss = sys + sh * 12.0f * sy;
+        float swidth = scw * sc;
+        float sheight = sch * sc;
+        glViewport(xss, yss, swidth, sheight);
         if (lay->ndisource != nullptr) {
             if (lay->ndisource->hasNewFrame()) {
                 if (!lay->ndisource->getLatestFrame(lay->ndiintex)) {
@@ -3857,7 +3871,7 @@ void onestepfrom(bool stage, Node *node, Node *prevnode, GLuint prevfbotex, GLui
                     instance->setParameter(par.name, (int)lay->isfparams[pos++]->value);
                 }
                 else if (lay->isfparams[pos]->type == ISFLoader::PARAM_LONG) {
-                    instance->setParameter(par.name, (int) par.values[lay->isfparams[pos++]->value]);
+                    instance->setParameter(par.name, (int)lay->isfparams[pos++]->value);
                 }
                 else {
                     instance->setParameter(par.name, lay->isfparams[pos++]->value);
@@ -3903,9 +3917,9 @@ void onestepfrom(bool stage, Node *node, Node *prevnode, GLuint prevfbotex, GLui
             glClear(GL_COLOR_BUFFER_BIT);
             if (!lay->onhold && lay->filename != "") {
                 if (lay->changeinit == 2) {
-                    draw_box(nullptr, black, -1.0f, 1.0f, 2.0f, -2.0f, sx, sy, sc, op, 0, lay->texture, 0, 0, false);
+                    draw_box(nullptr, black, -1.0f, 1.0f, 2.0f, -2.0f, 0.0f, 0.0f, 1.0f, op, 0, lay->texture, 0, 0, false);
                 } else {
-                    draw_box(nullptr, black, -1.0f, 1.0f, 2.0f, -2.0f, sx, sy, sc, op, 0, lay->oldtexture, 0, 0, false);
+                    draw_box(nullptr, black, -1.0f, 1.0f, 2.0f, -2.0f, 0.0f, 0.0f, 1.0f, op, 0, lay->oldtexture, 0, 0, false);
                 }
             }
         }
@@ -4399,11 +4413,6 @@ bool display_mix() {
                      box->vtxcoords->h - ys * 2.0f, node->mixtex);
             mainprogram->outputmonitor->in();
         }
-
-        if (node->ndioutput != nullptr) {
-            node->ndiouttex.setFromExistingTexture(node->mixtex, mainprogram->ow[!mainprogram->prevmodus], mainprogram->oh[!mainprogram->prevmodus]);
-            node->ndioutput->sendFrame(node->ndiouttex);
-        }
     }
 	else {
 		mainprogram->uniformCache->setBool("wipe", false);
@@ -4450,37 +4459,55 @@ bool display_mix() {
                      box->vtxcoords->w - xs * 4.0f, box->vtxcoords->h - ys * 4.0f, node->mixtex);
             mainprogram->mainmonitor->in();
         }
+	}
 
+    // draw deck monitors
+    if (mainprogram->prevmodus) {
+        node = (MixNode *) mainprogram->nodesmain->mixnodes[0][0];
+        box = mainprogram->deckmonitor[0];
+        if (!mainprogram->binsscreen) {
+            draw_box(red, box->acolor, box->vtxcoords->x1 + xs, box->vtxcoords->y1 + ys, box->vtxcoords->w - xs * 2.0f,
+                     box->vtxcoords->h - ys * 2.0f, node->mixtex);
+            box->in();
+        }
         if (node->ndioutput != nullptr) {
             node->ndiouttex.setFromExistingTexture(node->mixtex, mainprogram->ow[!mainprogram->prevmodus], mainprogram->oh[!mainprogram->prevmodus]);
             node->ndioutput->sendFrame(node->ndiouttex);
         }
-	}
-
-    if (!mainprogram->binsscreen) {
-        // draw deck monitors
-        if (mainprogram->prevmodus) {
-            node = (MixNode *) mainprogram->nodesmain->mixnodes[0][0];
-            box = mainprogram->deckmonitor[0];
-            draw_box(red, box->acolor, box->vtxcoords->x1 + xs, box->vtxcoords->y1 + ys, box->vtxcoords->w - xs * 2.0f,
-                     box->vtxcoords->h - ys * 2.0f, node->mixtex);
-            box->in();
-            node = (MixNode *) mainprogram->nodesmain->mixnodes[0][1];
-            box = mainprogram->deckmonitor[1];
+        node = (MixNode *) mainprogram->nodesmain->mixnodes[0][1];
+        box = mainprogram->deckmonitor[1];
+        if (!mainprogram->binsscreen) {
             draw_box(red, black, box->vtxcoords->x1 + xs, box->vtxcoords->y1 + ys, box->vtxcoords->w - xs * 2.0f,
                      box->vtxcoords->h - ys * 2.0f, node->mixtex);
             box->in();
-        } else {
-            node = (MixNode *) mainprogram->nodesmain->mixnodes[1][0];
-            box = mainprogram->deckmonitor[0];
+        }
+        if (node->ndioutput != nullptr) {
+            node->ndiouttex.setFromExistingTexture(node->mixtex, mainprogram->ow[!mainprogram->prevmodus], mainprogram->oh[!mainprogram->prevmodus]);
+            node->ndioutput->sendFrame(node->ndiouttex);
+        }
+    } else {
+        node = (MixNode *) mainprogram->nodesmain->mixnodes[1][0];
+        box = mainprogram->deckmonitor[0];
+        if (!mainprogram->binsscreen) {
             draw_box(red, black, box->vtxcoords->x1 + xs, box->vtxcoords->y1 + ys, box->vtxcoords->w - xs * 2.0f,
                      box->vtxcoords->h - ys * 2.0f, node->mixtex);
             box->in();
-            node = (MixNode *) mainprogram->nodesmain->mixnodes[1][1];
-            box = mainprogram->deckmonitor[1];
-            draw_box(red, black, box->vtxcoords->x1 + xs, box->vtxcoords->y1 + ys, box->vtxcoords->w - xs * 2.0f,
+        }
+        if (node->ndioutput != nullptr) {
+            node->ndiouttex.setFromExistingTexture(node->mixtex, mainprogram->ow[!mainprogram->prevmodus], mainprogram->oh[!mainprogram->prevmodus]);
+            node->ndioutput->sendFrame(node->ndiouttex);
+        }
+        node = (MixNode *) mainprogram->nodesmain->mixnodes[1][1];
+        box = mainprogram->deckmonitor[1];
+        if (!mainprogram->binsscreen) {
+            draw_box(red, black, box->vtxcoords->x1 + xs, box->vtxcoords->y1 + ys,
+                     box->vtxcoords->w - xs * 2.0f,
                      box->vtxcoords->h - ys * 2.0f, node->mixtex);
             box->in();
+        }
+        if (node->ndioutput != nullptr) {
+            node->ndiouttex.setFromExistingTexture(node->mixtex, mainprogram->ow[!mainprogram->prevmodus], mainprogram->oh[!mainprogram->prevmodus]);
+            node->ndioutput->sendFrame(node->ndiouttex);
         }
     }
 
@@ -4801,6 +4828,12 @@ void handle_scenes(Scene* scene) {
                         }
                         mainmix->scenes[dck][i]->switch_to(true);
                         mainmix->currscene[dck] = i;
+
+                        if (mainmix->currscene[0] == mainmix->currscene[1]) {
+                            mainmix->scenes[0][mainmix->currscene[0]]->crossfade = mainmix->crossfadecomp->value;
+                            mainmix->scenes[1][mainmix->currscene[1]]->crossfade = mainmix->crossfadecomp->value;
+                        }
+                        mainmix->crossfadecomp->value = si->crossfade;
                     }
                     si->switch_to(true);
 
@@ -7978,8 +8011,6 @@ int main(int argc, char* argv[]) {
     std::filesystem::path full_path(std::filesystem::current_path());
     printf("PATH %s", full_path.string().c_str());
     printf("\n");
-    std::string pp(full_path.string() + "/lock.png");
-    ILboolean ret2 = ilLoadImage((const ILstring)pp.c_str());
     mainprogram->ffgldir = mainprogram->docpath + "/ffglplugins";
     if (!exists(mainprogram->ffgldir)) {
         std::filesystem::create_directories(mainprogram->ffgldir);
@@ -8201,6 +8232,8 @@ int main(int argc, char* argv[]) {
     std::string lstr = mainprogram->appimagedir + "/usr/share/ewocvj2/lock.png";
     ILboolean ret2 = ilLoadImage(lstr.c_str());
 #endif
+    std::string pp(full_path.string() + "/lock.png");
+    ILboolean ret2 = ilLoadImage((const ILstring)pp.c_str());
     if (ret2 == IL_FALSE) {
         printf("can't load lock image\n");
     }
@@ -8546,25 +8579,7 @@ int main(int argc, char* argv[]) {
                 mainmix->mouseshelf->open(localPath);
             } else if (localPathto == "SAVESHELF") {
                 mainprogram->currshelfdir = dirname(localPath);
-                std::string ext = localPath.substr(localPath.length() - 6, std::string::npos);
-                std::string src = mainprogram->project->shelfdir + mainmix->mouseshelf->basepath;
-                std::string dest;
-                if (ext != ".shelf") {
-                    dest = localPath;
-                    std::filesystem::path p1{dest};
-                    if (!std::filesystem::exists(p1)) {
-                        std::filesystem::create_directory(p1);
-                    }
-                    copy_dir(src, dest);
-                } else {
-                    dest = dirname(localPath);
-                    copy_dir(src, dest);
-                }
-                std::filesystem::path p3{dest + "/" + mainmix->mouseshelf->basepath + ".shelf"};
-                if (std::filesystem::exists(p3)) {
-                    mainprogram->remove(localPath);
-                }
-                mainmix->mouseshelf->save(dest + "/" + remove_extension(basename(localPath)) + ".shelf");
+                mainmix->mouseshelf->save(mainprogram->currshelfdir + remove_extension(basename(localPath)) + ".shelf");
             } else if (localPathto == "OPENFILESSHELF") {
                 if (localPaths.size()) {
                     mainprogram->currfilesdir = dirname(localPaths[0]);

@@ -430,9 +430,9 @@ void BinsMain::handle(bool draw) {
 					color[3] = 1.0f;
 				}
 				else if (binel->type == ELEM_IMAGE) {
-					color[0] = 1.0f;
-					color[1] = 1.0f;
-					color[2] = 1.0f;
+					color[0] = 0.9f;
+					color[1] = 0.8f;
+					color[2] = 0.0f;
 					color[3] = 1.0f;
 				}
 				else {

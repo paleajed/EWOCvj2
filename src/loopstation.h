@@ -50,7 +50,7 @@ class LoopStation {
 		LoopStationElement* free_element();
 		void init();
 		void handle();
-        void remove_entries(int copycomp);
+        void remove_entries(int copycomp, bool deck);
 		LoopStation();
         ~LoopStation();
 		

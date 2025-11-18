@@ -440,6 +440,8 @@ class Scene {
 		std::vector<Layer*> tempscnblayers;
 		std::vector<float> tempnbframes;
 		int scrollpos = 0;
+		float deckspeed = 1.0f;
+		float crossfade = 0.5f;
 
         void switch_to(bool dotempmap);
         Scene();
@@ -525,7 +527,7 @@ class Mixer {
 		void new_state();
 		void open_state(std::string path, bool undo = false);
 		void save_state(std::string path, bool autosave, bool undo = false);
-		std::vector<std::string> write_layer(Layer *lay, std::ostream& wfile, bool doclips, bool dojpeg);
+		std::vector<std::string> write_layer(Layer *lay, std::ostream& wfile, bool doclips, bool dojpeg, bool modus = true);
 		Layer* read_layers(std::istream &rfile, std::string result, std::vector<Layer*> &layers, bool deck, bool isdeck, int type, bool doclips, bool concat, bool load, bool loadevents, bool save, bool keepeff = false);
 		void start_recording();
         void cloneset_destroy(int clnr);
@@ -588,6 +590,7 @@ class Mixer {
 		Param *crossfade;
 		Param *crossfadecomp;
 		std::string crossfadename[2];
+		float deckcrossfade = 0.5f;
 
 		int currscene[2] = {0, 0};
         int setscene = -1;
