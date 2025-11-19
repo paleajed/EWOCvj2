@@ -12,7 +12,10 @@
 
 NDITexture::NDITexture()
         : texture_id_(0), pbo_upload_(0), pbo_download_(0),
-          width_(0), height_(0), format_(GL_RGBA), internal_format_(GL_RGBA8) {
+          width_(0), height_(0), format_(GL_RGBA), internal_format_(GL_RGBA8),
+          upload_pbo_index_(0) {
+    upload_pbos_[0] = 0;
+    upload_pbos_[1] = 0;
 }
 
 NDITexture::~NDITexture() {
@@ -30,9 +33,6 @@ bool NDITexture::uploadFrame(const NDIlib_video_frame_v2_t& frame) {
             return false;
         }
     }
-
-    // Upload frame data to texture
-    glBindTexture(GL_TEXTURE_2D, texture_id_);
 
     // Determine format based on NDI FourCC
     GLenum gl_format = GL_RGBA;
@@ -52,15 +52,56 @@ bool NDITexture::uploadFrame(const NDIlib_video_frame_v2_t& frame) {
             gl_format = GL_BGR;
             break;
         default:
-            // Default to RGBA
             gl_format = GL_RGBA;
             break;
     }
 
-    glTexSubImage2D(GL_TEXTURE_2D, 0, 0, 0, width_, height_, gl_format, gl_type, frame.p_data);
+    int buffer_size = width_ * height_ * 4;
+
+    // Setup PBOs on first use
+    if (upload_pbos_[0] == 0) {
+        glGenBuffers(2, upload_pbos_);
+
+        for (int i = 0; i < 2; i++) {
+            glBindBuffer(GL_PIXEL_UNPACK_BUFFER, upload_pbos_[i]);
+            glBufferData(GL_PIXEL_UNPACK_BUFFER, buffer_size, nullptr, GL_STREAM_DRAW);
+        }
+        glBindBuffer(GL_PIXEL_UNPACK_BUFFER, 0);
+        upload_pbo_index_ = 0;
+    }
+
+    int current_write_pbo = upload_pbo_index_ % 2;
+
+    glBindTexture(GL_TEXTURE_2D, texture_id_);
+
+    // Upload to texture
+    if (upload_pbo_index_ > 0) {
+        // From frame 1 onwards: upload from the PREVIOUS PBO (which has data from last frame)
+        int previous_pbo = (upload_pbo_index_ - 1) % 2;
+        glBindBuffer(GL_PIXEL_UNPACK_BUFFER, upload_pbos_[previous_pbo]);
+        glTexSubImage2D(GL_TEXTURE_2D, 0, 0, 0, width_, height_, gl_format, gl_type, 0);
+        glBindBuffer(GL_PIXEL_UNPACK_BUFFER, 0);
+    } else {
+        // Frame 0: upload directly (synchronous) since no PBO has data yet
+        glTexSubImage2D(GL_TEXTURE_2D, 0, 0, 0, width_, height_, gl_format, gl_type, frame.p_data);
+    }
+
+    // Write current frame data to current PBO for NEXT frame to use
+    glBindBuffer(GL_PIXEL_UNPACK_BUFFER, upload_pbos_[current_write_pbo]);
+    glBufferData(GL_PIXEL_UNPACK_BUFFER, buffer_size, nullptr, GL_STREAM_DRAW);
+
+    void* ptr = glMapBuffer(GL_PIXEL_UNPACK_BUFFER, GL_WRITE_ONLY);
+    if (ptr) {
+        memcpy(ptr, frame.p_data, buffer_size);
+        glUnmapBuffer(GL_PIXEL_UNPACK_BUFFER);
+    }
+
+    glBindBuffer(GL_PIXEL_UNPACK_BUFFER, 0);
     glBindTexture(GL_TEXTURE_2D, 0);
 
-    return NDIUtils::checkGLError("uploadFrame");
+    upload_pbo_index_++;
+
+    return true;
 }
 
 bool NDITexture::createTexture(int width, int height, GLenum format) {
@@ -136,6 +177,12 @@ void NDITexture::cleanup() {
     if (texture_id_ != 0) {
         glDeleteTextures(1, &texture_id_);
         texture_id_ = 0;
+    }
+
+    if (upload_pbos_[0] != 0) {
+        glDeleteBuffers(2, upload_pbos_);
+        upload_pbos_[0] = 0;
+        upload_pbos_[1] = 0;
     }
 
     if (pbo_upload_ != 0) {
@@ -373,7 +420,7 @@ void NDISource::receiverLoop() {
     while (running_) {
         NDIlib_video_frame_v2_t video_frame = {};
 
-        switch (NDIlib_recv_capture_v2(ndi_recv_, &video_frame, nullptr, nullptr, 0)) {
+        switch (NDIlib_recv_capture_v2(ndi_recv_, &video_frame, nullptr, nullptr, 16)) {
             case NDIlib_frame_type_video:
             {
                 std::lock_guard<std::mutex> lock(frame_mutex_);
@@ -387,15 +434,13 @@ void NDISource::receiverLoop() {
                 current_frame_ = video_frame;
                 frame_valid_ = true;
                 has_new_frame_ = true;
-                updateStats();
 
                 // Don't free here - we'll free when we get the next frame
             }
                 break;
 
             case NDIlib_frame_type_none:
-                // No new frame, continue
-                std::this_thread::sleep_for(std::chrono::milliseconds(1));
+                // Timeout handles waiting, no sleep needed
                 break;
 
             default:
@@ -405,21 +450,6 @@ void NDISource::receiverLoop() {
     }
 }
 
-void NDISource::updateStats() {
-    auto now = std::chrono::steady_clock::now();
-    stats_.frames_received++;
-
-    if (stats_.last_frame_time.time_since_epoch().count() > 0) {
-        auto duration = std::chrono::duration_cast<std::chrono::microseconds>(
-                now - stats_.last_frame_time).count();
-
-        if (duration > 0) {
-            stats_.current_fps = 1000000.0 / duration;
-        }
-    }
-
-    stats_.last_frame_time = now;
-}
 
 void NDISource::setLowLatencyMode(bool enabled) {
     low_latency_mode_ = enabled;
@@ -601,11 +631,6 @@ bool NDIOutput::sendFrame(const NDITexture& texture) {
         frame_counter_++;
     }
 
-    // Update stats less frequently
-    if (frame_counter_ % 30 == 0) {  // Only every 30 frames
-        updateStats();
-    }
-
     return true;
 }
 
@@ -620,7 +645,6 @@ bool NDIOutput::sendFrame(const NDIlib_video_frame_v2_t& frame) {
     NDIlib_send_send_video_v2(ndi_send_, &frame);
 
     frame_counter_++;
-    updateStats();
 
     return true;
 }
@@ -653,21 +677,6 @@ bool NDIOutput::initializeSender() {
     return true;
 }
 
-void NDIOutput::updateStats() {
-    auto now = std::chrono::steady_clock::now();
-    stats_.frames_received++;
-
-    if (stats_.last_frame_time.time_since_epoch().count() > 0) {
-        auto duration = std::chrono::duration_cast<std::chrono::microseconds>(
-                now - stats_.last_frame_time).count();
-
-        if (duration > 0) {
-            stats_.current_fps = 1000000.0 / duration;
-        }
-    }
-
-    stats_.last_frame_time = now;
-}
 
 void NDIOutput::cleanup() {
     if (ndi_send_) {
@@ -820,7 +829,6 @@ void NDIOutput::cleanupPBODownloader() {
 NDIManager::NDIManager()
         : initialized_(false), ndi_find_(nullptr), discovery_running_(false),
           discovery_interval_(5), global_low_latency_(false) {
-    global_stats_.start_time = std::chrono::steady_clock::now();
 }
 
 NDIManager::~NDIManager() {
@@ -1001,7 +1009,6 @@ std::shared_ptr<NDISource> NDIManager::createSource(const std::string& source_na
                   << "' (ref count: 1)" << std::endl;
     }
 
-    updateGlobalStats();
     return source;
 }
 
@@ -1055,7 +1062,6 @@ void NDIManager::removeSource(const std::string& source_name) {
                 std::cout << "Removing source '" << source_name << "' (no more references)" << std::endl;
                 sources_.erase(source_name);
                 source_ref_counts_.erase(ref_it);
-                updateGlobalStats();
             }
             return;
         }
@@ -1064,7 +1070,6 @@ void NDIManager::removeSource(const std::string& source_name) {
     // Fallback: remove immediately if no ref count tracking
     std::cout << "Removing source '" << source_name << "' (no ref count found)" << std::endl;
     sources_.erase(source_name);
-    updateGlobalStats();
 }
 
 std::shared_ptr<NDISource> NDIManager::getSource(const std::string& source_name) {
@@ -1098,14 +1103,12 @@ std::shared_ptr<NDIOutput> NDIManager::createOutput(const std::string& output_na
     auto output = std::make_shared<NDIOutput>(output_name, width, height, fps);
     outputs_[output_name] = output;
 
-    updateGlobalStats();
     return output;
 }
 
 void NDIManager::removeOutput(const std::string& output_name) {
     std::lock_guard<std::mutex> lock(outputs_mutex_);
     outputs_.erase(output_name);
-    updateGlobalStats();
 }
 
 std::shared_ptr<NDIOutput> NDIManager::getOutput(const std::string& output_name) {
@@ -1147,11 +1150,6 @@ void NDIManager::setNetworkInterface(const std::string& interface_name) {
 
 void NDIManager::setMulticastGroup(const std::string& group) {
     multicast_group_ = group;
-}
-
-NDIManager::GlobalStats NDIManager::getGlobalStats() const {
-    std::lock_guard<std::mutex> lock(stats_mutex_);
-    return global_stats_;
 }
 
 std::vector<std::string> NDIManager::getSupportedFormats() {
@@ -1274,11 +1272,6 @@ std::map<std::string, int> NDIManager::getAllSourceRefCounts() const {
     return source_ref_counts_;
 }
 
-void NDIManager::updateGlobalStats() {
-    std::lock_guard<std::mutex> lock(stats_mutex_);
-    global_stats_.active_sources = sources_.size();
-    global_stats_.active_outputs = outputs_.size();
-}
 
 // ============================================================================
 // Utility Functions Implementation

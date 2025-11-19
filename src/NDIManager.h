@@ -44,18 +44,6 @@ struct NDISourceInfo {
     NDISourceInfo() : is_available(false), width(0), height(0), fps(0.0) {}
 };
 
-// NDI stream statistics
-struct NDIStreamStats {
-    uint64_t frames_received;
-    uint64_t frames_dropped;
-    uint64_t bytes_received;
-    double current_fps;
-    double bitrate_mbps;
-    std::chrono::steady_clock::time_point last_frame_time;
-
-    NDIStreamStats() : frames_received(0), frames_dropped(0), bytes_received(0),
-                       current_fps(0.0), bitrate_mbps(0.0) {}
-};
 
 // OpenGL texture wrapper for NDI frames
 class NDITexture {
@@ -92,8 +80,10 @@ public:
 
 private:
     GLuint texture_id_;
-    GLuint pbo_upload_;   // Pixel buffer object for async uploads
+    GLuint pbo_upload_;   // Pixel buffer object for async uploads (legacy)
     GLuint pbo_download_; // Pixel buffer object for async downloads
+    GLuint upload_pbos_[2]; // Double-buffered PBOs for async upload
+    int upload_pbo_index_;  // Current PBO index for upload
     int width_, height_;
     GLenum format_;
     GLenum internal_format_;
@@ -136,7 +126,6 @@ public:
 
     // Information
     const NDISourceInfo& getSourceInfo() const { return source_info_; }
-    const NDIStreamStats& getStats() const { return stats_; }
 
     // Settings
     void setLowLatencyMode(bool enabled);
@@ -149,7 +138,6 @@ public:
 private:
     std::string source_name_;
     NDISourceInfo source_info_;
-    NDIStreamStats stats_;
 
     NDIlib_recv_instance_t ndi_recv_;
     NDIlib_source_t ndi_source_;
@@ -170,7 +158,6 @@ private:
     std::function<void(bool)> connection_callback_;
 
     void receiverLoop();
-    void updateStats();
     void cleanup();
 };
 
@@ -194,9 +181,6 @@ public:
     void setFormat(const std::string& format);
     void setMetadata(const std::map<std::string, std::string>& metadata);
 
-    // Information
-    const NDIStreamStats& getStats() const { return stats_; }
-
     void setMaxBufferedFrames(int count) { max_buffered_frames_ = count; }
 
     void setGPUConversion(bool enabled) { use_gpu_conversion_ = enabled; }
@@ -219,7 +203,6 @@ private:
     NDIlib_send_instance_t ndi_send_;
 
     std::atomic<bool> streaming_;
-    NDIStreamStats stats_;
 
     std::mutex send_mutex_;
     int64_t frame_counter_;
@@ -282,7 +265,6 @@ private:
 
     bool initializeSender();
     void cleanup();
-    void updateStats();
 };
 
 // Main NDI Manager
@@ -330,16 +312,6 @@ public:
     void setNetworkInterface(const std::string& interface_name);
     void setMulticastGroup(const std::string& group);
 
-    // Statistics
-    struct GlobalStats {
-        int active_sources;
-        int active_outputs;
-        double total_bandwidth_mbps;
-        std::chrono::steady_clock::time_point start_time;
-    };
-
-    GlobalStats getGlobalStats() const;
-
     // Utility methods
     static std::string getVersionString();
     static std::vector<std::string> getSupportedFormats();
@@ -380,12 +352,7 @@ private:
     std::string network_interface_;
     std::string multicast_group_;
 
-    // Global statistics
-    mutable std::mutex stats_mutex_;
-    GlobalStats global_stats_;
-
     void discoveryLoop();
-    void updateGlobalStats();
     void cleanupInactiveSources();
     void cleanupInactiveOutputs();
 };

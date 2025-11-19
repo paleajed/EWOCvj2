@@ -3256,7 +3256,35 @@ Layer::~Layer() {
         this->ndioutput->stopStream();
     }
     if (this->ndisource != nullptr) {
+        auto name = this->ndisource->getSourceInfo().name;
         this->ndisource->releaseReference();
+        Layer *promotedlay = nullptr;
+        for (auto lays: mainmix->layers) {
+            for (auto lay: lays) {
+                if (lay == this) continue;
+                if (lay->filename == name) {
+                    lay->type = ELEM_FILE;
+                    lay->ndisource = mainprogram->ndimanager.createSource(
+                            lay->filename);
+                    lay->ndisource->connect();
+                    lay->ndisource->getLatestFrame(lay->ndiintex);
+                    promotedlay = lay;
+                    break;
+                }
+            }
+            if (promotedlay) break;
+        }
+        if (promotedlay) {
+            for (auto lays: mainmix->layers) {
+                for (auto lay: lays) {
+                    if (lay == this) continue;
+                    if (lay == promotedlay) continue;
+                    if (lay->filename == promotedlay->ndisource->getSourceInfo().name) {
+                        lay->ndiparentlay = promotedlay;
+                    }
+                }
+            }
+        }
     }
 
     // Clean up audio thread and synchronization objects for HAP audio
@@ -3705,7 +3733,7 @@ void Layer::set_clones(int clsnr, bool open) {
 Layer* Layer::clone(bool dup) {
 	std::vector<Layer*>& lvec = choose_layers(this->deck);
 	Layer* dlay = mainmix->add_layer(lvec, this->pos + 1);
-	dlay->isclone = true;
+	dlay->isclone = !dup;
 	mainmix->set_values(dlay, this, false);
 	dlay->pos = this->pos + 1;
 
@@ -5607,7 +5635,7 @@ void Layer::display() {
                 }
                 render_text(name, white, box->vtxcoords->x1 + 0.015f,
                 box->vtxcoords->y1 + box->vtxcoords->h - 0.09f, 0.0005f, 0.0008f);
-                if (this->ndisource != nullptr) {
+                if (this->ndisource != nullptr || this->type == ELEM_NDI) {
                     render_text("NDI", white, box->vtxcoords->x1 + 0.015f, box->vtxcoords->y1 + box->vtxcoords->h - 0.135f, 0.0005f, 0.0008f);
                 }
                 else if (this->vidformat == -1) {
@@ -6681,7 +6709,7 @@ void Layer::display() {
 
             // Draw speed->box
             Param *par = this->speed;
-            if (this->filename == "" || this->type == ELEM_LIVE) {
+            if (this->filename == "" || this->type == ELEM_LIVE || this->type == ELEM_NDI || this->ndisource != nullptr) {
                 draw_box(lightgrey, darkgrey, this->speed->box->vtxcoords->x1, this->speed->box->vtxcoords->y1,
                          this->speed->box->vtxcoords->w * 0.30f, 0.075f, -1);
             }
@@ -6758,7 +6786,7 @@ void Layer::display() {
                     }
                 }
             } else {
-                if (this->filename == "" || this->type == ELEM_LIVE) {
+                if (this->filename == "" || this->type == ELEM_LIVE || this->type == ELEM_NDI || this->ndisource != nullptr) {
                     this->playbut->box->acolor[0] = 0.3;
                     this->playbut->box->acolor[1] = 0.3;
                     this->playbut->box->acolor[2] = 0.3;
@@ -6804,7 +6832,7 @@ void Layer::display() {
                     }
                 }
             } else {
-                if (this->filename == "" || this->type == ELEM_LIVE) {
+                if (this->filename == "" || this->type == ELEM_LIVE || this->type == ELEM_NDI || this->ndisource != nullptr) {
                     this->revbut->box->acolor[0] = 0.3;
                     this->revbut->box->acolor[1] = 0.3;
                     this->revbut->box->acolor[2] = 0.3;
@@ -6848,7 +6876,7 @@ void Layer::display() {
                     }
                 }
             } else {
-                if (this->filename == "" || this->type == ELEM_LIVE) {
+                if (this->filename == "" || this->type == ELEM_LIVE || this->type == ELEM_NDI || this->ndisource != nullptr) {
                     this->bouncebut->box->acolor[0] = 0.3;
                     this->bouncebut->box->acolor[1] = 0.3;
                     this->bouncebut->box->acolor[2] = 0.3;
@@ -6894,7 +6922,7 @@ void Layer::display() {
                     this->prevfbw = false;
                 }
             } else {
-                if (this->filename == "" || this->type == ELEM_LIVE) {
+                if (this->filename == "" || this->type == ELEM_LIVE || this->type == ELEM_NDI || this->ndisource != nullptr) {
                     this->frameforward->box->acolor[0] = 0.3;
                     this->frameforward->box->acolor[1] = 0.3;
                     this->frameforward->box->acolor[2] = 0.3;
@@ -6929,7 +6957,7 @@ void Layer::display() {
                     this->prevffw = false;
                 }
             } else {
-                if (this->filename == "" || this->type == ELEM_LIVE) {
+                if (this->filename == "" || this->type == ELEM_LIVE || this->type == ELEM_NDI || this->ndisource != nullptr) {
                     this->framebackward->box->acolor[0] = 0.3;
                     this->framebackward->box->acolor[1] = 0.3;
                     this->framebackward->box->acolor[2] = 0.3;
@@ -6963,7 +6991,7 @@ void Layer::display() {
                     }
                 }
             } else {
-                if (this->filename == "" || this->type == ELEM_LIVE) {
+                if (this->filename == "" || this->type == ELEM_LIVE || this->type == ELEM_NDI || this->ndisource != nullptr) {
                     this->stopbut->box->acolor[0] = 0.3;
                     this->stopbut->box->acolor[1] = 0.3;
                     this->stopbut->box->acolor[2] = 0.3;
@@ -11242,10 +11270,12 @@ void Layer::load_frame() {
         std::lock_guard<std::mutex> lock(this->decresult_mutex);
         check_newdata = this->decresult->newdata;
     }
-    if (this->pos == 0 && this->deck == 0 && this->comp == true && check_newdata) {
-        bool dummy = false;
-    }
     // checks if new frame has been decompressed and loads it into layer
+    if (this->type == ELEM_NDI) {
+        this->texture = this->ndiparentlay->ndiintex.getTextureID();
+        this->newtexdata = true;
+        return;
+    }
     if (this->filename == "") return;
     if (this->ffglsourcenr != -1) return;  // ffgl sources are handled in onestepfrom
     Layer *srclay = this;
@@ -13332,7 +13362,7 @@ std::vector<std::string> Mixer::write_layer(Layer* lay, std::ostream& wfile, boo
 	wfile << "FILENAME\n";
 	wfile << lay->filename;
 	wfile << "\n";
-	if (lay->type != ELEM_LIVE && lay->ffglsourcenr == -1) {
+	if (lay->ndisource == nullptr && lay->type != ELEM_NDI && lay->type != ELEM_LIVE && lay->ffglsourcenr == -1) {
 		wfile << "RELPATH\n";
 		if (lay->filename != "") {
 			wfile << std::filesystem::relative(lay->filename, mainprogram->contentpath).generic_string();

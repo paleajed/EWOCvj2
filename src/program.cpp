@@ -4546,6 +4546,21 @@ void Program::handle_wipemenu() {
 	}
 }
 
+
+void copy_ndi(Layer *src, Layer *dest) {
+    dest->type = ELEM_NDI;
+    dest->filename = src->ndisource->getSourceInfo().name;
+    dest->ndiparentlay = src;
+    dest->changeinit = 2;
+    {
+        std::lock_guard<std::mutex> lock(src->decresult_mutex);
+        dest->decresult->width = src->decresult->width;
+        dest->decresult->height = src->decresult->height;
+    }
+    dest->initialized = true;
+    dest->newtexdata = true;
+}
+
 void Program::handle_laymenu1() {
     GLuint tex;
 	int k = -1;
@@ -4723,68 +4738,71 @@ void Program::handle_laymenu1() {
         else if (!cond && k == 12) {
             // duplicate layer
             Layer* lay = mainmix->mouselayer->clone(true);
-            lay->isclone = false;
             Layer *duplay = lay;
-            lay->dontcloseclips = true;
-            lay->transfered = true;
-            if (mainmix->mouselayer->ffglsourcenr != -1) {
-                lay->set_ffglsource(mainmix->mouselayer->ffglnr);
-                for (int i = 0; i < lay->ffglparams.size(); i++) {
-                    Param *parsource = mainmix->mouselayer->ffglparams[i];
-                    Param *pardest = lay->ffglparams[i];
-                    if (parsource->type == FF_TYPE_EVENT) {
-                        // no value
-                    }
-                    else if (pardest->type == FF_TYPE_TEXT || pardest->type == FF_TYPE_FILE) {
-                        pardest->valuestr = parsource->valuestr;
-                    }
-                    else {
-                        pardest->value = parsource->value;
-                    }
-                }
-                // Note: FFGL source plugins use internal timing and cannot be synchronized
-                // copyTimingFrom would have no effect since we don't call setTime
-                // if (mainmix->mouselayer->instance && lay->instance) {
-                //     lay->instance->copyTimingFrom(mainmix->mouselayer->instance.get());
-                // }
+            if (mainmix->mouselayer->ndisource != nullptr) {
+                copy_ndi(mainmix->mouselayer, lay);
             }
-            else if (mainmix->mouselayer->isfsourcenr != -1) {
-                lay->set_isfsource(mainmix->mouselayer->isfnr);
-                for (int i = 0; i < lay->isfparams.size(); i++) {
-                    Param *parsource = mainmix->mouselayer->isfparams[i];
-                    Param *pardest = lay->isfparams[i];
-                    if (parsource->type == ISFLoader::PARAM_EVENT) {
-                        // no value
-                    } else {
-                        pardest->value = parsource->value;
-                    }
-                }
-                // Copy timing state from source instance to duplicate
-                if (mainmix->mouselayer->isfinstancenr != -1 && lay->isfinstancenr != -1) {
-                    auto sourceInstance = mainprogram->isfinstances[mainmix->mouselayer->isfpluginnr][mainmix->mouselayer->isfinstancenr];
-                    auto destInstance = mainprogram->isfinstances[lay->isfpluginnr][lay->isfinstancenr];
-                    if (sourceInstance && destInstance) {
-                        destInstance->copyTimingFrom(sourceInstance, mainmix->time);
-                    }
-                }
-            }
-            else if (lay->type == ELEM_IMAGE) {
-                duplay = lay->open_image(lay->filename, true, true);
-                {
-                    std::lock_guard<std::mutex> lock(duplay->decresult_mutex);
-                    duplay->decresult->width = mainmix->mouselayer->iw;
-                    duplay->decresult->height = mainmix->mouselayer->ih;
-                }
-                duplay->vidformat = mainmix->mouselayer->vidformat;
+            else if (mainmix->mouselayer->type == ELEM_NDI) {
+                copy_ndi(mainmix->mouselayer->ndiparentlay, lay);
             }
             else {
-                duplay = lay->open_video(lay->frame, lay->filename, false, true);
-                {
-                    std::lock_guard<std::mutex> lock(duplay->decresult_mutex);
-                    duplay->decresult->width = mainmix->mouselayer->iw;
-                    duplay->decresult->height = mainmix->mouselayer->ih;
+                lay->isclone = false;
+                lay->dontcloseclips = true;
+                lay->transfered = true;
+                if (mainmix->mouselayer->ffglsourcenr != -1) {
+                    lay->set_ffglsource(mainmix->mouselayer->ffglnr);
+                    for (int i = 0; i < lay->ffglparams.size(); i++) {
+                        Param *parsource = mainmix->mouselayer->ffglparams[i];
+                        Param *pardest = lay->ffglparams[i];
+                        if (parsource->type == FF_TYPE_EVENT) {
+                            // no value
+                        } else if (pardest->type == FF_TYPE_TEXT || pardest->type == FF_TYPE_FILE) {
+                            pardest->valuestr = parsource->valuestr;
+                        } else {
+                            pardest->value = parsource->value;
+                        }
+                    }
+                    // Note: FFGL source plugins use internal timing and cannot be synchronized
+                    // copyTimingFrom would have no effect since we don't call setTime
+                    // if (mainmix->mouselayer->instance && lay->instance) {
+                    //     lay->instance->copyTimingFrom(mainmix->mouselayer->instance.get());
+                    // }
+                } else if (mainmix->mouselayer->isfsourcenr != -1) {
+                    lay->set_isfsource(mainmix->mouselayer->isfnr);
+                    for (int i = 0; i < lay->isfparams.size(); i++) {
+                        Param *parsource = mainmix->mouselayer->isfparams[i];
+                        Param *pardest = lay->isfparams[i];
+                        if (parsource->type == ISFLoader::PARAM_EVENT) {
+                            // no value
+                        } else {
+                            pardest->value = parsource->value;
+                        }
+                    }
+                    // Copy timing state from source instance to duplicate
+                    if (mainmix->mouselayer->isfinstancenr != -1 && lay->isfinstancenr != -1) {
+                        auto sourceInstance = mainprogram->isfinstances[mainmix->mouselayer->isfpluginnr][mainmix->mouselayer->isfinstancenr];
+                        auto destInstance = mainprogram->isfinstances[lay->isfpluginnr][lay->isfinstancenr];
+                        if (sourceInstance && destInstance) {
+                            destInstance->copyTimingFrom(sourceInstance, mainmix->time);
+                        }
+                    }
+                } else if (lay->type == ELEM_IMAGE) {
+                    duplay = lay->open_image(lay->filename, true, true);
+                    {
+                        std::lock_guard<std::mutex> lock(duplay->decresult_mutex);
+                        duplay->decresult->width = mainmix->mouselayer->iw;
+                        duplay->decresult->height = mainmix->mouselayer->ih;
+                    }
+                    duplay->vidformat = mainmix->mouselayer->vidformat;
+                } else {
+                    duplay = lay->open_video(lay->frame, lay->filename, false, true);
+                    {
+                        std::lock_guard<std::mutex> lock(duplay->decresult_mutex);
+                        duplay->decresult->width = mainmix->mouselayer->iw;
+                        duplay->decresult->height = mainmix->mouselayer->ih;
+                    }
+                    duplay->vidformat = mainmix->mouselayer->vidformat;
                 }
-                duplay->vidformat = mainmix->mouselayer->vidformat;
             }
             duplay->shiftx->value = mainmix->mouselayer->shiftx->value;
             duplay->shifty->value = mainmix->mouselayer->shifty->value;
@@ -4802,42 +4820,49 @@ void Program::handle_laymenu1() {
         }
         else if (!cond && k == 13) {
             // clone layer
-            Layer* lay = mainmix->mouselayer->clone(false);
-            Layer *clonelay = lay;
-            lay->dontcloseclips = true;
-            lay->transfered = true;
-            if (mainmix->mouselayer->ffglsourcenr != -1) {
-                lay->ffglsourcenr = mainmix->mouselayer->ffglsourcenr;
-                lay->instance = mainmix->mouselayer->instance;
-                lay->ffglinstancenr = mainmix->mouselayer->ffglinstancenr;
-                lay->ffglparams = mainmix->mouselayer->ffglparams;
+            if (mainmix->mouselayer->ndisource != nullptr) {
+                Layer *lay = mainmix->mouselayer->clone(true);
+                copy_ndi(mainmix->mouselayer, lay);
             }
-            else if (mainmix->mouselayer->isfsourcenr != -1) {
-                lay->isfsourcenr = mainmix->mouselayer->isfsourcenr;
-                lay->instance = mainmix->mouselayer->instance;
-                lay->isfinstancenr = mainmix->mouselayer->isfinstancenr;
-                lay->isfpluginnr = mainmix->mouselayer->isfpluginnr;
-                lay->isfparams = mainmix->mouselayer->isfparams;
-            }
-            else if (lay->type == ELEM_IMAGE) {
-                clonelay = lay->open_image(lay->filename, true, true);
+            else if (mainmix->mouselayer->type == ELEM_NDI) {
+                Layer *lay = mainmix->mouselayer->clone(true);
+                copy_ndi(mainmix->mouselayer->ndiparentlay, lay);
             }
             else {
-                clonelay = lay->open_video(lay->frame, lay->filename, false, true);
+                Layer *lay = mainmix->mouselayer->clone(false);
+                Layer *clonelay = lay;
+                lay->dontcloseclips = true;
+                lay->transfered = true;
+                if (mainmix->mouselayer->ffglsourcenr != -1) {
+                    lay->ffglsourcenr = mainmix->mouselayer->ffglsourcenr;
+                    lay->instance = mainmix->mouselayer->instance;
+                    lay->ffglinstancenr = mainmix->mouselayer->ffglinstancenr;
+                    lay->ffglparams = mainmix->mouselayer->ffglparams;
+                } else if (mainmix->mouselayer->isfsourcenr != -1) {
+                    lay->isfsourcenr = mainmix->mouselayer->isfsourcenr;
+                    lay->instance = mainmix->mouselayer->instance;
+                    lay->isfinstancenr = mainmix->mouselayer->isfinstancenr;
+                    lay->isfpluginnr = mainmix->mouselayer->isfpluginnr;
+                    lay->isfparams = mainmix->mouselayer->isfparams;
+                } else if (lay->type == ELEM_IMAGE) {
+                    clonelay = lay->open_image(lay->filename, true, true);
+                } else {
+                    clonelay = lay->open_video(lay->frame, lay->filename, false, true);
+                }
+                clonelay->shiftx->value = mainmix->mouselayer->shiftx->value;
+                clonelay->shifty->value = mainmix->mouselayer->shifty->value;
+                clonelay->scale->value = mainmix->mouselayer->scale->value;
+                clonelay->opacity->value = mainmix->mouselayer->opacity->value;
+                if (mainmix->mouselayer->clonesetnr == -1) {
+                    mainmix->mouselayer->clonesetnr = mainmix->clonesets.size();
+                    //mainmix->firstlayers[mainmix->mouselayer->clonesetnr] = mainmix->mouselayer;      set in Layer::load_frame()
+                    std::unordered_set<Layer *> *uset = new std::unordered_set<Layer *>;
+                    mainmix->clonesets[mainmix->mouselayer->clonesetnr] = uset;
+                    uset->emplace(mainmix->mouselayer);
+                }
+                clonelay->clonesetnr = mainmix->mouselayer->clonesetnr;
+                mainmix->clonesets[mainmix->mouselayer->clonesetnr]->emplace(clonelay);
             }
-            clonelay->shiftx->value = mainmix->mouselayer->shiftx->value;
-            clonelay->shifty->value = mainmix->mouselayer->shifty->value;
-            clonelay->scale->value = mainmix->mouselayer->scale->value;
-            clonelay->opacity->value = mainmix->mouselayer->opacity->value;
-            if (mainmix->mouselayer->clonesetnr == -1) {
-                mainmix->mouselayer->clonesetnr = mainmix->clonesets.size();
-                //mainmix->firstlayers[mainmix->mouselayer->clonesetnr] = mainmix->mouselayer;      set in Layer::load_frame()
-                std::unordered_set<Layer*> *uset = new std::unordered_set<Layer*>;
-                mainmix->clonesets[mainmix->mouselayer->clonesetnr] = uset;
-                uset->emplace(mainmix->mouselayer);
-            }
-            clonelay->clonesetnr = mainmix->mouselayer->clonesetnr;
-            mainmix->clonesets[mainmix->mouselayer->clonesetnr]->emplace(clonelay);
         }
 		else if (k == (14 - cond * 2)) {
             // center image
@@ -5003,8 +5028,35 @@ void Program::handle_laymenu1() {
         else if ((!cond && k == 19) || k == 19 - cond * 2) {
             // select NDI source
             if (this->menuresults.size()) {
-                mainmix->mouselayer->ndisource = mainprogram->ndimanager.createSource(this->ndisourcenames[this->menuresults[0]]);
-                mainmix->mouselayer->ndisource->connect();
+                bool brk = false;
+                for (auto lays : mainmix->layers) {
+                    for (auto lay: lays) {
+                        if (lay->ndisource) {
+                            if (lay->ndisource->getSourceInfo().name == this->ndisourcenames[this->menuresults[0]]) {
+                                copy_ndi(lay, mainmix->mouselayer);
+                                mainmix->mouselayer->type = ELEM_NDI;
+                                mainmix->mouselayer->filename = this->ndisourcenames[this->menuresults[0]];
+                                mainmix->mouselayer->ndiparentlay = lay;
+                                mainmix->mouselayer->changeinit = 2;
+                                {
+                                    std::lock_guard<std::mutex> lock(lay->decresult_mutex);
+                                    mainmix->mouselayer->decresult->width = lay->decresult->width;
+                                    mainmix->mouselayer->decresult->height = lay->decresult->height;
+                                }
+                                mainmix->mouselayer->initialized = true;
+                                mainmix->mouselayer->newtexdata = true;
+                                brk = true;
+                                break;
+                            }
+                        }
+                    }
+                    if (brk) break;
+                }
+                if (!brk) {
+                    mainmix->mouselayer->ndisource = mainprogram->ndimanager.createSource(
+                            this->ndisourcenames[this->menuresults[0]]);
+                    mainmix->mouselayer->ndisource->connect();
+                }
             }
         }
         else if ((!cond && k == 20) || k == 20 - cond * 2) {
@@ -5132,9 +5184,36 @@ void Program::handle_newlaymenu() {
              std::vector<Layer *> &lvec = choose_layers(mainmix->mousedeck);
              Layer *lay = mainmix->add_layer(lvec, lvec.size());
              if (this->menuresults.size()) {
-                 lay->ndisource = mainprogram->ndimanager.createSource(this->ndisourcenames[this->menuresults[0]]);
-                 lay->ndisource->connect();
-                 bool dummy = false;
+                 bool brk = false;
+                 for (auto lays : mainmix->layers) {
+                     for (auto srclay: lays) {
+                         if (srclay->ndisource) {
+                             if (srclay->ndisource->getSourceInfo().name ==
+                                 this->ndisourcenames[this->menuresults[0]]) {
+                                 copy_ndi(srclay, lay);
+                                 lay->type = ELEM_NDI;
+                                 lay->filename = this->ndisourcenames[this->menuresults[0]];
+                                 lay->ndiparentlay = srclay;
+                                 lay->changeinit = 2;
+                                 {
+                                     std::lock_guard<std::mutex> lock(srclay->decresult_mutex);
+                                     lay->decresult->width = srclay->decresult->width;
+                                     lay->decresult->height = srclay->decresult->height;
+                                 }
+                                 lay->initialized = true;
+                                 lay->newtexdata = true;
+                                 brk = true;
+                                 break;
+                             }
+                         }
+                     }
+                     if (brk) break;
+                 }
+                 if (!brk) {
+                     lay->ndisource = mainprogram->ndimanager.createSource(
+                             this->ndisourcenames[this->menuresults[0]]);
+                     lay->ndisource->connect();
+                 }
              }
          }
 	}

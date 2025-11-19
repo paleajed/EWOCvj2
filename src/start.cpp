@@ -3680,14 +3680,34 @@ void onestepfrom(bool stage, Node *node, Node *prevnode, GLuint prevfbotex, GLui
         if (lay->pos == 1 && lay->comp == true) {
             bool dummy = false;
         }
-        if (lay->type == ELEM_IMAGE) {
+        if (lay->ndisource != nullptr) {
+            glActiveTexture(GL_TEXTURE0);
+            int ndiw, ndih;
+            glBindTexture(GL_TEXTURE_2D, lay->ndiintex.getTextureID());
+            glGetTexLevelParameteriv(GL_TEXTURE_2D, 0, GL_TEXTURE_WIDTH, &ndiw);
+            glGetTexLevelParameteriv(GL_TEXTURE_2D, 0, GL_TEXTURE_HEIGHT, &ndih);
+            frac = (float)ndiw / (float)ndih;
+            scw = (float)ndiw;
+            sch = (float)ndih;
+        }
+        else if (lay->type == ELEM_IMAGE) {
             ilBindImage(lay->boundimage);
             ilActiveImage((int)lay->frame);
             frac = (float)ilGetInteger(IL_IMAGE_WIDTH) / (float)ilGetInteger(IL_IMAGE_HEIGHT);
             scw = (float)ilGetInteger(IL_IMAGE_WIDTH);
             sch = (float)ilGetInteger(IL_IMAGE_HEIGHT);
         }
-        else if (lay->type != ELEM_LIVE){
+        else if (lay->type == ELEM_NDI) {
+            glActiveTexture(GL_TEXTURE0);
+            int ndiw, ndih;
+            glBindTexture(GL_TEXTURE_2D, lay->ndiparentlay->ndiintex.getTextureID());
+            glGetTexLevelParameteriv(GL_TEXTURE_2D, 0, GL_TEXTURE_WIDTH, &ndiw);
+            glGetTexLevelParameteriv(GL_TEXTURE_2D, 0, GL_TEXTURE_HEIGHT, &ndih);
+            frac = (float)ndiw / (float)ndih;
+            scw = (float)ndiw;
+            sch = (float)ndih;
+        }
+        else if (lay->type != ELEM_LIVE) {
             if (lay->decresult->height == 0) return;
             frac = (float)(lay->decresult->width) / (float)(lay->decresult->height);
             scw = (float)(lay->decresult->width);
@@ -3768,7 +3788,7 @@ void onestepfrom(bool stage, Node *node, Node *prevnode, GLuint prevfbotex, GLui
             //glViewport(0, 0, lay->ndiintex.getWidth(), lay->ndiintex.getHeight());
             glClearColor(0.0f, 0.0f, 0.0f, 0.0f);
             glClear(GL_COLOR_BUFFER_BIT);
-            draw_box(nullptr, black, -1.0f, 1.0f, 2.0f, -2.0f, sx, sy, sc, op, 0, lay->ndiintex.getTextureID(), 0, 0, false);
+            draw_box(nullptr, black, -1.0f, 1.0f, 2.0f, -2.0f, 0.0f, 0.0f, 1.0f, op, 0, lay->ndiintex.getTextureID(), 0, 0, false);
         }
         else if (lay->ffglsourcenr != -1) {
             FFGLFramebuffer infbo;
@@ -4413,6 +4433,11 @@ bool display_mix() {
                      box->vtxcoords->h - ys * 2.0f, node->mixtex);
             mainprogram->outputmonitor->in();
         }
+
+        if (node->ndioutput != nullptr) {
+            node->ndiouttex.setFromExistingTexture(node->mixtex, mainprogram->ow[!mainprogram->prevmodus], mainprogram->oh[!mainprogram->prevmodus]);
+            node->ndioutput->sendFrame(node->ndiouttex);
+        }
     }
 	else {
 		mainprogram->uniformCache->setBool("wipe", false);
@@ -4458,6 +4483,11 @@ bool display_mix() {
             draw_box(red, black, box->vtxcoords->x1 + xs * 2.0f, box->vtxcoords->y1 + ys * 2.0f,
                      box->vtxcoords->w - xs * 4.0f, box->vtxcoords->h - ys * 4.0f, node->mixtex);
             mainprogram->mainmonitor->in();
+        }
+
+        if (node->ndioutput != nullptr) {
+            node->ndiouttex.setFromExistingTexture(node->mixtex, mainprogram->ow[!mainprogram->prevmodus], mainprogram->oh[!mainprogram->prevmodus]);
+            node->ndioutput->sendFrame(node->ndiouttex);
         }
 	}
 

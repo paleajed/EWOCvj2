@@ -32,8 +32,9 @@ typedef enum
 	ELEM_IMAGE = 2,
 	ELEM_DECK = 3,
 	ELEM_MIX = 4,
-    ELEM_LIVE = 5,
-    ELEM_SOURCE = 1000,   // sources start here and count upwards
+	ELEM_LIVE = 5,
+	ELEM_NDI = 6,
+	ELEM_SOURCE = 1000,   // sources start here and count upwards
 } ELEM_TYPE;
 
 typedef enum
@@ -376,6 +377,7 @@ class Layer {
         std::shared_ptr<NDIOutput> ndioutput = nullptr;
         NDITexture ndiintex;
         NDITexture ndiouttex;
+		Layer *ndiparentlay;
 
         int packets_beyond_current = 0;
         std::vector<int> latestptsvec;
