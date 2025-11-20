@@ -13,7 +13,7 @@
 NDITexture::NDITexture()
         : texture_id_(0), pbo_upload_(0), pbo_download_(0),
           width_(0), height_(0), format_(GL_RGBA), internal_format_(GL_RGBA8),
-          upload_pbo_index_(0) {
+          upload_pbo_index_(0), upload_pbo_allocated_size_(0) {
     upload_pbos_[0] = 0;
     upload_pbos_[1] = 0;
 }
@@ -24,50 +24,79 @@ NDITexture::~NDITexture() {
 
 bool NDITexture::uploadFrame(const NDIlib_video_frame_v2_t& frame) {
     if (!frame.p_data || frame.xres <= 0 || frame.yres <= 0) {
+        std::cerr << "Invalid NDI frame: p_data=" << frame.p_data
+                  << " xres=" << frame.xres << " yres=" << frame.yres << std::endl;
+        return false;
+    }
+
+    // Determine format based on NDI FourCC FIRST
+    GLenum gl_format = GL_RGBA;
+    GLenum gl_type = GL_UNSIGNED_BYTE;
+    int bytes_per_pixel = 4;
+
+    switch (frame.FourCC) {
+        case NDIlib_FourCC_video_type_RGBA:
+            gl_format = GL_RGBA;
+            bytes_per_pixel = 4;
+            break;
+        case NDIlib_FourCC_video_type_RGBX:
+            gl_format = GL_RGB;
+            bytes_per_pixel = 4;
+            break;
+        case NDIlib_FourCC_video_type_BGRA:
+            gl_format = GL_BGRA;
+            bytes_per_pixel = 4;
+            break;
+        case NDIlib_FourCC_video_type_BGRX:
+            gl_format = GL_BGR;
+            bytes_per_pixel = 4;
+            break;
+        case NDIlib_FourCC_video_type_UYVY:
+        case NDIlib_FourCC_video_type_UYVA:
+            // UYVY format requires YUV->RGB conversion which is not implemented
+            std::cerr << "UYVY format not supported on receiver (FourCC: " << frame.FourCC
+                      << "). Configure NDI output to send RGBA instead." << std::endl;
+            return false;
+        default:
+            std::cerr << "Unknown NDI format: " << frame.FourCC << ", assuming RGBA" << std::endl;
+            gl_format = GL_RGBA;
+            bytes_per_pixel = 4;
+            break;
+    }
+
+    // Validate line stride based on actual format
+    int min_stride = frame.xres * bytes_per_pixel;
+    if (frame.line_stride_in_bytes <= 0 || frame.line_stride_in_bytes < min_stride) {
+        std::cerr << "Invalid NDI frame stride: " << frame.line_stride_in_bytes
+                  << " (expected at least " << min_stride << " for FourCC " << frame.FourCC << ")" << std::endl;
         return false;
     }
 
     // Create texture if it doesn't exist or dimensions changed
     if (texture_id_ == 0 || width_ != frame.xres || height_ != frame.yres) {
+        std::cerr << "Creating texture: " << frame.xres << "x" << frame.yres
+                  << " (FourCC: " << frame.FourCC << ")" << std::endl;
         if (!createTexture(frame.xres, frame.yres)) {
+            std::cerr << "Failed to create texture!" << std::endl;
             return false;
         }
     }
 
-    // Determine format based on NDI FourCC
-    GLenum gl_format = GL_RGBA;
-    GLenum gl_type = GL_UNSIGNED_BYTE;
+    // Use the actual NDI frame stride, not assumed width * 4
+    // This is critical for internal sources which may have different alignment
+    int frame_data_size = frame.line_stride_in_bytes * frame.yres;
 
-    switch (frame.FourCC) {
-        case NDIlib_FourCC_video_type_RGBA:
-            gl_format = GL_RGBA;
-            break;
-        case NDIlib_FourCC_video_type_RGBX:
-            gl_format = GL_RGB;
-            break;
-        case NDIlib_FourCC_video_type_BGRA:
-            gl_format = GL_BGRA;
-            break;
-        case NDIlib_FourCC_video_type_BGRX:
-            gl_format = GL_BGR;
-            break;
-        default:
-            gl_format = GL_RGBA;
-            break;
-    }
-
-    int buffer_size = width_ * height_ * 4;
-
-    // Setup PBOs on first use
+    // Setup PBOs on first use - allocate for the actual frame size with stride
     if (upload_pbos_[0] == 0) {
         glGenBuffers(2, upload_pbos_);
 
         for (int i = 0; i < 2; i++) {
             glBindBuffer(GL_PIXEL_UNPACK_BUFFER, upload_pbos_[i]);
-            glBufferData(GL_PIXEL_UNPACK_BUFFER, buffer_size, nullptr, GL_STREAM_DRAW);
+            glBufferData(GL_PIXEL_UNPACK_BUFFER, frame_data_size, nullptr, GL_STREAM_DRAW);
         }
         glBindBuffer(GL_PIXEL_UNPACK_BUFFER, 0);
         upload_pbo_index_ = 0;
+        upload_pbo_allocated_size_ = frame_data_size;
     }
 
     int current_write_pbo = upload_pbo_index_ % 2;
@@ -88,11 +117,18 @@ bool NDITexture::uploadFrame(const NDIlib_video_frame_v2_t& frame) {
 
     // Write current frame data to current PBO for NEXT frame to use
     glBindBuffer(GL_PIXEL_UNPACK_BUFFER, upload_pbos_[current_write_pbo]);
-    glBufferData(GL_PIXEL_UNPACK_BUFFER, buffer_size, nullptr, GL_STREAM_DRAW);
+
+    // Only reallocate PBO if the frame is bigger than what we allocated
+    // This prevents reallocating every frame which kills performance
+    if (frame_data_size > upload_pbo_allocated_size_) {
+        glBufferData(GL_PIXEL_UNPACK_BUFFER, frame_data_size, nullptr, GL_STREAM_DRAW);
+        upload_pbo_allocated_size_ = frame_data_size;
+    }
 
     void* ptr = glMapBuffer(GL_PIXEL_UNPACK_BUFFER, GL_WRITE_ONLY);
     if (ptr) {
-        memcpy(ptr, frame.p_data, buffer_size);
+        // Use the actual frame data size from NDI
+        memcpy(ptr, frame.p_data, frame_data_size);
         glUnmapBuffer(GL_PIXEL_UNPACK_BUFFER);
     }
 
@@ -183,6 +219,7 @@ void NDITexture::cleanup() {
         glDeleteBuffers(2, upload_pbos_);
         upload_pbos_[0] = 0;
         upload_pbos_[1] = 0;
+        upload_pbo_allocated_size_ = 0;
     }
 
     if (pbo_upload_ != 0) {
@@ -380,6 +417,10 @@ void NDISource::disconnect() {
         return;
     }
 
+    // Set connected to false FIRST to prevent getLatestFrame() from proceeding
+    connected_ = false;
+    // Clear the new frame flag immediately to prevent any frame access
+    has_new_frame_ = false;
     running_ = false;
 
     if (receiver_thread_.joinable()) {
@@ -387,7 +428,6 @@ void NDISource::disconnect() {
     }
 
     cleanup();
-    connected_ = false;
 
     if (connection_callback_) {
         connection_callback_(false);
@@ -401,19 +441,21 @@ bool NDISource::getLatestFrame(NDITexture& texture) {
 
     std::lock_guard<std::mutex> lock(frame_mutex_);
 
-    if (frame_valid_) {
-        bool success = texture.uploadFrame(current_frame_);
-        if (success) {
-            has_new_frame_ = false;
-
-            if (frame_callback_) {
-                frame_callback_(texture);
-            }
-        }
-        return success;
+    // Double-check everything under mutex lock to prevent race condition
+    // connected_ could have been set to false while we were waiting for the lock
+    if (!connected_ || !frame_valid_ || current_frame_.p_data == nullptr) {
+        return false;
     }
 
-    return false;
+    bool success = texture.uploadFrame(current_frame_);
+    if (success) {
+        has_new_frame_ = false;
+
+        if (frame_callback_) {
+            frame_callback_(texture);
+        }
+    }
+    return success;
 }
 
 void NDISource::receiverLoop() {
@@ -490,6 +532,8 @@ void NDISource::cleanup() {
         std::lock_guard<std::mutex> lock(frame_mutex_);
         NDIlib_recv_free_video_v2(ndi_recv_, &current_frame_);
         frame_valid_ = false;
+        // Clear the frame data pointer to catch any use-after-free bugs
+        memset(&current_frame_, 0, sizeof(current_frame_));
     }
 
     if (ndi_recv_) {
@@ -510,7 +554,8 @@ void NDISource::cleanup() {
 NDIOutput::NDIOutput(const std::string& output_name, int width, int height, double fps)
         : output_name_(output_name), width_(width), height_(height), fps_(fps),
           ndi_send_(nullptr), streaming_(false), frame_counter_(0),
-          max_buffered_frames_(3), use_gpu_conversion_(true) {
+          max_buffered_frames_(3), use_gpu_conversion_(false),  // Disabled: receiver doesn't handle UYVY
+          last_send_time_(std::chrono::steady_clock::now()) {
 
     yuv_converter_ = std::make_unique<NDIYUVConverter>();
 }
@@ -553,12 +598,12 @@ bool NDIOutput::sendFrame(const NDITexture& texture) {
     }
 
     // Time-based frame rate limiting for 30fps NDI output
-    static auto last_ndi_send_time = std::chrono::steady_clock::now();
+    // Use member variable last_send_time_, NOT static (multiple outputs need independent throttles)
     auto now = std::chrono::steady_clock::now();
 
     // Calculate time since last NDI frame (targeting 30fps = 33.33ms intervals)
     auto target_interval = std::chrono::microseconds(33333);  // 1/30 second
-    auto elapsed = now - last_ndi_send_time;
+    auto elapsed = now - last_send_time_;
 
     if (elapsed < target_interval) {
         // Too soon for next NDI frame - always process downloads though
@@ -567,7 +612,7 @@ bool NDIOutput::sendFrame(const NDITexture& texture) {
     }
 
     // Time to send a new NDI frame
-    last_ndi_send_time = now;
+    last_send_time_ = now;
 
     // Initialize GPU converter if needed (only once)
     if (use_gpu_conversion_ && !yuv_converter_->isInitialized()) {

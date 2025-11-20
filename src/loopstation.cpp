@@ -332,6 +332,18 @@ void LoopStationElement::mouse_handle() {
         this->lpst->foundrec = true;
     }
 
+    auto step = []() {
+        if (mainprogram->steplprow) {
+            int rowpos = loopstation->currelem->pos;
+            rowpos++;
+            if (rowpos > 7) {
+                rowpos = 0;
+            }
+            loopstation->currelem = loopstation->elements[rowpos];
+            mainprogram->waitonetime = true;
+        }
+    };
+
     mainprogram->handle_button(this->recbut, true, false, true);
     if (this->recbut->toggled()) {
         loopstation->currelem = this;
@@ -348,15 +360,7 @@ void LoopStationElement::mouse_handle() {
             this->starttime = std::chrono::high_resolution_clock::now();
             mainprogram->recundo = false;
         } else {
-            if (mainprogram->steplprow) {
-                int rowpos = loopstation->currelem->pos;
-                rowpos++;
-                if (rowpos > 7) {
-                    rowpos = 0;
-                }
-                loopstation->currelem = loopstation->elements[rowpos];
-                mainprogram->waitonetime = true;
-            }
+            step();
             if (this->eventlist.size()) {
                 std::chrono::high_resolution_clock::time_point now = std::chrono::high_resolution_clock::now();
                 std::chrono::duration<double> elapsed;
@@ -390,6 +394,7 @@ void LoopStationElement::mouse_handle() {
                 elapsed = std::chrono::duration_cast<std::chrono::duration<double>>(now - this->starttime);
                 this->totaltime = std::chrono::duration_cast<std::chrono::milliseconds>(elapsed).count();
                 this->eventpos = 0;
+                step();
             }
             this->recbut->value = false;
             this->recbut->oldvalue = false;
@@ -427,6 +432,7 @@ void LoopStationElement::mouse_handle() {
                 elapsed = std::chrono::duration_cast<std::chrono::duration<double>>(now - this->starttime);
                 this->totaltime = std::chrono::duration_cast<std::chrono::milliseconds>(elapsed).count();
                 this->eventpos = 0;
+                step();
             }
             this->recbut->value = false;
             this->recbut->oldvalue = false;

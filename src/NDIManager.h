@@ -84,6 +84,7 @@ private:
     GLuint pbo_download_; // Pixel buffer object for async downloads
     GLuint upload_pbos_[2]; // Double-buffered PBOs for async upload
     int upload_pbo_index_;  // Current PBO index for upload
+    int upload_pbo_allocated_size_;  // Actual allocated size of upload PBOs
     int width_, height_;
     GLenum format_;
     GLenum internal_format_;

@@ -19,6 +19,8 @@
 #include <algorithm>
 #include <filesystem>
 #include <cerrno>
+#include <thread>
+#include <chrono>
 
 #include "GL/glew.h"
 #include "GL/gl.h"
@@ -4561,6 +4563,96 @@ void copy_ndi(Layer *src, Layer *dest) {
     dest->newtexdata = true;
 }
 
+void set_ndi(Layer *ndilay) {
+    if (mainprogram->menuresults.size()) {
+        bool cond = (ndilay->ndisource != nullptr);
+        bool brk = false;
+        for (auto lays : mainmix->layers) {
+            for (auto srclay: lays) {
+                if (srclay == ndilay) continue;
+                if (srclay->ndisource) {
+                    if (srclay->ndisource->getSourceInfo().name ==
+                        mainprogram->ndisourcenames[mainprogram->menuresults[0]]) {
+                        copy_ndi(srclay, ndilay);
+                        ndilay->type = ELEM_NDI;
+                        ndilay->filename = mainprogram->ndisourcenames[mainprogram->menuresults[0]];
+                        ndilay->ndiparentlay = srclay;
+                        ndilay->changeinit = 2;
+                        {
+                            std::lock_guard<std::mutex> lock(srclay->decresult_mutex);
+                            ndilay->decresult->width = srclay->decresult->width;
+                            ndilay->decresult->height = srclay->decresult->height;
+                        }
+                        ndilay->initialized = true;
+                        ndilay->newtexdata = true;
+                        brk = true;
+                        break;
+                    }
+                }
+            }
+            if (brk) break;
+        }
+        if (!brk) {
+            ELEM_TYPE butype = ndilay->type;
+
+            // Store old source temporarily to avoid dangling pointer during switch
+            auto old_source = ndilay->ndisource;
+
+            // Create and connect new source FIRST
+            auto new_source = mainprogram->ndimanager.createSource(
+                    mainprogram->ndisourcenames[mainprogram->menuresults[0]]);
+            new_source->connect();
+
+            // Wait for new source to receive at least one frame before switching
+            // This is critical for internal NDI sources that may share buffers
+            int wait_count = 0;
+            while (!new_source->hasNewFrame() && wait_count < 100) {
+                std::this_thread::sleep_for(std::chrono::milliseconds(10));
+                wait_count++;
+            }
+
+            // Now atomically switch to new source
+            ndilay->type = ELEM_FILE;
+            ndilay->ndisource = new_source;
+            ndilay->filename = ndilay->ndisource->getSourceInfo().name;
+
+
+            // Release old source after new one is ready
+            if (old_source != nullptr) {
+                old_source->releaseReference();
+            }
+
+            if (cond) {
+                if (ndilay->clonesetnr != -1) {
+                    std::unordered_set cpset = *mainmix->clonesets[ndilay->clonesetnr];
+                    for (auto it: cpset) {
+                        Layer *lay = it;
+                        if (lay->pos == ndilay->pos && lay->deck == ndilay->deck && lay->comp == ndilay->comp) {
+                            continue;
+                        }
+                        copy_ndi(ndilay, lay);
+                    }
+                }
+            } else if (butype == ELEM_NDI) {
+                if (ndilay->clonesetnr != -1) {
+                    std::unordered_set cpset = *mainmix->clonesets[ndilay->clonesetnr];
+                    for (auto it: cpset) {
+                        Layer *lay = it;
+                        if (lay->pos == ndilay->pos && lay->deck == ndilay->deck && lay->comp == ndilay->comp) {
+                            continue;
+                        }
+                        if (lay->ndisource != nullptr) {
+                            lay->ndisource->releaseReference();
+                            lay->ndisource = nullptr;
+                        }
+                        copy_ndi(ndilay, lay);
+                    }
+                }
+            }
+        }
+    }
+}
+
 void Program::handle_laymenu1() {
     GLuint tex;
 	int k = -1;
@@ -4601,7 +4693,8 @@ void Program::handle_laymenu1() {
 	if (this->laymenu1->state > 1) {
         if ((mainmix->mouselayer->vidformat == 188 || mainmix->mouselayer->vidformat == 187) ||
         mainmix->mouselayer->filename == "" || mainmix->mouselayer->type == ELEM_IMAGE || mainmix->mouselayer->type
-        == ELEM_LIVE) {
+                                                                                          == ELEM_LIVE || mainmix->mouselayer->type
+                                                                                                          == ELEM_NDI) {
             if (this->laymenu1->entries.back() == "HAP encode on-the-fly") {
                 this->laymenu1->entries.pop_back();
             }
@@ -4820,17 +4913,15 @@ void Program::handle_laymenu1() {
         }
         else if (!cond && k == 13) {
             // clone layer
+            Layer *lay = mainmix->mouselayer->clone(false);
+            Layer *clonelay = lay;
             if (mainmix->mouselayer->ndisource != nullptr) {
-                Layer *lay = mainmix->mouselayer->clone(true);
                 copy_ndi(mainmix->mouselayer, lay);
             }
             else if (mainmix->mouselayer->type == ELEM_NDI) {
-                Layer *lay = mainmix->mouselayer->clone(true);
                 copy_ndi(mainmix->mouselayer->ndiparentlay, lay);
             }
             else {
-                Layer *lay = mainmix->mouselayer->clone(false);
-                Layer *clonelay = lay;
                 lay->dontcloseclips = true;
                 lay->transfered = true;
                 if (mainmix->mouselayer->ffglsourcenr != -1) {
@@ -4849,20 +4940,20 @@ void Program::handle_laymenu1() {
                 } else {
                     clonelay = lay->open_video(lay->frame, lay->filename, false, true);
                 }
-                clonelay->shiftx->value = mainmix->mouselayer->shiftx->value;
-                clonelay->shifty->value = mainmix->mouselayer->shifty->value;
-                clonelay->scale->value = mainmix->mouselayer->scale->value;
-                clonelay->opacity->value = mainmix->mouselayer->opacity->value;
-                if (mainmix->mouselayer->clonesetnr == -1) {
-                    mainmix->mouselayer->clonesetnr = mainmix->clonesets.size();
-                    //mainmix->firstlayers[mainmix->mouselayer->clonesetnr] = mainmix->mouselayer;      set in Layer::load_frame()
-                    std::unordered_set<Layer *> *uset = new std::unordered_set<Layer *>;
-                    mainmix->clonesets[mainmix->mouselayer->clonesetnr] = uset;
-                    uset->emplace(mainmix->mouselayer);
-                }
-                clonelay->clonesetnr = mainmix->mouselayer->clonesetnr;
-                mainmix->clonesets[mainmix->mouselayer->clonesetnr]->emplace(clonelay);
             }
+            if (mainmix->mouselayer->clonesetnr == -1) {
+                mainmix->mouselayer->clonesetnr = mainmix->clonesets.size();
+                //mainmix->firstlayers[mainmix->mouselayer->clonesetnr] = mainmix->mouselayer;      set in Layer::load_frame()
+                std::unordered_set<Layer *> *uset = new std::unordered_set<Layer *>;
+                mainmix->clonesets[mainmix->mouselayer->clonesetnr] = uset;
+                uset->emplace(mainmix->mouselayer);
+            }
+            clonelay->clonesetnr = mainmix->mouselayer->clonesetnr;
+            mainmix->clonesets[mainmix->mouselayer->clonesetnr]->emplace(clonelay);
+            clonelay->shiftx->value = mainmix->mouselayer->shiftx->value;
+            clonelay->shifty->value = mainmix->mouselayer->shifty->value;
+            clonelay->scale->value = mainmix->mouselayer->scale->value;
+            clonelay->opacity->value = mainmix->mouselayer->opacity->value;
         }
 		else if (k == (14 - cond * 2)) {
             // center image
@@ -5027,37 +5118,7 @@ void Program::handle_laymenu1() {
         }
         else if ((!cond && k == 19) || k == 19 - cond * 2) {
             // select NDI source
-            if (this->menuresults.size()) {
-                bool brk = false;
-                for (auto lays : mainmix->layers) {
-                    for (auto lay: lays) {
-                        if (lay->ndisource) {
-                            if (lay->ndisource->getSourceInfo().name == this->ndisourcenames[this->menuresults[0]]) {
-                                copy_ndi(lay, mainmix->mouselayer);
-                                mainmix->mouselayer->type = ELEM_NDI;
-                                mainmix->mouselayer->filename = this->ndisourcenames[this->menuresults[0]];
-                                mainmix->mouselayer->ndiparentlay = lay;
-                                mainmix->mouselayer->changeinit = 2;
-                                {
-                                    std::lock_guard<std::mutex> lock(lay->decresult_mutex);
-                                    mainmix->mouselayer->decresult->width = lay->decresult->width;
-                                    mainmix->mouselayer->decresult->height = lay->decresult->height;
-                                }
-                                mainmix->mouselayer->initialized = true;
-                                mainmix->mouselayer->newtexdata = true;
-                                brk = true;
-                                break;
-                            }
-                        }
-                    }
-                    if (brk) break;
-                }
-                if (!brk) {
-                    mainmix->mouselayer->ndisource = mainprogram->ndimanager.createSource(
-                            this->ndisourcenames[this->menuresults[0]]);
-                    mainmix->mouselayer->ndisource->connect();
-                }
-            }
+            set_ndi(mainmix->mouselayer);
         }
         else if ((!cond && k == 20) || k == 20 - cond * 2) {
             if (mainmix->mouselayer->ndioutput == nullptr) {
@@ -5183,38 +5244,7 @@ void Program::handle_newlaymenu() {
              // select NDI source
              std::vector<Layer *> &lvec = choose_layers(mainmix->mousedeck);
              Layer *lay = mainmix->add_layer(lvec, lvec.size());
-             if (this->menuresults.size()) {
-                 bool brk = false;
-                 for (auto lays : mainmix->layers) {
-                     for (auto srclay: lays) {
-                         if (srclay->ndisource) {
-                             if (srclay->ndisource->getSourceInfo().name ==
-                                 this->ndisourcenames[this->menuresults[0]]) {
-                                 copy_ndi(srclay, lay);
-                                 lay->type = ELEM_NDI;
-                                 lay->filename = this->ndisourcenames[this->menuresults[0]];
-                                 lay->ndiparentlay = srclay;
-                                 lay->changeinit = 2;
-                                 {
-                                     std::lock_guard<std::mutex> lock(srclay->decresult_mutex);
-                                     lay->decresult->width = srclay->decresult->width;
-                                     lay->decresult->height = srclay->decresult->height;
-                                 }
-                                 lay->initialized = true;
-                                 lay->newtexdata = true;
-                                 brk = true;
-                                 break;
-                             }
-                         }
-                     }
-                     if (brk) break;
-                 }
-                 if (!brk) {
-                     lay->ndisource = mainprogram->ndimanager.createSource(
-                             this->ndisourcenames[this->menuresults[0]]);
-                     lay->ndisource->connect();
-                 }
-             }
+             set_ndi(lay);
          }
 	}
 

@@ -3781,7 +3781,7 @@ void onestepfrom(bool stage, Node *node, Node *prevnode, GLuint prevfbotex, GLui
                     std::cout << "Failed to get frame!" << std::endl;
                 }
             }
-            lay->filename = "";
+            //lay->filename = "";
 
             glBindFramebuffer(GL_FRAMEBUFFER, lay->fbo);
             glDrawBuffer(GL_COLOR_ATTACHMENT0);

@@ -779,78 +779,83 @@ void BinsMain::handle(bool draw) {
     serveripbox.vtxcoords->h = 0.085f;
     serveripbox.upvtxtoscr();
 
-    if (!mainprogram->enteringserverip) {
-        draw_box(white, darkblue, &serveripbox, -1);
-        std::string displayText = mainprogram->manualserverip.empty() ? "LOCAL SERVER" : mainprogram->manualserverip;
-        render_text(displayText, white, -0.93f, -0.95f, 0.00075f, 0.0012f);
+	if (!mainprogram->server) {
+		if (!mainprogram->enteringserverip) {
+			draw_box(white, darkblue, &serveripbox, -1);
+			std::string displayText = mainprogram->manualserverip.empty() ? "LOCAL SERVER"
+																		  : mainprogram->manualserverip;
+			render_text(displayText, white, -0.93f, -0.95f, 0.00075f, 0.0012f);
 
-        // Click to start entering server IP
-        if (serveripbox.in()) {
-            this->selboxing = false;
-            if (mainprogram->leftmouse) {
-				mainprogram->leftmouse = false;
-                mainprogram->enteringserverip = true;
-                mainprogram->renaming = EDIT_STRING;
-                mainprogram->inputtext = mainprogram->manualserverip;
-                mainprogram->cursorpos0 = mainprogram->inputtext.length();
-                SDL_StartTextInput();
-            }
-        }
-    } else {
-        // Currently entering server IP
-        draw_box(white, darkblue, &serveripbox, -1);
-        if (mainprogram->renaming == EDIT_NONE) {
-            // User finished entering
-            mainprogram->enteringserverip = false;
-            mainprogram->manualserverip = mainprogram->inputtext;
+			// Click to start entering server IP
+			if (serveripbox.in()) {
+				this->selboxing = false;
+				if (mainprogram->leftmouse) {
+					mainprogram->leftmouse = false;
+					mainprogram->enteringserverip = true;
+					mainprogram->renaming = EDIT_STRING;
+					mainprogram->inputtext = mainprogram->manualserverip;
+					mainprogram->cursorpos0 = mainprogram->inputtext.length();
+					SDL_StartTextInput();
+				}
+			}
+		} else {
+			// Currently entering server IP
+			draw_box(white, darkblue, &serveripbox, -1);
+			if (mainprogram->renaming == EDIT_NONE) {
+				// User finished entering
+				mainprogram->enteringserverip = false;
+				mainprogram->manualserverip = mainprogram->inputtext;
 
-            // If valid IP entered, attempt to connect
-            if (!mainprogram->manualserverip.empty() && mainprogram->manualserverip != "LOCAL SERVER") {
-                // Validate IP before connecting
-                struct sockaddr_in test_addr;
-                if (inet_pton(AF_INET, mainprogram->manualserverip.c_str(), &test_addr.sin_addr) > 0) {
-                    std::cout << "Connecting to remote server IP: " << mainprogram->manualserverip << std::endl;
+				// If valid IP entered, attempt to connect
+				if (!mainprogram->manualserverip.empty() && mainprogram->manualserverip != "LOCAL SERVER") {
+					// Validate IP before connecting
+					struct sockaddr_in test_addr;
+					if (inet_pton(AF_INET, mainprogram->manualserverip.c_str(), &test_addr.sin_addr) > 0) {
+						std::cout << "Connecting to remote server IP: " << mainprogram->manualserverip << std::endl;
 
-                    // If we're currently a server, stop being server
-                    if (mainprogram->server) {
-                        std::cout << "Quitting server role to connect to remote server" << std::endl;
-                        mainprogram->server = false;
-                        mainprogram->stop_discovery();
+						// If we're currently a server, stop being server
+						if (mainprogram->server) {
+							std::cout << "Quitting server role to connect to remote server" << std::endl;
+							mainprogram->server = false;
+							mainprogram->stop_discovery();
 
-                        // Clean up UPnP port mapping (thread-safe)
-                        {
-                            std::lock_guard<std::mutex> lock(mainprogram->upnpMutex);
-                            if (mainprogram->upnpMapper) {
-                                std::cout << "Removing UPnP port mapping..." << std::endl;
-                                mainprogram->upnpMapper->removePortMapping(8000, "TCP");
-                                delete mainprogram->upnpMapper;
-                                mainprogram->upnpMapper = nullptr;
-                            }
-                        }
-                    }
+							// Clean up UPnP port mapping (thread-safe)
+							{
+								std::lock_guard<std::mutex> lock(mainprogram->upnpMutex);
+								if (mainprogram->upnpMapper) {
+									std::cout << "Removing UPnP port mapping..." << std::endl;
+									mainprogram->upnpMapper->removePortMapping(8000, "TCP");
+									delete mainprogram->upnpMapper;
+									mainprogram->upnpMapper = nullptr;
+								}
+							}
+						}
 
-                    // Mark as disconnected so socket_client will create fresh socket
-                    mainprogram->connected = 0;
-                    mainprogram->serverip = mainprogram->manualserverip;
-                    mainprogram->autoConnectAttempted = true;
+						// Mark as disconnected so socket_client will create fresh socket
+						mainprogram->connected = 0;
+						mainprogram->serverip = mainprogram->manualserverip;
+						mainprogram->autoConnectAttempted = true;
 
-                    if (inet_pton(AF_INET, mainprogram->serverip.c_str(), &mainprogram->serv_addr_client.sin_addr) > 0) {
-                        int opt = 1;
-                        std::thread sockclient(&Program::socket_client, mainprogram, mainprogram->serv_addr_client, opt);
-                        sockclient.detach();
-                    }
-                } else {
-                    std::cout << "Invalid IP address entered: " << mainprogram->manualserverip << std::endl;
-                }
-            }
-        } else {
-            // Show input text with cursor - validate and color accordingly
-            struct sockaddr_in test_addr;
-            bool validIP = (inet_pton(AF_INET, mainprogram->inputtext.c_str(), &test_addr.sin_addr) > 0);
-            float* textColor = validIP ? white : red;
-            render_text(mainprogram->inputtext, textColor, -0.86f, -0.95f, 0.00075f, 0.0012f);
-        }
-    }
+						if (inet_pton(AF_INET, mainprogram->serverip.c_str(), &mainprogram->serv_addr_client.sin_addr) >
+							0) {
+							int opt = 1;
+							std::thread sockclient(&Program::socket_client, mainprogram, mainprogram->serv_addr_client,
+												   opt);
+							sockclient.detach();
+						}
+					} else {
+						std::cout << "Invalid IP address entered: " << mainprogram->manualserverip << std::endl;
+					}
+				}
+			} else {
+				// Show input text with cursor - validate and color accordingly
+				struct sockaddr_in test_addr;
+				bool validIP = (inet_pton(AF_INET, mainprogram->inputtext.c_str(), &test_addr.sin_addr) > 0);
+				float *textColor = validIP ? white : red;
+				render_text(mainprogram->inputtext, textColor, -0.86f, -0.95f, 0.00075f, 0.0012f);
+			}
+		}
+	}
 
     std::vector<std::string> connsockNamesCopy;
     {

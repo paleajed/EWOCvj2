@@ -3691,26 +3691,28 @@ void Layer::set_clones(int clsnr, bool open) {
         clsnr = this->clonesetnr;
     }*/
 	if (this->clonesetnr != -1) {
-        std::unordered_set cpset = *mainmix->clonesets[this->clonesetnr];
-        int cnt = 0;
-        for (auto it : cpset) {
+            std::unordered_set cpset = *mainmix->clonesets[this->clonesetnr];
+            int cnt = 0;
+            for (auto it : cpset) {
             Layer *lay = it;
             if (lay->pos == this->pos && lay->deck == this->deck && lay->comp == this->comp) {
                 continue;
             }
             cnt++;
-            bool alreadyclosed = false;
-            if (cnt == cpset.size() - 1) {
-                alreadyclosed = !mainmix->busyopen;
-                mainmix->busyopen = false;
-            }
-            if (open && !alreadyclosed) {
-                if (lay->filename != this->filename) {
-                    lay->filename = this->filename;
-                    if (this->type == ELEM_IMAGE) {
-                        lay = lay->open_image(this->filename, true, true, clsnr != -1, false);
-                    } else {
-                        lay = lay->open_video(0.0f, this->filename, true, true, clsnr != -1, false);
+            if (this->ndisource == nullptr && this->type != ELEM_NDI) {
+                bool alreadyclosed = false;
+                if (cnt == cpset.size() - 1) {
+                    alreadyclosed = !mainmix->busyopen;
+                    mainmix->busyopen = false;
+                }
+                if (open && !alreadyclosed) {
+                    if (lay->filename != this->filename) {
+                        lay->filename = this->filename;
+                        if (this->type == ELEM_IMAGE) {
+                            lay = lay->open_image(this->filename, true, true, clsnr != -1, false);
+                        } else {
+                            lay = lay->open_video(0.0f, this->filename, true, true, clsnr != -1, false);
+                        }
                     }
                 }
             }
@@ -5615,7 +5617,7 @@ void Layer::display() {
                 render_text("Layer " + deckstr + std::to_string(this->pos + 1), white, box->vtxcoords->x1 + 0.015f,
                             box->vtxcoords->y1 + box->vtxcoords->h - 0.045f, 0.0005f, 0.0008f);
                 std::string name = remove_extension(basename(this->filename));
-                if (this->type == ELEM_LIVE) {
+                if (this->type == ELEM_LIVE || this->type == ELEM_NDI) {
                     name = this->filename;
                 }
                 else if (this->ffglsourcenr != -1) {
