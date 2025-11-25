@@ -2252,8 +2252,8 @@ MirrorEffect::MirrorEffect() {
     param = new Param;
     param->nextrow = true;
     param->name = "Xcoord";
-    param->value = 0.5f;
-    param->range[0] = 0.0f;
+    param->value = 0.0f;
+    param->range[0] = -1.0f;
     param->range[1] = 1.0f;
     param->sliding = true;
     param->shadervar = "xcrdmirror";
@@ -2263,8 +2263,8 @@ MirrorEffect::MirrorEffect() {
     this->params.push_back(param);
     param = new Param;
     param->name = "Ycoord";
-    param->value = 0.5f;
-    param->range[0] = 0.0f;
+    param->value = 0.0f;
+    param->range[0] = -1.0f;
     param->range[1] = 1.0f;
     param->sliding = true;
     param->shadervar = "ycrdmirror";
@@ -5495,7 +5495,7 @@ void Mixer::vidbox_handle() {
             if (box->in()) {
                 if (mainprogram->mousewheel) {
                     // scaling layer view
-                    lay->scale->value -= mainprogram->mousewheel * lay->scale->value / 10.0f;
+                    lay->scale->value += mainprogram->mousewheel * lay->scale->value / 10.0f;
                     for (int i = 0; i < loopstation->elements.size(); i++) {
                         if (loopstation->elements[i]->recbut->value) {
                             loopstation->elements[i]->add_param_automationentry(lay->scale);

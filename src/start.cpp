@@ -3462,12 +3462,6 @@ void onestepfrom(bool stage, Node *node, Node *prevnode, GLuint prevfbotex, GLui
             } else
                 mainprogram->uniformCache->setFloat("opacity", 1.0f);
 
-            glBindFramebuffer(GL_FRAMEBUFFER, effect->fbo);
-            glDrawBuffer(GL_COLOR_ATTACHMENT0);
-            if (stage) glViewport(0, 0, mainprogram->ow[1], mainprogram->oh[1]);
-            else glViewport(0, 0, mainprogram->ow[0], mainprogram->oh[0]);
-            glClearColor(0.f, 0.f, 0.f, 0.f);
-            glClear(GL_COLOR_BUFFER_BIT);
 
             Layer *lay = effect->layer;
 
@@ -3481,6 +3475,31 @@ void onestepfrom(bool stage, Node *node, Node *prevnode, GLuint prevfbotex, GLui
                 sc = lay->scale->value;
                 op = lay->opacity->value;
             }
+
+            glBindFramebuffer(GL_FRAMEBUFFER, effect->fbo);
+            glDrawBuffer(GL_COLOR_ATTACHMENT0);
+
+
+            float sxs, sys, xss, yss, swidth, sheight;
+            if (stage) glViewport(0, 0, mainprogram->ow[1], mainprogram->oh[1]);
+            else glViewport(0, 0, mainprogram->ow[0], mainprogram->oh[0]);
+            if (effect->node == lay->lasteffnode[0]) {
+                sxs = lay->swidth / 2.0f - (lay->swidth / 2.0f) * sc * lay->xss;
+                sys = lay->sheight / 2.0f - (lay->sheight / 2.0f) * sc * lay->yss;
+                xss = (sxs + lay->swidth * 12.0f * sx) / lay->xss;
+                yss = (sys + lay->sheight * 12.0f * sy) / lay->yss;
+                swidth = lay->swidth * sc;
+                sheight = lay->sheight * sc;
+                mainprogram->uniformCache->setBool("lasteffect", true);
+                mainprogram->uniformCache->setFloat("xss", lay->xss);
+                mainprogram->uniformCache->setFloat("yss", lay->yss);
+                mainprogram->uniformCache->setFloat("swidth", swidth);
+                mainprogram->uniformCache->setFloat("sheight", sheight);
+                glViewport(xss, yss, swidth, sheight);
+                glClearColor(0.f, 0.f, 0.f, 0.f);
+                glClear(GL_COLOR_BUFFER_BIT);
+            }
+
             if (effect->ffglnr != -1 && effect->onoffbutton->value) {
                 FFGLEffect *eff = (FFGLEffect*)effect;
                 FFGLFramebuffer infbo;
@@ -3520,41 +3539,25 @@ void onestepfrom(bool stage, Node *node, Node *prevnode, GLuint prevfbotex, GLui
                     glDrawBuffer(GL_COLOR_ATTACHMENT0);
                     if (stage) glViewport(0, 0, mainprogram->ow[1], mainprogram->oh[1]);
                     else glViewport(0, 0, mainprogram->ow[0], mainprogram->oh[0]);
+                    if (effect->node == lay->lasteffnode[0]) {
+                        glViewport(xss, yss, swidth, sheight);
+                    }
                     glClearColor(0.f, 0.f, 0.f, 0.f);
                     glClear(GL_COLOR_BUFFER_BIT);
 
-                    float sx = 0.0f;
-                    float sy = 0.0f;
-                    float sc = 1.0f;
-                    float op = 1.0f;
-                    if (effect->node == lay->lasteffnode[0]) {
-                        sx = lay->shiftx->value;
-                        sy = lay->shifty->value;
-                        sc = lay->scale->value;
-                        op = lay->opacity->value;
-                    }
-
                     mainprogram->uniformCache->setInt("interm", 0);
                     mainprogram->uniformCache->setBool("down", false);
-                    draw_box(nullptr, black, -1.0f, 1.0f, 2.0f, -2.0f, sx, sy, sc, op, 0, prevfbotex, 0, 0, false);
+                    draw_box(nullptr, black, -1.0f, 1.0f, 2.0f, -2.0f, 0.0f, 0.0f, 1.0f, op, 0, prevfbotex, 0, 0, false);
                 } else {
                     glBindFramebuffer(GL_FRAMEBUFFER, effect->fbo);
                     glDrawBuffer(GL_COLOR_ATTACHMENT0);
                     if (stage) glViewport(0, 0, mainprogram->ow[1], mainprogram->oh[1]);
                     else glViewport(0, 0, mainprogram->ow[0], mainprogram->oh[0]);
+                    if (effect->node == lay->lasteffnode[0]) {
+                        glViewport(xss, yss, swidth, sheight);
+                    }
                     glClearColor(0.f, 0.f, 0.f, 0.f);
                     glClear(GL_COLOR_BUFFER_BIT);
-
-                    float sx = 0.0f;
-                    float sy = 0.0f;
-                    float sc = 1.0f;
-                    float op = 1.0f;
-                    if (effect->node == lay->lasteffnode[0]) {
-                        sx = lay->shiftx->value;
-                        sy = lay->shifty->value;
-                        sc = lay->scale->value;
-                        op = lay->opacity->value;
-                    }
 
                     mainprogram->uniformCache->setInt("interm", 2);
                     mainprogram->uniformCache->setSampler("Sampler1", 1);
@@ -3562,7 +3565,7 @@ void onestepfrom(bool stage, Node *node, Node *prevnode, GLuint prevfbotex, GLui
                     glBindTexture(GL_TEXTURE_2D, prevfbotex);
                     glActiveTexture(GL_TEXTURE0);
                     glBindTexture(GL_TEXTURE_2D, effect->tempfbotex);
-                    draw_box(nullptr, black, -1.0f, 1.0f, 2.0f, -2.0f, sx, sy, sc, op, 0, effect->tempfbotex, 0, 0,
+                    draw_box(nullptr, black, -1.0f, 1.0f, 2.0f, -2.0f, 0.0f, 0.0f, 1.0f, op, 0, effect->tempfbotex, 0, 0,
                              false);
                 }
             } else if (effect->isfnr != -1 && effect->onoffbutton->value) {
@@ -3609,20 +3612,12 @@ void onestepfrom(bool stage, Node *node, Node *prevnode, GLuint prevfbotex, GLui
 
                 glBindFramebuffer(GL_FRAMEBUFFER, effect->fbo);
                 glDrawBuffer(GL_COLOR_ATTACHMENT0);
-                if (stage) glViewport(0, 0, mainprogram->ow[1], mainprogram->oh[1]);
-                else glViewport(0, 0, mainprogram->ow[0], mainprogram->oh[0]);
                 glClearColor(0.f, 0.f, 0.f, 0.f);
                 glClear(GL_COLOR_BUFFER_BIT);
-
-                float sx = 0.0f;
-                float sy = 0.0f;
-                float sc = 1.0f;
-                float op = 1.0f;
+                if (stage) glViewport(0, 0, mainprogram->ow[1], mainprogram->oh[1]);
+                else glViewport(0, 0, mainprogram->ow[0], mainprogram->oh[0]);
                 if (effect->node == lay->lasteffnode[0]) {
-                    sx = lay->shiftx->value;
-                    sy = lay->shifty->value;
-                    sc = lay->scale->value;
-                    op = lay->opacity->value;
+                    glViewport(xss, yss, swidth, sheight);
                 }
 
                 mainprogram->uniformCache->setInt("interm", 2);
@@ -3631,12 +3626,28 @@ void onestepfrom(bool stage, Node *node, Node *prevnode, GLuint prevfbotex, GLui
                 glBindTexture(GL_TEXTURE_2D, prevfbotex);
                 glActiveTexture(GL_TEXTURE0);
                 glBindTexture(GL_TEXTURE_2D, effect->tempfbotex);
-                draw_box(nullptr, black, -1.0f, 1.0f, 2.0f, -2.0f, sx, sy, sc, op, 0, effect->tempfbotex, 0, 0,
+                draw_box(nullptr, black, -1.0f, 1.0f, 2.0f, -2.0f, 0.0f, 0.0f, 1.0f, op, 0, effect->tempfbotex, 0, 0,
                          false);
 
             } else {
-                if (!lay->onhold)
-                    draw_box(nullptr, black, -1.0f, 1.0f, 2.0f, -2.0f, sx, sy, sc, op, 0, prevfbotex, 0, 0, false);
+                if (!lay->onhold) {
+                    glBindFramebuffer(GL_FRAMEBUFFER, effect->tempfbo);
+                    glDrawBuffer(GL_COLOR_ATTACHMENT0);
+                    glClearColor(0.f, 0.f, 0.f, 0.f);
+                    glClear(GL_COLOR_BUFFER_BIT);
+                    mainprogram->uniformCache->setInt("interm", (effect->type == SCALE));
+                    draw_box(nullptr, black, -1.0f, 1.0f, 2.0f, -2.0f, 0.0f, 0.0f, 1.0f, 1.0f, 0, prevfbotex, 0, 0,
+                             false);
+                    mainprogram->uniformCache->setInt("interm", !(effect->type == SCALE));
+                    glBindFramebuffer(GL_FRAMEBUFFER, effect->fbo);
+                    glDrawBuffer(GL_COLOR_ATTACHMENT0);
+                    glClearColor(0.f, 0.f, 0.f, 0.f);
+                    glClear(GL_COLOR_BUFFER_BIT);
+                    if (stage) glViewport(0, 0, mainprogram->ow[1], mainprogram->oh[1]);
+                    else glViewport(0, 0, mainprogram->ow[0], mainprogram->oh[0]);
+                    draw_box(nullptr, black, -1.0f, 1.0f, 2.0f, -2.0f, 0.0f, 0.0f, 1.0f, op, 0, effect->tempfbotex, 0, 0,
+                             false);
+                }
             }
 
             if (effect->node == lay->lasteffnode[0]) {
@@ -3649,6 +3660,7 @@ void onestepfrom(bool stage, Node *node, Node *prevnode, GLuint prevfbotex, GLui
             prevfbotex = effect->fbotex;
             prevfbo = effect->fbo;
 
+            mainprogram->uniformCache->setBool("lasteffect", false);
             mainprogram->uniformCache->setBool("down", false);
             mainprogram->uniformCache->setInt("interm", 0);
             glViewport(0, 0, glob->w, glob->h);
@@ -3707,7 +3719,7 @@ void onestepfrom(bool stage, Node *node, Node *prevnode, GLuint prevfbotex, GLui
             scw = (float)ndiw;
             sch = (float)ndih;
         }
-        else if (lay->type != ELEM_LIVE) {
+        else {
             if (lay->decresult->height == 0) return;
             frac = (float)(lay->decresult->width) / (float)(lay->decresult->height);
             scw = (float)(lay->decresult->width);
@@ -3772,9 +3784,20 @@ void onestepfrom(bool stage, Node *node, Node *prevnode, GLuint prevfbotex, GLui
         sys = sh / 2.0f - (sh / 2.0f) * sc * ys;
         float xss = sxs + sw * 12.0f * sx;
         float yss = sys + sh * 12.0f * sy;
+        lay->xss = xs;
+        lay->yss = ys;
         float swidth = scw * sc;
         float sheight = sch * sc;
-        glViewport(xss, yss, swidth, sheight);
+        lay->swidth = sw;
+        lay->sheight = sh;
+        lay->scw = scw;
+        lay->sch = sch;
+        glViewport(0, 0, sw, sh);
+        // When no effects: apply aspect ratio + shift + scale
+        // When effects exist: apply only aspect ratio (shift/scale applied at last effect)
+        if (lay->effects[0].empty()) {
+            glViewport(xss, yss, swidth, sheight);
+        }
         if (lay->ndisource != nullptr) {
             if (lay->ndisource->hasNewFrame()) {
                 if (!lay->ndisource->getLatestFrame(lay->ndiintex)) {
@@ -3841,29 +3864,15 @@ void onestepfrom(bool stage, Node *node, Node *prevnode, GLuint prevfbotex, GLui
 
             lay->instance->processFrame({infbo}, outfbo);
 
-            // opacity shift scale
-            float sx = 0.0f;
-            float sy = 0.0f;
-            float sc = 1.0f;
-            float op = 1.0f;
-            if (lay->effects[0].empty()) {
-                sx = lay->shiftx->value;
-                sy = lay->shifty->value;
-                sc = lay->scale->value;
-                if (lay->node == lay->lasteffnode[0]) {
-                    op = lay->opacity->value;
-                } else {
-                    op = 1.0f;
-                }
-            }
-
             glBindFramebuffer(GL_FRAMEBUFFER, lay->fbo);
             glDrawBuffer(GL_COLOR_ATTACHMENT0);
-            if (stage) glViewport(0, 0, mainprogram->ow[1], mainprogram->oh[1]);
-            else glViewport(0, 0, mainprogram->ow[0], mainprogram->oh[0]);
+            glViewport(0, 0, sw, sh);
+            if (lay->effects[0].empty()) {
+                glViewport(xss, yss, swidth, sheight);
+            }
             glClearColor( 0.f, 0.f, 0.f, 0.f );
             glClear(GL_COLOR_BUFFER_BIT);
-            draw_box(nullptr, black, -1.0f, 1.0f, 2.0f, -2.0f, sx, sy, sc, op, 0, lay->tempfbotex, 0, 0, false);
+            draw_box(nullptr, black, -1.0f, 1.0f, 2.0f, -2.0f, 0.0f, 0.0f, 1.0f, op, 0, lay->tempfbotex, 0, 0, false);
         }
         else if (lay->isfsourcenr != -1) {
             auto instance = mainprogram->isfinstances[lay->isfpluginnr][lay->isfinstancenr];
@@ -3909,26 +3918,13 @@ void onestepfrom(bool stage, Node *node, Node *prevnode, GLuint prevfbotex, GLui
             glDrawBuffer(GL_COLOR_ATTACHMENT0);
             if (stage) glViewport(0, 0, mainprogram->ow[1], mainprogram->oh[1]);
             else glViewport(0, 0, mainprogram->ow[0], mainprogram->oh[0]);
+            if (lay->effects[0].empty()) {
+                glViewport(xss, yss, swidth, sheight);
+            }
             glClearColor( 0.f, 0.f, 0.f, 0.f );
             glClear(GL_COLOR_BUFFER_BIT);
 
-            // opacity shift scale
-            float sx = 0.0f;
-            float sy = 0.0f;
-            float sc = 1.0f;
-            float op = 1.0f;
-            if (lay->effects[0].empty()) {
-                sx = lay->shiftx->value;
-                sy = lay->shifty->value;
-                sc = lay->scale->value;
-                if (lay->node == lay->lasteffnode[0]) {
-                    op = lay->opacity->value;
-                } else {
-                    op = 1.0f;
-                }
-            }
-
-            draw_box(nullptr, black, -1.0f, 1.0f, 2.0f, -2.0f, sx, sy, sc, op, 0, lay->tempfbotex, 0, 0, false);
+            draw_box(nullptr, black, -1.0f, 1.0f, 2.0f, -2.0f, 0.0f, 0.0f, 1.0f, op, 0, lay->tempfbotex, 0, 0, false);
         }
         else {
             glBindFramebuffer(GL_FRAMEBUFFER, lay->fbo);
@@ -3954,7 +3950,10 @@ void onestepfrom(bool stage, Node *node, Node *prevnode, GLuint prevfbotex, GLui
         prevfbotex = lay->fbotex;
         prevfbo = lay->fbo;
 
-        glViewport(0, 0, glob->w, glob->h);
+
+        if (lay->effects[0].empty()) {
+            glViewport(0, 0, glob->w, glob->h);
+        }
 
         lay->newtexdata = false;
     }

@@ -202,6 +202,12 @@ class Layer {
 		Param *shiftx;
 		Param *shifty;
         Param *scale;
+		float xss = 0.0f;
+		float yss = 0.0f;
+		float swidth = 0.0f;
+		float sheight = 0.0f;
+		float scw = 0.0f;
+		float sch = 0.0f;
         Param *scritch;
 		float oldscale = 1.0f;
         Param *scratch;

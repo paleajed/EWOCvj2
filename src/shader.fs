@@ -28,6 +28,11 @@ uniform float globw = 1920.0;
 uniform float globh = 1080.0;
 uniform bool inverteff = false;
 uniform float fcdiv = 1.0f;
+uniform bool lasteffect = false;
+uniform float xss = 0.0f;
+uniform float yss = 0.0f;
+uniform float swidth = 0.0f;
+uniform float sheight = 0.0f;
 uniform int numverts = 0;
 uniform float drywet = 1.0f;
 uniform vec4 color = vec4(0.0f, 0.0f, 0.0f, 1.0f);
@@ -1534,18 +1539,40 @@ vec4 mirror(vec2 texco)  //selfmade
 {
 	int xm = int(xmirror + 0.5f);
 	int ym = int(ymirror + 0.5f);
+
 	if (xm == 0) {
-		if (texco.x > xcrdmirror) texco.x = 2.0f * xcrdmirror - texco.x;
+		if (texco.x > 0.5f - xcrdmirror) {
+		    texco.x = 1.0 - texco.x - xcrdmirror;
+		}
+		else {
+		    texco.x = texco.x + xcrdmirror;
+		}
 	}
 	else if (xm == 2) {
-		if (texco.x <= xcrdmirror) texco.x = 2.0f * xcrdmirror - texco.x;
+		if (texco.x <= 0.5f - xcrdmirror) {
+		    texco.x = 1.0 - texco.x - xcrdmirror;
+		}
+		else {
+		    texco.x = texco.x + xcrdmirror;
+		}
 	}
 	if (ym == 2) {
-		if (texco.y > ycrdmirror) texco.y = 2.0f * ycrdmirror - texco.y;
+		if (texco.y > 0.5f - ycrdmirror) {
+		    texco.y = 1.0 - texco.y - ycrdmirror;
+		}
+		else {
+		    texco.y = texco.y + ycrdmirror;
+		}
 	}
 	else if (ym == 0) {
-		if (texco.y <= ycrdmirror) texco.y = 2.0f * ycrdmirror - texco.y;
+		if (texco.y <= 0.5f - ycrdmirror) {
+		    texco.y = 1.0 - texco.y - ycrdmirror;
+		}
+		else {
+		    texco.y = texco.y + ycrdmirror;
+		}
 	}
+
 	return texture(Sampler0, texco);
 }
 
