@@ -64,7 +64,7 @@ out vec2 isf_FragNormCoord;
 out vec2 vv_FragNormCoord;
 
 // ISF vertex shader initialization function
-void isf_vertShaderInit() {
+vec2 isf_vertShaderInit() {
     gl_Position = vec4(aPos, 0.0, 1.0);
 
     // ISF expects inverted Y coordinate (0,0 = top-left, 1,1 = bottom-right)
@@ -73,6 +73,8 @@ void isf_vertShaderInit() {
 
     isf_FragNormCoord = isfCoord;        // Inverted Y for ISF compatibility
     vv_FragNormCoord = isfCoord;         // Keep them the same for compatibility
+
+    return isfCoord;
 }
 
 )";
@@ -387,7 +389,14 @@ bool ISFLoader::loadISFDirectory(const std::string& directory) {
                     }
                     batch.shader->customVertexShader_ = processedVertexStream.str();
 
-                    if (!customVaryingInputs.empty()) {
+                    // Replace any reads of isf_FragNormCoord with aTexCoord (since isf_FragNormCoord is an out variable and cannot be read)
+                    size_t pos = 0;
+                    while ((pos = batch.shader->customVertexShader_.find("isf_FragNormCoord", pos)) != std::string::npos) {
+                        batch.shader->customVertexShader_.replace(pos, 17, "aTexCoord");
+                        pos += 9; // Length of "aTexCoord"
+                    }
+
+                        if (!customVaryingInputs.empty()) {
                         customVaryingInputs = "// Custom varying inputs from vertex shader\n" + customVaryingInputs + "\n";
                     }
 
@@ -439,7 +448,7 @@ bool ISFLoader::loadISFDirectory(const std::string& directory) {
 
                     vertexSource += customVertexUniforms +
                                    "// ISF vertex shader initialization function\n"
-                                   "void isf_vertShaderInit() {\n"
+                                   "vec2 isf_vertShaderInit() {\n"
                                    "    gl_Position = vec4(aPos, 0.0, 1.0);\n"
                                    "    \n"
                                    "    // ISF expects inverted Y coordinate (0,0 = top-left, 1,1 = bottom-right)\n"
@@ -447,6 +456,8 @@ bool ISFLoader::loadISFDirectory(const std::string& directory) {
                                    "    \n"
                                    "    isf_FragNormCoord = isfCoord;        // Inverted Y for ISF compatibility\n"
                                    "    vv_FragNormCoord = isfCoord;         // Keep them the same for compatibility\n"
+                                   "    \n"
+                                   "    return isfCoord;"
                                    "}\n"
                                    "\n" +
                                    batch.shader->customVertexShader_;
@@ -1751,6 +1762,13 @@ bool ISFLoader::compileShader(const std::string& fragmentSource, ISFShader& shad
         // Update the custom vertex shader to the processed version (without conditionals)
         shader.customVertexShader_ = processedVertexStream.str();
 
+        // Replace any reads of isf_FragNormCoord with aTexCoord (since isf_FragNormCoord is an out variable and cannot be read)
+        size_t pos = 0;
+        while ((pos = shader.customVertexShader_.find("isf_FragNormCoord", pos)) != std::string::npos) {
+            shader.customVertexShader_.replace(pos, 17, "aTexCoord");
+            pos += 9; // Length of "aTexCoord"
+        }
+
         if (!customVaryingInputs.empty()) {
             customVaryingInputs = "// Custom varying inputs from vertex shader\n" + customVaryingInputs + "\n";
             std::cout << "DEBUG: Added varying inputs for " << shader.name_ << ": " << uniqueVaryings.size() << " variables" << std::endl;
@@ -1875,7 +1893,7 @@ bool ISFLoader::compileShader(const std::string& fragmentSource, ISFShader& shad
                        customVertexUniforms +
                        cornerVars +
                        "// ISF vertex shader initialization function\n"
-                       "void isf_vertShaderInit() {\n"
+                       "vec2 isf_vertShaderInit() {\n"
                        "    gl_Position = vec4(aPos, 0.0, 1.0);\n"
                        "    \n"
                        "    // ISF expects inverted Y coordinate (0,0 = top-left, 1,1 = bottom-right)\n"
@@ -1883,6 +1901,8 @@ bool ISFLoader::compileShader(const std::string& fragmentSource, ISFShader& shad
                        "    \n"
                        "    isf_FragNormCoord = isfCoord;        // Inverted Y for ISF compatibility\n"
                        "    vv_FragNormCoord = isfCoord;         // Keep them the same for compatibility\n"
+                       "    \n"
+                       "    return isfCoord;"
                        "}\n"
                        "\n" +
                        shader.customVertexShader_;
@@ -2069,17 +2089,6 @@ bool ISFLoader::compileShader(const std::string& fragmentSource, ISFShader& shad
                                          inputUniforms +
                                          bufferUniforms +
                                          "\n" + modernFragmentSource;
-
-    // DEBUG: Add debug output for Sorting Smear to troubleshoot the effect
-    if (shader.name_.find("Sorting Smear") != std::string::npos) {
-        std::cout << "=== SORTING SMEAR VERTEX SHADER ===" << std::endl;
-        std::cout << vertexSource << std::endl;
-        std::cout << "=== END SORTING SMEAR VERTEX SHADER ===" << std::endl;
-
-        std::cout << "=== SORTING SMEAR FRAGMENT SHADER ===" << std::endl;
-        std::cout << completeFragmentSource << std::endl;
-        std::cout << "=== END SORTING SMEAR FRAGMENT SHADER ===" << std::endl;
-    }
 
     // **NEW: Try to load from cache first**
     shader.program_ = loadCachedProgram(shader.name_, vertexSource, completeFragmentSource);
@@ -2920,6 +2929,12 @@ void ISFShaderInstance::renderSinglePass(float time, float renderWidth, float re
     GLint originalViewport[4];
     glGetIntegerv(GL_VIEWPORT, originalViewport);
 
+    // Store blend state
+    GLboolean blendEnabled = glIsEnabled(GL_BLEND);
+
+    // Disable blending for ISF rendering to prevent alpha issues
+    glDisable(GL_BLEND);
+
     glUseProgram(parentShader_->program_);
 
     // Render to original framebuffer with original viewport
@@ -2938,6 +2953,10 @@ void ISFShaderInstance::renderSinglePass(float time, float renderWidth, float re
 
     // Draw fullscreen quad
     drawFullscreenQuad();
+
+    if (blendEnabled) {
+        glEnable(GL_BLEND);
+    }
 }
 
 void ISFShaderInstance::renderPass(int passIndex, float time, float renderWidth, float renderHeight, int frameIndex,
@@ -3132,9 +3151,21 @@ void ISFShaderInstance::bindTextures(int passIndex) {
             glActiveTexture(GL_TEXTURE0 + textureUnit);
             glBindTexture(GL_TEXTURE_2D, textureId);
 
+            // DEBUG: Log Emboss texture binding
+            if (parentShader_->name_.find("Emboss") != std::string::npos) {
+                std::cout << "=== EMBOSS TEXTURE BINDING ===" << std::endl;
+                std::cout << "Input[" << i << "] name: " << input.name << std::endl;
+                std::cout << "Texture ID: " << textureId << std::endl;
+                std::cout << "Texture unit: " << textureUnit << std::endl;
+            }
+
             auto it = parentShader_->inputLocations_.find(input.name);
             if (it != parentShader_->inputLocations_.end() && it->second != -1) {
                 glUniform1i(it->second, textureUnit);
+                // DEBUG: Log Emboss uniform setting
+                if (parentShader_->name_.find("Emboss") != std::string::npos) {
+                    std::cout << "Set uniform '" << input.name << "' to texture unit " << textureUnit << std::endl;
+                }
             } else {
                 // Try common input names for first texture - CRITICAL for effects like FastMosh
                 if (textureUnit == 0) {

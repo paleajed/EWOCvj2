@@ -1231,7 +1231,9 @@ class Program {
         void handle_editmenu();
         void handle_lpstmenu();
         void handle_beatmenu();
-        void handle_optionmenu();
+		void handle_optionmenu();
+		void handle_sourcemenu();
+		void handle_mixmodemenu();
         void write_recentprojectlist();
         void socket_server(struct sockaddr_in serv_addr, int opt);
         void socket_client(struct sockaddr_in serv_addr, int opt);

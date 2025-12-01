@@ -33,7 +33,7 @@ typedef enum
 	ELEM_DECK = 3,
 	ELEM_MIX = 4,
 	ELEM_LIVE = 5,
-	ELEM_NDI = 6,
+    ELEM_NDI = 6,
 	ELEM_SOURCE = 1000,   // sources start here and count upwards
 } ELEM_TYPE;
 
@@ -245,7 +245,7 @@ class Layer {
 		int changeinit = -1;
 		void get_frame();
 		std::thread audiot;
-		int audiooff = 2;
+		int audiooff = 1;
 		void playaudio();
 		bool stopaudiothread = false;
 		bool audiothreadalive = false;
@@ -387,6 +387,9 @@ class Layer {
 
         int packets_beyond_current = 0;
         std::vector<int> latestptsvec;
+
+		bool ismask = false;
+		float clearval = 0.0f;
 
         void display();
 		Effect* add_effect(EFFECT_TYPE type, int pos, bool cat, int ffglnr = -1, int isfnr = -1);
@@ -634,7 +637,9 @@ class Mixer {
         Param *adapttextparam = nullptr;
 		bool midiisspeed = false;
 		int prevx;
-		GLuint mixbackuptex;
+		GLuint masktex = -1;
+		GLuint lasttex = -1;
+		bool inmixphase = false;
 		int wipe[2] = {-1, -1};
 		int wipedir[2] = {0, 0};
 		bool moving = false;

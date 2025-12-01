@@ -372,7 +372,7 @@ BlendNode *NodePage::add_blendnode(BLEND_TYPE btype, bool comp) {
 void NodePage::delete_node(Node *node) {
 	for(int i = 0; i < node->out.size(); i++) {
 		if (node->out[i]->in == node) node->out[i]->in = nullptr;
-		else if (node->out[i]->type == BLEND) {
+		if (node->out[i]->type == BLEND) {
 			if (((BlendNode*)node->out[i])->in2 == node) ((BlendNode*)node->out[i])->in2 = nullptr;
 		}
 	}
@@ -407,6 +407,7 @@ void NodePage::delete_node(Node *node) {
             }
         }
     }
+    node->out.clear();
 	delete node;
 }
 

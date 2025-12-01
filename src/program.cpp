@@ -3722,16 +3722,17 @@ void Program::handle_mixenginemenu() {
 	k = mainprogram->handle_menu(mainprogram->mixenginemenu);
 	if (k == 0) {
         if (mainmix->mousenode && mainprogram->menuresults.size()) {
-            if (mainprogram->menuresults[0] > 21) {
+            if (mainprogram->menuresults[0] > 22) {
                 BlendNode *bnode = (BlendNode *) mainmix->mousenode;
-                if (mainprogram->menuresults[0] < mainprogram->ffglmixernames.size() + 22) {
-                    bnode->set_ffglmixer(mainprogram->menuresults[0] - 22);
-                } else if (mainprogram->menuresults[0] >= mainprogram->ffglmixernames.size() + 22) {
-                    bnode->set_isfmixer(mainprogram->menuresults[0] - mainprogram->ffglmixernames.size() - 22);
+                if (mainprogram->menuresults[0] < mainprogram->ffglmixernames.size() + 23) {
+                    bnode->set_ffglmixer(mainprogram->menuresults[0] - 23);
+                } else if (mainprogram->menuresults[0] >= mainprogram->ffglmixernames.size() + 23) {
+                    bnode->set_isfmixer(mainprogram->menuresults[0] - mainprogram->ffglmixernames.size() - 23);
                 }
             } else if (mainmix->mousenode->type == BLEND) {
                 BlendNode *bnode = (BlendNode *) mainmix->mousenode;
                 bnode->blendtype = (BLEND_TYPE) (mainprogram->menuresults[0] + 1);
+                bnode->layer->ismask = (mainprogram->menuresults[0] == 22);
                 bnode->ffglmixernr = -1;
                 bnode->isfmixernr = -1;
             }
@@ -4615,6 +4616,7 @@ void set_ndi(Layer *ndilay) {
             ndilay->type = ELEM_FILE;
             ndilay->ndisource = new_source;
             ndilay->filename = ndilay->ndisource->getSourceInfo().name;
+            ndilay->clearval = 0.0f;  // mask to black
 
 
             // Release old source after new one is ready
@@ -4831,6 +4833,9 @@ void Program::handle_laymenu1() {
         else if (!cond && k == 12) {
             // duplicate layer
             Layer* lay = mainmix->mouselayer->clone(true);
+            if (lay->pos == mainmix->scenes[lay->deck][mainmix->currscene[lay->deck]]->scrollpos + 3) {
+                mainmix->scenes[lay->deck][mainmix->currscene[lay->deck]]->scrollpos++;
+            }
             Layer *duplay = lay;
             if (mainmix->mouselayer->ndisource != nullptr) {
                 copy_ndi(mainmix->mouselayer, lay);
@@ -4915,6 +4920,9 @@ void Program::handle_laymenu1() {
             // clone layer
             Layer *lay = mainmix->mouselayer->clone(false);
             Layer *clonelay = lay;
+            if (lay->pos == mainmix->scenes[lay->deck][mainmix->currscene[lay->deck]]->scrollpos + 3) {
+                mainmix->scenes[lay->deck][mainmix->currscene[lay->deck]]->scrollpos++;
+            }
             if (mainmix->mouselayer->ndisource != nullptr) {
                 copy_ndi(mainmix->mouselayer, lay);
             }
@@ -4955,13 +4963,20 @@ void Program::handle_laymenu1() {
             clonelay->scale->value = mainmix->mouselayer->scale->value;
             clonelay->opacity->value = mainmix->mouselayer->opacity->value;
         }
-		else if (k == (14 - cond * 2)) {
+        else if (k == (14 - cond * 2)) {
+            // apply mask
+            Layer *masklay = mainmix->add_layer(*mainmix->mouselayer->layers, mainmix->mouselayer->pos);
+            masklay->blendnode->blendtype = MASK;
+            masklay->ismask = true;
+            masklay->clearval = 1.0f;
+        }
+        else if (k == (15 - cond * 2)) {
             // center image
-			mainmix->mouselayer->shiftx->value = 0.0f;
-			mainmix->mouselayer->shifty->value = 0.0f;
+            mainmix->mouselayer->shiftx->value = 0.0f;
+            mainmix->mouselayer->shifty->value = 0.0f;
             mainmix->mouselayer->set_clones();
-		}
-		else if (k == 15 - cond * 2) {
+        }
+		else if (k == 16 - cond * 2) {
             // set aspect ratio
 			mainmix->mouselayer->aspectratio = (RATIO_TYPE)this->menuresults[0];
 			if (mainmix->mouselayer->type == ELEM_IMAGE) {
@@ -4980,7 +4995,7 @@ void Program::handle_laymenu1() {
                 }
             }
 		}
-        else if (k == 16 - cond * 2) {
+        else if (k == 17 - cond * 2) {
             // show layer on external display
             // chosen output screen already used? re-use window
             int currdisp = SDL_GetWindowDisplayIndex(this->mainwindow);
@@ -5082,7 +5097,7 @@ void Program::handle_laymenu1() {
                 }
             }
         }
-        else if ((!cond && k == 17) || k == 17 - cond * 2) {
+        else if ((!cond && k == 18) || k == 18 - cond * 2) {
             // record and replace layer
             if (!mainmix->reclay && mainmix->mouselayer->ffglsourcenr == -1 && mainmix->mouselayer->isfsourcenr == -1) {
                 if (mainmix->mouselayer->clips->size() == 1) {
@@ -5099,7 +5114,7 @@ void Program::handle_laymenu1() {
                 }
             }
         }
-        else if ((!cond && k == 18) || k == 18 - cond * 2) {
+        else if ((!cond && k == 19) || k == 19 - cond * 2) {
             // switch layer to generator type
             if (this->menuresults.size()) {
                 if (this->absources[this->menuresults[0]] >= 1000 && this->absources[this->menuresults[0]] < 2000) {
@@ -5116,11 +5131,11 @@ void Program::handle_laymenu1() {
                 }
             }
         }
-        else if ((!cond && k == 19) || k == 19 - cond * 2) {
+        else if ((!cond && k == 20) || k == 20 - cond * 2) {
             // select NDI source
             set_ndi(mainmix->mouselayer);
         }
-        else if ((!cond && k == 20) || k == 20 - cond * 2) {
+        else if ((!cond && k == 21) || k == 21 - cond * 2) {
             if (mainmix->mouselayer->ndioutput == nullptr) {
                 // create NDI output
                 mainprogram->ndilaycount++;
@@ -5136,7 +5151,7 @@ void Program::handle_laymenu1() {
                 mainmix->mouselayer->ndioutput = nullptr;
             }
         }
-        else if (!cond && k == 21 && encode) {
+        else if (!cond && k == 22 && encode) {
             BinElement *binel = new BinElement;
             binel->bin = nullptr;
             binel->type = ELEM_FILE;
@@ -5901,6 +5916,61 @@ void Program::handle_beatmenu() {
             }
             mainmix->mouselayer->beatdetbut->value = true;
         }
+    }
+
+    if (mainprogram->menuchosen) {
+        mainprogram->menuchosen = false;
+        mainprogram->menuactivation = 0;
+        mainprogram->menuresults.clear();
+        mainprogram->recundo = true;
+    }
+}
+
+void Program::handle_sourcemenu() {
+    int k = -1;
+    // Draw and handle beatmenu for beat switching the layer queues
+    k = mainprogram->handle_menu(mainprogram->sourcemenu);
+    if (k > -1) {
+        if (this->absources[k] >= 1000 && this->absources[k] < 2000) {
+            int ffglnr = this->absources[k] - 1000;
+            mainmix->mouselayer->set_ffglsource(ffglnr);
+        }
+        if (this->absources[k] >= 2000 && this->absources[k] < 3000) {
+            int isfnr = this->absources[k] - 2000;
+            mainmix->mouselayer->set_isfsource(isfnr);
+        }
+    }
+
+    if (mainprogram->menuchosen) {
+        mainprogram->menuchosen = false;
+        mainprogram->menuactivation = 0;
+        mainprogram->menuresults.clear();
+        mainprogram->recundo = true;
+    }
+}
+
+void Program::handle_mixmodemenu() {
+    int k = -1;
+    // Draw and handle mixmodemenu
+    k = mainprogram->handle_menu(mainprogram->mixmodemenu);
+    if (k > -1) {
+        if (mainmix->mousenode) {
+            if (k > 22) {
+                BlendNode *bnode = (BlendNode *) mainmix->mousenode;
+                if (k < mainprogram->ffglmixernames.size() + 23) {
+                    bnode->set_ffglmixer(k - 23);
+                } else if (k >= mainprogram->ffglmixernames.size() + 23) {
+                    bnode->set_isfmixer(k - mainprogram->ffglmixernames.size() - 23);
+                }
+            } else if (mainmix->mousenode->type == BLEND) {
+                BlendNode *bnode = (BlendNode *) mainmix->mousenode;
+                bnode->blendtype = (BLEND_TYPE) (k + 1);
+                bnode->layer->ismask = (k == 22);
+                bnode->ffglmixernr = -1;
+                bnode->isfmixernr = -1;
+            }
+        }
+        mainmix->mousenode = nullptr;
     }
 
     if (mainprogram->menuchosen) {
@@ -9684,6 +9754,7 @@ void Program::define_menus() {
     mixmodes.push_back("CHROMAKEY");
     mixmodes.push_back("LUMAKEY");
     mixmodes.push_back("DISPLACEMENT");
+    mixmodes.push_back("MASK");
     for (auto name : mainprogram->ffglmixernames) {
         mixmodes.push_back(name);
     }
@@ -9783,6 +9854,7 @@ void Program::define_menus() {
     layops1.push_back("Delete layer");
     layops1.push_back("Duplicate layer");
     layops1.push_back("Clone layer");
+    layops1.push_back("Apply mask");
     layops1.push_back("Center image");
     layops1.push_back("submenu aspectmenu");
     layops1.push_back("Aspect ratio");
@@ -9810,6 +9882,7 @@ void Program::define_menus() {
     layops2.push_back("Open mix");
     layops2.push_back("Save mix");
     layops2.push_back("Delete layer");
+    layops2.push_back("Apply mask");
     layops2.push_back("Center image");
     layops2.push_back("submenu aspectmenu");
     layops2.push_back("Aspect ratio");

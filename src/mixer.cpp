@@ -881,15 +881,9 @@ void Mixer::handle_adaptparam() {
 
     if (this->adaptparam->layer) {
         if (this->adaptparam->layer->volume->value == 0.0f || this->adaptparam->layer->speed->value == 0.0f) {
-            if (this->adaptparam->layer->audiooff == 0) {
-                this->adaptparam->layer->audiooff = 1;
-            }
+            this->adaptparam->layer->audiooff = 1;
         } else {
-            if (this->adaptparam->layer->audiooff == 2) {
-                this->adaptparam->layer->audiooff = 3;
-            } else {
-                this->adaptparam->layer->audiooff = 0;
-            }
+            this->adaptparam->layer->audiooff = 0;
         }
     }
 
@@ -2251,23 +2245,23 @@ MirrorEffect::MirrorEffect() {
     this->params.push_back(param);
     param = new Param;
     param->nextrow = true;
-    param->name = "Xcoord";
+    param->name = "Xcenter";
     param->value = 0.0f;
     param->range[0] = -1.0f;
     param->range[1] = 1.0f;
     param->sliding = true;
-    param->shadervar = "xcrdmirror";
+    param->shadervar = "xcntmirror";
     param->effect = this;
     param->box->tooltiptitle = "X Mirror Coord";
     param->box->tooltip = "Sets the X position of the mirror axis. ";
     this->params.push_back(param);
     param = new Param;
-    param->name = "Ycoord";
+    param->name = "Ycenter";
     param->value = 0.0f;
     param->range[0] = -1.0f;
     param->range[1] = 1.0f;
     param->sliding = true;
-    param->shadervar = "ycrdmirror";
+    param->shadervar = "ycntmirror";
     param->effect = this;
     param->box->tooltiptitle = "Y Mirror Coord";
     param->box->tooltip = "Sets the Y position of the mirror axis. ";
@@ -2635,17 +2629,6 @@ void Mixer::do_deletelay(Layer *testlay, std::vector<Layer*> &layers, bool add) 
             }
             mainprogram->deleffects.push_back(testlay->effects[1].back());
             testlay->effects[1].pop_back();
-        }
-
-        if (testlay->pos > 0 && testlay->blendnode) {
-            mainprogram->nodesmain->currpage->delete_node(testlay->blendnode);
-            testlay->blendnode = 0;
-        } else {
-            if (nextlay) {
-                mainprogram->nodesmain->currpage->delete_node(nextlay->blendnode);
-                nextlay->blendnode = new BlendNode;
-                nextlay->blendnode->blendtype = nextbtype;
-            }
         }
 
         for (int i = testlay->pos; i < layers.size(); i++) {
@@ -3514,6 +3497,7 @@ bool Layer::initialize(int w, int h, int compression) {
         }
     }
 
+    this->set_aspectratio(this->iw, this->ih);
 
     if (!this->initdeck) {
         this->changeinit = -1;
@@ -4880,12 +4864,8 @@ static int get_format_from_sample_fmt(const char **fmt,
 
 static void process_audio(Layer *lay, float framenr, bool scritched) {
     // Process audio packets for current video frame timing
-    if (lay->audiooff == 2) return;
-    if (lay->audiooff == 1 || lay->audiooff == 3 || lay->scritchpause) {
-        lay->audiooff = 2;
-        if (lay->audiooff == 3) {
-            lay->audiooff = 0;
-        }
+    if (lay->audiooff == 1) return;
+    if (lay->scritchpause) {
         std::lock_guard<std::mutex> audioLock(lay->chunklock);
         lay->snippets.clear();
         lay->pslens.clear();
@@ -5596,6 +5576,10 @@ void Layer::display() {
             draw_box(white, nullptr, box->vtxcoords->x1 - pixelw * 2.0f, box->vtxcoords->y1 - pixelh * 2.0f, box->vtxcoords->w + 3.0f * pixelw, box->vtxcoords->h + 3.0f * pixelh, -1);
             draw_box(black, nullptr, box, -1);
 		}
+        else if (this->ismask) {
+            draw_box(green, nullptr, box->vtxcoords->x1 - pixelw * 2.0f, box->vtxcoords->y1 - pixelh * 2.0f, box->vtxcoords->w + 3.0f * pixelw, box->vtxcoords->h + 3.0f * pixelh, -1);
+            draw_box(black, nullptr, box, -1);
+        }
         else {
             draw_box(red, nullptr, box->vtxcoords->x1 - pixelw * 2.0f, box->vtxcoords->y1 - pixelh * 2.0f, box->vtxcoords->w + 3.0f * pixelw, box->vtxcoords->h + 3.0f * pixelh, -1);
             draw_box(black, nullptr, box, -1);
@@ -5829,62 +5813,64 @@ void Layer::display() {
                     }
                     this->solobut->box->vtxcoords->x1 = this->mutebut->box->vtxcoords->x1 + 0.03f;
                     this->solobut->box->upvtxtoscr();
-                    if (this->solobut->box->in()) {
-                        render_text("S", alphablue, this->solobut->box->vtxcoords->x1 + 0.0078f,
-                                    this->solobut->box->vtxcoords->y1 + 0.0078f, 0.0006, 0.001);
-                        if (mainprogram->leftmousedown) {
-                            this->soloing = true;
-                            mainprogram->leftmousedown = false;
-                        }
-                        if (this->soloing && mainprogram->leftmouse) {
-                            mainprogram->leftmouse = false;
-                            this->soloing = false;
-                            this->solobut->value = !this->solobut->value;
-                            this->solobut->oldvalue = !this->solobut->oldvalue;
-                            mainprogram->register_undo(nullptr, this->solobut);
-                            if (this->solobut->value) {
-                                if (this->mutebut->value) {
-                                    this->mutebut->value = false;
-                                    this->mutebut->oldvalue = false;
-                                }
-                                for (int k = 0; k < lvec.size(); k++) {
-                                    if (k != this->pos) {
-                                        if (lvec[k]->mutebut->value == false) {
-                                            lvec[k]->mutebut->value = true;
-                                            lvec[k]->mutebut->oldvalue = true;
-                                        } else {
+                    if (!this->ismask) {
+                        if (this->solobut->box->in()) {
+                            render_text("S", alphablue, this->solobut->box->vtxcoords->x1 + 0.0078f,
+                                        this->solobut->box->vtxcoords->y1 + 0.0078f, 0.0006, 0.001);
+                            if (mainprogram->leftmousedown) {
+                                this->soloing = true;
+                                mainprogram->leftmousedown = false;
+                            }
+                            if (this->soloing && mainprogram->leftmouse) {
+                                mainprogram->leftmouse = false;
+                                this->soloing = false;
+                                this->solobut->value = !this->solobut->value;
+                                this->solobut->oldvalue = !this->solobut->oldvalue;
+                                mainprogram->register_undo(nullptr, this->solobut);
+                                if (this->solobut->value) {
+                                    if (this->mutebut->value) {
+                                        this->mutebut->value = false;
+                                        this->mutebut->oldvalue = false;
+                                    }
+                                    for (int k = 0; k < lvec.size(); k++) {
+                                        if (k != this->pos) {
+                                            if (lvec[k]->mutebut->value == false) {
+                                                lvec[k]->mutebut->value = true;
+                                                lvec[k]->mutebut->oldvalue = true;
+                                            } else {
+                                                lvec[k]->mutebut->value = false;
+                                                lvec[k]->mutebut->oldvalue = false;
+                                                lvec[k]->mutebut->value = true;
+                                                lvec[k]->mutebut->oldvalue = true;
+                                            }
+                                            lvec[k]->solobut->value = false;
+                                            lvec[k]->solobut->oldvalue = false;
+                                        }
+                                    }
+                                } else {
+                                    for (int k = 0; k < lvec.size(); k++) {
+                                        if (k != this->pos) {
                                             lvec[k]->mutebut->value = false;
                                             lvec[k]->mutebut->oldvalue = false;
-                                            lvec[k]->mutebut->value = true;
-                                            lvec[k]->mutebut->oldvalue = true;
                                         }
-                                        lvec[k]->solobut->value = false;
-                                        lvec[k]->solobut->oldvalue = false;
                                     }
                                 }
-                            } else {
-                                for (int k = 0; k < lvec.size(); k++) {
-                                    if (k != this->pos) {
-                                        lvec[k]->mutebut->value = false;
-                                        lvec[k]->mutebut->oldvalue = false;
+                                for (int i = 0; i < loopstation->elements.size(); i++) {
+                                    if (loopstation->elements[i]->recbut->value) {
+                                        loopstation->elements[i]->add_button_automationentry(this->solobut);
                                     }
                                 }
                             }
-                            for (int i = 0; i < loopstation->elements.size(); i++) {
-                                if (loopstation->elements[i]->recbut->value) {
-                                    loopstation->elements[i]->add_button_automationentry(this->solobut);
-                                }
+                            if (mainprogram->menuactivation && !mainprogram->menuondisplay) {
+                                mainprogram->parammenu3->state = 2;
+                                mainmix->learnparam = nullptr;
+                                mainmix->learnbutton = this->solobut;
+                                mainprogram->menuactivation = false;
                             }
+                        } else if (!this->solobut->value) {
+                            render_text("S", alphawhite, this->solobut->box->vtxcoords->x1 + 0.0078f,
+                                        this->solobut->box->vtxcoords->y1 + 0.0078f, 0.0006, 0.001);
                         }
-                        if (mainprogram->menuactivation && !mainprogram->menuondisplay) {
-                            mainprogram->parammenu3->state = 2;
-                            mainmix->learnparam = nullptr;
-                            mainmix->learnbutton = this->solobut;
-                            mainprogram->menuactivation = false;
-                        }
-                    } else if (!this->solobut->value) {
-                        render_text("S", alphawhite, this->solobut->box->vtxcoords->x1 + 0.0078f,
-                                    this->solobut->box->vtxcoords->y1 + 0.0078f, 0.0006, 0.001);
                     }
 
                     // draw and handle keepeff button
@@ -5987,7 +5973,7 @@ void Layer::display() {
                 }
 			}
 			else {
-                if (mainprogram->prevmodus == !this->comp && this->deck == 1 && this->pos == this->layers->size() - 1) {
+                if (mainprogram->prevmodus == !this->comp && this->deck == 1 && (this->pos == mainmix->scenes[this->deck][mainmix->currscene[this->deck]]->scrollpos + 2 || this->pos == this->layers->size() - 1)) {
                     if (!mainprogram->inmonitors) {
                         mainprogram->ineffmenu = false;
                     }
@@ -6140,7 +6126,10 @@ void Layer::display() {
                 case 22:
                     mixstr = "Disp";
                     break;
-                case 24:
+                case 23:
+                    mixstr = "Mask";
+                    break;
+                case 25:
                     mixstr = "Wipe";
                     break;
                 case 1000:
@@ -6241,6 +6230,19 @@ void Layer::display() {
                         this->sourcebox->vtxcoords->w = textw + 0.048f;
                         x1 = this->sourcebox->vtxcoords->x1 + 0.048f + textw;
                         wi = (0.7f - mainprogram->numw - 0.048f - textw) / 4.0f;
+                        if (box->in()) {
+                            if (mainprogram->leftmouse) {
+                                if (!mainprogram->menuondisplay) {
+                                    mainprogram->sourcemenu->state = 2;
+                                    mainprogram->sourcemenu->menux = mainprogram->mx;
+                                    mainprogram->sourcemenu->menuy = mainprogram->my;
+                                    mainmix->mouselayer = this;
+                                    mainmix->mousedeck = this->deck;
+                                    mainprogram->menuactivation = false;
+                                }
+                                mainprogram->leftmouse = false;
+                            }
+                        }
                     }
                     y1 = this->sourcebox->vtxcoords->y1;
                     // draw parameters
@@ -6305,6 +6307,20 @@ void Layer::display() {
                         this->blendnode->mixerbox->vtxcoords->w = textw + 0.048f;
                         x1 = this->blendnode->mixerbox->vtxcoords->x1 + 0.048f + textw;
                         wi = (0.7f - mainprogram->numw - 0.048f - textw) / 4.0f;
+                        if (box->in()) {
+                            if (mainprogram->leftmouse) {
+                                if (!mainprogram->menuondisplay) {
+                                    mainprogram->mixmodemenu->state = 2;
+                                    mainprogram->mixmodemenu->menux = mainprogram->mx;
+                                    mainprogram->mixmodemenu->menuy = mainprogram->my;
+                                    mainmix->mouselayer = this;
+                                    mainmix->mousedeck = this->deck;
+                                    mainmix->mousenode = this->blendnode;
+                                    mainprogram->menuactivation = false;
+                                }
+                                mainprogram->leftmouse = false;
+                            }
+                        }
                     }
                     y1 = this->blendnode->mixerbox->vtxcoords->y1;
                     // draw parameters
@@ -6410,8 +6426,8 @@ void Layer::display() {
                     }
                 }
                 // delete effect?
-                eff->delbox->vtxcoords->x1 = box->vtxcoords->x1 + box->vtxcoords->w - eff->delbox->vtxcoords->w;
-                eff->delbox->vtxcoords->y1 = box->vtxcoords->y1 + box->vtxcoords->h / 2.0f - eff->delbox->vtxcoords->h / 2.0f;
+                eff->delbox->vtxcoords->x1 = eff->box->vtxcoords->x1 + eff->box->vtxcoords->w - eff->delbox->vtxcoords->w;
+                eff->delbox->vtxcoords->y1 = eff->box->vtxcoords->y1 + eff->box->vtxcoords->h / 2.0f - eff->delbox->vtxcoords->h / 2.0f;
                 eff->delbox->upvtxtoscr();
                 draw_box(lightgrey, black, eff->delbox, -1);
                 render_text("x", white, eff->delbox->vtxcoords->x1 + 0.004f, eff->delbox->vtxcoords->y1 + 0.008f, 0.00045f, 0.00075f);
@@ -8252,6 +8268,7 @@ bool Layer::exchange(std::vector<Layer*>& slayers, std::vector<Layer*>& dlayers,
                 bool indeck = inlay->deck;
                 BlendNode* bnode = inlay->blendnode;
                 BLEND_TYPE btype = bnode->blendtype;
+                bool imask = inlay->ismask;
                 VideoNode* node = inlay->node;
 
                 slayers[this->pos] = inlay;
@@ -8266,6 +8283,7 @@ bool Layer::exchange(std::vector<Layer*>& slayers, std::vector<Layer*>& dlayers,
                 slayers[this->pos]->blendnode->wipedir = this->blendnode->wipedir;
                 slayers[this->pos]->blendnode->wipex->value = this->blendnode->wipex->value;
                 slayers[this->pos]->blendnode->wipey->value = this->blendnode->wipey->value;
+                slayers[this->pos]->ismask = this->ismask;
 
                 dlayers[i] = this;
                 dlayers[i]->pos = i;
@@ -8279,6 +8297,7 @@ bool Layer::exchange(std::vector<Layer*>& slayers, std::vector<Layer*>& dlayers,
                 dlayers[i]->blendnode->wipedir = bnode->wipedir;
                 dlayers[i]->blendnode->wipex->value = bnode->wipex->value;
                 dlayers[i]->blendnode->wipey->value = bnode->wipey->value;
+                dlayers[i]->ismask = imask;
 
                 for (int j = 0; j < inlay->effects[0].size(); j++) {
                     inlay->effects[0][j]->node->align = inlay->node;
@@ -8500,6 +8519,7 @@ void Mixer::set_values(Layer *clay, Layer *lay, bool doclips) {
     clay->queueing = lay->queueing;
     clay->prevshelfdragelem = lay->prevshelfdragelem;
     clay->filename = lay->filename;
+    clay->ismask = lay->ismask;
 }
 
 
@@ -10154,6 +10174,7 @@ Layer* Layer::open_video(float frame, const std::string filename, int reset, boo
         this->databufready = false;
         this->databufsize = 0;
     }
+    this->clearval = 0.0f;  // mask to black
     this->initialized = false;
     this->vidopen = true;
 
@@ -11607,6 +11628,8 @@ Layer* Layer::open_image(const std::string path, bool init, bool dontdeleffs, bo
     }
     this->transfered = false;
 
+    this->clearval = 0.0f;  // mask to black
+
     this->type = ELEM_IMAGE;
 	this->vidopen = true;
 	ilEnable(IL_CONV_PAL);
@@ -12184,7 +12207,7 @@ Layer* Mixer::read_layers(std::istream &rfile, const std::string result, std::ve
                     }
                 }
                 mainmix->retargeting = true;
-                this->newlaypaths.push_back(filename);
+                this->newlaypaths.push_back(absfilename);
                 filename = "";
                 layend->filename = filename;  // for CLIPLAYER
                 this->newpathlayers.push_back(layend);
@@ -12501,6 +12524,9 @@ Layer* Mixer::read_layers(std::istream &rfile, const std::string result, std::ve
 				if (istring == "MIXMODE") {
 					safegetline(rfile, istring);
 					layend->blendnode->blendtype = (BLEND_TYPE)std::stoi(istring);
+                    if (layend->blendnode->blendtype == MASK) {
+                        layend->ismask = true;
+                    }
                     if (ffglmixernr != -1) {
                         layend->blendnode->ffglmixernr = ffglmixernr;
                         layend->blendnode->set_ffglmixer(ffglmixernr);
@@ -16108,6 +16134,7 @@ void Layer::set_ffglsource(int sourcenr) {
     this->type = ELEM_SOURCE;
     this->ffglsourcenr = sourcenr;
     this->vidformat = -1;
+    this->clearval = 0.0f;  // mask to black
 
     int w = mainprogram->ow[this->comp];
     int h = mainprogram->oh[this->comp];
@@ -16207,6 +16234,7 @@ void Layer::set_isfsource(int isfnr) {
         }
     }
     this->vidformat = -1;
+    this->clearval = 0.0f;  // mask to black
 
     if (this->ffglsourcenr != -1) {
         auto shader = mainprogram->ffglsourceplugins[this->ffglsourcenr];

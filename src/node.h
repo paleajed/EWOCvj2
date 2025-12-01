@@ -47,8 +47,9 @@ typedef enum
     CHROMAKEY = 20,
     LUMAKEY = 21,
 	DISPLACEMENT = 22,
-	CROSSFADING = 23,
-    WIPE = 24,
+	MASK = 23,
+	CROSSFADING = 24,
+	WIPE = 25,
     FFGL_MIXER = 1000,
     ISF_MIXER = 2000,
 

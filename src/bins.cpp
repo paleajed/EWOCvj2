@@ -1125,7 +1125,7 @@ void BinsMain::handle(bool draw) {
 			if (bin->shared) {
 				namedisplay += " (SHARED)";
 			}
-			if (mainprogram->renaming != EDIT_NONE && bin == this->currbin) {
+			if (mainprogram->renaming == EDIT_BINNAME && bin == this->currbin) {
 				// bin renaming with keyboard
 				do_text_input(bin->box->vtxcoords->x1 + 0.025f, bin->box->vtxcoords->y1 + 0.018f, 0.00045f, 0.00075f, mainprogram->mx, mainprogram->my, mainprogram->xvtxtoscr(0.3f - 0.03f), 0, nullptr);
 			}
