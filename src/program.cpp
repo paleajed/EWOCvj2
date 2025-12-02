@@ -1904,13 +1904,13 @@ void Program::handle_changed_owoh() {
 		}
 
 		GLuint tex;
-		tex = set_texes(this->fbotex[0], &this->frbuf[0], this->ow[0], this->oh[0]);
+		tex = set_texes(this->fbotex[0], this->frbuf[0], this->ow[0], this->oh[0]);
 		this->fbotex[0] = tex;
-		tex = set_texes(this->fbotex[1], &this->frbuf[1], this->ow[0], this->oh[0]);
+		tex = set_texes(this->fbotex[1], this->frbuf[1], this->ow[0], this->oh[0]);
 		this->fbotex[1] = tex;
-		tex = set_texes(this->fbotex[2], &this->frbuf[2], this->ow[1], this->oh[1]);
+		tex = set_texes(this->fbotex[2], this->frbuf[2], this->ow[1], this->oh[1]);
 		this->fbotex[2] = tex;
-		tex = set_texes(this->fbotex[3], &this->frbuf[3], this->ow[1], this->oh[1]);
+		tex = set_texes(this->fbotex[3], this->frbuf[3], this->ow[1], this->oh[1]);
 		this->fbotex[3] = tex;
 
 #ifdef POSIX
@@ -8076,7 +8076,7 @@ bool Project::open(std::string path, bool autosave, bool newp, bool undo) {
         return false;
     }
 
-    if (!newp && !undo && mainprogram->pathto != "OPENPROJECT") {
+    /*if (!newp && !undo && mainprogram->pathto != "OPENPROJECT") {
         // remove unsaved bins
         std::vector<Bin *> bins = binsmain->bins;
         int correct = 0;
@@ -8089,7 +8089,7 @@ bool Project::open(std::string path, bool autosave, bool newp, bool undo) {
         if (binsmain->bins.size() == 0) {
             mainprogram->remove(mainprogram->project->binsdir + "bins.list");
         }
-    }
+    }*/
 
     mainprogram->project->name = remove_extension(basename(path));
     *namedest = &mainprogram->project->name;

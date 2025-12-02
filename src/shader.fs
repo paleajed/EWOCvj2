@@ -1620,19 +1620,25 @@ void main()
 
     if (interm == 2) {
 		vec4 texcol1 = texture(Sampler0, texco);
-        vec3 rgb = texcol1.rgb;
+        vec3 rgb1 = texcol1.rgb;
         if (ismask == 2) {
             vec3 hsv = rgb2hsv(texcol1.rgb);
             hsv.y *= 0.0f;
             rgb = hsv2rgb(hsv);
         }
     	vec4 texcol2 = texture(Sampler1, texco);
+        vec3 rgb2 = texcol2.rgb;
+        if (ismask == 2) {
+            vec3 hsv = rgb2hsv(texcol2.rgb);
+            hsv.y *= 0.0f;
+            rgb2 = hsv2rgb(hsv);
+        }
         if (usemask) {
             // mask mode
             vec2 center = vec2(texco.x - 0.5f, texco.y - 0.5f);
             float mod = (swidth / sheight) / (float(fbowidth) / float(fboheight));
             if (swidth / sheight > float(fbowidth) / float(fboheight)) {
-                center.y *= mod;
+                center.y /= mod;
             }
             else {
                 center.x *= mod;
@@ -1640,15 +1646,15 @@ void main()
             center += vec2(0.5, 0.5);
             vec4 maskcol = texture(Sampler2, center);
             float maskopacity = rgb2hsv(maskcol.rgb).z;
-            FragColor = vec4(rgb * drywet + (1.0f - drywet) * texcol2.rgb, texcol1.a * maskcol.a * maskopacity * opacity);
+            FragColor = vec4(rgb1 * drywet + (1.0f - drywet) * rgb2, texcol1.a * maskcol.a * maskopacity * opacity);
         }
         else {
-            FragColor = vec4(rgb * drywet + (1.0f - drywet) * texcol2.rgb, texcol1.a * opacity);
+            FragColor = vec4(rgb1 * drywet + (1.0f - drywet) * rgb2, texcol1.a * opacity);
         }
     	return;
     }
     if (ismask == 1) {
-        // make mask layer grayscale
+        // display mask layer as grayscale
 		vec4 texcol = texture(Sampler0, texco);
 	    vec3 hsv = rgb2hsv(texcol.rgb);
 	    hsv.y *= 0.0f;
@@ -1668,7 +1674,7 @@ void main()
         vec2 center = vec2(texco.x - 0.5f, texco.y - 0.5f);
         float mod = (swidth / sheight) / (float(fbowidth) / float(fboheight));
         if (swidth / sheight > float(fbowidth) / float(fboheight)) {
-            center.y *= mod;
+            center.y /= mod;
         }
         else {
             center.x *= mod;
@@ -1941,7 +1947,7 @@ void main()
          fc = texture(endSampler0, (TexCoord0.st + displacement) * 0.91f);
          // Keep original alpha for displacement
      }
-     else if (mixmode == 23) {
+     else if (mixmode == 24) {
          //CROSSFADING alpha
          float fac1 = clamp((1.0f - cf) * 2.0f, 0.0f, 1.0f);
          float fac2 = clamp(cf * 2.0f, 0.0f, 1.0f);
@@ -2236,7 +2242,7 @@ void main()
 	}
 
 	if (wipe) {
-		if (mixmode == 24) {
+		if (mixmode == 25) {
 			float xamount = cf;
 			if (inlayer) xamount = 1.0f - mixfac;
 			float xpix = int(xamount * fbowidth * fcdiv);

@@ -1402,7 +1402,7 @@ extern GLuint copy_tex(GLuint tex, bool yflip);
 extern GLuint copy_tex(GLuint tex, int tw, int th);
 extern GLuint copy_tex(GLuint tex, int tw, int th, bool yflip, int sx = 0, int sy = 0);
 extern void blacken(GLuint tex);
-extern GLuint set_texes(GLuint tex, GLuint *fbo, float ow, float oh);
+extern GLuint set_texes(GLuint tex, GLuint fbo, float ow, float oh);
 
 void open_genmidis(std::string path);
 void save_genmidis(std::string path);

@@ -3553,11 +3553,11 @@ void Layer::set_aspectratio(int lw, int lh) {
     glGetTexLevelParameteriv(GL_TEXTURE_2D, 0, GL_TEXTURE_HEIGHT, &sh);
 
     mainprogram->add_to_texpool(this->fbotex);
-    tex = set_texes(this->fbotex, &this->fbo, w, h);
+    tex = set_texes(this->fbotex, this->fbo, w, h);
     this->fbotex = tex;
 
     mainprogram->add_to_texpool(this->tempfbotex);
-    tex = set_texes(this->tempfbotex, &this->tempfbo, w, h);
+    tex = set_texes(this->tempfbotex, this->tempfbo, w, h);
     this->tempfbotex = tex;
 
     if (this->type == ELEM_IMAGE || this->type == ELEM_LIVE) {
@@ -16235,6 +16235,8 @@ void Layer::set_isfsource(int isfnr) {
     }
     this->vidformat = -1;
     this->clearval = 0.0f;  // mask to black
+
+    //this->set_aspectratio(mainprogram->oh[!mainprogram->prevmodus], mainprogram->oh[!mainprogram->prevmodus]);
 
     if (this->ffglsourcenr != -1) {
         auto shader = mainprogram->ffglsourceplugins[this->ffglsourcenr];

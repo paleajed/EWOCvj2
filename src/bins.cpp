@@ -1095,6 +1095,7 @@ void BinsMain::handle(bool draw) {
 						mainprogram->cursorpos0 = mainprogram->inputtext.length();
 						SDL_StartTextInput();
 						mainprogram->renaming = EDIT_BINNAME;
+						binsmain->currbin->oldname = binsmain->currbin->name;
 						this->dragbin = nullptr;
 					}
 					if (i + this->binsscroll == this->dragbinpos) {
@@ -1311,6 +1312,7 @@ void BinsMain::handle(bool draw) {
 				mainprogram->cursorpos0 = mainprogram->inputtext.length();
 				SDL_StartTextInput();
 				mainprogram->renaming = EDIT_BINNAME;
+				binsmain->currbin->oldname = binsmain->currbin->name;
 			}
 		}
 		else {
@@ -1351,6 +1353,7 @@ void BinsMain::handle(bool draw) {
 				mainprogram->cursorpos0 = mainprogram->inputtext.length();
 				SDL_StartTextInput();
 				mainprogram->renaming = EDIT_BINNAME;
+				binsmain->currbin->oldname = binsmain->currbin->name;
 			}
 		}
 	}

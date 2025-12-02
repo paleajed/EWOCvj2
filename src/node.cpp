@@ -155,15 +155,10 @@ void Node::draw_connection(Node *node, CONN_TYPE ct) {
 	}
 }
 
-GLuint set_texes(GLuint tex, GLuint *fbo, float ow, float oh) {
-    if (*fbo != -1) glBindFramebuffer(GL_FRAMEBUFFER, *fbo);
+GLuint set_texes(GLuint tex, GLuint fbo, float ow, float oh) {
+    if (fbo != -1) glBindFramebuffer(GL_FRAMEBUFFER, fbo);
 
 	GLuint newtex;
-
-    int sw, sh;
-    glBindTexture(GL_TEXTURE_2D, tex);
-    glGetTexLevelParameteriv(GL_TEXTURE_2D, 0, GL_TEXTURE_WIDTH, &sw);
-    glGetTexLevelParameteriv(GL_TEXTURE_2D, 0, GL_TEXTURE_HEIGHT, &sh);
 
     GLuint rettex = mainprogram->grab_from_texpool(ow, oh, GL_RGBA8);
     if (rettex != -1) {
@@ -180,7 +175,7 @@ GLuint set_texes(GLuint tex, GLuint *fbo, float ow, float oh) {
         mainprogram->texintfmap[newtex] = GL_RGBA8;
     }
 
-    if (*fbo != -1) glFramebufferTexture2D(GL_FRAMEBUFFER, GL_COLOR_ATTACHMENT0, GL_TEXTURE_2D, newtex, 0);
+    if (fbo != -1) glFramebufferTexture2D(GL_FRAMEBUFFER, GL_COLOR_ATTACHMENT0, GL_TEXTURE_2D, newtex, 0);
 	return newtex;
 }
 
@@ -188,24 +183,24 @@ void Node::renew_texes(float ow, float oh) {
 	GLuint tex;
 	if (this->type == VIDEO) {
 		VideoNode* vnode = (VideoNode*)this;
-        tex = set_texes(vnode->layer->tempfbotex, &vnode->layer->tempfbo, ow, oh);
+        tex = set_texes(vnode->layer->tempfbotex, vnode->layer->tempfbo, ow, oh);
         vnode->layer->tempfbotex = tex;
-        tex = set_texes(vnode->layer->fbotex, &vnode->layer->fbo, ow, oh);
+        tex = set_texes(vnode->layer->fbotex, vnode->layer->fbo, ow, oh);
         vnode->layer->fbotex = tex;
 	}
 	else if (this->type == EFFECT) {
 		EffectNode* enode = (EffectNode*)this;
-		tex = set_texes(enode->effect->fbotex, &enode->effect->fbo, ow, oh);
+		tex = set_texes(enode->effect->fbotex, enode->effect->fbo, ow, oh);
 		enode->effect->fbotex = tex;
 	}
 	else if (this->type == BLEND) {
 		BlendNode* bnode = (BlendNode*)this;
-		tex = set_texes(bnode->fbotex, &bnode->fbo, ow, oh);
+		tex = set_texes(bnode->fbotex, bnode->fbo, ow, oh);
 		bnode->fbotex = tex;
 	}
 	else if (this->type == MIX) {
 		MixNode* mnode = (MixNode*)this;
-		tex = set_texes(mnode->mixtex, &mnode->mixfbo, ow, oh);
+		tex = set_texes(mnode->mixtex, mnode->mixfbo, ow, oh);
 		mnode->mixtex = tex;
 	}
 }

@@ -154,7 +154,8 @@ class BinsMain {
 		
 class Bin {
 	public:
-		std::string name = "";
+        std::string name = "";
+        std::string oldname = "";
 		std::string path = "";
 		std::string owner = "";  // Seatname of the client that owns/created this bin
 		std::string last_message_sender = "";  // Seatname of who sent the last BIN_SENT message (to avoid echo)

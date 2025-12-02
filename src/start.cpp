@@ -3367,7 +3367,7 @@ void onestepfrom(bool stage, Node *node, Node *prevnode, GLuint prevfbotex, GLui
 				}
 			}
 
-           glActiveTexture(GL_TEXTURE0);
+            glActiveTexture(GL_TEXTURE0);
             if (effect->fbo == -1) {
                 do {
                     if (effect->fbo != -1) {
@@ -3469,6 +3469,25 @@ void onestepfrom(bool stage, Node *node, Node *prevnode, GLuint prevfbotex, GLui
 
             Layer *lay = effect->layer;
 
+            int sw, sh;
+            glBindTexture(GL_TEXTURE_2D, effect->fbotex);
+            glGetTexLevelParameteriv(GL_TEXTURE_2D, 0, GL_TEXTURE_WIDTH, &sw);
+            glGetTexLevelParameteriv(GL_TEXTURE_2D, 0, GL_TEXTURE_HEIGHT, &sh);
+            float mod1 = lay->iw / (float)sw;
+            float mod2 = lay->ih / (float)sh;
+            if (lay->iw / lay->ih > (float)sw / (float)sh) {
+                sw = lay->iw / mod1;
+                sh = lay->ih / mod1;
+            }
+            else {
+                sw = lay->iw / mod2;
+                sh = lay->ih / mod2;
+            }
+            if (lay->isfsourcenr != -1) {
+                sw = mainprogram->oh[stage];
+                sh = mainprogram->oh[stage];
+            }
+
             float sx = 0.0f;
             float sy = 0.0f;
             float sc = 1.0f;
@@ -3488,12 +3507,12 @@ void onestepfrom(bool stage, Node *node, Node *prevnode, GLuint prevfbotex, GLui
             if (stage) glViewport(0, 0, mainprogram->ow[1], mainprogram->oh[1]);
             else glViewport(0, 0, mainprogram->ow[0], mainprogram->oh[0]);
             if (effect->node == lay->lasteffnode[0]) {
-                sxs = lay->swidth / 2.0f - (lay->swidth / 2.0f) * sc * lay->xss;
-                sys = lay->sheight / 2.0f - (lay->sheight / 2.0f) * sc * lay->yss;
-                xss = (sxs + lay->swidth * 12.0f * sx) / lay->xss;
-                yss = (sys + lay->sheight * 12.0f * sy) / lay->yss;
-                swidth = lay->swidth * sc;
-                sheight = lay->sheight * sc;
+                sxs = sw / 2.0f - (sw / 2.0f) * sc * lay->xss;
+                sys = sh / 2.0f - (sh / 2.0f) * sc * lay->yss;
+                xss = (sxs + sw * 12.0f * sx) / lay->xss;
+                yss = (sys + sh * 12.0f * sy) / lay->yss;
+                swidth = sw * sc;
+                sheight = sh * sc;
                 mainprogram->uniformCache->setBool("lasteffect", true);
                 mainprogram->uniformCache->setFloat("xss", lay->xss);
                 mainprogram->uniformCache->setFloat("yss", lay->yss);
@@ -3587,12 +3606,13 @@ void onestepfrom(bool stage, Node *node, Node *prevnode, GLuint prevfbotex, GLui
             } else if (effect->isfnr != -1 && effect->onoffbutton->value) {
                 auto instance = mainprogram->isfinstances[effect->isfpluginnr][effect->isfinstancenr];
 
+                mainprogram->uniformCache->setBool("usemask", false);
                 glBindFramebuffer(GL_FRAMEBUFFER, effect->tempfbo);
                 glDrawBuffer(GL_COLOR_ATTACHMENT0);
                 if (stage) glViewport(0, 0, mainprogram->ow[1], mainprogram->oh[1]);
                 else glViewport(0, 0, mainprogram->ow[0], mainprogram->oh[0]);
                 if (effect->node == lay->lasteffnode[0]) {
-                    glViewport(xss, yss, swidth, sheight);
+                    //glViewport(xss, yss, swidth, sheight);
                 }
                 glClearColor(0.f, 0.f, 0.f, 0.f);
                 glClear(GL_COLOR_BUFFER_BIT);
@@ -3626,10 +3646,10 @@ void onestepfrom(bool stage, Node *node, Node *prevnode, GLuint prevfbotex, GLui
                 instance->bindInputTexture(prevfbotex, 0);
 
                 if (effect->node == lay->lasteffnode[0]) {
-                    instance->render(mainmix->time, swidth, sheight);
+                    instance->render(mainmix->time, mainprogram->oh[stage], mainprogram->oh[stage]);
                 }
                 else {
-                    instance->render(mainmix->time, mainprogram->ow[stage], mainprogram->oh[stage]);
+                    instance->render(mainmix->time, mainprogram->oh[stage], mainprogram->oh[stage]);
                 }
 
                 glUseProgram(mainprogram->ShaderProgram);
@@ -3641,24 +3661,23 @@ void onestepfrom(bool stage, Node *node, Node *prevnode, GLuint prevfbotex, GLui
                 if (stage) glViewport(0, 0, mainprogram->ow[1], mainprogram->oh[1]);
                 else glViewport(0, 0, mainprogram->ow[0], mainprogram->oh[0]);
                 if (effect->node == lay->lasteffnode[0]) {
-                    //glViewport(xss, yss, swidth, sheight);
+                    glViewport(xss, yss, swidth, sheight);
                 }
 
+                mainprogram->uniformCache->setBool("usemask", umask);
                 mainprogram->uniformCache->setInt("interm", 2);
                 mainprogram->uniformCache->setSampler("Sampler1", 1);
+                if (umask) {
+                    glActiveTexture(GL_TEXTURE2);
+                    glBindTexture(GL_TEXTURE_2D, mainmix->masktex);
+                }
                 glActiveTexture(GL_TEXTURE1);
                 glBindTexture(GL_TEXTURE_2D, prevfbotex);
                 glActiveTexture(GL_TEXTURE0);
                 glBindTexture(GL_TEXTURE_2D, effect->tempfbotex);
 
-                mainprogram->uniformCache->setFloat("swidth", 1.0f);
-                mainprogram->uniformCache->setFloat("sheight", 1.0f);
-                mainprogram->uniformCache->setInt("fbowidth", mainprogram->oh[stage]);
-                mainprogram->uniformCache->setInt("fboheight", mainprogram->oh[stage]);
                 draw_box(nullptr, black, -1.0f, 1.0f, 2.0f, -2.0f, 0.0f, 0.0f, 1.0f, op, 0, effect->tempfbotex, 0, 0,
-                         false);
-                mainprogram->uniformCache->setInt("fbowidth", mainprogram->ow[stage]);
-                mainprogram->uniformCache->setInt("fboheight", mainprogram->oh[stage]);
+                     false);
 
             } else {
                 if (!lay->onhold) {
@@ -3704,12 +3723,12 @@ void onestepfrom(bool stage, Node *node, Node *prevnode, GLuint prevfbotex, GLui
                 if (!lay->ismask) {
                     mainmix->masktex = -1;
                     if (lay->pos == 0) {
-                        mainmix->lasttex = lay->fbotex;
+                        mainmix->lasttex = effect->fbotex;
                     }
                 }
                 else {
                     if (lay->pos == 0) {
-                        mainmix->masktex = lay->fbotex;
+                        mainmix->masktex = effect->fbotex;
                     }
                 }
             }
@@ -3751,22 +3770,25 @@ void onestepfrom(bool stage, Node *node, Node *prevnode, GLuint prevfbotex, GLui
         if (lay->pos == 1 && lay->comp == true) {
             bool dummy = false;
         }
-        if (lay->ndisource != nullptr) {
+        if (lay->ffglsourcenr != -1 || lay->isfsourcenr != -1) {
+            int sw, sh;
+            glBindTexture(GL_TEXTURE_2D, lay->fbotex);
+            glGetTexLevelParameteriv(GL_TEXTURE_2D, 0, GL_TEXTURE_WIDTH, &sw);
+            glGetTexLevelParameteriv(GL_TEXTURE_2D, 0, GL_TEXTURE_HEIGHT, &sh);
+            frac = sw / sh;
+        }
+        else if (lay->ndisource != nullptr) {
             glActiveTexture(GL_TEXTURE0);
             int ndiw, ndih;
             glBindTexture(GL_TEXTURE_2D, lay->ndiintex.getTextureID());
             glGetTexLevelParameteriv(GL_TEXTURE_2D, 0, GL_TEXTURE_WIDTH, &ndiw);
             glGetTexLevelParameteriv(GL_TEXTURE_2D, 0, GL_TEXTURE_HEIGHT, &ndih);
             frac = (float)ndiw / (float)ndih;
-            scw = (float)ndiw;
-            sch = (float)ndih;
         }
         else if (lay->type == ELEM_IMAGE) {
             ilBindImage(lay->boundimage);
             ilActiveImage((int)lay->frame);
             frac = (float)ilGetInteger(IL_IMAGE_WIDTH) / (float)ilGetInteger(IL_IMAGE_HEIGHT);
-            scw = (float)ilGetInteger(IL_IMAGE_WIDTH);
-            sch = (float)ilGetInteger(IL_IMAGE_HEIGHT);
         }
         else if (lay->type == ELEM_NDI) {
             glActiveTexture(GL_TEXTURE0);
@@ -3775,19 +3797,13 @@ void onestepfrom(bool stage, Node *node, Node *prevnode, GLuint prevfbotex, GLui
             glGetTexLevelParameteriv(GL_TEXTURE_2D, 0, GL_TEXTURE_WIDTH, &ndiw);
             glGetTexLevelParameteriv(GL_TEXTURE_2D, 0, GL_TEXTURE_HEIGHT, &ndih);
             frac = (float)ndiw / (float)ndih;
-            scw = (float)ndiw;
-            sch = (float)ndih;
         }
         else {
             if (lay->decresult->height == 0) return;
             frac = (float)(lay->decresult->width) / (float)(lay->decresult->height);
-            scw = (float)(lay->decresult->width);
-            sch = (float)(lay->decresult->height);
         }
         if (lay->dummy) {
             frac = (float)(lay->video_dec_ctx->width) / (float)(lay->video_dec_ctx->height);
-            scw = (float)(lay->video_dec_ctx->width);
-            sch = (float)(lay->video_dec_ctx->height);
         }
         if (fraco > frachd) {
             ys = 0.0f;
@@ -3856,7 +3872,7 @@ void onestepfrom(bool stage, Node *node, Node *prevnode, GLuint prevfbotex, GLui
         float sheight = sch * sc;
         mainprogram->uniformCache->setFloat("swidth", sw);
         mainprogram->uniformCache->setFloat("sheight", sh);
-        lay->swidth = sw;
+        sw = sw;
         lay->sheight = sh;
         lay->scw = scw;
         lay->sch = sch;
@@ -3865,13 +3881,13 @@ void onestepfrom(bool stage, Node *node, Node *prevnode, GLuint prevfbotex, GLui
         // When effects exist: apply only aspect ratio (shift/scale applied at last effect)
         bool clearval = lay->clearval;
         bool clearopacity = 0.0f;
-        if (lay->ismask) {
-            lay->blendnode->blendtype = MASK;
-            clearopacity = 1.0f;
-            // turn mask into grayscale
-            mainprogram->uniformCache->setInt("ismask", 1);
-        }
         if (!effectspresent) {
+            if (lay->ismask) {
+                lay->blendnode->blendtype = MASK;
+                clearopacity = 1.0f;
+                // turn mask into grayscale
+                mainprogram->uniformCache->setInt("ismask", 1);
+            }
             glViewport(xss, yss, swidth, sheight);
             if (mainmix->masktex != -1) {
                 // enable mask mode: masktex passed by previous blend node used as grayscale mask
@@ -3953,7 +3969,7 @@ void onestepfrom(bool stage, Node *node, Node *prevnode, GLuint prevfbotex, GLui
             glDrawBuffer(GL_COLOR_ATTACHMENT0);
             glViewport(0, 0, sw, sh);
             if (!effectspresent) {
-                glViewport(xss, yss, swidth, sheight);
+                //glViewport(xss, yss, swidth, sheight);
             }
             glClearColor(clearval, clearval, clearval, clearopacity);
             glClear(GL_COLOR_BUFFER_BIT);
@@ -3966,6 +3982,9 @@ void onestepfrom(bool stage, Node *node, Node *prevnode, GLuint prevfbotex, GLui
             glDrawBuffer(GL_COLOR_ATTACHMENT0);
             if (stage) glViewport(0, 0, mainprogram->ow[1], mainprogram->oh[1]);
             else glViewport(0, 0, mainprogram->ow[0], mainprogram->oh[0]);
+            if (!effectspresent) {
+                glViewport(xss, yss, swidth, sheight);
+            }
             glClearColor( 0.f, 0.f, 0.f, 0.f );
             glClear(GL_COLOR_BUFFER_BIT);
 
@@ -4004,7 +4023,7 @@ void onestepfrom(bool stage, Node *node, Node *prevnode, GLuint prevfbotex, GLui
             if (stage) glViewport(0, 0, mainprogram->ow[1], mainprogram->oh[1]);
             else glViewport(0, 0, mainprogram->ow[0], mainprogram->oh[0]);
             if (!effectspresent) {
-                glViewport(xss, yss, swidth, sheight);
+                //glViewport(xss, yss, swidth, sheight);
             }
             glClearColor(clearval, clearval, clearval, clearopacity);
             glClear(GL_COLOR_BUFFER_BIT);
@@ -7131,6 +7150,11 @@ void the_loop() {
                 std::vector<Bin *> bins = binsmain->bins;
                 int correct = 0;
                 for (int i = 0; i < bins.size(); i++) {
+                    if (ret == 2) {
+                        if (bins[i]->oldname != "") {
+                            bins[i]->name = bins[i]->oldname;
+                        }
+                    }
                     if (!bins[i]->saved) {
                         binsmain->bins.erase(binsmain->bins.begin() + i - correct);
                         mainprogram->remove(bins[i]->path);
