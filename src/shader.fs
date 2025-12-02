@@ -1624,7 +1624,7 @@ void main()
         if (ismask == 2) {
             vec3 hsv = rgb2hsv(texcol1.rgb);
             hsv.y *= 0.0f;
-            rgb = hsv2rgb(hsv);
+            rgb1 = hsv2rgb(hsv);
         }
     	vec4 texcol2 = texture(Sampler1, texco);
         vec3 rgb2 = texcol2.rgb;
@@ -1659,8 +1659,24 @@ void main()
 	    vec3 hsv = rgb2hsv(texcol.rgb);
 	    hsv.y *= 0.0f;
 	    vec3 rgb = hsv2rgb(hsv);
-    	FragColor = vec4(rgb, texcol.a * opacity);
-    	return;
+	    if (usemask) {
+            vec2 center = vec2(texco.x - 0.5f, texco.y - 0.5f);
+            float mod = (swidth / sheight) / (float(fbowidth) / float(fboheight));
+            if (swidth / sheight > float(fbowidth) / float(fboheight)) {
+                center.y /= mod;
+            }
+            else {
+                center.x *= mod;
+            }
+            center += vec2(0.5, 0.5);
+            vec4 texcol2 = texture(Sampler2, center);
+            float maskopacity = rgb2hsv(texcol2.rgb).z;
+            FragColor = vec4(rgb, texcol.a * texcol2.a * maskopacity * opacity);
+   	    }
+   	    else {
+   	         FragColor = vec4(rgb, texcol.a * opacity);
+   	    }
+   	    return;
     }
     if (interm != 1 && usemask) {
         // mask mode
