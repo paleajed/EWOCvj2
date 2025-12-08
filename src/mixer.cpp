@@ -1237,7 +1237,7 @@ BrightnessEffect::BrightnessEffect() {
 	this->numrows = 1;
 	Param *param = new Param;
 	param->name = "Amount"; 
-	param->value = 0.5f;
+	param->value = 0.0f;
 	param->range[0] = -1.0f;
 	param->range[1] = 1.0f;
 	param->sliding = true;
@@ -5540,6 +5540,7 @@ void Mixer::vidbox_handle() {
 }
 
 void Layer::display() {
+    float deepred[] = {1.0, 0.0, 0.0, 1.0};
 
 	std::vector<Layer*>& lvec = choose_layers(this->deck);
 	if (mainmix->scenes[this->deck][mainmix->currscene[this->deck]]->scrollpos > lvec.size() - 2) mainmix->scenes[this->deck][mainmix->currscene[this->deck]]->scrollpos = lvec.size() - 2;
@@ -6139,11 +6140,11 @@ void Layer::display() {
                     mixstr = "ISF";
                     break;
             }
-            if (this->pos > 0) {
+            if (this->pos > 0 || this->blendnode->blendtype == MASK) {
                 render_text(mixstr, white, this->mixbox->vtxcoords->x1 + 0.015f,
                             1.0f - (mainprogram->layh + 0.135f) + 0.03f, 0.00045f, 0.00075f);
             } else {
-                render_text(mixstr, darkred1, this->mixbox->vtxcoords->x1 + 0.015f,
+                render_text(mixstr, deepred, this->mixbox->vtxcoords->x1 + 0.015f,
                             1.0f - (mainprogram->layh + 0.135f) + 0.03f, 0.00045f, 0.00075f);
             }
 
@@ -6157,23 +6158,30 @@ void Layer::display() {
             mainprogram->effscrollupB->upvtxtoscr();
             mainprogram->effscrolldownA->upvtxtoscr();
             mainprogram->effscrolldownB->upvtxtoscr();
-            Boxx *box = mainprogram->effcat[this->deck]->box;
-            box->vtxcoords->x1 = efx;
-            box->upvtxtoscr();
-            mainprogram->handle_button(mainprogram->effcat[this->deck]);
-            this->effcat = mainprogram->effcat[this->deck]->value;
-            if (this->effects[1].size() && mainprogram->effcat[this->deck]->value == 0) {
-                box->acolor[0] = 0.5f;
-                box->acolor[1] = 0.0f;
-                box->acolor[2] = 0.0f;
-                box->acolor[3] = 1.0f;
+
+            bool cat = 0;
+            if (!this->ismask && this->pos != 0) {
+                Boxx *box = mainprogram->effcat[this->deck]->box;
+                box->vtxcoords->x1 = efx;
+                box->upvtxtoscr();
+                mainprogram->handle_button(mainprogram->effcat[this->deck]);
+                this->effcat = mainprogram->effcat[this->deck]->value;
+                if (this->effects[1].size() && mainprogram->effcat[this->deck]->value == 0) {
+                    box->acolor[0] = 0.5f;
+                    box->acolor[1] = 0.0f;
+                    box->acolor[2] = 0.0f;
+                    box->acolor[3] = 1.0f;
+                }
+                draw_box(box, -1);
+                render_text(mainprogram->effcat[this->deck]->name[mainprogram->effcat[this->deck]->value], white,
+                            box->vtxcoords->x1, box->vtxcoords->y1 + box->vtxcoords->h, 0.00045f, 0.00075f, 0,
+                            1);
+                cat = mainprogram->effcat[this->deck]->value;
             }
-            draw_box(box, -1);
-            render_text(mainprogram->effcat[this->deck]->name[mainprogram->effcat[this->deck]->value], white,
-                        box->vtxcoords->x1, box->vtxcoords->y1 + box->vtxcoords->h, 0.00045f, 0.00075f, 0,
-                        1);
+            else {
+                mainprogram->effcat[this->deck]->value = 0;
+            }
             std::vector<Effect *> &evec = this->choose_effects();
-            bool cat = mainprogram->effcat[this->deck]->value;
 
             // Draw and handle effect stack scrollboxes
             if (mainmix->currlay[!mainprogram->prevmodus]->deck == 0) {
@@ -8136,7 +8144,7 @@ void Mixer::reconnect_all(std::vector<Layer*> &layers) {
             layers[j]->lasteffnode[0] = layers[j]->effects[0].back()->node;
         } else layers[j]->lasteffnode[0] = layers[j]->node;
         if (j == 0) layers[j]->lasteffnode[1] = layers[j]->lasteffnode[0];
-        if (layers[j]->effects[1].size()) {
+        if (layers[j]->effects[1].size() && !layers[j]->ismask && j != 0) {
             layers[j]->lasteffnode[1] = layers[j]->effects[1].back()->node;
         } else if (j > 0) {
             layers[j]->lasteffnode[1] = layers[j]->blendnode;
@@ -8160,14 +8168,14 @@ void Mixer::reconnect_all(std::vector<Layer*> &layers) {
             if (j != layers.size() - 1)
                 mainprogram->nodesmain->currpage->connect_nodes(layers[j]->lasteffnode[1],
                                                                 layers[j + 1]->blendnode);
-            if (layers[j]->effects[1].size()) {
-                mainprogram->nodesmain->currpage->connect_nodes(layers[j]->lasteffnode[0],
-                                                                layers[j]->lasteffnode[1]);
+            if (layers[j]->effects[1].size() && !layers[j]->ismask && j != 0) {
+                //mainprogram->nodesmain->currpage->connect_nodes(layers[j]->lasteffnode[0],
+                                                                //layers[j]->lasteffnode[1]);
             }
         }
         else {
             mainprogram->nodesmain->currpage->connect_in2(layers[j]->lasteffnode[0], layers[j]->blendnode);
-            if (layers[j]->effects[1].size()) {
+            if (layers[j]->effects[1].size() && !layers[j]->ismask && j != 0) {
                 mainprogram->nodesmain->currpage->connect_nodes(layers[j]->blendnode,
                                                                 layers[j]->effects[1][0]->node);
                 if (j + 1 < layers.size()) {
@@ -8185,7 +8193,7 @@ void Mixer::reconnect_all(std::vector<Layer*> &layers) {
                 }
             }
         }
-        if (layers[j]->effects[1].size() > 1) {
+        if (layers[j]->effects[1].size() > 1 && !layers[j]->ismask && j != 0) {
             for (int i = 0; i < layers[j]->effects[1].size() - 1; ++i) {
                 mainprogram->nodesmain->currpage->connect_nodes(layers[j]->effects[1][i]->node,
                                                                 layers[j]->effects[1][i + 1]->node);

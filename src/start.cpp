@@ -3473,15 +3473,25 @@ void onestepfrom(bool stage, Node *node, Node *prevnode, GLuint prevfbotex, GLui
             glBindTexture(GL_TEXTURE_2D, effect->fbotex);
             glGetTexLevelParameteriv(GL_TEXTURE_2D, 0, GL_TEXTURE_WIDTH, &sw);
             glGetTexLevelParameteriv(GL_TEXTURE_2D, 0, GL_TEXTURE_HEIGHT, &sh);
-            float mod1 = lay->iw / (float)sw;
-            float mod2 = lay->ih / (float)sh;
-            if (lay->iw / lay->ih > (float)sw / (float)sh) {
-                sw = lay->iw / mod1;
-                sh = lay->ih / mod1;
-            }
-            else {
-                sw = lay->iw / mod2;
-                sh = lay->ih / mod2;
+            if (lay->aspectratio != RATIO_OUTPUT) {
+                if (effect->node == lay->lasteffnode[0]) {
+                    float mod1, mod2;
+                    if (lay->aspectratio == RATIO_ORIGINAL_INSIDE) {
+                        mod1 = lay->iw / (float) sw;
+                        mod2 = lay->ih / (float) sh;
+                    }
+                    else {
+                        mod2 = lay->iw / (float) sw;
+                        mod1 = lay->ih / (float) sh;
+                    }
+                    if (lay->iw / lay->ih > (float) sw / (float) sh) {
+                        sw = lay->iw / mod1;
+                        sh = lay->ih / mod1;
+                    } else {
+                        sw = lay->iw / mod2;
+                        sh = lay->ih / mod2;
+                    }
+                }
             }
             if (lay->isfsourcenr != -1) {
                 sw = mainprogram->oh[stage];
@@ -3646,10 +3656,10 @@ void onestepfrom(bool stage, Node *node, Node *prevnode, GLuint prevfbotex, GLui
                 instance->bindInputTexture(prevfbotex, 0);
 
                 if (effect->node == lay->lasteffnode[0]) {
-                    instance->render(mainmix->time, mainprogram->oh[stage], mainprogram->oh[stage]);
+                    instance->render(mainmix->time, mainprogram->ow[stage], mainprogram->oh[stage]);
                 }
                 else {
-                    instance->render(mainmix->time, mainprogram->oh[stage], mainprogram->oh[stage]);
+                    instance->render(mainmix->time, mainprogram->ow[stage], mainprogram->oh[stage]);
                 }
 
                 glUseProgram(mainprogram->ShaderProgram);
@@ -3732,6 +3742,11 @@ void onestepfrom(bool stage, Node *node, Node *prevnode, GLuint prevfbotex, GLui
                     }
                 }
             }
+            if (lay->effects[1].size()) {
+                if (effect->node == lay->effects[1].back()->node) {
+                    mainmix->lasttex = effect->fbotex;
+                }
+            }
 
             prevfbotex = effect->fbotex;
             prevfbo = effect->fbo;
@@ -3775,7 +3790,7 @@ void onestepfrom(bool stage, Node *node, Node *prevnode, GLuint prevfbotex, GLui
             glBindTexture(GL_TEXTURE_2D, lay->fbotex);
             glGetTexLevelParameteriv(GL_TEXTURE_2D, 0, GL_TEXTURE_WIDTH, &sw);
             glGetTexLevelParameteriv(GL_TEXTURE_2D, 0, GL_TEXTURE_HEIGHT, &sh);
-            frac = sw / sh;
+            frac = (float)sw / (float)sh;
         }
         else if (lay->ndisource != nullptr) {
             glActiveTexture(GL_TEXTURE0);
@@ -3967,7 +3982,8 @@ void onestepfrom(bool stage, Node *node, Node *prevnode, GLuint prevfbotex, GLui
 
             glBindFramebuffer(GL_FRAMEBUFFER, lay->fbo);
             glDrawBuffer(GL_COLOR_ATTACHMENT0);
-            glViewport(0, 0, sw, sh);
+            if (stage) glViewport(0, 0, mainprogram->ow[1], mainprogram->oh[1]);
+            else glViewport(0, 0, mainprogram->ow[0], mainprogram->oh[0]);
             if (!effectspresent) {
                 //glViewport(xss, yss, swidth, sheight);
             }
@@ -5346,7 +5362,7 @@ void end_input() {
 void the_loop() {
     //printf("concatting %d\n", mainprogram->concatting);
     float halfwhite[] = {1.0f, 1.0f, 1.0f, 0.5f};
-    float deepred[4] = {1.0, 0.0, 0.0, 1.0};
+    float deepred[] = {1.0, 0.0, 0.0, 1.0};
     float red[] = {1.0f, 0.5f, 0.5f, 1.0f};
     float green[] = {0.0f, 0.75f, 0.0f, 1.0f};
     float orange[] = {1.0f, 0.5f, 0.0f, 1.0f};

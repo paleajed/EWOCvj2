@@ -4966,6 +4966,9 @@ void Program::handle_laymenu1() {
         else if (k == (14 - cond * 2)) {
             // apply mask
             Layer *masklay = mainmix->add_layer(*mainmix->mouselayer->layers, mainmix->mouselayer->pos);
+            if (masklay->pos == mainmix->scenes[masklay->deck][mainmix->currscene[masklay->deck]]->scrollpos + 2) {
+                mainmix->scenes[masklay->deck][mainmix->currscene[masklay->deck]]->scrollpos++;
+            }
             masklay->blendnode->blendtype = MASK;
             masklay->ismask = true;
             masklay->clearval = 1.0f;

@@ -1311,6 +1311,7 @@ extern float purple[];
 extern float yellow[];
 extern float lightblue[];
 extern float darkblue[];
+extern float deepred[];
 extern float red[];
 extern float lightgrey[];
 extern float grey[];
