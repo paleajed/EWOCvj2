@@ -18,6 +18,8 @@ typedef enum
     BET_MOVSEL = 15,
     BET_DELSEL = 16,
     BET_HAPSEL = 17,
+    BET_UPSCALEIMAGE = 18,
+	BET_LOADSTYLEPREP = 19,
 } BINELMENU_OPTION;
 
 class Bin;
@@ -134,10 +136,10 @@ class BinsMain {
 		void import_bins();
 		void open_files_bin();
 		void open_handlefile(std::string path, GLuint tex = -1);
-		std::tuple<std::string, std::string> hap_binel(BinElement *binel, BinElement* bdm);
+		std::tuple<std::string, std::string> hap_binel(BinElement *binel, BinElement* bdm, int upscalemodel = -1);
 		void hap_deck(BinElement * bd);
 		void hap_mix(BinElement * bm);
-		void hap_encode(std::string srcpath, BinElement* binel, BinElement* bdm);
+		void hap_encode(std::string srcpath, BinElement* binel, BinElement* bdm, int upscalemodel = -1);
         void undo_redo(char offset);
         void clear_undo();
         void save_binjpegs();
@@ -211,6 +213,7 @@ class BinElement {
 		int allhaps = 0;
 		Layer *otflay = nullptr;
 		void erase(bool deletetex = true);
+        void upscale_image(int model);
         BinElement();
 		~BinElement();
 };

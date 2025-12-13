@@ -103,7 +103,8 @@ extern "C" {
 // my own header
 #include "program.h"
 #include "UPnPPortMapper.h"
-
+#include "AIStyleTransfer.h"
+#include "RealESRGANWrapper.h"
 #define PROGRAM_NAME "EWOCvj"
 
 #ifdef WINDOWS
@@ -116,6 +117,7 @@ Globals *glob = nullptr;
 Program *mainprogram = nullptr;
 Mixer *mainmix = nullptr;
 BinsMain *binsmain = nullptr;
+StyleRoom *mainstyleroom = nullptr;
 LoopStation *loopstation = nullptr;
 LoopStation *lp = nullptr;
 LoopStation *lpc = nullptr;
@@ -2987,8 +2989,7 @@ void onestepfrom(bool stage, Node *node, Node *prevnode, GLuint prevfbotex, GLui
 	if (node->type == EFFECT) {
 		Effect *effect = ((EffectNode*)node)->effect;
 
-		if (1) {
-		//if (effect->layer->initialized) {
+		if (effect->onoffbutton->value) {
 			mainprogram->uniformCache->setFloat("drywet", effect->drywet->value);
             GLuint effectProgram = 0;
 			if (effect->onoffbutton->value) {
@@ -3360,10 +3361,10 @@ void onestepfrom(bool stage, Node *node, Node *prevnode, GLuint prevfbotex, GLui
 						break;
 					 }
 
-					case MIRROR: {
-						mainprogram->uniformCache->setInt("fxid", MIRROR);
-						break;
-					}
+                    case MIRROR: {
+                        mainprogram->uniformCache->setInt("fxid", MIRROR);
+                        break;
+                    }
 				}
 			}
 
@@ -3689,7 +3690,62 @@ void onestepfrom(bool stage, Node *node, Node *prevnode, GLuint prevfbotex, GLui
                 draw_box(nullptr, black, -1.0f, 1.0f, 2.0f, -2.0f, 0.0f, 0.0f, 1.0f, op, 0, effect->tempfbotex, 0, 0,
                      false);
 
+            } else if (effect->aistylnr != -1 && effect->onoffbutton->value) {
+                AIStyleEffect* aiEffect = dynamic_cast<AIStyleEffect*>(effect);
+                if (aiEffect) {
+                    // Update style and processing resolution if parameters changed
+                    aiEffect->updateStyle();
+                    //aiEffect->updateProcessingResolution(mainprogram->ow[stage], mainprogram->oh[stage]);
+
+                    // Prepare input FBO structure
+                    FBOstruct inputFBO;
+                    inputFBO.framebuffer = prevfbo;
+                    inputFBO.texture = prevfbotex;
+                    int sw, sh;
+                    glBindTexture(GL_TEXTURE_2D, prevfbotex);
+                    glGetTexLevelParameteriv(GL_TEXTURE_2D, 0, GL_TEXTURE_WIDTH, &sw);
+                    glGetTexLevelParameteriv(GL_TEXTURE_2D, 0, GL_TEXTURE_HEIGHT, &sh);
+                    inputFBO.width = sw;
+                    inputFBO.height = sh;
+
+                    // Prepare output FBO structure
+                    FBOstruct outputFBO;
+                    outputFBO.framebuffer = effect->tempfbo;
+                    outputFBO.texture = effect->tempfbotex;
+                    outputFBO.width = mainprogram->ow[stage];
+                    outputFBO.height = mainprogram->oh[stage];
+
+                    // Run AI style transfer
+                    bool success = aiEffect->styleTransfer->render(inputFBO, outputFBO);
+
+                    // Composite result with dry/wet mix
+                    glBindFramebuffer(GL_FRAMEBUFFER, effect->fbo);
+                    glDrawBuffer(GL_COLOR_ATTACHMENT0);
+                    if (stage) glViewport(0, 0, mainprogram->ow[1], mainprogram->oh[1]);
+                    else glViewport(0, 0, mainprogram->ow[0], mainprogram->oh[0]);
+                    if (effect->node == lay->lasteffnode[0]) {
+                        glViewport(xss, yss, swidth, sheight);
+                    }
+                    glClearColor(0.f, 0.f, 0.f, 0.f);
+                    glClear(GL_COLOR_BUFFER_BIT);
+
+                    if (success) {
+                        mainprogram->uniformCache->setInt("interm", 2);
+                        mainprogram->uniformCache->setSampler("Sampler1", 1);
+                        glActiveTexture(GL_TEXTURE1);
+                        glBindTexture(GL_TEXTURE_2D, prevfbotex);
+                        glActiveTexture(GL_TEXTURE0);
+                        glBindTexture(GL_TEXTURE_2D, effect->tempfbotex);
+                        draw_box(nullptr, black, -1.0f, 1.0f, 2.0f, -2.0f, 0.0f, 0.0f, 1.0f, op, 0, effect->tempfbotex, 0, 0, false);
+                    } else {
+                        // Fallback: passthrough original
+                        mainprogram->uniformCache->setInt("interm", 0);
+                        mainprogram->uniformCache->setBool("down", false);
+                        draw_box(nullptr, black, -1.0f, 1.0f, 2.0f, -2.0f, 0.0f, 0.0f, 1.0f, op, 0, prevfbotex, 0, 0, false);
+                    }
+                }
             } else {
+                // standard shader path
                 if (!lay->onhold) {
                     if (effect->node == lay->lasteffnode[0]) {
                         glBindFramebuffer(GL_FRAMEBUFFER, effect->tempfbo);
@@ -4051,6 +4107,16 @@ void onestepfrom(bool stage, Node *node, Node *prevnode, GLuint prevfbotex, GLui
             glDrawBuffer(GL_COLOR_ATTACHMENT0);
             glClearColor(clearval, clearval, clearval, clearopacity);
             glClear(GL_COLOR_BUFFER_BIT);
+            if (lay->upscale->value) {
+                int sw, sh;
+                glBindTexture(GL_TEXTURE_2D, lay->texture);
+                glGetTexLevelParameteriv(GL_TEXTURE_2D, 0, GL_TEXTURE_WIDTH, &sw);
+                glGetTexLevelParameteriv(GL_TEXTURE_2D, 0, GL_TEXTURE_HEIGHT, &sh);
+                mainprogram->uniformCache->setInt("lanczosinw", sw);
+                mainprogram->uniformCache->setInt("lanczosinh", sh);
+                mainprogram->uniformCache->setFloat("lanczosSharpness", lay->rcassharpness->value);
+                mainprogram->uniformCache->setInt("interm", 3);
+            }
             if (!lay->onhold && lay->filename != "") {
                 if (lay->changeinit == 2) {
                     draw_box(nullptr, black, -1.0f, 1.0f, 2.0f, -2.0f, 0.0f, 0.0f, 1.0f, op, 0, lay->texture, 0, 0, false);
@@ -4058,6 +4124,7 @@ void onestepfrom(bool stage, Node *node, Node *prevnode, GLuint prevfbotex, GLui
                     draw_box(nullptr, black, -1.0f, 1.0f, 2.0f, -2.0f, 0.0f, 0.0f, 1.0f, op, 0, lay->oldtexture, 0, 0, false);
                 }
             }
+            mainprogram->uniformCache->setInt("interm", 0);
         }
 
         if (!effectspresent) {
@@ -4557,7 +4624,7 @@ bool display_mix() {
         glBindFramebuffer(GL_FRAMEBUFFER, 0);
         glDrawBuffer(GL_BACK_LEFT);
         glViewport(0, 0, glob->w, glob->h);
-        if (!mainprogram->binsscreen) {
+        if (!mainprogram->binsscreen && !mainprogram->styleroom) {
             draw_box(red, black, box->vtxcoords->x1 + xs * 2.0f, box->vtxcoords->y1 + ys * 2.0f,
                      box->vtxcoords->w - xs * 4.0f, box->vtxcoords->h - ys * 4.0f, node->mixtex);
             mainprogram->mainmonitor->in();
@@ -4600,7 +4667,7 @@ bool display_mix() {
         glBindFramebuffer(GL_FRAMEBUFFER, 0);
         glDrawBuffer(GL_BACK_LEFT);
         glViewport(0, 0, glob->w, glob->h);
-        if (!mainprogram->binsscreen) {
+        if (!mainprogram->binsscreen && !mainprogram->styleroom) {
             draw_box(red, black, box->vtxcoords->x1 + xs, box->vtxcoords->y1 + ys, box->vtxcoords->w - xs * 2.0f,
                      box->vtxcoords->h - ys * 2.0f, node->mixtex);
             mainprogram->outputmonitor->in();
@@ -4651,7 +4718,7 @@ bool display_mix() {
         glBindFramebuffer(GL_FRAMEBUFFER, 0);
         glDrawBuffer(GL_BACK_LEFT);
         glViewport(0, 0, glob->w, glob->h);
-        if (!mainprogram->binsscreen) {
+        if (!mainprogram->binsscreen && !mainprogram->styleroom) {
             draw_box(red, black, box->vtxcoords->x1 + xs * 2.0f, box->vtxcoords->y1 + ys * 2.0f,
                      box->vtxcoords->w - xs * 4.0f, box->vtxcoords->h - ys * 4.0f, node->mixtex);
             mainprogram->mainmonitor->in();
@@ -4667,7 +4734,7 @@ bool display_mix() {
     if (mainprogram->prevmodus) {
         node = (MixNode *) mainprogram->nodesmain->mixnodes[0][0];
         box = mainprogram->deckmonitor[0];
-        if (!mainprogram->binsscreen) {
+        if (!mainprogram->binsscreen && !mainprogram->styleroom) {
             draw_box(red, box->acolor, box->vtxcoords->x1 + xs, box->vtxcoords->y1 + ys, box->vtxcoords->w - xs * 2.0f,
                      box->vtxcoords->h - ys * 2.0f, node->mixtex);
             box->in();
@@ -4678,7 +4745,7 @@ bool display_mix() {
         }
         node = (MixNode *) mainprogram->nodesmain->mixnodes[0][1];
         box = mainprogram->deckmonitor[1];
-        if (!mainprogram->binsscreen) {
+        if (!mainprogram->binsscreen && !mainprogram->styleroom) {
             draw_box(red, black, box->vtxcoords->x1 + xs, box->vtxcoords->y1 + ys, box->vtxcoords->w - xs * 2.0f,
                      box->vtxcoords->h - ys * 2.0f, node->mixtex);
             box->in();
@@ -4690,7 +4757,7 @@ bool display_mix() {
     } else {
         node = (MixNode *) mainprogram->nodesmain->mixnodes[1][0];
         box = mainprogram->deckmonitor[0];
-        if (!mainprogram->binsscreen) {
+        if (!mainprogram->binsscreen && !mainprogram->styleroom) {
             draw_box(red, black, box->vtxcoords->x1 + xs, box->vtxcoords->y1 + ys, box->vtxcoords->w - xs * 2.0f,
                      box->vtxcoords->h - ys * 2.0f, node->mixtex);
             box->in();
@@ -4701,7 +4768,7 @@ bool display_mix() {
         }
         node = (MixNode *) mainprogram->nodesmain->mixnodes[1][1];
         box = mainprogram->deckmonitor[1];
-        if (!mainprogram->binsscreen) {
+        if (!mainprogram->binsscreen && !mainprogram->styleroom) {
             draw_box(red, black, box->vtxcoords->x1 + xs, box->vtxcoords->y1 + ys,
                      box->vtxcoords->w - xs * 2.0f,
                      box->vtxcoords->h - ys * 2.0f, node->mixtex);
@@ -5453,7 +5520,7 @@ void the_loop() {
         }
     }
 
-    if (!mainprogram->binsscreen) {
+    if (!mainprogram->binsscreen && !mainprogram->styleroom) {
         // draw background graphic
         draw_direct(nullptr, black, -1.0f, -1.0f, 2.0f, 2.0f, 0.0f, 0.0f, 1.0f, 1.0f, 0, mainprogram->bgtex, glob->w,
                     glob->h, false, false);
@@ -5654,7 +5721,7 @@ void the_loop() {
             for (int i = 0; i < 25; i++) total += mainmix->fps[i];
             mainmix->rate = total / 25;
             std::string s = std::to_string(mainmix->rate);
-            if (!mainprogram->binsscreen) {
+            if (!mainprogram->binsscreen && !mainprogram->styleroom) {
                 render_text(s, white, 0.01f, 0.37f, 0.0006f, 0.001f);
             } else {
                 render_text(s, white, 0.7f, 0.37f, 0.0006f, 0.001f);
@@ -5692,7 +5759,7 @@ void the_loop() {
     mainprogram->lpstelem = mainprogram->midishelfelem;
 
 
-    if (!mainprogram->binsscreen && !mainmix->retargeting) {
+    if (!mainprogram->binsscreen && !mainmix->retargeting && !mainprogram->styleroom) {
         //handle shelves
         mainprogram->inshelf = -1;
         mainprogram->shelves[0]->handle();
@@ -5700,7 +5767,7 @@ void the_loop() {
     }
 
 
-    if (!mainprogram->binsscreen && !mainmix->retargeting) {
+    if (!mainprogram->binsscreen && !mainmix->retargeting && !mainprogram->styleroom) {
         mainprogram->preview_modus_buttons();
         make_layboxes();
     }
@@ -6382,11 +6449,20 @@ void the_loop() {
     }
 
     else if (mainprogram->binsscreen && !binsmain->floating) {
-		// big one this: this if decides if code for bins or mix screen is executed
-		// the following statement is defined in bins.cpp
-		// the 'true' value triggers the full version of this function: it draws the screen also
-		// 'false' does a dummy run, used to rightmouse cancel things initiated in code (not the mouse)
-		binsmain->handle(true);
+        // big one this: this if decides if code for bins or mix screen is executed
+        // the following statement is defined in bins.cpp
+        // the 'true' value triggers the full version of this function: it draws the screen also
+        // 'false' does a dummy run, used to rightmouse cancel things initiated in code (not the mouse)
+        binsmain->handle(true);
+        display_mix();   // for NDI throughput of output monitors
+    }
+
+    else if (mainprogram->styleroom && !binsmain->floating) {
+        // big one this: this if decides if code for bins or mix screen is executed
+        // the following statement is defined in bins.cpp
+        // the 'true' value triggers the full version of this function: it draws the screen also
+        // 'false' does a dummy run, used to rightmouse cancel things initiated in code (not the mouse)
+        mainstyleroom->handle();
         display_mix();   // for NDI throughput of output monitors
     }
 
@@ -6546,7 +6622,7 @@ void the_loop() {
             handle_scenes(mainmix->scenes[1][mainmix->currscene[1]]);
         }
 
-        if (!mainprogram->binsscreen) {
+        if (!mainprogram->binsscreen && !mainprogram->styleroom) {
             // draw and handle overall genmidi button
             mainmix->handle_genmidibuttons();
         }
@@ -6751,7 +6827,7 @@ void the_loop() {
                 }
             }
         }
-        if (!mainprogram->binsscreen) {
+        if (!mainprogram->binsscreen && !mainprogram->styleroom) {
             mainprogram->beatthres->handle();
         }
     }
@@ -7295,7 +7371,7 @@ void the_loop() {
 	mainprogram->config_midipresets_init();
 
 
-    if (!mainprogram->binsscreen) {
+    if (!mainprogram->binsscreen && !mainprogram->styleroom) {
         // leftmouse click outside clip queue cancels clip queue visualisation and deselects multiple selected layers
         bool found = false;
         bool found2 = false;
@@ -7332,8 +7408,8 @@ void the_loop() {
         glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
         if (!binsmain->floating) {
             // draw and handle wormgates
-            if (!mainprogram->binsscreen) mainprogram->handle_wormgate(0);
-            mainprogram->handle_wormgate(1);
+            if (!mainprogram->binsscreen && !mainprogram->styleroom) mainprogram->handle_wormgate(0);
+            if (!mainprogram->styleroom) mainprogram->handle_wormgate(1);
             if (mainprogram->dragbinel) {
                 if (!mainprogram->wormgate1->box->in() && !mainprogram->wormgate2->box->in()) {
                     mainprogram->inwormgate = false;
@@ -7342,7 +7418,7 @@ void the_loop() {
         }
 
         // display the deck monitors and output monitors on the bottom of the screen
-        if (!mainprogram->binsscreen) display_mix();
+        if (!mainprogram->binsscreen && !mainprogram->styleroom) display_mix();
     }
 
     mainprogram->directmode = false;
@@ -7426,7 +7502,7 @@ void the_loop() {
         }
     }
 
-    if (!mainprogram->binsscreen && mainprogram->fullscreen == -1) {
+    if (!mainprogram->binsscreen && !mainprogram->styleroom && mainprogram->fullscreen == -1) {
         // background texture overlay fakes transparency
         draw_direct(nullptr, black, -1.0f, -1.0f, 2.0f, 2.0f, 0.0f, 0.0f, 1.0f, 0.2f, 0, mainprogram->bgtex,
                     glob->w, glob->h, false, false);
@@ -8139,6 +8215,7 @@ int main(int argc, char* argv[]) {
     mainmix = new Mixer;
     binsmain = new BinsMain;
     retarget = new Retarget;
+    mainstyleroom = new StyleRoom;
 
 
 #ifdef WINDOWS
@@ -8659,6 +8736,29 @@ int main(int argc, char* argv[]) {
         mainprogram->isfinstances.push_back({});
     }
 
+    // Load AI style transfer models
+    {
+        AIStyleTransfer tempStyleTransfer;
+        if (tempStyleTransfer.initialize()) {
+            std::string modelsPath;
+            #ifdef _WIN32
+                modelsPath = "C:/ProgramData/EWOCvj2/models/styles/";
+            #else
+                modelsPath = "/usr/share/EWOCvj2/models/styles/";
+            #endif
+
+            int numStyles = tempStyleTransfer.loadStyles(modelsPath);
+            if (numStyles > 0) {
+                auto styleNames = tempStyleTransfer.getAvailableStyles();
+                for (auto &name : styleNames) {
+                    std::transform(name.begin(), name.end(), name.begin(), ::toupper);
+                    mainprogram->aistylenames.push_back(name);
+                }
+                std::cerr << "[Init] Loaded " << numStyles << " AI style models" << std::endl;
+            }
+        }
+    }
+
     // define all menus
     mainprogram->define_menus();
 
@@ -8689,6 +8789,14 @@ int main(int argc, char* argv[]) {
             mainprogram->recentprojectpaths.push_back(istring);
         }
         rfile.close();
+    }
+
+    if (mainstyleroom->prepbin->elements.empty()) {
+        // initialize ai style preparation file bin
+        for (int i = 0; i < 16; i++) {
+            StylePreparationElement* elem = new StylePreparationElement;
+            mainstyleroom->prepbin->elements.push_back(elem);
+        }
     }
 
     glViewport(0, 0, glob->w, glob->h);
@@ -9220,7 +9328,7 @@ int main(int argc, char* argv[]) {
                         }
                         if (e.key.keysym.sym == SDLK_z) {  // UNDO
                             if (mainprogram->undoon && !loopstation->foundrec) {
-                                if (!mainprogram->binsscreen) {
+                                if (!mainprogram->binsscreen && !mainprogram->styleroom) {
                                     if (mainprogram->undomapvec[mainprogram->undopos - 1].size() &&
                                         mainprogram->undopbpos > 1) {
                                         mainprogram->undo_redo_parbut(-2);
@@ -9281,7 +9389,7 @@ int main(int argc, char* argv[]) {
                                             }
                                         }
                                     }
-                                } else {
+                                } else if (!mainprogram->styleroom) {
                                     if (binsmain->undobins.size() && binsmain->undopos > 0) {
                                         binsmain->undo_redo(-2);
                                         binsmain->undopos--;
@@ -9291,7 +9399,7 @@ int main(int argc, char* argv[]) {
                         }
                         if (e.key.keysym.sym == SDLK_y) {  // UNDO
                             if (mainprogram->undoon && !loopstation->foundrec) {
-                                if (!mainprogram->binsscreen) {
+                                if (!mainprogram->binsscreen && !mainprogram->styleroom) {
                                     if (mainprogram->undomapvec[mainprogram->undopos - 1].size() >
                                         mainprogram->undopbpos) {
                                         mainprogram->undo_redo_parbut(0);
@@ -9318,7 +9426,7 @@ int main(int argc, char* argv[]) {
                                         mainprogram->undopos++;
                                         mainprogram->undopbpos = 0;
                                     }
-                                } else {
+                                } else if (!mainprogram->styleroom) {
                                     if (binsmain->undobins.size() > binsmain->undopos) {
                                         binsmain->undo_redo(0);
                                         binsmain->undopos++;

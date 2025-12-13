@@ -1,6 +1,7 @@
 #include <string>
 #include <vector>
 #include <mutex>
+#include <memory>
 
 #define WIN32_LEAN_AND_MEAN
 #define NOMINMAX
@@ -55,8 +56,9 @@ typedef enum
 	MIRROR = 39,
     BOXBLUR = 40,
     CHROMASTRETCH = 41,
-    PASS = 42,
-    FFGL = 1000,
+	FFGL = 1000,
+	ISF = 1000,
+	AI_STYLE = 3000,
 } EFFECT_TYPE;
 
 typedef enum
@@ -74,6 +76,8 @@ class Effect;
 class Layer;
 class EffectNode;
 class MidiNode;
+class AIStyleTransfer;
+class RealESRGANUpscaler;
 
 class Param {
 	public:
@@ -128,6 +132,7 @@ class Effect {
         int isfnr = -1;
         int isfpluginnr = -1;
         int isfinstancenr = -1;
+        int aistylnr = -1;
         virtual float get_speed() { return -1; };
 		virtual float get_ripplecount() { return -1; };
 		virtual void set_ripplecount(float count) { return; };
@@ -376,4 +381,24 @@ public:
 
     ISFEffect(Layer *lay, int isfnr);
 };
+
+
+
+class AIStyleEffect : public Effect {
+public:
+    AIStyleEffect(int styleIndex = -1);
+    ~AIStyleEffect();
+
+    std::unique_ptr<AIStyleTransfer> styleTransfer;
+
+    void updateStyle();
+    void updateProcessingResolution(int width, int height);
+
+private:
+    int lastStyleIndex;
+    float lastProcessingScale;
+    bool initialized;
+};
+
+
 

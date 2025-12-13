@@ -43,9 +43,12 @@ extern "C" {
 #include "libavutil/imgutils.h"
 }
 
+#include "IL/il.h"
+
 // my own header
 #include "program.h"
 #include "UPnPPortMapper.h"
+#include "RealESRGANWrapper.h"
 
 
 
@@ -110,10 +113,216 @@ void BinElement::erase(bool deletetex) {
 	blacken(this->oldtex);
 }
 
+void BinElement::upscale_image(int model) {
+	// Upscale the image at this->path using RealESRGAN and save to path+"_upscaled"
+	if (this->path.empty()) {
+		std::cerr << "[BinElement::upscale_image] No image path set" << std::endl;
+		return;
+	}
+
+	if (model < 0) {
+		std::cerr << "[BinElement::upscale_image] Invalid model index: " << model << std::endl;
+		return;
+	}
+
+	std::cerr << "[BinElement::upscale_image] Loading image: " << this->path << std::endl;
+
+	// Load image with DevIL
+	ILuint imageID;
+	ilGenImages(1, &imageID);
+	ilBindImage(imageID);
+
+	if (!ilLoadImage((const ILstring)this->path.c_str())) {
+		std::cerr << "[BinElement::upscale_image] Failed to load image with DevIL: " << this->path << std::endl;
+		ilDeleteImages(1, &imageID);
+		return;
+	}
+
+	// Get image properties
+	int width = ilGetInteger(IL_IMAGE_WIDTH);
+	int height = ilGetInteger(IL_IMAGE_HEIGHT);
+	int imageFormat = ilGetInteger(IL_IMAGE_FORMAT);
+	int imageType = ilGetInteger(IL_IMAGE_TYPE);
+
+	std::cerr << "[BinElement::upscale_image] Image size: " << width << "x" << height
+	          << ", format: " << imageFormat << ", type: " << imageType << std::endl;
+
+	// Convert to RGB format (DevIL standard format)
+	if (!ilConvertImage(IL_RGB, IL_UNSIGNED_BYTE)) {
+		std::cerr << "[BinElement::upscale_image] Failed to convert image to RGB format" << std::endl;
+		ilDeleteImages(1, &imageID);
+		return;
+	}
+
+	// Get RGB image data
+	ILubyte* rgbImageData = ilGetData();
+	if (!rgbImageData) {
+		std::cerr << "[BinElement::upscale_image] Failed to get image data" << std::endl;
+		ilDeleteImages(1, &imageID);
+		return;
+	}
+
+	// Convert RGB to BGR for ncnn (ncnn uses BGR like OpenCV)
+	int imageSize = width * height * 3;
+	unsigned char* bgrImageData = new unsigned char[imageSize];
+	for (int i = 0; i < width * height; i++) {
+		bgrImageData[i * 3 + 0] = rgbImageData[i * 3 + 2]; // B = R
+		bgrImageData[i * 3 + 1] = rgbImageData[i * 3 + 1]; // G = G
+		bgrImageData[i * 3 + 2] = rgbImageData[i * 3 + 0]; // R = B
+	}
+
+	std::cerr << "[BinElement::upscale_image] Converted RGB to BGR. First 10 BGR values: ";
+	for (int i = 0; i < 30; i++) {
+		std::cerr << (int)bgrImageData[i] << " ";
+	}
+	std::cerr << std::endl;
+
+	// Initialize RealESRGAN upscaler
+	RealESRGANUpscaler upscaler;
+	if (!upscaler.initialize()) {
+		std::cerr << "[BinElement::upscale_image] Failed to initialize RealESRGAN" << std::endl;
+		ilDeleteImages(1, &imageID);
+		return;
+	}
+
+	// Load models
+	std::string modelsPath;
+	#ifdef _WIN32
+		modelsPath = "C:/ProgramData/EWOCvj2/models/upscale/";
+	#else
+		modelsPath = "/usr/share/EWOCvj2/models/upscale/";
+	#endif
+
+	int numModels = upscaler.loadModels(modelsPath);
+	if (numModels == 0) {
+		std::cerr << "[BinElement::upscale_image] No upscale models found in: " << modelsPath << std::endl;
+		ilDeleteImages(1, &imageID);
+		return;
+	}
+
+	if (model >= numModels) {
+		std::cerr << "[BinElement::upscale_image] Model index " << model
+		          << " out of range (0-" << (numModels - 1) << ")" << std::endl;
+		ilDeleteImages(1, &imageID);
+		return;
+	}
+
+	// Set the model
+	if (!upscaler.setModel(model)) {
+		std::cerr << "[BinElement::upscale_image] Failed to set model " << model << std::endl;
+		ilDeleteImages(1, &imageID);
+		return;
+	}
+
+	int scaleFactor = upscaler.getScaleFactor();
+	std::cerr << "[BinElement::upscale_image] Using " << scaleFactor << "x upscaling model" << std::endl;
+
+	// Upscale the image
+	unsigned char* upscaledBuffer = nullptr;
+	int upscaledWidth = 0;
+	int upscaledHeight = 0;
+
+	if (!upscaler.renderBuffer(bgrImageData, width, height, upscaledBuffer, upscaledWidth, upscaledHeight)) {
+		std::cerr << "[BinElement::upscale_image] Failed to upscale image: " << upscaler.getLastError() << std::endl;
+		delete[] bgrImageData;
+		ilDeleteImages(1, &imageID);
+		return;
+	}
+
+	// Don't need the BGR input data anymore
+	delete[] bgrImageData;
+
+	std::cerr << "[BinElement::upscale_image] Upscaled from " << width << "x" << height
+	          << " to " << upscaledWidth << "x" << upscaledHeight << std::endl;
+
+	// Debug: Check if buffer contains valid data
+	if (upscaledBuffer) {
+		int samplePixels = std::min(10, upscaledWidth * upscaledHeight);
+		std::cerr << "[BinElement::upscale_image] First 10 BGR pixel values: ";
+		for (int i = 0; i < samplePixels * 3; i++) {
+			std::cerr << (int)upscaledBuffer[i] << " ";
+		}
+		std::cerr << std::endl;
+	}
+
+	// Convert upscaled BGR buffer to RGB for DevIL and flip vertically
+	unsigned char* rgbUpscaledBuffer = new unsigned char[upscaledWidth * upscaledHeight * 3];
+	for (int y = 0; y < upscaledHeight; y++) {
+		for (int x = 0; x < upscaledWidth; x++) {
+			int srcIdx = (y * upscaledWidth + x) * 3;
+			// Flip vertically: invert the y coordinate
+			int dstIdx = ((upscaledHeight - 1 - y) * upscaledWidth + x) * 3;
+
+			// Swap B and R channels: BGR -> RGB
+			rgbUpscaledBuffer[dstIdx + 0] = upscaledBuffer[srcIdx + 2]; // R = B
+			rgbUpscaledBuffer[dstIdx + 1] = upscaledBuffer[srcIdx + 1]; // G = G
+			rgbUpscaledBuffer[dstIdx + 2] = upscaledBuffer[srcIdx + 0]; // B = R
+		}
+	}
+
+	std::cerr << "[BinElement::upscale_image] Converted BGR to RGB. First 10 RGB values: ";
+	for (int i = 0; i < 30; i++) {
+		std::cerr << (int)rgbUpscaledBuffer[i] << " ";
+	}
+	std::cerr << std::endl;
+
+	// Create new DevIL image for upscaled result
+	ILuint upscaledImageID;
+	ilGenImages(1, &upscaledImageID);
+	ilBindImage(upscaledImageID);
+
+	// Use ilTexImage to set the image data (RGB format for DevIL)
+	if (!ilTexImage(upscaledWidth, upscaledHeight, 1, 3, IL_RGB, IL_UNSIGNED_BYTE, rgbUpscaledBuffer)) {
+		ILenum error = ilGetError();
+		std::cerr << "[BinElement::upscale_image] Failed to create image with ilTexImage. DevIL error: " << error << std::endl;
+		delete[] rgbUpscaledBuffer;
+		delete[] upscaledBuffer;
+		ilDeleteImages(1, &upscaledImageID);
+		ilDeleteImages(1, &imageID);
+		return;
+	}
+
+	// Determine output path: input path + "_upscaled" before extension
+	std::filesystem::path inputPath(this->path);
+	std::filesystem::path outputPath = inputPath.parent_path() /
+	                                   (inputPath.stem().string() + "_upscaled" + inputPath.extension().string());
+
+	if (exists(outputPath)) {
+		std::filesystem::remove(outputPath);
+	}
+
+	std::cerr << "[BinElement::upscale_image] Saving upscaled image to: " << outputPath << std::endl;
+
+	// Save the upscaled image
+	ILboolean saveResult = ilSaveImage((const ILstring)outputPath.string().c_str());
+	std::cerr << "[BinElement::upscale_image] ilSaveImage returned: " << saveResult << std::endl;
+
+	if (!saveResult) {
+		ILenum error = ilGetError();
+		std::cerr << "[BinElement::upscale_image] Failed to save upscaled image. DevIL error code: " << error << std::endl;
+		delete[] rgbUpscaledBuffer;
+		delete[] upscaledBuffer;
+		ilDeleteImages(1, &upscaledImageID);
+		ilDeleteImages(1, &imageID);
+		return;
+	}
+
+	// Update BinElement path to point to upscaled image
+	this->path = outputPath.string();
+
+	std::cerr << "[BinElement::upscale_image] Successfully upscaled and saved to: " << this->path << std::endl;
+
+	// Cleanup
+	delete[] rgbUpscaledBuffer;
+	delete[] upscaledBuffer;
+	ilDeleteImages(1, &upscaledImageID);
+	ilDeleteImages(1, &imageID);
+}
+
 BinsMain::BinsMain() {
 	for (int i = 0; i < 12; i++) {
 		for (int j = 0; j < 12; j++) {
-			// initialize all 144 bin elements
+			// initialize all 144 viz boxes
 			Boxx *box = new Boxx;
 			this->elemboxes.push_back(box);
 			box->vtxcoords->x1 = -0.95f + j * 0.12f;
@@ -299,9 +508,16 @@ void BinsMain::handle(bool draw) {
 								binelmenuoptions.push_back(BET_LOADSHELFA);
 								bnlm.push_back("Load block in shelf B");
 								binelmenuoptions.push_back(BET_LOADSHELFB);
-								bnlm.push_back("HAP encode element");
-								binelmenuoptions.push_back(BET_HAPELEM);
-								bnlm.push_back("Quit");
+								bnlm.push_back("Load block in AI styleroom");
+								binelmenuoptions.push_back(BET_LOADSTYLEPREP);
+                                if (binel->type == ELEM_IMAGE) {
+                                    bnlm.push_back("submenu upscalemenu");
+                                    bnlm.push_back("Upscale image");
+                                    binelmenuoptions.push_back(BET_UPSCALEIMAGE);
+                                }
+                                bnlm.push_back("HAP encode element");
+                                binelmenuoptions.push_back(BET_HAPELEM);
+                                bnlm.push_back("Quit");
 								binelmenuoptions.push_back(BET_QUIT);
 							}
 							else {
@@ -335,6 +551,8 @@ void BinsMain::handle(bool draw) {
 								binelmenuoptions.push_back(BET_LOADSHELFA);
 								bnlm.push_back("Load block in shelf B");
 								binelmenuoptions.push_back(BET_LOADSHELFB);
+								bnlm.push_back("Load block in AI styleroom");
+								binelmenuoptions.push_back(BET_LOADSTYLEPREP);
 								bnlm.push_back("HAP encode deck");
 								binelmenuoptions.push_back(BET_HAPELEM);
 								bnlm.push_back("Quit");
@@ -369,6 +587,8 @@ void BinsMain::handle(bool draw) {
 								binelmenuoptions.push_back(BET_LOADSHELFA);
 								bnlm.push_back("Load block in shelf B");
 								binelmenuoptions.push_back(BET_LOADSHELFB);
+								bnlm.push_back("Load block in AI styleroom");
+								binelmenuoptions.push_back(BET_LOADSTYLEPREP);
 								bnlm.push_back("HAP encode mix");
 								binelmenuoptions.push_back(BET_HAPELEM);
 								bnlm.push_back("Quit");
@@ -442,8 +662,6 @@ void BinsMain::handle(bool draw) {
 					color[3] = 1.0f;
 				}
 				// visualize elements
-				//draw_box(nullptr, color, box->vtxcoords->x1 - 0.01f, box->vtxcoords->y1 - 0.01f, box->vtxcoords->w + 0.02f, box->vtxcoords->h + 0.02f, -1);
-				//draw_box(box, -1);  //in case of alpha thumbnail
 				if (binel->select) {
 					mainprogram->uniformCache->setBool("inverteff", true);
 				}
@@ -580,6 +798,8 @@ void BinsMain::handle(bool draw) {
 						binelmenuoptions.push_back(BET_LOADSHELFA);
 						binel.push_back("Load block in shelf B");
 						binelmenuoptions.push_back(BET_LOADSHELFB);
+						binel.push_back("Load block in AI styleroom");
+						binelmenuoptions.push_back(BET_LOADSTYLEPREP);
 						binel.push_back("HAP encode entire bin");
 						binelmenuoptions.push_back(BET_HAPBIN);
 						binel.push_back("Quit");
@@ -1569,7 +1789,7 @@ void BinsMain::handle(bool draw) {
 					this->hap_deck(this->menubinel);
 				}
 				else {
-					this->hap_binel(this->menubinel, nullptr);
+            		this->hap_binel(this->menubinel, nullptr, -1);
 				}
 			}
 			else this->menubinel->encoding = false; // signal stopping the encoding of this elem
@@ -1619,6 +1839,32 @@ void BinsMain::handle(bool draw) {
             // save project
             mainprogram->project->save(mainprogram->project->path);
         }
+		else if (binelmenuoptions[k] == BET_UPSCALEIMAGE) {
+			// ai realesrgan upscale image
+			this->menubinel->upscale_image(mainprogram->menuresults[0]);
+		}
+		else if (binelmenuoptions[k] == BET_LOADSTYLEPREP) {
+			// load block in AI styleroom preparation bin
+			bool found = false;
+			for (int i = 0; i < 16; i++) {
+				StylePreparationElement* elem = mainstyleroom->prepbin->elements[i];
+				BinElement* binel = this->currbin->elements[this->mouseshelfnum / 3 * 48 + (this->mouseshelfnum % 3) * 4 + (i / 4) * 12 + (i % 4)];
+				elem->erase();
+				if (binel->type == ELEM_IMAGE) {
+					elem->name = binel->name;
+					elem->abspath = binel->path;
+					elem->relpath = binel->relpath;
+					elem->type = binel->type;
+					glDeleteTextures(1, &elem->tex);
+					elem->tex = copy_tex(binel->tex, 192, 108);
+					found = true;
+				}
+			}
+			if (found) {
+				mainprogram->binsscreen = false;
+				mainprogram->styleroom = true;
+			}
+		}
 	}
 
 	if (mainprogram->menuchosen) {
@@ -4250,7 +4496,7 @@ void BinsMain::save_binjpegs() {
     }
 }
 
-std::tuple<std::string, std::string> BinsMain::hap_binel(BinElement *binel, BinElement *bdm) {
+std::tuple<std::string, std::string> BinsMain::hap_binel(BinElement *binel, BinElement *bdm, int upscalemodel) {
 	// encode single bin element, possibly contained in a deck or a mix
     if (!check_permission(dirname(binel->path))) {
         return {"",""};
@@ -4259,7 +4505,7 @@ std::tuple<std::string, std::string> BinsMain::hap_binel(BinElement *binel, BinE
    	std::string apath = "";
 	std::string rpath = "";
 	if (binel->type == ELEM_FILE) {
-		std::thread hap (&BinsMain::hap_encode, this, binel->path, binel, bdm);
+		std::thread hap (&BinsMain::hap_encode, this, binel->path, binel, bdm, upscalemodel);  // -1 = no upscaling
 		if (!mainprogram->threadmode || binel->bin == nullptr) {
 			#ifdef WINDOWS
 			SetThreadPriority((void*)hap.native_handle(), THREAD_PRIORITY_LOWEST);
@@ -4347,7 +4593,7 @@ std::tuple<std::string, std::string> BinsMain::hap_binel(BinElement *binel, BinE
 				mainprogram->encthreads--;
 				return {apath, rpath};
  			}
-			std::thread hap (&BinsMain::hap_encode, this, path, binel, bdm);
+			std::thread hap (&BinsMain::hap_encode, this, path, binel, bdm, upscalemodel);
 			if (!mainprogram->threadmode) {
 				#ifdef WINDOWS
 				SetThreadPriority((void*)hap.native_handle(), THREAD_PRIORITY_LOWEST);
@@ -4470,7 +4716,7 @@ void BinsMain::hap_mix(BinElement * bm) {
 	bm->allhaps = bm->encthreads;
 }
 
-void BinsMain::hap_encode(std::string srcpath, BinElement *binel, BinElement *bdm) {
+void BinsMain::hap_encode(std::string srcpath, BinElement *binel, BinElement *bdm, int upscalemodel) {
 	// do the actual hap encoding
   	binel->encwaiting = true;
 	// opening the source vid
@@ -4498,13 +4744,22 @@ void BinsMain::hap_encode(std::string srcpath, BinElement *binel, BinElement *bd
 	source_dec_ctx->time_base = { 1, 1000 };
 	source_dec_ctx->framerate = { source_stream->r_frame_rate.num, source_stream->r_frame_rate.den };
 	r = avcodec_open2(source_dec_ctx, scodec, nullptr);
-	if (source_dec_cpm->codec_id == 188 || source_dec_cpm->codec_id == 187) {
+	bool sourceIsHAP = (source_dec_cpm->codec_id == 188 || source_dec_cpm->codec_id == 187);
+	if (sourceIsHAP && upscalemodel < 0) {
+		// Source is already HAP and no upscaling requested - nothing to do
 		binel->encwaiting = false;
 		binel->encoding = false;
 		if (bdm) {
 			bdm->encthreads--;
 		}
 		return;
+	}
+
+	// Check if .wav file already exists (for HAP sources that are being upscaled)
+	std::string existing_wav_path = remove_extension(srcpath) + ".wav";
+	bool wavAlreadyExists = std::filesystem::exists(existing_wav_path);
+	if (wavAlreadyExists && sourceIsHAP && upscalemodel >= 0) {
+		std::cerr << "[HAP Encode] HAP source with existing .wav file - skipping audio extraction" << std::endl;
 	}
 
 	// Audio stream setup for WAV extraction
@@ -4516,8 +4771,8 @@ void BinsMain::hap_encode(std::string srcpath, BinElement *binel, BinElement *bd
 	std::string wav_temp_path;
 	int64_t audio_samples_written = 0;
 
-	// Find and setup audio stream if available
-	if (find_stream_index(&audio_stream_idx, source, AVMEDIA_TYPE_AUDIO) >= 0) {
+	// Find and setup audio stream if available (skip if .wav already exists)
+	if (!wavAlreadyExists && find_stream_index(&audio_stream_idx, source, AVMEDIA_TYPE_AUDIO) >= 0) {
 		audio_stream = source->streams[audio_stream_idx];
 		audio_dec_cpm = audio_stream->codecpar;
 		const AVCodec *audio_codec = avcodec_find_decoder(audio_stream->codecpar->codec_id);
@@ -4549,6 +4804,10 @@ void BinsMain::hap_encode(std::string srcpath, BinElement *binel, BinElement *bd
 			}
 		}
 	}
+
+	// Keep upscalemodel parameter for future use (currently unused)
+	(void)upscalemodel;  // Mark as intentionally unused
+	int scaleFactor = 1;  // No scaling
 
 	if (binel->bin) {
         while (mainprogram->encthreads >= mainprogram->maxthreads) {
@@ -4593,10 +4852,17 @@ void BinsMain::hap_encode(std::string srcpath, BinElement *binel, BinElement *bd
     //c->framerate = (AVRational){source_stream->r_frame_rate.num, source_stream->r_frame_rate.den};
 	c->sample_aspect_ratio = source_dec_cpm->sample_aspect_ratio;
     c->pix_fmt = codec->pix_fmts[0];
-    int rem = source_dec_cpm->width % 32;
-    c->width = source_dec_cpm->width + (32 - rem) * (rem > 0);
-    rem = source_dec_cpm->height % 4;
-    c->height = source_dec_cpm->height + (4 - rem) * (rem > 0);
+    // Calculate base dimensions
+    int baseWidth = source_dec_cpm->width;
+    int baseHeight = source_dec_cpm->height;
+    // Apply upscaling factor if enabled
+    int targetWidth = baseWidth * scaleFactor;
+    int targetHeight = baseHeight * scaleFactor;
+    // Apply HAP alignment requirements (width must be multiple of 32, height multiple of 4)
+    int rem = targetWidth % 32;
+    c->width = targetWidth + (32 - rem) * (rem > 0);
+    rem = targetHeight % 4;
+    c->height = targetHeight + (4 - rem) * (rem > 0);
     //c->global_quality = 0;
    	r = avcodec_open2(c, codec, nullptr);
 
@@ -4620,19 +4886,18 @@ void BinsMain::hap_encode(std::string srcpath, BinElement *binel, BinElement *bd
     nv12frame->width  = c->width;
     nv12frame->height = c->height;
 
-	// Determine required buffer size and allocate buffer
-  	struct SwsContext *sws_ctx = sws_getContext
-    (
-        c->width,
-       	c->height,
-        (AVPixelFormat)source_dec_cpm->format,
-        c->width,
-        c->height,
-        c->pix_fmt,
-        SWS_BILINEAR,
-        nullptr,
-        nullptr,
-        nullptr);
+	// Create SwsContext for color space conversion (decoded format to encoder format)
+	struct SwsContext *sws_ctx = sws_getContext(
+		baseWidth,
+		baseHeight,
+		(AVPixelFormat)source_dec_cpm->format,
+		c->width,
+		c->height,
+		c->pix_fmt,
+		SWS_BILINEAR,
+		nullptr,
+		nullptr,
+		nullptr);
 	/* transcode */
 	AVFrame *decframe = nullptr;
 	decframe = av_frame_alloc();
@@ -4744,13 +5009,14 @@ void BinsMain::hap_encode(std::string srcpath, BinElement *binel, BinElement *bd
 
 	   	// do pixel format conversion
 		int storage = av_image_alloc(nv12frame->data, nv12frame->linesize, nv12frame->width, nv12frame->height, c->pix_fmt, 32);
-		sws_scale
-		(
+
+		// Convert decoded frame to encoder format
+		sws_scale(
 			sws_ctx,
-            decframe->data,
+			decframe->data,
 			decframe->linesize,
 			0,
-			nv12frame->height,
+			baseHeight,
 			nv12frame->data,
 			nv12frame->linesize
 		);
@@ -4796,6 +5062,11 @@ void BinsMain::hap_encode(std::string srcpath, BinElement *binel, BinElement *bd
     // Clean up audio resources
     if (audio_dec_ctx) {
     	avcodec_free_context(&audio_dec_ctx);
+    }
+
+    // Clean up sws context
+    if (sws_ctx) {
+    	sws_freeContext(sws_ctx);
     }
 
     avcodec_free_context(&c);

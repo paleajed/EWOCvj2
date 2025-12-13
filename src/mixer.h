@@ -163,7 +163,9 @@ class Layer {
         float oldspeed = 0.0f;
         float oldfac = 0.0f;
 		Param *opacity;
-		Param *volume;
+        Param *volume;
+        Param *upscale;
+        Param *rcassharpness;
 		Button *playbut;
 		Button *revbut;
         Button *bouncebut;
@@ -392,9 +394,9 @@ class Layer {
 		float clearval = 0.0f;
 
         void display();
-		Effect* add_effect(EFFECT_TYPE type, int pos, bool cat, int ffglnr = -1, int isfnr = -1);
-        Effect* do_add_effect(EFFECT_TYPE type, int pos, bool comp, bool cat, int ffglnr = -1, int isfnr = -1);
-        Effect* replace_effect(EFFECT_TYPE type, int pos, int ffglnr = -1, int isfnr = -1);
+		Effect* add_effect(EFFECT_TYPE type, int pos, bool cat, int ffglnr = -1, int isfnr = -1, int aistylnr = -1);
+        Effect* do_add_effect(EFFECT_TYPE type, int pos, bool comp, bool cat, int ffglnr = -1, int isfnr = -1, int aistylnr = -1);
+        Effect* replace_effect(EFFECT_TYPE type, int pos, int ffglnr = -1, int isfnr = -1, int aistylnr = -1);
 		void delete_effect(int pos, bool connect = true);
 		void inhibit();
 		std::vector<Effect*>& choose_effects();

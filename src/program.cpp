@@ -3777,6 +3777,7 @@ void Program::handle_effectmenu() {
         std::vector<Effect*>& evec = mainmix->mouselayer->choose_effects();
         int ffglnr = -1;
         int isfnr = -1;
+        int aistylnr = -1;
         if (mainmix->insert) {
             if (this->abeffects[k] >= 1000 && this->abeffects[k] < 2000) {
                 ffglnr = this->abeffects[k] - 1000;
@@ -3784,7 +3785,10 @@ void Program::handle_effectmenu() {
             if (this->abeffects[k] >= 2000 && this->abeffects[k] < 3000) {
                 isfnr = this->abeffects[k] - 2000;
             }
-		    mainmix->mouselayer->add_effect((EFFECT_TYPE)this->abeffects[k], mainmix->mouseeffect, mainprogram->effcat[mainmix->mouselayer->deck]->value, ffglnr, isfnr);
+            if (this->abeffects[k] >= 3000) {
+                aistylnr = this->abeffects[k] - 3000;
+            }
+		    mainmix->mouselayer->add_effect((EFFECT_TYPE)this->abeffects[k], mainmix->mouseeffect, mainprogram->effcat[mainmix->mouselayer->deck]->value, ffglnr, isfnr, aistylnr);
 		}
 		else {
             if (this->abeffects[k] >= 1000 && this->abeffects[k] < 2000) {
@@ -3793,7 +3797,10 @@ void Program::handle_effectmenu() {
             if (this->abeffects[k] >= 2000 && this->abeffects[k] < 3000) {
                 isfnr = this->abeffects[k] - 2000;
             }
-			mainmix->mouselayer->replace_effect((EFFECT_TYPE)this->abeffects[k], mainmix->mouseeffect, ffglnr, isfnr);
+            if (this->abeffects[k] >= 3000) {
+                aistylnr = this->abeffects[k] - 3000;
+            }
+			mainmix->mouselayer->replace_effect((EFFECT_TYPE)this->abeffects[k], mainmix->mouseeffect, ffglnr, isfnr, aistylnr);
 		}
 		mainmix->mouselayer = nullptr;
 		mainmix->mouseeffect = -1;
@@ -9682,6 +9689,7 @@ void Program::define_menus() {
     effects.push_back("MIRROR");
     effects.push_back("BOXBLUR");
     effects.push_back("CHROMASTRETCH");
+    effects.push_back("UPSCALING");
     std::vector<std::string> meffects = effects;
     std::sort(meffects.begin(), meffects.end());
     std::vector<std::string> plugins;
@@ -9689,6 +9697,9 @@ void Program::define_menus() {
         plugins.push_back(name);
     }
     for (auto name : mainprogram->isfeffectnames) {
+        plugins.push_back(name);
+    }
+    for (auto name : mainprogram->aistylenames) {
         plugins.push_back(name);
     }
     std::sort(plugins.begin(), plugins.end());
@@ -9721,6 +9732,13 @@ void Program::define_menus() {
         for (int j = 0; j < mainprogram->isfeffectnames.size(); j++) {
             if (meffects[i] == mainprogram->isfeffectnames[j]) {
                 mainprogram->abeffects.push_back(2000 + j);
+                continue;
+            }
+        }
+        if (brk) continue;
+        for (int j = 0; j < mainprogram->aistylenames.size(); j++) {
+            if (meffects[i] == mainprogram->aistylenames[j]) {
+                mainprogram->abeffects.push_back(3000 + j);
                 continue;
             }
         }
@@ -10154,6 +10172,54 @@ void Program::define_menus() {
     beat.push_back("every two bars");
     beat.push_back("every four bars");
     mainprogram->make_menu("beatmenu", mainprogram->beatmenu, beat);
+
+    // Create upscale menu with available Real-ESRGAN models
+    std::vector<std::string> upscaleModels;
+
+    // Scan for model files directly without initializing upscaler
+    std::string modelsPath;
+    #ifdef _WIN32
+        modelsPath = "C:/ProgramData/EWOCvj2/models/upscale/";
+    #else
+        modelsPath = "/usr/share/EWOCvj2/models/upscale/";
+    #endif
+
+    if (std::filesystem::exists(modelsPath)) {
+        try {
+            // Look for .param/.bin file pairs
+            std::vector<std::string> modelNames;
+            for (const auto& entry : std::filesystem::directory_iterator(modelsPath)) {
+                if (entry.is_regular_file() && entry.path().extension() == ".param") {
+                    std::filesystem::path paramPath = entry.path();
+                    std::filesystem::path binPath = paramPath;
+                    binPath.replace_extension(".bin");
+
+                    // Check if corresponding .bin file exists
+                    if (std::filesystem::exists(binPath)) {
+                        std::string modelName = paramPath.stem().string();
+                        modelNames.push_back(modelName);
+                    }
+                }
+            }
+
+            // Add to menu
+            for (const auto& name : modelNames) {
+                upscaleModels.push_back(name);
+            }
+
+            if (!modelNames.empty()) {
+                std::cerr << "[Menu] Found " << modelNames.size() << " upscaling models" << std::endl;
+            } else {
+                std::cerr << "[Menu] No upscaling models found in " << modelsPath << std::endl;
+            }
+        } catch (const std::exception& e) {
+            std::cerr << "[Menu] Error scanning upscale models: " << e.what() << std::endl;
+        }
+    } else {
+        std::cerr << "[Menu] Upscale models directory does not exist: " << modelsPath << std::endl;
+    }
+
+    mainprogram->make_menu("upscalemenu", mainprogram->upscalemenu, upscaleModels);
 
     //make menu item names text bitmaps
     for (int i = 0; i < mainprogram->menulist.size(); i++) {

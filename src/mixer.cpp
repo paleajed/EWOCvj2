@@ -47,6 +47,7 @@ extern "C" {
 
 // my own header
 #include "program.h"
+#include "AIStyleTransfer.h"
 
 
 
@@ -485,6 +486,28 @@ void Param::handle(bool smallxpad) {
             }
             if (this->box->in()) {
                 if (this->type == FF_TYPE_EVENT || this->type == ISFLoader::PARAM_EVENT) {
+                    this->box->acolor[0] = 0.5f;
+                    this->box->acolor[1] = 0.5f;
+                    this->box->acolor[2] = 1.0f;
+                    draw_box(this->box, -1);
+                    this->box->acolor[0] = 0.3f;
+                    this->box->acolor[1] = 0.8f;
+                    this->box->acolor[2] = 0.4f;
+                    if (mainprogram->leftmouse) {
+                        // trigger event
+                        this->value = 1.0f;
+                        this->box->acolor[0] = 1.0f;
+                        this->box->acolor[1] = 0.0f;
+                        this->box->acolor[2] = 0.0f;
+                        draw_box(this->box, -1);
+                        this->box->acolor[0] = 0.3f;
+                        this->box->acolor[1] = 0.8f;
+                        this->box->acolor[2] = 0.4f;
+                        mainprogram->leftmouse = false;
+                        mainprogram->recundo = false;
+                    }
+                }
+                if (this->sliding == false && this->range[0] == 0.0f && this->range[0] == 1.0f) {
                     this->box->acolor[0] = 0.5f;
                     this->box->acolor[1] = 0.5f;
                     this->box->acolor[2] = 1.0f;
@@ -2374,12 +2397,13 @@ void StrobeEffect::set_phase(int phase) { this->phase = phase; }
 
 // EFFECTS BELONGING TO A LAYER
 
-Effect* Layer::do_add_effect(EFFECT_TYPE type, int pos, bool comp, bool cat, int ffglnr, int isfnr) {
+Effect* Layer::do_add_effect(EFFECT_TYPE type, int pos, bool comp, bool cat, int ffglnr, int isfnr, int aistylnr) {
 	// adds an effect of a certain type to a layer at a certain position in its effect list
 	// comp is set when the layer belongs to the output layer stacks
-	Effect *effect = new_effect(this, type, ffglnr, isfnr);
+	Effect *effect = new_effect(this, type, ffglnr, isfnr, aistylnr);
     effect->ffglnr = ffglnr;
     effect->isfnr = isfnr;
+    effect->aistylnr = aistylnr;
 
 	effect->type = type;
 	effect->pos = pos;
@@ -2435,14 +2459,14 @@ Effect* Layer::do_add_effect(EFFECT_TYPE type, int pos, bool comp, bool cat, int
 
 	return effect;
 }
-Effect* Layer::add_effect(EFFECT_TYPE type, int pos, bool cat, int ffglnr, int isfnr) {
+Effect* Layer::add_effect(EFFECT_TYPE type, int pos, bool cat, int ffglnr, int isfnr, int aistylnr) {
 	Effect *eff;
 
 	if (mainprogram->prevmodus) {
-		eff = this->do_add_effect(type, pos, false, cat, ffglnr, isfnr);
+		eff = this->do_add_effect(type, pos, false, cat, ffglnr, isfnr, aistylnr);
 	}
 	else {
-		eff = this->do_add_effect(type, pos, true, cat, ffglnr, isfnr);
+		eff = this->do_add_effect(type, pos, true, cat, ffglnr, isfnr, aistylnr);
 	}
 	eff->onoffbutton->layer = this;
 	for (int i = 0; i < eff->params.size(); i++) {
@@ -2456,11 +2480,11 @@ Effect* Layer::add_effect(EFFECT_TYPE type, int pos, bool cat, int ffglnr, int i
     return eff;
 }
 
-Effect* Layer::replace_effect(EFFECT_TYPE type, int pos, int ffglnr, int isfnr) {
+Effect* Layer::replace_effect(EFFECT_TYPE type, int pos, int ffglnr, int isfnr, int aistylnr) {
 	Effect *effect;
 
 	this->delete_effect(pos);
-	effect = this->add_effect(type, pos, mainprogram->effcat[this->deck]->value, ffglnr, isfnr);
+	effect = this->add_effect(type, pos, mainprogram->effcat[this->deck]->value, ffglnr, isfnr, aistylnr);
 
 	return effect;
 }
@@ -2973,20 +2997,49 @@ Layer::Layer(bool comp) {
 	this->opacity->box->acolor[3] = 1.0;
     this->opacity->box->tooltiptitle = "Set layer opacity ";
 	this->opacity->box->tooltip = "Leftdrag sets current layer opacity. Doubleclicking allows numeric entry. ";
-	this->volume = new Param;
-	this->volume->name = "Volume";
-	this->volume->value = 0.0f;
-	this->volume->deflt = 0.0f;
-	this->volume->range[0] = 0.0f;
-	this->volume->range[1] = 1.0f;
+    this->volume = new Param;
+    this->volume->name = "Volume";
+    this->volume->value = 0.0f;
+    this->volume->deflt = 0.0f;
+    this->volume->range[0] = 0.0f;
+    this->volume->range[1] = 1.0f;
     this->volume->layer = this;
     this->volume->sliding = true;
-	this->volume->box->acolor[0] = 0.5;
-	this->volume->box->acolor[1] = 0.2;
-	this->volume->box->acolor[2] = 0.5;
-	this->volume->box->acolor[3] = 1.0;
+    this->volume->box->acolor[0] = 0.5;
+    this->volume->box->acolor[1] = 0.2;
+    this->volume->box->acolor[2] = 0.5;
+    this->volume->box->acolor[3] = 1.0;
     this->volume->box->tooltiptitle = "Set audio volume ";
-	this->volume->box->tooltip = "Leftdrag sets current layer audio volume.  Default is zero.  (Audio support is experimental and often causes strange effects.) Doubleclicking allows numeric entry. ";
+    this->volume->box->tooltip = "Leftdrag sets current layer audio volume.  Default is zero.  Doubleclicking allows numeric entry. ";
+    this->upscale = new Param;
+    this->upscale->type = FF_TYPE_BOOLEAN;
+    this->upscale->name = "Upscale";
+    this->upscale->value = 0.0f;
+    this->upscale->deflt = 0.0f;
+    this->upscale->range[0] = 0.0f;
+    this->upscale->range[1] = 1.0f;
+    this->upscale->layer = this;
+    this->upscale->sliding = false;
+    this->upscale->box->acolor[0] = 0.5;
+    this->upscale->box->acolor[1] = 0.2;
+    this->upscale->box->acolor[2] = 0.5;
+    this->upscale->box->acolor[3] = 1.0;
+    this->upscale->box->tooltiptitle = "Toggle layer upscaling ";
+    this->upscale->box->tooltip = "Leftclick to toggle Lanczos3 + RCAS upscaling. ";
+    this->rcassharpness = new Param;
+    this->rcassharpness->name = "Sharpness";
+    this->rcassharpness->value = 0.5f;
+    this->rcassharpness->deflt = 0.5f;
+    this->rcassharpness->range[0] = 0.0f;
+    this->rcassharpness->range[1] = 1.0f;
+    this->rcassharpness->layer = this;
+    this->rcassharpness->sliding = true;
+    this->rcassharpness->box->acolor[0] = 0.5;
+    this->rcassharpness->box->acolor[1] = 0.2;
+    this->rcassharpness->box->acolor[2] = 0.5;
+    this->rcassharpness->box->acolor[3] = 1.0;
+    this->rcassharpness->box->tooltiptitle = "Set upscaling RCAS sharpness ";
+    this->rcassharpness->box->tooltip = "Leftdrag to set the sharpness amount of th upscaling RCAS pass. Doubleclicking allows numeric entry. ";
 	this->playbut = new Button(false);
     this->playbut->name[0] = "playbut";
     this->playbut->butid = 5;
@@ -3779,7 +3832,7 @@ Layer* Layer::clone(bool dup) {
 	mainprogram->effcat[dlay->deck]->value = 0;
     std::unordered_map<LoopStationElement*, LoopStationElement*> lpmap;
 	for (int i = 0; i < this->effects[0].size(); i++) {
-		Effect* eff = dlay->add_effect(this->effects[0][i]->type, i, mainprogram->effcat[this->deck]->value, this->effects[0][i]->ffglnr, this->effects[0][i]->isfnr);
+		Effect* eff = dlay->add_effect(this->effects[0][i]->type, i, mainprogram->effcat[this->deck]->value, this->effects[0][i]->ffglnr, this->effects[0][i]->isfnr, this->effects[0][i]->aistylnr);
 		for (int j = 0; j < this->effects[0][i]->params.size(); j++) {
 			Param* par = this->effects[0][i]->params[j];
 			Param* cpar = eff->params[j];
@@ -4002,7 +4055,14 @@ void make_layboxes() {
 					vnode->vidbox->lcolor[2] = 0.0;
 					vnode->vidbox->lcolor[3] = 1.0;
                     if (!vnode->layer->initdeck) {
-                        if (vnode->layer->effects[0].size() == 0) {
+                        bool effectspresent = false;
+                        for (auto eff : vnode->layer->effects[0]) {
+                            if (eff->onoffbutton->value) {
+                                effectspresent = true;
+                                break;
+                            }
+                        }
+                        if (!effectspresent) {
                             vnode->vidbox->tex = vnode->layer->fbotex;
                         } else {
                             vnode->vidbox->tex = vnode->layer->effects[0][vnode->layer->effects[0].size() -
@@ -4060,7 +4120,14 @@ void make_layboxes() {
 						vnode->vidbox->lcolor[2] = 0.0;
 						vnode->vidbox->lcolor[3] = 1.0;
                         if (!vnode->layer->initdeck) {
-                            if (vnode->layer->effects[0].size() == 0) {
+                            bool effectspresent = false;
+                            for (auto eff : vnode->layer->effects[0]) {
+                                if (eff->onoffbutton->value) {
+                                    effectspresent = true;
+                                    break;
+                                }
+                            }
+                            if (!effectspresent) {
                                 vnode->vidbox->tex = vnode->layer->fbotex;
                             } else {
                                 vnode->vidbox->tex = vnode->layer->effects[0][vnode->layer->effects[0].size() -
@@ -4231,14 +4298,26 @@ void make_layboxes() {
 				testlay->opacity->box->vtxcoords->h = 0.075f;
 				testlay->opacity->box->upvtxtoscr();
 
-				// GUI box of layer audio volume slider
-				testlay->volume->box->vtxcoords->x1 = testlay->mixbox->vtxcoords->x1 + mainprogram->layw * 1.5f * 0.30f;
-				testlay->volume->box->vtxcoords->y1 = testlay->mixbox->vtxcoords->y1 - 0.225f;
-				testlay->volume->box->vtxcoords->w = mainprogram->layw * 1.5f * 0.25f;
-				testlay->volume->box->vtxcoords->h = 0.075f;
-				testlay->volume->box->upvtxtoscr();
+                // GUI box of layer audio volume slider
+                testlay->volume->box->vtxcoords->x1 = testlay->mixbox->vtxcoords->x1 + mainprogram->layw * 1.5f * 0.30f;
+                testlay->volume->box->vtxcoords->y1 = testlay->mixbox->vtxcoords->y1 - 0.225f;
+                testlay->volume->box->vtxcoords->w = mainprogram->layw * 1.5f * 0.25f;
+                testlay->volume->box->vtxcoords->h = 0.075f;
+                testlay->volume->box->upvtxtoscr();
 
-				// GUI box of play video button
+                // GUI boxes of layer upscale
+                testlay->upscale->box->vtxcoords->x1 = testlay->mixbox->vtxcoords->x1 + mainprogram->layw * 1.5f * 0.60f;
+                testlay->upscale->box->vtxcoords->y1 = testlay->mixbox->vtxcoords->y1 - 0.225f;
+                testlay->upscale->box->vtxcoords->w = mainprogram->layw * 1.5f * 0.25f;
+                testlay->upscale->box->vtxcoords->h = 0.075f;
+                testlay->upscale->box->upvtxtoscr();
+                testlay->rcassharpness->box->vtxcoords->x1 = testlay->mixbox->vtxcoords->x1 + mainprogram->layw * 1.5f * 0.9f;
+                testlay->rcassharpness->box->vtxcoords->y1 = testlay->mixbox->vtxcoords->y1 - 0.225f;
+                testlay->rcassharpness->box->vtxcoords->w = mainprogram->layw * 1.5f * 0.25f;
+                testlay->rcassharpness->box->vtxcoords->h = 0.075f;
+                testlay->rcassharpness->box->upvtxtoscr();
+
+                // GUI box of play video button
                 testlay->playbut->box->lcolor[0] = 0.7;
                 testlay->playbut->box->lcolor[1] = 0.7;
                 testlay->playbut->box->lcolor[2] = 0.7;
@@ -6393,9 +6472,18 @@ void Layer::display() {
                     }
 
                     effstr = eff->get_namestring();
+                    if (eff->aistylnr != -1) {
+                        // For AI_STYLE effects, replace effect name with the actual ONNX style name
+                        AIStyleEffect* aieff = static_cast<AIStyleEffect*>(eff);
+                        if (aieff && aieff->styleTransfer) {
+                            auto styles = aieff->styleTransfer->getAvailableStyles();
+                            if (eff->aistylnr >= 0 && eff->aistylnr < styles.size()) {
+                                effstr = styles[eff->aistylnr];
+                            }
+                        }
+                    }
                     float textw = (textwvec_total(render_text(effstr, white, eff->box->vtxcoords->x1 + 0.015f,
-                                                                eff->box->vtxcoords->y1 + 0.075f - 0.045f,
-                                                                0.00045f, 0.00075f)));
+                                                                eff->box->vtxcoords->y1 + 0.075f - 0.045f,0.00045f, 0.00075f)));
                     eff->box->vtxcoords->w = textw + 0.048f;
                     x1 = eff->box->vtxcoords->x1 + 0.048f + textw;
                     wi = (0.7f - mainprogram->numw - 0.048f - textw) / 4.0f;
@@ -6784,6 +6872,19 @@ void Layer::display() {
                     for (int i = 0; i < mainmix->currlays[!mainprogram->prevmodus].size(); i++) {
                         mainmix->currlays[!mainprogram->prevmodus][i]->volume->value = par->value;
                     }
+                }
+            }
+
+            // Draw upscale boxes
+            int lw, lh;
+            glBindTexture(GL_TEXTURE_2D, this->texture);
+            glGetTexLevelParameteriv(GL_TEXTURE_2D, 0, GL_TEXTURE_WIDTH, &lw);
+            glGetTexLevelParameteriv(GL_TEXTURE_2D, 0, GL_TEXTURE_HEIGHT, &lh);
+            if (lw < mainprogram->ow[!mainprogram->prevmodus] && lh < mainprogram->oh[!mainprogram->prevmodus]) {
+                par = this->upscale;
+                par->handle();
+                if (par->value) {
+                    this->rcassharpness->handle();
                 }
             }
 
@@ -12931,6 +13032,7 @@ Layer* Mixer::read_layers(std::istream &rfile, const std::string result, std::ve
 			int type;
             int ffglnr;
             int isfnr;
+            int aistylnr;
 			Effect *eff = nullptr;
 			safegetline(rfile, istring);
 			while (istring != "ENDOFEFFECTS") {
@@ -12947,7 +13049,8 @@ Layer* Mixer::read_layers(std::istream &rfile, const std::string result, std::ve
 					type = std::stoi(istring);
                     ffglnr = -1;
                     isfnr = -1;
-				}
+                    aistylnr = -1;
+                }
                 if (istring == "FFGLNAME") {
                     safegetline(rfile, istring);
                     if (istring != "") {
@@ -12981,7 +13084,7 @@ Layer* Mixer::read_layers(std::istream &rfile, const std::string result, std::ve
 				if (istring == "POS") {
 					safegetline(rfile, istring);
 					int pos = std::stoi(istring);
-					eff = layend->add_effect((EFFECT_TYPE)type, pos, mainprogram->effcat[deck]->value, ffglnr, isfnr);
+					eff = layend->add_effect((EFFECT_TYPE)type, pos, mainprogram->effcat[deck]->value, ffglnr, isfnr, aistylnr);
 				}
 				if (istring == "ONOFFVAL") {
 					safegetline(rfile, istring);
@@ -13112,6 +13215,7 @@ Layer* Mixer::read_layers(std::istream &rfile, const std::string result, std::ve
 			int type;
             int ffglnr;
             int isfnr;
+            int aistylnr;
 			Effect *eff = nullptr;
 			while (safegetline(rfile, istring)) {
                 if (istring == "ENDOFSTREAMEFFECTS") {
@@ -13127,6 +13231,7 @@ Layer* Mixer::read_layers(std::istream &rfile, const std::string result, std::ve
                     type = std::stoi(istring);
                     ffglnr = -1;
                     isfnr = -1;
+                    aistylnr = -1;
                 }
                 if (istring == "FFGLNAME") {
                     safegetline(rfile, istring);
@@ -13161,7 +13266,7 @@ Layer* Mixer::read_layers(std::istream &rfile, const std::string result, std::ve
 				if (istring == "POS") {
 					safegetline(rfile, istring);
 					int pos = std::stoi(istring);
-					eff = layend->add_effect((EFFECT_TYPE)type, pos, mainprogram->effcat[deck]->value, ffglnr, isfnr);
+					eff = layend->add_effect((EFFECT_TYPE)type, pos, mainprogram->effcat[deck]->value, ffglnr, isfnr, aistylnr);
 				}
 				if (istring == "ONOFFVAL") {
 					safegetline(rfile, istring);
@@ -15099,7 +15204,7 @@ void Layer::clip_display_next(bool startend, bool alive) {
 
 // UTILITY
 
-Effect* new_effect(Layer *lay, EFFECT_TYPE type, int ffglnr, int isfnr) {
+Effect* new_effect(Layer *lay, EFFECT_TYPE type, int ffglnr, int isfnr, int aistylnr) {
 	switch (type) {
         case BLUR:
             return new BlurEffect;
@@ -15227,6 +15332,9 @@ Effect* new_effect(Layer *lay, EFFECT_TYPE type, int ffglnr, int isfnr) {
         case CHROMASTRETCH:
             return new ChromastretchEffect;
             break;
+        case AI_STYLE:
+            return new AIStyleEffect;
+            break;
     }
     if (type >= 1000 && type < 2000) {
         // FFGL
@@ -15235,6 +15343,10 @@ Effect* new_effect(Layer *lay, EFFECT_TYPE type, int ffglnr, int isfnr) {
     if (type >= 2000 && type < 3000) {
         // ISF
         return new ISFEffect(lay, isfnr);
+    }
+    if (type >= 3000) {
+        // AI Style
+        return new AIStyleEffect(aistylnr);
     }
 	return nullptr;
 }
@@ -15387,7 +15499,7 @@ Layer* Layer::transfer(bool clones, bool dontdeleffs, bool exchange, bool image)
         for (int m = 0; m < 2; m++) {
             mainprogram->effcat[this->deck]->value = m;
             for (int j = 0; j < this->effects[m].size(); j++) {
-                Effect *eff = lay->add_effect(this->effects[m][j]->type, j, mainprogram->effcat[this->deck]->value, this->effects[m][j]->ffglnr, this->effects[m][j]->isfnr);
+                Effect *eff = lay->add_effect(this->effects[m][j]->type, j, mainprogram->effcat[this->deck]->value, this->effects[m][j]->ffglnr, this->effects[m][j]->isfnr, this->effects[m][j]->aistylnr);
                 for (int k = 0; k < this->effects[m][j]->params.size(); k++) {
                     Param *par = this->effects[m][j]->params[k];
                     Param *cpar = lay->effects[m][j]->params[k];

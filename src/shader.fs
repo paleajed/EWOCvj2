@@ -120,6 +120,11 @@ uniform float OuterVignetting = 1.0f;
 uniform float RandomValue = 2.0f;
 uniform float TimeLapse = 0.1f;
 
+// lanczos upscale parameters
+uniform float lanczosSharpness = 0.5f;  // 0.0 = no sharpening, 1.0 = max sharpening
+uniform int lanczosinw = 1920;
+uniform int lanczosinh = 1080;
+
 uniform bool wipe = false;
 uniform int wkind = -1;
 uniform int dir = 0;
@@ -1583,6 +1588,94 @@ vec4 mirror(vec2 texco)  //selfmade
 
 
 
+// Lanczos-3 Upscaling + RCAS - High Quality Upsampling
+// Lanczos-3 resampling with Contrast Adaptive Sharpening
+vec4 lanczos_upscale(vec2 uv) {
+	vec2 inputSize = vec2(lanczosinw, lanczosinh);
+	vec2 texelSize = 1.0 / inputSize;
+	vec2 pos = uv * inputSize;
+	vec2 frac = fract(pos);
+	vec2 center = (floor(pos) + 0.5) * texelSize;
+
+	const float PI = 3.14159265359;
+
+	// Lanczos sinc function
+	float sinc(float x) {
+		if (abs(x) < 0.001) return 1.0;
+		float px = PI * x;
+		return sin(px) / px;
+	}
+
+	// Lanczos-3 kernel
+	float lanczos3(float x) {
+		if (abs(x) < 3.0) {
+			return sinc(x) * sinc(x / 3.0);
+		}
+		return 0.0;
+	}
+
+	// Lanczos-3 upsampling (6x6 neighborhood)
+	vec4 result = vec4(0.0);
+	float totalWeight = 0.0;
+
+	for (int y = -2; y <= 3; y++) {
+		for (int x = -2; x <= 3; x++) {
+			vec2 offset = vec2(x, y) * texelSize;
+			vec2 samplePos = center + offset;
+			vec4 sample = texture(Sampler0, samplePos);
+
+			// Calculate Lanczos weight
+			vec2 dist = vec2(x, y) - frac;
+			float wx = lanczos3(dist.x);
+			float wy = lanczos3(dist.y);
+			float weight = wx * wy;
+
+			result += sample * weight;
+			totalWeight += weight;
+		}
+	}
+
+	result /= totalWeight;
+
+	// Sample 3x3 neighborhood for RCAS (centered on result position)
+	vec4 samples[9];
+	int idx = 0;
+	for (int y = -1; y <= 1; y++) {
+		for (int x = -1; x <= 1; x++) {
+			vec2 offset = vec2(x, y) * texelSize;
+			samples[idx++] = texture(Sampler0, center + offset);
+		}
+	}
+
+	// RCAS - Robust Contrast Adaptive Sharpening (if sharpness > 0)
+	if (lanczosSharpness > 0.01) {
+		// Find min and max in cross pattern
+		vec4 minSample = result;
+		vec4 maxSample = result;
+		minSample = min(minSample, samples[1]);  // top
+		maxSample = max(maxSample, samples[1]);
+		minSample = min(minSample, samples[3]);  // left
+		maxSample = max(maxSample, samples[3]);
+		minSample = min(minSample, samples[5]);  // right
+		maxSample = max(maxSample, samples[5]);
+		minSample = min(minSample, samples[7]);  // bottom
+		maxSample = max(maxSample, samples[7]);
+
+		// Compute adaptive sharpening amount
+		vec4 range = maxSample - minSample;
+		float adaptiveSharp = lanczosSharpness * (1.0 - dot(range.rgb, vec3(0.299, 0.587, 0.114)));
+
+		// Apply sharpening kernel
+		vec4 sharpened = result * (1.0 + adaptiveSharp * 4.0) -
+						 (samples[1] + samples[3] + samples[5] + samples[7]) * adaptiveSharp;
+
+		// Clamp to prevent over/undershooting
+		result = clamp(sharpened, minSample, maxSample);
+	}
+
+	return result;
+}
+
 void main()
 {
 	float cf2 = 1.0f - cf;
@@ -1618,8 +1711,14 @@ void main()
 		return;
 	}
 
-    if (interm == 2) {
-		vec4 texcol1 = texture(Sampler0, texco);
+    if (interm > 2) {
+        vec4 texcol1;
+		if (interm == 3) {
+		    texcol1 = lanczos_upscale(texco);
+		}
+		else {
+            texcol1 = texture(Sampler0, texco);
+		}
         vec3 rgb1 = texcol1.rgb;
         if (ismask == 2) {
             vec3 hsv = rgb2hsv(texcol1.rgb);
@@ -1793,9 +1892,6 @@ void main()
 				intcol = boxblur(texco); break;
 			case 41:
 				intcol = chromastretch(texcol); break;
-			case 42:
-			    // passthrough
-				intcol = texcol; break;
 		    }
             if (ismask == 2) {
                 vec3 hsv = rgb2hsv(intcol.rgb);

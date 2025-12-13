@@ -54,7 +54,7 @@ add_executable(EWOCvj2 WIN32
         bins.h
         box.h
         effect.h
-        layer.h
+        mixer.h
         loopstation.cpp
         loopstation.h
         mixer.cpp
@@ -80,6 +80,13 @@ add_executable(EWOCvj2 WIN32
         NDIManager.cpp
         UPnPPortMapper.h
         UPnPPortMapper.cpp
+        AIStyleTransfer.h
+        AIStyleTransfer.cpp
+        AIStyleEffect.cpp
+        RealESRGANWrapper.h
+        RealESRGANWrapper.cpp
+        styleroom.h
+        styleroom.cpp
 )
 
 set(Boost_USE_STATIC_RUNTIME ON)
@@ -332,6 +339,123 @@ if (UNIX)
     find_library(Z_LIBRARY z HINTS)
     target_link_libraries(EWOCvj2 PUBLIC ${Z_LIBRARY})
 endif (UNIX)
+
+# ONNX Runtime for AI Style Transfer
+if (WIN32)
+    if (MINGW)
+        set(ONNXRUNTIME_ROOT "C:/source/onnxruntime" CACHE PATH "ONNX Runtime root directory")
+        if(EXISTS ${ONNXRUNTIME_ROOT})
+            message(STATUS "ONNX Runtime found at ${ONNXRUNTIME_ROOT}")
+            include_directories(${ONNXRUNTIME_ROOT}/include)
+            include_directories(${ONNXRUNTIME_ROOT}/include/onnxruntime)
+            include_directories(${ONNXRUNTIME_ROOT}/include/onnxruntime/core/session)
+
+            set(ONNXRUNTIME_LIB "${ONNXRUNTIME_ROOT}/lib/onnxruntime.lib")
+            if(EXISTS ${ONNXRUNTIME_LIB})
+                message(STATUS "ONNX Runtime library found: ${ONNXRUNTIME_LIB}")
+                target_link_libraries(EWOCvj2 PUBLIC ${ONNXRUNTIME_LIB})
+            else()
+                message(WARNING "ONNX Runtime library not found at ${ONNXRUNTIME_LIB}")
+            endif()
+        else()
+            message(WARNING "ONNX Runtime not found at ${ONNXRUNTIME_ROOT}")
+        endif()
+    endif(MINGW)
+endif(WIN32)
+
+# Real-ESRGAN library for AI Upscaling
+if (WIN32)
+    if (MINGW)
+        set(REALESRGAN_SRC "C:/source/realesrgan-src/src" CACHE PATH "Real-ESRGAN source directory")
+        set(NCNN_ROOT "C:/source/ncnn-mingw/build-mingw" CACHE PATH "ncnn build directory (MinGW build)")
+
+        if(EXISTS ${REALESRGAN_SRC})
+            message(STATUS "Real-ESRGAN source found at ${REALESRGAN_SRC}")
+            target_include_directories(EWOCvj2 PRIVATE ${REALESRGAN_SRC})
+
+            # Add Real-ESRGAN source files to build
+            target_sources(EWOCvj2 PRIVATE ${REALESRGAN_SRC}/realesrgan.cpp)
+        else()
+            message(WARNING "Real-ESRGAN source not found at ${REALESRGAN_SRC}")
+        endif()
+
+        if(EXISTS ${NCNN_ROOT})
+            message(STATUS "ncnn (MinGW build) found at ${NCNN_ROOT}")
+            # Include ncnn headers - build directory first (has generated headers like platform.h)
+            target_include_directories(EWOCvj2 PRIVATE
+                ${NCNN_ROOT}/src
+                C:/source/ncnn-mingw/src
+            )
+
+            # Link to MinGW-built ncnn library
+            set(NCNN_LIB "${NCNN_ROOT}/src/libncnn.dll.a")
+            set(NCNN_DLL "${NCNN_ROOT}/src/libncnn.dll")
+
+            if(EXISTS ${NCNN_LIB} AND EXISTS ${NCNN_DLL})
+                message(STATUS "ncnn library found: ${NCNN_LIB}")
+                message(STATUS "ncnn DLL found: ${NCNN_DLL}")
+
+                # Link with MinGW-compatible import library
+                target_link_libraries(EWOCvj2 PUBLIC ${NCNN_LIB})
+
+                # Copy DLL to output directories (keep original name libncnn.dll)
+                configure_file(${NCNN_DLL} ${CMAKE_BINARY_DIR}/libncnn.dll COPYONLY)
+                configure_file(${NCNN_DLL} ${CMAKE_SOURCE_DIR}/../cmake-build-debug-mingw/libncnn.dll COPYONLY)
+            else()
+                message(WARNING "ncnn library or DLL not found. Expected:")
+                message(WARNING "  Library: ${NCNN_LIB}")
+                message(WARNING "  DLL: ${NCNN_DLL}")
+                message(WARNING "Run C:/source/ncnn-mingw/build_ncnn_mingw.bat to build ncnn with MinGW")
+            endif()
+        else()
+            message(WARNING "ncnn not found at ${NCNN_ROOT}")
+            message(WARNING "Run C:/source/ncnn-mingw/build_ncnn_mingw.bat to build ncnn with MinGW")
+        endif()
+
+        # Link Vulkan for GPU acceleration
+        set(VULKAN_SDK "C:/VulkanSDK/1.4.328.1" CACHE PATH "Vulkan SDK directory")
+
+        if(EXISTS ${VULKAN_SDK})
+            message(STATUS "Vulkan SDK found at ${VULKAN_SDK}")
+            include_directories(${VULKAN_SDK}/Include)
+
+            set(VULKAN_LIB "${VULKAN_SDK}/Lib/vulkan-1.lib")
+            if(EXISTS ${VULKAN_LIB})
+                message(STATUS "Vulkan library found: ${VULKAN_LIB}")
+                target_link_libraries(EWOCvj2 PUBLIC ${VULKAN_LIB})
+            else()
+                message(WARNING "Vulkan library not found at ${VULKAN_LIB}")
+            endif()
+        else()
+            message(WARNING "Vulkan SDK not found at ${VULKAN_SDK} - GPU acceleration will not be available")
+        endif()
+    endif(MINGW)
+endif(WIN32)
+
+if (UNIX)
+    # Real-ESRGAN and ncnn for Linux
+    set(REALESRGAN_SRC "C:/source/realesrgan-src/src" CACHE PATH "Real-ESRGAN source directory")
+
+    if(EXISTS ${REALESRGAN_SRC})
+        message(STATUS "Real-ESRGAN source found at ${REALESRGAN_SRC}")
+        include_directories(${REALESRGAN_SRC})
+        target_sources(EWOCvj2 PRIVATE ${REALESRGAN_SRC}/realesrgan.cpp)
+    endif()
+
+    find_library(NCNN_LIB ncnn PATHS ${LIB_SEARCH_DIRS})
+    if(NCNN_LIB)
+        message(STATUS "ncnn library found: ${NCNN_LIB}")
+        target_link_libraries(EWOCvj2 PUBLIC ${NCNN_LIB})
+    else()
+        message(WARNING "ncnn library not found")
+    endif()
+
+    find_package(Vulkan)
+    if(Vulkan_FOUND)
+        target_link_libraries(EWOCvj2 PUBLIC ${Vulkan_LIBRARY})
+    endif()
+endif(UNIX)
+
 
 
 if (UNIX)

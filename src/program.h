@@ -44,12 +44,13 @@
 #include "box.h"
 #include "effect.h"
 #include "node.h"
-#include "layer.h"
+#include "mixer.h"
 #include "window.h"
 #include "loopstation.h"
 #include "bins.h"
 #include "retarget.h"
 #include "UniformCache.h"
+#include "styleroom.h"
 
 class PrefCat;
 class Menu;
@@ -604,7 +605,8 @@ class Program {
         Menu* lpstmenu = nullptr;
         Menu* beatmenu = nullptr;
         Menu* sendmenu = nullptr;
-        Menu* optionmenu = nullptr;
+		Menu* optionmenu = nullptr;
+		Menu* upscalemenu = nullptr;
         bool menuactivation = false;
         bool binmenuactivation = false;
 		bool menuchosen = false;
@@ -892,8 +894,9 @@ class Program {
         std::vector<std::string> busylist;
 		std::vector<Layer*> busylayers;
 		std::vector<Layer*> mimiclayers;
-		
-		bool binsscreen = false;
+
+        bool binsscreen = false;
+        bool styleroom = false;
 		BinElement *dragbinel = nullptr;
 		Clip *dragclip = nullptr;
         bool draggedclip = false;
@@ -1157,6 +1160,8 @@ class Program {
         std::vector<std::vector<ISFShaderInstance*>> isfinstances;
         std::mutex isfinstances_mutex;  // Protects isfinstances from concurrent access
 
+        std::vector<std::string> aistylenames;  // AI style transfer model names
+
         NDIManager& ndimanager;
         std::vector<std::string> ndisourcenames;
         int ndilaycount = 0;
@@ -1286,6 +1291,7 @@ extern Globals *glob;
 extern Program *mainprogram;
 extern Mixer *mainmix;
 extern BinsMain *binsmain;
+extern StyleRoom *mainstyleroom;
 extern LoopStation *loopstation;
 extern LoopStation *lp;
 extern LoopStation *lpc;
@@ -1416,7 +1422,7 @@ void set_live_base(Layer *lay, std::string livename);
 
 extern void set_queueing(bool onoff);
 
-extern Effect* new_effect(Layer *lay, EFFECT_TYPE type, int ffglnr, int isfnr);
+extern Effect* new_effect(Layer *lay, EFFECT_TYPE type, int ffglnr, int isfnr, int aistylnr = -1);
 
 extern bool exists(std::string name);
 extern std::string dirname(std::string pathname);
