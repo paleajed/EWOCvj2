@@ -1,16 +1,21 @@
 class StylePreparationElement;
 class StylePreparationBin;
 class Style;
+class ReCoNetTrainer;
 
 class StyleRoom {
     public:
         std::vector<Style*> styles;
         StylePreparationBin* prepbin;
         std::vector<Boxx*> elemboxes;
+        Param* res = nullptr;
+        Param* quality = nullptr;
+        Param* usegpu = nullptr;
         int reswidth = 1280;
         int resheight = 720;
         Menu* stylepreparationmenu;
         StylePreparationElement* menuelem;
+        ReCoNetTrainer* reconetTrainer = nullptr;
 
         void handle();
         StyleRoom();
@@ -18,7 +23,7 @@ class StyleRoom {
 
 class Style {
     public:
-        StylePreparationBin* bin;
+        StylePreparationBin* bin = nullptr;
         std::string name = "";
         std::string abspath = "";
         std::string relpath = "";
@@ -33,7 +38,7 @@ class StylePreparationBin {
 
 class StylePreparationElement {
     public:
-        StylePreparationBin* bin;
+        StylePreparationBin* bin = nullptr;
         ELEM_TYPE type = ELEM_FILE;
         std::string name = "";
         std::string abspath = "";

@@ -13,9 +13,18 @@
 
 // my own header
 #include "program.h"
+#include "ReCoNetTrainer.h"
 
 StyleRoom::StyleRoom() {
     this->prepbin = new StylePreparationBin;
+
+#ifdef RECONET_TRAINING_ENABLED
+    // Initialize ReCoNet trainer
+    this->reconetTrainer = new ReCoNetTrainer();
+
+#else
+    this->reconetTrainer = nullptr;
+#endif
 
     for (int i = 0; i < 4; i++) {
         for (int j = 0; j < 4; j++) {
@@ -36,6 +45,64 @@ StyleRoom::StyleRoom() {
             box->tooltip = "Shows thumbnail of style room inspiration element, either being a video file (grey border) or an image (white border) or a layer file (orange border).  Hovering over this element shows its resolution.  Leftdrag allows dragging to bin screen via wormgate, going past the left screen border.  Rightclickmenu allows loading files in several ways. ";
         }
     }
+    
+    this->res = new Param;
+    this->res->name = "Res width";
+    this->res->value = 1270;
+    this->res->deflt = 1270;
+    this->res->range[0] = 0;
+    this->res->range[1] = 1920;
+    this->res->sliding = false;
+    this->res->box->acolor[0] = 0.2;
+    this->res->box->acolor[1] = 0.2;
+    this->res->box->acolor[2] = 0.5;
+    this->res->box->acolor[3] = 1.0;
+    this->res->box->tooltiptitle = "Set inspiration images resolution ";
+    this->res->box->tooltip = "Leftdrag to set the inspiration images resolution. Its value is the resolution width of the 16:9 box the images will be constrained to. Doubleclicking allows numeric entry. ";
+    this->quality = new Param;
+    this->quality->name = "Training quality";
+    this->quality->options.push_back("FAST");
+    this->quality->options.push_back("BALANCED");
+    this->quality->options.push_back("HIGH");
+    this->quality->value = 1;
+    this->quality->deflt = 1;
+    this->quality->range[0] = 0;
+    this->quality->range[1] = 2;
+    this->quality->sliding = false;
+    this->quality->box->acolor[0] = 0.2;
+    this->quality->box->acolor[1] = 0.2;
+    this->quality->box->acolor[2] = 0.5;
+    this->quality->box->acolor[3] = 1.0;
+    this->quality->box->tooltiptitle = "Set training quality ";
+    this->quality->box->tooltip = "Set quality of style training. Higher quality means slower training. ";
+    this->usegpu = new Param;
+    this->usegpu->name = "Use GPU";
+    this->usegpu->value = 1;
+    this->usegpu->deflt = 1;
+    this->usegpu->range[0] = 0;
+    this->usegpu->range[1] = 1;
+    this->usegpu->sliding = false;
+    this->usegpu->box->acolor[0] = 0.2;
+    this->usegpu->box->acolor[1] = 0.2;
+    this->usegpu->box->acolor[2] = 0.5;
+    this->usegpu->box->acolor[3] = 1.0;
+    this->usegpu->box->tooltiptitle = "Use GPU accelerated training? ";
+    this->usegpu->box->tooltip = "Toggles use of the gpu for style training on or off. ";
+    this->res->box->vtxcoords->x1 = -0.5f;
+    this->res->box->vtxcoords->y1 = - 0.7f;
+    this->res->box->vtxcoords->w = mainprogram->layw * 1.5f * 0.25f;
+    this->res->box->vtxcoords->h = 0.075f;
+    this->res->box->upvtxtoscr();
+    this->quality->box->vtxcoords->x1 = -0.5f;
+    this->quality->box->vtxcoords->y1 = - 0.8f;
+    this->quality->box->vtxcoords->w = mainprogram->layw * 1.5f * 0.25f;
+    this->quality->box->vtxcoords->h = 0.075f;
+    this->quality->box->upvtxtoscr();
+    this->usegpu->box->vtxcoords->x1 = -0.5f;
+    this->usegpu->box->vtxcoords->y1 = - 0.9f;
+    this->usegpu->box->vtxcoords->w = mainprogram->layw * 1.5f * 0.25f;
+    this->usegpu->box->vtxcoords->h = 0.075f;
+    this->usegpu->box->upvtxtoscr();
 }
 
 StylePreparationBin::StylePreparationBin() {
@@ -125,5 +192,60 @@ void StyleRoom::handle() {
                 render_text(elem->name.substr(0, 20), white, box->vtxcoords->x1, box->vtxcoords->y1 - 0.03f, 0.00090f,
                             0.000150f);
         }
+    }
+
+    this->res->handle();
+    this->quality->handle();
+    this->usegpu->handle();
+
+    Boxx box;
+    box.vtxcoords->x1 = -0.3f;
+    box.vtxcoords->y1 = -0.8f;
+    box.vtxcoords->w = 0.3f;
+    box.vtxcoords->h = 0.15f;
+    box.upvtxtoscr();
+    draw_box(&box, -1);
+    render_text("TRAIN", white, -0.25f, -0.75f, 0.0009f, 0.000150f);
+    if (box.in()) {
+        if (mainprogram->leftmouse) {
+            ReCoNetTrainer::Config config;
+            switch ((int)this->quality->value) {
+                case 0:
+                    config.quality = ReCoNetTrainer::Quality::FAST;
+                    break;
+                case 1:
+                    config.quality = ReCoNetTrainer::Quality::BALANCED;
+                    break;
+                case 2:
+                    config.quality = ReCoNetTrainer::Quality::HIGH;
+                    break;
+            }
+            config.useGPU = this->usegpu->value;  // User checkbox
+
+            bool started = mainstyleroom->reconetTrainer->startTraining(
+                    mainstyleroom->prepbin,
+                    "Tierlantijn",  // Model name from text input
+                    config);
+            if (!started) {
+                std::string error = mainstyleroom->reconetTrainer->getLastError();
+                // Show error to user
+                printf("%s\n", error.c_str());
+            }
+        }
+    }
+
+    if (mainstyleroom->reconetTrainer->isTraining()) {
+        auto progress = mainstyleroom->reconetTrainer->getProgress();
+
+        // Update UI:
+        // - Progress bar: progress.currentIteration / progress.totalIterations
+        // - Status text: progress.status
+        // - Loss value: progress.totalLoss
+        // - Percentage: (progress.currentIteration * 100) / progress.totalIterations
+
+        // Example:
+        int percent = (progress.currentIteration * 100) / progress.totalIterations;
+        std::string statusText = progress.status + " " + std::to_string(percent) + "%";
+        render_text(statusText, white, 0.5f, -0.75f, 0.00045f, 0.000075f);
     }
 }

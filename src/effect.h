@@ -77,6 +77,7 @@ class Layer;
 class EffectNode;
 class MidiNode;
 class AIStyleTransfer;
+class ComputeStyleTransfer;
 class RealESRGANUpscaler;
 
 class Param {
@@ -390,9 +391,22 @@ public:
     ~AIStyleEffect();
 
     std::unique_ptr<AIStyleTransfer> styleTransfer;
+    std::unique_ptr<ComputeStyleTransfer> computeStyleTransfer;  // GPU compute shader path
 
     void updateStyle();
     void updateProcessingResolution(int width, int height);
+
+    /**
+     * Apply AI style transfer - dual path (ONNX or Compute Shaders)
+     * @param inputTexture Input GL texture
+     * @param outputTexture Output GL texture (must be pre-allocated)
+     * @param width Image width
+     * @param height Image height
+     * @return true if processing succeeded
+     */
+    bool applyStyle(GLuint inputTexture, GLuint outputTexture, int width, int height);
+
+    bool useComputeShaders = false;  // Toggle between ONNX Runtime and compute shaders
 
 private:
     int lastStyleIndex;

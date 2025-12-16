@@ -105,6 +105,7 @@ extern "C" {
 #include "UPnPPortMapper.h"
 #include "AIStyleTransfer.h"
 #include "RealESRGANWrapper.h"
+#include "ReCoNetTrainer.h"
 #define PROGRAM_NAME "EWOCvj"
 
 #ifdef WINDOWS
@@ -3697,26 +3698,36 @@ void onestepfrom(bool stage, Node *node, Node *prevnode, GLuint prevfbotex, GLui
                     aiEffect->updateStyle();
                     //aiEffect->updateProcessingResolution(mainprogram->ow[stage], mainprogram->oh[stage]);
 
-                    // Prepare input FBO structure
-                    FBOstruct inputFBO;
-                    inputFBO.framebuffer = prevfbo;
-                    inputFBO.texture = prevfbotex;
+                    // Get input texture dimensions
                     int sw, sh;
                     glBindTexture(GL_TEXTURE_2D, prevfbotex);
                     glGetTexLevelParameteriv(GL_TEXTURE_2D, 0, GL_TEXTURE_WIDTH, &sw);
                     glGetTexLevelParameteriv(GL_TEXTURE_2D, 0, GL_TEXTURE_HEIGHT, &sh);
+
+                    // Get output texture dimensions (different from input!)
+                    int ow, oh;
+                    glBindTexture(GL_TEXTURE_2D, effect->tempfbotex);
+                    glGetTexLevelParameteriv(GL_TEXTURE_2D, 0, GL_TEXTURE_WIDTH, &ow);
+                    glGetTexLevelParameteriv(GL_TEXTURE_2D, 0, GL_TEXTURE_HEIGHT, &oh);
+
+                    // Run AI style transfer using ONNX Runtime async PBO pipeline
+                    // Create FBOstructs with proper framebuffer parameters
+                    FBOstruct inputFBO;
+                    inputFBO.framebuffer = prevfbo;
+                    inputFBO.texture = prevfbotex;
                     inputFBO.width = sw;
                     inputFBO.height = sh;
 
-                    // Prepare output FBO structure
                     FBOstruct outputFBO;
                     outputFBO.framebuffer = effect->tempfbo;
                     outputFBO.texture = effect->tempfbotex;
-                    outputFBO.width = mainprogram->ow[stage];
-                    outputFBO.height = mainprogram->oh[stage];
+                    outputFBO.width = ow;
+                    outputFBO.height = oh;
 
-                    // Run AI style transfer
-                    bool success = aiEffect->styleTransfer->render(inputFBO, outputFBO);
+                    // Call render() directly with proper FBOs (not applyStyle)
+                    bool success = aiEffect->styleTransfer->render(inputFBO, outputFBO, false);
+
+                    glUseProgram(mainprogram->ShaderProgram);
 
                     // Composite result with dry/wet mix
                     glBindFramebuffer(GL_FRAMEBUFFER, effect->fbo);
@@ -8217,6 +8228,15 @@ int main(int argc, char* argv[]) {
     retarget = new Retarget;
     mainstyleroom = new StyleRoom;
 
+#ifdef RECONET_TRAINING_ENABLED
+    // Initialize ReCoNet trainer
+    if (mainstyleroom->reconetTrainer) {
+        if (!mainstyleroom->reconetTrainer->initialize()) {
+            std::cerr << "[ERROR] Failed to initialize ReCoNet trainer: "
+                      << mainstyleroom->reconetTrainer->getLastError() << std::endl;
+        }
+    }
+#endif
 
 #ifdef WINDOWS
     std::filesystem::path p5{mainprogram->docpath + "projects"};

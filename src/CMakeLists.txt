@@ -82,11 +82,15 @@ add_executable(EWOCvj2 WIN32
         UPnPPortMapper.cpp
         AIStyleTransfer.h
         AIStyleTransfer.cpp
+        ComputeStyleTransfer.h
+        ComputeStyleTransfer.cpp
         AIStyleEffect.cpp
         RealESRGANWrapper.h
         RealESRGANWrapper.cpp
         styleroom.h
         styleroom.cpp
+        ReCoNetTrainer.h
+        ReCoNetTrainer.cpp
 )
 
 set(Boost_USE_STATIC_RUNTIME ON)
@@ -362,6 +366,73 @@ if (WIN32)
         endif()
     endif(MINGW)
 endif(WIN32)
+
+# ONNX Protobuf for weight extraction (compute shader implementation)
+if (WIN32)
+    if (MINGW)
+        # Find Protobuf for ONNX model parsing
+        set(PROTOBUF_ROOT "C:/msys64/mingw64" CACHE PATH "Protobuf root directory")
+        if(EXISTS ${PROTOBUF_ROOT})
+            message(STATUS "Protobuf found at ${PROTOBUF_ROOT}")
+            include_directories(${PROTOBUF_ROOT}/include)
+
+            find_library(PROTOBUF_LIBRARY protobuf PATHS ${PROTOBUF_ROOT}/lib ${LIB2_SEARCH_DIR})
+            if(PROTOBUF_LIBRARY)
+                message(STATUS "Protobuf library found: ${PROTOBUF_LIBRARY}")
+                target_link_libraries(EWOCvj2 PUBLIC ${PROTOBUF_LIBRARY})
+            else()
+                message(WARNING "Protobuf library not found - install with: pacman -S mingw-w64-x86_64-protobuf")
+            endif()
+        else()
+            message(WARNING "Protobuf not found at ${PROTOBUF_ROOT}")
+        endif()
+
+        # ONNX protobuf library for model parsing
+        set(ONNX_ROOT "C:/source/onnx" CACHE PATH "ONNX root directory")
+        if(EXISTS ${ONNX_ROOT})
+            message(STATUS "ONNX found at ${ONNX_ROOT}")
+            include_directories(${ONNX_ROOT})
+            include_directories(${ONNX_ROOT}/include)
+
+            find_library(ONNX_LIBRARY onnx PATHS ${ONNX_ROOT}/lib)
+            find_library(ONNX_PROTO_LIBRARY onnx_proto PATHS ${ONNX_ROOT}/lib)
+            if(ONNX_LIBRARY AND ONNX_PROTO_LIBRARY)
+                message(STATUS "ONNX libraries found")
+                target_link_libraries(EWOCvj2 PUBLIC ${ONNX_LIBRARY} ${ONNX_PROTO_LIBRARY})
+            else()
+                message(WARNING "ONNX libraries not found - compute shader weight loading will be unavailable")
+            endif()
+        else()
+            message(WARNING "ONNX not found at ${ONNX_ROOT}")
+        endif()
+    endif(MINGW)
+endif(WIN32)
+
+# Python 3 and PyTorch for ReCoNet Training
+find_package(Python3 COMPONENTS Interpreter)
+if(Python3_FOUND)
+    message(STATUS "Python ${Python3_VERSION} found: ${Python3_EXECUTABLE}")
+
+    # Check for PyTorch
+    execute_process(
+        COMMAND ${Python3_EXECUTABLE} -c "import torch; print(torch.__version__)"
+        OUTPUT_VARIABLE PYTORCH_VERSION
+        OUTPUT_STRIP_TRAILING_WHITESPACE
+        RESULT_VARIABLE PYTORCH_CHECK
+        ERROR_QUIET
+    )
+
+    if(PYTORCH_CHECK EQUAL 0)
+        message(STATUS "PyTorch ${PYTORCH_VERSION} found - ReCoNet training enabled")
+        add_compile_definitions(RECONET_TRAINING_ENABLED)
+    else()
+        message(WARNING "PyTorch not found - ReCoNet training disabled")
+        message(WARNING "To enable ReCoNet training, install with: pip install torch torchvision onnx")
+    endif()
+else()
+    message(WARNING "Python 3 not found - ReCoNet training disabled")
+    message(WARNING "To enable ReCoNet training, install Python 3.8+ from python.org")
+endif()
 
 # Real-ESRGAN library for AI Upscaling
 if (WIN32)

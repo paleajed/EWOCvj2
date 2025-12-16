@@ -65,18 +65,19 @@ struct StyleModel {
     int inputWidth = 0;         // Expected input width (0 = any)
     int inputHeight = 0;        // Expected input height (0 = any)
     bool loaded = false;        // Whether model is currently loaded
+    bool needsInputNormalization = false;  // Whether to normalize input to [-1, 1] (auto-detected)
 };
 
 /**
  * Processing job for async queue
  */
 struct ProcessingJob {
-    GLuint inputTexture = 0;
-    GLuint outputTexture = 0;
+    int frameIndex = 0;      // Which frame buffer to use
     int width = 0;
     int height = 0;
-    std::atomic<bool>* completed = nullptr;
-    bool* success = nullptr;
+    float* inputBuffer = nullptr;   // Pre-downloaded input data
+    float* outputBuffer = nullptr;  // Where to write output
+    std::atomic<bool>* frameReady = nullptr;  // Signal when done
 };
 
 /**
@@ -189,18 +190,28 @@ private:
     std::vector<StyleModel> styleModels;
     int currentStyleIndex = -1;
 
-    // OpenGL resources for PBO transfers
-    GLuint pbos[2] = {0, 0};        // Ping-pong PBOs for async transfer
+    // OpenGL resources for PBO transfers (triple-buffered)
+    GLuint downloadPBOs[3] = {0, 0, 0};      // PBOs for async texture download
+    GLuint uploadPBOs[3] = {0, 0, 0};        // PBOs for async texture upload
+    unsigned char* downloadMapPtr[3] = {nullptr, nullptr, nullptr};  // Persistent mapped download buffers
+    unsigned char* uploadMapPtr[3] = {nullptr, nullptr, nullptr};    // Persistent mapped upload buffers
     int pboIndex = 0;
     int pboSize = 0;
 
-    // Processing buffers
-    std::vector<float> inputBuffer;   // CPU buffer for model input
-    std::vector<float> outputBuffer;  // CPU buffer for model output
+    // Processing buffers (triple-buffered)
+    std::vector<float> inputBuffers[3];   // CPU buffers for model input
+    std::vector<float> outputBuffers[3];  // CPU buffers for model output
 
     // Temp FBOs for rescaling
     FBOstruct scaledInputFBO = {0, 0, 0, 0};
     FBOstruct scaledOutputFBO = {0, 0, 0, 0};
+
+    // Triple-buffering state
+    int currentFrame = 0;
+    GLsync downloadFences[3] = {nullptr, nullptr, nullptr};  // GPU sync for downloads
+    GLsync uploadFences[3] = {nullptr, nullptr, nullptr};    // GPU sync for uploads
+    std::atomic<bool> frameReady[3] = {false, false, false}; // CPU processing complete
+    int lastOutputFrame = -1;  // Last frame uploaded to output
 
     // Threading for async processing
     std::unique_ptr<std::thread> workerThread;
@@ -235,9 +246,18 @@ private:
     void cleanupPBOs();
     bool createTempFBO(FBOstruct& fbo, int width, int height);
     void deleteFBO(FBOstruct& fbo);
+
+    // Async PBO transfer methods
+    bool startAsyncDownload(GLuint fbo, int width, int height, int frameIndex);
+    bool finishAsyncDownload(int frameIndex, int width, int height);
+    bool startAsyncUpload(const float* buffer, int width, int height, int frameIndex);
+    bool finishAsyncUpload(GLuint texture, int width, int height, int frameIndex);
+
+    // Legacy sync methods (deprecated)
     bool downloadTextureToBuffer(GLuint texture, int width, int height, std::vector<float>& buffer);
     bool downloadTextureToBuffer(GLuint fbo, GLuint texture, int width, int height, std::vector<float>& buffer);
     bool uploadBufferToTexture(const std::vector<float>& buffer, int width, int height, GLuint texture);
+
     void setError(const std::string& error);
     void updateStats(float inferenceTime);
 
@@ -248,6 +268,8 @@ private:
     void denormalizeOutput(std::vector<float>& data, int width, int height);
     void hwcToChw(const std::vector<float>& hwc, std::vector<float>& chw, int width, int height);
     void chwToHwc(const std::vector<float>& chw, std::vector<float>& hwc, int width, int height);
+    void hwcToChw4(const std::vector<float>& hwc, std::vector<float>& chw, int width, int height);
+    void chw4ToHwc(const std::vector<float>& chw, std::vector<float>& hwc, int width, int height);
 };
 
 #endif // AAISTYLETRANSFER_H
