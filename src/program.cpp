@@ -19,6 +19,7 @@
 #include <algorithm>
 #include <filesystem>
 #include <cerrno>
+#include <cmath>
 #include <thread>
 #include <chrono>
 
@@ -74,6 +75,8 @@
 #include "SDL2/SDL_syswm.h"
 #include <turbojpeg.h>
 #include <libavutil/channel_layout.h>
+
+#include "AIStyleTransfer.h"
 
 // my own header
 #include "program.h"
@@ -285,6 +288,33 @@ void MidiElement::register_midi() {
 void MidiElement::unregister_midi() {
     // unregister a MIDI control
     mainmix->midi_registrations[!mainprogram->prevmodus][this->midi0][this->midi1][this->midiport].midielem = nullptr;
+}
+
+// OpenGL extension constants for GPU memory info
+#ifndef GL_GPU_MEMORY_INFO_CURRENT_AVAILABLE_VIDMEM_NVX
+#define GL_GPU_MEMORY_INFO_CURRENT_AVAILABLE_VIDMEM_NVX 0x9049
+#endif
+#ifndef GL_TEXTURE_FREE_MEMORY_ATI
+#define GL_TEXTURE_FREE_MEMORY_ATI 0x87FC
+#endif
+
+int Program::getFreeVRAM() {
+    GLint freeMemKB = 0;
+
+    // Try NVIDIA extension first (GL_NVX_gpu_memory_info)
+    glGetIntegerv(GL_GPU_MEMORY_INFO_CURRENT_AVAILABLE_VIDMEM_NVX, &freeMemKB);
+    if (glGetError() == GL_NO_ERROR && freeMemKB > 0) {
+        return freeMemKB / 1024;  // Convert KB to MB
+    }
+
+    // Try AMD extension (GL_ATI_meminfo)
+    GLint memInfo[4] = {0};
+    glGetIntegerv(GL_TEXTURE_FREE_MEMORY_ATI, memInfo);
+    if (glGetError() == GL_NO_ERROR && memInfo[0] > 0) {
+        return memInfo[0] / 1024;  // Convert KB to MB
+    }
+
+    return -1;  // Not available
 }
 
 
@@ -684,10 +714,10 @@ Program::Program() : ndimanager(NDIManager::getInstance()), upnpMapper(nullptr) 
 
     // box at end of effects list: allows adding effects
     this->addeffectbox = new Boxx;
-	this->addeffectbox->vtxcoords->w = this->layw * 1.5f;
-	this->addeffectbox->vtxcoords->h = 0.057f;
-	this->addeffectbox->tooltiptitle = "Add effect ";
-	this->addeffectbox->tooltip = "Add effect to end of layer effect queue ";
+    this->addeffectbox->vtxcoords->w = this->layw * 1.5f;
+    this->addeffectbox->vtxcoords->h = 0.057f;
+    this->addeffectbox->tooltiptitle = "Add effect ";
+    this->addeffectbox->tooltip = "Add effect to end of layer effect queue ";
 
     // box that pops up between effects entries of effects list: allows inserting effects
 	this->inserteffectbox = new Boxx;
@@ -879,7 +909,6 @@ Program::Program() : ndimanager(NDIManager::getInstance()), upnpMapper(nullptr) 
 
     // wormgates allow switching between mix and bins screen
     // you can also drag content through them by dragging up to the screen edge
-    // wormgate rectangle to the left
 	this->wormgate1 = new Button(false);
 	this->wormgate1->toggle = 1;
 	this->wormgate1->box->vtxcoords->x1 = -1.0f;
@@ -887,18 +916,35 @@ Program::Program() : ndimanager(NDIManager::getInstance()), upnpMapper(nullptr) 
 	this->wormgate1->box->vtxcoords->w = 0.0375f;
 	this->wormgate1->box->vtxcoords->h = 0.6f;
 	this->wormgate1->box->upvtxtoscr();
-	this->wormgate1->box->tooltiptitle = "Screen switching wormgate ";
-	this->wormgate1->box->tooltip = "Connects mixing screen and media bins screen.  Leftclick to switch screen.  Drag content inside this box up to the very edge of the screen to travel to the other screen. ";
-    // wormgate rectangle to the right
-	this->wormgate2 = new Button(false);
-	this->wormgate2->toggle = 1;
-	this->wormgate2->box->vtxcoords->x1 = 1.0f - 0.0375f;
-	this->wormgate2->box->vtxcoords->y1 = -0.58f;
-	this->wormgate2->box->vtxcoords->w = 0.0375f;
-	this->wormgate2->box->vtxcoords->h = 0.6f;
-	this->wormgate2->box->upvtxtoscr();
-	this->wormgate2->box->tooltiptitle = "Screen switching wormgate ";
-    this->wormgate2->box->tooltip = "Connects mixing screen and media bins screen.  Leftclick to switch screen.  Drag content inside this box up to the very edge of the screen to travel to the other screen. ";
+    this->wormgate1->box->tooltiptitle = "Screen switching wormgate ";
+    this->wormgate1->box->tooltip = "Connects between rooms.  Leftclick to switch room.  Drag content inside this box up to the very edge of the screen to travel to the other room. ";
+    this->wormgate2 = new Button(false);
+    this->wormgate2->toggle = 1;
+    this->wormgate2->box->vtxcoords->x1 = 1.0f - 0.0375f;
+    this->wormgate2->box->vtxcoords->y1 = -0.58f;
+    this->wormgate2->box->vtxcoords->w = 0.0375f;
+    this->wormgate2->box->vtxcoords->h = 0.6f;
+    this->wormgate2->box->upvtxtoscr();
+    this->wormgate2->box->tooltiptitle = "Screen switching wormgate ";
+    this->wormgate2->box->tooltip = "Connects between rooms.  Leftclick to switch room.  Drag content inside this box up to the very edge of the screen to travel to the other room. ";
+    this->wormgate3 = new Button(false);
+    this->wormgate3->toggle = 1;
+    this->wormgate3->box->vtxcoords->x1 = 1.0f - 0.0375f;
+    this->wormgate3->box->vtxcoords->y1 = -0.5f;
+    this->wormgate3->box->vtxcoords->w = 0.0375f;
+    this->wormgate3->box->vtxcoords->h = 0.45f;
+    this->wormgate3->box->upvtxtoscr();
+    this->wormgate3->box->tooltiptitle = "Screen switching wormgate ";
+    this->wormgate3->box->tooltip = "Connects between rooms.  Leftclick to switch room.  Drag content inside this box up to the very edge of the screen to travel to the other room. ";
+    this->wormgate4 = new Button(false);
+    this->wormgate4->toggle = 1;
+    this->wormgate4->box->vtxcoords->x1 = 1.0f - 0.0375f;
+    this->wormgate4->box->vtxcoords->y1 = -1.0f;
+    this->wormgate4->box->vtxcoords->w = 0.0375f;
+    this->wormgate4->box->vtxcoords->h = 0.45f;
+    this->wormgate4->box->upvtxtoscr();
+    this->wormgate4->box->tooltiptitle = "Screen switching wormgate ";
+    this->wormgate4->box->tooltip = "Connects between rooms.  Leftclick to switch room.  Drag content inside this box up to the very edge of the screen to travel to the other room. ";
 
     // volume treshold for beat detection to kick in
     this->beatthres = new Param;
@@ -976,6 +1022,7 @@ const char* Program::mime_to_tinyfds(std::string filters) {
 	if (filters == "application/ewocvj2-project") return "*.ewocvj";
 	if (filters == "application/ewocvj2-shelf") return "*.shelf";
 	if (filters == "application/ewocvj2-bin") return "*.bin";
+	if (filters == "application/ewocvj2-style") return "*.style";
 	return "";
 }
 #endif
@@ -990,12 +1037,13 @@ LPCSTR Program::mime_to_wildcard(std::string filters) {
 	if (filters == "application/ewocvj2-state") return "EWOCvj2 state file (.state)\0*.state\0";
 	if (filters == "application/ewocvj2-project") return "EWOCvj2 project file (.ewocvj)\0*.ewocvj\0";
 	if (filters == "application/ewocvj2-shelf") return "EWOCvj2 shelf file (.shelf)\0*.shelf\0";
-	if (filters == "application/ewocvj2-bin") return "EWOCvj2 bin file (.bin)\0*.bin\0";
+    if (filters == "application/ewocvj2-bin") return "EWOCvj2 bin file (.bin)\0*.bin\0";
+    if (filters == "application/ewocvj2-style") return "EWOCvj2 style file (.style)\0*.style\0";
 	return "";
 }
 
 void Program::win_dialog(const char* title, LPCSTR filters, std::string defaultdir, bool open, bool multi) {
-	// Windows file dialog implementation
+	// Windows file dialog implementation using IFileDialog (modern API)
 	boost::replace_all(defaultdir, "/", "\\");
 	std::filesystem::path p(defaultdir);
 	std::string name;
@@ -1004,56 +1052,131 @@ void Program::win_dialog(const char* title, LPCSTR filters, std::string defaultd
 		defaultdir = defaultdir.substr(0, defaultdir.length() - name.length() - 1);
 	}
 #ifdef WINDOWS
-	OPENFILENAME ofn;
-	char szFile[4096];
-	if (name != "") {
-		int pos = 0;
-		do {
-			szFile[pos] = name[pos];
-			pos++;
-		} while (pos < name.length());
-		szFile[pos] = '\0';
+	mainprogram->blocking = true;
+
+	// Parse the old-style filter string into COMDLG_FILTERSPEC array
+	std::vector<std::wstring> filterStrings;
+	std::vector<COMDLG_FILTERSPEC> filterSpecs;
+	const char* ptr = filters;
+	while (*ptr) {
+		std::string desc(ptr);
+		ptr += desc.length() + 1;
+		if (!*ptr) break;
+		std::string pattern(ptr);
+		ptr += pattern.length() + 1;
+		// Convert to wide strings
+		std::wstring wdesc(desc.begin(), desc.end());
+		std::wstring wpattern(pattern.begin(), pattern.end());
+		filterStrings.push_back(wdesc);
+		filterStrings.push_back(wpattern);
 	}
-	ZeroMemory(&ofn, sizeof(ofn));
-	ofn.lStructSize = sizeof(ofn);
-	ofn.hwndOwner = NULL;
-	ofn.lpstrFile = szFile;
-	if (name == "") ofn.lpstrFile[0] = '\0';
-	ofn.nMaxFile = sizeof(szFile);
-	ofn.lpstrFilter = filters;
-	ofn.nFilterIndex = 2;
-	ofn.lpstrTitle = title;
-	ofn.lpstrFileTitle = NULL;
-	ofn.nMaxFileTitle = 0;
-	ofn.lpstrInitialDir = defaultdir.c_str();
-	ofn.Flags = OFN_PATHMUSTEXIST | OFN_FILEMUSTEXIST;
-	if (multi) ofn.Flags = ofn.Flags | OFN_ALLOWMULTISELECT | OFN_EXPLORER;
-	bool ret;
-    mainprogram->blocking = true;
-	if (open) ret = GetOpenFileName(&ofn);
-	else ret = GetSaveFileName(&ofn);
-    mainprogram->blocking = false;
-	if (strlen(ofn.lpstrFile) == 0 || ret == 0) {
-		binsmain->openfilesbin = false;
-		return;
+	for (size_t i = 0; i < filterStrings.size(); i += 2) {
+		COMDLG_FILTERSPEC spec;
+		spec.pszName = filterStrings[i].c_str();
+		spec.pszSpec = filterStrings[i + 1].c_str();
+		filterSpecs.push_back(spec);
 	}
-	char* wstr = ofn.lpstrFile;
-	std::string directory(wstr);
-	if (!multi) this->path = directory;
-	else {
-		if (wstr[directory.length() + 1] == 0) {
-			// only one file in selection
-			this->paths.push_back(directory);
+
+	// Convert title and defaultdir to wide strings
+	std::wstring wtitle(title, title + strlen(title));
+	std::wstring wdefaultdir(defaultdir.begin(), defaultdir.end());
+
+	// Create the file dialog
+	IFileDialog* pfd = NULL;
+	HRESULT hr;
+	if (open) {
+		hr = CoCreateInstance(CLSID_FileOpenDialog, NULL, CLSCTX_INPROC_SERVER, IID_PPV_ARGS(&pfd));
+	} else {
+		hr = CoCreateInstance(CLSID_FileSaveDialog, NULL, CLSCTX_INPROC_SERVER, IID_PPV_ARGS(&pfd));
+	}
+
+	if (SUCCEEDED(hr)) {
+		// Set options
+		DWORD dwFlags;
+		pfd->GetOptions(&dwFlags);
+		if (open && multi) {
+			pfd->SetOptions(dwFlags | FOS_ALLOWMULTISELECT);
 		}
-		else {
-			wstr += (directory.length() + 1);
-			while (*wstr) {
-				std::string filename = wstr;
-				this->paths.push_back(directory + "/" + filename);
-				wstr += (filename.length() + 1);
+
+		// Set title
+		pfd->SetTitle(wtitle.c_str());
+
+		// Set file type filters
+		if (!filterSpecs.empty()) {
+			pfd->SetFileTypes((UINT)filterSpecs.size(), filterSpecs.data());
+			pfd->SetFileTypeIndex(1);
+		}
+
+		// Set initial directory using SetFolder (forces the directory)
+		IShellItem* psiFolder = NULL;
+		hr = SHCreateItemFromParsingName(wdefaultdir.c_str(), NULL, IID_PPV_ARGS(&psiFolder));
+		if (SUCCEEDED(hr)) {
+			pfd->SetFolder(psiFolder);
+			psiFolder->Release();
+		}
+
+		// Set default filename if extracted from path
+		if (!name.empty()) {
+			std::wstring wname(name.begin(), name.end());
+			pfd->SetFileName(wname.c_str());
+		}
+
+		// Show the dialog
+		hr = pfd->Show(NULL);
+
+		if (SUCCEEDED(hr)) {
+			if (open && multi) {
+				// Multi-select: get results from IFileOpenDialog
+				IFileOpenDialog* pfod = NULL;
+				hr = pfd->QueryInterface(IID_PPV_ARGS(&pfod));
+				if (SUCCEEDED(hr)) {
+					IShellItemArray* psia = NULL;
+					hr = pfod->GetResults(&psia);
+					if (SUCCEEDED(hr)) {
+						DWORD count = 0;
+						psia->GetCount(&count);
+						for (DWORD i = 0; i < count; i++) {
+							IShellItem* psi = NULL;
+							hr = psia->GetItemAt(i, &psi);
+							if (SUCCEEDED(hr)) {
+								PWSTR pszPath = NULL;
+								hr = psi->GetDisplayName(SIGDN_FILESYSPATH, &pszPath);
+								if (SUCCEEDED(hr)) {
+									std::wstring wpath(pszPath);
+									std::string spath(wpath.begin(), wpath.end());
+									this->paths.push_back(spath);
+									CoTaskMemFree(pszPath);
+								}
+								psi->Release();
+							}
+						}
+						psia->Release();
+					}
+					pfod->Release();
+				}
+			} else {
+				// Single file
+				IShellItem* psi = NULL;
+				hr = pfd->GetResult(&psi);
+				if (SUCCEEDED(hr)) {
+					PWSTR pszPath = NULL;
+					hr = psi->GetDisplayName(SIGDN_FILESYSPATH, &pszPath);
+					if (SUCCEEDED(hr)) {
+						std::wstring wpath(pszPath);
+						std::string spath(wpath.begin(), wpath.end());
+						this->path = spath;
+						CoTaskMemFree(pszPath);
+					}
+					psi->Release();
+				}
 			}
+		} else {
+			binsmain->openfilesbin = false;
 		}
+		pfd->Release();
 	}
+
+	mainprogram->blocking = false;
 #endif
 }
 #endif
@@ -1741,120 +1864,176 @@ bool Program::do_order_paths() {
 }
 
 
-void Program::handle_wormgate(bool gate) {
+void Program::handle_wormgate(int room) {
     // draw and handle wormgates
-    // wormgates allow switching between mix and bins screen
+    // wormgates allow switching between rooms
     // you can also drag content through them by dragging up to the screen edge
-	Boxx* box;
-	if (gate == 0) box = mainprogram->wormgate1->box;
-	else box = mainprogram->wormgate2->box;
+	std::vector<Button*> buttons;
+    if (room == 0) {
+        buttons.push_back(mainprogram->wormgate1);
+        buttons.push_back(mainprogram->wormgate2);
+        mainprogram->wormgate2->box->vtxcoords->y1 = -0.58f;
+        mainprogram->wormgate2->box->vtxcoords->h = 0.6f;
+        mainprogram->wormgate2->box->upvtxtoscr();
+    }
+    else if (room == 1) {
+        buttons.push_back(mainprogram->wormgate2);
+        buttons.push_back(mainprogram->wormgate3);
+        buttons.push_back(mainprogram->wormgate4);
+        mainprogram->wormgate2->box->vtxcoords->y1 = -0.0f;
+        mainprogram->wormgate2->box->vtxcoords->h = 1.0f;
+        mainprogram->wormgate2->box->upvtxtoscr();
+    }
+	else  {
+        buttons.push_back(mainprogram->wormgate2);
+        mainprogram->wormgate2->box->vtxcoords->y1 = -1.0f;
+        mainprogram->wormgate2->box->vtxcoords->h = 2.0f;
+        mainprogram->wormgate2->box->upvtxtoscr();
+    }
 
-    //glBindFramebuffer(GL_FRAMEBUFFER, 0);
-    //glDrawBuffer(GL_BACK_LEFT);
-	if (gate == 0) {
-		register_triangle_draw(lightgrey, lightgrey, -1.0 + box->vtxcoords->w, box->vtxcoords->y1 + box->vtxcoords->h / 4.0f - 0.15f, box->vtxcoords->h / 4.0f, box->vtxcoords->h / 2.0f, LEFT, OPEN, true);
+    Boxx* box = nullptr;
+	if (room == 0) {
+        box = mainprogram->wormgate1->box;
+        register_triangle_draw(lightgrey, lightgrey, -1.0 + box->vtxcoords->w, box->vtxcoords->y1 + 0.15f - 0.15f, 0.15f, 0.3f, LEFT, OPEN, true);
         mainprogram->directmode = true;
-		if (mainprogram->binsscreen) render_text("MIX", lightgrey, -0.9f, -0.29f, 0.0006f, 0.001f);
-		else render_text("BINS", lightgrey, -0.9f, -0.44f, 0.0006f, 0.001f);
+        render_text("BINS", lightgrey, -0.9f, -0.44f, 0.0006f, 0.001f);
+        mainprogram->directmode = false;
+        box = mainprogram->wormgate2->box;
+        register_triangle_draw(lightgrey, lightgrey, 1.0f - box->vtxcoords->w - 0.15f * 0.866f, box->vtxcoords->y1 + 0.15f - 0.15f, 0.15f, 0.3f, RIGHT, OPEN, true);
+        mainprogram->directmode = true;
+        render_text("BINS", lightgrey, 0.86f, -0.44f, 0.0006f, 0.001f);
         mainprogram->directmode = false;
 	}
-	else {
-		if (mainprogram->binsscreen) {
-			register_triangle_draw(lightgrey, lightgrey, 1.0f - box->vtxcoords->w - box->vtxcoords->h / 4.0f * 0.866f, box->vtxcoords->y1 + box->vtxcoords->h / 4.0f + 0.15f, box->vtxcoords->h / 4.0f, box->vtxcoords->h / 2.0f, RIGHT, OPEN, true);
-            mainprogram->directmode = true;
-			render_text("MIX", lightgrey, 0.86f, -0.14f, 0.0006f, 0.001f);
-            mainprogram->directmode = false;
-		}
-		else {
-			register_triangle_draw(lightgrey, lightgrey, 1.0f - box->vtxcoords->w - box->vtxcoords->h / 4.0f * 0.866f, box->vtxcoords->y1 + box->vtxcoords->h / 4.0f - 0.15f, box->vtxcoords->h / 4.0f, box->vtxcoords->h / 2.0f, RIGHT, OPEN, true);
-            mainprogram->directmode = true;
-			render_text("BINS", lightgrey, 0.86f, -0.44f, 0.0006f, 0.001f);
-            mainprogram->directmode = false;
-		}
+	else if (room == 1) {
+        box = mainprogram->wormgate2->box;
+        register_triangle_draw(lightgrey, lightgrey, 1.0f - box->vtxcoords->w - 0.15f * 0.866f, box->vtxcoords->y1 + 0.025f, 0.15f, 0.3f, RIGHT, OPEN, true);
+        mainprogram->directmode = true;
+        render_text("MIX", lightgrey, 0.86f, 0.16f, 0.0006f, 0.001f);
+        mainprogram->directmode = false;
+        box = mainprogram->wormgate3->box;
+        register_triangle_draw(lightgrey, lightgrey, 1.0f - box->vtxcoords->w - 0.15f * 0.866f, box->vtxcoords->y1 + 0.025f, 0.15f, 0.3f, RIGHT, OPEN, true);
+        mainprogram->directmode = true;
+        render_text("STYLE", lightgrey, 0.86f, -0.34f, 0.0006f, 0.001f);
+        mainprogram->directmode = false;
+        box = mainprogram->wormgate4->box;
+        register_triangle_draw(lightgrey, lightgrey, 1.0f - box->vtxcoords->w - 0.15f * 0.866f, box->vtxcoords->y1 + 0.025f, 0.15f, 0.3f, RIGHT, OPEN, true);
+        mainprogram->directmode = true;
+        render_text("VIDGEN", lightgrey, 0.86f, -0.84f, 0.0006f, 0.001f);
+        mainprogram->directmode = false;
 	}
-
-	if (mainprogram->binsscreen) {
-		box->vtxcoords->y1 = -1.0f;
-		box->vtxcoords->h = 2.0f;
-		box->upvtxtoscr();
-	}
+    else if (room == 2) {
+        box = mainprogram->wormgate2->box;
+        register_triangle_draw(lightgrey, lightgrey, 1.0f - box->vtxcoords->w - 0.15f * 0.866f, box->vtxcoords->y1 + 0.725f, 0.15f, 0.3f, RIGHT, OPEN, true);
+        mainprogram->directmode = true;
+        render_text("BINS", lightgrey, 0.86f, -0.14f, 0.0006f, 0.001f);
+        mainprogram->directmode = false;
+    }
+    else if (room == 3) {
+        box = mainprogram->wormgate2->box;
+        register_triangle_draw(lightgrey, lightgrey, 1.0f - box->vtxcoords->w - 0.15f * 0.866f, box->vtxcoords->y1 + 0.725f, 0.15f, 0.3f, RIGHT, OPEN, true);
+        mainprogram->directmode = true;
+        render_text("BINS", lightgrey, 0.86f, -0.14f, 0.0006f, 0.001f);
+        mainprogram->directmode = false;
+    }
 
 	//draw and handle BINS wormgate
 	if (mainprogram->fullscreen == -1) {
-		if (box->in()) {
-            binsmain->selboxing = false;
-            mainprogram->directmode = true;
-			draw_box(lightgrey, lightblue, box, -1);
-            mainprogram->directmode = false;
-            if (!mainprogram->menuondisplay) {
-				if (mainprogram->leftmouse) {
-                    mainprogram->leftmouse = false;
-					mainprogram->binsscreen = !mainprogram->binsscreen;
-                    mainprogram->recundo = false;
-                    if (mainprogram->binsscreen) {
-                        for (int i = 0; i < 4; i++ ) {
-                            for (Layer *lay : mainmix->layers[i]) {
-                                if (lay->clips->size() > 1) {
-                                    lay->compswitched = true;
-                                    GLuint tex = copy_tex(lay->node->vidbox->tex, 192, 108);
-                                    save_thumb(lay->currcliptexpath, tex);
+        for (int i = 0; i < buttons.size(); i++) {
+            Boxx *box = buttons[i]->box;
+            if (box->in()) {
+                binsmain->selboxing = false;
+                mainprogram->directmode = true;
+                draw_box(lightgrey, lightblue, box, -1);
+                mainprogram->directmode = false;
+                if (!mainprogram->menuondisplay) {
+                    if (mainprogram->leftmouse) {
+                        mainprogram->leftmouse = false;
+                        mainprogram->binsscreen = !mainprogram->binsscreen;
+                        if (mainprogram->binsscreen) {
+                            mainprogram->styleroom = false;
+                            mainprogram->genroom = false;
+                        }
+                        if (room == 1) {
+                            if (box == mainprogram->wormgate3->box) {
+                                mainprogram->styleroom = true;
+                            }
+                            else if (box == mainprogram->wormgate4->box) {
+                                mainprogram->genroom = true;
+                            }
+                        }
+                        mainprogram->recundo = false;
+                        if (mainprogram->binsscreen) {
+                            for (int i = 0; i < 4; i++) {
+                                for (Layer *lay: mainmix->layers[i]) {
+                                    if (lay->clips->size() > 1) {
+                                        lay->compswitched = true;
+                                        GLuint tex = copy_tex(lay->node->vidbox->tex, 192, 108);
+                                        save_thumb(lay->currcliptexpath, tex);
+                                    }
                                 }
                             }
                         }
                     }
-				}
-				if (mainprogram->menuactivation) {
-					mainprogram->parammenu1->state = 2;
-					mainmix->learnparam = nullptr;
-					mainmix->learnbutton = mainprogram->wormgate1;
-					mainprogram->menuactivation = false;
-				}
-			}
-			if (mainprogram->dragbinel) {
-				//dragging something inside wormgate
-				if (!mainprogram->inwormgate && !mainprogram->menuondisplay) {
-                    //if (mainprogram->mx == gate * (glob->w - 1)) {
-                    if (!mainprogram->binsscreen) {
-                        set_queueing(false);
+                    if (mainprogram->menuactivation) {
+                        mainprogram->parammenu1->state = 2;
+                        mainmix->learnparam = nullptr;
+                        mainmix->learnbutton = buttons[i];
+                        mainprogram->menuactivation = false;
                     }
-                    mainprogram->binsscreen = !mainprogram->binsscreen;
-                    mainprogram->inwormgate = true;
-                    if (mainprogram->binsscreen) {
-                        for (int i = 0; i < 4; i++ ) {
-                            for (Layer *lay : mainmix->layers[i]) {
-                                if (lay->clips->size() > 1) {
-                                    lay->compswitched = true;
-                                    GLuint tex = copy_tex(lay->node->vidbox->tex, 192, 108);
-                                    save_thumb(lay->currcliptexpath, tex);
+                }
+                if (mainprogram->dragbinel) {
+                    //dragging something inside wormgate
+                    if (!mainprogram->inwormgate && !mainprogram->menuondisplay) {
+                        //if (mainprogram->mx == room * (glob->w - 1)) {
+                        if (!mainprogram->binsscreen) {
+                            set_queueing(false);
+                        }
+                        mainprogram->binsscreen = !mainprogram->binsscreen;
+                        if (mainprogram->binsscreen) {
+                            mainprogram->styleroom = false;
+                            mainprogram->genroom = false;
+                        }
+                        if (room == 1) {
+                            if (box == mainprogram->wormgate3->box) {
+                                mainprogram->styleroom = true;
+                            }
+                            else if (box == mainprogram->wormgate4->box) {
+                                mainprogram->genroom = true;
+                            }
+                        }
+                        mainprogram->inwormgate = true;
+                        if (mainprogram->binsscreen) {
+                            for (int i = 0; i < 4; i++) {
+                                for (Layer *lay: mainmix->layers[i]) {
+                                    if (lay->clips->size() > 1) {
+                                        lay->compswitched = true;
+                                        GLuint tex = copy_tex(lay->node->vidbox->tex, 192, 108);
+                                        save_thumb(lay->currcliptexpath, tex);
+                                    }
                                 }
                             }
                         }
                     }
                 }
-			}
-		}
-		else {
-            mainprogram->directmode = true;
-			draw_box(lightgrey, lightgrey, box, -1);
-            mainprogram->directmode = false;
-		}
-        for (float y = box->vtxcoords->y1 + box->vtxcoords->w / 2.0f; y < box->vtxcoords->y1 + box->vtxcoords->h; y += box->vtxcoords->w * 2.0f) {
-            if (gate == 0) {
-                register_triangle_draw(white, white, box->vtxcoords->x1,
-                                       y, box->vtxcoords->w / 2.0f,
-                                       box->vtxcoords->w, LEFT, CLOSED, true);
+            } else {
+                mainprogram->directmode = true;
+                draw_box(lightgrey, lightgrey, box, -1);
+                mainprogram->directmode = false;
             }
-            else {
-                register_triangle_draw(white, white, box->vtxcoords->x1 + box->vtxcoords->w / 2.0f,
-                                       y, box->vtxcoords->w / 2.0f,
-                                       box->vtxcoords->w, RIGHT, CLOSED, true);
+            for (float y = box->vtxcoords->y1 + box->vtxcoords->w / 2.0f; y < box->vtxcoords->y1 + box->vtxcoords->h; y += box->vtxcoords->w * 2.0f) {
+                if (box == mainprogram->wormgate1->box) {
+                    register_triangle_draw(white, white, box->vtxcoords->x1,
+                                           y, box->vtxcoords->w / 2.0f,
+                                           box->vtxcoords->w, LEFT, CLOSED, true);
+                }
+                else {
+                    register_triangle_draw(white, white, box->vtxcoords->x1 + box->vtxcoords->w / 2.0f,
+                                           y, box->vtxcoords->w / 2.0f,
+                                           box->vtxcoords->w, RIGHT, CLOSED, true);
+                }
             }
         }
  	}
-
-	box->vtxcoords->y1 = -0.58f;
-	box->vtxcoords->h = 0.6f;
-	box->upvtxtoscr();
 }
 
 
@@ -3416,11 +3595,6 @@ int Program::handle_menu(Menu* menu, float xshift, float yshift) {
         float screenWidth = binsmain->inbinwin ? binsmain->globw : glob->w;
         int maxVisibleColumns = (int)(screenWidth / mainprogram->xvtxtoscr(columnWidth));
 
-        // Adjust menu position when there are many columns
-        if (totalColumns > maxVisibleColumns) {
-            menu->menux = 0; // Shift menu all the way to the left
-        }
-
         // Static scroll offset to persist between frames
         static int columnScrollOffset = 0;
         static Menu* lastScrolledMenu = nullptr;
@@ -3431,20 +3605,13 @@ int Program::handle_menu(Menu* menu, float xshift, float yshift) {
             lastScrolledMenu = menu;
         }
 
-        // Handle mousewheel scrolling by columns
-        if (totalColumns > maxVisibleColumns && mainprogram->mousewheel != 0) {
-            if (mainprogram->mousewheel > 0) {
-                columnScrollOffset = std::max(0, columnScrollOffset - 1);
-            } else {
-                columnScrollOffset = std::min(totalColumns - maxVisibleColumns, columnScrollOffset + 1);
-            }
-            mainprogram->mousewheel = 0;
-        }
-
-        // Handle mousewheel scrolling for split submenus
+        // Handle mousewheel scrolling for split submenus FIRST (before main menu consumes it)
         if (menu->splitNeedsScrolling && mainprogram->mousewheel != 0) {
-            // Calculate maximum scroll offset for split submenu
-            // Count total submenu entries to get column count
+            float colWidth = menu->width * 1.5f;
+            // Subtract xvtxtoscr(0) to get relative offset (consistent with visibility section)
+            float colScreenWidth = mainprogram->xvtxtoscr(colWidth);
+
+            // Count total columns
             int submenuEntryCount = 0;
             for (const auto& entry : menu->entries) {
                 if (entry.find("submenu") != 0) {
@@ -3452,27 +3619,40 @@ int Program::handle_menu(Menu* menu, float xshift, float yshift) {
                 }
             }
             int submenuTotalColumns = (submenuEntryCount + itemsPerColumn - 1) / itemsPerColumn;
+            int leftColumns = menu->splitColumnsOnLeft;
+            int rightColumns = submenuTotalColumns - leftColumns;
 
-            // Calculate visible columns (accounting for gap)
-            float columnWidth = mainprogram->xvtxtoscr(menu->width * 1.5f);
-            float gapWidth = mainprogram->xvtxtoscr(menu->splitGapWidth);
-            int maxVisibleWithGap = (int)((screenWidth - gapWidth) / columnWidth);
+            // Calculate available slots for each block (consistent with visibility section)
+            float parentMenuScreenLeft = menu->menux + mainprogram->xvtxtoscr(xshift);
+            float parentMenuScreenRight = parentMenuScreenLeft + mainprogram->xvtxtoscr(menu->splitGapWidth);
+            int maxLeftSlots = std::max(1, (int)(parentMenuScreenLeft / colScreenWidth));
+            int maxRightSlots = std::max(1, (int)((screenWidth - parentMenuScreenRight) / colScreenWidth));
 
-            int maxScroll = std::max(0, submenuTotalColumns - maxVisibleWithGap);
+            // Scroll limits based on new formula:
+            // Left block: scrolledPos = posFromRight + scroll
+            // Right block: scrolledPos = posFromLeft - scroll
+            // Negative scroll shows leftmost content, positive scroll shows rightmost content
+            int minScroll = std::min(0, maxLeftSlots - leftColumns);  // to see column 0 in left block
+            int maxScroll = std::max(0, rightColumns - maxRightSlots);  // to see last column in right block
 
             if (mainprogram->mousewheel > 0) {
-                menu->splitScrollOffset = std::max(0, menu->splitScrollOffset - 1);
+                // Scroll up = show more left content = decrease scroll offset
+                menu->splitScrollOffset = std::max(minScroll, menu->splitScrollOffset - 1);
             } else {
+                // Scroll down = show more right content = increase scroll offset
                 menu->splitScrollOffset = std::min(maxScroll, menu->splitScrollOffset + 1);
             }
 
-            // Recalculate split point based on scroll offset
-            // The main menu position in screen coordinates
-            float mainMenuScreenPos = menu->menux + mainprogram->xvtxtoscr(xshift);
-            // The submenu starts at menux=0, so columns start from scroll offset
-            // Split point is where main menu starts in the scrolled coordinate system
-            menu->splitColumnsOnLeft = menu->splitScrollOffset + (int)(mainMenuScreenPos / columnWidth);
+            mainprogram->mousewheel = 0;
+        }
 
+        // Handle mousewheel scrolling for main menu (only if submenu didn't consume it)
+        if (totalColumns > maxVisibleColumns && mainprogram->mousewheel != 0) {
+            if (mainprogram->mousewheel > 0) {
+                columnScrollOffset = std::max(0, columnScrollOffset - 1);
+            } else {
+                columnScrollOffset = std::min(totalColumns - maxVisibleColumns, columnScrollOffset + 1);
+            }
             mainprogram->mousewheel = 0;
         }
 
@@ -3488,17 +3668,43 @@ int Program::handle_menu(Menu* menu, float xshift, float yshift) {
 
             // Handle scrolling for split submenus differently
             if (menu->splitNeedsScrolling) {
-                // Apply split scroll offset
-                displayColumn = column - menu->splitScrollOffset;
+                // For split submenus, scroll each block within its available space
+                // Left block: columns 0 to splitColumnsOnLeft-1, fills space left of parent menu
+                // Right block: columns splitColumnsOnLeft to end, fills space right of parent menu
+                float colWidth = menu->width * 1.5f;
 
-                // For split submenus, calculate visibility accounting for gap
-                float columnWidth = mainprogram->xvtxtoscr(menu->width * 1.5f);
-                float gapWidth = mainprogram->xvtxtoscr(menu->splitGapWidth);
-                int maxVisibleWithGap = (int)((screenWidth - gapWidth) / columnWidth);
+                // Calculate available space for each block
+                float colScreenWidth = mainprogram->xvtxtoscr(colWidth);
+                float parentMenuScreenLeft = menu->menux + mainprogram->xvtxtoscr(xshift);
+                float parentMenuScreenRight = parentMenuScreenLeft + mainprogram->xvtxtoscr(menu->splitGapWidth);
+                // Use ceiling to include columns that mostly fit (avoids empty gaps)
+                int maxLeftSlots = std::max(1, (int)(parentMenuScreenLeft / colScreenWidth));
+                int maxRightSlots = std::max(1, (int)((screenWidth - parentMenuScreenRight) / colScreenWidth));
 
-                // Column is visible if within bounds (accounting for gap in the middle)
-                if (displayColumn < 0 || displayColumn >= maxVisibleWithGap) {
-                    skipColumn = true;
+                if (column - menu->splitScrollOffset < menu->splitColumnsOnLeft) {
+                    // Left block - scrolls within left space
+                    // posFromRight: 0 = rightmost (next to parent), higher = further left
+                    int posFromRight = menu->splitColumnsOnLeft - 1 - column;
+                    // Scroll shifts which columns are visible
+                    int scrolledPos = posFromRight + menu->splitScrollOffset;
+
+                    // Skip if position is outside left block's available slots
+                    if (scrolledPos < 0 || scrolledPos >= maxLeftSlots) {
+                        skipColumn = true;
+                    }
+                    displayColumn = scrolledPos;
+                } else {
+                    // Right block - scrolls within right space
+                    // posFromLeft: 0 = leftmost (next to parent), higher = further right
+                    int posFromLeft = column - menu->splitColumnsOnLeft;
+                    // Scroll shifts which columns are visible
+                    int scrolledPos = posFromLeft - menu->splitScrollOffset;
+
+                    // Skip if position is outside right block's available slots
+                    if (scrolledPos < 0 || scrolledPos >= maxRightSlots) {
+                        skipColumn = true;
+                    }
+                    displayColumn = scrolledPos;
                 }
             } else {
                 // Regular scrolling for non-split menus
@@ -3520,13 +3726,28 @@ int Program::handle_menu(Menu* menu, float xshift, float yshift) {
                 continue;
             }
 
-            // Always position columns from left to right, maintaining entry order
-            xoff = menu->width * displayColumn * 1.5f + xshift;
+            // Position columns based on menu type
+            if (menu->splitNeedsScrolling && menu->splitColumnsOnLeft >= 0) {
+                // Split submenu: position based on displayColumn (scrolled slot position)
+                // displayColumn is the slot position after scrolling
+                float colWidth = menu->width * 1.5f;
+                if (column - menu->splitScrollOffset < menu->splitColumnsOnLeft) {
+                    // Left block: position from parent menu left edge going left
+                    // displayColumn 0 = next to parent menu, higher = further left
+                    xoff = xshift - (displayColumn + 1) * colWidth;
+                } else {
+                    // Right block: position from parent menu right edge going right
+                    // displayColumn 0 = next to parent menu, higher = further right
+                    xoff = xshift + menu->splitGapWidth + displayColumn * colWidth;
+                }
+            } else {
+                // Regular menu or non-scrolling split: position left to right
+                xoff = menu->width * displayColumn * 1.5f + xshift;
 
-            // Handle split positioning for wide submenus
-            if (menu->splitColumnsOnLeft >= 0 && column >= menu->splitColumnsOnLeft) {
-                // This column is past the split point - add gap width to skip over parent menu
-                xoff += menu->splitGapWidth;
+                // Handle split positioning for wide submenus (non-scrolling case)
+                if (menu->splitColumnsOnLeft >= 0 && column >= menu->splitColumnsOnLeft) {
+                    xoff += menu->splitGapWidth;
+                }
             }
 
             std::size_t sub = menu->entries[k].find("submenu");
@@ -3612,27 +3833,34 @@ int Program::handle_menu(Menu* menu, float xshift, float yshift) {
                                     if (submenuLeftEdge < 0) {
                                         // Submenu too wide - need to split around main menu
                                         // Calculate available space on left and right
-                                        float availableLeftSpace = menu->menux + mainprogram->xvtxtoscr(xshift);
-                                        float mainMenuWidth = mainMenuColumns * columnWidth;
-                                        float availableRightSpace = screenWidth - (menu->menux + mainprogram->xvtxtoscr(xshift) + mainMenuWidth);
+                                        float colScreenWidth = mainprogram->xvtxtoscr(menu->width * 1.5f);
+                                        float parentMenuScreenLeft = menu->menux + mainprogram->xvtxtoscr(xshift);
+                                        float mainMenuWidth = mainMenuColumns * colScreenWidth;
+                                        float parentMenuScreenRight = parentMenuScreenLeft + mainMenuWidth;
+                                        float availableLeftSpace = parentMenuScreenLeft;
+                                        float availableRightSpace = screenWidth - parentMenuScreenRight;
 
-                                        int maxColumnsOnLeft = std::max(0, (int)(availableLeftSpace / columnWidth));
-                                        int maxColumnsOnRight = std::max(0, (int)(availableRightSpace / columnWidth));
+                                        // Use ceiling to include columns that mostly fit
+                                        int maxColumnsOnLeft = std::max(0, (int)(availableLeftSpace / colScreenWidth));
+                                        int maxColumnsOnRight = std::max(0, (int)(availableRightSpace / colScreenWidth));
                                         int totalVisibleColumns = maxColumnsOnLeft + maxColumnsOnRight;
 
                                         // Check if submenu needs scrolling even when split
                                         if (submenuColumns > totalVisibleColumns) {
-                                            // Enable scrolling mode - position at left edge of screen
+                                            // Enable scrolling mode - anchor to parent menu edges
+                                            // Only reset scroll offset when first entering scrolling mode
+                                            if (!mainprogram->menulist[i]->splitNeedsScrolling) {
+                                                mainprogram->menulist[i]->splitScrollOffset = 0;
+                                            }
                                             mainprogram->menulist[i]->splitNeedsScrolling = true;
-                                            mainprogram->menulist[i]->splitScrollOffset = 0;  // Start at leftmost
                                             mainprogram->menulist[i]->splitGapWidth = mainMenuColumns * menu->width * 1.5f;
 
-                                            // Calculate split point from left edge with scroll offset
-                                            float mainMenuLeftEdgeInSubmenu = (menu->menux + mainprogram->xvtxtoscr(xshift)) / columnWidth;
-                                            mainprogram->menulist[i]->splitColumnsOnLeft = (int)mainMenuLeftEdgeInSubmenu;
+                                            // Split point: how many columns on the left of parent menu
+                                            mainprogram->menulist[i]->splitColumnsOnLeft = maxColumnsOnLeft;
 
-                                            xs = xshift;  // Start from left edge
-                                            mainprogram->menulist[i]->menux = 0;  // Submenu at screen left edge
+                                            // Keep same coordinate system as parent menu
+                                            xs = xshift;
+                                            mainprogram->menulist[i]->menux = menu->menux;
                                         } else {
                                             // Submenu fits when split - no scrolling needed
                                             mainprogram->menulist[i]->splitNeedsScrolling = false;
@@ -3766,44 +3994,52 @@ void Program::handle_mixenginemenu() {
 	}
 }
 
-void Program::handle_effectmenu() {
+void Program::handle_globeffectmenu() {
 	int k = -1;
-	// Draw and handle mainprogram->effectmenu
-    if (this->effectmenu->state == 2) {
+	// Draw and handle mainprogram->globeffectmenu
+    if (this->globeffectmenu->state == 2) {
         this->ineffmenu = true;
     }
-	k = this->handle_menu(this->effectmenu);
+	k = this->handle_menu(this->globeffectmenu);
 	if (k > -1) {
-        std::vector<Effect*>& evec = mainmix->mouselayer->choose_effects();
-        int ffglnr = -1;
-        int isfnr = -1;
-        int aistylnr = -1;
-        if (mainmix->insert) {
-            if (this->abeffects[k] >= 1000 && this->abeffects[k] < 2000) {
-                ffglnr = this->abeffects[k] - 1000;
+        if (k == 0) {
+            std::vector<Effect *> &evec = mainmix->mouselayer->choose_effects();
+            int ffglnr = -1;
+            int isfnr = -1;
+            if (mainmix->insert) {
+                if (this->abeffects[this->menuresults[0]] >= 1000 && this->abeffects[this->menuresults[0]] < 2000) {
+                    ffglnr = this->abeffects[this->menuresults[0]] - 1000;
+                }
+                if (this->abeffects[this->menuresults[0]] >= 2000 && this->abeffects[this->menuresults[0]] < 3000) {
+                    isfnr = this->abeffects[this->menuresults[0]] - 2000;
+                }
+                mainmix->mouselayer->add_effect((EFFECT_TYPE) this->abeffects[this->menuresults[0]], mainmix->mouseeffect,
+                                                mainprogram->effcat[mainmix->mouselayer->deck]->value, ffglnr, isfnr,
+                                                -1);
+            } else {
+                if (this->abeffects[this->menuresults[0]] >= 1000 && this->abeffects[this->menuresults[0]] < 2000) {
+                    ffglnr = this->abeffects[this->menuresults[0]] - 1000;
+                }
+                if (this->abeffects[this->menuresults[0]] >= 2000 && this->abeffects[this->menuresults[0]] < 3000) {
+                    isfnr = this->abeffects[this->menuresults[0]] - 2000;
+                }
+                mainmix->mouselayer->replace_effect((EFFECT_TYPE) this->abeffects[this->menuresults[0]], mainmix->mouseeffect, ffglnr,
+                                                    isfnr, -1);
             }
-            if (this->abeffects[k] >= 2000 && this->abeffects[k] < 3000) {
-                isfnr = this->abeffects[k] - 2000;
+            mainmix->mouselayer = nullptr;
+            mainmix->mouseeffect = -1;
+        }
+        else if (k == 1) {
+            std::vector<Effect*>& evec = mainmix->mouselayer->choose_effects();
+            if (mainmix->insert) {
+                mainmix->mouselayer->add_effect((EFFECT_TYPE)(3000 + this->menuresults[0] - 1), mainmix->mouseeffect, mainprogram->effcat[mainmix->mouselayer->deck]->value, -1, -1, this->menuresults[0] - 1);
             }
-            if (this->abeffects[k] >= 3000) {
-                aistylnr = this->abeffects[k] - 3000;
+            else {
+                mainmix->mouselayer->replace_effect((EFFECT_TYPE)(3000 + this->menuresults[0] - 1), mainmix->mouseeffect, -1, -1, this->menuresults[0] - 1);
             }
-		    mainmix->mouselayer->add_effect((EFFECT_TYPE)this->abeffects[k], mainmix->mouseeffect, mainprogram->effcat[mainmix->mouselayer->deck]->value, ffglnr, isfnr, aistylnr);
-		}
-		else {
-            if (this->abeffects[k] >= 1000 && this->abeffects[k] < 2000) {
-                ffglnr = this->abeffects[k] - 1000;
-            }
-            if (this->abeffects[k] >= 2000 && this->abeffects[k] < 3000) {
-                isfnr = this->abeffects[k] - 2000;
-            }
-            if (this->abeffects[k] >= 3000) {
-                aistylnr = this->abeffects[k] - 3000;
-            }
-			mainmix->mouselayer->replace_effect((EFFECT_TYPE)this->abeffects[k], mainmix->mouseeffect, ffglnr, isfnr, aistylnr);
-		}
-		mainmix->mouselayer = nullptr;
-		mainmix->mouseeffect = -1;
+            mainmix->mouselayer = nullptr;
+            mainmix->mouseeffect = -1;
+        }
 	}
 	if (this->menuchosen) {
         this->menuchosen = false;
@@ -4229,6 +4465,8 @@ void Program::handle_monitormenu() {
         monitors.push_back("MIDI learn wipe position");
         monitors.push_back("submenu mixtargetmenu");
         monitors.push_back("Show on display");
+        monitors.push_back("submenu stylemenu");
+        monitors.push_back("Apply style");
         if (mnode->ndioutput != nullptr) {
             monitors.push_back("Toggle NDI output off");
         }
@@ -4403,6 +4641,12 @@ void Program::handle_monitormenu() {
             }
         }
         else if (k == 4) {
+            ((MixNode*)mainmix->mousenode)->aistylnr = mainprogram->menuresults[0] - 1;
+            if (mainprogram->menuresults[0] > 0) {
+                ((MixNode *) mainmix->mousenode)->aieffect = new AIStyleEffect(mainprogram->menuresults[0] - 1);
+            }
+        }
+        else if (k == 5) {
             if (mnode->ndioutput == nullptr) {
                 // create NDI output
                 mainprogram->ndilaycount++;
@@ -6009,6 +6253,8 @@ void Program::handle_optionmenu() {
                 }
                 cnt++;
             }
+        } else {
+            mainmix->mouseparam->value = k;
         }
         // UNDO registration
         mainprogram->register_undo(mainmix->mouseparam, nullptr);
@@ -6021,7 +6267,6 @@ void Program::handle_optionmenu() {
         mainprogram->recundo = false;
     }
 }
-
 
 // end of menu code
 
@@ -7868,7 +8113,7 @@ void Project::delete_dirs(std::string path) {
             }
         }
 
-        std::filesystem::remove_all(it.path());
+        safe_remove_all(it.path());
     }
     std::filesystem::current_path(std::filesystem::current_path().parent_path().parent_path());
 	for (int i = 0; i < binsmain->bins.size(); i++) {
@@ -8092,7 +8337,7 @@ bool Project::open(std::string path, bool autosave, bool newp, bool undo) {
         int correct = 0;
         for (int i = 0; i < bins.size(); i++) {
             mainprogram->remove(bins[i]->path);
-            std::filesystem::remove_all(mainprogram->project->binsdir + bins[i]->name);
+            safe_remove_all(mainprogram->project->binsdir + bins[i]->name);
             correct++;
         }
         binsmain->save_binslist();
@@ -8528,7 +8773,7 @@ void Project::copy_over(std::string path, std::string path2, std::string oldprdi
     if (exists(path2)) {
         this->delete_dirs(path2);
         if (!mainprogram->inautosave) {
-            std::filesystem::remove(path2);
+            safe_remove(path2);
         }
     }
     //this->create_dirs(path2);
@@ -8555,7 +8800,7 @@ void Project::copy_over(std::string path, std::string path2, std::string oldprdi
                 if (!exists(it->second)) {
                     rename(it->first, it->second);
                 } else {
-                    std::filesystem::remove_all(it->first);
+                    safe_remove_all(it->first);
                 }
             }
             // change autosave project file names
@@ -8593,7 +8838,7 @@ void Project::save_as() {
     std::string path2;
     std::string str;
     std::string bubinsdir = pathtoplatform(this->binsdir);
-    std::string buaddir = pathtoplatform(this->autosavedir);
+    std::string buaddir = this->autosavedir;
     if (dirname(mainprogram->project->path) != "") {
         std::string oldprdir = mainprogram->project->name;
         mainprogram->currprojdir = dirname(mainprogram->project->path);
@@ -9644,9 +9889,18 @@ PIProg::PIProg() {
     pos++;
 }
 
+void Program::create_stylemenu() {
+    std::vector<std::string> styleModels;
+    styleModels.push_back("NONE");
+    for (auto name : mainprogram->aistylenames) {
+        styleModels.push_back(name);
+    }
+    mainprogram->make_menu("stylemenu", mainprogram->stylemenu, styleModels);
+}
 
-void Program::define_menus() {
-    std::vector<std::string> effects;
+void Program::create_effmenu() {
+	this->abeffects.clear();
+	std::vector<std::string> effects;
     effects.push_back("BLUR");
     effects.push_back("BRIGHTNESS");
     effects.push_back("CHROMAROTATE");
@@ -9692,14 +9946,12 @@ void Program::define_menus() {
     effects.push_back("UPSCALING");
     std::vector<std::string> meffects = effects;
     std::sort(meffects.begin(), meffects.end());
+    std::sort(meffects.begin(), meffects.end());
     std::vector<std::string> plugins;
-    for (auto name : mainprogram->ffgleffectnames) {
+    for (auto name : this->ffgleffectnames) {
         plugins.push_back(name);
     }
-    for (auto name : mainprogram->isfeffectnames) {
-        plugins.push_back(name);
-    }
-    for (auto name : mainprogram->aistylenames) {
+    for (auto name : this->isfeffectnames) {
         plugins.push_back(name);
     }
     std::sort(plugins.begin(), plugins.end());
@@ -9708,49 +9960,54 @@ void Program::define_menus() {
         bool brk = false;
         for (int j = 0; j < effects.size(); j++) {
             if (meffects[i] == effects[j]) {
-                if (std::find(mainprogram->abeffects.begin(), mainprogram->abeffects.end(), j) != mainprogram->abeffects.end()) {
+                if (std::find(this->abeffects.begin(), this->abeffects.end(), j) != this->abeffects.end()) {
                     continue;
                 }
-                mainprogram->abeffects.push_back((EFFECT_TYPE) j);
+                this->abeffects.push_back((EFFECT_TYPE) j);
                 brk = true;
                 break;
             }
         }
         if (brk) continue;
         brk = false;
-        for (int j = 0; j < mainprogram->ffgleffectnames.size(); j++) {
-            if (meffects[i] == mainprogram->ffgleffectnames[j]) {
-                if (std::find(mainprogram->abeffects.begin(), mainprogram->abeffects.end(), 1000 + j) != mainprogram->abeffects.end()) {
+        for (int j = 0; j < this->ffgleffectnames.size(); j++) {
+            if (meffects[i] == this->ffgleffectnames[j]) {
+                if (std::find(this->abeffects.begin(), this->abeffects.end(), 1000 + j) != this->abeffects.end()) {
                     continue;
                 }
-                mainprogram->abeffects.push_back(1000 + j);
+                this->abeffects.push_back(1000 + j);
                 brk = true;
                 break;
             }
         }
         if (brk) continue;
-        for (int j = 0; j < mainprogram->isfeffectnames.size(); j++) {
-            if (meffects[i] == mainprogram->isfeffectnames[j]) {
-                mainprogram->abeffects.push_back(2000 + j);
-                continue;
-            }
-        }
-        if (brk) continue;
-        for (int j = 0; j < mainprogram->aistylenames.size(); j++) {
-            if (meffects[i] == mainprogram->aistylenames[j]) {
-                mainprogram->abeffects.push_back(3000 + j);
+        for (int j = 0; j < this->isfeffectnames.size(); j++) {
+            if (meffects[i] == this->isfeffectnames[j]) {
+                this->abeffects.push_back(2000 + j);
                 continue;
             }
         }
     }
-    mainprogram->make_menu("effectmenu", mainprogram->effectmenu, meffects);
+    this->make_menu("effectmenu", this->effectmenu, meffects);
+
+    std::vector<std::string> options;
+    options.push_back("submenu effectmenu");
+    options.push_back("EFFECT");
+    options.push_back("submenu stylemenu");
+    options.push_back("AI STYLE");
+    this->make_menu("globeffectmenu", this->globeffectmenu, options);
+}
+
+void Program::define_menus() {
+    this->create_effmenu();
+    this->create_stylemenu();
 
     std::vector<std::string> mixengines;
     mixengines.push_back("submenu mixmodemenu");
     mixengines.push_back("Choose mixmode...");
     mixengines.push_back("submenu wipemenu");
     mixengines.push_back("Choose wipe...");
-    mainprogram->make_menu("mixenginemenu", mainprogram->mixenginemenu, mixengines);
+    this->make_menu("mixenginemenu", this->mixenginemenu, mixengines);
 
     std::vector<std::string> mixmodes;
     mixmodes.push_back("MIX");
@@ -9776,70 +10033,70 @@ void Program::define_menus() {
     mixmodes.push_back("LUMAKEY");
     mixmodes.push_back("DISPLACEMENT");
     mixmodes.push_back("MASK");
-    for (auto name : mainprogram->ffglmixernames) {
+    for (auto name : this->ffglmixernames) {
         mixmodes.push_back(name);
     }
-    for (auto name : mainprogram->isfmixernames) {
+    for (auto name : this->isfmixernames) {
         mixmodes.push_back(name);
     }
-    mainprogram->make_menu("mixmodemenu", mainprogram->mixmodemenu, mixmodes);
+    this->make_menu("mixmodemenu", this->mixmodemenu, mixmodes);
 
     std::vector<std::string> parammodes1;
     parammodes1.push_back("MIDI Learn");
     parammodes1.push_back("Reset to default");
-    mainprogram->make_menu("parammenu1", mainprogram->parammenu1, parammodes1);
+    this->make_menu("parammenu1", this->parammenu1, parammodes1);
 
     std::vector<std::string> parammodes2;
     parammodes2.push_back("MIDI Learn");
     parammodes2.push_back("Remove automation");
     parammodes2.push_back("Reset to default");
-    mainprogram->make_menu("parammenu2", mainprogram->parammenu2, parammodes2);
+    this->make_menu("parammenu2", this->parammenu2, parammodes2);
 
     std::vector<std::string> parammodes1b;
     parammodes1b.push_back("MIDI Learn");
     parammodes1b.push_back("Reset to default");
     parammodes1b.push_back("Toggle lock");
-    mainprogram->make_menu("parammenu1b", mainprogram->parammenu1b, parammodes1b);
+    this->make_menu("parammenu1b", this->parammenu1b, parammodes1b);
 
     std::vector<std::string> parammodes2b;
     parammodes2b.push_back("MIDI Learn");
     parammodes2b.push_back("Remove automation");
     parammodes2b.push_back("Reset to default");
     parammodes2b.push_back("Toggle lock");
-    mainprogram->make_menu("parammenu2b", mainprogram->parammenu2b, parammodes2b);
+    this->make_menu("parammenu2b", this->parammenu2b, parammodes2b);
 
     std::vector<std::string> parammodes3;
     parammodes3.push_back("MIDI Learn");
-    mainprogram->make_menu("parammenu3", mainprogram->parammenu3, parammodes3);
+    this->make_menu("parammenu3", this->parammenu3, parammodes3);
 
     std::vector<std::string> parammodes4;
     parammodes4.push_back("MIDI Learn");
     parammodes4.push_back("Remove automation");
-    mainprogram->make_menu("parammenu4", mainprogram->parammenu4, parammodes4);
+    this->make_menu("parammenu4", this->parammenu4, parammodes4);
 
     std::vector<std::string> parammodes5;
     parammodes5.push_back("MIDI Learn");
     parammodes5.push_back("Toggle lock");
-    mainprogram->make_menu("parammenu5", mainprogram->parammenu5, parammodes5);
+    this->make_menu("parammenu5", this->parammenu5, parammodes5);
 
     std::vector<std::string> parammodes6;
     parammodes6.push_back("MIDI Learn");
     parammodes6.push_back("Remove automation");
     parammodes6.push_back("Toggle lock");
-    mainprogram->make_menu("parammenu6", mainprogram->parammenu6, parammodes6);
+    this->make_menu("parammenu6", this->parammenu6, parammodes6);
 
     std::vector<std::string> mixtargets;
-    mainprogram->make_menu("monitormenu", mainprogram->monitormenu, mixtargets);
+    this->make_menu("monitormenu", this->monitormenu, mixtargets);
 
     std::vector<std::string> bintargets;
-    mainprogram->make_menu("bintargetmenu", mainprogram->bintargetmenu, bintargets);
+    this->make_menu("bintargetmenu", this->bintargetmenu, bintargets);
 
     std::vector<std::string> fullscreen;
     fullscreen.push_back("Exit fullscreen");
-    mainprogram->make_menu("fullscreenmenu", mainprogram->fullscreenmenu, fullscreen);
+    this->make_menu("fullscreenmenu", this->fullscreenmenu, fullscreen);
 
     std::vector<std::string> livesources;
-    mainprogram->make_menu("livemenu", mainprogram->livemenu, livesources);
+    this->make_menu("livemenu", this->livemenu, livesources);
 
     std::vector<std::string> loopops;
     loopops.push_back("Set loop start to current frame");
@@ -9850,14 +10107,14 @@ void Program::define_menus() {
     loopops.push_back("submenu beatmenu");
     loopops.push_back("Beatmatch loop");
     loopops.push_back("MIDI Learn move loop area");
-    mainprogram->make_menu("loopmenu", mainprogram->loopmenu, loopops);
-    mainprogram->loopmenu->width = 0.2f;
+    this->make_menu("loopmenu", this->loopmenu, loopops);
+    this->loopmenu->width = 0.2f;
 
     std::vector<std::string> aspectops;
     aspectops.push_back("Same as output");
     aspectops.push_back("Original inside");
     aspectops.push_back("Original outside");
-    mainprogram->make_menu("aspectmenu", mainprogram->aspectmenu, aspectops);
+    this->make_menu("aspectmenu", this->aspectmenu, aspectops);
 
     std::vector<std::string> layops1;
     layops1.push_back("submenu livemenu");
@@ -9888,7 +10145,7 @@ void Program::define_menus() {
     layops1.push_back("Select NDI source");
     layops1.push_back("Toggle output to NDI");
     layops1.push_back("HAP encode on-the-fly");
-    mainprogram->make_menu("laymenu1", mainprogram->laymenu1, layops1);
+    this->make_menu("laymenu1", this->laymenu1, layops1);
 
     std::vector<std::string> layops2;
     layops2.push_back("submenu livemenu");
@@ -9912,7 +10169,7 @@ void Program::define_menus() {
     layops2.push_back("Record and replace");
     layops2.push_back("submenu sourcemenu");
     layops2.push_back("Use source plugin");
-    mainprogram->make_menu("laymenu2", mainprogram->laymenu2, layops2);
+    this->make_menu("laymenu2", this->laymenu2, layops2);
 
     std::vector<std::string> loadops;
     loadops.push_back("submenu livemenu");
@@ -9928,53 +10185,53 @@ void Program::define_menus() {
     loadops.push_back("Use source plugin");
     loadops.push_back("submenu ndisourcemenu");
     loadops.push_back("Select NDI source");
-    mainprogram->make_menu("newlaymenu", mainprogram->newlaymenu, loadops);
+    this->make_menu("newlaymenu", this->newlaymenu, loadops);
 
     std::vector<std::string> sourceops;
-    for (auto name : mainprogram->ffglsourcenames) {
+    for (auto name : this->ffglsourcenames) {
         sourceops.push_back(name);
     }
-    for (auto name : mainprogram->isfsourcenames) {
+    for (auto name : this->isfsourcenames) {
         std::transform(name.begin(), name.end(), name.begin(), ::toupper);
         sourceops.push_back(name);
     }
-    if (mainprogram->ffglsourcenames.empty() && mainprogram->isfsourcenames.empty()) {
+    if (this->ffglsourcenames.empty() && this->isfsourcenames.empty()) {
         sourceops.push_back("No plugins installed");
     }
     std::sort(sourceops.begin(), sourceops.end());
     for (int i = 0; i < sourceops.size(); i++) {
         bool brk = false;
-        for (int j = 0; j < mainprogram->ffglsourcenames.size(); j++) {
-            if (sourceops[i] == mainprogram->ffglsourcenames[j]) {
-                if (std::find(mainprogram->absources.begin(), mainprogram->absources.end(), 1000 + j) != mainprogram->absources.end()) {
+        for (int j = 0; j < this->ffglsourcenames.size(); j++) {
+            if (sourceops[i] == this->ffglsourcenames[j]) {
+                if (std::find(this->absources.begin(), this->absources.end(), 1000 + j) != this->absources.end()) {
                     continue;
                 }
-                mainprogram->absources.push_back(1000 + j);
+                this->absources.push_back(1000 + j);
                 brk = true;
                 break;
             }
         }
         if (brk) continue;
         brk = false;
-        for (int j = 0; j < mainprogram->isfsourcenames.size(); j++) {
-            if (sourceops[i] == mainprogram->isfsourcenames[j]) {
-                if (std::find(mainprogram->absources.begin(), mainprogram->absources.end(), 2000 + j) != mainprogram->absources.end()) {
+        for (int j = 0; j < this->isfsourcenames.size(); j++) {
+            if (sourceops[i] == this->isfsourcenames[j]) {
+                if (std::find(this->absources.begin(), this->absources.end(), 2000 + j) != this->absources.end()) {
                     continue;
                 }
-                mainprogram->absources.push_back(2000 + j);
+                this->absources.push_back(2000 + j);
                 brk = true;
                 break;
             }
         }
     }
-    mainprogram->make_menu("sourcemenu", mainprogram->sourcemenu, sourceops);
+    this->make_menu("sourcemenu", this->sourcemenu, sourceops);
 
     std::vector<std::string> clipops;
     clipops.push_back("submenu livemenu");
     clipops.push_back("Connect live");
     clipops.push_back("Open file(s)");
     clipops.push_back("Delete clip");
-    mainprogram->make_menu("clipmenu", mainprogram->clipmenu, clipops);
+    this->make_menu("clipmenu", this->clipmenu, clipops);
 
     std::vector<std::string> wipes;
     wipes.push_back("CROSSFADE");
@@ -10002,11 +10259,11 @@ void Program::define_menus() {
     wipes.push_back("DOT");
     wipes.push_back("submenu dir2menu");
     wipes.push_back("REPEL");
-    mainprogram->make_menu("wipemenu", mainprogram->wipemenu, wipes);
+    this->make_menu("wipemenu", this->wipemenu, wipes);
     int count = 0;
     for (int i = 0; i < wipes.size(); i++) {
         if (wipes[i].find("submenu") != std::string::npos) {
-            mainprogram->wipesmap[wipes[i]] = count;
+            this->wipesmap[wipes[i]] = count;
             count++;
         }
     }
@@ -10016,12 +10273,12 @@ void Program::define_menus() {
     direction1.push_back("Right->Left");
     direction1.push_back("Up->Down");
     direction1.push_back("Down->Up");
-    mainprogram->make_menu("dir1menu", mainprogram->dir1menu, direction1);
+    this->make_menu("dir1menu", this->dir1menu, direction1);
 
     std::vector<std::string> direction2;
     direction2.push_back("In->Out");
     direction2.push_back("Out->In");
-    mainprogram->make_menu("dir2menu", mainprogram->dir2menu, direction2);
+    this->make_menu("dir2menu", this->dir2menu, direction2);
 
     std::vector<std::string> direction3;
     direction3.push_back("Left->Right");
@@ -10030,7 +10287,7 @@ void Program::define_menus() {
     direction3.push_back("Up->Down");
     direction3.push_back("Down->Up");
     direction3.push_back("UpDown/InOut");
-    mainprogram->make_menu("dir3menu", mainprogram->dir3menu, direction3);
+    this->make_menu("dir3menu", this->dir3menu, direction3);
 
     std::vector<std::string> direction4;
     direction4.push_back("Up/Right->LeftUp");
@@ -10041,10 +10298,10 @@ void Program::define_menus() {
     direction4.push_back("Down/Right->Left");
     direction4.push_back("Left/Up->Down");
     direction4.push_back("Left/Down->Up");
-    mainprogram->make_menu("dir4menu", mainprogram->dir4menu, direction4);
+    this->make_menu("dir4menu", this->dir4menu, direction4);
 
     std::vector<std::string> binel;
-    mainprogram->make_menu("binelmenu", mainprogram->binelmenu, binel);
+    this->make_menu("binelmenu", this->binelmenu, binel);
 
     std::vector<std::string> bin;
     bin.push_back("New bin");
@@ -10052,19 +10309,19 @@ void Program::define_menus() {
     bin.push_back("Save current bin");
     bin.push_back("Delete current bin");
     bin.push_back("Rename current bin");
-    mainprogram->make_menu("binmenu", mainprogram->binmenu, bin);
+    this->make_menu("binmenu", this->binmenu, bin);
 
     std::vector<std::string> bin2;
     bin2.push_back("New bin");
     bin2.push_back("Open bin");
     bin2.push_back("Save bin");
     bin2.push_back("Rename bin");
-    mainprogram->make_menu("bin2menu", mainprogram->bin2menu, bin2);
+    this->make_menu("bin2menu", this->bin2menu, bin2);
 
     std::vector<std::string> binsel;
     binsel.push_back("Delete elements");
     binsel.push_back("Move elements");
-    mainprogram->make_menu("binselmenu", mainprogram->binselmenu, binsel);
+    this->make_menu("binselmenu", this->binselmenu, binsel);
 
     std::vector<std::string> generic;
     generic.push_back("New project");
@@ -10078,7 +10335,7 @@ void Program::define_menus() {
     generic.push_back("submenu auinmenu");
     generic.push_back("Beatmatch device");
     generic.push_back("Quit");
-    mainprogram->make_menu("mainmenu", mainprogram->mainmenu, generic);
+    this->make_menu("mainmenu", this->mainmenu, generic);
 
     std::vector<std::string> shelf1;
     shelf1.push_back("Open file(s)");
@@ -10091,7 +10348,7 @@ void Program::define_menus() {
     shelf1.push_back("Insert in bin");
     shelf1.push_back("Rename element");
     shelf1.push_back("Erase element");
-    mainprogram->make_menu("shelfmenu", mainprogram->shelfmenu, shelf1);
+    this->make_menu("shelfmenu", this->shelfmenu, shelf1);
 
     std::vector<std::string> file;
     file.push_back("submenu filenewmenu");
@@ -10102,13 +10359,13 @@ void Program::define_menus() {
     file.push_back("Save as");
     file.push_back("Save project");
     file.push_back("Quit");
-    mainprogram->make_menu("filemenu", mainprogram->filemenu, file);
+    this->make_menu("filemenu", this->filemenu, file);
 
     std::vector<std::string> laylist1;
-    mainprogram->make_menu("laylistmenu1", mainprogram->laylistmenu1, laylist1);
+    this->make_menu("laylistmenu1", this->laylistmenu1, laylist1);
 
     std::vector<std::string> laylist2;
-    mainprogram->make_menu("laylistmenu2", mainprogram->laylistmenu2, laylist2);
+    this->make_menu("laylistmenu2", this->laylistmenu2, laylist2);
 
     std::vector<std::string> filenew;
     filenew.push_back("Project");
@@ -10119,7 +10376,7 @@ void Program::define_menus() {
     filenew.push_back("Layer in deck A before");
     filenew.push_back("submenu laylistmenu2");
     filenew.push_back("Layer in deck B before");
-    mainprogram->make_menu("filenewmenu", mainprogram->filenewmenu, filenew);
+    this->make_menu("filenewmenu", this->filenewmenu, filenew);
 
     std::vector<std::string> fileopen;
     fileopen.push_back("Project");
@@ -10134,7 +10391,7 @@ void Program::define_menus() {
     fileopen.push_back("Files into queue in deck A");
     fileopen.push_back("submenu laylistmenu2");
     fileopen.push_back("Files into queue in deck B");
-    mainprogram->make_menu("fileopenmenu", mainprogram->fileopenmenu, fileopen);
+    this->make_menu("fileopenmenu", this->fileopenmenu, fileopen);
 
     std::vector<std::string> filesave;
     filesave.push_back("Project");
@@ -10145,14 +10402,14 @@ void Program::define_menus() {
     filesave.push_back("Layer in deck A");
     filesave.push_back("submenu laylistmenu4");
     filesave.push_back("Layer in deck B");
-    mainprogram->make_menu("filesavemenu", mainprogram->filesavemenu, filesave);
+    this->make_menu("filesavemenu", this->filesavemenu, filesave);
 
     std::vector<std::string> edit;
     edit.push_back("Preferences");
     edit.push_back("Configure general MIDI");
     edit.push_back("submenu auinmenu");
     edit.push_back("Beatmatch device");
-    mainprogram->make_menu("editmenu", mainprogram->editmenu, edit);
+    this->make_menu("editmenu", this->editmenu, edit);
 
     std::vector<std::string> lpst;
     lpst.push_back("Clear loopstation line");
@@ -10162,7 +10419,7 @@ void Program::define_menus() {
     lpst.push_back("submenu beatmenu");
     lpst.push_back("Beatmatch (1 bar = 4 beats)");
     lpst.push_back("MIDI Learn");
-    mainprogram->make_menu("lpstmenu", mainprogram->lpstmenu, lpst);
+    this->make_menu("lpstmenu", this->lpstmenu, lpst);
 
     std::vector<std::string> beat;
     beat.push_back("off");
@@ -10171,7 +10428,7 @@ void Program::define_menus() {
     beat.push_back("every bar");
     beat.push_back("every two bars");
     beat.push_back("every four bars");
-    mainprogram->make_menu("beatmenu", mainprogram->beatmenu, beat);
+    this->make_menu("beatmenu", this->beatmenu, beat);
 
     // Create upscale menu with available Real-ESRGAN models
     std::vector<std::string> upscaleModels;
@@ -10219,12 +10476,27 @@ void Program::define_menus() {
         std::cerr << "[Menu] Upscale models directory does not exist: " << modelsPath << std::endl;
     }
 
-    mainprogram->make_menu("upscalemenu", mainprogram->upscalemenu, upscaleModels);
+    this->make_menu("upscalemenu", this->upscalemenu, upscaleModels);
+
+    std::vector<std::string> vidupops;
+    vidupops.push_back("FAST CLEANUP");
+    vidupops.push_back("FAST X2");
+    vidupops.push_back("FAST X3");
+    vidupops.push_back("FAST X4");
+    vidupops.push_back("BALANCED CLEANUP");
+    vidupops.push_back("BALANCED X2");
+    vidupops.push_back("BALANCED X3");
+    vidupops.push_back("BALANCED X4");
+    vidupops.push_back("ULTRA CLEANUP");
+    vidupops.push_back("ULTRA X2");
+    vidupops.push_back("ULTRA X3");
+    vidupops.push_back("ULTRA X4");
+    this->make_menu("vidupscalemenu", this->vidupscalemenu, vidupops);
 
     //make menu item names text bitmaps
-    for (int i = 0; i < mainprogram->menulist.size(); i++) {
-        for (int j = 0; j < mainprogram->menulist[i]->entries.size(); j++) {
-            render_text(mainprogram->menulist[i]->entries[j], nullptr, white, 2.0f, 2.0f, 0.00045f, 0.00075f, 0, 0, 0);
+    for (int i = 0; i < this->menulist.size(); i++) {
+        for (int j = 0; j < this->menulist[i]->entries.size(); j++) {
+            render_text(this->menulist[i]->entries[j], nullptr, white, 2.0f, 2.0f, 0.00045f, 0.00075f, 0, 0, 0);
         }
     }
 }
@@ -10233,7 +10505,7 @@ void Program::define_menus() {
 void Program::write_recentprojectlist() {
     std::ofstream wfile;
 #ifdef WINDOWS
-    std::string dir2 = mainprogram->docpath;
+    std::string dir2 = this->docpath;
 #else
 #ifdef POSIX
     std::string homedir(getenv("HOME"));
@@ -10243,11 +10515,11 @@ void Program::write_recentprojectlist() {
     wfile.open(dir2 + "recentprojectslist");
     if (!wfile.fail()) {
         wfile << "EWOCvj RECENTPROJECTS V0.1\n";
-        while (mainprogram->recentprojectpaths.size() > 10) {
-            mainprogram->recentprojectpaths.pop_back();
+        while (this->recentprojectpaths.size() > 10) {
+            this->recentprojectpaths.pop_back();
         }
-        for (int i = 0; i < mainprogram->recentprojectpaths.size(); i++) {
-            wfile << mainprogram->recentprojectpaths[i];
+        for (int i = 0; i < this->recentprojectpaths.size(); i++) {
+            wfile << this->recentprojectpaths[i];
             wfile << "\n";
         }
         wfile << "ENDOFFILE\n";
@@ -13249,7 +13521,7 @@ void Program::concat_files(std::string ofpath, std::string path, std::vector<std
             mainprogram->remove_ec(path, ec);
         }
         copy_file(ofpath, path);
-        std::filesystem::remove(ofpath);
+        safe_remove(ofpath);
     }
     else {
         bool dummy = false;
@@ -13269,11 +13541,11 @@ void Program::concat_files(std::string ofpath, std::string path, std::vector<std
 }
 
 void Program::remove_ec(std::string filepath, std::error_code& ec) {
-    std::filesystem::remove(filepath, ec);
+    safe_remove(filepath);
 }
 
 void Program::remove(std::string filepath) {
-    std::filesystem::remove_all(filepath);
+    safe_remove_all(filepath);
 }
 
 std::string Program::get_typestring(std::string path) {
@@ -13936,7 +14208,7 @@ void Program::init_audio(const char* device) {
             1,
             &desiredSpec,
             &obtainedSpec,
-            0
+            SDL_AUDIO_ALLOW_ANY_CHANGE
     );
 
     if (this->audeviceid == 0) {
@@ -13949,15 +14221,25 @@ void Program::init_audio(const char* device) {
 
     this->ausamplerate = obtainedSpec.freq;
     this->ausamples = obtainedSpec.samples;
+    this->auformat = obtainedSpec.format;
+    this->auchannels = obtainedSpec.channels;
     this->aubuffersize = obtainedSpec.samples * SDL_AUDIO_BITSIZE(obtainedSpec.format) / 8 * obtainedSpec.channels;
 
-    // NEW: Use 4096 FFT size to get 2048 output bins + 1 = 2049 complex elements
-    int fft_size = 4096;
-    this->auout = (fftw_complex*) fftw_malloc(sizeof(fftw_complex) * (fft_size / 2 + 1));
-    this->auoutsize = sizeof(float) * 2 * (fft_size / 2 + 1);  // Keep for beat detection compatibility
+    // Debug: print obtained audio spec
+    std::cerr << "Audio device opened - freq: " << obtainedSpec.freq
+              << ", samples: " << obtainedSpec.samples
+              << ", channels: " << (int)obtainedSpec.channels
+              << ", format: 0x" << std::hex << obtainedSpec.format << std::dec
+              << ", bits: " << SDL_AUDIO_BITSIZE(obtainedSpec.format)
+              << ", buffersize: " << this->aubuffersize << std::endl;
+
+    // Use obtained sample count as FFT size for proper beat detection on any hardware
+    this->aufftsize = obtainedSpec.samples;
+    this->auout = (fftw_complex*) fftw_malloc(sizeof(fftw_complex) * (this->aufftsize / 2 + 1));
+    this->auoutsize = sizeof(float) * 2 * (this->aufftsize / 2 + 1);
     this->aubuffer = (float*) malloc(this->aubuffersize);
-    this->auin = (double*) fftw_malloc(sizeof(double) * fft_size);  // 4096 samples
-    this->auplan = fftw_plan_dft_r2c_1d(fft_size, this->auin, this->auout, FFTW_ESTIMATE);
+    this->auin = (double*) fftw_malloc(sizeof(double) * this->aufftsize);
+    this->auplan = fftw_plan_dft_r2c_1d(this->aufftsize, this->auin, this->auout, FFTW_ESTIMATE);
 
     this->auinitialized = true;
 }
@@ -13976,6 +14258,7 @@ void Program::process_audio() {
     // init BeatDetektor
     this->beatdet = new BeatDetektor((float)mainprogram->minbpm, (float)mainprogram->minbpm * 2, nullptr);
     this->austarttime = std::chrono::high_resolution_clock::now();
+    this->timetotop = mainmix->time;
 
     float sumavg;
     int cnt = 0;
@@ -13996,43 +14279,78 @@ void Program::process_audio() {
         int bytesRead = SDL_DequeueAudio(this->audeviceid, this->aubuffer, this->aubuffersize);
 
         if (bytesRead > 0) {
+            // Calculate bytes per sample based on format
+            int bytesPerSample = SDL_AUDIO_BITSIZE(this->auformat) / 8;
+            int bytesPerFrame = bytesPerSample * this->auchannels;
+            int framesRead = bytesRead / bytesPerFrame;
+            int samplesToProcess = std::min(framesRead, this->ausamples);
+
             // Store normalized audio samples for FFGL audio buffers
             std::vector<float> audioSamples;
-            audioSamples.reserve(this->ausamples);
+            audioSamples.reserve(samplesToProcess);
 
-            // Process audio input - separate processing for beat detection vs ISF
-            for (int i = 0; i < this->ausamples; i++) {
-                // Store normalized version for FFGL plugins (keep original)
-                audioSamples.push_back(this->aubuffer[i]);
+            // Process audio input - convert from device format to float
+            unsigned char* rawBuffer = (unsigned char*)this->aubuffer;
 
-                // For beat detection: use RAW values (original approach)
-                this->auin[i] = this->aubuffer[i]; // NO normalization for beat detection
-                max = std::max(std::abs(this->auin[i]), max);
+            for (int i = 0; i < samplesToProcess; i++) {
+                float sample = 0.0f;
+
+                // Convert based on format, average channels if stereo
+                for (int ch = 0; ch < this->auchannels; ch++) {
+                    int offset = (i * this->auchannels + ch) * bytesPerSample;
+                    float chSample = 0.0f;
+
+                    switch (this->auformat) {
+                        case AUDIO_S16LSB:
+                        case AUDIO_S16MSB: {
+                            Sint16 s16 = *(Sint16*)(rawBuffer + offset);
+                            chSample = (float)s16 / 32768.0f;
+                            break;
+                        }
+                        case AUDIO_S32LSB:
+                        case AUDIO_S32MSB: {
+                            Sint32 s32 = *(Sint32*)(rawBuffer + offset);
+                            chSample = (float)s32 / 2147483648.0f;
+                            break;
+                        }
+                        case AUDIO_F32LSB:
+                        case AUDIO_F32MSB: {
+                            chSample = *(float*)(rawBuffer + offset);
+                            break;
+                        }
+                        default:
+                            chSample = 0.0f;
+                    }
+                    sample += chSample;
+                }
+                sample /= (float)this->auchannels;  // Average channels
+
+                audioSamples.push_back(sample);
+                this->auin[i] = sample;
+                max = std::max(std::abs((double)sample), max);
             }
 
-            // Zero-pad to 4096 samples for FFT
-            for (int i = this->ausamples; i < 4096; i++) {
+            // Zero-pad from actual samples read to FFT size (if needed)
+            for (int i = samplesToProcess; i < this->aufftsize; i++) {
                 this->auin[i] = 0.0;
             }
 
-            if (cnt == 40) {
+            if (mainmix->time - mainprogram->timetotop > 1.0f) {
+                mainprogram->timetotop = mainmix->time;
                 top = max;
                 max = 0.0f;
                 cnt = 0;
-                fflush(stdout);
             }
             cnt++;
 
-            // Perform single 4096-sample FFT for both beat detection and FFGL
+            // Perform FFT for beat detection
             fftw_execute(this->auplan);
 
             // Beat detection processing (original approach)
             this->auoutfloat.clear();
 
-            // FIXED: Loop over actual element count, not byte size!
-            // auout has (fft_size / 2 + 1) = 2049 complex elements for fft_size=4096
-            // auoutsize is in BYTES (16392), but auout only has 2049 elements
-            int fft_output_elements = 2049;  // fft_size / 2 + 1
+            // FFT output has (fft_size / 2 + 1) complex elements
+            int fft_output_elements = this->aufftsize / 2 + 1;
             for (int i = 0; i < fft_output_elements; i++) {
                 this->auoutfloat.push_back((float)(this->auout[i][0]));
                 this->auoutfloat.push_back((float)(this->auout[i][1]));
@@ -14048,28 +14366,29 @@ void Program::process_audio() {
             // Beat detection
             this->beatdet->process((float)this->autime / 1000.0f, this->auoutfloat);
 
-            // Create 2048 FFT magnitudes with logarithmic frequency mapping
+            // Create FFT magnitudes with logarithmic frequency mapping
             // But normalize the FFT input for FFGL (not for beat detection)
-            std::vector<float> fftMagnitudes(2048, 0.0f);
+            int fftHalfSize = this->aufftsize / 2;
+            std::vector<float> fftMagnitudes(fftHalfSize, 0.0f);
 
             // Create normalized FFT for FFGL (separate from beat detection FFT)
-            fftw_complex* ffglFFTOut = (fftw_complex*) fftw_malloc(sizeof(fftw_complex) * (4096 / 2 + 1));
-            double* normalizedAudioFFT = (double*) fftw_malloc(sizeof(double) * 4096);
+            fftw_complex* ffglFFTOut = (fftw_complex*) fftw_malloc(sizeof(fftw_complex) * (this->aufftsize / 2 + 1));
+            double* normalizedAudioFFT = (double*) fftw_malloc(sizeof(double) * this->aufftsize);
 
-            // Fill with normalized audio for FFGL FFT
-            for (int i = 0; i < this->ausamples; i++) {
-                normalizedAudioFFT[i] = this->aubuffer[i] / 32768.0; // Normalized
+            // Fill with normalized audio for FFGL FFT (use already-converted samples)
+            for (int i = 0; i < samplesToProcess; i++) {
+                normalizedAudioFFT[i] = audioSamples[i];
             }
-            for (int i = this->ausamples; i < 4096; i++) {
+            for (int i = samplesToProcess; i < this->aufftsize; i++) {
                 normalizedAudioFFT[i] = 0.0;
             }
 
-            fftw_plan ffglPlan = fftw_plan_dft_r2c_1d(4096, normalizedAudioFFT, ffglFFTOut, FFTW_ESTIMATE);
+            fftw_plan ffglPlan = fftw_plan_dft_r2c_1d(this->aufftsize, normalizedAudioFFT, ffglFFTOut, FFTW_ESTIMATE);
             fftw_execute(ffglPlan);
 
             // Calculate linear FFT from normalized data
             std::vector<float> linearFFT;
-            for (int i = 0; i < 2048; i++) {
+            for (int i = 0; i < fftHalfSize; i++) {
                 float real = (float)ffglFFTOut[i][0];
                 float imag = (float)ffglFFTOut[i][1];
                 float magnitude = sqrt(real * real + imag * imag);
@@ -14083,28 +14402,29 @@ void Program::process_audio() {
             fftw_free(normalizedAudioFFT);
 
             // Map linear frequency bins to logarithmic distribution
-            for (int i = 0; i < 2048; i++) {
+            float nyquist = this->ausamplerate / 2.0f;
+            for (int i = 0; i < fftHalfSize; i++) {
                 // Logarithmic frequency mapping
-                float logRatio = (float)i / 2047.0f; // 0.0 to 1.0
+                float logRatio = (float)i / (float)(fftHalfSize - 1); // 0.0 to 1.0
 
-                // Map to logarithmic frequency range (20Hz to 22kHz)
+                // Map to logarithmic frequency range (20Hz to nyquist)
                 float minFreq = 20.0f;    // 20 Hz
-                float maxFreq = 22000.0f; // 22 kHz
+                float maxFreq = nyquist;
                 float targetFreq = minFreq * pow(maxFreq / minFreq, logRatio);
 
                 // Convert target frequency back to linear bin index
-                int sourceBin = (int)(targetFreq * 2048.0f / 22050.0f); // 22050 = sample_rate/2
-                sourceBin = std::min(sourceBin, 2047);
+                int sourceBin = (int)(targetFreq * (float)fftHalfSize / nyquist);
+                sourceBin = std::min(sourceBin, fftHalfSize - 1);
 
                 fftMagnitudes[i] = linearFFT[sourceBin];
             }
 
             // Create stereo audio data for ISF plugins from mono source
             std::vector<float> stereoAudioForISF;
-            stereoAudioForISF.reserve(this->ausamples * 2); // Double size for stereo
+            stereoAudioForISF.reserve(samplesToProcess * 2); // Double size for stereo
 
-            for (int i = 0; i < this->ausamples; i++) {
-                float auSample = this->aubuffer[i] + 0.5f;  // Much less normalization than /32768
+            for (int i = 0; i < samplesToProcess; i++) {
+                float auSample = audioSamples[i] * 0.5f + 0.5f;  // Convert -1..1 to 0..1 range
                 // Create stereo from mono by duplicating channels
                 stereoAudioForISF.push_back(auSample);  // Left channel
                 stereoAudioForISF.push_back(auSample);  // Right channel (same as left)

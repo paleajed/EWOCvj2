@@ -62,16 +62,19 @@ void BeatDetektor::process(float timer_seconds, std::vector<float> &fft_data)
 		if (!src)
 		{
 			a_freq_range[range] = 0;
-			
+
 			// accumulate frequency values for this range
-			for (i = x; i<x+range_step; i++)
+			// Clamp upper bound to prevent out-of-bounds access when size isn't evenly divisible
+			unsigned int range_end = std::min((unsigned int)(x + range_step), (unsigned int)fft_data.size());
+			unsigned int actual_range_size = range_end - x;
+			for (i = x; i < range_end; i++)
 			{
 				v = fabs(fft_data[i]);
 				a_freq_range[range] += v;
 			}
-			
-			// average for range
-			a_freq_range[range] /= range_step;
+
+			// average for range (use actual count to avoid division issues)
+			a_freq_range[range] /= (actual_range_size > 0 ? actual_range_size : 1);
 			
 			// two sets of averages chase this one at a 
 			

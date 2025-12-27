@@ -40,32 +40,143 @@ class StylePreparationBin;
 class ReCoNetTrainer {
 public:
     /**
-     * Quality presets for training
+     * Quality presets for training (resolution and iterations)
      */
     enum class Quality {
-        FAST,      // 256x256, batch=4, iter=2000, ~5-10 min GPU
-        BALANCED,  // 512x512, batch=2, iter=5000, ~30-60 min GPU
-        HIGH       // 1024x1024, batch=1, iter=10000, ~2-4 hours GPU
+        FAST,
+        BALANCED_256,
+        BALANCED_512,
+        HIGH_256,
+        HIGH_512
+    };
+
+    /**
+     * Style influence presets (content/style/temporal balance)
+     * Calibrated for [-1, 1] image range with VGG16 perceptual loss
+     */
+    enum class StyleInfluence {
+        MINIMAL,   // Subtle stylization, preserves content structure
+        BALANCED,  // Good balance for most artistic styles
+        STRONG     // Bold artistic style with pronounced brush strokes
+    };
+
+    /**
+     * Abstraction level presets (VGG layer emphasis)
+     * Controls which visual features are captured from the style image
+     */
+    enum class AbstractionLevel {
+        LOW,       // Fine details: edges, colors, small textures
+        MEDIUM,    // Balanced: textures and medium-scale patterns
+        HIGH       // Abstract: broad strokes, mood, semantic structure
     };
 
     /**
      * Training configuration
      */
     struct Config {
-        Quality quality = Quality::BALANCED;
+        Quality quality = Quality::BALANCED_256;
+        StyleInfluence styleInfluence = StyleInfluence::BALANCED;
+        AbstractionLevel abstractionLevel = AbstractionLevel::MEDIUM;
         float learningRate = 1e-3f;
+
+        // Loss weights - set automatically by styleInfluence preset, or manually
+        // Calibrated for [-1, 1] image range
         float contentWeight = 1.0f;
-        float styleWeight = 10.0f;
-        float tvWeight = 1e-4f;
+        float styleWeight = 1e6f;     // BALANCED preset default
+        float tvWeight = 2.0f;        // Total variation for smoothness
         bool useGPU = true;
+        std::string contentDataset;   // Path to content images folder (COCO, ImageNet, etc.)
+
+        // Custom training parameters (used when quality == CUSTOM)
+        int resolution = 256;         // Training resolution (256, 512, etc.)
+        int iterations = 20000;       // Number of training iterations
+        int batchSize = 4;            // Images per training batch (lower = less VRAM)
+
+        // Inspiration image preprocessing: smallest side will be scaled to this value
+        // This ensures uniform style element size regardless of source image resolution
+        int inspirationResolution = 256;
+
+        // Temporal coherence settings (for flicker-free video style transfer)
+        // NOTE: Start with 0 to verify style works, then add temporal loss
+        float temporalWeight = 0.0f;  // Weight for temporal consistency (0 = disabled)
+        std::string videoDataset;     // Path to video files or frame folders (comma-separated)
+        int sequenceLength = 2;       // Number of consecutive frames per training sample
+
+        // Advanced: Per-layer style weights (VGG19 layers)
+        // Higher layers = broader patterns, lower layers = finer details
+        // Default values optimized for brush strokes (relu3_1 and relu4_1 are key)
+        float styleWeightRelu1 = 0.1f;   // relu1_1: Fine edges
+        float styleWeightRelu2 = 0.5f;   // relu2_1: Small textures
+        float styleWeightRelu3 = 2.0f;   // relu3_1: Medium strokes (KEY)
+        float styleWeightRelu4 = 3.0f;   // relu4_1: Brush strokes (KEY)
+        float styleWeightRelu5 = 3.0f;   // relu5_1: Abstract mood
+
+        // Apply style influence preset to weights
+        void applyStyleInfluence() {
+            switch (styleInfluence) {
+                case StyleInfluence::MINIMAL:
+                    // Subtle stylization - preserves more content
+                    contentWeight = 4.0f;
+                    styleWeight = 2e6f;
+                    temporalWeight = (temporalWeight > 0) ? 1e4f : 0.0f;
+                    tvWeight = 2.0f;
+                    break;
+                case StyleInfluence::BALANCED:
+                    // Good for most use cases
+                    contentWeight = 3.0f;
+                    styleWeight = 4e6f;
+                    temporalWeight = (temporalWeight > 0) ? 1e4f : 0.0f;
+                    tvWeight = 2.0f;
+                    break;
+                case StyleInfluence::STRONG:
+                    // Bold artistic style with pronounced strokes
+                    contentWeight = 2.0f;
+                    styleWeight = 6e6f;
+                    temporalWeight = (temporalWeight > 0) ? 1e4f : 0.0f;
+                    tvWeight = 2.0f;
+                    break;
+            }
+        }
+
+        // Apply abstraction level preset to VGG layer weights
+        void applyAbstractionLevel() {
+            switch (abstractionLevel) {
+                case AbstractionLevel::LOW:
+                    // Fine details: edges, colors, small textures
+                    styleWeightRelu1 = 2.0f;   // Fine edges - HIGH
+                    styleWeightRelu2 = 2.0f;   // Small textures - HIGH
+                    styleWeightRelu3 = 1.0f;   // Medium strokes - medium
+                    styleWeightRelu4 = 0.4f;   // Brush strokes - low
+                    styleWeightRelu5 = 0.2f;   // Abstract mood - minimal
+                    break;
+                case AbstractionLevel::MEDIUM:
+                    // Balanced: textures and medium-scale patterns
+                    styleWeightRelu1 = 0.4f;   // Fine edges - low
+                    styleWeightRelu2 = 1.0f;   // Small textures - medium
+                    styleWeightRelu3 = 2.0f;   // Medium strokes - HIGH
+                    styleWeightRelu4 = 2.0f;   // Brush strokes - HIGH
+                    styleWeightRelu5 = 1.0f;   // Abstract mood - medium
+                    break;
+                case AbstractionLevel::HIGH:
+                    // Abstract: broad strokes, mood, semantic structure
+                    styleWeightRelu1 = 0.2f;   // Fine edges - minimal
+                    styleWeightRelu2 = 0.4f;   // Small textures - low
+                    styleWeightRelu3 = 1.0f;   // Medium strokes - medium
+                    styleWeightRelu4 = 2.0f;   // Brush strokes - HIGH
+                    styleWeightRelu5 = 2.0f;   // Abstract mood - HIGH
+                    break;
+            }
+        }
 
         // Helper to get resolution from quality preset
         int getResolution() const {
             switch (quality) {
                 case Quality::FAST: return 256;
-                case Quality::BALANCED: return 512;
-                case Quality::HIGH: return 1024;
-                default: return 512;
+                case Quality::BALANCED_256: return 256;
+                case Quality::BALANCED_512: return 512;
+                case Quality::HIGH_256: return 256;
+                case Quality::HIGH_512: return 512;
+                default: return 256;
             }
         }
 
@@ -73,19 +184,23 @@ public:
         int getBatchSize() const {
             switch (quality) {
                 case Quality::FAST: return 4;
-                case Quality::BALANCED: return 2;
-                case Quality::HIGH: return 1;
-                default: return 2;
+                case Quality::BALANCED_256: return 4;
+                case Quality::BALANCED_512: return 4;
+                case Quality::HIGH_256: return 4;
+                case Quality::HIGH_512: return 2;
+                default: return 4;
             }
         }
 
         // Helper to get iteration count from quality preset
         int getIterations() const {
             switch (quality) {
-                case Quality::FAST: return 2000;
-                case Quality::BALANCED: return 5000;
-                case Quality::HIGH: return 10000;
-                default: return 5000;
+                case Quality::FAST: return 10000;
+                case Quality::BALANCED_256: return 20000;
+                case Quality::BALANCED_512: return 20000;
+                case Quality::HIGH_256: return 40000;
+                case Quality::HIGH_512: return 40000;
+                default: return 20000;
             }
         }
     };
@@ -242,10 +357,13 @@ private:
     /**
      * Preprocess single image
      * Loads with DevIL, uploads to GL, scales with lanczos shader, downloads
+     * Smallest side is scaled to targetMinDimension, aspect ratio preserved
+     * @param outWidth Output: actual width of processed image
+     * @param outHeight Output: actual height of processed image
      * @return OpenGL texture ID, or -1 on error
      */
     GLuint preprocessSingleImage(const std::string& imagePath,
-                                 int targetWidth, int targetHeight);
+                                 int targetMinDimension, int& outWidth, int& outHeight);
 
     /**
      * Save preprocessed texture to PNG file
@@ -260,6 +378,7 @@ private:
      */
     bool generateConfigJSON(const Config& config,
                             const std::vector<std::string>& imagePaths,
+                            const std::vector<std::string>& originalImagePaths,
                             const std::string& modelName,
                             const std::string& outputPath);
 

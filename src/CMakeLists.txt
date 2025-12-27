@@ -91,6 +91,12 @@ add_executable(EWOCvj2 WIN32
         styleroom.cpp
         ReCoNetTrainer.h
         ReCoNetTrainer.cpp
+        VideoUpscaler.h
+        VideoUpscaler.cpp
+        ComfyUIManager.h
+        ComfyUIManager.cpp
+        ComfyUIInstaller.h
+        ComfyUIInstaller.cpp
 )
 
 set(Boost_USE_STATIC_RUNTIME ON)
@@ -210,6 +216,9 @@ if (WIN32)
         target_link_libraries(EWOCvj2 PUBLIC ${SHCORE_LIBRARY})
         find_library(WS2_LIBRARY ws2_32 PATHS ${LIB1_SEARCH_DIR} ${LIB2_SEARCH_DIR})
         target_link_libraries(EWOCvj2 PUBLIC ${WS2_LIBRARY})
+        # WinHTTP for ComfyUI REST/WebSocket communication
+        find_library(WINHTTP_LIBRARY winhttp PATHS ${LIB1_SEARCH_DIR} ${LIB2_SEARCH_DIR})
+        target_link_libraries(EWOCvj2 PUBLIC ${WINHTTP_LIBRARY})
         find_library(DEVIL_LIBRARY IL.dll PATHS ${LIB1_SEARCH_DIR} ${LIB2_SEARCH_DIR})
         target_link_libraries(EWOCvj2 PUBLIC ${DEVIL_LIBRARY})
         find_library(FREEGLUT_LIBRARY freeglut.dll PATHS ${LIB1_SEARCH_DIR} ${LIB2_SEARCH_DIR})
@@ -342,6 +351,14 @@ if (UNIX)
     target_link_libraries(EWOCvj2 PUBLIC ${GL_LIBRARY})
     find_library(Z_LIBRARY z HINTS)
     target_link_libraries(EWOCvj2 PUBLIC ${Z_LIBRARY})
+    # libcurl for ComfyUI REST/WebSocket communication
+    find_library(CURL_LIBRARY curl PATHS ${LIB_SEARCH_DIRS})
+    if(CURL_LIBRARY)
+        message(STATUS "Found libcurl: ${CURL_LIBRARY}")
+        target_link_libraries(EWOCvj2 PUBLIC ${CURL_LIBRARY})
+    else()
+        message(WARNING "libcurl not found - ComfyUI integration will not be available")
+    endif()
 endif (UNIX)
 
 # ONNX Runtime for AI Style Transfer
@@ -538,6 +555,7 @@ if (UNIX)
     install(CODE "execute_process(COMMAND xdg-icon-resource install --context mimetype --novendor --size 256 --mode user ../application-ewocvj2-project.png)")
     install(CODE "execute_process(COMMAND xdg-icon-resource install --context mimetype --novendor --size 256 --mode user ../application-ewocvj2-shelf.png)")
     install(CODE "execute_process(COMMAND xdg-icon-resource install --context mimetype --novendor --size 256 --mode user ../application-ewocvj2-state.png)")
+    install(CODE "execute_process(COMMAND xdg-icon-resource install --context mimetype --novendor --size 256 --mode user ../application-ewocvj2-style.png)")
     install(FILES ewocvj2-bin.xml DESTINATION share/mime/application)
     install(FILES ewocvj2-deck.xml DESTINATION share/mime/application)
     install(FILES ewocvj2-layer.xml DESTINATION share/mime/application)
@@ -545,6 +563,7 @@ if (UNIX)
     install(FILES ewocvj2-project.xml DESTINATION share/mime/application)
     install(FILES ewocvj2-shelf.xml DESTINATION share/mime/application)
     install(FILES ewocvj2-state.xml DESTINATION share/mime/application)
+    install(FILES ewocvj2-style.xml DESTINATION share/mime/application)
     install(CODE "execute_process(COMMAND update-mime-database /usr/share/mime)")
     install(DIRECTORY DESTINATION share/FFGL)
     install(DIRECTORY DESTINATION share/ISF)

@@ -49,6 +49,7 @@ extern "C" {
 #include "program.h"
 #include "UPnPPortMapper.h"
 #include "RealESRGANWrapper.h"
+#include "VideoUpscaler.h"
 
 
 
@@ -87,6 +88,18 @@ BinElement::BinElement() {
 }
 
 BinElement::~BinElement() {
+	// Wait for upscale thread to finish if running
+	if (this->upscaleThread && this->upscaleThread->joinable()) {
+		this->upscaleThread->join();
+	}
+	// Stop and cleanup video upscaler if running
+	if (this->upscaler) {
+		if (this->upscaler->isProcessing()) {
+			this->upscaler->stop();
+		}
+		delete this->upscaler;
+		this->upscaler = nullptr;
+	}
 	glDeleteTextures(1, &this->tex);
 	if (this->oldtex != -1) glDeleteTextures(1, &this->oldtex);
 }
@@ -223,7 +236,15 @@ void BinElement::upscale_image(int model) {
 	int upscaledHeight = 0;
 
 	if (!upscaler.renderBuffer(bgrImageData, width, height, upscaledBuffer, upscaledWidth, upscaledHeight)) {
-		std::cerr << "[BinElement::upscale_image] Failed to upscale image: " << upscaler.getLastError() << std::endl;
+		std::string error = upscaler.getLastError();
+		std::cerr << "[BinElement::upscale_image] Failed to upscale image: " << error << std::endl;
+		// Check for out of memory errors
+		if (error.find("memory") != std::string::npos ||
+		    error.find("Memory") != std::string::npos ||
+		    error.find("OOM") != std::string::npos ||
+		    error.find("allocation") != std::string::npos) {
+			mainprogram->infostr = "Out of VRAM! Try a smaller image or lower upscale model.";
+		}
 		delete[] bgrImageData;
 		ilDeleteImages(1, &imageID);
 		return;
@@ -288,7 +309,7 @@ void BinElement::upscale_image(int model) {
 	                                   (inputPath.stem().string() + "_upscaled" + inputPath.extension().string());
 
 	if (exists(outputPath)) {
-		std::filesystem::remove(outputPath);
+		safe_remove(outputPath);
 	}
 
 	std::cerr << "[BinElement::upscale_image] Saving upscaled image to: " << outputPath << std::endl;
@@ -317,6 +338,249 @@ void BinElement::upscale_image(int model) {
 	delete[] upscaledBuffer;
 	ilDeleteImages(1, &upscaledImageID);
 	ilDeleteImages(1, &imageID);
+}
+
+void BinElement::upscale_image_async(int model) {
+	// Check if already upscaling
+	if (this->upscaling.load()) {
+		std::cerr << "[BinElement::upscale_image_async] Already upscaling, ignoring request" << std::endl;
+		return;
+	}
+
+	if (this->path.empty()) {
+		std::cerr << "[BinElement::upscale_image_async] No image path set" << std::endl;
+		return;
+	}
+
+	if (model < 0) {
+		std::cerr << "[BinElement::upscale_image_async] Invalid model index: " << model << std::endl;
+		return;
+	}
+
+	// Clean up any previous thread
+	if (this->upscaleThread && this->upscaleThread->joinable()) {
+		this->upscaleThread->join();
+	}
+
+	// Reset state
+	this->upscaling.store(true);
+	this->upscaleComplete.store(false);
+	this->upscaleSuccess.store(false);
+	this->upscaledPath.clear();
+
+	// Capture values needed by the worker thread
+	std::string imagePath = this->path;
+
+	std::cerr << "[BinElement::upscale_image_async] Starting worker thread for: " << imagePath << std::endl;
+
+	// Spawn worker thread
+	this->upscaleThread = std::make_unique<std::thread>([this, imagePath, model]() {
+		std::cerr << "[Upscale Worker] Starting upscale for: " << imagePath << std::endl;
+
+		bool success = false;
+		std::string outputPathStr;
+
+		// Load image with DevIL
+		ILuint imageID;
+		ilGenImages(1, &imageID);
+		ilBindImage(imageID);
+
+		if (!ilLoadImage((const ILstring)imagePath.c_str())) {
+			std::cerr << "[Upscale Worker] Failed to load image: " << imagePath << std::endl;
+			ilDeleteImages(1, &imageID);
+			goto cleanup;
+		}
+
+		{
+			// Get image properties
+			int width = ilGetInteger(IL_IMAGE_WIDTH);
+			int height = ilGetInteger(IL_IMAGE_HEIGHT);
+
+			std::cerr << "[Upscale Worker] Image size: " << width << "x" << height << std::endl;
+
+			// Convert to RGB format
+			if (!ilConvertImage(IL_RGB, IL_UNSIGNED_BYTE)) {
+				std::cerr << "[Upscale Worker] Failed to convert image to RGB format" << std::endl;
+				ilDeleteImages(1, &imageID);
+				goto cleanup;
+			}
+
+			// Get RGB image data
+			ILubyte* rgbImageData = ilGetData();
+			if (!rgbImageData) {
+				std::cerr << "[Upscale Worker] Failed to get image data" << std::endl;
+				ilDeleteImages(1, &imageID);
+				goto cleanup;
+			}
+
+			// Convert RGB to BGR for ncnn
+			int imageSize = width * height * 3;
+			unsigned char* bgrImageData = new unsigned char[imageSize];
+			for (int i = 0; i < width * height; i++) {
+				bgrImageData[i * 3 + 0] = rgbImageData[i * 3 + 2];
+				bgrImageData[i * 3 + 1] = rgbImageData[i * 3 + 1];
+				bgrImageData[i * 3 + 2] = rgbImageData[i * 3 + 0];
+			}
+
+			// Initialize RealESRGAN upscaler
+			RealESRGANUpscaler upscaler;
+			if (!upscaler.initialize()) {
+				std::cerr << "[Upscale Worker] Failed to initialize RealESRGAN" << std::endl;
+				delete[] bgrImageData;
+				ilDeleteImages(1, &imageID);
+				goto cleanup;
+			}
+
+			// Load models
+			std::string modelsPath;
+			#ifdef _WIN32
+				modelsPath = "C:/ProgramData/EWOCvj2/models/upscale/";
+			#else
+				modelsPath = "/usr/share/EWOCvj2/models/upscale/";
+			#endif
+
+			int numModels = upscaler.loadModels(modelsPath);
+			if (numModels == 0 || model >= numModels) {
+				std::cerr << "[Upscale Worker] Invalid model or no models found" << std::endl;
+				delete[] bgrImageData;
+				ilDeleteImages(1, &imageID);
+				goto cleanup;
+			}
+
+			if (!upscaler.setModel(model)) {
+				std::cerr << "[Upscale Worker] Failed to set model " << model << std::endl;
+				delete[] bgrImageData;
+				ilDeleteImages(1, &imageID);
+				goto cleanup;
+			}
+
+			int scaleFactor = upscaler.getScaleFactor();
+			std::cerr << "[Upscale Worker] Using " << scaleFactor << "x upscaling" << std::endl;
+
+			// Upscale the image
+			unsigned char* upscaledBuffer = nullptr;
+			int upscaledWidth = 0;
+			int upscaledHeight = 0;
+
+			if (!upscaler.renderBuffer(bgrImageData, width, height, upscaledBuffer, upscaledWidth, upscaledHeight)) {
+				std::string error = upscaler.getLastError();
+				std::cerr << "[Upscale Worker] Failed to upscale: " << error << std::endl;
+				// Check for out of memory errors
+				if (error.find("memory") != std::string::npos ||
+				    error.find("Memory") != std::string::npos ||
+				    error.find("OOM") != std::string::npos ||
+				    error.find("allocation") != std::string::npos) {
+					mainprogram->infostr = "Out of VRAM! Try a smaller image or lower upscale model.";
+				}
+				delete[] bgrImageData;
+				ilDeleteImages(1, &imageID);
+				goto cleanup;
+			}
+
+			delete[] bgrImageData;
+
+			std::cerr << "[Upscale Worker] Upscaled to " << upscaledWidth << "x" << upscaledHeight << std::endl;
+
+			// Convert BGR to RGB and flip vertically
+			unsigned char* rgbUpscaledBuffer = new unsigned char[upscaledWidth * upscaledHeight * 3];
+			for (int y = 0; y < upscaledHeight; y++) {
+				for (int x = 0; x < upscaledWidth; x++) {
+					int srcIdx = (y * upscaledWidth + x) * 3;
+					int dstIdx = ((upscaledHeight - 1 - y) * upscaledWidth + x) * 3;
+					rgbUpscaledBuffer[dstIdx + 0] = upscaledBuffer[srcIdx + 2];
+					rgbUpscaledBuffer[dstIdx + 1] = upscaledBuffer[srcIdx + 1];
+					rgbUpscaledBuffer[dstIdx + 2] = upscaledBuffer[srcIdx + 0];
+				}
+			}
+
+			// Create new DevIL image for upscaled result
+			ILuint upscaledImageID;
+			ilGenImages(1, &upscaledImageID);
+			ilBindImage(upscaledImageID);
+
+			if (!ilTexImage(upscaledWidth, upscaledHeight, 1, 3, IL_RGB, IL_UNSIGNED_BYTE, rgbUpscaledBuffer)) {
+				std::cerr << "[Upscale Worker] Failed to create image with ilTexImage" << std::endl;
+				delete[] rgbUpscaledBuffer;
+				delete[] upscaledBuffer;
+				ilDeleteImages(1, &upscaledImageID);
+				ilDeleteImages(1, &imageID);
+				goto cleanup;
+			}
+
+			// Determine output path
+			std::filesystem::path inputPath(imagePath);
+			std::filesystem::path outputPath = inputPath.parent_path() /
+				(inputPath.stem().string() + "_upscaled" + inputPath.extension().string());
+
+			if (exists(outputPath)) {
+				safe_remove(outputPath);
+			}
+
+			std::cerr << "[Upscale Worker] Saving to: " << outputPath << std::endl;
+
+			if (!ilSaveImage((const ILstring)outputPath.string().c_str())) {
+				std::cerr << "[Upscale Worker] Failed to save upscaled image" << std::endl;
+				delete[] rgbUpscaledBuffer;
+				delete[] upscaledBuffer;
+				ilDeleteImages(1, &upscaledImageID);
+				ilDeleteImages(1, &imageID);
+				goto cleanup;
+			}
+
+			outputPathStr = outputPath.string();
+			success = true;
+
+			// Cleanup
+			delete[] rgbUpscaledBuffer;
+			delete[] upscaledBuffer;
+			ilDeleteImages(1, &upscaledImageID);
+			ilDeleteImages(1, &imageID);
+		}
+
+	cleanup:
+		// Store results
+		this->upscaledPath = outputPathStr;
+		this->upscaleSuccess.store(success);
+		this->upscaleComplete.store(true);
+		this->upscaling.store(false);
+
+		std::cerr << "[Upscale Worker] Finished, success=" << success << std::endl;
+	});
+}
+
+void BinElement::check_upscale_complete() {
+	if (!this->upscaleComplete.load()) {
+		return;
+	}
+
+	// Join the thread if it's done
+	if (this->upscaleThread && this->upscaleThread->joinable()) {
+		this->upscaleThread->join();
+	}
+
+	if (this->upscaleSuccess.load() && !this->upscaledPath.empty()) {
+		std::cerr << "[BinElement::check_upscale_complete] Updating path to: " << this->upscaledPath << std::endl;
+		this->path = this->upscaledPath;
+	}
+
+	// Reset state
+	this->upscaleComplete.store(false);
+	this->upscaleSuccess.store(false);
+	this->upscaledPath.clear();
+}
+
+bool BinsMain::isAnyUpscaling() {
+    std::lock_guard<std::recursive_mutex> lock(this->binsmutex);
+    for (Bin* bin : this->bins) {
+        if (bin) {
+            for (BinElement* binel : bin->elements) {
+                if (binel && binel->vidupscaling) {
+                    return true;
+                }
+            }
+        }
+    }
+    return false;
 }
 
 BinsMain::BinsMain() {
@@ -514,6 +778,11 @@ void BinsMain::handle(bool draw) {
                                     bnlm.push_back("submenu upscalemenu");
                                     bnlm.push_back("Upscale image");
                                     binelmenuoptions.push_back(BET_UPSCALEIMAGE);
+                                }
+                                else if (binel->type == ELEM_FILE && !binel->encoding && !binel->vidupscaling) {
+                                    bnlm.push_back("submenu vidupscalemenu");
+                                    bnlm.push_back("Upscale video");
+                                    binelmenuoptions.push_back(BET_UPSCALEVIDEO);
                                 }
                                 bnlm.push_back("HAP encode element");
                                 binelmenuoptions.push_back(BET_HAPELEM);
@@ -1439,7 +1708,7 @@ void BinsMain::handle(bool draw) {
 				box->upvtxtoscr();
 				BinElement* binel = this->currbin->elements[i * 12 + j];
 				if (draw) {
-					// show if element encoding/awaiting encoding
+					// show if element encoding/awaiting encoding/upscaling
 					if (binel->encwaiting) {
 						render_text("Waiting...", white, box->vtxcoords->x1 + 0.0075f, box->vtxcoords->y1 + box->vtxcoords->h - 0.0225f, 0.0005f, 0.0008f);
 					}
@@ -1453,6 +1722,36 @@ void BinsMain::handle(bool draw) {
 						}
 						render_text("Encoding...", white, box->vtxcoords->x1 + 0.0075f, box->vtxcoords->y1 + box->vtxcoords->h - 0.0225f, 0.0005f, 0.0008f);
 						draw_box(black, white, box->vtxcoords->x1, box->vtxcoords->y1 + box->vtxcoords->h - 0.0675f, progress * 0.1f, 0.02f, -1);
+					}
+					else if (binel->vidupscaling) {
+						if (!binel->upscaler->isProcessing()) {
+							// Upscaling finished - check for success
+							std::string error = binel->upscaler->getLastError();
+							if (error.empty()) {
+								// Success - use upscaled video
+								binel->path = binel->vidupscalingpath;
+							} else {
+								// Error - inform user
+								if (error.find("CUDA") != std::string::npos ||
+									error.find("memory") != std::string::npos ||
+									error.find("OOM") != std::string::npos ||
+									error.find("MemoryError") != std::string::npos) {
+									mainprogram->infostr = "Upscaling failed: GPU out of memory. Try lower scale or quality.";
+								} else {
+									mainprogram->infostr = "Upscaling failed: " + error.substr(0, 50);
+								}
+							}
+							// Cleanup
+							binel->vidupscaling = false;
+							binel->vidupscalingpath = "";
+							delete binel->upscaler;
+							binel->upscaler = nullptr;
+						} else {
+							// Still processing - show progress
+							auto progress = binel->upscaler->getProgress();
+							render_text("Upscaling...", white, box->vtxcoords->x1 + 0.0075f, box->vtxcoords->y1 + box->vtxcoords->h - 0.0225f, 0.0005f, 0.0008f);
+							draw_box(black, white, box->vtxcoords->x1, box->vtxcoords->y1 + box->vtxcoords->h - 0.0675f, (progress.percentComplete / 100.0f) * 0.1f, 0.02f, -1);
+						}
 					}
  				}
 			}
@@ -1592,33 +1891,30 @@ void BinsMain::handle(bool draw) {
 	k = mainprogram->handle_menu(mainprogram->binelmenu);
 	//if (k > -1) this->currbinel = nullptr;
 	if (binelmenuoptions.size() && k > -1) {
-		if (binelmenuoptions[k] != BET_OPENFILES) this->menuactbinel = nullptr;
+        if (binelmenuoptions[k] != BET_OPENFILES) this->menuactbinel = nullptr;
         if (binelmenuoptions[k] == BET_DELETE) {
             // delete hovered bin element
             this->delbinels.push_back(this->menubinel);
             mainprogram->del = true;
-        }
-        else if (binelmenuoptions[k] == BET_DELSEL) {
+        } else if (binelmenuoptions[k] == BET_DELSEL) {
             // delete selected bin elements
             for (int i = 0; i < 144; i++) {
                 BinElement *elem = this->currbin->elements[i];
                 if (elem->select) this->delbinels.push_back(elem);
             }
             mainprogram->del = true;
-        }
-        else if (binelmenuoptions[k] == BET_MOVSEL) {
+        } else if (binelmenuoptions[k] == BET_MOVSEL) {
             // start move selected bin elements
             for (int i = 0; i < 12; i++) {
                 for (int j = 0; j < 12; j++) {
-                    BinElement* binel = this->currbin->elements[i * 12 + j];
+                    BinElement *binel = this->currbin->elements[i * 12 + j];
                     if (binel->select) {
                         this->movebinels.push_back(binel);
                         this->addpaths.push_back(binel->path);
                         this->inputtexes.push_back(binel->tex);
                         this->inputtypes.push_back(binel->type);
                         this->inputjpegpaths.push_back(binel->jpegpath);
-                    }
-                    else {
+                    } else {
                         this->addpaths.push_back("");
                         this->inputtexes.push_back(-1);
                         this->inputtypes.push_back(ELEM_FILE);
@@ -1626,83 +1922,80 @@ void BinsMain::handle(bool draw) {
                     }
                 }
             }
-        }
-		else if (binelmenuoptions[k] == BET_RENAME) {
-			// start renaming bin element
-			this->renamingelem = this->menubinel;
-			this->renamingelem->oldname = this->renamingelem->name;
-			std::string name = this->menubinel->name;
-			this->backupname = name;
-			mainprogram->inputtext = name;
-			mainprogram->cursorpos0 = mainprogram->inputtext.length();
-			SDL_StartTextInput();
-			mainprogram->renaming = EDIT_BINELEMNAME;
-		}
-		else if (binelmenuoptions[k] == BET_LOADDECKA) {
-			// load hovered deck in deck A
-			mainprogram->binsscreen = false;
-			mainmix->mousedeck = 0;
-			mainmix->open_deck(this->menubinel->path, 1);
-		}
-		else if (binelmenuoptions[k] == BET_LOADDECKB) {
-			// load hovered deck in deck B
-			mainprogram->binsscreen = false;
-			mainmix->mousedeck = 1;
-			mainmix->open_deck(this->menubinel->path, 1);
-		}
-		else if (binelmenuoptions[k] == BET_LOADMIX) {
-			// load hovered mix into decks
-			mainprogram->binsscreen = false;
-			mainmix->open_mix(this->menubinel->path.c_str(), true);
-		}
-		else if (binelmenuoptions[k] == BET_OPENFILES) {
-			// open videos/images/layer files into bin
-			mainprogram->pathto = "OPENFILESBIN";
-			std::thread filereq(&Program::get_multinname, mainprogram, "Open file(s)", "", std::filesystem::canonical(mainprogram->currfilesdir).generic_string());
-			filereq.detach();
- 		}
-		else if (binelmenuoptions[k] == BET_INSDECKA) {
-			// insert deck A into bin
-			{
-				std::lock_guard<std::mutex> lock(mainprogram->pathmutex);
-				mainprogram->paths.clear();
-			}
-			mainmix->mousedeck = 0;
-			std::string path = find_unused_filename("deckA", mainprogram->project->binsdir + this->currbin->name + "/", ".deck");
+        } else if (binelmenuoptions[k] == BET_RENAME) {
+            // start renaming bin element
+            this->renamingelem = this->menubinel;
+            this->renamingelem->oldname = this->renamingelem->name;
+            std::string name = this->menubinel->name;
+            this->backupname = name;
+            mainprogram->inputtext = name;
+            mainprogram->cursorpos0 = mainprogram->inputtext.length();
+            SDL_StartTextInput();
+            mainprogram->renaming = EDIT_BINELEMNAME;
+        } else if (binelmenuoptions[k] == BET_LOADDECKA) {
+            // load hovered deck in deck A
+            mainprogram->binsscreen = false;
+            mainmix->mousedeck = 0;
+            mainmix->open_deck(this->menubinel->path, 1);
+        } else if (binelmenuoptions[k] == BET_LOADDECKB) {
+            // load hovered deck in deck B
+            mainprogram->binsscreen = false;
+            mainmix->mousedeck = 1;
+            mainmix->open_deck(this->menubinel->path, 1);
+        } else if (binelmenuoptions[k] == BET_LOADMIX) {
+            // load hovered mix into decks
+            mainprogram->binsscreen = false;
+            mainmix->open_mix(this->menubinel->path.c_str(), true);
+        } else if (binelmenuoptions[k] == BET_OPENFILES) {
+            // open videos/images/layer files into bin
+            mainprogram->pathto = "OPENFILESBIN";
+            std::thread filereq(&Program::get_multinname, mainprogram, "Open file(s)", "",
+                                std::filesystem::canonical(mainprogram->currfilesdir).generic_string());
+            filereq.detach();
+        } else if (binelmenuoptions[k] == BET_INSDECKA) {
+            // insert deck A into bin
+            {
+                std::lock_guard<std::mutex> lock(mainprogram->pathmutex);
+                mainprogram->paths.clear();
+            }
+            mainmix->mousedeck = 0;
+            std::string path = find_unused_filename("deckA", mainprogram->project->binsdir + this->currbin->name + "/",
+                                                    ".deck");
             if (mainprogram->prevmodus) {
-                this->menubinel->tex = copy_tex(mainprogram->nodesmain->mixnodes[0][mainmix->mousedeck]->mixtex, 192, 108);
+                this->menubinel->tex = copy_tex(mainprogram->nodesmain->mixnodes[0][mainmix->mousedeck]->mixtex, 192,
+                                                108);
+            } else {
+                this->menubinel->tex = copy_tex(mainprogram->nodesmain->mixnodes[1][mainmix->mousedeck]->mixtex, 192,
+                                                108);
             }
-            else {
-                this->menubinel->tex = copy_tex(mainprogram->nodesmain->mixnodes[1][mainmix->mousedeck]->mixtex, 192, 108);
-            }
-			mainmix->save_deck(path, true, true);
-			this->menubinel->type = ELEM_DECK;
-			this->menubinel->path = path;
-			this->menubinel->name = remove_extension(basename(this->menubinel->path));
-			//this->menubinel->oldjpegpath = this->menubinel->jpegpath;
+            mainmix->save_deck(path, true, true);
+            this->menubinel->type = ELEM_DECK;
+            this->menubinel->path = path;
+            this->menubinel->name = remove_extension(basename(this->menubinel->path));
+            //this->menubinel->oldjpegpath = this->menubinel->jpegpath;
             std::string jpegpath = path + ".jpeg";
             save_thumb(jpegpath, this->menubinel->tex);
             this->menubinel->jpegpath = jpegpath;
             this->menubinel->absjpath = this->menubinel->jpegpath;
-            this->menubinel->reljpath = std::filesystem::relative(this->menubinel->absjpath, mainprogram->project->binsdir).generic_string();
+            this->menubinel->reljpath = std::filesystem::relative(this->menubinel->absjpath,
+                                                                  mainprogram->project->binsdir).generic_string();
             this->menubinel->temp = true;
-			// clean up: maybe too much cleared here, doesn't really matter
-			this->menuactbinel = nullptr;
-			this->prevbinel = nullptr;
-		}
-		else if (binelmenuoptions[k] == BET_INSDECKB) {
-			// insert deck B into bin
-			{
-				std::lock_guard<std::mutex> lock(mainprogram->pathmutex);
-				mainprogram->paths.clear();
-			}
-			mainmix->mousedeck = 1;
+            // clean up: maybe too much cleared here, doesn't really matter
+            this->menuactbinel = nullptr;
+            this->prevbinel = nullptr;
+        } else if (binelmenuoptions[k] == BET_INSDECKB) {
+            // insert deck B into bin
+            {
+                std::lock_guard<std::mutex> lock(mainprogram->pathmutex);
+                mainprogram->paths.clear();
+            }
+            mainmix->mousedeck = 1;
 
-            std::string path = find_unused_filename("deckB", mainprogram->project->binsdir + this->currbin->name + "/", ".deck");
+            std::string path = find_unused_filename("deckB", mainprogram->project->binsdir + this->currbin->name + "/",
+                                                    ".deck");
             if (mainprogram->prevmodus) {
                 this->menubinel->tex = copy_tex(mainprogram->nodesmain->mixnodes[0][mainmix->mousedeck]->mixtex);
-            }
-            else {
+            } else {
                 this->menubinel->tex = copy_tex(mainprogram->nodesmain->mixnodes[1][mainmix->mousedeck]->mixtex);
             }
             mainmix->save_deck(path, true, true);
@@ -1714,24 +2007,24 @@ void BinsMain::handle(bool draw) {
             save_thumb(jpegpath, this->menubinel->tex);
             this->menubinel->jpegpath = jpegpath;
             this->menubinel->absjpath = this->menubinel->jpegpath;
-            this->menubinel->reljpath = std::filesystem::relative(this->menubinel->absjpath, mainprogram->project->binsdir).generic_string();
+            this->menubinel->reljpath = std::filesystem::relative(this->menubinel->absjpath,
+                                                                  mainprogram->project->binsdir).generic_string();
             this->menubinel->temp = true;
             // clean up: maybe too much cleared here, doesn't really matter
             this->menuactbinel = nullptr;
             this->prevbinel = nullptr;
-        }
-		else if (binelmenuoptions[k] == BET_INSMIX) {
-			// insert current mix into bin
-			{
-				std::lock_guard<std::mutex> lock(mainprogram->pathmutex);
-				mainprogram->paths.clear();
-			}
+        } else if (binelmenuoptions[k] == BET_INSMIX) {
+            // insert current mix into bin
+            {
+                std::lock_guard<std::mutex> lock(mainprogram->pathmutex);
+                mainprogram->paths.clear();
+            }
 
-            std::string path = find_unused_filename("mix", mainprogram->project->binsdir + this->currbin->name + "/", ".mix");
+            std::string path = find_unused_filename("mix", mainprogram->project->binsdir + this->currbin->name + "/",
+                                                    ".mix");
             if (mainprogram->prevmodus) {
                 this->menubinel->tex = copy_tex(mainprogram->nodesmain->mixnodes[0][2]->mixtex, 192, 108);
-            }
-            else {
+            } else {
                 this->menubinel->tex = copy_tex(mainprogram->nodesmain->mixnodes[1][2]->mixtex, 192, 108);
             }
             mainmix->save_mix(path, mainprogram->prevmodus, true);
@@ -1743,83 +2036,76 @@ void BinsMain::handle(bool draw) {
             save_thumb(jpegpath, this->menubinel->tex);
             this->menubinel->jpegpath = jpegpath;
             this->menubinel->absjpath = this->menubinel->jpegpath;
-            this->menubinel->reljpath = std::filesystem::relative(this->menubinel->absjpath, mainprogram->project->binsdir).generic_string();
+            this->menubinel->reljpath = std::filesystem::relative(this->menubinel->absjpath,
+                                                                  mainprogram->project->binsdir).generic_string();
             this->menubinel->temp = true;
             // clean up: maybe too much cleared here, doesn't really matter
             this->menuactbinel = nullptr;
             this->prevbinel = nullptr;
-		}
-		else if (binelmenuoptions[k] == BET_LOADSHELFA) {
-			// load hovered block into shelf A
-			Shelf* shelf = mainprogram->shelves[0];
-			for (int i = 0; i < 16; i++) {
-				BinElement* binel = this->currbin->elements[this->mouseshelfnum / 3 * 48 + (this->mouseshelfnum % 3) * 4 + (i / 4) * 12 + (i % 4)];
-				ShelfElement* elem = shelf->elements[i];
+        } else if (binelmenuoptions[k] == BET_LOADSHELFA) {
+            // load hovered block into shelf A
+            Shelf *shelf = mainprogram->shelves[0];
+            for (int i = 0; i < 16; i++) {
+                BinElement *binel = this->currbin->elements[this->mouseshelfnum / 3 * 48 +
+                                                            (this->mouseshelfnum % 3) * 4 + (i / 4) * 12 + (i % 4)];
+                ShelfElement *elem = shelf->elements[i];
                 elem->path = binel->path;
                 elem->name = binel->name;
-				elem->jpegpath = binel->jpegpath;
-				elem->type = binel->type;
+                elem->jpegpath = binel->jpegpath;
+                elem->type = binel->type;
                 GLuint butex = elem->tex;
                 elem->tex = copy_tex(binel->tex, 192, 108);
                 if (butex != -1) glDeleteTextures(1, &butex);
-			}
-		}
-		else if (binelmenuoptions[k] == BET_LOADSHELFB) {
-			// load hovered block into shelf B
-			Shelf* shelf = mainprogram->shelves[1];
-			for (int i = 0; i < 16; i++) {
-				BinElement* binel = this->currbin->elements[this->mouseshelfnum / 3 * 48 + (this->mouseshelfnum % 3) * 4 + (i / 4) * 12 + (i % 4)];
-				ShelfElement* elem = shelf->elements[i];
-				elem->path = binel->path;
+            }
+        } else if (binelmenuoptions[k] == BET_LOADSHELFB) {
+            // load hovered block into shelf B
+            Shelf *shelf = mainprogram->shelves[1];
+            for (int i = 0; i < 16; i++) {
+                BinElement *binel = this->currbin->elements[this->mouseshelfnum / 3 * 48 +
+                                                            (this->mouseshelfnum % 3) * 4 + (i / 4) * 12 + (i % 4)];
+                ShelfElement *elem = shelf->elements[i];
+                elem->path = binel->path;
                 elem->name = binel->name;
-				elem->jpegpath = binel->jpegpath;
-				elem->type = binel->type;
-				GLuint butex = elem->tex;
-				elem->tex = copy_tex(binel->tex, 192, 108);
+                elem->jpegpath = binel->jpegpath;
+                elem->type = binel->type;
+                GLuint butex = elem->tex;
+                elem->tex = copy_tex(binel->tex, 192, 108);
                 if (butex != -1) glDeleteTextures(1, &butex);
-			}
-		}
-		else if (binelmenuoptions[k] == BET_HAPELEM) {
-			if (!this->menubinel->encoding) {
-				// hap encode hovered bin element
-				if (this->menubinel->type == ELEM_DECK) {
-					this->hap_mix(this->menubinel);
-				}
-				else if (this->menubinel->type == ELEM_MIX) {
-					this->hap_deck(this->menubinel);
-				}
-				else {
-            		this->hap_binel(this->menubinel, nullptr, -1);
-				}
-			}
-			else this->menubinel->encoding = false; // signal stopping the encoding of this elem
-		}
-        else if (binelmenuoptions[k] == BET_HAPBIN) {
+            }
+        } else if (binelmenuoptions[k] == BET_HAPELEM) {
+            if (!this->menubinel->encoding) {
+                // hap encode hovered bin element
+                if (this->menubinel->type == ELEM_DECK) {
+                    this->hap_mix(this->menubinel);
+                } else if (this->menubinel->type == ELEM_MIX) {
+                    this->hap_deck(this->menubinel);
+                } else {
+                    this->hap_binel(this->menubinel, nullptr, -1);
+                }
+            } else this->menubinel->encoding = false; // signal stopping the encoding of this elem
+        } else if (binelmenuoptions[k] == BET_HAPBIN) {
             // hap encode entire bin
             for (int i = 0; i < 12; i++) {
                 for (int j = 0; j < 12; j++) {
                     // elements
-                    BinElement* binel = this->currbin->elements[i * 12 + j];
-                    if (binel->encoding) continue;
+                    BinElement *binel = this->currbin->elements[i * 12 + j];
+                    if (binel->encoding || binel->vidupscaling) continue;
                     if (binel->name != "" && (binel->type == ELEM_FILE || binel->type == ELEM_LAYER)) {
                         this->hap_binel(binel, nullptr);
-                    }
-                    else if (binel->type == ELEM_DECK) {
+                    } else if (binel->type == ELEM_DECK) {
                         this->hap_deck(binel);
-                    }
-                    else if (binel->type == ELEM_MIX) {
+                    } else if (binel->type == ELEM_MIX) {
                         this->hap_mix(binel);
                     }
                 }
             }
-        }
-        else if (binelmenuoptions[k] == BET_HAPSEL) {
+        } else if (binelmenuoptions[k] == BET_HAPSEL) {
             // hap encode entire bin
             for (int i = 0; i < 12; i++) {
                 for (int j = 0; j < 12; j++) {
                     // elements
-                    BinElement* binel = this->currbin->elements[i * 12 + j];
-                    if (binel->select) {
+                    BinElement *binel = this->currbin->elements[i * 12 + j];
+                    if (binel->select && !binel->vidupscaling) {
                         if (binel->name != "" && (binel->type == ELEM_FILE || binel->type == ELEM_LAYER)) {
                             this->hap_binel(binel, nullptr);
                         } else if (binel->type == ELEM_DECK) {
@@ -1830,19 +2116,51 @@ void BinsMain::handle(bool draw) {
                     }
                 }
             }
-        }
-        else if (binelmenuoptions[k] == BET_QUIT) {
+        } else if (binelmenuoptions[k] == BET_QUIT) {
             // quit program
             mainprogram->quitting = "quitted";
-        }
-        else if (binelmenuoptions[k] == BET_SAVPROJ) {
+        } else if (binelmenuoptions[k] == BET_SAVPROJ) {
             // save project
             mainprogram->project->save(mainprogram->project->path);
+        } else if (binelmenuoptions[k] == BET_UPSCALEIMAGE) {
+            // ai realesrgan upscale image (async to not block video)
+            this->menubinel->upscale_image_async(mainprogram->menuresults[0]);
+        } else if (binelmenuoptions[k] == BET_UPSCALEVIDEO) {
+            // ai video upscaling (async to not block video)
+            this->menubinel->upscaler = new VideoUpscaler;
+            if (this->menubinel->upscaler->initialize()) {
+                VideoUpscaler::Quality quality;
+                switch (mainprogram->menuresults[0] / 4) {
+                    case 0:
+                        quality = VideoUpscaler::Quality::FAST;
+                        break;
+                    case 1:
+                        quality = VideoUpscaler::Quality::BALANCED;
+                        break;
+                    case 2:
+                    default:
+                        quality = VideoUpscaler::Quality::ULTRA;
+                        break;
+                }
+                VideoUpscaler::ScaleFactor scalefactor;
+                switch (mainprogram->menuresults[0] % 4) {
+                    case 0:
+                        scalefactor = VideoUpscaler::ScaleFactor::CLEANUP;
+                        break;
+                    case 1:
+                        scalefactor = VideoUpscaler::ScaleFactor::X2;
+                        break;
+                    case 2:
+                        scalefactor = VideoUpscaler::ScaleFactor::X3;
+                        break;
+                    case 3:
+                        scalefactor = VideoUpscaler::ScaleFactor::X4;
+                        break;
+                }
+				this->menubinel->vidupscalingpath = this->menubinel->upscaler->upscale(this->menubinel->path, quality, scalefactor);
+                this->menubinel->vidupscaling = true;
+            }
         }
-		else if (binelmenuoptions[k] == BET_UPSCALEIMAGE) {
-			// ai realesrgan upscale image
-			this->menubinel->upscale_image(mainprogram->menuresults[0]);
-		}
 		else if (binelmenuoptions[k] == BET_LOADSTYLEPREP) {
 			// load block in AI styleroom preparation bin
 			bool found = false;
@@ -4642,7 +4960,7 @@ void BinsMain::hap_deck(BinElement* bd) {
             if (apath == "" && rpath == "") {
                 rfile.close();
                 wfile.close();
-                std::filesystem::remove(remove_extension(bd->path) + ".temp");
+                safe_remove(remove_extension(bd->path) + ".temp");
                 return;
             }
 			wfile << "FILENAME\n";
@@ -4692,7 +5010,7 @@ void BinsMain::hap_mix(BinElement * bm) {
                 if (apath == "" && rpath == "") {
                     rfile.close();
                     wfile.close();
-                    std::filesystem::remove(remove_extension(bm->path) + ".temp");
+                    safe_remove(remove_extension(bm->path) + ".temp");
                     return;
                 }
 				wfile << "FILENAME\n";

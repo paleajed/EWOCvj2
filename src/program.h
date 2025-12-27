@@ -17,6 +17,7 @@
 #include <atomic>
 #include <chrono>
 #include <string>
+#include <utility>
 #include "GL/gl.h"
 #include "BeatDetektor.h"
 #include "fftw3.h"
@@ -549,11 +550,13 @@ class Program {
 		Layer *prelay = nullptr;
         std::vector<Layer*> dellays;
         std::vector<Effect*> deleffects;
+        std::vector<std::pair<Layer*, int>> effectsToDelete;  // Layer and effect position pairs for OOM deletion
         SDL_Window *splashwindow = nullptr;
         SDL_Window *mainwindow = nullptr;
 		std::vector<EWindow*> mixwindows;
 		std::vector<Menu*> menulist;
 		std::vector<Menu*> actmenulist;
+		Menu *globeffectmenu = nullptr;
 		Menu *effectmenu = nullptr;
 		Menu *mixmodemenu = nullptr;
         Menu *parammenu1 = nullptr;
@@ -606,7 +609,9 @@ class Program {
         Menu* beatmenu = nullptr;
         Menu* sendmenu = nullptr;
 		Menu* optionmenu = nullptr;
-		Menu* upscalemenu = nullptr;
+        Menu* upscalemenu = nullptr;
+        Menu* vidupscalemenu = nullptr;
+		Menu* stylemenu = nullptr;
         bool menuactivation = false;
         bool binmenuactivation = false;
 		bool menuchosen = false;
@@ -777,6 +782,7 @@ class Program {
         size_t autime = 0;
         int aubpmcounter = 0;
         float topquality = 0.0f;
+        float timetotop = 0.0f;
         float qtime = 0.0f;
         bool inbetween = false;
 
@@ -885,6 +891,9 @@ class Program {
         float* aubuffer = nullptr;
         int aubuffersize = 0;
         int ausamples = 0;
+        int aufftsize = 0;
+        SDL_AudioFormat auformat = 0;
+        int auchannels = 0;
         std::vector<float> auoutfloat;
         int auoutsize = 0;
         double* auin = nullptr;
@@ -897,6 +906,7 @@ class Program {
 
         bool binsscreen = false;
         bool styleroom = false;
+        bool genroom = false;
 		BinElement *dragbinel = nullptr;
 		Clip *dragclip = nullptr;
         bool draggedclip = false;
@@ -909,12 +919,15 @@ class Program {
         bool draggingrec = false;
 		bool inwormgate = false;
 		Button* wormgate1 = nullptr;
-		Button* wormgate2 = nullptr;
+        Button* wormgate2 = nullptr;
+		Button* wormgate3 = nullptr;
+		Button* wormgate4 = nullptr;
 		DIR *opendir = nullptr;
         bool submenuscreated = false;
         bool gotaudioinputs = false;
 
 		EDIT_TYPE renaming = EDIT_NONE;
+        bool renamingstyle = false;
         bool renamingseat = false;
         bool renamingip = false;
         bool enteringserverip = false;
@@ -1160,7 +1173,8 @@ class Program {
         std::vector<std::vector<ISFShaderInstance*>> isfinstances;
         std::mutex isfinstances_mutex;  // Protects isfinstances from concurrent access
 
-        std::vector<std::string> aistylenames;  // AI style transfer model names
+		std::vector<std::string> aistylenames;  // AI style transfer model names
+		std::vector<std::string> aistylepaths;
 
         NDIManager& ndimanager;
         std::vector<std::string> ndisourcenames;
@@ -1181,6 +1195,8 @@ class Program {
 		int handle_menu(Menu* menu, float xshift, float yshift);
 		void handle_fullscreen();
 		void make_menu(std::string name, Menu *&menu, std::vector<std::string> &entries);
+		void create_effmenu();
+		void create_stylemenu();
 		void get_outname(const char *title, std::string filters, std::string defaultdir);
 		void get_inname(const char *title, std::string filters, std::string defaultdir);
 		void get_multinname(const char* title, std::string filters, std::string defaultdir);
@@ -1198,7 +1214,7 @@ class Program {
 		void add_main_oscmethods();
         GLuint get_tex(Layer *lay);
 		bool order_paths(bool dodeckmix);
-		void handle_wormgate(bool gate);
+		void handle_wormgate(int room);
         int handle_scrollboxes(Boxx &upperbox, Boxx &lowerbox, int numlines, int scrollpos, int scrlines);
         int handle_scrollboxes(Boxx &upperbox, Boxx &lowerbox, int numlines, int scrollpos, int scrlines, int mx, int
             my);
@@ -1213,7 +1229,7 @@ class Program {
 		void tooltips_handle(int win);
 		void define_menus();
 		void handle_mixenginemenu();
-		void handle_effectmenu();
+		void handle_globeffectmenu();
         void handle_parammenu1();
         void handle_parammenu2();
         void handle_parammenu1b();
@@ -1272,6 +1288,7 @@ class Program {
         void init_audio(const char* device);
         char* bl_recv(int sock, char *buf, size_t sz, int flags);
         int bl_send(int sock, const char *buf, size_t sz, int flags);
+        int getFreeVRAM();  // Returns free VRAM in MB (NVIDIA/AMD), -1 if unavailable
         Program();
 
 	private:
@@ -1296,7 +1313,6 @@ extern LoopStation *loopstation;
 extern LoopStation *lp;
 extern LoopStation *lpc;
 extern Retarget *retarget;
-extern Menu *effectmenu;
 extern float smw, smh;
 extern SDL_GLContext glc;
 extern SDL_GLContext orderglc;
@@ -1435,6 +1451,8 @@ extern bool check_permission(std::string directory);
 extern std::string remove_version(std::string filename);
 extern std::string pathtoplatform(std::string path);
 extern std::string pathtoposix(std::string path);
+extern void safe_remove_all(const std::filesystem::path& path);
+extern void safe_remove(const std::filesystem::path& path);
 extern std::vector<std::string> getListOfDrives();
 extern std::string test_driveletters(std::string path);
 extern bool isimage(std::string path);

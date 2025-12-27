@@ -16,6 +16,7 @@ class Layer;
 class Clip;
 class ShelfElement;
 class BinElement;
+class StylePreparationElement;
 
 class Retarget {
     public:
@@ -23,6 +24,7 @@ class Retarget {
         Clip *clip = nullptr;
         ShelfElement *shelem = nullptr;
         BinElement *binel = nullptr;
+        StylePreparationElement *stylelem = nullptr;
         GLuint tex;
         int filesize = 0;
 

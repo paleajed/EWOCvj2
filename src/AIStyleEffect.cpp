@@ -27,6 +27,7 @@
 
 AIStyleEffect::AIStyleEffect(int styleIndex) : Effect() {
     type = AI_STYLE;
+    this->aistylnr = styleIndex;
     initialized = false;
     lastStyleIndex = -1;
     lastProcessingScale = 1.0f;
@@ -205,12 +206,6 @@ AIStyleEffect::AIStyleEffect(int styleIndex) : Effect() {
     qualityParam->effect = this;
     params.push_back(qualityParam);*/
 
-    // Set initial style if available
-    if (numStyles > 0) {
-        int initStyle = (styleIndex >= 0 && styleIndex < numStyles) ? styleIndex : 0;
-        styleTransfer->setStyle(initStyle);
-        lastStyleIndex = initStyle;
-    }
 
     // Note: processingResolution is auto-detected from model input shape
     // Models with fixed dimensions (e.g. 224×224) will auto-downscale
@@ -272,8 +267,8 @@ bool AIStyleEffect::applyStyle(GLuint inputTexture, GLuint outputTexture, int wi
         outputFBO.height = height;
         outputFBO.framebuffer = tempOutputFBO;
 
-        // Use async rendering
-        bool result = styleTransfer->render(inputFBO, outputFBO, false);
+        // Render using triple-buffered async pipeline
+        bool result = styleTransfer->render(inputFBO, outputFBO);
 
         // Print timing every 60 frames
         static int frameCount = 0;
@@ -290,21 +285,21 @@ bool AIStyleEffect::applyStyle(GLuint inputTexture, GLuint outputTexture, int wi
 }
 
 void AIStyleEffect::updateStyle() {
-    if (!initialized || !styleTransfer || params.empty()) return;
+    if (!initialized || !styleTransfer) return;
 
-    int newStyleIndex = static_cast<int>(params[0]->value);
+    // Use aistylnr from Effect base class (set when effect is created)
+    int newStyleIndex = this->aistylnr;
     auto availableStyles = styleTransfer->getAvailableStyles();
 
     if (newStyleIndex < 0 || newStyleIndex >= static_cast<int>(availableStyles.size())) {
         return;
     }
 
-    if (newStyleIndex != lastStyleIndex) {
-        if (styleTransfer->setStyle(newStyleIndex)) {
-            lastStyleIndex = newStyleIndex;
-            std::cerr << "[AIStyleEffect] Switched to style: "
-                      << availableStyles[newStyleIndex] << std::endl;
-        }
+    if (newStyleIndex != lastStyleIndex && !styleTransfer->isModelLoading()) {
+        styleTransfer->setStyleAsync(newStyleIndex);
+        lastStyleIndex = newStyleIndex;
+        std::cerr << "[AIStyleEffect] Switching to style: "
+                  << availableStyles[newStyleIndex] << std::endl;
     }
 }
 

@@ -13,6 +13,7 @@
 #include "GL/freeglut.h"
 
 #include "ReCoNetTrainer.h"
+#include "AIStyleTransfer.h"
 #include "program.h"
 
 #include <iostream>
@@ -35,6 +36,69 @@
 #include <winsock2.h>
 #include <windows.h>
 #include <shlobj.h>
+
+// Helper function to run a command without showing a console window
+// Returns true if CreateProcess succeeded, exitCode and output are set
+static bool runCommandSilent(const std::string& cmd, std::string& output, int& exitCode) {
+    SECURITY_ATTRIBUTES sa;
+    sa.nLength = sizeof(SECURITY_ATTRIBUTES);
+    sa.bInheritHandle = TRUE;
+    sa.lpSecurityDescriptor = NULL;
+
+    HANDLE hReadPipe, hWritePipe;
+    if (!CreatePipe(&hReadPipe, &hWritePipe, &sa, 0)) {
+        return false;
+    }
+
+    // Ensure the read handle is not inherited
+    SetHandleInformation(hReadPipe, HANDLE_FLAG_INHERIT, 0);
+
+    STARTUPINFOA si;
+    PROCESS_INFORMATION pi;
+    ZeroMemory(&si, sizeof(si));
+    si.cb = sizeof(si);
+    si.hStdError = hWritePipe;
+    si.hStdOutput = hWritePipe;
+    si.dwFlags |= STARTF_USESTDHANDLES | STARTF_USESHOWWINDOW;
+    si.wShowWindow = SW_HIDE;
+    ZeroMemory(&pi, sizeof(pi));
+
+    // CreateProcess needs a mutable copy of the command line
+    std::string cmdCopy = cmd;
+
+    if (!CreateProcessA(NULL, (LPSTR)cmdCopy.c_str(), NULL, NULL, TRUE,
+                        CREATE_NO_WINDOW, NULL, NULL, &si, &pi)) {
+        CloseHandle(hReadPipe);
+        CloseHandle(hWritePipe);
+        return false;
+    }
+
+    // Close write end of pipe in parent process
+    CloseHandle(hWritePipe);
+
+    // Read output from pipe
+    output.clear();
+    char buffer[256];
+    DWORD bytesRead;
+    while (ReadFile(hReadPipe, buffer, sizeof(buffer) - 1, &bytesRead, NULL) && bytesRead > 0) {
+        buffer[bytesRead] = '\0';
+        output += buffer;
+    }
+
+    // Wait for process to finish
+    WaitForSingleObject(pi.hProcess, INFINITE);
+
+    DWORD dwExitCode;
+    GetExitCodeProcess(pi.hProcess, &dwExitCode);
+    exitCode = static_cast<int>(dwExitCode);
+
+    CloseHandle(pi.hProcess);
+    CloseHandle(pi.hThread);
+    CloseHandle(hReadPipe);
+
+    return true;
+}
+
 #else
 #include <unistd.h>
 #include <sys/wait.h>
@@ -141,17 +205,15 @@ bool ReCoNetTrainer::initialize() {
     bool foundPython = false;
     for (const auto& path : pythonPaths) {
 #ifdef _WIN32
-        // Try to run python --version using _popen (no console window)
-        std::string cmd = path + " --version 2>&1";
-        FILE* pipe = _popen(cmd.c_str(), "r");
-        if (pipe) {
-            int exitCode = _pclose(pipe);
-            if (exitCode == 0) {
-                pythonExecutable = path;
-                foundPython = true;
-                std::cerr << "[ReCoNetTrainer] Found Python: " << path << std::endl;
-                break;
-            }
+        // Try to run python --version silently (no console window)
+        std::string cmd = "\"" + path + "\" --version";
+        std::string output;
+        int exitCode;
+        if (runCommandSilent(cmd, output, exitCode) && exitCode == 0) {
+            pythonExecutable = path;
+            foundPython = true;
+            std::cerr << "[ReCoNetTrainer] Found Python: " << path << std::endl;
+            break;
         }
 #else
         std::string cmd = "\"" + path + "\" --version >/dev/null 2>&1";
@@ -170,30 +232,21 @@ bool ReCoNetTrainer::initialize() {
         return false;
     }
 
-    // Check for PyTorch by capturing output (using _popen to avoid console window)
+    // Check for PyTorch silently (no console window)
 #ifdef _WIN32
-    // Build command with proper escaping for _popen
-    // Use double quotes around the whole command and escape inner quotes
-    std::string checkCmd = pythonExecutable + " -c \"import torch; print(torch.__version__)\" 2>&1";
-
-    FILE* pipe = _popen(checkCmd.c_str(), "r");
+    std::string checkCmd = "\"" + pythonExecutable + "\" -c \"import torch; print(torch.__version__)\"";
+    std::string result;
+    int torchExitCode;
     bool torchFound = false;
 
-    if (pipe) {
-        char buffer[256];
-        std::string result;
-        while (fgets(buffer, sizeof(buffer), pipe) != NULL) {
-            result += buffer;
-        }
-        int exitCode = _pclose(pipe);
-
+    if (runCommandSilent(checkCmd, result, torchExitCode)) {
         std::cerr << "[ReCoNetTrainer] PyTorch check output: " << result;
 
         // Check if output looks like a version number
         if (result.find('.') != std::string::npos &&
             result.find("ModuleNotFoundError") == std::string::npos &&
             result.find("ImportError") == std::string::npos &&
-            exitCode == 0) {
+            torchExitCode == 0) {
             torchFound = true;
         }
     }
@@ -318,6 +371,11 @@ bool ReCoNetTrainer::startTraining(StylePreparationBin* bin,
         progress = Progress();
         progress.totalIterations = config.getIterations();
         progress.status = "Starting...";
+    }
+
+    // Join previous training thread if it exists (prevents std::terminate on destruction)
+    if (trainingThread && trainingThread->joinable()) {
+        trainingThread->join();
     }
 
     // Start training thread
@@ -445,7 +503,17 @@ void ReCoNetTrainer::trainingThreadFunc(StylePreparationBin* bin,
             return;
         }
 
-        // Preprocess images
+        // Collect original image paths (for high-res style loading in Python)
+        std::vector<std::string> originalImagePaths;
+        for (size_t i = 0; i < bin->elements.size(); i++) {
+            StylePreparationElement* elem = bin->elements[i];
+            if (!elem->abspath.empty()) {
+                originalImagePaths.push_back(elem->abspath);
+            }
+        }
+        std::cerr << "[ReCoNetTrainer] Collected " << originalImagePaths.size() << " original style image paths" << std::endl;
+
+        // Preprocess images (for content-resolution fallback)
         std::vector<std::string> imagePaths;
         updateProgress({0, config.getIterations(), 0, 0, 0, "Preprocessing images...", 0});
 
@@ -468,7 +536,7 @@ void ReCoNetTrainer::trainingThreadFunc(StylePreparationBin* bin,
         for (char& c : outputOnnxPath) if (c == '/') c = '\\';
         #endif
 
-        if (!generateConfigJSON(config, imagePaths, modelName, configPath)) {
+        if (!generateConfigJSON(config, imagePaths, originalImagePaths, modelName, configPath)) {
             training.store(false);
             return;
         }
@@ -492,11 +560,34 @@ void ReCoNetTrainer::trainingThreadFunc(StylePreparationBin* bin,
             for (char& c : finalModelPath) if (c == '/') c = '\\';
             #endif
             try {
+                if (exists(finalModelPath)) {
+                    safe_remove(finalModelPath);
+                }
                 std::filesystem::copy_file(outputOnnxPath, finalModelPath,
                                           std::filesystem::copy_options::overwrite_existing);
                 std::cerr << "[ReCoNetTrainer] Model saved: " << finalModelPath << std::endl;
                 updateProgress({config.getIterations(), config.getIterations(), 0, 0, 0,
                               "Training complete!", 0});
+
+                // Add new style to available styles list
+                mainstyleroom->updatelists();
+
+                std::string modelsdir;
+#ifdef _WIN32
+                modelsdir = "C:/ProgramData/EWOCvj2/models/styles/";
+#else
+                modelsdir = "/usr/share/EWOCvj2/models/styles/";
+#endif
+                std::string path;
+                int count = 0;
+                while (1) {
+                    path = modelsdir + mainstyleroom->currstylename + ".onnx";
+                    if (!exists(path)) {
+                        break;
+                    }
+                    count++;
+                    mainstyleroom->currstylename = remove_version(mainstyleroom->currstylename) + "_" + std::to_string(count);
+                }
             } catch (const std::exception& e) {
                 setError(std::string("Failed to copy model file: ") + e.what());
             }
@@ -531,7 +622,8 @@ void ReCoNetTrainer::trainingThreadFunc(StylePreparationBin* bin,
 
 bool ReCoNetTrainer::preprocessImages(StylePreparationBin* bin, const Config& config,
                                       std::vector<std::string>& outImagePaths) {
-    int targetRes = config.getResolution();
+    // Use inspirationResolution for preprocessing - smallest side will be this value
+    int targetMinDimension = config.inspirationResolution;
     int processedCount = 0;
 
     for (size_t i = 0; i < bin->elements.size(); i++) {
@@ -548,11 +640,13 @@ bool ReCoNetTrainer::preprocessImages(StylePreparationBin* bin, const Config& co
         updateProgress({processedCount, config.getIterations(), 0, 0, 0,
                        "Preprocessing image " + std::to_string(processedCount + 1) + "...", 0});
 
-        // Preprocess image
-        GLuint texture = preprocessSingleImage(elem->abspath, targetRes, targetRes);
+        // Preprocess image - output dimensions calculated based on aspect ratio
+        int outWidth = 0, outHeight = 0;
+        GLuint texture = preprocessSingleImage(elem->abspath, targetMinDimension, outWidth, outHeight);
 
-        if (texture == (GLuint)-1) {
+        if (texture == (GLuint)-1 || outWidth <= 0 || outHeight <= 0) {
             setError("Failed to preprocess image: " + elem->abspath);
+            if (texture != (GLuint)-1) glDeleteTextures(1, &texture);
             return false;
         }
 
@@ -560,6 +654,7 @@ bool ReCoNetTrainer::preprocessImages(StylePreparationBin* bin, const Config& co
         GLenum err = glGetError();
         if (err == GL_OUT_OF_MEMORY) {
             setError("Out of VRAM during preprocessing. Reduce image count or quality.");
+            mainprogram->infostr = "Out of VRAM! Reduce image count or training quality.";
             glDeleteTextures(1, &texture);
             return false;
         }
@@ -573,7 +668,7 @@ bool ReCoNetTrainer::preprocessImages(StylePreparationBin* bin, const Config& co
         }
         #endif
 
-        if (!savePreprocessedImage(texture, targetRes, targetRes, outputPath)) {
+        if (!savePreprocessedImage(texture, outWidth, outHeight, outputPath)) {
             setError("Failed to save preprocessed image: " + outputPath);
             glDeleteTextures(1, &texture);
             return false;
@@ -592,7 +687,11 @@ bool ReCoNetTrainer::preprocessImages(StylePreparationBin* bin, const Config& co
 }
 
 GLuint ReCoNetTrainer::preprocessSingleImage(const std::string& imagePath,
-                                             int targetWidth, int targetHeight) {
+                                             int targetMinDimension, int& outWidth, int& outHeight) {
+    // Initialize output parameters to safe defaults
+    outWidth = 0;
+    outHeight = 0;
+
     // Load image with DevIL
     ILuint ilImage;
     ilGenImages(1, &ilImage);
@@ -609,11 +708,45 @@ GLuint ReCoNetTrainer::preprocessSingleImage(const std::string& imagePath,
     int srcHeight = ilGetInteger(IL_IMAGE_HEIGHT);
     ILubyte* data = ilGetData();
 
-    if (!data) {
-        std::cerr << "[ReCoNetTrainer] Failed to get image data" << std::endl;
+    if (!data || srcWidth <= 0 || srcHeight <= 0) {
+        std::cerr << "[ReCoNetTrainer] Failed to get image data or invalid dimensions" << std::endl;
         ilDeleteImages(1, &ilImage);
         return (GLuint)-1;
     }
+
+    // Calculate output dimensions: smallest side = targetMinDimension, maintain aspect ratio
+    int targetWidth, targetHeight;
+    if (srcWidth <= srcHeight) {
+        // Width is smaller or equal - scale width to target, height proportionally
+        targetWidth = targetMinDimension;
+        targetHeight = (int)((float)srcHeight / (float)srcWidth * targetMinDimension);
+    } else {
+        // Height is smaller - scale height to target, width proportionally
+        targetHeight = targetMinDimension;
+        targetWidth = (int)((float)srcWidth / (float)srcHeight * targetMinDimension);
+    }
+
+    // Clamp to reasonable maximum to avoid GPU memory issues with extreme aspect ratios
+    const int maxDimension = 4096;
+    if (targetWidth > maxDimension) {
+        targetHeight = (int)((float)targetHeight * maxDimension / targetWidth);
+        targetWidth = maxDimension;
+    }
+    if (targetHeight > maxDimension) {
+        targetWidth = (int)((float)targetWidth * maxDimension / targetHeight);
+        targetHeight = maxDimension;
+    }
+
+    // Ensure minimum dimensions
+    if (targetWidth < 1) targetWidth = 1;
+    if (targetHeight < 1) targetHeight = 1;
+
+    // Return computed dimensions to caller
+    outWidth = targetWidth;
+    outHeight = targetHeight;
+
+    std::cerr << "[ReCoNetTrainer] Resizing " << srcWidth << "x" << srcHeight
+              << " -> " << targetWidth << "x" << targetHeight << std::endl;
 
     // Create source texture (don't use pool - avoid thread safety issues)
     GLuint srcTexture;
@@ -723,20 +856,36 @@ bool ReCoNetTrainer::savePreprocessedImage(GLuint texture, int width, int height
         return false;
     }
 
-    // Download from GL texture as RGB (3 bytes per pixel)
-    std::vector<unsigned char> pixels(width * height * 3);
+    // Create FBO to read from texture using glReadPixels (more compatible than glGetTexImage)
+    GLuint readFBO;
+    glGenFramebuffers(1, &readFBO);
+    glBindFramebuffer(GL_FRAMEBUFFER, readFBO);
+    glFramebufferTexture2D(GL_FRAMEBUFFER, GL_COLOR_ATTACHMENT0, GL_TEXTURE_2D, texture, 0);
 
-    glBindTexture(GL_TEXTURE_2D, texture);
-    glGetTexImage(GL_TEXTURE_2D, 0, GL_RGB, GL_UNSIGNED_BYTE, pixels.data());
+    GLenum fboStatus = glCheckFramebufferStatus(GL_FRAMEBUFFER);
+    if (fboStatus != GL_FRAMEBUFFER_COMPLETE) {
+        std::cerr << "[ReCoNetTrainer] FBO incomplete for reading: " << fboStatus << std::endl;
+        glBindFramebuffer(GL_FRAMEBUFFER, 0);
+        glDeleteFramebuffers(1, &readFBO);
+        return false;
+    }
+
+    // Read pixels from FBO as RGB (3 bytes per pixel)
+    std::vector<unsigned char> pixels(width * height * 3);
+    glPixelStorei(GL_PACK_ALIGNMENT, 1);
+    glReadPixels(0, 0, width, height, GL_RGB, GL_UNSIGNED_BYTE, pixels.data());
+
+    glBindFramebuffer(GL_FRAMEBUFFER, 0);
+    glDeleteFramebuffers(1, &readFBO);
 
     // Check for GL errors
     GLenum glErr = glGetError();
     if (glErr != GL_NO_ERROR) {
-        std::cerr << "[ReCoNetTrainer] OpenGL error during texture read: " << glErr << std::endl;
+        std::cerr << "[ReCoNetTrainer] OpenGL error during pixel read: " << glErr << std::endl;
         return false;
     }
 
-    // OpenGL textures are bottom-up, but PNG expects top-down
+    // OpenGL reads bottom-up, but PNG expects top-down
     // Flip the image vertically
     std::vector<unsigned char> flippedPixels(width * height * 3);
     for (int y = 0; y < height; y++) {
@@ -775,6 +924,7 @@ bool ReCoNetTrainer::savePreprocessedImage(GLuint texture, int width, int height
 
 bool ReCoNetTrainer::generateConfigJSON(const Config& config,
                                         const std::vector<std::string>& imagePaths,
+                                        const std::vector<std::string>& originalImagePaths,
                                         const std::string& modelName,
                                         const std::string& outputPath) {
     std::ofstream file(outputPath);
@@ -809,16 +959,39 @@ bool ReCoNetTrainer::generateConfigJSON(const Config& config,
     file << "  \"content_weight\": " << config.contentWeight << ",\n";
     file << "  \"style_weight\": " << config.styleWeight << ",\n";
     file << "  \"tv_weight\": " << config.tvWeight << ",\n";
+    file << "  \"temporal_weight\": " << config.temporalWeight << ",\n";
+    file << "  \"video_dataset\": \"" << preparePathForJson(config.videoDataset) << "\",\n";
+    file << "  \"sequence_length\": " << config.sequenceLength << ",\n";
     file << "  \"use_gpu\": " << (config.useGPU ? "true" : "false") << ",\n";
-    file << "  \"image_paths\": [\n";
+    file << "  \"content_dataset\": \"" << preparePathForJson(config.contentDataset) << "\",\n";
 
+    // Advanced: Per-layer style weights (VGG19 layers)
+    file << "  \"style_layer_weights\": {\n";
+    file << "    \"relu1_1\": " << config.styleWeightRelu1 << ",\n";
+    file << "    \"relu2_1\": " << config.styleWeightRelu2 << ",\n";
+    file << "    \"relu3_1\": " << config.styleWeightRelu3 << ",\n";
+    file << "    \"relu4_1\": " << config.styleWeightRelu4 << ",\n";
+    file << "    \"relu5_1\": " << config.styleWeightRelu5 << "\n";
+    file << "  },\n";
+
+    // Preprocessed image paths (legacy, for content-resolution style if needed)
+    file << "  \"image_paths\": [\n";
     for (size_t i = 0; i < imagePaths.size(); i++) {
         file << "    \"" << preparePathForJson(imagePaths[i]) << "\"";
         if (i < imagePaths.size() - 1) file << ",";
         file << "\n";
     }
+    file << "  ],\n";
 
+    // Original high-res image paths for style (preserves brush stroke detail!)
+    file << "  \"original_style_paths\": [\n";
+    for (size_t i = 0; i < originalImagePaths.size(); i++) {
+        file << "    \"" << preparePathForJson(originalImagePaths[i]) << "\"";
+        if (i < originalImagePaths.size() - 1) file << ",";
+        file << "\n";
+    }
     file << "  ]\n";
+
     file << "}\n";
 
     file.close();
@@ -939,11 +1112,20 @@ void ReCoNetTrainer::monitorTrainingProgress() {
                 buffer[bytesRead] = '\0';
                 std::string output(buffer);
 
-                // Print stderr lines
+                // Print stderr lines and check for OOM errors
                 std::istringstream stream(output);
                 std::string line;
                 while (std::getline(stream, line)) {
                     std::cerr << "[Training ERROR] " << line << std::endl;
+
+                    // Check for CUDA/PyTorch out of memory errors
+                    if (line.find("CUDA out of memory") != std::string::npos ||
+                        line.find("OutOfMemoryError") != std::string::npos ||
+                        line.find("out of memory") != std::string::npos) {
+                        mainprogram->infostr = "Out of VRAM! Reduce training resolution or batch size.";
+                        setError("CUDA out of memory. Reduce resolution or batch size.");
+                        shouldStop.store(true);
+                    }
                 }
             }
         }
@@ -961,7 +1143,7 @@ void ReCoNetTrainer::monitorTrainingProgress() {
 }
 
 bool ReCoNetTrainer::parseProgressLine(const std::string& line) {
-    // Parse lines like: "[Iteration 450/2000] Loss: 12.34"
+    // Parse lines like: "[Iteration 450/2000] Loss: 12.34 ... Remain: 120.3s"
     size_t iterPos = line.find("[Iteration");
     if (iterPos == std::string::npos) {
         return false;
@@ -969,6 +1151,7 @@ bool ReCoNetTrainer::parseProgressLine(const std::string& line) {
 
     int currentIter = 0, totalIter = 0;
     float loss = 0.0f;
+    float remainingTime = 0.0f;
 
     // Extract iteration numbers
     sscanf(line.c_str() + iterPos, "[Iteration %d/%d]", &currentIter, &totalIter);
@@ -979,11 +1162,18 @@ bool ReCoNetTrainer::parseProgressLine(const std::string& line) {
         sscanf(line.c_str() + lossPos, "Loss: %f", &loss);
     }
 
+    // Extract remaining time (format: "Remain: 120.3s")
+    size_t remainPos = line.find("Remain:");
+    if (remainPos != std::string::npos) {
+        sscanf(line.c_str() + remainPos, "Remain: %f", &remainingTime);
+    }
+
     // Update progress
     Progress newProgress;
     newProgress.currentIteration = currentIter;
     newProgress.totalIterations = totalIter;
     newProgress.totalLoss = loss;
+    newProgress.estimatedTimeRemaining = remainingTime;
     newProgress.status = "Training...";
 
     updateProgress(newProgress);

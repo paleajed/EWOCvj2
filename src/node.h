@@ -131,9 +131,13 @@ class MixNode: public Node {
 		int screen = 0;
 		GLuint mixfbo = -1;
 		GLuint mixtex = -1;
+		GLuint tempmixfbo = -1;
+		GLuint tempmixtex = -1;
 		bool newmixfbo = false;
         std::shared_ptr<NDIOutput> ndioutput = nullptr;
         NDITexture ndiouttex;
+		int aistylnr = -1;
+		Effect* aieffect = nullptr;
 		MixNode() {}
 		MixNode(const MixNode &node);
 		~MixNode();

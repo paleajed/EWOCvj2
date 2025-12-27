@@ -35,6 +35,11 @@ AIStyleTransfer::~AIStyleTransfer() {
         workerThread->join();
     }
 
+    // Wait for any pending model load to complete
+    if (modelLoadThread && modelLoadThread->joinable()) {
+        modelLoadThread->join();
+    }
+
     // Cleanup OpenGL resources
     cleanupPBOs();
     deleteFBO(scaledInputFBO);
@@ -58,20 +63,43 @@ bool AIStyleTransfer::initialize() {
         ortSessionOptions->SetGraphOptimizationLevel(GraphOptimizationLevel::ORT_ENABLE_ALL);
 
         // Setup GPU acceleration if requested
+        // Priority: TensorRT (NVIDIA RTX) -> DirectML (any GPU) -> CUDA (Linux) -> CPU
         if (useGPU) {
+            bool gpuEnabled = false;
+
+            #ifdef _WIN32
+            // Windows: Try TensorRT RTX first (fastest for NVIDIA RTX GPUs)
             try {
-                #ifdef _WIN32
-                    // Use DirectML on Windows (ONNX Runtime 1.23.0+)
+                ortSessionOptions->AppendExecutionProvider("NvTensorRtRtx");
+                std::cerr << "[AIStyleTransfer] Using TensorRT RTX GPU acceleration" << std::endl;
+                gpuEnabled = true;
+            } catch (const Ort::Exception& e) {
+                std::cerr << "[AIStyleTransfer] TensorRT RTX unavailable: " << e.what() << std::endl;
+            }
+
+            // Fallback: DirectML (works with NVIDIA, AMD, Intel via DirectX 12)
+            if (!gpuEnabled) {
+                try {
                     ortSessionOptions->AppendExecutionProvider("DML");
                     std::cerr << "[AIStyleTransfer] Using DirectML GPU acceleration" << std::endl;
-                #else
-                    // Use CUDA on Linux
-                    ortSessionOptions->AppendExecutionProvider("CUDA");
-                    std::cerr << "[AIStyleTransfer] Using CUDA GPU acceleration" << std::endl;
-                #endif
+                    gpuEnabled = true;
+                } catch (const Ort::Exception& e) {
+                    std::cerr << "[AIStyleTransfer] DirectML unavailable: " << e.what() << std::endl;
+                }
+            }
+            #else
+            // Linux: Use CUDA for NVIDIA GPUs
+            try {
+                ortSessionOptions->AppendExecutionProvider("CUDA");
+                std::cerr << "[AIStyleTransfer] Using CUDA GPU acceleration" << std::endl;
+                gpuEnabled = true;
             } catch (const Ort::Exception& e) {
-                std::cerr << "[AIStyleTransfer] GPU acceleration unavailable: " << e.what()
-                          << ", falling back to CPU" << std::endl;
+                std::cerr << "[AIStyleTransfer] CUDA unavailable: " << e.what() << std::endl;
+            }
+            #endif
+
+            if (!gpuEnabled) {
+                std::cerr << "[AIStyleTransfer] No GPU acceleration available, using CPU" << std::endl;
                 useGPU = false;
             }
         } else {
@@ -130,6 +158,8 @@ int AIStyleTransfer::loadStyles(const std::string& modelsPath) {
                 model.loaded = false;
                 styleModels.push_back(model);
 
+                mainprogram->aistylepaths.push_back(model.path.string());
+
                 std::cerr << "[AIStyleTransfer] Found style: " << model.name << std::endl;
             }
         }
@@ -170,6 +200,53 @@ bool AIStyleTransfer::setStyle(int styleIndex) {
     return false;
 }
 
+void AIStyleTransfer::setStyleAsync(int styleIndex) {
+    if (!initialized) {
+        setError("Not initialized");
+        return;
+    }
+
+    if (styleIndex < 0 || styleIndex >= static_cast<int>(styleModels.size())) {
+        setError("Invalid style index");
+        return;
+    }
+
+    // If already loading, ignore (or could queue)
+    if (modelLoading.load()) {
+        std::cerr << "[AIStyleTransfer] Model load already in progress, ignoring request" << std::endl;
+        return;
+    }
+
+    // Wait for previous load thread to finish if exists
+    if (modelLoadThread && modelLoadThread->joinable()) {
+        modelLoadThread->join();
+    }
+
+    pendingStyleIndex.store(styleIndex);
+    modelLoading.store(true);
+
+    std::cerr << "[AIStyleTransfer] Starting async load for style: " << styleModels[styleIndex].name << std::endl;
+
+    // Launch loading thread
+    modelLoadThread = std::make_unique<std::thread>([this, styleIndex]() {
+        // Wait for any in-progress processing
+        while (processing.load()) {
+            std::this_thread::sleep_for(std::chrono::milliseconds(10));
+        }
+
+        if (loadModel(styleModels[styleIndex].path)) {
+            currentStyleIndex = styleIndex;
+            styleModels[styleIndex].loaded = true;
+            std::cerr << "[AIStyleTransfer] Async load complete: " << styleModels[styleIndex].name << std::endl;
+        } else {
+            std::cerr << "[AIStyleTransfer] Async load failed: " << styleModels[styleIndex].name << std::endl;
+        }
+
+        modelLoading.store(false);
+        pendingStyleIndex.store(-1);
+    });
+}
+
 std::vector<std::string> AIStyleTransfer::getAvailableStyles() const {
     std::vector<std::string> names;
     names.reserve(styleModels.size());
@@ -179,7 +256,7 @@ std::vector<std::string> AIStyleTransfer::getAvailableStyles() const {
     return names;
 }
 
-bool AIStyleTransfer::render(const FBOstruct& input, FBOstruct& output, bool async) {
+bool AIStyleTransfer::render(const FBOstruct& input, FBOstruct& output) {
     if (!initialized) {
         setError("Not initialized");
         return false;
@@ -208,13 +285,31 @@ bool AIStyleTransfer::render(const FBOstruct& input, FBOstruct& output, bool asy
     glPixelStorei(GL_UNPACK_SKIP_ROWS, 0);
 
     // Passthrough mode - just copy input to output
-    if (passthrough || currentStyleIndex < 0 || !ortSession) {
-        glBindFramebuffer(GL_READ_FRAMEBUFFER, input.framebuffer);
-        glBindFramebuffer(GL_DRAW_FRAMEBUFFER, output.framebuffer);
-        glBlitFramebuffer(0, 0, input.width, input.height,
-                         0, 0, output.width, output.height,
-                         GL_COLOR_BUFFER_BIT, GL_LINEAR);
-        glBindFramebuffer(GL_FRAMEBUFFER, 0);
+    // BUT: if we have a valid AI frame, show that instead of passthrough during model loading
+    bool needsPassthrough = passthrough || currentStyleIndex < 0 || !ortSession;
+
+    if (needsPassthrough) {
+        // Check if we have a valid AI frame to show instead of passthrough
+        // This prevents flashing during model loading or temporary session unavailability
+        if (lastOutputFrame >= 0 && scaledOutputFBO.framebuffer != 0 && letterboxW > 0 && letterboxH > 0) {
+            // Show last valid AI frame - extract from letterbox region
+            glBindBuffer(GL_PIXEL_PACK_BUFFER, 0);
+            glBindBuffer(GL_PIXEL_UNPACK_BUFFER, 0);
+            glBindFramebuffer(GL_READ_FRAMEBUFFER, scaledOutputFBO.framebuffer);
+            glBindFramebuffer(GL_DRAW_FRAMEBUFFER, output.framebuffer);
+            glBlitFramebuffer(letterboxX, letterboxY, letterboxX + letterboxW, letterboxY + letterboxH,
+                             0, 0, output.width, output.height,
+                             GL_COLOR_BUFFER_BIT, GL_LINEAR);
+            glBindFramebuffer(GL_FRAMEBUFFER, 0);
+        } else {
+            // No valid AI frame yet - true passthrough
+            glBindFramebuffer(GL_READ_FRAMEBUFFER, input.framebuffer);
+            glBindFramebuffer(GL_DRAW_FRAMEBUFFER, output.framebuffer);
+            glBlitFramebuffer(0, 0, input.width, input.height,
+                             0, 0, output.width, output.height,
+                             GL_COLOR_BUFFER_BIT, GL_LINEAR);
+            glBindFramebuffer(GL_FRAMEBUFFER, 0);
+        }
 
         // Restore pixel store state before returning
         glPixelStorei(GL_PACK_ALIGNMENT, savedPackAlignment);
@@ -231,26 +326,21 @@ bool AIStyleTransfer::render(const FBOstruct& input, FBOstruct& output, bool asy
 
     // Determine processing resolution
     // IMPORTANT: Width must be multiple of 4 for RGB alignment (width×3 must be 4-byte aligned)
-    int maxDimension = 512;
+    int maxDimension = 256;
     int procWidth, procHeight;
 
     if (processingWidth > 0 && processingHeight > 0) {
-        // User-specified processing resolution - ensure width is aligned
+        // Model has fixed dimensions (set by loadModel) - use them
+        // This ensures square-trained models process square input
         procWidth = (processingWidth / 4) * 4;  // Round down to multiple of 4
         procHeight = processingHeight;
     } else {
-        // Auto-scale to max dimension, ensuring width is multiple of 4
-        float scale = 1.0f;
-        if (input.width > maxDimension || input.height > maxDimension) {
-            scale = static_cast<float>(maxDimension) / std::max(input.width, input.height);
-        }
-        procWidth = static_cast<int>(input.width * scale);
-        procHeight = static_cast<int>(input.height * scale);
-
-        // CRITICAL: Round width to multiple of 4 for RGB alignment
-        // This ensures width×3 (RGB bytes per row) is 4-byte aligned
-        procWidth = (procWidth / 4) * 4;
-        if (procWidth == 0) procWidth = 4;  // Minimum width
+        // Model has dynamic dimensions - force SQUARE processing at maxDimension
+        // Style transfer models are typically trained on square images, so
+        // processing non-square input causes distorted style patterns.
+        // The input will be scaled to square, processed, then scaled back.
+        procWidth = (maxDimension / 4) * 4;  // Round to multiple of 4
+        procHeight = maxDimension;
     }
 
     // Setup persistent mapped PBOs for async transfers
@@ -277,13 +367,45 @@ bool AIStyleTransfer::render(const FBOstruct& input, FBOstruct& output, bool asy
                 return false;
             }
         }
+
+        // Calculate letterbox region to maintain aspect ratio
+        // This prevents style distortion on non-square inputs
+        float inputAspect = (float)input.width / (float)input.height;
+        float procAspect = (float)procWidth / (float)procHeight;
+
+        if (inputAspect > procAspect) {
+            // Input is wider - pillarbox (black bars top/bottom)
+            letterboxW = procWidth;
+            letterboxH = (int)(procWidth / inputAspect);
+            letterboxX = 0;
+            letterboxY = (procHeight - letterboxH) / 2;
+        } else {
+            // Input is taller - letterbox (black bars left/right)
+            letterboxH = procHeight;
+            letterboxW = (int)(procHeight * inputAspect);
+            letterboxX = (procWidth - letterboxW) / 2;
+            letterboxY = 0;
+        }
+
+        // Clear to black first (for letterbox/pillarbox bars)
+        glBindFramebuffer(GL_FRAMEBUFFER, scaledInputFBO.framebuffer);
+        glClearColor(0.0f, 0.0f, 0.0f, 1.0f);
+        glClear(GL_COLOR_BUFFER_BIT);
+
+        // Blit input to letterbox region maintaining aspect ratio
         glBindFramebuffer(GL_READ_FRAMEBUFFER, input.framebuffer);
         glBindFramebuffer(GL_DRAW_FRAMEBUFFER, scaledInputFBO.framebuffer);
         glBlitFramebuffer(0, 0, input.width, input.height,
-                         0, 0, procWidth, procHeight,
+                         letterboxX, letterboxY, letterboxX + letterboxW, letterboxY + letterboxH,
                          GL_COLOR_BUFFER_BIT, GL_LINEAR);
         glBindFramebuffer(GL_FRAMEBUFFER, 0);
         inputToUse = scaledInputFBO;
+    } else {
+        // No scaling needed - content fills entire processing area
+        letterboxX = 0;
+        letterboxY = 0;
+        letterboxW = procWidth;
+        letterboxH = procHeight;
     }
 
     // ========================================================================
@@ -321,6 +443,10 @@ bool AIStyleTransfer::render(const FBOstruct& input, FBOstruct& output, bool asy
         startAsyncUpload(outputBuffers[readyIdx].data(), procWidth, procHeight, readyIdx);
         finishAsyncUpload(scaledOutputFBO.texture, procWidth, procHeight, readyIdx);
 
+        // Wait for upload to complete before marking as ready
+        // This ensures the texture is fully written before we blit from it
+        WaitBuffer(uploadFences[readyIdx]);
+
         frameReady[readyIdx].store(false);
         lastOutputFrame = readyIdx;
     }
@@ -331,10 +457,11 @@ bool AIStyleTransfer::render(const FBOstruct& input, FBOstruct& output, bool asy
         glBindBuffer(GL_PIXEL_PACK_BUFFER, 0);
         glBindBuffer(GL_PIXEL_UNPACK_BUFFER, 0);
 
-        // Blit from scaledOutputFBO (processing resolution) to output (full output texture size)
+        // Blit from letterbox region in scaledOutputFBO to output
+        // This extracts only the styled content, not the black bars
         glBindFramebuffer(GL_READ_FRAMEBUFFER, scaledOutputFBO.framebuffer);
         glBindFramebuffer(GL_DRAW_FRAMEBUFFER, output.framebuffer);
-        glBlitFramebuffer(0, 0, procWidth, procHeight,
+        glBlitFramebuffer(letterboxX, letterboxY, letterboxX + letterboxW, letterboxY + letterboxH,
                          0, 0, output.width, output.height,
                          GL_COLOR_BUFFER_BIT, GL_LINEAR);
 
@@ -351,8 +478,13 @@ bool AIStyleTransfer::render(const FBOstruct& input, FBOstruct& output, bool asy
     }
 
     // Step 3: Finish async download from previous frame and queue for processing
-    if (currentFrame >= 1) {
+    // IMPORTANT: Only process if buffer is not still being used by worker thread
+    // This prevents overwriting inputBuffers while worker is reading them
+    if (currentFrame >= 1 && !bufferInUse[prevIdx].load()) {
         if (finishAsyncDownload(prevIdx, procWidth, procHeight)) {
+            // Mark buffer as in use BEFORE queuing
+            bufferInUse[prevIdx].store(true);
+
             // Queue job for worker thread
             ProcessingJob job;
             job.frameIndex = prevIdx;
@@ -494,8 +626,18 @@ bool AIStyleTransfer::inferenceInternal(const float* input, float* output, int w
         return true;
 
     } catch (const Ort::Exception& e) {
-        setError(std::string("Inference failed: ") + e.what());
+        std::string errorMsg = e.what();
+        setError(std::string("Inference failed: ") + errorMsg);
         std::cerr << "[AIStyleTransfer] " << lastError << std::endl;
+
+        // Check for out of memory errors
+        if (errorMsg.find("memory") != std::string::npos ||
+            errorMsg.find("Memory") != std::string::npos ||
+            errorMsg.find("OOM") != std::string::npos ||
+            errorMsg.find("out of") != std::string::npos ||
+            errorMsg.find("allocation") != std::string::npos) {
+            outOfMemoryError.store(true);
+        }
         return false;
     }
 }
@@ -586,16 +728,18 @@ void AIStyleTransfer::workerThreadFunc() {
                     std::cerr << "[AIStyleTransfer] Worker inference: " << inferenceTime << "ms" << std::endl;
                 }
 
-                // Signal ready for upload
+                // Signal ready for upload and release buffer
                 if (job.frameReady) {
                     job.frameReady->store(true);
                 }
+                bufferInUse[frameIdx].store(false);
             } else {
                 // Passthrough input to output as fallback (copy RGB float data)
                 outputBuffers[frameIdx] = inputBuffers[frameIdx];
                 if (job.frameReady) {
                     job.frameReady->store(true);  // Still mark as ready to show something
                 }
+                bufferInUse[frameIdx].store(false);
             }
 
             processing.store(false);

@@ -52,6 +52,7 @@ class BinElement;
 class MidiElement;
 class LoopStation;
 class PreciseTimerController;
+class StylePreparationElement;
 
 
 struct frame_result {
@@ -478,7 +479,8 @@ class Mixer {
         std::vector<Clip*> newpathclips;
         std::vector<Layer*> newpathcliplays;
         std::vector<ShelfElement*> newpathshelfelems;
-        std::vector<BinElement*> newpathbinels;
+		std::vector<BinElement*> newpathbinels;
+		std::vector<StylePreparationElement*> newpathstylelems;
         std::vector<std::string> *newpaths;
         std::vector<std::string> newlaypaths;
         std::vector<std::string> newclippaths;
@@ -486,6 +488,7 @@ class Mixer {
         std::vector<std::string> newbinelpaths;
         std::vector<std::string> newbineljpegpaths;
         std::vector<std::string> newcliplaypaths;
+		std::vector<std::string> newstyleimagepaths;
         std::vector<Clip*> newpathlayclips;
         int newpathpos = 0;
         int retargetstage = 0;

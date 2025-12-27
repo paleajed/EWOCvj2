@@ -19,11 +19,13 @@ typedef enum
     BET_DELSEL = 16,
     BET_HAPSEL = 17,
     BET_UPSCALEIMAGE = 18,
-	BET_LOADSTYLEPREP = 19,
+    BET_UPSCALEVIDEO = 19,
+	BET_LOADSTYLEPREP = 20,
 } BINELMENU_OPTION;
 
 class Bin;
 class BinElement;
+class VideoUpscaler;
 
 class BinsMain {
 	public:
@@ -148,6 +150,7 @@ class BinsMain {
         void receive_shared_textures();
         void receive_shared_files();
         void solve_nameclashes();
+        bool isAnyUpscaling();  // Check if any bin element is currently upscaling
         BinsMain();
 
 	private:
@@ -212,8 +215,21 @@ class BinElement {
         std::string encodingend;
 		int allhaps = 0;
 		Layer *otflay = nullptr;
+		VideoUpscaler *upscaler = nullptr;
+		bool vidupscaling = false;
+		std::string vidupscalingpath = "";
+
+		// Upscaling state (async worker thread)
+		std::atomic<bool> upscaling{false};
+		std::atomic<bool> upscaleComplete{false};
+		std::atomic<bool> upscaleSuccess{false};
+		std::string upscaledPath;
+		std::unique_ptr<std::thread> upscaleThread;
+
 		void erase(bool deletetex = true);
         void upscale_image(int model);
+        void upscale_image_async(int model);
+        void check_upscale_complete();
         BinElement();
 		~BinElement();
 };

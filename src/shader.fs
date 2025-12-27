@@ -1590,87 +1590,88 @@ vec4 mirror(vec2 texco)  //selfmade
 
 // Lanczos-3 Upscaling + RCAS - High Quality Upsampling
 // Lanczos-3 resampling with Contrast Adaptive Sharpening
+
+const float LANCZOS_PI = 3.14159265359;
+
+// Lanczos sinc function
+float lanczos_sinc(float x) {
+	if (abs(x) < 0.001) return 1.0;
+	float px = LANCZOS_PI * x;
+	return sin(px) / px;
+}
+
+// Lanczos-3 kernel
+float lanczos3(float x) {
+	if (abs(x) < 3.0) {
+		return lanczos_sinc(x) * lanczos_sinc(x / 3.0);
+	}
+	return 0.0;
+}
+
 vec4 lanczos_upscale(vec2 uv) {
 	vec2 inputSize = vec2(lanczosinw, lanczosinh);
 	vec2 texelSize = 1.0 / inputSize;
 	vec2 pos = uv * inputSize;
-	vec2 frac = fract(pos);
-	vec2 center = (floor(pos) + 0.5) * texelSize;
-
-	const float PI = 3.14159265359;
-
-	// Lanczos sinc function
-	float sinc(float x) {
-		if (abs(x) < 0.001) return 1.0;
-		float px = PI * x;
-		return sin(px) / px;
-	}
-
-	// Lanczos-3 kernel
-	float lanczos3(float x) {
-		if (abs(x) < 3.0) {
-			return sinc(x) * sinc(x / 3.0);
-		}
-		return 0.0;
-	}
+	vec2 frac_pos = fract(pos);
+	vec2 center_pos = (floor(pos) + 0.5) * texelSize;
 
 	// Lanczos-3 upsampling (6x6 neighborhood)
 	vec4 result = vec4(0.0);
 	float totalWeight = 0.0;
 
-	for (int y = -2; y <= 3; y++) {
-		for (int x = -2; x <= 3; x++) {
-			vec2 offset = vec2(x, y) * texelSize;
-			vec2 samplePos = center + offset;
-			vec4 sample = texture(Sampler0, samplePos);
+	for (int iy = -2; iy <= 3; iy++) {
+		for (int ix = -2; ix <= 3; ix++) {
+			vec2 offset = vec2(ix, iy) * texelSize;
+			vec2 samplePos = center_pos + offset;
+			vec4 samp = texture(Sampler0, samplePos);
 
 			// Calculate Lanczos weight
-			vec2 dist = vec2(x, y) - frac;
-			float wx = lanczos3(dist.x);
-			float wy = lanczos3(dist.y);
-			float weight = wx * wy;
+			vec2 dist_vec = vec2(ix, iy) - frac_pos;
+			float wx = lanczos3(dist_vec.x);
+			float wy = lanczos3(dist_vec.y);
+			float w = wx * wy;
 
-			result += sample * weight;
-			totalWeight += weight;
+			result += samp * w;
+			totalWeight += w;
 		}
 	}
 
 	result /= totalWeight;
 
 	// Sample 3x3 neighborhood for RCAS (centered on result position)
-	vec4 samples[9];
+	vec4 rcas_samples[9];
 	int idx = 0;
-	for (int y = -1; y <= 1; y++) {
-		for (int x = -1; x <= 1; x++) {
-			vec2 offset = vec2(x, y) * texelSize;
-			samples[idx++] = texture(Sampler0, center + offset);
+	for (int ry = -1; ry <= 1; ry++) {
+		for (int rx = -1; rx <= 1; rx++) {
+			vec2 rcas_offset = vec2(rx, ry) * texelSize;
+			rcas_samples[idx++] = texture(Sampler0, center_pos + rcas_offset);
 		}
 	}
 
 	// RCAS - Robust Contrast Adaptive Sharpening (if sharpness > 0)
 	if (lanczosSharpness > 0.01) {
 		// Find min and max in cross pattern
-		vec4 minSample = result;
-		vec4 maxSample = result;
-		minSample = min(minSample, samples[1]);  // top
-		maxSample = max(maxSample, samples[1]);
-		minSample = min(minSample, samples[3]);  // left
-		maxSample = max(maxSample, samples[3]);
-		minSample = min(minSample, samples[5]);  // right
-		maxSample = max(maxSample, samples[5]);
-		minSample = min(minSample, samples[7]);  // bottom
-		maxSample = max(maxSample, samples[7]);
+		vec4 minSamp = result;
+		vec4 maxSamp = result;
+		minSamp = min(minSamp, rcas_samples[1]);  // top
+		maxSamp = max(maxSamp, rcas_samples[1]);
+		minSamp = min(minSamp, rcas_samples[3]);  // left
+		maxSamp = max(maxSamp, rcas_samples[3]);
+		minSamp = min(minSamp, rcas_samples[5]);  // right
+		maxSamp = max(maxSamp, rcas_samples[5]);
+		minSamp = min(minSamp, rcas_samples[7]);  // bottom
+		maxSamp = max(maxSamp, rcas_samples[7]);
 
 		// Compute adaptive sharpening amount
-		vec4 range = maxSample - minSample;
-		float adaptiveSharp = lanczosSharpness * (1.0 - dot(range.rgb, vec3(0.299, 0.587, 0.114)));
+		vec4 rcas_range = maxSamp - minSamp;
+		float adaptiveSharp = lanczosSharpness * (1.0 - dot(rcas_range.rgb, vec3(0.299, 0.587, 0.114)));
 
 		// Apply sharpening kernel
 		vec4 sharpened = result * (1.0 + adaptiveSharp * 4.0) -
-						 (samples[1] + samples[3] + samples[5] + samples[7]) * adaptiveSharp;
+						 (rcas_samples[1] + rcas_samples[3] + rcas_samples[5] + rcas_samples[7]) * adaptiveSharp;
 
 		// Clamp to prevent over/undershooting
-		result = clamp(sharpened, minSample, maxSample);
+		result = clamp(sharpened, minSamp, maxSamp);
 	}
 
 	return result;
@@ -1949,7 +1950,7 @@ void main()
          float term0 = (1.0f - fac2 * tex1.a / 2.0f) * fac1;
          float term1 = (1.0f - fac1 * tex0.a / 2.0f) * fac2;
          fc = vec4((tex0.rgb * (term0 + (1.0f - tex1.a) * (1.0f - term0)) + tex1.rgb * (term1 + (1.0f - tex0.a) * (1.0f - term1))),
-                   tex0.a);
+                   tex0.a + tex1.a - tex0.a * tex1.a);
      }
      else if (mixmode == 2) {
          //ALPHA OVERLAY

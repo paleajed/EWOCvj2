@@ -106,6 +106,7 @@ extern "C" {
 #include "AIStyleTransfer.h"
 #include "RealESRGANWrapper.h"
 #include "ReCoNetTrainer.h"
+#include "ComfyUIInstaller.h"
 #define PROGRAM_NAME "EWOCvj"
 
 #ifdef WINDOWS
@@ -413,6 +414,92 @@ std::string pathtoplatform(std::string path) {
 std::string pathtoposix(std::string path) {
     std::replace(path.begin(), path.end(), '\\', '/');
     return path;
+}
+
+void safe_remove_all(const std::filesystem::path& path) {
+#ifdef WINDOWS
+    // If it's a file, use safe_remove instead
+    if (std::filesystem::exists(path) && std::filesystem::is_regular_file(path)) {
+        safe_remove(path);
+        return;
+    }
+    // Recursively delete directory contents using FindFirstFile to catch hidden files
+    while (std::filesystem::exists(path)) {
+        try {
+            std::wstring searchPath = path.wstring() + L"\\*";
+            WIN32_FIND_DATAW findData;
+            HANDLE hFind = FindFirstFileW(searchPath.c_str(), &findData);
+            if (hFind != INVALID_HANDLE_VALUE) {
+                bool hasMore = true;
+                while (hasMore) {
+                    std::wstring name(findData.cFileName);
+                    if (name != L"." && name != L"..") {
+                        std::filesystem::path childPath = path / findData.cFileName;
+                        if (findData.dwFileAttributes & FILE_ATTRIBUTE_DIRECTORY) {
+                            safe_remove_all(childPath);
+                        } else {
+                            // Clear read-only attribute if set
+                            if (findData.dwFileAttributes & FILE_ATTRIBUTE_READONLY) {
+                                SetFileAttributesW(childPath.wstring().c_str(),
+                                    findData.dwFileAttributes & ~FILE_ATTRIBUTE_READONLY);
+                            }
+                            safe_remove(childPath);
+                        }
+                    }
+                    hasMore = FindNextFileW(hFind, &findData);
+                }
+                FindClose(hFind);
+            }
+        } catch (...) {
+        }
+        // Try to remove the directory (should be empty now)
+        std::wstring wpath(path.wstring());
+        if (RemoveDirectoryW(wpath.c_str())) {
+            break;
+        }
+        // If direct removal failed (e.g., Google Drive lock), try rename-then-remove strategy
+        if (mainprogram && !mainprogram->temppath.empty()) {
+            std::string newpath;
+            std::string name = remove_extension(basename(path.filename().string()));
+            int count = 0;
+            while (1) {
+                newpath = mainprogram->temppath + name;
+                if (!exists(newpath)) {
+                    break;
+                }
+                count++;
+                name = remove_version(name) + "_" + std::to_string(count);
+            }
+            std::filesystem::path tempDest(newpath);
+            std::wstring wTempDest = tempDest.wstring();
+            if (MoveFileW(wpath.c_str(), wTempDest.c_str())) {
+                // Successfully moved to temp, now try to remove from there
+                RemoveDirectoryW(wTempDest.c_str());
+                break;  // Directory is no longer at original path
+            }
+        }
+        Sleep(100);
+    }
+#endif
+#ifdef POSIX
+    std::filesystem::remove_all(path);
+#endif
+}
+
+void safe_remove(const std::filesystem::path& path) {
+#ifdef WINDOWS
+    // Use DeleteFileW for single files - simpler and works with Google Drive
+    while (std::filesystem::exists(path)) {
+        std::wstring wpath(path.wstring());
+        if (DeleteFileW(wpath.c_str())) {
+            break;
+        }
+        Sleep(100);
+    }
+#endif
+#ifdef POSIX
+    std::filesystem::remove(path);
+#endif
 }
 
 std::string getdocumentspath() {
@@ -900,7 +987,7 @@ void do_retarget() {
         mainmix->newpathbinels[i]->path = mainmix->newbinelpaths[i];
         mainmix->newpathbinels[i]->absjpath = mainmix->newbineljpegpaths[i];
         mainmix->newpathbinels[i]->reljpath = std::filesystem::relative(mainmix->newpathbinels[i]->absjpath,
-                                                                 mainprogram->project->binsdir).generic_string();
+                                                                        mainprogram->project->binsdir).generic_string();
         mainmix->newpathbinels[i]->jpegpath = mainmix->newpathbinels[i]->absjpath;
         if (mainmix->newpathbinels[i]->name != "") {
             if (mainmix->newpathbinels[i]->absjpath != "") {
@@ -917,6 +1004,16 @@ void do_retarget() {
         }
     }
 
+    // set up retarget style prep elements
+    for (int i = 0; i < mainmix->newpathstylelems.size(); i++) {
+        mainmix->newpathstylelems[i]->abspath = mainmix->newstyleimagepaths[i];
+        mainmix->newpathstylelems[i]->relpath = std::filesystem::relative(mainmix->newstyleimagepaths[i], mainprogram->contentpath).generic_string();
+        if (mainmix->newpathstylelems[i]->abspath == "") {
+            mainmix->newpathstylelems[i]->name = "";
+            blacken(mainmix->newpathstylelems[i]->tex);
+        }
+    }
+
     mainmix->newlaypaths.clear();
     mainmix->newclippaths.clear();
     mainmix->newshelfpaths.clear();
@@ -925,6 +1022,7 @@ void do_retarget() {
     mainmix->newpathclips.clear();
     mainmix->newpathshelfelems.clear();
     mainmix->newpathbinels.clear();
+    mainmix->newpathstylelems.clear();
 
     check_stage(1);
 }
@@ -3725,7 +3823,16 @@ void onestepfrom(bool stage, Node *node, Node *prevnode, GLuint prevfbotex, GLui
                     outputFBO.height = oh;
 
                     // Call render() directly with proper FBOs (not applyStyle)
-                    bool success = aiEffect->styleTransfer->render(inputFBO, outputFBO, false);
+                    bool success = aiEffect->styleTransfer->render(inputFBO, outputFBO);
+
+                    // Check for out of memory error
+                    if (aiEffect->styleTransfer->hadOutOfMemoryError()) {
+                        aiEffect->styleTransfer->clearOutOfMemoryError();
+                        mainprogram->infostr = "AI Style: Out of VRAM! Effect removed.";
+                        // Queue effect for deletion (delete after frame processing)
+                        mainprogram->effectsToDelete.push_back({lay, effect->pos});
+                        success = false;
+                    }
 
                     glUseProgram(mainprogram->ShaderProgram);
 
@@ -3748,6 +3855,13 @@ void onestepfrom(bool stage, Node *node, Node *prevnode, GLuint prevfbotex, GLui
                         glActiveTexture(GL_TEXTURE0);
                         glBindTexture(GL_TEXTURE_2D, effect->tempfbotex);
                         draw_box(nullptr, black, -1.0f, 1.0f, 2.0f, -2.0f, 0.0f, 0.0f, 1.0f, op, 0, effect->tempfbotex, 0, 0, false);
+
+                        // Reset shader state after AI style effect to avoid pollution for subsequent rendering
+                        mainprogram->uniformCache->setInt("interm", 0);
+                        mainprogram->uniformCache->setBool("down", false);
+                        glActiveTexture(GL_TEXTURE1);
+                        glBindTexture(GL_TEXTURE_2D, 0);
+                        glActiveTexture(GL_TEXTURE0);
                     } else {
                         // Fallback: passthrough original
                         mainprogram->uniformCache->setInt("interm", 0);
@@ -3758,6 +3872,8 @@ void onestepfrom(bool stage, Node *node, Node *prevnode, GLuint prevfbotex, GLui
             } else {
                 // standard shader path
                 if (!lay->onhold) {
+                    glActiveTexture(GL_TEXTURE1);
+                    glBindTexture(GL_TEXTURE_2D, prevfbotex);
                     if (effect->node == lay->lasteffnode[0]) {
                         glBindFramebuffer(GL_FRAMEBUFFER, effect->tempfbo);
                         glDrawBuffer(GL_COLOR_ATTACHMENT0);
@@ -4414,25 +4530,43 @@ void onestepfrom(bool stage, Node *node, Node *prevnode, GLuint prevfbotex, GLui
 
 	else if (node->type == MIX) {
         MixNode *mnode = (MixNode*)node;
-		if (mnode->mixfbo == -1) {
-		    mnode->newmixfbo = false;
-			glGenTextures(1, &(mnode->mixtex));
-			glBindTexture(GL_TEXTURE_2D, mnode->mixtex);
+        if (mnode->mixfbo == -1) {
+            mnode->newmixfbo = false;
+            glGenTextures(1, &(mnode->mixtex));
+            glBindTexture(GL_TEXTURE_2D, mnode->mixtex);
             glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR);
             glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
             glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_BORDER);
             glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_BORDER);
-			if (stage == 0) {
-				glTexStorage2D(GL_TEXTURE_2D, 1, GL_RGBA8, mainprogram->ow[0], mainprogram->oh[0]);
-			}
-			else {
-				glTexStorage2D(GL_TEXTURE_2D, 1, GL_RGBA8, mainprogram->ow[1], mainprogram->oh[1]);
-			}
+            if (stage == 0) {
+                glTexStorage2D(GL_TEXTURE_2D, 1, GL_RGBA8, mainprogram->ow[0], mainprogram->oh[0]);
+            }
+            else {
+                glTexStorage2D(GL_TEXTURE_2D, 1, GL_RGBA8, mainprogram->ow[1], mainprogram->oh[1]);
+            }
 
-			glGenFramebuffers(1, &(mnode->mixfbo));
-			glBindFramebuffer(GL_FRAMEBUFFER, mnode->mixfbo);
-			glFramebufferTexture2D(GL_FRAMEBUFFER, GL_COLOR_ATTACHMENT0, GL_TEXTURE_2D, mnode->mixtex, 0);
-		}
+            glGenFramebuffers(1, &(mnode->mixfbo));
+            glBindFramebuffer(GL_FRAMEBUFFER, mnode->mixfbo);
+            glFramebufferTexture2D(GL_FRAMEBUFFER, GL_COLOR_ATTACHMENT0, GL_TEXTURE_2D, mnode->mixtex, 0);
+        }
+        if (mnode->tempmixfbo == -1) {
+            glGenTextures(1, &(mnode->tempmixtex));
+            glBindTexture(GL_TEXTURE_2D, mnode->tempmixtex);
+            glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR);
+            glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
+            glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_BORDER);
+            glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_BORDER);
+            if (stage == 0) {
+                glTexStorage2D(GL_TEXTURE_2D, 1, GL_RGBA8, mainprogram->ow[0], mainprogram->oh[0]);
+            }
+            else {
+                glTexStorage2D(GL_TEXTURE_2D, 1, GL_RGBA8, mainprogram->ow[1], mainprogram->oh[1]);
+            }
+
+            glGenFramebuffers(1, &(mnode->tempmixfbo));
+            glBindFramebuffer(GL_FRAMEBUFFER, mnode->tempmixfbo);
+            glFramebufferTexture2D(GL_FRAMEBUFFER, GL_COLOR_ATTACHMENT0, GL_TEXTURE_2D, mnode->tempmixtex, 0);
+        }
 		glBindFramebuffer(GL_FRAMEBUFFER, mnode->mixfbo);
 		glDrawBuffer(GL_COLOR_ATTACHMENT0);
 		if (stage) glViewport(0, 0, mainprogram->ow[1], mainprogram->oh[1]);
@@ -4440,6 +4574,67 @@ void onestepfrom(bool stage, Node *node, Node *prevnode, GLuint prevfbotex, GLui
         glClearColor(0, 0, 0, 0);
         glClear(GL_COLOR_BUFFER_BIT);
         draw_box(nullptr, black, -1.0f, 1.0f, 2.0f, -2.0f, prevfbotex);
+
+        if (mnode->aistylnr != -1) {
+            AIStyleEffect *aiEffect = dynamic_cast<AIStyleEffect *>(mnode->aieffect);
+            if (aiEffect) {
+                // Update style and processing resolution if parameters changed
+                aiEffect->updateStyle();
+                //aiEffect->updateProcessingResolution(mainprogram->ow[stage], mainprogram->oh[stage]);
+
+                // Run AI style transfer using ONNX Runtime async PBO pipeline
+                // Create FBOstructs with proper framebuffer parameters
+                FBOstruct inputFBO;
+                inputFBO.framebuffer = mnode->mixfbo;
+                inputFBO.texture = mnode->mixtex;
+                inputFBO.width = mainprogram->ow[stage];
+                inputFBO.height = mainprogram->oh[stage];
+
+                FBOstruct outputFBO;
+                outputFBO.framebuffer = mnode->tempmixfbo;
+                outputFBO.texture = mnode->tempmixtex;
+                outputFBO.width = mainprogram->ow[stage];
+                outputFBO.height = mainprogram->oh[stage];
+
+                // Call render() directly with proper FBOs (not applyStyle)
+                bool success = aiEffect->styleTransfer->render(inputFBO, outputFBO);
+
+                // Check for out of memory error
+                if (aiEffect->styleTransfer->hadOutOfMemoryError()) {
+                    aiEffect->styleTransfer->clearOutOfMemoryError();
+                    mainprogram->infostr = "AI Style: Out of VRAM! Style disabled.";
+                    mnode->aistylnr = -1;
+                    success = false;
+                }
+
+                glUseProgram(mainprogram->ShaderProgram);
+
+                // Reset shader uniforms that may have been set by layer effects
+                mainprogram->uniformCache->setInt("interm", 0);
+                mainprogram->uniformCache->setBool("down", false);
+
+                // Reset texture units that may have been set by layer effects
+                glActiveTexture(GL_TEXTURE1);
+                glBindTexture(GL_TEXTURE_2D, 0);
+                glActiveTexture(GL_TEXTURE0);
+
+                // Output result
+                glBindFramebuffer(GL_FRAMEBUFFER, mnode->mixfbo);
+                glDrawBuffer(GL_COLOR_ATTACHMENT0);
+                if (stage) glViewport(0, 0, mainprogram->ow[1], mainprogram->oh[1]);
+                else glViewport(0, 0, mainprogram->ow[0], mainprogram->oh[0]);
+                glClearColor(0.f, 0.f, 0.f, 0.f);
+                glClear(GL_COLOR_BUFFER_BIT);
+
+                if (success) {
+                    draw_box(nullptr, black, -1.0f, 1.0f, 2.0f, -2.0f, 0.0f, 0.0f, 1.0f, 1.0f, 0, mnode->tempmixtex, 0, 0,
+                             false);
+                } else {
+                    // Fallback: passthrough original
+                    draw_box(nullptr, black, -1.0f, 1.0f, 2.0f, -2.0f, 0.0f, 0.0f, 1.0f, 1.0f, 0, prevfbotex, 0, 0, false);
+                }
+            }
+        }
 
         prevfbotex = mnode->mixtex;
 		prevfbo = mnode->mixfbo;
@@ -5438,6 +5633,9 @@ void end_input() {
 
 
 void the_loop() {
+    // Frame start time for training mode fps cap
+    auto frameStart = std::chrono::high_resolution_clock::now();
+
     //printf("concatting %d\n", mainprogram->concatting);
     float halfwhite[] = {1.0f, 1.0f, 1.0f, 0.5f};
     float deepred[] = {1.0, 0.0, 0.0, 1.0};
@@ -5735,7 +5933,7 @@ void the_loop() {
             if (!mainprogram->binsscreen && !mainprogram->styleroom) {
                 render_text(s, white, 0.01f, 0.37f, 0.0006f, 0.001f);
             } else {
-                render_text(s, white, 0.7f, 0.37f, 0.0006f, 0.001f);
+                render_text(s, white, 0.9f, 0.37f, 0.0006f, 0.001f);
             }
         }
         mainmix->fpscount++;
@@ -6256,6 +6454,20 @@ void the_loop() {
                         retarget->filesize = retarget->binel->filesize;
                     }
                 }
+                if (mainmix->retargetstage == 6) {
+                    mainmix->newpaths = &mainmix->newstyleimagepaths;
+                    if (mainmix->newpathpos >= (*(mainmix->newpaths)).size()) {
+                        check_stage(1);
+                        if (!mainmix->retargeting) {
+                            mainprogram->frontbatch = false;
+                            return;
+                        }
+                    } else {
+                        retarget->stylelem = mainmix->newpathstylelems[mainmix->newpathpos];
+                        retarget->tex = retarget->stylelem->tex;
+                        retarget->filesize = retarget->stylelem->filesize;
+                    }
+                }
             };
             load_data();
 
@@ -6474,6 +6686,11 @@ void the_loop() {
         // the 'true' value triggers the full version of this function: it draws the screen also
         // 'false' does a dummy run, used to rightmouse cancel things initiated in code (not the mouse)
         mainstyleroom->handle();
+        // Handle parameter adaptation
+        if (mainmix->adaptparam) {
+            mainmix->handle_adaptparam();
+        }
+
         display_mix();   // for NDI throughput of output monitors
     }
 
@@ -6986,7 +7203,7 @@ void the_loop() {
 
     mainprogram->handle_mixenginemenu();
 
-    mainprogram->handle_effectmenu();
+    mainprogram->handle_globeffectmenu();
 
     mainprogram->handle_parammenu1();
 
@@ -7261,7 +7478,7 @@ void the_loop() {
                     if (!bins[i]->saved) {
                         binsmain->bins.erase(binsmain->bins.begin() + i - correct);
                         mainprogram->remove(bins[i]->path);
-                        std::filesystem::remove_all(mainprogram->project->bubd + bins[i]->name);
+                        safe_remove_all(mainprogram->project->bubd + bins[i]->name);
                         correct++;
                     }
                 }
@@ -7287,7 +7504,7 @@ void the_loop() {
             // empty autosave temp dir
             std::filesystem::path path_to_rem(mainprogram->project->autosavedir + "temp");
             for (std::filesystem::directory_iterator end_dir_it, it(path_to_rem); it != end_dir_it; ++it) {
-                std::filesystem::remove_all(it->path());
+                safe_remove_all(it->path());
             }
 
             //save midi map
@@ -7419,8 +7636,10 @@ void the_loop() {
         glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
         if (!binsmain->floating) {
             // draw and handle wormgates
-            if (!mainprogram->binsscreen && !mainprogram->styleroom) mainprogram->handle_wormgate(0);
-            if (!mainprogram->styleroom) mainprogram->handle_wormgate(1);
+            if (!mainprogram->binsscreen && !mainprogram->styleroom && !mainprogram->genroom) mainprogram->handle_wormgate(0);
+            if (mainprogram->binsscreen) mainprogram->handle_wormgate(1);
+            if (mainprogram->styleroom) mainprogram->handle_wormgate(2);
+            if (mainprogram->genroom) mainprogram->handle_wormgate(3);
             if (mainprogram->dragbinel) {
                 if (!mainprogram->wormgate1->box->in() && !mainprogram->wormgate2->box->in()) {
                     mainprogram->inwormgate = false;
@@ -7544,6 +7763,15 @@ void the_loop() {
     //glFinish();
     SDL_GL_SwapWindow(mainprogram->mainwindow);
 
+    // Process queued effect deletions (from OOM errors)
+    for (auto& pair : mainprogram->effectsToDelete) {
+        Layer* lay = pair.first;
+        int pos = pair.second;
+        if (lay && pos >= 0 && pos < (int)lay->effects[mainprogram->effcat[lay->deck]->value].size()) {
+            lay->delete_effect(pos);
+        }
+    }
+    mainprogram->effectsToDelete.clear();
 
     mainprogram->ttreserved = false;
     mainprogram->boxhit = false;
@@ -7622,6 +7850,26 @@ void the_loop() {
     //UNDO
     if ((mainprogram->recundo || mainprogram->undowaiting) && !mainmix->retargeting) {
         mainprogram->undo_redo_save();
+    }
+
+    // Cap to ~30fps during ReCoNet training to free up GPU
+    if (mainstyleroom && mainstyleroom->reconetTrainer && mainstyleroom->reconetTrainer->isTraining()) {
+        auto frameEnd = std::chrono::high_resolution_clock::now();
+        auto frameDuration = std::chrono::duration_cast<std::chrono::milliseconds>(frameEnd - frameStart).count();
+        int delayMs = 33 - (int)frameDuration;  // 33ms = ~30fps
+        if (delayMs > 0) {
+            SDL_Delay(delayMs);
+        }
+    }
+
+    // Cap to ~30fps during video upscaling to free up GPU/CPU
+    if (binsmain && binsmain->isAnyUpscaling()) {
+        auto frameEnd = std::chrono::high_resolution_clock::now();
+        auto frameDuration = std::chrono::duration_cast<std::chrono::milliseconds>(frameEnd - frameStart).count();
+        int delayMs = 33 - (int)frameDuration;  // 33ms = ~30fps
+        if (delayMs > 0) {
+            SDL_Delay(delayMs);
+        }
     }
 }
 
@@ -8228,6 +8476,21 @@ int main(int argc, char* argv[]) {
     retarget = new Retarget;
     mainstyleroom = new StyleRoom;
 
+    ComfyUIInstaller installer;
+    InstallConfig config;
+    config.installDir = "C:/ProgramData/EWOCvj2/ComfyUI";
+
+    installer.setProgressCallback([](const InstallProgress& p) {
+        std::cout << p.status << " " << p.percentComplete << "%" << std::endl;
+    });
+
+    // Installs: Base → SD+AnimateDiff → HunyuanVideo (in sequence)
+    if (installer.installAll(config)) {
+        while (installer.isInstalling()) {
+            std::this_thread::sleep_for(std::chrono::milliseconds(100));
+        }
+    }
+
 #ifdef RECONET_TRAINING_ENABLED
     // Initialize ReCoNet trainer
     if (mainstyleroom->reconetTrainer) {
@@ -8267,7 +8530,7 @@ int main(int argc, char* argv[]) {
     //empty temp dir if program crashed last time
     std::filesystem::path path_to_remove(mainprogram->temppath);
     for (std::filesystem::directory_iterator end_dir_it, it(path_to_remove); it != end_dir_it; ++it) {
-        std::filesystem::remove_all(it->path());
+        safe_remove_all(it->path());
     }
 
     glc = SDL_GL_CreateContext(mainprogram->mainwindow);
@@ -8757,27 +9020,7 @@ int main(int argc, char* argv[]) {
     }
 
     // Load AI style transfer models
-    {
-        AIStyleTransfer tempStyleTransfer;
-        if (tempStyleTransfer.initialize()) {
-            std::string modelsPath;
-            #ifdef _WIN32
-                modelsPath = "C:/ProgramData/EWOCvj2/models/styles/";
-            #else
-                modelsPath = "/usr/share/EWOCvj2/models/styles/";
-            #endif
-
-            int numStyles = tempStyleTransfer.loadStyles(modelsPath);
-            if (numStyles > 0) {
-                auto styleNames = tempStyleTransfer.getAvailableStyles();
-                for (auto &name : styleNames) {
-                    std::transform(name.begin(), name.end(), name.begin(), ::toupper);
-                    mainprogram->aistylenames.push_back(name);
-                }
-                std::cerr << "[Init] Loaded " << numStyles << " AI style models" << std::endl;
-            }
-        }
-    }
+    mainstyleroom->updatelists();
 
     // define all menus
     mainprogram->define_menus();
@@ -8815,9 +9058,17 @@ int main(int argc, char* argv[]) {
         // initialize ai style preparation file bin
         for (int i = 0; i < 16; i++) {
             StylePreparationElement* elem = new StylePreparationElement;
+            elem->pos = i;
             mainstyleroom->prepbin->elements.push_back(elem);
         }
     }
+    mainstyleroom->elemmenuoptions.clear();
+    std::vector<std::string> snlm;
+    snlm.push_back("Save project");
+    mainstyleroom->elemmenuoptions.push_back(SET_SAVPROJ);
+    snlm.push_back("Quit");
+    mainstyleroom->elemmenuoptions.push_back(SET_QUIT);
+    mainprogram->make_menu("styleroommenu", mainstyleroom->styleroommenu, snlm);
 
     glViewport(0, 0, glob->w, glob->h);
     SDL_GL_MakeCurrent(mainprogram->mainwindow, glc);
@@ -8964,8 +9215,8 @@ int main(int argc, char* argv[]) {
                 std::string dest = pathtoplatform(
                         dirname(localPath) + remove_extension(basename(localPath)) + "/");
                 if (exists(dest)) {
-                    std::filesystem::remove(dest + remove_extension(basename(localPath)) + ".bin");
-                    std::filesystem::remove_all(dest);
+                    safe_remove(dest + remove_extension(basename(localPath)) + ".bin");
+                    safe_remove_all(dest);
                 }
                 copy_dir(src, dest);
                 std::string bupaths[144];
@@ -9053,6 +9304,16 @@ int main(int argc, char* argv[]) {
                 mainmix->mouseparam->valuestr = localPath;
                 // UNDO registration
                 mainprogram->register_undo(mainmix->mouseparam, nullptr);
+            } else if (localPathto == "OPENFILESSTYLE") {
+                if (localPaths.size()) {
+                    mainprogram->currfilesdir = dirname(localPaths[0]);
+                    mainstyleroom->openfilesstyle = true;
+                }
+            } else if (localPathto == "OPENSTYLE") {
+                if (localPaths.size()) {
+                    //mainprogram->currfilesdir = dirname(localPaths[0]);
+                    mainstyleroom->prepbin->open(localPath);
+                }
             }
 
             {

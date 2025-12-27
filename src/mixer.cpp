@@ -48,6 +48,14 @@ extern "C" {
 // my own header
 #include "program.h"
 #include "AIStyleTransfer.h"
+#include "ComputeStyleTransfer.h"
+
+
+inline const char* av_err2str_cpp(int errnum) {
+	thread_local char buf[AV_ERROR_MAX_STRING_SIZE];
+	return av_make_error_string(buf, AV_ERROR_MAX_STRING_SIZE, errnum);
+}
+
 
 
 
@@ -397,6 +405,17 @@ void Param::handle(bool smallxpad) {
     if (smallxpad) pad = 0.005f;
 	std::string thisstr;
 
+    bool onoff = false;
+    std::vector<std::string> onoffoptions = {"OFF", "ON"};
+    if (this->type == FF_TYPE_STANDARD || this->type == FF_TYPE_BOOLEAN) {
+        if (this->sliding == false && this->range[0] == 0.0f && this->range[1] == 1.0f) {
+            onoff = true;
+            this->box->acolor[0] = 0.5f;
+            this->box->acolor[1] = 0.5f;
+            this->box->acolor[2] = 0.5f;
+        }
+    }
+
     if (this->type != FF_TYPE_BUFFER) {
 
         draw_box(this->box, -1);
@@ -417,7 +436,7 @@ void Param::handle(bool smallxpad) {
         } else if (this->type == FF_TYPE_ALPHA || this->type == ISFLoader::PARAM_ALPHA) {
             tex = mainprogram->alphagradienttex;
         }
-        if (this->type != FF_TYPE_OPTION && this->type != FF_TYPE_TEXT && this->type != FF_TYPE_FILE &&
+        if (!onoff && this->type != FF_TYPE_OPTION && this->type != FF_TYPE_TEXT && this->type != FF_TYPE_FILE &&
             this->type != FF_TYPE_EVENT && this->type != ISFLoader::PARAM_EVENT && this->type != ISFLoader::PARAM_LONG) {
             draw_box(grey, black, this->box->vtxcoords->x1 + pad,
                      this->box->vtxcoords->y1 + this->box->vtxcoords->h / 8.0f,
@@ -452,7 +471,14 @@ void Param::handle(bool smallxpad) {
                 thisstr = std::to_string((int) this->value);
             }
         }
-        if (this->type == FF_TYPE_OPTION) {
+        if (onoff) {
+            if (this->name != "") {
+                thisstr = this->name + ": " + onoffoptions[(int)this->value];
+            } else {
+                thisstr = onoffoptions[(int)this->value];
+            }
+        }
+        if (this->type == FF_TYPE_OPTION ) {
             if (this->name != "") {
                 thisstr = this->name + ": " + this->options[(int)this->value];
             } else {
@@ -475,7 +501,7 @@ void Param::handle(bool smallxpad) {
         }
         if (this != mainmix->adaptnumparam && this != mainmix->adapttextparam) {
             if (this->name != "drywet") {
-                render_text(thisstr, white, this->box->vtxcoords->x1 + 0.03f - 0.02f * (this->type == FF_TYPE_OPTION) -
+                render_text(thisstr, white, this->box->vtxcoords->x1 + 0.03f - 0.02f * (onoff || this->type == FF_TYPE_OPTION) -
                                             0.02f * (this->type == FF_TYPE_TEXT) -
                                             0.02f * (this->type == FF_TYPE_FILE) +
                                             0.02f * (this->type == FF_TYPE_EVENT) -
@@ -507,28 +533,18 @@ void Param::handle(bool smallxpad) {
                         mainprogram->recundo = false;
                     }
                 }
-                if (this->sliding == false && this->range[0] == 0.0f && this->range[0] == 1.0f) {
-                    this->box->acolor[0] = 0.5f;
-                    this->box->acolor[1] = 0.5f;
-                    this->box->acolor[2] = 1.0f;
-                    draw_box(this->box, -1);
-                    this->box->acolor[0] = 0.3f;
-                    this->box->acolor[1] = 0.8f;
-                    this->box->acolor[2] = 0.4f;
-                    if (mainprogram->leftmouse) {
-                        // trigger event
-                        this->value = 1.0f;
-                        this->box->acolor[0] = 1.0f;
-                        this->box->acolor[1] = 0.0f;
-                        this->box->acolor[2] = 0.0f;
-                        draw_box(this->box, -1);
-                        this->box->acolor[0] = 0.3f;
-                        this->box->acolor[1] = 0.8f;
-                        this->box->acolor[2] = 0.4f;
+                else if (onoff) {
+                    if (mainprogram->leftmouse && !mainprogram->menuondisplay) {
+                        mainprogram->make_menu("optionmenu", mainprogram->optionmenu, onoffoptions);
+                        mainprogram->optionmenu->state = 2;
+                        mainprogram->optionmenu->menux = mainprogram->mx;
+                        mainprogram->optionmenu->menuy = mainprogram->my;
+                        mainmix->mouseparam = this;
                         mainprogram->leftmouse = false;
                         mainprogram->recundo = false;
                     }
-                } else if (this->type == FF_TYPE_OPTION || this->type == ISFLoader::PARAM_LONG) {
+                }
+                else if (this->type == FF_TYPE_OPTION || this->type == ISFLoader::PARAM_LONG) {
                     if (mainprogram->leftmouse && !mainprogram->menuondisplay) {
                         if (this->type == FF_TYPE_OPTION) {
                             mainprogram->make_menu("optionmenu", mainprogram->optionmenu, this->options);
@@ -547,7 +563,8 @@ void Param::handle(bool smallxpad) {
                         mainprogram->leftmouse = false;
                         mainprogram->recundo = false;
                     }
-                } else if (this->type == FF_TYPE_TEXT) {
+                }
+                else if (this->type == FF_TYPE_TEXT) {
                     if (mainprogram->leftmouse) {
                         mainprogram->renaming = EDIT_TEXTPARAM;
                         this->oldvaluestr = this->valuestr;
@@ -558,7 +575,8 @@ void Param::handle(bool smallxpad) {
                         mainprogram->leftmouse = false;
                         mainprogram->recundo = false;
                     }
-                } else if (this->type == FF_TYPE_FILE) {
+                }
+                else if (this->type == FF_TYPE_FILE) {
                     if (mainprogram->leftmouse) {
                         // start file requester
                         mainprogram->pathto = "FFGLFILE";
@@ -568,7 +586,8 @@ void Param::handle(bool smallxpad) {
                         filereq.detach();
                         mainprogram->leftmouse = false;
                     }
-                } else {
+                }
+                else {
                     if (mainprogram->leftmousedown && !mainprogram->inserteffectbox->in()) {
                         mainprogram->leftmousedown = false;
                         mainmix->prepadaptparam = this;
@@ -628,7 +647,7 @@ void Param::handle(bool smallxpad) {
                     mainprogram->menuactivation = false;
                 }
             }
-            if (this->type != FF_TYPE_OPTION && this->type != FF_TYPE_TEXT && this->type != FF_TYPE_FILE &&
+            if (!onoff && this->type != FF_TYPE_OPTION && this->type != FF_TYPE_TEXT && this->type != FF_TYPE_FILE &&
                 this->type != FF_TYPE_EVENT && this->type != ISFLoader::PARAM_EVENT && this->type != ISFLoader::PARAM_LONG) {
                 if (this->sliding) {
                     draw_box(green, green, this->box->vtxcoords->x1 + pad + (this->box->vtxcoords->w - pad * 2.0f) *
@@ -2539,6 +2558,14 @@ void Layer::delete_effect(int pos, bool connect) {
         auto shader = mainprogram->isfloader.getShader(effect->isfpluginnr);
         shader->releaseInstance(mainprogram->isfinstances[effect->isfpluginnr][effect->isfinstancenr]);
     }
+    if (effect->aistylnr != -1) {
+        // Release AI style transfer resources
+        AIStyleEffect* aiEffect = static_cast<AIStyleEffect*>(effect);
+        aiEffect->styleTransfer.reset();
+        aiEffect->computeStyleTransfer.reset();
+    }
+
+    this->numefflines[cat] -= effect->numrows;
 
 	evec.erase(evec.begin() + pos);
 	delete effect;
@@ -5055,7 +5082,7 @@ static void process_audio(Layer *lay, float framenr, bool scritched) {
                                            seek_target, seek_target + AV_TIME_BASE, 0);
                     lay->last_processed_audio_pts = -1; // Reset audio processing tracking for loop
                     */
-                    printf("Audio stream EOF or error: %s\n", av_err2str(ret));
+                    printf("Audio stream EOF or error\n", av_err2str_cpp(ret));
                     break;
                 }
             }
@@ -5123,7 +5150,7 @@ void Layer::get_cpu_frame(int framenr, int prevframe, int errcount)
 
             int seek_ret = av_seek_frame(this->video, this->video_stream->index, seekTarget, AVSEEK_FLAG_BACKWARD);
             if (seek_ret < 0) {
-                printf("Warning: seek to startframe failed: %s\n", av_err2str(seek_ret));
+                printf("Warning: seek to startframe failed: %s\n", av_err2str_cpp(seek_ret));
             }
             {
                 std::lock_guard<std::mutex> lock(this->video_dec_ctx_mutex);
@@ -5152,14 +5179,14 @@ void Layer::get_cpu_frame(int framenr, int prevframe, int errcount)
 
             int seek_ret3 = av_seek_frame(this->audio, this->audio_dedicated_stream_idx, seekTarget, 0);
             if (seek_ret3 < 0) {
-                printf("Warning: seek to startframe failed: %s\n", av_err2str(seek_ret));
+                printf("Warning: seek to startframe failed: %s\n", av_err2str_cpp(seek_ret));
             }
             av_read_frame(this->audio, this->audiopkt_dedicated);
 
             /*if (this->audio_dec_ctx) {
                 int seek_ret2 = av_seek_frame(this->video, this->audio_stream->index, seekTarget, 0);
                 if (seek_ret2 < 0) {
-                    printf("Warning: seek to startframe failed: %s\n", av_err2str(seek_ret));
+                    printf("Warning: seek to startframe failed: %s\n", av_err2str_cpp(seek_ret));
                 }
                 avcodec_flush_buffers(this->audio_dec_ctx);
             }*/
@@ -6277,7 +6304,7 @@ void Layer::display() {
             if (this->effects[cat].size()) {
                 if ((glob->w / 2.0f > mainprogram->mx && mainmix->currlay[!mainprogram->prevmodus]->deck == 0) ||
                     (glob->w / 2.0f < mainprogram->mx && mainmix->currlay[!mainprogram->prevmodus]->deck == 1)) {
-                    if (mainprogram->my > mainprogram->yvtxtoscr(mainprogram->layh - 0.3f)) {
+                    if (mainprogram->my > mainprogram->yvtxtoscr(mainprogram->layh)) {
                         if (mainprogram->mousewheel && this->numefflines[cat] > mainprogram->efflines) {
                             this->effscroll[cat] -= mainprogram->mousewheel;
                             if (this->effscroll[cat] < 0) this->effscroll[cat] = 0;
@@ -6588,12 +6615,13 @@ void Layer::display() {
                     }
                     if (mainprogram->addeffectbox->in()) {
                         if ((mainprogram->menuactivation || mainprogram->leftmouse) && !mainprogram->drageff) {
-                            mainprogram->effectmenu->state = 2;
+                            mainprogram->globeffectmenu->state = 2;
                             mainmix->insert = true;
                             mainmix->mouseeffect = evec.size();
                             mainmix->mouselayer = this;
-                            mainprogram->effectmenu->menux = mainprogram->mx;
-                            mainprogram->effectmenu->menuy = mainprogram->my;
+                            mainmix->mousenode = nullptr;
+                            mainprogram->globeffectmenu->menux = mainprogram->mx;
+                            mainprogram->globeffectmenu->menuy = mainprogram->my;
                             mainprogram->menuactivation = false;
                             mainprogram->menuondisplay = true;
                             mainprogram->drageffsense = false;
@@ -6624,12 +6652,13 @@ void Layer::display() {
                                     break;
                                 }
                                 if ((mainprogram->menuactivation || mainprogram->leftmouse) && !mainprogram->drageff) {
-                                    mainprogram->effectmenu->state = 2;
+                                    mainprogram->globeffectmenu->state = 2;
                                     mainmix->mouselayer = this;
                                     mainmix->mouseeffect = j;
+                                    mainmix->mousenode = nullptr;
                                     mainmix->insert = false;
-                                    mainprogram->effectmenu->menux = mainprogram->mx;
-                                    mainprogram->effectmenu->menuy = mainprogram->my;
+                                    mainprogram->globeffectmenu->menux = mainprogram->mx;
+                                    mainprogram->globeffectmenu->menuy = mainprogram->my;
                                     mainprogram->menuactivation = false;
                                     mainprogram->menuondisplay = true;
                                     mainprogram->dragbox = nullptr;
@@ -6667,13 +6696,14 @@ void Layer::display() {
                                 mainprogram->inbetween = true;
                                 if ((mainprogram->menuactivation || mainprogram->leftmouse || mainprogram->lmover) &&
                                     !mainprogram->drageff) {
-                                    mainprogram->effectmenu->state = 2;
+                                    mainprogram->globeffectmenu->state = 2;
                                     mainmix->insert = true;
                                     mainmix->mouseeffect = j;
                                     mainmix->mouselayer = this;
+                                    mainmix->mousenode = nullptr;
                                     mainprogram->lmover = false;
-                                    mainprogram->effectmenu->menux = mainprogram->mx;
-                                    mainprogram->effectmenu->menuy = mainprogram->iemy;
+                                    mainprogram->globeffectmenu->menux = mainprogram->mx;
+                                    mainprogram->globeffectmenu->menuy = mainprogram->iemy;
                                     mainprogram->menuactivation = false;
                                     mainprogram->menuondisplay = true;
                                     mainprogram->recundo = false;
@@ -6691,7 +6721,7 @@ void Layer::display() {
                 }
             }
 
-            // Draw effectmenuhints
+            // Draw globeffectmenuhints
             mainprogram->inserteffectbox->vtxcoords->x1 = 1.0f; // shove inserteffectbox offscreen
             if (!mainprogram->queueing) {
                 if (vy1 < 1.0 - mainprogram->layh - 0.135f - 0.33f - 0.075f * (mainprogram->efflines - 1)) {
@@ -7538,6 +7568,7 @@ void Mixer::outputmonitors_handle() {
                 }
 
                 if (mainprogram->menuactivation) {
+                    mainmix->mousenode = mnode;
                     mainprogram->monitormenu->state = 2;
                     mainprogram->monitormenu->value = i;
                     if (!mainprogram->prevmodus && i == 2) {
@@ -10732,7 +10763,7 @@ bool Layer::thread_vidopen() {
                 avcodec_parameters_to_context(this->audio_dec_ctx, this->audio_stream->codecpar);
                 int ret = avcodec_open2(this->audio_dec_ctx, dec, nullptr);
                 if (ret < 0) {
-                    printf("ERROR: Could not open audio codec: %s\n", av_err2str(ret));
+                    printf("ERROR: Could not open audio codec: %s\n", av_err2str_cpp(ret));
                     avcodec_free_context(&this->audio_dec_ctx);
                     this->audio_dec_ctx = nullptr;
                     this->audio_stream_idx = -1;
@@ -13081,6 +13112,21 @@ Layer* Mixer::read_layers(std::istream &rfile, const std::string result, std::ve
                         }
                     }
                 }
+                if (istring == "AISTYLENAME") {
+                    safegetline(rfile, istring);
+                    if (istring != "") {
+                        int position =
+                                std::find(mainprogram->aistylenames.begin(), mainprogram->aistylenames.end(), istring) -
+                                mainprogram->aistylenames.begin();
+                        if (position != mainprogram->aistylenames.size()) {
+                            type = 3000 + position;
+                            aistylnr = position;
+                        } else {
+                            mainprogram->missingplugs.emplace(istring);
+                            type = 9999;
+                        }
+                    }
+                }
 				if (istring == "POS") {
 					safegetline(rfile, istring);
 					int pos = std::stoi(istring);
@@ -13257,6 +13303,21 @@ Layer* Mixer::read_layers(std::istream &rfile, const std::string result, std::ve
                         if (position != mainprogram->isfeffectnames.size()) {
                             type = 2000 + position;
                             isfnr = position;
+                        } else {
+                            mainprogram->missingplugs.emplace(istring);
+                            type = 9999;
+                        }
+                    }
+                }
+                if (istring == "AISTYLENAME") {
+                    safegetline(rfile, istring);
+                    if (istring != "") {
+                        int position =
+                                std::find(mainprogram->aistylenames.begin(), mainprogram->aistylenames.end(), istring) -
+                                mainprogram->aistylenames.begin();
+                        if (position != mainprogram->aistylenames.size()) {
+                            type = 3000 + position;
+                            aistylnr = position;
                         } else {
                             mainprogram->missingplugs.emplace(istring);
                             type = 9999;
@@ -13942,6 +14003,13 @@ std::vector<std::string> Mixer::write_layer(Layer* lay, std::ostream& wfile, boo
         }
         wfile << name2;
         wfile << "\n";
+        wfile << "AISTYLENAME\n";
+        std::string name3;
+        if (eff->aistylnr != -1) {
+            name3 = mainprogram->aistylenames[eff->aistylnr];
+        }
+        wfile << name3;
+        wfile << "\n";
 		wfile << "POS\n";
 		wfile << std::to_string(j);
 		wfile << "\n";
@@ -14034,6 +14102,13 @@ std::vector<std::string> Mixer::write_layer(Layer* lay, std::ostream& wfile, boo
             name2 = mainprogram->isfeffectnames[eff->isfnr];
         }
         wfile << name2;
+        wfile << "\n";
+        wfile << "AISTYLENAME\n";
+        std::string name3;
+        if (eff->aistylnr != -1) {
+            name3 = mainprogram->aistylenames[eff->aistylnr];
+        }
+        wfile << name3;
         wfile << "\n";
 		wfile << "POS\n";
 		wfile << std::to_string(j);

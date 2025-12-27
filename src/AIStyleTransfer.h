@@ -110,11 +110,24 @@ public:
     int loadStyles(const std::string& modelsPath);
 
     /**
-     * Set active style model
+     * Set active style model (blocking)
      * @param styleIndex Index of style to use (0-based)
      * @return true if style loaded successfully
      */
     bool setStyle(int styleIndex);
+
+    /**
+     * Set active style model asynchronously (non-blocking)
+     * Model loads in background, check isModelLoading() for status
+     * @param styleIndex Index of style to use (0-based)
+     */
+    void setStyleAsync(int styleIndex);
+
+    /**
+     * Check if model is currently loading in background
+     * @return true if model loading is in progress
+     */
+    bool isModelLoading() const { return modelLoading.load(); }
 
     /**
      * Get current active style index
@@ -130,14 +143,13 @@ public:
 
     /**
      * Apply style transfer to input FBO
-     * Main render method - applies AI style transfer
+     * Main render method - applies AI style transfer using triple-buffered async pipeline
      *
      * @param input Input FBO containing source texture
      * @param output Output FBO for result (will be created if needed)
-     * @param async If true, returns immediately (non-blocking). Check isProcessing()
      * @return true if processing started/completed successfully
      */
-    bool render(const FBOstruct& input, FBOstruct& output, bool async = false);
+    bool render(const FBOstruct& input, FBOstruct& output);
 
     /**
      * Check if async processing is in progress
@@ -150,6 +162,17 @@ public:
      * @return Error string (empty if no error)
      */
     std::string getLastError() const { return lastError; }
+
+    /**
+     * Check if last error was out of memory
+     * @return true if OOM error occurred
+     */
+    bool hadOutOfMemoryError() const { return outOfMemoryError.load(); }
+
+    /**
+     * Clear OOM error flag
+     */
+    void clearOutOfMemoryError() { outOfMemoryError.store(false); }
 
     /**
      * Get inference statistics
@@ -211,6 +234,7 @@ private:
     GLsync downloadFences[3] = {nullptr, nullptr, nullptr};  // GPU sync for downloads
     GLsync uploadFences[3] = {nullptr, nullptr, nullptr};    // GPU sync for uploads
     std::atomic<bool> frameReady[3] = {false, false, false}; // CPU processing complete
+    std::atomic<bool> bufferInUse[3] = {false, false, false}; // Buffer being processed by worker
     int lastOutputFrame = -1;  // Last frame uploaded to output
 
     // Threading for async processing
@@ -221,12 +245,24 @@ private:
     std::atomic<bool> processing{false};
     std::atomic<bool> shouldTerminate{false};
 
+    // Async model loading
+    std::unique_ptr<std::thread> modelLoadThread;
+    std::atomic<bool> modelLoading{false};
+    std::atomic<int> pendingStyleIndex{-1};
+
     // Configuration
     bool useGPU = true;
     int processingWidth = 0;      // 0 = use input resolution
     int processingHeight = 0;
     bool passthrough = false;
     bool initialized = false;
+
+    // Letterbox region for aspect-preserving scaling (within square processing area)
+    // Stores where the actual image content is placed to avoid style distortion
+    int letterboxX = 0;      // X offset of content region within square
+    int letterboxY = 0;      // Y offset of content region within square
+    int letterboxW = 0;      // Width of content region
+    int letterboxH = 0;      // Height of content region
 
     // Statistics
     float lastInferenceTime = 0.0f;
@@ -237,6 +273,7 @@ private:
     // Error handling
     mutable std::mutex errorMutex;
     std::string lastError;
+    std::atomic<bool> outOfMemoryError{false};
 
     // Private methods
     bool loadModel(const fs::path& modelPath);
