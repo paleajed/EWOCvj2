@@ -8522,7 +8522,7 @@ int main(int argc, char* argv[]) {
     }
 #endif
 
-    ComfyUIInstaller installer;
+    /*ComfyUIInstaller installer;
     InstallConfig config;
     config.installDir = "C:/ProgramData/EWOCvj2/ComfyUI";
 
@@ -8540,7 +8540,7 @@ int main(int argc, char* argv[]) {
     std::string installDir = "C:/ProgramData/EWOCvj2/ComfyUI";
     mainvideogenroom->sdinstalled = ComfyUIInstaller::isSDAnimateDiffInstalled(installDir);
     mainvideogenroom->hunyuaninstalled = ComfyUIInstaller::isHunyuanVideoInstalled(installDir);
-
+*/
 #ifdef WINDOWS
     std::filesystem::path p5{mainprogram->docpath + "projects"};
     mainprogram->currprojdir = p5.generic_string();
