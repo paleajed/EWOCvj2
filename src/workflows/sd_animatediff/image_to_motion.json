@@ -1,0 +1,114 @@
+{
+  "1": {
+    "class_type": "CheckpointLoaderSimple",
+    "inputs": {
+      "ckpt_name": "${MODEL_NAME}"
+    }
+  },
+  "2": {
+    "class_type": "LoadImage",
+    "inputs": {
+      "image": "${INPUT_IMAGE}"
+    }
+  },
+  "3": {
+    "class_type": "ADE_AnimateDiffLoaderWithContext",
+    "inputs": {
+      "model_name": "mm_sd_v15_v2.fp16.safetensors",
+      "beta_schedule": "sqrt_linear (AnimateDiff)",
+      "motion_scale": "${MOTION_STRENGTH}",
+      "apply_v2_models_properly": true,
+      "model": ["1", 0],
+      "context_options": ["4", 0],
+      "motion_lora": ["5", 0]
+    }
+  },
+  "4": {
+    "class_type": "ADE_StandardStaticContextOptions",
+    "inputs": {
+      "context_length": "${CONTEXT_LENGTH}",
+      "context_stride": 1,
+      "context_overlap": "${CONTEXT_OVERLAP}",
+      "closed_loop": "${SEAMLESS_LOOP}",
+      "fuse_method": "pyramid",
+      "use_on_equal_length": false
+    }
+  },
+  "5": {
+    "class_type": "ADE_AnimateDiffLoRALoader",
+    "inputs": {
+      "lora_name": "${MOTION_LORA}",
+      "strength": "${MOTION_STRENGTH}"
+    }
+  },
+  "6": {
+    "class_type": "ImageScaleToTotalPixels",
+    "inputs": {
+      "upscale_method": "lanczos",
+      "megapixels": 0.26,
+      "image": ["2", 0]
+    }
+  },
+  "7": {
+    "class_type": "VAEEncode",
+    "inputs": {
+      "pixels": ["6", 0],
+      "vae": ["1", 2]
+    }
+  },
+  "8": {
+    "class_type": "RepeatLatentBatch",
+    "inputs": {
+      "amount": "${FRAMES}",
+      "samples": ["7", 0]
+    }
+  },
+  "9": {
+    "class_type": "CLIPTextEncode",
+    "inputs": {
+      "text": "${PROMPT}",
+      "clip": ["1", 1]
+    }
+  },
+  "10": {
+    "class_type": "CLIPTextEncode",
+    "inputs": {
+      "text": "${NEGATIVE_PROMPT}",
+      "clip": ["1", 1]
+    }
+  },
+  "11": {
+    "class_type": "KSampler",
+    "inputs": {
+      "seed": "${SEED}",
+      "steps": "${STEPS}",
+      "cfg": "${CFG_SCALE}",
+      "sampler_name": "euler_ancestral",
+      "scheduler": "normal",
+      "denoise": 0.6,
+      "model": ["3", 0],
+      "positive": ["9", 0],
+      "negative": ["10", 0],
+      "latent_image": ["8", 0]
+    }
+  },
+  "12": {
+    "class_type": "VAEDecode",
+    "inputs": {
+      "samples": ["11", 0],
+      "vae": ["1", 2]
+    }
+  },
+  "13": {
+    "class_type": "VHS_VideoCombine",
+    "inputs": {
+      "frame_rate": "${FPS}",
+      "loop_count": 0,
+      "filename_prefix": "image_to_motion",
+      "format": "video/h264-mp4",
+      "pingpong": false,
+      "save_output": true,
+      "images": ["12", 0]
+    }
+  }
+}

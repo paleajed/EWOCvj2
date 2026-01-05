@@ -415,7 +415,7 @@ private:
 
     /**
      * Count valid images in bin
-     * Counts elements with non-empty abspath
+     * Counts elements with non-empty onnxpath
      */
     int countValidImages(StylePreparationBin* bin);
 

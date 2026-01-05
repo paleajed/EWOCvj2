@@ -11,8 +11,9 @@ typedef enum
 	SET_UPSCALEIMAGE = 8,
 	SET_OPENSTYLE = 9,
     SET_SAVESTYLE = 10,
-    SET_RENAMESTYLE = 10,
-    SET_DELETESTYLE = 10,
+    SET_RENAMESTYLE = 11,
+	SET_DELETESTYLE = 12,
+	SET_DELETESETUP = 13,
 } ELEMMENU_OPTION;
 
 class StylePreparationElement;
@@ -28,7 +29,6 @@ class StyleRoom {
         std::string backupname;
         StylePreparationBin* prepbin;
         std::vector<Boxx*> elemboxes;
-        std::string currstylename = "Style_0";
 		Boxx* stylenamesbox;
 		int stylesscroll = 0;
         Boxx* stylesscrolldown;
@@ -71,8 +71,11 @@ class Style {
         StylePreparationBin* bin = nullptr;
         std::string name = "";
         std::string oldname = "";
-        std::string abspath = "";
+		std::string onnxpath = "";
+		std::string preppath = "";
         std::string relpath = "";
+		bool onnxinstalled = false;
+		bool prepinstalled = false;
         Boxx* box = nullptr;
 };
 
@@ -80,6 +83,7 @@ class StylePreparationBin {
     public:
         std::vector<StylePreparationElement*> elements;
 
+		void initialize();
 		void open(std::string path);
 		void save();
         StylePreparationBin();

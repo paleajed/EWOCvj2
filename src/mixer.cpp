@@ -3435,6 +3435,7 @@ Layer::~Layer() {
     av_packet_free(&this->audiopkt_dedicated);
 
     sws_freeContext(this->sws_ctx);
+    this->sws_ctx = nullptr;
 
     {
         std::lock_guard<std::mutex> lock(this->video_dec_ctx_mutex);
@@ -5163,7 +5164,7 @@ void Layer::get_cpu_frame(int framenr, int prevframe, int errcount)
                         // Check if this is a keyframe AND after our target
                         if ((this->decpkt->flags & AV_PKT_FLAG_KEY) && this->decpkt->pts >= seekTarget) {
                             first_keyframe_after = this->decpkt->pts;
-                            printf("Found first keyframe after target at PTS: %ld\n", first_keyframe_after);
+                            // Debug: printf("Found first keyframe after target at PTS: %ld\n", first_keyframe_after);
                             break;
                         }
                     }
@@ -5648,6 +5649,25 @@ void Mixer::vidbox_handle() {
 void Layer::display() {
     float deepred[] = {1.0, 0.0, 0.0, 1.0};
 
+    if (this->swaphap) {
+        auto binel = this->swaphap;
+        this->swaphap = nullptr;
+        bool bukeb = this->keepeffbut->value;
+        this->keepeffbut->value = 1;
+        this->transfered = true;
+        Layer *lay = this->open_video(this->frame, binel->path, false);
+        lay->keepeffbut->value = bukeb;
+        // wait for video open
+        std::unique_lock<std::mutex> olock(lay->endopenlock);
+        lay->endopenvar.wait(olock, [&] {return lay->opened; });
+        lay->opened = false;
+        olock.unlock();
+        lay->set_clones();
+        lay->scritched = true;
+        lay->hapbinel = nullptr;
+        return;
+    }
+    
 	std::vector<Layer*>& lvec = choose_layers(this->deck);
 	if (mainmix->scenes[this->deck][mainmix->currscene[this->deck]]->scrollpos > lvec.size() - 2) mainmix->scenes[this->deck][mainmix->currscene[this->deck]]->scrollpos = lvec.size() - 2;
 	if (mainmix->scenes[this->deck][mainmix->currscene[this->deck]]->scrollpos < 0) mainmix->scenes[this->deck][mainmix->currscene[this->deck]]->scrollpos = 0;
@@ -7811,7 +7831,7 @@ void Mixer::layerdrag_handle() {
 		Layer* lay = this->currlay[!mainprogram->prevmodus];
 		Boxx* box = lay->node->vidbox;
 		if (lay->vidmoving) {
-			if (mainprogram->binsscreen) {
+			if (mainprogram->binsroom) {
 				float boxwidth = 0.3f;
 				float nmx = mainprogram->xscrtovtx(mainprogram->mx) + boxwidth / 2.0f;
 				float nmy = 2.0 - mainprogram->yscrtovtx(mainprogram->my) - boxwidth / 2.0f;
@@ -7824,7 +7844,7 @@ void Mixer::layerdrag_handle() {
                 enddrag();
                 mainprogram->rightmouse = false;
 				bool ret;
-				if (!mainprogram->binsscreen) {
+				if (!mainprogram->binsroom) {
 					if (mainprogram->prevmodus) {
 						if (mainprogram->mx < glob->w / 2.0f) ret = lay->exchange(lvec, this->layers[0], 0);
 						else ret = lay->exchange(lvec, this->layers[1], 1);
@@ -7861,7 +7881,7 @@ void Mixer::deckmixdrag_handle() {
 
     if (mainprogram->dragbinel) {
         if (mainprogram->dragbinel->type == ELEM_DECK) {
-            if (!mainprogram->binsscreen) {
+            if (!mainprogram->binsroom) {
                 // check drop of dragged deck into mix
                 for (int m = 0; m < 2; ++m) {
                     Boxx box;
@@ -7888,7 +7908,7 @@ void Mixer::deckmixdrag_handle() {
                 }
             }
         } else if (mainprogram->dragbinel->type == ELEM_MIX) {
-            if (!mainprogram->binsscreen) {
+            if (!mainprogram->binsroom) {
                 // check drop of dragged mix into layer stacks
                 Boxx box;
                 box.vtxcoords->x1 = -1.0f + mainprogram->numw;
@@ -8116,7 +8136,8 @@ void Mixer::open_dragbinel(Layer *thislay) {
     this->open_dragbinel(thislay, -1);
 }
 
-void Mixer::open_dragbinel(Layer *thislay, int i) {
+void Mixer::
+open_dragbinel(Layer *thislay, int i) {
     // open element dragged to layer stack or double-clicked from shelf
     if (mainprogram->shelfdragelem) {
         mainprogram->shelf_triggering(mainprogram->shelfdragelem, -1, thislay);
@@ -8352,6 +8373,7 @@ void Mixer::reconnect_all(std::vector<Layer*> &layers) {
             if (layers[j]->pos > 0) {
                 if (layers[j]->blendnode->in) {
                     layers[j]->blendnode->in->out.clear();
+                    layers[j]->lasteffnode[1]->out[0]->in = nullptr;
                     mainprogram->nodesmain->currpage->connect_nodes(layers[j]->blendnode->in,
                                                                     layers[j]->lasteffnode[1]->out[0]);
                 }
@@ -8364,8 +8386,14 @@ void Mixer::reconnect_all(std::vector<Layer*> &layers) {
             }
         }
         else if (layers[j]->solobut->value) {
-            if (!layers[j]->blendnode->in) {
-                mainprogram->nodesmain->currpage->connect_nodes(layers[j]->lasteffnode[0], layers[j]->blendnode);
+            for (int i = 0; i < 4; i++) {
+                if (&layers == &mainmix->layers[i]) {
+                    mainprogram->nodesmain->mixnodes[i / 2][i % 2]->in->out.clear();
+                    mainprogram->nodesmain->mixnodes[i / 2][i % 2]->in = nullptr;
+                    layers[j]->lasteffnode[1]->out.clear();
+                    mainprogram->nodesmain->currpage->connect_nodes(layers[j]->lasteffnode[1],
+                                                                    mainprogram->nodesmain->mixnodes[i / 2][i % 2]);
+                }
             }
         }
     }
@@ -10525,7 +10553,7 @@ bool Layer::thread_vidopen() {
             double tbperframe = (double)this->video_stream->duration / (double)this->numf;
             this->millif = tbperframe * (((double)this->video_stream->time_base.num * 1000.0) / (double)this->video_stream->time_base.den);
 
-            sws_freeContext(this->sws_ctx);
+            //sws_freeContext(this->sws_ctx);
             //avcodec_free_context(&this->video_dec_ctx);
             av_frame_unref(this->decframe);
 
@@ -11293,8 +11321,8 @@ bool Layer::progress(bool comp, bool alive, bool doclips) {
             }
             // calculate new frame numbers
             float fac = 0.0f;
-            if (1) fac = mainmix->deckspeed[comp][this->deck]->value;
-            else fac = this->olddeckspeed;
+            if (!alive) fac = 1.0f;
+            else fac = mainmix->deckspeed[comp][this->deck]->value;
             if (this->clonesetnr != -1) {
                 std::unordered_set<Layer*>::iterator it;
                 for (it = mainmix->clonesets[this->clonesetnr]->begin(); it != mainmix->clonesets[this->clonesetnr]->end(); it++) {
@@ -15105,7 +15133,7 @@ void Mixer::handle_clips() {
         for (int j = 0; j < lays.size(); j++) {
             Layer *lay2 = lays[j];
             if (mainprogram->dragbinel && !startdrag) {
-                if (!mainprogram->binsscreen) {
+                if (!mainprogram->binsroom) {
                     if (mainprogram->lmover) {
                         if (lay2->pos != mainprogram->draglaypos) continue;
                         if (lay2->deck != mainprogram->draglaydeck) continue;
@@ -15187,7 +15215,7 @@ void Layer::clip_display_next(bool startend, bool alive) {
                 this->currclipjpegpath = this->currclip->jpegpath;
             }
             oldclip->jpegpath = this->currclipjpegpath;
-            if (this->comp == !mainprogram->bupm && !mainprogram->binsscreen) {
+            if (this->comp == !mainprogram->bupm && !mainprogram->binsroom) {
                 oldclip->tex = copy_tex(node->vidbox->tex, 192, 108);
                 save_thumb(oldclip->jpegpath, oldclip->tex);
             }

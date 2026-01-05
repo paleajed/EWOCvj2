@@ -89,6 +89,8 @@ add_executable(EWOCvj2 WIN32
         RealESRGANWrapper.cpp
         styleroom.h
         styleroom.cpp
+        videogenroom.h
+        videogenroom.cpp
         ReCoNetTrainer.h
         ReCoNetTrainer.cpp
         VideoUpscaler.h
@@ -97,6 +99,12 @@ add_executable(EWOCvj2 WIN32
         ComfyUIManager.cpp
         ComfyUIInstaller.h
         ComfyUIInstaller.cpp
+        RealESRGANInstaller.h
+        RealESRGANInstaller.cpp
+        ReCoNetInstaller.h
+        ReCoNetInstaller.cpp
+        VideoUpscalingInstaller.h
+        VideoUpscalingInstaller.cpp
 )
 
 set(Boost_USE_STATIC_RUNTIME ON)

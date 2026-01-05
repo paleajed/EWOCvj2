@@ -18,6 +18,8 @@
 
 StyleRoom::StyleRoom() {
     this->prepbin = new StylePreparationBin;
+    this->currstyle = new Style;
+    this->currstyle->name = "Style_0";
 
 #ifdef RECONET_TRAINING_ENABLED
     // Initialize ReCoNet trainer
@@ -339,7 +341,7 @@ StyleRoom::StyleRoom() {
 
     float paramx = -0.75f;
     float paramy = -0.6f;
-    float paramw = mainprogram->layw * 1.5f * 0.25f;
+    float paramw = mainprogram->layw * 1.5f * 0.3f;
     float paramh = 0.1f;
     this->quality->box->vtxcoords->x1 = paramx;
     this->quality->box->vtxcoords->y1 = paramy;
@@ -374,6 +376,7 @@ StyleRoom::StyleRoom() {
 
     float paramx2 = 0.34f;
     float paramy2 = 0.2f;
+    paramw = mainprogram->layw * 1.5f * 0.25f;
     this->mode->box->vtxcoords->x1 = paramx2;
     this->mode->box->vtxcoords->y1 = paramy2 + paramh * 5.0;
     this->mode->box->vtxcoords->w = paramw;
@@ -444,16 +447,22 @@ StyleRoom::StyleRoom() {
     std::string path;
     int count = 0;
     while (1) {
-        path = modelsdir + this->currstylename + ".onnx";
+        path = modelsdir + this->currstyle->name + ".onnx";
         if (!exists(path)) {
             break;
         }
         count++;
-        this->currstylename = remove_version(this->currstylename) + "_" + std::to_string(count);
+        this->currstyle->name = remove_version(this->currstyle->name) + "_" + std::to_string(count);
     }
 }
 
 StylePreparationBin::StylePreparationBin() {
+}
+
+void StylePreparationBin::initialize() {
+    for (auto elem : this->elements) {
+        elem->erase();
+    }
 }
 
 StylePreparationElement::StylePreparationElement() {
@@ -640,7 +649,168 @@ void StyleRoom::handle() {
         }
     }
 
- 	// handle binelmenu thats been populated above, menuset controls which options sets are used
+    draw_box(white, darkgreen2, this->elemboxes[0]->vtxcoords->x1 - border, -0.96f, 1.65f, 0.5f, -1);
+    draw_box(white, black, this->stylenamesbox, -1);
+    //draw and handle stylelist
+    inbox = false;
+    //handle styleslist scroll
+    if (this->stylenamesbox->in()) {
+        // mousewheel scroll
+        this->stylesscroll -= mainprogram->mousewheel;
+        if (this->stylesscroll < 0) this->stylesscroll = 0;
+        if (this->styles.size() > 22 && this->styles.size() - this->stylesscroll < 23) {
+            this->stylesscroll = this->styles.size() - 22;
+        }
+    }
+
+    // draw and handle binslist scrollboxes
+    this->stylesscroll = mainprogram->handle_scrollboxes(*this->stylesscrollup, *this->stylesscrolldown, this->styles.size(), this->stylesscroll, 22);
+
+    for (int i = 0; i < 22; i++) {
+        Style *style = this->styles[i + this->stylesscroll];
+        style->box->vtxcoords->y1 =
+                this->stylenamesbox->vtxcoords->y1 + this->stylenamesbox->vtxcoords->h + (i + 1) * -0.05f;
+        style->box->upvtxtoscr();
+        if (style->box->in()) {
+            inbox = true;
+            this->menustyle = style;
+            if (mainprogram->renaming == EDIT_NONE) {
+                if (mainprogram->leftmouse) {
+                    // click to choose current bin
+                    this->currstyle = style;
+                    if (style->prepinstalled) {
+                        this->prepbin->open(style->preppath);
+                    } else {
+                        this->prepbin->initialize();
+                    }
+                }
+                if (mainprogram->doubleleftmouse) {
+                    // start renaming bin
+                    this->backupname = this->currstyle->name;
+                    mainprogram->inputtext = this->currstyle->name;
+                    mainprogram->cursorpos0 = mainprogram->inputtext.length();
+                    SDL_StartTextInput();
+                    mainprogram->renaming = EDIT_STYLENAME;
+                    this->currstyle->oldname = this->currstyle->name;
+                }
+                style->box->acolor[0] = 0.5f;
+                style->box->acolor[1] = 0.5f;
+                style->box->acolor[2] = 1.0f;
+                style->box->acolor[3] = 1.0f;
+            }
+            if (mainprogram->menuactivation) {
+                // Set style list menu
+                this->elemmenuoptions.clear();
+                std::vector<std::string> snlm;
+                if (style->onnxinstalled) {
+                    snlm.push_back("Delete style");
+                    this->elemmenuoptions.push_back(SET_DELETESTYLE);
+                }
+                if (style->prepinstalled) {
+                    snlm.push_back("Delete setup");
+                    this->elemmenuoptions.push_back(SET_DELETESETUP);
+                }
+                snlm.push_back("Rename");
+                this->elemmenuoptions.push_back(SET_RENAMESTYLE);
+                snlm.push_back("Quit");
+                this->elemmenuoptions.push_back(SET_QUIT);
+
+                mainprogram->make_menu("styleroommenu", mainstyleroom->styleroommenu, snlm);
+
+                this->styleroommenu->state = 2;
+                this->styleroommenu->menux = mainprogram->mx;
+                this->styleroommenu->menuy = mainprogram->my;
+            }
+        } else if (style == this->currstyle) {
+            // current style colored differently
+            style->box->acolor[0] = 0.4f;
+            style->box->acolor[1] = 0.2f;
+            style->box->acolor[2] = 0.2f;
+            style->box->acolor[3] = 1.0f;
+        } else {
+            style->box->acolor[0] = 0.0f;
+            style->box->acolor[1] = 0.0f;
+            style->box->acolor[2] = 0.0f;
+            style->box->acolor[3] = 1.0f;
+        }
+        draw_box(style->box, -1);
+        std::string namedisplay = style->name;
+        if (mainprogram->renaming == EDIT_STYLENAME && style == this->currstyle) {
+            // bin renaming with keyboard
+            do_text_input(style->box->vtxcoords->x1 + 0.025f, style->box->vtxcoords->y1 + 0.018f, 0.00045f, 0.00075f,
+                          mainprogram->mx, mainprogram->my, mainprogram->xvtxtoscr(0.3f - 0.03f), 0, nullptr);
+        } else
+            render_text(namedisplay, white, style->box->vtxcoords->x1 + 0.025f, style->box->vtxcoords->y1 + 0.018f,
+                        0.00045f, 0.00075f);
+        if (style->onnxinstalled) {
+            draw_box(green, green, style->box->vtxcoords->x1 + style->box->vtxcoords->w * 0.8f,
+                     style->box->vtxcoords->y1 + 0.015f, style->box->vtxcoords->w * 0.1f,
+                     style->box->vtxcoords->h - 0.02f, 0.0f, 0.0f, 1.0f, 1.0f, 2, -1, glob->w, glob->h, 0);
+        }
+        if (style->prepinstalled) {
+            draw_box(purple, purple, style->box->vtxcoords->x1 + style->box->vtxcoords->w * 0.9f,
+                     style->box->vtxcoords->y1 + 0.015f, style->box->vtxcoords->w * 0.1f,
+                     style->box->vtxcoords->h - 0.02f, 0.0f, 0.0f, 1.0f, 1.0f, 2, -1, glob->w, glob->h, 0);
+        }
+    }
+
+    if (!inbox && this->stylenamesbox->in()) {
+        if (this->menustyle) {
+            if (this->menustyle->name != "") {
+                // Set menu when over non-empty element
+                this->elemmenuoptions.clear();
+                std::vector<std::string> snlm;
+                snlm.push_back("Delete element");
+                elemmenuoptions.push_back(SET_DELETE);
+                snlm.push_back("Open file(s) from disk");
+                elemmenuoptions.push_back(SET_OPENFILES);
+                snlm.push_back("Insert deck A");
+                elemmenuoptions.push_back(SET_INSDECKA);
+                snlm.push_back("Insert deck B");
+                elemmenuoptions.push_back(SET_INSDECKB);
+                snlm.push_back("Insert full mix");
+                elemmenuoptions.push_back(SET_INSMIX);
+                snlm.push_back("Open style profile");
+                elemmenuoptions.push_back(SET_OPENSTYLE);
+                snlm.push_back("Save style profile");
+                elemmenuoptions.push_back(SET_SAVESTYLE);
+                snlm.push_back("submenu upscalemenu");
+                snlm.push_back("Upscale image");
+                elemmenuoptions.push_back(SET_UPSCALEIMAGE);
+                snlm.push_back("Quit");
+                elemmenuoptions.push_back(SET_QUIT);
+
+                mainprogram->make_menu("styleroommenu", mainstyleroom->styleroommenu, snlm);
+            } else {
+                // Set menu when over empty element
+                this->elemmenuoptions.clear();
+                std::vector<std::string> snlm;
+                snlm.push_back("Open file(s) from disk");
+                elemmenuoptions.push_back(SET_OPENFILES);
+                snlm.push_back("Insert deck A");
+                elemmenuoptions.push_back(SET_INSDECKA);
+                snlm.push_back("Insert deck B");
+                elemmenuoptions.push_back(SET_INSDECKB);
+                snlm.push_back("Insert full mix");
+                elemmenuoptions.push_back(SET_INSMIX);
+                snlm.push_back("Open style profile");
+                elemmenuoptions.push_back(SET_OPENSTYLE);
+                snlm.push_back("Save style profile");
+                elemmenuoptions.push_back(SET_SAVESTYLE);
+                snlm.push_back("Quit");
+                elemmenuoptions.push_back(SET_QUIT);
+
+                mainprogram->make_menu("styleroommenu", mainstyleroom->styleroommenu, snlm);
+            }
+        }
+        if (mainprogram->menuactivation) {
+            this->styleroommenu->state = 2;
+            this->styleroommenu->menux = mainprogram->mx;
+            this->styleroommenu->menuy = mainprogram->my;
+        }
+    }
+
+    // handle binelmenu thats been populated above, menuset controls which options sets are used
 	int k = -1;
 	k = mainprogram->handle_menu(mainstyleroom->styleroommenu);
 	if (elemmenuoptions.size() && k > -1) {
@@ -739,159 +909,26 @@ void StyleRoom::handle() {
         }
         else if (elemmenuoptions[k] == SET_RENAMESTYLE) {
             // start renaming style
-            this->backupname = this->currstyle->name;
-            mainprogram->inputtext = this->currstyle->name;
+            this->backupname = this->menustyle->name;
+            mainprogram->inputtext = this->menustyle->name;
             mainprogram->cursorpos0 = mainprogram->inputtext.length();
             SDL_StartTextInput();
-            mainprogram->renaming = EDIT_BINNAME;
-            this->currstyle->oldname = this->currstyle->name;
+            mainprogram->renaming = EDIT_STYLENAME;
+            this->menustyle->oldname = this->menustyle->name;
+            this->currstyle = this->menustyle;
         }
         else if (elemmenuoptions[k] == SET_DELETESTYLE) {
-            // delete style model or profile
-            safe_remove(this->currstyle->abspath);
+            // delete style onnx model
+            safe_remove(this->menustyle->onnxpath);
+            this->updatelists();
+        }
+        else if (elemmenuoptions[k] == SET_DELETESETUP) {
+            // delete style setup profile
+            safe_remove(this->menustyle->preppath);
             this->updatelists();
         }
     }
 	    
-    draw_box(white, darkgreen2, this->elemboxes[0]->vtxcoords->x1 - border, -0.96f, 1.65f, 0.5f, -1);
-    draw_box(white, black, this->stylenamesbox, -1);
-    //draw and handle stylelist
-    inbox = false;
-    //handle styleslist scroll
-    if (this->stylenamesbox->in()) {
-        // mousewheel scroll
-        this->stylesscroll -= mainprogram->mousewheel;
-        if (this->stylesscroll < 0) this->stylesscroll = 0;
-        if (this->styles.size() > 22 && this->styles.size() - this->stylesscroll < 23) {
-            this->stylesscroll = this->styles.size() - 22;
-        }
-    }
-
-    // draw and handle binslist scrollboxes
-    this->stylesscroll = mainprogram->handle_scrollboxes(*this->stylesscrollup, *this->stylesscrolldown, this->styles.size(), this->stylesscroll, 22);
-
-    for (int i = 0; i < 22; i++) {
-        Style* style = this->styles[i + this->stylesscroll];
-        style->box->vtxcoords->y1 = this->stylenamesbox->vtxcoords->y1 + this->stylenamesbox->vtxcoords->h + (i + 1) * -0.05f;
-        style->box->upvtxtoscr();
-        if (style->box->in()) {
-            inbox = true;
-            this->menustyle = style;
-            if (mainprogram->renaming == EDIT_NONE) {
-                if (mainprogram->leftmouse) {
-                    // click to choose current bin
-                    this->currstyle = style;
-                }
-                if (mainprogram->doubleleftmouse) {
-                    // start renaming bin
-                    this->backupname = this->currstyle->name;
-                    mainprogram->inputtext = this->currstyle->name;
-                    mainprogram->cursorpos0 = mainprogram->inputtext.length();
-                    SDL_StartTextInput();
-                    mainprogram->renaming = EDIT_BINNAME;
-                    this->currstyle->oldname = this->currstyle->name;
-                }
-                style->box->acolor[0] = 0.5f;
-                style->box->acolor[1] = 0.5f;
-                style->box->acolor[2] = 1.0f;
-                style->box->acolor[3] = 1.0f;
-            }
-            if (mainprogram->menuactivation) {
-                // Set style list menu
-                this->elemmenuoptions.clear();
-                std::vector<std::string> snlm;
-                snlm.push_back("Delete model");
-                elemmenuoptions.push_back(SET_DELETESTYLE);
-                snlm.push_back("Rename model");
-                elemmenuoptions.push_back(SET_RENAMESTYLE);
-                snlm.push_back("Quit");
-                elemmenuoptions.push_back(SET_QUIT);
-
-                mainprogram->make_menu("styleroommenu", mainstyleroom->styleroommenu, snlm);
-
-                this->styleroommenu->state = 2;
-                this->styleroommenu->menux = mainprogram->mx;
-                this->styleroommenu->menuy = mainprogram->my;
-            }
-        }
-        else if (style == this->currstyle) {
-            // current style colored differently
-            style->box->acolor[0] = 0.4f;
-            style->box->acolor[1] = 0.2f;
-            style->box->acolor[2] = 0.2f;
-            style->box->acolor[3] = 1.0f;
-        }
-        else {
-            style->box->acolor[0] = 0.0f;
-            style->box->acolor[1] = 0.0f;
-            style->box->acolor[2] = 0.0f;
-            style->box->acolor[3] = 1.0f;
-        }
-        draw_box(style->box, -1);
-        std::string namedisplay = style->name;
-        if (mainprogram->renaming == EDIT_BINNAME && style == this->currstyle) {
-            // bin renaming with keyboard
-            do_text_input(style->box->vtxcoords->x1 + 0.025f, style->box->vtxcoords->y1 + 0.018f, 0.00045f, 0.00075f, mainprogram->mx, mainprogram->my, mainprogram->xvtxtoscr(0.3f - 0.03f), 0, nullptr);
-        }
-        else render_text(namedisplay, white, style->box->vtxcoords->x1 + 0.025f, style->box->vtxcoords->y1 + 0.018f, 0.00045f, 0.00075f);
-    }
-
-    if (!inbox && this->stylenamesbox->in()) {
-        if (this->menustyle) {
-            if (this->menustyle->name != "") {
-                // Set menu when over non-empty element
-                this->elemmenuoptions.clear();
-                std::vector<std::string> snlm;
-                snlm.push_back("Delete element");
-                elemmenuoptions.push_back(SET_DELETE);
-                snlm.push_back("Open file(s) from disk");
-                elemmenuoptions.push_back(SET_OPENFILES);
-                snlm.push_back("Insert deck A");
-                elemmenuoptions.push_back(SET_INSDECKA);
-                snlm.push_back("Insert deck B");
-                elemmenuoptions.push_back(SET_INSDECKB);
-                snlm.push_back("Insert full mix");
-                elemmenuoptions.push_back(SET_INSMIX);
-                snlm.push_back("Open style profile");
-                elemmenuoptions.push_back(SET_OPENSTYLE);
-                snlm.push_back("Save style profile");
-                elemmenuoptions.push_back(SET_SAVESTYLE);
-                snlm.push_back("submenu upscalemenu");
-                snlm.push_back("Upscale image");
-                elemmenuoptions.push_back(SET_UPSCALEIMAGE);
-                snlm.push_back("Quit");
-                elemmenuoptions.push_back(SET_QUIT);
-
-                mainprogram->make_menu("styleroommenu", mainstyleroom->styleroommenu, snlm);
-            } else {
-                // Set menu when over empty element
-                this->elemmenuoptions.clear();
-                std::vector<std::string> snlm;
-                snlm.push_back("Open file(s) from disk");
-                elemmenuoptions.push_back(SET_OPENFILES);
-                snlm.push_back("Insert deck A");
-                elemmenuoptions.push_back(SET_INSDECKA);
-                snlm.push_back("Insert deck B");
-                elemmenuoptions.push_back(SET_INSDECKB);
-                snlm.push_back("Insert full mix");
-                elemmenuoptions.push_back(SET_INSMIX);
-                snlm.push_back("Open style profile");
-                elemmenuoptions.push_back(SET_OPENSTYLE);
-                snlm.push_back("Save style profile");
-                elemmenuoptions.push_back(SET_SAVESTYLE);
-                snlm.push_back("Quit");
-                elemmenuoptions.push_back(SET_QUIT);
-
-                mainprogram->make_menu("styleroommenu", mainstyleroom->styleroommenu, snlm);
-            }
-        }
-        if (mainprogram->menuactivation) {
-            this->styleroommenu->state = 2;
-            this->styleroommenu->menux = mainprogram->mx;
-            this->styleroommenu->menuy = mainprogram->my;
-        }
-    }
-
     this->res->handle();
     if (this->mode->value == 0.0f) {
         this->quality->handle();
@@ -934,11 +971,11 @@ void StyleRoom::handle() {
     draw_box(&box, -1);
     render_text("Style name:", white, box.vtxcoords->x1 - 0.15f, box.vtxcoords->y1 + 0.03f, 0.0009f, 0.00150f);
     if (mainprogram->renamingstyle == false) {
-        render_text(mainstyleroom->currstylename, white, box.vtxcoords->x1 + 0.02f, box.vtxcoords->y1 + 0.03f, 0.0009f, 0.00150f);
+        render_text(mainstyleroom->currstyle->name, white, box.vtxcoords->x1 + 0.02f, box.vtxcoords->y1 + 0.03f, 0.0009f, 0.00150f);
     } else {
         if (mainprogram->renaming == EDIT_NONE) {
             mainprogram->renamingstyle = false;
-            mainstyleroom->currstylename = mainprogram->inputtext;
+            mainstyleroom->currstyle->name = mainprogram->inputtext;
             std::string modelsdir;
 #ifdef _WIN32
             modelsdir = "C:/ProgramData/EWOCvj2/models/styles/";
@@ -948,12 +985,12 @@ void StyleRoom::handle() {
             std::string path;
             int count = 0;
             while (1) {
-                path = modelsdir + mainstyleroom->currstylename + ".onnx";
+                path = modelsdir + mainstyleroom->currstyle->name + ".onnx";
                 if (!exists(path)) {
                     break;
                 }
                 count++;
-                mainstyleroom->currstylename = remove_version(mainstyleroom->currstylename) + "_" + std::to_string(count);
+                mainstyleroom->currstyle->name = remove_version(mainstyleroom->currstyle->name) + "_" + std::to_string(count);
             }
         } else if (mainprogram->renaming == EDIT_CANCEL) {
             mainprogram->renamingstyle = false;
@@ -968,7 +1005,7 @@ void StyleRoom::handle() {
             mainprogram->leftmouse = false;
             mainprogram->renamingstyle = true;
             mainprogram->renaming = EDIT_STRING;
-            mainprogram->inputtext = mainstyleroom->currstylename;
+            mainprogram->inputtext = mainstyleroom->currstyle->name;
             mainprogram->cursorpos0 = mainprogram->inputtext.length();
             SDL_StartTextInput();
         }
@@ -1092,7 +1129,7 @@ void StyleRoom::handle() {
 
                     bool started = mainstyleroom->reconetTrainer->startTraining(
                             mainstyleroom->prepbin,
-                            mainstyleroom->currstylename,  // Model name from text input
+                            mainstyleroom->currstyle->name,  // Model name from text input
                             config);
                     if (!started) {
                         std::string error = mainstyleroom->reconetTrainer->getLastError();
@@ -1173,9 +1210,11 @@ void StyleRoom::open_files_bin() {
 void StylePreparationBin::save() {
     // save bin file
     std::ofstream wfile;
-    std::string path = "C:/ProgramData/EWOCvj2/models/styles/setup/" + mainstyleroom->currstylename + ".style";
+    std::string path = "C:/ProgramData/EWOCvj2/models/styles/setup/" + mainstyleroom->currstyle->name + ".style";
     wfile.open(path.c_str());
     wfile << "EWOCvj STYLEFILE\n";
+
+    mainstyleroom->currstyle->onnxpath = path;
 
     wfile << "ELEMS\n";
     // save elements
@@ -1258,14 +1297,18 @@ void StylePreparationBin::save() {
 
     wfile << "ENDOFFILE\n";
     wfile.close();
+
+    mainstyleroom->updatelists();
 }
 
 void StylePreparationBin::open(std::string path) {
     // open a style preparation project
-    mainstyleroom->currstylename = remove_extension(basename(path));
+    mainstyleroom->currstyle->name = remove_extension(basename(path));
 
     std::ifstream rfile;
     rfile.open(path);
+
+    mainstyleroom->currstyle->onnxpath = path;
 
     int count = 0;
     std::string abspath;
@@ -1279,13 +1322,24 @@ void StylePreparationBin::open(std::string path) {
         else if (istring == "ELEMS") {
             // open style preparation elements
             while (safegetline(rfile, istring)) {
-                StylePreparationElement *elem = this->elements[count];
-                bool notfound = false;
                 if (istring == "ENDOFELEMS") break;
+                bool notfound = false;
+                StylePreparationElement *elem;
                 if (istring == "ABSPATH") {
+                    elem = this->elements[count++];
                     safegetline(rfile, istring);
                     elem->abspath = istring;
                     elem->relpath = std::filesystem::relative(istring, mainprogram->contentpath).generic_string();
+                    if (exists(elem->abspath)) {
+                        Layer *lay = new Layer(true);
+                        get_imagetex(lay, elem->abspath);
+                        std::unique_lock<std::mutex> lock2(lay->enddecodelock);
+                        lay->enddecodevar.wait(lock2, [&] { return lay->processed; });
+                        lay->processed = false;
+                        lock2.unlock();
+                        elem->tex = mainprogram->get_tex(lay);
+                        lay->close();
+                    }
                 }
                 if (istring == "RELPATH") {
                     safegetline(rfile, istring);
@@ -1307,6 +1361,16 @@ void StylePreparationBin::open(std::string path) {
                         else {
                             elem->abspath = teststr;
                         }
+                        if (exists(elem->relpath)) {
+                            Layer *lay = new Layer(true);
+                            get_imagetex(lay, elem->abspath);
+                            std::unique_lock<std::mutex> lock2(lay->enddecodelock);
+                            lay->enddecodevar.wait(lock2, [&] { return lay->processed; });
+                            lay->processed = false;
+                            lock2.unlock();
+                            elem->tex = mainprogram->get_tex(lay);
+                            lay->close();
+                        }
                     }
                 }
                 if (istring == "NAME") {
@@ -1320,62 +1384,84 @@ void StylePreparationBin::open(std::string path) {
             }
         }
         else if (istring == "MODE") {
+            safegetline(rfile, istring);
             mainstyleroom->mode->value = std::stof(istring);
         }
         else if (istring == "RES") {
+            safegetline(rfile, istring);
             mainstyleroom->res->value = std::stof(istring);
         }
         else if (istring == "USEGPU") {
+            safegetline(rfile, istring);
             mainstyleroom->usegpu->value = std::stof(istring);
         }
         else if (istring == "QUALITY") {
+            safegetline(rfile, istring);
             mainstyleroom->quality->value = std::stof(istring);
         }
         else if (istring == "INFLUENCE") {
+            safegetline(rfile, istring);
             mainstyleroom->influence->value = std::stof(istring);
         }
         else if (istring == "ABSTRACTION") {
+            safegetline(rfile, istring);
             mainstyleroom->abstraction->value = std::stof(istring);
         }
         else if (istring == "COHERENCE") {
+            safegetline(rfile, istring);
             mainstyleroom->coherence->value = std::stof(istring);
         }
         else if (istring == "LAYRELU1") {
+            safegetline(rfile, istring);
             mainstyleroom->layrelu1->value = std::stof(istring);
         }
         else if (istring == "LAYRELU2") {
+            safegetline(rfile, istring);
             mainstyleroom->layrelu2->value = std::stof(istring);
         }
         else if (istring == "LAYRELU3") {
+            safegetline(rfile, istring);
             mainstyleroom->layrelu3->value = std::stof(istring);
         }
         else if (istring == "LAYRELU4") {
+            safegetline(rfile, istring);
             mainstyleroom->layrelu4->value = std::stof(istring);
         }
         else if (istring == "LAYRELU5") {
+            safegetline(rfile, istring);
             mainstyleroom->layrelu5->value = std::stof(istring);
         }
         else if (istring == "STYLEWEIGHT") {
+            safegetline(rfile, istring);
             mainstyleroom->styleweight->value = std::stof(istring);
         }
         else if (istring == "CONTENTWEIGHT") {
+            safegetline(rfile, istring);
             mainstyleroom->contentweight->value = std::stof(istring);
         }
         else if (istring == "TEMPORALWEIGHT") {
+            safegetline(rfile, istring);
             mainstyleroom->temporalweight->value = std::stof(istring);
         }
         else if (istring == "TRAINRES") {
+            safegetline(rfile, istring);
             mainstyleroom->trainres->value = std::stof(istring);
         }
         else if (istring == "TRAINITER") {
+            safegetline(rfile, istring);
             mainstyleroom->trainiter->value = std::stof(istring);
         }
         else if (istring == "BATCHSIZE") {
+            safegetline(rfile, istring);
             mainstyleroom->batchsize->value = std::stof(istring);
         }
     }
 
     rfile.close();
+}
+
+bool compare_styles_by_name(const Style* a, const Style* b) {
+    return a->name < b->name; // Sorts alphabetically by name
 }
 
 void StyleRoom::updatelists() {
@@ -1410,13 +1496,42 @@ void StyleRoom::updatelists() {
     }
     this->styles.clear();
     for (int i = 0; i < mainprogram->aistylenames.size(); i++) {
+        // add installed ONNX's
         Style* style = new Style;
+        style->onnxinstalled = true;
         style->name = mainprogram->aistylenames[i];
-        style->abspath = mainprogram->aistylepaths[i];
+        style->onnxpath = mainprogram->aistylepaths[i];
         style->box = new Boxx;
         style->box->vtxcoords->x1 = -0.04f;
         style->box->vtxcoords->w = 0.248f;
         style->box->vtxcoords->h = this->stylenamesbox->vtxcoords->h / 20.0f;
         this->styles.push_back(style);
     }
+
+    auto keepstyles = this->styles;
+    for (const auto& entry : std::filesystem::recursive_directory_iterator(modelsPath + "setup")) {
+        if (entry.is_regular_file() && entry.path().extension() == ".style") {
+            // add saved preparation styles
+            auto name = remove_extension(basename(entry.path().string()));
+            std::transform(name.begin(), name.end(), name.begin(), ::toupper);
+            int pos = std::find(mainprogram->aistylenames.begin(), mainprogram->aistylenames.end(), name) - mainprogram->aistylenames.begin();
+            if (pos == mainprogram->aistylenames.size()) {
+                Style* style = new Style;
+                style->prepinstalled = true;
+                style->preppath = entry.path().string();
+                style->name = name;
+                style->onnxpath = entry.path().string();
+                style->box = new Boxx;
+                style->box->vtxcoords->x1 = -0.04f;
+                style->box->vtxcoords->w = 0.248f;
+                style->box->vtxcoords->h = this->stylenamesbox->vtxcoords->h / 20.0f;
+                this->styles.push_back(style);
+            }
+            else {
+                keepstyles[pos]->prepinstalled = true;
+                keepstyles[pos]->preppath = entry.path().string();
+            }
+        }
+    }
+    std::sort(this->styles.begin(),this->styles.end(),compare_styles_by_name);
 }

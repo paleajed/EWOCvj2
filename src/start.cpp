@@ -120,6 +120,7 @@ Program *mainprogram = nullptr;
 Mixer *mainmix = nullptr;
 BinsMain *binsmain = nullptr;
 StyleRoom *mainstyleroom = nullptr;
+VideoGenRoom *mainvideogenroom = nullptr;
 LoopStation *loopstation = nullptr;
 LoopStation *lp = nullptr;
 LoopStation *lpc = nullptr;
@@ -3007,7 +3008,7 @@ void midi_set() {
             if (but->value > but->toggle) but->value = 0;
         }
 		if (but->toggle == 0) but->value = !but->value;
-		if (but == mainprogram->wormgate1 || but == mainprogram->wormgate2) mainprogram->binsscreen = but->value;
+		if (but == mainprogram->wormgate1 || but == mainprogram->wormgate2) mainprogram->binsroom = but->value;
 		
 		for (int i = 0; i < loopstation->elements.size(); i++) {
 			if (loopstation->elements[i]->recbut->value) {
@@ -4830,7 +4831,7 @@ bool display_mix() {
         glBindFramebuffer(GL_FRAMEBUFFER, 0);
         glDrawBuffer(GL_BACK_LEFT);
         glViewport(0, 0, glob->w, glob->h);
-        if (!mainprogram->binsscreen && !mainprogram->styleroom) {
+        if (!mainprogram->binsroom && !mainprogram->styleroom && !mainprogram->genroom) {
             draw_box(red, black, box->vtxcoords->x1 + xs * 2.0f, box->vtxcoords->y1 + ys * 2.0f,
                      box->vtxcoords->w - xs * 4.0f, box->vtxcoords->h - ys * 4.0f, node->mixtex);
             mainprogram->mainmonitor->in();
@@ -4873,7 +4874,7 @@ bool display_mix() {
         glBindFramebuffer(GL_FRAMEBUFFER, 0);
         glDrawBuffer(GL_BACK_LEFT);
         glViewport(0, 0, glob->w, glob->h);
-        if (!mainprogram->binsscreen && !mainprogram->styleroom) {
+        if (!mainprogram->binsroom && !mainprogram->styleroom && !mainprogram->genroom) {
             draw_box(red, black, box->vtxcoords->x1 + xs, box->vtxcoords->y1 + ys, box->vtxcoords->w - xs * 2.0f,
                      box->vtxcoords->h - ys * 2.0f, node->mixtex);
             mainprogram->outputmonitor->in();
@@ -4924,7 +4925,7 @@ bool display_mix() {
         glBindFramebuffer(GL_FRAMEBUFFER, 0);
         glDrawBuffer(GL_BACK_LEFT);
         glViewport(0, 0, glob->w, glob->h);
-        if (!mainprogram->binsscreen && !mainprogram->styleroom) {
+        if (!mainprogram->binsroom && !mainprogram->styleroom && !mainprogram->genroom) {
             draw_box(red, black, box->vtxcoords->x1 + xs * 2.0f, box->vtxcoords->y1 + ys * 2.0f,
                      box->vtxcoords->w - xs * 4.0f, box->vtxcoords->h - ys * 4.0f, node->mixtex);
             mainprogram->mainmonitor->in();
@@ -4940,7 +4941,7 @@ bool display_mix() {
     if (mainprogram->prevmodus) {
         node = (MixNode *) mainprogram->nodesmain->mixnodes[0][0];
         box = mainprogram->deckmonitor[0];
-        if (!mainprogram->binsscreen && !mainprogram->styleroom) {
+        if (!mainprogram->binsroom && !mainprogram->styleroom && !mainprogram->genroom) {
             draw_box(red, box->acolor, box->vtxcoords->x1 + xs, box->vtxcoords->y1 + ys, box->vtxcoords->w - xs * 2.0f,
                      box->vtxcoords->h - ys * 2.0f, node->mixtex);
             box->in();
@@ -4951,7 +4952,7 @@ bool display_mix() {
         }
         node = (MixNode *) mainprogram->nodesmain->mixnodes[0][1];
         box = mainprogram->deckmonitor[1];
-        if (!mainprogram->binsscreen && !mainprogram->styleroom) {
+        if (!mainprogram->binsroom && !mainprogram->styleroom && !mainprogram->genroom) {
             draw_box(red, black, box->vtxcoords->x1 + xs, box->vtxcoords->y1 + ys, box->vtxcoords->w - xs * 2.0f,
                      box->vtxcoords->h - ys * 2.0f, node->mixtex);
             box->in();
@@ -4963,7 +4964,7 @@ bool display_mix() {
     } else {
         node = (MixNode *) mainprogram->nodesmain->mixnodes[1][0];
         box = mainprogram->deckmonitor[0];
-        if (!mainprogram->binsscreen && !mainprogram->styleroom) {
+        if (!mainprogram->binsroom && !mainprogram->styleroom && !mainprogram->genroom) {
             draw_box(red, black, box->vtxcoords->x1 + xs, box->vtxcoords->y1 + ys, box->vtxcoords->w - xs * 2.0f,
                      box->vtxcoords->h - ys * 2.0f, node->mixtex);
             box->in();
@@ -4974,7 +4975,7 @@ bool display_mix() {
         }
         node = (MixNode *) mainprogram->nodesmain->mixnodes[1][1];
         box = mainprogram->deckmonitor[1];
-        if (!mainprogram->binsscreen && !mainprogram->styleroom) {
+        if (!mainprogram->binsroom && !mainprogram->styleroom && !mainprogram->genroom) {
             draw_box(red, black, box->vtxcoords->x1 + xs, box->vtxcoords->y1 + ys,
                      box->vtxcoords->w - xs * 2.0f,
                      box->vtxcoords->h - ys * 2.0f, node->mixtex);
@@ -5607,6 +5608,7 @@ void enddrag() {
 		mainprogram->dragout[0] = true;
 		mainprogram->dragout[1] = true;
         mainprogram->draggingrec = false;
+        mainvideogenroom->dragging = false;
 		//glDeleteTextures(1, mainprogram->dragbinel->tex);  maybe needs implementing in one case, check history
 	}
     delete mainprogram->dragbinel;
@@ -5729,7 +5731,7 @@ void the_loop() {
         }
     }
 
-    if (!mainprogram->binsscreen && !mainprogram->styleroom) {
+    if (!mainprogram->binsroom && !mainprogram->styleroom && !mainprogram->genroom) {
         // draw background graphic
         draw_direct(nullptr, black, -1.0f, -1.0f, 2.0f, 2.0f, 0.0f, 0.0f, 1.0f, 1.0f, 0, mainprogram->bgtex, glob->w,
                     glob->h, false, false);
@@ -5930,7 +5932,7 @@ void the_loop() {
             for (int i = 0; i < 25; i++) total += mainmix->fps[i];
             mainmix->rate = total / 25;
             std::string s = std::to_string(mainmix->rate);
-            if (!mainprogram->binsscreen && !mainprogram->styleroom) {
+            if (!mainprogram->binsroom && !mainprogram->styleroom && !mainprogram->genroom) {
                 render_text(s, white, 0.01f, 0.37f, 0.0006f, 0.001f);
             } else {
                 render_text(s, white, 0.9f, 0.37f, 0.0006f, 0.001f);
@@ -5968,7 +5970,7 @@ void the_loop() {
     mainprogram->lpstelem = mainprogram->midishelfelem;
 
 
-    if (!mainprogram->binsscreen && !mainmix->retargeting && !mainprogram->styleroom) {
+    if (!mainprogram->binsroom && !mainmix->retargeting && !mainprogram->styleroom && !mainprogram->genroom) {
         //handle shelves
         mainprogram->inshelf = -1;
         mainprogram->shelves[0]->handle();
@@ -5976,7 +5978,7 @@ void the_loop() {
     }
 
 
-    if (!mainprogram->binsscreen && !mainmix->retargeting && !mainprogram->styleroom) {
+    if (!mainprogram->binsroom && !mainmix->retargeting && !mainprogram->styleroom && !mainprogram->genroom) {
         mainprogram->preview_modus_buttons();
         make_layboxes();
     }
@@ -6375,7 +6377,7 @@ void the_loop() {
                 mainprogram->mx > glob->w - mainprogram->xvtxtoscr(0.05f)) {
                 if (mainprogram->orderleftmouse) {
                     printf("stopped\n");
-                    ;
+                    stopComfyUIServer();
                     SDL_Quit();
                     exit(0);
                 }
@@ -6671,7 +6673,7 @@ void the_loop() {
         }
     }
 
-    else if (mainprogram->binsscreen && !binsmain->floating) {
+    else if (mainprogram->binsroom && !binsmain->floating) {
         // big one this: this if decides if code for bins or mix screen is executed
         // the following statement is defined in bins.cpp
         // the 'true' value triggers the full version of this function: it draws the screen also
@@ -6686,6 +6688,17 @@ void the_loop() {
         // the 'true' value triggers the full version of this function: it draws the screen also
         // 'false' does a dummy run, used to rightmouse cancel things initiated in code (not the mouse)
         mainstyleroom->handle();
+        // Handle parameter adaptation
+        if (mainmix->adaptparam) {
+            mainmix->handle_adaptparam();
+        }
+
+        display_mix();   // for NDI throughput of output monitors
+    }
+
+    else if (mainprogram->genroom && !binsmain->floating) {
+        // Video generation room for ComfyUI integration
+        mainvideogenroom->handle();
         // Handle parameter adaptation
         if (mainmix->adaptparam) {
             mainmix->handle_adaptparam();
@@ -6714,13 +6727,14 @@ void the_loop() {
 
 
 	else {  // this is MIX screen specific stuff
+        // Stop ComfyUI server when entering mix room (save resources)
+        mainprogram->mixroom = true;
 
 		if (mainmix->learn && mainprogram->rightmouse) {
 			// MIDI learn cancel
 			mainmix->learn = false;
 			mainprogram->rightmouse = false;
 		}
-
 
         // shelf element renaming
         if (mainprogram->renamingshelfelem) {
@@ -6850,7 +6864,7 @@ void the_loop() {
             handle_scenes(mainmix->scenes[1][mainmix->currscene[1]]);
         }
 
-        if (!mainprogram->binsscreen && !mainprogram->styleroom) {
+        if (!mainprogram->binsroom && !mainprogram->styleroom && !mainprogram->genroom) {
             // draw and handle overall genmidi button
             mainmix->handle_genmidibuttons();
         }
@@ -7055,7 +7069,7 @@ void the_loop() {
                 }
             }
         }
-        if (!mainprogram->binsscreen && !mainprogram->styleroom) {
+        if (!mainprogram->binsroom && !mainprogram->styleroom && !mainprogram->genroom) {
             mainprogram->beatthres->handle();
         }
     }
@@ -7574,6 +7588,9 @@ void the_loop() {
 			printf("stopped\n");
             fflush(stdout);
 
+            // Stop ComfyUI server before quitting
+            stopComfyUIServer();
+
             SDL_Quit();
 			exit(0);
 		}
@@ -7599,7 +7616,7 @@ void the_loop() {
 	mainprogram->config_midipresets_init();
 
 
-    if (!mainprogram->binsscreen && !mainprogram->styleroom) {
+    if (!mainprogram->binsroom && !mainprogram->styleroom && !mainprogram->genroom) {
         // leftmouse click outside clip queue cancels clip queue visualisation and deselects multiple selected layers
         bool found = false;
         bool found2 = false;
@@ -7636,19 +7653,27 @@ void the_loop() {
         glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
         if (!binsmain->floating) {
             // draw and handle wormgates
-            if (!mainprogram->binsscreen && !mainprogram->styleroom && !mainprogram->genroom) mainprogram->handle_wormgate(0);
-            if (mainprogram->binsscreen) mainprogram->handle_wormgate(1);
-            if (mainprogram->styleroom) mainprogram->handle_wormgate(2);
-            if (mainprogram->genroom) mainprogram->handle_wormgate(3);
+            if (!mainprogram->binsroom && !mainprogram->styleroom && !mainprogram->genroom) {
+                mainprogram->handle_wormgate(0);
+            }
+            if (mainprogram->binsroom) {
+                mainprogram->handle_wormgate(1);
+            }
+            if (mainprogram->styleroom) {
+                mainprogram->handle_wormgate(2);
+            }
+            if (mainprogram->genroom) {
+                mainprogram->handle_wormgate(3);
+            }
             if (mainprogram->dragbinel) {
-                if (!mainprogram->wormgate1->box->in() && !mainprogram->wormgate2->box->in()) {
+                if (!mainprogram->wormgate1->box->in() && !mainprogram->wormgate2->box->in() && !mainprogram->wormgate3->box->in() && !mainprogram->wormgate4->box->in()) {
                     mainprogram->inwormgate = false;
                 }
             }
         }
 
         // display the deck monitors and output monitors on the bottom of the screen
-        if (!mainprogram->binsscreen && !mainprogram->styleroom) display_mix();
+        if (!mainprogram->binsroom && !mainprogram->styleroom && !mainprogram->genroom) display_mix();
     }
 
     mainprogram->directmode = false;
@@ -7732,7 +7757,7 @@ void the_loop() {
         }
     }
 
-    if (!mainprogram->binsscreen && !mainprogram->styleroom && mainprogram->fullscreen == -1) {
+    if (!mainprogram->binsroom && !mainprogram->styleroom && !mainprogram->genroom && mainprogram->fullscreen == -1) {
         // background texture overlay fakes transparency
         draw_direct(nullptr, black, -1.0f, -1.0f, 2.0f, 2.0f, 0.0f, 0.0f, 1.0f, 0.2f, 0, mainprogram->bgtex,
                     glob->w, glob->h, false, false);
@@ -7856,7 +7881,7 @@ void the_loop() {
     if (mainstyleroom && mainstyleroom->reconetTrainer && mainstyleroom->reconetTrainer->isTraining()) {
         auto frameEnd = std::chrono::high_resolution_clock::now();
         auto frameDuration = std::chrono::duration_cast<std::chrono::milliseconds>(frameEnd - frameStart).count();
-        int delayMs = 33 - (int)frameDuration;  // 33ms = ~30fps
+        int delayMs = 31 - (int)frameDuration;  // 33ms = ~30fps
         if (delayMs > 0) {
             SDL_Delay(delayMs);
         }
@@ -7866,7 +7891,17 @@ void the_loop() {
     if (binsmain && binsmain->isAnyUpscaling()) {
         auto frameEnd = std::chrono::high_resolution_clock::now();
         auto frameDuration = std::chrono::duration_cast<std::chrono::milliseconds>(frameEnd - frameStart).count();
-        int delayMs = 33 - (int)frameDuration;  // 33ms = ~30fps
+        int delayMs = 31 - (int)frameDuration;  // 33ms = ~30fps
+        if (delayMs > 0) {
+            SDL_Delay(delayMs);
+        }
+    }
+
+    // Cap to ~30fps during ComfyUI video generation to free up GPU
+    if (mainvideogenroom && mainvideogenroom->comfyManager && mainvideogenroom->comfyManager->isGenerating()) {
+        auto frameEnd = std::chrono::high_resolution_clock::now();
+        auto frameDuration = std::chrono::duration_cast<std::chrono::milliseconds>(frameEnd - frameStart).count();
+        int delayMs = 31 - (int)frameDuration;  // 33ms = ~30fps
         if (delayMs > 0) {
             SDL_Delay(delayMs);
         }
@@ -8475,6 +8510,17 @@ int main(int argc, char* argv[]) {
     binsmain = new BinsMain;
     retarget = new Retarget;
     mainstyleroom = new StyleRoom;
+    mainvideogenroom = new VideoGenRoom;
+
+#ifdef RECONET_TRAINING_ENABLED
+    // Initialize ReCoNet trainer
+    if (mainstyleroom->reconetTrainer) {
+        if (!mainstyleroom->reconetTrainer->initialize()) {
+            std::cerr << "[ERROR] Failed to initialize ReCoNet trainer: "
+                      << mainstyleroom->reconetTrainer->getLastError() << std::endl;
+        }
+    }
+#endif
 
     ComfyUIInstaller installer;
     InstallConfig config;
@@ -8491,15 +8537,9 @@ int main(int argc, char* argv[]) {
         }
     }
 
-#ifdef RECONET_TRAINING_ENABLED
-    // Initialize ReCoNet trainer
-    if (mainstyleroom->reconetTrainer) {
-        if (!mainstyleroom->reconetTrainer->initialize()) {
-            std::cerr << "[ERROR] Failed to initialize ReCoNet trainer: "
-                      << mainstyleroom->reconetTrainer->getLastError() << std::endl;
-        }
-    }
-#endif
+    std::string installDir = "C:/ProgramData/EWOCvj2/ComfyUI";
+    mainvideogenroom->sdinstalled = ComfyUIInstaller::isSDAnimateDiffInstalled(installDir);
+    mainvideogenroom->hunyuaninstalled = ComfyUIInstaller::isHunyuanVideoInstalled(installDir);
 
 #ifdef WINDOWS
     std::filesystem::path p5{mainprogram->docpath + "projects"};
@@ -9249,8 +9289,8 @@ int main(int argc, char* argv[]) {
             } else if (localPathto == "CHOOSEDIR") {
                 mainprogram->choosedir = localPath + "/";
                 //std::string driveletter1 = str.substr(0, 1);
-                //std::string abspath = std::filesystem::canonical(mainprogram->docpath).generic_string();
-                //std::string driveletter2 = abspath.substr(0, 1);
+                //std::string onnxpath = std::filesystem::canonical(mainprogram->docpath).generic_string();
+                //std::string driveletter2 = onnxpath.substr(0, 1);
                 //if (driveletter1 == driveletter2) {
                 //	mainprogram->choosedir = std::filesystem::relative(str, mainprogram->docpath).generic_string() + "/";
                 //}
@@ -9312,8 +9352,63 @@ int main(int argc, char* argv[]) {
             } else if (localPathto == "OPENSTYLE") {
                 if (localPaths.size()) {
                     //mainprogram->currfilesdir = dirname(localPaths[0]);
+                    bool found = false;
+                    for (auto style : mainstyleroom->styles) {
+                        if (pathtoplatform(style->onnxpath) == pathtoplatform(localPath)) {
+                            mainstyleroom->currstyle = style;
+                            found = true;
+                            break;
+                        }
+                    }
+                    if (!found) {
+                        mainstyleroom->currstyle = new Style;
+                    }
                     mainstyleroom->prepbin->open(localPath);
+                    if (!found) {
+                        mainstyleroom->updatelists();
+                        int pos = std::find(mainprogram->aistylenames.begin(), mainprogram->aistylenames.end(), mainstyleroom->currstyle->name) - mainprogram->aistylenames.begin();
+                        if (pos > mainstyleroom->stylesscroll + 21) {
+                            mainstyleroom->stylesscroll += pos - mainstyleroom->stylesscroll + 21;
+                        }
+                    }
                 }
+            } else if (localPathto == "OPENVIDEOGENIMAGE") {
+                mainprogram->currfilesdir = dirname(localPath);
+                switch (mainvideogenroom->menuboxnr) {
+                    case 0:
+                        mainvideogenroom->inputImagePath = localPath;
+                        if (isimage(localPath)) {
+                            Layer *lay = new Layer(true);
+                            get_imagetex(lay, localPath);
+                            mainvideogenroom->inputImageTex = mainprogram->get_tex(lay);
+                        }
+                        else if (isvideo(localPath)) {
+                            Layer *lay = new Layer(true);
+                            get_videotex(lay, localPath);
+                            while (!lay->processed) {
+                                std::this_thread::sleep_for(std::chrono::milliseconds(10));
+                            }
+                            mainvideogenroom->inputImageTex = mainprogram->get_tex(lay);
+                        }
+                        break;
+                    case 1:
+                        mainvideogenroom->controlNetImagePath = localPath;
+                        if (isimage(localPath)) {
+                            Layer *lay = new Layer(true);
+                            get_imagetex(lay, localPath);
+                            mainvideogenroom->controlNetImageTex = mainprogram->get_tex(lay);
+                        }
+                        break;
+                    case 2:
+                        mainvideogenroom->styleImagePath = localPath;
+                        if (isimage(localPath)) {
+                            Layer *lay = new Layer(true);
+                            get_imagetex(lay, localPath);
+                            mainvideogenroom->styleImageTex = mainprogram->get_tex(lay);
+                        }
+                        break;
+                }
+                mainvideogenroom->menuboxnr = -1;
             }
 
             {
@@ -9539,6 +9634,9 @@ int main(int argc, char* argv[]) {
                             mainprogram->cursorpos0 = mainprogram->inputtext.length();
                         }
                     }
+                } else if (mainprogram->renaming == EDIT_STYLENAME) {
+                    mainstyleroom->currstyle->name = mainprogram->inputtext;
+                    rename(mainstyleroom->currstyle->onnxpath, mainstyleroom->currstyle->onnxpath);
                 }
             }
 
@@ -9609,7 +9707,7 @@ int main(int argc, char* argv[]) {
                         }
                         if (e.key.keysym.sym == SDLK_z) {  // UNDO
                             if (mainprogram->undoon && !loopstation->foundrec) {
-                                if (!mainprogram->binsscreen && !mainprogram->styleroom) {
+                                if (!mainprogram->binsroom && !mainprogram->styleroom && !mainprogram->genroom) {
                                     if (mainprogram->undomapvec[mainprogram->undopos - 1].size() &&
                                         mainprogram->undopbpos > 1) {
                                         mainprogram->undo_redo_parbut(-2);
@@ -9680,7 +9778,7 @@ int main(int argc, char* argv[]) {
                         }
                         if (e.key.keysym.sym == SDLK_y) {  // UNDO
                             if (mainprogram->undoon && !loopstation->foundrec) {
-                                if (!mainprogram->binsscreen && !mainprogram->styleroom) {
+                                if (!mainprogram->binsroom && !mainprogram->styleroom && !mainprogram->genroom) {
                                     if (mainprogram->undomapvec[mainprogram->undopos - 1].size() >
                                         mainprogram->undopbpos) {
                                         mainprogram->undo_redo_parbut(0);
@@ -9978,9 +10076,9 @@ int main(int argc, char* argv[]) {
                 if (path != "") {
                     mainprogram->project->open(path, false, true);
                     mainprogram->undowaiting = 2;
-                    mainprogram->binsscreen = true;
+                    mainprogram->binsroom = true;
                     mainprogram->undo_redo_save();
-                    mainprogram->binsscreen = false;
+                    mainprogram->binsroom = false;
                     mainprogram->undo_redo_save();
                     std::string p = dirname(mainprogram->path);
                     mainprogram->currprojdir = dirname(p.substr(0, p.length() - 1));
@@ -10052,9 +10150,9 @@ int main(int argc, char* argv[]) {
                         SDL_GL_MakeCurrent(mainprogram->mainwindow, glc);
                         mainprogram->project->open(mainprogram->path, false, true);
                         mainprogram->undowaiting = 2;
-                        mainprogram->binsscreen = true;
+                        mainprogram->binsroom = true;
                         mainprogram->undo_redo_save();
-                        mainprogram->binsscreen = false;
+                        mainprogram->binsroom = false;
                         mainprogram->undo_redo_save();
                         std::string p = dirname(mainprogram->path);
                         mainprogram->currprojdir = dirname(p.substr(0, p.length() - 1));
@@ -10088,9 +10186,9 @@ int main(int argc, char* argv[]) {
                         //SDL_GL_MakeCurrent(mainprogram->mainwindow, glc);
                         bool ret = mainprogram->project->open(mainprogram->recentprojectpaths[i], false, true);
                         mainprogram->undowaiting = 2;
-                        mainprogram->binsscreen = true;
+                        mainprogram->binsroom = true;
                         mainprogram->undo_redo_save();
-                        mainprogram->binsscreen = false;
+                        mainprogram->binsroom = false;
                         mainprogram->undo_redo_save();
                         if (ret) {
                             std::string p = dirname(mainprogram->recentprojectpaths[i]);
@@ -10128,6 +10226,7 @@ int main(int argc, char* argv[]) {
                             }
                         }
 
+                        stopComfyUIServer();
                         SDL_Quit();
                         exit(0);
                     }
@@ -10156,6 +10255,8 @@ int main(int argc, char* argv[]) {
                 mainprogram->start_discovery();
                 mainprogram->discoveryInitialized = true;
             }
+
+
 
 
             the_loop();  // main loop

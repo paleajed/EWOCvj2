@@ -394,6 +394,8 @@ class Layer {
 		bool ismask = false;
 		float clearval = 0.0f;
 
+        BinElement *swaphap = nullptr;
+
         void display();
 		Effect* add_effect(EFFECT_TYPE type, int pos, bool cat, int ffglnr = -1, int isfnr = -1, int aistylnr = -1);
         Effect* do_add_effect(EFFECT_TYPE type, int pos, bool comp, bool cat, int ffglnr = -1, int isfnr = -1, int aistylnr = -1);

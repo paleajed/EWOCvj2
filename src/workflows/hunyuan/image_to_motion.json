@@ -1,0 +1,175 @@
+{
+  "1": {
+    "class_type": "UnetLoaderGGUF",
+    "inputs": {
+      "unet_name": "hunyuanvideo1.5_720p_i2v-Q4_K_M.gguf"
+    }
+  },
+  "2": {
+    "class_type": "DualCLIPLoader",
+    "inputs": {
+      "clip_name1": "qwen_2.5_vl_7b_fp8_scaled.safetensors",
+      "clip_name2": "byt5_small_glyphxl_fp16.safetensors",
+      "type": "hunyuan_video_15"
+    }
+  },
+  "3": {
+    "class_type": "VAELoader",
+    "inputs": {
+      "vae_name": "hunyuanvideo15_vae_fp16.safetensors"
+    }
+  },
+  "4": {
+    "class_type": "CLIPVisionLoader",
+    "inputs": {
+      "clip_name": "sigclip_vision_patch14_384.safetensors"
+    }
+  },
+  "5": {
+    "class_type": "LoadImage",
+    "inputs": {
+      "image": "${INPUT_IMAGE}"
+    }
+  },
+  "20": {
+    "class_type": "DownloadAndLoadFlorence2Model",
+    "inputs": {
+      "model": "microsoft/Florence-2-large",
+      "precision": "fp16",
+      "attention": "sdpa"
+    }
+  },
+  "21": {
+    "class_type": "Florence2Run",
+    "inputs": {
+      "text_input": "",
+      "task": "more_detailed_caption",
+      "fill_mask": true,
+      "keep_model_loaded": false,
+      "max_new_tokens": 256,
+      "num_beams": 3,
+      "do_sample": false,
+      "output_mask_select": "",
+      "seed": 1,
+      "image": ["5", 0],
+      "florence2_model": ["20", 0]
+    }
+  },
+  "6": {
+    "class_type": "CLIPVisionEncode",
+    "inputs": {
+      "clip_vision": ["4", 0],
+      "image": ["5", 0],
+      "crop": "center"
+    }
+  },
+  "24": {
+    "class_type": "PrimitiveString",
+    "inputs": {
+      "value": "${PROMPT}"
+    }
+  },
+  "25": {
+    "class_type": "StringConcatenate",
+    "inputs": {
+      "string_a": ["21", 2],
+      "string_b": ["24", 0],
+      "delimiter": " "
+    }
+  },
+  "7": {
+    "class_type": "CLIPTextEncode",
+    "inputs": {
+      "clip": ["2", 0],
+      "text": ["25", 0]
+    },
+    "_meta": {
+      "title": "Positive Prompt"
+    }
+  },
+  "26": {
+    "class_type": "CLIPTextEncode",
+    "inputs": {
+      "clip": ["2", 0],
+      "text": ""
+    },
+    "_meta": {
+      "title": "Negative Prompt"
+    }
+  },
+  "10": {
+    "class_type": "HunyuanVideo15ImageToVideo",
+    "inputs": {
+      "width": "${WIDTH}",
+      "height": "${HEIGHT}",
+      "length": "${FRAMES}",
+      "batch_size": 1,
+      "positive": ["7", 0],
+      "negative": ["26", 0],
+      "vae": ["3", 0],
+      "start_image": ["5", 0],
+      "clip_vision_output": ["6", 0]
+    }
+  },
+  "11": {
+    "class_type": "ModelSamplingSD3",
+    "inputs": {
+      "model": ["1", 0],
+      "shift": 7.0
+    }
+  },
+  "12": {
+    "class_type": "BasicScheduler",
+    "inputs": {
+      "model": ["11", 0],
+      "scheduler": "simple",
+      "steps": "${STEPS}",
+      "denoise": "${DENOISE_STRENGTH}"
+    }
+  },
+  "13": {
+    "class_type": "RandomNoise",
+    "inputs": {
+      "noise_seed": "${SEED}"
+    }
+  },
+  "14": {
+    "class_type": "KSamplerSelect",
+    "inputs": {
+      "sampler_name": "euler"
+    }
+  },
+  "15": {
+    "class_type": "CFGGuider",
+    "inputs": {
+      "model": ["11", 0],
+      "positive": ["10", 0],
+      "negative": ["10", 1],
+      "cfg": 6.0
+    }
+  },
+  "16": {
+    "class_type": "SamplerCustomAdvanced",
+    "inputs": {
+      "noise": ["13", 0],
+      "guider": ["15", 0],
+      "sampler": ["14", 0],
+      "sigmas": ["12", 0],
+      "latent_image": ["10", 2]
+    }
+  },
+  "17": {
+    "class_type": "VAEDecode",
+    "inputs": {
+      "vae": ["3", 0],
+      "samples": ["16", 0]
+    }
+  },
+  "18": {
+    "class_type": "SaveImage",
+    "inputs": {
+      "images": ["17", 0],
+      "filename_prefix": "hunyuan_i2v/${BATCH_ID}/frame"
+    }
+  }
+}

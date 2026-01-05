@@ -1,0 +1,137 @@
+{
+  "1": {
+    "class_type": "UnetLoaderGGUF",
+    "inputs": {
+      "unet_name": "hunyuanvideo1.5_720p_i2v-Q4_K_M.gguf"
+    }
+  },
+  "2": {
+    "class_type": "DualCLIPLoader",
+    "inputs": {
+      "clip_name1": "qwen_2.5_vl_7b_fp8_scaled.safetensors",
+      "clip_name2": "byt5_small_glyphxl_fp16.safetensors",
+      "type": "hunyuan_video_15"
+    }
+  },
+  "3": {
+    "class_type": "VAELoader",
+    "inputs": {
+      "vae_name": "hunyuanvideo15_vae_fp16.safetensors"
+    }
+  },
+  "4": {
+    "class_type": "CLIPVisionLoader",
+    "inputs": {
+      "clip_name": "sigclip_vision_patch14_384.safetensors"
+    }
+  },
+  "5": {
+    "class_type": "LoadImage",
+    "inputs": {
+      "image": "${INPUT_IMAGE}"
+    }
+  },
+  "6": {
+    "class_type": "CLIPVisionEncode",
+    "inputs": {
+      "clip_vision": ["4", 0],
+      "image": ["5", 0],
+      "crop": "center"
+    }
+  },
+  "7": {
+    "class_type": "CLIPTextEncode",
+    "inputs": {
+      "clip": ["2", 0],
+      "text": "${PROMPT}, following the edges and lines of the reference image"
+    }
+  },
+  "8": {
+    "class_type": "FluxGuidance",
+    "inputs": {
+      "conditioning": ["7", 0],
+      "guidance": 6.0
+    }
+  },
+  "9": {
+    "class_type": "unCLIPConditioning",
+    "inputs": {
+      "conditioning": ["8", 0],
+      "clip_vision_output": ["6", 0],
+      "strength": "${CONTROLNET_STRENGTH}",
+      "noise_augmentation": 0.0
+    }
+  },
+  "10": {
+    "class_type": "EmptyHunyuanLatentVideo",
+    "inputs": {
+      "width": "${WIDTH}",
+      "height": "${HEIGHT}",
+      "length": "${FRAMES}",
+      "batch_size": 1
+    }
+  },
+  "11": {
+    "class_type": "ModelSamplingSD3",
+    "inputs": {
+      "model": ["1", 0],
+      "shift": 7.0
+    }
+  },
+  "12": {
+    "class_type": "BasicScheduler",
+    "inputs": {
+      "model": ["11", 0],
+      "scheduler": "normal",
+      "steps": "${STEPS}",
+      "denoise": 1.0
+    }
+  },
+  "13": {
+    "class_type": "RandomNoise",
+    "inputs": {
+      "noise_seed": "${SEED}"
+    }
+  },
+  "14": {
+    "class_type": "KSamplerSelect",
+    "inputs": {
+      "sampler_name": "euler"
+    }
+  },
+  "15": {
+    "class_type": "BasicGuider",
+    "inputs": {
+      "model": ["11", 0],
+      "conditioning": ["9", 0]
+    }
+  },
+  "16": {
+    "class_type": "SamplerCustomAdvanced",
+    "inputs": {
+      "noise": ["13", 0],
+      "guider": ["15", 0],
+      "sampler": ["14", 0],
+      "sigmas": ["12", 0],
+      "latent_image": ["10", 0]
+    }
+  },
+  "17": {
+    "class_type": "VAEDecodeTiled",
+    "inputs": {
+      "vae": ["3", 0],
+      "samples": ["16", 0],
+      "tile_size": 128,
+      "overlap": 32,
+      "temporal_size": 32,
+      "temporal_overlap": 4
+    }
+  },
+  "18": {
+    "class_type": "SaveImage",
+    "inputs": {
+      "images": ["17", 0],
+      "filename_prefix": "hunyuan_canny/${BATCH_ID}/frame"
+    }
+  }
+}

@@ -83,6 +83,22 @@ struct DownloadFile {
 };
 
 /**
+ * Model component descriptor - extensible unit of installation
+ * Each component represents a logical group of files/nodes that can be
+ * checked and installed independently
+ */
+struct ModelComponent {
+    std::string id;                           // Unique identifier (e.g., "florence2", "hunyuan_t2v")
+    std::string name;                         // Human-readable name
+    std::string description;                  // What this component provides
+    std::vector<DownloadFile> files;          // Files to download
+    std::vector<std::string> customNodes;     // Git URLs for custom nodes
+    std::vector<std::string> checkFiles;      // Files to check for existence (relative paths)
+    bool required = true;                     // If false, component is optional
+    bool enabled = true;                      // Can be disabled by user preference
+};
+
+/**
  * Installation configuration
  */
 struct InstallConfig {
@@ -223,6 +239,54 @@ public:
      */
     static std::string formatSize(int64_t bytes);
 
+    // === Component Management ===
+
+    /**
+     * Get all components for ComfyUI base installation
+     * @return Vector of ModelComponent definitions
+     */
+    static std::vector<ModelComponent> getComfyUIBaseComponents();
+
+    /**
+     * Get all components for HunyuanVideo backend
+     * @return Vector of ModelComponent definitions
+     */
+    static std::vector<ModelComponent> getHunyuanComponents();
+
+    /**
+     * Get all components for SD+AnimateDiff backend
+     * @return Vector of ModelComponent definitions
+     */
+    static std::vector<ModelComponent> getSDComponents();
+
+    /**
+     * Check if a specific component is installed
+     * @param component The component to check
+     * @param installDir Installation directory
+     * @return true if all check files exist
+     */
+    static bool isComponentInstalled(const ModelComponent& component,
+                                      const std::string& installDir);
+
+    /**
+     * Get list of missing components for a backend
+     * @param components All components to check
+     * @param installDir Installation directory
+     * @return Vector of components that are not fully installed
+     */
+    static std::vector<ModelComponent> getMissingComponents(
+        const std::vector<ModelComponent>& components,
+        const std::string& installDir);
+
+    /**
+     * Install only missing components (incremental install)
+     * @param config Installation configuration
+     * @param components Components to check and install if missing
+     * @return true if installation started
+     */
+    bool installMissingComponents(const InstallConfig& config,
+                                   const std::vector<ModelComponent>& components);
+
     // === Uninstallation ===
 
     /**
@@ -312,8 +376,8 @@ private:
 
     // ComfyUI Base
     static constexpr const char* COMFYUI_PORTABLE_URL =
-        "https://github.com/comfyanonymous/ComfyUI/releases/download/v0.3.10/ComfyUI_windows_portable_nvidia.7z";
-    static constexpr int64_t COMFYUI_PORTABLE_SIZE = 1641892866LL;  // ~1.64GB (actual size)
+        "https://github.com/comfyanonymous/ComfyUI/releases/download/v0.7.0/ComfyUI_windows_portable_nvidia.7z";
+    static constexpr int64_t COMFYUI_PORTABLE_SIZE = 1700000000LL;  // ~1.7GB (estimated)
 
     // SD1.5 + AnimateDiff
     static constexpr const char* SD15_FP16_URL =
@@ -346,26 +410,33 @@ private:
         "https://huggingface.co/h94/IP-Adapter/resolve/main/models/image_encoder/model.safetensors";
     static constexpr int64_t CLIP_VISION_SIZE = 2530000000LL;  // ~2.5GB
 
-    // HunyuanVideo GGUF (Q4 for low VRAM)
+    // HunyuanVideo 1.5 GGUF (VRAM-friendly quantized models)
     static constexpr const char* HUNYUAN_T2V_Q4_URL =
-        "https://huggingface.co/city96/HunyuanVideo-gguf/resolve/main/hunyuan-video-t2v-720p-Q4_0.gguf";
-    static constexpr int64_t HUNYUAN_T2V_Q4_SIZE = 7740000000LL;  // ~7.74GB
+        "https://huggingface.co/jayn7/HunyuanVideo-1.5_T2V_720p-GGUF/resolve/main/720p/hunyuanvideo1.5_720p_t2v-Q4_K_M.gguf";
+    static constexpr int64_t HUNYUAN_T2V_Q4_SIZE = 5090000000LL;  // ~5.09GB (was 7.74GB in old version)
 
     static constexpr const char* HUNYUAN_I2V_Q4_URL =
-        "https://huggingface.co/city96/HunyuanVideo-I2V-gguf/resolve/main/hunyuan-video-i2v-720p-Q4_K_M.gguf";
-    static constexpr int64_t HUNYUAN_I2V_Q4_SIZE = 8000000000LL;  // ~8GB
+        "https://huggingface.co/jayn7/HunyuanVideo-1.5_I2V_720p-GGUF/resolve/main/720p/hunyuanvideo1.5_720p_i2v-Q4_K_M.gguf";
+    static constexpr int64_t HUNYUAN_I2V_Q4_SIZE = 5090000000LL;  // ~5.09GB (was 8GB in old version)
 
+    // HunyuanVideo 1.5 VAE
     static constexpr const char* HUNYUAN_VAE_URL =
-        "https://huggingface.co/Kijai/HunyuanVideo_comfy/resolve/main/hunyuan_video_vae_bf16.safetensors";
+        "https://huggingface.co/Comfy-Org/HunyuanVideo_1.5_repackaged/resolve/main/split_files/vae/hunyuanvideo15_vae_fp16.safetensors";
     static constexpr int64_t HUNYUAN_VAE_SIZE = 493000000LL;  // ~493MB
 
-    static constexpr const char* HUNYUAN_CLIP_URL =
-        "https://huggingface.co/Comfy-Org/HunyuanVideo_repackaged/resolve/main/split_files/text_encoders/clip_l.safetensors";
-    static constexpr int64_t HUNYUAN_CLIP_SIZE = 246000000LL;  // ~246MB
+    // HunyuanVideo 1.5 CLIP text encoders (qwen 2.5 + byt5)
+    static constexpr const char* HUNYUAN_QWEN_URL =
+        "https://huggingface.co/Comfy-Org/HunyuanVideo_1.5_repackaged/resolve/main/split_files/text_encoders/qwen_2.5_vl_7b_fp8_scaled.safetensors";
+    static constexpr int64_t HUNYUAN_QWEN_SIZE = 8100000000LL;  // ~8.1GB
 
-    static constexpr const char* HUNYUAN_LLAVA_URL =
-        "https://huggingface.co/Comfy-Org/HunyuanVideo_repackaged/resolve/main/split_files/text_encoders/llava_llama3_fp8_scaled.safetensors";
-    static constexpr int64_t HUNYUAN_LLAVA_SIZE = 9090000000LL;  // ~9GB
+    static constexpr const char* HUNYUAN_BYT5_URL =
+        "https://huggingface.co/Comfy-Org/HunyuanVideo_1.5_repackaged/resolve/main/split_files/text_encoders/byt5_small_glyphxl_fp16.safetensors";
+    static constexpr int64_t HUNYUAN_BYT5_SIZE = 593000000LL;  // ~593MB
+
+    // CLIP Vision for I2V (sigclip for 1.5)
+    static constexpr const char* HUNYUAN_CLIP_VISION_URL =
+        "https://huggingface.co/Comfy-Org/sigclip_vision_384/resolve/main/sigclip_vision_patch14_384.safetensors";
+    static constexpr int64_t HUNYUAN_CLIP_VISION_SIZE = 856000000LL;  // ~856MB
 
     // Custom Node Git URLs
     static constexpr const char* NODE_ANIMATEDIFF_EVOLVED =
@@ -376,12 +447,42 @@ private:
         "https://github.com/Kosinkadink/ComfyUI-Advanced-ControlNet.git";
     static constexpr const char* NODE_IPADAPTER_PLUS =
         "https://github.com/cubiq/ComfyUI_IPAdapter_plus.git";
+    static constexpr const char* NODE_FIZZNODES =
+        "https://github.com/FizzleDorf/ComfyUI_FizzNodes.git";
     static constexpr const char* NODE_COMFYUI_GGUF =
         "https://github.com/city96/ComfyUI-GGUF.git";
     static constexpr const char* NODE_HUNYUAN_WRAPPER =
         "https://github.com/kijai/ComfyUI-HunyuanVideoWrapper.git";
     static constexpr const char* NODE_COMFYUI_MANAGER =
         "https://github.com/ltdrdata/ComfyUI-Manager.git";
+    static constexpr const char* NODE_FRAME_INTERPOLATION =
+        "https://github.com/Fannovel16/ComfyUI-Frame-Interpolation.git";
+    static constexpr const char* NODE_FLORENCE2 =
+        "https://github.com/kijai/ComfyUI-Florence2.git";
+
+    // Florence-2 model for image captioning (used by HunyuanVideo I2V)
+    static constexpr const char* FLORENCE2_LARGE_URL =
+        "https://huggingface.co/microsoft/Florence-2-large/resolve/main/model.safetensors";
+    static constexpr int64_t FLORENCE2_LARGE_SIZE = 1553563458LL;  // ~1.55GB
+    static constexpr const char* FLORENCE2_CONFIG_URL =
+        "https://huggingface.co/microsoft/Florence-2-large/resolve/main/config.json";
+    static constexpr const char* FLORENCE2_TOKENIZER_URL =
+        "https://huggingface.co/microsoft/Florence-2-large/resolve/main/tokenizer.json";
+    static constexpr const char* FLORENCE2_TOKENIZER_CONFIG_URL =
+        "https://huggingface.co/microsoft/Florence-2-large/resolve/main/tokenizer_config.json";
+    static constexpr const char* FLORENCE2_VOCAB_URL =
+        "https://huggingface.co/microsoft/Florence-2-large/resolve/main/vocab.json";
+    static constexpr const char* FLORENCE2_PROCESSOR_URL =
+        "https://huggingface.co/microsoft/Florence-2-large/resolve/main/preprocessor_config.json";
+    static constexpr const char* FLORENCE2_GENERATION_CONFIG_URL =
+        "https://huggingface.co/microsoft/Florence-2-large/resolve/main/generation_config.json";
+    // Python code files (required for custom model architecture)
+    static constexpr const char* FLORENCE2_MODELING_URL =
+        "https://huggingface.co/microsoft/Florence-2-large/resolve/main/modeling_florence2.py";
+    static constexpr const char* FLORENCE2_CONFIGURATION_URL =
+        "https://huggingface.co/microsoft/Florence-2-large/resolve/main/configuration_florence2.py";
+    static constexpr const char* FLORENCE2_PROCESSING_URL =
+        "https://huggingface.co/microsoft/Florence-2-large/resolve/main/processing_florence2.py";
 
     // === Private Methods ===
 
@@ -390,6 +491,8 @@ private:
     void installSDAnimateDiffThread(InstallConfig config);
     void installHunyuanVideoThread(InstallConfig config);
     void installAllThread(InstallConfig config);
+    void installMissingComponentsThread(InstallConfig config,
+                                         std::vector<ModelComponent> components);
 
     // Download helpers
     bool downloadFile(const DownloadFile& file);

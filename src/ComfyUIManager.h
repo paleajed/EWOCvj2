@@ -3,7 +3,7 @@
  *
  * Backend integration for ComfyUI video generation
  * Supports StableDiffusion+AnimateDiff and HunyuanVideo backends
- * with 17 creative presets across 5 tiers
+ * with 13 creative presets across 5 tiers
  *
  * Communication:
  * - WebSocket for real-time progress updates
@@ -51,37 +51,31 @@ enum class PresetTier {
 };
 
 /**
- * All 17 video generation presets
+ * All 13 video generation presets
  */
 enum class PresetType {
     // Tier 1 - Beginner (simple, immediate results)
-    TEXT_TO_LOOP = 0,           // Prompt -> seamless video loop
+    TEXT_TO_VIDEO = 0,          // Prompt -> video
     IMAGE_TO_MOTION = 1,        // Still image -> animated video
     KALEIDOSCOPE_GENERATOR = 2, // Symmetric psychedelic patterns
 
     // Tier 2 - Intermediate (more creative control)
     STYLE_TRANSFER_LOOP = 3,    // Apply artistic style via IPAdapter
     MORPHING_SEQUENCES = 4,     // Smooth transitions between concepts
-    REACTIVE_GEOMETRY = 5,      // Geometric patterns with ControlNet
-    GLITCH_DATABEND = 6,        // Digital artifact aesthetics
+    VIDEO_CONTINUATION = 5,     // Continue video from last frame (Hunyuan only)
 
     // Tier 3 - Advanced (professional features)
-    MULTI_LAYER_COMPOSITE = 7,  // Combine multiple generated layers
-    CONTROLLABLE_CHARACTER = 8, // Consistent character across clips
-    TEXTURE_EVOLUTION = 9,      // Organic material transformations
+    CONTROLLABLE_CHARACTER = 6, // Consistent character across clips
+    TEXTURE_EVOLUTION = 7,      // Organic material transformations
 
     // Tier 4 - Power User
-    LORA_TRAINING_ASSISTANT = 10,   // Train custom styles
-    BATCH_VARIATION_GENERATOR = 11, // Generate multiple variations
-    BEAT_SYNC_PATTERN = 12,         // BPM-aligned generation
-    CONTROLNET_DIRECTOR = 13,       // Guide with sketch/depth/pose
-    UPSCALE_ENHANCE = 14,           // Resolution upscaling pipeline
+    LORA_TRAINING_ASSISTANT = 8,    // Train custom styles
+    BATCH_VARIATION_GENERATOR = 9,  // Generate multiple variations
+    CONTROLNET_DIRECTOR = 10,       // Guide with sketch/depth/pose
+    FRAME_INTERPOLATION = 11,       // Increase FPS using RIFE
+    REMIX_EXISTING_CLIP = 12,       // Variation on previous generation
 
-    // Interactive/Experimentation
-    PROMPT_LAB = 15,            // Prompt engineering experimentation
-    REMIX_EXISTING_CLIP = 16,   // Variation on previous generation
-
-    PRESET_COUNT = 17
+    PRESET_COUNT = 13
 };
 
 /**
@@ -111,7 +105,7 @@ enum class MotionType {
 };
 
 /**
- * Style presets for Text-to-Loop
+ * Style presets for Text-to-Video
  */
 enum class StylePreset {
     ABSTRACT = 0,
@@ -120,17 +114,6 @@ enum class StylePreset {
     CINEMATIC = 3,
     RETRO = 4,
     CYBERPUNK = 5
-};
-
-/**
- * Glitch artifact types
- */
-enum class GlitchType {
-    SCAN_LINES = 0,
-    PIXEL_SORT = 1,
-    RGB_SHIFT = 2,
-    COMPRESSION = 3,
-    STATIC = 4
 };
 
 // ============================================================================
@@ -190,7 +173,7 @@ struct ComfyUIConfig {
     bool autoFallback = true;         // Fallback to SD if Hunyuan unavailable
     int maxQueueSize = 5;
     int connectionTimeout = 30000;    // ms
-    int generationTimeout = 600000;   // ms (10 minutes)
+    int generationTimeout = 0;        // ms (0 = no timeout, wait indefinitely)
 
     // GPU settings
     bool useGPU = true;
@@ -211,7 +194,7 @@ struct ComfyUIConfig {
  * Contains all possible parameters across all presets
  */
 struct GenerationParams {
-    PresetType preset = PresetType::TEXT_TO_LOOP;
+    PresetType preset = PresetType::TEXT_TO_VIDEO;
     GenerationBackend backend = GenerationBackend::SD_ANIMATEDIFF;
 
     // Core generation parameters
@@ -226,7 +209,11 @@ struct GenerationParams {
     int width = 512;
     int height = 512;
     float fps = 8.0f;
-    bool seamlessLoop = true;         // AnimateDiff closed_loop (SD only)
+    bool seamlessLoop = false;        // AnimateDiff closed_loop (TEXT_TO_VIDEO only)
+
+    // AnimateDiff context parameters (SD only)
+    int contextLength = 16;           // Frames processed together (8-32)
+    int contextOverlap = 6;           // Overlap between windows (1-16)
 
     // Input media paths
     std::string inputImagePath = "";
@@ -242,11 +229,15 @@ struct GenerationParams {
     float styleStrength = 0.8f;
     bool preserveColors = false;
 
+    // Remix clip
+    float remixStrength = 0.5f;       // Denoise amount (0.0-1.0, lower = more original)
+
     // Image-to-Motion specific
     MotionType motionType = MotionType::ZOOM_IN;
     float motionStrength = 0.5f;
+    float denoiseStrength = 1.0f;     // Fixed at 1.0 - lower values cause noise artifacts
 
-    // Text-to-Loop specific
+    // Text-to-Video specific
     StylePreset stylePreset = StylePreset::ABSTRACT;
     float motionIntensity = 0.5f;
 
@@ -255,12 +246,11 @@ struct GenerationParams {
     float rotationSpeed = 0.5f;
 
     // Morphing sequences
-    std::vector<std::string> morphPrompts;
-    std::vector<float> morphWeights;
-    int morphSteps = 10;
+    std::string morphStartPrompt = "";
+    std::string morphEndPrompt = "";
+    int morphMidpoint = 50;           // Percentage of frames where transition completes
 
     // Glitch/Databend specific
-    GlitchType glitchType = GlitchType::RGB_SHIFT;
     float glitchIntensity = 0.5f;
     bool temporalCoherence = true;
 
@@ -294,6 +284,10 @@ struct GenerationParams {
     int upscaleFactor = 2;            // 2x or 4x
     bool frameInterpolation = false;
     int interpolationFactor = 2;      // 2x or 4x frames
+
+    // Video continuation
+    bool appendToSource = true;       // Append generated frames to source video
+    std::string sourceVideoPath = ""; // Path to source video for continuation
 
     // Output settings
     std::string outputPath = "";      // If empty, auto-generate
@@ -368,7 +362,7 @@ struct GenerationProgress {
  *
  *   if (manager.initialize(config) && manager.connect()) {
  *       GenerationParams params;
- *       params.preset = PresetType::TEXT_TO_LOOP;
+ *       params.preset = PresetType::TEXT_TO_VIDEO;
  *       params.prompt = "A spinning galaxy, cosmic colors";
  *       params.frames = 24;
  *
@@ -625,6 +619,22 @@ public:
      */
     ComfyUIConfig getConfig() const { return config; }
 
+    /**
+     * Get current batch ID (for frame output directory)
+     */
+    std::string getCurrentBatchId() const { return currentBatchId; }
+
+    /**
+     * Get ComfyUI output directory path
+     */
+    std::string getComfyOutputDir() const;
+
+    /**
+     * Get frames directory path for current batch
+     * Returns the path where SaveImage stored the frames
+     */
+    std::string getFramesDirectory() const;
+
 private:
     // === Configuration ===
     ComfyUIConfig config;
@@ -660,6 +670,7 @@ private:
     std::string currentPromptId;
     std::string currentClientId;
     GenerationParams currentParams;
+    std::string currentBatchId;  // Unique ID for frame output directory
 
     // === Private Methods ===
 

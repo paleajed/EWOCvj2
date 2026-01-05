@@ -1,0 +1,110 @@
+{
+  "1": {
+    "class_type": "CheckpointLoaderSimple",
+    "inputs": {
+      "ckpt_name": "${MODEL_NAME}"
+    }
+  },
+  "2": {
+    "class_type": "ControlNetLoader",
+    "inputs": {
+      "control_net_name": "${CONTROLNET_MODEL}"
+    }
+  },
+  "3": {
+    "class_type": "LoadImage",
+    "inputs": {
+      "image": "${CONTROLNET_IMAGE}"
+    }
+  },
+  "4": {
+    "class_type": "ADE_AnimateDiffLoaderWithContext",
+    "inputs": {
+      "model_name": "mm_sd_v15_v2.fp16.safetensors",
+      "beta_schedule": "sqrt_linear (AnimateDiff)",
+      "motion_scale": "${MOTION_INTENSITY}",
+      "apply_v2_models_properly": true,
+      "model": ["1", 0],
+      "context_options": ["5", 0]
+    }
+  },
+  "5": {
+    "class_type": "ADE_StandardStaticContextOptions",
+    "inputs": {
+      "context_length": "${CONTEXT_LENGTH}",
+      "context_stride": 1,
+      "context_overlap": "${CONTEXT_OVERLAP}",
+      "closed_loop": "${SEAMLESS_LOOP}",
+      "fuse_method": "pyramid",
+      "use_on_equal_length": false
+    }
+  },
+  "6": {
+    "class_type": "CLIPTextEncode",
+    "inputs": {
+      "text": "${PROMPT}",
+      "clip": ["1", 1]
+    }
+  },
+  "7": {
+    "class_type": "CLIPTextEncode",
+    "inputs": {
+      "text": "${NEGATIVE_PROMPT}",
+      "clip": ["1", 1]
+    }
+  },
+  "8": {
+    "class_type": "ControlNetApplyAdvanced",
+    "inputs": {
+      "strength": "${CONTROLNET_STRENGTH}",
+      "start_percent": 0.0,
+      "end_percent": 1.0,
+      "positive": ["6", 0],
+      "negative": ["7", 0],
+      "control_net": ["2", 0],
+      "image": ["3", 0]
+    }
+  },
+  "9": {
+    "class_type": "EmptyLatentImage",
+    "inputs": {
+      "width": "${WIDTH}",
+      "height": "${HEIGHT}",
+      "batch_size": "${FRAMES}"
+    }
+  },
+  "10": {
+    "class_type": "KSampler",
+    "inputs": {
+      "seed": "${SEED}",
+      "steps": "${STEPS}",
+      "cfg": "${CFG_SCALE}",
+      "sampler_name": "euler_ancestral",
+      "scheduler": "normal",
+      "denoise": 1.0,
+      "model": ["4", 0],
+      "positive": ["8", 0],
+      "negative": ["8", 1],
+      "latent_image": ["9", 0]
+    }
+  },
+  "11": {
+    "class_type": "VAEDecode",
+    "inputs": {
+      "samples": ["10", 0],
+      "vae": ["1", 2]
+    }
+  },
+  "12": {
+    "class_type": "VHS_VideoCombine",
+    "inputs": {
+      "frame_rate": "${FPS}",
+      "loop_count": 0,
+      "filename_prefix": "controlnet_director",
+      "format": "video/h264-mp4",
+      "pingpong": false,
+      "save_output": true,
+      "images": ["11", 0]
+    }
+  }
+}

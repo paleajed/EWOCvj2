@@ -1029,7 +1029,7 @@ void BinsMain::handle(bool draw) {
 							this->insertshelf = nullptr;
                             this->mouseshelfnum = -1;
                             this->oldmouseshelfnum = -1;
-							//mainprogram->binsscreen = false;
+							//mainprogram->binsroom = false;
 						}
 						if (mainprogram->rightmouse) {
 							// cancel shelf insert
@@ -1043,7 +1043,7 @@ void BinsMain::handle(bool draw) {
 							this->insertshelf = nullptr;
 							mainprogram->rightmouse = false;
 							mainprogram->menuactivation = false;
-							mainprogram->binsscreen = false;
+							mainprogram->binsroom = false;
 						}
 						this->oldmouseshelfnum = this->mouseshelfnum;
 					}
@@ -1934,17 +1934,17 @@ void BinsMain::handle(bool draw) {
             mainprogram->renaming = EDIT_BINELEMNAME;
         } else if (binelmenuoptions[k] == BET_LOADDECKA) {
             // load hovered deck in deck A
-            mainprogram->binsscreen = false;
+            mainprogram->binsroom = false;
             mainmix->mousedeck = 0;
             mainmix->open_deck(this->menubinel->path, 1);
         } else if (binelmenuoptions[k] == BET_LOADDECKB) {
             // load hovered deck in deck B
-            mainprogram->binsscreen = false;
+            mainprogram->binsroom = false;
             mainmix->mousedeck = 1;
             mainmix->open_deck(this->menubinel->path, 1);
         } else if (binelmenuoptions[k] == BET_LOADMIX) {
             // load hovered mix into decks
-            mainprogram->binsscreen = false;
+            mainprogram->binsroom = false;
             mainmix->open_mix(this->menubinel->path.c_str(), true);
         } else if (binelmenuoptions[k] == BET_OPENFILES) {
             // open videos/images/layer files into bin
@@ -2179,7 +2179,7 @@ void BinsMain::handle(bool draw) {
 				}
 			}
 			if (found) {
-				mainprogram->binsscreen = false;
+				mainprogram->binsroom = false;
 				mainprogram->styleroom = true;
 			}
 		}
@@ -2720,14 +2720,14 @@ void BinsMain::handle(bool draw) {
 						}
 					}
 
-                    if (binel != this->currbinel && mainprogram->binsscreen) {
+                    if (binel != this->currbinel && mainprogram->binsroom) {
 						if (this->currbinel) this->binpreview = false;
                         bool cond1 = false;
-                        bool cond2 = false;
+						bool cond2 = false;
 						if (mainprogram->dragbinel) {
                             cond1 = (mainprogram->shelfdragelem);
-                            cond2 = (mainprogram->draggingrec);
-                        }
+							cond2 = (mainprogram->draggingrec);
+						}
 						if (lay->vidmoving || cond1 || cond2) {
 							// when dragging layer/mix/deck in from mix view
 							if (this->currbinel) {
@@ -2877,12 +2877,12 @@ void BinsMain::handle(bool draw) {
 
 		if (!inbinel) this->binpreview = false;
 
-        if (inbinel && !mainprogram->rightmouse && (lay->vidmoving || mainprogram->shelfdragelem || mainprogram->draggingrec) &&
+        if (inbinel && !mainprogram->rightmouse && (lay->vidmoving || mainprogram->shelfdragelem || mainprogram->draggingrec || mainvideogenroom->dragging) &&
             mainprogram->lmover) {
             // confirm layer dragging from main view and set influenced bin element to the right values
             this->currbinel->type = mainprogram->dragbinel->type;
             this->currbinel->path = mainprogram->dragbinel->path;
-            this->currbinel->tex = copy_tex(this->currbinel->tex);
+            this->currbinel->tex = copy_tex(mainprogram->dragbinel->tex);
             if (this->currbinel->type == ELEM_DECK || this->currbinel->type == ELEM_MIX) {
                 if (exists(this->currbinel->path) && mainprogram->draglay == nullptr) {
                     // a duplicate of the content will be made, if the content file already exists
@@ -5204,98 +5204,124 @@ void BinsMain::hap_encode(std::string srcpath, BinElement *binel, BinElement *bd
     nv12frame->width  = c->width;
     nv12frame->height = c->height;
 
-	// Create SwsContext for color space conversion (decoded format to encoder format)
-	struct SwsContext *sws_ctx = sws_getContext(
-		baseWidth,
-		baseHeight,
-		(AVPixelFormat)source_dec_cpm->format,
-		c->width,
-		c->height,
-		c->pix_fmt,
-		SWS_BILINEAR,
-		nullptr,
-		nullptr,
-		nullptr);
+	// SwsContext will be created after first frame is decoded (to get actual format)
+	struct SwsContext *sws_ctx = nullptr;
+	bool sws_ctx_initialized = false;
+
 	/* transcode */
-	AVFrame *decframe = nullptr;
-	decframe = av_frame_alloc();
+	AVFrame *decframe = av_frame_alloc();
+	AVPacket *pktptr = av_packet_alloc();
 	int frame = 0;
-	int count = 0;
-	while (count < numf) {
+	bool encode_error = false;
+
+	// Helper lambda to process a decoded frame
+	auto processDecodedFrame = [&]() -> bool {
+		// Create SwsContext on first decoded frame (to get actual pixel format)
+		if (!sws_ctx_initialized) {
+			sws_ctx = sws_getContext(
+				decframe->width,
+				decframe->height,
+				(AVPixelFormat)decframe->format,
+				c->width,
+				c->height,
+				c->pix_fmt,
+				SWS_BILINEAR,
+				nullptr,
+				nullptr,
+				nullptr);
+			if (!sws_ctx) {
+				printf("Failed to create SwsContext for HAP encoding (src format: %d, dst format: %d)\n",
+					decframe->format, c->pix_fmt);
+				return false;
+			}
+			sws_ctx_initialized = true;
+		}
+
+		// Allocate output frame data
+		int storage = av_image_alloc(nv12frame->data, nv12frame->linesize, nv12frame->width, nv12frame->height, c->pix_fmt, 32);
+		if (storage < 0) {
+			printf("Failed to allocate image for HAP encoding\n");
+			return false;
+		}
+
+		// Convert decoded frame to encoder format
+		sws_scale(
+			sws_ctx,
+			decframe->data,
+			decframe->linesize,
+			0,
+			decframe->height,
+			nv12frame->data,
+			nv12frame->linesize
+		);
+		nv12frame->pts = decframe->pts;
+
+		encode_frame(dest, source, c, nv12frame, pktptr, nullptr, frame);
+
+		av_freep(&nv12frame->data[0]);
+		frame++;
+		return true;
+	};
+
+	// Main decode loop - read all packets
+	while (av_read_frame(source, pktptr) >= 0) {
+		// Check for cancellation
 		bool cond = false;
 		if (bdm) cond = (bdm->encoding == false);
 		if (binel->encoding == false || cond) {
-			// Clean up audio resources if encoding is cancelled
 			if (wav_file) {
 				fclose(wav_file);
-				mainprogram->remove(wav_temp_path); // delete the wav file under construction
+				mainprogram->remove(wav_temp_path);
 			}
-			if (audio_dec_ctx) {
-				avcodec_free_context(&audio_dec_ctx);
-			}
-
+			if (audio_dec_ctx) avcodec_free_context(&audio_dec_ctx);
+			if (sws_ctx) sws_freeContext(sws_ctx);
 			if (bdm) {
 				bdm->encthreads--;
-				delete binel;  // temp bin elements populate bdm binelements
+				delete binel;
 			}
 			mainprogram->encthreads--;
+			av_packet_free(&pktptr);
+			av_frame_free(&decframe);
 			avio_close(dest->pb);
-			mainprogram->remove(destpath); // delete the hap file under construction
+			mainprogram->remove(destpath);
 			return;
 		}
-		binel->encodeprogress = (float)count / (float)numf;
-		if (bdm) bdm->encodeprogress += binel->encodeprogress - oldprogress;
-		oldprogress = binel->encodeprogress;
-		// decode a frame
-		pkt = *av_packet_alloc();;
-		pkt.data = nullptr;
-		pkt.size = 0;
-		av_read_frame(source, &pkt);
 
 		// Handle audio packets
-		if (audio_dec_ctx && pkt.stream_index == audio_stream_idx) {
+		if (audio_dec_ctx && pktptr->stream_index == audio_stream_idx) {
 			AVFrame *audio_frame = av_frame_alloc();
-			if (avcodec_send_packet(audio_dec_ctx, &pkt) >= 0) {
+			if (avcodec_send_packet(audio_dec_ctx, pktptr) >= 0) {
 				while (avcodec_receive_frame(audio_dec_ctx, audio_frame) >= 0) {
 					if (wav_file && audio_frame->nb_samples > 0) {
-						// Convert audio to 16-bit PCM and write to WAV file
 						int samples_per_channel = audio_frame->nb_samples;
 						int num_channels = audio_frame->ch_layout.nb_channels;
-
-						// Convert audio samples to 16-bit PCM
 						for (int i = 0; i < samples_per_channel; i++) {
 							for (int ch = 0; ch < num_channels; ch++) {
 								int16_t sample = 0;
-
-								// Handle different audio formats
 								switch (audio_frame->format) {
 									case AV_SAMPLE_FMT_S16:
-									case AV_SAMPLE_FMT_S16P:
-									{
+									case AV_SAMPLE_FMT_S16P: {
 										int16_t *data = (int16_t*)audio_frame->data[audio_frame->format == AV_SAMPLE_FMT_S16P ? ch : 0];
 										sample = data[audio_frame->format == AV_SAMPLE_FMT_S16P ? i : i * num_channels + ch];
 										break;
 									}
 									case AV_SAMPLE_FMT_FLT:
-									case AV_SAMPLE_FMT_FLTP:
-									{
+									case AV_SAMPLE_FMT_FLTP: {
 										float *data = (float*)audio_frame->data[audio_frame->format == AV_SAMPLE_FMT_FLTP ? ch : 0];
 										float fval = data[audio_frame->format == AV_SAMPLE_FMT_FLTP ? i : i * num_channels + ch];
 										sample = (int16_t)(fval * 32767.0f);
 										break;
 									}
 									case AV_SAMPLE_FMT_S32:
-									case AV_SAMPLE_FMT_S32P:
-									{
+									case AV_SAMPLE_FMT_S32P: {
 										int32_t *data = (int32_t*)audio_frame->data[audio_frame->format == AV_SAMPLE_FMT_S32P ? ch : 0];
 										int32_t ival = data[audio_frame->format == AV_SAMPLE_FMT_S32P ? i : i * num_channels + ch];
 										sample = (int16_t)(ival >> 16);
 										break;
 									}
 									default:
-										sample = 0; // Unsupported format, write silence
+										sample = 0;
 								}
-
 								fwrite(&sample, sizeof(int16_t), 1, wav_file);
 								audio_samples_written++;
 							}
@@ -5304,57 +5330,89 @@ void BinsMain::hap_encode(std::string srcpath, BinElement *binel, BinElement *bd
 				}
 			}
 			av_frame_free(&audio_frame);
-			av_packet_unref(&pkt);
+			av_packet_unref(pktptr);
 			continue;
 		}
 
-		if (pkt.stream_index != source_stream_idx) {
-			av_packet_unref(&pkt);
+		// Skip non-video packets
+		if (pktptr->stream_index != source_stream_idx) {
+			av_packet_unref(pktptr);
 			continue;
 		}
-		count++;
-		int got_frame;
-    		while (1) {
-			avcodec_send_packet(source_dec_ctx, &pkt);
- 			int r = avcodec_receive_frame(source_dec_ctx, decframe);
-			if (r == AVERROR(EAGAIN)) {
-				av_packet_unref(&pkt);
-				av_read_frame(source, &pkt);
+
+		// Send video packet to decoder
+		int ret = avcodec_send_packet(source_dec_ctx, pktptr);
+		av_packet_unref(pktptr);
+
+		if (ret < 0) {
+			continue;
+		}
+
+		// Drain ALL available frames from decoder (handles B-frames properly)
+		while (ret >= 0) {
+			ret = avcodec_receive_frame(source_dec_ctx, decframe);
+			if (ret == AVERROR(EAGAIN) || ret == AVERROR_EOF) {
+				break;  // Need more packets or done
 			}
-			else break;
-			if (r == AVERROR(EINVAL)) printf("EINVAL\n");
+			if (ret < 0) {
+				break;
+			}
+
+			// Update progress
+			binel->encodeprogress = (float)frame / (float)numf;
+			if (bdm) bdm->encodeprogress += binel->encodeprogress - oldprogress;
+			oldprogress = binel->encodeprogress;
+
+			// Process the decoded frame
+			if (!processDecodedFrame()) {
+				encode_error = true;
+				break;
+			}
+			av_frame_unref(decframe);
 		}
 
-	   	// do pixel format conversion
-		int storage = av_image_alloc(nv12frame->data, nv12frame->linesize, nv12frame->width, nv12frame->height, c->pix_fmt, 32);
-
-		// Convert decoded frame to encoder format
-		sws_scale(
-			sws_ctx,
-			decframe->data,
-			decframe->linesize,
-			0,
-			baseHeight,
-			nv12frame->data,
-			nv12frame->linesize
-		);
-		nv12frame->pts = decframe->pts;
-
-		encode_frame(dest, source, c, nv12frame, &pkt, nullptr, frame);
-
-        av_freep(&nv12frame->data[0]);
-		av_packet_unref(&pkt);
-		//av_frame_unref(decframe);
-		//av_frame_unref(nv12frame);
-        frame++;
+		if (encode_error) break;
 	}
-    /* flush the encoder */
-    // int got_frame;
-    // while (1) {
-    	// got_frame = encode_frame(dest, c, nullptr, &pkt, nullptr);
-    	// if (!got_frame) break;
-    // }
-    dest_stream->duration = (count + 1) * av_rescale_q(1, c->time_base, dest_stream->time_base);
+
+	// Flush decoder - get remaining buffered frames (critical for B-frames!)
+	if (!encode_error) {
+		avcodec_send_packet(source_dec_ctx, nullptr);
+		while (true) {
+			int ret = avcodec_receive_frame(source_dec_ctx, decframe);
+			if (ret == AVERROR(EAGAIN) || ret == AVERROR_EOF) {
+				break;
+			}
+			if (ret < 0) {
+				break;
+			}
+
+			binel->encodeprogress = (float)frame / (float)numf;
+			if (bdm) bdm->encodeprogress += binel->encodeprogress - oldprogress;
+			oldprogress = binel->encodeprogress;
+
+			if (!processDecodedFrame()) {
+				break;
+			}
+			av_frame_unref(decframe);
+		}
+	}
+
+	av_packet_free(&pktptr);
+
+	if (encode_error) {
+		binel->encoding = false;
+		if (bdm) bdm->encthreads--;
+		mainprogram->encthreads--;
+		av_frame_free(&decframe);
+		av_frame_free(&nv12frame);
+		if (sws_ctx) sws_freeContext(sws_ctx);
+		avformat_close_input(&source);
+		avio_close(dest->pb);
+		mainprogram->remove(destpath);
+		return;
+	}
+
+    dest_stream->duration = (frame + 1) * av_rescale_q(1, c->time_base, dest_stream->time_base);
     av_write_trailer(dest);
     avio_close(dest->pb);
 
@@ -5390,7 +5448,6 @@ void BinsMain::hap_encode(std::string srcpath, BinElement *binel, BinElement *bd
     avcodec_free_context(&c);
     av_frame_free(&nv12frame);
     av_frame_free(&decframe);
-    av_packet_unref(&pkt);
     avcodec_free_context(&source_dec_ctx);
     avformat_close_input(&source);
     binel->path = remove_extension(binel->path) + "_hap.mov";
@@ -5410,19 +5467,7 @@ void BinsMain::hap_encode(std::string srcpath, BinElement *binel, BinElement *bd
     }
     binel->encoding = false;
     if (binel->otflay) {
-        bool bukeb = binel->otflay->keepeffbut->value;
-        binel->otflay->keepeffbut->value = 1;
-        binel->otflay->transfered = true;
-        binel->otflay = binel->otflay->open_video(binel->otflay->frame, binel->path, false);
-        binel->otflay->keepeffbut->value = bukeb;
-        // wait for video open
-        std::unique_lock<std::mutex> olock(binel->otflay->endopenlock);
-        binel->otflay->endopenvar.wait(olock, [&] {return binel->otflay->opened; });
-        binel->otflay->opened = false;
-        olock.unlock();
-        binel->otflay->set_clones();
-        binel->otflay->scritched = true;
-        binel->otflay->hapbinel = nullptr;
+		binel->otflay->swaphap = binel;
     }
     if (bdm) {
    		bdm->encthreads--;
@@ -5443,10 +5488,10 @@ void BinsMain::clear_undo() {
     }
     binsmain->undobins.clear();
     binsmain->undopos = 0;
-    bool bubs = mainprogram->binsscreen;
-    mainprogram->binsscreen = true;
+    bool bubs = mainprogram->binsroom;
+    mainprogram->binsroom = true;
     mainprogram->undo_redo_save();
-    mainprogram->binsscreen = bubs;
+    mainprogram->binsroom = bubs;
 }
 
 void BinsMain::undo_redo(char offset) {

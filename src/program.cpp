@@ -1879,7 +1879,9 @@ void Program::handle_wormgate(int room) {
     else if (room == 1) {
         buttons.push_back(mainprogram->wormgate2);
         buttons.push_back(mainprogram->wormgate3);
-        buttons.push_back(mainprogram->wormgate4);
+        if (mainvideogenroom->sdinstalled || mainvideogenroom->hunyuaninstalled) {
+            buttons.push_back(mainprogram->wormgate4);
+        }
         mainprogram->wormgate2->box->vtxcoords->y1 = -0.0f;
         mainprogram->wormgate2->box->vtxcoords->h = 1.0f;
         mainprogram->wormgate2->box->upvtxtoscr();
@@ -1914,11 +1916,13 @@ void Program::handle_wormgate(int room) {
         register_triangle_draw(lightgrey, lightgrey, 1.0f - box->vtxcoords->w - 0.15f * 0.866f, box->vtxcoords->y1 + 0.025f, 0.15f, 0.3f, RIGHT, OPEN, true);
         mainprogram->directmode = true;
         render_text("STYLE", lightgrey, 0.86f, -0.34f, 0.0006f, 0.001f);
-        mainprogram->directmode = false;
-        box = mainprogram->wormgate4->box;
-        register_triangle_draw(lightgrey, lightgrey, 1.0f - box->vtxcoords->w - 0.15f * 0.866f, box->vtxcoords->y1 + 0.025f, 0.15f, 0.3f, RIGHT, OPEN, true);
-        mainprogram->directmode = true;
-        render_text("VIDGEN", lightgrey, 0.86f, -0.84f, 0.0006f, 0.001f);
+        if (mainvideogenroom->sdinstalled || mainvideogenroom->hunyuaninstalled) {
+            box = mainprogram->wormgate4->box;
+            register_triangle_draw(lightgrey, lightgrey, 1.0f - box->vtxcoords->w - 0.15f * 0.866f,
+                                   box->vtxcoords->y1 + 0.025f, 0.15f, 0.3f, RIGHT, OPEN, true);
+            mainprogram->directmode = true;
+            render_text("VIDGEN", lightgrey, 0.86f, -0.84f, 0.0006f, 0.001f);
+        }
         mainprogram->directmode = false;
 	}
     else if (room == 2) {
@@ -1948,8 +1952,8 @@ void Program::handle_wormgate(int room) {
                 if (!mainprogram->menuondisplay) {
                     if (mainprogram->leftmouse) {
                         mainprogram->leftmouse = false;
-                        mainprogram->binsscreen = !mainprogram->binsscreen;
-                        if (mainprogram->binsscreen) {
+                        mainprogram->binsroom = !mainprogram->binsroom;
+                        if (mainprogram->binsroom) {
                             mainprogram->styleroom = false;
                             mainprogram->genroom = false;
                         }
@@ -1962,7 +1966,7 @@ void Program::handle_wormgate(int room) {
                             }
                         }
                         mainprogram->recundo = false;
-                        if (mainprogram->binsscreen) {
+                        if (mainprogram->binsroom) {
                             for (int i = 0; i < 4; i++) {
                                 for (Layer *lay: mainmix->layers[i]) {
                                     if (lay->clips->size() > 1) {
@@ -1985,11 +1989,11 @@ void Program::handle_wormgate(int room) {
                     //dragging something inside wormgate
                     if (!mainprogram->inwormgate && !mainprogram->menuondisplay) {
                         //if (mainprogram->mx == room * (glob->w - 1)) {
-                        if (!mainprogram->binsscreen) {
+                        if (!mainprogram->binsroom) {
                             set_queueing(false);
                         }
-                        mainprogram->binsscreen = !mainprogram->binsscreen;
-                        if (mainprogram->binsscreen) {
+                        mainprogram->binsroom = !mainprogram->binsroom;
+                        if (mainprogram->binsroom) {
                             mainprogram->styleroom = false;
                             mainprogram->genroom = false;
                         }
@@ -2002,7 +2006,7 @@ void Program::handle_wormgate(int room) {
                             }
                         }
                         mainprogram->inwormgate = true;
-                        if (mainprogram->binsscreen) {
+                        if (mainprogram->binsroom) {
                             for (int i = 0; i < 4; i++) {
                                 for (Layer *lay: mainmix->layers[i]) {
                                     if (lay->clips->size() > 1) {
@@ -4719,7 +4723,7 @@ void Program::handle_bintargetmenu() {
     k = mainprogram->handle_menu(mainprogram->bintargetmenu);
     if (k > -1) {
         binsmain->floating = true;
-        mainprogram->binsscreen = false;
+        mainprogram->binsroom = false;
         if (!binsmain->floatset) {
             k++;
             binsmain->screen = k;
@@ -5746,7 +5750,7 @@ void Program::handle_shelfmenu() {
 	else if (k == 7) {
 		// insert entire shelf in a bin block
 		binsmain->insertshelf = mainmix->mouseshelf;
-		mainprogram->binsscreen = true;
+		mainprogram->binsroom = true;
 	}
     else if (k == 8) {
         // start renaming shelf element
@@ -8374,9 +8378,9 @@ bool Project::open(std::string path, bool autosave, bool newp, bool undo) {
             safegetline(rfile, istring);
             mainprogram->prevmodus = std::stoi(istring);
         }
-        else if (istring == "BINSSCREEN") {
+        else if (istring == "binsroom") {
             safegetline(rfile, istring);
-            //mainprogram->binsscreen = std::stoi(istring);
+            //mainprogram->binsroom = std::stoi(istring);
         }
         else if (istring == "SWAPSCROLLPOS") {
             safegetline(rfile, istring);
@@ -8564,8 +8568,8 @@ void Project::save(std::string path, bool autosave, bool undo, bool nocheck) {
     wfile << "PREVMODUS\n";
     wfile << std::to_string(mainprogram->prevmodus);
     wfile << "\n";
-    wfile << "BINSSCREEN\n";
-    wfile << std::to_string(mainprogram->binsscreen);
+    wfile << "binsroom\n";
+    wfile << std::to_string(mainprogram->binsroom);
     wfile << "\n";
     wfile << "SWAPSCROLLPOS\n";
     wfile << std::to_string(mainmix->swapscrollpos[0]);
@@ -13942,7 +13946,7 @@ void Program::undo_redo_save() {
         found = true;
     }
     if (!found) {
-        if (!this->binsscreen) {
+        if (!this->binsroom) {
             std::string undopath = find_unused_filename("UNDO_state", this->temppath, ".ewocvj");
             for (int i = 0; i < this->undopaths.size() - this->undopos; i++) {
                 this->undopaths.pop_back();
@@ -13965,7 +13969,7 @@ void Program::undo_redo_save() {
     found = false;
     if (binsmain->openfilesbin) found = true;
     if (!found) {
-        if (this->binsscreen) {
+        if (this->binsroom) {
             int bupos = binsmain->currbin->pos;
             Bin *bin = new Bin(-1);
             for (int i = 0; i < 12; i++) {

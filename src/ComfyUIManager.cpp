@@ -31,6 +31,19 @@
 #include <curl/curl.h>
 #endif
 
+// FFmpeg includes for video frame extraction
+extern "C" {
+#include "libavformat/avformat.h"
+#include "libavcodec/avcodec.h"
+#include "libswscale/swscale.h"
+#include "libavutil/avutil.h"
+#include "libavutil/pixfmt.h"
+#include "libavutil/opt.h"
+#include "libavutil/imgutils.h"
+}
+
+#include "VideoUpscaler.h"
+
 namespace fs = std::filesystem;
 
 // ============================================================================
@@ -51,15 +64,15 @@ void ComfyUIManager::initPresetRegistry() {
 
     // Tier 1 - Beginner
     presetRegistry[0] = {
-        PresetType::TEXT_TO_LOOP,
-        "Text-to-Loop",
-        "Generate seamless video loops from text prompts",
+        PresetType::TEXT_TO_VIDEO,
+        "Text-to-Video",
+        "Generate video from text prompts",
         PresetTier::BEGINNER,
         true, true, true,  // SD full, Hunyuan partial
         "No seamless loop control - generates standard video",
         true, false, false, false, false, {},
         16, 512, 512, 8.0f,
-        "text_to_loop"
+        "text_to_video"
     };
 
     presetRegistry[1] = {
@@ -103,51 +116,27 @@ void ComfyUIManager::initPresetRegistry() {
         "Morphing Sequences",
         "Smooth transitions between different concepts",
         PresetTier::INTERMEDIATE,
-        true, true, true,
-        "Basic interpolation only - no advanced prompt scheduling",
+        true, false, false,
+        "Not supported - requires BatchPromptSchedule unavailable in Hunyuan",
         true, false, false, false, false, {},
         24, 512, 512, 8.0f,
         "morphing"
     };
 
     presetRegistry[5] = {
-        PresetType::REACTIVE_GEOMETRY,
-        "Reactive Geometry",
-        "Geometric patterns with ControlNet guidance",
+        PresetType::VIDEO_CONTINUATION,
+        "Video Continuation",
+        "Continue video from last frame with new prompt (like Veo3)",
         PresetTier::INTERMEDIATE,
-        true, true, true,
-        "Only depth and canny ControlNet supported",
-        true, false, false, false, true,
-        {ControlNetType::DEPTH, ControlNetType::CANNY, ControlNetType::NORMAL},
-        16, 512, 512, 8.0f,
-        "reactive_geometry"
-    };
-
-    presetRegistry[6] = {
-        PresetType::GLITCH_DATABEND,
-        "Glitch / Databend",
-        "Digital artifact aesthetics and data corruption effects",
-        PresetTier::INTERMEDIATE,
-        true, true, false, "",
-        true, false, true, false, false, {},
-        16, 512, 512, 8.0f,
-        "glitch"
+        false, true, false,  // Hunyuan only
+        "Not supported - requires Hunyuan i2v architecture",
+        true, false, true, false, false, {},  // requires prompt, requires input video
+        65, 0, 0, 24.0f,  // frames only, width/height from input
+        "video_continuation"
     };
 
     // Tier 3 - Advanced
-    presetRegistry[7] = {
-        PresetType::MULTI_LAYER_COMPOSITE,
-        "Multi-Layer Composite",
-        "Combine multiple generated elements with blend modes",
-        PresetTier::ADVANCED,
-        true, true, true,
-        "Single pass only - no true layer separation",
-        true, false, false, false, false, {},
-        16, 512, 512, 8.0f,
-        "multi_layer"
-    };
-
-    presetRegistry[8] = {
+    presetRegistry[6] = {
         PresetType::CONTROLLABLE_CHARACTER,
         "Controllable Character",
         "Maintain consistent character across clips using reference images",
@@ -159,19 +148,20 @@ void ComfyUIManager::initPresetRegistry() {
         "character"
     };
 
-    presetRegistry[9] = {
+    presetRegistry[7] = {
         PresetType::TEXTURE_EVOLUTION,
         "Texture Evolution",
         "Organic material transformations between textures",
         PresetTier::ADVANCED,
-        true, true, false, "",
+        true, false, false,  // SD only
+        "Not supported - requires BatchPromptSchedule",
         true, false, false, false, false, {},
         24, 512, 512, 8.0f,
         "texture_evolution"
     };
 
     // Tier 4 - Power User
-    presetRegistry[10] = {
+    presetRegistry[8] = {
         PresetType::LORA_TRAINING_ASSISTANT,
         "LoRA Training Assistant",
         "Train custom style models from inspiration images",
@@ -183,7 +173,7 @@ void ComfyUIManager::initPresetRegistry() {
         "lora_training"
     };
 
-    presetRegistry[11] = {
+    presetRegistry[9] = {
         PresetType::BATCH_VARIATION_GENERATOR,
         "Batch Variation Generator",
         "Generate multiple variations with seed sweeps or parameter sweeps",
@@ -194,24 +184,13 @@ void ComfyUIManager::initPresetRegistry() {
         "batch_variation"
     };
 
-    presetRegistry[12] = {
-        PresetType::BEAT_SYNC_PATTERN,
-        "Beat-Sync Pattern",
-        "Generate content aligned to musical BPM and structure",
-        PresetTier::POWER_USER,
-        true, true, false, "",
-        true, false, false, false, false, {},
-        16, 512, 512, 8.0f,
-        "beat_sync"
-    };
-
-    presetRegistry[13] = {
+    presetRegistry[10] = {
         PresetType::CONTROLNET_DIRECTOR,
         "ControlNet Director",
         "Guide generation with sketch, depth, pose, or edge maps",
         PresetTier::POWER_USER,
-        true, true, true,
-        "Only depth and canny supported - no pose or sketch",
+        true, false, false,  // SD only
+        "Not supported - Hunyuan lacks ControlNet integration",
         true, true, false, false, true,
         {ControlNetType::DEPTH, ControlNetType::CANNY, ControlNetType::POSE,
          ControlNetType::SKETCH, ControlNetType::NORMAL},
@@ -219,30 +198,19 @@ void ComfyUIManager::initPresetRegistry() {
         "controlnet_director"
     };
 
-    presetRegistry[14] = {
-        PresetType::UPSCALE_ENHANCE,
-        "Upscale & Enhance",
-        "Upscale video resolution and optionally interpolate frames",
+    presetRegistry[11] = {
+        PresetType::FRAME_INTERPOLATION,
+        "Frame Interpolation",
+        "Increase video FPS using RIFE motion interpolation",
         PresetTier::POWER_USER,
         true, true, false, "",
         false, false, true, false, false, {},
-        0, 1920, 1080, 24.0f,
-        "upscale"
+        0, 0, 0, 0.0f,  // Resolution/FPS from input video
+        "frame_interpolation"
     };
 
     // Interactive
-    presetRegistry[15] = {
-        PresetType::PROMPT_LAB,
-        "Prompt Lab",
-        "Experiment with prompts and compare results side-by-side",
-        PresetTier::INTERACTIVE,
-        true, true, false, "",
-        true, false, false, false, false, {},
-        8, 512, 512, 8.0f,
-        "prompt_lab"
-    };
-
-    presetRegistry[16] = {
+    presetRegistry[12] = {
         PresetType::REMIX_EXISTING_CLIP,
         "Remix Existing Clip",
         "Create variations on a previously generated clip",
@@ -772,6 +740,40 @@ std::string ComfyUIManager::getLastOutputPath() const {
     return outputHistory.back();
 }
 
+std::string ComfyUIManager::getComfyOutputDir() const {
+    // ComfyUI is configured to output to config.outputDir
+    // (set via --output-directory when starting ComfyUI)
+    return config.outputDir;
+}
+
+std::string ComfyUIManager::getFramesDirectory() const {
+    // Get the frames output directory for the current batch
+    // ComfyUI SaveImage outputs to: output/<prefix>/<batchId>/frame_00001.png
+    // The prefix is based on the workflow (hunyuan_t2v, hunyuan_i2v, etc.)
+
+    if (currentBatchId.empty()) {
+        return "";
+    }
+
+    // Search for a directory containing the batch ID
+    std::string outputDir = getComfyOutputDir();
+    if (!fs::exists(outputDir)) {
+        return "";
+    }
+
+    // Look for directories containing our batch ID
+    for (const auto& entry : fs::directory_iterator(outputDir)) {
+        if (entry.is_directory()) {
+            fs::path batchDir = entry.path() / currentBatchId;
+            if (fs::exists(batchDir) && fs::is_directory(batchDir)) {
+                return batchDir.string();
+            }
+        }
+    }
+
+    return "";
+}
+
 std::vector<std::string> ComfyUIManager::getOutputHistory(int count) {
     std::lock_guard<std::mutex> lock(historyMutex);
     int start = std::max(0, static_cast<int>(outputHistory.size()) - count);
@@ -1084,38 +1086,95 @@ void ComfyUIManager::webSocketThreadFunc() {
     u_long mode = 1;
     ioctlsocket(sock, FIONBIO, &mode);
 
-    // Message loop
-    std::string messageBuffer;
-    while (wsThreadRunning.load()) {
-        bytesReceived = recv(sock, buffer, sizeof(buffer) - 1, 0);
-        if (bytesReceived > 0) {
-            // Parse WebSocket frame (simplified)
-            // In production, properly handle WebSocket framing
-            if (bytesReceived >= 2) {
-                int payloadLen = buffer[1] & 0x7F;
-                int offset = 2;
+    // Message loop with proper frame accumulation
+    std::vector<unsigned char> frameBuffer;
+    std::string messageAccumulator;  // For fragmented messages
 
+    while (wsThreadRunning.load()) {
+        bytesReceived = recv(sock, buffer, sizeof(buffer), 0);
+        if (bytesReceived > 0) {
+            // Append received data to frame buffer
+            frameBuffer.insert(frameBuffer.end(), buffer, buffer + bytesReceived);
+
+            // Process complete frames from buffer
+            while (frameBuffer.size() >= 2) {
+                unsigned char opcode = frameBuffer[0] & 0x0F;
+                bool fin = (frameBuffer[0] & 0x80) != 0;
+                bool masked = (frameBuffer[1] & 0x80) != 0;
+                uint64_t payloadLen = frameBuffer[1] & 0x7F;
+                size_t headerLen = 2;
+
+                // Extended payload length
                 if (payloadLen == 126) {
-                    payloadLen = (static_cast<unsigned char>(buffer[2]) << 8) |
-                                  static_cast<unsigned char>(buffer[3]);
-                    offset = 4;
+                    if (frameBuffer.size() < 4) break;  // Need more data
+                    payloadLen = (static_cast<uint64_t>(frameBuffer[2]) << 8) |
+                                  static_cast<uint64_t>(frameBuffer[3]);
+                    headerLen = 4;
                 } else if (payloadLen == 127) {
-                    offset = 10;  // 8-byte length
-                    // For simplicity, assume payload fits in int
+                    if (frameBuffer.size() < 10) break;  // Need more data
                     payloadLen = 0;
                     for (int i = 0; i < 8; i++) {
-                        payloadLen = (payloadLen << 8) | static_cast<unsigned char>(buffer[2 + i]);
+                        payloadLen = (payloadLen << 8) | static_cast<uint64_t>(frameBuffer[2 + i]);
+                    }
+                    headerLen = 10;
+                }
+
+                // Masking key (server->client messages should not be masked, but handle it)
+                size_t maskOffset = headerLen;
+                if (masked) {
+                    headerLen += 4;
+                }
+
+                // Check if we have the complete frame
+                size_t totalFrameLen = headerLen + static_cast<size_t>(payloadLen);
+                if (frameBuffer.size() < totalFrameLen) break;  // Need more data
+
+                // Extract payload
+                std::string payload;
+                if (payloadLen > 0) {
+                    payload.resize(static_cast<size_t>(payloadLen));
+                    for (size_t i = 0; i < payloadLen; i++) {
+                        unsigned char byte = frameBuffer[headerLen + i];
+                        if (masked) {
+                            byte ^= frameBuffer[maskOffset + (i % 4)];
+                        }
+                        payload[i] = static_cast<char>(byte);
                     }
                 }
 
-                if (offset + payloadLen <= bytesReceived) {
-                    std::string message(buffer + offset, payloadLen);
-                    handleWebSocketMessage(message);
+                // Remove processed frame from buffer
+                frameBuffer.erase(frameBuffer.begin(), frameBuffer.begin() + totalFrameLen);
+
+                // Handle frame based on opcode
+                if (opcode == 0x01 || opcode == 0x00) {  // Text frame or continuation
+                    messageAccumulator += payload;
+                    if (fin) {
+                        // Complete message received
+                        handleWebSocketMessage(messageAccumulator);
+                        messageAccumulator.clear();
+                    }
+                } else if (opcode == 0x08) {  // Close frame
+                    wsThreadRunning.store(false);
+                    break;
+                } else if (opcode == 0x09) {  // Ping - send pong
+                    // Build pong frame (opcode 0x0A)
+                    std::vector<unsigned char> pong;
+                    pong.push_back(0x8A);  // FIN + Pong opcode
+                    pong.push_back(static_cast<unsigned char>(payload.size()));
+                    pong.insert(pong.end(), payload.begin(), payload.end());
+                    send(sock, reinterpret_cast<char*>(pong.data()), static_cast<int>(pong.size()), 0);
                 }
+                // Ignore pong (0x0A) and other frames
             }
         } else if (bytesReceived == 0) {
             // Connection closed
             break;
+        } else {
+            // WSAEWOULDBLOCK is expected for non-blocking
+            int err = WSAGetLastError();
+            if (err != WSAEWOULDBLOCK) {
+                break;  // Real error
+            }
         }
 
         std::this_thread::sleep_for(std::chrono::milliseconds(10));
@@ -1164,6 +1223,7 @@ void ComfyUIManager::handleWebSocketMessage(const std::string& message) {
         if (!msg.contains("type")) return;
 
         std::string type = msg["type"].get<std::string>();
+        std::cerr << "[ComfyUI WS] Message type: " << type << std::endl;
 
         if (type == "status") {
             parseStatusMessage(msg);
@@ -1179,6 +1239,7 @@ void ComfyUIManager::handleWebSocketMessage(const std::string& message) {
 
     } catch (const std::exception& e) {
         // Ignore parsing errors for malformed messages
+        std::cerr << "[ComfyUI WS] Parse error: " << e.what() << std::endl;
     }
 }
 
@@ -1231,6 +1292,7 @@ void ComfyUIManager::parseExecutionMessage(const nlohmann::json& msg) {
     if (data.contains("node")) {
         if (data["node"].is_null()) {
             // Execution completed for this prompt
+            std::cerr << "[ComfyUI WS] Execution complete (node=null), setting DOWNLOADING state" << std::endl;
             prog.state = GenerationProgress::State::DOWNLOADING;
             prog.status = "Downloading output...";
         } else {
@@ -1238,6 +1300,7 @@ void ComfyUIManager::parseExecutionMessage(const nlohmann::json& msg) {
             prog.nodesCompleted++;
             prog.state = GenerationProgress::State::GENERATING;
             prog.status = "Executing: " + prog.currentNode;
+            std::cerr << "[ComfyUI WS] Executing node: " << prog.currentNode << std::endl;
         }
     }
 
@@ -1245,14 +1308,20 @@ void ComfyUIManager::parseExecutionMessage(const nlohmann::json& msg) {
 }
 
 void ComfyUIManager::parseExecutedMessage(const nlohmann::json& msg) {
+    std::cerr << "[ComfyUI WS] Received 'executed' message" << std::endl;
+
     if (!msg.contains("data")) return;
     auto& data = msg["data"];
 
     if (data.contains("prompt_id") &&
         data["prompt_id"].get<std::string>() == currentPromptId) {
-        // This prompt completed
+        // This prompt completed - set to DOWNLOADING state
+        std::cerr << "[ComfyUI WS] Our prompt completed: " << currentPromptId << std::endl;
         GenerationProgress prog = getProgress();
         prog.nodesCompleted++;
+        prog.state = GenerationProgress::State::DOWNLOADING;
+        prog.status = "Downloading output...";
+        std::cerr << "[ComfyUI WS] Setting DOWNLOADING state from executed message" << std::endl;
         updateProgress(prog);
     }
 }
@@ -1273,6 +1342,232 @@ void ComfyUIManager::parseErrorMessage(const nlohmann::json& msg) {
 }
 
 // ============================================================================
+// Video Utilities - Frame Extraction
+// ============================================================================
+
+/**
+ * Extract the last frame from a video and save it as PNG
+ * Used for VIDEO_CONTINUATION preset
+ * @param videoPath Path to input video
+ * @param outputPngPath Path where to save the extracted frame
+ * @param outWidth Output: video width
+ * @param outHeight Output: video height
+ * @return true if extraction successful
+ */
+static bool extractLastFrameFromVideo(const std::string& videoPath,
+                                      const std::string& outputPngPath,
+                                      int& outWidth, int& outHeight) {
+    std::cerr << "[ComfyUI] Extracting last frame from: " << videoPath << std::endl;
+
+    AVFormatContext* formatCtx = nullptr;
+    if (avformat_open_input(&formatCtx, videoPath.c_str(), nullptr, nullptr) < 0) {
+        std::cerr << "[ComfyUI] Could not open video: " << videoPath << std::endl;
+        return false;
+    }
+
+    if (avformat_find_stream_info(formatCtx, nullptr) < 0) {
+        std::cerr << "[ComfyUI] Could not find stream information" << std::endl;
+        avformat_close_input(&formatCtx);
+        return false;
+    }
+
+    // Find video stream
+    int videoStreamIdx = -1;
+    for (unsigned int i = 0; i < formatCtx->nb_streams; i++) {
+        if (formatCtx->streams[i]->codecpar->codec_type == AVMEDIA_TYPE_VIDEO) {
+            videoStreamIdx = static_cast<int>(i);
+            break;
+        }
+    }
+
+    if (videoStreamIdx < 0) {
+        std::cerr << "[ComfyUI] No video stream found" << std::endl;
+        avformat_close_input(&formatCtx);
+        return false;
+    }
+
+    AVStream* videoStream = formatCtx->streams[videoStreamIdx];
+    AVCodecParameters* codecpar = videoStream->codecpar;
+    outWidth = codecpar->width;
+    outHeight = codecpar->height;
+
+    // Find decoder
+    const AVCodec* decoder = avcodec_find_decoder(codecpar->codec_id);
+    if (!decoder) {
+        std::cerr << "[ComfyUI] Could not find video decoder" << std::endl;
+        avformat_close_input(&formatCtx);
+        return false;
+    }
+
+    AVCodecContext* decCtx = avcodec_alloc_context3(decoder);
+    avcodec_parameters_to_context(decCtx, codecpar);
+    if (avcodec_open2(decCtx, decoder, nullptr) < 0) {
+        std::cerr << "[ComfyUI] Could not open video decoder" << std::endl;
+        avcodec_free_context(&decCtx);
+        avformat_close_input(&formatCtx);
+        return false;
+    }
+
+    // Seek to near the end of the video
+    // We use the duration to calculate where to seek
+    int64_t duration = formatCtx->duration;
+    if (duration <= 0 && videoStream->duration > 0) {
+        duration = av_rescale_q(videoStream->duration, videoStream->time_base, AV_TIME_BASE_Q);
+    }
+
+    // Seek to 99% of the video to ensure we're near the last frame
+    if (duration > 0) {
+        int64_t seekTarget = duration - (duration / 100);  // 99% position
+        if (seekTarget < 0) seekTarget = 0;
+        av_seek_frame(formatCtx, -1, seekTarget, AVSEEK_FLAG_BACKWARD);
+        avcodec_flush_buffers(decCtx);
+    }
+
+    // Read frames until we get to the last one
+    AVPacket* packet = av_packet_alloc();
+    AVFrame* frame = av_frame_alloc();
+    AVFrame* lastFrame = av_frame_alloc();
+    bool hasLastFrame = false;
+
+    while (av_read_frame(formatCtx, packet) >= 0) {
+        if (packet->stream_index == videoStreamIdx) {
+            if (avcodec_send_packet(decCtx, packet) >= 0) {
+                while (avcodec_receive_frame(decCtx, frame) >= 0) {
+                    // Copy frame data to lastFrame (we want to keep the last one)
+                    av_frame_unref(lastFrame);
+                    av_frame_ref(lastFrame, frame);
+                    hasLastFrame = true;
+                }
+            }
+        }
+        av_packet_unref(packet);
+    }
+
+    // Flush decoder to get any remaining frames
+    avcodec_send_packet(decCtx, nullptr);
+    while (avcodec_receive_frame(decCtx, frame) >= 0) {
+        av_frame_unref(lastFrame);
+        av_frame_ref(lastFrame, frame);
+        hasLastFrame = true;
+    }
+
+    if (!hasLastFrame) {
+        std::cerr << "[ComfyUI] Could not decode any frames from video" << std::endl;
+        av_frame_free(&frame);
+        av_frame_free(&lastFrame);
+        av_packet_free(&packet);
+        avcodec_free_context(&decCtx);
+        avformat_close_input(&formatCtx);
+        return false;
+    }
+
+    std::cerr << "[ComfyUI] Got last frame: " << outWidth << "x" << outHeight << std::endl;
+
+    // Convert frame to RGB for PNG encoding
+    SwsContext* swsCtx = sws_getContext(
+        outWidth, outHeight, decCtx->pix_fmt,
+        outWidth, outHeight, AV_PIX_FMT_RGB24,
+        SWS_BILINEAR, nullptr, nullptr, nullptr);
+
+    if (!swsCtx) {
+        std::cerr << "[ComfyUI] Could not create SWS context" << std::endl;
+        av_frame_free(&frame);
+        av_frame_free(&lastFrame);
+        av_packet_free(&packet);
+        avcodec_free_context(&decCtx);
+        avformat_close_input(&formatCtx);
+        return false;
+    }
+
+    AVFrame* rgbFrame = av_frame_alloc();
+    rgbFrame->format = AV_PIX_FMT_RGB24;
+    rgbFrame->width = outWidth;
+    rgbFrame->height = outHeight;
+    av_frame_get_buffer(rgbFrame, 32);
+
+    sws_scale(swsCtx, lastFrame->data, lastFrame->linesize, 0, outHeight,
+              rgbFrame->data, rgbFrame->linesize);
+
+    // Encode to PNG
+    const AVCodec* pngEncoder = avcodec_find_encoder(AV_CODEC_ID_PNG);
+    if (!pngEncoder) {
+        std::cerr << "[ComfyUI] PNG encoder not found" << std::endl;
+        sws_freeContext(swsCtx);
+        av_frame_free(&rgbFrame);
+        av_frame_free(&frame);
+        av_frame_free(&lastFrame);
+        av_packet_free(&packet);
+        avcodec_free_context(&decCtx);
+        avformat_close_input(&formatCtx);
+        return false;
+    }
+
+    AVCodecContext* pngCtx = avcodec_alloc_context3(pngEncoder);
+    pngCtx->width = outWidth;
+    pngCtx->height = outHeight;
+    pngCtx->pix_fmt = AV_PIX_FMT_RGB24;
+    pngCtx->time_base = {1, 25};
+
+    if (avcodec_open2(pngCtx, pngEncoder, nullptr) < 0) {
+        std::cerr << "[ComfyUI] Could not open PNG encoder" << std::endl;
+        avcodec_free_context(&pngCtx);
+        sws_freeContext(swsCtx);
+        av_frame_free(&rgbFrame);
+        av_frame_free(&frame);
+        av_frame_free(&lastFrame);
+        av_packet_free(&packet);
+        avcodec_free_context(&decCtx);
+        avformat_close_input(&formatCtx);
+        return false;
+    }
+
+    // Encode the frame
+    AVPacket* pngPacket = av_packet_alloc();
+    rgbFrame->pts = 0;
+
+    if (avcodec_send_frame(pngCtx, rgbFrame) < 0) {
+        std::cerr << "[ComfyUI] Error sending frame to PNG encoder" << std::endl;
+        av_packet_free(&pngPacket);
+        avcodec_free_context(&pngCtx);
+        sws_freeContext(swsCtx);
+        av_frame_free(&rgbFrame);
+        av_frame_free(&frame);
+        av_frame_free(&lastFrame);
+        av_packet_free(&packet);
+        avcodec_free_context(&decCtx);
+        avformat_close_input(&formatCtx);
+        return false;
+    }
+
+    bool success = false;
+    if (avcodec_receive_packet(pngCtx, pngPacket) >= 0) {
+        // Write PNG to file
+        std::ofstream outFile(outputPngPath, std::ios::binary);
+        if (outFile.is_open()) {
+            outFile.write(reinterpret_cast<const char*>(pngPacket->data), pngPacket->size);
+            outFile.close();
+            success = true;
+            std::cerr << "[ComfyUI] Saved last frame to: " << outputPngPath << std::endl;
+        } else {
+            std::cerr << "[ComfyUI] Could not write PNG file: " << outputPngPath << std::endl;
+        }
+    }
+
+    // Cleanup
+    av_packet_free(&pngPacket);
+    avcodec_free_context(&pngCtx);
+    sws_freeContext(swsCtx);
+    av_frame_free(&rgbFrame);
+    av_frame_free(&frame);
+    av_frame_free(&lastFrame);
+    av_packet_free(&packet);
+    avcodec_free_context(&decCtx);
+    avformat_close_input(&formatCtx);
+
+    return success;
+}
+
+// ============================================================================
 // Private Methods - Generation
 // ============================================================================
 
@@ -1287,18 +1582,57 @@ void ComfyUIManager::generationThreadFunc(GenerationParams params) {
 
     currentParams = params;
 
-    // Prepare workflow
-    nlohmann::json workflow = prepareWorkflow(params.preset, params);
-    if (workflow.is_null()) {
-        prog.state = GenerationProgress::State::FAILED;
-        prog.status = "Failed to prepare workflow";
-        prog.errorMessage = getLastError();
-        updateProgress(prog);
-        generating.store(false);
-        return;
+    // Determine batch count - only for BATCH_VARIATION_GENERATOR preset
+    int batchCount = 1;
+    if (params.preset == PresetType::BATCH_VARIATION_GENERATOR && params.batchSize > 1) {
+        batchCount = params.batchSize;
     }
 
-    // Upload input images if needed
+    // Generate base seed if random
+    int baseSeed = params.seed;
+    if (baseSeed < 0) {
+        baseSeed = static_cast<int>(std::random_device()() % 999999999);
+    }
+
+    // VIDEO_CONTINUATION: Extract last frame from source video
+    std::string extractedFramePath;
+    std::string sourceVideoForConcat;  // Store for later concatenation
+    if (params.preset == PresetType::VIDEO_CONTINUATION && !params.sourceVideoPath.empty()) {
+        prog.status = "Extracting last frame from source video...";
+        updateProgress(prog);
+
+        // Create temp path for extracted frame
+        std::string tempDir = fs::temp_directory_path().string();
+        extractedFramePath = tempDir + "/comfyui_continuation_frame_" +
+                             std::to_string(std::chrono::steady_clock::now().time_since_epoch().count()) + ".png";
+
+        int videoWidth = 0, videoHeight = 0;
+        if (!extractLastFrameFromVideo(params.sourceVideoPath, extractedFramePath, videoWidth, videoHeight)) {
+            prog.state = GenerationProgress::State::FAILED;
+            prog.status = "Failed to extract last frame from source video";
+            prog.errorMessage = "Could not extract frame from: " + params.sourceVideoPath;
+            updateProgress(prog);
+            generating.store(false);
+            return;
+        }
+
+        // Use extracted frame as input image
+        params.inputImagePath = extractedFramePath;
+
+        // Use source video dimensions (override any user-set values)
+        if (videoWidth > 0 && videoHeight > 0) {
+            params.width = videoWidth;
+            params.height = videoHeight;
+            std::cerr << "[ComfyUI] Using source video dimensions: " << videoWidth << "x" << videoHeight << std::endl;
+        }
+
+        // Store source video path for later concatenation
+        if (params.appendToSource) {
+            sourceVideoForConcat = params.sourceVideoPath;
+        }
+    }
+
+    // Upload input images if needed (only once, before batch loop)
     if (!params.inputImagePath.empty()) {
         std::string uploadedName;
         if (!uploadImage(params.inputImagePath, uploadedName)) {
@@ -1309,58 +1643,123 @@ void ComfyUIManager::generationThreadFunc(GenerationParams params) {
             generating.store(false);
             return;
         }
-        // Update workflow with uploaded image name
-        substituteNode(workflow, "${INPUT_IMAGE}", params);
     }
 
-    // Submit workflow
-    prog.state = GenerationProgress::State::QUEUED;
-    prog.status = "Submitting to queue...";
-    updateProgress(prog);
-
-    nlohmann::json response = submitWorkflow(workflow);
-    if (response.is_null() || !response.contains("prompt_id")) {
-        prog.state = GenerationProgress::State::FAILED;
-        prog.status = "Failed to submit workflow";
-        prog.errorMessage = response.contains("error") ?
-                           response["error"].get<std::string>() : "Unknown error";
-        updateProgress(prog);
-        generating.store(false);
-        return;
-    }
-
-    currentPromptId = response["prompt_id"].get<std::string>();
-
-    // Wait for completion
-    prog.state = GenerationProgress::State::GENERATING;
-    prog.status = "Waiting for generation...";
-    updateProgress(prog);
-
-    if (!waitForCompletion(config.generationTimeout)) {
+    // Batch generation loop
+    for (int batchIdx = 0; batchIdx < batchCount; batchIdx++) {
         if (shouldStop.load()) {
             prog.state = GenerationProgress::State::CANCELLED;
             prog.status = "Cancelled";
-        } else {
+            updateProgress(prog);
+            generating.store(false);
+            return;
+        }
+
+        // For batch variation, use incrementing seeds
+        GenerationParams batchParams = params;
+        if (batchCount > 1) {
+            batchParams.seed = baseSeed + batchIdx;
+            prog.status = "Batch " + std::to_string(batchIdx + 1) + "/" +
+                          std::to_string(batchCount) + " - Preparing...";
+            updateProgress(prog);
+        }
+
+        // Prepare workflow with this batch's parameters
+        nlohmann::json workflow = prepareWorkflow(batchParams.preset, batchParams);
+        if (workflow.is_null()) {
             prog.state = GenerationProgress::State::FAILED;
-            prog.status = "Generation timed out";
+            prog.status = "Failed to prepare workflow";
+            prog.errorMessage = getLastError();
+            updateProgress(prog);
+            generating.store(false);
+            return;
+        }
+
+        // Update workflow with uploaded image name if needed
+        if (!params.inputImagePath.empty()) {
+            substituteNode(workflow, "${INPUT_IMAGE}", batchParams);
+        }
+
+        // Submit workflow
+        prog.state = GenerationProgress::State::QUEUED;
+        if (batchCount > 1) {
+            prog.status = "Batch " + std::to_string(batchIdx + 1) + "/" +
+                          std::to_string(batchCount) + " - Queued...";
+        } else {
+            prog.status = "Submitting to queue...";
         }
         updateProgress(prog);
-        generating.store(false);
-        return;
+
+        nlohmann::json response = submitWorkflow(workflow);
+        if (response.is_null() || !response.contains("prompt_id")) {
+            prog.state = GenerationProgress::State::FAILED;
+            prog.status = "Failed to submit workflow";
+            prog.errorMessage = response.contains("error") ?
+                               response["error"].get<std::string>() : "Unknown error";
+            updateProgress(prog);
+            generating.store(false);
+            return;
+        }
+
+        currentPromptId = response["prompt_id"].get<std::string>();
+
+        // Wait for completion
+        prog.state = GenerationProgress::State::GENERATING;
+        if (batchCount > 1) {
+            prog.status = "Batch " + std::to_string(batchIdx + 1) + "/" +
+                          std::to_string(batchCount) + " - Generating...";
+        } else {
+            prog.status = "Waiting for generation...";
+        }
+        updateProgress(prog);
+
+        if (!waitForCompletion(config.generationTimeout)) {
+            if (shouldStop.load()) {
+                prog.state = GenerationProgress::State::CANCELLED;
+                prog.status = "Cancelled";
+            } else {
+                prog.state = GenerationProgress::State::FAILED;
+                prog.status = "Generation timed out";
+            }
+            updateProgress(prog);
+            generating.store(false);
+            return;
+        }
+
+        // Get history and process output
+        prog.state = GenerationProgress::State::DOWNLOADING;
+        if (batchCount > 1) {
+            prog.status = "Batch " + std::to_string(batchIdx + 1) + "/" +
+                          std::to_string(batchCount) + " - Downloading...";
+        } else {
+            prog.status = "Retrieving output...";
+        }
+        updateProgress(prog);
+
+        std::cerr << "[ComfyUI] Getting history for prompt: " << currentPromptId << std::endl;
+        nlohmann::json history = getHistory(currentPromptId);
+        std::cerr << "[ComfyUI] Got history, processing output..." << std::endl;
+
+        if (!processOutput(history)) {
+            std::cerr << "[ComfyUI] processOutput failed" << std::endl;
+            prog.state = GenerationProgress::State::FAILED;
+            prog.status = "Failed to retrieve output";
+            updateProgress(prog);
+            generating.store(false);
+            return;
+        }
+        std::cerr << "[ComfyUI] Output processed successfully (batch " << (batchIdx + 1) << "/" << batchCount << ")" << std::endl;
+
+        // Update progress percentage for batch
+        if (batchCount > 1) {
+            prog.percentComplete = ((float)(batchIdx + 1) / batchCount) * 100.0f;
+            updateProgress(prog);
+        }
     }
 
-    // Get history and process output
-    prog.state = GenerationProgress::State::DOWNLOADING;
-    prog.status = "Retrieving output...";
-    updateProgress(prog);
-
-    nlohmann::json history = getHistory(currentPromptId);
-    if (!processOutput(history)) {
-        prog.state = GenerationProgress::State::FAILED;
-        prog.status = "Failed to retrieve output";
-        updateProgress(prog);
-        generating.store(false);
-        return;
+    // Cleanup temp extracted frame if we created one
+    if (!extractedFramePath.empty() && fs::exists(extractedFramePath)) {
+        fs::remove(extractedFramePath);
     }
 
     // Complete
@@ -1368,7 +1767,11 @@ void ComfyUIManager::generationThreadFunc(GenerationParams params) {
     float elapsed = std::chrono::duration<float>(endTime - startTime).count();
 
     prog.state = GenerationProgress::State::COMPLETE;
-    prog.status = "Complete";
+    if (batchCount > 1) {
+        prog.status = "Complete - " + std::to_string(batchCount) + " variations";
+    } else {
+        prog.status = "Complete";
+    }
     prog.percentComplete = 100.0f;
     prog.elapsedTime = elapsed;
     prog.outputPath = getLastOutputPath();
@@ -1379,12 +1782,15 @@ void ComfyUIManager::generationThreadFunc(GenerationParams params) {
 
 bool ComfyUIManager::waitForCompletion(int timeoutMs) {
     auto startTime = std::chrono::steady_clock::now();
+    auto lastPollTime = startTime;
+    const int pollIntervalMs = 2000;  // Poll history API every 2 seconds as fallback
 
     while (!shouldStop.load()) {
         auto now = std::chrono::steady_clock::now();
         auto elapsed = std::chrono::duration_cast<std::chrono::milliseconds>(now - startTime);
 
-        if (elapsed.count() > timeoutMs) {
+        // Only apply timeout if timeoutMs > 0 (0 = wait indefinitely)
+        if (timeoutMs > 0 && elapsed.count() > timeoutMs) {
             return false;
         }
 
@@ -1395,6 +1801,37 @@ bool ComfyUIManager::waitForCompletion(int timeoutMs) {
         }
         if (prog.state == GenerationProgress::State::DOWNLOADING) {
             return true;  // Ready to download
+        }
+
+        // Polling fallback: check history API periodically in case websocket isn't working
+        auto sincePoll = std::chrono::duration_cast<std::chrono::milliseconds>(now - lastPollTime);
+        if (sincePoll.count() >= pollIntervalMs && !currentPromptId.empty()) {
+            lastPollTime = now;
+            try {
+                nlohmann::json history = getHistory(currentPromptId);
+                if (!history.is_null() && history.contains(currentPromptId)) {
+                    auto& promptData = history[currentPromptId];
+                    if (promptData.contains("status")) {
+                        auto& status = promptData["status"];
+                        if (status.contains("completed") && status["completed"].get<bool>()) {
+                            std::cerr << "[ComfyUI] Polling detected completion" << std::endl;
+                            prog.state = GenerationProgress::State::DOWNLOADING;
+                            prog.status = "Downloading output...";
+                            updateProgress(prog);
+                            return true;
+                        }
+                        if (status.contains("status_str") && status["status_str"].get<std::string>() == "error") {
+                            std::cerr << "[ComfyUI] Polling detected error" << std::endl;
+                            prog.state = GenerationProgress::State::FAILED;
+                            prog.status = "Generation failed";
+                            updateProgress(prog);
+                            return false;
+                        }
+                    }
+                }
+            } catch (...) {
+                // Ignore polling errors
+            }
         }
 
         // Update elapsed time
@@ -1408,16 +1845,35 @@ bool ComfyUIManager::waitForCompletion(int timeoutMs) {
 }
 
 bool ComfyUIManager::processOutput(const nlohmann::json& historyData) {
+    std::cerr << "[ComfyUI] processOutput called" << std::endl;
+
     if (historyData.is_null() || !historyData.contains(currentPromptId)) {
+        std::cerr << "[ComfyUI] No history data for prompt: " << currentPromptId << std::endl;
+        std::cerr << "[ComfyUI] History data: " << historyData.dump(2).substr(0, 500) << std::endl;
         setError("No history data for prompt");
         return false;
     }
 
     auto& promptHistory = historyData[currentPromptId];
     if (!promptHistory.contains("outputs")) {
+        std::cerr << "[ComfyUI] No outputs in history. Keys: ";
+        for (auto& [key, val] : promptHistory.items()) {
+            std::cerr << key << " ";
+        }
+        std::cerr << std::endl;
         setError("No outputs in history");
         return false;
     }
+
+    std::cerr << "[ComfyUI] Found outputs. Nodes: ";
+    for (auto& [nodeId, nodeOutputs] : promptHistory["outputs"].items()) {
+        std::cerr << nodeId << "(keys:";
+        for (auto& [key, val] : nodeOutputs.items()) {
+            std::cerr << key << ",";
+        }
+        std::cerr << ") ";
+    }
+    std::cerr << std::endl;
 
     // Find video/image outputs
     for (auto& [nodeId, nodeOutputs] : promptHistory["outputs"].items()) {
@@ -1446,18 +1902,100 @@ bool ComfyUIManager::processOutput(const nlohmann::json& historyData) {
             }
         }
         if (nodeOutputs.contains("images")) {
-            // Handle image sequences if needed
+            // Handle image sequences - collect all frame paths
+            std::vector<std::string> framePaths;
+            std::string framesSubfolder;
+
             for (auto& image : nodeOutputs["images"]) {
                 std::string filename = image["filename"].get<std::string>();
                 std::string subfolder = image.value("subfolder", "");
+                framePaths.push_back(filename);
+                framesSubfolder = subfolder;
+            }
 
-                std::string localPath = config.outputDir + "/" + filename;
-                if (downloadOutput(filename, subfolder, localPath)) {
-                    addToHistory(localPath);
-                    // Continue for all images in sequence
+            std::cerr << "[ComfyUI] Found " << framePaths.size() << " images" << std::endl;
+
+            // Get ComfyUI's output directory (files are already on disk)
+            // Use fs::path for proper path handling across platforms
+            fs::path comfyOutputPath = fs::path(getComfyOutputDir());
+            if (!framesSubfolder.empty()) {
+                // Normalize subfolder separators - ComfyUI may use either
+                std::string normalizedSubfolder = framesSubfolder;
+                std::replace(normalizedSubfolder.begin(), normalizedSubfolder.end(), '\\', '/');
+                comfyOutputPath = comfyOutputPath / normalizedSubfolder;
+            }
+            std::string comfyOutputDir = comfyOutputPath.string();
+
+            std::cerr << "[ComfyUI] ComfyUI output dir: " << comfyOutputDir << std::endl;
+
+            // If we have multiple frames, this is a sequence
+            if (framePaths.size() > 1) {
+                // The frames are already in comfyOutputDir, just use that as the frames directory
+                // No need to move them - they're already organized by batch ID
+                if (fs::exists(comfyOutputPath) && fs::is_directory(comfyOutputPath)) {
+                    // Verify at least one frame exists
+                    fs::path firstFrame = comfyOutputPath / framePaths[0];
+                    if (fs::exists(firstFrame)) {
+                        std::cerr << "[ComfyUI] Using existing frames directory: " << comfyOutputDir << std::endl;
+                        addToHistory(comfyOutputDir);
+                        return true;
+                    }
+                }
+
+                // Fallback: Create a unique frames directory and move frames there
+                std::string framesDir = config.outputDir + "/frames_" + currentBatchId;
+                fs::create_directories(framesDir);
+
+                std::cerr << "[ComfyUI] Creating frames directory: " << framesDir << std::endl;
+
+                // Move frames from ComfyUI output to our frames directory
+                int moved = 0;
+                for (const auto& filename : framePaths) {
+                    fs::path srcPath = comfyOutputPath / filename;
+                    fs::path dstPath = fs::path(framesDir) / filename;
+
+                    std::cerr << "[ComfyUI] Trying to move: " << srcPath.string() << std::endl;
+
+                    if (fs::exists(srcPath)) {
+                        try {
+                            fs::rename(srcPath, dstPath);  // Move (faster than copy)
+                            moved++;
+                        } catch (...) {
+                            // If move fails (cross-device), try copy
+                            try {
+                                fs::copy_file(srcPath, dstPath, fs::copy_options::overwrite_existing);
+                                fs::remove(srcPath);
+                                moved++;
+                            } catch (...) {
+                                std::cerr << "[ComfyUI] Failed to move/copy: " << srcPath.string() << std::endl;
+                            }
+                        }
+                    } else {
+                        std::cerr << "[ComfyUI] Source file not found: " << srcPath.string() << std::endl;
+                    }
+                }
+
+                if (moved > 0) {
+                    std::cerr << "[ComfyUI] Moved " << moved << " frames to: " << framesDir << std::endl;
+                    addToHistory(framesDir);
+                    return true;
                 }
             }
-            if (!outputHistory.empty()) return true;
+
+            // Single image - use directly from ComfyUI output
+            if (!framePaths.empty()) {
+                fs::path srcPath = comfyOutputPath / framePaths[0];
+                if (fs::exists(srcPath)) {
+                    addToHistory(srcPath.string());
+                    return true;
+                }
+                // Fallback to download
+                std::string localPath = config.outputDir + "/" + framePaths[0];
+                if (downloadOutput(framePaths[0], framesSubfolder, localPath)) {
+                    addToHistory(localPath);
+                    return true;
+                }
+            }
         }
     }
 
@@ -1530,19 +2068,25 @@ nlohmann::json ComfyUIManager::prepareWorkflow(PresetType preset, const Generati
     auto& workflowMap = (params.backend == GenerationBackend::SD_ANIMATEDIFF) ?
                         workflowsSD : workflowsHunyuan;
 
-    if (workflowMap.find(info.workflowFile) == workflowMap.end()) {
-        // Try loading from file
-        std::string path = getWorkflowPath(preset, params.backend);
-        if (!loadWorkflowFile(path, params.backend)) {
-            setError("Workflow not found: " + info.workflowFile);
-            return nlohmann::json();
-        }
+    // Always reload workflow from disk to pick up any changes
+    std::string path = getWorkflowPath(preset, params.backend);
+    if (!loadWorkflowFile(path, params.backend)) {
+        setError("Workflow not found: " + info.workflowFile);
+        return nlohmann::json();
     }
 
     workflow = workflowMap[info.workflowFile];
 
     // Substitute parameters
     substituteParameters(workflow, params);
+
+    // Debug: Log the prompt being sent
+    for (auto& [nodeId, node] : workflow.items()) {
+        if (node.contains("inputs") && node["inputs"].contains("text")) {
+            std::cerr << "[ComfyUI] Node " << nodeId << " text: "
+                      << node["inputs"]["text"].get<std::string>() << std::endl;
+        }
+    }
 
     // Apply backend-specific adjustments
     if (params.backend == GenerationBackend::HUNYUAN_VIDEO) {
@@ -1563,15 +2107,60 @@ nlohmann::json ComfyUIManager::prepareWorkflow(PresetType preset, const Generati
         setupSeamlessLoop(workflow, true);
     }
 
-    if (params.preset == PresetType::BEAT_SYNC_PATTERN) {
-        setupBeatSync(workflow, params);
-    }
-
     return workflow;
 }
 
 void ComfyUIManager::substituteParameters(nlohmann::json& workflow,
                                            const GenerationParams& params) {
+    // Model names based on backend
+    std::string modelName = (params.backend == GenerationBackend::SD_ANIMATEDIFF) ?
+                            "v1-5-pruned-emaonly-fp16.safetensors" :
+                            "hunyuan-video-t2v-720p-Q4_0.gguf";
+    std::string motionModuleName = "mm_sd_v15_v2.fp16.safetensors";
+    std::string vaeName = (params.backend == GenerationBackend::SD_ANIMATEDIFF) ?
+                          "vae-ft-mse-840000-ema-pruned.safetensors" :
+                          "hunyuan_video_vae_bf16.safetensors";
+
+    // ControlNet model names
+    std::string controlNetModel = "";
+    switch (params.controlNetType) {
+        case ControlNetType::DEPTH:
+            controlNetModel = "control_v11f1p_sd15_depth.pth";
+            break;
+        case ControlNetType::CANNY:
+            controlNetModel = "control_v11p_sd15_canny.pth";
+            break;
+        case ControlNetType::POSE:
+            controlNetModel = "control_v11p_sd15_openpose.pth";
+            break;
+        case ControlNetType::SKETCH:
+            controlNetModel = "control_v11p_sd15_scribble.pth";
+            break;
+        case ControlNetType::NORMAL:
+            controlNetModel = "control_v11p_sd15_normalbae.pth";
+            break;
+        default:
+            controlNetModel = "none";
+            break;
+    }
+
+    // Motion type string
+    std::string motionTypeStr = "";
+    switch (params.motionType) {
+        case MotionType::ZOOM_IN: motionTypeStr = "zoom_in"; break;
+        case MotionType::ZOOM_OUT: motionTypeStr = "zoom_out"; break;
+        case MotionType::PAN_LEFT: motionTypeStr = "pan_left"; break;
+        case MotionType::PAN_RIGHT: motionTypeStr = "pan_right"; break;
+        case MotionType::ROTATE_CW: motionTypeStr = "rotate_cw"; break;
+        case MotionType::ROTATE_CCW: motionTypeStr = "rotate_ccw"; break;
+        case MotionType::DRIFT: motionTypeStr = "drift"; break;
+        case MotionType::PULSE: motionTypeStr = "pulse"; break;
+    }
+
+    // Generate seed if random
+    int actualSeed = params.seed >= 0 ? params.seed :
+                     static_cast<int>(std::random_device()() % 999999999);
+
     // Recursive substitution
     std::function<void(nlohmann::json&)> substitute = [&](nlohmann::json& node) {
         if (node.is_string()) {
@@ -1586,16 +2175,113 @@ void ComfyUIManager::substituteParameters(nlohmann::json& workflow,
                 }
             };
 
+            // Fix hardcoded model names that don't match actual files
+            replace("mm_sd_v15_v2.ckpt", motionModuleName);
+            replace("mm_sd15_v2.ckpt", motionModuleName);
+            replace("v1-5-pruned.ckpt", modelName);
+            replace("v1-5-pruned-emaonly.ckpt", modelName);
+            replace("v1-5-pruned-emaonly.safetensors", modelName);
+
+            // Core params
             replace("${PROMPT}", params.prompt);
             replace("${NEGATIVE_PROMPT}", params.negativePrompt);
-            replace("${SEED}", params.seed >= 0 ? std::to_string(params.seed) :
-                              std::to_string(std::random_device()()));
+            replace("${SEED}", std::to_string(actualSeed));
             replace("${STEPS}", std::to_string(params.steps));
             replace("${CFG_SCALE}", std::to_string(params.cfgScale));
+            replace("${CFG}", std::to_string(params.cfgScale));
+
+            // Video params
             replace("${FRAMES}", std::to_string(params.frames));
             replace("${WIDTH}", std::to_string(params.width));
             replace("${HEIGHT}", std::to_string(params.height));
             replace("${FPS}", std::to_string(params.fps));
+
+            // Frame interpolation params
+            replace("${INTERPOLATION_FACTOR}", std::to_string(params.interpolationFactor));
+            replace("${TARGET_FPS}", std::to_string(params.fps));
+
+            // AnimateDiff context params
+            replace("${CONTEXT_LENGTH}", std::to_string(params.contextLength));
+            replace("${CONTEXT_OVERLAP}", std::to_string(params.contextOverlap));
+            replace("${SEAMLESS_LOOP}", params.seamlessLoop ? "true" : "false");
+
+            // Model names
+            replace("${MODEL_NAME}", modelName);
+            replace("${MOTION_MODULE}", motionModuleName);
+            replace("${VAE_NAME}", vaeName);
+            replace("${CONTROLNET_MODEL}", controlNetModel);
+
+            // Motion params
+            replace("${MOTION_TYPE}", motionTypeStr);
+            replace("${MOTION_INTENSITY}", std::to_string(params.motionStrength));
+            replace("${MOTION_STRENGTH}", std::to_string(params.motionStrength));
+            replace("${MOTION_SCALE}", std::to_string(params.motionStrength));
+
+            // Style params
+            replace("${STYLE_STRENGTH}", std::to_string(params.styleStrength));
+            replace("${CONTROLNET_STRENGTH}", std::to_string(params.controlNetStrength));
+            replace("${REMIX_STRENGTH}", std::to_string(params.remixStrength));
+
+            replace("${DENOISE_STRENGTH}", std::to_string(params.denoiseStrength));
+
+            // Beat sync params
+            replace("${BPM}", std::to_string(params.bpm));
+            replace("${BAR_LENGTH}", std::to_string(params.barLength));
+
+            // Kaleidoscope
+            replace("${SYMMETRY_FOLD}", std::to_string(params.symmetryFold));
+
+            // Morphing prompts - escape for JSON
+            auto escapeJson = [](const std::string& s) {
+                std::string result;
+                for (char c : s) {
+                    switch (c) {
+                        case '"': result += "\\\""; break;
+                        case '\\': result += "\\\\"; break;
+                        case '\n': result += "\\n"; break;
+                        case '\r': result += "\\r"; break;
+                        case '\t': result += "\\t"; break;
+                        default: result += c; break;
+                    }
+                }
+                return result;
+            };
+            replace("${MORPH_PROMPT_START}", escapeJson(params.morphStartPrompt));
+            replace("${MORPH_PROMPT_END}", escapeJson(params.morphEndPrompt));
+            // Midpoint is the frame where transition completes (percentage of total frames)
+            int midpointFrame = (params.frames * params.morphMidpoint) / 100;
+            replace("${MORPH_MIDPOINT}", std::to_string(midpointFrame));
+            replace("${MORPH_AFTER_MID}", std::to_string(midpointFrame + 1));
+            // Last frame for full-video interpolation
+            replace("${LAST_FRAME}", std::to_string(params.frames - 1));
+
+            // Texture evolution
+            replace("${START_TEXTURE}", escapeJson(params.startTexture));
+            replace("${END_TEXTURE}", escapeJson(params.endTexture));
+
+            // Batch ID for frame output directories (timestamp-based unique ID)
+            auto now = std::chrono::system_clock::now();
+            auto epoch = now.time_since_epoch();
+            auto millis = std::chrono::duration_cast<std::chrono::milliseconds>(epoch).count();
+            std::string batchId = std::to_string(millis);
+            replace("${BATCH_ID}", batchId);
+
+            // Store batch ID for later use in output processing
+            currentBatchId = batchId;
+
+            // Input paths (if provided)
+            if (!params.inputImagePath.empty()) {
+                replace("${INPUT_IMAGE}", params.inputImagePath);
+            }
+            if (!params.inputVideoPath.empty()) {
+                replace("${INPUT_VIDEO}", params.inputVideoPath);
+            }
+            if (!params.styleImagePath.empty()) {
+                replace("${STYLE_IMAGE}", params.styleImagePath);
+            }
+            if (!params.controlNetImagePath.empty()) {
+                replace("${CONTROLNET_IMAGE}", params.controlNetImagePath);
+            }
 
             node = str;
         } else if (node.is_object()) {
@@ -1610,6 +2296,13 @@ void ComfyUIManager::substituteParameters(nlohmann::json& workflow,
     };
 
     substitute(workflow);
+
+    // Debug: print the BatchPromptSchedule text after substitution
+    if (workflow.contains("4") && workflow["4"].contains("inputs") &&
+        workflow["4"]["inputs"].contains("text")) {
+        std::cout << "[ComfyUIManager] BatchPromptSchedule text: "
+                  << workflow["4"]["inputs"]["text"].dump() << std::endl;
+    }
 }
 
 void ComfyUIManager::substituteNode(nlohmann::json& node, const std::string& key,
@@ -1626,6 +2319,30 @@ void ComfyUIManager::applyPresetDefaults(GenerationParams& params) {
     if (params.width == 0) params.width = info.defaultWidth;
     if (params.height == 0) params.height = info.defaultHeight;
     if (params.fps == 0.0f) params.fps = info.defaultFPS;
+
+    // Backend-specific validation
+    if (params.backend == GenerationBackend::HUNYUAN_VIDEO) {
+        // HunyuanVideo requires frames = 1 + 4n (5, 9, 13, 17, 21, 25, ...)
+        int n = (params.frames - 1 + 2) / 4;  // Round to nearest
+        if (n < 1) n = 1;
+        params.frames = 1 + 4 * n;
+        if (params.frames > 129) params.frames = 129;
+
+        // HunyuanVideo requires width/height to be multiples of 16
+        params.width = ((params.width + 8) / 16) * 16;
+        params.height = ((params.height + 8) / 16) * 16;
+        if (params.width < 256) params.width = 256;
+        if (params.height < 256) params.height = 256;
+    } else {
+        // SD AnimateDiff: multiples of 8 work best, max ~64 frames
+        params.frames = ((params.frames + 4) / 8) * 8;  // Round to nearest 8
+        if (params.frames < 8) params.frames = 8;
+        if (params.frames > 64) params.frames = 64;
+
+        // SD requires multiples of 8
+        params.width = ((params.width + 4) / 8) * 8;
+        params.height = ((params.height + 4) / 8) * 8;
+    }
 
     // Generate output path if not set
     if (params.outputPath.empty()) {

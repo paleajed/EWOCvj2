@@ -1,0 +1,112 @@
+{
+  "1": {
+    "class_type": "UnetLoaderGGUF",
+    "inputs": {
+      "unet_name": "hunyuanvideo1.5_720p_t2v-Q4_K_M.gguf"
+    }
+  },
+  "2": {
+    "class_type": "DualCLIPLoader",
+    "inputs": {
+      "clip_name1": "qwen_2.5_vl_7b_fp8_scaled.safetensors",
+      "clip_name2": "byt5_small_glyphxl_fp16.safetensors",
+      "type": "hunyuan_video_15"
+    }
+  },
+  "3": {
+    "class_type": "VAELoader",
+    "inputs": {
+      "vae_name": "hunyuanvideo15_vae_fp16.safetensors"
+    }
+  },
+  "4": {
+    "class_type": "CLIPTextEncode",
+    "inputs": {
+      "clip": ["2", 0],
+      "text": "${PROMPT}"
+    },
+    "_meta": {
+      "title": "Positive Prompt"
+    }
+  },
+  "20": {
+    "class_type": "CLIPTextEncode",
+    "inputs": {
+      "clip": ["2", 0],
+      "text": ""
+    },
+    "_meta": {
+      "title": "Negative Prompt"
+    }
+  },
+  "5": {
+    "class_type": "EmptyHunyuanLatentVideo",
+    "inputs": {
+      "width": "${WIDTH}",
+      "height": "${HEIGHT}",
+      "length": "${FRAMES}",
+      "batch_size": 1
+    }
+  },
+  "7": {
+    "class_type": "ModelSamplingSD3",
+    "inputs": {
+      "model": ["1", 0],
+      "shift": 9.0
+    }
+  },
+  "8": {
+    "class_type": "BasicScheduler",
+    "inputs": {
+      "model": ["7", 0],
+      "scheduler": "simple",
+      "steps": "${STEPS}",
+      "denoise": 1.0
+    }
+  },
+  "9": {
+    "class_type": "RandomNoise",
+    "inputs": {
+      "noise_seed": "${SEED}"
+    }
+  },
+  "10": {
+    "class_type": "KSamplerSelect",
+    "inputs": {
+      "sampler_name": "euler"
+    }
+  },
+  "11": {
+    "class_type": "CFGGuider",
+    "inputs": {
+      "model": ["7", 0],
+      "positive": ["4", 0],
+      "negative": ["20", 0],
+      "cfg": 6.0
+    }
+  },
+  "12": {
+    "class_type": "SamplerCustomAdvanced",
+    "inputs": {
+      "noise": ["9", 0],
+      "guider": ["11", 0],
+      "sampler": ["10", 0],
+      "sigmas": ["8", 0],
+      "latent_image": ["5", 0]
+    }
+  },
+  "13": {
+    "class_type": "VAEDecode",
+    "inputs": {
+      "vae": ["3", 0],
+      "samples": ["12", 0]
+    }
+  },
+  "14": {
+    "class_type": "SaveImage",
+    "inputs": {
+      "images": ["13", 0],
+      "filename_prefix": "hunyuan_t2v/${BATCH_ID}/frame"
+    }
+  }
+}

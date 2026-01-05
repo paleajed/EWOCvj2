@@ -1,0 +1,90 @@
+{
+  "1": {
+    "class_type": "CheckpointLoaderSimple",
+    "inputs": {
+      "ckpt_name": "${MODEL_NAME}"
+    }
+  },
+  "2": {
+    "class_type": "ADE_AnimateDiffLoaderWithContext",
+    "inputs": {
+      "model_name": "mm_sd_v15_v2.fp16.safetensors",
+      "beta_schedule": "sqrt_linear (AnimateDiff)",
+      "motion_scale": 1.0,
+      "apply_v2_models_properly": true,
+      "model": ["1", 0],
+      "context_options": ["3", 0]
+    }
+  },
+  "3": {
+    "class_type": "ADE_StandardStaticContextOptions",
+    "inputs": {
+      "context_length": "${CONTEXT_LENGTH}",
+      "context_stride": 1,
+      "context_overlap": "${CONTEXT_OVERLAP}",
+      "closed_loop": "${SEAMLESS_LOOP}",
+      "fuse_method": "pyramid",
+      "use_on_equal_length": false
+    }
+  },
+  "4": {
+    "class_type": "BatchPromptSchedule",
+    "inputs": {
+      "text": "\"0\": \"${START_TEXTURE} texture, material, organic, detailed, macro photography\",\n\"${MORPH_MIDPOINT}\": \"${START_TEXTURE} texture, material, organic, detailed, macro photography\",\n\"${MORPH_AFTER_MID}\": \"${END_TEXTURE} texture, material, organic, detailed, macro photography\",\n\"${LAST_FRAME}\": \"${END_TEXTURE} texture, material, organic, detailed, macro photography\"",
+      "max_frames": "${FRAMES}",
+      "print_output": true,
+      "start_frame": 0,
+      "end_frame": "${FRAMES}",
+      "clip": ["1", 1]
+    }
+  },
+  "5": {
+    "class_type": "CLIPTextEncode",
+    "inputs": {
+      "text": "blurry, low quality, distorted",
+      "clip": ["1", 1]
+    }
+  },
+  "6": {
+    "class_type": "EmptyLatentImage",
+    "inputs": {
+      "width": "${WIDTH}",
+      "height": "${HEIGHT}",
+      "batch_size": "${FRAMES}"
+    }
+  },
+  "7": {
+    "class_type": "KSampler",
+    "inputs": {
+      "seed": "${SEED}",
+      "steps": "${STEPS}",
+      "cfg": "${CFG_SCALE}",
+      "sampler_name": "euler_ancestral",
+      "scheduler": "normal",
+      "denoise": 1.0,
+      "model": ["2", 0],
+      "positive": ["4", 0],
+      "negative": ["5", 0],
+      "latent_image": ["6", 0]
+    }
+  },
+  "8": {
+    "class_type": "VAEDecode",
+    "inputs": {
+      "samples": ["7", 0],
+      "vae": ["1", 2]
+    }
+  },
+  "9": {
+    "class_type": "VHS_VideoCombine",
+    "inputs": {
+      "frame_rate": "${FPS}",
+      "loop_count": 0,
+      "filename_prefix": "texture_evolution",
+      "format": "video/h264-mp4",
+      "pingpong": false,
+      "save_output": true,
+      "images": ["8", 0]
+    }
+  }
+}

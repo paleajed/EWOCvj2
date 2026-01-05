@@ -20,6 +20,7 @@
 #include <winhttp.h>
 #include <shlwapi.h>
 #include <shellapi.h>
+#include <iostream>
 #pragma comment(lib, "winhttp.lib")
 #pragma comment(lib, "shlwapi.lib")
 #pragma comment(lib, "shell32.lib")
@@ -213,54 +214,39 @@ void ComfyUIInstaller::setProgressCallback(std::function<void(const InstallProgr
 // ============================================================================
 
 bool ComfyUIInstaller::isComfyUIInstalled(const std::string& installDir) {
-    // Check for main ComfyUI executable/script
-    // The portable version extracts to "ComfyUI_windows_portable" subfolder
-    fs::path portablePath = fs::path(installDir) / "ComfyUI_windows_portable";
+    // Use component-based checking for consistency
+    auto components = getComfyUIBaseComponents();
+    auto missing = getMissingComponents(components, installDir);
 
-    // Check for portable version structure
-    if (fs::exists(portablePath / "ComfyUI" / "main.py") ||
-        fs::exists(portablePath / "python_embeded") ||
-        fs::exists(portablePath / "run_nvidia_gpu.bat")) {
-        return true;
-    }
-
-    return false;
+    // All components installed = nothing missing
+    return missing.empty();
 }
 
 bool ComfyUIInstaller::isSDAnimateDiffInstalled(const std::string& installDir) {
-    // Portable version path structure
-    fs::path basePath = fs::path(installDir) / "ComfyUI_windows_portable" / "ComfyUI";
-    fs::path modelsPath = basePath / "models";
+    // Use component-based checking - only check required components
+    auto allComponents = getSDComponents();
 
-    // Check for SD1.5 model
-    bool hasSD = fs::exists(modelsPath / "checkpoints" / "v1-5-pruned-emaonly-fp16.safetensors");
+    // Filter to only required components for "is installed" check
+    std::vector<ModelComponent> requiredComponents;
+    for (const auto& comp : allComponents) {
+        if (comp.required) {
+            requiredComponents.push_back(comp);
+        }
+    }
 
-    // Check for AnimateDiff motion module
-    bool hasAD = fs::exists(modelsPath / "animatediff_models" / "mm_sd_v15_v2.fp16.safetensors");
+    auto missing = getMissingComponents(requiredComponents, installDir);
 
-    // Check for AnimateDiff-Evolved custom node
-    fs::path nodesPath = basePath / "custom_nodes" / "ComfyUI-AnimateDiff-Evolved";
-    bool hasNode = fs::exists(nodesPath);
-
-    return hasSD && hasAD && hasNode;
+    // All required components installed = nothing missing
+    return missing.empty();
 }
 
 bool ComfyUIInstaller::isHunyuanVideoInstalled(const std::string& installDir) {
-    // Portable version path structure
-    fs::path basePath = fs::path(installDir) / "ComfyUI_windows_portable" / "ComfyUI";
-    fs::path modelsPath = basePath / "models";
+    // Use component-based checking for consistency
+    auto components = getHunyuanComponents();
+    auto missing = getMissingComponents(components, installDir);
 
-    // Check for HunyuanVideo T2V model
-    bool hasT2V = fs::exists(modelsPath / "diffusion_models" / "hunyuan-video-t2v-720p-Q4_0.gguf");
-
-    // Check for VAE
-    bool hasVAE = fs::exists(modelsPath / "vae" / "hunyuan_video_vae_bf16.safetensors");
-
-    // Check for GGUF custom node
-    fs::path nodesPath = basePath / "custom_nodes" / "ComfyUI-GGUF";
-    bool hasNode = fs::exists(nodesPath);
-
-    return hasT2V && hasVAE && hasNode;
+    // All components installed = nothing missing
+    return missing.empty();
 }
 
 int64_t ComfyUIInstaller::getRequiredDiskSpace(InstallComponent component) {
@@ -275,8 +261,8 @@ int64_t ComfyUIInstaller::getRequiredDiskSpace(InstallComponent component) {
             return 10LL * 1024 * 1024 * 1024;  // 10GB
 
         case InstallComponent::HUNYUAN_VIDEO:
-            // T2V Q4 (~7.74GB) + I2V Q4 (~8GB) + VAE (~493MB) +
-            // CLIP (~246MB) + LLaVA (~9GB)
+            // T2V Q4 (~7.74GB) + I2V Q4 (~8GB) + VAE (~493MB) + CLIP (~246MB) +
+            // LLaVA (~9GB) + CLIP Vision (~1.17GB)
             return 30LL * 1024 * 1024 * 1024;  // 30GB
 
         default:
@@ -296,7 +282,7 @@ int64_t ComfyUIInstaller::getDownloadSize(InstallComponent component) {
 
         case InstallComponent::HUNYUAN_VIDEO:
             return HUNYUAN_T2V_Q4_SIZE + HUNYUAN_I2V_Q4_SIZE + HUNYUAN_VAE_SIZE +
-                   HUNYUAN_CLIP_SIZE + HUNYUAN_LLAVA_SIZE;
+                   HUNYUAN_QWEN_SIZE + HUNYUAN_BYT5_SIZE + HUNYUAN_CLIP_VISION_SIZE;
 
         default:
             return 0;
@@ -697,8 +683,12 @@ void ComfyUIInstaller::installComfyUIBaseThread(InstallConfig config) {
     prog.status = "Checking existing installation...";
     updateProgress(prog);
 
-    // Check if already installed
-    if (isComfyUIInstalled(config.installDir)) {
+    // Use component-based approach to find what's missing
+    auto allComponents = getComfyUIBaseComponents();
+    auto missingComponents = getMissingComponents(allComponents, config.installDir);
+
+    // Check if everything is already installed
+    if (missingComponents.empty()) {
         prog.state = InstallProgress::State::COMPLETE;
         prog.status = "ComfyUI base already installed";
         prog.percentComplete = 100.0f;
@@ -707,7 +697,8 @@ void ComfyUIInstaller::installComfyUIBaseThread(InstallConfig config) {
         return;
     }
 
-    prog.status = "Preparing installation...";
+    // Log what's missing
+    prog.status = "Installing " + std::to_string(missingComponents.size()) + " missing component(s)...";
     updateProgress(prog);
 
     // Create directories
@@ -723,8 +714,16 @@ void ComfyUIInstaller::installComfyUIBaseThread(InstallConfig config) {
         (fs::path(config.installDir) / "temp").string() : config.tempDir;
     createDirectories(tempDir);
 
-    // Check and install prerequisites (7-Zip, Git)
-    if (!checkPrerequisites()) {
+    // Check and install prerequisites (7-Zip, Git) - only if portable component is missing
+    bool needsPortable = false;
+    for (const auto& comp : missingComponents) {
+        if (comp.id == "comfyui_portable") {
+            needsPortable = true;
+            break;
+        }
+    }
+
+    if (needsPortable && !checkPrerequisites()) {
         prog.state = InstallProgress::State::CHECKING;
         prog.status = "Installing prerequisites...";
         updateProgress(prog);
@@ -739,15 +738,29 @@ void ComfyUIInstaller::installComfyUIBaseThread(InstallConfig config) {
         }
     }
 
-    // Get file list
-    auto files = getComfyUIBaseFiles();
-    prog.filesTotal = static_cast<int>(files.size());
-    prog.filesCompleted = 0;
-
     auto startTime = std::chrono::steady_clock::now();
 
-    // Download ComfyUI portable
-    for (const auto& file : files) {
+    std::string nodesDir = (fs::path(config.installDir) / "ComfyUI_windows_portable" / "ComfyUI" / "custom_nodes").string();
+
+    // Count total files and nodes to install
+    prog.filesTotal = 0;
+    for (const auto& comp : missingComponents) {
+        prog.filesTotal += static_cast<int>(comp.files.size());
+        prog.filesTotal += static_cast<int>(comp.customNodes.size());
+    }
+    prog.filesCompleted = 0;
+
+    // Calculate total download size for missing components
+    int64_t totalBytes = 0;
+    int64_t downloadedBytes = 0;
+    for (const auto& comp : missingComponents) {
+        for (const auto& f : comp.files) {
+            totalBytes += f.expectedSize;
+        }
+    }
+
+    // Install each missing component
+    for (const auto& component : missingComponents) {
         if (shouldCancel.load()) {
             prog.state = InstallProgress::State::CANCELLED;
             prog.status = "Installation cancelled";
@@ -756,71 +769,117 @@ void ComfyUIInstaller::installComfyUIBaseThread(InstallConfig config) {
             return;
         }
 
-        prog.state = InstallProgress::State::DOWNLOADING;
-        prog.currentFile = file.description;
-        prog.status = "Downloading " + file.description;
+        prog.status = "Installing " + component.name + "...";
         updateProgress(prog);
 
-        std::string localPath = (fs::path(tempDir) / fs::path(file.localPath).filename()).string();
+        // Download files for this component
+        for (const auto& file : component.files) {
+            if (shouldCancel.load()) break;
 
-        if (!downloadFileWithResume(file.url, localPath, file.expectedSize)) {
-            if (file.required) {
-                prog.state = InstallProgress::State::FAILED;
-                prog.errorMessage = "Failed to download " + file.description + ": " + getLastError();
-                prog.status = "FAILED: " + prog.errorMessage;
-                updateProgress(prog);
-                if (!runningInstallAll.load()) installing.store(false);
-                return;
+            prog.state = InstallProgress::State::DOWNLOADING;
+            prog.currentFile = file.description;
+            prog.status = "Downloading " + file.description;
+            if (file.expectedSize > 0) {
+                prog.status += " (" + formatSize(file.expectedSize) + ")";
             }
-        }
-
-        prog.filesCompleted++;
-
-        // Extract 7z archive
-        if (file.localPath.find(".7z") != std::string::npos) {
-            prog.state = InstallProgress::State::EXTRACTING;
-            prog.status = "Extracting " + file.description;
+            prog.percentComplete = (totalBytes > 0) ?
+                (static_cast<float>(downloadedBytes) / totalBytes * 100.0f) : 0.0f;
             updateProgress(prog);
 
-            if (!extract7z(localPath, config.installDir)) {
-                prog.state = InstallProgress::State::FAILED;
-                prog.errorMessage = "Failed to extract " + file.description + ": " + getLastError();
-                prog.status = "FAILED: " + prog.errorMessage;
-                updateProgress(prog);
-                if (!runningInstallAll.load()) installing.store(false);
-                return;
+            std::string localPath = (fs::path(tempDir) / fs::path(file.localPath).filename()).string();
+
+            if (!downloadFileWithResume(file.url, localPath, file.expectedSize)) {
+                if (file.required) {
+                    prog.state = InstallProgress::State::FAILED;
+                    prog.errorMessage = "Failed to download " + file.description + ": " + getLastError();
+                    prog.status = "FAILED: " + prog.errorMessage;
+                    updateProgress(prog);
+                    if (!runningInstallAll.load()) installing.store(false);
+                    return;
+                }
             }
+
+            downloadedBytes += file.expectedSize;
+            prog.filesCompleted++;
+
+            // Extract 7z archive (special case for ComfyUI portable)
+            if (file.localPath.find(".7z") != std::string::npos) {
+                prog.state = InstallProgress::State::EXTRACTING;
+                prog.status = "Extracting " + file.description;
+                updateProgress(prog);
+
+                if (!extract7z(localPath, config.installDir)) {
+                    prog.state = InstallProgress::State::FAILED;
+                    prog.errorMessage = "Failed to extract " + file.description + ": " + getLastError();
+                    prog.status = "FAILED: " + prog.errorMessage;
+                    updateProgress(prog);
+                    if (!runningInstallAll.load()) installing.store(false);
+                    return;
+                }
+            }
+        }
+
+        // Clone custom nodes for this component
+        createDirectories(nodesDir);
+        for (const auto& nodeUrl : component.customNodes) {
+            if (shouldCancel.load()) break;
+
+            // Extract repo name from URL
+            std::string repoName = nodeUrl;
+            size_t lastSlash = repoName.rfind('/');
+            if (lastSlash != std::string::npos) {
+                repoName = repoName.substr(lastSlash + 1);
+            }
+            if (repoName.size() > 4 && repoName.substr(repoName.size() - 4) == ".git") {
+                repoName = repoName.substr(0, repoName.size() - 4);
+            }
+
+            prog.state = InstallProgress::State::INSTALLING_NODES;
+            prog.status = "Installing node: " + repoName + "...";
+            updateProgress(prog);
+
+            std::string targetDir = (fs::path(nodesDir) / repoName).string();
+            if (!fs::exists(targetDir)) {
+                cloneRepository(nodeUrl, targetDir);
+            }
+
+            prog.filesCompleted++;
         }
     }
 
-    // Install essential custom nodes
-    prog.state = InstallProgress::State::INSTALLING_NODES;
-    prog.status = "Installing ComfyUI Manager...";
+    // Install Python dependencies for VideoHelperSuite (cv2, imageio-ffmpeg)
+    prog.status = "Installing video dependencies...";
     updateProgress(prog);
 
-    std::string nodesDir = (fs::path(config.installDir) / "ComfyUI_windows_portable" / "ComfyUI" / "custom_nodes").string();
-    createDirectories(nodesDir);
+    std::string pythonExe = config.installDir + "\\ComfyUI_windows_portable\\python_embeded\\python.exe";
+    if (fs::exists(pythonExe)) {
+        std::string pipCommand = "\"" + pythonExe + "\" -m pip install opencv-python imageio-ffmpeg av numexpr pandas";
 
-    if (!cloneRepository(NODE_COMFYUI_MANAGER, (fs::path(nodesDir) / "ComfyUI-Manager").string())) {
-        // Non-fatal, continue
-    }
+#ifdef _WIN32
+        STARTUPINFOA si = { sizeof(si) };
+        PROCESS_INFORMATION pi;
+        si.dwFlags = STARTF_USESHOWWINDOW;
+        si.wShowWindow = SW_HIDE;
 
-    if (!cloneRepository(NODE_VIDEO_HELPER_SUITE, (fs::path(nodesDir) / "ComfyUI-VideoHelperSuite").string())) {
-        // Non-fatal, continue
+        char cmdLine[4096];
+        strncpy(cmdLine, pipCommand.c_str(), sizeof(cmdLine) - 1);
+        cmdLine[sizeof(cmdLine) - 1] = '\0';
+
+        if (CreateProcessA(NULL, cmdLine, NULL, NULL, FALSE,
+                          CREATE_NO_WINDOW, NULL, NULL, &si, &pi)) {
+            WaitForSingleObject(pi.hProcess, 300000);
+            CloseHandle(pi.hProcess);
+            CloseHandle(pi.hThread);
+        }
+#else
+        system(pipCommand.c_str());
+#endif
     }
 
     // Verification
     prog.state = InstallProgress::State::VERIFYING;
     prog.status = "Verifying installation...";
     updateProgress(prog);
-
-    if (!isComfyUIInstalled(config.installDir)) {
-        prog.state = InstallProgress::State::FAILED;
-        prog.errorMessage = "Installation verification failed";
-        updateProgress(prog);
-        if (!runningInstallAll.load()) installing.store(false);
-        return;
-    }
 
     // Cleanup temp files
     if (config.cleanupOnFailure) {
@@ -845,8 +904,12 @@ void ComfyUIInstaller::installSDAnimateDiffThread(InstallConfig config) {
     prog.status = "Checking existing installation...";
     updateProgress(prog);
 
-    // Check if already installed
-    if (isSDAnimateDiffInstalled(config.installDir)) {
+    // Use component-based approach to find what's missing
+    auto allComponents = getSDComponents();
+    auto missingComponents = getMissingComponents(allComponents, config.installDir);
+
+    // Check if everything is already installed
+    if (missingComponents.empty()) {
         prog.state = InstallProgress::State::COMPLETE;
         prog.status = "SD + AnimateDiff already installed";
         prog.percentComplete = 100.0f;
@@ -855,7 +918,8 @@ void ComfyUIInstaller::installSDAnimateDiffThread(InstallConfig config) {
         return;
     }
 
-    prog.status = "Preparing SD + AnimateDiff installation...";
+    // Log what's missing
+    prog.status = "Installing " + std::to_string(missingComponents.size()) + " missing component(s)...";
     updateProgress(prog);
 
     auto startTime = std::chrono::steady_clock::now();
@@ -869,17 +933,27 @@ void ComfyUIInstaller::installSDAnimateDiffThread(InstallConfig config) {
     createDirectories((modelsPath / "ipadapter").string());
     createDirectories((modelsPath / "clip_vision").string());
 
-    // Get file list
-    auto files = getSDAnimateDiffFiles();
-    prog.filesTotal = static_cast<int>(files.size());
+    std::string nodesDir = (fs::path(config.installDir) / "ComfyUI_windows_portable" / "ComfyUI" / "custom_nodes").string();
+
+    // Count total files and nodes to install
+    prog.filesTotal = 0;
+    for (const auto& comp : missingComponents) {
+        prog.filesTotal += static_cast<int>(comp.files.size());
+        prog.filesTotal += static_cast<int>(comp.customNodes.size());
+    }
     prog.filesCompleted = 0;
 
+    // Calculate total download size for missing components
     int64_t totalBytes = 0;
     int64_t downloadedBytes = 0;
-    for (const auto& f : files) totalBytes += f.expectedSize;
+    for (const auto& comp : missingComponents) {
+        for (const auto& f : comp.files) {
+            totalBytes += f.expectedSize;
+        }
+    }
 
-    // Download files
-    for (const auto& file : files) {
+    // Install each missing component
+    for (const auto& component : missingComponents) {
         if (shouldCancel.load()) {
             prog.state = InstallProgress::State::CANCELLED;
             prog.status = "Installation cancelled";
@@ -888,56 +962,69 @@ void ComfyUIInstaller::installSDAnimateDiffThread(InstallConfig config) {
             return;
         }
 
-        prog.state = InstallProgress::State::DOWNLOADING;
-        prog.currentFile = file.description;
-        prog.status = "Downloading " + file.description;
-        prog.percentComplete = (totalBytes > 0) ?
-            (static_cast<float>(downloadedBytes) / totalBytes * 100.0f) : 0.0f;
+        prog.status = "Installing " + component.name + "...";
         updateProgress(prog);
 
-        std::string localPath = (modelsPath / file.localPath).string();
+        // Download files for this component
+        for (const auto& file : component.files) {
+            if (shouldCancel.load()) break;
 
-        if (!downloadFileWithResume(file.url, localPath, file.expectedSize)) {
-            if (file.required) {
-                prog.state = InstallProgress::State::FAILED;
-                prog.errorMessage = "Failed to download " + file.description + ": " + getLastError();
-                prog.status = "FAILED: " + prog.errorMessage;
-                updateProgress(prog);
-                if (!runningInstallAll.load()) installing.store(false);
-                return;
+            prog.state = InstallProgress::State::DOWNLOADING;
+            prog.currentFile = file.description;
+            prog.status = "Downloading " + file.description;
+            if (file.expectedSize > 0) {
+                prog.status += " (" + formatSize(file.expectedSize) + ")";
             }
+            prog.percentComplete = (totalBytes > 0) ?
+                (static_cast<float>(downloadedBytes) / totalBytes * 100.0f) : 0.0f;
+            updateProgress(prog);
+
+            std::string localPath = (modelsPath / file.localPath).string();
+
+            // Create parent directory
+            fs::path parentDir = fs::path(localPath).parent_path();
+            createDirectories(parentDir.string());
+
+            if (!downloadFileWithResume(file.url, localPath, file.expectedSize)) {
+                if (file.required) {
+                    prog.state = InstallProgress::State::FAILED;
+                    prog.errorMessage = "Failed to download " + file.description + ": " + getLastError();
+                    prog.status = "FAILED: " + prog.errorMessage;
+                    updateProgress(prog);
+                    if (!runningInstallAll.load()) installing.store(false);
+                    return;
+                }
+            }
+
+            downloadedBytes += file.expectedSize;
+            prog.filesCompleted++;
         }
 
-        downloadedBytes += file.expectedSize;
-        prog.filesCompleted++;
-    }
+        // Clone custom nodes for this component
+        for (const auto& nodeUrl : component.customNodes) {
+            if (shouldCancel.load()) break;
 
-    // Install custom nodes
-    prog.state = InstallProgress::State::INSTALLING_NODES;
-    prog.status = "Installing AnimateDiff nodes...";
-    updateProgress(prog);
+            // Extract repo name from URL
+            std::string repoName = nodeUrl;
+            size_t lastSlash = repoName.rfind('/');
+            if (lastSlash != std::string::npos) {
+                repoName = repoName.substr(lastSlash + 1);
+            }
+            if (repoName.size() > 4 && repoName.substr(repoName.size() - 4) == ".git") {
+                repoName = repoName.substr(0, repoName.size() - 4);
+            }
 
-    std::string nodesDir = (fs::path(config.installDir) / "ComfyUI_windows_portable" / "ComfyUI" / "custom_nodes").string();
+            prog.state = InstallProgress::State::INSTALLING_NODES;
+            prog.status = "Installing node: " + repoName + "...";
+            updateProgress(prog);
 
-    auto customNodes = getSDCustomNodes();
-    for (const auto& nodeUrl : customNodes) {
-        if (shouldCancel.load()) break;
+            std::string targetDir = (fs::path(nodesDir) / repoName).string();
+            if (!fs::exists(targetDir)) {
+                cloneRepository(nodeUrl, targetDir);
+            }
 
-        // Extract repo name from URL
-        std::string repoName = fs::path(nodeUrl).stem().string();
-        if (repoName.empty()) continue;
-
-        // Remove .git extension if present
-        if (repoName.length() > 4 && repoName.substr(repoName.length() - 4) == ".git") {
-            repoName = repoName.substr(0, repoName.length() - 4);
+            prog.filesCompleted++;
         }
-
-        std::string targetDir = (fs::path(nodesDir) / repoName).string();
-
-        prog.status = "Installing " + repoName + "...";
-        updateProgress(prog);
-
-        cloneRepository(nodeUrl, targetDir);
     }
 
     // Verification
@@ -962,8 +1049,12 @@ void ComfyUIInstaller::installHunyuanVideoThread(InstallConfig config) {
     prog.status = "Checking existing installation...";
     updateProgress(prog);
 
-    // Check if already installed
-    if (isHunyuanVideoInstalled(config.installDir)) {
+    // Use component-based approach to find what's missing
+    auto allComponents = getHunyuanComponents();
+    auto missingComponents = getMissingComponents(allComponents, config.installDir);
+
+    // Check if everything is already installed
+    if (missingComponents.empty()) {
         prog.state = InstallProgress::State::COMPLETE;
         prog.status = "HunyuanVideo already installed";
         prog.percentComplete = 100.0f;
@@ -972,28 +1063,41 @@ void ComfyUIInstaller::installHunyuanVideoThread(InstallConfig config) {
         return;
     }
 
-    prog.status = "Preparing HunyuanVideo installation...";
+    // Log what's missing
+    prog.status = "Installing " + std::to_string(missingComponents.size()) + " missing component(s)...";
     updateProgress(prog);
 
     auto startTime = std::chrono::steady_clock::now();
 
     // Create model directories (portable version path structure)
     fs::path modelsPath = fs::path(config.installDir) / "ComfyUI_windows_portable" / "ComfyUI" / "models";
-    createDirectories((modelsPath / "diffusion_models").string());
+    createDirectories((modelsPath / "unet").string());
     createDirectories((modelsPath / "vae").string());
     createDirectories((modelsPath / "text_encoders").string());
+    createDirectories((modelsPath / "clip_vision").string());
+    createDirectories((modelsPath / "LLM" / "Florence-2-large").string());
 
-    // Get file list
-    auto files = getHunyuanVideoFiles();
-    prog.filesTotal = static_cast<int>(files.size());
+    std::string nodesDir = (fs::path(config.installDir) / "ComfyUI_windows_portable" / "ComfyUI" / "custom_nodes").string();
+
+    // Count total files and nodes to install
+    prog.filesTotal = 0;
+    for (const auto& comp : missingComponents) {
+        prog.filesTotal += static_cast<int>(comp.files.size());
+        prog.filesTotal += static_cast<int>(comp.customNodes.size());
+    }
     prog.filesCompleted = 0;
 
+    // Calculate total download size for missing components
     int64_t totalBytes = 0;
     int64_t downloadedBytes = 0;
-    for (const auto& f : files) totalBytes += f.expectedSize;
+    for (const auto& comp : missingComponents) {
+        for (const auto& f : comp.files) {
+            totalBytes += f.expectedSize;
+        }
+    }
 
-    // Download files
-    for (const auto& file : files) {
+    // Install each missing component
+    for (const auto& component : missingComponents) {
         if (shouldCancel.load()) {
             prog.state = InstallProgress::State::CANCELLED;
             prog.status = "Installation cancelled";
@@ -1002,50 +1106,161 @@ void ComfyUIInstaller::installHunyuanVideoThread(InstallConfig config) {
             return;
         }
 
-        prog.state = InstallProgress::State::DOWNLOADING;
-        prog.currentFile = file.description;
-        prog.status = "Downloading " + file.description + " (" + formatSize(file.expectedSize) + ")";
-        prog.percentComplete = (totalBytes > 0) ?
-            (static_cast<float>(downloadedBytes) / totalBytes * 100.0f) : 0.0f;
+        prog.status = "Installing " + component.name + "...";
         updateProgress(prog);
 
-        std::string localPath = (modelsPath / file.localPath).string();
+        // Download files for this component
+        for (const auto& file : component.files) {
+            if (shouldCancel.load()) break;
 
-        if (!downloadFileWithResume(file.url, localPath, file.expectedSize)) {
-            if (file.required) {
-                prog.state = InstallProgress::State::FAILED;
-                prog.errorMessage = "Failed to download " + file.description + ": " + getLastError();
-                prog.status = "FAILED: " + prog.errorMessage;
-                updateProgress(prog);
-                if (!runningInstallAll.load()) installing.store(false);
-                return;
+            prog.state = InstallProgress::State::DOWNLOADING;
+            prog.currentFile = file.description;
+            prog.status = "Downloading " + file.description;
+            if (file.expectedSize > 0) {
+                prog.status += " (" + formatSize(file.expectedSize) + ")";
             }
+            prog.percentComplete = (totalBytes > 0) ?
+                (static_cast<float>(downloadedBytes) / totalBytes * 100.0f) : 0.0f;
+            updateProgress(prog);
+
+            std::string localPath = (modelsPath / file.localPath).string();
+
+            // Create parent directory
+            fs::path parentDir = fs::path(localPath).parent_path();
+            createDirectories(parentDir.string());
+
+            if (!downloadFileWithResume(file.url, localPath, file.expectedSize)) {
+                if (file.required) {
+                    prog.state = InstallProgress::State::FAILED;
+                    prog.errorMessage = "Failed to download " + file.description + ": " + getLastError();
+                    prog.status = "FAILED: " + prog.errorMessage;
+                    updateProgress(prog);
+                    if (!runningInstallAll.load()) installing.store(false);
+                    return;
+                }
+            }
+
+            downloadedBytes += file.expectedSize;
+            prog.filesCompleted++;
         }
 
-        downloadedBytes += file.expectedSize;
-        prog.filesCompleted++;
+        // Clone custom nodes for this component
+        for (const auto& nodeUrl : component.customNodes) {
+            if (shouldCancel.load()) break;
+
+            // Extract repo name from URL
+            std::string repoName = nodeUrl;
+            size_t lastSlash = repoName.rfind('/');
+            if (lastSlash != std::string::npos) {
+                repoName = repoName.substr(lastSlash + 1);
+            }
+            if (repoName.size() > 4 && repoName.substr(repoName.size() - 4) == ".git") {
+                repoName = repoName.substr(0, repoName.size() - 4);
+            }
+
+            prog.state = InstallProgress::State::INSTALLING_NODES;
+            prog.status = "Installing node: " + repoName + "...";
+            updateProgress(prog);
+
+            std::string targetDir = (fs::path(nodesDir) / repoName).string();
+            if (!fs::exists(targetDir)) {
+                cloneRepository(nodeUrl, targetDir);
+            }
+
+            prog.filesCompleted++;
+        }
     }
 
-    // Install custom nodes
-    prog.state = InstallProgress::State::INSTALLING_NODES;
-    prog.status = "Installing HunyuanVideo nodes...";
+    // Install Python dependencies for HunyuanVideoWrapper and Florence-2
+    prog.status = "Installing Python dependencies...";
     updateProgress(prog);
 
-    std::string nodesDir = (fs::path(config.installDir) / "ComfyUI_windows_portable" / "ComfyUI" / "custom_nodes").string();
+    std::string pythonExe = config.installDir + "\\ComfyUI_windows_portable\\python_embeded\\python.exe";
 
-    auto customNodes = getHunyuanCustomNodes();
-    for (const auto& nodeUrl : customNodes) {
-        if (shouldCancel.load()) break;
+    if (fs::exists(pythonExe)) {
+        // HunyuanVideoWrapper requirements
+        std::string wrapperDir = nodesDir + "\\ComfyUI-HunyuanVideoWrapper";
+        std::string requirementsFile = wrapperDir + "\\requirements.txt";
 
-        std::string repoName = fs::path(nodeUrl).stem().string();
-        if (repoName.empty()) continue;
+        if (fs::exists(requirementsFile)) {
+            std::string pipCommand = "\"" + pythonExe + "\" -m pip install -r \"" + requirementsFile + "\"";
 
-        std::string targetDir = (fs::path(nodesDir) / repoName).string();
+#ifdef _WIN32
+            STARTUPINFOA si = { sizeof(si) };
+            PROCESS_INFORMATION pi;
+            si.dwFlags = STARTF_USESHOWWINDOW;
+            si.wShowWindow = SW_HIDE;
 
-        prog.status = "Installing " + repoName + "...";
+            char cmdLine[4096];
+            strncpy(cmdLine, pipCommand.c_str(), sizeof(cmdLine) - 1);
+            cmdLine[sizeof(cmdLine) - 1] = '\0';
+
+            if (CreateProcessA(NULL, cmdLine, NULL, NULL, FALSE,
+                              CREATE_NO_WINDOW, NULL, NULL, &si, &pi)) {
+                WaitForSingleObject(pi.hProcess, 300000);
+                CloseHandle(pi.hProcess);
+                CloseHandle(pi.hThread);
+            }
+#else
+            system(pipCommand.c_str());
+#endif
+        }
+
+        // Florence-2 dependencies (matplotlib, timm, einops, transformers)
+        prog.status = "Installing Florence-2 dependencies...";
         updateProgress(prog);
 
-        cloneRepository(nodeUrl, targetDir);
+        std::string florence2Deps = "\"" + pythonExe + "\" -m pip install matplotlib timm einops transformers";
+
+#ifdef _WIN32
+        {
+            STARTUPINFOA si = { sizeof(si) };
+            PROCESS_INFORMATION pi;
+            si.dwFlags = STARTF_USESHOWWINDOW;
+            si.wShowWindow = SW_HIDE;
+
+            char cmdLine[4096];
+            strncpy(cmdLine, florence2Deps.c_str(), sizeof(cmdLine) - 1);
+            cmdLine[sizeof(cmdLine) - 1] = '\0';
+
+            if (CreateProcessA(NULL, cmdLine, NULL, NULL, FALSE,
+                              CREATE_NO_WINDOW, NULL, NULL, &si, &pi)) {
+                WaitForSingleObject(pi.hProcess, 300000);
+                CloseHandle(pi.hProcess);
+                CloseHandle(pi.hThread);
+            }
+        }
+#else
+        system(florence2Deps.c_str());
+#endif
+
+        // GGUF dependencies (for loading GGUF quantized models)
+        prog.status = "Installing GGUF dependencies...";
+        updateProgress(prog);
+
+        std::string ggufDeps = "\"" + pythonExe + "\" -m pip install gguf sentencepiece protobuf";
+
+#ifdef _WIN32
+        {
+            STARTUPINFOA si = { sizeof(si) };
+            PROCESS_INFORMATION pi;
+            si.dwFlags = STARTF_USESHOWWINDOW;
+            si.wShowWindow = SW_HIDE;
+
+            char cmdLine[4096];
+            strncpy(cmdLine, ggufDeps.c_str(), sizeof(cmdLine) - 1);
+            cmdLine[sizeof(cmdLine) - 1] = '\0';
+
+            if (CreateProcessA(NULL, cmdLine, NULL, NULL, FALSE,
+                              CREATE_NO_WINDOW, NULL, NULL, &si, &pi)) {
+                WaitForSingleObject(pi.hProcess, 300000);
+                CloseHandle(pi.hProcess);
+                CloseHandle(pi.hThread);
+            }
+        }
+#else
+        system(ggufDeps.c_str());
+#endif
     }
 
     // Verification
@@ -1876,48 +2091,91 @@ std::vector<DownloadFile> ComfyUIInstaller::getSDAnimateDiffFiles() {
 
 std::vector<DownloadFile> ComfyUIInstaller::getHunyuanVideoFiles() {
     return {
-        // HunyuanVideo T2V Q4 (text-to-video)
+        // HunyuanVideo 1.5 T2V GGUF (VRAM-friendly quantized)
+        // Note: UnetLoaderGGUF looks in models/unet/ folder
         {
             HUNYUAN_T2V_Q4_URL,
-            "diffusion_models/hunyuan-video-t2v-720p-Q4_0.gguf",
-            "HunyuanVideo T2V (Q4)",
+            "unet/hunyuanvideo1.5_720p_t2v-Q4_K_M.gguf",
+            "HunyuanVideo 1.5 T2V (Q4 GGUF)",
             HUNYUAN_T2V_Q4_SIZE,
             "",
             true
         },
-        // HunyuanVideo I2V Q4 (image-to-video)
+        // HunyuanVideo 1.5 I2V GGUF (for image-to-video)
         {
             HUNYUAN_I2V_Q4_URL,
-            "diffusion_models/hunyuan-video-i2v-720p-Q4_K_M.gguf",
-            "HunyuanVideo I2V (Q4)",
+            "unet/hunyuanvideo1.5_720p_i2v-Q4_K_M.gguf",
+            "HunyuanVideo 1.5 I2V (Q4 GGUF)",
             HUNYUAN_I2V_Q4_SIZE,
             "",
-            false  // Optional - for image-to-video
+            true
         },
-        // VAE
+        // VAE (1.5 version)
         {
             HUNYUAN_VAE_URL,
-            "vae/hunyuan_video_vae_bf16.safetensors",
-            "HunyuanVideo VAE",
+            "vae/hunyuanvideo15_vae_fp16.safetensors",
+            "HunyuanVideo 1.5 VAE",
             HUNYUAN_VAE_SIZE,
             "",
             true
         },
-        // CLIP text encoder
+        // Qwen 2.5 VL text encoder (for 1.5)
         {
-            HUNYUAN_CLIP_URL,
-            "text_encoders/clip_l.safetensors",
-            "CLIP-L Text Encoder",
-            HUNYUAN_CLIP_SIZE,
+            HUNYUAN_QWEN_URL,
+            "text_encoders/qwen_2.5_vl_7b_fp8_scaled.safetensors",
+            "Qwen 2.5 VL Text Encoder (FP8)",
+            HUNYUAN_QWEN_SIZE,
             "",
             true
         },
-        // LLaVA text encoder
+        // ByT5 text encoder (for 1.5)
         {
-            HUNYUAN_LLAVA_URL,
-            "text_encoders/llava_llama3_fp8_scaled.safetensors",
-            "LLaVA-LLaMA3 Text Encoder (FP8)",
-            HUNYUAN_LLAVA_SIZE,
+            HUNYUAN_BYT5_URL,
+            "text_encoders/byt5_small_glyphxl_fp16.safetensors",
+            "ByT5 Small GlyphXL Text Encoder",
+            HUNYUAN_BYT5_SIZE,
+            "",
+            true
+        },
+        // SigCLIP Vision for I2V (1.5 version)
+        {
+            HUNYUAN_CLIP_VISION_URL,
+            "clip_vision/sigclip_vision_patch14_384.safetensors",
+            "SigCLIP Vision Encoder",
+            HUNYUAN_CLIP_VISION_SIZE,
+            "",
+            true
+        },
+        // Florence-2 Large for detailed image captioning (I2V)
+        {
+            FLORENCE2_LARGE_URL,
+            "LLM/Florence-2-large/model.safetensors",
+            "Florence-2 Large Model",
+            FLORENCE2_LARGE_SIZE,
+            "",
+            true
+        },
+        {
+            FLORENCE2_CONFIG_URL,
+            "LLM/Florence-2-large/config.json",
+            "Florence-2 Config",
+            0,
+            "",
+            true
+        },
+        {
+            FLORENCE2_TOKENIZER_URL,
+            "LLM/Florence-2-large/tokenizer.json",
+            "Florence-2 Tokenizer",
+            0,
+            "",
+            true
+        },
+        {
+            FLORENCE2_PROCESSOR_URL,
+            "LLM/Florence-2-large/preprocessor_config.json",
+            "Florence-2 Preprocessor Config",
+            0,
             "",
             true
         }
@@ -1929,14 +2187,618 @@ std::vector<std::string> ComfyUIInstaller::getSDCustomNodes() {
         NODE_ANIMATEDIFF_EVOLVED,
         NODE_VIDEO_HELPER_SUITE,
         NODE_ADVANCED_CONTROLNET,
-        NODE_IPADAPTER_PLUS
+        NODE_IPADAPTER_PLUS,
+        NODE_FIZZNODES,
+        NODE_FRAME_INTERPOLATION     // For RIFE frame interpolation
     };
 }
 
 std::vector<std::string> ComfyUIInstaller::getHunyuanCustomNodes() {
     return {
-        NODE_COMFYUI_GGUF,
-        NODE_HUNYUAN_WRAPPER,
-        NODE_VIDEO_HELPER_SUITE  // Also needed for video output
+        NODE_COMFYUI_GGUF,           // For GGUF model loading
+        NODE_VIDEO_HELPER_SUITE,     // For video output
+        NODE_FRAME_INTERPOLATION,    // For RIFE frame interpolation
+        NODE_FLORENCE2               // For detailed image captioning (I2V)
     };
+}
+
+// ============================================================================
+// Component Management
+// ============================================================================
+
+std::vector<ModelComponent> ComfyUIInstaller::getHunyuanComponents() {
+    return {
+        // HunyuanVideo 1.5 T2V (Text-to-Video)
+        {
+            "hunyuan_t2v",
+            "HunyuanVideo 1.5 T2V",
+            "Text-to-video generation model (GGUF Q4)",
+            {
+                {
+                    HUNYUAN_T2V_Q4_URL,
+                    "unet/hunyuanvideo1.5_720p_t2v-Q4_K_M.gguf",
+                    "HunyuanVideo 1.5 T2V (Q4 GGUF)",
+                    HUNYUAN_T2V_Q4_SIZE, "", true
+                }
+            },
+            {},  // No custom nodes specific to this component
+            {"unet/hunyuanvideo1.5_720p_t2v-Q4_K_M.gguf"},
+            true, true
+        },
+        // HunyuanVideo 1.5 I2V (Image-to-Video)
+        {
+            "hunyuan_i2v",
+            "HunyuanVideo 1.5 I2V",
+            "Image-to-video generation model (GGUF Q4)",
+            {
+                {
+                    HUNYUAN_I2V_Q4_URL,
+                    "unet/hunyuanvideo1.5_720p_i2v-Q4_K_M.gguf",
+                    "HunyuanVideo 1.5 I2V (Q4 GGUF)",
+                    HUNYUAN_I2V_Q4_SIZE, "", true
+                }
+            },
+            {},
+            {"unet/hunyuanvideo1.5_720p_i2v-Q4_K_M.gguf"},
+            true, true
+        },
+        // HunyuanVideo 1.5 VAE
+        {
+            "hunyuan_vae",
+            "HunyuanVideo 1.5 VAE",
+            "Video autoencoder for encoding/decoding",
+            {
+                {
+                    HUNYUAN_VAE_URL,
+                    "vae/hunyuanvideo15_vae_fp16.safetensors",
+                    "HunyuanVideo 1.5 VAE",
+                    HUNYUAN_VAE_SIZE, "", true
+                }
+            },
+            {},
+            {"vae/hunyuanvideo15_vae_fp16.safetensors"},
+            true, true
+        },
+        // Text Encoders (Qwen 2.5 + ByT5 for 1.5)
+        {
+            "hunyuan_text_encoders",
+            "HunyuanVideo 1.5 Text Encoders",
+            "Qwen 2.5 VL and ByT5 text encoders for prompt understanding",
+            {
+                {
+                    HUNYUAN_QWEN_URL,
+                    "text_encoders/qwen_2.5_vl_7b_fp8_scaled.safetensors",
+                    "Qwen 2.5 VL Text Encoder (FP8)",
+                    HUNYUAN_QWEN_SIZE, "", true
+                },
+                {
+                    HUNYUAN_BYT5_URL,
+                    "text_encoders/byt5_small_glyphxl_fp16.safetensors",
+                    "ByT5 Small GlyphXL Text Encoder",
+                    HUNYUAN_BYT5_SIZE, "", true
+                }
+            },
+            {},
+            {"text_encoders/qwen_2.5_vl_7b_fp8_scaled.safetensors", "text_encoders/byt5_small_glyphxl_fp16.safetensors"},
+            true, true
+        },
+        // SigCLIP Vision for I2V (1.5 version)
+        {
+            "hunyuan_clip_vision",
+            "HunyuanVideo 1.5 CLIP Vision",
+            "SigCLIP vision encoder for image-to-video conditioning",
+            {
+                {
+                    HUNYUAN_CLIP_VISION_URL,
+                    "clip_vision/sigclip_vision_patch14_384.safetensors",
+                    "SigCLIP Vision Encoder",
+                    HUNYUAN_CLIP_VISION_SIZE, "", true
+                }
+            },
+            {},
+            {"clip_vision/sigclip_vision_patch14_384.safetensors"},
+            true, true
+        },
+        // Florence-2 for detailed image captioning
+        {
+            "florence2",
+            "Florence-2 Image Captioning",
+            "Generates detailed descriptions of input images for better I2V results",
+            {
+                // Model weights
+                {
+                    FLORENCE2_LARGE_URL,
+                    "LLM/Florence-2-large/model.safetensors",
+                    "Florence-2 Large Model",
+                    FLORENCE2_LARGE_SIZE, "", true
+                },
+                // Config files
+                {
+                    FLORENCE2_CONFIG_URL,
+                    "LLM/Florence-2-large/config.json",
+                    "Florence-2 Config",
+                    0, "", true
+                },
+                {
+                    FLORENCE2_GENERATION_CONFIG_URL,
+                    "LLM/Florence-2-large/generation_config.json",
+                    "Florence-2 Generation Config",
+                    0, "", true
+                },
+                // Tokenizer files
+                {
+                    FLORENCE2_TOKENIZER_URL,
+                    "LLM/Florence-2-large/tokenizer.json",
+                    "Florence-2 Tokenizer",
+                    0, "", true
+                },
+                {
+                    FLORENCE2_TOKENIZER_CONFIG_URL,
+                    "LLM/Florence-2-large/tokenizer_config.json",
+                    "Florence-2 Tokenizer Config",
+                    0, "", true
+                },
+                {
+                    FLORENCE2_VOCAB_URL,
+                    "LLM/Florence-2-large/vocab.json",
+                    "Florence-2 Vocab",
+                    0, "", true
+                },
+                // Preprocessor
+                {
+                    FLORENCE2_PROCESSOR_URL,
+                    "LLM/Florence-2-large/preprocessor_config.json",
+                    "Florence-2 Preprocessor Config",
+                    0, "", true
+                },
+                // Python code files (required for custom architecture)
+                {
+                    FLORENCE2_MODELING_URL,
+                    "LLM/Florence-2-large/modeling_florence2.py",
+                    "Florence-2 Modeling Code",
+                    0, "", true
+                },
+                {
+                    FLORENCE2_CONFIGURATION_URL,
+                    "LLM/Florence-2-large/configuration_florence2.py",
+                    "Florence-2 Configuration Code",
+                    0, "", true
+                },
+                {
+                    FLORENCE2_PROCESSING_URL,
+                    "LLM/Florence-2-large/processing_florence2.py",
+                    "Florence-2 Processing Code",
+                    0, "", true
+                }
+            },
+            {NODE_FLORENCE2},
+            {"LLM/Florence-2-large/processing_florence2.py"},  // Check for Python file existence
+            true, true
+        },
+        // Core custom nodes for Hunyuan
+        {
+            "hunyuan_nodes",
+            "HunyuanVideo Custom Nodes",
+            "Required ComfyUI nodes for HunyuanVideo",
+            {},
+            {NODE_COMFYUI_GGUF, NODE_VIDEO_HELPER_SUITE, NODE_FRAME_INTERPOLATION},
+            {},  // Check by node folder existence
+            true, true
+        }
+    };
+}
+
+std::vector<ModelComponent> ComfyUIInstaller::getComfyUIBaseComponents() {
+    return {
+        // ComfyUI Portable archive
+        {
+            "comfyui_portable",
+            "ComfyUI Portable",
+            "Core ComfyUI installation with Python environment",
+            {
+                {
+                    COMFYUI_PORTABLE_URL,
+                    "ComfyUI_windows_portable_nvidia.7z",
+                    "ComfyUI Portable",
+                    COMFYUI_PORTABLE_SIZE, "", true
+                }
+            },
+            {},  // No custom nodes in the archive itself
+            {},  // Check is done via directory existence
+            true, true
+        },
+        // ComfyUI Manager
+        {
+            "comfyui_manager",
+            "ComfyUI Manager",
+            "Node manager for installing additional custom nodes",
+            {},
+            {NODE_COMFYUI_MANAGER},
+            {},
+            true, true
+        },
+        // Video Helper Suite (needed for video output)
+        {
+            "video_helper_suite",
+            "Video Helper Suite",
+            "Video encoding and output nodes",
+            {},
+            {NODE_VIDEO_HELPER_SUITE},
+            {},
+            true, true
+        }
+    };
+}
+
+std::vector<ModelComponent> ComfyUIInstaller::getSDComponents() {
+    return {
+        // SD1.5 Checkpoint
+        {
+            "sd15_checkpoint",
+            "Stable Diffusion 1.5",
+            "Base SD1.5 model (FP16)",
+            {
+                {
+                    SD15_FP16_URL,
+                    "checkpoints/v1-5-pruned-emaonly-fp16.safetensors",
+                    "Stable Diffusion 1.5 (FP16)",
+                    SD15_FP16_SIZE, "", true
+                }
+            },
+            {},
+            {"checkpoints/v1-5-pruned-emaonly-fp16.safetensors"},
+            true, true
+        },
+        // AnimateDiff Motion Module
+        {
+            "animatediff_motion",
+            "AnimateDiff Motion Module",
+            "Motion module for video generation",
+            {
+                {
+                    ANIMATEDIFF_MM_V2_FP16_URL,
+                    "animatediff_models/mm_sd_v15_v2.fp16.safetensors",
+                    "AnimateDiff Motion Module v2",
+                    ANIMATEDIFF_MM_V2_SIZE, "", true
+                }
+            },
+            {},
+            {"animatediff_models/mm_sd_v15_v2.fp16.safetensors"},
+            true, true
+        },
+        // VAE
+        {
+            "sd_vae",
+            "SD VAE",
+            "Variational autoencoder for image encoding/decoding",
+            {
+                {
+                    SD_VAE_FP16_URL,
+                    "vae/vae-ft-mse-840000-ema-pruned.safetensors",
+                    "SD VAE (MSE)",
+                    SD_VAE_SIZE, "", true
+                }
+            },
+            {},
+            {"vae/vae-ft-mse-840000-ema-pruned.safetensors"},
+            true, true
+        },
+        // ControlNet Depth (optional)
+        {
+            "controlnet_depth",
+            "ControlNet Depth",
+            "Depth-based control for image generation",
+            {
+                {
+                    CONTROLNET_DEPTH_URL,
+                    "controlnet/control_v11f1p_sd15_depth.pth",
+                    "ControlNet Depth",
+                    CONTROLNET_DEPTH_SIZE, "", false
+                }
+            },
+            {},
+            {"controlnet/control_v11f1p_sd15_depth.pth"},
+            false, true  // Optional
+        },
+        // ControlNet Canny (optional)
+        {
+            "controlnet_canny",
+            "ControlNet Canny",
+            "Edge-based control for image generation",
+            {
+                {
+                    CONTROLNET_CANNY_URL,
+                    "controlnet/control_v11p_sd15_canny.pth",
+                    "ControlNet Canny",
+                    CONTROLNET_CANNY_SIZE, "", false
+                }
+            },
+            {},
+            {"controlnet/control_v11p_sd15_canny.pth"},
+            false, true  // Optional
+        },
+        // IPAdapter (optional)
+        {
+            "ipadapter",
+            "IP-Adapter Plus",
+            "Image prompt adapter for style/content transfer",
+            {
+                {
+                    IPADAPTER_PLUS_URL,
+                    "ipadapter/ip-adapter-plus_sd15.safetensors",
+                    "IP-Adapter Plus",
+                    IPADAPTER_PLUS_SIZE, "", false
+                }
+            },
+            {},
+            {"ipadapter/ip-adapter-plus_sd15.safetensors"},
+            false, true  // Optional
+        },
+        // CLIP Vision (optional, needed for IPAdapter)
+        {
+            "clip_vision_sd",
+            "CLIP Vision Encoder",
+            "Vision encoder for IP-Adapter",
+            {
+                {
+                    CLIP_VISION_URL,
+                    "clip_vision/model.safetensors",
+                    "CLIP Vision Encoder",
+                    CLIP_VISION_SIZE, "", false
+                }
+            },
+            {},
+            {"clip_vision/model.safetensors"},
+            false, true  // Optional
+        },
+        // AnimateDiff Custom Nodes
+        {
+            "animatediff_nodes",
+            "AnimateDiff Nodes",
+            "Required custom nodes for AnimateDiff",
+            {},
+            {NODE_ANIMATEDIFF_EVOLVED, NODE_VIDEO_HELPER_SUITE},
+            {},
+            true, true
+        },
+        // ControlNet Custom Nodes (optional)
+        {
+            "controlnet_nodes",
+            "ControlNet Nodes",
+            "Advanced ControlNet custom nodes",
+            {},
+            {NODE_ADVANCED_CONTROLNET},
+            {},
+            false, true  // Optional
+        },
+        // IPAdapter Custom Nodes (optional)
+        {
+            "ipadapter_nodes",
+            "IP-Adapter Nodes",
+            "IP-Adapter custom nodes",
+            {},
+            {NODE_IPADAPTER_PLUS},
+            {},
+            false, true  // Optional
+        },
+        // FizzNodes for batch prompts
+        {
+            "fizznodes",
+            "FizzNodes",
+            "Batch prompt scheduling nodes",
+            {},
+            {NODE_FIZZNODES},
+            {},
+            true, true
+        },
+        // Frame Interpolation
+        {
+            "frame_interpolation",
+            "Frame Interpolation",
+            "RIFE frame interpolation for smoother videos",
+            {},
+            {NODE_FRAME_INTERPOLATION},
+            {},
+            true, true
+        }
+    };
+}
+
+bool ComfyUIInstaller::isComponentInstalled(const ModelComponent& component,
+                                             const std::string& installDir) {
+    namespace fs = std::filesystem;
+
+    // Special case: ComfyUI portable base - check for directory structure
+    if (component.id == "comfyui_portable") {
+        fs::path portablePath = fs::path(installDir) / "ComfyUI_windows_portable";
+        return fs::exists(portablePath / "ComfyUI" / "main.py") ||
+               fs::exists(portablePath / "python_embeded") ||
+               fs::exists(portablePath / "run_nvidia_gpu.bat");
+    }
+
+    // Get the models directory
+    std::string modelsDir = installDir + "/ComfyUI_windows_portable/ComfyUI/models";
+    std::string nodesDir = installDir + "/ComfyUI_windows_portable/ComfyUI/custom_nodes";
+
+    // Check all required files
+    for (const auto& checkFile : component.checkFiles) {
+        fs::path filePath = fs::path(modelsDir) / checkFile;
+        if (!fs::exists(filePath)) {
+            return false;
+        }
+    }
+
+    // Check custom nodes (by folder name)
+    for (const auto& nodeUrl : component.customNodes) {
+        // Extract repo name from URL
+        std::string repoName = nodeUrl;
+        size_t lastSlash = repoName.rfind('/');
+        if (lastSlash != std::string::npos) {
+            repoName = repoName.substr(lastSlash + 1);
+        }
+        // Remove .git suffix
+        if (repoName.size() > 4 && repoName.substr(repoName.size() - 4) == ".git") {
+            repoName = repoName.substr(0, repoName.size() - 4);
+        }
+
+        fs::path nodePath = fs::path(nodesDir) / repoName;
+        if (!fs::exists(nodePath)) {
+            return false;
+        }
+    }
+
+    return true;
+}
+
+std::vector<ModelComponent> ComfyUIInstaller::getMissingComponents(
+    const std::vector<ModelComponent>& components,
+    const std::string& installDir) {
+
+    std::vector<ModelComponent> missing;
+
+    for (const auto& component : components) {
+        if (component.enabled && !isComponentInstalled(component, installDir)) {
+            missing.push_back(component);
+        }
+    }
+
+    return missing;
+}
+
+bool ComfyUIInstaller::installMissingComponents(const InstallConfig& config,
+                                                 const std::vector<ModelComponent>& components) {
+    if (installing.load()) {
+        setError("Installation already in progress");
+        return false;
+    }
+
+    // Check for missing components
+    auto missing = getMissingComponents(components, config.installDir);
+    if (missing.empty()) {
+        // Nothing to install
+        InstallProgress prog;
+        prog.state = InstallProgress::State::COMPLETE;
+        prog.status = "All components already installed";
+        prog.percentComplete = 100.0f;
+        updateProgress(prog);
+        return true;
+    }
+
+    currentConfig = config;
+    installing.store(true);
+    shouldCancel.store(false);
+
+    // Clean up previous thread
+    if (installThread && installThread->joinable()) {
+        installThread->join();
+    }
+
+    installThread = std::make_unique<std::thread>(
+        &ComfyUIInstaller::installMissingComponentsThread, this, config, missing);
+
+    return true;
+}
+
+void ComfyUIInstaller::installMissingComponentsThread(InstallConfig config,
+                                                       std::vector<ModelComponent> components) {
+    namespace fs = std::filesystem;
+
+    InstallProgress prog;
+    prog.state = InstallProgress::State::CHECKING;
+    prog.status = "Installing missing components...";
+    prog.filesTotal = 0;
+
+    // Count total files and nodes
+    for (const auto& comp : components) {
+        prog.filesTotal += comp.files.size();
+        prog.filesTotal += comp.customNodes.size();
+    }
+    updateProgress(prog);
+
+    std::string modelsDir = config.installDir + "/ComfyUI_windows_portable/ComfyUI/models";
+    std::string nodesDir = config.installDir + "/ComfyUI_windows_portable/ComfyUI/custom_nodes";
+
+    int filesCompleted = 0;
+
+    for (const auto& component : components) {
+        if (shouldCancel.load()) {
+            prog.state = InstallProgress::State::CANCELLED;
+            prog.status = "Installation cancelled";
+            updateProgress(prog);
+            if (!runningInstallAll.load()) installing.store(false);
+            return;
+        }
+
+        prog.status = "Installing " + component.name + "...";
+        updateProgress(prog);
+
+        // Download files
+        for (const auto& file : component.files) {
+            if (shouldCancel.load()) break;
+
+            prog.currentFile = file.description;
+            prog.status = "Downloading " + file.description;
+            updateProgress(prog);
+
+            DownloadFile dlFile = file;
+            dlFile.localPath = modelsDir + "/" + file.localPath;
+
+            // Create parent directory
+            fs::path parentDir = fs::path(dlFile.localPath).parent_path();
+            fs::create_directories(parentDir);
+
+            if (!downloadFile(dlFile)) {
+                if (file.required) {
+                    prog.state = InstallProgress::State::FAILED;
+                    prog.status = "Failed to download " + file.description;
+                    prog.errorMessage = getLastError();
+                    updateProgress(prog);
+                    if (!runningInstallAll.load()) installing.store(false);
+                    return;
+                }
+            }
+
+            filesCompleted++;
+            prog.filesCompleted = filesCompleted;
+            prog.percentComplete = (float)filesCompleted / (float)prog.filesTotal * 100.0f;
+            updateProgress(prog);
+        }
+
+        // Clone custom nodes
+        for (const auto& nodeUrl : component.customNodes) {
+            if (shouldCancel.load()) break;
+
+            // Extract repo name
+            std::string repoName = nodeUrl;
+            size_t lastSlash = repoName.rfind('/');
+            if (lastSlash != std::string::npos) {
+                repoName = repoName.substr(lastSlash + 1);
+            }
+            if (repoName.size() > 4 && repoName.substr(repoName.size() - 4) == ".git") {
+                repoName = repoName.substr(0, repoName.size() - 4);
+            }
+
+            prog.status = "Installing node: " + repoName;
+            updateProgress(prog);
+
+            std::string targetDir = nodesDir + "/" + repoName;
+            if (!fs::exists(targetDir)) {
+                if (!cloneRepository(nodeUrl, targetDir)) {
+                    std::cerr << "[ComfyUIInstaller] Warning: Failed to clone " << repoName << std::endl;
+                }
+            }
+
+            filesCompleted++;
+            prog.filesCompleted = filesCompleted;
+            prog.percentComplete = (float)filesCompleted / (float)prog.filesTotal * 100.0f;
+            updateProgress(prog);
+        }
+    }
+
+    prog.state = InstallProgress::State::COMPLETE;
+    prog.status = "All components installed successfully";
+    prog.percentComplete = 100.0f;
+    updateProgress(prog);
+
+    if (!runningInstallAll.load()) installing.store(false);
 }

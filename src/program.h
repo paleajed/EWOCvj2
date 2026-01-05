@@ -52,6 +52,7 @@
 #include "retarget.h"
 #include "UniformCache.h"
 #include "styleroom.h"
+#include "videogenroom.h"
 
 class PrefCat;
 class Menu;
@@ -97,7 +98,8 @@ typedef enum
 	EDIT_STRING = 5,
 	EDIT_NUMBER = 6,
     EDIT_FLOATPARAM = 7,
-    EDIT_TEXTPARAM = 8,
+	EDIT_TEXTPARAM = 8,
+	EDIT_STYLENAME = 9,
 } EDIT_TYPE;
 
 typedef enum
@@ -904,7 +906,8 @@ class Program {
 		std::vector<Layer*> busylayers;
 		std::vector<Layer*> mimiclayers;
 
-        bool binsscreen = false;
+		bool mixroom = false;
+		bool binsroom = false;
         bool styleroom = false;
         bool genroom = false;
 		BinElement *dragbinel = nullptr;
@@ -1309,6 +1312,7 @@ extern Program *mainprogram;
 extern Mixer *mainmix;
 extern BinsMain *binsmain;
 extern StyleRoom *mainstyleroom;
+extern VideoGenRoom *mainvideogenroom;
 extern LoopStation *loopstation;
 extern LoopStation *lp;
 extern LoopStation *lpc;
