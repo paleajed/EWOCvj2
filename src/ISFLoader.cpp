@@ -3151,21 +3151,9 @@ void ISFShaderInstance::bindTextures(int passIndex) {
             glActiveTexture(GL_TEXTURE0 + textureUnit);
             glBindTexture(GL_TEXTURE_2D, textureId);
 
-            // DEBUG: Log Emboss texture binding
-            if (parentShader_->name_.find("Emboss") != std::string::npos) {
-                std::cout << "=== EMBOSS TEXTURE BINDING ===" << std::endl;
-                std::cout << "Input[" << i << "] name: " << input.name << std::endl;
-                std::cout << "Texture ID: " << textureId << std::endl;
-                std::cout << "Texture unit: " << textureUnit << std::endl;
-            }
-
             auto it = parentShader_->inputLocations_.find(input.name);
             if (it != parentShader_->inputLocations_.end() && it->second != -1) {
                 glUniform1i(it->second, textureUnit);
-                // DEBUG: Log Emboss uniform setting
-                if (parentShader_->name_.find("Emboss") != std::string::npos) {
-                    std::cout << "Set uniform '" << input.name << "' to texture unit " << textureUnit << std::endl;
-                }
             } else {
                 // Try common input names for first texture - CRITICAL for effects like FastMosh
                 if (textureUnit == 0) {

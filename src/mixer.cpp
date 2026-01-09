@@ -569,7 +569,7 @@ void Param::handle(bool smallxpad) {
                         mainprogram->renaming = EDIT_TEXTPARAM;
                         this->oldvaluestr = this->valuestr;
                         mainmix->adapttextparam = this;
-                        mainprogram->inputtext = "";
+                        mainprogram->inputtext = this->valuestr;
                         mainprogram->cursorpos0 = mainprogram->inputtext.length();
                         SDL_StartTextInput();
                         mainprogram->leftmouse = false;
@@ -5451,10 +5451,11 @@ void Layer::get_frame(){
             if (this->filename == "" || this->isclone || this->type == ELEM_IMAGE) {
                 continue;
             }
-            if (this->vidformat != 188 && this->vidformat != 187) {
-                // Atomic snapshot for consistent reads
-                int current_frame = this->frame.load();
-                int current_prevframe = this->prevframe.load();
+            // Atomic snapshot for consistent reads
+            int current_frame = this->frame.load();
+            int current_prevframe = this->prevframe.load();
+
+            if (this->vidformat != 187 && this->vidformat != 188) {
                 if (this->video && current_frame != current_prevframe) {
                     get_cpu_frame(current_frame, current_prevframe, 0);
                     if (mainprogram->openerr) {
@@ -8369,6 +8370,7 @@ void Mixer::reconnect_all(std::vector<Layer*> &layers) {
 
     // handle layer mute and solo modes
     for (int j = 0; j < layers.size(); j++) {
+        bool living = false;
         if (layers[j]->mutebut->value) {
             if (layers[j]->pos > 0) {
                 if (layers[j]->blendnode->in) {
@@ -8376,25 +8378,42 @@ void Mixer::reconnect_all(std::vector<Layer*> &layers) {
                     layers[j]->lasteffnode[1]->out[0]->in = nullptr;
                     mainprogram->nodesmain->currpage->connect_nodes(layers[j]->blendnode->in,
                                                                     layers[j]->lasteffnode[1]->out[0]);
+                    layers[j]->lasteffnode[0]->out.clear();
+                    layers[j]->blendnode->in2 = nullptr;
                 }
                 else {
-                    layers[j]->lasteffnode[1]->out[0]->in = nullptr;
+                    if (layers[0]->lasteffnode[0]->out.size()) {
+                        layers[0]->lasteffnode[0]->out[0]->in = nullptr;
+                        layers[0]->lasteffnode[0]->out.clear();
+                    }
                 }
-            } else if (layers[j]->next() != layers[j]) {
-                layers[j]->lasteffnode[0]->out.clear();
-                layers[j]->next()->blendnode->in = nullptr;
+            } else {
+
+                if (layers[j]->next() != layers[j]) {
+                    layers[j]->lasteffnode[0]->out.clear();
+                    layers[j]->next()->blendnode->in = nullptr;
+                }
             }
         }
-        else if (layers[j]->solobut->value) {
+        else {
+            living = true;
+        }
+        if (!living) {
+            // bolt empty layer to deck output when everything is muted
+            if (layers[layers.size() - 1]->lasteffnode[1]->out.size()) {
+                layers[layers.size() - 1]->lasteffnode[1]->out[0]->in = nullptr;
+                layers[layers.size() - 1]->lasteffnode[1]->out.clear();
+            }
             for (int i = 0; i < 4; i++) {
                 if (&layers == &mainmix->layers[i]) {
-                    mainprogram->nodesmain->mixnodes[i / 2][i % 2]->in->out.clear();
                     mainprogram->nodesmain->mixnodes[i / 2][i % 2]->in = nullptr;
-                    layers[j]->lasteffnode[1]->out.clear();
-                    mainprogram->nodesmain->currpage->connect_nodes(layers[j]->lasteffnode[1],
+                    mainprogram->nodesmain->currpage->connect_nodes(mainmix->emptylayer[!mainprogram->prevmodus]->node,
                                                                     mainprogram->nodesmain->mixnodes[i / 2][i % 2]);
                 }
             }
+        }
+        else {
+            mainmix->emptylayer[!mainprogram->prevmodus]->node->out.clear();
         }
     }
 }
@@ -10515,7 +10534,30 @@ bool Layer::thread_vidopen() {
         // Seek back to beginning after getting first_pts
         avformat_seek_file(this->video, this->video_stream->index, 0, this->first_pts, this->first_pts, AVSEEK_FLAG_BACKWARD);
         this->bpp = 4;
+
+        bool cpu = true;
         if (this->vidformat == 188 || this->vidformat == 187) {
+            int r = av_read_frame(this->video, this->decpkt);
+            if (r >= 0) {
+                char *bptrData = (char *) (this->decpkt)->data;
+                int headerl = 4;
+                if (*bptrData == 0 && *(bptrData + 1) == 0 && *(bptrData + 2) == 0) {
+                    headerl = 8;
+                }
+                {
+                    std::lock_guard<std::mutex> lock(this->decresult_mutex);
+                    this->decresult->compression = *(bptrData + 3);
+                }
+                if ((int)this->decresult->compression == 187 || (int)this->decresult->compression == 190) {
+                    cpu = false;
+                }
+                else {
+                    // trick to set non-compressed hap app-wide
+                    this->vidformat = 666;
+                }
+            }
+        }
+        if (!cpu) {
             if (oldvidformat != -1) {
                 if (this->oldvidformat != 188 && this->oldvidformat != 187) {
                     // hap cpu change needs new texstorage

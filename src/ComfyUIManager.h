@@ -3,7 +3,6 @@
  *
  * Backend integration for ComfyUI video generation
  * Supports StableDiffusion+AnimateDiff and HunyuanVideo backends
- * with 13 creative presets across 5 tiers
  *
  * Communication:
  * - WebSocket for real-time progress updates
@@ -40,42 +39,23 @@ enum class GenerationBackend {
 };
 
 /**
- * Preset tier/category for UI organization
- */
-enum class PresetTier {
-    BEGINNER = 0,
-    INTERMEDIATE = 1,
-    ADVANCED = 2,
-    POWER_USER = 3,
-    INTERACTIVE = 4
-};
-
-/**
- * All 13 video generation presets
+ * All video generation presets
  */
 enum class PresetType {
-    // Tier 1 - Beginner (simple, immediate results)
     TEXT_TO_VIDEO = 0,          // Prompt -> video
     IMAGE_TO_MOTION = 1,        // Still image -> animated video
-    KALEIDOSCOPE_GENERATOR = 2, // Symmetric psychedelic patterns
+    STYLE_TRANSFER_LOOP = 2,    // Apply artistic style via IPAdapter
+    MORPHING_SEQUENCES = 3,     // Smooth transitions between concepts
+    VIDEO_CONTINUATION = 4,     // Continue video from last frame (Hunyuan only)
+    CONTROLLABLE_CHARACTER = 5, // Consistent character across clips
+    TEXTURE_EVOLUTION = 6,      // Organic material transformations
+    BATCH_VARIATION_GENERATOR_T2V = 7,  // Generate multiple T2V variations
+    BATCH_VARIATION_GENERATOR_I2V = 8,  // Generate multiple I2V variations
+    CONTROLNET_DIRECTOR = 9,            // Guide with sketch/depth/pose
+    FRAME_INTERPOLATION = 10,           // Increase FPS using RIFE
+    REMIX_EXISTING_CLIP = 11,           // Variation on previous generation
 
-    // Tier 2 - Intermediate (more creative control)
-    STYLE_TRANSFER_LOOP = 3,    // Apply artistic style via IPAdapter
-    MORPHING_SEQUENCES = 4,     // Smooth transitions between concepts
-    VIDEO_CONTINUATION = 5,     // Continue video from last frame (Hunyuan only)
-
-    // Tier 3 - Advanced (professional features)
-    CONTROLLABLE_CHARACTER = 6, // Consistent character across clips
-    TEXTURE_EVOLUTION = 7,      // Organic material transformations
-
-    // Tier 4 - Power User
-    LORA_TRAINING_ASSISTANT = 8,    // Train custom styles
-    BATCH_VARIATION_GENERATOR = 9,  // Generate multiple variations
-    CONTROLNET_DIRECTOR = 10,       // Guide with sketch/depth/pose
-    FRAME_INTERPOLATION = 11,       // Increase FPS using RIFE
-    REMIX_EXISTING_CLIP = 12,       // Variation on previous generation
-
-    PRESET_COUNT = 13
+    PRESET_COUNT = 12
 };
 
 /**
@@ -127,7 +107,6 @@ struct PresetInfo {
     PresetType type;
     std::string name;
     std::string description;
-    PresetTier tier;
 
     // Backend compatibility
     bool supportedBySD = true;
@@ -143,10 +122,10 @@ struct PresetInfo {
     bool requiresControlNet = false;
     std::vector<ControlNetType> supportedControlNets;
 
-    // Default parameters
+    // Default parameters (SDXL native resolution)
     int defaultFrames = 16;
-    int defaultWidth = 512;
-    int defaultHeight = 512;
+    int defaultWidth = 1024;
+    int defaultHeight = 1024;
     float defaultFPS = 8.0f;
 
     // Workflow file name (without extension, relative to backend folder)
@@ -204,10 +183,10 @@ struct GenerationParams {
     int steps = 20;
     float cfgScale = 7.0f;
 
-    // Video parameters
+    // Video parameters (SDXL native resolution)
     int frames = 16;
-    int width = 512;
-    int height = 512;
+    int width = 1024;
+    int height = 1024;
     float fps = 8.0f;
     bool seamlessLoop = false;        // AnimateDiff closed_loop (TEXT_TO_VIDEO only)
 
@@ -437,13 +416,6 @@ public:
     static const PresetInfo& getPresetInfo(PresetType preset);
 
     /**
-     * Get all presets in a specific tier
-     * @param tier The preset tier
-     * @return Vector of preset types
-     */
-    static std::vector<PresetType> getPresetsForTier(PresetTier tier);
-
-    /**
      * Get all presets supported by a specific backend
      * @param backend The generation backend
      * @param includePartial Include presets with partial support
@@ -469,11 +441,6 @@ public:
      * Get human-readable name for a backend
      */
     static std::string backendToString(GenerationBackend backend);
-
-    /**
-     * Get human-readable name for a tier
-     */
-    static std::string tierToString(PresetTier tier);
 
     // === Generation ===
 

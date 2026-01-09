@@ -379,36 +379,52 @@ private:
         "https://github.com/comfyanonymous/ComfyUI/releases/download/v0.7.0/ComfyUI_windows_portable_nvidia.7z";
     static constexpr int64_t COMFYUI_PORTABLE_SIZE = 1700000000LL;  // ~1.7GB (estimated)
 
-    // SD1.5 + AnimateDiff
-    static constexpr const char* SD15_FP16_URL =
-        "https://huggingface.co/Comfy-Org/stable-diffusion-v1-5-archive/resolve/main/v1-5-pruned-emaonly-fp16.safetensors";
-    static constexpr int64_t SD15_FP16_SIZE = 2132649990LL;  // ~2GB
+    // SDXL FP16 checkpoint (GGUF doesn't work with conv2d UNet architecture)
+    static constexpr const char* SDXL_CHECKPOINT_URL =
+        "https://huggingface.co/stabilityai/stable-diffusion-xl-base-1.0/resolve/main/sd_xl_base_1.0.safetensors";
+    static constexpr int64_t SDXL_CHECKPOINT_SIZE = 6940000000LL;  // ~6.94GB
 
-    static constexpr const char* ANIMATEDIFF_MM_V2_FP16_URL =
-        "https://huggingface.co/neggles/animatediff-modules/resolve/main/mm_sd_v15_v2.fp16.safetensors";
-    static constexpr int64_t ANIMATEDIFF_MM_V2_SIZE = 909000000LL;  // ~909MB
+    static constexpr const char* ANIMATEDIFF_SDXL_URL =
+        "https://huggingface.co/guoyww/animatediff/resolve/main/mm_sdxl_v10_beta.ckpt";
+    static constexpr int64_t ANIMATEDIFF_SDXL_SIZE = 1620000000LL;  // ~1.62GB
 
-    static constexpr const char* SD_VAE_FP16_URL =
-        "https://huggingface.co/stabilityai/sd-vae-ft-mse-original/resolve/main/vae-ft-mse-840000-ema-pruned.safetensors";
-    static constexpr int64_t SD_VAE_SIZE = 334700000LL;  // ~335MB
+    // Official SDXL VAE from madebyollin (FP16 version for compatibility)
+    static constexpr const char* SDXL_VAE_URL =
+        "https://huggingface.co/madebyollin/sdxl-vae-fp16-fix/resolve/main/sdxl_vae.safetensors";
+    static constexpr int64_t SDXL_VAE_SIZE = 335000000LL;  // ~335MB
 
-    // ControlNet models
-    static constexpr const char* CONTROLNET_DEPTH_URL =
-        "https://huggingface.co/lllyasviel/ControlNet-v1-1/resolve/main/control_v11f1p_sd15_depth.pth";
-    static constexpr int64_t CONTROLNET_DEPTH_SIZE = 1450000000LL;  // ~1.4GB
+    // ControlNet SDXL models
+    static constexpr const char* CONTROLNET_DEPTH_SDXL_URL =
+        "https://huggingface.co/diffusers/controlnet-depth-sdxl-1.0/resolve/main/diffusion_pytorch_model.fp16.safetensors";
+    static constexpr int64_t CONTROLNET_DEPTH_SDXL_SIZE = 2500000000LL;  // ~2.5GB
 
-    static constexpr const char* CONTROLNET_CANNY_URL =
-        "https://huggingface.co/lllyasviel/ControlNet-v1-1/resolve/main/control_v11p_sd15_canny.pth";
-    static constexpr int64_t CONTROLNET_CANNY_SIZE = 1450000000LL;
+    static constexpr const char* CONTROLNET_CANNY_SDXL_URL =
+        "https://huggingface.co/diffusers/controlnet-canny-sdxl-1.0/resolve/main/diffusion_pytorch_model.fp16.safetensors";
+    static constexpr int64_t CONTROLNET_CANNY_SDXL_SIZE = 2500000000LL;  // ~2.5GB
 
-    // IPAdapter
-    static constexpr const char* IPADAPTER_PLUS_URL =
-        "https://huggingface.co/h94/IP-Adapter/resolve/main/models/ip-adapter-plus_sd15.safetensors";
-    static constexpr int64_t IPADAPTER_PLUS_SIZE = 98000000LL;  // ~98MB
+    // IPAdapter SDXL
+    static constexpr const char* IPADAPTER_SDXL_PLUS_URL =
+        "https://huggingface.co/h94/IP-Adapter/resolve/main/sdxl_models/ip-adapter-plus_sdxl_vit-h.safetensors";
+    static constexpr int64_t IPADAPTER_SDXL_PLUS_SIZE = 847000000LL;  // ~847MB
 
-    static constexpr const char* CLIP_VISION_URL =
+    static constexpr const char* CLIP_VISION_H_URL =
         "https://huggingface.co/h94/IP-Adapter/resolve/main/models/image_encoder/model.safetensors";
-    static constexpr int64_t CLIP_VISION_SIZE = 2530000000LL;  // ~2.5GB
+    static constexpr int64_t CLIP_VISION_H_SIZE = 2530000000LL;  // ~2.5GB (same ViT-H encoder)
+
+    // IPAdapter FaceID SDXL (for face/character consistency)
+    static constexpr const char* IPADAPTER_FACEID_SDXL_URL =
+        "https://huggingface.co/h94/IP-Adapter-FaceID/resolve/main/ip-adapter-faceid-plusv2_sdxl.bin";
+    static constexpr int64_t IPADAPTER_FACEID_SDXL_SIZE = 1680000000LL;  // ~1.68GB
+
+    // FaceID SDXL LoRA (required for FaceID SDXL)
+    static constexpr const char* IPADAPTER_FACEID_SDXL_LORA_URL =
+        "https://huggingface.co/h94/IP-Adapter-FaceID/resolve/main/ip-adapter-faceid-plusv2_sdxl_lora.safetensors";
+    static constexpr int64_t IPADAPTER_FACEID_SDXL_LORA_SIZE = 393000000LL;  // ~393MB
+
+    // InsightFace model for FaceID (antelopev2)
+    static constexpr const char* INSIGHTFACE_ANTELOPE_URL =
+        "https://huggingface.co/MonsterMMORPG/tools/resolve/main/antelopev2.zip";
+    static constexpr int64_t INSIGHTFACE_ANTELOPE_SIZE = 360000000LL;  // ~360MB
 
     // HunyuanVideo 1.5 GGUF (VRAM-friendly quantized models)
     static constexpr const char* HUNYUAN_T2V_Q4_URL =

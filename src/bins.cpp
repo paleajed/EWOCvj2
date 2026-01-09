@@ -201,7 +201,7 @@ void BinElement::upscale_image(int model) {
 	// Load models
 	std::string modelsPath;
 	#ifdef _WIN32
-		modelsPath = "C:/ProgramData/EWOCvj2/models/upscale/";
+		modelsPath = mainprogram->programData + "/EWOCvj2/models/upscale/";
 	#else
 		modelsPath = "/usr/share/EWOCvj2/models/upscale/";
 	#endif
@@ -434,7 +434,7 @@ void BinElement::upscale_image_async(int model) {
 			// Load models
 			std::string modelsPath;
 			#ifdef _WIN32
-				modelsPath = "C:/ProgramData/EWOCvj2/models/upscale/";
+				modelsPath = mainprogram->programData + "/EWOCvj2/models/upscale/";
 			#else
 				modelsPath = "/usr/share/EWOCvj2/models/upscale/";
 			#endif

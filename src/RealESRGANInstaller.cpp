@@ -8,6 +8,9 @@
 
 #include "RealESRGANInstaller.h"
 
+// Helper to get programData without including program.h (avoids OpenGL header conflicts)
+extern std::string getProgramDataPath();
+
 #include <filesystem>
 #include <fstream>
 #include <sstream>
@@ -288,7 +291,7 @@ std::string RealESRGANInstaller::getDefaultModelsDir() {
     if (SUCCEEDED(SHGetFolderPathA(NULL, CSIDL_COMMON_APPDATA, NULL, 0, programData))) {
         return std::string(programData) + "\\EWOCvj2\\models\\upscale";
     }
-    return "C:\\ProgramData\\EWOCvj2\\models\\upscale";
+    return getProgramDataPath() + "/EWOCvj2/models/upscale";
 #else
     // Linux/Mac: use ~/.local/share
     const char* home = getenv("HOME");

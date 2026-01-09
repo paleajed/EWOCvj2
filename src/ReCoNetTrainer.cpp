@@ -275,8 +275,8 @@ bool ReCoNetTrainer::initialize() {
         modelsDir = basePath + "\\models\\styles";
         scriptsDir = basePath + "\\scripts";
     } else {
-        modelsDir = "C:\\ProgramData\\EWOCvj2\\models\\styles";
-        scriptsDir = "C:\\ProgramData\\EWOCvj2\\scripts";
+        modelsDir = mainprogram->programData + "/EWOCvj2/models/styles";
+        scriptsDir = mainprogram->programData + "/EWOCvj2/scripts";
     }
 
     // Temp directory
@@ -574,7 +574,7 @@ void ReCoNetTrainer::trainingThreadFunc(StylePreparationBin* bin,
 
                 std::string modelsdir;
 #ifdef _WIN32
-                modelsdir = "C:/ProgramData/EWOCvj2/models/styles/";
+                modelsdir = mainprogram->programData + "/EWOCvj2/models/styles/";
 #else
                 modelsdir = "/usr/share/EWOCvj2/models/styles/";
 #endif

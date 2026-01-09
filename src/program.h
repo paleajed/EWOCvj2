@@ -100,6 +100,7 @@ typedef enum
     EDIT_FLOATPARAM = 7,
 	EDIT_TEXTPARAM = 8,
 	EDIT_STYLENAME = 9,
+	EDIT_PROMPT = 10,
 } EDIT_TYPE;
 
 typedef enum
@@ -515,6 +516,7 @@ class Program {
 		GLuint EffectShaderPrograms[43];  // One program per effect (fxid 0-42)
 		UniformCache* uniformCache = nullptr;
         OptimizedRenderer *renderer = nullptr;
+		std::string programData;
 		GLuint fbovao;
 		GLuint fbotex[4];
 		GLuint frbuf[4];
@@ -943,6 +945,8 @@ class Program {
 		int cursortemp1 = -1;
 		int cursortemp2 = -1;
 		bool cursorreset = true;
+		bool arrowup = false;
+		bool arrowdown = false;
 		float cursorpixels = -1;
 		float startpos = 0;
 		int startcursor = 0;
@@ -1469,6 +1473,8 @@ extern void drag_into_layerstack(std::vector<Layer*>& layers, bool deck);
 
 extern void do_text_input(float x, float y, float sx, float sy, int mx, int my, float width, int smflag, PrefItem* item);
 extern void do_text_input(float x, float y, float sx, float sy, int mx, int my, float width, int smflag, PrefItem* item, bool directdraw);
+extern void do_text_input_multiple_lines(float x, float y, float sx, float sy, int mx, int my, float width, float lineHeight, int maxLines, int smflag, PrefItem* item);
+extern void do_text_input_multiple_lines(float x, float y, float sx, float sy, int mx, int my, float width, float lineHeight, int maxLines, int smflag, PrefItem* item, bool directdraw);
 extern void end_input();
 
 extern void onestepfrom(bool stage, Node *node, Node *prevnode, GLuint prevfbotex, GLuint prevfbo);

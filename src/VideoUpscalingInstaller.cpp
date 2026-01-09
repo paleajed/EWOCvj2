@@ -9,6 +9,9 @@
 
 #include "VideoUpscalingInstaller.h"
 
+// Helper to get programData without including program.h (avoids OpenGL header conflicts)
+extern std::string getProgramDataPath();
+
 #ifdef _WIN32
 #define WIN32_LEAN_AND_MEAN
 #define NOMINMAX
@@ -354,7 +357,7 @@ std::string VideoUpscalingInstaller::getDefaultPythonDir() {
 
 std::string VideoUpscalingInstaller::getDefaultModelsDir() {
 #ifdef _WIN32
-    return "C:/ProgramData/EWOCvj2/models/upscale";
+    return getProgramDataPath() + "/EWOCvj2/models/upscale";
 #else
     return "/var/lib/EWOCvj2/models/upscale";
 #endif

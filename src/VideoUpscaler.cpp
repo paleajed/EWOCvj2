@@ -8,6 +8,9 @@
 
 #include "VideoUpscaler.h"
 
+// Helper to get programData without including program.h (avoids OpenGL header conflicts)
+extern std::string getProgramDataPath();
+
 #include <iostream>
 #include <iomanip>
 #include <fstream>
@@ -253,8 +256,8 @@ bool VideoUpscaler::initialize() {
         modelsDir = basePath + "\\models\\upscale";
         scriptsDir = basePath + "\\scripts";
     } else {
-        modelsDir = "C:\\ProgramData\\EWOCvj2\\models\\upscale";
-        scriptsDir = "C:\\ProgramData\\EWOCvj2\\scripts";
+        modelsDir = getProgramDataPath() + "/EWOCvj2/models/upscale";
+        scriptsDir = getProgramDataPath() + "/EWOCvj2/scripts";
     }
 
     char tempPath[MAX_PATH];

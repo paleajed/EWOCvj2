@@ -3,7 +3,6 @@
  *
  * UI room for ComfyUI-based video generation
  * Supports StableDiffusion+AnimateDiff and HunyuanVideo backends
- * with 13 creative presets across 5 tiers
  *
  * License: GPL3
  */
@@ -61,6 +60,7 @@ public:
     bool hunyuaninstalled = false;
 
     // UI Layout Boxes
+    Boxx* promptBox = nullptr;                         // Large preview area (left side)
     Boxx* previewBox = nullptr;                         // Large preview area (left side)
     Boxx* historyBox = nullptr;                         // History container
     std::vector<VideoGenHistoryItem*> historyItems;     // Generated outputs history
@@ -100,8 +100,11 @@ public:
     GLuint inputImageTex = -1;
     std::string controlNetImagePath = "";
     GLuint controlNetImageTex = -1;
+    bool controlNetIsVideo = false;
     std::string styleImagePath = "";
     GLuint styleImageTex = -1;
+    std::string promptstr = "";
+    std::string oldpromptstr = "";
 
     // Progress state (cached from callback)
     float progressPercent = 0.0f;
@@ -113,11 +116,9 @@ public:
     std::atomic<bool> startupInProgress{false};
 
     // Parameters (Param objects for UI)
-    Param* tierFilter = nullptr;                // Options: All, Beginner, Intermediate, Advanced, Power User, Interactive
     Param* backendParam = nullptr;              // Options: SD AnimateDiff, HunyuanVideo
 
     // Generation params
-    Param* prompt = nullptr;                    // Text input
     Param* negativePrompt = nullptr;            // Text input
     Param* seed = nullptr;                      // Numeric (-1 = random)
     Param* steps = nullptr;                     // Numeric (default 20)

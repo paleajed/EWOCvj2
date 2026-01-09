@@ -98,6 +98,63 @@ void stopComfyUIServer() {
 }
 
 // ============================================================================
+// Letterbox Drawing Helper
+// ============================================================================
+
+/**
+ * Draw a texture in letterbox/pillarbox style within a box
+ * Maintains aspect ratio with black bars as needed
+ *
+ * @param box The bounding box to draw within
+ * @param tex The texture to draw
+ * @param texWidth Actual width of the texture
+ * @param texHeight Actual height of the texture
+ */
+static void draw_box_letterbox(Boxx* box, GLuint tex, int texWidth, int texHeight) {
+    if (!box || tex == (GLuint)-1 || texWidth <= 0 || texHeight <= 0) {
+        draw_box(box, tex);
+        return;
+    }
+
+    float boxX = box->vtxcoords->x1;
+    float boxY = box->vtxcoords->y1;
+    float boxW = box->vtxcoords->w;
+    float boxH = box->vtxcoords->h;
+
+    // Account for screen aspect ratio - GL coords don't map 1:1 to pixels
+    float screenAspect = (float)glob->w / (float)glob->h;
+
+    // Calculate aspect ratios
+    float texAspect = (float)texWidth / (float)texHeight;
+    float boxAspect = boxW / boxH;
+
+    // Box aspect in actual pixels (not GL coords)
+    float boxPixelAspect = boxAspect * screenAspect;
+
+    float drawX, drawY, drawW, drawH;
+
+    if (texAspect > boxPixelAspect) {
+        // Texture is wider than box - letterbox (black bars top/bottom)
+        drawW = boxW;
+        drawH = boxW * screenAspect / texAspect;
+        drawX = boxX;
+        drawY = boxY + (boxH - drawH) / 2.0f;
+    } else {
+        // Texture is taller than box - pillarbox (black bars left/right)
+        drawH = boxH;
+        drawW = boxH * texAspect / screenAspect;
+        drawX = boxX + (boxW - drawW) / 2.0f;
+        drawY = boxY;
+    }
+
+    // Draw black background first
+    draw_box(black, black, boxX, boxY, boxW, boxH, -1);
+
+    // Draw texture with letterbox coordinates
+    draw_box(nullptr, nullptr, drawX, drawY, drawW, drawH, tex);
+}
+
+// ============================================================================
 // HAP Encoding from Frame Sequence
 // ============================================================================
 
@@ -183,7 +240,16 @@ static bool hapEncodeFrames(const std::string& framesDir,
     c->framerate = {fpsInt, 1};
     c->pix_fmt = codec->pix_fmts[0];  // HAP uses RGBA or similar
 
-    if (avcodec_open2(c, codec, nullptr) < 0) {
+    // Force Snappy compression: compressor value is the high nibble of section type
+    // Range is [160-176] = [0xA0-0xB0]: 160/0xA0=none, 176/0xB0=snappy
+    // 0xB0 (176) + 0x0B (DXT1) = 0xBB (187) = Snappy-compressed DXT1
+    AVDictionary* opts = nullptr;
+    av_dict_set_int(&opts, "compressor", 0xB0, 0);  // 176 = Snappy compression
+
+    int openRet = avcodec_open2(c, codec, &opts);
+    av_dict_free(&opts);
+
+    if (openRet < 0) {
         std::cerr << "[HAP Encode] Failed to open HAP encoder" << std::endl;
         avcodec_free_context(&c);
         return false;
@@ -1216,7 +1282,7 @@ static bool startComfyUIServer(std::function<void(const std::string&)> statusCal
     updateStatus("Checking ComfyUI installation...");
 
     // Check if ComfyUI is installed
-    std::string installDir = "C:/ProgramData/EWOCvj2/ComfyUI";
+    std::string installDir = mainprogram->programData + "/EWOCvj2/ComfyUI";
     if (!ComfyUIInstaller::isComfyUIInstalled(installDir)) {
         updateStatus("Installing ComfyUI (first-time setup)...");
 
@@ -1257,7 +1323,7 @@ static bool startComfyUIServer(std::function<void(const std::string&)> statusCal
     updateStatus("Locating Python environment...");
 
     // Use the embedded Python from ComfyUI installation (has correct dependencies)
-    std::string pythonPath = "C:/ProgramData/EWOCvj2/ComfyUI/ComfyUI_windows_portable/python_embeded/python.exe";
+    std::string pythonPath = mainprogram->programData + "/EWOCvj2/ComfyUI/ComfyUI_windows_portable/python_embeded/python.exe";
 
     // Fall back to EWOCVJ2_PYTHON if embedded Python doesn't exist
     if (!std::filesystem::exists(pythonPath)) {
@@ -1274,9 +1340,9 @@ static bool startComfyUIServer(std::function<void(const std::string&)> statusCal
 
     // ComfyUI paths to try (portable version structure)
     std::vector<std::string> comfyPaths = {
-        "C:/ProgramData/EWOCvj2/ComfyUI/ComfyUI_windows_portable/ComfyUI/main.py",
-        "C:/ProgramData/EWOCvj2/ComfyUI/main.py",
-        "C:/ProgramData/EWOCvj2/comfyui/ComfyUI/main.py"
+        mainprogram->programData + "/EWOCvj2/ComfyUI/ComfyUI_windows_portable/ComfyUI/main.py",
+        mainprogram->programData + "/EWOCvj2/ComfyUI/main.py",
+        mainprogram->programData + "/EWOCvj2/comfyui/ComfyUI/main.py"
     };
 
     std::string comfyMainPy = "";
@@ -1312,7 +1378,7 @@ static bool startComfyUIServer(std::function<void(const std::string&)> statusCal
 #ifdef _WIN32
     // On Windows, use start /B to run in background without a visible console
     // Use --output-directory to ensure ComfyUI outputs to our configured directory
-    std::string outputDir = "C:/ProgramData/EWOCvj2/comfyui/outputs";
+    std::string outputDir = mainprogram->programData + "/EWOCvj2/comfyui/outputs";
     std::string cmd = "start /B \"\" \"" + pythonPath + "\" \"" + comfyMainPy +
                       "\" --listen 127.0.0.1 --port 8188 --lowvram --output-directory \"" + outputDir + "\"";
 
@@ -1379,6 +1445,14 @@ VideoGenRoom::VideoGenRoom() {
     // Create menu
     this->videogenmenu = new Menu;
 
+    // prompt box
+    this->promptBox = new Boxx;
+    this->promptBox->vtxcoords->x1 = 0.30f;
+    this->promptBox->vtxcoords->y1 = -0.95f;
+    this->promptBox->vtxcoords->w = 0.6f;
+    this->promptBox->vtxcoords->h = 0.6f;
+    this->promptBox->upvtxtoscr();
+
     // Initialize preview box (large, left side)
     this->previewBox = new Boxx;
     this->previewBox->vtxcoords->x1 = -0.80f;
@@ -1418,9 +1492,9 @@ VideoGenRoom::VideoGenRoom() {
 
 
     float presetsx = 0.35f;
-    float presetsy = -0.8f;
+    float presetsy = -0.2f;
     float presetsw = 0.3f;
-    float presetsh = 1.60f;
+    float presetsh = 1.00f;
 
     // Presets container box (right side)
     this->presetsBox = new Boxx;
@@ -1474,8 +1548,8 @@ VideoGenRoom::VideoGenRoom() {
     this->controlNetBox->lcolor[1] = 0.4f;
     this->controlNetBox->lcolor[2] = 0.4f;
     this->controlNetBox->lcolor[3] = 1.0f;
-    this->controlNetBox->tooltiptitle = "ControlNet Image ";
-    this->controlNetBox->tooltip = "Drag a depth/edge/pose image here for ControlNet guidance. ";
+    this->controlNetBox->tooltiptitle = "ControlNet Image/Video ";
+    this->controlNetBox->tooltip = "Drag a depth/edge/pose image or video here for ControlNet guidance. Video provides per-frame control. ";
 
     this->styleImageBox = new Boxx;
     this->styleImageBox->vtxcoords->x1 = inputBoxX + 0.39f;
@@ -1522,33 +1596,6 @@ VideoGenRoom::VideoGenRoom() {
     float paramw = 0.24f;
     float paramh = 0.1f;
 
-    // Tier filter
-    this->tierFilter = new Param;
-    this->tierFilter->type = FF_TYPE_OPTION;
-    this->tierFilter->name = "Tier";
-    this->tierFilter->options.push_back("ALL");
-    this->tierFilter->options.push_back("BEGINNER");
-    this->tierFilter->options.push_back("INTERMEDIATE");
-    this->tierFilter->options.push_back("ADVANCED");
-    this->tierFilter->options.push_back("POWER USER");
-    this->tierFilter->options.push_back("INTERACTIVE");
-    this->tierFilter->value = 0;
-    this->tierFilter->deflt = 0;
-    this->tierFilter->range[0] = 0;
-    this->tierFilter->range[1] = 5;
-    this->tierFilter->sliding = false;
-    this->tierFilter->box->vtxcoords->x1 = 0.35f;
-    this->tierFilter->box->vtxcoords->y1 = 0.85f;
-    this->tierFilter->box->vtxcoords->w = 0.25f;
-    this->tierFilter->box->vtxcoords->h = 0.075f;
-    this->tierFilter->box->upvtxtoscr();
-    this->tierFilter->box->acolor[0] = 0.2f;
-    this->tierFilter->box->acolor[1] = 0.4f;
-    this->tierFilter->box->acolor[2] = 0.2f;
-    this->tierFilter->box->acolor[3] = 1.0f;
-    this->tierFilter->box->tooltiptitle = "Filter presets by tier ";
-    this->tierFilter->box->tooltip = "Show only presets from selected difficulty tier. ";
-
     // Backend selection
     this->backendParam = new Param;
     this->backendParam->type = FF_TYPE_OPTION;
@@ -1571,23 +1618,6 @@ VideoGenRoom::VideoGenRoom() {
     this->backendParam->box->acolor[3] = 1.0f;
     this->backendParam->box->tooltiptitle = "Select generation backend ";
     this->backendParam->box->tooltip = "SD AnimateDiff: Full preset support. HunyuanVideo: Power users. ";
-
-    // Prompt (text input)
-    this->prompt = new Param;
-    this->prompt->type = FF_TYPE_TEXT;
-    this->prompt->name = "Prompt";
-    this->prompt->valuestr = "";
-    this->prompt->box->vtxcoords->x1 = paramx;
-    this->prompt->box->vtxcoords->y1 = paramy - paramh;
-    this->prompt->box->vtxcoords->w = paramw;
-    this->prompt->box->vtxcoords->h = 0.075f;
-    this->prompt->box->upvtxtoscr();
-    this->prompt->box->acolor[0] = 0.3f;
-    this->prompt->box->acolor[1] = 0.3f;
-    this->prompt->box->acolor[2] = 0.3f;
-    this->prompt->box->acolor[3] = 1.0f;
-    this->prompt->box->tooltiptitle = "Generation prompt ";
-    this->prompt->box->tooltip = "Enter your text prompt describing what to generate. ";
 
     // Negative prompt
     this->negativePrompt = new Param;
@@ -2127,9 +2157,9 @@ VideoGenRoom::VideoGenRoom() {
     // Remix strength
     this->remixStrength = new Param;
     this->remixStrength->name = "Remix";
-    this->remixStrength->value = 0.5f;
-    this->remixStrength->deflt = 0.5f;
-    this->remixStrength->range[0] = 0.1f;
+    this->remixStrength->value = 0.3f;
+    this->remixStrength->deflt = 0.3f;
+    this->remixStrength->range[0] = 0.0f;
     this->remixStrength->range[1] = 1.0f;
     this->remixStrength->sliding = true;
     this->remixStrength->box->vtxcoords->x1 = paramx;
@@ -2142,7 +2172,7 @@ VideoGenRoom::VideoGenRoom() {
     this->remixStrength->box->acolor[2] = 0.3f;
     this->remixStrength->box->acolor[3] = 1.0f;
     this->remixStrength->box->tooltiptitle = "Remix strength ";
-    this->remixStrength->box->tooltip = "How much to change from original (0.1 = subtle, 1.0 = complete restyle). ";
+    this->remixStrength->box->tooltip = "How much to transform from input. Lower = preserves input better (smooth continuation), higher = more creative freedom. ";
 
     // Batch size for variation generator
     this->batchSize = new Param;
@@ -2254,9 +2284,7 @@ VideoGenRoom::~VideoGenRoom() {
     if (this->videogenmenu) delete this->videogenmenu;
 
     // Delete params
-    if (this->tierFilter) delete this->tierFilter;
     if (this->backendParam) delete this->backendParam;
-    if (this->prompt) delete this->prompt;
     if (this->negativePrompt) delete this->negativePrompt;
     if (this->seed) delete this->seed;
     if (this->steps) delete this->steps;
@@ -2303,6 +2331,32 @@ void VideoGenRoom::handle() {
 
     float border = 0.05f;
 
+    // handle prompt editing
+    if (mainprogram->renaming == EDIT_PROMPT) {
+        // prompt renaming with keyboard
+        do_text_input_multiple_lines(this->promptBox->vtxcoords->x1 + 0.025f, this->promptBox->vtxcoords->y1 + this->promptBox->vtxcoords->h - 0.1f, 0.00072f, 0.00120f, mainprogram->mx, mainprogram->my, mainprogram->xvtxtoscr(this->promptBox->vtxcoords->w - 0.05f), 0.05f, 10, 0, nullptr);
+    }
+
+    // =====================
+    // Draw Prompt Area
+    // =====================
+
+    draw_box(white, darkgreen2, this->promptBox, -1);
+    render_text("PROMPT", white, this->promptBox->vtxcoords->x1,
+                this->promptBox->vtxcoords->y1 + this->promptBox->vtxcoords->h + 0.01f,
+                0.0006f, 0.001f);
+    if (this->promptBox->in()) {
+        if (mainprogram->renaming == EDIT_NONE && mainprogram->leftmouse) {
+            mainprogram->renaming = EDIT_PROMPT;
+            this->oldpromptstr = this->promptstr;
+            mainprogram->inputtext = this->promptstr;
+            mainprogram->cursorpos0 = mainprogram->inputtext.length();
+            SDL_StartTextInput();
+            mainprogram->leftmouse = false;
+            mainprogram->recundo = false;
+        }
+    } 
+
     // =====================
     // Draw Preview Area
     // =====================
@@ -2312,11 +2366,18 @@ void VideoGenRoom::handle() {
              this->previewBox->vtxcoords->h + border * 2, -1);
 
     GLuint tex = -1;
+    int previewTexW = 0, previewTexH = 0;
     if (this->currentPreviewItem) {
         tex = this->currentPreviewItem->tex;
+        if (this->currentPreviewItem->layer && this->currentPreviewItem->layer->decresult) {
+            previewTexW = this->currentPreviewItem->layer->decresult->width;
+            previewTexH = this->currentPreviewItem->layer->decresult->height;
+        }
     }
-    if (tex != (GLuint)-1) {
-        draw_box(this->previewBox, this->currentPreviewItem->tex);
+    if (tex != (GLuint)-1 && previewTexW > 0 && previewTexH > 0) {
+        draw_box_letterbox(this->previewBox, tex, previewTexW, previewTexH);
+    } else if (tex != (GLuint)-1) {
+        draw_box(this->previewBox, tex);  // Fallback if dimensions unknown
     } else {
         draw_box(this->previewBox, -1);
         render_text("No preview", grey, this->previewBox->vtxcoords->x1 + 0.2f,
@@ -2414,7 +2475,13 @@ void VideoGenRoom::handle() {
         }
 
         if (item->tex != (GLuint)-1) {
-            draw_box(item->box, item->tex);
+            int texW = item->layer->decresult->width;
+            int texH = item->layer->decresult->height;
+            if (texW > 0 && texH > 0) {
+                draw_box_letterbox(item->box, item->tex, texW, texH);
+            } else {
+                draw_box(item->box, item->tex);
+            }
         } else {
             draw_box(item->box, -1);
         }
@@ -2425,13 +2492,14 @@ void VideoGenRoom::handle() {
                 mainprogram->dragbinel->type = ELEM_FILE;
                 mainprogram->dragbinel->path = item->path;
                 mainprogram->dragbinel->tex = item->tex;
+                mainprogram->draglay = item->layer;
                 this->dragging = true;
                 mainprogram->leftmousedown = false;
             }
-            if (mainprogram->leftmouse) {
+            if (mainprogram->lmover) {
                 // Load to preview
                 this->currentPreviewItem = item;
-                mainprogram->leftmouse = false;
+                this->promptstr = item->prompt;
             }
             if (mainprogram->menuactivation) {
                 // Right-click menu
@@ -2589,7 +2657,11 @@ void VideoGenRoom::handle() {
     if (this->controlNetBox->in()) {
         if (mainprogram->lmover && mainprogram->dragbinel) {
             this->controlNetImagePath = mainprogram->dragbinel->path;
-            this->controlNetImageTex = mainprogram->dragbinel->tex;
+            this->controlNetImageTex = copy_tex(mainprogram->dragbinel->tex);
+
+            // Detect if it's a video (use !isimage since isvideo incorrectly matches images)
+            this->controlNetIsVideo = !isimage(this->controlNetImagePath);
+
             mainprogram->rightmouse = true;
             binsmain->handle(0);
             enddrag();
@@ -2623,9 +2695,6 @@ void VideoGenRoom::handle() {
     render_text("PRESETS", white, this->presetsBox->vtxcoords->x1,
                 this->presetsBox->vtxcoords->y1 + this->presetsBox->vtxcoords->h - 0.02f,
                 0.0006f, 0.001f);
-
-    // Tier filter at top of presets
-    this->tierFilter->handle();
 
     // Get filtered presets
     std::vector<PresetInfo> filteredPresets = this->getFilteredPresets();
@@ -2661,18 +2730,6 @@ void VideoGenRoom::handle() {
 
         draw_box(&presetBox, -1);
         render_text(preset.name, white, presetBox.vtxcoords->x1 + 0.01f,
-                    presetBox.vtxcoords->y1 + 0.025f, 0.00045f, 0.00075f);
-
-        // Tier badge
-        std::string tierStr;
-        switch (preset.tier) {
-            case PresetTier::BEGINNER: tierStr = "B"; break;
-            case PresetTier::INTERMEDIATE: tierStr = "I"; break;
-            case PresetTier::ADVANCED: tierStr = "A"; break;
-            case PresetTier::POWER_USER: tierStr = "P"; break;
-            case PresetTier::INTERACTIVE: tierStr = "X"; break;
-        }
-        render_text(tierStr, green, presetBox.vtxcoords->x1 + presetBox.vtxcoords->w - 0.03f,
                     presetBox.vtxcoords->y1 + 0.025f, 0.00045f, 0.00075f);
 
         if (presetBox.in()) {
@@ -2732,15 +2789,14 @@ void VideoGenRoom::handle() {
         if (presetInfo.requiresPrompt) {
             if (this->selectedPreset == PresetType::MORPHING_SEQUENCES) {
                 // Morphing uses start/end prompts instead of single prompt
+                // Fixed 32 frames, 50% midpoint - no UI params needed
                 this->morphStartPrompt->handle();
                 this->morphEndPrompt->handle();
-                this->morphMidpoint->handle();
             } else if (this->selectedPreset == PresetType::TEXTURE_EVOLUTION) {
                 // Texture evolution uses start/end texture types
                 this->startTexture->handle();
                 this->endTexture->handle();
             } else {
-                this->prompt->handle();
                 this->negativePrompt->handle();
             }
         }
@@ -2749,10 +2805,17 @@ void VideoGenRoom::handle() {
         this->cfgScale->handle();
     }
 
-    // Video dimension params (not for frame interpolation - those come from input)
+    // Video dimension params (not for frame interpolation, video continuation, or morphing - those are fixed/from input)
     if (this->selectedPreset == PresetType::FRAME_INTERPOLATION) {
         // Frame interpolation only needs multiplier
         this->frameMultiplier->handle();
+    } else if (this->selectedPreset == PresetType::VIDEO_CONTINUATION) {
+        // Video continuation: frames only, width/height come from input video
+        this->frames->handle();
+    } else if (this->selectedPreset == PresetType::MORPHING_SEQUENCES) {
+        // Morphing: fixed 32 frames to match context window, show width/height only
+        this->width->handle();
+        this->height->handle();
     } else {
         this->frames->handle();
         if (isSDBackend) {
@@ -2787,6 +2850,20 @@ void VideoGenRoom::handle() {
         }
     }
 
+    // Identity strength for Controllable Face/Character (SD only)
+    if (this->selectedPreset == PresetType::CONTROLLABLE_CHARACTER && isSDBackend) {
+        this->styleStrength->box->tooltiptitle = "Identity strength ";
+        this->styleStrength->box->tooltip = "How strongly to preserve face/character identity (1.0-1.5 recommended). ";
+        this->styleStrength->range[1] = 2.0f;  // FaceID works better with higher values
+        if (this->styleStrength->value < 1.0f) {
+            this->styleStrength->value = 1.2f;  // Default to stronger identity
+        }
+        this->styleStrength->handle();
+    } else {
+        // Reset range for other presets
+        this->styleStrength->range[1] = 1.0f;
+    }
+
     // Motion params - for SD AnimateDiff presets that use variable motion intensity
     // motionType (LoRA selection) is only for IMAGE_TO_MOTION
     // motionStrength is for all presets using ${MOTION_INTENSITY}
@@ -2796,7 +2873,8 @@ void VideoGenRoom::handle() {
             this->selectedPreset == PresetType::IMAGE_TO_MOTION ||
             this->selectedPreset == PresetType::STYLE_TRANSFER_LOOP ||
             this->selectedPreset == PresetType::CONTROLLABLE_CHARACTER ||
-            this->selectedPreset == PresetType::BATCH_VARIATION_GENERATOR ||
+            this->selectedPreset == PresetType::BATCH_VARIATION_GENERATOR_T2V ||
+            this->selectedPreset == PresetType::BATCH_VARIATION_GENERATOR_I2V ||
             this->selectedPreset == PresetType::CONTROLNET_DIRECTOR
         );
 
@@ -2814,18 +2892,17 @@ void VideoGenRoom::handle() {
         this->contextOverlap->handle();
     }
 
-    // Kaleidoscope symmetry - only for KALEIDOSCOPE_GENERATOR preset
-    if (this->selectedPreset == PresetType::KALEIDOSCOPE_GENERATOR) {
-        this->symmetryFold->handle();
-    }
 
-    // Remix strength - for REMIX_EXISTING_CLIP preset
-    if (this->selectedPreset == PresetType::REMIX_EXISTING_CLIP) {
+    // Remix strength - for presets that transform input (lower = more faithful to input)
+    if (this->selectedPreset == PresetType::REMIX_EXISTING_CLIP ||
+        this->selectedPreset == PresetType::IMAGE_TO_MOTION ||
+        this->selectedPreset == PresetType::VIDEO_CONTINUATION) {
         this->remixStrength->handle();
     }
 
-    // Batch size - for BATCH_VARIATION_GENERATOR preset
-    if (this->selectedPreset == PresetType::BATCH_VARIATION_GENERATOR) {
+    // Batch size - for BATCH_VARIATION_GENERATOR presets
+    if (this->selectedPreset == PresetType::BATCH_VARIATION_GENERATOR_T2V ||
+        this->selectedPreset == PresetType::BATCH_VARIATION_GENERATOR_I2V) {
         this->batchSize->handle();
     }
 
@@ -2959,6 +3036,10 @@ void VideoGenRoom::startGeneration() {
     this->startupThread = std::make_unique<std::thread>(&VideoGenRoom::startupThreadFunc, this);
 }
 
+// VIDEO_CONTINUATION state for frame concatenation (declared here for startupThreadFunc access)
+static std::string continuationSourceVideo = "";
+static bool continuationAppendToSource = false;
+
 void VideoGenRoom::startupThreadFunc() {
     // Initialize ComfyUI manager if needed
     if (!this->comfyManager->isInitialized()) {
@@ -2966,9 +3047,9 @@ void VideoGenRoom::startupThreadFunc() {
 
         ComfyUIConfig config;
 #ifdef _WIN32
-        config.workflowsDir = "C:/ProgramData/EWOCvj2/comfyui/workflows";
-        config.outputDir = "C:/ProgramData/EWOCvj2/comfyui/outputs";
-        config.inputDir = "C:/ProgramData/EWOCvj2/comfyui/inputs";
+        config.workflowsDir = mainprogram->programData + "/EWOCvj2/comfyui/workflows";
+        config.outputDir = mainprogram->programData + "/EWOCvj2/comfyui/outputs";
+        config.inputDir = mainprogram->programData + "/EWOCvj2/comfyui/inputs";
 #else
         config.workflowsDir = "/usr/share/EWOCvj2/comfyui/workflows";
         config.outputDir = "/usr/share/EWOCvj2/comfyui/outputs";
@@ -3074,10 +3155,6 @@ void VideoGenRoom::updateProgress() {
 static std::string pendingOutputPath = "";
 static bool hasPendingOutput = false;
 
-// VIDEO_CONTINUATION state for frame concatenation
-static std::string continuationSourceVideo = "";
-static bool continuationAppendToSource = false;
-
 void VideoGenRoom::loadOutputToHistory(const std::string& path) {
     std::cerr << "[VideoGenRoom] loadOutputToHistory queued: " << path << std::endl;
 
@@ -3123,7 +3200,9 @@ static void processPendingOutput(VideoGenRoom* room) {
         std::cerr << "[VideoGenRoom] Source video: " << continuationSourceVideo << std::endl;
 
         bool sourceIsHAP = isHAPVideo(continuationSourceVideo);
-        float fps = room->fps ? room->fps->value : 24.0f;
+        // Hunyuan outputs at 24fps, SD AnimateDiff uses the UI fps value
+        bool isHunyuan = (room->backendParam && (int)room->backendParam->value == (int)GenerationBackend::HUNYUAN_VIDEO);
+        float fps = isHunyuan ? 24.0f : (room->fps ? room->fps->value : 24.0f);
 
         if (sourceIsHAP && room->hapOutput && room->hapOutput->value > 0.5f) {
             // OPTIMIZED PATH: Source is HAP, output is HAP - use packet passthrough!
@@ -3172,7 +3251,9 @@ static void processPendingOutput(VideoGenRoom* room) {
             std::cerr << "[VideoGenRoom] HAP encoding frames from: " << path << std::endl;
             std::cerr << "[VideoGenRoom] HAP output: " << hapPath << std::endl;
 
-            float fps = room->fps ? room->fps->value : 24.0f;
+            // Hunyuan outputs at 24fps, SD AnimateDiff uses the UI fps value
+            bool isHunyuan = (room->backendParam && (int)room->backendParam->value == (int)GenerationBackend::HUNYUAN_VIDEO);
+            float fps = isHunyuan ? 24.0f : (room->fps ? room->fps->value : 24.0f);
             if (hapEncodeFrames(path, hapPath, fps, nullptr)) {
                 // Success - use HAP version, update path
                 path = hapPath;
@@ -3219,7 +3300,7 @@ skip_encoding:
     item->path = path;
     item->name = basename(path);
     item->preset = room->selectedPreset;
-    item->prompt = room->prompt->valuestr;
+    item->prompt = mainvideogenroom->promptstr;
     item->tex = -1;
 
     room->historyItems.insert(room->historyItems.begin(), item);
@@ -3365,28 +3446,11 @@ float VideoGenRoom::getDetectedBpm() {
 
 std::vector<PresetInfo> VideoGenRoom::getFilteredPresets() {
     std::vector<PresetInfo> result;
-    int tierValue = (int)this->tierFilter->value;
     GenerationBackend backend = (GenerationBackend)(int)this->backendParam->value;
 
-    // Get all presets first, then filter
-    std::vector<PresetInfo> allPresets;
-
-    if (tierValue == 0) {
-        // ALL tiers - get all presets
-        for (int i = 0; i < (int)PresetType::PRESET_COUNT; i++) {
-            allPresets.push_back(ComfyUIManager::getPresetInfo((PresetType)i));
-        }
-    } else {
-        // Filter by selected tier
-        PresetTier selectedTier = (PresetTier)(tierValue - 1);
-        std::vector<PresetType> presetTypes = ComfyUIManager::getPresetsForTier(selectedTier);
-        for (const auto& type : presetTypes) {
-            allPresets.push_back(ComfyUIManager::getPresetInfo(type));
-        }
-    }
-
-    // Now filter by backend
-    for (const auto& preset : allPresets) {
+    // Get all presets and filter by backend
+    for (int i = 0; i < (int)PresetType::PRESET_COUNT; i++) {
+        PresetInfo preset = ComfyUIManager::getPresetInfo((PresetType)i);
         bool supported = false;
         if (backend == GenerationBackend::SD_ANIMATEDIFF) {
             supported = preset.supportedBySD;
@@ -3419,7 +3483,7 @@ GenerationParams VideoGenRoom::buildGenerationParams() {
     params.preset = this->selectedPreset;
     params.backend = (GenerationBackend)(int)this->backendParam->value;
 
-    params.prompt = this->prompt->valuestr;
+    params.prompt = this->promptstr;
     params.negativePrompt = this->negativePrompt->valuestr;
     params.seed = (int)this->seed->value;
     params.steps = (int)this->steps->value;
@@ -3445,6 +3509,9 @@ GenerationParams VideoGenRoom::buildGenerationParams() {
     params.styleStrength = this->styleStrength->value;
     params.preserveColors = (this->preserveColors->value > 0.5f);
 
+    // For Controllable Face/Character, use styleStrength as identity strength
+    params.identityStrength = this->styleStrength->value;
+
     params.motionType = (MotionType)(int)this->motionType->value;
     params.motionStrength = this->motionStrength->value;
     params.denoiseStrength = 1.0f;  // Fixed at 1.0 - lower values cause noise artifacts
@@ -3462,10 +3529,15 @@ GenerationParams VideoGenRoom::buildGenerationParams() {
     int foldValues[] = {2, 4, 6, 8};
     params.symmetryFold = foldValues[foldIdx];
 
-    // Morphing prompts
+    // Morphing prompts - fixed 32 frames and 50% midpoint
     params.morphStartPrompt = this->morphStartPrompt->valuestr;
     params.morphEndPrompt = this->morphEndPrompt->valuestr;
-    params.morphMidpoint = (int)this->morphMidpoint->value;
+    if (params.preset == PresetType::MORPHING_SEQUENCES) {
+        params.frames = 32;
+        params.morphMidpoint = 50;
+    } else {
+        params.morphMidpoint = (int)this->morphMidpoint->value;
+    }
 
     // Texture evolution
     params.startTexture = this->startTexture->valuestr;
@@ -3506,6 +3578,7 @@ void VideoGenRoom::clearInputImage() {
 
 void VideoGenRoom::clearControlNetImage() {
     this->controlNetImagePath = "";
+    this->controlNetIsVideo = false;
     if (this->controlNetImageTex != (GLuint)-1) {
         glDeleteTextures(1, &this->controlNetImageTex);
         this->controlNetImageTex = -1;

@@ -25,6 +25,9 @@
 #include <fstream>
 #include <cstdlib>  // For system()
 
+// Helper to get programData without including program.h (avoids OpenGL header conflicts)
+extern std::string getProgramDataPath();
+
 AIStyleEffect::AIStyleEffect(int styleIndex) : Effect() {
     type = AI_STYLE;
     this->aistylnr = styleIndex;
@@ -45,7 +48,7 @@ AIStyleEffect::AIStyleEffect(int styleIndex) : Effect() {
     // Load styles from platform-specific models directory
     std::string modelsPath;
     #ifdef _WIN32
-        modelsPath = "C:/ProgramData/EWOCvj2/models/styles/";
+        modelsPath = getProgramDataPath() + "/EWOCvj2/models/styles/";
     #else
         modelsPath = "/usr/share/EWOCvj2/models/styles/";
     #endif
@@ -136,7 +139,7 @@ AIStyleEffect::AIStyleEffect(int styleIndex) : Effect() {
                     std::ifstream devScript(scriptPath);
                     if (!devScript.good()) {
                         // Try installed path
-                        scriptPath = "C:/ProgramData/EWOCvj2/scripts/extract_weights.py";
+                        scriptPath = getProgramDataPath() + "/EWOCvj2/scripts/extract_weights.py";
                     }
                 #else
                     scriptPath = "/usr/share/EWOCvj2/scripts/extract_weights.py";

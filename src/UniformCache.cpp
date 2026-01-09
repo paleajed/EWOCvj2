@@ -29,9 +29,6 @@ GLint UniformCache::getUniformLocation(const std::string& name) {
     locationCache[name] = location;
     
     if (location == -1) {
-        if (name == "" ) {
-            bool dummy = false;
-        }
         std::cerr << "Warning: Uniform '" << name << "' not found in shader program" << std::endl;
     }
     

@@ -276,9 +276,10 @@ int64_t ComfyUIInstaller::getDownloadSize(InstallComponent component) {
             return COMFYUI_PORTABLE_SIZE;
 
         case InstallComponent::SD_ANIMATEDIFF:
-            return SD15_FP16_SIZE + ANIMATEDIFF_MM_V2_SIZE + SD_VAE_SIZE +
-                   CONTROLNET_DEPTH_SIZE + CONTROLNET_CANNY_SIZE +
-                   IPADAPTER_PLUS_SIZE + CLIP_VISION_SIZE;
+            return SDXL_GGUF_SIZE + SDXL_CLIP_L_SIZE + SDXL_CLIP_G_SIZE +
+                   ANIMATEDIFF_SDXL_SIZE + SDXL_VAE_SIZE +
+                   CONTROLNET_DEPTH_SDXL_SIZE + CONTROLNET_CANNY_SDXL_SIZE +
+                   IPADAPTER_SDXL_PLUS_SIZE + CLIP_VISION_H_SIZE;
 
         case InstallComponent::HUNYUAN_VIDEO:
             return HUNYUAN_T2V_Q4_SIZE + HUNYUAN_I2V_Q4_SIZE + HUNYUAN_VAE_SIZE +
@@ -932,6 +933,7 @@ void ComfyUIInstaller::installSDAnimateDiffThread(InstallConfig config) {
     createDirectories((modelsPath / "controlnet").string());
     createDirectories((modelsPath / "ipadapter").string());
     createDirectories((modelsPath / "clip_vision").string());
+    createDirectories((modelsPath / "insightface" / "models").string());
 
     std::string nodesDir = (fs::path(config.installDir) / "ComfyUI_windows_portable" / "ComfyUI" / "custom_nodes").string();
 
@@ -1025,6 +1027,82 @@ void ComfyUIInstaller::installSDAnimateDiffThread(InstallConfig config) {
 
             prog.filesCompleted++;
         }
+    }
+
+    // Extract InsightFace zip if it was downloaded
+    std::string insightfaceZip = (modelsPath / "insightface" / "models" / "antelopev2.zip").string();
+    if (fs::exists(insightfaceZip)) {
+        prog.state = InstallProgress::State::EXTRACTING;
+        prog.status = "Extracting InsightFace model...";
+        updateProgress(prog);
+
+        std::string extractDir = (modelsPath / "insightface" / "models").string();
+        if (!extractZip(insightfaceZip, extractDir)) {
+            // Non-fatal - just log it
+            prog.status = "Warning: Failed to extract InsightFace model";
+            updateProgress(prog);
+        }
+    }
+
+    // Install InsightFace Python package for FaceID support
+    // Use pre-built wheel from Gourieff Assets (standard solution for ComfyUI)
+    prog.state = InstallProgress::State::INSTALLING_NODES;
+    prog.status = "Installing InsightFace dependencies...";
+    updateProgress(prog);
+
+    std::string pythonExe = config.installDir + "\\ComfyUI_windows_portable\\python_embeded\\python.exe";
+    if (fs::exists(pythonExe)) {
+        // Install onnxruntime-gpu first
+        std::string onnxDeps = "\"" + pythonExe + "\" -m pip install onnxruntime-gpu";
+
+#ifdef _WIN32
+        {
+            STARTUPINFOA si = { sizeof(si) };
+            PROCESS_INFORMATION pi;
+            si.dwFlags = STARTF_USESHOWWINDOW;
+            si.wShowWindow = SW_HIDE;
+
+            char cmdLine[4096];
+            strncpy(cmdLine, onnxDeps.c_str(), sizeof(cmdLine) - 1);
+            cmdLine[sizeof(cmdLine) - 1] = '\0';
+
+            if (CreateProcessA(NULL, cmdLine, NULL, NULL, FALSE,
+                               CREATE_NO_WINDOW, NULL, NULL, &si, &pi)) {
+                WaitForSingleObject(pi.hProcess, 300000);  // 5 min timeout
+                CloseHandle(pi.hProcess);
+                CloseHandle(pi.hThread);
+            }
+        }
+#else
+        system(onnxDeps.c_str());
+#endif
+
+        // Install insightface from pre-built wheel (Gourieff Assets - standard ComfyUI solution)
+        // This wheel is built for Python 3.13 Windows x64
+        std::string insightfaceWheel = "https://github.com/Gourieff/Assets/raw/main/Insightface/insightface-0.7.3-cp313-cp313-win_amd64.whl";
+        std::string insightfaceCmd = "\"" + pythonExe + "\" -m pip install " + insightfaceWheel;
+
+#ifdef _WIN32
+        {
+            STARTUPINFOA si = { sizeof(si) };
+            PROCESS_INFORMATION pi;
+            si.dwFlags = STARTF_USESHOWWINDOW;
+            si.wShowWindow = SW_HIDE;
+
+            char cmdLine[4096];
+            strncpy(cmdLine, insightfaceCmd.c_str(), sizeof(cmdLine) - 1);
+            cmdLine[sizeof(cmdLine) - 1] = '\0';
+
+            if (CreateProcessA(NULL, cmdLine, NULL, NULL, FALSE,
+                               CREATE_NO_WINDOW, NULL, NULL, &si, &pi)) {
+                WaitForSingleObject(pi.hProcess, 300000);  // 5 min timeout
+                CloseHandle(pi.hProcess);
+                CloseHandle(pi.hThread);
+            }
+        }
+#else
+        system(insightfaceCmd.c_str());
+#endif
     }
 
     // Verification
@@ -2023,68 +2101,113 @@ std::vector<DownloadFile> ComfyUIInstaller::getComfyUIBaseFiles() {
 
 std::vector<DownloadFile> ComfyUIInstaller::getSDAnimateDiffFiles() {
     return {
-        // SD1.5 checkpoint
+        // SDXL GGUF Q5_K_M (UNet only - better quality)
         {
-            SD15_FP16_URL,
-            "checkpoints/v1-5-pruned-emaonly-fp16.safetensors",
-            "Stable Diffusion 1.5 (FP16)",
-            SD15_FP16_SIZE,
+            SDXL_GGUF_URL,
+            "unet/stable-diffusion-xl-base-1.0-Q5_K_M.gguf",
+            "SDXL Base 1.0 GGUF Q5_K_M",
+            SDXL_GGUF_SIZE,
             "",
             true
         },
-        // AnimateDiff motion module
+        // SDXL CLIP L (text encoder 1)
         {
-            ANIMATEDIFF_MM_V2_FP16_URL,
-            "animatediff_models/mm_sd_v15_v2.fp16.safetensors",
-            "AnimateDiff Motion Module v2",
-            ANIMATEDIFF_MM_V2_SIZE,
+            SDXL_CLIP_L_URL,
+            "clip/clip_l.safetensors",
+            "SDXL CLIP-L Text Encoder",
+            SDXL_CLIP_L_SIZE,
             "",
             true
         },
-        // VAE
+        // SDXL CLIP G (text encoder 2)
         {
-            SD_VAE_FP16_URL,
-            "vae/vae-ft-mse-840000-ema-pruned.safetensors",
-            "SD VAE (MSE)",
-            SD_VAE_SIZE,
+            SDXL_CLIP_G_URL,
+            "clip/clip_g.safetensors",
+            "SDXL CLIP-G Text Encoder",
+            SDXL_CLIP_G_SIZE,
             "",
             true
         },
-        // ControlNet - Depth
+        // AnimateDiff SDXL motion module
         {
-            CONTROLNET_DEPTH_URL,
-            "controlnet/control_v11f1p_sd15_depth.pth",
-            "ControlNet Depth",
-            CONTROLNET_DEPTH_SIZE,
+            ANIMATEDIFF_SDXL_URL,
+            "animatediff_models/mm_sdxl_v10_beta.ckpt",
+            "AnimateDiff SDXL Motion Module",
+            ANIMATEDIFF_SDXL_SIZE,
+            "",
+            true
+        },
+        // SDXL VAE
+        {
+            SDXL_VAE_URL,
+            "vae/sdxl_vae.safetensors",
+            "SDXL VAE",
+            SDXL_VAE_SIZE,
+            "",
+            true
+        },
+        // ControlNet SDXL - Depth
+        {
+            CONTROLNET_DEPTH_SDXL_URL,
+            "controlnet/controlnet-depth-sdxl-1.0.safetensors",
+            "ControlNet SDXL Depth",
+            CONTROLNET_DEPTH_SDXL_SIZE,
             "",
             false  // Optional
         },
-        // ControlNet - Canny
+        // ControlNet SDXL - Canny
         {
-            CONTROLNET_CANNY_URL,
-            "controlnet/control_v11p_sd15_canny.pth",
-            "ControlNet Canny",
-            CONTROLNET_CANNY_SIZE,
+            CONTROLNET_CANNY_SDXL_URL,
+            "controlnet/controlnet-canny-sdxl-1.0.safetensors",
+            "ControlNet SDXL Canny",
+            CONTROLNET_CANNY_SDXL_SIZE,
             "",
             false  // Optional
         },
-        // IPAdapter
+        // IPAdapter SDXL
         {
-            IPADAPTER_PLUS_URL,
-            "ipadapter/ip-adapter-plus_sd15.safetensors",
-            "IP-Adapter Plus",
-            IPADAPTER_PLUS_SIZE,
+            IPADAPTER_SDXL_PLUS_URL,
+            "ipadapter/ip-adapter-plus_sdxl_vit-h.safetensors",
+            "IP-Adapter SDXL Plus",
+            IPADAPTER_SDXL_PLUS_SIZE,
             "",
             false  // Optional
         },
-        // CLIP Vision
+        // CLIP Vision H (same encoder for SDXL)
         {
-            CLIP_VISION_URL,
+            CLIP_VISION_H_URL,
             "clip_vision/model.safetensors",
-            "CLIP Vision Encoder",
-            CLIP_VISION_SIZE,
+            "CLIP Vision Encoder (ViT-H)",
+            CLIP_VISION_H_SIZE,
             "",
             false  // Optional - needed for IPAdapter
+        },
+        // IPAdapter FaceID SDXL (for face/character consistency)
+        {
+            IPADAPTER_FACEID_SDXL_URL,
+            "ipadapter/ip-adapter-faceid-plusv2_sdxl.bin",
+            "IP-Adapter FaceID SDXL Plus V2",
+            IPADAPTER_FACEID_SDXL_SIZE,
+            "",
+            false  // Optional - needed for Controllable Face/Character preset
+        },
+        // IPAdapter FaceID SDXL LoRA (required for FaceID SDXL)
+        {
+            IPADAPTER_FACEID_SDXL_LORA_URL,
+            "loras/ip-adapter-faceid-plusv2_sdxl_lora.safetensors",
+            "IP-Adapter FaceID SDXL LoRA",
+            IPADAPTER_FACEID_SDXL_LORA_SIZE,
+            "",
+            false  // Optional - needed for FaceID SDXL
+        },
+        // InsightFace model for FaceID
+        {
+            INSIGHTFACE_ANTELOPE_URL,
+            "insightface/models/antelopev2.zip",
+            "InsightFace Antelopev2",
+            INSIGHTFACE_ANTELOPE_SIZE,
+            "",
+            false  // Optional - needed for FaceID, requires unzip
         }
     };
 }
@@ -2189,7 +2312,8 @@ std::vector<std::string> ComfyUIInstaller::getSDCustomNodes() {
         NODE_ADVANCED_CONTROLNET,
         NODE_IPADAPTER_PLUS,
         NODE_FIZZNODES,
-        NODE_FRAME_INTERPOLATION     // For RIFE frame interpolation
+        NODE_FRAME_INTERPOLATION,    // For RIFE frame interpolation
+        NODE_COMFYUI_GGUF            // For GGUF model loading (SDXL quantized)
     };
 }
 
@@ -2432,124 +2556,198 @@ std::vector<ModelComponent> ComfyUIInstaller::getComfyUIBaseComponents() {
 
 std::vector<ModelComponent> ComfyUIInstaller::getSDComponents() {
     return {
-        // SD1.5 Checkpoint
+        // SDXL GGUF Q5_K_M (better quality quantized UNet)
         {
-            "sd15_checkpoint",
-            "Stable Diffusion 1.5",
-            "Base SD1.5 model (FP16)",
+            "sdxl_unet_gguf",
+            "SDXL UNet GGUF Q5_K_M",
+            "Quantized SDXL UNet for low VRAM (~1.84GB)",
             {
                 {
-                    SD15_FP16_URL,
-                    "checkpoints/v1-5-pruned-emaonly-fp16.safetensors",
-                    "Stable Diffusion 1.5 (FP16)",
-                    SD15_FP16_SIZE, "", true
+                    SDXL_GGUF_URL,
+                    "unet/stable-diffusion-xl-base-1.0-Q5_K_M.gguf",
+                    "SDXL Base 1.0 GGUF Q5_K_M",
+                    SDXL_GGUF_SIZE, "", true
                 }
             },
             {},
-            {"checkpoints/v1-5-pruned-emaonly-fp16.safetensors"},
+            {"unet/stable-diffusion-xl-base-1.0-Q5_K_M.gguf"},
             true, true
         },
-        // AnimateDiff Motion Module
+        // SDXL CLIP encoders
+        {
+            "sdxl_clip",
+            "SDXL CLIP Text Encoders",
+            "Dual CLIP text encoders for SDXL",
+            {
+                {
+                    SDXL_CLIP_L_URL,
+                    "clip/clip_l.safetensors",
+                    "SDXL CLIP-L Text Encoder",
+                    SDXL_CLIP_L_SIZE, "", true
+                },
+                {
+                    SDXL_CLIP_G_URL,
+                    "clip/clip_g.safetensors",
+                    "SDXL CLIP-G Text Encoder",
+                    SDXL_CLIP_G_SIZE, "", true
+                }
+            },
+            {},
+            {"clip/clip_l.safetensors", "clip/clip_g.safetensors"},
+            true, true
+        },
+        // AnimateDiff SDXL Motion Module
         {
             "animatediff_motion",
-            "AnimateDiff Motion Module",
-            "Motion module for video generation",
+            "AnimateDiff SDXL Motion Module",
+            "Motion module for SDXL video generation",
             {
                 {
-                    ANIMATEDIFF_MM_V2_FP16_URL,
-                    "animatediff_models/mm_sd_v15_v2.fp16.safetensors",
-                    "AnimateDiff Motion Module v2",
-                    ANIMATEDIFF_MM_V2_SIZE, "", true
+                    ANIMATEDIFF_SDXL_URL,
+                    "animatediff_models/mm_sdxl_v10_beta.ckpt",
+                    "AnimateDiff SDXL Motion Module",
+                    ANIMATEDIFF_SDXL_SIZE, "", true
                 }
             },
             {},
-            {"animatediff_models/mm_sd_v15_v2.fp16.safetensors"},
+            {"animatediff_models/mm_sdxl_v10_beta.ckpt"},
             true, true
         },
-        // VAE
+        // SDXL VAE
         {
-            "sd_vae",
-            "SD VAE",
-            "Variational autoencoder for image encoding/decoding",
+            "sdxl_vae",
+            "SDXL VAE",
+            "Variational autoencoder for SDXL",
             {
                 {
-                    SD_VAE_FP16_URL,
-                    "vae/vae-ft-mse-840000-ema-pruned.safetensors",
-                    "SD VAE (MSE)",
-                    SD_VAE_SIZE, "", true
+                    SDXL_VAE_URL,
+                    "vae/sdxl_vae.safetensors",
+                    "SDXL VAE",
+                    SDXL_VAE_SIZE, "", true
                 }
             },
             {},
-            {"vae/vae-ft-mse-840000-ema-pruned.safetensors"},
+            {"vae/sdxl_vae.safetensors"},
             true, true
         },
-        // ControlNet Depth (optional)
+        // ControlNet SDXL Depth (optional)
         {
             "controlnet_depth",
-            "ControlNet Depth",
-            "Depth-based control for image generation",
+            "ControlNet SDXL Depth",
+            "Depth-based control for SDXL image generation",
             {
                 {
-                    CONTROLNET_DEPTH_URL,
-                    "controlnet/control_v11f1p_sd15_depth.pth",
-                    "ControlNet Depth",
-                    CONTROLNET_DEPTH_SIZE, "", false
+                    CONTROLNET_DEPTH_SDXL_URL,
+                    "controlnet/controlnet-depth-sdxl-1.0.safetensors",
+                    "ControlNet SDXL Depth",
+                    CONTROLNET_DEPTH_SDXL_SIZE, "", false
                 }
             },
             {},
-            {"controlnet/control_v11f1p_sd15_depth.pth"},
+            {"controlnet/controlnet-depth-sdxl-1.0.safetensors"},
             false, true  // Optional
         },
-        // ControlNet Canny (optional)
+        // ControlNet SDXL Canny (optional)
         {
             "controlnet_canny",
-            "ControlNet Canny",
-            "Edge-based control for image generation",
+            "ControlNet SDXL Canny",
+            "Edge-based control for SDXL image generation",
             {
                 {
-                    CONTROLNET_CANNY_URL,
-                    "controlnet/control_v11p_sd15_canny.pth",
-                    "ControlNet Canny",
-                    CONTROLNET_CANNY_SIZE, "", false
+                    CONTROLNET_CANNY_SDXL_URL,
+                    "controlnet/controlnet-canny-sdxl-1.0.safetensors",
+                    "ControlNet SDXL Canny",
+                    CONTROLNET_CANNY_SDXL_SIZE, "", false
                 }
             },
             {},
-            {"controlnet/control_v11p_sd15_canny.pth"},
+            {"controlnet/controlnet-canny-sdxl-1.0.safetensors"},
             false, true  // Optional
         },
-        // IPAdapter (optional)
+        // IPAdapter SDXL (optional)
         {
             "ipadapter",
-            "IP-Adapter Plus",
-            "Image prompt adapter for style/content transfer",
+            "IP-Adapter SDXL Plus",
+            "Image prompt adapter for SDXL style/content transfer",
             {
                 {
-                    IPADAPTER_PLUS_URL,
-                    "ipadapter/ip-adapter-plus_sd15.safetensors",
-                    "IP-Adapter Plus",
-                    IPADAPTER_PLUS_SIZE, "", false
+                    IPADAPTER_SDXL_PLUS_URL,
+                    "ipadapter/ip-adapter-plus_sdxl_vit-h.safetensors",
+                    "IP-Adapter SDXL Plus",
+                    IPADAPTER_SDXL_PLUS_SIZE, "", false
                 }
             },
             {},
-            {"ipadapter/ip-adapter-plus_sd15.safetensors"},
+            {"ipadapter/ip-adapter-plus_sdxl_vit-h.safetensors"},
             false, true  // Optional
         },
-        // CLIP Vision (optional, needed for IPAdapter)
+        // CLIP Vision H (optional, needed for IPAdapter)
         {
             "clip_vision_sd",
             "CLIP Vision Encoder",
-            "Vision encoder for IP-Adapter",
+            "Vision encoder for IP-Adapter (ViT-H)",
             {
                 {
-                    CLIP_VISION_URL,
+                    CLIP_VISION_H_URL,
                     "clip_vision/model.safetensors",
-                    "CLIP Vision Encoder",
-                    CLIP_VISION_SIZE, "", false
+                    "CLIP Vision Encoder (ViT-H)",
+                    CLIP_VISION_H_SIZE, "", false
                 }
             },
             {},
             {"clip_vision/model.safetensors"},
             false, true  // Optional
+        },
+        // IPAdapter FaceID SDXL (optional, for face/character consistency)
+        {
+            "ipadapter_faceid",
+            "IP-Adapter FaceID SDXL",
+            "Face-based identity preservation for SDXL video generation",
+            {
+                {
+                    IPADAPTER_FACEID_SDXL_URL,
+                    "ipadapter/ip-adapter-faceid-plusv2_sdxl.bin",
+                    "IP-Adapter FaceID SDXL Plus V2",
+                    IPADAPTER_FACEID_SDXL_SIZE, "", false
+                }
+            },
+            {},
+            {"ipadapter/ip-adapter-faceid-plusv2_sdxl.bin"},
+            false, true  // Optional - for Controllable Face/Character preset
+        },
+        // IPAdapter FaceID SDXL LoRA (required for FaceID SDXL)
+        {
+            "ipadapter_faceid_lora",
+            "IP-Adapter FaceID SDXL LoRA",
+            "Required LoRA for FaceID SDXL",
+            {
+                {
+                    IPADAPTER_FACEID_SDXL_LORA_URL,
+                    "loras/ip-adapter-faceid-plusv2_sdxl_lora.safetensors",
+                    "IP-Adapter FaceID SDXL LoRA",
+                    IPADAPTER_FACEID_SDXL_LORA_SIZE, "", false
+                }
+            },
+            {},
+            {"loras/ip-adapter-faceid-plusv2_sdxl_lora.safetensors"},
+            false, true  // Optional - required for FaceID SDXL
+        },
+        // InsightFace (optional, needed for FaceID)
+        {
+            "insightface",
+            "InsightFace Model",
+            "Face detection and analysis for FaceID",
+            {
+                {
+                    INSIGHTFACE_ANTELOPE_URL,
+                    "insightface/models/antelopev2.zip",
+                    "InsightFace Antelopev2",
+                    INSIGHTFACE_ANTELOPE_SIZE, "", false
+                }
+            },
+            {},
+            {"insightface/models/antelopev2/1k3d68.onnx"},  // Check for extracted file
+            false, true  // Optional - for FaceID
         },
         // AnimateDiff Custom Nodes
         {

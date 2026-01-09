@@ -1712,7 +1712,32 @@ void main()
 		return;
 	}
 
-    if (interm > 2) {
+    if (interm == 2 && usemask) {
+        // mask mode
+		vec4 texcol1 = texture(Sampler0, texco);
+		vec4 texcol3 = texture(Sampler1, texco);
+        vec3 rgb = texcol1.rgb;
+        vec3 rgb2 = texcol3.rgb;
+        if (ismask == 2) {
+            vec3 hsv = rgb2hsv(texcol1.rgb);
+            hsv.y *= 0.0f;
+            rgb = hsv2rgb(hsv);
+        }
+        vec2 center = vec2(texco.x - 0.5f, texco.y - 0.5f);
+        float mod = (swidth / sheight) / (float(fbowidth) / float(fboheight));
+        if (swidth / sheight > float(fbowidth) / float(fboheight)) {
+            center.y /= mod;
+        }
+        else {
+            center.x *= mod;
+        }
+        center += vec2(0.5, 0.5);
+        vec4 texcol2 = texture(Sampler2, center);
+		float maskopacity = rgb2hsv(texcol2.rgb).z;
+        FragColor = vec4(rgb * drywet + (1.0f - drywet) * rgb2, texcol1.a * texcol3.a * maskopacity * opacity);
+    	return;
+    }
+    if (interm > 1) {
         vec4 texcol1;
 		if (interm == 3) {
 		    texcol1 = lanczos_upscale(texco);
@@ -1777,29 +1802,6 @@ void main()
    	         FragColor = vec4(rgb, texcol.a * opacity);
    	    }
    	    return;
-    }
-    if (interm != 1 && usemask) {
-        // mask mode
-		vec4 texcol1 = texture(Sampler0, texco);
-        vec3 rgb = texcol1.rgb;
-        if (ismask == 2) {
-            vec3 hsv = rgb2hsv(texcol1.rgb);
-            hsv.y *= 0.0f;
-            rgb = hsv2rgb(hsv);
-        }
-        vec2 center = vec2(texco.x - 0.5f, texco.y - 0.5f);
-        float mod = (swidth / sheight) / (float(fbowidth) / float(fboheight));
-        if (swidth / sheight > float(fbowidth) / float(fboheight)) {
-            center.y /= mod;
-        }
-        else {
-            center.x *= mod;
-        }
-        center += vec2(0.5, 0.5);
-        vec4 texcol2 = texture(Sampler2, center);
-		float maskopacity = rgb2hsv(texcol2.rgb).z;
-    	FragColor = vec4(rgb, texcol1.a * texcol2.a * maskopacity * opacity);
-    	return;
     }
     if (interm == 1) {
 		texcol = texture(Sampler0, texco);

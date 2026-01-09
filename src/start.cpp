@@ -111,12 +111,26 @@ extern "C" {
 
 #ifdef WINDOWS
 #include <shellapi.h>
+#include <shlobj.h>
 #endif
 
 
 FT_Library ft;
 Globals *glob = nullptr;
 Program *mainprogram = nullptr;
+
+// Helper function to get programData without including program.h (avoids OpenGL header conflicts)
+std::string getProgramDataPath() {
+    if (mainprogram) {
+        return mainprogram->programData;
+    }
+#ifdef _WIN32
+    return "C:/ProgramData";
+#else
+    return "/usr/share";
+#endif
+}
+
 Mixer *mainmix = nullptr;
 BinsMain *binsmain = nullptr;
 StyleRoom *mainstyleroom = nullptr;
@@ -3624,9 +3638,6 @@ void onestepfrom(bool stage, Node *node, Node *prevnode, GLuint prevfbotex, GLui
                 yss = (sys + sh * 12.0f * sy) / lay->yss;
                 swidth = sw * sc;
                 sheight = sh * sc;
-                mainprogram->uniformCache->setBool("lasteffect", true);
-                mainprogram->uniformCache->setFloat("xss", lay->xss);
-                mainprogram->uniformCache->setFloat("yss", lay->yss);
                 mainprogram->uniformCache->setFloat("swidth", swidth);
                 mainprogram->uniformCache->setFloat("sheight", sheight);
                 glViewport(xss, yss, swidth, sheight);
@@ -3937,7 +3948,6 @@ void onestepfrom(bool stage, Node *node, Node *prevnode, GLuint prevfbotex, GLui
 
             mainprogram->uniformCache->setBool("usemask", false);
             mainprogram->uniformCache->setInt("ismask", 0);
-            mainprogram->uniformCache->setBool("lasteffect", false);
             mainprogram->uniformCache->setBool("down", false);
             mainprogram->uniformCache->setInt("interm", 0);
             glViewport(0, 0, glob->w, glob->h);
@@ -4719,48 +4729,23 @@ void walk_nodes(bool stage) {
 	mainprogram->directmode = true;
     for (int i = 0; i < 4; i = i + 2) {
         if (stage == i / 2) {
-            int mutes = 0;
-            bool muted = false;
             for (int j = 0; j < mainmix->layers[i].size(); j++) {
                 Layer *lay = mainmix->layers[i][j];
-                if (lay->mutebut->value) mutes++;
                 walk_forward(lay->node);
                 onestepfrom(i / 2, lay->node, nullptr, -1, -1);
             }
             mainmix->inmixphase = false;
             mainmix->lasttex = -1;
-            if (mutes == mainmix->layers[i].size()) {
-                muted = true;
-                glBindFramebuffer(GL_FRAMEBUFFER, mainprogram->nodesmain->mixnodes[i / 2][0]->mixfbo);
-                glDrawBuffer(GL_COLOR_ATTACHMENT0);
-                glClearColor(0, 0, 0, 0);
-                glClear(GL_COLOR_BUFFER_BIT);
-            }
-            mutes = 0;
             for (int j = 0; j < mainmix->layers[i + 1].size(); j++) {
                 Layer *lay = mainmix->layers[i + 1][j];
-                if (lay->mutebut->value) mutes++;
                 walk_forward(lay->node);
                 onestepfrom(i / 2, lay->node, nullptr, -1, -1);
-            }
-            if (mutes == mainmix->layers[i + 1].size()) {
-                muted = true;
-                glBindFramebuffer(GL_FRAMEBUFFER, mainprogram->nodesmain->mixnodes[i / 2][1]->mixfbo);
-                glDrawBuffer(GL_COLOR_ATTACHMENT0);
-                glClearColor(0, 0, 0, 0);
-                glClear(GL_COLOR_BUFFER_BIT);
-            }
-            if (muted) {
-                mainprogram->bnodeend[i / 2]->intex = -1;
-                mainprogram->bnodeend[i / 2]->in2tex = -1;
-                onestepfrom(i / 2, mainprogram->bnodeend[i / 2], mainprogram->nodesmain->mixnodes[i / 2][0],
-                            mainprogram->nodesmain->mixnodes[i / 2][0]->mixtex, mainprogram->nodesmain->mixnodes[i / 2][0]->mixfbo);
-                onestepfrom(i / 2, mainprogram->bnodeend[i / 2], mainprogram->nodesmain->mixnodes[i / 2][1],
-                            mainprogram->nodesmain->mixnodes[i / 2][1]->mixtex, mainprogram->nodesmain->mixnodes[i / 2][1]->mixfbo);
             }
             mainmix->inmixphase = false;
         }
     }
+    onestepfrom(0, mainmix->emptylayer[0]->node, nullptr, -1, -1);
+    onestepfrom(1, mainmix->emptylayer[1]->node, nullptr, -1, -1);
 
 	mainprogram->directmode = false;
 }
@@ -5553,8 +5538,373 @@ void do_text_input(float x, float y, float sx, float sy, int mx, int my, float w
 		}
 	}
 }
-	
 
+
+// Helper struct for multi-line text input
+struct TextLine {
+    int startIdx;      // Start index in original string
+    int endIdx;        // End index in original string (exclusive)
+    float width;       // Rendered width of this line
+};
+
+// Word-wrap text into lines that fit within maxWidth
+static std::vector<TextLine> wrap_text_to_lines(const std::string& text, float x, float y, float sx, float sy, int smflag, float maxWidthPixels) {
+    std::vector<TextLine> lines;
+    if (text.empty()) {
+        lines.push_back({0, 0, 0.0f});
+        return lines;
+    }
+
+    int lineStart = 0;
+    int lastSpace = -1;
+    float currentWidth = 0.0f;
+
+    for (int i = 0; i <= (int)text.length(); i++) {
+        if (i == (int)text.length() || text[i] == '\n') {
+            // End of text or explicit newline
+            std::string lineText = text.substr(lineStart, i - lineStart);
+            std::vector<float> widthVec = render_text(lineText, nullptr, white, x, y, sx, sy, smflag, 0, 0);
+            float lineWidth = textwvec_total(widthVec);
+            lines.push_back({lineStart, i, lineWidth});
+            lineStart = i + 1;
+            lastSpace = -1;
+            currentWidth = 0.0f;
+            continue;
+        }
+
+        // Calculate width up to this character
+        std::string partText = text.substr(lineStart, i - lineStart + 1);
+        std::vector<float> widthVec = render_text(partText, nullptr, white, x, y, sx, sy, smflag, 0, 0);
+        currentWidth = mainprogram->xvtxtoscr(textwvec_total(widthVec));
+
+        if (text[i] == ' ') {
+            lastSpace = i;
+        }
+
+        if (currentWidth > maxWidthPixels && i > lineStart) {
+            // Line too long, need to wrap
+            int wrapAt;
+            if (lastSpace > lineStart) {
+                // Wrap at last space (word boundary)
+                wrapAt = lastSpace;
+            } else {
+                // No space found, wrap at current position
+                wrapAt = i;
+            }
+
+            std::string lineText = text.substr(lineStart, wrapAt - lineStart);
+            std::vector<float> lineWidthVec = render_text(lineText, nullptr, white, x, y, sx, sy, smflag, 0, 0);
+            float lineWidth = textwvec_total(lineWidthVec);
+            lines.push_back({lineStart, wrapAt, lineWidth});
+
+            // Skip the space if we wrapped at a space
+            lineStart = (text[wrapAt] == ' ') ? wrapAt + 1 : wrapAt;
+            lastSpace = -1;
+            currentWidth = 0.0f;
+
+            // Recalculate width from new line start to current position
+            if (i >= lineStart) {
+                std::string newPart = text.substr(lineStart, i - lineStart + 1);
+                std::vector<float> newWidthVec = render_text(newPart, nullptr, white, x, y, sx, sy, smflag, 0, 0);
+                currentWidth = mainprogram->xvtxtoscr(textwvec_total(newWidthVec));
+            }
+        }
+    }
+
+    // Handle any remaining text
+    if (lineStart < (int)text.length()) {
+        std::string lineText = text.substr(lineStart);
+        std::vector<float> widthVec = render_text(lineText, nullptr, white, x, y, sx, sy, smflag, 0, 0);
+        float lineWidth = textwvec_total(widthVec);
+        lines.push_back({lineStart, (int)text.length(), lineWidth});
+    }
+
+    if (lines.empty()) {
+        lines.push_back({0, 0, 0.0f});
+    }
+
+    return lines;
+}
+
+// Find which line and position within line for an absolute cursor position
+static void cursor_to_line_pos(int cursorPos, const std::vector<TextLine>& lines, int& lineIdx, int& posInLine) {
+    for (int i = 0; i < (int)lines.size(); i++) {
+        if (cursorPos <= lines[i].endIdx) {
+            lineIdx = i;
+            posInLine = cursorPos - lines[i].startIdx;
+            return;
+        }
+    }
+    // Cursor at end
+    lineIdx = (int)lines.size() - 1;
+    posInLine = lines[lineIdx].endIdx - lines[lineIdx].startIdx;
+}
+
+// Static scroll offset for multi-line text input (persists between frames)
+static int multilineScrollOffset = 0;
+
+void do_text_input_multiple_lines(float x, float y, float sx, float sy, int mx, int my, float width, float lineHeight, int maxLines, int smflag, PrefItem* item) {
+    do_text_input_multiple_lines(x, y, sx, sy, mx, my, width, lineHeight, maxLines, smflag, item, false);
+}
+
+void do_text_input_multiple_lines(float x, float y, float sx, float sy, int mx, int my, float width, float lineHeight, int maxLines, int smflag, PrefItem* item, bool directdraw) {
+    // Multi-line text input with word wrapping and vertical scrolling
+    mainprogram->tooltipmilli = 0.0f;
+
+    // Word-wrap text into lines
+    std::vector<TextLine> lines = wrap_text_to_lines(mainprogram->inputtext, x, y, sx, sy, smflag, width);
+
+    // Initialize cursor position if needed
+    if (mainprogram->cursorpixels == -1) {
+        mainprogram->cursorpos0 = mainprogram->inputtext.length();
+        mainprogram->cursorpixels = 0;
+        mainprogram->startcursor = 0;
+        mainprogram->startpos = 0;
+        multilineScrollOffset = 0;
+    }
+
+    // Calculate line height in GL coordinates
+    float glLineHeight = lineHeight;
+
+    // Determine visible line range
+    int totalLines = (int)lines.size();
+    int visibleLines = (maxLines > 0) ? std::min(maxLines, totalLines) : totalLines;
+
+    // Find cursor line for auto-scrolling
+    int cursorLine = 0, cursorPosInLine = 0;
+    cursor_to_line_pos(mainprogram->cursorpos0, lines, cursorLine, cursorPosInLine);
+
+    // Handle arrow up/down navigation
+    if (mainprogram->arrowup && cursorLine > 0) {
+        // Move to previous line at same character position
+        int targetLine = cursorLine - 1;
+        int lineLength = lines[targetLine].endIdx - lines[targetLine].startIdx;
+        int newPosInLine = std::min(cursorPosInLine, lineLength);
+        mainprogram->cursorpos0 = lines[targetLine].startIdx + newPosInLine;
+        mainprogram->arrowup = false;
+        // Recalculate cursor position
+        cursor_to_line_pos(mainprogram->cursorpos0, lines, cursorLine, cursorPosInLine);
+    } else {
+        mainprogram->arrowup = false;
+    }
+
+    if (mainprogram->arrowdown && cursorLine < (int)lines.size() - 1) {
+        // Move to next line at same character position
+        int targetLine = cursorLine + 1;
+        int lineLength = lines[targetLine].endIdx - lines[targetLine].startIdx;
+        int newPosInLine = std::min(cursorPosInLine, lineLength);
+        mainprogram->cursorpos0 = lines[targetLine].startIdx + newPosInLine;
+        mainprogram->arrowdown = false;
+        // Recalculate cursor position
+        cursor_to_line_pos(mainprogram->cursorpos0, lines, cursorLine, cursorPosInLine);
+    } else {
+        mainprogram->arrowdown = false;
+    }
+
+    // Auto-scroll to keep cursor visible
+    if (maxLines > 0 && totalLines > maxLines) {
+        if (cursorLine < multilineScrollOffset) {
+            // Cursor above visible area - scroll up
+            multilineScrollOffset = cursorLine;
+        } else if (cursorLine >= multilineScrollOffset + maxLines) {
+            // Cursor below visible area - scroll down
+            multilineScrollOffset = cursorLine - maxLines + 1;
+        }
+        // Clamp scroll offset
+        multilineScrollOffset = std::clamp(multilineScrollOffset, 0, totalLines - maxLines);
+    } else {
+        multilineScrollOffset = 0;
+    }
+
+    int firstVisibleLine = multilineScrollOffset;
+    int lastVisibleLine = std::min(firstVisibleLine + visibleLines, totalLines);
+
+    // Handle mouse clicks
+    if (mainprogram->leftmousedown || mainprogram->leftmouse || mainprogram->orderleftmousedown || mainprogram->orderleftmouse) {
+        bool found = false;
+
+        // Check each visible line for click
+        for (int visIdx = 0; visIdx < visibleLines && (firstVisibleLine + visIdx) < totalLines; visIdx++) {
+            int lineIdx = firstVisibleLine + visIdx;
+            float lineY = y - visIdx * glLineHeight;  // Use visIdx for screen position
+            float lineTop = mainprogram->yvtxtoscr(1.0f - (lineY - 0.005f));
+            float lineBottom = mainprogram->yvtxtoscr(1.0f - (lineY + (mainprogram->texth / 2.6f) / (2070.0f / glob->h)));
+
+            if (my < lineTop && my > lineBottom) {
+                // Click is on this line, find character position
+                const TextLine& line = lines[lineIdx];
+                std::string lineText = mainprogram->inputtext.substr(line.startIdx, line.endIdx - line.startIdx);
+                std::vector<float> charWidths = render_text(lineText, nullptr, white, x, lineY, sx, sy, smflag, 0, 0);
+
+                float distin = 0.0f;
+                for (int j = 0; j <= (int)charWidths.size(); j++) {
+                    float charX = mainprogram->xvtxtoscr(x + 1.0f + distin);
+                    float nextCharX;
+                    if (j == (int)charWidths.size()) {
+                        nextCharX = glob->w;
+                    } else {
+                        nextCharX = mainprogram->xvtxtoscr(x + 1.0f + distin + charWidths[j]);
+                    }
+
+                    if (mx >= charX && mx < nextCharX) {
+                        int absPos = line.startIdx + j;
+                        found = true;
+
+                        if (mainprogram->leftmousedown || mainprogram->orderleftmousedown) {
+                            if (!mainprogram->cursorreset) {
+                                if (mainprogram->cursorpos1 == -1) {
+                                    mainprogram->cursorpos1 = absPos;
+                                    mainprogram->cursorpos2 = absPos;
+                                } else {
+                                    mainprogram->cursorpos2 = absPos;
+                                }
+                            } else {
+                                if (mainprogram->cursortemp1 == -1) {
+                                    mainprogram->cursortemp1 = absPos;
+                                    mainprogram->cursortemp2 = absPos;
+                                } else {
+                                    mainprogram->cursortemp2 = absPos;
+                                }
+                                if (mainprogram->cursortemp1 != mainprogram->cursortemp2) {
+                                    mainprogram->cursorpos1 = mainprogram->cursortemp1;
+                                    mainprogram->cursorpos2 = mainprogram->cursortemp2;
+                                    mainprogram->cursorreset = false;
+                                }
+                            }
+                        }
+                        if (mainprogram->leftmouse || mainprogram->orderleftmouse) {
+                            mainprogram->cursorpos0 = absPos;
+                            if (mainprogram->cursorreset) {
+                                mainprogram->cursorpos1 = -1;
+                                mainprogram->cursorpos2 = -1;
+                            }
+                            mainprogram->cursorreset = true;
+                            mainprogram->cursortemp1 = -1;
+                            mainprogram->cursortemp2 = -1;
+                        }
+                        mainprogram->leftmouse = false;
+                        break;
+                    }
+
+                    if (j < (int)charWidths.size()) {
+                        distin += charWidths[j];
+                    }
+                }
+                if (found) break;
+            }
+        }
+
+        if (!found) {
+            // Clicked outside - cancel edit
+            if (mainprogram->renaming == EDIT_BINNAME) {
+                for (BinElement* elem : binsmain->currbin->elements) {
+                    if (elem->path != "") {
+                        elem->autosavejpegsaved = false;
+                    }
+                }
+            }
+            mainmix->adaptnumparam = nullptr;
+            mainmix->adapttextparam = nullptr;
+            if (item) item->renaming = false;
+            if (mainmix->retargeting) {
+                mainmix->renaming = false;
+            }
+            mainprogram->renaming = EDIT_NONE;
+            end_input();
+            multilineScrollOffset = 0;  // Reset scroll on exit
+        }
+        mainprogram->recundo = false;
+    }
+
+    // Render text and cursor if still editing
+    if (mainprogram->renaming != EDIT_NONE) {
+        // Re-wrap in case text changed
+        lines = wrap_text_to_lines(mainprogram->inputtext, x, y, sx, sy, smflag, width);
+        totalLines = (int)lines.size();
+
+        // Re-calculate cursor position after re-wrap
+        cursor_to_line_pos(mainprogram->cursorpos0, lines, cursorLine, cursorPosInLine);
+
+        // Re-apply auto-scroll after re-wrap
+        if (maxLines > 0 && totalLines > maxLines) {
+            if (cursorLine < multilineScrollOffset) {
+                multilineScrollOffset = cursorLine;
+            } else if (cursorLine >= multilineScrollOffset + maxLines) {
+                multilineScrollOffset = cursorLine - maxLines + 1;
+            }
+            multilineScrollOffset = std::clamp(multilineScrollOffset, 0, std::max(0, totalLines - maxLines));
+        } else {
+            multilineScrollOffset = 0;
+        }
+
+        firstVisibleLine = multilineScrollOffset;
+        lastVisibleLine = std::min(firstVisibleLine + (maxLines > 0 ? maxLines : totalLines), totalLines);
+
+        // Render visible lines only
+        for (int visIdx = 0; visIdx < (lastVisibleLine - firstVisibleLine); visIdx++) {
+            int lineIdx = firstVisibleLine + visIdx;
+            float lineY = y - visIdx * glLineHeight;
+            const TextLine& line = lines[lineIdx];
+            std::string lineText = mainprogram->inputtext.substr(line.startIdx, line.endIdx - line.startIdx);
+            render_text(lineText, white, x, lineY, sx, sy, smflag, 0);
+        }
+
+        if (mainprogram->cursorpos1 == -1) {
+            // Draw cursor line (only if cursor is in visible area)
+            if (cursorLine >= firstVisibleLine && cursorLine < lastVisibleLine) {
+                int visIdx = cursorLine - firstVisibleLine;
+                float cursorY = y - visIdx * glLineHeight;
+                const TextLine& line = lines[cursorLine];
+                std::string beforeCursor = mainprogram->inputtext.substr(line.startIdx, cursorPosInLine);
+                std::vector<float> widthVec = render_text(beforeCursor, nullptr, white, x, cursorY, sx, sy, smflag, 0, 0);
+                float textw = textwvec_total(widthVec);
+
+                if (mainprogram->inputtext == "") {
+                    int w2 = (smflag == 0) ? glob->w : smw;
+                    int h2 = (smflag == 0) ? glob->h : smh;
+                    int psize = (int)((sy * 24000.0f * h2 / 1346.0f) * (0.5625f / ((float)h2 / (float)w2)));
+                    mainprogram->texth = mainprogram->yscrtovtx(psize * 3);
+                } else {
+                    mainprogram->buth = mainprogram->texth;
+                }
+
+                register_line_draw(white, x + textw, cursorY - 0.005f - (smflag > 0) * 0.005f,
+                                  x + textw, cursorY + (mainprogram->texth / 2.6f) / (2070.0f / glob->h) - (smflag > 0) * (mainprogram->texth / 4.2f),
+                                  directdraw);
+            }
+        } else {
+            // Draw selection highlight across potentially multiple visible lines
+            int c1 = mainprogram->cursorpos1;
+            int c2 = mainprogram->cursorpos2;
+            if (c2 < c1) std::swap(c1, c2);
+
+            for (int visIdx = 0; visIdx < (lastVisibleLine - firstVisibleLine); visIdx++) {
+                int lineIdx = firstVisibleLine + visIdx;
+                const TextLine& line = lines[lineIdx];
+                float lineY = y - visIdx * glLineHeight;
+
+                // Check if selection intersects this line
+                if (c2 <= line.startIdx || c1 >= line.endIdx) continue;
+
+                // Calculate selection bounds on this line
+                int selStart = std::max(c1, line.startIdx) - line.startIdx;
+                int selEnd = std::min(c2, line.endIdx) - line.startIdx;
+
+                std::string beforeSel = mainprogram->inputtext.substr(line.startIdx, selStart);
+                std::vector<float> beforeVec = render_text(beforeSel, nullptr, white, x, lineY, sx, sy, smflag, 0, 0);
+                float textw1 = textwvec_total(beforeVec);
+
+                std::string selText = mainprogram->inputtext.substr(line.startIdx + selStart, selEnd - selStart);
+                std::vector<float> selVec = render_text(selText, nullptr, white, x + textw1, lineY, sx, sy, smflag, 0, 0);
+                float textw2 = textwvec_total(selVec);
+
+                float box_y = lineY - 0.005f - (smflag > 0) * 0.005f;
+                float box_height = 0.005f + (mainprogram->texth / 2.6f) / (2070.0f / glob->h) - (smflag > 0) * (mainprogram->texth / 4.2f) + 0.005f + (smflag > 0) * 0.005f;
+                draw_box(white, white, x + textw1, box_y, textw2, box_height, -1, false, false, true);
+            }
+        }
+    }
+}
 
 
 void enddrag() {
@@ -8512,6 +8862,11 @@ int main(int argc, char* argv[]) {
     mainstyleroom = new StyleRoom;
     mainvideogenroom = new VideoGenRoom;
 
+    char programData[MAX_PATH];
+    SHGetFolderPathA(NULL, CSIDL_COMMON_APPDATA, NULL, 0, programData);
+    mainprogram->programData = programData;
+    mainprogram->programData = pathtoposix(mainprogram->programData);
+
 #ifdef RECONET_TRAINING_ENABLED
     // Initialize ReCoNet trainer
     if (mainstyleroom->reconetTrainer) {
@@ -8535,12 +8890,12 @@ int main(int argc, char* argv[]) {
         while (installer.isInstalling()) {
             std::this_thread::sleep_for(std::chrono::milliseconds(100));
         }
-    }
+    }*/
 
-    std::string installDir = "C:/ProgramData/EWOCvj2/ComfyUI";
+    std::string installDir = mainprogram->programData + "/EWOCvj2/ComfyUI";
     mainvideogenroom->sdinstalled = ComfyUIInstaller::isSDAnimateDiffInstalled(installDir);
     mainvideogenroom->hunyuaninstalled = ComfyUIInstaller::isHunyuanVideoInstalled(installDir);
-*/
+
 #ifdef WINDOWS
     std::filesystem::path p5{mainprogram->docpath + "projects"};
     mainprogram->currprojdir = p5.generic_string();
@@ -8625,7 +8980,7 @@ int main(int argc, char* argv[]) {
     if (!exists(mainprogram->ffgldir)) {
         std::filesystem::create_directories(mainprogram->ffgldir);
     }
-    mainprogram->isfdir = "C:/ProgramData/ISF";
+    mainprogram->isfdir = mainprogram->programData + "/ISF";
     if (!exists(mainprogram->isfdir)) {
         std::filesystem::create_directories(mainprogram->isfdir);
     }
@@ -8757,6 +9112,9 @@ int main(int argc, char* argv[]) {
     mainprogram->bnodeend[0] = mainprogram->nodesmain->currpage->add_blendnode(CROSSFADING, false);
     mainprogram->nodesmain->currpage->connect_nodes(mixnodeA, mixnodeB, mainprogram->bnodeend[0]);
     mainprogram->nodesmain->currpage->connect_nodes(mainprogram->bnodeend[0], mixnodeAB);
+    mainmix->emptylayer[0] = new Layer(0);
+    mainmix->emptylayer[0]->node = mainprogram->nodesmain->currpage->add_videonode(0);
+    mainmix->emptylayer[0]->node->layer = mainmix->emptylayer[0];
 
     MixNode *mixnodeAcomp = mainprogram->nodesmain->currpage->add_mixnode(0, true);
     MixNode *mixnodeBcomp = mainprogram->nodesmain->currpage->add_mixnode(0, true);
@@ -8764,6 +9122,9 @@ int main(int argc, char* argv[]) {
     mainprogram->bnodeend[1] = mainprogram->nodesmain->currpage->add_blendnode(CROSSFADING, true);
     mainprogram->nodesmain->currpage->connect_nodes(mixnodeAcomp, mixnodeBcomp, mainprogram->bnodeend[1]);
     mainprogram->nodesmain->currpage->connect_nodes(mainprogram->bnodeend[1], mixnodeABcomp);
+    mainmix->emptylayer[1] = new Layer(1);
+    mainmix->emptylayer[1]->node = mainprogram->nodesmain->currpage->add_videonode(1);
+    mainmix->emptylayer[1]->node->layer = mainmix->emptylayer[1];
 
     mainprogram->uniformCache->setSampler("endSampler0", 1);
     mainprogram->uniformCache->setSampler("endSampler1", 2);
@@ -8773,8 +9134,6 @@ int main(int argc, char* argv[]) {
     laymidiC = new LayMidi;
     laymidiD = new LayMidi;
     if (exists(mainprogram->docpath + "/midiset.gm")) open_genmidis(mainprogram->docpath + "midiset.gm");
-
-    mainprogram->uniformCache->setBool("preff", true);
 
     // make init layer stacks
     for (int n = 0; n < 2; n++) {
@@ -9487,6 +9846,13 @@ int main(int argc, char* argv[]) {
                     if (e.key.keysym.sym == SDLK_RIGHT && mainprogram->cursorpos0 < mainprogram->inputtext.length()) {
                         mainprogram->cursorpos0++;
                     }
+                    //Handle cursor up/down (for multi-line input)
+                    if (e.key.keysym.sym == SDLK_UP) {
+                        mainprogram->arrowup = true;
+                    }
+                    if (e.key.keysym.sym == SDLK_DOWN) {
+                        mainprogram->arrowdown = true;
+                    }
                     //Handle backspace
                     if (e.key.keysym.sym == SDLK_BACKSPACE && mainprogram->inputtext.length() > 0) {
                         if (c1 != -1) {
@@ -9615,6 +9981,9 @@ int main(int argc, char* argv[]) {
                             mainprogram->tmguitextmap.erase(mainprogram->inputtext);
                         }
                     }
+                }
+                if (mainprogram->renaming == EDIT_PROMPT) {
+                    mainvideogenroom->promptstr = mainprogram->inputtext;
                 }
                 if (mainprogram->renaming == EDIT_BINNAME) {
                     binsmain->binrenamemap.erase(binsmain->currbin->name);

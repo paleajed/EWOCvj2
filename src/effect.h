@@ -1,3 +1,6 @@
+#ifndef EFFECT_H
+#define EFFECT_H
+
 #include <string>
 #include <vector>
 #include <mutex>
@@ -414,5 +417,4 @@ private:
     bool initialized;
 };
 
-
-
+#endif // EFFECT_H

@@ -62,12 +62,10 @@ void ComfyUIManager::initPresetRegistry() {
 
     presetRegistry.resize(static_cast<size_t>(PresetType::PRESET_COUNT));
 
-    // Tier 1 - Beginner
     presetRegistry[0] = {
         PresetType::TEXT_TO_VIDEO,
         "Text-to-Video",
         "Generate video from text prompts",
-        PresetTier::BEGINNER,
         true, true, true,  // SD full, Hunyuan partial
         "No seamless loop control - generates standard video",
         true, false, false, false, false, {},
@@ -79,7 +77,6 @@ void ComfyUIManager::initPresetRegistry() {
         PresetType::IMAGE_TO_MOTION,
         "Image-to-Motion",
         "Animate a still image with camera or object motion",
-        PresetTier::BEGINNER,
         true, true, false, "",
         true, true, false, false, false, {},
         16, 512, 512, 8.0f,
@@ -87,23 +84,9 @@ void ComfyUIManager::initPresetRegistry() {
     };
 
     presetRegistry[2] = {
-        PresetType::KALEIDOSCOPE_GENERATOR,
-        "Kaleidoscope Generator",
-        "Create symmetric, psychedelic patterns",
-        PresetTier::BEGINNER,
-        true, false, false,  // SD only
-        "Not supported - requires symmetry nodes unavailable in Hunyuan",
-        true, false, false, false, false, {},
-        24, 512, 512, 12.0f,
-        "kaleidoscope"
-    };
-
-    // Tier 2 - Intermediate
-    presetRegistry[3] = {
         PresetType::STYLE_TRANSFER_LOOP,
         "Style Transfer Loop",
         "Apply artistic style from a reference image using IPAdapter",
-        PresetTier::INTERMEDIATE,
         true, false, false,  // SD only
         "Not supported - requires IPAdapter unavailable in Hunyuan",
         true, false, false, true, false, {},
@@ -111,11 +94,10 @@ void ComfyUIManager::initPresetRegistry() {
         "style_transfer"
     };
 
-    presetRegistry[4] = {
+    presetRegistry[3] = {
         PresetType::MORPHING_SEQUENCES,
         "Morphing Sequences",
         "Smooth transitions between different concepts",
-        PresetTier::INTERMEDIATE,
         true, false, false,
         "Not supported - requires BatchPromptSchedule unavailable in Hunyuan",
         true, false, false, false, false, {},
@@ -123,11 +105,10 @@ void ComfyUIManager::initPresetRegistry() {
         "morphing"
     };
 
-    presetRegistry[5] = {
+    presetRegistry[4] = {
         PresetType::VIDEO_CONTINUATION,
         "Video Continuation",
         "Continue video from last frame with new prompt (like Veo3)",
-        PresetTier::INTERMEDIATE,
         false, true, false,  // Hunyuan only
         "Not supported - requires Hunyuan i2v architecture",
         true, false, true, false, false, {},  // requires prompt, requires input video
@@ -135,12 +116,10 @@ void ComfyUIManager::initPresetRegistry() {
         "video_continuation"
     };
 
-    // Tier 3 - Advanced
-    presetRegistry[6] = {
+    presetRegistry[5] = {
         PresetType::CONTROLLABLE_CHARACTER,
-        "Controllable Character",
+        "Controllable Face/Character",
         "Maintain consistent character across clips using reference images",
-        PresetTier::ADVANCED,
         true, false, false,  // SD only
         "Not supported - requires InstantID/IPAdapter unavailable in Hunyuan",
         true, true, false, false, false, {},
@@ -148,11 +127,10 @@ void ComfyUIManager::initPresetRegistry() {
         "character"
     };
 
-    presetRegistry[7] = {
+    presetRegistry[6] = {
         PresetType::TEXTURE_EVOLUTION,
         "Texture Evolution",
         "Organic material transformations between textures",
-        PresetTier::ADVANCED,
         true, false, false,  // SD only
         "Not supported - requires BatchPromptSchedule",
         true, false, false, false, false, {},
@@ -160,35 +138,30 @@ void ComfyUIManager::initPresetRegistry() {
         "texture_evolution"
     };
 
-    // Tier 4 - Power User
-    presetRegistry[8] = {
-        PresetType::LORA_TRAINING_ASSISTANT,
-        "LoRA Training Assistant",
-        "Train custom style models from inspiration images",
-        PresetTier::POWER_USER,
-        true, false, false,  // SD only
-        "Not supported - different training architecture",
-        false, true, false, false, false, {},
-        0, 0, 0, 0.0f,  // No video output for training
-        "lora_training"
-    };
-
-    presetRegistry[9] = {
-        PresetType::BATCH_VARIATION_GENERATOR,
-        "Batch Variation Generator",
-        "Generate multiple variations with seed sweeps or parameter sweeps",
-        PresetTier::POWER_USER,
+    presetRegistry[7] = {
+        PresetType::BATCH_VARIATION_GENERATOR_T2V,
+        "Batch Variation Generator T2V",
+        "Generate multiple text-to-video variations with seed sweeps",
         true, true, false, "",
         true, false, false, false, false, {},
         16, 512, 512, 8.0f,
-        "batch_variation"
+        "batch_variation_t2v"
     };
 
-    presetRegistry[10] = {
+    presetRegistry[8] = {
+        PresetType::BATCH_VARIATION_GENERATOR_I2V,
+        "Batch Variation Generator I2V",
+        "Generate multiple image-to-video variations with seed sweeps",
+        true, true, false, "",
+        true, true, false, false, false, {},  // requiresImage = true
+        16, 512, 512, 8.0f,
+        "batch_variation_i2v"
+    };
+
+    presetRegistry[9] = {
         PresetType::CONTROLNET_DIRECTOR,
         "ControlNet Director",
         "Guide generation with sketch, depth, pose, or edge maps",
-        PresetTier::POWER_USER,
         true, false, false,  // SD only
         "Not supported - Hunyuan lacks ControlNet integration",
         true, true, false, false, true,
@@ -198,23 +171,20 @@ void ComfyUIManager::initPresetRegistry() {
         "controlnet_director"
     };
 
-    presetRegistry[11] = {
+    presetRegistry[10] = {
         PresetType::FRAME_INTERPOLATION,
         "Frame Interpolation",
         "Increase video FPS using RIFE motion interpolation",
-        PresetTier::POWER_USER,
         true, true, false, "",
         false, false, true, false, false, {},
         0, 0, 0, 0.0f,  // Resolution/FPS from input video
         "frame_interpolation"
     };
 
-    // Interactive
-    presetRegistry[12] = {
+    presetRegistry[11] = {
         PresetType::REMIX_EXISTING_CLIP,
         "Remix Existing Clip",
         "Create variations on a previously generated clip",
-        PresetTier::INTERACTIVE,
         true, true, true,
         "Basic variations only - no full remixing capabilities",
         true, false, true, false, false, {},
@@ -377,17 +347,6 @@ const PresetInfo& ComfyUIManager::getPresetInfo(PresetType preset) {
     return presetRegistry[index];
 }
 
-std::vector<PresetType> ComfyUIManager::getPresetsForTier(PresetTier tier) {
-    initPresetRegistry();
-    std::vector<PresetType> result;
-    for (const auto& info : presetRegistry) {
-        if (info.tier == tier) {
-            result.push_back(info.type);
-        }
-    }
-    return result;
-}
-
 std::vector<PresetType> ComfyUIManager::getPresetsForBackend(GenerationBackend backend,
                                                                bool includePartial) {
     initPresetRegistry();
@@ -423,17 +382,6 @@ std::string ComfyUIManager::backendToString(GenerationBackend backend) {
     switch (backend) {
         case GenerationBackend::SD_ANIMATEDIFF: return "StableDiffusion + AnimateDiff";
         case GenerationBackend::HUNYUAN_VIDEO: return "HunyuanVideo";
-        default: return "Unknown";
-    }
-}
-
-std::string ComfyUIManager::tierToString(PresetTier tier) {
-    switch (tier) {
-        case PresetTier::BEGINNER: return "Beginner";
-        case PresetTier::INTERMEDIATE: return "Intermediate";
-        case PresetTier::ADVANCED: return "Advanced";
-        case PresetTier::POWER_USER: return "Power User";
-        case PresetTier::INTERACTIVE: return "Interactive";
         default: return "Unknown";
     }
 }
@@ -964,7 +912,13 @@ nlohmann::json ComfyUIManager::submitWorkflow(const nlohmann::json& workflow) {
 }
 
 bool ComfyUIManager::interruptGeneration() {
-    std::string response = httpPost("/interrupt", nlohmann::json{});
+    // ComfyUI's /interrupt endpoint expects a JSON body (not null)
+    // Send prompt_id if we have one, otherwise send empty object
+    nlohmann::json body = nlohmann::json::object();  // Creates {} not null
+    if (!currentPromptId.empty()) {
+        body["prompt_id"] = currentPromptId;
+    }
+    std::string response = httpPost("/interrupt", body);
     return !response.empty();
 }
 
@@ -1013,6 +967,17 @@ bool ComfyUIManager::downloadOutput(const std::string& filename, const std::stri
     if (data.empty()) {
         setError("Failed to download output: " + filename);
         return false;
+    }
+
+    // Create parent directories if they don't exist
+    fs::path outputPath(localPath);
+    if (outputPath.has_parent_path()) {
+        try {
+            fs::create_directories(outputPath.parent_path());
+        } catch (const std::exception& e) {
+            setError("Failed to create output directory: " + std::string(e.what()));
+            return false;
+        }
     }
 
     std::ofstream file(localPath, std::ios::binary);
@@ -1582,9 +1547,10 @@ void ComfyUIManager::generationThreadFunc(GenerationParams params) {
 
     currentParams = params;
 
-    // Determine batch count - only for BATCH_VARIATION_GENERATOR preset
+    // Determine batch count - only for BATCH_VARIATION_GENERATOR presets
     int batchCount = 1;
-    if (params.preset == PresetType::BATCH_VARIATION_GENERATOR && params.batchSize > 1) {
+    if ((params.preset == PresetType::BATCH_VARIATION_GENERATOR_T2V ||
+         params.preset == PresetType::BATCH_VARIATION_GENERATOR_I2V) && params.batchSize > 1) {
         batchCount = params.batchSize;
     }
 
@@ -2082,7 +2048,8 @@ nlohmann::json ComfyUIManager::prepareWorkflow(PresetType preset, const Generati
 
     // Debug: Log the prompt being sent
     for (auto& [nodeId, node] : workflow.items()) {
-        if (node.contains("inputs") && node["inputs"].contains("text")) {
+        if (node.contains("inputs") && node["inputs"].contains("text") &&
+            node["inputs"]["text"].is_string()) {
             std::cerr << "[ComfyUI] Node " << nodeId << " text: "
                       << node["inputs"]["text"].get<std::string>() << std::endl;
         }
@@ -2112,32 +2079,32 @@ nlohmann::json ComfyUIManager::prepareWorkflow(PresetType preset, const Generati
 
 void ComfyUIManager::substituteParameters(nlohmann::json& workflow,
                                            const GenerationParams& params) {
-    // Model names based on backend
+    // Model names based on backend (GGUF quantized for VRAM efficiency)
     std::string modelName = (params.backend == GenerationBackend::SD_ANIMATEDIFF) ?
-                            "v1-5-pruned-emaonly-fp16.safetensors" :
+                            "stable-diffusion-xl-base-1.0-Q5_K_M.gguf" :
                             "hunyuan-video-t2v-720p-Q4_0.gguf";
-    std::string motionModuleName = "mm_sd_v15_v2.fp16.safetensors";
+    std::string motionModuleName = "mm_sdxl_v10_beta.ckpt";
     std::string vaeName = (params.backend == GenerationBackend::SD_ANIMATEDIFF) ?
-                          "vae-ft-mse-840000-ema-pruned.safetensors" :
+                          "sdxl_vae.safetensors" :
                           "hunyuan_video_vae_bf16.safetensors";
 
-    // ControlNet model names
+    // ControlNet model names (SDXL versions for SD backend)
     std::string controlNetModel = "";
     switch (params.controlNetType) {
         case ControlNetType::DEPTH:
-            controlNetModel = "control_v11f1p_sd15_depth.pth";
+            controlNetModel = "controlnet-depth-sdxl-1.0.safetensors";
             break;
         case ControlNetType::CANNY:
-            controlNetModel = "control_v11p_sd15_canny.pth";
+            controlNetModel = "controlnet-canny-sdxl-1.0.safetensors";
             break;
         case ControlNetType::POSE:
-            controlNetModel = "control_v11p_sd15_openpose.pth";
+            controlNetModel = "controlnet-openpose-sdxl-1.0.safetensors";
             break;
         case ControlNetType::SKETCH:
-            controlNetModel = "control_v11p_sd15_scribble.pth";
+            controlNetModel = "controlnet-scribble-sdxl-1.0.safetensors";
             break;
         case ControlNetType::NORMAL:
-            controlNetModel = "control_v11p_sd15_normalbae.pth";
+            controlNetModel = "controlnet-normal-sdxl-1.0.safetensors";
             break;
         default:
             controlNetModel = "none";
@@ -2178,9 +2145,12 @@ void ComfyUIManager::substituteParameters(nlohmann::json& workflow,
             // Fix hardcoded model names that don't match actual files
             replace("mm_sd_v15_v2.ckpt", motionModuleName);
             replace("mm_sd15_v2.ckpt", motionModuleName);
+            replace("mm_sdxl_v10_beta.ckpt", motionModuleName);
             replace("v1-5-pruned.ckpt", modelName);
             replace("v1-5-pruned-emaonly.ckpt", modelName);
             replace("v1-5-pruned-emaonly.safetensors", modelName);
+            replace("sd_xl_base_1.0.safetensors", modelName);
+            replace("sdxl_base_1.0.safetensors", modelName);
 
             // Core params
             replace("${PROMPT}", params.prompt);
@@ -2220,7 +2190,8 @@ void ComfyUIManager::substituteParameters(nlohmann::json& workflow,
             // Style params
             replace("${STYLE_STRENGTH}", std::to_string(params.styleStrength));
             replace("${CONTROLNET_STRENGTH}", std::to_string(params.controlNetStrength));
-            replace("${REMIX_STRENGTH}", std::to_string(params.remixStrength));
+            // REMIX_STRENGTH: denoise = 1 - remix (high remix = low denoise = preserve input)
+            replace("${REMIX_STRENGTH}", std::to_string(1.0f - params.remixStrength));
 
             replace("${DENOISE_STRENGTH}", std::to_string(params.denoiseStrength));
 
@@ -2282,6 +2253,12 @@ void ComfyUIManager::substituteParameters(nlohmann::json& workflow,
             if (!params.controlNetImagePath.empty()) {
                 replace("${CONTROLNET_IMAGE}", params.controlNetImagePath);
             }
+
+            // FaceID / Character consistency (uses input image as reference)
+            if (!params.inputImagePath.empty()) {
+                replace("${REFERENCE_IMAGE}", params.inputImagePath);
+            }
+            replace("${IDENTITY_STRENGTH}", std::to_string(params.identityStrength));
 
             node = str;
         } else if (node.is_object()) {

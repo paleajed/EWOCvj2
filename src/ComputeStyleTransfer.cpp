@@ -7,6 +7,7 @@
  */
 
 #include "ComputeStyleTransfer.h"
+#include "program.h"
 #include <iostream>
 #include <fstream>
 #include <sstream>
@@ -14,6 +15,8 @@
 #include <cmath>
 #include <cstring>
 #include <cstdlib>  // For system()
+
+extern Program* mainprogram;
 
 // ONNX protobuf headers for weight extraction
 #ifdef _MSC_VER
@@ -884,7 +887,7 @@ bool ComputeStyleTransfer::process(GLuint inputTexture, GLuint outputTexture, in
 
     // DEBUG: Dump input texture
     if (debugDump) {
-        debugSaveTexture(inputTexture, inputWidth, inputHeight, "C:/ProgramData/EWOCvj2/debug_input.ppm");
+        debugSaveTexture(inputTexture, inputWidth, inputHeight, (mainprogram->programData + "/EWOCvj2/debug_input.ppm").c_str());
     }
 
     // Process at INPUT dimensions, then scale to OUTPUT dimensions
@@ -901,7 +904,7 @@ bool ComputeStyleTransfer::process(GLuint inputTexture, GLuint outputTexture, in
     }
 
     if (debugDump) {
-        debugSaveTextureArray(normalizedTex, inputWidth, inputHeight, "C:/ProgramData/EWOCvj2/debug_01_normalized.ppm");
+        debugSaveTextureArray(normalizedTex, inputWidth, inputHeight, (mainprogram->programData + "/EWOCvj2/debug_01_normalized.ppm").c_str());
     }
 
     GLuint processedTex = normalizedTex;  // Track current texture through pipeline
@@ -916,7 +919,7 @@ bool ComputeStyleTransfer::process(GLuint inputTexture, GLuint outputTexture, in
         if (!runReLU(conv1Tex, conv1Tex, inputWidth, inputHeight, 32)) return false;
 
         if (debugDump) {
-            debugSaveTextureArray(conv1Tex, inputWidth, inputHeight, "C:/ProgramData/EWOCvj2/debug_02_conv1.ppm");
+            debugSaveTextureArray(conv1Tex, inputWidth, inputHeight, (mainprogram->programData + "/EWOCvj2/debug_02_conv1.ppm").c_str());
         }
 
         // Conv2: 32→64, 3x3, stride=2 + InstanceNorm + ReLU  [H/2, W/2, 64]
@@ -928,7 +931,7 @@ bool ComputeStyleTransfer::process(GLuint inputTexture, GLuint outputTexture, in
         if (!runReLU(conv2Tex, conv2Tex, w2, h2, 64)) return false;
 
         if (debugDump) {
-            debugSaveTextureArray(conv2Tex, w2, h2, "C:/ProgramData/EWOCvj2/debug_03_conv2.ppm");
+            debugSaveTextureArray(conv2Tex, w2, h2, (mainprogram->programData + "/EWOCvj2/debug_03_conv2.ppm").c_str());
         }
 
         // Conv3: 64→128, 3x3, stride=2 + InstanceNorm + ReLU  [H/4, W/4, 128]
@@ -940,7 +943,7 @@ bool ComputeStyleTransfer::process(GLuint inputTexture, GLuint outputTexture, in
         if (!runReLU(conv3Tex, conv3Tex, w4, h4, 128)) return false;
 
         if (debugDump) {
-            debugSaveTextureArray(conv3Tex, w4, h4, "C:/ProgramData/EWOCvj2/debug_04_conv3.ppm");
+            debugSaveTextureArray(conv3Tex, w4, h4, (mainprogram->programData + "/EWOCvj2/debug_04_conv3.ppm").c_str());
         }
 
         processedTex = conv3Tex;
@@ -972,7 +975,7 @@ bool ComputeStyleTransfer::process(GLuint inputTexture, GLuint outputTexture, in
         }
 
         if (debugDump) {
-            debugSaveTextureArray(processedTex, w4, h4, "C:/ProgramData/EWOCvj2/debug_05_residuals.ppm");
+            debugSaveTextureArray(processedTex, w4, h4, (mainprogram->programData + "/EWOCvj2/debug_05_residuals.ppm").c_str());
         }
 
         // === DECODER ===
@@ -984,7 +987,7 @@ bool ComputeStyleTransfer::process(GLuint inputTexture, GLuint outputTexture, in
         if (!runReLU(deconv1Tex, deconv1Tex, w2, h2, 64)) return false;
 
         if (debugDump) {
-            debugSaveTextureArray(deconv1Tex, w2, h2, "C:/ProgramData/EWOCvj2/debug_06_deconv1.ppm");
+            debugSaveTextureArray(deconv1Tex, w2, h2, (mainprogram->programData + "/EWOCvj2/debug_06_deconv1.ppm").c_str());
         }
 
         // DeConv2: 64→32, 3x3, stride=2 (upsample to H, W) + InstanceNorm + ReLU
@@ -995,7 +998,7 @@ bool ComputeStyleTransfer::process(GLuint inputTexture, GLuint outputTexture, in
         if (!runReLU(deconv2Tex, deconv2Tex, inputWidth, inputHeight, 32)) return false;
 
         if (debugDump) {
-            debugSaveTextureArray(deconv2Tex, inputWidth, inputHeight, "C:/ProgramData/EWOCvj2/debug_07_deconv2.ppm");
+            debugSaveTextureArray(deconv2Tex, inputWidth, inputHeight, (mainprogram->programData + "/EWOCvj2/debug_07_deconv2.ppm").c_str());
         }
 
         // Conv_out: 32→3, 9x9, stride=1 + Tanh
@@ -1010,7 +1013,7 @@ bool ComputeStyleTransfer::process(GLuint inputTexture, GLuint outputTexture, in
         if (!runClampAndNormalize(convOutTex, convOutTex, inputWidth, inputHeight, 3)) return false;
 
         if (debugDump) {
-            debugSaveTextureArray(convOutTex, inputWidth, inputHeight, "C:/ProgramData/EWOCvj2/debug_08_final_conv.ppm");
+            debugSaveTextureArray(convOutTex, inputWidth, inputHeight, (mainprogram->programData + "/EWOCvj2/debug_08_final_conv.ppm").c_str());
         }
 
         processedTex = convOutTex;
@@ -1032,7 +1035,7 @@ bool ComputeStyleTransfer::process(GLuint inputTexture, GLuint outputTexture, in
 
     // DEBUG: Dump output before Lanczos
     if (debugDump) {
-        debugSaveTexture(outputReadyTex, inputWidth, inputHeight, "C:/ProgramData/EWOCvj2/debug_before_lanczos.ppm");
+        debugSaveTexture(outputReadyTex, inputWidth, inputHeight, (mainprogram->programData + "/EWOCvj2/debug_before_lanczos.ppm").c_str());
     }
 
     // Scale to OUTPUT dimensions using Lanczos3 (high-quality resampling)
@@ -1049,7 +1052,7 @@ bool ComputeStyleTransfer::process(GLuint inputTexture, GLuint outputTexture, in
 
     // DEBUG: Dump final output
     if (debugDump) {
-        debugSaveTexture(outputTexture, outputWidth, outputHeight, "C:/ProgramData/EWOCvj2/debug_final_output.ppm");
+        debugSaveTexture(outputTexture, outputWidth, outputHeight, (mainprogram->programData + "/EWOCvj2/debug_final_output.ppm").c_str());
     }
 
     glEndQuery(GL_TIME_ELAPSED);

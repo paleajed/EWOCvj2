@@ -440,7 +440,7 @@ StyleRoom::StyleRoom() {
 
     std::string modelsdir;
 #ifdef _WIN32
-    modelsdir = "C:/ProgramData/EWOCvj2/models/styles/";
+    modelsdir = mainprogram->programData + "/EWOCvj2/models/styles/";
 #else
     modelsdir = "/usr/share/EWOCvj2/models/styles/";
 #endif
@@ -901,7 +901,7 @@ void StyleRoom::handle() {
         }
         else if (elemmenuoptions[k] == SET_OPENSTYLE) {
             mainprogram->pathto = "OPENSTYLE";
-            std::thread filereq(&Program::get_inname, mainprogram, "Open style file", "application/ewocvj2-style", "C:/ProgramData/EWOCvj2/models/styles/setup");
+            std::thread filereq(&Program::get_inname, mainprogram, "Open style file", "application/ewocvj2-style", (mainprogram->programData + "/EWOCvj2/models/styles/setup").c_str());
             filereq.detach();
         }
         else if (elemmenuoptions[k] == SET_SAVESTYLE) {
@@ -978,7 +978,7 @@ void StyleRoom::handle() {
             mainstyleroom->currstyle->name = mainprogram->inputtext;
             std::string modelsdir;
 #ifdef _WIN32
-            modelsdir = "C:/ProgramData/EWOCvj2/models/styles/";
+            modelsdir = mainprogram->programData + "/EWOCvj2/models/styles/";
 #else
             modelsdir = "/usr/share/EWOCvj2/models/styles/";
 #endif
@@ -1065,7 +1065,7 @@ void StyleRoom::handle() {
                     // Content dataset for style transfer training (photos to stylize)
                     // Use COCO, ImageNet, or any folder with diverse photos
 #ifdef _WIN32
-                    config.contentDataset = "C:/ProgramData/EWOCvj2/datasets/content";
+                    config.contentDataset = mainprogram->programData + "/EWOCvj2/datasets/content";
 #else
                     config.contentDataset = "/usr/share/EWOCvj2/datasets/content";
 #endif
@@ -1073,7 +1073,7 @@ void StyleRoom::handle() {
                     // Temporal coherence training (for flicker-free video style transfer)
                     // Set video dataset to a folder with video files or frame sequences
 #ifdef _WIN32
-                    config.videoDataset = "C:/ProgramData/EWOCvj2/datasets/video";
+                    config.videoDataset = mainprogram->programData + "/EWOCvj2/datasets/video";
 #else
                     config.videoDataset = "/usr/share/EWOCvj2/datasets/video";
 #endif
@@ -1210,7 +1210,7 @@ void StyleRoom::open_files_bin() {
 void StylePreparationBin::save() {
     // save bin file
     std::ofstream wfile;
-    std::string path = "C:/ProgramData/EWOCvj2/models/styles/setup/" + mainstyleroom->currstyle->name + ".style";
+    std::string path = mainprogram->programData + "/EWOCvj2/models/styles/setup/" + mainstyleroom->currstyle->name + ".style";
     wfile.open(path.c_str());
     wfile << "EWOCvj STYLEFILE\n";
 
@@ -1468,7 +1468,7 @@ void StyleRoom::updatelists() {
     AIStyleTransfer tempStyleTransfer;
     std::string modelsPath;
 #ifdef _WIN32
-    modelsPath = "C:/ProgramData/EWOCvj2/models/styles/";
+    modelsPath = mainprogram->programData + "/EWOCvj2/models/styles/";
 #else
     modelsPath = "/usr/share/EWOCvj2/models/styles/";
 #endif

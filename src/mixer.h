@@ -673,6 +673,8 @@ class Mixer {
 
         std::vector<Layer*> loadinglays;
 
+		Layer* emptylayer[2];
+
 		std::unordered_map<Param*, float> buparval;
 		std::unordered_map<Param*, Param*> bupar;
 		std::unordered_map<Param*, bool> buplaybut;

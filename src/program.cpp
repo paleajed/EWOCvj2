@@ -10440,7 +10440,7 @@ void Program::define_menus() {
     // Scan for model files directly without initializing upscaler
     std::string modelsPath;
     #ifdef _WIN32
-        modelsPath = "C:/ProgramData/EWOCvj2/models/upscale/";
+        modelsPath = mainprogram->programData + "/EWOCvj2/models/upscale/";
     #else
         modelsPath = "/usr/share/EWOCvj2/models/upscale/";
     #endif
