@@ -105,3 +105,56 @@ For Windows you will need to have these files in your build directory to run the
 * swscale-5.dll
 * tiff.dll
 * zlib1.dll
+
+
+
+
+
+Optional Integration: HunyuanVideo
+
+This application optionally supports video generation using Tencent HunyuanVideo models.
+
+License Separation
+
+This application is licensed under GPL-3.0-or-later.
+
+HunyuanVideo models are NOT part of this project and are not distributed with it.
+
+The HunyuanVideo model weights and related assets are licensed separately by Tencent under the Tencent Hunyuan Community License Agreement.
+
+There is no license inheritance or linkage between this application and the HunyuanVideo models.
+Model usage occurs only if the user manually downloads and configures them.
+
+Territorial & Legal Notice
+
+⚠️ Important for EU / UK / South Korea users
+
+According to Tencent’s license terms, the Tencent Hunyuan Community License Agreement does not apply in the European Union, United Kingdom, or South Korea unless you have obtained a separate license from Tencent.
+
+If you are located in one of these regions:
+
+You are responsible for ensuring you have a valid legal right to download and use the HunyuanVideo models.
+
+This project does not grant any rights to the models and does not provide legal authorization for their use.
+
+User Responsibility
+
+By enabling HunyuanVideo support, you acknowledge that:
+
+You have reviewed and accepted Tencent’s applicable license terms.
+
+You are legally permitted to use the models in your jurisdiction.
+
+Any generated output and model usage comply with Tencent’s acceptable-use policies and local law.
+
+No Warranty
+
+This project:
+
+Makes no guarantees regarding the legality, availability, or continued licensing of third-party AI models.
+
+Is not affiliated with or endorsed by Tencent.
+
+Alternatives
+
+For users seeking fully open-source and GPL-compatible solutions, this application also supports (or plans to support) alternative video generation backends with OSI-approved licenses.
